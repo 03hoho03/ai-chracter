@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 109개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 모두 57개 제외 —
+**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 110개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 노벨 공개 정책 스위치 1개(`NOVEL_PUBLIC_POLICY_V2_ENABLED`), 모두 58개 제외 —
 운영에서 켜 둔 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 7개(`PORTONE_*` 5개·
 `IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`), 노벨 키 2개(`NOVEL_PUBLIC_ENABLED`·`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`)는 셈에 들어간다) + 앱이 읽지 않지만
 옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
@@ -277,6 +277,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `MEMORY_FACTS_INJECT` | 설정 안 함(기본 `false`) | 매 턴 방의 관계·사실 기억을 키마다 지금 값으로 줄여(뒤집힌 값은 되살리지 않는다) 생성 프롬프트의 대화 기록 뒤·회상 앞 섹션에 싣는다(LLM 호출 없음, 사실 읽기 한 번, 줄 합계 700자 상한 — 상한의 앞 30% 는 관계 → 아는 사람이 정해진 사실 → 뒤집힌 사실 → 그 밖 순서, 나머지는 이번 사용자 메시지와 드문 낱말이 겹치는 사실을 먼저 채운다). 꺼져 있으면 사실을 읽지도 않아 생성 프롬프트가 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다(원문이 전체로 실리면 같은 사실이 두 번 들어간다). 실은 사실은 턴 기록(`chat_turns.memory_facts`)에 id·글자 수로 남는다. 사실은 추출(`MEMORY_FACTS_EXTRACT`)이 만들므로 추출 없이 켜면 실을 사실이 없다. 켜는 법은 줄 추가(`MEMORY_FACTS_INJECT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 섹션이 빠지고 사실·기록은 남는다. 🔴 임베딩 쓰기·읽기를 켠 뒤 마지막에 켠다(「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절) |
 | `MEMORY_KNOWLEDGE_FILTER` | 설정 안 함(기본 `false`) | 사실 섹션을 고르기 전에, 아는 사람이 정해진 사실 중 그 사람이 이번 장면(이번 사용자 메시지·직전 응답에 이름이 나온 인물, 사용자 제외)에 없는 행을 뺀다 — 비밀을 모르는 인물만 있는 장면에서 그 비밀이 새지 않게. 사실 섹션 안에서만 걸리므로 `MEMORY_FACTS_INJECT` 가 꺼져 있으면 켜도 생성 프롬프트·SQL 이 같다. 🔴 켤 때는 `MEMORY_SUMMARY_SECRET_MARKING` 과 한 번에 켠다(「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절). 끄면 다음 턴부터 걸러 내지 않는다 |
 | `MEMORY_SUMMARY_SECRET_MARKING` | 설정 안 함(기본 `false`) | 요약 접기 프롬프트의 지시문 바로 뒤에 비밀 표기 슬롯(비밀에 아는 사람 표기를 붙이고 그 내용을 표기 없이 다시 쓰지 않게 하는 지시와 그 방의 인물 이름 목록)을 싣는다. 꺼져 있으면 이름을 읽지도 않고 슬롯이 빠져 요약 프롬프트가 바이트까지 그대로다. 🔴 켜면 다음 접기부터 **모든 방**의 요약 글이 바뀌고, 그 요약이 생성 프롬프트와 엔딩 판정 입력에도 실린다. 끄면 다음 접기부터 슬롯이 빠지고 이미 쓴 요약은 그대로 남는다. 슬롯 문안은 프롬프트 세트 데이터라 이미지 롤백으로는 빠지지 않는다(옛 코드는 슬롯 값을 넘기지 않아 조용히 빠진다) |
+| `MEMORY_MODEL_SCOPE` | 설정 안 함(기본 `opus`) | 회상·사실 주입·지식 범위 필터·요약 비밀 표기·임베딩 회상이 동작하는 방의 범위(레인과 글쓰기 모델). 기본은 두 레인의 Opus 방뿐이고, 범위 밖 방의 턴은 스위치를 다 끈 것과 같다. 추출·임베딩 쓰기와 무관하다. 값 형식과 비울 때의 주의는 「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절 |
 | `MEMORY_EMBED_WRITE` | 설정 안 함(기본 `false`) | 턴 뒤 백그라운드(접기·장면 추출·사실 추출 다음)에서 방의 장면·사실 행 중 지금 모델·차원의 임베딩이 없는 것을 오래된 순서로 한 번에 64행까지 Voyage 로 임베딩해 `chat_memory_embeddings` 에 넣는다. 꺼져 있으면 예약하지 않아 Voyage 호출·임베딩 표 읽기·쓰기가 0 이다. 사용자 프롬프트는 켜도 그대로다(읽는 쪽은 `MEMORY_EMBED_RECALL`). 켜면 `VOYAGE_API_KEY` 가 있어야 기동한다. 켠 직후에는 이미 쌓인 행을 방마다 턴당 64행씩 따라잡아 그동안 임베딩 원가가 평소보다 많다. 클로버·레이트리밋에 세지 않는다. 끄면 이미 넣은 행은 남고 새로 채우지 않는다 |
 | `MEMORY_EMBED_MODEL` / `MEMORY_EMBED_DIMS` | 설정 안 함(기본 `voyage-4-large` / `1024`) | 임베딩 모델 id 와 출력 차원. 임베딩 행은 모델·차원을 함께 적고 읽는 쪽이 늘 지금 값으로 거르므로, 바꾸면 그 모델·차원의 행이 없는 장면·사실을 처음부터 다시 채운다(옛 행은 남는다). 기본값이 회상 품질 측정이 고른 값이라 켤 때 줄을 넣지 않는다 — 측정과 다른 모델·차원으로 돌릴 때만 넣는다. 단가표(`apps/api/src/api/llm/pricing.py`)에 없는 모델 id 면 원가가 "단가 없음"으로 빠진다 |
 | `VOYAGE_API_KEY` | Voyage 콘솔에서 만든 이 서비스 전용 API 키 | 임베딩 쓰기·읽기의 자격. 둘 중 하나라도 켜졌는데 비어 있으면 api 가 기동하지 못한다(교체가 실패하고 옛 색이 계속 서빙한다). 🔴 꺼진 채로는 넣지 않아도 된다. 지울 때는 두 스위치 줄을 먼저 지운다. 켜기 전 조건(처리방침 게시·학습 데이터 설정)은 「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절 |
@@ -305,11 +306,12 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `BEDROCK_CHAT_TIMEOUT_MS` / `BEDROCK_CHAPTER_TIMEOUT_MS` | 설정 안 함(기본 `45000` / `300000`) | 상위 모델 채팅 턴 / 소설 장 생성의 요청 타임아웃(ms). 스트리밍이라 "다음 청크까지"의 상한이다. 재시도는 하지 않는다 |
 | `BEDROCK_CHAT_MAX_TOKENS` / `BEDROCK_CHAPTER_MAX_TOKENS` | 설정 안 함(기본 `4096` / `32768`) | 출력 상한. Bedrock 은 요청의 출력 상한만큼 분당 토큰 쿼터를 먼저 잡으므로 올리면 동시 요청이 스로틀되기 쉽다. 장이 잘리면 실패·환불이다 |
 | `ANTHROPIC_DIRECT_API_KEY` | Anthropic 콘솔에서 만든 이 서비스 전용 API 키 | 상위 모델을 Anthropic API 로 직접 보낼 때의 자격. SDK 가 스스로 읽는 `ANTHROPIC_API_KEY` 와 이름을 나눴다. 아래 배정이 호출을 직결로 옮기는데 비어 있으면 스위치와 무관하게 api 가 기동하지 못한다. 직결의 모델 id·타임아웃·출력 상한·사고 깊이(나머지 `ANTHROPIC_*`)는 설정 안 함이 기본이다(기본값은 `.env.example`) |
-| `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음) | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
+| `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음) | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 장면 헤더 판정 호출 위치(`chat_scene_judgment`·`preview_scene_judgment`)는 줄을 두지 않고 짝인 스탯 판정 호출 위치의 배정을 물려받는다 — **스탯 판정 배정을 바꾸면 장면 판정도 함께 움직인다**(줄을 따로 넣으면 그 이름을 모르는 옛 이미지가 뜨지 못한다). 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
 | `CHAT_PREMIUM_MODELS_ENABLED` | 켤 때 `true`(코드 기본값은 꺼짐) | 채팅 상위 모델 스위치. 켜면 로그인 회원 모두가 채팅방에 상위 모델(Opus)을 고를 수 있다 — 명단·계정별 허용은 없다. 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 지금 이미지가 읽지 않지만 지우지 않는다(채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단을 다시 읽는다). 켜고 끄는 법은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
 | `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같고, 어드민이 준 계정별 허용 행도 있어야 한다. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
 | `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
 | `NOVEL_PUBLIC_PREVIEW_ALLOWLIST` | 미리보기 동안 계정 id, **쉼표 구분**(공백·따옴표 없이). 전체 공개 뒤에는 줄을 지운다(코드 기본값은 빈 명단) | 노벨 미리보기 명단. 비어 있으면 스위치가 켜졌을 때 모두에게 열리고, 비어 있지 않으면 스위치가 켜져 있어도 명단의 로그인 회원에게만 열린다 — 그 밖의 회원·비로그인은 스위치를 끈 것과 같은 응답이고, 인증 없는 가격 응답의 `novelPublicEnabled` 도 거짓이다. UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 절차는 "노벨(공개 소설) 켜기 · 끄기" 절 |
+| `NOVEL_PUBLIC_POLICY_V2_ENABLED` | 개정 약관 시행 뒤 켤 때 `true`(코드 기본값은 `false`) | 노벨 공개 정책 스위치. 꺼져 있으면 지금 약관대로다 — 첫 공개는 자동 글 심사를 통과하면 바로 열리고, 원작자가 소설화 허락을 거두면 다음 화가 막힌다. 켜면 아직 독자에게 보인 적 없는 소설의 첫 공개가 운영자 승인(어드민 `POST /admin/novels/{id}/review`)을 기다리고, 한 번 독자에게 보인 소설(연재권 잠금)은 원작자가 허락을 거둬도 다음 화를 이어 공개한다. 산 사람 보호도 켜진다 — 산 때의 판을 고를 수 있고, 거둠·게시자 정지·판매된 소설 삭제 뒤에도 소장자는 계속 읽으며, 노벨 이용제한·원작 이용제한·원작 삭제·게시자 탈퇴는 구매를 환급한다. 판매된 소설 삭제는 숨김, 판매된 화가 든 마지막 묶음 삭제는 409 다. 잠금 기록(첫 공개마다)과 판 행(공개마다)은 스위치와 무관하게 쌓인다. 켜는 순서·롤백은 "노벨(공개 소설) 켜기 · 끄기" 절의 "공개 정책 스위치" |
 
 > **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
 > 지우고 빈 항목은 버리며, 남는 오리진이 없으면 기동에 실패한다. 새로 쓸 때는 쉼표 구분으로 쓴다.
@@ -492,6 +494,8 @@ cd /opt/ddona/app && sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전SHA>
 건너뛰면 새 코드가 자기 마이그레이션 없는 스키마에서 뜨고 `/health` 는 DB 를 보지 않아 배포가 초록으로 끝난다. 롤백해 둔 동안
 태그를 생략한 env 반영 재교체도 같은 상황이라 표시를 붙인다(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh`). DB 가 이미지보다
 뒤거나 같으면 표시와 상관없이 upgrade 한다. 판정 자체가 실패하면(DB 에 못 닿음 등) 건너뛰지 않고 멈춘다.
+법무 문서에 시행 예정(예약) 판이 있으면 먼저 어드민에서 철회한 뒤 시행 시각(`effective_at`)이 생기기 전 이미지로 롤백한다(옛 코드는
+예약 판을 즉시 현행으로 본다).
 과거 태그는 `gcloud artifacts docker tags list asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api`.
 배포 워크플로가 끝에서(실행 이미지 확인 뒤) `apps/api/scripts/ops/prune_api_images.py`로 VM 로컬 API 이미지를
 **현재 것 포함 최근 3개**(+ 실행 중 이미지)만 남기고 지운다 — 다른 저장소 이미지(caddy·postgres 등)는 건드리지
@@ -1604,8 +1608,9 @@ Gemini 활성 `85102fbf-51a6-48bb-a44f-b320eaa6325d`, Sonnet `dace3703-a59e-4d5d
 
 ### 3-12. 상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기
 
-채팅 턴 생성(측정용 리플레이 포함)과 소설 장 생성은 Gemini 대신 Claude 로 돌 수 있다. 판정·요약·발행 심사·문단 수정은
-고른 모델과 무관하게 Gemini 다. 채팅에서 고를 수 있는 상위 모델은 Opus 하나다 — Sonnet 은 소설 장에만 남았고, 채팅에서
+채팅 턴 생성(측정용 리플레이 포함)과 소설 장 생성은 Gemini 대신 Claude 로 돌 수 있다. 판정·요약은 고른
+모델과 무관하게 판정·요약 모델 키(env 표의 `STAT_JUDGMENT_MODEL` 행, 코드 기본값 `gemini`)가 정하고, 운영은 판정·요약을 Haiku
+5.5 직결로 돌린다. 발행 심사·문단 수정은 고른 모델과 무관하게 Gemini 다. 채팅에서 고를 수 있는 상위 모델은 Opus 하나다 — Sonnet 은 소설 장에만 남았고, 채팅에서
 내리기 전에 Sonnet 을 저장한 방은 Gemini 로 Gemini 가격에 돈다.
 
 **공급자 경로.** 상위 모델 호출이 어느 공급자로 가는지는 호출 위치마다 정한다. 코드 기본 경로는 AWS Bedrock 이고,
@@ -1975,9 +1980,99 @@ sudo bash ops/swap-api.sh
 나머지에게 404 다. 화면은 인증 없는 `GET /clover/pricing` 의 `novelPublicEnabled` 로 노벨 탭을 숨긴다. 줄을 지웠으니 키 개수
 문장을 다시 센다.
 
+**공개 정책 스위치(`NOVEL_PUBLIC_POLICY_V2_ENABLED`) 켜기 · 끄기** — 첫 공개 운영자 승인과 연재권 잠금, 그리고 산 사람
+보호(산 때의 판 고르기, 거둠·게시자 정지·판매된 소설 삭제 뒤에도 소장자 열람 유지, 노벨 이용제한·원작 이용제한·원작 삭제·
+게시자 탈퇴 때 환급, 판매된 소설 삭제는 숨김)의 효력을 켠다(키 표의 설명). 개정 약관(승인 반려의 이의제기 경로, 연재권 조항)이 시행된 뒤에, 그리고 어드민의 승인 대기열 화면과 작가의 대기·반려
+표시 화면이 배포된 뒤에 켠다 — 화면이 없으면 작가에게 대기 행이 "거둠"으로 보이고 운영자는 승인할 화면이 없다. 순서가
+고정이다(끝에 `ok` 가 찍힐 때만 다음 줄로 간다):
+
+1. 옛 이미지가 내려갔는지 확인한다 — 서빙 중인 색의 이미지가 스위치를 아는 판인지 본다. 잠금을 모르는 옛 이미지가 남아 있는
+   동안의 첫 공개는 잠금 없이 생기므로 2 를 그 뒤에 돌려야 한다.
+2. 연재권 잠금 백필을 다시 돌린다. 문장은 마이그레이션 `6fbf1e9a65b8` 의 `BACKFILL_SERIAL_LOCK_SQL` 하나다(멱등 — 이미 잠긴
+   소설과 대기·반려 행은 건드리지 않는다). 배포 겹침 동안 옛 이미지가 만든 첫 공개가 여기서 잠긴다 — 빠뜨리면 그 소설은
+   켠 뒤에도 잠기지 않은 채라 원작자가 허락을 거두면 다음 화가 막힌다(다음 공개가 그 순간을 잠금 시각으로 찍는다). 출력의 `UPDATE n` 이 잠근 소설 수다.
+3. 판 행 백필을 다시 돌린다. 문장은 마이그레이션 `d77bce2bba4c` 의 `BACKFILL_CHAPTER_EDITIONS_SQL` 하나다(멱등 — 이미 있는
+   판 행은 바꾸지 않고 없는 판만 더한다). 배포 겹침 동안 옛 이미지가 다시 공개한 판은 판 행 없이 올라가는데, 그 판을 산
+   사람은 켠 뒤 "산 때의 판" 대신 그 화의 가장 오래된 판을 받는다. 출력의 `INSERT 0 n` 이 채운 판 수다.
+4. 닫혔는데 환급되지 않은 구매를 센다(읽기 전용). 스위치가 꺼진 동안의 노벨 이용제한·원작 이용제한·원작 삭제는 환급하지
+   않는다 — 켠 뒤 그 소장자는 410 을 받는데, 환급할 쓰기가 다시 오지 않는다. 출력이 `0` 이면 5 로 간다. 0 이 아니면 같은
+   조건에서 `count(*)` 를 `p.novel_id, n.content_id` 로 바꿔 대상을 적어 두고 5 로 간 뒤, 켠 상태에서 그 노벨·원작을 어드민에서
+   해제했다가 다시 제한해 환급한다(꺼진 동안의 해제·재제한은 환급하지 않는다). 다시 세어 0 인지 본다. 스위치가 꺼진 동안의
+   게시자 탈퇴는 지금 약관대로 환급 없이 소설을 지웠으므로 이 수에 들지 않는다. 원작 상태는 DB 에 대문자 라벨(`NORMAL`·
+   `RESTRICTED`·`DELETED`)로, 노벨 공개의 운영 상태는 소문자(`normal`·`restricted`)로 저장된다.
+5. 스위치 줄을 더하고 올린다.
+
+```sh
+cd /opt/ddona/app
+C="sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
+$C exec -T api_$(sudo bash ops/active-color.sh) \
+  python -c "from api.core.config import settings; settings.novel_public_policy_v2_enabled; print('ok')"
+$C exec -T api_$(sudo bash ops/active-color.sh) python -c \
+  "import runpy; print(runpy.run_path('migrations/versions/6fbf1e9a65b8_novel_serial_lock_and_publication_review.py')['BACKFILL_SERIAL_LOCK_SQL'])" \
+  | $C exec -T postgres psql -U postgres -d ai_character_chat -v ON_ERROR_STOP=1
+$C exec -T api_$(sudo bash ops/active-color.sh) python -c \
+  "import runpy; print(runpy.run_path('migrations/versions/d77bce2bba4c_novel_editions_and_buyer_protection.py')['BACKFILL_CHAPTER_EDITIONS_SQL'])" \
+  | $C exec -T postgres psql -U postgres -d ai_character_chat -v ON_ERROR_STOP=1
+$C exec -T postgres psql -U postgres -d ai_character_chat -At -v ON_ERROR_STOP=1 <<'SQL'
+SELECT count(*) FROM novel_purchases p
+JOIN novels n ON n.id = p.novel_id
+JOIN novel_publications np ON np.novel_id = n.id
+LEFT JOIN contents c ON c.id = n.content_id
+WHERE p.refunded_at IS NULL AND p.buyer_user_id IS NOT NULL
+  AND (np.moderation_status = 'restricted'
+       OR c.id IS NULL
+       OR (c.moderation_status <> 'NORMAL' AND NOT c.restricted_by_suspension));
+SQL
+sudo sh -c 'printf "\nNOVEL_PUBLIC_POLICY_V2_ENABLED=true\n" >> /opt/ddona/.env'
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo bash ops/swap-api.sh
+$C exec -T api_$(sudo bash ops/active-color.sh) \
+  python -c "from api.core.config import settings; print(settings.novel_public_policy_v2_enabled)"
+```
+
+`True` 가 나오면 켜졌다. 새 소설의 첫 공개가 어드민 노벨 목록의 승인 대기(`reviewStatus=pending`)에 들어오는지 본다. 줄을
+더했으니 "BE 런타임" 절의 키 개수 문장을 다시 센다.
+
+**끄기·롤백 — 스위치 줄부터.** 끄면 지금 약관 동작으로 돌아간다 — 첫 공개가 바로 열리고 잠긴 소설도 허락을 거두면 다음 화가
+막힌다. 남은 승인 대기 행은 독자에게 보이지 않은 채 남고, 작가가 다시 신청하면 처음 공개처럼 원작 허락·목록 판정을 거쳐
+바로 공개된다. 운영자의 승인·반려는 스위치와 무관하게 계속 된다.
+
+산 사람 보호도 함께 꺼진다. 켜져 있는 동안 거둔 소설·게시자가 정지된 소설·원작자 정지로 일괄 제한된 원작의 소설·숨긴 소설
+(판매된 소설 삭제)의 소장자는 끄는 순간 환급 없이 410 을 받는다 — 그 소장을 끝낸 쓰기는 이미 지나가서 환급할 쓰기가 다시
+오지 않는다. 숨긴 소설은 그 소장자들의 구매가 미환급으로 남으므로 파기 크론("숨긴 소설 파기 — purge cron" 절)도 지우지
+않고 남겨 둔다. 그래서 끄기는 롤백 때만 하고, 끄기 전에 아래로 그런 소장자가 몇 명인지 본다(0 이 아니면 다시 켤 때까지
+그 사람들은 읽지 못한다). 끈 동안 판매된 소설 삭제는 다시 진짜 삭제 + 환급이고, 게시자 탈퇴·운영자 제재는 환급하지 않는다.
+
+```sql
+SELECT count(DISTINCT p.buyer_user_id) FROM novel_purchases p
+JOIN novels n ON n.id = p.novel_id
+JOIN novel_publications np ON np.novel_id = n.id
+JOIN users u ON u.id = n.user_id
+LEFT JOIN contents c ON c.id = n.content_id
+WHERE p.refunded_at IS NULL AND p.buyer_user_id IS NOT NULL
+  AND (np.visibility = 'withdrawn' OR n.hidden_at IS NOT NULL OR u.suspended_at IS NOT NULL
+       OR c.restricted_by_suspension);
+```
+
+```sh
+cd /opt/ddona/app
+sudo sed -i '/^NOVEL_PUBLIC_POLICY_V2_ENABLED=/d' /opt/ddona/.env
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo bash ops/swap-api.sh
+```
+
+이미지를 이 판보다 옛 것으로 되돌릴 때는 위 끄기를 먼저 하고 재기동한 뒤 되돌린다. 🔴 되돌리기 전에 승인 대기·반려 행이
+있으면 운영자가 먼저 처리하거나 작가에게 알린다 — 옛 코드는 심사 칸을 몰라 작가에게 그 행이 "거둠"으로 보이고, 다시 열기는
+DB CHECK(대기·반려 행은 공개 범위 `withdrawn`)에 걸려 500 이다(공개되지는 않는다 — 이미지 롤백 동안 이것이 정상이다).
+마이그레이션까지 downgrade 하면 그 CHECK 가 사라져 작가의 다시 열기가 승인 없이 공개된다. 승인·반려 조치 로그가 생긴 뒤
+옛 이미지로 되돌리면 그 게시자의 어드민 회원 상세가 500 이다(옛 코드가 새 조치 종류를 모른다 — 독자 영향은 없다). 숨긴
+소설이 있으면 옛 코드는 숨김 칸을 몰라 되돌린 동안 그 소설이 작가 목록에 다시 보이고 작가가 고치거나 다시 공개할 수 있다.
+새 이미지로 돌아오면 숨김이 찍힌 소설은 다시 공개돼 있어도 독자 목록·구매에서 빠지고 작가에게서도 사라진다.
+
 **구매·삭제 환급** — 화 가격(30)과 소설마다 무료인 앞 화 수(5)는 env 가 아니라 `core/clover.py` 의 상수다(바꾸려면 배포).
-게시자가 산 화가 든 소설·마지막 묶음을 지우면 같은 트랜잭션에서 구매자에게 환급한다(원장 `novel_read_refund`, 이미 결제
-환불된 구매분은 건너뜀). 🔴 **구매가 생긴 뒤 이 판보다 옛 이미지로 되돌리면** 옛 코드의 소설·묶음 삭제는 구매를 몰라 환급
+공개 정책 스위치가 꺼져 있으면 게시자가 산 화가 든 소설·마지막 묶음을 지울 때 같은 트랜잭션에서 구매자에게 환급한다(원장
+`novel_read_refund`, 이미 결제 환불된 구매분은 건너뜀). 켜져 있으면 아직 환급되지 않은 구매가 있는 소설의 삭제는 지우지
+않고 숨기며(환급 없음, 소장자는 계속 읽는다), 그런 구매가 든 마지막 묶음의 삭제는 409 `NOVEL_BATCH_SOLD` 로 거절한다. 🔴 **구매가 생긴 뒤 이 판보다 옛 이미지로 되돌리면** 옛 코드의 소설·묶음 삭제는 구매를 몰라 환급
 없이 지운다 — 되돌리기 전에 먼저 스위치를 끄고(위 "끄기"), 되돌린 동안 지워진 구매는 아래로 찾아 어드민 지급으로 보정한다.
 `novel_purchases` 에 행이 있으면 그 리비전의 downgrade 는 거부되므로 스키마는 그대로 두고 이미지만 되돌린다.
 
@@ -2081,7 +2176,8 @@ sudo bash ops/swap-api.sh
 
    마지막 줄 "지급 정보 재암호화: N행, 복호화할 수 없어 건너뜀 M행". M 이 0 이 아니면 종료 코드가 1 이다 — 그 행은 목록에
    없는 키로 만들어졌다는 뜻이라 옛 키를 지우지 말고 원인을 먼저 찾는다.
-4. 옛 키는 **3 이후 백업 보관 기간(일 7개 + 주 4개 — 약 35일)이 지난 뒤** 값에서 지우고 재기동한다. 그 전에 지우면 그
+4. 옛 키는 **3 이후 백업 보관 기간(일 7개 + 주 4개 — 주 사본은 일요일 백업이라 정상 동작에서 약 28일, 일요일 백업이 실패할
+   때마다 7일씩 늘어난다)이 지난 뒤** 값에서 지우고 재기동한다. 그 전에 지우면 그
    기간의 백업을 복원했을 때 지급 정보를 읽지 못한다. 보관해 둔 옛 키 사본도 그때 폐기한다.
 
 **키를 잃었을 때**: 복호화할 수 없다. 작가의 정산 화면은 열리고 등록 정보의 실명만 비어 보이며(은행·계좌 끝 4자리는
@@ -2100,7 +2196,21 @@ sudo bash ops/swap-api.sh
 
 **지금 운영(2026-10-16).** 장면·사실 추출(`MEMORY_EPISODES_EXTRACT`·`MEMORY_FACTS_EXTRACT`)이 켜져 있고 추출·요약·판정 모델은
 `haiku`(Anthropic 직결)다. 회상·사실 주입·지식 범위 필터·요약 비밀 표기·임베딩 쓰기·읽기는 꺼져 있고 `VOYAGE_API_KEY` 는 없다.
-사실 추출의 `known_by`·화자 문안은 프롬프트 세트 데이터라 스위치 없이 이미 운영 문안이다.
+사실 추출의 비밀 규칙 문안(비밀의 주인은 늘 아는 사람에 넣고 남이 몰래 본 비밀은 주인과 본 인물, 여럿이 함께 숨긴 비밀은 그
+자리의 인물 모두를 적는다, 털어놓은 장면의 관계 행 두 인물을 비밀 내용 행의 아는 사람으로 물려준다, 같은 키를 다시 쓸 때 앞서
+알던 인물을 지우지 않는다, 아는 사람을 정하는 차례)과 장면 추출의 아는 사람·말한 인물 규칙 문안은 프롬프트 세트 데이터라 스위치
+없이 이미 운영 문안이다.
+
+**장면 행의 아는 사람 칸.** 장면 기억 행에도 그 장면을 아는 인물 이름 목록 칸(`chat_memory_episodes.known_by`)이 있고 장면 추출이
+채운다. 뜻과 길이 규칙은 사실 행의 같은 칸과 같다 — NULL 은 공개이거나 알 수 없다는 뜻이고 빈 배열은 쓰지 않으며, 원소 1~10개,
+원소마다 60자 이하(CHECK 둘). 그 장면에 실제로 있었던 인물만 넣고 대사 속에서 이름만 불린 인물은 넣지 않는다.
+
+**기억 사용 범위(`MEMORY_MODEL_SCOPE`, 기본 `opus`).** 회상·사실 주입·지식 범위 필터·요약 비밀 표기·임베딩 회상은 그 턴의 레인과
+글쓰기 모델이 이 목록에 들 때만 동작하고, 범위 밖 방의 턴은 스위치를 다 끈 것과 프롬프트·SQL 이 같다. 기본은 두 레인의 Opus 방뿐이다
+— 기억 품질은 Opus 방에서만 재 보았다. 값은 쉼표 목록이고 원소는 `모델`(두 레인 모두) 또는 `레인:모델`(레인 `story`·`character`,
+모델 `gemini`·`sonnet`·`opus` — 판정 전용 `haiku` 는 아니다)이며, 모르는 레인·모델이면 기동하지 않는다. 어떤 방에서도 기억을 쓰지
+않으려면 값을 비우지 말고 스위치를 끈다 — 운영 env 형식 검사가 빈 값을 거부해 배포가 멈춘다. 추출(장면·사실)과 임베딩 쓰기는
+범위와 무관하게 모든 방에서 돈다(쌓아 두는 일이라 그 방 대화가 바뀌지 않는다).
 
 **켜는 순서.** 한 단계씩 켜고, 단계마다 기존 방 10~15턴으로 내용·스탯·토큰과 섹션이 실렸는지(운영 읽기 전용 SELECT 로
 `chat_turns.memory_recall`·`memory_facts`)를 본 뒤 다음 단계로 간다. 이 순서만 켜는 도중의 상태가 전부 회상 품질 측정이 잰
@@ -2108,7 +2218,7 @@ sudo bash ops/swap-api.sh
 
 1. `MEMORY_EPISODES_RECALL=true` — 장면 회상(명사 순위만). 인물이 대사로만 말한 장면은 싣지 않고, 방 사실 행의 아는 사람 정보로
    이번 장면에 아는 사람이 없는 비밀과 근거가 겹치는 장면을 가린다 — 이 가림은 회상 스위치에 묶여 있어 `MEMORY_KNOWLEDGE_FILTER`
-   없이도 걸린다.
+   없이도 걸린다. 장면 행 자신의 아는 사람 칸에 적힌 인물이 이번 장면에 아무도 없는 장면도 같은 가림으로 빠진다.
 2. `MEMORY_SUMMARY_SECRET_MARKING=true` 와 `MEMORY_KNOWLEDGE_FILTER=true` 를 **한 번에**. 1 을 보류하면 2 도 보류한다(회상 없이 표기·
    필터만 켠 조합은 재지 않았다). 🔴 요약 표기는 다음 접기부터 모든 방의 요약 글을 바꾸고 그 요약이 엔딩 판정 입력에도 실린다.
    필터는 사실 주입이 꺼진 동안 생성 프롬프트를 바꾸지 않지만 측정한 조합과 같게 하려고 함께 켠다.
@@ -2127,14 +2237,21 @@ sudo bash ops/swap-api.sh
    0.3 은 코드 상수(`apps/api/src/api/chat/memory_fact_section.py` 의 `EXACT_RATIO`)다. 모두 코드 기본값이라
    스위치·키 줄 말고는 넣을 줄이 없다.
 
-**알려진 성질 — 켜기 전에 정할 것.** Voyage 가 계속 실패해도(키 회수·쿼터 소진·장애) 멈추는 장치가 없다. 쓰기는 턴마다 채우기가
-다시 부르고(한 번에 10초 상한·세 번까지), 읽기는 턴마다 질의 임베딩을 다시 부른다(1000 ms 상한 뒤 명사 단독). 두 쪽 다 매번 경고
-로그와 Bugsink 이벤트(`dependency=voyage`, 쿼터 소진은 `voyage_rate_limit`)를 남긴다. 켜기 전에 연속 실패의 상한·백오프를 코드로
-넣을지, 아니면 그 태그의 경보를 끄는 기준으로 삼을지 정한다. 같은 방에서 턴이 빠르게 겹치면 두 채우기가 같은 행을 임베딩할 수
+**알려진 성질 — 켜기 전에 정할 것.** Voyage 가 연속 3회 실패하면(키 회수·쿼터 소진·장애) 질의 임베딩과 임베딩 채우기를 함께
+멈춘다 — 멈춤은 30초에서 시작해 실패가 하나 더 셀 때마다 배로 늘어 최대 900초이고, 연속 실패 수는 방과 무관한 Redis 키 하나
+(`voyage_backoff`)로 두 쪽이 공유하며, 호출이 한 번 성공하면 풀린다. 채우기는 한 번에 10초 상한·세 번까지 다시 보낸 뒤의 실패를
+세고, 질의 임베딩은 다시 보내지 않고 한 번만 부른다(1000 ms 상한 뒤 명사 단독). 질의 임베딩의 시간 초과는 실패로 세지 않는다.
+멈춘 동안의 질의 임베딩은 건너뛰어 임베딩 회상이 꺼진 턴과 같고(명사 단독), 채우기는 건너뛴 행을 풀린 뒤 따라잡는다. Redis 를
+못 읽으면 멈춤 없이 부른다. 실패한 호출은 매번 경고 로그와 Bugsink 이벤트(`dependency=voyage`, 쿼터 소진은 `voyage_rate_limit`)를
+남긴다. 같은 방에서 턴이 빠르게 겹치면 두 채우기가 같은 행을 임베딩할 수
 있다 — 중복 행은 들어가지 않고 원가만 두 번이다.
 
 - 회상을 켜면 사실 주입이 꺼져 있어도 매 턴 방 사실 행을 한 번 읽는다(대화 길이에 비례). 사실 주입까지 켜면 같은 행을 두 번 읽는다.
-- 회상의 아는 사람 가림은 회상 스위치에 묶여 따로 끌 수 없다 — 끄는 길은 회상 전체(`MEMORY_EPISODES_RECALL`)다.
+- 회상의 아는 사람 가림은 회상 스위치에 묶여 따로 끌 수 없다 — 끄는 길은 회상 전체(`MEMORY_EPISODES_RECALL`)다. 가림은 방 사실
+  행의 아는 사람과 장면 행 자신의 아는 사람 칸 둘로 걸린다.
+- `MEMORY_KNOWLEDGE_FILTER` 를 켠 턴은 직전 응답의 대사 따옴표(`"…"`·`“…”`·`「…」`·`『…』`, 작은따옴표는 속마음이라 빼지 않는다)
+  안에서만 나온 이름을 장면 인물로 세지 않는다 — 사실 섹션 필터·이름 정확 조회·회상 가림이 같은 장면 인물을 쓴다. 이번 사용자
+  메시지는 따옴표 안이어도 센다.
 
 **원가 보기.** 턴에 실린 호출(생성·판정·질의 임베딩)의 호출 위치별·턴별 원가 분포는 `scripts/turn_cost_report.py`(읽기 전용
 트랜잭션, 턴 기록 `chat_turns.llm_calls`), 턴 뒤 백그라운드(요약 접기·추출·임베딩 채우기)까지 포함한 일 단위 합계는
@@ -2145,6 +2262,10 @@ sudo bash ops/swap-api.sh
 cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env \
   exec -T api_$(sudo bash ops/active-color.sh) python scripts/turn_cost_report.py --from 2026-10-16 --to 2026-10-22 --chat-model opus
 ```
+
+**첫 글자 지연 보기.** 턴 기록 `chat_turns.llm_calls` 의 생성 칸에는 첫 글자 지연이 둘 붙는다 — `firstTokenMs` 는 턴 시작부터,
+`streamFirstTokenMs` 는 생성 호출(스트림)을 연 때부터 처음 글이 든 조각이 올 때까지(ms)다. 둘의 차가 생성 호출 앞의 준비 시간이라
+질의 임베딩·기억 읽기가 늘린 지연은 그 차로 본다. 글 없이 끝난 생성은 두 키 다 없고, 판정·임베딩 칸에는 붙지 않는다.
 
 **끄기 — 켠 역순.** 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh`. 역순이면 되돌리는 도중의 상태도 전부 잰 조합이다.
 
@@ -2159,9 +2280,10 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
 꺼진 채 돌므로 스위치부터 지운다.
 
 **되돌리기 — 스위치 → (이미지 또는 데이터).** ① 위 끄기를 먼저 한다. 그다음 ②와 ③ 중 **하나**를 고른다. ② 코드만 되돌리면 이미지 롤백(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh
-<이전SHA>`, "BE → GCE VM" 절의 「롤백」)이 1순위다. 이 묶음의 스키마·데이터 변경은 셋이고 옛 이미지는 셋 위에서 그대로 돈다 —
-임베딩 표는 모르고 지나가고(스냅샷 삭제가 CASCADE 로 끝난다), 요약 슬롯은 옛 코드가 값을 넘기지 않아 빠지고, 사실 추출 문안은
-**옛 이미지도 새 문안을 쓴다**(DB 의 활성 세트라서). 요약 슬롯을 모르는 이미지의 어드민 게시 검증은 그 슬롯을 잉여로 보고 그 체인의
+<이전SHA>`, "BE → GCE VM" 절의 「롤백」)이 1순위다. 이 묶음의 스키마·데이터 변경은 아래 표의 일곱이고 옛 이미지는 그 위에서 그대로
+돈다 — 임베딩 표는 모르고 지나가고(스냅샷 삭제가 CASCADE 로 끝난다), 장면 행의 아는 사람 칸은 옛 코드가 빼고 넣어 NULL 로 남고,
+요약 슬롯(출처 문장 포함)은 옛 코드가 값을 넘기지 않아 빠지고, 사실·장면 추출 문안은 **옛 이미지도 새 문안을 쓴다**(DB 의 활성
+세트라서 — 장면 아는 사람 칸을 모르는 옛 결과 스키마로는 그 칸이 NULL 로 남는다). 요약 슬롯을 모르는 이미지의 어드민 게시 검증은 그 슬롯을 잉여로 보고 그 체인의
 게시만 막는다.
 ③ 데이터까지 되돌릴 때(문안을 옛것으로, 또는 revert 병합이 필요할 때)는 ② **대신** 아래 downgrade 를 새 코드 이미지로 먼저 돌리고, 그
 다음에 revert(또는 이미지 롤백)한다. ②를 먼저 하면 서빙 이미지가 리비전 파일을 모르는 옛 이미지라 그 이미지로는 downgrade 가
@@ -2170,13 +2292,20 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
 
 | 순서 | 리비전 | 바꾼 것 | downgrade 목표 | downgrade 가 하는 일 |
 |---|---|---|---|---|
-| 1 | `0aeadefcf159` | 요약 비밀 표기 슬롯을 더한 새 세트(8 체인) | `e4e407a62d03` | 이 리비전이 만든 세트만 리터럴 id 로 지워 그 앞 세트가 다시 활성이 된다 |
-| 2 | `e4e407a62d03` | 사실 추출 `known_by`·화자 문안을 바꾼 새 세트(8 체인) | `b3b2636b9184` | 이 리비전이 만든 세트만 리터럴 id 로 지워 옛 문안이 다시 활성이 된다 |
-| 3 | `b3b2636b9184` | 임베딩 표 `chat_memory_embeddings`·`vector` 확장 | `726aad108167` | 표를 지우고, 확장은 그것에 기대는 객체가 없을 때만 지운다(임베딩은 장면·사실에서 다시 만들 수 있다) |
+| 1 | `0c1a85bc5c2f` | 요약 비밀 표기 슬롯 끝에 확인되지 않은 주장의 출처를 적게 하는 문장을 더한 새 세트(8 체인) | `6fbf1e9a65b8` | 이 리비전이 만든 세트만 리터럴 id 로 지워 그 앞 활성 세트가 다시 활성이 된다(시드 뒤 어드민 게시가 있으면 멈춘다 — 그 세트를 먼저 정리) |
+| 2 | `c1f3945cb802` | 사실 추출 비밀 규칙을 아는 사람을 정하는 차례가 있는 판으로 바꾼 새 세트(8 체인) | `e05462d680f0` | 이 리비전이 만든 세트만 리터럴 id 로 지워 그 앞 활성 세트가 다시 활성이 된다(시드 뒤 어드민 게시가 있으면 멈춘다 — 그 세트를 먼저 정리) |
+| 3 | `eb8d3cc6d5c2` | 장면 추출 아는 사람·말한 인물 규칙 문안을 바꾼 새 세트(8 체인) + 장면 추출 결과 스키마의 `known_by` 칸 | `0346abdbcc92` | 이 리비전이 만든 세트만 리터럴 id 로 지워 그 앞 활성 세트가 다시 활성이 된다(시드 뒤 어드민 게시가 있으면 멈춘다 — 그 세트를 먼저 정리). 결과 스키마는 코드라 downgrade 뒤 이미지도 되돌린다 — 새 이미지가 옛 문안으로 돌면 규칙 없는 칸이 쌓인다 |
+| 4 | `131ec072bed3` | 장면 행 `chat_memory_episodes.known_by` 칸(expand)과 CHECK 둘 | `d6abfd9f92ce` | CHECK 둘 → 칸 DROP(그 칸에 쌓인 값은 사라진다). 3 을 먼저 되돌린다 |
+| 5 | `0aeadefcf159` | 요약 비밀 표기 슬롯을 더한 새 세트(8 체인) | `e4e407a62d03` | 이 리비전이 만든 세트만 리터럴 id 로 지워 그 앞 세트가 다시 활성이 된다 |
+| 6 | `e4e407a62d03` | 사실 추출 비밀 규칙(아는 사람 물려받기·목격 비밀·집단 비밀·주인 이름)을 바꾼 새 세트(8 체인) | `b3b2636b9184` | 이 리비전이 만든 세트만 리터럴 id 로 지워 옛 문안이 다시 활성이 된다 |
+| 7 | `b3b2636b9184` | 임베딩 표 `chat_memory_embeddings`·`vector` 확장 | `726aad108167` | 표를 지우고, 확장은 그것에 기대는 객체가 없을 때만 지운다(임베딩은 장면·사실에서 다시 만들 수 있다) |
 
 - **리비전 하나마다 [그 리비전 파일을 가진 이미지로 downgrade → 그 PR revert 병합] 짝**이고 위 순서(위가 head 쪽)로만 내려간다 —
-  `alembic downgrade` 는 목표 위에 쌓인 리비전을 전부 내리므로, 목표가 아래일수록 위의 것까지 함께 내려간다. 이 셋 위에 다른 런의
-  리비전이 쌓였으면 멈추고 판단한다.
+  `alembic downgrade` 는 목표 위에 쌓인 리비전을 전부 내리므로, 목표가 아래일수록 위의 것까지 함께 내려간다. 이 표의 리비전 사이에는
+  다른 작업의 리비전이 끼어 있다 — 1 과 2 사이 `6fbf1e9a65b8`(연재 잠금·공개 심사), 2 와 3 사이 `e05462d680f0`(소설 집필 잠금),
+  3 과 4 사이 `0346abdbcc92`·`677dd73e2ab9`(장면 헤더), 4 와 5 사이 `d6abfd9f92ce`·`fc3ca58a473b`·`1c4ff252c34a`(약관·동의)·
+  `49b68a8a681e`(스탯 공개 여부). 목표가 그 아래면 그 리비전도 함께 내려가므로, 그 위에 다른 리비전이 더 쌓였거나 사이 리비전을
+  내려야 하면 멈추고 판단한다.
 - 🔴 downgrade 는 **그 리비전 파일을 가진 이미지**로 돌린다 — ②를 하지 않았으면 서빙 중인 색의 이미지가 그것이다. 리비전 파일이
   없는 이미지는 그 리비전을 내리지 못한다. 먼저 백업(`sudo /opt/ddona/backup.sh`), 이미지는 서빙 중인 색의 것(②를 이미 했다면
   첫 줄 대신 `IMG=<IMAGE>:<새 코드 TAG>`):
@@ -2184,18 +2313,50 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
   ```sh
   cd /opt/ddona/app
   IMG=$(sudo docker inspect --format '{{.Config.Image}}' ddona-api_$(sudo bash ops/active-color.sh)-1)
-  sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env "$IMG" alembic downgrade e4e407a62d03
+  sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env "$IMG" alembic downgrade 6fbf1e9a65b8
   ```
 
 - 🔴 downgrade 와 revert 병합 사이에 교체·재기동·다른 병합을 하지 않는다 — 교체 스크립트가 서빙 이미지로 `alembic upgrade head`
   를 다시 돌려 지운 것을 되살린다.
-- 시드 뒤 어드민이 같은 체인에 새로 게시했으면 1·2 의 downgrade 는 지우지 않고 멈춘다 — 사람이 판단한다. 프롬프트 시드를 손으로
+- 시드 뒤 어드민이 같은 체인에 새로 게시했으면 문안 리비전(1·2·3·5·6)의 downgrade 는 지우지 않고 멈춘다 — 사람이 판단한다. 프롬프트 시드를 손으로
   지우거나 옛 프롬프트 버전을 통째로 복원하지 않는다.
 - revert 의 순서는 병합의 역순이다. 마이그레이션 없는 PR(사실 섹션 선택·하이브리드 회상·Voyage 채우기·지식 범위 필터·회상 줄의
-  인물 장면·비밀 장면 거름과 사실 섹션의 인물 주장 거름·이 문서와 원가 스크립트)은 이미지 롤백이나 revert 만으로 되돌아간다. 임베딩 표를 읽고 쓰는 코드(하이브리드 회상·채우기)는 3 의
+  인물 장면·비밀 장면 거름과 사실 섹션의 인물 주장 거름·이 문서와 원가 스크립트)은 이미지 롤백이나 revert 만으로 되돌아간다. 임베딩 표를 읽고 쓰는 코드(하이브리드 회상·채우기)는 7 의
   downgrade 보다 먼저 revert 한다.
-- 🔴 Postgres 이미지(pgvector 를 실은 것)를 원래 이미지로 되돌리는 것은 3 의 downgrade 가 끝난 **뒤에만** 한다 — `vector` 타입이 남은
+- 🔴 Postgres 이미지(pgvector 를 실은 것)를 원래 이미지로 되돌리는 것은 7 의 downgrade 가 끝난 **뒤에만** 한다 — `vector` 타입이 남은
   DB 를 확장 없는 이미지로 띄우면 그 표를 읽지 못한다.
+
+### 3-16. 숨긴 소설 파기 — purge cron
+
+노벨 정책 스위치(`NOVEL_PUBLIC_POLICY_V2_ENABLED`)가 켜진 뒤 노벨로 팔린 소설을 작가가 지우면, 산 사람이 계속 읽도록 소설을
+숨긴다(`novels.hidden_at`). 아직 환급되지 않은 소장자가 모두 사라진(구매자가 모두 탈퇴했거나 모두 환급받은) 숨긴 소설을 이
+크론이 **매일** 진짜로 지운다. 구매 행(거래 기록)은 남는다. 지울 것이 없는 날은 아무것도 바꾸지 않고, 실패한 날은 다음 날
+저절로 다시 돈다. 스위치와 무관하게 돈다 — 스위치를 끈 뒤에도 남은 숨긴 소설은 소장이 끝나면 지워져야 한다.
+
+"크리에이터 정산 월 확정 — settle cron" 절과 같이 **서빙 중인 api 컨테이너 안에서** `python -m api.novelize.hidden_purge` 를
+돌린다(소설 삭제·탈퇴와 같은 삭제 코드를 쓴다). 래퍼 `ops/purge-hidden-novels.sh` 는 `ops/active-color.sh` 로 색을 고르고
+`compose exec -T api_<색>` 으로 들어간다. 교체 중이라 색을 하나로 못 고르면 그날은 실패로 끝난다. 래퍼는 `.env` 를 읽지 않는다.
+알림은 없다 — 실패는 Bugsink 에 `dependency=hidden_novel_purge` 태그로 남고 로그 파일에 종료 코드가 남는다.
+
+**최초 1회 — 심볼릭 링크 설치**:
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/purge-hidden-novels.sh /opt/ddona/purge-hidden-novels.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-hidden-novel-purge /etc/cron.d/ddona-hidden-novel-purge
+```
+
+**검증**:
+
+```sh
+# 1. 수동 1회 실행 — 정상 종료와 마지막 줄 "숨긴 소설 파기: N편" 확인
+sudo -u root /opt/ddona/purge-hidden-novels.sh
+tail /var/log/ddona-hidden-novel-purge.log
+
+# 2. 다음 17:35 UTC(KST 02:35)에 크론이 실제로 도는지
+tail -f /var/log/ddona-hidden-novel-purge.log
+```
+
+⚠️ 17:35 UTC — 다른 크론(05:00·06:00·15:05·16:35·18:00 UTC, 매시 17분, 5분마다)과 겹치지 않는다.
 
 ## 4. 배포 후 스모크 검증
 

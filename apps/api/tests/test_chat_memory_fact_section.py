@@ -22,7 +22,8 @@
   순서로 남기고, 리플레이는 그 id 로 줄을 다시 렌더한다. 사실 읽기가 실패하면 섹션 없이 턴을 계속한다.
 - 지식 범위 필터 스위치(`memory_knowledge_filter`)가 켜져 있으면 키별 최신 행 중 아는 사람이 이번 장면에 없는 행을 고르기 전에
   뺀다(빠진 자리는 다음 후보가 채운다). 스토리 방은 아는 사람이 정해진 행이 있을 때만 미디어 북 인물을 한 번 읽는다. 사실 주입이
-  꺼져 있으면 필터가 켜져 있어도 프롬프트·SQL 이 같다.
+  꺼져 있으면 필터가 켜져 있어도 프롬프트·SQL 이 같다. 켠 턴은 직전 응답의 대사 따옴표 안에만 나온 이름을 장면 인물로 세지
+  않는다. 장면 인물의 이름 출처는 사실 행뿐이다(장면 행의 아는 사람 칸은 회상의 가림에만 쓴다).
 - 임베딩 회상 스위치(`memory_embed_recall`)가 켜져 있으면 관련 몫은 명사 순위와, 회상과 같은 질의 임베딩으로 잰 사실 임베딩
   거리 순위(지금 모델·차원, 거리 상한 안)를 RRF 로 합친 순서다. 거리 순위는 지식 범위 필터를 지난 행 사이에서만 매긴다. 벡터
   쪽이 비면 명사 단독과 같다."""
@@ -46,8 +47,16 @@ from api.chat.prompt_builder import MemorySummaryResult, PromptLane, StatRuleJud
 from api.chat.router import _resolve_starting_setup
 from api.chat.turn_prompt import GenerationPrompt, InjectedPersona, InjectedTurnState, build_room_prompt
 from api.core.config import settings
-from api.db.models import ChatMemoryFact, ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
+from api.db.models import (
+    ChatMemoryEpisode,
+    ChatMemoryFact,
+    ChatMessage,
+    ChatMessageRole,
+    ChatRoom,
+    ChatRoomMemorySnapshot,
+)
 from api.db.models.chat import FACT_VALUE_MAX, ChatTurn
+from api.llm.chat_models import ChatModelId
 from api.llm.client import LLMCallContext, LLMClient, SegmentedPrompt
 from api.llm.voyage import VoyageEmbeddingClient
 from factories import (
@@ -59,6 +68,7 @@ from factories import (
     _make_memory_embedding,
     _make_memory_episode,
     _make_memory_fact,
+    _memory_scope_covers_gemini,
     _open_room,
     _override_llm_client,
     _parse_sse_events,
@@ -344,20 +354,33 @@ async def _build(
     user_content: str,
     *,
     lane: PromptLane = "story",
+    model: ChatModelId = "gemini",
     turn_state: InjectedTurnState | None = None,
+    embedding_client: VoyageEmbeddingClient | None = None,
 ) -> GenerationPrompt:
+    """그 방의 생성 프롬프트. `model` 은 방의 글쓰기 모델 — 라우트처럼 그 모델의 세트로 조립한다."""
     chat_room = await db_session.get(ChatRoom, room.room_id)
     assert chat_room is not None
     setup = await _resolve_starting_setup(db_session, chat_room)
-    prompt_set, sections = await load_active_prompt_set(db_session, lane=lane)
+    prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
     history = await _room_messages(db_session, room.room_id)
     return await build_room_prompt(
-        db_session, chat_room, setup, history, user_content, None, prompt_set, sections, turn_state=turn_state
+        db_session,
+        chat_room,
+        setup,
+        history,
+        user_content,
+        None,
+        prompt_set,
+        sections,
+        turn_state=turn_state,
+        embedding_client=embedding_client,
     )
 
 
 def _facts_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "memory_facts_inject", True)
+    _memory_scope_covers_gemini(monkeypatch)
 
 
 def _section(prompt: str) -> str:
@@ -425,6 +448,7 @@ async def test_facts_section_follows_history_and_precedes_recall(
     await _plant(db_session, room, snapshots[2], [_AUDITION, _FRIENDS])
     await _plant_scenes(db_session, room, snapshots[2])
     monkeypatch.setattr(settings, "memory_episodes_recall", True)
+    _memory_scope_covers_gemini(monkeypatch)
     off = await _build(db_session, room, "밀알당 기억나?")
     _facts_on(monkeypatch)
     on = await _build(db_session, room, "밀알당 기억나?")
@@ -455,6 +479,7 @@ async def test_recall_on_with_facts_off_never_names_the_facts_section(
     await _plant_scenes(db_session, room, snapshots[2])
     monkeypatch.setattr(settings, "memory_episodes_recall", True)
     monkeypatch.setattr(settings, "memory_facts_inject", False)
+    _memory_scope_covers_gemini(monkeypatch)
 
     built = await _build(db_session, room, "밀알당 기억나?", lane=lane)
 
@@ -832,6 +857,7 @@ _SECRET_LINE = "- 유나 · 전학: 다음 달에 간다 (유나·사용자만 �
 
 def _filter_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "memory_knowledge_filter", True)
+    _memory_scope_covers_gemini(monkeypatch)
 
 
 async def _set_last_response(db_session: AsyncSession, room: Room, content: str) -> None:
@@ -881,6 +907,45 @@ async def test_profile_name_is_the_user_not_a_scene_person(
     assert HEADER not in built.prompt and built.memory_facts == ()
     kept = await _build(db_session, room, "하늘이는 유나랑 같이 있어", turn_state=state)
     assert "전학" in _section(kept.prompt)
+
+
+async def test_name_only_inside_the_reply_dialogue_is_not_a_scene_person(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """필터를 켠 턴 — 직전 응답에서 유나가 대사 안에만 나오면 유나의 비밀이 빠지고, 서술에도 나오면 남는다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_SECRET, _FRIENDS])
+    _facts_on(monkeypatch)
+    _filter_on(monkeypatch)
+
+    await _set_last_response(db_session, room, "“유나는 어디 있어?” 민수가 물었다.")
+    assert _SECRET_LINE not in _section((await _build(db_session, room, "그래서?")).prompt)
+    await _set_last_response(db_session, room, "“유나는 어디 있어?” 민수가 유나를 찾았다.")
+    assert _SECRET_LINE in _section((await _build(db_session, room, "그래서?")).prompt)
+
+
+async def test_scene_known_by_is_not_a_name_source_for_the_fact_section(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """장면 행의 아는 사람 칸은 사실 섹션의 장면 인물 출처가 아니다 — 장면 칸에 유나·지아를 채워도 필터를 켠 사실 섹션이 바이트까지
+    같다(회상은 꺼 두어 사실 섹션만 본다)."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_SECRET, _FRIENDS])
+    await _plant_scenes(db_session, room, snapshots[2])
+    _facts_on(monkeypatch)
+    _filter_on(monkeypatch)
+    before = await _build(db_session, room, "지아는 뭐 해?")
+
+    await db_session.execute(
+        sa.update(ChatMemoryEpisode)
+        .where(ChatMemoryEpisode.chat_room_id == room.room_id)
+        .values(known_by=["유나", "지아"])
+    )
+    await db_session.commit()
+    after = await _build(db_session, room, "지아는 뭐 해?")
+
+    assert _SECRET_LINE not in _section(before.prompt)
+    assert after.prompt == before.prompt
 
 
 async def _statements(db_session: AsyncSession, room: Room, user_content: str, *, lane: PromptLane = "story") -> int:
@@ -1356,3 +1421,157 @@ async def test_replay_renders_a_recorded_character_claim_as_it_was(
     rows = await memory_fact_section.fact_rows_from_record(db_session, [{"factId": str(claim_id)}])
 
     assert memory_fact_section.fact_lines(rows, user_name=None) == "- 유나 · 오디션: 겨울 (민수의 말)"
+
+
+# --- 기억 사용 범위(글쓰기 모델) ----------------------------------------------------------------
+
+_GENERATION_MEMORY_SWITCHES = (
+    "memory_episodes_recall",
+    "memory_facts_inject",
+    "memory_knowledge_filter",
+    "memory_embed_recall",
+    "memory_summary_secret_marking",
+)
+
+
+def _memory_switches(monkeypatch: pytest.MonkeyPatch, on: bool) -> None:
+    for name in _GENERATION_MEMORY_SWITCHES:
+        monkeypatch.setattr(settings, name, on)
+
+
+async def _memory_room(db_client: httpx.AsyncClient, db_session: AsyncSession, lane: PromptLane) -> Room:
+    """사실 행과 "밀알당" 장면이 있는 방 — 스위치가 동작하면 사실 섹션과 회상 섹션이 둘 다 실린다."""
+    room, snapshots = await _fact_room(db_client, db_session, lane=lane)
+    await _plant(db_session, room, snapshots[2], [_AUDITION, _FRIENDS])
+    await _plant_scenes(db_session, room, snapshots[2])
+    return room
+
+
+async def _built_and_statements(
+    db_session: AsyncSession, room: Room, *, lane: PromptLane, model: ChatModelId, stub: VoyageStub
+) -> tuple[GenerationPrompt, int]:
+    client = VoyageEmbeddingClient(
+        api_key="test-key", model="voyage-test", dims=3, transport=stub.transport(), retry_delays=(0.0, 0.0)
+    )
+    with _count_queries() as count:
+        built = await _build(db_session, room, "밀알당 기억나?", lane=lane, model=model, embedding_client=client)
+        return built, count()
+
+
+@pytest.mark.parametrize("lane", ["story", "character"])
+@pytest.mark.parametrize("model", ["gemini", "sonnet"])
+async def test_memory_switches_do_nothing_in_a_room_written_by_a_model_outside_the_scope(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    lane: PromptLane,
+    model: ChatModelId,
+) -> None:
+    """기본 범위(Opus 방뿐)에서 Gemini·Sonnet 방은 기억 스위치를 다 켜도 다 끈 턴과 프롬프트 바이트·SQL 문 수가 같고, 질의 임베딩도
+    부르지 않는다 — 측정하지 않은 모델 방에 기억이 실려 나가지 않게."""
+    monkeypatch.setattr(settings, "memory_model_scope", [("story", "opus"), ("character", "opus")])
+    room = await _memory_room(db_client, db_session, lane)
+    stub = VoyageStub()
+
+    _memory_switches(monkeypatch, False)
+    off, off_statements = await _built_and_statements(db_session, room, lane=lane, model=model, stub=stub)
+    _memory_switches(monkeypatch, True)
+    on, on_statements = await _built_and_statements(db_session, room, lane=lane, model=model, stub=stub)
+
+    assert on.prompt == off.prompt
+    assert HEADER not in on.prompt and RECALL_HEADER not in on.prompt
+    assert (on.memory_facts, on.memory_recall) == ((), ())
+    assert on_statements == off_statements
+    assert stub.bodies == []
+
+
+@pytest.mark.parametrize("lane", ["story", "character"])
+async def test_memory_switches_work_in_an_opus_room_under_the_default_scope(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, lane: PromptLane
+) -> None:
+    """같은 방을 Opus 세트로 조립하면 기본 범위 안이라 사실 섹션과 회상 섹션이 실리고 질의 임베딩을 한 번 부른다."""
+    monkeypatch.setattr(settings, "memory_model_scope", [("story", "opus"), ("character", "opus")])
+    room = await _memory_room(db_client, db_session, lane)
+    stub = VoyageStub()
+    _memory_switches(monkeypatch, True)
+
+    built, _ = await _built_and_statements(db_session, room, lane=lane, model="opus", stub=stub)
+
+    assert HEADER in built.prompt and RECALL_HEADER in built.prompt
+    assert "- 민수 → 지아: 소꿉친구" in _section(built.prompt)
+    assert len(stub.bodies) == 1
+
+
+@pytest.mark.parametrize("lane", ["story", "character"])
+async def test_an_opus_room_builds_the_same_prompt_as_when_every_writing_model_is_in_the_scope(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, lane: PromptLane
+) -> None:
+    """범위 제한이 없던 코드는 모든 글쓰기 모델이 범위 안인 것과 같다. 기본 범위의 Opus 방은 기억 스위치를 다 켰을 때 그 넓은
+    범위로 조립한 턴과 프롬프트 바이트·SQL 문 수·질의 임베딩 호출 수가 같다 — 범위 제한이 Opus 방의 프롬프트를 바꾸지 않는다.
+    스위치를 끈 턴과는 달라야 기능이 실제로 켜진 채 비교한 것이다."""
+    room = await _memory_room(db_client, db_session, lane)
+
+    async def _build_under(scope: list[tuple[str, str]], *, on: bool) -> tuple[GenerationPrompt, int, int]:
+        monkeypatch.setattr(settings, "memory_model_scope", scope)
+        _memory_switches(monkeypatch, on)
+        stub = VoyageStub()
+        built, statements = await _built_and_statements(db_session, room, lane=lane, model="opus", stub=stub)
+        return built, statements, len(stub.bodies)
+
+    default_scope = [("story", "opus"), ("character", "opus")]
+    every_model = [(each_lane, model) for each_lane in ("story", "character") for model in ("gemini", "sonnet", "opus")]
+    scoped, scoped_statements, scoped_embeds = await _build_under(default_scope, on=True)
+    unscoped, unscoped_statements, unscoped_embeds = await _build_under(every_model, on=True)
+    switched_off, _, _ = await _build_under(default_scope, on=False)
+
+    assert scoped.prompt == unscoped.prompt
+    assert (scoped.memory_facts, scoped.memory_recall) == (unscoped.memory_facts, unscoped.memory_recall)
+    assert scoped_statements == unscoped_statements
+    assert scoped_embeds == unscoped_embeds == 1
+    assert scoped.prompt != switched_off.prompt
+    assert HEADER in scoped.prompt and RECALL_HEADER in scoped.prompt
+
+
+async def test_a_lane_scoped_entry_leaves_the_other_lane_of_the_same_model_out(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """범위가 스토리 Opus 방뿐이면 캐릭터 Opus 방은 스위치를 다 켜도 다 끈 턴과 같다."""
+    monkeypatch.setattr(settings, "memory_model_scope", [("story", "opus")])
+    room = await _memory_room(db_client, db_session, "character")
+    stub = VoyageStub()
+
+    _memory_switches(monkeypatch, False)
+    off, off_statements = await _built_and_statements(db_session, room, lane="character", model="opus", stub=stub)
+    _memory_switches(monkeypatch, True)
+    on, on_statements = await _built_and_statements(db_session, room, lane="character", model="opus", stub=stub)
+
+    assert on.prompt == off.prompt
+    assert on_statements == off_statements
+    assert stub.bodies == []
+
+
+async def test_injected_memory_lines_are_dropped_outside_the_scope(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """지난 턴을 다시 조립하는 측정 도구가 회상·사실 줄을 주입해도, 범위 밖 방이면 스위치를 끈 턴처럼 싣지 않는다."""
+    monkeypatch.setattr(settings, "memory_model_scope", [("story", "opus"), ("character", "opus")])
+    room = await _memory_room(db_client, db_session, "story")
+    chat_room = await db_session.get(ChatRoom, room.room_id)
+    assert chat_room is not None
+    summary = await load_current_summary(db_session, room.room_id)
+    assert summary is not None
+    state = InjectedTurnState(
+        summary=summary,
+        memory_note="",
+        stats={},
+        persona=None,
+        recall_lines="- 주입한 회상 줄",
+        fact_lines="- 주입한 사실 줄",
+    )
+    _memory_switches(monkeypatch, True)
+
+    outside = await _build(db_session, room, "밀알당 기억나?", model="gemini", turn_state=state)
+    inside = await _build(db_session, room, "밀알당 기억나?", model="opus", turn_state=state)
+
+    assert "주입한" not in outside.prompt
+    assert "- 주입한 회상 줄" in inside.prompt and "- 주입한 사실 줄" in inside.prompt

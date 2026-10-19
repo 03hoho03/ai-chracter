@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import ConfigDict, Field, StringConstraints, field_validator
 
@@ -98,6 +98,18 @@ class ChatRoomMemoryResponse(CamelModel):
     limits: ChatRoomMemoryLimits
 
 
+class StoryScene(CamelModel):
+    """장면 헤더의 장면 — 지금 장소와 시간. 모르는 칸은 null 이다. 같은 이름의 미디어 북 장면 축·장면 기억과는 다른 것이다."""
+
+    place: str | None
+    time: str | None
+
+
+def story_scene_of(value: dict[str, Any] | None) -> StoryScene | None:
+    """저장된 장면 칸(`chat_messages.scene`·`chat_previous_responses.scene`)을 응답 모양으로. 비어 있으면 `None`."""
+    return StoryScene.model_validate(value) if value is not None else None
+
+
 class ChatMessageResponse(CamelModel):
     id: uuid.UUID
     role: ChatMessageRole
@@ -115,6 +127,9 @@ class ChatMessageResponse(CamelModel):
     # 싣지 않는다(그쪽은 고정 비율 칸으로 그린다). 크기를 모르는 자산도 None 이다.
     image_width: int | None = None
     image_height: int | None = None
+    # 장면 헤더를 켠 스토리 방의 AI 응답에 저장된 그 턴의 장면(`chat_messages.scene`). 꺼진 작품·켜기 전 메시지·사용자
+    # 메시지·오프닝은 null 이다. 화면은 마지막 AI 응답의 장면을 헤더에 보이고, 아직 AI 턴이 없으면 방 스냅숏의 첫 장면을 보인다.
+    scene: StoryScene | None = None
 
 
 class ChatMessagePageResponse(CamelModel):
@@ -136,7 +151,10 @@ class StatDefSnapshot(CamelModel):
     max_value: int
     initial_value: int
     unit: str | None
-    description: str
+    # 작가가 플레이어에게 보여 주려고 쓴 짧은 설명(게이지 칸을 눌러 여는 팝오버). 판정용 설명과 다른 칸이고
+    # 판정·생성 프롬프트에는 실리지 않는다. 판정용 설명은 판정 재료라 이 스냅숏에 싣지 않는다. 숨긴 스탯은 스탯째
+    # 스냅숏에서 빠지므로 여기 실리는 것은 보이는 스탯 것뿐이다. 쓰지 않았으면 None.
+    player_description: str | None
 
 
 class ShortcutSnapshot(CamelModel):
@@ -169,12 +187,13 @@ EndingRuleListItem = Annotated[
 
 
 class EndingSnapshot(CamelModel):
+    """플레이어 방 응답의 엔딩. 판정 문안은 판정 재료이고 에필로그는 아직 닿지 않은 엔딩의 내용이라 싣지 않는다 — 도달한
+    엔딩의 에필로그는 방 응답의 `ending` 칸에 실린다. 힌트는 엔딩 모음이 미도달 엔딩에만 골라 싣는 칸이라 여기에는 없다."""
+
     id: uuid.UUID
     name: str
     turn_count_gate: int
-    judgment_prompt: str
-    epilogue: str | None
-    hint: str | None
+    # 언제나 빈 목록이다. 이 칸을 목록으로 읽는 옛 화면이 깨지지 않도록 키만 남겨 둔다.
     stat_rules: list[EndingRuleListItem]
 
 
@@ -188,6 +207,12 @@ class ChatRoomContentSnapshot(CamelModel):
     # 동일), ChatRoomResponse.startingSetupId(entity_id, 이미 테스트로 고정됨)로는 그 호출을 만들 수
     # 없어 room이 고정한 물리적 StartingSetup 행의 id를 별도로 노출한다.
     pinned_starting_setup_id: uuid.UUID
+    # 작가가 켠 장면 헤더(방이 고정한 버전의 토글)와 시작설정의 첫 장면. 첫 장면은 방에 아직 AI 턴이 없을 때 헤더에 보인다 —
+    # 작가가 장소·시간을 둘 다 비워 두었으면 null 이다.
+    # 기본값을 `default_factory` 로 두는 이유는 `KeywordNoteDraftInput`(content/schemas.py)의 같은 주석과 같다 — OpenAPI 에
+    # `default` 가 찍히면 FE 생성 타입이 이 칸을 필수로 만든다.
+    scene_header_enabled: bool = Field(default_factory=bool)
+    initial_scene: StoryScene | None = None
 
 
 class ChatRoomEnding(CamelModel):
@@ -236,8 +261,10 @@ class ChatRoomResponse(CamelModel):
     # 작품이 이용제한·삭제돼 이 방에서 대화를 이어갈 수 없는가. 방을 여는 순간 입력창 대신 안내를 띄우려고 싣는다 —
     # 없으면 보내 본 뒤 403 을 받고서야 안다.
     content_restricted: bool
-    # 이 방에서 소설을 새로 만들 수 없는가 — 작가가 소설화를 허용하지 않았고, 내가 그 작가가 아니며, 이 방에 소설이 아직
-    # 없을 때 참이다(소설이 있으면 「소설로 보기」는 그 소설을 연다). 판정을 화면이 복제하지 않게 서버가 계산해 싣는다.
+    # 이 방에서 소설을 새로 만들 수 없는가 — 작가가 소설화를 허용하지 않았고, 내가 그 작가가 아니며, 이 방에 첫 화가
+    # 저장되어 잠긴 소설이 없을 때 참이다(잠기기 전의 빈 소설은 이어 쓸 수 없어 없는 것과 같다. 잠긴 소설이 있으면
+    # 「소설로 보기」는 그 소설을 연다. 잠금이 없어도 성공한 화 생성 작업이 있으면 생성 경로가 잠그고 통과시키므로
+    # 막지 않는다). 판정을 화면이 복제하지 않게 서버가 계산해 싣는다.
     # 부정형인 이유: 이 칸을 모르는 옛 서버의 응답에서는 칸이 없어 "막지 않음"으로 읽혀야 한다(옛 서버는 막지도 않는다).
     # 기본값을 `default_factory` 로 두는 이유는 `effective_chat_model` 과 같다.
     novel_creation_blocked: bool = Field(default_factory=bool)
@@ -351,6 +378,9 @@ class PreviewSessionState(CamelModel):
     stats: dict[str, float]
     turn_count: int = 0
     ending_reached: bool = False
+    # 장면 헤더를 켠 초안의 지금 장면 — 시작은 첫 시작설정의 첫 장면이고, 턴마다 장면 판정이 적은 장면으로 바뀐다. 켜지
+    # 않았으면 null 이다. 다음 턴 장면 판정이 이 값을 직전 장면으로 잇는다.
+    story_scene: StoryScene | None = None
 
 
 class PreviewSessionStartResponse(CamelModel):
@@ -369,12 +399,29 @@ class ChatStatChangeEvent(CamelModel):
     new_value: float
 
 
+class ChatHiddenStatSignalEvent(CamelModel):
+    """플레이어에게 숨긴 스탯 가운데 익명 신호를 켠 것이 이번 턴에 바뀌었다는 표시. 몇 개가 바뀌었든 한 턴에 하나이고,
+    어느 스탯인지·어느 쪽으로 얼마나 움직였는지는 싣지 않는다 — 싣는 순간 숨긴 스탯을 되짚을 수 있다."""
+
+    type: Literal["hiddenStatSignal"] = "hiddenStatSignal"
+
+
 class ChatEndingReachedEvent(CamelModel):
     type: Literal["endingReached"] = "endingReached"
     ending_id: uuid.UUID
     epilogue: str | None
     # 에필로그의 칸 id 형태 태그가 가리키는 그림(방이 고정한 버전 기준).
     media_tag_images: dict[uuid.UUID, MediaTagImage] = Field(default_factory=dict)
+
+
+class ChatSceneChangeEvent(CamelModel):
+    """장면 헤더를 켠 스토리 방(과 미리보기)의 매 턴 장면 — 바뀌지 않았어도 턴마다 보낸다. `message_id` 는 그 장면이 저장된 AI
+    응답이다(뒤따르는 `done` 의 메시지와 같다)."""
+
+    type: Literal["sceneChange"] = "sceneChange"
+    message_id: uuid.UUID
+    place: str | None
+    time: str | None
 
 
 class ChatPolicyWarningEvent(CamelModel):
@@ -395,7 +442,9 @@ class ChatErrorEvent(CamelModel):
 ChatStreamEvent = Annotated[
     ChatTokenEvent
     | ChatStatChangeEvent
+    | ChatHiddenStatSignalEvent
     | ChatEndingReachedEvent
+    | ChatSceneChangeEvent
     | ChatPolicyWarningEvent
     | ChatDoneEvent
     | ChatErrorEvent,

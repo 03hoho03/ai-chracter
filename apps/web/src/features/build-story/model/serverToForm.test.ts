@@ -5,6 +5,7 @@ import { formToServer } from "./formToServer";
 import { serverToForm } from "./serverToForm";
 
 type StoryDraftResponse = components["schemas"]["StoryDraftResponse"];
+type StartingSetupDraftItem = components["schemas"]["StartingSetupDraftItem"];
 type MediaBookDraft = components["schemas"]["MediaBookDraft"];
 
 function requireFirst<T>(items: readonly T[]): T {
@@ -86,10 +87,15 @@ function baseDraftResponse(): StoryDraftResponse {
             description: "생존에 필요한 신체 상태",
             perTurnDelta: -1,
             rules: [],
+            hiddenFromPlayer: false,
+            playerDescription: null,
+            signalHiddenChange: false,
           },
         ],
         endings: [],
         situationNotes: [],
+        initialScenePlace: null,
+        initialSceneTime: null,
       },
     ],
     keywordNotes: [
@@ -113,6 +119,7 @@ function baseDraftResponse(): StoryDraftResponse {
     hashtags: ["모험"],
     visibility: "public",
     novelPermission: "forbidden",
+    sceneHeaderEnabled: false,
   };
 }
 
@@ -127,6 +134,7 @@ describe("serverToForm", () => {
         userGoal: "표류에서 살아남아 무사히 귀환한다",
         rules: "선원들 앞에서 약한 모습을 보이지 않는다",
         customPrompt: undefined,
+        sceneHeaderEnabled: false,
       },
       startingSetups: [
         {
@@ -149,10 +157,15 @@ describe("serverToForm", () => {
               description: "생존에 필요한 신체 상태",
               perTurnDelta: -1,
               rules: [],
+              hiddenFromPlayer: false,
+              playerDescription: "",
+              signalHiddenChange: false,
             },
           ],
           endings: [],
           situationNotes: [],
+          initialScenePlace: "",
+          initialSceneTime: "",
         },
       ],
       keywordNotes: [
@@ -336,6 +349,36 @@ describe("serverToForm", () => {
     delete stat.rules;
 
     expect(requireFirst(requireFirst(serverToForm(response).startingSetups).stats).rules).toEqual([]);
+  });
+
+  it("reads a stat's player visibility settings, and the server defaults when the response omits them", () => {
+    const response = baseDraftResponse();
+    const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
+    stat.hiddenFromPlayer = true;
+    stat.playerDescription = "바닥나면 쓰러진다";
+    stat.signalHiddenChange = true;
+
+    const formStat = requireFirst(requireFirst(serverToForm(response).startingSetups).stats);
+    expect(formStat).toMatchObject({ hiddenFromPlayer: true, playerDescription: "바닥나면 쓰러진다", signalHiddenChange: true });
+
+    delete stat.hiddenFromPlayer;
+    delete stat.playerDescription;
+    delete stat.signalHiddenChange;
+    expect(requireFirst(requireFirst(serverToForm(response).startingSetups).stats)).toMatchObject({
+      hiddenFromPlayer: false,
+      playerDescription: "",
+      signalHiddenChange: false,
+    });
+  });
+
+  it("round-trips a hidden stat's settings back to the same payload, keeping a description the locked field still holds", () => {
+    const response = baseDraftResponse();
+    const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
+    stat.hiddenFromPlayer = true;
+    stat.playerDescription = "숨기기 전에 쓴 설명";
+    stat.signalHiddenChange = true;
+
+    expect(formToServer(serverToForm(response)).startingSetups).toEqual(response.startingSetups);
   });
 
   it("maps situation notes with their condition rule trees, and an omitted list to an empty one", () => {
@@ -538,6 +581,42 @@ describe("serverToForm", () => {
     expect(formToServer(serverToForm(response)).novelPermission).toBe(novelPermission);
   });
 
+  it("round-trips the scene header switch and the first scene place and time", () => {
+    const response = { ...baseDraftResponse(), sceneHeaderEnabled: true };
+    const setup = requireFirst(response.startingSetups);
+    setup.initialScenePlace = "버려진 제7채굴 갱도";
+    setup.initialSceneTime = null;
+
+    const form = serverToForm(response);
+    expect(form.storySetting.sceneHeaderEnabled).toBe(true);
+    expect(requireFirst(form.startingSetups)).toMatchObject({ initialScenePlace: "버려진 제7채굴 갱도", initialSceneTime: "" });
+
+    const payload = formToServer(form);
+    expect(payload.sceneHeaderEnabled).toBe(true);
+    expect(requireFirst(payload.startingSetups)).toMatchObject({
+      initialScenePlace: "버려진 제7채굴 갱도",
+      initialSceneTime: null,
+    });
+  });
+
+  // 이 칸들이 생기기 전 서버의 응답에는 키가 없다. 꺼진 헤더와 빈 첫 장면으로 채운다(서버 기본값과 같다).
+  it("loads an old draft without the scene keys and saves it back as an explicit off switch and empty scene", () => {
+    const oldResponse: Partial<StoryDraftResponse> = baseDraftResponse();
+    delete oldResponse.sceneHeaderEnabled;
+    const oldSetup: Partial<StartingSetupDraftItem> = requireFirst(oldResponse.startingSetups ?? []);
+    delete oldSetup.initialScenePlace;
+    delete oldSetup.initialSceneTime;
+
+    const form = serverToForm(oldResponse as StoryDraftResponse);
+    expect(form.storySetting.sceneHeaderEnabled).toBe(false);
+    expect(requireFirst(form.startingSetups)).toMatchObject({ initialScenePlace: "", initialSceneTime: "" });
+
+    const payload = formToServer(form);
+
+    expect(payload.sceneHeaderEnabled).toBe(false);
+    expect(requireFirst(payload.startingSetups)).toMatchObject({ initialScenePlace: null, initialSceneTime: null });
+  });
+
   // 이 칸이 생기기 전 서버의 응답에는 키가 없다. 새 작품과 같은 기본값으로 채운다.
   it("treats a response without the novel permission as the new-work default", () => {
     const oldResponse: Partial<StoryDraftResponse> = baseDraftResponse();
@@ -545,7 +624,7 @@ describe("serverToForm", () => {
 
     const form = serverToForm(oldResponse as StoryDraftResponse);
 
-    expect(form.registration.novelPermission).toBe("private");
+    expect(form.registration.novelPermission).toBe("forbidden");
   });
 
   it("round-trips up to 3 development example pairs losslessly", () => {

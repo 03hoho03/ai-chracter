@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import EmailStr, Field
+from pydantic import AwareDatetime, ConfigDict, EmailStr, Field
 
 from api.chat.prompt_builder import PromptLane
 from api.core.schema import CamelModel
@@ -23,7 +23,7 @@ from api.db.models.moderation import (
 )
 from api.db.models.novel import NovelPublicationModerationStatus, NovelPublicationVisibility
 from api.db.models.payment import PaymentStatus
-from api.legal.schemas import LegalDocumentKind
+from api.legal.schemas import LegalConsentUnit, LegalDocumentKind
 from api.llm.chat_models import PromptSetModelId
 
 
@@ -35,6 +35,9 @@ class AdminLoginRequest(CamelModel):
 class AdminMeResponse(CamelModel):
     id: uuid.UUID
     email: str
+    # 노벨 공개 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있는가. 노벨 이용제한·작품 조치의 확인 문구(산 사람에게
+    # 환급되는가)가 이 값으로 갈린다 — 조치 화면마다 받는 응답이 달라, 운영 화면이 늘 읽는 이 응답에 둔다.
+    novel_public_policy_v2_enabled: bool
 
 
 class AdminDashboardCountsResponse(CamelModel):
@@ -455,43 +458,71 @@ class AdminCloverLedgerListResponse(CamelModel):
 
 class AdminLegalDraftItem(CamelModel):
     body_markdown: str
+    change_notice_markdown: str | None
     created_at: datetime
 
 
 class AdminLegalPublishedItem(CamelModel):
+    """`reconsent_scopes` 는 이 판이 다시 받은 동의 단위다."""
+
     version: str
     body_markdown: str
+    change_notice_markdown: str | None
     published_at: datetime
-    requires_reconsent: bool
+    effective_at: datetime
+    reconsent_scopes: list[LegalConsentUnit]
 
 
 class AdminLegalDocumentResponse(CamelModel):
+    """`published` 는 지금 시행 중인 현행판, `upcoming` 은 시행 시각이 아직 오지 않은 예약 판이다."""
+
     kind: LegalDocumentKind
     draft: AdminLegalDraftItem | None
     published: AdminLegalPublishedItem | None
+    upcoming: AdminLegalPublishedItem | None
 
 
 class AdminLegalDraftUpsertRequest(CamelModel):
+    """`change_notice_markdown` 을 아예 보내지 않으면 초안의 변경 안내를 그대로 둔다 — 안내 칸을 모르는 이전 어드민 화면이
+    본문만 저장해도 안내가 지워지지 않게 한다. null 을 보내면 비운다."""
+
     body_markdown: str
+    change_notice_markdown: str | None = None
 
 
 class AdminLegalPublishRequest(CamelModel):
-    """`version`은 zero-padded ISO 날짜(`YYYY-MM-DD`)로 강제한다 — `_reconsent_required`
-    (`api/auth/router.py`)가 이 값을 문자열째로 비교해 재동의 필요 여부를 판정하고, 그
-    비교가 시간순과 일치하려면 모든 버전이 같은 자릿수로 zero-padding돼 있어야 한다
-    (그렇지 않으면 예: `"2026-9-6" < "2026-10-01"`이 문자열 비교로는 `False`가 되어
-    재동의가 영원히 뜨지 않는다). 달력상 유효한 날짜인지(`2026-13-45` 등)는 검사하지
-    않는다 — 자릿수 고정 포맷만 지키면 무효한 날짜라도 문자열 비교의 시간순 일치라는
-    전제 자체는 깨지지 않으므로, 이 정규식만으로 방어 목적은 충분하다고 판단했다."""
+    """`version` 은 날짜(`YYYY-MM-DD`)이고, 같은 날 다시 게시하면 순번 접미사를 붙인다(첫 판은 접미사 없음, 둘째부터
+    `.2`, `.3`, … `.10`). 접미사는 `.0`·`.1`·앞자리 0 을 받지 않아 한 판에 이름이 하나뿐이다. 판의 앞뒤는 버전 문자열이
+    아니라 시행 시각으로 정하므로(`api/legal/documents.py`) 이 형식은 사람이 읽는 이름을 고르게 할 뿐이다. 달력상 유효한
+    날짜인지는 검사하지 않는다.
 
-    version: str = Field(min_length=1, pattern=r"^\d{4}-\d{2}-\d{2}$")
-    requires_reconsent: bool
+    `effective_at` 은 시행 시각이다. 비우면 게시 시각과 같아 즉시 현행이 되고, 미래면 그 시각까지 시행 예정 판으로
+    남는다. 시간대가 없는 값은 받지 않는다(서버 시계와 비교할 수 없다).
+
+    재동의 범위는 `reconsent_scopes` 로 받는다. 약관은 `terms`, 처리방침은 `collection`·`transfer` 를 고를 수 있고 정책
+    문서는 고를 수 없다. 비우면 재동의 없는 게시다.
+
+    모르는 칸은 422 로 거부한다. 동의 단위를 모르던 이전 어드민 화면은 재동의를 불리언 `requiresReconsent` 로 보냈는데,
+    그 칸을 조용히 버리면 재동의를 걸려던 게시가 재동의 없는 게시로 나간다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: str = Field(min_length=1, pattern=r"^\d{4}-\d{2}-\d{2}(\.([2-9]|[1-9]\d+))?$")
+    reconsent_scopes: list[LegalConsentUnit] = Field(default_factory=list)
+    effective_at: AwareDatetime | None = None
+
+
+# 이력 표의 판 상태. 현행 = 지금 시행 중, 예정 = 시행 시각 전, 철회 = 시행 전에 거둔 판, 지난 판 = 다음 판이 시행돼 밀려난 판.
+AdminLegalVersionState = Literal["current", "scheduled", "withdrawn", "past"]
 
 
 class AdminLegalVersionItem(CamelModel):
     version: str
     published_at: datetime
-    requires_reconsent: bool
+    effective_at: datetime
+    reconsent_scopes: list[LegalConsentUnit]
+    change_notice_markdown: str | None
+    state: AdminLegalVersionState
 
 
 class AdminLegalVersionsResponse(CamelModel):

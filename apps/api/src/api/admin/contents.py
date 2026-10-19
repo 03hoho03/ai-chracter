@@ -43,6 +43,7 @@ from api.db.models.story import (
     StoryVersionDetail,
 )
 from api.db.session import get_db_session
+from api.novel_public.purchases import lock_source_closing, refund_source_closing
 from api.moderation.router import upgrade_content_chat_rooms_to_latest_version
 
 router = APIRouter(tags=["admin"])
@@ -448,6 +449,14 @@ async def act_on_content(
                 detail="admin_comment is required for lift-restriction",
             )
 
+    # 이용제한·삭제는 그 원작으로 만든 노벨의 구매를 환급한다(정책 스위치가 켜졌을 때). 환급할 사람들의 사용자 행을 조치
+    # 행 INSERT 보다 먼저 잡는다(`lock_source_closing`). 정지 표식이 붙은 작품을 다시 제한해 표식이 내려가는 것도 이제 작품
+    # 자체의 제재라 환급한다.
+    closing = (
+        await lock_source_closing(db, content_id=content.id, deleting=body.action == ModerationActionType.DELETE)
+        if body.action in (ModerationActionType.RESTRICT, ModerationActionType.DELETE)
+        else None
+    )
     action_row = ModerationAction(content_id=content.id, admin_id=admin_id, action=body.action)
     db.add(action_row)
     await db.flush()
@@ -484,6 +493,7 @@ async def act_on_content(
         reason_category=body.reason_category.value if body.reason_category is not None else None,
         reason_text=body.admin_comment or "",
     )
+    await refund_source_closing(db, closing)
 
     await db.commit()
 

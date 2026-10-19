@@ -6,6 +6,7 @@ from pydantic import Field
 from api.core.schema import CamelModel
 from api.comments.schemas import CommentNotificationTargetResponse
 from api.db.models.content import ContentType, ModerationStatus
+from api.db.models.novel import NovelPurchaseRefundReason
 from api.db.models.moderation import (
     AppealStatus,
     AppealTargetKind,
@@ -17,8 +18,8 @@ from api.db.models.moderation import (
 
 
 class NovelRefundNotificationResponse(CamelModel):
-    """노벨 삭제 환급 알림의 내용 — 게시자가 지운 소장 화 수와 실제로 돌려준 클로버. 소설 제목은 없다(지운 글의 사본을
-    남기지 않는다)."""
+    """노벨 구매 환급 알림의 내용 — 환급한 소장 화 수와 실제로 돌려준 클로버. 소설 제목은 없다(지운 글의 사본을 남기지
+    않는다)."""
 
     chapter_count: int
     clover_amount: int
@@ -28,6 +29,9 @@ class NotificationResponse(CamelModel):
     comment: CommentNotificationTargetResponse | None = None
     # `novel-purchase-refund` 알림만 채운다. 그 구매자가 탈퇴해 구매 행이 지워졌으면 비어 있다.
     novel_refund: NovelRefundNotificationResponse | None = None
+    # 위 알림의 환급 사유(화면이 사유별 문구를 고른다). 사유 칸이 생기기 전의 환급은 게시자 삭제뿐이라 `deleted` 로 싣는다.
+    # `novel_refund` 안에 두지 않은 것은 그 칸의 모양(화 수·클로버 수)을 읽는 옛 화면을 그대로 두려는 것이다.
+    novel_refund_reason: NovelPurchaseRefundReason | None = None
     comment_action_id: uuid.UUID | None = None
     id: uuid.UUID
     type: str

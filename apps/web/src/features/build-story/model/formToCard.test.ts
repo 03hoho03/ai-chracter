@@ -13,6 +13,7 @@ function baseFormValues(): StoryBuilderFormValues {
       userGoal: undefined,
       rules: undefined,
       customPrompt: undefined,
+      sceneHeaderEnabled: false,
     },
     startingSetups: [],
     keywordNotes: [],

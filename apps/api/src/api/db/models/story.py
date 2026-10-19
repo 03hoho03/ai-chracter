@@ -83,6 +83,10 @@ class StoryVersionDetail(Base):
     # 필수로 만들지 않는다 — 기존 33건이 비어 있는 채로 발행돼 있다.
     user_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
     rules: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 작가가 켜는 장면 헤더 — 켜면 이 버전의 스토리 방에서 매 턴 응답 뒤 판정 모델이 지금 장면의 장소·시간을 적어 화면 머리에
+    # 보인다(생성 프롬프트에는 싣지 않는다). 발행·편집 취소가 이 행을 손으로 옮기므로 그 두 자리도 이 칸을 옮긴다.
+    # `server_default` 는 배포 중 겹쳐 도는 옛 API 이미지가 이 칸을 모른 채 행을 INSERT 해도 꺼진 값으로 채우려는 것이다.
+    scene_header_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
 
 
 class StartingSetup(Base):
@@ -101,6 +105,10 @@ class StartingSetup(Base):
     playguide: Mapped[str | None] = mapped_column(Text, nullable=True)
     suggested_replies: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 장면 헤더의 첫 장면 — 방에 아직 AI 턴이 없을 때(오프닝만 있을 때) 헤더에 보이고, 첫 턴 장면 판정이 이어받을 직전 장면이다.
+    # 작가가 비워 두면 없음(null)이다. 길이 상한은 저장 요청에만 건다(`StoryDraftPayload` 의 검증).
+    initial_scene_place: Mapped[str | None] = mapped_column(Text, nullable=True)
+    initial_scene_time: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class StatDef(Base):
@@ -133,6 +141,15 @@ class StatDef(Base):
     change_direction: Mapped[StatChangeDirection] = mapped_column(Text, server_default="both", nullable=False)
     max_change_per_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 플레이어 화면에서 숨기는 스탯. 판정·상황 노트·엔딩 판정은 그대로 이 스탯을 쓰고, 플레이어에게 나가는 응답(방 응답의
+    # 스탯 정의·값, 턴 SSE 의 스탯 변화)에서만 빠진다. 작가 본인의 방도 같다.
+    # 배포 중 1분 남짓 겹쳐 도는 옛 API 이미지가 아래 세 칸을 모른 채 스탯을 INSERT 해도 NOT NULL 위반이 나지 않는다 — 두
+    # 불리언(이 칸과 `signal_hidden_change`)은 `server_default` 가 채우고, `player_description` 은 NULL 을 허용한다.
+    hidden_from_player: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+    # 플레이어에게 보여 줄 짧은 설명(60자 이하). 화면 전용이라 판정 프롬프트에는 실리지 않는다 — 판정은 `description` 을 읽는다.
+    player_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 숨긴 스탯이 한 턴에 바뀌었을 때 방향·크기·이름 없는 익명 신호를 플레이어에게 줄지. 숨기지 않은 스탯에서는 쓰지 않는다.
+    signal_hidden_change: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
 
 
 class StatRule(Base):

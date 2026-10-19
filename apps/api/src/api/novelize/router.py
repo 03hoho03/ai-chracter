@@ -53,6 +53,7 @@ from api.db.models.novel import (
     NovelChapterRevision,
     NovelCharacter,
     NovelJob,
+    NovelPublication,
     NovelReadingPosition,
     NovelSnapshot,
 )
@@ -71,7 +72,9 @@ from api.llm.model_access import effective_model, has_novel_premium_access
 from api.novelize.access import require_novelize_access
 from api.novelize.batches import ensure_batches
 from api.novel_public.purchases import (
+    chapters_with_unrefunded_purchase,
     lock_publisher_and_buyers,
+    novel_was_sold,
     purchase_refund_preview,
     refund_deleted_purchases,
 )
@@ -175,6 +178,7 @@ from api.novelize.source import (
     segment_hash,
 )
 from api.novelize.text import split_paragraphs
+from api.novelize.writing_lock import first_saved_chapter_at, lock_as_backfill, refuses_novelize
 from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 from api.session.dependencies import get_current_user_id
 
@@ -197,9 +201,12 @@ def _novel_error(status_code: int, code: str) -> HTTPException:
 # ── 소유권 ──────────────────────────────────────────────────────────────────
 async def _get_owned_novel(db: AsyncSession, novel_id: uuid.UUID, user_id: uuid.UUID) -> Novel:
     """없으면 404, 남의 것이면 403(방 소유권 검사와 같은 모양). 행을 잠그지 않는다 — 소설 행을 먼저 잠그면 성공
-    저장(작업 행 → 소설 행)과 교착한다."""
+    저장(작업 행 → 소설 행)과 교착한다.
+
+    숨긴 소설(노벨로 팔린 뒤 작가가 지운 소설, `Novel.hidden_at`)도 404 다 — 작가에게는 지운 소설이다. 작가의 모든 소설
+    라우트(공개 라우트 포함)가 이 확인을 거치므로, 숨긴 소설을 주소로 열어 고치거나 다시 공개하는 길이 여기서 막힌다."""
     novel = await db.get(Novel, novel_id, populate_existing=True)
-    if novel is None:
+    if novel is None or novel.hidden_at is not None:
         raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_NOT_FOUND")
     if novel.user_id != user_id:
         raise _novel_error(status.HTTP_403_FORBIDDEN, "NOVEL_FORBIDDEN")
@@ -660,15 +667,16 @@ async def create_room_novel(
     받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).
 
     작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).
-    이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열리고 이어 쓸 수 있어야
-    한다. 같은 이유로 모델을 부르는 라우트(다음 화·연쇄·다시 만들기·AI 수정)는 허락을 보지 않는다. 허락 변경과 겹친
-    생성은 잠그지 않는다 — 놓치는 것은 금지로 바꾸는 순간과 겹친 생성 하나이고, 그 소설은 어차피 유지되는 대상이다."""
+    이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열려야 한다. 이어 쓰기는
+    따로 판정한다: 모델을 부르는 라우트는 첫 화가 저장되어 잠긴 소설이면 허락을 보지 않고, 잠기기 전(빈 소설)이면 이와
+    같은 판정으로 403 이다(`_ensure_novelize_permission`). 허락 변경과 겹친 생성은 잠그지 않는다 — 놓치는 것은 금지로
+    바꾸는 순간과 겹친 생성 하나이고, 그 빈 소설은 다음 생성 요청에서 같은 판정을 받는다."""
     existing = await _room_novel_id(db, room.id)
     if existing is not None:
         return await _expire_and_detail(db, existing)
 
     content = await db.get_one(Content, room.content_id)
-    if content.novel_permission == "forbidden" and content.creator_user_id != user_id:
+    if refuses_novelize(content, user_id):
         raise _novel_error(status.HTTP_403_FORBIDDEN, "CONTENT_NOVELIZE_FORBIDDEN")
     persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
     character_name: str | None
@@ -724,13 +732,13 @@ async def list_novels(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> NovelListResponse:
-    """내 소설을 최근 수정 순으로. 원래 방이 지워진 소설도 나온다(`chatRoomId` null)."""
+    """내 소설을 최근 수정 순으로. 원래 방이 지워진 소설도 나온다(`chatRoomId` null). 숨긴 소설은 나오지 않는다."""
     chapter_count = (
         select(func.count()).select_from(NovelChapter).where(NovelChapter.novel_id == Novel.id).scalar_subquery()
     )
     query = (
         select(Novel, chapter_count)
-        .where(Novel.user_id == user_id)
+        .where(Novel.user_id == user_id, Novel.hidden_at.is_(None))
         .order_by(Novel.updated_at.desc(), Novel.id.desc())
     )
     if cursor is not None:
@@ -783,11 +791,24 @@ async def delete_novel(
 
     노벨에서 이 소설의 화를 산 구매자가 있으면 같은 트랜잭션에서 그 구매를 환급한다 — 그래서 게시자 행과 함께 그 구매자들의
     행도 id 순으로 잠근다(`novel_public/purchases.py` 모듈 docstring). 잠근 뒤 새 구매가 보이면 409
-    `NOVEL_DELETE_CONFLICT` 이고 지우지 않는다(다시 누르면 된다)."""
+    `NOVEL_DELETE_CONFLICT` 이고 지우지 않는다(다시 누르면 된다).
+
+    정책 스위치가 켜져 있고 노벨로 팔린 소설(`novel_was_sold`)이면 지우지 않고 숨긴다 — 산 사람이 계속 읽어야 해서다. 진행
+    중 작업을 환불하고, 공개를 거두고(새로 보이거나 팔리지 않는다), 숨긴 시각을 찍고 방 칸을 비운다(같은 방에서 새 소설을
+    만들 수 있고, 진행 중이던 연쇄 생성도 방이 없어 다음 묶음을 만들지 않는다). 환급은 없다. 숨긴 소설은 작가의 목록·주소
+    에서 사라지고(`_get_owned_novel`), 미환급 소장자가 모두 사라지면 하루 한 번 도는 파기가 지운다(`hidden_purge.py`).
+    판정은 사용자 행을 잠근 뒤에 한다 — 구매가 게시자 행을 잡으므로 그 뒤로는 새 구매가 끼지 않는다."""
     novel_id, publisher_id = novel.id, novel.user_id
     locked = await lock_publisher_and_buyers(db, publisher_id=publisher_id, novel_id=novel_id)
     # 행이 곧 지워져 남지 않으므로 사유 칸은 어느 값이든 같다 — 우리 쪽 사정으로 끝낸 작업이라 `internal` 이다.
     await refund_active_jobs(db, novel_id=novel_id, failure_code="internal")
+    if settings.novel_public_policy_v2_enabled and await novel_was_sold(db, novel_id):
+        await db.execute(
+            update(NovelPublication).where(NovelPublication.novel_id == novel_id).values(visibility="withdrawn")
+        )
+        await db.execute(update(Novel).where(Novel.id == novel_id).values(hidden_at=func.now(), chat_room_id=None))
+        await db.commit()
+        return
     await refund_deleted_purchases(db, novel_id=novel_id, locked_user_ids=locked)
     await delete_novels(db, [novel_id])
     await db.commit()
@@ -932,12 +953,33 @@ async def _get_chapter(db: AsyncSession, novel: Novel, chapter_id: uuid.UUID) ->
 
 
 async def _ensure_content_allows_model(db: AsyncSession, novel: Novel) -> None:
-    """모델을 부르는 라우트(경계 제안·장 생성·재생성·AI 수정)만 막는다. 작품은 소설 행에 사본으로 둔 원작 id 로
-    읽어 방이 지워져도 판정한다. 원작 행이 아예 없으면 이용 제한과 같이 막는다(풀어 줄 근거가 없다)."""
+    """모델을 부르는 라우트(경계 제안·장 생성·연쇄·재생성·AI 수정)와 연쇄 견적의 원작 판정. 차감·모델 호출보다 앞에서
+    부른다. 이용 제한(403 `CONTENT_RESTRICTED`)을 먼저 보고, 다음으로 잠기기 전 소설의 소설화 허락을 본다. 작품은 소설
+    행에 사본으로 둔 원작 id 로 읽어 방이 지워져도 판정한다. 원작 행이 아예 없으면 이용 제한과 같이 막는다(풀어 줄 근거가
+    없다)."""
     content = await db.get(Content, novel.content_id, populate_existing=True)
     if content is None:
         raise _novel_error(status.HTTP_403_FORBIDDEN, "CONTENT_RESTRICTED")
     _ensure_content_playable(content)
+    await _ensure_novelize_permission(db, novel, content)
+
+
+async def _ensure_novelize_permission(db: AsyncSession, novel: Novel, content: Content) -> None:
+    """잠기지 않은 소설은 지금 허락을 따른다 — 작가가 허용 안 함이고 요청자가 작가 본인이 아니면 403
+    `CONTENT_NOVELIZE_FORBIDDEN`. 잠긴 소설(첫 화가 저장된 소설)은 허락과 무관하게 통과한다.
+
+    예외로, 잠금은 없지만 그 소설에 성공한 화 생성 작업이 있으면 거절하지 않고 그 자리에서 출처 `backfill`(그때 허락·
+    버전은 알 수 없음)로 잠근 뒤 통과시킨다. 배포가 겹치는 1분 남짓 동안 잠금 칸을 모르는 옛 코드가 첫 화를 저장하면
+    잠금 없이 화와 성공한 작업만 남기 때문이다 — 그 소설은 이미 권리를 얻었는데 거절하면 사용자가 다음 화를 잃는다.
+    잠금은 곧바로 커밋한다: 이 요청이 뒤에서 다른 이유로 거절되어도 판정이 다음 요청에서 다시 갈리지 않게. 거절 경로에서만
+    작업 행을 조회하므로 잠긴 소설과 허락된 소설은 쿼리가 늘지 않는다."""
+    if novel.writing_locked_at is not None or not refuses_novelize(content, novel.user_id):
+        return
+    first_saved_at = await first_saved_chapter_at(db, novel.id)
+    if first_saved_at is None:
+        raise _novel_error(status.HTTP_403_FORBIDDEN, "CONTENT_NOVELIZE_FORBIDDEN")
+    await lock_as_backfill(db, novel.id, first_saved_at)
+    await db.commit()
 
 
 def _source_room_id(novel: Novel) -> uuid.UUID:
@@ -1370,7 +1412,10 @@ async def _delete_last_batch(
     db: AsyncSession, novel: Novel, batch: NovelBatch, *, not_last_code: str, locked: frozenset[uuid.UUID]
 ) -> None:
     """`batch` 가 이 소설의 마지막 묶음이면 그 화들과 함께 지우고 커밋한다. 노벨에서 그 화들을 산 구매는 같은 트랜잭션에서
-    환급한다. 호출자가 `lock_publisher_and_buyers` 로 게시자와 구매자 행을 잠근 뒤 부른다(`locked`)."""
+    환급한다. 호출자가 `lock_publisher_and_buyers` 로 게시자와 구매자 행을 잠근 뒤 부른다(`locked`).
+
+    정책 스위치가 켜져 있고 그 화들에 아직 환급되지 않은 구매가 있으면 409 `NOVEL_BATCH_SOLD` 이고 아무것도 지우지 않는다 —
+    묶음 삭제로 산 화를 지우면 소설 삭제의 숨김(산 사람이 계속 읽는다)을 우회한다."""
     active = await db.scalar(
         select(NovelJob.id).where(NovelJob.novel_id == novel.id, NovelJob.status.in_(ACTIVE_JOB_STATUSES)).limit(1)
     )
@@ -1380,6 +1425,8 @@ async def _delete_last_batch(
     if batch.ordinal != last_ordinal:
         raise _novel_error(status.HTTP_409_CONFLICT, not_last_code)
     chapter_ids = list((await db.scalars(select(NovelChapter.id).where(NovelChapter.batch_id == batch.id))).all())
+    if settings.novel_public_policy_v2_enabled and await chapters_with_unrefunded_purchase(db, chapter_ids):
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_BATCH_SOLD")
     await refund_deleted_purchases(db, novel_id=novel.id, locked_user_ids=locked, chapter_ids=chapter_ids)
     await delete_batch(db, novel_id=novel.id, batch_id=batch.id)
     await db.execute(update(Novel).where(Novel.id == novel.id).values(updated_at=func.now()))

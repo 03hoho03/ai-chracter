@@ -10,6 +10,7 @@ export const PROMPT_CHANNEL_LABELS = {
   // 것을 라벨로 알린다(서버는 게시 검증용으로만 이 행을 받는다).
   stat_judgment: "스탯 판정(사용 안 함)",
   stat_rule_judgment: "스탯 규칙 판정",
+  scene_judgment: "장면 헤더 판정",
   ending_judgment: "엔딩 판정",
   image_judgment: "이미지 판정",
   memory_summary: "기억 요약",

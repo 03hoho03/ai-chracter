@@ -949,7 +949,7 @@ async def test_get_story_chat_room_embeds_content_snapshot(
             "maxValue": stat.max_value,
             "initialValue": stat.initial_value,
             "unit": stat.unit,
-            "description": stat.description,
+            "playerDescription": stat.player_description,
         }
     ]
     assert snapshot["shortcuts"] == [
@@ -957,33 +957,10 @@ async def test_get_story_chat_room_embeds_content_snapshot(
     ]
     assert snapshot["suggestedReplies"] == ["안녕하세요", "여긴 어디죠?"]
 
-    assert len(snapshot["endings"]) == 1
-    ending_body = snapshot["endings"][0]
-    assert ending_body["id"] == str(ending.entity_id)
-    assert ending_body["statRules"] == [
-        {
-            "kind": "rule",
-            "id": str(top_rule.entity_id),
-            "statId": str(stat.entity_id),
-            "operator": "gte",
-            "threshold": 80.0,
-            "nextOp": "and",
-        },
-        {
-            "kind": "group",
-            "id": str(group.entity_id),
-            "nextOp": None,
-            "rules": [
-                {
-                    "kind": "rule",
-                    "id": str(nested_rule.entity_id),
-                    "statId": str(stat.entity_id),
-                    "operator": "lt",
-                    "threshold": 20.0,
-                    "nextOp": None,
-                }
-            ],
-        },
+    # 스탯의 판정용 설명과 엔딩의 판정 문안·에필로그·힌트·규칙은 판정 재료라 플레이어 응답에 싣지 않는다. 규칙 칸은 그 칸을
+    # 목록으로 읽는 옛 화면을 위해 키를 남기고 언제나 빈 목록이다 — 규칙이 있는 엔딩도 그렇다.
+    assert snapshot["endings"] == [
+        {"id": str(ending.entity_id), "name": "해피엔딩", "turnCountGate": 10, "statRules": []}
     ]
 
 

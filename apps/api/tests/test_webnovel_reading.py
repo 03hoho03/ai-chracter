@@ -246,6 +246,94 @@ async def test_cover_is_the_source_thumbnail_until_the_source_creator_withdraws(
     assert listed[0]["source"]["coverUrl"] is None
 
 
+# ── 원작 표기 — 원작자 이름·비공식 2차 창작 ─────────────────────────────────────
+async def _source_creator_id(db_session: AsyncSession, novel: PublicNovel) -> uuid.UUID:
+    creator_id = await db_session.scalar(sa.select(Content.creator_user_id).where(Content.id == novel.content_id))
+    assert creator_id is not None
+    return creator_id
+
+
+async def _set_nickname(db_session: AsyncSession, user_id: uuid.UUID, nickname: str) -> None:
+    await db_session.execute(sa.update(User).where(User.id == user_id).values(nickname=nickname))
+    await db_session.commit()
+
+
+async def _source_credits(
+    client: httpx.AsyncClient, db_session: AsyncSession, novel: PublicNovel, *, as_user: uuid.UUID
+) -> list[dict[str, object]]:
+    """노벨 목록·작품 정보·홈 세 응답이 싣는 원작 표기. 홈에 걸려 있지 않으면 첫 자리에 건다."""
+    if await db_session.get(HomeNovelCuration, 1) is None:
+        db_session.add(HomeNovelCuration(position=1, novel_id=novel.novel_id))
+        await db_session.commit()
+    listed = (await _get(client, "/webnovels", as_user=as_user)).json()["items"]
+    detail = (await client.get(f"/webnovels/{novel.novel_id}")).json()
+    home = (await client.get("/webnovels/home-curation")).json()["items"]
+    assert [item["id"] for item in listed] == [item["id"] for item in home] == [str(novel.novel_id)]
+    return [listed[0]["source"], detail["source"], home[0]["source"]]
+
+
+async def test_someone_elses_source_is_credited_to_its_creator_and_marked_unofficial(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """원작이 게시자가 아닌 회원의 작품이면 원작자 닉네임을 싣고 비공식 2차 창작으로 표시한다."""
+    novel = await _novel(db_session)
+    reader = await _member(db_session)
+    await _set_nickname(db_session, await _source_creator_id(db_session, novel), "원작쓴이")
+
+    credits = await _source_credits(db_client, db_session, novel, as_user=reader)
+
+    assert [(c["creatorNickname"], c["unofficial"]) for c in credits] == [("원작쓴이", True)] * 3
+
+
+async def test_a_novel_of_the_publishers_own_source_is_not_marked_unofficial(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    novel = await _novel(db_session)
+    reader = await _member(db_session)
+    await db_session.execute(
+        sa.update(Content).where(Content.id == novel.content_id).values(creator_user_id=novel.publisher_id)
+    )
+    await _set_nickname(db_session, novel.publisher_id, "직접쓴이")
+
+    credits = await _source_credits(db_client, db_session, novel, as_user=reader)
+
+    assert [(c["creatorNickname"], c["unofficial"]) for c in credits] == [("직접쓴이", False)] * 3
+
+
+async def test_a_withdrawn_source_creator_is_not_named(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    """원작자가 탈퇴하면 이름을 싣지 않는다(표지를 비우는 것과 같은 판정) — 탈퇴 회원의 닉네임이 응답 어디에도 남지 않는다.
+    원작자가 게시자가 아니라는 사실은 그대로라 비공식 표시는 남는다."""
+    novel = await _novel(db_session)
+    reader = await _member(db_session)
+    creator_id = await _source_creator_id(db_session, novel)
+    await _set_nickname(db_session, creator_id, "떠난원작자")
+    await db_session.execute(sa.update(User).where(User.id == creator_id).values(deleted_at=sa.func.now()))
+    await db_session.commit()
+
+    credits = await _source_credits(db_client, db_session, novel, as_user=reader)
+    detail = await db_client.get(f"/webnovels/{novel.novel_id}")
+
+    assert [(c["creatorNickname"], c["unofficial"]) for c in credits] == [(None, True)] * 3
+    assert "떠난원작자" not in detail.text
+
+
+async def test_the_creator_name_follows_a_nickname_change_at_once(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """원작자 이름은 공개 때 복사해 두지 않고 읽을 때 원작자 행에서 가져온다."""
+    novel = await _novel(db_session)
+    reader = await _member(db_session)
+    creator_id = await _source_creator_id(db_session, novel)
+    await _set_nickname(db_session, creator_id, "옛이름")
+    before = await _source_credits(db_client, db_session, novel, as_user=reader)
+    await _set_nickname(db_session, creator_id, "새이름")
+
+    after = await _source_credits(db_client, db_session, novel, as_user=reader)
+
+    assert [c["creatorNickname"] for c in before] == ["옛이름"] * 3
+    assert [c["creatorNickname"] for c in after] == ["새이름"] * 3
+
+
 # ── 화 읽기 ─────────────────────────────────────────────────────────────────
 async def test_a_locked_chapter_carries_no_body_and_a_free_one_does(
     db_client: httpx.AsyncClient, db_session: AsyncSession

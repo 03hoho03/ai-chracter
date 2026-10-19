@@ -51,6 +51,7 @@ from api.auth.password_reset import delete_reset_token, get_reset_token, store_r
 from api.auth.schemas import (
     ChangePasswordRequest,
     EnabledFeature,
+    LegalConsentVersions,
     LoginRequest,
     MeResponse,
     PasswordResetConfirmRequest,
@@ -64,7 +65,12 @@ from api.auth.schemas import (
     VerifyEmailResponse,
     WithdrawRequest,
 )
-from api.auth.withdrawal import delete_storage_objects_later, erase_account
+from api.auth.withdrawal import (
+    delete_storage_objects_later,
+    erase_account,
+    lock_withdrawal_parties,
+    retry_on_new_buyers,
+)
 from api.auth.verification import (
     VERIFICATION_ATTEMPTS_LIMIT,
     clear_verification_attempts,
@@ -84,10 +90,15 @@ from api.core.security import hash_password, hash_withdrawn_email, verify_passwo
 from api.core.sentry import capture_dependency_failure
 from api.creator_payout.config import creator_payout_active
 from api.db.models.auth import User, WithdrawnEmail
+from api.db.models.legal import LegalDocument
 from api.db.session import get_db_session
-from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
+from api.legal import consents as legal_consents
+from api.legal import documents as legal_documents
+from api.legal.dependencies import reconsent_required_units
+from api.legal.schemas import LegalConsentUnit
 from api.llm.model_access import has_chat_premium_access, has_novel_premium_access
 from api.novel_public.access import novel_public_open_to
+from api.novel_public.purchases import NovelPartiesChangedError
 from api.novelize.access import has_novelize_access
 from api.payments.config import identity_gate_active
 from api.payments.eligibility import purchase_block_reason
@@ -130,24 +141,21 @@ def _onboarding_conflict(code: str) -> HTTPException:
 
 async def _apply_onboarding_consent(
     db: AsyncSession, user: User, payload: SocialOnboardingRequest, now: datetime
-) -> None:
-    """소셜 온보딩이 받은 프로필과 약관 3종 동의를 행에 적는다. 동의 버전은 지금 게시된 최신본이다.
+) -> dict[LegalConsentUnit, LegalDocument | None]:
+    """소셜 온보딩이 받은 프로필과 약관 3종 동의를 행에 적는다. 동의 버전은 지금의 현행판이다(시행 예정 판이 아니다).
+    동의한 판을 돌려준다 — 동의 이력은 회원 행이 `_flush_social_signup` 으로 들어간 뒤에 더한다.
 
     버전 조회가 자동 flush 를 일으키지 않게 막는다. 카카오 온보딩은 기존 행을 대체할 때 회원번호를
     이 함수 호출 전에 대입하는데, 여기서 flush 되면 그 UPDATE 가 UNIQUE 충돌을 409 로 바꾸는
     `_flush_social_signup` 의 savepoint 밖에서 나가 500 이 된다. 쓰기는 그 함수에서만 나가야 한다."""
     with db.no_autoflush:
-        privacy_version = await _latest_published_legal_version(db, "privacy")
-        terms_version = await _latest_published_legal_version(db, "terms")
+        consented = await legal_consents.current_consent_documents(
+            db, legal_consents.CONSENT_UNITS, now=legal_documents.utcnow()
+        )
     user.nickname = payload.nickname
     user.birth_date = payload.birth_date
-    user.terms_agreed_at = now
-    user.privacy_agreed_at = now
-    user.transfer_agreed_at = now
-    user.terms_version = terms_version
-    user.privacy_version = privacy_version
-    # 국외이전 동의는 처리방침 버전에 묶인다.
-    user.transfer_version = privacy_version
+    legal_consents.apply_consent_versions(user, consented, at=now)
+    return consented
 
 
 async def _flush_social_signup(db: AsyncSession, user: User) -> None:
@@ -242,31 +250,24 @@ async def signup(
         existing.password_hash = await hash_password(payload.password)
         existing.nickname = payload.nickname
         existing.birth_date = payload.birth_date
-        existing.terms_agreed_at = now
-        existing.privacy_agreed_at = now
-        existing.transfer_agreed_at = now
-        existing.terms_version = await _latest_published_legal_version(db, "terms")
-        privacy_version = await _latest_published_legal_version(db, "privacy")
-        existing.privacy_version = privacy_version
-        # 국외이전 동의는 처리방침 버전에 묶인다.
-        existing.transfer_version = privacy_version
+        consented = await legal_consents.current_consent_documents(
+            db, legal_consents.CONSENT_UNITS, now=legal_documents.utcnow()
+        )
+        legal_consents.apply_consent_versions(existing, consented, at=now)
+        await legal_consents.replace_signup_consent_history(db, existing.id, consented, at=now)
         await replace_signup_personas(db, existing, payload.persona_name)
         await db.commit()
     else:
-        privacy_version = await _latest_published_legal_version(db, "privacy")
+        consented = await legal_consents.current_consent_documents(
+            db, legal_consents.CONSENT_UNITS, now=legal_documents.utcnow()
+        )
         user = User(
             email=payload.email,
             password_hash=await hash_password(payload.password),
             nickname=payload.nickname,
             birth_date=payload.birth_date,
-            terms_agreed_at=now,
-            privacy_agreed_at=now,
-            transfer_agreed_at=now,
-            terms_version=await _latest_published_legal_version(db, "terms"),
-            privacy_version=privacy_version,
-            # 국외이전 동의는 처리방침 버전에 묶인다.
-            transfer_version=privacy_version,
         )
+        legal_consents.apply_consent_versions(user, consented, at=now)
         try:
             async with db.begin_nested():
                 db.add(user)
@@ -278,6 +279,7 @@ async def signup(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
             ) from None
+        await legal_consents.replace_signup_consent_history(db, user.id, consented, at=now)
         await create_signup_persona(db, user, payload.persona_name)
         await db.commit()
 
@@ -481,8 +483,9 @@ async def onboarding_google(
         if await _reregistration_blocked(db, pending["email"], now):
             raise _onboarding_conflict("REREGISTRATION_BLOCKED")
         user = User(email=pending["email"], google_sub=pending["sub"], email_verified_at=now)
-        await _apply_onboarding_consent(db, user, payload, now)
+        consented = await _apply_onboarding_consent(db, user, payload, now)
         await _flush_social_signup(db, user)
+        await legal_consents.replace_signup_consent_history(db, user.id, consented, at=now)
         await create_signup_persona(db, user, payload.persona_name)
     else:
         # 대입·커밋·pending 토큰 삭제 **전**에 막는다 — 뒤에서 막으면 403인데도
@@ -630,8 +633,9 @@ async def onboarding_kakao(
             replaced_email_signup = True
         else:
             raise _onboarding_conflict("EMAIL_ALREADY_REGISTERED")
-        await _apply_onboarding_consent(db, user, payload, now)
+        consented = await _apply_onboarding_consent(db, user, payload, now)
         await _flush_social_signup(db, user)
+        await legal_consents.replace_signup_consent_history(db, user.id, consented, at=now)
         if replaced_email_signup:
             await replace_signup_personas(db, user, payload.persona_name)
         else:
@@ -698,24 +702,40 @@ async def _handle_kakao_unlink_webhook(
     kakao_id = _kakao_webhook_user_id(request, await request.body())
     if kakao_id is None:
         return Response(status_code=status.HTTP_200_OK)
-    # 같은 알림이 겹쳐 와도 두 번째는 첫 커밋을 기다린 뒤 회원번호가 지워진 행을 다시 평가해
-    # 0행이 된다 — 잠금과 커밋 뒤 NULL 이 멱등을 만든다.
-    user = await db.scalar(
-        select(User)
-        .where(User.kakao_id == kakao_id)
-        .with_for_update(key_share=True)
-        .execution_options(populate_existing=True)
-    )
-    if user is None or user.deleted_at is not None:
-        return Response(status_code=status.HTTP_200_OK)
 
     storage_keys: list[str] = []
 
     async def collect_storage_key(storage_key: str) -> None:
         storage_keys.append(storage_key)
 
-    user_id = user.id
-    await erase_account(db, user, delete_storage_object=collect_storage_key)
+    async def erase() -> uuid.UUID | None:
+        """잠그고 파기한다. 파기했으면 회원 id, 회원이 없거나 이미 탈퇴했으면 None."""
+        storage_keys.clear()
+        # 노벨 구매자까지 잠그려면 잠그기 전에 누구인지 알아야 한다(`lock_withdrawal_parties`). 잠근 뒤 같은 회원번호로
+        # 다시 고른다.
+        target = await db.scalar(select(User.id).where(User.kakao_id == kakao_id))
+        refund_locked = await lock_withdrawal_parties(db, target) if target is not None else None
+        # 같은 알림이 겹쳐 와도 두 번째는 첫 커밋을 기다린 뒤 회원번호가 지워진 행을 다시 평가해
+        # 0행이 된다 — 잠금과 커밋 뒤 NULL 이 멱등을 만든다.
+        user = await db.scalar(
+            select(User)
+            .where(User.kakao_id == kakao_id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+        if user is None or user.deleted_at is not None:
+            return None
+        if refund_locked is not None and user.id not in refund_locked:
+            # 잠그기 전에 고른 회원이 아니다(그 사이 회원번호가 다른 회원으로 옮겨 갔다) — 처음부터 다시 고른다.
+            raise NovelPartiesChangedError
+        await erase_account(
+            db, user, delete_storage_object=collect_storage_key, refund_locked=refund_locked
+        )
+        return user.id
+
+    user_id = await retry_on_new_buyers(db, erase)
+    if user_id is None:
+        return Response(status_code=status.HTTP_200_OK)
     # 카카오 쪽 연결은 이미 끊겼으므로 연결 끊기 API 는 부르지 않는다.
     # 세션 폐기가 실패해도 500 을 내지 않는다 — 파기는 이미 커밋됐고 카카오는 재전송하지 않으므로
     # 500 은 아래 오브젝트 스토리지 삭제 예약만 빠뜨린다. 남은 세션은 `get_current_user_id` 의
@@ -905,10 +925,8 @@ async def get_me(
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    required_terms_version = await _latest_published_legal_version(db, "terms", requires_reconsent=True)
-    required_privacy_version = await _latest_published_legal_version(
-        db, "privacy", requires_reconsent=True
-    )
+    # 쓰기 게이트(`require_legal_consent`)와 같은 판정 함수다 — 따로 판정하면 모달이 뜨지 않는데 쓰기가 막히거나 그 반대가 된다.
+    reconsent_units = await reconsent_required_units(db, user, now=legal_documents.utcnow())
 
     # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴 파기
     # 시에만 None이 된다.
@@ -920,8 +938,14 @@ async def get_me(
         nickname=user.nickname,
         bio=user.bio,
         profile_image_asset_id=user.profile_image_asset_id,
-        terms_reconsent_required=_reconsent_required(user.terms_version, required_terms_version),
-        privacy_reconsent_required=_reconsent_required(user.privacy_version, required_privacy_version),
+        terms_reconsent_required="terms" in reconsent_units,
+        collection_reconsent_required="collection" in reconsent_units,
+        transfer_reconsent_required="transfer" in reconsent_units,
+        legal_consent_versions=LegalConsentVersions(
+            terms=user.terms_version,
+            collection=user.privacy_version,
+            transfer=user.transfer_version,
+        ),
         has_password=user.password_hash is not None,
         social_provider=None if method == "email" else method,
         enabled_features=await _enabled_features(db, user.id),
@@ -1008,16 +1032,8 @@ async def withdraw(
     db: AsyncSession = Depends(get_db_session),
     kakao_unlinker: KakaoUnlinker = Depends(get_kakao_unlinker),
 ) -> None:
-    user = await lock_active_user(db, user_id)
-    # 되돌릴 수 없는 파기라 세션만으로 넘기지 않고 비밀번호가 있는 계정은 현재 비밀번호를 다시
-    # 확인한다(소셜 전용 계정은 확인할 비밀번호가 없어 버튼 확인만 한다). 행을 잠근 뒤 확인하므로
-    # 확인과 파기 사이에 비밀번호가 바뀌지 않고, 실패하면 예외가 트랜잭션을 되감아 잠금이 풀린다.
-    if user.password_hash is not None:
-        await _confirm_current_password(
-            user.id, body.current_password if body is not None else None, user.password_hash
-        )
-    # 파기가 회원번호를 지우므로 연결 끊기에 쓸 값을 먼저 잡아 둔다.
-    kakao_id = user.kakao_id
+    """탈퇴. 노벨 게시자면 정책 스위치가 켜졌을 때 그 소설의 구매자에게 환급한다 — 잠금과 다시 하기는 `auth/withdrawal.py`
+    모듈 docstring. 다시 하기 상한을 넘기면 409 `WITHDRAWAL_CONFLICT` 이고 아무것도 지우지 않았다(다시 누르면 된다)."""
     # 저장소 삭제는 이미지 수에 비례하고 상한이 없다. 그동안 회원 행과 댓글·좋아요를 단 남의 작품 행을 잠근 채 커넥션을
     # 쥐지 않도록 키만 모았다가 파기를 커밋한 뒤 응답 뒤에서 지운다(카카오 연결 끊기 알림과 같은 방식). 삭제가 실패하면
     # 그 객체는 가리키는 행 없이 남는다 — 파기 기록·개인정보 삭제·재가입 차단은 이미 한 커밋으로 끝났다.
@@ -1026,7 +1042,26 @@ async def withdraw(
     async def collect_storage_key(storage_key: str) -> None:
         storage_keys.append(storage_key)
 
-    await erase_account(db, user, delete_storage_object=collect_storage_key)
+    async def erase() -> str | None:
+        """잠그고 확인하고 파기한다. 파기 전의 카카오 회원번호를 돌려준다(파기가 그 칸을 지운다)."""
+        storage_keys.clear()
+        refund_locked = await lock_withdrawal_parties(db, user_id)
+        user = await lock_active_user(db, user_id)
+        # 되돌릴 수 없는 파기라 세션만으로 넘기지 않고 비밀번호가 있는 계정은 현재 비밀번호를 다시
+        # 확인한다(소셜 전용 계정은 확인할 비밀번호가 없어 버튼 확인만 한다). 행을 잠근 뒤 확인하므로
+        # 확인과 파기 사이에 비밀번호가 바뀌지 않고, 실패하면 예외가 트랜잭션을 되감아 잠금이 풀린다.
+        if user.password_hash is not None:
+            await _confirm_current_password(
+                user.id, body.current_password if body is not None else None, user.password_hash
+            )
+        kakao_id = user.kakao_id
+        await erase_account(db, user, delete_storage_object=collect_storage_key, refund_locked=refund_locked)
+        return kakao_id
+
+    try:
+        kakao_id = await retry_on_new_buyers(db, erase)
+    except NovelPartiesChangedError:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "WITHDRAWAL_CONFLICT"}) from None
     if storage_keys:
         background_tasks.add_task(delete_storage_objects_later, storage_keys)
 

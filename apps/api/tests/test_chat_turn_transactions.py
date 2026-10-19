@@ -42,6 +42,7 @@ from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
     MemorySummaryResult,
+    SceneJudgmentResult,
     StatRuleJudgmentResult,
 )
 from api.core import clover, rate_limit_gate
@@ -68,6 +69,7 @@ from api.db.models import (
 )
 from api.db.models.chat import ChatTurn, DiscardedResponse, StoryEndingUnlock, StoryMediaExposure
 from api.db.models.clover import CloverLedger
+from api.db.models.story import StoryVersionDetail
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
     _add_named_media_cell,
@@ -311,7 +313,7 @@ async def _regenerate_story(db_client: httpx.AsyncClient, db_session: AsyncSessi
     )
 
 
-async def _preview_story(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Turn:
+async def _preview_story(db_client: httpx.AsyncClient, db_session: AsyncSession, *, scene_header: bool = False) -> _Turn:
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
@@ -369,6 +371,8 @@ async def _preview_story(db_client: httpx.AsyncClient, db_session: AsyncSession)
         "hashtags": [],
         "visibility": "private",
     }
+    if scene_header:
+        payload["sceneHeaderEnabled"] = True
     started = await db_client.post("/preview-sessions", json=payload)
     assert started.status_code == 201, started.text
     session_id = started.json()["previewSessionId"]
@@ -398,6 +402,32 @@ async def _preview_story(db_client: httpx.AsyncClient, db_session: AsyncSession)
     )
 
 
+async def _enable_scene_header(db_session: AsyncSession, room_id: uuid.UUID) -> None:
+    version_id = await db_session.scalar(sa.select(ChatRoom.content_version_id).where(ChatRoom.id == room_id))
+    await db_session.execute(
+        sa.update(StoryVersionDetail)
+        .where(StoryVersionDetail.content_version_id == version_id)
+        .values(scene_header_enabled=True)
+    )
+    await db_session.commit()
+
+
+def _with_scene_header(
+    build: Callable[[httpx.AsyncClient, AsyncSession], Awaitable[_Turn]], call_site: str
+) -> Callable[[httpx.AsyncClient, AsyncSession], Awaitable[_Turn]]:
+    """같은 시나리오를 장면 헤더를 켠 작품으로 — 장면 판정 응답 하나를 더한다."""
+
+    async def _build(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Turn:
+        turn = await build(db_client, db_session)
+        room_id = re.search(r"/chat-rooms/([0-9a-f-]{36})/", turn.path)
+        if room_id is not None:
+            await _enable_scene_header(db_session, uuid.UUID(room_id.group(1)))
+        turn.structured[call_site] = [SceneJudgmentResult(place="옥상", time=None)]
+        return turn
+
+    return _build
+
+
 _SCENARIOS: dict[str, Callable[[httpx.AsyncClient, AsyncSession], Awaitable[_Turn]]] = {
     "send-character": _send_character,
     "send-story": _send_story,
@@ -405,6 +435,16 @@ _SCENARIOS: dict[str, Callable[[httpx.AsyncClient, AsyncSession], Awaitable[_Tur
     "regenerate-character": _regenerate_character,
     "regenerate-story": _regenerate_story,
     "preview-story": _preview_story,
+}
+
+# 장면 헤더를 켠 작품의 시나리오. 호출 순서와 "열린 트랜잭션 0" 만 본다(스냅숏은 위 여섯 시나리오가 끈 상태로 고정한다).
+_SCENE_SCENARIOS: dict[str, Callable[[httpx.AsyncClient, AsyncSession], Awaitable[_Turn]]] = {
+    "send-story-scene": _with_scene_header(_send_story, "chat_scene_judgment"),
+    "edit-story-scene": _with_scene_header(_edit_story, "chat_scene_judgment"),
+    "regenerate-story-scene": _with_scene_header(_regenerate_story, "chat_scene_judgment"),
+    "preview-story-scene": _with_scene_header(
+        lambda db_client, db_session: _preview_story(db_client, db_session, scene_header=True), "preview_scene_judgment"
+    ),
 }
 
 # 시나리오마다 외부 호출이 실제로 그 자리들을 지나는지 — 이게 빠지면 "열린 트랜잭션 0"이 호출이 없어서 참일 수 있다.
@@ -427,13 +467,37 @@ _EXPECTED_CALL_SITES = {
     "regenerate-character": ["chat_generate", "chat_situational_image"],
     "regenerate-story": ["chat_generate", "chat_media_book_image"],
     "preview-story": ["preview_generate", "preview_stat_judgment", "preview_ending_judgment"],
+    # 장면 판정은 첫 물결의 마지막이다(목록 순서로 함께 부른다) — 엔딩 판정 앞이다.
+    "send-story-scene": [
+        "chat_generate",
+        "chat_stat_judgment",
+        "chat_media_book_image",
+        "chat_scene_judgment",
+        "chat_ending_judgment",
+        "chat_ending_judgment",
+    ],
+    "edit-story-scene": [
+        "chat_generate",
+        "chat_stat_judgment",
+        "chat_media_book_image",
+        "chat_scene_judgment",
+        "chat_ending_judgment",
+        "chat_ending_judgment",
+    ],
+    "regenerate-story-scene": ["chat_generate", "chat_media_book_image", "chat_scene_judgment"],
+    "preview-story-scene": [
+        "preview_generate",
+        "preview_stat_judgment",
+        "preview_scene_judgment",
+        "preview_ending_judgment",
+    ],
 }
 
 
 async def _run(
     db_client: httpx.AsyncClient, db_session: AsyncSession, case: str
 ) -> tuple[list[tuple[str, int]], list[dict[str, Any]], dict[str, Any]]:
-    turn = await _SCENARIOS[case](db_client, db_session)
+    turn = await {**_SCENARIOS, **_SCENE_SCENARIOS}[case](db_client, db_session)
     # 셋업이 같은 세션에 남긴 트랜잭션을 닫아 기준값을 0 으로 만든다(요청 세션이 곧 이 세션이다).
     await db_session.commit()
     with _open_transaction_probe() as open_sessions:
@@ -447,7 +511,7 @@ async def _run(
     return fake.calls, _parse_sse_events(response.text), await turn.read_state()
 
 
-@pytest.mark.parametrize("case", list(_SCENARIOS))
+@pytest.mark.parametrize("case", [*_SCENARIOS, *_SCENE_SCENARIOS])
 async def test_no_transaction_is_open_while_waiting_for_the_llm(
     db_client: httpx.AsyncClient, db_session: AsyncSession, case: str
 ) -> None:

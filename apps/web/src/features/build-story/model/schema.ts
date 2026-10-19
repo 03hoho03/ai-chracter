@@ -61,6 +61,8 @@ export const storySettingSchema = z
     userGoal: z.string().optional(),
     rules: z.string().optional(),
     customPrompt: z.string().optional(),
+    /** 장면 헤더 — 켜면 매 턴 응답을 읽고 따로 짚은 장소·시간을 플레이어 상태 줄에 보인다. 이야기 생성에는 들어가지 않는다. */
+    sceneHeaderEnabled: z.boolean().default(false),
   })
   .superRefine((value, ctx) => {
     if (value.promptTemplate === "custom") {
@@ -89,6 +91,22 @@ export const MAX_STAT_RULES = 10;
 export const MAX_STAT_RULE_CONDITION_LENGTH = 100;
 export const STAT_RULE_LIMIT_MESSAGE = `규칙은 스탯마다 ${MAX_STAT_RULES}개까지예요. 더 넣으려면 쓰지 않는 규칙을 지워 주세요.`;
 export const STAT_RULE_DELTA_MESSAGE = "0이 아닌 정수로 입력해주세요(예: +3, -5)";
+/** 플레이어용 스탯 설명 상한(서버 상한과 같은 값). 서버처럼 앞뒤 공백을 뗀 뒤 코드 포인트로 센다. 서버는 넘는 설명이 든
+ * 초안 저장을 통째로 거절하므로 입력칸이 이 상한에서 자른다. */
+export const MAX_STAT_PLAYER_DESCRIPTION_LENGTH = 60;
+
+/** 장면 헤더의 첫 장면 장소·시간 한 칸의 상한(서버 상한과 같은 값 — 화면 머리 한 줄에 들어가는 길이). 서버처럼 앞뒤 공백을
+ * 뗀 뒤 코드 포인트로 센다. 서버는 넘는 칸이 든 초안 저장을 통째로 거절하므로 입력칸이 이 상한에서 자른다. */
+export const MAX_STORY_SCENE_FIELD_LENGTH = 24;
+
+function storySceneFieldSchema(subject: string) {
+  return z
+    .string()
+    .refine(
+      (value) => countCharacters(value.trim()) <= MAX_STORY_SCENE_FIELD_LENGTH,
+      `${subject} ${MAX_STORY_SCENE_FIELD_LENGTH}자 이하로 입력해주세요`,
+    );
+}
 
 /**
  * 턴당 자동 변화가 있는 스탯은 판정 AI 가 보지 않아 규칙이 발동할 일이 없다 — 서버는 둘을 함께 건 스탯의 발행을 거절한다. 스탯
@@ -184,6 +202,19 @@ export const statDefSchema = z
     perTurnDelta: z.number().int(STAT_INTEGER_MESSAGE).nullable(),
     /** 「조건 → 증감」 규칙. 판정을 받는 스탯(턴당 자동 변화가 없는 스탯)에는 하나 이상 있어야 발행된다(아래 검사). */
     rules: statRulesSchema,
+    /** 플레이어 화면에서 이 스탯을 뺀다. 판정·엔딩은 그대로 이 스탯을 쓴다. */
+    hiddenFromPlayer: z.boolean(),
+    /** 플레이어가 게이지 칸을 눌러 보는 짧은 설명. 판정에는 실리지 않는다. 빈 글이 "없음"이다(`formToServer` 가 null 로
+     * 보낸다) — 글 칸이라 RHF 가 빈 칸을 `undefined` 가 아니라 빈 글로 주므로 옛 값으로 되살아나지 않는다. 숨긴 스탯이면
+     * 칸이 잠기지만 값은 지우지 않는다. */
+    playerDescription: z
+      .string()
+      .refine(
+        (value) => countCharacters(value.trim()) <= MAX_STAT_PLAYER_DESCRIPTION_LENGTH,
+        `플레이어에게 보일 설명은 ${MAX_STAT_PLAYER_DESCRIPTION_LENGTH}자 이하로 입력해주세요`,
+      ),
+    /** 숨긴 스탯이 한 턴에 바뀌면 방향·크기 없는 익명 신호를 줄지. 숨기지 않은 스탯에서는 쓰지 않아 칸이 잠기지만 값은 남긴다. */
+    signalHiddenChange: z.boolean(),
   })
   .superRefine((stat, ctx) => {
     // 오류는 턴당 자동 변화 칸에 붙인다 — 발행 때 이 스탯을 열고 그 칸으로 포커스가 가, 바로 아래 문장이 이유를 말한다.
@@ -334,6 +365,11 @@ export const startingSetupSchema = z.object({
     .array(situationNoteSchema)
     .max(MAX_SITUATION_NOTES, `상황 노트는 시작설정마다 최대 ${MAX_SITUATION_NOTES}개까지만 추가할 수 있습니다`)
     .default([]),
+  /** 장면 헤더의 첫 장면 — 아직 AI 턴이 없을 때 상태 줄에 보이고 첫 장면 판정이 이어받는다. 빈 글과 undefined 가 "없음"이다
+   * (`formToServer` 가 null 로 보낸다 — 글 칸이라 RHF 는 비운 칸을 빈 글로 준다). 장면 헤더를 끄면 칸이 숨지만 값은 지우지
+   * 않는다 — 다시 켜면 그대로 돌아오고, 숨은 동안의 자동저장도 값을 그대로 보낸다. */
+  initialScenePlace: storySceneFieldSchema("첫 장면 장소는").optional(),
+  initialSceneTime: storySceneFieldSchema("첫 장면 시간은").optional(),
 });
 
 /** 키워드북 상한의 단일 소스. 스키마의 검사·메시지와 widgets/build-story/ui/KeywordNoteTab.tsx 의 입력 가드가 전부

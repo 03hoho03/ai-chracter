@@ -8,6 +8,9 @@ import { apiClient } from "@/shared/api/client";
 
 import { toPublishFailure, type PublishFailure } from "../model/publishFailure";
 
+/** 공개를 끝까지 보낸 결과. */
+export type PublishRunResult = "published" | "inReview" | false;
+
 /** 공개 진행. `checking` 은 몇 번째 요청을 기다리는가(1부터), `failed` 는 멈춘 까닭이다. */
 export type PublishRunState =
   | { kind: "idle" }
@@ -23,6 +26,10 @@ export type PublishRunState =
  *
  * 요청 하나하나는 뮤테이션으로 보낸다 — 약관 재동의 403·세션 소실 같은 실패를 다른 쓰기와 같은 전역 처리(재동의
  * 모달·세션 비우기)가 받게.
+ *
+ * 응답이 운영자 승인 대기면(첫 공개 신청) 남은 요청을 보내지 않고 끝낸다 — 대기 중 다음 화 요청은 서버가 409 로 막는다.
+ * 보낼 요청은 `toPublishRequests` 가 이미 하나로 자르므로 이것은 겹침 방어다. 끝난 결과는 독자에게 열렸으면
+ * `"published"`, 승인 대기로 끝났으면 `"inReview"`, 멈췄거나 보내지 않았으면 `false` 다.
  *
  * 공개한 글은 노벨 화면의 캐시(목록·작품 정보·화)를 낡게 하므로 끝나면 함께 버린다. */
 export function usePublishNovelRun(novelId: string) {
@@ -42,7 +49,7 @@ export function usePublishNovelRun(novelId: string) {
     };
   }, []);
 
-  async function run(requests: readonly (string | null)[]): Promise<boolean> {
+  async function run(requests: readonly (string | null)[]): Promise<PublishRunResult> {
     if (isRunningRef.current || requests.length === 0) return false;
     isRunningRef.current = true;
     try {
@@ -52,6 +59,10 @@ export function usePublishNovelRun(novelId: string) {
         try {
           const data = await publishChapter.mutateAsync(chapterId);
           queryClient.setQueryData(novelKeys.publication(novelId), data);
+          if (data.reviewStatus === "pending") {
+            setState({ kind: "idle" });
+            return "inReview";
+          }
         } catch (error) {
           setState({ kind: "failed", failure: toPublishFailure(error) });
           void queryClient.invalidateQueries({ queryKey: novelKeys.publication(novelId) });
@@ -59,7 +70,7 @@ export function usePublishNovelRun(novelId: string) {
         }
       }
       setState({ kind: "idle" });
-      return true;
+      return "published";
     } finally {
       isRunningRef.current = false;
       void queryClient.invalidateQueries({ queryKey: webnovelKeys.all });

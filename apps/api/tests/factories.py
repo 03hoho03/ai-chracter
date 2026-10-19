@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from sqlalchemy.orm import Session, SessionTransaction
 from starlette.types import Message
 
+from api.chat import voyage_backoff
 from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
 from api.core.clover import CloverKind, SpendUsage, refund_spend, revoke_purchase_lots, spend
@@ -102,6 +103,7 @@ from api.db.models import (
     UserPersona,
 )
 from api.db.session import engine
+from api.legal.consents import kind_consent_units
 from api.llm import bedrock as bedrock_module
 from api.llm import gemini as gemini_module
 from api.llm.bedrock import BedrockLLMClient
@@ -113,13 +115,12 @@ from api.main import app
 from api.session.store import create_session
 
 
-# migration c49014ae5b62가 시드해둔 terms/privacy
-# 게시본(version "2026-09-06", requires_reconsent=True)이 세션 내내 사라지지 않는 ambient
-# 상태다 — `_make_user`는 DB를 조회하지 않는 순수 헬퍼라 "현재 게시본이 몇 버전인지"를 알
-# 수 없으므로, 어떤 게시본보다 큰 값을 기본값으로 둬 "이미 동의한 사용자"를 재현한다.
-# `_reconsent_required`는 zero-padded ISO 날짜 문자열 비교라 "9999-12-31"이 서버가 강제하는
-# `\d{4}-\d{2}-\d{2}` 포맷 안에서 사실상 최댓값이다.
-_FAR_FUTURE_LEGAL_VERSION = "9999-12-31"
+# migration c49014ae5b62가 시드해둔 terms/privacy 게시본(version "2026-09-06", requires_reconsent=True)이
+# 세션 내내 사라지지 않는 ambient 상태다. 재동의 판정은 회원이 동의한 버전을 게시본에서 찾아 그 판의 시행 시각으로
+# 앞뒤를 가리고, 게시본에 없는 버전은 미동의로 본다. 그래서 기본값은 "아무 판보다 큰 문자열"이 아니라 실제로 있는 시드
+# 판이다 — 테스트가 그보다 뒤에 재동의 판을 게시하면 기본 사용자는 미동의가 된다(그런 테스트는 버전을 직접 넘긴다).
+# 국외이전 동의도 처리방침 버전에 묶이므로 같은 값으로 채운다.
+_SEED_LEGAL_VERSION = "2026-09-06"
 
 
 def _make_user(**overrides: object) -> User:
@@ -129,8 +130,10 @@ def _make_user(**overrides: object) -> User:
         "birth_date": date(2000, 1, 1),
         "terms_agreed_at": datetime.now(UTC),
         "privacy_agreed_at": datetime.now(UTC),
-        "terms_version": _FAR_FUTURE_LEGAL_VERSION,
-        "privacy_version": _FAR_FUTURE_LEGAL_VERSION,
+        "transfer_agreed_at": datetime.now(UTC),
+        "terms_version": _SEED_LEGAL_VERSION,
+        "privacy_version": _SEED_LEGAL_VERSION,
+        "transfer_version": _SEED_LEGAL_VERSION,
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -897,14 +900,27 @@ async def _make_published(
     body_markdown: str = "게시된 내용",
     requires_reconsent: bool = False,
     published_at: datetime | None = None,
+    effective_at: datetime | None = None,
+    reconsent_scopes: list[str] | None = None,
+    change_notice_markdown: str | None = None,
 ) -> LegalDocument:
+    """`effective_at` 을 비우면 게시 즉시 시행한 판(시행 시각 = 게시 시각)이다. `reconsent_scopes` 를 비우면
+    `requires_reconsent=True` 는 그 문서의 동의 단위 전부를 다시 받는 판이 된다(테스트가 문서 전체 재동의를 짧게 쓰는 줄임)."""
+    published_at = published_at or datetime.now(UTC)
+    if reconsent_scopes is None:
+        reconsent_scopes = list(kind_consent_units(kind)) if requires_reconsent else []
+        # 정책 문서에는 동의 단위가 없어 `requires_reconsent=True` 가 조용히 "재동의 없음"이 된다 — 범위를 직접 준다.
+        assert reconsent_scopes or not requires_reconsent, "정책 문서의 재동의는 reconsent_scopes 로 준다"
     document = LegalDocument(
         kind=kind,
         version=version,
         body_markdown=body_markdown,
         status="published",
-        requires_reconsent=requires_reconsent,
-        published_at=published_at or datetime.now(UTC),
+        requires_reconsent=bool(reconsent_scopes),
+        reconsent_scopes=reconsent_scopes,
+        change_notice_markdown=change_notice_markdown,
+        published_at=published_at,
+        effective_at=effective_at or published_at,
     )
     db_session.add(document)
     await db_session.flush()
@@ -1221,6 +1237,17 @@ class VoyageStub:
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self)
+
+
+class VoyageClock:
+    """Voyage 연속 실패 백오프가 읽는 시계를 손으로 넘긴다 — 멈춤이 풀리는 시각 앞뒤를 실제로 기다리지 않고 본다."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, start: float = 1_000_000.0) -> None:
+        self.now = start
+        monkeypatch.setattr(voyage_backoff, "_now", lambda: self.now)
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
 
 
 def _parse_sse_events(body: str) -> list[dict[str, Any]]:
@@ -1868,6 +1895,12 @@ def _enable_chat_premium(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "chat_premium_models_enabled", True)
 
 
+def _memory_scope_covers_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
+    """기억 사용 범위에 두 레인의 Gemini 방을 넣는다. 기억 스위치를 켜는 테스트 대부분이 Gemini 세트로 조립하는데, 기본 범위는
+    Opus 방뿐이라 그대로 두면 켠 스위치가 동작하지 않아 그 테스트가 보려던 기능이 꺼진 채로 돈다."""
+    monkeypatch.setattr(settings, "memory_model_scope", [("story", "gemini"), ("character", "gemini")])
+
+
 async def _allow_novel_premium(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, user_id: uuid.UUID
 ) -> None:
@@ -1974,6 +2007,31 @@ async def _add_batch(
     )
     await db_session.commit()
     return chapters
+
+
+async def _lock_novel(
+    db_session: AsyncSession,
+    novel_id: uuid.UUID,
+    *,
+    permission: str | None = "private",
+    source: str = "first_chapter",
+    version_id: uuid.UUID | None = None,
+    locked_at: datetime | None = None,
+) -> None:
+    """작업을 거치지 않고 소설에 집필권 잠금을 써 넣고 커밋한다 — 첫 화를 실제로 저장한 소설(잠금이 함께 생긴다)을
+    `_add_chapter` 로 흉내 낼 때 함께 부른다. `_add_chapter` 만 부르면 잠금 없이 화만 있는 소설이 된다(잠금 칸을 모르는
+    옛 코드가 첫 화를 저장한 상태와 같다)."""
+    await db_session.execute(
+        sa.update(Novel)
+        .where(Novel.id == novel_id)
+        .values(
+            writing_locked_at=locked_at if locked_at is not None else sa.func.now(),
+            writing_lock_permission=permission,
+            writing_lock_content_version_id=version_id,
+            writing_lock_source=source,
+        )
+    )
+    await db_session.commit()
 
 
 async def _queue_job(

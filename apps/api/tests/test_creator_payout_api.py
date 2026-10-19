@@ -30,7 +30,7 @@ from api.db.models.creator_payout import (
     CreatorPayoutConfirmationLine,
 )
 from api.db.models.moderation import AdminActionLog
-from api.legal.dependencies import _latest_published_legal_version
+from api.legal.documents import current_legal_version, utcnow
 from api.main import app
 from api.payments.notify import get_payment_notifier
 from factories import (
@@ -41,6 +41,7 @@ from factories import (
     _login_as_admin,
     _make_draft_content,
     _make_player,
+    _make_published,
     _make_published_character,
     _make_user,
     _use,
@@ -184,9 +185,28 @@ async def test_apply_gates_refuse_in_order(
     assert application is not None
     assert (application.status, application.privacy_version) == (
         "pending",
-        await _latest_published_legal_version(db_session, "privacy"),
+        await current_legal_version(db_session, "privacy", now=utcnow()),
     )
     assert notifications == [APPLICATION_RECEIVED_MESSAGE]
+
+
+async def test_application_records_current_privacy_version_not_a_scheduled_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """시행 예정 처리방침이 있어도 신청은 지금 시행 중인 판의 버전을 남긴다. 깨지는 시나리오: 아직 효력이 없는 처리방침에
+    동의한 것으로 신청이 기록된다."""
+    await _make_published(
+        db_session, kind="privacy", version="2026-11-01", effective_at=datetime.now(UTC) + timedelta(days=30)
+    )
+    creator, _ = await _creator(db_session)
+
+    await _apply(db_client, creator)
+
+    application = await db_session.scalar(
+        select(CreatorPayoutApplication).where(CreatorPayoutApplication.user_id == creator.id)
+    )
+    assert application is not None
+    assert application.privacy_version == "2026-09-06"
 
 
 async def test_withdrawn_member_cannot_apply(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:

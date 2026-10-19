@@ -4,22 +4,25 @@ import { DEFAULT_CHAT_MODEL } from "@/entities/chat-model/@x/chat-room";
 import { toMediaTagImages } from "@/entities/media-book/@x/chat-room";
 
 import type { ChatMessage } from "./chatStream";
-import type {
-  ChatRoomState,
-  ComparisonOp,
-  Ending,
-  RuleListItem,
-  Shortcut,
-  SingleRule,
-  StatDef,
-} from "../model/chatRoomState";
+import type { ChatRoomState, ComparisonOp, Ending, Shortcut, StatDef } from "../model/chatRoomState";
 
-type ChatRoomResponseDto = components["schemas"]["ChatRoomResponse"];
-type ChatMessageDto = ChatRoomResponseDto["messages"][number];
-type StatDefSnapshotDto = components["schemas"]["StatDefSnapshot"];
-type EndingSnapshotDto = components["schemas"]["EndingSnapshot"];
+type ChatRoomResponseFullDto = components["schemas"]["ChatRoomResponse"];
+type ContentSnapshotFullDto = components["schemas"]["ChatRoomContentSnapshot"];
 type EndingRuleItemDto = components["schemas"]["EndingRuleItem"];
-type EndingRuleGroupItemDto = components["schemas"]["EndingRuleGroupItem"];
+
+/** 스냅숏에서 화면이 읽는 칸만 남긴 모양. 스탯의 판정용 설명과 엔딩의 판정 문안·에필로그·힌트·규칙은 작가가 쓴 판정
+ * 재료라 화면이 읽지 않고, 서버는 이 칸들을 응답에서 지울 수 있다 — 타입에서 빼 두어 읽으면 타입 검사에서 걸리고, 키가
+ * 없는 응답도 그대로 받는다. 생성 타입의 전체 응답은 이 모양에 그대로 대입된다. */
+type StatDefSnapshotDto = Omit<components["schemas"]["StatDefSnapshot"], "description">;
+type EndingSnapshotDto = Pick<components["schemas"]["EndingSnapshot"], "id" | "name" | "turnCountGate">;
+type ContentSnapshotDto = Omit<ContentSnapshotFullDto, "stats" | "endings"> & {
+  stats: StatDefSnapshotDto[];
+  endings: EndingSnapshotDto[];
+};
+type ChatRoomResponseDto = Omit<ChatRoomResponseFullDto, "contentSnapshot"> & {
+  contentSnapshot?: ContentSnapshotDto | null;
+};
+type ChatMessageDto = ChatRoomResponseDto["messages"][number];
 
 // BE는 DB 컬럼명 그대로의 raw operator(gte/lte/eq/gt/lt)를
 // 쓰고, entities/chat-room의 provisional 타입은 비교 연산자
@@ -33,24 +36,6 @@ export const OPERATOR_MAP: Record<EndingRuleItemDto["operator"], ComparisonOp> =
   lt: "<",
 };
 
-function toSingleRule(dto: EndingRuleItemDto): SingleRule {
-  return {
-    kind: "rule",
-    id: dto.id,
-    statId: dto.statId,
-    operator: OPERATOR_MAP[dto.operator],
-    value: dto.threshold,
-    nextOp: dto.nextOp,
-  };
-}
-
-function toRuleListItem(dto: EndingRuleItemDto | EndingRuleGroupItemDto): RuleListItem {
-  if (dto.kind === "group") {
-    return { kind: "group", id: dto.id, rules: dto.rules.map(toSingleRule), nextOp: dto.nextOp };
-  }
-  return toSingleRule(dto);
-}
-
 function toStatDef(dto: StatDefSnapshotDto): StatDef {
   return {
     id: dto.id,
@@ -61,20 +46,12 @@ function toStatDef(dto: StatDefSnapshotDto): StatDef {
     max: dto.maxValue,
     initial: dto.initialValue,
     unit: dto.unit ?? undefined,
-    description: dto.description,
+    playerDescription: dto.playerDescription ?? undefined,
   };
 }
 
 function toEnding(dto: EndingSnapshotDto): Ending {
-  return {
-    id: dto.id,
-    name: dto.name,
-    turnGate: dto.turnCountGate,
-    judgePrompt: dto.judgmentPrompt,
-    statRules: dto.statRules.map(toRuleListItem),
-    epilogue: dto.epilogue ?? undefined,
-    endingHint: dto.hint ?? undefined,
-  };
+  return { id: dto.id, name: dto.name, turnGate: dto.turnCountGate };
 }
 
 function toShortcut(dto: components["schemas"]["ShortcutSnapshot"]): Shortcut {
@@ -90,6 +67,7 @@ export function toChatMessage(dto: ChatMessageDto): ChatMessage {
     imageUrl: dto.imageUrl ?? undefined,
     imageWidth: dto.imageWidth ?? undefined,
     imageHeight: dto.imageHeight ?? undefined,
+    scene: dto.scene ? { place: dto.scene.place ?? undefined, time: dto.scene.time ?? undefined } : undefined,
     createdAt: dto.createdAt,
   };
 }
@@ -112,6 +90,14 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
           shortcuts: dto.contentSnapshot.shortcuts.map(toShortcut),
           suggestedReplies: dto.contentSnapshot.suggestedReplies,
           pinnedStartingSetupId: dto.contentSnapshot.pinnedStartingSetupId,
+          // 두 칸은 응답 스키마상 선택이다(서버 기본값이 있는 칸). 이 칸이 없는 옛 서버는 장면 헤더가 없는 서버다.
+          sceneHeaderEnabled: dto.contentSnapshot.sceneHeaderEnabled ?? false,
+          initialScene: dto.contentSnapshot.initialScene
+            ? {
+                place: dto.contentSnapshot.initialScene.place ?? undefined,
+                time: dto.contentSnapshot.initialScene.time ?? undefined,
+              }
+            : undefined,
         }
       : undefined,
     messages: dto.messages.map(toChatMessage),

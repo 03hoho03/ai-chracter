@@ -83,6 +83,10 @@ function fromApiStatDef(stat: StatDefDraftItem): StatDefValues {
     perTurnDelta: stat.perTurnDelta ?? null,
     // 생성 타입에서 선택 필드라(서버는 늘 채워 보낸다) 빠지면 빈 목록. 서버가 순서대로 준다.
     rules: (stat.rules ?? []).map(({ id, condition, delta }) => ({ id, condition, delta })),
+    // 아래 셋도 생성 타입에서 선택 필드다 — 빠지면 서버 기본값(숨기지 않음·설명 없음·신호 없음)으로 읽는다.
+    hiddenFromPlayer: stat.hiddenFromPlayer ?? false,
+    playerDescription: stat.playerDescription ?? "",
+    signalHiddenChange: stat.signalHiddenChange ?? false,
   };
 }
 
@@ -131,6 +135,9 @@ function fromApiStartingSetup(setup: StartingSetupDraftItem): StartingSetupValue
     endings: setup.endings.map(fromApiEnding),
     // 생성 타입에서 선택 필드라 없으면 빈 목록으로 받는다.
     situationNotes: (setup.situationNotes ?? []).map(fromApiSituationNote),
+    // 생성 타입에서 선택 필드다 — 이 칸이 생기기 전 초안(키 없음)과 null 은 빈 칸이다.
+    initialScenePlace: setup.initialScenePlace ?? "",
+    initialSceneTime: setup.initialSceneTime ?? "",
   };
 }
 
@@ -191,6 +198,8 @@ export function serverToForm(data: StoryDraftContent): StoryBuilderFormValues {
       userGoal: data.userGoal ?? undefined,
       rules: data.rules ?? undefined,
       customPrompt: data.customPrompt ?? undefined,
+      // 이 칸이 생기기 전 초안(키 없음)은 꺼진 헤더다 — 서버 기본값과 같다.
+      sceneHeaderEnabled: data.sceneHeaderEnabled ?? false,
     },
     startingSetups: data.startingSetups.map(fromApiStartingSetup),
     keywordNotes: data.keywordNotes.map(fromApiKeywordNote),

@@ -5,11 +5,12 @@ import { NovelCommentDeleteConfirmModal } from "../features/act-on-novel-comment
 import { DeleteConfirmModal, LiftRestrictionConfirmModal } from "../features/act-on-report";
 import { ApproveApplicationModal, DecisionReasonModal } from "../features/decide-creator-payout-application";
 import { ContentActionConfirmModal, HomeCurationConfirmModal } from "../pages/content-detail";
-import { PublishDialog } from "../pages/legal";
+import { PublishDialog, WithdrawDialog } from "../pages/legal";
 import {
   HomeNovelCurationConfirmModal,
   NovelCommentActionConfirmModal,
   NovelModerationConfirmModal,
+  NovelReviewConfirmModal,
 } from "../pages/novel-detail";
 import { PublishNoticeDialog } from "../pages/notice-detail";
 import { PublishPromptSetDialog, RestorePromptSetDialog } from "../pages/prompt-sets";
@@ -44,12 +45,14 @@ function RootComponent() {
       <ContentActionConfirmModal />
       <HomeCurationConfirmModal />
       <NovelModerationConfirmModal />
+      <NovelReviewConfirmModal />
       <NovelCommentActionConfirmModal />
       <HomeNovelCurationConfirmModal />
       <NovelCommentDeleteConfirmModal />
       <UserActionConfirmModal />
       <RefundPaymentModal />
       <PublishDialog />
+      <WithdrawDialog />
       <PublishNoticeDialog />
       <PublishPromptSetDialog />
       <RestorePromptSetDialog />

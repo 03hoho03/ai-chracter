@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
+  addStatDelta,
   applyStreamEvent,
+  buildRoomTurnAnnouncement,
   buildEditPayload,
   buildRegeneratePayload,
   buildSendPayload,
@@ -10,9 +12,17 @@ import {
   dropLastMessage,
   getChatRateLimit,
   isContentRestrictedError,
+  selectRoomScene,
 } from "@/entities/chat-room";
 import { chatStreamEventSchema } from "@/entities/chat-room";
-import type { ChatMessage, ChatRateLimit, ChatRoomState, ChatStreamRequest } from "@/entities/chat-room";
+import type {
+  ChatMessage,
+  ChatRateLimit,
+  ChatRoomState,
+  ChatStreamRequest,
+  StatDeltas,
+  StatTurnFeedback,
+} from "@/entities/chat-room";
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 import { isIdentityVerificationRequiredError } from "@/entities/identity";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
@@ -88,6 +98,11 @@ export function useSendMessage(
   const [status, setStatus] = useState<SendMessageStatus>({ kind: "idle" });
   const [policyWarning, setPolicyWarning] = useState<string>();
   const [streamingText, setStreamingText] = useState("");
+  // 확정된 마지막 턴이 상태 줄에 알릴 것(증감 칩·익명 신호·스크린리더 안내). 다음 턴이 시작되면 거둔다 — 익명 신호는 다음
+  // 메시지를 보낼 때까지 남는다. 방 이동·초기화·되돌리기는 이 훅이 모르므로, 화면은 `selectVisibleTurnFeedback` 으로
+  // 그 턴의 방·응답이 아직 지금 것인지 가려 보인다. `turn` 은 이 훅 안에서만 쓰는 일련번호다.
+  const [turnFeedback, setTurnFeedback] = useState<StatTurnFeedback>();
+  const turnFeedbackSeqRef = useRef(0);
 
   /** `allowCloverConfirm`은 **무한 루프 차단기**다. 동의 뒤 재시도는
    * `false`로 들어가므로, 재시도가 또 `CLOVER_CONFIRM_REQUIRED`를 받아도 모달을 다시 띄우지 않고
@@ -109,6 +124,7 @@ export function useSendMessage(
     setStatus({ kind: "sending" });
     setPolicyWarning(undefined);
     setStreamingText("");
+    setTurnFeedback(undefined);
     // finally에서 status를 읽으면 위 setStatus가 아직 반영되지 않은 클로저 값을 보므로, 이번 스트림에서
     // 에러가 났는지는 로컬 변수로 따로 추적한다.
     let hasErrored = false;
@@ -120,6 +136,10 @@ export function useSendMessage(
     // 낙관적 변경을 이 줄보다 *앞에서* 하므로, 무조건 부르면 방금 추가한 사용자 메시지나 편집
     // 절단이 조용히 사라진다. 재생성은 제거가 이 줄 *뒤*라 그 창이 없다.
     let dropped: ChatMessage | undefined;
+    // 턴을 보내기 직전 상태 줄이 보이던 장면 — 확정된 장면과 견줘 바뀐 칸만 안내한다. 수정의 절단·재생성의 제거보다 먼저 읽어야
+    // 사용자가 보고 있던 장면이다.
+    const roomBeforeTurn = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(roomId));
+    const sceneBeforeTurn = roomBeforeTurn && selectRoomScene(roomBeforeTurn);
     // 편집 절단을 여기서 하는 이유: retry()가 같은 payload로 다시 들어올 때도 같은 절단을 다시 한다. 되돌릴 목록은
     // 첫 시도 것을 이어 받아 이후의 retryPayload에 실린다.
     const pending: PendingRequest = {
@@ -135,6 +155,12 @@ export function useSendMessage(
     // 복원 여부를 판단한다.
     let hasCommitted = false;
     let committedMessage: ChatMessage | undefined;
+    // 이번 턴의 증감은 캐시의 직전 값과 `statChange` 새 값의 차다. 재생성은 서버가 그 턴의 스탯을 반영 전 값으로 되돌린 뒤
+    // 다시 판정하므로 캐시의 직전 값(옛 응답의 결과)과의 차는 이번 턴의 변화가 아니다 — 칩을 세우지 않는다. 익명 신호는
+    // 서버가 `statChange` 와 따로, 턴 시작 값(반영 전 값)과 이번 판정 결과가 다른 신호 켠 숨긴 스탯으로 정해 보낸다. 재생성도
+    // 같은 기준이라 그대로 쓴다.
+    let deltas: StatDeltas = {};
+    let hiddenSignal = false;
 
     try {
       for await (const event of openChatStream(pending.payload, chatStreamEventSchema)) {
@@ -146,6 +172,11 @@ export function useSendMessage(
           hasErrored = true;
           // 스트림 안에서 온 오류는 상한과 무관하다(게이트는 스트림이 열리기 전에 429로 막는다).
           setStatus({ kind: "error", retryPayload: pending });
+        } else if (event.type === "statChange" && pending.kind === "newTurn") {
+          const previous = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(roomId))?.stats[event.statId];
+          deltas = addStatDelta(deltas, event.statId, previous, event.newValue);
+        } else if (event.type === "hiddenStatSignal") {
+          hiddenSignal = true;
         }
         applyStreamEvent(queryClient, roomId, event, {
           kind: pending.kind,
@@ -209,6 +240,21 @@ export function useSendMessage(
     } finally {
       setStreamingText("");
       settleTurnStreamEnd(queryClient, roomId, { dropped, hasCommitted });
+      // 칩·안내는 턴이 확정된 뒤 한 번만 — 스트리밍 도중이나 응답이 커밋되지 않은 턴에는 알리지 않는다.
+      // 안내 문장은 여기서 그 턴의 값으로 한 번 만들어 둔다 — 뒤에 값이 바뀌어도 다시 만들지 않는다. 스탯 이름·장면 글은 화면과
+      // 같이 작가 매크로를 펼친 글로 읽는다.
+      if (hasCommitted && committedMessage) {
+        const room = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(roomId));
+        turnFeedbackSeqRef.current += 1;
+        setTurnFeedback({
+          turn: turnFeedbackSeqRef.current,
+          roomId,
+          messageId: committedMessage.id,
+          deltas,
+          hiddenSignal,
+          announcement: room ? buildRoomTurnAnnouncement(room, { deltas, hiddenSignal }, sceneBeforeTurn) : "",
+        });
+      }
       if (!hasErrored) setStatus({ kind: "idle" });
       if (pending.kind === "regenerate" && committedMessage) onRegenerated?.(committedMessage);
     }
@@ -256,5 +302,5 @@ export function useSendMessage(
     void openStream(status.retryPayload);
   }
 
-  return { send, retry, regenerate, editMessage, status, policyWarning, streamingText };
+  return { send, retry, regenerate, editMessage, status, policyWarning, streamingText, turnFeedback };
 }

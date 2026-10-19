@@ -5,7 +5,7 @@ import type { ChatModelId } from "@/entities/chat-model/@x/chat-room";
 import type { MediaTagImages } from "@/entities/media-book/@x/chat-room";
 
 import type { ChatMessage } from "../api/chatStream";
-import type { RuleListItem } from "./endingRules";
+import type { PendingScene, StoryScene } from "./storyScene";
 
 export type { ComparisonOp, LogicOp, RuleGroup, RuleListItem, SingleRule } from "./endingRules";
 
@@ -18,7 +18,8 @@ export type StatDef = {
   max: number;
   initial: number;
   unit?: string;
-  description: string;
+  // 작가가 플레이어에게 보여 주려고 쓴 짧은 설명(게이지 칸 팝오버). 판정용 설명은 플레이어 화면이 읽지 않는다.
+  playerDescription?: string;
 };
 
 export type Shortcut = {
@@ -28,14 +29,12 @@ export type Shortcut = {
   prompt: string;
 };
 
+// 플레이어 화면이 엔딩 정의에서 읽는 것은 이름(도달 구분선)과 최소 턴뿐이다. 판정 문안·규칙·힌트·에필로그는 작가가 쓴 판정
+// 재료라 화면이 쓰지 않고, 도달한 엔딩의 에필로그는 방 응답의 엔딩 칸(`endingStatus`)으로 따로 온다.
 export type Ending = {
   id: string;
   name: string;
   turnGate: number;
-  judgePrompt: string;
-  statRules: RuleListItem[]; // 비어있으면 judgePrompt만으로 판정
-  epilogue?: string;
-  endingHint?: string;
 };
 
 // BE의 실제 ChatRoomResponse(캐릭터 챗)는 storyId가 아니라 contentId를 쓰고
@@ -54,6 +53,10 @@ export type ChatRoomState = {
     shortcuts: Shortcut[];
     suggestedReplies: string[];
     pinnedStartingSetupId: string; // 물리적 PK(entity_id인 startingSetupId와 다름). GET /stories/starting-setups/{id}/ending-collection 호출에 쓴다.
+    // 작가가 켠 장면 헤더(방이 고정한 버전의 토글)와 시작설정의 첫 장면. 첫 장면은 아직 AI 턴이 없을 때 상태 줄에 보인다 —
+    // 작가가 장소·시간을 둘 다 비워 두었으면 undefined 다.
+    sceneHeaderEnabled: boolean;
+    initialScene?: StoryScene;
   };
   messages: ChatMessage[];
   // 긴 방은 최근 메시지만 받고 위로 올라갈 때 앞을 이어 받는다 — `messages` 앞에 서버에 메시지가 더 있는가.
@@ -95,4 +98,6 @@ export type ChatRoomState = {
   // 다음 턴 하나의 클로버(그 모델의 가격). undefined 는 서버가 값을 주지 않았다는 뜻이다 — 이 칸이 생기기 전의 서버가
   // 그렇다(서버와 화면은 따로 배포된다). 그때 화면은 가격 숫자를 말하지 않고 부족 여부도 판정하지 않는다.
   turnCost: number | undefined;
+  // 장면 이벤트가 그 응답보다 먼저 와서 붙일 메시지가 아직 캐시에 없을 때 잠시 든 장면. 그 응답이 확정되면 붙이고 지운다.
+  pendingScene?: PendingScene;
 };

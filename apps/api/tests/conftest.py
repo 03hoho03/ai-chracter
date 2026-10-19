@@ -84,6 +84,7 @@ if _xdist_worker is not None:
     os.environ["REDIS_URL"] = f"{_redis_base}/{int(_redis_index) + int(_xdist_worker.removeprefix('gw'))}"
 
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
+from api.chat.voyage_backoff import VOYAGE_BACKOFF_KEY
 from api.content.publish_filter_memo import PASSED_KEY_PREFIX
 from api.core import clover
 from api.core.config import settings
@@ -214,6 +215,13 @@ async def _flush_local_image_keys() -> None:
     keys = await redis_client.keys("local_image:*")
     if keys:
         await redis_client.delete(*keys)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _flush_voyage_backoff() -> None:
+    """Voyage 연속 실패 백오프는 방과 무관한 키 하나라 테스트끼리 자연히 갈리지 않는다. 키 거부·5xx 를 흉내 내는 테스트가
+    남긴 실패 수가 쌓이면 무관한 다음 테스트의 질의 임베딩·채우기가 조용히 건너뛰어진다."""
+    await redis_client.delete(VOYAGE_BACKOFF_KEY)
 
 
 @pytest.fixture

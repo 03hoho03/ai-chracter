@@ -1,5 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import type { StoryScene } from "@/entities/chat-room/@x/preview-session";
 import { normalizeMediaTags, type MediaTagCell, type MediaTagImages } from "@/entities/media-book/@x/preview-session";
 
 import type { PreviewStartPayload } from "../api/previewStream";
@@ -25,7 +26,16 @@ function toStatDef(item: StatDefDraftItem): PreviewStatDef {
     initial: item.initialValue,
     unit: item.unit ?? undefined,
     description: item.description,
+    playerDescription: item.playerDescription ?? undefined,
+    // 생성 타입에서 선택 필드다(서버 기본값이 있는 칸) — 빠지면 숨기지 않은 스탯이다.
+    hiddenFromPlayer: item.hiddenFromPlayer ?? false,
   };
+}
+
+/** 시작설정의 첫 장면 — 서버처럼 앞뒤 공백을 떼고 빈 글은 없음으로 본다. 둘 다 없으면 첫 장면이 없다. */
+function toInitialScene(place: string | null | undefined, time: string | null | undefined): StoryScene | undefined {
+  const scene = { place: place?.trim() || undefined, time: time?.trim() || undefined };
+  return scene.place === undefined && scene.time === undefined ? undefined : scene;
 }
 
 function toShortcut(item: ShortcutDraftItem): PreviewShortcut {
@@ -87,6 +97,7 @@ export function buildPreviewStartState(
       suggestedReplies: [],
       endingStatus: { reached: false, epilogue: undefined },
       turnCount: 0,
+      sceneHeaderEnabled: false,
     };
   }
 
@@ -106,6 +117,7 @@ export function buildPreviewStartState(
       suggestedReplies: [],
       endingStatus: { reached: false, epilogue: undefined },
       turnCount: 0,
+      sceneHeaderEnabled: payload.sceneHeaderEnabled ?? false,
     };
   }
 
@@ -130,5 +142,8 @@ export function buildPreviewStartState(
     suggestedReplies: setup.suggestedReplies,
     endingStatus: { reached: false, epilogue: undefined },
     turnCount: 0,
+    // 서버 미리보기 세션도 첫 시작설정의 첫 장면에서 시작한다(토글이 꺼졌으면 장면이 없다).
+    sceneHeaderEnabled: payload.sceneHeaderEnabled ?? false,
+    initialScene: toInitialScene(setup.initialScenePlace, setup.initialSceneTime),
   };
 }

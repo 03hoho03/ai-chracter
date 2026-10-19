@@ -29,7 +29,8 @@
           "imageId": "<id4>",
           "imageUrl": "/<bucket>/assets/situational-image/<id5>.webp",
           "imageWidth": 300,
-          "role": "assistant"
+          "role": "assistant",
+          "scene": null
         },
         "type": "done"
       }
@@ -97,7 +98,8 @@
           "imageId": null,
           "imageUrl": null,
           "imageWidth": null,
-          "role": "assistant"
+          "role": "assistant",
+          "scene": null
         },
         "type": "done"
       }
@@ -146,7 +148,8 @@
           "imageId": "<id2>",
           "imageUrl": "/<bucket>/assets/situational-image/<id3>.webp",
           "imageWidth": null,
-          "role": "assistant"
+          "role": "assistant",
+          "scene": null
         },
         "type": "done"
       }
@@ -198,7 +201,8 @@
           "imageId": "<id2>",
           "imageUrl": "/<bucket>/assets/situational-image/<id3>.webp",
           "imageWidth": 300,
-          "role": "assistant"
+          "role": "assistant",
+          "scene": null
         },
         "type": "done"
       }
@@ -255,7 +259,8 @@
           "imageId": "<id2>",
           "imageUrl": "/<bucket>/assets/situational-image/<id3>.webp",
           "imageWidth": null,
-          "role": "assistant"
+          "role": "assistant",
+          "scene": null
         },
         "type": "done"
       }
@@ -618,7 +623,8 @@
           "imageId": "<id4>",
           "imageUrl": "/<bucket>/assets/situational-image/<id5>.webp",
           "imageWidth": 300,
-          "role": "assistant"
+          "role": "assistant",
+          "scene": null
         },
         "type": "done"
       }

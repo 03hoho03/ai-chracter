@@ -85,6 +85,7 @@ from api.novelize.paragraphs import resplit_long_paragraphs
 from api.novelize.prompts import NovelizeReviseResult
 from api.novelize.source import group_turns, load_candidates, message_key, next_chapter_start
 from api.novelize.text import clean_chapter_body, looks_like_refusal, split_paragraphs
+from api.novelize.writing_lock import lock_with_first_chapter
 
 logger = logging.getLogger(__name__)
 
@@ -555,8 +556,9 @@ async def _save_ai_edit(session_factory: SessionFactory, job_id: uuid.UUID, body
 async def _save_batch(
     session_factory: SessionFactory, job_id: uuid.UUID, chapter_input: ChapterInput, batch: ParsedBatch
 ) -> None:
-    """묶음 결과 저장. 한 트랜잭션에서 사용자 행 잠금 → 성공 전이 → 묶음·화·개정 → 인물·등장 연결 → 소설 제목 → 모자란
-    화 환불이다.
+    """묶음 결과 저장. 한 트랜잭션에서 사용자 행 잠금 → 성공 전이 → 묶음·화·개정 → (생성이면) 집필권 잠금 → 인물·등장
+    연결 → 소설 제목 → 모자란 화 환불이다. 잠금은 이미 잠긴 소설을 덮지 않으므로 첫 화를 저장한 생성(연쇄 자식 포함)만
+    잠근다. 다시 만들기는 이미 있는 묶음을 고치므로 첫 화가 될 수 없다.
 
     사용자 행을 먼저 잡는 이유는 모자란 화 환불이 사용자 행을 고치기 때문이다(`billing.py` 의 락 순서). 탈퇴가 사용자
     행을 쥔 채 작업을 지우는 중이면 여기서 기다렸다가, 탈퇴가 끝난 뒤 사용자나 작업 행이 없어 결과를 버린다. 만료
@@ -601,6 +603,8 @@ async def _save_batch(
             batch_id, chapters, revisions = saved
         else:
             batch_id, chapters, revisions = await _save_generated(db, job, chapter_input, batch)
+            # 첫 화를 저장한 소설을 잠근다(이미 잠겼으면 그대로). 같은 트랜잭션이라 아래 단계가 실패해 화가 롤백되면 잠금도 남지 않는다.
+            await lock_with_first_chapter(db, job.novel_id, chapter_input.content_version_id)
         await _link_characters(db, job.novel_id, chapters, batch.episodes)
         if chapter_input.writes_novel_title and batch.novel_title:
             # 사용자가 그사이 제목을 고쳤으면 덮지 않는다 — 조건을 문장에 걸어 읽고 쓰는 사이에 끼어들 틈이 없다.

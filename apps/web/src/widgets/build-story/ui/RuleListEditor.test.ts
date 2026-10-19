@@ -17,6 +17,9 @@ const KEPT: StatDefValues = {
   description: "d",
   perTurnDelta: null,
   rules: [],
+  hiddenFromPlayer: false,
+  playerDescription: "",
+  signalHiddenChange: false,
 };
 
 function rule(id: string, statId: string): SingleRuleValues {

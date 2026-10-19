@@ -13,6 +13,7 @@
 `test_chat_memory_rewind.py` 의 커밋되는 독립 커넥션 절에 있다.
 """
 
+import hashlib
 import json
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -47,7 +48,13 @@ from api.db.models import (
     ChatMessageRole,
     ChatRoomMemorySnapshot,
 )
-from api.db.models.chat import EPISODE_DETAIL_MAX, EPISODE_NOUNS_MAX, EPISODE_TITLE_MAX
+from api.db.models.chat import (
+    EPISODE_DETAIL_MAX,
+    EPISODE_NOUNS_MAX,
+    EPISODE_TITLE_MAX,
+    FACT_KNOWN_BY_MAX,
+    FACT_NAME_MAX,
+)
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, collect_usage
 from factories import (
     PRODUCTION_ENV_NAMES,
@@ -79,6 +86,7 @@ def _item(**overrides: Any) -> MemoryEpisodeItem:
         "importance": 3,
         "start_line": 1,
         "end_line": 2,
+        "known_by": [],
     }
     values.update(overrides)
     return MemoryEpisodeItem(**values)
@@ -356,6 +364,30 @@ def test_normalization_trims_keywords_and_evidence_to_their_caps() -> None:
     assert draft.evidence == ["근거1", "근거2"]
 
 
+def test_normalization_cuts_known_by_like_a_fact_row() -> None:
+    """장면 행의 아는 인물 칸은 사실 행과 같은 CHECK 를 쓴다 — 빈 이름을 버리고, 이름은 상한에서 자르고, 앞에서부터 상한
+    개수만 남긴다. 사용자 표기("사용자 인물")는 거르지 않는다(거르는 것은 읽는 쪽이다)."""
+    names = [" ", "", "사용자 인물", "가" * (FACT_NAME_MAX + 1), *[f"인물{index:02d}" for index in range(9)]]
+    draft = _one(_item(known_by=names))
+    assert draft.known_by == ["사용자 인물", "가" * FACT_NAME_MAX, *[f"인물{index:02d}" for index in range(8)]]
+    assert len(draft.known_by) == FACT_KNOWN_BY_MAX
+
+
+@pytest.mark.parametrize(
+    ("given", "kept"),
+    [
+        pytest.param([], None, id="empty"),
+        pytest.param(["  ", ""], None, id="only-blank"),
+        pytest.param([" 서윤 "], ["서윤"], id="trimmed"),
+        pytest.param(
+            [f"인물{index:02d}" for index in range(11)], [f"인물{index:02d}" for index in range(10)], id="eleven"
+        ),
+    ],
+)
+def test_normalization_keeps_known_by_none_when_nothing_is_left(given: list[str], kept: list[str] | None) -> None:
+    assert _one(_item(known_by=given)).known_by == kept
+
+
 def test_a_blank_title_falls_back_to_the_start_of_the_detail() -> None:
     draft = _one(_item(title="  ", detail="나" * 70))
     assert draft.title == "나" * EPISODE_TITLE_MAX
@@ -585,6 +617,42 @@ async def test_empty_episode_list_marks_extraction_done(db_client: httpx.AsyncCl
     assert [(row.snapshot_id, row.status, row.episode_count) for row in await _extractions(db_session, room)] == [
         (snapshot_id, "done", 0)
     ]
+
+
+async def test_extracted_episode_rows_store_the_cut_known_by(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """모델이 준 아는 인물이 잘린 채 장면 행에 들어가고, 빈 목록을 준 장면의 칸은 NULL(공개이거나 알 수 없음)이다 — 빈
+    배열을 넣으면 테이블 CHECK 가 거부해 그 접기의 추출 전체가 실패한다."""
+    room = await _open_room(db_client, db_session, turns=10)
+    await _plant(db_session, room, 10)
+    secret = _item(title="둘만 아는 장면", known_by=["서윤", " ", "사용자 인물", "가" * (FACT_NAME_MAX + 1)])
+    public = _item(title="모두 아는 장면", known_by=[])
+
+    await _extract(db_session, room, EpisodeLLMClient(_result(secret, public)))
+
+    rows = (
+        await db_session.execute(
+            sa.select(ChatMemoryEpisode.title, ChatMemoryEpisode.known_by)
+            .where(ChatMemoryEpisode.chat_room_id == room.room_id)
+            .order_by(ChatMemoryEpisode.ordinal)
+        )
+    ).all()
+    assert [tuple(row) for row in rows] == [
+        ("둘만 아는 장면", ["서윤", "사용자 인물", "가" * FACT_NAME_MAX]),
+        ("모두 아는 장면", None),
+    ]
+
+
+# 장면 추출 결과 스키마를 키 순서로 정렬한 JSON 의 sha256.
+_EPISODE_RESULT_SCHEMA_SHA256 = "8b3b58557bebb9600edab87ff493a5ce123ea27fe9881e5016f9077ce262a868"
+
+
+def test_episode_result_schema_bytes_are_pinned() -> None:
+    """결과 스키마는 추출 요청에 그대로 실린다 — 스키마가 바뀌면 운영의 추출 요청이 바뀌고, 규칙 문안 없이 칸만 늘면 그 칸이
+    규칙 없이 채워진 채 쌓인다. 의도한 변경이면 문안과 함께 이 값을 갱신한다."""
+    schema = json.dumps(MemoryEpisodeResult.model_json_schema(), sort_keys=True, ensure_ascii=False)
+    assert hashlib.sha256(schema.encode()).hexdigest() == _EPISODE_RESULT_SCHEMA_SHA256
 
 
 async def test_failed_extraction_retries_up_to_three_times(

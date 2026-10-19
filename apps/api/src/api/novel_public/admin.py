@@ -10,38 +10,51 @@
 
 **잠금** — 노벨 조치는 공개 상태 행 → 신고 행, 댓글 조치는 댓글 행 → 신고 행 순서로 잡는다. 소설·묶음 삭제가 공개 상태
 행 → (댓글 DELETE) → (신고 행의 `SET NULL`) 순서로 잡기 때문이다. 신고 행을 먼저 쥐면 그 삭제와 엇갈려 교착한다. 반려는 신고
-행만 잡는다.
+행만 잡는다. 정책 스위치가 켜져 있으면 이용제한이 구매를 환급하므로(`novel_public/purchases.py`) 그 앞에 게시자와 미환급
+구매자의 사용자 행을 먼저 잡는다 — 구매는 사용자 행을 쥔 채 공개 상태 행을 기다리므로, 공개 상태 행을 쥐고 구매자 행을
+기다리면 그 구매와 교착한다.
 
 작품 신고 처리(`moderation/router.py`)와 나란히 둔 별도 라우트다 — 작품 신고 표·조치 표는 작품 FK 를 전제하므로 노벨을
-섞지 않는다. 노벨 스위치와 무관하게 돈다(켜기 전에도 운영자가 볼 수 있게)."""
+섞지 않는다. 노벨 스위치와 무관하게 돈다(켜기 전에도 운영자가 볼 수 있게).
+
+**첫 공개 승인·반려**도 노벨 스위치·정책 스위치와 무관하게 돈다 — 스위치를 끈 뒤 남은 대기도 운영자가 처리할 수 있어야
+한다. 잠금은 게시자 사용자 행 → 그 소설의 화 행 → 공개 상태 행 순서다. 작가의 소설 삭제·마지막 묶음 삭제는 게시자와
+구매자 사용자 행 → 공개 상태 행(구매 환급) → 화 행 순서로 잡고, 작가의 공개 쓰기와 탈퇴도 사용자 행을 먼저 잡는다. 승인·반려가
+게시자 행 없이 화 행이나 공개 상태 행부터 쥐면 그 경로들과 반대 방향으로 엇갈려 교착하므로, 같은 첫 자리(게시자 행)에서
+줄을 서게 한다. 그 뒤의 화 행 → 공개 상태 행은 탈퇴가 화 행을 지운 뒤 공개 상태 행을 지우는 순서와 같다."""
 
 import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.action_log import record_admin_action
 from api.admin.dependencies import get_current_admin_id
+from api.core.config import settings
 from api.db.models.auth import User
 from api.db.models.content import Content
 from api.db.models.moderation import AdminActionType, ReportStatus
 from api.db.models.novel import (
     Novel,
     NovelChapter,
+    NovelChapterEdition,
     NovelChapterPublication,
     NovelChapterRevision,
     NovelComment,
     NovelCommentReport,
     NovelPublication,
     NovelPublicationModerationStatus,
+    NovelPublicationReviewStatus,
     NovelPurchase,
     NovelReport,
     NovelScreening,
 )
 from api.db.session import get_db_session
-from api.novel_public.access import select_readable_publications
+from api.legal.documents import current_legal_version
+from api.novel_public.access import judge_source, select_readable_publications
+from api.novel_public.purchases import lock_novel_parties, refund_closing_purchases
 from api.novel_public.admin_schemas import (
     AdminNovelChapterItem,
     AdminNovelChapterResponse,
@@ -59,6 +72,8 @@ from api.novel_public.admin_schemas import (
     AdminNovelListResponse,
     AdminNovelModerationRequest,
     AdminNovelModerationResponse,
+    AdminNovelReviewRequest,
+    AdminNovelReviewResponse,
     AdminNovelReportActionRequest,
     AdminNovelReportDetailResponse,
     AdminNovelReportEvidence,
@@ -66,6 +81,8 @@ from api.novel_public.admin_schemas import (
     AdminNovelReportListResponse,
     AdminNovelScreeningItem,
 )
+from api.novel_public.serial_lock import lock_serial
+from api.novelize.billing import _lock_user
 from api.novelize.text import split_paragraphs
 
 ADMIN_NOVEL_PAGE_SIZE = 20
@@ -160,6 +177,8 @@ async def _list_items(db: AsyncSession, rows: list[tuple[NovelPublication, Novel
             purchase_count=purchase_counts.get(novel.id, 0),
             pending_report_count=report_counts.get(novel.id, 0),
             published_at=publication.published_at,
+            review_status=publication.review_status,
+            hidden_at=novel.hidden_at,
         )
         for publication, novel, nickname in rows
     ]
@@ -187,11 +206,15 @@ def _report_item(report: NovelReport) -> AdminNovelReportListItem:
 async def list_admin_novels(
     page: int = Query(1, ge=1),
     moderation_status: NovelPublicationModerationStatus | None = Query(None, alias="moderationStatus"),
+    review_status: NovelPublicationReviewStatus | None = Query(None, alias="reviewStatus"),
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminNovelListResponse:
-    """공개한 적 있는 노벨 전부, 마지막 공개 시각 최신순 20개씩(쪽 번호). 이용제한 상태로 거를 수 있다."""
+    """공개한 적 있는(또는 첫 공개를 신청한) 노벨 전부, 마지막 공개 시각 최신순 20개씩(쪽 번호). 이용제한 상태·첫 공개 심사
+    상태로 거를 수 있다(승인 대기열 = `reviewStatus=pending`)."""
     filters = [NovelPublication.moderation_status == moderation_status] if moderation_status is not None else []
+    if review_status is not None:
+        filters.append(NovelPublication.review_status == review_status)
     total = (await db.scalar(select(func.count()).select_from(NovelPublication).where(*filters))) or 0
     rows = (
         await db.execute(
@@ -276,6 +299,13 @@ async def _detail(db: AsyncSession, novel_id: uuid.UUID) -> AdminNovelDetailResp
         reports=[_report_item(report) for report in reports],
         purchase_buyer_count=int(buyers),
         purchase_amount=int(amount),
+        review_reason=publication.review_reason,
+        reviewed_at=publication.reviewed_at,
+        serial_locked_at=novel.serial_locked_at,
+        serial_lock_permission=novel.serial_lock_permission,
+        serial_lock_content_version_id=novel.serial_lock_content_version_id,
+        serial_lock_terms_version=novel.serial_lock_terms_version,
+        serial_lock_source=novel.serial_lock_source,
     )
 
 
@@ -318,6 +348,14 @@ async def get_admin_novel_chapter(
 
 
 # ── 이용제한·해제 ────────────────────────────────────────────────────────────
+async def _lock_parties_for_refund(db: AsyncSession, novel_id: uuid.UUID) -> frozenset[uuid.UUID] | None:
+    """정책 스위치가 켜져 있으면 이용제한이 환급할 사람들(게시자와 미환급 구매자)을 공개 상태 행보다 먼저 잠그고 돌려준다
+    (`purchases.py` 의 잠금 순서). 꺼져 있으면 환급이 없으니 잠그지 않고 None."""
+    if not settings.novel_public_policy_v2_enabled:
+        return None
+    return await lock_novel_parties(db, novel_ids=[novel_id])
+
+
 async def _lock_publication(db: AsyncSession, novel_id: uuid.UUID) -> NovelPublication | None:
     publication: NovelPublication | None = await db.scalar(
         select(NovelPublication)
@@ -360,12 +398,14 @@ async def moderate_admin_novel(
 ) -> AdminNovelModerationResponse:
     """노벨을 이용제한(`restrict`)하거나 해제(`lift`)한다. 사유가 공백뿐이면 422, 공개 상태 행이 없으면 404
     `NOVEL_NOT_FOUND`, 이미 그 상태면 409 `NOVEL_ALREADY_RESTRICTED`·`NOVEL_NOT_RESTRICTED`(감사 로그가 빈 조치로 쌓이지
-    않게)."""
+    않게). 정책 스위치가 켜져 있으면 이용제한이 그 노벨의 모든 미환급 구매를 환급한다(해제는 환급을 되돌리지 않는다) —
+    환급 대상을 잠근 뒤 새 구매가 보이면 409 `NOVEL_REFUND_CONFLICT`(다시 누르면 된다)."""
     reason = _require_reason(body.admin_comment)
+    restrict = body.action == "restrict"
+    locked = await _lock_parties_for_refund(db, novel_id) if restrict else None
     publication = await _lock_publication(db, novel_id)
     if publication is None:
         raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_NOT_FOUND")
-    restrict = body.action == "restrict"
     if restrict and publication.moderation_status == "restricted":
         raise _error(status.HTTP_409_CONFLICT, "NOVEL_ALREADY_RESTRICTED")
     if not restrict and publication.moderation_status == "normal":
@@ -378,8 +418,87 @@ async def moderate_admin_novel(
         reason_category=body.reason_category.value if body.reason_category is not None else None,
         reason=reason,
     )
+    if locked is not None:
+        await refund_closing_purchases(db, novel_ids=[novel_id], locked_user_ids=locked, reason="novel_restricted")
     await db.commit()
     return AdminNovelModerationResponse(novel_id=novel_id, moderation_status=publication.moderation_status)
+
+
+# ── 첫 공개 승인·반려 ─────────────────────────────────────────────────────────
+@router.post("/admin/novels/{novel_id}/review")
+async def review_admin_novel(
+    novel_id: uuid.UUID,
+    body: AdminNovelReviewRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminNovelReviewResponse:
+    """운영자 승인을 기다리는 첫 공개를 승인(`approve`)하거나 반려(`reject`)한다. 공개 상태 행이 없으면 404
+    `NOVEL_NOT_FOUND`, 대기가 아니면 409 `NOVEL_REVIEW_NOT_PENDING`(이미 처리됨 — 감사 로그가 빈 조치로 쌓이지 않게).
+
+    승인은 독자에게 처음 여는 순간이라 그때의 원작 판정을 다시 본다 — 아직 잠기지 않은 소설이라 지금 허락을 따르고, 막히면
+    409 `NOVEL_SOURCE_NOT_PUBLISHABLE`+`reason` 이며 운영자는 반려로 처리한다. 대기 중에 1화가 든 마지막 묶음이 지워져 1화
+    공개본이 없으면 409 `NOVEL_REVIEW_NO_FIRST_CHAPTER` 다(공개 화가 없는 소설에 잠금을 주지 않는다 — 이것도 반려로 처리).
+    통과하면 공개 범위·심사 칸·처음 공개 시각을 한 UPDATE 로 바꾸고 연재권 잠금을 찍는다.
+
+    반려는 사유가 필요하고(공백뿐이면 422) 그 글이 그대로 작가의 공개 상태에 실린다. 화 공개본을 지우고 공개 상태 행은
+    사유를 들고 남긴다(대기 공개가 쌓은 판 행도 지운다 — 독자에게 보인 적 없는 판이다). 잠금 순서는 모듈 docstring."""
+    reject = body.action == "reject"
+    reason = _require_reason(body.admin_comment) if reject else body.admin_comment.strip()
+    # 소설의 게시자는 바뀌지 않으므로 잠그기 전에 읽어도 된다. 그사이 지워졌으면 아래 공개 상태 행 확인이 404 를 낸다.
+    publisher_id = await db.scalar(select(Novel.user_id).where(Novel.id == novel_id))
+    if publisher_id is None:
+        raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_NOT_FOUND")
+    await _lock_user(db, publisher_id)
+    await db.execute(select(NovelChapter.id).where(NovelChapter.novel_id == novel_id).with_for_update())
+    publication = await _lock_publication(db, novel_id)
+    if publication is None:
+        raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_NOT_FOUND")
+    if publication.review_status != "pending":
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_REVIEW_NOT_PENDING")
+    novel = await db.get_one(Novel, novel_id, populate_existing=True)
+    if reject:
+        await db.execute(delete(NovelChapterPublication).where(NovelChapterPublication.novel_id == novel_id))
+        await db.execute(delete(NovelChapterEdition).where(NovelChapterEdition.novel_id == novel_id))
+        values: dict[str, object] = {"review_status": "rejected", "review_reason": reason, "reviewed_at": func.now()}
+    else:
+        first_chapter = await db.scalar(
+            select(NovelChapterPublication.chapter_id).where(
+                NovelChapterPublication.novel_id == novel_id, NovelChapterPublication.ordinal == 1
+            )
+        )
+        if first_chapter is None:
+            raise _error(status.HTTP_409_CONFLICT, "NOVEL_REVIEW_NO_FIRST_CHAPTER")
+        gate = await judge_source(db, novel.content_id, novel.user_id, permission_locked=False)
+        if gate.new_publish_block is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "NOVEL_SOURCE_NOT_PUBLISHABLE", "reason": gate.new_publish_block},
+            )
+        values = {
+            "visibility": "public",
+            "review_status": "approved",
+            "reviewed_at": func.now(),
+            "first_published_at": func.now(),
+            "published_at": func.now(),
+        }
+    await db.execute(update(NovelPublication).where(NovelPublication.novel_id == novel_id).values(**values))
+    if not reject:
+        terms_version = await current_legal_version(db, "terms", now=datetime.now(UTC))
+        await lock_serial(db, novel_id, terms_version=terms_version)
+    await record_admin_action(
+        db,
+        admin_id=admin_id,
+        action_type="novel-review-reject" if reject else "novel-review-approve",
+        target_user_id=novel.user_id,
+        target_novel_id=novel_id,
+        reason_text=reason,
+    )
+    await db.commit()
+    return AdminNovelReviewResponse(
+        novel_id=novel_id,
+        review_status="rejected" if reject else "approved",
+        visibility="withdrawn" if reject else "public",
+    )
 
 
 # ── 노벨 신고 ───────────────────────────────────────────────────────────────
@@ -455,11 +574,14 @@ async def act_on_admin_novel_report(
 ) -> AdminNovelReportDetailResponse:
     """신고를 처리한다 — `restrict` 는 그 노벨을 이용제한하고 신고를 처리완료로(이미 이용제한이어도 처리된다), `reject` 는
     노벨을 건드리지 않고 반려로 둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져
-    이용제한할 대상이 없으면 409 `NOVEL_GONE`(반려는 된다)."""
+    이용제한할 대상이 없으면 409 `NOVEL_GONE`(반려는 된다). 이용제한은 직접 이용제한과 같이 환급한다 — 이미 이용제한된
+    노벨이면 돌려줄 것이 없다."""
     reason = _require_reason(body.admin_comment)
     report = await _get_novel_report(db, report_id)
     if body.action == "restrict":
-        publication = await _lock_publication(db, report.novel_id) if report.novel_id is not None else None
+        novel_id = report.novel_id
+        locked = await _lock_parties_for_refund(db, novel_id) if novel_id is not None else None
+        publication = await _lock_publication(db, novel_id) if novel_id is not None else None
         if publication is None:
             raise _error(status.HTTP_409_CONFLICT, "NOVEL_GONE")
         report = await _get_novel_report(db, report_id, lock=True)
@@ -471,6 +593,10 @@ async def act_on_admin_novel_report(
             reason_category=report.reason_category.value,
             reason=reason,
         )
+        if locked is not None:
+            await refund_closing_purchases(
+                db, novel_ids=[publication.novel_id], locked_user_ids=locked, reason="novel_restricted"
+            )
         report.status = ReportStatus.RESOLVED
     else:
         report = await _get_novel_report(db, report_id, lock=True)

@@ -1,54 +1,57 @@
-"""`_latest_published_legal_version`·`_reconsent_required`는
-`auth/router.py`에서 옮겨온 것이고 판정 로직은 그대로다. `legal/router.py`의 `_latest_published`
-(공개 조회·동의 기록용, `requires_reconsent` 필터가 없다)와는 다른 함수이니 혼동하지 말 것."""
+"""재동의 판정과 그 판정으로 쓰기를 막는 게이트. `GET /me` 의 재동의 플래그도 같은 판정 함수를 부른다."""
 
 import uuid
+from datetime import datetime
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models.auth import User
-from api.db.models.legal import LegalDocument
 from api.db.session import get_db_session
-from api.legal.schemas import LegalConsentKind
+from api.legal import consents, documents
+from api.legal.schemas import LegalConsentUnit
 from api.session.dependencies import get_current_user_id
 
 
-async def _latest_published_legal_version(
-    db: AsyncSession, kind: str, *, requires_reconsent: bool | None = None
-) -> str | None:
-    """kind별 최신 게시본의 version. `requires_reconsent`를 주면 그 값으로 게시된 것만
-    보고(`GET /me` 재동의 판정용), 안 주면 전체 게시본 중 최신(가입 시점 기록용)."""
-    filters = [LegalDocument.kind == kind, LegalDocument.status == "published"]
-    if requires_reconsent is not None:
-        filters.append(LegalDocument.requires_reconsent.is_(requires_reconsent))
-    document = await db.scalar(
-        select(LegalDocument).where(*filters).order_by(LegalDocument.published_at.desc()).limit(1)
-    )
-    return document.version if document is not None else None
+async def _reconsent_required(
+    db: AsyncSession, unit: LegalConsentUnit, agreed_version: str | None, *, now: datetime
+) -> bool:
+    """회원이 그 동의 단위로 동의한 판이 그 단위의 재동의 기준 판(그 단위를 다시 받은 시행된 판 중 가장 늦은 것)보다
+    앞이면 재동의가 필요하다. 단위마다 따로 본다 — 처리방침이 국외이전 동의만 다시 받으면 수집·이용 동의는 옛 판이어도
+    막지 않는다.
 
-
-def _reconsent_required(current_version: str | None, required_version: str | None) -> bool:
-    """`required_version`이 없으면(=`requires_reconsent=true`로 게시된 문서가 아직
-    없으면) 재동의가 필요할 수 없다. 있으면 유저가 그 버전 이상으로 동의했는지 본다.
-
-    **`version`이 zero-padded ISO 날짜 문자열이라 문자열 비교가 시간순과 일치한다는
-    전제 위에 이 판정 전체가 서 있다** — 다른 포맷의 버전을 쓰면 이 비교가 깨진다.
-    그 전제는 서버가 강제한다: `AdminLegalPublishRequest.version`(`api/admin/schemas.py`)의
-    `pattern=r"^\d{4}-\d{2}-\d{2}$"`가 이 포맷이 아닌 버전의 게시 자체를 422로 막는다.
+    판의 앞뒤는 버전 문자열이 아니라 시행 시각(같으면 게시 시각)으로 정한다 — 같은 날 다시 게시한 판에는 순번 접미사가
+    붙어 `2026-10-18.10` 이 문자열로는 `2026-10-18.2` 보다 앞이 된다. 그래서 회원이 동의한 버전 문자열을 게시본에서
+    찾아 그 행의 시행 시각을 본다. **게시본에서 찾지 못한 버전은 미동의로 본다** — 동의로 보면 DB 직접 수정이나 오타로
+    들어간 버전이 게이트를 영영 우회한다.
     """
-    if required_version is None:
+    kind = consents.consent_kind(unit)
+    required = await documents.current_legal_document(db, kind, now=now, reconsent_scope=unit)
+    if required is None:
         return False
-    return current_version is None or current_version < required_version
+    if agreed_version is None:
+        return True
+    agreed = await documents.published_legal_document(db, kind, agreed_version)
+    if agreed is None:
+        return True
+    return documents.effective_order(agreed) < documents.effective_order(required)
+
+
+async def reconsent_required_units(db: AsyncSession, user: User, *, now: datetime) -> list[LegalConsentUnit]:
+    """재동의가 필요한 동의 단위를 약관 → 수집·이용 → 국외이전 순서로. 게이트의 403 과 `GET /me` 의 플래그가 이 값이다."""
+    return [
+        unit
+        for unit in consents.CONSENT_UNITS
+        if await _reconsent_required(db, unit, consents.agreed_version(user, unit), now=now)
+    ]
 
 
 async def require_legal_consent(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """약관·처리방침 중 하나라도 재동의가
-    필요하면 403 + 기계 판독 가능한 detail로 막는다. `get_current_user_id`에는
+    """동의 단위 중 하나라도 재동의가
+    필요하면 403 + 기계 판독 가능한 detail로 막는다. detail 의 `consents` 는 다시 받을 동의 단위다. `get_current_user_id`에는
     재동의(버전) 검사를 끼워넣지 않는다 — 그 의존성은 읽기 엔드포인트와 재동의 전에도
     허용하는 쓰기 예외에도 함께 쓰이므로, 거기 넣으면 읽기까지 막힌다. 존재·탈퇴(`deleted_at`)
     확인은 이 제약 밖이라 그쪽이 한다."""
@@ -60,19 +63,9 @@ async def require_legal_consent(
         # 스스로 막는다. `auth/router.py`의 get_me·withdraw 등 같은 모양의 분기도 같은 이유다.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    required_terms_version = await _latest_published_legal_version(db, "terms", requires_reconsent=True)
-    required_privacy_version = await _latest_published_legal_version(
-        db, "privacy", requires_reconsent=True
-    )
-
-    kinds: list[LegalConsentKind] = []
-    if _reconsent_required(user.terms_version, required_terms_version):
-        kinds.append("terms")
-    if _reconsent_required(user.privacy_version, required_privacy_version):
-        kinds.append("privacy")
-
-    if kinds:
+    units = await reconsent_required_units(db, user, now=documents.utcnow())
+    if units:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "LEGAL_RECONSENT_REQUIRED", "kinds": kinds},
+            detail={"code": "LEGAL_RECONSENT_REQUIRED", "consents": units},
         )

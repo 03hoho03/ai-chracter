@@ -18,6 +18,7 @@ const SERVER_CODES: [number, string][] = [
   [403, "NOVELIZE_NOT_ALLOWED"],
   [403, "NOVEL_MODEL_NOT_ALLOWED"],
   [403, "CONTENT_RESTRICTED"],
+  [403, "CONTENT_NOVELIZE_FORBIDDEN"],
   [404, "NOVEL_NOT_FOUND"],
   [403, "NOVEL_FORBIDDEN"],
   [422, "NOVEL_CURSOR_INVALID"],
@@ -122,7 +123,7 @@ describe("toNovelActionError", () => {
   });
 
   it("재동의 403 은 이 화면이 말하지 않는다(전역 모달이 맡는다)", () => {
-    expect(toNovelActionError(apiError(403, { code: "LEGAL_RECONSENT_REQUIRED", kinds: ["privacy"] }), "generate")).toBeNull();
+    expect(toNovelActionError(apiError(403, { code: "LEGAL_RECONSENT_REQUIRED", consents: ["collection", "transfer"] }), "generate")).toBeNull();
   });
 
   describe("429 소설화 창", () => {

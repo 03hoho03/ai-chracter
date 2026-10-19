@@ -9,8 +9,9 @@
 - 방 장면의 20% 넘게 나오는 명사는 질의에서 빠진다. 임계용 점수는 드문 명사 하나를 1 로 둔 절대 척도(상한 1)이고 순위는
   상한 없는 원점수다. 주입은 임계 0.60 이상이 회상 단서 턴에 3개, 그 밖의 턴에 1개. 장면 5개 미만이면 회상하지 않는다.
 - 섹션은 대화 기록 뒤(캐시 블록 셋째)에 있고 줄은 일어난 순서다. 섞임·사용자 장면은 꼬리표로 표시한다.
-- 인물이 대사로만 말한 장면과, 이번 턴 가려진 비밀(키별 최신 행의 아는 사람이 장면에 없는 사실 키)과 근거 범위가 겹치는 장면은
-  싣지 않는다. 통계(장면 수 하한·흔한 명사·사용자 토큰 풀·최근 스냅샷 둘)는 방 장면 전부로 낸 뒤 순위에서만 빼고, 벡터 쪽은 거리
+- 인물이 대사로만 말한 장면과, 이번 턴 가려진 비밀(키별 최신 행의 아는 사람이 장면에 없는 사실 키)과 근거 범위가 겹치는 장면,
+  장면 행 자신의 아는 사람이 하나도 장면에 없는 장면은 싣지 않는다(두 가림의 합집합). 장면 칸이 비어 있으면 그 칸으로는 가리지
+  않는다. 지식 범위 필터 스위치를 켜면 직전 응답의 대사 따옴표 안에만 나온 이름은 장면 인물이 아니다. 통계(장면 수 하한·흔한 명사·사용자 토큰 풀·최근 스냅샷 둘)는 방 장면 전부로 낸 뒤 순위에서만 빼고, 벡터 쪽은 거리
   읽기 안에서 뺀다. 사실 읽기가 실패하면 회상 없이 조립한다. 리플레이는 기록한 장면을 그대로 렌더한다.
 - 턴 기록(`chat_turns.memory_recall`)에 실은 장면의 id·점수·순위·글자 수·질의 쪽을 남기고, 리플레이는 그 id 로 줄을 다시
   렌더한다. 장면 읽기가 실패하면 회상 없이 턴을 계속한다.
@@ -30,7 +31,7 @@ import math
 import time
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,7 @@ import httpx
 import pytest
 import sqlalchemy as sa
 from pydantic import ValidationError
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import memory_recall
@@ -59,6 +61,13 @@ from api.chat.prompt_builder import (
 )
 from api.chat.router import _resolve_starting_setup
 from api.chat.turn_prompt import GenerationPrompt, InjectedTurnState, build_room_prompt
+from api.chat.voyage_backoff import (
+    BACKOFF_AFTER_FAILURES,
+    BACKOFF_BASE_SECONDS,
+    BACKOFF_FACTOR,
+    BACKOFF_MAX_SECONDS,
+    backoff_seconds,
+)
 from api.core.config import settings
 from api.db.models import (
     ChatMemoryEpisode,
@@ -76,12 +85,14 @@ from api.main import app
 from factories import (
     PRODUCTION_ENV_NAMES,
     Room,
+    VoyageClock,
     VoyageStub,
     _clear_llm_override,
     _count_queries,
     _make_memory_embedding,
     _make_memory_episode,
     _make_memory_fact,
+    _memory_scope_covers_gemini,
     _open_room,
     _open_transaction_probe,
     _override_llm_client,
@@ -464,6 +475,7 @@ class Scene:
     importance: int = 3
     # 장면 id 를 정하고 싶을 때(id 순과 일어난 순서를 일부러 다르게 둔다).
     key: int | None = None
+    known_by: list[str] | None = None
 
 
 _FILLER_SCENES = [Scene(f"잡담 {i}", f"평범한 하루 {i}번째.", [f"일상{i}"], turn=1 + i % 4) for i in range(5)]
@@ -521,6 +533,7 @@ async def _add_scene(
         nouns=episode_nouns(scene.nouns, scene.title, scene.detail),
         asserted_by=scene.asserted_by,
         importance=scene.importance,
+        known_by=scene.known_by,
         **({"id": uuid.UUID(int=scene.key)} if scene.key is not None else {}),
     )
     db_session.add(episode)
@@ -569,6 +582,7 @@ async def _build(
 
 def _recall_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "memory_episodes_recall", True)
+    _memory_scope_covers_gemini(monkeypatch)
 
 
 def _section(prompt: str) -> str:
@@ -1320,7 +1334,14 @@ async def test_send_records_the_query_embedding_and_holds_no_transaction_while_w
         stub.total_tokens,
         "ok",
     )
-    assert record.llm_calls[1]["callSite"] == "chat_generate"
+    # 첫 글자 지연은 생성 칸에만 붙는다 — 질의 임베딩 칸의 지연은 `latencyMs` 하나다.
+    assert {"firstTokenMs", "streamFirstTokenMs"} & first_call.keys() == set()
+    generate_call = record.llm_calls[1]
+    assert generate_call["callSite"] == "chat_generate"
+    # 턴 시작부터 잰 값은 질의 임베딩을 기다린 시간을 품으므로 스트림 시작부터 잰 값보다 작을 수 없다.
+    turn_ms, stream_ms = generate_call.get("firstTokenMs"), generate_call.get("streamFirstTokenMs")
+    assert isinstance(turn_ms, int) and isinstance(stream_ms, int)
+    assert turn_ms >= stream_ms
 
 
 async def test_turn_record_has_no_query_embedding_call_when_the_switch_is_off(
@@ -1404,6 +1425,256 @@ def test_query_embedding_waits_up_to_a_second_by_default(monkeypatch: pytest.Mon
     켜자마자 일부 턴이 명사 단독으로 떨어진다. 기본 상한은 1초이고 env 로 바꾼다."""
     assert load_production_env(monkeypatch).memory_embed_recall_timeout_ms == 1000
     assert load_production_env(monkeypatch, MEMORY_EMBED_RECALL_TIMEOUT_MS="400").memory_embed_recall_timeout_ms == 400
+
+
+# --- 질의 임베딩의 연속 실패 백오프 ---------------------------------------------------------------
+# Voyage 가 키를 거부하면(401, 다시 보내지 않는다) 한 턴에 요청 하나가 실패한다. 스텁이 받은 요청 수가 곧 질의 임베딩을 부른 턴 수다.
+
+_N = BACKOFF_AFTER_FAILURES
+
+
+class _UnreachableRedis:
+    """모든 명령이 `RedisError` 인 Redis — 백오프 상태를 읽지도 쓰지도 못하는 상황."""
+
+    def pipeline(self, *args: Any, **kwargs: Any) -> Any:
+        raise RedisError("down")
+
+    def __getattr__(self, name: str) -> Any:
+        async def _fail(*args: Any, **kwargs: Any) -> Any:
+            raise RedisError("down")
+
+        return _fail
+
+
+async def _turns(db_session: AsyncSession, room: Room, stub: VoyageStub, count: int) -> GenerationPrompt:
+    built: GenerationPrompt | None = None
+    for _ in range(count):
+        built = await _build(db_session, room, "밀알당 기억나?", embedding_client=_embed_client(stub))
+    assert built is not None
+    return built
+
+
+def test_backoff_doubles_per_failure_past_the_threshold_up_to_the_cap() -> None:
+    """문턱 아래에서는 멈추지 않고, 문턱에서 처음 멈춤, 실패가 하나 늘 때마다 배수만큼 길어지다 상한에서 멈춘다. 실패가 아주
+    많이 쌓여도 상한을 넘지 않는다(거듭제곱이 커져도 오류 없이)."""
+    assert backoff_seconds(0) == 0
+    assert backoff_seconds(_N - 1) == 0
+    assert backoff_seconds(_N) == BACKOFF_BASE_SECONDS
+    assert backoff_seconds(_N + 1) == BACKOFF_BASE_SECONDS * BACKOFF_FACTOR
+    assert backoff_seconds(_N + 2) == BACKOFF_BASE_SECONDS * BACKOFF_FACTOR**2
+    assert backoff_seconds(_N + 1_000) == BACKOFF_MAX_SECONDS
+    assert BACKOFF_BASE_SECONDS < BACKOFF_MAX_SECONDS
+
+
+async def test_query_embedding_pauses_after_consecutive_failures_and_retries_when_the_pause_ends(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """문턱만큼 연속 실패하면 다음 턴은 Voyage 를 부르지 않는다. 멈춤이 풀리는 시각 1초 전까지는 계속 건너뛰고, 그 시각이 되면
+    다시 부른다. 다시 부른 호출도 실패하면 멈춤이 배수만큼 길어지고, 성공하면 그다음 턴부터 매 턴 부른다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
+    _hybrid_on(monkeypatch)
+    clock = VoyageClock(monkeypatch)
+    stub = VoyageStub(failures=[401] * (_N + 1))
+
+    await _turns(db_session, room, stub, _N)
+    assert len(stub.bodies) == _N
+    paused = await _turns(db_session, room, stub, 1)
+    assert len(stub.bodies) == _N
+    assert paused.memory_query is None
+
+    clock.advance(BACKOFF_BASE_SECONDS - 1)
+    await _turns(db_session, room, stub, 1)
+    assert len(stub.bodies) == _N
+    clock.advance(1)
+    retried = await _turns(db_session, room, stub, 1)
+    assert len(stub.bodies) == _N + 1
+    assert retried.memory_query is not None and retried.memory_query["outcome"] == "failed"
+
+    clock.advance(BACKOFF_BASE_SECONDS * BACKOFF_FACTOR - 1)
+    await _turns(db_session, room, stub, 1)
+    assert len(stub.bodies) == _N + 1
+    clock.advance(1)
+    recovered = await _turns(db_session, room, stub, 1)
+    assert recovered.memory_query is not None and recovered.memory_query["outcome"] == "ok"
+    await _turns(db_session, room, stub, 1)
+    assert len(stub.bodies) == _N + 3
+
+
+async def test_a_successful_query_embedding_resets_the_failure_count(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """문턱 하나 모자라게 실패 → 성공 → 다시 문턱 하나 모자라게 실패하면, 합쳐서는 문턱을 넘었어도 연속이 아니라 멈추지 않는다.
+    거기서 하나 더 실패해 연속 실패가 문턱에 닿아야 멈춘다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
+    _hybrid_on(monkeypatch)
+    VoyageClock(monkeypatch)
+
+    await _turns(db_session, room, VoyageStub(failures=[401] * (_N - 1)), _N - 1)
+    await _turns(db_session, room, VoyageStub(), 1)
+    stub = VoyageStub(failures=[401] * _N)
+    await _turns(db_session, room, stub, _N)
+    assert len(stub.bodies) == _N
+    await _turns(db_session, room, stub, 1)
+    assert len(stub.bodies) == _N
+
+
+async def test_query_embedding_timeouts_do_not_count_as_failures(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시간 상한을 넘긴 질의 임베딩은 문턱만큼 쌓여도 멈춤을 부르지 않는다 — 느리지만 살아 있는 Voyage 를 세면 기억 임베딩
+    채우기까지 멈춘다. 그 뒤 진짜 실패가 문턱만큼 쌓여야 멈춘다(시간 초과가 실패 수를 지우지도 않는다는 것은 다루지 않는다)."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
+    _hybrid_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_embed_recall_timeout_ms", 100)
+    VoyageClock(monkeypatch)
+
+    async def _slow() -> None:
+        await asyncio.sleep(5)
+
+    slow = VoyageStub(before_answer=_slow)
+    timed_out = await _turns(db_session, room, slow, _N)
+    assert timed_out.memory_query is not None and timed_out.memory_query["outcome"] == "timeout"
+    failing = VoyageStub(failures=[401] * _N)
+    await _turns(db_session, room, failing, _N)
+    assert len(failing.bodies) == _N
+    await _turns(db_session, room, failing, 1)
+    assert len(failing.bodies) == _N
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [pytest.param(503, id="5xx"), pytest.param(httpx.ConnectError("끊김"), id="connect")],
+)
+async def test_query_embedding_sends_one_request_on_a_passing_failure(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: int | Exception,
+) -> None:
+    """질의 임베딩은 지나가는 실패(5xx·연결 실패)에도 다시 보내지 않는다 — 다시 보낼 수 있는 클라이언트를 넘겨도 요청 하나로
+    끝나고 실패로 기록된다. 시간 상한이 첫 재시도 대기보다 짧아 다시 보낸 요청이 답을 가져올 수 없기 때문이다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
+    _hybrid_on(monkeypatch)
+    stub = VoyageStub(failures=[failure] * 3)
+
+    built = await _turns(db_session, room, stub, 1)
+
+    assert len(stub.bodies) == 1
+    assert built.memory_query is not None and built.memory_query["outcome"] == "failed"
+
+
+async def test_query_embedding_pauses_after_consecutive_server_errors_within_the_timeout(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Voyage 가 5xx 를 잇달아 내면 질의 임베딩은 시간 초과가 아니라 시간 상한 안의 실패로 끝나 연속 실패 수가 오르고, 문턱만큼
+    쌓이면 다음 턴은 부르지 않는다. 운영에서 첫 재시도 대기(1초)가 시간 상한(1초)을 다 쓰는 관계를 짧은 값(대기 0.2초, 상한
+    0.1초)으로 흉내 낸다 — 질의 경로가 다시 보내려 기다리면 시간 초과로 분류돼 실패 수가 오르지 않고 멈춤이 걸리지 않는다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
+    _hybrid_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_embed_recall_timeout_ms", 100)
+    VoyageClock(monkeypatch)
+    stub = VoyageStub(failures=[503] * (3 * (_N + 1)))
+    client = VoyageEmbeddingClient(
+        api_key="test-key", model=_EMBED_MODEL, dims=stub.dims, transport=stub.transport(), retry_delays=(0.2, 0.2)
+    )
+
+    for _ in range(_N):
+        built = await _build(db_session, room, "밀알당 기억나?", embedding_client=client)
+        assert built.memory_query is not None and built.memory_query["outcome"] == "failed"
+    assert len(stub.bodies) == _N
+    paused = await _build(db_session, room, "밀알당 기억나?", embedding_client=client)
+    assert paused.memory_query is None
+    assert len(stub.bodies) == _N
+
+
+async def test_a_paused_turn_is_byte_identical_to_noun_only_and_to_a_failed_turn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """멈춤으로 건너뛴 턴은 임베딩 회상이 꺼진 턴(클라이언트 없음)과 프롬프트·회상 기록·SQL 문 수·요청 세션 커밋 수가 같고 질의
+    칸도 없다 — 커밋 앞에서 돌아오므로 트랜잭션 경계까지 꺼진 턴과 같다. 질의 임베딩을 부르는 턴은 기다리는 동안 커넥션을 쥐지
+    않으려고 한 번 더 커밋하므로, 커밋 수가 그 차이를 실제로 가른다. 프롬프트·회상 기록은 질의 임베딩이 실패한 턴과도 같다. 정원
+    장면이 질의와 가장 가까워 벡터 쪽이 살아 있으면 정원이 실리는 배치라 같음이 우연이 아니다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
+    _hybrid_on(monkeypatch)
+    VoyageClock(monkeypatch)
+    stub = VoyageStub(failures=[401] * _N)
+    commits = 0
+    real_commit = db_session.commit
+
+    async def _counting_commit() -> None:
+        nonlocal commits
+        commits += 1
+        await real_commit()
+
+    monkeypatch.setattr(db_session, "commit", _counting_commit)
+
+    async def _counted(embedding_client: VoyageEmbeddingClient | None) -> tuple[GenerationPrompt, int, int]:
+        nonlocal commits
+        commits = 0
+        with _count_queries() as statements:
+            built = await _build(db_session, room, "밀알당 기억나?", embedding_client=embedding_client)
+            return built, statements(), commits
+
+    noun_only, statements_noun_only, commits_noun_only = await _counted(None)
+    # 실패를 쌓기 전에 본다 — 성공은 실패 수를 지우므로 순서가 바뀌면 아래 멈춤이 오지 않는다.
+    working = await _build(db_session, room, "밀알당 기억나?", embedding_client=_embed_client(VoyageStub()))
+    await _turns(db_session, room, stub, _N - 1)
+    failed, _, commits_failed = await _counted(_embed_client(stub))
+    paused, statements_paused, commits_paused = await _counted(_embed_client(stub))
+
+    assert working.prompt != noun_only.prompt
+    assert len(stub.bodies) == _N
+    assert paused.memory_query is None
+    assert paused.prompt == noun_only.prompt == failed.prompt
+    assert paused.memory_recall == noun_only.memory_recall == failed.memory_recall
+    assert statements_paused == statements_noun_only
+    assert commits_failed == commits_noun_only + 1
+    assert commits_paused == commits_noun_only
+
+
+async def test_rooms_share_one_failure_count(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """실패 수는 방마다가 아니라 하나다 — 한 방에서 문턱만큼 실패하면 다른 방의 다음 턴도 Voyage 를 부르지 않는다."""
+    first = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    # 정원 장면은 id 를 고정하므로 두 방에 같이 심으면 키가 겹친다. 둘째 방은 id 를 고정하지 않은 장면만 둔다 — 질의 임베딩을
+    # 부를 조건(요약 커서가 있고 회상이 고른다)은 장면 내용과 무관하다.
+    second = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
+    _hybrid_on(monkeypatch)
+    VoyageClock(monkeypatch)
+
+    await _turns(db_session, first, VoyageStub(failures=[401] * _N), _N)
+    other_room = VoyageStub()
+    paused = await _turns(db_session, second, other_room, 1)
+
+    assert other_room.bodies == []
+    assert paused.memory_query is None
+
+
+async def test_unreachable_failure_count_keeps_calling_voyage_every_turn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Redis 를 읽지도 쓰지도 못하면 멈추지 않고 매 턴 부른다 — 턴은 끝나고, 문턱을 넘게 실패해도 다음 턴이 다시 부르며, Voyage 가
+    살아나면 그 턴부터 벡터 쪽이 돈다."""
+    from api.chat import voyage_backoff
+
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
+    _hybrid_on(monkeypatch)
+    monkeypatch.setattr(voyage_backoff, "redis_client", _UnreachableRedis())
+    stub = VoyageStub(failures=[401] * (_N + 1))
+
+    await _turns(db_session, room, stub, _N + 1)
+    recovered = await _turns(db_session, room, stub, 1)
+
+    assert len(stub.bodies) == _N + 2
+    assert recovered.memory_query is not None and recovered.memory_query["outcome"] == "ok"
 
 
 # --- 인물이 말한 장면 ------------------------------------------------------------------------
@@ -1591,7 +1862,7 @@ async def test_replay_renders_a_recorded_character_scene_as_it_was(
 
 
 # --- 회상 줄의 지식 범위 ---------------------------------------------------------------------
-# 장면 행에는 아는 사람 칸이 없어, 회상은 같은 턴에 방 사실 행을 읽어 비밀 장면을 끌어낸다 — 키별 최신 행의 아는 사람이 이번
+# 회상은 장면 행의 아는 사람 칸과 함께, 같은 턴에 방 사실 행을 읽어 비밀 장면을 끌어낸다 — 키별 최신 행의 아는 사람이 이번
 # 장면 인물(이번 사용자 메시지·직전 응답에 나온 방 이름, 사용자 제외)에 없는 키의 어느 행과든 근거 범위가 겹치는 장면을 뺀다.
 # 회상 스위치에 묶여 사실 주입·지식 범위 필터 스위치와 무관하게 걸리고, 사실 읽기가 실패하면 회상 없이 조립한다(걸러지지
 # 않은 회상을 싣지 않는다).
@@ -1762,3 +2033,120 @@ async def test_recall_off_reads_no_facts_either(
     assert statements_with_memory == statements_without_memory
     # 켠 턴: SAVEPOINT·장면 후보·사실 행·줄 렌더·RELEASE 다섯 문장이 더해진다.
     assert statements_recall_on == statements_with_memory + 5
+
+
+# --- 장면 행의 아는 사람 칸 ------------------------------------------------------------------
+# 후보 장면의 아는 사람 칸이 차 있으면 그 원소를 아는 사람이 이번 장면에 하나도 없을 때 그 장면을 뺀다(사실 행 유래 가림과
+# 합집합). 장면 인물 후보 이름에는 사실 행 이름에 더해 후보 장면들의 아는 사람 원소가 든다 — 사실 행이 없거나 그 인물 행이 없는
+# 방에서도 장면 칸의 인물이 턴에 나오면 장면 인물이다. 칸이 비어 있으면(옛 행) 그 칸으로는 가리지 않는다.
+
+_BAKERY_LINE = "- 밀알당에 간 날: 태민이랑 밀알당에서 소금빵을 먹었다."
+
+
+async def _set_last_response(db_session: AsyncSession, room: Room, content: str) -> None:
+    last = room.turns[max(room.turns)][1]
+    await db_session.execute(sa.update(ChatMessage).where(ChatMessage.id == last.id).values(content=content))
+    await db_session.commit()
+
+
+async def test_scene_known_only_by_someone_absent_drops_even_in_a_room_without_facts(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """방에 사실 행이 하나도 없어도 장면 칸으로 가린다. 민수만 아는 밀알당 장면은 민수가 없는 턴에 빠지고, 민수가 나온 턴에는
+    남는다 — 민수는 사실 행이 아니라 장면 칸에서 방 이름이 된다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, replace(_BAKERY, known_by=["민수"])])
+    _recall_on(monkeypatch)
+    facts = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(ChatMemoryFact).where(ChatMemoryFact.chat_room_id == room.room_id)
+    )
+    assert facts == 0
+
+    hidden = await _build(db_session, room, "밀알당 기억나?")
+    assert HEADER not in hidden.prompt
+    assert hidden.memory_recall == ()
+    assert _lines((await _build(db_session, room, "민수랑 밀알당 기억나?")).prompt) == [_BAKERY_LINE]
+
+
+async def test_scene_without_known_by_is_not_hidden_by_its_column(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """칸이 빈 장면(아는 사람이 정해지지 않은 옛 행)은 누가 나오든 남는다 — 다른 장면의 칸이 차 있어도 그렇다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, replace(_GARDEN, known_by=["민수"])])
+    _recall_on(monkeypatch)
+
+    assert _lines((await _build(db_session, room, "밀알당 기억나?")).prompt) == [_BAKERY_LINE]
+
+
+async def test_scene_column_hides_even_when_the_room_has_only_public_facts(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사실 행이 있지만 모두 공개(아는 사람 없음)인 방 — 사실 쪽으로는 가릴 것이 없어도 장면 칸으로는 가린다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, replace(_BAKERY, known_by=["민수"])])
+    db_session.add(_make_memory_fact(room.room_id, await _snapshot_for(db_session, room, 1), ordinal=5))
+    await db_session.commit()
+    _recall_on(monkeypatch)
+
+    assert HEADER not in (await _build(db_session, room, "밀알당 기억나?")).prompt
+
+
+async def test_fact_secret_and_scene_column_hide_as_a_union(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """밀알당(턴 3)은 민수만 아는 비밀 사실과 겹치고, 정원(턴 5)은 장면 칸으로 지아만 안다. 둘 다 묻는 회상 단서 턴에 아무도
+    없으면 둘 다 빠지고, 민수만 나오면 밀알당만, 둘 다 나오면 둘 다 실린다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, replace(_GARDEN, known_by=["지아"])])
+    await _plant_fact(db_session, room, turn=3, known_by=["민수"])
+    _recall_on(monkeypatch)
+    garden_line = "- 정원 산책: 비 갠 오후에 수국 길을 걸었다."
+
+    assert HEADER not in (await _build(db_session, room, "밀알당이랑 수국 기억나?")).prompt
+    assert _lines((await _build(db_session, room, "민수랑 밀알당이랑 수국 기억나?")).prompt) == [_BAKERY_LINE]
+    assert _lines((await _build(db_session, room, "민수랑 지아랑 밀알당이랑 수국 기억나?")).prompt) == [
+        _BAKERY_LINE,
+        garden_line,
+    ]
+
+
+async def test_user_name_in_the_scene_column_is_not_a_scene_person(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사용자만 아는 장면은 사용자 표기가 메시지에 나와도 빠진다 — 사실 행의 사용자 처리와 같다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, replace(_BAKERY, known_by=["사용자 인물"])])
+    _recall_on(monkeypatch)
+
+    assert HEADER not in (await _build(db_session, room, "사용자 인물이랑 밀알당 기억나?")).prompt
+
+
+async def test_vector_limit_is_filled_past_a_scene_hidden_by_its_column(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """벡터 쪽도 장면 칸으로 가린다 — 거리 순위 길이 1 에서 가장 가까운 밀알당이 칸으로 가려지면 그다음 정원이 실린다. 민수가
+    나온 턴에는 밀알당이 실린다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, replace(_BAKERY, known_by=["민수"]), _GARDEN])
+    bakery_id = await _embed_scene(db_session, room, _BAKERY.title, _NEAR)
+    garden_id = await _embed_scene(db_session, room, _GARDEN.title, _MID)
+    _hybrid_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_embed_recall_vector_limit", 1)
+
+    hidden = await _build(db_session, room, _PLAIN, embedding_client=_embed_client(VoyageStub()))
+    known = await _build(db_session, room, f"민수랑 {_PLAIN}", embedding_client=_embed_client(VoyageStub()))
+
+    assert _vector_ids(hidden) == [str(garden_id)]
+    assert _vector_ids(known) == [str(bakery_id)]
+
+
+async def test_name_only_inside_the_reply_dialogue_hides_the_scene_when_the_filter_is_on(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """직전 응답에서 민수가 대사 안에만 나온다. 필터가 꺼져 있으면 지금처럼 민수를 장면 인물로 세어 민수만 아는 장면이 남고, 켜면
+    빠진다. 켠 채로도 서술에 민수가 나오거나 이번 사용자 메시지에 나오면 남는다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, replace(_BAKERY, known_by=["민수"])])
+    await _set_last_response(db_session, room, "“민수는 어디 갔지?” 유나가 중얼거렸다.")
+    _recall_on(monkeypatch)
+
+    assert _lines((await _build(db_session, room, "밀알당 기억나?")).prompt) == [_BAKERY_LINE]
+    monkeypatch.setattr(settings, "memory_knowledge_filter", True)
+    assert HEADER not in (await _build(db_session, room, "밀알당 기억나?")).prompt
+    assert _lines((await _build(db_session, room, "민수랑 밀알당 기억나?")).prompt) == [_BAKERY_LINE]
+    await _set_last_response(db_session, room, "“민수는 어디 갔지?” 유나가 민수를 찾았다.")
+    assert _lines((await _build(db_session, room, "밀알당 기억나?")).prompt) == [_BAKERY_LINE]

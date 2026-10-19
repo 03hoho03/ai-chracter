@@ -5,7 +5,10 @@ import { ChevronLeft } from "lucide-react";
 import { MODERATION_STATUS_LABELS } from "@/entities/admin-content";
 import {
   NOVEL_MODERATION_STATUS_LABELS,
-  NOVEL_VISIBILITY_LABELS,
+  NOVEL_REVIEW_STATUS_LABELS,
+  NOVEL_SERIAL_LOCK_PERMISSION_LABELS,
+  NOVEL_SERIAL_LOCK_SOURCE_LABELS,
+  novelPublicationLabel,
   useNovelDetailQuery,
   type AdminNovelDetailResponse,
 } from "@/entities/admin-novel";
@@ -61,12 +64,13 @@ function NovelDetailBody({ novelId }: NovelDetailPageProps) {
   return (
     <QueryState query={novelDetailQuery} skeleton="detail" errorMessage="노벨 정보를 불러오지 못했어요.">
       {(novel) => (
-        // 조치(홈 노벨·이용제한/해제)는 공개 상태 행이 있는 한 늘 있다 — 거둔 노벨도 이용제한을 걸어 둘 수 있다.
+        // 조치(홈 노벨·이용제한/해제)는 공개 상태 행이 있는 한 늘 있다 — 거둔 노벨도 이용제한을 걸어 둘 수 있다. 첫 공개
+        // 승인 대기면 승인·반려가 그 위에 더해진다.
         <DetailLayout
           actions={{
             title: "조치",
             triggerLabel: "조치하기",
-            summary: `${NOVEL_VISIBILITY_LABELS[novel.visibility]} · ${NOVEL_MODERATION_STATUS_LABELS[novel.moderationStatus]}`,
+            summary: `${novelPublicationLabel(novel)} · ${NOVEL_MODERATION_STATUS_LABELS[novel.moderationStatus]}`,
             render: (host) => <NovelActions novel={novel} onSuccess={host.onDone} />,
           }}
         >
@@ -88,7 +92,7 @@ function NovelSummary({ novel }: { novel: AdminNovelDetailResponse }) {
     <section className={`${SECTION_CLASS} gap-4`}>
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <span>{NOVEL_VISIBILITY_LABELS[novel.visibility]}</span>
+          <span>{novelPublicationLabel(novel)}</span>
           <span aria-hidden>·</span>
           <span>{NOVEL_MODERATION_STATUS_LABELS[novel.moderationStatus]}</span>
           <span aria-hidden>·</span>
@@ -142,6 +146,8 @@ function NovelSummary({ novel }: { novel: AdminNovelDetailResponse }) {
             {novel.publisherSuspended && <span className="text-xs text-destructive-text">이용정지 중</span>}
           </dd>
         </div>
+        <NovelReviewRecord novel={novel} />
+        <SerialLockRecord novel={novel} />
       </dl>
 
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm @xl:grid-cols-4">
@@ -161,6 +167,60 @@ function NovelSummary({ novel }: { novel: AdminNovelDetailResponse }) {
         </p>
       </div>
     </section>
+  );
+}
+
+/** 첫 공개 심사 결과. 반려 사유는 게시자 화면에 그대로 실린 글이라 줄바꿈까지 전문을 보인다. 심사가 없던 시절의 공개와
+ * 스위치가 꺼진 동안의 공개는 값이 없다. */
+function NovelReviewRecord({ novel }: { novel: AdminNovelDetailResponse }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-muted-foreground">첫 공개 심사</dt>
+      <dd className="flex flex-col gap-1">
+        <span className="flex flex-wrap items-baseline gap-x-2">
+          <span className="text-foreground">
+            {novel.reviewStatus === null ? "심사 없이 공개" : NOVEL_REVIEW_STATUS_LABELS[novel.reviewStatus]}
+          </span>
+          {novel.reviewedAt !== null && (
+            <span className="text-xs text-muted-foreground">{formatDateTime(novel.reviewedAt)}</span>
+          )}
+        </span>
+        {novel.reviewStatus === "rejected" && novel.reviewReason !== null && (
+          <span className="max-w-prose whitespace-pre-wrap break-keep text-muted-foreground wrap-anywhere">
+            {novel.reviewReason}
+          </span>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+/** 연재권 잠금 기록. 잠긴 뒤에는 원작 허락이 바뀌어도 그때의 허락으로 이어 공개할 수 있어, 그 판단 재료(잠근 시각·경로·그때
+ * 허락·약관 판·원작 판)를 함께 보인다. 원작 판 id 는 앞 8자만 — 대조용이지 읽을 값이 아니다. */
+function SerialLockRecord({ novel }: { novel: AdminNovelDetailResponse }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-muted-foreground">연재권 잠금</dt>
+      <dd className="flex flex-wrap items-baseline gap-x-2">
+        {novel.serialLockedAt === null ? (
+          <span className="text-muted-foreground">아직 잠기지 않음</span>
+        ) : (
+          <>
+            <span className="text-foreground">{formatDateTime(novel.serialLockedAt)}</span>
+            <span className="text-xs text-muted-foreground">
+              {[
+                novel.serialLockSource && NOVEL_SERIAL_LOCK_SOURCE_LABELS[novel.serialLockSource],
+                novel.serialLockPermission && `허락 ${NOVEL_SERIAL_LOCK_PERMISSION_LABELS[novel.serialLockPermission]}`,
+                novel.serialLockTermsVersion && `약관 ${novel.serialLockTermsVersion}`,
+                novel.serialLockContentVersionId && `원작 판 ${novel.serialLockContentVersionId.slice(0, 8)}`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </>
+        )}
+      </dd>
+    </div>
   );
 }
 

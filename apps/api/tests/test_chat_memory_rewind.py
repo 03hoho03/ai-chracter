@@ -816,6 +816,7 @@ async def _run_fold(engine: AsyncEngine, room: Room, factory: async_sessionmaker
         sections=sections,
         is_story_chat=False,
         names=PromptNames(persona_name=None, char_name=None),
+        writing_model="gemini",
     )
 
 
@@ -1007,6 +1008,7 @@ class _EpisodeClient(LLMClient):
                     importance=3,
                     start_line=1,
                     end_line=20,
+                    known_by=[],
                 )
             ]
         )

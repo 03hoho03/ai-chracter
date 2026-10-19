@@ -42,7 +42,7 @@ from api.core.config import settings
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
 from api.db.models.payment import Payment, PaymentCancellation as CancellationRow
-from api.legal.dependencies import _latest_published_legal_version
+from api.legal.documents import current_legal_version, utcnow
 from api.main import app
 from api.payments import router as payments_router
 from api.payments import service as payments_service
@@ -265,9 +265,28 @@ async def test_create_payment_fixes_the_amount_on_the_server(
         1_500,
         _CHANNEL,
         "pending",
-        await _latest_published_legal_version(db_session, "terms"),
+        await current_legal_version(db_session, "terms", now=utcnow()),
         "2026-10-01",
     )
+
+
+async def test_create_payment_records_current_versions_not_scheduled_ones(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """시행 예정 판이 있어도 주문은 지금 시행 중인 약관·환불정책 버전을 남긴다. 깨지는 시나리오: 버전 조회가 시행 시각을
+    보지 않아, 아직 효력이 없는 조건에 동의한 것으로 주문이 기록된다."""
+    later = datetime.now(UTC) + timedelta(days=30)
+    await _make_published(db_session, kind="refund-policy", version="2026-10-01")
+    await _make_published(db_session, kind="refund-policy", version="2026-11-01", effective_at=later)
+    await _make_published(db_session, kind="terms", version="2026-11-01", effective_at=later)
+    await _buyer(db_session, db_client)
+
+    resp = await db_client.post("/payments", json={"productKey": "plus_v2", "agreed": True})
+
+    assert resp.status_code == 201
+    order = await db_session.scalar(select(Payment).where(Payment.payment_id == resp.json()["paymentId"]))
+    assert order is not None
+    assert (order.terms_version, order.refund_policy_version) == ("2026-09-06", "2026-10-01")
 
 
 async def test_create_payment_rejects_a_retired_product_key(
@@ -315,7 +334,7 @@ async def test_create_payment_needs_a_published_refund_policy(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """동의를 기록할 환불정책 게시본이 없으면 유료 조건 동의가 성립하지 않는다."""
-    assert await _latest_published_legal_version(db_session, "refund-policy") is None
+    assert await current_legal_version(db_session, "refund-policy", now=utcnow()) is None
     await _buyer(db_session, db_client)
 
     resp = await db_client.post("/payments", json={"productKey": "basic_v2", "agreed": True})

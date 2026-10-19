@@ -12,7 +12,9 @@ import {
   MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH,
   MAX_SITUATION_NOTE_CONTENT_LENGTH,
   MAX_SITUATION_NOTE_NAME_LENGTH,
+  MAX_STAT_PLAYER_DESCRIPTION_LENGTH,
   MAX_STAT_RULE_CONDITION_LENGTH,
+  MAX_STORY_SCENE_FIELD_LENGTH,
   MAX_TRIGGER_KEYWORD_LENGTH,
   type StoryFieldKey,
 } from "@/features/build-story";
@@ -114,6 +116,8 @@ export const STORY_FIELD_MOCKUPS = {
     seedPath: "developmentExamples.*.assistantLine",
     readTiming: null,
   },
+  // 장면 헤더는 생성 AI 가 읽지 않는 화면 설정이다(첫 장면 두 칸도 같다). 튜토리얼 시드는 헤더를 켜고 첫 장면을 채운다.
+  "storySetting.sceneHeaderEnabled": { kind: "switch", seedPath: "sceneHeaderEnabled", readTiming: null },
 
   startingSetups: { kind: "cardList", seedPath: "startingSetups", readTiming: null },
   "startingSetups.*.name": { kind: "text", seedPath: "startingSetups.*.name", readTiming: null },
@@ -122,6 +126,20 @@ export const STORY_FIELD_MOCKUPS = {
     kind: "textarea",
     seedPath: "startingSetups.*.openingMessage",
     readTiming: "firstScreen",
+  },
+  "startingSetups.*.initialScenePlace": {
+    kind: "text",
+    seedPath: "startingSetups.*.initialScenePlace",
+    readTiming: null,
+    limit: MAX_STORY_SCENE_FIELD_LENGTH,
+    counter: true,
+  },
+  "startingSetups.*.initialSceneTime": {
+    kind: "text",
+    seedPath: "startingSetups.*.initialSceneTime",
+    readTiming: null,
+    limit: MAX_STORY_SCENE_FIELD_LENGTH,
+    counter: true,
   },
   "startingSetups.*.$advanced": { kind: "switch", seedPath: null, readTiming: null },
   "startingSetups.*.playGuide": { kind: "textarea", seedPath: "startingSetups.*.playguide", readTiming: "notRead" },
@@ -152,6 +170,16 @@ export const STORY_FIELD_MOCKUPS = {
     seedPath: "startingSetups.*.statDefs.*.description",
     readTiming: "judge",
   },
+  // 숨김·플레이어용 설명·익명 신호는 AI가 읽지 않는 화면 설정이고 튜토리얼 시드도 쓰지 않는다.
+  "startingSetups.*.stats.*.hiddenFromPlayer": { kind: "switch", seedPath: null, readTiming: null },
+  "startingSetups.*.stats.*.playerDescription": {
+    kind: "text",
+    seedPath: null,
+    readTiming: null,
+    limit: MAX_STAT_PLAYER_DESCRIPTION_LENGTH,
+    counter: true,
+  },
+  "startingSetups.*.stats.*.signalHiddenChange": { kind: "switch", seedPath: null, readTiming: null },
   "startingSetups.*.stats.*.rules": {
     kind: "statChangeRules",
     seedPath: "startingSetups.*.statDefs.*.rules",

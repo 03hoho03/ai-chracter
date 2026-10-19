@@ -15,6 +15,8 @@ from api.llm.call_policy import BackendId, LLMCallSite
 
 # Anthropic API 의 사고 깊이(`output_config.effort`). API 가 받는 값만 둔다 — 오타가 첫 호출의 거부가 아니라 기동 거부가 되게.
 ClaudeEffort = Literal["low", "medium", "high", "xhigh", "max"]
+# 기억 사용 범위(`memory_model_scope`)가 받는 레인 — 기억 기능이 있는 대화 레인 둘뿐이다.
+MemoryScopeLane = Literal["story", "character"]
 
 
 class Settings(BaseSettings):
@@ -428,6 +430,28 @@ class Settings(BaseSettings):
             raise ValueError(f"상위 모델 스위치가 켜져 있는데 {', '.join(missing)} 가 비어 있다")
         return self
 
+    @field_validator("memory_model_scope", mode="before")
+    @classmethod
+    def _split_memory_model_scope(cls, value: object) -> object:
+        """env 문자열을 `(레인, 모델)` 목록으로 편다. 항목은 쉼표로 나누고 앞뒤 공백은 지우며 빈 항목은 버린다. `모델` 만 쓴
+        항목은 두 레인 모두로, `레인:모델` 은 그 레인 하나로 편다. 콜론이 둘 이상이거나 한쪽이 비면 거부하고, 모르는 레인·모델
+        이름(판정 전용 `haiku` 포함)은 pydantic 이 거부한다 — 오타가 조용히 "어떤 방도 범위에 없음"이 되면 켠 스위치가 아무
+        데서도 동작하지 않는데 기동은 성공한다."""
+        if not isinstance(value, str):
+            return value
+        pairs: list[tuple[str, str]] = []
+        for item in value.split(","):
+            if not item.strip():
+                continue
+            parts = [part.strip() for part in item.split(":")]
+            if len(parts) == 1:
+                pairs += [(lane, parts[0]) for lane in get_args(MemoryScopeLane)]
+            elif len(parts) == 2 and all(parts):
+                pairs.append((parts[0], parts[1]))
+            else:
+                raise ValueError(f"MEMORY_MODEL_SCOPE 의 항목 {item.strip()!r} 은 모델 또는 레인:모델 모양이 아니다")
+        return pairs
+
     @model_validator(mode="after")
     def _embedding_needs_a_voyage_key(self) -> "Settings":
         """키 없이 켜진 채우기는 채울 때마다 실패할 뿐이라 켠 것이 성공한 것처럼 보인다 — 배포 단계에서 드러나게 기동을 막는다.
@@ -567,8 +591,8 @@ class Settings(BaseSettings):
     # 끄면(줄 삭제 + 재기동) 이미 뽑은 사실은 남고 새로 뽑지 않는다.
     memory_facts_extract: bool = False
     # 매 턴 방의 장면 기억에서 이번 턴과 이어질 장면을 골라 생성 프롬프트의 회상 섹션(대화 기록 뒤)에 싣는다. 인물이 대사로만
-    # 말한 장면은 싣지 않고, 방 사실 행의 아는 사람 정보로 이번 장면에 아는 사람이 없는 비밀과 근거가 겹치는 장면을 가린다
-    # (`chat/memory_recall.py`) — 그래서 켜면 사실 주입이 꺼져 있어도 매 턴 방 사실 행을 읽고, 이 가림만 따로 끌 수는 없다.
+    # 말한 장면은 싣지 않고, 장면 행 자신의 아는 사람 칸이나 방 사실 행의 아는 사람 정보로 이번 장면에 아는 사람이 없는 비밀
+    # 장면을 가린다(`chat/memory_recall.py`) — 그래서 켜면 사실 주입이 꺼져 있어도 매 턴 방 사실 행을 읽고, 이 가림만 따로 끌 수는 없다.
     # 기본은 꺼짐 — 꺼져 있으면 장면도 사실도 읽지 않아 생성 프롬프트·SQL 이 이 스위치가 생기기 전과 같다. 위 생성 윈도우
     # 스위치가 꺼져 있으면 요약 커서가 없어 이 값과 무관하게 회상도 없다. 끄면(줄 삭제 + 재기동) 다음 턴부터 섹션이 빠지고
     # 장면은 남는다.
@@ -581,15 +605,28 @@ class Settings(BaseSettings):
     memory_facts_inject: bool = False
     # 사실 섹션을 고르기 전에, 아는 사람이 정해진 사실 중 그 사람이 이번 장면(이번 사용자 메시지·직전 응답에 이름이 나온
     # 인물, 사용자 제외)에 없는 행을 뺀다(`chat/memory_knowledge.py`) — 비밀을 모르는 인물만 있는 장면에서 그 비밀이 새지 않게.
-    # 기본은 꺼짐 — 꺼져 있으면 이름 출처를 읽지도 않아 생성 프롬프트·SQL 이 이 스위치가 생기기 전과 같다. 사실 섹션 안에서만
-    # 걸리므로 위 사실 주입 스위치가 꺼져 있으면 이 값과 무관하게 아무것도 바뀌지 않는다. 회상 줄의 같은 가림은 이 스위치가 아니라
-    # 회상 스위치에 묶여 있다. 끄면(줄 삭제 + 재기동) 다음 턴부터 사실 섹션에서 걸러 내지 않는다.
+    # 기본은 꺼짐 — 꺼져 있으면 이름 출처를 읽지도 않아 생성 프롬프트·SQL 이 이 스위치가 생기기 전과 같다. 거름은 사실 섹션 안에서만
+    # 걸린다. 회상 줄의 같은 가림은 이 스위치가 아니라 회상 스위치에 묶여 있다. 켜면 사실 섹션과 회상의 가림 모두 직전 응답의
+    # 대사 따옴표 안에만 나온 이름을 장면 인물로 세지 않는다(두 섹션이 같은 장면 인물을 써야 사실 섹션이 뺀 비밀이 회상 줄로
+    # 새지 않는다) — 그래서 사실 주입과 회상이 둘 다 꺼져 있을 때만 이 값과 무관하게 아무것도 바뀌지 않는다. 끄면(줄 삭제 +
+    # 재기동) 다음 턴부터 사실 섹션에서 걸러 내지 않고 대사 안 이름도 다시 센다.
     memory_knowledge_filter: bool = False
     # 요약 접기 프롬프트의 지시문 바로 뒤에 비밀 표기 슬롯(비밀에 아는 사람 표기를 붙이고 그 내용을 표기 없이 다시 쓰지 않게 하는
     # 지시와 그 방의 인물 이름 목록)을 싣는다(`chat/memory_fold.py`). 기본은 꺼짐 — 꺼져 있으면 이름 출처를 읽지도 않고 슬롯의 값이
     # 비어 conditional 로 섹션째 빠져, 요약 프롬프트가 이 스위치가 생기기 전과 바이트까지 같다. 생성 윈도우 스위치가 꺼져 있으면
     # 접기가 없어 이 값과 무관하다. 끄면(줄 삭제 + 재기동) 다음 접기부터 슬롯이 빠지고, 이미 쓴 요약은 그대로 남는다.
     memory_summary_secret_marking: bool = False
+    # 위 기억 사용 스위치(회상·사실 주입·지식 범위 필터·요약 비밀 표기)와 아래 임베딩 회상이 실제로 동작하는 방의 범위 — 그 턴의
+    # 레인과 글쓰기 모델이 이 목록에 있어야 켜진 스위치가 동작하고, 없으면 그 턴은 스위치를 다 끈 것과 프롬프트·SQL 이 같다.
+    # 기억 품질은 Opus 방에서만 재 보았고 다른 모델 방에서 켜면 측정하지 않은 동작이 나가므로 기본은 Opus 방뿐이다. 값은 쉼표로
+    # 나눈 목록이고 원소는 `모델`(두 레인 모두) 또는 `레인:모델`이다 — 레인은 `story`·`character`, 모델은 글쓰기 모델 id
+    # (`gemini`·`sonnet`·`opus`, 판정 전용 `haiku` 는 아니다). 모르는 레인·모델이면 기동하지 않는다. 어떤 방에서도
+    # 기억을 쓰지 않으려면 이 값을 비우지 말고 기억 스위치를 끈다 — 운영 env 형식 검사가 빈 값을 거부해 배포가 멈춘다.
+    # 추출(장면·사실)과 임베딩 쓰기는 이 범위와 무관하다 — 쌓아 두는 일이라 어느 방에서 켜도 그 방 대화가 바뀌지 않는다.
+    memory_model_scope: Annotated[list[tuple[MemoryScopeLane, backends.ChatModelId]], NoDecode] = [
+        ("story", "opus"),
+        ("character", "opus"),
+    ]
     # 요약 접기 뒤 장면·사실 기억 행을 Voyage 로 임베딩해 `chat_memory_embeddings` 에 채우는 백그라운드 작업을 켠다
     # (`chat/memory_embeddings.py`). 기본은 꺼짐 — 꺼져 있으면 예약하지 않아 Voyage 를 부르지도 임베딩 표를 읽지도 않고, 턴의
     # 호출·트랜잭션이 이 스위치가 생기기 전과 같다. 생성 윈도우 스위치가 꺼져 있으면 접기가 없어 이 값과 무관하게 채우지 않는다.
@@ -702,6 +739,10 @@ class Settings(BaseSettings):
     # — 약관이 시행되기 전에 운영자만 운영 환경에서 시험해 보고, 시행일에 명단을 비워 모두에게 연다. 판정은
     # `novel_public/access.py` 의 `novel_public_open_to` 하나다. UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다.
     novel_public_preview_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
+    # 노벨 공개 정책 스위치. 꺼져 있으면(기본값) 지금 약관대로다 — 첫 공개는 자동 글 심사를 통과하면 바로 독자에게 열리고,
+    # 원작자가 소설화 허락을 거두면 다음 화 공개가 막힌다. 켜면 아직 독자에게 보인 적 없는 소설의 첫 공개가 운영자 승인을
+    # 기다리고, 한 번 독자에게 보인 소설은 원작자가 허락을 거둬도 다음 화를 이어 공개한다. 개정 약관이 시행된 뒤에 켠다.
+    novel_public_policy_v2_enabled: bool = False
 
     @field_validator(
         "novelize_grant_allowlist",

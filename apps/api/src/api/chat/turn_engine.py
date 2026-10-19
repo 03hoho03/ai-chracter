@@ -16,6 +16,7 @@ import 한다)."""
 import asyncio
 import json
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
@@ -31,10 +32,18 @@ from api.chat.schemas import (
     ChatErrorEvent,
     ChatMessageResponse,
     ChatPolicyWarningEvent,
+    ChatSceneChangeEvent,
     ChatStreamEvent,
     ChatTokenEvent,
+    story_scene_of,
 )
-from api.chat.turn_judgments import JudgmentContext, TurnJudgment, TurnJudgmentResult, _llm_dependency_tag
+from api.chat.turn_judgments import (
+    JudgmentContext,
+    TurnJudgment,
+    TurnJudgmentResult,
+    _llm_dependency_tag,
+    player_stat_events,
+)
 from api.chat.turn_prompt import GenerationPrompt, JudgmentPromptSets
 from api.chat.turn_settlement import TurnSettlement
 from api.content.schemas import MediaTagImage
@@ -66,6 +75,24 @@ _PERSONA_AND_NOTE_POLICY_WARNING_MESSAGE = (
     f"{_POLICY_WARNING_MESSAGE} 대화 프로필이나 기억 노트 내용이 원인일 수 있어요."
 )
 _GENERATION_ERROR_MESSAGE = "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+# 생성 첫 글자 지연을 재는 단조 시계(초). 벽시계는 NTP 보정으로 뒤로 갈 수 있어 쓰지 않는다. 테스트가 정해진 값을 내는
+# 가짜로 바꿔 끼우므로, 읽는 자리는 이 이름을 부를 때마다 모듈에서 찾아야 한다.
+_clock: Callable[[], float] = time.monotonic
+
+
+def turn_clock() -> float:
+    """첫 글자 지연을 재는 시계의 지금 값. 라우트가 턴 시작 시각(`TurnInput.started_at`)을 이것으로 읽어, 턴 엔진과 같은
+    시계(테스트가 바꿔 끼운 것까지)로 잰다."""
+    return _clock()
+
+
+@dataclass
+class _FirstTokenTiming:
+    """생성 스트림을 연 시각과 처음으로 글이 든 델타가 온 시각(`_clock` 값). 글이 든 델타 없이 끝나면 `first_text_at` 이
+    `None` 이다."""
+
+    stream_started_at: float | None = None
+    first_text_at: float | None = None
 
 
 def _policy_warning_message(persona_description_rendered: bool, note_rendered: bool) -> str:
@@ -236,6 +263,7 @@ async def _stream_generated_tokens(
     usage: LLMCallContext,
     turn: int,
     log: logging.Logger,
+    timing: _FirstTokenTiming | None = None,
 ) -> AsyncIterator[ChatTokenEvent]:
     """`llm_client.generate()`의 각 델타를 그대로 relay하며 호출부가 넘긴 빈 리스트 `chunks`에
     누적한다 — 제너레이터는 반환값과 yield를 동시에 쓸 수 없어, 스트림 종료 후 조립할 전체
@@ -249,7 +277,12 @@ async def _stream_generated_tokens(
     프롬프트와 그때 실린 지시문을 그 파일에 덤프한다. **덤프 실패는 절대 스트림을
     막지 않는다** — SSE 제너레이터 본문에서 새 예외가 새면 요청 스코프 DB 세션이 강제 종료돼
     무관한 다른 요청까지 500이 된다(apps/api/CLAUDE.md 의 SSE 스트리밍 절). 덤프 실패 경고는 부르는 쪽 로거(`log`)로
-    남긴다(`run_turn` 의 같은 이유)."""
+    남긴다(`run_turn` 의 같은 이유).
+
+    `timing` 을 넘기면 생성 스트림을 연 시각과 처음으로 글이 든 델타가 온 시각을 적는다. 빈 델타는 화면에 아무것도 띄우지
+    않으므로 첫 글자로 세지 않고, 글이 든 델타가 하나도 없으면 첫 글자 시각을 비워 둔다. `chunks` 와 같은 이유로 반환값
+    대신 out-param 이고, 덤프는 스트림 시작 시각 전에 끝내 지연에 들지 않는다. 시각은 모듈의 `_clock` 을 부를 때마다 찾아
+    읽는다(테스트가 바꿔 끼운다). 델타를 relay 하는 순서와 내용은 재는 것과 무관하게 그대로다."""
     if settings.prompt_dump_path is not None:
         try:
             _dump_prompt(
@@ -262,9 +295,13 @@ async def _stream_generated_tokens(
             )
         except Exception:
             log.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", usage.room_id, turn, exc_info=True)
+    if timing is not None:
+        timing.stream_started_at = _clock()
     async for delta in llm_client.generate(
         prompt, system_instruction, stop_sequences=[f"\n{user_label}:"], usage=usage
     ):
+        if delta and timing is not None and timing.first_text_at is None:
+            timing.first_text_at = _clock()
         chunks.append(delta)
         yield ChatTokenEvent(delta=delta)
 
@@ -278,7 +315,7 @@ def _turn_message_response(
 ) -> ChatMessageResponse:
     """턴(새 턴·재생성)의 `done.finalMessage`. 스토리 칸은 원본 비율로 그리게 너비·높이를 싣고, 캐릭터 상황별
     이미지는 싣지 않는다(지금의 고정 비율 칸 그대로). 칸 그림을 서명하지 못했으면 이미지 없이 보낸다 —
-    상황별 이미지 URL 조립 실패와 같은 규칙이다."""
+    상황별 이미지 URL 조립 실패와 같은 규칙이다. 장면은 메시지에 저장된 그대로다(장면 헤더가 꺼졌으면 null)."""
     if judged_cell_id is not None and judged_cell_image is not None:
         return ChatMessageResponse(
             id=message.id,
@@ -289,6 +326,7 @@ def _turn_message_response(
             image_url=judged_cell_image.url,
             image_width=judged_cell_image.width,
             image_height=judged_cell_image.height,
+            scene=story_scene_of(message.scene),
         )
     return ChatMessageResponse(
         id=message.id,
@@ -297,6 +335,7 @@ def _turn_message_response(
         created_at=message.created_at,
         image_id=matched_image.entity_id if matched_image is not None else None,
         image_url=matched_image_url,
+        scene=story_scene_of(message.scene),
     )
 
 
@@ -348,6 +387,10 @@ class TurnInput:
     judgment_sets: JudgmentPromptSets
     # 생성 호출의 모델을 정한다.
     charge: ChatCharge
+    # 턴을 시작한 시각(`turn_clock` 값). 라우트가 생성 프롬프트 조립(질의 임베딩 포함) 직전에 읽는다 — 기억 기능이 늘리는
+    # 지연이 그 조립에서 생기므로, 첫 글자 지연을 여기서부터 재야 그 증가분이 보인다. 기본값을 두지 않는다 — 만드는 곳이
+    # 라우트 넷뿐이고, 빠뜨리면 그 경로의 턴 시작 지연이 조용히 사라진다.
+    started_at: float
 
 
 @dataclass
@@ -370,6 +413,12 @@ class TurnResult:
     memory_facts: tuple[dict[str, Any], ...] = ()
     # 이 턴의 조립이 부른 질의 임베딩 한 칸(조립 결과의 `memory_query` 그대로). 방 턴 기록의 `llm_calls` 맨 앞에 들어간다.
     memory_query: dict[str, Any] | None = None
+    # 처음으로 글이 든 델타가 오기까지의 지연(정수 ms) 둘. 앞은 턴 시작(생성 프롬프트 조립 직전)부터, 뒤는 생성 스트림을
+    # 연 때부터다 — 앞은 기억 기능의 조립·질의 임베딩이 늘리는 지연까지 품고, 뒤는 생성 호출(공급자 왕복 — 네트워크 왕복과
+    # 백엔드 클라이언트 첫 생성을 포함) 쪽 지연이라 둘을 빼면 조립 몫이 나온다. 글이 든 델타 없이 끝난 생성은 잴 첫
+    # 글자가 없어 둘 다 `None` 이다 — 0 으로 채우면 분포에 가짜 빠른 값이 섞인다. 방 턴 기록의 생성 칸 `firstTokenMs`·`streamFirstTokenMs` 다.
+    first_token_ms: int | None = None
+    stream_first_token_ms: int | None = None
 
 
 @dataclass
@@ -457,6 +506,7 @@ async def run_turn(
     chunks: list[str] = []
     # 생성과 판정 호출이 같은 목록에 사용량을 더한다 — 공급자 구현이 사용량을 집계하는 자리에서 함께 더한다.
     llm_calls: list[CallUsage] = []
+    timing = _FirstTokenTiming()
     try:
         async for token_event in _stream_generated_tokens(
             llm,
@@ -473,6 +523,7 @@ async def run_turn(
             ),
             turn=next_turn,
             log=log,
+            timing=timing,
         ):
             yield token_event
     except LLMPolicyViolationError:
@@ -492,6 +543,11 @@ async def run_turn(
 
     assistant_content = "".join(chunks)
     generated_at = datetime.now(UTC)
+    first_token_ms: int | None = None
+    stream_first_token_ms: int | None = None
+    if timing.first_text_at is not None and timing.stream_started_at is not None:
+        first_token_ms = round((timing.first_text_at - inp.started_at) * 1000)
+        stream_first_token_ms = round((timing.first_text_at - timing.stream_started_at) * 1000)
 
     # 판정이 채우는 결과 — 쓰기 구간이 한꺼번에 쓴다(스탯 행·바뀐 스탯 값·도달한 엔딩·그림). `try` 앞에서 만들어, 판정
     # 도중 예외가 나도 그때까지 채운 결과는 쓰기 구간으로 간다.
@@ -547,6 +603,8 @@ async def run_turn(
         memory_recall=generation.memory_recall,
         memory_facts=generation.memory_facts,
         memory_query=generation.memory_query,
+        first_token_ms=first_token_ms,
+        stream_first_token_ms=stream_first_token_ms,
     )
     # 쓰기 구간은 예외를 흡수하지 않는다 — 쓰기·커밋 실패는 제너레이터를 뚫고 정산 가드가 응답 행을 확인해 정산한다.
     written = await store.write(turn, settlement)
@@ -559,11 +617,17 @@ async def run_turn(
     if after_commit is not None:
         after_commit(turn)
 
-    for stat_change_event in result.stat_change_events:
-        yield stat_change_event
+    for stat_event in player_stat_events(result):
+        yield stat_event
 
     if shown.ending_reached_event is not None:
         yield shown.ending_reached_event
+
+    # 장면 헤더를 켠 작품은 매 턴(바뀌지 않았어도) 저장한 장면을 그 메시지 id 와 함께 보낸다. 꺼진 작품은 판정이 없어 보내지 않는다.
+    if result.story_scene is not None:
+        yield ChatSceneChangeEvent(
+            message_id=written.message.id, place=result.story_scene.place, time=result.story_scene.time
+        )
 
     # 미리보기는 `done` 을 내보내는 순간 응답이 확정된다 — 이 앞의 이벤트에서 끊기면 환급하고, `done` 에 멈춘 뒤 끊기면
     # 소모다. 방은 쓰기 구간의 커밋에서 이미 세웠으니(그 뒤 이벤트에서 끊겨도 환급하지 않는다) 다시 세워도 같다. 미리보기는 DB 에 남기는 것이 없어 여기서 처음 선다 — 쓰기

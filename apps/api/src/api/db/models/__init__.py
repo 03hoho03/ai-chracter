@@ -61,7 +61,7 @@ from api.db.models.creator_payout import (
 )
 from api.db.models.feature_grant import FeatureName, UserFeatureGrant
 from api.db.models.inquiry import Inquiry, InquiryCategory, InquiryStatus
-from api.db.models.legal import LegalDocument
+from api.db.models.legal import LegalDocument, UserLegalConsent
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.db.models.moderation import (
     AdminActionLog,
@@ -83,6 +83,7 @@ from api.db.models.novel import (
     NovelBatch,
     NovelChapter,
     NovelChapterCharacter,
+    NovelChapterEdition,
     NovelChapterPublication,
     NovelChapterRevision,
     NovelCharacter,
@@ -217,6 +218,7 @@ __all__ = [
     "NovelBatch",
     "NovelChapter",
     "NovelChapterCharacter",
+    "NovelChapterEdition",
     "NovelChapterPublication",
     "NovelChapterRevision",
     "NovelCharacter",
@@ -264,6 +266,7 @@ __all__ = [
     "StoryVersionDetail",
     "User",
     "UserFeatureGrant",
+    "UserLegalConsent",
     "UserPersona",
     "WithdrawnEmail",
     "WithdrawnIdentity",

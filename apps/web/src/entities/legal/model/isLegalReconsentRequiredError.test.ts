@@ -7,7 +7,7 @@ describe("isLegalReconsentRequiredError", () => {
     expect(
       isLegalReconsentRequiredError({
         status: 403,
-        detail: { code: "LEGAL_RECONSENT_REQUIRED", kinds: ["terms"] },
+        detail: { code: "LEGAL_RECONSENT_REQUIRED", consents: ["terms"] },
         message: "재동의가 필요해요",
       }),
     ).toBe(true);

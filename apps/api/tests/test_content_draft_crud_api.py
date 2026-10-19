@@ -22,6 +22,7 @@ from sqlalchemy.pool import NullPool
 from api.core.config import settings
 from api.core.s3 import build_thumbnail_key
 from api.db.models.character import CharacterVersionDetail, SituationalImage
+from api.content.schemas import CharacterDraftResponse, ContentDetailResponse, StoryDraftResponse
 from api.db.models.content import (
     Content,
     ContentTarget,
@@ -1041,12 +1042,37 @@ async def test_patch_draft_from_an_old_bundle_ignores_the_removed_default_user_n
         assert "defaultUserName" not in resp.json()
 
 
+async def test_a_new_draft_forbids_novelizing_until_the_creator_chooses(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """초안 생성은 허락을 넘기지 않는다 — 새 작품은 허용 안 함으로 시작하고, 초안 응답이 그 값을 싣는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+
+    created = await db_client.post("/contents", json={"type": "character"})
+    assert created.status_code == 201
+    draft = await db_client.get(f"/contents/{created.json()['contentId']}/draft")
+
+    assert draft.status_code == 200
+    assert draft.json()["novelPermission"] == "forbidden"
+
+
+def test_responses_that_omit_the_novel_permission_default_to_forbidden() -> None:
+    """서버는 응답에 작품 행의 허락을 늘 채우고, 응답 스키마의 기본값은 이 칸을 모르는 생성 타입·화면과의 호환용이다.
+    그 기본값도 새 작품의 기본값과 같아야 한다 — 다르면 칸을 빠뜨린 응답이 실제보다 넓은 허락으로 읽힌다."""
+    for schema in (ContentDetailResponse, CharacterDraftResponse, StoryDraftResponse):
+        field = schema.model_fields["novel_permission"]
+        assert field.get_default(call_default_factory=True) == "forbidden", schema.__name__
+
+
 @pytest.mark.parametrize(("make_draft", "make_payload"), _DRAFT_KINDS)
 async def test_patch_draft_keeps_novel_permission_when_key_omitted(
     db_client: httpx.AsyncClient, db_session: AsyncSession, make_draft: Any, make_payload: Any
 ) -> None:
-    """소설화 허락 칸을 모르는 옛 화면의 자동저장은 이 키를 안 보낸다. 그 저장이 작가가 고른 "허용 안 함"을 기본값으로
-    되돌리면 안 된다. 보낸 값은 헤더에 바로 쓴다."""
+    """소설화 허락 칸을 모르는 옛 화면의 자동저장은 이 키를 안 보낸다. 그 저장이 작가가 고른 값을 기본값으로 되돌리면
+    안 된다 — 고른 값은 기본값(허용 안 함)과 다른 "공개 허용"이어야 되돌림이 보인다. 보낸 값은 헤더에 바로 쓴다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -1054,16 +1080,16 @@ async def test_patch_draft_keeps_novel_permission_when_key_omitted(
     await db_session.commit()
     await _login_as(db_client, user.id)
 
-    saved = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(novelPermission="forbidden"))
+    saved = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(novelPermission="public"))
     assert saved.status_code == 200
-    assert saved.json()["novelPermission"] == "forbidden"
+    assert saved.json()["novelPermission"] == "public"
 
     omitted = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(name="새 이름"))
     assert omitted.status_code == 200
-    assert omitted.json()["novelPermission"] == "forbidden"
-    assert (await db_client.get(f"/contents/{content.id}/draft")).json()["novelPermission"] == "forbidden"
+    assert omitted.json()["novelPermission"] == "public"
+    assert (await db_client.get(f"/contents/{content.id}/draft")).json()["novelPermission"] == "public"
     stored = await db_session.scalar(sa.select(Content.novel_permission).where(Content.id == content.id))
-    assert stored == "forbidden"
+    assert stored == "public"
 
 
 async def test_patch_content_draft_upserts_starting_setup_tree(
@@ -3828,6 +3854,97 @@ async def test_patch_story_draft_enforces_stat_rule_limits(
     assert sum(len(items) for items in saved.values()) == (len(rules) if accepted else 0)
 
 
+async def _saved_stat_visibility(db_session: AsyncSession, version_id: uuid.UUID) -> list[tuple[object, ...]]:
+    saved = (
+        await db_session.scalars(
+            sa.select(StatDef)
+            .join(StartingSetup, StatDef.starting_setup_id == StartingSetup.id)
+            .where(StartingSetup.content_version_id == version_id)
+            .order_by(StatDef.order)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    return [(s.name, s.hidden_from_player, s.player_description, s.signal_hidden_change) for s in saved]
+
+
+def _visibility_keys(stat: dict[str, object]) -> tuple[object, ...]:
+    return (stat["name"], stat["hiddenFromPlayer"], stat["playerDescription"], stat["signalHiddenChange"])
+
+
+async def test_patch_story_draft_round_trips_stat_player_visibility_and_keeps_it_when_keys_omitted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """숨김·플레이어용 설명·익명 신호 세 칸은 저장·초안 응답에서 왕복한다. 플레이어용 설명은 앞뒤 공백을 떼어 저장하고,
+    숨긴 스탯에 설명이 있어도 받는다(빌더가 칸을 잠가도 값은 지우지 않는다). 세 칸을 모르는 옛 화면 번들의 자동저장은 키를
+    보내지 않는데, 그 저장이 작가가 켠 숨김을 꺼 버리면 숨긴 스탯이 플레이어에게 드러나므로 키가 없으면 값을 그대로 둔다.
+    키 없이 들어온 새 스탯은 숨기지 않음·설명 없음·신호 없음으로 생긴다. 공백뿐인 설명은 비운 것으로 본다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup_id = str(uuid.uuid4())
+    hidden = _limited_stat_item(
+        name="숨김", hiddenFromPlayer=True, playerDescription="  마음속 무언가  ", signalHiddenChange=True
+    )
+    shown = _limited_stat_item(name="보임", playerDescription="함께 보낸 시간")
+
+    def payload(*stats: dict[str, object]) -> dict[str, object]:
+        return _story_draft_payload(startingSetups=[_starting_setup_item(id=setup_id, statDefs=list(stats))])
+
+    created = await db_client.patch(f"/contents/{content.id}/draft", json=payload(hidden, shown))
+
+    assert created.status_code == 200
+    expected = [("숨김", True, "마음속 무언가", True), ("보임", False, "함께 보낸 시간", False)]
+    assert await _saved_stat_visibility(db_session, version.id) == expected
+    assert [_visibility_keys(s) for s in created.json()["startingSetups"][0]["statDefs"]] == expected
+    got = await db_client.get(f"/contents/{content.id}/draft")
+    assert [_visibility_keys(s) for s in got.json()["startingSetups"][0]["statDefs"]] == expected
+
+    visibility_keys = {"hiddenFromPlayer", "playerDescription", "signalHiddenChange"}
+
+    def old_bundle(stat: dict[str, object]) -> dict[str, object]:
+        return {key: value for key, value in stat.items() if key not in visibility_keys}
+
+    omitted = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=payload(old_bundle(hidden), old_bundle(shown), _limited_stat_item(name="새 스탯")),
+    )
+
+    assert omitted.status_code == 200
+    assert await _saved_stat_visibility(db_session, version.id) == [*expected, ("새 스탯", False, None, False)]
+
+    blanked = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=payload({**hidden, "hiddenFromPlayer": False, "playerDescription": "   ", "signalHiddenChange": False}),
+    )
+
+    assert blanked.status_code == 200
+    assert await _saved_stat_visibility(db_session, version.id) == [("숨김", False, None, False)]
+
+
+@pytest.mark.parametrize(
+    ("player_description", "accepted"),
+    [
+        pytest.param("가" * 60, True, id="sixty"),
+        pytest.param("  " + "가" * 60 + "  ", True, id="sixty-padded"),
+        pytest.param("가" * 61, False, id="sixty-one"),
+    ],
+)
+async def test_patch_story_draft_limits_stat_player_description_length(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, player_description: str, accepted: bool
+) -> None:
+    """플레이어용 설명은 앞뒤 공백을 뗀 뒤 60자까지 받는다. 넘으면 422 로 막고 아무것도 저장하지 않는다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[_starting_setup_item(statDefs=[_limited_stat_item(playerDescription=player_description)])]
+        ),
+    )
+
+    assert resp.status_code == (200 if accepted else 422)
+    saved = await _saved_stat_visibility(db_session, version.id)
+    assert [description for _, _, description, _ in saved] == (["가" * 60] if accepted else [])
+
+
 async def test_removing_stat_starting_setup_or_draft_leaves_no_stat_rules(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -4074,3 +4191,93 @@ async def test_get_character_draft_signs_situational_images_without_a_query_per_
     many, _, _ = await _character_draft_with_situational_images(db_client, db_session, imaged=4, bare=0)
     large = await _get_count(many)
     assert large == small
+
+
+# ── 장면 헤더 토글·첫 장면 ──────────────────────────────────────────────────────────────────────
+
+
+async def _saved_scene_header(db_session: AsyncSession, version_id: uuid.UUID) -> tuple[object, ...]:
+    detail = await db_session.get(StoryVersionDetail, version_id, populate_existing=True)
+    assert detail is not None
+    setups = (
+        await db_session.scalars(
+            sa.select(StartingSetup)
+            .where(StartingSetup.content_version_id == version_id)
+            .order_by(StartingSetup.order)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    return (detail.scene_header_enabled, [(s.initial_scene_place, s.initial_scene_time) for s in setups])
+
+
+def _response_scene_header(body: dict[str, Any]) -> tuple[object, ...]:
+    return (
+        body["sceneHeaderEnabled"],
+        [(s["initialScenePlace"], s["initialSceneTime"]) for s in body["startingSetups"]],
+    )
+
+
+async def test_patch_story_draft_round_trips_the_scene_header_and_keeps_it_when_keys_omitted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """장면 헤더 토글과 시작설정의 첫 장면(장소·시간)은 저장·초안 응답에서 왕복하고, 첫 장면은 앞뒤 공백을 떼며 공백뿐이면
+    없음이다. 이 키들을 모르는 옛 빌더 번들의 자동저장은 키를 보내지 않는데, 그 저장이 작가가 켠 토글을 끄거나 첫 장면을 지우면
+    안 되므로 키가 없으면 값을 그대로 둔다. 키 없이 들어온 새 시작설정은 첫 장면 없이 생긴다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup = _starting_setup_item(initialScenePlace="  학교 옥상  ", initialSceneTime="방과 후")
+
+    created = await db_client.patch(
+        f"/contents/{content.id}/draft", json=_story_draft_payload(sceneHeaderEnabled=True, startingSetups=[setup])
+    )
+
+    assert created.status_code == 200
+    expected = (True, [("학교 옥상", "방과 후")])
+    assert await _saved_scene_header(db_session, version.id) == expected
+    assert _response_scene_header(created.json()) == expected
+    assert _response_scene_header((await db_client.get(f"/contents/{content.id}/draft")).json()) == expected
+
+    old_bundle_setup = {k: v for k, v in setup.items() if k not in {"initialScenePlace", "initialSceneTime"}}
+    omitted = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[old_bundle_setup, _starting_setup_item(name="새 시작설정")]),
+    )
+
+    assert omitted.status_code == 200
+    assert await _saved_scene_header(db_session, version.id) == (True, [("학교 옥상", "방과 후"), (None, None)])
+
+    cleared = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            sceneHeaderEnabled=False, startingSetups=[{**setup, "initialScenePlace": "   ", "initialSceneTime": None}]
+        ),
+    )
+
+    assert cleared.status_code == 200
+    assert await _saved_scene_header(db_session, version.id) == (False, [(None, None)])
+
+
+@pytest.mark.parametrize("key", ["initialScenePlace", "initialSceneTime"])
+@pytest.mark.parametrize(
+    ("value", "accepted"),
+    [
+        pytest.param("가" * 24, True, id="twenty-four"),
+        pytest.param("  " + "가" * 24 + "  ", True, id="twenty-four-padded"),
+        pytest.param("가" * 25, False, id="twenty-five"),
+    ],
+)
+async def test_patch_story_draft_limits_the_initial_scene_length(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, key: str, value: str, accepted: bool
+) -> None:
+    """첫 장면의 장소·시간은 앞뒤 공백을 뗀 뒤 24자까지 받는다(판정이 적는 장면과 같은 상한). 넘으면 422 로 막고 아무것도
+    저장하지 않는다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[_starting_setup_item(**{key: value})]),
+    )
+
+    assert resp.status_code == (200 if accepted else 422)
+    _enabled, scenes = await _saved_scene_header(db_session, version.id)
+    expected = [("가" * 24, None) if key == "initialScenePlace" else (None, "가" * 24)] if accepted else []
+    assert scenes == expected

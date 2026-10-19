@@ -29,6 +29,9 @@ const STAT: StatDefValues = {
   description: "d",
   perTurnDelta: null,
   rules: [],
+  hiddenFromPlayer: false,
+  playerDescription: "",
+  signalHiddenChange: false,
 };
 
 function rule(id: string, statId = "days"): SingleRuleValues {

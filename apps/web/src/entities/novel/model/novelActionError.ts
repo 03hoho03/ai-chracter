@@ -135,6 +135,12 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     message: "이미 진행 중인 작업이 있어요. 끝나면 다시 해주세요.",
     shouldRefetchNovel: true,
   },
+  // 아직 첫 화가 없는 남의 작품 소설에서, 원작자가 소설 만들기를 허용하지 않을 때 온다. 첫 화를 만든 소설은 이 거절을
+  // 받지 않으므로 "새 화"로 다시 만들기·AI 수정까지 아우른다. 원작자가 허락을 바꾸기 전에는 풀리지 않아 다시 시도를 말하지 않는다.
+  CONTENT_NOVELIZE_FORBIDDEN: {
+    message: "원작자가 이 작품의 소설 만들기를 허용하지 않아 새 화를 만들 수 없어요.",
+    shouldRefetchNovel: false,
+  },
   CONTENT_RESTRICTED: {
     message: "이용이 제한된 작품이라 새로 쓰는 작업을 할 수 없어요. 지금까지 만든 화는 그대로 볼 수 있어요.",
     shouldRefetchNovel: false,

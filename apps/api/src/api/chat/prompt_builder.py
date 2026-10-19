@@ -115,6 +115,13 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ),
     ("stat_rule_judgment", "judgment_instruction"): frozenset(),
     ("stat_rule_judgment", "user_name"): frozenset({"user_name"}),
+    # 장면 헤더 판정 — `build_scene_judgment_prompt` 가 만드는 `values`. 직전 장면은 conditional 이라 장소·시간이 둘 다 없으면
+    # 섹션째 빠진다. 사용자 이름 한 줄은 두지 않는다 — 이 판정은 이번 턴 글과 직전 장면만 본다.
+    ("scene_judgment", "instruction"): frozenset(),
+    ("scene_judgment", "previous_scene"): frozenset({"previous_place", "previous_time"}),
+    ("scene_judgment", "turn_context"): frozenset(
+        {"user_label", "user_message", "assistant_label", "assistant_message"}
+    ),
     ("ending_judgment", "memory_summary"): frozenset({"memory_summary"}),
     ("ending_judgment", "history_header"): frozenset(),
     ("ending_judgment", "turn_context"): frozenset({"turn_lines"}),
@@ -180,7 +187,7 @@ async def load_active_prompt_set(
 ) -> tuple[PromptSet, list[PromptSection]]:
     """`(lane, model)`의 활성 세트(published 중 `published_at`이 가장 최신인 것)와 그 섹션 전부를
     읽는다. `model` 기본값이 Gemini 인 것은 심사·소설 묶음 경계·문단 수정처럼 모델을 고르지 않는 호출이 Gemini 세트를 읽기
-    때문이고(소설 화 생성은 작업의 모델 체인, 판정·요약은 판정·요약 모델 설정의 체인을 읽는다), 모델을 빠뜨린 호출부도 지금까지와 같은 세트로 간다. `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면
+    때문이고(소설 화 생성은 작업의 모델 체인, 판정·요약은 판정·요약 모델 설정의 체인을 읽는다), 모델을 빠뜨린 호출부도 지금까지와 같은 세트로 간다. 활성 세트가 없으면
     `PromptSetNotFoundError` — downgrade 직후처럼 테이블 자체가 없는 게 아니라
     행만 없는 상태는 만들어지기 어렵지만, 그 경우에도 조용히 넘어가지 않는다.
 
@@ -700,6 +707,38 @@ def build_stat_rule_judgment_prompt(
     return render_prompt_channel(sections, channel="stat_rule_judgment", scope="story", values=values), rule_ids
 
 
+def build_scene_judgment_prompt(
+    *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
+    previous_place: str | None,
+    previous_time: str | None,
+    user_message: str,
+    assistant_message: str,
+    names: PromptNames,
+) -> str:
+    """장면 헤더 판정 프롬프트 — 이번 턴의 사용자 메시지·모델 응답과 직전 장면(장소·시간)만 싣는다. 스토리 설정·지난 대화·대화
+    프로필은 싣지 않는다: 장면은 이번 턴에 무엇이 바뀌었는지로 정하고, 바뀐 근거가 없으면 판정이 비워 직전 장면을 이어받는다.
+    직전 장면이 둘 다 없으면 그 섹션째 빠진다(conditional). 모델 응답은 스탯 판정처럼 `names` 로 `{{user}}` 를 바꾸고, 사용자
+    메시지는 그대로 둔다. 이 레인 세트에 채널 행이 없으면 빈 문자열이다 — 부르는 쪽이 판정을 건너뛴다."""
+    values = {
+        "previous_place": previous_place or "",
+        "previous_time": previous_time or "",
+        "user_label": prompt_set.user_label,
+        "user_message": user_message,
+        "assistant_label": prompt_set.story_assistant_label,
+        "assistant_message": names.expand(assistant_message),
+    }
+    return render_prompt_channel(sections, channel="scene_judgment", scope="story", values=values)
+
+
+class SceneJudgmentResult(BaseModel):
+    """지금 장면의 장소·시간. 이번 턴 글에 근거가 없는 칸은 null(직전 장면을 이어받는다)."""
+
+    place: str | None
+    time: str | None
+
+
 class StatRuleJudgmentResult(BaseModel):
     """이번 턴에 실제로 일어난 일에 해당하는 규칙의 id 목록. 해당하는 규칙이 없으면 빈 목록."""
 
@@ -958,6 +997,7 @@ class MemoryEpisodeItem(BaseModel):
     importance: int
     start_line: int
     end_line: int
+    known_by: list[str]
 
 
 class MemoryEpisodeResult(BaseModel):

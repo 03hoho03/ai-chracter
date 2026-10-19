@@ -27,6 +27,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.memory_fact_section import fact_body
+from api.chat.voyage_backoff import clear_voyage_backoff, record_voyage_failure, voyage_allowed
 from api.core.sentry import capture_dependency_failure
 from api.db.models import ChatMemoryEmbedding, ChatMemoryEpisode, ChatMemoryFact, ChatRoomMemorySnapshot
 from api.llm.voyage import EmbeddingError, VoyageEmbeddingClient
@@ -65,7 +66,8 @@ async def fill_pending_embeddings(
 
     1. 새 세션에서 지금 모델·차원(`client.model`·`client.dims`)의 임베딩이 없는 행을 오래된 순서로 상한까지 고르고 세션을 닫는다.
        없으면 끝(Voyage 를 부르지 않는다).
-    2. 세션 없이 Voyage 를 한 번 부른다(문서 종류).
+    2. Voyage 연속 실패로 멈춘 동안이면 끝(`chat/voyage_backoff.py`). 아니면 세션 없이 Voyage 를 한 번 부른다(문서 종류). 그
+       호출이 실패하면 연속 실패 수에 세고, 성공하면 지운다 — 뒤의 DB 실패는 Voyage 실패가 아니라 세지 않는다.
     3. 스냅샷마다 새 세션 한 트랜잭션: **먼저 스냅샷을 `FOR KEY SHARE` 로 잠근다**(없으면 되감겼다 — 그 스냅샷 몫은 건너뛴다).
        그다음 행마다 SAVEPOINT 를 두고 INSERT 한다 — 대상 행이 그사이 사라져 외래 키에 걸리면 그 행만 건너뛰고, 같은 대상·모델·
        차원 행이 이미 있으면(다른 작업이 먼저 넣었다) 넣지 않는다. 그리고 커밋한다.
@@ -75,9 +77,17 @@ async def fill_pending_embeddings(
             pending = await _pending_rows(session, room_id, client.model, client.dims)
         if not pending:
             return
-        vectors = await client.embed(
-            [row.text for row in pending], input_type="document", call_site=EMBEDDING_CALL_SITE
-        )
+        if not await voyage_allowed():
+            logger.warning("대화방 %s 기억 임베딩 채우기를 Voyage 연속 실패 멈춤으로 건너뛴다", room_id)
+            return
+        try:
+            vectors = await client.embed(
+                [row.text for row in pending], input_type="document", call_site=EMBEDDING_CALL_SITE
+            )
+        except Exception:
+            await record_voyage_failure()
+            raise
+        await clear_voyage_backoff()
         for snapshot_id in dict.fromkeys(row.snapshot_id for row in pending):
             share = [(row, vector) for row, vector in zip(pending, vectors, strict=True) if row.snapshot_id == snapshot_id]
             async with session_factory() as session:

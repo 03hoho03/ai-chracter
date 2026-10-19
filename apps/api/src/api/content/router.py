@@ -920,6 +920,8 @@ async def _story_draft_response(
                 opening_message=setup.opening_message,
                 playguide=setup.playguide,
                 suggested_replies=setup.suggested_replies or [],
+                initial_scene_place=setup.initial_scene_place,
+                initial_scene_time=setup.initial_scene_time,
                 stat_defs=[
                     StatDefDraftItem(
                         id=stat_def.entity_id,
@@ -932,6 +934,9 @@ async def _story_draft_response(
                         unit=stat_def.unit,
                         description=stat_def.description,
                         per_turn_delta=stat_def.per_turn_delta,
+                        hidden_from_player=stat_def.hidden_from_player,
+                        player_description=stat_def.player_description,
+                        signal_hidden_change=stat_def.signal_hidden_change,
                         rules=[
                             StatRuleDraftItem(id=rule.entity_id, condition=rule.condition, delta=rule.delta)
                             for rule in (
@@ -996,6 +1001,7 @@ async def _story_draft_response(
         ],
         user_goal=detail.user_goal,
         rules=detail.rules,
+        scene_header_enabled=detail.scene_header_enabled,
         starting_setups=starting_setups,
         keyword_notes=[
             KeywordNoteDraftItem(
@@ -1503,6 +1509,9 @@ async def _update_story_draft(
     ]
     detail.user_goal = payload.user_goal
     detail.rules = payload.rules
+    # 안 보냈으면 저장된 값을 둔다(아래 `novel_permission` 과 같은 이유).
+    if payload.scene_header_enabled is not None:
+        detail.scene_header_enabled = payload.scene_header_enabled
     version.detail_description = payload.description
     content.genre_id = payload.genre_id
     content.target = payload.target
@@ -1583,9 +1592,15 @@ async def _update_story_draft(
     setup_physical_id: dict[uuid.UUID, uuid.UUID] = {}
     for order, setup_item in enumerate(payload.starting_setups):
         setup = existing_setups.get(setup_item.id)
+        is_new_setup = setup is None
         if setup is None:
             setup = StartingSetup(entity_id=setup_item.id, content_version_id=version.id)
             db.add(setup)
+        # 첫 장면은 보냈을 때(또는 새 시작설정일 때)만 맞춘다(`StartingSetupDraftItem` 의 같은 칸 주석).
+        if is_new_setup or "initial_scene_place" in setup_item.model_fields_set:
+            setup.initial_scene_place = setup_item.initial_scene_place
+        if is_new_setup or "initial_scene_time" in setup_item.model_fields_set:
+            setup.initial_scene_time = setup_item.initial_scene_time
         setup.name = setup_item.name
         setup.prologue = setup_item.prologue
         setup.opening_message = setup_item.opening_message
@@ -1601,6 +1616,7 @@ async def _update_story_draft(
         }
         for stat_order, stat_item in enumerate(setup_item.stat_defs):
             stat_def = existing_stat_defs.get(stat_item.id)
+            is_new_stat = stat_def is None
             if stat_def is None:
                 stat_def = StatDef(entity_id=stat_item.id, starting_setup_id=setup.id)
                 db.add(stat_def)
@@ -1614,6 +1630,14 @@ async def _update_story_draft(
             stat_def.description = stat_item.description
             stat_def.per_turn_delta = stat_item.per_turn_delta
             stat_def.order = stat_order
+            # 기존 스탯에서 안 보낸 노출 설정은 그대로 둔다(`StatDefDraftItem` 의 주석). 새 스탯은 기본값을 직접 넣는다 —
+            # DB 기본값에 맡기면 INSERT 뒤 그 칸이 만료돼 응답을 만들 때 다시 읽어야 한다.
+            if is_new_stat or "hidden_from_player" in stat_item.model_fields_set:
+                stat_def.hidden_from_player = stat_item.hidden_from_player
+            if is_new_stat or "player_description" in stat_item.model_fields_set:
+                stat_def.player_description = stat_item.player_description
+            if is_new_stat or "signal_hidden_change" in stat_item.model_fields_set:
+                stat_def.signal_hidden_change = stat_item.signal_hidden_change
             if "rules" in stat_item.model_fields_set:
                 # 새 스탯의 물리 id 는 파이썬 쪽 기본값이라 flush 해야 채워진다.
                 await db.flush()
@@ -1875,6 +1899,7 @@ async def _restore_draft_detail(
     draft_story.development_examples = published_story.development_examples
     draft_story.user_goal = published_story.user_goal
     draft_story.rules = published_story.rules
+    draft_story.scene_header_enabled = published_story.scene_header_enabled
 
 
 @router.post(
@@ -2441,6 +2466,8 @@ async def _clone_story_children(
             playguide=setup.playguide,
             suggested_replies=setup.suggested_replies,
             order=setup.order,
+            initial_scene_place=setup.initial_scene_place,
+            initial_scene_time=setup.initial_scene_time,
         )
         db.add(new_setup)
         await db.flush()
@@ -2465,6 +2492,9 @@ async def _clone_story_children(
                 change_direction=stat_def.change_direction,
                 max_change_per_turn=stat_def.max_change_per_turn,
                 order=stat_def.order,
+                hidden_from_player=stat_def.hidden_from_player,
+                player_description=stat_def.player_description,
+                signal_hidden_change=stat_def.signal_hidden_change,
             )
             db.add(new_stat_def)
             await db.flush()
@@ -2834,6 +2864,7 @@ async def _write_story_publish(
             development_examples=detail.development_examples,
             user_goal=detail.user_goal,
             rules=detail.rules,
+            scene_header_enabled=detail.scene_header_enabled,
         )
     )
 

@@ -2600,6 +2600,9 @@ def _stat_def_fields(stat_def: StatDef) -> tuple[object, ...]:
         stat_def.change_direction,
         stat_def.max_change_per_turn,
         stat_def.order,
+        stat_def.hidden_from_player,
+        stat_def.player_description,
+        stat_def.signal_hidden_change,
     )
 
 
@@ -2607,7 +2610,8 @@ async def test_publish_and_reset_clone_every_stat_def_field(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
     """발행과 편집 취소는 스탯을 생성자에 필드를 하나씩 나열해 복사한다. 하나를 빠뜨리면 그 필드가 조용히 기본값으로
-    돌아가므로(방향은 양방향, 폭·턴당 변화는 없음으로), 모든 필드를 기본값이 아닌 값으로 채워 두고 복사본과 맞춰 본다.
+    돌아가므로(방향은 양방향, 폭·턴당 변화·플레이어용 설명은 없음으로, 숨김·익명 신호는 꺼짐으로 — 숨김이 꺼지면
+    숨긴 스탯이 플레이어에게 드러난다), 모든 필드를 기본값이 아닌 값으로 채워 두고 복사본과 맞춰 본다.
     방향·폭은 더 이상 읽지 않지만 옛 이미지로 되돌렸을 때를 위해 값 그대로 옮긴다. 턴당 변화가 있는 스탯에는 규칙을 달 수
     없고(발행이 막는다) 판정 스탯에는 규칙이 있어야 하므로 스탯 둘로 나눠 싣는다."""
     user = _make_user()
@@ -2620,6 +2624,9 @@ async def test_publish_and_reset_clone_every_stat_def_field(
     judged.unit = "일"
     judged.change_direction = "decrease"
     judged.max_change_per_turn = 7
+    judged.hidden_from_player = True
+    judged.player_description = "숨겨도 남는 설명"
+    judged.signal_hidden_change = True
     counter = StatDef(
         entity_id=uuid.uuid4(),
         starting_setup_id=setup.id,
@@ -2633,6 +2640,9 @@ async def test_publish_and_reset_clone_every_stat_def_field(
         description="매 턴 준다",
         per_turn_delta=-3,
         order=1,
+        hidden_from_player=False,
+        player_description="보이는 스탯의 설명",
+        signal_hidden_change=False,
     )
     db_session.add(counter)
     await db_session.flush()
@@ -4116,3 +4126,71 @@ async def test_publish_still_succeeds_when_only_text_changes_while_it_is_being_s
         sa.select(CharacterVersionDetail.one_liner).where(CharacterVersionDetail.content_version_id == version.id)
     )
     assert published_one_liner == "바뀐 한 줄 소개"
+
+
+async def test_publish_and_reset_copy_the_scene_header_toggle_and_initial_scene(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """장면 헤더 토글은 버전 상세 행에 있어 발행(새 초안 상세를 만든다)과 편집 취소(초안 상세에 칸을 대입한다)가 손으로
+    옮기고, 시작설정의 첫 장면은 버전 복제가 옮긴다. 하나를 빠뜨리면 발행 직후 새 초안·편집 취소한 초안에서 그 값이 조용히
+    꺼진 값·없음으로 돌아가 다음 발행에서 작가가 켠 헤더가 사라진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, setup, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    detail = await db_session.get(StoryVersionDetail, version.id)
+    assert detail is not None
+    detail.scene_header_enabled = True
+    setup.initial_scene_place = "버려진 등대"
+    setup.initial_scene_time = "새벽"
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert publish_resp.status_code == 200
+    content_id = content.id
+
+    async def _draft_scene_header() -> tuple[object, ...]:
+        draft_version_id = await db_session.scalar(
+            sa.select(ContentVersion.id).where(
+                ContentVersion.content_id == content_id, ContentVersion.published_at.is_(None)
+            )
+        )
+        assert draft_version_id is not None
+        draft_detail = await db_session.get(StoryVersionDetail, draft_version_id, populate_existing=True)
+        draft_setup = await db_session.scalar(
+            sa.select(StartingSetup)
+            .where(StartingSetup.content_version_id == draft_version_id)
+            .execution_options(populate_existing=True)
+        )
+        assert draft_detail is not None and draft_setup is not None
+        return (draft_detail.scene_header_enabled, draft_setup.initial_scene_place, draft_setup.initial_scene_time)
+
+    assert await _draft_scene_header() == (True, "버려진 등대", "새벽")
+
+    draft_version_id = await db_session.scalar(
+        sa.select(ContentVersion.id).where(ContentVersion.content_id == content_id, ContentVersion.published_at.is_(None))
+    )
+    await db_session.execute(
+        sa.update(StoryVersionDetail)
+        .where(StoryVersionDetail.content_version_id == draft_version_id)
+        .values(scene_header_enabled=False)
+    )
+    await db_session.execute(
+        sa.update(StartingSetup)
+        .where(StartingSetup.content_version_id == draft_version_id)
+        .values(initial_scene_place=None, initial_scene_time="밤")
+    )
+    await db_session.commit()
+    assert await _draft_scene_header() == (False, None, "밤")
+
+    reset_resp = await db_client.post(f"/contents/{content_id}/draft/reset")
+    assert reset_resp.status_code == 204
+    assert await _draft_scene_header() == (True, "버려진 등대", "새벽")

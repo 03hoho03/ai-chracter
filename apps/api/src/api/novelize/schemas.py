@@ -292,6 +292,10 @@ class NovelPurchaseRefundPreview(CamelModel):
     novel_refund_amount: int = 0
     last_batch_buyer_count: int = 0
     last_batch_refund_amount: int = 0
+    # 정책 스위치가 켜졌을 때만 참이 된다. `novel_sold`: 소설을 지우면 환급하지 않고 숨긴다(산 사람이 계속 읽는다) — 위
+    # 두 칸의 환급 안내는 맞지 않는다. `last_batch_sold`: 마지막 묶음에 산 화가 있어 지울 수 없다(409 `NOVEL_BATCH_SOLD`).
+    novel_sold: bool = False
+    last_batch_sold: bool = False
 
 
 class NovelDetailResponse(CamelModel):

@@ -39,10 +39,9 @@ GUARDED = frozenset(
         "set_cached_active_prompt_set",
         "load_active_prompt_set",
         # 턴 판정이 부르는 것. 라우터도 계속 쓴다 — 생성 프롬프트 렌더 실패(방·미리보기)와 미리보기 저장 실패의 Bugsink
-        # 승격, 엔딩 스냅숏의 규칙 조회, 스탯 정의 조회(첫 스탯 심기·콘텐츠 스냅숏).
+        # 승격, 스탯 정의 조회(첫 스탯 심기·콘텐츠 스냅숏).
         "capture_dependency_failure",
         "_llm_dependency_tag",
-        "_ending_rule_items",
         "StatDef",
         # 턴 골격(`turn_engine`)과 턴 저장소(`turn_store`)가 부르는 것. 라우터의 다른 라우트가 쓴다(폐기 기록과 `delete` 는
         # 편집·메시지 삭제가 라우터에서 계속 쓴다).
@@ -67,7 +66,16 @@ GUARDED = frozenset(
 )
 MOVED_CALLER_MODULES = ("turn_prompt.py", "room_stats.py", "turn_judgments.py", "turn_engine.py", "turn_store.py")
 # 위 조건에 맞지만 지키지 않는 이름 → 이유.
-EXCLUDED: dict[str, str] = {}
+EXCLUDED: dict[str, str] = {
+    "initial_story_scene": (
+        "시작설정의 장소·시간을 장면 값으로 감싸기만 하는 순수 함수다(I/O·LLM·DB 없음). 테스트는 시작설정 칸을 바꿔 결과를 "
+        "고르지 이 함수를 갈아끼울 까닭이 없어, 라우터 쪽 패치가 판정 모듈의 호출부를 빗나갈 일이 생기지 않는다."
+    ),
+    "story_scene_of": (
+        "저장된 장면 칸(dict)을 응답 모양으로 검증·변환하기만 하는 순수 함수다(I/O 없음). 테스트는 메시지의 장면 칸을 바꿔 "
+        "결과를 고르지 이 함수를 갈아끼울 까닭이 없어, 라우터 쪽 패치가 턴 골격·판정 모듈의 호출부를 빗나갈 일이 생기지 않는다."
+    ),
+}
 
 # `capture_dependency_failure` 를 라우터에 패치해 그 자리의 Bugsink 태그를 재는 테스트들의 공통 이유. 재는 흡수 자리가
 # 라우터에 남아 있어(턴 생성 프롬프트 렌더·미리보기 저장), 판정·턴 골격·턴 저장소 모듈의 흡수 자리는 이 패치와 무관하다.

@@ -116,6 +116,10 @@ class ChatMessage(Base):
     # entity_id 다. assistant 메시지에만 채워진다. FK 없음 — entity_id는 버전 간 복제돼 유니크가
     # 아니고, 방 종류에 따라 가리키는 테이블도 달라 형제 컬럼과 같은 다형 참조 관례를 따른다.
     image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 장면 헤더를 켠 스토리 방의 AI 응답에만 채우는 그 턴의 장면 `{"place": str|null, "time": str|null}` — 판정이 적은 값에
+    # 언급이 없던 칸은 직전 장면을 이어받아 채운다. 장면 헤더가 꺼진 작품·켜기 전 메시지·사용자 메시지·오프닝은 null 이다.
+    # 화면 표시 전용이라 생성 프롬프트에 싣지 않는다.
+    scene: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # 턴마다의 히스토리 로드·방 조회·방 목록의 마지막 메시지가 전부 "한 방의 메시지를 `(created_at, id)` 순으로"
     # 찾는다. 없으면 그 조회마다 플랫폼 전체 메시지를 순차 스캔한다(FK 는 Postgres 에서 인덱스를 만들지 않는다).
@@ -180,6 +184,9 @@ EPISODE_DETAIL_MAX = 300
 EPISODE_NOUNS_MAX = 30
 EPISODE_KEYWORDS_MAX = 8
 EPISODE_EVIDENCE_MAX = 2
+# 인물 이름 하나와 아는 사람 목록의 상한. 사실 기억과 장면 기억의 `known_by` 가 같은 규칙을 쓰도록 한 상수를 함께 쓴다.
+FACT_NAME_MAX = 60
+FACT_KNOWN_BY_MAX = 10
 
 
 class ChatMemoryEpisode(Base):
@@ -200,6 +207,8 @@ class ChatMemoryEpisode(Base):
     - `nouns` 는 검색에 쓰는 정규화된 명사, `keywords` 는 짧은 핵심 구절, `evidence` 는 원문에서 옮긴 짧은 근거다.
     - `asserted_by` 는 장면의 사실을 누가 말했는가다: 사용자 본인(`user`), 캐릭터(`character` — 캐릭터가 사용자에 대해
       지어낸 말을 사실로 회상하지 않게 구별한다), 서술(`narration`), 섞임(`mixed`).
+    - `known_by` 는 이 장면을 아는 인물 이름 목록이고 뜻과 규칙은 `ChatMemoryFact` 의 같은 칸과 같다(NULL 은 공개이거나
+      알 수 없음, 빈 배열은 쓰지 않는다). 장면 추출이 결과의 같은 칸을 사실 행과 같은 규칙으로 잘라 채운다.
     - `importance` 는 1~5, `ordinal` 은 그 접기 안의 장면 순서(0부터)다.
     `asserted_by` 는 native enum 이 아니라 Text 이고 위 Literal 이 값 범위다."""
 
@@ -224,6 +233,7 @@ class ChatMemoryEpisode(Base):
     evidence: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
     asserted_by: Mapped[EpisodeAssertedBy] = mapped_column(Text, nullable=False)
     importance: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    known_by: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -231,6 +241,8 @@ class ChatMemoryEpisode(Base):
     # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 아래 CHECK 의 검증은 행위 테스트가 유일하다.
     # 유니크의 앞 열(`snapshot_id`)이 스냅샷 DELETE 의 CASCADE 가 이 테이블을 찾는 인덱스를 겸한다. 방 인덱스는 한 방의
     # 장면을 원문 순서로 읽는 검색과, 방 DELETE 의 FK 확인을 받는다.
+    # `known_by` 의 두 CHECK 는 `ChatMemoryFact` 의 것과 같은 식이다(원소 검사가 제어 문자 U+001F 로 이어 붙인 문자열을
+    # 보는 이유도 그쪽 주석과 같다).
     __table_args__ = (
         UniqueConstraint("snapshot_id", "ordinal", name="ux_chat_memory_episodes_snapshot_ordinal"),
         CheckConstraint(
@@ -255,6 +267,14 @@ class ChatMemoryEpisode(Base):
         ),
         CheckConstraint(
             f"cardinality(evidence) <= {EPISODE_EVIDENCE_MAX}", name="ck_chat_memory_episodes_evidence_count"
+        ),
+        CheckConstraint(
+            f"cardinality(known_by) BETWEEN 1 AND {FACT_KNOWN_BY_MAX}", name="ck_chat_memory_episodes_known_by_count"
+        ),
+        CheckConstraint(
+            "array_position(known_by, NULL) IS NULL"
+            f" AND array_to_string(known_by, E'\\x1F') !~ '[^\\x1F]{{{FACT_NAME_MAX + 1}}}'",
+            name="ck_chat_memory_episodes_known_by_items",
         ),
         Index("ix_chat_memory_episodes_room_end", "chat_room_id", "end_created_at", "end_message_id"),
     )
@@ -308,10 +328,9 @@ FactAssertedBy = Literal["user", "character", "narration"]
 FactExtractionStatus = EpisodeExtractionStatus
 
 # 사실 기억 칸의 DB 상한. 추출 결과를 자르는 쪽은 이 값 이하로 잘라야 한다 — 넘기면 잘라 낸 행이 CHECK 에 막힌다.
-FACT_NAME_MAX = 60
+# 인물 이름 상한과 아는 사람 수 상한(`FACT_NAME_MAX`·`FACT_KNOWN_BY_MAX`)은 장면 기억 앞에 있다.
 FACT_VALUE_MAX = 200
 FACT_KEY_MAX = 200
-FACT_KNOWN_BY_MAX = 10
 # 한 접기에서 뽑는 사실 행의 상한이자 `ordinal` 의 범위(0 이상 이 값 미만)다.
 FACT_PER_SNAPSHOT_MAX = 20
 
@@ -596,6 +615,10 @@ class ChatTurn(Base):
     - `llm_calls` 는 `[{callSite, model, promptTokens, cachedTokens, cacheWriteTokens, outputTokens, thoughtsTokens}]`,
       `stat_changes` 는 `{statEntityId: [before, after]}` 다. 임베딩 회상을 켠 턴은 맨 앞에 질의 임베딩 한 칸
       `{callSite, model, dims, promptTokens, latencyMs, outcome}` 이 붙는다(`chat/memory_vector.py`).
+      생성 칸에는 처음으로 글이 든 델타가 오기까지의 지연 둘(정수 ms)이 더해진다 — `firstTokenMs` 는 턴 시작(생성 프롬프트
+      조립 직전)부터라 기억 기능의 조립·질의 임베딩 지연까지 품고, `streamFirstTokenMs` 는 생성 스트림을 연 때부터라 생성
+      호출(공급자 왕복 — 네트워크 왕복과 백엔드 클라이언트 첫 생성을 포함) 쪽 지연이다. 글 없이 끝난 생성과 이 키를 쓰기
+      전 이미지가 넣은 행에는 없다. 판정·질의 임베딩 칸에는 붙지 않는다.
     - `memory_recall` 은 그 턴 프롬프트에 실은 장면 기억 목록 `[{episodeId, score, rank, chars}]` 이다(글은 싣지 않는다).
       회상을 쓰지 않은 턴과 이 칸을 모르는 옛 이미지가 넣은 행은 DB 기본값 `[]` 이다. 벡터 순위와 합쳐 고른 턴은 칸마다 벡터
       순위 `vectorRank` 가 더해지고, 명사 쪽에 없던 장면은 `score`·`rank` 가 null 이다.
@@ -675,6 +698,8 @@ class ChatPreviousResponse(Base):
     message_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 밀려난 응답의 장면(메시지의 `scene` 과 같은 꼴). 맞바꾸기가 본문·그림과 함께 옮긴다.
+    scene: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

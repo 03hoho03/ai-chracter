@@ -21,6 +21,7 @@ function baseFormValues(): StoryBuilderFormValues {
       userGoal: "표류에서 살아남아 무사히 귀환한다",
       rules: "선원들 앞에서 약한 모습을 보이지 않는다",
       customPrompt: undefined,
+      sceneHeaderEnabled: true,
     },
     startingSetups: [
       {
@@ -30,6 +31,8 @@ function baseFormValues(): StoryBuilderFormValues {
         openingSituation: "파도 소리만 들린다.",
         playGuide: "생존에 집중하는 톤을 유지하세요.",
         suggestedReplies: ["주변을 둘러본다"],
+        initialScenePlace: " 낯선 해변 ",
+        initialSceneTime: "",
         stats: [
           {
             id: "stat-1",
@@ -43,6 +46,9 @@ function baseFormValues(): StoryBuilderFormValues {
             description: "생존에 필요한 신체 상태",
             perTurnDelta: -1,
             rules: [],
+            hiddenFromPlayer: false,
+            playerDescription: "",
+            signalHiddenChange: false,
           },
         ],
         endings: [],
@@ -105,6 +111,7 @@ describe("formToServer", () => {
       userGoal: "표류에서 살아남아 무사히 귀환한다",
       rules: "선원들 앞에서 약한 모습을 보이지 않는다",
       customPrompt: null,
+      sceneHeaderEnabled: true,
       startingSetups: [
         {
           id: "setup-1",
@@ -126,10 +133,15 @@ describe("formToServer", () => {
               description: "생존에 필요한 신체 상태",
               perTurnDelta: -1,
               rules: [],
+              hiddenFromPlayer: false,
+              playerDescription: null,
+              signalHiddenChange: false,
             },
           ],
           endings: [],
           situationNotes: [],
+          initialScenePlace: "낯선 해변",
+          initialSceneTime: null,
         },
       ],
       keywordNotes: [
@@ -171,6 +183,31 @@ describe("formToServer", () => {
     });
   });
 
+  it("sends the scene header switch and the first scene even while the switch is off — hidden fields keep their values", () => {
+    const values = baseFormValues();
+    values.storySetting.sceneHeaderEnabled = false;
+    const setup = requireFirst(values.startingSetups);
+    setup.initialScenePlace = "낯선 해변";
+    setup.initialSceneTime = "새벽";
+
+    const payload = formToServer(values);
+
+    expect(payload.sceneHeaderEnabled).toBe(false);
+    expect(requireFirst(payload.startingSetups)).toMatchObject({ initialScenePlace: "낯선 해변", initialSceneTime: "새벽" });
+  });
+
+  it("sends an empty, blank or missing first scene field as null (none)", () => {
+    const values = baseFormValues();
+    const setup = requireFirst(values.startingSetups);
+    setup.initialScenePlace = "   ";
+    setup.initialSceneTime = undefined;
+
+    expect(requireFirst(formToServer(values).startingSetups)).toMatchObject({
+      initialScenePlace: null,
+      initialSceneTime: null,
+    });
+  });
+
   it("maps a null profile image and unset optional storySetting fields to null", () => {
     const values = baseFormValues();
     values.profile.image = null;
@@ -208,6 +245,7 @@ describe("formToServer", () => {
       userGoal: "커스텀 목표",
       rules: "커스텀 규칙",
       customPrompt: "커스텀 프롬프트 본문",
+      sceneHeaderEnabled: false,
     };
 
     const payload = formToServer(values);
@@ -289,6 +327,28 @@ describe("formToServer", () => {
       { id: "rule-b", condition: "사용자가 약속에 늦었다", delta: -3 },
       { id: "rule-a", condition: "사용자가 짐을 나눠 들었다", delta: 3 },
     ]);
+  });
+
+  it("always sends a stat's player visibility settings, with a trimmed description and an empty one as null", () => {
+    const values = baseFormValues();
+    const stat = requireFirst(requireFirst(values.startingSetups).stats);
+    expect(requireFirst(requireFirst(formToServer(values).startingSetups).statDefs)).toMatchObject({
+      hiddenFromPlayer: false,
+      playerDescription: null,
+      signalHiddenChange: false,
+    });
+
+    stat.hiddenFromPlayer = true;
+    stat.playerDescription = "  바닥나면 쓰러진다 ";
+    stat.signalHiddenChange = true;
+    expect(requireFirst(requireFirst(formToServer(values).startingSetups).statDefs)).toMatchObject({
+      hiddenFromPlayer: true,
+      playerDescription: "바닥나면 쓰러진다",
+      signalHiddenChange: true,
+    });
+
+    stat.playerDescription = "   ";
+    expect(requireFirst(requireFirst(formToServer(values).startingSetups).statDefs)).toHaveProperty("playerDescription", null);
   });
 
   it("sends only the finished rules while some are half written, so the rest of the draft still saves", () => {

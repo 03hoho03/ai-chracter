@@ -2,12 +2,21 @@
 파기를 하도록 한 곳에 둔다. 라우터를 import 하지 않아 어느 라우터에서 불러도 순환이 생기지 않는다.
 
 요청에 묶인 일(현재 세션 삭제·쿠키 지우기)과 세션 일괄 폐기는 커밋 뒤 호출자가 한다.
+
+**노벨 게시자의 탈퇴** — 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면 탈퇴자의 소설(숨긴 소설 포함)을 산 사람
+모두에게 환급한다(사유 `publisher_withdrawn`). 그래서 탈퇴자 행만이 아니라 그 구매자들의 행도 id 순으로 한 번에 잠근다
+(`lock_withdrawal_parties`, `novel_public/purchases.py` 의 잠금 순서) — 탈퇴자 행을 먼저 쥐고 구매자 행을 따로 잡으면, 탈퇴자의
+다른 화를 사는 중인(구매자 → 게시자 순으로 잡는) 그 구매자와 교착한다. 누구를 잠글지는 잠그기 전에 고르므로 그 사이 새 구매가
+커밋되면 잠그지 않은 구매자가 생긴다 — 그때 환급이 `NovelPartiesChangedError` 를 내고, 호출자가 롤백한 뒤 처음부터 다시 한다
+(`retry_on_new_buyers`). 탈퇴자 행을 잠근 뒤에는 새 구매가 끼지 않으므로(구매가 게시자 행을 잡는다) 다시 할 때마다 새 구매자는
+그 사이에 커밋된 것뿐이다.
 """
 
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import TypeVar
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -20,6 +29,7 @@ from api.chat.room_deletion import delete_chat_rooms
 from api.clover.missions import MISSION_KEYS, mission_idempotency_key
 from api.comments.actions import erase_user_comments, lock_withdrawal_contents
 from api.core import clover
+from api.core.config import settings
 from api.core.constants import WITHDRAWN_IDENTITY_RETENTION_PERIOD
 from api.core.s3 import build_variant_keys, delete_object
 from api.core.security import hash_withdrawn_email
@@ -31,14 +41,43 @@ from api.db.models.content import Content, ContentChatParticipant, ContentVisibi
 from api.db.models.creator_payout import CreatorPayout, CreatorPayoutApplication, CreatorPayoutProfile
 from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
+from api.db.models.legal import UserLegalConsent
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
 from api.db.models.novel import Novel, NovelComment, NovelPurchase, NovelReaderPosition
 from api.db.models.persona import UserPersona
+from api.novel_public.purchases import NovelPartiesChangedError, lock_novel_parties, refund_purchases
 from api.novelize.deletion import delete_novels
 
 logger = logging.getLogger(__name__)
 
 StorageObjectDeleter = Callable[[str], Awaitable[None]]
+
+T = TypeVar("T")
+
+# 새 구매자가 끼어 처음부터 다시 하는 횟수까지 친 탈퇴 시도 상한. 다시 할 때마다 그 사이에 새 구매가 또 커밋돼야 다음 시도가
+# 필요하므로 연달아 넘기기는 어렵다. 넘기면 `DELETE /me` 는 409, 카카오 연결 끊기 알림은 500 이다.
+WITHDRAWAL_ATTEMPTS = 4
+
+
+async def lock_withdrawal_parties(db: AsyncSession, user_id: uuid.UUID) -> frozenset[uuid.UUID] | None:
+    """정책 스위치가 켜져 있으면 탈퇴자와, 탈퇴자의 소설(숨긴 소설 포함)의 미환급 구매자를 id 순으로 한 번에 잠그고 잠근
+    사람들을 돌려준다(`erase_account` 의 `refund_locked` 로 넘긴다). 꺼져 있으면 아무것도 잠그지 않고 None — 호출자가 지금처럼
+    탈퇴자 행만 잠근다. 탈퇴·정지 판정은 호출자가 잠근 뒤에 한다."""
+    if not settings.novel_public_policy_v2_enabled:
+        return None
+    novel_ids = (await db.scalars(select(Novel.id).where(Novel.user_id == user_id))).all()
+    return await lock_novel_parties(db, novel_ids=novel_ids, extra_user_ids=(user_id,))
+
+
+async def retry_on_new_buyers(db: AsyncSession, attempt: Callable[[], Awaitable[T]]) -> T:
+    """`attempt`(잠금부터 파기 커밋까지)를 부르고, 잠근 뒤 새 구매자가 보여 `NovelPartiesChangedError` 가 나면 롤백하고 처음부터
+    다시 부른다(모듈 docstring). `WITHDRAWAL_ATTEMPTS` 번째도 그러면 그 예외를 그대로 낸다."""
+    for _ in range(WITHDRAWAL_ATTEMPTS - 1):
+        try:
+            return await attempt()
+        except NovelPartiesChangedError:
+            await db.rollback()
+    return await attempt()
 
 
 async def delete_storage_object_now(storage_key: str) -> None:
@@ -88,9 +127,16 @@ async def _retain_withdrawn_identity(
 
 
 async def erase_account(
-    db: AsyncSession, user: User, *, delete_storage_object: StorageObjectDeleter
+    db: AsyncSession,
+    user: User,
+    *,
+    delete_storage_object: StorageObjectDeleter,
+    refund_locked: frozenset[uuid.UUID] | None = None,
 ) -> None:
     """탈퇴 파기를 수행하고 커밋한다.
+
+    `refund_locked` 는 `lock_withdrawal_parties` 가 잠근 사람들이다. 주면 탈퇴자의 소설을 지우기 전에 그 구매를 모두
+    환급한다(모듈 docstring). 잠그지 않은 구매자가 보이면 `NovelPartiesChangedError` 이고 아무것도 커밋하지 않는다.
 
     호출자가 `user` 행을 FOR UPDATE 로 잠그고 탈퇴·정지 여부를 판정한 뒤 부른다 —
     `lock_active_user` 는 정지 회원에게 403 을 던지는 요청 전용 검사라, 요청이 아닌 경로가 같은
@@ -176,9 +222,14 @@ async def erase_account(
     # 방보다 먼저 지우면 방 DELETE 가 소설의 방 참조를 비우는 UPDATE 를 할 일이 없다. 진행 중 작업도 환불하지 않고
     # 지운다 — 잔액은 아래 `burn_all` 이 통째로 소멸시킨다.
     novel_ids = (await db.scalars(select(Novel.id).where(Novel.user_id == user_id))).all()
+    if refund_locked is not None:
+        await refund_purchases(
+            db, novel_ids=novel_ids, locked_user_ids=refund_locked, reason="publisher_withdrawn"
+        )
     await delete_novels(db, novel_ids)
-    # 노벨: 이 사람이 게시자면 위에서 소설이 지워지고 남의 구매 행은 그대로 남는다 — 환급 없이 열람만 끝나고, 구매 행이
-    # 구매자에게 "게시자가 탈퇴했다"를 알려 줄 근거다. 이 사람이 산 구매 행은 지우지 않고 구매자 칸만 비운다 — 화·가격·
+    # 노벨: 이 사람이 게시자면 위에서 소설이 지워지고 남의 구매 행은 그대로 남는다 — 구매 행이 구매자에게 "게시자가
+    # 탈퇴했다"를 알려 줄 근거다(정책 스위치가 켜져 있으면 위에서 환급했고, 꺼져 있으면 환급 없이 열람만 끝난다). 이 사람이
+    # 산 구매 행은 지우지 않고 구매자 칸만 비운다 — 화·가격·
     # 차감 원장이 거래 기록으로 남아야 하지만 "이 사람이 어느 소설을 읽었는가"는 남기지 않는다. 구매자가 빈 구매는 그 뒤
     # 게시자가 소설을 지워도 환급 대상이 아니다(탈퇴로 잔액이 이미 소멸했다).
     await db.execute(update(NovelPurchase).where(NovelPurchase.buyer_user_id == user_id).values(buyer_user_id=None))
@@ -213,6 +264,10 @@ async def erase_account(
     )
     # 기능 허용은 계정에 딸린 설정이라 계정과 함께 지운다. 누가 언제 허용했는지는 감사 로그에 남는다.
     await db.execute(delete(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id))
+    # 동의 이력(어느 판에 어떤 동의 단위로 언제 동의했는지)은 계정에 딸린 기록이라 탈퇴하면 지체 없이 파기한다. `users` 의
+    # 동의 버전·시각 칸은 회원 행과 함께 남는다 — 그 칸을 비울지는 이 파기와 따로 정할 일이다. 재동의 기록도 이 회원 행을
+    # 잠그고 탈퇴 여부를 다시 본 뒤 쓰므로, 잠금을 쥔 지금 지우면 탈퇴 뒤에 이력 행이 새로 남지 않는다.
+    await db.execute(delete(UserLegalConsent).where(UserLegalConsent.user_id == user_id))
     # 정산 신청 기록(신청·동의 시각, 처리 결과와 사유, 적립 구간)은 동의로 받은 기록이라 탈퇴하면 지체 없이 파기한다.
     # 확정 행·내역 줄·배치 실행 기록은 신청 행을 참조하지 않아 그대로 남는다 — 그쪽은 세법상 장부로 보존한다. 적립 구간이
     # 사라져도 탈퇴한 회원은 월 확정 배치가 건너뛰므로 정산이 달라지지 않는다. 어드민의 신청 처리도 이 회원의 `users` 행을

@@ -9,7 +9,16 @@ function detail(finished: boolean): WebnovelDetailResponse {
     id: "n",
     title: "t",
     synopsis: "",
-    source: { contentId: "c", contentType: "story", title: "s", characterName: null, coverUrl: null, linkable: true },
+    source: {
+      contentId: "c",
+      contentType: "story",
+      title: "s",
+      characterName: null,
+      coverUrl: null,
+      linkable: true,
+      creatorNickname: null,
+      unofficial: false,
+    },
     publisherUserId: "p",
     publisherNickname: null,
     isPublisher: false,
@@ -32,6 +41,7 @@ function detail(finished: boolean): WebnovelDetailResponse {
     lastRead: null,
     firstPublishedAt: "2026-10-09T00:00:00Z",
     publishedAt: "2026-10-09T00:00:00Z",
+    salesStopped: false,
   };
 }
 

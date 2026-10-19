@@ -251,7 +251,7 @@ def _knowledge_filter(
 ) -> Callable[[ChatMemoryFact], bool]:
     """이번 턴의 장면 인물로 행을 남길지 정하는 판정."""
     scene = scene_for_turn(rows, scope, history=history, user_content=user_content, names=names)
-    return lambda row: known_in_scene(row, scene)
+    return lambda row: known_in_scene(row.known_by, scene)
 
 
 async def _facts(

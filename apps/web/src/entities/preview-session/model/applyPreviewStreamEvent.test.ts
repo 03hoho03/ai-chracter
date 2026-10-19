@@ -21,6 +21,7 @@ function buildState(overrides: Partial<PreviewSessionState> = {}): PreviewSessio
     suggestedReplies: [],
     endingStatus: { reached: false, epilogue: undefined },
     turnCount: 3,
+    sceneHeaderEnabled: true,
     ...overrides,
   };
 }
@@ -113,6 +114,34 @@ describe("applyPreviewStreamEvent", () => {
     const last = queryClient.getQueryData<PreviewSessionState>(previewSessionKeys.detail(SESSION_ID))?.messages.at(-1);
     expect(last).toEqual({ id: "m2", role: "assistant", content: "다음 대사", createdAt: "2026-07-08T00:01:00Z" });
     expect(last?.imageUrl).toBeUndefined();
+  });
+
+  it("sceneChange before done is held and attached to that response, and the wire scene is parsed", () => {
+    applyPreviewStreamEvent(
+      queryClient,
+      SESSION_ID,
+      previewStreamEventSchema.parse({ type: "sceneChange", messageId: "m2", place: "갱도", time: null }),
+    );
+    applyPreviewStreamEvent(queryClient, SESSION_ID, {
+      type: "done",
+      finalMessage: { id: "m2", role: "assistant", content: "다음 대사", createdAt: "2026-07-08T00:01:00Z" },
+    });
+
+    const state = queryClient.getQueryData<PreviewSessionState>(previewSessionKeys.detail(SESSION_ID));
+    expect(state?.messages.at(-1)?.scene).toEqual({ place: "갱도", time: undefined });
+    expect(state?.pendingScene).toBeUndefined();
+
+    const done = previewStreamEventSchema.parse({
+      type: "done",
+      finalMessage: {
+        id: "m3",
+        role: "assistant",
+        content: "또 다음",
+        createdAt: "2026-07-08T00:02:00Z",
+        scene: { place: null, time: "새벽" },
+      },
+    });
+    expect(done.type === "done" && done.finalMessage.scene).toEqual({ place: undefined, time: "새벽" });
   });
 
   it("is a no-op when there is no cached state yet for the session", () => {

@@ -14,6 +14,9 @@ const STAT_ERROR_FIELDS: Record<StatErrorField, true> = {
   unit: true,
   description: true,
   perTurnDelta: true,
+  hiddenFromPlayer: true,
+  playerDescription: true,
+  signalHiddenChange: true,
 };
 
 /** 규칙 한 줄에서 오류가 붙을 수 있는 칸. */

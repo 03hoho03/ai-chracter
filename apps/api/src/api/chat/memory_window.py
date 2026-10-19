@@ -6,7 +6,7 @@
 """
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime
 from typing import Any, NamedTuple
 
@@ -75,3 +75,11 @@ def prompt_window(messages: Sequence[ChatMessage], cursor: MessageKey | None) ->
         for message in messages
         if message is opening or (message.created_at, message.id) > cursor
     ]
+
+
+def memory_model_in_scope(lane: str, model: str, scope: Collection[tuple[str, str]]) -> bool:
+    """그 턴의 레인과 글쓰기 모델이 기억 사용 범위(`memory_model_scope` 설정)에 드는가. 회상·사실 주입·지식 범위 필터·요약 비밀
+    표기·임베딩 회상은 "스위치 ∧ 이 판정"을 읽는다 — 범위 밖 방은 스위치가 켜져 있어도 스위치를 다 끈 턴과 같다. `model` 은
+    판정·요약 모델이 아니라 그 턴에 응답을 쓴 모델이다(요약 접기는 요약 모델의 세트를 받으므로 그 세트의 모델로 판정하면 Opus
+    방의 접기도 범위 밖이 된다)."""
+    return (lane, model) in scope

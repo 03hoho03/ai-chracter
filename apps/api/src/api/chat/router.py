@@ -50,6 +50,7 @@ from api.chat.turn_engine import (
     TurnInput,
     TurnResult,
     run_turn,
+    turn_clock,
 )
 from api.chat.turn_store import (
     PreviewTurnStore,
@@ -57,8 +58,8 @@ from api.chat.turn_store import (
     _record_story_media_unlocks,
 )
 from api.chat.turn_judgments import (
-    _ending_rule_items,
     _llm_dependency_tag,
+    initial_story_scene,
     new_turn_judgments,
     preview_judgments,
     regenerate_judgments,
@@ -71,6 +72,7 @@ from api.chat.schemas import (
     ChatMessageEditRequest,
     ChatMessagePageResponse,
     ChatMessageResponse,
+    story_scene_of,
     ChatModelItem,
     ChatRoomContentSnapshot,
     ChatRoomCreateRequest,
@@ -133,9 +135,10 @@ from api.db.models.chat import (
     StoryEndingUnlock,
     StoryMediaExposure,
 )
-from api.db.models.content import Content, ContentType, ModerationStatus
+from api.db.models.content import Content, ContentType, ContentVersion, ModerationStatus
 from api.db.models.media import Asset
 from api.db.models.novel import Novel
+from api.novelize.writing_lock import first_saved_chapter_at, refuses_novelize
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
@@ -155,6 +158,7 @@ from api.llm.chat_models import (
     CHAT_MODELS_BY_ID,
     DEFAULT_CHAT_MODEL,
     DEFAULT_CHAT_ROOM_MODEL,
+    ChatModelId,
     PromptSetModelId,
     chat_turn_cost,
     is_chat_room_model,
@@ -446,6 +450,19 @@ async def _require_starting_setup(db: AsyncSession, room: ChatRoom) -> StartingS
     return setup
 
 
+async def _scene_header_enabled(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> bool:
+    """방이 고정한 버전에서 작가가 장면 헤더를 켰는가. 캐릭터 방은 장면 헤더가 없다. 턴 골격이 판정 LLM 앞에서 요청 세션을
+    반납하므로 생성 전에 읽어도 트랜잭션을 쥐고 기다리지 않는다."""
+    if setup is None:
+        return False
+    enabled = await db.scalar(
+        select(StoryVersionDetail.scene_header_enabled).where(
+            StoryVersionDetail.content_version_id == room.content_version_id
+        )
+    )
+    return bool(enabled)
+
+
 async def _seed_initial_stats(db: AsyncSession, room: ChatRoom, setup: StartingSetup) -> None:
     stat_defs = (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
     for stat_def in stat_defs:
@@ -457,29 +474,31 @@ async def _seed_initial_stats(db: AsyncSession, room: ChatRoom, setup: StartingS
     await db.flush()
 
 
-async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
-    """스냅숏은 아직 도달하지 않은 엔딩까지 싣는다. 그래서 에필로그의 미디어 북 태그는 그림으로 해석하지
-    않고 지운다 — 해석하면 플레이어가 보지 못한 칸의 원본 URL 이 응답에 실린다. 화면은 에필로그를
-    엔딩 이벤트·엔딩 모음에서 그리므로 여기서 태그가 사라져도 보이는 것이 없다."""
+def _ending_snapshot(ending: Ending) -> EndingSnapshot:
+    """스냅숏은 아직 도달하지 않은 엔딩까지 싣는다. 그래서 판정 문안(판정 재료)과 에필로그(플레이어가 아직 보지 못한
+    내용)는 싣지 않는다. 화면은 에필로그를 엔딩 이벤트·방 응답의 엔딩 칸·엔딩 모음에서, 힌트는 엔딩 모음에서 그린다.
+
+    스탯 규칙은 언제나 빈 목록이다 — 어느 스탯이 몇을 넘으면 어느 엔딩인지는 엔딩 판정만 쓰는 정보이고, 플레이어에게
+    실으면 숨긴 스탯의 id 와 엔딩 조건이 함께 드러난다. 엔딩 판정은 규칙을 DB 에서 따로 읽는다(`turn_judgments._ending_rule_items`)."""
     return EndingSnapshot(
         id=ending.entity_id,
         name=ending.name,
         turn_count_gate=ending.turn_count_gate,
-        judgment_prompt=ending.judgment_prompt,
-        epilogue=strip_media_tags(ending.epilogue) if ending.epilogue is not None else None,
-        hint=ending.hint,
-        stat_rules=await _ending_rule_items(db, ending),
+        stat_rules=[],
     )
 
 
 async def _build_content_snapshot(
-    db: AsyncSession, room: ChatRoom, setup: StartingSetup
+    db: AsyncSession, room: ChatRoom, setup: StartingSetup, *, scene_header_enabled: bool
 ) -> ChatRoomContentSnapshot:
     """stats/endings는 방이 고정한 시작설정(setup) 기준,
-    단축어는 작품 전역(content_version_id) 기준."""
+    단축어는 작품 전역(content_version_id) 기준. 플레이어에게 숨긴 스탯은 싣지 않는다 — 작가 본인의 방도 같다(작가가
+    숨긴 스탯을 보는 곳은 빌더 미리보기다)."""
     stat_defs = (
         await db.scalars(
-            select(StatDef).where(StatDef.starting_setup_id == setup.id).order_by(StatDef.order)
+            select(StatDef)
+            .where(StatDef.starting_setup_id == setup.id, StatDef.hidden_from_player.is_(False))
+            .order_by(StatDef.order)
         )
     ).all()
     endings = (
@@ -502,17 +521,19 @@ async def _build_content_snapshot(
                 max_value=s.max_value,
                 initial_value=s.initial_value,
                 unit=s.unit,
-                description=s.description,
+                player_description=s.player_description,
             )
             for s in stat_defs
         ],
-        endings=[await _ending_snapshot(db, ending) for ending in endings],
+        endings=[_ending_snapshot(ending) for ending in endings],
         shortcuts=[
             ShortcutSnapshot(id=sc.entity_id, name=sc.name, description=sc.description, prompt=sc.prompt)
             for sc in shortcuts
         ],
         suggested_replies=setup.suggested_replies or [],
         pinned_starting_setup_id=setup.id,
+        scene_header_enabled=scene_header_enabled,
+        initial_scene=initial_story_scene(setup.initial_scene_place, setup.initial_scene_time),
     )
 
 
@@ -641,21 +662,39 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
     content_snapshot = None
     stats = None
     if setup is not None:
-        content_snapshot = await _build_content_snapshot(db, room, setup)
+        content_snapshot = await _build_content_snapshot(
+            db,
+            room,
+            setup,
+            scene_header_enabled=isinstance(version_detail, StoryVersionDetail) and version_detail.scene_header_enabled,
+        )
         stat_rows = (
             await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
         ).all()
-        stats = {str(row.stat_entity_id): float(row.current_value) for row in stat_rows}
+        # 값은 스냅숏에 실린(보이는) 정의 기준으로만 싣는다 — 숨긴 스탯 값과, 방이 버전을 옮기며 정의를 잃은 고아 값이 빠진다.
+        visible_stat_ids = {stat.id for stat in content_snapshot.stats}
+        stats = {
+            str(row.stat_entity_id): float(row.current_value)
+            for row in stat_rows
+            if row.stat_entity_id in visible_stat_ids
+        }
 
     image_urls, cell_images = await _sign_message_images(db, room, setup, messages)
     # 다음 턴이 실제로 쓸 모델. 기본 모델 방이거나 상위 모델 스위치가 꺼져 있으면 쿼리가 없다.
     effective_model = await effective_room_model(db, room.user_id, room.chat_model)
-    # 소설 유무는 허용 안 함 작품의 남의 방에서만 본다(방 하나에 소설 하나 — 방 유니크 인덱스로 찾는다).
-    novel_creation_blocked = (
-        content.novel_permission == "forbidden"
-        and room.user_id != content.creator_user_id
-        and await db.scalar(select(Novel.id).where(Novel.chat_room_id == room.id)) is None
-    )
+    # 잠긴 소설 유무는 허용 안 함 작품의 남의 방에서만 본다(방 하나에 소설 하나 — 방 유니크 인덱스로 찾는다). 잠기기
+    # 전의 빈 소설은 이어 쓸 수 없으니 소설이 없는 것과 같이 막힌 것으로 보인다. 잠긴 소설은 화를 다 지워도 잠겨 있다.
+    # 잠금이 없어도 성공한 화 생성 작업이 있으면 막지 않는다 — 생성 경로와 같은 판정이다. 배포가 겹치는 동안 옛 코드가
+    # 잠금 없이 첫 화를 저장한 소설은 생성 경로를 지나야 그 자리에서 잠기는데, 여기서 막힘으로 보이면 사용자가 그 경로에
+    # 닿지 못한다. 여기서는 읽기만 하고 잠그지 않는다.
+    novel_creation_blocked = False
+    if refuses_novelize(content, room.user_id):
+        novel_row = (
+            await db.execute(select(Novel.id, Novel.writing_locked_at).where(Novel.chat_room_id == room.id))
+        ).first()
+        novel_creation_blocked = novel_row is None or (
+            novel_row.writing_locked_at is None and await first_saved_chapter_at(db, novel_row.id) is None
+        )
 
     # 미디어 북 태그는 첫 메시지(작성자 글을 칸 id 형태로 복사한 것)에서만 해석하고, 그중에서도 방 버전의
     # 시작설정 첫 메시지가 실제로 가리키는 칸만 서명한다. 오프닝은 지울 수 있어 첫 자리에 사용자 메시지나
@@ -734,6 +773,7 @@ def _room_message_response(
             image_url=cell_image.url,
             image_width=cell_image.width,
             image_height=cell_image.height,
+            scene=story_scene_of(message.scene),
         )
     return ChatMessageResponse(
         id=message.id,
@@ -742,6 +782,7 @@ def _room_message_response(
         created_at=message.created_at,
         image_id=message.image_id,
         image_url=image_urls.get(message.image_id) if message.image_id is not None else None,
+        scene=story_scene_of(message.scene),
     )
 
 
@@ -947,10 +988,13 @@ def _fold_after_commit(
     setup: StartingSetup | None,
     judgment_sets: JudgmentPromptSets,
     names: PromptNames,
+    writing_model: ChatModelId,
 ) -> Callable[[TurnResult], None]:
     """턴을 커밋한 뒤 긴 방의 요약 접기(`fold_memory`)를 background로 예약하는 콜백. 접을 때인지는 접기 쪽이 새 세션으로
     다시 읽어 판정한다(턴마다 예약하고 대부분은 읽기만 하고 끝난다). 세트는 요약 모델의 세트다(라우트가 넘긴다).
     생성 윈도우 설정이 꺼져 있으면 요약을 싣지 않으므로 접기도 예약하지 않는다 — 설정은 예약하는 그때 읽는다.
+    `writing_model` 은 이 턴에 응답을 쓴 모델(차감 영수증의 모델)이다 — 접기가 비밀 표기 슬롯을 기억 사용 범위로 가를 때 요약
+    모델이 아니라 이 모델로 판정한다. 추출·임베딩 채우기 예약은 이 범위와 무관하다.
 
     장면 기억 추출 스위치가 켜져 있으면 접기 **뒤에** 추출(`extract_pending_episode`, 추출 모델의 세트)을 예약한다.
     background 는 넣은 순서대로 차례로 돌아 접기가 이 턴에 커밋한 스냅샷을 추출이 바로 본다. 추출할 스냅샷이 없으면 읽기만
@@ -978,6 +1022,7 @@ def _fold_after_commit(
             sections=summary_sections,
             is_story_chat=is_story_chat,
             names=names,
+            writing_model=writing_model,
         )
         if settings.memory_episodes_extract:
             episode_set, episode_sections = judgment_sets.episode
@@ -1085,6 +1130,8 @@ async def send_message(
             db.add(user_message)
             await db.commit()
 
+            # 첫 글자 지연의 턴 시작점 — 기억 기능이 늘리는 조립·질의 임베딩 지연이 들도록 조립 직전에 읽는다.
+            started_at = turn_clock()
             prepared = await _room_generation_prompt(
                 db,
                 room,
@@ -1113,9 +1160,12 @@ async def send_message(
                     generation_set=generation_set,
                     judgment_sets=judgment_sets,
                     charge=charge,
+                    started_at=started_at,
                 ),
                 llm=llm_client,
-                judgments=new_turn_judgments(db, room, setup, log=logger),
+                judgments=new_turn_judgments(
+                    db, room, setup, log=logger, scene_header_enabled=await _scene_header_enabled(db, room, setup)
+                ),
                 store=RoomTurnStore(
                     db,
                     room,
@@ -1134,6 +1184,7 @@ async def send_message(
                     setup,
                     judgment_sets,
                     generation.names,
+                    charge.model,
                 ),
                 log=logger,
             ):
@@ -1239,6 +1290,8 @@ async def regenerate_message(
             )
             # 이번 입력은 바꿀 응답 바로 앞의 사용자 메시지이고, 생성·판정이 보는 히스토리는 그 앞까지다.
             user_content = history[-1].content
+            # 첫 글자 지연의 턴 시작점 — 기억 기능이 늘리는 조립·질의 임베딩 지연이 들도록 조립 직전에 읽는다.
+            started_at = turn_clock()
             prepared = await _room_generation_prompt(
                 db,
                 room,
@@ -1268,9 +1321,17 @@ async def regenerate_message(
                     generation_set=generation_set,
                     judgment_sets=judgment_sets,
                     charge=charge,
+                    started_at=started_at,
                 ),
                 llm=llm_client,
-                judgments=regenerate_judgments(db, room, setup, last_message.id, log=logger),
+                judgments=regenerate_judgments(
+                    db,
+                    room,
+                    setup,
+                    last_message.id,
+                    log=logger,
+                    scene_header_enabled=await _scene_header_enabled(db, room, setup),
+                ),
                 store=RoomTurnStore(db, room, setup, mode="replace", replaced_message_id=last_message.id, log=logger),
                 settlement=settlement,
                 after_commit=_fold_after_commit(
@@ -1282,6 +1343,7 @@ async def regenerate_message(
                     setup,
                     judgment_sets,
                     generation.names,
+                    charge.model,
                 ),
                 log=logger,
             ):
@@ -1386,6 +1448,8 @@ async def edit_message(
             await db.commit()
 
             # 수정 요청은 단축어를 받지 않는다(`ChatMessageEditRequest` 는 글만 싣는다).
+            # 첫 글자 지연의 턴 시작점 — 기억 기능이 늘리는 조립·질의 임베딩 지연이 들도록 조립 직전에 읽는다.
+            started_at = turn_clock()
             prepared = await _room_generation_prompt(
                 db,
                 room,
@@ -1414,9 +1478,12 @@ async def edit_message(
                     generation_set=generation_set,
                     judgment_sets=judgment_sets,
                     charge=charge,
+                    started_at=started_at,
                 ),
                 llm=llm_client,
-                judgments=new_turn_judgments(db, room, setup, log=logger),
+                judgments=new_turn_judgments(
+                    db, room, setup, log=logger, scene_header_enabled=await _scene_header_enabled(db, room, setup)
+                ),
                 store=RoomTurnStore(db, room, setup, mode="append", log=logger),
                 settlement=settlement,
                 after_commit=_fold_after_commit(
@@ -1428,6 +1495,7 @@ async def edit_message(
                     setup,
                     judgment_sets,
                     generation.names,
+                    charge.model,
                 ),
                 log=logger,
             ):
@@ -2137,9 +2205,16 @@ async def get_ending_collection(
     """`starting_setup_id`는 물리적 PK(`_build_content_snapshot`의
     `startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달
     여부는 `story_ending_unlocks`를 entity_id(버전 불변)로 조인해 같은 시작설정으로
-    새 대화방을 만들어도 이전 기록이 유지되게 한다."""
+    새 대화방을 만들어도 이전 기록이 유지되게 한다.
+
+    작품을 읽을 수 있는 사람에게만 연다 — 이미지 보관함과 같은 기준(`is_open_to_participant`)이라, 비공개 작품은 작가
+    본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를 시작한 플레이어)에게만 열린다. 이용제한·삭제된 작품은
+    이미지 보관함처럼 그 방의 주인과 작가 본인에게도 닫힌다 — 두 화면이 같은 판정을 써야 한쪽만 열리는 일이 없다.
+    막힌 경우는 없는 시작설정과 같은 404 다."""
     setup = await db.get(StartingSetup, starting_setup_id)
-    if setup is None:
+    version = await db.get(ContentVersion, setup.content_version_id) if setup is not None else None
+    content = await db.get(Content, version.content_id) if version is not None else None
+    if setup is None or content is None or not await is_open_to_participant(db, content, user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Starting setup not found")
 
     endings = (
@@ -2395,7 +2470,11 @@ def _build_preview_start_state(payload: CharacterDraftPayload | StoryDraftPayloa
         ChatMessageResponse(id=uuid.uuid4(), role=ChatMessageRole.ASSISTANT, content=opening_text, created_at=now)
     ]
     stats = {str(stat.id): float(stat.initial_value) for stat in setup.stat_defs}
-    return PreviewSessionState(payload=payload, messages=messages, stats=stats)
+    # 장면 헤더를 켠 초안은 첫 시작설정의 첫 장면에서 시작한다(실채팅의 오프닝뿐인 방과 같다).
+    story_scene = (
+        initial_story_scene(setup.initial_scene_place, setup.initial_scene_time) if payload.scene_header_enabled else None
+    )
+    return PreviewSessionState(payload=payload, messages=messages, stats=stats, story_scene=story_scene)
 
 
 @preview_router.post(
@@ -2595,6 +2674,8 @@ async def send_preview_message(
             )
         )
 
+        # 첫 글자 지연의 턴 시작점 — 방 경로와 같은 자리(조립 직전)다. 미리보기는 턴 기록을 쓰지 않지만 턴 입력의 모양을 맞춘다.
+        started_at = turn_clock()
         try:
             # 초안 페이로드와 세션 상태로 조립한다(DB 조회 없음). 상황 노트 조건은 이번 턴 판정 반영 전 세션 스탯으로 본다.
             generation = build_preview_prompt(
@@ -2631,6 +2712,7 @@ async def send_preview_message(
                     generation_set=prompt_set,
                     judgment_sets=judgment_sets,
                     charge=charge,
+                    started_at=started_at,
                 ),
                 llm=llm_client,
                 judgments=preview_judgments(state, media_images, user_id, log=logger),

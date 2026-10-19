@@ -44,8 +44,9 @@ def _load(revision: str) -> ModuleType:
 _M = _load("5cab2abe4e7b")
 # 회상 섹션 문안의 지금 판 — 글을 쓰는 여섯 체인의 활성 세트가 이 리비전의 것이다.
 _RECALL = _load("726aad108167")
-# 사실 추출 지시문의 지금 판 — 여덟 체인의 활성 세트가 이 리비전의 것이다(채널의 슬롯 모양은 위 리비전 그대로다).
-_INSTRUCTION = _load("e4e407a62d03")
+# 사실 추출 지시문의 지금 판 — 이 리비전이 바꾼 지시문이 뒤 리비전의 사본을 거쳐 여덟 체인 활성 세트에 그대로 있다(채널의 슬롯
+# 모양은 위 리비전 그대로다).
+_INSTRUCTION = _load("c1f3945cb802")
 _NAMES = PromptNames(persona_name="하늘", char_name="민지")
 _NO_NAMES = PromptNames(persona_name=None, char_name=None)
 _EXISTING = ["relation|민지|하늘 = 경계 — 말을 아낌 (confirmed)", "fact|민지|생일 달 = 삼월 (claimed)"]
@@ -107,8 +108,8 @@ async def test_fact_prompt_has_the_layout_the_harness_measured(
     )
 
 
-# 비밀 규칙(아는 인물·주인 이름)을 넓힌 사실 추출 지시문의 지문 — 글자 하나가 바뀌어도 여기서 깨진다.
-_KNOWN_BY_INSTRUCTION_MD5 = "31fab9859bca21d5f9831b5415528a1f"
+# 비밀 규칙에 아는 인물을 정하는 차례를 붙인 사실 추출 지시문의 지문 — 글자 하나가 바뀌어도 여기서 깨진다.
+_KNOWN_BY_INSTRUCTION_MD5 = "1dc4e0fabaea765f4056ea4ab84433a5"
 
 
 @pytest.mark.parametrize("model", ["gemini", "sonnet", "opus", "haiku"])

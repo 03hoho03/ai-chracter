@@ -1,6 +1,18 @@
 import type { ContentDraftPayload, NovelPermission } from "@/entities/content";
 
 /**
+ * 저장 기록의 첫 기준. 아직 서버에 없는 초안의 폼 값은 서버가 아니라 이 화면의 기본값에서 왔으므로 기준으로 삼지 않는다 —
+ * 기준이 없으면 첫 저장이 칸을 실어, 서버의 칸 기본값이 무엇이든 화면에 보인 값이 저장된다. 이미 있는 초안은 불러온 값이
+ * 곧 서버 값이라 그대로 기준이 된다.
+ */
+export function toNovelPermissionBaseline(
+  draftId: string | undefined,
+  loaded: NovelPermission | undefined,
+): NovelPermission | undefined {
+  return draftId === undefined ? undefined : loaded;
+}
+
+/**
  * 빌더 저장이 소설 만들기 허락 칸을 **이 화면에서 바꿨을 때만** 싣게 하는 기록.
  *
  * 이 칸은 작품 헤더 값이라 빌더 밖(작품 상세 "⋯" 메뉴)에서도 바뀐다. 빌더는 다른 칸을 고칠 때마다 폼 전체를 저장하므로,

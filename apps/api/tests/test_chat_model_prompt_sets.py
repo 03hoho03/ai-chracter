@@ -15,12 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import router as chat_router
 from api.chat import turn_prompt
+from api.chat.memory_window import memory_model_in_scope
 from api.chat.prompt_builder import StatRuleJudgmentResult, load_active_prompt_set
 from api.chat.prompt_set_cache import get_cached_active_prompt_set
 from api.core import clover
 from api.core.config import settings
 from api.db.models.prompt import PromptSection, PromptSet
-from api.db.models.chat import ChatRoom
+from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.clover import CloverLedger
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
@@ -184,6 +185,86 @@ async def test_memory_fold_gets_the_gemini_set_in_a_premium_room(
 
     assert resp.status_code == 200
     assert folded_with == ["gemini"]
+
+
+async def _last_user_message_id(db_session: AsyncSession, room_id: uuid.UUID) -> uuid.UUID:
+    message_id = await db_session.scalar(
+        select(ChatMessage.id)
+        .where(ChatMessage.chat_room_id == room_id, ChatMessage.role == ChatMessageRole.USER)
+        .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
+        .limit(1)
+    )
+    assert message_id is not None
+    return message_id
+
+
+async def _turn(db_client: httpx.AsyncClient, db_session: AsyncSession, room_id: uuid.UUID, surface: str) -> None:
+    fake = _RecordingLLM()
+    if surface == "send":
+        resp = await _post(db_client, fake, "POST", f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    elif surface == "regenerate":
+        resp = await _post(db_client, fake, "POST", f"/chat-rooms/{room_id}/regenerate")
+    else:
+        message_id = await _last_user_message_id(db_session, room_id)
+        resp = await _post(
+            db_client, fake, "PATCH", f"/chat-rooms/{room_id}/messages/{message_id}", json={"content": "고친 말"}
+        )
+    assert resp.status_code == 200
+    assert [e["type"] for e in _parse_sse_events(resp.text)][-1] == "done"
+
+
+@pytest.mark.parametrize("surface", ["send", "regenerate", "edit"])
+async def test_memory_fold_gets_the_writing_model_of_the_turn_beside_the_summary_set(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, surface: str
+) -> None:
+    """접기는 요약 모델의 세트(Gemini)와 함께 그 턴에 응답을 쓴 모델(Opus)을 받는다 — 비밀 표기 슬롯의 기억 사용 범위를 요약
+    모델이 아니라 글쓰기 모델로 가르기 위해서다. 재생성·수정 턴도 같은 값을 넘긴다."""
+    room_id, _ = await _opus_story_room(db_client, db_session, monkeypatch)
+    folded_with: list[tuple[str, str]] = []
+
+    async def _recording_fold(*_args: Any, **kwargs: Any) -> None:
+        folded_with.append((kwargs["prompt_set"].model, kwargs["writing_model"]))
+
+    monkeypatch.setattr(chat_router, "fold_memory", _recording_fold)
+
+    await _turn(db_client, db_session, room_id, surface)
+
+    assert folded_with == [("gemini", "opus")]
+
+
+async def test_memory_fold_gets_gemini_as_the_writing_model_in_a_gemini_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    room_id = await _gemini_story_room(db_client, db_session)
+    writing_models: list[str] = []
+
+    async def _recording_fold(*_args: Any, **kwargs: Any) -> None:
+        writing_models.append(kwargs["writing_model"])
+
+    monkeypatch.setattr(chat_router, "fold_memory", _recording_fold)
+
+    await _turn(db_client, db_session, room_id, "send")
+
+    assert writing_models == ["gemini"]
+
+
+@pytest.mark.parametrize("surface", ["send", "regenerate", "edit"])
+async def test_generation_judges_the_memory_scope_by_the_writing_model_of_the_turn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, surface: str
+) -> None:
+    """생성 프롬프트 조립은 그 턴의 레인과 글쓰기 모델로 기억 사용 범위를 가른다 — 재생성·수정 턴도 같은 조립을 지난다."""
+    room_id, _ = await _opus_story_room(db_client, db_session, monkeypatch)
+    judged: list[tuple[str, str]] = []
+
+    def _recording_scope(lane: str, model: str, scope: Any) -> bool:
+        judged.append((lane, model))
+        return memory_model_in_scope(lane, model, scope)
+
+    monkeypatch.setattr(turn_prompt, "memory_model_in_scope", _recording_scope)
+
+    await _turn(db_client, db_session, room_id, surface)
+
+    assert judged == [("story", "opus")]
 
 
 async def test_gemini_room_does_not_read_any_model_set(

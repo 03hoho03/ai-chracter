@@ -9,6 +9,7 @@ from api.db.models.moderation import ReportReasonCategory, ReportStatus
 from api.db.models.novel import (
     NovelContentType,
     NovelPublicationModerationStatus,
+    NovelPublicationReviewStatus,
     NovelPublicationVisibility,
     NovelScreeningOutcome,
     NovelScreeningPart,
@@ -49,7 +50,12 @@ class NovelPublicationStatusResponse(CamelModel):
     - `new_publish_block`: 새로 공개(처음 공개·다음 화)할 수 없는 이유. 없으면 비어 있다.
     - `republish_block`: 이미 공개한 것을 다시 내거나 거둔 공개를 다시 열 수 없는 이유.
     - `screening_rejections_left`: 오늘 더 걸릴 수 있는 심사 횟수(상한 `screening_rejection_limit`). 상한을 적용하지 않는
-      계정이면 비어 있다."""
+      계정이면 비어 있다.
+    - `review_status`: 첫 공개의 운영자 심사 — 대기·승인·반려. 심사 없이 공개됐거나 공개한 적이 없으면 비어 있다. 대기·
+      반려인 동안 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이 아니다.
+    - `review_reason`: 반려 사유. 운영자가 쓴 글 그대로이고 반려일 때만 있다. `reviewed_at` 은 마지막 승인·반려 시각이다.
+    - `review_required`: 지금 공개하면 독자에게 바로 열리지 않고 운영자 승인을 기다리는가(정책 스위치가 켜졌고 아직 독자에게
+      보인 적 없는 소설)."""
 
     published: bool
     visibility: NovelPublicationVisibility | None
@@ -65,6 +71,10 @@ class NovelPublicationStatusResponse(CamelModel):
     screening_rejection_limit: int
     first_published_at: datetime | None
     published_at: datetime | None
+    review_status: NovelPublicationReviewStatus | None
+    review_reason: str | None
+    reviewed_at: datetime | None
+    review_required: bool
 
 
 # ── 독자 화면 ───────────────────────────────────────────────────────────────
@@ -88,7 +98,9 @@ PublicNovelEndedReason = Literal[
 class PublicNovelSource(CamelModel):
     """원작 표기. `title`·`character_name` 은 소설을 만들 때의 원작 사본이다. `cover_url` 은 원작의 지금 게시본 썸네일 —
     노벨 표지는 이것뿐이고, 원작자가 탈퇴했거나 썸네일이 없으면 비어 있다(화면이 기본 표지를 그린다). `linkable` 은 원작이
-    지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다."""
+    지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다. `creator_nickname` 은 원작자의 지금 닉네임이다(복사해 두지 않고
+    읽을 때 가져온다) — 원작자가 탈퇴했거나 원작 행이 없으면 비어 있다. `unofficial` 은 원작자가 게시자가 아닌가(화면이
+    "비공식 2차 창작"을 붙인다)이고, 원작 행이 없으면 참이다(근거 없이 공식으로 표시하지 않는다)."""
 
     content_id: uuid.UUID
     content_type: NovelContentType
@@ -96,6 +108,8 @@ class PublicNovelSource(CamelModel):
     character_name: str | None
     cover_url: str | None
     linkable: bool
+    creator_nickname: str | None
+    unofficial: bool
 
 
 class PublicNovelListItem(CamelModel):
@@ -115,6 +129,18 @@ class PublicNovelListItem(CamelModel):
 
 class PublicNovelListResponse(CamelModel):
     items: list[PublicNovelListItem]
+    next_cursor: str | None
+
+
+class PublicNovelOwnedItem(PublicNovelListItem):
+    """소장 목록의 한 줄 — 노벨 목록의 한 줄에 판매 중지 표시를 더한 것. `sales_stopped` 는 노벨 목록에서 빠졌지만 소장자
+    조건으로 열리는 노벨인가다(작품 정보의 같은 이름 값과 같다)."""
+
+    sales_stopped: bool
+
+
+class PublicNovelOwnedListResponse(CamelModel):
+    items: list[PublicNovelOwnedItem]
     next_cursor: str | None
 
 
@@ -156,7 +182,9 @@ class PublicNovelDetailResponse(CamelModel):
 
     - `is_publisher`: 보는 사람이 게시자 본인인가(모든 화를 무료로 읽고, 화면이 "내 소설에서 관리"를 보인다).
     - `free_chapter_count`·`chapter_price`: "1~5화 무료 · 6화부터 화당 30클로버" 안내용 지금 설정값.
-    - `liked`: 보는 사람이 좋아요했는가."""
+    - `liked`: 보는 사람이 좋아요했는가.
+    - `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지, 원작자 정지로 인한 원작 일괄
+      제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다."""
 
     id: uuid.UUID
     title: str
@@ -174,6 +202,7 @@ class PublicNovelDetailResponse(CamelModel):
     last_read: PublicNovelLastRead | None
     first_published_at: datetime
     published_at: datetime
+    sales_stopped: bool = False
 
 
 class PublicNovelChapterLink(CamelModel):
@@ -184,10 +213,22 @@ class PublicNovelChapterLink(CamelModel):
     access: PublicNovelChapterAccess
 
 
+class PublicNovelPurchasedEdition(CamelModel):
+    """산 사람이 고를 수 있는 "산 때의 판" — 판 번호와 그 판을 공개한 시각."""
+
+    edition: int
+    published_at: datetime
+
+
 class PublicNovelChapterResponse(CamelModel):
     """노벨 화 하나. `access` 가 `locked` 면 본문(`paragraphs`)과 작가의 말이 비어 있고 `price` 로 소장 화면을 그린다 —
     잠긴 화의 글은 한 글자도 싣지 않는다. 읽을 수 있으면 공개본 개정의 본문을 문단 배열로 싣는다(소유자 화 조회의
-    `paragraphs` 와 같은 나눔이라 읽은 자리의 문단 번호가 같은 뜻이다). `edition` 은 공개본 판이다(읽은 자리 저장에 싣는다)."""
+    `paragraphs` 와 같은 나눔이라 읽은 자리의 문단 번호가 같은 뜻이다). `edition` 은 실어 준 글의 판이다(읽은 자리 저장에
+    싣는다) — 보통은 지금 판이고, 산 사람이 산 때의 판을 고르면 그 판이다.
+
+    `purchased_edition` 은 그 화를 산 사람에게만, 산 때의 판이 지금 판과 다를 때 싣는다(정책 스위치가 켜졌을 때). 판 이력이
+    생기기 전의 판을 샀으면 남아 있는 가장 오래된 판으로 대신한다. 그 판 번호를 쿼리 `edition` 으로 보내면 그 판의 본문·
+    제목·작가의 말을 준다. `sales_stopped` 는 작품 정보의 같은 칸과 같다."""
 
     novel_id: uuid.UUID
     novel_title: str
@@ -202,6 +243,8 @@ class PublicNovelChapterResponse(CamelModel):
     previous_chapter: PublicNovelChapterLink | None
     next_chapter: PublicNovelChapterLink | None
     reading_position: PublicNovelReadingPosition | None
+    purchased_edition: PublicNovelPurchasedEdition | None = None
+    sales_stopped: bool = False
 
 
 class PublicNovelReadingPositionRequest(CamelModel):

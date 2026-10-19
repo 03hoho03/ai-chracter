@@ -5,17 +5,20 @@ from datetime import datetime
 from typing import Literal
 
 from api.core.schema import CamelModel
-from api.db.models.content import ModerationStatus
+from api.db.models.content import ModerationStatus, NovelPermission
 from api.db.models.moderation import ReportReasonCategory, ReportStatus
 from api.db.models.novel import (
     NovelCommentDeletedBy,
     NovelPublicationModerationStatus,
+    NovelPublicationReviewStatus,
     NovelPublicationVisibility,
     NovelScreeningOutcome,
     NovelScreeningPart,
+    NovelSerialLockSource,
 )
 
 AdminNovelModerationAction = Literal["restrict", "lift"]
+AdminNovelReviewAction = Literal["approve", "reject"]
 AdminNovelReportAction = Literal["restrict", "reject"]
 AdminNovelCommentAction = Literal["hide", "restore", "delete"]
 AdminNovelCommentReportAction = Literal["hide", "delete", "reject"]
@@ -23,8 +26,11 @@ AdminNovelCommentReportAction = Literal["hide", "delete", "reject"]
 
 class AdminNovelListItem(CamelModel):
     """공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자
-    정지·원작 숨김·공개 화 없음이면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의 구매도 거래 기록이라
-    센다), `pending_report_count` 는 처리 전 노벨 신고 수다."""
+    정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의
+    구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사
+    (대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이
+    아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지워 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로
+    게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다)."""
 
     id: uuid.UUID
     title: str
@@ -40,6 +46,8 @@ class AdminNovelListItem(CamelModel):
     purchase_count: int
     pending_report_count: int
     published_at: datetime
+    review_status: NovelPublicationReviewStatus | None
+    hidden_at: datetime | None
 
 
 class AdminNovelListResponse(CamelModel):
@@ -89,7 +97,12 @@ class AdminNovelDetailResponse(AdminNovelListItem):
     """공개본 글과 운영 판단 재료. `source_moderation_status` 는 원작의 지금 상태(원작이 없으면 비어 있다), `publisher_suspended`
     는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다.
     `purchase_amount` 는 환급되지 않은 구매의 가격 합(탈퇴한 구매자의 구매 포함), `purchase_buyer_count` 는 그 구매를 한 사람
-    수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다."""
+    수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다.
+
+    `review_reason` 은 반려 사유(작가에게 그대로 보인다), `reviewed_at` 은 마지막 승인·반려 시각이다. `serial_lock_*` 는 연재권
+    잠금 기록이다 — 잠긴 시각, 그때의 원작 소설화 허락·원작 게시본 id·시행 중이던 약관 판의 사본과 출처(`first_publish` 는
+    첫 공개·승인이 찍음, `backfill` 은 이 기록이 생기기 전 공개된 소설을 뒤늦게 채움 — 허락·원작 게시본을 알 수 없어 비어
+    있다). 잠기지 않았으면 모두 비어 있다."""
 
     synopsis: str
     content_id: uuid.UUID
@@ -101,6 +114,13 @@ class AdminNovelDetailResponse(AdminNovelListItem):
     reports: list[AdminNovelReportListItem]
     purchase_buyer_count: int
     purchase_amount: int
+    review_reason: str | None
+    reviewed_at: datetime | None
+    serial_locked_at: datetime | None
+    serial_lock_permission: NovelPermission | None
+    serial_lock_content_version_id: uuid.UUID | None
+    serial_lock_terms_version: str | None
+    serial_lock_source: NovelSerialLockSource | None
 
 
 class AdminNovelChapterResponse(CamelModel):
@@ -125,6 +145,20 @@ class AdminNovelModerationRequest(CamelModel):
 class AdminNovelModerationResponse(CamelModel):
     novel_id: uuid.UUID
     moderation_status: NovelPublicationModerationStatus
+
+
+class AdminNovelReviewRequest(CamelModel):
+    """첫 공개 승인(`approve`)·반려(`reject`). `admin_comment` 는 감사 로그에 남는 글이고, 반려에서는 운영자가 쓴 글 그대로
+    작가에게 보이는 반려 사유이기도 하다(반려는 공백뿐이면 422)."""
+
+    action: AdminNovelReviewAction
+    admin_comment: str
+
+
+class AdminNovelReviewResponse(CamelModel):
+    novel_id: uuid.UUID
+    review_status: NovelPublicationReviewStatus
+    visibility: NovelPublicationVisibility
 
 
 class AdminNovelReportEvidence(CamelModel):

@@ -6,6 +6,7 @@ import { useId } from "react";
 import { NovelReadProgressSummary, NovelStatusState, toNovelReadProgress, toResumeTarget } from "@/entities/novel";
 import {
   ReadingEndedState,
+  toSourceCredit,
   toWebnovelLoadFailure,
   toWebnovelPriceSummary,
   useWebnovelQuery,
@@ -97,6 +98,7 @@ function WebnovelInfoContent({ novel }: { novel: WebnovelDetailResponse }) {
   }));
   const progress = toNovelReadProgress(chapters);
   const resume = toResumeTarget(chapters, novel.lastRead?.chapterId);
+  const credit = toSourceCredit(novel.source);
   const meta = [
     `${novel.chapters.length}화`,
     novel.isPublisher
@@ -118,6 +120,12 @@ function WebnovelInfoContent({ novel }: { novel: WebnovelDetailResponse }) {
           <h1 className="text-2xl font-bold tracking-tight text-balance break-keep text-foreground">{novel.title}</h1>
           <div className="flex flex-col gap-1 text-sm">
             <WebnovelSourceCredit source={novel.source} isLinked />
+            {/* 원작자 닉네임은 글자만 — 응답에 원작자 회원 id 가 없어 프로필로 걸 수 없다. 목록 행(한 줄 잘림)에는 넣지 않는다. */}
+            {credit.creatorNickname !== undefined && (
+              <p className="min-w-0 break-keep text-muted-foreground">
+                원작자 · <span className="text-foreground">{credit.creatorNickname}</span>
+              </p>
+            )}
             {novel.publisherNickname !== null && (
               <p className="min-w-0 break-keep text-muted-foreground">
                 게시자 ·{" "}
@@ -128,15 +136,24 @@ function WebnovelInfoContent({ novel }: { novel: WebnovelDetailResponse }) {
                 >
                   {novel.publisherNickname}
                 </Link>
+                {credit.publisherIsCreator && " · 원작자"}
               </p>
             )}
             <p className="break-keep text-muted-foreground tabular-nums">{meta}</p>
           </div>
-          {/* 노벨의 모든 작품이 AI 대화에서 나온 소설이라는 표시. 중립 상태 배지 — 색 없이 테두리와 글자로만. */}
-          <span className="inline-flex w-fit items-center gap-1 rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
-            <Sparkles aria-hidden className="size-3" />
-            AI 대화로 만든 소설
-          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {/* 노벨의 모든 작품이 AI 대화에서 나온 소설이라는 표시. 중립 상태 배지 — 색 없이 테두리와 글자로만. */}
+            <span className="inline-flex w-fit items-center gap-1 rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
+              <Sparkles aria-hidden className="size-3" />
+              AI 대화로 만든 소설
+            </span>
+            {/* 원작자가 아닌 사람이 공개한 소설. 같은 중립 배지 꼴 — 경고가 아니라 출처 표기다. */}
+            {credit.isUnofficial && (
+              <span className="inline-flex w-fit items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
+                비공식 2차 창작
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

@@ -750,10 +750,22 @@ export interface paths {
          *     오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게
          *     되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.
          *
-         *     동의를 기록하지 않는 문서(운영정책·청소년 보호정책·환불정책·크리에이터 정산 정책)는 `requires_reconsent=true` 로
-         *     게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무
-         *     효과가 없는데, 게시 이력·감사 로그에는 "재동의 필요"로 남아 운영자가 회원 재동의를
-         *     받은 것으로 믿게 된다.
+         *     **다만 게시가 성공하면 초안의 변경 안내는 비운다.** 안내는 그 판에서 무엇이 바뀌었는지를 적은 것이라 다음 판에 그대로
+         *     쓸 수 없다. 남겨 두면 다음 게시가 이미 나간 안내를 자기 안내로 복제하고, 재동의 게시의 "안내 필수" 검사도 그 낡은
+         *     안내로 통과해 회원이 엉뚱한 안내를 보고 동의하게 된다. 비우면 새 판의 안내는 늘 새로 써야 한다. 직전 안내를 고쳐 쓰고
+         *     싶으면 화면이 게시본의 안내를 불러와 채우면 된다.
+         *
+         *     재동의 범위는 그 문서의 동의 단위 안에서만 고른다(`_requested_reconsent_scopes`). 변경 안내도 초안에서 복제하고, 앞뒤
+         *     공백만 있는 안내는 없는 것으로 저장한다. **재동의 범위가 하나라도 걸린 게시는 안내가 없으면 422 다** — 재동의 화면은
+         *     전문보다 안내를 먼저 보여 주므로, 안내 없이 재동의를 걸면 회원이 무엇이 바뀌었는지 모른 채 동의하게 된다.
+         *
+         *     **시행 시각**: 비우면 게시 시각으로 즉시 시행한다. 게시 시각보다 이르면 422 — 과거로 소급하면 그 판이 직전 현행판보다
+         *     앞에 놓여 영영 현행이 되지 못하거나, 그 사이에 옛 판에 동의한 회원이 새 판에 동의한 것으로 읽힌다. 미래면 시행 예정
+         *     판이 된다. **예정 판이 있는 동안 같은 kind 의 다른 게시는 즉시든 예약이든 409 다**(먼저 예정 판을 철회한다). 즉시 게시를
+         *     허용하면 예정 판이 시행되는 순간 그 판이 현행이 되어 사이에 게시한 수정이 조용히 사라지고, 초안에 남은 예정 판 본문을
+         *     즉시 게시하면 공지 기간 없이 오늘 시행된다. 급한 수정은 예정 판 철회 → 수정판 게시 → 수정을 반영한 판 재예약 순서로 한다.
+         *     이 검사는 부분 유니크 인덱스로 할 수 없다(인덱스 조건에 현재 시각을 쓸 수 없다). 그래서 kind 의 초안 행을 잠가 같은
+         *     kind 의 게시를 줄 세운 뒤 검사한다 — 게시는 초안이 있어야 하므로 초안 행이 kind 단위의 잠금 대상이 된다.
          */
         post: operations["publish_legal_document_admin_legal__kind__publish_post"];
         delete?: never;
@@ -773,6 +785,28 @@ export interface paths {
         get: operations["list_legal_document_versions_admin_legal__kind__versions_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/legal/{kind}/versions/{version}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw Legal Document
+         * @description 시행 예정 판을 철회한다. 행은 지우지 않고 `withdrawn` 으로 남기며 그 버전 이름은 다시 쓸 수 없다(이미 공지로
+         *     나갔을 수 있다). 시행 시각이 지난 판은 409 — 시행된 판에는 이미 동의한 회원이 있을 수 있어 거둘 수 없고, 고치려면 새
+         *     판을 게시한다. 행을 잠그고 시각을 본다(같은 판을 두 번 철회하는 요청이 둘 다 감사 로그를 남기지 않게).
+         */
+        post: operations["withdraw_legal_document_admin_legal__kind__versions__version__withdraw_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1917,7 +1951,11 @@ export interface paths {
         get: operations["get_me_me_get"];
         put?: never;
         post?: never;
-        /** Withdraw */
+        /**
+         * Withdraw
+         * @description 탈퇴. 노벨 게시자면 정책 스위치가 켜졌을 때 그 소설의 구매자에게 환급한다 — 잠금과 다시 하기는 `auth/withdrawal.py`
+         *     모듈 docstring. 다시 하기 상한을 넘기면 409 `WITHDRAWAL_CONFLICT` 이고 아무것도 지우지 않았다(다시 누르면 된다).
+         */
         delete: operations["withdraw_me_delete"];
         options?: never;
         head?: never;
@@ -1950,9 +1988,55 @@ export interface paths {
         };
         /**
          * Get Legal Document
-         * @description 공개 조회 — 인증 없음. web `/terms`가 최신 게시본을 그대로 보여주는 데 쓴다.
+         * @description 공개 조회 — 인증 없음. web `/terms` 등이 현행판을 보여 주는 데 쓴다. 시행 예정 판이 있으면 그 버전과 시행 시각을
+         *     `upcoming` 으로 곁들인다(시행일 전 게시를 알리기 위해서다).
          */
         get: operations["get_legal_document_legal__kind__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/legal/{kind}/upcoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Upcoming Legal Document
+         * @description 시행 예정 판의 전문 — 인증 없음. 없으면 404.
+         */
+        get: operations["get_upcoming_legal_document_legal__kind__upcoming_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/legal/{kind}/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Legal Document Changes
+         * @description 누적 변경 안내 — 인증 없음. `since` 판보다 뒤에 시행된 판들의 변경 안내를 최신 판부터 준다. 재동의 화면이 회원이
+         *     마지막으로 동의한 판을 `since` 로 넘겨, 그 뒤로 바뀐 것을 재동의가 걸리지 않은 판까지 모두 보여 준다(지금 동의하는
+         *     대상은 최신 전문 전체라 그 안에 다 들어 있다). 시행 예정 판과 철회본은 들지 않는다.
+         *
+         *     `since` 가 없거나 시행된 판에서 찾지 못하면 시행된 판 전부를 준다 — 모르는 판을 기준으로 아무것도 안 보여 주는 것보다
+         *     전부 보여 주는 쪽이 안전하다. 판의 앞뒤는 버전 문자열이 아니라 시행 순서로 정한다.
+         */
+        get: operations["list_legal_document_changes_legal__kind__changes_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1972,10 +2056,14 @@ export interface paths {
         put?: never;
         /**
          * Consent Legal Document
-         * @description 재동의 기록. **요청의 `version`은 신뢰하지 않는다** — 클라이언트가 값을 조작해
-         *     보내면 실제로 게시된 적 없는 버전이 `users.terms_version`에 남아 `GET /me`의
-         *     재동의 판정을 영구히 우회할 수 있다. 그래서 body의 `kind`로 어떤 문서에 동의했는지만
-         *     받고, 실제로 기록하는 version은 서버가 다시 조회한 "현재 최신 게시본"의 것이다.
+         * @description 재동의 기록. 동의 단위(`consents`)마다 그 문서의 현행판 버전을 `users` 칸에 적고 동의 이력 행을 하나씩 더한다.
+         *
+         *     **요청은 버전을 받지 않는다** — 클라이언트가 보낸 버전을 기록하면 실제로 게시된 적 없는 버전이
+         *     `users.terms_version`에 남아 `GET /me`의 재동의 판정을 영구히 우회할 수 있다. 그래서 어떤 동의인지만
+         *     받고, 실제로 기록하는 version은 서버가 다시 조회한 현행판의 것이다(시행 예정 판이 아니다).
+         *
+         *     **회원 행을 잠그고 탈퇴 여부를 다시 본 뒤 쓴다.** 잠그지 않으면 탈퇴와 겹친 요청이 탈퇴 커밋을 기다렸다가 이력 행을
+         *     넣어(회원 행은 지우지 않으므로 FK 검사도 통과한다) 탈퇴 뒤에 그 회원의 동의 이력이 남는다.
          *
          *     ⚠️ 정지된 유저는 `get_current_user_id`가 403으로 막아 여기 도달하지 못한다. 정지
          *     중에도 통과시켜야 할 이유는 없다고 판단했다 — 재동의도 다른 유저 행위와 마찬가지로
@@ -2548,7 +2636,7 @@ export interface paths {
         };
         /**
          * List Novels
-         * @description 내 소설을 최근 수정 순으로. 원래 방이 지워진 소설도 나온다(`chatRoomId` null).
+         * @description 내 소설을 최근 수정 순으로. 원래 방이 지워진 소설도 나온다(`chatRoomId` null). 숨긴 소설은 나오지 않는다.
          */
         get: operations["list_novels_novels_get"];
         put?: never;
@@ -2584,6 +2672,12 @@ export interface paths {
          *     노벨에서 이 소설의 화를 산 구매자가 있으면 같은 트랜잭션에서 그 구매를 환급한다 — 그래서 게시자 행과 함께 그 구매자들의
          *     행도 id 순으로 잠근다(`novel_public/purchases.py` 모듈 docstring). 잠근 뒤 새 구매가 보이면 409
          *     `NOVEL_DELETE_CONFLICT` 이고 지우지 않는다(다시 누르면 된다).
+         *
+         *     정책 스위치가 켜져 있고 노벨로 팔린 소설(`novel_was_sold`)이면 지우지 않고 숨긴다 — 산 사람이 계속 읽어야 해서다. 진행
+         *     중 작업을 환불하고, 공개를 거두고(새로 보이거나 팔리지 않는다), 숨긴 시각을 찍고 방 칸을 비운다(같은 방에서 새 소설을
+         *     만들 수 있고, 진행 중이던 연쇄 생성도 방이 없어 다음 묶음을 만들지 않는다). 환급은 없다. 숨긴 소설은 작가의 목록·주소
+         *     에서 사라지고(`_get_owned_novel`), 미환급 소장자가 모두 사라지면 하루 한 번 도는 파기가 지운다(`hidden_purge.py`).
+         *     판정은 사용자 행을 잠근 뒤에 한다 — 구매가 게시자 행을 잡으므로 그 뒤로는 새 구매가 끼지 않는다.
          */
         delete: operations["delete_novel_novels__novel_id__delete"];
         options?: never;
@@ -3259,9 +3353,10 @@ export interface paths {
          *     받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).
          *
          *     작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).
-         *     이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열리고 이어 쓸 수 있어야
-         *     한다. 같은 이유로 모델을 부르는 라우트(다음 화·연쇄·다시 만들기·AI 수정)는 허락을 보지 않는다. 허락 변경과 겹친
-         *     생성은 잠그지 않는다 — 놓치는 것은 금지로 바꾸는 순간과 겹친 생성 하나이고, 그 소설은 어차피 유지되는 대상이다.
+         *     이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열려야 한다. 이어 쓰기는
+         *     따로 판정한다: 모델을 부르는 라우트는 첫 화가 저장되어 잠긴 소설이면 허락을 보지 않고, 잠기기 전(빈 소설)이면 이와
+         *     같은 판정으로 403 이다(`_ensure_novelize_permission`). 허락 변경과 겹친 생성은 잠그지 않는다 — 놓치는 것은 금지로
+         *     바꾸는 순간과 겹친 생성 하나이고, 그 빈 소설은 다음 생성 요청에서 같은 판정을 받는다.
          */
         post: operations["create_room_novel_chat_rooms__room_id__novel_post"];
         delete?: never;
@@ -3305,6 +3400,12 @@ export interface paths {
          * Withdraw Novel Publication
          * @description 공개를 거둔다. 공개 상태 행과 공개본은 지우지 않고 공개 범위만 바꾼다 — 다시 공개하면 공개본이 그대로 살아난다.
          *     이미 거둔 공개면 그대로 204 다. 재동의 게이트를 걸지 않는다(자기 글을 내리는 일이라).
+         *
+         *     운영자 승인을 기다리는 공개를 거두는 것은 신청 취소다 — 독자에게 보인 적 없는 글이라 공개 상태 행과 화 공개본, 그 판
+         *     행을 지운다.
+         *     대기 조건을 건 DELETE 를 먼저 낸다. 그 문장이 승인과 같은 공개 상태 행 잠금에서 줄을 서므로, 승인이 먼저 커밋했으면
+         *     다시 평가한 조건에 걸려 아무것도 지우지 않고 아래의 보통 거두기가 된다. 읽어서 대기면 지우는 식으로 하면 승인 커밋 뒤에도
+         *     지워져 공개 상태 행 없이 잠금만 남은 소설이 생긴다. 정책 스위치와 무관하다.
          */
         post: operations["withdraw_novel_publication_novels__novel_id__publication_withdraw_post"];
         delete?: never;
@@ -3375,6 +3476,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webnovels/owned": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Owned Webnovels
+         * @description 내가 소장한 노벨 — 아직 환급되지 않은 구매가 하나라도 있고 지금 작품 정보가 열리는 노벨을, 노벨 목록의 최신순과 같은
+         *     순서·커서로 20편씩. 판단은 작품 정보와 같다: 목록 조건으로 읽히면 판매 중이고, 정책 스위치가 켜졌을 때 소장자 조건으로만
+         *     읽히면 `salesStopped` 가 참이다(모듈 docstring 의 소장자 열람). 스위치가 꺼져 있으면 소장자 열람이 없어 판매 중인 노벨만
+         *     싣는다 — 누르면 410 인 노벨을 "소장"으로 보이지 않는다. 환급으로 닫힌 노벨은 미환급 구매가 없어 빠진다.
+         */
+        get: operations["list_owned_webnovels_webnovels_owned_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webnovels/{novel_id}": {
         parameters: {
             query?: never;
@@ -3385,7 +3509,8 @@ export interface paths {
         /**
          * Get Webnovel
          * @description 노벨 작품 정보와 목차. 읽을 수 없으면 소장했던 사람에게 410 `NOVEL_READING_ENDED`, 아니면 404 `NOVEL_NOT_FOUND`
-         *     (모듈 docstring). 목차의 화마다 독자에게의 상태(`access`)와 가격, 그 화를 읽던 자리를 싣는다.
+         *     (모듈 docstring). 목차의 화마다 독자에게의 상태(`access`)와 가격, 그 화를 읽던 자리를 싣는다. 목록에서 빠진 노벨을
+         *     소장자가 열면 `salesStopped` 가 참이다(모듈 docstring 의 소장자 열람).
          */
         get: operations["get_webnovel_webnovels__novel_id__get"];
         put?: never;
@@ -3409,6 +3534,10 @@ export interface paths {
          *     (자기 글을 다시 열어 본 것은 독자의 조회가 아니다). 아니면 본문 없이
          *     `access: locked` 와 가격만 싣는다(소장 화면용). 읽을 수 없으면 소장했던 사람에게 410 `NOVEL_READING_ENDED`, 아니면 404
          *     `NOVEL_CHAPTER_NOT_FOUND`(모듈 docstring).
+         *
+         *     `edition` 은 고를 판이다(정책 스위치가 켜졌을 때). 지금 판이거나, 그 화를 산 사람의 산 때의 판(`purchasedEdition`)만
+         *     고를 수 있고 그 밖의 값은 404 `NOVEL_CHAPTER_NOT_FOUND` 다 — 사지 않은 사람·무료 화·게시자 본인은 지금 판만 읽는다.
+         *     스위치가 꺼져 있으면 이 값을 보지 않고 지금 판을 준다.
          */
         get: operations["get_webnovel_chapter_webnovels__novel_id__chapters__chapter_id__get"];
         put?: never;
@@ -3431,7 +3560,8 @@ export interface paths {
          * Save Webnovel Reading Position
          * @description 노벨 화를 읽던 자리를 저장한다(소유자 읽은 자리와 같은 계약 — 문단 번호, 같은 값을 다시 보내도 같고, 다 읽은 화는
          *     다 읽은 화로 남는다). 문단 번호가 문단 수 밖이면 422 `NOVEL_PARAGRAPH_RANGE_INVALID`, 지금 읽을 수 없는 화(없음·숨김)는
-         *     404 `NOVEL_CHAPTER_NOT_FOUND`, 소장하지 않은 유료 화는 403 `NOVEL_CHAPTER_LOCKED` 다.
+         *     404 `NOVEL_CHAPTER_NOT_FOUND`, 소장하지 않은 유료 화는 403 `NOVEL_CHAPTER_LOCKED` 다. 소장자는 목록에서 빠진 노벨에서도
+         *     저장한다(모듈 docstring 의 소장자 열람).
          *
          *     화 행을 키 공유 잠금으로 확인한 뒤 저장한다 — 소유자 읽은 자리와 같은 이유다. 묶음·소설 삭제는 화를 `FOR UPDATE` 로
          *     잠근 뒤 읽은 자리를 지우므로, 이쪽이 먼저 잡으면 삭제가 이 저장을 기다렸다가 함께 지우고, 삭제가 먼저면 이 확인이
@@ -3574,7 +3704,8 @@ export interface paths {
         };
         /**
          * List Admin Novels
-         * @description 공개한 적 있는 노벨 전부, 마지막 공개 시각 최신순 20개씩(쪽 번호). 이용제한 상태로 거를 수 있다.
+         * @description 공개한 적 있는(또는 첫 공개를 신청한) 노벨 전부, 마지막 공개 시각 최신순 20개씩(쪽 번호). 이용제한 상태·첫 공개 심사
+         *     상태로 거를 수 있다(승인 대기열 = `reviewStatus=pending`).
          */
         get: operations["list_admin_novels_admin_novels_get"];
         put?: never;
@@ -3638,9 +3769,39 @@ export interface paths {
          * Moderate Admin Novel
          * @description 노벨을 이용제한(`restrict`)하거나 해제(`lift`)한다. 사유가 공백뿐이면 422, 공개 상태 행이 없으면 404
          *     `NOVEL_NOT_FOUND`, 이미 그 상태면 409 `NOVEL_ALREADY_RESTRICTED`·`NOVEL_NOT_RESTRICTED`(감사 로그가 빈 조치로 쌓이지
-         *     않게).
+         *     않게). 정책 스위치가 켜져 있으면 이용제한이 그 노벨의 모든 미환급 구매를 환급한다(해제는 환급을 되돌리지 않는다) —
+         *     환급 대상을 잠근 뒤 새 구매가 보이면 409 `NOVEL_REFUND_CONFLICT`(다시 누르면 된다).
          */
         post: operations["moderate_admin_novel_admin_novels__novel_id__moderation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novels/{novel_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Admin Novel
+         * @description 운영자 승인을 기다리는 첫 공개를 승인(`approve`)하거나 반려(`reject`)한다. 공개 상태 행이 없으면 404
+         *     `NOVEL_NOT_FOUND`, 대기가 아니면 409 `NOVEL_REVIEW_NOT_PENDING`(이미 처리됨 — 감사 로그가 빈 조치로 쌓이지 않게).
+         *
+         *     승인은 독자에게 처음 여는 순간이라 그때의 원작 판정을 다시 본다 — 아직 잠기지 않은 소설이라 지금 허락을 따르고, 막히면
+         *     409 `NOVEL_SOURCE_NOT_PUBLISHABLE`+`reason` 이며 운영자는 반려로 처리한다. 대기 중에 1화가 든 마지막 묶음이 지워져 1화
+         *     공개본이 없으면 409 `NOVEL_REVIEW_NO_FIRST_CHAPTER` 다(공개 화가 없는 소설에 잠금을 주지 않는다 — 이것도 반려로 처리).
+         *     통과하면 공개 범위·심사 칸·처음 공개 시각을 한 UPDATE 로 바꾸고 연재권 잠금을 찍는다.
+         *
+         *     반려는 사유가 필요하고(공백뿐이면 422) 그 글이 그대로 작가의 공개 상태에 실린다. 화 공개본을 지우고 공개 상태 행은
+         *     사유를 들고 남긴다(대기 공개가 쌓은 판 행도 지운다 — 독자에게 보인 적 없는 판이다). 잠금 순서는 모듈 docstring.
+         */
+        post: operations["review_admin_novel_admin_novels__novel_id__review_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3697,7 +3858,8 @@ export interface paths {
          * Act On Admin Novel Report
          * @description 신고를 처리한다 — `restrict` 는 그 노벨을 이용제한하고 신고를 처리완료로(이미 이용제한이어도 처리된다), `reject` 는
          *     노벨을 건드리지 않고 반려로 둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져
-         *     이용제한할 대상이 없으면 409 `NOVEL_GONE`(반려는 된다).
+         *     이용제한할 대상이 없으면 409 `NOVEL_GONE`(반려는 된다). 이용제한은 직접 이용제한과 같이 환급한다 — 이미 이용제한된
+         *     노벨이면 돌려줄 것이 없다.
          */
         post: operations["act_on_admin_novel_report_admin_novel_reports__report_id__actions_post"];
         delete?: never;
@@ -5361,6 +5523,11 @@ export interface paths {
          *     `startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달
          *     여부는 `story_ending_unlocks`를 entity_id(버전 불변)로 조인해 같은 시작설정으로
          *     새 대화방을 만들어도 이전 기록이 유지되게 한다.
+         *
+         *     작품을 읽을 수 있는 사람에게만 연다 — 이미지 보관함과 같은 기준(`is_open_to_participant`)이라, 비공개 작품은 작가
+         *     본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를 시작한 플레이어)에게만 열린다. 이용제한·삭제된 작품은
+         *     이미지 보관함처럼 그 방의 주인과 작가 본인에게도 닫힌다 — 두 화면이 같은 판정을 써야 한쪽만 열리는 일이 없다.
+         *     막힌 경우는 없는 시작설정과 같은 404 다.
          */
         get: operations["get_ending_collection_stories_starting_setups__starting_setup_id__ending_collection_get"];
         put?: never;
@@ -6851,7 +7018,10 @@ export interface components {
             /** Replybody */
             replyBody: string;
         };
-        /** AdminLegalDocumentResponse */
+        /**
+         * AdminLegalDocumentResponse
+         * @description `published` 는 지금 시행 중인 현행판, `upcoming` 은 시행 시각이 아직 오지 않은 예약 판이다.
+         */
         AdminLegalDocumentResponse: {
             /**
              * Kind
@@ -6860,51 +7030,78 @@ export interface components {
             kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
             draft: components["schemas"]["AdminLegalDraftItem"] | null;
             published: components["schemas"]["AdminLegalPublishedItem"] | null;
+            upcoming: components["schemas"]["AdminLegalPublishedItem"] | null;
         };
         /** AdminLegalDraftItem */
         AdminLegalDraftItem: {
             /** Bodymarkdown */
             bodyMarkdown: string;
+            /** Changenoticemarkdown */
+            changeNoticeMarkdown: string | null;
             /**
              * Createdat
              * Format: date-time
              */
             createdAt: string;
         };
-        /** AdminLegalDraftUpsertRequest */
+        /**
+         * AdminLegalDraftUpsertRequest
+         * @description `change_notice_markdown` 을 아예 보내지 않으면 초안의 변경 안내를 그대로 둔다 — 안내 칸을 모르는 이전 어드민 화면이
+         *     본문만 저장해도 안내가 지워지지 않게 한다. null 을 보내면 비운다.
+         */
         AdminLegalDraftUpsertRequest: {
             /** Bodymarkdown */
             bodyMarkdown: string;
+            /** Changenoticemarkdown */
+            changeNoticeMarkdown?: string | null;
         };
         /**
          * AdminLegalPublishRequest
-         * @description `version`은 zero-padded ISO 날짜(`YYYY-MM-DD`)로 강제한다 — `_reconsent_required`
-         *     (`api/auth/router.py`)가 이 값을 문자열째로 비교해 재동의 필요 여부를 판정하고, 그
-         *     비교가 시간순과 일치하려면 모든 버전이 같은 자릿수로 zero-padding돼 있어야 한다
-         *     (그렇지 않으면 예: `"2026-9-6" < "2026-10-01"`이 문자열 비교로는 `False`가 되어
-         *     재동의가 영원히 뜨지 않는다). 달력상 유효한 날짜인지(`2026-13-45` 등)는 검사하지
-         *     않는다 — 자릿수 고정 포맷만 지키면 무효한 날짜라도 문자열 비교의 시간순 일치라는
-         *     전제 자체는 깨지지 않으므로, 이 정규식만으로 방어 목적은 충분하다고 판단했다.
+         * @description `version` 은 날짜(`YYYY-MM-DD`)이고, 같은 날 다시 게시하면 순번 접미사를 붙인다(첫 판은 접미사 없음, 둘째부터
+         *     `.2`, `.3`, … `.10`). 접미사는 `.0`·`.1`·앞자리 0 을 받지 않아 한 판에 이름이 하나뿐이다. 판의 앞뒤는 버전 문자열이
+         *     아니라 시행 시각으로 정하므로(`api/legal/documents.py`) 이 형식은 사람이 읽는 이름을 고르게 할 뿐이다. 달력상 유효한
+         *     날짜인지는 검사하지 않는다.
+         *
+         *     `effective_at` 은 시행 시각이다. 비우면 게시 시각과 같아 즉시 현행이 되고, 미래면 그 시각까지 시행 예정 판으로
+         *     남는다. 시간대가 없는 값은 받지 않는다(서버 시계와 비교할 수 없다).
+         *
+         *     재동의 범위는 `reconsent_scopes` 로 받는다. 약관은 `terms`, 처리방침은 `collection`·`transfer` 를 고를 수 있고 정책
+         *     문서는 고를 수 없다. 비우면 재동의 없는 게시다.
+         *
+         *     모르는 칸은 422 로 거부한다. 동의 단위를 모르던 이전 어드민 화면은 재동의를 불리언 `requiresReconsent` 로 보냈는데,
+         *     그 칸을 조용히 버리면 재동의를 걸려던 게시가 재동의 없는 게시로 나간다.
          */
         AdminLegalPublishRequest: {
             /** Version */
             version: string;
-            /** Requiresreconsent */
-            requiresReconsent: boolean;
+            /** Reconsentscopes */
+            reconsentScopes?: ("terms" | "collection" | "transfer")[];
+            /** Effectiveat */
+            effectiveAt?: string | null;
         };
-        /** AdminLegalPublishedItem */
+        /**
+         * AdminLegalPublishedItem
+         * @description `reconsent_scopes` 는 이 판이 다시 받은 동의 단위다.
+         */
         AdminLegalPublishedItem: {
             /** Version */
             version: string;
             /** Bodymarkdown */
             bodyMarkdown: string;
+            /** Changenoticemarkdown */
+            changeNoticeMarkdown: string | null;
             /**
              * Publishedat
              * Format: date-time
              */
             publishedAt: string;
-            /** Requiresreconsent */
-            requiresReconsent: boolean;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
+            /** Reconsentscopes */
+            reconsentScopes: ("terms" | "collection" | "transfer")[];
         };
         /** AdminLegalVersionItem */
         AdminLegalVersionItem: {
@@ -6915,8 +7112,20 @@ export interface components {
              * Format: date-time
              */
             publishedAt: string;
-            /** Requiresreconsent */
-            requiresReconsent: boolean;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
+            /** Reconsentscopes */
+            reconsentScopes: ("terms" | "collection" | "transfer")[];
+            /** Changenoticemarkdown */
+            changeNoticeMarkdown: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "current" | "scheduled" | "withdrawn" | "past";
         };
         /** AdminLegalVersionsResponse */
         AdminLegalVersionsResponse: {
@@ -7009,6 +7218,8 @@ export interface components {
             id: string;
             /** Email */
             email: string;
+            /** Novelpublicpolicyv2Enabled */
+            novelPublicPolicyV2Enabled: boolean;
         };
         /** AdminNoticeCreateRequest */
         AdminNoticeCreateRequest: {
@@ -7298,6 +7509,11 @@ export interface components {
          *     는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다.
          *     `purchase_amount` 는 환급되지 않은 구매의 가격 합(탈퇴한 구매자의 구매 포함), `purchase_buyer_count` 는 그 구매를 한 사람
          *     수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다.
+         *
+         *     `review_reason` 은 반려 사유(작가에게 그대로 보인다), `reviewed_at` 은 마지막 승인·반려 시각이다. `serial_lock_*` 는 연재권
+         *     잠금 기록이다 — 잠긴 시각, 그때의 원작 소설화 허락·원작 게시본 id·시행 중이던 약관 판의 사본과 출처(`first_publish` 는
+         *     첫 공개·승인이 찍음, `backfill` 은 이 기록이 생기기 전 공개된 소설을 뒤늦게 채움 — 허락·원작 게시본을 알 수 없어 비어
+         *     있다). 잠기지 않았으면 모두 비어 있다.
          */
         AdminNovelDetailResponse: {
             /**
@@ -7343,6 +7559,10 @@ export interface components {
              * Format: date-time
              */
             publishedAt: string;
+            /** Reviewstatus */
+            reviewStatus: ("pending" | "approved" | "rejected") | null;
+            /** Hiddenat */
+            hiddenAt: string | null;
             /** Synopsis */
             synopsis: string;
             /**
@@ -7368,12 +7588,29 @@ export interface components {
             purchaseBuyerCount: number;
             /** Purchaseamount */
             purchaseAmount: number;
+            /** Reviewreason */
+            reviewReason: string | null;
+            /** Reviewedat */
+            reviewedAt: string | null;
+            /** Seriallockedat */
+            serialLockedAt: string | null;
+            /** Seriallockpermission */
+            serialLockPermission: ("forbidden" | "private" | "public") | null;
+            /** Seriallockcontentversionid */
+            serialLockContentVersionId: string | null;
+            /** Seriallocktermsversion */
+            serialLockTermsVersion: string | null;
+            /** Seriallocksource */
+            serialLockSource: ("first_publish" | "backfill") | null;
         };
         /**
          * AdminNovelListItem
          * @description 공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자
-         *     정지·원작 숨김·공개 화 없음이면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의 구매도 거래 기록이라
-         *     센다), `pending_report_count` 는 처리 전 노벨 신고 수다.
+         *     정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의
+         *     구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사
+         *     (대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이
+         *     아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지워 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로
+         *     게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다).
          */
         AdminNovelListItem: {
             /**
@@ -7419,6 +7656,10 @@ export interface components {
              * Format: date-time
              */
             publishedAt: string;
+            /** Reviewstatus */
+            reviewStatus: ("pending" | "approved" | "rejected") | null;
+            /** Hiddenat */
+            hiddenAt: string | null;
         };
         /** AdminNovelListResponse */
         AdminNovelListResponse: {
@@ -7593,6 +7834,38 @@ export interface components {
             totalPages: number;
             /** Totalcount */
             totalCount: number;
+        };
+        /**
+         * AdminNovelReviewRequest
+         * @description 첫 공개 승인(`approve`)·반려(`reject`). `admin_comment` 는 감사 로그에 남는 글이고, 반려에서는 운영자가 쓴 글 그대로
+         *     작가에게 보이는 반려 사유이기도 하다(반려는 공백뿐이면 422).
+         */
+        AdminNovelReviewRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "approve" | "reject";
+            /** Admincomment */
+            adminComment: string;
+        };
+        /** AdminNovelReviewResponse */
+        AdminNovelReviewResponse: {
+            /**
+             * Novelid
+             * Format: uuid
+             */
+            novelId: string;
+            /**
+             * Reviewstatus
+             * @enum {string}
+             */
+            reviewStatus: "pending" | "approved" | "rejected";
+            /**
+             * Visibility
+             * @enum {string}
+             */
+            visibility: "public" | "withdrawn";
         };
         /**
          * AdminNovelScreeningItem
@@ -7976,7 +8249,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -8662,6 +8935,7 @@ export interface components {
             imageWidth?: number | null;
             /** Imageheight */
             imageHeight?: number | null;
+            scene?: components["schemas"]["StoryScene"] | null;
         };
         /**
          * ChatMessageRole
@@ -8700,6 +8974,9 @@ export interface components {
              * Format: uuid
              */
             pinnedStartingSetupId: string;
+            /** Sceneheaderenabled */
+            sceneHeaderEnabled?: boolean;
+            initialScene?: components["schemas"]["StoryScene"] | null;
         };
         /** ChatRoomCreateRequest */
         ChatRoomCreateRequest: {
@@ -9090,6 +9367,8 @@ export interface components {
             novelFreeChapterCount: number;
             /** Novelpublicenabled */
             novelPublicEnabled: boolean;
+            /** Novelpublicpolicyv2Enabled */
+            novelPublicPolicyV2Enabled: boolean;
             /** Paymentsenabled */
             paymentsEnabled: boolean;
             /** Paymethods */
@@ -10103,7 +10382,11 @@ export interface components {
          * @enum {string}
          */
         EndingRuleOperator: "gte" | "lte" | "eq" | "gt" | "lt";
-        /** EndingSnapshot */
+        /**
+         * EndingSnapshot
+         * @description 플레이어 방 응답의 엔딩. 판정 문안은 판정 재료이고 에필로그는 아직 닿지 않은 엔딩의 내용이라 싣지 않는다 — 도달한
+         *     엔딩의 에필로그는 방 응답의 `ending` 칸에 실린다. 힌트는 엔딩 모음이 미도달 엔딩에만 골라 싣는 칸이라 여기에는 없다.
+         */
         EndingSnapshot: {
             /**
              * Id
@@ -10114,12 +10397,6 @@ export interface components {
             name: string;
             /** Turncountgate */
             turnCountGate: number;
-            /** Judgmentprompt */
-            judgmentPrompt: string;
-            /** Epilogue */
-            epilogue: string | null;
-            /** Hint */
-            hint: string | null;
             /** Statrules */
             statRules: (components["schemas"]["EndingRuleItem"] | components["schemas"]["EndingRuleGroupItem"])[];
         };
@@ -10409,17 +10686,58 @@ export interface components {
             /** Alwayson */
             alwaysOn?: boolean;
         };
-        /** LegalConsentRequest */
-        LegalConsentRequest: {
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "terms" | "privacy";
+        /**
+         * LegalChangeItem
+         * @description 시행된 판 하나의 변경 안내. `reconsent_scopes` 는 그 판이 다시 받은 동의 단위다(없으면 빈 목록).
+         */
+        LegalChangeItem: {
             /** Version */
             version: string;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
+            /** Changenotice */
+            changeNotice: string | null;
+            /** Reconsentscopes */
+            reconsentScopes: ("terms" | "collection" | "transfer")[];
         };
-        /** LegalDocumentPublicResponse */
+        /**
+         * LegalChangesResponse
+         * @description 시행 순서로 최신 판이 먼저다.
+         */
+        LegalChangesResponse: {
+            /** Items */
+            items: components["schemas"]["LegalChangeItem"][];
+        };
+        /**
+         * LegalConsentRequest
+         * @description 동의할 단위를 `consents` 로 받는다. 버전은 받지 않는다 — 서버가 단위마다 그 문서의 현행판 버전을 기록한다.
+         */
+        LegalConsentRequest: {
+            /** Consents */
+            consents: ("terms" | "collection" | "transfer")[];
+        };
+        /**
+         * LegalConsentVersions
+         * @description 회원이 마지막으로 동의한 판의 버전을 동의 단위별로 낸다(약관·처리방침 수집·이용·국외이전). 동의한 적 없는 단위는
+         *     null 이다. 재동의 화면이 마지막으로 동의한 판 이후의 변경 안내만 고를 때 이 값을 since 로 쓴다 — 판의 앞뒤 순서는
+         *     변경 안내 API 가 시행 순서로 판정하므로 여기서는 저장된 값을 그대로 싣는다.
+         */
+        LegalConsentVersions: {
+            /** Terms */
+            terms: string | null;
+            /** Collection */
+            collection: string | null;
+            /** Transfer */
+            transfer: string | null;
+        };
+        /**
+         * LegalDocumentPublicResponse
+         * @description `published_at` 은 게시(공지) 시각, `effective_at` 은 이 판이 현행이 된 시행 시각이다. `change_notice` 는 이 판의
+         *     변경 안내(마크다운)이고 없으면 null 이다.
+         */
         LegalDocumentPublicResponse: {
             /**
              * Kind
@@ -10435,6 +10753,53 @@ export interface components {
              * Format: date-time
              */
             publishedAt: string;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
+            /** Changenotice */
+            changeNotice: string | null;
+            upcoming: components["schemas"]["LegalUpcomingSummary"] | null;
+        };
+        /** LegalUpcomingDocumentResponse */
+        LegalUpcomingDocumentResponse: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
+            /** Version */
+            version: string;
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
+            /** Changenotice */
+            changeNotice: string | null;
+        };
+        /**
+         * LegalUpcomingSummary
+         * @description 현행판 응답에 곁들이는 시행 예정 판 요약. 전문은 `GET /legal/{kind}/upcoming` 이 준다.
+         */
+        LegalUpcomingSummary: {
+            /** Version */
+            version: string;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
+            /** Changenotice */
+            changeNotice: string | null;
         };
         /**
          * LogicalOp
@@ -10468,8 +10833,11 @@ export interface components {
             profileImageAssetId: string | null;
             /** Termsreconsentrequired */
             termsReconsentRequired: boolean;
-            /** Privacyreconsentrequired */
-            privacyReconsentRequired: boolean;
+            /** Collectionreconsentrequired */
+            collectionReconsentRequired: boolean;
+            /** Transferreconsentrequired */
+            transferReconsentRequired: boolean;
+            legalConsentVersions: components["schemas"]["LegalConsentVersions"];
             /** Haspassword */
             hasPassword: boolean;
             /** Socialprovider */
@@ -10761,6 +11129,8 @@ export interface components {
         NotificationResponse: {
             comment?: components["schemas"]["CommentNotificationTargetResponse"] | null;
             novelRefund?: components["schemas"]["NovelRefundNotificationResponse"] | null;
+            /** Novelrefundreason */
+            novelRefundReason?: ("deleted" | "publisher_withdrawn" | "novel_restricted" | "source_restricted" | "source_deleted") | null;
             /** Commentactionid */
             commentActionId?: string | null;
             /**
@@ -11573,6 +11943,11 @@ export interface components {
          *     - `republish_block`: 이미 공개한 것을 다시 내거나 거둔 공개를 다시 열 수 없는 이유.
          *     - `screening_rejections_left`: 오늘 더 걸릴 수 있는 심사 횟수(상한 `screening_rejection_limit`). 상한을 적용하지 않는
          *       계정이면 비어 있다.
+         *     - `review_status`: 첫 공개의 운영자 심사 — 대기·승인·반려. 심사 없이 공개됐거나 공개한 적이 없으면 비어 있다. 대기·
+         *       반려인 동안 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이 아니다.
+         *     - `review_reason`: 반려 사유. 운영자가 쓴 글 그대로이고 반려일 때만 있다. `reviewed_at` 은 마지막 승인·반려 시각이다.
+         *     - `review_required`: 지금 공개하면 독자에게 바로 열리지 않고 운영자 승인을 기다리는가(정책 스위치가 켜졌고 아직 독자에게
+         *       보인 적 없는 소설).
          */
         NovelPublicationStatusResponse: {
             /** Published */
@@ -11602,6 +11977,14 @@ export interface components {
             firstPublishedAt: string | null;
             /** Publishedat */
             publishedAt: string | null;
+            /** Reviewstatus */
+            reviewStatus: ("pending" | "approved" | "rejected") | null;
+            /** Reviewreason */
+            reviewReason: string | null;
+            /** Reviewedat */
+            reviewedAt: string | null;
+            /** Reviewrequired */
+            reviewRequired: boolean;
         };
         /**
          * NovelPublishRequest
@@ -11643,6 +12026,16 @@ export interface components {
              * @default 0
              */
             lastBatchRefundAmount: number;
+            /**
+             * Novelsold
+             * @default false
+             */
+            novelSold: boolean;
+            /**
+             * Lastbatchsold
+             * @default false
+             */
+            lastBatchSold: boolean;
         };
         /**
          * NovelReadingPositionRequest
@@ -11664,8 +12057,8 @@ export interface components {
         };
         /**
          * NovelRefundNotificationResponse
-         * @description 노벨 삭제 환급 알림의 내용 — 게시자가 지운 소장 화 수와 실제로 돌려준 클로버. 소설 제목은 없다(지운 글의 사본을
-         *     남기지 않는다).
+         * @description 노벨 구매 환급 알림의 내용 — 환급한 소장 화 수와 실제로 돌려준 클로버. 소설 제목은 없다(지운 글의 사본을 남기지
+         *     않는다).
          */
         NovelRefundNotificationResponse: {
             /** Chaptercount */
@@ -12085,7 +12478,12 @@ export interface components {
          * PublicNovelChapterResponse
          * @description 노벨 화 하나. `access` 가 `locked` 면 본문(`paragraphs`)과 작가의 말이 비어 있고 `price` 로 소장 화면을 그린다 —
          *     잠긴 화의 글은 한 글자도 싣지 않는다. 읽을 수 있으면 공개본 개정의 본문을 문단 배열로 싣는다(소유자 화 조회의
-         *     `paragraphs` 와 같은 나눔이라 읽은 자리의 문단 번호가 같은 뜻이다). `edition` 은 공개본 판이다(읽은 자리 저장에 싣는다).
+         *     `paragraphs` 와 같은 나눔이라 읽은 자리의 문단 번호가 같은 뜻이다). `edition` 은 실어 준 글의 판이다(읽은 자리 저장에
+         *     싣는다) — 보통은 지금 판이고, 산 사람이 산 때의 판을 고르면 그 판이다.
+         *
+         *     `purchased_edition` 은 그 화를 산 사람에게만, 산 때의 판이 지금 판과 다를 때 싣는다(정책 스위치가 켜졌을 때). 판 이력이
+         *     생기기 전의 판을 샀으면 남아 있는 가장 오래된 판으로 대신한다. 그 판 번호를 쿼리 `edition` 으로 보내면 그 판의 본문·
+         *     제목·작가의 말을 준다. `sales_stopped` 는 작품 정보의 같은 칸과 같다.
          */
         PublicNovelChapterResponse: {
             /**
@@ -12120,6 +12518,12 @@ export interface components {
             previousChapter: components["schemas"]["PublicNovelChapterLink"] | null;
             nextChapter: components["schemas"]["PublicNovelChapterLink"] | null;
             readingPosition: components["schemas"]["PublicNovelReadingPosition"] | null;
+            purchasedEdition?: components["schemas"]["PublicNovelPurchasedEdition"] | null;
+            /**
+             * Salesstopped
+             * @default false
+             */
+            salesStopped: boolean;
         };
         /**
          * PublicNovelCommentCreateRequest
@@ -12181,6 +12585,8 @@ export interface components {
          *     - `is_publisher`: 보는 사람이 게시자 본인인가(모든 화를 무료로 읽고, 화면이 "내 소설에서 관리"를 보인다).
          *     - `free_chapter_count`·`chapter_price`: "1~5화 무료 · 6화부터 화당 30클로버" 안내용 지금 설정값.
          *     - `liked`: 보는 사람이 좋아요했는가.
+         *     - `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지, 원작자 정지로 인한 원작 일괄
+         *       제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다.
          */
         PublicNovelDetailResponse: {
             /**
@@ -12225,6 +12631,11 @@ export interface components {
              * Format: date-time
              */
             publishedAt: string;
+            /**
+             * Salesstopped
+             * @default false
+             */
+            salesStopped: boolean;
         };
         /**
          * PublicNovelHomeItem
@@ -12311,6 +12722,58 @@ export interface components {
             nextCursor: string | null;
         };
         /**
+         * PublicNovelOwnedItem
+         * @description 소장 목록의 한 줄 — 노벨 목록의 한 줄에 판매 중지 표시를 더한 것. `sales_stopped` 는 노벨 목록에서 빠졌지만 소장자
+         *     조건으로 열리는 노벨인가다(작품 정보의 같은 이름 값과 같다).
+         */
+        PublicNovelOwnedItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Synopsis */
+            synopsis: string;
+            source: components["schemas"]["PublicNovelSource"];
+            /** Publishernickname */
+            publisherNickname: string | null;
+            /** Chaptercount */
+            chapterCount: number;
+            /** Likecount */
+            likeCount: number;
+            /** Viewcount */
+            viewCount: number;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+            /** Salesstopped */
+            salesStopped: boolean;
+        };
+        /** PublicNovelOwnedListResponse */
+        PublicNovelOwnedListResponse: {
+            /** Items */
+            items: components["schemas"]["PublicNovelOwnedItem"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /**
+         * PublicNovelPurchasedEdition
+         * @description 산 사람이 고를 수 있는 "산 때의 판" — 판 번호와 그 판을 공개한 시각.
+         */
+        PublicNovelPurchasedEdition: {
+            /** Edition */
+            edition: number;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+        };
+        /**
          * PublicNovelReadingPosition
          * @description 화 하나를 읽던 자리. `edition` 은 그때 읽던 공개본 판이다 — 지금 판과 다르면 문단 수가 달라졌을 수 있어 화면이
          *     `paragraph_count` 비율로 옮긴다. `finished` 는 그 화를 끝까지 읽은 적이 있는가다.
@@ -12365,7 +12828,9 @@ export interface components {
          * PublicNovelSource
          * @description 원작 표기. `title`·`character_name` 은 소설을 만들 때의 원작 사본이다. `cover_url` 은 원작의 지금 게시본 썸네일 —
          *     노벨 표지는 이것뿐이고, 원작자가 탈퇴했거나 썸네일이 없으면 비어 있다(화면이 기본 표지를 그린다). `linkable` 은 원작이
-         *     지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다.
+         *     지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다. `creator_nickname` 은 원작자의 지금 닉네임이다(복사해 두지 않고
+         *     읽을 때 가져온다) — 원작자가 탈퇴했거나 원작 행이 없으면 비어 있다. `unofficial` 은 원작자가 게시자가 아닌가(화면이
+         *     "비공식 2차 창작"을 붙인다)이고, 원작 행이 없으면 참이다(근거 없이 공식으로 표시하지 않는다).
          */
         PublicNovelSource: {
             /**
@@ -12386,6 +12851,10 @@ export interface components {
             coverUrl: string | null;
             /** Linkable */
             linkable: boolean;
+            /** Creatornickname */
+            creatorNickname: string | null;
+            /** Unofficial */
+            unofficial: boolean;
         };
         /**
          * PutPayoutInfoRequest
@@ -12656,6 +13125,10 @@ export interface components {
             endings: components["schemas"]["EndingDraftItem"][];
             /** Situationnotes */
             situationNotes?: components["schemas"]["SituationNoteDraftItem"][];
+            /** Initialsceneplace */
+            initialScenePlace?: string | null;
+            /** Initialscenetime */
+            initialSceneTime?: string | null;
         };
         /** StartingSetupSummary */
         StartingSetupSummary: {
@@ -12701,6 +13174,12 @@ export interface components {
             description: string;
             /** Perturndelta */
             perTurnDelta?: number | null;
+            /** Hiddenfromplayer */
+            hiddenFromPlayer?: boolean;
+            /** Playerdescription */
+            playerDescription?: string | null;
+            /** Signalhiddenchange */
+            signalHiddenChange?: boolean;
             /** Rules */
             rules?: components["schemas"]["StatRuleDraftItem"][];
         };
@@ -12725,8 +13204,8 @@ export interface components {
             initialValue: number;
             /** Unit */
             unit: string | null;
-            /** Description */
-            description: string;
+            /** Playerdescription */
+            playerDescription: string | null;
         };
         /**
          * StatRuleDraftItem
@@ -12785,6 +13264,8 @@ export interface components {
             /** Novelpermission */
             novelPermission?: ("forbidden" | "private" | "public") | null;
             mediaBook?: components["schemas"]["MediaBookPayload"] | null;
+            /** Sceneheaderenabled */
+            sceneHeaderEnabled?: boolean | null;
         };
         /** StoryDraftResponse */
         StoryDraftResponse: {
@@ -12840,6 +13321,8 @@ export interface components {
              */
             novelPermission?: "forbidden" | "private" | "public";
             mediaBook?: components["schemas"]["MediaBookDraft"];
+            /** Sceneheaderenabled */
+            sceneHeaderEnabled?: boolean;
         };
         /**
          * StoryImageArchiveItem
@@ -12885,6 +13368,16 @@ export interface components {
          * @enum {string}
          */
         StoryPromptTemplate: "basic" | "emotional" | "simulation" | "custom";
+        /**
+         * StoryScene
+         * @description 장면 헤더의 장면 — 지금 장소와 시간. 모르는 칸은 null 이다. 같은 이름의 미디어 북 장면 축·장면 기억과는 다른 것이다.
+         */
+        StoryScene: {
+            /** Place */
+            place: string | null;
+            /** Time */
+            time: string | null;
+        };
         /** UpdateProfileRequest */
         UpdateProfileRequest: {
             /** Nickname */
@@ -13936,6 +14429,38 @@ export interface operations {
             header?: never;
             path: {
                 kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLegalVersionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_legal_document_admin_legal__kind__versions__version__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
+                version: string;
             };
             cookie?: never;
         };
@@ -15868,6 +16393,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LegalDocumentPublicResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_upcoming_legal_document_legal__kind__upcoming_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalUpcomingDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_legal_document_changes_legal__kind__changes_get: {
+        parameters: {
+            query?: {
+                since?: string | null;
+            };
+            header?: never;
+            path: {
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalChangesResponse"];
                 };
             };
             /** @description Validation Error */
@@ -18205,6 +18794,37 @@ export interface operations {
             };
         };
     };
+    list_owned_webnovels_webnovels_owned_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicNovelOwnedListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_webnovel_webnovels__novel_id__get: {
         parameters: {
             query?: never;
@@ -18238,7 +18858,9 @@ export interface operations {
     };
     get_webnovel_chapter_webnovels__novel_id__chapters__chapter_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                edition?: number | null;
+            };
             header?: never;
             path: {
                 novel_id: string;
@@ -18536,6 +19158,7 @@ export interface operations {
             query?: {
                 page?: number;
                 moderationStatus?: ("normal" | "restricted") | null;
+                reviewStatus?: ("pending" | "approved" | "rejected") | null;
             };
             header?: never;
             path?: never;
@@ -18648,6 +19271,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminNovelModerationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_admin_novel_admin_novels__novel_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminNovelReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelReviewResponse"];
                 };
             };
             /** @description Validation Error */

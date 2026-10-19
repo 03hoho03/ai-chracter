@@ -40,13 +40,13 @@ async def test_creator_changes_the_permission_and_the_detail_shows_it_to_anyone(
     await db_session.commit()
     await _login_as(db_client, creator.id)
 
-    resp = await db_client.put(f"/contents/{content.id}/novel-permission", json={"novelPermission": "forbidden"})
+    resp = await db_client.put(f"/contents/{content.id}/novel-permission", json={"novelPermission": "public"})
 
     assert resp.status_code == 204
-    assert await _stored(db_session, content.id) == "forbidden"
+    assert await _stored(db_session, content.id) == "public"
     await _login_as(db_client, viewer.id)
     detail = await db_client.get(f"/contents/{content.id}")
-    assert detail.status_code == 200 and detail.json()["novelPermission"] == "forbidden"
+    assert detail.status_code == 200 and detail.json()["novelPermission"] == "public"
 
 
 async def test_someone_else_cannot_change_it_and_a_missing_work_is_404(
@@ -58,12 +58,12 @@ async def test_someone_else_cannot_change_it_and_a_missing_work_is_404(
     await db_session.commit()
     await _login_as(db_client, other.id)
 
-    forbidden = await db_client.put(f"/contents/{content.id}/novel-permission", json={"novelPermission": "forbidden"})
-    missing = await db_client.put(f"/contents/{uuid.uuid4()}/novel-permission", json={"novelPermission": "forbidden"})
+    forbidden = await db_client.put(f"/contents/{content.id}/novel-permission", json={"novelPermission": "public"})
+    missing = await db_client.put(f"/contents/{uuid.uuid4()}/novel-permission", json={"novelPermission": "public"})
 
     assert (forbidden.status_code, forbidden.json()["detail"]) == (403, "Not the content owner")
     assert (missing.status_code, missing.json()["detail"]) == (404, "Content not found")
-    assert await _stored(db_session, content.id) == "private"
+    assert await _stored(db_session, content.id) == "forbidden"
 
 
 async def test_a_suspended_creator_cannot_change_it(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
@@ -71,17 +71,20 @@ async def test_a_suspended_creator_cannot_change_it(db_client: httpx.AsyncClient
     creator, content = await _work(db_session, suspended_at=datetime.now(UTC))
     await _login_as(db_client, creator.id)
 
-    resp = await db_client.put(f"/contents/{content.id}/novel-permission", json={"novelPermission": "forbidden"})
+    resp = await db_client.put(f"/contents/{content.id}/novel-permission", json={"novelPermission": "public"})
 
     assert (resp.status_code, resp.json()["detail"]) == (403, "Account suspended")
-    assert await _stored(db_session, content.id) == "private"
+    assert await _stored(db_session, content.id) == "forbidden"
 
 
 async def test_a_restricted_work_can_still_change_it(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    """허락을 낮추는 것은 작가 보호 쪽이라 이용제한 중에도 막지 않는다."""
+    """허락을 낮추는 것은 작가 보호 쪽이라 이용제한 중에도 막지 않는다. 시작 값을 공개 허용으로 두어, 새 작품의 기본값인
+    허용 안 함으로 낮춘 저장이 실제로 값을 바꾸는지 본다."""
     creator, content = await _work(db_session)
     await db_session.execute(
-        sa.update(Content).where(Content.id == content.id).values(moderation_status=ModerationStatus.RESTRICTED)
+        sa.update(Content)
+        .where(Content.id == content.id)
+        .values(moderation_status=ModerationStatus.RESTRICTED, novel_permission="public")
     )
     await db_session.commit()
     await _login_as(db_client, creator.id)

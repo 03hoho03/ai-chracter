@@ -20,7 +20,7 @@ from api.chat.memory_fact_section import NO_FACTS, FactSection, facts_for_turn
 from api.chat.memory_knowledge import KnowledgeScope
 from api.chat.memory_recall import NO_RECALL, Recall, recall_for_turn
 from api.chat.memory_vector import QueryEmbedding, embed_query, query_text
-from api.chat.memory_window import CurrentSummary, load_current_summary, prompt_window
+from api.chat.memory_window import CurrentSummary, load_current_summary, memory_model_in_scope, prompt_window
 from api.chat.prompt_builder import (
     PromptLane,
     PromptNames,
@@ -35,6 +35,7 @@ from api.chat.prompt_builder import (
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
 from api.chat.room_stats import load_room_stats
 from api.chat.schemas import EndingRuleGroupItem, EndingRuleItem, EndingRuleListItem
+from api.chat.voyage_backoff import voyage_allowed
 from api.content.schemas import (
     CharacterDraftPayload,
     RULE_LIST_ADAPTER,
@@ -305,14 +306,20 @@ async def build_room_prompt(
 
     사실 주입 스위치(`memory_facts_inject`)도 같은 조건(생성 윈도우가 켜져 있고 요약 커서가 있음)에서만 방의 관계·사실 기억을
     골라 대화 기록 뒤·회상 앞 섹션에 싣는다(`chat/memory_fact_section.py`). 기록 뒤라 앞 두 캐시 블록은 사실과 무관하게 같고,
-    꺼져 있으면 사실을 읽지도 않는다. 지식 범위 필터 스위치(`memory_knowledge_filter`)는 그 사실 섹션 안에서만 걸리므로, 사실
-    주입이 꺼져 있으면 켜져 있어도 프롬프트·SQL 이 같다. 회상 줄의 같은 가림은 이 스위치가 아니라 회상 스위치를 따른다.
+    꺼져 있으면 사실을 읽지도 않는다. 지식 범위 필터 스위치(`memory_knowledge_filter`)의 거름은 그 사실 섹션 안에서만 걸린다.
+    회상 줄의 같은 가림은 이 스위치가 아니라 회상 스위치를 따르되, 이 스위치를 켠 턴은 두 섹션 모두 직전 응답의 대사 따옴표
+    안에만 나온 이름을 장면 인물로 세지 않는다 — 회상이 사실 섹션보다 넓은 장면 인물로 덜 가리면 사실 섹션이 뺀 비밀이 회상
+    줄로 샌다. 회상과 사실 주입이 둘 다 꺼져 있으면 이 스위치를 켜도 프롬프트·SQL 이 같다.
 
     임베딩 회상 스위치(`memory_embed_recall`)가 켜져 있고 `embedding_client` 를 받았으며 이번 턴에 회상이나 사실 섹션을 새로
     고르면(주입 상태의 줄로 다시 렌더하는 칸은 고르지 않는다) 둘을 고르기 전에 질의 임베딩을 한 번 받아 둘이 함께 쓴다
     (`chat/memory_vector.py`). 그 앞에서 요청 세션의 읽기 트랜잭션을 커밋해 반납한다 — 턴 골격이 생성 LLM 앞에서 반납하는 것과 같은
     이유로, 외부 호출을 기다리는 동안 커넥션을 쥐지 않는다. 꺼져 있거나 클라이언트가 없으면(리플레이·측정 도구) 부르지도 커밋하지도
-    않는다."""
+    않는다. Voyage 가 연속으로 실패해 멈춘 동안(`chat/voyage_backoff.py`)도 커밋 앞에서 돌아와 꺼진 턴과 같다.
+
+    위 네 스위치는 이 턴의 레인과 글쓰기 모델(`prompt_set` 의 레인·모델)이 기억 사용 범위(`memory_model_scope`)에 들 때만 켜진
+    것으로 읽는다(`memory_window.memory_model_in_scope`). 범위 밖 방은 스위치가 켜져 있어도 다 끈 턴과 프롬프트·SQL 이 같고, 주입
+    상태의 회상·사실 줄도 싣지 않는다."""
     memory_summary = ""
     full_history = history
     current_summary: CurrentSummary | None = None
@@ -322,13 +329,21 @@ async def build_room_prompt(
             history = prompt_window(history, current_summary.cursor)
             memory_summary = current_summary.text
 
-    recall_searches = settings.memory_episodes_recall and (turn_state is None or turn_state.recall_lines is None)
-    facts_select = settings.memory_facts_inject and (turn_state is None or turn_state.fact_lines is None)
+    # 기억 사용 스위치는 이 턴의 레인·글쓰기 모델(생성 세트의 것)이 기억 사용 범위에 들 때만 켜진 것으로 읽는다 — 범위 밖이면
+    # 스위치를 다 끈 턴과 프롬프트·SQL 이 같다.
+    in_scope = memory_model_in_scope(prompt_set.lane, prompt_set.model, settings.memory_model_scope)
+    episodes_recall = settings.memory_episodes_recall and in_scope
+    facts_inject = settings.memory_facts_inject and in_scope
+    knowledge_filter = settings.memory_knowledge_filter and in_scope
+    embed_recall = settings.memory_embed_recall and in_scope
+
+    recall_searches = episodes_recall and (turn_state is None or turn_state.recall_lines is None)
+    facts_select = facts_inject and (turn_state is None or turn_state.fact_lines is None)
 
     async def query_embedding(names: PromptNames) -> QueryEmbedding | None:
         if (
             embedding_client is None
-            or not settings.memory_embed_recall
+            or not embed_recall
             or current_summary is None
             or not (recall_searches or facts_select)
         ):
@@ -342,6 +357,10 @@ async def build_room_prompt(
                 "대화방 %s 질의 임베딩 글을 만들지 못해 명사 단독으로 고른다: %s", room.id, exc, exc_info=True
             )
             return None
+        # 멈춤 중이면 커밋하기 전에 돌아온다 — 임베딩 회상이 꺼진 턴과 SQL 문까지 같다.
+        if not await voyage_allowed():
+            logger.warning("대화방 %s 질의 임베딩을 Voyage 연속 실패 멈춤으로 건너뛰고 명사 단독으로 고른다", room.id)
+            return None
         await db.commit()
         return await embed_query(
             embedding_client,
@@ -351,7 +370,7 @@ async def build_room_prompt(
         )
 
     async def recall(names: PromptNames, query: QueryEmbedding | None) -> Recall:
-        if not settings.memory_episodes_recall or current_summary is None:
+        if not episodes_recall or current_summary is None:
             return NO_RECALL
         if turn_state is not None and turn_state.recall_lines is not None:
             return Recall(turn_state.recall_lines, ())
@@ -363,12 +382,14 @@ async def build_room_prompt(
             window=history,
             user_content=user_content,
             names=names,
-            scope=KnowledgeScope(user_label=prompt_set.user_label),
+            scope=KnowledgeScope(
+                user_label=prompt_set.user_label, ignore_quoted_reply_names=knowledge_filter
+            ),
             query_vector=query.vector if query is not None else None,
         )
 
     async def facts(names: PromptNames, query: QueryEmbedding | None) -> FactSection:
-        if not settings.memory_facts_inject or current_summary is None:
+        if not facts_inject or current_summary is None:
             return NO_FACTS
         if turn_state is not None and turn_state.fact_lines is not None:
             return FactSection(turn_state.fact_lines, ())
@@ -379,8 +400,10 @@ async def build_room_prompt(
             history=full_history,
             user_content=user_content,
             names=names,
-            scope=KnowledgeScope(user_label=prompt_set.user_label),
-            knowledge_filter=settings.memory_knowledge_filter,
+            scope=KnowledgeScope(
+                user_label=prompt_set.user_label, ignore_quoted_reply_names=knowledge_filter
+            ),
+            knowledge_filter=knowledge_filter,
             query_vector=query.vector if query is not None else None,
         )
 

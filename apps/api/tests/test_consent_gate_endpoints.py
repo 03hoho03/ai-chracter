@@ -312,7 +312,7 @@ async def test_legal_consent_still_open_without_consent(
 ) -> None:
     await _unconsented_user(db_client, db_session)
 
-    resp = await db_client.post("/legal/consent", json={"kind": "terms", "version": "2099-01-01"})
+    resp = await db_client.post("/legal/consent", json={"consents": ["terms"]})
 
     assert resp.status_code == 204
 
