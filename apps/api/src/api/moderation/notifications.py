@@ -15,7 +15,7 @@ from api.db.models.comments import Comment, CommentMute
 from api.db.models.inquiry import Inquiry
 from api.db.models.moderation import Notification
 from api.db.models.notice import Notice
-from api.db.models.novel import NovelPurchase
+from api.db.models.novel import NovelPurchase, NovelPurchaseRefundReason
 from api.moderation.schemas import (
     NotificationListResponse,
     NotificationResponse,
@@ -23,8 +23,8 @@ from api.moderation.schemas import (
 )
 
 COMMENT_NOTIFICATION_TYPES = ("comment-created", "comment-reply", "comment-mention")
-# 노벨 삭제 환급 알림(`novel_public/purchases.py` 가 만든다). 문구는 화면이 이 값과 응답의 `novelRefund`(화 수·클로버 수)로
-# 만든다 — 소설 제목은 싣지 않는다(지운 글의 사본을 남기지 않는다).
+# 노벨 구매 환급 알림(`novel_public/purchases.py` 가 만든다). 문구는 화면이 이 값과 응답의 `novelRefund`(화 수·클로버 수)·
+# `novelRefundReason`(환급 사유)으로 만든다 — 소설 제목은 싣지 않는다(지운 글의 사본을 남기지 않는다).
 NOVEL_REFUND_NOTIFICATION_TYPE = "novel-purchase-refund"
 
 
@@ -80,15 +80,20 @@ async def serialize_notifications(
     )
     targets = await notification_targets(db, list(comments.values()), user_id)
     refund_ids = [item.id for item in notifications if item.type == NOVEL_REFUND_NOTIFICATION_TYPE]
-    refunds: dict[uuid.UUID, NovelRefundNotificationResponse] = (
+    # 알림 하나 = 환급 한 번이라 그 알림의 구매 행들은 사유가 같다(`novel_public/purchases.py` 의 `refund_purchases`).
+    refunds: dict[uuid.UUID, tuple[NovelRefundNotificationResponse, NovelPurchaseRefundReason]] = (
         {
-            notification_id: NovelRefundNotificationResponse(chapter_count=chapter_count, clover_amount=amount or 0)
-            for notification_id, chapter_count, amount in (
+            notification_id: (
+                NovelRefundNotificationResponse(chapter_count=chapter_count, clover_amount=amount or 0),
+                reason or "deleted",
+            )
+            for notification_id, chapter_count, amount, reason in (
                 await db.execute(
                     select(
                         NovelPurchase.refund_notification_id,
                         func.count(),
                         func.coalesce(func.sum(NovelPurchase.refunded_amount), 0),
+                        func.max(NovelPurchase.refund_reason),
                     )
                     .where(NovelPurchase.refund_notification_id.in_(refund_ids))
                     .group_by(NovelPurchase.refund_notification_id)
@@ -131,7 +136,8 @@ async def serialize_notifications(
                 created_at=notification.created_at,
                 read=notification.read,
                 comment=target,
-                novel_refund=refunds.get(notification.id),
+                novel_refund=refund[0] if (refund := refunds.get(notification.id)) is not None else None,
+                novel_refund_reason=refund[1] if refund is not None else None,
             )
         )
     return items

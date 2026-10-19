@@ -722,6 +722,7 @@ _AUTHOR_WRITES = [
     pytest.param("PUT", "/novels/{novel}/notes", {"settingNotes": "메모"}, id="notes"),
     pytest.param("PATCH", "/novels/{novel}", {"title": "새 제목"}, id="novel-title"),
     pytest.param("PATCH", "/novels/{novel}/chapters/{chapter}", {"authorNote": "작가의 말"}, id="chapter"),
+    pytest.param("POST", "/novels/{novel}/chapters", {"endMessageId": "{chapter}", "expectedCost": "40"}, id="generate"),
     pytest.param("POST", "/novels/{novel}/publication", {"chapterId": "{chapter}"}, id="publish"),
     pytest.param("POST", "/novels/{novel}/publication/withdraw", None, id="withdraw"),
     pytest.param("DELETE", "/novels/{novel}/batches/{batch}", None, id="last-batch"),
@@ -738,8 +739,9 @@ async def test_a_hidden_novel_is_not_found_on_any_author_route(
     template: str,
     payload: dict[str, str] | None,
 ) -> None:
-    """숨긴 소설은 작가에게 없는 소설이다 — 상세·설정 노트·제목·화 글·공개·거두기·마지막 묶음 삭제·다시 삭제가 모두 404 다.
-    깨지는 시나리오: 작가가 숨긴 소설 주소를 기억해 고치고 다시 공개해, 지웠다고 안내한 글이 독자에게 다시 나간다."""
+    """숨긴 소설은 작가에게 없는 소설이다 — 상세·설정 노트·제목·화 글·화 생성·공개·거두기·마지막 묶음 삭제·다시 삭제가 모두
+    404 다. LLM 은 불리면 실패하는 가짜로 갈아 끼운다(화 생성이 404 보다 먼저 작업을 띄우면 그 자체로 실패한다). 깨지는
+    시나리오: 작가가 숨긴 소설 주소를 기억해 고치고 다시 공개해, 지웠다고 안내한 글이 독자에게 다시 나간다."""
     novel = await _novel(db_session)
     await _hide_in_db(db_session, novel.novel_id)
     await _allow_novelize(db_session, monkeypatch, novel.publisher_id)

@@ -170,7 +170,9 @@ class PublicNovelDetailResponse(CamelModel):
 
     - `is_publisher`: 보는 사람이 게시자 본인인가(모든 화를 무료로 읽고, 화면이 "내 소설에서 관리"를 보인다).
     - `free_chapter_count`·`chapter_price`: "1~5화 무료 · 6화부터 화당 30클로버" 안내용 지금 설정값.
-    - `liked`: 보는 사람이 좋아요했는가."""
+    - `liked`: 보는 사람이 좋아요했는가.
+    - `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지, 원작자 정지로 인한 원작 일괄
+      제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다."""
 
     id: uuid.UUID
     title: str
@@ -188,6 +190,7 @@ class PublicNovelDetailResponse(CamelModel):
     last_read: PublicNovelLastRead | None
     first_published_at: datetime
     published_at: datetime
+    sales_stopped: bool = False
 
 
 class PublicNovelChapterLink(CamelModel):
@@ -198,10 +201,22 @@ class PublicNovelChapterLink(CamelModel):
     access: PublicNovelChapterAccess
 
 
+class PublicNovelPurchasedEdition(CamelModel):
+    """산 사람이 고를 수 있는 "산 때의 판" — 판 번호와 그 판을 공개한 시각."""
+
+    edition: int
+    published_at: datetime
+
+
 class PublicNovelChapterResponse(CamelModel):
     """노벨 화 하나. `access` 가 `locked` 면 본문(`paragraphs`)과 작가의 말이 비어 있고 `price` 로 소장 화면을 그린다 —
     잠긴 화의 글은 한 글자도 싣지 않는다. 읽을 수 있으면 공개본 개정의 본문을 문단 배열로 싣는다(소유자 화 조회의
-    `paragraphs` 와 같은 나눔이라 읽은 자리의 문단 번호가 같은 뜻이다). `edition` 은 공개본 판이다(읽은 자리 저장에 싣는다)."""
+    `paragraphs` 와 같은 나눔이라 읽은 자리의 문단 번호가 같은 뜻이다). `edition` 은 실어 준 글의 판이다(읽은 자리 저장에
+    싣는다) — 보통은 지금 판이고, 산 사람이 산 때의 판을 고르면 그 판이다.
+
+    `purchased_edition` 은 그 화를 산 사람에게만, 산 때의 판이 지금 판과 다를 때 싣는다(정책 스위치가 켜졌을 때). 판 이력이
+    생기기 전의 판을 샀으면 남아 있는 가장 오래된 판으로 대신한다. 그 판 번호를 쿼리 `edition` 으로 보내면 그 판의 본문·
+    제목·작가의 말을 준다. `sales_stopped` 는 작품 정보의 같은 칸과 같다."""
 
     novel_id: uuid.UUID
     novel_title: str
@@ -216,6 +231,8 @@ class PublicNovelChapterResponse(CamelModel):
     previous_chapter: PublicNovelChapterLink | None
     next_chapter: PublicNovelChapterLink | None
     reading_position: PublicNovelReadingPosition | None
+    purchased_edition: PublicNovelPurchasedEdition | None = None
+    sales_stopped: bool = False
 
 
 class PublicNovelReadingPositionRequest(CamelModel):

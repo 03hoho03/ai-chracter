@@ -53,6 +53,7 @@ from api.db.models.novel import (
     NovelChapterRevision,
     NovelCharacter,
     NovelJob,
+    NovelPublication,
     NovelReadingPosition,
     NovelSnapshot,
 )
@@ -71,7 +72,9 @@ from api.llm.model_access import effective_model, has_novel_premium_access
 from api.novelize.access import require_novelize_access
 from api.novelize.batches import ensure_batches
 from api.novel_public.purchases import (
+    chapters_with_unrefunded_purchase,
     lock_publisher_and_buyers,
+    novel_was_sold,
     purchase_refund_preview,
     refund_deleted_purchases,
 )
@@ -198,9 +201,12 @@ def _novel_error(status_code: int, code: str) -> HTTPException:
 # ── 소유권 ──────────────────────────────────────────────────────────────────
 async def _get_owned_novel(db: AsyncSession, novel_id: uuid.UUID, user_id: uuid.UUID) -> Novel:
     """없으면 404, 남의 것이면 403(방 소유권 검사와 같은 모양). 행을 잠그지 않는다 — 소설 행을 먼저 잠그면 성공
-    저장(작업 행 → 소설 행)과 교착한다."""
+    저장(작업 행 → 소설 행)과 교착한다.
+
+    숨긴 소설(노벨로 팔린 뒤 작가가 지운 소설, `Novel.hidden_at`)도 404 다 — 작가에게는 지운 소설이다. 작가의 모든 소설
+    라우트(공개 라우트 포함)가 이 확인을 거치므로, 숨긴 소설을 주소로 열어 고치거나 다시 공개하는 길이 여기서 막힌다."""
     novel = await db.get(Novel, novel_id, populate_existing=True)
-    if novel is None:
+    if novel is None or novel.hidden_at is not None:
         raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_NOT_FOUND")
     if novel.user_id != user_id:
         raise _novel_error(status.HTTP_403_FORBIDDEN, "NOVEL_FORBIDDEN")
@@ -726,13 +732,13 @@ async def list_novels(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> NovelListResponse:
-    """내 소설을 최근 수정 순으로. 원래 방이 지워진 소설도 나온다(`chatRoomId` null)."""
+    """내 소설을 최근 수정 순으로. 원래 방이 지워진 소설도 나온다(`chatRoomId` null). 숨긴 소설은 나오지 않는다."""
     chapter_count = (
         select(func.count()).select_from(NovelChapter).where(NovelChapter.novel_id == Novel.id).scalar_subquery()
     )
     query = (
         select(Novel, chapter_count)
-        .where(Novel.user_id == user_id)
+        .where(Novel.user_id == user_id, Novel.hidden_at.is_(None))
         .order_by(Novel.updated_at.desc(), Novel.id.desc())
     )
     if cursor is not None:
@@ -785,11 +791,24 @@ async def delete_novel(
 
     노벨에서 이 소설의 화를 산 구매자가 있으면 같은 트랜잭션에서 그 구매를 환급한다 — 그래서 게시자 행과 함께 그 구매자들의
     행도 id 순으로 잠근다(`novel_public/purchases.py` 모듈 docstring). 잠근 뒤 새 구매가 보이면 409
-    `NOVEL_DELETE_CONFLICT` 이고 지우지 않는다(다시 누르면 된다)."""
+    `NOVEL_DELETE_CONFLICT` 이고 지우지 않는다(다시 누르면 된다).
+
+    정책 스위치가 켜져 있고 노벨로 팔린 소설(`novel_was_sold`)이면 지우지 않고 숨긴다 — 산 사람이 계속 읽어야 해서다. 진행
+    중 작업을 환불하고, 공개를 거두고(새로 보이거나 팔리지 않는다), 숨긴 시각을 찍고 방 칸을 비운다(같은 방에서 새 소설을
+    만들 수 있고, 진행 중이던 연쇄 생성도 방이 없어 다음 묶음을 만들지 않는다). 환급은 없다. 숨긴 소설은 작가의 목록·주소
+    에서 사라지고(`_get_owned_novel`), 미환급 소장자가 모두 사라지면 하루 한 번 도는 파기가 지운다(`hidden_purge.py`).
+    판정은 사용자 행을 잠근 뒤에 한다 — 구매가 게시자 행을 잡으므로 그 뒤로는 새 구매가 끼지 않는다."""
     novel_id, publisher_id = novel.id, novel.user_id
     locked = await lock_publisher_and_buyers(db, publisher_id=publisher_id, novel_id=novel_id)
     # 행이 곧 지워져 남지 않으므로 사유 칸은 어느 값이든 같다 — 우리 쪽 사정으로 끝낸 작업이라 `internal` 이다.
     await refund_active_jobs(db, novel_id=novel_id, failure_code="internal")
+    if settings.novel_public_policy_v2_enabled and await novel_was_sold(db, novel_id):
+        await db.execute(
+            update(NovelPublication).where(NovelPublication.novel_id == novel_id).values(visibility="withdrawn")
+        )
+        await db.execute(update(Novel).where(Novel.id == novel_id).values(hidden_at=func.now(), chat_room_id=None))
+        await db.commit()
+        return
     await refund_deleted_purchases(db, novel_id=novel_id, locked_user_ids=locked)
     await delete_novels(db, [novel_id])
     await db.commit()
@@ -1393,7 +1412,10 @@ async def _delete_last_batch(
     db: AsyncSession, novel: Novel, batch: NovelBatch, *, not_last_code: str, locked: frozenset[uuid.UUID]
 ) -> None:
     """`batch` 가 이 소설의 마지막 묶음이면 그 화들과 함께 지우고 커밋한다. 노벨에서 그 화들을 산 구매는 같은 트랜잭션에서
-    환급한다. 호출자가 `lock_publisher_and_buyers` 로 게시자와 구매자 행을 잠근 뒤 부른다(`locked`)."""
+    환급한다. 호출자가 `lock_publisher_and_buyers` 로 게시자와 구매자 행을 잠근 뒤 부른다(`locked`).
+
+    정책 스위치가 켜져 있고 그 화들에 아직 환급되지 않은 구매가 있으면 409 `NOVEL_BATCH_SOLD` 이고 아무것도 지우지 않는다 —
+    묶음 삭제로 산 화를 지우면 소설 삭제의 숨김(산 사람이 계속 읽는다)을 우회한다."""
     active = await db.scalar(
         select(NovelJob.id).where(NovelJob.novel_id == novel.id, NovelJob.status.in_(ACTIVE_JOB_STATUSES)).limit(1)
     )
@@ -1403,6 +1425,8 @@ async def _delete_last_batch(
     if batch.ordinal != last_ordinal:
         raise _novel_error(status.HTTP_409_CONFLICT, not_last_code)
     chapter_ids = list((await db.scalars(select(NovelChapter.id).where(NovelChapter.batch_id == batch.id))).all())
+    if settings.novel_public_policy_v2_enabled and await chapters_with_unrefunded_purchase(db, chapter_ids):
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_BATCH_SOLD")
     await refund_deleted_purchases(db, novel_id=novel.id, locked_user_ids=locked, chapter_ids=chapter_ids)
     await delete_batch(db, novel_id=novel.id, batch_id=batch.id)
     await db.execute(update(Novel).where(Novel.id == novel.id).values(updated_at=func.now()))

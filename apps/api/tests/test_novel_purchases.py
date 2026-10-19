@@ -354,7 +354,8 @@ async def test_deleting_a_novel_refunds_every_purchase_and_tells_each_buyer_once
 async def test_owner_detail_tells_how_many_buyers_a_delete_will_refund(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """소설 전체는 6·7·8화 구매(두 사람, 90), 마지막 묶음은 7·8화(두 사람, 60)."""
+    """소설 전체는 6·7·8화 구매(두 사람, 90), 마지막 묶음은 7·8화(두 사람, 60). 정책 스위치가 켜지면 같은 소설의 삭제는
+    숨김이 되고 마지막 묶음은 지울 수 없다는 표시가 함께 선다(환급 안내가 맞지 않는다)."""
     novel = await _setup(db_session)
     first, second = await _buyer(db_session), await _buyer(db_session)
     for buyer, ordinal in ((first, 6), (first, 7), (second, 8)):
@@ -363,6 +364,8 @@ async def test_owner_detail_tells_how_many_buyers_a_delete_will_refund(
     await _login_as(db_client, novel.publisher_id)
 
     resp = await db_client.get(f"/novels/{novel.novel_id}")
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", True)
+    with_policy = await db_client.get(f"/novels/{novel.novel_id}")
 
     assert resp.status_code == 200
     assert resp.json()["purchaseRefunds"] == {
@@ -370,6 +373,12 @@ async def test_owner_detail_tells_how_many_buyers_a_delete_will_refund(
         "novelRefundAmount": 90,
         "lastBatchBuyerCount": 2,
         "lastBatchRefundAmount": 60,
+        "novelSold": False,
+        "lastBatchSold": False,
+    }
+    assert {key: with_policy.json()["purchaseRefunds"][key] for key in ("novelSold", "lastBatchSold")} == {
+        "novelSold": True,
+        "lastBatchSold": True,
     }
 
 

@@ -1412,3 +1412,32 @@ async def test_a_rejected_or_cancelled_first_publish_leaves_no_edition_rows(
 
     assert waiting == 1
     assert await _editions(db_session, novel_id) == []
+
+
+async def test_a_new_request_over_edition_rows_an_old_image_left_behind_replaces_them(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """배포가 겹치는 동안 판 이력 표를 모르는 옛 이미지가 승인 대기 공개를 반려하면 화 공개본만 지우고, 대기 공개가 쌓은
+    1판 판 행은 남는다. 작가가 고쳐 다시 신청하면 화 공개본이 다시 1판으로 시작하는데, 남은 행과 부딪치지 않고 그 행을 새
+    공개본으로 바꾼다. 깨지는 시나리오: 다시 신청이 (화, 1판) 판 행 충돌로 500 이 되어 그 소설은 다시 공개할 수 없다."""
+    novel_id, chapters = await _pending(db_client, db_session, monkeypatch)
+    # 옛 이미지의 반려 — 판 행은 모르고 화 공개본만 지운다.
+    await db_session.execute(sa.delete(NovelChapterPublication).where(NovelChapterPublication.novel_id == novel_id))
+    await db_session.execute(
+        sa.update(NovelPublication)
+        .where(NovelPublication.novel_id == novel_id)
+        .values(review_status="rejected", review_reason="고쳐서 다시 신청해 주세요.", reviewed_at=sa.func.now())
+    )
+    await db_session.commit()
+    left = await _editions(db_session, novel_id)
+    edited = await _new_revision(db_session, chapters[0], "고쳐서 다시 낸 첫 화.")
+
+    resp = await _publish(db_client, novel_id, chapters[0])
+
+    assert [(chapter_id, edition) for chapter_id, edition, *_ in left] == [(chapters[0].id, 1)]
+    assert resp.status_code == 200, resp.text
+    editions = await _editions(db_session, novel_id)
+    assert editions == await _publications(db_session, novel_id)
+    assert [(chapter_id, edition, revision_id) for chapter_id, edition, revision_id, *_ in editions] == [
+        (chapters[0].id, 1, edited.id)
+    ]

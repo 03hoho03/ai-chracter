@@ -129,3 +129,34 @@ def select_readable_publications(*columns: Any) -> Select[Any]:
         .join(Content, Content.id == Novel.content_id)
         .where(*readable_publication_conditions())
     )
+
+
+def owner_readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
+    """정책 스위치가 켜졌을 때, 아직 환급되지 않은 구매를 가진 사람(소장자)이 이 공개 소설을 계속 읽을 수 있는가 — SQL 조건.
+    운영자 이용제한 없음 ∧ 첫 공개 승인 대기·반려 아님 ∧ 게시자 미탈퇴 ∧ 원작이 정상이거나 원작자 정지로만 일괄 제한됨 ∧ 공개
+    화가 하나 이상. 조인은 `readable_publication_conditions` 와 같다.
+
+    공개 범위(게시자의 거둠·판매된 소설 삭제의 숨김)와 게시자 정지는 보지 않는다 — 게시자 쪽 사정이라 산 사람의 소장을 끝내지
+    않는다(새로 보이거나 팔리지 않는 것은 목록·구매가 쓰는 `readable_publication_conditions` 가 맡는다). 여기서 빠지는 경우
+    (노벨 이용제한·원작 자체 이용제한·원작 삭제·게시자 탈퇴)는 그 쓰기마다 구매를 환급한다(`purchases.py` 모듈 docstring) —
+    두 목록이 어긋나면 환급 없이 닫히는 소장이 생긴다."""
+    return (
+        or_(NovelPublication.review_status.is_(None), NovelPublication.review_status == "approved"),
+        NovelPublication.moderation_status == "normal",
+        User.deleted_at.is_(None),
+        or_(Content.moderation_status == ModerationStatus.NORMAL, Content.restricted_by_suspension.is_(True)),
+        exists().where(_any_chapter.novel_id == NovelPublication.novel_id).correlate_except(_any_chapter),
+    )
+
+
+def select_owner_readable_publications(*columns: Any) -> Select[Any]:
+    """`select_readable_publications` 의 소장자 판(`owner_readable_publication_conditions`). 이 사람이 그 소설의 소장자인지는
+    호출자가 먼저 본다."""
+    return (
+        select(*columns)
+        .select_from(NovelPublication)
+        .join(Novel, Novel.id == NovelPublication.novel_id)
+        .join(User, User.id == Novel.user_id)
+        .join(Content, Content.id == Novel.content_id)
+        .where(*owner_readable_publication_conditions())
+    )

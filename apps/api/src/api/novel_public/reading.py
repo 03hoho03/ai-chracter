@@ -9,9 +9,14 @@
 작가의 말은 화 공개본 사본, 본문은 그 공개본이 가리키는 개정, 소설 제목·소개는 공개 상태 행 사본이고, 표지는 원작
 썸네일이다(원작자가 탈퇴했으면 싣지 않는다 — 탈퇴한 회원의 작품 그림을 계속 내보이지 않는다).
 
+**소장자 열람** — 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면, 목록에서 빠진 노벨이어도 아직 환급되지 않은
+구매를 가진 사람은 작품 정보·산 화·무료 화를 계속 읽고 읽은 자리를 저장한다(`select_owner_readable_publications` — 게시자의
+거둠·정지, 원작자 정지로 인한 원작 일괄 제한, 판매된 소설 삭제). 그때 응답의 `salesStopped` 가 참이고, 사지 않은 유료 화는
+살 수 없다(구매는 목록 조건을 본다). 산 사람은 산 때의 판을 골라 다시 읽는다(화 읽기의 쿼리 `edition`).
+
 **열람 종료** — 읽을 수 없게 된 소설·화를 소장한 사람이 열면 410 `NOVEL_READING_ENDED` 와 이유(`reason`)를 준다. 소장하지
 않은 사람에게는 이유 없이 404 다 — 게시자의 철회·운영 조치 사실을 제3자에게 알릴 까닭이 없다. 이유는 구매 행(소설·화가
-지워져도 남는 사본)과 지금 공개 상태로 가른다(`_ended_or_not_found`).
+지워져도 남는 사본, 환급 사유)과 지금 공개 상태로 가른다(`_ended_or_not_found`).
 
 **조회 수**는 화 본문을 실제로 내준 때만, 소설 단위로 회원마다 하루 한 번 센다(Redis `SET NX`, 응답 뒤 백그라운드에서 상대
 UPDATE — 작품 상세 조회와 같은 꼴)."""
@@ -20,16 +25,18 @@ import base64
 import binascii
 import json
 import uuid
-from collections.abc import Sequence
-from datetime import datetime
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
+from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import delete, func, select, tuple_, update
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from sqlalchemy import Row, Select, delete, func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
 from api.core import clover
+from api.core.config import settings
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.content.access import publicly_listed_conditions
 from api.db.models.auth import User
@@ -39,11 +46,13 @@ from api.db.models.novel import (
     HomeNovelCuration,
     Novel,
     NovelChapter,
+    NovelChapterEdition,
     NovelChapterPublication,
     NovelChapterRevision,
     NovelLike,
     NovelPublication,
     NovelPurchase,
+    NovelPurchaseRefundReason,
     NovelReaderPosition,
 )
 from api.db.session import get_db_session, get_session_factory
@@ -51,6 +60,7 @@ from api.legal.dependencies import require_legal_consent
 from api.novel_public.access import (
     novel_public_open_to,
     require_novel_public_readable,
+    select_owner_readable_publications,
     select_readable_publications,
 )
 from api.novel_public.no_store import NoStoreRoute
@@ -68,6 +78,7 @@ from api.novel_public.schemas import (
     PublicNovelListItem,
     PublicNovelListResponse,
     PublicNovelListSort,
+    PublicNovelPurchasedEdition,
     PublicNovelReadingPosition,
     PublicNovelReadingPositionRequest,
     PublicNovelSource,
@@ -180,7 +191,7 @@ def _price(ordinal: int) -> int | None:
 
 
 async def _owned_chapter_ids(db: AsyncSession, user_id: uuid.UUID, novel_id: uuid.UUID) -> set[uuid.UUID]:
-    """이 사람이 이 소설에서 소장한 화(삭제로 환급된 구매는 빼고 — 그 화는 이미 없다)."""
+    """이 사람이 이 소설에서 소장한 화(환급된 구매는 빼고 — 환급된 구매는 소장이 아니다)."""
     rows = await db.scalars(
         select(NovelPurchase.chapter_id).where(
             NovelPurchase.buyer_user_id == user_id,
@@ -189,6 +200,23 @@ async def _owned_chapter_ids(db: AsyncSession, user_id: uuid.UUID, novel_id: uui
         )
     )
     return set(rows.all())
+
+
+async def _keeps_reading(db: AsyncSession, user_id: uuid.UUID, novel_id: uuid.UUID) -> bool:
+    """목록 조건으로 읽을 수 없는 노벨을 이 사람에게 소장자 조건으로 다시 볼 것인가 — 정책 스위치가 켜졌고 이 소설에 아직
+    환급되지 않은 구매가 있다(모듈 docstring 의 소장자 열람)."""
+    if not settings.novel_public_policy_v2_enabled:
+        return False
+    found = await db.scalar(
+        select(NovelPurchase.id)
+        .where(
+            NovelPurchase.buyer_user_id == user_id,
+            NovelPurchase.novel_id == novel_id,
+            NovelPurchase.refunded_at.is_(None),
+        )
+        .limit(1)
+    )
+    return found is not None
 
 
 def _position(row: NovelReaderPosition) -> PublicNovelReadingPosition:
@@ -200,20 +228,34 @@ def _position(row: NovelReaderPosition) -> PublicNovelReadingPosition:
     )
 
 
+# 환급 사유 → 열람 종료 이유. 410 의 이유 값을 늘리지 않고 기존 값에 대응시킨다 — 옛 화면의 이유별 안내가 그대로 맞는다.
+# 사유가 비어 있는 환급은 이 칸이 생기기 전이나 옛 코드의 것이라 그때 유일했던 삭제 환급이다.
+_ENDED_BY_REFUND: dict[NovelPurchaseRefundReason, PublicNovelEndedReason] = {
+    "deleted": "deleted",
+    "publisher_withdrawn": "publisher_withdrawn",
+    "novel_restricted": "restricted",
+    "source_restricted": "source_unavailable",
+    "source_deleted": "source_unavailable",
+}
+
+
 async def _ended_or_not_found(
     db: AsyncSession, *, user_id: uuid.UUID, novel_id: uuid.UUID, chapter_id: uuid.UUID | None
 ) -> HTTPException:
     """읽을 수 없는 소설·화를 연 사람에게 줄 응답. 이 소설을 하나라도 소장한(했던) 사람에게만 410 `NOVEL_READING_ENDED` 와
     이유를, 아니면 404(`NOVEL_NOT_FOUND`, 화면 `NOVEL_CHAPTER_NOT_FOUND`)다. 이유는 앞의 것이 먼저다.
 
-    1. `deleted` — 그 화(작품 정보면 소설 전체가 지워졌을 때 그 소설)의 구매가 게시자 삭제로 환급됐다. `refundedAmount` 는
-       돌려준 클로버다. 지워진 것은 노벨을 다시 켜도 돌아오지 않으므로 스위치보다 먼저다.
+    1. 그 화의 구매가 모두 환급됐다(작품 정보면 소설이 없고 환급된 구매가 있다) — 가장 나중 환급의 사유로 가른다
+       (`_ENDED_BY_REFUND`). 환급은 노벨을 다시 켜거나 다시 열어도 돌아오지 않으므로 스위치보다 먼저다.
     2. `service_off` — 노벨 스위치가 꺼져 있다(켜면 그대로 다시 열린다).
     3. 소설이 없다 — 게시자가 탈퇴했으면 `publisher_withdrawn`, 아니면 `deleted`(이미지를 옛 판으로 되돌린 동안의 삭제는
        환급하지 않아 이 길로 온다 — `refundedAmount` 0).
     4. `restricted`(운영 이용제한이나 게시자 정지) → `withdrawn`(게시자가 거둠) → `source_unavailable`(원작 이용제한·삭제).
-    5. 소설은 읽을 수 있는데 그 화가 없다 — 환급된 구매가 있으면 `deleted`(마지막 묶음을 지워 공개 화가 모두 사라진 경우),
-       아니면 404."""
+    5. 소설은 읽을 수 있는데 그 화가 없다 — 환급된 구매가 있으면 그 사유(마지막 묶음을 지워 공개 화가 모두 사라지면
+       `deleted`), 아니면 404.
+
+    `refundedAmount` 는 돌려준 클로버다(화 읽기는 그 화 몫, 작품 정보는 소설 전체 몫). 환급이 있으면 이유와 무관하게 싣고,
+    `deleted` 면 0 이어도 싣는다."""
     not_found = _error(
         status.HTTP_404_NOT_FOUND, "NOVEL_NOT_FOUND" if chapter_id is None else "NOVEL_CHAPTER_NOT_FOUND"
     )
@@ -229,15 +271,20 @@ async def _ended_or_not_found(
 
     def ended(reason: PublicNovelEndedReason) -> HTTPException:
         extra: dict[str, object] = {}
-        if reason == "deleted":
+        if refunded or reason == "deleted":
             extra["refundedAmount"] = sum(p.refunded_amount or 0 for p in refunded)
         return _error(status.HTTP_410_GONE, "NOVEL_READING_ENDED", reason=reason, **extra)
 
+    def ended_by_refund() -> HTTPException:
+        latest = max(refunded, key=lambda p: p.refunded_at or datetime.min.replace(tzinfo=UTC))
+        return ended(_ENDED_BY_REFUND[latest.refund_reason or "deleted"])
+
     novel = await db.get(Novel, novel_id)
-    if chapter_id is not None and refunded:
-        return ended("deleted")
+    # 다시 연 화를 다시 샀으면 환급되지 않은 구매가 있어 환급 사유가 아니라 지금 상태로 가른다.
+    if chapter_id is not None and refunded and len(refunded) == len(scope):
+        return ended_by_refund()
     if chapter_id is None and novel is None and refunded:
-        return ended("deleted")
+        return ended_by_refund()
     if not novel_public_open_to(user_id):
         return ended("service_off")
     if novel is None:
@@ -254,7 +301,7 @@ async def _ended_or_not_found(
         return ended("withdrawn")
     if source is None or source.moderation_status != ModerationStatus.NORMAL:
         return ended("source_unavailable")
-    return ended("deleted") if refunded else not_found
+    return ended_by_refund() if refunded else not_found
 
 
 async def _count_view(
@@ -371,15 +418,25 @@ async def get_webnovel(
     db: AsyncSession = Depends(get_db_session),
 ) -> PublicNovelDetailResponse:
     """노벨 작품 정보와 목차. 읽을 수 없으면 소장했던 사람에게 410 `NOVEL_READING_ENDED`, 아니면 404 `NOVEL_NOT_FOUND`
-    (모듈 docstring). 목차의 화마다 독자에게의 상태(`access`)와 가격, 그 화를 읽던 자리를 싣는다."""
-    row = (
-        await db.execute(
-            select_readable_publications(NovelPublication, Novel, User.nickname).where(
-                NovelPublication.novel_id == novel_id
+    (모듈 docstring). 목차의 화마다 독자에게의 상태(`access`)와 가격, 그 화를 읽던 자리를 싣는다. 목록에서 빠진 노벨을
+    소장자가 열면 `salesStopped` 가 참이다(모듈 docstring 의 소장자 열람)."""
+    open_to_viewer = novel_public_open_to(user_id)
+
+    async def find(select_publications: Callable[..., Select[Any]]) -> Row[Any] | None:
+        return (
+            await db.execute(
+                select_publications(NovelPublication, Novel, User.nickname).where(
+                    NovelPublication.novel_id == novel_id
+                )
             )
-        )
-    ).one_or_none()
-    if row is None or not novel_public_open_to(user_id):
+        ).one_or_none()
+
+    row = await find(select_readable_publications)
+    sales_stopped = False
+    if row is None and open_to_viewer and await _keeps_reading(db, user_id, novel_id):
+        row = await find(select_owner_readable_publications)
+        sales_stopped = row is not None
+    if row is None or not open_to_viewer:
         raise await _ended_or_not_found(db, user_id=user_id, novel_id=novel_id, chapter_id=None)
     publication, novel, nickname = row
     is_publisher = novel.user_id == user_id
@@ -446,15 +503,43 @@ async def get_webnovel(
         last_read=last_read,
         first_published_at=publication.first_published_at,
         published_at=publication.published_at,
+        sales_stopped=sales_stopped,
     )
 
 
 # ── 화 읽기 ─────────────────────────────────────────────────────────────────
+async def _purchased_edition(
+    db: AsyncSession, *, user_id: uuid.UUID, chapter_id: uuid.UUID
+) -> NovelChapterEdition | None:
+    """이 사람이 그 화를 산 때의 판 행 — 아직 환급되지 않은 구매의 판 번호로 고른다. 그 판 행이 없으면(판 이력이 생기기 전의
+    판을 샀다) 그 화의 가장 오래된 판 행으로 대신하고, 판 행이 하나도 없으면 None."""
+    bought = await db.scalar(
+        select(NovelPurchase.edition).where(
+            NovelPurchase.buyer_user_id == user_id,
+            NovelPurchase.chapter_id == chapter_id,
+            NovelPurchase.refunded_at.is_(None),
+        )
+    )
+    if bought is None:
+        return None
+    exact = await db.get(NovelChapterEdition, (chapter_id, bought))
+    if exact is not None:
+        return exact
+    oldest: NovelChapterEdition | None = await db.scalar(
+        select(NovelChapterEdition)
+        .where(NovelChapterEdition.chapter_id == chapter_id)
+        .order_by(NovelChapterEdition.edition)
+        .limit(1)
+    )
+    return oldest
+
+
 @reading_router.get("/{novel_id}/chapters/{chapter_id}")
 async def get_webnovel_chapter(
     novel_id: uuid.UUID,
     chapter_id: uuid.UUID,
     background_tasks: BackgroundTasks,
+    edition: int | None = Query(None, ge=1, le=2_147_483_647),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
@@ -462,21 +547,50 @@ async def get_webnovel_chapter(
     """노벨 화 하나. 무료 화·소장한 화·게시자 본인이면 공개본 본문을 문단 배열로 싣고, 게시자 본인이 아니면 조회 수를 센다
     (자기 글을 다시 열어 본 것은 독자의 조회가 아니다). 아니면 본문 없이
     `access: locked` 와 가격만 싣는다(소장 화면용). 읽을 수 없으면 소장했던 사람에게 410 `NOVEL_READING_ENDED`, 아니면 404
-    `NOVEL_CHAPTER_NOT_FOUND`(모듈 docstring)."""
-    row = (
-        await db.execute(
-            select_readable_publications(NovelPublication, Novel, NovelChapterPublication, NovelChapterRevision.body)
-            .join(NovelChapterPublication, NovelChapterPublication.novel_id == NovelPublication.novel_id)
-            .join(NovelChapterRevision, NovelChapterRevision.id == NovelChapterPublication.revision_id)
-            .where(NovelPublication.novel_id == novel_id, NovelChapterPublication.chapter_id == chapter_id)
-        )
-    ).one_or_none()
-    if row is None or not novel_public_open_to(user_id):
+    `NOVEL_CHAPTER_NOT_FOUND`(모듈 docstring).
+
+    `edition` 은 고를 판이다(정책 스위치가 켜졌을 때). 지금 판이거나, 그 화를 산 사람의 산 때의 판(`purchasedEdition`)만
+    고를 수 있고 그 밖의 값은 404 `NOVEL_CHAPTER_NOT_FOUND` 다 — 사지 않은 사람·무료 화·게시자 본인은 지금 판만 읽는다.
+    스위치가 꺼져 있으면 이 값을 보지 않고 지금 판을 준다."""
+    open_to_viewer = novel_public_open_to(user_id)
+
+    async def find(select_publications: Callable[..., Select[Any]]) -> Row[Any] | None:
+        return (
+            await db.execute(
+                select_publications(NovelPublication, Novel, NovelChapterPublication, NovelChapterRevision.body)
+                .join(NovelChapterPublication, NovelChapterPublication.novel_id == NovelPublication.novel_id)
+                .join(NovelChapterRevision, NovelChapterRevision.id == NovelChapterPublication.revision_id)
+                .where(NovelPublication.novel_id == novel_id, NovelChapterPublication.chapter_id == chapter_id)
+            )
+        ).one_or_none()
+
+    row = await find(select_readable_publications)
+    sales_stopped = False
+    if row is None and open_to_viewer and await _keeps_reading(db, user_id, novel_id):
+        row = await find(select_owner_readable_publications)
+        sales_stopped = row is not None
+    if row is None or not open_to_viewer:
         raise await _ended_or_not_found(db, user_id=user_id, novel_id=novel_id, chapter_id=chapter_id)
     publication, novel, chapter, body = row
     is_publisher = novel.user_id == user_id
     owned = await _owned_chapter_ids(db, user_id, novel_id)
     access = _chapter_access(chapter.ordinal, chapter_id, is_publisher=is_publisher, owned=owned)
+
+    policy_v2 = settings.novel_public_policy_v2_enabled
+    bought = (
+        await _purchased_edition(db, user_id=user_id, chapter_id=chapter_id)
+        if policy_v2 and access == "owned"
+        else None
+    )
+    if bought is not None and bought.edition == chapter.edition:
+        bought = None  # 산 때의 판이 지금 판이면 고를 것이 없다
+    served_edition, title, author_note = chapter.edition, chapter.title, chapter.author_note
+    if policy_v2 and edition is not None and edition != chapter.edition:
+        if bought is None or edition != bought.edition:
+            raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
+        old_revision = await db.get_one(NovelChapterRevision, bought.revision_id)
+        served_edition, title, author_note, body = bought.edition, bought.title, bought.author_note, old_revision.body
+
     neighbours = {
         ordinal: neighbour_id
         for neighbour_id, ordinal in (
@@ -508,15 +622,21 @@ async def get_webnovel_chapter(
         novel_title=_title(publication, novel),
         id=chapter_id,
         ordinal=chapter.ordinal,
-        title=chapter.title,
+        title=title,
         access=access,
         price=_price(chapter.ordinal),
-        edition=chapter.edition,
+        edition=served_edition,
         paragraphs=split_paragraphs(body) if readable else None,
-        author_note=chapter.author_note if readable else None,
+        author_note=author_note if readable else None,
         previous_chapter=link(chapter.ordinal - 1),
         next_chapter=link(chapter.ordinal + 1),
         reading_position=_position(position) if position is not None else None,
+        purchased_edition=(
+            PublicNovelPurchasedEdition(edition=bought.edition, published_at=bought.published_at)
+            if bought is not None
+            else None
+        ),
+        sales_stopped=sales_stopped,
     )
 
 
@@ -535,7 +655,8 @@ async def save_webnovel_reading_position(
 ) -> None:
     """노벨 화를 읽던 자리를 저장한다(소유자 읽은 자리와 같은 계약 — 문단 번호, 같은 값을 다시 보내도 같고, 다 읽은 화는
     다 읽은 화로 남는다). 문단 번호가 문단 수 밖이면 422 `NOVEL_PARAGRAPH_RANGE_INVALID`, 지금 읽을 수 없는 화(없음·숨김)는
-    404 `NOVEL_CHAPTER_NOT_FOUND`, 소장하지 않은 유료 화는 403 `NOVEL_CHAPTER_LOCKED` 다.
+    404 `NOVEL_CHAPTER_NOT_FOUND`, 소장하지 않은 유료 화는 403 `NOVEL_CHAPTER_LOCKED` 다. 소장자는 목록에서 빠진 노벨에서도
+    저장한다(모듈 docstring 의 소장자 열람).
 
     화 행을 키 공유 잠금으로 확인한 뒤 저장한다 — 소유자 읽은 자리와 같은 이유다. 묶음·소설 삭제는 화를 `FOR UPDATE` 로
     잠근 뒤 읽은 자리를 지우므로, 이쪽이 먼저 잡으면 삭제가 이 저장을 기다렸다가 함께 지우고, 삭제가 먼저면 이 확인이
@@ -547,17 +668,19 @@ async def save_webnovel_reading_position(
         .where(NovelChapter.id == chapter_id, NovelChapter.novel_id == novel_id)
         .with_for_update(key_share=True, read=True)
     )
-    row = (
-        (
+
+    async def find(select_publications: Callable[..., Select[Any]]) -> Row[Any] | None:
+        return (
             await db.execute(
-                select_readable_publications(Novel.user_id, NovelChapterPublication.ordinal)
+                select_publications(Novel.user_id, NovelChapterPublication.ordinal)
                 .join(NovelChapterPublication, NovelChapterPublication.novel_id == NovelPublication.novel_id)
                 .where(NovelPublication.novel_id == novel_id, NovelChapterPublication.chapter_id == chapter_id)
             )
         ).one_or_none()
-        if locked is not None
-        else None
-    )
+
+    row = await find(select_readable_publications) if locked is not None else None
+    if row is None and locked is not None and await _keeps_reading(db, user_id, novel_id):
+        row = await find(select_owner_readable_publications)
     if row is None:
         raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
     publisher_id, ordinal = row

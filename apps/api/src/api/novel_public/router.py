@@ -39,6 +39,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -48,6 +49,7 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.novel import (
     Novel,
     NovelChapter,
+    NovelChapterEdition,
     NovelChapterPublication,
     NovelChapterRevision,
     NovelPublication,
@@ -339,7 +341,8 @@ async def _status(db: AsyncSession, novel: Novel, user_id: uuid.UUID) -> NovelPu
 # ── 쓰기 ────────────────────────────────────────────────────────────────────
 async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_version: str | None) -> None:
     """계획대로 공개본을 쓴다. 승인 대기로 가는 요청(`plan.review`)은 공개 범위를 `withdrawn` 으로 두고 대기를 표시하고,
-    그 밖에는 결과가 독자에게 열리므로 연재권 잠금을 찍는다(이미 잠겼으면 그대로).
+    그 밖에는 결과가 독자에게 열리므로 연재권 잠금을 찍는다(이미 잠겼으면 그대로). 화를 공개하거나 다시 내면 그 판의 판 행을
+    하나 쌓는다(`_record_edition`) — 다시 내기가 화 공개본을 덮어도 산 사람이 산 때의 판을 다시 읽을 수 있게.
 
     공개 범위와 심사 칸은 같은 UPDATE 문으로 바꾼다 — 대기·반려 행은 `withdrawn` 이어야 한다는 CHECK 가 문장마다 걸리므로
     나눠 쓰면 첫 문장이 거부된다."""
@@ -398,16 +401,51 @@ async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_ve
             )
         )
         await db.flush()
-        return
+    else:
+        await db.execute(
+            update(NovelChapterPublication)
+            .where(NovelChapterPublication.chapter_id == chapter.chapter_id)
+            .values(
+                revision_id=chapter.revision_id,
+                title=chapter.title,
+                author_note=chapter.author_note,
+                edition=NovelChapterPublication.edition + 1,
+                published_at=now,
+            )
+        )
+    await _record_edition(db, chapter.chapter_id)
+
+
+async def _record_edition(db: AsyncSession, chapter_id: uuid.UUID) -> None:
+    """방금 쓴 화 공개본의 지금 판을 판 행으로 남긴다(정책 스위치와 무관) — 화 공개본 행을 그대로 베껴 판 번호·개정·제목·
+    작가의 말·공개 시각이 공개본과 어긋나지 않는다.
+
+    같은 (화, 판) 행이 이미 있으면 덮어쓴다. 그런 행은 독자에게 보인 적 없는 판뿐이다 — 판 행은 승인 대기 공개에서도
+    쓰이는데, 배포가 겹치는 동안 판 행을 모르는 옛 이미지가 그 대기를 반려·취소하면 화 공개본만 지우고 판 행은 남긴다.
+    그 소설을 다시 공개하면 화 공개본이 1판부터 다시 시작해 남은 행과 부딪친다. 보인 적 있는 판은 화 공개본이 지워지지
+    않는 한 판 번호가 줄지 않고, 화를 지우면 판 행도 함께 지워지므로 덮어쓰는 행이 산 사람의 판일 수 없다."""
+    current = select(
+        NovelChapterPublication.chapter_id,
+        NovelChapterPublication.edition,
+        NovelChapterPublication.novel_id,
+        NovelChapterPublication.revision_id,
+        NovelChapterPublication.title,
+        NovelChapterPublication.author_note,
+        NovelChapterPublication.published_at,
+    ).where(NovelChapterPublication.chapter_id == chapter_id)
+    statement = insert(NovelChapterEdition).from_select(
+        ["chapter_id", "edition", "novel_id", "revision_id", "title", "author_note", "published_at"], current
+    )
     await db.execute(
-        update(NovelChapterPublication)
-        .where(NovelChapterPublication.chapter_id == chapter.chapter_id)
-        .values(
-            revision_id=chapter.revision_id,
-            title=chapter.title,
-            author_note=chapter.author_note,
-            edition=NovelChapterPublication.edition + 1,
-            published_at=now,
+        statement.on_conflict_do_update(
+            index_elements=[NovelChapterEdition.chapter_id, NovelChapterEdition.edition],
+            set_={
+                "novel_id": statement.excluded.novel_id,
+                "revision_id": statement.excluded.revision_id,
+                "title": statement.excluded.title,
+                "author_note": statement.excluded.author_note,
+                "published_at": statement.excluded.published_at,
+            },
         )
     )
 
@@ -537,7 +575,8 @@ async def withdraw_novel_publication(
     """공개를 거둔다. 공개 상태 행과 공개본은 지우지 않고 공개 범위만 바꾼다 — 다시 공개하면 공개본이 그대로 살아난다.
     이미 거둔 공개면 그대로 204 다. 재동의 게이트를 걸지 않는다(자기 글을 내리는 일이라).
 
-    운영자 승인을 기다리는 공개를 거두는 것은 신청 취소다 — 독자에게 보인 적 없는 글이라 공개 상태 행과 화 공개본을 지운다.
+    운영자 승인을 기다리는 공개를 거두는 것은 신청 취소다 — 독자에게 보인 적 없는 글이라 공개 상태 행과 화 공개본, 그 판
+    행을 지운다.
     대기 조건을 건 DELETE 를 먼저 낸다. 그 문장이 승인과 같은 공개 상태 행 잠금에서 줄을 서므로, 승인이 먼저 커밋했으면
     다시 평가한 조건에 걸려 아무것도 지우지 않고 아래의 보통 거두기가 된다. 읽어서 대기면 지우는 식으로 하면 승인 커밋 뒤에도
     지워져 공개 상태 행 없이 잠금만 남은 소설이 생긴다. 정책 스위치와 무관하다."""
@@ -550,6 +589,7 @@ async def withdraw_novel_publication(
     )
     if cancelled is not None:
         await db.execute(delete(NovelChapterPublication).where(NovelChapterPublication.novel_id == novel_id))
+        await db.execute(delete(NovelChapterEdition).where(NovelChapterEdition.novel_id == novel_id))
         await db.commit()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     updated = await db.scalar(
