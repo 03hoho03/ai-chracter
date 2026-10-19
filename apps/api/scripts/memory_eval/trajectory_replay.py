@@ -36,8 +36,8 @@ from api.llm.client import SegmentedPrompt
 from memory_eval import checkpoint
 from memory_eval.arm_env import BARE_SUFFIX, BUNDLE1_ARMS, series_label, template_series
 from memory_eval.embed_offline import EmbeddingTable
-from memory_eval.offline_embedding import client_for
-from memory_eval.runtime import RoomContext, arm_settings
+from memory_eval.offline_embedding import client_for, embeds_recall
+from memory_eval.runtime import ARMS, RoomContext, arm_settings
 
 
 def _sha(text: str) -> str:
@@ -244,6 +244,31 @@ async def replay_point(
         "buildMs": round(build_ms, 3),
     }
     return point, str(prompt)
+
+
+def query_expected(arm: str, point: Mapping[str, Any]) -> bool:
+    """이 점의 조립이 질의 임베딩을 불렀어야 하는가 — 임베딩 회상을 켠 갈래이고, 회상이나 사실 주입이 켜져 있고, 요약이 있는
+    턴(본 스냅샷이 하나 이상). 앱도 이 조건에서만 질의 임베딩을 부른다."""
+    overrides = ARMS[arm]
+    selects = bool(overrides.get("memory_episodes_recall")) or bool(overrides.get("memory_facts_inject"))
+    return embeds_recall(arm) and selects and int(point["snapshotsSeen"]) > 0
+
+
+def require_query_embedded(points: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    """질의 임베딩을 불렀어야 할 점이 모두 `ok` 로 조립됐는지 단언한다. 하나라도 아니면(`failed`·`timeout`·부르지 않음 None)
+    `SystemExit` 로 끊는다.
+
+    앱의 질의 임베딩은 실패를 흡수해 그 턴을 명사 단독 회상으로 조립하고, Voyage 연속 실패 멈춤 중이면 아예 부르지 않는다. 오프라인
+    클라이언트가 앱과 어긋나 예외를 내거나 멈춤 키가 남아 있으면 임베딩 회상 갈래의 궤적이 오류 없이 명사 단독으로 재진다 —
+    그 궤적으로 낸 판정은 무효다. 계획 모드(빠진 질의 글 모으기)의 점은 쓰지 않으므로 이 단언에 넣지 않는다."""
+    expected = [p for p in points if query_expected(str(p["arm"]), p)]
+    bad = [p for p in expected if p.get("queryOutcome") != "ok"]
+    if bad:
+        sample = ", ".join(f"{p['arm']}@{p['turn']}={p.get('queryOutcome')}" for p in bad[:5])
+        raise SystemExit(
+            f"질의 임베딩이 ok 가 아닌 점 {len(bad)}/{len(expected)}개 — 임베딩 회상 갈래가 명사 단독으로 조립됐다: {sample}"
+        )
+    return {"expected": len(expected), "ok": len(expected)}
 
 
 # 넣기 때 남긴 기준 궤적과 견주는 칸(시간 칸은 뺀다).

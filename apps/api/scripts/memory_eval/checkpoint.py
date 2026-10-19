@@ -260,7 +260,12 @@ def write_fingerprint(path: Path, fingerprint: Mapping[str, Any]) -> None:
 
 
 async def clear_room_redis_keys(room_id: uuid.UUID) -> list[str]:
-    """그 방의 턴 락·접기 백오프와 활성 프롬프트 세트 캐시만 지운다. `FLUSHDB`·`FLUSHALL` 은 쓰지 않는다.
+    """그 방의 턴 락·접기 백오프, 활성 프롬프트 세트 캐시, 전역 Voyage 연속 실패 멈춤 키만 지운다. `FLUSHDB`·`FLUSHALL` 은 쓰지
+    않는다.
+
+    Voyage 멈춤 키는 방과 무관한 키 하나라 방 키만 지우면 앞 프로브(또는 어긋난 임베딩 클라이언트)가 남긴 연속 실패 수가 하루
+    동안 다음 프로브로 넘어가고, 문턱을 넘으면 다음 프로브의 질의 임베딩이 통째로 건너뛰어져 임베딩 회상 갈래가 명사 단독으로
+    재진다.
 
     앱의 모듈 싱글턴 Redis 클라이언트를 쓰지 않고 호출마다 연결을 만들어 이 루프 안에서 닫는다 — 프로브는 시도마다
     `asyncio.run` 으로 새 이벤트 루프를 열고, 싱글턴은 처음 쓴 루프에 묶여 두 번째 루프에서 "다른 루프에 붙은 Future" 로
@@ -268,17 +273,37 @@ async def clear_room_redis_keys(room_id: uuid.UUID) -> list[str]:
     from redis.asyncio import Redis
 
     from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
+    from api.chat.voyage_backoff import VOYAGE_BACKOFF_KEY
     from api.core.config import settings
 
     client = Redis.from_url(settings.redis_url, decode_responses=True)
     try:
-        keys = [f"chat_room:turn_lock:{room_id}", f"memory_fold_backoff:{room_id}"]
+        keys = [f"chat_room:turn_lock:{room_id}", f"memory_fold_backoff:{room_id}", VOYAGE_BACKOFF_KEY]
         keys += [key async for key in client.scan_iter(match=f"{ACTIVE_PROMPT_SET_KEY_PREFIX}*")]
         deleted = []
         for key in keys:
             if await client.delete(key):
                 deleted.append(key)
         return deleted
+    finally:
+        await client.aclose()
+
+
+async def require_no_voyage_backoff() -> None:
+    """전역 Voyage 연속 실패 멈춤 키가 없음을 단언한다(프로브 턴을 보내기 직전). 있으면 그 프로브의 질의 임베딩이 건너뛰어질 수
+    있으므로 `SystemExit` — 복원이 지웠는데도 남아 있다면 다른 프로세스가 같은 Redis 에서 Voyage 를 부르고 있다."""
+    from redis.asyncio import Redis
+
+    from api.chat.voyage_backoff import VOYAGE_BACKOFF_KEY
+    from api.core.config import settings
+
+    client = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        if await client.exists(VOYAGE_BACKOFF_KEY):
+            raise SystemExit(
+                f"Redis 에 Voyage 연속 실패 멈춤 키({VOYAGE_BACKOFF_KEY})가 있다 — 이대로 보내면 질의 임베딩이 건너뛰어져 임베딩 "
+                "회상 갈래가 명사 단독으로 재진다. 같은 Redis 를 쓰는 다른 서버·작업을 확인한다"
+            )
     finally:
         await client.aclose()
 

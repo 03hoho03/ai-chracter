@@ -361,6 +361,22 @@ async def _turn_memory_recall(database_url: str, room_id: uuid.UUID, since: date
         await engine.dispose()
 
 
+async def _ensure_consent(database_url: str, room_id: uuid.UUID) -> None:
+    from api.db.models import ChatRoom
+    from memory_eval.room import ensure_current_consent
+    from memory_eval.runtime import make_engine
+
+    engine, factory = make_engine(database_url)
+    try:
+        async with factory() as db:
+            room = await db.get(ChatRoom, room_id)
+            assert room is not None
+            await ensure_current_consent(db, [room.user_id])
+            await db.commit()
+    finally:
+        await engine.dispose()
+
+
 async def _top_up(database_url: str, room_id: uuid.UUID, amount: int) -> None:
     from api.db.models import ChatRoom
     from memory_eval.room import grant_clover
@@ -402,6 +418,8 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
         )
         if top_up:
             asyncio.run(_top_up(run.database_url, run.room_id, run.clover_top_up))
+        # 템플릿이 얼린 뒤 새 약관 판이 시행됐으면 측정 계정이 재동의 게이트에 막힌다 — 복원할 때마다 현행판으로 맞춘다.
+        asyncio.run(_ensure_consent(run.database_url, run.room_id))
         if probe.guard_memory:
             reasons = asyncio.run(memory_precheck(run.database_url, run.room_id, probe.turns))
             if reasons:
@@ -419,6 +437,8 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
             "DATABASE_URL": run.database_url,
             "PROMPT_DUMP_PATH": str(folder / "prompt-dump.jsonl"),
         }
+        # 복원이 지운 전역 Voyage 멈춤 키가 그사이 다시 생겼으면 질의 임베딩이 건너뛰어진다 — 서버를 띄우기 전에 끊는다.
+        asyncio.run(checkpoint.require_no_voyage_backoff())
         started_at = datetime.now(UTC)
         handle = server.start(overrides, port=run.port, log=server_log, allow_paid=run.allow_paid)
         turns: list[dict[str, Any]] = []

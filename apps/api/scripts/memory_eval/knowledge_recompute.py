@@ -16,7 +16,7 @@ from typing import Any
 
 from api.chat.memory_fact_section import _knowledge_filter
 from api.chat.memory_facts import fact_rows_statement, normalize_part
-from api.chat.memory_knowledge import KnowledgeScope, latest_by_key, room_names, scene_people, user_names
+from api.chat.memory_knowledge import KnowledgeScope, latest_by_key, scene_for_turn
 from api.chat.memory_window import MessageKey
 from api.chat.prompt_builder import PromptNames
 from api.db.models import ChatMessage, ChatMessageRole
@@ -30,15 +30,16 @@ def recompute_turn(
     user_content: str,
     names: PromptNames,
     user_label: str,
+    ignore_quoted_reply_names: bool,
 ) -> dict[str, Any]:
-    """`rows` 는 그 턴 커서 이하 사실 행 전부(쓴 순서), `history` 는 그 턴 사용자 메시지 앞까지의 방 대화(오프닝 포함)."""
+    """`rows` 는 그 턴 커서 이하 사실 행 전부(쓴 순서), `history` 는 그 턴 사용자 메시지 앞까지의 방 대화(오프닝 포함).
+    `ignore_quoted_reply_names` 는 측정 서버가 그 턴에 넘긴 값과 같아야 한다(`ignores_quoted_reply_names`) — 서버는 지식 범위
+    필터를 켠 턴에 직전 응답의 대사 따옴표 안에만 나온 이름을 장면 인물로 세지 않으므로, 다른 값으로 다시 계산하면 장면 인물과
+    뺀 행이 서버와 조용히 어긋난다."""
     candidates = [row for _, row in latest_by_key(rows)]
-    users = user_names(names.persona_name, user_label)
-    scene = scene_people(
-        room_names(rows, (), users=users), (user_content, _previous_text(history, user_content, names))
-    )
-    keep = _knowledge_filter(rows, KnowledgeScope(user_label=user_label), history=history, user_content=user_content,
-                             names=names)  # fmt: skip
+    scope = KnowledgeScope(user_label=user_label, ignore_quoted_reply_names=ignore_quoted_reply_names)
+    scene = scene_for_turn(rows, scope, history=history, user_content=user_content, names=names)
+    keep = _knowledge_filter(rows, scope, history=history, user_content=user_content, names=names)
     secret = [row for row in candidates if row.known_by]
     return {
         "scenePeople": sorted(scene),
@@ -52,10 +53,10 @@ def recompute_turn(
     }
 
 
-def _previous_text(history: Sequence[ChatMessage], user_content: str, names: PromptNames) -> str:
-    from api.chat.keyword_notes import recent_scan_turns
-
-    return recent_scan_turns(history, user_content, 0, names=names)[0].assistant_text
+def ignores_quoted_reply_names(arm_overrides: Mapping[str, Any]) -> bool:
+    """측정 서버가 그 갈래의 턴에 장면 인물을 셀 때 넘기는 값 — 서버는 지식 범위 필터 스위치를 켠 턴에 켠다(사실 주입이 꺼져
+    있어도 회상의 가림이 같은 장면 인물을 쓴다). 측정 방은 기억 사용 범위 안(Opus)이라 범위 판정은 늘 참이다."""
+    return bool(arm_overrides.get("memory_knowledge_filter"))
 
 
 def probe_history(base: Sequence[ChatMessage], turns: Sequence[Mapping[str, Any]]) -> tuple[list[ChatMessage], str]:
@@ -91,6 +92,7 @@ async def recompute_probe(
     turns: Sequence[Mapping[str, Any]],
     names: PromptNames,
     user_label: str,
+    ignore_quoted_reply_names: bool,
 ) -> dict[str, Any]:
     """템플릿 DB(`db`, 프로브를 보낸 체크포인트 그대로)에서 그 프로브 질문 턴을 다시 계산한다."""
     from sqlalchemy import select
@@ -106,4 +108,11 @@ async def recompute_probe(
         ).all()
     )
     history, question = probe_history(base, turns)
-    return recompute_turn(rows, history=history, user_content=question, names=names, user_label=user_label)
+    return recompute_turn(
+        rows,
+        history=history,
+        user_content=question,
+        names=names,
+        user_label=user_label,
+        ignore_quoted_reply_names=ignore_quoted_reply_names,
+    )
