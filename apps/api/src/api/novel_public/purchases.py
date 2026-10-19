@@ -439,15 +439,14 @@ async def refund_source_closing(db: AsyncSession, closing: SourceClosing | None)
 
 # ── 판매된 소설·묶음 ────────────────────────────────────────────────────────
 async def novel_was_sold(db: AsyncSession, novel_id: uuid.UUID) -> bool:
-    """정책 스위치가 켜졌을 때 이 소설의 삭제가 숨김이 되는가 — 탈퇴하지 않은 구매자의 구매가 하나라도 있는가. 이미 환급된
-    구매도 센다. 환급 여부로 가르면 같은 노벨의 이용제한(환급)과 삭제가 겹칠 때 어느 쪽이 먼저 커밋했는지에 따라 삭제가
-    숨김이 되기도 하고 진짜 삭제가 되기도 한다. 소장자가 남지 않은 숨긴 소설은 하루 한 번 도는 파기가 지운다
-    (`novelize/hidden_purge.py`). 구매자가 모두 탈퇴한 소설은 판매되지 않은 소설처럼 진짜로 지운다."""
-    found = await db.scalar(
-        select(NovelPurchase.id)
-        .where(NovelPurchase.novel_id == novel_id, NovelPurchase.buyer_user_id.is_not(None))
-        .limit(1)
-    )
+    """정책 스위치가 켜졌을 때 이 소설의 삭제가 숨김이 되는가 — 아직 환급되지 않은 구매(탈퇴하지 않은 구매자)가 하나라도
+    있는가. 숨기는 까닭은 산 사람이 계속 읽게 하려는 것이라, 소장자가 없으면(모두 환급받았거나 모두 탈퇴) 판매되지 않은
+    소설처럼 진짜로 지운다 — 읽을 사람도 없는데 숨겨 두면 작가가 지운 글이 다음 파기까지 남는다.
+
+    삭제는 사용자 행을 잠근 뒤에 이것을 부른다. 같은 노벨의 이용제한(환급)도 같은 사용자 행을 먼저 잡으므로 둘은 줄을 서고,
+    어느 쪽이 먼저든 구매는 한 번 환급된다(제재가 먼저면 진짜 삭제, 삭제가 먼저면 숨긴 뒤 제재가 환급). 소유자 화면의 삭제 전
+    고지(`purchase_refund_preview`)도 이것을 써서 안내와 실제 동작이 같다."""
+    found = await db.scalar(select(NovelPurchase.id).where(NovelPurchase.novel_id == novel_id, *_REFUNDABLE).limit(1))
     return found is not None
 
 

@@ -95,7 +95,7 @@ async def require_novel_public_readable(request: Request, db: AsyncSession = Dep
 
 def readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
     """독자가 지금 이 공개 소설을 읽을 수 있는가 — SQL 조건. 공개 중(거두지 않음) ∧ 첫 공개가 운영자 승인을 기다리거나
-    반려되지 않음 ∧ 운영자 이용제한 없음 ∧ 게시자가 탈퇴·정지
+    반려되지 않음 ∧ 운영자 이용제한 없음 ∧ 작가가 숨기지 않음 ∧ 게시자가 탈퇴·정지
     되지 않음 ∧ 원작이 이용제한·삭제되지 않음 ∧ 공개 화가 하나 이상(마지막 묶음을 지워 공개 화가 모두 사라진 공개 상태 행은
     소설 제목·소개만 남아 읽을 것이 없다). 호출부가 `NovelPublication`·`Novel`·게시자 `User`(`User.id ==
     Novel.user_id`)·원작 `Content`(`Content.id == Novel.content_id`)를 조인한다.
@@ -108,6 +108,10 @@ def readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
         # 경로에서 깨져도 승인 전 글이 나가지 않게 하려는 것이다.
         or_(NovelPublication.review_status.is_(None), NovelPublication.review_status == "approved"),
         NovelPublication.moderation_status == "normal",
+        # 숨긴 소설(노벨로 팔린 뒤 작가가 지운 소설)은 공개를 거둔 채 숨기므로 위 공개 범위 조건으로 이미 빠진다. 숨김을 따로
+        # 보는 것은 그 약속이 깨져도(숨김을 모르는 옛 이미지로 되돌린 동안 작가가 다시 공개) 지운 소설이 독자 목록·구매에
+        # 나가지 않게 하려는 것이다.
+        Novel.hidden_at.is_(None),
         User.deleted_at.is_(None),
         User.suspended_at.is_(None),
         Content.moderation_status == ModerationStatus.NORMAL,

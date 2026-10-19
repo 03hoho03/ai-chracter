@@ -776,6 +776,57 @@ async def test_a_novel_with_no_remaining_buyer_is_really_deleted(
         assert not await _novel_exists(db_session, novel.novel_id)
 
 
+async def test_a_novel_whose_every_purchase_was_refunded_is_really_deleted_and_previewed_as_unsold(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """산 사람이 있었어도 그 구매가 모두 환급됐으면(노벨 이용제한 등) 계속 읽을 사람이 없으므로, 삭제 전 고지는 숨김이 아니라고
+    알리고(`novelSold` 거짓) 삭제는 진짜로 지운다. 구매 행(거래 기록)은 남는다. 깨지는 시나리오: 읽을 사람이 없는데 "산 사람이
+    계속 읽도록 숨깁니다"라고 안내하고, 작가가 지운 글이 다음 파기까지 남는다."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    await db_session.execute(
+        sa.update(NovelPurchase)
+        .where(NovelPurchase.novel_id == novel.novel_id)
+        .values(refunded_at=sa.func.now(), refunded_amount=30, refund_reason="novel_restricted")
+    )
+    await db_session.commit()
+    await _allow_novelize(db_session, monkeypatch, novel.publisher_id)
+    await _login_as(db_client, novel.publisher_id)
+
+    preview = (await db_client.get(f"/novels/{novel.novel_id}")).json()["purchaseRefunds"]
+    deleted = await db_client.delete(f"/novels/{novel.novel_id}")
+
+    assert (preview["novelSold"], preview["novelBuyerCount"]) == (False, 0)
+    assert deleted.status_code == 204
+    assert not await _novel_exists(db_session, novel.novel_id)
+    assert _refunds(await _purchases(db_session, buyer)) == [(6, 30, "novel_restricted")]
+
+
+async def test_a_hidden_novel_published_again_by_an_old_image_stays_out_of_the_list_and_the_shop(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """숨긴 소설이 공개 범위 `public` 으로 돌아와 있어도(숨김을 모르는 옛 이미지로 되돌린 동안 작가가 다시 공개) 독자 목록에
+    없고 아무도 새로 살 수 없으며, 소장자는 산 화를 계속 읽는다. 깨지는 시나리오: 작가에게는 지운 소설인데 독자에게 다시
+    팔리고, 작가는 관리하려 하면 404 를 받는다."""
+    novel = await _novel(db_session)
+    owner, newcomer = await _member(db_session), await _member(db_session)
+    await _bought(db_client, novel, 6, owner)
+    await _hide_in_db(db_session, novel.novel_id)
+    await db_session.execute(
+        sa.update(NovelPublication).where(NovelPublication.novel_id == novel.novel_id).values(visibility="public")
+    )
+    await db_session.commit()
+
+    listed = await _listed_ids(db_client, as_user=newcomer)
+    bought = await _buy(db_client, novel, 7, as_user=newcomer)
+    kept = await _get(db_client, _path(novel, 6), as_user=owner)
+
+    assert str(novel.novel_id) not in listed
+    assert bought.status_code == 404, bought.text
+    assert kept.status_code == 200
+
+
 async def test_the_last_batch_cannot_be_deleted_while_one_of_its_chapters_is_sold(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

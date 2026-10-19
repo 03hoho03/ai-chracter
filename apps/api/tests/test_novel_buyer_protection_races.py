@@ -395,32 +395,33 @@ async def test_a_restriction_racing_the_publishers_withdrawal_refunds_each_purch
     assert await _balance(world, buyer) == 100
 
 
-async def test_hiding_a_sold_novel_and_restricting_it_at_once_end_hidden_with_one_refund(world: _World) -> None:
-    """판매된 소설 삭제(숨김)가 먼저 줄을 서고 노벨 이용제한이 뒤에 선다. 놓으면 교착 없이 소설은 숨겨지고 산 사람의 구매는
-    이용제한으로 한 번 환급된다. 깨지는 시나리오: 숨김과 제재가 사용자 행·공개 상태 행을 서로 다른 순서로 잡아 교착하거나,
-    숨김이 환급해 소설이 숨겨지지 않고 지워진다."""
+async def test_deleting_a_sold_novel_and_restricting_it_at_once_refund_once_without_deadlock(world: _World) -> None:
+    """판매된 소설 삭제와 노벨 이용제한이 겹친다. 둘 다 막힌 뒤 놓으면 교착 없이 끝나고 산 사람의 구매는 이용제한으로 한 번
+    환급된다. 어느 쪽이 먼저 줄을 통과하느냐에 따라 소설은 숨겨지거나(삭제가 먼저 — 숨긴 뒤 이용제한이 환급) 진짜로 지워진다
+    (이용제한이 먼저 — 환급 뒤 소장자가 없어 삭제가 지운다). 깨지는 시나리오: 삭제와 제재가 사용자 행·공개 상태 행을 서로 다른
+    순서로 잡아 교착하거나, 삭제가 환급하고 제재가 또 환급하거나, 숨김 판정을 잠그기 전에 해 아무도 환급하지 않는다."""
     publisher, buyer = await world.member(), await world.member()
     novel = await world.publish(publisher)
     await _bought(world, novel, buyer, 6)
     admin = await world.admin()
     holder = await _hold_user(world, min(publisher, buyer))
-    hiding = _delete_novel_task(world, novel.novel_id)
+    deleting = _delete_novel_task(world, novel.novel_id)
     restriction = _restrict_task(world, novel, admin)
     try:
-        await _assert_blocked(hiding)
+        await _assert_blocked(deleting)
         await _assert_blocked(restriction)
-        hidden, restricted = await _settle(holder, [hiding, restriction])
+        deleted, restricted = await _settle(holder, [deleting, restriction])
     finally:
-        await _close_quietly(holder, [hiding, restriction])
+        await _close_quietly(holder, [deleting, restriction])
 
-    assert (hidden, isinstance(restricted, HTTPException)) == (None, False)
+    assert (deleted, isinstance(restricted, HTTPException)) == (None, False)
     async with world.factory() as s:
         row = await s.get(Novel, novel.novel_id)
         visibility = await s.scalar(select(NovelPublication.visibility).where(NovelPublication.novel_id == novel.novel_id))
-    assert row is not None and row.hidden_at is not None
-    assert visibility == "withdrawn"
+    assert row is None or (row.hidden_at is not None and visibility == "withdrawn")
     assert await _refunds(world, buyer) == [(6, 30)]
     assert await _refund_entries(world, buyer) == 1
+    assert await _balance(world, buyer) == 100
 
 
 # ── 숨긴 소설 파기 ───────────────────────────────────────────────────────────
