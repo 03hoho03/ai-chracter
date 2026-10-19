@@ -4,6 +4,7 @@
 클라이언트다."""
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ import pytest
 
 from memory_eval import embed_api as ea
 from memory_eval import embed_offline as eo
+from memory_eval.recall_offline import Ranked
 from memory_eval.ledger import BudgetExceededError, Ledger
 
 
@@ -323,3 +325,189 @@ def test_cli_embed_run_paid_writes_vectors_and_ledger_through_the_http_client(
     assert code == 0 and len(rec.requests) == 1
     assert eo.EmbeddingTable.load(out, model="voyage-4-lite", dims=256).has("query", "질의")
     assert Ledger(run / "ledger.jsonl").rows()[0]["bundle"] == "b1-s5"
+
+
+def _work(tmp_path: Path) -> Path:
+    """2차 형식 심기 표 하나(개발 d0·d2, 시험 d1·d3)와 분할 파일 — 시험 정답 파일은 만들지 않는다(열면 실패한다)."""
+    from memory_eval import holdout
+
+    answers = [("창가", 5), ("창가", 5), ("하드", 15), ("하드", 15)]
+    plants = {
+        "checkpoints": [300],
+        "plants": [
+            {"id": f"d{i}", "category": "detail", "primary": True, "questionForm": "direct",
+             "question": f"개발 질문 {i}" if i % 2 == 0 else f"시험 질문 {i}", "plant_turns": [turn],
+             "ask_checkpoints": [300], "answer_key": {"mode": "match", "bundles": [[word]], "correct": word}}
+            for i, (word, turn) in enumerate(answers)
+        ],
+        "abstains": [],
+    }  # fmt: skip
+    split_dir = tmp_path / "split"
+    split_dir.mkdir()
+    plants_path = tmp_path / "plants.json"
+    plants_path.write_text(json.dumps(plants, ensure_ascii=False), encoding="utf-8")
+    (split_dir / holdout.DEV_IDS_FILE).write_text(json.dumps(["d0", "d2"]), encoding="utf-8")
+    (split_dir / holdout.TEST_IDS_FILE).write_text(json.dumps(["d1", "d3"]), encoding="utf-8")
+    (split_dir / holdout.MANIFEST_FILE).write_text(
+        json.dumps({"seed": 1, "plantsSha256": holdout.sha256_file(plants_path), "testKeysSha256": "x"}),
+        encoding="utf-8",
+    )
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text(
+        "".join(json.dumps({"turn": t, "user": "u", "assistant": f"진행 {t}"}) + "\n" for t in range(1, 301)),
+        encoding="utf-8",
+    )
+    episodes = tmp_path / "episodes.json"
+    episodes.write_text(json.dumps([
+        {"id": "e1", "start_turn": 1, "end_turn": 10, "title": "카페", "detail": "창가 자리", "nouns": ["창가", "카페"],
+         "available_from_turn": 11},
+        {"id": "e2", "start_turn": 11, "end_turn": 20, "title": "편집실", "detail": "하드 디스크", "nouns": ["편집실"],
+         "available_from_turn": 21},
+    ], ensure_ascii=False), encoding="utf-8")  # fmt: skip
+    manifest = tmp_path / "works.json"
+    manifest.write_text(json.dumps([{"work": "w", "plants": str(plants_path), "splitDir": str(split_dir),
+                                     "transcript": str(transcript), "episodes": {"300": str(episodes)}}]), "utf-8")  # fmt: skip
+    return manifest
+
+
+def test_compare_dry_run_estimates_only_dev_texts_per_candidate(tmp_path: Path) -> None:
+    from memory_eval_cli import main
+
+    manifest = _work(tmp_path)
+    run = tmp_path / "cmp"
+    out = tmp_path / "report.json"
+    code = main(["--run", str(run), "embed-compare", "--works", str(manifest), "--embeddings",
+                 str(tmp_path / "emb.jsonl"), "--candidates", "voyage-4-lite@256,voyage-4@512", "--out", str(out), "--dry-run"])  # fmt: skip
+    assert code == 0
+    report = json.loads(out.read_text(encoding="utf-8"))
+    est = {e["candidate"]: e for e in report["estimate"]}
+    # 장면 둘 + 개발 질문 둘(시험 질문은 없다).
+    assert est["voyage-4-lite@256"]["texts"] == 4 and est["voyage-4@512"]["texts"] == 4
+    assert report["estimateTotal"]["usd"] == pytest.approx(sum(e["usd"] for e in report["estimate"]))
+    assert report["table"] == []
+
+
+def test_compare_reports_noun_vector_and_rrf_recall_for_a_fully_embedded_candidate(tmp_path: Path) -> None:
+    from memory_eval_cli import main
+
+    manifest = _work(tmp_path)
+    emb = tmp_path / "emb.jsonl"
+    dims = 256
+    one, two = [1.0] + [0.0] * (dims - 1), [0.0, 1.0] + [0.0] * (dims - 2)
+    vecs = {("document", "카페\n창가 자리"): one, ("document", "편집실\n하드 디스크"): two,
+            ("query", "개발 질문 0\n진행 300"): one, ("query", "개발 질문 2\n진행 300"): two}  # fmt: skip
+    emb.write_text("".join(json.dumps({"model": "voyage-4-lite", "dims": dims, "inputType": k, "sha256": eo.text_sha(t),
+                                       "vector": v}) + "\n" for (k, t), v in vecs.items()), "utf-8")  # fmt: skip
+    out = tmp_path / "report.json"
+    code = main(["--run", str(tmp_path / "cmp"), "embed-compare", "--works", str(manifest), "--embeddings", str(emb),
+                 "--candidates", "voyage-4-lite@256", "--out", str(out)])  # fmt: skip
+    assert code == 0
+    report = json.loads(out.read_text(encoding="utf-8"))
+    methods = {(r["candidate"], r["method"]) for r in report["table"]}
+    assert methods == {("-", "nouns"), ("voyage-4-lite@256", "vector"), ("voyage-4-lite@256", "rrf")}
+    vector = next(r for r in report["table"] if r["method"] == "vector")
+    assert vector["all"]["n"] == 2 and vector["all"]["recall3"] == 1.0
+    assert set(vector["byForm"]) == {"direct"}
+    assert vector["plainInjection"] == {"n": 2, "injected": 2, "meanPerTurn": 1.0}
+
+
+def test_compare_runs_one_vector_and_rrf_row_per_point_of_the_hybrid_settings_grid(tmp_path: Path) -> None:
+    from memory_eval_cli import main
+
+    manifest = _work(tmp_path)
+    emb = tmp_path / "emb.jsonl"
+    dims = 256
+    one, two = [1.0] + [0.0] * (dims - 1), [0.0, 1.0] + [0.0] * (dims - 2)
+    vecs = {("document", "카페\n창가 자리"): one, ("document", "편집실\n하드 디스크"): two,
+            ("query", "개발 질문 0\n진행 300"): one, ("query", "개발 질문 2\n진행 300"): two}  # fmt: skip
+    emb.write_text("".join(json.dumps({"model": "voyage-4-lite", "dims": dims, "inputType": k, "sha256": eo.text_sha(t),
+                                       "vector": v}) + "\n" for (k, t), v in vecs.items()), "utf-8")  # fmt: skip
+    out = tmp_path / "report.json"
+    code = main(["--run", str(tmp_path / "cmp"), "embed-compare", "--works", str(manifest), "--embeddings", str(emb),
+                 "--candidates", "voyage-4-lite@256", "--memory-embed-recall-max-plain", "1,2",
+                 "--memory-embed-recall-df-max", "none,20", "--out", str(out)])  # fmt: skip
+    assert code == 0
+    table = json.loads(out.read_text(encoding="utf-8"))["table"]
+    rrf = [r for r in table if r["method"] == "rrf"]
+    points = {(r["params"]["memory_embed_recall_max_plain"], r["params"]["memory_embed_recall_df_max"]) for r in rrf}
+    assert points == {(1, None), (1, 20), (2, None), (2, 20)}
+    assert len([r for r in table if r["method"] == "vector"]) == 4
+    assert all(r["params"]["memory_embed_recall_rrf_k"] == 20 for r in rrf)
+    two_cap = next(r for r in table if r["method"] == "vector" and r["params"]["memory_embed_recall_max_plain"] == 2)
+    assert two_cap["plainInjection"] == {"n": 2, "injected": 4, "meanPerTurn": 2.0}
+
+
+def test_compare_refuses_a_noun_side_other_than_production_recall_for_the_hybrid(tmp_path: Path) -> None:
+    from memory_eval_cli import main
+
+    manifest = _work(tmp_path)
+    code = main(["--run", str(tmp_path / "cmp"), "embed-compare", "--works", str(manifest), "--embeddings",
+                 str(tmp_path / "emb.jsonl"), "--candidates", "voyage-4-lite@256",
+                 "--retriever", "memory_eval.prototype_recall:retrieve_e", "--out", str(tmp_path / "r.json")])  # fmt: skip
+    assert code == 2
+
+
+# 목적함수의 RRF 격자 칸만 실제 꼴로 지어낸 것 — 기준 순서와 필수 조건은 코드가 아는 이름이다.
+OBJECTIVE_RRF = {
+    "rrfGrid": {
+        "order": ["recallAt3DevSum", "-normalTurnMeanInjected"],
+        "requirements": {"nounOnlyMatchesReference": "지어낸 필수 조건 설명"},
+    }
+}
+
+
+def _git_run(repo: Path, *args: str) -> str:
+    done = subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", *args],
+        check=True, capture_output=True, text=True,
+    )  # fmt: skip
+    return done.stdout.strip()
+
+
+def test_compare_marks_each_rrf_point_with_the_requirement_and_the_command_selects_by_the_committed_objective(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memory_eval_cli import main
+
+    manifest = _work(tmp_path)
+    emb = tmp_path / "emb.jsonl"
+    dims = 256
+    one, two = [1.0] + [0.0] * (dims - 1), [0.0, 1.0] + [0.0] * (dims - 2)
+    vecs = {("document", "카페\n창가 자리"): one, ("document", "편집실\n하드 디스크"): two,
+            ("query", "개발 질문 0\n진행 300"): one, ("query", "개발 질문 2\n진행 300"): two}  # fmt: skip
+    emb.write_text("".join(json.dumps({"model": "voyage-4-lite", "dims": dims, "inputType": k, "sha256": eo.text_sha(t),
+                                       "vector": v}) + "\n" for (k, t), v in vecs.items()), "utf-8")  # fmt: skip
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_run(repo, "init", "-q")
+    objective = repo / "objective.json"
+    objective.write_text(json.dumps(OBJECTIVE_RRF, ensure_ascii=False), encoding="utf-8")
+    _git_run(repo, "add", "objective.json")
+    _git_run(repo, "commit", "-qm", "objective")
+
+    # 명사 단독과 어긋나는 격자 점(보통 턴 상한 2)을 흉내 — 꺼진 경로가 그 점에서만 장면 하나를 더 싣는다.
+    real = eo.embedding_off_retriever
+
+    def drifting(params: eo.HybridParams) -> Any:
+        inner = real(params)
+
+        def retrieve(*a: Any, **kw: Any) -> Any:
+            ranked = inner(*a, **kw)
+            return [Ranked("e1", 0.0, True), *ranked] if params.max_plain == 2 else ranked
+
+        return retrieve
+
+    monkeypatch.setattr(eo, "embedding_off_retriever", drifting)
+    out = tmp_path / "report.json"
+    code = main(["--run", str(tmp_path / "cmp"), "embed-compare", "--works", str(manifest), "--embeddings", str(emb),
+                 "--candidates", "voyage-4-lite@256", "--memory-embed-recall-max-plain", "1,2",
+                 "--objective", str(objective), "--out", str(out)])  # fmt: skip
+    assert code == 0
+    report = json.loads(out.read_text(encoding="utf-8"))
+    rrf = {r["params"]["memory_embed_recall_max_plain"]: r for r in report["table"] if r["method"] == "rrf"}
+    assert rrf[1]["requirements"] == {"nounOnlyMatchesReference": 1}
+    assert rrf[2]["requirements"] == {"nounOnlyMatchesReference": 0}
+    selection = report["selection"]
+    assert selection["chosen"]["params"]["memory_embed_recall_max_plain"] == 1
+    assert [r["params"]["memory_embed_recall_max_plain"] for r in selection["excluded"]] == [2]
+    assert selection["objective"]["sha256"] and selection["objective"]["commit"] == _git_run(repo, "rev-parse", "HEAD")
