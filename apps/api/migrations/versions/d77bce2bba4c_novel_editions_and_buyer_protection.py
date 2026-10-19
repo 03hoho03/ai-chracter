@@ -1,7 +1,7 @@
 """novel chapter editions and buyer protection
 
 Revision ID: d77bce2bba4c
-Revises: 0c1a85bc5c2f
+Revises: 0f82ea9f9fa5
 Create Date: 2026-10-19 18:00:00.000000
 
 노벨 화의 판 이력 표를 만들고, 소설에 숨김 칸을, 노벨 구매에 환급 사유 칸을 더하고, 구매의 "화·구매자 하나에 한 행" 유니크를
@@ -58,7 +58,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "d77bce2bba4c"
-down_revision: str | Sequence[str] | None = "0c1a85bc5c2f"
+down_revision: str | Sequence[str] | None = "0f82ea9f9fa5"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
