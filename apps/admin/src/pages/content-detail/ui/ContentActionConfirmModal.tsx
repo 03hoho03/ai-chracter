@@ -12,20 +12,28 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm } from "react-hook-form";
+import { useQueryClient } from "@tanstack/react-query";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
 import { useContentActionMutation, type AdminContentActionType } from "@/entities/admin-content";
 import {
-  CONTENT_ACTION_NOVEL_REFUND_NOTE,
+  DERIVATIVE_NOVELS_DEFAULT,
+  DERIVATIVE_NOVELS_LEGEND,
+  DERIVATIVE_NOVELS_NOTE,
+  DERIVATIVE_NOVELS_OPTIONS,
   isNovelRefundConflict,
+  isNovelSalesStopDisabled,
   NOVEL_REFUND_CONFLICT_MESSAGE,
+  NOVEL_SALES_STOP_DISABLED_MESSAGE,
+  toDerivativeNovelsField,
 } from "@/entities/admin-novel";
 import { isReportReasonCategory, REPORT_REASON_OPTIONS, REPORT_REASON_VALUES } from "@/entities/report";
-import { useSessionQuery } from "@/entities/session";
+import { sessionKeys, useSessionQuery } from "@/entities/session";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 import { focusInitialElement } from "@/shared/lib/callable/focusInitialElement";
+import { ActionChoice } from "@/shared/ui/ActionChoice";
 
 const ACTION_TITLE: Record<AdminContentActionType, string> = {
   restrict: "이용제한 부과",
@@ -56,6 +64,7 @@ const contentActionSchema = z.object({
   reasonCategory: z.enum(REPORT_REASON_VALUES).optional(),
   adminComment: z.string(),
   confirmText: z.string(),
+  derivativeNovels: z.enum(["stop_sales", "close"]),
 });
 
 type ContentActionFormValues = z.infer<typeof contentActionSchema>;
@@ -85,22 +94,38 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
       formState: { errors, isSubmitting },
     } = useForm<ContentActionFormValues>({
       resolver: zodResolver(createContentActionSchema(action, contentName)),
-      defaultValues: { reasonCategory: undefined, adminComment: "", confirmText: "" },
+      defaultValues: {
+        reasonCategory: undefined,
+        adminComment: "",
+        confirmText: "",
+        derivativeNovels: DERIVATIVE_NOVELS_DEFAULT,
+      },
     });
+    const queryClient = useQueryClient();
+    const derivativeNovels = useWatch({ control, name: "derivativeNovels" });
 
     const isReasonCategoryRequired = action !== "lift-restriction";
     const isNameMatchRequired = action === "delete";
-    // 정책 스위치가 켜져 있으면 이용제한·삭제가 이 작품으로 만든 노벨의 구매를 돌려준다 — 확정 전에 말한다.
-    const isNovelRefunding =
-      useSessionQuery().data?.novelPublicPolicyV2Enabled === true && (action === "restrict" || action === "delete");
+    // 정책 스위치가 켜져 있으면 이용제한·삭제가 이 작품으로 만든 노벨을 어떻게 할지 고른다(판매 중단 / 닫고 환급). 꺼져
+    // 있으면 고르지 않고 칸도 보내지 않는다 — 지금과 같다.
+    const isPolicyOn = useSessionQuery().data?.novelPublicPolicyV2Enabled === true;
+    const isClosing = action === "restrict" || action === "delete";
+    const isDerivativeChoiceShown = isPolicyOn && isClosing;
 
     const onSubmit = async (values: ContentActionFormValues) => {
       try {
-        await actionMutation.mutateAsync(formToServer(values, action));
+        await actionMutation.mutateAsync(formToServer(values, action, isPolicyOn));
         toast.success(SUCCESS_MESSAGE[action]);
         call.end();
         onSuccess?.();
       } catch (error) {
+        // 판매 중단을 골랐는데 그사이 정책 스위치가 꺼졌다 — 세션을 새로 받으면 고르는 칸이 사라진 꺼짐 화면이 되고, 모달은
+        // 열어 둔 채 운영자가 바뀐 설명을 읽고 다시 확정하게 한다.
+        if (isNovelSalesStopDisabled(error)) {
+          toast.error(NOVEL_SALES_STOP_DISABLED_MESSAGE.content);
+          void queryClient.invalidateQueries({ queryKey: sessionKeys.all });
+          return;
+        }
         // 새 구매자 경합으로 조치 전체가 되돌려졌다 — 모달을 열어 둔 채 바로 다시 누르게 한다.
         toast.error(isNovelRefundConflict(error) ? NOVEL_REFUND_CONFLICT_MESSAGE.content : ERROR_MESSAGE);
       }
@@ -113,7 +138,6 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
             <DialogTitle>{ACTION_TITLE[action]}</DialogTitle>
             <DialogDescription>
               <span className="font-medium text-foreground">{contentName}</span>에 대해 {ACTION_EFFECT[action]}
-              {isNovelRefunding && ` ${CONTENT_ACTION_NOVEL_REFUND_NOTE}`}
             </DialogDescription>
           </DialogHeader>
 
@@ -159,6 +183,24 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
                     {errors.reasonCategory.message}
                   </p>
                 )}
+              </div>
+            )}
+
+            {isDerivativeChoiceShown && (
+              <div className="flex flex-col gap-1.5">
+                <Controller
+                  name="derivativeNovels"
+                  control={control}
+                  render={({ field }) => (
+                    <ActionChoice
+                      legend={DERIVATIVE_NOVELS_LEGEND}
+                      options={DERIVATIVE_NOVELS_OPTIONS}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    />
+                  )}
+                />
+                <p className="break-keep text-sm text-muted-foreground">{DERIVATIVE_NOVELS_NOTE[derivativeNovels]}</p>
               </div>
             )}
 
@@ -227,12 +269,13 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
 );
 
 /** `confirmText`는 확인 전용 폼 필드라 서버로 넘어가지 않는다. `lift-restriction`은 사유 카테고리를
- * 받지 않는다(알림을 만들지 않아 고를 근거가 없다). */
-function formToServer(values: ContentActionFormValues, action: ContentConfirmAction) {
+ * 받지 않는다(알림을 만들지 않아 고를 근거가 없다). 파생 노벨 선택은 스위치가 켜진 닫는 조치에서만 싣는다. */
+function formToServer(values: ContentActionFormValues, action: ContentConfirmAction, isPolicyOn: boolean) {
   return {
     action,
     reasonCategory: action === "lift-restriction" ? undefined : values.reasonCategory,
     adminComment: values.adminComment.trim() || undefined,
+    derivativeNovels: toDerivativeNovelsField(isPolicyOn, action === "restrict" || action === "delete", values.derivativeNovels),
   };
 }
 

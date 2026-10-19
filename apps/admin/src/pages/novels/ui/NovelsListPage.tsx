@@ -93,6 +93,7 @@ function NovelStatus({ novel }: { novel: NovelListItem }) {
     <span className="flex flex-col">
       <span>
         {novelPublicationLabel(novel)} · {NOVEL_MODERATION_STATUS_LABELS[novel.moderationStatus]}
+        {novel.salesStoppedAt !== null && " · 판매 중단"}
       </span>
       {!novel.readable && <span className="text-xs text-destructive-text">독자에게 안 보임</span>}
     </span>

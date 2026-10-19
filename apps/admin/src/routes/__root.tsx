@@ -11,6 +11,7 @@ import {
   NovelCommentActionConfirmModal,
   NovelModerationConfirmModal,
   NovelReviewConfirmModal,
+  NovelSalesConfirmModal,
 } from "../pages/novel-detail";
 import { PublishNoticeDialog } from "../pages/notice-detail";
 import { PublishPromptSetDialog, RestorePromptSetDialog } from "../pages/prompt-sets";
@@ -46,6 +47,7 @@ function RootComponent() {
       <HomeCurationConfirmModal />
       <NovelModerationConfirmModal />
       <NovelReviewConfirmModal />
+      <NovelSalesConfirmModal />
       <NovelCommentActionConfirmModal />
       <HomeNovelCurationConfirmModal />
       <NovelCommentDeleteConfirmModal />

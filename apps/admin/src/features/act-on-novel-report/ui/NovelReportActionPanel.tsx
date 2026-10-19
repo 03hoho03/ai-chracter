@@ -10,11 +10,13 @@ import { toast } from "sonner";
 import {
   adminNovelKeys,
   isNovelRefundConflict,
+  isNovelSalesStopDisabled,
   NOVEL_REFUND_CONFLICT_MESSAGE,
   NOVEL_RESTRICT_REFUND_NOTE,
+  NOVEL_SALES_STOP_DISABLED_MESSAGE,
 } from "@/entities/admin-novel";
 import { reportKeys, useNovelReportActionMutation, type NovelReportDetail } from "@/entities/report";
-import { useSessionQuery } from "@/entities/session";
+import { sessionKeys, useSessionQuery } from "@/entities/session";
 import { apiErrorCode } from "@/shared/lib/api/client";
 import { ActionChoice } from "@/shared/ui/ActionChoice";
 
@@ -24,7 +26,20 @@ import {
   type NovelReportActionValues,
 } from "../model/schema";
 
-const SUCCESS_MESSAGE = { restrict: "노벨을 이용제한하고 신고를 처리했어요.", reject: "신고를 반려했어요." };
+const SUCCESS_MESSAGE: Record<NovelReportActionValues["action"], string> = {
+  stop_sales: "노벨 판매를 멈추고 신고를 처리했어요.",
+  restrict: "노벨을 이용제한하고 신고를 처리했어요.",
+  reject: "신고를 반려했어요.",
+};
+
+/** 판매 중단을 고르면 확정 전에 산 회원에게 일어날 일을 말한다(이용제한의 환급 문장과 짝). */
+const STOP_SALES_NOTE = "판매만 멈춰요. 노벨 목록·홈에서 빠지고 새로 팔지 않아요. 산 회원은 계속 읽고 환급은 없어요.";
+
+/** 지워진 노벨에 조치를 고른 409 의 문장 — 고른 조치에 맞춰 말한다. */
+const GONE_MESSAGE: Record<Exclude<NovelReportActionValues["action"], "reject">, string> = {
+  restrict: "그사이 노벨이 지워져 이용제한할 대상이 없어요. 반려로 처리해주세요.",
+  stop_sales: "그사이 노벨이 지워져 판매를 멈출 대상이 없어요. 반려로 처리해주세요.",
+};
 
 type NovelReportActionPanelProps = {
   report: NovelReportDetail;
@@ -59,11 +74,18 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
       form.reset({ action: values.action, adminComment: "" });
       onSuccess?.();
     } catch (error) {
-      if (apiErrorCode(error) === "NOVEL_GONE") {
-        // 지워진 노벨은 되돌아오지 않는다 — 상세를 새로 읽어 이용제한을 막고, 반려를 고르게 둔다.
-        setGoneMessage("그사이 노벨이 지워져 이용제한할 대상이 없어요. 반려로 처리해주세요.");
+      if (apiErrorCode(error) === "NOVEL_GONE" && values.action !== "reject") {
+        // 지워진 노벨은 되돌아오지 않는다 — 상세를 새로 읽어 조치를 막고, 반려를 고르게 둔다.
+        setGoneMessage(GONE_MESSAGE[values.action]);
         form.setValue("action", "reject");
         await queryClient.invalidateQueries({ queryKey: reportKeys.all });
+        return;
+      }
+      // 그사이 정책 스위치가 꺼져 판매 중단을 받지 않는다 — 세션을 새로 받아 선택지를 꺼짐 화면으로 돌리고 고른 값을 비운다.
+      if (isNovelSalesStopDisabled(error)) {
+        toast.error(NOVEL_SALES_STOP_DISABLED_MESSAGE.novel);
+        form.resetField("action");
+        await queryClient.invalidateQueries({ queryKey: sessionKeys.all });
         return;
       }
       // 새 구매자 경합으로 조치 전체가 되돌려졌다 — 사유는 그대로 남아 있어 바로 다시 누르면 된다.
@@ -83,8 +105,17 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
           이 노벨은 이미 이용제한 중이에요. 이용제한을 고르면 신고만 처리완료가 돼요. 해제는 노벨 상세에서 해요.
         </p>
       )}
+      {isPolicyOn && report.novelSalesStoppedAt !== null && (
+        <p className="break-keep text-sm text-muted-foreground">
+          이 노벨은 이미 판매 중단 중이에요. 판매 중단을 고르면 신고만 처리완료가 돼요. 재개는 노벨 상세에서 해요.
+        </p>
+      )}
       {isNovelGone && (
-        <p className="break-keep text-sm text-muted-foreground">노벨이 지워져 이용제한할 대상이 없어요. 반려만 할 수 있어요.</p>
+        <p className="break-keep text-sm text-muted-foreground">
+          {isPolicyOn
+            ? "노벨이 지워져 조치할 대상이 없어요. 반려만 할 수 있어요."
+            : "노벨이 지워져 이용제한할 대상이 없어요. 반려만 할 수 있어요."}
+        </p>
       )}
       <form
         noValidate
@@ -104,7 +135,12 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
               value={field.value}
               onValueChange={field.onChange}
               error={errors.action?.message}
+              // 정책 스위치가 켜져 있으면 판매 중단을 첫째로 둔다 — 산 회원의 열람을 남기는 조치를 먼저 보게 한다. 처음
+              // 선택은 비워 둔다: 조치와 반려는 신고마다 운영자가 판단하는 일이라 미리 고르면 반려할 신고가 처리될 수 있다.
               options={[
+                ...(isPolicyOn
+                  ? [{ value: "stop_sales" as const, label: NOVEL_REPORT_ACTION_LABELS.stop_sales, disabled: isNovelGone }]
+                  : []),
                 { value: "restrict", label: NOVEL_REPORT_ACTION_LABELS.restrict, disabled: isNovelGone },
                 { value: "reject", label: NOVEL_REPORT_ACTION_LABELS.reject },
               ]}
@@ -130,6 +166,9 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
         {/* 정책 스위치가 켜져 있으면 이용제한이 이 노벨의 구매를 돌려준다 — 되돌릴 수 없으니 확정 전에 말한다. */}
         {isPolicyOn && action === "restrict" && (
           <p className="text-sm break-keep text-muted-foreground">{NOVEL_RESTRICT_REFUND_NOTE}</p>
+        )}
+        {isPolicyOn && action === "stop_sales" && (
+          <p className="text-sm break-keep text-muted-foreground">{STOP_SALES_NOTE}</p>
         )}
         {!!goneMessage && (
           <p role="alert" className="break-keep text-sm text-destructive-text">

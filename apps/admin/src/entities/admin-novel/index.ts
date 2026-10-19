@@ -33,9 +33,15 @@ export {
   novelPublicationLabel,
   type NovelReviewStatus,
 } from "./model/labels";
+export { isNovelRefundConflict, NOVEL_REFUND_CONFLICT_MESSAGE, NOVEL_RESTRICT_REFUND_NOTE } from "./model/refundConflict";
 export {
-  CONTENT_ACTION_NOVEL_REFUND_NOTE,
-  isNovelRefundConflict,
-  NOVEL_REFUND_CONFLICT_MESSAGE,
-  NOVEL_RESTRICT_REFUND_NOTE,
-} from "./model/refundConflict";
+  DERIVATIVE_NOVELS_DEFAULT,
+  DERIVATIVE_NOVELS_LEGEND,
+  DERIVATIVE_NOVELS_NOTE,
+  DERIVATIVE_NOVELS_OPTIONS,
+  isNovelSalesStopDisabled,
+  NOVEL_SALES_STOP_DISABLED_MESSAGE,
+  toDerivativeNovelsField,
+  type DerivativeNovelsChoice,
+} from "./model/salesStop";
+export { useNovelSalesMutation, type NovelSalesAction } from "./api/useNovelSalesMutation";
