@@ -73,14 +73,21 @@ class LedgerVoyageClient(VoyageEmbeddingClient):
         self.refused: BudgetExceededError | None = None
 
     async def embed_with_usage(
-        self, texts: Sequence[str], *, input_type: EmbeddingInputType, call_site: str
+        self,
+        texts: Sequence[str],
+        *,
+        input_type: EmbeddingInputType,
+        call_site: str,
+        retry_delays: Sequence[float] | None = None,
     ) -> tuple[list[list[float]], int]:
         try:
             self.ledger.check_headroom(price_usd(self.model, estimate_tokens_total(texts)))
         except BudgetExceededError as exc:
             self.refused = exc
             raise
-        vectors, tokens = await super().embed_with_usage(texts, input_type=input_type, call_site=call_site)
+        vectors, tokens = await super().embed_with_usage(
+            texts, input_type=input_type, call_site=call_site, retry_delays=retry_delays
+        )
         self.ledger.append(
             stage=self.stage, call_site=call_site, model=self.model, input_tokens=tokens, cached_tokens=0,
             cache_write_tokens=0, output_tokens=0, thoughts_tokens=0,

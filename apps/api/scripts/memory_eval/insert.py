@@ -314,6 +314,7 @@ async def run_insert(
                 is_story_chat=ctx.lane == "story",
                 names=ctx.names,
                 series=b_series,
+                writing_model=trajectory_model,
             )
             async with session_factory() as db:
                 after = await _snapshot_count(db, room_id)

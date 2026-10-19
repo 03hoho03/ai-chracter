@@ -44,8 +44,16 @@ class OfflineQueryEmbeddingClient(VoyageEmbeddingClient):
         return vectors
 
     async def embed_with_usage(
-        self, texts: Sequence[str], *, input_type: EmbeddingInputType, call_site: str
+        self,
+        texts: Sequence[str],
+        *,
+        input_type: EmbeddingInputType,
+        call_site: str,
+        retry_delays: Sequence[float] | None = None,
     ) -> tuple[list[list[float]], int]:
+        # 앱의 질의 임베딩은 다시 보내지 않으려고 `retry_delays=()` 를 넘긴다. 파일에서 읽기만 하므로 받고 쓰지 않는다 — 받지
+        # 않으면 TypeError 를 앱이 실패로 흡수해 임베딩 회상 갈래가 오류 없이 명사 단독으로 조립된다.
+        del retry_delays
         if input_type != "query":
             raise SystemExit(f"오프라인 질의 임베딩은 질의 글만 받는다 — {input_type} 글을 부른 곳을 확인한다")
         for text in texts:
