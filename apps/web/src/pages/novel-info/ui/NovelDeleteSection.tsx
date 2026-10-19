@@ -16,7 +16,9 @@ export function NovelDeleteSection({ novel }: { novel: NovelDetailResponse }) {
         소설 관리
       </h2>
       <p className="text-sm break-keep text-muted-foreground">
-        지우면 모든 화와 판 이력, 설정 노트가 함께 사라져요. 원래 대화방은 그대로예요.
+        {novel.purchaseRefunds?.novelSold === true
+          ? "노벨에서 소장한 회원이 있어, 지우면 숨겨 두고 소장한 회원은 계속 읽어요."
+          : "지우면 모든 화와 판 이력, 설정 노트가 함께 사라져요. 원래 대화방은 그대로예요."}
       </p>
       <Button
         type="button"

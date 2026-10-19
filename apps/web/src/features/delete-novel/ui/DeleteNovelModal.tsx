@@ -17,6 +17,7 @@ import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useDeleteNovelMutation } from "../api/useDeleteNovelMutation";
 import { withDeleteConflictRetry } from "../lib/deleteConflictRetry";
+import { toNovelHideDescription } from "../model/refundNotice";
 import { RefundNoticeBox } from "./RefundNoticeBox";
 
 type DeleteNovelModalProps = {
@@ -36,7 +37,10 @@ type DeleteNovelModalProps = {
  *
  * 노벨에서 이 소설의 화를 소장한 회원이 있으면 몇 명에게 클로버 몇 개를 돌려주는지 확정 전에 말한다(소설 상세의
  * 삭제 전 확인 값 — 목록에서 열었으면 여기서 받는다). 그 값을 받는 동안은 지우기를 막는다. 그사이 새 소장자가 생겨
- * 서버가 돌려보내면 한 번은 저절로 다시 보낸다. */
+ * 서버가 돌려보내면 한 번은 저절로 다시 보낸다.
+ *
+ * 노벨에서 팔린 소설이면(삭제 전 확인 값의 판매 표시) 서버가 지우지 않고 숨긴다 — 그때는 설명을 숨김으로 갈아 끼우고
+ * 환급 고지 대신 돌려주지 않는다는 상자를 둔다. 실행 버튼과 지운 뒤 동작은 같다(숨긴 소설은 작가에게 지운 것과 같다). */
 export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>(({ call, novelId, title, hasActiveJob }) => {
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -49,6 +53,7 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
   const [error, setError] = useState<string | undefined>(undefined);
   const isDeleting = deleteMutation.isPending;
   const isPreviewPending = detail.isPending;
+  const hideDescription = toNovelHideDescription(detail.data?.purchaseRefunds);
 
   async function handleDelete() {
     if (isDeleting || isPreviewPending) return;
@@ -81,19 +86,25 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
         <DialogHeader>
           <DialogTitle className="break-keep">‘{title}’ 소설을 지울까요?</DialogTitle>
           <DialogDescription className="break-keep">
-            모든 화와 판 이력, 설정 노트가 함께 지워지고 되돌릴 수 없어요. 원래 대화방은 그대로예요.
+            {hideDescription ?? "모든 화와 판 이력, 설정 노트가 함께 지워지고 되돌릴 수 없어요. 원래 대화방은 그대로예요."}
             {hasActiveJob === true && " 진행 중인 작업은 멈추고, 쓴 클로버는 돌려드려요."}
             {hasActiveJob === undefined && " 진행 중인 작업이 있으면 멈추고, 쓴 클로버는 돌려드려요."}
           </DialogDescription>
         </DialogHeader>
 
-        {detail.data === undefined ? (
-          <RefundNoticeBox preview={isPreviewPending ? "pending" : "unknown"} scope="novel" subject="이 소설의 화" />
-        ) : (
-          detail.data.purchaseRefunds !== undefined && (
-            <RefundNoticeBox preview={detail.data.purchaseRefunds} scope="novel" subject="이 소설의 화" />
-          )
+        {hideDescription !== undefined && (
+          <p className="rounded-lg border border-border p-3 text-xs break-keep text-muted-foreground">
+            클로버는 돌려드리지 않아요 — 소장한 회원은 계속 읽을 수 있어서예요.
+          </p>
         )}
+        {hideDescription === undefined &&
+          (detail.data === undefined ? (
+            <RefundNoticeBox preview={isPreviewPending ? "pending" : "unknown"} scope="novel" subject="이 소설의 화" />
+          ) : (
+            detail.data.purchaseRefunds !== undefined && (
+              <RefundNoticeBox preview={detail.data.purchaseRefunds} scope="novel" subject="이 소설의 화" />
+            )
+          ))}
 
         {error !== undefined && (
           <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
