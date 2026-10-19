@@ -147,26 +147,54 @@ def test_parallel_judging_gives_the_same_results_in_input_order_as_serial_judgin
     assert 1 < parallel.peak <= 4
 
 
-def test_a_budget_stop_in_one_request_stops_the_parallel_run() -> None:
-    from memory_eval.ledger import BudgetExceededError
+class _StopsLikeTheLedger:
+    """원장 상한처럼 멈춘다: `멈춤` 입력이 보내기 전 확인에서 걸리면 그 뒤로는 어느 입력도 보내기 전에 걸린다(누적 원가는 줄지
+    않으므로 한 번 넘은 상한은 계속 넘는다). 보낸 호출은 응답을 받은 뒤 원장에 한 줄을 남긴다."""
 
-    class Stops:
-        def __init__(self) -> None:
-            self.calls = 0
+    def __init__(self, ledger: Any, *, slow: float = 0.01) -> None:
+        self.ledger = ledger
+        self.slow = slow
+        self.stopped = False
+        self.sent = 0
 
-        async def verdict(self, prompt: str) -> JudgeVerdict:
-            self.calls += 1
-            await asyncio.sleep(0)
-            if prompt == "멈춤":
-                raise BudgetExceededError("상한")
-            await asyncio.sleep(0.01)
-            return JudgeVerdict(verdict="kept", reason="r")
+    async def verdict(self, prompt: str) -> JudgeVerdict:
+        from memory_eval.ledger import BudgetExceededError
 
-    judge = Stops()
+        await asyncio.sleep(0)
+        if self.stopped or prompt == "멈춤":
+            self.stopped = True
+            raise BudgetExceededError("상한")
+        self.sent += 1
+        await asyncio.sleep(self.slow)
+        self.ledger.append(
+            stage="t", call_site="memory_eval_judge", model=JUDGE_MODEL, input_tokens=100, cached_tokens=0,
+            cache_write_tokens=0, output_tokens=10, thoughts_tokens=0,
+        )  # fmt: skip
+        return JudgeVerdict(verdict="kept", reason="r")
+
+
+def test_a_budget_stop_in_one_request_stops_the_parallel_run(tmp_path: Path) -> None:
+    from memory_eval.ledger import BudgetExceededError, Ledger
+
+    judge = _StopsLikeTheLedger(Ledger(tmp_path / "ledger.jsonl"))
     requests = [("secret", "멈춤")] + [("secret", f"입력 {n}") for n in range(40)]
     with pytest.raises(BudgetExceededError):
         asyncio.run(judge_all(cast(HaikuJudge, judge), cast(Any, requests), concurrency=2))
-    assert judge.calls < 2 * len(requests)
+    assert judge.sent < 2 * len(requests)
+
+
+def test_calls_already_sent_when_another_call_hits_the_cap_finish_and_are_recorded(tmp_path: Path) -> None:
+    from memory_eval.ledger import BudgetExceededError, Ledger
+
+    # 느린 입력의 두 표가 응답을 기다리는 사이 다른 줄이 상한에 걸린다. 이미 나간 두 호출은 끝까지 받아 원장에 남고, 그 뒤로는
+    # 새 호출이 나가지 않는다 — 나간 호출을 끊으면 청구됐을 수 있는 원가가 원장에서 빠져 남은 여유를 크게 본다.
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    judge = _StopsLikeTheLedger(ledger, slow=0.05)
+    requests = [("relation", "느린 입력"), ("relation", "멈춤"), ("relation", "다음 입력")]
+    with pytest.raises(BudgetExceededError):
+        asyncio.run(judge_all(cast(HaikuJudge, judge), cast(Any, requests), concurrency=4))
+    assert judge.sent == 2
+    assert len(ledger.rows()) == 2
 
 
 def test_the_estimate_counts_the_vote_ceiling_of_each_kind() -> None:
