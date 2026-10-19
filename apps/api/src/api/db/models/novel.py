@@ -721,6 +721,28 @@ class NovelChapterEdition(Base):
     )
 
 
+class NovelFreeOrdinal(Base):
+    """소설마다 무료로 독자에게 내놓은 적이 있는 화 번호. 독자에게 한 번 무료로 준 번호는 그 화를 지우고 다시 만들어도
+    무료로 공개한다 — 화를 지우면 화 공개본(과 그 가격 칸)이 함께 사라지고 다시 만든 화는 새 화라, 화 공개본만으로는 "이
+    번호는 무료였다"를 기억하지 못한다. 그래서 화가 아니라 (소설, 번호)로 남긴다.
+
+    6화부터를 무료로 공개할 때와 유료 화를 무료로 바꿀 때 한 행이 생기고 지워지지 않는다(소설과 함께 지워질 뿐이다). 앞 무료
+    화(`NOVEL_FREE_CHAPTER_COUNT` 까지)는 상수가 무료로 지키므로 남기지 않는다. 소설 행 칸이 아니라 따로 둔 표인 것은 기록이
+    소설 행을 잠그지 않게 하려는 것이다 — 이 표의 INSERT 는 FK 로 소설 행에 가장 약한 공유 잠금만 걸어 소설 행 UPDATE 와
+    부딪치지 않는다.
+
+    소설을 지우면 함께 지워지는 `ON DELETE CASCADE` 다 — 이 표를 모르는 옛 코드의 소설 삭제·숨긴 소설 파기가 FK 위반이 되지
+    않게. 복합 PK 와 CHECK 는 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 검증한다."""
+
+    __tablename__ = "novel_free_ordinals"
+
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (CheckConstraint("ordinal >= 1", name="ck_novel_free_ordinals_ordinal_positive"),)
+
+
 class NovelScreening(Base):
     """공개 전 텍스트 심사 한 번의 판정. 통과·거부만 남는다 — 심사 호출이 실패해(장애) 판정이 없으면 행이 없다.
 
