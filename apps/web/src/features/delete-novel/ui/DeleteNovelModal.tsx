@@ -94,7 +94,7 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
 
         {hideDescription !== undefined && (
           <p className="rounded-lg border border-border p-3 text-xs break-keep text-muted-foreground">
-            클로버는 돌려드리지 않아요 — 소장한 회원은 계속 읽을 수 있어서예요.
+            소장한 회원에게 클로버는 돌려드리지 않아요 — 산 화를 계속 읽을 수 있어서예요.
           </p>
         )}
         {hideDescription === undefined &&
