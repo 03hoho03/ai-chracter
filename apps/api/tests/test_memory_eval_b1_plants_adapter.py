@@ -214,8 +214,8 @@ def test_probe_dry_run_takes_bundle_arms_by_lane_and_refuses_a_test_id(
     plants, split_dir = _bundle(tmp_path, lane="character")
     assert main(_probe_argv(tmp_path, plants, split_dir, "b1-B2")) == 0
     capsys.readouterr()
-    assert main(_probe_argv(tmp_path, plants, split_dir, "b1-B1E")) == 2
-    assert "캐릭터" in capsys.readouterr().err
+    assert main(_probe_argv(tmp_path, plants, split_dir, "b1-B1E")) == 0
+    capsys.readouterr()
     test_id = json.loads((split_dir / holdout.TEST_IDS_FILE).read_text(encoding="utf-8"))[0]
     assert main([*_probe_argv(tmp_path, plants, split_dir, "b1-A1"), "--items", test_id]) == 2
     assert "시험 문항" in capsys.readouterr().err
@@ -260,3 +260,133 @@ def test_probe_categories_plan_only_those_judged_kinds_and_the_halt_base_counts_
     capsys.readouterr()
     assert main(argv) == 0  # 주지 않으면 지금처럼 전부
     assert {p["item"] for p in json.loads(capsys.readouterr().out)["plan"]} == secrets | others
+
+
+def _kinds(tmp_path: Path, plants: Path, split_dir: Path) -> tuple[list[str], list[str]]:
+    view = _dev_view(tmp_path, plants, split_dir)
+    ids = sorted(p.item_id for p in plants_mod.opus_probes(view, 300))
+    secrets = [i for i in ids if judge.judge_kind(view.item(i)) == "secret"]
+    return secrets, [i for i in ids if i not in secrets]
+
+
+def test_probe_items_left_out_of_the_plan_by_category_or_checkpoint_are_refused_by_id(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """요청한 문항이 범주 거르기나 체크포인트 조건으로 계획에서 빠지면 아무것도 돌지 않은 채 정상 종료하던 것을 막는다 — 다시
+    돌렸다고 믿은 문항의 결과가 비어 있게 된다."""
+    from memory_eval_cli import main
+
+    plants, split_dir = _bundle(tmp_path)
+    secrets, others = _kinds(tmp_path, plants, split_dir)
+    argv = _probe_argv(tmp_path, plants, split_dir, "b1-B2")
+    assert main([*argv, "--categories", "secret", "--items", others[0]]) == 2  # 전부 범주 밖
+    err = capsys.readouterr().err
+    assert others[0] in err and "범주" in err
+    assert main([*argv, "--categories", "secret", "--items", f"{secrets[0]},{others[0]}"]) == 2  # 일부만 밖
+    err = capsys.readouterr().err
+    assert others[0] in err and secrets[0] not in err
+    assert main([*argv, "--checkpoints", "100", "--items", secrets[0]]) == 2  # 그 체크포인트에서 묻지 않는 문항
+    err = capsys.readouterr().err
+    assert secrets[0] in err and "체크포인트" in err
+
+
+def test_probe_items_whose_results_are_all_on_file_finish_cleanly_and_an_unknown_id_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from memory_eval_cli import main
+
+    plants, split_dir = _bundle(tmp_path)
+    secrets, _ = _kinds(tmp_path, plants, split_dir)
+    out = tmp_path / "run" / "probes" / "b1-b1-B2.jsonl"
+    out.parent.mkdir(parents=True)
+    out.write_text(json.dumps({"checkpoint": 300, "item": secrets[0], "status": "ok"}) + "\n", encoding="utf-8")
+    argv = _probe_argv(tmp_path, plants, split_dir, "b1-B2")
+    assert main([*argv, "--items", secrets[0]]) == 0  # 계획에는 들었고 결과가 이미 있다 — 남은 게 없을 뿐이다
+    assert json.loads(capsys.readouterr().out)["plan"] == []
+    assert main([*argv, "--items", f"{secrets[0]},t-지어낸문항"]) == 2
+    err = capsys.readouterr().err
+    assert "t-지어낸문항" in err and "없는" in err
+
+
+def _probe_rows_file(tmp_path: Path, units: list[tuple[int, str]]) -> Path:
+    out = tmp_path / "run" / "probes" / "b1-b1-B2.jsonl"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        "".join(json.dumps({"checkpoint": cp, "item": item, "status": "ok"}) + "\n" for cp, item in units),
+        encoding="utf-8",
+    )
+    return out
+
+
+def test_probe_redo_plans_only_the_named_units_and_refuses_a_repeat_or_an_unplanned_unit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """다시 돌릴 단위는 결과가 있어도 계획에 든다. 드라이런은 결과 파일·폴더를 옮기지 않는다."""
+    from memory_eval_cli import main
+
+    plants, split_dir = _bundle(tmp_path)
+    secrets, _ = _kinds(tmp_path, plants, split_dir)
+    out = _probe_rows_file(tmp_path, [(300, secrets[0]), (300, secrets[1])])
+    before = out.read_bytes()
+    argv = _probe_argv(tmp_path, plants, split_dir, "b1-B2")
+    assert main([*argv, "--redo", f"300:{secrets[0]}"]) == 0
+    plan = json.loads(capsys.readouterr().out)["plan"]
+    assert [(p["cp"], p["item"]) for p in plan] == [(300, secrets[0])]
+    assert out.read_bytes() == before
+    assert main([*argv, "--redo", f"300:{secrets[2]}"]) == 0  # 결과가 없는 단위는 보통 실행처럼 돈다
+    assert [(p["cp"], p["item"]) for p in json.loads(capsys.readouterr().out)["plan"]] == [(300, secrets[2])]
+    assert main([*argv, "--redo", f"300:{secrets[0]},300:{secrets[0]}"]) == 2
+    assert "중복" in capsys.readouterr().err
+    # 그 체크포인트에서는 묻지 않는 문항이라 계획에 없다
+    assert main([*argv, "--checkpoints", "100,300", "--redo", f"100:{secrets[0]}"]) == 2
+    assert f"100:{secrets[0]}" in capsys.readouterr().err
+
+
+def test_setting_aside_redo_units_moves_their_rows_and_folders_under_stale_and_keeps_the_rest(tmp_path: Path) -> None:
+    from memory_eval.probe import set_aside_units
+
+    run = tmp_path / "run"
+    out = _probe_rows_file(tmp_path, [(300, "q1"), (300, "q2"), (100, "q1")])
+    for cp, item in ((300, "q1"), (300, "q2"), (100, "q1")):
+        attempt = run / "probes" / f"b1-cp{cp}-b1-B2" / item / "attempt1"
+        attempt.mkdir(parents=True)
+        (attempt / "server.log").write_text(f"{cp}-{item}\n", encoding="utf-8")
+
+    stale = set_aside_units(run, stage="b1", arm="b1-B2", out=out, units={(300, "q1")})
+
+    assert stale is not None and stale.parent == run / "probes" and stale.name.startswith("stale-")
+    kept = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    assert [(r["checkpoint"], r["item"]) for r in kept] == [(300, "q2"), (100, "q1")]
+    moved = [json.loads(line) for line in (stale / out.name).read_text(encoding="utf-8").splitlines()]
+    assert [(r["checkpoint"], r["item"]) for r in moved] == [(300, "q1")]
+    assert not (run / "probes" / "b1-cp300-b1-B2" / "q1").exists()
+    log = stale / "b1-cp300-b1-B2" / "q1" / "attempt1" / "server.log"
+    assert log.read_text(encoding="utf-8") == "300-q1\n"
+    for cp, item in ((300, "q2"), (100, "q1")):
+        assert (run / "probes" / f"b1-cp{cp}-b1-B2" / item / "attempt1" / "server.log").exists()
+    assert sorted(p.name for p in out.parent.iterdir() if p.is_file()) == [out.name]  # 임시 파일이 남지 않는다
+    # 결과 행이 없는 단위는 옮길 것이 없다
+    assert set_aside_units(run, stage="b1", arm="b1-B2", out=out, units={(300, "q9")}) is None
+
+
+def test_a_failure_while_rewriting_the_results_leaves_the_result_file_whole_and_the_moved_rows_under_stale(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남길 행을 다시 쓰다 멈춰도(바꿔 끼우기 직전 실패) 결과 파일은 원래 바이트 그대로이고, 뺀 행은 stale 아래에 이미 있다 —
+    결과 파일을 그 자리에서 덮어쓰면 반쯤 쓰인 파일이 남아 끝난 단위가 사라진다."""
+    from memory_eval import probe
+
+    run = tmp_path / "run"
+    out = _probe_rows_file(tmp_path, [(300, "q1"), (300, "q2"), (100, "q1")])
+    before = out.read_bytes()
+
+    def broken_replace(src: object, dst: object) -> None:
+        raise OSError("지어낸 쓰기 실패")
+
+    monkeypatch.setattr("memory_eval.probe.os.replace", broken_replace)
+    with pytest.raises(OSError, match="지어낸 쓰기 실패"):
+        probe.set_aside_units(run, stage="b1", arm="b1-B2", out=out, units={(300, "q1")})
+    assert out.read_bytes() == before
+    (stale,) = (run / "probes").glob("stale-*")
+    moved = [json.loads(line) for line in (stale / out.name).read_text(encoding="utf-8").splitlines()]
+    assert [(r["checkpoint"], r["item"]) for r in moved] == [(300, "q1")]

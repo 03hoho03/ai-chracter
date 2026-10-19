@@ -594,6 +594,77 @@ def test_own_worker_ports_in_this_tree_pass_and_every_other_server_on_the_shared
     assert [pid for pid, *_ in found] == [3, 4, 5]
 
 
+def test_cleanup_picks_only_servers_of_this_tree_on_this_runs_worker_ports() -> None:
+    """중단된 실행이 남긴 작업자 서버만 내린다 — 다른 트리의 측정 서버나 이 트리의 다른 포트(개발 서버 등)는 건드리지 않는다."""
+    from memory_eval.server import leftover_worker_servers
+
+    own = "/w/root/.claude/worktrees/long-memory-a/apps/api"
+    procs = [
+        (1, own, 8131),
+        (2, own, 8137),
+        (3, own, 8130),  # 기준 포트 자체는 작업자 포트가 아니다
+        (4, own, 8138),  # 작업자 수 상한 밖
+        (5, "/w/root/.claude/worktrees/long-memory-b/apps/api", 8132),  # 다른 트리의 작업자 포트
+        (6, own, None),
+        (7, "", 8133),  # 어느 트리인지 모른다
+        (8, "/w/root/.claude/worktrees/long-memory-a/apps/api-old", 8134),  # 이름만 앞이 같은 다른 폴더
+    ]
+    assert leftover_worker_servers(procs, own_tree=own, ports=range(8131, 8138)) == [(1, 8131), (2, 8137)]
+
+
+def test_probe_cleanup_command_stops_only_the_selected_servers_and_prints_pid_and_port(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from memory_eval import server
+    from memory_eval_cli import main
+
+    own = str(server.API_DIR)
+    procs = [(41, own, 8131), (42, own, 8000), (43, "/elsewhere/apps/api", 8132)]
+    monkeypatch.setattr(server, "running_api_servers", lambda: procs)
+    stopped: list[list[int]] = []
+
+    def fake_stop(pids: list[int], **_: Any) -> list[int]:
+        stopped.append(list(pids))
+        return []
+
+    monkeypatch.setattr(server, "stop_pids", fake_stop)
+    assert main(["--run", str(tmp_path), "probe-cleanup", "--port", "8130"]) == 0
+    assert stopped == [[41]]
+    out = json.loads(capsys.readouterr().out)
+    assert out["stopped"] == [{"pid": 41, "port": 8131}]
+
+
+def test_stop_pids_terminates_politely_then_kills_what_ignores_the_terminate_signal() -> None:
+    """SIGTERM 으로 끝나는 프로세스는 그것으로 끝나고, SIGTERM 을 무시하는 프로세스는 기다린 뒤 SIGKILL 로 내린다."""
+    import signal
+
+    from memory_eval.server import stop_pids
+
+    polite = subprocess.Popen(["sleep", "60"])
+    stubborn = subprocess.Popen(
+        [sys.executable, "-c", "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('ready', flush=True); time.sleep(60)"],
+        stdout=subprocess.PIPE,
+        text=True,
+    )  # fmt: skip
+    try:
+        assert stubborn.stdout is not None and stubborn.stdout.readline().strip() == "ready"
+        # 이 테스트 프로세스의 자식이라 죽은 뒤 거두지 않으면 좀비로 남아 살아 있는 것처럼 보인다 — 운영에서 내리는 서버는 자식이 아니다.
+        reapers = [threading.Thread(target=proc.wait, daemon=True) for proc in (polite, stubborn)]
+        for reaper in reapers:
+            reaper.start()
+        killed = stop_pids([polite.pid, stubborn.pid], timeout=2.0)
+        for reaper in reapers:
+            reaper.join(timeout=10)
+        assert killed == [stubborn.pid]
+        assert polite.returncode == -signal.SIGTERM
+        assert stubborn.returncode == -signal.SIGKILL
+    finally:
+        for proc in (polite, stubborn):
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+
+
 def _git(*args: str, cwd: Path) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
