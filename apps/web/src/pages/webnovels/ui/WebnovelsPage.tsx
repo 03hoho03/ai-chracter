@@ -46,7 +46,7 @@ type WebnovelRowItem = WebnovelListItem & { salesStopped?: boolean };
 export function WebnovelsPage({ view, onViewChange }: { view: WebnovelsView; onViewChange: (view: WebnovelsView) => void }) {
   const pricing = useCloverPricingQuery();
   const session = useSessionQuery();
-  const { shown: shownView, chips } = toWebnovelsView(view, pricing.data);
+  const { shown: shownView, chips, chipsLabel } = toWebnovelsView(view, pricing.data);
   const isOwnedView = shownView === "owned";
   // 보이는 목록 하나만 받는다. 두 목록 모두 노벨이 닫혀 있으면 404 다.
   const listQuery = useWebnovelListQuery(shownView === "owned" ? "latest" : shownView, { enabled: !isOwnedView });
@@ -92,7 +92,7 @@ export function WebnovelsPage({ view, onViewChange }: { view: WebnovelsView; onV
           // 이미 고른 칩을 다시 누르면 빈 값이 온다 — 목록은 늘 하나가 골라져 있어야 해서 무시한다.
           if (isWebnovelsView(value)) onViewChange(value);
         }}
-        aria-label="목록"
+        aria-label={chipsLabel}
         className="self-start"
       >
         {chips.map((value) => (
