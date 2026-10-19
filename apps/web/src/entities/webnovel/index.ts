@@ -5,6 +5,11 @@ export {
   type WebnovelReadingPositionRequest,
 } from "./api/saveWebnovelReadingPosition";
 export { useHomeWebnovelsQuery, type HomeWebnovelItem } from "./api/useHomeWebnovelsQuery";
+export {
+  useOwnedWebnovelListQuery,
+  type OwnedWebnovelItem,
+  type OwnedWebnovelListResponse,
+} from "./api/useOwnedWebnovelListQuery";
 export { useReportWebnovelCommentMutation, useReportWebnovelMutation } from "./api/useReportWebnovelMutations";
 export { useWebnovelChapterQuery, type WebnovelChapterResponse } from "./api/useWebnovelChapterQuery";
 export {
