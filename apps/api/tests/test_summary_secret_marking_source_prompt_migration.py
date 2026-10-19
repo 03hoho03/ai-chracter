@@ -42,6 +42,10 @@ _M = _load("0c1a85bc5c2f")
 _SECRET_MARKING = _load("0aeadefcf159")
 # 이 리비전 직전 여덟 체인의 활성 세트(사실 추출 지시문 차례를 바꾼 리비전 — 그 사이의 리비전은 프롬프트를 게시하지 않는다).
 _PREVIOUS = _load("c1f3945cb802")
+# 이 리비전 뒤에 story 레인 네 체인에 장면 판정 지시문만 바꾼 새 세트를 게시하는 리비전. head 상태에서는 story 레인에서 그
+# 세트들이 활성이라, "이 리비전 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 그 리비전을 먼저 되돌린다(실제
+# downgrade 순서).
+_LATER = _load("0f82ea9f9fa5")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
@@ -96,6 +100,11 @@ async def _lane_only_active_id(db_session: AsyncSession, lane: PromptLane) -> uu
     connection = await db_session.connection()
     chosen: uuid.UUID = (await connection.execute(_M._LANE_ONLY_ACTIVE_SET_SQL, {"lane": lane})).one().id
     return chosen
+
+
+async def _undo_later_revisions(db_session: AsyncSession) -> None:
+    connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
 
 
 async def _get_set(db_session: AsyncSession, set_id: uuid.UUID) -> PromptSet:
@@ -167,6 +176,7 @@ def test_the_revision_seeds_exactly_eight_chains() -> None:
 async def test_each_chain_is_active_at_its_seeded_set_with_the_new_slot_bytes(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
+    await _undo_later_revisions(db_session)
     assert await _active_id(db_session, lane, model) == _M.NEW_SET_IDS[(lane, model)]
     _prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
     body = _summary_body(sections, "secret_marking")
@@ -178,6 +188,7 @@ async def test_each_chain_is_active_at_its_seeded_set_with_the_new_slot_bytes(
 @pytest.mark.parametrize("lane", _LANES)
 async def test_the_lane_only_select_picks_the_new_gemini_set(db_session: AsyncSession, lane: PromptLane) -> None:
     """모델 열을 모르는 원시 SQL 이 레인만 보고 최신 게시본을 고를 때도 새 Gemini 세트를 집는다."""
+    await _undo_later_revisions(db_session)
     assert await _lane_only_active_id(db_session, lane) == _M.NEW_SET_IDS[(lane, "gemini")]
 
 
@@ -229,11 +240,13 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
     others = (
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
-                PromptSet.status == "published", PromptSet.id.not_in(order)
+                PromptSet.status == "published",
+                PromptSet.id.not_in(order),
+                PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
             )
         )
     ).all()
-    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 없다.
+    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 장면 판정 지시문 교체 리비전의 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 
@@ -335,6 +348,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
     for lane, model in _PAIRS:
@@ -359,6 +373,7 @@ async def test_upgrade_copies_a_summary_instruction_the_admin_edited(db_session:
     """운영 story 요약 지시문처럼 어드민이 고쳐 게시한 지시문이 활성이어도 멈추지 않고 그 본문을 그대로 옮긴다 — 가정 검사와
     교체는 비밀 표기 슬롯만 본다. 검사가 지시문 본문을 견주게 바뀌면 여기서 `RuntimeError` 로 깨진다."""
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     edited = "운영자가 어드민에서 고쳐 게시한 요약 지시문"
     await db_session.execute(
@@ -388,6 +403,7 @@ async def test_upgrade_refuses_to_overwrite_a_slot_body_the_admin_edited(
     """활성 슬롯 본문이 앞 리비전 문안과 한 글자라도 다르면 어드민이 고친 운영 문안이다 — 조용히 덮어쓰지 않고, 그 레인에는 아무
     세트도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
         sa.update(PromptSection)
@@ -408,6 +424,7 @@ async def test_upgrade_refuses_to_overwrite_a_slot_body_the_admin_edited(
 
 async def test_upgrade_stops_when_the_slot_row_is_not_exactly_one(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
         sa.delete(PromptSection).where(
@@ -433,6 +450,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])
     assert previous.published_at is not None
@@ -449,6 +467,7 @@ async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_s
 async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     db_session: AsyncSession, lane: PromptLane, model: str
 ) -> None:
+    await _undo_later_revisions(db_session)
     seeded = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
     assert seeded.published_at is not None
     db_session.add(_set(lane=lane, model=model, published_at=seeded.published_at + timedelta(seconds=1)))
