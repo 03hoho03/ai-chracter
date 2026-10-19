@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.chat.prompt_builder import PromptNames, load_active_prompt_set
 from api.chat.turn_prompt import JudgmentPromptSets, generation_prompt_set, judgment_prompt_sets
-from api.core.config import settings
+from api.core.config import Settings, settings
 from api.db.models import ChatRoom
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.persona import UserPersona
@@ -29,7 +29,7 @@ from api.db.models.story import StartingSetup
 from api.llm.chat_models import ChatModelId, PromptSetModelId
 from replay.local_db import ensure_local_database
 
-from memory_eval.arm_env import BARE_SUFFIX, BUNDLE1_ARMS, BUNDLE1_SWITCHES, POST_HISTORY_SWITCHES
+from memory_eval.arm_env import BARE_SUFFIX, BUNDLE1_ARMS, BUNDLE1_SWITCHES, COMMON_ENV, POST_HISTORY_SWITCHES
 from memory_eval.checkpoint import database_name, ensure_eval_db_name
 
 # 갈래 = 같은 DB 상태에서 조립만 달리하는 설정 묶음. 회상 스위치는 회상을 구현한 코드에만 있다. A2·B2 는 2차 런의 두 갈래
@@ -58,6 +58,11 @@ ARMS.update(
         if ARMS[arm]["memory_summary_secret_marking"]
     }
 )
+
+# 기억 사용 범위는 갈래마다 다르지 않고 측정 서버 env 표의 공통 줄로 고정된다. 앱 조립을 이 프로세스 안에서 부르는 경로는
+# 로컬 `.env` 로 뜨므로, 그 범위가 Opus 를 빼면 임베딩 없는 회상 갈래가 빈 회상으로 조용히 재진다 — 갈래 설정을 씌울 때 이
+# 값도 같이 씌운다. 표의 글은 앱이 env 를 읽을 때와 같은 해석으로 편다.
+ARM_MEMORY_MODEL_SCOPE = Settings._split_memory_model_scope(dict(COMMON_ENV)["MEMORY_MODEL_SCOPE"])
 
 
 def work_database_url(*, writes: bool) -> str:
@@ -134,8 +139,9 @@ async def generation_set(db: AsyncSession, model: ChatModelId, *, lane: Lane) ->
 
 @contextlib.contextmanager
 def arm_settings(arm: str) -> Iterator[None]:
-    """갈래의 설정을 이 프로세스의 `settings` 에 잠시 씌운다. 그 설정 칸이 없는 코드면 거부한다."""
-    overrides = ARMS[arm]
+    """갈래의 설정과 측정 서버 env 표의 기억 사용 범위를 이 프로세스의 `settings` 에 잠시 씌운다. 그 설정 칸이 없는 코드면
+    거부한다."""
+    overrides = {**ARMS[arm], "memory_model_scope": ARM_MEMORY_MODEL_SCOPE}
     missing = [name for name in overrides if not hasattr(settings, name)]
     if missing:
         raise SystemExit(f"갈래 {arm} 의 설정 {missing} 가 이 코드에 없다(회상을 구현한 코드에서만 돈다)")
