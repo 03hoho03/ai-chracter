@@ -29,7 +29,7 @@ from api.content.router import _MEDIA_BOOK_S3_CONCURRENCY
 from api.core import rate_limit_gate
 from api.core.config import settings
 from api.core.redis import redis_client
-from api.core.s3 import build_thumbnail_key, build_variant_keys, download_object
+from api.core.s3 import build_frame_sheet_key, build_required_variant_keys, build_thumbnail_key, download_object
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -87,6 +87,16 @@ def _upload_test_thumbnail(storage_key: str, color: tuple[int, int, int] = (40, 
     Image.new("RGB", (8, 8), color=color).save(buffer, format="WEBP")
     s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
     s3.put_object(Bucket=settings.s3_bucket_name, Key=build_thumbnail_key(storage_key), Body=buffer.getvalue())
+    return buffer.getvalue()
+
+
+def _upload_test_frame_sheet(storage_key: str) -> bytes:
+    """원본 `storage_key` 옆 `_frames.webp` 자리에 프레임 모음을 올리고 그 바이트를 돌려준다. 축소본과 색이 달라 어느
+    쪽이 심사에 실렸는지 가린다."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (16, 8), color=(250, 120, 0)).save(buffer, format="WEBP")
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=build_frame_sheet_key(storage_key), Body=buffer.getvalue())
     return buffer.getvalue()
 
 
@@ -713,6 +723,30 @@ async def test_publish_screens_situational_original_when_its_thumbnail_is_missin
     assert resp.status_code == 200
     assert fake.received_images is not None
     assert fake.received_images[1] == (_object_bytes(asset.storage_key), "image/png")
+
+
+async def test_publish_screens_the_frame_sheet_of_an_animated_situational_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """움직이는 상황 이미지는 축소본(첫 프레임) 대신 프레임 모음을 싣는다 — 첫 프레임만 보면 뒤 프레임에만 있는 장면이
+    심사를 지나간다. 자리는 축소본과 같아 이미지 목록 줄과 실린 그림의 짝이 그대로다."""
+    content, _, _, image = await _publishable_character(db_session, db_client)
+    asset = await db_session.get(Asset, image.image_asset_id)
+    assert asset is not None
+    asset.frame_count = 12
+    await db_session.commit()
+    sheet = _upload_test_frame_sheet(asset.storage_key)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_images is not None
+    assert fake.received_images[1] == (sheet, "image/webp")
 
 
 async def test_publish_does_not_fall_back_when_situational_thumbnail_read_fails_otherwise(
@@ -1792,7 +1826,7 @@ async def test_publish_story_creates_blur_only_for_cells_without_blur(
         20,
         30,
     )
-    assert _bucket_keys() - keys_before == {blurred.storage_key, *build_variant_keys(blurred.storage_key)}
+    assert _bucket_keys() - keys_before == {blurred.storage_key, *build_required_variant_keys(blurred.storage_key)}
     copied_blur_id = await db_session.scalar(
         sa.select(MediaBookCell.blurred_asset_id).where(
             MediaBookCell.entity_id == fresh.entity_id, MediaBookCell.content_version_id != version.id
@@ -1977,7 +2011,7 @@ async def test_publish_story_blurs_cells_concurrently_within_s3_connection_limit
             size,
         )
         assert Image.open(io.BytesIO(_object_bytes(blurred.storage_key))).size == size
-        blurred_keys |= {blurred.storage_key, *build_variant_keys(blurred.storage_key)}
+        blurred_keys |= {blurred.storage_key, *build_required_variant_keys(blurred.storage_key)}
     assert _bucket_keys() - keys_before == blurred_keys
     assert len(blurred_keys) == 3 * len(sized_cells)
 
@@ -2098,6 +2132,34 @@ async def test_publish_story_sends_media_cell_thumbnails_to_filter(
     assert fake.received_images == [
         (_object_bytes(thumbnail.storage_key), "image/png"),
         *[(thumb, "image/webp") for _, thumb in cells],
+    ]
+
+
+async def test_publish_story_sends_the_frame_sheet_of_an_animated_media_cell_to_filter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """움직이는 칸은 축소본 대신 프레임 모음을 싣고, 나머지 칸은 그대로 축소본이다. 자리(축 순서)는 바뀌지 않는다."""
+    content, _, thumbnail, cells = await _story_with_media_cells(db_session, db_client)
+    animated_cell = cells[1][0]
+    asset = await db_session.get(Asset, animated_cell.image_asset_id)
+    assert asset is not None
+    asset.frame_count = 2
+    await db_session.commit()
+    sheet = _upload_test_frame_sheet(asset.storage_key)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_images == [
+        (_object_bytes(thumbnail.storage_key), "image/png"),
+        (cells[0][1], "image/webp"),
+        (sheet, "image/webp"),
+        (cells[2][1], "image/webp"),
     ]
 
 

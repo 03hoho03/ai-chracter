@@ -29,7 +29,7 @@ import {
   type SortableHandleProps,
   FieldGuideLink,
 } from "@/features/build-common";
-import { uploadAsset } from "@/shared/api/asset/uploadAsset";
+import { MAX_UPLOAD_BYTES_BY_PURPOSE, uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { MAX_SOURCE_BYTES } from "@/shared/lib/asset/resizeImage";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { firstLine } from "@/shared/lib/text/firstLine";
@@ -42,6 +42,8 @@ import { situationalImageThumbUrl, type SavedSituationalImage } from "../model/s
 
 const SITUATIONAL_IMAGE_LIST: CharacterCollapsibleList = "situationalImage";
 const MAX_FILE_MEGABYTES = MAX_SOURCE_BYTES / (1024 * 1024);
+// GIF는 리사이즈 없이 원본 그대로 올라가 업로드 상한이 곧 원본 상한이다.
+const MAX_GIF_MEGABYTES = MAX_UPLOAD_BYTES_BY_PURPOSE["situational-image"] / (1024 * 1024);
 const DESCRIPTION_SNIPPET_LENGTH = 20;
 
 type AdvancedTabProps = {
@@ -420,7 +422,7 @@ function SituationalImageRow({
             <input
               id={inputId}
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept="image/png,image/jpeg,image/webp,image/gif"
               className="sr-only"
               aria-disabled={isUploadBlocked}
               aria-describedby={isMissingDescription ? `${uploadBlockedId} ${uploadHelpId}` : uploadHelpId}
@@ -440,7 +442,7 @@ function SituationalImageRow({
             </p>
           )}
           <p id={uploadHelpId} className="text-xs break-keep text-muted-foreground">
-            PNG·JPG·WebP, 한 장에 {MAX_FILE_MEGABYTES}MB까지예요.
+            PNG·JPG·WebP는 한 장에 {MAX_FILE_MEGABYTES}MB, 움직이는 GIF는 {MAX_GIF_MEGABYTES}MB까지예요.
           </p>
         </div>
       </div>

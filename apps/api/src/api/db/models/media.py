@@ -59,6 +59,10 @@ class Asset(Base):
     # 못해 크기를 모르는 자산이다 — 그런 자산은 화면이 고정 비율 칸에 맞춰 그린다.
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 원본의 프레임 수. 1 은 정지 그림, 2 이상은 움직이는 그림이고 그 원본 곁에 프레임 모음 변형이 있다 — 발행 심사가
+    # 이 값으로 첫 프레임 썸네일 대신 프레임 모음을 싣는다. NULL 은 이 컬럼이 생기기 전에 만들어진 자산으로, 그때는
+    # 화면이 모든 그림을 정지 WebP 로 바꿔 올렸으므로 정지 그림으로 다룬다.
+    frame_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ImageGenerationRequest(Base):

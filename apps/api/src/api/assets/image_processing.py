@@ -7,6 +7,7 @@
 
 import asyncio
 import io
+import math
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Literal, ParamSpec, TypeVar
@@ -14,7 +15,7 @@ from typing import TYPE_CHECKING, Literal, ParamSpec, TypeVar
 from starlette.concurrency import run_in_threadpool
 
 from api.core.config import settings
-from api.core.s3 import build_display_key, build_thumbnail_key
+from api.core.s3 import build_display_key, build_frame_sheet_key, build_thumbnail_key
 
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
@@ -45,6 +46,18 @@ DISPLAY_WEBP_QUALITY = THUMBNAIL_WEBP_QUALITY
 # ⚠️ 호출 시점에 모듈 전역으로 읽는다(테스트가 `monkeypatch.setattr` 로 낮춘다).
 MAX_DECODE_PIXELS = 9_000_000
 
+# 움직이는 그림의 프레임 수 × 프레임 픽셀 상한. 프레임 모음은 고른 프레임까지 앞 프레임을 차례로 풀어야 닿으므로 일은
+# 이 총량에 비례한다(메모리는 한 프레임과 모음 한 장만 든다). 업로드 상한 5MB 안의 현실적인 움짤(600×800, 60프레임
+# = 약 2,900만)의 세 배쯤이다. 5MB 로도 단색 프레임은 수천 장을 담을 수 있어 바이트 상한만으로는 못 막는다.
+# ⚠️ 호출 시점에 모듈 전역으로 읽는다(테스트가 `monkeypatch.setattr` 로 낮춘다).
+MAX_ANIMATED_DECODE_PIXELS = 100_000_000
+
+# 프레임 모음: 처음과 마지막을 포함해 고르게 뽑는 프레임 수와 모음 한 장의 긴 변. 9장 3×3 이면 1024 에서 칸 하나가
+# 약 340px 다. 심사는 움직이는 그림 하나에 이 한 장을 싣는다 — 이미지 목록 줄과 실린 그림이 하나씩 짝을 이룬다.
+FRAME_SHEET_SLOTS = 9
+FRAME_SHEET_MAX_EDGE = 1024
+FRAME_SHEET_WEBP_QUALITY = THUMBNAIL_WEBP_QUALITY
+
 # 디코드·블러·변형 생성을 한 번에 몇 건까지 돌릴지(프로세스 전역). 픽셀 상한은 한 장의 메모리만 묶고, 동시 요청
 # 수(스레드풀 40, 미디어 북 블러 8)가 곱해지는 것은 못 막는다. 값은 env `IMAGE_DECODE_CONCURRENCY` 로 정한다 — 워커를
 # 늘리면 워커 수만큼 곱해지므로 VM 메모리에 맞춰 줄인다. import 시점에 한 번 읽는다(세마포어를 그때 만든다).
@@ -59,11 +72,12 @@ class ImageTooLargeError(ValueError):
     """디코드하기 전에 픽셀 수가 `MAX_DECODE_PIXELS` 를 넘었다. `ValueError` 하위라 "그림으로 풀지 못했다"를 잡는
     기존 `except (OSError, ValueError)` 들이 그대로 받는다 — 업로드 완료처럼 원인을 따로 알리려는 곳만 먼저 잡는다.
     `actual_pixels` 는 Pillow 가 크기를 알려 주기 전에 스스로 거부했을 때(약 1.8억 픽셀 초과) `None` 이다.
-    `max_pixels` 는 검사에 실제로 쓴 상한이다 — 호출자가 상수를 따로 import 해 알리면 검사와 어긋날 수 있다."""
+    `max_pixels` 는 검사에 실제로 쓴 상한이다 — 호출자가 상수를 따로 import 해 알리면 검사와 어긋날 수 있다. 움직이는
+    그림의 총량 검사는 그 상한(`MAX_ANIMATED_DECODE_PIXELS`)을 넘긴다."""
 
-    def __init__(self, actual_pixels: int | None) -> None:
+    def __init__(self, actual_pixels: int | None, max_pixels: int | None = None) -> None:
         self.actual_pixels = actual_pixels
-        self.max_pixels = MAX_DECODE_PIXELS
+        self.max_pixels = MAX_DECODE_PIXELS if max_pixels is None else max_pixels
         super().__init__(f"image has {actual_pixels} pixels, limit is {self.max_pixels}")
 
 
@@ -130,6 +144,15 @@ def read_image_content_type(image_bytes: bytes) -> str | None:
         return image.get_format_mimetype()
 
 
+def read_frame_count(image_bytes: bytes) -> int:
+    """움직이는 그림의 프레임 수. 정지 그림은 1 이다. 픽셀은 풀지 않고 프레임 데이터를 건너뛰며 센다 — 100프레임 GIF
+    에서 전체 디코드의 약 1/10 이 든다(로컬 측정 0.13초 대 1.24초)."""
+    from PIL import Image
+
+    with Image.open(io.BytesIO(image_bytes)) as image:
+        return int(getattr(image, "n_frames", 1))
+
+
 def generate_thumbnail(image_bytes: bytes) -> bytes:
     """CPU-bound (Pillow) — run via `run_image_work`.
 
@@ -147,13 +170,50 @@ def generate_display_image(image_bytes: bytes) -> bytes:
 def generate_variants(storage_key: str, image_bytes: bytes) -> list[tuple[str, bytes]]:
     """CPU-bound (Pillow) — run via `run_image_work`.
 
-    READY 이미지 자산이 원본 곁에 늘 가져야 하는 변형 전부를 `(저장 키, WebP 바이트)` 로 만든다. 응답이 변형 키를
-    존재 확인 없이 유도하므로, 자산을 만드는 경로는 이 목록을 전부 올린 뒤에만 READY 로 둔다. 키 순서는
-    `build_variant_keys`(지우는 쪽) 와 같다."""
-    return [
+    원본 곁에 둘 변형 전부를 `(저장 키, WebP 바이트)` 로 만든다. 썸네일·표시용은 늘(움직이는 그림이면 첫 프레임),
+    프레임 모음은 움직이는 그림에만 만든다. 응답이 썸네일·표시용 키를 존재 확인 없이 유도하므로, 자산을 만드는 경로는
+    이 목록을 전부 올린 뒤에만 READY 로 둔다. 키 순서는 `build_variant_keys`(지우는 쪽) 와 같다."""
+    variants = [
         (build_thumbnail_key(storage_key), generate_thumbnail(image_bytes)),
         (build_display_key(storage_key), generate_display_image(image_bytes)),
     ]
+    frame_sheet = _generate_frame_sheet(image_bytes)
+    if frame_sheet is not None:
+        variants.append((build_frame_sheet_key(storage_key), frame_sheet))
+    return variants
+
+
+def _generate_frame_sheet(image_bytes: bytes) -> bytes | None:
+    """움직이는 그림에서 처음과 마지막을 포함해 프레임을 고르게 `FRAME_SHEET_SLOTS` 장 뽑아 격자 한 장에 붙인다.
+    정지 그림이면 `None`. 격자는 정사각에 가깝게 열을 먼저 채우고(3장 2×2, 9장 3×3), 비는 칸은 투명이다. 칸은 프레임
+    비율 그대로 줄이고 늘리지 않는다."""
+    from PIL import Image
+
+    with _open_for_decode(image_bytes) as original:
+        frame_count = int(getattr(original, "n_frames", 1))
+        if frame_count <= 1:
+            return None
+        width, height = original.size
+        if frame_count * width * height > MAX_ANIMATED_DECODE_PIXELS:
+            raise ImageTooLargeError(frame_count * width * height, max_pixels=MAX_ANIMATED_DECODE_PIXELS)
+
+        slots = min(FRAME_SHEET_SLOTS, frame_count)
+        indices = [round(slot * (frame_count - 1) / (slots - 1)) for slot in range(slots)]
+        columns = math.ceil(math.sqrt(slots))
+        rows = math.ceil(slots / columns)
+        scale = min(1.0, FRAME_SHEET_MAX_EDGE / (columns * width), FRAME_SHEET_MAX_EDGE / (rows * height))
+        tile_width, tile_height = max(1, round(width * scale)), max(1, round(height * scale))
+
+        sheet = Image.new("RGBA", (columns * tile_width, rows * tile_height), (0, 0, 0, 0))
+        for slot, index in enumerate(indices):
+            original.seek(index)
+            frame = original.convert("RGBA").resize((tile_width, tile_height))
+            row, column = divmod(slot, columns)
+            sheet.paste(frame, (column * tile_width, row * tile_height))
+
+    output = io.BytesIO()
+    sheet.save(output, format="WEBP", quality=FRAME_SHEET_WEBP_QUALITY)
+    return output.getvalue()
 
 
 def _shrink_to_webp(image_bytes: bytes, max_edge: int, quality: int) -> bytes:

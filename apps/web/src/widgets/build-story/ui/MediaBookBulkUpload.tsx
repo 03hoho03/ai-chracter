@@ -17,7 +17,7 @@ import {
   type MediaBookCellImage,
 } from "@/features/build-story";
 import { MediaBookOverwriteModal } from "@/features/edit-media-book";
-import { uploadAsset } from "@/shared/api/asset/uploadAsset";
+import { MAX_UPLOAD_BYTES_BY_PURPOSE, uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { MAX_SOURCE_BYTES } from "@/shared/lib/asset/resizeImage";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
@@ -38,6 +38,8 @@ const UPLOAD_CONCURRENCY = 3;
 // 도움말에 적는 한 장 상한. 사용자가 고른 원본 파일에 걸리는 검사(리사이즈 전 크기 검사)와 같은 상수에서 계산해
 // 도움말 숫자와 그 검사가 갈리지 않게 한다. 업로드 상한(리사이즈 결과물에 건다)은 사용자가 고른 파일 크기와 무관하다.
 const MAX_FILE_MEGABYTES = MAX_SOURCE_BYTES / (1024 * 1024);
+// GIF는 리사이즈 없이 원본 그대로 올라가 업로드 상한이 곧 원본 상한이다.
+const MAX_GIF_MEGABYTES = MAX_UPLOAD_BYTES_BY_PURPOSE["situational-image"] / (1024 * 1024);
 
 // 다 올린 뒤 버튼에 마지막 진행(`n/n`)을 남겨 두는 시간. 결과와 같은 순간에 원래 문구로 돌아가면 마지막 장이 끝났다는
 // 표시가 한 번도 그려지지 않는다. 결과는 기다리지 않고 바로 보인다.
@@ -177,7 +179,8 @@ export function MediaBookBulkUpload() {
         {result !== undefined && <UploadResultNotice result={result} onDismiss={() => setResult(undefined)} />}
         <p id={helpId} hidden={result !== undefined} className="text-xs break-keep text-muted-foreground">
           ‘<span className="text-foreground">유나_리딩.png</span>’처럼 이름의 첫 _ 앞을 인물, 뒤를 장면으로 읽어 그 칸에
-          넣어요. 없는 인물·장면은 새로 만들어요. PNG·JPG·WebP, 한 장에 {MAX_FILE_MEGABYTES}MB까지예요.
+          넣어요. 없는 인물·장면은 새로 만들어요. PNG·JPG·WebP는 한 장에 {MAX_FILE_MEGABYTES}MB, 움직이는
+          GIF는 {MAX_GIF_MEGABYTES}MB까지예요.
         </p>
       </div>
 

@@ -15,6 +15,7 @@ from api.assets.image_processing import (
     THUMBNAIL_CONTENT_TYPE,
     ImageTooLargeError,
     generate_variants,
+    read_frame_count,
     read_image_content_type,
     read_image_size,
     run_image_work,
@@ -240,10 +241,12 @@ async def _complete_locked_upload(db: AsyncSession, asset_id: uuid.UUID, storage
     try:
         variants = await run_image_work(generate_variants, storage_key, original_bytes)
         width, height = await run_in_threadpool(read_image_size, original_bytes)
+        frame_count = await run_in_threadpool(read_frame_count, original_bytes)
         detected_content_type = await run_in_threadpool(read_image_content_type, original_bytes)
     except ImageTooLargeError as exc:
         # `ValueError` 하위라 아래보다 먼저 잡아야 원인이 "풀 수 없는 그림"으로 가려지지 않는다. 바이트 상한과 같은
-        # 모양으로 알린다. 정상 화면은 업로드 전에 줄여 올리므로 여기 닿는 것은 화면을 거치지 않은 요청이다.
+        # 모양으로 알린다. 화면은 대개 업로드 전에 줄여 올리지만, GIF 는 원본 그대로 올려 프레임 수 × 크기 상한에
+        # 여기서 걸릴 수 있다 — 화면은 `maxPixels` 로 이 거절을 알아보고 따로 안내한다.
         await _discard_upload(db, asset_id, upload_key)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -276,7 +279,7 @@ async def _complete_locked_upload(db: AsyncSession, asset_id: uuid.UUID, storage
     marked = await db.scalar(
         update(Asset)
         .where(Asset.id == asset_id, Asset.status == AssetStatus.PENDING)
-        .values(status=AssetStatus.READY, width=width, height=height)
+        .values(status=AssetStatus.READY, width=width, height=height, frame_count=frame_count)
         .returning(Asset.id)
     )
     await db.commit()
