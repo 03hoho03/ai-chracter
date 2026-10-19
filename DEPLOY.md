@@ -311,7 +311,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같고, 어드민이 준 계정별 허용 행도 있어야 한다. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
 | `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
 | `NOVEL_PUBLIC_PREVIEW_ALLOWLIST` | 미리보기 동안 계정 id, **쉼표 구분**(공백·따옴표 없이). 전체 공개 뒤에는 줄을 지운다(코드 기본값은 빈 명단) | 노벨 미리보기 명단. 비어 있으면 스위치가 켜졌을 때 모두에게 열리고, 비어 있지 않으면 스위치가 켜져 있어도 명단의 로그인 회원에게만 열린다 — 그 밖의 회원·비로그인은 스위치를 끈 것과 같은 응답이고, 인증 없는 가격 응답의 `novelPublicEnabled` 도 거짓이다. UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 절차는 "노벨(공개 소설) 켜기 · 끄기" 절 |
-| `NOVEL_PUBLIC_POLICY_V2_ENABLED` | 개정 약관 시행 뒤 켤 때 `true`(코드 기본값은 `false`) | 노벨 공개 정책 스위치. 꺼져 있으면 지금 약관대로다 — 첫 공개는 자동 글 심사를 통과하면 바로 열리고, 원작자가 소설화 허락을 거두면 다음 화가 막힌다. 켜면 아직 독자에게 보인 적 없는 소설의 첫 공개가 운영자 승인(어드민 `POST /admin/novels/{id}/review`)을 기다리고, 한 번 독자에게 보인 소설(연재권 잠금)은 원작자가 허락을 거둬도 다음 화를 이어 공개한다. 산 사람 보호도 켜진다 — 산 때의 판을 고를 수 있고, 거둠·게시자 정지·판매된 소설 삭제 뒤에도 소장자는 계속 읽으며, 노벨 이용제한·원작 이용제한·원작 삭제·게시자 탈퇴는 구매를 환급한다. 판매된 소설 삭제는 숨김, 판매된 화가 든 마지막 묶음 삭제는 409 다. 잠금 기록(첫 공개마다)과 판 행(공개마다)은 스위치와 무관하게 쌓인다. 켜는 순서·롤백은 "노벨(공개 소설) 켜기 · 끄기" 절의 "공개 정책 스위치" |
+| `NOVEL_PUBLIC_POLICY_V2_ENABLED` | 개정 약관 시행 뒤 켤 때 `true`(코드 기본값은 `false`) | 노벨 공개 정책 스위치. 꺼져 있으면 지금 약관대로다 — 첫 공개는 자동 글 심사를 통과하면 바로 열리고, 원작자가 소설화 허락을 거두면 다음 화가 막힌다. 켜면 아직 독자에게 보인 적 없는 소설의 첫 공개가 운영자 승인(어드민 `POST /admin/novels/{id}/review`)을 기다리고, 한 번 독자에게 보인 소설(연재권 잠금)은 원작자가 허락을 거둬도 다음 화를 이어 공개한다. 산 사람 보호도 켜진다 — 산 때의 판을 고를 수 있고, 거둠·게시자 정지·판매된 소설 삭제 뒤에도 소장자는 계속 읽으며, 노벨 이용제한·원작 이용제한·원작 삭제·게시자 탈퇴는 구매를 환급한다. 판매된 소설 삭제는 숨김, 판매된 화가 든 마지막 묶음 삭제는 409 다. 6화부터 화마다 무료·유료를 골라 공개하고 유료 화를 무료로 바꿀 수 있다(꺼져 있으면 6화부터 유료로 저장하고 무료로 전환은 409). 잠금 기록(첫 공개마다)과 판 행(공개마다), 화마다의 가격 칸은 스위치와 무관하게 쌓인다. 켜는 순서·롤백은 "노벨(공개 소설) 켜기 · 끄기" 절의 "공개 정책 스위치" |
 
 > **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
 > 지우고 빈 항목은 버리며, 남는 오리진이 없으면 기동에 실패한다. 새로 쓸 때는 쉼표 구분으로 쓴다.
@@ -1994,15 +1994,19 @@ sudo bash ops/swap-api.sh
 3. 판 행 백필을 다시 돌린다. 문장은 마이그레이션 `d77bce2bba4c` 의 `BACKFILL_CHAPTER_EDITIONS_SQL` 하나다(멱등 — 이미 있는
    판 행은 바꾸지 않고 없는 판만 더한다). 배포 겹침 동안 옛 이미지가 다시 공개한 판은 판 행 없이 올라가는데, 그 판을 산
    사람은 켠 뒤 "산 때의 판" 대신 그 화의 가장 오래된 판을 받는다. 출력의 `INSERT 0 n` 이 채운 판 수다.
-4. 닫혔는데 환급되지 않은 구매를 센다(읽기 전용). 스위치가 꺼진 동안의 노벨 이용제한·원작 이용제한·원작 삭제는 환급하지
-   않는다 — 켠 뒤 그 소장자는 410 을 받는데, 환급할 쓰기가 다시 오지 않는다. 출력이 `0` 이면 5 로 간다. 0 이 아니면 같은
-   조건에서 `count(*)` 를 `p.novel_id, n.content_id` 로 바꿔 대상을 적어 두고 5 로 간 뒤, 켠 상태에서 그 노벨·원작을 어드민에서
+4. 앞 화 가격 백필을 다시 돌린다. 문장은 마이그레이션 `3b4b814583dc` 의 `BACKFILL_FREE_CHAPTER_PRICE_SQL` 하나다(멱등 — 이미
+   0 인 행은 건드리지 않는다). 배포 겹침 동안 가격 칸을 모르는 옛 이미지가 공개한 앞 화(1~5화)는 칸 기본값 30 을 받는다. 읽는
+   쪽은 앞 화를 칸과 무관하게 무료로 판정하므로 독자 화면은 이미 맞고, 이 단계는 칸 값을 화면과 같게 맞추는 정리다. 출력의
+   `UPDATE n` 이 고친 화 수다.
+5. 닫혔는데 환급되지 않은 구매를 센다(읽기 전용). 스위치가 꺼진 동안의 노벨 이용제한·원작 이용제한·원작 삭제는 환급하지
+   않는다 — 켠 뒤 그 소장자는 410 을 받는데, 환급할 쓰기가 다시 오지 않는다. 출력이 `0` 이면 6 으로 간다. 0 이 아니면 같은
+   조건에서 `count(*)` 를 `p.novel_id, n.content_id` 로 바꿔 대상을 적어 두고 6 으로 간 뒤, 켠 상태에서 그 노벨·원작을 어드민에서
    해제했다가 다시 제한해 환급한다(꺼진 동안의 해제·재제한은 환급하지 않는다). 다시 세어 0 인지 본다. 스위치가 꺼진 동안의
    게시자 탈퇴는 지금 약관대로 환급 없이 소설을 지웠으므로 이 수에 들지 않는다. 원작 상태는 DB 에 대문자 라벨(`NORMAL`·
    `RESTRICTED`·`DELETED`)로, 노벨 공개의 운영 상태는 소문자(`normal`·`restricted`)로 저장된다. 이 수에는 이용제한된
    노벨(`np.moderation_status = 'restricted'`)의 미환급 구매도 든다 — 켠 뒤 작가의 노벨 공개 칸은 이용제한된 노벨에 "쓴
    클로버는 돌려드렸어요"라고 말하므로, 그런 노벨이 하나라도 남으면 해제·재제한으로 환급할 때까지 그 문장이 거짓이다.
-5. 스위치 줄을 더하고 올린다.
+6. 스위치 줄을 더하고 올린다.
 
 ```sh
 cd /opt/ddona/app
@@ -2014,6 +2018,9 @@ $C exec -T api_$(sudo bash ops/active-color.sh) python -c \
   | $C exec -T postgres psql -U postgres -d ai_character_chat -v ON_ERROR_STOP=1
 $C exec -T api_$(sudo bash ops/active-color.sh) python -c \
   "import runpy; print(runpy.run_path('migrations/versions/d77bce2bba4c_novel_editions_and_buyer_protection.py')['BACKFILL_CHAPTER_EDITIONS_SQL'])" \
+  | $C exec -T postgres psql -U postgres -d ai_character_chat -v ON_ERROR_STOP=1
+$C exec -T api_$(sudo bash ops/active-color.sh) python -c \
+  "import runpy; print(runpy.run_path('migrations/versions/3b4b814583dc_novel_chapter_price.py')['BACKFILL_FREE_CHAPTER_PRICE_SQL'])" \
   | $C exec -T postgres psql -U postgres -d ai_character_chat -v ON_ERROR_STOP=1
 $C exec -T postgres psql -U postgres -d ai_character_chat -At -v ON_ERROR_STOP=1 <<'SQL'
 SELECT count(*) FROM novel_purchases p
