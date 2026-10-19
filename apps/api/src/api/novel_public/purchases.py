@@ -1,7 +1,8 @@
 """노벨 화 소장 구매와, 산 화를 더 읽을 수 없게 될 때의 자동 환급.
 
-**구매**는 화 하나를 클로버로 소장하는 것이다. 가격은 화마다 처음 공개 때 얼린 값(`NovelChapterPublication.price`)이고,
-소설마다 앞 화들(`NOVEL_FREE_CHAPTER_COUNT`)은 그 값과 무관하게 무료다(`chapter_price`). 무료 화와 게시자 본인의 열람은 살
+**구매**는 화 하나를 클로버로 소장하는 것이다. 화마다 무료·유료는 화 공개본에 저장된 값(`NovelChapterPublication.price`,
+0 = 무료)이 정하고 유료 화의 가격은 늘 지금 화당 가격(`NOVEL_READ_COST`)이며, 소설마다 앞 화들(`NOVEL_FREE_CHAPTER_COUNT`)은
+그 값과 무관하게 무료다(`chapter_price`). 구매 행에는 그때 낸 값을 남기고 환급은 그 값을 돌려준다. 무료 화와 게시자 본인의 열람은 살
 것이 없다(원작자도 무료가 아니다 — 원작자는 이 소설을 쓴 사람이 아니다). 산 뒤 작가가 그 화를 무료로 바꿔도 환불하지 않는다. 환급되지 않은 구매가 있는 화는 다시 사지 않는다.
 다시 공개로 본문이 바뀌어도 같은 화이고, 거뒀다 다시 공개하면 소장이 그대로 살아난다(구매 행은 공개 상태를 따라 지워지지
 않는다). 환급된 구매는 소장이 아니다 — 그 화가 다시 열리면 다시 산다. 무료·보너스 클로버로도 산다 — 차감 순서는 다른 차감과
@@ -99,9 +100,13 @@ async def lock_users_in_order(db: AsyncSession, user_ids: Iterable[uuid.UUID]) -
 
 # ── 구매 ────────────────────────────────────────────────────────────────────
 def chapter_price(ordinal: int, stored_price: int) -> int:
-    """화의 지금 가격(0 = 무료). 앞 화들은 저장된 값과 무관하게 무료다 — 가격 칸을 모르는 옛 코드가 앞 화를 공개하면 칸의
-    기본값(유료)이 들어가기 때문이다. 무료 화 수는 호출 때 모듈 전역으로 읽는다(테스트가 바꿔 끼울 수 있게)."""
-    return 0 if ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT else stored_price
+    """화의 지금 가격(0 = 무료). 저장된 값은 무료(0)인지 유료(그 밖)인지만 뜻하고, 유료 화는 늘 지금 화당 가격이다 — 화당
+    가격 상수를 바꾸면 이미 공개한 유료 화도 그 값으로 팔린다(이미 산 구매 행은 낸 값 그대로다). 앞 화들은 저장된 값과
+    무관하게 무료다 — 가격 칸을 모르는 옛 코드가 앞 화를 공개하면 칸의 기본값(유료)이 들어가기 때문이다. 두 상수는 호출 때
+    모듈 전역으로 읽는다(테스트가 바꿔 끼울 수 있게)."""
+    if ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT or stored_price == 0:
+        return 0
+    return clover.NOVEL_READ_COST
 
 
 @dataclass(frozen=True)

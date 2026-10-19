@@ -27,12 +27,12 @@ class NovelPublishRequest(CamelModel):
     한 화씩 부르면 앞 화까지는 공개된 채로 남고 이어짐도 요청마다 지켜진다.
 
     `free` 는 새로 공개하는 화의 가격 선택이다(정책 스위치가 켜졌을 때만 본다). 참이면 무료, 거짓이면 유료(화당 가격)이고,
-    비우면 앞 화(`NOVEL_FREE_CHAPTER_COUNT` 까지)는 무료·그 뒤는 유료다. 앞 화는 유료로 낼 수 없다(409
-    `NOVEL_CHAPTER_PRICE_LOCKED`). 이미 공개한 화를 다시 낼 때 비우면 지금 가격을 그대로 두고 — 이 칸을 모르는 옛 화면도 무료로
-    공개한 화를 고쳐 다시 낼 수 있게 — 무료로 공개한 화에 거짓을 보내면 409 `NOVEL_CHAPTER_PRICE_LOCKED`(무료로 공개한 화는
-    다시 유료가 되지 않는다), 유료 화에 참을 보내면 409 `NOVEL_CHAPTER_ALREADY_PRICED`(무료로 바꾸기는 따로 있는 "무료로
-    전환"만 한다 — 다시 공개 흐름을 타면 심사·판 올림이 따라온다). 스위치가 꺼져 있으면 이 칸을 보지 않고 새 화는 앞 화 무료·
-    그 뒤 유료로 저장한다(지금 약관의 규칙)."""
+    비우면 앞 화(`NOVEL_FREE_CHAPTER_COUNT` 까지)와 무료로 나간 적 있는 번호(상태 응답의 `free_locked_ordinals`)는 무료·그
+    밖은 유료다. 앞 화와 무료로 나간 적 있는 번호는 유료로 낼 수 없다(409 `NOVEL_CHAPTER_PRICE_LOCKED`). 이미 공개한 화를
+    다시 낼 때 비우면 지금 가격을 그대로 두고 — 이 칸을 모르는 옛 화면도 무료로 공개한 화를 고쳐 다시 낼 수 있게 — 무료로
+    공개한 화에 거짓을 보내면 409 `NOVEL_CHAPTER_PRICE_LOCKED`(무료로 공개한 화는 다시 유료가 되지 않는다), 유료 화에 참을
+    보내면 409 `NOVEL_CHAPTER_ALREADY_PRICED`(무료로 바꾸기는 따로 있는 "무료로 전환"만 한다 — 다시 공개 흐름을 타면 심사·판
+    올림이 따라온다). 스위치가 꺼져 있으면 이 칸을 보지 않고 새 화는 앞 화 무료·그 뒤 유료로 저장한다(지금 약관의 규칙)."""
 
     chapter_id: uuid.UUID | None = None
     free: bool | None = None
@@ -64,6 +64,9 @@ class NovelPublicationStatusResponse(CamelModel):
     - `published_chapter_count`: 1화부터 이어진 공개 화 수. `chapter_count` 는 소설의 화 수다.
     - `published_chapters`: 공개한 화마다 가격(번호 순). 화면이 무료로 공개한 화를 고정으로 그리고 유료 화에 "무료로 전환"을
       건다.
+    - `free_locked_ordinals`: 아직 공개하지 않은 번호 중 무료로만 공개할 수 있는 번호(오름차순) — 무료로 공개하거나 무료로
+      전환한 화를 지우고 다시 만든 번호다. 화면이 그 번호의 가격 선택을 "무료 고정"으로 그린다. 정책 스위치가 꺼져 있으면
+      비어 있다.
     - `changed_chapter_ordinals`·`metadata_changed`: 공개한 뒤 고쳐서 공개본과 다른 화·소설 제목·소개. 다시 공개해야
       반영된다.
     - `new_publish_block`: 새로 공개(처음 공개·다음 화)할 수 없는 이유. 없으면 비어 있다.
@@ -81,6 +84,7 @@ class NovelPublicationStatusResponse(CamelModel):
     moderation_status: NovelPublicationModerationStatus | None
     published_chapter_count: int
     published_chapters: list[NovelPublishedChapter]
+    free_locked_ordinals: list[int]
     chapter_count: int
     changed_chapter_ordinals: list[int]
     metadata_changed: bool
@@ -202,8 +206,8 @@ class PublicNovelDetailResponse(CamelModel):
     """노벨 작품 정보. 제목·소개·화 제목은 공개본 사본이다.
 
     - `is_publisher`: 보는 사람이 게시자 본인인가(모든 화를 무료로 읽고, 화면이 "내 소설에서 관리"를 보인다).
-    - `free_chapter_count`·`chapter_price`: 앞 무료 화 수와 새로 공개하는 유료 화의 화당 가격(지금 설정값). 6화 이후에도
-      작가가 무료로 둔 화가 있을 수 있고 이미 공개한 화의 가격은 공개 때 값이므로, 화마다의 값은 목차의 `price` 다.
+    - `free_chapter_count`·`chapter_price`: 앞 무료 화 수와 유료 화의 화당 가격(지금 설정값 — 이미 공개한 유료 화도 이
+      값이다). 6화 이후에도 작가가 무료로 둔 화가 있을 수 있으므로 화마다의 값은 목차의 `price` 다.
     - `liked`: 보는 사람이 좋아요했는가.
     - `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지, 원작자 정지로 인한 원작 일괄
       제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다."""
