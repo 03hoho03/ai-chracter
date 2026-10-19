@@ -15,6 +15,7 @@ from memory_eval import checkpoint, holdout, ledger as ledger_mod, plants as pla
 from memory_eval.arm_env import BUNDLE1_ARMS
 from memory_eval.ledger import Ledger
 from memory_eval.cli_common import (
+    DEFAULT_SEED_JSON,
     _db_url,
     _hybrid_args,
     _hybrid_params,
@@ -41,8 +42,6 @@ if TYPE_CHECKING:
     from api.llm.client import LLMClient
 
     from memory_eval.fact_catchup import FactCatchUp
-
-DEFAULT_SEED_JSON = Path(__file__).resolve().parents[1] / "seed_content/data/tutorial/stories/tutorial-filmclub.json"
 
 
 def _embedding_catch_up(args: argparse.Namespace) -> Any:
@@ -585,6 +584,10 @@ def cmd_trajectory_replay(args: argparse.Namespace) -> int:
             }
         if b_series:
             summary["selfRender"] = tr.self_render_checks(flat)
+        replay_checks = getattr(args, "replay_checks", None)
+        if replay_checks is not None and len(arms) == 2:
+            # 다른 묶음이 덧붙인 앞 두 캐시 블록·길이 판정 요약 — 두 갈래를 견줄 때만.
+            summary["checks"] = replay_checks(args, flat, (arms[0], arms[1]))
         return summary
 
     with recall_settings(_hybrid_params(args)):
@@ -701,6 +704,10 @@ def cmd_probe(args: argparse.Namespace) -> int:
     for item_id in sorted(items or ()):
         plant_set.item(item_id)  # 숨긴 시험 문항이면 거부, 없는 문항이면 KeyError
     planned = [p for cp in cps for p in plants_mod.opus_probes(plant_set, cp)]
+    plan_filter = getattr(args, "plan_filter", None)
+    if plan_filter is not None:
+        # 다른 묶음이 덧붙인 문항 거르기(판정 종류) — 거른 문항이 이번 실행의 계획이고, 멈춤 기준도 그 계획으로 센다.
+        planned = [p for p in planned if plan_filter(args, plant_set.item(p.item_id))]
     # 불능 멈춤의 기준은 이번 실행이 사전 등록 문항으로 계획한 프로브 전체(일부 문항만 다시 돌려도 같다). 앞 측정의 문항 수가
     # 기본값으로 남으면 문항 수가 다른 측정에서 멈춤 선이 조용히 어긋나므로, 명시한 기준이 계획과 다르면 거부한다.
     halt_base = len(planned)

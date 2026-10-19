@@ -7,7 +7,7 @@
 명세 같은 측정 데이터는 공개 저장소에 두지 않으므로 기본 경로가 없고, 데이터를 읽는 명령은 `--data-dir` 를 요구한다.
 
 DB 를 쓰는 명령은 실행 명령의 `DATABASE_URL` 로 작업 DB(이름 `lm_eval_` 로 시작)를 준다 — `.env` 의 값보다 명령의 값이 이긴다.
-유료 호출이 날 수 있는 명령(insert·probe·prototype-facts·embed-run)은 `--dry-run` 이 기본 동작이고, 실제 호출은 `--allow-paid`
+유료 호출이 날 수 있는 명령(insert·probe·prototype-facts·embed-run, 판정 묶음의 judge·prototype-extract·judge-agreement 등)은 `--dry-run` 이 기본 동작이고, 실제 호출은 `--allow-paid`
 를 명시해야 한다(원장 상한을 본 뒤). 가짜 LLM(`--fake-llm`)은 절차 확인용이다.
 
 하위 명령은 묶음 모듈마다 등록한다(`COMMAND_GROUPS`). 묶음은 공용 모듈(`memory_eval.cli_common`)만 함께 쓰고 서로 import 하지
@@ -27,13 +27,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from memory_eval import cli_infra
+from memory_eval import cli_infra, cli_judge
 from memory_eval.cli_common import add_global_args
 from memory_eval.ledger import EXIT_BUDGET, BudgetExceededError
 
 Register = Callable[["argparse._SubParsersAction[argparse.ArgumentParser]"], None]
-# 하위 명령 묶음의 등록 함수. 판정·집계 묶음은 같은 꼴의 `register` 를 가진 모듈을 여기 더한다.
-COMMAND_GROUPS: tuple[Register, ...] = (cli_infra.register,)
+# 하위 명령 묶음의 등록 함수. 판정·집계 묶음은 인프라 묶음의 두 명령에 인자를 덧붙이므로 인프라 뒤에 둔다.
+COMMAND_GROUPS: tuple[Register, ...] = (cli_infra.register, cli_judge.register)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,6 +76,10 @@ def _run(args: argparse.Namespace) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    check_args = getattr(args, "check_args", None)
+    if check_args is not None:
+        # 인자 사이의 모순은 인자 오류(종료 코드 2, 사용법 출력)로 멈춘다 — 명령 본문의 문자열 종료와 달리 부른 쪽에 예외로 닿는다.
+        check_args(parser, args)
     status_dir: Path | None = args.status_dir
     if status_dir is None:
         return _run(args)

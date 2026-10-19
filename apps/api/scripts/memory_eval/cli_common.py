@@ -13,6 +13,9 @@ from memory_eval import holdout, plants as plants_mod
 from memory_eval.ledger import Ledger
 from memory_eval.seal import PREREGISTRATION_FILE, require_seal
 
+# 카운트다운·대본 검사가 읽는 튜토리얼 작품 글 — 저장소의 시드라 측정 데이터가 아니다.
+DEFAULT_SEED_JSON = Path(__file__).resolve().parents[1] / "seed_content/data/tutorial/stories/tutorial-filmclub.json"
+
 
 def add_global_args(ap: argparse.ArgumentParser) -> None:
     """하위 명령 앞에 주는 전역 인자."""
