@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, StringConstraints, field_validator
 
 from api.core.schema import CamelModel
 from api.db.models.moderation import ReportReasonCategory, ReportStatus
@@ -13,6 +13,7 @@ from api.db.models.novel import (
     NovelPublicationVisibility,
     NovelScreeningOutcome,
     NovelScreeningPart,
+    NOVEL_CHANGE_SUMMARY_MAX_LENGTH,
 )
 from api.novel_public.access import NewPublishBlock, RepublishBlock
 from api.novelize.schemas import CHAPTER_BODY_MAX_LENGTH
@@ -32,10 +33,27 @@ class NovelPublishRequest(CamelModel):
     다시 낼 때 비우면 지금 가격을 그대로 두고 — 이 칸을 모르는 옛 화면도 무료로 공개한 화를 고쳐 다시 낼 수 있게 — 무료로
     공개한 화에 거짓을 보내면 409 `NOVEL_CHAPTER_PRICE_LOCKED`(무료로 공개한 화는 다시 유료가 되지 않는다), 유료 화에 참을
     보내면 409 `NOVEL_CHAPTER_ALREADY_PRICED`(무료로 바꾸기는 따로 있는 "무료로 전환"만 한다 — 다시 공개 흐름을 타면 심사·판
-    올림이 따라온다). 스위치가 꺼져 있으면 이 칸을 보지 않고 새 화는 앞 화 무료·그 뒤 유료로 저장한다(지금 약관의 규칙)."""
+    올림이 따라온다). 스위치가 꺼져 있으면 이 칸을 보지 않고 새 화는 앞 화 무료·그 뒤 유료로 저장한다(지금 약관의 규칙).
+
+    `change_summary` 는 이미 공개한 화를 고쳐 다시 낼 때 작가가 쓰는 짧은 변경 요약이다(앞뒤 공백을 덜고 1~100자, 빈 글·
+    공백만이면 보내지 않은 것과 같다 — 입력 칸을 비운 채 보내는 화면이 요약이 필요 없는 요청에서 422 를 받지 않게). 정책
+    스위치가 켜져 있으면 그런 요청에 꼭 있어야 하고(없으면 422 `NOVEL_CHANGE_SUMMARY_REQUIRED`), 공개 화면 글이라 고친 화의
+    글과 함께 심사한 뒤 새 판에 남는다 — 산 사람의 판 고르기가 공개 시각과 함께 보인다. 새 화(첫 판)·소설 제목·소개만 다시
+    내는 요청·스위치가 꺼진 동안에는 보지 않는다."""
 
     chapter_id: uuid.UUID | None = None
     free: bool | None = None
+    change_summary: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=NOVEL_CHANGE_SUMMARY_MAX_LENGTH)]
+        | None
+    ) = None
+
+    @field_validator("change_summary", mode="before")
+    @classmethod
+    def _blank_summary_is_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
 class NovelPublicationScreening(CamelModel):
@@ -250,11 +268,13 @@ class PublicNovelChapterLink(CamelModel):
     access: PublicNovelChapterAccess
 
 
-class PublicNovelPurchasedEdition(CamelModel):
-    """산 사람이 고를 수 있는 "산 때의 판" — 판 번호와 그 판을 공개한 시각."""
+class PublicNovelEdition(CamelModel):
+    """산 사람의 판 고르기에 보이는 판 하나 — 판 번호, 그 판을 공개한 시각, 작가가 그 판을 낼 때 쓴 변경 요약. 첫 판·정책
+    스위치가 꺼진 동안 낸 판·요약을 받기 전의 판은 요약이 비어 있다."""
 
     edition: int
     published_at: datetime
+    change_summary: str | None
 
 
 class PublicNovelChapterResponse(CamelModel):
@@ -265,7 +285,8 @@ class PublicNovelChapterResponse(CamelModel):
 
     `purchased_edition` 은 그 화를 산 사람에게만, 산 때의 판이 지금 판과 다를 때 싣는다(정책 스위치가 켜졌을 때). 판 이력이
     생기기 전의 판을 샀으면 남아 있는 가장 오래된 판으로 대신한다. 그 판 번호를 쿼리 `edition` 으로 보내면 그 판의 본문·
-    제목·작가의 말을 준다. `sales_stopped` 는 작품 정보의 같은 칸과 같다."""
+    제목·작가의 말을 준다. `latest_edition` 은 그때 함께 싣는 지금 판(최신 판)이다 — 판 고르기는 이 두 판만 보이고, 사이에
+    낸 판은 싣지 않는다. 둘 다 산 때의 판을 골라 읽는 중에도 실린다. `sales_stopped` 는 작품 정보의 같은 칸과 같다."""
 
     novel_id: uuid.UUID
     novel_title: str
@@ -280,7 +301,8 @@ class PublicNovelChapterResponse(CamelModel):
     previous_chapter: PublicNovelChapterLink | None
     next_chapter: PublicNovelChapterLink | None
     reading_position: PublicNovelReadingPosition | None
-    purchased_edition: PublicNovelPurchasedEdition | None = None
+    purchased_edition: PublicNovelEdition | None = None
+    latest_edition: PublicNovelEdition | None = None
     sales_stopped: bool = False
 
 

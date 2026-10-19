@@ -7968,7 +7968,7 @@ export interface components {
              */
             outcome: "passed" | "rejected";
             /** Flaggedparts */
-            flaggedParts: ("novel_title" | "synopsis" | "chapter_title" | "author_note" | "chapter_body")[];
+            flaggedParts: ("novel_title" | "synopsis" | "chapter_title" | "author_note" | "chapter_body" | "change_summary")[];
             /** Reason */
             reason: string | null;
             /** Model */
@@ -12010,7 +12010,7 @@ export interface components {
             /** Chapterordinal */
             chapterOrdinal: number | null;
             /** Flaggedparts */
-            flaggedParts: ("novel_title" | "synopsis" | "chapter_title" | "author_note" | "chapter_body")[];
+            flaggedParts: ("novel_title" | "synopsis" | "chapter_title" | "author_note" | "chapter_body" | "change_summary")[];
             /**
              * Createdat
              * Format: date-time
@@ -12103,12 +12103,20 @@ export interface components {
          *     공개한 화에 거짓을 보내면 409 `NOVEL_CHAPTER_PRICE_LOCKED`(무료로 공개한 화는 다시 유료가 되지 않는다), 유료 화에 참을
          *     보내면 409 `NOVEL_CHAPTER_ALREADY_PRICED`(무료로 바꾸기는 따로 있는 "무료로 전환"만 한다 — 다시 공개 흐름을 타면 심사·판
          *     올림이 따라온다). 스위치가 꺼져 있으면 이 칸을 보지 않고 새 화는 앞 화 무료·그 뒤 유료로 저장한다(지금 약관의 규칙).
+         *
+         *     `change_summary` 는 이미 공개한 화를 고쳐 다시 낼 때 작가가 쓰는 짧은 변경 요약이다(앞뒤 공백을 덜고 1~100자, 빈 글·
+         *     공백만이면 보내지 않은 것과 같다 — 입력 칸을 비운 채 보내는 화면이 요약이 필요 없는 요청에서 422 를 받지 않게). 정책
+         *     스위치가 켜져 있으면 그런 요청에 꼭 있어야 하고(없으면 422 `NOVEL_CHANGE_SUMMARY_REQUIRED`), 공개 화면 글이라 고친 화의
+         *     글과 함께 심사한 뒤 새 판에 남는다 — 산 사람의 판 고르기가 공개 시각과 함께 보인다. 새 화(첫 판)·소설 제목·소개만 다시
+         *     내는 요청·스위치가 꺼진 동안에는 보지 않는다.
          */
         NovelPublishRequest: {
             /** Chapterid */
             chapterId?: string | null;
             /** Free */
             free?: boolean | null;
+            /** Changesummary */
+            changeSummary?: string | null;
         };
         /**
          * NovelPublishedChapter
@@ -12611,7 +12619,8 @@ export interface components {
          *
          *     `purchased_edition` 은 그 화를 산 사람에게만, 산 때의 판이 지금 판과 다를 때 싣는다(정책 스위치가 켜졌을 때). 판 이력이
          *     생기기 전의 판을 샀으면 남아 있는 가장 오래된 판으로 대신한다. 그 판 번호를 쿼리 `edition` 으로 보내면 그 판의 본문·
-         *     제목·작가의 말을 준다. `sales_stopped` 는 작품 정보의 같은 칸과 같다.
+         *     제목·작가의 말을 준다. `latest_edition` 은 그때 함께 싣는 지금 판(최신 판)이다 — 판 고르기는 이 두 판만 보이고, 사이에
+         *     낸 판은 싣지 않는다. 둘 다 산 때의 판을 골라 읽는 중에도 실린다. `sales_stopped` 는 작품 정보의 같은 칸과 같다.
          */
         PublicNovelChapterResponse: {
             /**
@@ -12646,7 +12655,8 @@ export interface components {
             previousChapter: components["schemas"]["PublicNovelChapterLink"] | null;
             nextChapter: components["schemas"]["PublicNovelChapterLink"] | null;
             readingPosition: components["schemas"]["PublicNovelReadingPosition"] | null;
-            purchasedEdition?: components["schemas"]["PublicNovelPurchasedEdition"] | null;
+            purchasedEdition?: components["schemas"]["PublicNovelEdition"] | null;
+            latestEdition?: components["schemas"]["PublicNovelEdition"] | null;
             /**
              * Salesstopped
              * @default false
@@ -12766,6 +12776,22 @@ export interface components {
              * @default false
              */
             salesStopped: boolean;
+        };
+        /**
+         * PublicNovelEdition
+         * @description 산 사람의 판 고르기에 보이는 판 하나 — 판 번호, 그 판을 공개한 시각, 작가가 그 판을 낼 때 쓴 변경 요약. 첫 판·정책
+         *     스위치가 꺼진 동안 낸 판·요약을 받기 전의 판은 요약이 비어 있다.
+         */
+        PublicNovelEdition: {
+            /** Edition */
+            edition: number;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+            /** Changesummary */
+            changeSummary: string | null;
         };
         /**
          * PublicNovelHomeItem
@@ -12894,19 +12920,6 @@ export interface components {
             items: components["schemas"]["PublicNovelOwnedItem"][];
             /** Nextcursor */
             nextCursor: string | null;
-        };
-        /**
-         * PublicNovelPurchasedEdition
-         * @description 산 사람이 고를 수 있는 "산 때의 판" — 판 번호와 그 판을 공개한 시각.
-         */
-        PublicNovelPurchasedEdition: {
-            /** Edition */
-            edition: number;
-            /**
-             * Publishedat
-             * Format: date-time
-             */
-            publishedAt: string;
         };
         /**
          * PublicNovelReadingPosition

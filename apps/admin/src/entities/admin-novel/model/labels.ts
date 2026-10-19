@@ -73,6 +73,7 @@ export const NOVEL_FLAGGED_PART_LABELS: Record<NovelFlaggedPart, string> = {
   chapter_title: "화 제목",
   author_note: "작가의 말",
   chapter_body: "본문",
+  change_summary: "변경 요약",
 };
 
 export const NOVEL_COMMENT_DELETED_BY_LABELS: Record<NovelCommentDeletedBy, string> = {

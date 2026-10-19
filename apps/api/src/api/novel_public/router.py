@@ -50,7 +50,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import Text, delete, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -119,7 +119,10 @@ def _error(status_code: int, code: str, **extra: object) -> HTTPException:
 class _ChapterPlan:
     """공개하거나 다시 낼 화 하나와 그때 얼릴 값. `price` 는 새로 공개하는 화면 그때 저장할 값(0 = 무료, 유료면 지금 화당
     가격), 다시 내는 화면 지금 가격이다 — 다시 내기는 가격을 쓰지 않지만 재계획 비교에 들어가, 심사를 기다리는 사이 그 화가
-    무료로 바뀌면 쓰지 않고 409 `NOVEL_PUBLISH_CONFLICT` 다(다시 누르면 된다)."""
+    무료로 바뀌면 쓰지 않고 409 `NOVEL_PUBLISH_CONFLICT` 다(다시 누르면 된다).
+
+    `change_summary` 는 이 판의 판 행에 남길 작가의 변경 요약이다. 정책 스위치가 켜졌고 이미 공개한 화를 다시 낼 때만
+    있다(그때는 꼭 있다) — 새 화·스위치가 꺼진 동안에는 요청에 실려 와도 None 이다."""
 
     chapter_id: uuid.UUID
     ordinal: int
@@ -129,6 +132,7 @@ class _ChapterPlan:
     body: str
     is_new: bool
     price: int
+    change_summary: str | None
 
 
 @dataclass(frozen=True)
@@ -170,6 +174,8 @@ def _items(plan_metadata: tuple[str | None, str] | None, chapter: _ChapterPlan |
             items.append(NovelScreenItem(part="author_note", text=chapter.author_note))
         if chapter.body.strip():
             items.append(NovelScreenItem(part="chapter_body", text=chapter.body))
+        if chapter.change_summary is not None:
+            items.append(NovelScreenItem(part="change_summary", text=chapter.change_summary))
     return tuple(items)
 
 
@@ -233,9 +239,7 @@ async def _remember_free(db: AsyncSession, novel_id: uuid.UUID, ordinal: int) ->
     )
 
 
-async def _plan(
-    db: AsyncSession, novel: Novel, user_id: uuid.UUID, chapter_id: uuid.UUID | None, free: bool | None
-) -> _PublishPlan:
+async def _plan(db: AsyncSession, novel: Novel, user_id: uuid.UUID, body: NovelPublishRequest) -> _PublishPlan:
     publication = await db.get(NovelPublication, novel.id, populate_existing=True)
     if publication is not None and publication.moderation_status == "restricted":
         raise _error(status.HTTP_409_CONFLICT, "NOVEL_PUBLICATION_RESTRICTED")
@@ -258,6 +262,7 @@ async def _plan(
     chapter_plan: _ChapterPlan | None = None
     # 보인 적 없는 공개 상태 행 위의 요청은 처음 공개와 같다 — 허락·목록 판정을 건너뛴 채 잠금을 얻는 길을 막는다.
     is_new = publication is None or unseen
+    chapter_id = body.chapter_id
     if chapter_id is None:
         # 화 공개본이 하나도 없는 보인 적 없는 행(반려로 화 공개본이 지워짐)도 처음 공개처럼 1화부터 내야 한다.
         if publication is None or (unseen and published == 0):
@@ -275,10 +280,16 @@ async def _plan(
         revision = await _current_revision(db, chapter.id)
         frozen = await db.get(NovelChapterPublication, chapter.id, populate_existing=True)
         remembered_free = frozen is None and await _remembered_free(db, novel.id, chapter.ordinal)
-        price = _price_for(chapter.ordinal, frozen, free, remembered_free=remembered_free)
+        price = _price_for(chapter.ordinal, frozen, body.free, remembered_free=remembered_free)
         chapter_is_new = frozen is None
         is_new = is_new or chapter_is_new
         if frozen is None or await _chapter_changed(db, frozen, chapter, revision):
+            # 변경 요약은 새 판을 내는 다시 공개에만 쓴다. 스위치가 켜져 있으면 꼭 있어야 한다 — 심사를 부르기 전에 거절한다.
+            change_summary = (
+                body.change_summary if settings.novel_public_policy_v2_enabled and not chapter_is_new else None
+            )
+            if settings.novel_public_policy_v2_enabled and not chapter_is_new and change_summary is None:
+                raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_CHANGE_SUMMARY_REQUIRED")
             chapter_plan = _ChapterPlan(
                 chapter_id=chapter.id,
                 ordinal=chapter.ordinal,
@@ -288,6 +299,7 @@ async def _plan(
                 body=revision.body,
                 is_new=chapter_is_new,
                 price=price,
+                change_summary=change_summary,
             )
     if is_new and gate.new_publish_block is not None:
         status_code = status.HTTP_403_FORBIDDEN if gate.new_publish_block == "source_permission" else 409
@@ -514,12 +526,12 @@ async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_ve
                 published_at=now,
             )
         )
-    await _record_edition(db, chapter.chapter_id)
+    await _record_edition(db, chapter.chapter_id, chapter.change_summary)
 
 
-async def _record_edition(db: AsyncSession, chapter_id: uuid.UUID) -> None:
+async def _record_edition(db: AsyncSession, chapter_id: uuid.UUID, change_summary: str | None) -> None:
     """방금 쓴 화 공개본의 지금 판을 판 행으로 남긴다(정책 스위치와 무관) — 화 공개본 행을 그대로 베껴 판 번호·개정·제목·
-    작가의 말·공개 시각이 공개본과 어긋나지 않는다.
+    작가의 말·공개 시각이 공개본과 어긋나지 않는다. 변경 요약은 화 공개본에 없어 요청 값을 그대로 싣는다.
 
     같은 (화, 판) 행이 이미 있으면 덮어쓴다. 그런 행은 독자에게 보인 적 없는 판뿐이다 — 판 행은 승인 대기 공개에서도
     쓰이는데, 배포가 겹치는 동안 판 행을 모르는 옛 이미지가 그 대기를 반려·취소하면 화 공개본만 지우고 판 행은 남긴다.
@@ -533,9 +545,11 @@ async def _record_edition(db: AsyncSession, chapter_id: uuid.UUID) -> None:
         NovelChapterPublication.title,
         NovelChapterPublication.author_note,
         NovelChapterPublication.published_at,
+        literal(change_summary, Text),
     ).where(NovelChapterPublication.chapter_id == chapter_id)
     statement = insert(NovelChapterEdition).from_select(
-        ["chapter_id", "edition", "novel_id", "revision_id", "title", "author_note", "published_at"], current
+        ["chapter_id", "edition", "novel_id", "revision_id", "title", "author_note", "published_at", "change_summary"],
+        current,
     )
     await db.execute(
         statement.on_conflict_do_update(
@@ -546,6 +560,7 @@ async def _record_edition(db: AsyncSession, chapter_id: uuid.UUID) -> None:
                 "title": statement.excluded.title,
                 "author_note": statement.excluded.author_note,
                 "published_at": statement.excluded.published_at,
+                "change_summary": statement.excluded.change_summary,
             },
         )
     )
@@ -580,7 +595,7 @@ async def _lock_and_replan(
     """쓰기 구간의 시작. 사용자 행을 잠근 뒤 계획을 다시 세워 읽기 구간의 것과 같은지 본다."""
     await _lock_user(db, user_id)
     novel = await _get_owned_novel(db, novel_id, user_id)
-    if await _plan(db, novel, user_id, body.chapter_id, body.free) != planned:
+    if await _plan(db, novel, user_id, body) != planned:
         raise _error(status.HTTP_409_CONFLICT, "NOVEL_PUBLISH_CONFLICT")
     return novel
 
@@ -623,7 +638,7 @@ async def publish_novel(
     now = datetime.now(UTC)
     async with session_factory() as read_db:
         novel = await _get_owned_novel(read_db, novel_id, user_id)
-        plan = await _plan(read_db, novel, user_id, body.chapter_id, body.free)
+        plan = await _plan(read_db, novel, user_id, body)
         if plan.items:
             await enforce_rejection_limit(read_db, user_id, now)
             try:

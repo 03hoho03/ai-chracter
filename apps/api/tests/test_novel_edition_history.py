@@ -222,6 +222,7 @@ async def test_with_the_policy_switch_off_picking_an_edition_still_serves_the_cu
     assert resp.status_code == 200, resp.text
     assert (resp.json()["edition"], resp.json()["paragraphs"]) == (2, ["고친 6화"])
     assert _purchased_edition(resp.json()) is None
+    assert resp.json()["latestEdition"] is None
 
 
 async def test_a_buyer_keeps_picking_the_edition_bought_after_the_chapter_is_made_free(
@@ -252,3 +253,75 @@ async def test_a_buyer_keeps_picking_the_edition_bought_after_the_chapter_is_mad
     assert (bought.status_code, bought.json()["paragraphs"]) == (200, ["6화 본문"])
     assert (toc["access"], toc["price"]) == ("free", None)
     assert stranger_old.status_code == 404
+
+
+async def _summarize(db_session: AsyncSession, novel: PublicNovel, ordinal: int, edition: int, summary: str) -> None:
+    """그 판의 판 행에 작가의 변경 요약을 적는다(다시 공개 라우트가 요약을 남기는 것은 공개 라우트 테스트가 따로 본다)."""
+    await db_session.execute(
+        sa.update(NovelChapterEdition)
+        .where(NovelChapterEdition.chapter_id == novel.chapter_ids[ordinal - 1], NovelChapterEdition.edition == edition)
+        .values(change_summary=summary)
+    )
+    await db_session.commit()
+
+
+def _edition_info(body: dict[str, object], key: str) -> tuple[object, datetime, object] | None:
+    value = body.get(key)
+    if value is None:
+        return None
+    assert isinstance(value, dict)
+    return value["edition"], datetime.fromisoformat(value["publishedAt"]), value["changeSummary"]
+
+
+async def test_the_edition_picker_shows_the_date_and_summary_of_the_bought_and_the_latest_edition(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """판 고르기는 "산 때의 판"과 "최신 판" 두 판만 보이고, 두 판 모두 공개 시각과 작가의 변경 요약을 싣는다 — 산 때의 판이
+    첫 판이면 요약은 비어 있고, 2판 때 산 사람에게는 2판의 요약이 산 때의 판 쪽에 실린다. 1판 때 산 사람에게 사이의 판(2판)
+    요약은 싣지 않는다. 산 때의 판을 골라 읽는 중에도 같은 두 판을 싣는다. 그 화를 사지 않은 독자에게는 어느 쪽도 없다.
+    깨지는 시나리오: 독자가 최신 판에서 무엇이 바뀌었는지 볼 수 없거나, 두 칸의 요약·날짜가 서로 뒤섞인다."""
+    novel = await _novel(db_session)
+    early, late, stranger = await _member(db_session), await _member(db_session), await _member(db_session)
+    await _buy(db_client, novel, 6, early)
+    bought_at = await _first_published_at(db_session, novel, 6)
+    second_at, third_at = bought_at + timedelta(days=1), bought_at + timedelta(days=2)
+    await _republish(db_session, novel, 6, body="2판 본문", title="2판", note="", at=second_at)
+    await _summarize(db_session, novel, 6, 2, "중간 장면을 고쳤어요.")
+    await _buy(db_client, novel, 6, late)
+    await _republish(db_session, novel, 6, body="3판 본문", title="3판", note="", at=third_at)
+    await _summarize(db_session, novel, 6, 3, "결말을 바꿨어요.")
+
+    latest = (await _read(db_client, novel, 6, as_user=early)).json()
+    bought = (await _read(db_client, novel, 6, as_user=early, edition=1)).json()
+    second_buyer = (await _read(db_client, novel, 6, as_user=late)).json()
+    other = (await _read(db_client, novel, 6, as_user=stranger)).json()
+
+    for body in (latest, bought):
+        assert _edition_info(body, "purchasedEdition") == (1, bought_at, None)
+        assert _edition_info(body, "latestEdition") == (3, third_at, "결말을 바꿨어요.")
+    assert _edition_info(second_buyer, "purchasedEdition") == (2, second_at, "중간 장면을 고쳤어요.")
+    assert _edition_info(second_buyer, "latestEdition") == (3, third_at, "결말을 바꿨어요.")
+    assert (other["purchasedEdition"], other["latestEdition"]) == (None, None)
+
+
+async def test_a_latest_edition_without_its_edition_row_is_shown_without_a_summary(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """지금 판의 판 행이 없으면(판 이력 표를 모르는 옛 이미지가 다시 낸 판) 최신 판은 화 공개본의 판 번호·공개 시각으로 싣고
+    요약은 비운다. 깨지는 시나리오: 판 행이 없다고 산 사람의 화 읽기가 500 이 된다."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _buy(db_client, novel, 6, buyer)
+    second_at = datetime.now(UTC) + timedelta(days=1)
+    await _republish(db_session, novel, 6, body="2판 본문", title="2판", note="", at=second_at)
+    await db_session.execute(
+        sa.delete(NovelChapterEdition).where(
+            NovelChapterEdition.chapter_id == novel.chapter_ids[5], NovelChapterEdition.edition == 2
+        )
+    )
+    await db_session.commit()
+
+    resp = await _read(db_client, novel, 6, as_user=buyer)
+
+    assert resp.status_code == 200, resp.text
+    assert _edition_info(resp.json(), "latestEdition") == (2, second_at, None)

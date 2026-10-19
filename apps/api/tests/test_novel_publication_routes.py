@@ -1562,11 +1562,18 @@ async def test_a_new_request_over_edition_rows_an_old_image_left_behind_replaces
 
 # ── 화별 가격 ───────────────────────────────────────────────────────────────
 async def _publish_priced(
-    db_client: httpx.AsyncClient, novel_id: uuid.UUID, chapter: NovelChapter, *, free: bool | None
+    db_client: httpx.AsyncClient,
+    novel_id: uuid.UUID,
+    chapter: NovelChapter,
+    *,
+    free: bool | None,
+    summary: str | None = None,
 ) -> httpx.Response:
     body: dict[str, object] = {"chapterId": str(chapter.id)}
     if free is not None:
         body["free"] = free
+    if summary is not None:
+        body["changeSummary"] = summary
     return await db_client.post(f"/novels/{novel_id}/publication", json=body)
 
 
@@ -1614,7 +1621,7 @@ async def test_from_the_sixth_chapter_the_publisher_picks_free_or_paid_and_free_
     explicit_eighth = await _publish_priced(db_client, novel_id, chapters[7], free=False)
     back_to_paid = await _publish_priced(db_client, novel_id, chapters[5], free=False)
     await _new_revision(db_session, chapters[5], "고친 6화.")
-    revised = await _publish_priced(db_client, novel_id, chapters[5], free=None)
+    revised = await _publish_priced(db_client, novel_id, chapters[5], free=None, summary="6화를 고쳤어요.")
     assert (await db_client.post(f"/novels/{novel_id}/publication/withdraw")).status_code == 204
     reopened = await _publish(db_client, novel_id, None)
 
@@ -1880,3 +1887,202 @@ async def test_a_publication_whose_sales_were_stopped_still_turns_a_paid_chapter
     assert (await _prices(db_session, novel_id))[6] == 0
     assert withdrawn.status_code == 204
     assert (reopened.status_code, reopened.json()["detail"]["code"]) == (409, "NOVEL_PUBLICATION_SALES_STOPPED")
+
+
+# ── 변경 요약 ───────────────────────────────────────────────────────────────
+async def _republish_with(
+    db_client: httpx.AsyncClient, novel_id: uuid.UUID, chapter: NovelChapter, summary: str | None = None
+) -> httpx.Response:
+    """그 화를 다시 낸다. `summary` 가 None 이면 요약 칸을 아예 싣지 않는다(이 칸을 모르는 옛 화면의 요청)."""
+    body: dict[str, object] = {"chapterId": str(chapter.id)}
+    if summary is not None:
+        body["changeSummary"] = summary
+    return await db_client.post(f"/novels/{novel_id}/publication", json=body)
+
+
+async def _summaries(db_session: AsyncSession, chapter_id: uuid.UUID) -> dict[int, str | None]:
+    rows = await db_session.execute(
+        sa.select(NovelChapterEdition.edition, NovelChapterEdition.change_summary)
+        .where(NovelChapterEdition.chapter_id == chapter_id)
+        .execution_options(populate_existing=True)
+    )
+    return {edition: summary for edition, summary in rows.tuples()}
+
+
+async def test_republishing_a_published_chapter_stores_the_trimmed_summary_on_the_new_edition_after_screening_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """정책 스위치가 켜졌을 때 공개한 화를 고쳐 다시 내면서 실은 변경 요약은 앞뒤 공백을 덜어 새 판의 판 행에만 남고, 첫 판의
+    판 행은 요약이 비어 있다. 요약도 공개 화면 글이라 고친 화의 글과 함께 "변경 요약" 자리로 심사에 실린다. 깨지는
+    시나리오: 요약이 심사를 거치지 않고 독자에게 나가거나, 앞 판의 판 행에 새 요약이 덮여 산 때의 판 설명이 바뀐다."""
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=2, chapters=2)
+    await _new_revision(db_session, chapters[0], "고친 첫 문단이다.")
+
+    resp = await _republish_with(db_client, novel_id, chapters[0], "  결말 장면을 고쳤어요.  ")
+
+    assert resp.status_code == 200, resp.text
+    assert await _summaries(db_session, chapters[0].id) == {1: None, 2: "결말 장면을 고쳤어요."}
+    prompt = llm.calls[-1][1]
+    assert "=== change_summary: 변경 요약 ===\n결말 장면을 고쳤어요." in prompt
+    assert "고친 첫 문단이다." in prompt
+
+
+async def test_with_the_switch_on_republishing_a_published_chapter_needs_a_summary(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """정책 스위치가 켜졌을 때 공개한 화를 고쳐 다시 내는 요청에 요약이 없거나 공백뿐이면 심사를 부르기 전에 422
+    `NOVEL_CHANGE_SUMMARY_REQUIRED` 이고 아무것도 쓰지 않는다(판도 그대로). 깨지는 시나리오: 독자가 판 고르기에서 무엇이
+    바뀌었는지 모른 채 새 판을 받거나, 거절할 요청에 심사 호출(원가·시간당 상한)을 쓴다."""
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=2, chapters=2)
+    await _new_revision(db_session, chapters[0], "고친 첫 문단이다.")
+    screened = len(llm.calls)
+
+    resp = await _republish_with(db_client, novel_id, chapters[0])
+    blank = await _republish_with(db_client, novel_id, chapters[0], "   ")
+
+    assert (resp.status_code, resp.json()["detail"]) == (422, {"code": "NOVEL_CHANGE_SUMMARY_REQUIRED"})
+    assert (blank.status_code, blank.json()["detail"]) == (422, {"code": "NOVEL_CHANGE_SUMMARY_REQUIRED"})
+    assert len(llm.calls) == screened
+    frozen = await db_session.get_one(NovelChapterPublication, chapters[0].id, populate_existing=True)
+    assert frozen.edition == 1
+    assert await _summaries(db_session, chapters[0].id) == {1: None}
+
+
+@pytest.mark.parametrize(
+    ("summary", "accepted"),
+    [
+        pytest.param("가" * 100, True, id="100-chars"),
+        pytest.param(" " + "가" * 100 + " ", True, id="100-chars-after-trim"),
+        pytest.param("가" * 101, False, id="101-chars"),
+    ],
+)
+async def test_a_summary_is_one_to_a_hundred_characters_after_trimming(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ScreenLLM,
+    summary: str,
+    accepted: bool,
+) -> None:
+    """요약은 앞뒤 공백을 덜고 1~100자다. 넘으면 요청 검증의 422 이고 아무것도 쓰지 않는다. 깨지는 시나리오: 긴 글이 "짧은
+    변경 요약" 자리에 들어가거나, 공백 때문에 상한 안의 요약이 거절된다."""
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=1, chapters=1)
+    await _new_revision(db_session, chapters[0], "고친 첫 문단이다.")
+
+    resp = await _republish_with(db_client, novel_id, chapters[0], summary)
+
+    if accepted:
+        assert resp.status_code == 200, resp.text
+        assert await _summaries(db_session, chapters[0].id) == {1: None, 2: "가" * 100}
+    else:
+        assert resp.status_code == 422, resp.text
+        assert await _summaries(db_session, chapters[0].id) == {1: None}
+
+
+async def test_a_summary_sent_with_a_first_edition_or_metadata_only_is_ignored(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """요약은 이미 공개한 화를 다시 낼 때만 쓰인다. 새 화(1판)나 소설 제목·소개만 다시 내는 요청에 실려 오면 보지 않는다 —
+    판 행에 남지 않고 심사에도 실리지 않는다. 빈 글·공백뿐인 요약은 보내지 않은 것과 같다. 깨지는 시나리오: 첫 판에 "바뀐
+    것" 설명이 붙거나, 쓰이지 않을 글이 심사에 실려 그 글 때문에 공개가 거절되거나, 비워 둔 입력 칸 때문에 새 화 공개가
+    422 가 된다."""
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=1, chapters=2)
+    await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(synopsis="고친 소개."))
+    await db_session.commit()
+
+    new_chapter = await _republish_with(db_client, novel_id, chapters[1], "처음 내는 화의 요약")
+    metadata_only = await db_client.post(
+        f"/novels/{novel_id}/publication", json={"chapterId": None, "changeSummary": "소개만 고친 요약"}
+    )
+    await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(synopsis="또 고친 소개."))
+    await db_session.commit()
+    blank_metadata = await db_client.post(
+        f"/novels/{novel_id}/publication", json={"chapterId": None, "changeSummary": "  "}
+    )
+
+    assert new_chapter.status_code == 200, new_chapter.text
+    assert metadata_only.status_code == 200, metadata_only.text
+    assert blank_metadata.status_code == 200, blank_metadata.text
+    assert await _summaries(db_session, chapters[1].id) == {1: None}
+    assert all("change_summary" not in prompt for _, prompt, _ in llm.calls)
+
+
+async def test_with_the_switch_off_the_summary_is_neither_required_nor_stored(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """정책 스위치가 꺼져 있으면 지금처럼 요약 없이 다시 낸다. 요약을 실어 와도 보지 않는다 — 판 행에 남지 않고 심사에도
+    실리지 않는다. 깨지는 시나리오: 약관 개정 전에 다시 공개가 막히거나, 꺼진 동안 받은 글이 심사·저장된다."""
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch, chapters=2)
+    for chapter in chapters:
+        assert (await _publish(db_client, novel_id, chapter)).status_code == 200
+    await _new_revision(db_session, chapters[0], "고친 첫 문단이다.")
+    await _new_revision(db_session, chapters[1], "고친 둘째 화.")
+
+    without = await _republish_with(db_client, novel_id, chapters[0])
+    with_summary = await _republish_with(db_client, novel_id, chapters[1], "꺼진 동안의 요약")
+
+    assert without.status_code == 200, without.text
+    assert with_summary.status_code == 200, with_summary.text
+    assert await _summaries(db_session, chapters[0].id) == {1: None, 2: None}
+    assert await _summaries(db_session, chapters[1].id) == {1: None, 2: None}
+    assert all("change_summary" not in prompt for _, prompt, _ in llm.calls)
+
+
+async def test_a_summary_that_fails_screening_alone_rejects_the_republish_and_names_its_part(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """요약만 심사에 걸려도 다시 공개는 거절된다 — 400 `NOVEL_SCREENING_REJECTED` 가 그 자리(`change_summary`)를 짚고, 심사
+    기록과 상태 응답의 최근 심사에도 같은 자리가 남는다. 판은 그대로다. 깨지는 시나리오: 걸린 요약이 독자에게 나가거나, 그
+    자리 값을 DB 가 받지 못해 거절 기록이 500 이 된다."""
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=1, chapters=1)
+    await _new_revision(db_session, chapters[0], "고친 첫 문단이다.")
+    # 한 테스트 트랜잭션 안의 now() 는 같은 값이라, 첫 공개의 통과 기록을 하루 앞으로 옮겨 최근 심사가 이번 거부가 되게 한다.
+    await db_session.execute(
+        sa.update(NovelScreening)
+        .where(NovelScreening.novel_id == novel_id)
+        .values(created_at=sa.func.now() - sa.text("interval '1 day'"))
+    )
+    await db_session.commit()
+    llm.results.append(_rejected("change_summary"))
+
+    resp = await _republish_with(db_client, novel_id, chapters[0], "걸리는 요약")
+
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"]["flaggedParts"] == ["change_summary"]
+    frozen = await db_session.get_one(NovelChapterPublication, chapters[0].id, populate_existing=True)
+    assert frozen.edition == 1
+    recorded = await db_session.scalar(
+        sa.select(NovelScreening.flagged_parts)
+        .where(NovelScreening.novel_id == novel_id, NovelScreening.outcome == "rejected")
+        .execution_options(populate_existing=True)
+    )
+    assert recorded == ["change_summary"]
+    status_body = (await db_client.get(f"/novels/{novel_id}/publication")).json()
+    assert status_body["lastScreening"]["flaggedParts"] == ["change_summary"]
+
+
+async def test_republishing_over_a_left_behind_edition_row_replaces_its_summary_too(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """같은 (화, 판) 판 행이 이미 있으면 다시 공개가 그 행을 덮는데(판 행 쓰기의 덮어쓰기 갈래), 요약도 이번 요청의 값으로
+    바뀐다. 깨지는 시나리오: 덮어쓴 판 행에 지난 요약이 남아 독자가 다른 개정의 설명을 본다."""
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=1, chapters=1)
+    first = await db_session.get_one(NovelChapterPublication, chapters[0].id, populate_existing=True)
+    db_session.add(
+        NovelChapterEdition(
+            chapter_id=chapters[0].id,
+            edition=2,
+            novel_id=novel_id,
+            revision_id=first.revision_id,
+            title=None,
+            author_note="",
+            change_summary="남아 있던 요약",
+        )
+    )
+    await db_session.commit()
+    await _new_revision(db_session, chapters[0], "고친 첫 문단이다.")
+
+    resp = await _republish_with(db_client, novel_id, chapters[0], "이번 요약")
+
+    assert resp.status_code == 200, resp.text
+    assert (await _summaries(db_session, chapters[0].id))[2] == "이번 요약"
