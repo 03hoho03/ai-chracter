@@ -66,6 +66,7 @@ async def test_response_follows_products_and_cost_constants(
     for key in (
         "paymentsEnabled",
         "novelPublicEnabled",
+        "novelPublicPolicyV2Enabled",
         "payMethods",
         "identityGateEnabled",
         "models",
@@ -199,3 +200,17 @@ async def test_pricing_exposes_the_identity_gate_switch(
     monkeypatch.setattr(settings, "identity_gate_enabled", gate)
 
     assert (await db_client.get("/clover/pricing")).json()["identityGateEnabled"] is gate
+
+
+@pytest.mark.parametrize("switch", [pytest.param(False, id="policy-off"), pytest.param(True, id="policy-on")])
+async def test_pricing_exposes_the_novel_public_policy_switch(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, switch: bool
+) -> None:
+    """노벨 구매 전 고지와 작가의 공개 거두기 안내(거두거나 제재되면 산 사람이 계속 읽는가, 환급받는가)가 이 값으로 갈린다 —
+    노벨 정책 스위치 그대로다. 깨지는 시나리오: 스위치를 켰는데 구매 화면이 "공개가 끝나도 돌려드리지 않아요"라는 옛 약관
+    문장을 그대로 보인다."""
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", switch)
+
+    resp = await db_client.get("/clover/pricing")
+
+    assert (resp.status_code, resp.json().get("novelPublicPolicyV2Enabled")) == (200, switch)

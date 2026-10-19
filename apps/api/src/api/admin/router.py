@@ -14,6 +14,7 @@ from api.admin.schemas import AdminLoginRequest, AdminMeResponse
 from api.admin.session import create_admin_session, delete_admin_session
 from api.auth.router import _auth_too_many_requests
 from api.core import rate_limit
+from api.core.config import settings
 from api.core.security import verify_password
 from api.db.models.auth import AdminUser
 from api.db.session import get_db_session
@@ -77,4 +78,6 @@ async def get_admin_me(
     if admin is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    return AdminMeResponse(id=admin.id, email=admin.email)
+    return AdminMeResponse(
+        id=admin.id, email=admin.email, novel_public_policy_v2_enabled=settings.novel_public_policy_v2_enabled
+    )

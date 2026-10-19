@@ -53,7 +53,28 @@ async def test_admin_login_issues_admin_session_and_me_returns_admin(
     assert me.status_code == 200
     admin = await db_session.scalar(select(AdminUser).where(AdminUser.email == payload["email"]))
     assert admin is not None
-    assert me.json() == {"id": str(admin.id), "email": admin.email}
+    assert me.json() == {
+        "id": str(admin.id),
+        "email": admin.email,
+        "novelPublicPolicyV2Enabled": settings.novel_public_policy_v2_enabled,
+    }
+
+
+@pytest.mark.parametrize("switch", [pytest.param(False, id="policy-off"), pytest.param(True, id="policy-on")])
+async def test_admin_me_exposes_the_novel_public_policy_switch(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, switch: bool
+) -> None:
+    """운영 화면의 노벨 조치 확인 문구(이용제한하면 산 사람에게 환급되는가, 작품 조치가 그 작품의 노벨 구매를 환급하는가)가
+    이 값으로 갈린다. 운영 화면이 늘 읽는 세션 응답에 싣는다 — 조치 화면마다 받는 응답이 달라서다. 깨지는 시나리오: 스위치를
+    켰는데 운영자가 "환급 없이 열람만 끝난다"는 옛 문구를 보고 조치한다."""
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", switch)
+    payload = await _create_admin(db_session)
+    login = await db_client.post("/admin/auth/login", json={"email": payload["email"], "password": payload["password"]})
+    assert login.status_code == 204
+
+    me = await db_client.get("/admin/me")
+
+    assert (me.status_code, me.json().get("novelPublicPolicyV2Enabled")) == (200, switch)
 
 
 async def test_admin_login_rejects_wrong_password(

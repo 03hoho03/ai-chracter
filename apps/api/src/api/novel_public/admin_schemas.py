@@ -29,7 +29,8 @@ class AdminNovelListItem(CamelModel):
     정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의
     구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사
     (대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이
-    아니다."""
+    아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지워 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로
+    게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다)."""
 
     id: uuid.UUID
     title: str
@@ -46,6 +47,7 @@ class AdminNovelListItem(CamelModel):
     pending_report_count: int
     published_at: datetime
     review_status: NovelPublicationReviewStatus | None
+    hidden_at: datetime | None
 
 
 class AdminNovelListResponse(CamelModel):

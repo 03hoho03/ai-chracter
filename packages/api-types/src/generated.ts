@@ -3476,6 +3476,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webnovels/owned": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Owned Webnovels
+         * @description 내가 소장한 노벨 — 아직 환급되지 않은 구매가 하나라도 있고 지금 작품 정보가 열리는 노벨을, 노벨 목록의 최신순과 같은
+         *     순서·커서로 20편씩. 판단은 작품 정보와 같다: 목록 조건으로 읽히면 판매 중이고, 정책 스위치가 켜졌을 때 소장자 조건으로만
+         *     읽히면 `salesStopped` 가 참이다(모듈 docstring 의 소장자 열람). 스위치가 꺼져 있으면 소장자 열람이 없어 판매 중인 노벨만
+         *     싣는다 — 누르면 410 인 노벨을 "소장"으로 보이지 않는다. 환급으로 닫힌 노벨은 미환급 구매가 없어 빠진다.
+         */
+        get: operations["list_owned_webnovels_webnovels_owned_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webnovels/{novel_id}": {
         parameters: {
             query?: never;
@@ -7195,6 +7218,8 @@ export interface components {
             id: string;
             /** Email */
             email: string;
+            /** Novelpublicpolicyv2Enabled */
+            novelPublicPolicyV2Enabled: boolean;
         };
         /** AdminNoticeCreateRequest */
         AdminNoticeCreateRequest: {
@@ -7536,6 +7561,8 @@ export interface components {
             publishedAt: string;
             /** Reviewstatus */
             reviewStatus: ("pending" | "approved" | "rejected") | null;
+            /** Hiddenat */
+            hiddenAt: string | null;
             /** Synopsis */
             synopsis: string;
             /**
@@ -7582,7 +7609,8 @@ export interface components {
          *     정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의
          *     구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사
          *     (대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이
-         *     아니다.
+         *     아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지워 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로
+         *     게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다).
          */
         AdminNovelListItem: {
             /**
@@ -7630,6 +7658,8 @@ export interface components {
             publishedAt: string;
             /** Reviewstatus */
             reviewStatus: ("pending" | "approved" | "rejected") | null;
+            /** Hiddenat */
+            hiddenAt: string | null;
         };
         /** AdminNovelListResponse */
         AdminNovelListResponse: {
@@ -9337,6 +9367,8 @@ export interface components {
             novelFreeChapterCount: number;
             /** Novelpublicenabled */
             novelPublicEnabled: boolean;
+            /** Novelpublicpolicyv2Enabled */
+            novelPublicPolicyV2Enabled: boolean;
             /** Paymentsenabled */
             paymentsEnabled: boolean;
             /** Paymethods */
@@ -12688,6 +12720,45 @@ export interface components {
         PublicNovelListResponse: {
             /** Items */
             items: components["schemas"]["PublicNovelListItem"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /**
+         * PublicNovelOwnedItem
+         * @description 소장 목록의 한 줄 — 노벨 목록의 한 줄에 판매 중지 표시를 더한 것. `sales_stopped` 는 노벨 목록에서 빠졌지만 소장자
+         *     조건으로 열리는 노벨인가다(작품 정보의 같은 이름 값과 같다).
+         */
+        PublicNovelOwnedItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Synopsis */
+            synopsis: string;
+            source: components["schemas"]["PublicNovelSource"];
+            /** Publishernickname */
+            publisherNickname: string | null;
+            /** Chaptercount */
+            chapterCount: number;
+            /** Likecount */
+            likeCount: number;
+            /** Viewcount */
+            viewCount: number;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+            /** Salesstopped */
+            salesStopped: boolean;
+        };
+        /** PublicNovelOwnedListResponse */
+        PublicNovelOwnedListResponse: {
+            /** Items */
+            items: components["schemas"]["PublicNovelOwnedItem"][];
             /** Nextcursor */
             nextCursor: string | null;
         };
@@ -18714,6 +18785,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicNovelListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_owned_webnovels_webnovels_owned_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicNovelOwnedListResponse"];
                 };
             };
             /** @description Validation Error */
