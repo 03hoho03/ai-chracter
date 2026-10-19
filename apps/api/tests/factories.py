@@ -1895,6 +1895,12 @@ def _enable_chat_premium(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "chat_premium_models_enabled", True)
 
 
+def _memory_scope_covers_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
+    """기억 사용 범위에 두 레인의 Gemini 방을 넣는다. 기억 스위치를 켜는 테스트 대부분이 Gemini 세트로 조립하는데, 기본 범위는
+    Opus 방뿐이라 그대로 두면 켠 스위치가 동작하지 않아 그 테스트가 보려던 기능이 꺼진 채로 돈다."""
+    monkeypatch.setattr(settings, "memory_model_scope", [("story", "gemini"), ("character", "gemini")])
+
+
 async def _allow_novel_premium(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, user_id: uuid.UUID
 ) -> None:

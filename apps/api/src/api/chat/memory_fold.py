@@ -23,7 +23,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.memory_knowledge import room_people, user_names
-from api.chat.memory_window import MessageKey, load_current_summary, opening_message
+from api.chat.memory_window import MessageKey, load_current_summary, memory_model_in_scope, opening_message
 from api.chat.prompt_builder import MemorySummaryResult, PromptNames, PromptRenderError, build_memory_summary_prompt
 from api.chat.prompt_dump import dump_background_prompt
 from api.core.config import settings
@@ -39,7 +39,7 @@ from api.db.models import (
     PromptSection,
     PromptSet,
 )
-from api.llm.chat_models import configured_call_site_model
+from api.llm.chat_models import ChatModelId, configured_call_site_model
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, LLMClientError, dependency_tag
 from api.llm.routing import resolve_backend
 
@@ -110,6 +110,7 @@ async def fold_memory(
     sections: Sequence[PromptSection],
     is_story_chat: bool,
     names: PromptNames,
+    writing_model: ChatModelId,
 ) -> None:
     """접을 때가 된 방이면 요약을 만들어 스냅샷으로 커밋한다. 절대 예외를 내지 않는다.
 
@@ -117,7 +118,9 @@ async def fold_memory(
     프로필을 다시 읽지 않고 그 턴의 생성 프롬프트와 같은 값을 받는다.
 
     요약 비밀 표기 스위치가 켜져 있으면 접을 때가 된 접기만 요약 호출 전에 이름 출처(방 사실 행, 스토리 방이면 미디어 북 인물)를
-    새 세션으로 읽어 슬롯의 인물 이름 목록을 채운다(`_room_people`). 꺼져 있으면 읽지 않고 슬롯이 빠진다.
+    새 세션으로 읽어 슬롯의 인물 이름 목록을 채운다(`_room_people`). 꺼져 있으면 읽지 않고 슬롯이 빠진다. 켜져 있어도 이 방의
+    레인과 `writing_model`(이 접기를 예약한 턴에 응답을 쓴 모델)이 기억 사용 범위에 없으면 꺼진 것과 같다. 받은 세트는 요약 모델의
+    세트라 그 모델로 판정하면 글쓰기 모델이 Opus 인 방도 범위 밖이 되므로, 판정은 세트의 레인과 글쓰기 모델로 한다.
 
     순서가 정합성의 전부다.
     1. 방의 `memory_version`을 **가장 먼저** 읽고, 그다음 현재 요약과 커서 뒤 메시지를 읽는다.
@@ -153,6 +156,7 @@ async def fold_memory(
                 session_factory, room_id, is_story_chat=is_story_chat, names=names, user_label=prompt_set.user_label
             )
             if settings.memory_summary_secret_marking
+            and memory_model_in_scope(prompt_set.lane, writing_model, settings.memory_model_scope)
             else None
         )
         prompt = build_memory_summary_prompt(

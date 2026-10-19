@@ -375,6 +375,28 @@ async def test_embedding_fill_runs_after_the_extractions_and_embeds_the_new_rows
     assert await _embeddings(db_session, room) == [(("fact", fact_id), _MODEL, 3, stub.vector(0))]
 
 
+async def test_extractions_and_embedding_fill_ignore_the_memory_scope(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """기억 사용 범위는 기억을 싣는 쪽만 가른다. 범위 밖 방(스토리 Opus 방만 범위인데 캐릭터 Gemini 방)에서도 접기 뒤 두 추출과
+    임베딩 채우기가 그대로 예약되고 돈다 — 쌓아 두는 일은 그 방 대화를 바꾸지 않고, 나중에 범위를 넓혀도 기억이 비어 있지 않게."""
+    monkeypatch.setattr(settings, "memory_model_scope", [("story", "opus")])
+    monkeypatch.setattr(settings, "memory_episodes_extract", True)
+    monkeypatch.setattr(settings, "memory_facts_extract", True)
+    monkeypatch.setattr(settings, "memory_embed_write", True)
+    scheduled = _record_scheduling(monkeypatch)
+    room = await _open_room(db_client, db_session, turns=29)
+    await db_session.commit()
+    stub = VoyageStub()
+
+    assert (await _send(db_client, room, stub))[-1] == "done"
+
+    assert scheduled == ["fold_memory", "extract_pending_episode", "extract_pending_facts", "fill_pending_embeddings"]
+    assert stub.inputs == [["민수 → 지아: 소꿉친구"]]
+    fact_id = await db_session.scalar(sa.select(ChatMemoryFact.id).where(ChatMemoryFact.chat_room_id == room.room_id))
+    assert await _embeddings(db_session, room) == [(("fact", fact_id), _MODEL, 3, stub.vector(0))]
+
+
 async def test_embedding_fill_follows_the_generation_window_switch(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

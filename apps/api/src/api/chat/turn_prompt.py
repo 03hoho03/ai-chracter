@@ -20,7 +20,7 @@ from api.chat.memory_fact_section import NO_FACTS, FactSection, facts_for_turn
 from api.chat.memory_knowledge import KnowledgeScope
 from api.chat.memory_recall import NO_RECALL, Recall, recall_for_turn
 from api.chat.memory_vector import QueryEmbedding, embed_query, query_text
-from api.chat.memory_window import CurrentSummary, load_current_summary, prompt_window
+from api.chat.memory_window import CurrentSummary, load_current_summary, memory_model_in_scope, prompt_window
 from api.chat.prompt_builder import (
     PromptLane,
     PromptNames,
@@ -315,7 +315,11 @@ async def build_room_prompt(
     고르면(주입 상태의 줄로 다시 렌더하는 칸은 고르지 않는다) 둘을 고르기 전에 질의 임베딩을 한 번 받아 둘이 함께 쓴다
     (`chat/memory_vector.py`). 그 앞에서 요청 세션의 읽기 트랜잭션을 커밋해 반납한다 — 턴 골격이 생성 LLM 앞에서 반납하는 것과 같은
     이유로, 외부 호출을 기다리는 동안 커넥션을 쥐지 않는다. 꺼져 있거나 클라이언트가 없으면(리플레이·측정 도구) 부르지도 커밋하지도
-    않는다. Voyage 가 연속으로 실패해 멈춘 동안(`chat/voyage_backoff.py`)도 커밋 앞에서 돌아와 꺼진 턴과 같다."""
+    않는다. Voyage 가 연속으로 실패해 멈춘 동안(`chat/voyage_backoff.py`)도 커밋 앞에서 돌아와 꺼진 턴과 같다.
+
+    위 네 스위치는 이 턴의 레인과 글쓰기 모델(`prompt_set` 의 레인·모델)이 기억 사용 범위(`memory_model_scope`)에 들 때만 켜진
+    것으로 읽는다(`memory_window.memory_model_in_scope`). 범위 밖 방은 스위치가 켜져 있어도 다 끈 턴과 프롬프트·SQL 이 같고, 주입
+    상태의 회상·사실 줄도 싣지 않는다."""
     memory_summary = ""
     full_history = history
     current_summary: CurrentSummary | None = None
@@ -325,13 +329,21 @@ async def build_room_prompt(
             history = prompt_window(history, current_summary.cursor)
             memory_summary = current_summary.text
 
-    recall_searches = settings.memory_episodes_recall and (turn_state is None or turn_state.recall_lines is None)
-    facts_select = settings.memory_facts_inject and (turn_state is None or turn_state.fact_lines is None)
+    # 기억 사용 스위치는 이 턴의 레인·글쓰기 모델(생성 세트의 것)이 기억 사용 범위에 들 때만 켜진 것으로 읽는다 — 범위 밖이면
+    # 스위치를 다 끈 턴과 프롬프트·SQL 이 같다.
+    in_scope = memory_model_in_scope(prompt_set.lane, prompt_set.model, settings.memory_model_scope)
+    episodes_recall = settings.memory_episodes_recall and in_scope
+    facts_inject = settings.memory_facts_inject and in_scope
+    knowledge_filter = settings.memory_knowledge_filter and in_scope
+    embed_recall = settings.memory_embed_recall and in_scope
+
+    recall_searches = episodes_recall and (turn_state is None or turn_state.recall_lines is None)
+    facts_select = facts_inject and (turn_state is None or turn_state.fact_lines is None)
 
     async def query_embedding(names: PromptNames) -> QueryEmbedding | None:
         if (
             embedding_client is None
-            or not settings.memory_embed_recall
+            or not embed_recall
             or current_summary is None
             or not (recall_searches or facts_select)
         ):
@@ -358,7 +370,7 @@ async def build_room_prompt(
         )
 
     async def recall(names: PromptNames, query: QueryEmbedding | None) -> Recall:
-        if not settings.memory_episodes_recall or current_summary is None:
+        if not episodes_recall or current_summary is None:
             return NO_RECALL
         if turn_state is not None and turn_state.recall_lines is not None:
             return Recall(turn_state.recall_lines, ())
@@ -371,13 +383,13 @@ async def build_room_prompt(
             user_content=user_content,
             names=names,
             scope=KnowledgeScope(
-                user_label=prompt_set.user_label, ignore_quoted_reply_names=settings.memory_knowledge_filter
+                user_label=prompt_set.user_label, ignore_quoted_reply_names=knowledge_filter
             ),
             query_vector=query.vector if query is not None else None,
         )
 
     async def facts(names: PromptNames, query: QueryEmbedding | None) -> FactSection:
-        if not settings.memory_facts_inject or current_summary is None:
+        if not facts_inject or current_summary is None:
             return NO_FACTS
         if turn_state is not None and turn_state.fact_lines is not None:
             return FactSection(turn_state.fact_lines, ())
@@ -389,9 +401,9 @@ async def build_room_prompt(
             user_content=user_content,
             names=names,
             scope=KnowledgeScope(
-                user_label=prompt_set.user_label, ignore_quoted_reply_names=settings.memory_knowledge_filter
+                user_label=prompt_set.user_label, ignore_quoted_reply_names=knowledge_filter
             ),
-            knowledge_filter=settings.memory_knowledge_filter,
+            knowledge_filter=knowledge_filter,
             query_vector=query.vector if query is not None else None,
         )
 

@@ -92,6 +92,7 @@ from factories import (
     _make_memory_embedding,
     _make_memory_episode,
     _make_memory_fact,
+    _memory_scope_covers_gemini,
     _open_room,
     _open_transaction_probe,
     _override_llm_client,
@@ -581,6 +582,7 @@ async def _build(
 
 def _recall_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "memory_episodes_recall", True)
+    _memory_scope_covers_gemini(monkeypatch)
 
 
 def _section(prompt: str) -> str:
