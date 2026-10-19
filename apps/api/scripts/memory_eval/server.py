@@ -5,10 +5,11 @@
 `ANTHROPIC_DIRECT_API_KEY` 를 빈 값으로 덮어 띄운다 — `.env` 에 실제 키가 있어도 서버가 Anthropic 을 부를 수 없다."""
 
 import os
+import re
 import signal
 import subprocess
 import time
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -78,24 +79,44 @@ def port_in_use(port: int) -> bool:
     return True
 
 
-def conflicting_servers(procs: list[tuple[int, str]], trees: list[str], *, own_pids: set[int]) -> list[tuple[int, str]]:
-    """같은 격리 Redis·DB 를 쓰는 워크트리(`trees`)에서 도는 다른 서버. 프로브는 방 키·활성 세트 캐시를 지우고 DB 를 템플릿으로
-    갈아 끼우므로, 그동안 다른 측정 서버가 같은 자원을 쓰면 서로의 상태를 깬다."""
-    conflicts: list[tuple[int, str]] = []
-    for pid, cwd in procs:
+def conflicting_servers(
+    procs: list[tuple[int, str, int | None]],
+    trees: list[str],
+    *,
+    own_pids: set[int],
+    own_ports: Collection[int] = (),
+    own_tree: str | None = None,
+) -> list[tuple[int, str, int | None]]:
+    """같은 격리 Redis·DB 를 쓰는 트리(`trees`)에서 도는 다른 서버(pid, 작업 디렉터리, `--port`). 프로브는 방 키·활성 세트 캐시를
+    지우고 DB 를 템플릿으로 갈아 끼우므로, 그동안 다른 측정 서버가 같은 자원을 쓰면 서로의 상태를 깬다.
+
+    이 실행의 프로브 작업자 서버는 통과시킨다 — 이 트리(`own_tree`) 안에서 작업자 포트(`own_ports`)로 뜬 서버. 작업자마다 작업
+    DB·Redis 번호가 따로라 서로의 자원을 쓰지 않는다. 같은 포트라도 다른 트리의 서버, 이 트리라도 작업자 포트가 아닌 서버는
+    거부한다."""
+    conflicts: list[tuple[int, str, int | None]] = []
+    for pid, cwd, port in procs:
         if pid in own_pids:
             continue
         if not cwd:
             # 작업 디렉터리를 읽지 못한 서버는 어느 트리인지 모른다 — 통과시키지 않는다.
             print(f"경고: API 서버 pid {pid} 의 작업 디렉터리를 읽지 못했다 — 같은 자원을 쓴다고 보고 거부한다")
-            conflicts.append((pid, cwd))
-        elif any(cwd == tree or cwd.startswith(tree.rstrip("/") + "/") for tree in trees):
-            conflicts.append((pid, cwd))
+            conflicts.append((pid, cwd, port))
+        elif own_tree is not None and port in own_ports and _under(cwd, own_tree):
+            continue
+        elif any(_under(cwd, tree) for tree in trees):
+            conflicts.append((pid, cwd, port))
     return conflicts
 
 
-def running_api_servers() -> list[tuple[int, str]]:
-    """이 기계에서 도는 `uvicorn api.main:app` 프로세스와 그 작업 디렉터리."""
+def _under(path: str, tree: str) -> bool:
+    return path == tree.rstrip("/") or path.startswith(tree.rstrip("/") + "/")
+
+
+_PORT_ARG = re.compile(r"--port[ =](\d+)")
+
+
+def running_api_servers() -> list[tuple[int, str, int | None]]:
+    """이 기계에서 도는 `uvicorn api.main:app` 프로세스와 그 작업 디렉터리, 명령줄의 `--port`(없으면 None)."""
     found = subprocess.run(["pgrep", "-f", "[u]vicorn api.main:app"], capture_output=True, text=True, check=False)
     procs = []
     for raw in found.stdout.split():
@@ -104,5 +125,33 @@ def running_api_servers() -> list[tuple[int, str]]:
             ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True, check=False
         )
         path = next((line[1:] for line in cwd.stdout.splitlines() if line.startswith("n")), "")
-        procs.append((pid, path))
+        args = subprocess.run(["ps", "-o", "args=", "-p", str(pid)], capture_output=True, text=True, check=False)
+        port = _PORT_ARG.search(args.stdout)
+        procs.append((pid, path, int(port.group(1)) if port else None))
     return procs
+
+
+# 측정 하네스가 도는 워크트리 이름의 머리. 이 이름의 워크트리들이 같은 격리 Redis·DB 를 쓴다.
+HARNESS_TREE_GLOB = "long-memory*"
+
+
+def harness_trees(api_dir: Path) -> list[str]:
+    """같은 격리 자원을 쓰는 트리: 이 실행의 트리와, 저장소 루트(주 체크아웃) 아래 `.claude/worktrees/` 의 측정 워크트리들.
+
+    루트는 git 의 공용 디렉터리(`--git-common-dir`)로 찾는다 — 실행 위치에서 상대 경로로 짐작하면 루트 체크아웃에서 돌 때
+    워크트리 목록이 비어 검사가 조용히 꺼진다. 루트 체크아웃 자체는 거기서 돌 때만 든다(워크트리에서 돌 때 루트의 개발 서버는
+    측정 워크트리와 다른 자원을 쓸 수 있어 전처럼 보지 않는다). git 저장소 밖이면 거부한다."""
+    found = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"],
+        cwd=api_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    lines = found.stdout.split()
+    if found.returncode != 0 or len(lines) != 2:
+        raise SystemExit(f"{api_dir} 의 git 저장소 루트를 찾지 못했다 — 같은 자원을 쓰는 서버 검사를 켤 수 없다")
+    common, here = (Path(line).resolve() for line in lines)
+    root = common.parent
+    trees = {str(here), *(str(p.resolve()) for p in (root / ".claude" / "worktrees").glob(HARNESS_TREE_GLOB))}
+    return sorted(trees)

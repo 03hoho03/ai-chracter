@@ -6,13 +6,23 @@
 (`BudgetExceededError` → CLI 종료 코드 20). 상한·멈춤 선은 승인 값이라 런마다 실행 인자로 받는다(기본값이 있으면 상한만 올린
 실행이 옛 멈춤 선에서 조용히 먼저 멈춘다).
 
+원장은 여러 작업자(프로브 작업자 스레드, 동시 판정, 따로 띄운 CLI 프로세스)가 함께 쓴다. 누적 읽기와 기록은 원장 옆 잠금
+파일(`<원장>.lock`)의 `fcntl.flock` 안에서 일어난다 — 두 작업자가 같은 누적을 읽고 같은 누적 칸을 적거나, 한 줄이 반쯤 쓰인
+원장을 읽지 않게. 확인을 통과한 호출은 응답을 받아 기록할 때까지 견적만큼 자리를 잡아 둔다(`reserve` — 자리 장부는 원장 옆
+`<원장>.holds`). 확인은 기록된 누적에 남이 잡아 둔 자리까지 더해 보므로, 상한 직전에서 여럿이 동시에 확인해도 함께 통과해
+넘지 않는다. 자리를 잡은 프로세스가 죽으면 그 자리는 세지 않는다(장부에 프로세스 번호가 있다).
+
 단가는 앱 단가표가 먼저이고, 앱 단가표에 아직 없는 모델(Haiku 5.5 — 단가 줄은 직결 구조화 호출을 고치는 변경에서 들어온다 —
 과 임베딩 오프라인 비교의 Voyage·Gemini 임베딩 모델)만 여기의 보충표에서 읽는다. 보충표에도 없으면 원가를 모르는 유료 호출이므로 거부한다. 입력 토큰은 캐시 읽기·쓰기를 포함한
 전체다(앱 단가 계산과 같은 뜻)."""
 
+import contextlib
+import fcntl
 import json
 import math
-from collections.abc import Mapping
+import os
+import uuid
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -88,19 +98,37 @@ class Ledger:
         # 승인 묶음. 없으면 원장 전체를 한 묶음으로 본다(유료 실행은 CLI 가 묶음을 요구한다).
         self.bundle = bundle
 
-    def rows(self) -> list[dict[str, Any]]:
+    @contextlib.contextmanager
+    def _locked(self) -> Iterator[None]:
+        """원장 잠금. 잠금은 연 파일 단위라 같은 프로세스의 다른 스레드도 기다린다 — 잠근 채 다시 잠그지 않는다."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.with_name(self.path.name + ".lock").open("a") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+    def _read_rows(self) -> list[dict[str, Any]]:
         if not self.path.exists():
             return []
         return [json.loads(line) for line in self.path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    def _in_bundle(self, row: Mapping[str, Any]) -> bool:
+        return self.bundle is None or row.get("bundle") == self.bundle
+
+    def rows(self) -> list[dict[str, Any]]:
+        if not self.path.exists():
+            return []
+        with self._locked():
+            return self._read_rows()
 
     def total_usd(self) -> float:
         return sum(row_cost(r) for r in self.rows())
 
     def bundle_usd(self) -> float:
         """이 묶음의 누적. 묶음 칸이 없는 옛 줄은 어느 묶음에도 들지 않는다."""
-        if self.bundle is None:
-            return self.total_usd()
-        return sum(row_cost(r) for r in self.rows() if r.get("bundle") == self.bundle)
+        return sum(row_cost(r) for r in self.rows() if self._in_bundle(r))
 
     def append(
         self,
@@ -123,37 +151,91 @@ class Ledger:
             output_tokens=output_tokens,
             thoughts_tokens=thoughts_tokens,
         )
-        row = {
-            "at": datetime.now(UTC).isoformat(),
-            "bundle": self.bundle,
-            "stage": stage,
-            "callSite": call_site,
-            "model": model,
-            "inputTokens": input_tokens,
-            "cachedTokens": cached_tokens,
-            "cacheWriteTokens": cache_write_tokens,
-            "outputTokens": output_tokens,
-            "thoughtsTokens": thoughts_tokens,
-            "costUsd": cost,
-            "cumulativeUsd": self.total_usd() + cost,
-            "bundleCumulativeUsd": self.bundle_usd() + cost,
-            "note": note,
-        }
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        with self._locked():
+            rows = self._read_rows()
+            row = {
+                "at": datetime.now(UTC).isoformat(),
+                "bundle": self.bundle,
+                "stage": stage,
+                "callSite": call_site,
+                "model": model,
+                "inputTokens": input_tokens,
+                "cachedTokens": cached_tokens,
+                "cacheWriteTokens": cache_write_tokens,
+                "outputTokens": output_tokens,
+                "thoughtsTokens": thoughts_tokens,
+                "costUsd": cost,
+                "cumulativeUsd": sum(row_cost(r) for r in rows) + cost,
+                "bundleCumulativeUsd": sum(row_cost(r) for r in rows if self._in_bundle(r)) + cost,
+                "note": note,
+            }
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
         return row
 
-    def check_headroom(self, next_estimate_usd: float) -> None:
-        total = self.bundle_usd()
+    # ---------------------------------------------------------------- 자리 잡기
+
+    def _holds_path(self) -> Path:
+        return self.path.with_name(self.path.name + ".holds")
+
+    def _live_holds(self) -> dict[str, dict[str, Any]]:
+        """잡아 둔 자리 가운데 그 프로세스가 아직 살아 있는 것(죽은 프로세스의 자리는 버린다)."""
+        path = self._holds_path()
+        holds: dict[str, dict[str, Any]] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        return {key: hold for key, hold in holds.items() if _alive(int(hold["pid"]))}
+
+    def _write_holds(self, holds: Mapping[str, Any]) -> None:
+        tmp = self._holds_path().with_name(self._holds_path().name + ".tmp")
+        tmp.write_text(json.dumps(holds, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(self._holds_path())
+
+    def _check(self, next_estimate_usd: float, holds: Mapping[str, Mapping[str, Any]]) -> None:
+        """잠근 채 부른다. 묶음 누적 + 이 묶음에 잡힌 자리 + 다음 견적이 상한·멈춤 선을 넘으면 멈춘다."""
+        spent = sum(row_cost(r) for r in self._read_rows() if self._in_bundle(r))
+        held = sum(float(h["usd"]) for h in holds.values() if self._in_bundle(h))
         limit = self.cap_usd if self.halt_usd is None else min(self.cap_usd, self.halt_usd)
-        if total + next_estimate_usd > limit:
+        if spent + held + next_estimate_usd > limit:
             name = "상한" if limit == self.cap_usd else "멈춤 선"
             where = f"묶음 {self.bundle} " if self.bundle is not None else ""
+            pending = f" + 진행 중 호출 자리 ${held:.4f}" if held else ""
             raise BudgetExceededError(
-                f"{where}누적 ${total:.4f} + 다음 견적 ${next_estimate_usd:.4f} 가 {name} ${limit:.2f} 를 넘는다"
+                f"{where}누적 ${spent:.4f}{pending} + 다음 견적 ${next_estimate_usd:.4f} 가 {name} ${limit:.2f} 를 넘는다"
                 " — 멈추고 묻는다"
             )
+
+    def check_headroom(self, next_estimate_usd: float) -> None:
+        """다음 호출을 보내도 되는지만 본다(자리는 잡지 않는다) — 호출을 하나씩 보내는 경로용. 동시에 보내는 경로는 `reserve`."""
+        with self._locked():
+            self._check(next_estimate_usd, self._live_holds())
+
+    @contextlib.contextmanager
+    def reserve(self, next_estimate_usd: float) -> Iterator[None]:
+        """여유를 확인하고 그 자리에서 견적만큼 자리를 잡는다 — 확인과 자리 잡기가 한 잠금 안이라 동시에 확인한 작업자가 함께
+        통과하지 않는다. 블록이 끝나면(예외로 끝나도) 자리를 놓는다. 블록 안에서 `append` 한 뒤 놓기 전 잠깐은 같은 호출이 기록과
+        자리로 두 번 세지는데, 상한을 넘는 쪽이 아니라 더 일찍 멈추는 쪽이다."""
+        key = uuid.uuid4().hex
+        with self._locked():
+            holds = self._live_holds()
+            self._check(next_estimate_usd, holds)
+            holds[key] = {"pid": os.getpid(), "usd": next_estimate_usd, "bundle": self.bundle}
+            self._write_holds(holds)
+        try:
+            yield
+        finally:
+            with self._locked():
+                holds = self._live_holds()
+                holds.pop(key, None)
+                self._write_holds(holds)
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def opus_turns_per_arm(plant_set: PlantSet) -> int:

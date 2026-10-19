@@ -28,7 +28,7 @@ import re
 import subprocess
 import time
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -268,10 +268,41 @@ class ProbeRun:
     # 복원할 체크포인트 템플릿의 단계 이름(얼린 넣기 실행의 label — 기준선 s4, 최종 비교 s8).
     checkpoint_label: str = ""
     clover_top_up: int = 3_000
+    # 측정 서버와 이 프로세스의 복원·확인이 함께 쓰는 Redis(프로브 작업자마다 번호가 다르다). 없으면 서버 env 에 넣지 않고 이
+    # 프로세스 설정의 Redis 를 쓴다 — 서버가 같은 `.env` 를 읽을 때만 둘이 같다.
+    redis_url: str | None = None
+    # 템플릿 → 작업 DB 복제 단계의 파일 잠금(작업자끼리 복제를 줄 세운다).
+    clone_lock: Path | None = None
+    # 서버를 띄우기 직전마다 부르는 검사(같은 자원을 쓰는 다른 서버가 그사이 떴는지).
+    before_start: Callable[[], None] | None = None
+    # 참이면 다음 시도를 시작하지 않고 `ProbeInterruptedError` 로 빠진다(병렬 실행의 멈춤 표지 — Ctrl-C 등).
+    interrupted: Callable[[], bool] | None = None
+
+
+class ProbeInterruptedError(Exception):
+    """멈춤 표지가 서서 프로브를 끝내지 않고 빠졌다. 결과가 없으므로 결과 파일·불능 수에 들지 않고 다음 실행이 다시 돈다."""
 
 
 def probe_dir(run: ProbeRun, probe: Probe, attempt: int) -> Path:
     return run.run_dir / "probes" / f"{run.stage}-cp{probe.checkpoint}-{run.arm}" / probe.item_id / f"attempt{attempt}"
+
+
+def set_aside_previous_run(item_dir: Path) -> Path | None:
+    """지난 실행이 남긴 문항 폴더를 `<문항>.prev-<UTC 시각>`(겹치면 `-2`, `-3` …)으로 옮긴다(없으면 None).
+
+    시도 폴더의 서버 로그·드라이버 출력·대화 기록·프롬프트 덤프는 모두 이어 쓰기라, 다시 도는 단위가 옛 폴더에 쓰면 서버 로그의
+    옛 사용량이 원장에 다시 적히고 마지막 턴·덤프·경고 집계가 옛 줄을 집는다. 지우지 않는 까닭은 지난 시도의 증거(돈을 쓴
+    호출의 로그)라서다. 집계는 결과 행이 가리키는 시도 폴더만 읽으므로 옮긴 폴더는 어느 집계에도 들지 않는다."""
+    if not item_dir.exists():
+        return None
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    target = item_dir.with_name(f"{item_dir.name}.prev-{stamp}")
+    n = 2
+    while target.exists():
+        target = item_dir.with_name(f"{item_dir.name}.prev-{stamp}-{n}")
+        n += 1
+    item_dir.rename(target)
+    return target
 
 
 def _driver(run: ProbeRun, base: str, folder: Path, *extra: str) -> int:
@@ -281,10 +312,12 @@ def _driver(run: ProbeRun, base: str, folder: Path, *extra: str) -> int:
         "--log", str(folder / "chat.jsonl"), "--snapshot-log", str(folder / "memory-snapshots.jsonl"),
         "--room", str(run.room_id), *extra,
     ]  # fmt: skip
-    env = {**os.environ, "DATABASE_URL": run.database_url}
+    env = {**os.environ, "DATABASE_URL": run.database_url, **({"REDIS_URL": run.redis_url} if run.redis_url else {})}
+    # 서버와 같은 까닭으로 새 세션에서 띄운다: 터미널의 Ctrl-C 는 전경 프로세스 그룹 전체에 가므로, 같은 그룹이면 드라이버도 죽어
+    # 그 시도가 그 밖의 오류로 세지고 재시도·불능으로 번진다. 중단은 하네스가 받아 다음 시도를 시작하지 않는 쪽으로만 처리한다.
     with (folder / "driver.out").open("ab") as out:
         return subprocess.run(
-            command, cwd=API_DIR, env=env, stdout=out, stderr=subprocess.STDOUT, check=False
+            command, cwd=API_DIR, env=env, stdout=out, stderr=subprocess.STDOUT, check=False, start_new_session=True
         ).returncode
 
 
@@ -401,143 +434,158 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
     attempts: list[Attempt] = []
     records: list[dict[str, Any]] = []
     top_up = False
+    set_aside_previous_run(probe_dir(run, probe, 1).parent)
     while True:
+        # 재시도는 복원·서버 기동부터 다시 돈다(유료) — 멈춤 표지가 섰으면 시작하지 않는다.
+        if run.interrupted is not None and run.interrupted():
+            raise ProbeInterruptedError(f"{probe.item_id} cp{probe.checkpoint}: 시도 {len(attempts) + 1} 전에 멈춤")
         attempt_no = len(attempts) + 1
         folder = probe_dir(run, probe, attempt_no)
         folder.mkdir(parents=True, exist_ok=True)
-        run.ledger.check_headroom(len(probe.turns) * (run.opus_turn_usd + run.judgment_turn_usd))
-        restored = asyncio.run(
-            checkpoint.restore(
-                run.database_url,
-                work_db=checkpoint.database_name(run.database_url),
-                checkpoint=probe.checkpoint,
-                room_id=run.room_id,
-                dumps_dir=run.run_dir / "dumps",
-                label=run.checkpoint_label,
+        # 시도마다 견적만큼 원장 자리를 잡고 서버 로그의 사용량을 원장에 적은 뒤 놓는다 — 작업자 여럿이 같은 원장을 쓸 때 상한 직전에서
+        # 동시에 확인한 작업자들이 함께 통과하지 않게.
+        # 실제 원가가 견적을 넘는 만큼은 막지 못하고, 그 초과분은 동시에 도는 작업자 수만큼 겹칠 수 있다.
+        with run.ledger.reserve(len(probe.turns) * (run.opus_turn_usd + run.judgment_turn_usd)):
+            restored = asyncio.run(
+                checkpoint.restore(
+                    run.database_url,
+                    work_db=checkpoint.database_name(run.database_url),
+                    checkpoint=probe.checkpoint,
+                    room_id=run.room_id,
+                    dumps_dir=run.run_dir / "dumps",
+                    label=run.checkpoint_label,
+                    redis_url=run.redis_url,
+                    clone_lock=run.clone_lock,
+                )
             )
-        )
-        if top_up:
-            asyncio.run(_top_up(run.database_url, run.room_id, run.clover_top_up))
-        # 템플릿이 얼린 뒤 새 약관 판이 시행됐으면 측정 계정이 재동의 게이트에 막힌다 — 복원할 때마다 현행판으로 맞춘다.
-        asyncio.run(_ensure_consent(run.database_url, run.room_id))
-        if probe.guard_memory:
-            reasons = asyncio.run(memory_precheck(run.database_url, run.room_id, probe.turns))
-            if reasons:
-                records.append({"attempt": attempt_no, "action": "unprobeable", "precheck": reasons, "costUsd": 0.0,
-                                "fingerprint": restored["fingerprint"], "folder": str(folder)})  # fmt: skip
-                return {
-                    "stage": run.stage, "arm": run.arm, "checkpoint": probe.checkpoint, "item": probe.item_id,
-                    "kind": probe.kind, "split": probe.split, "status": "unprobeable", "turns": [],
-                    "attempts": records,
-                }  # fmt: skip
-        server_log = folder / "server.log"
-        overrides = {
-            **run.server_overrides,
-            **arm_env(run.arm),
-            "DATABASE_URL": run.database_url,
-            "PROMPT_DUMP_PATH": str(folder / "prompt-dump.jsonl"),
-        }
-        # 복원이 지운 전역 Voyage 멈춤 키가 그사이 다시 생겼으면 질의 임베딩이 건너뛰어진다 — 서버를 띄우기 전에 끊는다.
-        asyncio.run(checkpoint.require_no_voyage_backoff())
-        started_at = datetime.now(UTC)
-        handle = server.start(overrides, port=run.port, log=server_log, allow_paid=run.allow_paid)
-        turns: list[dict[str, Any]] = []
-        drift: list[str] = []
-        code = EXIT_OK
-        try:
-            code = _driver(run, handle.base, folder, "--rebase", f"체크포인트 {probe.checkpoint} 복원")
-            if code == EXIT_OK:
-                for index, text_ in enumerate(probe.turns):
-                    if index > 0 and probe.guard_memory:
-                        drift = _guard_memory(run, restored["fingerprint"])
-                        if drift:
+            if top_up:
+                asyncio.run(_top_up(run.database_url, run.room_id, run.clover_top_up))
+            # 템플릿이 얼린 뒤 새 약관 판이 시행됐으면 측정 계정이 재동의 게이트에 막힌다 — 복원할 때마다 현행판으로 맞춘다.
+            asyncio.run(_ensure_consent(run.database_url, run.room_id))
+            if probe.guard_memory:
+                reasons = asyncio.run(memory_precheck(run.database_url, run.room_id, probe.turns))
+                if reasons:
+                    records.append({"attempt": attempt_no, "action": "unprobeable", "precheck": reasons, "costUsd": 0.0,
+                                    "fingerprint": restored["fingerprint"], "folder": str(folder)})  # fmt: skip
+                    return {
+                        "stage": run.stage, "arm": run.arm, "checkpoint": probe.checkpoint, "item": probe.item_id,
+                        "kind": probe.kind, "split": probe.split, "status": "unprobeable", "turns": [],
+                        "attempts": records,
+                    }  # fmt: skip
+            server_log = folder / "server.log"
+            overrides = {
+                **run.server_overrides,
+                **arm_env(run.arm),
+                "DATABASE_URL": run.database_url,
+                "PROMPT_DUMP_PATH": str(folder / "prompt-dump.jsonl"),
+                **({"REDIS_URL": run.redis_url} if run.redis_url else {}),
+            }
+            # 복원이 지운 전역 Voyage 멈춤 키가 그사이 다시 생겼으면 질의 임베딩이 건너뛰어진다 — 서버를 띄우기 전에 끊는다.
+            asyncio.run(checkpoint.require_no_voyage_backoff(run.redis_url))
+            if run.before_start is not None:
+                run.before_start()
+            started_at = datetime.now(UTC)
+            handle = server.start(overrides, port=run.port, log=server_log, allow_paid=run.allow_paid)
+            turns: list[dict[str, Any]] = []
+            drift: list[str] = []
+            code = EXIT_OK
+            try:
+                code = _driver(run, handle.base, folder, "--rebase", f"체크포인트 {probe.checkpoint} 복원")
+                if code == EXIT_OK:
+                    for index, text_ in enumerate(probe.turns):
+                        if index > 0 and probe.guard_memory:
+                            drift = _guard_memory(run, restored["fingerprint"])
+                            if drift:
+                                break
+                        wait = run.pacer.wait_before_send(now=time.monotonic())
+                        if wait:
+                            time.sleep(wait)
+                        run.pacer.record(time.monotonic())
+                        offset = server_log.stat().st_size
+                        code = _driver(
+                            run, handle.base, folder, "--say", text_, "--tag", "프로브", "--check-every", "0"
+                        )
+                        last = _last_turn(folder)
+                        turns.append(
+                            {
+                                "user": text_,
+                                "exit": code,
+                                "reply": (last or {}).get("reply") or "",
+                                "clientTurn": (last or {}).get("clientTurn"),
+                                # 드라이버가 잰 첫 글자 지연(보낸 뒤 첫 token 이벤트까지, ms). 첫 글자 전에 끊기면 None.
+                                "ttftMs": (last or {}).get("ttftMs"),
+                            }
+                        )
+                        if code not in (EXIT_OK, EXIT_ENDING):
                             break
-                    wait = run.pacer.wait_before_send(now=time.monotonic())
-                    if wait:
-                        time.sleep(wait)
-                    run.pacer.record(time.monotonic())
-                    offset = server_log.stat().st_size
-                    code = _driver(run, handle.base, folder, "--say", text_, "--tag", "프로브", "--check-every", "0")
-                    last = _last_turn(folder)
-                    turns.append(
-                        {
-                            "user": text_,
-                            "exit": code,
-                            "reply": (last or {}).get("reply") or "",
-                            "clientTurn": (last or {}).get("clientTurn"),
-                            # 드라이버가 잰 첫 글자 지연(보낸 뒤 첫 token 이벤트까지, ms). 첫 글자 전에 끊기면 None.
-                            "ttftMs": (last or {}).get("ttftMs"),
-                        }
-                    )
-                    if code not in (EXIT_OK, EXIT_ENDING):
-                        break
-        finally:
-            server.stop(handle)
-        log_text = _server_log_text(server_log)
-        # 원장 기준은 서버 로그(실패한 시도·백그라운드 접기·추출 포함). 턴 기록은 생성 호출 수 대조에만 쓴다.
-        usage = parse_usage_log(log_text)
-        recorded_turns = asyncio.run(_turn_usage(run.database_url, run.room_id, started_at))
-        memory_facts = asyncio.run(_turn_memory_facts(run.database_url, run.room_id, started_at))
-        memory_recall = asyncio.run(_turn_memory_recall(run.database_url, run.room_id, started_at))
-        for call in usage:
-            run.ledger.append(
-                stage=run.stage,
-                call_site=str(call.get("callSite")),
-                model=str(call.get("model")),
-                input_tokens=int(call.get("promptTokens") or 0),
-                cached_tokens=int(call.get("cachedTokens") or 0),
-                cache_write_tokens=int(call.get("cacheWriteTokens") or 0),
-                output_tokens=int(call.get("outputTokens") or 0),
-                thoughts_tokens=int(call.get("thoughtsTokens") or 0),
-                note=f"{probe.item_id} cp{probe.checkpoint} {run.arm}" + (" usage=missing" if call["missing"] else ""),
+            finally:
+                server.stop(handle)
+            log_text = _server_log_text(server_log)
+            # 원장 기준은 서버 로그(실패한 시도·백그라운드 접기·추출 포함). 턴 기록은 생성 호출 수 대조에만 쓴다.
+            usage = parse_usage_log(log_text)
+            recorded_turns = asyncio.run(_turn_usage(run.database_url, run.room_id, started_at))
+            memory_facts = asyncio.run(_turn_memory_facts(run.database_url, run.room_id, started_at))
+            memory_recall = asyncio.run(_turn_memory_recall(run.database_url, run.room_id, started_at))
+            for call in usage:
+                run.ledger.append(
+                    stage=run.stage,
+                    call_site=str(call.get("callSite")),
+                    model=str(call.get("model")),
+                    input_tokens=int(call.get("promptTokens") or 0),
+                    cached_tokens=int(call.get("cachedTokens") or 0),
+                    cache_write_tokens=int(call.get("cacheWriteTokens") or 0),
+                    output_tokens=int(call.get("outputTokens") or 0),
+                    thoughts_tokens=int(call.get("thoughtsTokens") or 0),
+                    note=f"{probe.item_id} cp{probe.checkpoint} {run.arm}"
+                    + (" usage=missing" if call["missing"] else ""),
+                )
+            saved = len(turns) == len(probe.turns) and all(t["reply"] for t in turns)
+            if probe.guard_memory and saved and not drift:
+                drift = summary_drift(folder)
+            attempt = Attempt(exit_code=code, response_saved=saved, recall_stack=recall_stack_in(log_text))
+            if code == EXIT_OK and not saved:
+                # 드라이버는 생성 오류로 유실된 턴도 0 으로 끝낸다 — 응답이 없으면 그 밖의 오류로 센다.
+                attempt = Attempt(exit_code=1, response_saved=False, recall_stack=attempt.recall_stack)
+            attempts.append(attempt)
+            action = next_action(attempts)
+            if drift:
+                action = Action(kind="unprobeable", reason=guard_reason(drift))
+            records.append(
+                {
+                    "attempt": attempt_no,
+                    "exit": attempt.exit_code,
+                    "saved": saved,
+                    "action": action.kind,
+                    "reason": action.reason,
+                    "costUsd": sum(opus_turn_cost_from_usage(c) for c in usage if not c["missing"]),
+                    "usageMissing": sum(1 for c in usage if c["missing"]),
+                    "usageProviders": sorted({str(c["provider"]) for c in usage}),
+                    "recallWarnings": recall_warning_count(log_text),
+                    "generateCallsLog": sum(1 for c in usage if c["callSite"] == "chat_generate"),
+                    "generateCallsTurns": sum(1 for c in recorded_turns if c.get("callSite") == "chat_generate"),
+                    "fingerprint": restored["fingerprint"],
+                    "memoryDrift": drift,
+                    "folder": str(folder),
+                }
             )
-        saved = len(turns) == len(probe.turns) and all(t["reply"] for t in turns)
-        if probe.guard_memory and saved and not drift:
-            drift = summary_drift(folder)
-        attempt = Attempt(exit_code=code, response_saved=saved, recall_stack=recall_stack_in(log_text))
-        if code == EXIT_OK and not saved:
-            # 드라이버는 생성 오류로 유실된 턴도 0 으로 끝낸다 — 응답이 없으면 그 밖의 오류로 센다.
-            attempt = Attempt(exit_code=1, response_saved=False, recall_stack=attempt.recall_stack)
-        attempts.append(attempt)
-        action = next_action(attempts)
-        if drift:
-            action = Action(kind="unprobeable", reason=guard_reason(drift))
-        records.append(
-            {
-                "attempt": attempt_no,
-                "exit": attempt.exit_code,
-                "saved": saved,
-                "action": action.kind,
-                "reason": action.reason,
-                "costUsd": sum(opus_turn_cost_from_usage(c) for c in usage if not c["missing"]),
-                "usageMissing": sum(1 for c in usage if c["missing"]),
-                "usageProviders": sorted({str(c["provider"]) for c in usage}),
-                "recallWarnings": recall_warning_count(log_text),
-                "generateCallsLog": sum(1 for c in usage if c["callSite"] == "chat_generate"),
-                "generateCallsTurns": sum(1 for c in recorded_turns if c.get("callSite") == "chat_generate"),
-                "fingerprint": restored["fingerprint"],
-                "memoryDrift": drift,
-                "folder": str(folder),
-            }
-        )
-        if action.kind != "retry":
-            from api.chat.memory_vector import QUERY_EMBEDDING_CALL_SITE
+            if action.kind != "retry":
+                from api.chat.memory_vector import QUERY_EMBEDDING_CALL_SITE
 
-            return {
-                "stage": run.stage,
-                "arm": run.arm,
-                "checkpoint": probe.checkpoint,
-                "item": probe.item_id,
-                "kind": probe.kind,
-                "split": probe.split,
-                "status": action.kind,
-                "turns": turns,
-                "memoryFacts": memory_facts,
-                "memoryRecall": memory_recall,
-                # 질의 임베딩 호출의 결과(ok·timeout·failed)와 지연 — 벡터 경로가 실제로 돌았는지 보는 입력.
-                "queryEmbeddings": [c for c in recorded_turns if c.get("callSite") == QUERY_EMBEDDING_CALL_SITE],
-                "attempts": records,
-            }
+                return {
+                    "stage": run.stage,
+                    "arm": run.arm,
+                    "checkpoint": probe.checkpoint,
+                    "item": probe.item_id,
+                    "kind": probe.kind,
+                    "split": probe.split,
+                    "status": action.kind,
+                    "turns": turns,
+                    "memoryFacts": memory_facts,
+                    "memoryRecall": memory_recall,
+                    # 질의 임베딩 호출의 결과(ok·timeout·failed)와 지연 — 벡터 경로가 실제로 돌았는지 보는 입력.
+                    "queryEmbeddings": [c for c in recorded_turns if c.get("callSite") == QUERY_EMBEDDING_CALL_SITE],
+                    "attempts": records,
+                }
         if action.wait_seconds:
             time.sleep(action.wait_seconds)
         top_up = action.top_up

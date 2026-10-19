@@ -206,8 +206,12 @@ def test_other_servers_on_the_shared_trees_are_conflicts() -> None:
     from memory_eval.server import conflicting_servers
 
     trees = ["/w/long-memory-prep", "/w/long-memory-eval"]
-    procs = [(1, "/w/long-memory-prep/apps/api"), (2, "/w/main/apps/api"), (3, "/w/long-memory-eval/apps/api")]
-    assert conflicting_servers(procs, trees, own_pids={3}) == [(1, "/w/long-memory-prep/apps/api")]
+    procs: list[tuple[int, str, int | None]] = [
+        (1, "/w/long-memory-prep/apps/api", 8130),
+        (2, "/w/main/apps/api", 8000),
+        (3, "/w/long-memory-eval/apps/api", 8130),
+    ]
+    assert conflicting_servers(procs, trees, own_pids={3}) == [(1, "/w/long-memory-prep/apps/api", 8130)]
 
 
 # ---------------------------------------------------------------- 8. 추출 연속 실패·빈 에피소드
@@ -439,4 +443,4 @@ def test_s8_refuses_input_that_lacks_one_half() -> None:
 def test_unreadable_working_directory_counts_as_a_conflict() -> None:
     from memory_eval.server import conflicting_servers
 
-    assert conflicting_servers([(9, "")], ["/w/long-memory-eval"], own_pids=set()) == [(9, "")]
+    assert conflicting_servers([(9, "", None)], ["/w/long-memory-eval"], own_pids=set()) == [(9, "", None)]

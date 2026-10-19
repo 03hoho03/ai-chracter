@@ -19,10 +19,12 @@ B 계열 템플릿(요약 글만 다른 판으로 바꾼 것)의 지문에는 �
 않아, 요약이 A 판으로 남은 B 템플릿도 지문이 같다. B 계열 이름으로 복원하면 이 해시도 DB 와 견준다."""
 
 import asyncio
+import contextlib
+import fcntl
 import hashlib
 import json
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -80,9 +82,36 @@ async def _exists(conn: AsyncConnection, name: str) -> bool:
     return bool(await conn.scalar(text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": name}))
 
 
-async def clone_database(database_url: str, *, source: str, target: str, replace: bool) -> None:
-    """`target` 을 `source` 의 복제로 만든다. `replace` 면 있던 `target` 을 먼저 지운다. 원본에 다른 연결이 있으면 거부."""
+@contextlib.contextmanager
+def _file_lock(path: Path | None) -> Iterator[None]:
+    """`path` 의 `fcntl.flock` 배타 잠금(없으면 잠그지 않는다). 잠금은 연 파일 단위라 같은 프로세스의 다른 스레드도 기다린다."""
+    if path is None:
+        yield
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+async def clone_database(
+    database_url: str, *, source: str, target: str, replace: bool, lock: Path | None = None
+) -> None:
+    """`target` 을 `source` 의 복제로 만든다. `replace` 면 있던 `target` 을 먼저 지운다. 원본에 다른 연결이 있으면 거부.
+
+    `lock` 을 주면 연결 검사부터 복제까지를 그 파일 잠금 안에서 한다 — 프로브 작업자 여럿이 같은 템플릿을 저마다의 작업 DB 로
+    복제할 때 한 번에 하나씩만 한다. 같은 템플릿의 동시 복제가 실패한다는 근거를 잰 적은 없다(복제 명령은 원본이 아니라 관리 DB
+    연결에서 나간다). 연결 검사와 복제 사이에 다른 작업자의 복제·삭제가 끼지 않게 하는 안전판이고, 복제는 1초 안팎이라 줄 세워도
+    비용이 작다. 턴을 보내는 동안은 잠그지 않는다."""
     ensure_eval_db_name(target)
+    with _file_lock(lock):
+        await _clone(database_url, source=source, target=target, replace=replace)
+
+
+async def _clone(database_url: str, *, source: str, target: str, replace: bool) -> None:
     engine = create_async_engine(maintenance_url(database_url), isolation_level="AUTOCOMMIT")
     try:
         async with engine.connect() as conn:
@@ -259,7 +288,7 @@ def write_fingerprint(path: Path, fingerprint: Mapping[str, Any]) -> None:
     path.write_text(json.dumps(fingerprint, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
 
-async def clear_room_redis_keys(room_id: uuid.UUID) -> list[str]:
+async def clear_room_redis_keys(room_id: uuid.UUID, redis_url: str | None = None) -> list[str]:
     """그 방의 턴 락·접기 백오프, 활성 프롬프트 세트 캐시, 전역 Voyage 연속 실패 멈춤 키만 지운다. `FLUSHDB`·`FLUSHALL` 은 쓰지
     않는다.
 
@@ -269,14 +298,17 @@ async def clear_room_redis_keys(room_id: uuid.UUID) -> list[str]:
 
     앱의 모듈 싱글턴 Redis 클라이언트를 쓰지 않고 호출마다 연결을 만들어 이 루프 안에서 닫는다 — 프로브는 시도마다
     `asyncio.run` 으로 새 이벤트 루프를 열고, 싱글턴은 처음 쓴 루프에 묶여 두 번째 루프에서 "다른 루프에 붙은 Future" 로
-    죽는다."""
+    죽는다.
+
+    `redis_url` 은 측정 서버가 쓰는 Redis 다(프로브 작업자마다 번호가 다르다). 주지 않으면 이 프로세스 설정의 Redis — 서버를 같은
+    `.env` 로 띄울 때만 맞다. 서버 env 에만 작업자 Redis 를 주고 여기서 다른 번호를 지우면 서버 쪽 턴 락·멈춤 키가 그대로 남는다."""
     from redis.asyncio import Redis
 
     from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
     from api.chat.voyage_backoff import VOYAGE_BACKOFF_KEY
     from api.core.config import settings
 
-    client = Redis.from_url(settings.redis_url, decode_responses=True)
+    client = Redis.from_url(redis_url or settings.redis_url, decode_responses=True)
     try:
         keys = [f"chat_room:turn_lock:{room_id}", f"memory_fold_backoff:{room_id}", VOYAGE_BACKOFF_KEY]
         keys += [key async for key in client.scan_iter(match=f"{ACTIVE_PROMPT_SET_KEY_PREFIX}*")]
@@ -289,15 +321,16 @@ async def clear_room_redis_keys(room_id: uuid.UUID) -> list[str]:
         await client.aclose()
 
 
-async def require_no_voyage_backoff() -> None:
+async def require_no_voyage_backoff(redis_url: str | None = None) -> None:
     """전역 Voyage 연속 실패 멈춤 키가 없음을 단언한다(프로브 턴을 보내기 직전). 있으면 그 프로브의 질의 임베딩이 건너뛰어질 수
-    있으므로 `SystemExit` — 복원이 지웠는데도 남아 있다면 다른 프로세스가 같은 Redis 에서 Voyage 를 부르고 있다."""
+    있으므로 `SystemExit` — 복원이 지웠는데도 남아 있다면 다른 프로세스가 같은 Redis 에서 Voyage 를 부르고 있다. `redis_url` 은
+    `clear_room_redis_keys` 와 같은 뜻(측정 서버가 쓰는 Redis)."""
     from redis.asyncio import Redis
 
     from api.chat.voyage_backoff import VOYAGE_BACKOFF_KEY
     from api.core.config import settings
 
-    client = Redis.from_url(settings.redis_url, decode_responses=True)
+    client = Redis.from_url(redis_url or settings.redis_url, decode_responses=True)
     try:
         if await client.exists(VOYAGE_BACKOFF_KEY):
             raise SystemExit(
@@ -334,13 +367,24 @@ async def freeze(
 
 
 async def restore(
-    database_url: str, *, work_db: str, checkpoint: int, room_id: uuid.UUID, dumps_dir: Path, label: str
+    database_url: str,
+    *,
+    work_db: str,
+    checkpoint: int,
+    room_id: uuid.UUID,
+    dumps_dir: Path,
+    label: str,
+    redis_url: str | None = None,
+    clone_lock: Path | None = None,
 ) -> dict[str, Any]:
     """템플릿으로 작업 DB 를 새로 복제하고, 이 방의 Redis 키를 정리한 다음 지문이 같은지 확인한다. 다르면 `SystemExit`. B 계열 이름이면 요약 글
-    해시도 지문에 넣어 견준다 — 해시가 없는 B 지문(해시를 싣기 전에 만든 것)도 칸 차이로 거부된다."""
+    해시도 지문에 넣어 견준다 — 해시가 없는 B 지문(해시를 싣기 전에 만든 것)도 칸 차이로 거부된다. `redis_url`·`clone_lock` 은
+    프로브 작업자의 Redis 와 복제 잠금(`clear_room_redis_keys`·`clone_database`)."""
     ensure_eval_db_name(work_db)
-    await clone_database(database_url, source=template_db_name(checkpoint, label), target=work_db, replace=True)
-    deleted = await clear_room_redis_keys(room_id)
+    await clone_database(
+        database_url, source=template_db_name(checkpoint, label), target=work_db, replace=True, lock=clone_lock
+    )
+    deleted = await clear_room_redis_keys(room_id, redis_url)
     expected = json.loads(fingerprint_path(dumps_dir, checkpoint, label).read_text(encoding="utf-8"))
     actual = await read_fingerprint(database_url, room_id)
     if label.endswith(B_SERIES_SUFFIX):

@@ -672,27 +672,29 @@ class HaikuJudge:
     async def verdict(self, prompt: str) -> JudgeVerdict:
         from api.llm.claude_messages import message_usage, parse_structured, structured_output_config
 
-        self._ledger.check_headroom(self._call_estimate_usd)
         output_config: Any = {**structured_output_config(JudgeVerdict), "effort": "low"}
         thinking: Any = {} if self._thinking is None else {"thinking": self._thinking}
-        message = await self._client.messages.create(
-            model=self._model,
-            max_tokens=1_000,
-            **thinking,
-            output_config=output_config,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        usage = message_usage(message)
-        self._ledger.append(
-            stage=self._stage,
-            call_site="memory_eval_judge",
-            model=self._model,
-            input_tokens=int(getattr(usage, "prompt_token_count", 0) or 0),
-            cached_tokens=int(getattr(usage, "cached_content_token_count", 0) or 0),
-            cache_write_tokens=int(getattr(usage, "cache_write_token_count", 0) or 0),
-            output_tokens=int(getattr(usage, "candidates_token_count", 0) or 0),
-            thoughts_tokens=int(getattr(usage, "thoughts_token_count", 0) or 0),
-        )
+        # 판정은 동시에 나간다 — 확인만 하고 보내면 응답이 와 기록되기 전에 다른 판정도 같은 누적으로 확인을 통과해 상한을 넘는다.
+        # 응답을 기록할 때까지 견적만큼 원장 자리를 잡아 둔다.
+        with self._ledger.reserve(self._call_estimate_usd):
+            message = await self._client.messages.create(
+                model=self._model,
+                max_tokens=1_000,
+                **thinking,
+                output_config=output_config,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            usage = message_usage(message)
+            self._ledger.append(
+                stage=self._stage,
+                call_site="memory_eval_judge",
+                model=self._model,
+                input_tokens=int(getattr(usage, "prompt_token_count", 0) or 0),
+                cached_tokens=int(getattr(usage, "cached_content_token_count", 0) or 0),
+                cache_write_tokens=int(getattr(usage, "cache_write_token_count", 0) or 0),
+                output_tokens=int(getattr(usage, "candidates_token_count", 0) or 0),
+                thoughts_tokens=int(getattr(usage, "thoughts_token_count", 0) or 0),
+            )
         return parse_structured(message, JudgeVerdict, "anthropic", "Anthropic")
 
 
@@ -722,9 +724,9 @@ async def _gather_or_cancel(coros: Sequence[Awaitable[_T]]) -> list[_T]:
     """모두 기다려 입력 순서대로 돌려준다.
 
     하나가 원장 상한 멈춤으로 끝나면 나머지를 취소하지 않고 끝까지 기다린 뒤 그 예외를 다시 낸다. 이미 나간 요청은 청구됐을 수
-    있으므로 응답을 받아 원장에 남겨야 누적 원가를 낮게 보지 않는다. 그 사이 새 호출은 나가지 않는다 — 판정기는 보내기 전에 원장
-    여유를 확인하고, 누적 원가는 줄지 않으므로 한 번 넘은 상한은 그 뒤의 확인에서도 넘는다. 그 밖의 예외(취소·중단 등)면
-    나머지를 취소한 뒤 다시 낸다."""
+    있으므로 응답을 받아 원장에 남겨야 누적 원가를 낮게 보지 않는다. 그 사이에도 상한은 넘지 않는다 — 판정기는 보내기 전에 기록된
+    누적과 진행 중 호출이 잡아 둔 자리를 더해 확인한다(진행 중 호출의 실제 원가가 견적보다 작으면 그 차이만큼은 새 호출이 나갈 수
+    있다). 그 밖의 예외(취소·중단 등)면 나머지를 취소한 뒤 다시 낸다."""
     tasks = [asyncio.ensure_future(c) for c in coros]
     try:
         return list(await asyncio.gather(*tasks))

@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from memory_eval import checkpoint, holdout, ledger as ledger_mod, plants as plants_mod
+from memory_eval import checkpoint, holdout, ledger as ledger_mod, plants as plants_mod, workers
 from memory_eval.arm_env import BUNDLE1_ARMS
 from memory_eval.ledger import Ledger
 from memory_eval.cli_common import (
@@ -33,6 +33,7 @@ from memory_eval.cli_common import (
     _write,
     data_file,
     paid,
+    update_status,
     with_plants,
     with_splits,
 )
@@ -695,6 +696,13 @@ def cmd_probe(args: argparse.Namespace) -> int:
 
     from memory_eval.arm_env import bundle1_env_pairs, require_lane_arm, series_label
 
+    # 같은 프로브가 큐에 두 번 들면 두 작업자가 같은 시도 폴더를 쓴다 — 한쪽이 다시 돌며 옆으로 옮기는 지난 폴더가 다른 쪽이 쓰는
+    # 폴더다. 계획 전에 거부한다.
+    for flag, raw in (("--checkpoints", args.checkpoints), ("--items", args.items or "")):
+        values = [v.strip() for v in raw.split(",") if v.strip()]
+        repeated = sorted({v for v in values if values.count(v) > 1})
+        if repeated:
+            raise SystemExit(f"{flag} 에 중복된 값이 있다: {repeated}")
     plant_set = _plant_view(args, _splits(args))
     bundle1 = args.arm in BUNDLE1_ARMS
     if bundle1:
@@ -782,12 +790,34 @@ def cmd_probe(args: argparse.Namespace) -> int:
                 f"측정 서버 env 가 정하지 않은 임베딩 설정 {leaked} 가 .env·실행 환경에 있다 — 서버가 그 값을 읽어 갈래 설정이 "
                 "바뀐다(df 상한 '없음'은 env 로 쓸 수 없어 줄을 뺀다). .env 에서 그 줄을 지우고 다시"
             )
-    if server.port_in_use(args.port):
-        raise SystemExit(f"포트 {args.port} 에 이미 서버가 있다")
-    trees = [str(p) for p in server.API_DIR.parents[1].parent.glob("long-memory*")]
-    others = server.conflicting_servers(server.running_api_servers(), trees, own_pids=set())
-    if others:
-        raise SystemExit(f"같은 격리 Redis·DB 를 쓰는 다른 API 서버가 떠 있다 — 내린 뒤 다시: {others}")
+    from api.core.config import settings
+
+    if args.room is None or args.cred_file is None or args.cookie_file is None:
+        raise SystemExit("프로브는 --room·--cred-file·--cookie-file 을 줘야 돈다")
+    slots = workers.worker_slots(
+        args.workers,
+        base_port=args.port,
+        database_url=_db_url(writes=True),
+        redis_url=settings.redis_url,
+        redis_db_base=args.redis_db_base,
+        cookie_file=args.cookie_file,
+    )
+    busy = [slot.port for slot in slots if server.port_in_use(slot.port)]
+    if busy:
+        raise SystemExit(f"작업자 포트 {busy} 에 이미 서버가 있다")
+    trees = server.harness_trees(server.API_DIR)
+    own_ports = {slot.port for slot in slots}
+
+    def no_other_servers() -> None:
+        # 이 실행의 작업자 서버(이 트리·작업자 포트)는 통과시키고, 같은 자원을 쓰는 트리의 다른 서버는 거부한다. 작업자가 서버를
+        # 띄우기 직전마다 다시 본다 — 실행 중에 다른 측정 서버가 뜰 수 있다.
+        others = server.conflicting_servers(
+            server.running_api_servers(), trees, own_pids=set(), own_ports=own_ports, own_tree=str(server.API_DIR)
+        )
+        if others:
+            raise SystemExit(f"같은 격리 Redis·DB 를 쓰는 다른 API 서버가 떠 있다 — 내린 뒤 다시: {others}")
+
+    no_other_servers()
     run = probe_mod.ProbeRun(
         stage=args.stage,
         arm=args.arm,
@@ -809,17 +839,43 @@ def cmd_probe(args: argparse.Namespace) -> int:
             if bundle1
             else args.checkpoint_label or args.stage
         ),
+        clone_lock=args.run / "clone.lock",
+        before_start=no_other_servers,
     )
-    for p in probes:
-        result = probe_mod.run_probe(run, p)
+    counts = {"unprobeable": unprobeable, "halted": False}
+
+    def on_result(result: dict[str, Any]) -> bool:
         with out.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(result, ensure_ascii=False, default=str) + "\n")
-        print(f"{p.item_id} cp{p.checkpoint}: {result['status']}")
-        unprobeable += result["status"] == "unprobeable"
-        if probe_mod.should_halt(unprobeable, halt_base):
-            raise SystemExit(f"프로브 불능 {unprobeable}건 — 멈추고 묻는다")
+        print(f"{result['item']} cp{result['checkpoint']}: {result['status']}", flush=True)
+        counts["unprobeable"] += result["status"] == "unprobeable"
+        if probe_mod.should_halt(int(counts["unprobeable"]), halt_base):
+            counts["halted"] = True
+        return bool(counts["halted"])
+
+    def progress(states: list[dict[str, Any]]) -> None:
+        if args.status_dir is not None:
+            update_status(args.status_dir, {"workers": states})
+
+    outcome = workers.run_parallel(
+        run,
+        probes,
+        slots,
+        on_result=on_result,
+        progress=progress,
+        failures_file=args.run / "probes" / f"{args.stage}-{args.arm}.failures.jsonl",
+    )
     if out.exists():
         _print(probe_mod.probe_summary(_probe_rows([out])))
+    if counts["halted"]:
+        raise SystemExit(f"프로브 불능 {counts['unprobeable']}건 — 멈추고 묻는다")
+    if outcome.budget_stop is not None:
+        raise outcome.budget_stop
+    if outcome.failures:
+        raise SystemExit(
+            f"작업 단위 {len(outcome.failures)}건 실패(남은 단위 {outcome.remaining}) — "
+            f"{args.stage}-{args.arm}.failures.jsonl 을 보고 다시 돌리면 결과 파일에 없는 단위만 돈다"
+        )
     return 0
 
 
@@ -1344,7 +1400,19 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--room", type=uuid.UUID)
     p.add_argument("--cred-file", type=Path)
     p.add_argument("--cookie-file", type=Path)
-    p.add_argument("--port", type=int, default=8130)
+    p.add_argument("--port", type=int, default=8130, help="작업자 i(1부터)의 서버 포트는 이 값 + i")
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=workers.DEFAULT_WORKERS,
+        help=f"프로브 작업자 수(1~{workers.MAX_WORKERS}). 작업자마다 서버 포트·작업 DB(<작업 DB>_probe_w<i>)·Redis 번호·쿠키 파일이 따로다",
+    )
+    p.add_argument(
+        "--redis-db-base",
+        type=int,
+        default=workers.DEFAULT_REDIS_DB_BASE,
+        help="작업자 i 의 Redis DB 번호는 이 값 + i(기본이면 9~15)",
+    )
     p.add_argument("--server-env", type=Path, help="서버에 덮어 줄 KEY=VALUE 파일(모델 배정 등 — 키 값은 넣지 않는다)")
     p.add_argument("--opus-turn-usd", type=float, default=0.13)
     p.add_argument("--judgment-turn-usd", type=float, default=0.003)

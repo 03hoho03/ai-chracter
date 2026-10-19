@@ -66,6 +66,24 @@ def paid(p: argparse.ArgumentParser) -> None:
     p.add_argument("--allow-paid", action="store_true", help="유료 호출을 실제로 한다(사용자 승인 뒤에만)")
 
 
+def write_status(status_dir: Path, status: dict[str, Any]) -> None:
+    """상태 파일을 통째로 바꿔 쓴다(임시 파일 뒤 이름 바꾸기) — 지켜보는 쪽이 반쯤 쓴 JSON 을 읽지 않게."""
+    status_dir.mkdir(parents=True, exist_ok=True)
+    tmp = status_dir / "status.json.tmp"
+    tmp.write_text(json.dumps(status, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    tmp.replace(status_dir / "status.json")
+
+
+def read_status(status_dir: Path) -> dict[str, Any]:
+    path = status_dir / "status.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def update_status(status_dir: Path, fields: dict[str, Any]) -> None:
+    """상태 파일에 칸을 더하거나 바꾼다(명령이 진행 중에 남기는 작업자별 진행 등). 진입점이 쓴 칸은 그대로 둔다."""
+    write_status(status_dir, {**read_status(status_dir), **fields})
+
+
 def _range(raw: str) -> tuple[int, int]:
     low, high = raw.split(",")
     return int(low), int(high)
