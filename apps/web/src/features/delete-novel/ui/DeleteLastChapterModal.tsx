@@ -10,12 +10,15 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import { hasNovelErrorCode, novelKeys, novelScoped, toNovelActionError, useNovelQuery } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useDeleteLastChapterMutation } from "../api/useDeleteLastChapterMutation";
 import { withDeleteConflictRetry } from "../lib/deleteConflictRetry";
+import { isLastBatchSold, isPreviewRequiredToDelete, LAST_BATCH_SOLD_REASON } from "../model/refundNotice";
 import { RefundNoticeBox } from "./RefundNoticeBox";
+import { RefundPreviewFailed } from "./RefundPreviewFailed";
 
 type DeleteLastChapterModalProps = {
   novelId: string;
@@ -37,7 +40,8 @@ type DeleteLastChapterModalProps = {
  * 호출부가 포커스를 옮긴다). 실패 문장은 누른 순간 기록한 상태다.
  *
  * 노벨에서 그 화들을 소장한 회원이 있으면 소설 지우기와 같은 환급 고지를 보이고, 새 소장자 경합으로 서버가 돌려보내면
- * 한 번은 저절로 다시 보낸다. */
+ * 한 번은 저절로 다시 보낸다. 그 화들이 노벨에서 팔린 것이면(모달을 연 뒤 받은 상세로 알게 된 경우) 실행을 막고
+ * 까닭을 말한다 — 서버가 지우지 않는다. */
 export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps, boolean>(
   ({ call, novelId, batchId, chapterIds, rangeLabel }) => {
     const queryClient = useQueryClient();
@@ -46,9 +50,14 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
     const [error, setError] = useState<string | undefined>(undefined);
     const isDeleting = deleteMutation.isPending;
     const isPreviewPending = detail.isPending;
+    const isSold = isLastBatchSold(detail.data?.purchaseRefunds);
+    const pricing = useCloverPricingQuery().data;
+    // 켜짐에서 상세를 받지 못했으면 그 화들이 팔렸는지 모른다 — 틀린 환급 고지로 지우게 두지 않고 다시 받게 한다.
+    const isPreviewMissing = detail.data === undefined && !isPreviewPending && isPreviewRequiredToDelete(pricing);
+    const isBlocked = isDeleting || isPreviewPending || isSold || isPreviewMissing;
 
     async function handleDelete() {
-      if (isDeleting || isPreviewPending) return;
+      if (isBlocked) return;
       setError(undefined);
       try {
         await withDeleteConflictRetry(() => deleteMutation.mutateAsync({ novelId, batchId }));
@@ -85,13 +94,23 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
             </DialogDescription>
           </DialogHeader>
 
-          {detail.data === undefined ? (
-            <RefundNoticeBox preview={isPreviewPending ? "pending" : "unknown"} scope="lastBatch" subject={rangeLabel} />
-          ) : (
-            detail.data.purchaseRefunds !== undefined && (
-              <RefundNoticeBox preview={detail.data.purchaseRefunds} scope="lastBatch" subject={rangeLabel} />
-            )
+          {isSold && (
+            <p className="rounded-lg border border-border p-3 text-xs break-keep text-muted-foreground">
+              {LAST_BATCH_SOLD_REASON}
+            </p>
           )}
+          {isPreviewMissing && (
+            <RefundPreviewFailed isRetrying={detail.isFetching} onRetry={() => void detail.refetch()} />
+          )}
+          {!isSold &&
+            !isPreviewMissing &&
+            (detail.data === undefined ? (
+              <RefundNoticeBox preview={isPreviewPending ? "pending" : "unknown"} scope="lastBatch" subject={rangeLabel} />
+            ) : (
+              detail.data.purchaseRefunds !== undefined && (
+                <RefundNoticeBox preview={detail.data.purchaseRefunds} scope="lastBatch" subject={rangeLabel} />
+              )
+            ))}
 
           {error !== undefined && (
             <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
@@ -106,7 +125,7 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
             <Button
               type="button"
               variant="destructive"
-              aria-disabled={isDeleting || isPreviewPending}
+              aria-disabled={isBlocked}
               className="aria-disabled:opacity-65"
               onClick={() => void handleDelete()}
             >

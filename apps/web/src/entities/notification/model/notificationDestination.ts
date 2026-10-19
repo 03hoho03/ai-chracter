@@ -17,7 +17,7 @@ export function resolveNotificationDestination(
   if (notification.type === "inquiry-reply" && notification.inquiryId) {
     return { kind: "inquiry", inquiryId: notification.inquiryId };
   }
-  // 노벨 삭제 환급은 돌려받은 클로버를 확인할 클로버 내역(얻은 쪽)으로 간다.
+  // 노벨 환급은 돌려받은 클로버를 확인할 클로버 내역(얻은 쪽)으로 간다.
   if (notification.type === NOVEL_REFUND_NOTIFICATION_TYPE) return { kind: "cloverHistory" };
   if (notification.comment) {
     return { kind: "comment", contentId: notification.comment.contentId,

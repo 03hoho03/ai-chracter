@@ -11,7 +11,7 @@ import {
   type NovelDetailResponse,
 } from "@/entities/novel";
 import { RegenerateChapterButton, type NovelChapterJobFlow } from "@/features/create-novel-chapter";
-import { DeleteLastChapterModal } from "@/features/delete-novel";
+import { DeleteLastChapterModal, isLastBatchSold, LAST_BATCH_SOLD_REASON } from "@/features/delete-novel";
 import { AiEditStatus, NovelChapterText, type NovelAiEditFlow } from "@/features/edit-novel-chapter";
 import { AuthorNoteEditor, EpisodeTitleEditor } from "@/features/edit-novel-episode";
 import { NovelRevisionHistoryModal } from "@/features/novel-revision-history";
@@ -62,8 +62,11 @@ export function BoardEpisodePanel({
   const firstInBatch = batchChapters[0] ?? chapter;
   const lastInBatch = batchChapters.at(-1) ?? chapter;
   const batchRangeLabel = toEpisodeRangeLabel(firstInBatch.ordinal, lastInBatch.ordinal);
-  // 진행 중 작업이 있으면 서버가 마지막 묶음 지우기를 409 로 막는다 — 미리 막고 까닭을 말한다.
-  const isDeleteBlocked = novel.activeJob !== null || chapterFlow.isBusy || aiEdit.isRunning;
+  // 진행 중 작업이 있거나 노벨에서 그 묶음 화를 소장한 회원이 있으면 서버가 마지막 묶음 지우기를 409 로 막는다 —
+  // 미리 막고 까닭을 말한다(진행 중 작업이 먼저다 — 끝나기를 기다리면 풀리는 쪽).
+  const isJobRunning = novel.activeJob !== null || chapterFlow.isBusy || aiEdit.isRunning;
+  const isBatchSold = isLastBatchSold(novel.purchaseRefunds);
+  const isDeleteBlocked = isJobRunning || isBatchSold;
   const hasPendingAiEdits = novel.pendingAiEdits.some((edit) => edit.chapterId === chapter.id);
   const revision = chapterQuery.data?.revision;
 
@@ -193,7 +196,7 @@ export function BoardEpisodePanel({
         </div>
         {isLastBatch && isDeleteBlocked && (
           <p id={deleteReasonId} className="text-sm break-keep text-muted-foreground">
-            진행 중인 작업이 끝나면 지울 수 있어요.
+            {isJobRunning ? "진행 중인 작업이 끝나면 지울 수 있어요." : LAST_BATCH_SOLD_REASON}
           </p>
         )}
         {!isLastBatch && <p className="text-xs break-keep text-muted-foreground">지우기는 마지막 묶음만 할 수 있어요.</p>}

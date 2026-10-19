@@ -23,7 +23,7 @@ import { useWithdrawAccountMutation } from "../api/useWithdrawAccountMutation";
 import { getCreatorEarningsWarning } from "../model/creatorEarningsWarning";
 import { getPaidBalanceWarning, type PaidBalanceWarning } from "../model/paidBalanceWarning";
 import { getWithdrawalPayoutAction } from "../model/withdrawalPayoutAction";
-import { WITHDRAW_GENERIC_ERROR_MESSAGE } from "../model/withdrawError";
+import { getWithdrawError } from "../model/withdrawError";
 import { CreatorEarningsWarningMessage } from "./CreatorEarningsWarningMessage";
 import { WithdrawPasswordForm } from "./WithdrawPasswordForm";
 
@@ -85,8 +85,9 @@ export function WithdrawAccountDialog({ label = "회원탈퇴", isBehindReconsen
     if (withdrawMutation.isPending) return;
     withdrawMutation.mutate(undefined, {
       onSuccess: handleWithdrawn,
-      onError: () => {
-        toast.error(WITHDRAW_GENERIC_ERROR_MESSAGE);
+      // 소셜 계정 경로에는 고칠 칸이 없어 어느 실패든 토스트로 보인다.
+      onError: (error) => {
+        toast.error(getWithdrawError(error).message);
       },
     });
   };

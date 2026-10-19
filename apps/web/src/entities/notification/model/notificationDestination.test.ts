@@ -21,7 +21,7 @@ function notification(patch: Partial<NotificationResponse>): NotificationRespons
 }
 
 describe("resolveNotificationDestination", () => {
-  it("노벨 삭제 환급은 클로버 내역으로 간다", () => {
+  it("노벨 환급은 클로버 내역으로 간다", () => {
     expect(
       resolveNotificationDestination(notification({ type: "novel-purchase-refund", novelRefund: { chapterCount: 1, cloverAmount: 30 } })),
     ).toEqual({ kind: "cloverHistory" });

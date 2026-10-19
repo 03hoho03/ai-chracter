@@ -50,6 +50,9 @@ type EpisodeReaderProps = {
   /** 호출부가 띄운 시트·모달(노벨 댓글 시트, 신고 모달)이 열려 있는가 — 열려 있으면 Esc 를 그쪽에 맡긴다(목차 시트와
    * 같은 이유). */
   isExtraSheetOpen?: boolean;
+  /** 화 제목 아래 한 줄(노벨 소장자의 판 안내). 판형 안에도 들어가 쪽 수에 든다 — 같은 보기 설정이면 기기와 무관하게
+   * 같은 쪽 수다. */
+  headerNote?: ReactNode;
 };
 
 /**
@@ -76,6 +79,7 @@ export function EpisodeReader({
   topBarAction,
   endExtras,
   isExtraSheetOpen = false,
+  headerNote,
 }: EpisodeReaderProps) {
   const settings = useAtomValue(readerSettingsAtom);
   const topBarId = useId();
@@ -287,6 +291,7 @@ export function EpisodeReader({
           onBodyTap={handleBodyTap}
           onOpenToc={openToc}
           endExtras={endExtras}
+          headerNote={headerNote}
         />
       )}
       {fit !== undefined && mode === "scroll" && (
@@ -302,6 +307,7 @@ export function EpisodeReader({
           onPointerUp={(event) => chrome.handlePointerUp(event, handleBodyTap)}
           onOpenToc={openToc}
           endExtras={endExtras}
+          headerNote={headerNote}
         />
       )}
 

@@ -2,6 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { SheetTitle } from "@ai-character-chat/ui/components/sheet";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { MessageCircle } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -11,6 +12,7 @@ import { NovelReadProgressSummary, toNovelReadProgress } from "@/entities/novel"
 import {
   saveWebnovelReadingPosition,
   sendWebnovelReadingPositionKeepalive,
+  toEditionNotice,
   toWebnovelReportErrorMessage,
   useReportWebnovelCommentMutation,
   useReportWebnovelMutation,
@@ -18,6 +20,7 @@ import {
   webnovelKeys,
   withWebnovelReadingPosition,
   WebnovelTocList,
+  type EditionNotice,
   type WebnovelChapterItem,
   type WebnovelChapterResponse,
   type WebnovelDetailResponse,
@@ -50,7 +53,7 @@ type WebnovelViewerProps = {
  *
  * 노벨에만 있는 것: 화 댓글(위 바의 댓글 버튼과 화 끝 "댓글 12" — 판형 흐름 밖의 시트라 댓글 수가 쪽 수를 바꾸지
  * 않는다), 소설 좋아요(화 끝), 이 화 신고(화 끝 맨 아래 — 내가 공개한 소설에는 없다). 이 화면은 읽을 수 있는 화에서만
- * 그려지므로 댓글을 언제나 열 수 있다. */
+ * 그려지므로 댓글을 열 수 있다 — 판매를 멈춘 소설만 빼고(소장자만 열고, 댓글·좋아요·신고는 닫혀 있다). */
 export function WebnovelViewer({ novel, summary, chapter, paragraphs }: WebnovelViewerProps) {
   const queryClient = useQueryClient();
   const progressId = useId();
@@ -58,8 +61,12 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
   // 신고 모달은 루트에 마운트돼 읽기 화면이 모르므로 열린 동안을 여기서 센다 — 그동안 Esc 는 모달만 닫는다.
   const [isReportOpen, setIsReportOpen] = useState(false);
   const commentsOpenerRef = useRef<HTMLElement | null>(null);
+  // 판매를 멈춘 소설(소장자만 연다)은 댓글·좋아요·신고가 닫혀 있다(서버가 404) — 그 자리를 그리지 않고 댓글도 묻지
+  // 않는다.
+  const isSalesStopped = chapter.salesStopped === true;
   // 화 끝 "댓글 12" 의 수 — 시트가 같은 쿼리의 첫 페이지를 읽는다.
-  const commentCount = useWebnovelCommentsQuery(novel.id, chapter.id).data?.pages[0]?.totalCount;
+  const commentCount = useWebnovelCommentsQuery(novel.id, chapter.id, { enabled: !isSalesStopped }).data?.pages[0]
+    ?.totalCount;
   const commentLabel = commentCount === undefined ? "댓글" : `댓글 ${formatCompactCount(commentCount)}`;
   const reportNovel = useReportWebnovelMutation(novel.id);
   const reportComment = useReportWebnovelCommentMutation(novel.id);
@@ -90,8 +97,10 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
     }
   }
   const { edition } = chapter;
+  // 산 뒤 고쳐진 화면 제목 아래에 판 안내 한 줄. 없으면 머리에 아무것도 더하지 않는다(판형 쪽 수가 지금과 같다).
+  const editionNotice = toEditionNotice(chapter);
   const position = summary.readingPosition;
-  const chapters = novel.chapters.map(toViewerChapter);
+  const chapters = novel.chapters.map((item) => toViewerChapter(item, isSalesStopped));
 
   const readingPosition: ReadingPositionStore = {
     saved: position ?? undefined,
@@ -115,57 +124,68 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
       <EpisodeReader
         route="public"
         isExtraSheetOpen={isCommentsOpen || isReportOpen}
-        topBarAction={
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={commentLabel}
-            className="shrink-0"
-            onClick={(event) => openComments(event.currentTarget)}
-          >
-            <MessageCircle aria-hidden />
-          </Button>
+        headerNote={
+          editionNotice === undefined ? undefined : (
+            <EditionNoteLine novelId={novel.id} chapterId={chapter.id} notice={editionNotice} />
+          )
         }
-        endExtras={{
-          renderActions: (format: EpisodeEndFormat) => (
-            <>
-              <WebnovelLikeButton
-                novelId={novel.id}
-                liked={novel.liked}
-                likeCount={novel.likeCount}
-                className={format.buttonClassName}
-                iconClassName={format.iconClassName}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                className={cn("tabular-nums hover:bg-secondary", format.buttonClassName)}
-                onClick={(event) => openComments(event.currentTarget)}
-              >
-                <MessageCircle aria-hidden className={format.iconClassName} />
-                {commentLabel}
-              </Button>
-            </>
-          ),
-          renderReport: (format: EpisodeEndFormat) =>
-            novel.isPublisher ? null : (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  "text-muted-foreground hover:bg-secondary",
-                  format.isInPageFormat && "h-[32px] px-[12px] text-[14px]",
-                )}
-                onClick={() =>
-                  void openReport("노벨 신고하기", (reasonCategory) => reportNovel.mutateAsync({ reasonCategory, chapterId: chapter.id }))
-                }
-              >
-                이 화 신고하기
-              </Button>
-            ),
-        }}
+        topBarAction={
+          isSalesStopped ? undefined : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={commentLabel}
+              className="shrink-0"
+              onClick={(event) => openComments(event.currentTarget)}
+            >
+              <MessageCircle aria-hidden />
+            </Button>
+          )
+        }
+        endExtras={
+          isSalesStopped
+            ? undefined
+            : {
+                renderActions: (format: EpisodeEndFormat) => (
+                  <>
+                    <WebnovelLikeButton
+                      novelId={novel.id}
+                      liked={novel.liked}
+                      likeCount={novel.likeCount}
+                      className={format.buttonClassName}
+                      iconClassName={format.iconClassName}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className={cn("tabular-nums hover:bg-secondary", format.buttonClassName)}
+                      onClick={(event) => openComments(event.currentTarget)}
+                    >
+                      <MessageCircle aria-hidden className={format.iconClassName} />
+                      {commentLabel}
+                    </Button>
+                  </>
+                ),
+                renderReport: (format: EpisodeEndFormat) =>
+                  novel.isPublisher ? null : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        "text-muted-foreground hover:bg-secondary",
+                        format.isInPageFormat && "h-[32px] px-[12px] text-[14px]",
+                      )}
+                      onClick={() =>
+                        void openReport("노벨 신고하기", (reasonCategory) => reportNovel.mutateAsync({ reasonCategory, chapterId: chapter.id }))
+                      }
+                    >
+                      이 화 신고하기
+                    </Button>
+                  ),
+              }
+        }
         novel={{ id: novel.id, title: novel.title, chapters }}
         episode={{
           id: chapter.id,
@@ -196,31 +216,60 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
               currentChapterId={chapter.id}
               surface="sheet"
               onNavigate={() => sheet.onOpenChange(false)}
+              isSalesStopped={isSalesStopped}
             />
           </ViewerTocSheet>
         )}
       />
-      <WebnovelCommentsSheet
-        novelId={novel.id}
-        chapterId={chapter.id}
-        episodeLabel={`${chapter.ordinal}화`}
-        open={isCommentsOpen}
-        onOpenChange={setIsCommentsOpen}
-        returnFocusTo={() => commentsOpenerRef.current}
-        onReport={(commentId) =>
-          void openReport("댓글 신고하기", (reasonCategory) => reportComment.mutateAsync({ commentId, reasonCategory }))
-        }
-      />
+      {!isSalesStopped && (
+        <WebnovelCommentsSheet
+          novelId={novel.id}
+          chapterId={chapter.id}
+          episodeLabel={`${chapter.ordinal}화`}
+          open={isCommentsOpen}
+          onOpenChange={setIsCommentsOpen}
+          returnFocusTo={() => commentsOpenerRef.current}
+          onReport={(commentId) =>
+            void openReport("댓글 신고하기", (reasonCategory) => reportComment.mutateAsync({ commentId, reasonCategory }))
+          }
+        />
+      )}
     </>
   );
 }
 
-/** 목차 항목을 읽기 화면의 화 모양으로. 아직 소장하지 않은 화만 가격을 싣는다(화 끝 "다음 화"가 미리 알린다). */
-function toViewerChapter(item: WebnovelChapterItem): ViewerChapter {
+const EDITION_LINK_CLASS =
+  "text-foreground underline underline-offset-2 outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring";
+
+/** 화 제목 아래 판 안내 — 산 뒤 고쳐진 화를 연 소장자에게, 지금 읽는 판과 다른 판으로 가는 길을 낸다. 고른 판은
+ * 주소의 `edition` 이라 같은 화면에서 search 만 바꾼다(판이 바뀌면 읽기 화면이 새로 마운트된다). */
+function EditionNoteLine({ novelId, chapterId, notice }: { novelId: string; chapterId: string; notice: EditionNotice }) {
+  const params = { novelId, chapterId };
+  const purchasedLabel = `산 때의 판(${notice.purchasedDateLabel} 공개)`;
+  return notice.kind === "newerAvailable" ? (
+    <>
+      소장하신 뒤 고쳐진 화예요.{" "}
+      <Link to="/webnovels/$novelId/episodes/$chapterId" params={params} search={{ edition: notice.purchasedEdition }} className={EDITION_LINK_CLASS}>
+        {purchasedLabel}으로 읽기
+      </Link>
+    </>
+  ) : (
+    <>
+      {purchasedLabel}을 읽고 있어요.{" "}
+      <Link to="/webnovels/$novelId/episodes/$chapterId" params={params} search={{}} className={EDITION_LINK_CLASS}>
+        최신 판으로 읽기
+      </Link>
+    </>
+  );
+}
+
+/** 목차 항목을 읽기 화면의 화 모양으로. 아직 소장하지 않은 화만 가격을 싣는다(화 끝 "다음 화"가 미리 알린다). 판매를
+ * 멈춘 소설이면 살 수 없으니 가격을 달지 않는다 — 누르면 잠긴 화 화면이 이유를 말한다. */
+function toViewerChapter(item: WebnovelChapterItem, isSalesStopped: boolean): ViewerChapter {
   return {
     id: item.id,
     ordinal: item.ordinal,
     title: item.title,
-    lockedPrice: item.access === "locked" && item.price !== null ? item.price : undefined,
+    lockedPrice: !isSalesStopped && item.access === "locked" && item.price !== null ? item.price : undefined,
   };
 }

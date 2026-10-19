@@ -29,6 +29,9 @@ type WebnovelLockedEpisodeProps = {
  * 바로 바뀐다 — 사기 전에 읽을 모양을 맞춰 둘 수 있게. 화 댓글은 없다(못 읽는 화의 댓글은 보이지 않는다). 솔리드는
  * "소장하고 읽기" 하나다. 사면 같은 주소에서 본문을 다시 받아 읽기 화면으로 바뀐다.
  *
+ * 판매를 멈춘 소설(소장자만 연다)이면 새로 소장할 수 없다고 말하고 소장 버튼을 그리지 않는다 — 이 화면에서 할 주된
+ * 일이 없어 솔리드도 없다.
+ *
  * 소장 확인 모달은 여기 마운트한다 — 루트에 두면 노벨 코드가 첫 화면 번들로 끌려온다. 모달을 여는 곳은 이 화면뿐이다. */
 export function WebnovelLockedEpisode({ novel, chapter }: WebnovelLockedEpisodeProps) {
   const [isTocOpen, setIsTocOpen] = useState(false);
@@ -40,6 +43,7 @@ export function WebnovelLockedEpisode({ novel, chapter }: WebnovelLockedEpisodeP
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const episodeLabel = toEpisodeLabel(chapter);
   const price = chapter.price ?? novel.chapterPrice;
+  const isSalesStopped = chapter.salesStopped === true;
 
   // 보기 설정은 읽기 화면과 같이 연 순간 고른 칩으로 포커스를 옮기고, Esc 나 바 밖을 누르면 닫는다(비모달 패널).
   // Esc 는 다른 레이어(소장 모달 등)가 먼저 받아 닫았으면 넘어간다 — 한 번에 하나만 닫는다.
@@ -133,27 +137,31 @@ export function WebnovelLockedEpisode({ novel, chapter }: WebnovelLockedEpisodeP
         <p className="text-sm text-muted-foreground">{novel.title}</p>
         <h1 className="text-2xl font-bold tracking-tight text-balance text-foreground">{episodeLabel}</h1>
         <p className="max-w-sm text-sm text-pretty text-muted-foreground">
-          {toLockedChapterSentence(novel.freeChapterCount)}
+          {isSalesStopped
+            ? "지금은 판매하지 않는 소설이라 이 화는 새로 소장할 수 없어요."
+            : toLockedChapterSentence(novel.freeChapterCount)}
         </p>
         <div className="mt-4 flex w-full max-w-xs flex-col gap-2">
-          <Button
-            type="button"
-            className="w-full"
-            onClick={() =>
-              void PurchaseWebnovelChapterModal.call({
-                novelId: novel.id,
-                chapterId: chapter.id,
-                ordinal: chapter.ordinal,
-                novelTitle: novel.title,
-                episodeLabel,
-                price,
-                freeChapterCount: novel.freeChapterCount,
-              })
-            }
-          >
-            <CloverIcon className="size-4" />
-            {price.toLocaleString()}클로버로 소장하고 읽기
-          </Button>
+          {!isSalesStopped && (
+            <Button
+              type="button"
+              className="w-full"
+              onClick={() =>
+                void PurchaseWebnovelChapterModal.call({
+                  novelId: novel.id,
+                  chapterId: chapter.id,
+                  ordinal: chapter.ordinal,
+                  novelTitle: novel.title,
+                  episodeLabel,
+                  price,
+                  freeChapterCount: novel.freeChapterCount,
+                })
+              }
+            >
+              <CloverIcon className="size-4" />
+              {price.toLocaleString()}클로버로 소장하고 읽기
+            </Button>
+          )}
           <div className="flex justify-center gap-2">
             <Button type="button" variant="ghost" onClick={(event) => openToc(event.currentTarget)}>
               목차
@@ -180,6 +188,7 @@ export function WebnovelLockedEpisode({ novel, chapter }: WebnovelLockedEpisodeP
           currentChapterId={chapter.id}
           surface="sheet"
           onNavigate={() => setIsTocOpen(false)}
+          isSalesStopped={isSalesStopped}
         />
       </ViewerTocSheet>
 

@@ -46,12 +46,15 @@ export const NOVEL_SERIAL_LOCK_PERMISSION_LABELS: Record<NovelSerialLockPermissi
   public: "공개 소설까지",
 };
 
-/** 목록 행·상세 머리 줄의 공개 상태 한 마디. 승인 대기·반려는 공개 범위가 `withdrawn` 이어도 게시자가 거둔 것이 아니므로
- * 심사 라벨을 대신 낸다. 승인됐거나 심사가 없던 공개는 공개 범위 라벨 그대로다. */
+/** 목록 행·상세 머리 줄의 공개 상태 한 마디. 게시자가 판매된 소설을 지워 숨겨 둔 것은 공개 범위가 `withdrawn` 이어도
+ * 거둔 것이 아니므로 "숨김"이 먼저다(숨김 시각이 없으면 — 옛 서버 — 지금 라벨). 승인 대기·반려도 같은 이유로 심사 라벨을
+ * 대신 낸다. 승인됐거나 심사가 없던 공개는 공개 범위 라벨 그대로다. */
 export function novelPublicationLabel(novel: {
   visibility: NovelVisibility;
   reviewStatus: NovelReviewStatus | null;
+  hiddenAt?: string | null;
 }): string {
+  if (typeof novel.hiddenAt === "string") return "숨김";
   if (novel.reviewStatus === "pending" || novel.reviewStatus === "rejected") {
     return NOVEL_REVIEW_STATUS_LABELS[novel.reviewStatus];
   }

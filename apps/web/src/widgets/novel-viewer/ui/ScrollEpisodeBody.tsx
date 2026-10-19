@@ -1,5 +1,5 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { useRef, type PointerEventHandler } from "react";
+import { useRef, type PointerEventHandler, type ReactNode } from "react";
 
 import type { ReadingPositionSession } from "../model/useReadingPosition";
 import { useScrollReadingTracker } from "../model/useScrollReadingTracker";
@@ -20,6 +20,8 @@ type ScrollEpisodeBodyProps = {
   onPointerUp: PointerEventHandler<HTMLElement>;
   onOpenToc: (opener: HTMLElement) => void;
   endExtras?: EpisodeEndExtras;
+  /** 화 제목 아래 한 줄. */
+  headerNote?: ReactNode;
 };
 
 /** 창 세로 스크롤로 읽는 화 본문. 붙어 있는 동안 읽던 자리로 되돌리고 지금 문단을 잰다(`useScrollReadingTracker`). */
@@ -35,6 +37,7 @@ export function ScrollEpisodeBody({
   onPointerUp,
   onOpenToc,
   endExtras,
+  headerNote,
 }: ScrollEpisodeBodyProps) {
   const { paragraphs } = episode;
   const articleRef = useRef<HTMLElement>(null);
@@ -50,6 +53,7 @@ export function ScrollEpisodeBody({
           novelTitle={novel.title}
           episodeLabel={episodeLabel}
           isInPageFormat={false}
+          note={headerNote}
         />
 
         <div className="flex flex-col gap-4 text-foreground">

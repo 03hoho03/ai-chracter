@@ -1,5 +1,6 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ChevronLeft } from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { ViewerRoute } from "../model/viewerSource";
 import { NovelInfoLink } from "./ViewerLinks";
@@ -12,11 +13,13 @@ type EpisodeHeaderProps = {
   /** 페이지 모드 판형 안에 놓이는가. 그러면 크기를 rem 대신 px 로 고정한다 — 판형 안이 브라우저 기본 글자 크기를 따라
    * 커지면 같은 판형인데 첫 쪽에 담기는 글이 달라져 쪽 수가 바뀐다. */
   isInPageFormat: boolean;
+  /** 화 제목 아래 한 줄(노벨 소장자의 판 안내). 글자 크기·잉크는 여기서 정하고 내용만 받는다. */
+  note?: ReactNode;
 };
 
-/** 화 머리 — 작품 정보로 가는 링크와 화 제목. 글자 수는 화를 다듬을 때 보는 정보라 편집 보드의 화 카드·패널에만
+/** 화 머리 — 작품 정보로 가는 링크와 화 제목(과 있으면 그 아래 안내 한 줄). 글자 수는 화를 다듬을 때 보는 정보라 편집 보드의 화 카드·패널에만
  * 두고, 읽는 화면에는 두지 않는다. */
-export function EpisodeHeader({ route, novelId, novelTitle, episodeLabel, isInPageFormat }: EpisodeHeaderProps) {
+export function EpisodeHeader({ route, novelId, novelTitle, episodeLabel, isInPageFormat, note }: EpisodeHeaderProps) {
   return (
     <header className={cn("flex flex-col", isInPageFormat ? "gap-[8px]" : "gap-2")}>
       {/* 바가 숨어 있어도 늘 있는 출구. */}
@@ -39,6 +42,9 @@ export function EpisodeHeader({ route, novelId, novelTitle, episodeLabel, isInPa
       >
         {episodeLabel}
       </h1>
+      {note !== undefined && (
+        <p className={cn("break-keep text-muted-foreground", isInPageFormat ? "text-[14px]/[20px]" : "text-sm")}>{note}</p>
+      )}
     </header>
   );
 }

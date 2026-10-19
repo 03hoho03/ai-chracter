@@ -108,7 +108,7 @@ export const CLOVER_KIND_LABELS: Record<string, string> = {
   purchase_revoke: "구매 취소 회수",
   purchase_restore: "구매 회수 복원",
   novel_read_spend: "노벨 소장",
-  novel_read_refund: "노벨 삭제 환급",
+  novel_read_refund: "노벨 환급",
 };
 
 type PaymentStatus = components["schemas"]["AdminUserPaymentItem"]["status"];

@@ -11,8 +11,8 @@ export type WebnovelCommentListResponse = components["schemas"]["PublicNovelComm
 
 /** `GET /webnovels/{novelId}/chapters/{chapterId}/comments` — 화 댓글 최신순 20개씩. 첫 페이지의 `totalCount` 가 그 화에
  * 보이는 댓글 수다(화 끝 "댓글 12" 버튼이 같은 쿼리를 읽는다). 볼 수 없는 화(소장하지 않은 유료 화)는 서버가 막으므로
- * 화면도 그런 화에서는 부르지 않는다. */
-export function useWebnovelCommentsQuery(novelId: string, chapterId: string) {
+ * 화면도 그런 화에서는 부르지 않는다. 판매를 멈춘 소설도 댓글이 닫혀 있어(소장자에게도 404) `enabled` 로 끈다. */
+export function useWebnovelCommentsQuery(novelId: string, chapterId: string, options?: { enabled?: boolean }) {
   return useInfiniteQuery<
     WebnovelCommentListResponse,
     ApiError,
@@ -29,5 +29,6 @@ export function useWebnovelCommentsQuery(novelId: string, chapterId: string) {
       ).data,
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    enabled: options?.enabled ?? true,
   });
 }

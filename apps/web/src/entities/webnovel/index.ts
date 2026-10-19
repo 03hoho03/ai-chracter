@@ -5,6 +5,11 @@ export {
   type WebnovelReadingPositionRequest,
 } from "./api/saveWebnovelReadingPosition";
 export { useHomeWebnovelsQuery, type HomeWebnovelItem } from "./api/useHomeWebnovelsQuery";
+export {
+  useOwnedWebnovelListQuery,
+  type OwnedWebnovelItem,
+  type OwnedWebnovelListResponse,
+} from "./api/useOwnedWebnovelListQuery";
 export { useReportWebnovelCommentMutation, useReportWebnovelMutation } from "./api/useReportWebnovelMutations";
 export { useWebnovelChapterQuery, type WebnovelChapterResponse } from "./api/useWebnovelChapterQuery";
 export {
@@ -25,6 +30,7 @@ export {
   type WebnovelDetailResponse,
   type WebnovelReadingPosition,
 } from "./api/useWebnovelQuery";
+export { toEditionNotice, type EditionNotice } from "./model/editionNotice";
 export { toReadingEndedNotice, type ReadingEndedAction, type ReadingEndedNotice } from "./model/readingEndedNotice";
 export { toWebnovelReportErrorMessage } from "./model/reportFailure";
 export { toSourceCredit } from "./model/sourceCredit";

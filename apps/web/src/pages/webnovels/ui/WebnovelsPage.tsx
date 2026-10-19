@@ -10,22 +10,27 @@ import { isWebnovelOpen, useSessionQuery } from "@/entities/session";
 import {
   toUniqueWebnovels,
   toWebnovelLoadFailure,
+  useOwnedWebnovelListQuery,
   useWebnovelListQuery,
   WebnovelCover,
   WebnovelSourceCredit,
   type WebnovelListItem,
-  type WebnovelListSort,
 } from "@/entities/webnovel";
 import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
 import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
 
+import { toWebnovelsView, type WebnovelsView } from "../model/webnovelsView";
+
 const PAGE_CLASS = "mx-auto flex max-w-list flex-col gap-6 px-4 sm:px-6 py-10 lg:pt-6";
 
-const SORT_LABELS: Record<WebnovelListSort, string> = { latest: "최신순", popular: "인기순" };
+const VIEW_LABELS: Record<WebnovelsView, string> = { latest: "최신순", popular: "인기순", owned: "소장" };
 
-function isListSort(value: string): value is WebnovelListSort {
-  return value === "latest" || value === "popular";
+function isWebnovelsView(value: string): value is WebnovelsView {
+  return value in VIEW_LABELS;
 }
+
+/** 목록 한 줄의 재료 — 노벨 목록 항목, 소장 목록이면 판매 중지 표시가 더 붙는다. */
+type WebnovelRowItem = WebnovelListItem & { salesStopped?: boolean };
 
 /** `/webnovels` — 노벨 목록. 회원이 AI 캐릭터와 나눈 대화를 소설로 옮겨 공개한 작품들이다. 목록의 모든 작품이 그렇게
  * 만든 소설이라 행마다 배지를 달지 않고 머리의 한 문장이 그 표시를 맡는다.
@@ -33,12 +38,20 @@ function isListSort(value: string): value is WebnovelListSort {
  * 항목은 카드 그리드가 아니라 행(표지 왼쪽 · 글 오른쪽)이다 — 소설은 소개 문장이 고르는 기준인데, 좁은 화면의 세로
  * 그리드 카드에는 제목·원작·지표를 넣으면 소개가 들어갈 자리가 없다. `md` 이상은 두 열.
  *
+ * "소장" 칩은 내가 소장한 노벨이다 — 판매를 멈춰 노벨 목록에서 빠진 노벨도 여기서 다시 찾아 들어간다. 칩이 언제
+ * 있는지는 `toWebnovelsView` 가 정한다(노벨 정책 스위치가 켜졌을 때만).
+ *
  * 노벨이 닫혀 있으면(공개 가격 응답과 `/me` 의 켜짐 표시가 둘 다 닫힘, 또는 목록 API 의 404) 찾을 수 없는 화면을 그린다 — 헤더에서도 탭이
  * 사라지고, 주소로 들어온 사람에게도 노벨이 없는 것과 같다. */
-export function WebnovelsPage({ sort, onSortChange }: { sort: WebnovelListSort; onSortChange: (sort: WebnovelListSort) => void }) {
+export function WebnovelsPage({ view, onViewChange }: { view: WebnovelsView; onViewChange: (view: WebnovelsView) => void }) {
   const pricing = useCloverPricingQuery();
   const session = useSessionQuery();
-  const query = useWebnovelListQuery(sort);
+  const { shown: shownView, chips, chipsLabel } = toWebnovelsView(view, pricing.data);
+  const isOwnedView = shownView === "owned";
+  // 보이는 목록 하나만 받는다. 두 목록 모두 노벨이 닫혀 있으면 404 다.
+  const listQuery = useWebnovelListQuery(shownView === "owned" ? "latest" : shownView, { enabled: !isOwnedView });
+  const ownedQuery = useOwnedWebnovelListQuery({ enabled: isOwnedView });
+  const query = isOwnedView ? ownedQuery : listQuery;
   const isOff =
     (pricing.data !== undefined && !isWebnovelOpen(pricing.data.novelPublicEnabled, session.data?.novelPublicEnabled)) ||
     (query.isError && toWebnovelLoadFailure(query.error).kind === "missing");
@@ -74,28 +87,31 @@ export function WebnovelsPage({ sort, onSortChange }: { sort: WebnovelListSort; 
         type="single"
         variant="outline"
         size="sm"
-        value={sort}
+        value={shownView}
         onValueChange={(value) => {
-          // 이미 고른 칩을 다시 누르면 빈 값이 온다 — 정렬은 늘 하나가 골라져 있어야 해서 무시한다.
-          if (isListSort(value)) onSortChange(value);
+          // 이미 고른 칩을 다시 누르면 빈 값이 온다 — 목록은 늘 하나가 골라져 있어야 해서 무시한다.
+          if (isWebnovelsView(value)) onViewChange(value);
         }}
-        aria-label="정렬"
+        aria-label={chipsLabel}
         className="self-start"
       >
-        {(["latest", "popular"] as const).map((value) => (
+        {chips.map((value) => (
           <ToggleGroupItem key={value} value={value}>
-            {SORT_LABELS[value]}
+            {VIEW_LABELS[value]}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
 
-      <WebnovelListBody query={query} />
+      {isOwnedView ? <WebnovelListBody query={ownedQuery} isOwned /> : <WebnovelListBody query={listQuery} isOwned={false} />}
     </main>
   );
 }
 
-function WebnovelListBody({ query }: { query: ReturnType<typeof useWebnovelListQuery> }) {
-  const items = toUniqueWebnovels(query.data?.pages ?? []);
+type WebnovelListQuery = ReturnType<typeof useWebnovelListQuery> | ReturnType<typeof useOwnedWebnovelListQuery>;
+
+function WebnovelListBody({ query, isOwned }: { query: WebnovelListQuery; isOwned: boolean }) {
+  const pages: readonly { items: readonly WebnovelRowItem[] }[] = query.data?.pages ?? [];
+  const items = toUniqueWebnovels(pages);
   const fetchNextPage = useCallback(() => {
     if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
   }, [query]);
@@ -107,9 +123,17 @@ function WebnovelListBody({ query }: { query: ReturnType<typeof useWebnovelListQ
   if (query.isError && items.length === 0) {
     return (
       <div role="alert" className="flex flex-wrap items-center gap-3">
-        <p className="text-sm text-destructive-text">노벨 목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+        <p className="text-sm text-destructive-text">
+          {isOwned ? "소장한 노벨을" : "노벨 목록을"} 불러오지 못했어요. 잠시 후 다시 시도해주세요.
+        </p>
         <RetryButton query={query} />
       </div>
+    );
+  }
+
+  if (items.length === 0 && isOwned) {
+    return (
+      <ContentListEmptyState title="아직 소장한 노벨이 없어요" message="유료 화를 소장하면 그 노벨이 여기에 모여요." />
     );
   }
 
@@ -149,8 +173,9 @@ function WebnovelListBody({ query }: { query: ReturnType<typeof useWebnovelListQ
 
 /** 목록의 한 줄 — 표지 · 제목 두 줄 · 원작 한 줄 · 소개 두 줄 · 게시자와 지표. 껍데기(배경·보더·hover) 없이 그림과
  * 글만 놓는 것은 홈 큐레이션 블록과 같은 어휘다. 줄 전체가 작품 정보로 가는 링크 하나라 포커스 링과 눌림 표시를
- * 링크에 직접 단다(전역 1px 아웃라인은 3:1 미달). 링크 이름은 제목만 — 소개까지 읽히면 목록을 훑기 어렵다. */
-function WebnovelRow({ item, isPriority }: { item: WebnovelListItem; isPriority: boolean }) {
+ * 링크에 직접 단다(전역 1px 아웃라인은 3:1 미달). 링크 이름은 제목만 — 소개까지 읽히면 목록을 훑기 어렵다. 소장
+ * 목록에서 판매를 멈춘 노벨은 지표 줄 끝에 "판매 중지"를 단다(무채색 — 경고가 아니라 상태다). */
+function WebnovelRow({ item, isPriority }: { item: WebnovelRowItem; isPriority: boolean }) {
   const titleId = useId();
   const meta = [item.publisherNickname, `${item.chapterCount}화`].filter((part) => part !== null);
 
@@ -178,13 +203,19 @@ function WebnovelRow({ item, isPriority }: { item: WebnovelListItem; isPriority:
             <span className="sr-only">좋아요</span>
             {formatCompactCount(item.likeCount)}
           </span>
+          {item.salesStopped === true && (
+            <>
+              <span aria-hidden>·</span>
+              <span>판매 중지</span>
+            </>
+          )}
         </p>
       </div>
     </Link>
   );
 }
 
-function RetryButton({ query }: { query: ReturnType<typeof useWebnovelListQuery> }) {
+function RetryButton({ query }: { query: WebnovelListQuery }) {
   return (
     <Button
       type="button"

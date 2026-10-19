@@ -32,6 +32,7 @@ const SERVER_CODES: [number, string][] = [
   [409, "NOVEL_CHAPTER_NOT_LAST"],
   [404, "NOVEL_BATCH_NOT_FOUND"],
   [409, "NOVEL_BATCH_NOT_LAST"],
+  [409, "NOVEL_BATCH_SOLD"],
   [409, "NOVEL_MODEL_INELIGIBLE"],
   [422, "NOVEL_COVER_INVALID"],
   [404, "NOVEL_CHARACTER_NOT_FOUND"],
@@ -60,6 +61,13 @@ describe("toNovelActionError", () => {
   it("코드마다 문구가 서로 다르다 — 표를 복사하다 한 문구가 두 코드에 붙지 않았다", () => {
     const messages = SERVER_CODES.map(([status, code]) => toNovelActionError(apiError(status, { code }), "generate")?.message);
     expect(new Set(messages).size).toBe(messages.length);
+  });
+
+  it("판매된 마지막 묶음 409 는 지울 수 없는 이유를 말하고 상세를 다시 받는다", () => {
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_BATCH_SOLD" }), "deleteChapter")).toEqual({
+      message: "노벨에서 소장한 회원이 있는 화라 지울 수 없어요. 소설 전체를 지우면 숨겨 둘 수 있어요.",
+      shouldRefetchNovel: true,
+    });
   });
 
   it("원문 변경 409 는 다시 만들 수 없다고 말한다", () => {

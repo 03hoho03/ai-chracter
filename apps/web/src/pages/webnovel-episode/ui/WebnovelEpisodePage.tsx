@@ -19,10 +19,21 @@ import { WebnovelViewer } from "./WebnovelViewer";
  * 받아 뷰어로 바뀐다.
  *
  * 읽을 수 없으면 소장했던 사람에게만 이유(열람 종료)를, 나머지에게는 찾을 수 없다고만 한다. 화의 이유가 소설의
- * 이유보다 앞선다(그 화만 지워졌을 수 있다). 전역 헤더·푸터가 없는 화면이라 상태 화면에도 나가는 링크를 둔다. */
-export function WebnovelEpisodePage({ novelId, chapterId }: { novelId: string; chapterId: string }) {
+ * 이유보다 앞선다(그 화만 지워졌을 수 있다). 전역 헤더·푸터가 없는 화면이라 상태 화면에도 나가는 링크를 둔다.
+ *
+ * `edition` 은 주소에 실린 산 때의 판이다. 그 주소로 화를 찾을 수 없으면(환급됐거나 정책이 바뀐 뒤의 낡은 주소일 수
+ * 있다) 목차 대신 같은 화의 최신 판으로 가는 길을 낸다 — 화 자체가 지워졌으면 그 길이 다시 찾을 수 없다고 말한다. */
+export function WebnovelEpisodePage({
+  novelId,
+  chapterId,
+  edition,
+}: {
+  novelId: string;
+  chapterId: string;
+  edition: number | undefined;
+}) {
   const novelQuery = useWebnovelQuery(novelId);
-  const chapterQuery = useWebnovelChapterQuery(novelId, chapterId);
+  const chapterQuery = useWebnovelChapterQuery(novelId, chapterId, edition);
 
   const chapterFailure =
     chapterQuery.isError && chapterQuery.data === undefined ? toWebnovelLoadFailure(chapterQuery.error) : undefined;
@@ -45,6 +56,21 @@ export function WebnovelEpisodePage({ novelId, chapterId }: { novelId: string; c
           <p className="text-sm text-muted-foreground">지워졌거나 지금은 볼 수 없는 소설이에요.</p>
           <Button asChild variant="outline">
             <Link to="/webnovels">노벨 둘러보기</Link>
+          </Button>
+        </NovelStatusState>
+      </StatusShell>
+    );
+  }
+
+  if (chapterFailure?.kind === "missing" && edition !== undefined) {
+    return (
+      <StatusShell novelId={novelId}>
+        <NovelStatusState icon={<BookX aria-hidden className="size-8 text-muted-foreground" />} title="이 화를 찾을 수 없어요">
+          <p className="text-sm break-keep text-muted-foreground">고른 판을 더 볼 수 없거나 지워진 화예요.</p>
+          <Button asChild variant="outline">
+            <Link to="/webnovels/$novelId/episodes/$chapterId" params={{ novelId, chapterId }} search={{}}>
+              최신 판으로 읽기
+            </Link>
           </Button>
         </NovelStatusState>
       </StatusShell>

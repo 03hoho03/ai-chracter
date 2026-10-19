@@ -4,11 +4,17 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
-import { adminNovelKeys } from "@/entities/admin-novel";
+import {
+  adminNovelKeys,
+  isNovelRefundConflict,
+  NOVEL_REFUND_CONFLICT_MESSAGE,
+  NOVEL_RESTRICT_REFUND_NOTE,
+} from "@/entities/admin-novel";
 import { reportKeys, useNovelReportActionMutation, type NovelReportDetail } from "@/entities/report";
+import { useSessionQuery } from "@/entities/session";
 import { apiErrorCode } from "@/shared/lib/api/client";
 import { ActionChoice } from "@/shared/ui/ActionChoice";
 
@@ -42,6 +48,8 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
     defaultValues: { action: isNovelGone ? "reject" : undefined, adminComment: "" },
   });
   const { errors, isSubmitting } = form.formState;
+  const action = useWatch({ control: form.control, name: "action" });
+  const isPolicyOn = useSessionQuery().data?.novelPublicPolicyV2Enabled === true;
 
   async function handleValidSubmit(values: NovelReportActionValues) {
     setGoneMessage(null);
@@ -56,6 +64,11 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
         setGoneMessage("그사이 노벨이 지워져 이용제한할 대상이 없어요. 반려로 처리해주세요.");
         form.setValue("action", "reject");
         await queryClient.invalidateQueries({ queryKey: reportKeys.all });
+        return;
+      }
+      // 새 구매자 경합으로 조치 전체가 되돌려졌다 — 사유는 그대로 남아 있어 바로 다시 누르면 된다.
+      if (isNovelRefundConflict(error)) {
+        toast.error(NOVEL_REFUND_CONFLICT_MESSAGE.novel);
         return;
       }
       toast.error("처리하지 못했어요. 사유는 그대로 남아 있으니 다시 시도해주세요.");
@@ -114,6 +127,10 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
             </p>
           )}
         </div>
+        {/* 정책 스위치가 켜져 있으면 이용제한이 이 노벨의 구매를 돌려준다 — 되돌릴 수 없으니 확정 전에 말한다. */}
+        {isPolicyOn && action === "restrict" && (
+          <p className="text-sm break-keep text-muted-foreground">{NOVEL_RESTRICT_REFUND_NOTE}</p>
+        )}
         {!!goneMessage && (
           <p role="alert" className="break-keep text-sm text-destructive-text">
             {goneMessage}

@@ -1,6 +1,6 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
-import { Check } from "lucide-react";
+import { Check, Lock } from "lucide-react";
 
 import { CloverIcon } from "@/entities/clover/@x/webnovel";
 import { toEpisodeLabel } from "@/entities/novel/@x/webnovel";
@@ -19,6 +19,8 @@ type WebnovelTocListProps = {
   surface: "page" | "sheet";
   /** 항목을 누른 순간(시트를 닫는 데 쓴다). */
   onNavigate?: () => void;
+  /** 판매를 멈춘 소설인가(소장자만 연다). 그러면 아직 소장하지 않은 화에 가격 대신 자물쇠를 단다 — 살 수 없다. */
+  isSalesStopped?: boolean;
 };
 
 /** 노벨 목차 — 화마다 `N화. 제목`, 읽음 표식, 그리고 오른쪽 끝의 이 사람에게의 가격 표식(무료·소장·클로버 가격).
@@ -34,6 +36,7 @@ export function WebnovelTocList({
   currentChapterId,
   surface,
   onNavigate,
+  isSalesStopped = false,
 }: WebnovelTocListProps) {
   const ordered = [...chapters].sort((a, b) => a.ordinal - b.ordinal);
 
@@ -58,7 +61,7 @@ export function WebnovelTocList({
             >
               <span className="min-w-0 flex-1 text-sm font-medium break-keep text-foreground">{toEpisodeLabel(chapter)}</span>
               <ReadingMarker isCurrent={isCurrent} isFinished={isFinished} isReading={isReading} />
-              <AccessMarker chapter={chapter} />
+              <AccessMarker chapter={chapter} isSalesStopped={isSalesStopped} />
             </Link>
           </li>
         );
@@ -90,7 +93,7 @@ function ReadingMarker({ isCurrent, isFinished, isReading }: { isCurrent: boolea
 }
 
 /** 이 사람에게 그 화가 어떤가. 폭이 화마다 달라 제목 줄이 흔들리지 않게 오른쪽 끝에 붙인다. */
-function AccessMarker({ chapter }: { chapter: WebnovelChapterItem }) {
+function AccessMarker({ chapter, isSalesStopped }: { chapter: WebnovelChapterItem; isSalesStopped: boolean }) {
   switch (chapter.access) {
     case "free":
       return <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">무료</span>;
@@ -103,6 +106,14 @@ function AccessMarker({ chapter }: { chapter: WebnovelChapterItem }) {
         </span>
       );
     case "locked":
+      if (isSalesStopped) {
+        return (
+          <span className="flex w-12 shrink-0 justify-end text-muted-foreground">
+            <Lock aria-hidden className="size-4" />
+            <span className="sr-only">판매 중지</span>
+          </span>
+        );
+      }
       return (
         <span className="inline-flex w-12 shrink-0 items-center justify-end gap-1 text-xs text-muted-foreground tabular-nums">
           <CloverIcon />
