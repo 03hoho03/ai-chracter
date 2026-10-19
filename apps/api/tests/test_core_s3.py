@@ -15,6 +15,7 @@ from api.core.s3 import (
     build_display_key,
     build_object_key,
     build_thumbnail_key,
+    build_frame_sheet_key,
     build_variant_keys,
     build_windowed_presigned_get_url,
 )
@@ -62,10 +63,17 @@ def test_build_display_key_without_extension() -> None:
     assert build_display_key("assets/profile-image/abc") == "assets/profile-image/abc_display.webp"
 
 
-def test_build_variant_keys_lists_thumbnail_and_display_keys() -> None:
+def test_build_frame_sheet_key_replaces_extension() -> None:
+    assert build_frame_sheet_key("assets/situational-image/abc.gif") == "assets/situational-image/abc_frames.webp"
+
+
+def test_build_variant_keys_lists_thumbnail_display_and_frame_sheet_keys() -> None:
+    """프레임 모음은 움직이는 그림에만 있지만 지우는 쪽은 그림이 움직이는지 모르므로 늘 함께 지운다(없는 키 삭제는
+    저장소가 성공으로 답한다)."""
     assert build_variant_keys("assets/generated/abc.png") == (
         "assets/generated/abc_thumb.webp",
         "assets/generated/abc_display.webp",
+        "assets/generated/abc_frames.webp",
     )
 
 

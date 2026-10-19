@@ -2,7 +2,7 @@ import asyncio
 import io
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import pytest
 from PIL import Image
@@ -16,16 +16,25 @@ from api.assets.image_processing import (
     generate_display_image,
     generate_thumbnail,
     generate_variants,
+    read_frame_count,
     read_image_size,
     run_image_work,
     validate_reference_image,
 )
-from api.core.s3 import build_variant_keys
+from api.core.s3 import build_display_key, build_frame_sheet_key, build_thumbnail_key, build_variant_keys
 
 
 def _png_bytes(width: int, height: int) -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (width, height), color=(120, 40, 200)).save(output, format="PNG")
+    return output.getvalue()
+
+
+def _gif_bytes(colors: list[tuple[int, int, int]], size: tuple[int, int] = (64, 48)) -> bytes:
+    """프레임마다 단색인 움직이는 GIF. 색이 프레임 번호를 대신해, 프레임 모음의 칸 색으로 어느 프레임이 실렸는지 가린다."""
+    frames = [Image.new("RGB", size, color=color) for color in colors]
+    output = io.BytesIO()
+    frames[0].save(output, format="GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
     return output.getvalue()
 
 
@@ -113,18 +122,91 @@ def test_generate_display_image_source_between_both_edges_is_not_upscaled() -> N
 
 
 def test_generate_variants_produces_every_variant_key_with_its_own_size() -> None:
-    """만드는 변형의 키 목록이 지우는 키 목록(`build_variant_keys`)과 같아야 한다 — 어긋나면 만든 사본이
-    자산 삭제·탈퇴 파기에서 빠져 남는다."""
+    """만드는 변형의 키가 전부 지우는 키 목록(`build_variant_keys`)에 있어야 한다 — 빠지면 만든 사본이 자산 삭제·
+    탈퇴 파기에서 남는다. 정지 그림에는 프레임 모음이 없다."""
     storage_key = "assets/generated/abc.png"
     variants = generate_variants(storage_key, _png_bytes(2048, 1536))
 
-    assert [key for key, _ in variants] == list(build_variant_keys(storage_key))
+    assert [key for key, _ in variants] == [build_thumbnail_key(storage_key), build_display_key(storage_key)]
+    assert {key for key, _ in variants} <= set(build_variant_keys(storage_key))
     sizes = {key: _open(body).size for key, body in variants}
     assert sizes == {
         "assets/generated/abc_thumb.webp": (512, 384),
         "assets/generated/abc_display.webp": (1024, 768),
     }
     assert all(_open(body).format == "WEBP" for _, body in variants)
+
+
+def test_generate_variants_adds_a_frame_sheet_for_an_animated_gif() -> None:
+    """움직이는 그림은 썸네일·표시용(첫 프레임) 곁에 프레임 모음을 하나 더 만든다. 발행 심사가 첫 프레임만 보면 뒤
+    프레임에만 있는 장면이 심사를 지나가므로, 심사는 프레임을 고르게 뽑아 한 장에 붙인 이것을 본다."""
+    storage_key = "assets/situational-image/abc.gif"
+    variants = dict(generate_variants(storage_key, _gif_bytes([(255, 0, 0), (0, 255, 0), (0, 0, 255)])))
+
+    assert list(variants) == list(build_variant_keys(storage_key))
+    thumbnail = _open(variants[build_thumbnail_key(storage_key)]).convert("RGB")
+    assert _is_close(thumbnail.getpixel((32, 24)), (255, 0, 0))
+    sheet = _open(variants[build_frame_sheet_key(storage_key)])
+    assert sheet.format == "WEBP"
+    # 3장은 2열 격자다: 왼쪽 위·오른쪽 위·왼쪽 아래.
+    _assert_tiles(sheet, columns=2, rows=2, expected=[(255, 0, 0), (0, 255, 0), (0, 0, 255), None])
+
+
+def test_frame_sheet_samples_nine_frames_evenly_from_first_to_last() -> None:
+    """프레임이 9장을 넘으면 처음과 마지막을 포함해 고르게 9장을 뽑는다 — 끝 장면만 다른 움짤도 심사에 실린다."""
+    colors = [(index * 12, 255 - index * 12, (index * 40) % 256) for index in range(20)]
+    sheet = _open(dict(generate_variants("a.gif", _gif_bytes(colors)))[build_frame_sheet_key("a.gif")])
+
+    expected = [colors[round(slot * 19 / 8)] for slot in range(9)]
+    _assert_tiles(sheet, columns=3, rows=3, expected=expected)
+
+
+def test_frame_sheet_fits_a_1024_long_edge_and_keeps_the_frame_aspect() -> None:
+    """900×1200 프레임 9장은 3×3 격자에서 칸이 256×341(비율 3:4, 세 칸 높이가 1024 를 넘지 않게 반올림)이다."""
+    colors = [(index * 20, 0, 0) for index in range(9)]
+    variants = dict(generate_variants("a.gif", _gif_bytes(colors, size=(900, 1200))))
+    sheet = _open(variants[build_frame_sheet_key("a.gif")])
+
+    assert sheet.size == (3 * 256, 3 * 341)
+
+
+def test_read_frame_count_counts_animation_frames_and_treats_still_images_as_one() -> None:
+    assert read_frame_count(_gif_bytes([(0, 0, 0), (9, 9, 9), (99, 99, 99)])) == 3
+    assert read_frame_count(_png_bytes(10, 10)) == 1
+
+
+def test_animated_image_over_the_total_pixel_limit_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """프레임 하나는 작아도 프레임 수만큼 풀어야 한다. 5MB 안에서도 단색 프레임은 수천 장이 들어가므로, 프레임 수 ×
+    프레임 픽셀에 상한을 둔다."""
+    data = _gif_bytes([(0, 0, 0), (9, 9, 9), (99, 99, 99)], size=(40, 30))
+    monkeypatch.setattr(image_processing, "MAX_ANIMATED_DECODE_PIXELS", 3 * 40 * 30 - 1)
+
+    with pytest.raises(ImageTooLargeError) as raised:
+        generate_variants("a.gif", data)
+
+    assert raised.value.actual_pixels == 3 * 40 * 30
+    assert raised.value.max_pixels == 3 * 40 * 30 - 1
+
+
+def _is_close(actual: object, expected: tuple[int, int, int], tolerance: int = 24) -> bool:
+    assert isinstance(actual, tuple)
+    return all(abs(int(a) - b) <= tolerance for a, b in zip(actual, expected, strict=False))
+
+
+def _assert_tiles(
+    sheet: Image.Image, *, columns: int, rows: int, expected: Sequence[tuple[int, int, int] | None]
+) -> None:
+    """격자 칸마다 가운데 색을 본다. `None` 은 빈 칸(투명)이다. WebP 손실 압축 오차만큼은 허용한다."""
+    rgba = sheet.convert("RGBA")
+    tile_width, tile_height = rgba.width // columns, rgba.height // rows
+    for index, color in enumerate(expected):
+        row, column = divmod(index, columns)
+        pixel = rgba.getpixel((column * tile_width + tile_width // 2, row * tile_height + tile_height // 2))
+        assert isinstance(pixel, tuple)
+        if color is None:
+            assert pixel[3] == 0, f"칸 {index} 는 비어 있어야 한다: {pixel}"
+        else:
+            assert pixel[3] == 255 and _is_close(pixel[:3], color), f"칸 {index}: {pixel} != {color}"
 
 
 # ---- 참조 이미지 검증 --------------------------------------------------------

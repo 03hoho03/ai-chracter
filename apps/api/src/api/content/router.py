@@ -90,7 +90,13 @@ from api.content.view_count import resolve_viewer_key, try_mark_viewed
 from api.core.config import settings
 from api.core.constants import WITHDRAWN_USER_NICKNAME
 from api.core.rate_limit_gate import enforce_publish_screen_limit
-from api.core.s3 import build_display_key, build_thumbnail_key, download_object, generate_presigned_get_url
+from api.core.s3 import (
+    build_display_key,
+    build_frame_sheet_key,
+    build_thumbnail_key,
+    download_object,
+    generate_presigned_get_url,
+)
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -1947,6 +1953,15 @@ def _download_situational_image_for_screening(storage_key: str) -> tuple[bytes, 
     return _download_original_for_screening(storage_key)
 
 
+def _download_frame_sheet_for_screening(storage_key: str) -> tuple[bytes, str]:
+    """Blocking network call — run via `run_in_threadpool`.
+
+    움직이는 그림의 프레임 모음(`_frames.webp`). 썸네일·원본을 실으면 심사 모델이 첫 프레임만 보고, 뒤 프레임에만 있는
+    장면이 심사를 지나간다. 모음은 업로드 완료가 움직이는 그림에 늘 만들므로 못 읽으면 대신하지 않고 그대로 올려
+    발행을 멈춘다 — 첫 프레임으로 대신하면 심사가 빠지는 프레임이 생긴다."""
+    return download_object(build_frame_sheet_key(storage_key)), THUMBNAIL_CONTENT_TYPE
+
+
 async def _storage_keys(db: AsyncSession, asset_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
     """자산 id → 저장 키. 발행은 읽기 구간에서 키만 모아 두고 커넥션을 돌려준 뒤에 내려받는다."""
     if not asset_ids:
@@ -1955,17 +1970,33 @@ async def _storage_keys(db: AsyncSession, asset_ids: Sequence[uuid.UUID]) -> dic
     return dict(rows.tuples().all())
 
 
+async def _animated_storage_keys(db: AsyncSession, asset_ids: Sequence[uuid.UUID]) -> frozenset[str]:
+    """움직이는 그림(프레임 2 이상)의 저장 키. 심사는 이 그림들에 첫 프레임 대신 프레임 모음을 싣는다."""
+    if not asset_ids:
+        return frozenset()
+    keys = await db.scalars(select(Asset.storage_key).where(Asset.id.in_(set(asset_ids)), Asset.frame_count > 1))
+    return frozenset(keys.all())
+
+
 async def _download_character_screening_images(
-    thumbnail_key: str | None, situational_keys: Sequence[str]
+    thumbnail_key: str | None, situational_keys: Sequence[str], animated_keys: frozenset[str]
 ) -> list[tuple[bytes, str]]:
     """썸네일(대표 이미지) 원본 + 이 버전의 상황 이미지 축소본을 받은 순서대로 내려받아 (바이트, MIME 타입) 쌍으로
     반환한다 — LLMClient.generate_structured()의 멀티모달 images 인자로 그대로 전달된다. 대표 이미지는 작품
-    얼굴이라 원본 그대로 본다."""
+    얼굴이라 원본 그대로 본다. `animated_keys` 의 그림은 어느 자리든 프레임 모음으로 대신한다(자리는 그대로다)."""
     images: list[tuple[bytes, str]] = []
     if thumbnail_key is not None:
-        images.append(await run_in_threadpool(_download_original_for_screening, thumbnail_key))
+        download = (
+            _download_frame_sheet_for_screening if thumbnail_key in animated_keys else _download_original_for_screening
+        )
+        images.append(await run_in_threadpool(download, thumbnail_key))
     for storage_key in situational_keys:
-        images.append(await run_in_threadpool(_download_situational_image_for_screening, storage_key))
+        download = (
+            _download_frame_sheet_for_screening
+            if storage_key in animated_keys
+            else _download_situational_image_for_screening
+        )
+        images.append(await run_in_threadpool(download, storage_key))
     return images
 
 
@@ -1986,6 +2017,8 @@ class _PublishPlan:
     thumbnail_key: str | None
     # 심사 순서의 (항목 entity_id, 원본 저장 키).
     image_keys: list[tuple[uuid.UUID, str]]
+    # 대표 이미지·`image_keys` 중 움직이는 그림의 원본 저장 키. 심사가 이 그림들에 프레임 모음을 싣는다.
+    animated_keys: frozenset[str]
     prompt: str
 
 
@@ -2117,10 +2150,10 @@ async def publish_content(
 
     if content.type == ContentType.CHARACTER:
         filter_images = await _download_character_screening_images(
-            plan.thumbnail_key, [storage_key for _, storage_key in plan.image_keys]
+            plan.thumbnail_key, [storage_key for _, storage_key in plan.image_keys], plan.animated_keys
         )
     else:
-        filter_images = await _download_story_screening_images(plan.thumbnail_key, plan.image_keys)
+        filter_images = await _download_story_screening_images(plan.thumbnail_key, plan.image_keys, plan.animated_keys)
     await _screen_for_publish(
         db,
         llm_client,
@@ -2213,12 +2246,14 @@ async def _plan_character_publish(
     draft = await _load_character_publish_draft(db, content, version)
     thumbnail_asset_id, situational = draft.screened_images()
     screened_asset_ids = (thumbnail_asset_id, *(image_id for _, image_id in situational))
-    storage_keys = await _storage_keys(db, [image_id for image_id in screened_asset_ids if image_id is not None])
+    screened_ids = [image_id for image_id in screened_asset_ids if image_id is not None]
+    storage_keys = await _storage_keys(db, screened_ids)
     return _PublishPlan(
         screened=draft.screened_images(),
         cells_to_blur=(),
         thumbnail_key=storage_keys[thumbnail_asset_id] if thumbnail_asset_id is not None else None,
         image_keys=[(entity_id, storage_keys[image_id]) for entity_id, image_id in situational],
+        animated_keys=await _animated_storage_keys(db, screened_ids),
         # 발행 검증이 이미지 없는 상황 이미지 행을 먼저 거부하므로 위 목록은 상황 이미지 전부다. 라벨 수는 실린 그림과
         # 같은 목록에서 센다 — 그래야 이미지 목록 줄과 실린 그림이 짝을 이룬다.
         prompt=build_character_publish_filter_prompt(
@@ -2283,7 +2318,7 @@ def _media_book_image_unavailable(cell_entity_id: uuid.UUID) -> HTTPException:
 
 
 async def _download_story_screening_images(
-    thumbnail_key: str | None, cells: Sequence[tuple[uuid.UUID, str]]
+    thumbnail_key: str | None, cells: Sequence[tuple[uuid.UUID, str]], animated_keys: frozenset[str]
 ) -> list[tuple[bytes, str]]:
     """대표 이미지 원본과, 그 뒤로 미디어 북 칸마다 축소본(`_thumb.webp`, 긴 변 512px) 한 장씩을 캐릭터의
     `_download_character_screening_images`와 같은 (바이트, MIME 타입) 쌍으로 돌려준다. `cells` 는 (칸 entity_id, 원본
@@ -2291,18 +2326,23 @@ async def _download_story_screening_images(
     50장 싣지 않으려고 축소본을 쓴다.
 
     축소본은 동시에 내려받는다(운영 저장소 왕복 50번을 줄로 세우면 발행이 그만큼 늦어진다). 칸 하나라도 못 읽으면
-    심사 없이 발행을 멈춘다 — 그 칸을 빼고 심사하면 아무도 보지 않은 그림이 발행된다."""
+    심사 없이 발행을 멈춘다 — 그 칸을 빼고 심사하면 아무도 보지 않은 그림이 발행된다. `animated_keys` 의 그림은
+    어느 자리든 프레임 모음으로 대신한다(자리는 그대로다)."""
     images: list[tuple[bytes, str]] = []
     if thumbnail_key is not None:
-        images.append(await run_in_threadpool(_download_original_for_screening, thumbnail_key))
+        download = (
+            _download_frame_sheet_for_screening if thumbnail_key in animated_keys else _download_original_for_screening
+        )
+        images.append(await run_in_threadpool(download, thumbnail_key))
     if not cells:
         return images
 
     semaphore = asyncio.Semaphore(_MEDIA_BOOK_S3_CONCURRENCY)
 
     async def download_thumbnail(storage_key: str) -> bytes:
+        key = build_frame_sheet_key(storage_key) if storage_key in animated_keys else build_thumbnail_key(storage_key)
         async with semaphore:
-            return await run_in_threadpool(download_object, build_thumbnail_key(storage_key))
+            return await run_in_threadpool(download_object, key)
 
     results = await asyncio.gather(
         *(download_thumbnail(storage_key) for _, storage_key in cells), return_exceptions=True
@@ -2740,18 +2780,17 @@ async def _plan_story_publish(
 ) -> _PublishPlan:
     draft = await _load_story_publish_draft(db, content, version)
     thumbnail_asset_id = draft.detail.thumbnail_asset_id
-    storage_keys = await _storage_keys(
-        db,
-        [
-            *([thumbnail_asset_id] if thumbnail_asset_id is not None else []),
-            *(cell.image_asset_id for cell in draft.ordered_cells),
-        ],
-    )
+    screened_ids = [
+        *([thumbnail_asset_id] if thumbnail_asset_id is not None else []),
+        *(cell.image_asset_id for cell in draft.ordered_cells),
+    ]
+    storage_keys = await _storage_keys(db, screened_ids)
     return _PublishPlan(
         screened=draft.screened_images(),
         cells_to_blur=draft.cells_to_blur(),
         thumbnail_key=storage_keys[thumbnail_asset_id] if thumbnail_asset_id is not None else None,
         image_keys=[(cell.entity_id, storage_keys[cell.image_asset_id]) for cell in draft.ordered_cells],
+        animated_keys=await _animated_storage_keys(db, screened_ids),
         prompt=build_story_publish_filter_prompt(sections=prompt_sections, media_cells=draft.cell_labels),
     )
 

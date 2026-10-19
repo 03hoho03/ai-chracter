@@ -20,7 +20,14 @@ from api.assets import router as assets_router
 from api.assets.schemas import UPLOAD_SIZE_LIMIT_BYTES, AssetPurpose
 from api.core import rate_limit_gate
 from api.core.config import settings
-from api.core.s3 import build_display_key, build_thumbnail_key, delete_object, download_object, upload_object
+from api.core.s3 import (
+    build_display_key,
+    build_frame_sheet_key,
+    build_thumbnail_key,
+    delete_object,
+    download_object,
+    upload_object,
+)
 from api.db.models.media import Asset, AssetStatus
 from factories import (
     _assert_blocked,
@@ -214,6 +221,50 @@ async def test_complete_keeps_an_animated_gif_inquiry_attachment_moving(
     assert stored == uploaded
     with Image.open(io.BytesIO(stored)) as image:
         assert sum(1 for _ in ImageSequence.Iterator(image)) == 3
+
+
+async def test_complete_records_frame_count_and_stores_a_frame_sheet_for_an_animated_situational_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """화면은 상황 이미지의 GIF 도 원본 그대로 올린다. 발행 심사는 자산 행의 프레임 수로 움직이는 그림을 골라 프레임
+    모음을 싣는다 — 프레임 수가 행에 없으면 심사는 첫 프레임 썸네일만 보게 된다."""
+    await _logged_in_user(db_client, db_session)
+    resp = await db_client.post(
+        "/assets/presigned-upload", json={"contentType": "image/gif", "purpose": "situational-image"}
+    )
+    assert resp.status_code == 201
+    asset_id, upload_url = resp.json()["assetId"], resp.json()["uploadUrl"]
+    frames = [Image.new("RGB", (64, 64), color=color) for color in ((255, 0, 0), (0, 255, 0), (0, 0, 255))]
+    output = io.BytesIO()
+    frames[0].save(output, format="GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    _put_via_presigned_url(upload_url, output.getvalue(), content_type="image/gif")
+
+    assert (await db_client.post(f"/assets/{asset_id}/complete")).status_code == 200
+
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    await db_session.refresh(asset)
+    assert asset.frame_count == 3
+    sheet = _object_bytes(build_frame_sheet_key(asset.storage_key))
+    assert sheet is not None
+    with Image.open(io.BytesIO(sheet)) as image:
+        assert image.format == "WEBP"
+
+
+async def test_complete_records_a_frame_count_of_one_for_a_still_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client, purpose="situational-image")
+    _put_via_presigned_url(upload_url, _png_bytes())
+
+    assert (await db_client.post(f"/assets/{asset_id}/complete")).status_code == 200
+
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    await db_session.refresh(asset)
+    assert asset.frame_count == 1
+    assert _object_bytes(build_frame_sheet_key(asset.storage_key)) is None
 
 
 async def test_reusing_the_upload_url_after_complete_cannot_change_the_stored_image(
@@ -434,6 +485,29 @@ async def test_complete_rejects_image_over_pixel_limit_and_cleans_up(
     assert complete_resp.json()["detail"] == {"maxPixels": 40 * 30 - 1, "actualPixels": 40 * 30}
     assert _object_bytes(_signed_key(upload_url)) is None
     assert _object_bytes(storage_key) is None
+    assert await db_session.get(Asset, uuid.UUID(asset_id)) is None
+
+
+async def test_complete_rejects_animated_image_over_the_total_pixel_limit_in_the_same_shape(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GIF 는 화면이 줄이지 않고 그대로 올리므로 프레임 수 × 크기 상한에 여기서 처음 걸린다. 화면은 `maxPixels` 로 이
+    거절을 알아보고 "프레임 수나 크기를 줄여 달라"고 안내하므로, 프레임 한 장의 상한과 같은 모양으로 알려야 한다."""
+    monkeypatch.setattr(image_processing, "MAX_ANIMATED_DECODE_PIXELS", 3 * 64 * 64 - 1)
+    await _logged_in_user(db_client, db_session)
+    resp = await db_client.post(
+        "/assets/presigned-upload", json={"contentType": "image/gif", "purpose": "situational-image"}
+    )
+    asset_id, upload_url = resp.json()["assetId"], resp.json()["uploadUrl"]
+    frames = [Image.new("RGB", (64, 64), color=color) for color in ((255, 0, 0), (0, 255, 0), (0, 0, 255))]
+    output = io.BytesIO()
+    frames[0].save(output, format="GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    _put_via_presigned_url(upload_url, output.getvalue(), content_type="image/gif")
+
+    complete_resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert complete_resp.status_code == 400
+    assert complete_resp.json()["detail"] == {"maxPixels": 3 * 64 * 64 - 1, "actualPixels": 3 * 64 * 64}
     assert await db_session.get(Asset, uuid.UUID(asset_id)) is None
 
 

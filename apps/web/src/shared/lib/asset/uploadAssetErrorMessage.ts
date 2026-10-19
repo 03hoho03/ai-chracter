@@ -14,6 +14,7 @@ export const MESSAGE_BY_CODE: Record<UploadAssetErrorCode, string> = {
   DECODE_FAILED: "PNG, JPG, WebP 이미지만 올릴 수 있어요.",
   ENCODE_FAILED: "이미지를 처리하지 못했어요. 다른 사진으로 다시 시도해주세요.",
   SIZE_LIMIT_EXCEEDED: "이미지 용량이 너무 커요. 더 작은 사진을 선택해주세요.",
+  PIXEL_LIMIT_EXCEEDED: "움직이는 이미지가 너무 길거나 커요. 프레임 수나 크기를 줄여 주세요.",
   UPLOAD_FAILED: "업로드 중 연결이 끊겼어요. 잠시 후 다시 시도해주세요.",
 };
 

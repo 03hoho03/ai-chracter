@@ -7,7 +7,7 @@ import {
   type ResizeSpec,
 } from "@/shared/lib/asset/resizeImage";
 
-import { apiClient } from "../client";
+import { apiClient, isApiError } from "../client";
 
 type PresignedUploadResponse = components["schemas"]["PresignedUploadResponse"];
 type AssetCompleteResponse = components["schemas"]["AssetCompleteResponse"];
@@ -29,16 +29,18 @@ const RESIZE_SPEC_BY_PURPOSE: Record<AssetPurpose, ResizeSpec> = {
 };
 
 /**
- * 리사이즈하지 않고 원본 바이트를 그대로 올리는 형식. 문의 첨부의 GIF는 버그를 녹화한 움직임 자체가 신고 내용인데,
- * `resizeImage`는 canvas에 첫 프레임만 그려 정지 그림으로 바꾼다. 원본 그대로여도 아래 용량 상한은 같게 걸리고, 서버는
- * 업로드 완료 때 바이트에서 형식을 읽어 저장한다.
+ * 리사이즈하지 않고 원본 바이트를 그대로 올리는 형식. `resizeImage`는 canvas에 첫 프레임만 그려 GIF를 정지 그림으로
+ * 바꾸는데, 문의 첨부는 버그를 녹화한 움직임 자체가 신고 내용이고 상황 이미지는 채팅에서 원본 그대로 움직여야 한다.
+ * 원본 그대로여도 아래 용량 상한은 같게 걸리고, 서버는 업로드 완료 때 바이트에서 형식을 읽어 저장한다. 대표 이미지는
+ * 크롭이 canvas에서 다시 그려 움직임이 어차피 사라지고 카드 용량이 크게 늘어 넣지 않는다.
  */
 const KEEP_ORIGINAL_TYPES_BY_PURPOSE: Partial<Record<AssetPurpose, readonly string[]>> = {
   "inquiry-attachment": ["image/gif"],
+  "situational-image": ["image/gif"],
 };
 
 /** 서버의 `UPLOAD_SIZE_LIMIT_BYTES`(apps/api/src/api/assets/schemas.py)와 같은 값 — 리사이즈 *결과물*에 건다. */
-const MAX_UPLOAD_BYTES_BY_PURPOSE: Record<AssetPurpose, number> = {
+export const MAX_UPLOAD_BYTES_BY_PURPOSE: Record<AssetPurpose, number> = {
   "profile-image": 2 * 1024 * 1024,
   "content-thumbnail": 5 * 1024 * 1024,
   "situational-image": 5 * 1024 * 1024,
@@ -49,6 +51,8 @@ export type UploadAssetErrorCode =
   | ResizeImageErrorCode
   /** 리사이즈 결과가 purpose별 상한을 넘음 */
   | "SIZE_LIMIT_EXCEEDED"
+  /** 서버가 픽셀 수 상한으로 거절함 — 리사이즈 없이 올리는 GIF가 프레임 수 × 크기 상한을 넘을 때 닿는다 */
+  | "PIXEL_LIMIT_EXCEEDED"
   /** S3로의 PUT 실패 (네트워크 단절, 서명 만료 등) */
   | "UPLOAD_FAILED";
 
@@ -100,10 +104,20 @@ export async function uploadAsset(file: File, purpose: AssetPurpose): Promise<st
     throw new UploadAssetError("UPLOAD_FAILED", "Failed to upload file to storage");
   }
 
-  const { data: completed } = await apiClient.post<AssetCompleteResponse>(
-    `/assets/${presigned.assetId}/complete`,
-  );
-  return completed.assetId;
+  try {
+    const { data: completed } = await apiClient.post<AssetCompleteResponse>(`/assets/${presigned.assetId}/complete`);
+    return completed.assetId;
+  } catch (error) {
+    if (isPixelLimitRejection(error)) throw new UploadAssetError("PIXEL_LIMIT_EXCEEDED", "Image exceeds the pixel limit");
+    throw error;
+  }
+}
+
+/** 업로드 완료의 400 중 픽셀 수 상한 거절(`{maxPixels, actualPixels}`). 그 밖의 실패는 호출부의 일반 문구로 간다. */
+export function isPixelLimitRejection(error: unknown): boolean {
+  if (!isApiError(error) || error.status !== 400) return false;
+  const { detail } = error;
+  return typeof detail === "object" && detail !== null && !Array.isArray(detail) && "maxPixels" in detail;
 }
 
 /** 호출부가 두 에러 타입을 갈라 보지 않도록 리사이즈 실패도 code를 승계해 `UploadAssetError`로 합친다. */

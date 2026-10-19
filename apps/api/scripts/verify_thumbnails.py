@@ -35,7 +35,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from api.core.config import settings
-from api.core.s3 import build_display_key, build_thumbnail_key, build_variant_keys, download_object, s3_client
+from api.core.s3 import build_display_key, build_thumbnail_key, build_required_variant_keys, download_object, s3_client
 from api.db.models.media import Asset, AssetStatus
 from api.db.session import async_session_factory
 
@@ -89,7 +89,7 @@ def main() -> int:
     total_display = 0
 
     for asset in assets:
-        if any(key not in sizes for key in build_variant_keys(asset.storage_key)):
+        if any(key not in sizes for key in build_required_variant_keys(asset.storage_key)):
             (missing if asset.storage_key in sizes else missing_originals).append(asset.storage_key)
             continue
         thumbnail_key = build_thumbnail_key(asset.storage_key)

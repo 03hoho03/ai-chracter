@@ -13,7 +13,7 @@ from api.core.config import settings
 from api.core.s3 import (
     build_display_key,
     build_thumbnail_key,
-    build_variant_keys,
+    build_required_variant_keys,
     download_object,
     get_object_size,
     s3_client,
@@ -73,7 +73,7 @@ async def test_backfill_adds_missing_variants_to_ready_assets_only(
         assert (display.format, display.size) == ("WEBP", (1024, 768))
     with Image.open(io.BytesIO(download_object(build_thumbnail_key(bare.storage_key)))) as thumbnail:
         assert (thumbnail.format, thumbnail.size) == ("WEBP", (512, 384))
-    assert not any(_exists(key) for key in build_variant_keys(pending.storage_key))
+    assert not any(_exists(key) for key in build_required_variant_keys(pending.storage_key))
 
 
 async def test_backfill_keeps_an_existing_variant_and_adds_only_the_missing_one(
@@ -113,7 +113,7 @@ async def test_backfill_dry_run_counts_targets_and_writes_nothing(
     assert "READY 자산 3건 — 생성 대상 2건, 원본 없음 0건, 이미 있음 1건" in out
     assert "_display.webp 2건" in out
     assert "_thumb.webp 1건" in out
-    assert not any(_exists(key) for key in build_variant_keys(bare.storage_key))
+    assert not any(_exists(key) for key in build_required_variant_keys(bare.storage_key))
 
 
 async def test_backfill_collects_failures_and_keeps_going(
@@ -131,7 +131,7 @@ async def test_backfill_collects_failures_and_keeps_going(
 
     assert await backfill.run(db_session, dry_run=False) == 1
 
-    assert all(_exists(key) for key in build_variant_keys(found.storage_key))
+    assert all(_exists(key) for key in build_required_variant_keys(found.storage_key))
     assert broken.storage_key in capsys.readouterr().out
 
 
@@ -150,8 +150,8 @@ async def test_backfill_reports_assets_without_an_original_separately_with_their
 
     assert await backfill.run(db_session, dry_run=False) == backfill.EXIT_ONLY_MISSING_ORIGINALS == 2
 
-    assert all(_exists(key) for key in build_variant_keys(found.storage_key))
-    assert not any(_exists(key) for key in build_variant_keys(lost.storage_key))
+    assert all(_exists(key) for key in build_required_variant_keys(found.storage_key))
+    assert not any(_exists(key) for key in build_required_variant_keys(lost.storage_key))
     assert lost.storage_key in capsys.readouterr().out
 
 
@@ -186,5 +186,5 @@ async def test_backfill_uploads_variants_as_webp(db_session: AsyncSession, s3_bu
 
     assert await backfill.run(db_session, dry_run=False) == 0
 
-    for key in build_variant_keys(bare.storage_key):
+    for key in build_required_variant_keys(bare.storage_key):
         assert s3_client.head_object(Bucket=settings.s3_bucket_name, Key=key)["ContentType"] == "image/webp"

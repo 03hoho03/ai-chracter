@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, generate_variants
 from api.core.config import settings
 from api.core.s3 import (
-    build_variant_keys,
+    build_required_variant_keys,
     download_object,
     get_object_size,
     upload_object,
@@ -70,7 +70,7 @@ async def run(session: AsyncSession, *, dry_run: bool) -> int:
     missing_originals: list[str] = []
     missing_by_suffix: Counter[str] = Counter()
     for storage_key in storage_keys:
-        missing = {key for key in build_variant_keys(storage_key) if get_object_size(key) is None}
+        missing = {key for key in build_required_variant_keys(storage_key) if get_object_size(key) is None}
         if not missing:
             continue
         if get_object_size(storage_key) is None:
