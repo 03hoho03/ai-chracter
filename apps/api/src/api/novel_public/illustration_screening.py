@@ -126,9 +126,14 @@ async def taken_down_shas(db: AsyncSession, shas: Iterable[str]) -> set[str]:
 
 async def record_display_shas(db: AsyncSession, pairs: Iterable[tuple[uuid.UUID, str]]) -> None:
     """내려받은 그림 바이트의 sha 를 그 자산 행에 적는다 — 화 읽기가 이 값으로 같은 파일을 담은 다른 자산의 내림을 본다. 커밋은
-    호출자."""
-    for asset_id, sha in dict(pairs).items():
-        await db.execute(update(Asset).where(Asset.id == asset_id).values(display_sha256=sha))
+    호출자. 값이 이미 같으면 행을 건드리지 않고(잠그지 않는다), 자산 id 순으로 쓴다 — 같은 원작 그림을 다른 순서로 붙인 두 공개가
+    동시에 자산 행을 거꾸로 잡아 교착하지 않게."""
+    for asset_id, sha in sorted(dict(pairs).items()):
+        await db.execute(
+            update(Asset)
+            .where(Asset.id == asset_id, Asset.display_sha256.is_distinct_from(sha))
+            .values(display_sha256=sha)
+        )
 
 
 async def remembered_shas(db: AsyncSession, shas: Iterable[str], *, model: str, version: str) -> set[str]:
