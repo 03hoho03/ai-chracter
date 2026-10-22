@@ -10,6 +10,9 @@ import {
   toMoveTarget,
   toParagraphActions,
   isUnplacedListShown,
+  isIllustrationLimitReached,
+  toAttachTarget,
+  toRetryAttachRequest,
   type BoardIllustration,
   type BoardRevision,
 } from "./boardIllustrations";
@@ -188,13 +191,30 @@ describe("toActiveMove", () => {
 });
 
 describe("보일 컨트롤", () => {
-  // 지금 화면의 동작 줄 그대로다 — 스위치가 꺼져 있으면 옮기는 중이 될 수 없어(위 `toActiveMove`) 늘 이 목록이다.
-  it("옮기는 중이 아니면 동작 줄은 지금 그대로 셋이다", () => {
-    expect(toParagraphActions({ isMoving: false })).toEqual(["aiEdit", "manualEdit", "clearSelection"]);
+  // 스위치가 꺼져 있으면 지금 화면의 동작 줄 그대로다 — 꺼져 있으면 옮기는 중이 될 수도 없어(위 `toActiveMove`) 늘 이 목록이다.
+  it("스위치가 꺼졌으면 동작 줄은 지금 그대로 셋이다", () => {
+    expect(toParagraphActions({ isMoving: false, isIllustrationsOn: false })).toEqual([
+      "aiEdit",
+      "manualEdit",
+      "clearSelection",
+    ]);
+  });
+
+  it("스위치가 켜졌으면 동작 줄에 그림 붙이기가 선택 해제 앞에 더해진다", () => {
+    expect(toParagraphActions({ isMoving: false, isIllustrationsOn: true })).toEqual([
+      "aiEdit",
+      "manualEdit",
+      "attach",
+      "clearSelection",
+    ]);
   });
 
   it("옮기는 중이면 동작 줄은 앞에 놓기·뒤에 놓기·취소다", () => {
-    expect(toParagraphActions({ isMoving: true })).toEqual(["placeBefore", "placeAfter", "cancelMove"]);
+    expect(toParagraphActions({ isMoving: true, isIllustrationsOn: true })).toEqual([
+      "placeBefore",
+      "placeAfter",
+      "cancelMove",
+    ]);
   });
 
   it.each([
@@ -205,21 +225,22 @@ describe("보일 컨트롤", () => {
     expect(toIllustrationActions({ isIllustrationsOn, isFixMode, illustration: illustration("a") })).toEqual([]);
   });
 
-  it("켜짐·고치기 모드면 옮기기·떼기", () => {
+  it("켜짐·고치기 모드면 옮기기·바꾸기·떼기", () => {
     expect(
       toIllustrationActions({ isIllustrationsOn: true, isFixMode: true, illustration: illustration("a") }),
-    ).toEqual(["move", "detach"]);
+    ).toEqual(["move", "replace", "detach"]);
   });
 
-  // 내린 그림은 독자에게 안내 상자로만 서고, 그대로 두면 이 화를 다시 공개할 수 없다 — 할 일은 떼기뿐이다.
-  it("운영자가 내린 그림은 떼기만", () => {
+  // 내린 그림은 독자에게 안내 상자로만 서고, 그대로 두면 이 화를 다시 공개할 수 없다 — 할 일은 다른 그림으로 바꾸거나
+  // 떼기다. 옮겨도 공개할 수 없는 것은 그대로라 옮기기는 없다.
+  it("운영자가 내린 그림은 바꾸기·떼기만", () => {
     expect(
       toIllustrationActions({
         isIllustrationsOn: true,
         isFixMode: true,
         illustration: illustration("a", { withheld: "taken_down" }),
       }),
-    ).toEqual(["detach"]);
+    ).toEqual(["replace", "detach"]);
   });
 
   it("원작이 이용 제한 중인 그림은 풀릴 수 있어 옮기기도 둔다", () => {
@@ -229,7 +250,7 @@ describe("보일 컨트롤", () => {
         isFixMode: true,
         illustration: illustration("a", { withheld: "original_restricted" }),
       }),
-    ).toEqual(["move", "detach"]);
+    ).toEqual(["move", "replace", "detach"]);
   });
 
   it("위치 확인 필요 목록은 스위치가 켜져 있고 그런 그림이 있을 때만", () => {
@@ -267,5 +288,70 @@ describe("countIllustrationsInRange", () => {
     );
     expect(countIllustrationsInRange(spots, { start: 1, end: 2 })).toBe(2);
     expect(countIllustrationsInRange(spots, { start: 0, end: 0 })).toBe(1);
+  });
+});
+
+describe("toAttachTarget", () => {
+  it("뒤에 붙이면 고른 범위의 마지막 문단 뒤다", () => {
+    expect(toAttachTarget(revision(), { start: 0, end: 1 }, "after")).toEqual({ anchorBlockId: "b1", placement: "after" });
+  });
+
+  // 여러 문단을 고르고 앞에 붙이면 범위 끝 문단 앞(둘째와 셋째 사이)이 아니라 범위 첫 문단 앞이다.
+  it("앞에 붙이면 고른 범위의 첫 문단 앞이다", () => {
+    expect(toAttachTarget(revision(), { start: 1, end: 2 }, "before")).toEqual({
+      anchorBlockId: "b1",
+      placement: "before",
+    });
+  });
+
+  it("지금 판에 없는 문단이면 붙일 자리가 없다", () => {
+    expect(toAttachTarget(revision(), { start: 3, end: 4 }, "after")).toBeNull();
+  });
+});
+
+describe("isIllustrationLimitReached", () => {
+  const many = (count: number) => Array.from({ length: count }, (_, index) => illustration(`p${index}`));
+
+  it("한 화의 삽화가 10장이면 더 붙일 수 없다", () => {
+    expect(isIllustrationLimitReached(revision({ illustrations: many(10) }))).toBe(true);
+    expect(isIllustrationLimitReached(revision({ illustrations: many(9) }))).toBe(false);
+  });
+
+  // 서버는 자리를 잃은 그림도 상한에 센다 — 빼고 세면 붙이기 버튼이 열려 있다가 요청이 409 로 끝난다.
+  it("위치 확인 필요인 그림도 센다", () => {
+    expect(
+      isIllustrationLimitReached(
+        revision({
+          illustrations: many(9),
+          unplacedIllustrations: [illustration("lost", { anchorBlockId: null, placement: null })],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("삽화 칸이 없는 응답은 상한에 닿지 않았다", () => {
+    expect(isIllustrationLimitReached({ id: "r1", blocks: [] })).toBe(false);
+  });
+});
+
+describe("toRetryAttachRequest", () => {
+  const failed = {
+    assetId: "asset-new",
+    source: "upload" as const,
+    target: { anchorBlockId: "b1", placement: "after" as const },
+  };
+
+  // 충돌 뒤 다시 받은 판을 기준으로 보내야 한다 — 실패한 요청의 옛 기준 판으로 다시 보내면 같은 409 가 끝없이 되풀이된다.
+  it("다시 넣기는 지금 판을 기준으로 같은 그림·같은 자리를 보낸다", () => {
+    expect(toRetryAttachRequest(revision({ id: "r2" }), failed)).toEqual({
+      baseRevisionId: "r2",
+      assetId: "asset-new",
+      source: "upload",
+      target: { anchorBlockId: "b1", placement: "after" },
+    });
+  });
+
+  it("그 문단이 지금 판에 없으면 다시 넣을 수 없다(문단을 다시 골라야 한다)", () => {
+    expect(toRetryAttachRequest(revision({ id: "r2", blocks: [{ id: "b0" }] }), failed)).toBeNull();
   });
 });

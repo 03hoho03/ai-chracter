@@ -27,7 +27,11 @@ import { ConfirmCloverSpendModal } from "@/features/confirm-clover-spend";
 import { ConfirmChapterSpendModal, ConfirmNovelSpendModal } from "@/features/confirm-novel-spend";
 import { ChapterBoundaryModal, ProtagonistNameModal } from "@/features/create-novel-chapter";
 import { DeleteLastChapterModal, DeleteNovelModal } from "@/features/delete-novel";
-import { AiEditInstructionModal, DiscardManualEditModal } from "@/features/edit-novel-chapter";
+import {
+  AiEditInstructionModal,
+  DiscardManualEditModal,
+  OriginalIllustrationPickerModal,
+} from "@/features/edit-novel-chapter";
 import { NovelRevisionHistoryModal } from "@/features/novel-revision-history";
 import { CommentActionModal, CommentLoginModal, CommentReportModal } from "@/features/work-comments";
 import { ContentComments } from "@/widgets/content-comments";
@@ -128,6 +132,7 @@ function RootComponent() {
       <ChapterBoundaryModal />
       <AiEditInstructionModal />
       <DiscardManualEditModal />
+      <OriginalIllustrationPickerModal />
       <NovelRevisionHistoryModal />
       <DeleteLastChapterModal />
       <DeleteNovelModal />

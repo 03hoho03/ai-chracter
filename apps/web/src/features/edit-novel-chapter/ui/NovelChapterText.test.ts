@@ -96,6 +96,7 @@ function render({
         onDraftDirtyChange: () => {},
         isIllustrationsOn,
         onFixModeRequest: () => {},
+        onPickImage: () => Promise.resolve(undefined),
       }),
     ),
   );
@@ -105,6 +106,7 @@ describe("NovelChapterText 삽화", () => {
   it.each([true, false])("스위치가 꺼졌으면 고치기 모드(%s)여도 삽화 조작과 위치 확인 필요 목록이 없다", (isFixMode) => {
     const markup = render({ isIllustrationsOn: false, isFixMode });
     expect(markup).not.toContain("옮기기");
+    expect(markup).not.toContain("바꾸기");
     expect(markup).not.toContain("떼기");
     expect(markup).not.toContain("위치 확인 필요");
     expect(markup).not.toContain("놓기");
@@ -112,9 +114,10 @@ describe("NovelChapterText 삽화", () => {
     expect(markup).toContain("https://img.example/placed.webp");
   });
 
-  it("켜짐 + 고치기 모드면 그림 아래 옮기기·떼기와 위치 확인 필요 목록이 있다", () => {
+  it("켜짐 + 고치기 모드면 그림 아래 옮기기·바꾸기·떼기와 위치 확인 필요 목록이 있다", () => {
     const markup = render({ isIllustrationsOn: true, isFixMode: true });
     expect(markup).toContain("옮기기");
+    expect(markup).toContain("바꾸기");
     expect(markup).toContain("떼기");
     expect(markup).toContain("위치 확인 필요 삽화 1장");
     expect(markup).toContain('aria-label="1번째 문단 뒤 삽화"');
@@ -124,6 +127,7 @@ describe("NovelChapterText 삽화", () => {
   it("켜짐 + 고치기 모드가 아니면 그림 조작은 없고 위치 확인 필요 목록은 있다", () => {
     const markup = render({ isIllustrationsOn: true, isFixMode: false });
     expect(markup).not.toContain("옮기기");
+    expect(markup).not.toContain("바꾸기");
     expect(markup).toContain("위치 확인 필요 삽화 1장");
     expect(markup).toContain("놓기");
   });
@@ -143,5 +147,21 @@ describe("NovelChapterText 삽화", () => {
     const list = markup.slice(markup.indexOf("위치 확인 필요 삽화 1장"), markup.indexOf("첫 문단"));
     expect(list).not.toContain("놓기");
     expect(list).toContain("떼기");
+  });
+
+  // 내린 그림은 옮겨도 공개할 수 없는 것이 그대로라 옮기기는 없고, 다른 그림으로 바꾸거나 떼야 다시 공개할 수 있다.
+  it("문단 사이의 내린 그림에는 바꾸기·떼기만 있다", () => {
+    const takenDown = {
+      ...chapter,
+      revision: {
+        ...chapter.revision,
+        illustrations: [illustration("placed", { url: null, withheld: "taken_down" })],
+        unplacedIllustrations: [],
+      },
+    } satisfies NovelChapterResponse;
+    const markup = render({ isIllustrationsOn: true, isFixMode: true, target: takenDown });
+    expect(markup).toContain("바꾸기");
+    expect(markup).toContain("떼기");
+    expect(markup).not.toContain("옮기기");
   });
 });

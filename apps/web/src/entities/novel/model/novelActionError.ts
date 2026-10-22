@@ -30,7 +30,9 @@ export type NovelAction =
   | "saveSnapshot"
   | "restoreSnapshot"
   | "deleteSnapshot"
+  | "attachIllustration"
   | "moveIllustration"
+  | "replaceIllustration"
   | "detachIllustration";
 
 export type NovelActionErrorNotice = {
@@ -64,7 +66,9 @@ const ACTION_OBJECT: Record<NovelAction, string> = {
   saveSnapshot: "버전을 저장하지",
   restoreSnapshot: "이 버전으로 되돌리지",
   deleteSnapshot: "버전을 지우지",
+  attachIllustration: "삽화를 붙이지",
   moveIllustration: "삽화를 옮기지",
+  replaceIllustration: "삽화를 바꾸지",
   detachIllustration: "삽화를 떼지",
 };
 
@@ -135,14 +139,20 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     message: "고른 문단이 바뀌었어요. 최신 내용을 불러왔어요. 다시 골라 주세요.",
     shouldRefetchNovel: true,
   },
-  // 옮기거나 뗄 삽화가 지금 판에 없다(배치 id 는 판마다 새로 매겨진다).
+  // 고른 그림을 그 출처로 쓸 수 없다(남의 것·준비 안 됨·삽화 용도가 아닌 업로드·그사이 원작 이용 제한 등 — 서버가 가르지
+  // 않는다). 판은 그대로라 다시 받을 것이 없고, 다른 그림을 고르면 된다.
+  NOVEL_ILLUSTRATION_ASSET_INVALID: {
+    message: "이 그림은 삽화로 쓸 수 없어요. 다른 그림을 골라 주세요.",
+    shouldRefetchNovel: false,
+  },
+  // 옮기거나 바꾸거나 뗄 삽화가 지금 판에 없다(배치 id 는 판마다 새로 매겨진다).
   NOVEL_ILLUSTRATION_NOT_FOUND: {
     message: "이 삽화가 그사이 바뀌었어요. 최신 내용을 불러왔어요.",
     shouldRefetchNovel: true,
   },
   // 삽화 스위치가 꺼졌다. 호출부가 가격 응답도 다시 받아 삽화 컨트롤을 거둔다.
   NOVEL_ILLUSTRATIONS_DISABLED: {
-    message: "지금은 삽화를 넣거나 옮기거나 뗄 수 없어요.",
+    message: "지금은 삽화를 넣거나 고칠 수 없어요.",
     shouldRefetchNovel: true,
   },
   NOVEL_SOURCE_CHANGED: {

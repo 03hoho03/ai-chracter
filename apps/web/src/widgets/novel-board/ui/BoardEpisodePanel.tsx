@@ -14,9 +14,16 @@ import {
 } from "@/entities/novel";
 import { RegenerateChapterButton, type NovelChapterJobFlow } from "@/features/create-novel-chapter";
 import { DeleteLastChapterModal, isLastBatchSold, LAST_BATCH_SOLD_REASON } from "@/features/delete-novel";
-import { AiEditStatus, NovelChapterText, type NovelAiEditFlow } from "@/features/edit-novel-chapter";
+import {
+  AiEditStatus,
+  NovelChapterText,
+  type NovelAiEditFlow,
+  type PickIllustrationImage,
+} from "@/features/edit-novel-chapter";
 import { AuthorNoteEditor, EpisodeTitleEditor } from "@/features/edit-novel-episode";
 import { NovelRevisionHistoryModal } from "@/features/novel-revision-history";
+
+import { useIllustrationImagePicker } from "./useIllustrationImagePicker";
 
 type BoardEpisodePanelProps = {
   novel: NovelDetailResponse;
@@ -54,6 +61,7 @@ export function BoardEpisodePanel({
   const chapterQuery = useNovelChapterQuery(novel.id, chapter.id, chapter.currentRevisionId);
   // 삽화 조작은 스위치가 켜졌을 때만 있다 — 한 번 읽어 본문으로 내린다.
   const isIllustrationsOn = isNovelIllustrationsOn(useCloverPricingQuery().data);
+  const illustrationPicker = useIllustrationImagePicker(novel.id);
   // 지우기는 마지막에 한 번에 만든 화들(마지막 묶음) 단위다 — 그 묶음의 어느 화에서든 지울 수 있고, 함께 지워지는
   // 화들의 범위를 버튼이 말한다.
   const lastChapter = novel.chapters.reduce<NovelChapterSummary | undefined>(
@@ -148,7 +156,10 @@ export function BoardEpisodePanel({
         onDraftDirtyChange={onDraftDirtyChange}
         isIllustrationsOn={isIllustrationsOn}
         onFixModeRequest={() => setIsFixMode(true)}
+        onPickImage={illustrationPicker.pickImage}
       />
+      {/* 붙이기·바꾸기의 파일 고르기 입력 — 스위치가 꺼져 있으면 그것을 여는 메뉴가 없어 그리지 않는다. */}
+      {isIllustrationsOn && illustrationPicker.fileInput}
 
       <AuthorNoteEditor novel={novel} chapter={chapter} />
 
@@ -220,6 +231,7 @@ type ChapterBodyProps = {
   onDraftDirtyChange: (isDirty: boolean) => void;
   isIllustrationsOn: boolean;
   onFixModeRequest: () => void;
+  onPickImage: PickIllustrationImage;
 };
 
 /** 본문 로딩·실패·본문. 이미 받은 본문이 있으면 다시 받기가 실패해도 그대로 둔다. */
@@ -232,6 +244,7 @@ function ChapterBody({
   onDraftDirtyChange,
   isIllustrationsOn,
   onFixModeRequest,
+  onPickImage,
 }: ChapterBodyProps) {
   if (query.data !== undefined) {
     return (
@@ -244,6 +257,7 @@ function ChapterBody({
         onDraftDirtyChange={onDraftDirtyChange}
         isIllustrationsOn={isIllustrationsOn}
         onFixModeRequest={onFixModeRequest}
+        onPickImage={onPickImage}
       />
     );
   }
