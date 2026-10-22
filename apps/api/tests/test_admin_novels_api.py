@@ -305,7 +305,7 @@ async def test_admin_resolves_a_novel_report_by_restricting_or_rejects_it(
 async def test_a_report_on_a_deleted_novel_keeps_its_evidence_and_can_only_be_rejected(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """게시자가 소설을 지워도 신고 상세는 증거로 무엇이 신고됐는지 보인다. 지운 노벨은 이용제한할 수 없어 409 이고 반려는 된다.
+    """게시자가 소설을 지워도 신고 상세는 증거로 무엇이 신고됐는지 보인다. 지운 노벨은 이용제한할 수도 삽화 내림으로 처리할 수도 없어 409 이고 반려는 된다.
     증거는 보유 기간이 지나면 파기 전이라도 숨긴다."""
     novel = await _novel(db_session)
     reporter = await _member(db_session)
@@ -320,12 +320,16 @@ async def test_a_report_on_a_deleted_novel_keeps_its_evidence_and_can_only_be_re
     detail = (await db_client.get(f"/admin/novel-reports/{report.id}")).json()
     hidden = (await db_client.get(f"/admin/novel-reports/{expired.id}")).json()
     gone = await db_client.post(f"/admin/novel-reports/{report.id}/actions", json={"action": "restrict", "adminComment": "x"})
+    gone_takedown = await db_client.post(
+        f"/admin/novel-reports/{report.id}/actions", json={"action": "illustration_takedown", "adminComment": "x"}
+    )
     rejected = await db_client.post(f"/admin/novel-reports/{report.id}/actions", json={"action": "reject", "adminComment": "지워짐"})
 
     assert (detail["novelId"], detail["chapterOrdinal"], detail["novelModerationStatus"]) == (None, 1, None)
     assert (detail["evidence"]["available"], detail["evidence"]["body"], detail["evidence"]["title"]) == (True, "1화 본문", "공개 제목")
     assert (hidden["evidence"]["available"], hidden["evidence"]["title"]) == (False, None)
     assert (gone.status_code, gone.json()["detail"]["code"]) == (409, "NOVEL_GONE")
+    assert (gone_takedown.status_code, gone_takedown.json()["detail"]["code"]) == (409, "NOVEL_GONE")
     assert (rejected.status_code, rejected.json()["status"]) == (200, "rejected")
     assert await _logs(db_session) == {("novel-report-reject", novel.publisher_id, None, "spam", "지워짐")}
 

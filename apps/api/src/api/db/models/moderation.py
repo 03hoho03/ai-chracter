@@ -221,6 +221,7 @@ AdminActionType = Literal[
     "novel-comment-restore",
     "novel-illustration-takedown",
     "novel-lift",
+    "novel-report-illustration-takedown",
     "novel-report-reject",
     "novel-restrict",
     "novel-review-approve",

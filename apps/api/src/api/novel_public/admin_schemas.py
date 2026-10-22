@@ -20,7 +20,7 @@ from api.novel_public.schemas import PublicNovelIllustration
 
 AdminNovelModerationAction = Literal["restrict", "lift"]
 AdminNovelReviewAction = Literal["approve", "reject"]
-AdminNovelReportAction = Literal["restrict", "stop_sales", "reject"]
+AdminNovelReportAction = Literal["restrict", "stop_sales", "reject", "illustration_takedown"]
 AdminNovelSalesAction = Literal["stop", "resume"]
 AdminNovelCommentAction = Literal["hide", "restore", "delete"]
 AdminNovelCommentReportAction = Literal["hide", "delete", "reject"]
@@ -137,8 +137,19 @@ class AdminNovelIllustration(PublicNovelIllustration):
     asset_id: uuid.UUID
 
 
+class AdminNovelChapterEditionItem(CamelModel):
+    """화의 판 하나 — 판 번호, 그 판을 공개한 시각, 작가가 쓴 변경 요약(첫 판·요약 없이 낸 판은 비어 있다). `current` 는 지금
+    독자에게 나가는 판인가."""
+
+    edition: int
+    published_at: datetime
+    change_summary: str | None
+    current: bool
+
+
 class AdminNovelChapterResponse(CamelModel):
-    """화 공개본 — 독자에게 나가는 그대로(제목·작가의 말·본문 문단)."""
+    """화의 판 하나 — 그 판을 산 회원에게 나가는 그대로(제목·작가의 말·본문 문단). `edition` 은 실제로 준 판이다(요청한 판을
+    모르는 서버는 지금 판을 주므로 화면은 이 값으로 어느 판을 보는지 판단한다). `editions` 는 그 화의 판 전부(최신순)다."""
 
     id: uuid.UUID
     ordinal: int
@@ -148,6 +159,7 @@ class AdminNovelChapterResponse(CamelModel):
     paragraphs: list[str]
     # 독자에게 나가는 그대로의 삽화(`PublicNovelIllustration`)에 그림 자산 id 를 더한 것 — 그림 내리기가 이 id 로 고른다.
     illustrations: list[AdminNovelIllustration]
+    editions: list[AdminNovelChapterEditionItem]
 
 
 class AdminNovelIllustrationTakedownRequest(CamelModel):

@@ -10,6 +10,7 @@ import hashlib
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -19,7 +20,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.content.publish import PublishFilterResult
 from api.core.config import settings
-from api.db.models import AdminActionLog, Asset, AssetKind, AssetStatus, Content, ModerationStatus, Novel, User
+from api.db.models import (
+    AdminActionLog,
+    Asset,
+    AssetKind,
+    AssetStatus,
+    Content,
+    ModerationStatus,
+    Novel,
+    NovelReport,
+    ReportReasonCategory,
+    ReportStatus,
+    User,
+)
 from api.db.models.novel import (
     NovelChapter,
     NovelChapterEdition,
@@ -762,11 +775,18 @@ async def _public(db: AsyncSession) -> PublicNovel:
 
 
 async def _freeze_pictures(
-    db: AsyncSession, novel: PublicNovel, ordinal: int, spots: list[Spot], *, screened: bool = True, edition: int = 1
+    db: AsyncSession,
+    novel: PublicNovel,
+    ordinal: int,
+    spots: list[Spot],
+    *,
+    screened: bool = True,
+    edition: int = 1,
+    body: str = _BODY,
 ) -> NovelChapterRevision:
     """공개 화 `ordinal` 에 `spots` 를 붙인 개정을 얼린다(공개본과 그 판 행). `screened` 면 심사 시각을 찍는다."""
     chapter = await db.get_one(NovelChapter, novel.chapter_ids[ordinal - 1])
-    revision = await _stack(db, chapter, spots, body=_BODY)
+    revision = await _stack(db, chapter, spots, body=body)
     mark = sa.func.now() if screened else None
     await db.execute(
         sa.update(NovelChapterPublication)
@@ -951,6 +971,180 @@ async def test_the_admin_chapter_view_carries_the_pictures_readers_get_with_thei
     assert off == []
 
 
+def _admin_chapter_path(novel: PublicNovel, ordinal: int) -> str:
+    return f"/admin/novels/{novel.novel_id}/chapters/{novel.chapter_ids[ordinal - 1]}"
+
+
+def _admin_shown(chapter: dict[str, Any]) -> list[tuple[Any, ...]]:
+    return [
+        (item["paragraphIndex"], item["placement"], item["assetId"], item["url"] is not None, item["withheld"])
+        for item in chapter["illustrations"]
+    ]
+
+
+def _edition_list(chapter: dict[str, Any]) -> list[tuple[Any, ...]]:
+    return [(item["edition"], item["current"], item["changeSummary"]) for item in chapter["editions"]]
+
+
+async def _old_and_new_editions(db: AsyncSession, novel: PublicNovel, ordinal: int) -> tuple[Asset, Asset]:
+    """화 `ordinal` 의 1판은 그림 P(첫 문단 뒤)와 다른 글·제목, 2판은 P 를 빼고 그림 Q(둘째 문단 앞)를 붙인 지금 판이다."""
+    old = await _asset(db, novel.publisher_id)
+    new = await _asset(db, novel.publisher_id)
+    await _freeze_pictures(db, novel, ordinal, [(0, "after", old, "generated")], body="옛 첫 문단.\n\n옛 둘째 문단.")
+    chapter_id = novel.chapter_ids[ordinal - 1]
+    await db.execute(
+        sa.update(NovelChapterEdition)
+        .where(NovelChapterEdition.chapter_id == chapter_id, NovelChapterEdition.edition == 1)
+        .values(title="1판 제목", author_note="1판 작가의 말")
+    )
+    await _freeze_pictures(db, novel, ordinal, [(1, "before", new, "upload")], edition=2)
+    await db.execute(
+        sa.update(NovelChapterEdition)
+        .where(NovelChapterEdition.chapter_id == chapter_id, NovelChapterEdition.edition == 2)
+        .values(change_summary="그림을 바꿨다")
+    )
+    await db.commit()
+    return old, new
+
+
+async def test_the_admin_reads_an_earlier_edition_as_its_buyers_see_it_and_gets_the_edition_list(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """어드민 화 읽기는 판 번호를 받아 그 판의 글·제목·그림(자산 id 포함)을 산 회원이 보는 그대로 주고, 응답의 판 번호는 실제로
+    준 판이다. 판 목록(최신순, 지금 판 표시, 변경 요약)은 늘 싣는다. 깨지는 시나리오: 작가가 신고된 그림을 뺀 새 판을 내면
+    운영자는 그 그림의 자산 id 를 볼 길이 없어 옛 판을 산 회원에게 계속 보이는 그림을 내리지 못한다."""
+    novel = await _public(db_session)
+    old, new = await _old_and_new_editions(db_session, novel, 1)
+    await _login_as_admin(db_client, await _create_admin(db_session))
+    path = _admin_chapter_path(novel, 1)
+
+    latest = (await db_client.get(path)).json()
+    first = await db_client.get(path, params={"edition": 1})
+    same = (await db_client.get(path, params={"edition": 2})).json()
+
+    assert (latest["edition"], _admin_shown(latest)) == (2, [(1, "before", str(new.id), True, None)])
+    assert _edition_list(latest) == [(2, True, "그림을 바꿨다"), (1, False, None)]
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert (body["edition"], body["title"], body["authorNote"]) == (1, "1판 제목", "1판 작가의 말")
+    assert body["paragraphs"] == ["옛 첫 문단.", "옛 둘째 문단."]
+    assert _admin_shown(body) == [(0, "after", str(old.id), True, None)]
+    assert _edition_list(body) == _edition_list(latest)
+    assert _without_urls(same) == _without_urls(latest)
+
+
+def _without_urls(chapter: dict[str, Any]) -> dict[str, Any]:
+    """서명 주소는 요청마다 달라질 수 있어 비교에서 뺀다."""
+    return {**chapter, "illustrations": _admin_shown(chapter)}
+
+
+async def test_an_unknown_edition_or_a_chapter_of_another_novel_is_not_found(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """그 화에 없는 판 번호는 404 `NOVEL_CHAPTER_EDITION_NOT_FOUND`, 다른 노벨의 화는 판을 주어도 404 `NOVEL_CHAPTER_NOT_FOUND`,
+    0 이하는 422 다."""
+    novel = await _public(db_session)
+    other = await _public(db_session)
+    await _old_and_new_editions(db_session, novel, 1)
+    await _login_as_admin(db_client, await _create_admin(db_session))
+
+    missing = await db_client.get(_admin_chapter_path(novel, 1), params={"edition": 3})
+    elsewhere = await db_client.get(
+        f"/admin/novels/{other.novel_id}/chapters/{novel.chapter_ids[0]}", params={"edition": 1}
+    )
+    zero = await db_client.get(_admin_chapter_path(novel, 1), params={"edition": 0})
+
+    assert (missing.status_code, missing.json()["detail"]["code"]) == (404, "NOVEL_CHAPTER_EDITION_NOT_FOUND")
+    assert (elsewhere.status_code, elsewhere.json()["detail"]["code"]) == (404, "NOVEL_CHAPTER_NOT_FOUND")
+    assert zero.status_code == 422
+
+
+async def test_an_earlier_edition_shows_no_pictures_when_it_was_not_screened_or_the_switch_is_off(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """옛 판이 삽화를 심사하지 않았으면(심사 시각이 그 판의 공개 시각과 다르면) 독자처럼 그림이 없다. 삽화 스위치가 꺼져 있으면
+    그림은 없지만 글과 판 목록은 나간다."""
+    novel = await _public(db_session)
+    old, _new = await _old_and_new_editions(db_session, novel, 1)
+    chapter_id = novel.chapter_ids[0]
+    await _login_as_admin(db_client, await _create_admin(db_session))
+    path = _admin_chapter_path(novel, 1)
+
+    screened = (await db_client.get(path, params={"edition": 1})).json()
+    await db_session.execute(
+        sa.update(NovelChapterEdition)
+        .where(NovelChapterEdition.chapter_id == chapter_id, NovelChapterEdition.edition == 1)
+        .values(illustrations_screened_at=NovelChapterEdition.published_at - sa.text("interval '1 second'"))
+    )
+    await db_session.commit()
+    unscreened = (await db_client.get(path, params={"edition": 1})).json()
+    monkeypatch.setattr(settings, "novel_illustrations_enabled", False)
+    off = (await db_client.get(path, params={"edition": 1})).json()
+
+    assert _admin_shown(screened) == [(0, "after", str(old.id), True, None)]
+    assert (unscreened["edition"], unscreened["illustrations"]) == (1, [])
+    assert (off["edition"], off["illustrations"], off["paragraphs"]) == (1, [], ["옛 첫 문단.", "옛 둘째 문단."])
+    assert _edition_list(off) == [(2, True, "그림을 바꿨다"), (1, False, None)]
+
+
+async def test_the_edition_list_carries_the_current_edition_even_without_its_edition_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """지금 판의 판 행이 없으면(판 행을 모르는 옛 이미지가 다시 낸 판, 판 행이 생기기 전의 화) 화 공개본으로 지금 판 한 항목을
+    만든다. 깨지는 시나리오: 판 고르기에 지금 판이 없어 운영자가 지금 판으로 돌아올 수 없다."""
+    novel = await _public(db_session)
+    picture = await _asset(db_session, novel.publisher_id)
+    await _freeze_pictures(db_session, novel, 1, [(0, "after", picture, "generated")])
+    await db_session.execute(
+        sa.update(NovelChapterPublication)
+        .where(NovelChapterPublication.chapter_id == novel.chapter_ids[0])
+        .values(edition=2)
+    )
+    await db_session.commit()
+    await _login_as_admin(db_client, await _create_admin(db_session))
+
+    no_rows = (await db_client.get(_admin_chapter_path(novel, 2))).json()
+    older_row_only = (await db_client.get(_admin_chapter_path(novel, 1))).json()
+    second = await _frozen(db_session, novel.chapter_ids[1])
+    assert second is not None
+
+    assert _edition_list(no_rows) == [(1, True, None)]
+    assert datetime.fromisoformat(no_rows["editions"][0]["publishedAt"]) == second.published_at
+    assert (older_row_only["edition"], _edition_list(older_row_only)) == (2, [(2, True, None), (1, False, None)])
+
+
+async def test_a_picture_taken_down_from_an_earlier_edition_is_withheld_for_its_buyers(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """옛 판 읽기에서 얻은 자산 id 로 그림을 내리면 그 판을 산 회원의 판 고르기 읽기에서도 그 자리가 운영자 사유로 빈다."""
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", True)
+    novel = await _public(db_session)
+    old = await _asset(db_session, novel.publisher_id)
+    new = await _asset(db_session, novel.publisher_id)
+    await _freeze_pictures(db_session, novel, 6, [(0, "after", old, "generated")])
+    buyer = await _reader(db_session)
+    await _login_as(db_client, buyer)
+    assert (await db_client.post(f"{_path(novel, 6)}/purchase", json={"expectedPrice": 30})).status_code == 200
+    await _freeze_pictures(db_session, novel, 6, [(1, "before", new, "upload")], edition=2)
+    await _login_as_admin(db_client, await _create_admin(db_session))
+    path = _admin_chapter_path(novel, 6)
+
+    earlier = (await db_client.get(path, params={"edition": 1})).json()
+    (picture,) = earlier["illustrations"]
+    down = await db_client.post(
+        f"/admin/novel-illustrations/{picture['assetId']}/takedown", json={"reason": "운영정책 위반 그림"}
+    )
+    after = (await db_client.get(path, params={"edition": 1})).json()
+    bought = await _read(db_client, f"{_path(novel, 6)}?edition=1", buyer)
+
+    assert picture["assetId"] == str(old.id)
+    assert down.status_code == 200, down.text
+    assert bought["edition"] == 1
+    for view in (after, bought):
+        (item,) = view["illustrations"]
+        assert (item["url"], item["withheld"], item["withheldReason"]) == (None, "taken_down", "운영정책 위반 그림")
+
+
 # ── 운영자 내림 ──────────────────────────────────────────────────────────────
 async def test_an_operator_takes_a_picture_down_from_every_edition_and_its_bytes_cannot_come_back(
     db_client: httpx.AsyncClient,
@@ -1044,6 +1238,108 @@ async def test_taking_down_a_file_withholds_every_asset_that_carries_it_and_the_
     ).tuples().all()
     assert sorted(logged) == sorted([(first.publisher_id, "운영정책 위반 그림"), (second.publisher_id, "같은 그림 신고")])
     assert (await db_session.get_one(Asset, a.id, populate_existing=True)).display_sha256 == sha
+
+
+# ── 신고를 삽화 내림으로 처리 ─────────────────────────────────────────────────
+def _novel_report(novel: PublicNovel, reporter: uuid.UUID) -> NovelReport:
+    return NovelReport(
+        reporter_user_id=reporter,
+        publisher_user_id=novel.publisher_id,
+        novel_id=novel.novel_id,
+        reason_category=ReportReasonCategory.ADULT,
+        status=ReportStatus.PENDING,
+        evidence_title="공개 제목",
+        evidence_synopsis="소개",
+        evidence_expires_at=datetime.now(UTC) + timedelta(days=1),
+    )
+
+
+async def _report_logs(db: AsyncSession) -> list[tuple[Any, ...]]:
+    rows = await db.execute(
+        sa.select(
+            AdminActionLog.target_user_id,
+            AdminActionLog.target_novel_id,
+            AdminActionLog.reason_category,
+            AdminActionLog.reason_text,
+        ).where(AdminActionLog.action_type == "novel-report-illustration-takedown")
+    )
+    return [tuple(row) for row in rows.tuples()]
+
+
+async def test_a_report_is_resolved_by_illustration_takedown_only_once_a_picture_of_that_novel_is_down(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """'삽화 내림으로 처리 완료'는 그 노벨의 어느 개정에 붙은 그림이든 하나가 내려가 있어야 받는다 — 지금 판에서 뺀 옛 판의 그림도
+    된다. 내린 그림이 없으면(다른 노벨의 그림만 내려가 있어도) 409 `NOVEL_ILLUSTRATION_NOT_TAKEN_DOWN` 이고 신고·감사 로그는
+    그대로다. 받으면 신고가 처리완료가 되고 감사 로그에 게시자·노벨·신고 사유 분류·조치 사유가 한 줄 남으며, 게시자 회원 상세가
+    그 줄과 함께 열린다. 깨지는 시나리오: 아무 그림도 내리지 않고 '조치함'으로 닫혀 처리 기록이 거짓이 된다."""
+    novel = await _public(db_session)
+    other = await _public(db_session)
+    old, _new = await _old_and_new_editions(db_session, novel, 1)
+    elsewhere = await _asset(db_session, other.publisher_id)
+    await _freeze_pictures(db_session, other, 1, [(0, "after", elsewhere, "generated")])
+    report = _novel_report(novel, await _reader(db_session))
+    db_session.add(report)
+    await db_session.commit()
+    admin = await _create_admin(db_session)
+    await _login_as_admin(db_client, admin)
+    url = f"/admin/novel-reports/{report.id}/actions"
+    action = {"action": "illustration_takedown", "adminComment": "신고된 그림을 내렸다"}
+
+    nothing_down = await db_client.post(url, json=action)
+    other_down = await db_client.post(f"/admin/novel-illustrations/{elsewhere.id}/takedown", json={"reason": "다른 그림"})
+    only_other_down = await db_client.post(url, json=action)
+    pending = await db_session.get_one(NovelReport, report.id, populate_existing=True)
+    pending_state = (pending.status, pending.resolved_at)
+    logs_before = await _report_logs(db_session)
+    down = await db_client.post(f"/admin/novel-illustrations/{old.id}/takedown", json={"reason": "운영정책 위반 그림"})
+    resolved = await db_client.post(url, json=action)
+    member = await db_client.get(f"/admin/users/{novel.publisher_id}")
+
+    assert (nothing_down.status_code, nothing_down.json()["detail"]["code"]) == (409, "NOVEL_ILLUSTRATION_NOT_TAKEN_DOWN")
+    assert other_down.status_code == 200, other_down.text
+    assert (only_other_down.status_code, only_other_down.json()["detail"]["code"]) == (
+        409,
+        "NOVEL_ILLUSTRATION_NOT_TAKEN_DOWN",
+    )
+    assert pending_state == (ReportStatus.PENDING, None)
+    assert logs_before == []
+    assert down.status_code == 200, down.text
+    assert resolved.status_code == 200, resolved.text
+    body = resolved.json()
+    assert (body["status"], body["resolvedByAdminId"]) == ("resolved", str(admin["id"]))
+    assert body["resolvedAt"] is not None
+    assert await _report_logs(db_session) == [(novel.publisher_id, novel.novel_id, "adult", "신고된 그림을 내렸다")]
+    assert member.status_code == 200, member.text
+    assert "novel-report-illustration-takedown" in {log["actionType"] for log in member.json()["actionLogs"]}
+
+
+@pytest.mark.parametrize("link", ["bytes", "asset_id"])
+async def test_a_picture_down_by_its_bytes_or_only_by_its_asset_id_counts_and_a_rejected_report_can_be_resolved(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, link: str
+) -> None:
+    """내린 그림 판정은 독자 화면과 같다 — 같은 파일을 다른 자산으로 내렸어도(자산 행의 바이트 sha 로 이어짐), 바이트 sha 가 적히지
+    않은 채 자산 id 로만 내린 자산이어도 내린 그림이다. 반려했던 신고도 이 방법으로 다시 처리하면 처리완료가 된다."""
+    novel = await _public(db_session)
+    picture = await _asset(db_session, novel.publisher_id)
+    await _freeze_pictures(db_session, novel, 1, [(0, "after", picture, "generated")])
+    if link == "bytes":
+        sha = hashlib.sha256(b"same-file").hexdigest()
+        await db_session.execute(sa.update(Asset).where(Asset.id == picture.id).values(display_sha256=sha))
+        db_session.add(NovelIllustrationTakedown(content_sha256=sha, asset_id=uuid.uuid4(), reason="다른 자산으로 내림"))
+    else:
+        db_session.add(NovelIllustrationTakedown(content_sha256="sha-not-on-the-asset", asset_id=picture.id, reason="내림"))
+    report = _novel_report(novel, await _reader(db_session))
+    db_session.add(report)
+    await db_session.commit()
+    await _login_as_admin(db_client, await _create_admin(db_session))
+    url = f"/admin/novel-reports/{report.id}/actions"
+
+    rejected = await db_client.post(url, json={"action": "reject", "adminComment": "처음엔 반려"})
+    resolved = await db_client.post(url, json={"action": "illustration_takedown", "adminComment": "그림 내림 확인"})
+
+    assert (rejected.status_code, rejected.json()["status"]) == (200, "rejected")
+    assert (resolved.status_code, resolved.json()["status"]) == (200, "resolved")
 
 
 # ── 작가 읽기 ────────────────────────────────────────────────────────────────

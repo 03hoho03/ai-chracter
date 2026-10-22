@@ -14,10 +14,10 @@
 신고로 한 조치는 신고 사유 분류를 함께 남긴다.
 
 **잠금** — 노벨 조치는 공개 상태 행 → 신고 행, 댓글 조치는 댓글 행 → 신고 행 순서로 잡는다. 소설·묶음 삭제가 공개 상태
-행 → (댓글 DELETE) → (신고 행의 `SET NULL`) 순서로 잡기 때문이다. 신고 행을 먼저 쥐면 그 삭제와 엇갈려 교착한다. 반려는 신고
-행만 잡는다. 정책 스위치가 켜져 있으면 이용제한이 구매를 환급하므로(`novel_public/purchases.py`) 그 앞에 게시자와 미환급
-구매자의 사용자 행을 먼저 잡는다 — 구매는 사용자 행을 쥔 채 공개 상태 행을 기다리므로, 공개 상태 행을 쥐고 구매자 행을
-기다리면 그 구매와 교착한다. 판매 중단은 환급이 없어 사용자 행을 잡지 않는다 — 공개 상태 행 하나(→ 신고 행)만 잡고 그 뒤에
+행 → (댓글 DELETE) → (신고 행의 `SET NULL`) 순서로 잡기 때문이다. 신고 행을 먼저 쥐면 그 삭제와 엇갈려 교착한다. 반려와
+삽화 내림으로 처리는 신고 행만 잡는다. 정책 스위치가 켜져 있으면 이용제한이 구매를 환급하므로(`novel_public/purchases.py`) 그
+앞에 게시자와 미환급 구매자의 사용자 행을 먼저 잡는다 — 구매는 사용자 행을 쥔 채 공개 상태 행을 기다리므로, 공개 상태 행을
+쥐고 구매자 행을 기다리면 그 구매와 교착한다. 판매 중단은 환급이 없어 사용자 행을 잡지 않는다 — 공개 상태 행 하나(→ 신고 행)만 잡고 그 뒤에
 아무것도 기다리지 않으므로 사용자 행을 쥔 쪽과 엇갈리지 않는다.
 
 작품 신고 처리(`moderation/router.py`)와 나란히 둔 별도 라우트다 — 작품 신고 표·조치 표는 작품 FK 를 전제하므로 노벨을
@@ -67,7 +67,7 @@ from api.db.models.novel import (
 from api.db.session import get_db_session
 from api.legal.documents import current_legal_version
 from api.novel_public.access import judge_source, select_readable_publications
-from api.novel_public.illustration_reads import frozen_illustrations
+from api.novel_public.illustration_reads import frozen_illustrations, takedown_reasons
 from api.novel_public.illustration_screening import (
     download_display,
     record_display_shas,
@@ -76,6 +76,7 @@ from api.novel_public.illustration_screening import (
 )
 from api.novel_public.purchases import chapter_price, lock_novel_parties, refund_closing_purchases
 from api.novel_public.admin_schemas import (
+    AdminNovelChapterEditionItem,
     AdminNovelChapterItem,
     AdminNovelChapterResponse,
     AdminNovelIllustration,
@@ -359,11 +360,15 @@ async def get_admin_novel(
 async def get_admin_novel_chapter(
     novel_id: uuid.UUID,
     chapter_id: uuid.UUID,
+    edition: int | None = Query(None, ge=1, le=2_147_483_647),
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminNovelChapterResponse:
-    """화 공개본 하나 — 독자에게 나가는 그대로(삽화도 독자 응답과 같은 조건·자리, 그림 자산 id 를 더해). 그 노벨의 공개 화가
-    아니면 404 `NOVEL_CHAPTER_NOT_FOUND`."""
+    """화의 판 하나 — 그 판이 독자에게 나가는 그대로(삽화도 독자 응답과 같은 조건·자리, 그림 자산 id 를 더해). `edition` 이 없거나
+    지금 판이면 지금 판을, 지난 판이면 그 판 행이 얼린 개정·제목·작가의 말을 준다 — 그 판을 산 회원의 판 고르기 읽기와 같은 세
+    값(개정·심사 시각·공개 시각)으로 그림을 고르므로 산 회원이 보는 그림 그대로이고, 지금 판에서 빠진 그림도 자산 id 가 보여
+    내릴 수 있다. 판 목록(`editions`)은 늘 싣는다. 그 노벨의 공개 화가 아니면 404 `NOVEL_CHAPTER_NOT_FOUND`, 그 화에 없는 판이면
+    404 `NOVEL_CHAPTER_EDITION_NOT_FOUND`. 정책 스위치와 무관하다(스위치를 끈 뒤 남은 옛 판도 운영자가 처리해야 한다)."""
     row = (
         await db.execute(
             select(NovelChapterPublication, NovelChapterRevision.body, Novel.content_id)
@@ -375,19 +380,49 @@ async def get_admin_novel_chapter(
     if row is None:
         raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
     chapter, body, content_id = row
+    edition_rows = (
+        await db.scalars(
+            select(NovelChapterEdition)
+            .where(NovelChapterEdition.chapter_id == chapter_id)
+            .order_by(NovelChapterEdition.edition.desc())
+        )
+    ).all()
+    served_edition, title, author_note = chapter.edition, chapter.title, chapter.author_note
+    revision_id, screened_at, published_at = chapter.revision_id, chapter.illustrations_screened_at, chapter.published_at
+    if edition is not None and edition != chapter.edition:
+        picked = next((saved for saved in edition_rows if saved.edition == edition), None)
+        if picked is None:
+            raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_EDITION_NOT_FOUND")
+        served_edition, title, author_note = picked.edition, picked.title, picked.author_note
+        revision_id, screened_at, published_at = picked.revision_id, picked.illustrations_screened_at, picked.published_at
+        body = (await db.get_one(NovelChapterRevision, revision_id)).body
     illustrations = await frozen_illustrations(
-        db,
-        revision_id=chapter.revision_id,
-        screened_at=chapter.illustrations_screened_at,
-        published_at=chapter.published_at,
-        content_id=content_id,
+        db, revision_id=revision_id, screened_at=screened_at, published_at=published_at, content_id=content_id
     )
+    editions = [
+        AdminNovelChapterEditionItem(
+            edition=saved.edition,
+            published_at=saved.published_at,
+            change_summary=saved.change_summary,
+            current=saved.edition == chapter.edition,
+        )
+        for saved in edition_rows
+    ]
+    if not any(item.current for item in editions):
+        # 지금 판의 판 행이 없다(판 행을 모르는 옛 이미지가 다시 냈거나 판 행이 생기기 전의 화) — 화 공개본으로 한 항목을 만든다.
+        editions.append(
+            AdminNovelChapterEditionItem(
+                edition=chapter.edition, published_at=chapter.published_at, change_summary=None, current=True
+            )
+        )
+        editions.sort(key=lambda item: item.edition, reverse=True)
     return AdminNovelChapterResponse(
         id=chapter.chapter_id,
         ordinal=chapter.ordinal,
-        title=chapter.title,
-        author_note=chapter.author_note,
-        edition=chapter.edition,
+        title=title,
+        author_note=author_note,
+        edition=served_edition,
+        editions=editions,
         paragraphs=split_paragraphs(body),
         illustrations=[
             AdminNovelIllustration(
@@ -766,6 +801,21 @@ async def get_admin_novel_report(
     return await _report_detail(db, await _get_novel_report(db, report_id))
 
 
+async def _has_taken_down_illustration(db: AsyncSession, novel_id: uuid.UUID) -> bool:
+    """그 노벨의 어느 개정(공개 여부와 무관)에 붙은 그림이든 하나가 내려가 있는가 — 독자 화면과 같은 판정(`takedown_reasons`)으로
+    본다. 지금 판에서 뺀 옛 판의 그림도 센다."""
+    asset_ids = (
+        await db.scalars(
+            select(NovelChapterIllustration.asset_id)
+            .join(NovelChapterRevision, NovelChapterRevision.id == NovelChapterIllustration.revision_id)
+            .join(NovelChapter, NovelChapter.id == NovelChapterRevision.chapter_id)
+            .where(NovelChapter.novel_id == novel_id)
+            .distinct()
+        )
+    ).all()
+    return bool(await takedown_reasons(db, asset_ids))
+
+
 @router.post("/admin/novel-reports/{report_id}/actions")
 async def act_on_admin_novel_report(
     report_id: uuid.UUID,
@@ -777,7 +827,13 @@ async def act_on_admin_novel_report(
     그 노벨의 판매를 멈추고 처리완료로(이미 멈췄어도 처리되고 멈춘 시각은 그대로), `reject` 는 노벨을 건드리지 않고 반려로
     둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져 조치할 대상이 없으면 409
     `NOVEL_GONE`(반려는 된다). 이용제한은 직접 이용제한과 같이 환급한다 — 이미 이용제한된 노벨이면 돌려줄 것이 없다. 판매
-    중단은 환급하지 않고, 정책 스위치가 꺼져 있으면 409 `NOVEL_SALES_STOP_DISABLED`."""
+    중단은 환급하지 않고, 정책 스위치가 꺼져 있으면 409 `NOVEL_SALES_STOP_DISABLED`.
+
+    `illustration_takedown` 은 노벨 상세에서 그림을 내린 뒤 신고를 처리완료로 닫는다(그림을 여기서 내리지는 않는다 — 내림의 감사
+    로그 대상은 그림 주인이고, 이 처리의 대상은 게시자다). 그 노벨의 어느 개정에 붙은 그림이든 하나가 독자 화면과 같은 판정으로
+    내려가 있어야 받고, 아니면 409 `NOVEL_ILLUSTRATION_NOT_TAKEN_DOWN`(신고는 그대로) — 아무것도 내리지 않고 조치한 것으로 닫는
+    일을 막는다. 같은 노벨의 다른 그림이 내려가 있어도 통과하므로 무엇을 내렸는지는 조치 사유가 적는다. 내림 기록은 지우는 코드가
+    없어 잠그지 않고 읽은 결과가 커밋 전에 거짓이 되지 않으므로, 반려처럼 신고 행만 잠근다."""
     reason = _require_reason(body.admin_comment)
     report = await _get_novel_report(db, report_id)
     if body.action == "restrict":
@@ -808,6 +864,22 @@ async def act_on_admin_novel_report(
         report = await _get_novel_report(db, report_id, lock=True)
         await _record_sales_stop(
             db, publication, admin_id=admin_id, stop=True, reason_category=report.reason_category.value, reason=reason
+        )
+        report.status = ReportStatus.RESOLVED
+    elif body.action == "illustration_takedown":
+        report = await _get_novel_report(db, report_id, lock=True)
+        if report.novel_id is None:
+            raise _error(status.HTTP_409_CONFLICT, "NOVEL_GONE")
+        if not await _has_taken_down_illustration(db, report.novel_id):
+            raise _error(status.HTTP_409_CONFLICT, "NOVEL_ILLUSTRATION_NOT_TAKEN_DOWN")
+        await record_admin_action(
+            db,
+            admin_id=admin_id,
+            action_type="novel-report-illustration-takedown",
+            target_user_id=report.publisher_user_id,
+            target_novel_id=report.novel_id,
+            reason_category=report.reason_category.value,
+            reason_text=reason,
         )
         report.status = ReportStatus.RESOLVED
     else:
