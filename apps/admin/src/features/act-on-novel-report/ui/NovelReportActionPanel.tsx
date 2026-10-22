@@ -111,7 +111,8 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
           <Link to="/novels/$novelId" params={{ novelId: report.novelId }} className={LINK_CLASS}>
             노벨 상세
           </Link>
-          의 공개본 화를 펼쳐 그 그림만 내리세요(환급 없음).
+          의 공개본 화를 펼쳐 그 그림만 내리세요(환급 없음). 그림 내림은 이 신고와 이어지지 않아, 내린 뒤 이 신고는 반려로
+          닫고 조치 사유에 그림을 내렸다고 적어 주세요.
         </p>
       )}
       {report.novelModerationStatus === "restricted" && (

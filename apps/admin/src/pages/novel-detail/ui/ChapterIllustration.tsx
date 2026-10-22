@@ -13,8 +13,9 @@ const ILLUSTRATION_MAX_HEIGHT_PX = 320;
 
 /**
  * 공개본 화 펼침의 그림 한 장 — 독자 화면처럼 문단 사이 제자리에 서고, 아래 한 줄에 출처·자산 id·"그림 내리기"를 둔다.
- * 내린 그림은 그림 대신 독자에게 보이는 사유 전문을, 원작이 이용제한 중이라 가려진 원작 그림은 그 사정을 적은 점선 상자로
- * 그린다. 가려진 원작 그림에도 내리기를 남긴다 — 원작 제한이 풀리면 다시 보이므로 그 그림만 영구히 내릴 길이 있어야 한다.
+ * 내린 그림은 그림 대신 독자에게 보이는 사유 전문을, 원작이 이용제한·삭제돼 가려진 원작 그림은 그 사정을 적은 점선 상자로
+ * 그린다(서버는 원작이 이용제한된 것과 삭제된 것을 가르지 않고 둘 다 가린다). 가려진 원작 그림에도 내리기를 남긴다 — 원작
+ * 제한이 풀리면 다시 보이므로 그 그림만 영구히 내릴 길이 있어야 한다.
  */
 export function ChapterIllustration({ illustration }: { illustration: AdminNovelIllustration }) {
   const isTakenDown = illustration.withheld === "taken_down";
@@ -40,7 +41,7 @@ export function ChapterIllustration({ illustration }: { illustration: AdminNovel
             variant="outline"
             size="sm"
             className="ml-auto"
-            aria-label={`${illustrationAlt(illustration)} 내리기`}
+            aria-label={`그림 내리기 — ${illustrationAlt(illustration)}`}
             onClick={() => void NovelIllustrationTakedownConfirmModal.call({ illustration })}
           >
             그림 내리기
@@ -93,7 +94,7 @@ function WithheldNotice({ illustration }: { illustration: AdminNovelIllustration
       <ImageOff aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
       <div className="flex min-w-0 flex-col gap-1">
         <p className="font-medium break-keep text-foreground">
-          {isTakenDown ? "운영자가 내린 그림" : "원작 작품이 이용제한 중이라 독자에게 가려진 원작 그림"}
+          {isTakenDown ? "운영자가 내린 그림" : "원작 작품이 이용제한·삭제돼 독자에게 가려진 원작 그림"}
         </p>
         {isTakenDown ? (
           <>
@@ -106,7 +107,7 @@ function WithheldNotice({ illustration }: { illustration: AdminNovelIllustration
           </>
         ) : (
           <p className="break-keep text-xs text-muted-foreground">
-            원작 이용제한이 풀리면 다시 보여요. 이 그림만 영구히 내리려면 그림 내리기를 쓰세요.
+            원작 이용제한이 풀리면 다시 보여요(삭제면 계속 가려져요). 이 그림만 영구히 내리려면 그림 내리기를 쓰세요.
           </p>
         )}
       </div>

@@ -92,7 +92,8 @@ export const NovelIllustrationTakedownConfirmModal = createCallable<NovelIllustr
     };
 
     return (
-      // 요청 중에는 닫지 않는다 — 닫은 뒤 끝나면 내려졌는지 알릴 자리가 없다.
+      // 요청 중에는 닫지 않는다 — 끝나기 전에 닫히면 화가 아직 다시 읽히지 않아 같은 "그림 내리기"가 그대로 남고, 운영자가
+      // 결과를 모른 채 다시 누르면 같은 그림에 감사 로그가 한 줄 더 쌓인다.
       <Dialog open={!call.ended} onOpenChange={(open) => !open && !isSubmitting && call.end()}>
         <DialogContent className="sm:max-w-md" onOpenAutoFocus={focusInitialElement}>
           <DialogHeader>
@@ -150,7 +151,14 @@ export const NovelIllustrationTakedownConfirmModal = createCallable<NovelIllustr
             </DialogBody>
 
             <DialogFooter>
-              <Button type="button" variant="outline" autoFocus data-initial-focus onClick={() => call.end()}>
+              <Button
+                type="button"
+                variant="outline"
+                autoFocus
+                data-initial-focus
+                disabled={isSubmitting}
+                onClick={() => call.end()}
+              >
                 취소
               </Button>
               <Button type="submit" variant="destructive" disabled={isSubmitting}>
@@ -164,12 +172,12 @@ export const NovelIllustrationTakedownConfirmModal = createCallable<NovelIllustr
   },
 );
 
-/** 내릴 그림의 축소본. 원작 이용제한으로 가려진 그림은 서버가 주소를 주지 않아 보일 수 없다 — 그 사정을 같은 자리에 적는다. */
+/** 내릴 그림의 축소본. 원작 이용제한·삭제로 가려진 그림은 서버가 주소를 주지 않아 보일 수 없다 — 그 사정을 같은 자리에 적는다. */
 function TakedownPreview({ illustration }: { illustration: AdminNovelIllustration }) {
   if (illustration.url === null) {
     return (
       <p className="rounded-lg border border-dashed border-border p-3 text-sm break-keep text-muted-foreground">
-        원작 작품이 이용제한 중이라 여기서는 그림을 볼 수 없어요.
+        원작 작품이 이용제한·삭제돼 여기서는 그림을 볼 수 없어요.
       </p>
     );
   }
