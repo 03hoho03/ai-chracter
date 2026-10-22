@@ -29,23 +29,29 @@
 게시자 행 없이 화 행이나 공개 상태 행부터 쥐면 그 경로들과 반대 방향으로 엇갈려 교착하므로, 같은 첫 자리(게시자 행)에서
 줄을 서게 한다. 그 뒤의 화 행 → 공개 상태 행은 탈퇴가 화 행을 지운 뒤 공개 상태 행을 지우는 순서와 같다."""
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from api.admin.action_log import record_admin_action
 from api.admin.dependencies import get_current_admin_id
 from api.core.config import settings
+from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.models.content import Content
+from api.db.models.media import Asset
 from api.db.models.moderation import AdminActionType, ReportStatus
 from api.db.models.novel import (
     Novel,
     NovelChapter,
     NovelChapterEdition,
+    NovelChapterIllustration,
     NovelChapterPublication,
     NovelChapterRevision,
     NovelComment,
@@ -60,10 +66,15 @@ from api.db.models.novel import (
 from api.db.session import get_db_session
 from api.legal.documents import current_legal_version
 from api.novel_public.access import judge_source, select_readable_publications
+from api.novel_public.illustration_reads import frozen_illustrations
+from api.novel_public.illustration_screening import download_display, record_takedown, sha256_of
 from api.novel_public.purchases import chapter_price, lock_novel_parties, refund_closing_purchases
 from api.novel_public.admin_schemas import (
     AdminNovelChapterItem,
     AdminNovelChapterResponse,
+    AdminNovelIllustration,
+    AdminNovelIllustrationTakedownRequest,
+    AdminNovelIllustrationTakedownResponse,
     AdminNovelCommentAction,
     AdminNovelCommentActionRequest,
     AdminNovelCommentItem,
@@ -92,6 +103,8 @@ from api.novel_public.admin_schemas import (
 from api.novel_public.serial_lock import lock_serial
 from api.novelize.billing import _lock_user
 from api.novelize.text import split_paragraphs
+
+logger = logging.getLogger(__name__)
 
 ADMIN_NOVEL_PAGE_SIZE = 20
 
@@ -343,17 +356,22 @@ async def get_admin_novel_chapter(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminNovelChapterResponse:
-    """화 공개본 하나 — 독자에게 나가는 그대로. 그 노벨의 공개 화가 아니면 404 `NOVEL_CHAPTER_NOT_FOUND`."""
+    """화 공개본 하나 — 독자에게 나가는 그대로(삽화도 독자 응답과 같은 조건·자리, 그림 자산 id 를 더해). 그 노벨의 공개 화가
+    아니면 404 `NOVEL_CHAPTER_NOT_FOUND`."""
     row = (
         await db.execute(
-            select(NovelChapterPublication, NovelChapterRevision.body)
+            select(NovelChapterPublication, NovelChapterRevision.body, Novel.content_id)
             .join(NovelChapterRevision, NovelChapterRevision.id == NovelChapterPublication.revision_id)
+            .join(Novel, Novel.id == NovelChapterPublication.novel_id)
             .where(NovelChapterPublication.novel_id == novel_id, NovelChapterPublication.chapter_id == chapter_id)
         )
     ).tuples().one_or_none()
     if row is None:
         raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
-    chapter, body = row
+    chapter, body, content_id = row
+    illustrations = await frozen_illustrations(
+        db, revision_id=chapter.revision_id, screened_at=chapter.illustrations_screened_at, content_id=content_id
+    )
     return AdminNovelChapterResponse(
         id=chapter.chapter_id,
         ordinal=chapter.ordinal,
@@ -361,7 +379,63 @@ async def get_admin_novel_chapter(
         author_note=chapter.author_note,
         edition=chapter.edition,
         paragraphs=split_paragraphs(body),
+        illustrations=[
+            AdminNovelIllustration(
+                paragraph_index=item.paragraph_index,
+                placement=item.placement,
+                order=item.order,
+                source=item.source,
+                url=item.url,
+                width=item.width,
+                height=item.height,
+                withheld=item.withheld,
+                withheld_reason=item.withheld_reason,
+                asset_id=item.asset_id,
+            )
+            for item in illustrations
+        ],
     )
+
+
+# ── 삽화 내리기 ──────────────────────────────────────────────────────────────
+@router.post("/admin/novel-illustrations/{asset_id}/takedown")
+async def take_down_novel_illustration(
+    asset_id: uuid.UUID,
+    body: AdminNovelIllustrationTakedownRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminNovelIllustrationTakedownResponse:
+    """소설 삽화로 쓰인 그림 하나를 모든 판에서 내린다 — 독자·어드민 화 읽기가 그 그림 자리에 사유만 남기고(글과 다른 그림은
+    그대로, 환급 없음), 그 바이트(정지 변형의 sha256)를 남겨 같은 파일을 다시 올린 새 자산도 공개 심사에서 막는다(통과 기억보다
+    먼저 본다 — 그 바이트의 통과 기억은 지운다). 소설 전체를 닫아야 하는 중대한 경우는 노벨 이용제한을 함께 쓴다.
+
+    사유가 공백뿐이면 422, 어느 개정의 삽화로도 쓰인 적 없는 자산이면 404 `NOVEL_ILLUSTRATION_NOT_FOUND`, 같은 바이트가 이미
+    내려가 있으면 409 `NOVEL_ILLUSTRATION_ALREADY_TAKEN_DOWN`, 그림을 저장소에서 못 읽으면 503
+    `NOVEL_ILLUSTRATION_UNAVAILABLE`(바이트 없이는 다시 올림을 막을 수 없어 기록하지 않는다). 감사 로그의 대상 회원은 그림의
+    주인이다. 삽화 스위치와 무관하게 돈다."""
+    reason = _require_reason(body.reason)
+    used = select(NovelChapterIllustration.id).where(NovelChapterIllustration.asset_id == asset_id).exists()
+    asset = await db.scalar(select(Asset).where(Asset.id == asset_id, used))
+    if asset is None:
+        raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_ILLUSTRATION_NOT_FOUND")
+    try:
+        data = await run_in_threadpool(download_display, asset.storage_key)
+    except (BotoCoreError, ClientError) as exc:
+        logger.warning("novel_illustration_takedown_download_failed asset_id=%s: %s", asset_id, type(exc).__name__)
+        capture_dependency_failure(exc, dependency="s3")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "NOVEL_ILLUSTRATION_UNAVAILABLE") from exc
+    taken_down_at = await record_takedown(db, asset_id=asset_id, sha=sha256_of(data), reason=reason)
+    if taken_down_at is None:
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_ILLUSTRATION_ALREADY_TAKEN_DOWN")
+    await record_admin_action(
+        db,
+        admin_id=admin_id,
+        action_type="novel-illustration-takedown",
+        target_user_id=asset.owner_user_id,
+        reason_text=reason,
+    )
+    await db.commit()
+    return AdminNovelIllustrationTakedownResponse(asset_id=asset_id, taken_down_at=taken_down_at)
 
 
 # ── 이용제한·해제 ────────────────────────────────────────────────────────────

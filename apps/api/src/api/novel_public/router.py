@@ -10,7 +10,9 @@
 
 1. 읽기: 따로 연 세션에서 공개 계획(무엇을 새로 공개하고 무엇을 다시 내며 무엇을 심사하는지)을 세우고 닫는다. 판정 실패
    (이어지지 않는 화, 원작 판정, 운영 조치)는 여기서 낸다.
-2. 심사: 계획이 심사할 글을 실었으면 게시자 하루 거부 상한을 보고 심사를 부른다. 트랜잭션 없음.
+2. 심사: 계획이 심사할 글을 실었으면 게시자 하루 거부 상한을 보고 심사를 부른다. 삽화 스위치가 켜져 있으면 얼릴 개정의
+   문단에 붙은 그림도 내려받아 운영자 내림 → 통과 기억 순으로 보고 남은 그림을 한 번에 심사한다(`illustration_screening.py`).
+   글과 그림을 둘 다 불러도 상한은 요청 하나를 한 번으로 센다. 트랜잭션 없음.
 3. 쓰기: 요청 세션에서 사용자 행을 잠그고 계획을 다시 세워 1 과 같은지 본다. 다르면(그사이 화를 고쳤거나 다른 요청이 먼저
    공개했다) 409 `NOVEL_PUBLISH_CONFLICT` 이고 아무것도 쓰지 않는다. 같으면 공개본을 쓴다(통과) 또는 거부 기록을 남긴다.
 
@@ -50,7 +52,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import ColumnElement, SQLColumnExpression, Text, delete, func, literal, or_, select, update
+from botocore.exceptions import BotoCoreError, ClientError
+from sqlalchemy import ColumnElement, SQLColumnExpression, Text, and_, delete, false, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -58,6 +61,7 @@ from api.chat.prompt_builder import PromptRenderError, PromptSetNotFoundError, l
 from api.core import clover
 from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
+from api.db.models.media import Asset
 from api.db.models.novel import (
     Novel,
     NovelChapter,
@@ -75,6 +79,22 @@ from api.legal.documents import current_legal_version
 from api.llm.client import LLMClient, LLMClientError, LLMRateLimitError
 from api.llm.dependencies import get_llm_client
 from api.novel_public.access import RepublishBlock, judge_source, require_novel_public_enabled
+from api.novel_public.illustration_screening import (
+    NOVEL_ILLUSTRATION_SCREEN_LANE,
+    TAKEN_DOWN_REASON,
+    IllustrationVerdict,
+    PlannedPicture,
+    build_novel_illustration_screen_prompt,
+    download_pictures,
+    picture_label,
+    prompt_version,
+    remember_passes,
+    remembered_shas,
+    screen_novel_illustrations,
+    screening_model,
+    sha256_of,
+    taken_down_shas,
+)
 from api.novel_public.purchases import chapter_price
 from api.novel_public.schemas import (
     NovelPublicationScreening,
@@ -95,6 +115,7 @@ from api.novel_public.screening import (
 from api.novel_public.serial_lock import lock_in_effect, lock_serial, needs_review
 from api.novelize.access import require_novelize_access
 from api.novelize.billing import _lock_user
+from api.novelize.illustrations import NOVEL_ILLUSTRATION_LIMIT, placement_fingerprint, placements_of
 from api.novelize.router import _get_owned_novel
 from api.session.dependencies import get_current_user_id
 
@@ -121,7 +142,13 @@ class _ChapterPlan:
     무료로 바뀌면 쓰지 않고 409 `NOVEL_PUBLISH_CONFLICT` 다(다시 누르면 된다).
 
     `change_summary` 는 이 판의 판 행에 남길 작가의 변경 요약이다. 정책 스위치가 켜졌고 이미 공개한 화를 다시 낼 때만
-    있다(그때는 꼭 있다) — 새 화·스위치가 꺼진 동안에는 요청에 실려 와도 None 이다."""
+    있다(그때는 꼭 있다) — 새 화·스위치가 꺼진 동안에는 요청에 실려 와도 None 이다.
+
+    `text_changed` 는 화의 글(제목·작가의 말·본문)이 공개본과 다른가(새 화면 참) — 거짓이면 그림만 바뀐 화라 글은 다시
+    심사하지 않는다. `pictures` 는 얼릴 개정의 문단에 붙은 그림(심사할 것)이고, `screens_pictures` 는 삽화 스위치가 켜져
+    이 공개가 그림을 심사하고 심사 시각을 찍는가다. 꺼져 있으면 그림을 보지 않고 시각을 비운 채 얼린다 — 읽기는 시각이 찬
+    판에서만 그림을 싣으므로 미심사 그림이 독자에게 나가지 않는다. 그림은 개정 id 에 묶여 바뀌지 않으므로(배치 행은 고치지
+    않는다) 재계획 비교의 개정 id 가 "심사한 그림 = 얼릴 그림"을 보장한다 — 그림 목록도 비교에 함께 들어간다."""
 
     chapter_id: uuid.UUID
     ordinal: int
@@ -132,6 +159,9 @@ class _ChapterPlan:
     is_new: bool
     price: int
     change_summary: str | None
+    text_changed: bool
+    pictures: tuple[PlannedPicture, ...]
+    screens_pictures: bool
 
 
 @dataclass(frozen=True)
@@ -158,7 +188,8 @@ class _PublishPlan:
 
 
 def _items(plan_metadata: tuple[str | None, str] | None, chapter: _ChapterPlan | None) -> tuple[NovelScreenItem, ...]:
-    """심사할 글. 빈 칸은 싣지 않는다 — 제목이 없으면(원작 제목으로 대신) 심사할 글이 아니다."""
+    """심사할 글. 빈 칸은 싣지 않는다 — 제목이 없으면(원작 제목으로 대신) 심사할 글이 아니다. 그림만 바뀐 화(`text_changed`
+    거짓)는 이미 심사를 통과해 얼린 글과 같으므로 화의 글을 싣지 않는다(변경 요약은 이번 판의 새 글이라 싣는다)."""
     items: list[NovelScreenItem] = []
     if plan_metadata is not None:
         title, synopsis = plan_metadata
@@ -166,13 +197,14 @@ def _items(plan_metadata: tuple[str | None, str] | None, chapter: _ChapterPlan |
             items.append(NovelScreenItem(part="novel_title", text=title))
         if synopsis.strip():
             items.append(NovelScreenItem(part="synopsis", text=synopsis))
-    if chapter is not None:
+    if chapter is not None and chapter.text_changed:
         if chapter.title is not None and chapter.title.strip():
             items.append(NovelScreenItem(part="chapter_title", text=chapter.title))
         if chapter.author_note.strip():
             items.append(NovelScreenItem(part="author_note", text=chapter.author_note))
         if chapter.body.strip():
             items.append(NovelScreenItem(part="chapter_body", text=chapter.body))
+    if chapter is not None:
         if chapter.change_summary is not None:
             items.append(NovelScreenItem(part="change_summary", text=chapter.change_summary))
     return tuple(items)
@@ -282,7 +314,8 @@ async def _plan(db: AsyncSession, novel: Novel, user_id: uuid.UUID, body: NovelP
         price = _price_for(chapter.ordinal, frozen, body.free, remembered_free=remembered_free)
         chapter_is_new = frozen is None
         is_new = is_new or chapter_is_new
-        if frozen is None or await _chapter_changed(db, chapter, revision):
+        changed, text_changed = (True, True) if frozen is None else await _chapter_changes(db, chapter, revision)
+        if changed:
             # 변경 요약은 새 판을 내는 다시 공개에만 쓴다. 스위치가 켜져 있으면 꼭 있어야 한다 — 심사를 부르기 전에 거절한다.
             change_summary = (
                 body.change_summary if settings.novel_public_policy_v2_enabled and not chapter_is_new else None
@@ -299,10 +332,24 @@ async def _plan(db: AsyncSession, novel: Novel, user_id: uuid.UUID, body: NovelP
                 is_new=chapter_is_new,
                 price=price,
                 change_summary=change_summary,
+                text_changed=text_changed,
+                pictures=await _planned_pictures(db, revision) if settings.novel_illustrations_enabled else (),
+                screens_pictures=settings.novel_illustrations_enabled,
             )
+            if len(chapter_plan.pictures) > NOVEL_ILLUSTRATION_LIMIT:
+                raise _error(status.HTTP_409_CONFLICT, "NOVEL_ILLUSTRATION_LIMIT_EXCEEDED")
     if is_new and gate.new_publish_block is not None:
         status_code = status.HTTP_403_FORBIDDEN if gate.new_publish_block == "source_permission" else 409
         raise _error(status_code, "NOVEL_SOURCE_NOT_PUBLISHABLE", reason=gate.new_publish_block)
+    # 남의 원작 그림은 원작의 소설화 허락이 공개일 때만 노벨에 낸다 — 비공개 소장만 허락한 원작의 그림이다. 판정은 글의 새 공개와
+    # 같은 원작 판정 하나라서 연재권 잠금이 효력이 있으면(그 소설에 한정된 허락이 이어진다) 원작 그림도 계속 낸다. 이미 공개한
+    # 화를 다시 낼 때도 본다 — 글과 달리 그 그림은 이번 공개로 처음 노벨에 나간다.
+    if (
+        chapter_plan is not None
+        and gate.new_publish_block == "source_permission"
+        and any(picture.source == "original" for picture in chapter_plan.pictures)
+    ):
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_ILLUSTRATION_ORIGINAL_NOT_PUBLISHABLE")
 
     metadata: tuple[str | None, str] | None = None
     if publication is None or (publication.title, publication.synopsis) != (novel.title, novel.synopsis):
@@ -318,16 +365,41 @@ async def _plan(db: AsyncSession, novel: Novel, user_id: uuid.UUID, body: NovelP
     )
 
 
-def _differs_from_publication(
+async def _planned_pictures(db: AsyncSession, revision: NovelChapterRevision) -> tuple[PlannedPicture, ...]:
+    """개정의 문단에 붙은 그림을 읽는 순서로(심사 순서 = 프롬프트 목록 순서). 위치 확인 필요인 그림은 독자에게 안 나가 뺀다."""
+    rows = [row for row in await placements_of(db, revision) if row.anchor_block_id is not None]
+    if not rows:
+        return ()
+    keys = dict(
+        (await db.execute(select(Asset.id, Asset.storage_key).where(Asset.id.in_({row.asset_id for row in rows}))))
+        .tuples()
+        .all()
+    )
+    position = {block_id: index for index, block_id in enumerate(revision.block_ids)}
+    pictures: list[PlannedPicture] = []
+    for row in rows:
+        if row.anchor_block_id is None or row.placement is None:
+            continue
+        pictures.append(
+            PlannedPicture(
+                asset_id=row.asset_id,
+                storage_key=keys[row.asset_id],
+                source=row.source,
+                paragraph=position[row.anchor_block_id],
+                placement=row.placement,
+            )
+        )
+    return tuple(pictures)
+
+
+def _text_differs_from_publication(
     title: SQLColumnExpression[str | None] | str | None,
     author_note: SQLColumnExpression[str] | str,
     current_hash: SQLColumnExpression[str] | str,
 ) -> ColumnElement[bool]:
-    """화 공개본(`NovelChapterPublication` 행)이 지금 화와 다른가 — 다시 공개의 계획(`_chapter_changed`)과 작가 상태의
-    "바뀐 공개 화"(`_changed_chapter_ordinals`)가 함께 쓰는 하나의 기준이다. 둘이 따로 비교하면 상태는 바뀐 화로 알리는데
-    다시 공개는 아무것도 안 쓰는(또는 그 반대) 화가 생긴다. 제목·작가의 말, 그리고 본문은 얼린 개정과 지금 개정의 본문
-    해시로 비교한다 — 옛 판으로 되돌리기는 같은 본문의 새 개정을 만드는데, 이미 심사를 통과한 글을 다시 심사할 이유가
-    없다. 개정을 쓰는 경로는 본문을 문단을 빈 줄 하나로 이은 모양으로 저장하므로 해시 비교는 글자 비교와 결과가 같다."""
+    """화 공개본의 글(제목·작가의 말·본문)이 지금 화와 다른가. 본문은 얼린 개정과 지금 개정의 본문 해시로 비교한다 — 옛 판으로
+    되돌리기는 같은 본문의 새 개정을 만드는데, 이미 심사를 통과한 글을 다시 심사할 이유가 없다. 개정을 쓰는 경로는 본문을 문단을
+    빈 줄 하나로 이은 모양으로 저장하므로 해시 비교는 글자 비교와 결과가 같다."""
     frozen_hash = (
         select(NovelChapterRevision.content_hash)
         .where(NovelChapterRevision.id == NovelChapterPublication.revision_id)
@@ -341,22 +413,57 @@ def _differs_from_publication(
     )
 
 
-async def _chapter_changed(db: AsyncSession, chapter: NovelChapter, revision: NovelChapterRevision) -> bool:
-    """공개한 화 `chapter` 의 공개본이 지금 화(`revision` = 지금 개정)와 다른가(`_differs_from_publication`)."""
-    changed = await db.scalar(
-        select(_differs_from_publication(chapter.title, chapter.author_note, revision.content_hash)).where(
-            NovelChapterPublication.chapter_id == chapter.id
-        )
+def _pictures_differ_from_publication(current_revision_id: SQLColumnExpression[uuid.UUID] | uuid.UUID) -> ColumnElement[bool]:
+    """화 공개본의 삽화가 지금 화와 다른가 — 삽화 스위치가 켜졌을 때만 본다(꺼진 동안은 그림이 독자에게 안 나가고 공개도 그림을
+    심사하지 않으니 그림만 바뀐 화를 다시 낼 일이 없다). 독자 화면의 그림 모양(`placement_fingerprint`)이 다르거나, 얼린 개정에
+    문단에 붙은 그림이 있는데 심사 시각이 비었으면(꺼진 동안 얼린 공개본) 바뀐 화다 — 다시 공개하면 심사를 거쳐 그림이 열린다."""
+    if not settings.novel_illustrations_enabled:
+        return false()
+    frozen = placement_fingerprint(NovelChapterPublication.revision_id)
+    return or_(
+        frozen.is_distinct_from(placement_fingerprint(current_revision_id)),
+        and_(NovelChapterPublication.illustrations_screened_at.is_(None), frozen.is_not(None)),
     )
-    return bool(changed)
+
+
+def _differs_from_publication(
+    title: SQLColumnExpression[str | None] | str | None,
+    author_note: SQLColumnExpression[str] | str,
+    current_hash: SQLColumnExpression[str] | str,
+    current_revision_id: SQLColumnExpression[uuid.UUID] | uuid.UUID,
+) -> ColumnElement[bool]:
+    """화 공개본(`NovelChapterPublication` 행)이 지금 화와 다른가 — 다시 공개의 계획(`_chapter_changes`)과 작가 상태의
+    "바뀐 공개 화"(`_changed_chapter_ordinals`)가 함께 쓰는 하나의 기준이다. 둘이 따로 비교하면 상태는 바뀐 화로 알리는데
+    다시 공개는 아무것도 안 쓰는(또는 그 반대) 화가 생긴다. 글(`_text_differs_from_publication`)이나 삽화
+    (`_pictures_differ_from_publication`)가 다르면 다르다."""
+    return or_(
+        _text_differs_from_publication(title, author_note, current_hash),
+        _pictures_differ_from_publication(current_revision_id),
+    )
+
+
+async def _chapter_changes(
+    db: AsyncSession, chapter: NovelChapter, revision: NovelChapterRevision
+) -> tuple[bool, bool]:
+    """공개한 화 `chapter` 의 공개본이 지금 화(`revision` = 지금 개정)와 다른가(`_differs_from_publication`)와, 그중 글이
+    다른가."""
+    row = (
+        await db.execute(
+            select(
+                _differs_from_publication(chapter.title, chapter.author_note, revision.content_hash, revision.id),
+                _text_differs_from_publication(chapter.title, chapter.author_note, revision.content_hash),
+            ).where(NovelChapterPublication.chapter_id == chapter.id)
+        )
+    ).one()
+    return bool(row[0]), bool(row[1])
 
 
 # ── 상태 ────────────────────────────────────────────────────────────────────
 async def _changed_chapter_ordinals(db: AsyncSession, novel_id: uuid.UUID) -> list[int]:
-    """공개본과 지금이 다른 공개 화의 번호(오름차순). `_chapter_changed` 와 같은 기준(`_differs_from_publication`)을 한
+    """공개본과 지금이 다른 공개 화의 번호(오름차순). `_chapter_changes` 와 같은 기준(`_differs_from_publication`)을 한
     쿼리로 쓴다 — 화마다 따로 읽으면 공개 화 수만큼 쿼리가 는다. 현재 개정은 화마다 `revision_no` 가 가장 큰 개정이다."""
     current = (
-        select(NovelChapterRevision.chapter_id, NovelChapterRevision.content_hash)
+        select(NovelChapterRevision.chapter_id, NovelChapterRevision.id, NovelChapterRevision.content_hash)
         .distinct(NovelChapterRevision.chapter_id)
         .join(NovelChapter, NovelChapter.id == NovelChapterRevision.chapter_id)
         .where(NovelChapter.novel_id == novel_id)
@@ -369,7 +476,9 @@ async def _changed_chapter_ordinals(db: AsyncSession, novel_id: uuid.UUID) -> li
         .join(current, current.c.chapter_id == NovelChapterPublication.chapter_id)
         .where(
             NovelChapterPublication.novel_id == novel_id,
-            _differs_from_publication(NovelChapter.title, NovelChapter.author_note, current.c.content_hash),
+            _differs_from_publication(
+                NovelChapter.title, NovelChapter.author_note, current.c.content_hash, current.c.id
+            ),
         )
         .order_by(NovelChapterPublication.ordinal)
     )
@@ -512,6 +621,9 @@ async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_ve
     chapter = plan.chapter
     if chapter is None:
         return
+    # 이 공개가 얼리는 개정의 그림을 심사했으면 지금, 아니면(스위치 꺼짐) 비운다 — 다시 내기가 앞 판의 시각을 남기면 심사하지
+    # 않은 새 개정의 그림이 독자에게 나간다.
+    screened_at = now if chapter.screens_pictures else None
     if chapter.is_new:
         db.add(
             NovelChapterPublication(
@@ -522,6 +634,7 @@ async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_ve
                 title=chapter.title,
                 author_note=chapter.author_note,
                 price=chapter.price,
+                illustrations_screened_at=screened_at,
             )
         )
         await db.flush()
@@ -537,6 +650,7 @@ async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_ve
                 author_note=chapter.author_note,
                 edition=NovelChapterPublication.edition + 1,
                 published_at=now,
+                illustrations_screened_at=screened_at,
             )
         )
     await _record_edition(db, chapter.chapter_id, chapter.change_summary)
@@ -544,7 +658,7 @@ async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_ve
 
 async def _record_edition(db: AsyncSession, chapter_id: uuid.UUID, change_summary: str | None) -> None:
     """방금 쓴 화 공개본의 지금 판을 판 행으로 남긴다(정책 스위치와 무관) — 화 공개본 행을 그대로 베껴 판 번호·개정·제목·
-    작가의 말·공개 시각이 공개본과 어긋나지 않는다. 변경 요약은 화 공개본에 없어 요청 값을 그대로 싣는다.
+    작가의 말·공개 시각·삽화 심사 시각이 공개본과 어긋나지 않는다. 변경 요약은 화 공개본에 없어 요청 값을 그대로 싣는다.
 
     같은 (화, 판) 행이 이미 있으면 덮어쓴다. 그런 행은 독자에게 보인 적 없는 판뿐이다 — 판 행은 승인 대기 공개에서도
     쓰이는데, 배포가 겹치는 동안 판 행을 모르는 옛 이미지가 그 대기를 반려·취소하면 화 공개본만 지우고 판 행은 남긴다.
@@ -559,9 +673,20 @@ async def _record_edition(db: AsyncSession, chapter_id: uuid.UUID, change_summar
         NovelChapterPublication.author_note,
         NovelChapterPublication.published_at,
         literal(change_summary, Text),
+        NovelChapterPublication.illustrations_screened_at,
     ).where(NovelChapterPublication.chapter_id == chapter_id)
     statement = insert(NovelChapterEdition).from_select(
-        ["chapter_id", "edition", "novel_id", "revision_id", "title", "author_note", "published_at", "change_summary"],
+        [
+            "chapter_id",
+            "edition",
+            "novel_id",
+            "revision_id",
+            "title",
+            "author_note",
+            "published_at",
+            "change_summary",
+            "illustrations_screened_at",
+        ],
         current,
     )
     await db.execute(
@@ -574,6 +699,7 @@ async def _record_edition(db: AsyncSession, chapter_id: uuid.UUID, change_summar
                 "author_note": statement.excluded.author_note,
                 "published_at": statement.excluded.published_at,
                 "change_summary": statement.excluded.change_summary,
+                "illustrations_screened_at": statement.excluded.illustrations_screened_at,
             },
         )
     )
@@ -619,6 +745,8 @@ def _screening_unavailable(exc: Exception) -> HTTPException:
         capture_dependency_failure(
             exc, dependency="gemini_rate_limit" if isinstance(exc, LLMRateLimitError) else "gemini"
         )
+    elif isinstance(exc, (BotoCoreError, ClientError)):
+        capture_dependency_failure(exc, dependency="s3")
     else:
         capture_dependency_failure(exc, dependency="prompt_render")
     return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "NOVEL_SCREENING_UNAVAILABLE")
@@ -652,14 +780,41 @@ async def publish_novel(
     async with session_factory() as read_db:
         novel = await _get_owned_novel(read_db, novel_id, user_id)
         plan = await _plan(read_db, novel, user_id, body)
-        if plan.items:
-            await enforce_rejection_limit(read_db, user_id, now)
-            try:
-                _prompt_set, sections = await load_active_prompt_set(read_db, lane=NOVEL_SCREEN_LANE)
-            except PromptSetNotFoundError as exc:
-                raise _screening_unavailable(exc) from exc
-            await enforce_call_limit(read_db, user_id)
+        pictures = plan.chapter.pictures if plan.chapter is not None else ()
+        try:
+            sections = (await load_active_prompt_set(read_db, lane=NOVEL_SCREEN_LANE))[1] if plan.items else []
+            picture_prompt = (
+                await load_active_prompt_set(read_db, lane=NOVEL_ILLUSTRATION_SCREEN_LANE) if pictures else None
+            )
+        except PromptSetNotFoundError as exc:
+            raise _screening_unavailable(exc) from exc
         await read_db.commit()
+
+    # 그림은 트랜잭션 밖에서 내려받는다(장마다 수백 KB, 저장소 왕복). 못 받으면 심사할 수 없으니 공개하지 않는다.
+    try:
+        picture_bytes = await download_pictures(pictures)
+    except (BotoCoreError, ClientError) as exc:
+        raise _screening_unavailable(exc) from exc
+    shas = tuple(sha256_of(data) for data in picture_bytes)
+    picture_model = screening_model()
+    version = prompt_version(picture_prompt[0].id, novel.content_type) if picture_prompt is not None else ""
+    # 심사에 실을 그림(첫 자리만 — 같은 바이트가 두 자리에 있으면 한 번). 운영자가 내린 바이트가 있으면 심사 없이 거부하므로
+    # 통과 기억도 보지 않는다(내림이 기억보다 먼저다).
+    to_screen: list[int] = []
+    taken_down = False
+    if plan.items or shas:
+        async with session_factory() as read_db:
+            taken_down = bool(await taken_down_shas(read_db, shas))
+            if not taken_down:
+                remembered = await remembered_shas(read_db, shas, model=picture_model, version=version)
+                for index, sha in enumerate(shas):
+                    if sha not in remembered and sha not in {shas[i] for i in to_screen}:
+                        to_screen.append(index)
+            # 상한은 공개 요청 하나를 한 번으로 센다 — 글과 그림 심사를 둘 다 불러도 게시자의 시간당 상한이 반으로 줄지 않게.
+            if plan.items or to_screen:
+                await enforce_rejection_limit(read_db, user_id, now)
+                await enforce_call_limit(read_db, user_id)
+            await read_db.commit()
 
     verdict = None
     if plan.items:
@@ -667,13 +822,41 @@ async def publish_novel(
             verdict = await screen_novel_text(llm_client, sections=sections, items=plan.items, user_id=user_id)
         except (LLMClientError, PromptRenderError) as exc:
             raise _screening_unavailable(exc) from exc
+    picture_verdict: IllustrationVerdict | None = None
+    if to_screen:
+        assert picture_prompt is not None  # 그림이 있으면 위에서 세트를 읽었다
+        try:
+            prompt = build_novel_illustration_screen_prompt(
+                picture_prompt[1],
+                scope=novel.content_type,
+                labels=[picture_label(pictures[index].paragraph, pictures[index].placement) for index in to_screen],
+            )
+            picture_verdict = await screen_novel_illustrations(
+                llm_client, prompt=prompt, images=[picture_bytes[index] for index in to_screen], user_id=user_id
+            )
+        except (LLMClientError, PromptRenderError) as exc:
+            raise _screening_unavailable(exc) from exc
 
     novel = await _lock_and_replan(db, novel_id, user_id, body, plan)
-    if verdict is not None and not verdict.passed:
+    # 심사를 기다리는 사이 운영자가 그 바이트를 내렸을 수 있다 — 잠근 뒤 다시 본다.
+    taken_down = taken_down or bool(await taken_down_shas(db, shas))
+    text_rejected = verdict is not None and not verdict.passed
+    pictures_rejected = taken_down or (picture_verdict is not None and not picture_verdict.passed)
+    if text_rejected or pictures_rejected:
+        flagged: list[NovelScreeningPart] = list(verdict.flagged_parts) if verdict is not None and text_rejected else []
+        reasons = [verdict.reason] if verdict is not None and text_rejected else []
+        if pictures_rejected:
+            flagged.append("illustration")
+            reasons.append(TAKEN_DOWN_REASON if taken_down else picture_verdict.reason if picture_verdict else None)
         db.add(
             _screening_row(
-                novel, plan, user_id, passed=False, flagged_parts=verdict.flagged_parts, reason=verdict.reason,
-                model=verdict.model,
+                novel,
+                plan,
+                user_id,
+                passed=False,
+                flagged_parts=flagged,
+                reason=" / ".join(reason for reason in reasons if reason) or None,
+                model=verdict.model if verdict is not None else picture_model,
             )
         )
         await db.commit()
@@ -682,13 +865,20 @@ async def publish_novel(
             status.HTTP_400_BAD_REQUEST,
             "NOVEL_SCREENING_REJECTED",
             chapterOrdinal=plan.chapter.ordinal if plan.chapter is not None else None,
-            flaggedParts=list(verdict.flagged_parts),
+            flaggedParts=flagged,
         )
     if not plan.writes_nothing:
         terms_version = await current_legal_version(db, "terms", now=datetime.now(UTC))
         await _apply(db, novel, plan, terms_version=terms_version)
-        if verdict is not None:
-            db.add(_screening_row(novel, plan, user_id, passed=True, flagged_parts=(), reason=None, model=verdict.model))
+        if picture_verdict is not None:
+            await remember_passes(
+                db, [shas[index] for index in to_screen], model=picture_verdict.model, version=version
+            )
+        screened_by = verdict or picture_verdict
+        if screened_by is not None:
+            db.add(
+                _screening_row(novel, plan, user_id, passed=True, flagged_parts=(), reason=None, model=screened_by.model)
+            )
         await db.commit()
         # 잠금은 ORM 객체를 거치지 않는 UPDATE 로 찍혀 객체의 잠금 칸이 낡았다. 상태 응답의 승인 필요 여부가 그 칸을 본다.
         await db.refresh(novel)
