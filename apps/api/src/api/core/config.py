@@ -744,6 +744,10 @@ class Settings(BaseSettings):
     # 기다리고, 한 번 독자에게 보인 소설은 원작자가 허락을 거둬도 다음 화를 이어 공개한다. 6화부터 화마다 무료·유료를
     # 고르고 유료 화를 무료로 바꾸는 것도 켜졌을 때만 된다. 개정 약관이 시행된 뒤에 켠다.
     novel_public_policy_v2_enabled: bool = False
+    # 소설 화 삽화 스위치. 꺼져 있으면(기본값) 작가의 삽화 붙이기·옮기기·바꾸기·떼기와 원작 그림 후보가 404 이고, 삽화 용도
+    # 업로드를 받지 않으며, 화 응답에 그림을 싣지 않고, 소설 표지는 생성 이미지 삭제를 막지 않는다(지금 약관대로). 개정에 이미
+    # 붙은 배치는 꺼져 있어도 새 개정으로 이어지고 그 그림 파일을 지우지 못하게 지킨다. 개정 처리방침 게시 뒤에 켠다.
+    novel_illustrations_enabled: bool = False
 
     @field_validator(
         "novelize_grant_allowlist",

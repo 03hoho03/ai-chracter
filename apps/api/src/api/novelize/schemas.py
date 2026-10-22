@@ -10,6 +10,8 @@ from api.content.author_macros import user_name_error
 from api.core.schema import CamelModel
 from api.db.models.novel import (
     NovelContentType,
+    NovelIllustrationPlacement,
+    NovelIllustrationSource,
     NovelJobFailureCode,
     NovelJobKind,
     NovelJobStatus,
@@ -495,12 +497,31 @@ class NovelBlock(CamelModel):
     text: str
 
 
+class NovelIllustration(CamelModel):
+    """개정에 붙은 삽화 한 장. `id` 는 이 개정의 배치 id 다 — 옮기기·바꾸기·떼기가 이 값으로 고르고, 개정이 바뀌면 새 id 가 된다.
+    `anchor_block_id`·`placement` 가 비어 있으면 위치 확인 필요(앵커 문단이 사라진 그림)다. `url` 은 크게 그리는 정지 변형이고,
+    `width`·`height` 는 그림 크기(모르면 null — 화면이 고정 비율 칸에 그린다)다. `order` 는 같은 자리(앵커·앞뒤) 안의 순서다."""
+
+    id: uuid.UUID
+    anchor_block_id: uuid.UUID | None
+    placement: NovelIllustrationPlacement | None
+    order: int
+    asset_id: uuid.UUID
+    source: NovelIllustrationSource
+    url: str
+    width: int | None
+    height: int | None
+
+
 class NovelRevisionResponse(NovelRevisionSummary):
     body: str
     # 본문을 빈 줄로 나눈 문단. 문단 범위(AI 수정)의 인덱스는 이 배열 기준이다 — 화면이 다시 나누지 않는다.
     paragraphs: list[str]
     # 문단마다 블록 id 를 붙인 같은 배열(블록 i = 문단 i). 개정이 바뀌어도 같은 문단을 가리키는 id 다.
     blocks: list[NovelBlock]
+    # 이 개정의 삽화 — 문단에 붙은 것(문단 순서·앞 먼저·자리 안 순서)과 위치 확인 필요인 것. 삽화 스위치가 꺼져 있으면 둘 다 빈 목록이다.
+    illustrations: list[NovelIllustration]
+    unplaced_illustrations: list[NovelIllustration]
 
 
 class NovelChapterResponse(CamelModel):
@@ -528,6 +549,53 @@ class NovelRevisionCreateRequest(CamelModel):
 
 class NovelRevisionRestoreRequest(CamelModel):
     base_revision_id: uuid.UUID
+
+
+class NovelIllustrationAttachRequest(CamelModel):
+    """그림 한 장을 문단(`anchor_block_id`, 지금 개정의 블록 id)의 앞·뒤에 붙인다. `order` 는 그 자리 안의 자리(0부터)이고, 비우거나
+    자리 수보다 크면 맨 끝이다. `source` 는 그림이 어디서 왔는가 — 서버가 그 출처로 쓸 수 있는 그림인지 본다."""
+
+    base_revision_id: uuid.UUID
+    anchor_block_id: uuid.UUID
+    placement: NovelIllustrationPlacement
+    order: int | None = Field(default=None, ge=0)
+    asset_id: uuid.UUID
+    source: NovelIllustrationSource
+
+
+class NovelIllustrationMoveRequest(CamelModel):
+    """배치 하나를 다른 자리로 옮긴다(위치 확인 필요인 그림을 다시 놓을 때도). `order` 는 붙이기와 같다."""
+
+    base_revision_id: uuid.UUID
+    anchor_block_id: uuid.UUID
+    placement: NovelIllustrationPlacement
+    order: int | None = Field(default=None, ge=0)
+
+
+class NovelIllustrationReplaceRequest(CamelModel):
+    """배치 하나의 그림만 바꾼다(자리는 그대로)."""
+
+    base_revision_id: uuid.UUID
+    asset_id: uuid.UUID
+    source: NovelIllustrationSource
+
+
+class NovelIllustrationDetachRequest(CamelModel):
+    base_revision_id: uuid.UUID
+
+
+class NovelOriginalIllustrationCandidate(CamelModel):
+    """원작 그림 후보 한 장. `kind` 는 원작에서의 자리(대표 이미지·상황 이미지·미디어 북 칸)다."""
+
+    asset_id: uuid.UUID
+    kind: Literal["thumbnail", "situationalImage", "mediaBook"]
+    url: str
+    width: int | None
+    height: int | None
+
+
+class NovelOriginalIllustrationCandidates(CamelModel):
+    items: list[NovelOriginalIllustrationCandidate]
 
 
 class NovelAiEditRequest(CamelModel):

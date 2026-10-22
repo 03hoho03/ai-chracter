@@ -924,3 +924,45 @@ async def test_complete_is_refused_when_the_completion_lock_cannot_be_reached(
     assert resp.status_code == 503, resp.text
     status_now = await db_session.scalar(select(Asset.status).where(Asset.id == uuid.UUID(asset_id)))
     assert status_now == AssetStatus.PENDING
+
+
+@pytest.mark.parametrize("switch", [pytest.param(False, id="off"), pytest.param(True, id="on")])
+async def test_illustration_uploads_open_only_with_the_illustrations_switch(
+    switch: bool, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, s3_bucket: None
+) -> None:
+    """삽화 용도 업로드는 삽화 스위치가 켜졌을 때만 받는다(꺼져 있으면 모르는 용도와 같은 422). 깨지는 시나리오: 약관 게시 전에
+    삽화 사진이 저장소에 쌓인다."""
+    monkeypatch.setattr(settings, "novel_illustrations_enabled", switch)
+    await _logged_in_user(db_client, db_session)
+
+    resp = await db_client.post(
+        "/assets/presigned-upload", json={"contentType": "image/png", "purpose": "novel-illustration"}
+    )
+
+    assert resp.status_code == (201 if switch else 422)
+
+
+async def test_complete_refuses_a_moving_illustration_upload_and_keeps_a_still_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, s3_bucket: None
+) -> None:
+    """삽화는 정지 그림만 받는다 — 움직이는 그림을 올리면 검사에서 떨어뜨려 지우고(400), 정지 그림은 준비된다. 깨지는 시나리오:
+    화면을 거치지 않은 GIF 가 삽화로 올라 어두운 읽기 화면에서 움직인다."""
+    monkeypatch.setattr(settings, "novel_illustrations_enabled", True)
+    await _logged_in_user(db_client, db_session)
+    resp = await db_client.post(
+        "/assets/presigned-upload", json={"contentType": "image/gif", "purpose": "novel-illustration"}
+    )
+    moving_id, moving_url = resp.json()["assetId"], resp.json()["uploadUrl"]
+    frames = [Image.new("RGB", (64, 64), color=color) for color in ((255, 0, 0), (0, 255, 0))]
+    output = io.BytesIO()
+    frames[0].save(output, format="GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    _put_via_presigned_url(moving_url, output.getvalue(), content_type="image/gif")
+    still_id, still_url = await _presign(db_client, purpose="novel-illustration")
+    _put_via_presigned_url(still_url, _png_bytes())
+
+    moving = await db_client.post(f"/assets/{moving_id}/complete")
+    still = await db_client.post(f"/assets/{still_id}/complete")
+
+    assert moving.status_code == 400
+    assert await db_session.get(Asset, uuid.UUID(moving_id), populate_existing=True) is None
+    assert still.status_code == 200, still.text

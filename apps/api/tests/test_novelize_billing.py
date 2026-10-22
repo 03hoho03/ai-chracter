@@ -579,7 +579,7 @@ async def test_refund_whose_commit_failed_is_retried_once_by_the_next_caller(db_
 async def test_refund_of_a_job_erased_with_its_novel_is_harmless(db_session: AsyncSession) -> None:
     """탈퇴·소설 삭제로 작업 행이 먼저 사라졌으면 뒤늦은 환불(백그라운드 실행의 실패 처리)은 아무것도 하지 않는다."""
     owner, job = await _charged_job(db_session)
-    await delete_novels(db_session, [job.novel_id])
+    await delete_novels(db_session, [job.novel_id], freed_storage_keys=[])
     await db_session.flush()
 
     async with _service_session(db_session) as s:
@@ -595,7 +595,7 @@ async def test_refund_active_jobs_before_deleting_a_novel_refunds_once(db_sessio
     async with _service_session(db_session) as s:
         assert await billing.refund_active_jobs(s, novel_id=job.novel_id, failure_code="internal") == 40
         assert await billing.refund_active_jobs(s, novel_id=job.novel_id, failure_code="internal") == 0
-        await delete_novels(s, [job.novel_id])
+        await delete_novels(s, [job.novel_id], freed_storage_keys=[])
         await s.commit()
 
     assert await _job_count(db_session, job.novel_id) == 0
@@ -635,7 +635,7 @@ async def independent_factory(db_engine: AsyncEngine) -> AsyncGenerator[async_se
         user_ids = (await cleanup.scalars(select(User.id).where(User.email.like(f"%@{_MARKER_DOMAIN}")))).all()
         if user_ids:
             novel_ids = (await cleanup.scalars(select(Novel.id).where(Novel.user_id.in_(user_ids)))).all()
-            await delete_novels(cleanup, novel_ids)
+            await delete_novels(cleanup, novel_ids, freed_storage_keys=[])
             # 환급 행이 배분·원장을, 사용처가 원장을, 배분이 원장·로트를 FK 로 잡으므로 이 순서로 원장보다 먼저 지운다.
             # 작업 행(원장을 가리키는 칸)은 `delete_novels` 가 이미 지웠다.
             spend_ledger_ids = select(CloverLedger.id).where(CloverLedger.user_id.in_(user_ids))
@@ -808,7 +808,7 @@ async def test_refund_waits_for_a_withdrawal_holding_the_user_instead_of_deadloc
 
         task = asyncio.ensure_future(refund())
         await _assert_blocked(task)
-        await delete_novels(withdrawal, [novel_id])
+        await delete_novels(withdrawal, [novel_id], freed_storage_keys=[])
         await withdrawal.commit()
         assert await task is None
     finally:
@@ -870,7 +870,7 @@ async def test_success_save_waits_for_a_withdrawal_holding_the_user_instead_of_d
         await withdrawal.execute(select(User.id).where(User.id == user_id).with_for_update(key_share=True))
         task = _save_two_of_three(independent_factory, job.id)
         await _assert_blocked(task)
-        await delete_novels(withdrawal, [novel_id])
+        await delete_novels(withdrawal, [novel_id], freed_storage_keys=[])
         await withdrawal.commit()
         await task
     finally:
@@ -961,7 +961,7 @@ async def test_novel_deletion_waits_for_an_edit_holding_the_chapter_and_removes_
 
         async def delete_novel() -> None:
             async with independent_factory() as s:
-                await delete_novels(s, [novel_id])
+                await delete_novels(s, [novel_id], freed_storage_keys=[])
                 await s.commit()
 
         task = asyncio.ensure_future(delete_novel())
@@ -1154,7 +1154,7 @@ async def test_last_batch_delete_lets_an_edit_holding_the_job_finish_instead_of_
         async def delete_last_batch() -> None:
             async with independent_factory() as s:
                 await billing._lock_user(s, user_id)
-                await delete_batch(s, novel_id=novel_id, batch_id=batch_id)
+                await delete_batch(s, novel_id=novel_id, batch_id=batch_id, freed_storage_keys=[])
                 await s.commit()
 
         task = asyncio.ensure_future(delete_last_batch())

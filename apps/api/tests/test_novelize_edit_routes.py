@@ -22,6 +22,7 @@ from factories import (
     _NeverCalledLLMClient,
     _add_chapter,
     _clear_llm_override,
+    _finished_ai_edit,
     _novel_ledger,
     _novel_setup,
     _override_llm_client,
@@ -324,27 +325,6 @@ async def test_rejected_ai_edit_charges_nothing(
 
 
 # ── 적용 ────────────────────────────────────────────────────────────────────
-async def _finished_ai_edit(
-    db_session: AsyncSession, novel_id: uuid.UUID, chapter: NovelChapter, base: NovelChapterRevision
-) -> NovelJob:
-    job = NovelJob(
-        novel_id=novel_id,
-        user_id=(await db_session.get_one(Novel, novel_id)).user_id,
-        kind="ai_edit",
-        status="succeeded",
-        chapter_id=chapter.id,
-        base_revision_id=base.id,
-        paragraph_start=1,
-        paragraph_end=1,
-        instruction="더 쓸쓸하게",
-        result_text="첫 문단이다.\n\n쓸쓸한 둘째 문단.\n\n셋째 문단이다.",
-        charged_amount=20,
-    )
-    db_session.add(job)
-    await db_session.commit()
-    return job
-
-
 async def test_applying_an_ai_edit_makes_its_preview_the_new_revision_once(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

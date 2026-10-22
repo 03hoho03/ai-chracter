@@ -21,5 +21,6 @@ describe("toRevisionSourceLabel", () => {
   it("되돌림 밖의 출처는 고정 문구다", () => {
     expect(toRevisionSourceLabel({ source: "ai_edit", revertedFromRevisionId: null }, revisions)).toBe("AI로 고침");
     expect(toRevisionSourceLabel({ source: "generate", revertedFromRevisionId: null }, revisions)).toBe("처음 만듦");
+    expect(toRevisionSourceLabel({ source: "illustration", revertedFromRevisionId: null }, revisions)).toBe("삽화 바꿈");
   });
 });

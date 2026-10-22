@@ -37,7 +37,7 @@ from api.core.rate_limit_gate import (
     is_rate_limit_exempt,
 )
 from api.core.redis import redis_client
-from api.db.models.novel import NovelScreeningPart
+from api.db.models.novel import NovelTextScreeningPart
 from api.db.models.prompt import PromptSection
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, LLMPolicyViolationError, structured_model
 from api.novelize.prompts import NovelizePrompt
@@ -66,7 +66,7 @@ NOVEL_SCREEN_DAILY_REJECT_WINDOW = "novel_screen_daily_reject"
 _REJECTION_KEY_PREFIX = "rate_limit:novel_screen_rejections"
 
 # 머리 줄에 함께 싣는 자리 이름. 키는 응답의 `flagged_parts` 값과 같은 글자다.
-_PART_LABELS: dict[NovelScreeningPart, str] = {
+_PART_LABELS: dict[NovelTextScreeningPart, str] = {
     "novel_title": "소설 제목",
     "synopsis": "소개",
     "chapter_title": "화 제목",
@@ -80,7 +80,7 @@ _PART_LABELS: dict[NovelScreeningPart, str] = {
 class NovelScreenItem:
     """심사할 글 한 자리. `text` 는 비어 있지 않다(빈 칸은 호출부가 싣지 않는다)."""
 
-    part: NovelScreeningPart
+    part: NovelTextScreeningPart
     text: str
 
 
@@ -88,7 +88,7 @@ class NovelScreenResult(BaseModel):
     """텍스트 심사의 응답 스키마. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
 
     passed: bool = Field(description="공개해도 되면 true, 기준에 걸리는 글이 하나라도 있으면 false.")
-    flagged_parts: list[NovelScreeningPart] = Field(
+    flagged_parts: list[NovelTextScreeningPart] = Field(
         description="통과가 아니면 기준에 걸린 글의 자리 키(머리 줄의 키)를 모두 넣는다. 통과면 빈 목록."
     )
     reason: str | None = Field(
@@ -101,7 +101,7 @@ class NovelScreenVerdict:
     """심사 한 번의 판정. `flagged_parts` 는 이번에 실은 자리로 좁힌 값이다(모델이 싣지 않은 자리를 짚어도 버린다)."""
 
     passed: bool
-    flagged_parts: tuple[NovelScreeningPart, ...]
+    flagged_parts: tuple[NovelTextScreeningPart, ...]
     reason: str | None
     model: str
 
@@ -162,7 +162,7 @@ async def screen_novel_text(
         return NovelScreenVerdict(passed=False, flagged_parts=screened, reason="안전 기준 차단", model=model)
     if result.passed:
         return NovelScreenVerdict(passed=True, flagged_parts=(), reason=None, model=model)
-    flagged = tuple(part for part in get_args(NovelScreeningPart) if part in result.flagged_parts and part in screened)
+    flagged = tuple(part for part in get_args(NovelTextScreeningPart) if part in result.flagged_parts and part in screened)
     return NovelScreenVerdict(passed=False, flagged_parts=flagged, reason=result.reason, model=model)
 
 

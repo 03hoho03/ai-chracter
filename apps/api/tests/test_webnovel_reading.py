@@ -848,7 +848,7 @@ async def test_a_novel_deleted_while_being_curated_is_a_conflict_not_a_server_er
 
     async def deleted_right_after_the_check(db: AsyncSession, novel_id: uuid.UUID) -> bool:
         readable = await listed(db, novel_id)
-        await delete_novels(db, [novel_id])
+        await delete_novels(db, [novel_id], freed_storage_keys=[])
         return readable
 
     monkeypatch.setattr(home_novel_curation, "_is_listed", deleted_right_after_the_check)

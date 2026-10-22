@@ -101,7 +101,7 @@ async def test_delete_novels_removes_every_row_under_the_novel(db_session: Async
     tree = await _make_novel_tree(db_session, owner.id)
     await _plant_novel_extras(db_session, tree)
 
-    await delete_novels(db_session, [tree.novel.id])
+    await delete_novels(db_session, [tree.novel.id], freed_storage_keys=[])
 
     assert await _row_counts(db_session, tree.novel.id) == _GONE
 
@@ -129,7 +129,7 @@ async def test_delete_novels_leaves_other_novels_untouched(db_session: AsyncSess
     other = await _make_novel_tree(db_session, owner.id)
     await _plant_novel_extras(db_session, other)
 
-    await delete_novels(db_session, [target.novel.id])
+    await delete_novels(db_session, [target.novel.id], freed_storage_keys=[])
 
     assert await _row_counts(db_session, other.novel.id) == {
         "novels": 1,
@@ -169,7 +169,7 @@ async def test_reports_outlive_the_novel_with_their_evidence(db_session: AsyncSe
     )
     await db_session.flush()
 
-    await delete_novels(db_session, [tree.novel.id])
+    await delete_novels(db_session, [tree.novel.id], freed_storage_keys=[])
 
     reports = (
         await db_session.execute(

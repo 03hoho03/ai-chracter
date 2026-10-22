@@ -117,7 +117,7 @@ async def world(db_engine: AsyncEngine) -> AsyncGenerator[_World, None]:
         await cleanup.execute(delete(CloverSpendUsage).where(CloverSpendUsage.spend_ledger_id.in_(ledger_ids)))
         await cleanup.execute(delete(CloverLedger).where(CloverLedger.user_id.in_(users)))
         await cleanup.execute(delete(CloverLot).where(CloverLot.user_id.in_(users)))
-        await delete_novels(cleanup, novel_ids)
+        await delete_novels(cleanup, novel_ids, freed_storage_keys=[])
         await cleanup.execute(delete(Content).where(Content.creator_user_id.in_(users)))
         # 탈퇴한 회원 행도 지운다 — 파기로 비워진 칸(생년월일 등)이 남으면 세션 끝 downgrade 의 NOT NULL 복원이 깨진다.
         await cleanup.execute(delete(User).where(User.id.in_(users)))

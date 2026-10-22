@@ -129,7 +129,7 @@ async def test_deleting_the_last_batch_removes_its_comments_and_keeps_the_report
     )
     await db_session.flush()
 
-    await delete_batch(db_session, novel_id=tree.novel.id, batch_id=last_batch.id)
+    await delete_batch(db_session, novel_id=tree.novel.id, batch_id=last_batch.id, freed_storage_keys=[])
 
     comments = await db_session.scalars(sa.select(NovelComment.id).where(NovelComment.novel_id == tree.novel.id))
     assert list(comments) == [kept.id]

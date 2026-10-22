@@ -45,7 +45,7 @@ async def independent_factory(db_engine: AsyncEngine) -> AsyncGenerator[async_se
         user_ids = (await cleanup.scalars(select(User.id).where(User.email.like(f"%@{_MARKER_DOMAIN}")))).all()
         if user_ids:
             novel_ids = (await cleanup.scalars(select(Novel.id).where(Novel.user_id.in_(user_ids)))).all()
-            await delete_novels(cleanup, novel_ids)
+            await delete_novels(cleanup, novel_ids, freed_storage_keys=[])
             content_ids = select(Content.id).where(Content.creator_user_id.in_(user_ids))
             await cleanup.execute(
                 update(Content).where(Content.id.in_(content_ids)).values(current_published_version_id=None)

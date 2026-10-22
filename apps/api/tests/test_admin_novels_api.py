@@ -313,7 +313,7 @@ async def test_a_report_on_a_deleted_novel_keeps_its_evidence_and_can_only_be_re
     expired = _report(novel, await _member(db_session), evidence_expires_at=datetime.now(UTC) - timedelta(seconds=1))
     db_session.add_all([report, expired])
     await db_session.flush()
-    await delete_novels(db_session, [novel.novel_id])
+    await delete_novels(db_session, [novel.novel_id], freed_storage_keys=[])
     await db_session.commit()
     await _as_admin(db_client, db_session)
 

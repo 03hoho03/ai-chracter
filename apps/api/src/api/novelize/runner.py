@@ -65,6 +65,7 @@ from api.novelize.blocks import build_revision, fresh_ids
 from api.novelize.boundary import episode_counts, suggest_end_turn
 from api.novelize.deletion import ai_edit_preview_is_fresh, erase_stale_ai_edit_previews
 from api.novelize.episodes import chapter_max_turns, k_max
+from api.novelize.illustrations import add_revision
 from api.novelize.inputs import (
     ChapterInput,
     SourceChangedError,
@@ -720,17 +721,19 @@ async def _save_generated(
     db.add_all(chapters)
     await db.flush()
     revisions = [
-        build_revision(
-            chapter_id=chapter.id,
-            revision_no=1,
-            body=episode.body,
-            source="generate",
-            block_ids=fresh_ids(episode.body),
+        await add_revision(
+            db,
+            build_revision(
+                chapter_id=chapter.id,
+                revision_no=1,
+                body=episode.body,
+                source="generate",
+                block_ids=fresh_ids(episode.body),
+            ),
+            previous=None,
         )
         for chapter, episode in zip(chapters, batch.episodes, strict=True)
     ]
-    db.add_all(revisions)
-    await db.flush()
     return row.id, chapters, revisions
 
 
@@ -761,20 +764,24 @@ async def _save_regenerated(
     revisions: list[NovelChapterRevision] = []
     for chapter, episode in zip(chapters, batch.episodes, strict=True):
         latest = await current_revision(db, chapter.id)
+        # 문단 id 를 모두 새로 받으므로 그 화의 삽화는 모두 위치 확인 필요로 이어진다(`illustrations.add_revision`).
         revisions.append(
-            build_revision(
-                chapter_id=chapter.id,
-                revision_no=(latest.revision_no if latest else 0) + 1,
-                body=episode.body,
-                source="regenerate",
-                block_ids=fresh_ids(episode.body),
+            await add_revision(
+                db,
+                build_revision(
+                    chapter_id=chapter.id,
+                    revision_no=(latest.revision_no if latest else 0) + 1,
+                    body=episode.body,
+                    source="regenerate",
+                    block_ids=fresh_ids(episode.body),
+                ),
+                previous=latest,
             )
         )
         if chapter.title_edited_at is None:
             # 사용자가 고친 화 제목은 덮지 않는다. 화 행을 잠근 뒤 읽은 값이라 제목 수정과 엇갈리지 않는다.
             chapter.title = episode.title
         chapter.summary = episode.summary
-    db.add_all(revisions)
     await db.flush()
     return target.id, chapters, revisions
 

@@ -109,6 +109,7 @@ from api.novelize.characters import (
     update_character,
 )
 from api.novelize.episodes import chapter_max_turns, k_max, regenerate_ineligibility
+from api.novelize.illustrations import PlacementSpec, add_revision, delete_storage_objects, placement_views
 from api.novelize.inputs import current_revision, load_novel_prompt_source
 from api.novelize.runner import enqueue_chain_job, enqueue_job, expire_stale_jobs
 from api.novelize.snapshots import SnapshotLimitError, restore_snapshot, save_snapshot
@@ -147,6 +148,7 @@ from api.novelize.schemas import (
     NovelChapterSuggestion,
     NovelChapterSummary,
     NovelChapterUpdateRequest,
+    NovelIllustration,
     NovelCharacterAddRequest,
     NovelCharacterListResponse,
     NovelCharacterMergeRequest,
@@ -821,7 +823,9 @@ async def delete_novel(
     중 작업을 환불하고, 공개를 거두고(새로 보이거나 팔리지 않는다), 숨긴 시각을 찍고 방 칸을 비운다(같은 방에서 새 소설을
     만들 수 있고, 진행 중이던 연쇄 생성도 방이 없어 다음 묶음을 만들지 않는다). 환급은 없다. 숨긴 소설은 작가의 목록·주소
     에서 사라지고(`_get_owned_novel`), 미환급 소장자가 모두 사라지면 하루 한 번 도는 파기가 지운다(`hidden_purge.py`).
-    판정은 사용자 행을 잠근 뒤에 한다 — 구매가 게시자 행을 잡으므로 그 뒤로는 새 구매가 끼지 않는다."""
+    판정은 사용자 행을 잠근 뒤에 한다 — 구매가 게시자 행을 잡으므로 그 뒤로는 새 구매가 끼지 않는다.
+
+    지운 소설만 쓰던 업로드 삽화 파일은 커밋 뒤에 저장소에서 지운다(`deletion.py` 모듈 docstring)."""
     novel_id, publisher_id = novel.id, novel.user_id
     locked = await lock_publisher_and_buyers(db, publisher_id=publisher_id, novel_id=novel_id)
     # 행이 곧 지워져 남지 않으므로 사유 칸은 어느 값이든 같다 — 우리 쪽 사정으로 끝낸 작업이라 `internal` 이다.
@@ -834,8 +838,10 @@ async def delete_novel(
         await db.commit()
         return
     await refund_deleted_purchases(db, novel_id=novel_id, locked_user_ids=locked)
-    await delete_novels(db, [novel_id])
+    freed: list[str] = []
+    await delete_novels(db, [novel_id], freed_storage_keys=freed)
     await db.commit()
+    await delete_storage_objects(freed)
 
 
 # ── 설정 노트·주인공 이름 ───────────────────────────────────────────────────
@@ -1453,9 +1459,11 @@ async def _delete_last_batch(
     if settings.novel_public_policy_v2_enabled and await chapters_with_unrefunded_purchase(db, chapter_ids):
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_BATCH_SOLD")
     await refund_deleted_purchases(db, novel_id=novel.id, locked_user_ids=locked, chapter_ids=chapter_ids)
-    await delete_batch(db, novel_id=novel.id, batch_id=batch.id)
+    freed: list[str] = []
+    await delete_batch(db, novel_id=novel.id, batch_id=batch.id, freed_storage_keys=freed)
     await db.execute(update(Novel).where(Novel.id == novel.id).values(updated_at=func.now()))
     await db.commit()
+    await delete_storage_objects(freed)
 
 
 @router.delete("/{novel_id}/batches/{batch_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1509,13 +1517,31 @@ def _revision_summary(revision: NovelChapterRevision) -> NovelRevisionSummary:
     )
 
 
-def _revision_response(revision: NovelChapterRevision) -> NovelRevisionResponse:
+async def _revision_response(db: AsyncSession, revision: NovelChapterRevision) -> NovelRevisionResponse:
+    """개정 본문·문단·블록과, 삽화 스위치가 켜져 있으면 그 개정의 삽화(문단에 붙은 것과 위치 확인 필요인 것)."""
     paragraphs = split_paragraphs(revision.body)
+    views = await placement_views(db, revision) if settings.novel_illustrations_enabled else []
+    shown = [
+        NovelIllustration(
+            id=view.row.id,
+            anchor_block_id=view.row.anchor_block_id,
+            placement=view.row.placement,
+            order=view.row.sort_order,
+            asset_id=view.row.asset_id,
+            source=view.row.source,
+            url=view.url,
+            width=view.width,
+            height=view.height,
+        )
+        for view in views
+    ]
     return NovelRevisionResponse(
         **_revision_summary(revision).model_dump(),
         body=revision.body,
         paragraphs=paragraphs,
         blocks=[NovelBlock(id=block_id, text=text) for block_id, text in zip(revision.block_ids, paragraphs, strict=True)],
+        illustrations=[item for item in shown if item.anchor_block_id is not None],
+        unplaced_illustrations=[item for item in shown if item.anchor_block_id is None],
     )
 
 
@@ -1527,7 +1553,7 @@ async def _chapter_response(db: AsyncSession, chapter: NovelChapter) -> NovelCha
         novel_id=chapter.novel_id,
         ordinal=chapter.ordinal,
         assistant_message_count=chapter.assistant_message_count,
-        revision=_revision_response(revision),
+        revision=await _revision_response(db, revision),
     )
 
 
@@ -1577,7 +1603,7 @@ async def get_novel_chapter_revision(
     db: AsyncSession = Depends(get_db_session),
 ) -> NovelRevisionResponse:
     chapter = await _get_chapter(db, novel, chapter_id)
-    return _revision_response(await _get_revision(db, chapter, revision_id))
+    return await _revision_response(db, await _get_revision(db, chapter, revision_id))
 
 
 # ── 직접 수정·되돌리기·적용 ─────────────────────────────────────────────────
@@ -1604,13 +1630,18 @@ async def _lock_current_revision_for_edit(
 
 
 async def _stack_revision(
-    db: AsyncSession, novel: Novel, current: NovelChapterRevision, revision: NovelChapterRevision
+    db: AsyncSession,
+    novel: Novel,
+    current: NovelChapterRevision,
+    revision: NovelChapterRevision,
+    *,
+    placements: list[PlacementSpec] | None = None,
 ) -> NovelChapterRevision:
-    """잠근 현재 개정 다음 번호로 `revision` 을 넣고 소설 수정 시각을 민다(커밋은 호출자)."""
+    """잠근 현재 개정 다음 번호로 `revision` 을 넣고(삽화 배치는 `add_revision` 의 승계 규칙대로, 배치 변경이면 `placements`) 소설
+    수정 시각을 민다(커밋은 호출자)."""
     revision.chapter_id = current.chapter_id
     revision.revision_no = current.revision_no + 1
-    db.add(revision)
-    await db.flush()
+    await add_revision(db, revision, previous=current, placements=placements)
     await db.execute(update(Novel).where(Novel.id == novel.id).values(updated_at=func.now()))
     return revision
 

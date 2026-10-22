@@ -1080,7 +1080,7 @@ async def test_novel_deleted_mid_job_leaves_nothing_and_raises_nothing(
     async def delete_novel() -> None:
         async with factory() as s:
             await billing.refund_active_jobs(s, novel_id=novel.id, failure_code="internal")
-            await delete_novels(s, [novel.id])
+            await delete_novels(s, [novel.id], freed_storage_keys=[])
             await s.commit()
 
     await runner.run_job(factory, _NovelLLM(during=delete_novel), job.id)

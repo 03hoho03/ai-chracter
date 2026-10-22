@@ -61,7 +61,7 @@ async def independent_factory(db_engine: AsyncEngine) -> AsyncGenerator[async_se
             await cleanup.execute(delete(CloverSpendUsage).where(CloverSpendUsage.spend_ledger_id.in_(ledger_ids)))
             await cleanup.execute(delete(CloverLedger).where(CloverLedger.user_id.in_(user_ids)))
             await cleanup.execute(delete(CloverLot).where(CloverLot.user_id.in_(user_ids)))
-            await delete_novels(cleanup, novel_ids)
+            await delete_novels(cleanup, novel_ids, freed_storage_keys=[])
             await cleanup.execute(delete(Content).where(Content.creator_user_id.in_(user_ids)))
             await cleanup.execute(delete(User).where(User.id.in_(user_ids)))
         await cleanup.commit()
