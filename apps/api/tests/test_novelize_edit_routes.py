@@ -156,6 +156,32 @@ async def test_direct_edit_on_a_stale_base_is_409_and_writes_nothing(
     assert [r.body for r in await _revisions(db_session, chapter.id)] == [_BODY, "탭 1"]
 
 
+@pytest.mark.parametrize("action", ["manual_edit", "restore"])
+async def test_direct_edit_and_restore_on_an_older_revision_with_the_same_text_are_still_409(
+    action: str, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """직접 수정·되돌리기의 낙관 잠금은 글이 아니라 개정 id 로 본다 — AI 수정 미리보기와 달리, 화면이 보고 고친 판이 지금
+    판이 아니면 그 사이 생긴 같은 글의 새 판도 화면이 모르는 판이다. 깨지는 시나리오: 글로 판정하면 다른 탭이 같은 글로
+    되돌린 직후의 낡은 화면이 409 없이 덮어쓴다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    db_session.add(revision_row(chapter_id=chapter.id, revision_no=2, body=_BODY, source="manual_edit"))
+    await db_session.commit()
+
+    if action == "manual_edit":
+        resp = await db_client.post(
+            f"/novels/{novel_id}/chapters/{chapter.id}/revisions", json={"baseRevisionId": str(base.id), "body": "탭"}
+        )
+    else:
+        resp = await db_client.post(
+            f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{base.id}/restore",
+            json={"baseRevisionId": str(base.id)},
+        )
+
+    assert resp.status_code == 409 and resp.json()["detail"] == {"code": "NOVEL_REVISION_CONFLICT"}
+    assert len(await _revisions(db_session, chapter.id)) == 2
+
+
 async def test_direct_edit_and_restore_work_on_a_restricted_work_whose_room_is_gone(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

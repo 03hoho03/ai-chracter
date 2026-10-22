@@ -3067,12 +3067,13 @@ export interface paths {
         /**
          * Apply Novel Ai Edit
          * @description 끝난 AI 수정의 미리보기를 새 개정으로 쌓는다(무과금). 수정을 맡긴 뒤 장의 글이 바뀌었으면
-         *     (`ai_edit_preview_is_fresh` 가 거짓이면) 409 `NOVEL_REVISION_CONFLICT`. 글이 같은 새 개정만 쌓였으면 적용된다. 적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·버림·장이
-         *     지워짐)은 409 `NOVEL_JOB_NOT_APPLICABLE`. 적용한 개정은 작업의 결과 개정(`revisionId`)이 된다. 적용한 작업의
+         *     (`ai_edit_preview_is_fresh` 가 거짓이면) 409 `NOVEL_REVISION_CONFLICT`. 글이 같은 새 개정만 쌓였으면 적용된다.
+         *     적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·버림·장이 지워짐)은 409 `NOVEL_JOB_NOT_APPLICABLE`. 적용한 개정은 작업의 결과 개정(`revisionId`)이 된다. 적용한 작업의
          *     지시문·결과 본문은 비운다(결과는 이제 개정에 있다). 새 개정 때문에 낡은 같은 장의 다른 미리보기도 비운다.
          *
          *     결과 본문이 있는지는 기준 개정 검사 **뒤에** 본다 — 장이 바뀌어 낡은 미리보기는 본문이 비워져 있지만, 사용자에게
-         *     알릴 사유는 "장이 바뀌었다"(409 `NOVEL_REVISION_CONFLICT`)다.
+         *     알릴 사유는 "장이 바뀌었다"(409 `NOVEL_REVISION_CONFLICT`)다. 예외 하나: 글이 바뀌어 비워진 뒤 다시 같은 글로
+         *     돌아온 장이면 판정은 통과하고 본문이 없어 409 `NOVEL_JOB_NOT_APPLICABLE` 이다(비워진 행은 목록에 없어 옛 탭에서만 닿는다).
          *
          *     잠금은 작업 행 → 장 행이다(소설·마지막 장 삭제와 같은 순서). 같은 작업을 두 번 적용하려는 요청은 작업 행에서
          *     줄을 서고, 뒤 요청은 결과 개정이 채워진 것을 본다.
