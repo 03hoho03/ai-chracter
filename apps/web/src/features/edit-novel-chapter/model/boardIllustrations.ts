@@ -98,6 +98,15 @@ export function toMovedIllustrationId(revision: BoardRevision, target: Placement
     .at(-1)?.id;
 }
 
+/** 바꾸기로 고른 그림이 지금 그림과 같은가. 같으면 보내지 않는다 — 서버는 같은 배치의 새 판을 하나 더 쌓는다(판 이력에 빈
+ * 판이 는다). 출처가 다르면(같은 자산을 다른 출처로) 다른 그림으로 본다. */
+export function isSameIllustrationImage(
+  illustration: BoardIllustration,
+  picked: { assetId: string; source: IllustrationSource },
+): boolean {
+  return illustration.assetId === picked.assetId && illustration.source === picked.source;
+}
+
 /** 바꾼 뒤 새 판에서 바꾼 그림의 id — 바꾸기는 자리·순서를 그대로 두므로 같은 자리·같은 순서의 그림이다. 없으면 `undefined`. */
 export function toReplacedIllustrationId(revision: BoardRevision, replaced: BoardIllustration): string | undefined {
   return (revision.illustrations ?? []).find(

@@ -11,6 +11,7 @@ import {
   toParagraphActions,
   isUnplacedListShown,
   isIllustrationLimitReached,
+  isSameIllustrationImage,
   toAttachTarget,
   toRetryAttachRequest,
   type BoardIllustration,
@@ -353,5 +354,17 @@ describe("toRetryAttachRequest", () => {
 
   it("그 문단이 지금 판에 없으면 다시 넣을 수 없다(문단을 다시 골라야 한다)", () => {
     expect(toRetryAttachRequest(revision({ id: "r2", blocks: [{ id: "b0" }] }), failed)).toBeNull();
+  });
+});
+
+describe("isSameIllustrationImage", () => {
+  // 바꾸기 창에서 지금 그림을 그대로 고르면 보내지 않는다 — 서버가 같은 배치의 새 판을 쌓아 판 이력에 빈 판이 는다.
+  it("같은 자산·같은 출처면 같은 그림이다", () => {
+    expect(isSameIllustrationImage(illustration("a"), { assetId: "asset-a", source: "upload" })).toBe(true);
+  });
+
+  it("자산이나 출처가 다르면 다른 그림이다", () => {
+    expect(isSameIllustrationImage(illustration("a"), { assetId: "asset-b", source: "upload" })).toBe(false);
+    expect(isSameIllustrationImage(illustration("a"), { assetId: "asset-a", source: "generated" })).toBe(false);
   });
 });

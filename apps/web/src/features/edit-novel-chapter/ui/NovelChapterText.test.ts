@@ -97,6 +97,7 @@ function render({
         isIllustrationsOn,
         onFixModeRequest: () => {},
         onPickImage: () => Promise.resolve(undefined),
+        isRevisionRefreshing: false,
       }),
     ),
   );

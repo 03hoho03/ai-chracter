@@ -258,6 +258,7 @@ function ChapterBody({
         isIllustrationsOn={isIllustrationsOn}
         onFixModeRequest={onFixModeRequest}
         onPickImage={onPickImage}
+        isRevisionRefreshing={query.isPlaceholderData}
       />
     );
   }

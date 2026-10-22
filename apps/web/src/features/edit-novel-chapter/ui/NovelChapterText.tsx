@@ -30,6 +30,7 @@ import { useSaveChapterRevisionMutation } from "../api/useSaveChapterRevisionMut
 import {
   countIllustrationsInRange,
   isIllustrationLimitReached,
+  isSameIllustrationImage,
   isUnplacedListShown,
   toActiveMove,
   toAttachTarget,
@@ -90,6 +91,9 @@ type NovelChapterTextProps = {
   onFixModeRequest: () => void;
   /** 붙이기·바꾸기에서 출처 하나의 창을 열어 그림을 고르게 한다. 창들은 위쪽 층(보드 위젯)이 연다. */
   onPickImage: PickIllustrationImage;
+  /** 새 판의 본문을 받는 중이라 화면이 아직 옛 판을 보이는가(다시 받는 동안 옛 본문을 자리표시로 둔다). 그동안 삽화 요청을
+   * 막는다 — 보이는 판을 기준으로 보내면 방금 받은 충돌을 한 번 더 받는다. */
+  isRevisionRefreshing: boolean;
 };
 
 /** 붙이기·바꾸기 하나가 지금 어느 단계인가. 고른 그림을 올리는 중이면 `uploading`, 요청이 도는 중이면 `sending` 이다. 바꾸기면
@@ -142,6 +146,7 @@ export function NovelChapterText({
   isIllustrationsOn,
   onFixModeRequest,
   onPickImage,
+  isRevisionRefreshing,
 }: NovelChapterTextProps) {
   const queryClient = useQueryClient();
   const groupLabelId = useId();
@@ -197,7 +202,7 @@ export function NovelChapterText({
   const isPlacing = moveMutation.isPending || detachMutation.isPending || imageRequest !== undefined;
   // 직접 고치기 저장과 삽화 요청은 같은 판을 기준으로 가므로 한쪽이 도는 동안 다른 쪽을 막는다 — 둘이 함께 나가면 늦은 쪽이
   // 같은 화면의 요청과 충돌해 409 로 끝난다.
-  const isPlacementBlocked = isPlacing || isRegenerating || isSaving;
+  const isPlacementBlocked = isPlacing || isRegenerating || isSaving || isRevisionRefreshing;
 
   useEffect(() => {
     onDraftDirtyChange(isDraftDirty);
@@ -395,9 +400,10 @@ export function NovelChapterText({
     const target = toAttachTarget(chapter.revision, activeRange, placement);
     if (target === null) return;
     setPlacementError(undefined);
-    setFailedAttach(null);
     const asset = await pickAsset(source, undefined, undefined);
     if (asset === undefined) return;
+    // 실패한 붙이기 기록은 새 그림을 실제로 고른 뒤에 지운다 — 창을 열었다 그냥 닫으면 다시 넣기가 남는다.
+    setFailedAttach(null);
     await sendAttach({ ...asset, target });
   }
 
@@ -408,6 +414,7 @@ export function NovelChapterText({
       // 창을 보는 사이 그 문단이 지워졌다 — 보내면 422 다. 다시 고르게 한다(다시 넣기 자리에도 같은 안내가 선다).
       setImageRequest(undefined);
       setFailedAttach(failed);
+      setLiveMessage("고른 문단이 바뀌어 붙이지 않았어요. 문단을 다시 골라 주세요.");
       return;
     }
     setImageRequest({ phase: "sending", replacingId: undefined });
@@ -445,6 +452,12 @@ export function NovelChapterText({
     setMoving(null);
     const asset = await pickAsset(source, illustration.id, illustration.assetId);
     if (asset === undefined) return;
+    if (isSameIllustrationImage(illustration, asset)) {
+      // 지금 그림을 그대로 골랐다 — 보내면 서버는 같은 배치의 새 판을 하나 더 쌓는다(판 이력에 빈 판이 는다).
+      setImageRequest(undefined);
+      setLiveMessage("지금 삽화와 같아 바꾸지 않았어요.");
+      return;
+    }
     setImageRequest({ phase: "sending", replacingId: illustration.id });
     try {
       const next = await replaceMutation.mutateAsync({
@@ -486,7 +499,7 @@ export function NovelChapterText({
         isMoving={activeMove?.id === illustration.id}
         isIllustrationsOn={isIllustrationsOn}
         isRegenerating={isRegenerating}
-        isBusy={isPlacing}
+        isBusy={isPlacementBlocked}
         pendingAction={pendingActionOf(illustration.id)}
         replacePendingLabel={replacePendingLabelOf(illustration.id)}
         onMove={() => startMove(illustration)}
@@ -664,7 +677,7 @@ export function NovelChapterText({
           canRetry={toRetryAttachRequest(chapter.revision, failedAttach) !== null}
           isBlocked={isPlacementBlocked}
           isLimitReached={isIllustrationLimitReached(chapter.revision)}
-          isRetrying={imageRequest !== undefined}
+          isRetrying={imageRequest?.phase === "sending" && imageRequest.replacingId === undefined}
           onRetry={() => void retryAttach()}
         />
       )}
@@ -673,7 +686,7 @@ export function NovelChapterText({
           illustrations={spots.unplaced}
           movingId={activeMove?.id}
           isRegenerating={isRegenerating}
-          isBusy={isPlacing}
+          isBusy={isPlacementBlocked}
           detachingId={detachMutation.isPending ? detachMutation.variables.illustrationId : undefined}
           rowRef={setFigureRef}
           // 목록은 고치기 모드와 상관없이 서지만, 항목마다 할 수 있는 일은 문단 사이 그림과 같은 판정이다(내린 그림은 떼기만).

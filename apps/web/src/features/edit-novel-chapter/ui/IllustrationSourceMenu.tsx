@@ -20,8 +20,6 @@ type IllustrationSourceMenuProps = {
   pendingLabel: string | undefined;
   icon: LucideIcon;
   variant: "outline" | "ghost";
-  /** 트리거의 접근 이름 — 같은 글자의 버튼이 여럿인 자리(그림마다 바꾸기)에서 어느 것인지 가른다. */
-  accessibleName?: string;
   /** 막혔으면 메뉴가 열리지 않는다(`aria-disabled` — 누른 버튼의 포커스를 지킨다). */
   isBlocked: boolean;
   describedBy: string | undefined;
@@ -46,7 +44,6 @@ export function IllustrationSourceMenu({
   pendingLabel,
   icon: Icon,
   variant,
-  accessibleName,
   isBlocked,
   describedBy,
   hasPlacement,
@@ -62,7 +59,6 @@ export function IllustrationSourceMenu({
           type="button"
           variant={variant}
           size="sm"
-          aria-label={accessibleName}
           aria-disabled={isBlocked}
           aria-describedby={describedBy}
           className="aria-disabled:opacity-65 aria-expanded:bg-secondary"
