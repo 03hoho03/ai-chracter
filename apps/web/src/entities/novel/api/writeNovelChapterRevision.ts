@@ -12,9 +12,15 @@ import type { NovelDetailResponse } from "./useNovelQuery";
  * - 그 장의 미적용 AI 수정안은 새 판의 글이 직전 판 글과 다를 때만 뺀다. 서버는 글이 바뀐 수정안만 목록에서 빼고 적용을
  *   막으므로, 같은 글의 새 판(삽화만 바꾼 판·같은 글 판으로 되돌림)에서 빼면 상세를 다시 받을 때 되살아나 깜빡인다. 상세에
  *   실린 수정안은 늘 지금 판과 글이 같은 것뿐이라 "새 판 글 = 직전 판 글"이 서버 판정과 같은 답이다. 직전 판 본문을 캐시에
- *   갖고 있지 않으면 뺀다 — 남기면 적용이 충돌로 끝나는 낡은 수정안이 한 번 보인다.
+ *   갖고 있지 않으면 뺀다 — 남기면 적용이 충돌로 끝나는 낡은 수정안이 한 번 보인다. 수정안을 적용한 응답이면
+ *   (`appliedEditId`) 그 수정안은 글이 같아도 뺀다 — 서버가 적용한 작업을 목록에서 빼므로 남기면 다시 적용할 수 없는 카드가
+ *   보인다(고칠 곳이 없어 글이 그대로인 수정안).
  * - 그래도 상세(갱신 시각·다른 장)와 개정 목록은 낡았으니 다시 받게 표시한다. */
-export function writeNovelChapterRevision(queryClient: QueryClient, chapter: NovelChapterResponse) {
+export function writeNovelChapterRevision(
+  queryClient: QueryClient,
+  chapter: NovelChapterResponse,
+  { appliedEditId }: { appliedEditId?: string } = {},
+) {
   const { novelId, id: chapterId, revision } = chapter;
   const isSameText = isSameAsPreviousText(queryClient, chapter);
   queryClient.setQueryData(novelKeys.chapter(novelId, chapterId, revision.id), chapter);
@@ -34,9 +40,9 @@ export function writeNovelChapterRevision(queryClient: QueryClient, chapter: Nov
                 }
               : summary,
           ),
-          pendingAiEdits: isSameText
-            ? novel.pendingAiEdits
-            : novel.pendingAiEdits.filter((edit) => edit.chapterId !== chapterId),
+          pendingAiEdits: novel.pendingAiEdits.filter(
+            (edit) => edit.id !== appliedEditId && (isSameText || edit.chapterId !== chapterId),
+          ),
         },
   );
   void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novelId) });

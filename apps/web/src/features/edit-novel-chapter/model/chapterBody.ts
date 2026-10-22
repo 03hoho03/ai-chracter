@@ -3,6 +3,12 @@ import type { ParagraphRange } from "./paragraphRange";
 /** 문단 사이를 다시 이을 때 쓰는 구분. 서버도 저장할 때 문단을 빈 줄 하나로 다시 잇는다. */
 const PARAGRAPH_SEPARATOR = "\n\n";
 
+/** 서버(Python `str.strip`)가 문단 앞뒤에서 걷는 공백. JS `trim` 과 갈리는 문자가 있다 — 서버는 정보 구분 문자(U+001C~U+001F)와
+ * U+0085 도 걷고 U+FEFF 는 걷지 않는다. 같은 글을 화면과 서버가 다른 수의 문단으로 세면 직접 수정이 실은 블록 id 수가
+ * 어긋나 저장이 거부된다. */
+const SERVER_WHITESPACE = "\\t-\\r\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+const SERVER_EDGE_WHITESPACE = new RegExp(`^[${SERVER_WHITESPACE}]+|[${SERVER_WHITESPACE}]+$`, "g");
+
 /** 빈 줄(공백만 있는 줄 포함)로 나눈 문단. 서버의 문단 나누기와 같은 규칙이다(앞뒤 공백을 걷고 빈 문단은 버리고,
  * 문단 안 줄바꿈 하나는 둔다).
  *
@@ -12,7 +18,7 @@ const PARAGRAPH_SEPARATOR = "\n\n";
 export function splitChapterParagraphs(text: string): string[] {
   return text
     .split(/\n[ \t]*\n/)
-    .map((paragraph) => paragraph.trim())
+    .map((paragraph) => paragraph.replace(SERVER_EDGE_WHITESPACE, ""))
     .filter((paragraph) => paragraph.length > 0);
 }
 

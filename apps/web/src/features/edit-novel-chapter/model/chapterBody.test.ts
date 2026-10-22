@@ -23,6 +23,14 @@ describe("splitChapterParagraphs", () => {
   it("비었거나 공백뿐이면 문단이 없다", () => {
     expect(splitChapterParagraphs("  \n\n ")).toEqual([]);
   });
+
+  it("문단 앞뒤에서 서버와 같은 공백을 걷는다 — 정보 구분 문자·U+0085 만인 문단은 없고, U+FEFF 만인 문단은 남는다", () => {
+    for (const blank of ["\x1c", "\x1f", "\x85", "\u3000", "\u00a0"]) {
+      expect(splitChapterParagraphs(`가\n\n${blank}\n\n나`)).toEqual(["가", "나"]);
+    }
+    expect(splitChapterParagraphs("가\n\n\ufeff\n\n나")).toEqual(["가", "\ufeff", "나"]);
+    expect(splitChapterParagraphs("\x85가\u3000")).toEqual(["가"]);
+  });
 });
 
 describe("assembleChapterBody", () => {

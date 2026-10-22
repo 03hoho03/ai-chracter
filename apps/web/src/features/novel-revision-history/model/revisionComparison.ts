@@ -5,12 +5,13 @@ type ComparableIllustration = Pick<
   "anchorBlockId" | "placement" | "order" | "assetId" | "source"
 >;
 
-/** 두 판을 견주는 데 쓰는 칸만 — 판 응답(`NovelRevisionResponse`)이 그대로 들어간다. */
+/** 두 판을 견주는 데 쓰는 칸만 — 판 응답(`NovelRevisionResponse`)이 그대로 들어간다. 삽화 칸이 없는 응답(API 만 그 칸을
+ * 더하기 전으로 되돌린 동안)은 그림이 없는 판으로 읽는다. */
 export type ComparableRevision = {
   paragraphs: readonly string[];
   blocks: readonly { id: string }[];
-  illustrations: readonly ComparableIllustration[];
-  unplacedIllustrations: readonly ComparableIllustration[];
+  illustrations?: readonly ComparableIllustration[];
+  unplacedIllustrations?: readonly ComparableIllustration[];
 };
 
 function isSameText(a: Pick<ComparableRevision, "paragraphs">, b: Pick<ComparableRevision, "paragraphs">): boolean {
@@ -21,7 +22,7 @@ function isSameText(a: Pick<ComparableRevision, "paragraphs">, b: Pick<Comparabl
  * 블록 id·순서 값 자체는 판마다 달라도 화면이 같으면 지문이 같다(되돌린 판은 블록 id 가 다르다). */
 function toIllustrationFingerprint(revision: ComparableRevision): string {
   const indexById = new Map(revision.blocks.map((block, index) => [block.id, index]));
-  const placed = revision.illustrations
+  const placed = (revision.illustrations ?? [])
     .map((illustration) => {
       const index = illustration.anchorBlockId === null ? undefined : indexById.get(illustration.anchorBlockId);
       return { spot: `${index ?? "?"}-${illustration.placement ?? "?"}`, illustration };
@@ -31,7 +32,7 @@ function toIllustrationFingerprint(revision: ComparableRevision): string {
       return a.illustration.order - b.illustration.order;
     })
     .map(({ spot, illustration }) => `${spot}:${illustration.assetId}:${illustration.source}`);
-  const unplaced = revision.unplacedIllustrations
+  const unplaced = (revision.unplacedIllustrations ?? [])
     .map((illustration) => `${illustration.assetId}:${illustration.source}`)
     .sort();
   return JSON.stringify([placed, unplaced]);

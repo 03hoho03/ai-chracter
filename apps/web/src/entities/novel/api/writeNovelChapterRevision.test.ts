@@ -58,6 +58,21 @@ describe("writeNovelChapterRevision", () => {
     expect(pendingIds(queryClient)).toEqual(["edit-here", "edit-other"]);
   });
 
+  it("글이 그대로인 수정안을 적용한 응답이면 적용한 수정안만 뺀다", () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(novelKeys.detail(NOVEL_ID), {
+      id: NOVEL_ID,
+      chapters: [{ id: CHAPTER_ID, currentRevisionId: "r1" }],
+      pendingAiEdits: [
+        { id: "edit-applied", chapterId: CHAPTER_ID },
+        { id: "edit-here", chapterId: CHAPTER_ID },
+      ],
+    });
+    queryClient.setQueryData(novelKeys.chapter(NOVEL_ID, CHAPTER_ID, "r1"), chapterAt("r1", ["하나", "둘"], "generate"));
+    writeNovelChapterRevision(queryClient, chapterAt("r2", ["하나", "둘"], "ai_edit"), { appliedEditId: "edit-applied" });
+    expect(pendingIds(queryClient)).toEqual(["edit-here"]);
+  });
+
   it("글이 바뀐 새 판이면 그 화의 수정안만 뺀다", () => {
     const queryClient = seed(["하나", "둘"]);
     writeNovelChapterRevision(queryClient, chapterAt("r2", ["하나", "둘 고침"], "manual_edit"));

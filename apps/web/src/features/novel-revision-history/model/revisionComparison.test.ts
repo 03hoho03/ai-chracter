@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { isIllustrationOnlyChange, shouldWarnPendingAiEditsLost, type ComparableRevision } from "./revisionComparison";
 
-type Illustration = ComparableRevision["illustrations"][number];
+type Illustration = NonNullable<ComparableRevision["illustrations"]>[number];
 
 function picture(overrides: Partial<Illustration> = {}): Illustration {
   return {
@@ -78,6 +78,12 @@ describe("isIllustrationOnlyChange", () => {
 
   it("글이 바뀌었으면 글 비교가 맡는다", () => {
     expect(isIllustrationOnlyChange(revision(text), revision(["하나", "둘 고침"], [picture()]))).toBe(false);
+  });
+
+  it("삽화 칸이 없는 응답은 그림 없는 판으로 읽는다", () => {
+    const bare = { paragraphs: text, blocks: [{ id: "a0" }, { id: "a1" }] };
+    expect(isIllustrationOnlyChange(bare, bare)).toBe(false);
+    expect(isIllustrationOnlyChange(bare, revision(text, [picture()]))).toBe(true);
   });
 
   it("그림이 없는 두 판(삽화 스위치가 꺼진 응답)은 지금과 같다 — 글 비교가 맡는다", () => {
