@@ -9,6 +9,7 @@ import { PublishDialog, WithdrawDialog } from "../pages/legal";
 import {
   HomeNovelCurationConfirmModal,
   NovelCommentActionConfirmModal,
+  NovelIllustrationTakedownConfirmModal,
   NovelModerationConfirmModal,
   NovelReviewConfirmModal,
   NovelSalesConfirmModal,
@@ -49,6 +50,7 @@ function RootComponent() {
       <NovelReviewConfirmModal />
       <NovelSalesConfirmModal />
       <NovelCommentActionConfirmModal />
+      <NovelIllustrationTakedownConfirmModal />
       <HomeNovelCurationConfirmModal />
       <NovelCommentDeleteConfirmModal />
       <UserActionConfirmModal />

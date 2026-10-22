@@ -3,6 +3,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -25,6 +26,8 @@ import {
   novelReportActionSchema,
   type NovelReportActionValues,
 } from "../model/schema";
+
+const LINK_CLASS = "admin-hit-area font-medium text-primary hover:underline focus-visible:underline";
 
 const SUCCESS_MESSAGE: Record<NovelReportActionValues["action"], string> = {
   stop_sales: "노벨 판매를 멈추고 신고를 처리했어요.",
@@ -100,6 +103,18 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
   // 제목·표면은 상세 레이아웃의 조치 열·시트가 진다.
   return (
     <div className="flex min-w-0 flex-col gap-4">
+      {/* 신고가 그림 하나 때문이면 노벨 전체를 닫지 않고 그 그림만 내리는 가벼운 길이 있다 — 이 화면에 그 길이 안 보이면
+          운영자가 환급이 따르는 이용제한으로만 처리하게 된다. */}
+      {report.novelId !== null && (
+        <p className="break-keep text-sm text-muted-foreground">
+          그림 하나만 내릴 수도 있어요. 문제가 삽화 하나뿐이면{" "}
+          <Link to="/novels/$novelId" params={{ novelId: report.novelId }} className={LINK_CLASS}>
+            노벨 상세
+          </Link>
+          의 공개본 화를 펼쳐 그 그림만 내리세요(환급 없음). 그림 내림은 이 신고와 이어지지 않아, 내린 뒤 이 신고는 반려로
+          닫고 조치 사유에 그림을 내렸다고 적어 주세요.
+        </p>
+      )}
       {report.novelModerationStatus === "restricted" && (
         <p className="break-keep text-sm text-muted-foreground">
           이 노벨은 이미 이용제한 중이에요. 이용제한을 고르면 신고만 처리완료가 돼요. 해제는 노벨 상세에서 해요.

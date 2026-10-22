@@ -4,3 +4,4 @@ export { NovelCommentActionConfirmModal } from "./ui/NovelCommentActionConfirmMo
 export { HomeNovelCurationConfirmModal } from "./ui/HomeNovelCurationConfirmModal";
 export { NovelReviewConfirmModal } from "./ui/NovelReviewConfirmModal";
 export { NovelSalesConfirmModal } from "./ui/NovelSalesConfirmModal";
+export { NovelIllustrationTakedownConfirmModal } from "./ui/NovelIllustrationTakedownConfirmModal";

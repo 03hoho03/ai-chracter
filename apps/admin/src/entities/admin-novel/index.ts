@@ -1,7 +1,11 @@
 export { adminNovelKeys, type AdminNovelListParams, type NovelModerationStatus } from "./api/keys";
 export { useNovelListQuery, type AdminNovelListResponse } from "./api/useNovelListQuery";
 export { useNovelDetailQuery, type AdminNovelDetailResponse } from "./api/useNovelDetailQuery";
-export { useNovelChapterQuery, type AdminNovelChapterResponse } from "./api/useNovelChapterQuery";
+export {
+  useNovelChapterQuery,
+  type AdminNovelChapterResponse,
+  type AdminNovelIllustration,
+} from "./api/useNovelChapterQuery";
 export {
   useNovelCommentsQuery,
   type AdminNovelComment,
@@ -45,3 +49,4 @@ export {
   type DerivativeNovelsChoice,
 } from "./model/salesStop";
 export { useNovelSalesMutation, type NovelSalesAction } from "./api/useNovelSalesMutation";
+export { useNovelIllustrationTakedownMutation } from "./api/useNovelIllustrationTakedownMutation";
