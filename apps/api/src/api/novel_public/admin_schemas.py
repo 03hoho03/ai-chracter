@@ -157,8 +157,12 @@ class AdminNovelIllustrationTakedownRequest(CamelModel):
 
 
 class AdminNovelIllustrationTakedownResponse(CamelModel):
+    """`already_taken_down` 이 참이면 같은 파일이 다른 자산으로 이미 내려가 있어 새로 내리지 않았다(이 자산도 이미 내린 그림으로
+    보인다). 그때 `taken_down_at` 은 처음 내린 시각이다."""
+
     asset_id: uuid.UUID
     taken_down_at: datetime
+    already_taken_down: bool
 
 
 class AdminNovelModerationRequest(CamelModel):

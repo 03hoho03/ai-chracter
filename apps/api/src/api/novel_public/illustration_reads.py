@@ -8,25 +8,25 @@
 싣는다. 위치 확인 필요인 그림은 싣지 않는다.
 
 **자리만 남기는 그림**(주소 없이 사유만):
-- 운영자가 내린 그림(`taken_down`) — 내림 표의 자산 id 로 본다. 사유는 운영자가 적은 독자용 문장이다. 모든 판에 걸린다.
+- 운영자가 내린 그림(`taken_down`) — 자산 행에 적힌 바이트 sha 로 내림 표를 잇는다(`takedown_reasons`). 같은 파일을 담은 다른
+  자산도 걸린다. 사유는 운영자가 적은 독자용 문장이다. 모든 판에 걸린다.
 - 운영자가 원작 작품을 이용제한·삭제한 동안의 원작 그림(`original_restricted`) — 원작 행이 정상 상태가 아니면 그 원작에서 온
   그림만 비운다. 원작자 계정 정지로 걸린 일괄 제한은 빼고 본다 — 원작자 탈퇴와 같이 그림을 그대로 보인다(소장자 열람 조건이
   정지 제한을 정상과 같이 보는 것과 같은 판단). 글과 다른 그림은 그대로다. 원작자의 탈퇴·비공개도 그림을 빼지 않는다(연재권이
   고정된 소설의 이용은 이어진다).
 환급은 없다 — 그림 자리만 비우고 판은 그대로다.
 
-**작가 화면**: 작가 자신의 화·개정 응답도 같은 두 까닭으로 자리만 남긴다(`owner_withholdings`). 그 개정의 그림 전부에 걸고, 내림은
-다시 공개와 같이 바이트로 본다."""
+**작가 화면**: 작가 자신의 화·개정 응답도 같은 두 까닭으로 자리만 남긴다(`owner_withholdings`). 그 개정의 그림 전부에 건다."""
 
 import asyncio
 import logging
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
 from botocore.exceptions import BotoCoreError, ClientError
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -59,6 +59,31 @@ async def _original_restricted(db: AsyncSession, content_id: uuid.UUID) -> bool:
     ).one_or_none()
     # 원작 행이 없으면 운영 제한과 같이 본다(풀어 줄 근거가 없다). 원작자 정지로 걸린 일괄 제한은 빼고 본다.
     return source is None or (source[0] != ModerationStatus.NORMAL and not source[1])
+
+
+async def takedown_reasons(db: AsyncSession, asset_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """내린 그림인 자산 → 운영자 사유. 내림 표를 자산 행에 적힌 바이트 sha 로 잇는다 — 같은 파일을 담은 다른 자산도 내린
+    그림이다. 그 자산 자신이 내린 자산이면 자산 id 로도 잇는다(바이트 sha 가 아직 적히지 않은 자산 — 이 칸이 생기기 전에 내린
+    자산이나 그 칸을 모르는 코드가 내린 자산). 둘 다 걸리면 자산 id 로 내린 기록의 사유가 먼저다."""
+    wanted = set(asset_ids)
+    if not wanted:
+        return {}
+    rows = await db.execute(
+        select(Asset.id, NovelIllustrationTakedown.reason)
+        .join(
+            NovelIllustrationTakedown,
+            or_(
+                NovelIllustrationTakedown.asset_id == Asset.id,
+                NovelIllustrationTakedown.content_sha256 == Asset.display_sha256,
+            ),
+        )
+        .where(Asset.id.in_(wanted))
+        .order_by(NovelIllustrationTakedown.asset_id != Asset.id)
+    )
+    found: dict[uuid.UUID, str] = {}
+    for asset_id, reason in rows.tuples():
+        found.setdefault(asset_id, reason)
+    return found
 
 
 @dataclass(frozen=True)
@@ -100,17 +125,7 @@ async def frozen_illustrations(
         return []
     asset_ids = {row.asset_id for row in rows}
     assets = {asset.id: asset for asset in (await db.scalars(select(Asset).where(Asset.id.in_(asset_ids)))).all()}
-    takedowns = dict(
-        (
-            await db.execute(
-                select(NovelIllustrationTakedown.asset_id, NovelIllustrationTakedown.reason).where(
-                    NovelIllustrationTakedown.asset_id.in_(asset_ids)
-                )
-            )
-        )
-        .tuples()
-        .all()
-    )
+    takedowns = await takedown_reasons(db, asset_ids)
     original_restricted = await _original_restricted(db, content_id)
     position = {block_id: index for index, block_id in enumerate(revision.block_ids)}
     rank: dict[tuple[int, str], int] = {}
@@ -179,8 +194,7 @@ async def owner_withholdings(
     빈 자리를 알고, 다시 공개 전에 바꾸거나 뗄 그림을 안다. 판·심사와 무관하게 그 개정의 모든 배치(위치 확인 필요 포함)에 건다.
 
     내림은 다시 공개가 거부하는 기준과 같게 그림의 바이트(정지 변형의 sha)로 본다 — 같은 파일을 새 자산으로 다시 올린 그림도
-    내림으로 보인다. 그래서 독자 읽기(자산 id 로 본다)와 달리, 내림 이전에 얼린 판에 같은 바이트의 다른 자산이 있으면 독자에게는
-    보이고 작가에게는 비어 보인다(그 화는 다시 공개할 수 없으므로 작가 화면 쪽이 맞다). `assets` 는 `rows` 의 자산이다."""
+    내림으로 보인다. `assets` 는 `rows` 의 자산이다."""
     takedowns = await _owner_takedowns(db, assets)
     restricted = any(row.source == "original" for row in rows) and await _original_restricted(db, content_id)
     withheld: dict[uuid.UUID, Withholding] = {}
@@ -193,30 +207,23 @@ async def owner_withholdings(
 
 
 async def _owner_takedowns(db: AsyncSession, assets: Mapping[uuid.UUID, Asset]) -> dict[uuid.UUID, str]:
-    """내린 그림인 자산 → 운영자 사유. 내림이 하나도 없으면 내려받지 않는다 — 작가 응답은 편집할 때마다 나가므로 저장소 왕복을
-    내림이 생긴 뒤로 미룬다. 내려받기가 실패하면 응답을 실패시키지 않고(편집 결과를 돌려주는 자리다) 내린 그 자산만 자산 id 로
-    본다."""
+    """내린 그림인 자산 → 운영자 사유. 독자와 같이 자산 행의 바이트 sha 로 잇고(`takedown_reasons`), 바이트 sha 가 아직 적히지
+    않은 자산(공개 심사를 거친 적 없는 그림 — 작가가 다시 올린 파일이 여기 든다)만 내려받아 대조한다. 다시 공개가 바이트로
+    막으므로 작가 화면도 바이트로 봐야 하는데, 그런 자산은 행에 값이 없다. 내림이 하나도 없으면 아무것도 보지 않는다. 내려받기가
+    실패하면 응답을 실패시키지 않고(편집 결과를 돌려주는 자리다) 이어진 것만 돌려준다. 읽기라 내려받은 sha 를 행에 적지는 않는다."""
     if not assets or await db.scalar(select(NovelIllustrationTakedown.content_sha256).limit(1)) is None:
         return {}
-    found = dict(
-        (
-            await db.execute(
-                select(NovelIllustrationTakedown.asset_id, NovelIllustrationTakedown.reason).where(
-                    NovelIllustrationTakedown.asset_id.in_(assets)
-                )
-            )
-        )
-        .tuples()
-        .all()
-    )
-    ids = list(assets)
+    found = await takedown_reasons(db, assets)
+    unknown = [asset_id for asset_id, asset in assets.items() if asset.display_sha256 is None and asset_id not in found]
+    if not unknown:
+        return found
     try:
-        data = await asyncio.gather(*(run_in_threadpool(download_display, assets[i].storage_key) for i in ids))
+        data = await asyncio.gather(*(run_in_threadpool(download_display, assets[i].storage_key) for i in unknown))
     except (BotoCoreError, ClientError) as exc:
         logger.warning("novel_owner_illustration_download_failed: %s", type(exc).__name__)
         capture_dependency_failure(exc, dependency="s3")
         return found
-    shas = {asset_id: sha256_of(item) for asset_id, item in zip(ids, data, strict=True)}
+    shas = {asset_id: sha256_of(item) for asset_id, item in zip(unknown, data, strict=True)}
     by_sha = dict(
         (
             await db.execute(
@@ -228,4 +235,4 @@ async def _owner_takedowns(db: AsyncSession, assets: Mapping[uuid.UUID, Asset]) 
         .tuples()
         .all()
     )
-    return {**{asset_id: by_sha[sha] for asset_id, sha in shas.items() if sha in by_sha}, **found}
+    return {**found, **{asset_id: by_sha[sha] for asset_id, sha in shas.items() if sha in by_sha}}

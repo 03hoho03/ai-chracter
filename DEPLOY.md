@@ -1687,6 +1687,20 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
           (SELECT count(*) FROM novel_screenings WHERE 'illustration' = ANY(flagged_parts));"
 ```
 
+**자산 그림 바이트 sha 칸(`c4e1a7d93b20`) — 배포 · 되돌리기.** `assets.display_sha256`(TEXT NULL)을 더한다. 소설 삽화의 공개
+심사와 운영자 그림 내림이 그림을 내려받을 때 채우고, 노벨·어드민·작가 화 읽기가 이 값으로 내림 기록을 이어 같은 파일을 담은 다른
+자산도 내린 그림으로 비운다. 채워 넣을 과거 값은 없다. 평상시 겹침 교체로 배포한다(`skip_overlap` 불필요): 겹침 동안 도는 옛
+이미지(`1bded8ff`)는 이 칸을 매핑하지 않아 SELECT·INSERT 에 싣지 않고(새 자산 행은 NULL), 그 구간의 옛 공개 심사·내림이 칸을 채우지
+않을 뿐이다 — 내린 그 자산은 옛·새 읽기 모두 자산 id 로 비운다. 스위치가 꺼진 동안에는 공개 심사가 그림을 내려받지 않아 칸이 채워지지
+않는다(내림만 채운다).
+
+- **병합 전**: 운영 최신 백업 성공을 본다.
+- **되돌리기**: 이미지만 `1bded8ff` 로 되돌려도 된다(downgrade 없이 — 옛 코드는 이 칸을 모른 채 돈다). 그동안 읽기는 내림 기록의
+  자산 id 로만 보므로, 같은 파일의 다른 자산(내림 응답 `alreadyTakenDown` 참으로 처리한 것)은 독자에게 다시 보인다 — 그런 내림이
+  있었으면 그 자산을 담은 노벨을 이용제한으로 닫는다. 스키마까지 내리려면(`alembic downgrade b871b88d2a90`) 칸을 지울 뿐이고 막는
+  행이 없다. [downgrade → revert 병합] 한 짝으로 하고 겹침 중 `main` 병합을 멈춘다(새 이미지가 칸 없는 스키마에서 돌면 자산 조회가
+  깨진다).
+
 ### 3-12. 상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기
 
 채팅 턴 생성(측정용 리플레이 포함)과 소설 장 생성은 Gemini 대신 Claude 로 돌 수 있다. 판정·요약은 고른

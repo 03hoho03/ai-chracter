@@ -281,6 +281,21 @@ async def test_publishing_a_chapter_screens_its_pictures_once_and_marks_the_froz
     assert edition.illustrations_screened_at == frozen.illustrations_screened_at
     passes = (await db_session.scalars(sa.select(NovelIllustrationScreenPass.content_sha256))).all()
     assert set(passes) >= {hashlib.sha256(_display_key(one).encode()).hexdigest()}
+    recorded = {
+        asset.id: asset.display_sha256
+        for asset in (
+            await db_session.scalars(
+                sa.select(Asset)
+                .where(Asset.id.in_([one.id, two.id, unplaced.id]))
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+    }
+    assert recorded == {
+        one.id: hashlib.sha256(_display_key(one).encode()).hexdigest(),
+        two.id: hashlib.sha256(_display_key(two).encode()).hexdigest(),
+        unplaced.id: None,
+    }
 
 
 async def test_a_rejected_picture_freezes_nothing_and_records_an_illustration_rejection(
@@ -461,6 +476,8 @@ async def test_a_rejection_for_taken_down_bytes_names_the_pictures_that_carry_th
         "takenDownAssetIds": [str(reupload.id)],
     }
     assert await _screenings(db_session, setup.novel_id) == [("rejected", ["illustration"])]
+    # 거부돼도 내려받은 바이트의 sha 는 자산 행에 남는다 — 이미 얼린 다른 판의 그 자산도 읽기에서 내린 그림이 된다.
+    assert (await db_session.get_one(Asset, reupload.id, populate_existing=True)).display_sha256 == sha
 
 
 async def test_a_chapter_with_more_than_ten_placed_pictures_is_not_published(
@@ -984,6 +1001,51 @@ async def test_an_operator_takes_a_picture_down_from_every_edition_and_its_bytes
     assert logged == 1
 
 
+async def test_taking_down_a_file_withholds_every_asset_that_carries_it_and_the_second_asset_is_already_down(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, same_bytes: dict[str, bytes]
+) -> None:
+    """같은 파일을 두 자산(A·B)으로 올려 두 노벨에 공개한 뒤 A 를 내리면, B 를 담은 노벨의 독자·어드민 화면에서도 B 자리가 A 의
+    사유로 빈다(공개 심사가 B 의 바이트 sha 를 자산 행에 적어 둔다). B 를 내리면 이미 내려간 파일이라 새 행 없이 성공하고 감사
+    로그에 B 조치가 한 줄 남는다. 깨지는 시나리오: A 를 내려도 B 는 독자에게 계속 보이고, B 를 내리려 하면 409 로 막혀 노벨 전체
+    이용제한밖에 길이 없다."""
+    first = await _public(db_session)
+    second = await _public(db_session)
+    a = await _asset(db_session, first.publisher_id)
+    b = await _asset(db_session, second.publisher_id)
+    same_bytes[_display_key(a)] = b"same-file"
+    same_bytes[_display_key(b)] = b"same-file"
+    await _freeze_pictures(db_session, first, 1, [(0, "after", a, "generated")])
+    await _freeze_pictures(db_session, second, 1, [(1, "before", b, "generated")])
+    sha = hashlib.sha256(b"same-file").hexdigest()
+    # 공개 심사가 내려받으며 적어 둔 값(공개 경로가 적는 것은 공개 심사 시험이 본다).
+    await db_session.execute(sa.update(Asset).where(Asset.id == b.id).values(display_sha256=sha))
+    await db_session.commit()
+    await _login_as_admin(db_client, await _create_admin(db_session))
+
+    down_a = await db_client.post(f"/admin/novel-illustrations/{a.id}/takedown", json={"reason": "운영정책 위반 그림"})
+    admin_view = (await db_client.get(f"/admin/novels/{second.novel_id}/chapters/{second.chapter_ids[0]}")).json()
+    down_b = await db_client.post(f"/admin/novel-illustrations/{b.id}/takedown", json={"reason": "같은 그림 신고"})
+    reader_view = await _read(db_client, _path(second, 1), await _reader(db_session))
+
+    assert down_a.status_code == 200, down_a.text
+    assert down_b.status_code == 200, down_b.text
+    assert down_b.json()["alreadyTakenDown"] is True and down_a.json()["alreadyTakenDown"] is False
+    assert down_b.json()["takenDownAt"] == down_a.json()["takenDownAt"]
+    for view in (admin_view, reader_view):
+        (item,) = view["illustrations"]
+        assert (item["url"], item["withheld"], item["withheldReason"]) == (None, "taken_down", "운영정책 위반 그림")
+    rows = (await db_session.execute(sa.select(NovelIllustrationTakedown.asset_id))).scalars().all()
+    assert rows == [a.id]
+    logged = (
+        await db_session.execute(
+            sa.select(AdminActionLog.target_user_id, AdminActionLog.reason_text)
+            .where(AdminActionLog.action_type == "novel-illustration-takedown")
+        )
+    ).tuples().all()
+    assert sorted(logged) == sorted([(first.publisher_id, "운영정책 위반 그림"), (second.publisher_id, "같은 그림 신고")])
+    assert (await db_session.get_one(Asset, a.id, populate_existing=True)).display_sha256 == sha
+
+
 # ── 작가 읽기 ────────────────────────────────────────────────────────────────
 async def _owner_chapter(client: httpx.AsyncClient, novel_id: uuid.UUID, chapter: NovelChapter) -> dict[str, Any]:
     resp = await client.get(f"/novels/{novel_id}/chapters/{chapter.id}")
@@ -1090,9 +1152,42 @@ async def test_the_author_read_downloads_no_picture_while_nothing_is_taken_down(
     db_session.add(NovelIllustrationTakedown(content_sha256="0" * 64, asset_id=uuid.uuid4(), reason="다른 그림"))
     await db_session.commit()
     after_a_takedown = _owner_shown(await _owner_chapter(db_client, setup.novel_id, chapter))
+    sha = hashlib.sha256(_display_key(picture).encode()).hexdigest()
+    await db_session.execute(sa.update(Asset).where(Asset.id == picture.id).values(display_sha256=sha))
+    await db_session.commit()
+    recorded = _owner_shown(await _owner_chapter(db_client, setup.novel_id, chapter))
 
-    assert clean == after_a_takedown == [(str(picture.id), True, None, None)]
+    assert clean == after_a_takedown == recorded == [(str(picture.id), True, None, None)]
+    # 바이트 sha 가 적힌 뒤에는 행의 값으로 대조하고 내려받지 않는다.
     assert fetched == [_display_key(picture)]
+
+
+async def test_the_author_sees_an_asset_whose_file_was_taken_down_as_another_asset_without_downloading(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공개 심사를 거쳐 바이트 sha 가 자산 행에 적힌 그림(B)은, 같은 파일이 다른 자산(A)으로 내려가 있으면 작가 화면에서도 A 의
+    사유로 빈다 — 자산 행의 값으로 잇고 내려받지 않는다. 깨지는 시나리오: 작가 화면이 B 를 그대로 보여 주거나, 응답마다 그림을
+    내려받는다."""
+    setup = await _novel(db_client, db_session, monkeypatch)
+    chapter = setup.chapters[0]
+    b = await _asset(db_session, setup.room.user_id)
+    sha = hashlib.sha256(b"same-file").hexdigest()
+    await db_session.execute(sa.update(Asset).where(Asset.id == b.id).values(display_sha256=sha))
+    db_session.add(NovelIllustrationTakedown(content_sha256=sha, asset_id=uuid.uuid4(), reason="운영정책 위반 그림"))
+    await db_session.commit()
+    await _stack(db_session, chapter, [(0, "after", b, "generated")])
+    fetched: list[str] = []
+
+    def download(key: str) -> bytes:
+        fetched.append(key)
+        return key.encode()
+
+    monkeypatch.setattr(illustration_screening, "download_object", download)
+
+    shown = _owner_shown(await _owner_chapter(db_client, setup.novel_id, chapter))
+
+    assert shown == [(str(b.id), False, "taken_down", "운영정책 위반 그림")]
+    assert fetched == []
 
 
 async def test_a_storage_failure_on_the_author_read_still_withholds_the_taken_down_asset_itself(

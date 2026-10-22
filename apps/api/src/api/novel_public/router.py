@@ -90,6 +90,7 @@ from api.novel_public.illustration_screening import (
     download_pictures,
     picture_label,
     prompt_version,
+    record_display_shas,
     remember_passes,
     remembered_shas,
     screen_novel_illustrations,
@@ -860,6 +861,8 @@ async def publish_novel(
     novel = await _lock_and_replan(db, novel_id, user_id, body, plan)
     # 심사를 기다리는 사이 운영자가 그 바이트를 내렸을 수 있다 — 잠근 뒤 다시 본다.
     taken_down |= await taken_down_shas(db, shas)
+    # 읽기가 같은 파일을 담은 다른 자산의 내림을 보도록 내려받은 바이트의 sha 를 자산 행에 적는다(거부·통과 모두 커밋한다).
+    await record_display_shas(db, ((picture.asset_id, sha) for picture, sha in zip(pictures, shas, strict=True)))
     text_rejected = verdict is not None and not verdict.passed
     pictures_rejected = bool(taken_down) or (picture_verdict is not None and not picture_verdict.passed)
     if text_rejected or pictures_rejected:

@@ -74,6 +74,10 @@ class Asset(Base):
     # 정지 변형만 만들고 응답하며, 움직이는 변형은 그 뒤에 백그라운드로 만든다 — 끝나기 전에는 카드·상세가 정지 변형을
     # 받는다. 정지 그림은 늘 false 다.
     animated_variants_ready: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+    # 크게 그리는 정지 변형(`_display.webp`) 바이트의 sha256. 소설 삽화의 공개 심사와 운영자 내림이 그 바이트를 내려받을 때
+    # 채운다(내려받을 때마다 다시 쓴다) — 화 읽기가 이 값을 내림 표와 이어 같은 파일을 담은 다른 자산도 내린 그림으로 본다.
+    # NULL 은 아직 그 둘을 거치지 않은 자산이다.
+    display_sha256: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ImageGenerationRequest(Base):
