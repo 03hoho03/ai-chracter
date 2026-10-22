@@ -542,8 +542,10 @@ STAGE_PASS_REQUIRES = "사용자가 요약 표기·지식 범위 필터 단계�
 
 
 def _lane_status(table: Mapping[str, Any]) -> str:
-    """한 레인 표의 S1·S2 로 본 그 레인의 안전 — 둘 다 통과면 pass, 하나라도 위반이면 fail, 그 밖은 판정 불능."""
-    statuses = [str(table.get(gate, {}).get("status")) for gate in ("S1", "S2")]
+    """한 레인 표의 S1~S4 로 본 그 레인의 안전 — 넷 다 통과면 pass, 하나라도 위반이면 fail, 그 밖은 판정 불능. 앞 두 캐시
+    블록(S3)·길이(S4)도 넣는다 — 측정 계획이 이 둘을 누출·오인 사실화와 같은 하드 안전으로 두었고, 권고 문장이 둘을 적지
+    않았다고 빼면 캐시가 깨지거나 프롬프트가 불어나는 스위치를 권고하게 된다."""
+    statuses = [str(table.get(gate, {}).get("status")) for gate in ("S1", "S2", "S3", "S4")]
     if OUT_OF_SCOPE in (table.get("status"), *statuses):
         return OUT_OF_SCOPE
     if "fail" in statuses:
@@ -577,11 +579,23 @@ def _step(
 
 
 def recommendations(
-    safety: Mapping[str, Any], effects: Mapping[str, Any], non_inferiority: Mapping[str, Any]
+    safety: Mapping[str, Any],
+    effects: Mapping[str, Any],
+    non_inferiority: Mapping[str, Any],
+    *,
+    controls: Mapping[str, Any],
 ) -> dict[str, Any]:
     """단계별 켜기 권고와 다음 단계 진행 조건 칸(`stage3Pass`). 단계의 안전 조건(S1·S2)은 레인마다 본다 — 한 레인만 위반이면 그 단계부터 그 레인을 기억
     기능의 모델 범위에서 빼는 안(`dropLanes`, 누적)으로 권고하고, 남은 레인이 없으면 권고하지 않는다. 앞 단계가 권고되지 않으면
-    뒤 단계는 `blocked` 다. 판정이 아니라 권고다 — 켜기는 사용자 결정이다."""
+    뒤 단계는 `blocked` 다. 판정이 아니라 권고다 — 켜기는 사용자 결정이다.
+
+    판정자 대조군이 통과(또는 사용자가 받아들인 미달)가 아니면 모든 단계와 진행 조건 칸이 판정 불능이다 — 판정자를 믿을 수 없으면
+    S1·S2·효과·비열등 값이 모두 그 판정자에게서 나왔으므로 어느 단계도 권고할 근거가 없다."""
+    if controls.get("status") != "pass":
+        reason = "판정자 대조군을 넘지 못했다"
+        steps_halted = {name: {"status": "halt", "reason": reason, "dropLanes": []} for name, *_rest in STEPS}
+        return {"steps": steps_halted, "stage3Pass": {"status": "halt", "reason": reason,
+                                                      "pairs": list(STAGE_PASS_PAIRS), "alsoRequires": STAGE_PASS_REQUIRES}}  # fmt: skip
     extras = {"nonInferiority": non_inferiority, **{k: effects[k] for k in ("E1", "E2")}}
     lanes: list[Lane] = ["story", "character"]
     dropped: list[Lane] = []
@@ -615,6 +629,10 @@ def recommendations(
     return {"steps": steps, "stage3Pass": stage}
 
 
+def _with_signal(gate: dict[str, Any]) -> dict[str, Any]:
+    return gate | {"violationSignal": not gate["missing"] and gate["n"] > 0 and gate["p"] < SAFETY_ALPHA}
+
+
 def _pair_tables(
     pairs: Sequence[tuple[str, str, tuple[Lane, ...]]],
     lanes: Mapping[Lane, Sequence[Sequence[dict[str, Any]]]],
@@ -642,6 +660,13 @@ def _pair_tables(
             groups = lanes[lane]
             secret = secret_gate(groups, score_rows, judge_rows, (a, b), min_n=SECRET_MIN_N[lane])
             premise = premise_gate(groups, score_rows, judge_rows, (a, b), min_n=PREMISE_MIN_N[lane])
+            if scope is not None:
+                # 개발 미리보기는 개발 절반이 하한보다 작아도 돈다 — 하한 미달 멈춤이 위반을 가리지 않게, 셀 수 있었던 문항의
+                # 검정이 위반 문턱 밑이면 신호를 함께 낸다(판정 상태는 바꾸지 않는다).
+                secret = _with_signal(secret)
+                premise = _with_signal(premise) | {
+                    "byPolicy": {k: _with_signal(v) for k, v in premise["byPolicy"].items()}
+                }
             table: dict[str, Any] = {
                 "S1": _void(secret, (a, b), invalid[lane]),
                 "S2": _void(premise, (a, b), invalid[lane]),
@@ -727,7 +752,7 @@ def v4_verdict(
         controls = {"accuracy": control_accuracy(control_rows), "binaryAccuracy": control_binary_accuracy(control_rows),
                     "n": len(control_rows), "status": "pass" if ok or accepted else "fail", "pass": ok or accepted,
                     **({"override": dict(controls_override)} if accepted and controls_override else {})}  # fmt: skip
-    advice = recommendations(safety, effects, non_inferiority)
+    advice = recommendations(safety, effects, non_inferiority, controls=controls)
     parts = [t for pair in safety.values() for t in pair.values() if t["status"] != OUT_OF_SCOPE]
     held = [k for k in EFFECTS if effects[k]["status"] == UNDERPOWERED]
     skipped = sorted(
