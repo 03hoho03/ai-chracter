@@ -799,11 +799,14 @@ def _fake_probe_world(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, say_codes
     from memory_eval import probe as probe_mod
     from memory_eval import server as server_mod
 
-    calls: dict[str, Any] = {"restore": 0, "start": [], "stop": 0, "sleep": [], "topup": 0, "driver": [], "consent": []}
+    calls: dict[str, Any] = {
+        "restore": 0, "restoreBSeries": [], "start": [], "stop": 0, "sleep": [], "topup": 0, "driver": [], "consent": []
+    }  # fmt: skip
     codes = iter(say_codes)
 
-    async def restore(*_: Any, **__: Any) -> dict[str, Any]:
+    async def restore(*_: Any, **kwargs: Any) -> dict[str, Any]:
         calls["restore"] += 1
+        calls["restoreBSeries"].append(kwargs["b_series"])
         return {"fingerprint": {"turnCount": 100}}
 
     def start(overrides: dict[str, str], **kwargs: Any) -> Any:
@@ -875,6 +878,30 @@ def _fake_probe_world(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, say_codes
         pacer=BurstPacer(limit=9, window_seconds=60.0),
     )
     return calls
+
+
+@pytest.mark.parametrize(
+    ("arm", "b_series"),
+    [
+        pytest.param("b1-B1", True, id="b-series-arm"),
+        pytest.param("b1-A1", False, id="a-series-arm"),
+        pytest.param("b1-A0M", True, id="marking-without-recall"),
+        pytest.param("B", False, id="outside-bundle-1"),
+    ],
+)
+def test_probe_tells_restore_the_template_series_of_its_arm(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, arm: str, b_series: bool
+) -> None:
+    # 요약 표기를 켠 묶음 1 갈래만 B 계열 템플릿에서 돈다. 묶음 1 밖 갈래(2차 런 갈래 등)는 A 계열이다.
+    import dataclasses
+
+    from memory_eval.plants import Probe
+    from memory_eval.probe import run_probe
+
+    calls = _fake_probe_world(monkeypatch, tmp_path, say_codes=[0])
+    run = dataclasses.replace(calls["run"], arm=arm)
+    run_probe(run, Probe(item_id="obj01", checkpoint=100, turns=["질문"], kind="plant", split="dev"))
+    assert calls["restoreBSeries"] == [b_series]
 
 
 def test_probe_restores_and_restarts_for_every_retry_and_records_usage(

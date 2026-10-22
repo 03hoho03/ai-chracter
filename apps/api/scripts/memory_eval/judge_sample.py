@@ -95,6 +95,8 @@ def run_branch(
             room_id=room_id,
             dumps_dir=run_dir / "dumps",
             label=label,
+            # 엔딩 갈래 템플릿은 `freeze` 가 투입을 그대로 얼린 A 계열이다. B 지문을 잘못 주면 요약 해시 칸이 남아 거부된다.
+            b_series=False,
         )
     )
     overrides = {

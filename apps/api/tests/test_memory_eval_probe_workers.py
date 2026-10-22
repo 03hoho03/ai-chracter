@@ -594,6 +594,38 @@ def test_own_worker_ports_in_this_tree_pass_and_every_other_server_on_the_shared
     assert [pid for pid, *_ in found] == [3, 4, 5]
 
 
+def test_servers_that_end_or_turn_defunct_while_being_listed_are_dropped_but_an_unreadable_live_one_stays(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """목록을 만드는 사이 형제 작업자 서버가 내려가면 작업 디렉터리를 못 읽어도 충돌이 아니다. 살아 있는데 디렉터리를 못 읽는
+    서버만 그대로 남겨 충돌 검사가 거부하게 한다."""
+    from memory_eval import server
+
+    own = "/w/root/.claude/worktrees/long-memory-a/apps/api"
+    cwd = {"11": own, "12": "", "13": own, "14": "", "15": own, "16": own}
+    ps = {
+        "11": "S    /venv/bin/python -m uvicorn api.main:app --port 8131\n",
+        "12": "",  # 이미 끝났다
+        "13": "Z    <defunct>\n",  # 끝나서 부모가 거두기를 기다린다
+        "14": "S    /venv/bin/python -m uvicorn api.main:app --port 8132\n",  # 살아 있지만 디렉터리를 못 읽었다
+        "15": "S    /usr/bin/sleep 60\n",  # 끝난 서버의 번호를 다른 프로세스가 물려받았다
+        "16": "Z    /venv/bin/python -m uvicorn api.main:app --port 8133\n",  # 명령줄이 남은 채 defunct 로 보이는 플랫폼
+    }
+
+    def fake_run(cmd: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        pid = cmd[cmd.index("-p") + 1] if "-p" in cmd else ""
+        if cmd[0] == "pgrep":
+            out = "11\n12\n13\n14\n15\n16\n"
+        elif cmd[0] == "lsof":
+            out = f"p{pid}\nfcwd\nn{cwd[pid]}\n" if cwd[pid] else ""
+        else:
+            out = ps[pid]
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert server.running_api_servers() == [(11, own, 8131), (14, "", 8132)]
+
+
 def test_cleanup_picks_only_servers_of_this_tree_on_this_runs_worker_ports() -> None:
     """중단된 실행이 남긴 작업자 서버만 내린다 — 다른 트리의 측정 서버나 이 트리의 다른 포트(개발 서버 등)는 건드리지 않는다."""
     from memory_eval.server import leftover_worker_servers

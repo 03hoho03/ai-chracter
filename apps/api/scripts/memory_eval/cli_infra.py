@@ -310,6 +310,7 @@ def cmd_restore(args: argparse.Namespace) -> int:
                 room_id=args.room,
                 dumps_dir=args.run / "dumps",
                 label=args.label,
+                b_series=args.b_series,
             )
         )
     )
@@ -1404,6 +1405,12 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
         p.add_argument("--pg-container")
         p.add_argument("--db-user", default="postgres")
         p.add_argument("--require-episodes", action="store_true", help="에피소드가 0 이면 얼리지 않는다")
+        if name == "restore":
+            p.add_argument(
+                "--b-series",
+                action="store_true",
+                help="B 계열 템플릿(요약 글을 표기 판으로 바꾼 것) — 요약 글 해시도 견준다",
+            )
         p.set_defaults(fn=fn)
 
     p = sub.add_parser("fingerprint")
