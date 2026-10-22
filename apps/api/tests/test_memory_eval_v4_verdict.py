@@ -719,6 +719,86 @@ def test_the_preview_command_needs_no_seal_and_writes_a_dev_marked_result(tmp_pa
     assert {m.split(":")[0] for m in result["safety"]["b1-A0:b1-A1"]["story"]["S1"]["missing"]} <= dev
 
 
+def test_two_character_scripts_pool_their_items_into_one_character_lane_sample() -> None:
+    """작품 하나의 캐릭터 대본이 둘(a·b 판)이면 두 대본의 문항을 합친 것이 그 레인의 표본이다 — 한 대본만으로는 하한(26)
+    밑이라 멈추고, 두 대본을 합치면 하한을 넘어 검정한다."""
+    story = _set(_items("fc", "secret", 64))
+    half_a, half_b = _items("ca", "secret", 13), _items("cb", "secret", 13)
+    scores, judged = [], []
+    for items in (half_a, half_b):
+        scores += _rows(items, "b1-A0", leakHit=False) + _rows(items, "b1-A1", leakHit=False)
+        judged += _judged(items, "b1-A0", ["kept"] * 13) + _judged(items, "b1-A1", ["kept"] * 13)
+    one = v4.v4_verdict([story], [_set(half_a)], scores, judge_rows=judged, control_rows=None, trajectories={},
+                        section_max={})["safety"]["b1-A0:b1-A1"]["character"]["S1"]  # fmt: skip
+    assert (one["n"], one["status"]) == (13, "halt")
+    both = v4.v4_verdict([story], [_set(half_a), _set(half_b)], scores, judge_rows=judged, control_rows=None,
+                         trajectories={}, section_max={})["safety"]["b1-A0:b1-A1"]["character"]["S1"]  # fmt: skip
+    assert (both["n"], both["status"]) == (26, "pass")
+
+
+def test_the_same_script_given_twice_in_a_lane_is_refused() -> None:
+    """같은 대본을 두 번 넘기면 문항이 두 번 세어져 레인 표본이 부풀므로 거부한다(스토리·캐릭터 둘 다)."""
+    story = _set(_items("fc", "secret", 4))
+    character = _set(_items("ca", "secret", 4))
+    with pytest.raises(SystemExit, match="두 번"):
+        v4.v4_verdict([story], [character, character], [], judge_rows=[], control_rows=None, trajectories={},
+                      section_max={})  # fmt: skip
+    with pytest.raises(SystemExit, match="두 번"):
+        v4.v4_verdict([story, story], [character], [], judge_rows=[], control_rows=None, trajectories={},
+                      section_max={})  # fmt: skip
+
+
+def _bundle_works(tmp_path: Path, works: Sequence[str]) -> dict[str, tuple[Path, Path]]:
+    """작품마다 비밀 문항 8개짜리 심기 표를 쓰고 한 분할 설정으로 나눈다 — 작품 이름 → (심기 표, 분할 폴더)."""
+    import json
+
+    from memory_eval import bundle_split, holdout
+
+    spec: dict[str, Any] = {}
+    out: dict[str, tuple[Path, Path]] = {}
+    root = tmp_path / "run" / "b1" / "split"
+    for work in works:
+        plants = tmp_path / f"plants-{work}.json"
+        entries = [{"id": f"{work}-sec{i:02d}", "category": "secret", "stratum": "secret", "ask_checkpoints": [CP],
+                    "score_checkpoint": CP, "question": f"q{i}", "answer_key": {"mode": "judge"}} for i in range(8)]  # fmt: skip
+        plants.write_text(json.dumps({"version": work, "lane": "character", "checkpoints": [CP], "plants": entries,
+                                      "abstains": []}), encoding="utf-8")  # fmt: skip
+        spec[work] = {"plants": plants.name, "strata": {"secret": 11}}
+        out[work] = (plants, root / work)
+    config = tmp_path / "split-seeds.json"
+    config.write_text(json.dumps({"base": 1, "works": spec, "totals": []}), encoding="utf-8")
+    assert bundle_split.write_bundle(config, root, seed_sha=holdout.sha256_file(config))["ok"]
+    return out
+
+
+def test_the_preview_command_takes_the_character_option_once_per_script(tmp_path: Path) -> None:
+    """`--character` 를 대본마다 한 번씩 주면 두 대본의 개발 문항이 모두 캐릭터 레인에 들어간다. 한 번만 주던 호출도 그대로
+    돈다."""
+    import json
+
+    from memory_eval import holdout
+    from memory_eval_cli import main
+
+    bundles = _bundle_works(tmp_path, ["s", "ca", "cb"])
+    empty = tmp_path / "empty.json"
+    empty.write_text("[]", encoding="utf-8")
+
+    def character_missing(*works: str) -> set[str]:
+        out = tmp_path / f"preview-{'-'.join(works)}.json"
+        argv = ["--run", str(tmp_path / "run"), "v4-preview", "--story", *map(str, bundles["s"])]
+        for work in works:
+            argv += ["--character", *map(str, bundles[work])]
+        argv += ["--scores", str(empty), "--judged", str(empty), "--out", str(out)]
+        assert main(argv) == 0
+        result = json.loads(out.read_text(encoding="utf-8"))
+        return {m.split(":")[0] for m in result["safety"]["b1-A0:b1-A1"]["character"]["S1"]["missing"]}
+
+    dev = {w: set(json.loads((bundles[w][1] / holdout.DEV_IDS_FILE).read_text(encoding="utf-8"))) for w in ("ca", "cb")}
+    assert dev["ca"] and dev["cb"]
+    assert character_missing("ca", "cb") == dev["ca"] | dev["cb"]
+    assert character_missing("ca") == dev["ca"]
+
+
 # ---------------------------------------------------------------- 통과 최소 불일치 표
 
 
