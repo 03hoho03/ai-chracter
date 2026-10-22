@@ -67,6 +67,7 @@ async def test_response_follows_products_and_cost_constants(
         "paymentsEnabled",
         "novelPublicEnabled",
         "novelPublicPolicyV2Enabled",
+        "novelIllustrationsEnabled",
         "payMethods",
         "identityGateEnabled",
         "models",
@@ -214,3 +215,16 @@ async def test_pricing_exposes_the_novel_public_policy_switch(
     resp = await db_client.get("/clover/pricing")
 
     assert (resp.status_code, resp.json().get("novelPublicPolicyV2Enabled")) == (200, switch)
+
+
+@pytest.mark.parametrize("switch", [pytest.param(False, id="off"), pytest.param(True, id="on")])
+async def test_pricing_exposes_the_novel_illustrations_switch(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, switch: bool
+) -> None:
+    """작가 화면의 삽화 붙이기 진입이 이 값으로 열린다 — 삽화 스위치 그대로다. 깨지는 시나리오: 스위치가 꺼졌는데 화면이 붙이기
+    버튼을 보여 누르는 족족 404 가 나거나, 켰는데 진입이 보이지 않는다."""
+    monkeypatch.setattr(settings, "novel_illustrations_enabled", switch)
+
+    resp = await db_client.get("/clover/pricing")
+
+    assert (resp.status_code, resp.json().get("novelIllustrationsEnabled")) == (200, switch)

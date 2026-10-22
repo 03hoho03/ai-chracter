@@ -9,6 +9,11 @@ cascade 에 기대지 않고 순서를 직접 적어 잠금·삭제 순서를 �
 다른 표가 가리키지 않는 말단 표라 여기서 따로 지우지 않고 화·소설을 지울 때 cascade 로 함께 지워진다. 노벨·노벨 댓글 신고는 지우지 않는다 — 소설·화·댓글
 칸이 `SET NULL` 이라 대상이 지워지면 칸만 비고, 신고와 증거 사본은 보유 기간 동안 남는다.
 
+화 개정의 삽화 배치는 개정보다 먼저 직접 지운다(개정 FK 가 cascade 지만 기대지 않는다). 지운 배치가 쓰던 업로드 삽화가 이제
+아무도 쓰지 않는 것이면 그 자산 행도 지우고, 저장소에서 지울 키를 호출자가 넘긴 `freed_storage_keys` 에 더한다 — 저장소는 호출자가
+커밋 뒤에 지운다(`illustrations.delete_storage_objects`). 이 인자를 필수로 둔 것은 새 호출자가 파일 정리를 빠뜨리지 않게 하려는
+것이다.
+
 이 모듈은 라우터를 import 하지 않는다 — `auth/withdrawal.py` 가 import 해도 순환이 생기지 않게."""
 
 import uuid
@@ -38,6 +43,7 @@ from api.db.models.novel import (
     NovelChapter,
     NovelChapterCharacter,
     NovelChapterEdition,
+    NovelChapterIllustration,
     NovelChapterRevision,
     NovelChapterPublication,
     NovelCharacter,
@@ -50,11 +56,13 @@ from api.db.models.novel import (
     NovelScreening,
     NovelSnapshot,
 )
+from api.novelize.illustrations import delete_unused_uploads, drop_placements, uploads_used_by
 
 
-async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> None:
+async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID], *, freed_storage_keys: list[str]) -> None:
     """`novel_ids` 소설들을 작업 → 화 잠금 → 읽은 위치(소유자·노벨 독자)·화 댓글 → 스냅샷 → 등장 인물 → 인물 → 텍스트 심사 기록 → 화
-    공개본 → 개정 → 화 → 묶음 → 좋아요·홈 노벨 지정 → 공개 상태 → 소설 순으로 지운다. 커밋은 호출부가 한다. 화 공개본은 개정을 가리키므로 개정보다 먼저다.
+    공개본 → 개정의 삽화 배치 → 개정 → 화 → 묶음 → 좋아요·홈 노벨 지정 → 공개 상태 → 소설 순으로 지우고, 끝에 이제 아무도 쓰지 않는
+    업로드 삽화를 지운다. 커밋은 호출부가 한다. 화 공개본은 개정을 가리키므로 개정보다 먼저다.
 
     작업 행이 맨 앞인 이유는 둘이다. 작업이 화·개정을 FK 로 가리키므로 먼저 지워야 하고, 진행 중 작업이 성공을
     저장하는 트랜잭션과 겹쳤을 때도 안전해진다 — 성공 쪽이 작업 행을 잡고 있으면 이 DELETE 가 기다렸다가 뒤 문장들이
@@ -84,6 +92,9 @@ async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> Non
     await db.execute(delete(NovelCharacter).where(NovelCharacter.novel_id.in_(novel_ids)))
     await db.execute(delete(NovelScreening).where(NovelScreening.novel_id.in_(novel_ids)))
     await db.execute(delete(NovelChapterPublication).where(NovelChapterPublication.novel_id.in_(novel_ids)))
+    uploads = await drop_placements(
+        db, select(NovelChapterRevision.id).where(NovelChapterRevision.chapter_id.in_(chapter_ids))
+    )
     await db.execute(delete(NovelChapterRevision).where(NovelChapterRevision.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelChapter).where(NovelChapter.novel_id.in_(novel_ids)))
     await db.execute(delete(NovelBatch).where(NovelBatch.novel_id.in_(novel_ids)))
@@ -91,9 +102,12 @@ async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> Non
     await db.execute(delete(HomeNovelCuration).where(HomeNovelCuration.novel_id.in_(novel_ids)))
     await db.execute(delete(NovelPublication).where(NovelPublication.novel_id.in_(novel_ids)))
     await db.execute(delete(Novel).where(Novel.id.in_(novel_ids)))
+    freed_storage_keys += await delete_unused_uploads(db, uploads)
 
 
-async def strip_author_only_data(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> int:
+async def strip_author_only_data(
+    db: AsyncSession, novel_ids: Sequence[uuid.UUID], *, freed_storage_keys: list[str]
+) -> int:
     """탈퇴한 작가의 숨겨 남긴 소설들에서 독자가 읽는 것만 남기고 작가만 쓰던 것을 지운다. 바꾼 행 수를 돌려준다(0 이면 이미
     정리된 소설이다 — 몇 번 불러도 결과가 같다). 커밋은 호출부가 한다.
 
@@ -103,7 +117,8 @@ async def strip_author_only_data(db: AsyncSession, novel_ids: Sequence[uuid.UUID
 
     지우거나 비우는 것: 작업 행, 작가 읽은 자리, 스냅숏, 등장 인물·인물 카드, 공개본·판 행이 없는 화(공개되지 않은 화 — 그
     화의 심사 기록·읽은 자리·댓글과 함께)와 화가 남지 않은 묶음, 공개본·판 행이 가리키지 않는 개정(초고·수정 이력), 남는 개정의
-    되돌리기 원본 칸, 남는 화의 작업본 제목·요약·작가의 말, 소설의 설정 노트·주인공 이름·작업본 제목과 소개·편집 보드·표지.
+    되돌리기 원본 칸, 남는 화의 작업본 제목·요약·작가의 말, 소설의 설정 노트·주인공 이름·작업본 제목과 소개·편집 보드·표지, 지운
+    개정의 삽화 배치와 그 배치만 쓰던 업로드 삽화.
 
     잠금과 순서는 `delete_novels` 와 같다 — 작업 행을 먼저 지우고(진행 중 작업의 조건부 전이가 0행이 된다) 화 행을 잠근 뒤
     읽은 자리·댓글·개정을 지운다. 비우는 UPDATE 는 이미 빈 행을 고르지 않아 바꾼 행 수가 "정리할 것이 있었는가"를 뜻한다."""
@@ -144,6 +159,11 @@ async def strip_author_only_data(db: AsyncSession, novel_ids: Sequence[uuid.UUID
         )
         .values(reverted_from_revision_id=None)
     )
+    dropped_revision_ids = select(NovelChapterRevision.id).where(
+        NovelChapterRevision.chapter_id.in_(chapter_ids), NovelChapterRevision.id.not_in(kept_revision_ids)
+    )
+    uploads = set((await db.scalars(uploads_used_by(dropped_revision_ids))).all())
+    await run(delete(NovelChapterIllustration).where(NovelChapterIllustration.revision_id.in_(dropped_revision_ids)))
     await run(
         delete(NovelChapterRevision).where(
             NovelChapterRevision.chapter_id.in_(chapter_ids), NovelChapterRevision.id.not_in(kept_revision_ids)
@@ -193,19 +213,21 @@ async def strip_author_only_data(db: AsyncSession, novel_ids: Sequence[uuid.UUID
             cover_asset_id=None,
         )
     )
+    freed_storage_keys += await delete_unused_uploads(db, uploads)
     return changed
 
 
-async def delete_batch(db: AsyncSession, *, novel_id: uuid.UUID, batch_id: uuid.UUID) -> None:
+async def delete_batch(
+    db: AsyncSession, *, novel_id: uuid.UUID, batch_id: uuid.UUID, freed_storage_keys: list[str]
+) -> None:
     """묶음 하나와 그 화들을 지운다. 진행 중 작업 확인·"마지막 묶음" 판정·사용자 잠금은 호출자가 먼저 한다(커밋도).
 
     작업 행은 지우지 않고 그 화들을 가리키는 칸(화·기준 개정·결과 개정)과 AI 수정 지시문·결과 본문만 비운다 — 같은
     시작 메시지의 하루 재시도 상한이 작업 행 수로 세므로, 지우면 묶음을 지웠다 다시 만드는 것으로 상한이 풀린다. 차감
     기록의 작업 쪽 짝도 남는다. 작업의 개정 참조는 모두 그 작업이 가리키는 화의 개정이라, 화로 골라 셋을 함께 비운다.
 
-    그다음 화를 잠그고(`delete_novels` 와 같은 이유) 읽은 위치(소유자·노벨 독자)·화 댓글·등장 인물·텍스트 심사 기록·화 공개본·개정·
-    화·묶음 순으로
-    지운다. 인물 카드는 남긴다 — 사용자가 메모를 적은 카드일 수 있고, 다른 화에도 나온다. 소설의 공개 상태 행도 남긴다 —
+    그다음 화를 잠그고(`delete_novels` 와 같은 이유) 읽은 위치(소유자·노벨 독자)·화 댓글·등장 인물·텍스트 심사 기록·화 공개본·개정의
+    삽화 배치·개정·화·묶음 순으로 지우고, 끝에 이제 아무도 쓰지 않는 업로드 삽화를 지운다. 인물 카드는 남긴다 — 사용자가 메모를 적은 카드일 수 있고, 다른 화에도 나온다. 소설의 공개 상태 행도 남긴다 —
     지우는 것은 마지막 묶음뿐이라 남은 공개 화는 여전히 1화부터 이어지고, 공개한 화가 모두 지워져도 소설 제목·소개 사본과
     운영자 조치는 소설에 남아야 한다(다시 화를 공개하면 같은 행을 쓴다).
 
@@ -229,10 +251,14 @@ async def delete_batch(db: AsyncSession, *, novel_id: uuid.UUID, batch_id: uuid.
     await db.execute(delete(NovelChapterCharacter).where(NovelChapterCharacter.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelScreening).where(NovelScreening.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelChapterPublication).where(NovelChapterPublication.chapter_id.in_(chapter_ids)))
+    uploads = await drop_placements(
+        db, select(NovelChapterRevision.id).where(NovelChapterRevision.chapter_id.in_(chapter_ids))
+    )
     await db.execute(delete(NovelChapterRevision).where(NovelChapterRevision.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelChapter).where(NovelChapter.id.in_(chapter_ids)))
     await _shrink_snapshot_entries(db, novel_id, {str(chapter_id) for chapter_id in chapter_ids})
     await db.execute(delete(NovelBatch).where(NovelBatch.id == batch_id))
+    freed_storage_keys += await delete_unused_uploads(db, uploads)
 
 
 async def _shrink_snapshot_entries(db: AsyncSession, novel_id: uuid.UUID, removed: set[str]) -> None:

@@ -2040,6 +2040,28 @@ async def _add_batch(
     return chapters
 
 
+async def _finished_ai_edit(
+    db_session: AsyncSession, novel_id: uuid.UUID, chapter: NovelChapter, base: NovelChapterRevision
+) -> NovelJob:
+    """둘째 문단(인덱스 1)을 고친 끝난 AI 수정 하나(미리보기가 남아 있다)를 넣고 커밋한다. 본문은 `_add_chapter` 기본 본문 꼴이다."""
+    job = NovelJob(
+        novel_id=novel_id,
+        user_id=(await db_session.get_one(Novel, novel_id)).user_id,
+        kind="ai_edit",
+        status="succeeded",
+        chapter_id=chapter.id,
+        base_revision_id=base.id,
+        paragraph_start=1,
+        paragraph_end=1,
+        instruction="더 쓸쓸하게",
+        result_text="첫 문단이다.\n\n쓸쓸한 둘째 문단.\n\n셋째 문단이다.",
+        charged_amount=20,
+    )
+    db_session.add(job)
+    await db_session.commit()
+    return job
+
+
 async def _lock_novel(
     db_session: AsyncSession,
     novel_id: uuid.UUID,

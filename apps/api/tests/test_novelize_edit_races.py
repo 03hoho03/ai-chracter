@@ -55,7 +55,7 @@ async def independent_factory(db_engine: AsyncEngine) -> AsyncGenerator[async_se
         user_ids = (await cleanup.scalars(select(User.id).where(User.email.like(f"%@{_MARKER_DOMAIN}")))).all()
         if user_ids:
             novel_ids = (await cleanup.scalars(select(Novel.id).where(Novel.user_id.in_(user_ids)))).all()
-            await delete_novels(cleanup, novel_ids)
+            await delete_novels(cleanup, novel_ids, freed_storage_keys=[])
             await cleanup.execute(delete(User).where(User.id.in_(user_ids)))
         await cleanup.commit()
 
@@ -138,7 +138,7 @@ async def test_reading_position_waiting_on_a_last_batch_deletion_is_404_not_a_fo
     deleter = independent_factory()
     try:
         await _lock_user(deleter, seed.user_id)
-        await delete_batch(deleter, novel_id=seed.novel_id, batch_id=seed.batch_id)
+        await delete_batch(deleter, novel_id=seed.novel_id, batch_id=seed.batch_id, freed_storage_keys=[])
         task = _in_own_session(independent_factory, seed.novel_id, save)
         await _assert_blocked(task)
         await deleter.commit()

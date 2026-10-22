@@ -148,6 +148,8 @@ class CloverPricingResponse(CamelModel):
     # 노벨 공개 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있는가. 노벨 구매 전 고지와 작가의 공개 거두기 안내(공개가
     # 끝나면 산 사람이 계속 읽는가, 환급받는가)가 이 값으로 갈린다 — 꺼진 동안 켜진 정책 문장을 쓰면 거짓이다.
     novel_public_policy_v2_enabled: bool
+    # 소설 삽화 스위치(`novel_illustrations_enabled`)가 켜져 있는가. 작가 화면의 삽화 붙이기 진입이 이 값으로 열린다.
+    novel_illustrations_enabled: bool
     # 지금 결제를 받는가. 거짓이면 구매 화면이 "준비 중"을 보인다.
     payments_enabled: bool
     # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).

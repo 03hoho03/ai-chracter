@@ -30,6 +30,7 @@ from api.db.models.novel import Novel, NovelPurchase
 from api.db.session import async_session_factory, engine
 from api.novel_public.purchases import lock_novel_parties, lock_users_in_order
 from api.novelize.deletion import delete_novels, strip_author_only_data
+from api.novelize.illustrations import delete_storage_objects
 
 # 숨긴 소설 중 아직 환급되지 않은 구매(탈퇴하지 않은 구매자)가 남지 않은 것 — 소장이 모두 끝났다.
 _PURGEABLE = (
@@ -46,17 +47,20 @@ async def purge_hidden_novels(db: AsyncSession) -> int:
     """미환급 구매자가 남지 않은 숨긴 소설을 모두 지우고 지운 소설 수를 돌려준다. 구매 행(소설·화를 FK 없이 가리키는
     사본)은 거래 기록이라 남긴다. 소설마다 게시자 행을 먼저 잠근다 — 소설을 지우는 다른 경로(소설 삭제·탈퇴)와 같은 첫
     잠금이라 함께 돌아도 줄을 선다. 잠근 뒤 같은 조건으로 다시 확인해, 기다리는 사이 게시자 탈퇴가 먼저 지운 소설은
-    건너뛴다. 소설마다 커밋한다 — 한 소설의 잠금을 쥔 채 다음 소설을 기다리지 않는다."""
+    건너뛴다. 소설마다 커밋한다 — 한 소설의 잠금을 쥔 채 다음 소설을 기다리지 않는다. 지운 소설만 쓰던 업로드 삽화 파일은 그 커밋
+    뒤에 저장소에서 지운다."""
     candidates = (await db.scalars(select(Novel.id).where(*_PURGEABLE).order_by(Novel.id))).all()
     await db.commit()
     purged = 0
     for novel_id in candidates:
         await lock_novel_parties(db, novel_ids=[novel_id])
         still = await db.scalar(select(Novel.id).where(Novel.id == novel_id, *_PURGEABLE))
+        freed: list[str] = []
         if still is not None:
-            await delete_novels(db, [novel_id])
+            await delete_novels(db, [novel_id], freed_storage_keys=freed)
             purged += 1
         await db.commit()
+        await delete_storage_objects(freed)
     return purged
 
 
@@ -86,9 +90,11 @@ async def strip_withdrawn_publisher_novels(db: AsyncSession) -> int:
     for novel_id, publisher_id in candidates:
         await lock_users_in_order(db, [publisher_id])
         still = await db.scalar(select(Novel.id).where(Novel.id == novel_id, *_KEPT_FOR_OWNERS_OF_A_WITHDRAWN_PUBLISHER))
-        if still is not None and await strip_author_only_data(db, [novel_id]) > 0:
+        freed: list[str] = []
+        if still is not None and await strip_author_only_data(db, [novel_id], freed_storage_keys=freed) > 0:
             stripped += 1
         await db.commit()
+        await delete_storage_objects(freed)
     return stripped
 
 

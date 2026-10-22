@@ -18,6 +18,8 @@ class AssetPurpose(str, enum.Enum):
     CONTENT_THUMBNAIL = "content-thumbnail"
     SITUATIONAL_IMAGE = "situational-image"
     INQUIRY_ATTACHMENT = "inquiry-attachment"
+    # 소설 화 삽화. 정지 그림만 받는다(완료 때 움직이는 그림은 거절). 소설 삽화 스위치가 켜졌을 때만 받는다.
+    NOVEL_ILLUSTRATION = "novel-illustration"
 
 
 # Per-purpose upload size limits in bytes, applied to the *resized* result the FE
@@ -35,6 +37,7 @@ UPLOAD_SIZE_LIMIT_BYTES: dict[AssetPurpose, int] = {
     AssetPurpose.CONTENT_THUMBNAIL: 5 * 1024 * 1024,
     AssetPurpose.SITUATIONAL_IMAGE: 5 * 1024 * 1024,
     AssetPurpose.INQUIRY_ATTACHMENT: 5 * 1024 * 1024,
+    AssetPurpose.NOVEL_ILLUSTRATION: 5 * 1024 * 1024,
 }
 
 
@@ -96,6 +99,18 @@ class GeneratedImageUsage(CamelModel):
     field: GeneratedImageUsageField
 
 
+NovelImageUsageField = Literal["cover", "illustration"]
+
+
+class NovelImageUsage(CamelModel):
+    """이 그림을 쓰는 소설 하나 — 표지이거나, 어느 화의 어느 개정(지난 판 포함)의 삽화다. 작품 사용처(`GeneratedImageUsage`)와
+    칸을 나눈 것은 작품 사용처가 빌더로 가는 링크로 그려지기 때문이다."""
+
+    novel_id: uuid.UUID
+    novel_title: str
+    field: NovelImageUsageField
+
+
 class GeneratedImageItem(CamelModel):
     """`GET /me/generated-images` item shape."""
 
@@ -103,3 +118,4 @@ class GeneratedImageItem(CamelModel):
     image_url: str
     created_at: datetime
     usages: list[GeneratedImageUsage]
+    novel_usages: list[NovelImageUsage]

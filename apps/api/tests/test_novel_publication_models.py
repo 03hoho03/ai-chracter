@@ -162,7 +162,7 @@ async def test_delete_batch_removes_only_that_batchs_publications_and_keeps_the_
     )
     await db_session.flush()
 
-    await delete_batch(db_session, novel_id=tree.novel.id, batch_id=last_batch.id)
+    await delete_batch(db_session, novel_id=tree.novel.id, batch_id=last_batch.id, freed_storage_keys=[])
 
     published = await db_session.scalars(
         sa.select(NovelChapterPublication.chapter_id).where(NovelChapterPublication.novel_id == tree.novel.id)

@@ -58,6 +58,7 @@ from api.novel_public.purchases import reader_router as novel_public_reader_rout
 from api.novel_public.reading import reading_router as novel_public_reading_router
 from api.novel_public.reports import reports_router as novel_public_reports_router
 from api.novel_public.router import router as novel_public_router
+from api.novelize.illustration_router import illustration_router as novelize_illustration_router
 from api.novelize.router import (
     owner_router as novelize_owner_router,
     room_router as novelize_room_router,
@@ -172,6 +173,7 @@ app.include_router(content_router)
 app.include_router(novelize_router)
 app.include_router(novelize_room_router)
 app.include_router(novelize_owner_router)
+app.include_router(novelize_illustration_router)
 app.include_router(novel_public_router)
 app.include_router(novel_public_owner_router)
 app.include_router(novel_public_reader_router)

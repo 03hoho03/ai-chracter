@@ -21,7 +21,7 @@ from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from api.assets.router import collect_asset_usages
+from api.assets.router import collect_asset_usages, collect_novel_asset_usages
 from api.chat.room_deletion import delete_chat_rooms
 from api.clover.missions import MISSION_KEYS, mission_idempotency_key
 from api.comments.actions import erase_user_comments, lock_withdrawal_contents
@@ -44,6 +44,8 @@ from api.db.models.novel import Novel, NovelComment, NovelPublication, NovelPurc
 from api.db.models.persona import UserPersona
 from api.novel_public.purchases import sold_novel_ids
 from api.novelize.deletion import delete_novels, strip_author_only_data
+from api.novelize.illustrations import UPLOAD_KEY_PREFIX as ILLUSTRATION_UPLOAD_KEY_PREFIX
+from api.novelize.illustrations import delete_unused_uploads
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +98,9 @@ async def _retain_withdrawn_identity(
     row.withdrawn_at = now
 
 
-async def _keep_sold_novels_hidden(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> None:
+async def _keep_sold_novels_hidden(
+    db: AsyncSession, novel_ids: Sequence[uuid.UUID], *, freed_storage_keys: list[str]
+) -> None:
     """탈퇴자의 팔린 소설을 지우지 않고 숨긴다 — 공개를 거두고(새로 보이거나 팔리지 않는다) 숨긴 시각을 찍고 방 칸을 비운다.
     작가가 팔린 소설을 지울 때의 숨김과 같은 모양이라 소장자 열람·하루 한 번 파기가 그대로 따라온다. 이미 숨긴 소설은 숨긴
     시각을 그대로 둔다.
@@ -112,7 +116,7 @@ async def _keep_sold_novels_hidden(db: AsyncSession, novel_ids: Sequence[uuid.UU
     구매 행·클로버는 건드리지 않는다."""
     if not novel_ids:
         return
-    await strip_author_only_data(db, novel_ids)
+    await strip_author_only_data(db, novel_ids, freed_storage_keys=freed_storage_keys)
     await db.execute(
         update(NovelPublication).where(NovelPublication.novel_id.in_(novel_ids)).values(visibility="withdrawn")
     )
@@ -212,8 +216,9 @@ async def erase_account(db: AsyncSession, user: User, *, delete_storage_object: 
     # 남긴다(모듈 docstring). 판정은 탈퇴자 행을 잠근 지금 한다.
     novel_ids = (await db.scalars(select(Novel.id).where(Novel.user_id == user_id))).all()
     kept = await sold_novel_ids(db, novel_ids) if settings.novel_public_policy_v2_enabled else frozenset()
-    await _keep_sold_novels_hidden(db, [novel_id for novel_id in novel_ids if novel_id in kept])
-    await delete_novels(db, [novel_id for novel_id in novel_ids if novel_id not in kept])
+    freed: list[str] = []
+    await _keep_sold_novels_hidden(db, [novel_id for novel_id in novel_ids if novel_id in kept], freed_storage_keys=freed)
+    await delete_novels(db, [novel_id for novel_id in novel_ids if novel_id not in kept], freed_storage_keys=freed)
     # 노벨: 이 사람이 게시자면 위에서 팔리지 않은 소설은 지워지고, 남의 구매 행은 그대로 남는다 — 지운 소설에서는 구매 행이
     # 구매자에게 "게시자가 탈퇴했다"를 알려 줄 근거다(환급 없이 열람만 끝난다). 이 사람이
     # 산 구매 행은 지우지 않고 구매자 칸만 비운다 — 화·가격·
@@ -294,10 +299,14 @@ async def erase_account(db: AsyncSession, user: User, *, delete_storage_object: 
             ).all()
         )
 
+        # 숨겨 남긴 팔린 소설의 판이 삽화로 쓰는 그림도 남긴다(산 사람이 계속 읽는다). 지운 소설의 배치는 위에서 이미 사라졌다.
+        novel_usages_by_asset = await collect_novel_asset_usages(db, asset_ids)
         deletable_assets = [
             asset
             for asset in generated_assets
-            if not usages_by_asset.get(asset.id) and asset.id not in inquiry_asset_ids
+            if not usages_by_asset.get(asset.id)
+            and not novel_usages_by_asset.get(asset.id)
+            and asset.id not in inquiry_asset_ids
         ]
         deletable_ids = {asset.id for asset in deletable_assets}
         for asset in deletable_assets:
@@ -330,6 +339,21 @@ async def erase_account(db: AsyncSession, user: User, *, delete_storage_object: 
                     ImageGenerationRequest.id.in_(emptied_request_ids)
                 )
             )
+
+    # 소설 삽화로 올린 업로드도 "그림과 같은 수명"으로 파기한다 — 위 소설 처리가 지운 개정만 쓰던 것(`freed`)과, 어느 소설에도
+    # 붙이지 않은 채 남은 것. 숨겨 남긴 팔린 소설의 판이 쓰는 것은 남는다(`delete_unused_uploads` 가 사용처를 본다).
+    leftover_uploads = (
+        await db.scalars(
+            select(Asset.id).where(
+                Asset.owner_user_id == user_id,
+                Asset.kind == AssetKind.ORIGINAL,
+                Asset.storage_key.startswith(ILLUSTRATION_UPLOAD_KEY_PREFIX),
+            )
+        )
+    ).all()
+    freed += await delete_unused_uploads(db, leftover_uploads)
+    for storage_key in freed:
+        await delete_storage_object(storage_key)
 
     # 잔액은 0으로 소멸시키고 **원장은 남긴다**. 탈퇴는 soft
     # delete라 `users` 행이 그대로 남으므로, 한 줄을 안 쓰면 "아무것도 안 함"이 기본값이고

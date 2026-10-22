@@ -35,6 +35,7 @@ from api.db.models.novel import (
 )
 from api.novelize.blocks import build_revision, copied_ids
 from api.novelize.characters import clean_aliases, joined_memo, load_cards
+from api.novelize.illustrations import add_revision
 from api.novelize.inputs import current_revision
 
 PAYLOAD_VERSION = 1
@@ -213,7 +214,9 @@ async def _restore_chapter(
     current = await current_revision(db, chapter_id)
     assert current is not None  # 화 행과 첫 개정은 한 트랜잭션에서 함께 들어간다
     if current.id != source.id:
-        db.add(
+        # 되돌린 개정은 그때 개정의 삽화 배치를 그대로 복사한다(`illustrations.add_revision`).
+        await add_revision(
+            db,
             build_revision(
                 chapter_id=chapter_id,
                 revision_no=current.revision_no + 1,
@@ -221,9 +224,9 @@ async def _restore_chapter(
                 source="revert",
                 reverted_from_revision_id=source.id,
                 block_ids=copied_ids(source),
-            )
+            ),
+            previous=current,
         )
-        await db.flush()
         restacked.append(chapter_id)
     await db.execute(
         update(NovelChapter)

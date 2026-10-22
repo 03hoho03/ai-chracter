@@ -29,11 +29,13 @@ from api.assets.schemas import (
     GeneratedImageItem,
     GeneratedImageUsage,
     GeneratedImageUsageField,
+    NovelImageUsage,
     PresignedUploadRequest,
     PresignedUploadResponse,
     RegisterSituationalImageRequest,
     SituationalImageResponse,
 )
+from api.core.config import settings
 from api.core.rate_limit_gate import enforce_upload_rate_limit
 from api.core.redis import redis_client
 from api.core.redis_lock import release_lock, wait_for_lock
@@ -53,6 +55,7 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import Content, ContentType, ContentVersion
 from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.novel import Novel, NovelChapter, NovelChapterIllustration, NovelChapterRevision
 from api.db.models.story import MediaBookCell, StoryVersionDetail
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
@@ -78,6 +81,11 @@ async def create_presigned_upload(
         # 크롭 영역을 읽는 곳은 대표 이미지의 변형뿐이다. 다른 용도에서 받으면 조용히 버려진다.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="crop is only accepted for content-thumbnail"
+        )
+    if payload.purpose == AssetPurpose.NOVEL_ILLUSTRATION and not settings.novel_illustrations_enabled:
+        # 삽화 스위치가 꺼진 동안은 모르는 용도와 같게 답한다(약관 게시 전에 삽화 사진을 받지 않는다).
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="novel-illustration uploads are not open"
         )
     asset_id = uuid.uuid4()
     storage_key = build_object_key(payload.purpose.value, asset_id, payload.content_type)
@@ -285,6 +293,13 @@ async def _complete_locked_upload(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded object is not a decodable image",
         ) from exc
+    if frame_count > 1 and _upload_purpose(storage_key) == AssetPurpose.NOVEL_ILLUSTRATION:
+        # 소설 삽화는 정지 그림만 받는다 — 어두운 읽기 화면에서 움직이는 그림은 놀람이고, 화면은 올리기 전에 정지 그림으로
+        # 바꿔 올린다. 화면을 거치지 않은 움직이는 그림은 검사에서 떨어뜨린다.
+        await _discard_upload(db, asset_id, upload_key)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Novel illustrations must be still images"
+        )
     # 최종 키의 Content-Type 은 검사한 바이트의 실제 형식에서 정한다. 키의 확장자로는 되살릴 수 없다 — 시스템 MIME
     # 표가 없는 운영 이미지에서는 WebP 키에 확장자가 붙지 않아 `application/octet-stream` 이 되고, 원본을 새 탭에서
     # 열면 그림 대신 다운로드가 된다.
@@ -527,6 +542,48 @@ async def collect_asset_usages(
     return {asset_id: list(entries.values()) for asset_id, entries in merged.items()}
 
 
+async def collect_novel_asset_usages(
+    db: AsyncSession, asset_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[NovelImageUsage]]:
+    """어느 소설이 이 그림들을 쓰는가 — 어느 화의 어느 개정(지난 판·공개본이 얼린 판 포함)이든 삽화로 붙어 있으면 쓰는 것이다.
+    소설 표지는 소설 삽화 스위치가 켜졌을 때만 센다 — 꺼져 있으면 지금처럼 표지가 빈다(표지 FK 는 `SET NULL`). 숨긴 소설(작가가
+    지운 팔린 소설)도 센다 — 산 사람이 계속 읽는다. 같은 (소설, 칸)은 하나로 합친다. 삭제 판정과 갤러리 목록이 함께 쓴다."""
+    if not asset_ids:
+        return {}
+    merged: dict[uuid.UUID, dict[tuple[uuid.UUID, str], NovelImageUsage]] = {}
+
+    def _add(asset_id: uuid.UUID, novel_id: uuid.UUID, title: str | None, content_title: str, field: str) -> None:
+        usage = NovelImageUsage.model_validate({"novel_id": novel_id, "novel_title": title or content_title, "field": field})
+        merged.setdefault(asset_id, {})[(novel_id, field)] = usage
+
+    placement_rows = await db.execute(
+        select(NovelChapterIllustration.asset_id, Novel.id, Novel.title, Novel.content_title)
+        .join(NovelChapterRevision, NovelChapterRevision.id == NovelChapterIllustration.revision_id)
+        .join(NovelChapter, NovelChapter.id == NovelChapterRevision.chapter_id)
+        .join(Novel, Novel.id == NovelChapter.novel_id)
+        .where(NovelChapterIllustration.asset_id.in_(asset_ids))
+    )
+    for asset_id, novel_id, title, content_title in placement_rows.tuples():
+        _add(asset_id, novel_id, title, content_title, "illustration")
+    if settings.novel_illustrations_enabled:
+        cover_rows = await db.execute(
+            select(Novel.cover_asset_id, Novel.id, Novel.title, Novel.content_title).where(
+                Novel.cover_asset_id.in_(asset_ids)
+            )
+        )
+        for cover_id, novel_id, title, content_title in cover_rows.tuples():
+            if cover_id is not None:
+                _add(cover_id, novel_id, title, content_title, "cover")
+    return {asset_id: list(entries.values()) for asset_id, entries in merged.items()}
+
+
+def _in_use_detail(usages: list[GeneratedImageUsage], novel_usages: list[NovelImageUsage]) -> dict[str, object]:
+    return {
+        "usages": [usage.model_dump(mode="json", by_alias=True) for usage in usages],
+        "novelUsages": [usage.model_dump(mode="json", by_alias=True) for usage in novel_usages],
+    }
+
+
 @me_router.get("/generated-images")
 async def list_generated_images(
     current_user_id: uuid.UUID = Depends(get_current_user_id),
@@ -545,6 +602,7 @@ async def list_generated_images(
         )
     )
     usages_by_asset = await collect_asset_usages(db, [asset.id for asset in assets])
+    novel_usages_by_asset = await collect_novel_asset_usages(db, [asset.id for asset in assets])
 
     items: list[GeneratedImageItem] = []
     for asset in assets:
@@ -555,6 +613,7 @@ async def list_generated_images(
                 image_url=image_url,
                 created_at=asset.created_at,
                 usages=usages_by_asset.get(asset.id, []),
+                novel_usages=novel_usages_by_asset.get(asset.id, []),
             )
         )
     return items
@@ -570,7 +629,7 @@ async def delete_generated_image(
 
     존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset
     존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아
-    발행·초안 참조가 깨지는 삭제를 구조적으로 막는다.
+    발행·초안 참조가 깨지는 삭제를 구조적으로 막는다. 작품 사용처는 `usages`, 소설 사용처(표지·삽화)는 `novelUsages` 다.
     """
     asset = await db.get(Asset, asset_id)
     if (
@@ -581,13 +640,9 @@ async def delete_generated_image(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
     usages = (await collect_asset_usages(db, [asset_id])).get(asset_id, [])
-    if usages:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "usages": [usage.model_dump(mode="json", by_alias=True) for usage in usages]
-            },
-        )
+    novel_usages = (await collect_novel_asset_usages(db, [asset_id])).get(asset_id, [])
+    if usages or novel_usages:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_in_use_detail(usages, novel_usages))
 
     storage_key = asset.storage_key
     # 저장소 삭제를 기다리는 동안 커넥션을 쥐지 않도록 조회를 닫는다(롤백은 세션의 객체를 만료시켜 쓰지 않는다).
@@ -603,12 +658,8 @@ async def delete_generated_image(
     # 저장소를 지우는 사이 다른 탭이 이 그림을 걸었을 수 있다 — 행을 지우기 전에 사용처를 다시 본다. 걸렸으면 행을 남겨
     # (외래 키 오류로 500 이 나는 대신) 사용처와 함께 409 로 답한다. 저장소 객체는 이미 지워졌다.
     usages = (await collect_asset_usages(db, [asset_id])).get(asset_id, [])
-    if usages:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "usages": [usage.model_dump(mode="json", by_alias=True) for usage in usages]
-            },
-        )
+    novel_usages = (await collect_novel_asset_usages(db, [asset_id])).get(asset_id, [])
+    if usages or novel_usages:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_in_use_detail(usages, novel_usages))
     await db.delete(asset)
     await db.commit()

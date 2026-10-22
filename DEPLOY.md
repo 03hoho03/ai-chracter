@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 110개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 노벨 공개 정책 스위치 1개(`NOVEL_PUBLIC_POLICY_V2_ENABLED`), 모두 58개 제외 —
+**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 111개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 노벨 공개 정책 스위치 1개(`NOVEL_PUBLIC_POLICY_V2_ENABLED`)·소설 삽화 스위치 1개(`NOVEL_ILLUSTRATIONS_ENABLED`), 모두 59개 제외 —
 운영에서 켜 둔 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 7개(`PORTONE_*` 5개·
 `IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`), 노벨 키 2개(`NOVEL_PUBLIC_ENABLED`·`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`)는 셈에 들어간다) + 앱이 읽지 않지만
 옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
@@ -312,6 +312,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
 | `NOVEL_PUBLIC_PREVIEW_ALLOWLIST` | 미리보기 동안 계정 id, **쉼표 구분**(공백·따옴표 없이). 전체 공개 뒤에는 줄을 지운다(코드 기본값은 빈 명단) | 노벨 미리보기 명단. 비어 있으면 스위치가 켜졌을 때 모두에게 열리고, 비어 있지 않으면 스위치가 켜져 있어도 명단의 로그인 회원에게만 열린다 — 그 밖의 회원·비로그인은 스위치를 끈 것과 같은 응답이고, 인증 없는 가격 응답의 `novelPublicEnabled` 도 거짓이다. UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 절차는 "노벨(공개 소설) 켜기 · 끄기" 절 |
 | `NOVEL_PUBLIC_POLICY_V2_ENABLED` | 개정 약관 시행 뒤 켤 때 `true`(코드 기본값은 `false`) | 노벨 공개 정책 스위치. 꺼져 있으면 지금 약관대로다 — 첫 공개는 자동 글 심사를 통과하면 바로 열리고, 원작자가 소설화 허락을 거두면 다음 화가 막힌다. 켜면 아직 독자에게 보인 적 없는 소설의 첫 공개가 운영자 승인(어드민 `POST /admin/novels/{id}/review`)을 기다리고, 한 번 독자에게 보인 소설(연재권 잠금)은 원작자가 허락을 거두거나 원작을 비공개로 돌리거나 탈퇴해도 다음 화를 이어 공개한다(원작 이용제한·삭제만 막는다). 원작자가 탈퇴하면 그 원작의 대화 중 첫 화를 저장하지 않은 것은 새로 소설화할 수 없다. 켜져 있으면 이미 공개한 화를 고쳐 다시 낼 때 작가의 짧은 변경 요약(1~100자)이 필요하고(없으면 422 `NOVEL_CHANGE_SUMMARY_REQUIRED` — 이 칸을 보내는 web 화면이 나가기 전에 켜면 다시 공개가 막힌다), 그 요약도 글 심사를 거쳐 산 사람의 판 고르기에 공개 시각과 함께 보인다. 산 사람 보호도 켜진다 — 산 때의 판을 고를 수 있고, 거둠·게시자 정지·판매된 소설 삭제·게시자 탈퇴 뒤에도 소장자는 계속 읽으며(게시자가 탈퇴하면 판매된 소설은 숨겨 남고 판매되지 않은 소설만 지운다, 환급 없음), 노벨 이용제한·원작 이용제한·원작 삭제는 구매를 환급한다. 운영자의 판매 중단(노벨 판매 중단, 원작 제한·삭제 때 파생 소설은 판매만 멈추기)도 켜졌을 때만 쓸 수 있다 — 목록·새 판매만 멈추고 소장자는 계속 읽으며 환급하지 않는다(꺼져 있으면 409 `NOVEL_SALES_STOP_DISABLED`). 판매된 소설 삭제는 숨김, 판매된 화가 든 마지막 묶음 삭제는 409 다. 6화부터 화마다 무료·유료를 골라 공개하고 유료 화를 무료로 바꿀 수 있으며, 그렇게 무료로 나간 번호는 그 화를 지우고 다시 만들어도 무료로만 공개한다(꺼져 있으면 6화부터 유료로 저장하고 무료로 전환은 409, 무료로 나간 번호도 지키지 않는다). 잠금 기록(첫 공개마다)과 판 행(공개마다), 화마다의 가격 칸은 스위치와 무관하게 쌓인다. 켜는 순서·롤백은 "노벨(공개 소설) 켜기 · 끄기" 절의 "공개 정책 스위치" |
+| `NOVEL_ILLUSTRATIONS_ENABLED` | 개정 처리방침(삽화 항목) 게시 뒤 켤 때 `true`(코드 기본값은 `false`) | 소설 화 삽화 스위치. 꺼져 있으면 지금 약관대로다 — 작가의 삽화 붙이기·옮기기·바꾸기·떼기와 원작 그림 후보 API 가 404(캐시 안 함), 삽화 용도 업로드(`novel-illustration`)는 422, 작가의 화·개정 응답에 그림이 없고, 소설 표지로 쓴 생성 이미지도 지금처럼 지울 수 있다(표지가 빈다). 켜면 그 API 들이 열리고, 응답에 그림이 실리고, 웹 가격 응답의 `novelIllustrationsEnabled` 로 작가 화면의 진입이 열리며, 표지로 쓴 이미지는 삭제가 409 다. 스위치와 무관하게 이미 개정에 붙은 배치는 새 개정으로 이어지고 그 그림은 지울 수 없으며(409), 어느 개정도 쓰지 않게 된 업로드 삽화 파일은 소설 삭제·묶음 삭제·탈퇴·숨긴 소설 파기 때 함께 지워진다. 스키마·롤백은 "소설 화 삽화 스키마" 절 |
 
 > **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
 > 지우고 빈 항목은 버리며, 남는 오리진이 없으면 기동에 실패한다. 새로 쓸 때는 쉼표 구분으로 쓴다.
@@ -1659,6 +1660,32 @@ sudo bash ops/swap-api.sh 5bd30c8
 - **스키마까지 내릴 때**(`alembic downgrade f89a3d8ed3a8`): 두 칸을 지운다. 블록 id 가 사라지고, 다시 올리면 백필이 다른 새 id
   로 채운다 — 블록 id 를 가리키는 다른 표가 생긴 뒤라면 그 참조가 끊긴다. 위 「스키마까지 되돌릴 때」의 순서(옛 코드 먼저 → 새
   이미지로 downgrade)를 따른다. 이 목표는 `211f81f33be5` 도 함께 내린다.
+
+**소설 화 삽화 스키마(`b871b88d2a90`) — 배포 · 되돌리기.** 화 개정마다의 삽화 배치 표(`novel_chapter_illustrations`, 개정 FK
+`ON DELETE CASCADE`·그림 FK 지우기 거부), 개정 출처 CHECK 의 `illustration`, 심사 거부 자리 CHECK 의 `illustration`, 화 공개본·판의
+`illustrations_screened_at`(NULL 허용), 삽화 심사 통과 기억 표·내림 기록 표를 한 리비전에 더한다. 스위치(`NOVEL_ILLUSTRATIONS_ENABLED`,
+위 env 표)가 꺼진 채 배포하면 운영 동작이 바뀌지 않는다 — 배치 API 는 404, 응답에 그림이 없고, 배치 행·`illustration` 개정이 생기지
+않는다. 평상시 겹침 교체로 배포한다(`skip_overlap` 불필요): 겹침 동안 도는 옛 이미지(`7a96144b`)는 새 표·칸을 모르고, 넓힌 CHECK 는
+옛 값을 그대로 받고, 공개본·판 INSERT 는 새 칸을 NULL 로 남기며, 개정을 지우는 옛 경로(소설·묶음 삭제·탈퇴)는 배치를 CASCADE 로 함께
+지운다(공개본·판 INSERT 와 개정 DELETE 는 `tests/test_novel_illustrations_migration.py` 가 옛 코드 꼴의 원시 SQL 로 확인한다).
+
+- **병합 전**: 위 블록 칸 단락과 같이 운영 최신 백업 성공을 본다.
+- **되돌리기 순서**: ① 스위치 줄을 지운다(`sudo sed -i '/^NOVEL_ILLUSTRATIONS_ENABLED=/d' /opt/ddona/.env` → `check_env.py --format`
+  → api 재생성). 배치 API 가 404 가 되고 응답에서 그림이 빠진다 — 이미 붙은 배치는 DB 에 남고 다시 켜면 다시 보인다. ② 이미지를
+  이 리비전 이전(`7a96144b`)으로 되돌리기 전에 아래 행 수를 본다. **`illustration` 개정이 하나라도 있으면 이미지 롤백 금지·앞으로
+  고치기** — 옛 이미지의 화·개정·소설 상세 응답은 개정 출처 Literal 에 `illustration` 이 없어 그 화를 읽는 순간 500 이다. 0 이면
+  (배치는 `illustration` 개정으로만 처음 생기므로 배치도 0 이다) 이미지만 되돌려도 된다(downgrade 없이 — 옛 코드는 이 스키마에서
+  돈다). ③ 스키마까지 내려야 하면(`alembic downgrade 211f81f33be5`) 서빙 중 이미지로 돌리고,
+  막는 행(배치·`illustration` 개정·거부 기록·심사 시각·통과 기억·내림 기록)이 하나라도 있으면 downgrade 가 일부러 멈춘다. 0 일 때만
+  [downgrade → revert 병합] 한 짝으로 하고, 겹침 중 `main` 병합을 멈춘다.
+
+```sh
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c \
+  "SELECT (SELECT count(*) FROM novel_chapter_revisions WHERE source = 'illustration'),
+          (SELECT count(*) FROM novel_chapter_illustrations),
+          (SELECT count(*) FROM novel_screenings WHERE 'illustration' = ANY(flagged_parts));"
+```
 
 ### 3-12. 상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기
 
