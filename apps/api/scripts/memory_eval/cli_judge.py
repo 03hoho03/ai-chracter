@@ -768,27 +768,52 @@ def v4_effect_floors_input(path: Path) -> dict[str, Any]:
 
 
 def cmd_v4_verdict(args: argparse.Namespace) -> int:
-    """묶음 1 판정 — 안전 쌍·효과 셋 Holm·비열등·캐릭터 표(시험 절반 — 봉인 확인 뒤). 대본마다 심기 표와 분할 폴더를 짝으로 주고,
-    궤적은 대본마다 `trajectory-replay` 출력 폴더를 준다. 결과는 `<원자료>/b1/measure/verdict.json`."""
+    """묶음 1 판정 — 안전 쌍·효과 Holm·비열등·캐릭터 표·켜기 권고(시험 절반 — 봉인 확인 뒤). 대본마다 심기 표와 분할 폴더를 짝으로
+    주고, 궤적은 대본마다 `trajectory-replay` 출력 폴더를 준다. 결과는 `<원자료>/b1/measure/verdict.json`."""
+    return _v4_judge(args, split="test")
+
+
+def cmd_v4_preview(args: argparse.Namespace) -> int:
+    """개발 절반 미리보기 — 시험 판정과 같은 함수·같은 규칙을 개발 문항에 돌린다(봉인 없이). 개발 미리보기가 돌리지 않는 갈래가 든
+    쌍·효과는 개발 범위 밖으로 표시한다. 결과는 `<원자료>/b1/preview/verdict-dev.json`, 결과 머리에 `split: dev`."""
+    return _v4_judge(args, split="dev")
+
+
+def cmd_v4_power_table(args: argparse.Namespace) -> int:
+    """봉인 전에 실제 시험 n 으로 "통과 최소 불일치" 표를 낸다 — 판정 규칙과 같은 상수(문턱)를 읽는다. 유료 호출·파일 읽기 없음."""
+    from memory_eval.verdict_v4 import power_table
+
+    sizes: dict[str, int] = {}
+    for item in args.n:
+        key, _, value = item.partition("=")
+        if not value.isdigit():
+            raise SystemExit(f"표본은 '키=정수' 꼴이다: {item!r}")
+        sizes[key] = int(value)
+    _print(power_table(sizes, max_c=args.max_c))
+    return 0
+
+
+def _v4_judge(args: argparse.Namespace, *, split: str) -> int:
     from memory_eval.judge import ensure_unique_probe_rows
     from memory_eval.verdict_v4 import v4_verdict
 
     scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
     judge_rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
     _require_ran(args, scores + judge_rows)
-    require_seal(
-        {"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha, test_drop=getattr(args, "test_drop", None)
-    )
+    seal_sha = getattr(args, "seal_sha", None)
+    test_drop = getattr(args, "test_drop", None)
+    if split == "test":
+        require_seal({"test"}, args.run / PREREGISTRATION_FILE, seal_sha=seal_sha, test_drop=test_drop)
 
     def view(pair: list[str]) -> plants_mod.PlantSet:
         plants_path, split_dir = Path(pair[0]), Path(pair[1])
         return holdout.load_view(
             plants_path,
             split_dir,
-            {"test"},
+            {split},
             preregistration=args.run / PREREGISTRATION_FILE,
-            seal_sha=args.seal_sha,
-            test_drop=args.test_drop,
+            seal_sha=seal_sha,
+            test_drop=test_drop,
         )
 
     story = [view(pair) for pair in args.story]
@@ -817,10 +842,12 @@ def cmd_v4_verdict(args: argparse.Namespace) -> int:
     result = v4_verdict(
         story, character, scores, judge_rows=judge_rows, control_rows=control_rows, trajectories=trajectories,
         section_max=section_max, controls_override=override, effect_floors=floors["floors"] if floors else None,
+        with_a0m=args.with_a0m, split=split,
     )  # fmt: skip
     if floors:
         result["effectFloors"] = floors
-    out = args.out or args.run / "b1" / "measure" / "verdict.json"
+    default_out = args.run / "b1" / ("measure/verdict.json" if split == "test" else "preview/verdict-dev.json")
+    out = args.out or default_out
     out.parent.mkdir(parents=True, exist_ok=True)
     _write(out, result)
     _print(
@@ -828,6 +855,9 @@ def cmd_v4_verdict(args: argparse.Namespace) -> int:
         | {k: result["effects"][k]["status"] for k in ("E1", "E2", "E3")}
         | {"nonInferiority": result["nonInferiority"]["status"], "controls": result["controls"]["status"]}
         | {"invalid": result["invalid"], "underpowered": result["underpowered"], "status": result["status"]}
+        | {"recommendations": {k: v["status"] for k, v in result["recommendations"]["steps"].items()}}
+        | {"stage3Pass": result["recommendations"]["stage3Pass"]["status"]}
+        | {"split": result["split"], "outOfScope": result["outOfScope"]}
     )
     return 0
 
@@ -1043,7 +1073,10 @@ def cmd_judge_sample_estimate(args: argparse.Namespace) -> int:
     """두 대본의 턴 수로 표본 생성(Opus 직결) 원가 견적. 토큰 값은 실측(첫 몇 턴의 원장)으로 바꾼다."""
     from memory_eval import judge_sample as js
 
-    scripts = {path.name: js.load_script(path) for path in (data_file(args, js.STORY_SCRIPT_FILE), data_file(args, js.CHARACTER_SCRIPT_FILE))}
+    scripts = {
+        path.name: js.load_script(path)
+        for path in (data_file(args, js.STORY_SCRIPT_FILE), data_file(args, js.CHARACTER_SCRIPT_FILE))
+    }
     rooms = {
         name: js.generation_estimate(
             turns=len(script["turns"]),
@@ -1254,7 +1287,6 @@ def _kind_quota(value: str) -> tuple[str, int]:
     return kind, int(count)
 
 
-
 def _check_judge_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     if args.categories is not None and not args.controls:
         parser.error("--categories 는 대조군(--controls)만 거른다")
@@ -1266,6 +1298,11 @@ def _keep_categories(args: argparse.Namespace, entry: dict[str, Any]) -> bool:
     from memory_eval.judge import judge_kind
 
     categories: list[str] | None = args.categories
+    if args.targeted:
+        from memory_eval.verdict_v4 import targeted_asks
+
+        if not targeted_asks(str(entry.get("category")), args.arm):
+            return False
     return categories is None or judge_kind(entry) in categories
 
 
@@ -1287,10 +1324,54 @@ def _extend_infra(sub: "argparse._SubParsersAction[argparse.ArgumentParser]", pa
         type=parse_categories,
         help="이 판정 종류의 문항만 계획한다(쉼표 목록, 기본 전부) — 멈춤 기준도 그 계획의 프로브 수",
     )
+    probe.add_argument(
+        "--targeted",
+        action="store_true",
+        help="범주 → 갈래 표대로 이 갈래가 묻는 범주의 문항만 계획한다(표에 없는 범주는 모든 갈래에서) — --categories 와 겹치면 둘 다 맞는 문항",
+    )
     # 범주를 고르면 그 범주 문항이 이번 실행의 계획이다(안전 범주만 보내는 갈래) — 멈춤 기준도 그 계획으로 센다.
     probe.set_defaults(plan_filter=_keep_categories)
     replay.add_argument("--section-max", type=int, default=970, help="길이 판정의 같은 턴 차 최대(섹션 최대 + 구분)")
     replay.set_defaults(replay_checks=_replay_checks)
+
+
+def _v4_args(p: argparse.ArgumentParser, *, out_default: str) -> None:
+    """v4-verdict·v4-preview 가 함께 받는 입력 — 두 명령이 같은 판정 함수를 부르므로 입력도 같다."""
+    p.add_argument("--story", nargs=2, action="append", required=True, metavar=("PLANTS", "SPLIT_DIR"),
+                   help="스토리 대본 하나의 심기 표와 분할 폴더(대본마다 한 번씩)")  # fmt: skip
+    p.add_argument(
+        "--character",
+        nargs=2,
+        required=True,
+        metavar=("PLANTS", "SPLIT_DIR"),
+        help="캐릭터 대본의 심기 표와 분할 폴더(관문 표라 필수)",
+    )
+    p.add_argument("--scores", type=Path, nargs="+", required=True, help="score 출력(모든 대본·갈래)")
+    p.add_argument("--judged", type=Path, nargs="+", required=True, help="judge 출력(모든 대본·갈래)")
+    p.add_argument("--controls", type=Path, help="대조군 기록(기본 <원자료>/judge/controls.json)")
+    p.add_argument(
+        "--split-seeds",
+        type=Path,
+        help="분할 시드 파일 — 효과마다 합계 하한을 읽어 쌍 수가 그 밑인 효과만 검출력 부족으로 보류한다(없으면 그 효과도 halt)",
+    )
+    p.add_argument(
+        "--accept-failed-controls",
+        metavar="SHA256",
+        help="관문을 못 넘은 대조군 기록을 사용자가 받아들였을 때 그 기록 파일의 sha256(본 판정 judge 와 같은 값)",
+    )
+    p.add_argument("--accept-reason", help="--accept-failed-controls 의 이유(누가 왜 — 결과에 남는다)")
+    p.add_argument("--trajectory-dir", nargs=3, action="append", default=[], metavar=("SCRIPT", "LANE", "DIR"),
+                   help="대본 하나의 trajectory-replay 출력 폴더(대본 이름·레인·폴더)")  # fmt: skip
+    p.add_argument(
+        "--section-max", nargs="*", default=[], help="쌍마다 섹션 계산 최대 — '기준:비교=글자'(예 b1-A0:b1-A1=970)"
+    )
+    p.add_argument(
+        "--with-a0m",
+        action="store_true",
+        help="측정에 A0M 갈래를 더했을 때 — A0 대 A0M 쌍을 관문에, 그 비열등을 관찰에 넣는다",
+    )
+    p.add_argument("--out", type=Path, help=f"기본 {out_default}")
+    _ran_args(p)
 
 
 def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
@@ -1498,7 +1579,9 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--scores", type=Path, nargs="+", required=True, help="score 출력(A·B 갈래)")
     p.add_argument("--judged", type=Path, nargs="*", default=[], help="judge 출력")
     p.add_argument("--offline", type=Path, required=True, help="recall-offline 출력(시험 절반)")
-    p.add_argument("--trajectory", type=Path, nargs="*", default=[], help="trajectory 점(jsonl, A·B 갈래) — 길이·캐시 블록 칸")
+    p.add_argument(
+        "--trajectory", type=Path, nargs="*", default=[], help="trajectory 점(jsonl, A·B 갈래) — 길이·캐시 블록 칸"
+    )
     p.add_argument("--recall-section-max", type=int, help="테스트가 계산한 회상 섹션 최대 글자 — 길이 칸")
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_s8)
@@ -1516,43 +1599,31 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.set_defaults(fn=cmd_v3_verdict)
 
     p = sub.add_parser(
-        "v4-verdict", help="묶음 1 판정 — 안전 쌍·효과 셋 Holm·비열등·캐릭터 표(시험 절반 — 봉인 해시 필요)"
+        "v4-verdict", help="묶음 1 판정 — 안전 쌍·효과 Holm·비열등·캐릭터 표·켜기 권고(시험 절반 — 봉인 해시 필요)"
     )
     p.add_argument("--seal-sha", required=True)
     p.add_argument(
         "--test-drop", type=Path, help="시험 쪽에서 뺄 id 목록 파일(sha256 이 봉인 문서 머리에 적혀 있어야 한다)"
     )
-    p.add_argument("--story", nargs=2, action="append", required=True, metavar=("PLANTS", "SPLIT_DIR"),
-                   help="스토리 대본 하나의 심기 표와 분할 폴더(대본마다 한 번씩)")  # fmt: skip
-    p.add_argument(
-        "--character",
-        nargs=2,
-        required=True,
-        metavar=("PLANTS", "SPLIT_DIR"),
-        help="캐릭터 대본의 심기 표와 분할 폴더(관문 표라 필수)",
-    )
-    p.add_argument("--scores", type=Path, nargs="+", required=True, help="score 출력(모든 대본·갈래)")
-    p.add_argument("--judged", type=Path, nargs="+", required=True, help="judge 출력(모든 대본·갈래)")
-    p.add_argument("--controls", type=Path, help="대조군 기록(기본 <원자료>/judge/controls.json)")
-    p.add_argument(
-        "--split-seeds",
-        type=Path,
-        help="분할 시드 파일 — 효과마다 합계 하한을 읽어 쌍 수가 그 밑인 효과만 검출력 부족으로 보류한다(없으면 그 효과도 halt)",
-    )
-    p.add_argument(
-        "--accept-failed-controls",
-        metavar="SHA256",
-        help="관문을 못 넘은 대조군 기록을 사용자가 받아들였을 때 그 기록 파일의 sha256(본 판정 judge 와 같은 값)",
-    )
-    p.add_argument("--accept-reason", help="--accept-failed-controls 의 이유(누가 왜 — 결과에 남는다)")
-    p.add_argument("--trajectory-dir", nargs=3, action="append", default=[], metavar=("SCRIPT", "LANE", "DIR"),
-                   help="대본 하나의 trajectory-replay 출력 폴더(대본 이름·레인·폴더)")  # fmt: skip
-    p.add_argument(
-        "--section-max", nargs="*", default=[], help="쌍마다 섹션 계산 최대 — '기준:비교=글자'(예 b1-A0:b1-A1=970)"
-    )
-    p.add_argument("--out", type=Path, help="기본 <원자료>/b1/measure/verdict.json")
-    _ran_args(p)
+    _v4_args(p, out_default="<원자료>/b1/measure/verdict.json")
     p.set_defaults(fn=cmd_v4_verdict)
+
+    p = sub.add_parser(
+        "v4-preview",
+        help="개발 절반 미리보기 — v4-verdict 와 같은 규칙을 개발 문항에(봉인 없이). A0·A1·B1 밖 갈래가 든 쌍·효과는 개발 범위 밖",
+    )
+    _v4_args(p, out_default="<원자료>/b1/preview/verdict-dev.json")
+    p.set_defaults(fn=cmd_v4_preview)
+
+    p = sub.add_parser("v4-power-table", help="봉인 전 통과 최소 불일치 표 — 실제 시험 n 마다 규칙 문턱의 최소 b")
+    p.add_argument(
+        "--n",
+        nargs="+",
+        required=True,
+        help="표본 — 'secret:story=84' 꼴(키 secret:<레인>·premise:<레인>·effect:<E1|E2>·nonInferiority)",
+    )
+    p.add_argument("--max-c", type=int, default=5, help="반대쪽 불일치 c 를 0 부터 이 값까지")
+    p.set_defaults(fn=cmd_v4_power_table)
 
     from memory_eval import judge_agreement as ja
 

@@ -390,3 +390,55 @@ def test_a_failure_while_rewriting_the_results_leaves_the_result_file_whole_and_
     (stale,) = (run / "probes").glob("stale-*")
     moved = [json.loads(line) for line in (stale / out.name).read_text(encoding="utf-8").splitlines()]
     assert [(r["checkpoint"], r["item"]) for r in moved] == [(300, "q1")]
+
+
+def test_the_targeted_table_asks_each_category_in_every_arm_its_comparisons_need() -> None:
+    """범주마다 묻는 갈래 — 비밀·거짓 전제는 다섯 갈래, 관계·정정은 넷, 바꿔 말하기는 B1·B1E, 디테일은 A0·A1. 판정이 견주는
+    쌍·효과·비열등의 두 갈래가 그 범주를 묻는 갈래에 모두 들어 있어야 한다(빠지면 그 비교가 입력 누락으로 멈춘다)."""
+    from memory_eval import verdict_v4 as v4
+
+    five = ("b1-A0", "b1-A1", "b1-B1", "b1-B1E", "b1-B2")
+    assert v4.TARGETED_ARMS == {
+        "secret": five, "false_premise": five,
+        "relation": five[1:], "correction": five[1:],
+        "rephrase": ("b1-B1", "b1-B1E"), "detail": ("b1-A0", "b1-A1"),
+    }  # fmt: skip
+    needs: list[tuple[tuple[str, str], tuple[str, ...]]] = [
+        ((a, b), (v4.SECRET_CATEGORY, v4.PREMISE_CATEGORY)) for a, b, _ in v4.SAFETY_PAIRS + v4.REFERENCE_PAIRS
+    ]
+    needs += [((a, b), cats) for a, b, cats, _ in v4.EFFECTS.values()]
+    needs += [(v4.NONINFERIORITY[:2], v4.NONINFERIORITY[2])]
+    for arms, categories in needs:
+        for category in categories:
+            assert set(arms) <= set(v4.TARGETED_ARMS[category]), (arms, category)
+
+
+def test_probe_targeted_plans_only_the_categories_that_arm_is_asked_and_keeps_unlisted_ones(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """표적형은 사람이 문항 id 목록을 만들지 않고 범주 → 갈래 표로 계획을 고른다. 표에 없는 범주(기권 등 관찰 범주)는 모든
+    갈래에서 묻는다. 표에 없는 갈래(A0M)는 거부한다 — 그 갈래가 무엇을 물어야 하는지 표가 정하지 않았다."""
+    from memory_eval_cli import main
+
+    plants, split_dir = _bundle(tmp_path)
+    view = _dev_view(tmp_path, plants, split_dir)
+    by_category: dict[str, set[str]] = {}
+    for probe in plants_mod.opus_probes(view, 300):
+        by_category.setdefault(str(view.item(probe.item_id)["category"]), set()).add(probe.item_id)
+    assert {"secret", "rephrase", "abstain"} <= set(by_category)
+    expected = {
+        "b1-A0": by_category["secret"] | by_category["abstain"],
+        "b1-B1E": by_category["secret"] | by_category["rephrase"] | by_category["abstain"],
+    }
+    for arm, items in expected.items():
+        assert main([*_probe_argv(tmp_path, plants, split_dir, arm), "--targeted"]) == 0
+        out = json.loads(capsys.readouterr().out)
+        assert {p["item"] for p in out["plan"]} == items, arm
+        assert out["haltBase"] == len(items)
+    assert main([*_probe_argv(tmp_path, plants, split_dir, "b1-B1E"), "--targeted", "--categories", "secret"]) == 0
+    assert {p["item"] for p in json.loads(capsys.readouterr().out)["plan"]} == by_category["secret"]
+    rephrase = sorted(by_category["rephrase"])[0]
+    assert main([*_probe_argv(tmp_path, plants, split_dir, "b1-A0"), "--targeted", "--items", rephrase]) == 2
+    assert rephrase in capsys.readouterr().err
+    assert main([*_probe_argv(tmp_path, plants, split_dir, "b1-A0M"), "--targeted"]) == 2
+    assert "A0M" in capsys.readouterr().err
