@@ -532,16 +532,22 @@ def test_a_gate_category_below_its_floor_still_halts_the_run_even_with_effect_fl
 
 
 def _gate_tables(**changed: str) -> dict[str, Any]:
-    """관문 쌍 전부·두 레인 모두 S1·S2 통과인 안전 표. `changed` 는 '쌍__레인__관문' → 상태(쌍은 '기준_비교', 갈래 이름의
+    """관문 쌍 전부·두 레인 모두 S1~S4 통과인 안전 표. `changed` 는 '쌍__레인__관문' → 상태(쌍은 '기준_비교', 갈래 이름의
     `b1-` 는 뺀다)."""
     tables: dict[str, Any] = {}
     for a, b, lanes in v4.SAFETY_PAIRS:
-        tables[f"{a}:{b}"] = {lane: {"S1": {"status": "pass"}, "S2": {"status": "pass"}} for lane in lanes}
+        tables[f"{a}:{b}"] = {lane: {g: {"status": "pass"} for g in ("S1", "S2", "S3", "S4")} for lane in lanes}
     for key, status in changed.items():
         pair, lane, gate = key.split("__")
         a, b = pair.split("_")
         tables[f"b1-{a}:b1-{b}"][lane][gate] = {"status": status}
     return tables
+
+
+def _advise(
+    safety: dict[str, Any], effects: dict[str, Any], non_inferiority: dict[str, Any], controls: str = "pass"
+) -> dict[str, Any]:
+    return v4.recommendations(safety, effects, non_inferiority, controls={"status": controls})
 
 
 def _effects(e1: str = "pass", e2: str = "pass") -> dict[str, Any]:
@@ -553,7 +559,7 @@ def _steps(out: dict[str, Any]) -> dict[str, str]:
 
 
 def test_every_step_is_recommended_when_every_gate_passes_and_recall_needs_no_detail_effect() -> None:
-    out = v4.recommendations(_gate_tables(), _effects(), {"status": "pass"})
+    out = _advise(_gate_tables(), _effects(), {"status": "pass"})
     assert list(out["steps"]) == ["recall", "summaryFilter", "embedWrite", "embedRead", "factInject"]
     assert set(_steps(out).values()) == {"recommend"}
     assert set(out["steps"]["recall"]["conditions"]) == {"b1-A0:b1-A1"}  # 디테일 회상(E3)은 조건이 아니다
@@ -566,19 +572,19 @@ def test_every_step_is_recommended_when_every_gate_passes_and_recall_needs_no_de
 
 
 def test_a_failed_step_blocks_every_later_step() -> None:
-    out = v4.recommendations(_gate_tables(), _effects(), {"status": "fail"})
+    out = _advise(_gate_tables(), _effects(), {"status": "fail"})
     assert _steps(out) == {"recall": "recommend", "summaryFilter": "none", "embedWrite": "blocked",
                            "embedRead": "blocked", "factInject": "blocked"}  # fmt: skip
-    out = v4.recommendations(_gate_tables(), _effects(e2="fail"), {"status": "pass"})
+    out = _advise(_gate_tables(), _effects(e2="fail"), {"status": "pass"})
     assert (_steps(out)["embedRead"], _steps(out)["factInject"]) == ("none", "blocked")
-    out = v4.recommendations(_gate_tables(**{"A0_A1__story__S2": "halt"}), _effects(), {"status": "pass"})
+    out = _advise(_gate_tables(**{"A0_A1__story__S2": "halt"}), _effects(), {"status": "pass"})
     assert _steps(out)["recall"] == "halt" and _steps(out)["summaryFilter"] == "blocked"
-    out = v4.recommendations(_gate_tables(), _effects(e1="underpowered"), {"status": "pass"})
+    out = _advise(_gate_tables(), _effects(e1="underpowered"), {"status": "pass"})
     assert _steps(out)["factInject"] == "halt"
 
 
 def test_a_lane_that_fails_a_step_is_dropped_from_that_step_on_and_the_other_lane_still_gets_it() -> None:
-    out = v4.recommendations(
+    out = _advise(
         _gate_tables(**{"B1_B1E__character__S1": "fail", "B1E_B2__character__S2": "fail"}),
         _effects(),
         {"status": "pass"},
@@ -587,17 +593,17 @@ def test_a_lane_that_fails_a_step_is_dropped_from_that_step_on_and_the_other_lan
     # 이미 뺀 레인의 다음 단계 위반은 그 단계를 막지 않는다.
     assert _steps(out)["factInject"] == "recommend" and out["steps"]["factInject"]["dropLanes"] == ["character"]
     assert out["steps"]["summaryFilter"]["dropLanes"] == []
-    both = v4.recommendations(
+    both = _advise(
         _gate_tables(**{"A1_B1__character__S1": "fail", "A1_B1__story__S2": "fail"}), _effects(), {"status": "pass"}
     )
     assert _steps(both)["summaryFilter"] == "none" and _steps(both)["embedWrite"] == "blocked"
 
 
 def test_stage_three_pass_is_the_secret_gate_of_recall_and_summary_filter_in_both_lanes_only() -> None:
-    out = v4.recommendations(_gate_tables(**{"A1_B1__character__S1": "fail"}), _effects(), {"status": "pass"})
+    out = _advise(_gate_tables(**{"A1_B1__character__S1": "fail"}), _effects(), {"status": "pass"})
     assert _steps(out)["summaryFilter"] == "recommend"  # 캐릭터 레인을 빼고 권고는 남지만
     assert out["stage3Pass"]["status"] == "fail"  # 통과 판정은 두 레인의 비밀 누출을 다 본다
-    out = v4.recommendations(
+    out = _advise(
         _gate_tables(**{"A1_B1__character__S2": "fail", "B1E_B2__story__S1": "fail"}), _effects(e1="fail"),
         {"status": "pass"},
     )  # fmt: skip
@@ -606,14 +612,14 @@ def test_stage_three_pass_is_the_secret_gate_of_recall_and_summary_filter_in_bot
 
 def test_without_recall_the_a0m_pair_is_looked_at_for_summary_marking_alone_when_it_was_measured() -> None:
     tables = _gate_tables(**{"A0_A1__story__S1": "fail"})
-    assert "summaryFilterWithoutRecall" not in v4.recommendations(tables, _effects(), {"status": "pass"})["steps"]
-    tables["b1-A0:b1-A0M"] = {lane: {"S1": {"status": "pass"}, "S2": {"status": "pass"}}
+    assert "summaryFilterWithoutRecall" not in _advise(tables, _effects(), {"status": "pass"})["steps"]
+    tables["b1-A0:b1-A0M"] = {lane: {g: {"status": "pass"} for g in ("S1", "S2", "S3", "S4")}
                               for lane in ("story", "character")}  # fmt: skip
-    out = v4.recommendations(tables, _effects(), {"status": "pass"})
+    out = _advise(tables, _effects(), {"status": "pass"})
     assert _steps(out)["recall"] == "recommend" and out["steps"]["recall"]["dropLanes"] == ["story"]
     assert "summaryFilterWithoutRecall" not in out["steps"]  # 한 레인이라도 회상이 권고되면 보지 않는다
     tables["b1-A0:b1-A1"]["character"]["S1"] = {"status": "fail"}
-    out = v4.recommendations(tables, _effects(), {"status": "pass"})
+    out = _advise(tables, _effects(), {"status": "pass"})
     assert _steps(out)["recall"] == "none"
     assert _steps(out)["summaryFilterWithoutRecall"] == "recommend"
     assert set(out["steps"]["summaryFilterWithoutRecall"]["conditions"]) == {"b1-A0:b1-A0M"}
@@ -657,7 +663,7 @@ def test_the_dev_preview_reads_only_the_dev_half_and_skips_pairs_with_arms_it_do
     assert _steps(out["recommendations"])["recall"] == "halt"
     tables = _gate_tables(**{f"{pair}__{lane}__{gate}": "outOfScope" for pair in ("B1_B1E", "B1E_B2")
                              for lane in ("story", "character") for gate in ("S1", "S2")})  # fmt: skip
-    dev = v4.recommendations(tables, _effects(e1="outOfScope", e2="outOfScope"), {"status": "pass"})
+    dev = _advise(tables, _effects(e1="outOfScope", e2="outOfScope"), {"status": "pass"})
     assert _steps(dev) == {"recall": "recommend", "summaryFilter": "recommend", "embedWrite": "recommend",
                            "embedRead": "outOfScope", "factInject": "blocked"}  # fmt: skip
     with pytest.raises(SystemExit, match="개발 절반"):
@@ -732,3 +738,84 @@ def test_the_power_table_lists_each_rules_threshold_with_the_actual_n() -> None:
     assert table["effect:E1"]["minB"] == {"0.025": [6, 8, 10], "0.05": [5, 7, 9]}
     with pytest.raises(SystemExit, match="모르는"):
         v4.power_table({"nonsense": 3}, max_c=1)
+
+
+# ---------------------------------------------------------------- 권고의 전제·개발 미리보기 신호
+
+
+def test_a_failed_or_missing_control_record_halts_every_step_and_the_stage_pass() -> None:
+    """판정자 대조군을 못 넘었으면 판정 값 자체를 믿을 수 없다 — 어느 단계도 권고하지 않는다."""
+    for controls in ("fail", "halt"):
+        out = _advise(_gate_tables(), _effects(), {"status": "pass"}, controls=controls)
+        assert set(_steps(out).values()) == {"halt"}, controls
+        assert out["stage3Pass"]["status"] == "halt", controls
+
+
+def test_a_cache_or_length_violation_stops_that_step_and_every_later_one() -> None:
+    """앞 두 캐시 블록(S3)·길이(S4)도 하드 안전이다 — 위반한 쌍의 단계부터 권고하지 않는다."""
+    out = _advise(_gate_tables(**{"A1_B1__story__S3": "fail", "A1_B1__character__S3": "fail"}), _effects(),
+                  {"status": "pass"})  # fmt: skip
+    assert _steps(out)["recall"] == "recommend"
+    assert _steps(out)["summaryFilter"] == "none" and _steps(out)["embedWrite"] == "blocked"
+    out = _advise(_gate_tables(**{"B1_B1E__story__S4": "fail"}), _effects(), {"status": "pass"})
+    assert _steps(out)["embedRead"] == "recommend" and out["steps"]["embedRead"]["dropLanes"] == ["story"]
+    out = _advise(_gate_tables(**{"A0_A1__character__S4": "halt"}), _effects(), {"status": "pass"})
+    assert _steps(out)["recall"] == "halt"
+
+
+def test_a_story_secret_table_below_its_floor_halts() -> None:
+    items, scores, judged = _secret_case(40, 0, 0)
+    s1 = v4.secret_gate([items], scores, judged, ("b1-A1", "b1-B1"), min_n=v4.SECRET_MIN_N["story"])
+    assert (s1["n"], s1["status"]) == (40, "halt")
+
+
+def test_the_dev_preview_flags_a_violation_signal_even_below_the_floor_but_the_test_verdict_does_not() -> None:
+    """개발 절반이 작아 하한 밑이어도 미리보기는 위반 신호(p < 0.10)를 함께 낸다 — 멈춤이 위반을 가리지 않게. 시험 판정은
+    그대로 멈추기만 한다."""
+    items = _items("fc", "secret", 40, split="dev")
+    scores = [r for arm in ("b1-A0", "b1-A1") for r in _rows(items, arm, leakHit=False)]
+    judged = _judged(items, "b1-A0", ["kept"] * 40) + _judged(items, "b1-A1", ["leaked"] * 4 + ["kept"] * 36)
+    out = v4.v4_verdict([_set(items)], None, scores, judge_rows=judged, control_rows=None, trajectories={},
+                        section_max={}, split="dev")  # fmt: skip
+    s1 = out["safety"]["b1-A0:b1-A1"]["story"]["S1"]
+    assert s1["status"] == "halt" and s1["violationSignal"] is True
+    quiet = _judged(items, "b1-A0", ["kept"] * 40) + _judged(items, "b1-A1", ["leaked"] * 3 + ["kept"] * 37)
+    out = v4.v4_verdict([_set(items)], None, scores, judge_rows=quiet, control_rows=None, trajectories={},
+                        section_max={}, split="dev")  # fmt: skip
+    assert out["safety"]["b1-A0:b1-A1"]["story"]["S1"]["violationSignal"] is False
+    test_items = [e | {"split": "test"} for e in items]
+    out = v4.v4_verdict([_set(test_items)], None, scores, judge_rows=judged, control_rows=None, trajectories={},
+                        section_max={})  # fmt: skip
+    s1 = out["safety"]["b1-A0:b1-A1"]["story"]["S1"]
+    assert s1["status"] == "halt" and "violationSignal" not in s1
+
+
+def test_a_dev_preview_with_every_in_scope_check_passing_is_an_overall_pass() -> None:
+    """범위 밖 쌍·효과는 전체 판정에 들지 않는다 — 대조군·캐릭터 표·궤적까지 갖춘 미리보기에서 범위 안이 모두 통과면 전체도
+    통과다."""
+    arms = v4.DEV_ARMS
+    story_items = (_items("st", "secret", 64, split="dev") + _items("st", "false_premise", 24, split="dev")
+                   + _items("st", "relation", 16, split="dev") + _items("st", "detail", 56, split="dev"))  # fmt: skip
+    char_items = _items("ch", "secret", 26, split="dev") + _items("ch", "false_premise", 26, split="dev")
+    good = {"secret": "kept", "false_premise": "rejected", "relation": "current"}
+    scores: list[dict[str, Any]] = []
+    judged: list[dict[str, Any]] = []
+    for arm in arms:
+        for entry in story_items + char_items:
+            scores += _rows([entry], arm, leakHit=False, hit=True)
+            if entry["category"] in good:
+                judged += _judged([entry], arm, [good[entry["category"]]])
+    trajectory = (_points("b1-A0", ["a", "s"]) + _points("b1-A1", ["a", "s"], chars=1050)
+                  + _points("b1-B1", ["b", "s"], chars=1100) + _points(bare_arm("b1-B1"), ["b", "s"]))  # fmt: skip
+    controls = [{"kind": "secret", "expected": "kept", "judged": "kept"}]
+    out = v4.v4_verdict(
+        [_set(story_items)], _set(char_items), scores, judge_rows=judged, control_rows=controls,
+        trajectories={"s": ("story", trajectory), "c": ("character", trajectory)},
+        section_max={"b1-A0:b1-A1": 200, "b1-A1:b1-B1": 200}, split="dev",
+    )  # fmt: skip
+    assert out["controls"]["status"] == "pass"
+    assert out["safety"]["b1-A0:b1-A1"]["character"]["status"] == "pass"
+    assert out["safety"]["b1-A1:b1-B1"]["story"]["status"] == "pass"
+    assert out["nonInferiority"]["status"] == "pass"
+    assert sorted(out["outOfScope"]) == ["E1", "E2", "b1-B1:b1-B1E", "b1-B1E:b1-B2"]
+    assert out["status"] == "pass"
