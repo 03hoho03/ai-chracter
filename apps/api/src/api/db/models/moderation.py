@@ -219,6 +219,7 @@ AdminActionType = Literal[
     "novel-comment-hide",
     "novel-comment-report-reject",
     "novel-comment-restore",
+    "novel-illustration-takedown",
     "novel-lift",
     "novel-report-reject",
     "novel-restrict",

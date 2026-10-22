@@ -8,6 +8,8 @@ from api.core.schema import CamelModel
 from api.db.models.moderation import ReportReasonCategory, ReportStatus
 from api.db.models.novel import (
     NovelContentType,
+    NovelIllustrationPlacement,
+    NovelIllustrationSource,
     NovelPublicationModerationStatus,
     NovelPublicationReviewStatus,
     NovelPublicationVisibility,
@@ -277,6 +279,27 @@ class PublicNovelEdition(CamelModel):
     change_summary: str | None
 
 
+# 그림 자리만 남기고 주소를 싣지 않는 까닭 — 운영자가 그 그림을 내림, 운영자가 원작을 이용제한해 원작 그림을 뺌.
+NovelIllustrationWithheld = Literal["taken_down", "original_restricted"]
+
+
+class PublicNovelIllustration(CamelModel):
+    """화 읽기의 삽화 한 장. 자리는 본문 문단 배열(`paragraphs`)의 인덱스와 그 앞·뒤, 같은 자리 안의 순위(`order`, 0부터)다.
+    `source` 가 `original` 이면 원작에서 온 그림이다(화면이 "원작 이미지"로 표시한다). `url` 은 크게 그리는 정지 그림이고
+    `width`·`height` 는 그 크기(모르면 null — 화면이 정한 비율 칸에 그린다). `withheld` 가 차 있으면 그림 자리만 남는다 —
+    `url` 이 없고, 운영자가 내린 그림이면 `withheld_reason` 에 독자에게 보일 사유가 있다."""
+
+    paragraph_index: int
+    placement: NovelIllustrationPlacement
+    order: int
+    source: NovelIllustrationSource
+    url: str | None
+    width: int | None
+    height: int | None
+    withheld: NovelIllustrationWithheld | None
+    withheld_reason: str | None
+
+
 class PublicNovelChapterResponse(CamelModel):
     """노벨 화 하나. `access` 가 `locked` 면 본문(`paragraphs`)과 작가의 말이 비어 있고 `price` 로 소장 화면을 그린다 —
     잠긴 화의 글은 한 글자도 싣지 않는다. 읽을 수 있으면 공개본 개정의 본문을 문단 배열로 싣는다(소유자 화 조회의
@@ -304,6 +327,8 @@ class PublicNovelChapterResponse(CamelModel):
     purchased_edition: PublicNovelEdition | None = None
     latest_edition: PublicNovelEdition | None = None
     sales_stopped: bool = False
+    # 실어 준 판의 삽화(문단 번호 순). 삽화 스위치가 꺼졌거나, 그 판이 삽화를 심사하지 않았거나, 잠긴 화면 빈 목록이다.
+    illustrations: list[PublicNovelIllustration]
 
 
 class PublicNovelReadingPositionRequest(CamelModel):

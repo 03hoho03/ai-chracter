@@ -692,7 +692,8 @@ class NovelChapterPublication(Base):
     # 무료 화에는 30 이 들어갈 수 있고, 읽는 쪽은 앞 무료 화를 이 값과 무관하게 무료로 판정한다(`chapter_price`).
     price: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
     price_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # 이 공개본이 얼린 개정의 삽화를 심사했는가(그 시각). 비어 있으면 독자 화면에 그림을 싣지 않는다 — 삽화 스위치가 꺼진
+    # 이 공개본이 얼린 개정의 삽화를 심사했는가(그 시각). 공개 시각(`published_at`)과 같을 때만 심사한 것으로 보고, 비었거나
+    # 다르면 독자 화면에 그림을 싣지 않는다(이 칸을 모르는 코드의 다시 내기는 공개 시각만 바꾼다) — 삽화 스위치가 꺼진
     # 동안이나 이 칸을 모르는 옛 코드가 얼린 공개본에는 심사받지 않은 그림이 승계돼 있을 수 있다. nullable·기본값 없음인 것은
     # 옛 코드의 INSERT 가 이 칸을 모르기 때문이다.
     illustrations_screened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -739,8 +740,8 @@ class NovelChapterEdition(Base):
     # 판은 비어 있다. 화 공개본에는 두지 않는다 — 판 행은 화 공개본을 베껴 쓰므로, 거기 두면 다시 공개 UPDATE 가 이 칸을
     # 모르는 옛 이미지에서 지난 판의 요약이 새 판 행으로 베껴진다.
     change_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 이 판이 얼린 개정의 삽화를 심사했는가(그 시각). 화 공개본의 같은 칸과 같은 뜻이다 — 비어 있는 판에서는 독자에게 그림을
-    # 싣지 않는다.
+    # 이 판이 얼린 개정의 삽화를 심사했는가(그 시각). 화 공개본의 같은 칸과 같은 뜻이다 — 이 판의 공개 시각과 같지 않은 판에서는
+    # 독자에게 그림을 싣지 않는다.
     illustrations_screened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 소설 인덱스는 반려·신청 취소가 그 소설의 판 행을 지울 때와 소설 DELETE 때 FK 검사용이고, 개정 인덱스는 개정 DELETE 때

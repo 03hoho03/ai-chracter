@@ -16,6 +16,7 @@ from api.db.models.novel import (
     NovelScreeningPart,
     NovelSerialLockSource,
 )
+from api.novel_public.schemas import PublicNovelIllustration
 
 AdminNovelModerationAction = Literal["restrict", "lift"]
 AdminNovelReviewAction = Literal["approve", "reject"]
@@ -132,6 +133,10 @@ class AdminNovelDetailResponse(AdminNovelListItem):
     serial_lock_source: NovelSerialLockSource | None
 
 
+class AdminNovelIllustration(PublicNovelIllustration):
+    asset_id: uuid.UUID
+
+
 class AdminNovelChapterResponse(CamelModel):
     """화 공개본 — 독자에게 나가는 그대로(제목·작가의 말·본문 문단)."""
 
@@ -141,6 +146,19 @@ class AdminNovelChapterResponse(CamelModel):
     author_note: str
     edition: int
     paragraphs: list[str]
+    # 독자에게 나가는 그대로의 삽화(`PublicNovelIllustration`)에 그림 자산 id 를 더한 것 — 그림 내리기가 이 id 로 고른다.
+    illustrations: list[AdminNovelIllustration]
+
+
+class AdminNovelIllustrationTakedownRequest(CamelModel):
+    """그림 하나를 모든 판에서 내린다. `reason` 은 그 그림 자리에 독자에게 보일 사유이자 감사 로그의 조치 사유다(공백만이면 422)."""
+
+    reason: str
+
+
+class AdminNovelIllustrationTakedownResponse(CamelModel):
+    asset_id: uuid.UUID
+    taken_down_at: datetime
 
 
 class AdminNovelModerationRequest(CamelModel):

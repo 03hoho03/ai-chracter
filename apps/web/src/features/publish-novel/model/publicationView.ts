@@ -186,6 +186,7 @@ const CHAPTER_PART_LABELS = {
   chapter_title: "화 제목",
   author_note: "작가의 말",
   chapter_body: "본문",
+  illustration: "삽화",
 } as const;
 
 const NOVEL_PART_LABELS = {

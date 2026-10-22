@@ -67,4 +67,13 @@ describe("toPublishFailure", () => {
     expect(isRetryablePublishFailure({ kind: "stale" })).toBe(false);
     expect(isRetryablePublishFailure({ kind: "rejected" })).toBe(false);
   });
+
+  it("삽화 상한·원작 이미지 409 는 다시 시도를 권하지 않고 무엇을 빼야 하는지 말한다", () => {
+    const limit = toPublishFailure(apiError(409, { code: "NOVEL_ILLUSTRATION_LIMIT_EXCEEDED" }));
+    const original = toPublishFailure(apiError(409, { code: "NOVEL_ILLUSTRATION_ORIGINAL_NOT_PUBLISHABLE" }));
+    expect([limit, original]).toEqual([{ kind: "illustrationLimit" }, { kind: "originalIllustration" }]);
+    expect(isRetryablePublishFailure(limit) || isRetryablePublishFailure(original)).toBe(false);
+    expect(toPublishFailureMessage(limit)).toContain("10장까지");
+    expect(toPublishFailureMessage(original)).toContain("원작 이미지를 뺀 뒤");
+  });
 });

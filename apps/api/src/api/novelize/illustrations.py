@@ -26,8 +26,10 @@ from dataclasses import dataclass
 from typing import Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
-from sqlalchemy import Select, and_, delete, or_, select
+from sqlalchemy import ColumnElement, Select, SQLColumnExpression, and_, delete, func, literal_column, or_, select
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from starlette.concurrency import run_in_threadpool
 
 from api.assets.router import collect_asset_usages
@@ -56,6 +58,11 @@ logger = logging.getLogger(__name__)
 UPLOAD_KEY_PREFIX = f"assets/{AssetPurpose.NOVEL_ILLUSTRATION.value}/"
 
 OriginalKind = Literal["thumbnail", "situationalImage", "mediaBook"]
+
+# 한 화(개정 하나)에 둘 수 있는 삽화 수. 위치 확인 필요인 그림도 센다 — 다시 놓으면 화에 나가는 그림이다. 붙이기가 이 수에서
+# 막고, 공개도 문단에 붙은 그림이 이 수를 넘으면 막는다(이 상한 전에 쌓인 개정이 있어도 넘는 화가 나가지 않게). 심사 원가와 한
+# 화의 쪽 수를 묶는 정책값이다.
+NOVEL_ILLUSTRATION_LIMIT = 10
 
 
 @dataclass(frozen=True)
@@ -92,6 +99,28 @@ async def placements_of(db: AsyncSession, revision: NovelChapterRevision) -> lis
         return (0, position.get(row.anchor_block_id, len(position)), 0 if row.placement == "before" else 1, row.sort_order)
 
     return sorted(rows, key=key)
+
+
+def placement_fingerprint(revision_id: SQLColumnExpression[uuid.UUID] | uuid.UUID) -> ColumnElement[str | None]:
+    """개정 `revision_id` 의 삽화가 독자 화면에 놓이는 모양 — SQL 스칼라(문단에 붙은 그림이 없으면 NULL). 두 개정의 값이 같으면
+    (본문이 같을 때) 독자 화면의 그림이 같다. 공개 변경 판정이 공개본 개정과 지금 개정을 이 값으로 비교한다.
+
+    한 그림은 (앵커 문단의 번호, 앞뒤, 그림, 출처)이고 (문단 번호, 앞뒤, 순서 값) 순으로 잇는다. 블록 id 가 아니라 문단 번호인
+    것은 같은 글로 문단을 다시 쓰거나 승계 규칙으로 앵커 id 가 바뀐 뒤 같은 자리에 다시 붙인 화가 화면이 같은데 "바뀜"이 되지
+    않게 하려는 것이다. 순서 값을 싣지 않고 잇는 순서로만 쓰는 것은 같은 자리 안의 순위만 화면에 보이기 때문이다(저장값이 듬성해도
+    같다). 출처는 "원작 이미지" 표시를 바꾸므로 싣는다. 위치 확인 필요인 그림은 독자에게 안 나가 뺀다."""
+    owner = aliased(NovelChapterRevision)
+    row = aliased(NovelChapterIllustration)
+    paragraph = func.array_position(owner.block_ids, row.anchor_block_id)
+    entry = func.concat_ws(literal_column("':'"), paragraph, row.placement, row.asset_id, row.source)
+    return (
+        select(func.string_agg(entry, aggregate_order_by(literal_column("','"), paragraph, row.placement, row.sort_order)))
+        .select_from(row)
+        .join(owner, owner.id == row.revision_id)
+        .where(row.revision_id == revision_id, row.anchor_block_id.is_not(None))
+        .correlate_except(row, owner)
+        .scalar_subquery()
+    )
 
 
 def specs_of(rows: Sequence[NovelChapterIllustration]) -> list[PlacementSpec]:

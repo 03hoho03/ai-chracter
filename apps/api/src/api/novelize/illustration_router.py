@@ -19,7 +19,14 @@ from api.legal.dependencies import require_legal_consent
 from api.novel_public.no_store import NoStoreRoute
 from api.novelize.access import require_novelize_access
 from api.novelize.blocks import build_revision, copied_ids
-from api.novelize.illustrations import PlacementSpec, original_candidates, placements_of, specs_of, usable_asset
+from api.novelize.illustrations import (
+    NOVEL_ILLUSTRATION_LIMIT,
+    PlacementSpec,
+    original_candidates,
+    placements_of,
+    specs_of,
+    usable_asset,
+)
 from api.novelize.router import (
     _chapter_response,
     _get_chapter,
@@ -109,12 +116,15 @@ async def attach_novel_illustration(
 ) -> NovelChapterResponse:
     """그림 한 장을 지금 개정의 문단 앞·뒤에 붙인다. 문단이 지금 개정에 없으면 422 `NOVEL_ILLUSTRATION_ANCHOR_INVALID`, 그 출처로
     쓸 수 없는 그림(남의 것·준비 안 됨·삽화 용도가 아닌 업로드·본 적 없는 원작 그림 등 — 가르지 않는다)이면 422
-    `NOVEL_ILLUSTRATION_ASSET_INVALID`."""
+    `NOVEL_ILLUSTRATION_ASSET_INVALID`, 그 화에 이미 상한(`NOVEL_ILLUSTRATION_LIMIT`, 위치 확인 필요인 그림 포함)만큼 붙어 있으면
+    409 `NOVEL_ILLUSTRATION_LIMIT_EXCEEDED`."""
     chapter = await _get_chapter(db, novel, chapter_id)
     current = await _lock_current_revision_for_edit(db, chapter.id, payload.base_revision_id)
     _require_anchor(current, payload.anchor_block_id)
-    await _require_usable(db, novel, payload.asset_id, payload.source)
     specs = specs_of(await placements_of(db, current))
+    if len(specs) >= NOVEL_ILLUSTRATION_LIMIT:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_ILLUSTRATION_LIMIT_EXCEEDED")
+    await _require_usable(db, novel, payload.asset_id, payload.source)
     added = PlacementSpec(None, None, payload.asset_id, payload.source)
     await _stack_placements(
         db, novel, current, _placed_at(specs, added, payload.anchor_block_id, payload.placement, payload.order)

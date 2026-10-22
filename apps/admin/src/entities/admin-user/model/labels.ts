@@ -72,6 +72,7 @@ export const ACTION_TYPE_LABELS = {
   "novel-review-reject": "노벨 첫 공개 반려",
   "novel-sales-stop": "노벨 판매 중단",
   "novel-sales-resume": "노벨 판매 재개",
+  "novel-illustration-takedown": "노벨 삽화 내림",
   "novel-report-reject": "노벨 신고 반려",
   "novel-comment-hide": "노벨 댓글 운영 숨김",
   "novel-comment-restore": "노벨 댓글 운영 숨김 해제",

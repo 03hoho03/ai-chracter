@@ -3377,7 +3377,8 @@ export interface paths {
          * Attach Novel Illustration
          * @description 그림 한 장을 지금 개정의 문단 앞·뒤에 붙인다. 문단이 지금 개정에 없으면 422 `NOVEL_ILLUSTRATION_ANCHOR_INVALID`, 그 출처로
          *     쓸 수 없는 그림(남의 것·준비 안 됨·삽화 용도가 아닌 업로드·본 적 없는 원작 그림 등 — 가르지 않는다)이면 422
-         *     `NOVEL_ILLUSTRATION_ASSET_INVALID`.
+         *     `NOVEL_ILLUSTRATION_ASSET_INVALID`, 그 화에 이미 상한(`NOVEL_ILLUSTRATION_LIMIT`, 위치 확인 필요인 그림 포함)만큼 붙어 있으면
+         *     409 `NOVEL_ILLUSTRATION_LIMIT_EXCEEDED`.
          */
         post: operations["attach_novel_illustration_novels__novel_id__chapters__chapter_id__illustrations_post"];
         delete?: never;
@@ -3867,11 +3868,39 @@ export interface paths {
         };
         /**
          * Get Admin Novel Chapter
-         * @description 화 공개본 하나 — 독자에게 나가는 그대로. 그 노벨의 공개 화가 아니면 404 `NOVEL_CHAPTER_NOT_FOUND`.
+         * @description 화 공개본 하나 — 독자에게 나가는 그대로(삽화도 독자 응답과 같은 조건·자리, 그림 자산 id 를 더해). 그 노벨의 공개 화가
+         *     아니면 404 `NOVEL_CHAPTER_NOT_FOUND`.
          */
         get: operations["get_admin_novel_chapter_admin_novels__novel_id__chapters__chapter_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novel-illustrations/{asset_id}/takedown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take Down Novel Illustration
+         * @description 소설 삽화로 쓰인 그림 하나를 모든 판에서 내린다 — 독자·어드민 화 읽기가 그 그림 자리에 사유만 남기고(글과 다른 그림은
+         *     그대로, 환급 없음), 그 바이트(정지 변형의 sha256)를 남겨 같은 파일을 다시 올린 새 자산도 공개 심사에서 막는다(통과 기억보다
+         *     먼저 본다 — 그 바이트의 통과 기억은 지운다). 소설 전체를 닫아야 하는 중대한 경우는 노벨 이용제한을 함께 쓴다.
+         *
+         *     사유가 공백뿐이면 422, 어느 개정의 삽화로도 쓰인 적 없는 자산이면 404 `NOVEL_ILLUSTRATION_NOT_FOUND`, 같은 바이트가 이미
+         *     내려가 있으면 409 `NOVEL_ILLUSTRATION_ALREADY_TAKEN_DOWN`, 그림을 저장소에서 못 읽으면 503
+         *     `NOVEL_ILLUSTRATION_UNAVAILABLE`(바이트 없이는 다시 올림을 막을 수 없어 기록하지 않는다). 감사 로그의 대상 회원은 그림의
+         *     주인이다. 삽화 스위치와 무관하게 돈다.
+         */
+        post: operations["take_down_novel_illustration_admin_novel_illustrations__asset_id__takedown_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7474,6 +7503,8 @@ export interface components {
             edition: number;
             /** Paragraphs */
             paragraphs: string[];
+            /** Illustrations */
+            illustrations: components["schemas"]["AdminNovelIllustration"][];
         };
         /** AdminNovelCommentActionRequest */
         AdminNovelCommentActionRequest: {
@@ -7762,6 +7793,59 @@ export interface components {
             serialLockTermsVersion: string | null;
             /** Seriallocksource */
             serialLockSource: ("first_publish" | "backfill") | null;
+        };
+        /** AdminNovelIllustration */
+        AdminNovelIllustration: {
+            /** Paragraphindex */
+            paragraphIndex: number;
+            /**
+             * Placement
+             * @enum {string}
+             */
+            placement: "before" | "after";
+            /** Order */
+            order: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "upload" | "original" | "generated";
+            /** Url */
+            url: string | null;
+            /** Width */
+            width: number | null;
+            /** Height */
+            height: number | null;
+            /** Withheld */
+            withheld: ("taken_down" | "original_restricted") | null;
+            /** Withheldreason */
+            withheldReason: string | null;
+            /**
+             * Assetid
+             * Format: uuid
+             */
+            assetId: string;
+        };
+        /**
+         * AdminNovelIllustrationTakedownRequest
+         * @description 그림 하나를 모든 판에서 내린다. `reason` 은 그 그림 자리에 독자에게 보일 사유이자 감사 로그의 조치 사유다(공백만이면 422).
+         */
+        AdminNovelIllustrationTakedownRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /** AdminNovelIllustrationTakedownResponse */
+        AdminNovelIllustrationTakedownResponse: {
+            /**
+             * Assetid
+             * Format: uuid
+             */
+            assetId: string;
+            /**
+             * Takendownat
+             * Format: date-time
+             */
+            takenDownAt: string;
         };
         /**
          * AdminNovelListItem
@@ -8443,7 +8527,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "novel-sales-resume" | "novel-sales-stop" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-illustration-takedown" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "novel-sales-resume" | "novel-sales-stop" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -12959,6 +13043,8 @@ export interface components {
              * @default false
              */
             salesStopped: boolean;
+            /** Illustrations */
+            illustrations: components["schemas"]["PublicNovelIllustration"][];
         };
         /**
          * PublicNovelCommentCreateRequest
@@ -13112,6 +13198,39 @@ export interface components {
         PublicNovelHomeResponse: {
             /** Items */
             items: components["schemas"]["PublicNovelHomeItem"][];
+        };
+        /**
+         * PublicNovelIllustration
+         * @description 화 읽기의 삽화 한 장. 자리는 본문 문단 배열(`paragraphs`)의 인덱스와 그 앞·뒤, 같은 자리 안의 순위(`order`, 0부터)다.
+         *     `source` 가 `original` 이면 원작에서 온 그림이다(화면이 "원작 이미지"로 표시한다). `url` 은 크게 그리는 정지 그림이고
+         *     `width`·`height` 는 그 크기(모르면 null — 화면이 정한 비율 칸에 그린다). `withheld` 가 차 있으면 그림 자리만 남는다 —
+         *     `url` 이 없고, 운영자가 내린 그림이면 `withheld_reason` 에 독자에게 보일 사유가 있다.
+         */
+        PublicNovelIllustration: {
+            /** Paragraphindex */
+            paragraphIndex: number;
+            /**
+             * Placement
+             * @enum {string}
+             */
+            placement: "before" | "after";
+            /** Order */
+            order: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "upload" | "original" | "generated";
+            /** Url */
+            url: string | null;
+            /** Width */
+            width: number | null;
+            /** Height */
+            height: number | null;
+            /** Withheld */
+            withheld: ("taken_down" | "original_restricted") | null;
+            /** Withheldreason */
+            withheldReason: string | null;
         };
         /**
          * PublicNovelLastRead
@@ -19912,6 +20031,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminNovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    take_down_novel_illustration_admin_novel_illustrations__asset_id__takedown_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminNovelIllustrationTakedownRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelIllustrationTakedownResponse"];
                 };
             };
             /** @description Validation Error */
