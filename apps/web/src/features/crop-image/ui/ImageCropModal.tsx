@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import Cropper from "react-easy-crop";
 import type { Area, Point } from "react-easy-crop";
 import { toast } from "sonner";
@@ -14,15 +14,18 @@ import {
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
 import { Slider } from "@ai-character-chat/ui/components/slider";
+import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 
 import type { PreparedUpload } from "@/shared/api/asset/uploadAsset";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { cropToFile } from "../lib/cropToFile";
+import { toCropAspect, type CropAspectChoice } from "../model/cropAspect";
 
 export type ImageCropModalProps = {
   file: File;
-  aspect: number;
+  /** 고정 비율 하나, 또는 고를 수 있는 비율 칩 목록(첫 칩이 기본). 칩 목록은 그림 크기에 맞춰 쓰는 자리(소설 삽화)만 넘긴다. */
+  aspect: number | readonly CropAspectChoice[];
   shape?: "rect" | "round";
   /** GIF 를 움직이는 채로 둔다 — canvas 로 자르면 첫 프레임만 남으므로, 원본 파일과 크롭 영역을 그대로 돌려줘 서버가
    * 모든 프레임을 자르게 한다. 그 영역을 서버에 넘기는 업로드(대표 이미지)에서만 켠다. */
@@ -44,12 +47,19 @@ const MAX_ZOOM = 3;
 export const ImageCropModal = createCallable<ImageCropModalProps, PreparedUpload | undefined>(
   ({ call, file, aspect, shape = "rect", keepAnimation = false }) => {
     const isOpen = !call.ended;
+    const labelId = useId();
 
     const [imageUrl, setImageUrl] = useState<string>();
     const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
     const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area>();
     const [isApplying, setIsApplying] = useState(false);
+    const choices = typeof aspect === "number" ? undefined : aspect;
+    const [choiceIndex, setChoiceIndex] = useState(0);
+    const [mediaSize, setMediaSize] = useState<{ width: number; height: number }>();
+    const choice = choices?.[choiceIndex];
+    // 원본 칩은 그림이 오기 전에는 비율이 없다 — 그동안은 그림이 그려지지 않으므로 아무 값이나 같다.
+    const resolvedAspect = typeof aspect === "number" ? aspect : choice && (toCropAspect(choice, mediaSize) ?? 1);
 
     // 이 컴포넌트 인스턴스는 호출 1회당 하나다(react-call이 call마다 새 key로 마운트한다) — 그래서
     // isOpen이 아니라 마운트 시점 1회만 objectURL을 만들고, 언마운트에서 해제하면 누수가 없다.
@@ -99,7 +109,7 @@ export const ImageCropModal = createCallable<ImageCropModalProps, PreparedUpload
                 image={imageUrl}
                 crop={crop}
                 zoom={zoom}
-                aspect={aspect}
+                aspect={resolvedAspect}
                 minZoom={MIN_ZOOM}
                 maxZoom={MAX_ZOOM}
                 cropShape={shape}
@@ -113,6 +123,9 @@ export const ImageCropModal = createCallable<ImageCropModalProps, PreparedUpload
                 onCropChange={setCrop}
                 onZoomChange={setZoom}
                 onCropComplete={(_, areaPixels) => setCroppedAreaPixels(areaPixels)}
+                onMediaLoaded={({ naturalWidth, naturalHeight }) =>
+                  setMediaSize({ width: naturalWidth, height: naturalHeight })
+                }
                 // 라이브러리가 크롭 영역에 칠하는 기본 테두리(rgba(255,255,255,0.5))를 순백 금지
                 // 규칙에 맞게 primary 한 겹으로 덮어쓴다. 라이브러리 CSS는 런타임에 <head>로 주입돼
                 // Tailwind 유틸리티보다 뒤에 올 수 있어 캐스케이드 순서로는 이길 수 없다 — border-color
@@ -123,6 +136,35 @@ export const ImageCropModal = createCallable<ImageCropModalProps, PreparedUpload
               />
             )}
           </div>
+
+          {choices !== undefined && (
+            <div className="flex flex-wrap items-center gap-3">
+              <span id={labelId} className="shrink-0 text-sm text-muted-foreground">
+                비율
+              </span>
+              {/* 모달에는 이미 솔리드 채움(적용)이 있어 고른 칩은 무채 표면 + 윤곽이다 — 한 화면의 솔리드 채움은 하나다. */}
+              <ToggleGroup
+                type="single"
+                variant="neutral"
+                size="sm"
+                aria-labelledby={labelId}
+                value={String(choiceIndex)}
+                onValueChange={(value) => {
+                  // 단일 토글 그룹은 고른 칩을 다시 누르면 빈 값을 보낸다 — 비율은 늘 하나라 해제를 받지 않는다.
+                  if (value === "") return;
+                  setChoiceIndex(Number(value));
+                  setCrop({ x: 0, y: 0 });
+                  setZoom(1);
+                }}
+              >
+                {choices.map((item, index) => (
+                  <ToggleGroupItem key={item.label} value={String(index)}>
+                    {item.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
+          )}
 
           <div className="flex items-center gap-3">
             <span className="shrink-0 text-sm text-muted-foreground">확대/축소</span>

@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowUpToLine, Pencil, Sparkles, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, RotateCcw, X } from "lucide-react";
 import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 
 import { cloverKeys } from "@/entities/clover";
@@ -11,28 +11,43 @@ import {
   isChapterRegenerating,
   novelKeys,
   toNovelActionError,
+  type NovelActionErrorNotice,
   type NovelAction,
   type NovelChapterResponse,
   type NovelDetailResponse,
   type NovelPendingAiEdit,
 } from "@/entities/novel";
+import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
-import { useDetachIllustrationMutation, useMoveIllustrationMutation } from "../api/useIllustrationPlacementMutations";
+import {
+  useAttachIllustrationMutation,
+  useDetachIllustrationMutation,
+  useMoveIllustrationMutation,
+  useReplaceIllustrationMutation,
+} from "../api/useIllustrationPlacementMutations";
 import { useSaveChapterRevisionMutation } from "../api/useSaveChapterRevisionMutation";
 import {
   countIllustrationsInRange,
+  isIllustrationLimitReached,
+  isSameIllustrationImage,
   isUnplacedListShown,
   toActiveMove,
+  toAttachTarget,
   toIllustrationActions,
   toIllustrationLabel,
   toIllustrationSpots,
   toMovedIllustrationId,
   toMoveTarget,
   toParagraphActions,
+  toReplacedIllustrationId,
+  toRetryAttachRequest,
+  type AttachRequest,
   type BoardIllustration,
+  type FailedAttach,
   type IllustrationAction,
   type IllustrationPlacement,
+  type IllustrationSource,
   type MovingIllustration,
 } from "../model/boardIllustrations";
 import {
@@ -50,10 +65,12 @@ import {
   toParagraphSelectionAnnouncement,
   type ParagraphRange,
 } from "../model/paragraphRange";
+import { toIllustrationUploadErrorMessage, type PickIllustrationImage } from "../model/illustrationUpload";
 import type { NovelAiEditFlow } from "../model/useNovelAiEdit";
 
 import { AiEditPreview } from "./AiEditPreview";
 import { BoardIllustrationBlock } from "./BoardIllustrationBlock";
+import { ParagraphActionRow } from "./ParagraphActionRow";
 import { UnplacedIllustrationList } from "./UnplacedIllustrationList";
 
 type NovelChapterTextProps = {
@@ -72,7 +89,16 @@ type NovelChapterTextProps = {
   isIllustrationsOn: boolean;
   /** 고치기 모드를 켜 달라는 요청. 위치 확인 필요 목록의 `놓기` 가 본문에서 놓을 문단을 고르려면 문단이 버튼이어야 한다. */
   onFixModeRequest: () => void;
+  /** 붙이기·바꾸기에서 출처 하나의 창을 열어 그림을 고르게 한다. 창들은 위쪽 층(보드 위젯)이 연다. */
+  onPickImage: PickIllustrationImage;
+  /** 새 판의 본문을 받는 중이라 화면이 아직 옛 판을 보이는가(다시 받는 동안 옛 본문을 자리표시로 둔다). 그동안 삽화 요청을
+   * 막는다 — 보이는 판을 기준으로 보내면 방금 받은 충돌을 한 번 더 받는다. */
+  isRevisionRefreshing: boolean;
 };
+
+/** 붙이기·바꾸기 하나가 지금 어느 단계인가. 고른 그림을 올리는 중이면 `uploading`, 요청이 도는 중이면 `sending` 이다. 바꾸기면
+ * 어느 그림인지(배치 id)를 든다 — 그 그림의 바꾸기 버튼에 진행을 보인다. */
+type ImageRequestPhase = { phase: "uploading" | "sending"; replacingId: string | undefined };
 
 /** 직접 고치기 하나. `base` 는 시작한 순간의 판·문단·범위라 그사이 본문이 바뀌어도 그대로다. */
 type ManualEdit = { base: ManualEditBase; draft: string };
@@ -104,7 +130,12 @@ type ManualEditOutcome = "manualSaved" | "manualUnchanged" | "manualCancelled";
  *   이력에서 되돌릴 수 있다. 요청은 모두 지금 판을 기준으로 가고, 판이 바뀌면 옮기는 중이 저절로 끝나 낡은 기준으로 다시
  *   보내지 않는다. 직접 고치는 범위의 그림은 입력칸 아래 한 줄로 접고, 범위 밖 그림은 그대로 고칠 수 있다(같은 글·같은
  *   블록의 새 판이라 저장이 막히지 않는다). 다시 만드는 중에는 모두 막는다 — 다시 만든 판은 문단이 모두 새것이라 놓은 자리가
- *   곧 사라진다. */
+ *   곧 사라진다.
+ * - **붙이기·바꾸기**: 동작 줄의 `그림 붙이기` 메뉴(놓을 자리 + 출처 셋)와 그림 아래 `바꾸기` 메뉴(출처 셋)다. 출처를 고르면 그
+ *   출처의 창이 열리고, 고르는 순간(기기에서 고른 그림이면 다 올린 순간) 요청한다. 붙이기는 그 순간의 지금 판을 기준으로 간다
+ *   — 창을 보는 사이 판이 바뀌어도 그 문단이 남아 있으면 붙인다. 바꾸기는 한 요청이라 응답이 올 때까지 옛 그림이 그대로 서
+ *   있다. 붙이기가 실패하면 같은 그림으로 다시 넣는 버튼을 두고(올린 파일을 다시 올리지 않게), 다시 넣기도 그때의 지금 판을
+ *   기준으로 보낸다. 한 화의 상한(위치 확인 필요 포함)에 닿았으면 붙이기를 미리 막는다. */
 export function NovelChapterText({
   novel,
   chapter,
@@ -114,6 +145,8 @@ export function NovelChapterText({
   onDraftDirtyChange,
   isIllustrationsOn,
   onFixModeRequest,
+  onPickImage,
+  isRevisionRefreshing,
 }: NovelChapterTextProps) {
   const queryClient = useQueryClient();
   const groupLabelId = useId();
@@ -136,6 +169,16 @@ export function NovelChapterText({
   const [placementError, setPlacementError] = useState<string | undefined>(undefined);
   const moveMutation = useMoveIllustrationMutation();
   const detachMutation = useDetachIllustrationMutation();
+  const attachMutation = useAttachIllustrationMutation();
+  const replaceMutation = useReplaceIllustrationMutation();
+  // 붙이기·바꾸기의 단계. 업로드는 뮤테이션이 아니라 이 상태가 진행을 든다.
+  const [imageRequest, setImageRequest] = useState<ImageRequestPhase | undefined>(undefined);
+  // 실패한 붙이기 — 같은 그림으로 다시 넣기에 쓴다. 다음 붙이기를 시작하거나 다시 넣기가 성공하면 지운다. 옮기기·떼기·바꾸기는
+  // 지우지 않는다 — 상한에 막힌 뒤 다른 삽화를 떼고 다시 넣는 것이 이 버튼의 쓰임이다.
+  const [failedAttach, setFailedAttach] = useState<FailedAttach | null>(null);
+  // 창을 보는 사이·올리는 사이 판이 바뀔 수 있다 — 붙이기는 그 순간의 지금 판을 기준으로 보내려고 렌더마다 최신 판을 둔다.
+  const revisionRef = useRef(chapter.revision);
+  revisionRef.current = chapter.revision;
   // 그림 블록과 위치 확인 필요 항목(배치 id 로). 성공한 옮기기 뒤 옮긴 그림으로 포커스를 보낸다.
   const figureRefs = useRef(new Map<string, HTMLDivElement>());
   const pendingFigureFocusRef = useRef<string | undefined>(undefined);
@@ -156,10 +199,10 @@ export function NovelChapterText({
   const isRegenerating = isChapterRegenerating(novel.activeJob, chapter.id, batchId);
   const spots = toIllustrationSpots(chapter.revision);
   const activeMove = toActiveMove({ isIllustrationsOn, moving, revision: chapter.revision });
-  const isPlacing = moveMutation.isPending || detachMutation.isPending;
+  const isPlacing = moveMutation.isPending || detachMutation.isPending || imageRequest !== undefined;
   // 직접 고치기 저장과 삽화 요청은 같은 판을 기준으로 가므로 한쪽이 도는 동안 다른 쪽을 막는다 — 둘이 함께 나가면 늦은 쪽이
   // 같은 화면의 요청과 충돌해 409 로 끝난다.
-  const isPlacementBlocked = isPlacing || isRegenerating || isSaving;
+  const isPlacementBlocked = isPlacing || isRegenerating || isSaving || isRevisionRefreshing;
 
   useEffect(() => {
     onDraftDirtyChange(isDraftDirty);
@@ -308,7 +351,7 @@ export function NovelChapterText({
   /** 삽화 요청 실패. 옮기기를 끝내고(다시 받은 판에서 그림 id 가 바뀐다) 문장을 남긴다. 충돌·없어진 그림이면 상세를 다시
    * 받아 화 키가 새 판으로 바뀌고 본문을 새로 받는다 — 다음 요청은 그 판을 기준으로 간다. 스위치가 꺼졌으면 가격도 다시 받아
    * 삽화 조작을 거둔다. */
-  function handlePlacementError(error: unknown, action: NovelAction) {
+  function handlePlacementError(error: unknown, action: NovelAction): NovelActionErrorNotice | null {
     setMoving(null);
     setRange(null);
     setLiveMessage("");
@@ -316,14 +359,125 @@ export function NovelChapterText({
     onFocusFallback();
     const result = toNovelActionError(error, action);
     // 재동의가 필요하면 전역 재동의 모달이 맡는다.
-    if (result === null) return;
+    if (result === null) return null;
     setPlacementError(result.message);
     if (hasNovelErrorCode(error, "NOVEL_ILLUSTRATIONS_DISABLED")) {
       void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
       // 판이 그대로라 상세를 다시 받아도 화 키가 같다 — 꺼짐에서 서버가 비워 주는 삽화 목록을 받으려면 화도 다시 받는다.
       void queryClient.invalidateQueries({ queryKey: novelKeys.chapter(novel.id, chapter.id, chapter.revision.id) });
     }
+    // 원작 그림을 쓸 수 없게 됐으면(그사이 원작 이용 제한) 다음에 창을 열 때 후보도 새로 받는다.
+    if (hasNovelErrorCode(error, "NOVEL_ILLUSTRATION_ASSET_INVALID")) {
+      void queryClient.invalidateQueries({ queryKey: novelKeys.illustrationCandidates(novel.id) });
+    }
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
+    return result;
+  }
+
+  /** 고른 출처의 창을 열어 그림을 받고, 기기에서 고른 파일이면 올려 자산 id 로 바꾼다. 고르지 않았거나 업로드가 실패하면
+   * `undefined`(실패 문장은 여기서 남긴다). */
+  async function pickAsset(
+    source: IllustrationSource,
+    replacingId: string | undefined,
+    currentAssetId: string | undefined,
+  ): Promise<{ assetId: string; source: IllustrationSource } | undefined> {
+    const picked = await onPickImage(source, { currentAssetId });
+    if (picked === undefined) return undefined;
+    if (picked.kind === "asset") return { assetId: picked.assetId, source: picked.source };
+    setImageRequest({ phase: "uploading", replacingId });
+    try {
+      return { assetId: await uploadAsset(picked.upload.file, "novel-illustration"), source: "upload" };
+    } catch (error) {
+      setImageRequest(undefined);
+      setPlacementError(toIllustrationUploadErrorMessage(error));
+      return undefined;
+    }
+  }
+
+  /** 고른 범위의 앞·뒤에 그림을 붙인다. */
+  async function attach(source: IllustrationSource, placement: IllustrationPlacement) {
+    if (activeRange === null || isPlacementBlocked || isIllustrationLimitReached(chapter.revision)) return;
+    const target = toAttachTarget(chapter.revision, activeRange, placement);
+    if (target === null) return;
+    setPlacementError(undefined);
+    const asset = await pickAsset(source, undefined, undefined);
+    if (asset === undefined) return;
+    // 실패한 붙이기 기록은 새 그림을 실제로 고른 뒤에 지운다 — 창을 열었다 그냥 닫으면 다시 넣기가 남는다.
+    setFailedAttach(null);
+    await sendAttach({ ...asset, target });
+  }
+
+  /** 붙이기 요청 하나 — 처음 붙이기와 실패 뒤 다시 넣기가 함께 쓴다. 기준은 보내는 순간의 지금 판이다. */
+  async function sendAttach(failed: FailedAttach) {
+    const request = toRetryAttachRequest(revisionRef.current, failed);
+    if (request === null) {
+      // 창을 보는 사이 그 문단이 지워졌다 — 보내면 422 다. 다시 고르게 한다(다시 넣기 자리에도 같은 안내가 선다).
+      setImageRequest(undefined);
+      setFailedAttach(failed);
+      setLiveMessage("고른 문단이 바뀌어 붙이지 않았어요. 문단을 다시 골라 주세요.");
+      return;
+    }
+    setImageRequest({ phase: "sending", replacingId: undefined });
+    try {
+      const next = await attachMutation.mutateAsync({ ...request, novelId: novel.id, chapterId: chapter.id });
+      pendingFigureFocusRef.current = toMovedIllustrationId(next.revision, request.target);
+      setFailedAttach(null);
+      setRange(null);
+      setLiveMessage(toAttachedMessage(next.revision.blocks, request));
+    } catch (error) {
+      const result = handlePlacementError(error, "attachIllustration");
+      // 다시 넣어도 같은 결과인 실패(쓸 수 없는 그림·삽화가 꺼짐)와 재동의는 다시 넣기를 두지 않는다.
+      const isRetryable =
+        result !== null &&
+        !hasNovelErrorCode(error, "NOVEL_ILLUSTRATION_ASSET_INVALID") &&
+        !hasNovelErrorCode(error, "NOVEL_ILLUSTRATIONS_DISABLED");
+      setFailedAttach(isRetryable ? failed : null);
+    } finally {
+      setImageRequest(undefined);
+    }
+  }
+
+  async function retryAttach() {
+    if (failedAttach === null || isPlacementBlocked) return;
+    setPlacementError(undefined);
+    await sendAttach(failedAttach);
+  }
+
+  /** 그림 하나를 다른 그림으로 바꾼다. 고르기 시작한 판의 배치 id 와 그 판을 함께 보낸다 — 배치 id 는 판마다 새로 매겨져 옛
+   * id 를 새 판에 보낼 수 없다. 그사이 판이 바뀌었으면 서버가 충돌로 막고 다시 받는다. */
+  async function replace(illustration: BoardIllustration, source: IllustrationSource) {
+    if (isPlacementBlocked) return;
+    const baseRevisionId = chapter.revision.id;
+    setPlacementError(undefined);
+    setMoving(null);
+    const asset = await pickAsset(source, illustration.id, illustration.assetId);
+    if (asset === undefined) return;
+    if (isSameIllustrationImage(illustration, asset)) {
+      // 지금 그림을 그대로 골랐다 — 보내면 서버는 같은 배치의 새 판을 하나 더 쌓는다(판 이력에 빈 판이 는다).
+      setImageRequest(undefined);
+      setLiveMessage("지금 삽화와 같아 바꾸지 않았어요.");
+      return;
+    }
+    setImageRequest({ phase: "sending", replacingId: illustration.id });
+    try {
+      const next = await replaceMutation.mutateAsync({
+        novelId: novel.id,
+        chapterId: chapter.id,
+        illustrationId: illustration.id,
+        baseRevisionId,
+        ...asset,
+      });
+      pendingFigureFocusRef.current = toReplacedIllustrationId(next.revision, illustration);
+      setLiveMessage("삽화를 바꿨어요. 판 이력에서 되돌릴 수 있어요.");
+    } catch (error) {
+      handlePlacementError(error, "replaceIllustration");
+    } finally {
+      setImageRequest(undefined);
+    }
+  }
+
+  function replacePendingLabelOf(illustrationId: string): string | undefined {
+    return imageRequest?.replacingId === illustrationId ? toPhaseLabel(imageRequest, "바꾸는 중…") : undefined;
   }
 
   function pendingActionOf(illustrationId: string): IllustrationAction | undefined {
@@ -345,10 +499,12 @@ export function NovelChapterText({
         isMoving={activeMove?.id === illustration.id}
         isIllustrationsOn={isIllustrationsOn}
         isRegenerating={isRegenerating}
-        isBusy={isPlacing}
+        isBusy={isPlacementBlocked}
         pendingAction={pendingActionOf(illustration.id)}
+        replacePendingLabel={replacePendingLabelOf(illustration.id)}
         onMove={() => startMove(illustration)}
         onCancelMove={() => cancelMove()}
+        onReplace={(source) => void replace(illustration, source)}
         onDetach={() => void detach(illustration, paragraphIndex)}
       />
     ));
@@ -495,6 +651,8 @@ export function NovelChapterText({
   // 이 장을 다시 만드는 중이면 AI 수정도 막혀 있다(진행 중 작업은 하나) — 두 버튼의 사유를 한 문장으로 말한다.
   const actionBlockedReason = isRegenerating ? CHAPTER_REGENERATING_MESSAGE : toAiBlockedReason(aiEdit);
   const groupLabel = activeMove === null ? "고칠 문단 고르기" : "삽화를 놓을 문단 고르기";
+  // 동작 줄의 붙이기 버튼에 보일 진행. 바꾸기의 진행은 그 그림의 바꾸기 버튼이 보인다.
+  const attachPendingLabel = imageRequest?.replacingId === undefined ? toPhaseLabel(imageRequest, "붙이는 중…") : undefined;
 
   return (
     <div className="flex flex-col gap-3">
@@ -514,12 +672,21 @@ export function NovelChapterText({
           {placementError}
         </p>
       )}
+      {isIllustrationsOn && failedAttach !== null && (
+        <RetryAttachRow
+          canRetry={toRetryAttachRequest(chapter.revision, failedAttach) !== null}
+          isBlocked={isPlacementBlocked}
+          isLimitReached={isIllustrationLimitReached(chapter.revision)}
+          isRetrying={imageRequest?.phase === "sending" && imageRequest.replacingId === undefined}
+          onRetry={() => void retryAttach()}
+        />
+      )}
       {isUnplacedListShown({ isIllustrationsOn, revision: chapter.revision }) && (
         <UnplacedIllustrationList
           illustrations={spots.unplaced}
           movingId={activeMove?.id}
           isRegenerating={isRegenerating}
-          isBusy={isPlacing}
+          isBusy={isPlacementBlocked}
           detachingId={detachMutation.isPending ? detachMutation.variables.illustrationId : undefined}
           rowRef={setFigureRef}
           // 목록은 고치기 모드와 상관없이 서지만, 항목마다 할 수 있는 일은 문단 사이 그림과 같은 판정이다(내린 그림은 떼기만).
@@ -561,49 +728,20 @@ export function NovelChapterText({
                 )}
 
                 {isActionRowHere && activeMove === null && (
-                  <div className="flex flex-col gap-1.5 py-1">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        aria-disabled={isAiBlocked}
-                        aria-describedby={isAiBlocked && actionBlockedReason !== undefined ? actionBlockedReasonId : undefined}
-                        className="aria-disabled:opacity-65"
-                        onClick={() => {
-                          if (isAiBlocked) return;
-                          void startAiEdit(activeRange);
-                        }}
-                      >
-                        <Sparkles aria-hidden />
-                        AI로 고치기
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        aria-disabled={isRegenerating}
-                        aria-describedby={isRegenerating ? actionBlockedReasonId : undefined}
-                        className="aria-disabled:opacity-65"
-                        onClick={() => {
-                          if (isRegenerating) return;
-                          startManualEdit(activeRange);
-                        }}
-                      >
-                        <Pencil aria-hidden />
-                        직접 고치기
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => clearSelection(activeRange.end)}>
-                        <X aria-hidden />
-                        선택 해제
-                      </Button>
-                    </div>
-                    {actionBlockedReason !== undefined && (
-                      <p id={actionBlockedReasonId} className="text-sm break-keep text-muted-foreground">
-                        {actionBlockedReason}
-                      </p>
-                    )}
-                  </div>
+                  <ParagraphActionRow
+                    actions={toParagraphActions({ isMoving: false, isIllustrationsOn })}
+                    isAiBlocked={isAiBlocked}
+                    isRegenerating={isRegenerating}
+                    blockedReason={actionBlockedReason}
+                    reasonId={actionBlockedReasonId}
+                    isLimitReached={isIllustrationLimitReached(chapter.revision)}
+                    isAttachBusy={isPlacementBlocked}
+                    attachPendingLabel={attachPendingLabel}
+                    onAiEdit={() => void startAiEdit(activeRange)}
+                    onManualEdit={() => startManualEdit(activeRange)}
+                    onClearSelection={() => clearSelection(activeRange.end)}
+                    onAttach={(source, placement) => void attach(source, placement)}
+                  />
                 )}
 
                 {previewsEndingAt(index).map((edit) => (
@@ -622,6 +760,66 @@ export function NovelChapterText({
           })}
         </div>
       </article>
+    </div>
+  );
+}
+
+/** 붙이기·바꾸기의 진행 문구. 올리는 중이면 "올리는 중…", 요청 중이면 `sendingLabel`, 아무것도 안 돌면 없다. */
+function toPhaseLabel(request: ImageRequestPhase | undefined, sendingLabel: string): string | undefined {
+  if (request === undefined) return undefined;
+  return request.phase === "uploading" ? "올리는 중…" : sendingLabel;
+}
+
+/** 붙인 뒤 알림 줄 문장 — 몇째 문단 앞·뒤인지. 응답 판에서 그 문단을 찾지 못하면 자리를 말하지 않는다. */
+function toAttachedMessage(blocks: readonly { id: string }[], request: AttachRequest): string {
+  const index = blocks.findIndex((block) => block.id === request.target.anchorBlockId);
+  if (index < 0) return "삽화를 붙였어요.";
+  return `삽화를 ${index + 1}번째 문단 ${request.target.placement === "before" ? "앞에" : "뒤에"} 붙였어요.`;
+}
+
+type RetryAttachRowProps = {
+  /** 실패한 붙이기의 문단이 지금 판에 남아 있는가. 없으면 다시 넣을 자리가 없어 문단을 다시 고르라고 말한다. */
+  canRetry: boolean;
+  isBlocked: boolean;
+  /** 한 화의 삽화 상한에 닿았는가. 다시 넣어도 상한 409 로 끝나므로 다른 삽화를 뗄 때까지 막는다. */
+  isLimitReached: boolean;
+  isRetrying: boolean;
+  onRetry: () => void;
+};
+
+/** 붙이기가 실패한 뒤 같은 그림으로 다시 넣는 줄. 올린 파일을 다시 올리지 않게 하려는 것이고, 다시 넣기는 그때의 지금 판을
+ * 기준으로 간다. 그 문단이 지금 판에 없으면 버튼 대신 안내만 둔다. */
+function RetryAttachRow({ canRetry, isBlocked, isLimitReached, isRetrying, onRetry }: RetryAttachRowProps) {
+  const reasonId = useId();
+  if (!canRetry) {
+    return (
+      <p className="text-sm break-keep text-muted-foreground">
+        고른 문단이 바뀌어 같은 자리에 다시 넣을 수 없어요. 문단을 다시 골라 붙여 주세요.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-disabled={isBlocked || isLimitReached}
+        aria-describedby={isLimitReached ? reasonId : undefined}
+        className="w-fit aria-disabled:opacity-65"
+        onClick={() => {
+          if (isBlocked || isLimitReached) return;
+          onRetry();
+        }}
+      >
+        <RotateCcw aria-hidden />
+        {isRetrying ? "붙이는 중…" : "같은 그림으로 다시 넣기"}
+      </Button>
+      {isLimitReached && (
+        <p id={reasonId} className="text-sm break-keep text-muted-foreground">
+          다른 삽화를 떼면 같은 그림으로 다시 넣을 수 있어요.
+        </p>
+      )}
     </div>
   );
 }
@@ -648,7 +846,7 @@ function MoveTargetRow({ isBlocked, blockedReasonId, pendingPlacement, onPlace, 
   return (
     <div className="flex flex-col gap-1.5 py-1">
       <div className="flex flex-wrap gap-2">
-        {toParagraphActions({ isMoving: true }).map((action) => {
+        {toParagraphActions({ isMoving: true, isIllustrationsOn: true }).map((action) => {
           if (action === "cancelMove") {
             return (
               <Button key={action} type="button" variant="ghost" size="sm" onClick={onCancel}>

@@ -14,7 +14,9 @@
  * - `chainEstimate`: 남은 대화가 바뀌는 모든 일(화 생성·삭제). 확인 화면을 열 때마다 새로 받는다.
  * - `publication`: 노벨 공개·다시 공개·거두기(응답이 상태면 `setQueryData`), 그리고 공개본과 견주는 모든 쓰기(화 고치기·
  *   제목·소개·화 생성·삭제). 편집 보드는 상세 객체가 바뀔 때마다 함께 다시 받고, 작품 정보의
- *   제목·소개 수정은 그 뮤테이션이 직접 무효화한다. */
+ *   제목·소개 수정은 그 뮤테이션이 직접 무효화한다.
+ * - `illustrationCandidates`: 작가가 원작 방에서 그림을 새로 보면 는다(이 앱 밖의 일) — 창을 열 때마다 새로 받는다. 붙이기·바꾸기가
+ *   그 그림을 쓸 수 없다고 거절하면(그사이 원작 이용 제한) 다시 받는다. */
 export const novelKeys = {
   all: ["novel"] as const,
   list: () => [...novelKeys.all, "list"] as const,
@@ -35,6 +37,7 @@ export const novelKeys = {
   snapshot: (novelId: string, snapshotId: string) => [...novelKeys.all, "snapshot", novelId, snapshotId] as const,
   chainEstimate: (novelId: string) => [...novelKeys.all, "chainEstimate", novelId] as const,
   publication: (novelId: string) => [...novelKeys.all, "publication", novelId] as const,
+  illustrationCandidates: (novelId: string) => [...novelKeys.all, "illustrationCandidates", novelId] as const,
 };
 
 /** 한 소설의 캐시 중 `kinds` 종류만 고르는 술어. `invalidateQueries({ queryKey: novelKeys.all, predicate })` 로

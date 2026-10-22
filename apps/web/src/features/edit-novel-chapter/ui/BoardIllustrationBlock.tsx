@@ -1,11 +1,17 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { ImageMinus, MoveVertical, X } from "lucide-react";
+import { ImageMinus, MoveVertical, Replace, X } from "lucide-react";
 import { useId } from "react";
 
 import { CHAPTER_REGENERATING_MESSAGE, NovelIllustrationFigure } from "@/entities/novel";
 
-import type { BoardIllustration, IllustrationAction, IllustrationPlacement } from "../model/boardIllustrations";
+import type {
+  BoardIllustration,
+  IllustrationAction,
+  IllustrationPlacement,
+  IllustrationSource,
+} from "../model/boardIllustrations";
+import { IllustrationSourceMenu } from "./IllustrationSourceMenu";
 
 type BoardIllustrationBlockProps = {
   ref: (element: HTMLDivElement | null) => void;
@@ -23,18 +29,22 @@ type BoardIllustrationBlockProps = {
   /** 이 화를 다시 만드는 중인가. 그동안은 조작을 막고 사유를 단다 — 다시 만든 판은 문단이 모두 새것이라 지금 놓은 자리가
    * 곧 사라진다. */
   isRegenerating: boolean;
-  /** 다른 삽화 요청이 도는 중인가(두 요청이 같은 판을 기준으로 가면 뒤의 것이 충돌로 끝난다). */
+  /** 같은 판을 기준으로 가는 다른 요청(삽화 요청·업로드·직접 고치기 저장)이 도는 중이거나 새 판을 받는 중인가. 두 요청이 같은
+   * 판을 기준으로 가면 뒤의 것이 충돌로 끝난다 — 메뉴가 열려도 고른 출처가 조용히 무시되지 않게 여기서 막는다. */
   isBusy: boolean;
   /** 이 그림에 대해 진행 중인 요청. */
   pendingAction: IllustrationAction | undefined;
+  /** 이 그림을 바꾸는 중의 진행 문구("올리는 중…"·"바꾸는 중…"). 그동안 옛 그림은 그대로 서 있다. */
+  replacePendingLabel: string | undefined;
   onMove: () => void;
   onCancelMove: () => void;
+  onReplace: (source: IllustrationSource) => void;
   onDetach: () => void;
 };
 
 /**
  * 보드 본문의 문단 사이 그림 한 장 — 읽기 화면 스크롤 모드와 같은 그림 블록(페이지 배경 위라 `muted` 웰), 그 아래 고치기
- * 모드에서만 작은 조작 줄(옮기기·떼기). 조작은 `ghost` 다 — 이 화면의 유일한 솔리드 채움은 상단 "다음 화 만들기"다.
+ * 모드에서만 작은 조작 줄(옮기기·바꾸기·떼기). 바꾸기는 붙이기와 같은 출처 셋의 메뉴다. 조작은 `ghost` 다 — 이 화면의 유일한 솔리드 채움은 상단 "다음 화 만들기"다.
  *
  * 옮기는 중이면 고른 문단과 같은 문법(회색 면 + 안쪽 무채색 윤곽)으로 표시한다. 상자의 안쪽 여백·음수 바깥 여백은 늘 같아
  * 표시가 켜지고 꺼져도 그림이 움직이지 않는다. 성공한 옮기기 뒤 포커스를 받으려고 `tabIndex=-1` 이다.
@@ -51,8 +61,10 @@ export function BoardIllustrationBlock({
   isRegenerating,
   isBusy,
   pendingAction,
+  replacePendingLabel,
   onMove,
   onCancelMove,
+  onReplace,
   onDetach,
 }: BoardIllustrationBlockProps) {
   const reasonId = useId();
@@ -72,7 +84,7 @@ export function BoardIllustrationBlock({
     >
       <NovelIllustrationFigure illustration={{ ...illustration, paragraphIndex, placement }} surface="muted" />
       {isIllustrationsOn && isTakenDown && (
-        <p className="text-xs break-keep text-muted-foreground">이 삽화를 떼야 이 화를 다시 공개할 수 있어요.</p>
+        <p className="text-xs break-keep text-muted-foreground">이 삽화를 바꾸거나 떼야 이 화를 다시 공개할 수 있어요.</p>
       )}
       {actions.length > 0 && (
         <div className="flex flex-wrap gap-1">
@@ -99,6 +111,18 @@ export function BoardIllustrationBlock({
                 {pendingAction === "move" ? "옮기는 중…" : "옮기기"}
               </Button>
             ))}
+          {actions.includes("replace") && (
+            <IllustrationSourceMenu
+              label="바꾸기"
+              pendingLabel={replacePendingLabel}
+              icon={Replace}
+              variant="ghost"
+              isBlocked={isBlocked}
+              describedBy={isRegenerating ? reasonId : undefined}
+              hasPlacement={false}
+              onPick={(source) => onReplace(source)}
+            />
+          )}
           {actions.includes("detach") && (
             <Button
               type="button"

@@ -91,7 +91,7 @@ describe("toNovelActionError", () => {
   });
 
   // 삽화를 옮기거나 떼는 요청이 낡은 판을 기준으로 갔다 — 최신 판을 다시 받아야 다음 요청이 같은 409 를 되풀이하지 않는다.
-  it.each(["moveIllustration", "detachIllustration"] as const)("%s 의 판 충돌 409 는 최신 내용을 다시 받는다", (action) => {
+  it.each(["moveIllustration", "detachIllustration", "attachIllustration", "replaceIllustration"] as const)("%s 의 판 충돌 409 는 최신 내용을 다시 받는다", (action) => {
     expect(toNovelActionError(apiError(409, { code: "NOVEL_REVISION_CONFLICT" }), action)).toEqual({
       message: "다른 곳에서 먼저 고쳤어요. 최신 내용을 불러왔어요.",
       shouldRefetchNovel: true,
@@ -105,6 +105,27 @@ describe("toNovelActionError", () => {
     });
   });
 
+  // 고른 그림을 그 출처로 쓸 수 없다(남의 것·준비 안 됨·그사이 원작 제한 등). 판은 그대로라 다시 받을 것이 없고, 다른 그림을
+  // 고르면 된다.
+  it.each(["attachIllustration", "replaceIllustration"] as const)(
+    "%s 에 쓸 수 없는 그림이면 다른 그림을 고르라고 말하고 상세는 다시 받지 않는다",
+    (action) => {
+      expect(toNovelActionError(apiError(422, { code: "NOVEL_ILLUSTRATION_ASSET_INVALID" }), action)).toEqual({
+        message: "이 그림은 삽화로 쓸 수 없어요. 다른 그림을 골라 주세요.",
+        shouldRefetchNovel: false,
+      });
+    },
+  );
+
+  it("한 화의 삽화 상한에 닿았으면 떼고 다시 붙이라고 말한다", () => {
+    expect(
+      toNovelActionError(apiError(409, { code: "NOVEL_ILLUSTRATION_LIMIT_EXCEEDED" }), "attachIllustration"),
+    ).toEqual({
+      message: "한 화에는 삽화를 10장까지 넣을 수 있어요. 다른 삽화를 뗀 뒤 다시 붙여 주세요.",
+      shouldRefetchNovel: true,
+    });
+  });
+
   it("삽화가 지금 판에 없으면 그사이 바뀌었다고 말하고 최신 내용을 다시 받는다", () => {
     expect(toNovelActionError(apiError(404, { code: "NOVEL_ILLUSTRATION_NOT_FOUND" }), "detachIllustration")).toEqual({
       message: "이 삽화가 그사이 바뀌었어요. 최신 내용을 불러왔어요.",
@@ -114,7 +135,7 @@ describe("toNovelActionError", () => {
 
   it("삽화 기능이 꺼졌으면 지금은 할 수 없다고 말하고 상세를 다시 받는다", () => {
     expect(toNovelActionError(apiError(404, { code: "NOVEL_ILLUSTRATIONS_DISABLED" }), "moveIllustration")).toEqual({
-      message: "지금은 삽화를 넣거나 옮기거나 뗄 수 없어요.",
+      message: "지금은 삽화를 넣거나 고칠 수 없어요.",
       shouldRefetchNovel: true,
     });
   });
@@ -122,6 +143,8 @@ describe("toNovelActionError", () => {
   it.each([
     ["moveIllustration", "삽화를 옮기지 못했어요. 잠시 후 다시 시도해주세요."],
     ["detachIllustration", "삽화를 떼지 못했어요. 잠시 후 다시 시도해주세요."],
+    ["attachIllustration", "삽화를 붙이지 못했어요. 잠시 후 다시 시도해주세요."],
+    ["replaceIllustration", "삽화를 바꾸지 못했어요. 잠시 후 다시 시도해주세요."],
   ] as const)("%s 의 일반 실패는 무엇을 못 했는지 말한다", (action, message) => {
     expect(toNovelActionError(apiError(500, undefined), action)?.message).toBe(message);
   });
