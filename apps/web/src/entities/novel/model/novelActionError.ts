@@ -115,6 +115,11 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     message: "다른 곳에서 먼저 고쳤어요. 최신 내용을 불러왔어요.",
     shouldRefetchNovel: true,
   },
+  // 한 화에 둘 수 있는 삽화 수를 채웠다(위치 확인이 필요한 그림도 센다). 다른 그림을 떼면 붙일 수 있다.
+  NOVEL_ILLUSTRATION_LIMIT_EXCEEDED: {
+    message: "한 화에는 삽화를 10장까지 넣을 수 있어요. 다른 삽화를 뗀 뒤 다시 붙여 주세요.",
+    shouldRefetchNovel: true,
+  },
   NOVEL_SOURCE_CHANGED: {
     message: "원래 대화가 바뀌어 이 화는 다시 만들 수 없어요.",
     shouldRefetchNovel: false,

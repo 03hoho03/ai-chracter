@@ -267,6 +267,13 @@ describe("toRejectionNotice", () => {
     });
   });
 
+  it("삽화가 걸리면 그 화의 삽화라고 말하고 그 화를 고치러 간다", () => {
+    expect(toRejectionNotice({ chapterOrdinal: 3, flaggedParts: ["illustration"] })).toEqual({
+      message: "3화의 삽화가 운영 정책에 맞지 않는 내용으로 확인돼 공개하지 못했어요. 3화를 고친 뒤 다시 공개해 주세요.",
+      fixOrdinal: 3,
+    });
+  });
+
   it("제목·소개만 걸리면 고칠 화가 없다", () => {
     expect(toRejectionNotice({ chapterOrdinal: null, flaggedParts: ["synopsis"] })).toEqual({
       message: "소개가 운영 정책에 맞지 않는 내용으로 확인돼 공개하지 못했어요. 소개를 고친 뒤 다시 공개해 주세요.",

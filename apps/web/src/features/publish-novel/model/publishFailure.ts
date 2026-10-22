@@ -14,6 +14,8 @@ import { getRateLimitDetail } from "@/shared/api/rateLimit";
  * - `salesStopped`: 운영자가 판매를 멈춰 새 화·다시 공개를 낼 수 없다(409). 다시 시도해도 같다.
  * - `summaryRequired`: 이미 공개한 화를 고쳐 다시 내는데 변경 요약이 없다(422). 화면이 낡아 요약 칸 없이 보낸 경우만
  *   닿는다 — 공개 모달을 다시 열면 칸이 나온다.
+ * - `illustrationLimit`: 화에 붙은 삽화가 상한(10장)을 넘는다(409). 삽화를 줄여야 풀린다.
+ * - `originalIllustration`: 원작자가 소설 공개를 허락하지 않은 원작의 그림이 화에 있다(409). 그 그림을 빼야 풀린다.
  * - `failed`: 그 밖(네트워크·5xx). */
 export type PublishFailure =
   | { kind: "rejected" }
@@ -24,6 +26,8 @@ export type PublishFailure =
   | { kind: "stale" }
   | { kind: "salesStopped" }
   | { kind: "summaryRequired" }
+  | { kind: "illustrationLimit" }
+  | { kind: "originalIllustration" }
   | { kind: "failed" };
 
 const STALE_CODES = new Set([
@@ -48,6 +52,8 @@ export function toPublishFailure(error: unknown): PublishFailure {
   if (error.status === 409 && code === "NOVEL_PUBLICATION_IN_REVIEW") return { kind: "inReview" };
   if (error.status === 409 && code === "NOVEL_PUBLICATION_SALES_STOPPED") return { kind: "salesStopped" };
   if (error.status === 422 && code === "NOVEL_CHANGE_SUMMARY_REQUIRED") return { kind: "summaryRequired" };
+  if (error.status === 409 && code === "NOVEL_ILLUSTRATION_LIMIT_EXCEEDED") return { kind: "illustrationLimit" };
+  if (error.status === 409 && code === "NOVEL_ILLUSTRATION_ORIGINAL_NOT_PUBLISHABLE") return { kind: "originalIllustration" };
   if (typeof code === "string" && STALE_CODES.has(code)) return { kind: "stale" };
   return { kind: "failed" };
 }
@@ -77,6 +83,10 @@ export function toPublishFailureMessage(failure: PublishFailure): string | undef
       return "운영 정책에 따라 판매가 멈춰 공개하지 못했어요. 판매가 멈춘 동안은 새 화와 고친 내용을 공개할 수 없어요.";
     case "summaryRequired":
       return "고친 화를 다시 공개하려면 변경 요약이 필요해요. 다시 공개할 때 고친 화마다 바뀐 것을 적어 주세요.";
+    case "illustrationLimit":
+      return "한 화에는 삽화를 10장까지 넣을 수 있어요. 삽화를 줄인 뒤 다시 공개해 주세요.";
+    case "originalIllustration":
+      return "원작자가 소설 공개를 허락하지 않은 작품이라 원작 이미지가 든 화는 공개할 수 없어요. 원작 이미지를 뺀 뒤 다시 공개해 주세요.";
     case "failed":
       return "공개하지 못했어요. 잠시 후 다시 시도해 주세요.";
   }

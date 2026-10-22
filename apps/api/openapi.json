@@ -8121,7 +8121,7 @@
           "novels"
         ],
         "summary": "Attach Novel Illustration",
-        "description": "그림 한 장을 지금 개정의 문단 앞·뒤에 붙인다. 문단이 지금 개정에 없으면 422 `NOVEL_ILLUSTRATION_ANCHOR_INVALID`, 그 출처로\n쓸 수 없는 그림(남의 것·준비 안 됨·삽화 용도가 아닌 업로드·본 적 없는 원작 그림 등 — 가르지 않는다)이면 422\n`NOVEL_ILLUSTRATION_ASSET_INVALID`.",
+        "description": "그림 한 장을 지금 개정의 문단 앞·뒤에 붙인다. 문단이 지금 개정에 없으면 422 `NOVEL_ILLUSTRATION_ANCHOR_INVALID`, 그 출처로\n쓸 수 없는 그림(남의 것·준비 안 됨·삽화 용도가 아닌 업로드·본 적 없는 원작 그림 등 — 가르지 않는다)이면 422\n`NOVEL_ILLUSTRATION_ASSET_INVALID`, 그 화에 이미 상한(`NOVEL_ILLUSTRATION_LIMIT`, 위치 확인 필요인 그림 포함)만큼 붙어 있으면\n409 `NOVEL_ILLUSTRATION_LIMIT_EXCEEDED`.",
         "operationId": "attach_novel_illustration_novels__novel_id__chapters__chapter_id__illustrations_post",
         "parameters": [
           {
@@ -9509,7 +9509,7 @@
           "admin"
         ],
         "summary": "Get Admin Novel Chapter",
-        "description": "화 공개본 하나 — 독자에게 나가는 그대로. 그 노벨의 공개 화가 아니면 404 `NOVEL_CHAPTER_NOT_FOUND`.",
+        "description": "화 공개본 하나 — 독자에게 나가는 그대로(삽화도 독자 응답과 같은 조건·자리, 그림 자산 id 를 더해). 그 노벨의 공개 화가\n아니면 404 `NOVEL_CHAPTER_NOT_FOUND`.",
         "operationId": "get_admin_novel_chapter_admin_novels__novel_id__chapters__chapter_id__get",
         "parameters": [
           {
@@ -9540,6 +9540,60 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminNovelChapterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novel-illustrations/{asset_id}/takedown": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Take Down Novel Illustration",
+        "description": "소설 삽화로 쓰인 그림 하나를 모든 판에서 내린다 — 독자·어드민 화 읽기가 그 그림 자리에 사유만 남기고(글과 다른 그림은\n그대로, 환급 없음), 그 바이트(정지 변형의 sha256)를 남겨 같은 파일을 다시 올린 새 자산도 공개 심사에서 막는다(통과 기억보다\n먼저 본다 — 그 바이트의 통과 기억은 지운다). 소설 전체를 닫아야 하는 중대한 경우는 노벨 이용제한을 함께 쓴다.\n\n사유가 공백뿐이면 422, 어느 개정의 삽화로도 쓰인 적 없는 자산이면 404 `NOVEL_ILLUSTRATION_NOT_FOUND`, 같은 바이트가 이미\n내려가 있으면 409 `NOVEL_ILLUSTRATION_ALREADY_TAKEN_DOWN`, 그림을 저장소에서 못 읽으면 503\n`NOVEL_ILLUSTRATION_UNAVAILABLE`(바이트 없이는 다시 올림을 막을 수 없어 기록하지 않는다). 감사 로그의 대상 회원은 그림의\n주인이다. 삽화 스위치와 무관하게 돈다.",
+        "operationId": "take_down_novel_illustration_admin_novel_illustrations__asset_id__takedown_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminNovelIllustrationTakedownRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelIllustrationTakedownResponse"
                 }
               }
             }
@@ -18392,6 +18446,13 @@
             },
             "type": "array",
             "title": "Paragraphs"
+          },
+          "illustrations": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNovelIllustration"
+            },
+            "type": "array",
+            "title": "Illustrations"
           }
         },
         "type": "object",
@@ -18401,7 +18462,8 @@
           "title",
           "authorNote",
           "edition",
-          "paragraphs"
+          "paragraphs",
+          "illustrations"
         ],
         "title": "AdminNovelChapterResponse",
         "description": "화 공개본 — 독자에게 나가는 그대로(제목·작가의 말·본문 문단)."
@@ -19152,6 +19214,147 @@
         ],
         "title": "AdminNovelDetailResponse",
         "description": "공개본 글과 운영 판단 재료. `source_moderation_status` 는 원작의 지금 상태(원작이 없으면 비어 있다), `publisher_suspended`\n는 게시자 정지 여부, `publisher_withdrawn` 은 게시자 탈퇴 여부다 — 셋 다 `readable` 이 거짓인 이유를 가른다(탈퇴한\n게시자의 팔린 소설은 숨긴 채 남아 `hidden_at` 이 있다 — 탈퇴로 숨겼는지는 이것으로 본다. 작가가 지워 숨긴 뒤 탈퇴했으면\n둘 다 참이다). `reports` 는 최근 노벨 신고 20개다.\n`purchase_amount` 는 환급되지 않은 구매의 가격 합(탈퇴한 구매자의 구매 포함), `purchase_buyer_count` 는 그 구매를 한 사람\n수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다.\n\n`review_reason` 은 반려 사유(작가에게 그대로 보인다), `reviewed_at` 은 마지막 승인·반려 시각이다. `serial_lock_*` 는 연재권\n잠금 기록이다 — 잠긴 시각, 그때의 원작 소설화 허락·원작 게시본 id·시행 중이던 약관 판의 사본과 출처(`first_publish` 는\n첫 공개·승인이 찍음, `backfill` 은 이 기록이 생기기 전 공개된 소설을 뒤늦게 채움 — 허락·원작 게시본을 알 수 없어 비어\n있다). 잠기지 않았으면 모두 비어 있다."
+      },
+      "AdminNovelIllustration": {
+        "properties": {
+          "paragraphIndex": {
+            "type": "integer",
+            "title": "Paragraphindex"
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "before",
+              "after"
+            ],
+            "title": "Placement"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "upload",
+              "original",
+              "generated"
+            ],
+            "title": "Source"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "withheld": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "taken_down",
+                  "original_restricted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withheld"
+          },
+          "withheldReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withheldreason"
+          },
+          "assetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Assetid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paragraphIndex",
+          "placement",
+          "order",
+          "source",
+          "url",
+          "width",
+          "height",
+          "withheld",
+          "withheldReason",
+          "assetId"
+        ],
+        "title": "AdminNovelIllustration"
+      },
+      "AdminNovelIllustrationTakedownRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "AdminNovelIllustrationTakedownRequest",
+        "description": "그림 하나를 모든 판에서 내린다. `reason` 은 그 그림 자리에 독자에게 보일 사유이자 감사 로그의 조치 사유다(공백만이면 422)."
+      },
+      "AdminNovelIllustrationTakedownResponse": {
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Assetid"
+          },
+          "takenDownAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Takendownat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "assetId",
+          "takenDownAt"
+        ],
+        "title": "AdminNovelIllustrationTakedownResponse"
       },
       "AdminNovelListItem": {
         "properties": {
@@ -20808,6 +21011,7 @@
               "novel-comment-hide",
               "novel-comment-report-reject",
               "novel-comment-restore",
+              "novel-illustration-takedown",
               "novel-lift",
               "novel-report-reject",
               "novel-restrict",
@@ -31918,6 +32122,13 @@
             "type": "boolean",
             "title": "Salesstopped",
             "default": false
+          },
+          "illustrations": {
+            "items": {
+              "$ref": "#/components/schemas/PublicNovelIllustration"
+            },
+            "type": "array",
+            "title": "Illustrations"
           }
         },
         "type": "object",
@@ -31934,7 +32145,8 @@
           "authorNote",
           "previousChapter",
           "nextChapter",
-          "readingPosition"
+          "readingPosition",
+          "illustrations"
         ],
         "title": "PublicNovelChapterResponse",
         "description": "노벨 화 하나. `access` 가 `locked` 면 본문(`paragraphs`)과 작가의 말이 비어 있고 `price` 로 소장 화면을 그린다 —\n잠긴 화의 글은 한 글자도 싣지 않는다. 읽을 수 있으면 공개본 개정의 본문을 문단 배열로 싣는다(소유자 화 조회의\n`paragraphs` 와 같은 나눔이라 읽은 자리의 문단 번호가 같은 뜻이다). `edition` 은 실어 준 글의 판이다(읽은 자리 저장에\n싣는다) — 보통은 지금 판이고, 산 사람이 산 때의 판을 고르면 그 판이다.\n\n`purchased_edition` 은 그 화를 산 사람에게만, 산 때의 판이 지금 판과 다를 때 싣는다(정책 스위치가 켜졌을 때). 판 이력이\n생기기 전의 판을 샀으면 남아 있는 가장 오래된 판으로 대신한다. 그 판 번호를 쿼리 `edition` 으로 보내면 그 판의 본문·\n제목·작가의 말을 준다. `latest_edition` 은 그때 함께 싣는 지금 판(최신 판)이다 — 판 고르기는 이 두 판만 보이고, 사이에\n낸 판은 싣지 않는다. 둘 다 산 때의 판을 골라 읽는 중에도 실린다. `sales_stopped` 는 작품 정보의 같은 칸과 같다."
@@ -32254,6 +32466,108 @@
         ],
         "title": "PublicNovelHomeResponse",
         "description": "운영자가 고른 노벨 가운데 지금 읽을 수 있는 것, 자리 순. 비어 있으면 홈은 섹션을 그리지 않는다 — 고른 노벨이 없을 때\n인기순으로 채우지 않는다."
+      },
+      "PublicNovelIllustration": {
+        "properties": {
+          "paragraphIndex": {
+            "type": "integer",
+            "title": "Paragraphindex"
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "before",
+              "after"
+            ],
+            "title": "Placement"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "upload",
+              "original",
+              "generated"
+            ],
+            "title": "Source"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "withheld": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "taken_down",
+                  "original_restricted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withheld"
+          },
+          "withheldReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withheldreason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paragraphIndex",
+          "placement",
+          "order",
+          "source",
+          "url",
+          "width",
+          "height",
+          "withheld",
+          "withheldReason"
+        ],
+        "title": "PublicNovelIllustration",
+        "description": "화 읽기의 삽화 한 장. 자리는 본문 문단 배열(`paragraphs`)의 인덱스와 그 앞·뒤, 같은 자리 안의 순위(`order`, 0부터)다.\n`source` 가 `original` 이면 원작에서 온 그림이다(화면이 \"원작 이미지\"로 표시한다). `url` 은 크게 그리는 정지 그림이고\n`width`·`height` 는 그 크기(모르면 null — 화면이 정한 비율 칸에 그린다). `withheld` 가 차 있으면 그림 자리만 남는다 —\n`url` 이 없고, 운영자가 내린 그림이면 `withheld_reason` 에 독자에게 보일 사유가 있다."
       },
       "PublicNovelLastRead": {
         "properties": {
