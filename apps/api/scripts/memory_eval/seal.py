@@ -7,7 +7,11 @@
 
 판 번호는 측정마다 하나다. 앞 측정의 판(v2·v3·v4)은 그 측정이 시험 절반을 이미 한 번 계산해 소진했으므로, 그 판의 문서로는 더 이상
 시험 절반을 열 수 없다 — 같은 시험 문항을 다시 열어 고른 규칙은 시험 절반이 개발 절반이 된 셈이라 일반화 근거가 되지 못한다.
-다음 측정은 `SEALED_EDITION` 한 곳만 새 판으로 바꾼다(머리글 검사와 거부 문구가 이 값에서 나온다)."""
+다음 측정은 `SEALED_EDITION` 한 곳만 새 판으로 바꾼다(머리글 검사와 거부 문구가 이 값에서 나온다).
+
+시험 쪽에서 문항을 빼면(질문 꼴 빼기·하한까지 축소) 그 id 목록 파일의 sha256 을 봉인 문서 머리(첫 빈 줄 앞)에
+`test-drop-sha256: <sha>` 한 줄로 적는다. 머리에 그 줄이 있으면 같은 sha 의 목록 파일을 줘야 하고, 목록 파일을 주면 머리에 그
+줄이 있어야 한다 — 봉인 뒤에 뺄 문항을 바꾸거나, 봉인에 적은 빼기를 잊고 전체 시험 문항으로 계산하는 일을 막는다."""
 
 import hashlib
 import re
@@ -18,9 +22,14 @@ PREREGISTRATION_FILE = "preregistration.md"  # cite-ok: 하네스가 여는 원�
 # 이번 측정이 봉인할 사전 등록 판. 첫 줄의 `(판)`·`(판.1)` 꼴만 받는다.
 SEALED_EDITION = "v5"
 _SEALED_HEADER = re.compile(rf"\({re.escape(SEALED_EDITION)}(\.\d+)?\)")
+# 봉인 문서 머리에 시험 빼기 목록 파일의 sha256 을 적는 줄의 머리말.
+TEST_DROP_HEADER = "test-drop-sha256:"
+_DROP_LINE = re.compile(rf"^{re.escape(TEST_DROP_HEADER)}\s*([0-9a-f]{{64}})$")
 
 
-def require_seal(splits: set[str], preregistration: Path, *, seal_sha: str | None) -> None:
+def require_seal(
+    splits: set[str], preregistration: Path, *, seal_sha: str | None, test_drop: Path | None = None
+) -> None:
     if "test" not in splits:
         return
     if not seal_sha:
@@ -41,3 +50,24 @@ def require_seal(splits: set[str], preregistration: Path, *, seal_sha: str | Non
         )
     if seal_sha != actual:
         raise SystemExit("준 봉인 해시가 지금 사전 등록 문서의 sha256 과 다르다")
+    _require_drop_matches(preregistration.read_text(encoding="utf-8"), test_drop)
+
+
+def _require_drop_matches(document: str, test_drop: Path | None) -> None:
+    header: list[str] = []
+    for line in document.splitlines():
+        if not line.strip():
+            break
+        header.append(line.strip())
+    declared = [m.group(1) for line in header if (m := _DROP_LINE.match(line))]
+    if len(declared) > 1:
+        raise SystemExit("봉인 문서 머리에 시험 빼기 목록 sha256 줄이 둘 이상이다")
+    if test_drop is None:
+        if declared:
+            raise SystemExit("봉인 문서 머리가 시험 빼기 목록을 적었는데 이번 실행에 그 목록 파일(--test-drop)이 없다")
+        return
+    if not declared:
+        raise SystemExit(f"시험 빼기 목록을 줬는데 봉인 문서 머리에 `{TEST_DROP_HEADER}` 줄이 없다")
+    actual = hashlib.sha256(test_drop.read_bytes()).hexdigest()
+    if actual != declared[0]:
+        raise SystemExit(f"시험 빼기 목록 파일의 sha256 이 봉인 문서 머리에 적힌 값과 다르다: {declared[0]} ≠ {actual}")

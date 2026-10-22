@@ -105,15 +105,20 @@ def test_the_split_is_refused_when_the_seed_file_differs_from_the_sha_the_runner
     assert not (tmp_path / "split").exists()
 
 
-def test_the_split_command_needs_the_seed_sha_and_checks_it_on_a_dry_run_too(tmp_path: Path) -> None:
+def test_the_split_command_needs_the_seed_sha_and_checks_it_on_a_dry_run_too(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     from memory_eval_cli import main
 
     cfg, sha = _write_bundle(tmp_path)
     base = ["--run", str(tmp_path), "split-bundle", "--config", str(cfg)]
     with pytest.raises(SystemExit):
         main([*base, "--dry-run"])
-    with pytest.raises(SystemExit, match="sha256"):
-        main([*base, "--dry-run", "--seed-sha", "f" * 64])
+    capsys.readouterr()
+    assert main([*base, "--dry-run", "--seed-sha", "f" * 64]) == 2
+    assert "sha256" in capsys.readouterr().err
+    assert main([*base, "--seed-sha", "f" * 64]) == 2
+    assert not (tmp_path / "split").exists()
     assert main([*base, "--dry-run", "--seed-sha", sha]) == 0
     assert main([*base, "--seed-sha", sha]) == 0
     assert (tmp_path / "split" / "a" / holdout.MANIFEST_FILE).exists()

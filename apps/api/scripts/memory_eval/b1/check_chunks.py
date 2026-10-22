@@ -25,6 +25,8 @@
 - 경고(종료 코드에 넣지 않음, 사람 확인 뒤 `review.json` 으로 뺀다): 심은 뒤~마지막으로 묻는 체크포인트 사이 원문 창
   밖에 묶음 낱말(누출·옛 값 포함, 묶음이 없으면 핵심어의 낱말)이 다시 나옴, 정답 묶음이 한 음절이거나 대본 열 턴
   넘게 두루 나오는 흔한 낱말뿐임.
+- 질문 꼴 칸(`askForm`)은 심기 표 검사기와 같은 규칙으로 본다(허용 값, 층 이름과 칸 일치, 꼴이 든 층의 크기 짝수) — 대본을
+  쓰는 동안 심기 표를 고치면 분할 전에 여기서도 걸린다.
 - 마지막 묶음까지 오면: 300턴, 연속 30턴 글자 합 < 24,000(첫 접기가 글자 상한이 아니라 턴 수로 일어난다는 가정).
 
 표준출력에는 규칙 이름과 항목 id·턴만 찍는다(위반 다음에 경고). 위반이 있으면 종료 코드 1."""
@@ -36,6 +38,12 @@ import unicodedata
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
+if __package__:
+    from memory_eval.b1 import plants_tool
+else:  # `python3 -I` 로 단독 실행하면 이 파일의 폴더가 모듈 경로에 없다 — 같은 폴더의 심기 표 검사기를 직접 찾는다.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import plants_tool  # type: ignore[no-redef,import-not-found]
 
 USER_LEN = (20, 120)
 NARRATOR_LEN = (150, 350)
@@ -401,6 +409,11 @@ def check(
             old = bundle_words(e, ("reject_bundles",)) + [k for k in ps[0]["keywords"] if k not in ps[1]["keywords"]]
             if t in body and any(found(body[t] + "\n" + box[t], x) for x in old if len(norm(x)) > 1):
                 v["정정 턴에 옛 값 낱말"].append(f"{iid} 턴{t}")
+    entries = items + list(raw.get("abstains", []))
+    for rule, hits in plants_tool.ask_form_violations(entries).items():
+        v[rule] += hits
+    if odd := plants_tool.odd_strata(entries, forms_only=True):
+        v["질문 꼴 층 크기 홀수"] = odd
     watched = sorted({w for e in items for w in list(e.get("keywords") or []) + list(e.get("cueNouns") or [])})
     for cp in CHECKPOINTS:
         if cp in by_turn:

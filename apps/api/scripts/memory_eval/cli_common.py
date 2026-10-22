@@ -64,6 +64,9 @@ def with_plants(p: argparse.ArgumentParser) -> None:
 def with_splits(p: argparse.ArgumentParser) -> None:
     p.add_argument("--splits", default="dev", help="dev · test · dev,test (시험 절반은 봉인 해시가 있어야 한다)")
     p.add_argument("--seal-sha", help="이번 런 봉인 사전 등록의 sha256")
+    p.add_argument(
+        "--test-drop", type=Path, help="시험 쪽에서 뺄 id 목록 파일(sha256 이 봉인 문서 머리에 적혀 있어야 한다)"
+    )
 
 
 def paid(p: argparse.ArgumentParser) -> None:
@@ -109,7 +112,9 @@ def _write(path: Path, obj: Any) -> None:
 
 def _splits(args: argparse.Namespace) -> set[str]:
     splits = set(args.splits.split(","))
-    require_seal(splits, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha)
+    require_seal(
+        splits, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha, test_drop=getattr(args, "test_drop", None)
+    )
     return splits
 
 
@@ -144,6 +149,7 @@ def _plant_view(args: argparse.Namespace, splits: set[str] | None = None) -> pla
         splits or {"dev"},
         preregistration=args.run / PREREGISTRATION_FILE,
         seal_sha=getattr(args, "seal_sha", None),
+        test_drop=getattr(args, "test_drop", None),
     )
 
 

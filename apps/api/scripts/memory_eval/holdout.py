@@ -14,7 +14,9 @@
 
 보기: 개발 보기(기본)는 심기 표에서 개발 id 만 남기고, 시험 id 는 숨김으로 둔다(찾으면 없는 문항이 아니라 거부로 알린다).
 시험 절반을 담는 보기는 봉인 확인을 지난 뒤에만 `test-keys.json` 을 열고, 시험 항목은 심기 표가 아니라 그 파일에서 가져온다
-(분할 때 기록한 sha256 과 같아야 한다). 어느 보기든 심기 표가 분할 때와 달라졌으면 거부한다.
+(분할 때 기록한 sha256 과 같아야 한다). 어느 보기든 심기 표가 분할 때와 달라졌으면 거부한다. 시험 쪽에서 문항을 뺐으면
+(`holdout_trim`) 그 id 목록 파일을 함께 주고, 그 sha256 이 봉인 문서 머리에 적힌 값과 같을 때만 그 문항을 빼고 연다 — 심기 표와
+분할 파일은 그대로 둔다. 목록은 작품을 가리지 않는 id 하나의 목록이라 이 작품에 없는 id 는 건너뛰고, 개발 문항이 있으면 거부한다.
 
 항목은 1차 하네스 칸으로도 읽히게 옮긴다(`harness_entry`) — 프로브·오프라인 회상·채점·출처 귀속이 같은 코드로 돈다."""
 
@@ -35,6 +37,8 @@ TEST_IDS_FILE = "test-ids.json"
 TEST_KEYS_FILE = "test-keys.json"
 MANIFEST_FILE = "split-manifest.json"
 SPLIT_FILES = (DEV_IDS_FILE, TEST_IDS_FILE, TEST_KEYS_FILE, MANIFEST_FILE)
+# 시험 빼기 목록 파일에서 뺄 id 를 담는 칸.
+DROP_KEY = "drop"
 # 시험 절반의 주 지표 문항 수 하한.
 TEST_PRIMARY_MIN = 24
 ABSTAIN_CATEGORY = "abstain"
@@ -177,6 +181,13 @@ def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def read_drop_ids(path: Path) -> frozenset[str]:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or not isinstance(raw.get(DROP_KEY), list):
+        raise SystemExit(f"시험 빼기 목록 파일은 `{DROP_KEY}` 칸에 id 목록을 담는다: {path}")
+    return frozenset(str(i) for i in raw[DROP_KEY])
+
+
 def load_view(
     plants_path: Path,
     split_dir: Path,
@@ -184,6 +195,7 @@ def load_view(
     *,
     preregistration: Path,
     seal_sha: str | None,
+    test_drop: Path | None = None,
 ) -> PlantSet:
     unknown = splits - {"dev", "test"}
     if unknown or not splits:
@@ -198,14 +210,17 @@ def load_view(
     if "dev" in splits:
         chosen.update({str(e["id"]): (e, "dev") for e in _entries(raw) if str(e["id"]) in dev_ids})
     if "test" in splits:
-        require_seal({"test"}, preregistration, seal_sha=seal_sha)
+        require_seal({"test"}, preregistration, seal_sha=seal_sha, test_drop=test_drop)
         keys_path = split_dir / TEST_KEYS_FILE
         if sha256_file(keys_path) != manifest["testKeysSha256"]:
             raise SystemExit("시험 정답 파일이 분할 때 기록한 sha256 과 다르다")
         items = _read_json(keys_path)["items"]
         if {str(e["id"]) for e in items} != test_ids:
             raise SystemExit("시험 정답 파일의 문항이 시험 id 목록과 다르다")
-        chosen.update({str(e["id"]): (e, "test") for e in items})
+        dropped = read_drop_ids(test_drop) if test_drop is not None else frozenset()
+        if dropped & dev_ids:
+            raise SystemExit(f"시험 빼기 목록에 개발 문항이 있다(빼기는 시험 쪽만): {sorted(dropped & dev_ids)}")
+        chosen.update({str(e["id"]): (e, "test") for e in items if str(e["id"]) not in dropped})
     checkpoints = [int(c) for c in raw.get("checkpoints", [])]
     plants: list[dict[str, Any]] = []
     abstains: list[dict[str, Any]] = []

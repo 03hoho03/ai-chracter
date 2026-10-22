@@ -507,6 +507,25 @@ def cmd_judge_summary(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_judge_form_summary(args: argparse.Namespace) -> int:
+    """거짓 전제 판정 줄의 질문 꼴별 회피(`unaddressed`) 비율. 꼴은 심기 표의 질문 꼴 칸에서만 읽고(칸이 없으면 기본 꼴),
+    표준출력에는 꼴별 개수와 비율만 나간다."""
+    from memory_eval.b1.plants_tool import DEFAULT_ASK_FORM
+    from memory_eval.judge import unaddressed_by_ask_form
+
+    forms: dict[str, str] = {}
+    for path in args.plants:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        for entry in list(raw.get("plants", [])) + list(raw.get("abstains", [])):
+            item = str(entry["id"])
+            if item in forms:
+                raise SystemExit(f"심기 표 둘에 같은 문항 id 가 있다: {item}")
+            forms[item] = str(entry.get("askForm", DEFAULT_ASK_FORM))
+    rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
+    _print({"falsePremiseByAskForm": unaddressed_by_ask_form(rows, forms)})
+    return 0
+
+
 def cmd_countdown(args: argparse.Namespace) -> int:
     """CP300 상영회 카운트다운(스탯 값·노트 본문 존재만 — 두 절반 합계, 문항 이름은 개발 절반만)."""
     from memory_eval import countdown
@@ -664,7 +683,9 @@ def cmd_s8(args: argparse.Namespace) -> int:
     from memory_eval.judge import ensure_unique_probe_rows
     from memory_eval.verdict import s8_verdict
 
-    require_seal({"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha)
+    require_seal(
+        {"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha, test_drop=getattr(args, "test_drop", None)
+    )
     plant_set = _plant_view(args, {"dev", "test"})
     scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
     ensure_unique_probe_rows(scores)
@@ -687,7 +708,9 @@ def cmd_v3_verdict(args: argparse.Namespace) -> int:
     from memory_eval.judge import ensure_unique_probe_rows
     from memory_eval.verdict_v3 import v3_verdict
 
-    require_seal({"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha)
+    require_seal(
+        {"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha, test_drop=getattr(args, "test_drop", None)
+    )
     plant_set = _plant_view(args, {"dev", "test"})
     scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
     ensure_unique_probe_rows(scores)
@@ -739,12 +762,19 @@ def cmd_v4_verdict(args: argparse.Namespace) -> int:
     scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
     judge_rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
     _require_ran(args, scores + judge_rows)
-    require_seal({"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha)
+    require_seal(
+        {"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha, test_drop=getattr(args, "test_drop", None)
+    )
 
     def view(pair: list[str]) -> plants_mod.PlantSet:
         plants_path, split_dir = Path(pair[0]), Path(pair[1])
         return holdout.load_view(
-            plants_path, split_dir, {"test"}, preregistration=args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha
+            plants_path,
+            split_dir,
+            {"test"},
+            preregistration=args.run / PREREGISTRATION_FILE,
+            seal_sha=args.seal_sha,
+            test_drop=args.test_drop,
         )
 
     story = [view(pair) for pair in args.story]
@@ -1392,6 +1422,11 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     _ran_args(p)
     p.set_defaults(fn=cmd_judge_summary)
 
+    p = sub.add_parser("judge-form-summary", help="거짓 전제 판정의 질문 꼴별 unaddressed 비율(꼴은 심기 표 칸에서)")
+    p.add_argument("--judged", type=Path, nargs="+", required=True)
+    p.add_argument("--plants", type=Path, nargs="+", required=True, help="판정 줄의 문항이 든 심기 표(대본마다)")
+    p.set_defaults(fn=cmd_judge_form_summary)
+
     p = sub.add_parser("countdown", help="CP300 상영회 카운트다운 — 스탯·노트 본문 존재만, 갈래별")
     p.add_argument("--probes", type=Path, nargs="+", required=True)
     p.add_argument("--checkpoint", type=int, default=300)
@@ -1458,6 +1493,9 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
         "v4-verdict", help="묶음 1 판정 — 안전 쌍·효과 셋 Holm·비열등·캐릭터 표(시험 절반 — 봉인 해시 필요)"
     )
     p.add_argument("--seal-sha", required=True)
+    p.add_argument(
+        "--test-drop", type=Path, help="시험 쪽에서 뺄 id 목록 파일(sha256 이 봉인 문서 머리에 적혀 있어야 한다)"
+    )
     p.add_argument("--story", nargs=2, action="append", required=True, metavar=("PLANTS", "SPLIT_DIR"),
                    help="스토리 대본 하나의 심기 표와 분할 폴더(대본마다 한 번씩)")  # fmt: skip
     p.add_argument(
