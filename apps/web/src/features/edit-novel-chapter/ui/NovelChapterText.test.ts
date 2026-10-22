@@ -74,14 +74,22 @@ const aiEdit = {
   report: () => {},
 } as unknown as ComponentProps<typeof NovelChapterText>["aiEdit"];
 
-function render({ isIllustrationsOn, isFixMode }: { isIllustrationsOn: boolean; isFixMode: boolean }): string {
+function render({
+  isIllustrationsOn,
+  isFixMode,
+  target = chapter,
+}: {
+  isIllustrationsOn: boolean;
+  isFixMode: boolean;
+  target?: NovelChapterResponse;
+}): string {
   return renderToStaticMarkup(
     createElement(
       QueryClientProvider,
       { client: new QueryClient() },
       createElement(NovelChapterText, {
         novel,
-        chapter,
+        chapter: target,
         isFixMode,
         aiEdit,
         onFocusFallback: () => {},
@@ -118,5 +126,22 @@ describe("NovelChapterText 삽화", () => {
     expect(markup).not.toContain("옮기기");
     expect(markup).toContain("위치 확인 필요 삽화 1장");
     expect(markup).toContain("놓기");
+  });
+
+  // 위치 확인 필요라 공개 심사에서 빠져 있던 내린 그림을 다시 놓으면 다음 공개가 거부된다 — 목록에서도 떼기만 둔다.
+  it("위치 확인 필요인 내린 그림에는 놓기가 없고 떼기만 있다", () => {
+    const takenDown = {
+      ...chapter,
+      revision: {
+        ...chapter.revision,
+        unplacedIllustrations: [
+          illustration("lost", { anchorBlockId: null, placement: null, url: null, withheld: "taken_down" }),
+        ],
+      },
+    } satisfies NovelChapterResponse;
+    const markup = render({ isIllustrationsOn: true, isFixMode: true, target: takenDown });
+    const list = markup.slice(markup.indexOf("위치 확인 필요 삽화 1장"), markup.indexOf("첫 문단"));
+    expect(list).not.toContain("놓기");
+    expect(list).toContain("떼기");
   });
 });

@@ -157,7 +157,9 @@ export function NovelChapterText({
   const spots = toIllustrationSpots(chapter.revision);
   const activeMove = toActiveMove({ isIllustrationsOn, moving, revision: chapter.revision });
   const isPlacing = moveMutation.isPending || detachMutation.isPending;
-  const isPlacementBlocked = isPlacing || isRegenerating;
+  // 직접 고치기 저장과 삽화 요청은 같은 판을 기준으로 가므로 한쪽이 도는 동안 다른 쪽을 막는다 — 둘이 함께 나가면 늦은 쪽이
+  // 같은 화면의 요청과 충돌해 409 로 끝난다.
+  const isPlacementBlocked = isPlacing || isRegenerating || isSaving;
 
   useEffect(() => {
     onDraftDirtyChange(isDraftDirty);
@@ -173,14 +175,19 @@ export function NovelChapterText({
     setLiveMessage("");
   }, [isFixMode]);
 
-  // 옮기는 동안 Esc 는 어디서 눌러도 옮기기를 그만둔다.
+  // 옮기는 동안 Esc 는 어디서 눌러도 옮기기만 그만둔다. 보드도 Esc 로 고른 화를 푸는데(편집 패널이 닫힌다) 그쪽은 React
+  // 처리기라 문서에 버블로 걸면 늦는다 — 캡처로 먼저 받아 기본 동작을 막고, 패널은 막힌 Esc 를 무시한다.
   useEffect(() => {
     if (activeMove === null) return;
     function handleKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") cancelMove();
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // 그사이 연 대화상자(판 이력 등)의 Esc 는 그 대화상자 몫이다.
+      if (event.target instanceof Element && event.target.closest('[role="dialog"],[role="alertdialog"]')) return;
+      event.preventDefault();
+      cancelMove();
     }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
     // 옮기는 그림이 바뀔 때만 다시 건다. 처리기는 상태 설정과 ref 만 쓴다.
   }, [activeMove?.id]);
 
@@ -271,7 +278,7 @@ export function NovelChapterText({
       setRange(null);
       setLiveMessage(`삽화를 ${paragraphIndex + 1}번째 문단 ${placement === "before" ? "앞으로" : "뒤로"} 옮겼어요.`);
     } catch (error) {
-      handlePlacementError(error, "moveIllustration", activeMove.id);
+      handlePlacementError(error, "moveIllustration");
     }
   }
 
@@ -294,24 +301,27 @@ export function NovelChapterText({
       if (button) button.focus();
       else onFocusFallback();
     } catch (error) {
-      handlePlacementError(error, "detachIllustration", illustration.id);
+      handlePlacementError(error, "detachIllustration");
     }
   }
 
   /** 삽화 요청 실패. 옮기기를 끝내고(다시 받은 판에서 그림 id 가 바뀐다) 문장을 남긴다. 충돌·없어진 그림이면 상세를 다시
    * 받아 화 키가 새 판으로 바뀌고 본문을 새로 받는다 — 다음 요청은 그 판을 기준으로 간다. 스위치가 꺼졌으면 가격도 다시 받아
    * 삽화 조작을 거둔다. */
-  function handlePlacementError(error: unknown, action: NovelAction, illustrationId: string) {
+  function handlePlacementError(error: unknown, action: NovelAction) {
     setMoving(null);
     setRange(null);
     setLiveMessage("");
-    figureRefs.current.get(illustrationId)?.focus();
+    // 다시 받은 판에서는 배치 id 가 바뀌어 누른 그림도 새로 그려진다 — 사라지지 않는 장 제목으로 옮긴다.
+    onFocusFallback();
     const result = toNovelActionError(error, action);
     // 재동의가 필요하면 전역 재동의 모달이 맡는다.
     if (result === null) return;
     setPlacementError(result.message);
     if (hasNovelErrorCode(error, "NOVEL_ILLUSTRATIONS_DISABLED")) {
       void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
+      // 판이 그대로라 상세를 다시 받아도 화 키가 같다 — 꺼짐에서 서버가 비워 주는 삽화 목록을 받으려면 화도 다시 받는다.
+      void queryClient.invalidateQueries({ queryKey: novelKeys.chapter(novel.id, chapter.id, chapter.revision.id) });
     }
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
   }
@@ -376,7 +386,7 @@ export function NovelChapterText({
   }
 
   async function saveManualEdit() {
-    if (isSaving || isRegenerating || manualEdit === null || editRange === null) return;
+    if (isSaving || isPlacing || isRegenerating || manualEdit === null || editRange === null) return;
     aiEdit.report({ type: "started" });
     setEditError(undefined);
     const { baseRevisionId, body, blockIds, isUnchanged } = toManualEditSave(
@@ -458,6 +468,7 @@ export function NovelChapterText({
           hasPendingAiEdits={pendingEdits.length > 0}
           illustrationCount={countIllustrationsInRange(spots, editRange)}
           isSaving={isSaving}
+          isPlacing={isPlacing}
           onDraftChange={(draft) => setManualEdit((current) => (current ? { ...current, draft } : current))}
           onCancel={() => closeManualEdit("manualCancelled")}
           onSave={() => void saveManualEdit()}
@@ -511,6 +522,8 @@ export function NovelChapterText({
           isBusy={isPlacing}
           detachingId={detachMutation.isPending ? detachMutation.variables.illustrationId : undefined}
           rowRef={setFigureRef}
+          // 목록은 고치기 모드와 상관없이 서지만, 항목마다 할 수 있는 일은 문단 사이 그림과 같은 판정이다(내린 그림은 떼기만).
+          actionsOf={(illustration) => toIllustrationActions({ isIllustrationsOn, isFixMode: true, illustration })}
           onPlace={startPlaceUnplaced}
           onCancelMove={() => cancelMove()}
           onDetach={(illustration) => void detach(illustration, undefined)}
@@ -729,6 +742,8 @@ type ManualEditorProps = {
   /** 고치는 범위 문단들의 앞·뒤 삽화 수. 입력칸이 그 자리를 대신해 그림이 보이지 않으므로 수와 결과를 한 줄로 말한다. */
   illustrationCount: number;
   isSaving: boolean;
+  /** 삽화 요청이 도는 중인가. 같은 판을 기준으로 가므로 그동안 저장을 막는다. */
+  isPlacing: boolean;
   onDraftChange: (draft: string) => void;
   onCancel: () => void;
   onSave: () => void;
@@ -749,11 +764,12 @@ function ManualEditor({
   hasPendingAiEdits,
   illustrationCount,
   isSaving,
+  isPlacing,
   onDraftChange,
   onCancel,
   onSave,
 }: ManualEditorProps) {
-  const isSaveBlocked = isSaving || isRegenerating;
+  const isSaveBlocked = isSaving || isPlacing || isRegenerating;
   const saveDescribedBy = [isRegenerating && `${id}-regenerating`, hasPendingAiEdits && `${id}-pending`]
     .filter((part) => part !== false)
     .join(" ");

@@ -5,7 +5,7 @@ import { useId } from "react";
 
 import { CHAPTER_REGENERATING_MESSAGE } from "@/entities/novel";
 
-import type { BoardIllustration } from "../model/boardIllustrations";
+import type { BoardIllustration, IllustrationAction } from "../model/boardIllustrations";
 
 type UnplacedIllustrationListProps = {
   illustrations: readonly BoardIllustration[];
@@ -16,6 +16,8 @@ type UnplacedIllustrationListProps = {
   /** 진행 중인 떼기 요청의 그림 id. */
   detachingId: string | undefined;
   rowRef: (id: string, element: HTMLDivElement | null) => void;
+  /** 항목마다 보일 조작(`toIllustrationActions`). 운영자가 내린 그림은 다시 놓으면 공개가 거부되므로 떼기만 있다. */
+  actionsOf: (illustration: BoardIllustration) => IllustrationAction[];
   onPlace: (illustration: BoardIllustration) => void;
   onCancelMove: () => void;
   onDetach: (illustration: BoardIllustration) => void;
@@ -38,6 +40,7 @@ export function UnplacedIllustrationList({
   isBusy,
   detachingId,
   rowRef,
+  actionsOf,
   onPlace,
   onCancelMove,
   onDetach,
@@ -60,6 +63,7 @@ export function UnplacedIllustrationList({
       <ul className="flex flex-col gap-1">
         {illustrations.map((illustration, index) => {
           const isMoving = illustration.id === movingId;
+          const actions = actionsOf(illustration);
           const name = `위치 확인 필요 삽화 ${index + 1}`;
           return (
             <li key={illustration.id}>
@@ -94,28 +98,29 @@ export function UnplacedIllustrationList({
                   )}
                 </span>
                 <span className="flex gap-1">
-                  {isMoving ? (
-                    <Button type="button" variant="ghost" size="sm" onClick={onCancelMove}>
-                      <X aria-hidden />
-                      놓기 취소
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-disabled={isBlocked}
-                      aria-describedby={isRegenerating ? reasonId : undefined}
-                      className="aria-disabled:opacity-65"
-                      onClick={() => {
-                        if (isBlocked) return;
-                        onPlace(illustration);
-                      }}
-                    >
-                      <MoveVertical aria-hidden />
-                      놓기
-                    </Button>
-                  )}
+                  {actions.includes("move") &&
+                    (isMoving ? (
+                      <Button type="button" variant="ghost" size="sm" onClick={onCancelMove}>
+                        <X aria-hidden />
+                        놓기 취소
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-disabled={isBlocked}
+                        aria-describedby={isRegenerating ? reasonId : undefined}
+                        className="aria-disabled:opacity-65"
+                        onClick={() => {
+                          if (isBlocked) return;
+                          onPlace(illustration);
+                        }}
+                      >
+                        <MoveVertical aria-hidden />
+                        놓기
+                      </Button>
+                    ))}
                   <Button
                     type="button"
                     variant="ghost"
