@@ -19,19 +19,22 @@ SONNET = "claude-sonnet-5-5"
 OPUS = "claude-opus-5-5"
 
 
-def _fake_message() -> SimpleNamespace:
+def _fake_message(thinking_tokens: int | None = None) -> SimpleNamespace:
+    details = None if thinking_tokens is None else SimpleNamespace(thinking_tokens=thinking_tokens)
     usage = SimpleNamespace(
         input_tokens=1_000,
         cache_read_input_tokens=0,
         cache_creation_input_tokens=0,
         output_tokens=100,
-        output_tokens_details=None,
+        output_tokens_details=details,
     )
     text = SimpleNamespace(type="text", text=JudgeVerdict(verdict="declined", reason="r").model_dump_json())
     return SimpleNamespace(stop_reason="end_turn", content=[text], usage=usage)
 
 
-def _send(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+def _send(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, thinking_tokens: int | None = None, **kwargs: Any
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """가짜 Anthropic 클라이언트로 판정 한 번을 보내고 (보낸 요청, 원장 줄)을 돌려준다."""
     import anthropic
 
@@ -40,7 +43,7 @@ def _send(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **kwargs: Any) -> tup
     class FakeMessages:
         async def create(self, **request: Any) -> SimpleNamespace:
             sent.update(request)
-            return _fake_message()
+            return _fake_message(thinking_tokens)
 
     class FakeClient:
         def __init__(self, **_: Any) -> None:
@@ -94,6 +97,30 @@ def test_an_opus_judge_leaves_thinking_out_with_the_same_effort_and_prompt(
     assert sent["max_tokens"] == haiku_sent["max_tokens"]
     assert row["model"] == OPUS
     assert row["costUsd"] == pytest.approx((1_000 * 4.00 + 100 * 20.00) / 1_000_000)
+
+
+def test_an_opus_judge_row_keeps_its_thinking_tokens_apart_and_prices_them_as_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 사고를 끌 수 없는 판정자는 사고 토큰이 출력 토큰 안에 섞여 온다 — 원장 줄이 둘을 갈라 적어야 사고가 원가를 얼마나 먹는지 보인다.
+    sent, row = _send(monkeypatch, tmp_path, model=OPUS, thinking_tokens=60)
+    assert sent["output_config"]["effort"] == "low"
+    assert (row["outputTokens"], row["thoughtsTokens"]) == (40, 60)
+    assert row["costUsd"] == pytest.approx((1_000 * 4.00 + 100 * 20.00) / 1_000_000)
+
+
+def test_the_opus_call_estimate_covers_a_call_that_spends_the_whole_output_cap_on_thinking() -> None:
+    # 판정 한 번의 고정 견적이 사고 토큰을 따로 세지 않아도 되는 것은 사고가 출력 상한 안에 들기 때문이다 — 상한을 다 쓴 한
+    # 번(입력은 앞 측정 원장의 Opus 판정 입력 최대 약 3.8천 토큰보다 조금 크게)보다 견적이 작으면 드라이런이 사고 원가를 낮게 본다.
+    worst = cost_usd(
+        OPUS,
+        input_tokens=3_900,
+        cached_tokens=0,
+        cache_write_tokens=0,
+        output_tokens=0,
+        thoughts_tokens=judge_mod.JUDGE_MAX_TOKENS,
+    )
+    assert judge_mod.JUDGE_MODELS[OPUS][1] >= worst
 
 
 def test_an_unknown_judge_model_is_refused(tmp_path: Path) -> None:
