@@ -1181,6 +1181,31 @@ async def test_ai_edit_finishing_after_its_chapter_changed_is_refunded_as_source
     assert [r.body for r in await _revisions(db_session, chapter.id)][-1] == "딴 탭"
 
 
+async def test_ai_edit_finishing_after_a_same_text_revision_is_saved_as_a_preview(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """모델을 부르는 동안 그 장에 기준 판과 글이 같은 새 판이 쌓이면(같은 글로 되돌리기 등) 결과는 지금 판에도 그대로
+    맞는다 — 실패·환불하지 않고 미리보기로 저장한다. 깨지는 시나리오: 개정 id 로 판정하면 글이 그대로인데도 결과를 버린다."""
+    body = "\n\n".join(["문단이다. " * 40, "둘째."])
+    novel, chapter = await _chapter_with_body(db_client, db_session, body)
+    job = await _ai_edit_job(db_session, novel, chapter, start=1, end=1)
+    stored_body = (await _revisions(db_session, chapter.id))[-1].body
+
+    async def same_text_meanwhile() -> None:
+        db_session.add(revision_row(chapter_id=chapter.id, revision_no=2, body=stored_body, source="manual_edit"))
+        await db_session.commit()
+
+    await runner.run_job(
+        _factory(db_session), _NovelLLM(paragraphs=["고친 둘째."], during=same_text_meanwhile), job.id
+    )
+
+    stored = await _job(db_session, job.id)
+    assert (stored.status, stored.failure_code, stored.refunded_at) == ("succeeded", None, None)
+    paragraphs = split_paragraphs(stored_body)
+    assert stored.result_text == "\n\n".join([*paragraphs[:1], "고친 둘째.", *paragraphs[2:]])
+    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -40), ("novelize_spend", -20)]
+
+
 @pytest.mark.parametrize(
     ("paragraphs", "code"),
     [

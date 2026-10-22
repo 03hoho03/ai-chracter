@@ -86,7 +86,12 @@ from api.novelize.billing import (
     job_price,
     refund_active_jobs,
 )
-from api.novelize.deletion import delete_batch, delete_novels, erase_stale_ai_edit_previews
+from api.novelize.deletion import (
+    ai_edit_preview_is_fresh,
+    delete_batch,
+    delete_novels,
+    erase_stale_ai_edit_previews,
+)
 from api.novelize.blocks import (
     BlockIdsInvalidError,
     build_revision,
@@ -514,13 +519,23 @@ async def _active_job(db: AsyncSession, novel_id: uuid.UUID) -> NovelActiveJob |
 async def _pending_ai_edits(
     db: AsyncSession, novel_id: uuid.UUID, chapters: list[NovelChapterSummary]
 ) -> list[NovelPendingAiEdit]:
-    """성공했고 적용·버리기 전이며 기준 개정이 그 장의 현재 개정인 AI 수정. 현재 개정은 목차가 이미 읽은 값을 쓴다.
+    """성공했고 적용·버리기 전이며 기준 개정이 그 장의 현재 개정과 글이 같은(`ai_edit_preview_is_fresh`) AI 수정.
+    현재 개정은 목차가 이미 읽은 값을 쓴다.
 
     결과 본문이 비워진 행은 뺀다. 목차와 이 조회는 다른 문장이라, 그 사이 새 개정이 커밋되고 낡은 미리보기가
-    비워지면 기준 개정은 아직 목차의 현재 개정인데 본문이 없는 행을 보게 된다."""
+    비워지면 기준 개정은 아직 목차의 현재 개정과 글이 같은데 본문이 없는 행을 보게 된다."""
     current_revision_ids = [chapter.current_revision_id for chapter in chapters]
     if not current_revision_ids:
         return []
+    current_hash = (
+        select(NovelChapterRevision.content_hash)
+        .where(
+            NovelChapterRevision.id.in_(current_revision_ids),
+            NovelChapterRevision.chapter_id == NovelJob.chapter_id,
+        )
+        .correlate(NovelJob)
+        .scalar_subquery()
+    )
     jobs = await db.scalars(
         select(NovelJob)
         .where(
@@ -529,7 +544,7 @@ async def _pending_ai_edits(
             NovelJob.status == "succeeded",
             NovelJob.result_revision_id.is_(None),
             NovelJob.dismissed_at.is_(None),
-            NovelJob.base_revision_id.in_(current_revision_ids),
+            ai_edit_preview_is_fresh(NovelJob.base_revision_id, current_hash),
             NovelJob.instruction.is_not(None),
             NovelJob.result_text.is_not(None),
         )
@@ -1566,17 +1581,23 @@ async def get_novel_chapter_revision(
 
 
 # ── 직접 수정·되돌리기·적용 ─────────────────────────────────────────────────
-async def _lock_current_revision_for_edit(
-    db: AsyncSession, chapter_id: uuid.UUID, base_revision_id: uuid.UUID
-) -> NovelChapterRevision:
+async def _lock_current_revision(db: AsyncSession, chapter_id: uuid.UUID) -> NovelChapterRevision | None:
     """개정을 쌓는 세 경로(직접 수정·되돌리기·AI 수정 적용)의 공통 앞부분. 장 행을 먼저 잠그고(`FOR NO KEY UPDATE`)
-    그 뒤에 현재 개정을 읽는다 — 잠그기 전에 읽으면 그사이 커밋된 새 개정을 못 보고 옛 개정 위에 덮어쓴다. 현재
-    개정이 요청의 기준 개정이 아니면 409 `NOVEL_REVISION_CONFLICT`(다른 탭이 먼저 고쳤다). 장이 그사이 지워졌으면
-    404. 재생성 결과 저장도 같은 잠금으로 줄을 서서 같은 번호를 두 번 쓰지 않는다."""
+    그 뒤에 현재 개정을 읽는다 — 잠그기 전에 읽으면 그사이 커밋된 새 개정을 못 보고 옛 개정 위에 덮어쓴다. 장이 그사이
+    지워졌으면 404. 재생성 결과 저장도 같은 잠금으로 줄을 서서 같은 번호를 두 번 쓰지 않는다."""
     locked = await db.scalar(select(NovelChapter.id).where(NovelChapter.id == chapter_id).with_for_update(key_share=True))
     if locked is None:
         raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
-    current = await current_revision(db, chapter_id)
+    return await current_revision(db, chapter_id)
+
+
+async def _lock_current_revision_for_edit(
+    db: AsyncSession, chapter_id: uuid.UUID, base_revision_id: uuid.UUID
+) -> NovelChapterRevision:
+    """직접 수정·되돌리기의 낙관 잠금. 현재 개정이 요청의 기준 개정이 아니면 409 `NOVEL_REVISION_CONFLICT`(다른 탭이
+    먼저 고쳤다). 여기는 글이 아니라 개정 id 로 본다 — 화면이 보고 고친 판 위에만 쌓아야 하고, 그사이 생긴 같은 글의
+    새 판도 화면이 모르는 판이다."""
+    current = await _lock_current_revision(db, chapter_id)
     if current is None or current.id != base_revision_id:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_REVISION_CONFLICT")
     return current
@@ -1721,13 +1742,14 @@ async def apply_novel_ai_edit(
     novel: Novel = Depends(_owned_novel_dependency),
     db: AsyncSession = Depends(get_db_session),
 ) -> NovelChapterResponse:
-    """끝난 AI 수정의 미리보기를 새 개정으로 쌓는다(무과금). 수정을 맡긴 뒤 장이 바뀌었으면(기준 개정이 현재가
-    아니면) 409 `NOVEL_REVISION_CONFLICT`. 적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·버림·장이
-    지워짐)은 409 `NOVEL_JOB_NOT_APPLICABLE`. 적용한 개정은 작업의 결과 개정(`revisionId`)이 된다. 적용한 작업의
+    """끝난 AI 수정의 미리보기를 새 개정으로 쌓는다(무과금). 수정을 맡긴 뒤 장의 글이 바뀌었으면
+    (`ai_edit_preview_is_fresh` 가 거짓이면) 409 `NOVEL_REVISION_CONFLICT`. 글이 같은 새 개정만 쌓였으면 적용된다.
+    적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·버림·장이 지워짐)은 409 `NOVEL_JOB_NOT_APPLICABLE`. 적용한 개정은 작업의 결과 개정(`revisionId`)이 된다. 적용한 작업의
     지시문·결과 본문은 비운다(결과는 이제 개정에 있다). 새 개정 때문에 낡은 같은 장의 다른 미리보기도 비운다.
 
     결과 본문이 있는지는 기준 개정 검사 **뒤에** 본다 — 장이 바뀌어 낡은 미리보기는 본문이 비워져 있지만, 사용자에게
-    알릴 사유는 "장이 바뀌었다"(409 `NOVEL_REVISION_CONFLICT`)다.
+    알릴 사유는 "장이 바뀌었다"(409 `NOVEL_REVISION_CONFLICT`)다. 예외 하나: 글이 바뀌어 비워진 뒤 다시 같은 글로
+    돌아온 장이면 판정은 통과하고 본문이 없어 409 `NOVEL_JOB_NOT_APPLICABLE` 이다(비워진 행은 목록에 없어 옛 탭에서만 닿는다).
 
     잠금은 작업 행 → 장 행이다(소설·마지막 장 삭제와 같은 순서). 같은 작업을 두 번 적용하려는 요청은 작업 행에서
     줄을 서고, 뒤 요청은 결과 개정이 채워진 것을 본다."""
@@ -1750,11 +1772,15 @@ async def apply_novel_ai_edit(
         or job.paragraph_end is None
     ):
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_JOB_NOT_APPLICABLE")
-    current = await _lock_current_revision_for_edit(db, job.chapter_id, job.base_revision_id)
+    current = await _lock_current_revision(db, job.chapter_id)
+    if current is None or not await db.scalar(
+        select(ai_edit_preview_is_fresh(job.base_revision_id, current.content_hash))
+    ):
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_REVISION_CONFLICT")
     if job.result_text is None:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_JOB_NOT_APPLICABLE")
-    # 블록 id 는 잠근 현재 개정에서 잇는다. 지금은 위 잠금이 현재 = 기준 개정을 강제해 둘이 같은 행이지만, 본문이 같으면
-    # 낡지 않은 미리보기로 보게 되면 둘이 글자만 같고 id 가 다른 개정일 수 있다 — 그때도 지금 화의 문단 id 가 이어진다.
+    # 블록 id 는 기준 개정이 아니라 잠근 현재 개정에서 잇는다. 둘은 글만 같고 id 가 다른 개정일 수 있다(같은 글로
+    # 되돌리기 등) — 그때도 지금 화의 문단 id 가 이어진다.
     block_ids = succeeding_range_ids(current, job.paragraph_start, job.paragraph_end, job.result_text)
     revision = await _stack_revision(
         db, novel, current, build_revision(body=job.result_text, source="ai_edit", block_ids=block_ids)

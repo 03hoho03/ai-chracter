@@ -50,9 +50,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import Text, delete, func, literal, or_, select, update
+from sqlalchemy import ColumnElement, SQLColumnExpression, Text, delete, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.prompt_builder import PromptRenderError, PromptSetNotFoundError, load_active_prompt_set
@@ -283,7 +282,7 @@ async def _plan(db: AsyncSession, novel: Novel, user_id: uuid.UUID, body: NovelP
         price = _price_for(chapter.ordinal, frozen, body.free, remembered_free=remembered_free)
         chapter_is_new = frozen is None
         is_new = is_new or chapter_is_new
-        if frozen is None or await _chapter_changed(db, frozen, chapter, revision):
+        if frozen is None or await _chapter_changed(db, chapter, revision):
             # 변경 요약은 새 판을 내는 다시 공개에만 쓴다. 스위치가 켜져 있으면 꼭 있어야 한다 — 심사를 부르기 전에 거절한다.
             change_summary = (
                 body.change_summary if settings.novel_public_policy_v2_enabled and not chapter_is_new else None
@@ -319,44 +318,58 @@ async def _plan(db: AsyncSession, novel: Novel, user_id: uuid.UUID, body: NovelP
     )
 
 
-async def _chapter_changed(
-    db: AsyncSession, frozen: NovelChapterPublication, chapter: NovelChapter, revision: NovelChapterRevision
-) -> bool:
-    """공개본과 지금 화가 다른가. 본문은 개정 id 가 아니라 글자로 비교한다 — 옛 판으로 되돌리기는 같은 본문의 새 개정을
-    만드는데, 이미 심사를 통과한 글을 다시 심사할 이유가 없다."""
-    if (frozen.title, frozen.author_note) != (chapter.title, chapter.author_note):
-        return True
-    if frozen.revision_id == revision.id:
-        return False
-    frozen_body = await db.scalar(select(NovelChapterRevision.body).where(NovelChapterRevision.id == frozen.revision_id))
-    return frozen_body != revision.body
+def _differs_from_publication(
+    title: SQLColumnExpression[str | None] | str | None,
+    author_note: SQLColumnExpression[str] | str,
+    current_hash: SQLColumnExpression[str] | str,
+) -> ColumnElement[bool]:
+    """화 공개본(`NovelChapterPublication` 행)이 지금 화와 다른가 — 다시 공개의 계획(`_chapter_changed`)과 작가 상태의
+    "바뀐 공개 화"(`_changed_chapter_ordinals`)가 함께 쓰는 하나의 기준이다. 둘이 따로 비교하면 상태는 바뀐 화로 알리는데
+    다시 공개는 아무것도 안 쓰는(또는 그 반대) 화가 생긴다. 제목·작가의 말, 그리고 본문은 얼린 개정과 지금 개정의 본문
+    해시로 비교한다 — 옛 판으로 되돌리기는 같은 본문의 새 개정을 만드는데, 이미 심사를 통과한 글을 다시 심사할 이유가
+    없다. 개정을 쓰는 경로는 본문을 문단을 빈 줄 하나로 이은 모양으로 저장하므로 해시 비교는 글자 비교와 결과가 같다."""
+    frozen_hash = (
+        select(NovelChapterRevision.content_hash)
+        .where(NovelChapterRevision.id == NovelChapterPublication.revision_id)
+        .correlate(NovelChapterPublication)
+        .scalar_subquery()
+    )
+    return or_(
+        NovelChapterPublication.title.is_distinct_from(title),
+        NovelChapterPublication.author_note != author_note,
+        frozen_hash != current_hash,
+    )
+
+
+async def _chapter_changed(db: AsyncSession, chapter: NovelChapter, revision: NovelChapterRevision) -> bool:
+    """공개한 화 `chapter` 의 공개본이 지금 화(`revision` = 지금 개정)와 다른가(`_differs_from_publication`)."""
+    changed = await db.scalar(
+        select(_differs_from_publication(chapter.title, chapter.author_note, revision.content_hash)).where(
+            NovelChapterPublication.chapter_id == chapter.id
+        )
+    )
+    return bool(changed)
 
 
 # ── 상태 ────────────────────────────────────────────────────────────────────
 async def _changed_chapter_ordinals(db: AsyncSession, novel_id: uuid.UUID) -> list[int]:
-    """공개본과 지금이 다른 공개 화의 번호(오름차순). `_chapter_changed` 와 같은 비교(제목·작가의 말, 본문은 글자)를 한
-    쿼리로 한다 — 화마다 따로 읽으면 공개 화 수만큼 쿼리가 는다. 현재 개정은 화마다 `revision_no` 가 가장 큰 개정이다."""
+    """공개본과 지금이 다른 공개 화의 번호(오름차순). `_chapter_changed` 와 같은 기준(`_differs_from_publication`)을 한
+    쿼리로 쓴다 — 화마다 따로 읽으면 공개 화 수만큼 쿼리가 는다. 현재 개정은 화마다 `revision_no` 가 가장 큰 개정이다."""
     current = (
-        select(NovelChapterRevision.chapter_id, NovelChapterRevision.body)
+        select(NovelChapterRevision.chapter_id, NovelChapterRevision.content_hash)
         .distinct(NovelChapterRevision.chapter_id)
         .join(NovelChapter, NovelChapter.id == NovelChapterRevision.chapter_id)
         .where(NovelChapter.novel_id == novel_id)
         .order_by(NovelChapterRevision.chapter_id, NovelChapterRevision.revision_no.desc())
         .subquery()
     )
-    frozen_revision = aliased(NovelChapterRevision)
     rows = await db.scalars(
         select(NovelChapterPublication.ordinal)
         .join(NovelChapter, NovelChapter.id == NovelChapterPublication.chapter_id)
-        .join(frozen_revision, frozen_revision.id == NovelChapterPublication.revision_id)
         .join(current, current.c.chapter_id == NovelChapterPublication.chapter_id)
         .where(
             NovelChapterPublication.novel_id == novel_id,
-            or_(
-                NovelChapterPublication.title.is_distinct_from(NovelChapter.title),
-                NovelChapterPublication.author_note != NovelChapter.author_note,
-                frozen_revision.body != current.c.body,
-            ),
+            _differs_from_publication(NovelChapter.title, NovelChapter.author_note, current.c.content_hash),
         )
         .order_by(NovelChapterPublication.ordinal)
     )

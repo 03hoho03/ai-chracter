@@ -1,5 +1,5 @@
 """소설과 그 아래 행을 지우는 단 한 곳, 마지막 묶음을 지우는 곳, 탈퇴한 작가의 숨겨 남긴 소설에서 작가만 쓰던 것을 지우는
-곳, 그리고 더 쓸 데가 없어진 AI 수정 지시문·결과 본문을 비우는 곳.
+곳, 그리고 더 쓸 데가 없어진 AI 수정 지시문·결과 본문을 비우는 곳(과 그 미리보기가 낡았는지 가르는 판정).
 
 소설 단독 삭제와 회원 탈퇴가 `delete_novels` 를 같이 쓴다. 두 경로가 자식 목록을 따로 가지면 테이블이 늘 때 한쪽에만
 더해지기 쉽고, 빠진 쪽은 소설 DELETE 가 FK 위반으로 500 이 된다. 뼈대 테이블(작업·개정·화·소설)에는 `ON DELETE
@@ -15,8 +15,21 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Delete, Update, delete, literal_column, or_, select, text, update
+from sqlalchemy import (
+    ColumnElement,
+    Delete,
+    SQLColumnExpression,
+    Update,
+    delete,
+    exists,
+    literal_column,
+    or_,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from api.db.models.novel import (
     HomeNovelCuration,
@@ -243,9 +256,28 @@ async def _shrink_snapshot_entries(db: AsyncSession, novel_id: uuid.UUID, remove
         )
 
 
+def ai_edit_preview_is_fresh(
+    base_revision_id: SQLColumnExpression[uuid.UUID | None] | uuid.UUID,
+    current_hash: SQLColumnExpression[str] | str,
+) -> ColumnElement[bool]:
+    """AI 수정 미리보기가 아직 쓸 수 있는가 — 기준 개정의 본문 해시가 지금 개정의 본문 해시(`current_hash`)와 같다.
+    미리보기를 비우기·결과 저장·미적용 목록·적용이 모두 이 판정 하나를 쓴다. 한 자리만 다른 기준이면 저장은 성공했는데
+    곧바로 비워지거나, 목록에 없는데 적용은 되는 미리보기가 생긴다.
+
+    개정 id 가 아니라 본문 해시로 보는 이유: 같은 글로 되돌리기처럼 글이 그대로인 새 개정 위에서는 작업의 문단 범위와
+    결과 본문(범위 밖은 기준 문단을 그대로 이어 붙였다)이 지금 개정에도 똑같이 맞는다. 해시가 같으면 문단 배열이 같다.
+    적용 결과의 블록 id 는 기준 개정이 아니라 잠근 지금 개정에서 잇는다.
+
+    SQL 식이라 조회 조건에 그대로 넣거나 `select(...)` 로 값 하나를 읽는다. 기준 개정이 없으면(칸이 비었거나 행이
+    없으면) 거짓이다. 기준 개정은 별칭으로 읽는다 — 지금 개정 해시를 개정 표의 하위 조회로 넘겨도 그 조회가 이 식의
+    개정 행에 묶이지 않게."""
+    base = aliased(NovelChapterRevision)
+    return exists().where(base.id == base_revision_id, base.content_hash == current_hash)
+
+
 async def erase_stale_ai_edit_previews(db: AsyncSession, chapter_id: uuid.UUID) -> None:
-    """장 `chapter_id` 의 현재 개정이 아닌 개정을 기준으로 한, 적용도 버리기도 안 한 AI 수정 결과의 지시문과 결과
-    본문을 비운다. 커밋은 호출부가 한다.
+    """장 `chapter_id` 의 지금 개정과 글이 다른 개정을 기준으로 한(`ai_edit_preview_is_fresh` 가 거짓인), 적용도
+    버리기도 안 한 AI 수정 결과의 지시문과 결과 본문을 비운다. 커밋은 호출부가 한다.
 
     그런 결과는 적용하면 409 이고 상세의 미적용 목록에도 나오지 않아, 사용자가 버리기를 누를 길이 없다 — 비우지
     않으면 소설을 지울 때까지 아무도 볼 수 없는 사본으로 남는다. 작업 행은 남긴다(하루 재시도 상한을 행 수로 센다).
@@ -253,9 +285,9 @@ async def erase_stale_ai_edit_previews(db: AsyncSession, chapter_id: uuid.UUID) 
     새 개정을 커밋한 **뒤 별도 트랜잭션에서** 부른다. 개정을 쌓는 경로는 장 행을 잠그고, 적용은 작업 행 → 장 행 순서로
     잠근다 — 장을 쥔 채 작업 행을 고치면 같은 장의 적용과 서로를 기다린다. 따로 돌면 작업 행 잠금만 쥐고, 지금 커밋된
     현재 개정으로 판정하므로 몇 번 돌아도 같다. AI 수정 결과 저장은 이 함수를 부르지 않는다 — 저장할 때 장 행을
-    잠그고 기준 개정이 현재인지 확인해, 낡은 결과는 아예 성공으로 남기지 않는다."""
-    current = (
-        select(NovelChapterRevision.id)
+    잠그고 같은 판정으로 확인해, 낡은 결과는 아예 성공으로 남기지 않는다."""
+    current_hash = (
+        select(NovelChapterRevision.content_hash)
         .where(NovelChapterRevision.chapter_id == chapter_id)
         .order_by(NovelChapterRevision.revision_no.desc())
         .limit(1)
@@ -270,7 +302,7 @@ async def erase_stale_ai_edit_previews(db: AsyncSession, chapter_id: uuid.UUID) 
             NovelJob.result_revision_id.is_(None),
             NovelJob.dismissed_at.is_(None),
             NovelJob.result_text.is_not(None),
-            NovelJob.base_revision_id.is_distinct_from(current),
+            ~ai_edit_preview_is_fresh(NovelJob.base_revision_id, current_hash),
         )
         .values(instruction=None, result_text=None)
     )
