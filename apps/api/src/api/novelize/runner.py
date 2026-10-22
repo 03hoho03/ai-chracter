@@ -61,6 +61,7 @@ from api.novelize.billing import (
     shortfall_refund,
     transition_job,
 )
+from api.novelize.blocks import build_revision, fresh_ids
 from api.novelize.boundary import episode_counts, suggest_end_turn
 from api.novelize.deletion import erase_stale_ai_edit_previews
 from api.novelize.episodes import chapter_max_turns, k_max
@@ -714,7 +715,13 @@ async def _save_generated(
     db.add_all(chapters)
     await db.flush()
     revisions = [
-        NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body=episode.body, source="generate")
+        build_revision(
+            chapter_id=chapter.id,
+            revision_no=1,
+            body=episode.body,
+            source="generate",
+            block_ids=fresh_ids(episode.body),
+        )
         for chapter, episode in zip(chapters, batch.episodes, strict=True)
     ]
     db.add_all(revisions)
@@ -750,11 +757,12 @@ async def _save_regenerated(
     for chapter, episode in zip(chapters, batch.episodes, strict=True):
         latest = await current_revision(db, chapter.id)
         revisions.append(
-            NovelChapterRevision(
+            build_revision(
                 chapter_id=chapter.id,
                 revision_no=(latest.revision_no if latest else 0) + 1,
                 body=episode.body,
                 source="regenerate",
+                block_ids=fresh_ids(episode.body),
             )
         )
         if chapter.title_edited_at is None:

@@ -11349,6 +11349,16 @@ export interface components {
             /** Regenerateoptions */
             regenerateOptions: components["schemas"]["NovelRegenerateOption"][];
         };
+        /** NovelBlock */
+        NovelBlock: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Text */
+            text: string;
+        };
         /**
          * NovelBoardLayout
          * @description 편집 보드의 노드 위치와 화면 위치. 서버는 형식만 보고 통째로 저장한다. 읽을 때는 지금 없는 화·인물의 키를 빼고
@@ -12224,6 +12234,9 @@ export interface components {
         /**
          * NovelRevisionCreateRequest
          * @description 직접 수정 — 장 전체 본문을 보낸다. 화면이 고른 문단을 본문 안에서 바꿔 보낸다.
+         *
+         *     `block_ids` 는 선택이다. 실으면 본문 문단마다 하나씩 기준 개정의 블록 id 나 새 문단(null)을 적는다 — 문단 수와 다르거나
+         *     기준 개정에 없는 id·같은 id 둘이면 422 `NOVEL_BLOCK_IDS_INVALID`. 싣지 않으면 서버가 기준 개정과 글자로 맞춰 잇는다.
          */
         NovelRevisionCreateRequest: {
             /**
@@ -12233,6 +12246,8 @@ export interface components {
             baseRevisionId: string;
             /** Body */
             body: string;
+            /** Blockids */
+            blockIds?: (string | null)[] | null;
         };
         /** NovelRevisionListResponse */
         NovelRevisionListResponse: {
@@ -12264,6 +12279,8 @@ export interface components {
             body: string;
             /** Paragraphs */
             paragraphs: string[];
+            /** Blocks */
+            blocks: components["schemas"]["NovelBlock"][] | null;
         };
         /** NovelRevisionRestoreRequest */
         NovelRevisionRestoreRequest: {

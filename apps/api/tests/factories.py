@@ -1971,9 +1971,11 @@ async def _add_batch(
     episodes: int = 1,
     body: str = "첫 문단이다.\n\n둘째 문단이다.\n\n셋째 문단이다.",
 ) -> list[NovelChapter]:
-    """작업을 거치지 않고 묶음 하나와 그 화 `episodes` 개(화마다 첫 개정)를 넣고 커밋한다. 구간 모양(응답 수·해시)은 지금
-    방 원문으로 계산한다 — 다시 만들기의 원문 변경 검사가 이 값과 비교한다."""
+    """작업을 거치지 않고 묶음 하나와 그 화 `episodes` 개(화마다 블록 id 를 채운 첫 개정)를 넣고 커밋한다. 구간 모양(응답
+    수·해시)은 지금 방 원문으로 계산한다 — 다시 만들기의 원문 변경 검사가 이 값과 비교한다."""
+    from api.novelize.blocks import build_revision
     from api.novelize.source import segment_hash
+    from api.novelize.text import split_paragraphs
 
     messages = await _room_messages(db_session, room.room_id)
     segment = messages[messages.index(start) : messages.index(end) + 1]
@@ -2003,7 +2005,14 @@ async def _add_batch(
     db_session.add_all(chapters)
     await db_session.flush()
     db_session.add_all(
-        NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body=body, source="generate") for chapter in chapters
+        build_revision(
+            chapter_id=chapter.id,
+            revision_no=1,
+            body=body,
+            source="generate",
+            block_ids=[uuid.uuid4() for _ in split_paragraphs(body)],
+        )
+        for chapter in chapters
     )
     await db_session.commit()
     return chapters

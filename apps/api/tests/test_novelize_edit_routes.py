@@ -14,6 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import Content, ModerationStatus, Novel, NovelChapter, NovelChapterRevision, NovelJob
+from api.novelize import blocks
 from api.novelize import router as novelize_router
 from factories import (
     _NeverCalledLLMClient,
@@ -425,7 +426,7 @@ async def test_unapplied_ai_edit_comes_back_in_the_detail_until_it_is_applied(
     assert await _pending(db_client, novel_id) == []
 
     await db_session.execute(
-        sa.update(NovelJob).where(NovelJob.id == job.id).values(status="succeeded", result_text="고친 본문")
+        sa.update(NovelJob).where(NovelJob.id == job.id).values(status="succeeded", result_text="첫 문단이다.\n\n고친 둘째.\n\n셋째 문단이다.")
     )
     await db_session.commit()
     applied = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/apply")
@@ -621,3 +622,173 @@ async def test_detail_skips_a_preview_whose_text_was_erased_instead_of_failing(
     await db_session.commit()
 
     assert await _pending(db_client, novel_id) == []
+
+
+# ── 블록 id ─────────────────────────────────────────────────────────────────
+# 개정마다 문단 하나에 블록 id 하나가 붙는다. 직접 수정·AI 수정 적용은 바뀌지 않은 문단의 id 를 잇고, 되돌리기는 원본 개정의
+# id 를 그대로 복제한다. 셋업의 첫 개정(`_add_chapter`)은 블록 id 가 채워져 있다.
+def _block_ids(response: httpx.Response) -> list[uuid.UUID]:
+    revision = response.json()["revision"]
+    assert [block["text"] for block in revision["blocks"]] == revision["paragraphs"]
+    return [uuid.UUID(block["id"]) for block in revision["blocks"]]
+
+
+async def test_revision_responses_carry_blocks_and_null_for_a_revision_written_without_ids(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """블록 칸이 생기기 전 이미지가 쓴 개정은 `blocks: null` 이다 — 임시 id 를 지어내면 다음 요청에서 다른 id 가 된다.
+    깨지는 시나리오: 응답이 개정의 id 대신 다른 것을 싣거나, 칸이 빈 개정에서 500 이 난다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    first = (await _revisions(db_session, chapter.id))[0]
+    db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="옛 이미지 본문", source="manual_edit"))
+    await db_session.commit()
+
+    current = await db_client.get(f"/novels/{novel_id}/chapters/{chapter.id}")
+    old = await db_client.get(f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{first.id}")
+
+    assert current.status_code == 200, current.text
+    assert current.json()["revision"]["blocks"] is None
+    assert current.json()["revision"]["paragraphs"] == ["옛 이미지 본문"]
+    assert first.block_ids is not None and len(first.block_ids) == 3
+    assert old.json()["blocks"] == [
+        {"id": str(block_id), "text": text}
+        for block_id, text in zip(first.block_ids, old.json()["paragraphs"], strict=True)
+    ]
+
+
+async def test_direct_edit_without_block_ids_keeps_the_ids_of_unchanged_and_rewritten_paragraphs(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화면이 id 를 싣지 않는 옛 요청도 동작한다. 둘째 문단을 고치고 그 뒤에 문단 하나를 더하면 고친 문단은 옛 id 를 잇고
+    더한 문단만 새 id 다. 깨지는 시나리오: 서버가 전부 새 id 를 매겨 고치지 않은 문단까지 이어짐이 끊긴다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    a, b, c = base.block_ids or []
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
+        json={"baseRevisionId": str(base.id), "body": "첫 문단이다.\n\n고친 둘째.\n\n\n덧붙인 문단.\n\n셋째 문단이다."},
+    )
+
+    assert resp.status_code == 201, resp.text
+    ids = _block_ids(resp)
+    assert (ids[0], ids[1], ids[3]) == (a, b, c)
+    assert ids[2] not in (a, b, c)
+    stored = (await _revisions(db_session, chapter.id))[1]
+    assert stored.block_ids == ids
+    assert stored.content_hash == blocks.content_hash(stored.body)
+
+
+async def test_direct_edit_with_block_ids_uses_the_ids_it_sends(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화면이 문단마다 기존 id 나 새 문단(null)을 실으면 그대로 쓴다 — 글자가 같아도 서버가 다시 맞추지 않는다.
+    깨지는 시나리오: 서버가 보낸 목록을 무시하고 글자로 다시 이어 문단을 옮긴 뜻이 사라진다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    a, _b, c = base.block_ids or []
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
+        json={
+            "baseRevisionId": str(base.id),
+            "body": "셋째 문단이다.\n\n둘째 문단이다.\n\n첫 문단이다.",
+            "blockIds": [str(c), None, str(a)],
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    ids = _block_ids(resp)
+    assert (ids[0], ids[2]) == (c, a)
+    assert ids[1] not in (base.block_ids or [])
+
+
+@pytest.mark.parametrize("case", ["length", "foreign", "duplicate"])
+async def test_direct_edit_with_block_ids_that_do_not_fit_is_422_and_writes_nothing(
+    case: str, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """깨지는 시나리오: 문단 수와 다른 목록·이 개정에 없는 id·같은 id 둘이 그대로 저장돼 블록 i 가 문단 i 가 아니게 된다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    a, b, _c = [str(i) for i in base.block_ids or []]
+    block_ids = {"length": [a, b], "foreign": [a, b, str(uuid.uuid4())], "duplicate": [a, b, a]}[case]
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
+        json={"baseRevisionId": str(base.id), "body": _BODY, "blockIds": block_ids},
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == {"code": "NOVEL_BLOCK_IDS_INVALID"}
+    assert len(await _revisions(db_session, chapter.id)) == 1
+
+
+async def test_restore_copies_the_block_ids_of_the_restored_revision(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """되돌린 개정의 id 는 원본 개정의 id 다(지금 개정의 id 가 아니다). 깨지는 시나리오: 현재 개정에서 복사하거나 새로
+    매겨, 옛 판으로 돌아가도 그 판의 문단을 가리키던 것이 끊긴다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    first = (await _revisions(db_session, chapter.id))[0]
+    edited = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
+        json={"baseRevisionId": str(first.id), "body": "가.\n\n나.\n\n다.", "blockIds": [None, None, None]},
+    )
+
+    restored = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{first.id}/restore",
+        json={"baseRevisionId": edited.json()["revision"]["id"]},
+    )
+
+    assert restored.status_code == 201, restored.text
+    assert set(_block_ids(edited)).isdisjoint(first.block_ids or [])
+    assert _block_ids(restored) == first.block_ids
+    assert (await _revisions(db_session, chapter.id))[2].content_hash == blocks.content_hash(_BODY)
+
+
+async def test_applying_an_ai_edit_keeps_ids_outside_its_range_and_inherits_the_first_inside(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """둘째 문단(범위 1~1)을 두 문단으로 고친 결과를 적용한다. 범위 밖 첫·셋째는 제자리 id, 범위 안 첫 문단은 둘째의 id,
+    덧붙은 문단은 새 id 다. 깨지는 시나리오: 꼬리 위치를 하나 어긋나게 잡아 셋째 문단 id 가 덧붙은 문단에 붙는다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    a, b, c = base.block_ids or []
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+    await db_session.execute(
+        sa.update(NovelJob)
+        .where(NovelJob.id == job.id)
+        .values(result_text="첫 문단이다.\n\n쓸쓸한 둘째.\n\n덧붙은 문단.\n\n셋째 문단이다.")
+    )
+    await db_session.commit()
+
+    applied = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/apply")
+
+    assert applied.status_code == 201, applied.text
+    ids = _block_ids(applied)
+    assert (ids[0], ids[1], ids[3]) == (a, b, c)
+    assert ids[2] not in (a, b, c)
+
+
+async def test_new_revisions_over_a_revision_without_ids_get_fresh_ids(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """칸이 생기기 전 이미지가 쓴 개정 위에 직접 수정·되돌리기를 쌓아도 500 없이 문단마다 새 id 를 받는다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    old = NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="옛 가.\n\n옛 나.", source="manual_edit")
+    db_session.add(old)
+    await db_session.commit()
+
+    edited = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
+        json={"baseRevisionId": str(old.id), "body": "옛 가.\n\n새 나.\n\n새 다."},
+    )
+    restored = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{old.id}/restore",
+        json={"baseRevisionId": edited.json()["revision"]["id"]},
+    )
+
+    assert edited.status_code == 201, edited.text
+    assert len(set(_block_ids(edited))) == 3
+    assert restored.status_code == 201, restored.text
+    assert len(set(_block_ids(restored))) == 2
