@@ -2,7 +2,8 @@
 
 범위 편집(직접 수정·AI 수정 적용)은 글자가 같은 문단의 id 를 그대로 두고, 바뀐 구간마다 그 구간의 첫 새 문단이 그 구간의 첫
 옛 id 를 잇는다(나머지는 새 id). 직접 수정에서 화면이 id 를 싣지 않으면 서버가 옛 본문과 새 본문의 같은 앞부분·뒷부분을
-걷어 바뀐 범위를 되찾는다 — 바깥 문단 id 는 늘 제자리다. AI 수정 적용은 작업이 범위를 알아 위치로 계산한다.
+걷어 바뀐 범위를 되찾는다 — 바깥 문단 id 는 제자리다(범위 가장자리의 새 글이 바로 바깥 문단과 글자가 같을 때만 글자로
+가를 수 없다). AI 수정 적용은 작업이 범위를 알아 위치로 계산한다.
 
 맨 끝의 구조 검사는 개정 행을 만드는 길이 `blocks.py` 하나뿐인지 본다 — 다른 곳에서 개정을 만들면 블록 칸 불변식(문단 수 =
 id 수, id 가 겹치지 않음)을 거치지 않는다."""
@@ -239,10 +240,17 @@ def test_fresh_ids_give_one_new_id_per_paragraph() -> None:
 
 # ── 개정 행을 만드는 길은 하나 ───────────────────────────────────────────────
 _REVISION_COLUMNS_WITH_BODY = {"body", "block_ids", "content_hash"}
+_BLOCK_ATTRIBUTES = {"block_ids", "content_hash"}
+
+
+def _names_revision(node: ast.expr) -> bool:
+    return (isinstance(node, ast.Name) and node.id == "NovelChapterRevision") or (
+        isinstance(node, ast.Attribute) and node.attr == "NovelChapterRevision"
+    )
 
 
 def _targets_revision(call: ast.Call) -> bool:
-    return any(isinstance(arg, ast.Name) and arg.id == "NovelChapterRevision" for arg in call.args)
+    return any(_names_revision(arg) for arg in call.args)
 
 
 def _callee(call: ast.Call) -> str | None:
@@ -254,20 +262,34 @@ def _callee(call: ast.Call) -> str | None:
 
 
 def _revision_writes_outside_blocks(source: str) -> list[str]:
-    """개정 행을 만들거나 본문·블록 칸을 고치는 코드 자리. `reverted_from_revision_id` 만 비우는 UPDATE 는 허용한다."""
+    """개정 행을 만들거나 본문·블록 칸을 고치는 코드 자리. `reverted_from_revision_id` 만 비우는 UPDATE 는 허용한다.
+    원시 UPDATE 문은 고치는 칸을 가리지 않고 모두 잡는다(허용할 일이 생기면 그 자리를 이 검사에서 따로 뺀다)."""
     found: list[str] = []
     tree = ast.parse(source)
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if "insert into novel_chapter_revisions" in " ".join(node.value.lower().split()):
-                found.append(f"{node.lineno}: raw INSERT")
+            sql = " ".join(node.value.lower().split())
+            if "insert into novel_chapter_revisions" in sql or "update novel_chapter_revisions" in sql:
+                found.append(f"{node.lineno}: raw SQL")
+        if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(t, ast.Attribute) and t.attr in _BLOCK_ATTRIBUTES for t in targets):
+                found.append(f"{node.lineno}: block attribute assignment")
         if not isinstance(node, ast.Call):
             continue
         callee = _callee(node)
         if callee == "NovelChapterRevision":
             found.append(f"{node.lineno}: NovelChapterRevision(...)")
-        elif callee == "insert" and _targets_revision(node):
+        elif callee in {"insert", "pg_insert"} and _targets_revision(node):
             found.append(f"{node.lineno}: insert(NovelChapterRevision)")
+        elif (
+            callee == "insert"
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "__table__"
+            and _names_revision(node.func.value.value)
+        ):
+            found.append(f"{node.lineno}: NovelChapterRevision.__table__.insert()")
         elif callee == "values":
             inner = node.func.value if isinstance(node.func, ast.Attribute) else None
             while isinstance(inner, (ast.Call, ast.Attribute)):
@@ -291,10 +313,14 @@ update(NovelChapterRevision).where(x).values(body=b)
 update(NovelChapterRevision).values(block_ids=None)
 update(NovelChapterRevision).values(**changes)
 text("INSERT INTO  novel_chapter_revisions (id) VALUES (1)")
+pg_insert(models.NovelChapterRevision).values(id=1)
+NovelChapterRevision.__table__.insert()
+text("UPDATE novel_chapter_revisions SET body = ''")
+revision.block_ids = []
 update(NovelChapterRevision).where(x).values(reverted_from_revision_id=None)
 """
     lines = sorted(int(line.split(":")[0]) for line in _revision_writes_outside_blocks(sample))
-    assert lines == [2, 3, 4, 5, 6, 7, 8, 9]
+    assert lines == [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 
 
 def test_only_the_blocks_module_makes_revision_rows() -> None:

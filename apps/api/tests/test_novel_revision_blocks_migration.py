@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from api.db.models import NovelChapterRevision
 from api.db.models.novel import NovelRevisionSource
+from api.novelize.text import split_paragraphs
 from factories import NovelTree, _make_novel_tree, _make_user
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
@@ -188,3 +189,18 @@ async def test_downgrade_drops_the_columns_and_upgrade_fills_them_again(ddl_engi
     (first_ids, first_hash), (second_ids, second_hash) = rows
     assert len(first_ids) == 2 and second_ids == first_ids
     assert first_hash == second_hash == hashlib.sha256("가.\n\n나.".encode()).hexdigest()
+
+
+def test_the_migrations_paragraph_split_matches_the_runtime_one() -> None:
+    """백필이 매긴 id 수는 런타임 응답이 같은 본문을 나눈 문단 수와 같아야 한다(어긋나면 그 개정 조회가 실패한다). 공백 경계
+    입력으로 두 나누기를 맞대 본다. 깨지는 시나리오: 한쪽 사본만 고쳐 `\\r\\n`·전각 공백·탭 줄을 다르게 나눈다."""
+    bodies = [
+        "가.\n\n나.",
+        "  가.\n \t \n나.\n다.\n\n\n\n라.  ",
+        "가.\r\n\r\n나.",
+        "가.\n　\n나.　",
+        "\n\n\n",
+        "가.\n\t\n\t나.\n\n \n\n다.",
+    ]
+
+    assert [_M._split_paragraphs(body) for body in bodies] == [split_paragraphs(body) for body in bodies]

@@ -1755,8 +1755,8 @@ async def apply_novel_ai_edit(
     current = await _lock_current_revision_for_edit(db, job.chapter_id, job.base_revision_id)
     if job.result_text is None:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_JOB_NOT_APPLICABLE")
-    # 블록 id 는 작업의 기준 개정이 아니라 잠근 현재 개정에서 잇는다 — 둘이 글자만 같고 id 가 다른 개정이어도 지금 화의
-    # 문단을 가리키던 것이 끊기지 않는다.
+    # 블록 id 는 잠근 현재 개정에서 잇는다. 지금은 위 잠금이 현재 = 기준 개정을 강제해 둘이 같은 행이지만, 본문이 같으면
+    # 낡지 않은 미리보기로 보게 되면 둘이 글자만 같고 id 가 다른 개정일 수 있다 — 그때도 지금 화의 문단 id 가 이어진다.
     block_ids = succeeding_range_ids(current, job.paragraph_start, job.paragraph_end, job.result_text)
     revision = await _stack_revision(
         db, novel, current, build_revision(body=job.result_text, source="ai_edit", block_ids=block_ids)
