@@ -29720,12 +29720,26 @@
       "NovelImageUsage": {
         "properties": {
           "novelId": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Novelid"
           },
           "novelTitle": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Noveltitle"
           },
           "field": {
@@ -29744,7 +29758,7 @@
           "field"
         ],
         "title": "NovelImageUsage",
-        "description": "이 그림을 쓰는 소설 하나 — 표지이거나, 어느 화의 어느 개정(지난 판 포함)의 삽화다. 작품 사용처(`GeneratedImageUsage`)와\n칸을 나눈 것은 작품 사용처가 빌더로 가는 링크로 그려지기 때문이다."
+        "description": "이 그림을 쓰는 소설 하나 — 표지이거나, 어느 화의 어느 개정(지난 판 포함)의 삽화다. 작품 사용처(`GeneratedImageUsage`)와\n칸을 나눈 것은 작품 사용처가 빌더로 가는 링크로 그려지기 때문이다. 남의 소설(원작자가 만든 그림을 다른 작가가 원작 그림으로\n붙인 경우)은 id·제목 없이(둘 다 null) 칸마다 한 항목으로만 알린다 — 남의 비공개 소설 제목이 드러나지 않게."
       },
       "NovelJobResponse": {
         "properties": {

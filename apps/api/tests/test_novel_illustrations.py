@@ -784,6 +784,60 @@ async def test_a_generated_image_used_by_any_revision_cannot_be_deleted_until_th
     assert deleted.status_code == 204, deleted.text
 
 
+@pytest.mark.usefixtures("illustrations_on")
+async def test_the_creator_of_a_picture_used_in_someone_elses_novel_is_not_told_which_novel(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """원작자의 생성 이미지를 남의 작가가 원작 그림으로 붙이면 원작자는 그 이미지를 지울 수 없지만(409), 어느 소설인지(id·제목)는
+    받지 않는다. 깨지는 시나리오: 원작자가 갤러리·삭제 응답으로 남의 비공개 소설 제목과 id 를 알아낸다."""
+    from api.db.models import CharacterVersionDetail
+
+    room, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    content = await _hand_original_to_someone_else(db_session, novel_id)
+    picture = await _asset(db_session, content.creator_user_id)
+    await db_session.execute(
+        sa.update(CharacterVersionDetail)
+        .where(CharacterVersionDetail.content_version_id == content.current_published_version_id)
+        .values(thumbnail_asset_id=picture.id)
+    )
+    await db_session.commit()
+    first = await _current(db_session, chapter.id)
+    await _ok(await _attach(db_client, novel_id, chapter.id, first, first.block_ids[0], picture.id, source="original"))
+    await _login_as(db_client, content.creator_user_id)
+
+    refused = await db_client.delete(f"/me/generated-images/{picture.id}")
+    listed = (await db_client.get("/me/generated-images")).json()
+
+    hidden = [{"novelId": None, "novelTitle": None, "field": "illustration"}]
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["novelUsages"] == hidden
+    assert [item["novelUsages"] for item in listed if item["assetId"] == str(picture.id)] == [hidden]
+    assert room.user_id != content.creator_user_id
+
+
+@pytest.mark.usefixtures("illustrations_on")
+async def test_purging_a_withdrawn_authors_hidden_novel_deletes_the_generated_pictures_it_kept(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, deleted_keys: list[str]
+) -> None:
+    """탈퇴 때 숨겨 남긴 팔린 소설의 판이 쓰던 탈퇴자의 생성 이미지는, 그 소설이 파기되면 함께 지워진다(살아 있는 회원의 생성
+    이미지는 남는다). 깨지는 시나리오: 지울 사람이 없는 탈퇴자의 그림이 저장소에 영영 남는다."""
+    from api.db.models import User
+    from api.novelize.hidden_purge import purge_hidden_novels
+
+    room, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    first = await _current(db_session, chapter.id)
+    picture = await _asset(db_session, room.user_id)
+    await _ok(await _attach(db_client, novel_id, chapter.id, first, first.block_ids[0], picture.id))
+    await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(hidden_at=sa.func.now(), chat_room_id=None))
+    await db_session.execute(sa.update(User).where(User.id == room.user_id).values(deleted_at=sa.func.now()))
+    await db_session.commit()
+
+    assert await purge_hidden_novels(db_session) == 1
+
+    assert await db_session.get(Asset, picture.id, populate_existing=True) is None
+    assert picture.storage_key in deleted_keys
+
+
 @pytest.mark.parametrize("switch_on", [pytest.param(True, id="on"), pytest.param(False, id="off")])
 async def test_a_novel_cover_protects_its_image_only_while_illustrations_are_on(
     switch_on: bool, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch

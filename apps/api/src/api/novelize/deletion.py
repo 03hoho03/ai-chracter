@@ -56,7 +56,7 @@ from api.db.models.novel import (
     NovelScreening,
     NovelSnapshot,
 )
-from api.novelize.illustrations import delete_unused_uploads, drop_placements, uploads_used_by
+from api.novelize.illustrations import delete_unused_illustration_assets, drop_placements, assets_used_by
 
 
 async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID], *, freed_storage_keys: list[str]) -> None:
@@ -102,7 +102,7 @@ async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID], *, fre
     await db.execute(delete(HomeNovelCuration).where(HomeNovelCuration.novel_id.in_(novel_ids)))
     await db.execute(delete(NovelPublication).where(NovelPublication.novel_id.in_(novel_ids)))
     await db.execute(delete(Novel).where(Novel.id.in_(novel_ids)))
-    freed_storage_keys += await delete_unused_uploads(db, uploads)
+    freed_storage_keys += await delete_unused_illustration_assets(db, uploads)
 
 
 async def strip_author_only_data(
@@ -162,7 +162,7 @@ async def strip_author_only_data(
     dropped_revision_ids = select(NovelChapterRevision.id).where(
         NovelChapterRevision.chapter_id.in_(chapter_ids), NovelChapterRevision.id.not_in(kept_revision_ids)
     )
-    uploads = set((await db.scalars(uploads_used_by(dropped_revision_ids))).all())
+    uploads = set((await db.scalars(assets_used_by(dropped_revision_ids))).all())
     await run(delete(NovelChapterIllustration).where(NovelChapterIllustration.revision_id.in_(dropped_revision_ids)))
     await run(
         delete(NovelChapterRevision).where(
@@ -213,7 +213,7 @@ async def strip_author_only_data(
             cover_asset_id=None,
         )
     )
-    freed_storage_keys += await delete_unused_uploads(db, uploads)
+    freed_storage_keys += await delete_unused_illustration_assets(db, uploads)
     return changed
 
 
@@ -258,7 +258,7 @@ async def delete_batch(
     await db.execute(delete(NovelChapter).where(NovelChapter.id.in_(chapter_ids)))
     await _shrink_snapshot_entries(db, novel_id, {str(chapter_id) for chapter_id in chapter_ids})
     await db.execute(delete(NovelBatch).where(NovelBatch.id == batch_id))
-    freed_storage_keys += await delete_unused_uploads(db, uploads)
+    freed_storage_keys += await delete_unused_illustration_assets(db, uploads)
 
 
 async def _shrink_snapshot_entries(db: AsyncSession, novel_id: uuid.UUID, removed: set[str]) -> None:

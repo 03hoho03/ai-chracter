@@ -45,7 +45,7 @@ from api.db.models.persona import UserPersona
 from api.novel_public.purchases import sold_novel_ids
 from api.novelize.deletion import delete_novels, strip_author_only_data
 from api.novelize.illustrations import UPLOAD_KEY_PREFIX as ILLUSTRATION_UPLOAD_KEY_PREFIX
-from api.novelize.illustrations import delete_unused_uploads
+from api.novelize.illustrations import delete_unused_illustration_assets
 
 logger = logging.getLogger(__name__)
 
@@ -300,7 +300,7 @@ async def erase_account(db: AsyncSession, user: User, *, delete_storage_object: 
         )
 
         # 숨겨 남긴 팔린 소설의 판이 삽화로 쓰는 그림도 남긴다(산 사람이 계속 읽는다). 지운 소설의 배치는 위에서 이미 사라졌다.
-        novel_usages_by_asset = await collect_novel_asset_usages(db, asset_ids)
+        novel_usages_by_asset = await collect_novel_asset_usages(db, asset_ids, viewer_id=None)
         deletable_assets = [
             asset
             for asset in generated_assets
@@ -341,7 +341,7 @@ async def erase_account(db: AsyncSession, user: User, *, delete_storage_object: 
             )
 
     # 소설 삽화로 올린 업로드도 "그림과 같은 수명"으로 파기한다 — 위 소설 처리가 지운 개정만 쓰던 것(`freed`)과, 어느 소설에도
-    # 붙이지 않은 채 남은 것. 숨겨 남긴 팔린 소설의 판이 쓰는 것은 남는다(`delete_unused_uploads` 가 사용처를 본다).
+    # 붙이지 않은 채 남은 것. 숨겨 남긴 팔린 소설의 판이 쓰는 것은 남는다(`delete_unused_illustration_assets` 가 사용처를 본다).
     leftover_uploads = (
         await db.scalars(
             select(Asset.id).where(
@@ -351,7 +351,7 @@ async def erase_account(db: AsyncSession, user: User, *, delete_storage_object: 
             )
         )
     ).all()
-    freed += await delete_unused_uploads(db, leftover_uploads)
+    freed += await delete_unused_illustration_assets(db, leftover_uploads)
     for storage_key in freed:
         await delete_storage_object(storage_key)
 

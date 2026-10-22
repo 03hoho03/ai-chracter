@@ -566,7 +566,8 @@ async def test_delete_used_generated_image_is_409_with_usages(
                 "contentTitle": "사용중캐릭터",
                 "field": "thumbnail",
             }
-        ]
+        ],
+        "novelUsages": [],
     }
 
     # 삭제되지 않고 목록에 그대로 남아 있다.

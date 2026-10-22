@@ -16,8 +16,8 @@
 원작 그림 후보는 원작의 지금 발행본에서 고른다 — 대표 이미지는 늘, 상황 이미지·미디어 북 칸은 작가가 그 작품에서 본 것(사용자+작품
 노출 기록)만. 작가가 원작자 본인이면 지금 발행본의 그림 전부다. 원작을 그 작가에게 열 수 없으면(이용제한·남의 비공개 등) 후보가 없다.
 
-**업로드 삽화 파일 정리**: 업로드 삽화는 어느 개정도 쓰지 않게 되면 소설 삭제·묶음 삭제·탈퇴·숨긴 소설 파기 때 자산 행과 저장소
-파일(원본·변형)을 함께 지운다. 떼기만으로는 지우지 않는다(앞 개정이 여전히 쓴다)."""
+**삽화 파일 정리**: 업로드 삽화(와 소유자가 탈퇴한 생성 이미지)는 어느 개정도 쓰지 않게 되면 소설 삭제·묶음 삭제·탈퇴·숨긴 소설
+파기 때 자산 행과 저장소 파일(원본·변형)을 함께 지운다. 떼기만으로는 지우지 않는다(앞 개정이 여전히 쓴다)."""
 
 import logging
 import uuid
@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
-from sqlalchemy import Select, delete, select
+from sqlalchemy import Select, and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -261,33 +261,43 @@ async def usable_asset(
 
 
 # ── 업로드 삽화 파일 정리 ───────────────────────────────────────────────────
-def uploads_used_by(revision_ids: Select[tuple[uuid.UUID]]) -> Select[tuple[uuid.UUID]]:
-    """`revision_ids` 개정의 배치가 쓰는 업로드 그림 id."""
-    return select(NovelChapterIllustration.asset_id).where(
-        NovelChapterIllustration.revision_id.in_(revision_ids), NovelChapterIllustration.source == "upload"
-    )
+def assets_used_by(revision_ids: Select[tuple[uuid.UUID]]) -> Select[tuple[uuid.UUID]]:
+    """`revision_ids` 개정의 배치가 쓰는 그림 id(출처 무관)."""
+    return select(NovelChapterIllustration.asset_id).where(NovelChapterIllustration.revision_id.in_(revision_ids))
 
 
 async def drop_placements(db: AsyncSession, revision_ids: Select[tuple[uuid.UUID]]) -> set[uuid.UUID]:
-    """`revision_ids` 개정의 배치를 지우고, 그 배치가 쓰던 업로드 그림 id 를 돌려준다(정리 후보). 개정을 지우기 전에 부른다."""
-    used = set((await db.scalars(uploads_used_by(revision_ids))).all())
+    """`revision_ids` 개정의 배치를 지우고, 그 배치가 쓰던 그림 id 를 돌려준다(정리 후보). 개정을 지우기 전에 부른다."""
+    used = set((await db.scalars(assets_used_by(revision_ids))).all())
     await db.execute(delete(NovelChapterIllustration).where(NovelChapterIllustration.revision_id.in_(revision_ids)))
     return used
 
 
-async def delete_unused_uploads(db: AsyncSession, asset_ids: Iterable[uuid.UUID]) -> list[str]:
-    """`asset_ids` 중 업로드 삽화이면서 이제 아무도 쓰지 않는 자산의 행을 지우고, 지울 저장소 키(원본·변형)를 돌려준다. 저장소는
-    호출자가 커밋 뒤에 지운다. 배치뿐 아니라 다른 자리(작품 그림·문의 첨부·프로필·소설 표지)가 가리키는 것도 남긴다 — 업로드 API 는
-    용도와 무관하게 내 자산을 받는 자리가 있어서다."""
+async def delete_unused_illustration_assets(db: AsyncSession, asset_ids: Iterable[uuid.UUID]) -> list[str]:
+    """`asset_ids` 중 이제 아무도 쓰지 않는 삽화 파일의 자산 행을 지우고, 지울 저장소 키(원본·변형)를 돌려준다. 저장소는 호출자가
+    커밋 뒤에 지운다. 지우는 것은 둘이다 — 업로드 삽화, 그리고 소유자가 탈퇴한 생성 이미지(탈퇴 때 숨겨 남긴 팔린 소설의 판이 써서
+    남겼던 것 — 그 소설이 파기되면 지울 사람이 없다). 원작 그림·살아 있는 회원의 생성 이미지는 그 사람의 것이라 남긴다.
+
+    배치뿐 아니라 다른 자리(작품 그림·문의 첨부·프로필·소설 표지)가 가리키는 것도 남긴다 — 업로드 API 는 용도와 무관하게 내 자산을
+    받는 자리가 있어서다. 후보 자산 행을 먼저 잠근다(`FOR UPDATE`) — 붙이기는 그림 행을 키 공유 잠금으로 확인하므로, 같은 그림을
+    다른 소설에 붙이는 중이면 그 커밋을 기다렸다가 새 배치를 사용처로 본다(잠그지 않으면 행 DELETE 가 그 배치 FK 에 걸려 500)."""
     ids = set(asset_ids)
     if not ids:
         return []
+    withdrawn_owner = select(User.id).where(User.id == Asset.owner_user_id, User.deleted_at.is_not(None)).exists()
     assets = list(
         (
             await db.scalars(
-                select(Asset).where(
-                    Asset.id.in_(ids), Asset.kind == AssetKind.ORIGINAL, Asset.storage_key.startswith(UPLOAD_KEY_PREFIX)
+                select(Asset)
+                .where(
+                    Asset.id.in_(ids),
+                    or_(
+                        and_(Asset.kind == AssetKind.ORIGINAL, Asset.storage_key.startswith(UPLOAD_KEY_PREFIX)),
+                        and_(Asset.kind == AssetKind.GENERATED, withdrawn_owner),
+                    ),
                 )
+                .order_by(Asset.id)
+                .with_for_update()
             )
         ).all()
     )

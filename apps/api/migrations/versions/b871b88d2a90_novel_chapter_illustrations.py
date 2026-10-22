@@ -26,7 +26,8 @@ NULL 로 채워진다. 개정을 지우는 옛 경로는 배치 행을 CASCADE �
 
 **downgrade**: 옛 스키마가 받을 수 없는 행(출처 `illustration` 개정·`illustration` 자리 거부 기록·배치 행·삽화 심사 시각이 찬
 공개본·판·통과 기억·내림 기록)이 하나라도 있으면 아무것도 바꾸기 전에 `RuntimeError` 로 멈춘다 — 조용히 지우면 작가의 삽화와
-운영 기록이 사라진다. 옛 코드로 돌아가기만 하려면 downgrade 없이 이미지만 되돌린다(옛 코드는 이 스키마에서 그대로 돈다).
+운영 기록이 사라진다. 이 경우 옛 이미지로 돌아가는 것도 막힌다 — `illustration` 개정이 있으면 옛 이미지의 화·개정 응답이 출처
+값을 몰라 500 이므로 앞으로 고친다. `illustration` 개정이 0 일 때만 downgrade 없이 이미지만 되돌린다(옛 코드는 이 스키마에서 돈다).
 
 이 파일은 `api.*` 를 import 하지 않는다(저장소 관례).
 """
@@ -148,8 +149,9 @@ def downgrade() -> None:
     if blockers:
         found = ", ".join(f"{label} {count}행" for label, count in blockers.items())
         raise RuntimeError(
-            f"옛 스키마가 받을 수 없는 삽화 행이 있다: {found}. 옛 코드로 돌아가기만 하려면 downgrade 없이 이미지만 되돌린다"
-            "(이 스키마에서 옛 코드가 그대로 돈다). 꼭 내려야 하면 삽화 스위치를 끄고 그 행들을 기록으로 남긴 뒤 정리하고 다시 돌린다."
+            f"옛 스키마가 받을 수 없는 삽화 행이 있다: {found}. 출처 illustration 개정이 있으면 옛 이미지로 되돌리는 것도 안 된다"
+            "(옛 이미지의 화·개정 응답이 그 값을 몰라 500) — 앞으로 고친다. 그런 개정이 0 이면 downgrade 없이 이미지만 되돌린다."
+            " 꼭 내려야 하면 삽화 스위치를 끄고 그 행들을 기록으로 남긴 뒤 정리하고 다시 돌린다."
         )
     op.drop_index("ix_novel_illustration_takedowns_asset_id", table_name="novel_illustration_takedowns")
     op.drop_table("novel_illustration_takedowns")

@@ -48,7 +48,7 @@ illustration_router = APIRouter(
     prefix="/novels",
     tags=["novels"],
     route_class=NoStoreRoute,
-    dependencies=[Depends(_require_illustrations_enabled), Depends(require_novelize_access)],
+    dependencies=[Depends(require_novelize_access), Depends(_require_illustrations_enabled)],
 )
 
 

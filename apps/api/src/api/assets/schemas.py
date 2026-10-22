@@ -104,10 +104,11 @@ NovelImageUsageField = Literal["cover", "illustration"]
 
 class NovelImageUsage(CamelModel):
     """이 그림을 쓰는 소설 하나 — 표지이거나, 어느 화의 어느 개정(지난 판 포함)의 삽화다. 작품 사용처(`GeneratedImageUsage`)와
-    칸을 나눈 것은 작품 사용처가 빌더로 가는 링크로 그려지기 때문이다."""
+    칸을 나눈 것은 작품 사용처가 빌더로 가는 링크로 그려지기 때문이다. 남의 소설(원작자가 만든 그림을 다른 작가가 원작 그림으로
+    붙인 경우)은 id·제목 없이(둘 다 null) 칸마다 한 항목으로만 알린다 — 남의 비공개 소설 제목이 드러나지 않게."""
 
-    novel_id: uuid.UUID
-    novel_title: str
+    novel_id: uuid.UUID | None
+    novel_title: str | None
     field: NovelImageUsageField
 
 

@@ -543,37 +543,42 @@ async def collect_asset_usages(
 
 
 async def collect_novel_asset_usages(
-    db: AsyncSession, asset_ids: Sequence[uuid.UUID]
+    db: AsyncSession, asset_ids: Sequence[uuid.UUID], *, viewer_id: uuid.UUID | None
 ) -> dict[uuid.UUID, list[NovelImageUsage]]:
     """어느 소설이 이 그림들을 쓰는가 — 어느 화의 어느 개정(지난 판·공개본이 얼린 판 포함)이든 삽화로 붙어 있으면 쓰는 것이다.
     소설 표지는 소설 삽화 스위치가 켜졌을 때만 센다 — 꺼져 있으면 지금처럼 표지가 빈다(표지 FK 는 `SET NULL`). 숨긴 소설(작가가
-    지운 팔린 소설)도 센다 — 산 사람이 계속 읽는다. 같은 (소설, 칸)은 하나로 합친다. 삭제 판정과 갤러리 목록이 함께 쓴다."""
+    지운 팔린 소설)도 센다 — 산 사람이 계속 읽는다. 같은 (소설, 칸)은 하나로 합친다. 삭제 판정과 갤러리 목록이 함께 쓴다.
+    `viewer_id` 가 아닌 사람의 소설은 id·제목을 비운 한 항목으로 합친다(응답으로 나갈 때 남의 소설을 드러내지 않게 — 판정만 하는
+    호출은 None 을 넘긴다)."""
     if not asset_ids:
         return {}
-    merged: dict[uuid.UUID, dict[tuple[uuid.UUID, str], NovelImageUsage]] = {}
+    merged: dict[uuid.UUID, dict[tuple[uuid.UUID | None, str], NovelImageUsage]] = {}
 
-    def _add(asset_id: uuid.UUID, novel_id: uuid.UUID, title: str | None, content_title: str, field: str) -> None:
-        usage = NovelImageUsage.model_validate({"novel_id": novel_id, "novel_title": title or content_title, "field": field})
-        merged.setdefault(asset_id, {})[(novel_id, field)] = usage
+    def _add(
+        asset_id: uuid.UUID, novel_id: uuid.UUID, owner_id: uuid.UUID, title: str | None, content_title: str, field: str
+    ) -> None:
+        shown_id, shown_title = (novel_id, title or content_title) if owner_id == viewer_id else (None, None)
+        usage = NovelImageUsage.model_validate({"novel_id": shown_id, "novel_title": shown_title, "field": field})
+        merged.setdefault(asset_id, {})[(shown_id, field)] = usage
 
     placement_rows = await db.execute(
-        select(NovelChapterIllustration.asset_id, Novel.id, Novel.title, Novel.content_title)
+        select(NovelChapterIllustration.asset_id, Novel.id, Novel.user_id, Novel.title, Novel.content_title)
         .join(NovelChapterRevision, NovelChapterRevision.id == NovelChapterIllustration.revision_id)
         .join(NovelChapter, NovelChapter.id == NovelChapterRevision.chapter_id)
         .join(Novel, Novel.id == NovelChapter.novel_id)
         .where(NovelChapterIllustration.asset_id.in_(asset_ids))
     )
-    for asset_id, novel_id, title, content_title in placement_rows.tuples():
-        _add(asset_id, novel_id, title, content_title, "illustration")
+    for asset_id, novel_id, owner_id, title, content_title in placement_rows.tuples():
+        _add(asset_id, novel_id, owner_id, title, content_title, "illustration")
     if settings.novel_illustrations_enabled:
         cover_rows = await db.execute(
-            select(Novel.cover_asset_id, Novel.id, Novel.title, Novel.content_title).where(
+            select(Novel.cover_asset_id, Novel.id, Novel.user_id, Novel.title, Novel.content_title).where(
                 Novel.cover_asset_id.in_(asset_ids)
             )
         )
-        for cover_id, novel_id, title, content_title in cover_rows.tuples():
+        for cover_id, novel_id, owner_id, title, content_title in cover_rows.tuples():
             if cover_id is not None:
-                _add(cover_id, novel_id, title, content_title, "cover")
+                _add(cover_id, novel_id, owner_id, title, content_title, "cover")
     return {asset_id: list(entries.values()) for asset_id, entries in merged.items()}
 
 
@@ -602,7 +607,9 @@ async def list_generated_images(
         )
     )
     usages_by_asset = await collect_asset_usages(db, [asset.id for asset in assets])
-    novel_usages_by_asset = await collect_novel_asset_usages(db, [asset.id for asset in assets])
+    novel_usages_by_asset = await collect_novel_asset_usages(
+        db, [asset.id for asset in assets], viewer_id=current_user_id
+    )
 
     items: list[GeneratedImageItem] = []
     for asset in assets:
@@ -640,7 +647,7 @@ async def delete_generated_image(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
     usages = (await collect_asset_usages(db, [asset_id])).get(asset_id, [])
-    novel_usages = (await collect_novel_asset_usages(db, [asset_id])).get(asset_id, [])
+    novel_usages = (await collect_novel_asset_usages(db, [asset_id], viewer_id=current_user_id)).get(asset_id, [])
     if usages or novel_usages:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_in_use_detail(usages, novel_usages))
 
@@ -658,7 +665,7 @@ async def delete_generated_image(
     # 저장소를 지우는 사이 다른 탭이 이 그림을 걸었을 수 있다 — 행을 지우기 전에 사용처를 다시 본다. 걸렸으면 행을 남겨
     # (외래 키 오류로 500 이 나는 대신) 사용처와 함께 409 로 답한다. 저장소 객체는 이미 지워졌다.
     usages = (await collect_asset_usages(db, [asset_id])).get(asset_id, [])
-    novel_usages = (await collect_novel_asset_usages(db, [asset_id])).get(asset_id, [])
+    novel_usages = (await collect_novel_asset_usages(db, [asset_id], viewer_id=current_user_id)).get(asset_id, [])
     if usages or novel_usages:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_in_use_detail(usages, novel_usages))
     await db.delete(asset)
