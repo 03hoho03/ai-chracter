@@ -51,7 +51,8 @@ from api.db.models.moderation import ReportReasonCategory, ReportStatus
 # 소설이 어느 레인(story·character)의 문안으로 고쳐지는지. 방이 사라진 뒤에도 AI 수정은 할 수 있으므로 방에서
 # 읽지 않고 소설 행에 사본으로 둔다.
 NovelContentType = Literal["story", "character"]
-NovelRevisionSource = Literal["generate", "regenerate", "manual_edit", "ai_edit", "revert"]
+# `illustration` 은 삽화 배치만 바꾼 개정이다 — 본문·블록 id 는 앞 개정과 같다.
+NovelRevisionSource = Literal["generate", "regenerate", "manual_edit", "ai_edit", "revert", "illustration"]
 NovelJobKind = Literal["chapter_generate", "chapter_regenerate", "ai_edit", "chain_generate"]
 NovelJobStatus = Literal["queued", "running", "succeeded", "failed"]
 NovelJobFailureCode = Literal[
@@ -561,9 +562,12 @@ NovelPublicationModerationStatus = Literal["normal", "restricted"]
 NovelPublicationReviewStatus = Literal["pending", "approved", "rejected"]
 NovelScreeningOutcome = Literal["passed", "rejected"]
 # 텍스트 심사가 문제로 짚을 수 있는 공개 화면 글의 자리. `change_summary` 는 다시 공개 때 작가가 쓴 변경 요약이다.
-NovelScreeningPart = Literal[
+NovelTextScreeningPart = Literal[
     "novel_title", "synopsis", "chapter_title", "author_note", "chapter_body", "change_summary"
 ]
+# 심사 거부 기록이 짚을 수 있는 자리 — 글 자리에 더해 화의 삽화. 삽화 자리는 글 심사 모델에게 보이지 않는다(글 심사의 응답
+# 스키마는 글 자리만 안다).
+NovelScreeningPart = Literal[NovelTextScreeningPart, "illustration"]
 # 다시 공개 때 받는 변경 요약의 최대 글자 수(앞뒤 공백을 던 뒤). 판 고르기 한 줄에 날짜와 함께 보이는 "짧은" 요약이라 화
 # 제목 상한과 같은 값으로 골랐다. 요청 검증과 판 행 CHECK 가 함께 쓴다.
 NOVEL_CHANGE_SUMMARY_MAX_LENGTH = 100
@@ -688,6 +692,10 @@ class NovelChapterPublication(Base):
     # 무료 화에는 30 이 들어갈 수 있고, 읽는 쪽은 앞 무료 화를 이 값과 무관하게 무료로 판정한다(`chapter_price`).
     price: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
     price_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 이 공개본이 얼린 개정의 삽화를 심사했는가(그 시각). 비어 있으면 독자 화면에 그림을 싣지 않는다 — 삽화 스위치가 꺼진
+    # 동안이나 이 칸을 모르는 옛 코드가 얼린 공개본에는 심사받지 않은 그림이 승계돼 있을 수 있다. nullable·기본값 없음인 것은
+    # 옛 코드의 INSERT 가 이 칸을 모르기 때문이다.
+    illustrations_screened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 번호 유니크가 소설의 공개 화 목록 조회와 소설 DELETE 때 FK 검사도 겸한다. 개정 인덱스는 개정 DELETE 때 FK 검사용이다.
     # 가격 CHECK 는 음수만 막는다 — 무료 화 수·화당 가격은 코드 상수라 CHECK 에 박으면 상수를 바꿀 때마다 마이그레이션이
@@ -731,6 +739,9 @@ class NovelChapterEdition(Base):
     # 판은 비어 있다. 화 공개본에는 두지 않는다 — 판 행은 화 공개본을 베껴 쓰므로, 거기 두면 다시 공개 UPDATE 가 이 칸을
     # 모르는 옛 이미지에서 지난 판의 요약이 새 판 행으로 베껴진다.
     change_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 이 판이 얼린 개정의 삽화를 심사했는가(그 시각). 화 공개본의 같은 칸과 같은 뜻이다 — 비어 있는 판에서는 독자에게 그림을
+    # 싣지 않는다.
+    illustrations_screened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 소설 인덱스는 반려·신청 취소가 그 소설의 판 행을 지울 때와 소설 DELETE 때 FK 검사용이고, 개정 인덱스는 개정 DELETE 때
     # FK 검사용이다. 화 쪽은 PK 가 맡는다.
@@ -743,6 +754,98 @@ class NovelChapterEdition(Base):
         Index("ix_novel_chapter_editions_novel_id", "novel_id"),
         Index("ix_novel_chapter_editions_revision_id", "revision_id"),
     )
+
+
+# 삽화를 문단의 앞·뒤 어디에 붙였는가, 그리고 그 그림이 어디서 왔는가(기기에서 올림·원작 발행본의 그림·내가 만든 이미지).
+NovelIllustrationPlacement = Literal["before", "after"]
+NovelIllustrationSource = Literal["upload", "original", "generated"]
+
+
+class NovelChapterIllustration(Base):
+    """화 개정 하나에 붙은 삽화 한 장. 배치는 개정에 묶인다 — 붙이기·옮기기·바꾸기·떼기는 본문이 같은 새 개정을 쌓고 그
+    개정의 배치 행을 새로 쓴다. 쌓인 행은 고치지 않는다(판 이력·되돌리기·공개본이 개정 id 하나로 그때의 그림까지 가리킨다).
+
+    자리는 앵커 문단의 블록 id 와 그 앞·뒤(`placement`), 같은 자리 안의 순서(`sort_order`, 0부터)다. 앵커와 앞·뒤가 둘 다
+    비어 있으면 "위치 확인 필요" — 개정이 바뀌며 앵커 문단이 사라진 그림이다. 다른 자리로 옮기지 않고 작가가 다시 놓을 때까지
+    이 상태로 다음 개정에 이어진다. 블록은 행이 아니라서 앵커에는 FK 가 없다.
+
+    개정을 지우면 함께 지워지는 `ON DELETE CASCADE` 다(모듈 docstring 의 예외 — 이 표를 모르는 옛 코드의 개정 삭제가 FK 위반이
+    되지 않게). 그림 쪽은 기본 FK(지우기 거부)라 쓰이는 그림은 지울 수 없다 — 사용처 판정(`collect_asset_usages`)이 먼저 막는다.
+
+    CHECK·부분 유니크는 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 검증한다."""
+
+    __tablename__ = "novel_chapter_illustrations"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_chapter_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    anchor_block_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    placement: Mapped[NovelIllustrationPlacement | None] = mapped_column(Text, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    asset_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("assets.id"), nullable=False)
+    source: Mapped[NovelIllustrationSource] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 개정 인덱스는 개정의 배치 읽기와 개정 DELETE 의 CASCADE 조회용이다 — 아래 부분 유니크는 위치 확인 필요 행을 담지 않아
+    # 이 일을 겸하지 못한다. 그림 인덱스는 사용처 판정과 그림 DELETE 때 FK 검사용이다.
+    __table_args__ = (
+        CheckConstraint(
+            f"placement IN ({_sql_in_list(NovelIllustrationPlacement)})", name="ck_novel_chapter_illustrations_placement"
+        ),
+        CheckConstraint(
+            f"source IN ({_sql_in_list(NovelIllustrationSource)})", name="ck_novel_chapter_illustrations_source"
+        ),
+        CheckConstraint(
+            "(anchor_block_id IS NULL) = (placement IS NULL)", name="ck_novel_chapter_illustrations_anchor_pair"
+        ),
+        CheckConstraint("sort_order >= 0", name="ck_novel_chapter_illustrations_sort_order_nonnegative"),
+        Index(
+            "ux_novel_chapter_illustrations_slot",
+            "revision_id",
+            "anchor_block_id",
+            "placement",
+            "sort_order",
+            unique=True,
+            postgresql_where=text("anchor_block_id IS NOT NULL"),
+        ),
+        Index("ix_novel_chapter_illustrations_revision_id", "revision_id"),
+        Index("ix_novel_chapter_illustrations_asset_id", "asset_id"),
+    )
+
+
+class NovelIllustrationScreenPass(Base):
+    """삽화 심사를 통과한 그림 바이트의 기억. 같은 바이트를 같은 모델·같은 심사 문안으로 다시 심사하지 않으려고 둔다 — 키에
+    문안 판을 넣는 것은 운영자가 심사 문안을 고친 뒤에는 옛 문안으로 통과한 그림도 다시 심사해야 해서다. 자산이 아니라 바이트로
+    세므로 같은 파일을 다시 올린 새 자산도 같은 기억을 쓴다(그래서 자산 FK 가 없다). 행은 바뀌지 않고 지워지지만 않는다 — 긴급
+    내림(`NovelIllustrationTakedown`)이 이 기억보다 먼저 읽힌다.
+
+    복합 PK 는 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 검증한다."""
+
+    __tablename__ = "novel_illustration_screen_passes"
+
+    content_sha256: Mapped[str] = mapped_column(Text, primary_key=True)
+    model: Mapped[str] = mapped_column(Text, primary_key=True)
+    prompt_version: Mapped[str] = mapped_column(Text, primary_key=True)
+    passed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class NovelIllustrationTakedown(Base):
+    """운영자가 모든 판에서 내린 삽화 그림. 바이트 sha 로 기록해 같은 파일을 다시 올린 새 자산도 공개를 막는다 — 통과 기억보다
+    먼저 본다. `asset_id` 는 내린 그 자산의 사본이라 FK 가 없다(자산이 지워져도 내림 기록은 남는다). `reason` 은 그 자리에
+    독자에게 보일 사유다."""
+
+    __tablename__ = "novel_illustration_takedowns"
+
+    content_sha256: Mapped[str] = mapped_column(Text, primary_key=True)
+    asset_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # 읽기 화면이 그림 자산마다 내렸는지 볼 때 쓴다.
+    __table_args__ = (Index("ix_novel_illustration_takedowns_asset_id", "asset_id"),)
 
 
 class NovelFreeOrdinal(Base):
