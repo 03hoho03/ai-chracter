@@ -15,6 +15,9 @@ type MediaImageFrameProps = {
    * 테스트(파일 단위로 `bg-muted` 를 찾는다)가 다이얼로그 안 호출부를 못 본다. 호출부가 놓인 면을 보고 고른다.
    */
   surface: MediaImageSurface;
+  /** 그림을 끌어 브라우저의 끌어 놓기를 시작할 수 있는가. 끌기·탭을 손짓으로 받는 화면(소설 화 읽기)은 끈다 — 그림
+   * 위에서 끌면 그림 고스트가 떠 손짓을 가로챈다. 기본은 브라우저 동작 그대로다. */
+  isDraggable?: boolean;
 };
 
 /** 원본 비율 그림의 높이 상한. 고정 웰(`h-80`)과 같은 값이라 비율을 아는 그림과 모르는 그림이 같은 키로 선다. */
@@ -29,7 +32,7 @@ const SURFACE_CLASS: Record<MediaImageSurface, string> = {
  * 본문 사이에 블록으로 서는 그림(채팅의 상황 이미지·글 속 미디어 북 태그 그림, 상세의 글 속 그림). 크롭 없이
  * `object-contain` 으로 담는다.
  */
-export function MediaImageFrame({ url, width, height, alt, surface }: MediaImageFrameProps) {
+export function MediaImageFrame({ url, width, height, alt, surface, isDraggable = true }: MediaImageFrameProps) {
   const sizedStyle = mediaImageFrameStyle(width, height);
 
   // 크기를 모르는 그림은 고정 3:4 웰이다. 이 자리에 오던 그림(캐릭터 상황 이미지 — 시드·생성물 768x1024)은 세로가
@@ -46,7 +49,14 @@ export function MediaImageFrame({ url, width, height, alt, surface }: MediaImage
       )}
       style={sizedStyle}
     >
-      <img src={url} alt={alt} loading="lazy" decoding="async" className="size-full object-contain" />
+      <img
+        src={url}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        draggable={isDraggable ? undefined : false}
+        className="size-full object-contain"
+      />
     </div>
   );
 }
