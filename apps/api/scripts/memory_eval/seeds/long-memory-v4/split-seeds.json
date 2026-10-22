@@ -1,0 +1,213 @@
+{
+ "base": 405267118,
+ "shrinkSeed": 1435929608,
+ "works": {
+  "filmclub-a": {
+   "plants": "filmclub/a/plants.json",
+   "strata": {
+    "abstain": 220480665,
+    "correction": 468711164,
+    "detail": 1401224357,
+    "false_premise": 1221183251,
+    "false_premise:closed_confirm": 2056414260,
+    "false_premise:lie_action": 1032647640,
+    "false_premise:premise_followup": 574206909,
+    "relation": 1404483120,
+    "rephrase": 1812150550,
+    "secret:early": 267680063,
+    "secret:main": 892693496,
+    "speaker": 552136613
+   }
+  },
+  "filmclub-b": {
+   "plants": "filmclub/b/plants.json",
+   "strata": {
+    "abstain": 153621962,
+    "correction": 382958541,
+    "detail": 798785597,
+    "false_premise": 1468243008,
+    "false_premise:closed_confirm": 419591498,
+    "false_premise:lie_action": 825395886,
+    "false_premise:premise_followup": 1230755534,
+    "relation": 2049041833,
+    "rephrase": 1105450553,
+    "secret:early": 1295920925,
+    "secret:main": 1955621137,
+    "speaker": 796277297
+   }
+  },
+  "gate-a": {
+   "plants": "gate/a/plants.json",
+   "strata": {
+    "abstain": 1162049043,
+    "correction": 1676459013,
+    "detail": 1958503269,
+    "false_premise": 1750601294,
+    "false_premise:closed_confirm": 81833323,
+    "false_premise:lie_action": 1110468207,
+    "false_premise:premise_followup": 1343372448,
+    "relation": 2060993819,
+    "rephrase": 1593593787,
+    "secret:early": 250842744,
+    "secret:main": 439028308,
+    "speaker": 1052808269
+   }
+  },
+  "gate-b": {
+   "plants": "gate/b/plants.json",
+   "strata": {
+    "abstain": 634877296,
+    "correction": 622810120,
+    "detail": 1911004974,
+    "false_premise": 1719757210,
+    "false_premise:closed_confirm": 640199173,
+    "false_premise:lie_action": 1053959648,
+    "false_premise:premise_followup": 854026099,
+    "relation": 1530498685,
+    "rephrase": 66822525,
+    "secret:early": 519881801,
+    "secret:main": 1375691902,
+    "speaker": 1578837375
+   }
+  },
+  "hanseoyun-a": {
+   "plants": "hanseoyun/a/plants.json",
+   "strata": {
+    "abstain": 885994296,
+    "correction": 220680270,
+    "detail": 2036456569,
+    "false_premise": 1547557149,
+    "false_premise:closed_confirm": 2065365569,
+    "false_premise:lie_action": 1510954127,
+    "false_premise:premise_followup": 161604162,
+    "relation": 217624185,
+    "rephrase": 230272107,
+    "secret:early": 375969729,
+    "secret:main": 1746380999,
+    "speaker": 705633430
+   }
+  },
+  "hanseoyun-b": {
+   "plants": "hanseoyun/b/plants.json",
+   "strata": {
+    "abstain": 1166406595,
+    "correction": 1417243911,
+    "detail": 736542955,
+    "false_premise": 1085935897,
+    "false_premise:closed_confirm": 1876572279,
+    "false_premise:lie_action": 1952931464,
+    "false_premise:premise_followup": 535403707,
+    "relation": 361742013,
+    "rephrase": 991493712,
+    "secret:early": 571664475,
+    "secret:main": 1085034243,
+    "speaker": 1333024827
+   }
+  }
+ },
+ "totals": [
+  {
+   "name": "secret-story",
+   "works": [
+    "filmclub-a",
+    "filmclub-b",
+    "gate-a",
+    "gate-b"
+   ],
+   "categories": [
+    "secret"
+   ],
+   "min": 64
+  },
+  {
+   "name": "secret-character",
+   "works": [
+    "hanseoyun-a",
+    "hanseoyun-b"
+   ],
+   "categories": [
+    "secret"
+   ],
+   "min": 26
+  },
+  {
+   "name": "false-premise-story",
+   "works": [
+    "filmclub-a",
+    "filmclub-b",
+    "gate-a",
+    "gate-b"
+   ],
+   "categories": [
+    "false_premise"
+   ],
+   "min": 24
+  },
+  {
+   "name": "false-premise-character",
+   "works": [
+    "hanseoyun-a",
+    "hanseoyun-b"
+   ],
+   "categories": [
+    "false_premise"
+   ],
+   "min": 26
+  },
+  {
+   "name": "fact-inject-effect",
+   "works": [
+    "filmclub-a",
+    "filmclub-b",
+    "gate-a",
+    "gate-b"
+   ],
+   "categories": [
+    "relation",
+    "correction",
+    "false_premise"
+   ],
+   "min": 56
+  },
+  {
+   "name": "embed-recall-effect",
+   "works": [
+    "filmclub-a",
+    "filmclub-b",
+    "gate-a",
+    "gate-b"
+   ],
+   "categories": [
+    "rephrase"
+   ],
+   "min": 56
+  },
+  {
+   "name": "detail-recall-effect",
+   "works": [
+    "filmclub-a",
+    "filmclub-b",
+    "gate-a",
+    "gate-b"
+   ],
+   "categories": [
+    "detail"
+   ],
+   "min": 56
+  },
+  {
+   "name": "relation-correction-noninferiority",
+   "works": [
+    "filmclub-a",
+    "filmclub-b",
+    "gate-a",
+    "gate-b"
+   ],
+   "categories": [
+    "relation",
+    "correction"
+   ],
+   "min": 16
+  }
+ ]
+}
