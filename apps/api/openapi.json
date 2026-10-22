@@ -30205,17 +30205,10 @@
             "title": "Paragraphs"
           },
           "blocks": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/NovelBlock"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "items": {
+              "$ref": "#/components/schemas/NovelBlock"
+            },
+            "type": "array",
             "title": "Blocks"
           }
         },
