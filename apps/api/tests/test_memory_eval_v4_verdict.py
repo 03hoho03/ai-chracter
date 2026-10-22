@@ -740,10 +740,10 @@ def test_the_same_script_given_twice_in_a_lane_is_refused() -> None:
     """같은 대본을 두 번 넘기면 문항이 두 번 세어져 레인 표본이 부풀므로 거부한다(스토리·캐릭터 둘 다)."""
     story = _set(_items("fc", "secret", 4))
     character = _set(_items("ca", "secret", 4))
-    with pytest.raises(SystemExit, match="두 번"):
+    with pytest.raises(SystemExit, match="같은 대본"):
         v4.v4_verdict([story], [character, character], [], judge_rows=[], control_rows=None, trajectories={},
                       section_max={})  # fmt: skip
-    with pytest.raises(SystemExit, match="두 번"):
+    with pytest.raises(SystemExit, match="같은 대본"):
         v4.v4_verdict([story, story], [character], [], judge_rows=[], control_rows=None, trajectories={},
                       section_max={})  # fmt: skip
 
@@ -889,7 +889,7 @@ def test_a_dev_preview_with_every_in_scope_check_passing_is_an_overall_pass() ->
                   + _points("b1-B1", ["b", "s"], chars=1100) + _points(bare_arm("b1-B1"), ["b", "s"]))  # fmt: skip
     controls = [{"kind": "secret", "expected": "kept", "judged": "kept"}]
     out = v4.v4_verdict(
-        [_set(story_items)], _set(char_items), scores, judge_rows=judged, control_rows=controls,
+        [_set(story_items)], [_set(char_items)], scores, judge_rows=judged, control_rows=controls,
         trajectories={"s": ("story", trajectory), "c": ("character", trajectory)},
         section_max={"b1-A0:b1-A1": 200, "b1-A1:b1-B1": 200}, split="dev",
     )  # fmt: skip

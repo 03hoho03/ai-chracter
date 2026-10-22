@@ -688,7 +688,7 @@ def _pair_tables(
 
 def v4_verdict(
     story_sets: Sequence[PlantSet],
-    character_set: PlantSet | None,
+    character_sets: Sequence[PlantSet] | None,
     score_rows: Sequence[Mapping[str, Any]],
     *,
     judge_rows: Sequence[Mapping[str, Any]],
@@ -700,7 +700,8 @@ def v4_verdict(
     with_a0m: bool = False,
     split: str = "test",
 ) -> dict[str, Any]:
-    """`trajectories` 는 대본 이름 → (레인, 그 대본 궤적 점 전부), `section_max` 는 쌍 이름(`기준:비교`) → 그 쌍의 섹션 계산 최대.
+    """`story_sets`·`character_sets` 는 레인마다 대본별 심기 표다 — 한 레인 대본들의 문항을 합친 것이 그 레인 표본이다(캐릭터가
+    없거나 비면 그 레인 입력이 빠진 것). `trajectories` 는 대본 이름 → (레인, 그 대본 궤적 점 전부), `section_max` 는 쌍 이름(`기준:비교`) → 그 쌍의 섹션 계산 최대.
     `controls_override` 는 미달 대조군을 받아들인 사용자 결정(부르는 쪽이 기록 sha 를 확인한 것)이다. `effect_floors` 는 효과마다
     분할 시드 파일의 합계 하한이다 — 없으면 표본이 모자란 효과는 전과 같이 `halt` 다. `with_a0m` 은 측정에 A0M 갈래를 더했을
     때 그 쌍을 관문에 넣고 그 비열등을 관찰로 낸다. `split` 이 `dev` 면 개발 절반 미리보기다 — 개발 문항만 같은 규칙으로 보되,
@@ -721,8 +722,13 @@ def v4_verdict(
     lanes: dict[Lane, list[list[dict[str, Any]]]] = {
         "story": [[e for e in s.all_items() if e.get("split") == split] for s in story_sets]
     }
-    if character_set is not None:
-        lanes["character"] = [[e for e in character_set.all_items() if e.get("split") == split]]
+    if character_sets:
+        lanes["character"] = [[e for e in s.all_items() if e.get("split") == split] for s in character_sets]
+    for lane, sets in (("story", story_sets), ("character", character_sets or [])):
+        ids = [i for s in sets for i in {str(e["id"]) for e in s.all_items()}]
+        if len(ids) != len(set(ids)):
+            # 대본끼리 문항을 견준다 — 같은 대본을 두 번 넘기면 그 문항이 두 번 세어져 레인 표본이 부푼다.
+            raise SystemExit(f"{lane} 레인의 두 대본에 같은 문항이 있다 — 같은 대본을 두 번 넘겼는지 본다")
     if not any(g for groups in lanes.values() for g in groups):
         raise SystemExit(f"{half} 절반 문항이 없다 — 시험은 봉인 확인 뒤 시험 보기로, 개발은 개발 보기로 부른다")
     rates = unable_rates(lanes, judge_rows)

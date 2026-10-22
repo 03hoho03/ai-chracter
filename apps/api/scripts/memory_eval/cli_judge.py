@@ -817,7 +817,7 @@ def _v4_judge(args: argparse.Namespace, *, split: str) -> int:
         )
 
     story = [view(pair) for pair in args.story]
-    character = view(args.character) if args.character else None
+    character = [view(pair) for pair in args.character]
     ensure_unique_probe_rows(scores)
     controls_path = args.controls or args.run / "judge" / "controls.json"
     control_rows, override = v4_controls_input(
@@ -1342,9 +1342,10 @@ def _v4_args(p: argparse.ArgumentParser, *, out_default: str) -> None:
     p.add_argument(
         "--character",
         nargs=2,
+        action="append",
         required=True,
         metavar=("PLANTS", "SPLIT_DIR"),
-        help="캐릭터 대본의 심기 표와 분할 폴더(관문 표라 필수)",
+        help="캐릭터 대본 하나의 심기 표와 분할 폴더(대본마다 한 번씩, 관문 표라 하나 이상 필수)",
     )
     p.add_argument("--scores", type=Path, nargs="+", required=True, help="score 출력(모든 대본·갈래)")
     p.add_argument("--judged", type=Path, nargs="+", required=True, help="judge 출력(모든 대본·갈래)")
