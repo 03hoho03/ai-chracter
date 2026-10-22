@@ -29,7 +29,9 @@ export type NovelAction =
   | "mergeCharacter"
   | "saveSnapshot"
   | "restoreSnapshot"
-  | "deleteSnapshot";
+  | "deleteSnapshot"
+  | "moveIllustration"
+  | "detachIllustration";
 
 export type NovelActionErrorNotice = {
   message: string;
@@ -62,6 +64,8 @@ const ACTION_OBJECT: Record<NovelAction, string> = {
   saveSnapshot: "버전을 저장하지",
   restoreSnapshot: "이 버전으로 되돌리지",
   deleteSnapshot: "버전을 지우지",
+  moveIllustration: "삽화를 옮기지",
+  detachIllustration: "삽화를 떼지",
 };
 
 /** 원래 대화방이 지워져 화를 만들 수도 다시 만들 수도 없을 때의 문장. 만들기 버튼 아래 사유 문장과 두 요청의 409 가
@@ -124,6 +128,21 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
   // 한 화에 둘 수 있는 삽화 수를 채웠다(위치 확인이 필요한 그림도 센다). 다른 그림을 떼면 붙일 수 있다.
   NOVEL_ILLUSTRATION_LIMIT_EXCEEDED: {
     message: "한 화에는 삽화를 10장까지 넣을 수 있어요. 다른 삽화를 뗀 뒤 다시 붙여 주세요.",
+    shouldRefetchNovel: true,
+  },
+  // 삽화를 놓을 문단이 지금 판에 없다. 판을 확인한 뒤라 화면이 낡은 문단을 보낸 경우뿐이다 — 다시 받아 고르게 한다.
+  NOVEL_ILLUSTRATION_ANCHOR_INVALID: {
+    message: "고른 문단이 바뀌었어요. 최신 내용을 불러왔어요. 다시 골라 주세요.",
+    shouldRefetchNovel: true,
+  },
+  // 옮기거나 뗄 삽화가 지금 판에 없다(배치 id 는 판마다 새로 매겨진다).
+  NOVEL_ILLUSTRATION_NOT_FOUND: {
+    message: "이 삽화가 그사이 바뀌었어요. 최신 내용을 불러왔어요.",
+    shouldRefetchNovel: true,
+  },
+  // 삽화 스위치가 꺼졌다. 호출부가 가격 응답도 다시 받아 삽화 컨트롤을 거둔다.
+  NOVEL_ILLUSTRATIONS_DISABLED: {
+    message: "지금은 삽화를 넣거나 옮기거나 뗄 수 없어요.",
     shouldRefetchNovel: true,
   },
   NOVEL_SOURCE_CHANGED: {

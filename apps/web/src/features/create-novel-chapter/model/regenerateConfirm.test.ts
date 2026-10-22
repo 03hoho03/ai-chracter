@@ -24,4 +24,16 @@ describe("toRegenerateConfirmDescription", () => {
       "이 화들에서 적용하지 않은 AI 수정안",
     );
   });
+
+  // 다시 만든 판은 문단이 모두 새 문단이라 붙여 둔 삽화가 전부 자리를 잃는다. 삽화를 넣을 수 없는 동안은 말하지 않는다.
+  it("삽화를 쓸 수 있을 때만 붙인 삽화가 위치 확인 필요로 옮겨진다고 덧붙인다", () => {
+    const base = { rangeLabel: "2화", episodeCount: 1, hasPendingAiEdits: false };
+    expect(toRegenerateConfirmDescription({ ...base, isIllustrationsOn: false })).toBe(
+      "같은 대화로 이 화를 새로 써요. 지금 글은 이력에 남아요.",
+    );
+    expect(toRegenerateConfirmDescription(base)).toBe("같은 대화로 이 화를 새로 써요. 지금 글은 이력에 남아요.");
+    expect(toRegenerateConfirmDescription({ ...base, isIllustrationsOn: true })).toBe(
+      "같은 대화로 이 화를 새로 써요. 지금 글은 이력에 남아요. 넣어 둔 삽화는 자리를 잃고 위치 확인 필요로 옮겨져요.",
+    );
+  });
 });

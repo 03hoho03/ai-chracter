@@ -101,6 +101,7 @@ export {
   type NovelJobStatus,
 } from "./model/novelJobPolling";
 export { toNovelReadProgress, type NovelReadProgress } from "./model/novelReadProgress";
+export { isNovelIllustrationsOn } from "./model/illustrationSwitch";
 export { toResumeTarget, type ResumeTarget } from "./model/resumeTarget";
 export {
   toIllustrationLayoutKey,
