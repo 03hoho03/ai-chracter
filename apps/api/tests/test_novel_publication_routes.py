@@ -414,6 +414,60 @@ async def test_reverting_to_the_published_body_needs_no_screening(
     assert len(llm.calls) == 1
 
 
+@pytest.mark.parametrize(
+    ("change", "changed"),
+    [
+        pytest.param("same_text", False, id="same-text"),
+        pytest.param("title", True, id="title"),
+        pytest.param("author_note", True, id="author-note"),
+        pytest.param("same_body_other_hash", True, id="same-body-other-hash"),
+        pytest.param("other_body_same_hash", False, id="other-body-same-hash"),
+    ],
+)
+async def test_status_and_republish_judge_a_published_chapter_changed_by_the_same_rule(
+    change: str,
+    changed: bool,
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ScreenLLM,
+) -> None:
+    """작가 상태의 "바뀐 공개 화"와 다시 공개의 계획은 같은 기준으로 판정한다 — 제목·작가의 말, 그리고 본문은 개정의 본문
+    해시. 깨지는 시나리오: 둘이 다른 기준이면 상태는 바뀐 화로 알리는데 다시 공개는 아무것도 안 쓰거나, 그 반대다. 본문이
+    해시로 비교되는지는 해시만 어긋난 판(바뀜)과 본문만 다르고 해시가 같은 판(안 바뀜)으로 가른다."""
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch)
+    assert (await _publish(db_client, novel_id, chapters[0])).status_code == 200
+    published_body = await db_session.scalar(
+        sa.select(NovelChapterRevision.body).where(NovelChapterRevision.chapter_id == chapters[0].id)
+    )
+    assert published_body is not None
+    current = await _new_revision(db_session, chapters[0], published_body)
+    if change == "title":
+        await db_session.execute(sa.update(NovelChapter).where(NovelChapter.id == chapters[0].id).values(title="새 제목"))
+    elif change == "author_note":
+        await db_session.execute(
+            sa.update(NovelChapter).where(NovelChapter.id == chapters[0].id).values(author_note="고마워요")
+        )
+    elif change == "same_body_other_hash":
+        await db_session.execute(
+            sa.update(NovelChapterRevision).where(NovelChapterRevision.id == current.id).values(content_hash="0" * 64)
+        )
+    elif change == "other_body_same_hash":
+        await db_session.execute(
+            sa.update(NovelChapterRevision).where(NovelChapterRevision.id == current.id).values(body="다른 글이다.")
+        )
+    await db_session.commit()
+
+    status_body = (await db_client.get(f"/novels/{novel_id}/publication")).json()
+    resp = await _publish(db_client, novel_id, chapters[0])
+
+    assert status_body["changedChapterOrdinals"] == ([1] if changed else [])
+    assert resp.status_code == 200, resp.text
+    assert len(llm.calls) == (2 if changed else 1)
+    frozen = await db_session.get_one(NovelChapterPublication, chapters[0].id, populate_existing=True)
+    assert frozen.edition == (2 if changed else 1)
+
+
 async def test_metadata_republish_screens_title_and_synopsis_only(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
 ) -> None:

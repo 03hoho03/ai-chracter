@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.db.models import Content, ModerationStatus, Novel, NovelChapter, NovelChapterRevision, NovelJob
 from api.novelize import blocks
 from api.novelize import router as novelize_router
+from api.novelize.deletion import erase_stale_ai_edit_previews
 from factories import (
     revision_row,
     _NeverCalledLLMClient,
@@ -537,13 +538,19 @@ async def test_applying_or_dismissing_an_ai_edit_erases_its_instruction_and_prev
 async def test_a_new_revision_erases_the_previews_it_made_stale_in_that_chapter_only(
     change: str, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """장의 현재 판이 바뀌면 그 앞 판을 기준으로 한 미리보기는 적용할 수 없고 상세에도 안 나온다 — 사용자가 버리기를
-    누를 길도 없으니 서버가 비운다. 다른 장의 미리보기는 그대로다."""
+    """장의 현재 판 글이 바뀌면 그 앞 판을 기준으로 한 미리보기는 적용할 수 없고 상세에도 안 나온다 — 사용자가 버리기를
+    누를 길도 없으니 서버가 비운다. 다른 장의 미리보기는 그대로다. 되돌리기는 지금 판과 글이 다른 앞 판으로 간다(같은
+    글로 되돌리면 미리보기가 낡지 않는다 — 아래 같은 글 시험)."""
     room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
     messages = await _room_messages(db_session, room.room_id)
     chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1], body=_BODY)
     other_chapter = await _add_chapter(db_session, novel_id, room, room.turns[2][0], room.turns[3][1], body=_BODY)
-    base = (await _revisions(db_session, chapter.id))[0]
+    first = (await _revisions(db_session, chapter.id))[0]
+    base = first
+    if change == "revert":
+        base = revision_row(chapter_id=chapter.id, revision_no=2, body="고친 판.\n\n둘째.", source="manual_edit")
+        db_session.add(base)
+        await db_session.commit()
     stale = [await _finished_ai_edit(db_session, novel_id, chapter, base) for _ in range(2)]
     other_base = (await _revisions(db_session, other_chapter.id))[0]
     other = await _finished_ai_edit(db_session, novel_id, other_chapter, other_base)
@@ -554,7 +561,7 @@ async def test_a_new_revision_erases_the_previews_it_made_stale_in_that_chapter_
         )
     elif change == "revert":
         resp = await db_client.post(
-            f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{base.id}/restore",
+            f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{first.id}/restore",
             json={"baseRevisionId": str(base.id)},
         )
     else:
@@ -607,6 +614,91 @@ async def test_a_committed_revision_stays_201_when_erasing_stale_previews_fails(
     assert resp.json()["revision"]["revisionNo"] == 2
     assert [r.revision_no for r in await _revisions(db_session, chapter.id)] == [1, 2]
     assert reported == ["db"]
+
+
+@pytest.mark.parametrize("change", ["manual_edit", "revert"])
+async def test_a_new_revision_with_the_same_text_keeps_the_preview_listed_and_applicable(
+    change: str, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """미리보기가 낡았는지는 개정 id 가 아니라 글로 본다. 기준 판과 글이 같은 새 판(같은 글로 고치기, 같은 글로 되돌리기)
+    위에서는 미리보기의 문단 범위와 결과 본문이 그대로 맞는다 — 비우지 않고, 상세에 나오고, 적용된다. 깨지는 시나리오:
+    id 로 판정하면 같은 글로 되돌리기만 해도 맡긴 수정 결과가 지워지고 돈만 나간다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+
+    if change == "manual_edit":
+        resp = await db_client.post(
+            f"/novels/{novel_id}/chapters/{chapter.id}/revisions", json={"baseRevisionId": str(base.id), "body": _BODY}
+        )
+    else:
+        resp = await db_client.post(
+            f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{base.id}/restore",
+            json={"baseRevisionId": str(base.id)},
+        )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["revision"]["revisionNo"] == 2
+
+    assert await _job_texts(db_session, job.id) == ("더 쓸쓸하게", "첫 문단이다.\n\n쓸쓸한 둘째 문단.\n\n셋째 문단이다.")
+    assert [edit["id"] for edit in await _pending(db_client, novel_id)] == [str(job.id)]
+    applied = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/apply")
+    assert applied.status_code == 201, applied.text
+    assert applied.json()["revision"]["revisionNo"] == 3
+    assert applied.json()["revision"]["paragraphs"] == ["첫 문단이다.", "쓸쓸한 둘째 문단.", "셋째 문단이다."]
+
+
+async def test_applying_onto_a_same_text_revision_continues_the_current_revisions_paragraph_ids(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """기준 판과 글은 같지만 문단 id 가 다른 판이 지금 판이면(id 를 새로 받은 같은 글), 적용 결과는 지금 판의 id 를
+    잇는다 — 기준 판의 id 를 이으면 지금 화면의 문단을 가리키던 것이 끊긴다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+    current = revision_row(chapter_id=chapter.id, revision_no=2, body=_BODY, source="manual_edit")
+    db_session.add(current)
+    await db_session.commit()
+    assert not set(current.block_ids) & set(base.block_ids)
+
+    assert [edit["id"] for edit in await _pending(db_client, novel_id)] == [str(job.id)]
+    applied = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/apply")
+
+    assert applied.status_code == 201, applied.text
+    assert _block_ids(applied) == current.block_ids
+
+
+@pytest.mark.parametrize(
+    ("current_body", "current_hash", "erased"),
+    [
+        pytest.param(_BODY, None, False, id="same-text"),
+        pytest.param("다른 글.", None, True, id="other-text"),
+        pytest.param(_BODY, "0" * 64, True, id="same-body-other-hash"),
+    ],
+)
+async def test_erasing_stale_previews_compares_the_body_hash_of_the_base_and_current_revision(
+    current_body: str,
+    current_hash: str | None,
+    erased: bool,
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """비우기는 개정을 쌓는 모든 경로(직접 수정·되돌리기·적용·스냅숏 복원·다시 만들기)가 부르는 한 함수다. 판정은 기준
+    판과 지금 판의 본문 해시를 맞대는 것이다 — 해시를 일부러 어긋나게 하면 본문이 같아도 낡은 것으로 본다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+    current = revision_row(chapter_id=chapter.id, revision_no=2, body=current_body, source="manual_edit")
+    if current_hash is not None:
+        current.content_hash = current_hash
+    db_session.add(current)
+    await db_session.commit()
+
+    await erase_stale_ai_edit_previews(db_session, chapter.id)
+    await db_session.commit()
+
+    kept = ("더 쓸쓸하게", "첫 문단이다.\n\n쓸쓸한 둘째 문단.\n\n셋째 문단이다.")
+    assert await _job_texts(db_session, job.id) == ((None, None) if erased else kept)
 
 
 async def test_detail_skips_a_preview_whose_text_was_erased_instead_of_failing(

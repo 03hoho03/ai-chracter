@@ -63,7 +63,7 @@ from api.novelize.billing import (
 )
 from api.novelize.blocks import build_revision, fresh_ids
 from api.novelize.boundary import episode_counts, suggest_end_turn
-from api.novelize.deletion import erase_stale_ai_edit_previews
+from api.novelize.deletion import ai_edit_preview_is_fresh, erase_stale_ai_edit_previews
 from api.novelize.episodes import chapter_max_turns, k_max
 from api.novelize.inputs import (
     ChapterInput,
@@ -515,8 +515,9 @@ async def _save_ai_edit(session_factory: SessionFactory, job_id: uuid.UUID, body
     """문단 수정 결과는 개정이 아니라 미리보기 후보다. 사용자가 적용할 때 새 개정이 된다. 전이와 결과 본문을 한
     문장으로 써서 전이가 행을 받지 못하면 결과도 남지 않는다.
 
-    모델을 부르는 동안 사용자가 그 장을 고쳤으면(기준 개정이 이제 현재가 아니면) 결과는 적용할 수 없다. 쓸 수 없는
-    미리보기에 과금하지 않도록 성공으로 저장하지 않고 `source_changed` 로 실패·환불한다.
+    모델을 부르는 동안 사용자가 그 장의 글을 고쳤으면(`ai_edit_preview_is_fresh` 가 거짓이면) 결과는 적용할 수 없다.
+    쓸 수 없는 미리보기에 과금하지 않도록 성공으로 저장하지 않고 `source_changed` 로 실패·환불한다. 글이 같은 새 개정
+    (같은 글로 되돌리기 등)이 쌓였을 뿐이면 결과는 그대로 맞으므로 저장한다 — 비우기·목록·적용과 같은 판정이다.
 
     순서는 작업 행(성공 전이) → 장 행 잠금 → 현재 개정 확인이다. 장 행을 직접 수정·되돌리기·적용과 같은 잠금으로
     잡아야 확인과 커밋 사이에 새 개정이 끼지 못한다 — 잠그지 않고 읽기만 하면, 확인 직후 커밋된 새 개정 쪽의 낡은
@@ -548,7 +549,11 @@ async def _save_ai_edit(session_factory: SessionFactory, job_id: uuid.UUID, body
             is not None
         ):
             current = await current_revision(db, chapter_id)
-        if current is None or current.id != base_revision_id:
+        if (
+            current is None
+            or base_revision_id is None
+            or not await db.scalar(select(ai_edit_preview_is_fresh(base_revision_id, current.content_hash)))
+        ):
             await db.rollback()
             raise _JobFailedError("source_changed")
         await db.commit()

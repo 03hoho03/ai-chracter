@@ -133,6 +133,27 @@ def test_succession_invariants_hold_for_random_range_edits() -> None:
             assert positional[len(new) - (len(old) - last - 1) :] == base_ids[last + 1 :]
 
 
+def test_stored_bodies_are_equal_exactly_when_their_body_hashes_are() -> None:
+    """공개 화가 바뀌었는지는 본문 글자 대신 본문 해시로 본다. 개정을 쓰는 경로는 본문을 문단을 빈 줄 하나로 다시 이은
+    모양으로 저장하므로(생성의 후처리, 직접 수정, AI 수정 결과 조립, 되돌리기·복원의 복제), 그 모양의 두 본문은 글자가
+    같을 때 그리고 그때만 해시가 같다 — 판정 결과가 글자 비교와 같다. 무작위 원문(문단 사이 공백·빈 줄 수를 흔든다)을
+    저장 모양으로 바꿔 모든 쌍을 맞댄다. 시드를 고정해 실패가 재현된다."""
+    rng = random.Random(20261022)
+    pieces = ["가.", "나.", "가.\n이어진 줄.", "* * *", "  다.  "]
+    separators = ["\n\n", "\n  \n", "\n\n\n\n", "\n \t\n\n"]
+    stored = []
+    for _ in range(300):
+        parts = [rng.choice(pieces) for _ in range(rng.randint(1, 4))]
+        raw = parts[0] + "".join(rng.choice(separators) + part for part in parts[1:])
+        stored.append("\n\n".join(split_paragraphs(raw)))
+    hashes = [blocks.content_hash(body) for body in stored]
+
+    assert len(set(stored)) > 20
+    for i, body in enumerate(stored):
+        for j, other in enumerate(stored):
+            assert (body == other) == (hashes[i] == hashes[j]), (body, other)
+
+
 # ── 개정 단위 도우미 ────────────────────────────────────────────────────────
 def test_copied_ids_take_the_source_ids() -> None:
     """깨지는 시나리오: 되돌리기가 원본 id 대신 새 id 를 매긴다."""
