@@ -1606,12 +1606,16 @@ story 먼저). 소설 프롬프트 레인 리비전(`a7a87e3ba631`): `novel` 레
 Gemini 활성 `85102fbf-51a6-48bb-a44f-b320eaa6325d`, Sonnet `dace3703-a59e-4d5d-b765-a64085001771`, Opus
 `2b816f0c-0de0-4d23-ac90-6648c705d271` — 어드민이 게시하기 전이면 (novel, gemini)·(novel, sonnet)·(novel, opus) 행이 뒤의 셋이다.
 
-**화 개정 블록 칸(`17f49714e5ca`) — 배포 · 되돌리기.** 화 개정에 문단마다의 블록 id(`block_ids`)와 본문 해시(`content_hash`)
-칸을 NULL 허용으로 더하고, 같은 마이그레이션이 지금 있는 개정을 채운다. 스위치는 없다 — 바뀌는 운영 동작은 소유자 화·개정
-응답의 `blocks` 칸과 직접 수정 요청의 선택 칸 `blockIds` 뿐이다. 평상시 겹침 교체로 배포한다(`skip_overlap` 불필요): 겹침 동안
-칸을 모르는 옛 이미지가 쌓은 개정은 두 칸이 NULL 로 남고, 새 코드는 그 개정을 `blocks: null` 로 내며 그 위에 쌓는 개정에는 새
-id 를 준다. 그 NULL 행을 손으로 다시 채우는 단계는 없다 — 두 칸을 NOT NULL 로 좁히는 다음 리비전이 첫머리에서 남은 NULL 행을
-채운 뒤 좁힌다. 남은 수는 이렇게 본다(읽기 전용):
+**화 개정 블록 칸(`17f49714e5ca`·`211f81f33be5`) — 배포 · 되돌리기.** 화 개정에 문단마다의 블록 id(`block_ids`)와 본문
+해시(`content_hash`) 칸을 두 리비전에 걸쳐 들였다. `17f49714e5ca` 가 두 칸을 NULL 허용으로 더하고 같은 마이그레이션에서 지금
+있는 개정을 채웠고, `211f81f33be5` 가 첫머리에서 남은 빈 개정을 채운 뒤(문단마다 새 id) 두 칸을 NOT NULL 로 좁힌다. 스위치는
+없다 — 바뀌는 운영 동작은 소유자 화·개정 응답의 `blocks` 칸과 직접 수정 요청의 선택 칸 `blockIds` 뿐이다. 둘 다 평상시 겹침
+교체로 배포한다(`skip_overlap` 불필요): `17f49714e5ca` 의 겹침에서는 칸을 모르는 옛 이미지가 NULL 로 쓰고(NULL 허용), `211f81f33be5`
+의 겹침에서 도는 옛 이미지(`17f49714e5ca` 를 아는 이미지)는 개정을 언제나 두 칸을 채워 쓴다.
+
+- **`211f81f33be5` 병합 전**: 운영 최신 백업이 성공했는지 본다 — 크론이 매일 18:00 UTC 에 돈다(위 「백업 · 복원」).
+  `sudo tail -n 40 /var/log/ddona-backup.log` 의 마지막 실행에 업로드·순환 삭제 성공이 있고 실패·오류 줄이 없어야 한다. 남은
+  빈 개정 수도 본다(0 이 정상 — 아니어도 마이그레이션이 채운다). 배포 로그에 `블록 칸이 빈 개정 N행을 채웠다` 가 찍힌다.
 
 ```sh
 sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
@@ -1619,13 +1623,22 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   "SELECT count(*) FROM novel_chapter_revisions WHERE block_ids IS NULL OR content_hash IS NULL;"
 ```
 
-- **이미지만 되돌릴 때**: 이 리비전 이전 이미지도 이 스키마에서 그대로 돈다(두 칸을 모르고 NULL 로 쓴다). downgrade 하지 않는다.
-- **두 칸을 NOT NULL 로 좁힌 뒤 이 리비전 이전 이미지로 되돌릴 때**: 순서가 고정이다 — 먼저 지금 이미지로 그 좁히는 리비전을
-  downgrade(NOT NULL 해제)하고, 그다음 태그 롤백으로 옛 이미지를 띄운다. 거꾸로 하면 옛 이미지의 개정 INSERT(생성·직접 수정·
-  되돌리기·AI 수정 적용)가 NOT NULL 위반으로 500 이다. NOT NULL 해제는 칸을 지우지 않으므로 떠 있는 새 코드가 그대로 돈다.
+- **이미지만 `17f49714e5ca` 이상 이미지로 되돌릴 때**: 그 이미지는 두 칸을 채워 쓰므로 NOT NULL 스키마에서 그대로 돈다.
+  downgrade 하지 않는다(DB 가 이미지보다 앞서 있으니 롤백 표시로 마이그레이션을 건너뛴다 — 위 「BE → GCE VM」).
+- **`17f49714e5ca` 이전 이미지(두 칸을 모르는 이미지)로 되돌릴 때**: 순서가 고정이다 — 먼저 **지금 이미지로**
+  `211f81f33be5` 를 downgrade(NOT NULL 해제)하고, 그다음 태그 롤백으로 옛 이미지를 띄운다. 거꾸로 하면 옛 이미지의 개정
+  INSERT(생성·다시 만들기·직접 수정·되돌리기·AI 수정 적용·스냅숏 복원)가 NOT NULL 위반으로 500 이다. NOT NULL 해제는 칸·값을
+  남기므로 떠 있는 새 코드가 그대로 돈다. 그 뒤 옛 이미지가 쓰는 개정은 두 칸이 NULL 이고, 새 이미지를 다시 올리면
+  `211f81f33be5` 가 다시 돌며 채운다.
+
+```sh
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
+  <IMAGE>:<지금 TAG> alembic downgrade 17f49714e5ca
+```
+
 - **스키마까지 내릴 때**(`alembic downgrade f89a3d8ed3a8`): 두 칸을 지운다. 블록 id 가 사라지고, 다시 올리면 백필이 다른 새 id
   로 채운다 — 블록 id 를 가리키는 다른 표가 생긴 뒤라면 그 참조가 끊긴다. 위 「스키마까지 되돌릴 때」의 순서(옛 코드 먼저 → 새
-  이미지로 downgrade)를 따른다.
+  이미지로 downgrade)를 따른다. 이 목표는 `211f81f33be5` 도 함께 내린다.
 
 ### 3-12. 상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기
 

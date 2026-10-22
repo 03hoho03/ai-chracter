@@ -12280,7 +12280,7 @@ export interface components {
             /** Paragraphs */
             paragraphs: string[];
             /** Blocks */
-            blocks: components["schemas"]["NovelBlock"][] | null;
+            blocks: components["schemas"]["NovelBlock"][];
         };
         /** NovelRevisionRestoreRequest */
         NovelRevisionRestoreRequest: {

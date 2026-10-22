@@ -40,7 +40,7 @@ from api.novelize.prompts import NovelizePrompt
 from api.novelize.batches import ensure_batches
 from api.novelize.deletion import delete_batch, delete_novels
 from api.novelize.router import delete_last_novel_chapter, delete_novel
-from factories import _assert_blocked, _clover_lots, _make_draft_content, _make_user_with_clover_lot
+from factories import _assert_blocked, _clover_lots, _make_draft_content, _make_user_with_clover_lot, revision_row
 
 pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
 
@@ -950,13 +950,13 @@ async def test_novel_deletion_waits_for_an_edit_holding_the_chapter_and_removes_
         )
         s.add(chapter)
         await s.flush()
-        s.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate"))
+        s.add(revision_row(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate"))
         await s.commit()
 
     editor = independent_factory()
     try:
         await editor.execute(select(NovelChapter.id).where(NovelChapter.id == chapter.id).with_for_update(key_share=True))
-        editor.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="고침", source="manual_edit"))
+        editor.add(revision_row(chapter_id=chapter.id, revision_no=2, body="고침", source="manual_edit"))
         await editor.flush()
 
         async def delete_novel() -> None:
@@ -1047,7 +1047,7 @@ async def test_regeneration_waiting_on_a_last_chapter_deletion_is_404_and_charge
         )
         s.add(chapter)
         await s.flush()
-        s.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate"))
+        s.add(revision_row(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate"))
         await s.commit()
 
     def regenerate(novel: Novel) -> NovelJob:
@@ -1127,7 +1127,7 @@ async def test_last_batch_delete_lets_an_edit_holding_the_job_finish_instead_of_
     async with independent_factory() as s:
         novel = await s.get_one(Novel, novel_id)
         (chapter,) = await _batch(s, novel, episodes=1)
-        revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="본문", source="generate")
+        revision = revision_row(chapter_id=chapter.id, revision_no=1, body="본문", source="generate")
         s.add(revision)
         await s.flush()
         edit = NovelJob(

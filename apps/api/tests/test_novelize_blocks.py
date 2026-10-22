@@ -27,7 +27,7 @@ def _ids(count: int) -> list[uuid.UUID]:
     return [uuid.uuid4() for _ in range(count)]
 
 
-def _revision(body: str, block_ids: list[uuid.UUID] | None) -> NovelChapterRevision:
+def _revision(body: str, block_ids: list[uuid.UUID]) -> NovelChapterRevision:
     return NovelChapterRevision(body=body, source="generate", block_ids=block_ids)
 
 
@@ -134,23 +134,13 @@ def test_succession_invariants_hold_for_random_range_edits() -> None:
 
 
 # ── 개정 단위 도우미 ────────────────────────────────────────────────────────
-def test_copied_ids_take_the_source_ids_and_a_source_without_ids_gets_fresh_ones() -> None:
-    """깨지는 시나리오: 되돌리기가 원본 id 대신 새 id 를 매기거나, 칸이 비어 있는 옛 개정(이 칸 이전 이미지가 쓴 행)에서
-    500 이 난다."""
+def test_copied_ids_take_the_source_ids() -> None:
+    """깨지는 시나리오: 되돌리기가 원본 id 대신 새 id 를 매긴다."""
     source_ids = _ids(2)
 
     copied = blocks.copied_ids(_revision("가.\n\n나.", source_ids))
-    fresh = blocks.copied_ids(_revision("가.\n\n나.\n\n다.", None))
 
     assert copied == source_ids and copied is not source_ids
-    assert len(fresh) == 3 and len(set(fresh)) == 3
-
-
-def test_succession_over_a_base_without_ids_gives_fresh_ids() -> None:
-    body = "가.\n\n나.\n\n다."
-
-    assert len(set(blocks.succeeding_ids(_revision(body, None), "가.\n\n새 나.\n\n다."))) == 3
-    assert len(set(blocks.succeeding_range_ids(_revision(body, None), 1, 1, "가.\n\n새 나.\n\n다."))) == 3
 
 
 def test_succession_reads_the_paragraphs_of_the_base_body() -> None:
@@ -179,21 +169,19 @@ def test_requested_ids_are_used_as_sent_and_null_means_a_new_paragraph() -> None
         pytest.param("too_long", id="more-ids-than-paragraphs"),
         pytest.param("foreign", id="id-not-in-the-base-revision"),
         pytest.param("duplicate", id="same-id-twice"),
-        pytest.param("base_without_ids", id="any-id-over-a-base-without-ids"),
     ],
 )
 def test_requested_ids_reject_a_list_that_does_not_fit_the_body_or_the_base(case: str) -> None:
     """깨지는 시나리오: 화면이 낡은 목록을 보내 id 가 엉뚱한 문단에 붙거나, 다른 화의 id 가 이 화에 섞이거나, 한 id 가
     두 문단에 붙는다."""
     base_ids = _ids(2)
-    base = _revision("가.\n\n나.", None if case == "base_without_ids" else base_ids)
+    base = _revision("가.\n\n나.", base_ids)
     body = "가.\n\n나."
     cases: dict[str, list[uuid.UUID | None]] = {
         "too_short": [base_ids[0]],
         "too_long": [base_ids[0], base_ids[1], None],
         "foreign": [base_ids[0], uuid.uuid4()],
         "duplicate": [base_ids[0], base_ids[0]],
-        "base_without_ids": [base_ids[0], None],
     }
     requested = cases[case]
 

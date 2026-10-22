@@ -24,6 +24,7 @@ from api.db.models.novel import (
 )
 from api.novelize import router as novelize_router
 from factories import (
+    revision_row,
     _NeverCalledLLMClient,
     _add_batch,
     _clear_llm_override,
@@ -67,7 +68,7 @@ async def _stack(db: AsyncSession, chapter_id: uuid.UUID, body: str) -> NovelCha
     last = await db.scalar(
         sa.select(sa.func.max(NovelChapterRevision.revision_no)).where(NovelChapterRevision.chapter_id == chapter_id)
     )
-    revision = NovelChapterRevision(chapter_id=chapter_id, revision_no=(last or 0) + 1, body=body, source="manual_edit")
+    revision = revision_row(chapter_id=chapter_id, revision_no=(last or 0) + 1, body=body, source="manual_edit")
     db.add(revision)
     await db.commit()
     return revision

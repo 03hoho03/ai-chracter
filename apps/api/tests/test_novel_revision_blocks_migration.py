@@ -2,7 +2,8 @@
 
 세션 스코프 스키마(`_migrated_schema`)가 이미 `upgrade head` 를 했다. 백필 함수는 테스트마다 롤백되는 `db_session` 커넥션에
 직접 부르고, downgrade·upgrade 를 실제로 돌리는 테스트는 `ddl_engine` 의 롤백되는 트랜잭션 안에서 돌린다. 개정은 블록 칸을
-비운 채(이 칸 이전 이미지가 쓴 행처럼) 생성자로 넣는다."""
+비운 채(이 칸 이전 이미지가 쓴 행처럼) 넣는다 — head 에서는 두 칸이 NOT NULL 이라, 그 트랜잭션 안에서 좁히는 다음
+리비전(`211f81f33be5`)의 downgrade 를 먼저 돌린다."""
 
 import hashlib
 import importlib.util
@@ -35,6 +36,7 @@ def _load(revision: str) -> ModuleType:
 
 
 _M = _load("17f49714e5ca")
+_NOT_NULL = _load("211f81f33be5")
 
 
 async def _run(connection: AsyncConnection, step: Callable[[], None]) -> None:
@@ -46,13 +48,16 @@ async def _run(connection: AsyncConnection, step: Callable[[], None]) -> None:
 
 
 async def _tree(db: AsyncSession, body: str) -> NovelTree:
-    """화 하나에 생성 개정(1)과 그것을 되돌린 개정(2). 두 본문을 `body` 로 맞춘다."""
+    """화 하나에 생성 개정(1)과 그것을 되돌린 개정(2). 두 본문을 `body` 로 맞추고 블록 칸을 비운다."""
+    await _run(await db.connection(), _NOT_NULL.downgrade)
     user = _make_user()
     db.add(user)
     await db.flush()
     tree = await _make_novel_tree(db, user.id)
     await db.execute(
-        sa.update(NovelChapterRevision).where(NovelChapterRevision.chapter_id == tree.chapter.id).values(body=body)
+        sa.update(NovelChapterRevision)
+        .where(NovelChapterRevision.chapter_id == tree.chapter.id)
+        .values(body=body, block_ids=None, content_hash=None)
     )
     return tree
 

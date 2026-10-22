@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 import httpx
 import pytest
 import pytest_asyncio
-from factories import PublicNovel, _assert_blocked, _login_as, _make_public_novel, _make_user_with_clover_lot
+from factories import PublicNovel, _assert_blocked, _login_as, _make_public_novel, _make_user_with_clover_lot, revision_row
 from fastapi import HTTPException
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -563,11 +563,11 @@ async def test_a_withdrawal_waits_for_a_late_draft_of_an_unpublished_chapter_and
         draft = NovelChapter(novel_id=novel.novel_id, ordinal=9, batch_id=batch.id, episode_index=0, **segment)
         s.add(draft)
         await s.flush()
-        s.add(NovelChapterRevision(chapter_id=draft.id, revision_no=1, body="9화 초고", source="generate"))
+        s.add(revision_row(chapter_id=draft.id, revision_no=1, body="9화 초고", source="generate"))
         await s.commit()
     holder = world.factory()
     await holder.execute(select(NovelChapter.id).where(NovelChapter.id == draft.id).with_for_update(key_share=True))
-    holder.add(NovelChapterRevision(chapter_id=draft.id, revision_no=2, body="9화 늦은 초고", source="manual_edit"))
+    holder.add(revision_row(chapter_id=draft.id, revision_no=2, body="9화 늦은 초고", source="manual_edit"))
     await holder.flush()
     withdrawal = _withdraw_task(publisher)
     try:

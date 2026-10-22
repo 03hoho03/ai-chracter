@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
 from api.db.models.novel import NovelChapterEdition, NovelChapterPublication, NovelChapterRevision
-from factories import PublicNovel, _login_as, _make_public_novel, _make_user, _make_user_with_clover_lot
+from factories import PublicNovel, _login_as, _make_public_novel, _make_user, _make_user_with_clover_lot, revision_row
 
 
 @pytest.fixture(autouse=True)
@@ -85,7 +85,7 @@ async def _republish(
     latest = await db_session.scalar(
         sa.select(sa.func.max(NovelChapterRevision.revision_no)).where(NovelChapterRevision.chapter_id == chapter_id)
     )
-    revision = NovelChapterRevision(chapter_id=chapter_id, revision_no=(latest or 0) + 1, body=body, source="manual_edit")
+    revision = revision_row(chapter_id=chapter_id, revision_no=(latest or 0) + 1, body=body, source="manual_edit")
     db_session.add(revision)
     await db_session.flush()
     await db_session.execute(
