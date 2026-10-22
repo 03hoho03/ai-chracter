@@ -154,7 +154,11 @@ _PORT_ARG = re.compile(r"--port[ =](\d+)")
 
 
 def running_api_servers() -> list[tuple[int, str, int | None]]:
-    """이 기계에서 도는 `uvicorn api.main:app` 프로세스와 그 작업 디렉터리, 명령줄의 `--port`(없으면 None)."""
+    """이 기계에서 도는 `uvicorn api.main:app` 프로세스와 그 작업 디렉터리, 명령줄의 `--port`(없으면 None).
+
+    `pgrep` 뒤에 디렉터리·명령줄을 따로 읽는 사이 프로세스가 끝나거나 defunct 가 될 수 있다(형제 작업자 서버가 내려가는 순간).
+    디렉터리를 읽은 뒤의 `ps` 에 더 이상 서버 명령줄이 없거나 defunct 면 목록에서 뺀다 — 그대로 두면 디렉터리 ''·포트 None 이라
+    충돌로 거부된다. 살아 있는데 디렉터리를 못 읽은 서버는 남겨 충돌 검사가 거부하게 둔다."""
     found = subprocess.run(["pgrep", "-f", "[u]vicorn api.main:app"], capture_output=True, text=True, check=False)
     procs = []
     for raw in found.stdout.split():
@@ -163,8 +167,11 @@ def running_api_servers() -> list[tuple[int, str, int | None]]:
             ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True, check=False
         )
         path = next((line[1:] for line in cwd.stdout.splitlines() if line.startswith("n")), "")
-        args = subprocess.run(["ps", "-o", "args=", "-p", str(pid)], capture_output=True, text=True, check=False)
-        port = _PORT_ARG.search(args.stdout)
+        ps = subprocess.run(["ps", "-o", "stat=,args=", "-p", str(pid)], capture_output=True, text=True, check=False)
+        stat, _, args = ps.stdout.strip().partition(" ")
+        if stat.startswith("Z") or "uvicorn api.main:app" not in args:
+            continue
+        port = _PORT_ARG.search(args)
         procs.append((pid, path, int(port.group(1)) if port else None))
     return procs
 

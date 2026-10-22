@@ -480,6 +480,13 @@ async def _top_up(database_url: str, room_id: uuid.UUID, amount: int) -> None:
         await engine.dispose()
 
 
+def _b_series(arm: str) -> bool:
+    """갈래가 B 계열 템플릿(요약 글만 표기 판으로 바꾼 것)에서 도는가. 묶음 1 밖 갈래(2차 런 갈래 등)는 투입이 커밋한 A 계열이다."""
+    from memory_eval.arm_env import BUNDLE1_ARMS, template_series
+
+    return arm in BUNDLE1_ARMS and template_series(arm) == "B"
+
+
 def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
     """프로브 하나를 실패 처리 규칙대로 끝까지. 재시도는 언제나 복원부터."""
     from memory_eval import checkpoint, server
@@ -509,6 +516,7 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
                     room_id=run.room_id,
                     dumps_dir=run.run_dir / "dumps",
                     label=run.checkpoint_label,
+                    b_series=_b_series(run.arm),
                     redis_url=run.redis_url,
                     clone_lock=run.clone_lock,
                 )

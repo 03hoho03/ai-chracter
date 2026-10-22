@@ -622,7 +622,7 @@ def test_servers_that_end_or_turn_defunct_while_being_listed_are_dropped_but_an_
             out = ps[pid]
         return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
 
-    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     assert server.running_api_servers() == [(11, own, 8131), (14, "", 8132)]
 
 

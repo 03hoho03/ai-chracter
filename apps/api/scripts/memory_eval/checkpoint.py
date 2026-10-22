@@ -32,8 +32,6 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
-from memory_eval.arm_env import B_SERIES_SUFFIX
-
 EVAL_DB_PREFIX = "lm_eval_"
 SUMMARY_DIGEST_KEY = "summaryDigest"
 
@@ -374,12 +372,14 @@ async def restore(
     room_id: uuid.UUID,
     dumps_dir: Path,
     label: str,
+    b_series: bool,
     redis_url: str | None = None,
     clone_lock: Path | None = None,
 ) -> dict[str, Any]:
-    """템플릿으로 작업 DB 를 새로 복제하고, 이 방의 Redis 키를 정리한 다음 지문이 같은지 확인한다. 다르면 `SystemExit`. B 계열 이름이면 요약 글
-    해시도 지문에 넣어 견준다 — 해시가 없는 B 지문(해시를 싣기 전에 만든 것)도 칸 차이로 거부된다. `redis_url`·`clone_lock` 은
-    프로브 작업자의 Redis 와 복제 잠금(`clear_room_redis_keys`·`clone_database`)."""
+    """템플릿으로 작업 DB 를 새로 복제하고, 이 방의 Redis 키를 정리한 다음 지문이 같은지 확인한다. 다르면 `SystemExit`. B 계열
+    템플릿이면(`b_series`) 요약 글 해시도 지문에 넣어 견준다 — 해시가 없는 B 지문(해시를 싣기 전에 만든 것)도 칸 차이로 거부된다.
+    계열은 이름 꼬리로 짐작하지 않고 호출자가 아는 갈래로 받는다 — 대본 변형 이름이 우연히 B 꼬리로 끝나면 A 템플릿을 B 로 잘못
+    읽는다. `redis_url`·`clone_lock` 은 프로브 작업자의 Redis 와 복제 잠금(`clear_room_redis_keys`·`clone_database`)."""
     ensure_eval_db_name(work_db)
     await clone_database(
         database_url, source=template_db_name(checkpoint, label), target=work_db, replace=True, lock=clone_lock
@@ -387,7 +387,7 @@ async def restore(
     deleted = await clear_room_redis_keys(room_id, redis_url)
     expected = json.loads(fingerprint_path(dumps_dir, checkpoint, label).read_text(encoding="utf-8"))
     actual = await read_fingerprint(database_url, room_id)
-    if label.endswith(B_SERIES_SUFFIX):
+    if b_series:
         actual[SUMMARY_DIGEST_KEY] = await read_summary_digest(database_url, room_id)
     diffs = fingerprint_diff(expected, actual)
     if diffs:
