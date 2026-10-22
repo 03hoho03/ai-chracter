@@ -3066,8 +3066,8 @@ export interface paths {
         put?: never;
         /**
          * Apply Novel Ai Edit
-         * @description 끝난 AI 수정의 미리보기를 새 개정으로 쌓는다(무과금). 수정을 맡긴 뒤 장이 바뀌었으면(기준 개정이 현재가
-         *     아니면) 409 `NOVEL_REVISION_CONFLICT`. 적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·버림·장이
+         * @description 끝난 AI 수정의 미리보기를 새 개정으로 쌓는다(무과금). 수정을 맡긴 뒤 장의 글이 바뀌었으면
+         *     (`ai_edit_preview_is_fresh` 가 거짓이면) 409 `NOVEL_REVISION_CONFLICT`. 글이 같은 새 개정만 쌓였으면 적용된다. 적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·버림·장이
          *     지워짐)은 409 `NOVEL_JOB_NOT_APPLICABLE`. 적용한 개정은 작업의 결과 개정(`revisionId`)이 된다. 적용한 작업의
          *     지시문·결과 본문은 비운다(결과는 이제 개정에 있다). 새 개정 때문에 낡은 같은 장의 다른 미리보기도 비운다.
          *
@@ -11961,8 +11961,9 @@ export interface components {
         };
         /**
          * NovelPendingAiEdit
-         * @description 끝났지만 적용도 버리기도 하지 않은 AI 수정. 기준 개정이 지금도 그 장의 현재 개정인 것만 싣는다 — 그 사이 장이
-         *     바뀌었으면 적용이 409 라 미리보기로 내보일 이유가 없다. 화면이 작업 id 를 잃어도(새로고침·다른 기기) 여기서
+         * @description 끝났지만 적용도 버리기도 하지 않은 AI 수정. 기준 개정이 지금도 그 장의 현재 개정과 글이 같은 것만 싣는다 — 그
+         *     사이 장의 글이 바뀌었으면 적용이 409 라 미리보기로 내보일 이유가 없다(같은 글의 새 개정만 쌓였으면 그대로 싣고 적용도
+         *     된다). 화면이 작업 id 를 잃어도(새로고침·다른 기기) 여기서
          *     미리보기를 다시 찾아 적용(`apply`)하거나 버린다(`dismiss`). `result_text` 는 장 전체 본문이다.
          */
         NovelPendingAiEdit: {
