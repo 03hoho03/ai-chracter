@@ -33,6 +33,7 @@ from api.db.models.novel import (
     NovelSnapshot,
     NovelSnapshotKind,
 )
+from api.novelize.blocks import build_revision, copied_ids
 from api.novelize.characters import clean_aliases, joined_memo, load_cards
 from api.novelize.inputs import current_revision
 
@@ -213,12 +214,13 @@ async def _restore_chapter(
     assert current is not None  # 화 행과 첫 개정은 한 트랜잭션에서 함께 들어간다
     if current.id != source.id:
         db.add(
-            NovelChapterRevision(
+            build_revision(
                 chapter_id=chapter_id,
                 revision_no=current.revision_no + 1,
                 body=source.body,
                 source="revert",
                 reverted_from_revision_id=source.id,
+                block_ids=copied_ids(source),
             )
         )
         await db.flush()

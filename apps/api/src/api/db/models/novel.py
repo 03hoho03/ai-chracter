@@ -286,6 +286,10 @@ class NovelChapterRevision(Base):
 
     되돌리기는 옛 개정의 본문을 복제한 새 개정이고, `reverted_from_revision_id` 가 그 옛 개정을 가리킨다.
 
+    `block_ids` 는 본문 문단(`split_paragraphs`)마다 하나씩 붙는 블록 id 로, 개정이 바뀌어도 같은 문단을 가리키도록 앞
+    개정에서 이어받는다. `content_hash` 는 문단 배열의 sha256 이다. 둘 다 `api/novelize/blocks.py` 의 `build_revision` 하나가
+    쓰고(문단 수와 id 수가 같다·id 가 겹치지 않는다를 거기서 지킨다), 이 칸이 생기기 전 이미지가 쓴 행에서만 NULL 이다.
+
     `(chapter_id, revision_no)` 유니크가 낙관적 충돌 검사다 — 두 탭이 같은 개정을 기준으로 동시에 저장하면 같은 다음
     번호를 쓰려다 두 번째가 위반되고, 라우트는 그것을 409 로 돌려준다. 이 인덱스는 장의 현재 개정(최대 번호) 조회와
     장 삭제 때 개정을 찾는 조회도 겸한다."""
@@ -300,6 +304,8 @@ class NovelChapterRevision(Base):
     reverted_from_revision_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("novel_chapter_revisions.id"), nullable=True
     )
+    block_ids: Mapped[list[uuid.UUID] | None] = mapped_column(ARRAY(Uuid), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

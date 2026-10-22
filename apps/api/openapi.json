@@ -28079,6 +28079,25 @@
         "title": "NovelBatchSummary",
         "description": "묶음 하나 = 생성 한 번이 옮긴 원문 구간. 다시 만들기·마지막 묶음 삭제의 단위다."
       },
+      "NovelBlock": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "NovelBlock"
+      },
       "NovelBoardLayout": {
         "properties": {
           "version": {
@@ -30087,6 +30106,28 @@
             "maxLength": 100000,
             "minLength": 1,
             "title": "Body"
+          },
+          "blockIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blockids"
           }
         },
         "type": "object",
@@ -30095,7 +30136,7 @@
           "body"
         ],
         "title": "NovelRevisionCreateRequest",
-        "description": "직접 수정 — 장 전체 본문을 보낸다. 화면이 고른 문단을 본문 안에서 바꿔 보낸다."
+        "description": "직접 수정 — 장 전체 본문을 보낸다. 화면이 고른 문단을 본문 안에서 바꿔 보낸다.\n\n`block_ids` 는 선택이다. 실으면 본문 문단마다 하나씩 기준 개정의 블록 id 나 새 문단(null)을 적는다 — 문단 수와 다르거나\n기준 개정에 없는 id·같은 id 둘이면 422 `NOVEL_BLOCK_IDS_INVALID`. 싣지 않으면 서버가 기준 개정과 글자로 맞춰 잇는다."
       },
       "NovelRevisionListResponse": {
         "properties": {
@@ -30162,6 +30203,20 @@
             },
             "type": "array",
             "title": "Paragraphs"
+          },
+          "blocks": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/NovelBlock"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocks"
           }
         },
         "type": "object",
@@ -30172,7 +30227,8 @@
           "revertedFromRevisionId",
           "createdAt",
           "body",
-          "paragraphs"
+          "paragraphs",
+          "blocks"
         ],
         "title": "NovelRevisionResponse"
       },

@@ -489,10 +489,18 @@ class NovelRevisionSummary(CamelModel):
     created_at: datetime
 
 
+class NovelBlock(CamelModel):
+    id: uuid.UUID
+    text: str
+
+
 class NovelRevisionResponse(NovelRevisionSummary):
     body: str
     # 본문을 빈 줄로 나눈 문단. 문단 범위(AI 수정)의 인덱스는 이 배열 기준이다 — 화면이 다시 나누지 않는다.
     paragraphs: list[str]
+    # 문단마다 블록 id 를 붙인 같은 배열(블록 i = 문단 i). 개정이 바뀌어도 같은 문단을 가리키는 id 다. 블록 칸이 생기기 전
+    # 이미지가 쓴 개정은 null 이다.
+    blocks: list[NovelBlock] | None
 
 
 class NovelChapterResponse(CamelModel):
@@ -508,10 +516,14 @@ class NovelRevisionListResponse(CamelModel):
 
 
 class NovelRevisionCreateRequest(CamelModel):
-    """직접 수정 — 장 전체 본문을 보낸다. 화면이 고른 문단을 본문 안에서 바꿔 보낸다."""
+    """직접 수정 — 장 전체 본문을 보낸다. 화면이 고른 문단을 본문 안에서 바꿔 보낸다.
+
+    `block_ids` 는 선택이다. 실으면 본문 문단마다 하나씩 기준 개정의 블록 id 나 새 문단(null)을 적는다 — 문단 수와 다르거나
+    기준 개정에 없는 id·같은 id 둘이면 422 `NOVEL_BLOCK_IDS_INVALID`. 싣지 않으면 서버가 기준 개정과 글자로 맞춰 잇는다."""
 
     base_revision_id: uuid.UUID
     body: ChapterBodyText
+    block_ids: list[uuid.UUID | None] | None = None
 
 
 class NovelRevisionRestoreRequest(CamelModel):

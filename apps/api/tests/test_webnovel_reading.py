@@ -430,8 +430,9 @@ async def test_buying_opens_the_body_of_the_frozen_revision(
     reader = await _member(db_session)
     await db_session.execute(
         sa.text(
-            "INSERT INTO novel_chapter_revisions (id, chapter_id, revision_no, body, source)"
-            " VALUES (gen_random_uuid(), :chapter, 2, '고친 본문', 'manual_edit')"
+            "INSERT INTO novel_chapter_revisions (id, chapter_id, revision_no, body, source, block_ids, content_hash)"
+            " VALUES (gen_random_uuid(), :chapter, 2, '고친 본문', 'manual_edit', ARRAY[gen_random_uuid()],"
+            " encode(sha256(convert_to('고친 본문', 'UTF8')), 'hex'))"
         ),
         {"chapter": novel.chapter_ids[5]},
     )

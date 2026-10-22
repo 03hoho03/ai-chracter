@@ -43,13 +43,13 @@ from api.llm.client import (
     LLMTruncatedError,
     T,
 )
-from api.novelize import billing, runner
+from api.novelize import billing, blocks, runner
 from api.novelize import router as novelize_router
 from api.novelize import inputs
 from api.novelize.deletion import delete_novels
 from api.novelize.source import segment_hash
 from api.novelize.paragraphs import resplit_long_paragraphs
-from api.novelize.text import clean_chapter_body
+from api.novelize.text import clean_chapter_body, split_paragraphs
 from api.novelize import writing_lock
 from factories import (
     Room,
@@ -1608,3 +1608,42 @@ async def test_poll_is_behind_the_novelize_gate(db_client: httpx.AsyncClient, db
 
     assert resp.status_code == 403
     assert resp.json()["detail"] == {"code": "NOVELIZE_NOT_ALLOWED"}
+
+
+# ── 블록 id ─────────────────────────────────────────────────────────────────
+async def test_generated_episodes_get_one_fresh_block_id_per_paragraph(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """생성한 화마다 문단 수만큼 새 id 와 본문 해시가 붙고, 화끼리 id 가 겹치지 않는다. 깨지는 시나리오: 생성이 칸을
+    비워 두거나, 다시 나누기 전 문단 수로 id 를 매겨 문단과 어긋난다."""
+    room, novel = await _novel_for(db_client, db_session, balance=300)
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], episodes=3)
+
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_three_episodes()]), job.id)
+
+    seen: list[uuid.UUID] = []
+    for chapter in await _chapters(db_session, novel.id):
+        (revision,) = await _revisions(db_session, chapter.id)
+        assert revision.block_ids is not None
+        assert len(revision.block_ids) == len(split_paragraphs(revision.body))
+        assert revision.content_hash == blocks.content_hash(revision.body)
+        seen.extend(revision.block_ids)
+    assert len(seen) > 3 and len(set(seen)) == len(seen)
+
+
+async def test_regenerating_gives_new_block_ids_even_to_paragraphs_with_the_same_text(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """다시 만들기는 새 본문을 통째로 받으므로 글자가 같은 문단이 있어도 id 를 잇지 않는다. 깨지는 시나리오: 글자 승계를
+    쓰면 다시 쓴 화의 문단이 옛 화 문단의 자리(그림 등)를 물려받는다."""
+    room, novel, chapter, messages = await _first_chapter(db_client, db_session)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], chapter=chapter)
+
+    await runner.run_job(_factory(db_session), _NovelLLM(), job.id)
+
+    first, second = await _revisions(db_session, chapter.id)
+    assert second.body == first.body
+    assert first.block_ids is not None and second.block_ids is not None
+    assert len(second.block_ids) == len(split_paragraphs(second.body))
+    assert set(second.block_ids).isdisjoint(first.block_ids)

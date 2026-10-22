@@ -143,11 +143,16 @@ async def test_novel_chapter_rejects_zero_assistant_messages(db_session: AsyncSe
 async def test_novel_chapter_revision_rejects_unknown_source(db_session: AsyncSession) -> None:
     tree = await _tree(db_session)
 
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_novel_chapter_revisions_source"):
         async with db_session.begin_nested():
             await db_session.execute(
                 sa.insert(NovelChapterRevision).values(
-                    chapter_id=tree.chapter.id, revision_no=3, body="본문", source="import"
+                    chapter_id=tree.chapter.id,
+                    revision_no=3,
+                    body="본문",
+                    source="import",
+                    block_ids=[uuid.uuid4()],
+                    content_hash="0" * 64,
                 )
             )
 

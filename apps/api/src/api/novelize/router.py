@@ -87,6 +87,14 @@ from api.novelize.billing import (
     refund_active_jobs,
 )
 from api.novelize.deletion import delete_batch, delete_novels, erase_stale_ai_edit_previews
+from api.novelize.blocks import (
+    BlockIdsInvalidError,
+    build_revision,
+    copied_ids,
+    requested_ids,
+    succeeding_ids,
+    succeeding_range_ids,
+)
 from api.novelize.boundary import episode_counts, suggest_end_turn
 from api.novelize.characters import (
     CharacterNameTakenError,
@@ -117,6 +125,7 @@ from api.novelize.schemas import (
     NovelAiEditRequest,
     NovelBatchRegenerateRequest,
     NovelBatchSummary,
+    NovelBlock,
     NovelChainCreateRequest,
     NovelChainEstimate,
     NovelBoardLayout,
@@ -1486,8 +1495,14 @@ def _revision_summary(revision: NovelChapterRevision) -> NovelRevisionSummary:
 
 
 def _revision_response(revision: NovelChapterRevision) -> NovelRevisionResponse:
+    paragraphs = split_paragraphs(revision.body)
     return NovelRevisionResponse(
-        **_revision_summary(revision).model_dump(), body=revision.body, paragraphs=split_paragraphs(revision.body)
+        **_revision_summary(revision).model_dump(),
+        body=revision.body,
+        paragraphs=paragraphs,
+        blocks=None
+        if revision.block_ids is None
+        else [NovelBlock(id=block_id, text=text) for block_id, text in zip(revision.block_ids, paragraphs, strict=True)],
     )
 
 
@@ -1617,12 +1632,16 @@ async def create_novel_chapter_revision(
     방이 지워진 소설도 고칠 수 있다(모델을 부르지 않는다)."""
     chapter = await _get_chapter(db, novel, chapter_id)
     current = await _lock_current_revision_for_edit(db, chapter.id, payload.base_revision_id)
-    await _stack_revision(
-        db,
-        novel,
-        current,
-        NovelChapterRevision(body="\n\n".join(split_paragraphs(payload.body)), source="manual_edit"),
-    )
+    body = "\n\n".join(split_paragraphs(payload.body))
+    try:
+        block_ids = (
+            succeeding_ids(current, body)
+            if payload.block_ids is None
+            else requested_ids(current, payload.block_ids, body)
+        )
+    except BlockIdsInvalidError:
+        raise _novel_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_BLOCK_IDS_INVALID") from None
+    await _stack_revision(db, novel, current, build_revision(body=body, source="manual_edit", block_ids=block_ids))
     await db.commit()
     await _erase_stale_previews(db, chapter.id)
     return await _chapter_response(db, chapter)
@@ -1648,7 +1667,9 @@ async def restore_novel_chapter_revision(
         db,
         novel,
         current,
-        NovelChapterRevision(body=source.body, source="revert", reverted_from_revision_id=source.id),
+        build_revision(
+            body=source.body, source="revert", reverted_from_revision_id=source.id, block_ids=copied_ids(source)
+        ),
     )
     await db.commit()
     await _erase_stale_previews(db, chapter.id)
@@ -1727,13 +1748,18 @@ async def apply_novel_ai_edit(
         or job.dismissed_at is not None
         or job.chapter_id is None
         or job.base_revision_id is None
+        or job.paragraph_start is None
+        or job.paragraph_end is None
     ):
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_JOB_NOT_APPLICABLE")
     current = await _lock_current_revision_for_edit(db, job.chapter_id, job.base_revision_id)
     if job.result_text is None:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_JOB_NOT_APPLICABLE")
+    # 블록 id 는 잠근 현재 개정에서 잇는다. 지금은 위 잠금이 현재 = 기준 개정을 강제해 둘이 같은 행이지만, 본문이 같으면
+    # 낡지 않은 미리보기로 보게 되면 둘이 글자만 같고 id 가 다른 개정일 수 있다 — 그때도 지금 화의 문단 id 가 이어진다.
+    block_ids = succeeding_range_ids(current, job.paragraph_start, job.paragraph_end, job.result_text)
     revision = await _stack_revision(
-        db, novel, current, NovelChapterRevision(body=job.result_text, source="ai_edit")
+        db, novel, current, build_revision(body=job.result_text, source="ai_edit", block_ids=block_ids)
     )
     await db.execute(
         update(NovelJob)

@@ -505,3 +505,34 @@ async def test_restoring_an_auto_snapshot_at_the_cap_does_not_rotate_it_away(
     assert resp.status_code == 200, resp.text
     kept = (await db_client.get(f"/novels/{novel_id}/snapshots/{auto}")).status_code
     assert kept == 200
+
+
+async def test_restore_copies_the_block_ids_of_the_snapshots_revision(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """스냅숏 복원이 쌓는 개정은 스냅숏 때 개정의 블록 id 를 그대로 갖는다. 깨지는 시나리오: 지금 개정에서 복사하거나 새로
+    매겨, 되돌린 본문의 문단이 그때 문단과 다른 블록이 된다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    (chapter,) = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1], body="옛 가.\n\n옛 나.")
+    original = await db_session.scalar(
+        sa.select(NovelChapterRevision).where(NovelChapterRevision.chapter_id == chapter.id)
+    )
+    assert original is not None and original.block_ids is not None
+    snapshot_id = (await _snapshot(db_client, novel_id)).json()["id"]
+    await _stack(db_session, chapter.id, "옛 가.\n\n새 나.")
+
+    resp = await db_client.post(f"/novels/{novel_id}/snapshots/{snapshot_id}/restore")
+
+    assert resp.status_code == 200, resp.text
+    restored = await db_session.scalar(
+        sa.select(NovelChapterRevision)
+        .where(NovelChapterRevision.chapter_id == chapter.id, NovelChapterRevision.revision_no == 3)
+        .execution_options(populate_existing=True)
+    )
+    assert restored is not None
+    assert (restored.source, restored.block_ids, restored.content_hash) == (
+        "revert",
+        original.block_ids,
+        original.content_hash,
+    )
