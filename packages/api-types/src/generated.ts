@@ -3895,10 +3895,15 @@ export interface paths {
          *     그대로, 환급 없음), 그 바이트(정지 변형의 sha256)를 남겨 같은 파일을 다시 올린 새 자산도 공개 심사에서 막는다(통과 기억보다
          *     먼저 본다 — 그 바이트의 통과 기억은 지운다). 소설 전체를 닫아야 하는 중대한 경우는 노벨 이용제한을 함께 쓴다.
          *
-         *     사유가 공백뿐이면 422, 어느 개정의 삽화로도 쓰인 적 없는 자산이면 404 `NOVEL_ILLUSTRATION_NOT_FOUND`, 같은 바이트가 이미
-         *     내려가 있으면 409 `NOVEL_ILLUSTRATION_ALREADY_TAKEN_DOWN`, 그림을 저장소에서 못 읽으면 503
-         *     `NOVEL_ILLUSTRATION_UNAVAILABLE`(바이트 없이는 다시 올림을 막을 수 없어 기록하지 않는다). 감사 로그의 대상 회원은 그림의
-         *     주인이다. 삽화 스위치와 무관하게 돈다.
+         *     **같은 파일을 담은 다른 자산**: 내림은 바이트가 키라, 다른 자산(A)으로 같은 바이트가 이미 내려가 있으면 이 자산(B)도 이미
+         *     내린 그림이다(읽기가 자산 행의 바이트 sha 로 잇는다). 그래서 B 를 내리면 새 내림 행 없이 200 `alreadyTakenDown` 참과 처음
+         *     내린 시각을 돌려주고, B 자리의 사유는 처음 적은 사유 그대로다. 감사 로그에는 B 에 대한 조치로 한 줄(이번에 적은 사유)을
+         *     남긴다 — 운영자가 B 를 보고 내렸다는 사실이 기록에 남고, 독자에게 보이는 사유는 하나로 유지된다. 그 자산 자신이 이미 내려가
+         *     있으면(같은 자산을 두 번) 409 `NOVEL_ILLUSTRATION_ALREADY_TAKEN_DOWN`.
+         *
+         *     사유가 공백뿐이면 422, 어느 개정의 삽화로도 쓰인 적 없는 자산이면 404 `NOVEL_ILLUSTRATION_NOT_FOUND`, 그림을 저장소에서 못
+         *     읽으면 503 `NOVEL_ILLUSTRATION_UNAVAILABLE`(바이트 없이는 다시 올림을 막을 수 없어 기록하지 않는다). 감사 로그의 대상 회원은
+         *     그림의 주인이다. 삽화 스위치와 무관하게 돈다.
          */
         post: operations["take_down_novel_illustration_admin_novel_illustrations__asset_id__takedown_post"];
         delete?: never;
@@ -7834,7 +7839,11 @@ export interface components {
             /** Reason */
             reason: string;
         };
-        /** AdminNovelIllustrationTakedownResponse */
+        /**
+         * AdminNovelIllustrationTakedownResponse
+         * @description `already_taken_down` 이 참이면 같은 파일이 다른 자산으로 이미 내려가 있어 새로 내리지 않았다(이 자산도 이미 내린 그림으로
+         *     보인다). 그때 `taken_down_at` 은 처음 내린 시각이다.
+         */
         AdminNovelIllustrationTakedownResponse: {
             /**
              * Assetid
@@ -7846,6 +7855,8 @@ export interface components {
              * Format: date-time
              */
             takenDownAt: string;
+            /** Alreadytakendown */
+            alreadyTakenDown: boolean;
         };
         /**
          * AdminNovelListItem
@@ -12019,6 +12030,8 @@ export interface components {
          * @description 개정에 붙은 삽화 한 장. `id` 는 이 개정의 배치 id 다 — 옮기기·바꾸기·떼기가 이 값으로 고르고, 개정이 바뀌면 새 id 가 된다.
          *     `anchor_block_id`·`placement` 가 비어 있으면 위치 확인 필요(앵커 문단이 사라진 그림)다. `url` 은 크게 그리는 정지 변형이고,
          *     `width`·`height` 는 그림 크기(모르면 null — 화면이 고정 비율 칸에 그린다)다. `order` 는 같은 자리(앵커·앞뒤) 안의 순서다.
+         *     `withheld` 가 차 있으면 독자 화면과 같이 그림 자리만 남는다 — `url` 이 없고, 운영자가 내린 그림이면 `withheld_reason` 에
+         *     운영자가 적은 사유가 있다. 내린 그림이 든 화는 그 그림을 바꾸거나 떼야 다시 공개할 수 있다.
          */
         NovelIllustration: {
             /**
@@ -12043,11 +12056,15 @@ export interface components {
              */
             source: "upload" | "original" | "generated";
             /** Url */
-            url: string;
+            url: string | null;
             /** Width */
             width: number | null;
             /** Height */
             height: number | null;
+            /** Withheld */
+            withheld: ("taken_down" | "original_restricted") | null;
+            /** Withheldreason */
+            withheldReason: string | null;
         };
         /**
          * NovelIllustrationAttachRequest
