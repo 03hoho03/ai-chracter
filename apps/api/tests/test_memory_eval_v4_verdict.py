@@ -623,3 +623,86 @@ def test_the_verdict_carries_the_recommendations() -> None:
     out = v4.v4_verdict([_set(_items("fc", "secret", 64))], None, [], judge_rows=[], control_rows=None,
                         trajectories={}, section_max={})  # fmt: skip
     assert _steps(out["recommendations"])["recall"] == "halt"
+
+
+# ---------------------------------------------------------------- 개발 절반 미리보기
+
+
+def _three_arm_case(split: str) -> tuple[PlantSet, list[dict[str, Any]], list[dict[str, Any]]]:
+    """개발 미리보기가 도는 갈래 셋(A0·A1·B1)만 채점·판정 줄이 있는 비밀 64문항."""
+    items = _items("fc", "secret", 64, split=split)
+    scores = [r for arm in ("b1-A0", "b1-A1", "b1-B1") for r in _rows(items, arm, leakHit=False)]
+    judged = [r for arm in ("b1-A0", "b1-A1", "b1-B1") for r in _judged(items, arm, ["kept"] * 64)]
+    return _set(items, _items("other", "secret", 3, split="test" if split == "dev" else "dev")), scores, judged
+
+
+def test_the_dev_preview_reads_only_the_dev_half_and_skips_pairs_with_arms_it_does_not_run() -> None:
+    """개발 미리보기는 A0·A1·B1 만 돈다 — B1E·B2 가 든 쌍·효과는 입력이 빠진 것이 아니라 개발 범위 밖이라 멈추지 않고 따로
+    표시하고, 전체 판정·권고에서도 범위 밖으로 둔다."""
+    story, scores, judged = _three_arm_case("dev")
+    out = v4.v4_verdict([story], None, scores, judge_rows=judged, control_rows=None, trajectories={}, section_max={},
+                        split="dev")  # fmt: skip
+    assert out["split"] == "dev" and v4.DEV_ARMS == ("b1-A0", "b1-A1", "b1-B1")
+    s1 = out["safety"]["b1-A0:b1-A1"]["story"]["S1"]
+    assert s1["n"] == 64 and s1["status"] == "pass"  # 시험 문항 셋은 세지 않았다
+    for pair in ("b1-B1:b1-B1E", "b1-B1E:b1-B2"):
+        for lane in ("story", "character"):
+            assert out["safety"][pair][lane] == {"status": "outOfScope", "pass": None, "reason": "개발 범위 밖"}
+    assert out["safetyReference"]["b1-B1:b1-B2"]["story"]["status"] == "outOfScope"
+    assert out["effects"]["E1"]["status"] == "outOfScope" and out["effects"]["E2"]["status"] == "outOfScope"
+    assert out["effects"]["holm"]["m"] == 0
+    assert out["effects"]["E3"]["status"] == "observation"
+    assert sorted(out["outOfScope"]) == ["E1", "E2", "b1-B1:b1-B1E", "b1-B1E:b1-B2"]
+    steps = {k: v["status"] for k, v in out["recommendations"]["steps"].items()}
+    assert (steps["embedRead"], steps["factInject"]) == ("outOfScope", "blocked")
+    with pytest.raises(SystemExit, match="개발 절반"):
+        v4.v4_verdict([_set(_items("fc", "secret", 3))], None, [], judge_rows=[], control_rows=None, trajectories={},
+                      section_max={}, split="dev")  # fmt: skip
+
+
+def test_the_test_verdict_still_halts_when_the_later_arms_are_missing() -> None:
+    story, scores, judged = _three_arm_case("test")
+    out = v4.v4_verdict([story], None, scores, judge_rows=judged, control_rows=None, trajectories={}, section_max={})
+    assert out["split"] == "test" and out["outOfScope"] == []
+    assert out["safety"]["b1-A0:b1-A1"]["story"]["S1"]["status"] == "pass"
+    assert out["safety"]["b1-B1:b1-B1E"]["story"]["S1"]["status"] == "halt"
+    assert out["effects"]["E2"]["status"] == "halt" and out["status"] == "halt"
+
+
+def _bundle(tmp_path: Path) -> tuple[Path, Path]:
+    import json
+
+    from memory_eval import bundle_split, holdout
+
+    plants = tmp_path / "plants-t.json"
+    entries = [{"id": f"t-sec{i:02d}", "category": "secret", "stratum": "secret", "ask_checkpoints": [CP],
+                "score_checkpoint": CP, "question": f"q{i}", "answer_key": {"mode": "judge"}} for i in range(8)]  # fmt: skip
+    plants.write_text(json.dumps({"version": "t", "lane": "story", "checkpoints": [CP], "plants": entries,
+                                  "abstains": []}), encoding="utf-8")  # fmt: skip
+    config = tmp_path / "split-seeds.json"
+    config.write_text(json.dumps({"base": 1, "works": {"t": {"plants": plants.name, "strata": {"secret": 11}}},
+                                  "totals": []}), encoding="utf-8")  # fmt: skip
+    root = tmp_path / "run" / "b1" / "split"
+    assert bundle_split.write_bundle(config, root, seed_sha=holdout.sha256_file(config))["ok"]
+    return plants, root / "t"
+
+
+def test_the_preview_command_needs_no_seal_and_writes_a_dev_marked_result(tmp_path: Path) -> None:
+    import json
+
+    from memory_eval import holdout
+    from memory_eval_cli import main
+
+    plants, split_dir = _bundle(tmp_path)
+    empty = tmp_path / "empty.json"
+    empty.write_text("[]", encoding="utf-8")
+    out = tmp_path / "preview.json"
+    argv = ["--run", str(tmp_path / "run"), "v4-preview", "--story", str(plants), str(split_dir),
+            "--character", str(plants), str(split_dir), "--scores", str(empty), "--judged", str(empty),
+            "--out", str(out)]  # fmt: skip
+    assert main(argv) == 0
+    result = json.loads(out.read_text(encoding="utf-8"))
+    assert result["split"] == "dev" and "b1-B1:b1-B1E" in result["outOfScope"]
+    dev = set(json.loads((split_dir / holdout.DEV_IDS_FILE).read_text(encoding="utf-8")))
+    assert result["safety"]["b1-A0:b1-A1"]["story"]["S1"]["missing"]  # 채점 줄이 없는 개발 문항
+    assert {m.split(":")[0] for m in result["safety"]["b1-A0:b1-A1"]["story"]["S1"]["missing"]} <= dev
