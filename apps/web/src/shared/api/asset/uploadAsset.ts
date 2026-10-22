@@ -32,6 +32,9 @@ const RESIZE_SPEC_BY_PURPOSE: Record<AssetPurpose, ResizeSpec> = {
   "content-thumbnail": { maxEdge: 1024, quality: 0.82 },
   "situational-image": { maxEdge: 1536, quality: 0.82 },
   "inquiry-attachment": { maxEdge: 2048, quality: 0.9 },
+  // 소설 삽화는 읽기 화면의 판형 안에 크게 그려지는 정지 그림이다 — 상황 이미지와 같은 규격. 움직이는 그림도 canvas 로 한 장만
+  // 그려 올린다(아래 원본 유지 목록에 넣지 않는다).
+  "novel-illustration": { maxEdge: 1536, quality: 0.82 },
 };
 
 /**
@@ -52,6 +55,7 @@ export const MAX_UPLOAD_BYTES_BY_PURPOSE: Record<AssetPurpose, number> = {
   "content-thumbnail": 5 * 1024 * 1024,
   "situational-image": 5 * 1024 * 1024,
   "inquiry-attachment": 5 * 1024 * 1024,
+  "novel-illustration": 5 * 1024 * 1024,
 };
 
 export type UploadAssetErrorCode =

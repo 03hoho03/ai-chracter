@@ -1694,7 +1694,7 @@ export interface paths {
          *
          *     존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset
          *     존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아
-         *     발행·초안 참조가 깨지는 삭제를 구조적으로 막는다.
+         *     발행·초안 참조가 깨지는 삭제를 구조적으로 막는다. 작품 사용처는 `usages`, 소설 사용처(표지·삽화)는 `novelUsages` 다.
          */
         delete: operations["delete_generated_image_me_generated_images__asset_id__delete"];
         options?: never;
@@ -2674,6 +2674,8 @@ export interface paths {
          *     만들 수 있고, 진행 중이던 연쇄 생성도 방이 없어 다음 묶음을 만들지 않는다). 환급은 없다. 숨긴 소설은 작가의 목록·주소
          *     에서 사라지고(`_get_owned_novel`), 미환급 소장자가 모두 사라지면 하루 한 번 도는 파기가 지운다(`hidden_purge.py`).
          *     판정은 사용자 행을 잠근 뒤에 한다 — 구매가 게시자 행을 잡으므로 그 뒤로는 새 구매가 끼지 않는다.
+         *
+         *     지운 소설만 쓰던 업로드 삽화 파일은 커밋 뒤에 저장소에서 지운다(`deletion.py` 모듈 docstring).
          */
         delete: operations["delete_novel_novels__novel_id__delete"];
         options?: never;
@@ -3356,6 +3358,109 @@ export interface paths {
          *     바꾸는 순간과 겹친 생성 하나이고, 그 빈 소설은 다음 생성 요청에서 같은 판정을 받는다.
          */
         post: operations["create_room_novel_chat_rooms__room_id__novel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}/illustrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Attach Novel Illustration
+         * @description 그림 한 장을 지금 개정의 문단 앞·뒤에 붙인다. 문단이 지금 개정에 없으면 422 `NOVEL_ILLUSTRATION_ANCHOR_INVALID`, 그 출처로
+         *     쓸 수 없는 그림(남의 것·준비 안 됨·삽화 용도가 아닌 업로드·본 적 없는 원작 그림 등 — 가르지 않는다)이면 422
+         *     `NOVEL_ILLUSTRATION_ASSET_INVALID`.
+         */
+        post: operations["attach_novel_illustration_novels__novel_id__chapters__chapter_id__illustrations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}/illustrations/{illustration_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move Novel Illustration
+         * @description 배치 하나를 다른 자리로 옮긴다(위치 확인 필요인 그림을 다시 놓을 때도 같다). 그림은 그대로다.
+         */
+        post: operations["move_novel_illustration_novels__novel_id__chapters__chapter_id__illustrations__illustration_id__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}/illustrations/{illustration_id}/replace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace Novel Illustration
+         * @description 배치 하나의 그림만 바꾼다(자리·순서 그대로). 그림 판정은 붙이기와 같다.
+         */
+        post: operations["replace_novel_illustration_novels__novel_id__chapters__chapter_id__illustrations__illustration_id__replace_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}/illustrations/{illustration_id}/detach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Detach Novel Illustration
+         * @description 배치 하나를 뗀다. 그림 파일은 지우지 않는다 — 앞 개정이 여전히 쓰고, 되돌리기로 돌아올 수 있다.
+         */
+        post: operations["detach_novel_illustration_novels__novel_id__chapters__chapter_id__illustrations__illustration_id__detach_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/illustration-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Novel Illustration Candidates
+         * @description 원작 그림 후보 — 대표 이미지와, 작가가 그 작품에서 본 상황 이미지·미디어 북 칸(원작자 본인이면 지금 발행본의 그림 전부).
+         *     못 본 그림은 블러본으로도 싣지 않는다. 원작을 그 작가에게 열 수 없으면 빈 목록이다.
+         */
+        get: operations["list_novel_illustration_candidates_novels__novel_id__illustration_candidates_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7969,7 +8074,7 @@ export interface components {
              */
             outcome: "passed" | "rejected";
             /** Flaggedparts */
-            flaggedParts: ("novel_title" | "synopsis" | "chapter_title" | "author_note" | "chapter_body" | "change_summary")[];
+            flaggedParts: ("novel_title" | "synopsis" | "chapter_title" | "author_note" | "chapter_body" | "change_summary" | "illustration")[];
             /** Reason */
             reason: string | null;
             /** Model */
@@ -8806,7 +8911,7 @@ export interface components {
          * @description Extend as new upload flows need a purpose.
          * @enum {string}
          */
-        AssetPurpose: "profile-image" | "content-thumbnail" | "situational-image" | "inquiry-attachment";
+        AssetPurpose: "profile-image" | "content-thumbnail" | "situational-image" | "inquiry-attachment" | "novel-illustration";
         /**
          * AssetStatus
          * @description Row is created pending at presigned-upload
@@ -9458,6 +9563,8 @@ export interface components {
             novelPublicEnabled: boolean;
             /** Novelpublicpolicyv2Enabled */
             novelPublicPolicyV2Enabled: boolean;
+            /** Novelillustrationsenabled */
+            novelIllustrationsEnabled: boolean;
             /** Paymentsenabled */
             paymentsEnabled: boolean;
             /** Paymethods */
@@ -10545,6 +10652,8 @@ export interface components {
             createdAt: string;
             /** Usages */
             usages: components["schemas"]["GeneratedImageUsage"][];
+            /** Novelusages */
+            novelUsages: components["schemas"]["NovelImageUsage"][];
         };
         /**
          * GeneratedImageUsage
@@ -11629,7 +11738,7 @@ export interface components {
              * Currentrevisionsource
              * @enum {string}
              */
-            currentRevisionSource: "generate" | "regenerate" | "manual_edit" | "ai_edit" | "revert";
+            currentRevisionSource: "generate" | "regenerate" | "manual_edit" | "ai_edit" | "revert" | "illustration";
             /**
              * Updatedat
              * Format: date-time
@@ -11821,6 +11930,146 @@ export interface components {
             lastChapterModel?: "gemini" | "sonnet" | "opus";
             purchaseRefunds?: components["schemas"]["NovelPurchaseRefundPreview"];
         };
+        /**
+         * NovelIllustration
+         * @description 개정에 붙은 삽화 한 장. `id` 는 이 개정의 배치 id 다 — 옮기기·바꾸기·떼기가 이 값으로 고르고, 개정이 바뀌면 새 id 가 된다.
+         *     `anchor_block_id`·`placement` 가 비어 있으면 위치 확인 필요(앵커 문단이 사라진 그림)다. `url` 은 크게 그리는 정지 변형이고,
+         *     `width`·`height` 는 그림 크기(모르면 null — 화면이 고정 비율 칸에 그린다)다. `order` 는 같은 자리(앵커·앞뒤) 안의 순서다.
+         */
+        NovelIllustration: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Anchorblockid */
+            anchorBlockId: string | null;
+            /** Placement */
+            placement: ("before" | "after") | null;
+            /** Order */
+            order: number;
+            /**
+             * Assetid
+             * Format: uuid
+             */
+            assetId: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "upload" | "original" | "generated";
+            /** Url */
+            url: string;
+            /** Width */
+            width: number | null;
+            /** Height */
+            height: number | null;
+        };
+        /**
+         * NovelIllustrationAttachRequest
+         * @description 그림 한 장을 문단(`anchor_block_id`, 지금 개정의 블록 id)의 앞·뒤에 붙인다. `order` 는 그 자리 안의 자리(0부터)이고, 비우거나
+         *     자리 수보다 크면 맨 끝이다. `source` 는 그림이 어디서 왔는가 — 서버가 그 출처로 쓸 수 있는 그림인지 본다.
+         */
+        NovelIllustrationAttachRequest: {
+            /**
+             * Baserevisionid
+             * Format: uuid
+             */
+            baseRevisionId: string;
+            /**
+             * Anchorblockid
+             * Format: uuid
+             */
+            anchorBlockId: string;
+            /**
+             * Placement
+             * @enum {string}
+             */
+            placement: "before" | "after";
+            /** Order */
+            order?: number | null;
+            /**
+             * Assetid
+             * Format: uuid
+             */
+            assetId: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "upload" | "original" | "generated";
+        };
+        /** NovelIllustrationDetachRequest */
+        NovelIllustrationDetachRequest: {
+            /**
+             * Baserevisionid
+             * Format: uuid
+             */
+            baseRevisionId: string;
+        };
+        /**
+         * NovelIllustrationMoveRequest
+         * @description 배치 하나를 다른 자리로 옮긴다(위치 확인 필요인 그림을 다시 놓을 때도). `order` 는 붙이기와 같다.
+         */
+        NovelIllustrationMoveRequest: {
+            /**
+             * Baserevisionid
+             * Format: uuid
+             */
+            baseRevisionId: string;
+            /**
+             * Anchorblockid
+             * Format: uuid
+             */
+            anchorBlockId: string;
+            /**
+             * Placement
+             * @enum {string}
+             */
+            placement: "before" | "after";
+            /** Order */
+            order?: number | null;
+        };
+        /**
+         * NovelIllustrationReplaceRequest
+         * @description 배치 하나의 그림만 바꾼다(자리는 그대로).
+         */
+        NovelIllustrationReplaceRequest: {
+            /**
+             * Baserevisionid
+             * Format: uuid
+             */
+            baseRevisionId: string;
+            /**
+             * Assetid
+             * Format: uuid
+             */
+            assetId: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "upload" | "original" | "generated";
+        };
+        /**
+         * NovelImageUsage
+         * @description 이 그림을 쓰는 소설 하나 — 표지이거나, 어느 화의 어느 개정(지난 판 포함)의 삽화다. 작품 사용처(`GeneratedImageUsage`)와
+         *     칸을 나눈 것은 작품 사용처가 빌더로 가는 링크로 그려지기 때문이다.
+         */
+        NovelImageUsage: {
+            /**
+             * Novelid
+             * Format: uuid
+             */
+            novelId: string;
+            /** Noveltitle */
+            novelTitle: string;
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "cover" | "illustration";
+        };
         /** NovelJobResponse */
         NovelJobResponse: {
             /**
@@ -11961,6 +12210,33 @@ export interface components {
             nextCursor: string | null;
         };
         /**
+         * NovelOriginalIllustrationCandidate
+         * @description 원작 그림 후보 한 장. `kind` 는 원작에서의 자리(대표 이미지·상황 이미지·미디어 북 칸)다.
+         */
+        NovelOriginalIllustrationCandidate: {
+            /**
+             * Assetid
+             * Format: uuid
+             */
+            assetId: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "thumbnail" | "situationalImage" | "mediaBook";
+            /** Url */
+            url: string;
+            /** Width */
+            width: number | null;
+            /** Height */
+            height: number | null;
+        };
+        /** NovelOriginalIllustrationCandidates */
+        NovelOriginalIllustrationCandidates: {
+            /** Items */
+            items: components["schemas"]["NovelOriginalIllustrationCandidate"][];
+        };
+        /**
          * NovelPendingAiEdit
          * @description 끝났지만 적용도 버리기도 하지 않은 AI 수정. 기준 개정이 지금도 그 장의 현재 개정과 글이 같은 것만 싣는다 — 그
          *     사이 장의 글이 바뀌었으면 적용이 409 라 미리보기로 내보일 이유가 없다(같은 글의 새 개정만 쌓였으면 그대로 싣고 적용도
@@ -12022,7 +12298,7 @@ export interface components {
             /** Chapterordinal */
             chapterOrdinal: number | null;
             /** Flaggedparts */
-            flaggedParts: ("novel_title" | "synopsis" | "chapter_title" | "author_note" | "chapter_body" | "change_summary")[];
+            flaggedParts: ("novel_title" | "synopsis" | "chapter_title" | "author_note" | "chapter_body" | "change_summary" | "illustration")[];
             /**
              * Createdat
              * Format: date-time
@@ -12269,7 +12545,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "generate" | "regenerate" | "manual_edit" | "ai_edit" | "revert";
+            source: "generate" | "regenerate" | "manual_edit" | "ai_edit" | "revert" | "illustration";
             /** Revertedfromrevisionid */
             revertedFromRevisionId: string | null;
             /**
@@ -12283,6 +12559,10 @@ export interface components {
             paragraphs: string[];
             /** Blocks */
             blocks: components["schemas"]["NovelBlock"][];
+            /** Illustrations */
+            illustrations: components["schemas"]["NovelIllustration"][];
+            /** Unplacedillustrations */
+            unplacedIllustrations: components["schemas"]["NovelIllustration"][];
         };
         /** NovelRevisionRestoreRequest */
         NovelRevisionRestoreRequest: {
@@ -12305,7 +12585,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "generate" | "regenerate" | "manual_edit" | "ai_edit" | "revert";
+            source: "generate" | "regenerate" | "manual_edit" | "ai_edit" | "revert" | "illustration";
             /** Revertedfromrevisionid */
             revertedFromRevisionId: string | null;
             /**
@@ -18786,6 +19066,184 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NovelDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_novel_illustration_novels__novel_id__chapters__chapter_id__illustrations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelIllustrationAttachRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_novel_illustration_novels__novel_id__chapters__chapter_id__illustrations__illustration_id__move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                illustration_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelIllustrationMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_novel_illustration_novels__novel_id__chapters__chapter_id__illustrations__illustration_id__replace_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                illustration_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelIllustrationReplaceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detach_novel_illustration_novels__novel_id__chapters__chapter_id__illustrations__illustration_id__detach_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                illustration_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelIllustrationDetachRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_novel_illustration_candidates_novels__novel_id__illustration_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelOriginalIllustrationCandidates"];
                 };
             };
             /** @description Validation Error */

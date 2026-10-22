@@ -15,6 +15,8 @@ export function toRevisionSourceLabel(
       return "직접 고침";
     case "ai_edit":
       return "AI로 고침";
+    case "illustration":
+      return "삽화 바꿈";
     case "revert": {
       const from = revisions.find((item) => item.id === revision.revertedFromRevisionId);
       return from === undefined ? "옛 판으로 되돌림" : `${from.revisionNo}판으로 되돌림`;
