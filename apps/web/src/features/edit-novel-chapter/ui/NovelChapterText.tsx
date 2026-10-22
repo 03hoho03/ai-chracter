@@ -168,7 +168,8 @@ export function NovelChapterText({
   const replaceMutation = useReplaceIllustrationMutation();
   // 붙이기·바꾸기의 단계. 업로드는 뮤테이션이 아니라 이 상태가 진행을 든다.
   const [imageRequest, setImageRequest] = useState<ImageRequestPhase | undefined>(undefined);
-  // 실패한 붙이기 — 같은 그림으로 다시 넣기에 쓴다. 다음 삽화 조작에서 지운다.
+  // 실패한 붙이기 — 같은 그림으로 다시 넣기에 쓴다. 다음 붙이기를 시작하거나 다시 넣기가 성공하면 지운다. 옮기기·떼기·바꾸기는
+  // 지우지 않는다 — 상한에 막힌 뒤 다른 삽화를 떼고 다시 넣는 것이 이 버튼의 쓰임이다.
   const [failedAttach, setFailedAttach] = useState<FailedAttach | null>(null);
   // 창을 보는 사이·올리는 사이 판이 바뀔 수 있다 — 붙이기는 그 순간의 지금 판을 기준으로 보내려고 렌더마다 최신 판을 둔다.
   const revisionRef = useRef(chapter.revision);
@@ -274,7 +275,6 @@ export function NovelChapterText({
 
   function startMove(illustration: BoardIllustration) {
     setPlacementError(undefined);
-    setFailedAttach(null);
     setMoving({ illustrationId: illustration.id, revisionId: chapter.revision.id });
     setRange(null);
     setLiveMessage("놓을 문단을 누르세요. 그 문단 앞이나 뒤에 놓을 수 있어요. Esc 로 취소해요.");
@@ -303,7 +303,6 @@ export function NovelChapterText({
       return;
     }
     setPlacementError(undefined);
-    setFailedAttach(null);
     try {
       const next = await moveMutation.mutateAsync({
         novelId: novel.id,
@@ -326,7 +325,6 @@ export function NovelChapterText({
   async function detach(illustration: BoardIllustration, paragraphIndex: number | undefined) {
     if (isPlacementBlocked) return;
     setPlacementError(undefined);
-    setFailedAttach(null);
     try {
       await detachMutation.mutateAsync({
         novelId: novel.id,
@@ -444,7 +442,6 @@ export function NovelChapterText({
     if (isPlacementBlocked) return;
     const baseRevisionId = chapter.revision.id;
     setPlacementError(undefined);
-    setFailedAttach(null);
     setMoving(null);
     const asset = await pickAsset(source, illustration.id, illustration.assetId);
     if (asset === undefined) return;
@@ -666,6 +663,7 @@ export function NovelChapterText({
         <RetryAttachRow
           canRetry={toRetryAttachRequest(chapter.revision, failedAttach) !== null}
           isBlocked={isPlacementBlocked}
+          isLimitReached={isIllustrationLimitReached(chapter.revision)}
           isRetrying={imageRequest !== undefined}
           onRetry={() => void retryAttach()}
         />
@@ -770,13 +768,16 @@ type RetryAttachRowProps = {
   /** 실패한 붙이기의 문단이 지금 판에 남아 있는가. 없으면 다시 넣을 자리가 없어 문단을 다시 고르라고 말한다. */
   canRetry: boolean;
   isBlocked: boolean;
+  /** 한 화의 삽화 상한에 닿았는가. 다시 넣어도 상한 409 로 끝나므로 다른 삽화를 뗄 때까지 막는다. */
+  isLimitReached: boolean;
   isRetrying: boolean;
   onRetry: () => void;
 };
 
 /** 붙이기가 실패한 뒤 같은 그림으로 다시 넣는 줄. 올린 파일을 다시 올리지 않게 하려는 것이고, 다시 넣기는 그때의 지금 판을
  * 기준으로 간다. 그 문단이 지금 판에 없으면 버튼 대신 안내만 둔다. */
-function RetryAttachRow({ canRetry, isBlocked, isRetrying, onRetry }: RetryAttachRowProps) {
+function RetryAttachRow({ canRetry, isBlocked, isLimitReached, isRetrying, onRetry }: RetryAttachRowProps) {
+  const reasonId = useId();
   if (!canRetry) {
     return (
       <p className="text-sm break-keep text-muted-foreground">
@@ -785,21 +786,27 @@ function RetryAttachRow({ canRetry, isBlocked, isRetrying, onRetry }: RetryAttac
     );
   }
   return (
-    <div>
+    <div className="flex flex-col gap-1.5">
       <Button
         type="button"
         variant="outline"
         size="sm"
-        aria-disabled={isBlocked}
-        className="aria-disabled:opacity-65"
+        aria-disabled={isBlocked || isLimitReached}
+        aria-describedby={isLimitReached ? reasonId : undefined}
+        className="w-fit aria-disabled:opacity-65"
         onClick={() => {
-          if (isBlocked) return;
+          if (isBlocked || isLimitReached) return;
           onRetry();
         }}
       >
         <RotateCcw aria-hidden />
         {isRetrying ? "붙이는 중…" : "같은 그림으로 다시 넣기"}
       </Button>
+      {isLimitReached && (
+        <p id={reasonId} className="text-sm break-keep text-muted-foreground">
+          다른 삽화를 떼면 같은 그림으로 다시 넣을 수 있어요.
+        </p>
+      )}
     </div>
   );
 }
