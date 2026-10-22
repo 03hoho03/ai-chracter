@@ -44,6 +44,7 @@ const SERVER_CODES: [number, string][] = [
   [422, "NOVEL_PARAGRAPH_RANGE_INVALID"],
   [409, "NOVEL_JOB_NOT_APPLICABLE"],
   [409, "NOVEL_REVISION_CONFLICT"],
+  [422, "NOVEL_BLOCK_IDS_INVALID"],
   [409, "NOVEL_ILLUSTRATION_LIMIT_EXCEEDED"],
   [409, "NOVEL_SOURCE_CHANGED"],
   [409, "NOVEL_JOB_IN_PROGRESS"],
@@ -76,6 +77,13 @@ describe("toNovelActionError", () => {
     expect(toNovelActionError(error, "proposal", { isPolicyV2Enabled: true })).toEqual({
       message: "이 작품으로는 지금 새 화를 만들 수 없어요.",
       shouldRefetchNovel: false,
+    });
+  });
+
+  it("직접 수정의 문단 맞춤 422 는 쓴 글을 지키고 최신 글에서 다시 고르라고 말하며 상세를 다시 받는다", () => {
+    expect(toNovelActionError(apiError(422, { code: "NOVEL_BLOCK_IDS_INVALID" }), "edit")).toEqual({
+      message: "문단을 맞추지 못해 저장하지 못했어요. 쓴 글을 복사해 두고 취소한 뒤 최신 글에서 다시 골라 주세요.",
+      shouldRefetchNovel: true,
     });
   });
 

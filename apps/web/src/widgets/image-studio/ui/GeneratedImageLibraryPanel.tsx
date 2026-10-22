@@ -6,6 +6,7 @@ import { Images } from "lucide-react";
 import { useGeneratedImagesQuery } from "@/entities/generated-image";
 import { useGenerateImagesSubmit } from "@/features/generate-images";
 
+import { toGeneratedImageUsageView } from "../model/generatedImageUsage";
 import { GeneratedImageDetailModal } from "./GeneratedImageDetailModal";
 
 type GeneratedImageLibraryPanelProps = {
@@ -157,7 +158,7 @@ export function GeneratedImageLibraryPanel({
       <div className={cn("grid gap-3", gridColumnsClassName)}>
         {images.map((image) => {
           const createdAtLabel = CREATED_AT_FORMATTER.format(new Date(image.createdAt));
-          const hasUsageBadge = image.usages.length > 0;
+          const { isInUse: hasUsageBadge, usageCount } = toGeneratedImageUsageView(image);
           return (
             <figure key={image.assetId} className="flex flex-col gap-1.5">
               <button
@@ -182,7 +183,7 @@ export function GeneratedImageLibraryPanel({
                   {isCreatedAtVisible && <time dateTime={image.createdAt}>{createdAtLabel}</time>}
                   {hasUsageBadge && (
                     <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
-                      {image.usages.length}곳에서 사용 중
+                      {usageCount}곳에서 사용 중
                     </span>
                   )}
                 </figcaption>

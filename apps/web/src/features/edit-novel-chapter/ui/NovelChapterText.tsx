@@ -16,7 +16,13 @@ import {
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { useSaveChapterRevisionMutation } from "../api/useSaveChapterRevisionMutation";
-import { countChapterChars, joinParagraphRange, toManualEditSave, type ManualEditBase } from "../model/chapterBody";
+import {
+  countChapterChars,
+  isManualEditStale,
+  joinParagraphRange,
+  toManualEditSave,
+  type ManualEditBase,
+} from "../model/chapterBody";
 import {
   clampParagraphRange,
   formatParagraphRange,
@@ -60,8 +66,9 @@ type ManualEditOutcome = "manualSaved" | "manualUnchanged" | "manualCancelled";
  *   크롬 규칙(크롬 자리는 위쪽 헤더 한 줄과 넓은 화면의 좌측 패널뿐이고, 한 화면에만 두는 sticky/fixed 띠도 헤더 자리
  *   밖에 더하지 않는다 — DESIGN.md Navigation 절)에 어긋난다.
  * - **직접 고치기**: 고른 문단 자리에 입력칸이 들어선다(여덟 줄 높이에 고정되고 넘친 글은 칸 안에서
- *   스크롤된다). 시작한 순간의 판·문단을 잡아 두고 저장은 그 문단으로 장 전체 본문을 조립해 그 판을 기준으로 보낸다 —
- *   그사이 판이 바뀌었으면 서버가 409 로 막고, 입력한 글은 그대로 둔다.
+ *   스크롤된다). 시작한 순간의 판·문단·블록 id 를 잡아 두고 저장은 그 문단으로 장 전체 본문을 조립해 그 판을 기준으로
+ *   보낸다(문단마다 이을 블록 id 도 함께). 그사이 판이 바뀌었으면 서버가 409 로 막고, 입력한 글은 그대로 둔다. 바뀐 판이
+ *   같은 글·같은 블록이면(삽화만 바꾼 판) 그 판을 기준으로 보내 막히지 않는다.
  * - **다시 만드는 중**: 이 장을 다시 만드는 작업이 도는 동안은 직접 고치기 시작과 저장을 `aria-disabled` 로 막고
  *   사유를 단다. 다시 만든 글은 그때의 최신 판 위에 쌓여, 그사이 저장한 글을 판 이력으로 밀어낸다. 이미 열린
  *   입력칸은 닫지 않는다(쓰던 글을 지우지 않는다) — 끝나면 판이 바뀌어 저장 대신 "최신 글에서 다시"를 안내한다. */
@@ -93,8 +100,9 @@ export function NovelChapterText({
   const activeRange = isFixMode ? clampParagraphRange(range, paragraphs.length) : null;
   // 입력칸을 놓을 자리. 범위는 시작한 판의 것이라, 다른 곳의 수정으로 문단 수가 줄었으면 남은 문단 안으로 접는다.
   const editRange = manualEdit ? clampParagraphRange(manualEdit.base.range, paragraphs.length) : null;
-  // 시작한 뒤 판이 바뀌었는가. 그러면 저장은 서버가 충돌로 막고, 입력칸 자리의 새 글은 입력칸에 가려 보이지 않는다.
-  const isEditStale = manualEdit !== null && manualEdit.base.revisionId !== chapter.revision.id;
+  // 시작한 뒤 판이 바뀌었는가. 그러면 저장은 서버가 충돌로 막고, 입력칸 자리의 새 글은 입력칸에 가려 보이지 않는다. 같은
+  // 글·같은 블록의 새 판(삽화만 바꾼 판)은 그 판 위에 저장하므로 낡지 않았다.
+  const isEditStale = manualEdit !== null && isManualEditStale(manualEdit.base, chapter.revision);
   const isDraftDirty =
     manualEdit !== null && manualEdit.draft !== joinParagraphRange(manualEdit.base.paragraphs, manualEdit.base.range);
   const pendingEdits = novel.pendingAiEdits.filter((edit) => edit.chapterId === chapter.id);
@@ -148,7 +156,12 @@ export function NovelChapterText({
     aiEdit.report({ type: "started" });
     setEditError(undefined);
     setManualEdit({
-      base: { revisionId: chapter.revision.id, paragraphs, range: target },
+      base: {
+        revisionId: chapter.revision.id,
+        paragraphs,
+        blockIds: chapter.revision.blocks.map((block) => block.id),
+        range: target,
+      },
       draft: joinParagraphRange(paragraphs, target),
     });
     setRange(null);
@@ -167,7 +180,11 @@ export function NovelChapterText({
     if (isSaving || isRegenerating || manualEdit === null || editRange === null) return;
     aiEdit.report({ type: "started" });
     setEditError(undefined);
-    const { baseRevisionId, body, isUnchanged } = toManualEditSave(manualEdit.base, manualEdit.draft);
+    const { baseRevisionId, body, blockIds, isUnchanged } = toManualEditSave(
+      manualEdit.base,
+      manualEdit.draft,
+      chapter.revision,
+    );
     const length = countChapterChars(body);
     if (length === 0) {
       setEditError("화 본문을 모두 비울 수는 없어요.");
@@ -187,6 +204,7 @@ export function NovelChapterText({
         chapterId: chapter.id,
         baseRevisionId,
         body,
+        blockIds,
       });
       closeManualEdit("manualSaved");
     } catch (error) {

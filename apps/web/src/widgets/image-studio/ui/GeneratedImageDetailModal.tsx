@@ -10,7 +10,7 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { BookOpen, ChevronRight, ImagePlus, Trash2, UserRound } from "lucide-react";
+import { BookOpen, BookText, ChevronRight, ImagePlus, Trash2, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -20,6 +20,8 @@ import {
 } from "@/entities/generated-image";
 import { ConfirmChatRoomActionModal } from "@/features/manage-chat-room";
 import { isApiError } from "@/shared/api/client";
+
+import { toGeneratedImageDeleteConflictMessage, toGeneratedImageUsageView } from "../model/generatedImageUsage";
 
 const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
@@ -49,8 +51,9 @@ type GeneratedImageDetailModalProps = {
 };
 
 /** 그리드 셀을 눌러 여는 생성 이미지 상세 모달. 이 이미지를 쓰는
- * 작품(usages) 목록을 보여주고 각 항목에서 해당 작품 상세로 이동하며, 미사용 이미지는 여기서
- * 삭제한다(사용 중이면 비활성 + 사유 안내). 결과 영역과 보관함이 함께 쓴다. */
+ * 작품(usages) 목록을 보여주고 각 항목에서 해당 작품 상세로 이동하며, 소설 사용처(novelUsages — 표지·삽화)는
+ * 링크 없는 줄로 함께 보인다. 미사용 이미지는 여기서 삭제한다(사용 중이면 비활성 + 사유 안내). 결과 영역과 보관함이
+ * 함께 쓴다. */
 export function GeneratedImageDetailModal({
   image,
   onClose,
@@ -60,7 +63,8 @@ export function GeneratedImageDetailModal({
 }: GeneratedImageDetailModalProps) {
   const queryClient = useQueryClient();
   const deleteMutation = useDeleteGeneratedImageMutation(image.assetId);
-  const isInUse = image.usages.length > 0;
+  const usageView = toGeneratedImageUsageView(image);
+  const { isInUse } = usageView;
 
   const handleDelete = () => {
     void ConfirmChatRoomActionModal.call({
@@ -83,10 +87,10 @@ export function GeneratedImageDetailModal({
           onClose();
         } catch (error) {
           if (isApiError(error) && error.status === 409) {
-            // 조회와 삭제 사이에 다른 탭에서 작품에 붙인 경합 — 클라이언트의 usages 판단만
+            // 조회와 삭제 사이에 다른 탭에서 작품·소설에 붙인 경합 — 클라이언트의 사용처 판단만
             // 믿지 않고 목록을 다시 받아, 확인 모달이 닫힌 뒤 갱신된 사용처가 보이게 한다.
             await queryClient.invalidateQueries({ queryKey: generatedImagesKeys.list() });
-            toast.error("이미지가 방금 작품에 사용되어 삭제할 수 없어요.");
+            toast.error(toGeneratedImageDeleteConflictMessage(error));
             call.end();
           } else {
             toast.error("삭제에 실패했어요. 잠시 후 다시 시도해주세요.");
@@ -134,8 +138,8 @@ export function GeneratedImageDetailModal({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <h3 className="text-sm font-medium text-foreground">사용 중인 작품</h3>
-            {image.usages.length === 0 ? (
+            <h3 className="text-sm font-medium text-foreground">{usageView.heading}</h3>
+            {!isInUse ? (
               <p className="text-sm text-muted-foreground">아직 사용 중인 작품이 없어요.</p>
             ) : (
               <ul className="flex flex-col">
@@ -164,6 +168,15 @@ export function GeneratedImageDetailModal({
                     </Link>
                   </li>
                 ))}
+                {usageView.novelRows.map((row) => (
+                  // 소설 사용처는 링크가 아니다 — 작가가 지워 숨긴 팔린 소설도 들어오는데 응답이 숨김 여부를 알려 주지 않는다.
+                  // 작품 줄과 같은 안쪽 여백이라 글자 열이 맞는다.
+                  <li key={row.key} className="-mx-2 flex items-center gap-2 px-2 py-2">
+                    <BookText aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate text-sm text-foreground">{row.title}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{row.detail}</span>
+                  </li>
+                ))}
               </ul>
             )}
           </div>
@@ -189,7 +202,7 @@ export function GeneratedImageDetailModal({
           )}
           {isInUse && (
             <p className="text-xs text-muted-foreground sm:mr-auto">
-              위 작품에서 사용 중이라 삭제할 수 없어요.
+              {usageView.deleteBlockedReason}
             </p>
           )}
           <Button type="button" variant="destructive" disabled={isInUse} onClick={handleDelete}>
