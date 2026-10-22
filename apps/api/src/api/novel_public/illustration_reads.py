@@ -9,9 +9,10 @@
 
 **자리만 남기는 그림**(주소 없이 사유만):
 - 운영자가 내린 그림(`taken_down`) — 내림 표의 자산 id 로 본다. 사유는 운영자가 적은 독자용 문장이다. 모든 판에 걸린다.
-- 운영자가 원작을 이용제한·삭제한 동안의 원작 그림(`original_restricted`) — 원작 행이 정상 상태가 아니면(원작자 정지로 걸린
-  일괄 제한도 운영자 조치라 포함한다) 그 원작에서 온 그림만
-  비운다(글과 다른 그림은 그대로). 원작자의 탈퇴·비공개는 그림을 빼지 않는다(연재권이 고정된 소설의 이용은 이어진다).
+- 운영자가 원작 작품을 이용제한·삭제한 동안의 원작 그림(`original_restricted`) — 원작 행이 정상 상태가 아니면 그 원작에서 온
+  그림만 비운다. 원작자 계정 정지로 걸린 일괄 제한은 빼고 본다 — 원작자 탈퇴와 같이 그림을 그대로 보인다(소장자 열람 조건이
+  정지 제한을 정상과 같이 보는 것과 같은 판단). 글과 다른 그림은 그대로다. 원작자의 탈퇴·비공개도 그림을 빼지 않는다(연재권이
+  고정된 소설의 이용은 이어진다).
 환급은 없다 — 그림 자리만 비우고 판은 그대로다."""
 
 import uuid
@@ -85,8 +86,13 @@ async def frozen_illustrations(
         .tuples()
         .all()
     )
-    source_status = await db.scalar(select(Content.moderation_status).where(Content.id == content_id))
-    original_restricted = source_status != ModerationStatus.NORMAL
+    source = (
+        await db.execute(
+            select(Content.moderation_status, Content.restricted_by_suspension).where(Content.id == content_id)
+        )
+    ).one_or_none()
+    # 원작 행이 없으면 운영 제한과 같이 본다(풀어 줄 근거가 없다). 원작자 정지로 걸린 일괄 제한은 빼고 본다.
+    original_restricted = source is None or (source[0] != ModerationStatus.NORMAL and not source[1])
     position = {block_id: index for index, block_id in enumerate(revision.block_ids)}
     rank: dict[tuple[int, str], int] = {}
     shown: list[FrozenIllustration] = []

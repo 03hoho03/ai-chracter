@@ -854,6 +854,31 @@ async def test_an_operator_restricted_original_withholds_only_its_pictures_and_a
     assert restricted["paragraphs"] == withdrawn["paragraphs"]
 
 
+async def test_an_original_restricted_only_by_its_creators_suspension_keeps_its_pictures(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """원작자 정지로 원작이 일괄 제한된 것은 원작자 탈퇴처럼 원작 그림을 그대로 보인다(소장자 열람이 정지 제한을 정상과 같이
+    보는 것과 같다). 그림을 비우는 것은 운영자가 그 원작 작품을 직접 제한했을 때뿐이다. 깨지는 시나리오: 원작자 계정 정지 하나로
+    남의 유료 소설의 그림이 모두 빈 자리가 된다."""
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", True)
+    novel = await _public(db_session)
+    original = await _asset(db_session, novel.publisher_id, prefix="assets/situational-image/")
+    await _freeze_pictures(db_session, novel, 6, [(0, "after", original, "original")])
+    buyer = await _reader(db_session)
+    await _login_as(db_client, buyer)
+    assert (await db_client.post(f"{_path(novel, 6)}/purchase", json={"expectedPrice": 30})).status_code == 200
+    await db_session.execute(
+        sa.update(Content)
+        .where(Content.id == novel.content_id)
+        .values(moderation_status=ModerationStatus.RESTRICTED, restricted_by_suspension=True)
+    )
+    await db_session.commit()
+
+    suspended = await _read(db_client, _path(novel, 6), buyer)
+
+    assert _shown(suspended) == [(0, "after", 0, "original", True, None)]
+
+
 async def test_the_admin_chapter_view_carries_the_pictures_readers_get_with_their_asset_ids(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
