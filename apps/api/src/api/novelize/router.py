@@ -71,6 +71,7 @@ from api.llm.dependencies import get_llm_client
 from api.llm.model_access import effective_model, has_novel_premium_access
 from api.novelize.access import require_novelize_access
 from api.novelize.batches import ensure_batches
+from api.novel_public.illustration_reads import owner_withholdings
 from api.novel_public.purchases import (
     chapters_with_unrefunded_purchase,
     lock_publisher_and_buyers,
@@ -1518,23 +1519,44 @@ def _revision_summary(revision: NovelChapterRevision) -> NovelRevisionSummary:
 
 
 async def _revision_response(db: AsyncSession, revision: NovelChapterRevision) -> NovelRevisionResponse:
-    """개정 본문·문단·블록과, 삽화 스위치가 켜져 있으면 그 개정의 삽화(문단에 붙은 것과 위치 확인 필요인 것)."""
+    """개정 본문·문단·블록과, 삽화 스위치가 켜져 있으면 그 개정의 삽화(문단에 붙은 것과 위치 확인 필요인 것). 운영자가 내린
+    그림과 운영자가 이용제한한 원작의 그림은 독자 화면과 같이 주소 없이 까닭만 싣는다."""
     paragraphs = split_paragraphs(revision.body)
     views = await placement_views(db, revision) if settings.novel_illustrations_enabled else []
-    shown = [
-        NovelIllustration(
-            id=view.row.id,
-            anchor_block_id=view.row.anchor_block_id,
-            placement=view.row.placement,
-            order=view.row.sort_order,
-            asset_id=view.row.asset_id,
-            source=view.row.source,
-            url=view.url,
-            width=view.width,
-            height=view.height,
+    withholdings = (
+        await owner_withholdings(
+            db,
+            [view.row for view in views],
+            {view.row.asset_id: view.asset for view in views},
+            content_id=(
+                await db.execute(
+                    select(Novel.content_id)
+                    .join(NovelChapter, NovelChapter.novel_id == Novel.id)
+                    .where(NovelChapter.id == revision.chapter_id)
+                )
+            ).scalar_one(),
         )
-        for view in views
-    ]
+        if views
+        else {}
+    )
+    shown: list[NovelIllustration] = []
+    for view in views:
+        withheld = withholdings.get(view.row.id)
+        shown.append(
+            NovelIllustration(
+                id=view.row.id,
+                anchor_block_id=view.row.anchor_block_id,
+                placement=view.row.placement,
+                order=view.row.sort_order,
+                asset_id=view.row.asset_id,
+                source=view.row.source,
+                url=view.url if withheld is None else None,
+                width=view.width,
+                height=view.height,
+                withheld=withheld.withheld if withheld is not None else None,
+                withheld_reason=withheld.reason if withheld is not None else None,
+            )
+        )
     return NovelRevisionResponse(
         **_revision_summary(revision).model_dump(),
         body=revision.body,

@@ -428,6 +428,41 @@ async def test_a_taken_down_picture_blocks_publishing_before_the_pass_memory(
     assert await _screenings(db_session, setup.novel_id) == [("rejected", ["illustration"])]
 
 
+async def test_a_rejection_for_taken_down_bytes_names_the_pictures_that_carry_them(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ScreenLLM,
+    same_bytes: dict[str, bytes],
+) -> None:
+    """내린 바이트로 거부할 때 그 바이트를 담은 그림의 자산 id 를 한 번씩 싣는다(작가 화면이 어느 그림인지 가리킨다). 거부 기록은
+    지금처럼 하나다. 깨지는 시나리오: 작가가 어느 그림을 떼야 하는지 몰라 다시 눌러 거부 상한을 또 쓴다."""
+    setup = await _novel(db_client, db_session, monkeypatch)
+    chapter = setup.chapters[0]
+    fine = await _asset(db_session, setup.room.user_id)
+    reupload = await _asset(db_session, setup.room.user_id, prefix="assets/novel-illustration/")
+    same_bytes[_display_key(reupload)] = b"taken-down-picture"
+    sha = hashlib.sha256(b"taken-down-picture").hexdigest()
+    db_session.add(NovelIllustrationTakedown(content_sha256=sha, asset_id=uuid.uuid4(), reason="운영 정책 위반"))
+    await db_session.commit()
+    await _stack(
+        db_session,
+        chapter,
+        [(0, "after", fine, "generated"), (1, "after", reupload, "upload"), (2, "before", reupload, "upload")],
+    )
+
+    resp = await _publish(db_client, setup.novel_id, chapter)
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {
+        "code": "NOVEL_SCREENING_REJECTED",
+        "chapterOrdinal": 1,
+        "flaggedParts": ["illustration"],
+        "takenDownAssetIds": [str(reupload.id)],
+    }
+    assert await _screenings(db_session, setup.novel_id) == [("rejected", ["illustration"])]
+
+
 async def test_a_chapter_with_more_than_ten_placed_pictures_is_not_published(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
 ) -> None:
@@ -558,6 +593,7 @@ async def test_a_takedown_during_screening_is_seen_after_locking(
     resp = await _publish(db_client, setup.novel_id, chapter)
 
     assert (resp.status_code, resp.json()["detail"]["flaggedParts"]) == (400, ["illustration"])
+    assert resp.json()["detail"]["takenDownAssetIds"] == [str(picture.id)]
     assert await _frozen(db_session, chapter.id) is None
 
 
@@ -946,3 +982,142 @@ async def test_an_operator_takes_a_picture_down_from_every_edition_and_its_bytes
         .where(AdminActionLog.action_type == "novel-illustration-takedown")
     )
     assert logged == 1
+
+
+# ── 작가 읽기 ────────────────────────────────────────────────────────────────
+async def _owner_chapter(client: httpx.AsyncClient, novel_id: uuid.UUID, chapter: NovelChapter) -> dict[str, Any]:
+    resp = await client.get(f"/novels/{novel_id}/chapters/{chapter.id}")
+    assert resp.status_code == 200, resp.text
+    body: dict[str, Any] = resp.json()["revision"]
+    return body
+
+
+def _owner_shown(revision: dict[str, Any]) -> list[tuple[Any, ...]]:
+    return [
+        (item["assetId"], item["url"] is not None, item["withheld"], item["withheldReason"])
+        for item in [*revision["illustrations"], *revision["unplacedIllustrations"]]
+    ]
+
+
+async def test_the_author_sees_a_taken_down_picture_withheld_with_its_reason_matched_by_its_bytes(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    same_bytes: dict[str, bytes],
+) -> None:
+    """운영자가 내린 그림은 작가의 화·개정 응답에서도 주소 없이 사유만 남는다. 다시 공개가 바이트로 막으므로 같은 파일을 다시
+    올린 새 자산도, 위치 확인 필요인 그림도 같이 보인다. 깨지는 시나리오: 작가에게는 그림이 그대로 보여 다시 공개를 누르고,
+    어느 그림인지 모르는 거부로 하루 거부 상한을 쓴다."""
+    setup = await _novel(db_client, db_session, monkeypatch)
+    chapter = setup.chapters[0]
+    taken = await _asset(db_session, setup.room.user_id)
+    reupload = await _asset(db_session, setup.room.user_id, prefix="assets/novel-illustration/")
+    fine = await _asset(db_session, setup.room.user_id)
+    same_bytes[_display_key(taken)] = b"bad-picture"
+    same_bytes[_display_key(reupload)] = b"bad-picture"
+    revision = await _stack(
+        db_session,
+        chapter,
+        [(0, "after", taken, "generated"), (1, "after", reupload, "upload"), (1, "after", fine, "generated")],
+    )
+    db_session.add(NovelChapterIllustration(revision_id=revision.id, sort_order=0, asset_id=taken.id, source="generated"))
+    db_session.add(
+        NovelIllustrationTakedown(
+            content_sha256=hashlib.sha256(b"bad-picture").hexdigest(), asset_id=taken.id, reason="운영정책 위반 그림"
+        )
+    )
+    await db_session.commit()
+
+    current = await _owner_chapter(db_client, setup.novel_id, chapter)
+    by_id = await db_client.get(f"/novels/{setup.novel_id}/chapters/{chapter.id}/revisions/{revision.id}")
+
+    expected = [
+        (str(taken.id), False, "taken_down", "운영정책 위반 그림"),
+        (str(reupload.id), False, "taken_down", "운영정책 위반 그림"),
+        (str(fine.id), True, None, None),
+        (str(taken.id), False, "taken_down", "운영정책 위반 그림"),
+    ]
+    assert _owner_shown(current) == expected
+    assert by_id.status_code == 200, by_id.text
+    assert _owner_shown(by_id.json()) == expected
+
+
+@pytest.mark.parametrize("case", ["operator", "suspension"])
+async def test_the_author_sees_original_pictures_withheld_while_an_operator_restricts_the_original(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    """운영자가 원작을 직접 이용제한하면 작가 화면에서도 원작 그림 자리만 비고(독자와 같은 규칙), 작가 자신의 그림은 그대로다.
+    원작자 정지로 걸린 일괄 제한은 독자처럼 원작 그림을 그대로 보인다."""
+    setup = await _novel(db_client, db_session, monkeypatch)
+    chapter = setup.chapters[0]
+    novel = await db_session.get_one(Novel, setup.novel_id)
+    original = await _asset(db_session, setup.room.user_id, prefix="assets/situational-image/")
+    mine = await _asset(db_session, setup.room.user_id)
+    await _stack(db_session, chapter, [(0, "after", original, "original"), (0, "after", mine, "generated")])
+    await db_session.execute(
+        sa.update(Content)
+        .where(Content.id == novel.content_id)
+        .values(moderation_status=ModerationStatus.RESTRICTED, restricted_by_suspension=case == "suspension")
+    )
+    await db_session.commit()
+
+    shown = _owner_shown(await _owner_chapter(db_client, setup.novel_id, chapter))
+
+    if case == "operator":
+        assert shown == [(str(original.id), False, "original_restricted", None), (str(mine.id), True, None, None)]
+    else:
+        assert shown == [(str(original.id), True, None, None), (str(mine.id), True, None, None)]
+
+
+async def test_the_author_read_downloads_no_picture_while_nothing_is_taken_down(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """내린 그림이 하나도 없으면 작가 읽기는 그림을 내려받지 않는다 — 작가 화면의 응답은 편집할 때마다 나가므로 저장소 왕복을
+    더하지 않는다. 내림이 하나라도 생기면 바이트로 대조한다."""
+    setup = await _novel(db_client, db_session, monkeypatch)
+    chapter = setup.chapters[0]
+    picture = await _asset(db_session, setup.room.user_id)
+    await _stack(db_session, chapter, [(0, "after", picture, "generated")])
+    fetched: list[str] = []
+
+    def download(key: str) -> bytes:
+        fetched.append(key)
+        return key.encode()
+
+    monkeypatch.setattr(illustration_screening, "download_object", download)
+
+    clean = _owner_shown(await _owner_chapter(db_client, setup.novel_id, chapter))
+    db_session.add(NovelIllustrationTakedown(content_sha256="0" * 64, asset_id=uuid.uuid4(), reason="다른 그림"))
+    await db_session.commit()
+    after_a_takedown = _owner_shown(await _owner_chapter(db_client, setup.novel_id, chapter))
+
+    assert clean == after_a_takedown == [(str(picture.id), True, None, None)]
+    assert fetched == [_display_key(picture)]
+
+
+async def test_a_storage_failure_on_the_author_read_still_withholds_the_taken_down_asset_itself(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    same_bytes: dict[str, bytes],
+) -> None:
+    """작가 읽기에서 그림을 못 내려받아도 응답은 나간다(편집 결과를 돌려주는 자리라 저장소 장애로 실패시키지 않는다). 그때는
+    내린 그 자산만 자산 id 로 비운다."""
+    setup = await _novel(db_client, db_session, monkeypatch)
+    chapter = setup.chapters[0]
+    taken = await _asset(db_session, setup.room.user_id)
+    reupload = await _asset(db_session, setup.room.user_id)
+    await _stack(db_session, chapter, [(0, "after", taken, "generated"), (0, "after", reupload, "generated")])
+    sha = hashlib.sha256(_display_key(taken).encode()).hexdigest()
+    db_session.add(NovelIllustrationTakedown(content_sha256=sha, asset_id=taken.id, reason="신고"))
+    await db_session.commit()
+    from botocore.exceptions import ClientError
+
+    def broken(key: str) -> bytes:
+        raise ClientError({"Error": {"Code": "500"}}, "GetObject")
+
+    monkeypatch.setattr(illustration_screening, "download_object", broken)
+
+    shown = _owner_shown(await _owner_chapter(db_client, setup.novel_id, chapter))
+
+    assert shown == [(str(taken.id), False, "taken_down", "신고"), (str(reupload.id), True, None, None)]

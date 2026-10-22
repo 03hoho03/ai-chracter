@@ -21,7 +21,7 @@
 화 행만 잠그므로 쓰기 구간과 겹칠 수 있는데, 그러면 심사한 개정을 얼린다 — 공개본은 늘 심사를 거친 글이다.
 
 **심사 실패는 공개하지 않는다**(fail-closed). 걸리면 400 `NOVEL_SCREENING_REJECTED`(어느 화의 어느 글인지 — 사유 문구는
-화면이 가진다), 심사 호출이 실패하면 503 `NOVEL_SCREENING_UNAVAILABLE`(작품 발행 심사의 장애와 같은 코드 — 기다렸다 다시
+화면이 가진다. 운영자가 내린 그림으로 걸렸으면 그 그림들의 자산 id `takenDownAssetIds` 도), 심사 호출이 실패하면 503 `NOVEL_SCREENING_UNAVAILABLE`(작품 발행 심사의 장애와 같은 코드 — 기다렸다 다시
 시도하면 되는 일이라), 오늘 거부 상한이나 시간당 심사 호출 상한에 닿았으면 429.
 
 **첫 공개 운영자 승인** — 정책 스위치(`novel_public_policy_v2_enabled`)가 켜졌고 소설이 아직 연재권 잠금을 갖지 않았으면
@@ -821,10 +821,10 @@ async def publish_novel(
     # 심사에 실을 그림(첫 자리만 — 같은 바이트가 두 자리에 있으면 한 번). 운영자가 내린 바이트가 있으면 심사 없이 거부하므로
     # 통과 기억도 보지 않는다(내림이 기억보다 먼저다).
     to_screen: list[int] = []
-    taken_down = False
+    taken_down: set[str] = set()
     if plan.items or shas:
         async with session_factory() as read_db:
-            taken_down = bool(await taken_down_shas(read_db, shas))
+            taken_down = await taken_down_shas(read_db, shas)
             if not taken_down:
                 remembered = await remembered_shas(read_db, shas, model=picture_model, version=version)
                 for index, sha in enumerate(shas):
@@ -859,9 +859,9 @@ async def publish_novel(
 
     novel = await _lock_and_replan(db, novel_id, user_id, body, plan)
     # 심사를 기다리는 사이 운영자가 그 바이트를 내렸을 수 있다 — 잠근 뒤 다시 본다.
-    taken_down = taken_down or bool(await taken_down_shas(db, shas))
+    taken_down |= await taken_down_shas(db, shas)
     text_rejected = verdict is not None and not verdict.passed
-    pictures_rejected = taken_down or (picture_verdict is not None and not picture_verdict.passed)
+    pictures_rejected = bool(taken_down) or (picture_verdict is not None and not picture_verdict.passed)
     if text_rejected or pictures_rejected:
         flagged: list[NovelScreeningPart] = list(verdict.flagged_parts) if verdict is not None and text_rejected else []
         reasons = [verdict.reason] if verdict is not None and text_rejected else []
@@ -881,11 +881,17 @@ async def publish_novel(
         )
         await db.commit()
         await count_rejection(user_id, now)
+        # 내린 바이트로 거부하면 그 바이트를 담은 그림의 자산 id 를 한 번씩 싣는다 — 작가 화면이 바꾸거나 뗄 그림을 가리킨다.
+        # 심사가 거부한 그림은 한 호출의 판정이라 그림을 가리키지 못한다.
+        taken_down_ids = list(
+            dict.fromkeys(picture.asset_id for picture, sha in zip(pictures, shas, strict=True) if sha in taken_down)
+        )
         raise _error(
             status.HTTP_400_BAD_REQUEST,
             "NOVEL_SCREENING_REJECTED",
             chapterOrdinal=plan.chapter.ordinal if plan.chapter is not None else None,
             flaggedParts=flagged,
+            **({"takenDownAssetIds": [str(asset_id) for asset_id in taken_down_ids]} if taken_down_ids else {}),
         )
     if not plan.writes_nothing:
         terms_version = await current_legal_version(db, "terms", now=datetime.now(UTC))

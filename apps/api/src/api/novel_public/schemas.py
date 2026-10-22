@@ -10,6 +10,7 @@ from api.db.models.novel import (
     NovelContentType,
     NovelIllustrationPlacement,
     NovelIllustrationSource,
+    NovelIllustrationWithheld,
     NovelPublicationModerationStatus,
     NovelPublicationReviewStatus,
     NovelPublicationVisibility,
@@ -277,10 +278,6 @@ class PublicNovelEdition(CamelModel):
     edition: int
     published_at: datetime
     change_summary: str | None
-
-
-# 그림 자리만 남기고 주소를 싣지 않는 까닭 — 운영자가 그 그림을 내림, 운영자가 원작을 이용제한해 원작 그림을 뺌.
-NovelIllustrationWithheld = Literal["taken_down", "original_restricted"]
 
 
 class PublicNovelIllustration(CamelModel):

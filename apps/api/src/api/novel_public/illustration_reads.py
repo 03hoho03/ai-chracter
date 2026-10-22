@@ -13,27 +13,52 @@
   그림만 비운다. 원작자 계정 정지로 걸린 일괄 제한은 빼고 본다 — 원작자 탈퇴와 같이 그림을 그대로 보인다(소장자 열람 조건이
   정지 제한을 정상과 같이 보는 것과 같은 판단). 글과 다른 그림은 그대로다. 원작자의 탈퇴·비공개도 그림을 빼지 않는다(연재권이
   고정된 소설의 이용은 이어진다).
-환급은 없다 — 그림 자리만 비우고 판은 그대로다."""
+환급은 없다 — 그림 자리만 비우고 판은 그대로다.
 
+**작가 화면**: 작가 자신의 화·개정 응답도 같은 두 까닭으로 자리만 남긴다(`owner_withholdings`). 그 개정의 그림 전부에 걸고, 내림은
+다시 공개와 같이 바이트로 본다."""
+
+import asyncio
+import logging
 import uuid
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
+from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from api.core.config import settings
 from api.core.s3 import build_display_key, generate_presigned_get_url
+from api.core.sentry import capture_dependency_failure
 from api.db.models.content import Content, ModerationStatus
 from api.db.models.media import Asset
 from api.db.models.novel import (
+    NovelChapterIllustration,
     NovelChapterRevision,
     NovelIllustrationPlacement,
     NovelIllustrationSource,
     NovelIllustrationTakedown,
+    NovelIllustrationWithheld,
 )
-from api.novel_public.schemas import NovelIllustrationWithheld, PublicNovelIllustration
+from api.novel_public.illustration_screening import download_display, sha256_of
+from api.novel_public.schemas import PublicNovelIllustration
 from api.novelize.illustrations import placements_of
+
+logger = logging.getLogger(__name__)
+
+
+async def _original_restricted(db: AsyncSession, content_id: uuid.UUID) -> bool:
+    """운영자가 원작을 이용제한·삭제한 동안인가(모듈 docstring 의 원작 그림 규칙)."""
+    source = (
+        await db.execute(
+            select(Content.moderation_status, Content.restricted_by_suspension).where(Content.id == content_id)
+        )
+    ).one_or_none()
+    # 원작 행이 없으면 운영 제한과 같이 본다(풀어 줄 근거가 없다). 원작자 정지로 걸린 일괄 제한은 빼고 본다.
+    return source is None or (source[0] != ModerationStatus.NORMAL and not source[1])
 
 
 @dataclass(frozen=True)
@@ -86,13 +111,7 @@ async def frozen_illustrations(
         .tuples()
         .all()
     )
-    source = (
-        await db.execute(
-            select(Content.moderation_status, Content.restricted_by_suspension).where(Content.id == content_id)
-        )
-    ).one_or_none()
-    # 원작 행이 없으면 운영 제한과 같이 본다(풀어 줄 근거가 없다). 원작자 정지로 걸린 일괄 제한은 빼고 본다.
-    original_restricted = source is None or (source[0] != ModerationStatus.NORMAL and not source[1])
+    original_restricted = await _original_restricted(db, content_id)
     position = {block_id: index for index, block_id in enumerate(revision.block_ids)}
     rank: dict[tuple[int, str], int] = {}
     shown: list[FrozenIllustration] = []
@@ -140,3 +159,73 @@ def public_illustrations(illustrations: list[FrozenIllustration]) -> list[Public
         )
         for item in illustrations
     ]
+
+
+# ── 작가 화면 ───────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class Withholding:
+    withheld: NovelIllustrationWithheld
+    reason: str | None
+
+
+async def owner_withholdings(
+    db: AsyncSession,
+    rows: Sequence[NovelChapterIllustration],
+    assets: Mapping[uuid.UUID, Asset],
+    *,
+    content_id: uuid.UUID,
+) -> dict[uuid.UUID, Withholding]:
+    """작가 자신의 화·개정 응답에서 자리만 남길 그림(배치 id → 까닭). 독자와 같은 두 까닭이고 사유도 같다 — 작가가 독자가 보는
+    빈 자리를 알고, 다시 공개 전에 바꾸거나 뗄 그림을 안다. 판·심사와 무관하게 그 개정의 모든 배치(위치 확인 필요 포함)에 건다.
+
+    내림은 다시 공개가 거부하는 기준과 같게 그림의 바이트(정지 변형의 sha)로 본다 — 같은 파일을 새 자산으로 다시 올린 그림도
+    내림으로 보인다. 그래서 독자 읽기(자산 id 로 본다)와 달리, 내림 이전에 얼린 판에 같은 바이트의 다른 자산이 있으면 독자에게는
+    보이고 작가에게는 비어 보인다(그 화는 다시 공개할 수 없으므로 작가 화면 쪽이 맞다). `assets` 는 `rows` 의 자산이다."""
+    takedowns = await _owner_takedowns(db, assets)
+    restricted = any(row.source == "original" for row in rows) and await _original_restricted(db, content_id)
+    withheld: dict[uuid.UUID, Withholding] = {}
+    for row in rows:
+        if row.asset_id in takedowns:
+            withheld[row.id] = Withholding("taken_down", takedowns[row.asset_id])
+        elif row.source == "original" and restricted:
+            withheld[row.id] = Withholding("original_restricted", None)
+    return withheld
+
+
+async def _owner_takedowns(db: AsyncSession, assets: Mapping[uuid.UUID, Asset]) -> dict[uuid.UUID, str]:
+    """내린 그림인 자산 → 운영자 사유. 내림이 하나도 없으면 내려받지 않는다 — 작가 응답은 편집할 때마다 나가므로 저장소 왕복을
+    내림이 생긴 뒤로 미룬다. 내려받기가 실패하면 응답을 실패시키지 않고(편집 결과를 돌려주는 자리다) 내린 그 자산만 자산 id 로
+    본다."""
+    if not assets or await db.scalar(select(NovelIllustrationTakedown.content_sha256).limit(1)) is None:
+        return {}
+    found = dict(
+        (
+            await db.execute(
+                select(NovelIllustrationTakedown.asset_id, NovelIllustrationTakedown.reason).where(
+                    NovelIllustrationTakedown.asset_id.in_(assets)
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    ids = list(assets)
+    try:
+        data = await asyncio.gather(*(run_in_threadpool(download_display, assets[i].storage_key) for i in ids))
+    except (BotoCoreError, ClientError) as exc:
+        logger.warning("novel_owner_illustration_download_failed: %s", type(exc).__name__)
+        capture_dependency_failure(exc, dependency="s3")
+        return found
+    shas = {asset_id: sha256_of(item) for asset_id, item in zip(ids, data, strict=True)}
+    by_sha = dict(
+        (
+            await db.execute(
+                select(NovelIllustrationTakedown.content_sha256, NovelIllustrationTakedown.reason).where(
+                    NovelIllustrationTakedown.content_sha256.in_(set(shas.values()))
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    return {**{asset_id: by_sha[sha] for asset_id, sha in shas.items() if sha in by_sha}, **found}

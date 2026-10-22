@@ -186,6 +186,7 @@ async def add_revision(
 @dataclass(frozen=True)
 class PlacementView:
     row: NovelChapterIllustration
+    asset: Asset
     url: str
     width: int | None
     height: int | None
@@ -203,6 +204,7 @@ async def placement_views(db: AsyncSession, revision: NovelChapterRevision) -> l
     return [
         PlacementView(
             row=row,
+            asset=assets[row.asset_id],
             url=generate_presigned_get_url(build_display_key(assets[row.asset_id].storage_key)),
             width=assets[row.asset_id].width,
             height=assets[row.asset_id].height,

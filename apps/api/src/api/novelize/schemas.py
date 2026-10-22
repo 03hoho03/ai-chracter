@@ -12,6 +12,7 @@ from api.db.models.novel import (
     NovelContentType,
     NovelIllustrationPlacement,
     NovelIllustrationSource,
+    NovelIllustrationWithheld,
     NovelJobFailureCode,
     NovelJobKind,
     NovelJobStatus,
@@ -500,7 +501,9 @@ class NovelBlock(CamelModel):
 class NovelIllustration(CamelModel):
     """개정에 붙은 삽화 한 장. `id` 는 이 개정의 배치 id 다 — 옮기기·바꾸기·떼기가 이 값으로 고르고, 개정이 바뀌면 새 id 가 된다.
     `anchor_block_id`·`placement` 가 비어 있으면 위치 확인 필요(앵커 문단이 사라진 그림)다. `url` 은 크게 그리는 정지 변형이고,
-    `width`·`height` 는 그림 크기(모르면 null — 화면이 고정 비율 칸에 그린다)다. `order` 는 같은 자리(앵커·앞뒤) 안의 순서다."""
+    `width`·`height` 는 그림 크기(모르면 null — 화면이 고정 비율 칸에 그린다)다. `order` 는 같은 자리(앵커·앞뒤) 안의 순서다.
+    `withheld` 가 차 있으면 독자 화면과 같이 그림 자리만 남는다 — `url` 이 없고, 운영자가 내린 그림이면 `withheld_reason` 에
+    운영자가 적은 사유가 있다. 내린 그림이 든 화는 그 그림을 바꾸거나 떼야 다시 공개할 수 있다."""
 
     id: uuid.UUID
     anchor_block_id: uuid.UUID | None
@@ -508,9 +511,11 @@ class NovelIllustration(CamelModel):
     order: int
     asset_id: uuid.UUID
     source: NovelIllustrationSource
-    url: str
+    url: str | None
     width: int | None
     height: int | None
+    withheld: NovelIllustrationWithheld | None
+    withheld_reason: str | None
 
 
 class NovelRevisionResponse(NovelRevisionSummary):
