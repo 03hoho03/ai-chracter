@@ -3,8 +3,10 @@
 경계 견본과 판정 문구는 측정 데이터라 저장소에 두지 않는다. 여기의 견본·문구는 꼴만 맞춘 지어낸 값이고, 명령은 그것을 쓴
 임시 데이터 폴더를 `--data-dir` 로 받는다."""
 
+import hashlib
 import json
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -141,8 +143,11 @@ def _plants_file(tmp_path: Path) -> Path:
     return path
 
 
-def _run_controls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: Any) -> dict[str, Any]:
-    """가짜 판정자로 대조군 명령을 끝까지 돌린다. `answer(prompt, expected)` 가 판정 값을 정한다."""
+def _run_controls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: Any, extra: Sequence[str] = ()
+) -> dict[str, Any]:
+    """가짜 판정자로 대조군 명령을 끝까지 돌린다. `answer(prompt, expected)` 가 판정 값을 정한다. `extra` 는 judge 하위 명령
+    뒤에 붙는 인자다 — 넣는 경계 견본은 기본 견본 파일의 줄을 나눠 담은 것이어야 기대 판정 값을 찾는다."""
     from memory_eval_cli import main
 
     plant_set = PlantSet(raw={}, plants=[_speaker("spk01")], abstains=[])
@@ -165,7 +170,7 @@ def _run_controls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: Any) 
 
     monkeypatch.setattr(judge_mod, "HaikuJudge", FakeJudge)
     argv = ["--run", str(tmp_path), "--data-dir", str(data), "--cap-usd", "1", "--halt-usd", "1", "--bundle", "t"]
-    assert main([*argv, "judge", "--plants", str(_plants_file(tmp_path)), "--controls", "--allow-paid"]) == 0
+    assert main([*argv, "judge", "--plants", str(_plants_file(tmp_path)), "--controls", "--allow-paid", *extra]) == 0
     result: dict[str, Any] = json.loads((tmp_path / "judge" / "controls.json").read_text(encoding="utf-8"))
     return result
 
@@ -219,6 +224,66 @@ def test_speaker_misses_are_no_category_gate_but_count_in_the_three_way_total(
     assert out["passed"] is False
     assert out["observed"]["accuracyByKind"]["speaker"] < 0.9
     assert out["legacy"]["passed"] is False
+
+
+# ---------------------------------------------------------------- 경계 견본 파일 여럿
+
+
+def _split_boundary_files(tmp_path: Path) -> list[Path]:
+    """지어낸 견본 줄을 앞뒤 두 파일로 나눠 쓴다 — 두 파일을 합치면 기본 견본 파일과 같은 줄이다."""
+    rows = _boundary_rows()
+    half = len(rows) // 2
+    paths = []
+    for name, part in (("boundary-a.json", rows[:half]), ("boundary-b.json", rows[half:])):
+        path = tmp_path / name
+        path.write_text(json.dumps({"rows": part}, ensure_ascii=False), encoding="utf-8")
+        paths.append(path)
+    return paths
+
+
+def test_several_boundary_files_are_read_together_with_each_files_sha256(tmp_path: Path) -> None:
+    paths = _split_boundary_files(tmp_path)
+    rows, inputs = judge_mod.load_boundary_control_files(_empty_set(), paths)
+    assert [r["item"] for r in rows] == [r["id"] for r in _boundary_rows()]
+    assert inputs == [{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in paths]
+
+
+def test_boundary_ids_shared_across_files_or_with_a_plant_item_are_refused(tmp_path: Path) -> None:
+    first, _ = _split_boundary_files(tmp_path)
+    again = tmp_path / "again.json"
+    again.write_bytes(first.read_bytes())
+    with pytest.raises(SystemExit, match="겹친다"):
+        judge_mod.load_boundary_control_files(_empty_set(), [first, again])
+    clash = _one_row_file(tmp_path, id="spk01")
+    with pytest.raises(SystemExit, match="심기 표 문항과 겹친다"):
+        judge_mod.load_boundary_control_files(_empty_set(hidden=frozenset({"spk01"})), [first, clash])
+
+
+def test_the_controls_command_takes_several_boundary_files_and_records_their_sha256(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = _split_boundary_files(tmp_path)
+    out = _run_controls(tmp_path, monkeypatch, lambda _p, expected: expected, ["--boundary-controls", *map(str, paths)])
+    assert Counter(r.get("source", "plants") for r in out["rows"])["boundary"] == len(_boundary_rows())
+    assert out["boundaryInputs"] == [
+        {"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in paths
+    ]
+
+
+def test_the_controls_command_still_reads_the_data_folder_file_when_no_boundary_files_are_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = _run_controls(tmp_path, monkeypatch, lambda _p, expected: expected)
+    default = tmp_path / "data" / BOUNDARY_CONTROLS_FILE
+    assert out["boundaryInputs"] == [{"path": str(default), "sha256": hashlib.sha256(default.read_bytes()).hexdigest()}]
+
+
+def test_boundary_files_need_the_controls_mode(tmp_path: Path) -> None:
+    from memory_eval_cli import main
+
+    argv = ["--run", str(tmp_path), "--data-dir", str(_data_dir(tmp_path)), "judge"]
+    with pytest.raises(SystemExit):
+        main([*argv, "--plants", str(_plants_file(tmp_path)), "--dry-run", "--boundary-controls", "x.json"])
 
 
 def _rows(kind: str, expected: str, judged: str | None, n: int) -> list[dict[str, Any]]:
