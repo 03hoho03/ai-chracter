@@ -1,10 +1,17 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { ChevronDown } from "lucide-react";
-import { useId, useState } from "react";
+import { Fragment, useId, useState } from "react";
 
-import { useNovelChapterQuery, type AdminNovelDetailResponse } from "@/entities/admin-novel";
+import {
+  useNovelChapterQuery,
+  type AdminNovelChapterResponse,
+  type AdminNovelDetailResponse,
+} from "@/entities/admin-novel";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { QueryState } from "@/shared/ui/QueryState";
+
+import { illustrationKey, illustrationSpots } from "../lib/chapterIllustrations";
+import { ChapterIllustration } from "./ChapterIllustration";
 
 type NovelChapter = AdminNovelDetailResponse["chapters"][number];
 
@@ -93,26 +100,39 @@ function ChapterBody({ novelId, chapterId }: { novelId: string; chapterId: strin
 
   return (
     <QueryState query={chapterQuery} surface="card" errorMessage="이 화의 공개본을 불러오지 못했어요.">
-      {(chapter) => (
-        <div className="flex max-w-prose flex-col gap-4">
-          {!!chapter.authorNote && (
-            <div className="flex flex-col gap-1">
-              <h3 className="text-sm font-medium text-foreground">작가의 말</h3>
-              <p className="whitespace-pre-wrap break-keep rounded-lg bg-secondary p-3 text-sm text-foreground wrap-anywhere">
-                {chapter.authorNote}
-              </p>
-            </div>
-          )}
-          <div className="flex flex-col gap-3 text-sm leading-relaxed text-foreground">
-            {chapter.paragraphs.map((paragraph, index) => (
-              // 문단은 공개본 안에서 순서만으로 정체가 정해지고 다시 정렬되지 않아 순번이 곧 키다.
-              <p key={index} className="whitespace-pre-wrap break-keep wrap-anywhere">
-                {paragraph}
-              </p>
-            ))}
-          </div>
+      {(chapter) => <ChapterText chapter={chapter} />}
+    </QueryState>
+  );
+}
+
+/** 작가의 말과 문단. 그림은 독자 화면처럼 그 문단의 앞·뒤 제자리에 선다 — 그림이 없으면 글만이다. */
+function ChapterText({ chapter }: { chapter: AdminNovelChapterResponse }) {
+  const spot = illustrationSpots(chapter);
+
+  return (
+    <div className="flex max-w-prose flex-col gap-4">
+      {!!chapter.authorNote && (
+        <div className="flex flex-col gap-1">
+          <h3 className="text-sm font-medium text-foreground">작가의 말</h3>
+          <p className="whitespace-pre-wrap break-keep rounded-lg bg-secondary p-3 text-sm text-foreground wrap-anywhere">
+            {chapter.authorNote}
+          </p>
         </div>
       )}
-    </QueryState>
+      <div className="flex flex-col gap-3 text-sm leading-relaxed text-foreground">
+        {chapter.paragraphs.map((paragraph, index) => (
+          // 문단은 공개본 안에서 순서만으로 정체가 정해지고 다시 정렬되지 않아 순번이 곧 키다.
+          <Fragment key={index}>
+            {spot("before", index).map((illustration) => (
+              <ChapterIllustration key={illustrationKey(illustration)} illustration={illustration} />
+            ))}
+            <p className="whitespace-pre-wrap break-keep wrap-anywhere">{paragraph}</p>
+            {spot("after", index).map((illustration) => (
+              <ChapterIllustration key={illustrationKey(illustration)} illustration={illustration} />
+            ))}
+          </Fragment>
+        ))}
+      </div>
+    </div>
   );
 }

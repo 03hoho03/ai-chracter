@@ -49,6 +49,13 @@ const ACTION_EFFECT: Record<AdminContentActionType, string> = {
   reject: "",
 };
 
+/** 이 작품에서 가져와 노벨 삽화로 쓴 원작 이미지는 작품이 닫혀 있는 동안 독자에게 가려진다(소설의 글과 다른 그림은 그대로).
+ * 삽화가 꺼져 있으면 가릴 그림이 없을 뿐 문장은 참이라 스위치를 보지 않는다. */
+const ORIGINAL_ILLUSTRATIONS_NOTE: Record<"restrict" | "delete", string> = {
+  restrict: "이 작품에서 가져온 노벨 삽화(원작 이미지)는 제한 동안 독자에게 보이지 않아요.",
+  delete: "이 작품에서 가져온 노벨 삽화(원작 이미지)도 독자에게 더는 보이지 않아요.",
+};
+
 const SUCCESS_MESSAGE: Record<AdminContentActionType, string> = {
   restrict: "이용제한을 부과했어요.",
   delete: "삭제 처리했어요.",
@@ -138,6 +145,7 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
             <DialogTitle>{ACTION_TITLE[action]}</DialogTitle>
             <DialogDescription>
               <span className="font-medium text-foreground">{contentName}</span>에 대해 {ACTION_EFFECT[action]}
+              {isClosing && ` ${ORIGINAL_ILLUSTRATIONS_NOTE[action]}`}
             </DialogDescription>
           </DialogHeader>
 
