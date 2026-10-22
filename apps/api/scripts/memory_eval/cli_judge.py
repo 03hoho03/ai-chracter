@@ -779,6 +779,20 @@ def cmd_v4_preview(args: argparse.Namespace) -> int:
     return _v4_judge(args, split="dev")
 
 
+def cmd_v4_power_table(args: argparse.Namespace) -> int:
+    """봉인 전에 실제 시험 n 으로 "통과 최소 불일치" 표를 낸다 — 판정 규칙과 같은 상수(문턱)를 읽는다. 유료 호출·파일 읽기 없음."""
+    from memory_eval.verdict_v4 import power_table
+
+    sizes: dict[str, int] = {}
+    for item in args.n:
+        key, _, value = item.partition("=")
+        if not value.isdigit():
+            raise SystemExit(f"표본은 '키=정수' 꼴이다: {item!r}")
+        sizes[key] = int(value)
+    _print(power_table(sizes, max_c=args.max_c))
+    return 0
+
+
 def _v4_judge(args: argparse.Namespace, *, split: str) -> int:
     from memory_eval.judge import ensure_unique_probe_rows
     from memory_eval.verdict_v4 import v4_verdict
@@ -1600,6 +1614,16 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     )
     _v4_args(p, out_default="<원자료>/b1/preview/verdict-dev.json")
     p.set_defaults(fn=cmd_v4_preview)
+
+    p = sub.add_parser("v4-power-table", help="봉인 전 통과 최소 불일치 표 — 실제 시험 n 마다 규칙 문턱의 최소 b")
+    p.add_argument(
+        "--n",
+        nargs="+",
+        required=True,
+        help="표본 — 'secret:story=84' 꼴(키 secret:<레인>·premise:<레인>·effect:<E1|E2>·nonInferiority)",
+    )
+    p.add_argument("--max-c", type=int, default=5, help="반대쪽 불일치 c 를 0 부터 이 값까지")
+    p.set_defaults(fn=cmd_v4_power_table)
 
     from memory_eval import judge_agreement as ja
 

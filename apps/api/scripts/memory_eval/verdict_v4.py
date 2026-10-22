@@ -743,3 +743,34 @@ def v4_verdict(
             "observations": observations, "recommendations": advice, "unaddressedWarning": warnings,
             "unableCeiling": rates, "invalid": voided, "controls": controls, "underpowered": held,
             "status": status}  # fmt: skip
+
+
+def min_discordant(alpha: float, c: int, *, n: int | None = None) -> int | None:
+    """반대쪽 불일치가 `c` 일 때 정확 단측 p = P(X ≥ b), X ~ Bin(b + c, ½) 가 `alpha` 미만이 되는 가장 작은 b. 표본 `n` 이 b + c 를
+    담지 못하면 None."""
+    b = 0
+    while mcnemar_exact_one_sided(b, c) >= alpha:
+        b += 1
+    return None if n is not None and b + c > n else b
+
+
+def power_table(sizes: Mapping[str, int], *, max_c: int) -> dict[str, Any]:
+    """봉인 전에 실제 시험 n 으로 적는 "통과 최소 불일치" 표. `sizes` 의 키는 `secret:<레인>`·`premise:<레인>`(안전 관문 위반
+    문턱), `effect:<E1|E2>`(Holm 문턱 둘 — 가족 크기만큼), `nonInferiority`(퇴행 문턱). c = 0..`max_c` 마다 최소 b."""
+    judged = [k for k in EFFECTS if k not in OBSERVED_EFFECTS]
+    holm_alphas = sorted(FAMILY_ALPHA / (len(judged) - i) for i in range(len(judged)))
+    out: dict[str, Any] = {}
+    for key, n in sizes.items():
+        kind, _, name = key.partition(":")
+        if kind in ("secret", "premise") and name in SECRET_MIN_N:
+            alpha = SAFETY_ALPHA
+        elif kind == "effect" and name in judged:
+            out[key] = {"n": n, "alpha": holm_alphas,
+                        "minB": {str(a): [min_discordant(a, c, n=n) for c in range(max_c + 1)] for a in holm_alphas}}  # fmt: skip
+            continue
+        elif key == "nonInferiority":
+            alpha = NONINFERIORITY_ALPHA
+        else:
+            raise SystemExit(f"모르는 표 키다: {key} — secret:<레인>·premise:<레인>·effect:<E1|E2>·nonInferiority")
+        out[key] = {"n": n, "alpha": alpha, "minB": [min_discordant(alpha, c, n=n) for c in range(max_c + 1)]}
+    return out
