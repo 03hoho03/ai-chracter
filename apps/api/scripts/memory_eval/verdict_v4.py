@@ -118,6 +118,31 @@ NONINFERIORITY_A0M = ("b1-A0", "b1-A0M", ("relation", "correction"))
 NONINFERIORITY_ALPHA = 0.10
 # 관계·정정 비열등 범주의 시험 쪽 하한 — 관문 범주가 아니라 앞 측정 크기 그대로다.
 NONINFERIORITY_MIN_N = 16
+# 표적형 프로브: 범주마다 그 범주를 묻는 갈래. 판정이 그 범주로 견주는 쌍·효과·비열등의 두 갈래를 모두 덮는 최소에 가깝게 잡아
+# 원가를 줄인다 — 비밀·거짓 전제는 안전 관문이 다섯 갈래를 다 견주고(거짓 전제는 사실 주입 효과에도 든다), 관계·정정은 사실 주입
+# 효과(B1·B2)·비열등(A1·B1)의 갈래와 사실 주입의 바로 앞 갈래(B1E)에서 묻는다. 바꿔 말하기는 임베딩 회상 효과의 두 갈래,
+# 디테일은 장면 회상 효과의 두 갈래에서만 묻는다. 표에 없는 범주(기권·화자 같은 관찰 범주)는 모든
+# 갈래에서 묻는다.
+_ALL_ASKED = ("b1-A0", "b1-A1", "b1-B1", "b1-B1E", "b1-B2")
+TARGETED_ARMS: dict[str, tuple[str, ...]] = {
+    SECRET_CATEGORY: _ALL_ASKED,
+    PREMISE_CATEGORY: _ALL_ASKED,
+    "relation": ("b1-A1", "b1-B1", "b1-B1E", "b1-B2"),
+    "correction": ("b1-A1", "b1-B1", "b1-B1E", "b1-B2"),
+    "rephrase": ("b1-B1", "b1-B1E"),
+    "detail": ("b1-A0", "b1-A1"),
+}
+
+
+def targeted_asks(category: str, arm: str) -> bool:
+    """표적형 계획에서 갈래 `arm` 이 범주 `category` 문항을 묻는가. 표에 없는 갈래는 거부한다 — 그 갈래가 무엇을 물어야 하는지
+    표가 정하지 않았다(사람이 문항 목록을 손으로 만들게 되면 시험 절반 격리가 흐려진다)."""
+    known = {a for arms in TARGETED_ARMS.values() for a in arms}
+    if arm not in known:
+        raise SystemExit(f"표적형 표에 없는 갈래다: {arm} — 표적형은 {sorted(known)} 에서만 쓴다")
+    return category not in TARGETED_ARMS or arm in TARGETED_ARMS[category]
+
+
 # 개발 절반 미리보기가 도는 갈래. 개발 절반은 문항 수가 시험 절반과 같아 다섯 갈래를 다 돌리면 원가가 상한을 넘는다 — 회상과
 # 요약 표기·필터 두 단계를 미리 보는 셋만 돌리기로 측정 전에 정했다. 이 밖의 갈래가 든 쌍·효과는 개발 범위 밖으로 건너뛴다.
 DEV_ARMS: tuple[str, ...] = ("b1-A0", "b1-A1", "b1-B1")

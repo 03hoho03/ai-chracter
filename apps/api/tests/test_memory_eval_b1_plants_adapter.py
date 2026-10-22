@@ -403,7 +403,9 @@ def test_the_targeted_table_asks_each_category_in_every_arm_its_comparisons_need
         "relation": five[1:], "correction": five[1:],
         "rephrase": ("b1-B1", "b1-B1E"), "detail": ("b1-A0", "b1-A1"),
     }  # fmt: skip
-    needs = [((a, b), (v4.SECRET_CATEGORY, v4.PREMISE_CATEGORY)) for a, b, _ in v4.SAFETY_PAIRS + v4.REFERENCE_PAIRS]
+    needs: list[tuple[tuple[str, str], tuple[str, ...]]] = [
+        ((a, b), (v4.SECRET_CATEGORY, v4.PREMISE_CATEGORY)) for a, b, _ in v4.SAFETY_PAIRS + v4.REFERENCE_PAIRS
+    ]
     needs += [((a, b), cats) for a, b, cats, _ in v4.EFFECTS.values()]
     needs += [(v4.NONINFERIORITY[:2], v4.NONINFERIORITY[2])]
     for arms, categories in needs:

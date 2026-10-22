@@ -1284,6 +1284,11 @@ def _keep_categories(args: argparse.Namespace, entry: dict[str, Any]) -> bool:
     from memory_eval.judge import judge_kind
 
     categories: list[str] | None = args.categories
+    if args.targeted:
+        from memory_eval.verdict_v4 import targeted_asks
+
+        if not targeted_asks(str(entry.get("category")), args.arm):
+            return False
     return categories is None or judge_kind(entry) in categories
 
 
@@ -1304,6 +1309,11 @@ def _extend_infra(sub: "argparse._SubParsersAction[argparse.ArgumentParser]", pa
         "--categories",
         type=parse_categories,
         help="이 판정 종류의 문항만 계획한다(쉼표 목록, 기본 전부) — 멈춤 기준도 그 계획의 프로브 수",
+    )
+    probe.add_argument(
+        "--targeted",
+        action="store_true",
+        help="범주 → 갈래 표대로 이 갈래가 묻는 범주의 문항만 계획한다(표에 없는 범주는 모든 갈래에서) — --categories 와 겹치면 둘 다 맞는 문항",
     )
     # 범주를 고르면 그 범주 문항이 이번 실행의 계획이다(안전 범주만 보내는 갈래) — 멈춤 기준도 그 계획으로 센다.
     probe.set_defaults(plan_filter=_keep_categories)
