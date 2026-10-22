@@ -46,6 +46,9 @@ const SERVER_CODES: [number, string][] = [
   [409, "NOVEL_REVISION_CONFLICT"],
   [422, "NOVEL_BLOCK_IDS_INVALID"],
   [409, "NOVEL_ILLUSTRATION_LIMIT_EXCEEDED"],
+  [422, "NOVEL_ILLUSTRATION_ANCHOR_INVALID"],
+  [404, "NOVEL_ILLUSTRATION_NOT_FOUND"],
+  [404, "NOVEL_ILLUSTRATIONS_DISABLED"],
   [409, "NOVEL_SOURCE_CHANGED"],
   [409, "NOVEL_JOB_IN_PROGRESS"],
   [409, "NOVELIZE_PRICE_CHANGED"],
@@ -85,6 +88,42 @@ describe("toNovelActionError", () => {
       message: "문단을 맞추지 못해 저장하지 못했어요. 쓴 글을 복사해 두고 취소한 뒤 최신 글에서 다시 골라 주세요.",
       shouldRefetchNovel: true,
     });
+  });
+
+  // 삽화를 옮기거나 떼는 요청이 낡은 판을 기준으로 갔다 — 최신 판을 다시 받아야 다음 요청이 같은 409 를 되풀이하지 않는다.
+  it.each(["moveIllustration", "detachIllustration"] as const)("%s 의 판 충돌 409 는 최신 내용을 다시 받는다", (action) => {
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_REVISION_CONFLICT" }), action)).toEqual({
+      message: "다른 곳에서 먼저 고쳤어요. 최신 내용을 불러왔어요.",
+      shouldRefetchNovel: true,
+    });
+  });
+
+  it("고른 문단이 지금 판에 없으면 다시 고르라고 말하고 최신 내용을 다시 받는다", () => {
+    expect(toNovelActionError(apiError(422, { code: "NOVEL_ILLUSTRATION_ANCHOR_INVALID" }), "moveIllustration")).toEqual({
+      message: "고른 문단이 바뀌었어요. 최신 내용을 불러왔어요. 다시 골라 주세요.",
+      shouldRefetchNovel: true,
+    });
+  });
+
+  it("삽화가 지금 판에 없으면 그사이 바뀌었다고 말하고 최신 내용을 다시 받는다", () => {
+    expect(toNovelActionError(apiError(404, { code: "NOVEL_ILLUSTRATION_NOT_FOUND" }), "detachIllustration")).toEqual({
+      message: "이 삽화가 그사이 바뀌었어요. 최신 내용을 불러왔어요.",
+      shouldRefetchNovel: true,
+    });
+  });
+
+  it("삽화 기능이 꺼졌으면 지금은 할 수 없다고 말하고 상세를 다시 받는다", () => {
+    expect(toNovelActionError(apiError(404, { code: "NOVEL_ILLUSTRATIONS_DISABLED" }), "moveIllustration")).toEqual({
+      message: "지금은 삽화를 넣거나 옮기거나 뗄 수 없어요.",
+      shouldRefetchNovel: true,
+    });
+  });
+
+  it.each([
+    ["moveIllustration", "삽화를 옮기지 못했어요. 잠시 후 다시 시도해주세요."],
+    ["detachIllustration", "삽화를 떼지 못했어요. 잠시 후 다시 시도해주세요."],
+  ] as const)("%s 의 일반 실패는 무엇을 못 했는지 말한다", (action, message) => {
+    expect(toNovelActionError(apiError(500, undefined), action)?.message).toBe(message);
   });
 
   it("판매된 마지막 묶음 409 는 지울 수 없는 이유를 말하고 상세를 다시 받는다", () => {

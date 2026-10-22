@@ -3,8 +3,10 @@ import { Link } from "@tanstack/react-router";
 import { BookOpen, CloudOff, History, PencilLine, Trash2 } from "lucide-react";
 import { useEffect, useId, useState, type RefObject } from "react";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import {
   chaptersInBatch,
+  isNovelIllustrationsOn,
   toEpisodeRangeLabel,
   useNovelChapterQuery,
   type NovelChapterSummary,
@@ -50,6 +52,8 @@ export function BoardEpisodePanel({
   const batchHeadingId = useId();
   const [isFixMode, setIsFixMode] = useState(false);
   const chapterQuery = useNovelChapterQuery(novel.id, chapter.id, chapter.currentRevisionId);
+  // 삽화 조작은 스위치가 켜졌을 때만 있다 — 한 번 읽어 본문으로 내린다.
+  const isIllustrationsOn = isNovelIllustrationsOn(useCloverPricingQuery().data);
   // 지우기는 마지막에 한 번에 만든 화들(마지막 묶음) 단위다 — 그 묶음의 어느 화에서든 지울 수 있고, 함께 지워지는
   // 화들의 범위를 버튼이 말한다.
   const lastChapter = novel.chapters.reduce<NovelChapterSummary | undefined>(
@@ -142,6 +146,8 @@ export function BoardEpisodePanel({
         aiEdit={aiEdit}
         onFocusFallback={focusHeading}
         onDraftDirtyChange={onDraftDirtyChange}
+        isIllustrationsOn={isIllustrationsOn}
+        onFixModeRequest={() => setIsFixMode(true)}
       />
 
       <AuthorNoteEditor novel={novel} chapter={chapter} />
@@ -212,10 +218,21 @@ type ChapterBodyProps = {
   aiEdit: NovelAiEditFlow;
   onFocusFallback: () => void;
   onDraftDirtyChange: (isDirty: boolean) => void;
+  isIllustrationsOn: boolean;
+  onFixModeRequest: () => void;
 };
 
 /** 본문 로딩·실패·본문. 이미 받은 본문이 있으면 다시 받기가 실패해도 그대로 둔다. */
-function ChapterBody({ query, novel, isFixMode, aiEdit, onFocusFallback, onDraftDirtyChange }: ChapterBodyProps) {
+function ChapterBody({
+  query,
+  novel,
+  isFixMode,
+  aiEdit,
+  onFocusFallback,
+  onDraftDirtyChange,
+  isIllustrationsOn,
+  onFixModeRequest,
+}: ChapterBodyProps) {
   if (query.data !== undefined) {
     return (
       <NovelChapterText
@@ -225,6 +242,8 @@ function ChapterBody({ query, novel, isFixMode, aiEdit, onFocusFallback, onDraft
         aiEdit={aiEdit}
         onFocusFallback={onFocusFallback}
         onDraftDirtyChange={onDraftDirtyChange}
+        isIllustrationsOn={isIllustrationsOn}
+        onFixModeRequest={onFixModeRequest}
       />
     );
   }

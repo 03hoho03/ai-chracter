@@ -17,6 +17,7 @@ import {
   useNovelJobQuery,
   chaptersInBatch,
   initialChapterModelId,
+  isNovelIllustrationsOn,
   type NovelAction,
   type NovelChapterModelId,
   type NovelChapterSummary,
@@ -88,7 +89,10 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
   const chainMutation = useCreateChainMutation();
   const regenerateMutation = useRegenerateChapterMutation();
   // 소설 만들기 거절의 문장이 노벨 정책 스위치에 따라 다르다(`toNovelizeForbiddenCopy`).
-  const isPolicyV2Enabled = useCloverPricingQuery().data?.novelPublicPolicyV2Enabled === true;
+  const pricing = useCloverPricingQuery().data;
+  const isPolicyV2Enabled = pricing?.novelPublicPolicyV2Enabled === true;
+  // 다시 만들면 붙인 삽화가 자리를 잃는다는 문장은 삽화를 쓸 수 있을 때만 확인 화면에 싣는다.
+  const isIllustrationsOn = isNovelIllustrationsOn(pricing);
 
   const activeChapterJob: TrackedJob | undefined =
     novel.activeJob && novel.activeJob.kind !== "ai_edit"
@@ -316,6 +320,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
           rangeLabel,
           episodeCount: batchChapters.length,
           hasPendingAiEdits: novel.pendingAiEdits.some((edit) => batchChapterIds.has(edit.chapterId)),
+          isIllustrationsOn,
         }),
         confirmLabel: "다시 만들기",
         options,
