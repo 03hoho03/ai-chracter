@@ -574,6 +574,27 @@ def load_boundary_controls(plant_set: PlantSet, path: Path) -> list[dict[str, An
     return out
 
 
+def load_boundary_control_files(
+    plant_set: PlantSet, paths: Sequence[Path]
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """경계 견본 파일 여럿을 합쳐 읽고, 파일마다 경로와 sha256 을 돌려준다. 파일마다 `load_boundary_controls` 의 검사를 그대로
+    거치고, 파일끼리 id 가 겹쳐도 거부한다 — 겹치면 같은 견본이 대조군 관문에 두 번 실리거나 다른 견본이 같은 이름을 단다. sha256
+    은 대조군 결과에 남겨, 그 관문이 어느 견본 판으로 계산됐는지 나중에 맞춰 볼 수 있게 한다."""
+    rows: list[dict[str, Any]] = []
+    inputs: list[dict[str, str]] = []
+    owner: dict[str, str] = {}
+    for path in paths:
+        for row in load_boundary_controls(plant_set, path):
+            if row["item"] in owner:
+                raise SystemExit(
+                    f"경계 견본 id 가 다른 견본 파일과 겹친다: {path.name} {row['item']} ({owner[row['item']]})"
+                )
+            owner[row["item"]] = path.name
+            rows.append(row)
+        inputs.append({"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    return rows, inputs
+
+
 def control_entry(row: dict[str, Any], plant_set: PlantSet) -> dict[str, Any]:
     """대조군 한 줄의 문항 정보 — 경계 견본은 자기 `entry`, 나머지는 심기 표 문항."""
     entry = row.get("entry")

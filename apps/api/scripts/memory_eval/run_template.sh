@@ -50,3 +50,10 @@ DATABASE_URL="$WORK_DB_URL" uv run --env-file .env python scripts/memory_eval_cl
 
 # 중단된 프로브가 남긴 작업자 서버 내리기(이 트리·작업자 포트만, pid·포트만 출력). --port 는 프로브의 --port 와 같게:
 #   uv run --env-file .env python scripts/memory_eval_cli.py --run "$RUN_DIR" probe-cleanup --port <기준 포트>
+
+# 판정자 대조군 — 경계 견본 파일을 여럿 줄 수 있다(id 가 서로·심기 표와 겹치면 거부, 파일별 sha256 은 대조군 결과에 남는다).
+# 주지 않으면 --data-dir 의 기본 견본 파일 하나를 읽는다:
+#   ... judge --plants <심기 표> --controls --allow-paid --boundary-controls <견본 파일> <견본 파일...>
+# 묶음 판정 — 효과마다 분할 시드 파일의 합계 하한을 읽는다. 빠뜨리면 효과 하나만 표본이 모자라도 전체 판정이 멈춘다:
+#   ... v4-verdict --seal-sha <봉인 sha> --story <심기 표> <분할 폴더> --character <심기 표> <분할 폴더> \
+#     --scores <score 출력...> --judged <judge 출력...> --split-seeds <분할 시드 파일>

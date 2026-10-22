@@ -291,6 +291,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
     sources = args.control_sources or list(judge_mod.CONTROL_INPUTS)
     reused: dict[str, dict[str, Any]] = {}
     other_rule = 0
+    boundary_inputs: list[dict[str, str]] = []
     # 판정 문구는 측정 데이터다 — 견적만 내는 드라이런도 같은 판정 입력을 세도록 먼저 읽는다.
     wording = judge_mod.load_wording(data_file(args, judge_mod.JUDGE_WORDING_FILE))
     if args.controls:
@@ -304,7 +305,10 @@ def cmd_judge(args: argparse.Namespace) -> int:
             for path in args.extra_controls:
                 items += judge_mod.load_extra_controls(path, plant_set)
         if "boundary" in sources:
-            items += judge_mod.load_boundary_controls(plant_set, data_file(args, judge_mod.BOUNDARY_CONTROLS_FILE))
+            # 견본 파일을 주지 않으면 측정 데이터 폴더의 기본 견본 파일 하나를 읽는다.
+            boundary_paths = args.boundary_controls or [data_file(args, judge_mod.BOUNDARY_CONTROLS_FILE)]
+            boundary_rows, boundary_inputs = judge_mod.load_boundary_control_files(plant_set, boundary_paths)
+            items += boundary_rows
         if categories is not None:
             items = [i for i in items if i["kind"] in categories]
     else:
@@ -412,6 +416,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
             {
                 **judge_mod.controls_report(results),
                 **({"categories": categories} if categories else {}),
+                **({"boundaryInputs": boundary_inputs} if boundary_inputs else {}),
                 "judgeModel": args.judge_model,
                 "rows": results,
             },
@@ -753,6 +758,15 @@ def v4_controls_input(
     return rows, judge_mod.require_controls_passed(path, accept_sha256=accept_sha256, accept_reason=accept_reason)
 
 
+def v4_effect_floors_input(path: Path) -> dict[str, Any]:
+    """분할 시드 파일에서 효과마다의 합계 하한을 읽고, 그 파일의 sha256 을 함께 돌려준다 — 결과에 남겨 보류 기준이 결과 전에
+    커밋한 시드 파일의 값이었는지 맞춰 볼 수 있게 한다."""
+    from memory_eval.verdict_v4 import effect_floors
+
+    floors = effect_floors(json.loads(path.read_text(encoding="utf-8")))
+    return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "floors": floors}
+
+
 def cmd_v4_verdict(args: argparse.Namespace) -> int:
     """묶음 1 판정 — 안전 쌍·효과 셋 Holm·비열등·캐릭터 표(시험 절반 — 봉인 확인 뒤). 대본마다 심기 표와 분할 폴더를 짝으로 주고,
     궤적은 대본마다 `trajectory-replay` 출력 폴더를 준다. 결과는 `<원자료>/b1/measure/verdict.json`."""
@@ -799,10 +813,13 @@ def cmd_v4_verdict(args: argparse.Namespace) -> int:
     for item in args.section_max:
         pair, _, value = item.partition("=")
         section_max[pair] = int(value)
+    floors = v4_effect_floors_input(args.split_seeds) if args.split_seeds else None
     result = v4_verdict(
         story, character, scores, judge_rows=judge_rows, control_rows=control_rows, trajectories=trajectories,
-        section_max=section_max, controls_override=override,
+        section_max=section_max, controls_override=override, effect_floors=floors["floors"] if floors else None,
     )  # fmt: skip
+    if floors:
+        result["effectFloors"] = floors
     out = args.out or args.run / "b1" / "measure" / "verdict.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     _write(out, result)
@@ -810,7 +827,7 @@ def cmd_v4_verdict(args: argparse.Namespace) -> int:
         {pair: {lane: t["status"] for lane, t in lanes.items()} for pair, lanes in result["safety"].items()}
         | {k: result["effects"][k]["status"] for k in ("E1", "E2", "E3")}
         | {"nonInferiority": result["nonInferiority"]["status"], "controls": result["controls"]["status"]}
-        | {"invalid": result["invalid"], "status": result["status"]}
+        | {"invalid": result["invalid"], "underpowered": result["underpowered"], "status": result["status"]}
     )
     return 0
 
@@ -1241,6 +1258,9 @@ def _kind_quota(value: str) -> tuple[str, int]:
 def _check_judge_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     if args.categories is not None and not args.controls:
         parser.error("--categories 는 대조군(--controls)만 거른다")
+    if args.boundary_controls and not args.controls:
+        parser.error("--boundary-controls 는 대조군(--controls)에서만 쓴다")
+
 
 def _keep_categories(args: argparse.Namespace, entry: dict[str, Any]) -> bool:
     from memory_eval.judge import judge_kind
@@ -1365,6 +1385,12 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
         "--categories",
         type=parse_categories,
         help="대조군을 이 판정 종류만 돌린다(쉼표 목록, 기본 전부). 거르면 결과 파일 이름에 범주 꼬리가 붙는다",
+    )
+    p.add_argument(
+        "--boundary-controls",
+        type=Path,
+        nargs="+",
+        help="경계 견본 파일들(대조군만, id 가 서로·심기 표와 겹치면 거부). 주지 않으면 측정 데이터 폴더의 기본 견본 파일",
     )
     p.add_argument(
         "--control-sources",
@@ -1508,6 +1534,11 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--scores", type=Path, nargs="+", required=True, help="score 출력(모든 대본·갈래)")
     p.add_argument("--judged", type=Path, nargs="+", required=True, help="judge 출력(모든 대본·갈래)")
     p.add_argument("--controls", type=Path, help="대조군 기록(기본 <원자료>/judge/controls.json)")
+    p.add_argument(
+        "--split-seeds",
+        type=Path,
+        help="분할 시드 파일 — 효과마다 합계 하한을 읽어 쌍 수가 그 밑인 효과만 검출력 부족으로 보류한다(없으면 그 효과도 halt)",
+    )
     p.add_argument(
         "--accept-failed-controls",
         metavar="SHA256",

@@ -28,6 +28,9 @@
 c = A 성공이고 B 실패, p = P(X ≥ b), X ~ Bin(b + c, ½))을 셋 한 가족으로 Holm 단계 하강 보정한다. n < 24 이면 판정 불능이되 가족에
 p = 1 로 남긴다 — 빼면 남은 비교의 문턱이 느슨해져 표본이 모자란 비교가 다른 비교를 돕는다. 통과는 Holm 기각, 실패율 차
 (b − c)/n ≥ 0.15, n ≥ 24 가 모두 맞을 때다. 차가 모자란 비교도 Holm 사슬을 끊지 않는다(사슬은 p 만 본다).
+분할 시드 파일의 합계 하한(`totals`)을 효과마다 받으면(`effect_floors`), 쌍 수가 그 하한 밑인 효과는 그 효과만 "검출력 부족 —
+판정 보류"(`underpowered`)로 내고 전체 판정에 넣지 않는다. 가족에는 같은 이유로 p = 1 로 남는다. 입력이 빠졌거나 판정 불능 상한을
+넘었거나 그 범주 쌍이 하나도 없는 효과는 여전히 `halt` 이고, 안전 관문의 표본 하한은 보류가 아니라 지금처럼 `halt` 다.
 
 비열등(결과 칸 `nonInferiority`): 관계와 정정의 성공 수가 B1 ≥ A1 − 1 — 요약 문안을 바꾼 것이 관계 정보를 깎는지 본다. 이 마진은
 안전 관문에 적용되지 않는다. A0M 대 A0 의 같은 셈은 관찰(`observations`)로만 적고 전체 판정에 넣지 않는다.
@@ -77,6 +80,8 @@ EFFECTS: dict[str, tuple[str, str, tuple[str, ...], str]] = {
     "E3": ("b1-A0", "b1-A1", ("detail",), "hit"),
 }
 EFFECT_MIN_N = 24
+UNDERPOWERED = "underpowered"
+UNDERPOWERED_REASON = "검출력 부족 — 판정 보류"
 EFFECT_MIN_GAIN = 0.15
 FAMILY_ALPHA = 0.05
 NONINFERIORITY = ("b1-A1", "b1-B1", ("relation", "correction"))
@@ -254,6 +259,20 @@ def _effect(items: Sequence[Mapping[str, Any]], inputs: _Inputs, arms: tuple[str
             "excluded": excluded, "missing": missing, "halt": halt}  # fmt: skip
 
 
+def effect_floors(seeds: Mapping[str, Any]) -> dict[str, int]:
+    """분할 시드 파일의 합계 하한 가운데 범주 집합이 효과의 범주 집합과 같은 것 하나를 그 효과의 하한으로 고른다. 없거나 둘
+    이상이면 거부한다 — 어느 하한을 쓸지 결과를 보고 고를 여지를 남기지 않는다."""
+    out: dict[str, int] = {}
+    for key, (_a, _b, categories, _field) in EFFECTS.items():
+        found = [t for t in seeds.get("totals", []) if set(t.get("categories", [])) == set(categories)]
+        if len(found) != 1:
+            raise SystemExit(
+                f"효과 {key} 의 범주 {sorted(categories)} 와 맞는 합계 하한이 하나가 아니다: {len(found)}개"
+            )
+        out[key] = int(found[0]["min"])
+    return out
+
+
 def holm(p_values: Mapping[str, float], alpha: float = FAMILY_ALPHA) -> dict[str, Any]:
     """Holm 단계 하강 — 작은 p 부터 i 번째(0부터)를 alpha / (m − i) 와 견주고, 처음 미달한 곳에서 그 뒤를 모두 멈춘다. 같은 p 는
     이름 순."""
@@ -277,8 +296,14 @@ def effect_family(
     judge_rows: Sequence[Mapping[str, Any]],
     *,
     invalid_arms: frozenset[str] = frozenset(),
+    floors: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
-    """`invalid_arms` 는 불능 비율 상한을 넘은 갈래 — 판정자 값을 쓰는 비교만 무효(판정 불능, p = 1)가 된다."""
+    """`invalid_arms` 는 불능 비율 상한을 넘은 갈래 — 판정자 값을 쓰는 비교만 무효(판정 불능, p = 1)가 된다. `floors` 는 효과마다
+    분할 시드 파일의 합계 하한이다 — 쌍 수가 그 밑이면 그 효과만 보류(p = 1)한다.
+
+    보류 규칙은 분할 시드 파일과 함께 결과를 보기 전에 고정한 것이다. 하한은 시험 문항 수를 정할 때 쓴 바로 그 값이고, 하한 밑
+    효과를 다루는 법(그 효과만 보류, 가족에는 p = 1, 나머지는 그대로 판정)도 결과와 무관하게 정해져 있다. 결과를 본 뒤 하한을
+    낮추거나 보류할 효과를 고르면, 모자란 효과를 통과시키거나 실패한 효과를 지우는 쪽으로 판정을 맞출 수 있다."""
     items = _flat(groups)
     inputs = _Inputs(score_rows, judge_rows)
     out: dict[str, Any] = {}
@@ -287,14 +312,26 @@ def effect_family(
         void = sorted({a, b} & invalid_arms) if field == "judged" else []
         if void:
             out[key] |= {"halt": True, "invalid": void}
-        out[key]["holmP"] = 1.0 if out[key]["halt"] else out[key]["p"]
+        floor = None if floors is None else floors[key]
+        # 입력이 빠졌거나 무효인 효과는 표본 크기와 무관하게 멈춘다 — 보류는 쌍 수만 모자란 효과에만 준다. 쌍이 하나도
+        # 없으면 그 범주 문항이 없는 것이라 입력이 빠진 것과 같다 — 보류하면 전체 판정에서 빠져 통과로 보일 수 있다.
+        held = floor is not None and not out[key]["missing"] and not void and 0 < out[key]["n"] < floor
+        if held:
+            out[key] |= {
+                "halt": False,
+                "underpowered": {"reason": UNDERPOWERED_REASON, "n": out[key]["n"], "floor": floor},
+            }
+        out[key]["holmP"] = 1.0 if out[key]["halt"] or held else out[key]["p"]
     family = holm({key: out[key]["holmP"] for key in EFFECTS})
     for key in EFFECTS:
         entry = out[key]
         entry["holmThreshold"] = family["thresholds"][key]
         entry["holmRejected"] = key in family["rejected"]
         ok = entry["holmRejected"] and entry["gain"] is not None and entry["gain"] >= EFFECT_MIN_GAIN
-        entry["status"] = "halt" if entry.pop("halt") else ("pass" if ok else "fail")
+        halted = entry.pop("halt")
+        entry["status"] = (
+            "halt" if halted else (UNDERPOWERED if "underpowered" in entry else ("pass" if ok else "fail"))
+        )
         entry["pass"] = entry["status"] == "pass"
     out["holm"] = family
     return out
@@ -414,9 +451,11 @@ def v4_verdict(
     trajectories: Mapping[str, tuple[Lane, Sequence[Mapping[str, Any]]]],
     section_max: Mapping[str, int],
     controls_override: Mapping[str, Any] | None = None,
+    effect_floors: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
     """`trajectories` 는 대본 이름 → (레인, 그 대본 궤적 점 전부), `section_max` 는 쌍 이름(`기준:비교`) → 그 쌍의 섹션 계산 최대.
-    `controls_override` 는 미달 대조군을 받아들인 사용자 결정(부르는 쪽이 기록 sha 를 확인한 것)이다."""
+    `controls_override` 는 미달 대조군을 받아들인 사용자 결정(부르는 쪽이 기록 sha 를 확인한 것)이다. `effect_floors` 는 효과마다
+    분할 시드 파일의 합계 하한이다 — 없으면 표본이 모자란 효과는 전과 같이 `halt` 다."""
     seen: set[tuple[str, str, int]] = set()
     for row in judge_rows:
         judge_key = (str(row["arm"]), str(row["item"]), int(row["checkpoint"]))
@@ -463,7 +502,7 @@ def v4_verdict(
             table["status"] = _combine([table[k] for k in table])
             table["pass"] = table["status"] == "pass"
             safety[key][lane] = table
-    effects = effect_family(lanes["story"], score_rows, judge_rows, invalid_arms=invalid["story"])
+    effects = effect_family(lanes["story"], score_rows, judge_rows, invalid_arms=invalid["story"], floors=effect_floors)
     non_inferiority = noninferiority(lanes["story"], score_rows, judge_rows, invalid_arms=invalid["story"])
     observations = {
         "nonInferiorityA0M": noninferiority(
@@ -481,9 +520,11 @@ def v4_verdict(
                     "n": len(control_rows), "status": "pass" if ok or accepted else "fail", "pass": ok or accepted,
                     **({"override": dict(controls_override)} if accepted and controls_override else {})}  # fmt: skip
     parts = [t for pair in safety.values() for t in pair.values()]
-    parts += [effects[k] for k in EFFECTS] + [non_inferiority, controls]
+    held = [k for k in EFFECTS if effects[k]["status"] == UNDERPOWERED]
+    # 보류한 효과는 통과도 실패도 아니라 전체 판정에서 빠진다 — 넣으면 그 효과 하나가 나머지 판정까지 멈춘다.
+    parts += [effects[k] for k in EFFECTS if k not in held] + [non_inferiority, controls]
     voided = sorted(f"{lane}:{arm}" for lane, arms in invalid.items() for arm in arms)
     status = "halt" if voided else _combine(parts)
     return {"safety": safety, "effects": effects, "nonInferiority": non_inferiority, "observations": observations,
             "unaddressedWarning": warnings, "unableCeiling": rates, "invalid": voided, "controls": controls,
-            "status": status}  # fmt: skip
+            "underpowered": held, "status": status}  # fmt: skip
