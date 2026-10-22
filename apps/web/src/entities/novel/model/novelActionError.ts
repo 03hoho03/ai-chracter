@@ -115,6 +115,12 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     message: "다른 곳에서 먼저 고쳤어요. 최신 내용을 불러왔어요.",
     shouldRefetchNovel: true,
   },
+  // 직접 수정이 문단마다 실은 블록 id 가 본문 문단·기준 판과 맞지 않는다. 화면 계산이 서버와 어긋났을 때만 닿으므로 id 없이
+  // 저절로 다시 보내지 않는다(어긋남을 가린다). 입력칸은 그대로 두고 상세를 다시 받는다.
+  NOVEL_BLOCK_IDS_INVALID: {
+    message: "문단을 맞추지 못해 저장하지 못했어요. 쓴 글을 복사해 두고 취소한 뒤 최신 글에서 다시 골라 주세요.",
+    shouldRefetchNovel: true,
+  },
   // 한 화에 둘 수 있는 삽화 수를 채웠다(위치 확인이 필요한 그림도 센다). 다른 그림을 떼면 붙일 수 있다.
   NOVEL_ILLUSTRATION_LIMIT_EXCEEDED: {
     message: "한 화에는 삽화를 10장까지 넣을 수 있어요. 다른 삽화를 뗀 뒤 다시 붙여 주세요.",

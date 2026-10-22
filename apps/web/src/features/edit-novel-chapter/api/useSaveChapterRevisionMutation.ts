@@ -11,6 +11,8 @@ type SaveChapterRevisionVariables = {
   baseRevisionId: string;
   /** 장 전체 본문. 서버는 문단 범위를 모르므로 화면이 고른 범위를 바꿔 조립해 보낸다. */
   body: string;
+  /** 본문 문단마다 이을 기준 판의 블록 id(새 문단은 `null`). 그 문단에 붙은 삽화가 이 id 를 따라 자리를 지킨다. */
+  blockIds: (string | null)[];
 };
 
 /** `POST /novels/{novelId}/chapters/{chapterId}/revisions` — 직접 고친 본문을 새 개정으로 저장한다(201, 과금 없음).
@@ -19,11 +21,12 @@ export function useSaveChapterRevisionMutation() {
   const queryClient = useQueryClient();
 
   return useMutation<NovelChapterResponse, ApiError, SaveChapterRevisionVariables>({
-    mutationFn: async ({ novelId, chapterId, baseRevisionId, body }) =>
+    mutationFn: async ({ novelId, chapterId, baseRevisionId, body, blockIds }) =>
       (
         await apiClient.post<NovelChapterResponse>(`/novels/${novelId}/chapters/${chapterId}/revisions`, {
           baseRevisionId,
           body,
+          blockIds,
         })
       ).data,
     onSuccess: (chapter) => writeNovelChapterRevision(queryClient, chapter),

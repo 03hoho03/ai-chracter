@@ -5,8 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { toPageTypography } from "../lib/pageFormat";
-import { toReaderBlocks } from "../lib/readerBlocks";
-import type { ViewerIllustration } from "../model/viewerSource";
+import { toReaderBlocks, type ViewerIllustration } from "@/entities/novel";
+
 import { PagedEpisodeBlocks, ScrollEpisodeBlocks } from "./EpisodeBlocks";
 
 const PARAGRAPHS = ["첫 문단", "둘째 문단", "셋째 문단"];

@@ -3,12 +3,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { cloverKeys } from "@/entities/clover";
-import { novelKeys, type NovelPublicationStatus } from "@/entities/novel";
+import { novelKeys, novelScoped, type NovelPublicationStatus } from "@/entities/novel";
 import { webnovelKeys } from "@/entities/webnovel";
 import { apiClient } from "@/shared/api/client";
 
 import type { PublishRequestBody } from "../model/publicationView";
-import { toPublishFailure, type PublishFailure } from "../model/publishFailure";
+import { hasTakenDownIllustrations, toPublishFailure, type PublishFailure } from "../model/publishFailure";
 
 /** 공개를 끝까지 보낸 결과. */
 export type PublishRunResult = "published" | "inReview" | false;
@@ -69,6 +69,14 @@ export function usePublishNovelRun(novelId: string) {
           void queryClient.invalidateQueries({ queryKey: novelKeys.publication(novelId) });
           // 노벨 정책 스위치가 그사이 바뀌었으면(요약 필요 422, 가격 선택 409) 다시 연 모달이 바뀐 칸을 그리게 가격 응답도 다시 받는다.
           void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
+          // 내린 그림으로 걸렸으면 이 소설의 화·판 본문을 다시 받는다 — 판이 그대로라 저절로는 다시 받지 않고, 다시 받은
+          // 응답이 그 그림 자리에 내린 그림 안내를 세운다(판 이력도 같은 그림을 그린다).
+          if (hasTakenDownIllustrations(error)) {
+            void queryClient.invalidateQueries({
+              queryKey: novelKeys.all,
+              predicate: novelScoped(novelId, ["chapter", "revision"]),
+            });
+          }
           return false;
         }
       }

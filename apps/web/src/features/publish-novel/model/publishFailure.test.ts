@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { ApiErrorObject } from "@/shared/api/client";
 
-import { isRetryablePublishFailure, toPublishFailure, toPublishFailureMessage } from "./publishFailure";
+import {
+  hasTakenDownIllustrations,
+  isRetryablePublishFailure,
+  toPublishFailure,
+  toPublishFailureMessage,
+} from "./publishFailure";
 
 function apiError(status: number, detail: Record<string, unknown>) {
   return new ApiErrorObject({ status, detail, message: "error" });
@@ -75,5 +80,26 @@ describe("toPublishFailure", () => {
     expect(isRetryablePublishFailure(limit) || isRetryablePublishFailure(original)).toBe(false);
     expect(toPublishFailureMessage(limit)).toContain("10장까지");
     expect(toPublishFailureMessage(original)).toContain("원작 이미지를 뺀 뒤");
+  });
+});
+
+describe("hasTakenDownIllustrations", () => {
+  it("내린 그림을 가리키는 심사 거절이면 참이다 — 작가 화면의 화 본문을 다시 받아 그 그림 자리에 안내를 세운다", () => {
+    expect(
+      hasTakenDownIllustrations(
+        apiError(400, { code: "NOVEL_SCREENING_REJECTED", flaggedParts: ["illustration"], takenDownAssetIds: ["asset-1"] }),
+      ),
+    ).toBe(true);
+  });
+
+  it("심사가 걸러 낸 거절·빈 목록·다른 실패는 거짓이다", () => {
+    expect(hasTakenDownIllustrations(apiError(400, { code: "NOVEL_SCREENING_REJECTED", flaggedParts: ["illustration"] }))).toBe(
+      false,
+    );
+    expect(hasTakenDownIllustrations(apiError(400, { code: "NOVEL_SCREENING_REJECTED", takenDownAssetIds: [] }))).toBe(false);
+    expect(hasTakenDownIllustrations(apiError(409, { code: "NOVEL_PUBLISH_CONFLICT", takenDownAssetIds: ["asset-1"] }))).toBe(
+      false,
+    );
+    expect(hasTakenDownIllustrations(new Error("network"))).toBe(false);
   });
 });

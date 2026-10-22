@@ -16,8 +16,11 @@ import { useId, useState } from "react";
 import {
   CHAPTER_REGENERATING_MESSAGE,
   isChapterRegenerating,
+  NovelIllustrationFigure,
   novelKeys,
   toNovelActionError,
+  toOwnerViewerIllustrations,
+  toReaderBlocks,
   useNovelQuery,
   useNovelRevisionQuery,
 } from "@/entities/novel";
@@ -27,6 +30,7 @@ import { LazyDiffView } from "@/shared/ui/LazyDiffView";
 
 import { useNovelRevisionsQuery, type NovelRevisionSummary } from "../api/useNovelRevisionsQuery";
 import { useRestoreRevisionMutation } from "../api/useRestoreRevisionMutation";
+import { isIllustrationOnlyChange, shouldWarnPendingAiEditsLost } from "../model/revisionComparison";
 import { toInitialPreviewMode, type RevisionPreviewMode } from "../model/revisionPreviewMode";
 import { toRevisionSourceLabel } from "../model/revisionLabel";
 
@@ -248,7 +252,17 @@ function RevisionRow({
   const pendingNoteId = useId();
   const regeneratingNoteId = useId();
   const isRestoreBlocked = isRestoring || isRegenerating;
-  const restoreDescribedBy = [isRegenerating && regeneratingNoteId, hasPendingAiEdits && pendingNoteId]
+  // 되돌릴 판 글이 지금 글과 같으면 서버가 수정안을 남기므로 사라진다고 말하지 않는다. 두 판 글은 미리보기와 같은 판 캐시로
+  // 읽고, 펼친 옛 판에 수정안이 있을 때만 받는다.
+  const shouldCompareText = isExpanded && !isCurrent && hasPendingAiEdits;
+  const targetQuery = useNovelRevisionQuery(novelId, chapterId, shouldCompareText ? revision.id : undefined);
+  const currentTextQuery = useNovelRevisionQuery(novelId, chapterId, shouldCompareText ? current?.id : undefined);
+  const isPendingLossNoted = shouldWarnPendingAiEditsLost({
+    hasPendingAiEdits,
+    target: targetQuery.data,
+    current: currentTextQuery.data,
+  });
+  const restoreDescribedBy = [isRegenerating && regeneratingNoteId, isPendingLossNoted && pendingNoteId]
     .filter((part) => part !== false)
     .join(" ");
 
@@ -285,7 +299,7 @@ function RevisionRow({
               {CHAPTER_REGENERATING_MESSAGE}
             </p>
           )}
-          {!isCurrent && hasPendingAiEdits && (
+          {!isCurrent && isPendingLossNoted && (
             <p id={pendingNoteId} className="text-sm break-keep text-muted-foreground">
               되돌리면 이 화에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.
             </p>
@@ -330,7 +344,7 @@ type RevisionPreviewProps = {
  * 없던 밝은 채움이 생긴다. */
 function RevisionPreview({ novelId, chapterId, revision, previous, current }: RevisionPreviewProps) {
   const [mode, setMode] = useState<RevisionPreviewMode>(() =>
-    toInitialPreviewMode({ hasPrevious: previous !== undefined, hasCurrent: current !== undefined }),
+    toInitialPreviewMode({ source: revision.source, hasPrevious: previous !== undefined, hasCurrent: current !== undefined }),
   );
   const labelId = useId();
   const noteId = useId();
@@ -385,6 +399,9 @@ function RevisionPreview({ novelId, chapterId, revision, previous, current }: Re
               ? `${compareTarget.revisionNo}판에서 ${revision.revisionNo}판으로 바뀐 곳이에요.`
               : "되돌리면 지금 글에서 이렇게 바뀌어요."
           }
+          illustrationOnlyNote={
+            mode === "previous" ? "글은 그대로이고 삽화만 바뀌었어요." : "글은 지금과 같고 삽화만 달라요."
+          }
           onShowText={() => setMode("text")}
         />
       )}
@@ -394,15 +411,19 @@ function RevisionPreview({ novelId, chapterId, revision, previous, current }: Re
 
 type RevisionQuery = ReturnType<typeof useNovelRevisionQuery>;
 
+/** 두 판의 글 비교. 글이 같고 삽화만 다르면 글 비교는 "바뀐 곳이 없어요"를 말하므로, 대신 삽화만 바뀌었다고 말하고 그림이
+ * 보이는 이 판 글로 넘어가는 버튼을 둔다. */
 function RevisionDiff({
   beforeQuery,
   afterQuery,
   caption,
+  illustrationOnlyNote,
   onShowText,
 }: {
   beforeQuery: RevisionQuery;
   afterQuery: RevisionQuery;
   caption: string;
+  illustrationOnlyNote: string;
   onShowText: () => void;
 }) {
   if (beforeQuery.isPending || afterQuery.isPending) {
@@ -411,22 +432,34 @@ function RevisionDiff({
   if (beforeQuery.data === undefined || afterQuery.data === undefined) {
     return <p className="text-sm break-keep text-destructive-text">비교할 판의 글을 불러오지 못했어요.</p>;
   }
+  const showTextButton = (
+    <Button type="button" variant="outline" size="sm" onClick={onShowText}>
+      이 판 글 보기
+    </Button>
+  );
+  if (isIllustrationOnlyChange(beforeQuery.data, afterQuery.data)) {
+    return (
+      <div className="flex flex-col items-start gap-2">
+        <p className="text-xs break-keep text-muted-foreground">{caption}</p>
+        <p className="text-sm break-keep text-foreground">{illustrationOnlyNote}</p>
+        {showTextButton}
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs break-keep text-muted-foreground">{caption}</p>
       <LazyDiffView
         before={beforeQuery.data.body}
         after={afterQuery.data.body}
-        tooLargeAction={
-          <Button type="button" variant="outline" size="sm" onClick={onShowText}>
-            이 판 글 보기
-          </Button>
-        }
+        tooLargeAction={showTextButton}
       />
     </div>
   );
 }
 
+/** 판 글 — 문단과 그 사이 삽화(읽기 화면 스크롤 모드와 같은 블록). 모달 표면 위라 그림 웰·안내 상자는 `secondary` 면이다.
+ * 자리를 잃은 그림은 독자에게 보이지 않으므로 본문에 세우지 않고 한 줄로 센다. */
 function RevisionBody({ query }: { query: RevisionQuery }) {
   if (query.isPending) {
     return <div className="h-24 animate-pulse rounded-lg bg-secondary" />;
@@ -434,12 +467,24 @@ function RevisionBody({ query }: { query: RevisionQuery }) {
   if (query.data === undefined) {
     return <p className="text-sm break-keep text-destructive-text">이 판의 글을 불러오지 못했어요.</p>;
   }
+  const { paragraphs } = query.data;
+  const blocks = toReaderBlocks(paragraphs.length, toOwnerViewerIllustrations(query.data));
+  const unplacedCount = query.data.unplacedIllustrations?.length ?? 0;
   return (
     <div className="flex flex-col gap-3 text-sm leading-relaxed break-keep whitespace-pre-line text-foreground">
-      {query.data.paragraphs.map((paragraph, index) => (
-        // 판은 바뀌지 않아 순서가 곧 정체성이다.
-        <p key={index}>{paragraph}</p>
-      ))}
+      {blocks.map((block) =>
+        block.kind === "illustration" ? (
+          <NovelIllustrationFigure key={block.key} illustration={block.illustration} surface="secondary" />
+        ) : (
+          // 판은 바뀌지 않아 순서가 곧 정체성이다.
+          <p key={`paragraph-${block.index}`}>{paragraphs[block.index]}</p>
+        ),
+      )}
+      {unplacedCount > 0 && (
+        <p className="text-xs whitespace-normal text-muted-foreground">
+          위치 확인이 필요한 삽화 {unplacedCount}장은 이 판에서 독자에게 보이지 않아요.
+        </p>
+      )}
     </div>
   );
 }

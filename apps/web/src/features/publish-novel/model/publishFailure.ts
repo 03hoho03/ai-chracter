@@ -58,6 +58,16 @@ export function toPublishFailure(error: unknown): PublishFailure {
   return { kind: "failed" };
 }
 
+/** 운영자가 내린 그림 때문에 걸린 심사 거절인가(400 에 `takenDownAssetIds` 가 실린다). 그러면 작가 화면의 화 본문을 다시
+ * 받아야 그 그림 자리에 내린 그림 안내가 선다 — 그 화의 판은 그대로라 캐시 키가 같아 저절로는 다시 받지 않는다. 자산 id
+ * 목록을 화면 상태로 들지 않는다: 다시 받은 응답이 같은 것을 말하고, 따로 들면 둘이 어긋날 길이 생긴다. */
+export function hasTakenDownIllustrations(error: unknown): boolean {
+  if (!isApiError(error) || typeof error.detail !== "object" || error.detail === null) return false;
+  if (error.detail.code !== "NOVEL_SCREENING_REJECTED" || !("takenDownAssetIds" in error.detail)) return false;
+  const { takenDownAssetIds } = error.detail;
+  return Array.isArray(takenDownAssetIds) && takenDownAssetIds.length > 0;
+}
+
 /** 같은 요청을 다시 보내면 될 수 있는 실패인가 — "다시 시도" 버튼을 낼지. 심사 장애와 그 밖의 실패만이다. 승인 대기·
  * 낡음은 다시 받은 공개 상태가 할 일을 말하고, 거절·상한은 다시 보내도 같다. */
 export function isRetryablePublishFailure(failure: PublishFailure): boolean {

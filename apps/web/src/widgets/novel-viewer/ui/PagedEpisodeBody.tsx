@@ -1,8 +1,9 @@
 import { useEffect, useImperativeHandle, useRef, type ReactNode, type Ref, type RefObject } from "react";
 
+import { toIllustrationLayoutKey, toReaderBlocks } from "@/entities/novel";
+
 import type { PageFit } from "../lib/pageFit";
 import { PAGE_FORMAT_HEIGHT_PX, PAGE_FORMAT_PADDING_PX, PAGE_FORMAT_WIDTH_PX, type PageTypography } from "../lib/pageFormat";
-import { toIllustrationLayoutKey, toReaderBlocks } from "../lib/readerBlocks";
 import { useIsFinePointer } from "../lib/useIsFinePointer";
 import { usePagedReader, type PagedPosition, type PagedReaderHandle } from "../model/usePagedReader";
 import { usePageInput } from "../model/usePageInput";

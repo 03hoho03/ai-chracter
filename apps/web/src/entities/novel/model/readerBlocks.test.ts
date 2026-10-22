@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ViewerIllustration } from "../model/viewerSource";
-import { toIllustrationLayoutKey, toReaderBlocks } from "./readerBlocks";
+import { toIllustrationLayoutKey, toReaderBlocks, type ViewerIllustration } from "./readerBlocks";
 
 function illustration(overrides: Partial<ViewerIllustration>): ViewerIllustration {
   return {

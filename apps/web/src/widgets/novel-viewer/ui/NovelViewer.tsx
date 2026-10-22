@@ -9,6 +9,7 @@ import {
   saveReadingPosition,
   sendReadingPositionKeepalive,
   toNovelReadProgress,
+  toOwnerViewerIllustrations,
   type NovelChapterResponse,
   type NovelChapterSummary,
   type NovelDetailResponse,
@@ -16,7 +17,6 @@ import {
 
 import { withChapterReadingPosition } from "../lib/readingPositionCache";
 import { toChapterSavedReadingPosition } from "../lib/savedReadingPosition";
-import { toOwnerViewerIllustrations } from "../lib/viewerIllustrations";
 import type { ReadingPositionStore } from "../model/viewerSource";
 import { EpisodeReader } from "./EpisodeReader";
 import { ViewerTocSheet } from "./ViewerTocSheet";
