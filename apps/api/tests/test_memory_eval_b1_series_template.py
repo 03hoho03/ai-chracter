@@ -18,7 +18,7 @@ from api.db.models import ChatRoomMemorySnapshot
 from factories import _open_room, _plant_snapshot
 from memory_eval import checkpoint as checkpoint_mod
 from memory_eval import series_template as st
-from memory_eval.arm_env import series_label
+from memory_eval.arm_env import B_SERIES_SUFFIX, series_label
 
 
 async def _snapshots(db_session: AsyncSession, room_id: uuid.UUID) -> list[ChatRoomMemorySnapshot]:
@@ -225,9 +225,15 @@ def _fake_restore(monkeypatch: pytest.MonkeyPatch, fingerprint: dict[str, Any], 
     return digest_reads
 
 
-async def _restore(tmp_path: Path, label: str) -> dict[str, Any]:
+async def _restore(tmp_path: Path, label: str, *, b_series: bool) -> dict[str, Any]:
     return await checkpoint_mod.restore(
-        URL, work_db="lm_eval_work", checkpoint=100, room_id=uuid.uuid4(), dumps_dir=tmp_path, label=label
+        URL,
+        work_db="lm_eval_work",
+        checkpoint=100,
+        room_id=uuid.uuid4(),
+        dumps_dir=tmp_path,
+        label=label,
+        b_series=b_series,
     )
 
 
@@ -241,10 +247,11 @@ async def test_restore_refuses_a_b_template_whose_summaries_are_still_the_a_text
     )
     _fake_restore(monkeypatch, fp, _a_digest())
     with pytest.raises(SystemExit, match=checkpoint_mod.SUMMARY_DIGEST_KEY):
-        await _restore(tmp_path, b_label)
+        await _restore(tmp_path, b_label, b_series=True)
 
     _fake_restore(monkeypatch, fp, _b_digest())
-    assert (await _restore(tmp_path, b_label))["fingerprint"][checkpoint_mod.SUMMARY_DIGEST_KEY] == _b_digest()
+    restored = await _restore(tmp_path, b_label, b_series=True)
+    assert restored["fingerprint"][checkpoint_mod.SUMMARY_DIGEST_KEY] == _b_digest()
 
 
 async def test_restore_of_an_a_template_does_not_read_the_summary_digest(
@@ -253,5 +260,29 @@ async def test_restore_of_an_a_template_does_not_read_the_summary_digest(
     fp = {"turnCount": 100, "snapshotCount": 2}
     checkpoint_mod.write_fingerprint(checkpoint_mod.fingerprint_path(tmp_path, 100, "b1fc"), fp)
     digest_reads = _fake_restore(monkeypatch, fp, _a_digest())
-    assert (await _restore(tmp_path, "b1fc"))["fingerprint"] == fp
+    assert (await _restore(tmp_path, "b1fc", b_series=False))["fingerprint"] == fp
     assert digest_reads == []
+
+
+async def test_restore_of_an_a_template_whose_label_ends_like_the_b_suffix_needs_no_summary_digest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 대본 변형 이름이 B 계열 꼬리와 같은 글자로 끝나도, 계열은 이름이 아니라 호출자가 아는 갈래로 정한다.
+    fp = {"turnCount": 100, "snapshotCount": 2}
+    label = "b1fc-variant-b"
+    assert label.endswith(B_SERIES_SUFFIX)
+    checkpoint_mod.write_fingerprint(checkpoint_mod.fingerprint_path(tmp_path, 100, label), fp)
+    digest_reads = _fake_restore(monkeypatch, fp, _a_digest())
+    assert (await _restore(tmp_path, label, b_series=False))["fingerprint"] == fp
+    assert digest_reads == []
+
+
+async def test_restore_of_a_b_template_whose_saved_fingerprint_lacks_the_summary_digest_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 해시를 싣기 전에 얼린 B 지문은 이름에 꼬리가 없어도 B 계열로 부르면 칸 차이로 거부된다.
+    fp = {"turnCount": 100, "snapshotCount": 2}
+    checkpoint_mod.write_fingerprint(checkpoint_mod.fingerprint_path(tmp_path, 100, "b1fc"), fp)
+    _fake_restore(monkeypatch, fp, _b_digest())
+    with pytest.raises(SystemExit, match=checkpoint_mod.SUMMARY_DIGEST_KEY):
+        await _restore(tmp_path, "b1fc", b_series=True)
