@@ -760,6 +760,9 @@ class NovelChapterEdition(Base):
 # 삽화를 문단의 앞·뒤 어디에 붙였는가, 그리고 그 그림이 어디서 왔는가(기기에서 올림·원작 발행본의 그림·내가 만든 이미지).
 NovelIllustrationPlacement = Literal["before", "after"]
 NovelIllustrationSource = Literal["upload", "original", "generated"]
+# 그림 자리만 남기고 주소를 싣지 않는 까닭 — 운영자가 그 그림을 내림, 운영자가 원작을 이용제한해 원작 그림을 뺌. 독자·어드민·작가
+# 응답이 같은 값을 쓴다.
+NovelIllustrationWithheld = Literal["taken_down", "original_restricted"]
 
 
 class NovelChapterIllustration(Base):

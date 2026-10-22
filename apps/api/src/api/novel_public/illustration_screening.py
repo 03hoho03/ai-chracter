@@ -11,10 +11,9 @@
 **통과 기억**: 그림 바이트의 sha256·모델·심사 문안 판(활성 세트 id 와 범위)이 키다. 같은 바이트를 다른 자산으로 다시 올려도 다시
 부르지 않고, 모델이나 문안이 바뀌면 다시 심사한다. **운영자 내림이 기억보다 먼저다** — 내린 바이트는 기억이 있어도 공개하지 않는다.
 
-**운영자 내림**: 그림 하나(자산)의 정지 변형 바이트 sha 를 내림 표에 남기고 그 sha 의 통과 기억을 지운다. 읽기는 자산 id 로
-그 그림 자리를 비우고 사유를 싣는다(`illustration_reads.py`). 같은 바이트를 담은 다른 자산은 이미 얼린 판에서는 자산 id 가 달라
-그대로 보인다 — 새 공개는 sha 로 막히지만, 이미 얼린 다른 자산은 내림 기록이 하나뿐이라(바이트가 키) 따로 내릴 수 없다. 그런
-경우는 노벨 전체 이용제한으로 닫는다."""
+**운영자 내림**: 그림 하나(자산)의 정지 변형 바이트 sha 를 내림 표에 남기고 그 sha 의 통과 기억을 지운다. 읽기는 자산 행에
+적힌 바이트 sha(공개 심사·내림이 내려받을 때 적는다)나 자산 id 로 내림 표를 이어 그 그림 자리를 비우고 사유를 싣는다
+(`illustration_reads.py`) — 같은 파일을 담은 다른 자산도 이미 얼린 판에서 함께 비워진다."""
 
 import hashlib
 import logging
@@ -23,7 +22,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
@@ -32,6 +31,7 @@ from api.chat.prompt_builder import PromptLane, PromptRenderError, render_prompt
 from api.content.publish import PublishFilterResult
 from api.core.config import settings
 from api.core.s3 import build_display_key, download_object
+from api.db.models.media import Asset
 from api.db.models.novel import (
     NovelContentType,
     NovelIllustrationPlacement,
@@ -122,6 +122,18 @@ async def taken_down_shas(db: AsyncSession, shas: Iterable[str]) -> set[str]:
         select(NovelIllustrationTakedown.content_sha256).where(NovelIllustrationTakedown.content_sha256.in_(wanted))
     )
     return set(rows.all())
+
+
+async def record_display_shas(db: AsyncSession, pairs: Iterable[tuple[uuid.UUID, str]]) -> None:
+    """내려받은 그림 바이트의 sha 를 그 자산 행에 적는다 — 화 읽기가 이 값으로 같은 파일을 담은 다른 자산의 내림을 본다. 커밋은
+    호출자. 값이 이미 같으면 행을 건드리지 않고(잠그지 않는다), 자산 id 순으로 쓴다 — 같은 원작 그림을 다른 순서로 붙인 두 공개가
+    동시에 자산 행을 거꾸로 잡아 교착하지 않게."""
+    for asset_id, sha in sorted(dict(pairs).items()):
+        await db.execute(
+            update(Asset)
+            .where(Asset.id == asset_id, Asset.display_sha256.is_distinct_from(sha))
+            .values(display_sha256=sha)
+        )
 
 
 async def remembered_shas(db: AsyncSession, shas: Iterable[str], *, model: str, version: str) -> set[str]:

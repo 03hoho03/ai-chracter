@@ -56,6 +56,7 @@ from api.db.models.novel import (
     NovelChapterRevision,
     NovelComment,
     NovelCommentReport,
+    NovelIllustrationTakedown,
     NovelPublication,
     NovelPublicationModerationStatus,
     NovelPublicationReviewStatus,
@@ -67,7 +68,12 @@ from api.db.session import get_db_session
 from api.legal.documents import current_legal_version
 from api.novel_public.access import judge_source, select_readable_publications
 from api.novel_public.illustration_reads import frozen_illustrations
-from api.novel_public.illustration_screening import download_display, record_takedown, sha256_of
+from api.novel_public.illustration_screening import (
+    download_display,
+    record_display_shas,
+    record_takedown,
+    sha256_of,
+)
 from api.novel_public.purchases import chapter_price, lock_novel_parties, refund_closing_purchases
 from api.novel_public.admin_schemas import (
     AdminNovelChapterItem,
@@ -413,10 +419,16 @@ async def take_down_novel_illustration(
     그대로, 환급 없음), 그 바이트(정지 변형의 sha256)를 남겨 같은 파일을 다시 올린 새 자산도 공개 심사에서 막는다(통과 기억보다
     먼저 본다 — 그 바이트의 통과 기억은 지운다). 소설 전체를 닫아야 하는 중대한 경우는 노벨 이용제한을 함께 쓴다.
 
-    사유가 공백뿐이면 422, 어느 개정의 삽화로도 쓰인 적 없는 자산이면 404 `NOVEL_ILLUSTRATION_NOT_FOUND`, 같은 바이트가 이미
-    내려가 있으면 409 `NOVEL_ILLUSTRATION_ALREADY_TAKEN_DOWN`, 그림을 저장소에서 못 읽으면 503
-    `NOVEL_ILLUSTRATION_UNAVAILABLE`(바이트 없이는 다시 올림을 막을 수 없어 기록하지 않는다). 감사 로그의 대상 회원은 그림의
-    주인이다. 삽화 스위치와 무관하게 돈다."""
+    **같은 파일을 담은 다른 자산**: 내림은 바이트가 키라, 다른 자산(A)으로 같은 바이트가 이미 내려가 있으면 이 자산(B)도 이미
+    내린 그림이다(읽기가 자산 행의 바이트 sha 로 잇는다). 그래서 B 를 내리면 새 내림 행 없이 200 `alreadyTakenDown` 참과 처음
+    내린 시각을 돌려주고, B 자리의 사유는 처음 적은 사유 그대로다. 감사 로그에는 B 에 대한 조치로 한 줄(이번에 적은 사유)을
+    남긴다 — 운영자가 B 를 보고 내렸다는 사실이 기록에 남고, 독자에게 보이는 사유는 하나로 유지된다. B 를 다시 내려도 같은 200 과
+    감사 로그 한 줄이다(내림 행이 하나라 B 를 따로 내린 기록이 없다). 내림 행에 적힌 그 자산을 다시 내리면 409
+    `NOVEL_ILLUSTRATION_ALREADY_TAKEN_DOWN`.
+
+    사유가 공백뿐이면 422, 어느 개정의 삽화로도 쓰인 적 없는 자산이면 404 `NOVEL_ILLUSTRATION_NOT_FOUND`, 그림을 저장소에서 못
+    읽으면 503 `NOVEL_ILLUSTRATION_UNAVAILABLE`(바이트 없이는 다시 올림을 막을 수 없어 기록하지 않는다). 감사 로그의 대상 회원은
+    그림의 주인이다. 삽화 스위치와 무관하게 돈다."""
     reason = _require_reason(body.reason)
     used = select(NovelChapterIllustration.id).where(NovelChapterIllustration.asset_id == asset_id).exists()
     asset = await db.scalar(select(Asset).where(Asset.id == asset_id, used))
@@ -428,9 +440,16 @@ async def take_down_novel_illustration(
         logger.warning("novel_illustration_takedown_download_failed asset_id=%s: %s", asset_id, type(exc).__name__)
         capture_dependency_failure(exc, dependency="s3")
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "NOVEL_ILLUSTRATION_UNAVAILABLE") from exc
-    taken_down_at = await record_takedown(db, asset_id=asset_id, sha=sha256_of(data), reason=reason)
-    if taken_down_at is None:
-        raise _error(status.HTTP_409_CONFLICT, "NOVEL_ILLUSTRATION_ALREADY_TAKEN_DOWN")
+    sha = sha256_of(data)
+    taken_down_at = await record_takedown(db, asset_id=asset_id, sha=sha, reason=reason)
+    already = taken_down_at is None
+    if already:
+        earlier = await db.get_one(NovelIllustrationTakedown, sha)
+        if earlier.asset_id == asset_id:
+            raise _error(status.HTTP_409_CONFLICT, "NOVEL_ILLUSTRATION_ALREADY_TAKEN_DOWN")
+        taken_down_at = earlier.created_at
+    assert taken_down_at is not None  # 새 행이면 기록이 돌려준 시각, 이미 있으면 그 행의 시각
+    await record_display_shas(db, [(asset_id, sha)])
     await record_admin_action(
         db,
         admin_id=admin_id,
@@ -439,7 +458,9 @@ async def take_down_novel_illustration(
         reason_text=reason,
     )
     await db.commit()
-    return AdminNovelIllustrationTakedownResponse(asset_id=asset_id, taken_down_at=taken_down_at)
+    return AdminNovelIllustrationTakedownResponse(
+        asset_id=asset_id, taken_down_at=taken_down_at, already_taken_down=already
+    )
 
 
 # ── 이용제한·해제 ────────────────────────────────────────────────────────────
