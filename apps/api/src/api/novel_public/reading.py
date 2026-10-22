@@ -704,13 +704,13 @@ async def get_webnovel_chapter(
     if bought is not None and bought.edition == chapter.edition:
         bought = None  # 산 때의 판이 지금 판이면 고를 것이 없다
     served_edition, title, author_note = chapter.edition, chapter.title, chapter.author_note
-    served_revision_id, screened_at = chapter.revision_id, chapter.illustrations_screened_at
+    served = (chapter.revision_id, chapter.illustrations_screened_at, chapter.published_at)
     if policy_v2 and edition is not None and edition != chapter.edition:
         if bought is None or edition != bought.edition:
             raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
         old_revision = await db.get_one(NovelChapterRevision, bought.revision_id)
         served_edition, title, author_note, body = bought.edition, bought.title, bought.author_note, old_revision.body
-        served_revision_id, screened_at = bought.revision_id, bought.illustrations_screened_at
+        served = (bought.revision_id, bought.illustrations_screened_at, bought.published_at)
 
     # 산 때의 판이 있을 때만 판 고르기가 보이므로 지금 판의 요약도 그때만 읽는다. 지금 판의 공개 시각은 화 공개본의 것이다
     # (판 행과 같은 값). 판 행이 없으면(판 이력 표가 생긴 배포의 겹침 동안 그 표를 모르는 옛 이미지가 다시 낸 판) 요약 없이
@@ -753,7 +753,7 @@ async def get_webnovel_chapter(
     readable = access != "locked"
     illustrations = (
         await frozen_illustrations(
-            db, revision_id=served_revision_id, screened_at=screened_at, content_id=novel.content_id
+            db, revision_id=served[0], screened_at=served[1], published_at=served[2], content_id=novel.content_id
         )
         if readable
         else []

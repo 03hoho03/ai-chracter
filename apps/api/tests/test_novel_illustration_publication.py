@@ -507,6 +507,60 @@ async def test_an_original_picture_needs_the_originals_public_permission_unless_
     assert len(llm.image_calls) == 2
 
 
+async def test_an_original_picture_readers_already_see_keeps_going_out_after_the_permission_drops(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """원작 허락이 공개일 때 심사를 거쳐 나간 원작 그림은 허락이 비공개로 바뀐 뒤에도 그 화를 고쳐 다시 내면 그대로 나간다(글이
+    이미 공개한 것을 이어 가는 것과 같다). 새로 붙인 원작 그림만 막는다. 깨지는 시나리오: 독자가 계속 보는 그림 때문에 오타 하나
+    고친 다시 공개가 거절된다."""
+    setup = await _novel(db_client, db_session, monkeypatch)
+    chapter = setup.chapters[0]
+    source = await _hand_source_to(db_session, setup.novel_id, "public")
+    shown = await _asset(db_session, source.creator_user_id, prefix="assets/situational-image/")
+    extra = await _asset(db_session, source.creator_user_id, prefix="assets/situational-image/")
+    await _stack(db_session, chapter, [(0, "after", shown, "original")])
+    assert (await _publish(db_client, setup.novel_id, chapter)).status_code == 200
+    source.novel_permission = "private"
+    await db_session.commit()
+
+    await _stack(db_session, chapter, [(0, "after", shown, "original")], body="고친 첫 문단.\n\n둘째 문단이다.")
+    typo_fix = await _publish(db_client, setup.novel_id, chapter)
+    await _stack(db_session, chapter, [(0, "after", shown, "original"), (1, "before", extra, "original")])
+    added = await _publish(db_client, setup.novel_id, chapter)
+
+    assert typo_fix.status_code == 200, typo_fix.text
+    assert (added.status_code, added.json()["detail"]["code"]) == (409, "NOVEL_ILLUSTRATION_ORIGINAL_NOT_PUBLISHABLE")
+
+
+async def test_a_takedown_during_screening_is_seen_after_locking(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ScreenLLM,
+    same_bytes: dict[str, bytes],
+) -> None:
+    """심사를 기다리는 사이 운영자가 그 바이트를 내리면, 심사가 통과해도 잠근 뒤 다시 보고 거부한다."""
+    setup = await _novel(db_client, db_session, monkeypatch)
+    chapter = setup.chapters[0]
+    picture = await _asset(db_session, setup.room.user_id)
+    same_bytes[_display_key(picture)] = b"reported-picture"
+    await _stack(db_session, chapter, [(0, "after", picture, "generated")])
+
+    async def take_down() -> None:
+        db_session.add(
+            NovelIllustrationTakedown(
+                content_sha256=hashlib.sha256(b"reported-picture").hexdigest(), asset_id=picture.id, reason="신고"
+            )
+        )
+        await db_session.commit()
+
+    llm.during_image_call = take_down
+    resp = await _publish(db_client, setup.novel_id, chapter)
+
+    assert (resp.status_code, resp.json()["detail"]["flaggedParts"]) == (400, ["illustration"])
+    assert await _frozen(db_session, chapter.id) is None
+
+
 # ── 변경 판정 ────────────────────────────────────────────────────────────────
 async def test_a_picture_only_change_is_a_changed_chapter_in_status_and_republishing_makes_a_new_edition(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
@@ -610,6 +664,38 @@ async def test_republishing_text_with_the_switch_off_clears_the_screened_mark(
     assert frozen is not None and frozen.edition == 2 and frozen.illustrations_screened_at is None
     edition = await db_session.get_one(NovelChapterEdition, (chapter.id, 2), populate_existing=True)
     assert edition.illustrations_screened_at is None
+
+
+async def test_a_republish_by_code_that_does_not_know_the_screened_mark_hides_the_pictures_and_shows_as_changed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """심사 시각을 모르는 코드(되돌린 이미지)가 다시 내면 개정·판·공개 시각만 바뀌고 앞 판의 심사 시각이 남는다. 공개 시각과 다른
+    심사 시각은 심사하지 않은 판으로 본다 — 독자에게 그림이 없고, 작가 상태에는 바뀐 화로 보여 다시 공개하면 심사를 거친다.
+    깨지는 시나리오: 되돌린 동안 붙인 미심사 그림이 남은 시각 덕에 다시 올린 뒤 독자에게 나간다."""
+    setup = await _novel(db_client, db_session, monkeypatch)
+    chapter = setup.chapters[0]
+    first = await _asset(db_session, setup.room.user_id)
+    unscreened = await _asset(db_session, setup.room.user_id)
+    await _stack(db_session, chapter, [(0, "after", first, "generated")])
+    assert (await _publish(db_client, setup.novel_id, chapter)).status_code == 200
+    revision = await _stack(db_session, chapter, [(0, "after", unscreened, "generated")])
+    await db_session.execute(
+        sa.update(NovelChapterPublication)
+        .where(NovelChapterPublication.chapter_id == chapter.id)
+        .values(
+            revision_id=revision.id,
+            edition=NovelChapterPublication.edition + 1,
+            published_at=NovelChapterPublication.published_at + sa.text("interval '1 second'"),
+        )
+    )
+    await db_session.commit()
+
+    changed = (await _status(db_client, setup.novel_id))["changedChapterOrdinals"]
+    reader = await _reader(db_session)
+    shown = await _read(db_client, f"/webnovels/{setup.novel_id}/chapters/{chapter.id}", reader)
+
+    assert changed == [1]
+    assert shown["illustrations"] == []
 
 
 # ── 독자·어드민 읽기 ─────────────────────────────────────────────────────────

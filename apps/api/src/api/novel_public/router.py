@@ -66,6 +66,7 @@ from api.db.models.novel import (
     Novel,
     NovelChapter,
     NovelChapterEdition,
+    NovelChapterIllustration,
     NovelChapterPublication,
     NovelChapterRevision,
     NovelFreeOrdinal,
@@ -79,6 +80,7 @@ from api.legal.documents import current_legal_version
 from api.llm.client import LLMClient, LLMClientError, LLMRateLimitError
 from api.llm.dependencies import get_llm_client
 from api.novel_public.access import RepublishBlock, judge_source, require_novel_public_enabled
+from api.novel_public.illustration_reads import screened_for
 from api.novel_public.illustration_screening import (
     NOVEL_ILLUSTRATION_SCREEN_LANE,
     TAKEN_DOWN_REASON,
@@ -341,15 +343,14 @@ async def _plan(db: AsyncSession, novel: Novel, user_id: uuid.UUID, body: NovelP
     if is_new and gate.new_publish_block is not None:
         status_code = status.HTTP_403_FORBIDDEN if gate.new_publish_block == "source_permission" else 409
         raise _error(status_code, "NOVEL_SOURCE_NOT_PUBLISHABLE", reason=gate.new_publish_block)
-    # 남의 원작 그림은 원작의 소설화 허락이 공개일 때만 노벨에 낸다 — 비공개 소장만 허락한 원작의 그림이다. 판정은 글의 새 공개와
-    # 같은 원작 판정 하나라서 연재권 잠금이 효력이 있으면(그 소설에 한정된 허락이 이어진다) 원작 그림도 계속 낸다. 이미 공개한
-    # 화를 다시 낼 때도 본다 — 글과 달리 그 그림은 이번 공개로 처음 노벨에 나간다.
-    if (
-        chapter_plan is not None
-        and gate.new_publish_block == "source_permission"
-        and any(picture.source == "original" for picture in chapter_plan.pictures)
-    ):
-        raise _error(status.HTTP_409_CONFLICT, "NOVEL_ILLUSTRATION_ORIGINAL_NOT_PUBLISHABLE")
+    # 남의 원작 그림은 원작의 소설화 허락이 공개일 때만 새로 노벨에 낸다 — 비공개 소장만 허락한 원작의 그림이다. 판정은 글의 새
+    # 공개와 같은 원작 판정 하나라서 연재권 잠금이 효력이 있으면(그 소설에 한정된 허락이 이어진다) 원작 그림도 계속 낸다. 글이
+    # 이미 공개한 것은 허락을 낮춰도 이어지듯, 그 화의 지금 판이 심사를 거쳐 이미 독자에게 보인 원작 그림은 다시 내도 막지 않는다
+    # (막으면 오타 하나 고친 다시 공개가 거절되는데 독자는 그 그림을 계속 본다). 이번 공개로 처음 나가는 원작 그림만 막는다.
+    if chapter_plan is not None and gate.new_publish_block == "source_permission":
+        originals = {picture.asset_id for picture in chapter_plan.pictures if picture.source == "original"}
+        if originals - await _shown_originals(db, chapter_plan.chapter_id):
+            raise _error(status.HTTP_409_CONFLICT, "NOVEL_ILLUSTRATION_ORIGINAL_NOT_PUBLISHABLE")
 
     metadata: tuple[str | None, str] | None = None
     if publication is None or (publication.title, publication.synopsis) != (novel.title, novel.synopsis):
@@ -392,6 +393,21 @@ async def _planned_pictures(db: AsyncSession, revision: NovelChapterRevision) ->
     return tuple(pictures)
 
 
+async def _shown_originals(db: AsyncSession, chapter_id: uuid.UUID) -> set[uuid.UUID]:
+    """그 화의 지금 공개본이 독자에게 보이는 원작 그림(심사를 거친 판의 문단에 붙은 원작 출처 그림)의 자산 id."""
+    frozen = await db.get(NovelChapterPublication, chapter_id)
+    if frozen is None or not screened_for(frozen.illustrations_screened_at, frozen.published_at):
+        return set()
+    rows = await db.scalars(
+        select(NovelChapterIllustration.asset_id).where(
+            NovelChapterIllustration.revision_id == frozen.revision_id,
+            NovelChapterIllustration.source == "original",
+            NovelChapterIllustration.anchor_block_id.is_not(None),
+        )
+    )
+    return set(rows.all())
+
+
 def _text_differs_from_publication(
     title: SQLColumnExpression[str | None] | str | None,
     author_note: SQLColumnExpression[str] | str,
@@ -416,13 +432,17 @@ def _text_differs_from_publication(
 def _pictures_differ_from_publication(current_revision_id: SQLColumnExpression[uuid.UUID] | uuid.UUID) -> ColumnElement[bool]:
     """화 공개본의 삽화가 지금 화와 다른가 — 삽화 스위치가 켜졌을 때만 본다(꺼진 동안은 그림이 독자에게 안 나가고 공개도 그림을
     심사하지 않으니 그림만 바뀐 화를 다시 낼 일이 없다). 독자 화면의 그림 모양(`placement_fingerprint`)이 다르거나, 얼린 개정에
-    문단에 붙은 그림이 있는데 심사 시각이 비었으면(꺼진 동안 얼린 공개본) 바뀐 화다 — 다시 공개하면 심사를 거쳐 그림이 열린다."""
+    문단에 붙은 그림이 있는데 그 판이 심사하지 않았으면(꺼진 동안 얼렸거나 심사 시각을 모르는 옛 코드가 다시 냈다 — 읽기와 같은
+    판정 `screened_for`: 심사 시각 = 공개 시각) 바뀐 화다 — 다시 공개하면 심사를 거쳐 그림이 열린다."""
     if not settings.novel_illustrations_enabled:
         return false()
     frozen = placement_fingerprint(NovelChapterPublication.revision_id)
     return or_(
         frozen.is_distinct_from(placement_fingerprint(current_revision_id)),
-        and_(NovelChapterPublication.illustrations_screened_at.is_(None), frozen.is_not(None)),
+        and_(
+            NovelChapterPublication.illustrations_screened_at.is_distinct_from(NovelChapterPublication.published_at),
+            frozen.is_not(None),
+        ),
     )
 
 

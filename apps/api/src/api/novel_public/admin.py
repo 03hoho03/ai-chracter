@@ -370,7 +370,11 @@ async def get_admin_novel_chapter(
         raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
     chapter, body, content_id = row
     illustrations = await frozen_illustrations(
-        db, revision_id=chapter.revision_id, screened_at=chapter.illustrations_screened_at, content_id=content_id
+        db,
+        revision_id=chapter.revision_id,
+        screened_at=chapter.illustrations_screened_at,
+        published_at=chapter.published_at,
+        content_id=content_id,
     )
     return AdminNovelChapterResponse(
         id=chapter.chapter_id,

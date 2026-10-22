@@ -1,15 +1,16 @@
 """노벨 화 읽기(독자·어드민)에 싣는 삽화 — 얼린 판의 그림을 문단 번호로.
 
-**언제 싣나**: 삽화 스위치가 켜졌고 그 판(화 공개본·판 행)이 삽화를 심사했을 때(`illustrations_screened_at`)만이다. 스위치가
-꺼진 동안이나 이 칸을 모르는 코드가 얼린 판에는 심사받지 않은 그림이 승계돼 있을 수 있다. 잠긴 화(소장하지 않은 유료 화)는 글처럼
-그림도 싣지 않는다 — 호출부가 정한다.
+**언제 싣나**: 삽화 스위치가 켜졌고 그 판(화 공개본·판 행)이 삽화를 심사했을 때만이다(`screened_for`). 스위치가 꺼진 동안이나
+이 칸을 모르는 코드가 얼린 판에는 심사받지 않은 그림이 승계돼 있을 수 있다. 잠긴 화(소장하지 않은 유료 화)는 글처럼 그림도 싣지
+않는다 — 호출부가 정한다.
 
 **어디에**: 노벨·어드민 응답은 블록 id 를 싣지 않으므로 앵커 문단의 번호(본문 문단 배열의 인덱스)와 앞뒤, 같은 자리 안의 순위로
 싣는다. 위치 확인 필요인 그림은 싣지 않는다.
 
 **자리만 남기는 그림**(주소 없이 사유만):
 - 운영자가 내린 그림(`taken_down`) — 내림 표의 자산 id 로 본다. 사유는 운영자가 적은 독자용 문장이다. 모든 판에 걸린다.
-- 운영자가 원작을 이용제한·삭제한 동안의 원작 그림(`original_restricted`) — 원작 행이 정상 상태가 아니면 그 원작에서 온 그림만
+- 운영자가 원작을 이용제한·삭제한 동안의 원작 그림(`original_restricted`) — 원작 행이 정상 상태가 아니면(원작자 정지로 걸린
+  일괄 제한도 운영자 조치라 포함한다) 그 원작에서 온 그림만
   비운다(글과 다른 그림은 그대로). 원작자의 탈퇴·비공개는 그림을 빼지 않는다(연재권이 고정된 소설의 이용은 이어진다).
 환급은 없다 — 그림 자리만 비우고 판은 그대로다."""
 
@@ -48,11 +49,24 @@ class FrozenIllustration:
     withheld_reason: str | None
 
 
+def screened_for(screened_at: datetime | None, published_at: datetime) -> bool:
+    """그 판이 지금 얼린 개정의 삽화를 심사했는가 — 심사 시각이 그 판의 공개 시각과 같을 때만이다. 공개는 두 칸을 같은
+    트랜잭션 시각으로 함께 쓴다. 심사 시각을 모르는 옛 코드가 화 공개본을 다시 내면(UPDATE) 개정과 공개 시각만 바꾸고 앞 판의
+    심사 시각을 남기므로, 비어 있는지만 보면 옛 코드가 얼린 미심사 그림이 남은 시각 덕에 독자에게 나간다."""
+    return screened_at is not None and screened_at == published_at
+
+
 async def frozen_illustrations(
-    db: AsyncSession, *, revision_id: uuid.UUID, screened_at: datetime | None, content_id: uuid.UUID
+    db: AsyncSession,
+    *,
+    revision_id: uuid.UUID,
+    screened_at: datetime | None,
+    published_at: datetime,
+    content_id: uuid.UUID,
 ) -> list[FrozenIllustration]:
-    """판이 얼린 개정 `revision_id` 의 그림(모듈 docstring 의 조건). `content_id` 는 그 소설의 원작이다."""
-    if not settings.novel_illustrations_enabled or screened_at is None:
+    """판이 얼린 개정 `revision_id` 의 그림(모듈 docstring 의 조건). `screened_at`·`published_at` 은 그 판의 두 칸,
+    `content_id` 는 그 소설의 원작이다."""
+    if not settings.novel_illustrations_enabled or not screened_for(screened_at, published_at):
         return []
     revision = await db.get_one(NovelChapterRevision, revision_id)
     rows = [row for row in await placements_of(db, revision) if row.anchor_block_id is not None]
