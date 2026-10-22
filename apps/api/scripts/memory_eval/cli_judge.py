@@ -817,6 +817,7 @@ def cmd_v4_verdict(args: argparse.Namespace) -> int:
     result = v4_verdict(
         story, character, scores, judge_rows=judge_rows, control_rows=control_rows, trajectories=trajectories,
         section_max=section_max, controls_override=override, effect_floors=floors["floors"] if floors else None,
+        with_a0m=args.with_a0m,
     )  # fmt: skip
     if floors:
         result["effectFloors"] = floors
@@ -828,6 +829,8 @@ def cmd_v4_verdict(args: argparse.Namespace) -> int:
         | {k: result["effects"][k]["status"] for k in ("E1", "E2", "E3")}
         | {"nonInferiority": result["nonInferiority"]["status"], "controls": result["controls"]["status"]}
         | {"invalid": result["invalid"], "underpowered": result["underpowered"], "status": result["status"]}
+        | {"recommendations": {k: v["status"] for k, v in result["recommendations"]["steps"].items()}}
+        | {"stage3Pass": result["recommendations"]["stage3Pass"]["status"]}
     )
     return 0
 
@@ -1043,7 +1046,10 @@ def cmd_judge_sample_estimate(args: argparse.Namespace) -> int:
     """두 대본의 턴 수로 표본 생성(Opus 직결) 원가 견적. 토큰 값은 실측(첫 몇 턴의 원장)으로 바꾼다."""
     from memory_eval import judge_sample as js
 
-    scripts = {path.name: js.load_script(path) for path in (data_file(args, js.STORY_SCRIPT_FILE), data_file(args, js.CHARACTER_SCRIPT_FILE))}
+    scripts = {
+        path.name: js.load_script(path)
+        for path in (data_file(args, js.STORY_SCRIPT_FILE), data_file(args, js.CHARACTER_SCRIPT_FILE))
+    }
     rooms = {
         name: js.generation_estimate(
             turns=len(script["turns"]),
@@ -1252,7 +1258,6 @@ def _kind_quota(value: str) -> tuple[str, int]:
     if kind not in VERDICTS or not count.isdigit() or int(count) < 1:
         raise argparse.ArgumentTypeError(f"표본 수는 '판정 종류=양의 정수' 꼴이다: {value!r}")
     return kind, int(count)
-
 
 
 def _check_judge_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
@@ -1498,7 +1503,9 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--scores", type=Path, nargs="+", required=True, help="score 출력(A·B 갈래)")
     p.add_argument("--judged", type=Path, nargs="*", default=[], help="judge 출력")
     p.add_argument("--offline", type=Path, required=True, help="recall-offline 출력(시험 절반)")
-    p.add_argument("--trajectory", type=Path, nargs="*", default=[], help="trajectory 점(jsonl, A·B 갈래) — 길이·캐시 블록 칸")
+    p.add_argument(
+        "--trajectory", type=Path, nargs="*", default=[], help="trajectory 점(jsonl, A·B 갈래) — 길이·캐시 블록 칸"
+    )
     p.add_argument("--recall-section-max", type=int, help="테스트가 계산한 회상 섹션 최대 글자 — 길이 칸")
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_s8)
@@ -1549,6 +1556,11 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
                    help="대본 하나의 trajectory-replay 출력 폴더(대본 이름·레인·폴더)")  # fmt: skip
     p.add_argument(
         "--section-max", nargs="*", default=[], help="쌍마다 섹션 계산 최대 — '기준:비교=글자'(예 b1-A0:b1-A1=970)"
+    )
+    p.add_argument(
+        "--with-a0m",
+        action="store_true",
+        help="측정에 A0M 갈래를 더했을 때 — A0 대 A0M 쌍을 관문에, 그 비열등을 관찰에 넣는다",
     )
     p.add_argument("--out", type=Path, help="기본 <원자료>/b1/measure/verdict.json")
     _ran_args(p)

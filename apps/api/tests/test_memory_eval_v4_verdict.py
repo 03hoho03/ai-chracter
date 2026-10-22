@@ -579,7 +579,9 @@ def test_a_failed_step_blocks_every_later_step() -> None:
 
 def test_a_lane_that_fails_a_step_is_dropped_from_that_step_on_and_the_other_lane_still_gets_it() -> None:
     out = v4.recommendations(
-        _gate_tables(**{"B1_B1E__character__S1": "fail", "B1E_B2__character__S2": "fail"}), _effects(), {"status": "pass"}
+        _gate_tables(**{"B1_B1E__character__S1": "fail", "B1E_B2__character__S2": "fail"}),
+        _effects(),
+        {"status": "pass"},
     )
     assert _steps(out)["embedRead"] == "recommend" and out["steps"]["embedRead"]["dropLanes"] == ["character"]
     # 이미 뺀 레인의 다음 단계 위반은 그 단계를 막지 않는다.
