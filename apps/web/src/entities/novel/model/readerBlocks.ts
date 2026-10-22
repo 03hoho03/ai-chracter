@@ -1,4 +1,19 @@
-import type { ViewerIllustration } from "../model/viewerSource";
+/**
+ * 문단 사이에 서는 삽화 한 장. 자리는 문단 번호와 그 앞·뒤, 같은 자리 안의 순서(`order`)다. `url` 은 정지 그림이고
+ * `width`·`height` 는 그 크기(모르면 null — 고정 비율 칸에 그린다). `withheld` 가 차 있으면 그림 대신 사유 안내만
+ * 선다 — 운영자가 내린 그림(`withheldReason` 에 운영자가 적은 사유)이거나 원작이 이용 제한 중인 그림이다.
+ */
+export type ViewerIllustration = {
+  paragraphIndex: number;
+  placement: "before" | "after";
+  order: number;
+  source: "upload" | "original" | "generated";
+  url: string | null;
+  width: number | null;
+  height: number | null;
+  withheld: "taken_down" | "original_restricted" | null;
+  withheldReason: string | null;
+};
 
 /** 화 본문을 이루는 블록 — 문단 하나 또는 삽화 하나. 두 넘김 방식이 같은 목록을 그린다. */
 export type ReaderBlock =

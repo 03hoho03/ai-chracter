@@ -102,8 +102,26 @@ export {
 } from "./model/novelJobPolling";
 export { toNovelReadProgress, type NovelReadProgress } from "./model/novelReadProgress";
 export { toResumeTarget, type ResumeTarget } from "./model/resumeTarget";
+export {
+  toIllustrationLayoutKey,
+  toReaderBlocks,
+  type ReaderBlock,
+  type ViewerIllustration,
+} from "./model/readerBlocks";
+export {
+  toOwnerViewerIllustrations,
+  toPublicViewerIllustrations,
+  type OwnerIllustration,
+} from "./model/viewerIllustrations";
 export { ChapterModelSelect } from "./ui/ChapterModelSelect";
 export { EpisodeTocList } from "./ui/EpisodeTocList";
 export { NovelReadProgressSummary } from "./ui/NovelReadProgressSummary";
 export { NovelStatusState } from "./ui/NovelStatusState";
 export { NovelizeLockedState } from "./ui/NovelizeLockedState";
+export {
+  ILLUSTRATION_ALT,
+  NovelIllustrationFigure,
+  NovelIllustrationWithheldNotice,
+  ORIGINAL_CAPTION,
+  type NovelIllustrationSurface,
+} from "./ui/NovelIllustrationBlock";

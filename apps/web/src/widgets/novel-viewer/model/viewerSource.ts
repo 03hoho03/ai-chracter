@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import type { ViewerIllustration } from "@/entities/novel";
+
 import type { SavedReadingPosition } from "../lib/toRestoreParagraphIndex";
 
 /** 읽기 화면이 놓인 경로 — 내 소설(`/novels/…`)과 노벨(`/webnovels/…`). 링크 목적지와 화 끝의 몇 자리가 이것으로
@@ -31,23 +33,6 @@ export type ViewerEpisode = {
   authorNote: string;
   paragraphs: readonly string[];
   illustrations: readonly ViewerIllustration[];
-};
-
-/**
- * 문단 사이에 서는 삽화 한 장. 자리는 문단 번호와 그 앞·뒤, 같은 자리 안의 순서(`order`)다. `url` 은 정지 그림이고
- * `width`·`height` 는 그 크기(모르면 null — 고정 비율 칸에 그린다). `withheld` 가 차 있으면 그림 대신 사유 안내만
- * 선다 — 운영자가 내린 그림(`withheldReason` 에 운영자가 적은 사유)이거나 원작이 이용 제한 중인 그림이다.
- */
-export type ViewerIllustration = {
-  paragraphIndex: number;
-  placement: "before" | "after";
-  order: number;
-  source: "upload" | "original" | "generated";
-  url: string | null;
-  width: number | null;
-  height: number | null;
-  withheld: "taken_down" | "original_restricted" | null;
-  withheldReason: string | null;
 };
 
 /** 저장하는 읽은 자리. 어느 본문의 자리인지(소유자는 개정 id, 노벨은 공개본 판)는 저장소가 붙인다. */

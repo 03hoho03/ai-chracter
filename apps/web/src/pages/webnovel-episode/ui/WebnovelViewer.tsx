@@ -8,7 +8,7 @@ import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { ReportReasonCategory } from "@/entities/content";
-import { NovelReadProgressSummary, toNovelReadProgress } from "@/entities/novel";
+import { NovelReadProgressSummary, toNovelReadProgress, toPublicViewerIllustrations } from "@/entities/novel";
 import {
   saveWebnovelReadingPosition,
   sendWebnovelReadingPositionKeepalive,
@@ -31,7 +31,6 @@ import { WebnovelCommentsSheet } from "@/features/webnovel-comments";
 import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
 import {
   EpisodeReader,
-  toPublicViewerIllustrations,
   ViewerTocSheet,
   type EpisodeEndFormat,
   type ReadingPositionStore,

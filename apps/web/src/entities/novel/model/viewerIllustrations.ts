@@ -1,4 +1,4 @@
-import type { ViewerIllustration } from "../model/viewerSource";
+import type { ViewerIllustration } from "./readerBlocks";
 
 /** 내 소설 화 응답의 삽화 한 장. 자리를 문단 번호가 아니라 그 개정의 블록 id 로 가리키고, 비어 있으면 위치 확인
  * 필요(앵커 문단이 사라진 그림)다. */

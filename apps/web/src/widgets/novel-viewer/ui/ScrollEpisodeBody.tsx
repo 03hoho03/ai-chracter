@@ -1,7 +1,8 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useRef, type PointerEventHandler, type ReactNode } from "react";
 
-import { toReaderBlocks } from "../lib/readerBlocks";
+import { toReaderBlocks } from "@/entities/novel";
+
 import type { ReadingPositionSession } from "../model/useReadingPosition";
 import { useScrollReadingTracker } from "../model/useScrollReadingTracker";
 import type { EpisodeEndExtras, ViewerChapter, ViewerEpisode, ViewerNovel, ViewerRoute } from "../model/viewerSource";

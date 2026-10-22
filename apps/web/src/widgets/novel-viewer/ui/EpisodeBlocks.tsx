@@ -1,16 +1,14 @@
-import { cn } from "@ai-character-chat/ui/lib/utils";
-import { ImageOff } from "lucide-react";
-
-import { MediaImageFrame } from "@/shared/ui/media-image-frame/MediaImageFrame";
+import {
+  ILLUSTRATION_ALT,
+  NovelIllustrationFigure,
+  NovelIllustrationWithheldNotice,
+  ORIGINAL_CAPTION,
+  type ReaderBlock,
+  type ViewerIllustration,
+} from "@/entities/novel";
 
 import type { PageTypography } from "../lib/pageFormat";
 import { toPageIllustrationBox } from "../lib/pageIllustration";
-import type { ReaderBlock } from "../lib/readerBlocks";
-import type { ViewerIllustration } from "../model/viewerSource";
-
-/** 그림의 대체 글. 설명 글 칸은 응답에 없어 문단 사이에서 "삽화"로만 읽힌다. */
-const ILLUSTRATION_ALT = "삽화";
-const ORIGINAL_CAPTION = "원작 이미지";
 
 type PagedEpisodeBlocksProps = {
   paragraphs: readonly string[];
@@ -78,7 +76,7 @@ function PageIllustrationBlock({
   if (illustration.withheld !== null) {
     return (
       <div {...placementProps} className="break-inside-avoid" style={{ marginBottom }}>
-        <WithheldNotice illustration={illustration} isInPageFormat />
+        <NovelIllustrationWithheldNotice illustration={illustration} isInPageFormat surface="muted" />
       </div>
     );
   }
@@ -110,34 +108,14 @@ type ScrollEpisodeBlocksProps = {
   blocks: readonly ReaderBlock[];
 };
 
-/** 스크롤 모드 화 본문 — 문단과 그 사이 삽화. 글 속 그림 블록(`MediaImageFrame`)이 크기를 알면 비율로, 모르면 고정
- * 칸으로 자리를 먼저 잡아 그림이 늦게 와도 읽던 글이 밀리지 않는다. 사유 안내는 자르지 않는다. */
+/** 스크롤 모드 화 본문 — 문단과 그 사이 삽화. 그림 블록은 판 이력과 같은 `NovelIllustrationFigure` 다(크기를 알면
+ * 비율로, 모르면 고정 칸으로 자리를 먼저 잡아 그림이 늦게 와도 읽던 글이 밀리지 않는다). */
 export function ScrollEpisodeBlocks({ paragraphs, blocks }: ScrollEpisodeBlocksProps) {
   return (
     <div className="flex flex-col gap-4 text-foreground">
       {blocks.map((block) => {
         if (block.kind === "illustration") {
-          const { illustration } = block;
-          if (illustration.withheld !== null) return <WithheldNotice key={block.key} illustration={illustration} isInPageFormat={false} />;
-          return (
-            <figure key={block.key}>
-              {illustration.url === null ? (
-                <div aria-hidden className="aspect-3/4 h-80 max-w-3/4 rounded-lg bg-muted" />
-              ) : (
-                <MediaImageFrame
-                  url={illustration.url}
-                  width={illustration.width ?? undefined}
-                  height={illustration.height ?? undefined}
-                  alt={ILLUSTRATION_ALT}
-                  surface="muted"
-                  isDraggable={false}
-                />
-              )}
-              {illustration.source === "original" && (
-                <figcaption className="mt-1.5 text-xs font-medium text-muted-foreground">{ORIGINAL_CAPTION}</figcaption>
-              )}
-            </figure>
-          );
+          return <NovelIllustrationFigure key={block.key} illustration={block.illustration} surface="muted" />;
         }
         // 문단은 서버가 나눈 순서 그대로이고 이 목록은 다시 정렬되지 않아 순번이 곧 문단의 정체다(읽은 자리도 이 순번으로
         // 저장한다).
@@ -151,34 +129,6 @@ export function ScrollEpisodeBlocks({ paragraphs, blocks }: ScrollEpisodeBlocksP
           </p>
         );
       })}
-    </div>
-  );
-}
-
-/**
- * 그림 대신 서는 안내 — 운영자가 내린 그림(사유 함께)과 원작이 이용 제한 중인 그림. 소유자와 독자가 같은 안내를 본다
- * (작가도 독자가 무엇을 보는지 알아야 그 그림을 바꾸거나 뗀다). 그림 크기를 지키지 않고 짧은 상자로 선다 — 지키면 한
- * 쪽 거의 전부가 "없는 그림"이 된다. 판형 안이면 px, 스크롤 모드면 평소 크기이고 사유를 자르지 않는다.
- */
-function WithheldNotice({ illustration, isInPageFormat }: { illustration: ViewerIllustration; isInPageFormat: boolean }) {
-  const isTakenDown = illustration.withheld === "taken_down";
-  const title = isTakenDown ? "운영 정책에 따라 내린 그림이에요" : "원작이 이용 제한 중이라 이 그림은 보여 드릴 수 없어요";
-  const reason = isTakenDown ? illustration.withheldReason?.trim() : undefined;
-  return (
-    <div
-      role="note"
-      className={cn(
-        "flex items-start rounded-lg bg-muted break-keep text-muted-foreground",
-        isInPageFormat ? "gap-[10px] px-[14px] py-[12px] text-[13px]/[18px]" : "gap-2.5 px-3.5 py-3 text-xs",
-      )}
-    >
-      <ImageOff aria-hidden className={cn("shrink-0", isInPageFormat ? "mt-[1px] size-[16px]" : "mt-0.5 size-4")} />
-      <span className="min-w-0">
-        <span className="block font-medium text-foreground">{title}</span>
-        {reason !== undefined && reason !== "" && (
-          <span className={cn("block wrap-break-word", isInPageFormat && "line-clamp-3")}>{reason}</span>
-        )}
-      </span>
     </div>
   );
 }
