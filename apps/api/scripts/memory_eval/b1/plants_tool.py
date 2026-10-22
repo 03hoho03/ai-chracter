@@ -9,6 +9,8 @@
 `score_checkpoint`·`reMentionTurns`, 거짓 전제 항목의 `verdicts`·`judge_note`·`correct`·`fail_if`.
 거짓 전제 판정 정의는 측정 판정자와 같은 문장이어야 하므로 작성자가 쓰지 않고, 데이터 폴더의 정의 파일 문장을 넣는다.
 
+`stratum` 은 질문 꼴(`askForm`)이 기본이 아니면 꼴을 끝에 붙인다 — 꼴을 바꾸면 `fill` 을 다시 돌려야 분할에 반영된다.
+
 `check` 는 대본 없이 확인할 수 있는 규칙만 본다(대본 본문 검사는 대본 검사기 몫). 위반이 하나라도 있으면 종료 코드 1.
 표준출력에는 규칙 이름과 항목 id·턴만 찍는다 — 질문·정답 내용은 찍지 않는다."""
 
@@ -40,6 +42,14 @@ SUBTYPES = {
     "abstain": {"pure", "near_miss"},
 }
 QUESTION_FORMS = {"direct", "paraphrase", "anaphora"}
+# 질문 꼴(`askForm`) — 질문 형식(`questionForm`, 직접·바꿔 말하기·대명사)과 따로, 관문 범주 질문이 전제를 어떻게 까는가.
+# 꼴마다 응답 회피 비율이 다르고 닫힌 확인 질문은 의심을 비쳐 쉬워지므로, 꼴을 층 이름에 넣어 꼴마다 따로 반씩 나눈다.
+# 칸이 없으면 기본 꼴이고 층 이름이 바뀌지 않는다(칸이 없던 심기 표의 분할이 그대로다).
+DEFAULT_ASK_FORM = "plain"
+ASK_FORMS = frozenset({DEFAULT_ASK_FORM, "premise_followup", "closed_confirm", "lie_action"})
+ASK_FORM_CATEGORIES = frozenset({"secret", "false_premise"})
+# 사용자 거짓말 위에 행동을 요구하는 꼴은 거짓말을 사용자가 하는 항목에서만 뜻이 있다.
+LIE_ASK_FORM = "lie_action"
 LINES = {"assistant", "user"}
 ASSERTED = {"narration", "character", "user"}
 
@@ -77,10 +87,44 @@ def event_turns(entry: dict[str, Any]) -> list[int]:
 
 
 def stratum_of(entry: dict[str, Any]) -> str:
-    """분할 층. 비밀만 첫 접기 전 층과 그 뒤 층으로 나눈다 — 첫 요약에 처음 실리는 비밀이 한쪽 절반에 몰리지 않게."""
-    if entry["category"] == "secret":
-        return f"secret:{entry['layer']}"
-    return str(entry["category"])
+    """분할 층. 비밀만 첫 접기 전 층과 그 뒤 층으로 나눈다 — 첫 요약에 처음 실리는 비밀이 한쪽 절반에 몰리지 않게.
+    기본이 아닌 질문 꼴은 층 이름 끝에 붙는다 — 꼴마다 개발·시험이 반씩 가져가게."""
+    base = f"secret:{entry['layer']}" if entry["category"] == "secret" else str(entry["category"])
+    form = entry.get("askForm", DEFAULT_ASK_FORM)
+    return base if form == DEFAULT_ASK_FORM else f"{base}:{form}"
+
+
+def _stratified(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """층을 셀 수 있는 항목 — 비밀은 `fill` 이 층(`layer`)을 정한 뒤에만."""
+    return [e for e in items if e["category"] != "secret" or "layer" in e]
+
+
+def odd_strata(items: list[dict[str, Any]], *, forms_only: bool = False) -> list[str]:
+    """크기가 홀수인 층("층 개수"). 홀수 층은 개발 절반이 하나 더 가져가 시험 수가 층 크기의 절반이 아니게 된다.
+    `forms_only` 면 기본이 아닌 질문 꼴 항목이 든 층만 본다."""
+    counts = Counter(stratum_of(e) for e in _stratified(items))
+    formed = {stratum_of(e) for e in _stratified(items) if e.get("askForm", DEFAULT_ASK_FORM) != DEFAULT_ASK_FORM}
+    return [f"{name} {n}" for name, n in counts.items() if n % 2 and (not forms_only or name in formed)]
+
+
+def ask_form_violations(items: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """질문 꼴 칸 규칙(층 크기 홀수는 `odd_strata`). 칸이 없는 항목은 기본 꼴이라 걸리지 않는다."""
+    v: dict[str, list[str]] = defaultdict(list)
+    for e in items:
+        if "askForm" not in e:
+            continue
+        iid, form = str(e["id"]), e["askForm"]
+        if form not in ASK_FORMS:
+            v["모르는 질문 꼴"].append(iid)
+            continue
+        if form != DEFAULT_ASK_FORM and e["category"] not in ASK_FORM_CATEGORIES:
+            v["질문 꼴을 쓸 수 없는 범주"].append(iid)
+        if form == LIE_ASK_FORM and (e["category"] != "false_premise" or e.get("subtype") != "user_lie"):
+            v["사용자 거짓말 꼴인데 사용자 거짓말 항목이 아님"].append(iid)
+        if "stratum" in e and (e["category"] != "secret" or "layer" in e) and e["stratum"] != stratum_of(e):
+            # 분할은 적힌 층 이름을 읽는다 — 꼴을 바꾸고 `fill` 을 다시 돌리지 않으면 꼴이 분할에 반영되지 않는다.
+            v["층 이름과 질문 꼴 불일치"].append(iid)
+    return dict(v)
 
 
 def fill(raw: dict[str, Any], definitions: dict[str, Any]) -> dict[str, Any]:
@@ -139,10 +183,11 @@ def check(raw: dict[str, Any], work_text: str) -> dict[str, list[str]]:
         if not i.startswith(prefix):
             v["id 접두어"].append(i)
 
-    counts = Counter(stratum_of(e) for e in items if e["category"] != "secret" or "layer" in e)
-    for stratum, n in counts.items():
-        if n % 2:
-            v["층 크기 홀수"].append(f"{stratum} {n}")
+    counts = Counter(stratum_of(e) for e in _stratified(items))
+    if odd := odd_strata(items):
+        v["층 크기 홀수"] = odd
+    for rule, hits in ask_form_violations(items).items():
+        v[rule] += hits
     for stratum, want in quota.items():
         if counts.get(stratum, 0) != want:
             v["층 배정 수"].append(f"{stratum} {counts.get(stratum, 0)}≠{want}")
@@ -323,6 +368,7 @@ def summary(raw: dict[str, Any]) -> dict[str, Any]:
         "strata": dict(sorted(Counter(stratum_of(e) for e in items).items())),
         "subtypes": dict(sorted(Counter(f"{e['category']}/{e.get('subtype')}" for e in items).items())),
         "questionForms": dict(sorted(Counter(e.get("questionForm", "direct") for e in items).items())),
+        "askForms": dict(sorted(Counter(e.get("askForm", DEFAULT_ASK_FORM) for e in items).items())),
         "namelessUnaware": sum(1 for e in items if e["category"] == "secret" and e.get("unawareCharacter") is None),
         "plantEvents": len(events),
         "lastPlantTurn": max(events) if events else None,

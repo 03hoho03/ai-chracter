@@ -103,7 +103,7 @@ def _bundle(tmp_path: Path, *, lane: str | None = "story") -> tuple[Path, Path]:
         encoding="utf-8",
     )  # fmt: skip
     root = tmp_path / "run" / "b1" / "split"
-    assert bundle_split.write_bundle(config, root)["ok"]
+    assert bundle_split.write_bundle(config, root, seed_sha=holdout.sha256_file(config))["ok"]
     return plants, root / "t"
 
 

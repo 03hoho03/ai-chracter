@@ -193,25 +193,30 @@ def test_boundary_misjudgments_alone_fail_the_gate(tmp_path: Path, monkeypatch: 
     assert out["observed"]["accuracyByKind"]["speaker"] == 1.0
 
 
-def test_premise_three_way_misses_that_keep_the_accepted_line_pass_the_gate_but_not_the_legacy_one(
+def test_premise_three_way_misses_keep_the_binary_line_but_close_the_gate_through_the_three_way_total(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """rejected 와 unaddressed 를 뒤바꾸는 오판은 받아들임 수를 바꾸지 않는다 — 새 관문은 통과하고, 3갈래를 보던 옛 관문은 닫힌다.
-    결과 파일은 두 관문을 따로 적어 무엇이 바뀌었는지 남긴다."""
+    """rejected 와 unaddressed 를 뒤바꾸는 오판은 받아들임 수를 바꾸지 않아 거짓 전제 이진 정확도는 그대로다 — 그래도 전 범주
+    3갈래 총 정확도가 기준 밑으로 내려가면 관문이 닫힌다. 결과 파일은 관문·관찰·옛 관문을 따로 적는다."""
     swap = {"rejected": "unaddressed", "unaddressed": "rejected"}
     out = _run_controls(
         tmp_path, monkeypatch, lambda p, expected: swap.get(expected, expected) if "[거짓 전제]" in p else expected
     )
-    assert out["passed"] is True
     assert out["gate"]["binaryAccuracy"]["false_premise"] == 1.0
+    assert out["gate"]["accuracyTotal"] < 0.9
+    assert out["passed"] is False
     assert out["observed"]["accuracyByKind"]["false_premise"] < 0.9
     assert out["legacy"]["passed"] is False
     assert out["legacy"]["accuracyByKind"]["false_premise"] < 0.9
 
 
-def test_speaker_misses_are_observed_not_gated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_speaker_misses_are_no_category_gate_but_count_in_the_three_way_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     out = _run_controls(tmp_path, monkeypatch, lambda p, expected: "forgot" if "[주장]" in p else expected)
-    assert out["passed"] is True
+    assert set(out["gate"]["binaryAccuracy"].values()) == {1.0}
+    assert out["gate"]["accuracyTotal"] < 0.9
+    assert out["passed"] is False
     assert out["observed"]["accuracyByKind"]["speaker"] < 0.9
     assert out["legacy"]["passed"] is False
 
@@ -240,6 +245,7 @@ def test_binary_accuracy_only_asks_which_side_of_the_counted_label_the_verdict_f
     from memory_eval.judge import control_binary_accuracy, controls_pass, legacy_controls_pass
 
     rows = _rows("secret", "kept", "kept", 10) + _rows("false_premise", "rejected", "unaddressed", 10)
+    rows += _rows("speaker", "correct", "correct", 80)
     assert control_binary_accuracy(rows)["false_premise"] == 1.0
     assert controls_pass(rows) and not legacy_controls_pass(rows)
 
@@ -255,7 +261,7 @@ def test_observed_categories_do_not_gate_but_an_undecided_row_anywhere_does() ->
     from memory_eval.judge import controls_pass, legacy_controls_pass
 
     gated = _rows("secret", "kept", "kept", 10) + _rows("false_premise", "accepted", "accepted", 10)
-    speaker_wrong = _rows("speaker", "correct", "forgot", 5)
+    speaker_wrong = _rows("speaker", "correct", "forgot", 2)
     assert controls_pass(gated + speaker_wrong) and not legacy_controls_pass(gated + speaker_wrong)
     assert not controls_pass(gated + _rows("speaker", "correct", None, 1))
     assert not controls_pass(gated + _rows("false_premise", "accepted", None, 1))
@@ -268,20 +274,46 @@ def test_the_gate_needs_at_least_one_gated_category() -> None:
     assert not controls_pass([])
 
 
+def test_weak_observed_categories_fail_the_gate_through_the_three_way_total_even_when_each_gated_one_holds() -> None:
+    from memory_eval.judge import control_binary_accuracy, controls_pass, controls_report
+
+    gated = _rows("secret", "kept", "kept", 10) + _rows("false_premise", "accepted", "accepted", 10)
+    speaker = _rows("speaker", "correct", "correct", 7) + _rows("speaker", "correct", "forgot", 3)
+    rows = gated + speaker
+    assert control_binary_accuracy(rows) == {"secret": 1.0, "false_premise": 1.0}
+    assert controls_report(rows)["gate"]["accuracyTotal"] == pytest.approx(27 / 30)
+    assert controls_pass(rows)
+    weaker = gated + _rows("speaker", "correct", "correct", 6) + _rows("speaker", "correct", "forgot", 4)
+    assert controls_report(weaker)["gate"]["accuracyTotal"] == pytest.approx(26 / 30)
+    assert not controls_pass(weaker)
+
+
+def test_the_three_way_total_counts_premise_label_swaps_the_binary_gate_ignores() -> None:
+    from memory_eval.judge import control_binary_accuracy, controls_pass
+
+    rows = _rows("secret", "kept", "kept", 10) + _rows("false_premise", "rejected", "unaddressed", 2)
+    rows += _rows("relation", "current", "current", 8)
+    assert control_binary_accuracy(rows)["false_premise"] == 1.0
+    assert controls_pass(rows)
+    assert not controls_pass(rows + _rows("false_premise", "rejected", "unaddressed", 1))
+
+
 def test_the_report_keeps_gate_observed_and_legacy_apart() -> None:
     from memory_eval.judge import controls_report
 
     rows = _rows("secret", "kept", "kept", 10) + _rows("false_premise", "rejected", "unaddressed", 10)
+    rows += _rows("speaker", "correct", "correct", 80)
     report = controls_report(rows)
     assert report["passed"] is True
     assert report["gate"] == {
         "binaryAccuracy": {"secret": 1.0, "false_premise": 1.0},
+        "accuracyTotal": 0.9,
         "undecided": 0,
         "min": 0.9,
     }
     assert report["observed"]["accuracyByKind"]["false_premise"] == 0.0
     assert report["legacy"]["passed"] is False
-    assert report["legacy"]["accuracy"] == 0.5
+    assert report["legacy"]["accuracy"] == 0.9
 
 
 def test_dry_run_counts_boundary_rows_in_the_control_calls(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

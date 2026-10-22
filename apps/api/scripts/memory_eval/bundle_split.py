@@ -3,8 +3,14 @@
 시드 파일(대본을 확정하기 전에 커밋한다) 꼴:
 
     {"base": 정수,
+     "shrinkSeed": 정수,
      "works": {"<작품>": {"plants": "<시드 파일 기준 상대 경로>", "strata": {"<층>": 시드, ...}}, ...},
      "totals": [{"name": "...", "works": ["<작품>", ...], "categories": ["<범주>", ...], "min": 정수}, ...]}
+
+- 시드 파일은 결과를 보기 전에 고정한다. 분할은 시드 파일의 sha256 이 실행자가 준 값과 같을 때만 돈다 — 커밋해 둔 시드가 아닌
+  파일로 나뉘면 사전에 고정했다는 말이 거짓이 된다.
+- `shrinkSeed` 는 분할 뒤 관문 범주 시험 문항을 하한까지 줄일 때 쓰는 시드다(`holdout_trim`). 분할에는 쓰지 않지만 같은 파일에
+  두어 분할 시드와 함께 결과 전에 고정된다. 없으면 축소 명령이 거부한다.
 
 - 층은 항목의 `stratum` 칸(없으면 `category`)이다. 층마다 시드 파일이 준 시드로 `stratified_split` 한다 — 층마다 따로
   적힌 시드라 한 층의 시드를 바꿔도 다른 층의 배정은 그대로다.
@@ -62,6 +68,12 @@ def _counts(raw: Mapping[str, Any], halves: Mapping[str, str]) -> dict[str, dict
     return dict(sorted(counts.items()))
 
 
+def require_seed_sha(config_path: Path, seed_sha: str) -> None:
+    actual = holdout.sha256_file(config_path)
+    if actual != seed_sha:
+        raise SystemExit(f"시드 파일의 sha256 이 준 값과 다르다(고정한 시드 파일이 아니다): {seed_sha} ≠ {actual}")
+
+
 def plan_bundle(config_path: Path) -> dict[str, Any]:
     """파일을 쓰지 않고 분할·개수·합계 판정만 계산한다."""
     config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -96,7 +108,8 @@ def _dump(obj: Any) -> bytes:
     return (json.dumps(obj, ensure_ascii=False, indent=1) + "\n").encode("utf-8")
 
 
-def write_bundle(config_path: Path, out_root: Path) -> dict[str, Any]:
+def write_bundle(config_path: Path, out_root: Path, *, seed_sha: str) -> dict[str, Any]:
+    require_seed_sha(config_path, seed_sha)
     plan = plan_bundle(config_path)
     public = {"counts": plan["counts"], "totals": plan["totals"]}
     if not plan["ok"]:

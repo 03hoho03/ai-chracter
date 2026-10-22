@@ -142,14 +142,42 @@ def cmd_split_bundle(args: argparse.Namespace) -> int:
     from memory_eval import bundle_split
 
     if args.dry_run:
+        bundle_split.require_seed_sha(args.config, args.seed_sha)
         plan = bundle_split.plan_bundle(args.config)
         _print({"counts": plan["counts"], "totals": plan["totals"]})
         return 0 if plan["ok"] else 1
-    result = bundle_split.write_bundle(args.config, args.out_root or args.run / holdout.SPLIT_DIR)
+    result = bundle_split.write_bundle(
+        args.config, args.out_root or args.run / holdout.SPLIT_DIR, seed_sha=args.seed_sha
+    )
     _print({k: result[k] for k in ("counts", "totals", "testKeysSha256")})
     if not result["ok"]:
         print("시험 합계 하한을 못 채운 항목이 있어 어떤 작품의 분할 파일도 쓰지 않았다", file=sys.stderr)
         return 1
+    return 0
+
+
+def cmd_test_drop(args: argparse.Namespace) -> int:
+    """시험 쪽 빼기 목록. 표준출력은 이유별 개수·합계 판정·목록 파일 sha256 뿐이다(그 sha 를 봉인 문서 머리에 적는다)."""
+    from memory_eval import holdout_trim
+
+    if args.out.exists():
+        raise SystemExit(f"빼기 목록 파일이 이미 있다(덮어쓰지 않는다): {args.out}")
+    result = holdout_trim.build_drop(
+        args.config,
+        args.split_root or args.run / holdout.SPLIT_DIR,
+        seed_sha=args.seed_sha,
+        forms=args.drop_forms,
+        shrink=args.shrink,
+    )
+    sha = holdout_trim.write_drop(args.out, result)
+    _print(
+        {
+            "byReason": result["byReason"],
+            "byCategory": result["byCategory"],
+            "totals": result["totals"],
+            "dropSha256": sha,
+        }
+    )
     return 0
 
 
@@ -1328,8 +1356,27 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     )
     p.add_argument("--config", type=Path, required=True, help="층별 시드·합계 하한 파일")
     p.add_argument("--out-root", type=Path, help="작품별 분할 폴더의 부모(기본 <원자료>/split)")
+    p.add_argument("--seed-sha", required=True, help="고정해 둔 시드 파일의 sha256(다르면 거부)")
     p.add_argument("--dry-run", action="store_true", help="파일을 쓰지 않고 개수와 합계 판정만 찍는다")
     p.set_defaults(fn=cmd_split_bundle)
+
+    p = sub.add_parser(
+        "test-drop",
+        help="시험 쪽에서 뺄 id 목록 파일을 만든다 — 질문 꼴 빼기와 관문 범주 하한까지 축소(심기 표는 고치지 않는다)",
+    )
+    p.add_argument("--config", type=Path, required=True, help="split-bundle 과 같은 시드 파일")
+    p.add_argument("--seed-sha", required=True, help="고정해 둔 시드 파일의 sha256(다르면 거부)")
+    p.add_argument("--split-root", type=Path, help="작품별 분할 폴더의 부모(기본 <원자료>/split)")
+    p.add_argument(
+        "--drop-forms", nargs="*", default=[], help="시험 쪽에서 뺄 질문 꼴(거짓 전제 문항만, 꼴 표지로만 고른다)"
+    )
+    p.add_argument(
+        "--shrink",
+        action="store_true",
+        help="관문 범주 시험 문항을 시드 파일의 shrinkSeed 로 하한 × 1.1 올림까지 줄인다",
+    )
+    p.add_argument("--out", type=Path, required=True, help="쓸 id 목록 파일(이미 있으면 거부)")
+    p.set_defaults(fn=cmd_test_drop)
 
     p = sub.add_parser("budget")
     with_plants(p)

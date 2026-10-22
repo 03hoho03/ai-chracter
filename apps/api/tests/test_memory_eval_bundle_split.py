@@ -1,6 +1,7 @@
 """대본 셋을 한꺼번에 나누는 분할 — 층마다 시드 파일의 시드로 섞고, 층 크기는 짝수여야 하며, 작품을 넘는 시험 합계 하한을
 하나라도 못 채우면 어떤 작품의 분할 파일도 쓰지 않는다. 미리 보기는 개수만 찍고 파일을 만들지 않는다."""
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,10 @@ def _write_config(
     cfg = tmp_path / "split-seeds.json"
     cfg.write_text(json.dumps({"base": 7, "works": cfg_works, "totals": totals}, ensure_ascii=False), encoding="utf-8")
     return cfg
+
+
+def _sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 STORY = {"secret:early": 4, "secret:main": 6, "detail": 10}
@@ -126,19 +131,23 @@ def test_one_item_below_a_floor_fails_that_total_by_name(tmp_path: Path) -> None
 def test_a_failed_total_writes_no_split_file_for_any_work(tmp_path: Path) -> None:
     totals = [dict(TOTALS[0], min=11)]
     cfg = _write_config(tmp_path, {"a": STORY, "b": STORY}, totals)
-    result = bundle_split.write_bundle(cfg, tmp_path / "split")
+    result = bundle_split.write_bundle(cfg, tmp_path / "split", seed_sha=_sha(cfg))
     assert not result["ok"]
     assert not (tmp_path / "split").exists()
 
 
 def test_written_split_is_readable_by_the_dev_view_and_hides_test_items(tmp_path: Path) -> None:
     cfg = _write_config(tmp_path, {"a": STORY, "b": STORY}, TOTALS)
-    result = bundle_split.write_bundle(cfg, tmp_path / "split")
+    result = bundle_split.write_bundle(cfg, tmp_path / "split", seed_sha=_sha(cfg))
     assert result["ok"]
     manifest = json.loads((tmp_path / "split" / "a" / holdout.MANIFEST_FILE).read_text(encoding="utf-8"))
     assert manifest["strataSeeds"] == {"secret:early": 1000, "secret:main": 1001, "detail": 1002}
     view = holdout.load_view(
-        tmp_path / "plants-a.json", tmp_path / "split" / "a", {"dev"}, preregistration=tmp_path / PREREGISTRATION_FILE, seal_sha=None
+        tmp_path / "plants-a.json",
+        tmp_path / "split" / "a",
+        {"dev"},
+        preregistration=tmp_path / PREREGISTRATION_FILE,
+        seal_sha=None,
     )
     test_ids = json.loads((tmp_path / "split" / "a" / holdout.TEST_IDS_FILE).read_text(encoding="utf-8"))
     assert len(view.plants) == 10 and len(test_ids) == 10
@@ -151,7 +160,7 @@ def test_existing_split_files_are_never_overwritten(tmp_path: Path) -> None:
     (tmp_path / "split" / "b").mkdir(parents=True)
     (tmp_path / "split" / "b" / holdout.TEST_IDS_FILE).write_text("[]", encoding="utf-8")
     with pytest.raises(SystemExit, match="이미 있다"):
-        bundle_split.write_bundle(cfg, tmp_path / "split")
+        bundle_split.write_bundle(cfg, tmp_path / "split", seed_sha=_sha(cfg))
     assert not (tmp_path / "split" / "a").exists()
 
 
@@ -161,7 +170,9 @@ def test_dry_run_prints_counts_and_totals_only_and_writes_nothing(
     from memory_eval_cli import main
 
     cfg = _write_config(tmp_path, {"a": STORY, "b": STORY}, TOTALS)
-    assert main(["--run", str(tmp_path), "split-bundle", "--config", str(cfg), "--dry-run"]) == 0
+    assert (
+        main(["--run", str(tmp_path), "split-bundle", "--config", str(cfg), "--dry-run", "--seed-sha", _sha(cfg)]) == 0
+    )
     out = capsys.readouterr().out
     printed = json.loads(out)
     assert set(printed) == {"counts", "totals"}
@@ -173,5 +184,5 @@ def test_cli_exits_one_when_a_total_fails(tmp_path: Path) -> None:
     from memory_eval_cli import main
 
     cfg = _write_config(tmp_path, {"a": STORY, "b": STORY}, [dict(TOTALS[0], min=11)])
-    assert main(["--run", str(tmp_path), "split-bundle", "--config", str(cfg)]) == 1
+    assert main(["--run", str(tmp_path), "split-bundle", "--config", str(cfg), "--seed-sha", _sha(cfg)]) == 1
     assert not (tmp_path / "split").exists()
