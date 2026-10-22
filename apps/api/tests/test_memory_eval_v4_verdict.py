@@ -711,3 +711,24 @@ def test_the_preview_command_needs_no_seal_and_writes_a_dev_marked_result(tmp_pa
     dev = set(json.loads((split_dir / holdout.DEV_IDS_FILE).read_text(encoding="utf-8")))
     assert result["safety"]["b1-A0:b1-A1"]["story"]["S1"]["missing"]  # 채점 줄이 없는 개발 문항
     assert {m.split(":")[0] for m in result["safety"]["b1-A0:b1-A1"]["story"]["S1"]["missing"]} <= dev
+
+
+# ---------------------------------------------------------------- 통과 최소 불일치 표
+
+
+def test_min_discordant_is_the_smallest_b_whose_exact_one_sided_p_is_below_the_threshold() -> None:
+    """한쪽 불일치 c 마다 p = P(X ≥ b) 가 문턱 미만이 되는 가장 작은 b — 봉인 전에 실제 n 으로 적는 표다. n 이 b + c 를
+    못 담으면 None."""
+    assert [v4.min_discordant(0.10, c) for c in range(6)] == [4, 6, 7, 9, 10, 12]
+    assert [v4.min_discordant(0.025, c) for c in range(4)] == [6, 8, 10, 12]
+    assert [v4.min_discordant(0.05, c) for c in range(4)] == [5, 7, 9, 10]
+    assert v4.min_discordant(0.10, 1, n=6) is None and v4.min_discordant(0.10, 1, n=7) == 6
+
+
+def test_the_power_table_lists_each_rules_threshold_with_the_actual_n() -> None:
+    table = v4.power_table({"secret:story": 84, "effect:E1": 56}, max_c=2)
+    assert table["secret:story"] == {"n": 84, "alpha": 0.10, "minB": [4, 6, 7]}
+    assert table["effect:E1"]["alpha"] == [0.025, 0.05]
+    assert table["effect:E1"]["minB"] == {"0.025": [6, 8, 10], "0.05": [5, 7, 9]}
+    with pytest.raises(SystemExit, match="모르는"):
+        v4.power_table({"nonsense": 3}, max_c=1)
