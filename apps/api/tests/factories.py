@@ -617,12 +617,13 @@ async def _make_novel_tree(
     first_revision = revision_row(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate")
     db_session.add(first_revision)
     await db_session.flush()
-    reverting_revision = revision_row(
+    reverting_revision = build_revision(
         chapter_id=chapter.id,
         revision_no=2,
         body="첫 본문",
         source="revert",
         reverted_from_revision_id=first_revision.id,
+        block_ids=first_revision.block_ids,
     )
     generate_job = NovelJob(
         novel_id=novel.id,
