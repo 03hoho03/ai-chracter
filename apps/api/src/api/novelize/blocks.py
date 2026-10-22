@@ -10,7 +10,6 @@
   바깥 문단과 글자가 같을 때로, 그때는 글자로 어느 쪽이 바깥인지 가를 수 없어 같은 글의 다른 문단 id 를 받을 수 있다. 장
   전체를 한 번에 정렬하지 않는 이유는, 같은 글자 문단(`* * *` 같은 장면 구분)이 여럿이면 범위에서 떨어진 바깥 문단의 id 까지
   범위 안으로 옮겨 붙기 때문이다. AI 수정 적용은 작업이 범위를 알아 위치로 계산한다.
-이을 앞 개정에 id 가 없으면(이 칸이 생기기 전 이미지가 쓴 행) 전부 새 id 다.
 
 개정 행은 `build_revision` 하나로만 만든다 — id 수 = 문단 수, id 가 겹치지 않음을 여기서 지키고 해시를 계산한다(테스트가
 `src/` 의 다른 자리에서 개정을 만들지 않는지 구조로 검사한다)."""
@@ -43,8 +42,6 @@ def fresh_ids(body: str) -> list[uuid.UUID]:
 
 
 def copied_ids(source: NovelChapterRevision) -> list[uuid.UUID]:
-    if source.block_ids is None:
-        return fresh_ids(source.body)
     return list(source.block_ids)
 
 
@@ -94,22 +91,18 @@ def inherit_range(
 
 def succeeding_ids(base: NovelChapterRevision, body: str) -> list[uuid.UUID]:
     """직접 수정에서 화면이 id 를 싣지 않았을 때 — 기준 개정과 글자로 맞춘다."""
-    if base.block_ids is None:
-        return fresh_ids(body)
     return inherit_by_text(split_paragraphs(base.body), base.block_ids, split_paragraphs(body))
 
 
 def succeeding_range_ids(base: NovelChapterRevision, first: int, last: int, body: str) -> list[uuid.UUID]:
     """AI 수정 적용 — 잠근 현재 개정(`base`)의 id 와 작업의 문단 범위로 계산한다."""
-    if base.block_ids is None:
-        return fresh_ids(body)
     return inherit_range(split_paragraphs(base.body), base.block_ids, first, last, split_paragraphs(body))
 
 
 def requested_ids(base: NovelChapterRevision, requested: Sequence[uuid.UUID | None], body: str) -> list[uuid.UUID]:
     """직접 수정 요청이 문단마다 실은 id(`None` = 새 문단)를 검증해 새 id 로 바꾼다. 문단 수와 다르거나, 기준 개정에 없는
     id 이거나, 같은 id 가 둘이면 `BlockIdsInvalidError`."""
-    known = set(base.block_ids or [])
+    known = set(base.block_ids)
     sent = [block_id for block_id in requested if block_id is not None]
     if len(requested) != len(split_paragraphs(body)) or len(set(sent)) != len(sent) or not known.issuperset(sent):
         raise BlockIdsInvalidError

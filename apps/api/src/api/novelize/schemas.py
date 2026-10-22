@@ -498,9 +498,8 @@ class NovelRevisionResponse(NovelRevisionSummary):
     body: str
     # 본문을 빈 줄로 나눈 문단. 문단 범위(AI 수정)의 인덱스는 이 배열 기준이다 — 화면이 다시 나누지 않는다.
     paragraphs: list[str]
-    # 문단마다 블록 id 를 붙인 같은 배열(블록 i = 문단 i). 개정이 바뀌어도 같은 문단을 가리키는 id 다. 블록 칸이 생기기 전
-    # 이미지가 쓴 개정은 null 이다.
-    blocks: list[NovelBlock] | None
+    # 문단마다 블록 id 를 붙인 같은 배열(블록 i = 문단 i). 개정이 바뀌어도 같은 문단을 가리키는 id 다.
+    blocks: list[NovelBlock]
 
 
 class NovelChapterResponse(CamelModel):

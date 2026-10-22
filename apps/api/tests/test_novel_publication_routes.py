@@ -33,6 +33,7 @@ from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyV
 from api.novel_public import screening
 from api.novel_public.screening import NovelScreenResult
 from factories import (
+    revision_row,
     Room,
     _add_batch,
     _clear_llm_override,
@@ -134,7 +135,7 @@ async def _new_revision(db_session: AsyncSession, chapter: NovelChapter, body: s
     latest = await db_session.scalar(
         sa.select(sa.func.max(NovelChapterRevision.revision_no)).where(NovelChapterRevision.chapter_id == chapter.id)
     )
-    revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=(latest or 0) + 1, body=body, source="manual_edit")
+    revision = revision_row(chapter_id=chapter.id, revision_no=(latest or 0) + 1, body=body, source="manual_edit")
     db_session.add(revision)
     await db_session.commit()
     return revision

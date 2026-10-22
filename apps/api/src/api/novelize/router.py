@@ -1500,9 +1500,7 @@ def _revision_response(revision: NovelChapterRevision) -> NovelRevisionResponse:
         **_revision_summary(revision).model_dump(),
         body=revision.body,
         paragraphs=paragraphs,
-        blocks=None
-        if revision.block_ids is None
-        else [NovelBlock(id=block_id, text=text) for block_id, text in zip(revision.block_ids, paragraphs, strict=True)],
+        blocks=[NovelBlock(id=block_id, text=text) for block_id, text in zip(revision.block_ids, paragraphs, strict=True)],
     )
 
 

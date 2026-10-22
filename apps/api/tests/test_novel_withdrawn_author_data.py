@@ -35,6 +35,7 @@ from api.db.models.novel import (
     NovelSnapshot,
 )
 from factories import (
+    revision_row,
     PublicNovel,
     _create_admin,
     _login_as,
@@ -95,15 +96,15 @@ async def _plant_author_data(db_client: httpx.AsyncClient, db_session: AsyncSess
         sa.update(NovelChapterRevision).where(NovelChapterRevision.id == first_edition).values(body="6화 첫 판")
     )
     # 1판과 2판 사이의 초고, 그 초고를 되돌리기 원본으로 가리키는 2판, 2판 뒤의 초고.
-    between = NovelChapterRevision(chapter_id=sixth, revision_no=2, body="6화 사이 초고", source="manual_edit")
+    between = revision_row(chapter_id=sixth, revision_no=2, body="6화 사이 초고", source="manual_edit")
     db_session.add(between)
     await db_session.flush()
-    current = NovelChapterRevision(
+    current = revision_row(
         chapter_id=sixth, revision_no=3, body="6화 둘째 판", source="revert", reverted_from_revision_id=between.id
     )
     db_session.add(current)
     await db_session.flush()
-    latest = NovelChapterRevision(chapter_id=sixth, revision_no=4, body="6화 마지막 초고", source="manual_edit")
+    latest = revision_row(chapter_id=sixth, revision_no=4, body="6화 마지막 초고", source="manual_edit")
     db_session.add(latest)
     db_session.add_all(
         [
@@ -146,7 +147,7 @@ async def _plant_author_data(db_client: httpx.AsyncClient, db_session: AsyncSess
     )
     db_session.add(unpublished)
     await db_session.flush()
-    unpublished_revision = NovelChapterRevision(
+    unpublished_revision = revision_row(
         chapter_id=unpublished.id, revision_no=1, body="9화 초고", source="generate"
     )
     db_session.add(unpublished_revision)

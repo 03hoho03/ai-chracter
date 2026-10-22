@@ -19,7 +19,7 @@ from api.db.models import (
     ReportStatus,
 )
 from api.novelize.deletion import delete_batch
-from factories import NovelTree, _make_novel_tree, _make_user
+from factories import NovelTree, _make_novel_tree, _make_user, revision_row
 
 
 async def _tree(db_session: AsyncSession) -> NovelTree:
@@ -109,7 +109,7 @@ async def test_deleting_the_last_batch_removes_its_comments_and_keeps_the_report
         )
         db_session.add(chapter)
         await db_session.flush()
-        db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="본문", source="generate"))
+        db_session.add(revision_row(chapter_id=chapter.id, revision_no=1, body="본문", source="generate"))
         doomed.append(chapter)
     kept = _comment(tree)
     db_session.add_all([kept, *(_comment(tree, chapter_id=chapter.id) for chapter in doomed)])

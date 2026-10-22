@@ -35,7 +35,7 @@ from api.novelize.schemas import (
     NovelRevisionCreateRequest,
 )
 from api.novelize.snapshots import save_snapshot
-from factories import _assert_blocked, _make_novel_tree, _make_user
+from factories import _assert_blocked, _make_novel_tree, _make_user, revision_row
 
 _MARKER_DOMAIN = "novelize-edit-races.test"
 
@@ -313,7 +313,7 @@ async def test_a_snapshot_restore_commits_the_stale_preview_cleanup(
 ) -> None:
     seed = await _seed(independent_factory)
     async with independent_factory() as s:
-        newer = NovelChapterRevision(chapter_id=seed.chapter_id, revision_no=3, body="고침", source="manual_edit")
+        newer = revision_row(chapter_id=seed.chapter_id, revision_no=3, body="고침", source="manual_edit")
         s.add(newer)
         await s.commit()
     job_id = await _pending_preview(independent_factory, seed, newer.id)

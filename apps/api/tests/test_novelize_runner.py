@@ -52,6 +52,7 @@ from api.novelize.paragraphs import resplit_long_paragraphs
 from api.novelize.text import clean_chapter_body, split_paragraphs
 from api.novelize import writing_lock
 from factories import (
+    revision_row,
     Room,
     _NeverCalledLLMClient,
     _batch_output,
@@ -1164,7 +1165,7 @@ async def test_ai_edit_finishing_after_its_chapter_changed_is_refunded_as_source
     job = await _ai_edit_job(db_session, novel, chapter, start=1, end=1)
 
     async def edit_meanwhile() -> None:
-        db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="딴 탭", source="manual_edit"))
+        db_session.add(revision_row(chapter_id=chapter.id, revision_no=2, body="딴 탭", source="manual_edit"))
         await db_session.commit()
 
     await runner.run_job(_factory(db_session), _NovelLLM(paragraphs=["고친 둘째."], during=edit_meanwhile), job.id)

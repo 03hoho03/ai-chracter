@@ -17,7 +17,7 @@ from api.db.models import (
     NovelScreening,
 )
 from api.novelize.deletion import delete_batch
-from factories import NovelTree, _make_novel_tree, _make_user
+from factories import NovelTree, _make_novel_tree, _make_user, revision_row
 
 
 async def _tree(db_session: AsyncSession) -> NovelTree:
@@ -144,7 +144,7 @@ async def test_delete_batch_removes_only_that_batchs_publications_and_keeps_the_
     last_chapter = NovelChapter(novel_id=tree.novel.id, ordinal=2, batch_id=last_batch.id, episode_index=0, **segment)
     db_session.add(last_chapter)
     await db_session.flush()
-    last_revision = NovelChapterRevision(chapter_id=last_chapter.id, revision_no=1, body="둘째 화", source="generate")
+    last_revision = revision_row(chapter_id=last_chapter.id, revision_no=1, body="둘째 화", source="generate")
     db_session.add(last_revision)
     await db_session.flush()
     db_session.add_all(

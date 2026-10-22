@@ -37,6 +37,7 @@ from api.core.rate_limit import KST
 from api.core.security import hash_password
 from api.db.models.clover import CloverSpendAllocation, CloverSpendRefund, CloverSpendUsage
 from api.db.models.creator_payout import CreatorPayoutApplication
+from api.db.models.novel import NovelRevisionSource
 from api.db.models.payment import PaymentCancellation
 from api.db.models import (
     AdminUser,
@@ -112,6 +113,7 @@ from api.llm.dependencies import get_llm_client
 from api.llm.gemini import GeminiLLMClient
 from api.llm.routing import RoutingLLMClient
 from api.main import app
+from api.novelize.blocks import build_revision, fresh_ids
 from api.session.store import create_session
 
 
@@ -562,6 +564,25 @@ class NovelTree:
     active_job: NovelJob
 
 
+def revision_row(
+    *,
+    chapter_id: uuid.UUID,
+    revision_no: int,
+    body: str,
+    source: NovelRevisionSource,
+    reverted_from_revision_id: uuid.UUID | None = None,
+) -> NovelChapterRevision:
+    """블록 칸(문단마다 새 id·본문 해시)을 채운 개정 행 하나. 세션에 넣는 것은 호출자다."""
+    return build_revision(
+        chapter_id=chapter_id,
+        revision_no=revision_no,
+        body=body,
+        source=source,
+        reverted_from_revision_id=reverted_from_revision_id,
+        block_ids=fresh_ids(body),
+    )
+
+
 async def _make_novel_tree(
     db_session: AsyncSession, user_id: uuid.UUID, *, chat_room_id: uuid.UUID | None = None
 ) -> NovelTree:
@@ -593,10 +614,10 @@ async def _make_novel_tree(
     chapter = NovelChapter(novel_id=novel.id, ordinal=1, batch_id=batch.id, episode_index=0, **segment)
     db_session.add(chapter)
     await db_session.flush()
-    first_revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate")
+    first_revision = revision_row(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate")
     db_session.add(first_revision)
     await db_session.flush()
-    reverting_revision = NovelChapterRevision(
+    reverting_revision = revision_row(
         chapter_id=chapter.id,
         revision_no=2,
         body="첫 본문",
@@ -766,7 +787,7 @@ async def _make_public_novel(
             )
             db_session.add(chapter)
             await db_session.flush()
-            revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body=f"{ordinal}화 본문", source="generate")
+            revision = revision_row(chapter_id=chapter.id, revision_no=1, body=f"{ordinal}화 본문", source="generate")
             db_session.add(revision)
             await db_session.flush()
             db_session.add(

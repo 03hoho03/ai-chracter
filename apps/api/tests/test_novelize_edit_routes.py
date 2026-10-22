@@ -17,6 +17,7 @@ from api.db.models import Content, ModerationStatus, Novel, NovelChapter, NovelC
 from api.novelize import blocks
 from api.novelize import router as novelize_router
 from factories import (
+    revision_row,
     _NeverCalledLLMClient,
     _add_chapter,
     _clear_llm_override,
@@ -83,7 +84,7 @@ async def test_chapter_returns_the_current_revision_split_into_paragraphs_by_the
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch, body="가.\n\n  \n나.\n다.\n\n라.")
-    db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="새 가.\n\n새 나.", source="manual_edit"))
+    db_session.add(revision_row(chapter_id=chapter.id, revision_no=2, body="새 가.\n\n새 나.", source="manual_edit"))
     await db_session.commit()
 
     resp = await db_client.get(f"/novels/{novel_id}/chapters/{chapter.id}")
@@ -278,7 +279,7 @@ async def test_rejected_ai_edit_charges_nothing(
         "expectedCost": 20,
     }
     if change == "stale_base":
-        db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="딴 탭", source="manual_edit"))
+        db_session.add(revision_row(chapter_id=chapter.id, revision_no=2, body="딴 탭", source="manual_edit"))
         await db_session.commit()
     elif change == "past_the_end":
         payload["paragraphEnd"] = 3
@@ -633,23 +634,19 @@ def _block_ids(response: httpx.Response) -> list[uuid.UUID]:
     return [uuid.UUID(block["id"]) for block in revision["blocks"]]
 
 
-async def test_revision_responses_carry_blocks_and_null_for_a_revision_written_without_ids(
+async def test_an_old_revision_response_carries_that_revisions_blocks(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """블록 칸이 생기기 전 이미지가 쓴 개정은 `blocks: null` 이다 — 임시 id 를 지어내면 다음 요청에서 다른 id 가 된다.
-    깨지는 시나리오: 응답이 개정의 id 대신 다른 것을 싣거나, 칸이 빈 개정에서 500 이 난다."""
+    """깨지는 시나리오: 응답이 그 개정의 id 대신 다른 개정(지금 개정)의 것을 싣거나 문단과 짝이 어긋난다."""
     _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
     first = (await _revisions(db_session, chapter.id))[0]
-    db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="옛 이미지 본문", source="manual_edit"))
+    db_session.add(revision_row(chapter_id=chapter.id, revision_no=2, body="새 본문", source="manual_edit"))
     await db_session.commit()
 
-    current = await db_client.get(f"/novels/{novel_id}/chapters/{chapter.id}")
     old = await db_client.get(f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{first.id}")
 
-    assert current.status_code == 200, current.text
-    assert current.json()["revision"]["blocks"] is None
-    assert current.json()["revision"]["paragraphs"] == ["옛 이미지 본문"]
-    assert first.block_ids is not None and len(first.block_ids) == 3
+    assert old.status_code == 200, old.text
+    assert len(first.block_ids) == 3
     assert old.json()["blocks"] == [
         {"id": str(block_id), "text": text}
         for block_id, text in zip(first.block_ids, old.json()["paragraphs"], strict=True)
@@ -768,27 +765,3 @@ async def test_applying_an_ai_edit_keeps_ids_outside_its_range_and_inherits_the_
     ids = _block_ids(applied)
     assert (ids[0], ids[1], ids[3]) == (a, b, c)
     assert ids[2] not in (a, b, c)
-
-
-async def test_new_revisions_over_a_revision_without_ids_get_fresh_ids(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """칸이 생기기 전 이미지가 쓴 개정 위에 직접 수정·되돌리기를 쌓아도 500 없이 문단마다 새 id 를 받는다."""
-    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
-    old = NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="옛 가.\n\n옛 나.", source="manual_edit")
-    db_session.add(old)
-    await db_session.commit()
-
-    edited = await db_client.post(
-        f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
-        json={"baseRevisionId": str(old.id), "body": "옛 가.\n\n새 나.\n\n새 다."},
-    )
-    restored = await db_client.post(
-        f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{old.id}/restore",
-        json={"baseRevisionId": edited.json()["revision"]["id"]},
-    )
-
-    assert edited.status_code == 201, edited.text
-    assert len(set(_block_ids(edited))) == 3
-    assert restored.status_code == 201, restored.text
-    assert len(set(_block_ids(restored))) == 2
