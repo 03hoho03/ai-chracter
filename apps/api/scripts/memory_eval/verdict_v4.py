@@ -118,6 +118,11 @@ NONINFERIORITY_A0M = ("b1-A0", "b1-A0M", ("relation", "correction"))
 NONINFERIORITY_ALPHA = 0.10
 # 관계·정정 비열등 범주의 시험 쪽 하한 — 관문 범주가 아니라 앞 측정 크기 그대로다.
 NONINFERIORITY_MIN_N = 16
+# 개발 절반 미리보기가 도는 갈래. 개발 절반은 문항 수가 시험 절반과 같아 다섯 갈래를 다 돌리면 원가가 상한을 넘는다 — 회상과
+# 요약 표기·필터 두 단계를 미리 보는 셋만 돌리기로 측정 전에 정했다. 이 밖의 갈래가 든 쌍·효과는 개발 범위 밖으로 건너뛴다.
+DEV_ARMS: tuple[str, ...] = ("b1-A0", "b1-A1", "b1-B1")
+OUT_OF_SCOPE = "outOfScope"
+OUT_OF_SCOPE_REASON = "개발 범위 밖"
 # 갈래·레인 표마다 판정 불능이 이 몫(최소 1)을 넘으면 그 갈래가 든 판정 관문을 무효로 낸다.
 UNABLE_CEILING_SHARE = 0.03
 # 어느 갈래든 거짓 전제 판정 가능 문항 중 `unaddressed` 가 이 비율을 넘으면 그 범주의 판별력이 낮다고 표시한다.
@@ -333,9 +338,11 @@ def effect_family(
     *,
     invalid_arms: frozenset[str] = frozenset(),
     floors: Mapping[str, int] | None = None,
+    scope: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     """`invalid_arms` 는 불능 비율 상한을 넘은 갈래 — 판정자 값을 쓰는 비교만 무효(판정 불능, p = 1)가 된다. `floors` 는 효과마다
-    분할 시드 파일의 합계 하한이다 — 쌍 수가 그 밑이면 그 효과만 보류(p = 1)한다.
+    분할 시드 파일의 합계 하한이다 — 쌍 수가 그 밑이면 그 효과만 보류(p = 1)한다. `scope` 는 이번 실행이 돈 갈래(개발
+    미리보기) — 그 밖의 갈래가 든 효과는 범위 밖으로 표시하고 가족에서 뺀다.
 
     보류 규칙은 분할 시드 파일과 함께 결과를 보기 전에 고정한 것이다. 하한은 시험 문항 수를 정할 때 쓴 바로 그 값이고, 하한 밑
     효과를 다루는 법(그 효과만 보류, 가족에는 p = 1, 나머지는 그대로 판정)도 결과와 무관하게 정해져 있다. 결과를 본 뒤 하한을
@@ -343,7 +350,10 @@ def effect_family(
     items = _flat(groups)
     inputs = _Inputs(score_rows, judge_rows)
     out: dict[str, Any] = {}
+    skipped = [key for key, (a, b, _c, _f) in EFFECTS.items() if scope is not None and not {a, b} <= scope]
     for key, (a, b, categories, field) in EFFECTS.items():
+        if key in skipped:
+            continue
         out[key] = _effect([e for e in items if e.get("category") in categories], inputs, (a, b), field)
         void = sorted({a, b} & invalid_arms) if field == "judged" else []
         if void:
@@ -358,13 +368,13 @@ def effect_family(
                 "underpowered": {"reason": UNDERPOWERED_REASON, "n": out[key]["n"], "floor": floor},
             }
         out[key]["holmP"] = 1.0 if out[key]["halt"] or held else out[key]["p"]
-    for key in OBSERVED_EFFECTS:
+    for key in (k for k in OBSERVED_EFFECTS if k not in skipped):
         # 관찰 지표는 값만 낸다 — 가족에 넣지 않아 남은 비교의 문턱을 조이지 않고, 표본이 모자라도 판정을 멈추지 않는다.
         observed = out[key]
         for name in ("halt", "holmP", "underpowered"):
             observed.pop(name, None)
         observed |= {"status": OBSERVATION, "pass": None}
-    judged_keys = [key for key in EFFECTS if key not in OBSERVED_EFFECTS]
+    judged_keys = [key for key in EFFECTS if key not in OBSERVED_EFFECTS and key not in skipped]
     family = holm({key: out[key]["holmP"] for key in judged_keys})
     for key in judged_keys:
         entry = out[key]
@@ -376,6 +386,9 @@ def effect_family(
             "halt" if halted else (UNDERPOWERED if "underpowered" in entry else ("pass" if ok else "fail"))
         )
         entry["pass"] = entry["status"] == "pass"
+    for key in skipped:
+        a, b, _categories, _field = EFFECTS[key]
+        out[key] = {"arms": [a, b], "status": OUT_OF_SCOPE, "pass": None, "reason": OUT_OF_SCOPE_REASON}
     out["holm"] = family
     return out
 
@@ -501,14 +514,13 @@ STEPS: tuple[tuple[str, str | None, str | None, str | None], ...] = (
 A0M_STEP = ("summaryFilterWithoutRecall", "b1-A0:b1-A0M", None, None)
 STAGE_PASS_PAIRS = ("b1-A0:b1-A1", "b1-A1:b1-B1")
 STAGE_PASS_REQUIRES = "사용자가 요약 표기·지식 범위 필터 단계까지 운영에서 켰다"
-OUT_OF_SCOPE = "outOfScope"
 
 
 def _lane_status(table: Mapping[str, Any]) -> str:
     """한 레인 표의 S1·S2 로 본 그 레인의 안전 — 둘 다 통과면 pass, 하나라도 위반이면 fail, 그 밖은 판정 불능."""
-    if table.get("status") == OUT_OF_SCOPE:
-        return OUT_OF_SCOPE
     statuses = [str(table.get(gate, {}).get("status")) for gate in ("S1", "S2")]
+    if OUT_OF_SCOPE in (table.get("status"), *statuses):
+        return OUT_OF_SCOPE
     if "fail" in statuses:
         return "fail"
     return "pass" if all(s == "pass" for s in statuses) else "halt"
@@ -587,13 +599,17 @@ def _pair_tables(
     invalid: Mapping[Lane, frozenset[str]],
     trajectories: Mapping[str, tuple[Lane, Sequence[Mapping[str, Any]]]],
     section_max: Mapping[str, int],
+    scope: frozenset[str] | None,
 ) -> dict[str, Any]:
-    """쌍마다·레인마다 S1(비밀)·S2(거짓 전제)·S3(앞 두 캐시 블록)·S4(길이) 표."""
+    """쌍마다·레인마다 S1(비밀)·S2(거짓 전제)·S3(앞 두 캐시 블록)·S4(길이) 표. `scope` 밖 갈래가 든 쌍은 범위 밖으로 표시한다."""
     out: dict[str, Any] = {}
     for a, b, pair_lanes in pairs:
         key = f"{a}:{b}"
         out[key] = {}
         for lane in pair_lanes:
+            if scope is not None and not {a, b} <= scope:
+                out[key][lane] = {"status": OUT_OF_SCOPE, "pass": None, "reason": OUT_OF_SCOPE_REASON}
+                continue
             if lane not in lanes:
                 # 캐릭터 표는 관문이다 — 그 레인 입력을 빠뜨린 실행이 빈 표로 통과하지 않게 판정 불능으로 낸다.
                 out[key][lane] = {"status": "halt", "pass": False, "missingInput": lane}
@@ -632,11 +648,18 @@ def v4_verdict(
     controls_override: Mapping[str, Any] | None = None,
     effect_floors: Mapping[str, int] | None = None,
     with_a0m: bool = False,
+    split: str = "test",
 ) -> dict[str, Any]:
     """`trajectories` 는 대본 이름 → (레인, 그 대본 궤적 점 전부), `section_max` 는 쌍 이름(`기준:비교`) → 그 쌍의 섹션 계산 최대.
     `controls_override` 는 미달 대조군을 받아들인 사용자 결정(부르는 쪽이 기록 sha 를 확인한 것)이다. `effect_floors` 는 효과마다
     분할 시드 파일의 합계 하한이다 — 없으면 표본이 모자란 효과는 전과 같이 `halt` 다. `with_a0m` 은 측정에 A0M 갈래를 더했을
-    때 그 쌍을 관문에 넣고 그 비열등을 관찰로 낸다."""
+    때 그 쌍을 관문에 넣고 그 비열등을 관찰로 낸다. `split` 이 `dev` 면 개발 절반 미리보기다 — 개발 문항만 같은 규칙으로 보되,
+    `DEV_ARMS` 밖의 갈래가 든 쌍·효과는 입력이 빠진 것이 아니라 돌리지 않은 것이므로 멈추지 않고 범위 밖(`outOfScope`)으로 둔다.
+    시험 판정(`test`)은 빠진 갈래면 지금처럼 멈춘다."""
+    if split not in ("dev", "test"):
+        raise SystemExit(f"절반은 dev·test 중 하나다: {split}")
+    scope = frozenset(DEV_ARMS) if split == "dev" else None
+    half = {"dev": "개발", "test": "시험"}[split]
     seen: set[tuple[str, str, int]] = set()
     for row in judge_rows:
         judge_key = (str(row["arm"]), str(row["item"]), int(row["checkpoint"]))
@@ -646,21 +669,23 @@ def v4_verdict(
             )
         seen.add(judge_key)
     lanes: dict[Lane, list[list[dict[str, Any]]]] = {
-        "story": [[e for e in s.all_items() if e.get("split") == "test"] for s in story_sets]
+        "story": [[e for e in s.all_items() if e.get("split") == split] for s in story_sets]
     }
     if character_set is not None:
-        lanes["character"] = [[e for e in character_set.all_items() if e.get("split") == "test"]]
+        lanes["character"] = [[e for e in character_set.all_items() if e.get("split") == split]]
     if not any(g for groups in lanes.values() for g in groups):
-        raise SystemExit("시험 절반 문항이 없다 — 봉인 확인 뒤 시험 보기로 부른다")
+        raise SystemExit(f"{half} 절반 문항이 없다 — 시험은 봉인 확인 뒤 시험 보기로, 개발은 개발 보기로 부른다")
     rates = unable_rates(lanes, judge_rows)
     invalid = {lane: frozenset(arm for arm, r in table.items() if r["exceeded"]) for lane, table in rates.items()}
     gate_pairs = SAFETY_PAIRS + ((A0M_PAIR,) if with_a0m else ())
     safety, reference = (
         _pair_tables(pairs, lanes, score_rows, judge_rows, invalid=invalid, trajectories=trajectories,
-                     section_max=section_max)
+                     section_max=section_max, scope=scope)
         for pairs in (gate_pairs, REFERENCE_PAIRS)
     )  # fmt: skip
-    effects = effect_family(lanes["story"], score_rows, judge_rows, invalid_arms=invalid["story"], floors=effect_floors)
+    effects = effect_family(
+        lanes["story"], score_rows, judge_rows, invalid_arms=invalid["story"], floors=effect_floors, scope=scope
+    )
     non_inferiority = noninferiority(lanes["story"], score_rows, judge_rows, invalid_arms=invalid["story"])
     observations: dict[str, Any] = {}
     if with_a0m:
@@ -678,14 +703,18 @@ def v4_verdict(
                     "n": len(control_rows), "status": "pass" if ok or accepted else "fail", "pass": ok or accepted,
                     **({"override": dict(controls_override)} if accepted and controls_override else {})}  # fmt: skip
     advice = recommendations(safety, effects, non_inferiority)
-    parts = [t for pair in safety.values() for t in pair.values()]
+    parts = [t for pair in safety.values() for t in pair.values() if t["status"] != OUT_OF_SCOPE]
     held = [k for k in EFFECTS if effects[k]["status"] == UNDERPOWERED]
-    # 보류한 효과·관찰 지표는 통과도 실패도 아니라 전체 판정에서 빠진다 — 넣으면 그 효과 하나가 나머지 판정까지 멈춘다.
-    parts += [effects[k] for k in EFFECTS if k not in held and k not in OBSERVED_EFFECTS]
+    skipped = sorted(
+        [key for key, pair in safety.items() if any(t["status"] == OUT_OF_SCOPE for t in pair.values())]
+        + [k for k in EFFECTS if effects[k]["status"] == OUT_OF_SCOPE]
+    )
+    # 보류한 효과·관찰 지표·범위 밖 비교는 통과도 실패도 아니라 전체 판정에서 빠진다 — 넣으면 그 하나가 나머지 판정까지 멈춘다.
+    parts += [effects[k] for k in EFFECTS if k not in held and k not in OBSERVED_EFFECTS and k not in skipped]
     parts += [non_inferiority, controls]
     voided = sorted(f"{lane}:{arm}" for lane, arms in invalid.items() for arm in arms)
     status = "halt" if voided else _combine(parts)
-    return {"safety": safety, "safetyReference": reference, "effects": effects, "nonInferiority": non_inferiority,
+    return {"split": split, "outOfScope": skipped, "safety": safety, "safetyReference": reference, "effects": effects, "nonInferiority": non_inferiority,
             "observations": observations, "recommendations": advice, "unaddressedWarning": warnings,
             "unableCeiling": rates, "invalid": voided, "controls": controls, "underpowered": held,
             "status": status}  # fmt: skip

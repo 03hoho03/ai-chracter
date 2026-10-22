@@ -653,8 +653,13 @@ def test_the_dev_preview_reads_only_the_dev_half_and_skips_pairs_with_arms_it_do
     assert out["effects"]["holm"]["m"] == 0
     assert out["effects"]["E3"]["status"] == "observation"
     assert sorted(out["outOfScope"]) == ["E1", "E2", "b1-B1:b1-B1E", "b1-B1E:b1-B2"]
-    steps = {k: v["status"] for k, v in out["recommendations"]["steps"].items()}
-    assert (steps["embedRead"], steps["factInject"]) == ("outOfScope", "blocked")
+    # 캐릭터 입력이 없어 회상 단계부터 판정 불능이다 — 뒤 단계는 막힌다.
+    assert _steps(out["recommendations"])["recall"] == "halt"
+    tables = _gate_tables(**{f"{pair}__{lane}__{gate}": "outOfScope" for pair in ("B1_B1E", "B1E_B2")
+                             for lane in ("story", "character") for gate in ("S1", "S2")})  # fmt: skip
+    dev = v4.recommendations(tables, _effects(e1="outOfScope", e2="outOfScope"), {"status": "pass"})
+    assert _steps(dev) == {"recall": "recommend", "summaryFilter": "recommend", "embedWrite": "recommend",
+                           "embedRead": "outOfScope", "factInject": "blocked"}  # fmt: skip
     with pytest.raises(SystemExit, match="개발 절반"):
         v4.v4_verdict([_set(_items("fc", "secret", 3))], None, [], judge_rows=[], control_rows=None, trajectories={},
                       section_max={}, split="dev")  # fmt: skip

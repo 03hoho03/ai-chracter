@@ -57,3 +57,6 @@ DATABASE_URL="$WORK_DB_URL" uv run --env-file .env python scripts/memory_eval_cl
 # 묶음 판정 — 효과마다 분할 시드 파일의 합계 하한을 읽는다. 빠뜨리면 효과 하나만 표본이 모자라도 전체 판정이 멈춘다:
 #   ... v4-verdict --seal-sha <봉인 sha> --story <심기 표> <분할 폴더> --character <심기 표> <분할 폴더> \
 #     --scores <score 출력...> --judged <judge 출력...> --split-seeds <분할 시드 파일>
+# 개발 절반 미리보기 — 같은 판정 함수를 개발 문항에(봉인 없이). A0·A1·B1 밖 갈래가 든 쌍·효과는 개발 범위 밖으로 표시된다:
+#   ... v4-preview --story <심기 표> <분할 폴더> --character <심기 표> <분할 폴더> \
+#     --scores <score 출력...> --judged <judge 출력...> --split-seeds <분할 시드 파일>
