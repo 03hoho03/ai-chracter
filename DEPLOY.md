@@ -1630,10 +1630,30 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   INSERT(생성·다시 만들기·직접 수정·되돌리기·AI 수정 적용·스냅숏 복원)가 NOT NULL 위반으로 500 이다. NOT NULL 해제는 칸·값을
   남기므로 떠 있는 새 코드가 그대로 돈다. 그 뒤 옛 이미지가 쓰는 개정은 두 칸이 NULL 이고, 새 이미지를 다시 올리면
   `211f81f33be5` 가 다시 돌며 채운다.
+- **되돌릴 옛 이미지 태그는 `8f93cc8`** 이다(`17f49714e5ca` 이전 마지막 api 이미지, 리비전 `f89a3d8ed3a8`). 그 바로 뒤
+  병합 `79672b7` 은 `apps/admin` 만 바꿔 deploy-api 가 돌지 않았으므로 **이미지가 없다** — `swap-api.sh` 는 pull 에서, Actions
+  수동 실행은 태그 확인 단계에서 멈춘다. 태그는 deploy-api 가 돈 병합에만 있다(`gh run list --workflow deploy-api.yml` 로 확인).
+- **태그 롤백은 `5bd30c8` 을 거쳐 두 번에 한다.** `211f81f33be5` 를 아는 이미지는 NULL 블록 칸을 읽지 못하므로, 거기서 바로
+  `8f93cc8` 로 바꾸면 겹침(최대 약 100초) 동안 옛 이미지가 NULL 로 쓴 개정을 아직 떠 있는 새 이미지가 읽다 500 이다.
+  `5bd30c8` 은 `17f49714e5ca` 를 알고 NULL 칸을 `blocks: null` 로 다룬다. 다시 올릴 때도 같은 이유로 두 번이다 — `8f93cc8` 에서
+  바로 최신으로 가면 `211f81f33be5` 가 NOT NULL 을 건 뒤 겹침 동안 `8f93cc8` 의 개정 INSERT 가 NOT NULL 위반이다. 겹침을
+  끄는 대안은 `SKIP_OVERLAP=true`(대신 최대 65초 + 기동 시간 끊김).
+- 🔴 **되돌려 둔 동안 `main` 병합을 멈춘다**(배포 경로를 건드리는 PR). 병합되면 자동 배포가 한 번에 최신으로 교체해 위의
+  겹침 실패를 그대로 겪는다.
 
 ```sh
+# 1) 지금 이미지로 NOT NULL 해제
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
   <IMAGE>:<지금 TAG> alembic downgrade 17f49714e5ca
+# 2) 태그 롤백 두 번 — 각 교체 로그 끝 줄 `13) 완료` 를 보고 다음으로
+cd /opt/ddona/app
+sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh 5bd30c8
+sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh 8f93cc8
+#    (겹침 끄는 대안: sudo SKIP_OVERLAP=true DDONA_ROLLBACK=1 bash ops/swap-api.sh 8f93cc8)
+# 다시 올리기 — 먼저 5bd30c8(DB 를 아는 이미지라 표시 불필요, 마이그레이션 없음),
+sudo bash ops/swap-api.sh 5bd30c8
+# 그다음 Actions → deploy-api → Run workflow(image_tag 비움 = main 최신) 또는 다음 main push.
+# 배포 로그의 `블록 칸이 빈 개정 N행을 채웠다` 의 N 이 되돌려 둔 동안 생긴 개정 수(위 빈 개정 수 쿼리)와 같아야 한다.
 ```
 
 - **스키마까지 내릴 때**(`alembic downgrade f89a3d8ed3a8`): 두 칸을 지운다. 블록 id 가 사라지고, 다시 올리면 백필이 다른 새 id
