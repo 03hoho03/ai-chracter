@@ -1,6 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { isFinishedScreen, toAnchorParagraphIndex, toRestoreScreen, type PageAnchor } from "../lib/pageAnchor";
+import {
+  isFinishedScreen,
+  toAnchorParagraphIndex,
+  toCoveredAnchorTarget,
+  toLeadScreens,
+  toRestoreScreen,
+  type MeasuredIllustration,
+  type PageAnchor,
+} from "../lib/pageAnchor";
 import type { PageFit } from "../lib/pageFit";
 import { PAGE_FORMAT_PADDING_PX, PAGE_FORMAT_WIDTH_PX, PAGE_TEXT_HEIGHT_PX, PAGE_TEXT_WIDTH_PX } from "../lib/pageFormat";
 import { toSettleDurationMs } from "../lib/pageGesture";
@@ -21,8 +29,8 @@ const MAX_RESTORE_FRAMES = 30;
 /** `scrollend` 가 없는 브라우저에서 브라우저가 옮긴 스크롤이 멈췄다고 볼 조용한 간격. */
 const SCROLL_SETTLE_FALLBACK_MS = 100;
 
-/** 한 번 잰 쪽 배치. 한 장·펼침이 바뀌거나 보기 설정·글꼴이 바뀌면 통째로 다시 잰다(배율만 바뀌면 다시 재지 않는다
- * — 판형 안 조판은 배율과 무관하다). */
+/** 한 번 잰 쪽 배치. 한 장·펼침이 바뀌거나 보기 설정·글꼴·삽화 배치가 바뀌면 통째로 다시 잰다(배율만 바뀌면 다시
+ * 재지 않는다 — 판형 안 조판은 배율과 무관하다). */
 type PagedLayout = {
   columnCount: 1 | 2;
   /** 한 화면 폭 = 한 번 넘길 때 움직이는 `scrollLeft`(판형 px). */
@@ -31,8 +39,14 @@ type PagedLayout = {
   span: ColumnSpan;
   /** 화 끝 화면을 포함한 화면 수. */
   screenCount: number;
-  /** 문단마다 시작하는 화면. */
+  /** 문단마다 글이 시작하는 화면. */
   startScreens: number[];
+  /** 문단마다 글이 끝나는 화면. */
+  endScreens: number[];
+  /** 문단마다 머리(앞 삽화, 첫 문단이면 화 머리)가 시작하는 화면 — 쪽을 대표하는 문단과 되돌릴 화면을 이것으로 잰다. */
+  leadScreens: number[];
+  /** 삽화 블록마다 든 화면(문서 순서). */
+  illustrations: MeasuredIllustration[];
   /** 문단 안 글자 위치가 든 화면. 재지 못하면 비운다. */
   screenOfOffset: (paragraphIndex: number, offset: number) => number | undefined;
   /** 화면 좌표의 사각형이 든 화면. */
@@ -75,6 +89,9 @@ type UsePagedReaderOptions = {
   fit: PageFit;
   /** 판형 안 조판값(글자 크기·줄 간격)을 나타내는 값. 바뀌면 쪽을 다시 잰다. */
   typographyKey: string;
+  /** 삽화 블록의 높이를 정하는 것들을 나타내는 값(`toIllustrationLayoutKey`). 같은 판을 보는 동안 응답을 다시 받아
+   * 그림이 내려지거나 원작 제한이 걸리면 바뀌고, 그러면 쪽을 다시 잰다. */
+  illustrationLayoutKey: string;
 };
 
 /**
@@ -91,19 +108,23 @@ type UsePagedReaderOptions = {
  *   결과가 직전 배치에 따라 달라져, 같은 판형·같은 설정인데 쪽 수가 바뀌거나 잰 쪽과 그려진 쪽이 어긋난다.
  * - **좌표**: 포인터·사각형은 화면 px 이고 `scrollLeft`·단 폭은 판형 px 다. 화면 거리를 배율로 나눠 판형 px 로 바꾸고,
  *   배율은 계산한 값을 반올림하지 않고 쓴다(반올림하면 단 경계 근처 글자가 앞 단으로 잘못 분류된다).
- * - **다시 재기**: 한 장·펼침 변경, 보기 설정 변경, 글꼴 도착 때. 배율·위치만 바뀌면 다시 재지 않는다. 다시 잰
+ * - **다시 재기**: 한 장·펼침 변경, 보기 설정 변경, 삽화 배치 변경, 글꼴 도착 때. 배율·위치만 바뀌면 다시 재지 않는다.
+ *   삽화 그림이 도착할 때는 다시 재지 않는다 — 그림 상자는 응답의 그림 크기로 미리 정한 px 라 도착해도 쪽 나눔이 같다. 다시 잰
  *   뒤에는 읽던 자리(앵커)가 든 화면으로 돌아가기만 하고 앵커를 다시 정하지 않는다 — 연달아 바뀌어도 자리가 미끄러지지
  *   않게.
  * - **앵커**: 문단, 문단 안 글자 위치, 화 끝 화면 표시. 사용자가 화면을 옮길 때만 그 화면으로 다시 정하고
  *   (`toAnchorParagraphIndex`), 그때만 문단을 `session` 에 알린다. 서버에는 문단 번호만 가지만, 긴 문단 하나가 덮은
  *   화면과 화 끝 화면은 문단 번호만으로는 다시 잰 뒤 한 화면 앞으로 되돌아가 글자 위치와 화 끝 표시를 함께 든다.
+ *   문단은 머리(앞 삽화, 첫 문단이면 화 머리)가 시작하는 화면으로 센다 — 첫 쪽에 화 머리만 남은 화를 처음 열 때 첫
+ *   쪽으로 열고, 앞 그림만 있는 화면은 뒤 문단의 자리가 된다. 문단 글이 없고 삽화가 연 화면은 그 그림을 함께 든다
+ *   (`toCoveredAnchorTarget`).
  * - **되돌리기**: 라우터가 이동을 끝낸 뒤, 본문을 그린 다음에 읽은 `document.fonts.ready` 를 기다려 잰다(먼저 읽어
  *   두면 본문 글꼴 조각을 기다리지 않고 풀린다). 재기 시작은 스크롤 모드와 같은 분류(`toTrackingStart`)를 따른다.
  * - **다 읽음**: 마지막 문단이 시작하는 화면에 왔거나 지나왔다(`isFinishedScreen`).
  * - **브라우저가 옮긴 스크롤**: 포커스 이동·보조기기·찾기가 스크롤러를 화면 사이에 놓으면, 멈춘 뒤 화면에 맞추고
  *   사용자 이동으로 친다. 넘김 전환과 끌기 중의 스크롤은 우리가 움직인 것이라 건드리지 않는다.
  */
-export function usePagedReader({ session, paragraphCount, fit, typographyKey }: UsePagedReaderOptions) {
+export function usePagedReader({ session, paragraphCount, fit, typographyKey, illustrationLayoutKey }: UsePagedReaderOptions) {
   const viewportRef = useRef<HTMLElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const columnsRef = useRef<HTMLDivElement>(null);
@@ -197,6 +218,24 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey }: 
       return rect === undefined ? undefined : screenOfRect(rect);
     };
     const startScreens = paragraphs.map((_, index) => screenOfOffset(index, 0) ?? 0);
+    const endScreens = paragraphs.map(
+      (paragraph, index) => screenOfOffset(index, textLengthOf(paragraph)) ?? startScreens[index] ?? 0,
+    );
+    // 삽화 블록은 문단 순번을 건드리지 않게 `data-paragraph-index` 대신 자기 자리를 단다(`PagedEpisodeBlocks`).
+    const illustrations = Array.from(columns.querySelectorAll<HTMLElement>("[data-illustration-key]")).flatMap(
+      (element): MeasuredIllustration[] => {
+        const rect = firstRectOf(element);
+        if (rect === undefined) return [];
+        return [
+          {
+            key: element.dataset.illustrationKey ?? "",
+            paragraphIndex: Number(element.dataset.illustrationParagraph),
+            placement: element.dataset.illustrationPlacement === "before" ? "before" : "after",
+            screen: screenOfRect(rect),
+          },
+        ];
+      },
+    );
 
     return {
       columnCount,
@@ -204,6 +243,9 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey }: 
       span,
       screenCount,
       startScreens,
+      endScreens,
+      leadScreens: toLeadScreens({ startScreens, illustrations }),
+      illustrations,
       screenOfOffset,
       screenOfRect,
     };
@@ -266,17 +308,37 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey }: 
     layoutRef.current = layout;
     const anchor = anchorRef.current;
     if (layout === undefined || anchor === undefined) return;
-    const offsetScreen = anchor.charOffset > 0 ? layout.screenOfOffset(anchor.paragraphIndex, anchor.charOffset) : undefined;
-    const screen = toRestoreScreen({ anchor, startScreens: layout.startScreens, endScreen: layout.screenCount - 1, offsetScreen });
+    const offsetScreen =
+      anchor.isCovered === true || anchor.charOffset > 0
+        ? layout.screenOfOffset(anchor.paragraphIndex, anchor.charOffset)
+        : undefined;
+    const illustrationScreen =
+      anchor.illustrationKey === undefined
+        ? undefined
+        : layout.illustrations.find((block) => block.key === anchor.illustrationKey)?.screen;
+    const screen = toRestoreScreen({
+      anchor,
+      leadScreens: layout.leadScreens,
+      endScreen: layout.screenCount - 1,
+      offsetScreen,
+      illustrationScreen,
+    });
     moveTo(layout, screen, { durationMs: 0 });
   }
 
   function anchorAt(layout: PagedLayout, screen: number): PageAnchor {
     const isAtEnd = screen === layout.screenCount - 1;
-    if (layout.startScreens.length === 0) return { paragraphIndex: 0, charOffset: 0, isAtEnd };
-    const paragraphIndex = toAnchorParagraphIndex({ startScreens: layout.startScreens, screen });
-    const isCovered = !isAtEnd && layout.startScreens[paragraphIndex] !== screen;
-    return { paragraphIndex, charOffset: isCovered ? firstOffsetOnScreen(layout, paragraphIndex, screen) : 0, isAtEnd };
+    if (layout.leadScreens.length === 0) return { paragraphIndex: 0, charOffset: 0, isAtEnd };
+    const paragraphIndex = toAnchorParagraphIndex({ leadScreens: layout.leadScreens, screen });
+    if (isAtEnd || layout.leadScreens[paragraphIndex] === screen) return { paragraphIndex, charOffset: 0, isAtEnd };
+    const target = toCoveredAnchorTarget({
+      screen,
+      textStartScreen: layout.startScreens[paragraphIndex] ?? screen,
+      textEndScreen: layout.endScreens[paragraphIndex] ?? screen,
+      illustrations: layout.illustrations.filter((block) => block.paragraphIndex === paragraphIndex),
+    });
+    if (target.kind === "illustration") return { paragraphIndex, charOffset: 0, isAtEnd, illustrationKey: target.key };
+    return { paragraphIndex, charOffset: firstOffsetOnScreen(layout, paragraphIndex, screen), isAtEnd, isCovered: true };
   }
 
   /** 문단 안에서 그 화면에 처음 놓인 글자 위치. 글자 위치가 든 화면은 위치를 따라 줄지 않아 이분법으로 찾는다. */
@@ -329,12 +391,12 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey }: 
     fitRef.current = fit;
   }, [fit]);
 
-  // 처음 그릴 때, 보기 설정이 바뀔 때, 한 장·펼침이 바뀔 때는 칠하기 전에 잰다 — 다단이 걸리기 전 본문이 한 번 비치지
-  // 않게.
+  // 처음 그릴 때, 보기 설정이 바뀔 때, 한 장·펼침이 바뀔 때, 삽화 배치가 바뀔 때는 칠하기 전에 잰다 — 다단이 걸리기 전
+  // 본문이 한 번 비치지 않게.
   useLayoutEffect(() => {
     anchorRef.current ??= { paragraphIndex: session.toRestoreTarget().index, charOffset: 0, isAtEnd: false };
     relayout();
-  }, [typographyKey, fit.columnCount]);
+  }, [typographyKey, fit.columnCount, illustrationLayoutKey]);
 
   // 본문 글꼴이 처음 다 오면 그때부터 쪽 숫자를 보인다. 본문을 그린 뒤에 읽어야 본문이 쓰는 글꼴 조각까지 기다린다.
   // WebKit 의 `document.fonts.check` 는 조각 하나만 와도 참을 내 판정에 쓰지 않는다.
@@ -528,6 +590,12 @@ function layOutFromScratch(element: HTMLElement) {
   if (focused instanceof HTMLElement && focused !== document.activeElement && element.contains(focused)) {
     focused.focus({ preventScroll: true });
   }
+}
+
+/** 문단 글의 길이(글자 위치의 끝). 글이 없으면 0 이다. */
+function textLengthOf(paragraph: HTMLElement): number {
+  const text = paragraph.firstChild;
+  return text instanceof Text ? text.length : 0;
 }
 
 function firstRectOf(element: Element): DOMRect | undefined {

@@ -1,9 +1,11 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useRef, type PointerEventHandler, type ReactNode } from "react";
 
+import { toReaderBlocks } from "../lib/readerBlocks";
 import type { ReadingPositionSession } from "../model/useReadingPosition";
 import { useScrollReadingTracker } from "../model/useScrollReadingTracker";
 import type { EpisodeEndExtras, ViewerChapter, ViewerEpisode, ViewerNovel, ViewerRoute } from "../model/viewerSource";
+import { ScrollEpisodeBlocks } from "./EpisodeBlocks";
 import { EpisodeEnd } from "./EpisodeEnd";
 import { EpisodeHeader } from "./EpisodeHeader";
 
@@ -56,15 +58,7 @@ export function ScrollEpisodeBody({
           note={headerNote}
         />
 
-        <div className="flex flex-col gap-4 text-foreground">
-          {paragraphs.map((paragraph, index) => (
-            // 문단은 서버가 나눈 순서 그대로이고 이 목록은 다시 정렬되지 않아 순번이 곧 문단의 정체다(읽은 자리도
-            // 이 순번으로 저장한다).
-            <p key={index} data-paragraph-index={index} className="scroll-mt-4-safe whitespace-pre-line text-pretty break-keep">
-              {paragraph}
-            </p>
-          ))}
-        </div>
+        <ScrollEpisodeBlocks paragraphs={paragraphs} blocks={toReaderBlocks(paragraphs.length, episode.illustrations)} />
 
         <EpisodeEnd
           route={route}

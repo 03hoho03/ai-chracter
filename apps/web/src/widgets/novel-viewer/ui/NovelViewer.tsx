@@ -16,6 +16,7 @@ import {
 
 import { withChapterReadingPosition } from "../lib/readingPositionCache";
 import { toChapterSavedReadingPosition } from "../lib/savedReadingPosition";
+import { toOwnerViewerIllustrations } from "../lib/viewerIllustrations";
 import type { ReadingPositionStore } from "../model/viewerSource";
 import { EpisodeReader } from "./EpisodeReader";
 import { ViewerTocSheet } from "./ViewerTocSheet";
@@ -58,7 +59,11 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
     <EpisodeReader
       route="owner"
       novel={novel}
-      episode={{ ...summary, paragraphs: chapter.revision.paragraphs }}
+      episode={{
+        ...summary,
+        paragraphs: chapter.revision.paragraphs,
+        illustrations: toOwnerViewerIllustrations(chapter.revision),
+      }}
       readingPosition={readingPosition}
       renderToc={(sheet) => (
         <ViewerTocSheet

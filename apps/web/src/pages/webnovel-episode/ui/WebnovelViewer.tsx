@@ -31,6 +31,7 @@ import { WebnovelCommentsSheet } from "@/features/webnovel-comments";
 import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
 import {
   EpisodeReader,
+  toPublicViewerIllustrations,
   ViewerTocSheet,
   type EpisodeEndFormat,
   type ReadingPositionStore,
@@ -207,6 +208,7 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
           title: chapter.title,
           authorNote: chapter.authorNote ?? "",
           paragraphs,
+          illustrations: toPublicViewerIllustrations(chapter),
         }}
         readingPosition={readingPosition}
         renderToc={(sheet) => (

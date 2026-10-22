@@ -2,11 +2,13 @@ import { useEffect, useImperativeHandle, useRef, type ReactNode, type Ref, type 
 
 import type { PageFit } from "../lib/pageFit";
 import { PAGE_FORMAT_HEIGHT_PX, PAGE_FORMAT_PADDING_PX, PAGE_FORMAT_WIDTH_PX, type PageTypography } from "../lib/pageFormat";
+import { toIllustrationLayoutKey, toReaderBlocks } from "../lib/readerBlocks";
 import { useIsFinePointer } from "../lib/useIsFinePointer";
 import { usePagedReader, type PagedPosition, type PagedReaderHandle } from "../model/usePagedReader";
 import { usePageInput } from "../model/usePageInput";
 import type { ReadingPositionSession } from "../model/useReadingPosition";
 import type { EpisodeEndExtras, ViewerChapter, ViewerEpisode, ViewerNovel, ViewerRoute } from "../model/viewerSource";
+import { PagedEpisodeBlocks } from "./EpisodeBlocks";
 import { EpisodeEnd } from "./EpisodeEnd";
 import { EpisodeHeader } from "./EpisodeHeader";
 import { PageTurnButton } from "./PageTurnButton";
@@ -77,12 +79,14 @@ export function PagedEpisodeBody({
   headerNote,
 }: PagedEpisodeBodyProps) {
   const { paragraphs } = episode;
+  const blocks = toReaderBlocks(paragraphs.length, episode.illustrations);
   const isFinePointer = useIsFinePointer();
   const reader = usePagedReader({
     session: readingPosition,
     paragraphCount: paragraphs.length,
     fit,
     typographyKey: `${typography.fontSizePx}/${typography.lineHeight}`,
+    illustrationLayoutKey: toIllustrationLayoutKey(blocks),
   });
 
   const wheelRootRef = useRef<HTMLDivElement>(null);
@@ -170,27 +174,7 @@ export function PagedEpisodeBody({
                 />
               </div>
 
-              {/* 문단 상자는 flex 가 아니라 블록 흐름이고 문단 간격은 아래 여백이다(마지막 문단은 0 — 화 끝은 따로 한
-                  쪽이라 뒤에 간격이 필요 없다). WebKit 은 다단 안의 flex 항목을 줄 경계가 아니라 단 높이에서 잘라 나눠
-                  단 위·아래에 줄이 반쯤 잘려 그려지고, 다단 폭을 바꿀 때 쪽 나눔도 달라진다. 블록 문단은 줄 단위로
-                  나뉜다(엔진 둘 다 실측). */}
-              <div
-                className="text-foreground"
-                style={{ fontSize: typography.fontSizePx, lineHeight: typography.lineHeight }}
-              >
-                {paragraphs.map((paragraph, index) => (
-                  // 문단은 서버가 나눈 순서 그대로이고 이 목록은 다시 정렬되지 않아 순번이 곧 문단의 정체다(읽은 자리도
-                  // 이 순번으로 저장한다).
-                  <p
-                    key={index}
-                    data-paragraph-index={index}
-                    className="whitespace-pre-line text-pretty break-keep"
-                    style={{ marginBottom: index === paragraphs.length - 1 ? 0 : typography.paragraphGapPx }}
-                  >
-                    {paragraph}
-                  </p>
-                ))}
-              </div>
+              <PagedEpisodeBlocks paragraphs={paragraphs} blocks={blocks} typography={typography} />
 
               {/* 펼침에서 화 끝 블록이 오른쪽 단에 떨어질 때만 켜지는 빈 단 — 화 끝을 새 펼침의 왼쪽 쪽으로 민다. */}
               <div ref={reader.spacerRef} aria-hidden className="hidden break-before-column" />
