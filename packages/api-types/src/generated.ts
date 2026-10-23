@@ -11573,7 +11573,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "chapter_generate" | "chapter_regenerate" | "ai_edit" | "chain_generate";
+            kind: "chapter_generate" | "chapter_regenerate" | "ai_edit" | "chain_generate" | "outline_generate" | "episode_outline_generate" | "outline_chapter_generate";
             /**
              * Status
              * @enum {string}
@@ -12278,7 +12278,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "chapter_generate" | "chapter_regenerate" | "ai_edit" | "chain_generate";
+            kind: "chapter_generate" | "chapter_regenerate" | "ai_edit" | "chain_generate" | "outline_generate" | "episode_outline_generate" | "outline_chapter_generate";
             /**
              * Status
              * @enum {string}
