@@ -199,26 +199,31 @@ def test_voyage_models_are_priced_as_input_only() -> None:
 
 
 def test_embedding_write_without_a_voyage_key_refuses_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
-    """키 없이 켜진 스위치는 채우기마다 실패할 뿐이라 켠 것이 성공한 것처럼 보인다 — 배포 단계에서 드러나게 기동을 막는다."""
+    """키 없이 켜진 스위치는 채우기마다 실패할 뿐이라 켠 것이 성공한 것처럼 보인다 — 배포 단계에서 드러나게 기동을 막는다. 운영
+    env 의 키와 임베딩 회상 줄은 빼고 쓰기 스위치만으로 본다."""
+    without = ("VOYAGE_API_KEY", "MEMORY_EMBED_RECALL")
     with pytest.raises(ValidationError, match="VOYAGE_API_KEY"):
-        load_production_env(monkeypatch, MEMORY_EMBED_WRITE="true")
+        load_production_env(monkeypatch, without=without, MEMORY_EMBED_WRITE="true")
     with pytest.raises(ValidationError, match="VOYAGE_API_KEY"):
-        load_production_env(monkeypatch, MEMORY_EMBED_WRITE="true", VOYAGE_API_KEY=" ")
+        load_production_env(monkeypatch, without=without, MEMORY_EMBED_WRITE="true", VOYAGE_API_KEY=" ")
 
     loaded = load_production_env(monkeypatch, MEMORY_EMBED_WRITE="true", VOYAGE_API_KEY="pa-test")
 
     assert (loaded.memory_embed_write, loaded.voyage_api_key) == (True, "pa-test")
 
 
-def test_production_env_starts_with_embedding_off_and_no_voyage_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    """운영 env 에는 임베딩 키가 하나도 없다 — 키 없음 기동 거부가 꺼진 스위치에는 걸리지 않아 그대로 뜬다."""
-    assert not {"MEMORY_EMBED_WRITE", "MEMORY_EMBED_MODEL", "MEMORY_EMBED_DIMS", "VOYAGE_API_KEY"} & set(
-        PRODUCTION_ENV_NAMES
-    )
+def test_production_env_starts_with_embedding_write_on_and_a_voyage_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 env 는 임베딩 쓰기 스위치와 Voyage 키를 함께 넣어 켜진 채 뜬다. 모델·차원 줄은 넣지 않아 기본값으로 돈다. 키 줄만
+    빠진 배포는 기동 거부에 걸려 뜨지 않는다."""
+    assert {"MEMORY_EMBED_WRITE", "VOYAGE_API_KEY"} <= set(PRODUCTION_ENV_NAMES)
+    assert not {"MEMORY_EMBED_MODEL", "MEMORY_EMBED_DIMS"} & set(PRODUCTION_ENV_NAMES)
 
     loaded = load_production_env(monkeypatch)
 
-    assert (loaded.memory_embed_write, loaded.voyage_api_key) == (False, "")
+    assert loaded.memory_embed_write
+    assert loaded.voyage_api_key.strip()
+    with pytest.raises(ValidationError, match="VOYAGE_API_KEY"):
+        load_production_env(monkeypatch, without=("VOYAGE_API_KEY",))
     # 기본값은 회상 품질 측정이 고른 모델·차원이다 — 스위치만 켜도 측정한 설정으로 돈다.
     assert (loaded.memory_embed_model, loaded.memory_embed_dims) == ("voyage-4-large", 1024)
 

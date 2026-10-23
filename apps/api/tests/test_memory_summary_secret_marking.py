@@ -160,7 +160,7 @@ async def test_switched_on_without_names_the_slot_still_carries_the_fixed_phrase
     )
 
 
-def test_production_env_leaves_the_secret_marking_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    """운영 env 에는 스위치가 없어 꺼진 기본값으로 돈다 — 운영 요약 프롬프트는 이 슬롯이 생기기 전과 같다."""
-    assert "MEMORY_SUMMARY_SECRET_MARKING" not in PRODUCTION_ENV_NAMES
-    assert not load_production_env(monkeypatch).memory_summary_secret_marking
+def test_production_env_turns_the_secret_marking_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 env 는 스위치를 넣어 켜 둔다 — 운영 요약 접기 프롬프트에 비밀 표기 슬롯이 실린다."""
+    assert "MEMORY_SUMMARY_SECRET_MARKING" in PRODUCTION_ENV_NAMES
+    assert load_production_env(monkeypatch).memory_summary_secret_marking
