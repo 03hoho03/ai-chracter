@@ -119,6 +119,38 @@ async def test_send_message_other_user_room_returns_403(
     assert resp.status_code == 403
 
 
+@pytest.mark.parametrize("action", ["send", "edit"])
+async def test_message_text_with_a_nul_character_is_rejected_before_anything_is_written(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, action: str
+) -> None:
+    """Postgres text 는 NUL 을 담지 못한다 — 검증 없이 받으면 응답 스트림이 열린 뒤 사용자 메시지 저장에서 DB 가
+    거절한다. 스트림을 열기 전에 검증 오류(422)로 돌려준다."""
+    room = await _open_room(db_client, db_session, turns=1)
+    before = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(ChatMessage).where(ChatMessage.chat_room_id == room.room_id)
+    )
+    path = (
+        f"/chat-rooms/{room.room_id}/messages"
+        if action == "send"
+        else f"/chat-rooms/{room.room_id}/messages/{room.turns[1][0].id}"
+    )
+
+    _override_llm_client(_FakeLLMClient())
+    try:
+        resp = await db_client.request("POST" if action == "send" else "PATCH", path, json={"content": "안\u0000녕"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"][0]["loc"] == ["body", "content"]
+    assert (
+        await db_session.scalar(
+            sa.select(sa.func.count()).select_from(ChatMessage).where(ChatMessage.chat_room_id == room.room_id)
+        )
+        == before
+    )
+
+
 async def test_send_message_streams_tokens_and_saves_final_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

@@ -1529,3 +1529,42 @@ async def test_rewind_during_the_embedding_inserts_finishes_without_deadlock(
     assert captured == []
     assert await _committed_snapshots(committed_engine, room) == []
     assert await _committed_embedding_count(committed_engine, room) == 0
+
+# --- 노트 쓰기와 방 삭제의 경합 ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("method", "body"), [("PUT", {"note": "새 메모"}), ("DELETE", None)], ids=["save note", "clear note"]
+)
+async def test_a_note_write_that_overlaps_a_room_deletion_is_not_found(
+    committed_engine: AsyncEngine, db_client: httpx.AsyncClient, method: str, body: dict[str, str] | None
+) -> None:
+    """노트 저장·비우기가 주인 확인을 마친 뒤 다른 세션이 그 방을 지우고 커밋한다. 쓰기가 방 행을 잠그지 않으면
+    UPDATE 가 0행을 고친 채 커밋하고, 커밋 뒤 응답을 만들려고 방 행을 다시 읽다가 빈 결과로 500 이 난다. 쓰기 전에
+    방 행을 잠그면 삭제 커밋을 기다렸다가 방이 없음을 보고 404 로 끝난다."""
+    factory = async_sessionmaker(committed_engine, expire_on_commit=False)
+    room = await _seed_committed_room(committed_engine, turns=1)
+
+    async def _request_session() -> AsyncGenerator[AsyncSession, None]:
+        async with factory() as session:
+            yield session
+
+    deletion = factory()
+    saved = {key: app.dependency_overrides[key] for key in (get_db_session, get_session_factory)}
+    app.dependency_overrides[get_db_session] = _request_session
+    app.dependency_overrides[get_session_factory] = lambda: factory
+    write: asyncio.Task[httpx.Response] | None = None
+    try:
+        await _login_as(db_client, room.user_id)
+        await delete_chat_rooms(deletion, [room.room_id])
+        write = asyncio.create_task(db_client.request(method, f"/chat-rooms/{room.room_id}/memory/note", json=body))
+        await _wait_until_a_lock_is_awaited(committed_engine)
+        await deletion.commit()
+        resp = await asyncio.wait_for(write, 10)
+    finally:
+        await deletion.close()
+        if write is not None and not write.done():
+            write.cancel()
+        app.dependency_overrides.update(saved)
+
+    assert resp.status_code == 404

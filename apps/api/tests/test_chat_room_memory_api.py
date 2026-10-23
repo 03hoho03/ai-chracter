@@ -216,6 +216,29 @@ async def test_an_empty_summary_can_be_saved(db_client: httpx.AsyncClient, db_se
     assert [row.summary_text for row in await _snapshots(db_session, room)] == [""]
 
 
+async def test_memory_text_with_a_nul_character_is_rejected_without_changes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Postgres text 는 NUL 을 담지 못한다 — 검증 없이 쓰면 DB 가 거절해 500 이 난다. 검증 오류(422)로 돌려준다."""
+    room = await _open_room(db_client, db_session, turns=10)
+    await _plant_snapshot(db_session, room, turn=10, text="AI가 접은 요약")
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(memory_note="예전 메모"))
+    await db_session.commit()
+
+    note = await db_client.put(f"/chat-rooms/{room.room_id}/memory/note", json={"note": "메\u0000모"})
+    summary = await db_client.put(
+        f"/chat-rooms/{room.room_id}/memory/summary", json={"summary": "요\u0000약", "version": 0}
+    )
+
+    assert note.status_code == 422
+    assert note.json()["detail"][0]["loc"] == ["body", "note"]
+    assert summary.status_code == 422
+    assert summary.json()["detail"][0]["loc"] == ["body", "summary"]
+    assert await _note(db_session, room) == "예전 메모"
+    assert [row.summary_text for row in await _snapshots(db_session, room)] == ["AI가 접은 요약"]
+    assert await _memory_version(db_session, room) == 0
+
+
 # ---- 되돌리기 ----
 
 
