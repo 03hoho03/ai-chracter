@@ -931,3 +931,89 @@ class NovelOutlineApproveRequest(CamelModel):
     """승인할 리비전. 가장 최근 리비전이어야 한다."""
 
     revision: int = Field(ge=1)
+
+
+# ── 화별 장면 구성안 · 구성 흐름 원고 ───────────────────────────────────────
+# 장면 구성안 한 판의 장면 수와 장면 하나의 등장인물 수 상한 — 요청 하나의 크기를 묶는 값이고, 모델이 낸 판도 이 장면 수를 넘으면
+# 쓸 수 없는 판으로 실패·환불한다. 장면 제목·내용·목적 길이는 화 제목·구성안 줄거리·목표와 같다.
+EPISODE_OUTLINE_SCENES_MAX_COUNT = 30
+SCENE_CHARACTERS_MAX_COUNT = 20
+
+
+class NovelSceneView(CamelModel):
+    """장면 구성안의 장면 하나. `id` 는 리비전이 바뀌어도 같은 장면을 가리키는 장면 id 이고, `basis` 는 이 장면의 근거 대화
+    구간(양 끝 포함, 키 순)이다 — 근거는 그 화의 근거 구간 안에만 있다. `flashback` 은 회상 장면인가다. 목록 순서가 원고가 쓰는
+    장면 차례다."""
+
+    id: str
+    title: str
+    summary: str
+    purpose: str
+    characters: list[str]
+    flashback: bool
+    basis: list[NovelSourceRange]
+
+
+class NovelEpisodeOutlineView(CamelModel):
+    """장면 구성안 한 판. `stale` 이 참이면 지금 승인한 전체 구성안에서 그 화의 근거가 바뀌었거나(또는 화가 빠졌거나) 근거 include
+    구간이 지금 구간 선택에서 빠졌다 — 승인·편집·원고에 쓸 수 없고 다시 만들어야 한다."""
+
+    revision: int
+    source: NovelOutlineSource
+    model: str | None
+    approved_at: datetime | None
+    created_at: datetime
+    stale: bool
+    scenes: list[NovelSceneView]
+
+
+class NovelEpisodeOutlineState(CamelModel):
+    """한 화의 장면 구성안 화면 상태. `approved` 는 가장 최근에 승인한 판, `draft` 는 그보다 새 미승인 판이다. `models` 는 장면 구성안
+    가격, `chapter_models` 는 원고 가격(화 단가)이고, `chapter_id` 는 이 화를 이미 원고로 쓴 화다(없으면 null)."""
+
+    episode_key: uuid.UUID
+    approved: NovelEpisodeOutlineView | None
+    draft: NovelEpisodeOutlineView | None
+    models: list[NovelOutlineModel]
+    chapter_models: list[NovelOutlineModel]
+    chapter_id: uuid.UUID | None
+
+
+class NovelEpisodeOutlineCreateRequest(CamelModel):
+    """장면 구성안 만들기(과금). 지금 승인한 전체 구성안의 그 화를 근거로 한다. `expected_cost` 는 조회 상태의 그 모델 가격이다."""
+
+    expected_cost: int
+    model: ChatModelId = DEFAULT_CHAT_MODEL
+
+
+class NovelSceneInput(CamelModel):
+    """고친 장면 하나. `id` 는 기준 리비전에 있던 장면의 id 이고, 나눠서 새로 생긴 장면은 비워 보낸다(서버가 새 id 를 준다)."""
+
+    id: str | None = None
+    title: ChapterTitleText
+    summary: OutlineSummaryText
+    purpose: OutlineGoalText = ""
+    characters: list[CharacterNameText] = Field(default_factory=list, max_length=SCENE_CHARACTERS_MAX_COUNT)
+    flashback: bool = False
+    basis: list[NovelSourceRange] = Field(min_length=1, max_length=OUTLINE_BASIS_MAX_COUNT)
+
+
+class NovelEpisodeOutlineSaveRequest(CamelModel):
+    """고친 장면 구성안 저장 — 기준 리비전(화면이 본 그 화의 가장 최근 판) 위의 새 미승인 리비전이 된다. 장면을 빼려면 목록에서
+    지우고, 차례를 바꾸려면 목록 순서를 바꾼다."""
+
+    base_revision: int = Field(ge=1)
+    scenes: list[NovelSceneInput] = Field(min_length=1, max_length=EPISODE_OUTLINE_SCENES_MAX_COUNT)
+
+
+class NovelEpisodeOutlineApproveRequest(CamelModel):
+    """승인할 리비전. 그 화의 가장 최근 리비전이어야 한다."""
+
+    revision: int = Field(ge=1)
+
+
+class NovelOutlineChapterRequest(CamelModel):
+    """구성 흐름 원고 쓰기·다시 만들기(과금). 금액은 고른 모델의 화 단가 하나다."""
+
+    expected_cost: int
+    model: ChatModelId = DEFAULT_CHAT_MODEL

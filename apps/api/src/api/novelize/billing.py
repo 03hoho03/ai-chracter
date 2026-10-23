@@ -57,6 +57,8 @@ ACTIVE_JOB_STATUSES: tuple[NovelJobStatus, ...] = ("queued", "running")
 # 하루 상한에 세는 상태. 환불된 실패를 세면 우리 쪽 실패가 사용자의 하루 기회를 깎는다.
 _COUNTED_JOB_STATUSES: tuple[NovelJobStatus, ...] = ("queued", "running", "succeeded")
 _CHAPTER_JOB_KINDS: tuple[NovelJobKind, ...] = ("chapter_generate", "chapter_regenerate")
+# 구성 흐름 화를 쓰는 종류 — 원고와, 장면 구성안 리비전이 적힌 다시 만들기(구성 흐름 화의 다시 만들기).
+_OUTLINE_CHAPTER_JOB_KINDS: tuple[NovelJobKind, ...] = ("outline_chapter_generate", "chapter_regenerate")
 
 _NOVELIZE_WINDOW = "novelize"
 
@@ -165,7 +167,7 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
       다시 사는 경우). 장면 구성안을 고친 새 리비전이어도 같은 화 키면 막힌다.
     - 409 `NOVEL_JOB_IN_PROGRESS`: 이 소설에 진행 중(대기·실행) 작업이 있다. 작업 종류와 무관하다.
     - 429 `USER_LIMIT`(`window: "novelize"`): 같은 시작 메시지의 장 생성·재생성, 또는 같은 장면 구성안 리비전의 구성 흐름
-      원고가 오늘(KST) 상한에 닿았다. 재시도 초는 상한이 풀리는 KST 자정까지다. 연쇄 부모는 시작 메시지가 없어 세지도
+      원고·그 화의 다시 만들기가 오늘(KST) 상한에 닿았다. 재시도 초는 상한이 풀리는 KST 자정까지다. 연쇄 부모는 시작 메시지가 없어 세지도
       막히지도 않는다(자식은 이 함수를 거치지 않는다 — 부모가 이미 진행 중이라 진행 중 확인에 걸린다). 구성안 두 종은 세지
       않는다 — 유료라 남용 제동은 과금 자체다.
     - 429 `CLOVER_REQUIRED`(`window: "novelize"`): 잔액 부족. 이 경우 참인 재시도 시각은 없다(자정에 돌아오는 무료분은
@@ -225,12 +227,13 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_JOB_IN_PROGRESS"})
 
     same_attempt: ColumnElement[bool] | None = None
-    if job.kind in _CHAPTER_JOB_KINDS:
+    if job.kind in _CHAPTER_JOB_KINDS and job.episode_outline_id is None:
         same_attempt = and_(NovelJob.start_message_id == job.start_message_id, NovelJob.kind.in_(_CHAPTER_JOB_KINDS))
-    elif job.kind == "outline_chapter_generate":
-        # 구성 흐름 원고는 시작 메시지가 아니라 근거 장면 구성안 리비전으로 센다 — 같은 장면 구성안으로 거듭 다시 사는 것을 막는다.
+    elif job.kind in _OUTLINE_CHAPTER_JOB_KINDS:
+        # 구성 흐름 원고와 그 화의 다시 만들기는 시작 메시지가 아니라 근거 장면 구성안 리비전으로 함께 센다 — 같은 장면 구성안으로
+        # 거듭 다시 사는 것을 막는다.
         same_attempt = and_(
-            NovelJob.episode_outline_id == job.episode_outline_id, NovelJob.kind == "outline_chapter_generate"
+            NovelJob.episode_outline_id == job.episode_outline_id, NovelJob.kind.in_(_OUTLINE_CHAPTER_JOB_KINDS)
         )
     if same_attempt is not None:
         today_start = datetime.combine(clover.kst_today(now), time.min, tzinfo=KST)
