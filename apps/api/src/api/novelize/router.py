@@ -1335,7 +1335,18 @@ async def _regenerate_batch(
 
     순서: 작품 상태(403)·방(409)·주인공 이름(422)·모델 허용(403) → 죽은 작업 정리·묶음 보정·커밋 → 원문 변경(409) →
     차감·작업 생성(모델 적격성 409 → 금액 409 → 진행 중·하루 상한·잔액). 적격성과 금액은 묶음의 화 수를 세야 해서
-    사용자 잠금 아래에서 본다(`billing.create_charged_job`)."""
+    사용자 잠금 아래에서 본다(`billing.create_charged_job`).
+
+    구성 흐름 원고가 쓴 화(장면 구성안 리비전이 적힌 화)의 묶음은 409 `NOVEL_CHAPTER_OUTLINE_FLOW` 로 거절한다 — 이 길은 묶음의 첫·끝
+    사이를 연속 구간으로 다시 읽어 장면 계획 없이 쓰므로, 여러 include 구간에 걸친 화면 사이의 고르지 않은 대화까지 모델에 보낸다.
+    그 화는 구성 흐름의 다시 만들기로 한다."""
+    outline_chapter = await db.scalar(
+        select(NovelChapter.id)
+        .where(NovelChapter.batch_id == batch.id, NovelChapter.episode_outline_id.is_not(None))
+        .limit(1)
+    )
+    if outline_chapter is not None:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_CHAPTER_OUTLINE_FLOW")
     await _ensure_content_allows_model(db, novel)
     room_id = _source_room_id(novel)
     _require_protagonist_name(novel)

@@ -122,6 +122,10 @@ class ChapterInput:
     # 작품 설정을 읽은 원작 버전(읽을 버전이 없었으면 None). 첫 화 저장이 집필권 잠금에 "그때 원작 버전"으로 적는다 —
     # 저장 때 다시 고르면 그 사이 방이 지워져 원작의 지금 발행본으로 바뀔 수 있다.
     content_version_id: uuid.UUID | None = None
+    # 구성 흐름 원고·다시 만들기만 채운다 — 근거 장면 구성안 리비전과 장면 차례대로 (장면 id, 근거 원문 글자 수). 저장이 화에 장면
+    # 구성안을 적고 새 개정의 블록마다 장면 경계 행을 쓴다(`scenes.scene_block_rows`). 옛 흐름은 비어 있어 둘 다 하지 않는다.
+    episode_outline_id: uuid.UUID | None = None
+    scene_weights: tuple[tuple[str, int], ...] = ()
 
 
 class SourceChangedError(Exception):

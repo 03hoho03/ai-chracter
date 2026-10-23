@@ -2,12 +2,19 @@
 (`runner.py`)이 라우트 모듈을 import 하면 순환이 되기 때문이다(라우트가 실행을 띄운다). 원문은 읽지 않는다 — 메시지 키만 다룬다."""
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import MessageKey
-from api.db.models.novel import NovelChapter, NovelSourceSection, NovelSourceSectionMode, NovelSourceSelection
+from api.db.models.novel import (
+    NovelChapter,
+    NovelEpisodeOutline,
+    NovelSourceSection,
+    NovelSourceSectionMode,
+    NovelSourceSelection,
+)
 
 # 이미 화가 된 구간과 겹치면 안 되는 mode. 맥락(context)은 막지 않는다 — 잠금은 이미 쓴 대화를 다시 쓰는 것을 막는 것이고, 앞
 # 화와 이어지는 장면을 쓸 때 앞 화의 원문을 참고로 보내는 것은 그 약속을 깨지 않는다. 성공한 원고에 맥락으로 실렸던 구간까지
@@ -46,22 +53,57 @@ async def selection_sections(db: AsyncSession, selection_id: uuid.UUID) -> list[
     return list(rows.all())
 
 
+def stored_basis_key(basis: dict[str, str]) -> tuple[MessageKey, MessageKey]:
+    """장면 구성안에 저장한 장면 근거 하나(메시지 id 와 `created_at` 의 ISO 글자)의 양 끝 키."""
+    return (
+        (datetime.fromisoformat(basis["start_message_created_at"]), uuid.UUID(basis["start_message_id"])),
+        (datetime.fromisoformat(basis["end_message_created_at"]), uuid.UUID(basis["end_message_id"])),
+    )
+
+
 async def locked_ranges(db: AsyncSession, novel_id: uuid.UUID) -> list[tuple[MessageKey, MessageKey]]:
-    """이미 화가 된 구간 — 지금 있는 화마다 그 화의 첫·끝 키 사이 전체, 키 순, 중복 없이. 화를 지우면 그 구간은 풀린다.
+    """이미 화가 된 구간 — 지금 있는 화마다 그 화가 쓴 대화, 키 순, 중복 없이. 화를 지우면 그 구간은 풀린다.
 
     옛 흐름의 화는 연속 구간 하나를 쓰므로 첫·끝 키 사이 전체가 정확히 그 화가 쓴 대화다. 한 묶음의 화들은 묶음 구간을 함께
-    가리켜 같은 구간이 여러 번 나오므로 하나로 줄인다."""
-    rows = await db.execute(
-        select(
-            NovelChapter.start_message_created_at,
-            NovelChapter.start_message_id,
-            NovelChapter.end_message_created_at,
-            NovelChapter.end_message_id,
+    가리켜 같은 구간이 여러 번 나오므로 하나로 줄인다. 구성 흐름 화는 여러 include 구간에 걸칠 수 있어(사이는 맥락이거나 고르지 않은
+    대화) 첫·끝 사이 통째가 아니라 그 화가 쓴 장면 구성안의 장면 근거 구간들이다. 그 장면 구성안이 지워졌으면(판매된 소설의 작가 전용
+    데이터 정리 뒤) 첫·끝 사이로 읽는다."""
+    rows = (
+        await db.execute(
+            select(
+                NovelChapter.start_message_created_at,
+                NovelChapter.start_message_id,
+                NovelChapter.end_message_created_at,
+                NovelChapter.end_message_id,
+                NovelChapter.episode_outline_id,
+            )
+            .where(NovelChapter.novel_id == novel_id)
+            .distinct()
         )
-        .where(NovelChapter.novel_id == novel_id)
-        .distinct()
+    ).all()
+    outline_ids = {row[4] for row in rows if row[4] is not None}
+    scenes = (
+        dict(
+            (
+                await db.execute(
+                    select(NovelEpisodeOutline.id, NovelEpisodeOutline.scenes).where(
+                        NovelEpisodeOutline.id.in_(outline_ids)
+                    )
+                )
+            )
+            .tuples()
+            .all()
+        )
+        if outline_ids
+        else {}
     )
-    return sorted(((row[0], row[1]), (row[2], row[3])) for row in rows.all())
+    ranges: set[tuple[MessageKey, MessageKey]] = set()
+    for row in rows:
+        if row[4] in scenes:
+            ranges.update(stored_basis_key(basis) for scene in scenes[row[4]] for basis in scene["basis"])
+        else:
+            ranges.add(((row[0], row[1]), (row[2], row[3])))
+    return sorted(ranges)
 
 
 def hits_locked(

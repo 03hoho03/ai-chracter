@@ -43,6 +43,7 @@ from api.db.models.novel import (
     NovelChapterRevision,
     NovelCharacter,
     NovelJob,
+    NovelEpisodeOutline,
     NovelJobFailureCode,
     NovelOutline,
 )
@@ -93,7 +94,19 @@ from api.novelize.output import (
     parse_batch_output,
 )
 from api.novelize.paragraphs import resplit_long_paragraphs
-from api.novelize.prompts import NovelizeOutlineResult, NovelizeReviseResult
+from api.novelize.prompts import NovelizeEpisodeOutlineResult, NovelizeOutlineResult, NovelizeReviseResult
+from api.novelize.scene_outline import (
+    EpisodeOutlineInput,
+    MalformedScenesError,
+    RefusedScenesError,
+    build_episode_outline_input,
+    build_outline_chapter_input,
+    build_outline_regenerate_input,
+    episode_basis_holds,
+    model_scenes,
+    written_episodes,
+)
+from api.novelize.scenes import scene_block_rows
 from api.novelize.source import group_turns, load_candidates, message_key, next_chapter_start
 from api.novelize.text import clean_chapter_body, looks_like_refusal, split_paragraphs
 from api.novelize.writing_lock import lock_with_first_chapter
@@ -185,16 +198,38 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
                     revise = await build_revise_input(db, job, novel)
                 elif job.kind == "outline_generate":
                     outline_input = await build_outline_input(db, novel, model=chapter_job_model(job))
+                elif job.kind == "episode_outline_generate":
+                    assert job.outline_id is not None and job.outline_episode_key is not None  # 작업 대상 CHECK
+                    episode_input = await build_episode_outline_input(
+                        db, novel, job.outline_episode_key, outline_id=job.outline_id, model=chapter_job_model(job)
+                    )
+                elif job.kind == "outline_chapter_generate":
+                    assert job.episode_outline_id is not None and job.outline_episode_key is not None  # 작업 대상 CHECK
+                    chapter_input = await build_outline_chapter_input(
+                        db,
+                        novel,
+                        job.outline_episode_key,
+                        episode_outline_id=job.episode_outline_id,
+                        model=chapter_job_model(job),
+                    )
+                elif job.kind == "chapter_regenerate" and job.episode_outline_id is not None:
+                    # 구성 흐름 화의 다시 만들기 — 같은 장면 구성안으로 관문을 거쳐 다시 쓴다(옛 연속 구간 읽기를 타지 않는다).
+                    chapter = await db.get(NovelChapter, job.chapter_id) if job.chapter_id is not None else None
+                    if chapter is None:
+                        raise SourceChangedError(f"job={job.id} 다시 만들 화가 지워졌다")
+                    chapter_input = await build_outline_regenerate_input(
+                        db, novel, chapter, model=chapter_job_model(job)
+                    )
                 else:
                     chapter_input = await build_chapter_input(db, job, novel)
             except SourceChangedError as exc:
                 raise _JobFailedError("source_changed") from exc
             if job.kind == "ai_edit":
                 usage = LLMCallContext(call_site="novelize_revise", user_id=job.user_id, room_id=novel.chat_room_id)
-            elif job.kind == "outline_generate":
+            elif job.kind in ("outline_generate", "episode_outline_generate"):
                 # 고른 모델을 실어 부른다 — 구성안 호출 위치는 구조화 호출이어도 실린 모델의 구현으로 간다.
                 usage = LLMCallContext(
-                    call_site="novelize_outline",
+                    call_site="novelize_outline" if job.kind == "outline_generate" else "novelize_episode_outline",
                     user_id=job.user_id,
                     room_id=novel.chat_room_id,
                     model=chapter_job_model(job),
@@ -219,6 +254,9 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
         elif kind == "outline_generate":
             episodes = await _outline(llm_client, outline_input, usage)
             await _save_outline(session_factory, job_id, outline_input, episodes)
+        elif kind == "episode_outline_generate":
+            scenes = await _episode_outline(llm_client, episode_input, usage)
+            await _save_episode_outline(session_factory, job_id, scenes)
         else:
             batch = await _generate_batch(llm_client, chapter_input, usage)
             await _save_batch(session_factory, job_id, chapter_input, batch)
@@ -595,6 +633,79 @@ async def _save_outline(
         await db.commit()
 
 
+async def _episode_outline(
+    llm_client: LLMClient, episode_input: EpisodeOutlineInput, usage: LLMCallContext
+) -> list[dict[str, Any]]:
+    """화 하나의 장면 구성안 호출. 호출 실패는 전체 구성안과 같은 사유로 가르고, 쓸 수 없는 장면 구성안은 `malformed`, 거절문은
+    `refused` 로 실패·환불한다."""
+    prompt = episode_input.prompt
+    try:
+        result = await llm_client.generate_structured_with_instruction(
+            prompt.prompt, NovelizeEpisodeOutlineResult, system_instruction=prompt.system_instruction, usage=usage
+        )
+    except LLMTruncatedError as exc:
+        raise _JobFailedError("truncated") from exc
+    except LLMEmptyResponseError as exc:
+        raise _JobFailedError("empty") from exc
+    except LLMPolicyViolationError as exc:
+        raise _JobFailedError("blocked") from exc
+    except LLMClientError as exc:
+        logger.warning("소설화 장면 구성안 호출이 실패했다: %s", type(exc).__name__)
+        raise _JobFailedError("llm_error") from exc
+    try:
+        return model_scenes(result, episode_input.source.spans)
+    except MalformedScenesError as exc:
+        logger.warning("소설화 장면 구성안을 쓸 수 없다: %s", exc)
+        raise _JobFailedError("malformed") from exc
+    except RefusedScenesError as exc:
+        raise _JobFailedError("refused") from exc
+
+
+async def _save_episode_outline(
+    session_factory: SessionFactory, job_id: uuid.UUID, scenes: list[dict[str, Any]]
+) -> None:
+    """장면 구성안을 그 화의 다음 리비전(미승인, 출처 generate)으로 저장한다. 사용자 행 잠금 → 성공 전이 → 낡음 확인 → INSERT 순서다
+    (전체 구성안 저장과 같은 이유). 모델을 부르는 동안 그 화의 근거가 바뀌었거나(구성안 편집·근거 구간을 뺀 선택) 그 화가 원고가
+    되었으면 저장하지 않고 `source_changed` 로 실패·환불한다."""
+    async with session_factory() as db:
+        user_id = await db.scalar(select(NovelJob.user_id).where(NovelJob.id == job_id))
+        if user_id is None or not await _lock_user(db, user_id):
+            await db.rollback()
+            return
+        moved = await transition_job(
+            db, job_id=job_id, expected=("running",), values={"status": "succeeded", "finished_at": func.now()}
+        )
+        if moved is None:
+            await db.rollback()
+            return
+        job = await db.get_one(NovelJob, job_id)
+        assert job.outline_id is not None and job.outline_episode_key is not None  # 작업 대상 CHECK
+        key = job.outline_episode_key
+        if not await episode_basis_holds(db, job.novel_id, job.outline_id, key) or str(key) in await written_episodes(
+            db, job.novel_id
+        ):
+            await db.rollback()
+            raise _JobFailedError("source_changed")
+        last = await db.scalar(
+            select(func.coalesce(func.max(NovelEpisodeOutline.revision), 0)).where(
+                NovelEpisodeOutline.novel_id == job.novel_id, NovelEpisodeOutline.episode_key == key
+            )
+        )
+        db.add(
+            NovelEpisodeOutline(
+                novel_id=job.novel_id,
+                outline_id=job.outline_id,
+                episode_key=key,
+                revision=int(last or 0) + 1,
+                source="generate",
+                job_id=job_id,
+                model=job.model,
+                scenes=scenes,
+            )
+        )
+        await db.commit()
+
+
 def _assemble_revision(paragraphs: list[str], first: int, last: int, replacement: list[str]) -> str:
     """범위 밖 문단은 원본 그대로 붙인다 — 모델이 범위 밖을 고쳐 보냈어도 결과에 들어가지 않는다."""
     return "\n\n".join([*paragraphs[:first], *replacement, *paragraphs[last + 1 :]])
@@ -700,6 +811,8 @@ async def _save_batch(
             batch_id, chapters, revisions = await _save_generated(db, job, chapter_input, batch)
             # 첫 화를 저장한 소설을 잠근다(이미 잠겼으면 그대로). 같은 트랜잭션이라 아래 단계가 실패해 화가 롤백되면 잠금도 남지 않는다.
             await lock_with_first_chapter(db, job.novel_id, chapter_input.content_version_id)
+        if chapter_input.episode_outline_id is not None:
+            _add_scene_blocks(db, chapter_input, chapters, revisions)
         await _link_characters(db, job.novel_id, chapters, batch.episodes)
         if chapter_input.writes_novel_title and batch.novel_title:
             # 사용자가 그사이 제목을 고쳤으면 덮지 않는다 — 조건을 문장에 걸어 읽고 쓰는 사이에 끼어들 틈이 없다.
@@ -740,9 +853,32 @@ async def _save_batch(
             await db.commit()
 
 
+def _add_scene_blocks(
+    db: AsyncSession,
+    chapter_input: ChapterInput,
+    chapters: Sequence[NovelChapter],
+    revisions: Sequence[NovelChapterRevision],
+) -> None:
+    """구성 흐름 원고·다시 만들기가 쓴 새 개정의 블록마다 장면 경계 행을 넣는다(블록 id 는 모두 새 id 라 겹치지 않는다)."""
+    assert chapter_input.episode_outline_id is not None
+    for chapter, revision in zip(chapters, revisions, strict=True):
+        db.add_all(
+            scene_block_rows(
+                chapter_id=chapter.id,
+                episode_outline_id=chapter_input.episode_outline_id,
+                block_ids=revision.block_ids,
+                paragraph_lengths=[len(paragraph) for paragraph in split_paragraphs(revision.body)],
+                scenes=chapter_input.scene_weights,
+            )
+        )
+
+
 async def _episode_cap(db: AsyncSession, job: NovelJob) -> int:
     """생성 작업이 낼 수 있는 화 수의 상한. 연쇄 자식은 부모 행에 고정한 값이다 — 그 사이 설정이 바뀌어도 값을 낸
-    시점의 상한을 따른다. 부모 행이 아직 실행 중인 것은 호출 전에 소비액을 올리며 확인했다."""
+    시점의 상한을 따른다. 부모 행이 아직 실행 중인 것은 호출 전에 소비액을 올리며 확인했다. 구성 흐름 원고는 장면 구성안 하나로
+    화 하나를 쓴다."""
+    if job.kind == "outline_chapter_generate":
+        return 1
     if job.parent_job_id is not None:
         cap = await db.scalar(select(NovelJob.batch_k_max).where(NovelJob.id == job.parent_job_id))
         assert cap is not None  # 연쇄 부모는 CHECK 로 화 수 상한을 갖는다
@@ -802,6 +938,7 @@ async def _save_generated(
             episode_index=index,
             title=episode.title,
             summary=episode.summary,
+            episode_outline_id=chapter_input.episode_outline_id,
             **segment,
         )
         for index, episode in enumerate(batch.episodes)

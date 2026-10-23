@@ -85,6 +85,26 @@ class NovelizeOutlineResult(BaseModel):
     )
 
 
+class NovelizeEpisodeOutlineScene(BaseModel):
+    """장면 구성안의 장면 하나. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
+
+    title: str = Field(description="장면 제목. 그 장면의 핵심을 담은 20자 이내의 짧은 구절.")
+    summary: str = Field(description="그 장면에서 무엇이 일어나고 무엇이 달라지는지. 2~3문장.")
+    purpose: str = Field(description="이 장면이 이 화에서 맡는 몫 한 문장.")
+    characters: list[str] = Field(description="이 장면에 나오는 인물의 이름. [원문 대화]에 나온 이름 그대로.")
+    flashback: bool = Field(description="지금 이야기보다 앞서 일어난 일을 돌아보는 회상 장면이면 true, 아니면 false.")
+    start_turn: int = Field(description="이 장면의 근거가 시작되는 턴 번호. [원문 대화]의 [턴 n] 번호 중 하나.")
+    end_turn: int = Field(description="이 장면의 근거가 끝나는 턴 번호. start_turn 이상이고, 다음 장면의 start_turn 보다 작다.")
+
+
+class NovelizeEpisodeOutlineResult(BaseModel):
+    """장면 구성안의 응답 스키마. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
+
+    scenes: list[NovelizeEpisodeOutlineScene] = Field(
+        description="장면 목록. 일어난 순서대로, 적어도 하나. 앞 장면의 턴과 겹치지 않고 턴 번호가 뒤로 갈수록 커진다."
+    )
+
+
 def _scope(is_story_chat: bool) -> str:
     return "story" if is_story_chat else "character"
 
