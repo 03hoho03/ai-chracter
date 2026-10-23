@@ -7,7 +7,14 @@ from pydantic import ConfigDict, Field, StringConstraints, field_validator
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH
 from api.content.schemas import CharacterDraftPayload, MediaTagImage, StoryDraftPayload
 from api.core.schema import CamelModel, NoNul
-from api.db.models.chat import ChatMessageReportReason, ChatMessageRole
+from api.db.models.chat import (
+    ChatMessageReportReason,
+    ChatMessageRole,
+    EpisodeAssertedBy,
+    FactAssertedBy,
+    FactKind,
+    FactTruthStatus,
+)
 from api.db.models.content import ContentType
 from api.db.models.moderation import ReportStatus
 from api.db.models.story import EndingRuleOperator, LogicalOp
@@ -87,6 +94,15 @@ class ChatRoomMemoryLimits(CamelModel):
     summary_max_length: int
 
 
+class ChatRoomMemoryFeatures(CamelModel):
+    """기억 화면이 문구를 가를 서버 스위치. `items_visible` 은 장면·사실 목록 API 가 열려 있는가(닫혀 있으면 그 라우트가
+    404 라, 화면은 목록을 부르지 않고 "목록 없음"과 구별한다). `summary_folding` 은 긴 방의 대화를 요약으로 접는 생성 윈도우가
+    켜져 있는가다 — 꺼져 있으면 새 요약이 생기지 않고 있는 요약도 응답에 쓰이지 않는다."""
+
+    items_visible: bool
+    summary_folding: bool
+
+
 class ChatRoomMemoryResponse(CamelModel):
     """`summary`는 첫 접기 전이면 null이다(그때는 요약을 고칠 수 없다). `rolled_back_at`은 지난
     메시지를 고치거나 지워 요약이 이전 판으로 돌아간 마지막 시각이고, 초기화하면 null로 돌아간다."""
@@ -96,6 +112,54 @@ class ChatRoomMemoryResponse(CamelModel):
     version: int
     rolled_back_at: datetime | None
     limits: ChatRoomMemoryLimits
+    features: ChatRoomMemoryFeatures
+
+
+class ChatRoomMemoryEpisodeItem(CamelModel):
+    """장면 기억 하나. `asserted_by` 는 장면의 내용을 누가 말했는가(사용자·캐릭터·서술·섞임)다 — 캐릭터가 대사로만 말한 장면은
+    회상에 실리지 않는다. 턴은 추출 시점의 응답 순번이라 그 뒤 메시지가 지워졌으면 근사값이다."""
+
+    id: uuid.UUID
+    title: str
+    detail: str
+    asserted_by: EpisodeAssertedBy
+    start_turn: int
+    end_turn: int
+
+
+class ChatRoomMemoryFactItem(CamelModel):
+    """키마다 지금 이긴 사실 하나. `kind` 가 `relation` 이면 `subject`·`object` 사이 관계이고 `fact` 면 `subject` 의
+    `attribute` 다. `truth_label` 은 `truth_status` 를 사용자에게 보일 말로 바꾼 것이고, `speaker` 는 그 말을 한 인물(말한 사람
+    꼬리표, 없으면 null)이다. 아는 사람 목록은 싣지 않는다 — 응답에서 비밀을 가리는 내부 장치다."""
+
+    id: uuid.UUID
+    fact_key: str
+    kind: FactKind
+    subject: str
+    object: str | None
+    attribute: str | None
+    value: str
+    truth_status: FactTruthStatus
+    truth_label: str
+    asserted_by: FactAssertedBy
+    speaker: str | None
+    start_turn: int
+    end_turn: int
+
+
+class ChatRoomMemoryItemsResponse(CamelModel):
+    """방의 장면·사실 기억. 둘 다 지금 요약 커서까지 접힌 것이고, 요약이 아직 없으면 둘 다 비어 있다.
+
+    - `episodes` 는 일어난 순서로 한 페이지다. `next_cursor` 를 `cursor` 로 다시 보내면 다음 페이지이고, 마지막 페이지면 null.
+    - `facts` 는 키마다 이긴 행 전부다(페이지 없음, 이긴 행을 쓴 순서). 페이지마다 같은 목록이 온다.
+    - `episodes_used_in_replies`·`facts_used_in_replies` 는 이 방의 다음 턴에 그 기억이 응답 프롬프트에 실릴 수 있는가 — 기억
+      스위치가 켜져 있고 이 방의 레인과 다음 턴 모델이 기억 사용 범위에 들 때만 참이다. 거짓이어도 기억은 계속 쌓인다."""
+
+    episodes: list[ChatRoomMemoryEpisodeItem]
+    next_cursor: str | None
+    facts: list[ChatRoomMemoryFactItem]
+    episodes_used_in_replies: bool
+    facts_used_in_replies: bool
 
 
 class StoryScene(CamelModel):

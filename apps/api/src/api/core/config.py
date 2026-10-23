@@ -658,6 +658,11 @@ class Settings(BaseSettings):
     memory_embed_recall_max_distance: float = 2.0
     memory_embed_recall_vector_limit: int = 10
     memory_embed_recall_df_max: int | None = None
+    # 방 주인에게 그 방의 장면·사실 기억 목록을 보여 주는 API(`GET /chat-rooms/{id}/memory/items`)를 연다. 기본은 꺼짐 — 꺼져
+    # 있으면 라우트는 등록된 채 404 `MEMORY_ITEMS_DISABLED` 이고(그래서 OpenAPI 스펙은 이 값과 무관하다), 기억 응답의 기능 칸이
+    # 꺼짐을 알려 화면이 "목록 없음"과 가른다. 목록은 읽기만 해서 생성·요약·추출과 무관하다. 처리방침에 기억 열람 항목을 게시한
+    # 뒤 켠다. 끄면(줄 삭제 + 재기동) 다음 요청부터 다시 404 다.
+    memory_items_visible: bool = False
 
     # 소설화 전역 스위치. 꺼져 있으면 허용 행이 있어도 아무도 못 쓴다 — 코드 기본값이 닫힘이어야 env 설정 없이
     # 배포해도 닫힌 채로 뜬다. 끄면 다음 요청부터 막히고(재기동 필요), 허용 행은 남아 다시 켜면 그대로 돌아온다.

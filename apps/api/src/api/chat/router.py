@@ -16,6 +16,7 @@ from api.chat.memory_embeddings import fill_pending_embeddings
 from api.chat.memory_episodes import extract_pending_episode
 from api.chat.memory_facts import extract_pending_facts
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
+from api.chat.memory_items import InvalidItemsCursorError, memory_items, truth_label, used_in_replies
 from api.chat.memory_rewind import rewind_memory
 from api.chat.previous_response import clear_previous_response, previous_response_for, restore_previous_response
 from api.chat.memory_window import select_current_snapshot
@@ -78,6 +79,10 @@ from api.chat.schemas import (
     ChatRoomCreateRequest,
     ChatRoomEnding,
     ChatRoomListItem,
+    ChatRoomMemoryEpisodeItem,
+    ChatRoomMemoryFactItem,
+    ChatRoomMemoryFeatures,
+    ChatRoomMemoryItemsResponse,
     ChatRoomMemoryLimits,
     ChatRoomMemoryNoteRequest,
     ChatRoomMemoryResponse,
@@ -2041,6 +2046,9 @@ async def _memory_response(db: AsyncSession, room_id: uuid.UUID) -> ChatRoomMemo
         version=room_row.memory_version,
         rolled_back_at=room_row.memory_rolled_back_at,
         limits=ChatRoomMemoryLimits(note_max_length=MEMORY_NOTE_MAX_LENGTH, summary_max_length=SUMMARY_MAX_LENGTH),
+        features=ChatRoomMemoryFeatures(
+            items_visible=settings.memory_items_visible, summary_folding=settings.memory_window_generation
+        ),
     )
 
 
@@ -2054,6 +2062,64 @@ async def get_chat_room_memory(
     편집 폼의 기준값을 흔든다."""
     await _get_owned_room(db, room_id, user_id)
     return await _memory_response(db, room_id)
+
+
+async def _require_memory_items_visible() -> None:
+    if not settings.memory_items_visible:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "MEMORY_ITEMS_DISABLED"})
+
+
+@router.get("/{room_id}/memory/items", dependencies=[Depends(_require_memory_items_visible)])
+async def list_chat_room_memory_items(
+    room_id: uuid.UUID,
+    cursor: str | None = None,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryItemsResponse:
+    """방의 장면·사실 기억(`chat/memory_items.py`). 스위치가 꺼져 있으면 라우트는 등록된 채 404 다 — 기억 응답의 기능 칸이 화면에
+    꺼짐을 알린다. 자기 데이터 열람이라 재동의 게이트를 걸지 않는다(노트 비우기와 같다)."""
+    room = await _get_owned_room(db, room_id, user_id)
+    try:
+        episodes, next_cursor, facts = await memory_items(db, room.id, cursor)
+    except InvalidItemsCursorError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"code": "MEMORY_ITEMS_CURSOR_INVALID"}
+        ) from None
+    episodes_used, facts_used = await used_in_replies(db, room)
+    return ChatRoomMemoryItemsResponse(
+        episodes=[
+            ChatRoomMemoryEpisodeItem(
+                id=row.id,
+                title=row.title,
+                detail=row.detail,
+                asserted_by=row.asserted_by,
+                start_turn=row.start_turn,
+                end_turn=row.end_turn,
+            )
+            for row in episodes
+        ],
+        next_cursor=next_cursor,
+        facts=[
+            ChatRoomMemoryFactItem(
+                id=row.id,
+                fact_key=row.fact_key,
+                kind=row.kind,
+                subject=row.subject,
+                object=row.object,
+                attribute=row.attribute,
+                value=row.value,
+                truth_status=row.truth_status,
+                truth_label=truth_label(row.truth_status),
+                asserted_by=row.asserted_by,
+                speaker=row.speaker,
+                start_turn=row.start_turn,
+                end_turn=row.end_turn,
+            )
+            for row in facts
+        ],
+        episodes_used_in_replies=episodes_used,
+        facts_used_in_replies=facts_used,
+    )
 
 
 async def _lock_room_for_note_write(db: AsyncSession, room_id: uuid.UUID) -> None:
