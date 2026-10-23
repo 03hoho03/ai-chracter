@@ -65,6 +65,7 @@ from api.novelize.router import (
     router as novelize_router,
 )
 from api.novelize.runner import expire_stale_jobs_after_startup
+from api.novelize.selection_router import selection_router as novelize_selection_router
 from api.payments.router import router as payments_router
 from api.persona.router import me_router as persona_me_router
 from api.session.suspension import rebuild_suspended_user_markers
@@ -174,6 +175,7 @@ app.include_router(novelize_router)
 app.include_router(novelize_room_router)
 app.include_router(novelize_owner_router)
 app.include_router(novelize_illustration_router)
+app.include_router(novelize_selection_router)
 app.include_router(novel_public_router)
 app.include_router(novel_public_owner_router)
 app.include_router(novel_public_reader_router)

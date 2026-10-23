@@ -242,11 +242,14 @@ async def test_a_stored_selection_reads_include_and_context_sections_and_never_t
     db_session.add_all(sections)
     await db_session.flush()
 
-    ranges = section_ranges(sections)
-    read = await read_source(db_session, room.room_id, ranges)
-    rehashed = [segment_hash(await read_source(db_session, room.room_id, [r])) for r in ranges]
+    include = section_ranges(sections, mode="include")
+    context = section_ranges(sections, mode="context")
+    read = await read_source(db_session, room.room_id, include)
+    read_context = await read_source(db_session, room.room_id, context)
+    rehashed = [segment_hash(await read_source(db_session, room.room_id, [r])) for r in include + context]
 
-    assert [m.id for m in read] == [m.id for turn in (1, 2, 3, 5) for m in room.turns[turn]]
-    assert not any(_EXCLUDED in m.content for m in read)
-    assert sum(_CONTEXT in m.content for m in read) == 2
-    assert rehashed == [s.source_hash for s in sorted(sections, key=lambda s: s.start_message_created_at)]
+    assert [m.id for m in read] == [m.id for turn in (1, 2, 5) for m in room.turns[turn]]
+    assert [m.id for m in read_context] == [m.id for m in room.turns[3]]
+    assert not any(_EXCLUDED in m.content for m in read + read_context)
+    assert not any(_CONTEXT in m.content for m in read)
+    assert rehashed == [s.source_hash for s in (sections[1], sections[0], sections[2])]
