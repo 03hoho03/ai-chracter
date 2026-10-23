@@ -256,6 +256,35 @@ def test_cache_check_compares_same_series_pairs_directly_and_cross_series_pairs_
     assert v4.trajectory_gate(broken, ("b1-B1", "b1-B2"), section_max=600)["S3"]["status"] == "fail"
 
 
+def _growth(arm: str, per_turn: int) -> list[dict[str, Any]]:
+    return [
+        {"arm": arm, "turn": t, "chars": 20_000 + per_turn * (t - 101), "segmentSha": ["s", "s"]}
+        for t in range(101, 301)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("b_per_turn", "expected"),
+    [(1, "pass"), (0, "pass"), (3, "pass"), (4, "pass"), (5, "fail"), (6, "fail")],
+)
+def test_length_slope_only_fails_when_the_compared_arm_grows_two_or_more_chars_per_turn_faster(
+    b_per_turn: int, expected: str
+) -> None:
+    # 기준 갈래는 턴마다 3자씩 자란다. 비교 갈래가 덜 자라는 것(요약이 먼저 상한에 닿아 평평해지는 것)은 프롬프트가 불어나는
+    # 쪽이 아니므로 위반이 아니고, 턴당 2자 이상 더 자라야 위반이다. 같은 턴 차 상한은 넉넉히 둬 기울기만 본다.
+    points = _growth("b1-A1", 3) + _growth("b1-B1", b_per_turn)
+    s4 = v4.trajectory_gate(points, ("b1-A1", "b1-B1"), section_max=10_000)["S4"]
+    assert s4["status"] == expected, s4
+    assert abs(s4["slopeDiff"] - (b_per_turn - 3)) < 1e-9  # 부호가 남아 어느 쪽이 더 자랐는지 보인다
+
+
+def test_length_still_fails_when_the_compared_arm_exceeds_the_section_max_on_some_turn() -> None:
+    points = _growth("b1-A1", 3) + _growth("b1-B1", 1)
+    s4 = v4.trajectory_gate([p | {"chars": p["chars"] + 501} if p["arm"] == "b1-B1" and p["turn"] == 101 else p
+                             for p in points], ("b1-A1", "b1-B1"), section_max=500)["S4"]  # fmt: skip
+    assert s4["status"] == "fail" and s4["maxDiff"] == 501
+
+
 def test_unaddressed_warning_fires_above_thirty_percent_of_decided_items() -> None:
     items = _items("sy", "false_premise", 10)
     judged = _judged(items, "b1-A0", ["unaddressed"] * 4 + ["rejected"] * 5 + [None])

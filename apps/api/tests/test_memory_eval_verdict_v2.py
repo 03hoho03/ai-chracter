@@ -135,6 +135,13 @@ def test_trajectory_fails_on_slope_difference_of_two_chars_per_turn() -> None:
     assert abs(checks["6"]["slopeDiff"] - 2.0) < 1e-9
 
 
+def test_trajectory_slope_check_stays_two_sided_for_the_earlier_runs() -> None:
+    # 1~3차 판정이 함께 쓰는 기본 동작은 비교 갈래가 턴당 2자 덜 자라도 위반으로 본다.
+    checks = trajectory_checks(_points(lambda t: -2 * (t - 101)), recall_section_max=1_000)
+    assert checks["6"]["status"] == "fail"
+    assert abs(checks["6"]["slopeDiff"] - 2.0) < 1e-9
+
+
 def test_trajectory_fails_when_max_difference_exceeds_the_recall_section_max() -> None:
     checks = trajectory_checks(_points(lambda t: 1_344 if t == 200 else 0), recall_section_max=1_343)
     assert checks["6"]["status"] == "fail"
