@@ -114,8 +114,10 @@ def enqueued(monkeypatch: pytest.MonkeyPatch) -> list[uuid.UUID]:
     return seen
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def llm() -> Iterator[_OutlineLLM]:
+    """모든 시험에서 모델 클라이언트를 가짜로 갈아 끼운다 — 만들기 라우트는 본문 전에 클라이언트를 받으므로, 갈아 끼우지 않으면 키가
+    없는 환경에서 거절 시험까지 클라이언트 생성에서 실패한다."""
     fake = _OutlineLLM()
     _override_llm_client(fake)
     yield fake
