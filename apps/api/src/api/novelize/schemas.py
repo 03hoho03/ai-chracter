@@ -18,6 +18,7 @@ from api.db.models.novel import (
     NovelJobStatus,
     NovelRevisionSource,
     NovelSnapshotKind,
+    NovelSourceSectionMode,
 )
 from api.llm.chat_models import CHAT_MODELS_BY_ID, DEFAULT_CHAT_MODEL, ChatModelId, novel_episode_unit_price
 from api.novelize.episodes import RegenerateIneligibility
@@ -761,3 +762,79 @@ class NovelSnapshotRestoreResponse(CamelModel):
     novel: NovelDetailResponse
     skipped_chapters: list[uuid.UUID]
     auto_snapshot_id: uuid.UUID
+
+
+# ── 구간 선택 ───────────────────────────────────────────────────────────────
+# 한 선택에 담을 수 있는 구간 수. 화면이 구간을 하나하나 고르는 것이라 긴 방이라도 한참 아래에서 끝난다 — 요청 하나가 구간마다
+# 원문을 다시 읽어 해시하므로 상한을 둔다.
+SOURCE_SECTIONS_MAX_COUNT = 200
+
+
+class NovelSourceSectionInput(CamelModel):
+    """고른 구간 하나 — 양 끝 메시지(양 끝 포함)와 mode. 소설에 넣을 구간은 `include`, 앞뒤 맥락으로만 보낼 구간은 `context` 다.
+    빼는 구간(exclude)은 보내지 않는다 — 고르지 않은 나머지가 exclude 다."""
+
+    mode: NovelSourceSectionMode
+    start_message_id: uuid.UUID
+    end_message_id: uuid.UUID
+
+
+class NovelSourceSelectionSaveRequest(CamelModel):
+    """선택 초안 저장. `base_revision` 은 화면이 본 가장 최근 리비전(선택이 아직 없으면 null)이고 지금 최신과 다르면 409 다.
+    구간은 키 순으로, 겹치지 않게(맞닿은 메시지도 공유하지 않게) 보낸다.
+
+    고정 끝(이 선택이 다루는 방의 마지막 메시지)은 첫 저장 때의 방 끝이고 그 뒤 저장은 앞 리비전의 것을 물려받는다 — 고른 뒤
+    이어진 대화가 저절로 붙지 않게. `extend_to_room_end` 를 켠 저장만 고정 끝을 지금 방 끝으로 옮겨 새 대화를 고를 수 있게
+    한다("새 구간 추가")."""
+
+    base_revision: int | None = Field(ge=1)
+    extend_to_room_end: bool = False
+    sections: list[NovelSourceSectionInput] = Field(max_length=SOURCE_SECTIONS_MAX_COUNT)
+
+
+class NovelSourceSelectionApproveRequest(CamelModel):
+    """승인할 리비전. 가장 최근 리비전이어야 한다."""
+
+    revision: int = Field(ge=1)
+
+
+class NovelSourceRange(CamelModel):
+    """양 끝 메시지로 가리킨 구간(양 끝 포함)."""
+
+    start_message_id: uuid.UUID
+    end_message_id: uuid.UUID
+
+
+class NovelSourceSectionView(NovelSourceRange):
+    """저장된 구간 하나. `source_changed` 는 저장 때의 해시와 지금 방 원문의 해시가 다른가다 — 참이면 그 구간을 쓰는 다음 생성이
+    원문 변경으로 막히므로 화면이 다시 고르라고 알린다."""
+
+    mode: NovelSourceSectionMode
+    assistant_message_count: int
+    source_changed: bool
+
+
+class NovelSourceSelectionView(CamelModel):
+    """선택 한 판. `revision` 이 null 이면 아직 저장하지 않은 기본 제안이다. `room_end_message_id` 는 이 선택의 고정 끝(제안이면
+    지금 방 끝, 방이 비었으면 null)이고, 그 안에서 구간 밖·잠긴 구간 밖이 소설에서 빼는 구간이다."""
+
+    revision: int | None
+    approved_at: datetime | None
+    room_end_message_id: uuid.UUID | None
+    sections: list[NovelSourceSectionView]
+
+
+class NovelSourceSelectionState(CamelModel):
+    """구간 선택 화면의 상태. `approved` 는 가장 최근에 승인한 선택, `draft` 는 그보다 새 미승인 초안, `proposal` 은 선택이 하나도
+    없을 때의 기본 제안(화가 없으면 방 전체, 있으면 마지막 화 끝 다음부터 방 끝까지 include)이다.
+
+    `locked_ranges` 는 이미 화가 된 구간이다 — include 로 다시 고를 수 없고, 고르지 않아도 빼는 구간(exclude)이 아니다(앞 화를
+    거쳐 이미 소설에 들어가 있다). `room_end_message_id` 는 지금 방의 마지막 메시지, `has_new_messages` 는 가장 최근 선택의 고정
+    끝 뒤에 대화가 이어졌는가다."""
+
+    approved: NovelSourceSelectionView | None
+    draft: NovelSourceSelectionView | None
+    proposal: NovelSourceSelectionView | None
+    locked_ranges: list[NovelSourceRange]
+    room_end_message_id: uuid.UUID | None
+    has_new_messages: bool

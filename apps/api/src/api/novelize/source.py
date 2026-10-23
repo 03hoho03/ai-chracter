@@ -14,7 +14,7 @@
 import hashlib
 import json
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import Select, func, select, tuple_
@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat.memory_window import MessageKey
 from api.chat.prompt_builder import PromptNames, _turn_text
 from api.db.models.chat import ChatMessage, ChatMessageRole
-from api.db.models.novel import NovelChapter, NovelSourceSection
+from api.db.models.novel import NovelChapter, NovelSourceSection, NovelSourceSectionMode
 
 _KEY_ORDER = (ChatMessage.created_at.asc(), ChatMessage.id.asc())
 
@@ -47,9 +47,11 @@ def _room_messages(
     after: MessageKey | None = None,
     through: MessageKey | None = None,
     role: ChatMessageRole | None = None,
+    ids: Collection[uuid.UUID] | None = None,
+    newest_first: bool = False,
 ) -> Select[tuple[ChatMessage]]:
     """방의 메시지를 키 순으로 고르는 SELECT — 이 관문에서 메시지 표를 읽는 질의는 모두 이것을 거친다. `from_key` 이상·`after`
-    초과·`through` 이하로 키를 자르고, `role` 이면 그 역할만 남긴다."""
+    초과·`through` 이하로 키를 자르고, `role` 이면 그 역할만, `ids` 면 그 id 들만 남긴다. `newest_first` 면 키 역순이다."""
     key = tuple_(ChatMessage.created_at, ChatMessage.id)
     # 비교 오른쪽은 `tuple_` 이 아니라 평범한 튜플이다 — `tuple_` 끼리 비교하면 mypy 가 결과를 bool 로 본다.
     query = select(ChatMessage).where(ChatMessage.chat_room_id == room_id)
@@ -61,6 +63,10 @@ def _room_messages(
         query = query.where(key <= through)
     if role is not None:
         query = query.where(ChatMessage.role == role)
+    if ids is not None:
+        query = query.where(ChatMessage.id.in_(ids))
+    if newest_first:
+        return query.order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
     return query.order_by(*_KEY_ORDER)
 
 
@@ -104,10 +110,13 @@ async def read_source(
     return picked
 
 
-def section_ranges(sections: Iterable[NovelSourceSection]) -> list[SourceRange]:
-    """저장된 구간 선택의 구간 행(include·context)을 키 순의 읽을 구간으로 바꾼다. 고르지 않은 나머지(exclude)는 행이 없으므로
-    여기에 나오지 않는다."""
-    ordered = sorted(sections, key=lambda s: (s.start_message_created_at, s.start_message_id))
+def section_ranges(sections: Iterable[NovelSourceSection], *, mode: NovelSourceSectionMode) -> list[SourceRange]:
+    """저장된 구간 선택의 구간 행 중 `mode` 인 것을 키 순의 읽을 구간으로 바꾼다. mode 를 반드시 고르게 한 것은 소설 본문의
+    근거(include)와 앞뒤 맥락(context)을 빌더가 서로 다른 자리에 싣게 하려는 것이다 — 한 목록으로 받으면 맥락으로만 보낸 대화가
+    본문 근거에 섞인다. 고르지 않은 나머지(exclude)는 행이 없으므로 어느 mode 로도 나오지 않는다."""
+    ordered = sorted(
+        (s for s in sections if s.mode == mode), key=lambda s: (s.start_message_created_at, s.start_message_id)
+    )
     return [
         SourceRange(
             (s.start_message_created_at, s.start_message_id), (s.end_message_created_at, s.end_message_id)
@@ -146,6 +155,28 @@ async def next_chapter_start(
     return message
 
 
+async def room_message_keys(
+    db: AsyncSession, room_id: uuid.UUID, message_ids: Collection[uuid.UUID]
+) -> dict[uuid.UUID, MessageKey]:
+    """`message_ids` 중 이 방의 메시지인 것의 키. 다른 방이나 없는 id 는 결과에 없다 — 호출자가 빠진 id 로 소유를 판정한다."""
+    if not message_ids:
+        return {}
+    rows = (await db.scalars(_room_messages(room_id, ids=message_ids))).all()
+    return {message.id: message_key(message) for message in rows}
+
+
+async def last_message_key(db: AsyncSession, room_id: uuid.UUID) -> MessageKey | None:
+    """방의 마지막 메시지 키. 메시지가 없으면 None."""
+    message: ChatMessage | None = await db.scalar(_room_messages(room_id, newest_first=True).limit(1))
+    return None if message is None else message_key(message)
+
+
+async def first_message_key_after(db: AsyncSession, room_id: uuid.UUID, after: MessageKey | None) -> MessageKey | None:
+    """키가 `after` 보다 뒤인 첫 메시지의 키(`after` 가 None 이면 방의 첫 메시지). 없으면 None."""
+    message: ChatMessage | None = await db.scalar(_room_messages(room_id, after=after).limit(1))
+    return None if message is None else message_key(message)
+
+
 async def count_turns_from(db: AsyncSession, room_id: uuid.UUID, start_key: MessageKey) -> int:
     """`start_key` 부터 방 끝까지의 턴(AI 응답) 수. 끝에 응답 없이 남은 사용자 메시지는 묶음이 될 수 없어 세지 않는다."""
     replies = _room_messages(room_id, from_key=start_key, role=ChatMessageRole.ASSISTANT).subquery()
@@ -164,6 +195,23 @@ def segment_hash(messages: Sequence[ChatMessage]) -> str:
         [[message.role.value, message.content] for message in messages], ensure_ascii=False, separators=(",", ":")
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class RangeShape:
+    """구간 하나의 모양 — 모델 응답 수와 원문 해시(`segment_hash`)."""
+
+    assistant_message_count: int
+    source_hash: str
+
+
+async def range_shape(db: AsyncSession, room_id: uuid.UUID, source_range: SourceRange) -> RangeShape:
+    """`source_range` 를 지금 방 원문으로 다시 읽은 모양. 구간 밖은 읽지 않으므로 다른 곳의 원문이 바뀌어도 값이 같다."""
+    messages = await read_source(db, room_id, [source_range])
+    return RangeShape(
+        assistant_message_count=sum(1 for m in messages if m.role == ChatMessageRole.ASSISTANT),
+        source_hash=segment_hash(messages),
+    )
 
 
 @dataclass(frozen=True)

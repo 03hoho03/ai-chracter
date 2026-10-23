@@ -3468,6 +3468,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/novels/{novel_id}/source-selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Source Selection
+         * @description 구간 선택 화면의 상태 — 승인본·초안·기본 제안·이미 쓴 구간·지금 방 끝. 방이 지워진 소설은 409 `NOVEL_ROOM_GONE`.
+         */
+        get: operations["get_source_selection_novels__novel_id__source_selection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/source-selection/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Source Selection Draft
+         * @description 선택을 새 리비전의 초안으로 저장한다(앞 초안은 지우고 승인본은 그대로 둔다). 기준 리비전이 지금 최신이 아니면(다른 탭이
+         *     먼저 저장함) 409 `NOVEL_SOURCE_SELECTION_CONFLICT`. 구간 검증 실패는 `_checked_sections` 의 422 들이고, 그때는 아무것도 바뀌지
+         *     않는다.
+         */
+        put: operations["save_source_selection_draft_novels__novel_id__source_selection_draft_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/source-selection/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Source Selection
+         * @description 가장 최근 리비전의 초안을 승인한다. 이미 승인된 최신 리비전이면 그대로 돌려준다(두 번 누름). 최신이 아니면 409
+         *     `NOVEL_SOURCE_SELECTION_CONFLICT`. 저장 뒤 그 include 구간으로 화가 생겼으면 422 `NOVEL_SOURCE_SECTION_LOCKED`, 고른 구간의 원문이
+         *     저장 뒤 바뀌었으면 409 `NOVEL_SOURCE_CHANGED`(다시 저장해 지금 원문으로 고른다) — 둘 다 초안은 그대로 남는다.
+         */
+        post: operations["approve_source_selection_novels__novel_id__source_selection_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/novels/{novel_id}/publication": {
         parameters: {
             query?: never;
@@ -12864,6 +12928,133 @@ export interface components {
             linkable: boolean;
         };
         /**
+         * NovelSourceRange
+         * @description 양 끝 메시지로 가리킨 구간(양 끝 포함).
+         */
+        NovelSourceRange: {
+            /**
+             * Startmessageid
+             * Format: uuid
+             */
+            startMessageId: string;
+            /**
+             * Endmessageid
+             * Format: uuid
+             */
+            endMessageId: string;
+        };
+        /**
+         * NovelSourceSectionInput
+         * @description 고른 구간 하나 — 양 끝 메시지(양 끝 포함)와 mode. 소설에 넣을 구간은 `include`, 앞뒤 맥락으로만 보낼 구간은 `context` 다.
+         *     빼는 구간(exclude)은 보내지 않는다 — 고르지 않은 나머지가 exclude 다.
+         */
+        NovelSourceSectionInput: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "include" | "context";
+            /**
+             * Startmessageid
+             * Format: uuid
+             */
+            startMessageId: string;
+            /**
+             * Endmessageid
+             * Format: uuid
+             */
+            endMessageId: string;
+        };
+        /**
+         * NovelSourceSectionView
+         * @description 저장된 구간 하나. `source_changed` 는 저장 때의 해시와 지금 방 원문의 해시가 다른가다 — 참이면 그 구간을 쓰는 다음 생성이
+         *     원문 변경으로 막히므로 화면이 다시 고르라고 알린다.
+         */
+        NovelSourceSectionView: {
+            /**
+             * Startmessageid
+             * Format: uuid
+             */
+            startMessageId: string;
+            /**
+             * Endmessageid
+             * Format: uuid
+             */
+            endMessageId: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "include" | "context";
+            /** Assistantmessagecount */
+            assistantMessageCount: number;
+            /** Sourcechanged */
+            sourceChanged: boolean;
+        };
+        /**
+         * NovelSourceSelectionApproveRequest
+         * @description 승인할 리비전. 가장 최근 리비전이어야 한다.
+         */
+        NovelSourceSelectionApproveRequest: {
+            /** Revision */
+            revision: number;
+        };
+        /**
+         * NovelSourceSelectionSaveRequest
+         * @description 선택 초안 저장. `base_revision` 은 화면이 본 가장 최근 리비전(선택이 아직 없으면 null)이고 지금 최신과 다르면 409 다.
+         *     구간은 키 순으로, 겹치지 않게(맞닿은 메시지도 공유하지 않게) 보낸다.
+         *
+         *     고정 끝(이 선택이 다루는 방의 마지막 메시지)은 첫 저장 때의 방 끝이고 그 뒤 저장은 앞 리비전의 것을 물려받는다 — 고른 뒤
+         *     이어진 대화가 저절로 붙지 않게. `extend_to_room_end` 를 켠 저장만 고정 끝을 지금 방 끝으로 옮겨 새 대화를 고를 수 있게
+         *     한다("새 구간 추가").
+         */
+        NovelSourceSelectionSaveRequest: {
+            /** Baserevision */
+            baseRevision: number | null;
+            /**
+             * Extendtoroomend
+             * @default false
+             */
+            extendToRoomEnd: boolean;
+            /** Sections */
+            sections: components["schemas"]["NovelSourceSectionInput"][];
+        };
+        /**
+         * NovelSourceSelectionState
+         * @description 구간 선택 화면의 상태. `approved` 는 가장 최근에 승인한 선택, `draft` 는 그보다 새 미승인 초안, `proposal` 은 선택이 하나도
+         *     없을 때의 기본 제안(화가 없으면 방 전체, 있으면 마지막 화 끝 다음부터 방 끝까지 include)이다.
+         *
+         *     `locked_ranges` 는 이미 화가 된 구간이다 — include 로 다시 고를 수 없고, 고르지 않아도 빼는 구간(exclude)이 아니다(앞 화를
+         *     거쳐 이미 소설에 들어가 있다). `room_end_message_id` 는 지금 방의 마지막 메시지, `has_new_messages` 는 가장 최근 선택의 고정
+         *     끝 뒤에 대화가 이어졌는가다.
+         */
+        NovelSourceSelectionState: {
+            approved: components["schemas"]["NovelSourceSelectionView"] | null;
+            draft: components["schemas"]["NovelSourceSelectionView"] | null;
+            proposal: components["schemas"]["NovelSourceSelectionView"] | null;
+            /** Lockedranges */
+            lockedRanges: components["schemas"]["NovelSourceRange"][];
+            /** Roomendmessageid */
+            roomEndMessageId: string | null;
+            /** Hasnewmessages */
+            hasNewMessages: boolean;
+        };
+        /**
+         * NovelSourceSelectionView
+         * @description 선택 한 판. `revision` 이 null 이면 아직 저장하지 않은 기본 제안이다. `room_end_message_id` 는 이 선택의 고정 끝(제안이면
+         *     지금 방 끝, 방이 비었으면 null)이고, 그 안에서 구간 밖·잠긴 구간 밖이 소설에서 빼는 구간이다.
+         */
+        NovelSourceSelectionView: {
+            /** Revision */
+            revision: number | null;
+            /** Approvedat */
+            approvedAt: string | null;
+            /** Roomendmessageid */
+            roomEndMessageId: string | null;
+            /** Sections */
+            sections: components["schemas"]["NovelSourceSectionView"][];
+        };
+        /**
          * NovelUpdateRequest
          * @description 보낸 칸만 바꾼다. 제목을 바꾸면 그 뒤로 AI 가 제목을 덮지 않는다. `coverAssetId` 는 null 을 보내면 원작 썸네일로
          *     되돌리고, 값을 보내면 내 생성 이미지 중 준비가 끝난 것이어야 한다(아니면 422 `NOVEL_COVER_INVALID`).
@@ -19411,6 +19602,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NovelOriginalIllustrationCandidates"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_source_selection_novels__novel_id__source_selection_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelSourceSelectionState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_source_selection_draft_novels__novel_id__source_selection_draft_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelSourceSelectionSaveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelSourceSelectionState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_source_selection_novels__novel_id__source_selection_approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelSourceSelectionApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelSourceSelectionState"];
                 };
             };
             /** @description Validation Error */
