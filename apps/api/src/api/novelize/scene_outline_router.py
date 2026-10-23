@@ -56,6 +56,7 @@ from api.novelize.scene_outline import (
     ScenesInvalidError,
     approved_episode,
     chapter_turn_cap_exceeded,
+    check_context_sections,
     checked_scenes,
     episode_basis_holds,
     episode_ranges_for_edit,
@@ -369,7 +370,8 @@ async def regenerate_outline_chapter(
     금액은 고른 모델의 화 단가다.
 
     차감 전 거절: 옛 흐름 화 409 `NOVEL_CHAPTER_NOT_OUTLINE_FLOW`(옛 다시 만들기 라우트로 한다), 작품 상태·방·주인공 이름·모델 허용,
-    화를 만든 때와 장면 원문이 다름 409 `NOVEL_SOURCE_CHANGED`, 그리고 차감 함수의 모델 적격성 409·금액 409·진행 중 409·하루 상한
+    화를 만든 때와 장면 원문이 다름 409 `NOVEL_SOURCE_CHANGED`, 지금 선택의 맥락 구간 원문이 바뀜 409
+    `NOVEL_SOURCE_SELECTION_SOURCE_CHANGED`, 그리고 차감 함수의 모델 적격성 409·금액 409·진행 중 409·하루 상한
     429·잔액 429. 없는 화는 404 `NOVEL_CHAPTER_NOT_FOUND`."""
     chapter = await _get_chapter(db, novel, chapter_id)
     if chapter.episode_outline_id is None:
@@ -385,6 +387,10 @@ async def regenerate_outline_chapter(
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_CHANGED") from None
     if segment_hash(scenes.messages) != chapter.source_hash:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_CHANGED")
+    try:
+        await check_context_sections(db, novel, room_id)
+    except SourceChangedError as exc:
+        raise _refusal(exc) from None
     job = NovelJob(
         novel_id=novel.id,
         user_id=novel.user_id,

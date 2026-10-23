@@ -212,7 +212,8 @@ async def _select(
             "extendToRoomEnd": False,
             "roomEndMessageId": shown["roomEndMessageId"],
             "sections": [
-                {"mode": mode, "startMessageId": str(ms[a].id), "endMessageId": str(ms[b].id)} for mode, a, b in sections
+                {"mode": mode, "startMessageId": str(ms[a].id), "endMessageId": str(ms[b].id)}
+                for mode, a, b in sections
             ],
         },
     )
@@ -241,7 +242,9 @@ async def _outlined(
     assert response.status_code == 202, response.text
     assert (await _run(db_session, llm, enqueued[-1])).status == "succeeded"
     state = (await db_client.get(f"/novels/{novel_id}/outline")).json()
-    approved = await db_client.post(f"/novels/{novel_id}/outline/approve", json={"revision": state["draft"]["revision"]})
+    approved = await db_client.post(
+        f"/novels/{novel_id}/outline/approve", json={"revision": state["draft"]["revision"]}
+    )
     assert approved.status_code == 200, approved.text
     return novel_id, ms, [e["key"] for e in approved.json()["approved"]["episodes"]]
 
@@ -339,7 +342,8 @@ async def test_every_scene_outline_and_outline_chapter_route_is_a_no_store_404_w
         await db_client.post(f"{scenes}/approve", json={"revision": 1}),
         await _request_chapter(db_client, novel_id, key),
         await db_client.post(
-            f"/novels/{novel_id}/outline/chapters/{uuid.uuid4()}/regenerate", json={"model": "gemini", "expectedCost": 20}
+            f"/novels/{novel_id}/outline/chapters/{uuid.uuid4()}/regenerate",
+            json={"model": "gemini", "expectedCost": 20},
         ),
     ]
 
@@ -473,7 +477,9 @@ async def test_an_unlocked_novel_of_a_work_that_forbids_novelizing_cannot_buy_sc
     db_session.add(creator)
     await db_session.flush()
     await db_session.execute(
-        sa.update(Content).where(Content.id == content_id).values(novel_permission="forbidden", creator_user_id=creator.id)
+        sa.update(Content)
+        .where(Content.id == content_id)
+        .values(novel_permission="forbidden", creator_user_id=creator.id)
     )
     await db_session.commit()
 
@@ -674,17 +680,28 @@ async def test_an_edited_scene_outline_is_a_new_revision_that_keeps_scene_ids_an
 @pytest.mark.parametrize(
     ("scenes", "reason"),
     [
-        pytest.param(lambda ms, s: [_scene_input(s[0], basis=[_range(ms, 0, 2)])], "basis_outside_episode", id="other_episode"),
-        pytest.param(lambda ms, s: [_scene_input(s[0], basis=[_range(ms, 5, 6)])], "basis_outside_episode", id="context"),
-        pytest.param(lambda ms, s: [_scene_input(s[0], basis=[_range(ms, 3, 10)])], "basis_outside_episode", id="over_gap"),
         pytest.param(
-            lambda ms, s: [_scene_input(s[0], basis=[_range(ms, 9, 12)]), _scene_input(s[1], basis=[_range(ms, 11, 12)])],
+            lambda ms, s: [_scene_input(s[0], basis=[_range(ms, 0, 2)])], "basis_outside_episode", id="other_episode"
+        ),
+        pytest.param(
+            lambda ms, s: [_scene_input(s[0], basis=[_range(ms, 5, 6)])], "basis_outside_episode", id="context"
+        ),
+        pytest.param(
+            lambda ms, s: [_scene_input(s[0], basis=[_range(ms, 3, 10)])], "basis_outside_episode", id="over_gap"
+        ),
+        pytest.param(
+            lambda ms, s: [
+                _scene_input(s[0], basis=[_range(ms, 9, 12)]),
+                _scene_input(s[1], basis=[_range(ms, 11, 12)]),
+            ],
             "basis_overlap",
             id="overlap",
         ),
         pytest.param(lambda ms, s: [_scene_input(s[0], basis=[_range(ms, 9, 11)])], "basis_splits_turn", id="split"),
         pytest.param(lambda ms, s: [_scene_input(s[0], id=str(uuid.uuid4()))], "unknown_id", id="unknown_id"),
-        pytest.param(lambda ms, s: [_scene_input(s[0]), _scene_input(s[0], basis=[_range(ms, 9, 10)])], "unknown_id", id="dup"),
+        pytest.param(
+            lambda ms, s: [_scene_input(s[0]), _scene_input(s[0], basis=[_range(ms, 9, 10)])], "unknown_id", id="dup"
+        ),
     ],
 )
 async def test_an_edited_scene_outline_must_stay_inside_the_episode_on_turn_boundaries(
@@ -815,6 +832,71 @@ async def test_chapters_are_written_in_outline_order(
     assert (await _request_chapter(db_client, novel_id, keys[1])).status_code == 202
 
 
+async def _approve_outline_edit(
+    db_client: httpx.AsyncClient, novel_id: uuid.UUID, change: Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
+) -> None:
+    """지금 승인한 전체 구성안의 화 목록을 `change` 로 고쳐 새 리비전으로 저장하고 승인한다."""
+    outline = (await db_client.get(f"/novels/{novel_id}/outline")).json()["approved"]
+    episodes = [{k: e[k] for k in ("key", "title", "summary", "goal", "basis")} for e in outline["episodes"]]
+    saved = await db_client.put(
+        f"/novels/{novel_id}/outline/draft", json={"baseRevision": outline["revision"], "episodes": change(episodes)}
+    )
+    assert saved.status_code == 200, saved.text
+    approved = await db_client.post(
+        f"/novels/{novel_id}/outline/approve", json={"revision": saved.json()["draft"]["revision"]}
+    )
+    assert approved.status_code == 200, approved.text
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_a_chapter_cannot_be_written_before_an_episode_already_written_after_a_reorder(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """1화를 쓴 뒤 구성안 순서를 바꿔 그 화를 뒤로 옮기면, 앞으로 온 화의 원고는 409 `NOVEL_OUTLINE_EPISODE_OUT_OF_ORDER` 다 — 원고가
+    된 화는 늘 구성안의 맨 앞부터 이어져야 한다. 깨지는 시나리오: 구성안은 B→A 인데 화 번호는 A→B 로 굳는다(화 번호는 생성 순서로만
+    늘어 바로잡을 수 없다)."""
+    novel_id, _, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    await _written(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    await _scened(db_client, db_session, enqueued, llm, novel_id, keys[1])
+    owner = await _owner(db_session, novel_id)
+    before = await _novel_ledger(db_session, owner)
+
+    await _approve_outline_edit(db_client, novel_id, lambda episodes: [episodes[1], episodes[0]])
+
+    assert _code(await _request_chapter(db_client, novel_id, keys[1])) == (409, "NOVEL_OUTLINE_EPISODE_OUT_OF_ORDER")
+    assert await _novel_ledger(db_session, owner) == before
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_a_chapter_whose_episode_basis_is_edited_while_running_is_refunded_without_a_chapter(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """원고 모델을 부르는 동안 사용자가 그 화의 근거를 고친 구성안을 승인하면 저장하지 않고 `source_changed` 로 전액 환불한다. 깨지는
+    시나리오: 옛 근거로 쓴 원고가 그 화를 "원고 됨"으로 굳혀, 새 근거에만 있는 대화가 다시 쓸 수도 잠기지도 않고 빠진다."""
+    novel_id, ms, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    await _scened(db_client, db_session, enqueued, llm, novel_id, keys[0])
+
+    async def narrow_basis() -> None:
+        await _approve_outline_edit(
+            db_client, novel_id, lambda episodes: [{**episodes[0], "basis": [_range(ms, 0, 0)]}, episodes[1]]
+        )
+
+    llm.on_call = narrow_basis
+    assert (await _request_chapter(db_client, novel_id, keys[0])).status_code == 202
+    job = await _run(db_session, llm, enqueued[-1])
+
+    assert (job.status, job.failure_code, job.refunded_amount) == ("failed", "source_changed", 20)
+    assert await db_session.scalar(sa.select(sa.func.count()).select_from(NovelChapter)) == 0
+
+
 @pytest.mark.usefixtures("outline_flow_on")
 async def test_a_chapter_over_the_models_turn_cap_is_refused_before_charging(
     db_client: httpx.AsyncClient,
@@ -875,7 +957,8 @@ async def test_a_chapter_is_written_from_the_approved_scenes_with_range_columns_
     assert chapter.source_hash == segment_hash(scene_messages)
     eo = await db_session.scalar(
         sa.select(NovelEpisodeOutline).where(
-            NovelEpisodeOutline.novel_id == novel_id, NovelEpisodeOutline.revision == approved["revision"],
+            NovelEpisodeOutline.novel_id == novel_id,
+            NovelEpisodeOutline.revision == approved["revision"],
             NovelEpisodeOutline.episode_key == uuid.UUID(keys[1]),
         )
     )
@@ -1181,7 +1264,9 @@ async def test_the_old_regenerate_routes_refuse_an_outline_chapter_and_the_new_o
     owner = await _owner(db_session, novel_id)
     job = await _written(db_client, db_session, enqueued, llm, novel_id, keys[0])
     chapter = await db_session.get_one(NovelChapter, job.chapter_id)
-    old = await db_session.scalar(sa.select(NovelChapter).where(NovelChapter.novel_id == novel_id, NovelChapter.ordinal == 1))
+    old = await db_session.scalar(
+        sa.select(NovelChapter).where(NovelChapter.novel_id == novel_id, NovelChapter.ordinal == 1)
+    )
     assert old is not None
     before = await _novel_ledger(db_session, owner)
     body = {"model": "gemini", "expectedCost": 20}
@@ -1193,6 +1278,30 @@ async def test_the_old_regenerate_routes_refuse_an_outline_chapter_and_the_new_o
     assert _code(by_batch) == (409, "NOVEL_CHAPTER_OUTLINE_FLOW")
     assert _code(by_chapter) == (409, "NOVEL_CHAPTER_OUTLINE_FLOW")
     assert _code(new_on_old) == (409, "NOVEL_CHAPTER_NOT_OUTLINE_FLOW")
+    assert await _novel_ledger(db_session, owner) == before
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_an_outline_chapter_regenerate_refuses_a_changed_context_section_before_charging(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """다시 만들기도 지금 선택의 맥락 구간 원문이 바뀌었으면 차감 전에 409 `NOVEL_SOURCE_SELECTION_SOURCE_CHANGED` 다(원고 요청과 같다).
+    깨지는 시나리오: 누를 때마다 차감되고 실행에서 환불만 되풀이돼, 사용자가 선택을 다시 승인해야 한다는 것을 모른다."""
+    novel_id, ms, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    owner = await _owner(db_session, novel_id)
+    job = await _written(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    before = await _novel_ledger(db_session, owner)
+    await _rewrite(db_session, ms[5], "고친 맥락")
+
+    response = await db_client.post(
+        f"/novels/{novel_id}/outline/chapters/{job.chapter_id}/regenerate", json={"model": "gemini", "expectedCost": 20}
+    )
+
+    assert _code(response) == (409, "NOVEL_SOURCE_SELECTION_SOURCE_CHANGED")
     assert await _novel_ledger(db_session, owner) == before
 
 

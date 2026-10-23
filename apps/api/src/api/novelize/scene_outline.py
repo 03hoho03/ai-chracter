@@ -11,7 +11,7 @@
   막지 않는다 — 포함 비교).
 - 장면 구성안이 근거로 삼은 구성안 판에서의 그 화 근거가 지금 승인한 구성안의 그 화 근거와 같다. 다른 화를 고친 구성안은 장면 구성안을
   낡게 하지 않는다.
-- 그 화가 아직 원고가 되지 않았다. 원고는 구성안 화 순서대로만 쓴다(앞 화가 모두 원고가 되어야 한다 — 화 번호가 생성 순서로만 늘기
+- 그 화가 아직 원고가 되지 않았다. 원고는 구성안 화 순서대로만 쓴다(앞 화는 모두 원고이고 뒤 화는 아직 원고가 아니어야 한다 — 화 번호가 생성 순서로만 늘기
   때문이다).
 - 화 근거가 이미 화가 된 대화와 겹치지 않는다(승인 뒤 옛 흐름으로 이어 쓴 경우), 근거 구간 원문이 고를 때와 같다, 입력 견적이 상한 안이다.
 
@@ -258,6 +258,13 @@ async def _context_lines(db: AsyncSession, novel: Novel, room_id: uuid.UUID, cha
             raise SourceChangedError(f"novel={novel.id} 맥락 구간 {row.id} 의 원문이 바뀌었다")
         blocks.append(messages)
     return format_context_lines(blocks, **_line_labels(novel, chat_set))
+
+
+async def check_context_sections(db: AsyncSession, novel: Novel, room_id: uuid.UUID) -> None:
+    """지금 승인한 구간 선택의 맥락 구간 원문이 고를 때와 같은지 본다(다르면 `SourceChangedError`) — 맥락을 싣는 요청이 차감 전에
+    부른다. 실행이 같은 검사로 실패·환불만 되풀이하지 않게."""
+    chat_set, _ = await load_active_prompt_set(db, lane=novel.content_type)
+    await _context_lines(db, novel, room_id, chat_set)
 
 
 def _line_labels(novel: Novel, chat_set: PromptSet) -> dict[str, Any]:
@@ -588,12 +595,15 @@ async def load_outline_chapter_source(
     """원고의 원문. `episode_outline_id` 는 작업이 값을 치른 장면 구성안 리비전이고(요청 때는 None — 그 화의 지금 승인한 판), 그 판이
     근거로 삼은 화 근거가 지금도 같아야 한다. 구성안 화 순서도 여기서 본다."""
     outline, episode = await _require_usable_episode(db, novel, key)
+    # 원고가 된 화는 구성안의 맨 앞부터 이어져야 한다 — 앞 화가 모두 원고이고 뒤 화는 아직 원고가 아니다. 원고가 된 화를 구성안
+    # 편집으로 뒤로 옮긴 뒤 앞 화를 쓰면 화 번호(생성 순서)가 구성안 순서와 어긋나 바로잡을 수 없다.
     written = await written_episodes(db, novel.id)
-    for earlier in outline.episodes:
-        if earlier["key"] == str(key):
-            break
-        if earlier["key"] not in written:
-            raise EpisodeOutOfOrderError(f"novel={novel.id} 화 {key} 앞의 화가 아직 원고가 아니다")
+    keys = [episode["key"] for episode in outline.episodes]
+    position = keys.index(str(key))
+    if any(earlier not in written for earlier in keys[:position]) or any(
+        later in written for later in keys[position + 1 :]
+    ):
+        raise EpisodeOutOfOrderError(f"novel={novel.id} 화 {key} 가 구성안 순서대로가 아니다")
     episode_outline = (
         await latest_episode_outline(db, novel.id, key, approved=True)
         if episode_outline_id is None

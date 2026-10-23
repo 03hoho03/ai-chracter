@@ -801,6 +801,11 @@ async def _save_batch(
         if job.kind != "chapter_regenerate" and len(batch.episodes) > await _episode_cap(db, job):
             await db.rollback()
             raise _JobFailedError("malformed")
+        if job.kind == "outline_chapter_generate" and not await _outline_chapter_basis_holds(db, job):
+            # 모델을 부르는 동안 그 화의 근거를 고친 구성안이 승인됐다 — 옛 근거로 쓴 원고로 그 화를 "원고 됨"으로 굳히면 새 근거에만
+            # 있는 대화가 다시 쓸 수도 잠기지도 않고 빠진다. 장면 구성안 저장과 같이 저장하지 않고 환불한다.
+            await db.rollback()
+            raise _JobFailedError("source_changed")
         if job.kind == "chapter_regenerate":
             saved = await _save_regenerated(db, job, batch)
             if saved is None:
@@ -851,6 +856,14 @@ async def _save_batch(
             for chapter in chapters:
                 await erase_stale_ai_edit_previews(db, chapter.id)
             await db.commit()
+
+
+async def _outline_chapter_basis_holds(db: AsyncSession, job: NovelJob) -> bool:
+    """원고 작업이 값을 치른 장면 구성안이 근거로 삼은 화 근거가 지금 승인한 구성안에서도 같은가."""
+    episode_outline = await db.get(NovelEpisodeOutline, job.episode_outline_id) if job.episode_outline_id else None
+    return episode_outline is not None and await episode_basis_holds(
+        db, job.novel_id, episode_outline.outline_id, episode_outline.episode_key
+    )
 
 
 def _add_scene_blocks(
