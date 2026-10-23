@@ -10,7 +10,9 @@ import {
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { QueryState } from "@/shared/ui/QueryState";
 
+import { chapterEditions, isEditionIgnored } from "../lib/chapterEditions";
 import { illustrationKey, illustrationSpots } from "../lib/chapterIllustrations";
+import { ChapterEditionPicker } from "./ChapterEditionPicker";
 import { ChapterIllustration } from "./ChapterIllustration";
 
 type NovelChapter = AdminNovelDetailResponse["chapters"][number];
@@ -95,13 +97,49 @@ function ChapterRow({ novelId, chapter, isOpen, onToggle }: ChapterRowProps) {
   );
 }
 
+/**
+ * 펼친 화 하나. 판이 둘 이상이면 머리에 판 고르기를 두고, 고른 판을 그 판을 산 회원이 보는 그대로 그린다(그림마다 내리기 버튼도
+ * 그대로 — 그림 내림은 판과 무관하게 같은 파일이 쓰인 모든 판에서 내려간다).
+ *
+ * 판 목록은 늘 지금 판 응답에서 읽는다 — 고른 판 응답에서 읽으면 그 판을 받는 동안(데이터가 빈다)과 그 판을 못 불러온 동안 고르기가
+ * 사라져 방금 누른 고르기에서 포커스가 떨어지고 지금 판으로 돌아갈 길도 없어진다. 고른 판이 지금 판이면 두 쿼리가 같은 키라 요청은
+ * 하나다.
+ */
 function ChapterBody({ novelId, chapterId }: { novelId: string; chapterId: string }) {
-  const chapterQuery = useNovelChapterQuery(novelId, chapterId);
+  // `null` = 지금 판. 지금 판을 고르면 번호 대신 `null` 로 둔다 — 지금 판 응답과 같은 캐시를 써 요청이 겹치지 않는다.
+  const [pickedEdition, setPickedEdition] = useState<number | null>(null);
+  const currentQuery = useNovelChapterQuery(novelId, chapterId, null);
+  const chapterQuery = useNovelChapterQuery(novelId, chapterId, pickedEdition);
+  const editions = currentQuery.data ? chapterEditions(currentQuery.data) : [];
+  const currentEdition = editions.find((item) => item.current)?.edition;
+  const isIgnored = isEditionIgnored(pickedEdition, chapterQuery.data?.edition);
+  const shownEdition = isIgnored ? currentEdition : (pickedEdition ?? currentEdition);
+  const isPastEdition =
+    !isIgnored && pickedEdition !== null && currentEdition !== undefined && pickedEdition !== currentEdition;
 
   return (
-    <QueryState query={chapterQuery} surface="card" errorMessage="이 화의 공개본을 불러오지 못했어요.">
-      {(chapter) => <ChapterText chapter={chapter} />}
-    </QueryState>
+    <div className="flex flex-col gap-4">
+      {editions.length > 1 && shownEdition !== undefined && (
+        <ChapterEditionPicker
+          editions={editions}
+          value={shownEdition}
+          onValueChange={(edition) => setPickedEdition(edition === currentEdition ? null : edition)}
+        />
+      )}
+      {isIgnored && (
+        <p role="status" className="break-keep text-sm text-muted-foreground">
+          이 판을 불러오지 못해 지금 판을 보여요.
+        </p>
+      )}
+      {isPastEdition && (
+        <p className="break-keep rounded-lg bg-secondary p-3 text-sm text-foreground">
+          지금 판이 아니에요. 이 판을 산 회원만 이 판을 읽어요. 그림을 내리면 모든 판에서 내려가요.
+        </p>
+      )}
+      <QueryState query={chapterQuery} surface="card" errorMessage="이 화의 공개본을 불러오지 못했어요.">
+        {(chapter) => <ChapterText chapter={chapter} />}
+      </QueryState>
+    </div>
   );
 }
 

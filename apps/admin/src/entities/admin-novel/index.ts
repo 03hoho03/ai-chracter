@@ -3,6 +3,7 @@ export { useNovelListQuery, type AdminNovelListResponse } from "./api/useNovelLi
 export { useNovelDetailQuery, type AdminNovelDetailResponse } from "./api/useNovelDetailQuery";
 export {
   useNovelChapterQuery,
+  type AdminNovelChapterEditionItem,
   type AdminNovelChapterResponse,
   type AdminNovelIllustration,
 } from "./api/useNovelChapterQuery";

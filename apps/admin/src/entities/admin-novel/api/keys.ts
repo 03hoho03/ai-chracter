@@ -15,7 +15,9 @@ export const adminNovelKeys = {
   list: (params: AdminNovelListParams) =>
     [...adminNovelKeys.all, "list", params.page, params.moderationStatus ?? "all", params.reviewStatus ?? "all"] as const,
   detail: (novelId: string) => [...adminNovelKeys.all, "detail", novelId] as const,
-  chapter: (novelId: string, chapterId: string) => [...adminNovelKeys.all, "chapter", novelId, chapterId] as const,
+  /** 판(`null` = 지금 판)도 요청에 실리므로 키에 넣는다 — 빠지면 한 화의 두 판이 캐시를 나눠 써 고른 판과 다른 글이 보인다. */
+  chapter: (novelId: string, chapterId: string, edition: number | null) =>
+    [...adminNovelKeys.all, "chapter", novelId, chapterId, edition ?? "current"] as const,
   comments: (novelId: string, page: number) => [...adminNovelKeys.all, "comments", novelId, page] as const,
   homeCurations: () => [...adminNovelKeys.all, "home-curations"] as const,
 };
