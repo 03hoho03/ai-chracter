@@ -208,7 +208,11 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`은 "백업 · 복원" 절, `HEALTHCHECKS_RESOURCE_PING_URL`은 "VM 리소스 감시" 절). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
 🔴 이 수는 낡았다 — 2026-10-23 장기 기억 켜기에서 7줄(`MEMORY_EPISODES_RECALL`·`MEMORY_SUMMARY_SECRET_MARKING`·`MEMORY_KNOWLEDGE_FILTER`·
-`MEMORY_EMBED_WRITE`·`VOYAGE_API_KEY`·`MEMORY_EMBED_RECALL`·`MEMORY_EMBED_RECALL_TIMEOUT_MS`)이 더 들어갔고 그 뒤 VM 에서 다시 세지 않았다.
+`MEMORY_EMBED_WRITE`·`VOYAGE_API_KEY`·`MEMORY_EMBED_RECALL`·`MEMORY_EMBED_RECALL_TIMEOUT_MS`)이 더 들어갔고 그 뒤 VM 파일은 다시 세지 않았다.
+그날 켜기 뒤 서빙 컨테이너(`docker exec … env`)의 키 이름은 91개로, 켜기 전 84개에서 그 7개만큼 늘었고 `MEMORY_`·`VOYAGE_` 키는
+12개(위 7개 + `MEMORY_EPISODES_EXTRACT`·`MEMORY_EPISODE_MODEL`·`MEMORY_FACTS_EXTRACT`·`MEMORY_FACT_MODEL`·`MEMORY_SUMMARY_MODEL`)다.
+컨테이너 수는 이 파일 키 수가 아니다 — `env_file` 로 받은 파일 키에 베이스 이미지·Dockerfile·Docker 가 넣는 키(`PATH`·`HOSTNAME` 등)가
+더해진 수라, 파일 키 수는 VM 에서 아래 명령으로 따로 센다.
 이 수는 날짜가 붙은 실측값이라 VM에 키를 넣거나 빼면 낡는다 — 그때 VM에서 다시 세어 이 문장을 고친다
 (예: `sudo grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' /opt/ddona/.env | sort -u | wc -l`). 키 개수는 이 문장 한 곳에만 적는다.
 
