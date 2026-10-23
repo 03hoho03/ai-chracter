@@ -51,6 +51,7 @@ from api.db.models import (
     ChatMemoryFactExtraction,
     ChatMessage,
     ChatMessageRole,
+    ChatPreviousResponse,
     ChatRoom,
     ChatRoomMemorySnapshot,
     ChatTurn,
@@ -61,6 +62,7 @@ from api.db.models import (
     CloverSpendUsage,
     Content,
     ContentVersion,
+    DiscardedResponse,
     User,
 )
 from api.db.session import get_db_session, get_session_factory
@@ -620,6 +622,8 @@ async def committed_engine(db_engine: AsyncEngine) -> AsyncGenerator[AsyncEngine
             )
             await cleanup.execute(sa.delete(CloverLedger).where(CloverLedger.user_id.in_(user_ids)))
             await cleanup.execute(sa.delete(CloverLot).where(CloverLot.user_id.in_(user_ids)))
+            # 직전 응답 되돌리기가 남기는 버린 응답 기록은 방이 지워져도 사용자를 FK 로 잡는다.
+            await cleanup.execute(sa.delete(DiscardedResponse).where(DiscardedResponse.user_id.in_(user_ids)))
             await cleanup.execute(sa.delete(User).where(User.id.in_(user_ids)))
         await cleanup.commit()
     await committed.dispose()
@@ -1568,3 +1572,159 @@ async def test_a_note_write_that_overlaps_a_room_deletion_is_not_found(
         app.dependency_overrides.update(saved)
 
     assert resp.status_code == 404
+
+
+# --- 요약 고치기·되돌리기와 직전 응답 되돌리기의 방 삭제 경합 ------------------------------------------
+
+
+async def _request_with_the_room_deleted_right_after_commit(
+    engine: AsyncEngine,
+    db_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    room: Room,
+    method: str,
+    path: str,
+    body: dict[str, object] | None,
+) -> httpx.Response:
+    """요청이 커밋한 바로 다음, 다른 세션이 그 방을 지우고 커밋한다. 요청이 방 행을 잠근 동안 삭제는 그 잠금을
+    기다리다가 요청의 커밋과 함께 풀려 곧장 커밋하므로, 커밋 뒤에 응답을 만들려고 방을 다시 읽는 요청은 이 틈에
+    걸릴 수 있다. 시간 대신 커밋을 감싸 그 순서를 매번 같게 만든다."""
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _request_session() -> AsyncGenerator[AsyncSession, None]:
+        async with factory() as session:
+            commit = session.commit
+
+            async def _commit_then_delete_the_room() -> None:
+                await commit()
+                await _delete_room_committed(engine, room)
+
+            monkeypatch.setattr(session, "commit", _commit_then_delete_the_room)
+            yield session
+
+    await _login_as(db_client, room.user_id)
+    saved = {key: app.dependency_overrides[key] for key in (get_db_session, get_session_factory)}
+    app.dependency_overrides[get_db_session] = _request_session
+    app.dependency_overrides[get_session_factory] = lambda: factory
+    try:
+        return await db_client.request(method, path, json=body)
+    finally:
+        app.dependency_overrides.update(saved)
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [("summary", {"summary": "고친 요약", "version": 0}), ("summary/revert", {"version": 1})],
+    ids=["edit summary", "revert summary"],
+)
+async def test_a_summary_write_answers_with_what_it_saved_even_if_the_room_is_deleted_right_after(
+    committed_engine: AsyncEngine,
+    db_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    body: dict[str, object],
+) -> None:
+    """요약 고치기·되돌리기는 성공해 커밋했다. 그 직후 방이 지워져도 응답은 저장한 요약이어야 한다 — 커밋 뒤에 방 행을
+    다시 읽으면 빈 결과로 500 이 나고, 화면은 저장이 실패한 줄 안다."""
+    room = await _seed_committed_room(committed_engine, turns=1)
+    await _commit_snapshot(committed_engine, room, turn=1)
+    if path == "summary/revert":
+        async with async_sessionmaker(committed_engine, expire_on_commit=False)() as session:
+            await session.execute(
+                sa.update(ChatRoomMemorySnapshot)
+                .where(ChatRoomMemorySnapshot.chat_room_id == room.room_id)
+                .values(summary_text="고친 요약", source="user", previous_text="[S1]", previous_source="auto")
+            )
+            await session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(memory_version=1))
+            await session.commit()
+
+    resp = await _request_with_the_room_deleted_right_after_commit(
+        committed_engine,
+        db_client,
+        monkeypatch,
+        room,
+        "POST" if path.endswith("revert") else "PUT",
+        f"/chat-rooms/{room.room_id}/memory/{path}",
+        body,
+    )
+
+    assert resp.status_code == 200
+    expected = "고친 요약" if path == "summary" else "[S1]"
+    assert resp.json()["summary"]["text"] == expected
+    assert await _committed_version(committed_engine, room) is None
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [("summary", {"summary": "고친 요약", "version": 0}), ("summary/revert", {"version": 0})],
+    ids=["edit summary", "revert summary"],
+)
+async def test_a_summary_write_that_overlaps_a_room_deletion_is_not_found(
+    committed_engine: AsyncEngine, db_client: httpx.AsyncClient, path: str, body: dict[str, object]
+) -> None:
+    """요약 고치기·되돌리기가 주인 확인을 마친 뒤 다른 세션이 그 방을 지우고 커밋한다. 방 행 잠금은 삭제 커밋을 기다렸다가
+    빈 결과를 받는다 — 그 빈 값을 버전 불일치로 읽으면 409 가 나가 화면은 요약을 다시 받으러 간다. 방이 없으니 404 다."""
+    factory = async_sessionmaker(committed_engine, expire_on_commit=False)
+    room = await _seed_committed_room(committed_engine, turns=1)
+    await _commit_snapshot(committed_engine, room, turn=1)
+
+    async def _request_session() -> AsyncGenerator[AsyncSession, None]:
+        async with factory() as session:
+            yield session
+
+    deletion = factory()
+    saved = {key: app.dependency_overrides[key] for key in (get_db_session, get_session_factory)}
+    app.dependency_overrides[get_db_session] = _request_session
+    app.dependency_overrides[get_session_factory] = lambda: factory
+    write: asyncio.Task[httpx.Response] | None = None
+    try:
+        await _login_as(db_client, room.user_id)
+        await delete_chat_rooms(deletion, [room.room_id])
+        method = "POST" if path.endswith("revert") else "PUT"
+        write = asyncio.create_task(db_client.request(method, f"/chat-rooms/{room.room_id}/memory/{path}", json=body))
+        await _wait_until_a_lock_is_awaited(committed_engine)
+        await deletion.commit()
+        resp = await asyncio.wait_for(write, 10)
+    finally:
+        await deletion.close()
+        if write is not None and not write.done():
+            write.cancel()
+        app.dependency_overrides.update(saved)
+
+    assert resp.status_code == 404
+
+
+async def test_restoring_the_previous_reply_answers_with_the_room_even_if_the_room_is_deleted_right_after(
+    committed_engine: AsyncEngine, db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """재생성이 밀어낸 직전 응답으로 되돌리기는 성공해 커밋했다. 그 직후 방이 지워져도 응답은 되돌린 방 상태여야 한다 —
+    커밋 뒤에 방 응답을 만들면 같은 작품의 방 목록에서 이 방을 못 찾아 500 이 난다."""
+    room = await _seed_committed_room(committed_engine, turns=1)
+    current = room.turns[1][1]
+    restored_id = uuid.uuid4()
+    async with async_sessionmaker(committed_engine, expire_on_commit=False)() as session:
+        session.add(
+            ChatPreviousResponse(
+                chat_room_id=room.room_id,
+                replaced_by_message_id=current.id,
+                message_id=restored_id,
+                message_created_at=current.created_at - timedelta(milliseconds=500),
+                content="밀려난 응답",
+            )
+        )
+        await session.commit()
+
+    resp = await _request_with_the_room_deleted_right_after_commit(
+        committed_engine,
+        db_client,
+        monkeypatch,
+        room,
+        "POST",
+        f"/chat-rooms/{room.room_id}/messages/{current.id}/restore-previous",
+        None,
+    )
+
+    assert resp.status_code == 200
+    last = resp.json()["messages"][-1]
+    assert (last["id"], last["content"]) == (str(restored_id), "밀려난 응답")
+    assert await _committed_version(committed_engine, room) is None
