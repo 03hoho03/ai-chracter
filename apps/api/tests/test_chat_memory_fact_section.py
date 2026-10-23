@@ -998,10 +998,10 @@ async def test_filter_on_with_facts_off_keeps_prompt_and_statements(
     assert statements_on == statements_off
 
 
-def test_production_env_leaves_the_knowledge_filter_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    """운영 env 에는 필터 스위치가 없어 꺼진 기본값으로 돈다."""
-    assert "MEMORY_KNOWLEDGE_FILTER" not in PRODUCTION_ENV_NAMES
-    assert not load_production_env(monkeypatch).memory_knowledge_filter
+def test_production_env_turns_the_knowledge_filter_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 env 는 필터 스위치를 넣어 켜 둔다 — 사실 주입이 꺼져 있어도 회상 가림의 장면 인물 판정이 대사 안 이름을 빼고 센다."""
+    assert "MEMORY_KNOWLEDGE_FILTER" in PRODUCTION_ENV_NAMES
+    assert load_production_env(monkeypatch).memory_knowledge_filter
 
 
 # --- 이름 정확 조회 ------------------------------------------------------------------------------

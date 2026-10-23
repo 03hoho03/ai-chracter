@@ -1403,27 +1403,40 @@ async def test_replay_rebuilds_hybrid_recall_without_calling_voyage(
     assert len(stub.bodies) == calls_after_turn == 1
 
 
-def test_embed_recall_needs_a_voyage_key_and_production_leaves_it_off(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_embed_recall_needs_a_voyage_key_and_production_turns_it_on(monkeypatch: pytest.MonkeyPatch) -> None:
     """키 없이 켜진 임베딩 회상은 매 턴 실패해 명사 단독으로 떨어질 뿐이라 켠 것이 성공한 것처럼 보인다 — 기동을 막는다. 운영
-    env 에는 아직 이 스위치가 없어 꺼진 채 뜨고, 주입 상한의 기본값은 명사 단독의 상한과 같다."""
-    assert "MEMORY_EMBED_RECALL" not in PRODUCTION_ENV_NAMES
+    env 는 이 스위치와 Voyage 키를 함께 넣어 켜진 채 뜨고, 주입 상한의 기본값은 명사 단독의 상한과 같다."""
+    assert {"MEMORY_EMBED_RECALL", "VOYAGE_API_KEY"} <= set(PRODUCTION_ENV_NAMES)
     production = load_production_env(monkeypatch)
-    assert not production.memory_embed_recall
+    assert production.memory_embed_recall
     assert (production.memory_embed_recall_max_plain, production.memory_embed_recall_max_cue) == (
         memory_recall.MAX_INJECT_PLAIN,
         memory_recall.MAX_INJECT_RECALL_CUE,
     )
     # k 는 회상 품질 측정이 고른 값이다 — 스위치만 켜도 측정한 설정으로 돈다.
     assert production.memory_embed_recall_rrf_k == 20
+    # 키 줄만 빠진 운영 배포는 뜨지 않는다 — 임베딩 쓰기도 켜져 있어 그쪽이 먼저 걸릴 수 있으니 쓰기를 끈 채로 회상만 본다.
     with pytest.raises(ValidationError, match="MEMORY_EMBED_RECALL"):
-        load_production_env(monkeypatch, MEMORY_EMBED_RECALL="true")
-    assert load_production_env(monkeypatch, MEMORY_EMBED_RECALL="true", VOYAGE_API_KEY="k").memory_embed_recall
+        load_production_env(monkeypatch, without=("VOYAGE_API_KEY", "MEMORY_EMBED_WRITE"))
 
 
 def test_query_embedding_waits_up_to_a_second_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """운영 VM 에서 키 없이 401 을 받는 Voyage 왕복만 해도 다시 쓰는 연결의 p95 가 약 480ms 다(임베딩 계산 전) — 250ms 상한이면
-    켜자마자 일부 턴이 명사 단독으로 떨어진다. 기본 상한은 1초이고 env 로 바꾼다."""
-    assert load_production_env(monkeypatch).memory_embed_recall_timeout_ms == 1000
+    켜자마자 일부 턴이 명사 단독으로 떨어진다. 기본 상한은 1초이고 env 로 바꾼다. 운영은 첫 글자가 3초 늦는 것을 받아들이고
+    시간 초과로 회상을 놓치는 턴을 줄이려고 3초로 늘려 둔다."""
+    without_the_line = load_production_env(monkeypatch, without=("MEMORY_EMBED_RECALL_TIMEOUT_MS",))
+    assert without_the_line.memory_embed_recall_timeout_ms == 1000
+    assert load_production_env(monkeypatch).memory_embed_recall_timeout_ms == 3000
+
+
+def test_production_env_recalls_scenes_only_in_opus_rooms(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 env 는 장면 회상을 켜고 기억 사용 범위 줄은 넣지 않는다 — 기본 범위(Opus 방만)라 기억 품질을 잰 방에서만 켜진
+    스위치가 동작한다."""
+    assert "MEMORY_EPISODES_RECALL" in PRODUCTION_ENV_NAMES
+    assert "MEMORY_MODEL_SCOPE" not in PRODUCTION_ENV_NAMES
+    loaded = load_production_env(monkeypatch)
+    assert loaded.memory_episodes_recall
+    assert loaded.memory_model_scope == [("story", "opus"), ("character", "opus")]
     assert load_production_env(monkeypatch, MEMORY_EMBED_RECALL_TIMEOUT_MS="400").memory_embed_recall_timeout_ms == 400
 
 
