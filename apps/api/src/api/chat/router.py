@@ -2054,6 +2054,16 @@ async def get_chat_room_memory(
     return await _memory_response(db, room_id)
 
 
+async def _lock_room_for_note_write(db: AsyncSession, room_id: uuid.UUID) -> None:
+    """노트 저장·비우기의 쓰기 앞부분. 주인 확인과 쓰기 사이에 다른 요청이 방을 지우고 커밋하면 UPDATE 는 0행을
+    고치고 응답을 만들 방 행이 없어 500 이 난다. 쓰기 전에 방 행을 잠가(방 삭제의 첫 UPDATE 와 맞물리는 강도) 삭제가
+    먼저 커밋됐으면 404 로 끝낸다. 잠근 뒤에는 삭제가 이 요청의 커밋을 기다리므로, 호출부는 응답을 커밋 전에 만든다 —
+    커밋 뒤에 읽으면 기다리던 삭제가 그 사이 커밋돼 같은 500 이 난다."""
+    locked = await db.scalar(select(ChatRoom.id).where(ChatRoom.id == room_id).with_for_update(key_share=True))
+    if locked is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat room not found")
+
+
 @router.put("/{room_id}/memory/note", dependencies=[Depends(require_legal_consent)])
 async def update_chat_room_memory_note(
     room_id: uuid.UUID,
@@ -2064,9 +2074,11 @@ async def update_chat_room_memory_note(
     """노트는 사용자 한 사람만 쓰는 칸이라 버전 검사 없이 덮어쓴다. 요약 버전도 올리지 않는다 —
     올리면 노트를 저장할 때마다 열려 있던 요약 편집이 409가 된다."""
     await _get_owned_room(db, room_id, user_id)
+    await _lock_room_for_note_write(db, room_id)
     await db.execute(update(ChatRoom).where(ChatRoom.id == room_id).values(memory_note=payload.note))
+    response = await _memory_response(db, room_id)
     await db.commit()
-    return await _memory_response(db, room_id)
+    return response
 
 
 @router.delete("/{room_id}/memory/note")
@@ -2078,9 +2090,11 @@ async def clear_chat_room_memory_note(
     """노트 비우기. 자기 데이터 삭제라 약관·처리방침 재동의 전에도 열려 있다(방·메시지·대화 프로필
     삭제와 같다). 저장과 같은 전체 응답을 돌려준다."""
     await _get_owned_room(db, room_id, user_id)
+    await _lock_room_for_note_write(db, room_id)
     await db.execute(update(ChatRoom).where(ChatRoom.id == room_id).values(memory_note=""))
+    response = await _memory_response(db, room_id)
     await db.commit()
-    return await _memory_response(db, room_id)
+    return response
 
 
 def _memory_conflict(code: str) -> HTTPException:
