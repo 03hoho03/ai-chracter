@@ -214,6 +214,7 @@ export function LegalConsentFields() {
                     privacy@anthropic.com
                     <br />· Cloudflare, Inc. — 101 Townsend St., San Francisco, CA 94107, USA /
                     privacyquestions@cloudflare.com
+                    <br />· Voyage AI Innovations, Inc. — legal@voyageai.com
                   </dd>
                 </div>
                 <div>
@@ -230,13 +231,18 @@ export function LegalConsentFields() {
                     이름·인물 메모
                     <br />· Cloudflare, Inc.: 이미지 생성 프롬프트와 생성 이미지, 업로드 파일,
                     데이터베이스 백업, 웹사이트 접속 시 통신 정보
+                    <br />· Voyage AI Innovations, Inc.: 장면·사실 기억의 글, 기억 활용을 켠 AI 모델을
+                    고른 대화방에서는 이번 이용자 입력과 직전 AI 응답(계정 정보와 대화 프로필은 보내지
+                    않습니다)
                   </dd>
                 </div>
                 <div>
                   <dt className="font-semibold text-foreground">이전 국가 / 시기 / 방법</dt>
                   <dd className="mt-0.5 break-keep">
-                    미국(Google LLC·Cloudflare, Inc.·Anthropic, PBC — Anthropic, PBC는 입력과 출력을
-                    미국에 저장하며, 응답을 생성하는 연산은 요청마다 정하는 국가에서 할 수 있습니다), 전
+                    미국(Google LLC·Cloudflare, Inc.·Anthropic, PBC·Voyage AI Innovations, Inc. — Anthropic,
+                    PBC는 입력과 출력을 미국에 저장하며, 응답을 생성하는 연산은 요청마다 정하는 국가에서 할
+                    수 있습니다. Voyage AI Innovations, Inc.는 처리를 맡기는 클라우드 사업자의 설비에서
+                    처리할 수 있어 요청이 처리되는 국가를 미리 특정할 수 없습니다), 전
                     세계 AWS 상용 리전(Amazon Web Services, Inc. — 요청마다 AWS가 처리 리전을
                     정합니다). 대화 전송·콘텐츠 발행·대화 소설 요청과 공개·이미지 생성·파일 업로드·웹사이트 접속 시점에 수시로, HTTPS 등 암호화된 통신으로
                     전송합니다. 데이터베이스 백업은 매일 정해진 시각에 전송합니다.
@@ -249,10 +255,13 @@ export function LegalConsentFields() {
                     대화 구간 제안·화 생성·AI 수정과 콘텐츠 자동 심사(Google LLC), 상위 AI 모델을 고른 대화의 응답
                     생성과 대화 소설 화 생성(Amazon Web Services, Inc. 또는 Anthropic, PBC 가운데 서비스가
                     정한 한 곳), 운영자의 이미지 생성
-                    설비로의 요청·결과 전송, 파일 저장·백업, 웹사이트 전송·이용 분석(Cloudflare, Inc.). 국내
+                    설비로의 요청·결과 전송, 파일 저장·백업, 웹사이트 전송·이용 분석(Cloudflare, Inc.), 대화방별
+                    기억 검색을 위한 임베딩(글을 검색용 숫자 목록으로 바꾼 값) 생성(Voyage AI Innovations,
+                    Inc.). 국내
                     원본이 삭제되면 재전송을 중단하며, 백업은 일간 7일·주간 4주 순환 보관합니다. 이용
                     분석 원본 데이터는 7일간 보관되고, 집계 지표는 최근 6개월까지 조회할 수 있습니다. 이전받는 자의 자체 보유기간은 각 사업자의 정책을 따르며, Anthropic, PBC는
                     받은 입력과 출력을 30일 안에 삭제하고(이용정책 위반 판정 시 최대 2년) 모델 학습에
+                    쓰지 않습니다. Voyage AI Innovations, Inc.는 받은 글을 처리한 직후 삭제하고 모델 학습에
                     쓰지 않습니다.
                   </dd>
                 </div>
