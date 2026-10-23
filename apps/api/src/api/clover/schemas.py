@@ -153,6 +153,9 @@ class CloverPricingResponse(CamelModel):
     # 소설 구성 흐름 스위치(`novelize_outline_flow_enabled`)가 켜져 있는가. 작가 화면이 구간 선택·구성안 흐름으로 들어갈지를
     # 이 값으로 가른다.
     novelize_outline_flow_enabled: bool
+    # 여러 문단 수정 스위치(`novelize_multi_block_edit_enabled`)가 켜져 있는가. 작가 화면이 떨어진 문단 여럿을 고르는 입력으로
+    # 들어갈지를 이 값으로 가른다(꺼져 있으면 지금의 연속 범위 선택).
+    novelize_multi_block_edit_enabled: bool
     # 지금 결제를 받는가. 거짓이면 구매 화면이 "준비 중"을 보인다.
     payments_enabled: bool
     # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).

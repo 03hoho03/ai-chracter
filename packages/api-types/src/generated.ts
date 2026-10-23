@@ -3103,6 +3103,8 @@ export interface paths {
          *     버릴 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·이미 버림)은 409 `NOVEL_JOB_NOT_APPLICABLE`.
          *
          *     적용과 같은 작업 행을 잠근다 — 같은 수정의 적용과 버리기가 겹치면 뒤 요청이 앞 요청의 결과를 보고 409 다.
+         *
+         *     여러 문단 수정 작업이면 남은 수정안을 모두 버린다 — 패치 문단·묶음 이유를 비우고 상태(버림)와 블록 id 만 기록으로 남긴다.
          */
         post: operations["dismiss_novel_ai_edit_novels__novel_id__jobs__job_id__dismiss_post"];
         delete?: never;
@@ -3724,6 +3726,33 @@ export interface paths {
          *     429·잔액 429. 없는 화는 404 `NOVEL_CHAPTER_NOT_FOUND`.
          */
         post: operations["regenerate_outline_chapter_novels__novel_id__outline_chapters__chapter_id__regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}/block-edits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Novel Block Edit
+         * @description 고른 블록(기준 개정의 블록 id)을 지시대로 고치는 작업(과금, 202). 금액은 AI 수정 단가 한 번이다(블록 수와 무관). 작업은 AI
+         *     수정이고 범위·결과 본문 칸 대신 패치 칸을 쓴다.
+         *
+         *     차감 전 거절: 작품 이용 제한(403), 기준 개정이 지금 개정이 아님 409 `NOVEL_REVISION_CONFLICT`, 블록이 비었거나 겹치거나 기준
+         *     개정에 없음 422 `NOVEL_BLOCK_IDS_INVALID`, 상한보다 많음 422 `NOVEL_TOO_MANY_BLOCKS` + `maxBlocks`, 두 장면 이상에 걸침 422
+         *     `NOVEL_BLOCKS_NOT_IN_ONE_SCENE`(장면 경계가 없는 화는 화 전체가 한 장면), 입력 견적이 상한 초과 422 `NOVEL_EDIT_INPUT_TOO_LONG` +
+         *     `estimatedInputChars`·`maxInputChars`(고른 문단이 든 장면이 길다), 그리고 차감 함수의 금액 409·진행 중 409·잔액 429. 방이 지워진
+         *     소설도 고칠 수 있다(원문 대화가 필요 없다).
+         */
+        post: operations["create_novel_block_edit_novels__novel_id__chapters__chapter_id__block_edits_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9955,6 +9984,8 @@ export interface components {
             novelIllustrationsEnabled: boolean;
             /** Novelizeoutlineflowenabled */
             novelizeOutlineFlowEnabled: boolean;
+            /** Novelizemultiblockeditenabled */
+            novelizeMultiBlockEditEnabled: boolean;
             /** Paymentsenabled */
             paymentsEnabled: boolean;
             /** Paymethods */
@@ -11860,6 +11891,59 @@ export interface components {
             text: string;
         };
         /**
+         * NovelBlockEditBundleView
+         * @description 함께 적용해야 하는 수정안 묶음(둘 이상). 묶음에 든 수정안은 하나씩 적용하지 않는다.
+         */
+        NovelBlockEditBundleView: {
+            /** Id */
+            id: string;
+            /** Patchids */
+            patchIds: string[];
+            /** Reason */
+            reason: string | null;
+        };
+        /**
+         * NovelBlockEditPatchView
+         * @description 여러 문단 수정의 블록 하나 수정안. `state` 가 대기(`pending`)일 때만 `paragraphs`(그 블록 하나를 대신할 새 문단들)가 있다.
+         *     `fresh` 는 지금 개정에 아직 쓸 수 있는가다 — 그 블록이 있고 글이 수정을 맡길 때와 같다(사용자가 그 블록을 고쳤으면 거짓).
+         */
+        NovelBlockEditPatchView: {
+            /** Id */
+            id: string;
+            /**
+             * Blockid
+             * Format: uuid
+             */
+            blockId: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "applied" | "dismissed" | "stale";
+            /** Paragraphs */
+            paragraphs: string[] | null;
+            /** Fresh */
+            fresh: boolean;
+        };
+        /**
+         * NovelBlockEditRequest
+         * @description 여러 문단 수정 — 기준 개정의 블록 id 를 고른 만큼(같은 장면 안, 차례 무관) 보낸다. 서버가 같은 장면의 문단을 문맥으로
+         *     함께 보낸다.
+         */
+        NovelBlockEditRequest: {
+            /**
+             * Baserevisionid
+             * Format: uuid
+             */
+            baseRevisionId: string;
+            /** Blockids */
+            blockIds: string[];
+            /** Instruction */
+            instruction: string;
+            /** Expectedcost */
+            expectedCost: number;
+        };
+        /**
          * NovelBoardLayout
          * @description 편집 보드의 노드 위치와 화면 위치. 서버는 형식만 보고 통째로 저장한다. 읽을 때는 지금 없는 화·인물의 키를 빼고
          *     돌려주므로(묶음 삭제·인물 합치기 뒤), 화면은 받은 키만 다시 보내면 된다. 직렬화한 크기가 상세 `limits` 의
@@ -12299,6 +12383,8 @@ export interface components {
             activeJob: components["schemas"]["NovelActiveJob"] | null;
             /** Pendingaiedits */
             pendingAiEdits: components["schemas"]["NovelPendingAiEdit"][];
+            /** Pendingblockedits */
+            pendingBlockEdits?: components["schemas"]["NovelPendingBlockEdit"][];
             prices: components["schemas"]["NovelPrices"];
             limits: components["schemas"]["NovelLimits"];
             /**
@@ -12641,6 +12727,11 @@ export interface components {
             snapshotNameMaxLength: number;
             /** Boardlayoutmaxbytes */
             boardLayoutMaxBytes: number;
+            /**
+             * Blockeditmaxblocks
+             * @default 20
+             */
+            blockEditMaxBlocks: number;
         };
         /** NovelListItem */
         NovelListItem: {
@@ -12878,6 +12969,34 @@ export interface components {
             instruction: string;
             /** Resulttext */
             resultText: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /**
+         * NovelPendingBlockEdit
+         * @description 끝났고 아직 대기 수정안이 남은 여러 문단 수정. 화면이 작업 id 를 잃어도 여기서 수정안을 다시 찾는다. 수정안은 본문
+         *     차례다.
+         */
+        NovelPendingBlockEdit: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Chapterid
+             * Format: uuid
+             */
+            chapterId: string;
+            /** Instruction */
+            instruction: string;
+            /** Patches */
+            patches: components["schemas"]["NovelBlockEditPatchView"][];
+            /** Bundles */
+            bundles: components["schemas"]["NovelBlockEditBundleView"][];
             /**
              * Createdat
              * Format: date-time
@@ -20516,6 +20635,42 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["NovelOutlineChapterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_novel_block_edit_novels__novel_id__chapters__chapter_id__block_edits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelBlockEditRequest"];
             };
         };
         responses: {

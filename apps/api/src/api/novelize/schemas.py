@@ -31,6 +31,9 @@ from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 SETTING_NOTES_MAX_LENGTH = 2_000
 CHAPTER_BODY_MAX_LENGTH = 100_000
 AI_EDIT_INSTRUCTION_MAX_LENGTH = 500
+# 여러 문단 수정 한 번에 고를 수 있는 문단 수. 응답 스키마가 문단마다 수정안을 내므로 출력 길이와 응답 유효율이 이 수에 달려
+# 있다 — 측정 전의 임시값이다.
+BLOCK_EDIT_MAX_BLOCKS = 20
 # 소설 제목·화 제목은 목차와 표지에 한 줄로 보이는 길이, 소개는 작품 정보 화면의 몇 문단, 작가의 말은 설정 노트와 같은
 # 정도로 둔다. 작가의 말은 프롬프트에 실리지 않아 넉넉해도 비용이 없다.
 NOVEL_TITLE_MAX_LENGTH = 100
@@ -165,6 +168,8 @@ class NovelLimits(CamelModel):
     character_memo_max_length: int
     snapshot_name_max_length: int
     board_layout_max_bytes: int
+    # 여러 문단 수정 한 번에 고를 수 있는 문단 수. 기본값은 이 칸을 모르는 생성 타입·픽스처와의 호환용이고, 응답에는 항상 실린다.
+    block_edit_max_blocks: int = BLOCK_EDIT_MAX_BLOCKS
 
 
 class NovelActiveJob(CamelModel):
@@ -193,6 +198,37 @@ class NovelPendingAiEdit(CamelModel):
     paragraph_end: int
     instruction: str
     result_text: str
+    created_at: datetime
+
+
+class NovelBlockEditPatchView(CamelModel):
+    """여러 문단 수정의 블록 하나 수정안. `state` 가 대기(`pending`)일 때만 `paragraphs`(그 블록 하나를 대신할 새 문단들)가 있다.
+    `fresh` 는 지금 개정에 아직 쓸 수 있는가다 — 그 블록이 있고 글이 수정을 맡길 때와 같다(사용자가 그 블록을 고쳤으면 거짓)."""
+
+    id: str
+    block_id: uuid.UUID
+    state: Literal["pending", "applied", "dismissed", "stale"]
+    paragraphs: list[str] | None
+    fresh: bool
+
+
+class NovelBlockEditBundleView(CamelModel):
+    """함께 적용해야 하는 수정안 묶음(둘 이상). 묶음에 든 수정안은 하나씩 적용하지 않는다."""
+
+    id: str
+    patch_ids: list[str]
+    reason: str | None
+
+
+class NovelPendingBlockEdit(CamelModel):
+    """끝났고 아직 대기 수정안이 남은 여러 문단 수정. 화면이 작업 id 를 잃어도 여기서 수정안을 다시 찾는다. 수정안은 본문
+    차례다."""
+
+    id: uuid.UUID
+    chapter_id: uuid.UUID
+    instruction: str
+    patches: list[NovelBlockEditPatchView]
+    bundles: list[NovelBlockEditBundleView]
     created_at: datetime
 
 
@@ -328,6 +364,9 @@ class NovelDetailResponse(CamelModel):
     active_job: NovelActiveJob | None
     # 최근 것 먼저.
     pending_ai_edits: list[NovelPendingAiEdit]
+    # 여러 문단 수정 중 대기 수정안이 남은 것, 최근 것 먼저. 스위치와 무관하다(끈 뒤에도 남은 수정안을 본다). 기본값은 이 칸을
+    # 모르는 생성 타입·픽스처와의 호환용이고, 응답에는 항상 실린다.
+    pending_block_edits: list[NovelPendingBlockEdit] = Field(default_factory=list)
     prices: NovelPrices
     limits: NovelLimits
     created_at: datetime
@@ -609,6 +648,16 @@ class NovelAiEditRequest(CamelModel):
     base_revision_id: uuid.UUID
     paragraph_start: int = Field(ge=0)
     paragraph_end: int = Field(ge=0)
+    instruction: InstructionText
+    expected_cost: int
+
+
+class NovelBlockEditRequest(CamelModel):
+    """여러 문단 수정 — 기준 개정의 블록 id 를 고른 만큼(같은 장면 안, 차례 무관) 보낸다. 서버가 같은 장면의 문단을 문맥으로
+    함께 보낸다."""
+
+    base_revision_id: uuid.UUID
+    block_ids: list[uuid.UUID]
     instruction: InstructionText
     expected_cost: int
 

@@ -1,6 +1,6 @@
-"""소설화 호출(묶음 경계 제안·화 생성·문단 수정, 그리고 구성 흐름의 전체 구성안·장면 구성안)의 프롬프트 빌더. 문안은 `novel` 레인 프롬프트 세트의
+"""소설화 호출(묶음 경계 제안·화 생성·문단 수정·여러 문단 수정과 그 묶음 재검사, 그리고 구성 흐름의 전체 구성안·장면 구성안)의 프롬프트 빌더. 문안은 `novel` 레인 프롬프트 세트의
 `novelize_*` 채널에 있고(스토리·캐릭터 원작이 같은 행을 `scope="both"` 로 함께 쓴다), 코드는 값만 만든다. 화 생성은
-작업의 모델 체인 세트를, 경계 제안과 문단 수정은 Gemini 체인 세트를 읽는다(`inputs.load_novel_prompt_source`). 구성안 두 호출도
+작업의 모델 체인 세트를, 경계 제안과 문단 수정(여러 문단 수정·재검사 포함)은 Gemini 체인 세트를 읽는다(`inputs.load_novel_prompt_source`). 구성안 두 호출도
 고른 모델의 체인 세트를 읽는다.
 
 각 채널의 `instruction` 슬롯만 `system_instruction` 으로 보내고 나머지 슬롯은 본문으로 보낸다. 원문·작품 설정·
@@ -32,6 +32,10 @@ _REQUIRED_SLOTS: dict[str, frozenset[str]] = {
     "novelize_boundary": frozenset({_INSTRUCTION_SLOT, "max_turns", "turn_context"}),
     "novelize_chapter": frozenset({_INSTRUCTION_SLOT, "work_setting", "user_name", "episode_plan", "turn_context"}),
     "novelize_revise": frozenset({_INSTRUCTION_SLOT, "work_setting", "paragraphs", "target_range", "user_request"}),
+    "novelize_revise_blocks": frozenset(
+        {_INSTRUCTION_SLOT, "work_setting", "paragraphs", "target_blocks", "user_request"}
+    ),
+    "novelize_revise_recheck": frozenset({_INSTRUCTION_SLOT, "edited_paragraphs", "pending_patches"}),
     "novelize_outline": frozenset({_INSTRUCTION_SLOT, "work_setting", "user_name", "outline_plan", "turn_context"}),
     "novelize_episode_outline": frozenset(
         {_INSTRUCTION_SLOT, "work_setting", "user_name", "episode_outline", "turn_context"}
@@ -55,6 +59,38 @@ class NovelizeReviseResult(BaseModel):
             "[고칠 범위]의 문단들을 순서대로 대신할 문단 목록. 보통 [고칠 범위]의 문단 수와 같다. 범위 밖 문단은 넣지 "
             "않는다. 적어도 하나. 항목 하나가 문단 하나이고, 빈 줄과 [n] 번호를 넣지 않는다."
         )
+    )
+
+
+class NovelizeBlockEditPatch(BaseModel):
+    """여러 문단 수정의 문단 하나에 대한 수정안. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
+
+    paragraph: int = Field(description="고친 문단의 번호. [고칠 문단]에 적힌 번호 중 하나.")
+    paragraphs: list[str] = Field(
+        description=(
+            "그 문단 하나를 대신할 문단 목록. 보통 하나이고, 요청이 나누거나 더하라고 할 때만 여럿이다. 항목 하나가 문단 하나이고, "
+            "빈 줄과 [n] 번호를 넣지 않는다."
+        )
+    )
+
+
+class NovelizeBlockEditBundle(BaseModel):
+    """함께 적용해야 하는 수정안 묶음. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
+
+    paragraphs: list[int] = Field(
+        description="함께 적용하지 않으면 앞뒤가 어긋나는 수정안들의 문단 번호. 둘 이상, [고칠 문단]에 적힌 번호만."
+    )
+    reason: str = Field(description="함께 적용해야 하는 이유. 이야기 속 사실로 쓴 한 문장, 60자 이내.")
+
+
+class NovelizeBlockEditResult(BaseModel):
+    """여러 문단 수정의 응답 스키마. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
+
+    patches: list[NovelizeBlockEditPatch] = Field(
+        description="[고칠 문단]의 문단마다 하나씩의 수정안. 그 밖의 문단은 넣지 않는다. 적어도 하나."
+    )
+    bundles: list[NovelizeBlockEditBundle] = Field(
+        description="서로 기대어 함께 적용해야 하는 수정안 묶음. 하나를 빼고 적용해도 앞뒤가 맞으면 묶지 않는다. 없으면 빈 목록."
     )
 
 
@@ -370,4 +406,56 @@ def build_novelize_revise_prompt(
     }
     return _render(
         sections, channel="novelize_revise", is_story_chat=is_story_chat, values=values, rating_sections=chat_sections
+    )
+
+
+def build_novelize_revise_blocks_prompt(
+    *,
+    chat_sections: Sequence[PromptSection],
+    sections: Sequence[PromptSection],
+    is_story_chat: bool,
+    work_setting: str,
+    setting_notes: str,
+    paragraph_lines: str,
+    target_labels: Sequence[int],
+    user_request: str,
+) -> NovelizePrompt:
+    """여러 문단 수정(구조화, 과금). 문단 수정과 같이 지시문 뒤에 채팅 세트의 등급 규칙을 붙인다.
+
+    `paragraph_lines` 는 모델에 보낼 문맥 문단(장면 있는 화는 그 장면, 없으면 화 전체)을 화 전체에서 센 번호 `[n] ` 과 함께 빈 줄로
+    이은 글이고, `target_labels` 는 그중 고칠 문단의 번호(1부터)다. 모델에는 블록 id 를 보내지 않는다 — 번호로 받아 서버가 되찾는다."""
+    _require("novelize_revise_blocks", user_request=user_request, paragraph_lines=paragraph_lines)
+    if not target_labels:
+        raise PromptRenderError("channel='novelize_revise_blocks' 고칠 문단(target)이 없다")
+    values = {
+        "work_setting": work_setting,
+        "setting_notes": setting_notes,
+        "paragraph_lines": paragraph_lines,
+        "target_paragraphs": ", ".join(f"{label}번" for label in target_labels),
+        "user_request": user_request,
+    }
+    return _render(
+        sections,
+        channel="novelize_revise_blocks",
+        is_story_chat=is_story_chat,
+        values=values,
+        rating_sections=chat_sections,
+    )
+
+
+def build_novelize_revise_recheck_prompt(
+    *,
+    sections: Sequence[PromptSection],
+    is_story_chat: bool,
+    edited_lines: str,
+    patch_lines: str,
+    paragraph_lines: str = "",
+) -> NovelizePrompt:
+    """묶음 재검사(구조화, 무료) — 사용자가 직접 고친 문단(`edited_lines`)이 생긴 뒤 같은 묶음의 남은 수정안(`patch_lines`)을 따로
+    적용해도 되는지 판정한다. 글을 쓰지 않는 판정이라 등급 규칙을 붙이지 않는다. `paragraph_lines` 는 주변 문맥(비면 그 섹션째
+    빠진다). 줄 꼴은 여러 문단 수정과 같은 `[n] 글` 이다."""
+    _require("novelize_revise_recheck", edited_lines=edited_lines, patch_lines=patch_lines)
+    values = {"edited_lines": edited_lines, "patch_lines": patch_lines, "paragraph_lines": paragraph_lines}
+    return _render(
+        sections, channel="novelize_revise_recheck", is_story_chat=is_story_chat, values=values, rating_sections=None
     )

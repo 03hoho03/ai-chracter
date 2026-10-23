@@ -7369,7 +7369,7 @@
           "novels"
         ],
         "summary": "Dismiss Novel Ai Edit",
-        "description": "끝난 AI 수정의 미리보기를 적용하지 않고 버린다(환불 없음). 버린 수정은 상세의 미적용 목록에서 빠지고 적용도\n409 가 된다. 지시문과 결과 본문은 비운다 — 버린 결과는 더 쓸 데가 없고, 행은 하루 상한 집계용으로 남는다.\n버릴 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·이미 버림)은 409 `NOVEL_JOB_NOT_APPLICABLE`.\n\n적용과 같은 작업 행을 잠근다 — 같은 수정의 적용과 버리기가 겹치면 뒤 요청이 앞 요청의 결과를 보고 409 다.",
+        "description": "끝난 AI 수정의 미리보기를 적용하지 않고 버린다(환불 없음). 버린 수정은 상세의 미적용 목록에서 빠지고 적용도\n409 가 된다. 지시문과 결과 본문은 비운다 — 버린 결과는 더 쓸 데가 없고, 행은 하루 상한 집계용으로 남는다.\n버릴 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·이미 버림)은 409 `NOVEL_JOB_NOT_APPLICABLE`.\n\n적용과 같은 작업 행을 잠근다 — 같은 수정의 적용과 버리기가 겹치면 뒤 요청이 앞 요청의 결과를 보고 409 다.\n\n여러 문단 수정 작업이면 남은 수정안을 모두 버린다 — 패치 문단·묶음 이유를 비우고 상태(버림)와 블록 id 만 기록으로 남긴다.",
         "operationId": "dismiss_novel_ai_edit_novels__novel_id__jobs__job_id__dismiss_post",
         "parameters": [
           {
@@ -9145,6 +9145,70 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/NovelOutlineChapterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapters/{chapter_id}/block-edits": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Create Novel Block Edit",
+        "description": "고른 블록(기준 개정의 블록 id)을 지시대로 고치는 작업(과금, 202). 금액은 AI 수정 단가 한 번이다(블록 수와 무관). 작업은 AI\n수정이고 범위·결과 본문 칸 대신 패치 칸을 쓴다.\n\n차감 전 거절: 작품 이용 제한(403), 기준 개정이 지금 개정이 아님 409 `NOVEL_REVISION_CONFLICT`, 블록이 비었거나 겹치거나 기준\n개정에 없음 422 `NOVEL_BLOCK_IDS_INVALID`, 상한보다 많음 422 `NOVEL_TOO_MANY_BLOCKS` + `maxBlocks`, 두 장면 이상에 걸침 422\n`NOVEL_BLOCKS_NOT_IN_ONE_SCENE`(장면 경계가 없는 화는 화 전체가 한 장면), 입력 견적이 상한 초과 422 `NOVEL_EDIT_INPUT_TOO_LONG` +\n`estimatedInputChars`·`maxInputChars`(고른 문단이 든 장면이 길다), 그리고 차감 함수의 금액 409·진행 중 409·잔액 429. 방이 지워진\n소설도 고칠 수 있다(원문 대화가 필요 없다).",
+        "operationId": "create_novel_block_edit_novels__novel_id__chapters__chapter_id__block_edits_post",
+        "parameters": [
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelBlockEditRequest"
               }
             }
           }
@@ -24606,6 +24670,10 @@
             "type": "boolean",
             "title": "Novelizeoutlineflowenabled"
           },
+          "novelizeMultiBlockEditEnabled": {
+            "type": "boolean",
+            "title": "Novelizemultiblockeditenabled"
+          },
           "paymentsEnabled": {
             "type": "boolean",
             "title": "Paymentsenabled"
@@ -24638,6 +24706,7 @@
           "novelPublicPolicyV2Enabled",
           "novelIllustrationsEnabled",
           "novelizeOutlineFlowEnabled",
+          "novelizeMultiBlockEditEnabled",
           "paymentsEnabled",
           "payMethods",
           "identityGateEnabled"
@@ -29454,6 +29523,127 @@
         ],
         "title": "NovelBlock"
       },
+      "NovelBlockEditBundleView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "patchIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Patchids"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "patchIds",
+          "reason"
+        ],
+        "title": "NovelBlockEditBundleView",
+        "description": "함께 적용해야 하는 수정안 묶음(둘 이상). 묶음에 든 수정안은 하나씩 적용하지 않는다."
+      },
+      "NovelBlockEditPatchView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "blockId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Blockid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "applied",
+              "dismissed",
+              "stale"
+            ],
+            "title": "State"
+          },
+          "paragraphs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paragraphs"
+          },
+          "fresh": {
+            "type": "boolean",
+            "title": "Fresh"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "blockId",
+          "state",
+          "paragraphs",
+          "fresh"
+        ],
+        "title": "NovelBlockEditPatchView",
+        "description": "여러 문단 수정의 블록 하나 수정안. `state` 가 대기(`pending`)일 때만 `paragraphs`(그 블록 하나를 대신할 새 문단들)가 있다.\n`fresh` 는 지금 개정에 아직 쓸 수 있는가다 — 그 블록이 있고 글이 수정을 맡길 때와 같다(사용자가 그 블록을 고쳤으면 거짓)."
+      },
+      "NovelBlockEditRequest": {
+        "properties": {
+          "baseRevisionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Baserevisionid"
+          },
+          "blockIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Blockids"
+          },
+          "instruction": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Instruction"
+          },
+          "expectedCost": {
+            "type": "integer",
+            "title": "Expectedcost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "baseRevisionId",
+          "blockIds",
+          "instruction",
+          "expectedCost"
+        ],
+        "title": "NovelBlockEditRequest",
+        "description": "여러 문단 수정 — 기준 개정의 블록 id 를 고른 만큼(같은 장면 안, 차례 무관) 보낸다. 서버가 같은 장면의 문단을 문맥으로\n함께 보낸다."
+      },
       "NovelBoardLayout": {
         "properties": {
           "version": {
@@ -30426,6 +30616,13 @@
             "type": "array",
             "title": "Pendingaiedits"
           },
+          "pendingBlockEdits": {
+            "items": {
+              "$ref": "#/components/schemas/NovelPendingBlockEdit"
+            },
+            "type": "array",
+            "title": "Pendingblockedits"
+          },
           "prices": {
             "$ref": "#/components/schemas/NovelPrices"
           },
@@ -31263,6 +31460,11 @@
           "boardLayoutMaxBytes": {
             "type": "integer",
             "title": "Boardlayoutmaxbytes"
+          },
+          "blockEditMaxBlocks": {
+            "type": "integer",
+            "title": "Blockeditmaxblocks",
+            "default": 20
           }
         },
         "type": "object",
@@ -31830,6 +32032,54 @@
         ],
         "title": "NovelPendingAiEdit",
         "description": "끝났지만 적용도 버리기도 하지 않은 AI 수정. 기준 개정이 지금도 그 장의 현재 개정과 글이 같은 것만 싣는다 — 그\n사이 장의 글이 바뀌었으면 적용이 409 라 미리보기로 내보일 이유가 없다(같은 글의 새 개정만 쌓였으면 그대로 싣고 적용도\n된다). 화면이 작업 id 를 잃어도(새로고침·다른 기기) 여기서\n미리보기를 다시 찾아 적용(`apply`)하거나 버린다(`dismiss`). `result_text` 는 장 전체 본문이다."
+      },
+      "NovelPendingBlockEdit": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "chapterId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Chapterid"
+          },
+          "instruction": {
+            "type": "string",
+            "title": "Instruction"
+          },
+          "patches": {
+            "items": {
+              "$ref": "#/components/schemas/NovelBlockEditPatchView"
+            },
+            "type": "array",
+            "title": "Patches"
+          },
+          "bundles": {
+            "items": {
+              "$ref": "#/components/schemas/NovelBlockEditBundleView"
+            },
+            "type": "array",
+            "title": "Bundles"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "chapterId",
+          "instruction",
+          "patches",
+          "bundles",
+          "createdAt"
+        ],
+        "title": "NovelPendingBlockEdit",
+        "description": "끝났고 아직 대기 수정안이 남은 여러 문단 수정. 화면이 작업 id 를 잃어도 여기서 수정안을 다시 찾는다. 수정안은 본문\n차례다."
       },
       "NovelPrices": {
         "properties": {

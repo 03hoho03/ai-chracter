@@ -258,7 +258,7 @@ async def delete_batch(
 ) -> None:
     """묶음 하나와 그 화들을 지운다. 진행 중 작업 확인·"마지막 묶음" 판정·사용자 잠금은 호출자가 먼저 한다(커밋도).
 
-    작업 행은 지우지 않고 그 화들을 가리키는 칸(화·기준 개정·결과 개정)과 AI 수정 지시문·결과 본문만 비운다 — 같은
+    작업 행은 지우지 않고 그 화들을 가리키는 칸(화·기준 개정·결과 개정)과 AI 수정 지시문·결과 본문·여러 문단 수정 칸만 비운다 — 같은
     시작 메시지의 하루 재시도 상한이 작업 행 수로 세므로, 지우면 묶음을 지웠다 다시 만드는 것으로 상한이 풀린다. 차감
     기록의 작업 쪽 짝도 남는다. 작업의 개정 참조는 모두 그 작업이 가리키는 화의 개정이라, 화로 골라 셋을 함께 비운다.
 
@@ -278,7 +278,14 @@ async def delete_batch(
     await db.execute(
         update(NovelJob)
         .where(NovelJob.chapter_id.in_(chapter_ids))
-        .values(chapter_id=None, base_revision_id=None, result_revision_id=None, instruction=None, result_text=None)
+        .values(
+            chapter_id=None,
+            base_revision_id=None,
+            result_revision_id=None,
+            instruction=None,
+            result_text=None,
+            block_edit=None,
+        )
     )
     await db.execute(select(NovelChapter.id).where(NovelChapter.id.in_(chapter_ids)).with_for_update())
     await db.execute(delete(NovelReadingPosition).where(NovelReadingPosition.chapter_id.in_(chapter_ids)))
@@ -367,5 +374,7 @@ async def erase_stale_ai_edit_previews(db: AsyncSession, chapter_id: uuid.UUID) 
             NovelJob.result_text.is_not(None),
             ~ai_edit_preview_is_fresh(NovelJob.base_revision_id, current_hash),
         )
-        .values(instruction=None, result_text=None)
+        # 결과 본문이 있는 작업만 고르므로 여러 문단 수정(패치 칸이 있는 작업은 결과 본문이 늘 비어 있다)은 여기 오지 않는다 —
+        # 패치 칸은 늘 비어 있지만, 지시문·결과를 비우는 자리마다 패치 칸도 다룬다는 약속을 지키려 함께 적는다.
+        .values(instruction=None, result_text=None, block_edit=None)
     )

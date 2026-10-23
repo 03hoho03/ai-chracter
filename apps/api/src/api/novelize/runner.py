@@ -63,6 +63,8 @@ from api.novelize.billing import (
     shortfall_refund,
     transition_job,
 )
+from api.novelize.block_edit_inputs import BlockEditInput, build_block_edit_input
+from api.novelize.block_edits import BlockEdit, BlockEditBundle, BlockEditPatch, normalized_result, with_save_states
 from api.novelize.blocks import build_revision, fresh_ids
 from api.novelize.boundary import episode_counts, suggest_end_turn
 from api.novelize.deletion import ai_edit_preview_is_fresh, erase_stale_ai_edit_previews
@@ -94,7 +96,12 @@ from api.novelize.output import (
     parse_batch_output,
 )
 from api.novelize.paragraphs import resplit_long_paragraphs
-from api.novelize.prompts import NovelizeEpisodeOutlineResult, NovelizeOutlineResult, NovelizeReviseResult
+from api.novelize.prompts import (
+    NovelizeBlockEditResult,
+    NovelizeEpisodeOutlineResult,
+    NovelizeOutlineResult,
+    NovelizeReviseResult,
+)
 from api.novelize.scene_outline import (
     EpisodeOutlineInput,
     MalformedScenesError,
@@ -188,13 +195,17 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
 
     heartbeat = asyncio.create_task(keep_job_alive(session_factory, job_id))
     try:
+        block_input: BlockEditInput | None = None
         async with session_factory() as db:
             job = await db.get(NovelJob, job_id)
             novel = await db.get(Novel, job.novel_id) if job is not None else None
             if job is None or novel is None:
                 return
             try:
-                if job.kind == "ai_edit":
+                if job.kind == "ai_edit" and job.block_edit is not None:
+                    # 여러 문단 수정 — 패치 칸이 있는 AI 수정이다. 호출 위치·모델은 문단 수정과 같다(아래 `usage`).
+                    block_input = await build_block_edit_input(db, job, novel)
+                elif job.kind == "ai_edit":
                     revise = await build_revise_input(db, job, novel)
                 elif job.kind == "outline_generate":
                     outline_input = await build_outline_input(db, novel, model=chapter_job_model(job))
@@ -247,7 +258,10 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
                 )
             kind = job.kind
         # 여기서부터 모델 호출 — 세션을 닫은 뒤다.
-        if kind == "ai_edit":
+        if block_input is not None:
+            patches, bundles = await _revise_blocks(llm_client, block_input, usage)
+            await _save_block_edit(session_factory, job_id, patches, bundles)
+        elif kind == "ai_edit":
             result_text = await _revise(llm_client, revise.prompt.prompt, revise.prompt.system_instruction, usage)
             body = _assemble_revision(revise.paragraphs, revise.first_index, revise.last_index, result_text)
             await _save_ai_edit(session_factory, job_id, body)
@@ -567,6 +581,48 @@ async def _revise(llm_client: LLMClient, prompt: str, system_instruction: str, u
     return paragraphs
 
 
+async def _revise_blocks(
+    llm_client: LLMClient, block_input: BlockEditInput, usage: LLMCallContext
+) -> tuple[list[BlockEditPatch], list[BlockEditBundle]]:
+    """여러 문단 수정 호출. 응답을 대상 블록의 대기 패치와 묶음으로 정리한다(`block_edits.normalized_result` — 대상이 아닌 문단
+    번호의 패치는 버린다). 남은 패치가 없으면 `empty`, 어느 패치든 거절·안내문이면 `refused` 로 실패(환불)다. 문단 정리는 문단
+    수정과 같다(항목 안의 빈 줄은 문단 나눔, 앞의 `[n]` 은 걷는다)."""
+    try:
+        result = await llm_client.generate_structured_with_instruction(
+            block_input.prompt.prompt,
+            NovelizeBlockEditResult,
+            system_instruction=block_input.prompt.system_instruction,
+            usage=usage,
+        )
+    except LLMTruncatedError as exc:
+        raise _JobFailedError("truncated") from exc
+    except LLMEmptyResponseError as exc:
+        raise _JobFailedError("empty") from exc
+    except LLMPolicyViolationError as exc:
+        raise _JobFailedError("blocked") from exc
+    except LLMClientError as exc:
+        logger.warning("소설화 여러 문단 수정 호출이 실패했다: %s", type(exc).__name__)
+        raise _JobFailedError("llm_error") from exc
+    raw = [
+        (
+            item.paragraph,
+            [part for text in item.paragraphs for part in split_paragraphs(_LEADING_NUMBER.sub("", text.strip()))],
+        )
+        for item in result.patches
+    ]
+    patches, bundles, outside = normalized_result(
+        block_input.edit.targets, raw, [(bundle.paragraphs, bundle.reason) for bundle in result.bundles]
+    )
+    if outside:
+        # 고르지 않은 문단을 고쳐 보낸 응답 — 결과에는 들어가지 않지만 문안이 대상을 지키는지 볼 수 있게 남긴다.
+        logger.warning("소설화 여러 문단 수정 응답에서 대상이 아닌 문단의 수정안 %d개를 버렸다", outside)
+    if not patches:
+        raise _JobFailedError("empty")
+    for patch in patches:
+        _judge(patch.paragraphs or [])
+    return patches, bundles
+
+
 async def _outline(llm_client: LLMClient, outline_input: OutlineInput, usage: LLMCallContext) -> list[dict[str, Any]]:
     """전체 구성안 호출. 호출 실패는 문단 수정과 같은 사유로 가르고, 쓸 수 없는 구성안(화 수·턴 번호 범위 밖, 빈 제목)은
     `malformed`, 거절문은 `refused` 로 실패·환불한다."""
@@ -756,6 +812,51 @@ async def _save_ai_edit(session_factory: SessionFactory, job_id: uuid.UUID, body
         ):
             await db.rollback()
             raise _JobFailedError("source_changed")
+        await db.commit()
+
+
+async def _save_block_edit(
+    session_factory: SessionFactory,
+    job_id: uuid.UUID,
+    patches: list[BlockEditPatch],
+    bundles: list[BlockEditBundle],
+) -> None:
+    """여러 문단 수정 결과는 개정이 아니라 블록마다의 수정안(패치)이다. 장 전체 결과 본문과 범위 칸은 비워 둔다 — 옛 미리보기
+    목록·적용·낡은 미리보기 비우기가 이 작업을 건드리지 않게(작업 표의 CHECK 가 막는다).
+
+    잠금 순서는 문단 수정 저장과 같다: 작업 행(성공 전이) → 장 행 잠금 → 지금 개정. 전이가 행을 받지 못하면(만료 정리가 먼저
+    실패·환불했거나 소설 삭제가 작업 행을 지웠으면) 아무것도 쓰지 않는다. 장을 잠근 뒤 패치마다 지금 개정에 쓸 수 있는지 보고
+    (`block_edits.with_save_states`), 쓸 수 없는 패치는 처음부터 낡음으로 문단 없이 쓴다 — 모델을 부르는 동안 사용자가 그 블록을
+    고친 것이다. 쓸 수 있는 패치가 하나도 없으면 쓸 결과가 없으므로 롤백하고 `source_changed` 로 실패·환불한다(환불은 잠금을 놓은
+    뒤 — 사용자 행부터 잠그므로). 패치·묶음은 같은 트랜잭션의 두 번째 UPDATE 로 쓴다: 판정에 장 잠금이 필요하고, 장을 먼저 잠가
+    전이와 한 문장에 넣으면 작업 행을 쥔 채 장을 잠그는 소설 삭제와 서로를 기다린다."""
+    async with session_factory() as db:
+        saved = await transition_job(
+            db, job_id=job_id, expected=("running",), values={"status": "succeeded", "finished_at": func.now()}
+        )
+        if saved is None:
+            await db.rollback()
+            return
+        chapter_id, stored = (
+            await db.execute(select(NovelJob.chapter_id, NovelJob.block_edit).where(NovelJob.id == job_id))
+        ).one()
+        current = None
+        if (
+            chapter_id is not None
+            and await db.scalar(
+                select(NovelChapter.id).where(NovelChapter.id == chapter_id).with_for_update(key_share=True)
+            )
+            is not None
+        ):
+            current = await current_revision(db, chapter_id)
+        fresh = 0
+        if current is not None and stored is not None:
+            edit = BlockEdit.model_validate(stored).model_copy(update={"patches": patches, "bundles": bundles})
+            edit, fresh = with_save_states(edit, current.block_ids, split_paragraphs(current.body))
+        if not fresh:
+            await db.rollback()
+            raise _JobFailedError("source_changed")
+        await db.execute(update(NovelJob).where(NovelJob.id == job_id).values(block_edit=edit.to_json()))
         await db.commit()
 
 

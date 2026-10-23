@@ -40,7 +40,9 @@ def _load(revision: str) -> ModuleType:
 _M = _load("0c1a85bc5c2f")
 # 소설 레인 세 체인에 구성안 문안을 심은 리비전의 세트 — 다른 레인과 무관하지만 전역 버전 번호를 이 리비전 뒤에서 이어
 # 쓰므로 버전 차례를 보는 시험에서 뺀다.
-_NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values())
+_NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values()) + list(
+    _load("174f78b92e5c").NEW_SET_IDS.values()  # 그 뒤 여러 문단 수정 문안을 심은 소설 레인 Gemini 세트도 같은 이유로 뺀다.
+)
 # 비밀 표기 슬롯을 만든 리비전 — 옛 본문의 출처다(그 뒤 이 슬롯을 바꾼 리비전이 없다).
 _SECRET_MARKING = _load("0aeadefcf159")
 # 이 리비전 직전 여덟 체인의 활성 세트(사실 추출 지시문 차례를 바꾼 리비전 — 그 사이의 리비전은 프롬프트를 게시하지 않는다).

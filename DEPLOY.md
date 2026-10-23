@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 114개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 21개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 노벨 공개 정책 스위치 1개(`NOVEL_PUBLIC_POLICY_V2_ENABLED`)·소설 삽화 스위치 1개(`NOVEL_ILLUSTRATIONS_ENABLED`)·소설 구성 흐름 스위치 1개(`NOVELIZE_OUTLINE_FLOW_ENABLED`), 모두 62개 제외 —
+**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 116개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 22개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 노벨 공개 정책 스위치 1개(`NOVEL_PUBLIC_POLICY_V2_ENABLED`)·소설 삽화 스위치 1개(`NOVEL_ILLUSTRATIONS_ENABLED`)·소설 구성 흐름 스위치 1개(`NOVELIZE_OUTLINE_FLOW_ENABLED`)·여러 문단 수정 스위치 1개(`NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`), 모두 64개 제외 —
 운영에서 켜 둔 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 7개(`PORTONE_*` 5개·
 `IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`), 노벨 키 2개(`NOVEL_PUBLIC_ENABLED`·`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`)는 셈에 들어간다) + 앱이 읽지 않지만
 옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
@@ -321,6 +321,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `NOVEL_ILLUSTRATIONS_ENABLED` | 개정 처리방침(삽화 항목) 게시 뒤 켤 때 `true`(코드 기본값은 `false`) | 소설 화 삽화 스위치. 꺼져 있으면 지금 약관대로다 — 작가의 삽화 붙이기·옮기기·바꾸기·떼기와 원작 그림 후보 API 가 404(캐시 안 함), 삽화 용도 업로드(`novel-illustration`)는 422, 작가의 화·개정 응답에 그림이 없고, 소설 표지로 쓴 생성 이미지도 지금처럼 지울 수 있다(표지가 빈다). 켜면 그 API 들이 열리고, 응답에 그림이 실리고, 웹 가격 응답의 `novelIllustrationsEnabled` 로 작가 화면의 진입이 열리며, 표지로 쓴 이미지는 삭제가 409 다. 스위치와 무관하게 이미 개정에 붙은 배치는 새 개정으로 이어지고 그 그림은 지울 수 없으며(409), 어느 개정도 쓰지 않게 된 업로드 삽화 파일(과 소유자가 탈퇴한 생성 이미지)은 소설 삭제·묶음 삭제·탈퇴·숨긴 소설 파기 때 함께 지워진다. 남의 소설이 원작 그림으로 쓰는 원작자의 생성 이미지도 삭제가 409 이고, 그 소설의 id·제목은 원작자에게 보이지 않는다. 스키마·롤백은 "소설 화 삽화 스키마" 절 |
 | `NOVELIZE_OUTLINE_FLOW_ENABLED` | 개정 처리방침(구간 선택·구성안 항목) 게시 뒤 켤 때 `true`(코드 기본값은 `false`) | 소설 구성 흐름 스위치 — 작가가 소설로 옮길 대화 구간을 고르고(뺄 구간은 모델에 보내지 않는다) 구성안을 거쳐 화를 만드는 흐름. 꺼져 있으면 지금의 이어 쓰기 흐름(경계 제안·묶음 생성·연쇄·다시 만들기)만 있다. 지금은 웹 가격 응답의 `novelizeOutlineFlowEnabled`, 구간 선택 라우트(`/novels/{id}/source-selection` 조회·초안 저장·승인)와 전체 구성안 라우트(`/novels/{id}/outline` 조회·만들기(과금)·고친 판 저장·승인), 화별 장면 구성안 라우트(`/novels/{id}/outline/episodes/{key}/scenes` 조회·만들기(과금)·고친 판 저장·승인), 원고 라우트(`/novels/{id}/outline/episodes/{key}/chapter`, 과금)와 구성 흐름 화 다시 만들기(`/novels/{id}/outline/chapters/{chapterId}/regenerate`, 과금)만 이 값을 따른다(꺼져 있으면 모두 캐시하지 않는 404) — 켜면 구간 선택 행과 유료 구성안·장면 구성안·구성 흐름 화가 생기기 시작한다. 구성안·장면 구성안 단가는 원가를 재기 전의 임시값이다. 옛 다시 만들기 라우트는 스위치와 무관하게 구성 흐름 화를 409 `NOVEL_CHAPTER_OUTLINE_FLOW` 로 거절한다. 옛 이어 쓰기(경계 제안·묶음 생성·연쇄)는 켠 뒤에도 남아 승인한 선택(뺀 구간)을 보지 않고 화 번호가 가장 큰 화의 끝부터 이어 읽으므로(구성안 순서를 바꿔 뒤 대화를 앞 화로 쓴 소설이면 이미 쓴 대화를 다시 화로 만든다), 화면이 구성 흐름으로만 다음 화를 만들게 된 뒤에 켠다. 스키마·롤백은 "대화 구간 선택 스키마" 절 |
 | `NOVELIZE_OUTLINE_MAX_EPISODES` / `NOVELIZE_OUTLINE_MAX_INPUT_TOKENS` | 설정 안 함(기본 `30` / `150000`) | 전체 구성안 한 판의 화 수 상한(모델이 이를 넘게 나누면 실패·환불, 사용자가 고친 판도 이 안이어야 한다 — 묶음 하나의 화 수 상한 `NOVELIZE_K_MAX_*` 과 다른 값) / 전체 구성안·장면 구성안·원고 호출 한 번의 입력 견적 상한(토큰 — 지금은 고른 원문 줄의 글자 수로 어림한다). 견적이 넘으면 모델을 부르기 전·차감 전에 422 `NOVEL_OUTLINE_INPUT_TOO_LARGE`(구간을 줄여 다시 고르라는 안내)다. 둘 다 구성안 원가·분포를 재기 전의 임시값이고, 구성 흐름 스위치가 꺼져 있으면 쓰이지 않는다 |
+| `NOVELIZE_MULTI_BLOCK_EDIT_ENABLED` | 개정 처리방침(여러 문단 수정안 보관 항목) 게시와 수정안 적용·버리기 라우트 배포 뒤 켤 때 `true`(코드 기본값은 `false`) | 여러 문단 수정 스위치 — 작가가 같은 장면 안의 떨어진 문단 여럿을 골라 한 번에 AI 수정을 맡기고(AI 수정 단가 한 번, 블록 수 무관) 문단마다 수정안을 받는 흐름. 꺼져 있으면 지금의 연속 범위 수정(`/ai-edits`)만 있다. 웹 가격 응답의 `novelizeMultiBlockEditEnabled` 와 요청 라우트(`/novels/{id}/chapters/{chapterId}/block-edits`, 과금 — 꺼져 있으면 캐시하지 않는 404)만 이 값을 따른다. 이미 만든 수정안의 상세 목록(`pendingBlockEdits`)은 꺼져 있어도 보인다. 🔴 수정안을 하나씩 적용·버리는 라우트가 아직 없으므로(옛 버리기로 전부 버리기만 된다) 그 라우트가 배포되기 전에는 켜지 않는다. 연속 범위 수정은 켠 뒤에도 그대로 남는다. 스키마·롤백은 "여러 문단 수정 스키마" 절 |
+| `NOVELIZE_BLOCK_EDIT_MAX_INPUT_CHARS` | 설정 안 함(기본 `120000`) | 여러 문단 수정 한 번의 입력 견적 상한(글자 — 모델에 보낼 문맥 문단(장면 있는 화는 그 장면, 없으면 화 전체)·작품 설정·설정 노트·지시의 합). 넘으면 모델을 부르기 전·차감 전에 422 `NOVEL_EDIT_INPUT_TOO_LONG` 이다. 지연·원가를 재기 전의 임시값이고, 스위치가 꺼져 있으면 쓰이지 않는다 |
 
 > **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
 > 지우고 빈 항목은 버리며, 남는 오리진이 없으면 기동에 실패한다. 새로 쓸 때는 쉼표 구분으로 쓴다.
@@ -1851,6 +1853,53 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
              AND status IN ('queued','running')),
           (SELECT count(*) FROM novel_outlines), (SELECT count(*) FROM novel_episode_outlines),
           (SELECT count(*) FROM novel_scene_blocks);"
+```
+
+
+**여러 문단 수정 스키마(`a8708e3535d5`)·여러 문단 수정 문안(`174f78b92e5c`) — 배포 · 되돌리기.** 한 배포에 두 리비전이 함께 오른다.
+- `a8708e3535d5`(스키마): `novel_jobs.block_edit`(JSONB, NULL 허용)과 CHECK `ck_novel_jobs_block_edit`(칸이 있으면 AI 수정이고 범위·장 전체
+  결과 본문이 비어 있다)를 더한다. 칸에는 대상 블록(id·기준 해시·문단 번호)·장면·블록마다의 수정안·묶음이 담긴다.
+- `174f78b92e5c`(문안): 소설 레인 **Gemini 체인만** 그 체인 활성 세트의 바이트 사본에 여러 문단 수정 채널(`novelize_revise_blocks`, 6행)과
+  묶음 재검사 채널(`novelize_revise_recheck`, 4행)을 더한 새 게시 세트를 넣는다. Claude 두 체인은 그대로다. 옛 문단 수정 채널
+  (`novelize_revise`)은 한 글자도 바뀌지 않아 옛 렌더는 바이트 그대로다. 가정이 어긋나면(활성 세트 없음·옛 문단 수정 행 없음·새 채널 행이
+  이미 있음) `RuntimeError` 로 배포가 멈춘다.
+- 스위치(`NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`, 위 env 표)는 꺼진 채 배포한다 — 이 배포로 칸을 쓰는 코드는 스위치 뒤의 요청 라우트뿐이라
+  꺼진 동안 칸은 늘 비어 있다.
+
+평상시 겹침 교체로 배포한다(`skip_overlap` 불필요): 겹침 동안 도는 옛 이미지는 칸을 매핑하지 않고, 옛 작업 INSERT 는 칸을 비워 두며 CHECK 는
+칸이 있는 행에만 걸린다. 옛 이미지가 칸이 있는 행을 만나도(스위치를 켠 뒤 이미지만 되돌린 경우) 상세의 미적용 목록과 낡은 미리보기 비우기는
+결과 본문이 있는 행만 보아 지나치고, 옛 적용은 범위가 비어 409, 옛 버리기는 CHECK 를 통과한다(`tests/test_novel_block_edit_schema_migration.py`).
+옛 이미지의 어드민은 새 세트·초안의 새 행을 "잉여"로 보고 **소설 레인 Gemini 체인 게시만** 막는다 — 배포 뒤 열어 둔 어드민 소설 탭은
+새로고침한다.
+
+- **병합 전**: 운영 최신 백업 성공을 보고, 소설 레인 Gemini 활성 세트(id·게시 시각)와 새 채널 행·초안이 아직 없음을 아래 읽기 전용
+  SELECT 로 본다(새 채널 행 0, 초안이 있으면 새 채널 행이 빠진 채라 마이그레이션이 제자리에서 채운다). 운영 `LLM_CALL_SITE_BACKENDS` 는
+  건드리지 않는다 — 여러 문단 수정은 옛 문단 수정과 같은 호출 위치(`novelize_revise`, Gemini 고정)를 쓴다.
+- **되돌리기**: 1순위는 이미지만 이 배포 직전의 운영 이미지로 되돌리기다(downgrade 없이 — 옛 코드는 새 칸·문안 위에서 돈다). 스위치를 켠
+  뒤라면 먼저 스위치 줄을 지우고(재기동), 진행 중인 여러 문단 수정 작업이 끝나기(또는 만료 환불)를 기다린 뒤 아래 SELECT 의 둘째·셋째
+  값을 본다 — 대기 수정안이 남은 행이 있으면 옛 이미지에서는 그 수정안이 화면에서 사라지고 화를 지워도 문단이 행에 남으므로, 되돌리기 전에
+  그 행을 "전부 버림"으로 정리한다(버린 시각을 찍고 지시문을 비우며 칸의 수정안 문단을 지운다 — 어떤 UPDATE 로 할지는 그때 행 수를 보고
+  사람이 정한다). 스키마·문안까지 내리려면 **이미지를 먼저 되돌린 뒤**(칸을 지우는 순간 이 칸을 매핑한 새 이미지의 작업 조회가 모두 실패한다)
+  이 두 리비전 파일이 든 이미지의 **일회성 컨테이너로** `alembic downgrade b389c2317149` 를 돌린다 — 문안 downgrade 가 먼저 돌며 시드 뒤
+  어드민이 소설 레인 Gemini 체인에 새로 게시했으면 멈추고, 스키마 downgrade 는 대기 수정안이 남은 행이나 진행 중인 여러 문단 수정 작업이
+  있으면 멈춘다(끝난 수정안 기록 — 상태·블록 id 만 남은 행 — 은 칸과 함께 버린다). 둘 다 통과할 때만 [이미지 롤백 → downgrade → revert
+  병합] 순서로 하고 겹침 중 `main` 병합을 멈춘다. 문안 시드를 손으로 지우지 않는다.
+
+```sh
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c \
+  "SELECT (SELECT id || ' ' || published_at FROM prompt_sets WHERE status = 'published' AND lane = 'novel' AND model = 'gemini'
+             ORDER BY published_at DESC LIMIT 1),
+          (SELECT count(*) FROM prompt_sections s JOIN prompt_sets p ON p.id = s.prompt_set_id
+             WHERE p.lane = 'novel' AND s.channel IN ('novelize_revise_blocks','novelize_revise_recheck')),
+          (SELECT count(*) FROM prompt_sets WHERE status = 'draft' AND lane = 'novel' AND model = 'gemini');"
+# 되돌리기 판정(배포 뒤): 패치 칸이 있는 작업 수, 그중 진행 중, 대기 수정안이 남은 행
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c \
+  "SELECT (SELECT count(*) FROM novel_jobs WHERE block_edit IS NOT NULL),
+          (SELECT count(*) FROM novel_jobs WHERE block_edit IS NOT NULL AND status IN ('queued','running')),
+          (SELECT count(*) FROM novel_jobs WHERE block_edit IS NOT NULL AND dismissed_at IS NULL
+             AND jsonb_path_exists(block_edit, '$.patches[*] ? (@.state == \"pending\")'));"
 ```
 
 ### 3-12. 상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기

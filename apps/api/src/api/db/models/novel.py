@@ -432,6 +432,12 @@ class NovelJob(Base):
     outline_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     outline_episode_key: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     episode_outline_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 여러 문단 수정(AI 수정의 한 꼴)의 대상·패치·묶음(`novelize/block_edits.py` 의 `BlockEdit`). 이 칸이 있는 작업은 결과를
+    # 장 전체 본문(`result_text`)이 아니라 블록마다의 패치로 남기고 문단 범위 칸을 쓰지 않는다 — 옛 미리보기 목록·적용·낡은
+    # 미리보기 비우기는 결과 본문과 범위가 있는 작업만 보므로 이 작업을 건드리지 않는다(`ck_novel_jobs_block_edit`).
+    # 파이썬 None 은 JSON `null` 이 아니라 SQL NULL 로 쓴다 — 칸을 비우는 쓰기(`block_edit=None`)가 JSON null 을 남기면 "칸 없음"
+    # 판정(`IS NULL`)과 CHECK 가 그 행을 패치 작업으로 본다.
+    block_edit: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     failure_code: Mapped[NovelJobFailureCode | None] = mapped_column(Text, nullable=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -481,6 +487,13 @@ class NovelJob(Base):
             " AND (kind <> 'outline_chapter_generate'"
             " OR (episode_outline_id IS NOT NULL AND outline_episode_key IS NOT NULL))",
             name="ck_novel_jobs_outline_target",
+        ),
+        # 패치 작업은 AI 수정이고 범위·장 전체 결과 본문이 비어 있다. 결과 본문이 채워지면 옛 낡은 미리보기 비우기가 이 작업을
+        # 골라, 패치 하나를 적용해 화의 글이 바뀐 순간 같은 작업의 남은 패치 지시문까지 지운다.
+        CheckConstraint(
+            "block_edit IS NULL OR (kind = 'ai_edit' AND result_text IS NULL"
+            " AND paragraph_start IS NULL AND paragraph_end IS NULL)",
+            name="ck_novel_jobs_block_edit",
         ),
         Index("ix_novel_jobs_user_id_created_at", "user_id", "created_at"),
         Index("ix_novel_jobs_novel_id_start_message_id_created_at", "novel_id", "start_message_id", "created_at"),
