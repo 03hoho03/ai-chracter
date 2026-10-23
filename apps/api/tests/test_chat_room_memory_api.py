@@ -61,6 +61,7 @@ async def test_new_room_has_an_empty_note_and_no_summary(
         "version": 0,
         "rolledBackAt": None,
         "limits": {"noteMaxLength": 1000, "summaryMaxLength": 1500},
+        "features": {"itemsVisible": False, "summaryFolding": True},
     }
 
 
