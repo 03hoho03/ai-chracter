@@ -282,6 +282,9 @@ const FAILURE_SUBJECT: Record<NovelJobResponse["kind"], string> = {
   chapter_regenerate: "화를 다시 만들지 못했어요.",
   ai_edit: "AI로 고치지 못했어요.",
   chain_generate: "남은 대화를 소설로 만들지 못했어요.",
+  outline_generate: "전체 구성안을 만들지 못했어요.",
+  episode_outline_generate: "장면 구성안을 만들지 못했어요.",
+  outline_chapter_generate: "구성안으로 새 화를 쓰지 못했어요.",
 };
 
 /** 실패로 끝난 작업의 안내. 돌려준 클로버는 서버가 적은 환불액(`refundedAmount`)을 그대로 말한다 — 묶음·연쇄는 일부만

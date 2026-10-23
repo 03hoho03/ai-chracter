@@ -25,7 +25,7 @@ from datetime import datetime, time
 from typing import Any, assert_never
 
 from fastapi import HTTPException, status
-from sqlalchemy import case, func, select, update
+from sqlalchemy import ColumnElement, and_, case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import clover
@@ -37,12 +37,20 @@ from api.db.models.novel import (
     Novel,
     NovelBatch,
     NovelChapter,
+    NovelEpisodeOutline,
     NovelJob,
     NovelJobFailureCode,
     NovelJobKind,
     NovelJobStatus,
 )
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, novel_episode_unit_price, parse_chat_model_id
+from api.llm.chat_models import (
+    DEFAULT_CHAT_MODEL,
+    ChatModelId,
+    novel_episode_outline_unit_price,
+    novel_episode_unit_price,
+    novel_outline_unit_price,
+    parse_chat_model_id,
+)
 from api.novelize.episodes import k_max, regenerate_ineligibility
 
 ACTIVE_JOB_STATUSES: tuple[NovelJobStatus, ...] = ("queued", "running")
@@ -55,12 +63,19 @@ _NOVELIZE_WINDOW = "novelize"
 
 def job_price(kind: NovelJobKind, model: ChatModelId = DEFAULT_CHAT_MODEL, episode_count: int = 1) -> int:
     """작업 한 번의 클로버. 생성·다시 만들기는 고른 글쓰기 모델의 화 단가 × 화 수이고, AI 수정은 화 수·모델과 무관하다
-    (언제나 Gemini 로 화 하나의 문단을 고친다). 단가 상수를 부를 때마다 모듈 전역으로 읽는다 — 값을 붙잡아 두면
+    (언제나 Gemini 로 화 하나의 문단을 고친다). 구성 흐름의 전체 구성안·장면 구성안은 화 수와 무관한 모델별 고정가이고,
+    원고는 화 하나라 그 모델의 화 단가 한 번이다. 단가 상수를 부를 때마다 모듈 전역으로 읽는다 — 값을 붙잡아 두면
     테스트가 바꿀 수 없고, 화면에 금액을 내려주는 응답도 이 함수 하나에서 읽어야 차감액과 어긋나지 않는다."""
     if kind == "chapter_generate" or kind == "chapter_regenerate":
         return novel_episode_unit_price(model) * episode_count
     if kind == "ai_edit":
         return clover.NOVELIZE_AI_EDIT_COST
+    if kind == "outline_generate":
+        return novel_outline_unit_price(model)
+    if kind == "episode_outline_generate":
+        return novel_episode_outline_unit_price(model)
+    if kind == "outline_chapter_generate":
+        return novel_episode_unit_price(model)
     if kind == "chain_generate":
         # 연쇄 부모의 금액은 남은 대화의 묶음 수에 달려 작업 종류만으로 정해지지 않는다 — 부모 전용 계산이 따로 한다.
         raise ValueError("chain_generate 의 금액은 job_price 로 계산하지 않는다")
@@ -108,6 +123,23 @@ async def _starts_after_last_chapter(db: AsyncSession, job: NovelJob) -> bool:
     return last_end is None or tuple(last_end) < (job.start_message_created_at, job.start_message_id)
 
 
+async def _outline_episode_written(db: AsyncSession, job: NovelJob) -> bool:
+    """원고 작업이 쓰려는 구성안 화(`outline_episode_key`)를 가리키는 화가 지금 있는가. 화는 장면 구성안 리비전을 가리키므로 그
+    리비전의 화 키로 거슬러 본다 — 장면 구성안을 고쳐 새 리비전을 만들어도 같은 화 키라 같은 화로 센다. 사용자 잠금 뒤에 본다
+    (화 저장도 사용자 행을 먼저 잡는다)."""
+    written = await db.scalar(
+        select(NovelChapter.id)
+        .join(NovelEpisodeOutline, NovelEpisodeOutline.id == NovelChapter.episode_outline_id)
+        .where(
+            NovelChapter.novel_id == job.novel_id,
+            NovelEpisodeOutline.novel_id == job.novel_id,
+            NovelEpisodeOutline.episode_key == job.outline_episode_key,
+        )
+        .limit(1)
+    )
+    return written is not None
+
+
 async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: int, now: datetime) -> NovelJob:
     """요청 세션 `db` 에서 `job` 을 진행 대기(`queued`)로 넣고 단가만큼 차감한 뒤 커밋한다. 넣은 작업을 돌려준다.
 
@@ -129,19 +161,23 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     - 409 `NOVEL_MODEL_INELIGIBLE` + `reason`(다시 만들기만): 고른 모델이 그 묶음을 담지 못한다 — 묶음의 화 수가 그
       모델의 화 수 상한을 넘거나(`too_many_episodes`) 묶음의 턴 수가 그 모델의 턴 상한을 넘는다(`too_many_turns`).
       다시 만들기는 지금 화 수를 그대로 지키므로 화 수를 줄여 맞출 수 없다.
-    - 409 `NOVEL_JOB_IN_PROGRESS`: 이 소설에 진행 중(대기·실행) 작업이 있다.
-    - 429 `USER_LIMIT`(`window: "novelize"`): 같은 시작 메시지의 장 생성·재생성이 오늘(KST) 상한에 닿았다. 재시도 초는
-      상한이 풀리는 KST 자정까지다. 연쇄 부모는 시작 메시지가 없어 세지도 막히지도 않는다(자식은 이 함수를 거치지
-      않는다 — 부모가 이미 진행 중이라 진행 중 확인에 걸린다).
+    - 409 `NOVEL_OUTLINE_EPISODE_WRITTEN`(구성 흐름 원고만): 그 구성안 화를 이미 쓴 화가 지금 있다(낡은 화면이 같은 화를
+      다시 사는 경우). 장면 구성안을 고친 새 리비전이어도 같은 화 키면 막힌다.
+    - 409 `NOVEL_JOB_IN_PROGRESS`: 이 소설에 진행 중(대기·실행) 작업이 있다. 작업 종류와 무관하다.
+    - 429 `USER_LIMIT`(`window: "novelize"`): 같은 시작 메시지의 장 생성·재생성, 또는 같은 장면 구성안 리비전의 구성 흐름
+      원고가 오늘(KST) 상한에 닿았다. 재시도 초는 상한이 풀리는 KST 자정까지다. 연쇄 부모는 시작 메시지가 없어 세지도
+      막히지도 않는다(자식은 이 함수를 거치지 않는다 — 부모가 이미 진행 중이라 진행 중 확인에 걸린다). 구성안 두 종은 세지
+      않는다 — 유료라 남용 제동은 과금 자체다.
     - 429 `CLOVER_REQUIRED`(`window: "novelize"`): 잔액 부족. 이 경우 참인 재시도 시각은 없다(자정에 돌아오는 무료분은
       채팅 전용이라 소설화에는 다시 생기는 것이 없다). 그래도 채팅의 `CLOVER_REQUIRED` 와 같은 계약으로 KST 자정까지의
       초를 싣는다 — 웹의 소설 화면은 이 값을 쓰지 않는다.
 
     순서는 금액 확인(다시 만들기 빼고) → 사용자 잠금 → 소설·장 존재 확인 → 다시 만들기의 묶음·화 수·모델 적격성·금액
-    확인 → 다음 장 시작 재확인(장 생성만) → 진행 중 확인 → 하루 상한 → 작업 INSERT → 차감(clover_lots 잠금)이다. 진행
+    확인 → 다음 장 시작 재확인(장 생성만)·같은 구성안 화 확인(구성 흐름 원고만) → 진행 중 확인 → 하루 상한 → 작업 INSERT →
+    차감(clover_lots 잠금)이다. 진행
     중 확인과 상한을 사용자 잠금 뒤에 읽으므로 같은 사용자의 동시 요청이 둘 다 통과하지 못한다(부분 유니크 인덱스는
     마지막 방어선으로 남는다)."""
-    if job.kind == "chapter_generate" and job.episode_count_target is None:
+    if job.kind in ("chapter_generate", "outline_chapter_generate") and job.episode_count_target is None:
         job.episode_count_target = 1
     if job.kind != "chapter_regenerate":
         price = _checked_price(job, expected_cost)
@@ -177,6 +213,9 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     if job.kind == "chapter_generate" and not await _starts_after_last_chapter(db, job):
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_NOTHING_NEW"})
+    if job.kind == "outline_chapter_generate" and await _outline_episode_written(db, job):
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_OUTLINE_EPISODE_WRITTEN"})
 
     active = await db.scalar(
         select(NovelJob.id).where(NovelJob.novel_id == job.novel_id, NovelJob.status.in_(ACTIVE_JOB_STATUSES)).limit(1)
@@ -185,15 +224,22 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_JOB_IN_PROGRESS"})
 
+    same_attempt: ColumnElement[bool] | None = None
     if job.kind in _CHAPTER_JOB_KINDS:
+        same_attempt = and_(NovelJob.start_message_id == job.start_message_id, NovelJob.kind.in_(_CHAPTER_JOB_KINDS))
+    elif job.kind == "outline_chapter_generate":
+        # 구성 흐름 원고는 시작 메시지가 아니라 근거 장면 구성안 리비전으로 센다 — 같은 장면 구성안으로 거듭 다시 사는 것을 막는다.
+        same_attempt = and_(
+            NovelJob.episode_outline_id == job.episode_outline_id, NovelJob.kind == "outline_chapter_generate"
+        )
+    if same_attempt is not None:
         today_start = datetime.combine(clover.kst_today(now), time.min, tzinfo=KST)
         attempts = await db.scalar(
             select(func.count())
             .select_from(NovelJob)
             .where(
                 NovelJob.novel_id == job.novel_id,
-                NovelJob.start_message_id == job.start_message_id,
-                NovelJob.kind.in_(_CHAPTER_JOB_KINDS),
+                same_attempt,
                 NovelJob.status.in_(_COUNTED_JOB_STATUSES),
                 NovelJob.created_at >= today_start,
             )

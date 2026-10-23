@@ -99,6 +99,28 @@ def backend_model_id(backend: BackendId, model: PromptSetModelId) -> str:
     return value
 
 
+def novel_outline_unit_price(model_id: ChatModelId) -> int:
+    """구성 흐름의 전체 구성안 한 번의 클로버(모델별 고정가, 화 수와 무관하다)."""
+    if model_id == "gemini":
+        return clover.NOVELIZE_OUTLINE_COST
+    if model_id == "sonnet":
+        return clover.NOVELIZE_OUTLINE_COST_SONNET
+    if model_id == "opus":
+        return clover.NOVELIZE_OUTLINE_COST_OPUS
+    assert_never(model_id)
+
+
+def novel_episode_outline_unit_price(model_id: ChatModelId) -> int:
+    """구성 흐름의 화 하나의 장면 구성안 한 번의 클로버(모델별 고정가)."""
+    if model_id == "gemini":
+        return clover.NOVELIZE_EPISODE_OUTLINE_COST
+    if model_id == "sonnet":
+        return clover.NOVELIZE_EPISODE_OUTLINE_COST_SONNET
+    if model_id == "opus":
+        return clover.NOVELIZE_EPISODE_OUTLINE_COST_OPUS
+    assert_never(model_id)
+
+
 def configured_call_site_model(call_site: LLMCallSite) -> PromptSetModelId:
     """그 호출의 모델 — 판정·요약이면 지금 설정의 판정·요약 모델, 아니면 기본 모델(`llm/backends.py` 의 `call_site_model`).
     설정은 호출마다 읽는다(import 때 붙잡으면 테스트가 바꾼 설정이 실리지 않는다)."""

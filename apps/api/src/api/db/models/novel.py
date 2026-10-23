@@ -9,7 +9,7 @@
 `relationship()` 이 없고 뼈대 테이블(소설·화·개정·작업)에는 `ON DELETE CASCADE` 도 없으므로, 지울 때는 작업 → 개정 →
 화 → 소설 순서를 직접 지킨다(`novelize/deletion.py` 의 `delete_novels` 한 곳).
 
-🔴 예외: 묶음·인물·등장 인물·스냅샷·읽은 위치·구간 선택과 그 구간 행, 노벨 공개 상태·화 공개본·텍스트 심사 기록·독자 읽은 자리·좋아요·홈 노벨
+🔴 예외: 묶음·인물·등장 인물·스냅샷·읽은 위치·구간 선택과 그 구간 행·전체 구성안·장면 구성안·장면 블록, 노벨 공개 상태·화 공개본·텍스트 심사 기록·독자 읽은 자리·좋아요·홈 노벨
 지정·화 댓글은 부모(소설·화·개정)를 지우면
 함께 지워지는 `ON DELETE CASCADE` 다. 이 저장소의 "cascade 없음" 관례를 일부러 어긴 것이다 — 이미지만 옛 판으로
 되돌렸을 때 옛 코드의 화 삭제·소설 삭제·탈퇴는 이 테이블들을 모르고 위 순서대로만 지우는데, cascade 가 없으면 그
@@ -53,7 +53,18 @@ from api.db.models.moderation import ReportReasonCategory, ReportStatus
 NovelContentType = Literal["story", "character"]
 # `illustration` 은 삽화 배치만 바꾼 개정이다 — 본문·블록 id 는 앞 개정과 같다.
 NovelRevisionSource = Literal["generate", "regenerate", "manual_edit", "ai_edit", "revert", "illustration"]
-NovelJobKind = Literal["chapter_generate", "chapter_regenerate", "ai_edit", "chain_generate"]
+# 구성 흐름(구간 선택 → 전체 구성안 → 화별 장면 구성안 → 원고)의 작업 셋: 전체 구성안 생성(`outline_generate`), 한 화의 장면
+# 구성안 생성(`episode_outline_generate`), 승인된 장면 구성안으로 화 하나를 쓰는 원고(`outline_chapter_generate`). 새 흐름 화의
+# 다시 만들기는 따로 두지 않고 `chapter_regenerate` 를 쓴다.
+NovelJobKind = Literal[
+    "chapter_generate",
+    "chapter_regenerate",
+    "ai_edit",
+    "chain_generate",
+    "outline_generate",
+    "episode_outline_generate",
+    "outline_chapter_generate",
+]
 NovelJobStatus = Literal["queued", "running", "succeeded", "failed"]
 NovelJobFailureCode = Literal[
     "llm_error",
@@ -69,6 +80,8 @@ NovelJobFailureCode = Literal[
     "episode_count_mismatch",
 ]
 NovelSnapshotKind = Literal["manual", "auto_before_restore"]
+# 구성안 리비전이 어디서 왔는가 — 모델이 만든 판과 사용자가 고친 판.
+NovelOutlineSource = Literal["generate", "edit"]
 # 구간 선택의 구간 종류 — 소설에 넣을 구간과, 앞뒤 맥락으로만 보낼 구간. 빼는 구간은 행으로 두지 않는다.
 NovelSourceSectionMode = Literal["include", "context"]
 # 집필권 잠금이 어디서 왔는지. 첫 화 저장이 쓴 잠금과, 이 칸이 생기기 전에 이미 첫 화를 만든 소설에 마이그레이션이 채운
@@ -270,6 +283,11 @@ class NovelChapter(Base):
     # 다음 화 머리의 "이전 줄거리"와 다음 묶음 생성 입력에 쓰는 이 화 요약.
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     author_note: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    # 구성 흐름 원고가 쓴 화면 그 원고의 근거인 장면 구성안 리비전(`NovelEpisodeOutline.id`). 비어 있으면 옛 흐름(끝 턴을 골라
+    # 만든 묶음)의 화다. FK 를 두지 않는다 — 판매된 소설을 숨겨 남길 때 장면 구성안은 작가 전용 데이터라 지우고 이 화는 산
+    # 독자를 위해 남기는데, FK 면 그 정리가 막히거나(NO ACTION) 화가 함께 지워진다(CASCADE). nullable 인 것은 옛 코드의 화
+    # INSERT 가 이 칸을 모르기 때문이다.
+    episode_outline_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -281,6 +299,12 @@ class NovelChapter(Base):
         CheckConstraint("assistant_message_count >= 1", name="ck_novel_chapters_assistant_message_count_positive"),
         Index("ux_novel_chapters_novel_id_ordinal", "novel_id", "ordinal", unique=True),
         Index("ix_novel_chapters_batch_id", "batch_id"),
+        # 같은 구성안 화를 두 번 원고로 쓰지 않았는지 보는 조회용.
+        Index(
+            "ix_novel_chapters_episode_outline_id",
+            "episode_outline_id",
+            postgresql_where=text("episode_outline_id IS NOT NULL"),
+        ),
     )
 
 
@@ -401,6 +425,13 @@ class NovelJob(Base):
     # 돈을 넘지 않는다. 연쇄 부모가 아니면 비어 있다.
     planned_batches: Mapped[int | None] = mapped_column(Integer, nullable=True)
     batch_k_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 구성 흐름 작업의 대상. 장면 구성안 생성은 어느 전체 구성안(`outline_id`)의 어느 화(`outline_episode_key`, 구성안 리비전이
+    # 바뀌어도 같은 화를 가리키는 키)인지를, 원고는 근거 장면 구성안 리비전(`episode_outline_id`)과 그 화 키를 싣는다 — 원고의
+    # 하루 재시도 상한은 장면 구성안 리비전으로 세고, 같은 화를 두 번 쓰지 않았는지는 화 키로 본다. 셋 다 FK 가 없다 — 작업
+    # 행은 차감 기록이라 구성안을 지운 뒤에도 남는다(`batch_id` 와 같은 이유).
+    outline_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    outline_episode_key: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    episode_outline_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     failure_code: Mapped[NovelJobFailureCode | None] = mapped_column(Text, nullable=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -444,6 +475,13 @@ class NovelJob(Base):
             " AND unit_price IS NOT NULL AND planned_batches >= 1 AND batch_k_max >= 1 AND unit_price >= 1)",
             name="ck_novel_jobs_chain_plan",
         ),
+        # 구성 흐름 작업은 대상 칸을 갖는다. 비면 하루 상한·중복 확인이 NULL 로 비교돼 조용히 통과한다.
+        CheckConstraint(
+            "(kind <> 'episode_outline_generate' OR (outline_id IS NOT NULL AND outline_episode_key IS NOT NULL))"
+            " AND (kind <> 'outline_chapter_generate'"
+            " OR (episode_outline_id IS NOT NULL AND outline_episode_key IS NOT NULL))",
+            name="ck_novel_jobs_outline_target",
+        ),
         Index("ix_novel_jobs_user_id_created_at", "user_id", "created_at"),
         Index("ix_novel_jobs_novel_id_start_message_id_created_at", "novel_id", "start_message_id", "created_at"),
         Index(
@@ -457,6 +495,13 @@ class NovelJob(Base):
         Index("ix_novel_jobs_result_revision_id", "result_revision_id"),
         # 연쇄 부모의 자식 목록 조회용.
         Index("ix_novel_jobs_parent_job_id", "parent_job_id"),
+        # 원고의 하루 재시도 상한(같은 장면 구성안 리비전의 오늘 작업 수) 집계용.
+        Index(
+            "ix_novel_jobs_episode_outline_id_created_at",
+            "episode_outline_id",
+            "created_at",
+            postgresql_where=text("episode_outline_id IS NOT NULL"),
+        ),
     )
 
 
@@ -601,6 +646,110 @@ class NovelSourceSection(Base):
             "start_message_id",
             unique=True,
         ),
+    )
+
+
+class NovelOutline(Base):
+    """전체 구성안의 한 판(리비전). 승인된 구간 선택을 근거로 모델이 만든 판(`generate`)이거나, 앞 판을 사용자가 고친 판
+    (`edit`)이다. `approved_at` 이 비어 있으면 아직 승인하지 않았다. 승인한 판은 고치지 않고, 고치면 새 리비전이 된다. 리비전은
+    소설마다 1부터 오르고 `(novel_id, revision)` 유니크가 두 탭의 동시 저장을 막는다.
+
+    `episodes` 는 화 목록이다(화마다 이 구성안 계보에서 바뀌지 않는 화 키·제목·줄거리·근거 구간). 형식은 구성안 코드가 정하고
+    DB 는 통째로 저장한다. `selection_id` 는 근거로 삼은 구간 선택 판이고 FK 가 없다 — 구간 선택 쪽 정리(초안 지우기)가 이 표를
+    몰라도 막히지 않게 한다. `job_id`·`model` 은 만든 작업과 그 모델이고 고친 판이면 비어 있다(작업 FK 가 없는 것은 작업 행이
+    차감 기록이라 따로 남기 때문이다).
+
+    작가 전용 데이터다 — 판매된 소설을 숨겨 남길 때도 지운다. 소설을 지우면 함께 지워지는 `ON DELETE CASCADE` 다(모듈
+    docstring 의 예외와 같은 이유)."""
+
+    __tablename__ = "novel_outlines"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[NovelOutlineSource] = mapped_column(Text, nullable=False)
+    selection_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    episodes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 리비전 유니크 인덱스가 소설의 최신 구성안 조회와 소설 삭제 때 FK 검사를 겸한다.
+    __table_args__ = (
+        CheckConstraint("revision >= 1", name="ck_novel_outlines_revision_positive"),
+        CheckConstraint(f"source IN ({_sql_in_list(NovelOutlineSource)})", name="ck_novel_outlines_source"),
+        Index("ux_novel_outlines_novel_id_revision", "novel_id", "revision", unique=True),
+    )
+
+
+class NovelEpisodeOutline(Base):
+    """한 화의 장면 구성안 한 판(리비전). 승인된 전체 구성안(`outline_id`)의 한 화(`episode_key`)를 근거로 모델이 만든 판이거나
+    사용자가 고친 판이다. 리비전은 소설·화 키마다 1부터 오른다 — 전체 구성안을 고쳐 새 리비전이 되어도 화 키가 같으면 같은 화의
+    장면 구성안 이력으로 이어진다. `scenes` 는 장면 목록(장면마다 장면 id·내용·근거)이고 형식은 구성안 코드가 정한다. 원고는 승인한
+    판으로만 쓴다.
+
+    작가 전용 데이터다. 소설·전체 구성안을 지우면 함께 지워지는 `ON DELETE CASCADE` 다. 남는 표(화·작업)는 이 표를 FK 없이
+    가리킨다."""
+
+    __tablename__ = "novel_episode_outlines"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    outline_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_outlines.id", ondelete="CASCADE"), nullable=False
+    )
+    episode_key: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[NovelOutlineSource] = mapped_column(Text, nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scenes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 리비전 유니크 인덱스가 한 화의 최신 장면 구성안 조회와 소설 삭제 때 FK 검사를 겸하고, 구성안 인덱스는 구성안 DELETE 때
+    # FK 검사용이다.
+    __table_args__ = (
+        CheckConstraint("revision >= 1", name="ck_novel_episode_outlines_revision_positive"),
+        CheckConstraint(f"source IN ({_sql_in_list(NovelOutlineSource)})", name="ck_novel_episode_outlines_source"),
+        Index(
+            "ux_novel_episode_outlines_novel_id_episode_key_revision",
+            "novel_id",
+            "episode_key",
+            "revision",
+            unique=True,
+        ),
+        Index("ix_novel_episode_outlines_outline_id", "outline_id"),
+    )
+
+
+class NovelSceneBlock(Base):
+    """원고가 쓴 화의 문단(블록 id)이 장면 구성안의 어느 장면인지. 블록 id 는 개정이 바뀌어도 같은 문단을 가리키고 되돌리기·
+    스냅숏 복원은 옛 id 를 그대로 복제하므로, 개정마다 사본을 두지 않고 블록 id 하나에 행 하나를 둔다 — 어느 개정으로 돌아가도
+    장면을 찾는다. 수정으로 생긴 새 블록은 행이 없고, 읽는 쪽이 앞 블록의 장면으로 읽는다.
+
+    작가 전용 데이터다. 화·장면 구성안을 지우면 함께 지워지는 `ON DELETE CASCADE` 다."""
+
+    __tablename__ = "novel_scene_blocks"
+
+    block_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    chapter_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_chapters.id", ondelete="CASCADE"), nullable=False
+    )
+    episode_outline_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_episode_outlines.id", ondelete="CASCADE"), nullable=False
+    )
+    scene_id: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # 화 DELETE·장면 구성안 DELETE 때 FK 검사용이고, 화의 장면 경계 조회도 겸한다.
+    __table_args__ = (
+        Index("ix_novel_scene_blocks_chapter_id", "chapter_id"),
+        Index("ix_novel_scene_blocks_episode_outline_id", "episode_outline_id"),
     )
 
 
