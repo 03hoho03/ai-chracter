@@ -254,6 +254,22 @@ def format_turn_lines(
     return "\n".join(lines)
 
 
+def format_context_lines(
+    sections: Sequence[Sequence[ChatMessage]], *, names: PromptNames, user_label: str, assistant_label: str
+) -> str:
+    """맥락으로만 보내는 구간들의 원문 줄. 메시지마다 첫 줄 앞에 `라벨: ` 만 붙이고 턴 번호는 붙이지 않는다 — 번호는 모델이 화의
+    근거를 밝히는 데 쓰므로, 근거로 삼으면 안 되는 맥락에 번호를 주면 원문 줄의 번호와 겹쳐 근거에 섞인다. 구간 사이는 빈 줄로
+    가른다(그 사이의 대화는 보내지 않았다). 본문 처리는 `format_turn_lines` 와 같다."""
+    blocks = []
+    for messages in sections:
+        lines = []
+        for message in messages:
+            label = user_label if message.role == ChatMessageRole.USER else assistant_label
+            lines.append(f"{label}: {_turn_text(message, names, strip_tags=True)}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(block for block in blocks if block)
+
+
 def novel_prompt_names(*, protagonist_name: str, character_name: str | None) -> PromptNames:
     """소설 프롬프트의 이름 — 작가 글의 `{{user}}` 를 대화 프로필이 아니라 소설 주인공 이름으로 바꾼다. 주인공 이름은
     소설을 만들 때 대화 프로필 이름으로 미리 채운 칸이라, 사용자가 고치지 않았으면 대화 때와 같은 이름이다. 스토리는

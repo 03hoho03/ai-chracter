@@ -23,7 +23,6 @@ from api.chat.memory_window import MessageKey
 from api.core.config import settings
 from api.db.models.novel import (
     Novel,
-    NovelChapter,
     NovelSourceSection,
     NovelSourceSectionMode,
     NovelSourceSelection,
@@ -32,7 +31,15 @@ from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
 from api.novel_public.no_store import NoStoreRoute
 from api.novelize.access import require_novelize_access
+from api.novelize.billing import _lock_user
 from api.novelize.router import _novel_error, _owned_novel_dependency
+from api.novelize.selection import (
+    hits_locked,
+    latest_approved_selection,
+    locked_ranges,
+    section_key,
+    selection_sections,
+)
 from api.novelize.schemas import (
     NovelSourceRange,
     NovelSourceSectionView,
@@ -49,11 +56,6 @@ from api.novelize.source import (
     range_shape,
     room_message_keys,
 )
-
-# 이미 화가 된 구간과 겹치면 안 되는 mode. 맥락(context)은 막지 않는다 — 잠금은 이미 쓴 대화를 다시 쓰는 것을 막는 것이고, 앞
-# 화와 이어지는 장면을 쓸 때 앞 화의 원문을 참고로 보내는 것은 그 약속을 깨지 않는다. 성공한 원고에 맥락으로 실렸던 구간까지
-# 잠글지는 아직 정하지 않았다 — 정하면 이 집합과 `_locked_ranges` 만 바뀐다.
-_LOCK_BLOCKS_MODES: frozenset[NovelSourceSectionMode] = frozenset({"include"})
 
 
 async def _require_outline_flow_enabled() -> None:
@@ -85,10 +87,6 @@ def _room_id(novel: Novel) -> uuid.UUID:
     return novel.chat_room_id
 
 
-def _overlaps(a: tuple[MessageKey, MessageKey], b: tuple[MessageKey, MessageKey]) -> bool:
-    return a[0] <= b[1] and b[0] <= a[1]
-
-
 async def _latest_selection(db: AsyncSession, novel_id: uuid.UUID) -> NovelSourceSelection | None:
     selection: NovelSourceSelection | None = await db.scalar(
         select(NovelSourceSelection)
@@ -100,57 +98,11 @@ async def _latest_selection(db: AsyncSession, novel_id: uuid.UUID) -> NovelSourc
     return selection
 
 
-async def _latest_approved(db: AsyncSession, novel_id: uuid.UUID) -> NovelSourceSelection | None:
-    selection: NovelSourceSelection | None = await db.scalar(
-        select(NovelSourceSelection)
-        .where(NovelSourceSelection.novel_id == novel_id, NovelSourceSelection.approved_at.is_not(None))
-        .order_by(NovelSourceSelection.revision.desc())
-        .limit(1)
-        .execution_options(populate_existing=True)
-    )
-    return selection
-
-
-async def _sections_of(db: AsyncSession, selection_id: uuid.UUID) -> list[NovelSourceSection]:
-    rows = await db.scalars(
-        select(NovelSourceSection)
-        .where(NovelSourceSection.selection_id == selection_id)
-        .order_by(NovelSourceSection.start_message_created_at, NovelSourceSection.start_message_id)
-    )
-    return list(rows.all())
-
-
-async def _locked_ranges(db: AsyncSession, novel_id: uuid.UUID) -> list[tuple[MessageKey, MessageKey]]:
-    """이미 화가 된 구간 — 지금 있는 화마다 그 화의 첫·끝 키 사이 전체, 키 순, 중복 없이. 화를 지우면 그 구간은 풀린다.
-
-    옛 흐름의 화는 연속 구간 하나를 쓰므로 첫·끝 키 사이 전체가 정확히 그 화가 쓴 대화다. 한 묶음의 화들은 묶음 구간을 함께
-    가리켜 같은 구간이 여러 번 나오므로 하나로 줄인다."""
-    rows = await db.execute(
-        select(
-            NovelChapter.start_message_created_at,
-            NovelChapter.start_message_id,
-            NovelChapter.end_message_created_at,
-            NovelChapter.end_message_id,
-        )
-        .where(NovelChapter.novel_id == novel_id)
-        .distinct()
-    )
-    return sorted(((row[0], row[1]), (row[2], row[3])) for row in rows.all())
-
-
-def _section_key(section: NovelSourceSection) -> tuple[MessageKey, MessageKey]:
-    return (
-        (section.start_message_created_at, section.start_message_id),
-        (section.end_message_created_at, section.end_message_id),
-    )
-
-
 def _require_unlocked(
     sections: list[tuple[NovelSourceSectionMode, MessageKey, MessageKey]], locked: list[tuple[MessageKey, MessageKey]]
 ) -> None:
-    for mode, start, end in sections:
-        if mode in _LOCK_BLOCKS_MODES and any(_overlaps((start, end), lock) for lock in locked):
-            raise _novel_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_SOURCE_SECTION_LOCKED")
+    if hits_locked(sections, locked):
+        raise _novel_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_SOURCE_SECTION_LOCKED")
 
 
 async def _checked_sections(
@@ -176,7 +128,7 @@ async def _checked_sections(
         previous_end = end
     if previous_end is not None and previous_end > room_end:
         raise _novel_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_SOURCE_SECTION_OUT_OF_RANGE")
-    _require_unlocked(resolved, await _locked_ranges(db, novel.id))
+    _require_unlocked(resolved, await locked_ranges(db, novel.id))
     sections = [
         _Section(mode, start, end, await range_shape(db, room_id, SourceRange(start, end)))
         for mode, start, end in resolved
@@ -188,8 +140,8 @@ async def _checked_sections(
 
 async def _view(db: AsyncSession, room_id: uuid.UUID, selection: NovelSourceSelection) -> NovelSourceSelectionView:
     sections = []
-    for row in await _sections_of(db, selection.id):
-        start, end = _section_key(row)
+    for row in await selection_sections(db, selection.id):
+        start, end = section_key(row)
         shape = await range_shape(db, room_id, SourceRange(start, end))
         sections.append(
             NovelSourceSectionView(
@@ -237,8 +189,8 @@ async def _proposal(
 
 async def _state(db: AsyncSession, novel: Novel, room_id: uuid.UUID) -> NovelSourceSelectionState:
     latest = await _latest_selection(db, novel.id)
-    approved = await _latest_approved(db, novel.id)
-    locked = await _locked_ranges(db, novel.id)
+    approved = await latest_approved_selection(db, novel.id)
+    locked = await locked_ranges(db, novel.id)
     room_end = await last_message_key(db, room_id)
     draft = latest if latest is not None and latest.approved_at is None else None
     has_new = latest is not None and (
@@ -278,6 +230,9 @@ async def save_source_selection_draft(
     먼저 저장함) 409 `NOVEL_SOURCE_SELECTION_CONFLICT`. 구간 검증 실패는 `_checked_sections` 의 422 들이고, 그때는 아무것도 바뀌지
     않는다."""
     room_id = _room_id(novel)
+    # 사용자 행을 먼저 잡는다 — 구성안 작업의 저장이 같은 잠금 아래에서 "근거 구간이 지금 선택에 있는가"를 보고 저장하므로, 그
+    # 확인과 이 저장·승인이 줄을 서야 확인 직후에 바뀐 선택을 놓치지 않는다.
+    await _lock_user(db, novel.user_id)
     latest = await _latest_selection(db, novel.id)
     if (None if latest is None else latest.revision) != payload.base_revision:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_SELECTION_CONFLICT")
@@ -336,14 +291,15 @@ async def approve_source_selection(
     저장 뒤 바뀌었으면 409 `NOVEL_SOURCE_SELECTION_SOURCE_CHANGED`(다시 저장해 지금 원문으로 고른다 — 화 다시 만들기의
     원문 변경 코드와 할 일이 달라 코드를 나눈다) — 둘 다 초안은 그대로 남는다."""
     room_id = _room_id(novel)
+    await _lock_user(db, novel.user_id)  # 초안 저장과 같은 이유
     latest = await _latest_selection(db, novel.id)
     if latest is None or latest.revision != payload.revision:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_SELECTION_CONFLICT")
     if latest.approved_at is None:
-        rows = await _sections_of(db, latest.id)
-        _require_unlocked([(row.mode, *_section_key(row)) for row in rows], await _locked_ranges(db, novel.id))
+        rows = await selection_sections(db, latest.id)
+        _require_unlocked([(row.mode, *section_key(row)) for row in rows], await locked_ranges(db, novel.id))
         for row in rows:
-            if (await range_shape(db, room_id, SourceRange(*_section_key(row)))).source_hash != row.source_hash:
+            if (await range_shape(db, room_id, SourceRange(*section_key(row)))).source_hash != row.source_hash:
                 raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_SELECTION_SOURCE_CHANGED")
         # 승인 칸이 빈 행만 바꾼다 — 그사이 다른 저장이 이 초안을 지웠으면 바뀐 행이 없다.
         approved = await db.scalar(
