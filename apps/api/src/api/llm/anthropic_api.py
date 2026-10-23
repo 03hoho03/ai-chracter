@@ -246,6 +246,8 @@ class AnthropicLLMClient(LLMClient):
         self, prompt: str, response_schema: type[T], system: str | None, usage: LLMCallContext, method: str
     ) -> T:
         model = backend_model_id("anthropic", structured_call_model(usage.call_site, usage.model))
+        thinking: ThinkingConfigParam | None
+        effort: ClaudeEffort | None
         if follows_carried_model(usage.call_site):
             # 사용자가 고른 글쓰기 모델로 내는 유료 구조화(소설 구성안)는 판정 몫의 깊이가 아니라 그 호출 위치의 깊이(장 생성과
             # 같은 프로필)로 간다 — 판정 원가를 줄이려 판정 깊이를 낮추면 값을 낸 구성안의 품질까지 함께 내려가지 않게. 사고는
