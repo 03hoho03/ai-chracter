@@ -1810,6 +1810,42 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   "SELECT (SELECT count(*) FROM novel_source_selections), (SELECT count(*) FROM novel_source_sections);"
 ```
 
+**구성안 스키마(`1962604b5292`)·구성안 문안(`b389c2317149`) — 배포 · 되돌리기.** 한 배포에 두 리비전이 함께 오른다.
+- `1962604b5292`(스키마): 작업 종류 CHECK(`ck_novel_jobs_kind`)를 구성 흐름 셋(`outline_generate`·`episode_outline_generate`·
+  `outline_chapter_generate`)을 더한 목록으로 바꾸고(넓히기만), `novel_jobs` 에 대상 칸 셋과 그 칸을 새 종류에만 요구하는 CHECK,
+  `novel_chapters.episode_outline_id`(FK 없음)를 더하고, 표 `novel_outlines`·`novel_episode_outlines`·`novel_scene_blocks`(소설·화·구성안 FK
+  `ON DELETE CASCADE`)를 만든다. 이 배포에는 새 종류 작업·구성안 행을 쓰는 코드가 없다(구성안·원고 라우트는 다음 배포, 스위치 뒤).
+- `b389c2317149`(문안): 소설 레인 세 체인(gemini·sonnet·opus)마다 **그 체인 활성 세트의 바이트 사본**에 구성안 두 채널(각 9행)과
+  화 생성의 conditional 두 행(장면 계획·연속성 참고)을 더한 새 게시 세트를 넣는다. 운영자가 어드민에서 고친 문안은 그대로 옮겨진다.
+  옛 흐름 렌더는 바이트 그대로다(새 채널은 읽는 코드가 없고, 새 슬롯은 값을 넘기지 않아 섹션째 빠진다). 가정이 어긋나면(체인 활성
+  세트 없음·화 생성 행 없음·새 행이 이미 있음) `RuntimeError` 로 배포가 멈춘다 — 데이터는 한 트랜잭션이라 그대로다.
+
+평상시 겹침 교체로 배포한다(`skip_overlap` 불필요): 겹침 동안 도는 옛 이미지는 새 칸·표·채널을 모르고, 옛 작업·화 INSERT 는 새 칸을
+비워 두며(옛 값은 넓힌 CHECK 를 통과한다), 옛 소설 삭제·탈퇴·마지막 묶음 삭제는 새 표를 CASCADE 로 함께 지운다
+(`tests/test_novel_outline_schema_migration.py` 가 옛 코드 꼴의 원시 DELETE 로 확인한다). 옛 이미지의 어드민은 새 세트·초안의 새 행을
+"잉여"로 보고 **소설 레인 게시만** 막는다 — 배포 뒤 열어 둔 어드민 소설 탭은 새로고침한다.
+
+- **병합 전**: 운영 최신 백업 성공을 보고, 소설 레인 활성 세트(체인마다 id·게시 시각)와 새 채널 행이 아직 없음을 아래 읽기 전용
+  SELECT 로 본다. 운영 `LLM_CALL_SITE_BACKENDS` 에 새 호출 위치 이름(`novelize_outline`·`novelize_episode_outline`)을 적지 않는다 — 두
+  호출은 장 생성의 배정을 물려받고, 그 이름을 모르는 옛 이미지는 그 줄이 있으면 기동하지 못한다.
+- **되돌리기**: 1순위는 이미지만 이 배포 직전의 운영 이미지로 되돌리기다(downgrade 없이 — 옛 코드는 새 스키마·문안 위에서 돈다).
+  판정: 진행 중인 구성 흐름 작업 0(아래 SELECT, 이 배포만으로는 늘 0). 되돌려 둔 동안 판매돼 숨긴 소설의 작가가 탈퇴하면 옛 이미지의
+  작가 전용 데이터 정리가 구성안 표를 몰라 그 소설의 구성안이 남는다 — 다시 올린 뒤 그 행 수를 세어 정리한다. 스키마·문안까지
+  내리려면 **이 두 리비전 파일이 든 이미지로** `alembic downgrade 7738b72179c8` 를 돌린다 — 문안 downgrade 는 시드 뒤 어드민이 소설 레인에
+  새로 게시했으면 멈추고(무엇을 버릴지 사람이 정한다), 스키마 downgrade 는 구성 흐름 작업·구성안 행이 하나라도 있으면 멈춘다(값을 치른
+  산출물이라 지우지 않는다). 둘 다 통과할 때만 [downgrade → revert 병합] 한 짝으로 하고 겹침 중 `main` 병합을 멈춘다. 문안 시드를 손으로
+  지우지 않는다.
+
+```sh
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c \
+  "SELECT (SELECT count(*) FROM novel_jobs WHERE kind IN ('outline_generate','episode_outline_generate','outline_chapter_generate')),
+          (SELECT count(*) FROM novel_jobs WHERE kind IN ('outline_generate','episode_outline_generate','outline_chapter_generate')
+             AND status IN ('queued','running')),
+          (SELECT count(*) FROM novel_outlines), (SELECT count(*) FROM novel_episode_outlines),
+          (SELECT count(*) FROM novel_scene_blocks);"
+```
+
 ### 3-12. 상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기
 
 채팅 턴 생성(측정용 리플레이 포함)과 소설 장 생성은 Gemini 대신 Claude 로 돌 수 있다. 판정·요약은 고른
