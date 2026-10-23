@@ -748,6 +748,10 @@ class Settings(BaseSettings):
     # 업로드를 받지 않으며, 화 응답에 그림을 싣지 않고, 소설 표지는 생성 이미지 삭제를 막지 않는다(지금 약관대로). 개정에 이미
     # 붙은 배치는 꺼져 있어도 새 개정으로 이어지고 그 그림 파일을 지우지 못하게 지킨다. 개정 처리방침 게시 뒤에 켠다.
     novel_illustrations_enabled: bool = False
+    # 소설 구성 흐름 스위치 — 작가가 소설로 옮길 대화 구간을 고르고(뺄 구간은 모델에 보내지 않는다) 구성안을 거쳐 화를 만드는
+    # 흐름. 꺼져 있으면(기본값) 지금의 이어 쓰기 흐름(경계 제안·묶음 생성·연쇄)만 있다. 지금은 가격 응답의 같은 이름 칸만 이 값을
+    # 따르고, 구간 선택·구성안 라우트를 더할 때 이 스위치 뒤에 둔다. 개정 처리방침 게시 뒤에 켠다.
+    novelize_outline_flow_enabled: bool = False
 
     @field_validator(
         "novelize_grant_allowlist",

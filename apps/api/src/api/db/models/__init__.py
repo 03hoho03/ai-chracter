@@ -112,6 +112,9 @@ from api.db.models.novel import (
     NovelScreeningPart,
     NovelSnapshot,
     NovelSnapshotKind,
+    NovelSourceSection,
+    NovelSourceSectionMode,
+    NovelSourceSelection,
 )
 from api.db.models.payment import (
     Payment,
@@ -251,6 +254,9 @@ __all__ = [
     "NovelScreeningPart",
     "NovelSnapshot",
     "NovelSnapshotKind",
+    "NovelSourceSection",
+    "NovelSourceSectionMode",
+    "NovelSourceSelection",
     "Payment",
     "PaymentCancellation",
     "PaymentCancellationSource",

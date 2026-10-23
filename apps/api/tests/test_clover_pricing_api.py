@@ -68,6 +68,7 @@ async def test_response_follows_products_and_cost_constants(
         "novelPublicEnabled",
         "novelPublicPolicyV2Enabled",
         "novelIllustrationsEnabled",
+        "novelizeOutlineFlowEnabled",
         "payMethods",
         "identityGateEnabled",
         "models",
@@ -228,3 +229,16 @@ async def test_pricing_exposes_the_novel_illustrations_switch(
     resp = await db_client.get("/clover/pricing")
 
     assert (resp.status_code, resp.json().get("novelIllustrationsEnabled")) == (200, switch)
+
+
+@pytest.mark.parametrize("switch", [pytest.param(False, id="off"), pytest.param(True, id="on")])
+async def test_pricing_exposes_the_novel_outline_flow_switch(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, switch: bool
+) -> None:
+    """작가 화면이 구간 선택·구성안 흐름으로 들어갈지를 이 값으로 가른다 — 구성 흐름 스위치 그대로다. 깨지는 시나리오: 스위치가
+    꺼졌는데 화면이 새 흐름 진입을 보여 누르는 족족 404 가 나거나, 켰는데 옛 흐름만 보인다."""
+    monkeypatch.setattr(settings, "novelize_outline_flow_enabled", switch)
+
+    resp = await db_client.get("/clover/pricing")
+
+    assert (resp.status_code, resp.json().get("novelizeOutlineFlowEnabled")) == (200, switch)
