@@ -13774,6 +13774,66 @@
         }
       }
     },
+    "/chat-rooms/{room_id}/memory/items": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "List Chat Room Memory Items",
+        "description": "방의 장면·사실 기억(`chat/memory_items.py`). 스위치가 꺼져 있으면 라우트는 등록된 채 404 다 — 기억 응답의 기능 칸이 화면에\n꺼짐을 알린다. 자기 데이터 열람이라 재동의 게이트를 걸지 않는다(노트 비우기와 같다).",
+        "operationId": "list_chat_room_memory_items_chat_rooms__room_id__memory_items_get",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomMemoryItemsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms/{room_id}/memory/note": {
       "put": {
         "tags": [
@@ -23897,6 +23957,228 @@
         ],
         "title": "ChatRoomListItem"
       },
+      "ChatRoomMemoryEpisodeItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "assertedBy": {
+            "type": "string",
+            "enum": [
+              "user",
+              "character",
+              "narration",
+              "mixed"
+            ],
+            "title": "Assertedby"
+          },
+          "startTurn": {
+            "type": "integer",
+            "title": "Startturn"
+          },
+          "endTurn": {
+            "type": "integer",
+            "title": "Endturn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "detail",
+          "assertedBy",
+          "startTurn",
+          "endTurn"
+        ],
+        "title": "ChatRoomMemoryEpisodeItem",
+        "description": "장면 기억 하나. `asserted_by` 는 장면의 내용을 누가 말했는가(사용자·캐릭터·서술·섞임)다 — 캐릭터가 대사로만 말한 장면은\n회상에 실리지 않는다. 턴은 추출 시점의 응답 순번이라 그 뒤 메시지가 지워졌으면 근사값이다."
+      },
+      "ChatRoomMemoryFactItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "factKey": {
+            "type": "string",
+            "title": "Factkey"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "relation",
+              "fact"
+            ],
+            "title": "Kind"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "object": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object"
+          },
+          "attribute": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribute"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "truthStatus": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "claimed",
+              "disproved"
+            ],
+            "title": "Truthstatus"
+          },
+          "truthLabel": {
+            "type": "string",
+            "title": "Truthlabel"
+          },
+          "assertedBy": {
+            "type": "string",
+            "enum": [
+              "user",
+              "character",
+              "narration"
+            ],
+            "title": "Assertedby"
+          },
+          "speaker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker"
+          },
+          "startTurn": {
+            "type": "integer",
+            "title": "Startturn"
+          },
+          "endTurn": {
+            "type": "integer",
+            "title": "Endturn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "factKey",
+          "kind",
+          "subject",
+          "object",
+          "attribute",
+          "value",
+          "truthStatus",
+          "truthLabel",
+          "assertedBy",
+          "speaker",
+          "startTurn",
+          "endTurn"
+        ],
+        "title": "ChatRoomMemoryFactItem",
+        "description": "키마다 지금 이긴 사실 하나. `kind` 가 `relation` 이면 `subject`·`object` 사이 관계이고 `fact` 면 `subject` 의\n`attribute` 다. `truth_label` 은 `truth_status` 를 사용자에게 보일 말로 바꾼 것이고, `speaker` 는 그 말을 한 인물(말한 사람\n꼬리표, 없으면 null)이다. 아는 사람 목록은 싣지 않는다 — 응답에서 비밀을 가리는 내부 장치다."
+      },
+      "ChatRoomMemoryFeatures": {
+        "properties": {
+          "itemsVisible": {
+            "type": "boolean",
+            "title": "Itemsvisible"
+          },
+          "summaryFolding": {
+            "type": "boolean",
+            "title": "Summaryfolding"
+          }
+        },
+        "type": "object",
+        "required": [
+          "itemsVisible",
+          "summaryFolding"
+        ],
+        "title": "ChatRoomMemoryFeatures",
+        "description": "기억 화면이 문구를 가를 서버 스위치. `items_visible` 은 장면·사실 목록 API 가 열려 있는가(닫혀 있으면 그 라우트가\n404 라, 화면은 목록을 부르지 않고 \"목록 없음\"과 구별한다). `summary_folding` 은 긴 방의 대화를 요약으로 접는 생성 윈도우가\n켜져 있는가다 — 꺼져 있으면 새 요약이 생기지 않고 있는 요약도 응답에 쓰이지 않는다."
+      },
+      "ChatRoomMemoryItemsResponse": {
+        "properties": {
+          "episodes": {
+            "items": {
+              "$ref": "#/components/schemas/ChatRoomMemoryEpisodeItem"
+            },
+            "type": "array",
+            "title": "Episodes"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "facts": {
+            "items": {
+              "$ref": "#/components/schemas/ChatRoomMemoryFactItem"
+            },
+            "type": "array",
+            "title": "Facts"
+          },
+          "episodesUsedInReplies": {
+            "type": "boolean",
+            "title": "Episodesusedinreplies"
+          },
+          "factsUsedInReplies": {
+            "type": "boolean",
+            "title": "Factsusedinreplies"
+          }
+        },
+        "type": "object",
+        "required": [
+          "episodes",
+          "nextCursor",
+          "facts",
+          "episodesUsedInReplies",
+          "factsUsedInReplies"
+        ],
+        "title": "ChatRoomMemoryItemsResponse",
+        "description": "방의 장면·사실 기억. 둘 다 지금 요약 커서까지 접힌 것이고, 요약이 아직 없으면 둘 다 비어 있다.\n\n- `episodes` 는 일어난 순서로 한 페이지다. `next_cursor` 를 `cursor` 로 다시 보내면 다음 페이지이고, 마지막 페이지면 null.\n- `facts` 는 키마다 이긴 행 전부다(페이지 없음, 이긴 행을 쓴 순서). 페이지마다 같은 목록이 온다.\n- `episodes_used_in_replies`·`facts_used_in_replies` 는 이 방의 다음 턴에 그 기억이 응답 프롬프트에 실릴 수 있는가 — 기억\n  스위치가 켜져 있고 이 방의 레인과 다음 턴 모델이 기억 사용 범위에 들 때만 참이다. 거짓이어도 기억은 계속 쌓인다."
+      },
       "ChatRoomMemoryLimits": {
         "properties": {
           "noteMaxLength": {
@@ -23964,6 +24246,9 @@
           },
           "limits": {
             "$ref": "#/components/schemas/ChatRoomMemoryLimits"
+          },
+          "features": {
+            "$ref": "#/components/schemas/ChatRoomMemoryFeatures"
           }
         },
         "type": "object",
@@ -23972,7 +24257,8 @@
           "summary",
           "version",
           "rolledBackAt",
-          "limits"
+          "limits",
+          "features"
         ],
         "title": "ChatRoomMemoryResponse",
         "description": "`summary`는 첫 접기 전이면 null이다(그때는 요약을 고칠 수 없다). `rolled_back_at`은 지난\n메시지를 고치거나 지워 요약이 이전 판으로 돌아간 마지막 시각이고, 초기화하면 null로 돌아간다."
