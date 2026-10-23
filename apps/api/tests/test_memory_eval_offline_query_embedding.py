@@ -3,6 +3,7 @@
 외부 호출은 없다. 벡터 파일에 없는 질의 글이면 앱이 흡수하는 실패(명사 단독)로 떨어지지 않고 재조립을 멈춘다 — 빠진 글을 모으는
 계획 모드에서만 멈추지 않고 글을 모은다. 임베딩 회상이 꺼진 갈래는 지금처럼 클라이언트 없이 조립한다."""
 
+import json
 import uuid
 from pathlib import Path
 
@@ -250,16 +251,12 @@ def test_trajectory_command_writes_no_point_whose_query_embedding_is_not_ok(
     assert not list(tmp_path.glob("trajectory-*.jsonl"))
 
 
-def test_trajectory_replay_command_writes_no_file_when_a_query_embedding_is_not_ok(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """재조립 명령도 임베딩 회상 갈래의 점 하나라도 질의 임베딩이 `ok` 가 아니면 궤적 파일을 하나도 쓰지 않고 비0 으로 끝난다 —
-    단언 함수만 보는 테스트로는 명령이 그 단언을 부르는지 알 수 없다. DB·템플릿 지문은 가짜로 지나고 조립된 점만 꾸민다."""
+def _fake_replay_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, replay_point: object) -> Path:
+    """재조립 명령의 DB·템플릿 지문을 가짜로 지나게 하고 조립된 점만 `replay_point` 로 꾸민다. 벡터 파일(빈 것) 경로를 돌려준다."""
     from types import SimpleNamespace
 
     from memory_eval import checkpoint, runtime, trajectory_replay as tr
     from memory_eval.arm_env import series_label
-    from memory_eval_cli import main
 
     class FakeDb:
         async def connection(self) -> object:
@@ -275,10 +272,6 @@ def test_trajectory_replay_command_writes_no_file_when_a_query_embedding_is_not_
     class FakeEngine:
         async def dispose(self) -> None:
             return None
-
-    async def unembedded(*_: object, turn: int, arm: str, **__: object) -> tuple[dict[str, object], str]:
-        point = {"turn": turn, "arm": arm, "queryOutcome": None, "snapshotsSeen": 1, "segmentSha": ["a", "b"]}
-        return point, ""
 
     async def nothing(*_: object, **__: object) -> None:
         return None
@@ -302,19 +295,166 @@ def test_trajectory_replay_command_writes_no_file_when_a_query_embedding_is_not_
     monkeypatch.setattr(tr, "load_timeline", nothing)
     monkeypatch.setattr(tr, "injected_persona", nothing)
     monkeypatch.setattr(tr, "section_header", lambda *_a: "[머리글]")
-    monkeypatch.setattr(tr, "replay_point", unembedded)
+    monkeypatch.setattr(tr, "replay_point", replay_point)
     fingerprint_file = tmp_path / "dumps" / f"{series_label('b1-measure', 'b1-B1E')}-cp300.fingerprint.json"
     fingerprint_file.parent.mkdir(parents=True)
     fingerprint_file.write_text("{}", encoding="utf-8")
     (tmp_path / "no-insert-log.jsonl").write_text("", encoding="utf-8")
     vectors = tmp_path / "vectors.jsonl"
     vectors.write_text("", encoding="utf-8")
+    return vectors
+
+
+def test_trajectory_replay_command_writes_no_file_when_a_query_embedding_is_not_ok(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """재조립 명령도 임베딩 회상 갈래의 점 하나라도 질의 임베딩이 `ok` 가 아니면 궤적 파일을 하나도 쓰지 않고 비0 으로 끝난다 —
+    단언 함수만 보는 테스트로는 명령이 그 단언을 부르는지 알 수 없다. DB·템플릿 지문은 가짜로 지나고 조립된 점만 꾸민다."""
+    from memory_eval_cli import main
+
+    async def unembedded(*_: object, turn: int, arm: str, **__: object) -> tuple[dict[str, object], str]:
+        point = {"turn": turn, "arm": arm, "queryOutcome": None, "snapshotsSeen": 1, "segmentSha": ["a", "b"]}
+        return point, ""
+
+    vectors = _fake_replay_env(monkeypatch, tmp_path, unembedded)
     args = _replay_args(
         tmp_path, "b1-B1E", "--turns", "2,3", "--embeddings", str(vectors), "--embed-model", MODEL, "--embed-dims", "3"
     )
     assert main(args) == 2
     assert "질의 임베딩" in capsys.readouterr().err
     assert not (tmp_path / "out").exists()
+
+
+async def _app_query_step(
+    embeddings: eo.EmbeddingTable | None, missing: list[dict[str, str]] | None, text: str
+) -> None:
+    """앱 조립이 질의 임베딩 앞뒤로 하는 일만 — Voyage 멈춤 상태를 묻고, 허락되면 질의 임베딩을 받는다(실패는 연속 실패로 센다)."""
+    from api.chat.voyage_backoff import voyage_allowed
+
+    client = oe.client_for("b1-B1E", embeddings, missing=missing)
+    assert client is not None
+    if await voyage_allowed():
+        await embed_query(client, text, timeout_seconds=5.0, room_id=uuid.uuid4())
+
+
+def test_plan_mode_collects_every_missing_query_and_leaves_the_voyage_backoff_untouched(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """계획 모드의 빠진 질의는 Voyage 장애가 아니다 — 앱이 그것을 연속 실패로 세면 세 번째에 전역 멈춤 키가 서고, 그 뒤 턴은
+    질의 임베딩을 부르지 않아 빠진 글이 세 개에서 멈춘다. 다섯 턴이면 다섯 글을 모두 모으고, 멈춤 키를 남기지 않아야 한다."""
+    import redis
+    from redis.asyncio import Redis
+
+    from api.chat import voyage_backoff
+    from memory_eval_cli import main
+
+    # 명령은 자기 이벤트 루프를 새로 돌리므로 다른 루프에서 연결이 붙은 공용 클라이언트 대신 새 클라이언트를 준다.
+    monkeypatch.setattr(voyage_backoff, "redis_client", Redis.from_url(settings.redis_url, decode_responses=True))
+    state = redis.Redis.from_url(settings.redis_url)
+
+    async def app_like(
+        *_: object,
+        turn: int,
+        arm: str,
+        embeddings: eo.EmbeddingTable | None,
+        missing: list[dict[str, str]] | None,
+        **__: object,
+    ) -> tuple[dict[str, object], str]:
+        await _app_query_step(embeddings, missing, f"빠진 질의 {turn}")
+        return {"turn": turn, "arm": arm, "queryOutcome": "failed", "snapshotsSeen": 1, "segmentSha": ["a", "b"]}, ""
+
+    vectors = _fake_replay_env(monkeypatch, tmp_path, app_like)
+    plan = tmp_path / "plan.jsonl"
+    args = _replay_args(
+        tmp_path, "b1-B1E", "--turns", "2,6", "--embeddings", str(vectors), "--embed-model", MODEL, "--embed-dims", "3",
+        "--embed-plan-out", str(plan),
+    )  # fmt: skip
+    assert main(args) == 0
+    assert [json.loads(line)["text"] for line in plan.read_text(encoding="utf-8").splitlines()] == [
+        f"빠진 질의 {t}" for t in range(2, 7)
+    ]
+    assert state.exists(voyage_backoff.VOYAGE_BACKOFF_KEY) == 0
+
+
+def test_trajectory_replay_writes_the_summary_json_to_its_own_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """검사 줄이 읽는 요약 JSON 은 화면 출력과 따로 파일로도 남는다 — 화면은 경고 줄과 섞여 JSON 으로 읽히지 않을 수 있다."""
+    from redis.asyncio import Redis
+
+    from api.chat import voyage_backoff
+    from memory_eval_cli import main
+
+    monkeypatch.setattr(voyage_backoff, "redis_client", Redis.from_url(settings.redis_url, decode_responses=True))
+
+    async def app_like(
+        *_: object,
+        turn: int,
+        arm: str,
+        embeddings: eo.EmbeddingTable | None,
+        missing: list[dict[str, str]] | None,
+        **__: object,
+    ) -> tuple[dict[str, object], str]:
+        await _app_query_step(embeddings, missing, f"빠진 질의 {turn}")
+        return {"turn": turn, "arm": arm, "queryOutcome": "failed", "snapshotsSeen": 1, "segmentSha": ["a", "b"]}, ""
+
+    vectors = _fake_replay_env(monkeypatch, tmp_path, app_like)
+    summary = tmp_path / "summary" / "plan.json"
+    args = _replay_args(
+        tmp_path, "b1-B1E", "--turns", "2,3", "--embeddings", str(vectors), "--embed-model", MODEL, "--embed-dims", "3",
+        "--embed-plan-out", str(tmp_path / "plan.jsonl"), "--summary-out", str(summary),
+    )  # fmt: skip
+    assert main(args) == 0
+    written = json.loads(summary.read_text(encoding="utf-8"))
+    assert written == {"embedPlan": str(tmp_path / "plan.jsonl"), "missingQueries": 2, "trajectoryWritten": False}
+    assert json.loads(capsys.readouterr().out) == written
+
+
+def test_full_replay_keeps_the_apps_voyage_backoff_and_writes_no_summary_file_unasked(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """계획 모드가 아닌 본 재조립은 앱의 Voyage 백오프 자리를 그대로 둔다 — 실제 Redis 에 남은 멈춤 키를 그대로 존중해야
+    질의 임베딩이 빠진 궤적을 `require_query_embedded` 가 잡는다. `--summary-out` 을 주지 않으면 요약 파일도 만들지 않는다."""
+    from api.chat import voyage_backoff
+    from memory_eval_cli import main
+
+    original = object()
+    monkeypatch.setattr(voyage_backoff, "redis_client", original)
+    seen: list[bool] = []
+
+    async def embedded(*_: object, turn: int, arm: str, **__: object) -> tuple[dict[str, object], str]:
+        seen.append(vars(voyage_backoff)["redis_client"] is original)
+        return {"turn": turn, "arm": arm, "queryOutcome": "ok", "snapshotsSeen": 1, "segmentSha": ["a", "b"]}, ""
+
+    vectors = _fake_replay_env(monkeypatch, tmp_path, embedded)
+    before = {p for p in tmp_path.rglob("*") if p.is_file()}
+    args = _replay_args(
+        tmp_path, "b1-B1E", "--turns", "2,3", "--embeddings", str(vectors), "--embed-model", MODEL, "--embed-dims", "3"
+    )
+    assert main(args) == 0
+    assert seen and all(seen)
+    written = {p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file()} - {
+        p.relative_to(tmp_path).as_posix() for p in before
+    }
+    assert written == {"out/trajectory-b1-B1E.jsonl", "out/trajectory-b1-B1E-bare.jsonl"}
+
+
+def test_plan_mode_backoff_off_puts_the_apps_redis_slot_back_after_the_block_and_after_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """빈 상태는 블록 안에서만 앱 모듈 자리에 있다 — 블록이 끝나거나 블록 안에서 예외가 나도 원래 객체로 돌아와야 한 프로세스의
+    다음 일(본 재조립)이 실제 백오프 상태를 본다. 테스트 끝의 자동 복원에 가려지지 않게 블록 직후에 본다."""
+    from api.chat import voyage_backoff
+
+    original = object()
+    monkeypatch.setattr(voyage_backoff, "redis_client", original)
+    with oe.plan_mode_backoff_off():
+        assert vars(voyage_backoff)["redis_client"] is not original
+    assert vars(voyage_backoff)["redis_client"] is original
+
+    with pytest.raises(RuntimeError, match="블록 안 실패"), oe.plan_mode_backoff_off():
+        raise RuntimeError("블록 안 실패")
+    assert vars(voyage_backoff)["redis_client"] is original
 
 
 def test_replay_applies_the_given_hybrid_settings_and_restores_them() -> None:
