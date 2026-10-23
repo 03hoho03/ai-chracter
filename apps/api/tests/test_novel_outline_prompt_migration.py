@@ -365,7 +365,8 @@ async def test_upgrade_copies_admin_edited_sets_whose_chains_were_published_at_d
     활성이 된다. 깨지는 시나리오: 레인만 보는 활성 조회가 Gemini 를 집는지 보는 검사가 남아 운영 배포가 멈추거나, 시드 원문으로
     덮어 운영자가 고친 문안이 사라진다."""
     await _undo(db_session)
-    # 이전 시드보다 나중이어야 활성이다. 체인마다 1분씩 늦게 게시해 레인 전체의 최신은 opus 다.
+    # 체인마다 한 시간씩 늦게 게시해 레인 전체의 최신은 opus 다. 지금보다 뒤(시계가 어긋난 서버의 게시)로 두어, 새 세트 시각이
+    # "지금"이 아니라 "그 체인 활성 + 1초"여야 활성이 되는 경우까지 본다.
     published = [(await _get_set(db_session, _PREVIOUS_SET_IDS[model])).published_at for model in _MODELS]
     previous_at = max(at for at in published if at is not None)
     edited = {
@@ -373,7 +374,7 @@ async def test_upgrade_copies_admin_edited_sets_whose_chains_were_published_at_d
             db_session,
             _PREVIOUS_SET_IDS[model],
             status="published",
-            published_at=previous_at + timedelta(minutes=offset),
+            published_at=previous_at + timedelta(hours=offset),
             edit=f"\n(운영 수정 {model})",
         )
         for offset, model in enumerate(_MODELS, start=1)

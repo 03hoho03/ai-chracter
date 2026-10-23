@@ -150,7 +150,10 @@ async def test_bedrock_turns_thinking_off_only_where_the_model_takes_it(
 async def test_anthropic_sends_the_chosen_models_id_with_the_instruction_as_system(
     monkeypatch: pytest.MonkeyPatch, recorded: list[tuple[str, str]], model: ChatModelId
 ) -> None:
-    """직결 구현도 고른 모델의 id 와 `system` 을 싣는다. 사고는 싣지 않고 깊이만 — 판정·요약과 같은 규칙이다."""
+    """직결 구현도 고른 모델의 id 와 `system` 을 싣는다. 사고는 싣지 않고, 깊이는 판정 몫이 아니라 장 생성 몫의 설정이다. 깨지는
+    시나리오: 판정 원가를 줄이려 판정 깊이를 낮추면 값을 낸 Opus 구성안이 함께 낮은 깊이로 돈다."""
+    monkeypatch.setattr(settings, "anthropic_structured_effort", "low")
+    monkeypatch.setattr(settings, "anthropic_chapter_effort", "high")
     seen: list[httpx2.Request] = []
 
     await _outline(_anthropic(monkeypatch, seen), "novelize_episode_outline", model)
@@ -161,6 +164,7 @@ async def test_anthropic_sends_the_chosen_models_id_with_the_instruction_as_syst
     assert (body["model"], body["system"]) == (sent, "구성안 지시문")
     assert body["max_tokens"] == settings.anthropic_chapter_max_tokens
     assert "thinking" not in body
+    assert body["output_config"]["effort"] == "high"
     assert recorded == [("novelize_episode_outline", sent)]
 
 

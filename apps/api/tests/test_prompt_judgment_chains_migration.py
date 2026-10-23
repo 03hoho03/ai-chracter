@@ -34,6 +34,9 @@ def _load(revision: str) -> ModuleType:
 
 
 _M = _load("1a843a0b2d8f")
+# 소설 레인 세 체인에 구성안 문안을 심은 리비전의 세트 — 다른 레인과 무관하지만 전역 버전 번호를 이 리비전 뒤에서 이어
+# 쓰므로 버전 차례를 보는 시험에서 뺀다.
+_NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values())
 # 이 리비전 직전의 Claude 활성 세트 — 테스트 DB에서는 모델 축 리비전이 심은 시드다(그 뒤 Claude 채팅 체인에 게시한
 # 리비전이 없다).
 _PREVIOUS_CLAUDE_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("e6aa289fea62").NEW_SET_IDS
@@ -271,7 +274,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
     others = (
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
-                PromptSet.status == "published", PromptSet.id.not_in(order)
+                PromptSet.status == "published", PromptSet.id.not_in(order), PromptSet.id.not_in(_NOVEL_OUTLINE_SET_IDS)
             )
         )
     ).all()

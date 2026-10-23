@@ -24,7 +24,7 @@ from anthropic.types import ThinkingConfigParam
 from pydantic import BaseModel
 
 from api.core.config import ClaudeEffort, settings
-from api.llm.backends import turns_off_structured_thinking
+from api.llm.backends import follows_carried_model, turns_off_structured_thinking
 from api.llm.call_policy import CALL_POLICIES
 from api.llm.chat_models import backend_model_id, structured_call_model
 from api.llm.claude_messages import (
@@ -246,7 +246,13 @@ class AnthropicLLMClient(LLMClient):
         self, prompt: str, response_schema: type[T], system: str | None, usage: LLMCallContext, method: str
     ) -> T:
         model = backend_model_id("anthropic", structured_call_model(usage.call_site, usage.model))
-        thinking, effort = _structured_reasoning(model)
+        if follows_carried_model(usage.call_site):
+            # 사용자가 고른 글쓰기 모델로 내는 유료 구조화(소설 구성안)는 판정 몫의 깊이가 아니라 그 호출 위치의 깊이(장 생성과
+            # 같은 프로필)로 간다 — 판정 원가를 줄이려 판정 깊이를 낮추면 값을 낸 구성안의 품질까지 함께 내려가지 않게. 사고는
+            # 생성과 같이 싣지 않는다(글쓰기 모델은 끌 수 없다).
+            thinking, effort = None, _effort(usage.call_site)
+        else:
+            thinking, effort = _structured_reasoning(model)
         output_config = structured_output_config(response_schema)
         if effort is not None:
             output_config["effort"] = effort

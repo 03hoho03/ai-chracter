@@ -114,7 +114,7 @@ def test_outline_flow_jobs_are_priced_per_model_and_a_manuscript_is_one_episode(
     시나리오: 구성안이 화 단가로 차감되거나, 원고가 실린 화 수만큼 곱해진다."""
     assert [billing.job_price("outline_generate", model, n) for n in (1, 4)] == [outline, outline]
     assert [billing.job_price("episode_outline_generate", model, n) for n in (1, 4)] == [episode_outline] * 2
-    assert billing.job_price("outline_chapter_generate", model) == manuscript
+    assert [billing.job_price("outline_chapter_generate", model, n) for n in (1, 4)] == [manuscript, manuscript]
 
 
 def test_the_outline_prices_are_read_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:

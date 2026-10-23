@@ -38,6 +38,9 @@ def _load(revision: str) -> ModuleType:
 
 
 _M = _load("e4e407a62d03")
+# 소설 레인 세 체인에 구성안 문안을 심은 리비전의 세트 — 다른 레인과 무관하지만 전역 버전 번호를 이 리비전 뒤에서 이어
+# 쓰므로 버전 차례를 보는 시험에서 뺀다.
+_NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values())
 # 사실 추출 채널을 심은 리비전 — 옛 지시문의 출처이고, 판정 전용 체인(haiku)의 이 리비전 직전 활성 세트다.
 _FACT_MIGRATION = _load("5cab2abe4e7b")
 # 글을 쓰는 세 체인의 이 리비전 직전 활성 세트(회상 문안만 바꾼 리비전 — 그 사이에 프롬프트를 게시한 리비전이 없다).
@@ -235,7 +238,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
                 PromptSet.status == "published",
-                PromptSet.id.not_in(order),
+                PromptSet.id.not_in(order), PromptSet.id.not_in(_NOVEL_OUTLINE_SET_IDS),
                 PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SCENE_JUDGMENT.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_EPISODE_KNOWN_BY.NEW_SET_IDS.values())),

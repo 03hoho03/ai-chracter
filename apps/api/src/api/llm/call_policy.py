@@ -146,7 +146,9 @@ class CallPolicy:
     # Claude 로 가는 판정·요약(구조화)은 이 프로필의 타임아웃이 아니라 위 `gemini_timeout` 값으로 끊고(판정 하나가 턴을 붙잡는
     # 시간이 공급자에 따라 늘지 않게), 출력 상한은 `chat` 프로필 값을 쓴다. 사고 깊이는 이 프로필이 아니라 판정·요약 몫의
     # 설정(`anthropic_structured_effort`)이고 직접 API 구현에만 해당한다 — Bedrock 구현은 판정·요약에서 사고를 끄고 깊이를
-    # 보내지 않으며, 직접 API 구현도 깊이를 받지 않는 모델(Haiku 4.5)에는 싣지 않는다.
+    # 보내지 않으며, 직접 API 구현도 깊이를 받지 않는 모델(Haiku 4.5)에는 싣지 않는다. 사용자가 고른 모델로 가는 구조화
+    # 호출(소설 구성안)은 판정이 아니라 유료 글쓰기 계획이라 이 프로필의 출력 상한과 직접 API 깊이를 쓰고, 타임아웃은 다른
+    # 구조화 호출처럼 `gemini_timeout` 값이다(구성안 두 행은 장 생성의 값을 적었다).
     claude_limits: Literal["chat", "chapter"] = "chat"
     # Claude 에 빌더가 나눈 프롬프트 블록을 캐시 체크포인트와 함께 보내는가(채팅 턴 생성과 그 측정용 다시 생성).
     claude_cache_checkpoint: bool = False

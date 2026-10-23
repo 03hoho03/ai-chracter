@@ -38,6 +38,9 @@ def _load(revision: str) -> ModuleType:
 
 
 _M = _load("0aeadefcf159")
+# 소설 레인 세 체인에 구성안 문안을 심은 리비전의 세트 — 다른 레인과 무관하지만 전역 버전 번호를 이 리비전 뒤에서 이어
+# 쓰므로 버전 차례를 보는 시험에서 뺀다.
+_NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values())
 # 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로
 # story 초안은 이것도 거친다.
 _SCENE_JUDGMENT = _load("0346abdbcc92")
@@ -211,7 +214,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
                 PromptSet.status == "published",
-                PromptSet.id.not_in(order),
+                PromptSet.id.not_in(order), PromptSet.id.not_in(_NOVEL_OUTLINE_SET_IDS),
                 PromptSet.id.not_in(list(_SCENE_JUDGMENT.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_FACT_KNOWN_BY_ORDER.NEW_SET_IDS.values())),
