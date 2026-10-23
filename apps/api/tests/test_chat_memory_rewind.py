@@ -1655,6 +1655,35 @@ async def test_a_summary_write_answers_with_what_it_saved_even_if_the_room_is_de
 
 
 @pytest.mark.parametrize(
+    ("method", "body", "expected"),
+    [("PUT", {"note": "새 메모"}, "새 메모"), ("DELETE", None, "")],
+    ids=["save note", "clear note"],
+)
+async def test_a_note_write_answers_with_what_it_saved_even_if_the_room_is_deleted_right_after(
+    committed_engine: AsyncEngine,
+    db_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    body: dict[str, object] | None,
+    expected: str,
+) -> None:
+    """노트 저장·비우기는 성공해 커밋했다. 그 직후 방이 지워져도 응답은 저장한 노트여야 한다 — 커밋 뒤에 방 행을
+    다시 읽으면 빈 결과로 500 이 나고, 화면은 저장이 실패한 줄 안다."""
+    room = await _seed_committed_room(committed_engine, turns=1)
+    async with async_sessionmaker(committed_engine, expire_on_commit=False)() as session:
+        await session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(memory_note="옛 메모"))
+        await session.commit()
+
+    resp = await _request_with_the_room_deleted_right_after_commit(
+        committed_engine, db_client, monkeypatch, room, method, f"/chat-rooms/{room.room_id}/memory/note", body
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["note"] == expected
+    assert await _committed_version(committed_engine, room) is None
+
+
+@pytest.mark.parametrize(
     ("path", "body"),
     [("summary", {"summary": "고친 요약", "version": 0}), ("summary/revert", {"version": 0})],
     ids=["edit summary", "revert summary"],
