@@ -410,6 +410,53 @@ def test_trajectory_replay_writes_the_summary_json_to_its_own_file(
     assert json.loads(capsys.readouterr().out) == written
 
 
+def test_full_replay_keeps_the_apps_voyage_backoff_and_writes_no_summary_file_unasked(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """계획 모드가 아닌 본 재조립은 앱의 Voyage 백오프 자리를 그대로 둔다 — 실제 Redis 에 남은 멈춤 키를 그대로 존중해야
+    질의 임베딩이 빠진 궤적을 `require_query_embedded` 가 잡는다. `--summary-out` 을 주지 않으면 요약 파일도 만들지 않는다."""
+    from api.chat import voyage_backoff
+    from memory_eval_cli import main
+
+    original = object()
+    monkeypatch.setattr(voyage_backoff, "redis_client", original)
+    seen: list[bool] = []
+
+    async def embedded(*_: object, turn: int, arm: str, **__: object) -> tuple[dict[str, object], str]:
+        seen.append(vars(voyage_backoff)["redis_client"] is original)
+        return {"turn": turn, "arm": arm, "queryOutcome": "ok", "snapshotsSeen": 1, "segmentSha": ["a", "b"]}, ""
+
+    vectors = _fake_replay_env(monkeypatch, tmp_path, embedded)
+    before = {p for p in tmp_path.rglob("*") if p.is_file()}
+    args = _replay_args(
+        tmp_path, "b1-B1E", "--turns", "2,3", "--embeddings", str(vectors), "--embed-model", MODEL, "--embed-dims", "3"
+    )
+    assert main(args) == 0
+    assert seen and all(seen)
+    written = {p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file()} - {
+        p.relative_to(tmp_path).as_posix() for p in before
+    }
+    assert written == {"out/trajectory-b1-B1E.jsonl", "out/trajectory-b1-B1E-bare.jsonl"}
+
+
+def test_plan_mode_backoff_off_puts_the_apps_redis_slot_back_after_the_block_and_after_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """빈 상태는 블록 안에서만 앱 모듈 자리에 있다 — 블록이 끝나거나 블록 안에서 예외가 나도 원래 객체로 돌아와야 한 프로세스의
+    다음 일(본 재조립)이 실제 백오프 상태를 본다. 테스트 끝의 자동 복원에 가려지지 않게 블록 직후에 본다."""
+    from api.chat import voyage_backoff
+
+    original = object()
+    monkeypatch.setattr(voyage_backoff, "redis_client", original)
+    with oe.plan_mode_backoff_off():
+        assert vars(voyage_backoff)["redis_client"] is not original
+    assert vars(voyage_backoff)["redis_client"] is original
+
+    with pytest.raises(RuntimeError, match="블록 안 실패"), oe.plan_mode_backoff_off():
+        raise RuntimeError("블록 안 실패")
+    assert vars(voyage_backoff)["redis_client"] is original
+
+
 def test_replay_applies_the_given_hybrid_settings_and_restores_them() -> None:
     """재조립 프로세스의 하이브리드 설정은 `.env` 가 아니라 실행 인자(측정 서버에 준 값)로 정한다 — df 상한 '없음'도."""
     saved = {name: getattr(settings, name) for name in eo.CONFIG_NAMES}
