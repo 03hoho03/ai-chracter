@@ -32,6 +32,7 @@ const LINK_CLASS = "admin-hit-area font-medium text-primary hover:underline focu
 const SUCCESS_MESSAGE: Record<NovelReportActionValues["action"], string> = {
   stop_sales: "노벨 판매를 멈추고 신고를 처리했어요.",
   restrict: "노벨을 이용제한하고 신고를 처리했어요.",
+  illustration_takedown: "그림 내림으로 신고를 처리했어요.",
   reject: "신고를 반려했어요.",
 };
 
@@ -42,7 +43,11 @@ const STOP_SALES_NOTE = "판매만 멈춰요. 노벨 목록·홈에서 빠지고
 const GONE_MESSAGE: Record<Exclude<NovelReportActionValues["action"], "reject">, string> = {
   restrict: "그사이 노벨이 지워져 이용제한할 대상이 없어요. 반려로 처리해주세요.",
   stop_sales: "그사이 노벨이 지워져 판매를 멈출 대상이 없어요. 반려로 처리해주세요.",
+  illustration_takedown: "그사이 노벨이 지워져 그림 내림으로 처리할 대상이 없어요. 반려로 처리해주세요.",
 };
+
+/** '삽화 내림으로 처리 완료'를 골랐는데 그 노벨에 내린 그림이 하나도 없을 때(409) — 사유는 그대로 두고 먼저 내리라고 말한다. */
+const NOT_TAKEN_DOWN_MESSAGE = "이 노벨에서 내린 그림이 아직 없어요. 노벨 상세에서 그림을 먼저 내려 주세요.";
 
 type NovelReportActionPanelProps = {
   report: NovelReportDetail;
@@ -51,12 +56,13 @@ type NovelReportActionPanelProps = {
 };
 
 /** 노벨 신고 처리. 이미 처리된 신고도 다시 처리할 수 있어(상태·처리자·시각을 덮어쓴다) 늘 그린다. 노벨이 지워져 이용제한·판매
- * 중단할 대상이 없으면 서버가 409 `NOVEL_GONE` 을 내는데, 응답에 이미 `novelId` 가 비어 있으면 그 처리를 미리 막고 반려만 남긴다 —
+ * 중단·그림 내림으로 처리할 대상이 없으면 서버가 409 `NOVEL_GONE` 을 내는데, 응답에 이미 `novelId` 가 비어 있으면 그 처리를 미리 막고 반려만 남긴다 —
  * 409 는 상세를 연 뒤 지워진 경우에만 닿는다. 해제는 신고가 아니라 노벨 상세에서 한다(서버 신고 처리에 해제가 없다). */
 export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionPanelProps) {
   const id = useId();
   const queryClient = useQueryClient();
-  const [goneMessage, setGoneMessage] = useState<string | null>(null);
+  // 처리를 받지 않은 이유(지워진 노벨·내린 그림 없음) — 고른 처리와 사유 곁에 남겨 운영자가 읽고 바꾸게 한다.
+  const [rejectionMessage, setRejectionMessage] = useState<string | null>(null);
   const mutation = useNovelReportActionMutation(report.id, {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: adminNovelKeys.all }),
   });
@@ -70,7 +76,7 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
   const isPolicyOn = useSessionQuery().data?.novelPublicPolicyV2Enabled === true;
 
   async function handleValidSubmit(values: NovelReportActionValues) {
-    setGoneMessage(null);
+    setRejectionMessage(null);
     try {
       await mutation.mutateAsync(values);
       toast.success(SUCCESS_MESSAGE[values.action]);
@@ -79,9 +85,15 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
     } catch (error) {
       if (apiErrorCode(error) === "NOVEL_GONE" && values.action !== "reject") {
         // 지워진 노벨은 되돌아오지 않는다 — 상세를 새로 읽어 조치를 막고, 반려를 고르게 둔다.
-        setGoneMessage(GONE_MESSAGE[values.action]);
+        setRejectionMessage(GONE_MESSAGE[values.action]);
         form.setValue("action", "reject");
         await queryClient.invalidateQueries({ queryKey: reportKeys.all });
+        return;
+      }
+      // 그림 내림으로 닫으려면 그 노벨의 어느 판 그림이든 하나는 내려가 있어야 한다 — 고른 처리·사유를 그대로 두어, 노벨
+      // 상세에서 그림을 내리고 돌아와 다시 누르면 된다.
+      if (apiErrorCode(error) === "NOVEL_ILLUSTRATION_NOT_TAKEN_DOWN") {
+        setRejectionMessage(NOT_TAKEN_DOWN_MESSAGE);
         return;
       }
       // 그사이 정책 스위치가 꺼져 판매 중단을 받지 않는다 — 세션을 새로 받아 선택지를 꺼짐 화면으로 돌리고 고른 값을 비운다.
@@ -111,8 +123,8 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
           <Link to="/novels/$novelId" params={{ novelId: report.novelId }} className={LINK_CLASS}>
             노벨 상세
           </Link>
-          의 공개본 화를 펼쳐 그 그림만 내리세요(환급 없음). 그림 내림은 이 신고와 이어지지 않아, 내린 뒤 이 신고는 반려로
-          닫고 조치 사유에 그림을 내렸다고 적어 주세요.
+          의 공개본 화를 펼쳐 그 그림만 내리세요(환급 없음). 지난 판의 그림은 화 펼침에서 판을 골라 내려요. 내린 뒤 이 신고는
+          &lsquo;삽화 내림으로 처리 완료&rsquo;로 닫아 주세요.
         </p>
       )}
       {report.novelModerationStatus === "restricted" && (
@@ -157,6 +169,11 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
                   ? [{ value: "stop_sales" as const, label: NOVEL_REPORT_ACTION_LABELS.stop_sales, disabled: isNovelGone }]
                   : []),
                 { value: "restrict", label: NOVEL_REPORT_ACTION_LABELS.restrict, disabled: isNovelGone },
+                {
+                  value: "illustration_takedown",
+                  label: NOVEL_REPORT_ACTION_LABELS.illustration_takedown,
+                  disabled: isNovelGone,
+                },
                 { value: "reject", label: NOVEL_REPORT_ACTION_LABELS.reject },
               ]}
             />
@@ -185,9 +202,9 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
         {isPolicyOn && action === "stop_sales" && (
           <p className="text-sm break-keep text-muted-foreground">{STOP_SALES_NOTE}</p>
         )}
-        {!!goneMessage && (
+        {!!rejectionMessage && (
           <p role="alert" className="break-keep text-sm text-destructive-text">
-            {goneMessage}
+            {rejectionMessage}
           </p>
         )}
         <Button
