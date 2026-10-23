@@ -276,9 +276,10 @@ async def test_an_oversized_selection_is_refused_before_charging_with_a_reduce_s
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, enqueued: list[uuid.UUID]
 ) -> None:
     """고른 원문의 입력 견적이 상한을 넘으면 모델을 부르기 전·차감 전에 422 `NOVEL_OUTLINE_INPUT_TOO_LARGE` 이고, 견적과 상한을
-    함께 싣는다(화면이 "구간을 줄여 주세요"를 띄운다). 상한 안이면 같은 선택이 받아진다. 깨지는 시나리오: 넘는 입력을 조용히
+    함께 싣는다(화면이 "구간을 줄여 주세요"를 띄운다). 맥락 구간도 입력이라 견적에 든다 — 맥락을 뺀 선택은 견적이 줄고, 그 견적이
+    상한 안이면 받아진다. 깨지는 시나리오: 넘는 입력을 조용히
     잘라 보내거나, 호출이 실패한 뒤에야 알려 원가만 나간다."""
-    room_id, novel_id, _ = await _ready(db_client, db_session, monkeypatch)
+    room_id, novel_id, ms = await _ready(db_client, db_session, monkeypatch)
     monkeypatch.setattr(settings, "novelize_outline_max_input_tokens", 10)
 
     refused = await _request(db_client, novel_id)
@@ -292,7 +293,11 @@ async def test_an_oversized_selection_is_refused_before_charging_with_a_reduce_s
     assert user_id is not None
     assert await _novel_ledger(db_session, user_id) == []
 
-    monkeypatch.setattr(settings, "novelize_outline_max_input_tokens", detail["estimatedInputTokens"])
+    await _select(db_client, novel_id, ms, (_SECTIONS[0], _SECTIONS[2]))
+    without_context = (await _request(db_client, novel_id)).json()["detail"]["estimatedInputTokens"]
+    assert without_context < detail["estimatedInputTokens"]
+
+    monkeypatch.setattr(settings, "novelize_outline_max_input_tokens", without_context)
     assert (await _request(db_client, novel_id)).status_code == 202
 
 
@@ -643,6 +648,25 @@ def test_the_episode_hint_is_the_source_length_formula_without_the_batch_cap_and
     monkeypatch.setattr(settings, "novelize_outline_max_episodes", 30)
 
     assert [episode_hint(chars) for chars in (0, 3_000, 50_000, 1_000_000)] == [1, 1, 8, 30]
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_an_outline_whose_include_text_changed_and_was_reselected_is_stale(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _OutlineLLM,
+) -> None:
+    """같은 양 끝의 include 구간이라도 원문이 바뀐 뒤 다시 골라 승인했으면(해시가 다르면) 그 구간으로 만든 구성안은 낡았다. 깨지는
+    시나리오: 바뀐 대화를 본 적 없는 구성안이 승인돼 다음 단계가 옛 줄거리로 새 원문을 쓴다."""
+    novel_id, ms, _ = await _generated(db_client, db_session, monkeypatch, enqueued, llm)
+    await _rewrite(db_session, ms[10], "고친 글")
+
+    await _select(db_client, novel_id, await _room_messages(db_session, ms[0].chat_room_id), _SECTIONS)
+
+    assert (await db_client.get(f"/novels/{novel_id}/outline")).json()["draft"]["stale"] is True
+    assert _code(await _approve(db_client, novel_id, 1)) == (409, "NOVEL_OUTLINE_STALE")
 
 
 # ── 편집·승인 ───────────────────────────────────────────────────────────────
