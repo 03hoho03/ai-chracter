@@ -31,6 +31,7 @@ from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
 from api.novel_public.no_store import NoStoreRoute
 from api.novelize.access import require_novelize_access
+from api.novelize.billing import _lock_user
 from api.novelize.router import _novel_error, _owned_novel_dependency
 from api.novelize.selection import (
     hits_locked,
@@ -229,6 +230,9 @@ async def save_source_selection_draft(
     먼저 저장함) 409 `NOVEL_SOURCE_SELECTION_CONFLICT`. 구간 검증 실패는 `_checked_sections` 의 422 들이고, 그때는 아무것도 바뀌지
     않는다."""
     room_id = _room_id(novel)
+    # 사용자 행을 먼저 잡는다 — 구성안 작업의 저장이 같은 잠금 아래에서 "근거 구간이 지금 선택에 있는가"를 보고 저장하므로, 그
+    # 확인과 이 저장·승인이 줄을 서야 확인 직후에 바뀐 선택을 놓치지 않는다.
+    await _lock_user(db, novel.user_id)
     latest = await _latest_selection(db, novel.id)
     if (None if latest is None else latest.revision) != payload.base_revision:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_SELECTION_CONFLICT")
@@ -287,6 +291,7 @@ async def approve_source_selection(
     저장 뒤 바뀌었으면 409 `NOVEL_SOURCE_SELECTION_SOURCE_CHANGED`(다시 저장해 지금 원문으로 고른다 — 화 다시 만들기의
     원문 변경 코드와 할 일이 달라 코드를 나눈다) — 둘 다 초안은 그대로 남는다."""
     room_id = _room_id(novel)
+    await _lock_user(db, novel.user_id)  # 초안 저장과 같은 이유
     latest = await _latest_selection(db, novel.id)
     if latest is None or latest.revision != payload.revision:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_SELECTION_CONFLICT")

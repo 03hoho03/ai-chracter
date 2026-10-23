@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat.memory_window import MessageKey
 from api.chat.prompt_builder import load_active_prompt_set
 from api.core.config import settings
+from api.db.models.chat import ChatMessageRole
 from api.db.models.novel import Novel, NovelSourceSection
 from api.llm.chat_models import ChatModelId
 from api.novelize.episodes import source_chars
@@ -62,7 +63,6 @@ from api.novelize.source import (
     format_turn_lines,
     group_turns,
     novel_prompt_names,
-    range_shape,
     read_source,
     room_message_keys,
     segment_hash,
@@ -299,10 +299,12 @@ async def checked_episodes(
     - `basis_not_found`: 근거의 양 끝 메시지가 이 방에 없다(지워졌다).
     - `basis_outside_include`: 근거 구간이 그 구성안이 쓴 선택의 include 구간 하나 안에 있지 않거나 시작 > 끝이다 — 고르지 않은
       대화나 맥락 구간은 화의 근거가 될 수 없다.
-    - `basis_overlap`: 한 화 안의 근거가 키 순이 아니거나, 근거가 다른 화와 겹친다(한 턴이 두 화에 들어간다).
-    - `no_reply`: 화의 근거에 모델 응답이 하나도 없다.
+    - `basis_overlap`: 한 화 안의 근거가 키 순이 아니거나, 근거가 다른 화와 겹친다.
+    - `basis_splits_turn`: 근거가 턴 경계에서 시작·끝나지 않는다 — 시작은 그 include 구간의 첫 메시지이거나 모델 응답 바로 뒤
+      메시지, 끝은 모델 응답이어야 한다. 턴(사용자 말과 그 응답)을 메시지 단위로 두 화에 나누면 다음 단계가 턴으로 묶을 때 끝에
+      남은 사용자 말이 버려져, 고른 말이 조용히 빠진다. 끝이 응답이므로 화마다 응답이 하나 이상 있다.
 
-    화의 순서는 자유다(회상 화를 앞에 둘 수 있다). 근거는 관문으로 다시 읽어 응답 수만 본다."""
+    화의 순서는 자유다(회상 화를 앞에 둘 수 있다). 턴 경계는 근거가 든 include 구간을 관문으로 다시 읽어 본다."""
     if len(episodes) > settings.novelize_outline_max_episodes:
         raise OutlineInvalidError("too_many_episodes")
     keys: list[str] = []
@@ -318,26 +320,30 @@ async def checked_episodes(
         raise OutlineInvalidError("basis_not_found")
     sections = [section_key(row) for row in _include_rows(await selection_sections(db, selection_id))]
     all_ranges: list[tuple[MessageKey, MessageKey]] = []
+    section_messages: dict[int, list[Any]] = {}
     for episode in episodes:
         previous: MessageKey | None = None
         for basis in episode.basis:
             start, end = found[basis.start_message_id], found[basis.end_message_id]
-            if start > end or not any(lo <= start and end <= hi for lo, hi in sections):
+            index = next((i for i, (lo, hi) in enumerate(sections) if lo <= start and end <= hi), None)
+            if start > end or index is None:
                 raise OutlineInvalidError("basis_outside_include")
             if previous is not None and start <= previous:
                 raise OutlineInvalidError("basis_overlap")
             previous = end
             all_ranges.append((start, end))
+            if index not in section_messages:
+                section_messages[index] = await read_source(db, room_id, [SourceRange(*sections[index])])
+            ids = [message.id for message in section_messages[index]]
+            first, last = ids.index(basis.start_message_id), ids.index(basis.end_message_id)
+            messages = section_messages[index]
+            if messages[last].role != ChatMessageRole.ASSISTANT or (
+                first > 0 and messages[first - 1].role != ChatMessageRole.ASSISTANT
+            ):
+                raise OutlineInvalidError("basis_splits_turn")
     all_ranges.sort()
     if any(later[0] <= earlier[1] for earlier, later in pairwise(all_ranges)):
         raise OutlineInvalidError("basis_overlap")
-    for episode in episodes:
-        replies = 0
-        for basis in episode.basis:
-            shape = await range_shape(db, room_id, SourceRange(found[basis.start_message_id], found[basis.end_message_id]))
-            replies += shape.assistant_message_count
-        if replies == 0:
-            raise OutlineInvalidError("no_reply")
 
     return [
         {

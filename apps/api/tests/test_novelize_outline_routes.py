@@ -733,7 +733,7 @@ async def test_an_edit_on_a_stale_base_revision_is_a_conflict(
 @pytest.mark.usefixtures("outline_flow_on")
 @pytest.mark.parametrize(
     "case",
-    ["excluded_gap", "context_section", "overlapping_episodes", "unknown_key", "repeated_key", "no_reply", "over_cap"],
+    ["excluded_gap", "context_section", "overlapping_episodes", "unknown_key", "repeated_key", "no_reply", "split_turn", "over_cap"],
 )
 async def test_an_edit_whose_basis_leaves_the_included_turns_is_refused(
     db_client: httpx.AsyncClient,
@@ -744,9 +744,10 @@ async def test_an_edit_whose_basis_leaves_the_included_turns_is_refused(
     case: str,
 ) -> None:
     """편집한 화 근거는 그 구성안이 쓴 선택의 include 구간 안이어야 하고, 화끼리 겹치지 않으며, 화마다 모델 응답이 하나 이상
-    있어야 한다. 화 키는 기준 리비전의 것이거나 새 화(null)이고 겹치지 않는다. 화 수는 상한 안이다. 어기면 422
+    있어야 한다 — 근거는 턴 경계에서 시작해 모델 응답으로 끝나므로 한 턴을 두 화에 메시지 단위로 나눌 수 없다. 화 키는 기준
+    리비전의 것이거나 새 화(null)이고 겹치지 않는다. 화 수는 상한 안이다. 어기면 422
     `NOVEL_OUTLINE_INVALID` 이고 리비전이 생기지 않는다. 깨지는 시나리오: 편집으로 빼기로 한 대화·맥락 구간을 화 근거에 넣어 다음
-    단계가 그 원문을 모델에 보내거나, 같은 턴이 두 화에 들어가 두 번 쓰인다."""
+    단계가 그 원문을 모델에 보내거나, 같은 턴이 두 화에 들어가 두 번 쓰이거나, 나뉜 턴의 사용자 말이 다음 단계에서 버려진다."""
     novel_id, ms, state = await _generated(db_client, db_session, monkeypatch, enqueued, llm)
     first, second = state["draft"]["episodes"]
     episodes = {
@@ -756,6 +757,10 @@ async def test_an_edit_whose_basis_leaves_the_included_turns_is_refused(
         "unknown_key": [_episode_input(first, key=str(uuid.uuid4())), _episode_input(second)],
         "repeated_key": [_episode_input(first), _episode_input(second, key=first["key"])],
         "no_reply": [_episode_input(first, basis=[_range(ms, 1, 1)]), _episode_input(second)],
+        "split_turn": [
+            _episode_input(first, basis=[_range(ms, 0, 1)]),
+            _episode_input(second, basis=[_range(ms, 2, 4), _range(ms, 9, 12)]),
+        ],
         "over_cap": [_episode_input(first), _episode_input(second)],
     }[case]
     if case == "over_cap":
@@ -764,6 +769,16 @@ async def test_an_edit_whose_basis_leaves_the_included_turns_is_refused(
     response = await _save(db_client, novel_id, 1, episodes)
 
     assert _code(response) == (422, "NOVEL_OUTLINE_INVALID")
+    assert response.json()["detail"]["reason"] == {
+        "excluded_gap": "basis_outside_include",
+        "context_section": "basis_outside_include",
+        "overlapping_episodes": "basis_overlap",
+        "unknown_key": "unknown_key",
+        "repeated_key": "unknown_key",
+        "no_reply": "basis_splits_turn",
+        "split_turn": "basis_splits_turn",
+        "over_cap": "too_many_episodes",
+    }[case]
     assert [r.revision for r in await _outlines(db_session, novel_id)] == [1]
 
 
