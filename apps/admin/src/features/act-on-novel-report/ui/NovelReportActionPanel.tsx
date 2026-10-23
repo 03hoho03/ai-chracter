@@ -90,8 +90,8 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
         await queryClient.invalidateQueries({ queryKey: reportKeys.all });
         return;
       }
-      // 그림 내림으로 닫으려면 그 노벨의 어느 판 그림이든 하나는 내려가 있어야 한다 — 고른 처리·사유를 그대로 두어, 노벨
-      // 상세에서 그림을 내리고 돌아와 다시 누르면 된다.
+      // 그림 내림으로 닫으려면 그 노벨의 어느 판 그림이든 하나는 내려가 있어야 한다 — 이 화면에 머무는 동안은 고른 처리·
+      // 사유를 그대로 둔다(노벨 상세로 옮겨 갔다 돌아오면 패널이 새로 그려져 비어 있다).
       if (apiErrorCode(error) === "NOVEL_ILLUSTRATION_NOT_TAKEN_DOWN") {
         setRejectionMessage(NOT_TAKEN_DOWN_MESSAGE);
         return;
@@ -138,11 +138,7 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
         </p>
       )}
       {isNovelGone && (
-        <p className="break-keep text-sm text-muted-foreground">
-          {isPolicyOn
-            ? "노벨이 지워져 조치할 대상이 없어요. 반려만 할 수 있어요."
-            : "노벨이 지워져 이용제한할 대상이 없어요. 반려만 할 수 있어요."}
-        </p>
+        <p className="break-keep text-sm text-muted-foreground">노벨이 지워져 조치할 대상이 없어요. 반려만 할 수 있어요.</p>
       )}
       <form
         noValidate
