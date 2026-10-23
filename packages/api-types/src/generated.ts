@@ -3605,6 +3605,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/novels/{novel_id}/outline/episodes/{episode_key}/scenes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Episode Outline
+         * @description 한 화의 장면 구성안 화면 상태 — 승인본·초안(낡음 표시 포함), 장면 구성안·원고 가격, 이미 쓴 화. 승인한 전체 구성안이 없으면 409
+         *     `NOVEL_OUTLINE_REQUIRED`, 그 구성안에 없는 화 키면 404 `NOVEL_OUTLINE_EPISODE_NOT_FOUND`.
+         */
+        get: operations["get_episode_outline_novels__novel_id__outline_episodes__episode_key__scenes_get"];
+        put?: never;
+        /**
+         * Create Episode Outline
+         * @description 지금 승인한 전체 구성안의 그 화로 장면 구성안을 만드는 작업(과금, 202). 금액은 고른 모델의 장면 구성안 고정가다.
+         *
+         *     차감 전 거절: 작품 이용 제한·소설화 허락(403), 방 없음 409 `NOVEL_ROOM_GONE`, 주인공 이름 422, 모델 허용 403, 승인 구성안 없음 409
+         *     `NOVEL_OUTLINE_REQUIRED`, 화 키 없음 404 `NOVEL_OUTLINE_EPISODE_NOT_FOUND`, 구성안이 낡음 409 `NOVEL_OUTLINE_STALE`, 이미 원고가 된 화
+         *     409 `NOVEL_OUTLINE_EPISODE_WRITTEN`, 화 근거가 승인 뒤 화가 됨 422 `NOVEL_SOURCE_SECTION_LOCKED`, 원문이 바뀜 409
+         *     `NOVEL_SOURCE_SELECTION_SOURCE_CHANGED`, 입력 견적 상한 초과 422 `NOVEL_OUTLINE_INPUT_TOO_LARGE`, 그리고 차감 함수의 금액 409·진행
+         *     중 409·잔액 429.
+         */
+        post: operations["create_episode_outline_novels__novel_id__outline_episodes__episode_key__scenes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/outline/episodes/{episode_key}/scenes/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Episode Outline Draft
+         * @description 고친 장면 구성안을 기준 리비전 위의 새 미승인 리비전(출처 edit)으로 저장한다(무과금). 기준이 그 화의 가장 최근 리비전이 아니면 409
+         *     `NOVEL_EPISODE_OUTLINE_CONFLICT`, 기준 판이 낡았으면 409 `NOVEL_EPISODE_OUTLINE_STALE`, 장면 목록이 규칙을 어기면 422
+         *     `NOVEL_EPISODE_OUTLINE_INVALID` + `reason`(`scene_outline.checked_scenes`). 방이 지워졌으면 409 `NOVEL_ROOM_GONE`.
+         */
+        put: operations["save_episode_outline_draft_novels__novel_id__outline_episodes__episode_key__scenes_draft_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/outline/episodes/{episode_key}/scenes/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Episode Outline
+         * @description 그 화의 가장 최근 리비전을 승인한다(무과금). 이미 승인한 최신 리비전이면 그대로 돌려준다(두 번 누름). 최신이 아니면 409
+         *     `NOVEL_EPISODE_OUTLINE_CONFLICT`, 낡은 판이면 409 `NOVEL_EPISODE_OUTLINE_STALE`.
+         */
+        post: operations["approve_episode_outline_novels__novel_id__outline_episodes__episode_key__scenes_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/outline/episodes/{episode_key}/chapter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Outline Chapter
+         * @description 그 화의 승인한 장면 구성안으로 원고(화 하나)를 쓰는 작업(과금, 202). 금액은 고른 모델의 화 단가 하나다. 화는 다음 화 번호를 받는다.
+         *
+         *     차감 전 거절은 장면 구성안 만들기와 같은 것에 더해: 구성안에서 앞 화가 아직 원고가 아님 409 `NOVEL_OUTLINE_EPISODE_OUT_OF_ORDER`,
+         *     승인한 장면 구성안 없음 409 `NOVEL_EPISODE_OUTLINE_REQUIRED`, 장면 구성안이 낡음(그 화 근거가 바뀜) 409 `NOVEL_EPISODE_OUTLINE_STALE`,
+         *     장면이 쓰는 턴 수가 고른 모델의 턴 상한 초과 409 `NOVEL_MODEL_INELIGIBLE` + `reason: too_many_turns`. 같은 화를 이미 쓴 화가 있으면
+         *     차감 함수도 사용자 잠금 아래에서 409 `NOVEL_OUTLINE_EPISODE_WRITTEN` 으로 막는다.
+         */
+        post: operations["create_outline_chapter_novels__novel_id__outline_episodes__episode_key__chapter_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/outline/chapters/{chapter_id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate Outline Chapter
+         * @description 구성 흐름 화 하나를 같은 장면 구성안으로 다시 쓰는 작업(과금, 202). 결과는 그 화의 새 개정으로 쌓인다(화 수·화 번호 그대로).
+         *     금액은 고른 모델의 화 단가다.
+         *
+         *     차감 전 거절: 옛 흐름 화 409 `NOVEL_CHAPTER_NOT_OUTLINE_FLOW`(옛 다시 만들기 라우트로 한다), 작품 상태·방·주인공 이름·모델 허용,
+         *     화를 만든 때와 장면 원문이 다름 409 `NOVEL_SOURCE_CHANGED`, 그리고 차감 함수의 모델 적격성 409·금액 409·진행 중 409·하루 상한
+         *     429·잔액 429. 없는 화는 404 `NOVEL_CHAPTER_NOT_FOUND`.
+         */
+        post: operations["regenerate_outline_chapter_novels__novel_id__outline_chapters__chapter_id__regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/novels/{novel_id}/publication": {
         parameters: {
             query?: never;
@@ -12196,6 +12320,86 @@ export interface components {
             purchaseRefunds?: components["schemas"]["NovelPurchaseRefundPreview"];
         };
         /**
+         * NovelEpisodeOutlineApproveRequest
+         * @description 승인할 리비전. 그 화의 가장 최근 리비전이어야 한다.
+         */
+        NovelEpisodeOutlineApproveRequest: {
+            /** Revision */
+            revision: number;
+        };
+        /**
+         * NovelEpisodeOutlineCreateRequest
+         * @description 장면 구성안 만들기(과금). 지금 승인한 전체 구성안의 그 화를 근거로 한다. `expected_cost` 는 조회 상태의 그 모델 가격이다.
+         */
+        NovelEpisodeOutlineCreateRequest: {
+            /** Expectedcost */
+            expectedCost: number;
+            /**
+             * Model
+             * @default gemini
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
+        };
+        /**
+         * NovelEpisodeOutlineSaveRequest
+         * @description 고친 장면 구성안 저장 — 기준 리비전(화면이 본 그 화의 가장 최근 판) 위의 새 미승인 리비전이 된다. 장면을 빼려면 목록에서
+         *     지우고, 차례를 바꾸려면 목록 순서를 바꾼다.
+         */
+        NovelEpisodeOutlineSaveRequest: {
+            /** Baserevision */
+            baseRevision: number;
+            /** Scenes */
+            scenes: components["schemas"]["NovelSceneInput"][];
+        };
+        /**
+         * NovelEpisodeOutlineState
+         * @description 한 화의 장면 구성안 화면 상태. `approved` 는 가장 최근에 승인한 판, `draft` 는 그보다 새 미승인 판이다. `models` 는 장면 구성안
+         *     가격, `chapter_models` 는 원고 가격(화 단가)이고, `chapter_id` 는 이 화를 이미 원고로 쓴 화다(없으면 null).
+         */
+        NovelEpisodeOutlineState: {
+            /**
+             * Episodekey
+             * Format: uuid
+             */
+            episodeKey: string;
+            approved: components["schemas"]["NovelEpisodeOutlineView"] | null;
+            draft: components["schemas"]["NovelEpisodeOutlineView"] | null;
+            /** Models */
+            models: components["schemas"]["NovelOutlineModel"][];
+            /** Chaptermodels */
+            chapterModels: components["schemas"]["NovelOutlineModel"][];
+            /** Chapterid */
+            chapterId: string | null;
+        };
+        /**
+         * NovelEpisodeOutlineView
+         * @description 장면 구성안 한 판. `stale` 이 참이면 지금 승인한 전체 구성안에서 그 화의 근거가 바뀌었거나(또는 화가 빠졌거나) 근거 include
+         *     구간이 지금 구간 선택에서 빠졌다 — 승인·편집·원고에 쓸 수 없고 다시 만들어야 한다.
+         */
+        NovelEpisodeOutlineView: {
+            /** Revision */
+            revision: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "generate" | "edit";
+            /** Model */
+            model: string | null;
+            /** Approvedat */
+            approvedAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Stale */
+            stale: boolean;
+            /** Scenes */
+            scenes: components["schemas"]["NovelSceneView"][];
+        };
+        /**
          * NovelIllustration
          * @description 개정에 붙은 삽화 한 장. `id` 는 이 개정의 배치 id 다 — 옮기기·바꾸기·떼기가 이 값으로 고르고, 개정이 바뀌면 새 id 가 된다.
          *     `anchor_block_id`·`placement` 가 비어 있으면 위치 확인 필요(앵커 문단이 사라진 그림)다. `url` 은 크게 그리는 정지 변형이고,
@@ -12512,6 +12716,20 @@ export interface components {
         NovelOutlineApproveRequest: {
             /** Revision */
             revision: number;
+        };
+        /**
+         * NovelOutlineChapterRequest
+         * @description 구성 흐름 원고 쓰기·다시 만들기(과금). 금액은 고른 모델의 화 단가 하나다.
+         */
+        NovelOutlineChapterRequest: {
+            /** Expectedcost */
+            expectedCost: number;
+            /**
+             * Model
+             * @default gemini
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
         };
         /**
          * NovelOutlineCreateRequest
@@ -12990,6 +13208,54 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+        };
+        /**
+         * NovelSceneInput
+         * @description 고친 장면 하나. `id` 는 기준 리비전에 있던 장면의 id 이고, 나눠서 새로 생긴 장면은 비워 보낸다(서버가 새 id 를 준다).
+         */
+        NovelSceneInput: {
+            /** Id */
+            id?: string | null;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            /** Characters */
+            characters?: string[];
+            /**
+             * Flashback
+             * @default false
+             */
+            flashback: boolean;
+            /** Basis */
+            basis: components["schemas"]["NovelSourceRange"][];
+        };
+        /**
+         * NovelSceneView
+         * @description 장면 구성안의 장면 하나. `id` 는 리비전이 바뀌어도 같은 장면을 가리키는 장면 id 이고, `basis` 는 이 장면의 근거 대화
+         *     구간(양 끝 포함, 키 순)이다 — 근거는 그 화의 근거 구간 안에만 있다. `flashback` 은 회상 장면인가다. 목록 순서가 원고가 쓰는
+         *     장면 차례다.
+         */
+        NovelSceneView: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Purpose */
+            purpose: string;
+            /** Characters */
+            characters: string[];
+            /** Flashback */
+            flashback: boolean;
+            /** Basis */
+            basis: components["schemas"]["NovelSourceRange"][];
         };
         /**
          * NovelSettingNotesRequest
@@ -20047,6 +20313,218 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NovelOutlineState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_episode_outline_novels__novel_id__outline_episodes__episode_key__scenes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_key: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelEpisodeOutlineState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_episode_outline_novels__novel_id__outline_episodes__episode_key__scenes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_key: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelEpisodeOutlineCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_episode_outline_draft_novels__novel_id__outline_episodes__episode_key__scenes_draft_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_key: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelEpisodeOutlineSaveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelEpisodeOutlineState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_episode_outline_novels__novel_id__outline_episodes__episode_key__scenes_approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_key: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelEpisodeOutlineApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelEpisodeOutlineState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_outline_chapter_novels__novel_id__outline_episodes__episode_key__chapter_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_key: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelOutlineChapterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_outline_chapter_novels__novel_id__outline_chapters__chapter_id__regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelOutlineChapterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
                 };
             };
             /** @description Validation Error */
