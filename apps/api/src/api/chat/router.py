@@ -1560,10 +1560,12 @@ async def restore_previous_message(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat room not found")
         setup = await _resolve_starting_setup(db, room)
         restored = await restore_previous_response(db, room, setup, message_id)
+        # 응답은 커밋 전에 만든다 — 방 행 잠금을 기다리던 방 삭제가 커밋 직후 끼어들면 커밋 뒤의 방 응답이 이 방을 못 찾는다.
+        response = await _to_response(db, room, message_limit=message_limit) if restored else None
         await db.commit()
-    if not restored:
+    if response is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "PREVIOUS_RESPONSE_UNAVAILABLE"})
-    return await _to_response(db, room, message_limit=message_limit)
+    return response
 
 
 async def _persona_names(db: AsyncSession, rooms: Sequence[ChatRoom]) -> dict[uuid.UUID, str]:
@@ -2107,12 +2109,15 @@ async def _lock_current_summary_for_edit(
     """요약 편집·되돌리기의 공통 앞부분. 방 행을 먼저 잠그고(요약 접기·되감기와 같은 락) 그 뒤에
     버전과 현재 스냅샷을 읽는다 — 락 전에 읽으면 그사이 커밋된 새 요약을 못 보고 옛 행을 고친다.
     요청의 `version`이 방의 현재 값과 다르면(폼을 연 뒤 요약이 새로 접혔거나 되감겼다) 409, 고칠
-    스냅샷이 없으면(첫 접기 전) 409다. 거절은 아무것도 쓰기 전에 일어나고, 버전은 호출부가 실제로
-    고칠 때만 올린다."""
+    스냅샷이 없으면(첫 접기 전) 409다. 주인 확인 뒤 방이 지워졌으면 잠금이 빈 값을 받으므로 버전 불일치가 아니라
+    404다. 거절은 아무것도 쓰기 전에 일어나고, 버전은 호출부가 실제로 고칠 때만 올린다. 잠근 뒤에는 방 삭제가 이 요청의
+    커밋을 기다리므로 호출부는 응답을 커밋 전에 만든다 — 커밋 뒤에 읽으면 기다리던 삭제가 그 사이 커밋돼 500 이 난다."""
     current_version = await db.scalar(
         # 요약 접기·되감기의 UPDATE와 같은 강도(FOR NO KEY UPDATE) — 그 방에 메시지를 넣는 FK 검사는 막지 않는다.
         select(ChatRoom.memory_version).where(ChatRoom.id == room_id).with_for_update(key_share=True)
     )
+    if current_version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat room not found")
     if current_version != version:
         raise _memory_conflict("MEMORY_VERSION_CONFLICT")
     current = (
@@ -2161,8 +2166,9 @@ async def update_chat_room_memory_summary(
             updated_at=func.now(),
         )
     )
+    response = await _memory_response(db, room_id)
     await db.commit()
-    return await _memory_response(db, room_id)
+    return response
 
 
 @router.post("/{room_id}/memory/summary/revert", dependencies=[Depends(require_legal_consent)])
@@ -2192,8 +2198,9 @@ async def revert_chat_room_memory_summary(
             updated_at=func.now(),
         )
     )
+    response = await _memory_response(db, room_id)
     await db.commit()
-    return await _memory_response(db, room_id)
+    return response
 
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
