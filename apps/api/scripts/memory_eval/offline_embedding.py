@@ -94,6 +94,56 @@ def client_for(
     return OfflineQueryEmbeddingClient(table, missing=missing)
 
 
+class _NoBackoffState:
+    """Voyage 연속 실패 백오프(`api.chat.voyage_backoff`)가 읽고 쓰는 Redis 자리를 대신하는 빈 상태 — 읽으면 늘 비어 있고 쓰기는
+    버린다. 앱이 그 모듈에서 쓰는 만큼(`hgetall`·`delete`·트랜잭션 파이프라인)만 흉내 낸다."""
+
+    async def hgetall(self, _key: str) -> dict[str, str]:
+        return {}
+
+    async def delete(self, *_keys: str) -> int:
+        return 0
+
+    def pipeline(self, *, transaction: bool = True) -> "_NoBackoffState":
+        del transaction
+        return self
+
+    async def __aenter__(self) -> "_NoBackoffState":
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+    def hincrby(self, *_args: object) -> None:
+        return None
+
+    def hset(self, *_args: object) -> None:
+        return None
+
+    def expire(self, *_args: object) -> None:
+        return None
+
+    async def execute(self) -> list[object]:
+        return []
+
+
+@contextlib.contextmanager
+def plan_mode_backoff_off() -> Iterator[None]:
+    """계획 모드 동안 앱의 Voyage 연속 실패 백오프를 빈 상태로 돌린다. 계획 모드의 빠진 질의는 Voyage 장애가 아닌데 앱은 그
+    흡수되는 실패를 연속 실패로 센다 — 세 번째에 전역 멈춤 키가 서면 그 뒤 턴은 질의 임베딩을 부르지 않아 빠진 글을 더 모으지
+    못하고, 남은 키는 다음 재조립(벡터를 다 채운 본 실행)까지 막는다. 빈 상태는 멈춤을 묻지도 세지도 않으며 Redis 에 닿지 않는다.
+    앱 모듈이 Redis 장애 흉내용으로 열어 둔 이름(`redis_client`)만 갈아 끼우고 나올 때 되돌린다."""
+    from api.chat import voyage_backoff
+
+    name = "redis_client"
+    saved = getattr(voyage_backoff, name)
+    setattr(voyage_backoff, name, _NoBackoffState())
+    try:
+        yield
+    finally:
+        setattr(voyage_backoff, name, saved)
+
+
 @contextlib.contextmanager
 def recall_settings(params: HybridParams) -> Iterator[None]:
     """하이브리드 회상 설정(`memory_embed_recall_*`)을 이 프로세스의 `settings` 에 잠시 씌운다 — 재조립 프로세스는 `.env` 를

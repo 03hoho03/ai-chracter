@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -506,7 +507,7 @@ def cmd_trajectory_replay(args: argparse.Namespace) -> int:
 
     from memory_eval import trajectory_replay as tr
     from memory_eval.arm_env import BUNDLE1_ARMS, series_label, template_series
-    from memory_eval.offline_embedding import recall_settings
+    from memory_eval.offline_embedding import plan_mode_backoff_off, recall_settings
     from memory_eval.runtime import generation_set, load_room, make_engine
 
     arms = args.arms.split(",")
@@ -627,8 +628,11 @@ def cmd_trajectory_replay(args: argparse.Namespace) -> int:
             summary["checks"] = replay_checks(args, flat, (arms[0], arms[1]))
         return summary
 
-    with recall_settings(_hybrid_params(args)):
-        _print(asyncio.run(go()))
+    with recall_settings(_hybrid_params(args)), plan_mode_backoff_off() if missing is not None else nullcontext():
+        summary = asyncio.run(go())
+    if args.summary_out:
+        _write(args.summary_out, summary)
+    _print(summary)
     return 0
 
 
@@ -1517,6 +1521,11 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
         "--embed-plan-out",
         type=Path,
         help="계획 모드 — 질의 벡터가 빠진 글을 embed-plan 꼴(JSONL)로 모아 쓰고 궤적 점은 쓰지 않는다(embed-run 의 입력)",
+    )
+    p.add_argument(
+        "--summary-out",
+        type=Path,
+        help="화면에 내는 요약 JSON 을 이 파일에도 쓴다 — 화면 출력은 경고 줄과 섞일 수 있어 검사는 이 파일을 읽는다",
     )
     p.set_defaults(fn=cmd_trajectory_replay)
 
