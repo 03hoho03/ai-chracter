@@ -3533,6 +3533,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/novels/{novel_id}/outline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Novel Outline
+         * @description 전체 구성안 화면의 상태 — 승인본·초안(낡음 표시 포함)과 화 수 상한, 고를 수 있는 모델과 구성안 가격.
+         */
+        get: operations["get_novel_outline_novels__novel_id__outline_get"];
+        put?: never;
+        /**
+         * Create Novel Outline
+         * @description 지금 승인한 구간 선택으로 전체 구성안을 만드는 작업(과금, 202). 금액은 고른 모델의 구성안 고정가다.
+         *
+         *     차감 전 거절: 작품 이용 제한·소설화 허락(403), 방 없음 409 `NOVEL_ROOM_GONE`, 주인공 이름 422, 모델 허용 403, 승인한 선택 없음
+         *     409 `NOVEL_SOURCE_SELECTION_REQUIRED`, include 구간이 승인 뒤 화가 됨 422 `NOVEL_SOURCE_SECTION_LOCKED`, 고른 구간의 원문이 바뀜
+         *     409 `NOVEL_SOURCE_SELECTION_SOURCE_CHANGED`(다시 골라 승인한다), 입력 견적이 상한 초과 422 `NOVEL_OUTLINE_INPUT_TOO_LARGE` +
+         *     `estimatedInputTokens`·`maxInputTokens`(구간을 줄여 다시 승인한다), 그리고 차감 함수의 금액 409·진행 중 409·잔액 429.
+         */
+        post: operations["create_novel_outline_novels__novel_id__outline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/outline/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Novel Outline Draft
+         * @description 고친 구성안을 기준 리비전 위의 새 미승인 리비전(출처 edit)으로 저장한다(무과금). 기준이 가장 최근 리비전이 아니면 409
+         *     `NOVEL_OUTLINE_CONFLICT`, 기준 판이 낡았으면 409 `NOVEL_OUTLINE_STALE`, 화 목록이 규칙을 어기면 422 `NOVEL_OUTLINE_INVALID` +
+         *     `reason`(`outline.checked_episodes`). 방이 지워졌으면 409 `NOVEL_ROOM_GONE`.
+         */
+        put: operations["save_novel_outline_draft_novels__novel_id__outline_draft_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/outline/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Novel Outline
+         * @description 가장 최근 리비전을 승인한다(무과금). 이미 승인한 최신 리비전이면 그대로 돌려준다(두 번 누름). 최신이 아니면 409
+         *     `NOVEL_OUTLINE_CONFLICT`, 낡은 판이면 409 `NOVEL_OUTLINE_STALE`.
+         */
+        post: operations["approve_novel_outline_novels__novel_id__outline_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/novels/{novel_id}/publication": {
         parameters: {
             query?: never;
@@ -12434,6 +12506,134 @@ export interface components {
             items: components["schemas"]["NovelOriginalIllustrationCandidate"][];
         };
         /**
+         * NovelOutlineApproveRequest
+         * @description 승인할 리비전. 가장 최근 리비전이어야 한다.
+         */
+        NovelOutlineApproveRequest: {
+            /** Revision */
+            revision: number;
+        };
+        /**
+         * NovelOutlineCreateRequest
+         * @description 전체 구성안 만들기(과금). 지금 승인한 구간 선택을 근거로 한다. `model` 은 상위 모델이면 소설 상위 모델 허용이 있어야 하고,
+         *     `expected_cost` 는 조회 상태의 그 모델 `cost` 다.
+         */
+        NovelOutlineCreateRequest: {
+            /** Expectedcost */
+            expectedCost: number;
+            /**
+             * Model
+             * @default gemini
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
+        };
+        /**
+         * NovelOutlineEpisodeInput
+         * @description 고친 화 하나. `key` 는 기준 리비전에 있던 화의 키이고, 화를 나눠 새로 생긴 화는 비워 보낸다(서버가 새 키를 준다).
+         */
+        NovelOutlineEpisodeInput: {
+            /** Key */
+            key?: string | null;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /**
+             * Goal
+             * @default
+             */
+            goal: string;
+            /** Basis */
+            basis: components["schemas"]["NovelSourceRange"][];
+        };
+        /**
+         * NovelOutlineEpisodeView
+         * @description 구성안의 화 하나. `key` 는 리비전이 바뀌어도 같은 화를 가리키는 화 키, `basis` 는 이 화의 근거가 된 대화 구간(양 끝 포함,
+         *     키 순)이다 — 근거는 그 구성안이 쓴 구간 선택의 include 구간 안에만 있다. 목록 순서가 화 순서다.
+         */
+        NovelOutlineEpisodeView: {
+            /**
+             * Key
+             * Format: uuid
+             */
+            key: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Goal */
+            goal: string;
+            /** Basis */
+            basis: components["schemas"]["NovelSourceRange"][];
+        };
+        /**
+         * NovelOutlineModel
+         * @description 이 계정이 전체 구성안에 고를 수 있는 모델 하나와 그 모델의 구성안 한 번 가격(요청의 `expectedCost`).
+         */
+        NovelOutlineModel: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "gemini" | "sonnet" | "opus";
+            /** Name */
+            name: string;
+            /** Cost */
+            cost: number;
+        };
+        /**
+         * NovelOutlineSaveRequest
+         * @description 고친 구성안 저장 — 기준 리비전(화면이 본 가장 최근 판) 위의 새 미승인 리비전이 된다. 승인한 판은 고치지 않는다.
+         */
+        NovelOutlineSaveRequest: {
+            /** Baserevision */
+            baseRevision: number;
+            /** Episodes */
+            episodes: components["schemas"]["NovelOutlineEpisodeInput"][];
+        };
+        /**
+         * NovelOutlineState
+         * @description 전체 구성안 화면의 상태. `approved` 는 가장 최근에 승인한 판, `draft` 는 그보다 새 미승인 판(모델이 막 만든 판이거나 사용자가
+         *     고친 판)이다. `max_episodes` 는 구성안 화 수 상한, `models` 는 고를 수 있는 모델과 가격이다.
+         */
+        NovelOutlineState: {
+            approved: components["schemas"]["NovelOutlineView"] | null;
+            draft: components["schemas"]["NovelOutlineView"] | null;
+            /** Maxepisodes */
+            maxEpisodes: number;
+            /** Models */
+            models: components["schemas"]["NovelOutlineModel"][];
+        };
+        /**
+         * NovelOutlineView
+         * @description 구성안 한 판. `source` 는 모델이 만든 판(`generate`)인지 사용자가 고친 판(`edit`)인지, `model` 은 만든 모델(고친 판은 null)이다.
+         *     `stale` 이 참이면 그 판이 근거로 삼은 include 구간이 지금 승인한 구간 선택에서 빠졌거나 바뀌었다 — 승인·편집할 수 없고, 구간
+         *     선택에 맞춰 다시 만들어야 한다.
+         */
+        NovelOutlineView: {
+            /** Revision */
+            revision: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "generate" | "edit";
+            /** Model */
+            model: string | null;
+            /** Approvedat */
+            approvedAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Stale */
+            stale: boolean;
+            /** Episodes */
+            episodes: components["schemas"]["NovelOutlineEpisodeView"][];
+        };
+        /**
          * NovelPendingAiEdit
          * @description 끝났지만 적용도 버리기도 하지 않은 AI 수정. 기준 개정이 지금도 그 장의 현재 개정과 글이 같은 것만 싣는다 — 그
          *     사이 장의 글이 바뀌었으면 적용이 409 라 미리보기로 내보일 이유가 없다(같은 글의 새 개정만 쌓였으면 그대로 싣고 적용도
@@ -19711,6 +19911,142 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NovelSourceSelectionState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_novel_outline_novels__novel_id__outline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelOutlineState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_novel_outline_novels__novel_id__outline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelOutlineCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_novel_outline_draft_novels__novel_id__outline_draft_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelOutlineSaveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelOutlineState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_novel_outline_novels__novel_id__outline_approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelOutlineApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelOutlineState"];
                 };
             };
             /** @description Validation Error */
