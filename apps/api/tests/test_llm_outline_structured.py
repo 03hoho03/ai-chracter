@@ -294,17 +294,18 @@ def test_boot_refuses_when_the_backend_an_unassigned_outline_call_reaches_cannot
 def test_the_novel_premium_switch_needs_the_credentials_of_the_backend_an_outline_call_reaches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """소설 상위 모델 스위치는 장 생성과 함께 구성안 두 호출이 갈 구현의 자격도 본다 — 구성안만 Anthropic 으로 옮기고 키가
-    없으면 기동하지 않는다. 깨지는 시나리오: 켜진 채 뜬 뒤 Opus 구성안이 매번 자격 오류로 실패·환불된다."""
-    for key in ("ANTHROPIC_DIRECT_API_KEY", "LLM_CALL_SITE_BACKENDS"):
+    """소설 상위 모델 스위치는 장 생성과 함께 구성안 두 호출이 갈 구현의 자격도 본다. 장 생성을 Anthropic 직결로 옮기고(키 있음)
+    구성안 하나만 Bedrock 에 남긴 채 Bedrock 자격이 비면 기동하지 않는다 — 기본 구현을 그대로 적은 배정이라 배정 검증은 자격을
+    묻지 않으므로 이 스위치 검증만 잡는다. 깨지는 시나리오: 켜진 채 뜬 뒤 Opus 구성안이 매번 자격 오류로 실패·환불된다."""
+    for key in ("BEDROCK_ACCESS_KEY_ID", "BEDROCK_SECRET_ACCESS_KEY", "BEDROCK_REGION", "LLM_CALL_SITE_BACKENDS"):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("BEDROCK_ACCESS_KEY_ID", "AKIATEST")
-    monkeypatch.setenv("BEDROCK_SECRET_ACCESS_KEY", "secret-test")
-    monkeypatch.setenv("BEDROCK_REGION", "ap-northeast-2")
+    monkeypatch.setenv("ANTHROPIC_DIRECT_API_KEY", "sk-ant-test")
     monkeypatch.setenv("NOVELIZE_PREMIUM_MODELS_ENABLED", "true")
-    monkeypatch.setenv("LLM_CALL_SITE_BACKENDS", "novelize_outline:anthropic")
+    monkeypatch.setenv("LLM_CALL_SITE_BACKENDS", "novelize_chapter:anthropic,novelize_episode_outline:anthropic")
+    Settings(_env_file=None)  # type: ignore[call-arg]
 
-    with pytest.raises(ValidationError, match="ANTHROPIC_DIRECT_API_KEY"):
+    monkeypatch.setenv("LLM_CALL_SITE_BACKENDS", "novelize_chapter:anthropic,novelize_outline:bedrock")
+    with pytest.raises(ValidationError, match="BEDROCK_ACCESS_KEY_ID"):
         Settings(_env_file=None)  # type: ignore[call-arg]
 
 
