@@ -69,6 +69,7 @@ async def test_response_follows_products_and_cost_constants(
         "novelPublicPolicyV2Enabled",
         "novelIllustrationsEnabled",
         "novelizeOutlineFlowEnabled",
+        "novelizeMultiBlockEditEnabled",
         "payMethods",
         "identityGateEnabled",
         "models",

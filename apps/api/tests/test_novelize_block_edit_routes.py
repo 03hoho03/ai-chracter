@@ -375,7 +375,7 @@ async def test_the_detail_lists_pending_patches_with_live_freshness_and_never_as
 ) -> None:
     """상세의 `pendingBlockEdits` 는 대기 패치가 있는 패치 작업마다 지시·패치(상태·블록 id·문단·지금 신선한가)·묶음을 싣는다.
     신선함은 지금 개정으로 계산한다 — 사용자가 고친 블록의 패치는 낡음으로 보인다(같은 작업의 다른 패치는 그대로 신선). 패치
-    작업은 옛 `pendingAiEdits` 에 섞이지 않고, 버린 작업·실패 작업은 목록에 없다. 스위치와 무관하다(끈 뒤에도 남은 패치를 본다).
+    작업은 옛 `pendingAiEdits` 에 섞이지 않고, 버린 작업·실패 작업·대기 패치가 남지 않은 작업은 목록에 없다. 스위치와 무관하다(끈 뒤에도 남은 패치를 본다).
     깨지는 시나리오: 패치 하나를 고친 사용자 화면에서 같은 작업의 다른 패치까지 사라지거나, 옛 목록이 범위 없는 행에서 500 이 된다."""
     monkeypatch.setattr(settings, "novelize_multi_block_edit_enabled", False)
     _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
@@ -383,6 +383,13 @@ async def test_the_detail_lists_pending_patches_with_live_freshness_and_never_as
     job = await _patch_job(db_session, novel_id, chapter, base, [0, 1], bundle=True)
     await _patch_job(db_session, novel_id, chapter, base, [2], dismissed_at=sa.func.now(), instruction=None)
     await _patch_job(db_session, novel_id, chapter, base, [3], status="failed", charged_amount=0)
+    finished = await _patch_job(db_session, novel_id, chapter, base, [2])
+    assert finished.block_edit is not None
+    finished.block_edit = {
+        **finished.block_edit,
+        "patches": [{**patch, "state": "applied", "paragraphs": None} for patch in finished.block_edit["patches"]],
+    }
+    await db_session.commit()
     edited = await db_client.post(
         f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
         json={"baseRevisionId": str(base.id), "body": _BODY.replace("둘째 문단이다.", "사용자가 고친 둘째.")},

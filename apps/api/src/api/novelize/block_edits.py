@@ -2,7 +2,9 @@
 
 **작업 행의 칸 하나**(`NovelJob.block_edit`, JSON)가 한 작업의 전부다: 요청 때 서버가 지금 개정에서 계산한 대상(블록 id·기준 해시·
 화 전체에서 센 문단 번호), 대상 장면, 그리고 성공 저장 때 쓰는 블록마다의 패치와 의존 묶음. 사용자 글에서 나온 것은 패치 문단과
-묶음 이유뿐이다 — 패치가 더 쓸 데가 없어지면(적용·버림·낡음) 그 문단을 비우고 상태만 기록으로 남긴다.
+묶음 이유뿐이다 — 저장 때 이미 낡은 패치와 버린 패치는 그 문단(버리면 묶음 이유도)을 비우고 상태만 기록으로 남긴다. 저장 뒤
+사용자가 블록을 고쳐 낡은 대기 패치의 문단을 비우는 일과 적용한 패치의 문단을 비우는 일은 아직 없다 — 수정안 적용·버리기
+라우트와 함께 넣고, 그 전에는 스위치를 켜지 않는다.
 
 **낡음은 패치 단위다**(`patch_is_fresh`): 그 패치의 블록 id 가 지금 개정에 있고 그 문단 글자의 sha256 이 요청 때와 같으면 쓸 수
 있다. 화 전체 해시를 보는 옛 수정과 달리 다른 블록이 바뀌어도 이 패치는 산다. 블록 해시를 계산하고 패치를 판정하는 것은 이
@@ -114,7 +116,8 @@ def normalized_result(
     패치 수다(버린다).
 
     - 같은 번호가 둘이면 앞 것만, 문단이 비면 남기지 않는다. 패치는 본문 차례로 둔다.
-    - 묶음은 패치가 남은 번호만 보고, 겹치는 묶음은 하나로 합친다(이유는 먼저 온 묶음의 것). 원소가 하나뿐이면 묶음이 아니다."""
+    - 묶음은 패치가 남은 번호만 보고, 겹치는 묶음은 하나로 합친다(이유는 합친 묶음 중 모델이 가장 먼저 낸 것). 원소가 하나뿐이면
+      묶음이 아니다."""
     by_label = {target.label: target for target in targets}
     kept: dict[int, BlockEditPatch] = {}
     outside = 0
@@ -133,20 +136,21 @@ def normalized_result(
             state="pending",
         )
 
-    groups: list[tuple[set[int], str]] = []
-    for labels, reason in bundles:
+    # (원소, 이유, 모델이 낸 차례) — 합친 묶음은 목록 뒤로 옮겨지므로 이유는 목록 자리가 아니라 낸 차례가 가장 이른 것에서 고른다.
+    groups: list[tuple[set[int], str, int]] = []
+    for order, (labels, reason) in enumerate(bundles):
         members = {label for label in labels if label in kept}
         if not members:
             continue
         overlapping = [group for group in groups if group[0] & members]
         merged = members.union(*(group[0] for group in overlapping))
-        kept_reason = overlapping[0][1] if overlapping else reason.strip()[:_REASON_MAX_CHARS]
+        first = min([(order, reason.strip()[:_REASON_MAX_CHARS]), *((group[2], group[1]) for group in overlapping)])
         groups = [group for group in groups if not group[0] & members]
-        groups.append((merged, kept_reason))
+        groups.append((merged, first[1], first[0]))
     ordered = [kept[label] for label in sorted(kept)]
     patch_bundles = [
         BlockEditBundle(id=uuid.uuid4().hex, patch_ids=[kept[label].id for label in sorted(members)], reason=reason or None)
-        for members, reason in groups
+        for members, reason, _order in groups
         if len(members) >= 2
     ]
     return ordered, patch_bundles, outside

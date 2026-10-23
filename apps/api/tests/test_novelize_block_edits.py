@@ -162,3 +162,15 @@ def test_dismissing_all_keeps_states_as_a_record_but_no_text() -> None:
     assert [b.reason for b in dismissed.bundles] == [None]
     assert dismissed.to_json()["sceneId"] == "s1"
     assert "고친" not in str(dismissed.to_json()) and "이유" not in str(dismissed.to_json())
+
+
+def test_a_merged_bundle_keeps_the_reason_of_the_bundle_the_model_gave_first() -> None:
+    """겹치는 묶음을 여러 번 합쳐도 이유는 모델이 가장 먼저 낸 묶음의 것이다 — 합친 묶음이 목록 뒤로 옮겨진 뒤 다른 묶음과 다시
+    합쳐질 때 나중 묶음의 이유를 고르지 않는다."""
+    ids = _ids()
+    targets = _targets(ids, [0, 1, 2, 3, 4])
+    raw = [(n, [f"고친 {n}"]) for n in (1, 2, 3, 4, 5)]
+
+    _patches, bundles, _ = normalized_result(targets, raw, [([1, 2], "a"), ([3, 4], "b"), ([1, 5], "c"), ([4, 5], "d")])
+
+    assert [(len(b.patch_ids), b.reason) for b in bundles] == [(5, "a")]
