@@ -196,6 +196,17 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("novelize_revise", "paragraphs"): frozenset({"paragraph_lines"}),
     ("novelize_revise", "target_range"): frozenset({"first_paragraph", "last_paragraph"}),
     ("novelize_revise", "user_request"): frozenset({"user_request"}),
+    # 여러 문단 수정과 그 묶음 재검사 — 소설 레인 Gemini 체인에만 있다. 빌더가 만드는 `values` 와 같다.
+    ("novelize_revise_blocks", "instruction"): frozenset(),
+    ("novelize_revise_blocks", "work_setting"): frozenset({"work_setting"}),
+    ("novelize_revise_blocks", "setting_notes"): frozenset({"setting_notes"}),
+    ("novelize_revise_blocks", "paragraphs"): frozenset({"paragraph_lines"}),
+    ("novelize_revise_blocks", "target_blocks"): frozenset({"target_paragraphs"}),
+    ("novelize_revise_blocks", "user_request"): frozenset({"user_request"}),
+    ("novelize_revise_recheck", "instruction"): frozenset(),
+    ("novelize_revise_recheck", "context"): frozenset({"paragraph_lines"}),
+    ("novelize_revise_recheck", "edited_paragraphs"): frozenset({"edited_lines"}),
+    ("novelize_revise_recheck", "pending_patches"): frozenset({"patch_lines"}),
     # 노벨 공개 전 텍스트 심사 — `novel_public/screening.py` 의 빌더가 만드는 `values`. `instruction` 은
     # system_instruction 으로 따로 렌더되므로(`values={}`) 빈 집합이어야 한다. 심사할 글은 게시자가 쓴 글이라 지시문과 다른
     # 통로(본문)에 싣는다.

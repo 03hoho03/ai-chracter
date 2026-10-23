@@ -39,6 +39,27 @@ def _load(revision: str) -> ModuleType:
 
 
 _M = _load("b389c2317149")
+# 그 뒤 소설 레인 Gemini 체인에 여러 문단 수정 문안을 더한 리비전 — head 의 Gemini 활성이다. 이 파일은 "이 리비전 직후 상태"를
+# 보므로 테스트마다 그 리비전부터 먼저 되돌린다(실제 downgrade 순서, 테스트 트랜잭션이 끝나면 롤백된다).
+_LATER = _load("174f78b92e5c")
+
+
+@pytest.fixture(autouse=True)
+async def _undo_later_revisions(db_session: AsyncSession) -> None:
+    await (await db_session.connection()).run_sync(_LATER.delete_seeded_rows)
+
+
+def _with_later_rows(sections: list[PromptSection], model: str) -> list[PromptSection]:
+    """지금 코드의 게시 검증은 뒤 리비전이 Gemini 체인에 더한 채널도 요구한다 — 이 리비전의 세트·초안에 그 행만 얹어 검증한다."""
+    if model != "gemini":
+        return sections
+    return [
+        *sections,
+        *(
+            PromptSection(channel=c, scope=sc, slot=sl, variant=v, body=b, conditional=cond, order=o)
+            for c, sc, sl, v, b, cond, o in _LATER.NEW_CHANNEL_ROWS
+        ),
+    ]
 # 이 리비전 직전 소설 레인 세 체인의 활성 세트(소설 레인을 처음 심은 리비전 — 그 사이에 소설 레인을 게시한 리비전이 없다).
 _SEEDED_LANE = _load("a7a87e3ba631").NEW_SET_IDS
 _PREVIOUS_SET_IDS: dict[str, uuid.UUID] = {model: _SEEDED_LANE[model] for model in ("gemini", "sonnet", "opus")}
@@ -253,7 +274,7 @@ async def test_seeded_sets_pass_publish_validation_and_the_previous_sets_no_long
     """새 세트는 지금 코드의 게시 검증(슬롯 집합·자리표시자 허용 목록)을 통과하고, 이전 세트는 새 행이 없어 "누락"으로 막힌다 —
     코드 표와 시드가 같이 움직였다는 증거다."""
     prompt_set, sections = await load_active_prompt_set(db_session, lane="novel", model=model)
-    _validate_prompt_draft_for_publish(prompt_set, sections, lane="novel", model=model)
+    _validate_prompt_draft_for_publish(prompt_set, _with_later_rows(sections, model), lane="novel", model=model)
 
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[model])
     with pytest.raises(HTTPException):
@@ -429,7 +450,7 @@ async def test_patch_drafts_adds_the_rows_in_place_the_draft_publishes_and_downg
     }
     sections = await _sections_of(db_session, draft_id)
     draft = await _get_set(db_session, draft_id)
-    _validate_prompt_draft_for_publish(draft, sections, lane="novel", model=model)
+    _validate_prompt_draft_for_publish(draft, _with_later_rows(sections, model), lane="novel", model=model)
 
     assert await connection.run_sync(_M._patch_drafts) == []
 

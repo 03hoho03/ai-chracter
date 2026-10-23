@@ -44,7 +44,9 @@ def _load(revision: str) -> ModuleType:
 _M = _load("5cab2abe4e7b")
 # 소설 레인 세 체인에 구성안 문안을 심은 리비전의 세트 — 다른 레인과 무관하지만 전역 버전 번호를 이 리비전 뒤에서 이어
 # 쓰므로 버전 차례를 보는 시험에서 뺀다.
-_NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values())
+_NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values()) + list(
+    _load("174f78b92e5c").NEW_SET_IDS.values()  # 그 뒤 여러 문단 수정 문안을 심은 소설 레인 Gemini 세트도 같은 이유로 뺀다.
+)
 # 이 리비전 직전의 활성 세트 — 여덟 체인 모두 장면 기억 문안 리비전의 세트다(그 사이에 프롬프트를 게시한 리비전이 없다).
 _EPISODE_MIGRATION = _load("fc6f0e134782")
 _PREVIOUS_SET_IDS: dict[tuple[str, str], uuid.UUID] = _EPISODE_MIGRATION.NEW_SET_IDS

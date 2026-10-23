@@ -66,6 +66,8 @@ _SCENE_INSTRUCTION_V2_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0f82ea9
 # 그 뒤 소설 레인 세 체인에 구성안 문안을 더한 세트를 게시하는 리비전 — head 의 소설 레인 활성이라, "이 리비전 직후 상태"를
 # 보는 테스트는 그 리비전부터 먼저 되돌린다(실제 downgrade 순서).
 _NOVEL_OUTLINE = _load("b389c2317149")
+# 그 뒤 소설 레인 Gemini 체인에 여러 문단 수정 문안을 더한 리비전 — 되돌릴 때는 이것이 먼저다.
+_BLOCK_EDIT_PROMPTS = _load("174f78b92e5c")
 
 Row = tuple[str, str, str, str, str, bool, int]
 
@@ -104,6 +106,7 @@ async def test_the_copy_set_is_the_chat_novelize_rows_byte_for_byte(db_session: 
 
 async def test_each_novel_chain_has_its_new_set_active(db_session: AsyncSession) -> None:
     """(novel, 모델)마다 활성 세트가 하나다 — 없으면 그 모델 화 생성이 실패하고 어드민 소설 탭 초안 조회가 500 이다."""
+    await (await db_session.connection()).run_sync(_BLOCK_EDIT_PROMPTS.delete_seeded_rows)
     await (await db_session.connection()).run_sync(_NOVEL_OUTLINE.delete_seeded_rows)
     assert await _active_id(db_session, "novel") == _M.NEW_SET_IDS["gemini"]
     assert await _active_id(db_session, "novel", "sonnet") == _M.NEW_SET_IDS["sonnet"]
@@ -141,7 +144,7 @@ async def test_the_new_gemini_set_changes_only_the_chapter_channel_and_claude_ch
 async def test_seeded_sets_pass_the_novel_lane_publish_check(
     db_session: AsyncSession, set_key: str, model: ChatModelId
 ) -> None:
-    """시드에 그 뒤 구성안 문안 리비전이 더한 행만 얹으면 지금 코드의 소설 레인 게시 검증(슬롯 집합·자리표시자·order)을
+    """시드에 그 뒤 구성안 문안 리비전(과 Gemini 체인이면 여러 문단 수정 문안 리비전)이 더한 행만 얹으면 지금 코드의 소설 레인 게시 검증(슬롯 집합·자리표시자·order)을
     통과한다 — 이 시드의 행 자체가 검증 표와 어긋나지 않는다는 뜻이다. 통과하지 못하면 어드민이 시드를 열어 그대로 다시
     게시하는 것조차 막힌다."""
     prompt_set = await db_session.get_one(PromptSet, _M.NEW_SET_IDS[set_key])
@@ -150,6 +153,8 @@ async def test_seeded_sets_pass_the_novel_lane_publish_check(
     )
     seed_rows = [(s.channel, s.scope, s.slot, s.variant, s.body, s.conditional, s.order) for s in sections]
     later = [*_NOVEL_OUTLINE.chapter_rows(seed_rows), *_NOVEL_OUTLINE.NEW_CHANNEL_ROWS]
+    if model == "gemini":
+        later += list(_BLOCK_EDIT_PROMPTS.NEW_CHANNEL_ROWS)
     sections += [
         PromptSection(channel=c, scope=sc, slot=sl, variant=v, body=b, conditional=cond, order=o)
         for c, sc, sl, v, b, cond, o in later

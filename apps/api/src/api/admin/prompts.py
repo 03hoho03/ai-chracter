@@ -70,7 +70,9 @@ from api.novelize.prompts import (
     build_novelize_chapter_prompt,
     build_novelize_episode_outline_prompt,
     build_novelize_outline_prompt,
+    build_novelize_revise_blocks_prompt,
     build_novelize_revise_prompt,
+    build_novelize_revise_recheck_prompt,
 )
 
 router = APIRouter(tags=["admin"])
@@ -102,8 +104,9 @@ _NOVELIZE_CHANNELS: frozenset[str] = frozenset(_FROZEN_NOVELIZE_ROWS)
 
 # `novel` 레인(소설 문안). 경계 제안·문단 수정은 얼린 행과 같은 슬롯이고, 화 생성은 한 번에 여러 화를 쓰게 되며 인물
 # 메모·지난 화 요약·화 수 지시 슬롯이 늘었고, 구성 흐름 원고의 장면 계획·연속성 참고 슬롯이 더해졌다. 구성 흐름의 전체
-# 구성안·장면 구성안 두 채널은 구성안 문안 리비전이 세 체인에 심었다. 스토리·캐릭터 원작이 같은 행을 `scope="both"` 로 함께
-# 쓴다.
+# 구성안·장면 구성안 두 채널은 구성안 문안 리비전이 세 체인에 심었다. 여러 문단 수정과 그 묶음 재검사 두 채널은 Gemini
+# 체인에만 있다(옛 문단 수정처럼 늘 Gemini 로 부른다) — 얼린 행 집합과 다른 새 집합이라 채팅 레인 게시 검증은 그대로다.
+# 스토리·캐릭터 원작이 같은 행을 `scope="both"` 로 함께 쓴다.
 _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
     "novelize_boundary": _FROZEN_NOVELIZE_ROWS["novelize_boundary"],
     "novelize_chapter": frozenset(
@@ -125,6 +128,15 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
         }
     ),
     "novelize_revise": _FROZEN_NOVELIZE_ROWS["novelize_revise"],
+    "novelize_revise_blocks": frozenset(
+        {
+            ("both", slot, "")
+            for slot in ("instruction", "work_setting", "setting_notes", "paragraphs", "target_blocks", "user_request")
+        }
+    ),
+    "novelize_revise_recheck": frozenset(
+        {("both", slot, "") for slot in ("instruction", "context", "edited_paragraphs", "pending_patches")}
+    ),
     "novelize_outline": frozenset(
         {
             ("both", slot, "")
@@ -175,7 +187,8 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
 # 더한 72/48/4행, 요약 비밀 표기 리비전 `0aeadefcf159`가 두 레인 요약 채널에 `secret_marking` 1행을 더한 73/49/4행, 장면 헤더 판정
 # 문안 리비전이 story 에 판정 채널 `scene_judgment` 3행을 더한 76/49/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
 # 9·문단 수정 6 의 19행이었고(story·character 의 소설화 16행은 그대로 얼려 둔다), 구성안 문안 리비전 `b389c2317149` 가 화 생성에
-# 2행·전체 구성안 9행·장면 구성안 9행을 더해 39행이다.
+# 2행·전체 구성안 9행·장면 구성안 9행을 더해 39행이고, 여러 문단 수정 문안 리비전 `174f78b92e5c` 가 Gemini 체인에만 여러 문단
+# 수정 6행·묶음 재검사 4행을 더해 Gemini 체인은 49행이다(Claude 두 체인은 그대로).
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
 # 달라 두 파일에 따로 둔다(시드 하나는 상수 데이터, 이건 임의 입력을 거부하는 게이트).
@@ -1357,6 +1370,7 @@ _SAMPLE_NOVELIZE_TURN_LINES = (
 _SAMPLE_NOVELIZE_PARAGRAPHS = ["[샘플] 첫 문단", "[샘플] 둘째 문단", "[샘플] 셋째 문단"]
 # 구성 흐름의 장면 계획과 맥락으로만 보내는 구간(원문 줄과 같은 형식).
 _SAMPLE_NOVELIZE_SCENE_PLAN = "[샘플] 1. 비 오는 정류장에서 다시 만난다(턴 1~2)."
+_SAMPLE_BLOCK_EDIT_LINES = "[1] [샘플] 첫 문단.\n\n[2] [샘플] 둘째 문단.\n\n[3] [샘플] 셋째 문단."
 _SAMPLE_NOVELIZE_CONTEXT_LINES = "[턴 1] {assistant}: [샘플] 지난번 일은 잊어."
 
 # 소설 원작의 종류 = 라벨·등급 규칙을 읽을 채팅 레인.
@@ -1505,6 +1519,35 @@ def _novel_content_preview_items(
                     first_index=1,
                     last_index=1,
                     user_request="[샘플] 더 긴장감 있게",
+                ),
+            )
+        )
+        items.append(
+            _novelize_preview_item(
+                "novelize_revise_blocks",
+                f"novelize_revise_blocks · {suffix}",
+                lambda: build_novelize_revise_blocks_prompt(
+                    chat_sections=chat_sections,
+                    sections=sections,
+                    is_story_chat=is_story_chat,
+                    work_setting="[샘플] 작품 설정",
+                    setting_notes="[샘플] 설정 노트",
+                    paragraph_lines=_SAMPLE_BLOCK_EDIT_LINES,
+                    target_labels=[1, 3],
+                    user_request="[샘플] 더 긴장감 있게",
+                ),
+            )
+        )
+        items.append(
+            _novelize_preview_item(
+                "novelize_revise_recheck",
+                f"novelize_revise_recheck · {suffix}",
+                lambda: build_novelize_revise_recheck_prompt(
+                    sections=sections,
+                    is_story_chat=is_story_chat,
+                    edited_lines="[1] [샘플] 사용자가 직접 고친 첫 문단.",
+                    patch_lines="[3] [샘플] 수정안이 고친 셋째 문단.",
+                    paragraph_lines=_SAMPLE_BLOCK_EDIT_LINES,
                 ),
             )
         )

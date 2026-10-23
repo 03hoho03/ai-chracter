@@ -36,7 +36,9 @@ def _load(revision: str) -> ModuleType:
 _M = _load("1a843a0b2d8f")
 # 소설 레인 세 체인에 구성안 문안을 심은 리비전의 세트 — 다른 레인과 무관하지만 전역 버전 번호를 이 리비전 뒤에서 이어
 # 쓰므로 버전 차례를 보는 시험에서 뺀다.
-_NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values())
+_NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values()) + list(
+    _load("174f78b92e5c").NEW_SET_IDS.values()  # 그 뒤 여러 문단 수정 문안을 심은 소설 레인 Gemini 세트도 같은 이유로 뺀다.
+)
 # 이 리비전 직전의 Claude 활성 세트 — 테스트 DB에서는 모델 축 리비전이 심은 시드다(그 뒤 Claude 채팅 체인에 게시한
 # 리비전이 없다).
 _PREVIOUS_CLAUDE_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("e6aa289fea62").NEW_SET_IDS

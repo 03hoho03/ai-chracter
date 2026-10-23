@@ -242,3 +242,16 @@ async def test_pricing_exposes_the_novel_outline_flow_switch(
     resp = await db_client.get("/clover/pricing")
 
     assert (resp.status_code, resp.json().get("novelizeOutlineFlowEnabled")) == (200, switch)
+
+
+@pytest.mark.parametrize("switch", [pytest.param(False, id="off"), pytest.param(True, id="on")])
+async def test_pricing_exposes_the_novel_multi_block_edit_switch(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, switch: bool
+) -> None:
+    """작가 화면이 여러 문단을 골라 고치는 입력으로 들어갈지를 이 값으로 가른다 — 여러 문단 수정 스위치 그대로다. 깨지는 시나리오:
+    스위치가 꺼졌는데 화면이 새 선택을 보여 맡기는 족족 404 가 나거나, 켰는데 옛 연속 범위 선택만 보인다."""
+    monkeypatch.setattr(settings, "novelize_multi_block_edit_enabled", switch)
+
+    resp = await db_client.get("/clover/pricing")
+
+    assert (resp.status_code, resp.json().get("novelizeMultiBlockEditEnabled")) == (200, switch)

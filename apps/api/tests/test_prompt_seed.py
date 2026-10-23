@@ -255,6 +255,14 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
                 "turn_context",
             )
         },
+        # 여러 문단 수정 문안 리비전이 심은 두 채널(소설 레인 Gemini 체인만).
+        "novelize_revise_blocks": {
+            ("both", slot, "")
+            for slot in ("instruction", "work_setting", "setting_notes", "paragraphs", "target_blocks", "user_request")
+        },
+        "novelize_revise_recheck": {
+            ("both", slot, "") for slot in ("instruction", "context", "edited_paragraphs", "pending_patches")
+        },
     },
     # 노벨 텍스트 심사 레인 시드 리비전이 심은 지시문·심사할 글 두 행.
     "novel_screen": {

@@ -87,6 +87,7 @@ from api.novelize.billing import (
     job_price,
     refund_active_jobs,
 )
+from api.novelize.block_edits import BlockEdit, dismissed_all, fresh_flags
 from api.novelize.deletion import (
     ai_edit_preview_is_fresh,
     delete_batch,
@@ -162,7 +163,10 @@ from api.novelize.schemas import (
     NovelLimits,
     NovelListItem,
     NovelListResponse,
+    NovelBlockEditBundleView,
+    NovelBlockEditPatchView,
     NovelPendingAiEdit,
+    NovelPendingBlockEdit,
     NovelPrices,
     NovelProtagonistNameRequest,
     NovelReadingPositionRequest,
@@ -579,6 +583,69 @@ async def _pending_ai_edits(
     return pending
 
 
+async def _pending_block_edits(
+    db: AsyncSession, novel_id: uuid.UUID, chapters: list[NovelChapterSummary]
+) -> list[NovelPendingBlockEdit]:
+    """끝났고 대기 패치가 남은 여러 문단 수정(버리지 않은 것). 패치마다 지금 쓸 수 있는가(`fresh`)를 목차가 읽은 그 화의 현재
+    개정으로 계산해 싣는다 — 사용자가 블록을 고친 직후 그 패치가 낡음으로 바뀌기 전에도 화면이 안다. 같은 작업의 다른 패치는 그
+    블록이 그대로면 쓸 수 있다(화 전체 해시로 거르는 옛 목록과 다르다). 화가 지워져 목차에 없는 작업은 싣지 않는다."""
+    revision_ids = {chapter.id: chapter.current_revision_id for chapter in chapters}
+    jobs = (
+        await db.scalars(
+            select(NovelJob)
+            .where(
+                NovelJob.novel_id == novel_id,
+                NovelJob.kind == "ai_edit",
+                NovelJob.status == "succeeded",
+                NovelJob.dismissed_at.is_(None),
+                NovelJob.instruction.is_not(None),
+                NovelJob.block_edit.contains({"patches": [{"state": "pending"}]}),
+            )
+            .order_by(NovelJob.created_at.desc(), NovelJob.id.desc())
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    listed = [job for job in jobs if job.chapter_id in revision_ids]
+    if not listed:
+        return []
+    revisions = {
+        revision.chapter_id: revision
+        for revision in (
+            await db.scalars(
+                select(NovelChapterRevision).where(
+                    NovelChapterRevision.id.in_({revision_ids[job.chapter_id] for job in listed if job.chapter_id})
+                )
+            )
+        ).all()
+    }
+    pending: list[NovelPendingBlockEdit] = []
+    for job in listed:
+        # 위 조건으로 걸렀다 — 패치 칸·지시문·화가 있다.
+        assert job.block_edit is not None and job.instruction is not None and job.chapter_id is not None
+        edit = BlockEdit.model_validate(job.block_edit)
+        current = revisions[job.chapter_id]
+        flags = fresh_flags(edit, current.block_ids, split_paragraphs(current.body))
+        pending.append(
+            NovelPendingBlockEdit(
+                id=job.id,
+                chapter_id=job.chapter_id,
+                instruction=job.instruction,
+                patches=[
+                    NovelBlockEditPatchView(
+                        id=patch.id, block_id=patch.block_id, state=patch.state, paragraphs=patch.paragraphs, fresh=fresh
+                    )
+                    for patch, fresh in zip(edit.patches, flags, strict=True)
+                ],
+                bundles=[
+                    NovelBlockEditBundleView(id=bundle.id, patch_ids=bundle.patch_ids, reason=bundle.reason)
+                    for bundle in edit.bundles
+                ],
+                created_at=job.created_at,
+            )
+        )
+    return pending
+
+
 async def _detail(db: AsyncSession, novel_id: uuid.UUID) -> NovelDetailResponse:
     """상세. 묶음 없는 화나 빈 묶음이 있으면 먼저 고쳐 커밋한다 — 고치지 않으면 그 화가 목차와 묶음 목록에서 빠진다."""
     if await ensure_batches(db, novel_id):
@@ -606,6 +673,7 @@ async def _detail(db: AsyncSession, novel_id: uuid.UUID) -> NovelDetailResponse:
         last_read=await _last_read(db, novel.id),
         active_job=await _active_job(db, novel.id),
         pending_ai_edits=await _pending_ai_edits(db, novel.id, chapters),
+        pending_block_edits=await _pending_block_edits(db, novel.id, chapters),
         prices=_prices(),
         limits=_LIMITS,
         created_at=novel.created_at,
@@ -1844,7 +1912,9 @@ async def apply_novel_ai_edit(
     await db.execute(
         update(NovelJob)
         .where(NovelJob.id == job.id)
-        .values(result_revision_id=revision.id, instruction=None, result_text=None)
+        # 범위가 있는 작업만 여기 온다(패치 작업은 위에서 409) — 패치 칸은 늘 비어 있고, 지시문·결과를 비우는 자리마다 패치 칸도
+        # 다룬다는 약속을 지키려 함께 적는다.
+        .values(result_revision_id=revision.id, instruction=None, result_text=None, block_edit=None)
     )
     await db.commit()
     await _erase_stale_previews(db, current.chapter_id)
@@ -1865,7 +1935,9 @@ async def dismiss_novel_ai_edit(
     409 가 된다. 지시문과 결과 본문은 비운다 — 버린 결과는 더 쓸 데가 없고, 행은 하루 상한 집계용으로 남는다.
     버릴 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·이미 버림)은 409 `NOVEL_JOB_NOT_APPLICABLE`.
 
-    적용과 같은 작업 행을 잠근다 — 같은 수정의 적용과 버리기가 겹치면 뒤 요청이 앞 요청의 결과를 보고 409 다."""
+    적용과 같은 작업 행을 잠근다 — 같은 수정의 적용과 버리기가 겹치면 뒤 요청이 앞 요청의 결과를 보고 409 다.
+
+    여러 문단 수정 작업이면 남은 수정안을 모두 버린다 — 패치 문단·묶음 이유를 비우고 상태(버림)와 블록 id 만 기록으로 남긴다."""
     job = await db.scalar(
         select(NovelJob)
         .where(NovelJob.id == job_id, NovelJob.novel_id == novel.id)
@@ -1881,10 +1953,11 @@ async def dismiss_novel_ai_edit(
         or job.dismissed_at is not None
     ):
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_JOB_NOT_APPLICABLE")
+    patches = None if job.block_edit is None else dismissed_all(BlockEdit.model_validate(job.block_edit)).to_json()
     await db.execute(
         update(NovelJob)
         .where(NovelJob.id == job.id)
-        .values(dismissed_at=func.now(), instruction=None, result_text=None)
+        .values(dismissed_at=func.now(), instruction=None, result_text=None, block_edit=patches)
     )
     await db.commit()
 

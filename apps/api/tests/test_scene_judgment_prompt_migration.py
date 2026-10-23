@@ -52,6 +52,8 @@ _SOURCE_MARKING = _load("0c1a85bc5c2f")
 _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
 # 그 뒤 소설 레인 세 체인에 구성안 문안을 심은 리비전 — story 레인과 무관하지만 전역 버전 번호를 이어 쓴다.
 _NOVEL_OUTLINE = _load("b389c2317149")
+# 그 뒤 소설 레인 Gemini 체인에 여러 문단 수정 문안을 심은 리비전 — 같은 이유로 버전 차례에서 뺀다.
+_BLOCK_EDIT_PROMPTS = _load("174f78b92e5c")
 
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
 
@@ -210,6 +212,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(list(_SOURCE_MARKING.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_NOVEL_OUTLINE.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_BLOCK_EDIT_PROMPTS.NEW_SET_IDS.values())),
             )
         )
     ).all()
