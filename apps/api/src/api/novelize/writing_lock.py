@@ -55,13 +55,13 @@ async def lock_with_first_chapter(db: AsyncSession, novel_id: uuid.UUID, content
 
 
 async def first_saved_chapter_at(db: AsyncSession, novel_id: uuid.UUID) -> datetime | None:
-    """성공한 화 생성 작업 중 가장 이른 끝난 시각 — 그 소설에 첫 화가 한 번이라도 저장됐다는 기록이다(작업은 화 저장과
-    같은 트랜잭션에서만 성공이 되고, 화를 지워도 작업 행은 남는다). 연쇄 부모는 화를 저장하지 않아 세지 않는다. 없으면
-    None."""
+    """성공한 화 생성 작업(옛 흐름의 화 생성과 구성 흐름 원고) 중 가장 이른 끝난 시각 — 그 소설에 첫 화가 한 번이라도
+    저장됐다는 기록이다(작업은 화 저장과 같은 트랜잭션에서만 성공이 되고, 화를 지워도 작업 행은 남는다). 연쇄 부모와 구성안
+    작업은 화를 저장하지 않아 세지 않는다. 없으면 None."""
     first_at: datetime | None = await db.scalar(
         select(func.min(NovelJob.finished_at)).where(
             NovelJob.novel_id == novel_id,
-            NovelJob.kind == "chapter_generate",
+            NovelJob.kind.in_(("chapter_generate", "outline_chapter_generate")),
             NovelJob.status == "succeeded",
             NovelJob.finished_at.is_not(None),
         )

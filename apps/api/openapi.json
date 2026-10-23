@@ -28609,7 +28609,10 @@
               "chapter_generate",
               "chapter_regenerate",
               "ai_edit",
-              "chain_generate"
+              "chain_generate",
+              "outline_generate",
+              "episode_outline_generate",
+              "outline_chapter_generate"
             ],
             "title": "Kind"
           },
@@ -30240,7 +30243,10 @@
               "chapter_generate",
               "chapter_regenerate",
               "ai_edit",
-              "chain_generate"
+              "chain_generate",
+              "outline_generate",
+              "episode_outline_generate",
+              "outline_chapter_generate"
             ],
             "title": "Kind"
           },

@@ -70,6 +70,15 @@ CHAT_TURN_COST_SONNET = 60
 CHAT_TURN_COST_OPUS = 120
 NOVELIZE_EPISODE_COST_SONNET = 180
 NOVELIZE_EPISODE_COST_OPUS = 300
+# 구성 흐름의 전체 구성안 한 번과 화 하나의 장면 구성안 한 번의 클로버 — 모델별 고정가. 🔴 임시값이다: 원가를 아직 재지 않아
+# 같은 모델의 화 단가와 같게 두었고, 구성 흐름 스위치(`NOVELIZE_OUTLINE_FLOW_ENABLED`)가 꺼져 있는 동안은 이 값으로 차감하는
+# 경로가 없다. 구성안 원가를 잰 뒤 스위치를 켜기 전에 다시 정한다. 원고(승인한 장면 구성안으로 쓰는 화 하나)는 위 화 단가를 쓴다.
+NOVELIZE_OUTLINE_COST = 80
+NOVELIZE_OUTLINE_COST_SONNET = 180
+NOVELIZE_OUTLINE_COST_OPUS = 300
+NOVELIZE_EPISODE_OUTLINE_COST = 80
+NOVELIZE_EPISODE_OUTLINE_COST_SONNET = 180
+NOVELIZE_EPISODE_OUTLINE_COST_OPUS = 300
 
 # `db/models/clover.py`의 `kind` 컬럼 주석과 같은 목록이다. 컬럼은 Text라 DB가 값을 막지
 # 않으므로(마이그레이션 없이 넓히기 위해서다) 이 `Literal`이 유일한 강제 지점이다.

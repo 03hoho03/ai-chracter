@@ -27,13 +27,15 @@ from api.core import clover, rate_limit_gate
 from api.core.clover import SpendUsage
 from api.core.config import settings
 from api.core.rate_limit_gate import charge_chat_turn
-from api.db.models import Content, ModerationStatus, Novel, NovelChapterRevision, User
+from api.db.models import Content, ModerationStatus, Novel, NovelChapterRevision, NovelJob, User
+from api.db.models.novel import NovelJobKind
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.clover import CloverLedger, CloverSpendAllocation, CloverSpendUsage
 from api.llm.chat_models import DEFAULT_CHAT_MODEL
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, T
 from api.novelize import router as novelize_router
 from api.novelize import runner
+from api.novelize.billing import create_charged_job
 from factories import (
     _add_chapter,
     _batch_output,
@@ -448,6 +450,54 @@ async def test_each_novel_job_records_the_novel_its_room_and_the_works_owner(
     (usage,) = await _usages(db_session, room.user_id)
     assert usage[:5] == ("novel", novel.content_id, creator.id, expected_room, novel_id)
     assert await _spends_without_usage(db_session, room.user_id) == []
+
+
+@pytest.mark.parametrize("kind", ["outline_generate", "episode_outline_generate", "outline_chapter_generate"])
+async def test_each_outline_flow_job_records_the_novel_its_room_and_the_works_owner(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, kind: NovelJobKind
+) -> None:
+    """구성 흐름 작업(전체 구성안·장면 구성안·원고)도 같은 차감 한 자리를 지나 사용처 `novel` 하나를 남긴다 — 원작 작가가
+    소유자, 방·소설은 그 소설의 것. 라우트가 아직 없어 차감 함수를 직접 부른다. 깨지는 시나리오: 구성안 차감이 사용처 없이
+    남아 원작자 정산에서 빠지거나, 지불자를 소유자로 적는다."""
+    for name in ("NOVELIZE_OUTLINE_COST", "NOVELIZE_EPISODE_OUTLINE_COST"):
+        monkeypatch.setattr(clover, name, 50)
+    player = await _make_user_with_clover_lot(db_session, clover_balance=100)
+    creator = await _another_creator(db_session)
+    content = await _make_published_character(
+        db_session, creator_user_id=creator.id, genre_id=(await _get_genre(db_session)).id
+    )
+    assert content.current_published_version_id is not None
+    room = ChatRoom(user_id=player.id, content_id=content.id, content_version_id=content.current_published_version_id)
+    db_session.add(room)
+    await db_session.flush()
+    novel = Novel(
+        user_id=player.id,
+        chat_room_id=room.id,
+        content_id=content.id,
+        content_type="character",
+        content_title="원작",
+        character_name="인물",
+    )
+    db_session.add(novel)
+    await db_session.flush()
+    job = NovelJob(
+        novel_id=novel.id,
+        user_id=player.id,
+        kind=kind,
+        model="gemini",
+        outline_id=uuid.uuid4(),
+        outline_episode_key=uuid.uuid4(),
+        episode_outline_id=uuid.uuid4(),
+    )
+    expected = 40 if kind == "outline_chapter_generate" else 50
+
+    async with AsyncSession(bind=db_session.bind, join_transaction_mode="create_savepoint") as service:
+        await create_charged_job(service, job=job, expected_cost=expected, now=datetime.now(UTC))
+
+    assert await _usages(db_session, player.id) == [
+        ("novel", content.id, creator.id, room.id, novel.id, -expected)
+    ]
+    assert await _spends_without_usage(db_session, player.id) == []
 
 
 async def test_a_novel_job_on_a_restricted_work_charges_nothing_and_records_nothing(

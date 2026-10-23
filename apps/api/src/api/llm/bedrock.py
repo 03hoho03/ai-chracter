@@ -1,6 +1,7 @@
-"""AWS Bedrock 의 Claude 를 부르는 LLMClient. 채팅 턴 생성(지난 턴 다시 생성 포함)과 소설 장 생성(`generate`), 그리고
-판정·요약 모델이 Claude 일 때의 판정·요약(`generate_structured`)을 받는다. 그림을 싣는 구조화(발행 심사)와 지시문을 따로
-싣는 구조화(소설화)는 받지 않는다 — 등록부(`llm/backends.py`)가 그렇게 적어 기동 검증이 그런 배정을 거부한다.
+"""AWS Bedrock 의 Claude 를 부르는 LLMClient. 채팅 턴 생성(지난 턴 다시 생성 포함)과 소설 장 생성(`generate`), 판정·요약
+모델이 Claude 일 때의 판정·요약(`generate_structured`), 사용자가 Claude 를 고른 소설 구성안(지시문을 따로 싣는 구조화,
+`generate_structured_with_instruction`)을 받는다. 그림을 싣는 구조화(발행 심사)는 받지 않는다 — 등록부(`llm/backends.py`)가
+그렇게 적어 기동 검증이 그런 배정을 거부한다.
 
 실패 규칙은 `llm/gemini.py` 와 같다. SDK·네트워크 예외는 전부 `LLMClientError` 계열로 바꾼다(그대로 새면 SSE 제너레이터를
 뚫어 요청 스코프 DB 세션이 강제 종료된다). 사용량은 정상 종료한 스트림만 기록하고, 소설 장의 잘림·빈 본문은 기록한 **뒤**
@@ -19,11 +20,12 @@ import anthropic
 import botocore.eventstream
 import botocore.exceptions
 from anthropic import AsyncAnthropicBedrock
+from anthropic.types import ThinkingConfigParam
 from pydantic import BaseModel
 
 from api.core.config import settings
 from api.llm.call_policy import CALL_POLICIES
-from api.llm.chat_models import backend_model_id, configured_call_site_model
+from api.llm.chat_models import backend_model_id, structured_call_model
 from api.llm.claude_messages import (
     COMMON_TRANSPORT_ERRORS,
     ClaudeStreamTally,
@@ -79,6 +81,19 @@ def _max_tokens(call_site: LLMCallSite) -> int:
     if CALL_POLICIES[call_site].claude_limits == "chapter":
         return settings.bedrock_chapter_max_tokens
     return settings.bedrock_chat_max_tokens
+
+
+# 사고를 끌 수 없는 모델(5.x 글쓰기 모델)의 id 조각. Bedrock id 는 지역 접두(`global.anthropic.`)가 붙어 있어 접두가 아니라
+# 포함으로 본다. 이 모델들은 `thinking: disabled` 를 거부하고, 생략하면 알아서 사고한다.
+_THINKING_ALWAYS_ON = ("claude-opus-5", "claude-sonnet-5")
+
+
+def _structured_thinking(model_id: str) -> ThinkingConfigParam | None:
+    """구조화 요청의 사고 설정. 끌 수 있는 모델(4.x·Haiku)은 끈다 — 판정·구성안에 사고 토큰(출력 단가)을 쓰지 않는다. 끌 수
+    없는 모델은 싣지 않는다(None) — 실으면 요청이 거부된다."""
+    if any(fragment in model_id for fragment in _THINKING_ALWAYS_ON):
+        return None
+    return {"type": "disabled"}
 
 
 def _is_throttling(exc: BaseException) -> bool:
@@ -200,24 +215,45 @@ class BedrockLLMClient(LLMClient):
     ) -> T:
         """판정·요약 하나. 모델은 방의 모델이 아니라 그 호출의 판정·요약 모델 설정이다(라우터가 이 구현을 고른 것도 그
         모델로다). 타임아웃은 그 호출 위치의 Gemini 값과 같고(판정 하나가 턴을 붙잡는 시간이 공급자에 따라 늘지 않게), 출력
-        상한은 채팅 상한이다. 사고는 생성과 같이 끈다. 응답 해석과 실패 정규화는 공용 조각(`parse_structured`)이다."""
+        상한은 채팅 상한이다. 사고는 끈다(`_structured_thinking`). 응답 해석과 실패 정규화는 공용 조각(`parse_structured`)이다."""
         if images:
             # 그림을 싣는 호출(발행 심사)은 기동 검증이 이 구현에 배정하지 못하게 막는다.
             raise _bedrock_error(LLMClientError, "Bedrock client does not take images in a structured call")
-        model = backend_model_id("bedrock", configured_call_site_model(usage.call_site))
+        return await self._structured(prompt, response_schema, None, usage, "generate_structured")
+
+    async def generate_structured_with_instruction(
+        self,
+        prompt: str,
+        response_schema: type[T],
+        *,
+        system_instruction: str,
+        usage: LLMCallContext,
+    ) -> T:
+        """지시문을 `system` 으로 따로 싣는 구조화(소설 구성안). 모델은 사용자가 고른 모델이고(`structured_call_model`),
+        타임아웃·출력 상한은 그 호출 위치의 값이다(구성안은 장 생성 몫). 나머지는 `generate_structured` 와 같다."""
+        return await self._structured(
+            prompt, response_schema, system_instruction, usage, "generate_structured_with_instruction"
+        )
+
+    async def _structured(
+        self, prompt: str, response_schema: type[T], system: str | None, usage: LLMCallContext, method: str
+    ) -> T:
+        model = backend_model_id("bedrock", structured_call_model(usage.call_site, usage.model))
+        thinking = _structured_thinking(model)
         try:
             message = await self._sdk().messages.create(
                 model=model,
                 max_tokens=_max_tokens(usage.call_site),
                 messages=[{"role": "user", "content": str(prompt)}],
+                system=system if system is not None else anthropic.omit,
                 output_config=structured_output_config(response_schema),
-                thinking={"type": "disabled"},
+                thinking=thinking if thinking is not None else anthropic.omit,
                 timeout=request_timeout_ms(usage.call_site) / 1000,
             )
         except _TRANSPORT_ERRORS as exc:
             if _is_throttling(exc):
-                raise _bedrock_error(LLMRateLimitError, f"Bedrock generate_structured() call failed: {exc}") from exc
-            raise _bedrock_error(LLMClientError, f"Bedrock generate_structured() call failed: {exc}") from exc
+                raise _bedrock_error(LLMRateLimitError, f"Bedrock {method}() call failed: {exc}") from exc
+            raise _bedrock_error(LLMClientError, f"Bedrock {method}() call failed: {exc}") from exc
         usage_metadata = message_usage(message)
         _log_usage(usage, model, usage_metadata)
         await record_usage(usage.call_site, model, usage_metadata)

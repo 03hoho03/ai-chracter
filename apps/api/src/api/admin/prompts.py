@@ -68,6 +68,8 @@ from api.novelize.prompts import (
     NovelizePrompt,
     build_novelize_boundary_prompt,
     build_novelize_chapter_prompt,
+    build_novelize_episode_outline_prompt,
+    build_novelize_outline_prompt,
     build_novelize_revise_prompt,
 )
 
@@ -99,7 +101,9 @@ _FROZEN_NOVELIZE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
 _NOVELIZE_CHANNELS: frozenset[str] = frozenset(_FROZEN_NOVELIZE_ROWS)
 
 # `novel` 레인(소설 문안). 경계 제안·문단 수정은 얼린 행과 같은 슬롯이고, 화 생성은 한 번에 여러 화를 쓰게 되며 인물
-# 메모·지난 화 요약·화 수 지시 슬롯이 늘었다. 스토리·캐릭터 원작이 같은 행을 `scope="both"` 로 함께 쓴다.
+# 메모·지난 화 요약·화 수 지시 슬롯이 늘었고, 구성 흐름 원고의 장면 계획·연속성 참고 슬롯이 더해졌다. 구성 흐름의 전체
+# 구성안·장면 구성안 두 채널은 구성안 문안 리비전이 세 체인에 심었다. 스토리·캐릭터 원작이 같은 행을 `scope="both"` 로 함께
+# 쓴다.
 _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
     "novelize_boundary": _FROZEN_NOVELIZE_ROWS["novelize_boundary"],
     "novelize_chapter": frozenset(
@@ -115,10 +119,44 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
                 "previous_excerpt",
                 "episode_plan",
                 "turn_context",
+                "scene_plan",
+                "continuity_context",
             )
         }
     ),
     "novelize_revise": _FROZEN_NOVELIZE_ROWS["novelize_revise"],
+    "novelize_outline": frozenset(
+        {
+            ("both", slot, "")
+            for slot in (
+                "instruction",
+                "work_setting",
+                "user_name",
+                "setting_notes",
+                "character_notes",
+                "previous_summaries",
+                "continuity_context",
+                "outline_plan",
+                "turn_context",
+            )
+        }
+    ),
+    "novelize_episode_outline": frozenset(
+        {
+            ("both", slot, "")
+            for slot in (
+                "instruction",
+                "work_setting",
+                "user_name",
+                "setting_notes",
+                "character_notes",
+                "previous_summaries",
+                "episode_outline",
+                "continuity_context",
+                "turn_context",
+            )
+        }
+    ),
 }
 
 # 코드가 레인별로 아는 (channel, scope, slot, variant)
@@ -136,7 +174,8 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
 # 67/43/4행, 관계·사실 기억 문안 리비전 `5cab2abe4e7b`가 두 레인에 사실 슬롯 `memory_facts` 1행과 추출 채널 `memory_fact` 4행을
 # 더한 72/48/4행, 요약 비밀 표기 리비전 `0aeadefcf159`가 두 레인 요약 채널에 `secret_marking` 1행을 더한 73/49/4행, 장면 헤더 판정
 # 문안 리비전이 story 에 판정 채널 `scene_judgment` 3행을 더한 76/49/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
-# 9·문단 수정 6 의 19행이다(story·character 의 소설화 16행은 그대로 얼려 둔다).
+# 9·문단 수정 6 의 19행이었고(story·character 의 소설화 16행은 그대로 얼려 둔다), 구성안 문안 리비전 `b389c2317149` 가 화 생성에
+# 2행·전체 구성안 9행·장면 구성안 9행을 더해 39행이다.
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
 # 달라 두 파일에 따로 둔다(시드 하나는 상수 데이터, 이건 임의 입력을 거부하는 게이트).
@@ -377,7 +416,8 @@ _JUDGMENT_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
 
 # Gemini 가 아닌 체인은 그 모델이 쓸 수 있는 채널만 갖는다.
 # - Claude 세트(sonnet·opus 체인): 채팅 레인은 생성의 `system`·`generation` 과 그 레인의 판정·요약 채널, `novel` 레인은 화
-#   생성 `novelize_chapter` 뿐이다(경계 제안·문단 수정은 늘 Gemini 체인). 판정·요약 채널은 판정 모델을 그 모델로 바꿨을 때
+#   생성 `novelize_chapter` 와 구성 흐름의 구성안 두 채널이다(모두 사용자가 고른 모델로 낸다 — 경계 제안·문단 수정은 늘
+#   Gemini 체인). 판정·요약 채널은 판정 모델을 그 모델로 바꿨을 때
 #   읽는 문안이다(판정·요약 모델 설정, 기본은 Gemini — 방에서 고른 모델과는 무관하다).
 # - 판정 전용 세트(haiku 체인): 그 레인의 판정·요약 채널만. 그 id 로는 글을 쓰지 않는다.
 # R-1 기대 집합은 같은 레인 Gemini 표에서 이 채널만 남긴 것이다(표를 따로 적지 않는다 — 슬롯이 늘면 체인이 함께 따라온다).
@@ -389,7 +429,7 @@ _CLAUDE_SET_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
     "story": frozenset({"system", "generation"}) | _JUDGMENT_CHANNELS_BY_LANE["story"],
     "character": frozenset({"system", "generation"}) | _JUDGMENT_CHANNELS_BY_LANE["character"],
     "publish_filter": frozenset(),
-    "novel": frozenset({"novelize_chapter"}),
+    "novel": frozenset({"novelize_chapter", "novelize_outline", "novelize_episode_outline"}),
     "novel_screen": frozenset(),
 }
 
@@ -1315,6 +1355,9 @@ _SAMPLE_NOVELIZE_TURN_LINES = (
     "[턴 1] {assistant}: [샘플] 왔어?\n[턴 2] {user}: [샘플] 응, 늦어서 미안.\n[턴 2] {assistant}: [샘플] 괜찮아."
 )
 _SAMPLE_NOVELIZE_PARAGRAPHS = ["[샘플] 첫 문단", "[샘플] 둘째 문단", "[샘플] 셋째 문단"]
+# 구성 흐름의 장면 계획과 맥락으로만 보내는 구간(원문 줄과 같은 형식).
+_SAMPLE_NOVELIZE_SCENE_PLAN = "[샘플] 1. 비 오는 정류장에서 다시 만난다(턴 1~2)."
+_SAMPLE_NOVELIZE_CONTEXT_LINES = "[턴 1] {assistant}: [샘플] 지난번 일은 잊어."
 
 # 소설 원작의 종류 = 라벨·등급 규칙을 읽을 채팅 레인.
 _NovelContentLane = Literal["story", "character"]
@@ -1342,7 +1385,7 @@ def _novel_preview_items(
     chat_sets: _ChatSets,
 ) -> list[AdminPromptPreviewItem]:
     """`novel` 레인. 원작 종류(스토리·캐릭터)마다 그 채팅 Gemini 세트의 라벨·등급 규칙으로 렌더한다. Claude 체인은 화
-    생성만 그 세트를 읽어 그 항목만이다. 실호출은 지시문(뒤에 등급 규칙)과 본문을 따로 보내지만 미리보기는 그 순서대로 이어
+    생성과 구성안 두 호출만 그 세트를 읽어 그 항목만이다. 실호출은 지시문(뒤에 등급 규칙)과 본문을 따로 보내지만 미리보기는 그 순서대로 이어
     보여 준다."""
     items: list[AdminPromptPreviewItem] = []
     for content in _NOVEL_CONTENT_LANES:
@@ -1401,6 +1444,49 @@ def _novel_content_preview_items(
                 previous_summaries="[샘플] 1화: 두 사람이 비 오는 밤 처음 만났다.",
                 episode_count=2,
                 novel_title_rule="[샘플] 이번에는 소설 제목도 쓴다.",
+                scene_plan=_SAMPLE_NOVELIZE_SCENE_PLAN,
+                context_lines=_SAMPLE_NOVELIZE_CONTEXT_LINES.format(assistant=assistant),
+            ),
+        )
+    )
+    items.append(
+        _novelize_preview_item(
+            "novelize_outline",
+            f"novelize_outline · {suffix}",
+            lambda: build_novelize_outline_prompt(
+                chat_set=chat_set,
+                chat_sections=chat_sections,
+                sections=sections,
+                is_story_chat=is_story_chat,
+                work_setting="[샘플] 작품 설정",
+                user_name="[샘플] 하늘",
+                setting_notes="[샘플] 설정 노트",
+                turn_lines=turn_lines,
+                max_episodes=6,
+                episode_hint=3,
+                character_notes="[샘플] 도윤(윤이): 소꿉친구다.",
+                previous_summaries="[샘플] 1화: 두 사람이 비 오는 밤 처음 만났다.",
+                context_lines=_SAMPLE_NOVELIZE_CONTEXT_LINES.format(assistant=assistant),
+            ),
+        )
+    )
+    items.append(
+        _novelize_preview_item(
+            "novelize_episode_outline",
+            f"novelize_episode_outline · {suffix}",
+            lambda: build_novelize_episode_outline_prompt(
+                chat_set=chat_set,
+                chat_sections=chat_sections,
+                sections=sections,
+                is_story_chat=is_story_chat,
+                work_setting="[샘플] 작품 설정",
+                user_name="[샘플] 하늘",
+                setting_notes="[샘플] 설정 노트",
+                episode_outline="[샘플] 2화 · 빗속의 약속 — 두 사람이 정류장에서 다시 만난다.",
+                turn_lines=turn_lines,
+                character_notes="[샘플] 도윤(윤이): 소꿉친구다.",
+                previous_summaries="[샘플] 1화: 두 사람이 비 오는 밤 처음 만났다.",
+                context_lines=_SAMPLE_NOVELIZE_CONTEXT_LINES.format(assistant=assistant),
             ),
         )
     )

@@ -963,6 +963,9 @@ _EXPECTED_TIMEOUT_MS: dict[str, int] = {
     "novelize_chapter": 300_000,
     "novelize_revise": 120_000,
     "novelize_boundary": 30_000,
+    # 구성안 두 호출은 방 원문 전체를 읽고 목록을 내므로 장 생성과 같은 상한이다.
+    "novelize_outline": 300_000,
+    "novelize_episode_outline": 300_000,
 }
 
 

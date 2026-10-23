@@ -258,13 +258,13 @@ async def _chapter_models(db: AsyncSession, user_id: uuid.UUID) -> tuple[list[No
 
 
 async def _last_chapter_model(db: AsyncSession, novel_id: uuid.UUID, *, allowed: bool) -> ChatModelId:
-    """이 소설에서 가장 최근에 성공한 장 작업의 모델을 지금 쓸 모델로 읽는다. 실패한 장은 환불돼 사용자가 그 모델로 글을
-    받은 적이 없으므로 세지 않는다."""
+    """이 소설에서 가장 최근에 성공한 장 작업(구성 흐름 원고 포함)의 모델을 지금 쓸 모델로 읽는다. 실패한 장은 환불돼
+    사용자가 그 모델로 글을 받은 적이 없으므로 세지 않는다. 구성안 작업은 화를 쓰지 않아 세지 않는다."""
     stored = await db.scalar(
         select(NovelJob.model)
         .where(
             NovelJob.novel_id == novel_id,
-            NovelJob.kind.in_(("chapter_generate", "chapter_regenerate")),
+            NovelJob.kind.in_(("chapter_generate", "chapter_regenerate", "outline_chapter_generate")),
             NovelJob.status == "succeeded",
         )
         .order_by(NovelJob.created_at.desc(), NovelJob.id.desc())

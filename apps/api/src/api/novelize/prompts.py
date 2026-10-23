@@ -1,6 +1,7 @@
-"""소설화 호출 세 개(묶음 경계 제안·화 생성·문단 수정)의 프롬프트 빌더. 문안은 `novel` 레인 프롬프트 세트의
+"""소설화 호출(묶음 경계 제안·화 생성·문단 수정, 그리고 구성 흐름의 전체 구성안·장면 구성안)의 프롬프트 빌더. 문안은 `novel` 레인 프롬프트 세트의
 `novelize_*` 채널에 있고(스토리·캐릭터 원작이 같은 행을 `scope="both"` 로 함께 쓴다), 코드는 값만 만든다. 화 생성은
-작업의 모델 체인 세트를, 경계 제안과 문단 수정은 Gemini 체인 세트를 읽는다(`inputs.load_novel_prompt_source`).
+작업의 모델 체인 세트를, 경계 제안과 문단 수정은 Gemini 체인 세트를 읽는다(`inputs.load_novel_prompt_source`). 구성안 두 호출도
+고른 모델의 체인 세트를 읽는다.
 
 각 채널의 `instruction` 슬롯만 `system_instruction` 으로 보내고 나머지 슬롯은 본문으로 보낸다. 원문·작품 설정·
 설정 노트·수정 요청은 사용자나 작가가 쓴 글이라 지시처럼 읽힐 수 있어, 역할 규칙을 그 글과 다른 통로에 두려는 것이다
@@ -31,6 +32,10 @@ _REQUIRED_SLOTS: dict[str, frozenset[str]] = {
     "novelize_boundary": frozenset({_INSTRUCTION_SLOT, "max_turns", "turn_context"}),
     "novelize_chapter": frozenset({_INSTRUCTION_SLOT, "work_setting", "user_name", "episode_plan", "turn_context"}),
     "novelize_revise": frozenset({_INSTRUCTION_SLOT, "work_setting", "paragraphs", "target_range", "user_request"}),
+    "novelize_outline": frozenset({_INSTRUCTION_SLOT, "work_setting", "user_name", "outline_plan", "turn_context"}),
+    "novelize_episode_outline": frozenset(
+        {_INSTRUCTION_SLOT, "work_setting", "user_name", "episode_outline", "turn_context"}
+    ),
 }
 
 
@@ -162,6 +167,8 @@ def build_novelize_chapter_prompt(
     episode_count: int = 1,
     episode_chars: int | None = None,
     novel_title_rule: str = "",
+    scene_plan: str = "",
+    context_lines: str = "",
 ) -> NovelizePrompt:
     """묶음 생성·다시 만들기(자유 텍스트, 과금). `sections` 는 소설 레인 세트, `chat_set`·`chat_sections` 는 라벨과
     등급 규칙을 읽을 채팅 세트다. 지시문 뒤에 그 등급 규칙을 붙인다.
@@ -184,7 +191,11 @@ def build_novelize_chapter_prompt(
     - `episode_count`·`episode_chars`·`novel_title_rule`: 이번 묶음을 나눌 화 수, 화 하나의 목표 글자 수, 소설 제목을
       쓸지 알리는 한 줄(화 수 지시 슬롯 `episode_plan` 에 들어간다).
 
-    뒤의 다섯 값의 기본값은 첫 묶음이 아닌 한 화짜리 묶음이다. 글자 수를 비우면 설정의 화 목표 길이다."""
+    - `scene_plan`·`context_lines`: 구성 흐름 원고만 채우는 승인된 장면 구성안과 맥락으로만 보내는 구간의 원문 줄(원문과
+      같은 형식). 옛 흐름은 비워 두고, 두 슬롯이 conditional 이라 섹션째 빠져 렌더가 그대로다.
+
+    `character_notes` 부터 `novel_title_rule` 까지의 기본값은 첫 묶음이 아닌 한 화짜리 묶음이다. 글자 수를 비우면 설정의 화
+    목표 길이다."""
     _require("novelize_chapter", user_name=user_name, turn_lines=turn_lines)
     values = {
         **_labels(chat_set, is_story_chat=is_story_chat),
@@ -198,9 +209,93 @@ def build_novelize_chapter_prompt(
         "episode_count": str(episode_count),
         "episode_chars": str(episode_chars if episode_chars is not None else settings.novelize_episode_target_chars),
         "novel_title_rule": novel_title_rule,
+        "scene_plan": scene_plan,
+        "context_lines": context_lines,
     }
     return _render(
         sections, channel="novelize_chapter", is_story_chat=is_story_chat, values=values, rating_sections=chat_sections
+    )
+
+
+def build_novelize_outline_prompt(
+    *,
+    chat_set: PromptSet,
+    chat_sections: Sequence[PromptSection],
+    sections: Sequence[PromptSection],
+    is_story_chat: bool,
+    work_setting: str,
+    user_name: str,
+    setting_notes: str,
+    turn_lines: str,
+    max_episodes: int,
+    episode_hint: int,
+    character_notes: str = "",
+    previous_summaries: str = "",
+    context_lines: str = "",
+) -> NovelizePrompt:
+    """전체 구성안(구조화, 과금). 지시문 뒤에 채팅 세트의 등급 규칙을 붙인다 — 구성안은 화의 사건을 정하는 계획이라 화 생성과
+    같은 수위 규칙 아래에서 짠다.
+
+    `turn_lines` 는 소설에 넣기로 고른 구간들의 원문 줄이고 화 생성과 같은 형식이다. `context_lines` 는 맥락으로만 보내는 구간의
+    원문 줄이고 비면 섹션째 빠진다. `max_episodes`·`episode_hint` 는 화 수 상한과 원문 분량으로 본 안내값이다(1 ≤ 안내값 ≤
+    상한 — 어긋나면 "0화 이하로 나눈다" 같은 지시가 나가지 않게 렌더 전에 거절한다). 나머지 값은 화 생성과 같다."""
+    _require("novelize_outline", user_name=user_name, turn_lines=turn_lines)
+    if not 1 <= episode_hint <= max_episodes:
+        raise PromptRenderError(
+            f"channel='novelize_outline' 화 수 범위가 맞지 않다: 안내 {episode_hint}, 상한 {max_episodes}"
+        )
+    values = {
+        **_labels(chat_set, is_story_chat=is_story_chat),
+        "work_setting": work_setting,
+        "user_name": user_name,
+        "setting_notes": setting_notes,
+        "character_notes": character_notes,
+        "previous_summaries": previous_summaries,
+        "context_lines": context_lines,
+        "max_episodes": str(max_episodes),
+        "episode_hint": str(episode_hint),
+        "turn_lines": turn_lines,
+    }
+    return _render(
+        sections, channel="novelize_outline", is_story_chat=is_story_chat, values=values, rating_sections=chat_sections
+    )
+
+
+def build_novelize_episode_outline_prompt(
+    *,
+    chat_set: PromptSet,
+    chat_sections: Sequence[PromptSection],
+    sections: Sequence[PromptSection],
+    is_story_chat: bool,
+    work_setting: str,
+    user_name: str,
+    setting_notes: str,
+    episode_outline: str,
+    turn_lines: str,
+    character_notes: str = "",
+    previous_summaries: str = "",
+    context_lines: str = "",
+) -> NovelizePrompt:
+    """화 하나의 장면 구성안(구조화, 과금). `episode_outline` 은 승인된 전체 구성안에서 이 화에 정한 제목·줄거리를 사람이 읽는
+    글로 적은 것이고, `turn_lines` 는 그 화의 근거 구간 원문 줄이다. 나머지는 `build_novelize_outline_prompt` 와 같다."""
+    _require("novelize_episode_outline", user_name=user_name, turn_lines=turn_lines, episode_outline=episode_outline)
+    values = {
+        **_labels(chat_set, is_story_chat=is_story_chat),
+        "work_setting": work_setting,
+        "user_name": user_name,
+        "setting_notes": setting_notes,
+        "character_notes": character_notes,
+        "previous_summaries": previous_summaries,
+        "episode_outline": episode_outline,
+        "context_lines": context_lines,
+        "turn_lines": turn_lines,
+    }
+    return _render(
+        sections,
+        channel="novelize_episode_outline",
+        is_story_chat=is_story_chat,
+        values=values,
+        rating_sections=chat_sections,
     )
 
 

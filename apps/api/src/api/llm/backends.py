@@ -55,10 +55,10 @@ BACKENDS: dict[BackendId, BackendSpec] = {
         credential_env=(),
     ),
     "bedrock": BackendSpec(
-        # 구조화 출력은 Claude 공용 조각(`llm/claude_messages.py`)으로 받는다. 그림을 싣거나 지시문을 따로 싣는 구조화(발행
-        # 심사·소설화)는 구현하지 않았다.
+        # 구조화 출력은 Claude 공용 조각(`llm/claude_messages.py`)으로 받는다. 지시문을 따로 싣는 구조화는 `system` 으로 싣는다.
+        # 그림을 싣는 구조화(발행 심사)는 구현하지 않았다.
         capabilities=BackendCapabilities(
-            structured="json_schema", structured_images=False, structured_with_instruction=False
+            structured="json_schema", structured_images=False, structured_with_instruction=True
         ),
         model_id_settings={
             "sonnet": "bedrock_sonnet_model_id",
@@ -74,7 +74,7 @@ BACKENDS: dict[BackendId, BackendSpec] = {
     "anthropic": BackendSpec(
         # Bedrock 과 같은 공용 조각으로 같은 구조화 호출만 받는다.
         capabilities=BackendCapabilities(
-            structured="json_schema", structured_images=False, structured_with_instruction=False
+            structured="json_schema", structured_images=False, structured_with_instruction=True
         ),
         model_id_settings={
             "sonnet": "anthropic_sonnet_model_id",
@@ -108,6 +108,14 @@ _EFFORTS_WITH_THINKING_OFF = ("low", "medium", "high")
 def turns_off_structured_thinking(model_id: str) -> bool:
     """Anthropic 직결 구조화 호출이 이 모델에서 `thinking: disabled` 를 싣는가."""
     return model_id.startswith(_STRUCTURED_THINKING_OFF_PREFIXES)
+
+
+def follows_carried_model(call_site: LLMCallSite) -> bool:
+    """구조화 호출이 호출에 실린 모델(사용자가 고른 모델)로 구현과 모델 id 를 고르는가 — 모델을 고를 수 있는 구조화 호출(구성안
+    두 호출)뿐이다. 나머지 구조화 호출은 그 호출의 모델(`call_site_model`)로 간다. 모델을 고를 수 있는 스트리밍 호출(채팅 턴·
+    장 생성)은 원래 실린 모델로 가고, 그 호출 위치로 구조화를 부르는 일은 없어 이 판정 밖이다."""
+    policy = CALL_POLICIES[call_site]
+    return policy.model_selectable and policy.call_kind != "stream"
 
 
 def call_site_model(call_site: LLMCallSite, read_setting: Callable[[str], str]) -> PromptSetModelId:
@@ -183,6 +191,8 @@ def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting
     - 배정이 어떤 모델의 경로를 기본 구현에서 옮기는데 그 구현의 자격이 비어 있으면 거부한다. 기본 구현을 그대로 적은
       배정은 경로를 바꾸지 않으므로 자격을 묻지 않는다.
 
+    실린 모델을 따르는 구조화 호출(구성안)은 배정이 있든 없든 글쓰기 모델마다 실제로 갈 구현이 그 방식을 받는지 본다.
+
     모델 설정이 있는 호출(판정·요약)은 배정이 있든 없든 그 호출이 실제로 갈 구현을 해석해, 방식을 받지 못하거나 자격이 비어
     있으면 거부한다 — 판정 모델만 바꾸고 배정을 두지 않으면 판정은 그 모델의 기본 구현(Claude 면 Bedrock)으로 가는데, 그
     자격이 비어 있으면 매 판정이 실패한다. 채팅 판정과 미리보기 판정은 모델 설정을 함께 쓰지만 배정은 호출 위치마다라
@@ -213,6 +223,17 @@ def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting
         missing = _missing_credentials(backend, read_setting)
         if missing:
             errors.append(f"{entry} — 경로를 {backend} 로 옮기는데 {', '.join(missing)} 가 비어 있다")
+    for call_site, policy in CALL_POLICIES.items():
+        if not follows_carried_model(call_site):
+            continue
+        # 실린 모델을 따르는 구조화 호출(구성안)은 배정이 없어도 글쓰기 모델마다 갈 구현이 그 방식을 받아야 한다 — 아니면 첫
+        # 상위 모델 구성안에서야 실패한다. 자격은 상위 모델 스위치의 기동 검증(`core/config.py`)이 본다.
+        for model in get_args(ChatModelId):
+            _, backend = pick_backend(call_site, model, assignments)
+            if not _takes(BACKENDS[backend].capabilities, policy.call_kind):
+                errors.append(
+                    f"{model} 로 고른 {call_site} — 가는 구현 {backend} 는 이 호출의 방식({policy.call_kind})을 받지 못한다"
+                )
     for call_site, policy in CALL_POLICIES.items():
         if policy.model_setting is None:
             continue
