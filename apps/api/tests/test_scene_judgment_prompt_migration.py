@@ -50,6 +50,8 @@ _FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
 _SOURCE_MARKING = _load("0c1a85bc5c2f")
 # 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는 이것부터다.
 _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
+# 그 뒤 소설 레인 세 체인에 구성안 문안을 심은 리비전 — story 레인과 무관하지만 전역 버전 번호를 이어 쓴다.
+_NOVEL_OUTLINE = _load("b389c2317149")
 
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
 
@@ -207,11 +209,12 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(list(_FACT_KNOWN_BY_ORDER.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SOURCE_MARKING.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_NOVEL_OUTLINE.NEW_SET_IDS.values())),
             )
         )
     ).all()
     # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 장면 추출 지시문·사실 추출 지시문 차례·요약 비밀 표기 출처·장면 판정
-    # 지시문 교체 리비전의 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
+    # 지시문 교체·소설 구성안 문안 리비전의 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 

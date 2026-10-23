@@ -63,6 +63,9 @@ _FACT_KNOWN_BY_ORDER_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("c1f3945c
 _SOURCE_MARKING_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0c1a85bc5c2f").NEW_SET_IDS
 # 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전의 세트 — story 활성 Gemini 세트이기도 하다.
 _SCENE_INSTRUCTION_V2_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0f82ea9f9fa5").NEW_SET_IDS
+# 그 뒤 소설 레인 세 체인에 구성안 문안을 더한 세트를 게시하는 리비전 — head 의 소설 레인 활성이라, "이 리비전 직후 상태"를
+# 보는 테스트는 그 리비전부터 먼저 되돌린다(실제 downgrade 순서).
+_NOVEL_OUTLINE = _load("b389c2317149")
 
 Row = tuple[str, str, str, str, str, bool, int]
 
@@ -101,6 +104,7 @@ async def test_the_copy_set_is_the_chat_novelize_rows_byte_for_byte(db_session: 
 
 async def test_each_novel_chain_has_its_new_set_active(db_session: AsyncSession) -> None:
     """(novel, 모델)마다 활성 세트가 하나다 — 없으면 그 모델 화 생성이 실패하고 어드민 소설 탭 초안 조회가 500 이다."""
+    await (await db_session.connection()).run_sync(_NOVEL_OUTLINE.delete_seeded_rows)
     assert await _active_id(db_session, "novel") == _M.NEW_SET_IDS["gemini"]
     assert await _active_id(db_session, "novel", "sonnet") == _M.NEW_SET_IDS["sonnet"]
     assert await _active_id(db_session, "novel", "opus") == _M.NEW_SET_IDS["opus"]
@@ -137,12 +141,19 @@ async def test_the_new_gemini_set_changes_only_the_chapter_channel_and_claude_ch
 async def test_seeded_sets_pass_the_novel_lane_publish_check(
     db_session: AsyncSession, set_key: str, model: ChatModelId
 ) -> None:
-    """시드가 소설 레인 게시 검증(슬롯 집합·자리표시자·order)을 그대로 통과한다 — 통과하지 못하면 어드민이 시드를 열어
-    그대로 다시 게시하는 것조차 막힌다."""
+    """시드에 그 뒤 구성안 문안 리비전이 더한 행만 얹으면 지금 코드의 소설 레인 게시 검증(슬롯 집합·자리표시자·order)을
+    통과한다 — 이 시드의 행 자체가 검증 표와 어긋나지 않는다는 뜻이다. 통과하지 못하면 어드민이 시드를 열어 그대로 다시
+    게시하는 것조차 막힌다."""
     prompt_set = await db_session.get_one(PromptSet, _M.NEW_SET_IDS[set_key])
     sections = list(
         (await db_session.scalars(sa.select(PromptSection).where(PromptSection.prompt_set_id == prompt_set.id))).all()
     )
+    seed_rows = [(s.channel, s.scope, s.slot, s.variant, s.body, s.conditional, s.order) for s in sections]
+    later = [*_NOVEL_OUTLINE.chapter_rows(seed_rows), *_NOVEL_OUTLINE.NEW_CHANNEL_ROWS]
+    sections += [
+        PromptSection(channel=c, scope=sc, slot=sl, variant=v, body=b, conditional=cond, order=o)
+        for c, sc, sl, v, b, cond, o in later
+    ]
     _validate_prompt_draft_for_publish(prompt_set, sections, lane="novel", model=model)
 
 

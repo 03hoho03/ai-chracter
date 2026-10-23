@@ -219,7 +219,42 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
     "novel": {
         **_NOVELIZE_SLOTS,
         "novelize_chapter": _NOVELIZE_SLOTS["novelize_chapter"]
-        | {("both", "character_notes", ""), ("both", "previous_summaries", ""), ("both", "episode_plan", "")},
+        | {
+            ("both", "character_notes", ""),
+            ("both", "previous_summaries", ""),
+            ("both", "episode_plan", ""),
+            ("both", "scene_plan", ""),
+            ("both", "continuity_context", ""),
+        },
+        # 구성안 문안 리비전이 심은 전체 구성안·장면 구성안 두 채널.
+        "novelize_outline": {
+            ("both", slot, "")
+            for slot in (
+                "instruction",
+                "work_setting",
+                "user_name",
+                "setting_notes",
+                "character_notes",
+                "previous_summaries",
+                "continuity_context",
+                "outline_plan",
+                "turn_context",
+            )
+        },
+        "novelize_episode_outline": {
+            ("both", slot, "")
+            for slot in (
+                "instruction",
+                "work_setting",
+                "user_name",
+                "setting_notes",
+                "character_notes",
+                "previous_summaries",
+                "episode_outline",
+                "continuity_context",
+                "turn_context",
+            )
+        },
     },
     # 노벨 텍스트 심사 레인 시드 리비전이 심은 지시문·심사할 글 두 행.
     "novel_screen": {
