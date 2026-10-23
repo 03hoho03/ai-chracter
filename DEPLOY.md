@@ -1701,6 +1701,82 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   행이 없다. [downgrade → revert 병합] 한 짝으로 하고 겹침 중 `main` 병합을 멈춘다(새 이미지가 칸 없는 스키마에서 돌면 자산 조회가
   깨진다).
 
+**어드민 옛 판 읽기 · 노벨 신고 '삽화 내림으로 처리 완료' — 배포 · 되돌리기.** 마이그레이션 없음. 어드민 화 읽기의 `edition` 쿼리와
+응답의 판 목록(`editions`)은 기존 판 행(`novel_chapter_editions`)만 읽고, 신고 처리 방법 `illustration_takedown` 은 신고 상태
+`resolved` 를 다시 쓰며(native enum 변경 없음) 감사 로그에 새 값 `novel-report-illustration-takedown` 을 남긴다
+(`admin_action_logs.action_type` 은 CHECK 없는 Text). 어드민 라우트만 넓어지므로 두 스위치(`NOVEL_PUBLIC_POLICY_V2_ENABLED`·
+`NOVEL_ILLUSTRATIONS_ENABLED`)가 꺼진 채 배포해도 회원 화면은 바뀌지 않는다. 평상시 겹침 교체로 배포한다.
+
+- **겹침**: 옛 이미지는 새 처리 방법을 422 로 거절하고 `edition` 쿼리를 무시해 지금 판을 준다 — 어드민 화면은 요청한 판이 아니라
+  응답의 `edition` 으로 어느 판을 보는지 판단한다(그래서 이 처리 방법·판 고르기를 쓰는 admin 화면은 이 API 배포를 확인한 뒤에
+  낸다). 새 감사 값 행이 겹침 동안 생기면 옛 이미지가 그 게시자의 회원 상세(`GET /admin/users/{id}`)를 그릴 때 조치 이력의 응답
+  검증에서 500 이고, 겹침이 끝나면 풀린다.
+- **되돌리기(이 처리 방법이 생기기 전 이미지로)**: 먼저 아래 SELECT 로 새 감사 값 행 수와 걸린 게시자 수를 본다. **0 이면** 이미지만
+  되돌려도 된다. **1 이상이면** 옛 이미지에서 그 게시자들의 회원 상세가 계속 500 이다 — 감사 기록이라 행을 지우지 말고, 이미지
+  되돌리기를 미루고 앞으로 고치는 쪽을 택한다. 꼭 되돌려야 하면 그 게시자 수만큼 회원 상세가 열리지 않는 것을 감수하고, 다시
+  올리면 풀린다.
+
+```sh
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c \
+  "SELECT count(*), count(DISTINCT target_user_id) FROM admin_action_logs
+     WHERE action_type = 'novel-report-illustration-takedown';"
+```
+
+**잘못 내린 삽화 되돌리기 — 운영 DB 수동 쓰기(사용자 승인 필요).** 내림을 푸는 라우트는 없다. 내림은 `novel_illustration_takedowns`
+의 행 하나(키 = 그림 바이트의 sha256 `content_sha256`, 내린 자산 사본 `asset_id`, 독자에게 보인 사유 `reason`, `created_at`)이고,
+읽기는 자산 행의 `assets.display_sha256` 또는 자산 id 로 이 표를 이어 그림 자리를 비운다. 그래서 그 행을 지우면 같은 바이트를 담은
+**모든 자산·모든 노벨·모든 판**에서 함께 풀린다 — 한 노벨만 풀 수는 없다. 아래 쓰기는 운영 데이터를 바꾸는 수동 작업이므로 사용자
+승인을 받은 뒤에만 한다. 앞뒤 확인은 모두 읽기 전용이다.
+
+1. **풀 행 찾기(읽기)**: 잘못 내린 자산 id(어드민 화 읽기 응답의 `assetId`, 내림 응답의 `assetId`)로 그 자산을 비우는 내림 행을 모두
+   찾는다. 보통 한 행이고, 두 행이면(자산 id 로 내린 행과 같은 바이트를 다른 자산으로 내린 행) 둘 다 지워야 풀린다.
+
+   ```sh
+   sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+     psql -U postgres -d ai_character_chat -At -c \
+     "SELECT content_sha256, asset_id, created_at FROM novel_illustration_takedowns
+        WHERE asset_id = '<자산 id>'
+           OR content_sha256 = (SELECT display_sha256 FROM assets WHERE id = '<자산 id>');"
+   ```
+
+2. **함께 풀리는 자산 보기(읽기)**: 1 에서 나온 sha 마다 그 바이트를 담은 자산을 본다 — 이 자산들이 쓰인 모든 화에서 그림이 다시
+   보인다. 다른 회원의 자산이 섞여 있으면 그것도 함께 풀리는 것이 맞는지 판단한다.
+
+   ```sh
+   sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+     psql -U postgres -d ai_character_chat -At -c \
+     "SELECT a.id, a.owner_user_id FROM assets a JOIN novel_illustration_takedowns t
+        ON t.content_sha256 = a.display_sha256 OR t.asset_id = a.id
+        WHERE t.content_sha256 = '<1 에서 본 sha>';"
+   ```
+
+3. **지우기(쓰기, 승인 뒤)**: 지울 표는 `novel_illustration_takedowns` 하나뿐이다(다른 표가 이 행을 FK 로 가리키지 않는다). 1 에서
+   본 sha 마다 아래를 한 번씩 돌린다. `DO` 블록은 한 트랜잭션이라 지운 행 수가 1 이 아니면 예외로 통째로 되돌아간다(sha 를 잘못
+   옮겨 적었으면 아무것도 지우지 않고 멈춘다).
+
+   ```sh
+   sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+     psql -U postgres -d ai_character_chat -v ON_ERROR_STOP=1 -c \
+     "DO \$\$ DECLARE n int; BEGIN
+        DELETE FROM novel_illustration_takedowns WHERE content_sha256 = '<1 에서 본 sha>';
+        GET DIAGNOSTICS n = ROW_COUNT;
+        IF n <> 1 THEN RAISE EXCEPTION 'deleted % rows, rolled back', n; END IF;
+      END \$\$;"
+   ```
+
+4. **확인(읽기)**: 1 의 SELECT 가 빈 결과인지 본다. 어드민 화 읽기에서 그 자리의 `withheld` 가 비고 주소가 실리는지 본다(응답
+   캐시는 없다).
+
+지우지 않는 것: 감사 로그(`novel-illustration-takedown`·`novel-report-illustration-takedown` 행 — 내렸다가 풀었다는 사실이 감사
+기록이다, 푼 사실은 운영 기록에 따로 적는다), `assets.display_sha256`(그림 바이트의 사실일 뿐 내림 여부가 아니다), 그 그림으로
+'삽화 내림으로 처리 완료'한 신고(처리완료로 남는다 — 다시 판단하려면 어드민에서 다시 처리한다).
+
+**통과 기억**: 내릴 때 그 바이트의 삽화 심사 통과 기억(`novel_illustration_screen_passes` 의 그 `content_sha256` 행 전부)을 지웠고,
+되돌려도 되살아나지 않는다. 그래서 이미 공개된 판은 판의 심사 시각이 그대로라 다시 심사 없이 바로 그림을 보이지만, 그 그림이 든
+화를 작가가 **다시 공개하면 그 바이트를 처음처럼 다시 심사한다**(심사 호출 1회, 이번에는 거부될 수도 있다). 통과 기억 행을 손으로
+넣지 않는다 — 모델·심사 문안 판 키를 손으로 맞추면 심사 없이 통과시키는 것과 같다.
+
 ### 3-12. 상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기
 
 채팅 턴 생성(측정용 리플레이 포함)과 소설 장 생성은 Gemini 대신 Claude 로 돌 수 있다. 판정·요약은 고른
