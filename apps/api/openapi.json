@@ -8549,7 +8549,7 @@
           "novels"
         ],
         "summary": "Approve Source Selection",
-        "description": "가장 최근 리비전의 초안을 승인한다. 이미 승인된 최신 리비전이면 그대로 돌려준다(두 번 누름). 최신이 아니면 409\n`NOVEL_SOURCE_SELECTION_CONFLICT`. 저장 뒤 그 include 구간으로 화가 생겼으면 422 `NOVEL_SOURCE_SECTION_LOCKED`, 고른 구간의 원문이\n저장 뒤 바뀌었으면 409 `NOVEL_SOURCE_CHANGED`(다시 저장해 지금 원문으로 고른다) — 둘 다 초안은 그대로 남는다.",
+        "description": "가장 최근 리비전의 초안을 승인한다. 이미 승인된 최신 리비전이면 그대로 돌려준다(두 번 누름). 최신이 아니면 409\n`NOVEL_SOURCE_SELECTION_CONFLICT`. 저장 뒤 그 include 구간으로 화가 생겼으면 422 `NOVEL_SOURCE_SECTION_LOCKED`, 고른 구간의 원문이\n저장 뒤 바뀌었으면 409 `NOVEL_SOURCE_SELECTION_SOURCE_CHANGED`(다시 저장해 지금 원문으로 고른다 — 화 다시 만들기의\n원문 변경 코드와 할 일이 달라 코드를 나눈다) — 둘 다 초안은 그대로 남는다.",
         "operationId": "approve_source_selection_novels__novel_id__source_selection_approve_post",
         "parameters": [
           {
@@ -31916,6 +31916,11 @@
             "title": "Extendtoroomend",
             "default": false
           },
+          "roomEndMessageId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Roomendmessageid"
+          },
           "sections": {
             "items": {
               "$ref": "#/components/schemas/NovelSourceSectionInput"
@@ -31928,10 +31933,11 @@
         "type": "object",
         "required": [
           "baseRevision",
+          "roomEndMessageId",
           "sections"
         ],
         "title": "NovelSourceSelectionSaveRequest",
-        "description": "선택 초안 저장. `base_revision` 은 화면이 본 가장 최근 리비전(선택이 아직 없으면 null)이고 지금 최신과 다르면 409 다.\n구간은 키 순으로, 겹치지 않게(맞닿은 메시지도 공유하지 않게) 보낸다.\n\n고정 끝(이 선택이 다루는 방의 마지막 메시지)은 첫 저장 때의 방 끝이고 그 뒤 저장은 앞 리비전의 것을 물려받는다 — 고른 뒤\n이어진 대화가 저절로 붙지 않게. `extend_to_room_end` 를 켠 저장만 고정 끝을 지금 방 끝으로 옮겨 새 대화를 고를 수 있게\n한다(\"새 구간 추가\")."
+        "description": "선택 초안 저장. `base_revision` 은 화면이 본 가장 최근 리비전(선택이 아직 없으면 null)이고 지금 최신과 다르면 409 다.\n구간은 키 순으로, 겹치지 않게(맞닿은 메시지도 공유하지 않게) 보낸다.\n\n`room_end_message_id` 는 고정 끝(이 선택이 다루는 방의 마지막 메시지) — 화면이 본 그 메시지를 그대로 돌려보낸다. 첫 저장이면\n조회의 기본 제안의 고정 끝이고, 그 뒤 저장은 기준 리비전의 고정 끝이어야 한다(다르면 409) — 고른 뒤 이어진 대화가 저절로\n붙지 않게. `extend_to_room_end` 를 켠 저장만 고정 끝을 화면이 본 지금 방 끝(조회의 `room_end_message_id`)으로 옮겨 새 대화를\n고를 수 있게 한다(\"새 구간 추가\"). 서버가 저장 때의 방 끝을 쓰지 않는 것은, 화면이 본 뒤 들어온 메시지가 사용자가 보지도\n못한 채 \"고르지 않은 나머지\"로 숨지 않게 하려는 것이다 — 고정 끝 뒤에 남아 \"새 대화 있음\"으로 다시 보인다."
       },
       "NovelSourceSelectionState": {
         "properties": {

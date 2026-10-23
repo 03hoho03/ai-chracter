@@ -282,9 +282,12 @@ async def save_source_selection_draft(
     if (None if latest is None else latest.revision) != payload.base_revision:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_SELECTION_CONFLICT")
     if latest is None or payload.extend_to_room_end:
-        room_end = await last_message_key(db, room_id)
-        if room_end is None:
-            raise _novel_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_SOURCE_SELECTION_EMPTY")
+        found = await room_message_keys(db, room_id, {payload.room_end_message_id})
+        if payload.room_end_message_id not in found:
+            raise _novel_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_SOURCE_MESSAGE_NOT_FOUND")
+        room_end = found[payload.room_end_message_id]
+    elif payload.room_end_message_id != latest.room_end_message_id:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_SELECTION_CONFLICT")
     else:
         room_end = (latest.room_end_message_created_at, latest.room_end_message_id)
     sections = await _checked_sections(db, novel, room_id, payload, room_end)
@@ -330,7 +333,8 @@ async def approve_source_selection(
 ) -> NovelSourceSelectionState:
     """가장 최근 리비전의 초안을 승인한다. 이미 승인된 최신 리비전이면 그대로 돌려준다(두 번 누름). 최신이 아니면 409
     `NOVEL_SOURCE_SELECTION_CONFLICT`. 저장 뒤 그 include 구간으로 화가 생겼으면 422 `NOVEL_SOURCE_SECTION_LOCKED`, 고른 구간의 원문이
-    저장 뒤 바뀌었으면 409 `NOVEL_SOURCE_CHANGED`(다시 저장해 지금 원문으로 고른다) — 둘 다 초안은 그대로 남는다."""
+    저장 뒤 바뀌었으면 409 `NOVEL_SOURCE_SELECTION_SOURCE_CHANGED`(다시 저장해 지금 원문으로 고른다 — 화 다시 만들기의
+    원문 변경 코드와 할 일이 달라 코드를 나눈다) — 둘 다 초안은 그대로 남는다."""
     room_id = _room_id(novel)
     latest = await _latest_selection(db, novel.id)
     if latest is None or latest.revision != payload.revision:
@@ -340,7 +344,7 @@ async def approve_source_selection(
         _require_unlocked([(row.mode, *_section_key(row)) for row in rows], await _locked_ranges(db, novel.id))
         for row in rows:
             if (await range_shape(db, room_id, SourceRange(*_section_key(row)))).source_hash != row.source_hash:
-                raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_CHANGED")
+                raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_SELECTION_SOURCE_CHANGED")
         # 승인 칸이 빈 행만 바꾼다 — 그사이 다른 저장이 이 초안을 지웠으면 바뀐 행이 없다.
         approved = await db.scalar(
             update(NovelSourceSelection)

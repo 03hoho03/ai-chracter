@@ -783,12 +783,15 @@ class NovelSourceSelectionSaveRequest(CamelModel):
     """선택 초안 저장. `base_revision` 은 화면이 본 가장 최근 리비전(선택이 아직 없으면 null)이고 지금 최신과 다르면 409 다.
     구간은 키 순으로, 겹치지 않게(맞닿은 메시지도 공유하지 않게) 보낸다.
 
-    고정 끝(이 선택이 다루는 방의 마지막 메시지)은 첫 저장 때의 방 끝이고 그 뒤 저장은 앞 리비전의 것을 물려받는다 — 고른 뒤
-    이어진 대화가 저절로 붙지 않게. `extend_to_room_end` 를 켠 저장만 고정 끝을 지금 방 끝으로 옮겨 새 대화를 고를 수 있게
-    한다("새 구간 추가")."""
+    `room_end_message_id` 는 고정 끝(이 선택이 다루는 방의 마지막 메시지) — 화면이 본 그 메시지를 그대로 돌려보낸다. 첫 저장이면
+    조회의 기본 제안의 고정 끝이고, 그 뒤 저장은 기준 리비전의 고정 끝이어야 한다(다르면 409) — 고른 뒤 이어진 대화가 저절로
+    붙지 않게. `extend_to_room_end` 를 켠 저장만 고정 끝을 화면이 본 지금 방 끝(조회의 `room_end_message_id`)으로 옮겨 새 대화를
+    고를 수 있게 한다("새 구간 추가"). 서버가 저장 때의 방 끝을 쓰지 않는 것은, 화면이 본 뒤 들어온 메시지가 사용자가 보지도
+    못한 채 "고르지 않은 나머지"로 숨지 않게 하려는 것이다 — 고정 끝 뒤에 남아 "새 대화 있음"으로 다시 보인다."""
 
     base_revision: int | None = Field(ge=1)
     extend_to_room_end: bool = False
+    room_end_message_id: uuid.UUID
     sections: list[NovelSourceSectionInput] = Field(max_length=SOURCE_SECTIONS_MAX_COUNT)
 
 

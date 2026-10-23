@@ -57,10 +57,17 @@ async def _save(
     *,
     base: int | None = None,
     extend: bool = False,
+    end: uuid.UUID | None = None,
 ) -> httpx.Response:
+    """초안 저장. `end` 를 주지 않으면 화면처럼 조회한 상태에서 고정 끝을 가져와 돌려보낸다 — 늘리기면 지금 방 끝, 아니면 고치는
+    선택(초안 → 승인본 → 기본 제안 순)의 고정 끝."""
+    if end is None:
+        state = (await db_client.get(_base(novel_id))).json()
+        shown = state["draft"] or state["approved"] or state["proposal"]
+        end = uuid.UUID(state["roomEndMessageId"] if extend else shown["roomEndMessageId"])
     return await db_client.put(
         f"{_base(novel_id)}/draft",
-        json={"baseRevision": base, "extendToRoomEnd": extend, "sections": sections},
+        json={"baseRevision": base, "extendToRoomEnd": extend, "roomEndMessageId": str(end), "sections": sections},
     )
 
 
@@ -273,7 +280,7 @@ async def test_a_save_that_loses_the_revision_race_is_a_conflict_and_writes_noth
 
     monkeypatch.setattr(selection_router, "_latest_selection", read_then_lose_the_race)
 
-    response = await _save(db_client, novel_id, [_section("include", ms[0], ms[-1])])
+    response = await _save(db_client, novel_id, [_section("include", ms[0], ms[-1])], end=ms[-1].id)
 
     assert _code(response) == (409, "NOVEL_SOURCE_SELECTION_CONFLICT")
     assert [await _sections_of(db_session, s.id) for s in await _selections(db_session, novel_id)] in ([], [[]])
@@ -357,6 +364,40 @@ async def test_a_draft_saved_on_a_draft_keeps_the_first_fixed_end(
     assert second.status_code == 200, second.text
     assert second.json()["draft"]["roomEndMessageId"] == str(ms[-1].id)
     assert second.json()["hasNewMessages"] is True
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_the_fixed_end_is_the_one_the_screen_saw_not_the_room_end_at_save_time(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """첫 저장의 고정 끝은 화면이 조회 때 본 방 끝이다 — 조회와 저장 사이에 들어온 응답은 고정 끝 뒤에 남아 "새 대화 있음"으로
+    보인다. 늘리지 않는 저장이 기준 리비전과 다른 고정 끝을 보내면 409 `NOVEL_SOURCE_SELECTION_CONFLICT`, 이 방의 메시지가 아닌
+    고정 끝은 422 `NOVEL_SOURCE_MESSAGE_NOT_FOUND` 다. 깨지는 시나리오: 사용자가 본 적 없는 응답이 고르지 않은 나머지로 조용히
+    빠지거나, 낡은 화면이 고정 끝을 몰래 옮긴다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch, turns=2)
+    ms = await _room_messages(db_session, room.room_id)
+    seen = (await db_client.get(_base(novel_id))).json()
+    arrived = ChatMessage(
+        id=uuid.uuid4(),
+        chat_room_id=room.room_id,
+        role=ChatMessageRole.ASSISTANT,
+        content="조회 뒤 응답",
+        created_at=ms[-1].created_at + timedelta(seconds=1),
+    )
+    db_session.add(arrived)
+    await db_session.commit()
+
+    foreign_end = await _save(db_client, novel_id, [_section("include", ms[0], ms[-1])], end=uuid.uuid4())
+    saved = await _save(
+        db_client, novel_id, [_section("include", ms[0], ms[-1])], end=uuid.UUID(seen["proposal"]["roomEndMessageId"])
+    )
+    moved = await _save(db_client, novel_id, [_section("include", ms[0], ms[-1])], base=1, end=arrived.id)
+
+    assert _code(foreign_end) == (422, "NOVEL_SOURCE_MESSAGE_NOT_FOUND")
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["draft"]["roomEndMessageId"] == str(ms[-1].id)
+    assert saved.json()["hasNewMessages"] is True
+    assert _code(moved) == (409, "NOVEL_SOURCE_SELECTION_CONFLICT")
 
 
 # ── 겹침·정렬·소유 ──────────────────────────────────────────────────────────
@@ -492,7 +533,7 @@ async def test_editing_an_excluded_gap_changes_no_hash_and_editing_a_chosen_sect
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """고르지 않은 사이(exclude)의 원문을 고쳐도 구간 해시는 그대로라 승인이 되고 조회의 "원문 바뀜"도 없다. 승인 뒤 context 구간
-    원문을 고치면 그 구간만 "원문 바뀜"이다. 초안 저장 뒤 include 원문이 바뀌면 승인은 409 `NOVEL_SOURCE_CHANGED` 다. 깨지는
+    원문을 고치면 그 구간만 "원문 바뀜"이다. 초안 저장 뒤 include 원문이 바뀌면 승인은 409 `NOVEL_SOURCE_SELECTION_SOURCE_CHANGED` 다. 깨지는
     시나리오: 빼기로 한 대화를 고친 것만으로 다음 생성이 원문 변경으로 막히거나(해시가 exclude 를 읽음), 고른 구간의 원문이 바뀐
     선택이 그대로 승인된다."""
     room, novel_id = await _novel_setup(db_client, db_session, monkeypatch, turns=5)
@@ -511,7 +552,7 @@ async def test_editing_an_excluded_gap_changes_no_hash_and_editing_a_chosen_sect
     assert approved.status_code == 200, approved.text
     assert [s["sourceChanged"] for s in approved.json()["approved"]["sections"]] == [False, False, False]
     assert [s["sourceChanged"] for s in after_context_edit["approved"]["sections"]] == [False, True, False]
-    assert _code(refused) == (409, "NOVEL_SOURCE_CHANGED")
+    assert _code(refused) == (409, "NOVEL_SOURCE_SELECTION_SOURCE_CHANGED")
     assert (await _selections(db_session, novel_id))[-1].approved_at is None
 
 
@@ -554,7 +595,12 @@ async def test_someone_elses_novel_and_a_novel_without_its_room_are_refused(
 
     roomless = [
         await db_client.get(_base(roomless_id)),
-        await _save(db_client, roomless_id, [{"mode": "include", "startMessageId": str(uuid.uuid4()), "endMessageId": str(uuid.uuid4())}]),
+        await _save(
+            db_client,
+            roomless_id,
+            [{"mode": "include", "startMessageId": str(uuid.uuid4()), "endMessageId": str(uuid.uuid4())}],
+            end=uuid.uuid4(),
+        ),
     ]
     foreign = await db_client.get(_base(novel_id))
 
@@ -575,7 +621,7 @@ async def test_every_selection_route_is_an_uncached_404_while_the_switch_is_off(
 
     responses = [
         await db_client.get(_base(novel_id)),
-        await _save(db_client, novel_id, [_section("include", ms[0], ms[-1])]),
+        await _save(db_client, novel_id, [_section("include", ms[0], ms[-1])], end=ms[-1].id),
         await _approve(db_client, novel_id, 1),
     ]
     detail = await db_client.get(f"/novels/{novel_id}")
