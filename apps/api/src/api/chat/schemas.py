@@ -6,7 +6,7 @@ from pydantic import ConfigDict, Field, StringConstraints, field_validator
 
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH
 from api.content.schemas import CharacterDraftPayload, MediaTagImage, StoryDraftPayload
-from api.core.schema import CamelModel
+from api.core.schema import CamelModel, NoNul
 from api.db.models.chat import ChatMessageReportReason, ChatMessageRole
 from api.db.models.content import ContentType
 from api.db.models.moderation import ReportStatus
@@ -30,12 +30,12 @@ class ChatRoomCreateRequest(CamelModel):
 
 
 class ChatMessageCreateRequest(CamelModel):
-    content: str = Field(min_length=1)
+    content: Annotated[str, Field(min_length=1), NoNul]
     shortcut_id: uuid.UUID | None = None
 
 
 class ChatMessageEditRequest(CamelModel):
-    content: str = Field(min_length=1)
+    content: Annotated[str, Field(min_length=1), NoNul]
 
 
 class ChatRoomRenameRequest(CamelModel):
@@ -50,8 +50,8 @@ class ChangeStartingSetupRequest(CamelModel):
 # FE가 사본을 들지 않게 한다. `strip_whitespace`가 길이 검사보다 먼저라 앞뒤 공백은 세지 않는다.
 MEMORY_NOTE_MAX_LENGTH = 1_000
 
-MemoryNoteText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=MEMORY_NOTE_MAX_LENGTH)]
-MemorySummaryText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=SUMMARY_MAX_LENGTH)]
+MemoryNoteText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=MEMORY_NOTE_MAX_LENGTH), NoNul]
+MemorySummaryText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=SUMMARY_MAX_LENGTH), NoNul]
 
 
 class ChatRoomMemoryNoteRequest(CamelModel):
