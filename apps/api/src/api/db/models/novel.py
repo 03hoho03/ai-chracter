@@ -9,7 +9,7 @@
 `relationship()` 이 없고 뼈대 테이블(소설·화·개정·작업)에는 `ON DELETE CASCADE` 도 없으므로, 지울 때는 작업 → 개정 →
 화 → 소설 순서를 직접 지킨다(`novelize/deletion.py` 의 `delete_novels` 한 곳).
 
-🔴 예외: 묶음·인물·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록·독자 읽은 자리·좋아요·홈 노벨
+🔴 예외: 묶음·인물·등장 인물·스냅샷·읽은 위치·구간 선택과 그 구간 행, 노벨 공개 상태·화 공개본·텍스트 심사 기록·독자 읽은 자리·좋아요·홈 노벨
 지정·화 댓글은 부모(소설·화·개정)를 지우면
 함께 지워지는 `ON DELETE CASCADE` 다. 이 저장소의 "cascade 없음" 관례를 일부러 어긴 것이다 — 이미지만 옛 판으로
 되돌렸을 때 옛 코드의 화 삭제·소설 삭제·탈퇴는 이 테이블들을 모르고 위 순서대로만 지우는데, cascade 가 없으면 그
@@ -69,6 +69,8 @@ NovelJobFailureCode = Literal[
     "episode_count_mismatch",
 ]
 NovelSnapshotKind = Literal["manual", "auto_before_restore"]
+# 구간 선택의 구간 종류 — 소설에 넣을 구간과, 앞뒤 맥락으로만 보낼 구간. 빼는 구간은 행으로 두지 않는다.
+NovelSourceSectionMode = Literal["include", "context"]
 # 집필권 잠금이 어디서 왔는지. 첫 화 저장이 쓴 잠금과, 이 칸이 생기기 전에 이미 첫 화를 만든 소설에 마이그레이션이 채운
 # 잠금을 가른다 — 뒤의 것은 그때 원작 권한을 알 수 없다.
 NovelWritingLockSource = Literal["first_chapter", "backfill"]
@@ -525,6 +527,80 @@ class NovelSnapshot(Base):
     __table_args__ = (
         CheckConstraint(f"kind IN ({_sql_in_list(NovelSnapshotKind)})", name="ck_novel_snapshots_kind"),
         Index("ix_novel_snapshots_novel_id_created_at", "novel_id", created_at.desc()),
+    )
+
+
+class NovelSourceSelection(Base):
+    """사용자가 소설로 옮길 대화 구간을 고른 한 판(리비전). 원문 사본은 없다 — 구간 행(`NovelSourceSection`)의 양 끝 메시지 키와
+    해시, 그리고 고를 때 본 방의 마지막 메시지 키(`room_end_message_*`)만 둔다. 방 끝을 고정해 두는 것은 고른 뒤에 이어진 대화가
+    "방 끝까지 include" 같은 선택에 조용히 붙지 않게 하려는 것이다 — 새 메시지는 사용자가 구간을 더해야만 들어온다.
+
+    고르지 않은 나머지(고정한 방 끝까지 중 구간 행 밖)가 소설에서 빼는 구간(exclude)이라 따로 행이 없다. `approved_at` 이
+    비어 있으면 아직 승인하지 않은 초안이다. 리비전은 소설마다 1부터 하나씩 오르고 `(novel_id, revision)` 유니크가 두 탭의 동시
+    저장을 막는다.
+
+    소설을 지우면 함께 지워지는 `ON DELETE CASCADE` 다(모듈 docstring 의 예외와 같은 이유). 메시지 키는 FK 없는 사본이다 — 방
+    삭제·되감기·응답 지우기가 이 표를 몰라도 막히지 않는다. 새 코드는 소설 삭제·작가 전용 데이터 정리에서 직접 지운다."""
+
+    __tablename__ = "novel_source_selections"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    room_end_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    room_end_message_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 리비전 유니크 인덱스가 소설의 최신 선택 조회와 소설 삭제 때 FK 검사를 겸한다.
+    __table_args__ = (
+        CheckConstraint("revision >= 1", name="ck_novel_source_selections_revision_positive"),
+        Index("ux_novel_source_selections_novel_id_revision", "novel_id", "revision", unique=True),
+    )
+
+
+class NovelSourceSection(Base):
+    """구간 선택 하나에 든 연속 구간 하나 — 소설에 넣을 구간(`include`)이거나, 앞뒤 맥락으로만 보낼 구간(`context`)이다. 시작·끝
+    메시지는 FK 없는 Uuid 와 그 `created_at` 사본이고(화 행과 같은 이유), `assistant_message_count`·`source_hash` 는 고를 때의
+    구간 모양이다 — 해시 규칙은 화와 같아(`novelize/source.py` 의 `segment_hash`) 구간 원문이 바뀌면 다음 유료 생성이 알아챈다.
+    빼는 구간은 행이 없어 해시에도 들지 않는다.
+
+    구간의 순서는 시작 키 순이다. 겹치지 않음은 저장하는 코드가 지키고, DB 는 한 선택 안에서 같은 시작 키가 둘 생기는 것과 시작이
+    끝보다 뒤인 구간만 막는다. 선택을 지우면 함께 지워지는 `ON DELETE CASCADE` 다."""
+
+    __tablename__ = "novel_source_sections"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    selection_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_source_selections.id", ondelete="CASCADE"), nullable=False
+    )
+    mode: Mapped[NovelSourceSectionMode] = mapped_column(Text, nullable=False)
+    start_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    start_message_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    end_message_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    assistant_message_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_hash: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # 시작 키 유니크 인덱스가 선택의 구간을 키 순으로 읽는 조회와 선택 DELETE 때 FK 검사를 겸한다.
+    __table_args__ = (
+        CheckConstraint(f"mode IN ({_sql_in_list(NovelSourceSectionMode)})", name="ck_novel_source_sections_mode"),
+        CheckConstraint(
+            "(start_message_created_at, start_message_id) <= (end_message_created_at, end_message_id)",
+            name="ck_novel_source_sections_key_order",
+        ),
+        CheckConstraint(
+            "assistant_message_count >= 0", name="ck_novel_source_sections_assistant_message_count_nonnegative"
+        ),
+        Index(
+            "ux_novel_source_sections_selection_id_start",
+            "selection_id",
+            "start_message_created_at",
+            "start_message_id",
+            unique=True,
+        ),
     )
 
 

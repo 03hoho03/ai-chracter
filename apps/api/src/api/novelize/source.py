@@ -1,4 +1,11 @@
-"""소설 장의 원문 — 대화방 메시지 구간을 읽고, 해시하고, 프롬프트에 싣는 원문 줄로 만든다.
+"""소설화 원문 관문 — 소설화 코드가 대화방 메시지를 읽는 유일한 곳. 구간을 읽고, 해시하고, 프롬프트에 싣는 원문 줄로 만든다.
+
+사용자가 소설에서 빼기로 한 구간이 모델에 가지 않는다는 약속은 원문을 읽는 곳이 하나일 때만 지킬 수 있다. 그래서 메시지 SELECT 는
+이 모듈의 `_room_messages` 한 함수만 만들고, 원문 글을 읽는 공개 함수는 `read_source` 하나다 — 읽을 구간(양 끝 키)을 받아 그
+구간들만 읽고 구간 사이는 읽지 않는다. 다른 소설화 모듈은 메시지·기억 표를 직접 건드리지 않는다(구조 테스트가 지킨다).
+
+옛 흐름(마지막 화 끝 다음부터 이어 쓰기)은 구간 선택이 없으므로 "지금 그대로의 연속 구간 하나"로 이 관문을 부른다
+(`load_segment`·`load_candidates`). 구간 선택이 있으면 저장된 구간 행이 읽을 구간이다(`section_ranges`).
 
 장은 원문 사본을 두지 않고 구간의 양 끝 메시지 키(`(created_at, id)`)만 기억한다. 그래서 장을 만들 때마다 방에서 그
 구간을 다시 읽고, 그 사이 원문이 바뀌었는지는 해시로 가린다. 메시지 순서는 언제나 `(created_at, id)` 키 순이다 — 같은
@@ -7,16 +14,16 @@
 import hashlib
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import Select, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import MessageKey
 from api.chat.prompt_builder import PromptNames, _turn_text
 from api.db.models.chat import ChatMessage, ChatMessageRole
-from api.db.models.novel import NovelChapter
+from api.db.models.novel import NovelChapter, NovelSourceSection
 
 _KEY_ORDER = (ChatMessage.created_at.asc(), ChatMessage.id.asc())
 
@@ -25,50 +32,104 @@ def message_key(message: ChatMessage) -> MessageKey:
     return (message.created_at, message.id)
 
 
+@dataclass(frozen=True)
+class SourceRange:
+    """읽을 구간 하나 — 키가 `start` 이상 `end` 이하인 메시지(양 끝 포함). `end` 가 None 이면 방 끝까지다."""
+
+    start: MessageKey
+    end: MessageKey | None
+
+
+def _room_messages(
+    room_id: uuid.UUID,
+    *,
+    from_key: MessageKey | None = None,
+    after: MessageKey | None = None,
+    through: MessageKey | None = None,
+    role: ChatMessageRole | None = None,
+) -> Select[tuple[ChatMessage]]:
+    """방의 메시지를 키 순으로 고르는 SELECT — 이 관문에서 메시지 표를 읽는 질의는 모두 이것을 거친다. `from_key` 이상·`after`
+    초과·`through` 이하로 키를 자르고, `role` 이면 그 역할만 남긴다."""
+    key = tuple_(ChatMessage.created_at, ChatMessage.id)
+    # 비교 오른쪽은 `tuple_` 이 아니라 평범한 튜플이다 — `tuple_` 끼리 비교하면 mypy 가 결과를 bool 로 본다.
+    query = select(ChatMessage).where(ChatMessage.chat_room_id == room_id)
+    if from_key is not None:
+        query = query.where(key >= from_key)
+    if after is not None:
+        query = query.where(key > after)
+    if through is not None:
+        query = query.where(key <= through)
+    if role is not None:
+        query = query.where(ChatMessage.role == role)
+    return query.order_by(*_KEY_ORDER)
+
+
+async def read_source(
+    db: AsyncSession, room_id: uuid.UUID, ranges: Sequence[SourceRange], *, turn_cap: int | None = None
+) -> list[ChatMessage]:
+    """방 원문을 `ranges` 의 구간들만 넘긴 순서대로 읽어 잇는다. 구간 사이의 메시지는 읽지 않는다.
+
+    `turn_cap` 이 있으면 모델 응답을 구간을 건너 이어 세어 그 수에 닿는 응답에서 멈추고, 끝까지 가도 닿지 않으면 끝에 남은
+    응답 없는 사용자 메시지를 뺀다(장의 끝은 모델 응답이어야 한다). 상한이 1 미만이면 빈 목록이다. 상한이 있을 때는 방이 길어도
+    한 번에 다 읽지 않으려고 키 커서로 조금씩 읽는다(장 하나는 상한 N턴이라 보통 한두 번이면 끝난다)."""
+    if turn_cap is not None and turn_cap < 1:
+        return []
+    picked: list[ChatMessage] = []
+    assistants = 0
+    for source_range in ranges:
+        if turn_cap is None:
+            picked += (await db.scalars(_room_messages(room_id, from_key=source_range.start, through=source_range.end))).all()
+            continue
+        batch = turn_cap * 2 + 2
+        cursor: MessageKey | None = None
+        while True:
+            query = (
+                _room_messages(room_id, after=cursor, through=source_range.end)
+                if cursor is not None
+                else _room_messages(room_id, from_key=source_range.start, through=source_range.end)
+            )
+            rows = list((await db.scalars(query.limit(batch))).all())
+            for message in rows:
+                picked.append(message)
+                if message.role == ChatMessageRole.ASSISTANT:
+                    assistants += 1
+                    if assistants == turn_cap:
+                        return picked
+            if len(rows) < batch:
+                break
+            cursor = message_key(rows[-1])
+    if turn_cap is not None:
+        while picked and picked[-1].role == ChatMessageRole.USER:
+            picked.pop()
+    return picked
+
+
+def section_ranges(sections: Iterable[NovelSourceSection]) -> list[SourceRange]:
+    """저장된 구간 선택의 구간 행(include·context)을 키 순의 읽을 구간으로 바꾼다. 고르지 않은 나머지(exclude)는 행이 없으므로
+    여기에 나오지 않는다."""
+    ordered = sorted(sections, key=lambda s: (s.start_message_created_at, s.start_message_id))
+    return [
+        SourceRange(
+            (s.start_message_created_at, s.start_message_id), (s.end_message_created_at, s.end_message_id)
+        )
+        for s in ordered
+    ]
+
+
 async def load_segment(
     db: AsyncSession, room_id: uuid.UUID, start_key: MessageKey, end_key: MessageKey
 ) -> list[ChatMessage]:
-    """방의 메시지 중 키가 `start_key` 이상 `end_key` 이하인 것을 키 순으로 읽는다(양 끝 포함)."""
-    key = tuple_(ChatMessage.created_at, ChatMessage.id)
-    # 비교 오른쪽은 `tuple_` 이 아니라 평범한 튜플이다 — `tuple_` 끼리 비교하면 mypy 가 결과를 bool 로 본다.
-    rows = await db.scalars(
-        select(ChatMessage)
-        .where(ChatMessage.chat_room_id == room_id, key >= start_key, key <= end_key)
-        .order_by(*_KEY_ORDER)
-    )
-    return list(rows.all())
+    """옛 흐름의 구간 읽기 — 방의 메시지 중 키가 `start_key` 이상 `end_key` 이하인 것을 키 순으로(양 끝 포함). 구간 선택이
+    없는 묶음은 연속 구간 하나라 관문에 그 구간 하나를 넘긴다."""
+    return await read_source(db, room_id, [SourceRange(start_key, end_key)])
 
 
 async def load_candidates(
     db: AsyncSession, room_id: uuid.UUID, start_key: MessageKey, max_turns: int
 ) -> list[ChatMessage]:
-    """장 경계 후보 — `start_key` 이상인 메시지를 키 순으로, 모델 응답을 `max_turns` 개 셀 때까지 읽는다. 마지막 응답
-    뒤에 붙은 사용자 메시지(아직 응답이 없는 것)는 넣지 않는다. 장의 끝은 모델 응답이어야 하기 때문이다.
-
-    방이 길어도 한 번에 다 읽지 않으려고 키 커서로 조금씩 읽는다(장 하나는 상한 N턴이라 보통 한두 번이면 끝난다)."""
-    if max_turns < 1:
-        return []
-    batch = max_turns * 2 + 2
-    picked: list[ChatMessage] = []
-    assistants = 0
-    cursor: MessageKey | None = None
-    key = tuple_(ChatMessage.created_at, ChatMessage.id)
-    while True:
-        query = select(ChatMessage).where(ChatMessage.chat_room_id == room_id)
-        query = query.where(key > cursor) if cursor is not None else query.where(key >= start_key)
-        rows = list((await db.scalars(query.order_by(*_KEY_ORDER).limit(batch))).all())
-        for message in rows:
-            picked.append(message)
-            if message.role == ChatMessageRole.ASSISTANT:
-                assistants += 1
-                if assistants == max_turns:
-                    return picked
-        if len(rows) < batch:
-            break
-        cursor = message_key(rows[-1])
-    while picked and picked[-1].role == ChatMessageRole.USER:
-        picked.pop()
-    return picked
+    """옛 흐름의 장 경계 후보 — `start_key` 이상인 메시지를 키 순으로, 모델 응답을 `max_turns` 개 셀 때까지 읽는다. 마지막
+    응답 뒤에 붙은 사용자 메시지(아직 응답이 없는 것)는 넣지 않는다. 장의 끝은 모델 응답이어야 하기 때문이다."""
+    return await read_source(db, room_id, [SourceRange(start_key, None)], turn_cap=max_turns)
 
 
 async def next_chapter_start(
@@ -80,12 +141,16 @@ async def next_chapter_start(
     "끝 메시지보다 늦은"을 시각만이 아니라 `(created_at, id)` 키로 비교한다 — 끝 메시지와 같은 시각에 들어간 메시지가
     있어도 빠지거나 두 장에 겹치지 않는다. 끝 키는 장 행에 저장해 둔 값이라, 끝 메시지가 지워졌어도 기준이 그대로다.
     방을 초기화하면 옛 메시지가 모두 지워지고 새 오프닝이 그 뒤 시각으로 들어가므로 다음 장은 새 오프닝부터다."""
-    query = select(ChatMessage).where(ChatMessage.chat_room_id == room_id)
-    if last_chapter is not None:
-        end_key = (last_chapter.end_message_created_at, last_chapter.end_message_id)
-        query = query.where(tuple_(ChatMessage.created_at, ChatMessage.id) > end_key)
-    message: ChatMessage | None = await db.scalar(query.order_by(*_KEY_ORDER).limit(1))
+    after = None if last_chapter is None else (last_chapter.end_message_created_at, last_chapter.end_message_id)
+    message: ChatMessage | None = await db.scalar(_room_messages(room_id, after=after).limit(1))
     return message
+
+
+async def count_turns_from(db: AsyncSession, room_id: uuid.UUID, start_key: MessageKey) -> int:
+    """`start_key` 부터 방 끝까지의 턴(AI 응답) 수. 끝에 응답 없이 남은 사용자 메시지는 묶음이 될 수 없어 세지 않는다."""
+    replies = _room_messages(room_id, from_key=start_key, role=ChatMessageRole.ASSISTANT).subquery()
+    turns = await db.scalar(select(func.count()).select_from(replies))
+    return int(turns or 0)
 
 
 def segment_hash(messages: Sequence[ChatMessage]) -> str:

@@ -42,7 +42,7 @@ from api.core.rate_limit_gate import _too_many_requests
 from api.core.s3 import build_display_key, build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.character import CharacterVersionDetail
-from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
+from api.db.models.chat import ChatMessage, ChatRoom
 from api.db.models.content import Content, ContentType
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.novel import (
@@ -186,6 +186,7 @@ from api.novelize.schemas import (
 )
 from api.novelize.source import (
     SourceTurn,
+    count_turns_from,
     group_turns,
     load_candidates,
     load_segment,
@@ -1220,16 +1221,7 @@ async def _remaining_turns(db: AsyncSession, novel: Novel, room_id: uuid.UUID) -
     start = await next_chapter_start(db, room_id, last_chapter)
     if start is None:
         return 0
-    turns = await db.scalar(
-        select(func.count())
-        .select_from(ChatMessage)
-        .where(
-            ChatMessage.chat_room_id == room_id,
-            ChatMessage.role == ChatMessageRole.ASSISTANT,
-            tuple_(ChatMessage.created_at, ChatMessage.id) >= message_key(start),
-        )
-    )
-    return int(turns or 0)
+    return await count_turns_from(db, room_id, message_key(start))
 
 
 def _chain_batch_count(remaining_turns: int, model: ChatModelId) -> int:
