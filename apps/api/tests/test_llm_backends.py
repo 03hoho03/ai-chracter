@@ -416,12 +416,13 @@ def test_the_judgment_only_model_is_served_by_both_claude_backends_with_bedrock_
 
 
 @pytest.mark.parametrize("backend", ["bedrock", "anthropic"])
-def test_both_claude_backends_take_plain_structured_calls_but_not_images_or_a_separate_instruction(
+def test_both_claude_backends_take_structured_calls_with_or_without_an_instruction_but_not_images(
     backend: BackendId,
 ) -> None:
-    """구조화 출력은 Claude 공용 조각 하나로 두 구현이 함께 받는다 — 한쪽만 올리면 다른 쪽 배정이 기동에서 거부된다."""
+    """구조화 출력은 Claude 공용 조각 하나로 두 구현이 함께 받는다 — 한쪽만 올리면 다른 쪽 배정이 기동에서 거부된다. 지시문을
+    따로 싣는 구조화는 사용자가 Claude 를 고른 소설 구성안이 쓴다."""
     assert BACKENDS[backend].capabilities == BackendCapabilities(
-        structured="json_schema", structured_images=False, structured_with_instruction=False
+        structured="json_schema", structured_images=False, structured_with_instruction=True
     )
 
 

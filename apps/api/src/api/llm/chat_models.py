@@ -16,7 +16,7 @@ from typing import Literal, TypeGuard, assert_never, get_args
 
 from api.core import clover
 from api.core.config import settings
-from api.llm.backends import BACKENDS, MODEL_BACKENDS, call_site_model
+from api.llm.backends import BACKENDS, MODEL_BACKENDS, call_site_model, follows_carried_model
 
 # `as` 는 mypy strict 의 명시적 재export 요구 때문이다 — 기동 검증이 읽도록 정의를 잎 모듈(`llm/backends.py`)로 옮겼고,
 # 이 이름을 여기서 가져오는 모듈이 많아 기존 import 경로를 그대로 쓰게 둔다.
@@ -119,6 +119,15 @@ def novel_episode_outline_unit_price(model_id: ChatModelId) -> int:
     if model_id == "opus":
         return clover.NOVELIZE_EPISODE_OUTLINE_COST_OPUS
     assert_never(model_id)
+
+
+def structured_call_model(call_site: LLMCallSite, carried: PromptSetModelId) -> PromptSetModelId:
+    """구조화 호출 하나가 쓸 모델 — 실린 모델(`carried`)을 따르는 호출(구성안)이면 실린 모델, 아니면 그 호출의 모델(판정·요약은 그
+    설정의 모델, 나머지는 기본 모델). 라우터가 구현을, Claude 구현이 보낼 모델 id 를 이 함수 하나로 정한다 — 따로 계산하면
+    라우터가 고른 구현이 모르는 id 를 찾거나 값을 낸 모델과 다른 모델로 보낸다."""
+    if follows_carried_model(call_site):
+        return carried
+    return configured_call_site_model(call_site)
 
 
 def configured_call_site_model(call_site: LLMCallSite) -> PromptSetModelId:

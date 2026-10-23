@@ -1055,6 +1055,168 @@
       "bedrock_usage call_site=novelize_chapter model=bedrock_sonnet_model_id"
     ]
   },
+  "novelize_episode_outline": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": "LLMEmptyResponseError",
+        "ok": null,
+        "truncated": "LLMTruncatedError"
+      },
+      "maxTokens": "bedrock_chapter_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chapter_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 32768,
+        "timeoutMs": 300000
+      },
+      "generate": {
+        "maxOutputTokens": 32768,
+        "thinking": null,
+        "timeoutMs": 300000
+      },
+      "structured": {
+        "maxOutputTokens": 32768,
+        "thinking": null,
+        "timeoutMs": 300000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": "gemini_novelize_max_output_tokens",
+        "model": "gemini_novelize_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_novelize_thinking_budget",
+          "level": "gemini_novelize_thinking_level"
+        },
+        "timeout": "gemini_novelize_chapter_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": "gemini_novelize_max_output_tokens",
+        "model": "gemini_novelize_model_name",
+        "seed": false,
+        "thinking": {
+          "budget": "gemini_novelize_thinking_budget",
+          "level": "gemini_novelize_thinking_level"
+        },
+        "timeout": "gemini_novelize_chapter_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "novelize_episode_outline|bedrock_sonnet_model_id|calls",
+      "novelize_episode_outline|bedrock_sonnet_model_id|candidates",
+      "novelize_episode_outline|bedrock_sonnet_model_id|prompt",
+      "novelize_episode_outline|bedrock_sonnet_model_id|total",
+      "novelize_episode_outline|gemini_novelize_model_name|calls",
+      "novelize_episode_outline|gemini_novelize_model_name|candidates",
+      "novelize_episode_outline|gemini_novelize_model_name|prompt",
+      "novelize_episode_outline|gemini_novelize_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "bedrock",
+      "structured": "bedrock",
+      "warned": false
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=novelize_episode_outline model=gemini_novelize_model_name",
+      "bedrock_usage call_site=novelize_episode_outline model=bedrock_sonnet_model_id"
+    ]
+  },
+  "novelize_outline": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": "LLMEmptyResponseError",
+        "ok": null,
+        "truncated": "LLMTruncatedError"
+      },
+      "maxTokens": "bedrock_chapter_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chapter_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 32768,
+        "timeoutMs": 300000
+      },
+      "generate": {
+        "maxOutputTokens": 32768,
+        "thinking": null,
+        "timeoutMs": 300000
+      },
+      "structured": {
+        "maxOutputTokens": 32768,
+        "thinking": null,
+        "timeoutMs": 300000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": "gemini_novelize_max_output_tokens",
+        "model": "gemini_novelize_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_novelize_thinking_budget",
+          "level": "gemini_novelize_thinking_level"
+        },
+        "timeout": "gemini_novelize_chapter_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": "gemini_novelize_max_output_tokens",
+        "model": "gemini_novelize_model_name",
+        "seed": false,
+        "thinking": {
+          "budget": "gemini_novelize_thinking_budget",
+          "level": "gemini_novelize_thinking_level"
+        },
+        "timeout": "gemini_novelize_chapter_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "novelize_outline|bedrock_sonnet_model_id|calls",
+      "novelize_outline|bedrock_sonnet_model_id|candidates",
+      "novelize_outline|bedrock_sonnet_model_id|prompt",
+      "novelize_outline|bedrock_sonnet_model_id|total",
+      "novelize_outline|gemini_novelize_model_name|calls",
+      "novelize_outline|gemini_novelize_model_name|candidates",
+      "novelize_outline|gemini_novelize_model_name|prompt",
+      "novelize_outline|gemini_novelize_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "bedrock",
+      "structured": "bedrock",
+      "warned": false
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=novelize_outline model=gemini_novelize_model_name",
+      "bedrock_usage call_site=novelize_outline model=bedrock_sonnet_model_id"
+    ]
+  },
   "novelize_revise": {
     "bedrock": {
       "cacheBlocks": null,

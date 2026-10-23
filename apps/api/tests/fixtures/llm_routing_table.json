@@ -571,6 +571,94 @@
       }
     }
   },
+  "novelize_episode_outline": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "bedrock",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "bedrock",
+        "warned": false
+      }
+    }
+  },
+  "novelize_outline": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "bedrock",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "bedrock",
+        "warned": false
+      }
+    }
+  },
   "novelize_revise": {
     "gemini": {
       "generate": {

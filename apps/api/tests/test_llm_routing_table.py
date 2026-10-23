@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from api.core.config import settings
 from api.llm.backends import BACKENDS
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, backend_model_id
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, backend_model_id, structured_call_model
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient
 from api.llm.routing import RoutingLLMClient, resolve_backend
 from factories import _assert_characterization, _assert_recorded_cases
@@ -120,7 +120,8 @@ def test_the_resolver_names_the_backend_the_router_reaches(
     monkeypatch: pytest.MonkeyPatch, call_site: LLMCallSite
 ) -> None:
     """프롬프트 덤프·리플레이 비교·원가는 라우터를 거치지 않고 해석 함수로 구현과 id 를 얻는다 — 둘이 어긋나면 덤프에
-    실제로 보내지 않은 id 가 적힌다. 생성은 방의 모델로, 구조화는 기본 모델로 해석한 것이 위 표와 같아야 한다."""
+    실제로 보내지 않은 id 가 적힌다. 생성은 방의 모델로, 구조화는 그 호출의 구조화 모델(실린 모델을 따르는 구성안 두
+    호출만 방의 모델, 나머지는 기본 모델)로 해석한 것이 위 표와 같아야 한다."""
     monkeypatch.setattr(settings, "llm_call_site_backends", {})
     recorded = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))[call_site]
     for model in _MODELS:
@@ -129,4 +130,5 @@ def test_the_resolver_names_the_backend_the_router_reaches(
         served = model if model in BACKENDS[backend].model_id_settings else DEFAULT_CHAT_MODEL
         assert sent_id == backend_model_id(backend, served)
         for method in _METHODS[1:]:
-            assert resolve_backend(call_site, DEFAULT_CHAT_MODEL)[0] == recorded[model][method]["reached"], method
+            structured = structured_call_model(call_site, model)
+            assert resolve_backend(call_site, structured)[0] == recorded[model][method]["reached"], method

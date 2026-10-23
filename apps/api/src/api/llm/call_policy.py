@@ -48,6 +48,9 @@ LLMCallSite = Literal[
     "novelize_chapter",
     "novelize_revise",
     "novelize_boundary",
+    # 소설 구성 흐름: 전체 구성안(구조화), 한 화의 장면 구성안(구조화). 둘 다 사용자가 고른 모델로 가는 유료 호출이다.
+    "novelize_outline",
+    "novelize_episode_outline",
     # 노벨 공개 전 텍스트 심사(구조화). 발행 심사처럼 실패하면 공개하지 않는(fail-closed) 심사라 발행 심사와 같은 모델·
     # 타임아웃 스위치를 따른다(아래 표의 `publish_filter`) — 심사 모델을 바꿀 때 두 심사가 함께 움직인다.
     "novel_publish_screen",
@@ -115,6 +118,8 @@ class CallPolicy:
     # 요구한다. 모델은 이것이 아니라 `model_setting` 이 정한다.
     backend_from: LLMCallSite | None = None
     # 사용자가 고른 모델(상위 모델이면 Bedrock)을 따르는 호출인가. 아니면 상위 모델이 실려 와도 경고 후 Gemini 로 간다.
+    # 구조화 호출에서 이 값이 참이면(구성안 두 호출) 라우터와 Claude 구현이 판정·요약처럼 그 호출의 모델이 아니라 실린 모델로
+    # 구현과 모델 id 를 고른다(`llm/backends.py` 의 `follows_carried_model`).
     model_selectable: bool = False
     # 판정 종류. 판정 모델이 Gemini 일 때 실제 Gemini 모델을 `gemini_<종류>_judgment_model_name` 스위치로 고르고, 어드민
     # 판정 비율의 대상이 된다.
@@ -131,11 +136,11 @@ class CallPolicy:
     publish_filter: bool = False
     # 소설화 호출이면 그 갈래. 결과를 소설 본문으로 저장하므로, 채팅이라면 경고만 남기고 넘길 결과(출력 상한에서 잘림·빈
     # 본문)를 구분된 실패(`LLMTruncatedError`·`LLMEmptyResponseError`)로 올린다. `prose` 는 본문을 쓰는 장 생성·문단
-    # 수정으로 소설화 모델·출력 상한·사고 설정(`gemini_novelize_*`)을 쓴다. `boundary`(장 경계 제안)는 턴 번호 몇 개를
+    # 수정과 그 본문의 계획인 구성안 두 호출로, 소설화 모델·출력 상한·사고 설정(`gemini_novelize_*`)을 쓴다. `boundary`(장 경계 제안)는 턴 번호 몇 개를
     # 고르는 판정이라 실패 구분만 받고 모델·상한·사고는 기본을 따른다.
     novelize: Literal["prose", "boundary"] | None = None
     # Claude 의 타임아웃·출력 상한(Anthropic API 직접 구현은 사고 깊이도) 프로필. `chapter` 는 소설 장 생성용 긴 상한
-    # (`bedrock_chapter_*`·`anthropic_chapter_*`), `chat` 은 채팅 상한(`bedrock_chat_*`·`anthropic_chat_*`). 소설화 갈래에서 파생하지 않는 것은 Claude 로 가는 소설화 호출이 지금 장 생성 하나뿐이어서다 —
+    # (`bedrock_chapter_*`·`anthropic_chapter_*`), `chat` 은 채팅 상한(`bedrock_chat_*`·`anthropic_chat_*`). 소설화 갈래에서 파생하지 않는 것은 Claude 로 가는 소설화 호출이 장 생성과 구성안 두 호출뿐이어서다 —
     # 문단 수정·장 경계 제안은 구조화 호출이고 모델 선택 대상이 아니라 언제나 Gemini 로 가므로 이 값이 운영에서 쓰이지
     # 않는다. 이들을 Claude 로 보내게 되면 그때 상한을 따로 정해야 하므로 갈래와 묶지 않고 행마다 적는다.
     # Claude 로 가는 판정·요약(구조화)은 이 프로필의 타임아웃이 아니라 위 `gemini_timeout` 값으로 끊고(판정 하나가 턴을 붙잡는
@@ -246,6 +251,25 @@ CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
         gemini_timeout="gemini_novelize_boundary_timeout_ms",
         call_kind="structured_with_instruction",
         novelize="boundary",
+    ),
+    # 구성안 두 호출은 방 원문 전체(최대 수만 토큰)를 읽고 화·장면 목록을 내므로 장 생성의 타임아웃·출력 상한을 쓴다. 구현
+    # 배정은 장 생성 호출 위치의 것을 물려받는다 — 운영 env 는 장 생성 호출 위치만 배정하고, 물려받지 않으면 Opus 구성안이
+    # 모델의 기본 구현(Bedrock)으로 가 그 자격을 따로 요구한다.
+    "novelize_outline": CallPolicy(
+        gemini_timeout="gemini_novelize_chapter_timeout_ms",
+        call_kind="structured_with_instruction",
+        model_selectable=True,
+        novelize="prose",
+        claude_limits="chapter",
+        backend_from="novelize_chapter",
+    ),
+    "novelize_episode_outline": CallPolicy(
+        gemini_timeout="gemini_novelize_chapter_timeout_ms",
+        call_kind="structured_with_instruction",
+        model_selectable=True,
+        novelize="prose",
+        claude_limits="chapter",
+        backend_from="novelize_chapter",
     ),
     "novel_publish_screen": CallPolicy(
         gemini_timeout="gemini_publish_filter_timeout_ms",

@@ -4,7 +4,7 @@
 `LLM_CALL_SITE_BACKENDS`, 정책 표의 `backend`)으로 정한다. 배정이 없으면 생성 호출은 `model` 이 상위 모델이고 호출이 모델을
 고를 수 있는 종류(채팅 턴 생성·소설 장 생성·지난 턴 다시 생성)일 때만 Bedrock 으로 가고, 나머지는 Gemini 다. 구조화
 호출은 방의 모델을 보지 않는다 — 판정·요약은 그 호출의 판정·요약 모델 설정(기본 Gemini)으로, 심사·문단 수정 같은 나머지는
-기본 모델로 구현을 고른다. 레지스트리 밖 id 나 허용되지 않은 모델은 여기 닿기 전에 API 가 거부한다.
+기본 모델로 구현을 고른다. 예외는 사용자가 고른 모델로 가는 구조화 호출(소설 구성안 두 호출)이고, 실린 모델로 고른다. 레지스트리 밖 id 나 허용되지 않은 모델은 여기 닿기 전에 API 가 거부한다.
 """
 
 import logging
@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from api.core.config import settings
 from api.llm.backends import pick_backend
 from api.llm.call_policy import BackendId
-from api.llm.chat_models import PromptSetModelId, backend_model_id, configured_call_site_model
+from api.llm.chat_models import PromptSetModelId, backend_model_id, configured_call_site_model, structured_call_model
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient
 
 T = TypeVar("T", bound=BaseModel)
@@ -107,7 +107,7 @@ class RoutingLLMClient(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> T:
-        client = self._client_for(usage.call_site, configured_call_site_model(usage.call_site))
+        client = self._client_for(usage.call_site, structured_call_model(usage.call_site, usage.model))
         return await client.generate_structured(prompt, response_schema, images, usage=usage)
 
     async def generate_structured_with_instruction(
@@ -118,7 +118,7 @@ class RoutingLLMClient(LLMClient):
         system_instruction: str,
         usage: LLMCallContext,
     ) -> T:
-        client = self._client_for(usage.call_site, configured_call_site_model(usage.call_site))
+        client = self._client_for(usage.call_site, structured_call_model(usage.call_site, usage.model))
         return await client.generate_structured_with_instruction(
             prompt, response_schema, system_instruction=system_instruction, usage=usage
         )

@@ -1,8 +1,8 @@
 """Anthropic API 로 Claude 에 바로 보내는 LLMClient. 배정(`LLM_CALL_SITE_BACKENDS`)이 호출을 이 구현으로 옮길 때만 닿는다 —
 배정이 없으면 Claude 모델은 Bedrock 으로 간다(`llm/backends.py` 의 기본 순서). 받는 호출과 실패 규칙은 Bedrock 구현과 같다:
 채팅 턴 생성(지난 턴 다시 생성 포함)과 소설 장 생성(`generate`), 판정·요약 모델이 Claude 일 때의 판정·요약
-(`generate_structured`)을 받고, 그림·지시문을 따로 싣는 구조화는 등록부가 받지 못하는 구현으로 적어 기동 검증이 그런 배정을
-거부한다. 예외에는 `provider = "anthropic"` 을 적는다.
+(`generate_structured`), 사용자가 Claude 를 고른 소설 구성안(`generate_structured_with_instruction`)을 받고, 그림을 싣는
+구조화는 등록부가 받지 못하는 구현으로 적어 기동 검증이 그런 배정을 거부한다. 예외에는 `provider = "anthropic"` 을 적는다.
 
 글쓰기 모델(Opus 5.5 등)은 사고를 끌 수 없다 — `thinking` 을 끄거나 예산으로 보내면 요청이 거부되고, 생략하면 모델이
 알아서 사고한다. 그래서 생성 요청에는 `thinking` 을 싣지 않고 깊이만 `output_config.effort` 로 고른다. 판정 전용 Haiku 는
@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from api.core.config import ClaudeEffort, settings
 from api.llm.backends import turns_off_structured_thinking
 from api.llm.call_policy import CALL_POLICIES
-from api.llm.chat_models import backend_model_id, configured_call_site_model
+from api.llm.chat_models import backend_model_id, structured_call_model
 from api.llm.claude_messages import (
     COMMON_TRANSPORT_ERRORS,
     ClaudeStreamTally,
@@ -226,7 +226,26 @@ class AnthropicLLMClient(LLMClient):
         if images:
             # 그림을 싣는 호출(발행 심사)은 기동 검증이 이 구현에 배정하지 못하게 막는다.
             raise _anthropic_error(LLMClientError, "Anthropic client does not take images in a structured call")
-        model = backend_model_id("anthropic", configured_call_site_model(usage.call_site))
+        return await self._structured(prompt, response_schema, None, usage, "generate_structured")
+
+    async def generate_structured_with_instruction(
+        self,
+        prompt: str,
+        response_schema: type[T],
+        *,
+        system_instruction: str,
+        usage: LLMCallContext,
+    ) -> T:
+        """지시문을 `system` 으로 따로 싣는 구조화(소설 구성안). 모델은 사용자가 고른 모델이다(`structured_call_model`).
+        나머지는 `generate_structured` 와 같다."""
+        return await self._structured(
+            prompt, response_schema, system_instruction, usage, "generate_structured_with_instruction"
+        )
+
+    async def _structured(
+        self, prompt: str, response_schema: type[T], system: str | None, usage: LLMCallContext, method: str
+    ) -> T:
+        model = backend_model_id("anthropic", structured_call_model(usage.call_site, usage.model))
         thinking, effort = _structured_reasoning(model)
         output_config = structured_output_config(response_schema)
         if effort is not None:
@@ -236,14 +255,15 @@ class AnthropicLLMClient(LLMClient):
                 model=model,
                 max_tokens=_max_tokens(usage.call_site),
                 messages=[{"role": "user", "content": str(prompt)}],
+                system=system if system is not None else anthropic.omit,
                 output_config=output_config,
                 thinking=thinking if thinking is not None else anthropic.omit,
                 timeout=request_timeout_ms(usage.call_site) / 1000,
             )
         except COMMON_TRANSPORT_ERRORS as exc:
             if _is_throttling(exc):
-                raise _anthropic_error(LLMRateLimitError, f"Anthropic generate_structured() call failed: {exc}") from exc
-            raise _anthropic_error(LLMClientError, f"Anthropic generate_structured() call failed: {exc}") from exc
+                raise _anthropic_error(LLMRateLimitError, f"Anthropic {method}() call failed: {exc}") from exc
+            raise _anthropic_error(LLMClientError, f"Anthropic {method}() call failed: {exc}") from exc
         usage_metadata = message_usage(message)
         _log_usage(usage, model, usage_metadata)
         await record_usage(usage.call_site, model, usage_metadata)

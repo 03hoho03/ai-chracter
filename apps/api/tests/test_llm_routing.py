@@ -67,7 +67,9 @@ def _router() -> tuple[RoutingLLMClient, _Recorder, list[_Recorder]]:
     return RoutingLLMClient(gemini, factories={"bedrock": factory}), gemini, built
 
 
-_MODEL_SELECTABLE: frozenset[LLMCallSite] = frozenset({"chat_generate", "novelize_chapter", "replay_generate"})
+_MODEL_SELECTABLE: frozenset[LLMCallSite] = frozenset(
+    {"chat_generate", "novelize_chapter", "replay_generate", "novelize_outline", "novelize_episode_outline"}
+)
 
 
 @pytest.mark.parametrize("model", get_args(ChatModelId))

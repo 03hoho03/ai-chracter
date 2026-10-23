@@ -30,6 +30,8 @@ const CALL_SITE_LABELS: Record<string, string> = {
   // 장 생성과 재생성이 같은 call site 를 쓴다.
   novelize_chapter: "소설 장 생성",
   novelize_revise: "소설 문단 수정",
+  novelize_outline: "소설 전체 구성안",
+  novelize_episode_outline: "소설 장면 구성안",
 };
 
 const CELL_CLASS = "text-right tabular-nums";
