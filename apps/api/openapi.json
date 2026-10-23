@@ -23874,6 +23874,10 @@
             "type": "boolean",
             "title": "Novelillustrationsenabled"
           },
+          "novelizeOutlineFlowEnabled": {
+            "type": "boolean",
+            "title": "Novelizeoutlineflowenabled"
+          },
           "paymentsEnabled": {
             "type": "boolean",
             "title": "Paymentsenabled"
@@ -23905,6 +23909,7 @@
           "novelPublicEnabled",
           "novelPublicPolicyV2Enabled",
           "novelIllustrationsEnabled",
+          "novelizeOutlineFlowEnabled",
           "paymentsEnabled",
           "payMethods",
           "identityGateEnabled"

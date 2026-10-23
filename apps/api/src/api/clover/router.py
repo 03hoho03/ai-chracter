@@ -228,6 +228,7 @@ async def get_clover_pricing() -> CloverPricingResponse:
         novel_public_enabled=novel_public_open_to(None),
         novel_public_policy_v2_enabled=settings.novel_public_policy_v2_enabled,
         novel_illustrations_enabled=settings.novel_illustrations_enabled,
+        novelize_outline_flow_enabled=settings.novelize_outline_flow_enabled,
         payments_enabled=payments_active(),
         identity_gate_enabled=identity_gate_active(),
         pay_methods=[

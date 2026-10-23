@@ -9691,6 +9691,8 @@ export interface components {
             novelPublicPolicyV2Enabled: boolean;
             /** Novelillustrationsenabled */
             novelIllustrationsEnabled: boolean;
+            /** Novelizeoutlineflowenabled */
+            novelizeOutlineFlowEnabled: boolean;
             /** Paymentsenabled */
             paymentsEnabled: boolean;
             /** Paymethods */
