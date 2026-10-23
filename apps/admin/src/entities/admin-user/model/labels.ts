@@ -74,6 +74,7 @@ export const ACTION_TYPE_LABELS = {
   "novel-sales-resume": "노벨 판매 재개",
   "novel-illustration-takedown": "노벨 삽화 내림",
   "novel-report-reject": "노벨 신고 반려",
+  "novel-report-illustration-takedown": "노벨 신고 처리(삽화 내림)",
   "novel-comment-hide": "노벨 댓글 운영 숨김",
   "novel-comment-restore": "노벨 댓글 운영 숨김 해제",
   "novel-comment-delete": "노벨 댓글 운영 삭제",

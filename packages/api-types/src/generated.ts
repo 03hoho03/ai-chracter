@@ -3868,8 +3868,11 @@ export interface paths {
         };
         /**
          * Get Admin Novel Chapter
-         * @description 화 공개본 하나 — 독자에게 나가는 그대로(삽화도 독자 응답과 같은 조건·자리, 그림 자산 id 를 더해). 그 노벨의 공개 화가
-         *     아니면 404 `NOVEL_CHAPTER_NOT_FOUND`.
+         * @description 화의 판 하나 — 그 판이 독자에게 나가는 그대로(삽화도 독자 응답과 같은 조건·자리, 그림 자산 id 를 더해). `edition` 이 없거나
+         *     지금 판이면 지금 판을, 지난 판이면 그 판 행이 얼린 개정·제목·작가의 말을 준다 — 그 판을 산 회원의 판 고르기 읽기와 같은 세
+         *     값(개정·심사 시각·공개 시각)으로 그림을 고르므로 산 회원이 보는 그림 그대로이고, 지금 판에서 빠진 그림도 자산 id 가 보여
+         *     내릴 수 있다. 판 목록(`editions`)은 늘 싣는다. 그 노벨의 공개 화가 아니면 404 `NOVEL_CHAPTER_NOT_FOUND`, 그 화에 없는 판이면
+         *     404 `NOVEL_CHAPTER_EDITION_NOT_FOUND`. 정책 스위치와 무관하다(스위치를 끈 뒤 남은 옛 판도 운영자가 처리해야 한다).
          */
         get: operations["get_admin_novel_chapter_admin_novels__novel_id__chapters__chapter_id__get"];
         put?: never;
@@ -4040,6 +4043,12 @@ export interface paths {
          *     둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져 조치할 대상이 없으면 409
          *     `NOVEL_GONE`(반려는 된다). 이용제한은 직접 이용제한과 같이 환급한다 — 이미 이용제한된 노벨이면 돌려줄 것이 없다. 판매
          *     중단은 환급하지 않고, 정책 스위치가 꺼져 있으면 409 `NOVEL_SALES_STOP_DISABLED`.
+         *
+         *     `illustration_takedown` 은 노벨 상세에서 그림을 내린 뒤 신고를 처리완료로 닫는다(그림을 여기서 내리지는 않는다 — 내림의 감사
+         *     로그 대상은 그림 주인이고, 이 처리의 대상은 게시자다). 그 노벨의 어느 개정에 붙은 그림이든 하나가 독자 화면과 같은 판정으로
+         *     내려가 있어야 받고, 아니면 409 `NOVEL_ILLUSTRATION_NOT_TAKEN_DOWN`(신고는 그대로) — 아무것도 내리지 않고 조치한 것으로 닫는
+         *     일을 막는다. 같은 노벨의 다른 그림이 내려가 있어도 통과하므로 무엇을 내렸는지는 조치 사유가 적는다. 내림 기록은 지우는 코드가
+         *     없어 잠그지 않고 읽은 결과가 커밋 전에 거짓이 되지 않으므로, 반려처럼 신고 행만 잠근다.
          */
         post: operations["act_on_admin_novel_report_admin_novel_reports__report_id__actions_post"];
         delete?: never;
@@ -7471,6 +7480,24 @@ export interface components {
             bodyMarkdown?: string | null;
         };
         /**
+         * AdminNovelChapterEditionItem
+         * @description 화의 판 하나 — 판 번호, 그 판을 공개한 시각, 작가가 쓴 변경 요약(첫 판·요약 없이 낸 판은 비어 있다). `current` 는 지금
+         *     독자에게 나가는 판인가.
+         */
+        AdminNovelChapterEditionItem: {
+            /** Edition */
+            edition: number;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+            /** Changesummary */
+            changeSummary: string | null;
+            /** Current */
+            current: boolean;
+        };
+        /**
          * AdminNovelChapterItem
          * @description 공개 화 한 줄. `price` 는 그 화의 지금 가격(0 = 무료)이다.
          */
@@ -7491,7 +7518,8 @@ export interface components {
         };
         /**
          * AdminNovelChapterResponse
-         * @description 화 공개본 — 독자에게 나가는 그대로(제목·작가의 말·본문 문단).
+         * @description 화의 판 하나 — 그 판을 산 회원에게 나가는 그대로(제목·작가의 말·본문 문단). `edition` 은 실제로 준 판이다(요청한 판을
+         *     모르는 서버는 지금 판을 주므로 화면은 이 값으로 어느 판을 보는지 판단한다). `editions` 는 그 화의 판 전부(최신순)다.
          */
         AdminNovelChapterResponse: {
             /**
@@ -7511,6 +7539,8 @@ export interface components {
             paragraphs: string[];
             /** Illustrations */
             illustrations: components["schemas"]["AdminNovelIllustration"][];
+            /** Editions */
+            editions: components["schemas"]["AdminNovelChapterEditionItem"][];
         };
         /** AdminNovelCommentActionRequest */
         AdminNovelCommentActionRequest: {
@@ -7964,7 +7994,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "restrict" | "stop_sales" | "reject";
+            action: "restrict" | "stop_sales" | "reject" | "illustration_takedown";
             /** Admincomment */
             adminComment: string;
         };
@@ -8539,7 +8569,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-illustration-takedown" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "novel-sales-resume" | "novel-sales-stop" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-illustration-takedown" | "novel-lift" | "novel-report-illustration-takedown" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "novel-sales-resume" | "novel-sales-stop" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -20032,7 +20062,9 @@ export interface operations {
     };
     get_admin_novel_chapter_admin_novels__novel_id__chapters__chapter_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                edition?: number | null;
+            };
             header?: never;
             path: {
                 novel_id: string;
