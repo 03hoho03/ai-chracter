@@ -53,10 +53,15 @@ ARM_PAIRS = (("A", "B"), ("A2", "B2"))
 
 
 def trajectory_checks(
-    points: Sequence[dict[str, Any]], *, recall_section_max: int, arms: tuple[str, str] | None = None
+    points: Sequence[dict[str, Any]],
+    *,
+    recall_section_max: int,
+    arms: tuple[str, str] | None = None,
+    growth_only: bool = False,
 ) -> dict[str, Any]:
     """칸 6 길이(턴 101~300 기울기 차·같은 턴 B − A 최대)와 칸 7 캐시 블록(같은 턴 앞 두 블록 해시 동일). 갈래 쌍을 주지 않으면 점에
-    나온 갈래로 고른다(2차 런 갈래가 있으면 A2·B2, 아니면 A·B). 아래 A·B 는 그 쌍의 기준·비교 갈래다."""
+    나온 갈래로 고른다(2차 런 갈래가 있으면 A2·B2, 아니면 A·B). 아래 A·B 는 그 쌍의 기준·비교 갈래다. `growth_only` 면 기울기는
+    B 가 A 보다 더 자라는 쪽만 위반이고 차를 부호 그대로(B − A) 남긴다 — B 가 덜 자라는 것은 프롬프트가 불어나는 게 아니다."""
     present = {str(p.get("arm")) for p in points}
     base, other = arms or next((pair for pair in reversed(ARM_PAIRS) if set(pair) & present), ARM_PAIRS[0])
     low, high = TRAJECTORY_TURNS
@@ -71,7 +76,7 @@ def trajectory_checks(
         halt = {"status": "halt", "pass": False, "turns": len(window)}
         return {"6": dict(halt), "7": dict(halt)}
     slope = {arm: ols_slope([(t, by_arm[arm][t]["chars"]) for t in window]) for arm in ("A", "B")}
-    diff = abs(slope["B"] - slope["A"])
+    diff = slope["B"] - slope["A"] if growth_only else abs(slope["B"] - slope["A"])
     max_diff = max(by_arm["B"][t]["chars"] - by_arm["A"][t]["chars"] for t in turns)
     ok6 = diff < SLOPE_DIFF_MAX and max_diff <= recall_section_max
     mismatched = [t for t in turns if by_arm["A"][t]["segmentSha"][:2] != by_arm["B"][t]["segmentSha"][:2]]

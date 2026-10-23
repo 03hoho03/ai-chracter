@@ -22,7 +22,7 @@
 - 앞 두 캐시 블록(`S3`): 같은 템플릿 계열의 쌍은 같은 턴의 두 해시를 견준다. 계열이 다른 쌍은 요약 글이 달라 첫 블록이 원래
   다르므로, B 계열 갈래를 대화 기록 뒤 섹션을 빼고 다시 렌더한 점과 견준다.
 - 프롬프트 길이(`S4`): 같은 턴의 B − A 최댓값이 그 쌍이 더하는 섹션의 계산 최대 이하(쌍마다 부르는 쪽이 준다 — 없으면 `halt`)이고,
-  101~300턴 최소제곱 기울기 차가 턴당 2자 미만.
+  101~300턴 최소제곱 기울기 차(B − A, 부호 그대로)가 턴당 2자 미만. B 가 덜 자라는 것은 프롬프트가 불어나는 게 아니라 위반이 아니다.
 
 효과(결과 칸 `effects`, 스토리 대본 합, `EFFECTS`): 사실 주입 B2 대 B1(관계·정정·거짓 전제, 판정자), 임베딩 회상 B1E 대 B1(바꿔
 말하기·대명사, 질문 턴 응답의 정답 키), 장면 회상 A1 대 A0(디테일, 정답 키). 정확 McNemar 단측 검정(b = A 실패이고 B 성공,
@@ -487,7 +487,7 @@ def trajectory_gate(
         halt = {"status": "halt", "pass": False, "missingArms": sorted({a, b} - present)}
         return {"S3": dict(halt), "S4": dict(halt)}
     rows = [dict(p) for p in points]
-    checks = trajectory_checks(rows, recall_section_max=section_max or 0, arms=(a, b))
+    checks = trajectory_checks(rows, recall_section_max=section_max or 0, arms=(a, b), growth_only=True)
     if arm_series(a) == arm_series(b):
         s3 = {**checks["7"], "via": "pair"}
     else:
