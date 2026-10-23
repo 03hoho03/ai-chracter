@@ -67,6 +67,24 @@ class NovelizeBoundaryResult(BaseModel):
     reason: str = Field(description="그 턴에서 장면이 매듭지어지는 이유. 이야기 속 사건으로 쓴 한 문장, 60자 이내.")
 
 
+class NovelizeOutlineEpisode(BaseModel):
+    """전체 구성안의 화 하나. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
+
+    title: str = Field(description="화 제목. 그 화의 핵심 장면이나 말을 담은 20자 이내의 짧은 구절.")
+    summary: str = Field(description="그 화에서 일어난 일. 2~3문장, 과거형.")
+    goal: str = Field(description="이 화가 이야기에서 맡는 몫 — 화가 끝날 때 무엇이 달라지거나 무엇이 궁금해지는지 한 문장.")
+    start_turn: int = Field(description="이 화의 근거가 시작되는 턴 번호. [원문 대화]의 [턴 n] 번호 중 하나.")
+    end_turn: int = Field(description="이 화의 근거가 끝나는 턴 번호. start_turn 이상이고, 다음 화의 start_turn 보다 작다.")
+
+
+class NovelizeOutlineResult(BaseModel):
+    """전체 구성안의 응답 스키마. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
+
+    episodes: list[NovelizeOutlineEpisode] = Field(
+        description="화 목록. 이야기 순서대로, 적어도 하나. 앞 화의 턴과 겹치지 않고 턴 번호가 뒤로 갈수록 커진다."
+    )
+
+
 def _scope(is_story_chat: bool) -> str:
     return "story" if is_story_chat else "character"
 

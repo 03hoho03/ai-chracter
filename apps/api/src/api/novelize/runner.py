@@ -44,6 +44,7 @@ from api.db.models.novel import (
     NovelCharacter,
     NovelJob,
     NovelJobFailureCode,
+    NovelOutline,
 )
 from api.llm.client import (
     LLMCallContext,
@@ -76,6 +77,14 @@ from api.novelize.inputs import (
     next_ordinal,
     regenerate_batch,
 )
+from api.novelize.outline import (
+    MalformedOutlineError,
+    OutlineInput,
+    RefusedOutlineError,
+    build_outline_input,
+    outline_episodes,
+    selection_still_holds,
+)
 from api.novelize.output import (
     MalformedOutputError,
     ParsedBatch,
@@ -84,7 +93,7 @@ from api.novelize.output import (
     parse_batch_output,
 )
 from api.novelize.paragraphs import resplit_long_paragraphs
-from api.novelize.prompts import NovelizeReviseResult
+from api.novelize.prompts import NovelizeOutlineResult, NovelizeReviseResult
 from api.novelize.source import group_turns, load_candidates, message_key, next_chapter_start
 from api.novelize.text import clean_chapter_body, looks_like_refusal, split_paragraphs
 from api.novelize.writing_lock import lock_with_first_chapter
@@ -174,12 +183,22 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
             try:
                 if job.kind == "ai_edit":
                     revise = await build_revise_input(db, job, novel)
+                elif job.kind == "outline_generate":
+                    outline_input = await build_outline_input(db, novel, model=chapter_job_model(job))
                 else:
                     chapter_input = await build_chapter_input(db, job, novel)
             except SourceChangedError as exc:
                 raise _JobFailedError("source_changed") from exc
             if job.kind == "ai_edit":
                 usage = LLMCallContext(call_site="novelize_revise", user_id=job.user_id, room_id=novel.chat_room_id)
+            elif job.kind == "outline_generate":
+                # 고른 모델을 실어 부른다 — 구성안 호출 위치는 구조화 호출이어도 실린 모델의 구현으로 간다.
+                usage = LLMCallContext(
+                    call_site="novelize_outline",
+                    user_id=job.user_id,
+                    room_id=novel.chat_room_id,
+                    model=chapter_job_model(job),
+                )
             else:
                 # 작업에 적힌 모델 그대로다. 허용은 과금할 때 판정했고 여기서 다시 보지 않는다 — 그 사이 허용이 회수됐다고
                 # 기본 모델로 바꾸면 상위 모델 값을 내고 다른 모델의 글을 받는다. 화 문안도 그 모델의 소설 체인
@@ -197,6 +216,9 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
             result_text = await _revise(llm_client, revise.prompt.prompt, revise.prompt.system_instruction, usage)
             body = _assemble_revision(revise.paragraphs, revise.first_index, revise.last_index, result_text)
             await _save_ai_edit(session_factory, job_id, body)
+        elif kind == "outline_generate":
+            episodes = await _outline(llm_client, outline_input, usage)
+            await _save_outline(session_factory, job_id, outline_input, episodes)
         else:
             batch = await _generate_batch(llm_client, chapter_input, usage)
             await _save_batch(session_factory, job_id, chapter_input, batch)
@@ -505,6 +527,72 @@ async def _revise(llm_client: LLMClient, prompt: str, system_instruction: str, u
         raise _JobFailedError("empty")
     _judge(paragraphs)
     return paragraphs
+
+
+async def _outline(llm_client: LLMClient, outline_input: OutlineInput, usage: LLMCallContext) -> list[dict[str, Any]]:
+    """전체 구성안 호출. 호출 실패는 문단 수정과 같은 사유로 가르고, 쓸 수 없는 구성안(화 수·턴 번호 범위 밖, 빈 제목)은
+    `malformed`, 거절문은 `refused` 로 실패·환불한다."""
+    prompt = outline_input.prompt
+    try:
+        result = await llm_client.generate_structured_with_instruction(
+            prompt.prompt, NovelizeOutlineResult, system_instruction=prompt.system_instruction, usage=usage
+        )
+    except LLMTruncatedError as exc:
+        raise _JobFailedError("truncated") from exc
+    except LLMEmptyResponseError as exc:
+        raise _JobFailedError("empty") from exc
+    except LLMPolicyViolationError as exc:
+        raise _JobFailedError("blocked") from exc
+    except LLMClientError as exc:
+        logger.warning("소설화 전체 구성안 호출이 실패했다: %s", type(exc).__name__)
+        raise _JobFailedError("llm_error") from exc
+    try:
+        return outline_episodes(result, outline_input.source.spans)
+    except MalformedOutlineError as exc:
+        logger.warning("소설화 전체 구성안을 쓸 수 없다: %s", exc)
+        raise _JobFailedError("malformed") from exc
+    except RefusedOutlineError as exc:
+        raise _JobFailedError("refused") from exc
+
+
+async def _save_outline(
+    session_factory: SessionFactory, job_id: uuid.UUID, outline_input: OutlineInput, episodes: list[dict[str, Any]]
+) -> None:
+    """구성안을 그 소설의 다음 리비전(미승인, 출처 generate)으로 저장한다. 사용자 행 잠금 → 성공 전이 → 낡음 확인 → INSERT 순서다.
+    사용자 행을 먼저 잡는 것은 구성안 편집·승인도 같은 잠금 아래에서 다음 리비전 번호를 정하기 때문이다(같은 번호를 동시에 쓰지
+    않는다). 모델을 부르는 동안 사용자가 근거 include 구간을 빼거나 바꾼 선택을 승인했으면 그 구성안은 쓸 수 없으므로 저장하지 않고
+    `source_changed` 로 실패·환불한다(구간을 더하기만 한 선택은 통과한다)."""
+    source = outline_input.source
+    async with session_factory() as db:
+        user_id = await db.scalar(select(NovelJob.user_id).where(NovelJob.id == job_id))
+        if user_id is None or not await _lock_user(db, user_id):
+            await db.rollback()
+            return
+        moved = await transition_job(
+            db, job_id=job_id, expected=("running",), values={"status": "succeeded", "finished_at": func.now()}
+        )
+        if moved is None:
+            await db.rollback()
+            return
+        if not await selection_still_holds(db, source.novel_id, source.selection_id):
+            await db.rollback()
+            raise _JobFailedError("source_changed")
+        job = await db.get_one(NovelJob, job_id)
+        last = await db.scalar(
+            select(func.coalesce(func.max(NovelOutline.revision), 0)).where(NovelOutline.novel_id == source.novel_id)
+        )
+        db.add(
+            NovelOutline(
+                novel_id=source.novel_id,
+                revision=int(last or 0) + 1,
+                source="generate",
+                selection_id=source.selection_id,
+                job_id=job_id,
+                model=job.model,
+                episodes=episodes,
+            )
+        )
+        await db.commit()
 
 
 def _assemble_revision(paragraphs: list[str], first: int, last: int, replacement: list[str]) -> str:

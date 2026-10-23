@@ -752,6 +752,14 @@ class Settings(BaseSettings):
     # 흐름. 꺼져 있으면(기본값) 지금의 이어 쓰기 흐름(경계 제안·묶음 생성·연쇄)만 있다. 지금은 가격 응답의 같은 이름 칸만 이 값을
     # 따르고, 구간 선택·구성안 라우트를 더할 때 이 스위치 뒤에 둔다. 개정 처리방침 게시 뒤에 켠다.
     novelize_outline_flow_enabled: bool = False
+    # 전체 구성안 한 판의 화 수 상한. 모델이 낸 화 수가 1 이상 이 값 이하가 아니면 실패·환불이고, 사용자가 고친 판도 이 안이어야
+    # 한다. 프롬프트의 화 수 안내값(원문 분량 산식)도 이 값에서 자른다. 묶음 하나의 화 수 상한(`novelize_k_max_*`)과 다른 값이다 —
+    # 구성안은 고른 대화 전체를 나누므로 묶음 하나보다 훨씬 많은 화가 된다. 구성안 원가·분포를 재기 전의 임시값.
+    novelize_outline_max_episodes: int = Field(default=30, ge=1)
+    # 전체 구성안 호출 한 번의 입력 견적 상한(토큰). 견적은 고른 원문 줄(include·맥락)의 글자 수를 토큰 수로 그대로 친 값이다 —
+    # 글자당 토큰 비율을 아직 재지 않았다. 넘으면 모델을 부르기 전·차감 전에 "구간을 줄여 달라"로 거절한다(조용히 잘라 보내지
+    # 않는다). 구성안 원가·입력 분포를 잰 뒤 견적 규칙과 함께 정하는 임시값.
+    novelize_outline_max_input_tokens: int = Field(default=150_000, ge=1)
 
     @field_validator(
         "novelize_grant_allowlist",

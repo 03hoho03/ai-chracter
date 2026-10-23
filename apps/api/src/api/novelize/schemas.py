@@ -16,6 +16,7 @@ from api.db.models.novel import (
     NovelJobFailureCode,
     NovelJobKind,
     NovelJobStatus,
+    NovelOutlineSource,
     NovelRevisionSource,
     NovelSnapshotKind,
     NovelSourceSectionMode,
@@ -841,3 +842,92 @@ class NovelSourceSelectionState(CamelModel):
     locked_ranges: list[NovelSourceRange]
     room_end_message_id: uuid.UUID | None
     has_new_messages: bool
+
+
+# ── 전체 구성안 ─────────────────────────────────────────────────────────────
+# 화 하나의 줄거리·목적 길이 상한. 모델이 낸 글은 이 길이에서 자르고(문안은 2~3문장·한 문장을 요구한다), 사용자가 고친 글은 넘으면
+# 422 다. 화 수·화 하나의 근거 구간 수 상한은 요청 하나의 크기를 묶는 값이다 — 실제 화 수 상한은 설정(`novelize_outline_max_episodes`)
+# 이고 서버가 따로 본다.
+OUTLINE_SUMMARY_MAX_LENGTH = 1_000
+OUTLINE_GOAL_MAX_LENGTH = 300
+OUTLINE_EPISODES_MAX_COUNT = 200
+OUTLINE_BASIS_MAX_COUNT = 50
+
+OutlineSummaryText = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=OUTLINE_SUMMARY_MAX_LENGTH)
+]
+OutlineGoalText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=OUTLINE_GOAL_MAX_LENGTH)]
+
+
+class NovelOutlineEpisodeView(CamelModel):
+    """구성안의 화 하나. `key` 는 리비전이 바뀌어도 같은 화를 가리키는 화 키, `basis` 는 이 화의 근거가 된 대화 구간(양 끝 포함,
+    키 순)이다 — 근거는 그 구성안이 쓴 구간 선택의 include 구간 안에만 있다. 목록 순서가 화 순서다."""
+
+    key: uuid.UUID
+    title: str
+    summary: str
+    goal: str
+    basis: list[NovelSourceRange]
+
+
+class NovelOutlineView(CamelModel):
+    """구성안 한 판. `source` 는 모델이 만든 판(`generate`)인지 사용자가 고친 판(`edit`)인지, `model` 은 만든 모델(고친 판은 null)이다.
+    `stale` 이 참이면 그 판이 근거로 삼은 include 구간이 지금 승인한 구간 선택에서 빠졌거나 바뀌었다 — 승인·편집할 수 없고, 구간
+    선택에 맞춰 다시 만들어야 한다."""
+
+    revision: int
+    source: NovelOutlineSource
+    model: str | None
+    approved_at: datetime | None
+    created_at: datetime
+    stale: bool
+    episodes: list[NovelOutlineEpisodeView]
+
+
+class NovelOutlineModel(CamelModel):
+    """이 계정이 전체 구성안에 고를 수 있는 모델 하나와 그 모델의 구성안 한 번 가격(요청의 `expectedCost`)."""
+
+    id: ChatModelId
+    name: str
+    cost: int
+
+
+class NovelOutlineState(CamelModel):
+    """전체 구성안 화면의 상태. `approved` 는 가장 최근에 승인한 판, `draft` 는 그보다 새 미승인 판(모델이 막 만든 판이거나 사용자가
+    고친 판)이다. `max_episodes` 는 구성안 화 수 상한, `models` 는 고를 수 있는 모델과 가격이다."""
+
+    approved: NovelOutlineView | None
+    draft: NovelOutlineView | None
+    max_episodes: int
+    models: list[NovelOutlineModel]
+
+
+class NovelOutlineCreateRequest(CamelModel):
+    """전체 구성안 만들기(과금). 지금 승인한 구간 선택을 근거로 한다. `model` 은 상위 모델이면 소설 상위 모델 허용이 있어야 하고,
+    `expected_cost` 는 조회 상태의 그 모델 `cost` 다."""
+
+    expected_cost: int
+    model: ChatModelId = DEFAULT_CHAT_MODEL
+
+
+class NovelOutlineEpisodeInput(CamelModel):
+    """고친 화 하나. `key` 는 기준 리비전에 있던 화의 키이고, 화를 나눠 새로 생긴 화는 비워 보낸다(서버가 새 키를 준다)."""
+
+    key: uuid.UUID | None = None
+    title: ChapterTitleText
+    summary: OutlineSummaryText
+    goal: OutlineGoalText = ""
+    basis: list[NovelSourceRange] = Field(min_length=1, max_length=OUTLINE_BASIS_MAX_COUNT)
+
+
+class NovelOutlineSaveRequest(CamelModel):
+    """고친 구성안 저장 — 기준 리비전(화면이 본 가장 최근 판) 위의 새 미승인 리비전이 된다. 승인한 판은 고치지 않는다."""
+
+    base_revision: int = Field(ge=1)
+    episodes: list[NovelOutlineEpisodeInput] = Field(min_length=1, max_length=OUTLINE_EPISODES_MAX_COUNT)
+
+
+class NovelOutlineApproveRequest(CamelModel):
+    """승인할 리비전. 가장 최근 리비전이어야 한다."""
+
+    revision: int = Field(ge=1)
