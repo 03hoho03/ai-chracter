@@ -712,6 +712,16 @@ class Settings(BaseSettings):
     # 돌려 걸린 시간을 보고, 넘으면 이 값을 올린다. Anthropic API 직접 경로의 모델은 사고를 끌 수 없어 본문 앞에 사고가
     # 붙으므로, 장을 그 경로로 보낼 때는 그 경로로 따로 잰다. 임시값.
     novelize_job_timeout_seconds: float = 360
+    # 소설화 워커(`python -m api.novelize.worker`) 스위치. 켜면 api 는 연쇄 부모를 뺀 작업을 띄우지 않고 대기 행만 남기며,
+    # 따로 뜬 워커 프로세스가 그 행을 집어 돌린다 — api 교체가 돌던 작업을 죽이지 않게 하려는 것이다. 꺼져 있으면 지금처럼
+    # api 프로세스 안에서 띄운다. 켜 두고 워커가 없으면 작업은 heartbeat 만료 뒤 환불로 끝난다. 연쇄 부모는 스위치와 무관하게
+    # 늘 api 안에서 돈다.
+    novelize_worker_enabled: bool = False
+    # 워커가 대기 작업을 찾는 간격(초)과 한 워커가 동시에 돌리는 작업 수 상한. 상한이 차 있는 동안 안 집힌 작업은 heartbeat
+    # 만료(`novelize_heartbeat_expiry_seconds`) 뒤 환불되므로, 상한은 실사용 동시 작업 수보다 넉넉해야 한다. 상한을 올리면
+    # 워커의 DB 풀도 함께 키운다 — 작업 하나가 단계 세션과 heartbeat 세션을 함께 쥘 수 있다.
+    novelize_worker_poll_interval_seconds: float = Field(default=2, gt=0)
+    novelize_worker_max_concurrent_jobs: int = Field(default=4, ge=1)
     # 장 본문이 이보다 짧으면(글자 수, 앞뒤 공백 제외) 정상 종료였어도 실패·환불한다. 출력 토큰 1개로 끝난 장이 실제로
     # 나왔다. 200자는 측정으로 정한 값이 아니라 그런 몇 글자짜리 장을 거르려고 넉넉히 낮게 잡은 임시 하한이다 — 짧은
     # 응답 한 턴만 담은 정상 장이 이 아래로 나올 수도 있어서, 본 시험에서 정상 장의 최단 길이를 보고 다시 정한다.

@@ -1131,11 +1131,16 @@ async def _start_job(
     db: AsyncSession, job: NovelJob, expected_cost: int, session_factory: "SessionFactory", llm_client: LLMClient
 ) -> NovelJobResponse:
     """차감하며 작업을 넣고(커밋) 백그라운드로 띄운다. 거절 판정은 모두 이 앞에서 끝낸다 — 거절된 요청은 원장에
-    아무것도 남기지 않는다. 응답은 띄우기 전에 만든다: 띄운 작업이 같은 커넥션을 쓰는 테스트에서 겹치지 않게."""
+    아무것도 남기지 않는다. 응답은 띄우기 전에 만든다: 띄운 작업이 같은 커넥션을 쓰는 테스트에서 겹치지 않게.
+
+    소설화 워커 스위치가 켜져 있으면 연쇄 부모가 아닌 작업은 띄우지 않고 대기 행으로 남긴다 — 워커 프로세스가 집는다
+    (`novelize/worker.py`). 연쇄 부모는 스위치와 무관하게 이 프로세스에서 띄운다(워커가 집지 않는 종류다)."""
     job = await create_charged_job(db, job=job, expected_cost=expected_cost, now=datetime.now(UTC))
     response = await _job_response(db, await db.get_one(NovelJob, job.id, populate_existing=True))
-    enqueue = enqueue_chain_job if job.kind == "chain_generate" else enqueue_job
-    await enqueue(session_factory, llm_client, job.id)
+    if job.kind == "chain_generate":
+        await enqueue_chain_job(session_factory, llm_client, job.id)
+    elif not settings.novelize_worker_enabled:
+        await enqueue_job(session_factory, llm_client, job.id)
     return response
 
 

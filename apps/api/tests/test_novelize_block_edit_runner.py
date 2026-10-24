@@ -6,6 +6,7 @@
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -22,7 +23,14 @@ from api.novelize import billing, runner
 from api.novelize.block_edits import BlockEdit, block_hash, request_targets
 from api.novelize.blocks import build_revision
 from api.novelize.text import split_paragraphs
-from factories import _add_chapter, _make_user_with_clover_lot, _open_room, _room_messages, revision_row
+from factories import (
+    _add_chapter,
+    _make_user_with_clover_lot,
+    _open_room,
+    _room_messages,
+    _run_worker_one_pass,
+    revision_row,
+)
 
 pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
 
@@ -188,6 +196,48 @@ async def test_a_block_edit_keeps_patches_for_the_targets_only_and_writes_no_rev
     assert "[고칠 문단]" in prompt and "2번, 4번" in prompt and "더 쓸쓸하게" in prompt
     assert all(f"[{n}] {text}" in prompt for n, text in enumerate(_PARAGRAPHS, start=1))
     assert "[고치는 규칙]" in system_instruction
+
+
+async def test_the_novelize_worker_picks_up_a_block_edit_job_and_saves_the_same_patches(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """워커 스위치를 켜 두었을 때 여러 문단 수정 작업은 소설화 워커가 집어 돌린다. 패치 칸이 있는 AI 수정이라 종류는 문단 수정과
+    같지만 실행 갈래가 다르다 — 워커 경로로 돌려도 api 안에서 돌린 것(위 테스트들)과 같이 대상 패치만 남기고, 수정안이 없는 대상의
+    기준 해시는 지우며, 개정을 쓰지 않고 차감은 한 번이다. 깨지는 시나리오: 워커가 이 행을 집지 않아 만료 환불로 끝나거나, 패치
+    칸을 모르는 갈래(문단 범위 수정)로 돌려 실패·환불하거나 범위 결과를 저장한다."""
+    novel, chapter = await _chapter(db_client, db_session)
+    job = await _block_job(db_session, novel, chapter, [0, 1, 3])
+    base = await _current(db_session, chapter.id)
+    llm = _BlockLLM(
+        {
+            "patches": [
+                {"paragraph": 2, "paragraphs": ["[2] 서진은 젖은 창가에 섰다.", "빗소리가 들렸다."]},
+                {"paragraph": 3, "paragraphs": ["대상이 아닌 문단을 고쳤다."]},
+                {"paragraph": 4, "paragraphs": ["둘은 끝내 말이 없었다."]},
+            ],
+            "bundles": [{"paragraphs": [2, 4], "reason": "창가의 침묵이 이어진다"}],
+        }
+    )
+
+    claimed = await _run_worker_one_pass(monkeypatch, _factory(db_session), llm, tmp_path / "alive")
+
+    assert claimed == [job.id]
+    stored = await _job(db_session, job.id)
+    assert (stored.status, stored.result_text, stored.paragraph_start, stored.paragraph_end) == ("succeeded", None, None, None)
+    assert _patches(stored) == [
+        (str(base.block_ids[1]), "pending", ["서진은 젖은 창가에 섰다.", "빗소리가 들렸다."]),
+        (str(base.block_ids[3]), "pending", ["둘은 끝내 말이 없었다."]),
+    ]
+    assert stored.block_edit is not None
+    kept = [block_hash(_PARAGRAPHS[1]), block_hash(_PARAGRAPHS[3])]
+    assert [t["baseHash"] for t in stored.block_edit["targets"]] == ["", *kept]
+    assert [p["baseHash"] for p in stored.block_edit["patches"]] == kept
+    (bundle,) = stored.block_edit["bundles"]
+    assert bundle["patchIds"] == [p["id"] for p in stored.block_edit["patches"]]
+    assert (await _current(db_session, chapter.id)).revision_no == 1
+    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -20)]
+    assert [call[2].call_site for call in llm.calls] == ["novelize_revise"]
+    assert "[고칠 문단]" in llm.calls[0][0] and "1번, 2번, 4번" in llm.calls[0][0]
 
 
 async def test_a_target_the_model_leaves_alone_is_saved_without_its_base_hash(
