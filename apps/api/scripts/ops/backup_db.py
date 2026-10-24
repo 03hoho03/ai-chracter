@@ -7,11 +7,20 @@
     # VM 크론 (덤프 → R2 업로드 → 오래된 것 정리)
     cd /opt/ddona/app/apps/api && PYTHONPATH=scripts python -m ops.backup_db
 
+    # 사람이 손으로 뜨는 백업(마이그레이션 직전 등) — `backup/manual/` 에 따로 쌓인다
+    sudo /opt/ddona/backup.sh --manual
+
 **덤프 옵션이 `-Fc --no-owner --no-acl` 인 이유.** custom 포맷(`-Fc`)은 선택·병렬 복원이 되고,
 복원 대상(VM 의 PG)은 롤 이름이 Neon 과 달라 소유자·권한 구문이 들어가면 복원 중 에러가 쏟아진다.
 
 **보관 정책은 R2 수명주기 규칙이 아니라 여기서 판단한다.** 수명주기는 "N일 지나면 삭제"밖에 못
 하는데 우리가 원하는 건 "일단위 7개 + 주단위 4개"라 갯수 기준이기 때문이다.
+
+**수동 백업은 `--manual` 로 `backup/manual/` 에 올리고 따로 센다.** 보관이 갯수 기준이라 손으로
+뜬 백업을 `daily/` 에 섞으면 한 번 뜰 때마다 일단위 사본이 하나씩 밀려난다 — 하루에 다섯 번
+뜨면 그 전 닷새치 일단위 사본이 사라진다. 수동 경로는 `daily/`·`weekly/` 를 올리지도 정리하지도
+않고, healthchecks.io 에도 check-in 하지 않는다(그 체크는 매일 크론이 돌았는지를 보는 것이라
+손으로 뜬 백업이 크론의 성공·실패처럼 찍히면 안 된다).
 
 ⚠️ **백업은 자산과 같은 버킷(`ai-chracter-chat`)의 `backup/` 아래 산다.** 전용 버킷을 따로 두려
 했지만 기존 R2 토큰이 그 버킷에만 스코프돼 있어(다른 버킷은 전부 403) 새 토큰 없이는 쓸 수 없었다.
@@ -55,6 +64,7 @@ from ops.pg import run_sh, shell_quote
 AWS_IMAGE = "amazon/aws-cli:latest"
 DAILY_KEEP = 7
 WEEKLY_KEEP = 4
+MANUAL_KEEP = 5
 
 # R2 무료 한도(DEPLOY.md "Cloudflare R2" 절). 새 토큰·새 크론을 만들지 않고
 # 이미 있는 `aws()`/prune 경로로 총 사용량을 재는 김에 임계값만 비교한다.
@@ -261,7 +271,18 @@ def main() -> int:
     parser.add_argument("--out-dir", type=Path, default=Path("backups"))
     parser.add_argument("--no-upload", action="store_true", help="덤프만 뜨고 R2 는 건너뛴다")
     parser.add_argument("--keep-local", action="store_true", help="업로드 후에도 로컬 파일을 남긴다")
+    parser.add_argument(
+        "--manual",
+        action="store_true",
+        help=f"크론 밖 수동 백업. backup/manual/ 에 올려 최신 {MANUAL_KEEP}개만 남기고, "
+        "일·주단위 보관과 healthchecks.io check-in 은 건드리지 않는다",
+    )
     args = parser.parse_args()
+
+    if args.manual:
+        # 실패 ping 은 `__main__` 의 `_on_failure` 가 보내므로, 인자를 거기까지 넘기는 대신 이
+        # 프로세스의 환경에서 ping URL 을 지워 start·성공·실패 세 지점을 한꺼번에 끈다.
+        os.environ.pop("HEALTHCHECKS_BACKUP_PING_URL", None)
 
     _healthcheck("/start")  # "예정 시각에 안 돌았음"을 잡으려면 시작부터 찍어야 한다.
 
@@ -288,12 +309,18 @@ def main() -> int:
     base = os.environ.get("BACKUP_PREFIX", DEFAULT_PREFIX)
 
     # 주단위 사본은 일요일에만. 일단위와 같은 파일을 두 키에 올리므로 복원 절차는 하나로 같다.
-    kinds = ["daily/"] + (["weekly/"] if datetime.now(UTC).weekday() == 6 else [])
+    # 수동 백업은 `manual/` 하나에만 올리고 그것만 정리한다 — 일·주단위 사본 수에 끼지 않는다.
+    if args.manual:
+        kinds = ["manual/"]
+        retention = [("manual/", MANUAL_KEEP)]
+    else:
+        kinds = ["daily/"] + (["weekly/"] if datetime.now(UTC).weekday() == 6 else [])
+        retention = [("daily/", DAILY_KEEP), ("weekly/", WEEKLY_KEEP)]
     for kind in kinds:
         upload(target, bucket, f"{base}{kind}{target.name}")
         print(f"↑ s3://{bucket}/{base}{kind}{target.name}")
 
-    for kind, keep in (("daily/", DAILY_KEEP), ("weekly/", WEEKLY_KEEP)):
+    for kind, keep in retention:
         removed = prune(bucket, f"{base}{kind}", keep)
         if removed:
             print(f"🗑 {base}{kind} 정리: {len(removed)}개 삭제 ({', '.join(removed)})")
