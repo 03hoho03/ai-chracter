@@ -199,21 +199,15 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 122개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 23개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 노벨 공개 정책 스위치 1개(`NOVEL_PUBLIC_POLICY_V2_ENABLED`)·소설 삽화 스위치 1개(`NOVEL_ILLUSTRATIONS_ENABLED`)·소설 구성 흐름 스위치 1개(`NOVELIZE_OUTLINE_FLOW_ENABLED`)·여러 문단 수정 스위치 1개(`NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`)·스탯 판정 이벤트 스위치 1개(`STAT_EVENT_LOG`)·아직 켜지 않은 인상 키 3개(`MEMORY_IMPRESSIONS_WRITE`·`MEMORY_IMPRESSION_EVERY_N_FOLDS`·`MEMORY_IMPRESSION_MODEL`), 모두 70개 제외 —
-운영에서 켜 둔 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 7개(`PORTONE_*` 5개·
-`IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`), 노벨 키 2개(`NOVEL_PUBLIC_ENABLED`·`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`)는 셈에 들어간다) + 앱이 읽지 않지만
+**87개 키다**(2026-10-24 VM 실측, 키 이름만 셈): 아래 표 151개 중 80개(생략 가능한 조정 키 57개 — `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·소설화 밖 `GEMINI_*_TIMEOUT_MS` 5개(`GENERATE`·`JUDGMENT`·`MEMORY_SUMMARY`·`PUBLISH_FILTER`·`CLIENT`)·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 25개·장기 기억 조정용 9개(`MEMORY_MODEL_SCOPE`·`MEMORY_EMBED_MODEL`·`MEMORY_EMBED_DIMS`·`MEMORY_EMBED_RECALL_` 뒤에 `RRF_K`·`MAX_PLAIN`·`MAX_CUE`·`MAX_DISTANCE`·`VECTOR_LIMIT`·`DF_MAX` 가 붙는 6개), 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 스위치 5개(노벨 공개 정책 `NOVEL_PUBLIC_POLICY_V2_ENABLED`·소설 삽화 `NOVEL_ILLUSTRATIONS_ENABLED`·소설 구성 흐름 `NOVELIZE_OUTLINE_FLOW_ENABLED`·여러 문단 수정 `NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`·사실 주입 `MEMORY_FACTS_INJECT`), 아직 켜지 않은 인상 키 3개(`MEMORY_IMPRESSIONS_WRITE`·`MEMORY_IMPRESSION_EVERY_N_FOLDS`·`MEMORY_IMPRESSION_MODEL`), 전체 공개 뒤 줄을 지운 노벨 미리보기 명단 1개(`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`), 모두 80개 제외 —
+파일에 줄이 있는 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`·`NOVELIZE_WORKER_ENABLED`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 9개(`PORTONE_*` 5개·
+`IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 노벨 스위치 1개(`NOVEL_PUBLIC_ENABLED`), 장기 기억 키 13개(`MEMORY_*` 12개 — 장면·사실 추출과 모델, 장면 회상, 요약 모델·비밀 표기, 지식 범위 필터, 임베딩 쓰기·회상과 그 시간 상한, 기억 보기 `MEMORY_ITEMS_VISIBLE` — 와 `VOYAGE_API_KEY`), 스탯 판정 이벤트 스위치 1개(`STAT_EVENT_LOG`)를 포함한 나머지 71개는 셈에 들어간다) + 앱이 읽지 않지만
 옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
 `POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE` — 두 색으로 나뉘기 전의 `API_IMAGE` 줄은 없다) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`은 "백업 · 복원" 절, `HEALTHCHECKS_RESOURCE_PING_URL`은 "VM 리소스 감시" 절). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
-🔴 이 수는 낡았다 — 2026-10-23 장기 기억 켜기에서 7줄(`MEMORY_EPISODES_RECALL`·`MEMORY_SUMMARY_SECRET_MARKING`·`MEMORY_KNOWLEDGE_FILTER`·
-`MEMORY_EMBED_WRITE`·`VOYAGE_API_KEY`·`MEMORY_EMBED_RECALL`·`MEMORY_EMBED_RECALL_TIMEOUT_MS`)이 더 들어갔고 그 뒤 VM 파일은 다시 세지 않았다.
-그날 켜기 뒤 서빙 컨테이너(`docker exec … env`)의 키 이름은 91개로, 켜기 전 84개에서 그 7개만큼 늘었고 `MEMORY_`·`VOYAGE_` 키는
-12개(위 7개 + `MEMORY_EPISODES_EXTRACT`·`MEMORY_EPISODE_MODEL`·`MEMORY_FACTS_EXTRACT`·`MEMORY_FACT_MODEL`·`MEMORY_SUMMARY_MODEL`)다.
-2026-10-24 에는 기억 보기 켜기에서 `MEMORY_ITEMS_VISIBLE`, 스탯 판정 이벤트 켜기에서 `STAT_EVENT_LOG` 가 한 줄씩 더 들어갔고(위 제외 목록의
-`STAT_EVENT_LOG` 도 이제 파일에 있다), 그 뒤에도 VM 파일과 컨테이너 키 수는 다시 세지 않았다.
-컨테이너 수는 이 파일 키 수가 아니다 — `env_file` 로 받은 파일 키에 베이스 이미지·Dockerfile·Docker 가 넣는 키(`PATH`·`HOSTNAME` 등)가
+서빙 컨테이너(`docker exec … env`)의 키 수는 이 파일 키 수가 아니다 — `env_file` 로 받은 파일 키에 베이스 이미지·Dockerfile·Docker 가 넣는 키(`PATH`·`HOSTNAME` 등)가
 더해진 수라, 파일 키 수는 VM 에서 아래 명령으로 따로 센다.
 이 수는 날짜가 붙은 실측값이라 VM에 키를 넣거나 빼면 낡는다 — 그때 VM에서 다시 세어 이 문장을 고친다
 (예: `sudo grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' /opt/ddona/.env | sort -u | wc -l`). 키 개수는 이 문장 한 곳에만 적는다.
@@ -474,7 +468,8 @@ Artifact Registry push → IAP SSH로 VM에서 `ops/swap-api.sh <태그>`(아래
 
 교체 소요 시간은 옛 색에 남은 가장 긴 요청에 비례한다(최대 정지 유예 65초) — 느린 게 아니라 드레인이 기다리는 것이다.
 드레인이 기다리는 것은 요청뿐이다. 응답 뒤에 붙인 `BackgroundTasks`(인증 메일·조회수 집계·턴 뒤 기억 요약·추출 등)는 요청의 일부라 종료 때
-끝까지 기다려지고(상한은 `stop_grace_period`), 응답 연결 없이 `asyncio.create_task` 로 도는 소설화 작업은 기다려지지 않고 프로세스와
+끝까지 기다려지고(상한은 `stop_grace_period`), 응답 연결 없이 `asyncio.create_task` 로 도는 소설화 작업(워커 스위치가 켜져 있으면 연쇄(부모와 그 부모가 직접 돌리는 자식 — 워커는 자식 행을 집지 않는다)만 — 나머지 소설화 작업 6종은 워커가
+정지 신호 뒤에도 끝까지 마친다)은 기다려지지 않고 프로세스와
 함께 끝난다 — 그 환불은 heartbeat 만료 정리가 맡는다("알려진 갭" 절의 무중단 교체 항목, "소설화 켜기 · 끄기 · 회수 · 롤백" 절).
 중간에 끊겨 두 색이 다 떠 있으면 같은 명령을 다시 부르면 이어서 끝난다 — 옛 색에 드레인 플래그가 서 있으면 그 색을 마저
 드레인·정지하고(같은 태그 재실행이면 아래 소설화 워커 단계까지 마저 하고 끝 — 끊긴 곳이 드레인이라 그 교체의 워커 단계는 아직 돌지 않았다), 플래그가 없으면 다시 만들 색을 먼저 드레인해 내린 뒤 교체한다. 어느 쪽도
@@ -1278,7 +1273,9 @@ GCP Cloud Monitoring을 쓰지 않는 이유 —
 내려올 때 Discord로 알리고, 같은 실행이 healthchecks.io로도 ping해 VM 자체의 생사를 VM 밖에서 본다.
 
 **소설화 워커도 본다.** 교체 스크립트가 남긴 `/var/lib/ddona/novelize_worker` 가 `on` 일 때만(없거나 `off` 면 감시하지 않는다 —
-크론은 `.env` 를 읽지 않는다) 두 워커 색 중 docker 헬스 상태가 healthy 인 컨테이너가 하나라도 있는지 본다. 없으면 "새 소설화 작업이
+크론은 `.env` 를 읽지 않는다) 두 워커 색 중 docker 헬스 상태가 healthy 이거나, 재시작한 적 없이 막 뜨는 중(starting, 재시작 0회)인 컨테이너가 하나라도 있는지
+본다 — 교체가 새 워커를 막 띄운 헬스체크 유예 동안 크론이 겹쳐도 경고하지 않으려는 것이고, 재시작한 starting 은 유예 안에서 죽기를
+되풀이하는 워커(크래시 루프)일 수 있어 정상으로 치지 않는다(경고에 색별 상태가 실리고, starting 인 색에만 재시작 횟수가 붙는다). 없으면 "새 소설화 작업이
 60초 뒤 환불로 끝난다" 경고, 다시 생기거나 스위치를 끄면 복구 알림이다. 정지 중인 옛 워커도 내려갈 때까지 healthy 라 하나로 센다 —
 새 워커 기동이 실패한 교체는 교체 스크립트의 알림이 먼저 간다. docker 를 못 읽으면 그 항목만 "상태를 읽지 못했다" 경고로 두고
 메모리·디스크·ping 은 계속 간다(docker 데몬 문제가 "VM 이 죽었다" 로 보이지 않게). 지연은 크론 5분 + 헬스체크 30초다.
@@ -1592,7 +1589,7 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -
 되돌렸을 때 옛 코드가 읽는 값이라 새 코드는 읽지 않고, 어드민 채팅 탭에는 보이지 않으며, 채팅 레인을 저장·게시할 때 서버가
 직전 게시본의 값을 그대로 복사한다.
 
-**소설화 워커 켜기 · 끄기.** 워커 스위치(`NOVELIZE_WORKER_ENABLED`)를 켜면 api 는 연쇄 부모를 뺀 소설화 작업을 대기 행으로만
+**소설화 워커 켜기 · 끄기.** 워커 스위치(`NOVELIZE_WORKER_ENABLED`)를 켜면 api 는 연쇄(부모와 그 부모가 직접 돌리는 자식 — 워커는 자식 행을 집지 않는다)를 뺀 소설화 작업을 대기 행으로만
 남기고, 워커 컨테이너가 그 행을 집어 돈다. 워커는 정지 신호를 받으면 돌던 작업을 끝까지 마치고 내려가므로 api 교체가 작업을
 죽이지 않는다.
 
@@ -1611,7 +1608,7 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -
 남고, 그 차감액은 만료 정리가 환불할 때까지 묶인다. 새 코드는 프로세스마다 기동 뒤 heartbeat 만료 + 10초(기본 70초)에 모든
 소설의 죽은 작업을 한 번 환불하지만, 교체에서는 새 색이 옛 색의 드레인보다 **먼저** 뜨므로 드레인이 죽인 작업은 그 정리
 시각에 아직 만료 전이라 놓칠 수 있다. **옛 이미지로 롤백하면 이 정리가 없고 스키마를 내리면 작업 행이 사라져 환불 근거가
-없어진다.** 워커 스위치가 켜져 있으면 연쇄 부모를 뺀 작업은 워커에서 돌아 교체가 죽이지 않지만, 연쇄 부모는 여전히 api 안에서
+없어진다.** 워커 스위치가 켜져 있으면 연쇄(부모와 그 부모가 직접 돌리는 자식 — 워커는 자식 행을 집지 않는다)를 뺀 작업은 워커에서 돌아 교체가 죽이지 않지만, 연쇄는 여전히 api 안에서
 돌아 위와 같다. 그래서 먼저 비운다:
 
 1. (선택) 어드민에서 허용 계정들의 토글을 끈다 — 재기동 없이 새 작업이 바로 403 이 된다. 이미 돌던 작업은 끝까지 돈다.
@@ -3228,10 +3225,13 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
 - **무중단 교체가 지키지 못하는 것 — 컨테이너 안 백그라운드 작업.** 정지는 요청(SSE 채팅 턴 포함)과 그 요청에 붙은
   `BackgroundTasks` 까지 기다린다 — 응답 뒤 `BackgroundTasks` 로 도는 턴 뒤 기억 요약·추출은 교체 때 기다려진다(상한
   `stop_grace_period` 65초, 넘으면 끊긴다. 끊기면 기억 요약은 다음 턴에 다시 한다). 요청과 상관없이 `asyncio.create_task` 로
-  띄운 작업 — 이미지 생성 잡(운영 최대 약 42초), 소설 장 생성·문단 수정(상한 360초) — 은 기다리지 않고 옛 색이 멈출 때 함께
-  끊긴다(단일 컨테이너 시절의 완전교체도 같았다). 이미지 생성은 Redis 의 락·대기열
+  띄운 작업 — 이미지 생성 잡(운영 최대 약 42초), 소설 작업(상한 360초) — 은 기다리지 않고 옛 색이 멈출 때 함께
+  끊긴다(단일 컨테이너 시절의 완전교체도 같았다). 소설 작업은 워커 스위치(`NOVELIZE_WORKER_ENABLED`)가 켜져 있으면 연쇄(부모와 그 부모가 직접 돌리는 자식 — 워커는 자식 행을 집지 않는다)를 뺀
+  6종이 api 밖 워커에서 돌아 교체가 끊지 않는다 — api 안에 남아 끊기는 것은 연쇄와, 스위치를 끈 동안의 모든 소설 작업이다
+  ("소설화 켜기 · 끄기 · 회수 · 롤백" 절). 이미지 생성은 Redis 의 락·대기열
   칸이 TTL 로 풀리고("이미지 생성" 절), 잡 기록은 1시간 TTL 까지 진행 중으로 남는다 — 끊긴 잡의 환불 경로는 확인하지 않았다.
-  소설 작업은 진행 중으로 남고, 새 프로세스가 기동 뒤 heartbeat 만료 + 10초(기본 70초)에 죽은
+  끊긴 소설 작업은 진행 중으로 남는다. 워커가 떠 있으면 워커가 60초마다 모든 소설의 만료 작업을 환불한다. 워커가 없으면(스위치
+  꺼짐) 예전 그대로다 — 새 프로세스가 기동 뒤 heartbeat 만료 + 10초(기본 70초)에 죽은
   작업을 한 번 일괄 환불하는데, 이 정리는 "옛 프로세스가 새 프로세스보다 먼저 죽었다"는 전제다. blue/green 에서는 옛 색이 새 색
   기동 **뒤**(healthy 약 15~35초 + 드레인 최대 65초)에 멈추므로 옛 색에서 끊긴 작업의 heartbeat 가 그 일괄 정리 시점에 아직 만료되지
   않아 놓칠 수 있다 — 놓친 작업은 그 소설을 열거나 폴링할 때의 지연 정리가 환불하고, 그때까지 차감액이 묶인다. 소설화는 허용
