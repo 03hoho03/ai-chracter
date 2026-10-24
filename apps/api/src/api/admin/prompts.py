@@ -36,6 +36,7 @@ from api.chat.prompt_builder import (
     build_generation_prompt,
     build_memory_episode_prompt,
     build_memory_fact_prompt,
+    build_memory_impression_prompt,
     build_memory_summary_prompt,
     build_scene_judgment_prompt,
     build_stat_rule_judgment_prompt,
@@ -185,7 +186,8 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
 # 장면 기억 문안 리비전 `fc6f0e134782`가 두 레인에 회상 슬롯 `memory_recall` 1행과 추출 채널 `memory_episode` 4행을 더한
 # 67/43/4행, 관계·사실 기억 문안 리비전 `5cab2abe4e7b`가 두 레인에 사실 슬롯 `memory_facts` 1행과 추출 채널 `memory_fact` 4행을
 # 더한 72/48/4행, 요약 비밀 표기 리비전 `0aeadefcf159`가 두 레인 요약 채널에 `secret_marking` 1행을 더한 73/49/4행, 장면 헤더 판정
-# 문안 리비전이 story 에 판정 채널 `scene_judgment` 3행을 더한 76/49/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
+# 문안 리비전이 story 에 판정 채널 `scene_judgment` 3행을 더한 76/49/4행, 인상 생성 문안 리비전 `6558ab4d3dbc` 가 두 레인에 채널
+# `memory_impression` 3행을 더한 79/52/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
 # 9·문단 수정 6 의 19행이었고(story·character 의 소설화 16행은 그대로 얼려 둔다), 구성안 문안 리비전 `b389c2317149` 가 화 생성에
 # 2행·전체 구성안 9행·장면 구성안 9행을 더해 39행이고, 여러 문단 수정 문안 리비전 `174f78b92e5c` 가 Gemini 체인에만 여러 문단
 # 수정 6행·묶음 재검사 4행을 더해 Gemini 체인은 49행이다(Claude 두 체인은 그대로).
@@ -307,6 +309,14 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("both", "turn_context", ""),
             }
         ),
+        # 인상 생성 문안 리비전 `6558ab4d3dbc`가 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유).
+        "memory_impression": frozenset(
+            {
+                ("both", "instruction", ""),
+                ("both", "episodes", ""),
+                ("both", "facts", ""),
+            }
+        ),
         # 마이그레이션 `2519dde454e0`이 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유).
         "image_judgment": frozenset(
             {
@@ -377,6 +387,13 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("both", "turn_context", ""),
             }
         ),
+        "memory_impression": frozenset(  # 위 story와 같다
+            {
+                ("both", "instruction", ""),
+                ("both", "episodes", ""),
+                ("both", "facts", ""),
+            }
+        ),
         **_FROZEN_NOVELIZE_ROWS,  # 위 story와 같다
     },
     "publish_filter": {
@@ -407,7 +424,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str]]]]
     for lane, by_channel in _EXPECTED_ROWS_BY_LANE.items()
 }
 
-# 채팅 레인의 판정(스탯 규칙·장면 헤더·엔딩·그림)·기억 요약·장면 기억 추출·관계·사실 기억 추출 호출이 읽는 채널. 옛 `stat_judgment` 은 읽는 코드가 없어
+# 채팅 레인의 판정(스탯 규칙·장면 헤더·엔딩·그림)·기억 요약·장면 기억 추출·관계·사실 기억 추출·인상 생성 호출이 읽는 채널. 옛 `stat_judgment` 은 읽는 코드가 없어
 # Gemini 체인에만 남아 있다. 판정·요약 문안 체인이 있는 레인은 story·character 뿐이다.
 _JUDGMENT_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
     "story": frozenset(
@@ -419,9 +436,12 @@ _JUDGMENT_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
             "memory_summary",
             "memory_episode",
             "memory_fact",
+            "memory_impression",
         }
     ),
-    "character": frozenset({"image_judgment", "memory_summary", "memory_episode", "memory_fact"}),
+    "character": frozenset(
+        {"image_judgment", "memory_summary", "memory_episode", "memory_fact", "memory_impression"}
+    ),
     "publish_filter": frozenset(),
     "novel": frozenset(),
     "novel_screen": frozenset(),
@@ -1259,6 +1279,13 @@ _SAMPLE_MEMORY_FACT_LINES = (
     "- [샘플] 사용자: 고양이를 키운다 (사용자의 말)"
 )
 _SAMPLE_EXISTING_FACTS = ["relation|[샘플] 세빈|[샘플] 하늘 = 경계 — 말을 아낌 (confirmed)"]
+# 인상 생성의 입력 줄. 비우면 두 섹션이 conditional 드롭으로 안 보인다. 인상 작업이 만드는 줄 모양(장면은 `- 제목: 내용`, 관계는
+# `- 주어 → 대상: 값 (상태)`, 속성은 `- 주어 / 속성: 값 (상태)`)을 흉내 낸다.
+_SAMPLE_IMPRESSION_EPISODE_LINES = ["- [샘플] 비 오는 밤 편의점: [샘플] 세빈이 우산을 건네고 먼저 자리를 떴다."]
+_SAMPLE_IMPRESSION_FACT_LINES = [
+    "- [샘플] 세빈 → [샘플] 하늘: 경계·신뢰 — 말을 아끼다 우산을 건넴 (confirmed)",
+    "- [샘플] 하늘 / 진로 계획: 겨울 오디션 준비 (claimed)",
+]
 _SAMPLE_STAT_DEFS = [
     StatDef(
         entity_id=uuid.uuid4(),
@@ -1358,6 +1385,22 @@ def _memory_episode_preview_item(
             previous_titles=_SAMPLE_PREVIOUS_EPISODE_TITLES,
             turns=_SAMPLE_HISTORY,
             names=names,
+        ),
+    )
+
+
+def _memory_impression_preview_item(
+    sections: list[PromptSection], *, is_story_chat: bool
+) -> AdminPromptPreviewItem:
+    """인상 생성 호출 프롬프트. 장면·사실 줄이 둘 다 있는 경우를 보여 준다 — 비우면 그 섹션이 드롭돼 운영자가 문안을 못 본다."""
+    return AdminPromptPreviewItem(
+        channel="memory_impression",
+        label="memory_impression",
+        text=build_memory_impression_prompt(
+            sections=sections,
+            is_story_chat=is_story_chat,
+            episode_lines=_SAMPLE_IMPRESSION_EPISODE_LINES,
+            fact_lines=_SAMPLE_IMPRESSION_FACT_LINES,
         ),
     )
 
@@ -1680,6 +1723,8 @@ def _story_preview_items(
         items.append(
             _memory_fact_preview_item(prompt_set, sections, is_story_chat=True, names=_SAMPLE_STORY_NAMES)
         )
+    if "memory_impression" in channels:
+        items.append(_memory_impression_preview_item(sections, is_story_chat=True))
     # 얼린 소설 행은 미리보지 않는다 — 소설 문안은 `novel` 레인 미리보기에서 본다.
 
     return items
@@ -1750,6 +1795,8 @@ def _character_preview_items(
         items.append(
             _memory_fact_preview_item(prompt_set, sections, is_story_chat=False, names=_SAMPLE_CHARACTER_NAMES)
         )
+    if "memory_impression" in channels:
+        items.append(_memory_impression_preview_item(sections, is_story_chat=False))
 
     return items
 
