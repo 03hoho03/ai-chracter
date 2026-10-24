@@ -62,7 +62,7 @@ export type EpisodeJobControl = {
   isSceneJobRunningHere: boolean;
   /** 이 화의 원고 작업이 도는 중인가. */
   isWriteJobRunningHere: boolean;
-  /** 도는 작업의 화를 모르는가(새로고침·다른 탭에서 시작) — 그때는 이 화의 작업이라고 단정하지 않는다. */
+  /** 도는 작업의 화를 모르는가(작업이 화 키를 싣기 전에 만든 작업) — 그때는 이 화의 작업이라고 단정하지 않는다. */
   isRunningEpisodeUnknown: boolean;
   isAiEditRunning: boolean;
   /** 작업 줄의 진행 문장 id. 작업이 도는 동안 못 누르는 버튼이 이 문장을 가리킨다. */

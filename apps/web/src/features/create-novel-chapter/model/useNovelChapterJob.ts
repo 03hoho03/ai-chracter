@@ -46,7 +46,7 @@ import { ChapterBoundaryModal } from "../ui/ChapterBoundaryModal";
 import { ProtagonistNameModal } from "../ui/ProtagonistNameModal";
 
 import { toChainProgress } from "./chainProgress";
-import { OUTLINE_SPEND_FOOTNOTE, toDoneMessage, toRetryTarget, type RetryTarget } from "./chapterJobOutcome";
+import { OUTLINE_SPEND_FOOTNOTE, toDoneMessage, toJobEpisodeKey, toRetryTarget, type RetryTarget } from "./chapterJobOutcome";
 import { toOutlineFlowAvailability } from "./regenerateAction";
 import { toRegenerateConfirmDescription } from "./regenerateConfirm";
 import { toEpisodeJobRefusal } from "./episodeJobGuard";
@@ -68,8 +68,8 @@ export type ConfirmChapterSpend = (props: {
 /** 이 흐름이 지켜보는 작업 — AI 수정을 뺀 전부다. 남은 대화 한 번에(연쇄)는 경계 고르기의 한 칸으로 시작한다. */
 type ChapterJobKind = Exclude<NovelJobResponse["kind"], "ai_edit">;
 
-/** `episodeKey` 는 이 화면이 시작한 장면 구성안·원고 작업의 화 키다 — 작업 응답에 화 키가 없어, 상세의 진행 중 작업으로 알게 된 작업
- * (새로고침·다른 탭)은 `null` 이다. */
+/** `episodeKey` 는 장면 구성안·원고 작업의 화 키다 — 작업 응답·상세의 진행 중 작업이 싣고, 비면(옛 작업) 이 화면이 시작하며 기억한
+ * 키, 그것도 없으면 `null` 이다. */
 type TrackedJob = {
   jobId: string;
   kind: ChapterJobKind;
@@ -120,7 +120,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
   const episodeOutlineMutation = useCreateEpisodeOutlineMutation();
   const outlineChapterMutation = useCreateOutlineChapterMutation();
   const outlineRegenerateMutation = useRegenerateOutlineChapterMutation();
-  // 이 화면이 시작한 장면 구성안·원고 작업의 화 키. 작업이 끝난 뒤 다시 시도를 그 화로 잇는 데 쓴다.
+  // 이 화면이 시작한 장면 구성안·원고 작업의 화 키. 작업 응답에 화 키가 없는 옛 작업의 다시 시도를 그 화로 잇는 데 쓴다.
   const episodeKeyByJobIdRef = useRef(new Map<string, string>());
   // 장면 구성안을 고치는 중인 화 키 — 화 화면이 알려 준다. 작업 줄의 다시 시도는 그 화면의 막기를 거치지 않아 여기서 본다.
   const editingEpisodeKeysRef = useRef(new Set<string>());
@@ -139,7 +139,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
           kind: novel.activeJob.kind,
           chapterId: novel.activeJob.chapterId,
           batchId: novel.activeJob.batchId,
-          episodeKey: episodeKeyByJobIdRef.current.get(novel.activeJob.id) ?? null,
+          episodeKey: toJobEpisodeKey(novel.activeJob, episodeKeyByJobIdRef.current.get(novel.activeJob.id)),
         }
       : undefined;
   // 서버가 진행 중이라고 알려 온 작업이 먼저다 — 이 화면이 지켜보던 작업이 끝난 뒤 다른 탭이 새 작업을 시작했으면
@@ -305,7 +305,13 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
   function track(started: NovelJobResponse, episodeKey: string | null = null) {
     if (started.kind === "ai_edit") return;
     if (episodeKey !== null) episodeKeyByJobIdRef.current.set(started.id, episodeKey);
-    setTracked({ jobId: started.id, kind: started.kind, chapterId: started.chapterId, batchId: started.batchId, episodeKey });
+    setTracked({
+      jobId: started.id,
+      kind: started.kind,
+      chapterId: started.chapterId,
+      batchId: started.batchId,
+      episodeKey: toJobEpisodeKey(started, episodeKey),
+    });
   }
 
   async function startCreate() {
@@ -617,7 +623,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     isBusy,
     hasPollError,
     runningKind: isJobRunning ? watched?.kind : undefined,
-    /** 도는 장면 구성안·원고 작업의 화 키. 이 화면이 시작하지 않은 작업이면 모른다(`null`). */
+    /** 도는 장면 구성안·원고 작업의 화 키. 작업이 키를 싣지 않았고(옛 작업) 이 화면이 시작하지도 않았으면 모른다(`null`). */
     runningEpisodeKey: isJobRunning ? (watched?.episodeKey ?? null) : null,
     preparingEpisodeKey,
     outlineFlow,

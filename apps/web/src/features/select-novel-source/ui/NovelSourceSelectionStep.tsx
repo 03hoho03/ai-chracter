@@ -21,6 +21,7 @@ import {
 import { toSelectionRecovery } from "../model/selectionRecovery";
 import {
   hasChangedSource,
+  isFixedEndLost,
   SOURCE_SELECTION_STATUS_LABEL,
   toSaveRoomEnd,
   toSourceSelectionBase,
@@ -32,6 +33,8 @@ import {
   hasIncludedResponse,
   includeTurnsInRanges,
   isSameStates,
+  placeRangesByKey,
+  restoreIncludeRanges,
   setTurnRange,
   setTurnsState,
   toBaseStates,
@@ -49,8 +52,9 @@ type NovelSourceSelectionStepProps = {
   novel: NovelDetailResponse;
   /** 저장하지 않은 고침이 있는가를 알린다 — 보드가 다른 곳으로 옮기기 전에 버릴지 묻는다. */
   onDraftDirtyChange: (isDirty: boolean) => void;
-  /** 다시 담아 달라는 대화 구간(낡은 구성안의 근거). `id` 가 바뀔 때마다 한 번, 그 구간의 턴을 담기로 바꾼 고침을 만든다. */
-  restoreRequest?: { id: number; ranges: readonly SourceRange[] };
+  /** 되돌려 달라는 대화 구간(낡은 구성안이 쓴 구간). `id` 가 바뀔 때마다 한 번 고침을 만든다. `isExact` 면 그 구성안이 쓴 선택의 담기
+   * 구간이라 양 끝 그대로 되돌리고, 아니면(화들의 근거로 어림한 구간) 그 구간의 턴을 담기로 바꾸기만 한다. */
+  restoreRequest?: { id: number; ranges: readonly SourceRange[]; isExact: boolean };
 };
 
 /** 화면이 고친 선택. 고치기 시작한 판의 리비전을 들고 있다가 저장 때 보낸다 — 그사이 다른 탭이 저장했으면 서버가 409 로 막아,
@@ -204,16 +208,19 @@ function SelectionEditor({
   const fixedEndId = base?.view.roomEndMessageId ?? null;
   const allTurns = buildSourceTurns(messages, {
     fixedEndId,
+    fixedEndCreatedAt: base?.view.roomEndMessageCreatedAt,
     roomEndId: state.roomEndMessageId,
     lockedRanges: state.lockedRanges,
   });
+  // 끝 메시지가 지워진 구간도 키로 지금 있는 메시지에 맞춘다(키를 모르면 그대로 — 턴 상태를 펴며 이웃으로 어림한다).
+  const sections = placeRangesByKey(messages, base?.view.sections ?? []);
   const isExtended = edits?.isExtended ?? false;
   const turns = isExtended ? allTurns : allTurns.filter((turn) => !turn.isNew);
   const newTurnCount = allTurns.filter((turn) => turn.isNew).length;
-  const baseStates = toBaseStates(allTurns, base?.view.sections ?? []);
+  const baseStates = toBaseStates(allTurns, sections);
   const states = edits?.states ?? baseStates;
   const isDirty = edits !== undefined && (edits.isExtended || !isSameStates(turns, edits.states, baseStates));
-  const changedKeys = toChangedTurnKeys(allTurns, base?.view.sections ?? []);
+  const changedKeys = toChangedTurnKeys(allTurns, sections);
   const isSourceChanged = base !== undefined && hasChangedSource(base.view);
   // 서버에 보낼 것이 있는가 — 고쳤거나, 아직 한 번도 저장하지 않았거나(제안), 저장 뒤 원문이 바뀌어 지금 원문으로 다시 저장해야
   // 승인할 수 있다.
@@ -223,10 +230,10 @@ function SelectionEditor({
   // 화면이 본 방 끝을 아직 메시지 목록이 모른다(조회 사이에 대화가 이어졌다) — 한 번 다시 받는다.
   const roomEndId = state.roomEndMessageId;
   const isMessagesBehind = roomEndId !== null && !messages.some((message) => message.id === roomEndId);
-  // 고른 때의 마지막 메시지가 지금 대화에 없다(마지막 답을 다시 만들었거나 지웠다). 저장된 판에서만 있는 일이다 — 제안의 고정
-  // 끝은 지금 방 끝이다.
+  // 고른 때의 마지막 메시지가 지금 대화에 없고(마지막 답을 다시 만들었거나 지웠다) 키로도 자리를 잡을 수 없다. 저장된 판에서만 있는
+  // 일이다 — 제안의 고정 끝은 지금 방 끝이다. 키로 자리를 잡으면 다시 쓴 답은 고른 뒤 이어진 새 대화로 보인다.
   const isFixedEndMissing =
-    status !== "unsaved" && !isMessagesBehind && fixedEndId !== null && !messages.some((message) => message.id === fixedEndId);
+    status !== "unsaved" && !isMessagesBehind && base !== undefined && isFixedEndLost(messages, base.view);
   const refetchedForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isMessagesBehind || isMessagesFetching || refetchedForRef.current === roomEndId) return;
@@ -239,24 +246,42 @@ function SelectionEditor({
   }, [isDirty]);
   useEffect(() => () => onDraftDirtyChange(false), []);
 
-  // 다시 담아 달라는 구간이 왔다(낡은 구성안의 "구간 되돌리기"). 그 턴을 담기로 바꾼 고침을 만들고 타임라인을 펼쳐 이 단계 제목으로
-  // 포커스를 옮긴다 — 이용자가 확인한 뒤 승인한다. 구성안이 낡은 까닭이 구간을 뺀 것이 아니면(구간 끝·원문이 바뀜) 다시 담을 턴이
-  // 없거나 담아도 낡음이 남는다 — 그때는 다시 만들라고 말한다.
+  // 되돌려 달라는 구간이 왔다(낡은 구성안의 "구간 되돌리기"). 고침을 만들고 타임라인을 펼쳐 이 단계 제목으로 포커스를 옮긴다 —
+  // 이용자가 확인한 뒤 승인한다.
   useEffect(() => {
     if (restoreRequest === undefined || handledRestoreIdRef.current === restoreRequest.id) return;
     handledRestoreIdRef.current = restoreRequest.id;
-    const restored = includeTurnsInRanges(turns, states, restoreRequest.ranges);
-    if (restored.count > 0) edit(restored.states);
     setIsExpanded(true);
-    setNotice({
-      tone: "done",
-      message:
-        restored.count > 0
-          ? `구성안이 쓴 대화 ${restored.count.toLocaleString()}턴을 다시 담았어요. 확인한 뒤 승인하면 구성안을 다시 쓸 수 있어요. 그래도 낡음이 남으면 구성안을 다시 만들어주세요.`
-          : "구성안의 화들이 근거로 쓴 대화는 이미 모두 담겨 있어요. 그래도 낡음이 남으면 구성안을 다시 만들어주세요.",
-    });
+    setNotice({ tone: "done", message: restoreRequest.isExact ? restoreExactly(restoreRequest.ranges) : restoreRoughly(restoreRequest.ranges) });
     headingRef.current?.focus();
   }, [restoreRequest?.id]);
+
+  /** 그 구성안이 쓴 선택의 담기 구간을 양 끝 그대로 되돌린다. 그대로 고를 수 없으면(대화 묶음이 달라졌거나 그 대화가 화가 됐다)
+   * 아무것도 바꾸지 않고 다시 만들라고 말한다. 돌려준 것은 알릴 문장이다. */
+  function restoreExactly(ranges: readonly SourceRange[]): string {
+    const restored = restoreIncludeRanges(turns, states, ranges);
+    if (restored === undefined) return "구성안을 만든 때의 구간을 지금 대화에서 그대로 고를 수 없어요. 구성안을 다시 만들어주세요.";
+    if (restored.included === 0 && restored.excluded === 0) {
+      return "구성안을 만든 때의 담을 대화와 이미 같아요. 승인하면 구성안을 다시 쓸 수 있어요.";
+    }
+    edit(restored.states);
+    const split =
+      restored.excluded > 0
+        ? ` 이어 붙어 있던 다른 턴 ${restored.excluded.toLocaleString()}턴은 구간이 합쳐지지 않게 뺐어요.`
+        : "";
+    return `구성안을 만든 때의 담을 대화로 되돌렸어요. 확인한 뒤 승인하면 구성안을 다시 쓸 수 있어요.${split}`;
+  }
+
+  /** 화들의 근거로 어림한 구간의 턴을 담기로 바꾼다. 구성안이 낡은 까닭이 구간을 뺀 것이 아니면(구간 끝·원문이 바뀜) 다시 담을 턴이
+   * 없거나 담아도 낡음이 남는다 — 그때는 다시 만들라고 말한다. */
+  function restoreRoughly(ranges: readonly SourceRange[]): string {
+    const restored = includeTurnsInRanges(turns, states, ranges);
+    if (restored.count === 0) {
+      return "구성안의 화들이 근거로 쓴 대화는 이미 모두 담겨 있어요. 그래도 낡음이 남으면 구성안을 다시 만들어주세요.";
+    }
+    edit(restored.states);
+    return `구성안이 쓴 대화 ${restored.count.toLocaleString()}턴을 다시 담았어요. 확인한 뒤 승인하면 구성안을 다시 쓸 수 있어요. 그래도 낡음이 남으면 구성안을 다시 만들어주세요.`;
+  }
 
   useEffect(() => {
     if (pendingFocusTurn === undefined) return;
