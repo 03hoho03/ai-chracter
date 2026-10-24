@@ -3759,6 +3759,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/novels/{novel_id}/jobs/{job_id}/bundles/{bundle_id}/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recheck Novel Block Edit Bundle
+         * @description 사용자가 묶음 원소의 블록을 직접 고친 뒤, 남은 수정안을 따로 적용해도 이야기가 어긋나지 않는지 모델에 묻는다(무과금, 동기,
+         *     시간당 상한). 따로 적용해도 된다는 판정이면 고친 원소를 묶음에서 빼 낡음으로 두고(버리기만 된다), 남은 원소가 하나면 독립
+         *     수정안으로, 둘 이상이면 그들끼리 묶음으로 남긴다. 아니라는 판정(판단이 서지 않음 포함)이면 묶음은 그대로라 버리기만 된다.
+         *
+         *     거절: 작업 없음·모르는 묶음 404(`NOVEL_JOB_NOT_FOUND`·`NOVEL_PATCH_NOT_FOUND`), 고친 원소가 없음 409 `NOVEL_RECHECK_NOT_NEEDED`(묶음째
+         *     적용하면 된다), 남은 원소가 없거나 고친 블록이 모두 지워짐·패치 작업이 아님 409 `NOVEL_JOB_NOT_APPLICABLE` — 여기까지는 모델을
+         *     부르지 않고 상한도 깎지 않는다. 그다음 상한 초과 429, 모델 호출 실패 503 `NOVEL_RECHECK_UNAVAILABLE`(묶음 그대로). 모델을 부르는
+         *     동안 그 화에 새 개정이 쌓였으면 409 `NOVEL_REVISION_CONFLICT`, 그 묶음이 바뀌었으면 409 `NOVEL_JOB_NOT_APPLICABLE` — 판정은
+         *     옛 상태에 대한 것이라 쓰지 않는다. 모델을 부르기 전에 커밋해 커넥션을 돌려준다.
+         */
+        post: operations["recheck_novel_block_edit_bundle_novels__novel_id__jobs__job_id__bundles__bundle_id__recheck_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/jobs/{job_id}/patches/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Novel Block Edit
+         * @description 여러 문단 수정의 적용 단위(묶음에 들지 않은 수정안 하나 `patchId`, 또는 묶음 하나 `bundleId`)를 새 개정 하나로 쌓는다(무과금).
+         *     지금 화를 앞에서부터 걸으며 단위의 블록만 수정안 문단으로 바꾸고 그 밖의 문단·블록 id 는 그대로 둔다(블록 id 는 그 블록 자리의
+         *     문단 하나가 잇는다 — 삽화 배치가 따라간다). 적용한 수정안은 문단을 비우고 적용 개정 id 를 남기며, 작업의 결과 개정은 마지막으로
+         *     적용한 개정이 된다. 대기 수정안이 더 없으면 지시문도 비운다. 새 개정 때문에 쓸 수 없게 된 다른 수정안(다른 작업이 같은 블록을
+         *     고친 것 등)은 커밋 뒤 비우기가 낡음으로 바꾼다.
+         *
+         *     거절(아무것도 쓰지 않는다): 작업 없음 404 `NOVEL_JOB_NOT_FOUND`, 패치 작업이 아님·전부 버림·화가 지워짐·묶음에 든 수정안을
+         *     혼자·이미 끝난 수정안 409 `NOVEL_JOB_NOT_APPLICABLE`, 모르는 수정안·묶음 404 `NOVEL_PATCH_NOT_FOUND`, 단위 원소 중 하나라도
+         *     그 블록이 바뀌었거나 없음 409 `NOVEL_PATCH_STALE` + `stalePatchIds`(묶음은 통째로 거절), 적용한 화가 직접 수정 본문 상한을 넘음
+         *     409 `NOVEL_CHAPTER_TOO_LONG` + `maxChars`.
+         */
+        post: operations["apply_novel_block_edit_novels__novel_id__jobs__job_id__patches_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/jobs/{job_id}/patches/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Novel Block Edit
+         * @description 여러 문단 수정의 수정안을 적용하지 않고 버린다(환불 없음). 적용 단위 하나(`patchId`·`bundleId`)면 그 수정안들을 — 대기든 낡음이든
+         *     — 버림으로 바꾸고 문단과 그 블록의 기준 해시를 지운다(짧은 문단은 해시에서 글을 되찾을 수 있다). 대기 수정안이 더 없으면 지시문도
+         *     비운다. `all` 이면 남은 수정안 전부를 버리고 버린 시각을 찍으며 모든 문단·묶음 이유·기준 해시와 지시문을 지운다(일부를 적용한
+         *     작업에도 된다). 상태·블록 id 는 건수 기록으로 남는다.
+         *
+         *     거절은 적용과 같다(404 `NOVEL_JOB_NOT_FOUND`·`NOVEL_PATCH_NOT_FOUND`, 409 `NOVEL_JOB_NOT_APPLICABLE` — 이미 적용·버린 수정안,
+         *     묶음에 든 수정안을 혼자, 버릴 것이 없는 `all`). 적용과 같은 작업 행을 잠가 같은 단위의 적용과 버리기가 겹치면 뒤 요청이 409 다.
+         */
+        post: operations["dismiss_novel_block_edit_novels__novel_id__jobs__job_id__patches_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/novels/{novel_id}/publication": {
         parameters: {
             query?: never;
@@ -12107,6 +12190,17 @@ export interface components {
             /** Zoom */
             zoom: number;
         };
+        /**
+         * NovelBundleRecheckResponse
+         * @description 묶음 재검사 판정. `separable` 이 참이면 사용자가 고친 수정안이 묶음에서 빠져 남은 수정안을 따로 적용할 수 있다(상세를 다시
+         *     받아 본다). 거짓이면 묶음은 그대로라 버리기만 된다. `reason` 은 판정 이유 한 문장이다(저장하지 않는다).
+         */
+        NovelBundleRecheckResponse: {
+            /** Separable */
+            separable: boolean;
+            /** Reason */
+            reason: string;
+        };
         /** NovelChainCreateRequest */
         NovelChainCreateRequest: {
             /**
@@ -13068,6 +13162,31 @@ export interface components {
             stale: boolean;
             /** Episodes */
             episodes: components["schemas"]["NovelOutlineEpisodeView"][];
+        };
+        /**
+         * NovelPatchDismissRequest
+         * @description 버릴 것 — 적용 단위 하나(`patchId`·`bundleId`) 또는 남은 수정안 전부(`all: true`). 셋 중 하나만 보낸다.
+         */
+        NovelPatchDismissRequest: {
+            /** Patchid */
+            patchId?: string | null;
+            /** Bundleid */
+            bundleId?: string | null;
+            /**
+             * All
+             * @default false
+             */
+            all: boolean;
+        };
+        /**
+         * NovelPatchUnitRequest
+         * @description 여러 문단 수정의 적용 단위 — 묶음에 들지 않은 수정안 하나(`patchId`) 또는 묶음 하나(`bundleId`). 둘 중 하나만 보낸다.
+         */
+        NovelPatchUnitRequest: {
+            /** Patchid */
+            patchId?: string | null;
+            /** Bundleid */
+            bundleId?: string | null;
         };
         /**
          * NovelPendingAiEdit
@@ -20808,6 +20927,109 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["NovelJobResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recheck_novel_block_edit_bundle_novels__novel_id__jobs__job_id__bundles__bundle_id__recheck_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                bundle_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelBundleRecheckResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_novel_block_edit_novels__novel_id__jobs__job_id__patches_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelPatchUnitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_novel_block_edit_novels__novel_id__jobs__job_id__patches_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelPatchDismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
