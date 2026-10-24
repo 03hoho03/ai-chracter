@@ -12,7 +12,7 @@ type AdminActionType = components["schemas"]["AdminUserActionLogItem"]["actionTy
 /** `satisfies Record<AdminActionType, string>`이라 BE에 조치 종류가 늘면 여기서 컴파일이 깨지고, 목록에
  * 없는 키(예전의 `restrict`·`reject` 같은 데드 키)는 초과 속성으로 거부된다 — 그래서 호출부는 원문
  * 폴백 없이 인덱싱한다. 조치 이력 표(`pages/user-detail`)는 대상 유저·작품이 있는 로그만 보여 주므로
- * 대상이 없는 운영 조치 5종(문의 답변·약관·공지·프롬프트 세트)은 실제로는 그 표에 나오지 않는다 — 그래도
+ * 대상이 없는 운영 조치(약관·공지·프롬프트 세트 게시, 모델 배정 저장·되돌리기 등)는 실제로는 그 표에 나오지 않는다 — 그래도
  * 타입이 모든 조치의 라벨을 요구한다. `content-*` 3종의 문구는 작품 상세의 조치 버튼·확인
  * 모달(`ContentActionPanel`·`ContentActionConfirmModal`)과 같은 말이고, 대상은 같은 행의 "대상 작품"
  * 칸이 보여 주므로 "작품"을 덧붙이지 않는다. */
@@ -85,6 +85,8 @@ export const ACTION_TYPE_LABELS = {
   "notice-publish": "공지 게시",
   "notice-unpublish": "공지 숨김",
   "prompt-set-publish": "프롬프트 세트 게시",
+  "prompt-routing-save": "모델 배정 저장",
+  "prompt-routing-restore": "모델 배정 되돌리기",
 } satisfies Record<AdminActionType, string>;
 
 /** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 20종이다(`mission_grant`·`expire_burn`

@@ -787,6 +787,15 @@ class AdminPromptRouteCall(CamelModel):
     price: AdminPromptRoutePrice | None
 
 
+class AdminPromptRouteCandidate(CamelModel):
+    """칸의 행이 고를 수 있는 (부를 모델, 경로) 하나와, 그 쌍을 고르면 그 단계의 호출 위치마다 보낼 모델 id·단가. 지금 표·env
+    배정과 무관한 값이다 — 저장 전에 새로 고른 쌍의 단가를 보이려는 것이고, 그 쌍이 지금 env 로 저장되는지는 저장 검사가 본다."""
+
+    model: PromptSetModelId
+    backend: BackendId
+    calls: list[AdminPromptRouteCall]
+
+
 class AdminPromptRouteSkip(CamelModel):
     """그 칸에 쓸 행이 있었지만 지금 env 로는 적용되지 않는다. `stage` 는 그 행의 단계다(물려받으려던 행이면 물려준 단계)."""
 
@@ -809,10 +818,13 @@ class AdminPromptRouteCell(CamelModel):
     lane: RoutingLane
     room_model: ChatRoomModelId
     stage: PromptStage
+    # 그 단계의 종류. 행이 고를 수 있는 쌍이 종류마다 다르다(`allowed_pairs` 의 `kind`).
+    kind: StageKind
     configured: AdminPromptRouteRow | None
     effective: AdminPromptRouteEffective
     skipped: AdminPromptRouteSkip | None
     calls: list[AdminPromptRouteCall]
+    candidates: list[AdminPromptRouteCandidate]
 
 
 class AdminPromptRouteChainReader(CamelModel):

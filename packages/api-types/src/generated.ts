@@ -8994,6 +8994,25 @@ export interface components {
             price: components["schemas"]["AdminPromptRoutePrice"] | null;
         };
         /**
+         * AdminPromptRouteCandidate
+         * @description 칸의 행이 고를 수 있는 (부를 모델, 경로) 하나와, 그 쌍을 고르면 그 단계의 호출 위치마다 보낼 모델 id·단가. 지금 표·env
+         *     배정과 무관한 값이다 — 저장 전에 새로 고른 쌍의 단가를 보이려는 것이고, 그 쌍이 지금 env 로 저장되는지는 저장 검사가 본다.
+         */
+        AdminPromptRouteCandidate: {
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus" | "haiku";
+            /**
+             * Backend
+             * @enum {string}
+             */
+            backend: "gemini" | "bedrock" | "anthropic";
+            /** Calls */
+            calls: components["schemas"]["AdminPromptRouteCall"][];
+        };
+        /**
          * AdminPromptRouteCell
          * @description (레인, 방 모델, 단계) 한 칸. `configured` 는 그 칸 자신의 행이고, `effective` 는 채팅 호출 위치로 푼 값이다.
          */
@@ -9013,11 +9032,18 @@ export interface components {
              * @enum {string}
              */
             stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "generation" | "structured";
             configured: components["schemas"]["AdminPromptRouteRow"] | null;
             effective: components["schemas"]["AdminPromptRouteEffective"];
             skipped: components["schemas"]["AdminPromptRouteSkip"] | null;
             /** Calls */
             calls: components["schemas"]["AdminPromptRouteCall"][];
+            /** Candidates */
+            candidates: components["schemas"]["AdminPromptRouteCandidate"][];
         };
         /**
          * AdminPromptRouteChain
@@ -9569,7 +9595,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-illustration-takedown" | "novel-lift" | "novel-report-illustration-takedown" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "novel-sales-resume" | "novel-sales-stop" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-illustration-takedown" | "novel-lift" | "novel-report-illustration-takedown" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "novel-sales-resume" | "novel-sales-stop" | "prompt-routing-restore" | "prompt-routing-save" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
