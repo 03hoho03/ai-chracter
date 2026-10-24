@@ -32,6 +32,8 @@ export type SourceTurn = {
   messageIds: string[];
   /** 턴 안의 모델 응답 메시지 id(차례대로). 원고 턴 상한은 응답 하나를 한 턴으로 세어, 그 수는 턴 묶음 수와 다를 수 있다. */
   responseIds: string[];
+  /** 응답마다 발췌(`responseIds` 와 같은 차례, 다듬기는 `excerpt` 와 같다). 연달은 응답 사이를 고르는 화면이 쓴다. */
+  responseExcerpts: string[];
   /** 두 줄로 보일 발췌 — 응답 글(없으면 사용자 말)에서 채팅 표기를 지운 것. */
   excerpt: string;
   /** 응답이 하나라도 든 턴인가. 담은 턴 중 이런 턴이 하나는 있어야 저장된다. */
@@ -123,17 +125,23 @@ function toTurn(
   number: number,
   flags: Pick<SourceTurn, "isNew" | "isLocked" | "breaksBefore">,
 ): SourceTurn {
-  const response = messages.find((message) => message.role === "assistant");
-  const text = stripChatNotation((response ?? messages[0])?.content ?? "").trim();
+  const responses = messages.filter((message) => message.role === "assistant");
+  const response = responses[0];
   return {
     key: messages[0]?.id ?? "",
     number,
     messageIds: messages.map((message) => message.id),
-    responseIds: messages.filter((message) => message.role === "assistant").map((message) => message.id),
-    excerpt: text.length > EXCERPT_MAX ? `${text.slice(0, EXCERPT_MAX)}…` : text,
+    responseIds: responses.map((message) => message.id),
+    responseExcerpts: responses.map((message) => toExcerpt(message.content)),
+    excerpt: toExcerpt((response ?? messages[0])?.content ?? ""),
     hasResponse: response !== undefined,
     ...flags,
   };
+}
+
+function toExcerpt(content: string): string {
+  const text = stripChatNotation(content).trim();
+  return text.length > EXCERPT_MAX ? `${text.slice(0, EXCERPT_MAX)}…` : text;
 }
 
 type IndexRange = [number, number];
