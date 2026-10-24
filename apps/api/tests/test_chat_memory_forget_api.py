@@ -388,8 +388,9 @@ async def test_forgetting_a_key_removes_every_row_of_that_key_with_their_embeddi
 async def test_forgetting_a_secret_key_also_forgets_scenes_overlapping_any_of_its_rows(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """키의 이긴 행이 아는 사람을 정했다(비밀). 옛 행 범위(턴 1)와 겹치는 장면, 이긴 행 범위(턴 3~4)와 겹치는 장면(양 끝 포함 —
-    턴 4 장면)이 함께 지워지고, 어느 행과도 겹치지 않는 장면(턴 5)과 그 임베딩은 남는다. 미리 보기가 지울 장면 수를 같게 센다."""
+    """키의 이긴 행이 아는 사람을 정했다(비밀). 옛 행 범위(턴 1)와 겹치는 장면, 이긴 행 범위(턴 3~4) 안에 든 장면(턴 4)이 함께
+    지워지고, 어느 행과도 겹치지 않는 장면(턴 5)과 그 임베딩은 남는다. 미리 보기가 지울 장면 수를 같게 센다. 메시지 하나만
+    겹치는 경계는 아래 테스트가 잡는다."""
     room, snapshots = await _room(db_client, db_session)
     early = await _scene(
         db_session, room, snapshots[2], title="첫 장면", detail="처음.", nouns=["처음"], turn=1, ordinal=0
@@ -415,6 +416,41 @@ async def test_forgetting_a_secret_key_also_forgets_scenes_overlapping_any_of_it
     assert await _count(db_session, ChatMemoryEmbedding, ChatMemoryEmbedding.episode_id == early) == 0
     assert await _count(db_session, ChatMemoryEmbedding, ChatMemoryEmbedding.episode_id == apart) == 1
     assert await _count(db_session, ChatMemoryFact, ChatMemoryFact.chat_room_id == room.room_id) == 0
+
+
+@pytest.mark.usefixtures("items_visible")
+async def test_a_scene_sharing_exactly_one_message_with_a_secret_row_is_forgotten(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """겹침은 양 끝을 포함한다. 비밀 행 범위가 턴 3 사용자 메시지에서 시작하고, 한 장면은 바로 그 메시지에서 끝나(메시지 하나만
+    공유) 함께 지워진다. 그 바로 앞 메시지(턴 2 응답)에서 끝나는 장면은 한 메시지도 겹치지 않아 남는다."""
+    room, snapshots = await _room(db_client, db_session)
+    touching = _make_memory_episode(
+        room.room_id,
+        snapshots[4],
+        ordinal=0,
+        title="맞닿은 장면",
+        detail="맞닿음.",
+        nouns=episode_nouns(["맞닿음"], "맞닿은 장면", "맞닿음."),
+        asserted_by="narration",
+        **{**_span(room, 2, 3), "end_created_at": room.turns[3][0].created_at, "end_message_id": room.turns[3][0].id},
+    )
+    db_session.add(touching)
+    await db_session.commit()
+    before = await _scene(
+        db_session, room, snapshots[2], title="앞 장면", detail="바로 앞.", nouns=["바로앞"], turn=2, ordinal=0
+    )
+    await _fact(db_session, room, snapshots[4], value="몰래 사귐", first=3, last=4, known_by=["지아"])
+
+    preview = await db_client.get(_preview_path(room), params={"key": _FRIENDS_KEY})
+    resp = await db_client.delete(_facts_path(room), params={"key": _FRIENDS_KEY})
+
+    assert preview.json() == {"episodeCount": 1}
+    assert resp.status_code == 204
+    remaining = (
+        await db_session.scalars(sa.select(ChatMemoryEpisode.id).where(ChatMemoryEpisode.chat_room_id == room.room_id))
+    ).all()
+    assert remaining == [before]
 
 
 @pytest.mark.usefixtures("items_visible")
