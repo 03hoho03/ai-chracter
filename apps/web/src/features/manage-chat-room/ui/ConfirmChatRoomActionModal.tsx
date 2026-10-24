@@ -34,15 +34,21 @@ export const ConfirmChatRoomActionModal = createCallable<ConfirmChatRoomActionMo
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>{description}</DialogDescription>
+            {/* 덧붙이는 줄도 설명 안에 둔다 — 대화 상자의 설명(aria-describedby)으로 함께 읽힌다. */}
+            {note ? (
+              <DialogDescription asChild>
+                <div className="flex flex-col gap-2">
+                  <p>{description}</p>
+                  <p className="flex gap-2 text-foreground">
+                    <History aria-hidden className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
+                    {note}
+                  </p>
+                </div>
+              </DialogDescription>
+            ) : (
+              <DialogDescription>{description}</DialogDescription>
+            )}
           </DialogHeader>
-
-          {note && (
-            <p className="flex gap-2 text-sm break-keep text-foreground">
-              <History aria-hidden className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
-              {note}
-            </p>
-          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => call.end()}>

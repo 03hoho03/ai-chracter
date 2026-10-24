@@ -296,8 +296,13 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
           <DialogContent className="sm:max-w-md" onOpenAutoFocus={focusSelection}>
             <DialogHeader>
               <DialogTitle className="break-keep">{title}</DialogTitle>
-              <DialogDescription className="break-keep">{description}</DialogDescription>
-              <ChapterEndChangeNotice />
+              {/* 안내 줄도 설명 안에 둔다 — 대화 상자의 설명(aria-describedby)으로 함께 읽힌다. */}
+              <DialogDescription asChild>
+                <div className="flex flex-col gap-2 break-keep">
+                  <p>{description}</p>
+                  <ChapterEndChangeNotice />
+                </div>
+              </DialogDescription>
             </DialogHeader>
             {modelPicker}
             <DialogBody scrollLabel={LIST_LABEL}>{list}</DialogBody>
@@ -322,8 +327,12 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
         <SheetContent side="bottom" className="max-h-below-header gap-0 rounded-t-xl" onOpenAutoFocus={focusSelection}>
           <SheetHeader className="pr-12">
             <SheetTitle className="break-keep">{title}</SheetTitle>
-            <SheetDescription className="break-keep">{description}</SheetDescription>
-            <ChapterEndChangeNotice />
+            <SheetDescription asChild>
+              <div className="flex flex-col gap-2 break-keep">
+                <p>{description}</p>
+                <ChapterEndChangeNotice />
+              </div>
+            </SheetDescription>
           </SheetHeader>
           {modelPicker !== null && <div className="px-4 pb-4">{modelPicker}</div>}
           {/* 다이얼로그의 `DialogBody scrollLabel` 과 같은 몫 — 닫기 X 가 목록 밖이라 목록 자체가 Tab 정지이자 이름
@@ -359,7 +368,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
  * 말한다. */
 function ChapterEndChangeNotice() {
   return (
-    <p className="flex gap-2 text-sm break-keep text-muted-foreground">
+    <p className="flex gap-2">
       <Info aria-hidden className="mt-1 size-3.5 shrink-0" />
       만든 화의 마지막 답을 다시 생성하거나 방금 전 답변으로 돌리면 그 화는 다시 만들 수 없어요. 다시 생성한 답은 다음 화에 담겨요.
     </p>

@@ -62,7 +62,7 @@ import { useRestorePreviousResponse } from "../lib/useRestorePreviousResponse";
 import { chatSidePanelAtom } from "../model/atoms";
 import { chatModelChipName } from "../model/chatModelChip";
 import { loadOlderKeepingScroll, restorePrependScroll } from "../model/prependScrollAnchor";
-import { statRewindNotice } from "../model/statRewindNotice";
+import { editConfirmStatNote, roomStatContext, statRewindNotice } from "../model/statRewindNotice";
 import { ChatMemorySidebar } from "./ChatMemorySidebar";
 import { ChatMemoryTrigger } from "./ChatMemoryTrigger";
 import { ChatModelChip } from "./ChatModelChip";
@@ -111,7 +111,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     },
     (message) => offerRestore(message.id),
     (statRewind) => {
-      const notice = statRewindNotice("edit", statRewind, room?.endingStatus.reached ?? false);
+      const notice = statRewindNotice("edit", statRewind, roomStatContext(room));
       if (notice) toast(notice);
     },
   );
@@ -172,7 +172,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   function handleDeleteMessage(messageId: string) {
     deleteMessageMutation.mutate(messageId, {
       onSuccess: (statRewind) => {
-        const notice = statRewindNotice("delete", statRewind, room?.endingStatus.reached ?? false);
+        const notice = statRewindNotice("delete", statRewind, roomStatContext(room));
         if (notice) toast(notice);
       },
       onError: () => toast.error("메시지 삭제에 실패했어요. 잠시 후 다시 시도해주세요."),
@@ -450,7 +450,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                         setEditingMessageId(undefined);
                       };
                       if (shouldConfirmEditTruncation(removedOnEditCount)) {
-                        void confirmEditTruncation(removedOnEditCount, save, (snapshot?.stats.length ?? 0) > 0);
+                        void confirmEditTruncation(removedOnEditCount, save, editConfirmStatNote(roomStatContext(room)));
                       } else {
                         save();
                       }
