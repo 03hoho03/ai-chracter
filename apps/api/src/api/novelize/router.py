@@ -114,6 +114,7 @@ from api.novelize.episodes import chapter_max_turns, k_max, regenerate_ineligibi
 from api.novelize.illustrations import PlacementSpec, add_revision, delete_storage_objects, placement_views
 from api.novelize.inputs import current_revision, load_novel_prompt_source
 from api.novelize.runner import enqueue_chain_job, enqueue_job, expire_stale_jobs
+from api.novelize.scenes import revision_scene_groups
 from api.novelize.snapshots import SnapshotLimitError, restore_snapshot, save_snapshot
 from api.novelize.schemas import (
     AI_EDIT_INSTRUCTION_MAX_LENGTH,
@@ -173,6 +174,7 @@ from api.novelize.schemas import (
     NovelRevisionCreateRequest,
     NovelRevisionListResponse,
     NovelRevisionResponse,
+    NovelRevisionScene,
     NovelRevisionRestoreRequest,
     NovelRegenerateOption,
     NovelRevisionSummary,
@@ -362,6 +364,7 @@ async def _chapter_summaries(db: AsyncSession, novel_id: uuid.UUID) -> list[Nove
                     revision_id=position.revision_id,
                     finished=position.finished_at is not None,
                 ),
+                episode_outline_id=chapter.episode_outline_id,
             )
         )
     return summaries
@@ -1635,6 +1638,10 @@ async def _revision_response(db: AsyncSession, revision: NovelChapterRevision) -
         blocks=[NovelBlock(id=block_id, text=text) for block_id, text in zip(revision.block_ids, paragraphs, strict=True)],
         illustrations=[item for item in shown if item.anchor_block_id is not None],
         unplaced_illustrations=[item for item in shown if item.anchor_block_id is None],
+        scenes=[
+            NovelRevisionScene(id=scene_id, title=title, block_ids=members)
+            for scene_id, title, members in await revision_scene_groups(db, revision.chapter_id, revision.block_ids)
+        ],
     )
 
 

@@ -16,7 +16,7 @@ from collections.abc import Mapping, Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models.novel import NovelSceneBlock
+from api.db.models.novel import NovelEpisodeOutline, NovelSceneBlock
 
 
 def assign_scenes(paragraph_lengths: Sequence[int], scene_weights: Sequence[int]) -> list[int]:
@@ -60,6 +60,35 @@ async def revision_scenes(db: AsyncSession, chapter_id: uuid.UUID, block_ids: Se
         select(NovelSceneBlock.block_id, NovelSceneBlock.scene_id).where(NovelSceneBlock.chapter_id == chapter_id)
     )
     return resolve_scenes(block_ids, {block_id: scene_id for block_id, scene_id in rows.all()})
+
+
+async def revision_scene_groups(
+    db: AsyncSession, chapter_id: uuid.UUID, block_ids: Sequence[uuid.UUID]
+) -> list[tuple[str, str, list[uuid.UUID]]]:
+    """개정 하나(블록 id 목록)의 장면마다 (장면 id, 장면 제목, 그 장면의 블록 id 본문 차례), 본문에 처음 나오는 차례로. 블록마다 장면은
+    `resolve_scenes` 로 읽고(여러 문단 수정의 장면 판정과 같은 읽기), 제목은 그 개정 블록의 행이 가리키는 장면 구성안 리비전에서 읽는다
+    (같은 장면 id 가 여러 리비전에 있으면 가장 최근 리비전). 장면 경계가 없는 화는 빈 목록이다."""
+    rows = (
+        await db.execute(
+            select(NovelSceneBlock.block_id, NovelSceneBlock.scene_id, NovelSceneBlock.episode_outline_id).where(
+                NovelSceneBlock.chapter_id == chapter_id
+            )
+        )
+    ).all()
+    resolved = resolve_scenes(block_ids, {block_id: scene_id for block_id, scene_id, _ in rows})
+    present = set(block_ids)
+    outline_ids = {outline_id for block_id, _, outline_id in rows if block_id in present}
+    outlines = await db.scalars(
+        select(NovelEpisodeOutline)
+        .where(NovelEpisodeOutline.id.in_(outline_ids))
+        .order_by(NovelEpisodeOutline.revision)
+    )
+    titles = {scene["id"]: scene["title"] for outline in outlines.all() for scene in outline.scenes}
+    groups: dict[str, list[uuid.UUID]] = {}
+    for block_id, scene_id in zip(block_ids, resolved, strict=True):
+        if scene_id is not None:
+            groups.setdefault(scene_id, []).append(block_id)
+    return [(scene_id, titles[scene_id], members) for scene_id, members in groups.items()]
 
 
 def scene_block_rows(

@@ -50,6 +50,7 @@ from api.novelize.router import (
     _source_room_id,
     _start_job,
 )
+from api.novelize.scene_outline import episode_progress
 from api.novelize.schemas import (
     NovelJobResponse,
     NovelOutlineApproveRequest,
@@ -82,6 +83,8 @@ async def _latest(db: AsyncSession, novel_id: uuid.UUID, *, approved: bool = Fal
 
 
 async def _view(db: AsyncSession, outline: NovelOutline) -> NovelOutlineView:
+    keys = [uuid.UUID(str(episode["key"])) for episode in outline.episodes]
+    progress = await episode_progress(db, outline.novel_id, keys)
     return NovelOutlineView(
         revision=outline.revision,
         source=outline.source,
@@ -91,7 +94,7 @@ async def _view(db: AsyncSession, outline: NovelOutline) -> NovelOutlineView:
         stale=not await selection_still_holds(db, outline.novel_id, outline.selection_id),
         episodes=[
             NovelOutlineEpisodeView(
-                key=uuid.UUID(str(episode["key"])),
+                key=key,
                 title=episode["title"],
                 summary=episode["summary"],
                 goal=episode["goal"],
@@ -102,8 +105,10 @@ async def _view(db: AsyncSession, outline: NovelOutline) -> NovelOutlineView:
                     )
                     for basis in episode["basis"]
                 ],
+                chapter_id=progress[key][0],
+                scene_outline=progress[key][1],
             )
-            for episode in outline.episodes
+            for key, episode in zip(keys, outline.episodes, strict=True)
         ],
     )
 

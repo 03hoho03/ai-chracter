@@ -269,6 +269,9 @@ class NovelChapterSummary(CamelModel):
     finished_reading: bool
     # 이 화를 읽던 자리. 읽은 적 없으면 null 이다. 마지막으로 읽은 화가 아니어도 그 화를 다시 열면 이 자리로 돌아간다.
     reading_position: NovelChapterReadingPosition | None
+    # 구성 흐름(구성안 → 장면 구성안 → 원고)으로 쓴 화이면 그 화를 쓴 장면 구성안 리비전 id, 옛 흐름 화이면 null 이다. 구성 흐름 화는
+    # 옛 다시 만들기 라우트가 거절하고 구성 흐름 다시 만들기로만 다시 만든다. 구성 흐름 스위치와 무관하게 싣는다.
+    episode_outline_id: uuid.UUID | None
 
 
 class NovelRegenerateOption(CamelModel):
@@ -559,6 +562,15 @@ class NovelIllustration(CamelModel):
     withheld_reason: str | None
 
 
+class NovelRevisionScene(CamelModel):
+    """개정의 장면 하나. `id` 는 장면 구성안의 장면 id, `title` 은 그 블록들을 쓴 장면 구성안 리비전의 장면 제목, `block_ids` 는 이
+    장면에 든 블록 id(본문 차례)다. 여러 문단 수정은 한 장면 안의 블록만 함께 고를 수 있다."""
+
+    id: str
+    title: str
+    block_ids: list[uuid.UUID]
+
+
 class NovelRevisionResponse(NovelRevisionSummary):
     body: str
     # 본문을 빈 줄로 나눈 문단. 문단 범위(AI 수정)의 인덱스는 이 배열 기준이다 — 화면이 다시 나누지 않는다.
@@ -568,6 +580,9 @@ class NovelRevisionResponse(NovelRevisionSummary):
     # 이 개정의 삽화 — 문단에 붙은 것(문단 순서·앞 먼저·자리 안 순서)과 위치 확인 필요인 것. 삽화 스위치가 꺼져 있으면 둘 다 빈 목록이다.
     illustrations: list[NovelIllustration]
     unplaced_illustrations: list[NovelIllustration]
+    # 이 개정의 장면(본문에 처음 나오는 차례). 블록마다 꼭 한 장면에 든다. 장면 경계가 없는 화(옛 흐름 화)는 빈 목록이고 화 전체가
+    # 한 장면이다.
+    scenes: list[NovelRevisionScene]
 
 
 class NovelChapterResponse(CamelModel):
@@ -943,15 +958,25 @@ OutlineSummaryText = Annotated[
 OutlineGoalText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=OUTLINE_GOAL_MAX_LENGTH)]
 
 
+# 화 하나의 장면 구성안 상태 — 그 화의 가장 최근 판으로 정한다. 판이 없으면 none, 그 판이 낡았으면(장면 구성안 조회의 `stale`)
+# 승인 여부와 무관하게 stale, 아니면 미승인 draft·승인 approved 다. 승인본 위에 새 초안이 있으면 draft 다.
+NovelSceneOutlineStatus = Literal["none", "draft", "approved", "stale"]
+
+
 class NovelOutlineEpisodeView(CamelModel):
     """구성안의 화 하나. `key` 는 리비전이 바뀌어도 같은 화를 가리키는 화 키, `basis` 는 이 화의 근거가 된 대화 구간(양 끝 포함,
-    키 순)이다 — 근거는 그 구성안이 쓴 구간 선택의 include 구간 안에만 있다. 목록 순서가 화 순서다."""
+    키 순)이다 — 근거는 그 구성안이 쓴 구간 선택의 include 구간 안에만 있다. 목록 순서가 화 순서다.
+
+    `chapter_id` 는 이 화 키를 이미 원고로 쓴 화(없으면 null), `scene_outline` 은 이 화 장면 구성안의 상태다. 둘 다 이 판이 아니라
+    지금 상태다 — 승인본과 미승인 초안의 같은 화 키는 같은 값을 싣는다."""
 
     key: uuid.UUID
     title: str
     summary: str
     goal: str
     basis: list[NovelSourceRange]
+    chapter_id: uuid.UUID | None
+    scene_outline: NovelSceneOutlineStatus
 
 
 class NovelOutlineView(CamelModel):
