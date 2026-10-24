@@ -3,9 +3,9 @@
 **작업 행의 칸 하나**(`NovelJob.block_edit`, JSON)가 한 작업의 전부다: 요청 때 서버가 지금 개정에서 계산한 대상(블록 id·기준 해시·
 화 전체에서 센 문단 번호), 대상 장면, 그리고 성공 저장 때 쓰는 블록마다의 패치와 의존 묶음. 사용자 글에서 나온 것은 패치 문단과
 묶음 이유뿐이다 — 패치가 대기에서 벗어나는 순간(적용·버림·낡음) 그 문단을 비우고, 대기 원소가 없게 된 묶음의 이유도 비운다. 상태·
-블록 id·번호는 건수 기록으로 남는다. 기준 해시는 짧은 문단이면 글을 되찾을 수 있어, 대기에서 벗어난(적용·버림·낡음) 패치의 블록과
-환불한 작업에서는 지운다(성공한 작업에서 모델이 패치를 내지 않은 대상의 해시는 남는다). 지운
-해시는 빈 문자열이다 — `None` 으로 두면 이 칸을 문자열로 읽는 옛 이미지가 배포 겹침 동안 상세 조회에서 깨지고, 빈 문자열은 어떤
+블록 id·번호는 건수 기록으로 남는다. 기준 해시는 짧은 문단이면 글을 되찾을 수 있어, 대기 패치가 없는 블록(적용·버림·낡음이 된
+패치의 블록과 모델이 수정안을 내지 않은 대상)은 성공 저장·적용·버리기·낡음 표시·재검사 분리 때 지우고, 환불한 작업에서는 모두
+지운다. 지운 해시는 빈 문자열이다 — `None` 으로 두면 이 칸을 문자열로 읽는 옛 이미지가 배포 겹침 동안 상세 조회에서 깨지고, 빈 문자열은 어떤
 문단의 sha256 과도 같지 않아 그 패치를 다시 쓸 길이 없다.
 
 **적용 단위**는 독립 패치 하나 또는 묶음 하나다(`unit_patches`). 묶음은 원소 하나라도 쓸 수 없으면 통째로 거절한다 — 하나만 적용하면
@@ -226,8 +226,10 @@ def dismissed_all(edit: BlockEdit) -> BlockEdit:
 
 
 def _settled(edit: BlockEdit) -> BlockEdit:
-    """대기 원소가 하나도 없는 묶음의 이유를 비우고(이유는 모델이 사용자 글을 읽고 쓴 글이다), 끝난(적용·버림·낡음) 패치 블록의 기준
-    해시를 대상·패치 양쪽에서 지운다 — 기준 해시는 대기 패치의 적용 판정에만 쓰고, 짧은 문단은 해시로 글을 되찾을 수 있다."""
+    """대기 원소가 하나도 없는 묶음의 이유를 비우고(이유는 모델이 사용자 글을 읽고 쓴 글이다), 대기 패치가 없는 모든 블록의 기준
+    해시를 대상·패치 양쪽에서 지운다 — 끝난(적용·버림·낡음) 패치의 블록도, 모델이 수정안을 내지 않은 대상도다. 기준 해시는 대기
+    패치의 적용 판정에만 쓰고, 짧은 문단은 해시로 글을 되찾을 수 있다. 정산 자리마다 같은 규칙이라 이전 판이 남긴 해시도 다음
+    정산 때 지워진다."""
     states = {patch.id: patch.state for patch in edit.patches}
     bundles = [
         bundle
@@ -235,8 +237,9 @@ def _settled(edit: BlockEdit) -> BlockEdit:
         else bundle.model_copy(update={"reason": None})
         for bundle in edit.bundles
     ]
-    finished = {patch.block_id for patch in edit.patches if patch.state != "pending"}
-    return _without_hashes_of(edit.model_copy(update={"bundles": bundles}), finished)
+    waiting = {patch.block_id for patch in edit.patches if patch.state == "pending"}
+    blocks = {target.block_id for target in edit.targets} | {patch.block_id for patch in edit.patches}
+    return _without_hashes_of(edit.model_copy(update={"bundles": bundles}), blocks - waiting)
 
 
 def _without_hashes_of(edit: BlockEdit, blocks: set[uuid.UUID] | None) -> BlockEdit:
