@@ -618,10 +618,13 @@ async def _room_with_an_impression(
 async def test_forgetting_a_scene_removes_every_impression_of_the_room_and_raises_the_generation(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """잊는 장면이 인상의 근거든 아니든 그 방의 인상은 모두 지워진다. 다른 방의 인상은 남는다."""
+    """잊는 장면이 인상의 근거든 아니든, 인상이 매달린 스냅샷과 다른 스냅샷의 장면이든 그 방의 인상은 모두 지워진다.
+    다른 방의 인상은 남는다."""
     room, snapshots, _, _ = await _room_with_an_impression(db_client, db_session)
     other, *_ = await _room_with_an_impression(db_client, db_session)
-    unrelated = await _scene(db_session, room, snapshots[2], ordinal=1, title="근거 아닌 장면", detail="나중 장면.")
+    # 인상은 묶음의 가장 새 스냅샷(snapshots[2])에 매달린다. 잊는 장면을 그보다 오래된 스냅샷에 두어야 잊는 장면의
+    # 스냅샷으로만 좁힌 DELETE 가 인상을 남겨 드러난다.
+    unrelated = await _scene(db_session, room, snapshots[1], ordinal=1, title="근거 아닌 장면", detail="나중 장면.")
     generation = await _generation(db_session, room)
 
     await forget_episode(db_session, room.room_id, unrelated)
