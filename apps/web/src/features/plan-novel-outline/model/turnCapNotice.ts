@@ -32,21 +32,25 @@ function isSameBasis(
   );
 }
 
-/** 화 하나의 턴 상한 안내. 상한 안이거나 턴 수·상한 목록을 모르면 없다. */
-export function toEpisodeTurnCapNotice(turnCount: number | undefined, caps: readonly ChapterTurnCap[]): TurnCapNotice | undefined {
+/** 화 하나의 턴 상한 안내. 상한 안이거나 턴 수·상한 목록을 모르면 없다. 장면 구성안이 턴을 덜 수 있어 "이대로는"이라고 말한다.
+ * `isApproving` 은 이 판을 지금 승인할 수 있는 자리인가(승인 버튼이 보임) — 그때만 "나눈 뒤 승인할 수 있어요"를 붙인다. 이미 승인한
+ * 판이나 낡은 판에서는 승인할 것이 없다. */
+export function toEpisodeTurnCapNotice(
+  turnCount: number | undefined,
+  caps: readonly ChapterTurnCap[],
+  isApproving: boolean,
+): TurnCapNotice | undefined {
   const fit = toTurnCapFit(turnCount, caps);
   if (fit === undefined || turnCount === undefined || fit.kind === "fits") return undefined;
   const turns = `${turnCount.toLocaleString()}턴`;
   if (fit.kind === "some") {
     return {
       tone: "partial",
-      message: `이 화는 ${turns}이라 원고는 ${fit.ableNames.join("·")} 로만 쓸 수 있어요(${toOverCapPhrase(fit.over)}).`,
+      message: `이 화는 ${turns}이라 이대로는 원고를 ${fit.ableNames.join("·")} 로만 쓸 수 있어요(${toOverCapPhrase(fit.over)}).`,
     };
   }
-  return {
-    tone: "blocking",
-    message: `이 화는 ${turns}이라 어느 모델로도 원고를 쓸 수 없어요(${fit.maxTurns.toLocaleString()}턴까지). 나눈 뒤 승인할 수 있어요.`,
-  };
+  const subject = `이 화는 ${turns}이라 이대로는 어느 모델로도 원고를 쓸 수 없어요(${fit.maxTurns.toLocaleString()}턴까지).`;
+  return { tone: "blocking", message: isApproving ? `${subject} 나눈 뒤 승인할 수 있어요.` : subject };
 }
 
 type EpisodeTurns = { ordinal: number; turnCount: number | undefined; isWritten: boolean };

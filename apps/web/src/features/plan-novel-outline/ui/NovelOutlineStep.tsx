@@ -415,7 +415,7 @@ function OutlineEditor({
             }}
             titleMaxLength={titleMaxLength}
             // 원고가 된 화는 다시 쓸 화가 아니라 안내하지 않는다(서버의 승인 판정도 뺀다).
-            turnCapNotice={episode.chapterId === null ? toEpisodeTurnCapNotice(turnCounts[index], turnCaps) : undefined}
+            turnCapNotice={episode.chapterId === null ? toEpisodeTurnCapNotice(turnCounts[index], turnCaps, isApproveShown) : undefined}
             onEdit={() => {
               setSplittingId(undefined);
               setEditingId(episode.localId);

@@ -95,31 +95,40 @@ describe("화마다 턴 수 — 저장 전 화는 화면이 세고, 대화를 �
 
 describe("구성안 화의 턴 상한 안내", () => {
   it("상한 안이면 없다", () => {
-    expect(toEpisodeTurnCapNotice(20, CAPS)).toBeUndefined();
+    expect(toEpisodeTurnCapNotice(20, CAPS, true)).toBeUndefined();
   });
 
+  // 장면 구성안이 턴을 덜면 다른 모델로도 쓸 수 있어 "이대로는"이다.
   it("일부 모델만 넘으면 무채 안내로 쓸 수 있는 모델과 넘는 모델의 상한을 말한다", () => {
-    expect(toEpisodeTurnCapNotice(21, CAPS)).toEqual({
+    expect(toEpisodeTurnCapNotice(21, CAPS, true)).toEqual({
       tone: "partial",
-      message: "이 화는 21턴이라 원고는 Gemini 로만 쓸 수 있어요(Sonnet 5.5·Opus 5.5 는 20턴까지).",
+      message: "이 화는 21턴이라 이대로는 원고를 Gemini 로만 쓸 수 있어요(Sonnet 5.5·Opus 5.5 는 20턴까지).",
     });
   });
 
   it("모든 모델을 넘으면 막는 안내다 — 가장 큰 상한을 말한다", () => {
-    expect(toEpisodeTurnCapNotice(46, CAPS)).toEqual({
+    expect(toEpisodeTurnCapNotice(46, CAPS, true)).toEqual({
       tone: "blocking",
-      message: "이 화는 46턴이라 어느 모델로도 원고를 쓸 수 없어요(45턴까지). 나눈 뒤 승인할 수 있어요.",
+      message: "이 화는 46턴이라 이대로는 어느 모델로도 원고를 쓸 수 없어요(45턴까지). 나눈 뒤 승인할 수 있어요.",
+    });
+  });
+
+  // 이미 승인한 판·낡은 판에는 누를 승인이 없다.
+  it("승인할 자리가 아니면 승인 말을 붙이지 않는다", () => {
+    expect(toEpisodeTurnCapNotice(46, CAPS, false)).toEqual({
+      tone: "blocking",
+      message: "이 화는 46턴이라 이대로는 어느 모델로도 원고를 쓸 수 없어요(45턴까지).",
     });
   });
 
   it("Gemini 만 쓰는 계정은 45턴까지 아무것도 없다", () => {
-    expect(toEpisodeTurnCapNotice(45, [GEMINI])).toBeUndefined();
-    expect(toEpisodeTurnCapNotice(46, [GEMINI])?.tone).toBe("blocking");
+    expect(toEpisodeTurnCapNotice(45, [GEMINI], true)).toBeUndefined();
+    expect(toEpisodeTurnCapNotice(46, [GEMINI], true)?.tone).toBe("blocking");
   });
 
   it("턴 수를 모르거나 상한 목록이 없으면(옛 서버) 없다", () => {
-    expect(toEpisodeTurnCapNotice(undefined, CAPS)).toBeUndefined();
-    expect(toEpisodeTurnCapNotice(99, [])).toBeUndefined();
+    expect(toEpisodeTurnCapNotice(undefined, CAPS, true)).toBeUndefined();
+    expect(toEpisodeTurnCapNotice(99, [], true)).toBeUndefined();
   });
 });
 
