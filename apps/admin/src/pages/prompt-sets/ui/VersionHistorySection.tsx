@@ -175,7 +175,7 @@ function VersionDetailPanel({ id, dirtyByChain }: VersionDetailPanelProps) {
           <dd className="text-foreground">{detail.labels.characterAssistantLabel}</dd>
         </div>
       </dl>
-      <VersionSectionTable detail={detail} />
+      <VersionSectionTable detail={detail} restoreBlockedBy={isChainDirty ? restoreBlockedId : null} />
       <div className="flex flex-wrap items-center gap-2">
         {/* 막힌 사유가 읽히도록 `disabled` 대신 `aria-disabled` 로 포커스 순회에 남긴다. */}
         <Button
