@@ -15,6 +15,16 @@ def test_sections_split_on_line_start_headers_and_count_the_stripped_body() -> N
     }
 
 
+def test_a_known_header_right_after_a_sentence_end_on_the_same_line_starts_a_section() -> None:
+    # 요약이 세 칸을 한 줄에 이어 쓰기도 한다. 문장 끝 뒤가 아닌 자리의 머리글 꼴 글은 본문이다.
+    summary = "[지금] 금요일. [관계] 민지는 [지금] 화가 났다! [지난 일] 상영회. [다른 칸] 가"
+    assert section_chars(summary) == {
+        "지금": len("금요일."),
+        "관계": len("민지는 [지금] 화가 났다!"),
+        "지난 일": len("상영회. [다른 칸] 가"),
+    }
+
+
 def test_report_ratios_use_all_section_characters_and_flag_unknown_headers() -> None:
     report = section_report("머리 글\n[지금] 가나\n[관계] 가나다라마바\n[비밀] 가나")
     assert report["total"] == len("머리 글") + 2 + 6 + 2
