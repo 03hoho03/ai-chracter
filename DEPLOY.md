@@ -2479,6 +2479,48 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic downgrade 495e9a75bb46-1
 ```
 
+**프롬프트 체인·섹션 판 표(`d0051f733bb7`) — 배포 · 되돌리기.** 프롬프트 체인((레인, 모델) 세트 줄기)과 섹션에 `major.minor.patch`
+판을 매길 표 `prompt_set_semvers`·`prompt_section_semvers` 를 더하고, 지금 체인마다 활성인 게시 세트 하나와 그 섹션 전부를 1.0.0 으로
+매긴다(백필). 이 배포부터 어드민 게시가 판을 매기고 게시 응답에 판 칸이 붙는다.
+- 기존 `prompt_sets`·`prompt_sections` 의 칸과 정수 `version` 번호는 바꾸지 않는다(백필은 읽기만) — 정수 번호로 세트를 대조하는
+  도구가 그대로 맞는다. 업그레이드 첫 문장이 `lock_timeout 5s` 라, 겹침 중 옛 이미지 어드민의 초안 저장·게시와 부딪쳐 5초 안에
+  잠금을 못 잡으면 실패한다 — 다시 돌리면 된다.
+- 기준판 FK(`base_set_id`, 다음 판의 기준이 된 세트)는 `NO ACTION` 이라 **판이 쌓인 세트는 지울 수 없다** — 그 세트를 지우면 판
+  사슬이 끊기고, 그 위에 쌓인 나중 게시가 활성이라 지워도 서빙 문안이 되돌아가지 않기 때문이다. 세트 FK 는 둘 다 `ON DELETE CASCADE` 다.
+- 🔴 앞으로 게시 세트를 넣는 문안 마이그레이션은 이 리비전 파일의 판 매기기 블록(`_assign_semver`)을 자기 파일에 복사해 세트를 넣은
+  직후 부르고, downgrade 는 넣은 세트를 기준판으로 가리키는 판 행이 있으면 읽을 수 있는 오류로 멈추게 쓴다.
+
+평상시 겹침 교체로 배포한다(`skip_overlap` 불필요): 겹침 동안 도는 옛 이미지는 두 표를 모르고 읽지도 쓰지도 않는다. 그동안(또는
+이미지만 되돌린 동안) 옛 이미지가 게시한 세트는 판 행이 없을 뿐이고, 새 이미지의 다음 게시가 그 체인에서 판이 가장 큰 세트와
+견주므로 그 사이의 변경이 다음 판에 함께 셈해진다. 판 행을 손으로 채우지 않는다.
+
+- **병합 전**: 운영 최신 백업 성공을 보고, 운영 DB 리비전이 이 파일의 `down_revision`(보통 바로 위 모델 배정 표 리비전)과 같은지,
+  체인마다 활성 게시 세트가 무엇인지 아래 읽기 전용 SELECT 로 본다.
+- **되돌리기**: 1순위는 이미지만 되돌리기다(downgrade 없이). 이 리비전을 아는 이미지에서 모르는 이미지로 갈 때는 교체 스크립트가 DB 리비전을
+  모른다고 판정하므로 `DDONA_ROLLBACK=1` 이 필요하다. 스키마까지 내리는 순서는 위 모델 배정 표 문단과 같다 — 판 표를 읽는 게시
+  코드의 revert 를 먼저 모두 병합·배포하거나 태그 롤백 → 이 리비전을 아는 이미지로 downgrade → 스키마 revert 병합, 묶을 수밖에
+  없으면 revert 를 PR 하나로, downgrade 와 스키마 revert 사이에는 어떤 `main` 병합도 하지 않는다.
+- downgrade 는 **단계(`level`)가 있는 체인 판(= 배포 뒤 실제 게시로 매긴 판)이 하나라도 있으면** 아무것도 바꾸기 전에 `RuntimeError`
+  로 멈춘다. 배포 뒤 게시가 한 번이라도 있었으면 사실상 늘 멈춘다. 그때의 대체 절차는 위와 같다 — 이미지만 되돌리고, 마이그레이션
+  파일·ORM 모델은 남긴 채 게시 코드만 revert 한다. 판 행을 손 SQL 로 지워 downgrade 를 통과시키지 않는다.
+- downgrade 명령은 상대 지정 `d0051f733bb7-1` 로 친다. 치기 직전에 서빙 이미지 안 이 파일의 `down_revision` 을 읽어 `alembic history`
+  의 바로 아래 리비전과 같은지 보고, 그 사이나 이 리비전 위에 다른 런의 리비전이 끼었는지 본다(위에 쌓였으면 스키마를 남긴다).
+
+```sh
+# 병합 전·downgrade 전 — 읽기 전용: 지금 DB 리비전, 체인마다 활성 게시 세트, (이 리비전이 오른 뒤) 게시로 매긴 판 수
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c "SELECT version_num FROM alembic_version;"
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c \
+  "SELECT DISTINCT ON (lane, model) lane, model, id, version, published_at FROM prompt_sets WHERE status = 'published' ORDER BY lane, model, published_at DESC, id DESC;"
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c "SELECT count(*), count(level) FROM prompt_set_semvers;"
+# downgrade(백업 먼저, 이 리비전 파일이 든 이미지로)
+sudo /opt/ddona/backup.sh
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic history -r-3:current
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic downgrade d0051f733bb7-1
+```
+
 ### 3-13. 노벨(공개 소설) 켜기 · 끄기
 
 노벨은 소설화를 쓸 수 있는 계정이 자기 소설을 공개하는 기능이라 두 겹으로 닫혀 있다 — 소설화 세 겹("소설화 켜기 · 끄기 ·
