@@ -112,6 +112,7 @@ function RoutingEditor({ data }: RoutingEditorProps) {
     return before === undefined || after === undefined || isSameCellForm(before, after) ? [] : [{ cell, before, after }];
   });
   const errorKeys = Object.keys(form.formState.errors.cells ?? {});
+  const shownNotice = liveNotice(notice, errorKeys, cellByKey);
   const isAllEnv = shown.cells.every((cell) => current[cellKeyOf(cell)]?.mode !== "row");
 
   const accept = (next: AdminPromptRoutingResponse) => {
@@ -213,9 +214,9 @@ function RoutingEditor({ data }: RoutingEditorProps) {
           </div>
         </div>
 
-        {notice !== null && (
+        {shownNotice !== null && (
           <RouteErrorSummary
-            notice={notice}
+            notice={shownNotice}
             cellByKey={cellByKey}
             onFocusCell={focusCell}
             onReload={() => void reloadLatest()}
@@ -281,4 +282,19 @@ function RoutingEditor({ data }: RoutingEditorProps) {
       <UnsavedChangesGuard isDirty={isDirty} />
     </FormProvider>
   );
+}
+
+/** 저장 거부 요약은 칸 오류와 같은 폼 오류에서 거른다 — 운영자가 칸을 고쳐 그 칸의 오류가 지워지면 요약에서도 빠지고, 다 빠지면
+ * 요약도 사라진다. 칸에 걸 수 없는 항목(지금 표에 없는 칸)은 고칠 칸이 없어 남긴다. 되돌리기 거부는 그 이력의 칸이라 폼 오류로
+ * 걸지 않으므로 받은 그대로 둔다. */
+function liveNotice(
+  notice: RouteFailureNotice | null,
+  errorKeys: readonly string[],
+  cellByKey: ReadonlyMap<RouteCellKey, AdminPromptRouteCell>,
+): RouteFailureNotice | null {
+  if (notice === null || notice.kind !== "rules" || notice.restoredNumber !== null) return notice;
+  const items = notice.items.filter(
+    (item) => item.key === null || !cellByKey.has(item.key) || errorKeys.includes(item.key),
+  );
+  return items.length === 0 ? null : { ...notice, items };
 }
