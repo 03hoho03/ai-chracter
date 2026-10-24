@@ -72,6 +72,12 @@ describe("구성안 화의 턴 상한 안내 줄", () => {
     expect(render({ turnCapNotice: notice, isSplitting: true })).not.toContain('aria-label="2화 나누기"');
   });
 
+  it("나눌 자리 안내의 목적격 조사가 화 이름에 맞는다", () => {
+    const html = render({ isSplitting: true });
+    expect(html).toContain("2화를 나눌 자리를 고르세요.");
+    expect(html).not.toContain("2화을");
+  });
+
   it("나눌 자리마다 앞뒤 턴 수(응답 수)를 단다", () => {
     const html = render({ isSplitting: true });
     expect(html).toContain("앞 1턴 · 뒤 3턴");

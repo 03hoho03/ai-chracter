@@ -18,6 +18,7 @@ type ItemProps = Record<string, unknown> & { value: string; children: ReactNode 
 
 const captured = vi.hoisted(() => ({
   items: [] as Record<string, unknown>[],
+  content: undefined as Record<string, unknown> | undefined,
   onValueChange: undefined as ((value: string) => void) | undefined,
 }));
 
@@ -28,7 +29,10 @@ vi.mock("@ai-character-chat/ui/components/select", () => ({
   },
   SelectTrigger: ({ children }: { children: ReactNode }) => createElement("button", null, children),
   SelectValue: () => null,
-  SelectContent: ({ children }: { children: ReactNode }) => createElement("div", { role: "listbox" }, children),
+  SelectContent: (props: Record<string, unknown> & { children: ReactNode }) => {
+    captured.content = props;
+    return createElement("div", { role: "listbox" }, props.children);
+  },
   SelectItem: (props: ItemProps) => {
     captured.items.push(props);
     return createElement("div", { role: "option" }, props.children);
@@ -47,6 +51,7 @@ function itemFor(value: string): ItemProps {
 
 beforeEach(() => {
   captured.items = [];
+  captured.content = undefined;
   captured.onValueChange = undefined;
 });
 
@@ -86,6 +91,10 @@ describe("ChapterModelSelect — 옛 흐름 다시 만들기 창(바뀌지 않�
       expect(item.onClick).toBeUndefined();
       expect(item.className).toBeUndefined();
     }
+  });
+
+  it("그린 마크업이 그대로다", () => {
+    expect(render(REGENERATE)).toMatchSnapshot();
   });
 
   it("모델이 하나뿐이면(상위 모델 허용 없음) 아무것도 그리지 않는다", () => {
@@ -194,5 +203,19 @@ describe.each([
         expect(event.preventDefault).toHaveBeenCalled();
       }
     }
+  });
+});
+
+// 열린 목록은 가장 긴 항목 글만큼 넓어진다. 좁은 화면(390)에서 못 고르는 항목의 이유 글이 화면 폭을 넘겨 목록 오른쪽이 화면 밖으로
+// 나갔다 — 목록 폭을 화면 안 남은 폭으로 묶고, 넘는 항목 글은 낱말 단위로 줄을 바꾼다.
+describe.each([
+  ["옛 흐름 다시 만들기 창", REGENERATE],
+  ["원고 확인 창", MANUSCRIPT],
+] as const)("ChapterModelSelect — %s의 열린 목록은 화면 폭을 넘지 않는다", (_, options) => {
+  it("목록 폭의 상한이 화면 안 남은 폭이고, 항목 글은 낱말 단위로 줄을 바꾼다", () => {
+    render([...options]);
+    const classes = String(captured.content?.className ?? "").split(/\s+/);
+    expect(classes).toContain("max-w-(--radix-select-content-available-width)");
+    expect(classes).toContain("break-keep");
   });
 });
