@@ -1192,6 +1192,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/prompt-sets/{id}/sections/{channel}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Prompt Section
+         * @description 옛 게시본의 섹션 하나(채널 하나 또는 화자 라벨 넷 묶음 `speaker_labels`)만 그 체인의 초안으로 가져온다. 통째 복원은 다른
+         *     채널의 게시 안 한 편집까지 옛 값으로 돌리므로, 한 채널만 되돌릴 때 이 라우트를 쓴다. 게시하지 않는다 — 복원한 섹션은 다음
+         *     게시에서 기준판과 다른 섹션으로 잡혀 새 번호로 오른다(옛 번호로 돌아가지 않는다).
+         *
+         *     체인은 원본 세트의 (레인, 모델)이다. 거절은 모두 아무것도 쓰기 전에 한다. 초안이 없으면 활성판을 바탕으로 초안을 만든다
+         *     (`GET /draft` 와 같은 폴백). 그 섹션의 초안 내용이 활성판과 다르면(게시 안 한 편집이 있으면) 요청이 덮어쓰기를 켜지 않은 한
+         *     409 다. 경로가 세그먼트 4개라 `/{id}/restore`·`/{lane}/draft` 와 겹치지 않는다.
+         */
+        post: operations["restore_prompt_section_admin_prompt_sets__id__sections__channel__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/prompt-sets/{id}": {
         parameters: {
             query?: never;
@@ -9277,6 +9303,18 @@ export interface components {
             conditional: boolean;
             /** Order */
             order: number;
+        };
+        /**
+         * AdminPromptSectionRestoreRequest
+         * @description 옛 게시본의 섹션 하나를 지금 초안으로 가져온다. 그 섹션에 게시 안 한 편집이 초안에 있으면 409 로 멈추고, 이 값을 켜고
+         *     다시 보내면 그 편집을 덮어쓴다(다른 섹션의 게시 안 한 편집은 어느 쪽이든 그대로 둔다).
+         */
+        AdminPromptSectionRestoreRequest: {
+            /**
+             * Overwritedraftchanges
+             * @default false
+             */
+            overwriteDraftChanges: boolean;
         };
         /**
          * AdminPromptSectionSemver
@@ -17531,6 +17569,42 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_prompt_section_admin_prompt_sets__id__sections__channel__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                channel: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPromptSectionRestoreRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
