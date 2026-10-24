@@ -1,6 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ArrowLeft } from "lucide-react";
-import type { KeyboardEvent, RefObject } from "react";
+import type { KeyboardEvent, ReactNode, RefObject } from "react";
 
 import { useNovelCharactersQuery, type NovelDetailResponse } from "@/entities/novel";
 import type { NovelChapterJobFlow } from "@/features/create-novel-chapter";
@@ -13,6 +14,7 @@ import type { BoardSelection } from "../model/boardSelection";
 
 import { BoardEpisodePanel } from "./BoardEpisodePanel";
 import { BoardOverviewPanel } from "./BoardOverviewPanel";
+import { NovelPlanDocument } from "./NovelPlanDocument";
 
 type NovelBoardPanelProps = {
   novel: NovelDetailResponse;
@@ -23,14 +25,18 @@ type NovelBoardPanelProps = {
   /** 패널 제목. 고를 때 호출부가 여기로 포커스를 보낸다. */
   headingRef: RefObject<HTMLHeadingElement | null>;
   onSelect: (selection: BoardSelection | undefined) => void;
-  /** 좁은 화면에서 목록으로 돌아가기. 주면 맨 위에 "목록" 버튼을 둔다. */
+  /** 고르기를 풀고 돌아가기. 주면 맨 위에 돌아가기 버튼을 둔다 — 좁은 화면의 목록으로, 넓은 화면의 구성 모드에서는 캔버스로. */
   onBackToList?: () => void;
+  /** 돌아가기 버튼 이름. 없으면 "목록"이다. */
+  backLabel?: string;
+  /** 개요의 구성 화면 입구. 구성 흐름 스위치가 켜졌을 때만 호출부가 준다. */
+  planEntry?: ReactNode;
   onChapterDeleted: (firstDeletedOrdinal: number, deletedChapterIds: string[]) => void;
   onDraftDirtyChange: (isDirty: boolean) => void;
 };
 
 /**
- * 편집 보드의 패널 — 고른 것에 따라 화(본문 고치기)·인물 카드·설정 노트·버전, 고른 것이 없으면 소설 개요. 넓은
+ * 편집 보드의 패널 — 고른 것에 따라 화(본문 고치기)·인물 카드·설정 노트·버전·구성 모드, 고른 것이 없으면 소설 개요. 넓은
  * 화면에서는 캔버스 오른쪽 열, 좁은 화면에서는 목록 자리를 대신하는 화면이다(시트가 아니다 — 시트 표면에서는 문단
  * 버튼의 hover 가 사라지고, 긴 본문 편집이 시트 안 스크롤이 되며, 수정·이력 모달이 시트 위로 겹친다).
  *
@@ -48,6 +54,8 @@ export function NovelBoardPanel({
   headingRef,
   onSelect,
   onBackToList,
+  backLabel = "목록",
+  planEntry,
   onChapterDeleted,
   onDraftDirtyChange,
 }: NovelBoardPanelProps) {
@@ -61,11 +69,14 @@ export function NovelBoardPanel({
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" onKeyDown={handleKeyDown}>
-      <div className="flex flex-col gap-6 px-4 py-6 sm:px-6">
+      {/* 구성 모드는 문서라 넓은 화면에서도 읽기 좋은 폭(최대 672px)의 가운데 한 열이다. */}
+      <div
+        className={cn("flex flex-col gap-6 px-4 py-6 sm:px-6", selection?.kind === "plan" && "mx-auto w-full max-w-2xl")}
+      >
         {onBackToList !== undefined && (
           <Button type="button" variant="ghost" size="sm" className="-ml-2 self-start" onClick={onBackToList}>
             <ArrowLeft aria-hidden />
-            목록
+            {backLabel}
           </Button>
         )}
         <PanelContent
@@ -76,6 +87,7 @@ export function NovelBoardPanel({
           aiEdit={aiEdit}
           headingRef={headingRef}
           onSelect={onSelect}
+          planEntry={planEntry}
           onChapterDeleted={onChapterDeleted}
           onDraftDirtyChange={onDraftDirtyChange}
         />
@@ -84,7 +96,7 @@ export function NovelBoardPanel({
   );
 }
 
-type PanelContentProps = Omit<NovelBoardPanelProps, "onBackToList"> & {
+type PanelContentProps = Omit<NovelBoardPanelProps, "onBackToList" | "backLabel"> & {
   charactersQuery: ReturnType<typeof useNovelCharactersQuery>;
 };
 
@@ -96,11 +108,19 @@ function PanelContent({
   aiEdit,
   headingRef,
   onSelect,
+  planEntry,
   onChapterDeleted,
   onDraftDirtyChange,
 }: PanelContentProps) {
   if (selection === undefined) {
-    return <BoardOverviewPanel novel={novel} characterCount={charactersQuery.data?.length} headingRef={headingRef} />;
+    return (
+      <BoardOverviewPanel
+        novel={novel}
+        characterCount={charactersQuery.data?.length}
+        headingRef={headingRef}
+        planEntry={planEntry}
+      />
+    );
   }
 
   switch (selection.kind) {
@@ -142,6 +162,8 @@ function PanelContent({
           onRestored={() => aiEdit.report({ type: "started" })}
         />
       );
+    case "plan":
+      return <NovelPlanDocument novel={novel} headingRef={headingRef} onDraftDirtyChange={onDraftDirtyChange} />;
   }
 }
 

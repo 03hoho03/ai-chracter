@@ -16,7 +16,10 @@
  *   제목·소개·화 생성·삭제). 편집 보드는 상세 객체가 바뀔 때마다 함께 다시 받고, 작품 정보의
  *   제목·소개 수정은 그 뮤테이션이 직접 무효화한다.
  * - `illustrationCandidates`: 작가가 원작 방에서 그림을 새로 보면 는다(이 앱 밖의 일) — 창을 열 때마다 새로 받는다. 붙이기·바꾸기가
- *   그 그림을 쓸 수 없다고 거절하면(그사이 원작 이용 제한) 다시 받는다. */
+ *   그 그림을 쓸 수 없다고 거절하면(그사이 원작 이용 제한) 다시 받는다.
+ * - `sourceSelection`: 담을 대화 저장·승인(응답이 상태면 `setQueryData`), 그리고 이 앱 밖의 일 — 대화방에서 대화가 이어지거나
+ *   고쳐지면 방 끝·원문 변경 표시가 바뀐다. 구성 화면을 열 때마다 새로 받는다. 화 생성(작업이 끝나면 소설 캐시를 모두 다시 받는다)·마지막 화 지우기도 이미 쓴 구간을 바꿔
+ *   다시 받는다. */
 export const novelKeys = {
   all: ["novel"] as const,
   list: () => [...novelKeys.all, "list"] as const,
@@ -38,6 +41,7 @@ export const novelKeys = {
   chainEstimate: (novelId: string) => [...novelKeys.all, "chainEstimate", novelId] as const,
   publication: (novelId: string) => [...novelKeys.all, "publication", novelId] as const,
   illustrationCandidates: (novelId: string) => [...novelKeys.all, "illustrationCandidates", novelId] as const,
+  sourceSelection: (novelId: string) => [...novelKeys.all, "sourceSelection", novelId] as const,
 };
 
 /** 한 소설의 캐시 중 `kinds` 종류만 고르는 술어. `invalidateQueries({ queryKey: novelKeys.all, predicate })` 로

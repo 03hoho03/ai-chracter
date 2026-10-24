@@ -4,9 +4,11 @@ import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import { BookX, CloudOff, NotebookPen } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import {
   NovelStatusState,
   NovelizeLockedState,
+  isNovelOutlineFlowOn,
   toNovelLoadFailure,
   useNovelBoardLayoutQuery,
   novelKeys,
@@ -29,6 +31,7 @@ import {
   SnapshotDiffModal,
 } from "@/features/novel-snapshots";
 import {
+  BoardPlanEntry,
   LazyNovelBoardCanvas,
   NovelBoardCanvasSkeleton,
   NovelBoardJobLine,
@@ -45,6 +48,7 @@ import {
   toSelectedNodeKey,
   useIsNovelBoardCanvasLayout,
   type BoardSelection,
+  type PlanAvailability,
 } from "@/widgets/novel-board";
 
 import { canRemoveDeletedChapterCaches } from "../model/deletedChapterCaches";
@@ -182,10 +186,16 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
     };
   }, []);
 
+  // 구성 흐름 스위치. 켜져 있으면 다음 화는 구성 모드에서 만든다. 꺼졌으면 구성 모드와 그 입구가 없고 구성 흐름 조회도 하지
+  // 않는다(서버가 404 로 막는다). 가격을 받는 동안은 아직 모른다 — 주소의 구성 모드를 접지 않고 기다린다.
+  const pricingQuery = useCloverPricingQuery();
+  const isOutlineFlowOn = isNovelOutlineFlowOn(pricingQuery.data);
+  const planAvailability = toPlanAvailability(pricingQuery.data === undefined && pricingQuery.isPending, isOutlineFlowOn);
   const selection = resolveBoardSelection(
     parseBoardSelection(select),
     novel.chapters.map((chapter) => chapter.id),
     charactersQuery.data?.map((character) => character.id),
+    { plan: planAvailability },
   );
   const selectValue = selection === undefined ? undefined : toBoardSelectValue(selection);
   // 작업이 끝난 뒤의 비동기 콜백은 그 작업을 시작한 렌더의 값을 들고 있다 — 그사이 고른 것이 바뀌었을 수 있어 지금
@@ -275,6 +285,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
         parseBoardSelection("select" in next.search && typeof next.search.select === "string" ? next.search.select : undefined),
         novel.chapters.map((chapter) => chapter.id),
         charactersQuery.data?.map((character) => character.id),
+        { plan: planAvailability },
       );
       const targetValue = target === undefined ? undefined : toBoardSelectValue(target);
       // 같은 것이면 다시 그려지지 않아 글이 남는다.
@@ -302,7 +313,11 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
     try {
       const chapterOrdinal =
         target?.kind === "episode" ? novel.chapters.find((item) => item.id === target.id)?.ordinal : undefined;
-      return await DiscardManualEditModal.call({ chapterOrdinal });
+      return await DiscardManualEditModal.call({
+        chapterOrdinal,
+        // 구성 모드에서 버리는 것은 고르던 대화 구간이다.
+        isSourceSelection: selectionRef.current?.kind === "plan",
+      });
     } finally {
       openDiscardConfirmCountRef.current -= 1;
     }
@@ -353,13 +368,18 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
   // 배치를 한 번도 받지 못했다(받은 뒤 다시 받기만 실패했으면 받은 배치로 그리고 저장해도 된다).
   const isLayoutFailed = layoutQuery.isError && layoutQuery.data === undefined;
   const showPanel = isCanvasLayout || selection !== undefined;
+  // 구성 모드는 넓은 화면에서도 캔버스·옆 패널 대신 한 열 문서다. 패널 자리가 그 문서가 되어, 창 폭이 바뀌어도 고르던 구간이 남는다.
+  const isPlan = selection?.kind === "plan";
+  const showCanvas = isCanvasLayout && !isPlan;
+  const openPlan = () => void selectBoard({ kind: "plan" });
+  const planEntry = isOutlineFlowOn ? <BoardPlanEntry novel={novel} onOpen={openPlan} /> : undefined;
 
   return (
     <>
       <NovelBoardTopBar
         novelId={novel.id}
         title={novel.title ?? "제목 미정"}
-        autosaveNotice={isCanvasLayout && !isEmpty ? "카드 자리는 자동으로 저장돼요" : undefined}
+        autosaveNotice={showCanvas && !isEmpty ? "카드 자리는 자동으로 저장돼요" : undefined}
         versions={{
           isOpen: selection?.kind === "versions",
           onToggle: () => void selectBoard(selection?.kind === "versions" ? undefined : { kind: "versions" }),
@@ -369,13 +389,14 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
           hasChapters: !isEmpty,
           blockedReasonId: hasChapterBlockedReason(flow) ? blockedReasonId : undefined,
           buttonRef: createButtonRef,
+          onStart: isOutlineFlowOn ? openPlan : undefined,
         }}
         publishAction={<NovelPublishBoardButton novel={novel} />}
       />
       {/* 넓은 화면: 캔버스 + 옆 패널. 좁은 화면: 목록 ↔ 패널 화면. 패널 자리는 두 배치에서 같은 트리 자리(같은 부모의
           둘째 칸)라, 창 폭이 1024px 를 넘나들어도 패널이 다시 마운트되지 않아 쓰던 글이 남는다. */}
       <div className="flex h-below-header">
-        {isCanvasLayout ? (
+        {showCanvas ? (
           // 실패 안내의 "다시 시도"가 성공하면 안내와 함께 사라지므로, 누를 때 포커스를 받아 둘 자리라 `tabIndex=-1`.
           <main ref={canvasRegionRef} tabIndex={-1} aria-label="편집 보드" className="relative min-w-0 flex-1 outline-none">
             <Button
@@ -431,10 +452,10 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
           </main>
         ) : null}
         <div
-          role={isCanvasLayout ? "complementary" : "main"}
-          aria-label={isCanvasLayout ? "편집 패널" : "편집 보드"}
+          role={showCanvas ? "complementary" : "main"}
+          aria-label={toPanelSlotLabel(isPlan, showCanvas)}
           className={
-            isCanvasLayout
+            showCanvas
               ? "flex w-md shrink-0 flex-col border-l border-border bg-background xl:w-lg"
               : "flex min-w-0 flex-1 flex-col bg-background"
           }
@@ -454,10 +475,12 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
                 characterStatus={toCharacterStatus(charactersQuery)}
                 onRetryCharacters={() => void charactersQuery.refetch()}
                 onSelect={(next) => void selectBoard(next)}
+                planEntry={planEntry}
               />
             </div>
           )}
-          {showPanel && (
+          {showPanel && isPlan && planAvailability === "loading" && <PlanLoading />}
+          {showPanel && !(isPlan && planAvailability === "loading") && (
             <NovelBoardPanel
               key={selectValue ?? "overview"}
               novel={novel}
@@ -466,7 +489,9 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
               aiEdit={aiEdit}
               headingRef={headingRef}
               onSelect={(next) => void selectBoard(next)}
-              onBackToList={isCanvasLayout ? undefined : () => void selectBoard(undefined)}
+              onBackToList={showCanvas ? undefined : () => void selectBoard(undefined)}
+              backLabel={isCanvasLayout ? "캔버스로" : "목록"}
+              planEntry={planEntry}
               onChapterDeleted={handleChapterDeleted}
               onDraftDirtyChange={(isDirty) => {
                 isDraftDirtyRef.current = isDirty;
@@ -553,6 +578,28 @@ function CanvasFailedNotice({ message, onRetry, isRetrying, fallbackFocusRef }: 
       >
         다시 시도
       </Button>
+    </div>
+  );
+}
+
+function toPlanAvailability(isPricingPending: boolean, isOutlineFlowOn: boolean): PlanAvailability {
+  if (isPricingPending) return "loading";
+  return isOutlineFlowOn ? "on" : "off";
+}
+
+/** 패널 자리의 랜드마크 이름. 구성 모드는 그 자리가 화면 본문 전체다. */
+function toPanelSlotLabel(isPlan: boolean, showCanvas: boolean): string {
+  if (isPlan) return "구성";
+  return showCanvas ? "편집 패널" : "편집 보드";
+}
+
+/** 구성 모드 주소로 들어왔는데 스위치를 담은 가격 응답을 아직 받는 중. 받으면 구성 문서가 되거나(켜짐) 개요로 접힌다(꺼짐). */
+function PlanLoading() {
+  return (
+    <div role="status" className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 py-6 sm:px-6">
+      <span className="sr-only">구성을 불러오는 중이에요.</span>
+      <div aria-hidden className="h-7 w-24 animate-pulse rounded-lg bg-muted" />
+      <div aria-hidden className="h-16 animate-pulse rounded-lg bg-muted" />
     </div>
   );
 }
