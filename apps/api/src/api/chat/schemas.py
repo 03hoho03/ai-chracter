@@ -41,8 +41,18 @@ class ChatMessageCreateRequest(CamelModel):
     shortcut_id: uuid.UUID | None = None
 
 
+# 메시지 수정·삭제가 지운 턴의 스탯을 어떻게 되돌렸는지 — 값의 뜻은 `chat/stat_rewind.py` 모듈 설명.
+StatRewind = Literal["rewound", "partial", "kept"]
+
+
 class ChatMessageEditRequest(CamelModel):
     content: Annotated[str, Field(min_length=1), NoNul]
+
+
+class ChatMessageDeleteResponse(CamelModel):
+    """메시지 삭제의 응답. `stat_rewind` 로 화면이 안내 문구를 고른다(사용자 메시지·오프닝 삭제처럼 알릴 것이 없으면 null)."""
+
+    stat_rewind: StatRewind | None
 
 
 class ChatRoomRenameRequest(CamelModel):
@@ -509,8 +519,12 @@ class ChatPolicyWarningEvent(CamelModel):
 
 
 class ChatDoneEvent(CamelModel):
+    """`stat_rewind` 는 메시지 수정의 done 에만 싣는다 — 편집 지점 뒤에서 지운 턴의 스탯을 어떻게 되돌렸는지(`chat/stat_rewind.py`)로
+    화면이 안내 문구를 고른다. 다른 경로와, 지운 턴이 없던 수정의 done 에는 칸이 아예 없다."""
+
     type: Literal["done"] = "done"
     final_message: ChatMessageResponse
+    stat_rewind: StatRewind | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ChatErrorEvent(CamelModel):
