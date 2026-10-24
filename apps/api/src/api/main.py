@@ -280,3 +280,4 @@ async def ready(response: Response) -> dict[str, object]:
         response.status_code = status_module.HTTP_503_SERVICE_UNAVAILABLE
     return {"status": "ready" if ready else "unavailable", "checks": checks}
 # 경로 필터 시험용 주석
+# 경로 필터 시험용 주석 2
