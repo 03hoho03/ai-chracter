@@ -14,14 +14,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.action_log import record_admin_action
 from api.admin.dependencies import get_current_admin_id
+from api.admin.prompt_semver import (
+    SemverLevelError,
+    SemverPlan,
+    diff_sections,
+    draft_fingerprint,
+    format_semver,
+    load_base,
+    plan_semver,
+    section_contents,
+    section_semvers_of,
+    semvers_of,
+    write_semver,
+)
 from api.admin.schemas import (
+    AdminPromptDraftChangesResponse,
     AdminPromptDraftResponse,
     AdminPromptDraftUpsertRequest,
     AdminPromptLabels,
     AdminPromptPreviewItem,
     AdminPromptPreviewResponse,
     AdminPromptPublishRequest,
+    AdminPromptSectionChange,
     AdminPromptSectionItem,
+    AdminPromptSectionSemver,
     AdminPromptSetDetailResponse,
     AdminPromptSetListResponse,
     AdminPromptSetSummary,
@@ -887,6 +903,58 @@ async def _replace_draft_content(
     return draft
 
 
+async def _sections_to_publish(
+    db: AsyncSession, draft: PromptSet, *, lane: PromptLane, model: PromptSetModelId
+) -> list[PromptSection]:
+    """게시할 섹션 — 초안 섹션에서 채팅 Gemini 체인의 얼린 소설 행만 활성판 값으로 갈아 끼운 것. 게시와 바뀐 섹션 조회가 함께
+    쓴다."""
+    sections = await _sections_of(db, draft.id)
+    if _freezes_novel_rows(lane, model):
+        # 초안을 저장할 때 이미 얼린 값으로 갈아 끼우지만, 이 규칙 전에 저장된 초안도 있다 — 게시하는 값은 늘 직전
+        # 게시본의 소설 행이다(`_replace_draft_content` 와 같은 이유).
+        frozen = await _active_frozen_novel_sections(db, lane)
+        sections = sorted(
+            [s for s in sections if s.channel not in _NOVELIZE_CHANNELS] + frozen,
+            key=lambda s: (s.channel, s.order, s.slot, s.variant),
+        )
+    return sections
+
+
+def _semver_conflict(rule: str, message: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"rule": rule, "message": message})
+
+
+async def _plan_publish_semver(
+    db: AsyncSession,
+    body: AdminPromptPublishRequest,
+    *,
+    lane: PromptLane,
+    model: PromptSetModelId,
+    contents: dict[str, tuple[object, ...]],
+) -> SemverPlan:
+    """게시의 판을 아무것도 쓰기 전에 계산한다. 화면이 바뀐 섹션 조회 때 받은 기준판·초안 해시를 돌려보냈으면 지금 값과 견주어,
+    그 사이 다른 게시나 초안 저장이 끼어들었으면 409 로 멈춘다(단계를 다시 고르게). 보내지 않은 화면은 견주지 않는다."""
+    base = await load_base(db, lane, model)
+    if body.draft_hash is not None and body.draft_hash != draft_fingerprint(contents):
+        raise _semver_conflict(
+            "semver-draft-changed", "변경 내역을 본 뒤 초안이 바뀌었습니다. 바뀐 섹션을 다시 확인해 주세요."
+        )
+    if "base_set_id" in body.model_fields_set and body.base_set_id != (base.set_id if base is not None else None):
+        raise _semver_conflict(
+            "semver-base-moved", "변경 내역을 본 뒤 다른 게시가 먼저 들어왔습니다. 바뀐 섹션을 다시 확인해 주세요."
+        )
+    try:
+        return plan_semver(base, contents, body.levels)
+    except SemverLevelError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "rule": "semver-level-for-unchanged-section",
+                "message": f"바뀌지 않았거나 없는 섹션에 판 단계를 골랐습니다: {error.names}",
+            },
+        ) from None
+
+
 # ---- 목록·조회 ----------------------------------------------------------------
 
 
@@ -986,6 +1054,41 @@ async def preview_prompt_draft(
     return AdminPromptPreviewResponse(items=items)
 
 
+@router.get("/admin/prompt-sets/{lane}/draft/changes")
+async def get_prompt_draft_changes(
+    lane: PromptLane,
+    model: PromptSetModelId = _MODEL_QUERY,
+    _admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminPromptDraftChangesResponse:
+    """게시하면 판이 어떻게 갈릴지 미리 본다(읽기만 한다). 계산은 게시와 같은 함수다 — 얼린 소설 행 갈아 끼우기까지 같아야
+    화면이 단계를 고르게 한 섹션과 실제로 올라가는 섹션이 같다. 경로가 세그먼트 3개라 `GET /{id}` 와 겹치지 않는다."""
+    _require_lane_model(lane, model)
+    draft = await _get_draft(db, lane, model)
+    if draft is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
+    contents = section_contents(draft, await _sections_to_publish(db, draft, lane=lane, model=model))
+    base = await load_base(db, lane, model)
+    changes = diff_sections(contents, base.contents if base is not None else None)
+    return AdminPromptDraftChangesResponse(
+        base_set_id=base.set_id if base is not None else None,
+        base_semver=format_semver(base.number) if base is not None else None,
+        draft_hash=draft_fingerprint(contents),
+        sections=[
+            AdminPromptSectionChange(
+                channel=channel,
+                change=change,
+                current_semver=(
+                    format_semver(base.section_numbers[channel])
+                    if base is not None and channel in base.section_numbers
+                    else None
+                ),
+            )
+            for channel, change in sorted(changes.items())
+        ],
+    )
+
+
 @router.post("/admin/prompt-sets/{lane}/publish")
 async def publish_prompt_set(
     lane: PromptLane,
@@ -998,17 +1101,10 @@ async def publish_prompt_set(
     draft = await _get_draft(db, lane, model)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
-    sections = await _sections_of(db, draft.id)
-    if _freezes_novel_rows(lane, model):
-        # 초안을 저장할 때 이미 얼린 값으로 갈아 끼우지만, 이 규칙 전에 저장된 초안도 있다 — 게시하는 값은 늘 직전
-        # 게시본의 소설 행이다(`_replace_draft_content` 와 같은 이유).
-        frozen = await _active_frozen_novel_sections(db, lane)
-        sections = sorted(
-            [s for s in sections if s.channel not in _NOVELIZE_CHANNELS] + frozen,
-            key=lambda s: (s.channel, s.order, s.slot, s.variant),
-        )
+    sections = await _sections_to_publish(db, draft, lane=lane, model=model)
 
     _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
+    plan = await _plan_publish_semver(db, body, lane=lane, model=model, contents=section_contents(draft, sections))
 
     # 레인·모델 필터가 없다("안 넣는 것"이 결정이다). 버전 문자열 하나가 "언제 게시됐는가"를
     # 전역 시간축 위에 놓는다 — story의 v3 다음 게시가 v5일 수 있다(중간 v4는 다른 레인이나 다른 모델의 게시).
@@ -1051,6 +1147,9 @@ async def publish_prompt_set(
                     )
                 )
             await db.flush()
+            # 판 행도 같은 SAVEPOINT 안이다 — 같은 기준판을 읽은 다른 게시가 먼저 커밋했으면 기준판 유니크(또는 체인 번호
+            # 유니크)에 걸려 위 정수 번호 경합과 같은 409 가 된다. 셋 다 "다시 시도"가 답이라 문구를 나누지 않는다.
+            await write_semver(db, prompt_set_id=published.id, lane=lane, model=model, plan=plan)
     except IntegrityError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1091,6 +1190,12 @@ async def publish_prompt_set(
         published_at=published.published_at,
         labels=_to_labels(published),
         sections=[_to_section_item(s) for s in sections],
+        semver=format_semver(plan.number),
+        section_semvers=[
+            AdminPromptSectionSemver(channel=channel, semver=format_semver(number), level=level)
+            for channel, (number, level) in sorted(plan.sections.items())
+        ],
+        removed_sections=plan.removed,
     )
 
 
@@ -1162,6 +1267,11 @@ async def get_prompt_set(
         published_at=prompt_set.published_at,
         labels=_to_labels(prompt_set),
         sections=[_to_section_item(s) for s in sections],
+        semver=(await semvers_of(db, [prompt_set.id])).get(prompt_set.id),
+        section_semvers=[
+            AdminPromptSectionSemver(channel=channel, semver=format_semver(number), level=level)
+            for channel, number, level in await section_semvers_of(db, prompt_set.id)
+        ],
     )
 
 
@@ -1185,6 +1295,7 @@ async def list_prompt_sets(
             )
         ).all()
     }
+    semvers = await semvers_of(db, [prompt_set.id for prompt_set in prompt_sets])
     items: list[AdminPromptSetSummary] = []
     for prompt_set in prompt_sets:
         lane = as_prompt_lane(prompt_set.lane)
@@ -1202,6 +1313,7 @@ async def list_prompt_sets(
                 created_at=prompt_set.created_at,
                 published_at=prompt_set.published_at,
                 is_active=prompt_set.id in active_ids,
+                semver=semvers.get(prompt_set.id),
             )
         )
     return AdminPromptSetListResponse(items=items)
