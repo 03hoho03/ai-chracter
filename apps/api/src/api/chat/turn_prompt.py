@@ -145,9 +145,9 @@ PromptSetData = tuple[PromptSet, list[PromptSection]]
 
 @dataclass(frozen=True)
 class JudgmentPromptSets:
-    """한 턴의 판정·요약이 렌더할 세트 — 판정 종류마다, 그리고 기억 요약·장면 기억 추출·관계·사실 기억 추출에 하나씩. 각각 그
-    종류의 판정·요약 모델 설정의 (레인, 모델) 활성 세트다. 모델이 같은 칸은 같은 객체다. 미리보기도 같은 함수로 모든 칸을
-    채우지만 미리보기에는 요약·추출이 없어 그 세 칸은 쓰지 않는다."""
+    """한 턴의 판정·요약이 렌더할 세트 — 판정 종류마다, 그리고 기억 요약·장면 기억 추출·관계·사실 기억 추출·인상 생성에 하나씩.
+    각각 그 종류의 판정·요약 모델 설정의 (레인, 모델) 활성 세트다. 모델이 같은 칸은 같은 객체다. 미리보기도 같은 함수로 모든 칸을
+    채우지만 미리보기에는 요약·추출·인상이 없어 그 네 칸은 쓰지 않는다."""
 
     stat: PromptSetData
     ending: PromptSetData
@@ -155,6 +155,7 @@ class JudgmentPromptSets:
     summary: PromptSetData
     episode: PromptSetData
     fact: PromptSetData
+    impression: PromptSetData
 
 
 # 칸마다 모델을 읽는 호출 위치. 채팅·미리보기 판정은 같은 종류면 같은 모델 설정을 쓰므로 채팅 쪽 하나로 읽는다.
@@ -165,6 +166,7 @@ _JUDGMENT_SET_CALL_SITES: dict[str, LLMCallSite] = {
     "summary": "chat_memory_summary",
     "episode": "chat_memory_episode",
     "fact": "chat_memory_fact",
+    "impression": "chat_memory_impression",
 }
 
 
@@ -196,6 +198,7 @@ async def judgment_prompt_sets(
         summary=chosen["summary"],
         episode=chosen["episode"],
         fact=chosen["fact"],
+        impression=chosen["impression"],
     )
 
 

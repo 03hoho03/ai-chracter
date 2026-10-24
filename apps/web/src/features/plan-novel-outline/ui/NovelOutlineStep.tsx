@@ -30,10 +30,10 @@ import {
   toTurnIndex,
   updateEpisodeText,
   type OutlineEpisodeDraft,
-  type OutlineRange,
   type OutlineTurn,
 } from "../model/outlineEdits";
 import { toOutlineRecovery } from "../model/outlineRecovery";
+import { toSelectionRevert, type SelectionRevert } from "../model/selectionRevert";
 import {
   isEditBaseOutdated,
   OUTLINE_STATUS_LABEL,
@@ -68,8 +68,9 @@ type NovelOutlineStepProps = {
   /** 담을 대화의 승인 상태. 방이 지워져 읽지 않으면 `undefined`. */
   selection: { hasApproved: boolean; hasPendingDraft: boolean } | undefined;
   make: OutlineMakeControl;
-  /** 낡은 구성안의 근거 구간을 담을 대화 단계에 다시 담는다. */
-  onRevertSelection: (ranges: OutlineRange[]) => void;
+  /** 낡은 구성안이 쓴 구간을 담을 대화 단계에 되돌린다 — 그 구성안이 쓴 선택의 담기 구간이면 양 끝 그대로, 그 칸이 없으면 화들의
+   * 근거로 어림한 구간이다. */
+  onRevertSelection: (revert: Exclude<SelectionRevert, { kind: "sourceChanged" }>) => void;
   onDraftDirtyChange: (isDirty: boolean) => void;
 };
 
@@ -325,6 +326,8 @@ function OutlineEditor({
   }
 
   const status: OutlineStatus = base.status;
+  // 낡은 판만 되돌릴 구간을 따진다(서버가 낡은 판에만 그 선택의 구간을 싣는다).
+  const revert = base.isStale ? toSelectionRevert(base.view) : undefined;
   const isApproveShown = !base.isStale && (status !== "approved" || isDirty);
   const isActionBusy = busy !== undefined || isFormOpen;
   return (
@@ -337,8 +340,10 @@ function OutlineEditor({
       {base.isStale && (
         <div className="flex flex-col gap-3 rounded-lg border border-border px-4 py-3">
           <p className="text-sm break-keep text-foreground">
-            담을 대화를 바꿔 이 구성안이 근거로 쓴 대화가 빠졌어요(낡음). 낡은 구성안은 고치거나 승인할 수 없어요. 다시 만들거나, 빠진
-            대화를 다시 담아 승인해주세요.
+            {/* 방이 지워졌으면 서버가 모든 구간을 원문 바뀜으로 싣는다 — 원인은 방 삭제라 그 안내(아래)를 따른다. */}
+            {revert?.kind === "sourceChanged" && !isRoomGone
+              ? "구성안을 만든 뒤 대화 원문이 바뀌어 이 구성안은 낡았어요. 원문이 바뀐 대화는 구간을 되돌려도 그대로 돌아오지 않아요. 구성안을 다시 만들어주세요."
+              : "담을 대화를 바꿔 이 구성안이 근거로 쓴 대화가 빠졌어요(낡음). 낡은 구성안은 고치거나 승인할 수 없어요. 다시 만들거나, 빠진 대화를 다시 담아 승인해주세요."}
           </p>
           <div className="flex flex-wrap gap-2">
             <MakeButton
@@ -349,13 +354,8 @@ function OutlineEditor({
               blockedReason={makeBlockedReason}
               reasonId={makeReasonId}
             />
-            {!isRoomGone && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onRevertSelection(base.view.episodes.flatMap((episode) => episode.basis))}
-              >
+            {!isRoomGone && revert !== undefined && revert.kind !== "sourceChanged" && (
+              <Button type="button" variant="outline" size="sm" onClick={() => onRevertSelection(revert)}>
                 <RotateCcw aria-hidden />
                 구간 되돌리기
               </Button>

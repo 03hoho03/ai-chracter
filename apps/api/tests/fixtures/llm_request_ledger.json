@@ -863,6 +863,130 @@
       }
     ]
   },
+  "send-story-impressions": {
+    "calls": [
+      {
+        "callSite": "chat_generate",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate",
+        "model": "opus",
+        "promptSha": "65f2cff600a97ad3eede1d847d36313b8484703ec4ae3381f29a2b1869921403",
+        "provider": "bedrock",
+        "responseSchema": null,
+        "segments": {
+          "count": 3,
+          "shas": [
+            "cd810310ebb3ebc9d560acf8415828e42e2edc8ef865eca64b19bc9410fff197",
+            "25d988b74b7a2851e3702632e5ebd78253766b537790d4f413b4cecd49324afa",
+            "f745c664dc9a5a8899022561e41ddc90c8089e6079330cd5c88f04284270efb9"
+          ]
+        },
+        "stopSequences": [
+          "\n사용자:"
+        ],
+        "systemSha": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
+      },
+      {
+        "callSite": "chat_stat_judgment",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "ab355a86d12280e399c192f8569b25a11d6416e52d44a7f38b1e7bdcd86573c6",
+        "provider": "gemini",
+        "responseSchema": "StatRuleJudgmentResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
+      },
+      {
+        "callSite": "chat_media_book_image",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "920fc9b5f5574d1a3eae94553300ab60d384d0f08900b8fa6bb8c886466a64eb",
+        "provider": "gemini",
+        "responseSchema": "ImageMatchJudgmentResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
+      },
+      {
+        "callSite": "chat_ending_judgment",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "8e66ffbe862d54d4875a33571031d5bbf3cde02721f5376d1123fd1abcadbc0a",
+        "provider": "gemini",
+        "responseSchema": "EndingJudgmentResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
+      },
+      {
+        "callSite": "chat_memory_summary",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "1fe00e2e2c14e43ca54b4116a835e50ca4ba38f352cf4938ea1e57239e5ab93d",
+        "provider": "gemini",
+        "responseSchema": "MemorySummaryResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
+      },
+      {
+        "callSite": "chat_memory_episode",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "199361aa9b08f87e7882d6231ef61f0febb9a2d9f330ab7e0a27b04d5daea657",
+        "provider": "gemini",
+        "responseSchema": "MemoryEpisodeResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
+      },
+      {
+        "callSite": "chat_memory_fact",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "7ea304ee4b31cb535996a504391c601b519fec852b9e1cdf4f19279062e21008",
+        "provider": "gemini",
+        "responseSchema": "MemoryFactResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
+      },
+      {
+        "callSite": "chat_memory_impression",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "4084f9bcf9fd95f3e8934462ea531363f7fa2633dd5754cf20e882c4367fb648",
+        "provider": "gemini",
+        "responseSchema": "MemoryImpressionResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
+      }
+    ],
+    "promptDump": [
+      {
+        "chatModel": "opus",
+        "hasRoomId": true,
+        "turn": 31
+      }
+    ]
+  },
   "send-story-opus": {
     "calls": [
       {

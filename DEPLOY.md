@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 119개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 23개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 노벨 공개 정책 스위치 1개(`NOVEL_PUBLIC_POLICY_V2_ENABLED`)·소설 삽화 스위치 1개(`NOVEL_ILLUSTRATIONS_ENABLED`)·소설 구성 흐름 스위치 1개(`NOVELIZE_OUTLINE_FLOW_ENABLED`)·여러 문단 수정 스위치 1개(`NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`)·스탯 판정 이벤트 스위치 1개(`STAT_EVENT_LOG`), 모두 67개 제외 —
+**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 122개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 23개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 노벨 공개 정책 스위치 1개(`NOVEL_PUBLIC_POLICY_V2_ENABLED`)·소설 삽화 스위치 1개(`NOVEL_ILLUSTRATIONS_ENABLED`)·소설 구성 흐름 스위치 1개(`NOVELIZE_OUTLINE_FLOW_ENABLED`)·여러 문단 수정 스위치 1개(`NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`)·스탯 판정 이벤트 스위치 1개(`STAT_EVENT_LOG`)·아직 켜지 않은 인상 키 3개(`MEMORY_IMPRESSIONS_WRITE`·`MEMORY_IMPRESSION_EVERY_N_FOLDS`·`MEMORY_IMPRESSION_MODEL`), 모두 70개 제외 —
 운영에서 켜 둔 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 7개(`PORTONE_*` 5개·
 `IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`), 노벨 키 2개(`NOVEL_PUBLIC_ENABLED`·`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`)는 셈에 들어간다) + 앱이 읽지 않지만
 옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
@@ -211,7 +211,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 `MEMORY_EMBED_WRITE`·`VOYAGE_API_KEY`·`MEMORY_EMBED_RECALL`·`MEMORY_EMBED_RECALL_TIMEOUT_MS`)이 더 들어갔고 그 뒤 VM 파일은 다시 세지 않았다.
 그날 켜기 뒤 서빙 컨테이너(`docker exec … env`)의 키 이름은 91개로, 켜기 전 84개에서 그 7개만큼 늘었고 `MEMORY_`·`VOYAGE_` 키는
 12개(위 7개 + `MEMORY_EPISODES_EXTRACT`·`MEMORY_EPISODE_MODEL`·`MEMORY_FACTS_EXTRACT`·`MEMORY_FACT_MODEL`·`MEMORY_SUMMARY_MODEL`)다.
-2026-10-24 기억 보기 켜기에서 `MEMORY_ITEMS_VISIBLE` 한 줄이 더 들어갔고, 그 뒤에도 VM 파일과 컨테이너 키 수는 다시 세지 않았다.
+2026-10-24 에는 기억 보기 켜기에서 `MEMORY_ITEMS_VISIBLE`, 스탯 판정 이벤트 켜기에서 `STAT_EVENT_LOG` 가 한 줄씩 더 들어갔고(위 제외 목록의
+`STAT_EVENT_LOG` 도 이제 파일에 있다), 그 뒤에도 VM 파일과 컨테이너 키 수는 다시 세지 않았다.
 컨테이너 수는 이 파일 키 수가 아니다 — `env_file` 로 받은 파일 키에 베이스 이미지·Dockerfile·Docker 가 넣는 키(`PATH`·`HOSTNAME` 등)가
 더해진 수라, 파일 키 수는 VM 에서 아래 명령으로 따로 센다.
 이 수는 날짜가 붙은 실측값이라 VM에 키를 넣거나 빼면 낡는다 — 그때 VM에서 다시 세어 이 문장을 고친다
@@ -247,7 +248,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `IDENTITY_CI_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 본인인증 CI 를 저장하기 전에 HMAC 으로 바꾸는 키. **한번 정하면 바꾸지 말 것** — 바뀌면 이미 인증한 사람과 대조가 어긋나 같은 사람이 다른 계정으로 다시 인증할 수 있게 된다. `WITHDRAWN_EMAIL_HMAC_KEY` 와 다른 값을 쓴다. 비면 본인인증이 꺼진다 |
 | `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 무료 대화·미션을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다) |
 | `PAYMENT_DISCORD_WEBHOOK_URL` | 결제 알림용 디스코드 채널 웹훅 주소 | 결제·환불 완료 알림(상품·금액·상태만, 회원·주문을 알아볼 단서는 싣지 않는다). 비면 건너뛴다. 크론 알림의 `DISCORD_WEBHOOK_URL` 과 다른 키다 |
-| `CREATOR_PAYOUT_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 크리에이터 정산 스위치. 스위치와 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다(지급 정보 입력·지급 신청은 `CREATOR_PAYOUT_ENCRYPTION_KEYS` 도 있어야 열리고, 정산 신청·적립·확정·조회는 키와 무관하다) — 신청 자격이 본인인증한 만 19세 이상(나이는 코드 상수라 env 가 없다)이라서다. 켜면 결제·게이트가 꺼져 있어도 본인인증 시작이 열린다. 꺼져 있으면 회원의 정산 조회·신청·지급 정보 입력·지급 신청이 503 이고, 어드민의 신청·지급 처리(승인·거절·승인 취소, 이체 기록·반려)는 스위치와 무관하게 열려 있다. 정산 신청·지급 신청 접수 알림은 `PAYMENT_DISCORD_WEBHOOK_URL` 채널을 같이 쓴다(건수·금액만, 회원을 알아볼 단서는 싣지 않는다) |
+| `CREATOR_PAYOUT_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 크리에이터 정산 스위치. 스위치와 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다(지급 정보 입력·지급 신청은 `CREATOR_PAYOUT_ENCRYPTION_KEYS` 도 있어야 열리고, 정산 신청·적립·확정·조회는 키와 무관하다) — 신청 자격이 본인인증한 만 19세 이상(나이는 코드 상수라 env 가 없다)이라서다. 켜면 결제·게이트가 꺼져 있어도 본인인증 시작이 열린다. 꺼져 있으면 회원의 정산 조회·신청·지급 정보 입력·지급 신청이 503 이고, 어드민의 신청·지급 처리(승인·거절·승인 취소, 이체 기록·반려)는 스위치와 무관하게 열려 있다. 정산 신청·지급 신청 접수 알림은 `PAYMENT_DISCORD_WEBHOOK_URL` 채널을 같이 쓴다(건수·금액만, 회원을 알아볼 단서는 싣지 않는다). 🔴 켤 때 "크리에이터 정산 월 확정 — settle cron" 절의 크론 설치를 함께 한다 — 켠 뒤 크론이 없으면 월 확정이 돌지 않는다(2026-10-24 확인 기준 VM 에는 설치돼 있지 않다) |
 | `CREATOR_PAYOUT_RATE_BPS` / `CREATOR_PAYOUT_RETRO_DAYS` | 설정 안 함(기본 `500` / `90`) | 정산 비율(bps, 500 = 공급가의 5%, 1~10000) / 첫 승인 때 거슬러 확정하는 소급 일수(1 이상). 범위 밖이면 api 가 뜨지 않는다. 비율은 확정할 때마다 확정 행에 남아, 바꿔도 이미 확정한 금액은 그대로다 |
 | `CREATOR_PAYOUT_MINIMUM_KRW` | 설정 안 함(기본 `10000`) | 지급을 신청할 수 있는 최소 확정 잔액(원, 1 이상). 탈퇴하려는 회원은 이보다 적어도 탈퇴 화면에서 신청할 수 있다. 범위 밖이면 api 가 뜨지 않는다 |
 | `CREATOR_PAYOUT_ENCRYPTION_KEYS` | 🔴 지급 기능을 열 때 넣는다. `k1:<base64url 32바이트>` | 크리에이터 지급 정보(실명·주민등록번호·계좌번호) 암호화 키 목록 `kid:키[,kid:키]`. 맨 앞 키로 암호화하고 모든 키로 복호화한다. 비면 지급만 닫힌다 — 지급 정보 입력·지급 신청이 503 이고 정산 조회 응답의 `payoutAvailable` 이 거짓이다(어드민 지급 상세·열람은 409). 정산 신청·적립·월 확정·조회는 키와 무관하게 돈다, 형식이 틀리면 api 가 뜨지 않는다. **키를 잃으면 지급 정보를 되살릴 수 없다** — 만들기·보관·회전 절차는 "크리에이터 지급 정보 암호화 키" 절. 비밀 |
@@ -281,6 +282,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `MEMORY_EPISODE_MODEL` | **운영 `haiku`**(2026-10-13부터, 코드 기본값 `gemini`) | 장면 기억 추출의 모델(문안 체인의 모델 id). 판정·요약 모델 키와 같은 규칙이다 — `haiku`·`sonnet`·`opus` 면 그 모델이 갈 구현의 배정·자격이 있어야 기동한다 |
 | `MEMORY_FACTS_EXTRACT` | **운영 `true`**(2026-10-14부터, 코드 기본값 `false`) | 요약 접기가 접은 구간을 관계·사실 기억(인물 관계와 인물 속성, 누가 말했고 무엇이 뒤집혔는지)으로 뽑는 백그라운드 추출(턴 뒤, 장면 추출 다음). 장면 추출과 따로 켜고 끈다 — 한쪽이 실패해도 다른 쪽 완료 표지는 흔들리지 않는다. 꺼져 있으면 아무것도 예약하지 않아 턴 동작이 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다. 추출 호출은 클로버·레이트리밋에 세지 않는다. 켜는 법은 줄 추가(`MEMORY_FACTS_EXTRACT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh` 다. 켠 직후에는 장면 추출과 같은 이유로 기존 방의 밀린 스냅샷을 턴마다 하나씩 소화해 따라잡을 때까지 추출 원가가 일시적으로 많다. 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 뽑은 사실은 남고 새로 뽑지 않는다 |
 | `MEMORY_FACT_MODEL` | **운영 `haiku`**(2026-10-14부터, 코드 기본값 `gemini`) | 관계·사실 기억 추출의 모델(문안 체인의 모델 id). 판정·요약 모델 키와 같은 규칙이다 — `haiku`·`sonnet`·`opus` 면 그 모델이 갈 구현의 배정·자격이 있어야 기동한다 |
+| `MEMORY_IMPRESSION_MODEL` | 설정 안 함(기본 `gemini`) — `MEMORY_IMPRESSIONS_WRITE` 를 켤 때 `haiku` 와 배정 `chat_memory_impression:anthropic` 을 함께 넣는다 | 인상 생성의 모델(문안 체인의 모델 id). 판정·요약 모델 키와 같은 규칙이다 — `haiku`·`sonnet`·`opus` 면 그 모델이 갈 구현의 배정·자격이 있어야 기동한다. 🔴 이 호출 위치를 모르는 옛 이미지는 `LLM_CALL_SITE_BACKENDS` 의 `chat_memory_impression` 항목을 거부해 기동하지 못하므로, 그 이미지로 되돌리기 전에 배정 항목을 먼저 지운다 |
 | `MEMORY_FACTS_INJECT` | 설정 안 함(기본 `false`) | 매 턴 방의 관계·사실 기억을 키마다 지금 값으로 줄여(뒤집힌 값은 되살리지 않는다) 생성 프롬프트의 대화 기록 뒤·회상 앞 섹션에 싣는다(LLM 호출 없음, 사실 읽기 한 번, 줄 합계 700자 상한 — 상한의 앞 30% 는 관계 → 아는 사람이 정해진 사실 → 뒤집힌 사실 → 그 밖 순서, 나머지는 이번 사용자 메시지와 드문 낱말이 겹치는 사실을 먼저 채운다). 꺼져 있으면 사실을 읽지도 않아 생성 프롬프트가 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다(원문이 전체로 실리면 같은 사실이 두 번 들어간다). 실은 사실은 턴 기록(`chat_turns.memory_facts`)에 id·글자 수로 남는다. 사실은 추출(`MEMORY_FACTS_EXTRACT`)이 만들므로 추출 없이 켜면 실을 사실이 없다. 켜는 법은 줄 추가(`MEMORY_FACTS_INJECT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 섹션이 빠지고 사실·기록은 남는다. 🔴 임베딩 쓰기·읽기를 켠 뒤 마지막에 켠다(「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절) |
 | `MEMORY_KNOWLEDGE_FILTER` | **운영 `true`**(2026-10-23부터, 코드 기본값 `false`) | 사실 섹션을 고르기 전에, 아는 사람이 정해진 사실 중 그 사람이 이번 장면(이번 사용자 메시지·직전 응답에 이름이 나온 인물, 사용자 제외)에 없는 행을 뺀다 — 비밀을 모르는 인물만 있는 장면에서 그 비밀이 새지 않게. 거름은 사실 섹션 안에서만 걸리지만, 켠 턴은 회상 줄의 비밀 가림도 직전 응답의 대사 따옴표 안에만 나온 이름을 장면 인물로 세지 않는다(회상이 사실 섹션보다 덜 가려 그 비밀이 회상 줄로 새지 않게). 그래서 `MEMORY_FACTS_INJECT` 가 꺼져 있어도 `MEMORY_EPISODES_RECALL` 이 켜져 있으면 회상 줄이 달라질 수 있고(지금 운영이 이 조합이다), 회상과 사실 주입이 둘 다 꺼져 있을 때만 켜도 생성 프롬프트·SQL 이 같다. 🔴 켤 때는 `MEMORY_SUMMARY_SECRET_MARKING` 과 한 번에 켠다(「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절). 끄면 다음 턴부터 걸러 내지 않는다. 🔴 `MEMORY_FACTS_INJECT` 가 켜져 있으면 이 줄을 먼저 지우지 않는다 — 사실 주입부터 끈다(처리방침의 "비밀을 아는 인물이 장면에 없으면 보내지 않는다"가 사실 쪽에서는 이 필터가 켜져 있을 때만 참이다) |
 | `MEMORY_SUMMARY_SECRET_MARKING` | **운영 `true`**(2026-10-23부터, 코드 기본값 `false`) | 요약 접기 프롬프트의 지시문 바로 뒤에 비밀 표기 슬롯(비밀에 아는 사람 표기를 붙이고 그 내용을 표기 없이 다시 쓰지 않게 하는 지시와 그 방의 인물 이름 목록)을 싣는다. 꺼져 있으면 이름을 읽지도 않고 슬롯이 빠져 요약 프롬프트가 바이트까지 그대로다. 🔴 켜면 다음 접기부터 **모든 방**의 요약 글이 바뀌고, 그 요약이 생성 프롬프트와 엔딩 판정 입력에도 실린다. 끄면 다음 접기부터 슬롯이 빠지고 이미 쓴 요약은 그대로 남는다. 슬롯 문안은 프롬프트 세트 데이터라 이미지 롤백으로는 빠지지 않는다(옛 코드는 슬롯 값을 넘기지 않아 조용히 빠진다) |
@@ -294,7 +296,9 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `MEMORY_EMBED_RECALL_MAX_PLAIN` / `MEMORY_EMBED_RECALL_MAX_CUE` | 설정 안 함(기본 `1` / `3`) | 벡터 쪽이 비지 않은 턴의 회상 주입 상한 — 보통 턴 / 회상 단서("예전에"·"기억나" 등)가 있는 턴. 명사 단독의 상한과 같은 값이고 측정이 고른 값도 같다 |
 | `MEMORY_EMBED_RECALL_MAX_DISTANCE` / `MEMORY_EMBED_RECALL_VECTOR_LIMIT` / `MEMORY_EMBED_RECALL_DF_MAX` | 설정 안 함(기본 `2.0` / `10` / 비어 있음) | 벡터 순위에 넣는 코사인 거리 상한 / 회상의 벡터 순위에 넣는 거리 순 앞 개수 / 흔한 명사의 절대 상한(비면 비율 기준만). 🔴 거리 상한 `2.0` 은 코사인 거리의 최댓값이라 **아무것도 거르지 않는다** — 그래서 보통 턴에도 거의 매번 가장 가까운 장면 하나가 실린다. 측정 격자에서 상한을 둔 점과 목적함수가 같아 기본값에 가장 가까운 점(`2.0`·`10`·비어 있음)을 골랐고, 보통 턴 주입률이 명사 단독 0.95 에서 1.00 으로 오르는 것을 받아들였다. 사실 섹션 관련 몫도 같은 거리 상한을 쓴다 |
 | `MEMORY_ITEMS_VISIBLE` | **운영 `true`**(2026-10-24부터, 코드 기본값 `false`) — 기억 열람·잊게 하기를 적은 처리방침 판이 게시된 뒤에만 켠다 | 방 주인이 그 방의 장면·사실 기억을 보고 고르는 라우트를 연다 — 목록(`GET /chat-rooms/{id}/memory/items`), 장면·사실 잊게 하기(`DELETE /chat-rooms/{id}/memory/episodes/{episodeId}`·`DELETE /chat-rooms/{id}/memory/facts?key=`)와 사실 잊기 미리 보기(`GET /chat-rooms/{id}/memory/facts/forget-preview`), 요약 다시 만들기(`POST /chat-rooms/{id}/memory/summary/regenerate`, 유료). 꺼져 있으면 이 라우트가 모두 404 `MEMORY_ITEMS_DISABLED` 이고(인증보다 먼저 본다), 기억 응답(`GET /chat-rooms/{id}/memory`)의 `features.itemsVisible` 이 `false` 라 웹 기억 패널은 탭 없는 예전 모양(노트 편집기 하나, 목록 요청 없음)이다. 목록은 읽기만 해서 생성·요약·추출 프롬프트와 무관하다. 켜는 법은 줄 추가(`MEMORY_ITEMS_VISIBLE=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 요청부터 다시 404 이고 패널은 예전 모양으로 돌아간다. 🔴 끄거나 이미지를 되돌려도 이미 잊게 한 장면·사실은 돌아오지 않는다(실제로 지운 행이다). 잊게 하기·다시 만들기의 운영 성질은 「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절 |
-| `STAT_EVENT_LOG` | 설정 안 함(기본 `false`) — 처리방침 턴 기록 항목에 판정 규칙 식별자를 게시한 뒤 켤 때 `true` | 턴 기록(`chat_turns.stat_events`)에 그 턴 스탯 판정이 스탯마다 발동한 규칙·적용한 규칙(판본을 넘어 같은 규칙 id 와 그 판본의 규칙 행 id 쌍)·폭·범위에 잘렸는지와 카운터 스탯의 한 칸을 남긴다(조건 글은 싣지 않는다). 꺼져 있으면 칸이 DB 기본값 `[]` 이고 턴 기록 INSERT 의 칸 목록도 이 칸이 생기기 전과 같다(서버 기본값이 있는 칸이라 RETURNING 에는 이 칸이 더해진다). 켜도 꺼도 판정·생성 프롬프트와 스탯 값은 같다 — 기록만 더한다. 방의 기억 사용 범위와 무관하게 모든 방에 쓴다. 켜는 법은 줄 추가(`STAT_EVENT_LOG=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 다시 `[]` 이고 이미 쌓인 칸은 남는다(방 초기화·삭제·탈퇴 때 턴 기록과 함께 지워진다) |
+| `STAT_EVENT_LOG` | **운영 `true`**(2026-10-24부터, 코드 기본값 `false`) — 처리방침 「턴 기록」 항목에는 판정 규칙 식별자를 남긴다는 문구 한 줄이 다음 판에 더해진다 | 턴 기록(`chat_turns.stat_events`)에 그 턴 스탯 판정이 스탯마다 발동한 규칙·적용한 규칙(판본을 넘어 같은 규칙 id 와 그 판본의 규칙 행 id 쌍)·폭·범위에 잘렸는지와 카운터 스탯의 한 칸을 남긴다(조건 글은 싣지 않는다). 꺼져 있으면 칸이 DB 기본값 `[]` 이고 턴 기록 INSERT 의 칸 목록도 이 칸이 생기기 전과 같다(서버 기본값이 있는 칸이라 RETURNING 에는 이 칸이 더해진다). 켜도 꺼도 판정·생성 프롬프트와 스탯 값은 같다 — 기록만 더한다. 방의 기억 사용 범위와 무관하게 모든 방에 쓴다. 켜는 법은 줄 추가(`STAT_EVENT_LOG=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 다시 `[]` 이고 이미 쓴 이벤트는 남는다(방 초기화·삭제·탈퇴 때 턴 기록과 함께 지워진다) |
+| `MEMORY_IMPRESSIONS_WRITE` | 설정 안 함(기본 `false`) — 처리방침에 인상 항목을 게시한 뒤 켤 때 `true` | 요약 접기 몇 번마다(`MEMORY_IMPRESSION_EVERY_N_FOLDS`) 방 하나에 인상 한 행을 `chat_memory_impressions` 에 쌓는 백그라운드 작업(턴 뒤, 두 추출 다음 · 임베딩 채우기 앞). 입력은 그 접기들에서 뽑힌 장면·사실 행 중 아는 사람이 정해지지 않은 것뿐이고(요약 글·원문은 싣지 않는다) 묶음의 장면·사실 추출이 모두 끝나야 돈다 — 그래서 두 추출이 꺼져 있으면 아무것도 쌓이지 않는다. 기억 사용 범위(`MEMORY_MODEL_SCOPE`) 밖 방에서는 돌지 않는다. 저장만 한다 — 생성 프롬프트에 싣지 않고 화면에도 보이지 않는다. 꺼져 있으면 예약하지 않아 인상 호출도 인상 표 SELECT·INSERT 도 없다. 장면·사실 잊게 하기는 이 스위치와 무관하게 그 방의 인상을 모두 지우고 잊기 세대를 올린다. 🔴 운영에서 켜기 전에 인상 생성에 시도 상한이나 백오프를 먼저 넣는다 — 지금은 묶음에 선점·시도 기록이 없어, 행을 넣지 못한 묶음은 다음 접기가 스냅샷을 더해 그 묶음이 가장 새 묶음에서 밀려날 때까지 사용 범위 안 턴마다 다시 시도한다. 모델 오류·응답 형식 위반·빈 글이 계속되면 그 턴마다 모델 호출이 한 번씩 나가고(접기는 대략 10턴마다라 묶음 하나에 약 10번), 렌더 오류(인상 channel 이 빔)는 호출 없이 턴마다 Bugsink 경고만 쌓인다. 켜는 법은 `MEMORY_IMPRESSION_MODEL=haiku`·배정 `chat_memory_impression:anthropic`·이 줄 추가 → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 이 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 쌓인 행은 남는다(되감기·초기화·방 삭제·탈퇴·잊게 하기 때 지워진다) |
+| `MEMORY_IMPRESSION_EVERY_N_FOLDS` | 설정 안 함(기본 `3`) | 인상 하나가 덮는 요약 스냅샷 수. 방의 스냅샷 수가 이 값의 배수가 된 접기 뒤에 가장 새 스냅샷까지 이만큼을 묶는다 — 접기는 대략 10턴마다라 `3` 이면 약 30턴마다 한 번이다. 1 이상이어야 기동한다. 개발 측정에서 다시 정한다 |
 | `NOVELIZE_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 소설화(대화를 장편 소설의 장으로 옮겨 쓰기) 전역 스위치. 쓰려면 이 스위치·아래 명단·어드민이 준 계정별 허용 셋이 모두 있어야 한다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 모든 소설 화면·API 가 403 이고 허용 행은 남는다(다시 켜면 그대로 돌아온다). 켜기·끄기·회수·롤백은 "소설화 켜기 · 끄기 · 회수 · 롤백" 절 |
 | `NOVELIZE_GRANT_ALLOWLIST` | 허용할 수 있는 계정 id, **쉼표 구분**(공백·따옴표 없이) | 어드민이 허용을 줄 때와 사용자가 접근할 때 둘 다 본다 — 명단 밖 계정에는 어드민이 허용을 줄 수 없고(422), 명단에서 빼고 재기동하면 허용 행이 남아 있어도 바로 막힌다. 비면 아무에게도 줄 수 없다(기본값). UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 개인정보 처리방침이 소설화를 적기 전에는 운영자 계정만 넣는다 |
 | `GEMINI_NOVELIZE_MODEL_NAME` | 설정 안 함(기본값은 `apps/api/.env.example` 주석 줄) | 소설화 장 생성·문단 수정 모델. 장 경계 제안은 이 키가 아니라 `GEMINI_MODEL_NAME` 을 쓴다. 값이 비면 `GEMINI_MODEL_NAME` |
@@ -398,8 +402,8 @@ web 프로젝트 → Settings → Environment variables(현 UI는 **Variables an
 
 **자동배포가 정상 경로다.** `main` push 시 `.github/workflows/deploy-api.yml`이 이미지 빌드 →
 Artifact Registry push → IAP SSH로 VM에서 `ops/swap-api.sh <태그>`(아래 blue/green 교체) → 인터넷 쪽 `/health`
-확인까지 한다(실측 1분 35초 — api 가 단일 컨테이너이던 시절 값이다. blue/green 교체는 옛 색에 남은 요청이 끝나기를
-기다리므로 그만큼 길어질 수 있다).
+확인까지 한다(실측: 2026-10-22~10-24 deploy-api 성공 30회 중앙값 약 2분 20초, 1분 39초~4분 35초. 그중 VM 에서 pull·교체·확인하는
+단계가 중앙값 약 1분 10초, 이미지 빌드·푸시가 약 40초다. 교체는 옛 색에 남은 요청이 끝나기를 기다리므로 그만큼 길어질 수 있다).
 트리거 경로는 `apps/api/**` · `docker-compose.prod.yml` · `Caddyfile` · 저장소 루트 `ops/**` ·
 워크플로 자신이다. 단 `apps/api/**` 중 런타임 코드가 읽지 않는 파일(`tests/`, 앱 최상위 md, `probe-runs/`,
 평가 도구 `scripts/memory_eval/`·`scripts/memory_eval_cli.py`, 쓰지 않는 `cloudbuild.yaml`)만 바뀐 병합은
@@ -434,6 +438,9 @@ Artifact Registry push → IAP SSH로 VM에서 `ops/swap-api.sh <태그>`(아래
    상태 파일을 새 색으로 쓴다. 마지막 로그 줄 `13) 완료: active=…`가 찍혀야 끝까지 돈 것이다.
 
 교체 소요 시간은 옛 색에 남은 가장 긴 요청에 비례한다(최대 정지 유예 65초) — 느린 게 아니라 드레인이 기다리는 것이다.
+드레인이 기다리는 것은 요청뿐이다. 응답 뒤에 붙인 `BackgroundTasks`(인증 메일·조회수 집계·턴 뒤 기억 요약·추출 등)는 요청의 일부라 종료 때
+끝까지 기다려지고(상한은 `stop_grace_period`), 응답 연결 없이 `asyncio.create_task` 로 도는 소설화 작업은 기다려지지 않고 프로세스와
+함께 끝난다 — 그 환불은 heartbeat 만료 정리가 맡는다("알려진 갭" 절의 무중단 교체 항목, "소설화 켜기 · 끄기 · 회수 · 롤백" 절).
 중간에 끊겨 두 색이 다 떠 있으면 같은 명령을 다시 부르면 이어서 끝난다 — 옛 색에 드레인 플래그가 서 있으면 그 색을 마저
 드레인·정지하고(같은 태그 재실행이면 거기서 끝), 플래그가 없으면 다시 만들 색을 먼저 드레인해 내린 뒤 교체한다. 어느 쪽도
 서빙 중인 색을 드레인 없이 멈추지 않는다. 워크플로 실행 중 SSH 가 끊기면 교체 스크립트가 실패 정리 없이 끝날 수 있는데, 그
@@ -1236,6 +1243,21 @@ tail -f /var/log/ddona-resource-check.log   # 다음 5분 주기에 크론이 �
 
 "백업 · 복원" 절의 백업 스크립트와 같은 이유로 `check_resources.py`의 `__main__`도 `(RuntimeError, ValueError)` 밖의
 예외에서는 실패를 남기지 않는다 — healthchecks.io의 grace time 초과 감지가 대신 잡는다.
+
+**Ops Agent 를 쓰지 않는다.** 2026-10-02 GCP OS 정책(Ops Agent 자동 설치 템플릿 배정)으로 VM 에 깔렸지만 VM 서비스 계정에
+메트릭 쓰기 권한(`monitoring.timeSeries.create`)이 없어 수집기가 권한 거부 오류만 하루 수천 건(실측 약 8,600건) 쏟았다. 2026-10-24
+정책 배정을 삭제하고 패키지를 제거했다(`apt-get remove`, 설정 파일은 남음). 배정 삭제만으로는 패키지·apt 소스가 남는다 — 그 apt
+소스·키 파일은 `/root/osconfig-ops-agent-backup/` 로 옮겨 두었다. 감시는 이 절의 크론과 healthchecks.io 가 맡는다. VM 라벨
+`goog-ops-agent-policy` 는 남아 있어, 같은 템플릿 배정이 다시 생기면 이 VM 에 붙는다.
+
+다시 깔 때는 둘 중 하나다:
+- 배정 재생성 — 지우기 전에 배정 정의를 `gcloud compute os-config os-policy-assignments describe` 로 저장해 두었다가(출력 전용
+  최상위 키 `baseline`·`etag`·`name`·`revisionCreateTime`·`revisionId`·`rolloutState`·`uid` 를 뺀다)
+  `gcloud compute os-config os-policy-assignments create <이름> --location=<존> --file=<저장한 YAML>` 로 만든다. 라벨이 붙어 있어
+  OS Config 가 저장소·패키지를 스스로 다시 깐다.
+- 손으로 — 백업 폴더의 apt 소스·키를 제자리로 되돌리고 `apt-get update && apt-get install google-cloud-ops-agent`.
+
+어느 쪽이든 VM 서비스 계정에 메트릭·로그 쓰기 권한(Monitoring Metric Writer·Logs Writer)을 먼저 준다 — 없으면 같은 오류가 다시 쏟아진다.
 
 ### 3-8. 이미지 생성 요청 파기 — purge cron
 
@@ -2788,9 +2810,10 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
 - **같은 내용이 다시 뽑힐 수 있다.** 잊게 하기는 원문을 지우지 않는다. 잊은 행을 뽑은 접힌 구간 안이나 그보다 앞의 메시지를
   고치거나 지우거나 재생성하면 되감기가 그 메시지 이상을 덮는 스냅샷을 전부 지우므로, 그 구간이 다시 접힐 때 같은 원문에서 같은
   장면·사실이 다시 뽑힐 수 있다. 아직 접히지 않은 대화나 그 뒤에 이어진 대화에 같은 내용이 있어도 다음 접기에서 새로 뽑힌다.
-- **잊기 세대.** 사실을 잊으면 같은 트랜잭션에서 방의 잊기 세대(`chat_rooms.memory_forget_generation`, 리비전 `914b076c9291`)가
+- **잊기 세대.** 장면이든 사실이든 잊으면 같은 트랜잭션에서 방의 잊기 세대(`chat_rooms.memory_forget_generation`, 리비전 `914b076c9291`)가
   오르고, 그때 진행 중이던 장면·사실 추출은 넣기 직전에 세대가 바뀐 것을 보면 결과를 버린다(그 시도는 실패 한 번으로 적혀 시도 한도 안에서
-  다음 추출 때 다시 쥐어지므로 위와 같은 이유로 같은 내용이 다시 나올 수 있다). 장면만 잊으면 세대는 그대로다. 옛 이미지는 이 칸을 몰라도 돈다(서버 기본값 0) —
+  다음 추출 때 다시 쥐어지므로 위와 같은 이유로 같은 내용이 다시 나올 수 있다). 장면 잊기의 세대는 장면 행을 읽는 인상 생성 때문에 오르는데,
+  진행 중인 두 추출도 그 한 번을 버리게 된다. 잊기는 같은 트랜잭션에서 그 방의 인상(`chat_memory_impressions`)도 전부 지운다. 옛 이미지는 이 칸을 몰라도 돈다(서버 기본값 0) —
   이미지만 되돌리는 데 downgrade 는 필요 없고, 칸을 내릴 때는 이미지를 먼저 되돌린 뒤 내린다(칸을 매핑한 이미지는 칸이 사라지면 방
   조회가 실패한다). 내려도 잊은 행은 돌아오지 않는다.
 - **요약 다시 만들기**는 방 모델과 무관한 고정 10 클로버(`apps/api/src/api/core/clover.py` 의 `MEMORY_SUMMARY_REGENERATE_COST`, 웹은
@@ -3105,11 +3128,13 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
 - **스테이징 환경 없음**: main push → 바로 prod. 대신 BE는 명령 한 줄 롤백(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전SHA>` 또는
   Actions 수동 실행의 `image_tag`, "BE → GCE VM" 절 — 평상시 배포와 같은 무중단 교체다), FE는 Pages 이전 배포로 롤백 가능 →
   문제 시 1순위는 롤백, fix는 그 다음.
-- **무중단 교체가 지키지 못하는 것 — 컨테이너 안 백그라운드 작업.** 드레인은 Caddy 를 거치는 HTTP 요청(SSE 채팅 턴 포함)만
-  기다린다. 응답을 보낸 뒤 컨테이너 안에서 도는 작업 — 이미지 생성 잡(운영 최대 약 42초), 소설 장 생성·문단 수정(상한 360초),
-  턴 뒤 기억 요약 — 은 옛 색이 멈출 때 함께 끊긴다(단일 컨테이너 시절의 완전교체도 같았다). 이미지 생성은 Redis 의 락·대기열
+- **무중단 교체가 지키지 못하는 것 — 컨테이너 안 백그라운드 작업.** 정지는 요청(SSE 채팅 턴 포함)과 그 요청에 붙은
+  `BackgroundTasks` 까지 기다린다 — 응답 뒤 `BackgroundTasks` 로 도는 턴 뒤 기억 요약·추출은 교체 때 기다려진다(상한
+  `stop_grace_period` 65초, 넘으면 끊긴다. 끊기면 기억 요약은 다음 턴에 다시 한다). 요청과 상관없이 `asyncio.create_task` 로
+  띄운 작업 — 이미지 생성 잡(운영 최대 약 42초), 소설 장 생성·문단 수정(상한 360초) — 은 기다리지 않고 옛 색이 멈출 때 함께
+  끊긴다(단일 컨테이너 시절의 완전교체도 같았다). 이미지 생성은 Redis 의 락·대기열
   칸이 TTL 로 풀리고("이미지 생성" 절), 잡 기록은 1시간 TTL 까지 진행 중으로 남는다 — 끊긴 잡의 환불 경로는 확인하지 않았다.
-  기억 요약은 다음 턴에 다시 한다. 소설 작업은 진행 중으로 남고, 새 프로세스가 기동 뒤 heartbeat 만료 + 10초(기본 70초)에 죽은
+  소설 작업은 진행 중으로 남고, 새 프로세스가 기동 뒤 heartbeat 만료 + 10초(기본 70초)에 죽은
   작업을 한 번 일괄 환불하는데, 이 정리는 "옛 프로세스가 새 프로세스보다 먼저 죽었다"는 전제다. blue/green 에서는 옛 색이 새 색
   기동 **뒤**(healthy 약 15~35초 + 드레인 최대 65초)에 멈추므로 옛 색에서 끊긴 작업의 heartbeat 가 그 일괄 정리 시점에 아직 만료되지
   않아 놓칠 수 있다 — 놓친 작업은 그 소설을 열거나 폴링할 때의 지연 정리가 환불하고, 그때까지 차감액이 묶인다. 소설화는 허용

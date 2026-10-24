@@ -144,6 +144,10 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("memory_fact", "user_name"): frozenset({"user_name"}),
     ("memory_fact", "existing_facts"): frozenset({"existing_facts"}),
     ("memory_fact", "turn_context"): frozenset({"turn_lines"}),
+    # 인상 생성 호출 전용 channel — `build_memory_impression_prompt`가 만드는 `values`. 장면·사실 줄 말고는 아무것도 싣지 않는다.
+    ("memory_impression", "instruction"): frozenset(),
+    ("memory_impression", "episodes"): frozenset({"episode_lines"}),
+    ("memory_impression", "facts"): frozenset({"fact_lines"}),
     ("image_judgment", "image_list_intro"): frozenset({"image_lines"}),
     ("image_judgment", "turn_context"): frozenset({"turn_lines"}),
     ("image_judgment", "judgment_instruction"): frozenset(),
@@ -1123,4 +1127,28 @@ def build_memory_fact_prompt(
     }
     return render_prompt_channel(
         sections, channel="memory_fact", scope="story" if is_story_chat else "character", values=values
+    )
+
+
+# 인상 생성의 응답 스키마. 두 추출 스키마와 같은 이유로 docstring·필드 설명·길이 제약을 두지 않는다 — 상한은
+# `chat/memory_impressions.py` 가 서버에서 자른다.
+class MemoryImpressionResult(BaseModel):
+    impression: str
+
+
+def build_memory_impression_prompt(
+    *,
+    sections: Sequence[PromptSection],
+    is_story_chat: bool,
+    episode_lines: Sequence[str],
+    fact_lines: Sequence[str],
+) -> str:
+    """인상 생성 호출 프롬프트를 조립한다 — 요약 접기 몇 번 동안 뽑힌 장면·사실 기억을 읽고 인물 사이 감정·태도의 흐름을 적게 한다.
+
+    지시문 전체가 `memory_impression` channel(DB)에 있고, 코드는 부르는 쪽이 만든 장면 줄·사실 줄을 줄바꿈으로 이어 넘길 뿐이다.
+    이름 한 줄·요약 글·원문 대화는 받지 않는다 — 입력을 행으로만 못 박아야 비밀 행을 빼는 것이 행의 칸 하나로 정해진다. 줄이 없으면
+    빈 값이고, 그 섹션을 뺄지는 문안의 conditional 이 정한다."""
+    values = {"episode_lines": "\n".join(episode_lines), "fact_lines": "\n".join(fact_lines)}
+    return render_prompt_channel(
+        sections, channel="memory_impression", scope="story" if is_story_chat else "character", values=values
     )

@@ -23,16 +23,22 @@ export type RetryTarget =
 export const OUTLINE_SPEND_FOOTNOTE = "승인하지 않아도 쓴 클로버는 돌아오지 않아요. 만들지 못하면 모두 돌려드려요.";
 
 /** 다시 시도를 가를 때 작업 응답 밖에서 가져오는 것. `chapters` 는 상세의 목차(다시 만든 화가 구성안으로 쓴 화인지 본다), `episodeKey` 는
- * 이 화면이 시작한 장면 구성안·원고 작업의 화 키다 — 작업 응답에는 화 키가 없어, 새로고침·다른 탭에서 온 작업은 모른다. */
+ * 이 화면이 시작한 장면 구성안·원고 작업의 화 키다 — 작업 응답에 화 키가 없는 옛 작업일 때만 쓴다. */
 type RetryContext = {
   chapters?: readonly Pick<NovelChapterSummary, "id" | "batchId" | "episodeOutlineId">[];
   episodeKey?: string | null;
 };
 
+/** 장면 구성안·원고 작업의 화 키. 작업 응답(상세의 진행 중 작업도)이 실은 키가 먼저다 — 새로고침하거나 다른 탭에서 시작한 작업도
+ * 안다. 그 칸이 비면(화 키를 싣기 전에 만든 작업이거나, 서버가 그 칸을 싣기 전 응답) 이 화면이 시작하며 기억한 키, 그것도 없으면 모른다. */
+export function toJobEpisodeKey(job: { episodeKey?: string | null }, knownKey: string | null | undefined): string | null {
+  return job.episodeKey ?? knownKey ?? null;
+}
+
 export function toRetryTarget(job: NovelJobResponse, context: RetryContext = {}): RetryTarget | undefined {
   // 원래 대화가 바뀌어 실패한 작업은 다시 해도 같은 결과라 다시 시도를 내밀지 않는다(구성안은 담을 대화를 다시 승인해야 한다).
   if (job.failureReason === "source_changed") return undefined;
-  const episodeKey = context.episodeKey ?? undefined;
+  const episodeKey = toJobEpisodeKey(job, context.episodeKey) ?? undefined;
   switch (job.kind) {
     // 남은 대화 한 번에도 다시 시도는 경계 고르기를 다시 여는 것이다 — 그사이 만든 묶음이 있으면 남은 대화가 줄어 견적이 바뀌므로 같은
     // 요청을 그대로 다시 보내지 않는다.
