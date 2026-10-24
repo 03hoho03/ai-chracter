@@ -437,6 +437,8 @@ def test_each_judgment_and_summary_call_reads_the_model_setting_of_its_kind() ->
             assert policy.model_setting == "memory_episode_model"
         elif call_site == "chat_memory_fact":
             assert policy.model_setting == "memory_fact_model"
+        elif call_site == "chat_memory_impression":
+            assert policy.model_setting == "memory_impression_model"
         else:
             assert policy.model_setting is None, call_site
 

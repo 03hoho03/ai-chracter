@@ -25,22 +25,25 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from api.chat import memory_embeddings, memory_episodes, memory_facts, memory_fold, memory_forget
+from api.chat import memory_embeddings, memory_episodes, memory_facts, memory_fold, memory_forget, memory_impressions
 from api.chat.memory_embeddings import fill_pending_embeddings
 from api.chat.memory_episodes import extract_pending_episode
 from api.chat.memory_facts import extract_pending_facts
 from api.chat.memory_fold import fold_memory
+from api.chat.memory_impressions import generate_pending_impression
 from api.chat.memory_rewind import rewind_memory
 from api.chat.prompt_builder import (
     MemoryEpisodeItem,
     MemoryEpisodeResult,
     MemoryFactItem,
     MemoryFactResult,
+    MemoryImpressionResult,
     MemorySummaryResult,
     PromptNames,
     load_active_prompt_set,
 )
 from api.chat.room_deletion import delete_chat_rooms
+from api.core.config import settings
 from api.db.models import (
     Asset,
     CharacterVersionDetail,
@@ -49,6 +52,7 @@ from api.db.models import (
     ChatMemoryExtraction,
     ChatMemoryFact,
     ChatMemoryFactExtraction,
+    ChatMemoryImpression,
     ChatMessage,
     ChatMessageRole,
     ChatPreviousResponse,
@@ -75,6 +79,7 @@ from factories import (
     VoyageStub,
     _clear_llm_override,
     _get_genre,
+    _impression_sections,
     _login_as,
     _make_chat_turn,
     _make_memory_embedding,
@@ -1802,7 +1807,8 @@ async def test_restoring_the_previous_reply_answers_with_the_room_even_if_the_ro
 #
 # 잊게 하기는 방 행(`FOR NO KEY UPDATE`) → 그 방 스냅샷 전부(`FOR UPDATE`) → 행 DELETE 순으로 잡는다. 되감기·방 삭제와는 방 행에서
 # 줄을 서고, 방 행을 잡지 않는 추출·채우기와는 스냅샷에서 줄을 선다(그들의 `FOR KEY SHARE` 와 충돌하는 행 잠금은 `FOR UPDATE`
-# 뿐이다). 사실을 잊으면 방의 잊기 세대가 오르고, 그 전에 입력을 읽은 사실 추출은 넣기 직전에 세대가 바뀐 것을 보고 결과를 버린다.
+# 뿐이다). 장면이나 사실을 잊으면 방의 잊기 세대가 오르고, 그 전에 입력을 읽은 추출·인상 생성은 넣기 직전에 세대가 바뀐 것을 보고
+# 결과를 버린다.
 
 _FORGOTTEN_KEY = "relation|민수|지아"
 
@@ -2113,3 +2119,118 @@ async def test_a_scene_extraction_that_read_its_window_before_a_secret_fact_was_
 
     await _run_extraction(committed_engine, room, _EpisodeClient())
     assert await _scene_titles(committed_engine, room) == ["정류장"]
+
+
+# --- 인상 생성과 잊게 하기의 경합 -----------------------------------------------------------------
+#
+# 인상 생성의 마지막 트랜잭션은 묶음의 가장 새 스냅샷을 `FOR KEY SHARE` 로 먼저 잡은 뒤 방의 잊기 세대를 다시 읽고 행을 넣는다.
+# 잊게 하기(장면·사실)는 그 방 스냅샷 전부를 `FOR UPDATE` 로 잡은 뒤 그 방의 인상을 전부 지우고 세대를 올린다.
+
+
+class _ImpressionClient(LLMClient):
+    """인상만 부른다. `before_answer` 는 결과를 돌려주기 전에(생성이 입력을 다 읽고 세션을 닫은 뒤) 불린다."""
+
+    def __init__(self, before_answer: Callable[[], Awaitable[None]] | None = None) -> None:
+        self.before_answer = before_answer
+        self.calls = 0
+
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
+    ) -> AsyncIterator[str]:
+        raise AssertionError("인상 생성은 대화 생성을 부르지 않는다")
+        yield ""  # pragma: no cover
+
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
+    ) -> Any:
+        assert response_schema is MemoryImpressionResult, response_schema
+        self.calls += 1
+        if self.before_answer is not None:
+            await self.before_answer()
+        return MemoryImpressionResult(impression="정류장 장면 뒤로 서로를 믿기 시작했다.")
+
+
+async def _room_ready_for_an_impression(engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch) -> tuple[Room, uuid.UUID]:
+    """20턴 방, 묶음 크기 2. 턴 10·20 스냅샷 모두 장면 하나씩과 두 추출 기록(끝남)이 있다. (방, 턴 20 장면 id)."""
+    monkeypatch.setattr(settings, "memory_impression_every_n_folds", 2)
+    room = await _seed_committed_room(engine, turns=20)
+    await _commit_snapshot(engine, room, turn=10)
+    await _commit_snapshot(engine, room, turn=20)
+    first = await _snapshot_id_at(engine, room, turn=10)
+    second = await _snapshot_id_at(engine, room, turn=20)
+    later = _make_memory_episode(room.room_id, second, title="빵집", detail="빵집 앞에서 다시 만났다.")
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        session.add_all(
+            [
+                _make_memory_episode(room.room_id, first, title="정류장", detail="정류장에서 우산을 나눠 썼다."),
+                later,
+                _make_memory_extraction(room.room_id, first),
+                _make_memory_extraction(room.room_id, second),
+                _make_memory_fact_extraction(room.room_id, first, fact_count=0),
+                _make_memory_fact_extraction(room.room_id, second, fact_count=0),
+            ]
+        )
+        await session.commit()
+    return room, later.id
+
+
+async def _run_impression(engine: AsyncEngine, room: Room, llm: LLMClient) -> None:
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        prompt_set, sections = await load_active_prompt_set(session, lane="character")
+    await generate_pending_impression(
+        async_sessionmaker(engine, expire_on_commit=False),
+        llm,
+        room_id=room.room_id,
+        user_id=room.user_id,
+        prompt_set=prompt_set,
+        sections=[*sections, *_impression_sections(prompt_set)],
+        is_story_chat=False,
+        writing_model="opus",
+    )
+
+
+async def _committed_impressions(engine: AsyncEngine, room: Room) -> int:
+    return await _count_rows(engine, ChatMemoryImpression.chat_room_id == room.room_id, model=ChatMemoryImpression)
+
+
+async def test_a_scene_forgotten_while_an_impression_holds_its_snapshot_takes_the_impression_it_wrote(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """인상 생성이 마지막 트랜잭션에서 스냅샷을 잡고 세대 확인을 지나 행까지 넣은 채(커밋 전) 멈췄다. 그때 사용자가 근거 장면 하나를
+    잊는다. 잊기는 스냅샷 `FOR UPDATE` 에서 생성 커밋을 기다렸다가 방금 들어간 인상까지 지운다 — 어느 쪽도 교착으로 끊기지 않고 잊은
+    장면을 품은 인상이 남지 않는다."""
+    room, scene_id = await _room_ready_for_an_impression(committed_engine, monkeypatch)
+    gate = _Gate()
+    _pause_after(monkeypatch, memory_impressions, "_insert_impression", gate)
+    generation = asyncio.create_task(_run_impression(committed_engine, room, _ImpressionClient()))
+
+    paused, outcome = await _forget_while_paused(
+        committed_engine, gate, generation, lambda: _forget_committed(committed_engine, room, episode_id=scene_id)
+    )
+
+    assert (paused, outcome) == (True, "forgotten")
+    assert await _committed_impressions(committed_engine, room) == 0
+
+
+async def test_an_impression_that_read_its_input_before_a_scene_was_forgotten_discards_its_result(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """인상 생성이 입력(잊을 장면이 있다)을 읽고 모델을 기다리는 사이 사용자가 그 장면을 잊고 커밋한다. 그때는 지울 인상이 아직
+    없다. 장면 잊기도 잊기 세대를 올리므로 생성은 넣기 직전에 그것을 보고 결과를 버린다. 세대가 그대로거나 다시 확인하지 않으면 잊은
+    장면을 품은 인상이 남는다."""
+    room, scene_id = await _room_ready_for_an_impression(committed_engine, monkeypatch)
+    outcomes: list[str] = []
+
+    async def _user_forgets_the_scene() -> None:
+        outcomes.append(await _forget_committed(committed_engine, room, episode_id=scene_id))
+
+    llm = _ImpressionClient(before_answer=_user_forgets_the_scene)
+    await _run_impression(committed_engine, room, llm)
+
+    assert (llm.calls, outcomes) == (1, ["forgotten"])
+    assert await _committed_impressions(committed_engine, room) == 0

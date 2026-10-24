@@ -952,6 +952,8 @@ _EXPECTED_TIMEOUT_MS: dict[str, int] = {
     "chat_memory_episode": 60_000,
     # 관계·사실 기억 추출도 같은 백그라운드 구조화 호출이라 같은 값이다.
     "chat_memory_fact": 60_000,
+    # 인상 생성도 같은 백그라운드 구조화 호출이라 같은 값이다.
+    "chat_memory_impression": 60_000,
     "publish_filter_character": 60_000,
     "publish_filter_story": 60_000,
     "novel_publish_screen": 60_000,

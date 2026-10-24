@@ -343,6 +343,8 @@ class Settings(BaseSettings):
     memory_episode_model: PromptSetModelId = "gemini"
     # 요약 접기 뒤 관계·사실 기억 추출(`chat/memory_facts.py`)의 모델. 위 판정·요약 모델과 같은 규칙이다.
     memory_fact_model: PromptSetModelId = "gemini"
+    # 요약 접기 뒤 인상 생성(`chat/memory_impressions.py`)의 모델. 위 판정·요약 모델과 같은 규칙이다.
+    memory_impression_model: PromptSetModelId = "gemini"
 
     @field_validator("llm_call_site_backends", mode="before")
     @classmethod
@@ -392,6 +394,7 @@ class Settings(BaseSettings):
         "memory_summary_model",
         "memory_episode_model",
         "memory_fact_model",
+        "memory_impression_model",
         mode="before",
     )
     @classmethod
@@ -671,6 +674,17 @@ class Settings(BaseSettings):
     # 모든 방에서 돌고 이 칸은 기억 기능이 아니다. 처리방침 턴 기록 항목에 판정 규칙 식별자를 게시한 뒤 켠다. 끄면(줄 삭제 +
     # 재기동) 다음 턴부터 다시 `[]` 이고 이미 쌓인 칸은 남는다.
     stat_event_log: bool = False
+    # 요약 접기 몇 번마다 방 하나에 인상(그 접기들에서 뽑힌 장면·사실 기억을 읽고 인물 사이 감정·태도의 흐름을 적은 짧은 글) 한
+    # 행을 `chat_memory_impressions` 에 쌓는 백그라운드 작업을 켠다(`chat/memory_impressions.py`). 저장만 한다 — 생성 프롬프트에
+    # 싣지 않고 화면에도 보이지 않는다. 기본은 꺼짐 — 꺼져 있으면 예약하지 않아 호출도 인상 표 SELECT·INSERT 도 없고 턴의
+    # 호출·트랜잭션이 이 스위치가 생기기 전과 같다. 켜져 있어도 기억 사용 범위(`memory_model_scope`) 밖 방에서는 돌지 않고, 덮는
+    # 스냅샷들의 장면·사실 추출이 모두 끝나야 돈다 — 그래서 두 추출 스위치가 꺼져 있으면 아무것도 쌓이지 않는다. 생성 윈도우
+    # 스위치가 꺼져 있으면 접기가 없어 이 값과 무관하게 돌지 않는다. 처리방침에 인상 항목을 게시한 뒤 켠다. 끄면(줄 삭제 +
+    # 재기동) 이미 쌓인 행은 남고 새로 쌓지 않는다.
+    memory_impressions_write: bool = False
+    # 인상 하나가 덮는 요약 스냅샷 수(접기 횟수). 방의 스냅샷 수가 이 값의 배수가 된 접기 뒤에 가장 새 스냅샷까지의 이만큼을 묶어
+    # 인상 하나를 만든다. 접기는 대략 10턴마다라 기본값 3 이면 약 30턴마다 한 번이다 — 개발 측정에서 다시 정한다.
+    memory_impression_every_n_folds: int = Field(default=3, ge=1)
 
     # 소설화 전역 스위치. 꺼져 있으면 허용 행이 있어도 아무도 못 쓴다 — 코드 기본값이 닫힘이어야 env 설정 없이
     # 배포해도 닫힌 채로 뜬다. 끄면 다음 요청부터 막히고(재기동 필요), 허용 행은 남아 다시 켜면 그대로 돌아온다.

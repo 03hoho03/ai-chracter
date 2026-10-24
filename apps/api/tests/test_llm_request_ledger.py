@@ -1,6 +1,6 @@
 """채팅 턴 하나가 LLM 에 보내는 요청 전부를 장부로 고정한다 — 보내기·수정·재생성 × 스토리·캐릭터, 미리보기 스토리·캐릭터,
-상위 모델(opus)을 고른 스토리 방의 보내기, 단축어로 보낸 스토리 턴의 재생성, 장면 기억 추출을 켠 스토리 방의 보내기, 그리고
-관계·사실 기억 추출을 켠 스토리 방의 보내기.
+상위 모델(opus)을 고른 스토리 방의 보내기, 단축어로 보낸 스토리 턴의 재생성, 장면 기억 추출을 켠 스토리 방의 보내기,
+관계·사실 기억 추출을 켠 스토리 방의 보내기, 그리고 두 추출과 인상 쓰기를 켠 Opus 스토리 방의 보내기.
 
 장부 한 줄은 요청만 본다(응답 텍스트·토큰 수는 보지 않는다): 부른 메서드, 실제로 간 공급자, 호출 위치, 실린 모델,
 사용자·방 귀속 유무, 프롬프트와 지시문의 sha256, 정지 시퀀스, 응답 스키마 이름, 캐시 블록 조각 수와 조각별 sha256.
@@ -40,9 +40,11 @@ from api.chat.prompt_builder import (
     MemoryEpisodeResult,
     MemoryFactItem,
     MemoryFactResult,
+    MemoryImpressionResult,
     MemorySummaryResult,
     SceneJudgmentResult,
     StatRuleJudgmentResult,
+    load_active_prompt_set,
 )
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
 from api.core.config import settings
@@ -58,6 +60,7 @@ from factories import (
     _assert_recorded_cases,
     _clear_llm_override,
     _enable_chat_premium,
+    _impression_sections,
     _login_as,
     _make_asset,
     _make_chat_turn,
@@ -173,6 +176,8 @@ class _LedgerLLM(LLMClient):
                     )
                 ]
             )
+        if response_schema is MemoryImpressionResult:
+            return MemoryImpressionResult(impression="마을을 떠나며 서로를 믿게 됐다.")
         raise AssertionError(f"예상하지 못한 응답 스키마: {response_schema}")
 
     async def generate(
@@ -369,6 +374,31 @@ async def _send_story_with_facts(
     return _Case("POST", f"/chat-rooms/{room_id}/messages", {"content": "마을을 떠나자"}, cell_id)
 
 
+async def _send_story_with_impressions(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> _Case:
+    """두 추출과 인상 쓰기(묶음 크기 1)를 켠 Opus 스토리 방의 보내기 — 접기가 만든 스냅샷을 두 추출이 끝내면 인상 호출이 장부
+    끝에 남는다. 인상은 기억 사용 범위(기본 Opus 방) 안에서만 돌아 상위 모델 방이어야 한다. 인상 문안은 아직 DB 세트에 없어 활성
+    Gemini 스토리 세트(인상 모델 기본값의 세트)에 합성 섹션을 심는다."""
+    monkeypatch.setattr(settings, "memory_episodes_extract", True)
+    monkeypatch.setattr(settings, "memory_facts_extract", True)
+    monkeypatch.setattr(settings, "memory_impressions_write", True)
+    monkeypatch.setattr(settings, "memory_impression_every_n_folds", 1)
+    user = await _make_user_with_clover_lot(db_session, clover_balance=1000)
+    await db_session.commit()
+    _enable_chat_premium(monkeypatch)
+    room = await _open_room(db_client, db_session, turns=_ROOM_TURNS, lane="story", user=user)
+    cell_id = await _add_room_cell_and_endings(db_session, room.room_id, _ENDING_GATES)
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model="opus"))
+    prompt_set, _sections = await load_active_prompt_set(db_session, lane="story")
+    db_session.add_all(_impression_sections(prompt_set))
+    await db_session.commit()
+    keys = await redis_client.keys(f"{ACTIVE_PROMPT_SET_KEY_PREFIX}*")
+    if keys:
+        await redis_client.delete(*keys)
+    return _Case("POST", f"/chat-rooms/{room.room_id}/messages", {"content": "마을을 떠나자"}, str(cell_id))
+
+
 async def _send_story_with_scene_header(
     db_client: httpx.AsyncClient, db_session: AsyncSession, _: pytest.MonkeyPatch
 ) -> _Case:
@@ -405,6 +435,7 @@ _CASES: dict[str, _Builder] = {
     "send-story-opus": _send_story_opus,
     "send-story-episodes": _send_story_with_episodes,
     "send-story-facts": _send_story_with_facts,
+    "send-story-impressions": _send_story_with_impressions,
     "send-story-scene": _send_story_with_scene_header,
     "preview-story-scene": _preview_story_with_scene_header,
 }
@@ -438,6 +469,7 @@ _REQUIRED_CALL_SITES: dict[str, set[str]] = {
     "send-story-opus": _STORY_TURN_SITES,
     "send-story-episodes": _STORY_TURN_SITES | {"chat_memory_episode"},
     "send-story-facts": _STORY_TURN_SITES | {"chat_memory_fact"},
+    "send-story-impressions": _STORY_TURN_SITES | {"chat_memory_episode", "chat_memory_fact", "chat_memory_impression"},
     "send-story-scene": _STORY_TURN_SITES | {"chat_scene_judgment"},
     "preview-story-scene": {
         "preview_generate",

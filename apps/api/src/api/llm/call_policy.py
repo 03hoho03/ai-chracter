@@ -31,6 +31,9 @@ LLMCallSite = Literal[
     # 요약 접기가 접은 구간을 관계·사실 기억으로 뽑는 백그라운드 추출(`chat/memory_facts.py`). 장면 추출과 같은 이유로 클로버를
     # 깎지 않고 레이트리밋에도 세지 않는다.
     "chat_memory_fact",
+    # 요약 접기 몇 번마다 방의 장면·사실 기억에서 인상을 적는 백그라운드 호출(`chat/memory_impressions.py`). 두 추출과 같은
+    # 이유로 클로버를 깎지 않고 레이트리밋에도 세지 않는다.
+    "chat_memory_impression",
     # 스토리 장면 헤더 판정 — 매 턴 응답 직후 지금 장면의 장소·시간을 짧은 글로 적는다(새 턴·수정·재생성 공용). 화면 표시
     # 전용 부수 호출이라 클로버를 깎지 않고 레이트리밋에도 세지 않는다.
     "chat_scene_judgment",
@@ -76,6 +79,7 @@ ModelSetting = Literal[
     "memory_summary_model",
     "memory_episode_model",
     "memory_fact_model",
+    "memory_impression_model",
 ]
 
 # 공급자 구현의 id. 구현마다의 능력·서비스하는 모델·자격은 `llm/backends.py` 의 등록부 한 행이 정한다.
@@ -199,6 +203,12 @@ CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
     # 장면 추출과 같은 백그라운드 구조화 호출이라 같은 타임아웃을 쓰고, 같은 이유로 판정 종류가 아니다.
     "chat_memory_fact": CallPolicy(
         gemini_timeout="gemini_memory_summary_timeout_ms", call_kind="structured", model_setting="memory_fact_model"
+    ),
+    # 두 추출과 같은 백그라운드 구조화 호출이라 같은 타임아웃을 쓰고, 같은 이유로 판정 종류가 아니다.
+    "chat_memory_impression": CallPolicy(
+        gemini_timeout="gemini_memory_summary_timeout_ms",
+        call_kind="structured",
+        model_setting="memory_impression_model",
     ),
     # 장면 헤더 판정은 스탯 판정과 같은 판정 모델·타임아웃·판정 종류를 쓰고, 구현 배정도 스탯 판정 호출 위치의 것을 물려받는다.
     # 판정 종류가 스탯이라 Gemini 일 때 스탯 판정의 실제 모델로 가고 어드민 판정 비율에도 든다.
