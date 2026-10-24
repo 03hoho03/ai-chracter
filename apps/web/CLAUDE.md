@@ -167,3 +167,4 @@
   - **문장에 인라인 자식(`<Link>` 등)이 있으면 `getClientRects().length`가 요소 경계마다 rect를 쪼개 과다 계수한다**(1줄짜리가 5개) — 줄 수는 서로 다른 `top` 값의 개수로 센다.
 - **vitest**: UI 컴포넌트가 아니라 **핵심 순수 로직만**, 테스트 파일은 대상 옆 `*.test.ts`(`environment: "node"`, 별도 `vitest.config.ts`). CI는 typecheck → test → build.
 - **소비 화면 없는 공용 UI**는 `/ui-demo`에 임시 데모 섹션을 추가해 확인한 뒤 그 페이지 변경분만 원복한다(커밋엔 컴포넌트 + `index.ts` export만 남긴다).
+<!-- probe -->
