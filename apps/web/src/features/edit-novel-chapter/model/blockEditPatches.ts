@@ -20,11 +20,15 @@ export type PatchUnitView = {
   /** 다시 검사로 남은 원소를 따로 적용해도 되는지 물을 수 있는가 — 묶음에 사용자가 고친 원소(지금 판에 그 문단이 있는)와 아직 쓸 수
    * 있는 원소가 함께 있을 때만이다. 서버도 그 밖에는 모델을 부르지 않고 409 로 거절한다. 독립 수정안은 늘 거짓이다. */
   canRecheck: boolean;
+  /** 든 요청의 번호("요청 1"). 한 화에 요청이 하나면 없다. */
+  jobLabel: string | undefined;
 };
 
 /** 블록 자리에 놓이는 수정안 하나. */
 export type PatchCardView = {
   jobId: string;
+  /** 든 요청의 번호("요청 1"). 한 화에 요청이 하나면 없다. */
+  jobLabel: string | undefined;
   patch: NovelBlockEditPatch;
   index: number;
   isApplicable: boolean;
@@ -37,6 +41,8 @@ export type PatchCardView = {
 /** 작업 하나의 꼬리 줄 — 요청 문장과 "남은 수정안 모두 버리기". 자리를 잃은 단위(블록이 지금 판에 없음)도 여기 모은다. */
 export type PatchJobView = {
   jobId: string;
+  /** 요청 번호("요청 1"). 한 화에 요청이 하나면 없다. */
+  jobLabel: string | undefined;
   instruction: string;
   unplacedUnits: PatchUnitView[];
 };
@@ -62,6 +68,14 @@ function push<T>(map: Map<number, T[]>, index: number, item: T) {
   else items.push(item);
 }
 
+/** 한 화의 요청이 둘 이상이면 맡긴 차례(같은 시각이면 id 차례)로 "요청 n" 을 매긴다 — 두 요청의 수정안이 한 장면 안에서 엇갈리면
+ * 꼬리 줄의 요청 문장만으로는 어느 카드가 어느 요청의 것인지 알 수 없다. 하나면 번호가 없다(지금과 같은 화면). */
+function toJobLabels(edits: readonly NovelPendingBlockEdit[]): Map<string, string> {
+  if (edits.length < 2) return new Map();
+  const ordered = [...edits].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  return new Map(ordered.map((edit, rank) => [edit.id, `요청 ${rank + 1}`]));
+}
+
 /** 상세의 여러 문단 수정 작업 → 본문 위 자리. 대기 수정안과, 버리기를 기다리는 쓸 수 없는 수정안만 그린다(적용·버린 것은 없다).
  *
  * - 독립 수정안: 대기든 서버가 낡음으로 바꿨든 그 블록 자리에 카드로 서고 자기 적용·버리기를 단다(쓸 수 없으면 버리기만).
@@ -75,7 +89,9 @@ export function toPatchLayout(edits: readonly NovelPendingBlockEdit[], blockIds:
     cardBlockIndexes: new Set(),
   };
   const lastIndex = blockIds.length - 1;
+  const jobLabels = toJobLabels(edits);
   for (const edit of edits) {
+    const jobLabel = jobLabels.get(edit.id);
     const byId = new Map(edit.patches.map((patch) => [patch.id, patch]));
     const bundled = new Map<string, string>();
     for (const bundle of edit.bundles) for (const id of bundle.patchIds) bundled.set(id, bundle.id);
@@ -89,6 +105,7 @@ export function toPatchLayout(edits: readonly NovelPendingBlockEdit[], blockIds:
         if (index < 0) continue;
         push(layout.cardsAt, index, {
           jobId: edit.id,
+          jobLabel,
           patch,
           index,
           isApplicable: isFresh(patch),
@@ -122,6 +139,7 @@ export function toPatchLayout(edits: readonly NovelPendingBlockEdit[], blockIds:
           reason: bundle.reason,
           isApplicable: members.every(isFresh),
           canRecheck: members.some((patch) => !isFresh(patch) && indexOf(patch) >= 0) && members.some(isFresh),
+          jobLabel,
         },
         members,
       );
@@ -140,12 +158,14 @@ export function toPatchLayout(edits: readonly NovelPendingBlockEdit[], blockIds:
           reason: null,
           isApplicable: isFresh(patch),
           canRecheck: false,
+          jobLabel,
         },
         [patch],
       );
     }
     push(layout.jobsAfter, jobLast < 0 ? lastIndex : jobLast, {
       jobId: edit.id,
+      jobLabel,
       instruction: edit.instruction,
       unplacedUnits,
     });

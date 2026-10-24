@@ -158,3 +158,36 @@ describe("toPatchLayout — 묶음 다시 검사", () => {
     expect(layout.cardsAt.get(1)?.[0]?.unit?.canRecheck).toBe(false);
   });
 });
+
+// 한 화에 요청이 둘 이상이면 카드·묶음·요청 줄이 어느 요청의 것인지 번호로 짝짓는다(먼저 맡긴 것이 1). 서버는 최신부터 준다.
+describe("toPatchLayout — 요청 번호", () => {
+  const older = {
+    ...job("j-old", [patch("p1", "b1"), patch("p3", "b3")], [{ id: "u1", patchIds: ["p1", "p3"], reason: null }]),
+    createdAt: "2026-10-24T00:00:00Z",
+  };
+  const newer = { ...job("j-new", [patch("q2", "b2"), patch("q4", "b4")]), createdAt: "2026-10-24T00:05:00Z" };
+
+  it("요청이 하나면 번호가 없다", () => {
+    const layout = toPatchLayout([older], BLOCKS);
+    expect(layout.cardsAt.get(1)?.[0]?.jobLabel).toBeUndefined();
+    expect(layout.bundlesAfter.get(3)?.[0]?.jobLabel).toBeUndefined();
+    expect(layout.jobsAfter.get(3)?.[0]?.jobLabel).toBeUndefined();
+  });
+
+  it("둘 이상이면 맡긴 차례로 번호를 매겨 카드·묶음·꼬리 줄에 같은 번호를 단다", () => {
+    const layout = toPatchLayout([newer, older], BLOCKS);
+    expect(layout.cardsAt.get(1)?.[0]?.jobLabel).toBe("요청 1");
+    expect(layout.cardsAt.get(2)?.[0]?.jobLabel).toBe("요청 2");
+    expect(layout.cardsAt.get(2)?.[0]?.unit?.jobLabel).toBe("요청 2");
+    expect(layout.bundlesAfter.get(3)?.[0]?.jobLabel).toBe("요청 1");
+    expect(layout.jobsAfter.get(3)?.[0]?.jobLabel).toBe("요청 1");
+    expect(layout.jobsAfter.get(4)?.[0]?.jobLabel).toBe("요청 2");
+  });
+
+  it("같은 시각이면 id 차례로 정해 받은 차례가 바뀌어도 번호가 같다", () => {
+    const a = { ...job("j-a", [patch("p1", "b1")]), createdAt: "2026-10-24T00:00:00Z" };
+    const b = { ...job("j-b", [patch("q2", "b2")]), createdAt: "2026-10-24T00:00:00Z" };
+    expect(toPatchLayout([b, a], BLOCKS).cardsAt.get(1)?.[0]?.jobLabel).toBe("요청 1");
+    expect(toPatchLayout([a, b], BLOCKS).cardsAt.get(1)?.[0]?.jobLabel).toBe("요청 1");
+  });
+});

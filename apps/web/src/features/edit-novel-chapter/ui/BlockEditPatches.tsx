@@ -34,7 +34,8 @@ export function BlockPatchCard({ card, currentText, isActing, onApply, onDismiss
     <section aria-labelledby={headingId} className="flex flex-col gap-2 rounded-xl border border-border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 id={headingId} className="text-xs font-medium break-keep text-muted-foreground">
-          {formatParagraphIndexes([index])} · {status}
+          {formatParagraphIndexes([index])} · {card.jobLabel === undefined ? "" : `${card.jobLabel} · `}
+          {status}
         </h3>
         {isApplicable && (
           <ToggleGroup
@@ -111,6 +112,7 @@ export function PatchBundleRow({ unit, isActing, onApply, onDismiss, recheck }: 
   return (
     <div className="flex flex-col gap-1.5 py-1">
       <p className="text-sm break-keep text-muted-foreground">
+        {unit.jobLabel === undefined ? "" : `${unit.jobLabel} · `}
         {formatParagraphIndexes(unit.indexes)} 수정안은 함께 적용해야 해요{unit.reason ? ` · ${unit.reason}` : ""}
       </p>
       {!unit.isApplicable && (
@@ -149,7 +151,9 @@ type PatchJobRowProps = {
 export function PatchJobRow({ job, remainingCount, isActing, onDismissAll }: PatchJobRowProps) {
   return (
     <div className="flex flex-col gap-1.5 py-1">
-      <p className="text-sm break-keep text-muted-foreground">요청: {job.instruction}</p>
+      <p className="text-sm break-keep text-muted-foreground">
+        {job.jobLabel ?? "요청"}: {job.instruction}
+      </p>
       {job.unplacedUnits.length > 0 && (
         <p className="text-sm break-keep text-muted-foreground">
           문단이 지워져 자리를 잃은 수정안이 {job.unplacedUnits.reduce((count, unit) => count + unit.patchIds.length, 0)}개 있어요.
@@ -168,7 +172,7 @@ export function PatchJobRow({ job, remainingCount, isActing, onDismissAll }: Pat
             onDismissAll();
           }}
         >
-          남은 수정안 모두 버리기 ({remainingCount}개)
+          {job.jobLabel === undefined ? "" : `${job.jobLabel} `}남은 수정안 모두 버리기 ({remainingCount}개)
         </Button>
       </div>
     </div>

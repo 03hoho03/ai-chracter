@@ -131,12 +131,11 @@ function render({
 }
 
 describe("NovelChapterText 스위치 꺼짐 — 장면·남은 수정안이 있는 화", () => {
-  // 스냅숏은 장면 머리줄·다시 검사를 더하기 전 코드로 찍었다 — 스위치가 꺼진 화면은 그때와 글자 하나까지 같다.
+  // 스냅숏은 장면 머리줄·다시 검사·요청 번호를 더하기 전 코드로 찍었다 — 요청이 하나 이하인 화는 스위치가 꺼지면 그때와 글자 하나까지
+  // 같다. 요청이 둘 이상인 화는 꺼져도 번호가 붙는다(아래 "요청 번호").
   it.each([
     [true, "작업 하나", [bundleJob]],
     [false, "작업 하나", [bundleJob]],
-    [true, "작업 둘", [bundleJob, sceneTwoJob]],
-    [false, "작업 둘", [bundleJob, sceneTwoJob]],
   ])("고치기 모드(%s)·%s 화면이 장면 머리줄·다시 검사 전과 같다", (isFixMode, _label, jobs) => {
     const markup = render({
       novel: novelWith(jobs),
@@ -193,5 +192,30 @@ describe("NovelChapterText 묶음 다시 검사", () => {
     };
     const markup = render({ novel: novelWith([fresh]), chapter: chapterWith(TWO_SCENES), isFixMode: false, isMultiBlockEditOn: true });
     expect(markup).not.toContain("다시 검사");
+  });
+});
+
+// 받은 수정안은 스위치와 상관없이 보이고 적용·버릴 수 있으므로, 한 화에 요청이 둘 이상이면 꺼져도 어느 요청의 것인지 번호로 짝짓는다.
+describe("NovelChapterText 요청 번호", () => {
+  it.each([true, false])("요청이 둘이면 스위치(%s)와 상관없이 카드·묶음·요청 줄·모두 버리기에 같은 번호가 붙는다", (isMultiBlockEditOn) => {
+    const markup = render({
+      novel: novelWith([sceneTwoJob, bundleJob]),
+      chapter: chapterWith(TWO_SCENES),
+      isFixMode: false,
+      isMultiBlockEditOn,
+    });
+    expect(markup).toContain("1번째 문단 · 요청 1 · 함께 적용해야 해요");
+    expect(markup).toContain("4번째 문단 · 요청 2 · AI 수정안");
+    expect(markup).toContain("요청 1 · 1·3번째 문단 수정안은 함께 적용해야 해요");
+    expect(markup).toContain("요청 1: 문 앞 장면의 긴장을 높여 주세요");
+    expect(markup).toContain("요청 2: 회랑 묘사를 더해 주세요");
+    expect(markup).toContain("요청 1 남은 수정안 모두 버리기 (2개)");
+    expect(markup).toContain("요청 2 남은 수정안 모두 버리기 (2개)");
+  });
+
+  it("요청이 하나면 번호가 없다", () => {
+    const markup = render({ novel: novelWith([bundleJob]), chapter: chapterWith(TWO_SCENES), isFixMode: false, isMultiBlockEditOn: true });
+    expect(markup).not.toContain("요청 1");
+    expect(markup).toContain("요청: 문 앞 장면의 긴장을 높여 주세요");
   });
 });
