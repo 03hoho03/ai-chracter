@@ -47,3 +47,25 @@ describe("toChapterNotice", () => {
     });
   });
 });
+
+describe("toChapterNotice — 여러 문단 수정안", () => {
+  it("하나를 적용·버리면 옛 수정안과 같은 문장이다", () => {
+    expect(toChapterNotice({ type: "patchesApplied", chapterOrdinal: 2, count: 1 })).toEqual(
+      toChapterNotice({ type: "applied", chapterOrdinal: 2 }),
+    );
+    expect(toChapterNotice({ type: "patchesDismissed", chapterOrdinal: 2, count: 1 })).toEqual(
+      toChapterNotice({ type: "dismissed", chapterOrdinal: 2 }),
+    );
+  });
+
+  it("여럿이면 몇 개를 함께 적용·버렸는지 말한다", () => {
+    expect(toChapterNotice({ type: "patchesApplied", chapterOrdinal: 2, count: 3 })).toEqual({
+      tone: "info",
+      message: "2화에 수정안 3개를 함께 적용했어요. 이전 글은 판 이력에 남아요.",
+    });
+    expect(toChapterNotice({ type: "patchesDismissed", chapterOrdinal: 2, count: 3 })).toEqual({
+      tone: "info",
+      message: "2화 수정안 3개를 버렸어요.",
+    });
+  });
+});

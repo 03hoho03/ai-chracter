@@ -7,6 +7,7 @@ import {
   NOVEL_ROOM_GONE_MESSAGE,
   toNovelActionError,
   toNovelJobFailureMessage,
+  toStalePatchIds,
 } from "./novelActionError";
 
 function apiError(status: number, detail: string | Record<string, unknown> | undefined) {
@@ -263,6 +264,80 @@ describe("toNovelActionError", () => {
       const regenerate = toNovelActionError(apiError(500, undefined), "regenerate")?.message;
       expect(proposal).not.toBe(regenerate);
     });
+  });
+});
+
+describe("toNovelActionError — 여러 문단 수정", () => {
+  /** 여러 문단 수정 요청·적용·버리기가 받는 새 코드(재검사 코드는 재검사 화면 몫). */
+  const BLOCK_EDIT_CODES: [number, string, Record<string, unknown>][] = [
+    [404, "NOVEL_MULTI_BLOCK_EDIT_DISABLED", {}],
+    [422, "NOVEL_TOO_MANY_BLOCKS", { maxBlocks: 20 }],
+    [422, "NOVEL_BLOCKS_NOT_IN_ONE_SCENE", {}],
+    [422, "NOVEL_EDIT_INPUT_TOO_LONG", { estimatedInputChars: 130000, maxInputChars: 120000 }],
+    [409, "NOVEL_PATCH_STALE", { stalePatchIds: ["p1"] }],
+    [404, "NOVEL_PATCH_NOT_FOUND", {}],
+    [409, "NOVEL_CHAPTER_TOO_LONG", { maxChars: 100000 }],
+  ];
+
+  it.each(BLOCK_EDIT_CODES)("%i %s 는 일반 실패 문구가 아니라 자기 문구를 갖는다", (status, code, extra) => {
+    const fallbackMessage = toNovelActionError(apiError(500, undefined), "applyPatch")?.message;
+    const notice = toNovelActionError(apiError(status, { code, ...extra }), "applyPatch");
+    expect(notice?.message).toBeTruthy();
+    expect(notice?.message).not.toBe(fallbackMessage);
+  });
+
+  it("코드마다 문구가 서로 다르다", () => {
+    const messages = BLOCK_EDIT_CODES.map(
+      ([status, code, extra]) => toNovelActionError(apiError(status, { code, ...extra }), "aiEdit")?.message,
+    );
+    expect(new Set(messages).size).toBe(messages.length);
+  });
+
+  it("상한 값은 서버가 준 수를 말한다", () => {
+    expect(toNovelActionError(apiError(422, { code: "NOVEL_TOO_MANY_BLOCKS", maxBlocks: 12 }), "aiEdit")?.message).toBe(
+      "한 번에 12개 문단까지 고칠 수 있어요.",
+    );
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_CHAPTER_TOO_LONG", maxChars: 100000 }), "applyPatch")?.message).toBe(
+      "적용하면 화가 100,000자를 넘어요. 다른 문단을 줄인 뒤 적용해 주세요.",
+    );
+  });
+
+  it("상한 값이 없으면 수를 빼고 말한다", () => {
+    expect(toNovelActionError(apiError(422, { code: "NOVEL_TOO_MANY_BLOCKS" }), "aiEdit")?.message).toBe(
+      "한 번에 고칠 수 있는 문단 수를 넘었어요. 문단을 줄여 다시 골라 주세요.",
+    );
+  });
+
+  it("스위치 꺼짐·장면·수정안 낡음·없음은 상세를 다시 받는다", () => {
+    for (const [status, code, extra] of BLOCK_EDIT_CODES) {
+      const notice = toNovelActionError(apiError(status, { code, ...extra }), "aiEdit");
+      const expected = code !== "NOVEL_EDIT_INPUT_TOO_LONG" && code !== "NOVEL_CHAPTER_TOO_LONG";
+      expect([code, notice?.shouldRefetchNovel]).toEqual([code, expected]);
+    }
+  });
+
+  // 옛 문구는 직접 수정 저장의 말이다("쓴 글을 복사해 두고…") — AI 수정 요청에서 받으면 엉뚱한 말이 된다.
+  it("AI 수정 요청의 블록 id 422 는 문단을 다시 고르라고 말한다", () => {
+    expect(toNovelActionError(apiError(422, { code: "NOVEL_BLOCK_IDS_INVALID" }), "aiEdit")).toEqual({
+      message: "고른 문단이 바뀌었어요. 최신 내용을 불러왔어요. 다시 골라 주세요.",
+      shouldRefetchNovel: true,
+    });
+    expect(toNovelActionError(apiError(422, { code: "NOVEL_BLOCK_IDS_INVALID" }), "edit")?.message).toContain("쓴 글을 복사해");
+  });
+
+  it("수정안 적용·버리기의 일반 실패는 무엇을 못 했는지 말한다", () => {
+    expect(toNovelActionError(apiError(500, undefined), "applyPatch")?.message).toBe(
+      "수정안을 적용하지 못했어요. 잠시 후 다시 시도해주세요.",
+    );
+    expect(toNovelActionError(apiError(500, undefined), "dismissPatch")?.message).toBe(
+      "수정안을 버리지 못했어요. 잠시 후 다시 시도해주세요.",
+    );
+  });
+
+  it("낡은 수정안 id 를 읽는다", () => {
+    expect(toStalePatchIds(apiError(409, { code: "NOVEL_PATCH_STALE", stalePatchIds: ["p1", "p2"] }))).toEqual(["p1", "p2"]);
+    expect(toStalePatchIds(apiError(409, { code: "NOVEL_JOB_NOT_APPLICABLE" }))).toEqual([]);
+    expect(toStalePatchIds(new Error("x"))).toEqual([]);
   });
 });
 

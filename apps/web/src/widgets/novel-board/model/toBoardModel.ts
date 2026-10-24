@@ -2,6 +2,7 @@ import {
   isChapterRegenerating,
   readChapterReadingPosition,
   toBatchRangeLabel,
+  toPendingBlockEdits,
   type NovelChapterSummary,
   type NovelCharacterResponse,
   type NovelDetailResponse,
@@ -38,11 +39,14 @@ export function toPublicMark(
  * 못했으면(`undefined`) 인물 레인 없이 화 열만 그린다.
  */
 export function toBoardModel(
-  novel: Pick<NovelDetailResponse, "batches" | "chapters" | "settingNotes" | "pendingAiEdits" | "activeJob">,
+  novel: Pick<NovelDetailResponse, "batches" | "chapters" | "settingNotes" | "pendingAiEdits" | "pendingBlockEdits" | "activeJob">,
   characters: readonly NovelCharacterResponse[] | undefined,
   publication?: Pick<NovelPublicationStatus, "visibility" | "publishedChapterCount" | "changedChapterOrdinals">,
 ): BoardModel {
-  const pendingChapterIds = new Set(novel.pendingAiEdits.map((edit) => edit.chapterId));
+  // 옛 연속 범위 수정안과 여러 문단 수정안을 함께 센다 — 카드의 "AI 수정안이 있어요"는 어느 쪽이든 참이다.
+  const pendingChapterIds = new Set(
+    [...novel.pendingAiEdits, ...toPendingBlockEdits(novel)].map((edit) => edit.chapterId),
+  );
   return {
     batches: novel.batches.map((batch) => ({
       id: batch.id,

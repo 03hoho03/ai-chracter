@@ -61,3 +61,18 @@ export function shouldWarnPendingAiEditsLost({
   if (target === undefined || current === undefined) return true;
   return !isSameText(target, current);
 }
+
+/** 되돌리기 버튼 위의 수정안 경고 문장. 옛 연속 범위 수정안은 글이 바뀌면 그 화에서 모두 사라진다. 여러 문단 수정안은 블록마다
+ * 판정돼 글이 바뀌는 문단의 것만 쓸 수 없게 되므로, 그것만 있으면 그렇게 말한다. */
+export function toPendingLossSentence({
+  hasPendingAiEdits,
+  hasPendingBlockEdits,
+}: {
+  hasPendingAiEdits: boolean;
+  hasPendingBlockEdits: boolean;
+}): string {
+  if (!hasPendingAiEdits && hasPendingBlockEdits) {
+    return "되돌리면 글이 바뀌는 문단의 AI 수정안은 적용할 수 없게 되고, 쓴 클로버는 돌아오지 않아요.";
+  }
+  return "되돌리면 이 화에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.";
+}

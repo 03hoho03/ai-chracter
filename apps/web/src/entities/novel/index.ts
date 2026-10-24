@@ -83,6 +83,7 @@ export {
   toNovelActionError,
   toNovelJobFailureMessage,
   toRefundSentence,
+  toStalePatchIds,
   type NovelAction,
   type NovelActionErrorNotice,
 } from "./model/novelActionError";
@@ -102,6 +103,19 @@ export {
 } from "./model/novelJobPolling";
 export { toNovelReadProgress, type NovelReadProgress } from "./model/novelReadProgress";
 export { isNovelIllustrationsOn } from "./model/illustrationSwitch";
+export { isNovelMultiBlockEditOn } from "./model/multiBlockEditSwitch";
+export {
+  hasPendingBlockEdits,
+  hasPendingEdits,
+  isBlockEditJob,
+  toPendingBlockEdits,
+  withSettledPatches,
+  withStalePatches,
+  type NovelBlockEditBundle,
+  type NovelBlockEditPatch,
+  type NovelPendingBlockEdit,
+  type NovelRevisionScene,
+} from "./model/pendingBlockEdits";
 export { toResumeTarget, type ResumeTarget } from "./model/resumeTarget";
 export {
   toIllustrationLayoutKey,
