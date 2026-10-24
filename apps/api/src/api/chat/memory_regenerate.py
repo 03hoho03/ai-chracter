@@ -26,18 +26,27 @@ from redis.exceptions import RedisError
 from sqlalchemy import func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.memory_fold import _load_unsummarized
+from api.chat.memory_fold import SUMMARY_CALL_SITE, _load_unsummarized
 from api.chat.memory_window import MessageKey, select_current_snapshot
 from api.core.rate_limit_gate import _report_redis_failure
 from api.core.redis import redis_client
 from api.core.redis_lock import release_lock, try_acquire_lock
 from api.db.models import ChatMessage, ChatRoom, ChatRoomMemorySnapshot
+from api.llm.client import request_timeout_ms
 
 logger = logging.getLogger(__name__)
 
-# 진행 표시의 수명. 요약 호출 하나에는 호출 시간 상한이 있어 정상이면 이보다 훨씬 짧다. 배포·크래시로 풀지 못한 표시는 이 시간이
-# 지나 풀린다. 넘친 요청과 겹친 두 번째 요청이 들어와도 돈은 맞다 — 늦게 쓰는 쪽이 버전 충돌로 환불받는다.
-REGENERATE_LOCK_TTL_MS = 60_000
+# 진행 표시의 수명 = 요약 호출의 시간 상한 + 이 여유. 표시가 호출보다 먼저 풀리면 그사이 들어온 두 번째 요청이 깎이고, 늦게
+# 쓰는 쪽이 버전 충돌로 환불받아야 한다 — "겹친 두 번째 요청은 깎이지 않는다"가 깨진다. 그래서 수명은 호출 상한보다 길어야
+# 하고, 여유는 호출 앞뒤(입력 읽기·차감·프롬프트 조립·쓰기)의 몫이다. 배포·크래시로 풀지 못한 표시도 이 시간이 지나면 풀린다.
+_LOCK_TTL_MARGIN_MS = 30_000
+
+
+def regenerate_lock_ttl_ms() -> int:
+    """진행 표시의 수명(ms). 요약 호출은 Gemini·Bedrock·Anthropic 어느 구현으로 가든 호출 정책 표가 정한 같은 상한
+    (`request_timeout_ms` — 요약은 `gemini_memory_summary_timeout_ms`)을 요청에 싣고 다시 보내지 않으므로, 그 값을 읽어
+    여유를 더한다. 설정을 바꾸면 따라가도록 호출마다 읽는다."""
+    return request_timeout_ms(SUMMARY_CALL_SITE) + _LOCK_TTL_MARGIN_MS
 
 
 class RegenerateInProgressError(Exception):
@@ -154,7 +163,7 @@ async def hold_regenerate_lock(room_id: uuid.UUID) -> AsyncIterator[None]:
     것은 요약 호출 원가 한 번이다."""
     key = _lock_key(room_id)
     try:
-        token = await try_acquire_lock(redis_client, key, ttl_ms=REGENERATE_LOCK_TTL_MS)
+        token = await try_acquire_lock(redis_client, key, ttl_ms=regenerate_lock_ttl_ms())
     except RedisError as exc:
         logger.warning("대화방 %s 요약 다시 만들기 표시를 잡지 못했다(Redis 장애) — 표시 없이 진행한다: %s", room_id, exc)
         _report_redis_failure()
