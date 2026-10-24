@@ -98,10 +98,17 @@ describe("장면 구성안 만들기 막힘", () => {
   // 서버는 승인한 담을 대화의 원문이 바뀌었으면 과금 전에 409 로 막는다 — 누를 때마다 같은 거절이 되풀이되지 않게 화면이 먼저 막는다.
   it("담을 대화가 고른 뒤 바뀌었거나 승인한 것이 없으면 막고, 다시 승인하라고 말한다", () => {
     expect(toSceneMakeBlockedReason({ ...READY, selection: "sourceChanged" })).toBe(
-      "담을 대화의 구간 어딘가가 고른 뒤 바뀌었어요. 구성으로 돌아가 담을 대화를 확인하고 다시 승인하면 만들 수 있어요.",
+      "담을 대화의 구간 어딘가가 고른 뒤 바뀌었어요. 구성으로 돌아가 담을 대화를 확인해 다시 승인해주세요.",
     );
     expect(toSceneMakeBlockedReason({ ...READY, selection: "unapproved" })).toBe(
-      "담을 대화를 승인하면 만들 수 있어요. 구성으로 돌아가 담을 대화를 승인해주세요.",
+      "담을 대화를 먼저 승인해주세요. 구성으로 돌아가 승인할 수 있어요.",
+    );
+  });
+
+  // 원고를 쓴 화는 서버가 원문을 보기 전에 막는다 — 다시 승인해도 풀리지 않으니 담을 대화를 까닭으로 내밀지 않는다.
+  it("원고를 쓴 화는 담을 대화보다 원고가 먼저다", () => {
+    expect(toSceneMakeBlockedReason({ ...READY, isWritten: true, selection: "sourceChanged" })).toBe(
+      "원고를 쓴 화는 장면 구성안을 새로 만들지 않아요.",
     );
   });
 
@@ -151,13 +158,17 @@ describe("원고 쓰기 막힘", () => {
 
   it("담을 대화가 고른 뒤 바뀌었거나 승인한 것이 없으면 막는다", () => {
     expect(toWriteBlockedReason({ ...WRITABLE, selection: "sourceChanged" })).toBe(
-      "담을 대화의 구간 어딘가가 고른 뒤 바뀌었어요. 구성으로 돌아가 담을 대화를 확인하고 다시 승인하면 쓸 수 있어요.",
+      "담을 대화의 구간 어딘가가 고른 뒤 바뀌었어요. 구성으로 돌아가 담을 대화를 확인해 다시 승인해주세요.",
     );
     expect(toWriteBlockedReason({ ...WRITABLE, selection: "unapproved" })).toBe(
-      "담을 대화를 승인하면 쓸 수 있어요. 구성으로 돌아가 담을 대화를 승인해주세요.",
+      "담을 대화를 먼저 승인해주세요. 구성으로 돌아가 승인할 수 있어요.",
     );
     // 담을 대화를 다시 승인해야 풀리는 막힘이 화 차례보다 먼저다 — 앞 화를 써도 같은 거절을 받는다.
-    expect(toWriteBlockedReason({ ...WRITABLE, selection: "sourceChanged", order: "waiting" })).toContain("다시 승인하면");
+    expect(toWriteBlockedReason({ ...WRITABLE, selection: "sourceChanged", order: "waiting" })).toContain("다시 승인해주세요");
+    // 뒤 화에 원고가 있는 화는 다시 승인해도 쓸 수 없다 — 그 까닭이 먼저다.
+    expect(toWriteBlockedReason({ ...WRITABLE, selection: "sourceChanged", order: "laterWritten" })).toBe(
+      "뒤 화에 원고가 있어 이 화는 쓸 수 없어요.",
+    );
   });
 
   it("순서가 승인보다 먼저다(앞 화를 써야 풀리는 쪽)", () => {

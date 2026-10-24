@@ -144,7 +144,7 @@ describe("구성 모드 화 화면 — 담을 대화 승인 상태", () => {
   it("승인한 담을 대화가 없으면 막고 승인하라고 말한다", () => {
     const html = render("unapproved");
     expect(buttonTag(html, "원고 쓰기")).toContain('aria-disabled="true"');
-    expect(html).toContain("담을 대화를 승인하면 쓸 수 있어요.");
+    expect(html).toContain("담을 대화를 먼저 승인해주세요.");
   });
 
   // 담을 대화를 받는 동안은 모른다 — 서버가 같은 경우를 막으니 화면이 앞서 막지 않는다.
