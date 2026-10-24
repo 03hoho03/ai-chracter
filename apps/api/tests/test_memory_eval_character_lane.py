@@ -42,7 +42,7 @@ async def test_character_seed_room_folds_with_the_fake_client_and_assembles_a_tr
     assert ctx.lane == "character" and ctx.setup is None
     with pytest.raises(SystemExit, match="레인"):
         await runtime.load_room(db_session, room.room_id, lane="story")
-    sets = await runtime.judgment_sets(db_session, lane=ctx.lane)
+    sets = await runtime.judgment_sets(db_session, ctx)
     assert sets.summary[0].lane == "character"
     generation_set, _ = await runtime.generation_set(db_session, "gemini", lane=ctx.lane)
     assert generation_set.lane == "character"

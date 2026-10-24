@@ -2,7 +2,8 @@
 앱 API 클라이언트.
 
 레인은 방에서 읽는다(시작설정이 있으면 스토리, 없으면 캐릭터 — 앱의 레인 고르기와 같다). 생성·판정·요약 세트는 그 레인의 활성
-세트를 읽는다 — 다른 레인의 세트로 조립하면 다른 작품 꼴의 문안이 실린다.
+세트를 읽는다 — 다른 레인의 세트로 조립하면 다른 작품 꼴의 문안이 실린다. 판정·요약·추출 세트는 앱 방 턴처럼 측정 DB 의 모델
+배정 표를 방의 실효 방 모델 칸으로 풀어 고른다.
 
 DB 는 언제나 `settings.database_url`(실행 명령의 `DATABASE_URL`)이고, 쓰는 명령은 그 DB 이름이 `lm_eval_` 로 시작할 때만 돈다
 (격리 개발 DB·테스트 DB 를 지키려고). 운영 DB 는 앱의 로컬 DB 규칙으로 거부한다."""
@@ -19,6 +20,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from api.chat.prompt_builder import PromptNames, load_active_prompt_set
+from api.chat.prompt_routing import PromptRoutes, parse_route_row
+from api.chat.prompt_routing_cache import load_prompt_routes_from_db
 from api.chat.turn_prompt import JudgmentPromptSets, generation_prompt_set, judgment_prompt_sets
 from api.core.config import Settings, settings
 from api.db.models import ChatRoom
@@ -27,6 +30,7 @@ from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StartingSetup
 from api.llm.chat_models import ChatModelId, PromptSetModelId
+from api.llm.model_access import effective_room_model
 from replay.local_db import ensure_local_database
 
 from memory_eval.arm_env import BARE_SUFFIX, BUNDLE1_ARMS, BUNDLE1_SWITCHES, COMMON_ENV, POST_HISTORY_SWITCHES
@@ -122,14 +126,21 @@ async def load_room(db: AsyncSession, room_id: uuid.UUID, *, lane: Lane | None =
     return RoomContext(room=room, setup=setup, names=names, lane=room_lane)
 
 
-async def judgment_sets(db: AsyncSession, *, lane: Lane) -> JudgmentPromptSets:
-    """그 레인의 판정·요약·추출 세트(앱의 `judgment_prompt_sets` 와 같은 고르기)."""
+async def judgment_sets(db: AsyncSession, ctx: RoomContext) -> JudgmentPromptSets:
+    """그 방 레인의 판정·요약·추출 세트 — 앱 방 턴의 `judgment_prompt_sets` 와 같은 고르기다. 모델 배정 표는 Redis 캐시가 아니라
+    측정 DB 에서 바로 읽는다(이 프로세스의 Redis 는 측정 서버의 것과 다를 수 있고, 맞추기는 서버 쪽 캐시만 지운다). 지금 코드가
+    모르는 값의 행은 앱처럼 버려 그 칸이 env 규칙으로 풀린다. 칸의 방 모델은 방 주인의 실효 방 모델이다(이 프로세스 설정의 상위
+    모델 스위치로 읽는다 — 앱 서버와 같은 판정). 표가 비면 표를 넘기지 않은 호출과 같은 세트를 고른다."""
+    lane = ctx.lane
     gemini = await load_active_prompt_set(db, lane=lane, model="gemini")
 
     async def load(model: PromptSetModelId) -> tuple[PromptSet, list[PromptSection]]:
         return await load_active_prompt_set(db, lane=lane, model=model)
 
-    return await judgment_prompt_sets(lane=lane, gemini_set=gemini, load=load)
+    parsed = [parse_route_row(raw) for raw in await load_prompt_routes_from_db(db)]
+    routes = PromptRoutes.from_rows(row for row in parsed if row is not None)
+    room_model = await effective_room_model(db, ctx.room.user_id, ctx.room.chat_model)
+    return await judgment_prompt_sets(lane=lane, gemini_set=gemini, load=load, routes=routes, room_model=room_model)
 
 
 async def generation_set(db: AsyncSession, model: ChatModelId, *, lane: Lane) -> tuple[PromptSet, list[PromptSection]]:
