@@ -192,7 +192,9 @@ function TurnRow({ turn, state, isChanged, onToggle }: TurnRowProps) {
       type="button"
       data-turn={turn.number}
       aria-pressed={isIncluded}
-      className={ROW_CLASS}
+      // 잠긴 턴(이미 쓴 대화를 맥락으로 보낸 것)은 담을 수 없다. 묶음 버튼으로만 맥락에서 뺀다 — 눌러도 아무 일 없고 까닭을 읽힌다.
+      aria-disabled={turn.isLocked || undefined}
+      className={cn(ROW_CLASS, turn.isLocked && "hover:bg-transparent")}
       onClick={(event: MouseEvent<HTMLButtonElement>) => onToggle(turn, { isRange: event.shiftKey })}
     >
       <StateMark state={state} />
@@ -200,6 +202,7 @@ function TurnRow({ turn, state, isChanged, onToggle }: TurnRowProps) {
         <span className="text-xs text-muted-foreground tabular-nums">
           {turn.number}턴
           {isChanged && <span className="font-medium text-foreground"> · 고른 뒤 바뀜</span>}
+          {turn.isLocked && <span> · 이미 쓴 대화라 담을 수 없어요</span>}
         </span>
         <span className={cn("line-clamp-2 text-sm break-keep", state === "include" ? "text-foreground" : "text-muted-foreground")}>
           {turn.excerpt === "" ? "(빈 메시지)" : turn.excerpt}

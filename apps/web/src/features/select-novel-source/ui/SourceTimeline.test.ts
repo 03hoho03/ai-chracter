@@ -119,3 +119,25 @@ describe("SourceTimeline", () => {
     expect(/data-turn="3"[\s\S]*?<\/button>/.exec(html)?.[0]).not.toContain("바뀜");
   });
 });
+
+describe("SourceTimeline — 맥락으로 보낸 잠긴 턴", () => {
+  it("담기 토글이 아니라 막힌 줄이고 까닭을 말한다", () => {
+    const lockedContext = new Map(states).set("u1", "context");
+    const html = renderToStaticMarkup(
+      createElement(SourceTimeline, {
+        turns,
+        states: lockedContext,
+        changedKeys: new Set<string>(),
+        expandedGapKeys: new Set<string>(),
+        foldableKeys: new Set<string>(),
+        activeKey: undefined,
+        onToggleTurn: () => {},
+        onSetGap: () => {},
+        onToggleGapExpanded: () => {},
+      }),
+    );
+    expect(turnButton(html, 2)).toContain('aria-disabled="true"');
+    expect(/data-turn="2"[\s\S]*?<\/button>/.exec(html)?.[0]).toContain("이미 쓴 대화라 담을 수 없어요");
+    expect(turnButton(html, 3)).not.toContain("aria-disabled");
+  });
+});

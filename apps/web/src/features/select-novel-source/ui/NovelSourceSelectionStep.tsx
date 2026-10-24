@@ -22,6 +22,7 @@ import { toSelectionRecovery } from "../model/selectionRecovery";
 import {
   hasChangedSource,
   SOURCE_SELECTION_STATUS_LABEL,
+  toSaveRoomEnd,
   toSourceSelectionBase,
   toSourceSelectionStatus,
 } from "../model/selectionStatus";
@@ -204,6 +205,10 @@ function SelectionEditor({
   // 화면이 본 방 끝을 아직 메시지 목록이 모른다(조회 사이에 대화가 이어졌다) — 한 번 다시 받는다.
   const roomEndId = state.roomEndMessageId;
   const isMessagesBehind = roomEndId !== null && !messages.some((message) => message.id === roomEndId);
+  // 고른 때의 마지막 메시지가 지금 대화에 없다(마지막 답을 다시 만들었거나 지웠다). 저장된 판에서만 있는 일이다 — 제안의 고정
+  // 끝은 지금 방 끝이다.
+  const isFixedEndMissing =
+    status !== "unsaved" && !isMessagesBehind && fixedEndId !== null && !messages.some((message) => message.id === fixedEndId);
   const refetchedForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isMessagesBehind || isMessagesFetching || refetchedForRef.current === roomEndId) return;
@@ -232,7 +237,8 @@ function SelectionEditor({
   }
 
   function handleToggleTurn(turn: SourceTurn, { isRange }: { isRange: boolean }) {
-    if (busy !== undefined) return;
+    // 잠긴 턴은 담을 수 없다 — 맥락으로 보낸 잠긴 턴은 묶음의 "맥락에서 빼기"로만 바꾼다.
+    if (busy !== undefined || turn.isLocked) return;
     const anchor = isRange && anchorKey !== undefined && turns.some((item) => item.key === anchorKey) ? anchorKey : undefined;
     if (anchor === undefined) edit(toggleTurn(states, turn));
     else edit(setTurnRange(states, turns, anchor, turn.key, states.get(turn.key) === "include" ? "exclude" : "include"));
@@ -289,8 +295,7 @@ function SelectionEditor({
       novelId: novel.id,
       body: {
         baseRevision: edits?.baseRevision ?? base?.baseRevision ?? null,
-        roomEndMessageId: isExtended ? roomEndId : fixedEndId,
-        extendToRoomEnd: isExtended,
+        ...toSaveRoomEnd({ isExtended, isFixedEndMissing, fixedEndId, roomEndId }),
         sections: toSaveSections(turns, states),
       },
     });
@@ -304,7 +309,11 @@ function SelectionEditor({
     setBusy("save");
     try {
       const saved = await saveDraft();
-      if (saved !== undefined) setNotice({ tone: "done", message: "초안을 저장했어요. 승인하면 다음 단계로 이어져요." });
+      if (saved !== undefined) {
+        setNotice({ tone: "done", message: "초안을 저장했어요. 승인하면 다음 단계로 이어져요." });
+        // 저장하면 고친 것이 없어져 누른 "초안 저장"이 사라진다 — 포커스가 떨어지지 않게 단계 제목으로 옮긴다.
+        headingRef.current?.focus();
+      }
     } catch (error) {
       handleError(error, "saveSourceSelection");
     } finally {
@@ -353,6 +362,12 @@ function SelectionEditor({
       {isSourceChanged && (
         <p className="rounded-lg border border-border px-3 py-2 text-sm break-keep text-foreground">
           고른 뒤 대화가 바뀐 턴이 있어요("고른 뒤 바뀜"). 확인한 뒤 저장하거나 승인하면 지금 대화로 다시 담겨요.
+        </p>
+      )}
+      {isFixedEndMissing && (
+        <p className="rounded-lg border border-border px-3 py-2 text-sm break-keep text-foreground">
+          고른 때의 마지막 대화가 다시 쓰였거나 지워졌어요. 저장하면 지금 대화 끝까지를 고르는 범위로 삼아요. 그사이 생긴 대화는
+          빼기로 두었어요.
         </p>
       )}
       {state.hasNewMessages && !isExtended && newTurnCount > 0 && (

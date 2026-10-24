@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hasChangedSource, toSourceSelectionBase, toSourceSelectionStatus } from "./selectionStatus";
+import { hasChangedSource, toSaveRoomEnd, toSourceSelectionBase, toSourceSelectionStatus } from "./selectionStatus";
 
 type State = Parameters<typeof toSourceSelectionStatus>[0];
 
@@ -48,5 +48,32 @@ describe("hasChangedSource", () => {
   it("구간 하나라도 원문이 바뀌었으면 참이다", () => {
     expect(hasChangedSource(view(1, null))).toBe(false);
     expect(hasChangedSource(view(1, null, true))).toBe(true);
+  });
+});
+
+describe("toSaveRoomEnd", () => {
+  const ids = { fixedEndId: "m9", roomEndId: "m12" };
+
+  it("평소에는 고른 때의 고정 끝을 그대로 보낸다", () => {
+    expect(toSaveRoomEnd({ ...ids, isExtended: false, isFixedEndMissing: false })).toEqual({
+      roomEndMessageId: "m9",
+      extendToRoomEnd: false,
+    });
+  });
+
+  it("새 구간을 열었으면 지금 방 끝으로 옮긴다", () => {
+    expect(toSaveRoomEnd({ ...ids, isExtended: true, isFixedEndMissing: false })).toEqual({
+      roomEndMessageId: "m12",
+      extendToRoomEnd: true,
+    });
+  });
+
+  // 마지막 답을 다시 만들면 고정 끝 메시지가 새 id 로 바뀐다. 옛 끝을 보내면 서버가 다시 쓴 답을 담은 구간을 범위 밖이라 거절하고,
+  // 다시 받아도 같은 상태라 저장·승인이 영영 막힌다.
+  it("고정 끝 메시지를 지금 대화에서 찾지 못하면 지금 방 끝으로 옮긴다", () => {
+    expect(toSaveRoomEnd({ ...ids, isExtended: false, isFixedEndMissing: true })).toEqual({
+      roomEndMessageId: "m12",
+      extendToRoomEnd: true,
+    });
   });
 });
