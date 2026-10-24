@@ -1075,3 +1075,4 @@ null
 - **상황 노트를 지시나 숫자로 쓴다.** 상황은 지금 이야기의 사실로 전해집니다. 조건의 구간 전체에 맞는 사실로 적으세요. [상황](/guide/story/situationNote#startingSetups.*.situationNotes.*.content)
 - **전개 예시 세 쌍을 같은 모양으로 쓴다.** 매 응답이 그 모양으로 굳어요. [전개 예시](/guide/story/setting#storySetting.developmentExamples)
 - **플레이가이드에 AI 지시를 쓴다.** AI는 플레이가이드를 읽지 않습니다. [플레이가이드](/guide/story/startingSetup#startingSetups.*.$advanced)
+
