@@ -68,4 +68,22 @@ describe("truncateForEditAttempt", () => {
     expect(truncateForEditAttempt(queryClient, ROOM_ID, send, undefined)).toBeUndefined();
     expect(cachedMessages(queryClient)).toEqual(MESSAGES);
   });
+
+  // 삭제·수정 뒤 방을 다시 받는 중에 고쳐 저장하면, 늦게 도착한 조회가 서버의 옛 목록으로 잘라 둔 목록과 고친 글을 덮는다.
+  it("이미 진행 중이던 방 조회가 끝나도 잘라 둔 목록과 고친 글이 남는다", async () => {
+    let resolveFetch: (state: ChatRoomState) => void = () => {};
+    const inFlight = queryClient
+      .fetchQuery({
+        queryKey: chatRoomKeys.detail(ROOM_ID),
+        queryFn: () => new Promise<ChatRoomState>((resolve) => (resolveFetch = resolve)),
+      })
+      .catch(() => undefined);
+
+    truncateForEditAttempt(queryClient, ROOM_ID, EDIT, undefined);
+    resolveFetch(buildState(MESSAGES));
+    await inFlight;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(cachedMessages(queryClient)).toEqual([{ ...MESSAGES[0], content: "안녕하세요" }]);
+  });
 });
