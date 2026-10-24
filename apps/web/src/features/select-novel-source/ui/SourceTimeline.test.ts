@@ -113,11 +113,12 @@ describe("SourceTimeline", () => {
     expect(html).not.toMatch(/aria-expanded="/);
   });
 
-  it("원문이 바뀐 턴에 표시를 단다", () => {
+  // 서버는 원문 바뀜을 저장한 구간마다 알린다 — 표시는 그 턴이 바뀐 구간에 들었다는 뜻이지 그 턴이 바뀌었다는 뜻이 아니다.
+  it("원문이 바뀐 구간에 든 턴에 그 구간 표시를 단다", () => {
     const html = render([], ["u4"]);
     const row = /data-turn="5"[\s\S]*?<\/button>/.exec(html)?.[0] ?? "";
-    expect(row).toContain("바뀜");
-    expect(/data-turn="3"[\s\S]*?<\/button>/.exec(html)?.[0]).not.toContain("바뀜");
+    expect(row).toContain("고른 뒤 바뀐 구간");
+    expect(/data-turn="3"[\s\S]*?<\/button>/.exec(html)?.[0]).not.toContain("바뀐 구간");
   });
 });
 

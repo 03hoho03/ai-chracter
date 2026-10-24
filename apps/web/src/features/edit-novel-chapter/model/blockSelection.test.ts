@@ -7,6 +7,7 @@ import {
   toBlockSelectionAnnouncement,
   toBlockSelectionLabel,
   toContiguousRange,
+  toReleaseOnSwitchOff,
   toSceneKeyOf,
   toSelectedIndexes,
   withObjectParticle,
@@ -180,5 +181,23 @@ describe("toContiguousRange", () => {
     expect(toContiguousRange([3])).toEqual({ start: 3, end: 3 });
     expect(toContiguousRange([2, 4])).toBeNull();
     expect(toContiguousRange([])).toBeNull();
+  });
+});
+
+// 여러 문단 수정 요청이 스위치 꺼짐(404)으로 거절되면 가격을 다시 받아 고르기가 거둬진다. 그때 고른 것을 "선택 해제"처럼 풀어야
+// 상태 줄이 지난 고르기를 말하지 않고, 사라진 동작 줄 대신 둘 포커스 자리가 생긴다.
+describe("toReleaseOnSwitchOff", () => {
+  it("켜졌다가 꺼졌고 고른 문단이 있으면 본문 차례로 마지막 고른 문단에 포커스를 둔다", () => {
+    expect(toReleaseOnSwitchOff({ wasOn: true, isOn: false, selection: ["b4", "b1", "b2"], blockIds: BLOCKS })).toEqual({
+      focusIndex: 4,
+    });
+  });
+
+  it("고른 것이 없거나(지금 판에 없는 블록뿐이어도) 스위치가 그대로면 풀 것이 없다", () => {
+    expect(toReleaseOnSwitchOff({ wasOn: true, isOn: false, selection: [], blockIds: BLOCKS })).toBeUndefined();
+    expect(toReleaseOnSwitchOff({ wasOn: true, isOn: false, selection: ["gone"], blockIds: BLOCKS })).toBeUndefined();
+    expect(toReleaseOnSwitchOff({ wasOn: true, isOn: true, selection: ["b1"], blockIds: BLOCKS })).toBeUndefined();
+    expect(toReleaseOnSwitchOff({ wasOn: false, isOn: false, selection: ["b1"], blockIds: BLOCKS })).toBeUndefined();
+    expect(toReleaseOnSwitchOff({ wasOn: false, isOn: true, selection: ["b1"], blockIds: BLOCKS })).toBeUndefined();
   });
 });
