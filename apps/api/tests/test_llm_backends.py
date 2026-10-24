@@ -170,7 +170,7 @@ def test_a_backend_on_the_policy_row_is_followed_and_the_env_assignment_wins_ove
         ("novelize_revise", {"structured_with_instruction": False}, True),
         ("novelize_revise", {"structured_images": False}, False),
         # 스트리밍은 모든 구현이 받는다.
-        ("preview_generate", {"structured": "none", "structured_images": False}, False),
+        ("replay_generate", {"structured": "none", "structured_images": False}, False),
     ],
 )
 def test_an_assignment_whose_backend_cannot_take_the_call_kind_is_rejected(
@@ -292,12 +292,14 @@ def test_the_prompt_dump_names_the_id_of_the_resolved_backend(monkeypatch: pytes
     turn_engine._dump_prompt(
         room_id=None, call_site="chat_generate", model="gemini", turn=1, prompt="p", system_instruction="s"
     )
-    turn_engine._dump_prompt(
-        room_id=None, call_site="preview_generate", model="gemini", turn=1, prompt="p", system_instruction="s"
-    )
+    # 미리보기 생성은 채팅 생성의 배정을 물려받고, 측정용 다시 생성은 물려받지 않아 배정이 없다.
+    for call_site in ("preview_generate", "replay_generate"):
+        turn_engine._dump_prompt(
+            room_id=None, call_site=call_site, model="gemini", turn=1, prompt="p", system_instruction="s"
+        )
 
     records = [json.loads(line) for line in dump_path.read_text(encoding="utf-8").splitlines()]
-    assert [r["model"] for r in records] == [_FAKE_SENT_ID, settings.gemini_model_name]
+    assert [r["model"] for r in records] == [_FAKE_SENT_ID, _FAKE_SENT_ID, settings.gemini_model_name]
 
 
 def test_the_replay_compares_against_the_id_its_own_call_site_resolves_to(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,0 +1,1605 @@
+{
+ "generated_from": "832b22be",
+ "fixed_settings": {
+  "gemini_model_name": "fixture-gemini-base",
+  "bedrock_haiku_model_id": "fixture-bedrock-haiku",
+  "bedrock_opus_model_id": "fixture-bedrock-opus",
+  "anthropic_haiku_model_id": "fixture-anthropic-haiku",
+  "anthropic_opus_model_id": "fixture-anthropic-opus",
+  "identity_gate_enabled": false,
+  "payments_enabled": false,
+  "preview_session_ttl_seconds": 86400
+ },
+ "profiles": {
+  "gemini": [
+   "gemini",
+   {}
+  ],
+  "haiku-bedrock": [
+   "haiku",
+   {}
+  ],
+  "haiku-direct": [
+   "haiku",
+   {
+    "chat_generate": "anthropic",
+    "chat_stat_judgment": "anthropic",
+    "chat_ending_judgment": "anthropic",
+    "chat_media_book_image": "anthropic",
+    "preview_stat_judgment": "anthropic",
+    "preview_ending_judgment": "anthropic",
+    "preview_media_book_image": "anthropic"
+   }
+  ]
+ },
+ "scenarios": {
+  "gemini-character-off-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ]
+   ],
+   "db_statements": 9,
+   "redis_commands": 6
+  },
+  "gemini-character-off-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ]
+   ],
+   "db_statements": 9,
+   "redis_commands": 6
+  },
+  "gemini-character-on-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ]
+   ],
+   "db_statements": 9,
+   "redis_commands": 6
+  },
+  "gemini-character-on-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ]
+   ],
+   "db_statements": 9,
+   "redis_commands": 6
+  },
+  "gemini-story-off-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ]
+   ],
+   "db_statements": 10,
+   "redis_commands": 6
+  },
+  "gemini-story-off-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ]
+   ],
+   "db_statements": 10,
+   "redis_commands": 6
+  },
+  "gemini-story-on-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ]
+   ],
+   "db_statements": 10,
+   "redis_commands": 6
+  },
+  "gemini-story-on-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ]
+   ],
+   "db_statements": 10,
+   "redis_commands": 6
+  },
+  "haiku-bedrock-character-off-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 11,
+   "redis_commands": 8
+  },
+  "haiku-bedrock-character-off-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 11,
+   "redis_commands": 8
+  },
+  "haiku-bedrock-character-on-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 11,
+   "redis_commands": 8
+  },
+  "haiku-bedrock-character-on-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 11,
+   "redis_commands": 8
+  },
+  "haiku-bedrock-story-off-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 12,
+   "redis_commands": 8
+  },
+  "haiku-bedrock-story-off-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 12,
+   "redis_commands": 8
+  },
+  "haiku-bedrock-story-on-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 12,
+   "redis_commands": 8
+  },
+  "haiku-bedrock-story-on-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 12,
+   "redis_commands": 8
+  },
+  "haiku-direct-character-off-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 11,
+   "redis_commands": 8
+  },
+  "haiku-direct-character-off-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 11,
+   "redis_commands": 8
+  },
+  "haiku-direct-character-on-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 11,
+   "redis_commands": 8
+  },
+  "haiku-direct-character-on-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": null}}]",
+   "state_after": "{\"payload\":{\"name\":\"아리아\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"intro\":\"안녕하세요, 아리아예요\",\"exampleDialogues\":[],\"characterPrompt\":\"너는 아리아다.\",\"playguide\":null,\"situationalImages\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null},\"messages\":[{\"id\":\"<id-0>\",\"role\":\"assistant\",\"content\":\"안녕하세요, 아리아예요\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-1>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-2>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{},\"turnCount\":1,\"endingReached\":false,\"storyScene\":null}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 11,
+   "redis_commands": 8
+  },
+  "haiku-direct-story-off-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 12,
+   "redis_commands": 8
+  },
+  "haiku-direct-story-off-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 12,
+   "redis_commands": 8
+  },
+  "haiku-direct-story-on-gemini": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 12,
+   "redis_commands": 8
+  },
+  "haiku-direct-story-on-none": {
+   "start_status": 201,
+   "start_fields": [
+    "previewSessionId"
+   ],
+   "state_at_start": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":0,\"endingReached\":false,\"storyScene\":null}",
+   "status": 200,
+   "events": "[{\"type\": \"token\", \"delta\": \"응답\"}, {\"type\": \"sceneChange\", \"messageId\": \"<id-0>\", \"place\": null, \"time\": null}, {\"type\": \"done\", \"finalMessage\": {\"id\": \"<id-0>\", \"role\": \"assistant\", \"content\": \"응답\", \"createdAt\": \"<time>\", \"imageId\": null, \"imageUrl\": null, \"imageWidth\": null, \"imageHeight\": null, \"scene\": {\"place\": null, \"time\": null}}}]",
+   "state_after": "{\"payload\":{\"name\":\"잃어버린 도시\",\"oneLiner\":\"한 줄 소개\",\"thumbnailAssetId\":null,\"promptTemplate\":\"basic\",\"settingText\":\"세계관 설명\",\"developmentExample\":null,\"customPrompt\":null,\"developmentExamples\":[],\"userGoal\":null,\"rules\":null,\"startingSetups\":[{\"id\":\"<id-0>\",\"name\":\"시작설정1\",\"prologue\":\"프롤로그\",\"openingMessage\":\"어서 와.\",\"playguide\":null,\"suggestedReplies\":[],\"statDefs\":[{\"id\":\"<id-1>\",\"name\":\"체력\",\"icon\":\"heart\",\"color\":\"rose\",\"minValue\":0,\"maxValue\":100,\"initialValue\":50,\"unit\":null,\"description\":\"체력 스탯\",\"perTurnDelta\":null,\"hiddenFromPlayer\":false,\"playerDescription\":null,\"signalHiddenChange\":false,\"rules\":[{\"id\":\"<id-2>\",\"condition\":\"행복해진다\",\"delta\":40}]}],\"endings\":[{\"id\":\"<id-3>\",\"name\":\"해피엔딩\",\"turnCountGate\":1,\"judgmentPrompt\":\"행복한 결말에 도달했는가\",\"epilogue\":\"모두가 행복하게 살았다.\",\"hint\":null,\"statRules\":[],\"priorityStatId\":null}],\"situationNotes\":[],\"initialScenePlace\":null,\"initialSceneTime\":null}],\"keywordNotes\":[],\"shortcuts\":[],\"description\":\"상세 설명\",\"genreId\":null,\"target\":null,\"hashtags\":[],\"visibility\":\"private\",\"novelPermission\":null,\"mediaBook\":{\"people\":[{\"id\":\"<id-4>\",\"name\":\"민아\"}],\"scenes\":[{\"id\":\"<id-5>\",\"name\":\"창가\"}],\"cells\":[{\"id\":\"<id-6>\",\"personId\":\"<id-4>\",\"sceneId\":\"<id-5>\",\"imageAssetId\":\"<id-7>\",\"situationDescription\":\"창가에서 웃는다\",\"unlockHint\":\"\",\"excludeFromChat\":false}]},\"sceneHeaderEnabled\":true},\"messages\":[{\"id\":\"<id-8>\",\"role\":\"assistant\",\"content\":\"어서 와.\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-9>\",\"role\":\"user\",\"content\":\"행복해지자\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":null},{\"id\":\"<id-10>\",\"role\":\"assistant\",\"content\":\"응답\",\"createdAt\":\"<time>\",\"imageId\":null,\"imageUrl\":null,\"imageWidth\":null,\"imageHeight\":null,\"scene\":{\"place\":null,\"time\":null}}],\"stats\":{\"<id-1>\":50.0},\"turnCount\":1,\"endingReached\":false,\"storyScene\":{\"place\":null,\"time\":null}}",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku"
+    }
+   ],
+   "llm_calls": [
+    [
+     "preview_generate",
+     "gemini",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "preview_stat_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_media_book_image",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_scene_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "preview_ending_judgment",
+     "gemini",
+     null,
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "charges": [
+    [
+     "gemini",
+     10,
+     "preview"
+    ]
+   ],
+   "ledger": [],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 12,
+   "redis_commands": 8
+  }
+ }
+}

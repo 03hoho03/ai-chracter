@@ -1539,7 +1539,11 @@
   },
   "preview_generate": {
     "bedrock": {
-      "cacheBlocks": null,
+      "cacheBlocks": [
+        false,
+        true,
+        false
+      ],
       "failures": {
         "empty": null,
         "ok": null,
@@ -1606,9 +1610,9 @@
       "preview_generate|gemini_model_name|total"
     ],
     "routingWhenSonnet": {
-      "generate": "gemini",
+      "generate": "bedrock",
       "structured": "gemini",
-      "warned": true
+      "warned": false
     },
     "usageLogLines": [
       "gemini_usage call_site=preview_generate model=gemini_model_name",

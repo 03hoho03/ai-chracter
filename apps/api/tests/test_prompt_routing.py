@@ -529,15 +529,24 @@ def test_a_second_row_for_the_same_cell_is_refused(save_env: pytest.MonkeyPatch)
     assert _rules(rows) == [(1, "duplicate-row")]
 
 
-def test_a_row_assigned_for_chat_but_not_for_preview_is_a_backend_mismatch(save_env: pytest.MonkeyPatch) -> None:
-    assignments = dict(_JUDGMENTS_ON_ANTHROPIC["llm_call_site_backends"])
-    del assignments["preview_ending_judgment"]
+def test_a_row_assigned_for_chat_but_otherwise_for_preview_is_a_backend_mismatch(save_env: pytest.MonkeyPatch) -> None:
+    """미리보기 줄이 채팅 줄과 다른 env(기동 검증이 거부하는 env 다)에서는 행이 미리보기 경로와 맞지 않는다."""
+    assignments = {**_JUDGMENTS_ON_ANTHROPIC["llm_call_site_backends"], "preview_ending_judgment": "bedrock"}
     save_env.setattr(settings, "llm_call_site_backends", assignments)
 
     errors = route_row_errors([_input("ending_judgment")])
 
     assert [(error.index, error.rule) for error in errors] == [(0, "backend-mismatch")]
     assert "preview_ending_judgment" in errors[0].message
+
+
+def test_a_row_assigned_for_chat_fits_a_preview_without_its_own_line(save_env: pytest.MonkeyPatch) -> None:
+    """미리보기 판정 줄이 없으면 미리보기는 채팅 짝의 배정을 물려받아 같은 경로로 간다 — 행을 그대로 쓸 수 있다."""
+    assignments = dict(_JUDGMENTS_ON_ANTHROPIC["llm_call_site_backends"])
+    del assignments["preview_ending_judgment"]
+    save_env.setattr(settings, "llm_call_site_backends", assignments)
+
+    assert route_row_errors([_input("ending_judgment")]) == []
 
 
 def test_a_stat_row_inherited_by_a_scene_header_on_another_path_is_a_backend_mismatch(

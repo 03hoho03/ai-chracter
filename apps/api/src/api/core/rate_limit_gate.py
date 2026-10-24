@@ -2,9 +2,9 @@
 
 `core/rate_limit.py`가 기구(고정 창 카운터)를, 이 모듈이 **정책**(누구를, 무엇을, 몇 번까지)을
 맡는다. 채팅 4경로 — 메시지 전송 · 재생성 · 편집 · 빌더 미리보기 — 가 차감 본문 하나(`charge_chat_turn`)를
-공유한다. `Depends` 자리는 둘이다 — 미리보기는 이 모듈의 `enforce_chat_rate_limit`(방이 없어 언제나 Gemini), 방의
-세 경로는 방이 고른 모델을 읽어 가격을 정하는 `chat/router.py` 의 게이트다. 방을 읽는 게이트를 여기 두면 이 모듈이
-채팅 라우터를 import 해야 해 순환이 된다.
+공유한다. `Depends` 자리는 둘이고 둘 다 `chat/router.py` 에 있다 — 방의 세 경로는 방이 고른 모델을, 미리보기는 세션이 고른
+모델을 지금 쓸 모델로 읽어 가격을 정한다. 그 모델을 읽는 의존성이 채팅 라우터에 있어, 게이트를 여기 두면 이 모듈이 채팅
+라우터를 import 해야 해 순환이 된다.
 
 **모델에 따라 갈래가 둘이다.** Gemini 턴은 면제 통과·하루 무료분·하루 1회 확인·Redis 장애 통과를 그대로 따른다.
 상위 모델(Gemini 밖의 글쓰기 모델) 턴은 그 넷을 타지 않는다 — 면제 계정도 그 모델 가격을 내고, 무료분을 쓰지도
@@ -256,27 +256,6 @@ class ChatCharge:
     # 이 턴을 생성할 글쓰기 모델. 값을 받은 모델이 곧 생성 모델이다 — 생성 직전에 방을 다시 읽으면, 게이트와 생성 사이에
     # 방의 모델이 바뀌었을 때 받은 값과 다른 모델로 생성한다.
     model: ChatModelId = DEFAULT_CHAT_MODEL
-
-
-async def enforce_chat_rate_limit(
-    user_id: uuid.UUID = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db_session),
-    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
-) -> ChatCharge:
-    """빌더 미리보기의 게이트. 미리보기는 방이 없고 모델을 고르지 않아 언제나 Gemini 가격의 Gemini 턴이다.
-
-    가격은 부를 때마다 `clover` 모듈에서 읽는다(기본 인자로 잡으면 `monkeypatch` 가 통하지 않는다).
-
-    사용처는 작품을 가리키지 않는 `preview` 다 — 작가가 자기 초안을 시험하는 차감이라 정산 대상이 아니다. 그래도
-    `preview` 로 기록하는 것은 "사용처 없는 채팅 차감"을 배포 겹침 같은 이상 신호로만 남기려는 것이다."""
-    return await charge_chat_turn(
-        user_id,
-        db,
-        session_factory,
-        model=DEFAULT_CHAT_MODEL,
-        price=clover.CHAT_TURN_COST,
-        usage=clover.SpendUsage("preview"),
-    )
 
 
 async def charge_chat_turn(

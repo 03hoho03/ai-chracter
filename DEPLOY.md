@@ -315,7 +315,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `BEDROCK_CHAT_TIMEOUT_MS` / `BEDROCK_CHAPTER_TIMEOUT_MS` | 설정 안 함(기본 `45000` / `300000`) | 상위 모델 채팅 턴 / 소설 장 생성의 요청 타임아웃(ms). 스트리밍이라 "다음 청크까지"의 상한이다. 재시도는 하지 않는다 |
 | `BEDROCK_CHAT_MAX_TOKENS` / `BEDROCK_CHAPTER_MAX_TOKENS` | 설정 안 함(기본 `4096` / `32768`) | 출력 상한. Bedrock 은 요청의 출력 상한만큼 분당 토큰 쿼터를 먼저 잡으므로 올리면 동시 요청이 스로틀되기 쉽다. 장이 잘리면 실패·환불이다 |
 | `ANTHROPIC_DIRECT_API_KEY` | Anthropic 콘솔에서 만든 이 서비스 전용 API 키 | 상위 모델을 Anthropic API 로 직접 보낼 때의 자격. SDK 가 스스로 읽는 `ANTHROPIC_API_KEY` 와 이름을 나눴다. 아래 배정이 호출을 직결로 옮기는데 비어 있으면 스위치와 무관하게 api 가 기동하지 못한다. 직결의 모델 id·타임아웃·출력 상한·사고 깊이(나머지 `ANTHROPIC_*`)는 설정 안 함이 기본이다(기본값은 `.env.example`) |
-| `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음). 인상 생성 `chat_memory_impression` 은 아직 넣지 않았다 — 인상 쓰기를 켤 때 모델 줄과 함께 넣는다 | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 장면 헤더 판정 호출 위치(`chat_scene_judgment`·`preview_scene_judgment`)는 줄을 두지 않고 짝인 스탯 판정 호출 위치의 배정을 물려받는다 — **스탯 판정 배정을 바꾸면 장면 판정도 함께 움직인다**(줄을 따로 넣으면 그 이름을 모르는 옛 이미지가 뜨지 못한다). 모델 배정 표(`prompt_routes`)의 행은 이 배정 위에 얹힌다 — 판정·요약·추출 칸의 행은 그 행을 읽는 호출 위치 전부(채팅과 미리보기 판정, 물려받는 장면 판정)에서 이 배정으로 푼 경로가 행의 경로와 같을 때만 쓰이므로, **채팅 판정 배정을 바꿀 때는 짝인 미리보기 판정 배정도 같은 편집에서 바꾼다**(한쪽만 바꾸면 그 행이 양쪽 모두에서 건너뛰어져 env 규칙으로 돈다). 배정을 바꾼 뒤에는 "채팅 단계별 문안 체인·호출 모델 설정 — 켜기 · 끄기 · 되돌리기" 절대로 건너뛴 행을 확인한다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
+| `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음). 인상 생성 `chat_memory_impression` 은 아직 넣지 않았다 — 인상 쓰기를 켤 때 모델 줄과 함께 넣는다 | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 장면 헤더 판정 호출 위치(`chat_scene_judgment`·`preview_scene_judgment`)는 줄을 두지 않고 배정을 물려받는다 — 채팅 장면은 채팅 스탯 판정을, 미리보기 장면은 채팅 장면을 거쳐 같은 배정을 따른다. **스탯 판정 배정을 바꾸면 장면 판정도 함께 움직인다**(줄을 따로 넣으면 그 이름을 모르는 옛 이미지가 뜨지 못한다). 미리보기 생성(`preview_generate`)과 미리보기 판정 넷은 채팅 짝(`chat_generate`·`chat_stat_judgment`·`chat_ending_judgment`·`chat_media_book_image`·`chat_scene_judgment`)의 배정을 물려받는다. 미리보기 줄이 없으면 짝의 배정으로 가고, 줄이 있으면 그 줄로 가는 경로가 짝을 물려받아 가는 경로와 같아야 기동한다(다르면 api 가 뜨지 않는다). 그래서 **채팅 판정 배정을 바꿀 때는 짝인 미리보기 판정 줄도 같은 편집에서 바꾼다** — 채팅 줄만 바꾸고 미리보기 줄을 남기면 기동이 거부된다. `preview_generate` 줄은 넣지 않는다(채팅 생성 배정을 물려받는다 — 그 이름을 그 호출의 모델로 읽는 옛 이미지는 `preview_generate:anthropic` 줄로 뜨지 못한다). 모델 배정 표(`prompt_routes`)의 행은 이 배정 위에 얹힌다 — 판정·요약·추출 칸의 행은 그 행을 읽는 호출 위치 전부(채팅과 미리보기 판정, 물려받는 장면 판정)에서 이 배정으로 푼 경로가 행의 경로와 같을 때만 쓰인다. 배정을 바꾼 뒤에는 "채팅 단계별 문안 체인·호출 모델 설정 — 켜기 · 끄기 · 되돌리기" 절대로 건너뛴 행을 확인한다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
 | `CHAT_PREMIUM_MODELS_ENABLED` | 켤 때 `true`(코드 기본값은 꺼짐) | 채팅 상위 모델 스위치. 켜면 로그인 회원 모두가 채팅방에 상위 모델(Opus)을 고를 수 있다 — 명단·계정별 허용은 없다. 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 지금 이미지가 읽지 않지만 지우지 않는다(채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단을 다시 읽는다). 켜고 끄는 법은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
 | `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같고, 어드민이 준 계정별 허용 행도 있어야 한다. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
 | `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
@@ -2151,6 +2151,21 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
 켜기 · 끄기 · 되돌리기" 절. 발행 심사·문단 수정은 고른 모델과 무관하게 Gemini 다. 채팅에서 고를 수 있는 상위 모델은 Opus 하나다 — Sonnet 은 소설 장에만 남았고, 채팅에서
 내리기 전에 Sonnet 을 저장한 방은 Gemini 로 Gemini 가격에 돈다.
 
+**빌더 미리보기 모델.** 미리보기 세션도 시작 요청(`POST /preview-sessions?model=opus`)으로 모델을 고를 수 있다 — 고른 모델은
+세션 상태에 남고, 그 세션의 턴은 채팅방과 같은 규칙으로 생성·차감(그 모델의 턴 가격)·판정(모델 배정 표의 그 모델 칸)이 함께
+움직인다. 상위 모델은 채팅 스위치가 켜져 있어야 고를 수 있다(꺼져 있으면 403 `CHAT_MODEL_NOT_ALLOWED`). 모델을 바꾸면 새 세션이다.
+- 배포만으로 BE 에 이 칸이 생기지만 쿼리가 없는 요청(지금 웹)은 기본 Gemini 이고, 모델 배정 표의 (레인, `gemini`, 단계) 칸이
+  비어 있을 때 그 세션의 시작·전송·판정·차감·세션 상태는 배포 전과 같다 — 기본 세션의 미리보기 판정도 그 칸을 읽으므로 칸에 행이
+  있으면 판정 문안·부를 모델이 행을 따른다. 웹의 모델 피커는 다음 단계다.
+- 옛 이미지와 새 웹이 겹치면 옛 이미지는 모르는 쿼리를 무시해 Gemini 세션을 만든다. 새 이미지가 만든 Opus 세션을 옛 이미지가
+  이어 받으면 모르는 `chatModel` 칸을 버리고 Gemini 로, Gemini 가격에 돈다(값을 내고 다른 모델의 글을 받는 일은 없다).
+- 이미지를 되돌린 동안 옛 이미지가 Opus 세션에 한 턴이라도 쓰면 세션 상태를 그 칸 없이 다시 저장해 모델 칸이 지워진다. 새
+  이미지로 다시 올려도 그 세션은 Gemini 세션으로 남는다 — Opus 로 시험하려면 새 시작 요청으로 세션을 다시 연다.
+- 경로: 운영 env 에 미리보기 생성 줄을 넣지 않는다 — Opus 미리보기는 채팅 생성(`chat_generate:anthropic`)을 물려받아 Anthropic
+  직결로 간다. 미리보기 판정도 채팅 판정 짝의 배정을 물려받으며, 미리보기 판정 줄을 두면 채팅 짝과 같은 경로여야 api 가 뜬다
+  (env 표 `LLM_CALL_SITE_BACKENDS` 행). 운영 env 는 두 줄이 같아 그대로 뜬다. 이 이미지부터는 운영 env 에서 미리보기 판정 줄이 빠져도
+  채팅 줄을 물려받아 뜬다(전에는 Bedrock 으로 풀려 기동이 거부됐다).
+
 **공급자 경로.** 상위 모델 호출이 어느 공급자로 가는지는 호출 위치마다 정한다. 코드 기본 경로는 AWS Bedrock 이고,
 `LLM_CALL_SITE_BACKENDS` 에 배정한 호출 위치만 Anthropic API 직결(`ANTHROPIC_DIRECT_API_KEY`)로 간다. 운영은 채팅
 턴(`chat_generate`)·측정용 리플레이(`replay_generate`)·소설 장(`novelize_chapter`)을 모두 `anthropic` 에 배정해 두었고
@@ -2233,7 +2248,8 @@ sudo bash ops/swap-api.sh
 않는다 — 장 요청의 모델은 그 가격과 함께 지금 고른 값이다). 회수 전에 값을 낸 장 작업은 회수와 무관하게 그 모델로 끝난다.
 
 **끄기.** 채팅 스위치 줄만 지우고 다시 올린다. 키·배정 줄은 남겨 두면 다시 켤 때 스위치 한 줄이면 된다. 끈 동안 Opus 를
-저장한 방은 판정 문안과 차감이 함께 Gemini 방 칸으로 돈다 — 모델 배정 표의 Opus 방 칸 행은 쓰이지 않는다. 소설 줄
+저장한 방은 판정 문안과 차감이 함께 Gemini 방 칸으로 돈다 — 모델 배정 표의 Opus 방 칸 행은 쓰이지 않는다. Opus 로 시작한 빌더
+미리보기 세션도 같다(생성·차감·판정이 함께 Gemini). 소설 줄
 (`NOVELIZE_PREMIUM_*`)은 건드리지 않는다 — 소설 상위 모델까지 끌 때만 `NOVELIZE_PREMIUM_MODELS_ENABLED` 줄도 같은 방식으로
 지운다:
 
@@ -3175,7 +3191,8 @@ tail -f /var/log/ddona-hidden-novel-purge.log
 - **표가 비어 있으면** 모든 칸이 env 규칙(위 `STAT_JUDGMENT_MODEL` 행의 키와 `LLM_CALL_SITE_BACKENDS`)과 같다. 빈 표가 기본 상태다.
 - **표를 따르는 곳.** 채팅 방 턴(보내기·재생성·수정)의 스탯·장면 헤더·엔딩·그림 판정, 그 턴 뒤의 요약 접기·장면·사실 추출, 요약
   다시 만들기다. 장면 헤더 칸은 자기 행이 없으면 같은 (레인, 방 모델)의 스탯 판정 행을 물려받는다. 그림 칸은 스토리에서 미디어
-  북, 캐릭터에서 상황 이미지 단계다. 빌더 미리보기 판정은 이 배포에서 아직 표를 보지 않는다(env 규칙).
+  북, 캐릭터에서 상황 이미지 단계다. 빌더 미리보기 판정도 (레인, 그 턴의 실효 모델, 단계) 칸을 같은 규칙으로 읽는다 — 기본
+  Gemini 세션은 `gemini` 칸이다("빌더 미리보기 모델" 단락).
 - **표를 따르지 않는 칸.** 요약 접기 뒤 인상 생성은 배정 표 단계가 아니라 늘 env 설정(`MEMORY_IMPRESSION_MODEL`)의 체인과
   모델로 돈다 — 장기 기억 인상 기능이 아직 다듬어지는 중이라 단계 표 밖에 둔다. 표에 행이 있어도 인상의 문안·부를 모델은 바뀌지 않는다.
 - **행은 문안 체인과 부를 모델을 함께 바꾼다.** 행이 쓰인 칸의 판정·요약·추출 호출은 행의 부를 모델을 행의 경로로 부른다 — 공급자에
