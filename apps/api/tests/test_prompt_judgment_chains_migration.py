@@ -71,6 +71,9 @@ _FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
 _SOURCE_MARKING = _load("0c1a85bc5c2f")
 # 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는 이것부터다.
 _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
+# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
+# 때는 이것부터다.
+_IMPRESSION = _load("6558ab4d3dbc")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _CLAUDE_MODELS: tuple[PromptSetModelId, ...] = ("sonnet", "opus")
@@ -92,6 +95,7 @@ def _ids(pairs: list[tuple[PromptLane, PromptSetModelId]]) -> list[str]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -294,7 +298,7 @@ async def test_seeded_sets_match_publish_validation_but_for_the_later_revisions_
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
     """게시 검증의 기대 집합과 시드가 맞물린다 — head 코드 표와의 차이는 뒤 리비전들(장면 기억 문안·관계·사실 기억 문안·요약
-    비밀 표기 슬롯)이 더한 행뿐이다. 그 뒤 리비전 이후로 이 시드는 게시 검증에 막히고(복원해도 게시할 수 없다), 그 행을 더한 마지막 리비전의
+    비밀 표기 슬롯·인상 생성 채널)이 더한 행뿐이다. 그 뒤 리비전 이후로 이 시드는 게시 검증에 막히고(복원해도 게시할 수 없다), 그 행을 더한 마지막 리비전의
     세트가 그 체인의 게시 검증을 통과한다."""
     sections = await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)])
     prompt_set = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
@@ -304,6 +308,7 @@ async def test_seeded_sets_match_publish_validation_but_for_the_later_revisions_
     later.add((_SECRET_MARKING.SUMMARY_CHANNEL, _SECRET_MARKING.SCOPE, _SECRET_MARKING.SLOT))
     if lane == "story":
         later |= {(row[0], row[1], row[2]) for row in _SCENE_JUDGMENT.NEW_ROWS}
+    later |= {(row[0], row[1], row[2]) for row in _IMPRESSION.NEW_ROWS}
     seeded = {(s.channel, s.scope, s.slot) for s in sections}
     expected = {(channel, scope, slot) for channel, slots in _expected_slots(lane, model).items() for scope, slot in slots}
     assert seeded | later == expected and not seeded & later
@@ -311,7 +316,7 @@ async def test_seeded_sets_match_publish_validation_but_for_the_later_revisions_
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
     later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert later_set.id == (_SCENE_INSTRUCTION_V2 if lane == "story" else _SOURCE_MARKING).NEW_SET_IDS[(lane, model)]
+    assert later_set.id == _IMPRESSION.NEW_SET_IDS[(lane, model)]
     _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model="gemini")
@@ -390,6 +395,7 @@ async def test_downgrade_then_upgrade_swaps_the_chains_back_and_forth(db_session
     gemini_before = {lane: await _active_id(db_session, lane, "gemini") for lane in _LANES}
     connection = await db_session.connection()
 
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
     for lane, model in _CLAUDE_PAIRS:
@@ -414,6 +420,7 @@ async def test_downgrade_removes_judgment_only_sets_the_admin_published(db_sessi
     await db_session.flush()
     connection = await db_session.connection()
 
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
     assert await db_session.scalar(sa.select(sa.func.count()).select_from(PromptSet).where(PromptSet.model == "haiku")) == 0
@@ -425,6 +432,7 @@ async def test_downgrade_stops_when_the_admin_published_a_claude_set_after_the_s
 ) -> None:
     """그 게시본에도 판정 행이 있어 되돌린 뒤 활성으로 남으면 이전 코드의 게시 검증이 그 체인을 막는다 — 풀 길이 옛 버전
     통째 복원뿐이라 사람이 판단하게 멈춘다. 아무것도 지우지 않는다."""
+    await (await db_session.connection()).run_sync(_IMPRESSION.delete_seeded_rows)
     db_session.add(_set(lane=lane, model=model, status="published", published_at=await _after_gemini(db_session, lane)))
     await db_session.flush()
     connection = await db_session.connection()
@@ -447,6 +455,7 @@ async def test_upgrade_stops_when_the_lane_has_no_window(db_session: AsyncSessio
     만족하는 시각이 없다."""
     await _undo_later_revisions(db_session)
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     db_session.add(_set(lane="story", model="opus", status="published", published_at=await _after_gemini(db_session, "story")))
     await db_session.flush()
@@ -518,11 +527,13 @@ async def test_patch_drafts_adds_the_judgment_rows_in_place_and_the_draft_publis
     assert await connection.run_sync(_LATEST._patch_drafts) == [(lane, model)]
     assert await connection.run_sync(_SECRET_MARKING._patch_drafts) == [(lane, model)]
     await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
+    await connection.run_sync(_IMPRESSION._patch_drafts)
     sections = await _sections_of(db_session, draft_id)
     draft = await _get_set(db_session, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
 
     # 되돌리기도 실제 순서대로 뒤 리비전부터.
+    await connection.run_sync(_IMPRESSION._delete_draft_rows)
     await connection.run_sync(_SCENE_JUDGMENT._delete_draft_rows)
     await connection.run_sync(_SECRET_MARKING._delete_draft_rows)
     await connection.run_sync(_LATEST._delete_draft_rows)

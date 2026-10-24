@@ -44,7 +44,6 @@ from api.chat.prompt_builder import (
     MemorySummaryResult,
     SceneJudgmentResult,
     StatRuleJudgmentResult,
-    load_active_prompt_set,
 )
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
 from api.core.config import settings
@@ -60,7 +59,6 @@ from factories import (
     _assert_recorded_cases,
     _clear_llm_override,
     _enable_chat_premium,
-    _impression_sections,
     _login_as,
     _make_asset,
     _make_chat_turn,
@@ -378,8 +376,8 @@ async def _send_story_with_impressions(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> _Case:
     """두 추출과 인상 쓰기(묶음 크기 1)를 켠 Opus 스토리 방의 보내기 — 접기가 만든 스냅샷을 두 추출이 끝내면 인상 호출이 장부
-    끝에 남는다. 인상은 기억 사용 범위(기본 Opus 방) 안에서만 돌아 상위 모델 방이어야 한다. 인상 문안은 아직 DB 세트에 없어 활성
-    Gemini 스토리 세트(인상 모델 기본값의 세트)에 합성 섹션을 심는다."""
+    끝에 남는다. 인상은 기억 사용 범위(기본 Opus 방) 안에서만 돌아 상위 모델 방이어야 한다. 인상 문안은 활성 Gemini 스토리
+    세트(인상 모델 기본값의 세트)에 심은 운영 문안이다."""
     monkeypatch.setattr(settings, "memory_episodes_extract", True)
     monkeypatch.setattr(settings, "memory_facts_extract", True)
     monkeypatch.setattr(settings, "memory_impressions_write", True)
@@ -390,12 +388,7 @@ async def _send_story_with_impressions(
     room = await _open_room(db_client, db_session, turns=_ROOM_TURNS, lane="story", user=user)
     cell_id = await _add_room_cell_and_endings(db_session, room.room_id, _ENDING_GATES)
     await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model="opus"))
-    prompt_set, _sections = await load_active_prompt_set(db_session, lane="story")
-    db_session.add_all(_impression_sections(prompt_set))
     await db_session.commit()
-    keys = await redis_client.keys(f"{ACTIVE_PROMPT_SET_KEY_PREFIX}*")
-    if keys:
-        await redis_client.delete(*keys)
     return _Case("POST", f"/chat-rooms/{room.room_id}/messages", {"content": "마을을 떠나자"}, str(cell_id))
 
 

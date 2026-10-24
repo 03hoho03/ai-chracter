@@ -59,6 +59,9 @@ _FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
 _SOURCE_MARKING = _load("0c1a85bc5c2f")
 # 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는 이것부터다.
 _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
+# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
+# 때는 이것부터다.
+_IMPRESSION = _load("6558ab4d3dbc")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
@@ -107,6 +110,7 @@ def _summary_slots(sections: list[PromptSection]) -> list[str]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -222,6 +226,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(list(_FACT_KNOWN_BY_ORDER.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SOURCE_MARKING.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
             )
         )
     ).all()
@@ -234,10 +239,19 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
 async def test_seeded_sets_pass_publish_validation_and_the_previous_sets_no_longer_do(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
-    """새 세트는 지금 코드의 게시 검증(슬롯 집합·자리표시자 허용 목록)을 통과한다. 이전 세트는 이 슬롯이 없어 "누락"으로
-    막힌다 — 코드 표와 시드가 같이 움직였다는 증거다."""
+    """새 세트는 뒤 리비전(인상 생성 채널)의 행만 더하면 지금 코드의 게시 검증(슬롯 집합·자리표시자 허용 목록)을 통과한다.
+    이전 세트는 이 슬롯이 없어 "누락"으로 막힌다 — 코드 표와 시드가 같이 움직였다는 증거다."""
     await _undo_later_revisions(db_session)
     prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
+    sections = [
+        *sections,
+        *(
+            PromptSection(
+                prompt_set_id=prompt_set.id, channel=c, scope=s, slot=sl, variant=v, body=b, conditional=cond, order=o
+            )
+            for c, s, sl, v, b, cond, o in _IMPRESSION.NEW_ROWS
+        ),
+    ]
     # 장면 추출 지시문 리비전을 되돌린 뒤 story 레인의 활성은 뒤 리비전(장면 헤더 판정 채널)의 세트다 — 이 세트는 그 채널
     # "누락"으로 막히고, 그 채널만 더한 뒤 리비전의 세트가 통과한다.
     if lane == "story":
@@ -316,6 +330,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     올리면 같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
 
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
@@ -345,6 +360,7 @@ async def test_upgrade_copies_an_instruction_the_admin_edited(db_session: AsyncS
     """운영 story 요약 지시문처럼 어드민이 고쳐 게시한 지시문이 활성이면 멈추지 않고 그 본문을 그대로 옮긴다 — 가정 검사는
     본문이 아니라 슬롯 모양만 본다."""
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -386,6 +402,7 @@ async def test_upgrade_stops_when_the_summary_layout_is_not_the_expected_one(
     """요약 채널이 기대한 슬롯 집합·순서가 아니면(행이 빠짐, 어드민이 순서를 바꿈, 이 슬롯이 이미 있음) 그 레인에는 아무 세트도
     넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -431,6 +448,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -453,6 +471,7 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     db_session: AsyncSession, lane: PromptLane, model: str
 ) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -492,8 +511,11 @@ async def test_patch_drafts_adds_the_slot_in_place_and_the_draft_publishes(
     assert {key: value for key, value in _keyed(sections).items() if key[0] != "scene_judgment"} == _expected_after(
         before
     )
+    await connection.run_sync(_IMPRESSION._patch_drafts)
+    sections = await _sections_of(db_session, draft_id)
     _validate_prompt_draft_for_publish(await _get_set(db_session, draft_id), sections, lane=lane, model=model)
 
+    await connection.run_sync(_IMPRESSION._delete_draft_rows)
     await connection.run_sync(_SCENE_JUDGMENT._delete_draft_rows)
 
     assert await connection.run_sync(_M._delete_draft_rows) == [(lane, model)]

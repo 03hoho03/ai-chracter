@@ -12,7 +12,7 @@ import base64
 import json
 import os
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Generator, Iterable
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Generator, Iterable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, UTC
@@ -505,18 +505,20 @@ def _make_memory_fact_extraction(
     return ChatMemoryFactExtraction(**defaults)
 
 
-# 인상 채널의 합성 섹션 본문 첫 줄. 운영 문안이 아니다 — 문안은 DB 프롬프트 세트에만 있고 아직 심지 않았다.
+# 인상 채널의 합성 섹션 본문 첫 줄. 운영 문안이 아니다 — 운영 문안은 DB 프롬프트 세트에 있고, 인상 작업의 테스트는 그 문안이
+# 바뀌어도 깨지지 않게 이 합성 문안으로 렌더한다.
 IMPRESSION_SYNTHETIC_INSTRUCTION = "[합성 지시] 아래 기억에서 인물 사이 감정의 흐름을 한 문단으로 적는다."
 
 
-def _impression_sections(prompt_set: PromptSet) -> list[PromptSection]:
-    """인상 채널(`memory_impression`)의 합성 섹션 — 지시문 한 줄, 장면 줄, 사실 줄. 세션에 넣지 않고 렌더에만 쓴다."""
+def _impression_sections(prompt_set: PromptSet, sections: Sequence[PromptSection]) -> list[PromptSection]:
+    """세트의 섹션에서 인상 채널(`memory_impression`) 행을 빼고 그 자리에 합성 섹션 셋(지시문 한 줄, 장면 줄, 사실 줄)을
+    더한다. 합성 섹션은 세션에 넣지 않고 렌더에만 쓴다."""
     rows = [
         ("instruction", IMPRESSION_SYNTHETIC_INSTRUCTION),
         ("episodes", "[장면]\n{episode_lines}"),
         ("facts", "[사실]\n{fact_lines}"),
     ]
-    return [
+    return [section for section in sections if section.channel != "memory_impression"] + [
         PromptSection(
             prompt_set_id=prompt_set.id,
             channel="memory_impression",

@@ -73,6 +73,8 @@ _SECRET_MARKING_MIGRATION = _load("0aeadefcf159")
 # 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로
 # story 초안은 이것도 거친다.
 _SCENE_JUDGMENT = _load("0346abdbcc92")
+# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 리비전 — 게시 검사가 head 코드 표를 쓰므로 초안은 이것도 거친다.
+_IMPRESSION = _load("6558ab4d3dbc")
 
 _NOTE_KEY = ("generation", "both", "memory_note", "")
 _GEN_SUMMARY_KEY = ("generation", "both", "memory_summary", "")
@@ -510,6 +512,7 @@ async def test_patch_draft_adds_memory_rows_in_place_and_draft_then_publishes(
     assert await connection.run_sync(_MEMORY_FACT_MIGRATION._patch_drafts) == [(lane, "gemini")]
     assert await connection.run_sync(_SECRET_MARKING_MIGRATION._patch_drafts) == [(lane, "gemini")]
     await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
+    await connection.run_sync(_IMPRESSION._patch_drafts)
     db_session.expire_all()  # 원시 SQL이 민 order를 식별자 맵의 옛 값이 가리지 않게
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None

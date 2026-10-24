@@ -75,6 +75,9 @@ _FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
 _SOURCE_MARKING = _load("0c1a85bc5c2f")
 # 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는 이것부터다.
 _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
+# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
+# 때는 이것부터다.
+_IMPRESSION = _load("6558ab4d3dbc")
 
 _NEW_KEYS = {(row[0], row[1], row[2], row[3]) for row in _M.NEW_ROWS}
 
@@ -134,6 +137,7 @@ async def test_active_story_gemini_set_is_the_source_plus_four_rows(db_session: 
     나중 게시이며, 새 4행 말고는 원본과 바이트까지 같다. `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지
     못하므로 활성 id 를 직접 단언한다."""
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -175,6 +179,7 @@ async def test_downgrade_then_upgrade_swaps_the_active_set_and_back(db_session: 
     """되돌리면 활성 story Gemini 세트가 원본으로 돌아가고 이 채널 행이 어디에도 남지 않는다. 다시 올리면 같은 리터럴
     세트가 활성이 된다. Claude 체인 활성 세트는 내내 그대로다."""
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -187,6 +192,7 @@ async def test_downgrade_then_upgrade_swaps_the_active_set_and_back(db_session: 
     await connection.run_sync(_MEMORY_EPISODE_MIGRATION.delete_seeded_rows)
     claude_before = {model: await _active_id(db_session, model) for model in _CLAUDE_SET_IDS}
 
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
     assert await _active_id(db_session) == _SOURCE_SET_ID
@@ -272,12 +278,14 @@ async def test_patch_draft_adds_rows_in_place_and_the_draft_publishes_then_downg
     assert await connection.run_sync(_MEMORY_FACT_MIGRATION._patch_drafts) == [("story", "gemini")]
     assert await connection.run_sync(_SECRET_MARKING_MIGRATION._patch_drafts) == [("story", "gemini")]
     await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
+    await connection.run_sync(_IMPRESSION._patch_drafts)
     sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     assert draft is not None
     _validate_prompt_draft_for_publish(draft, sections, lane="story")
 
     # 되돌리기도 실제 순서대로 뒤 리비전부터.
+    await connection.run_sync(_IMPRESSION._delete_draft_rows)
     await connection.run_sync(_SCENE_JUDGMENT._delete_draft_rows)
     await connection.run_sync(_SECRET_MARKING_MIGRATION._delete_draft_rows)
     await connection.run_sync(_MEMORY_FACT_MIGRATION._delete_draft_rows)
