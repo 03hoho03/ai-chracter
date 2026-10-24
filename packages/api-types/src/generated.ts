@@ -9032,6 +9032,11 @@ export interface components {
              * @enum {string}
              */
             stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "generation" | "structured";
             configured: components["schemas"]["AdminPromptRouteRow"] | null;
             effective: components["schemas"]["AdminPromptRouteEffective"];
             skipped: components["schemas"]["AdminPromptRouteSkip"] | null;

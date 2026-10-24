@@ -22283,6 +22283,14 @@
             ],
             "title": "Stage"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "generation",
+              "structured"
+            ],
+            "title": "Kind"
+          },
           "configured": {
             "anyOf": [
               {
@@ -22326,6 +22334,7 @@
           "lane",
           "roomModel",
           "stage",
+          "kind",
           "configured",
           "effective",
           "skipped",
