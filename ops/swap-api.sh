@@ -209,9 +209,11 @@ detach_stop_worker() {
     log "⚠️ worker_$c 의 분리 정지를 띄우지 못했다(위 메시지) — 그 워커는 떠 있다. 다음 교체가 다시 시도한다"
 }
 
-# 알림은 막 합류한 새 api 색 안에서 보낸다 — 그 컨테이너 env 에 웹훅 주소가 있어 이 스크립트가 `.env` 를 읽지 않아도 된다.
+# 알림은 지금 서빙 중인 api 색(`WORKER_API`, `worker_step` 이 정한다) 안에서 보낸다 — 그 컨테이너 env 에 웹훅 주소가 있어
+# 이 스크립트가 `.env` 를 읽지 않아도 된다.
+WORKER_API=""
 worker_notify() {
-  compose exec -T "api_$IDLE" env PYTHONPATH=/app/scripts python -c \
+  compose exec -T "api_$WORKER_API" env PYTHONPATH=/app/scripts python -c \
     'import sys; from ops.notify import notify; sys.exit(0 if notify(sys.argv[1]) else 1)' "$1" ||
     log "⚠️ 워커 단계 알림을 보내지 못했다"
 }
@@ -292,16 +294,17 @@ wait_worker_slots() {
   done
 }
 
-# 12-1) 판정: 막 합류한 새 api 색 안에서 스위치와 워커 모듈 유무를 한 줄로 찍는다. 그 컨테이너는 이번 이미지와 지금 `.env`
-# 로 막 만들어졌고 워커도 같은 이미지·env 로 뜨므로 판정 대상이 같다. 앱과 같은 설정 파서라 참/거짓 해석이 갈리지 않고,
+# 12-1) 판정: 지금 서빙 중인 api 색(인자 — 평상시는 막 합류한 새 색) 안에서 스위치와 워커 모듈 유무를 한 줄로 찍는다. 그
+# 컨테이너는 이번 이미지와 지금 `.env` 로 만들어졌고 워커도 같은 이미지·env 로 뜨므로 판정 대상이 같다. 앱과 같은 설정 파서라 참/거짓 해석이 갈리지 않고,
 # 출력은 토큰 셋뿐이다(`.env` grep 은 파서가 다르고, `compose config`·`docker inspect` 는 비밀까지 꺼낸다). 워커 도입
 # 이전 이미지는 그 설정 칸도 모듈도 없어 `off absent` 다 — 옛 이미지로 워커를 띄워 모듈을 못 찾고 재시작을 되풀이하는
 # 일을 이 판정이 막는다.
 WORKER_CHECK='import importlib.util as u; from api.core.config import settings as s; print("DDONA_WORKER", "on" if getattr(s, "novelize_worker_enabled", False) else "off", "present" if u.find_spec("api.novelize.worker") else "absent")'
 
 worker_step() {
-  local out verdict c st n t="" o started_c started_o
-  out="$(compose exec -T "api_$IDLE" python -c "$WORKER_CHECK")" || {
+  local serving="$1" out verdict c st n t="" o started_c started_o
+  WORKER_API="$serving"
+  out="$(compose exec -T "api_$serving" python -c "$WORKER_CHECK")" || {
     worker_fail "소설화 워커 판정이 실패했다(위 메시지) — 워커는 건드리지 않았다" "$(worker_after_text)"
     return 0
   }
@@ -334,10 +337,10 @@ worker_step() {
     return 0
   fi
 
-  # 대상 슬롯: 새 api 색 슬롯이 비었으면 그것, 아니면 옛 색 슬롯. 12) 뒤라 두 색 이미지 줄이 같은 참조라 어느 슬롯이든
-  # 이번 이미지로 뜬다. 둘 다 차 있으면(새 워커를 띄운 뒤 옛 워커를 정지하기 전에 끊긴 잔재) 먼저 뜬 쪽을 정지하고 이번
+  # 대상 슬롯: 서빙 중인 api 색 슬롯이 비었으면 그것, 아니면 다른 색 슬롯. 두 색 이미지 줄이 같은 참조가 된 뒤에만 부르므로
+  # 어느 슬롯이든 이번 이미지로 뜬다. 둘 다 차 있으면(새 워커를 띄운 뒤 옛 워커를 정지하기 전에 끊긴 잔재) 먼저 뜬 쪽을 정지하고 이번
   # 기동은 건너뛴다 — 다음 교체가 빈 슬롯으로 잇는다.
-  for c in "$IDLE" "$ACTIVE"; do
+  for c in "$serving" "$(other_color "$serving")"; do
     case "$(worker_status "$c")" in
       alive | draining) ;;
       *)
@@ -443,7 +446,7 @@ log "이미지: $REF"
 
 # 4-1) 드레인 시작 뒤 끊긴 교체의 잔재(쉬는 색에 드레인 플래그)면 그 색을 마저 내린다. 이미 Caddy 밖이고
 #      하던 요청은 정지 유예 안에서 마친다. 끝나면 한 색 형상이라 아래가 평소처럼 이어진다. 원래 요청이 끊긴
-#      교체가 올리던 바로 그 이미지면(같은 태그로 재실행) 그 교체에 남은 일은 이것뿐이라 여기서 끝낸다.
+#      교체가 올리던 바로 그 이미지면(같은 태그로 재실행) 그 교체에 남은 일은 이것과 워커 단계뿐이라 둘을 하고 끝낸다.
 #      태그를 생략한 재실행(env 반영)은 끊긴 교체가 지금 env 로 떴는지 알 수 없어 한 번 더 교체한다.
 if grep -Fqx "$IDLE" <<<"$DRAINING"; then
   log "4-1) 중단된 교체의 잔재: api_$IDLE 에 드레인 플래그가 있다 — 마저 내리고 이어 간다"
@@ -453,7 +456,12 @@ if grep -Fqx "$IDLE" <<<"$DRAINING"; then
   RUNNING="$ACTIVE"
   log "4-1) 잔재 정리 완료: active=$ACTIVE 상태 파일 기록"
   if [ -n "$TAG_ARG" ] && [ "$REF" = "$CURRENT_REF" ]; then
-    log "완료: api_$ACTIVE 가 이미 $REF 다 — 끊긴 교체를 마저 끝냈고 더 할 일이 없다. 소요 $(($(date +%s) - START))s"
+    # 끊긴 곳은 옛 색 드레인(10~11)이라 그 교체의 워커 단계(12-1)는 아직 돌지 않았다. 두 색 줄이 이제 같은 참조이고 api 는
+    # 한 색이므로 여기서 슬롯을 비우고 워커 단계를 돌려 워커도 이 이미지로 맞춘다 — 안 하면 같은 태그 재실행이 초록으로
+    # 끝나도 워커는 옛 이미지 그대로(처음 켜는 교체였다면 워커 없음)로 남는다.
+    wait_worker_slots
+    worker_step "$ACTIVE"
+    log "완료: api_$ACTIVE 가 이미 $REF 다 — 끊긴 교체를 마저 끝냈다. 소요 $(($(date +%s) - START))s"
     exit 0
   fi
 fi
@@ -576,7 +584,7 @@ log "12) $ACTIVE_KEY 도 같은 이미지로 맞춤"
 
 # 12-1) 소설화 워커(위 `worker_step`). 두 색 이미지 줄이 같은 참조가 된 뒤라 빈 슬롯 어디에 띄워도 이번 이미지다. 새 api 가
 #       이미 서빙 중이라 여기서 무엇이 실패해도 api 교체를 되돌리지 않는다.
-worker_step
+worker_step "$IDLE"
 
 # 13) 상태 파일. 이 줄이 배포 로그에 찍혀야 stdin 이 중간에 삼켜지지 않고 끝까지 돈 것이다.
 write_state "$IDLE"
