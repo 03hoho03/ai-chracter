@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin import prompt_routing as admin_prompt_routing
 from api.chat.prompt_builder import load_active_prompt_set
-from api.chat.prompt_routing import ALLOWED_ROUTE_PAIRS
+from api.chat.prompt_routing import ALLOWED_ROUTE_PAIRS, route_chain_errors
 from api.chat.prompt_routing_cache import PROMPT_ROUTES_CACHE_KEY, invalidate_prompt_routes, load_prompt_routes
 from api.chat.prompt_stages import LANE_STAGES
 from api.chat.turn_prompt import judgment_prompt_sets
@@ -469,22 +469,29 @@ async def test_a_save_from_a_stale_revision_is_a_conflict(
     assert len(await _revisions(db_session)) == 1
 
 
-async def test_two_saves_computing_the_same_revision_number_conflict(
+async def test_a_save_committed_while_another_is_being_checked_makes_the_other_a_conflict(
     routing_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
 ) -> None:
     first = await _saved(db_client, [_STAT_ROW])
+    interleaved: list[int] = []
 
-    async def same_number(db: AsyncSession) -> int:
-        return 1
+    async def chain_errors_with_a_save_in_between(db: AsyncSession, rows: Any) -> Any:
+        # 같은 기준에서 출발한 다른 저장이 이 저장의 최신 이력 확인을 지난 뒤, 체인 검사 도중에 먼저 커밋된 상황을 만든다.
+        if not interleaved:
+            interleaved.append(1)
+            other = await _put(db_client, [_FACT_ROW], first["revisionId"])
+            interleaved.append(other.status_code)
+        return await route_chain_errors(db, rows)
 
-    # 앞 저장의 최신 이력 확인을 함께 지난 동시 저장 둘 중 뒤쪽을 흉내 낸다 — 같은 번호를 계산한다.
-    routing_env.setattr(admin_prompt_routing, "_next_revision_number", same_number)
+    routing_env.setattr(admin_prompt_routing, "route_chain_errors", chain_errors_with_a_save_in_between)
 
-    resp = await _put(db_client, [], first["revisionId"])
+    resp = await _put(db_client, [_STAT_ROW], first["revisionId"])
 
-    assert resp.status_code == 409
-    assert await _table(db_session) == [_STAT_ROW]
-    assert len(await _revisions(db_session)) == 1
+    assert interleaved == [1, 200]
+    assert resp.status_code == 409, resp.text
+    # 먼저 커밋된 저장의 표가 남고, 뒤 저장이 그 표를 지우고 이력을 하나 더 쌓지 않는다.
+    assert await _table(db_session) == [_FACT_ROW]
+    assert [r.number for r in await _revisions(db_session)] == [1, 2]
 
 
 async def test_saving_no_rows_empties_the_table_and_everything_resolves_from_env_again(

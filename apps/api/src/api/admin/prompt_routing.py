@@ -17,7 +17,7 @@ from typing import Any, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from redis.exceptions import RedisError
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -134,11 +134,6 @@ async def _latest_revision(db: AsyncSession) -> PromptRouteRevision | None:
         select(PromptRouteRevision).order_by(PromptRouteRevision.number.desc()).limit(1)
     )
     return result
-
-
-async def _next_revision_number(db: AsyncSession) -> int:
-    current = await db.scalar(select(func.max(PromptRouteRevision.number)))
-    return 1 if current is None else current + 1
 
 
 async def _routing_response(db: AsyncSession) -> AdminPromptRoutingResponse:
@@ -258,9 +253,11 @@ async def _save_routes(
     if chain_errors:
         raise _rule_error(rows, chain_errors)
 
-    # 프롬프트 세트 게시와 같은 이유로 SAVEPOINT 로 감싼다 — 최신 이력 확인을 함께 지난 동시 저장 둘이 같은 번호를 계산하면 번호
-    # 유니크 인덱스가 뒤쪽을 막는다. 서로 다른 두 표 중 하나를 잃는 경쟁이라 덮어쓰지 않고 409 로 다시 저장하게 한다.
-    number = await _next_revision_number(db)
+    # 번호는 낡은 기준 확인에 쓴 그 최신 이력에서 정한다. 검사 뒤에 최대 번호를 다시 읽으면 READ COMMITTED 의 새 스냅샷에 그 사이
+    # 커밋된 다른 저장이 보여 그 다음 번호를 잡고, 다른 저장의 표를 지운 채 성공한다. 이 번호를 다른 저장이 이미 쥐었으면 번호 유니크
+    # 인덱스가 막는다 — 프롬프트 세트 게시와 같은 이유로 SAVEPOINT 로 감싸, 서로 다른 두 표 중 하나를 잃는 경쟁을 덮어쓰지 않고
+    # 409 로 다시 저장하게 한다.
+    number = 1 if latest is None else latest.number + 1
     try:
         async with db.begin_nested():
             db.add(
