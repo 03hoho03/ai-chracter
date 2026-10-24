@@ -19,7 +19,9 @@
  *   그 그림을 쓸 수 없다고 거절하면(그사이 원작 이용 제한) 다시 받는다.
  * - `sourceSelection`: 담을 대화 저장·승인(응답이 상태면 `setQueryData`), 그리고 이 앱 밖의 일 — 대화방에서 대화가 이어지거나
  *   고쳐지면 방 끝·원문 변경 표시가 바뀐다. 구성 화면을 열 때마다 새로 받는다. 화 생성(작업이 끝나면 소설 캐시를 모두 다시 받는다)·마지막 화 지우기도 이미 쓴 구간을 바꿔
- *   다시 받는다. */
+ *   다시 받는다.
+ * - `outline`: 구성안 초안 저장·승인(응답이 상태면 `setQueryData`), 구성안 작업이 끝났을 때(작업이 끝나면 소설 캐시를 모두 다시
+ *   받는다), 그리고 담을 대화 승인 — 승인 선택이 바뀌면 구성안의 낡음 표시가 바뀐다. 구성 화면을 열 때마다 새로 받는다. */
 export const novelKeys = {
   all: ["novel"] as const,
   list: () => [...novelKeys.all, "list"] as const,
@@ -42,6 +44,7 @@ export const novelKeys = {
   publication: (novelId: string) => [...novelKeys.all, "publication", novelId] as const,
   illustrationCandidates: (novelId: string) => [...novelKeys.all, "illustrationCandidates", novelId] as const,
   sourceSelection: (novelId: string) => [...novelKeys.all, "sourceSelection", novelId] as const,
+  outline: (novelId: string) => [...novelKeys.all, "outline", novelId] as const,
 };
 
 /** 한 소설의 캐시 중 `kinds` 종류만 고르는 술어. `invalidateQueries({ queryKey: novelKeys.all, predicate })` 로

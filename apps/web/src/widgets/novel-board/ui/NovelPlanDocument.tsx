@@ -1,11 +1,18 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import type { RefObject } from "react";
+import { useMemo, useRef, useState, type RefObject } from "react";
 
-import type { NovelDetailResponse } from "@/entities/novel";
-import { NovelSourceSelectionStep } from "@/features/select-novel-source";
+import { useChatRoomSourceMessagesQuery } from "@/entities/chat-room";
+import { useNovelOutlineQuery, useNovelSourceSelectionQuery, type NovelDetailResponse } from "@/entities/novel";
+import type { NovelChapterJobFlow } from "@/features/create-novel-chapter";
+import { NovelOutlineStep, toOutlineBase, type OutlineMakeControl, type OutlineRange } from "@/features/plan-novel-outline";
+import { buildSourceTurns, NovelSourceSelectionStep, toSourceSelectionStatus } from "@/features/select-novel-source";
+
+import { toCurrentPlanStep } from "../model/planStep";
 
 type NovelPlanDocumentProps = {
   novel: NovelDetailResponse;
+  /** 화 작업 흐름 — 구성안 만들기(유료)도 이 흐름으로 시작하고, 진행·다시 시도는 작업 줄이 진다. */
+  chapterFlow: NovelChapterJobFlow;
   /** 문서 제목. 구성 모드로 옮기면 호출부가 여기로 포커스를 보낸다. */
   headingRef: RefObject<HTMLHeadingElement | null>;
   onDraftDirtyChange: (isDirty: boolean) => void;
@@ -18,9 +25,47 @@ const STEPS = ["담을 대화", "전체 구성안", "화별 장면·원고"] as 
  * 편집 보드의 구성 모드(`?select=plan`) — 대화를 골라 화 구성을 세우는 한 열 문서. 넓은 화면에서도 캔버스·옆 패널 대신 이
  * 문서 하나가 보이고(폭은 호출부가 정한다), 상단바·작업 줄·떠날 때의 버림 확인은 보드 것을 그대로 쓴다.
  *
- * 지금은 첫 단계(담을 대화)만 있다. 단계 줄은 앞으로 이어질 차례를 보인다.
+ * 지금은 담을 대화와 전체 구성안 두 단계가 있다. 두 단계는 서로 다른 기능이라 이 문서가 잇는다 — 구성안 단계의 근거 턴 번호는
+ * 담을 대화 단계와 같은 묶기로 세고(같은 대화방 메시지 캐시), 낡은 구성안의 "구간 되돌리기"는 담을 대화 단계에 고침으로 넘긴다.
  */
-export function NovelPlanDocument({ novel, headingRef, onDraftDirtyChange }: NovelPlanDocumentProps) {
+export function NovelPlanDocument({ novel, chapterFlow, headingRef, onDraftDirtyChange }: NovelPlanDocumentProps) {
+  const isRoomGone = novel.chatRoomId === null;
+  const selectionQuery = useNovelSourceSelectionQuery(novel.id, { enabled: !isRoomGone });
+  const outlineQuery = useNovelOutlineQuery(novel.id, { enabled: true });
+  const messagesQuery = useChatRoomSourceMessagesQuery(novel.chatRoomId, { enabled: !isRoomGone });
+  const [restoreRequest, setRestoreRequest] = useState<{ id: number; ranges: OutlineRange[] } | undefined>(undefined);
+  // 두 단계가 따로 알리는 저장하지 않은 고침. 어느 쪽이든 있으면 보드가 옮기기 전에 버릴지 묻는다.
+  const dirtyRef = useRef({ selection: false, outline: false });
+
+  const messages = messagesQuery.data;
+  const turns = useMemo(
+    () =>
+      messages === undefined
+        ? undefined
+        : buildSourceTurns(messages, { fixedEndId: null, roomEndId: messages.at(-1)?.id ?? null, lockedRanges: [] }),
+    [messages],
+  );
+  const selectionState = selectionQuery.data;
+  const outlineBase = outlineQuery.data === undefined ? undefined : toOutlineBase(outlineQuery.data);
+  const currentStep = toCurrentPlanStep({
+    selection: selectionState === undefined ? undefined : toSourceSelectionStatus(selectionState),
+    outline: outlineBase?.status,
+  });
+  const make: OutlineMakeControl = {
+    onStart: () => void chapterFlow.startOutline(),
+    isPreparing: chapterFlow.preparing === "outline",
+    // 다른 버튼에서 시작한 준비(경계 고르기·다시 만들기 확인)도 진행 중인 작업처럼 막는다.
+    isJobRunning: chapterFlow.isJobRunning || (chapterFlow.preparing !== undefined && chapterFlow.preparing !== "outline"),
+    isOutlineJobRunning: chapterFlow.runningKind === "outline_generate",
+    isAiEditRunning: chapterFlow.isAiEditRunning,
+    statusId: chapterFlow.statusId,
+  };
+
+  function reportDirty(part: "selection" | "outline", isDirty: boolean) {
+    dirtyRef.current = { ...dirtyRef.current, [part]: isDirty };
+    onDraftDirtyChange(dirtyRef.current.selection || dirtyRef.current.outline);
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
@@ -35,14 +80,17 @@ export function NovelPlanDocument({ novel, headingRef, onDraftDirtyChange }: Nov
           {STEPS.map((step, index) => (
             <li
               key={step}
-              aria-current={index === 0 ? "step" : undefined}
-              className={cn("flex items-center gap-1.5", index === 0 ? "font-medium text-foreground" : "text-muted-foreground")}
+              aria-current={index === currentStep ? "step" : undefined}
+              className={cn(
+                "flex items-center gap-1.5",
+                index === currentStep ? "font-medium text-foreground" : "text-muted-foreground",
+              )}
             >
               <span
                 aria-hidden
                 className={cn(
                   "flex size-5 items-center justify-center rounded-full border text-xs tabular-nums",
-                  index === 0 ? "border-foreground" : "border-border",
+                  index === currentStep ? "border-foreground" : "border-border",
                 )}
               >
                 {index + 1}
@@ -52,7 +100,24 @@ export function NovelPlanDocument({ novel, headingRef, onDraftDirtyChange }: Nov
           ))}
         </ol>
       </div>
-      <NovelSourceSelectionStep novel={novel} onDraftDirtyChange={onDraftDirtyChange} />
+      <NovelSourceSelectionStep
+        novel={novel}
+        onDraftDirtyChange={(isDirty) => reportDirty("selection", isDirty)}
+        restoreRequest={restoreRequest}
+      />
+      <NovelOutlineStep
+        novel={novel}
+        turns={turns}
+        isTurnsFailed={messagesQuery.isError && messages === undefined}
+        selection={
+          selectionState === undefined
+            ? undefined
+            : { hasApproved: selectionState.approved !== null, hasPendingDraft: selectionState.draft !== null }
+        }
+        make={make}
+        onRevertSelection={(ranges) => setRestoreRequest((previous) => ({ id: (previous?.id ?? 0) + 1, ranges }))}
+        onDraftDirtyChange={(isDirty) => reportDirty("outline", isDirty)}
+      />
     </div>
   );
 }

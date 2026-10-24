@@ -82,7 +82,16 @@ describe("구성안 편집 — 서버 판에서 편집 화로", () => {
     const drafts = toEpisodeDrafts(view);
     expect(isSameAsView(drafts, view)).toBe(true);
     expect(isSameAsView(updateEpisodeText(drafts, "k1", { title: "새 제목", summary: "줄거리", goal: "" }), view)).toBe(false);
-    const two = { ...view, episodes: [...view.episodes, { ...view.episodes[0], key: "k2", basis: [range("u3", "a3b")] }] };
+    const second: NovelOutlineView["episodes"][number] = {
+      key: "k2",
+      title: "둘째 화",
+      summary: "줄거리",
+      goal: "",
+      basis: [range("u3", "a3b")],
+      chapterId: null,
+      sceneOutline: "none",
+    };
+    const two = { ...view, episodes: [...view.episodes, second] };
     const twoDrafts = toEpisodeDrafts(two);
     expect(isSameAsView(moveEpisode(twoDrafts, "k2", -1), two)).toBe(false);
   });

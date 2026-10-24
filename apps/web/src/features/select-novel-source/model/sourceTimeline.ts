@@ -166,6 +166,32 @@ export function toBaseStates(turns: readonly SourceTurn[], sections: readonly So
   );
 }
 
+/** 구간들이 덮는 턴 가운데 담기가 아닌 턴을 담기로 바꾼다(잠긴 턴은 건너뛴다). 낡은 구성안의 근거 구간을 다시 담을 때 쓴다 —
+ * 지금 대화에서 찾지 못한 구간은 자리를 알 수 없어 건너뛴다(끝을 이웃까지 넓히는 저장된 구간과 달리, 근거 구간은 저장된 선택이
+ * 아니라 넓힐 이웃이 없다). `count` 는 바꾼 턴 수다. */
+export function includeTurnsInRanges(
+  turns: readonly SourceTurn[],
+  states: ReadonlyMap<string, TurnState>,
+  ranges: readonly SourceRange[],
+): { states: Map<string, TurnState>; count: number } {
+  const { indexById, ranges: turnRanges } = turnIndexRanges(turns);
+  const wanted: IndexRange[] = [];
+  for (const range of ranges) {
+    const start = indexById.get(range.startMessageId);
+    const end = indexById.get(range.endMessageId);
+    if (start !== undefined && end !== undefined && start <= end) wanted.push([start, end]);
+  }
+  const next = new Map(states);
+  let count = 0;
+  turns.forEach((turn, index) => {
+    if (turn.isLocked || !overlapsAny(turnRanges[index] ?? [0, -1], wanted)) return;
+    if (stateOf(states, turn) === "include") return;
+    next.set(turn.key, "include");
+    count += 1;
+  });
+  return { states: next, count };
+}
+
 /** 저장 뒤 원문이 바뀐 구간이 덮는 턴. */
 export function toChangedTurnKeys(
   turns: readonly SourceTurn[],

@@ -31,7 +31,8 @@ export function useSaveNovelSourceSelectionMutation() {
   });
 }
 
-/** `POST /novels/{id}/source-selection/approve` — 최신 판을 승인한다(무료). 응답이 상태 전체라 그것으로 캐시를 덮는다. */
+/** `POST /novels/{id}/source-selection/approve` — 최신 판을 승인한다(무료). 응답이 상태 전체라 그것으로 캐시를 덮는다. 승인한 선택이
+ * 바뀌면 구성안이 근거로 쓴 구간이 빠졌는지(낡음)가 바뀌므로 구성안도 다시 받는다. */
 export function useApproveNovelSourceSelectionMutation() {
   const queryClient = useQueryClient();
   return useMutation<NovelSourceSelectionState, ApiError, { novelId: string; revision: number }>({
@@ -39,6 +40,7 @@ export function useApproveNovelSourceSelectionMutation() {
       (await apiClient.post<NovelSourceSelectionState>(`/novels/${novelId}/source-selection/approve`, { revision })).data,
     onSuccess: (state, { novelId }) => {
       queryClient.setQueryData(novelKeys.sourceSelection(novelId), state);
+      void queryClient.invalidateQueries({ queryKey: novelKeys.outline(novelId) });
     },
   });
 }

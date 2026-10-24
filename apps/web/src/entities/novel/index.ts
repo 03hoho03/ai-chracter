@@ -25,6 +25,18 @@ export {
 } from "./api/useNovelCharactersQuery";
 export { useNovelRevisionQuery } from "./api/useNovelRevisionQuery";
 export {
+  novelOutlineQueryOptions,
+  useApproveNovelOutlineMutation,
+  useNovelOutlineQuery,
+  useSaveNovelOutlineMutation,
+  type NovelOutlineEpisode,
+  type NovelOutlineEpisodeInput,
+  type NovelOutlineModel,
+  type NovelOutlineSaveRequest,
+  type NovelOutlineState,
+  type NovelOutlineView,
+} from "./api/useNovelOutline";
+export {
   useApproveNovelSourceSelectionMutation,
   useNovelSourceSelectionQuery,
   useSaveNovelSourceSelectionMutation,
@@ -73,6 +85,7 @@ export { writeNovelChapterRevision } from "./api/writeNovelChapterRevision";
 export {
   hasChapterModelChoice,
   initialChapterModelId,
+  toOutlineModelOptions,
   toProposalModelOptions,
   toRegenerateModelOptions,
   type ChapterModelOption,

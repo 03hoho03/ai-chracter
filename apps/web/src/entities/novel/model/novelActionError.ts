@@ -38,7 +38,10 @@ export type NovelAction =
   | "replaceIllustration"
   | "detachIllustration"
   | "saveSourceSelection"
-  | "approveSourceSelection";
+  | "approveSourceSelection"
+  | "outline"
+  | "saveOutline"
+  | "approveOutline";
 
 export type NovelActionErrorNotice = {
   message: string;
@@ -80,6 +83,9 @@ const ACTION_OBJECT: Record<NovelAction, string> = {
   detachIllustration: "삽화를 떼지",
   saveSourceSelection: "고른 구간을 저장하지",
   approveSourceSelection: "고른 구간을 승인하지",
+  outline: "전체 구성안을 만들지",
+  saveOutline: "구성안을 저장하지",
+  approveOutline: "구성안을 승인하지",
 };
 
 /** 원래 대화방이 지워져 화를 만들 수도 다시 만들 수도 없을 때의 문장. 만들기 버튼 아래 사유 문장과 두 요청의 409 가
@@ -254,10 +260,30 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     message: "담을 대화를 하나 이상 골라주세요. AI 답이 든 턴이어야 해요.",
     shouldRefetchNovel: false,
   },
+  // 구성안을 만들려면 담을 대화를 승인해 둬야 한다. 화면이 미리 막으므로 다른 탭에서 승인 전 판을 새로 만든 경우다.
+  NOVEL_SOURCE_SELECTION_REQUIRED: { message: "먼저 담을 대화를 골라 승인해주세요.", shouldRefetchNovel: false },
+  // 구성안이 근거로 쓴 구간이 지금 승인한 담을 대화에서 빠졌다. 호출부가 구성안을 다시 받아 낡음 표시를 그린다.
+  NOVEL_OUTLINE_STALE: {
+    message: "구간을 바꿔 이 구성안은 낡았어요. 새로 만들거나 구간을 되돌려주세요.",
+    shouldRefetchNovel: false,
+  },
+  // 다른 탭이 먼저 저장·승인했다(또는 구성안 작업이 새 판을 냈다). 호출부가 고친 것을 버리고 구성안을 다시 받는다.
+  NOVEL_OUTLINE_CONFLICT: { message: "다른 곳에서 구성안을 고쳤어요. 새로 불러왔어요.", shouldRefetchNovel: false },
   CONTENT_RESTRICTED: {
     message: "이용이 제한된 작품이라 새로 쓰는 작업을 할 수 없어요. 지금까지 만든 화는 그대로 볼 수 있어요.",
     shouldRefetchNovel: false,
   },
+};
+
+/** 구성안 저장의 편집 검증 거절(`NOVEL_OUTLINE_INVALID`) 이유별 문장. 화면이 미리 막는 규칙들이라, 닿았다면 그사이 대화·구성안이
+ * 바뀌었거나 화면 계산이 서버와 어긋난 것이다 — 다시 받는 경우는 그렇다고 말한다. */
+const OUTLINE_INVALID_MESSAGE: Record<string, string> = {
+  too_many_episodes: "화가 너무 많아요. 화를 합치거나 지운 뒤 저장해주세요.",
+  unknown_key: "다른 곳에서 구성안이 바뀌어 저장하지 못했어요. 새로 불러왔어요.",
+  basis_not_found: "근거 대화 중 지워진 메시지가 있어 저장하지 못했어요. 대화와 구성안을 새로 불러왔어요.",
+  basis_outside_include: "담은 대화 밖의 턴은 화에 넣을 수 없어요. 구성안을 새로 불러왔어요.",
+  basis_overlap: "두 화가 같은 턴을 나눠 가질 수 없어요.",
+  basis_splits_turn: "대화 한 턴을 두 화로 가를 수 없어요.",
 };
 
 function detailCode(detail: unknown): string | undefined {
@@ -400,6 +426,31 @@ export function toNovelActionError(
   if (code === "NOVEL_JOB_NOT_APPLICABLE" && action === "dismissPatch") {
     return { message: "이미 적용했거나 버린 수정안이에요. 최신 내용을 불러왔어요.", shouldRefetchNovel: true };
   }
+  if (code === "NOVEL_OUTLINE_INVALID") {
+    const reason = reasonOf(error.detail);
+    return {
+      message: (reason === undefined ? undefined : OUTLINE_INVALID_MESSAGE[reason]) ?? "구성안을 저장하지 못했어요. 새로 불러왔어요.",
+      shouldRefetchNovel: false,
+    };
+  }
+  // 입력 견적이 서버 상한을 넘었다. 토큰 수는 이용자에게 뜻이 없어 한도 대비 비율로만 말한다.
+  if (code === "NOVEL_OUTLINE_INPUT_TOO_LARGE") {
+    const estimated = numberOf(error.detail, "estimatedInputTokens");
+    const max = numberOf(error.detail, "maxInputTokens");
+    const ratio =
+      estimated === undefined || max === undefined || max <= 0 ? "" : `(한도의 ${Math.round((estimated / max) * 100).toLocaleString()}%)`;
+    return { message: `고른 대화가 너무 길어요${ratio}. 담을 대화를 줄여 다시 승인해주세요.`, shouldRefetchNovel: false };
+  }
+  // 표의 문구는 구간 고르기의 말이다. 구성안을 만들 때 받으면 승인해 둔 선택이 그사이 화가 된 대화를 담고 있다.
+  if (code === "NOVEL_SOURCE_SECTION_LOCKED" && action === "outline") {
+    return {
+      message: "담은 대화 중 그사이 화가 된 곳이 있어요. 담을 대화를 확인해 다시 승인해주세요.",
+      shouldRefetchNovel: false,
+    };
+  }
+  if (code === "NOVEL_ROOM_GONE" && (action === "outline" || action === "saveOutline")) {
+    return { message: "원래 대화방이 지워져 구성안을 새로 만들거나 고칠 수 없어요.", shouldRefetchNovel: true };
+  }
   // 표의 문구는 화를 만들 때의 말이다. 구간 고르기에서 받으면 고를 대화 자체가 없다.
   if (code === "NOVEL_ROOM_GONE" && (action === "saveSourceSelection" || action === "approveSourceSelection")) {
     return { message: "원래 대화방이 지워져 담을 대화를 고를 수 없어요.", shouldRefetchNovel: true };
@@ -444,6 +495,10 @@ function failureReasonSentence(job: Pick<NovelJobResponse, "kind" | "failureReas
       return `${FAILURE_SUBJECT[job.kind]} 안전 기준에 걸리는 내용이 있었어요.`;
     case "source_changed":
       if (job.kind === "ai_edit") return "고치는 동안 화가 바뀌어 수정안을 쓸 수 없게 됐어요.";
+      // 구성안은 화가 아니라 승인한 담을 대화로 만든다 — 그 대화가 바뀌었으면 다시 승인해야 같은 요청이 된다.
+      if (job.kind === "outline_generate") {
+        return "고른 대화가 바뀌어 전체 구성안을 만들지 못했어요. 담을 대화를 확인해 다시 승인해주세요.";
+      }
       if (job.kind === "chain_generate") return "원래 대화가 바뀌어 남은 대화를 이어 만들 수 없어요.";
       return "원래 대화가 바뀌어 이 화는 다시 만들 수 없어요.";
     // 모델이 약속한 글 형식이나 화 수를 지키지 않았다 — 같은 요청으로 다시 하면 대개 맞게 나온다.

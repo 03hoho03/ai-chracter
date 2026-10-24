@@ -163,7 +163,14 @@ function PanelContent({
         />
       );
     case "plan":
-      return <NovelPlanDocument novel={novel} headingRef={headingRef} onDraftDirtyChange={onDraftDirtyChange} />;
+      return (
+        <NovelPlanDocument
+          novel={novel}
+          chapterFlow={chapterFlow}
+          headingRef={headingRef}
+          onDraftDirtyChange={onDraftDirtyChange}
+        />
+      );
   }
 }
 

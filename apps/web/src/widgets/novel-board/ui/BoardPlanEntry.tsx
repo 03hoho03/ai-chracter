@@ -1,7 +1,8 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { useId } from "react";
 
-import { useNovelSourceSelectionQuery, type NovelDetailResponse } from "@/entities/novel";
+import { useNovelOutlineQuery, useNovelSourceSelectionQuery, type NovelDetailResponse } from "@/entities/novel";
+import { OUTLINE_STATUS_LABEL, toOutlineBase } from "@/features/plan-novel-outline";
 import { SOURCE_SELECTION_STATUS_LABEL, hasChangedSource, toSourceSelectionStatus } from "@/features/select-novel-source";
 
 type BoardPlanEntryProps = {
@@ -20,6 +21,8 @@ export function BoardPlanEntry({ novel, onOpen }: BoardPlanEntryProps) {
   const headingId = useId();
   const isRoomGone = novel.chatRoomId === null;
   const query = useNovelSourceSelectionQuery(novel.id, { enabled: !isRoomGone });
+  const outlineQuery = useNovelOutlineQuery(novel.id, { enabled: true });
+  const outlineLine = toOutlineLine(outlineQuery.data === undefined ? undefined : toOutlineBase(outlineQuery.data));
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col items-start gap-2 rounded-xl border border-border p-4">
@@ -27,6 +30,7 @@ export function BoardPlanEntry({ novel, onOpen }: BoardPlanEntryProps) {
         구성
       </h3>
       <p className="text-sm break-keep text-muted-foreground">{toStatusLine(isRoomGone, query)}</p>
+      {outlineLine !== undefined && <p className="text-sm break-keep text-muted-foreground">{outlineLine}</p>}
       <Button type="button" variant="outline" size="sm" data-board-key="plan" onClick={onOpen}>
         구성 열기
       </Button>
@@ -43,4 +47,10 @@ function toStatusLine(isRoomGone: boolean, query: ReturnType<typeof useNovelSour
   const latest = query.data.draft ?? query.data.approved;
   const changed = latest !== null && hasChangedSource(latest) ? " · 원문 바뀜" : "";
   return `담을 대화 · ${status}${changed}`;
+}
+
+/** 전체 구성안 상태 한 줄. 구성안이 아직 없거나(받는 중·못 받음 포함) 모르면 줄을 두지 않는다 — 담을 대화 줄이 다음 할 일을 말한다. */
+function toOutlineLine(base: ReturnType<typeof toOutlineBase> | undefined): string | undefined {
+  if (base === undefined) return undefined;
+  return `전체 구성안 · ${OUTLINE_STATUS_LABEL[base.status]}${base.isStale ? " · 낡음" : ""}`;
 }
