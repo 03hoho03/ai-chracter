@@ -66,6 +66,7 @@ from api.novelize.router import (
 )
 from api.novelize.runner import expire_stale_jobs_after_startup
 from api.novelize.block_edit_router import block_edit_router as novelize_block_edit_router
+from api.novelize.block_edit_router import block_patch_router as novelize_block_patch_router
 from api.novelize.outline_router import outline_router as novelize_outline_router
 from api.novelize.scene_outline_router import scene_outline_router as novelize_scene_outline_router
 from api.novelize.selection_router import selection_router as novelize_selection_router
@@ -182,6 +183,7 @@ app.include_router(novelize_selection_router)
 app.include_router(novelize_outline_router)
 app.include_router(novelize_scene_outline_router)
 app.include_router(novelize_block_edit_router)
+app.include_router(novelize_block_patch_router)
 app.include_router(novel_public_router)
 app.include_router(novel_public_owner_router)
 app.include_router(novel_public_reader_router)

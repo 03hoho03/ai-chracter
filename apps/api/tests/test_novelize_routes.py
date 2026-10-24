@@ -87,7 +87,7 @@ _DUMMY_PATH_IDS = {
     name: str(uuid.uuid4())
     for name in (
         "novel_id", "chapter_id", "revision_id", "job_id", "room_id", "batch_id", "character_id", "snapshot_id", "illustration_id",
-        "episode_key",
+        "episode_key", "bundle_id",
     )
 }
 

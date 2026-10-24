@@ -48,6 +48,9 @@ LLMCallSite = Literal[
     "novelize_chapter",
     "novelize_revise",
     "novelize_boundary",
+    # 여러 문단 수정의 묶음 재검사(구조화, 무과금). 수정 호출(`novelize_revise`)과 갈라 둔 것은 무료 호출의 원가를 사용량에서 따로
+    # 보려고다 — 과금 없이 시간당 상한만 있는 호출이라 원가가 얼마나 드는지 혼자 보여야 상한을 정할 수 있다.
+    "novelize_revise_recheck",
     # 소설 구성 흐름: 전체 구성안(구조화), 한 화의 장면 구성안(구조화). 둘 다 사용자가 고른 모델로 가는 유료 호출이다.
     "novelize_outline",
     "novelize_episode_outline",
@@ -92,6 +95,7 @@ GeminiTimeoutSetting = Literal[
     "gemini_novelize_chapter_timeout_ms",
     "gemini_novelize_revise_timeout_ms",
     "gemini_novelize_boundary_timeout_ms",
+    "gemini_novelize_recheck_timeout_ms",
 ]
 
 # 시드 스크립트 호출은 작품 하나를 통째로 만드는 비스트리밍 호출이라 운영 호출 상한(최대 60초)에 걸릴 수 있다. 운영
@@ -251,6 +255,13 @@ CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
     ),
     "novelize_boundary": CallPolicy(
         gemini_timeout="gemini_novelize_boundary_timeout_ms",
+        call_kind="structured_with_instruction",
+        novelize="boundary",
+    ),
+    # 묶음 재검사는 경계 제안처럼 글을 쓰지 않는 짧은 판정이라 같은 갈래(실패 구분만, 모델·상한·사고는 기본)다. 모델 선택 대상이
+    # 아니라 언제나 Gemini 로 간다.
+    "novelize_revise_recheck": CallPolicy(
+        gemini_timeout="gemini_novelize_recheck_timeout_ms",
         call_kind="structured_with_instruction",
         novelize="boundary",
     ),

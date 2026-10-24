@@ -29,6 +29,7 @@ from api.db.models import (
 )
 from api.novelize import router as novelize_router
 from api.novelize.block_edits import BlockEdit, block_hash, normalized_result, request_targets
+from api.novelize.blocks import build_revision
 from api.novelize.text import split_paragraphs
 from factories import (
     _NeverCalledLLMClient,
@@ -389,12 +390,17 @@ async def test_the_detail_lists_pending_patches_with_live_freshness_and_never_as
         **finished.block_edit,
         "patches": [{**patch, "state": "applied", "paragraphs": None} for patch in finished.block_edit["patches"]],
     }
-    await db_session.commit()
-    edited = await db_client.post(
-        f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
-        json={"baseRevisionId": str(base.id), "body": _BODY.replace("둘째 문단이다.", "사용자가 고친 둘째.")},
+    # 사용자가 둘째 블록을 고친 새 개정이 커밋됐고 그 뒤 비우기는 아직 돌기 전인 틈 — 개정을 직접 넣는다(라우트는 곧바로 비운다).
+    db_session.add(
+        build_revision(
+            body=_BODY.replace("둘째 문단이다.", "사용자가 고친 둘째."),
+            source="manual_edit",
+            block_ids=base.block_ids,
+            chapter_id=chapter.id,
+            revision_no=base.revision_no + 1,
+        )
     )
-    assert edited.status_code == 201
+    await db_session.commit()
 
     detail = (await db_client.get(f"/novels/{novel_id}")).json()
 
@@ -456,16 +462,17 @@ async def test_deleting_the_last_batch_empties_its_patch_jobs(
     assert await connection.scalar(sa.text("SELECT block_edit IS NULL FROM novel_jobs WHERE id = :id"), {"id": stored.id})
 
 
-async def test_the_old_stale_preview_erase_leaves_a_patch_job_alone(
+async def test_the_old_stale_preview_erase_leaves_a_patch_job_instruction_and_untouched_patches(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """화의 글이 바뀌어 옛 낡은 미리보기 비우기가 돌아도 패치 작업의 지시·패치는 그대로다 — 패치는 블록 단위로 낡고, 옛 비우기는
-    결과 본문이 있는 작업만 본다. 깨지는 시나리오: 패치 작업에 결과 본문을 채우는 순간, 패치 하나를 적용해 화 해시가 바뀌면
-    같은 작업의 남은 패치 지시문까지 지워진다."""
+    """화의 글이 바뀌어 낡은 미리보기 비우기가 돌아도 패치 작업의 지시문과 바뀌지 않은 블록의 패치는 그대로다 — 옛 비우기는 결과
+    본문이 있는 작업만 보고, 패치는 블록 단위로 낡는다(고친 블록의 패치만 낡음). 깨지는 시나리오: 패치 작업에 결과 본문을 채우는
+    순간, 패치 하나를 적용해 화 해시가 바뀌면 같은 작업의 남은 패치 지시문까지 지워진다."""
     _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
     base = await _current(db_session, chapter.id)
     job = await _patch_job(db_session, novel_id, chapter, base, [0, 2])
-    before = job.block_edit
+    assert job.block_edit is not None
+    untouched = job.block_edit["patches"][1]
 
     edited = await db_client.post(
         f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
@@ -474,7 +481,10 @@ async def test_the_old_stale_preview_erase_leaves_a_patch_job_alone(
 
     assert edited.status_code == 201
     (stored,) = await _jobs(db_session, novel_id)
-    assert (stored.instruction, stored.result_text, stored.block_edit) == ("더 쓸쓸하게", None, before)
+    assert (stored.instruction, stored.result_text) == ("더 쓸쓸하게", None)
+    assert stored.block_edit is not None
+    assert [(p["state"], p["paragraphs"]) for p in stored.block_edit["patches"]] == [("stale", None), ("pending", ["고친 3."])]
+    assert stored.block_edit["patches"][1] == untouched
 
 
 async def test_polling_a_patch_job_reports_no_range_and_no_whole_body(

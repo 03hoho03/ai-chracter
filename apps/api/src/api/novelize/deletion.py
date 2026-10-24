@@ -37,6 +37,8 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from api.novelize.block_edits import BlockEdit, has_pending, stale_marked
+from api.novelize.text import split_paragraphs
 from api.db.models.novel import (
     HomeNovelCuration,
     Novel,
@@ -347,7 +349,8 @@ def ai_edit_preview_is_fresh(
 
 async def erase_stale_ai_edit_previews(db: AsyncSession, chapter_id: uuid.UUID) -> None:
     """장 `chapter_id` 의 지금 개정과 글이 다른 개정을 기준으로 한(`ai_edit_preview_is_fresh` 가 거짓인), 적용도
-    버리기도 안 한 AI 수정 결과의 지시문과 결과 본문을 비운다. 커밋은 호출부가 한다.
+    버리기도 안 한 AI 수정 결과의 지시문과 결과 본문을 비운다. 여러 문단 수정은 화 전체가 아니라 패치 단위로 본다
+    (`_erase_stale_patches`). 커밋은 호출부가 한다.
 
     그런 결과는 적용하면 409 이고 상세의 미적용 목록에도 나오지 않아, 사용자가 버리기를 누를 길이 없다 — 비우지
     않으면 소설을 지울 때까지 아무도 볼 수 없는 사본으로 남는다. 작업 행은 남긴다(하루 재시도 상한을 행 수로 센다).
@@ -378,3 +381,51 @@ async def erase_stale_ai_edit_previews(db: AsyncSession, chapter_id: uuid.UUID) 
         # 패치 칸은 늘 비어 있지만, 지시문·결과를 비우는 자리마다 패치 칸도 다룬다는 약속을 지키려 함께 적는다.
         .values(instruction=None, result_text=None, block_edit=None)
     )
+    await _erase_stale_patches(db, chapter_id)
+
+
+async def _erase_stale_patches(db: AsyncSession, chapter_id: uuid.UUID) -> None:
+    """여러 문단 수정의 패치 단위 비우기 — 장 `chapter_id` 의 대기 패치 중 지금 개정에 쓸 수 없게 된 것(그 블록이 없거나 글이
+    바뀜)을 낡음으로 바꾸고 문단을 비운다. 같은 작업의 다른 패치는 그 블록이 그대로면 산다. 대기 수정안이 하나도 남지 않은 작업은
+    지시문까지 비운다(처리방침의 즉시 삭제). 낡음은 영구다 — 같은 글로 돌아와도 비운 문단은 되살릴 수 없다.
+
+    판정은 패치 칸을 파이썬으로 읽어야 해서 작업 행을 `FOR NO KEY UPDATE` 로 잡는다(id 차례 — 두 비우기가 같은 행들을 서로 다른
+    차례로 잡아 교착하지 않게). 장 행은 잡지 않는다(위 비우기와 같은 이유). 지금 개정은 작업 행을 잡은 **뒤에** 읽는다 — 앞에서
+    읽으면 기다리는 동안 그 개정 위에서 맡겨 저장된 작업을 옛 개정으로 판정해 멀쩡한 패치를 낡음으로 만든다. 그 뒤에 쌓인 개정은
+    그 개정의 비우기가 다시 본다."""
+    jobs = (
+        await db.scalars(
+            select(NovelJob)
+            .where(
+                NovelJob.chapter_id == chapter_id,
+                NovelJob.kind == "ai_edit",
+                NovelJob.status == "succeeded",
+                NovelJob.dismissed_at.is_(None),
+                NovelJob.block_edit.contains({"patches": [{"state": "pending"}]}),
+            )
+            .order_by(NovelJob.id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    if not jobs:
+        return
+    current = await db.scalar(
+        select(NovelChapterRevision)
+        .where(NovelChapterRevision.chapter_id == chapter_id)
+        .order_by(NovelChapterRevision.revision_no.desc())
+        .limit(1)
+    )
+    if current is None:
+        return
+    paragraphs = split_paragraphs(current.body)
+    for job in jobs:
+        assert job.block_edit is not None  # 위 조건으로 걸렀다
+        edit = BlockEdit.model_validate(job.block_edit)
+        marked = stale_marked(edit, current.block_ids, paragraphs)
+        if marked == edit:
+            continue
+        values: dict[str, Any] = {"block_edit": marked.to_json()}
+        if not has_pending(marked):
+            values["instruction"] = None
+        await db.execute(update(NovelJob).where(NovelJob.id == job.id).values(**values))

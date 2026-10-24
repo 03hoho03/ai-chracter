@@ -1298,6 +1298,84 @@
       "bedrock_usage call_site=novelize_revise model=bedrock_sonnet_model_id"
     ]
   },
+  "novelize_revise_recheck": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": "LLMEmptyResponseError",
+        "ok": null,
+        "truncated": "LLMTruncatedError"
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 30000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 30000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_novelize_recheck_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_novelize_recheck_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "novelize_revise_recheck|bedrock_sonnet_model_id|calls",
+      "novelize_revise_recheck|bedrock_sonnet_model_id|candidates",
+      "novelize_revise_recheck|bedrock_sonnet_model_id|prompt",
+      "novelize_revise_recheck|bedrock_sonnet_model_id|total",
+      "novelize_revise_recheck|gemini_model_name|calls",
+      "novelize_revise_recheck|gemini_model_name|candidates",
+      "novelize_revise_recheck|gemini_model_name|prompt",
+      "novelize_revise_recheck|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=novelize_revise_recheck model=gemini_model_name",
+      "bedrock_usage call_site=novelize_revise_recheck model=bedrock_sonnet_model_id"
+    ]
+  },
   "preview_ending_judgment": {
     "bedrock": {
       "cacheBlocks": null,
