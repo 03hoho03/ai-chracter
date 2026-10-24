@@ -5339,6 +5339,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat-rooms/{room_id}/memory/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Chat Room Memory Items
+         * @description 방의 장면·사실 기억(`chat/memory_items.py`). 스위치가 꺼져 있으면 라우트는 등록된 채 404 다 — 기억 응답의 기능 칸이 화면에
+         *     꺼짐을 알린다. 자기 데이터 열람이라 재동의 게이트를 걸지 않는다(노트 비우기와 같다).
+         */
+        get: operations["list_chat_room_memory_items_chat_rooms__room_id__memory_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms/{room_id}/memory/note": {
         parameters: {
             query?: never;
@@ -9641,6 +9662,110 @@ export interface components {
              */
             createdAt: string;
         };
+        /**
+         * ChatRoomMemoryEpisodeItem
+         * @description 장면 기억 하나. `asserted_by` 는 장면의 내용을 누가 말했는가(사용자·캐릭터·서술·섞임)다 — 캐릭터가 대사로만 말한 장면은
+         *     회상에 실리지 않는다. 턴은 추출 시점의 응답 순번이라 그 뒤 메시지가 지워졌으면 근사값이다.
+         */
+        ChatRoomMemoryEpisodeItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Detail */
+            detail: string;
+            /**
+             * Assertedby
+             * @enum {string}
+             */
+            assertedBy: "user" | "character" | "narration" | "mixed";
+            /** Startturn */
+            startTurn: number;
+            /** Endturn */
+            endTurn: number;
+        };
+        /**
+         * ChatRoomMemoryFactItem
+         * @description 키마다 지금 이긴 사실 하나. `kind` 가 `relation` 이면 `subject`·`object` 사이 관계이고 `fact` 면 `subject` 의
+         *     `attribute` 다. `truth_label` 은 `truth_status` 를 사용자에게 보일 말로 바꾼 것이고, `speaker` 는 그 말을 한 인물(말한 사람
+         *     꼬리표, 없으면 null)이다. 아는 사람 목록은 싣지 않는다 — 응답에서 비밀을 가리는 내부 장치다.
+         */
+        ChatRoomMemoryFactItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Factkey */
+            factKey: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "relation" | "fact";
+            /** Subject */
+            subject: string;
+            /** Object */
+            object: string | null;
+            /** Attribute */
+            attribute: string | null;
+            /** Value */
+            value: string;
+            /**
+             * Truthstatus
+             * @enum {string}
+             */
+            truthStatus: "confirmed" | "claimed" | "disproved";
+            /** Truthlabel */
+            truthLabel: string;
+            /**
+             * Assertedby
+             * @enum {string}
+             */
+            assertedBy: "user" | "character" | "narration";
+            /** Speaker */
+            speaker: string | null;
+            /** Startturn */
+            startTurn: number;
+            /** Endturn */
+            endTurn: number;
+        };
+        /**
+         * ChatRoomMemoryFeatures
+         * @description 기억 화면이 문구를 가를 서버 스위치. `items_visible` 은 장면·사실 목록 API 가 열려 있는가(닫혀 있으면 그 라우트가
+         *     404 라, 화면은 목록을 부르지 않고 "목록 없음"과 구별한다). `summary_folding` 은 긴 방의 대화를 요약으로 접는 생성 윈도우가
+         *     켜져 있는가다 — 꺼져 있으면 새 요약이 생기지 않고 있는 요약도 응답에 쓰이지 않는다.
+         */
+        ChatRoomMemoryFeatures: {
+            /** Itemsvisible */
+            itemsVisible: boolean;
+            /** Summaryfolding */
+            summaryFolding: boolean;
+        };
+        /**
+         * ChatRoomMemoryItemsResponse
+         * @description 방의 장면·사실 기억. 둘 다 지금 요약 커서까지 접힌 것이고, 요약이 아직 없으면 둘 다 비어 있다.
+         *
+         *     - `episodes` 는 일어난 순서로 한 페이지다. `next_cursor` 를 `cursor` 로 다시 보내면 다음 페이지이고, 마지막 페이지면 null.
+         *     - `facts` 는 키마다 이긴 행 전부다(페이지 없음, 이긴 행을 쓴 순서). 페이지마다 같은 목록이 온다.
+         *     - `episodes_used_in_replies`·`facts_used_in_replies` 는 이 방의 다음 턴에 그 기억이 응답 프롬프트에 실릴 수 있는가 — 기억
+         *       스위치가 켜져 있고 이 방의 레인과 다음 턴 모델이 기억 사용 범위에 들 때만 참이다. 거짓이어도 기억은 계속 쌓인다.
+         */
+        ChatRoomMemoryItemsResponse: {
+            /** Episodes */
+            episodes: components["schemas"]["ChatRoomMemoryEpisodeItem"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+            /** Facts */
+            facts: components["schemas"]["ChatRoomMemoryFactItem"][];
+            /** Episodesusedinreplies */
+            episodesUsedInReplies: boolean;
+            /** Factsusedinreplies */
+            factsUsedInReplies: boolean;
+        };
         /** ChatRoomMemoryLimits */
         ChatRoomMemoryLimits: {
             /** Notemaxlength */
@@ -9670,6 +9795,7 @@ export interface components {
             /** Rolledbackat */
             rolledBackAt: string | null;
             limits: components["schemas"]["ChatRoomMemoryLimits"];
+            features: components["schemas"]["ChatRoomMemoryFeatures"];
         };
         /** ChatRoomMemoryRevertRequest */
         ChatRoomMemoryRevertRequest: {
@@ -23539,6 +23665,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatRoomMemoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_room_memory_items_chat_rooms__room_id__memory_items_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomMemoryItemsResponse"];
                 };
             };
             /** @description Validation Error */
