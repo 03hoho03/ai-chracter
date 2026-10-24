@@ -124,7 +124,7 @@ function LaneModelTabs({ lane, activeModel, mountedChains, onSelectModel, onDirt
   // 운영 읽힘은 배정 표가 다루는 채팅 두 레인에만 있다(소설·심사 레인은 표 밖이라 표시하지 않는다). 조회가 끝나기 전·실패는
   // "안 읽힘"으로 읽지 않도록 아무 표시도 하지 않는다.
   const isUnread = (model: PromptModel): boolean =>
-    isRoutingLane(lane) && routingQuery.data !== undefined && chainReaders(routingQuery.data, lane, model).length === 0;
+    isRoutingLane(lane) && routingQuery.data !== undefined && chainReaders(routingQuery.data, lane, model).live.length === 0;
 
   if (models.length === 1) {
     return <PromptLaneEditor lane={lane} model="gemini" onDirtyChange={onDirtyChange} />;

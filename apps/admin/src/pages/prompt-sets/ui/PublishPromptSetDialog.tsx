@@ -15,7 +15,7 @@ import { useState } from "react";
 import { type Control, Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { isRoutingLane, useRoutingQuery, type RoutingLane } from "@/entities/prompt-routing";
+import { isRoutingLane, PREMIUM_OFF_UNREAD_COPY, useRoutingQuery, type RoutingLane } from "@/entities/prompt-routing";
 import { isApiError } from "@/shared/lib/api/client";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
@@ -71,9 +71,10 @@ function chatPublishEffectCopy(routingQuery: ReturnType<typeof useRoutingQuery>,
   const novelNote = model === "gemini" ? "(화자 라벨과 등급 규칙은 다음 소설 작업에도 쓰여요)" : "";
   if (routingQuery.isPending) return `운영에서 이 체인을 읽는 칸을 확인하는 중이고${novelNote}`;
   if (routingQuery.isError) return `운영에서 이 체인을 읽는 칸을 확인하지 못했고(모델 배정 화면에서 확인하세요)${novelNote}`;
-  const count = chainReaders(routingQuery.data, lane, model).length;
-  if (count === 0) return `지금은 이 체인을 읽는 칸이 없어 게시해도 바로 쓰이지 않고${novelNote}`;
-  return `이 체인을 읽는 칸(${count}칸)의 다음 턴부터 즉시 반영되고${novelNote}`;
+  const { live, switchedOff } = chainReaders(routingQuery.data, lane, model);
+  const offNote = switchedOff.length > 0 ? `(Opus 방 ${switchedOff.length}칸은 ${PREMIUM_OFF_UNREAD_COPY})` : "";
+  if (live.length === 0) return `지금은 이 체인을 읽는 칸이 없어 게시해도 바로 쓰이지 않고${offNote}${novelNote}`;
+  return `이 체인을 읽는 칸(${live.length}칸)의 다음 턴부터 즉시 반영되고${offNote}${novelNote}`;
 }
 
 /** 게시는 그 체인을 읽는 자리에 즉시 반영되는 되돌리기 어려운 행동이라 다이얼로그로 한 번

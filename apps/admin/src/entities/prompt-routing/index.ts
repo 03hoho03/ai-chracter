@@ -12,6 +12,7 @@ export {
   ROUTING_LANE_LABELS,
   ROUTING_STAGE_LABELS,
 } from "./model/labels";
+export { isRoomLive, PREMIUM_OFF_UNREAD_COPY } from "./model/roomReads";
 export type {
   AdminPromptRouteAllowedPair,
   AdminPromptRouteCall,
