@@ -45,11 +45,11 @@ def test_counts_presence_non_empty_and_share_per_lane_and_model() -> None:
     assert story["present"] == 2
     assert story["nonEmpty"] == 2
     assert story["presentRate"] == pytest.approx(2 / 3)
-    shares = [4 / (2 + 4 + 2), 9 / (4 + 9 + 1), 0.0]
+    shares = [4 / (2 + 4 + 2), 7 / (4 + 7 + 1), 0.0]
     assert story["share"]["mean"] == pytest.approx(sum(shares) / 3)
     assert story["share"]["min"] == 0.0
-    assert story["share"]["max"] == pytest.approx(9 / 14)
-    assert story["share"]["pooled"] == pytest.approx((4 + 9) / (8 + 14 + 6))
+    assert story["share"]["max"] == pytest.approx(7 / 12)
+    assert story["share"]["pooled"] == pytest.approx((4 + 7) / (8 + 12 + 6))
     character = report["groups"]["A|character|opus"]
     assert character["present"] == 1
     assert character["nonEmpty"] == 0
@@ -59,13 +59,13 @@ def test_last_snapshot_per_room_is_reported_separately() -> None:
     story = relation_share([("A", STORY_A)])["groups"]["A|story|opus"]
     assert story["last"]["rooms"] == 2
     assert story["last"]["present"] == 1
-    assert story["last"]["share"]["mean"] == pytest.approx((9 / 14 + 0.0) / 2)
+    assert story["last"]["share"]["mean"] == pytest.approx((7 / 12 + 0.0) / 2)
 
 
 def test_a_snapshot_copied_into_a_later_source_is_counted_once_under_the_first() -> None:
     copied = [dict(s) for s in STORY_A[:1]]
     other = _snap("r1", "story", "opus", 1, "[지금] 가\n[관계] 가\n[지난 일] 가")
-    report = relation_share([("A", STORY_A), ("B", copied + [other])])
+    report = relation_share([("A", STORY_A), ("B", [*copied, other])])
     assert report["groups"]["B|story|opus"]["snapshots"] == 1
     assert report["duplicatesSkipped"] == 1
     # 출처를 합친 줄도 레인·모델별로 나온다.

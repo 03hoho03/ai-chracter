@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -143,17 +144,19 @@ async def test_breaks_down_by_turn_kind(turns: asyncpg.Connection) -> None:
     assert report["regenerate"]["appliedInFired"]["turnsAllApplied"] == 0
 
 
-async def test_clamped_change_against_the_delta_direction_is_a_violation(turns: asyncpg.Connection) -> None:
+async def test_a_clamped_change_must_move_with_the_delta_and_by_less_than_it(turns: asyncpg.Connection) -> None:
     await turns.execute("DELETE FROM chat_turns")
-    await turns.execute(
+    # 거꾸로 조금 · 거꾸로 많이 · 같은 방향이지만 폭 이상 — 잘린 원소로는 셋 다 나올 수 없다.
+    await turns.executemany(
         "INSERT INTO chat_turns VALUES ('send', $1::jsonb, $2::jsonb, $3)",
-        json.dumps([_judged("a", ["r1"], "r1", 3, True)]),
-        json.dumps({"a": [100, 90]}),
-        INSIDE,
+        [
+            (json.dumps([_judged("a", ["r1"], "r1", 3, True)]), json.dumps({"a": change}), INSIDE)
+            for change in ([100, 99], [100, 90], [90, 100])
+        ],
     )
     invariant = (await stat_event_distribution(turns, since=SINCE))["all"]["invariant"]
-    assert invariant["clampMismatch"] == 1
-    assert invariant["rowsViolating"] == 1
+    assert invariant["clampMismatch"] == 3
+    assert invariant["rowsViolating"] == 3
 
 
 async def test_until_bounds_the_window(turns: asyncpg.Connection) -> None:
@@ -163,9 +166,8 @@ async def test_until_bounds_the_window(turns: asyncpg.Connection) -> None:
 
 def test_sql_selects_only_aggregates_and_never_writes() -> None:
     sql = stat_events_sql(SINCE, None)
-    upper = sql.upper()
     for verb in ("INSERT", "UPDATE", "DELETE", "MERGE", "COPY", "CREATE", "ALTER", "DROP", "TRUNCATE", "GRANT"):
-        assert verb not in upper
+        assert re.search(rf"\b{verb}\b", sql, re.IGNORECASE) is None, verb
     # 방·메시지·턴 id 칸을 고르지 않는다.
     for column in ("chat_room_id", "assistant_message_id", "llm_calls"):
         assert column not in sql

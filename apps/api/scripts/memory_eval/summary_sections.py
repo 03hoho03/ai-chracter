@@ -1,7 +1,9 @@
 """요약 본문의 칸별 글자 수와 비율. 운영 요약 지시문은 요약을 `[지금]`·`[관계]`·`[지난 일]` 세 칸으로, 이 순서로 쓰게 한다 —
 사실 계층을 들일 때 `[관계]` 칸이 요약에서 얼마를 차지하는지(사실 섹션과 겹치는 몫)를 잰다.
 
-칸 = 줄 맨 앞의 `[이름]` 머리글부터 다음 머리글 앞까지. 글자 수는 머리글을 뺀 본문의 앞뒤 공백을 지운 길이(가운데 공백·줄바꿈
+칸 = 머리글부터 다음 머리글 앞까지. 머리글은 줄 맨 앞의 `[이름]`이거나, 지시문의 세 이름 중 하나가 문장 끝(마침표·물음표·
+느낌표·말줄임표, 닫는 따옴표·괄호) 뒤 공백 다음에 같은 줄로 이어 나온 것이다 — 요약이 세 칸을 한 줄에 이어 쓰기도 해서, 줄 맨
+앞만 보면 그 요약의 `[관계]` 칸이 `[지금]` 칸에 묻힌다. 문장 가운데 나온 머리글 꼴 글은 본문이다. 글자 수는 머리글을 뺀 본문의 앞뒤 공백을 지운 길이(가운데 공백·줄바꿈
 포함)이고, 비율의 분모는 모든 칸 글자 수의 합이다. 첫 머리글 앞의 글은 `(머리글 없음)` 칸으로 센다. 지시문에 없는 이름의
 머리글도 칸으로 세고 따로 표시한다(요약이 칸 이름을 바꿔 쓴 것을 놓치지 않게)."""
 
@@ -12,7 +14,9 @@ from typing import Any
 
 SECTION_NAMES = ("지금", "관계", "지난 일")
 NO_HEADER = "(머리글 없음)"
-_HEADER = re.compile(r"^\[([^\]\n]{1,20})\]", re.MULTILINE)
+_HEADER = re.compile(
+    r"^\[([^\]\n]{1,20})\]|(?<=[.?!…\"'”’)])[ \t]+\[(" + "|".join(SECTION_NAMES) + r")\]", re.MULTILINE
+)
 
 
 def section_chars(summary: str) -> dict[str, int]:
@@ -25,7 +29,8 @@ def section_chars(summary: str) -> dict[str, int]:
     for k, match in enumerate(matches):
         end = matches[k + 1].start() if k + 1 < len(matches) else len(summary)
         body = summary[match.end() : end].strip()
-        out[match.group(1)] = out.get(match.group(1), 0) + len(body)
+        name = match.group(1) or match.group(2)
+        out[name] = out.get(name, 0) + len(body)
     return out
 
 
