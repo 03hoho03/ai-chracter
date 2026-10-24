@@ -24,7 +24,7 @@ import ...` 자체는 통과하지만, `notify.py` 안에서 실제로 뭘 impor
 **근거(VM 실측, `/opt/ddona/backup.sh`)**:
 
     export PYTHONPATH=/opt/ddona/scripts
-    exec /usr/bin/python3 -m ops.backup_db --out-dir /opt/ddona/backups
+    exec /usr/bin/python3 -m ops.backup_db --out-dir /opt/ddona/backups "$@"
 
 `/opt/ddona/scripts/`에는 `ops`만 있고 `api` 패키지가 없다. 그 시스템 `/usr/bin/python3`는
 `boto3`는 있지만 `sqlalchemy`/`asyncpg`는 `ImportError`다. 크론은 `/etc/cron.d/ddona-backup`

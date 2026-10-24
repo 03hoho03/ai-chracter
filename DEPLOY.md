@@ -32,7 +32,7 @@ FE·BE가 같은 등록가능 도메인(`ddona.site`)에 있다 — 그래서 �
 | 이미지 저장소 | `asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api` (태그=커밋 SHA 7자리) |
 | VM 상의 형상 | `/opt/ddona/app`(git checkout) · `/opt/ddona/.env`(0600) · **전부 root 소유** |
 | 방화벽 | 80·443 공개 / 22는 IAP 대역(`35.235.240.0/20`)만 |
-| 백업 | 매일 18:00 UTC → `s3://ai-chracter-chat/backup/daily/`, 7일 + 4주 보관 ("백업 · 복원" 절) |
+| 백업 | 매일 18:00 UTC → `s3://ai-chracter-chat/backup/daily/`, 7일 + 4주 보관. 손으로 뜬 백업(`--manual`)은 `backup/manual/` 에 최신 5개 ("백업 · 복원" 절) |
 
 ⚠️ **`api` 레코드의 구름은 반드시 회색이다.** 주황(프록시)이면 ACME 챌린지가 막혀 Caddy 인증서
 **갱신**이 실패한다 — 발급된 인증서가 살아 있어 **두 달 뒤에** 죽는다. apex·`www`·`admin`은 Pages가
@@ -865,7 +865,7 @@ idle 색을 띄우기 전에 그 색의 새 이미지로 `compose run --rm -T ap
 ```bash
 gcloud compute ssh ddona-api --zone=asia-northeast3-a --tunnel-through-iap --project=ddona-ai-character-chat
 
-sudo /opt/ddona/backup.sh   # 먼저 백업
+sudo /opt/ddona/backup.sh --manual   # 먼저 백업 — backup/manual/ 에 올라가 일단위 보관 칸을 먹지 않는다
 
 # 현재 리비전
 sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env \
@@ -924,8 +924,15 @@ FE는 Cloudflare Pages 자체 Git 연동이라 같은 push라도 두 배포가 �
 --no-acl`). 보관은 일 7개 + 주 4개이고, 삭제 대상을 백업 파일명 패턴에 정확히 맞는 키로 제한해
 같은 버킷의 자산과 격리한다.
 
+**손으로 뜨는 백업은 반드시 `--manual` 을 붙인다.** 보관이 프리픽스별 갯수 기준이라, 붙이지 않고 뜨면
+`backup/daily/` 에 하나가 더 쌓여 가장 오래된 일단위 사본이 지워진다 — 2026-10 에 하루 동안 마이그레이션 병합 전
+수동 백업을 다섯 번 뜨자 10-17~10-20 일단위 사본이 밀려나 사라졌다. `--manual` 은 `backup/manual/` 에만 올리고 그 안에서 최신
+5개만 남긴다(같은 파일명 패턴 검사로 지운다). `daily/`·`weekly/` 는 올리지도 정리하지도 않고, healthchecks.io
+check-in 도 보내지 않는다 — 그 체크는 크론이 매일 돌았는지를 보므로 손으로 뜬 백업이 크론의 성공·실패처럼
+찍히면 안 된다. 만료된 탈퇴 해시 파기와 R2 용량 경고는 크론과 똑같이 돈다.
+
 ```sh
-sudo /opt/ddona/backup.sh   # 수동 실행
+sudo /opt/ddona/backup.sh --manual   # 수동 실행 → s3://ai-chracter-chat/backup/manual/<UTC 시각>.dump
 
 # 복원 — restore_db 는 빈 DB 를 전제한다. 운영 DB 를 실수로 덮지 않도록 대상을 명시적으로 만든다.
 cd /opt/ddona/app
@@ -952,8 +959,10 @@ sudo TARGET_DATABASE_URL="$(sudo grep ^DATABASE_URL= /opt/ddona/.env | cut -d= -
 순환 보관은 유지되므로, 운영 DB에서 90일 뒤 파기된 증거가 백업 사본에는 해당 사본의
 순환 삭제 시점까지 남을 수 있다. 복원 시 만료 증거를 제거하는 이유다.
 
-R2에서 백업을 내려받으려면 `aws s3 cp s3://ai-chracter-chat/backup/daily/<파일> .`
-(`--endpoint-url`은 `S3_ENDPOINT_URL`).
+R2에서 백업을 내려받으려면 `aws s3 cp s3://ai-chracter-chat/backup/<daily|weekly|manual>/<파일> .`
+(`--endpoint-url`은 `S3_ENDPOINT_URL`). 마이그레이션 직전 상태로 되돌릴 때는 그 직전에 손으로 뜬 `manual/` 사본이
+가장 가깝다 — 세 프리픽스를 `aws s3 ls` 로 보고 파일명(UTC 시각)으로 고른다. 어느 프리픽스에서 받았든 같은 `pg_dump -Fc`
+파일이라 `restore_db` 는 내려받은 로컬 경로만 받고 절차도 같다.
 
 **`/opt/ddona/backup.sh` 심볼릭 링크 — 전환 완료(2026-09-25 VM 확인), 재구축 시 1회**(`ops/bugsink-vacuum.sh`·`ops/logrotate.d`와
 같은 이유: `/opt/ddona/app`은 배포마다 `git reset --hard`되므로 링크만 걸어두면 이후 갱신이 자동이다).
@@ -969,6 +978,9 @@ sudo ln -sf /opt/ddona/app/ops/backup.sh /opt/ddona/backup.sh
 ls -l /opt/ddona/backup.sh    # → /opt/ddona/app/ops/backup.sh 를 가리켜야 한다
 sudo /opt/ddona/backup.sh     # 수동 1회 — healthchecks.io 대시보드에 check-in 이 찍히는지 본다
 ```
+
+이 확인만은 `--manual` 없이 돈다 — 크론과 같은 경로가 check-in 하는지 보는 것이 목적이라서다. 대가로 일단위 보관 칸을
+하나 먹는다(가장 오래된 일단위 사본 하나가 지워진다).
 
 ⚠️ `/etc/cron.d/ddona-backup`은 아직 `ops/cron.d/`에 없는 VM 로컬 파일이다(같은 드리프트). 크론은
 `/opt/ddona/backup.sh`를 부르므로 위 링크만으로 동작하지만, 재구축 시에는 이 파일도 손으로 만들어야 한다.
@@ -1721,7 +1733,7 @@ API 와 맞지 않는다(상세에 묶음 목록이 없어 다시 만들기가 `
 *묶음·화 구조만 내릴 때*(목표 `2494aa0e607e`, 장 작업 모델 리비전) — 이미지만 되돌려도 옛 코드가 도므로 대개 필요 없다:
 
 ```sh
-sudo /opt/ddona/backup.sh   # 먼저 백업
+sudo /opt/ddona/backup.sh --manual   # 먼저 백업
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
   <IMAGE>:<새 코드 TAG> alembic downgrade 2494aa0e607e
 ```
@@ -1742,7 +1754,7 @@ Claude 프롬프트 세트, 방마다 고른 모델도 사라지고, 위 묶음�
 내린다:
 
 ```sh
-sudo /opt/ddona/backup.sh   # 먼저 백업
+sudo /opt/ddona/backup.sh --manual   # 먼저 백업
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
   <IMAGE>:<새 코드 TAG> alembic downgrade 00ce650038ba
 ```
@@ -2286,7 +2298,7 @@ sudo bash ops/swap-api.sh
 
 
   ```sh
-  sudo /opt/ddona/backup.sh   # 먼저 백업
+  sudo /opt/ddona/backup.sh --manual   # 먼저 백업
   sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
     psql -U postgres -d ai_character_chat -c \
     "BEGIN; DELETE FROM prompt_sections WHERE prompt_set_id IN (SELECT id FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c','32b99025-22e8-45fa-86a5-50f267b30a1b','73026fdc-e2bc-4e99-9b94-950f791d6835','e8685db5-f431-419a-9957-0db6b27ec848','b483d5c3-92dd-4dd9-ad4b-9ae6488bbcb4','9a2b4dbb-ff70-4ccf-a8b3-4cff6ca785c0','8114a6d6-b5cc-4b4a-b8ac-a8f1c25b640d','99c2b0f5-3c36-4a96-adbd-d226e430b4f8','3db7a362-b2a1-4927-82d1-f6aeb4c94e3c','2517d852-c29f-4271-83c0-b5799da1ade0','9c029822-2229-48c6-bd0e-03312c2b618b','952ae5d4-5fa9-4cba-b6ba-d5970ac119ab','1b13a6d3-2747-4348-8e63-10aafceeb1ce')); DELETE FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c','32b99025-22e8-45fa-86a5-50f267b30a1b','73026fdc-e2bc-4e99-9b94-950f791d6835','e8685db5-f431-419a-9957-0db6b27ec848','b483d5c3-92dd-4dd9-ad4b-9ae6488bbcb4','9a2b4dbb-ff70-4ccf-a8b3-4cff6ca785c0','8114a6d6-b5cc-4b4a-b8ac-a8f1c25b640d','99c2b0f5-3c36-4a96-adbd-d226e430b4f8','3db7a362-b2a1-4927-82d1-f6aeb4c94e3c','2517d852-c29f-4271-83c0-b5799da1ade0','9c029822-2229-48c6-bd0e-03312c2b618b','952ae5d4-5fa9-4cba-b6ba-d5970ac119ab','1b13a6d3-2747-4348-8e63-10aafceeb1ce'); COMMIT;"
@@ -2432,7 +2444,7 @@ Anthropic 을 게시한 뒤에는 가입 화면의 국외이전 고지 사본(`a
    마지막 줄보다 더 내리지 않는다 — 엔딩 우선 스탯 열은 이 배포와 무관하다:
 
    ```sh
-   sudo /opt/ddona/backup.sh   # 먼저 백업
+   sudo /opt/ddona/backup.sh --manual   # 먼저 백업
    # 장 작업 모델 열만
    sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic downgrade 519329713933
    # 방 모델 열까지
@@ -2477,7 +2489,7 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
 sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
   psql -U postgres -d ai_character_chat -At -c "SELECT (SELECT count(*) FROM prompt_routes), (SELECT count(*) FROM prompt_route_revisions);"
 # downgrade(백업 먼저, 이 리비전 파일이 든 이미지로)
-sudo /opt/ddona/backup.sh
+sudo /opt/ddona/backup.sh --manual
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic history -r-3:current
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic downgrade 495e9a75bb46-1
 ```
@@ -2519,7 +2531,7 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
 sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
   psql -U postgres -d ai_character_chat -At -c "SELECT count(*), count(level) FROM prompt_set_semvers;"
 # downgrade(백업 먼저, 이 리비전 파일이 든 이미지로)
-sudo /opt/ddona/backup.sh
+sudo /opt/ddona/backup.sh --manual
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic history -r-3:current
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic downgrade d0051f733bb7-1
 ```
@@ -3060,7 +3072,7 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
 | 3 | `18d0cb76b3ca` | 턴 기록 `chat_turns.stat_events` 칸 | `914b076c9291` | 칸을 지운다(쌓인 이벤트가 사라진다). 칸을 매핑한 이미지는 턴 기록 INSERT·조회가 실패하므로 **판정 이벤트 칸 이전 이미지로 먼저 내린 뒤** 일회성 컨테이너로 돌린다 |
 
 - 위(head 쪽)부터 차례로만 내려간다. 일회성 컨테이너는 아래 문안 리비전 downgrade 와 같은 꼴(`sudo docker run --rm --network ddona_default
-  --env-file /opt/ddona/.env <IMAGE>:<그 리비전 파일을 가진 태그> alembic downgrade <목표>`)이고 먼저 `sudo /opt/ddona/backup.sh`.
+  --env-file /opt/ddona/.env <IMAGE>:<그 리비전 파일을 가진 태그> alembic downgrade <목표>`)이고 먼저 `sudo /opt/ddona/backup.sh --manual`.
   목표 위에 다른 작업의 리비전이 더 쌓였으면 멈추고 판단한다.
 - 🔴 downgrade 뒤 그 리비전 파일을 가진 이미지로 교체되면(`main` push 자동 배포, `image_tag` 를 비운 실행, 그런 이미지가 서빙 중일
   때의 태그 없는 교체) `alembic upgrade head` 가 지운 것을 되살린다. downgrade 와 revert 병합 사이에 다른 API 병합을 하지 않고, 롤백해
@@ -3110,7 +3122,7 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
   `49b68a8a681e`(스탯 공개 여부). 목표가 그 아래면 그 리비전도 함께 내려가므로, 그 위에 다른 리비전이 더 쌓였거나 사이 리비전을
   내려야 하면 멈추고 판단한다.
 - 🔴 downgrade 는 **그 리비전 파일을 가진 이미지**로 돌린다 — ②를 하지 않았으면 서빙 중인 색의 이미지가 그것이다. 리비전 파일이
-  없는 이미지는 그 리비전을 내리지 못한다. 먼저 백업(`sudo /opt/ddona/backup.sh`), 이미지는 서빙 중인 색의 것(②를 이미 했다면
+  없는 이미지는 그 리비전을 내리지 못한다. 먼저 백업(`sudo /opt/ddona/backup.sh --manual`), 이미지는 서빙 중인 색의 것(②를 이미 했다면
   첫 줄 대신 `IMG=<IMAGE>:<새 코드 TAG>`):
 
   ```sh
@@ -3381,7 +3393,7 @@ downgrade를 먼저 하면 아직 떠 있는 새 코드가 없어진 컬럼을 �
 이미지를 참조했는지" 기록을 지운다.
 
 ```sh
-sudo /opt/ddona/backup.sh   # 먼저 백업
+sudo /opt/ddona/backup.sh --manual   # 먼저 백업
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
   <IMAGE>:<새 코드 TAG> alembic downgrade 697222d13fe8
 ```
