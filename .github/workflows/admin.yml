@@ -5,15 +5,37 @@ on:
     branches: [main]
     paths:
       - "apps/admin/**"
+      # 앱 최상위 문서는 빌드·lint 가 읽지 않는다.
+      - "!apps/admin/*.md"
       - "packages/**"
+      # 패키지 최상위 문서는 어느 빌드·테스트·lint 도 읽지 않는다.
+      - "!packages/*/*.md"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      # CI 정의·루트 스크립트·turbo 태스크 정의가 바뀌어도 아래 turbo 단계가 다시 돌아야 한다.
+      - ".github/workflows/admin.yml"
+      - "package.json"
+      - "turbo.json"
   pull_request:
     paths:
       - "apps/admin/**"
+      # 앱 최상위 문서는 빌드·lint 가 읽지 않는다.
+      - "!apps/admin/*.md"
       - "packages/**"
+      # 패키지 최상위 문서는 어느 빌드·테스트·lint 도 읽지 않는다.
+      - "!packages/*/*.md"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      # CI 정의·루트 스크립트·turbo 태스크 정의가 바뀌어도 아래 turbo 단계가 다시 돌아야 한다.
+      - ".github/workflows/admin.yml"
+      - "package.json"
+      - "turbo.json"
+
+# PR 은 새 커밋이 오면 옛 검사를 취소한다. main push 는 run 마다 고유 그룹이라 서로 취소·대기하지 않는다 —
+# 같은 그룹이면 그룹당 대기 1개 규칙 때문에 연속 병합 시 중간 커밋의 검사가 대기 중에 버려진다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
