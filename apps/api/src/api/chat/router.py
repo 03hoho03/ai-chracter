@@ -1212,7 +1212,8 @@ async def send_message(
     # 폭주 방어)에는 오히려 맞다 — 실패한 요청은 둘 다 안 태운다. "상한이 DB를 보호한다"는
     # 근거로는 쓸 수 없는데, 재동의 검사가 이미 게이트보다 앞에서 DB를 치고 있어 그 명제는
     # 이 변경 전에도 부분적으로만 참이었다.
-    # 방의 세 경로는 방이 고른 모델로 가격을 정하는 게이트(`enforce_room_chat_charge`), 미리보기는 Gemini 게이트다.
+    # 방의 세 경로는 방이 고른 모델로 가격을 정하는 게이트(`enforce_room_chat_charge`), 미리보기는 세션이 고른 모델로 정하는
+    # 게이트(`enforce_preview_chat_charge`)다.
     charge: ChatCharge = Depends(enforce_room_chat_charge),
 ) -> AsyncIterator[ChatStreamEvent]:
     """text/event-stream SSE 응답. 이 방의 새 사용자 메시지를 커밋하고 생성 프롬프트를 조립한 뒤, 실제 생성+판단

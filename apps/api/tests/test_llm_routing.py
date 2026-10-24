@@ -68,7 +68,14 @@ def _router() -> tuple[RoutingLLMClient, _Recorder, list[_Recorder]]:
 
 
 _MODEL_SELECTABLE: frozenset[LLMCallSite] = frozenset(
-    {"chat_generate", "novelize_chapter", "replay_generate", "novelize_outline", "novelize_episode_outline"}
+    {
+        "chat_generate",
+        "preview_generate",
+        "novelize_chapter",
+        "replay_generate",
+        "novelize_outline",
+        "novelize_episode_outline",
+    }
 )
 
 
@@ -77,8 +84,8 @@ _MODEL_SELECTABLE: frozenset[LLMCallSite] = frozenset(
 async def test_generate_goes_to_bedrock_only_for_a_premium_model_at_a_model_selectable_call_site(
     call_site: LLMCallSite, model: ChatModelId
 ) -> None:
-    """판정·요약·미리보기·심사는 모델이 잘못 실려 와도 Gemini 로 간다 — 비싼 모델 원가가 사용자가 고른 적 없는 호출에
-    붙지 않게."""
+    """판정·요약·심사는 모델이 잘못 실려 와도 Gemini 로 간다 — 비싼 모델 원가가 사용자가 고른 적 없는 호출에 붙지 않게.
+    빌더 미리보기 생성은 세션을 시작할 때 고른 모델을 따른다."""
     router, gemini, _ = _router()
 
     tokens = [t async for t in router.generate("p", usage=LLMCallContext(call_site, None, None, model=model))]
