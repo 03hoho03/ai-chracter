@@ -59,6 +59,7 @@ from api.db.models.chat import (
     FactKind,
     FactTruthStatus,
 )
+from api.llm.chat_models import PromptSetModelId
 from api.llm.client import CallUsage, LLMCallContext, LLMCallSite, LLMClient, LLMClientError, dependency_tag
 
 logger = logging.getLogger(__name__)
@@ -244,10 +245,12 @@ async def extract_pending_facts(
     sections: Sequence[PromptSection],
     is_story_chat: bool,
     names: PromptNames,
+    call_model: PromptSetModelId | None = None,
 ) -> None:
     """방에서 아직 뽑지 않은 스냅샷 하나를 관계·사실 기억으로 뽑는다. 절대 예외를 내지 않는다(취소만 통과시킨다).
 
-    `prompt_set`·`sections` 는 사실 추출 모델의 세트, `names` 는 이 작업을 예약한 턴의 이름이다.
+    `prompt_set`·`sections` 는 사실 추출 모델의 세트, `names` 는 이 작업을 예약한 턴의 이름이다. `call_model` 은 모델 배정 표의
+    사실 기억 칸 행이 정한 부를 모델이고, 행이 없으면 None 이라 사실 추출 모델 설정으로 간다.
 
     1. 새 세션에서 후보를 고른다 — 사실 추출 기록이 없거나, 실패했거나, `running` 인 채 10분 넘은 스냅샷 중 시도가 3회 미만인
        것. 정렬은 스냅샷 커서 오름차순 하나다.
@@ -298,12 +301,17 @@ async def extract_pending_facts(
             prompt=prompt,
             log=logger,
             snapshot_id=candidate.snapshot_id,
+            call_model=call_model,
         )
         result = await llm_client.generate_structured(
             prompt,
             MemoryFactResult,
             usage=LLMCallContext(
-                call_site=_FACT_CALL_SITE, user_id=user_id, room_id=candidate.room_id, usage_sink=usage_sink
+                call_site=_FACT_CALL_SITE,
+                user_id=user_id,
+                room_id=candidate.room_id,
+                call_model=call_model,
+                usage_sink=usage_sink,
             ),
         )
         drafts, dropped = normalize_facts(result, window, turns_before=turns_before)

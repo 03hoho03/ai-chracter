@@ -8,7 +8,7 @@ import logging
 import uuid
 
 from api.core.config import settings
-from api.llm.chat_models import configured_call_site_model
+from api.llm.chat_models import PromptSetModelId, configured_call_site_model
 from api.llm.client import LLMCallSite, structured_model
 from api.llm.routing import resolve_backend
 
@@ -23,12 +23,14 @@ def dump_background_prompt(
     turn: int | None = None,
     cursor_message_id: uuid.UUID | None = None,
     snapshot_id: uuid.UUID | None = None,
+    call_model: PromptSetModelId | None = None,
 ) -> None:
     """백그라운드 구조화 호출 하나의 프롬프트를 덤프 파일에 한 줄로 남긴다. 덤프 경로가 없으면(운영) 아무것도 하지 않는다 —
     파일을 열지 않고 모델 해석도 하지 않는다. 부르는 쪽은 호출 **앞**에서 부른다 — 실패한 호출의 입력도 남아야 다시 보내 볼 수 있다.
 
     `kind` 는 `background` 다. 생성 줄만 읽는 리플레이(`scripts/replay/logs.py` 의 `dump_record`)가 이 줄을 생성 줄로 세지
-    않게 하려는 것이고, 어느 작업인지는 판정 줄처럼 `callSite` 로 가른다. 모델은 실제로 보낸 id 로, 판정 줄과 같은 해석이다.
+    않게 하려는 것이고, 어느 작업인지는 판정 줄처럼 `callSite` 로 가른다. 모델은 실제로 보낸 id 로, 판정 줄과 같은 해석이다 —
+    `call_model` 은 그 호출에 싣는 모델 배정 표의 모델이고 None 이면 그 호출의 모델 설정이다.
     이 호출들은 지시문을 따로 보내지 않아 `systemInstruction` 칸이 없다.
 
     무엇을 다뤘는지는 그 작업이 아는 식별자로 적는다. 접기는 그때 읽은 방 턴 수(`turn`, 그 턴의 생성 줄과 짝지을 수 있다)와
@@ -40,7 +42,7 @@ def dump_background_prompt(
     if settings.prompt_dump_path is None:
         return
     try:
-        backend, sent = resolve_backend(call_site, configured_call_site_model(call_site))
+        backend, sent = resolve_backend(call_site, call_model or configured_call_site_model(call_site), call_model)
         record: dict[str, str | int] = {"roomId": str(room_id)}
         if turn is not None:
             record["turn"] = turn

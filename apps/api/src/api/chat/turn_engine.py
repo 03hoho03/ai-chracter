@@ -53,7 +53,7 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatRoom
 from api.db.models.prompt import PromptSection, PromptSet
-from api.llm.chat_models import ChatModelId, configured_call_site_model
+from api.llm.chat_models import ChatModelId, PromptSetModelId, configured_call_site_model
 from api.llm.client import (
     CallUsage,
     LLMCallContext,
@@ -153,16 +153,18 @@ def _dump_judgment_prompt(
     schema: str,
     prompt: str,
     system_instruction: str | None = None,
+    call_model: PromptSetModelId | None = None,
 ) -> None:
     """판정 호출 하나의 프롬프트를 생성 프롬프트와 같은 덤프 파일에 한 줄로 남긴다. 판정 모델을 바꿔 볼 때 같은 판정 입력을
     다시 보내 지금 판정과 맞춰 보는 재료다. 방·턴 번호는 그 턴의 생성 줄과 같아서 둘을 짝지을 수 있고, `kind` 가
     `judgment` 라 생성 줄만 읽는 리플레이(`scripts/replay/logs.py` 의 `dump_record`)가 걸러 낸다.
 
     응답 스키마는 클래스 이름으로 남긴다 — 호출 위치마다 스키마가 하나라 다시 보낼 때 그 이름으로 찾는다. 모델은 실제로 보낸
-    id 다. 판정은 방의 모델이 아니라 판정 종류의 판정 모델 설정으로 구현을 고르고(`configured_call_site_model`), 그 구현이
+    id 다. 판정은 방의 모델이 아니라 모델 배정 표의 행이 정한 모델(`call_model`, 호출에 실린 값), 없으면 판정 종류의 판정 모델
+    설정으로 구현을 고르고(`configured_call_site_model`), 그 구현이
     Gemini 면 판정 종류마다 실제 Gemini 모델을 따로 고른다(`structured_model`). 지시문을 따로 보내는 구조화 호출(`generate_structured_with_instruction`)이면 그 지시문을
     `systemInstruction` 으로 함께 남긴다 — 생성 줄과 같은 키다. 지시문 없이 부른 판정 줄에는 이 키가 없다."""
-    backend, sent = resolve_backend(call_site, configured_call_site_model(call_site))
+    backend, sent = resolve_backend(call_site, call_model or configured_call_site_model(call_site), call_model)
     record = {
         "roomId": str(room_id) if room_id is not None else None,
         "turn": turn,
@@ -242,6 +244,7 @@ class _JudgmentPromptDump(LLMClient):
                 schema=response_schema.__name__,
                 prompt=prompt,
                 system_instruction=system_instruction,
+                call_model=usage.call_model,
             )
         except Exception:
             self._log.warning(
