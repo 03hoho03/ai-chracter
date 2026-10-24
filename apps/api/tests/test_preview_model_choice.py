@@ -336,6 +336,32 @@ async def test_an_opus_session_turns_to_gemini_for_judgments_and_charge_when_the
     assert stat_sets == ["haiku"]
 
 
+async def test_a_model_query_on_a_message_does_not_change_the_session_model(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """세션 모델은 시작 요청에서만 정한다 — 전송 요청에 모델 쿼리를 실어도 저장된 모델 칸·그 턴의 생성·차감은 시작 때 모델이다."""
+    fix_settings(monkeypatch, premium=True)
+    _, started = await start(db_client, db_session, model="opus")
+    session_id = started.json()["previewSessionId"]
+    charges, turns = record_charges(monkeypatch), record_turns(monkeypatch)
+    fake = RecordingLLM()
+
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(
+            f"/preview-sessions/{session_id}/messages", json={"content": "행복해지자"}, params={"model": "gemini"}
+        )
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    state = await stored_state(session_id)
+    assert (state.get("chatModel"), state["turnCount"]) == ("opus", 1)
+    assert charges == [("opus", clover.CHAT_TURN_COST_OPUS, "preview")]
+    assert turns == [("opus", "opus")]
+    assert fake.call("preview_generate")[1] == "opus"
+
+
 async def test_one_preview_turn_reads_the_effective_model_once_for_sets_generation_and_charge(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
