@@ -25,7 +25,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from api.chat import memory_embeddings, memory_episodes, memory_facts, memory_fold
+from api.chat import memory_embeddings, memory_episodes, memory_facts, memory_fold, memory_forget
 from api.chat.memory_embeddings import fill_pending_embeddings
 from api.chat.memory_episodes import extract_pending_episode
 from api.chat.memory_facts import extract_pending_facts
@@ -1757,3 +1757,267 @@ async def test_restoring_the_previous_reply_answers_with_the_room_even_if_the_ro
     last = resp.json()["messages"][-1]
     assert (last["id"], last["content"]) == (str(restored_id), "밀려난 응답")
     assert await _committed_version(committed_engine, room) is None
+
+# --- 잊게 하기와 추출·채우기·되감기의 경합 ---------------------------------------------------------
+#
+# 잊게 하기는 방 행(`FOR NO KEY UPDATE`) → 그 방 스냅샷 전부(`FOR UPDATE`) → 행 DELETE 순으로 잡는다. 되감기·방 삭제와는 방 행에서
+# 줄을 서고, 방 행을 잡지 않는 추출·채우기와는 스냅샷에서 줄을 선다(그들의 `FOR KEY SHARE` 와 충돌하는 행 잠금은 `FOR UPDATE`
+# 뿐이다). 사실을 잊으면 방의 잊기 세대가 오르고, 그 전에 입력을 읽은 사실 추출은 넣기 직전에 세대가 바뀐 것을 보고 결과를 버린다.
+
+_FORGOTTEN_KEY = "relation|민수|지아"
+
+
+async def _forget_committed(
+    engine: AsyncEngine, room: Room, *, episode_id: uuid.UUID | None = None, key: str | None = None
+) -> str:
+    """잊게 하기 라우트 본문과 같은 순서로 지우고 커밋한다. 대상이 그사이 사라졌으면 `"missing"`."""
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        try:
+            if episode_id is not None:
+                await memory_forget.forget_episode(session, room.room_id, episode_id)
+            else:
+                assert key is not None
+                await memory_forget.forget_fact_key(session, room.room_id, key)
+        except memory_forget.MemoryItemMissingError:
+            return "missing"
+        await session.commit()
+    return "forgotten"
+
+
+async def _snapshot_id_at(engine: AsyncEngine, room: Room, *, turn: int) -> uuid.UUID:
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        snapshot_id = await session.scalar(
+            sa.select(ChatRoomMemorySnapshot.id).where(
+                ChatRoomMemorySnapshot.chat_room_id == room.room_id,
+                ChatRoomMemorySnapshot.cursor_message_id == room.turns[turn][1].id,
+            )
+        )
+    assert snapshot_id is not None
+    return snapshot_id
+
+
+async def _room_with_an_extracted_first_part(engine: AsyncEngine) -> tuple[Room, uuid.UUID]:
+    """20턴 방. 턴 10 스냅샷은 장면 하나·사실 하나(잊을 키)를 이미 뽑았고(두 추출 기록 끝남), 턴 20 스냅샷은 아직 안 뽑았다.
+    (방, 그 장면 id)."""
+    room = await _seed_committed_room(engine, turns=20)
+    await _commit_snapshot(engine, room, turn=10)
+    first = await _snapshot_id_at(engine, room, turn=10)
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        episode = _make_memory_episode(room.room_id, first, title="옛 장면", detail="옛 장면 이야기.")
+        session.add_all(
+            [
+                episode,
+                _make_memory_extraction(room.room_id, first),
+                _make_memory_fact(room.room_id, first, fact_key=_FORGOTTEN_KEY, value="이웃"),
+                _make_memory_fact_extraction(room.room_id, first),
+            ]
+        )
+        await session.commit()
+    await _commit_snapshot(engine, room, turn=20)
+    return room, episode.id
+
+
+async def _count_rows(engine: AsyncEngine, *where: Any, model: Any) -> int:
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        return int(await session.scalar(sa.select(sa.func.count()).select_from(model).where(*where)) or 0)
+
+
+def _pause_after(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, gate: _Gate) -> None:
+    original = getattr(module, name)
+
+    async def _pause_there(*args: Any, **kwargs: Any) -> Any:
+        result = await original(*args, **kwargs)
+        gate.holding.set()
+        await gate.release.wait()
+        return result
+
+    monkeypatch.setattr(module, name, _pause_there)
+
+
+async def _forget_while_paused(
+    engine: AsyncEngine, gate: _Gate, background: asyncio.Task[None], forget: Callable[[], Coroutine[Any, Any, str]]
+) -> tuple[bool, str | None]:
+    """백그라운드 작업이 멈춤 지점에 닿으면 잊기를 시작하고, 잊기가 잠금을 기다리기 시작한 것을 본 뒤 작업을 풀어 준다. 어떤
+    단계가 실패해도 작업을 풀어 두 쪽을 끝까지 기다린다. (멈춤 지점에 닿았나, 잊기 결과)."""
+    other: asyncio.Task[str] | None = None
+    try:
+        paused = await _reached(gate.holding, 5)
+        if paused:
+            other = asyncio.create_task(forget())
+            await _wait_until_a_lock_is_awaited(engine)
+    finally:
+        gate.release.set()
+        await asyncio.wait_for(background, 15)
+        outcome = await asyncio.wait_for(other, 15) if other is not None else None
+    return paused, outcome
+
+
+async def test_a_key_forgotten_while_a_fact_extraction_holds_its_snapshot_takes_the_rows_it_wrote(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """턴 20 사실 추출이 마지막 트랜잭션에서 자기 스냅샷을 잡고 추출 기록까지 갱신한 채 멈췄다(넣을 행에 잊을 키가 있다). 그때
+    사용자가 그 키를 잊는다. 잊기는 스냅샷 `FOR UPDATE` 에서 추출 커밋을 기다렸다가 방금 들어간 행까지 지운다 — 어느 쪽도 교착으로
+    끊기지 않고 키 행이 하나도 남지 않는다. 스냅샷 잠금이 없으면 잊기가 기다리지 않고 먼저 끝나 추출이 키를 다시 넣는다."""
+    captured = _capture_fact_failures(monkeypatch)
+    room, _ = await _room_with_an_extracted_first_part(committed_engine)
+    gate = _Gate()
+    _pause_after(monkeypatch, memory_facts, "_finish_claim", gate)
+    extraction = asyncio.create_task(_run_fact_extraction(committed_engine, room, _FactClient()))
+
+    paused, outcome = await _forget_while_paused(
+        committed_engine, gate, extraction, lambda: _forget_committed(committed_engine, room, key=_FORGOTTEN_KEY)
+    )
+
+    assert (paused, outcome) == (True, "forgotten")
+    assert captured == []
+    assert await _count_rows(committed_engine, ChatMemoryFact.chat_room_id == room.room_id, model=ChatMemoryFact) == 0
+    assert sorted((await _committed_fact_state(committed_engine, room))[1]) == [("done", 1), ("done", 1)]
+
+
+async def test_a_fact_extraction_that_read_its_input_before_a_forget_discards_its_result(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """턴 20 사실 추출이 입력(앞 사실 목록 — 잊을 키가 있다)을 읽고 모델을 기다리는 사이 사용자가 그 키를 잊고 커밋한다. 추출은
+    넣기 직전에 방의 잊기 세대가 바뀐 것을 보고 결과를 버리고 그 스냅샷을 다시 쥘 수 있게 실패로 적는다(시도 하나를 쓴다). Bugsink
+    로 올리지 않는다 — 장애가 아니다. 세대를 다시 확인하지 않으면 잊은 키가 추출 결과로 되살아난다."""
+    captured = _capture_fact_failures(monkeypatch)
+    room, _ = await _room_with_an_extracted_first_part(committed_engine)
+    outcomes: list[str] = []
+
+    async def _user_forgets_the_key() -> None:
+        outcomes.append(await _forget_committed(committed_engine, room, key=_FORGOTTEN_KEY))
+
+    llm = _FactClient(before_answer=_user_forgets_the_key)
+    await _run_fact_extraction(committed_engine, room, llm)
+
+    assert (llm.calls, outcomes, captured) == (1, ["forgotten"], [])
+    assert await _count_rows(committed_engine, ChatMemoryFact.chat_room_id == room.room_id, model=ChatMemoryFact) == 0
+    assert sorted((await _committed_fact_state(committed_engine, room))[1]) == [("done", 1), ("failed", 1)]
+
+
+async def test_a_scene_forgotten_while_a_scene_extraction_holds_another_snapshot_finishes_without_deadlock(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """턴 20 장면 추출이 마지막 트랜잭션에서 자기 스냅샷을 잡고 추출 기록까지 갱신한 채 멈췄을 때 사용자가 턴 10 의 장면을 잊는다.
+    잊기는 추출 커밋을 기다렸다가 끝난다. 잊은 장면만 사라지고 추출이 넣은 장면은 남는다."""
+    captured = _capture_episode_failures(monkeypatch)
+    room, forgotten = await _room_with_an_extracted_first_part(committed_engine)
+    gate = _Gate()
+    _pause_after(monkeypatch, memory_episodes, "_finish_claim", gate)
+    extraction = asyncio.create_task(_run_extraction(committed_engine, room, _EpisodeClient()))
+
+    paused, outcome = await _forget_while_paused(
+        committed_engine, gate, extraction, lambda: _forget_committed(committed_engine, room, episode_id=forgotten)
+    )
+
+    assert (paused, outcome, captured) == (True, "forgotten", [])
+    async with async_sessionmaker(committed_engine, expire_on_commit=False)() as session:
+        titles = (
+            await session.scalars(
+                sa.select(ChatMemoryEpisode.title).where(ChatMemoryEpisode.chat_room_id == room.room_id)
+            )
+        ).all()
+    assert titles == ["정류장"]
+
+
+async def test_a_scene_forgotten_while_the_fill_writes_its_embedding_takes_the_embedding_too(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """임베딩 채우기가 잊을 장면의 임베딩을 넣은 채(그 장면 행을 FK 로 잡은 채) 커밋 전에 멈췄다. 사용자가 그 장면을 잊는다. 잊기는
+    채우기 커밋을 기다렸다가 장면을 지우고, CASCADE 가 방금 넣은 임베딩까지 지운다."""
+    room, forgotten = await _room_with_an_extracted_first_part(committed_engine)
+    gate = _Gate()
+    _pause_after(monkeypatch, memory_embeddings, "_insert_row", gate)
+    fill = asyncio.create_task(_run_fill(committed_engine, room, VoyageStub()))
+
+    paused, outcome = await _forget_while_paused(
+        committed_engine, gate, fill, lambda: _forget_committed(committed_engine, room, episode_id=forgotten)
+    )
+
+    assert (paused, outcome) == (True, "forgotten")
+    assert await _count_rows(committed_engine, ChatMemoryEpisode.id == forgotten, model=ChatMemoryEpisode) == 0
+    assert (
+        await _count_rows(committed_engine, ChatMemoryEmbedding.episode_id == forgotten, model=ChatMemoryEmbedding) == 0
+    )
+
+
+async def test_a_forget_waits_for_a_rewind_that_holds_the_room_row(committed_engine: AsyncEngine) -> None:
+    """되감기가 첫 문장(방 행 UPDATE)만 하고 아직 스냅샷을 지우지 않은 채 열려 있다. 잊기는 방 행에서 기다리고, 되감기가 턴 10
+    스냅샷을 지우고 커밋한 뒤에야 돌아 그 장면이 이미 없다고 본다. 방 행 잠금이 없으면 잊기가 되감기와 다른 순서로 스냅샷을 잡는다
+    — 이 테스트에서는 기다리지 않고 먼저 끝나 빨개진다."""
+    room, forgotten = await _room_with_an_extracted_first_part(committed_engine)
+    deleted = room.turns[5][0]
+    rewind = async_sessionmaker(committed_engine, expire_on_commit=False)()
+    forget: asyncio.Task[str] | None = None
+    try:
+        await rewind.execute(
+            sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(memory_version=ChatRoom.memory_version + 1)
+        )
+        forget = asyncio.create_task(_forget_committed(committed_engine, room, episode_id=forgotten))
+        await _wait_until_a_lock_is_awaited(committed_engine)
+        await rewind_memory(rewind, room.room_id, (deleted.created_at, deleted.id))
+        await rewind.execute(sa.delete(ChatMessage).where(ChatMessage.id == deleted.id))
+        await rewind.commit()
+        outcome = await asyncio.wait_for(forget, 10)
+    finally:
+        await rewind.close()
+        if forget is not None and not forget.done():
+            forget.cancel()
+
+    assert outcome == "missing"
+    assert (
+        await _count_rows(committed_engine, ChatMemoryEpisode.chat_room_id == room.room_id, model=ChatMemoryEpisode)
+        == 0
+    )
+
+
+async def _scene_titles(engine: AsyncEngine, room: Room) -> list[str]:
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        return list(
+            (
+                await session.scalars(
+                    sa.select(ChatMemoryEpisode.title).where(ChatMemoryEpisode.chat_room_id == room.room_id)
+                )
+            ).all()
+        )
+
+
+async def _fact_keys(engine: AsyncEngine, room: Room) -> list[str]:
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        return list(
+            (
+                await session.scalars(
+                    sa.select(ChatMemoryFact.fact_key).where(ChatMemoryFact.chat_room_id == room.room_id)
+                )
+            ).all()
+        )
+
+
+async def test_a_forgotten_scene_and_fact_come_back_when_a_rewind_refolds_their_part(
+    committed_engine: AsyncEngine,
+) -> None:
+    """잊게 하기 안내 문구("앞 대화를 고치거나 재생성하면 다시 생길 수 있어요")의 근거. 턴 10 스냅샷이 장면·사실을 뽑았고 사용자가
+    둘 다 잊었다. 그 구간 안 메시지를 지우면 되감기가 스냅샷을 지우고, 같은 구간이 다시 접히면(새 스냅샷) 두 추출이 같은 원문에서
+    같은 장면·사실을 다시 뽑는다. 되감기 없이 다시 돌리면 이미 뽑은 스냅샷이라 아무것도 생기지 않는다."""
+    room = await _seed_committed_room(committed_engine, turns=10)
+    await _commit_snapshot(committed_engine, room, turn=10)
+    await _run_extraction(committed_engine, room, _EpisodeClient())
+    await _run_fact_extraction(committed_engine, room, _FactClient())
+    async with async_sessionmaker(committed_engine, expire_on_commit=False)() as session:
+        [scene_id] = (
+            await session.scalars(sa.select(ChatMemoryEpisode.id).where(ChatMemoryEpisode.chat_room_id == room.room_id))
+        ).all()
+    assert await _forget_committed(committed_engine, room, episode_id=scene_id) == "forgotten"
+    assert await _forget_committed(committed_engine, room, key=_FORGOTTEN_KEY) == "forgotten"
+
+    await _run_extraction(committed_engine, room, _EpisodeClient())
+    await _run_fact_extraction(committed_engine, room, _FactClient())
+    without_rewind = (await _scene_titles(committed_engine, room), await _fact_keys(committed_engine, room))
+    await _delete_message_committed(committed_engine, room, room.turns[5][0])
+    await _commit_snapshot(committed_engine, room, turn=10)
+    await _run_extraction(committed_engine, room, _EpisodeClient())
+    await _run_fact_extraction(committed_engine, room, _FactClient())
+
+    assert without_rewind == ([], [])
+    assert await _scene_titles(committed_engine, room) == ["정류장"]
+    assert await _fact_keys(committed_engine, room) == [_FORGOTTEN_KEY]
