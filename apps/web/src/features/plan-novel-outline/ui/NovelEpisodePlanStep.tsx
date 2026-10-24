@@ -223,6 +223,13 @@ function EpisodeEditor({
     setNotice({ tone: "error", message: "그사이 새 장면 구성안이 와서 고치던 것은 버렸어요. 새 장면 구성안을 확인해주세요." });
   }, [latestRevision]);
 
+  // 첫 장면 구성안이 오면 누른 "장면 구성안 만들기"가 사라진다 — 포커스가 문서 처음으로 떨어졌으면 단계 제목으로 옮긴다(다른 자리에
+  // 있던 포커스는 건드리지 않는다).
+  const hasBase = base !== undefined;
+  useEffect(() => {
+    if (hasBase && document.activeElement === document.body) scenesHeadingRef.current?.focus();
+  }, [hasBase]);
+
   useEffect(() => {
     if (pendingFocus === undefined) return;
     setPendingFocus(undefined);
