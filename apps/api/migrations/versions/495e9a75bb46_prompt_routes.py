@@ -1,7 +1,7 @@
 """prompt routes
 
 Revision ID: 495e9a75bb46
-Revises: 8b045061cad4
+Revises: 6558ab4d3dbc
 Create Date: 2026-10-24 12:00:00.000000
 
 채팅 방 모델별로 단계마다 어느 프롬프트 체인을 읽고 어느 모델을 부를지 담을 표 둘을 더한다. 이 리비전만으로는 두 표를 읽거나
@@ -39,7 +39,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "495e9a75bb46"
-down_revision: str | Sequence[str] | None = "8b045061cad4"
+down_revision: str | Sequence[str] | None = "6558ab4d3dbc"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
