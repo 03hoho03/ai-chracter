@@ -11,7 +11,7 @@
 
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from api.core import clover
 from api.core.config import settings
 from api.db.models import ChatMessage, ChatRoom, Content, NovelJob
+from api.db.models.chat import ChatMessageRole
 from api.db.models.novel import (
     Novel,
     NovelBatch,
@@ -40,6 +41,7 @@ from api.novelize import runner
 from api.novelize.source import segment_hash
 from factories import (
     _add_chapter,
+    _allow_novel_premium,
     _batch_output,
     _clear_llm_override,
     _make_user,
@@ -1588,3 +1590,323 @@ async def test_a_revision_lists_its_scenes_with_their_blocks_and_an_old_chapter_
     old = (await db_client.get(f"/novels/{novel_id}")).json()["chapters"][0]
     assert old["episodeOutlineId"] is None
     assert (await db_client.get(f"/novels/{novel_id}/chapters/{old['id']}")).json()["revision"]["scenes"] == []
+
+
+# ── 원고 턴 상한: 화 턴 수·모델별 상한·적격 여부·승인 막기 ─────────────────────
+def _caps(monkeypatch: pytest.MonkeyPatch, *, gemini: int, sonnet: int, opus: int) -> None:
+    monkeypatch.setattr(settings, "novelize_chapter_max_turns", gemini)
+    monkeypatch.setattr(settings, "novelize_chapter_max_turns_sonnet", sonnet)
+    monkeypatch.setattr(settings, "novelize_chapter_max_turns_opus", opus)
+
+
+def _inserting_reply(db_session: AsyncSession) -> Callable[[uuid.UUID, Any, list[ChatMessage]], Awaitable[None]]:
+    """`ms[2]` 응답 바로 뒤에 사용자 말 없는 응답 하나를 더 넣는 `_outlined` 의 `before` — 응답이 잇달아 있으면 "사용자 말과 그 뒤 응답들"
+    묶음 수는 응답 수보다 적다."""
+
+    async def insert(_novel_id: uuid.UUID, room: Any, ms: list[ChatMessage]) -> None:
+        db_session.add(
+            ChatMessage(
+                chat_room_id=room.room_id,
+                role=ChatMessageRole.ASSISTANT,
+                content="말없이 잠시 뒤에 덧붙인 응답이다.",
+                created_at=ms[2].created_at + timedelta(milliseconds=500),
+            )
+        )
+        await db_session.commit()
+
+    return insert
+
+
+async def _replies_in_basis(db: AsyncSession, room_id: uuid.UUID, basis: list[dict[str, str]]) -> int:
+    """근거 구간들 안의 모델 응답 메시지 수 — 화면이 저장 전 화(나눈 조각·합친 결과)를 셀 때 쓰는 세기다."""
+    messages = await _room_messages(db, room_id)
+    index = {str(m.id): n for n, m in enumerate(messages)}
+    return sum(
+        1
+        for b in basis
+        for m in messages[index[b["startMessageId"]] : index[b["endMessageId"]] + 1]
+        if m.role == ChatMessageRole.ASSISTANT
+    )
+
+
+def _chapter_model(model: str, name: str, cost: int, max_turns: int, eligible: bool | None) -> dict[str, Any]:
+    return {
+        "id": model,
+        "name": name,
+        "cost": cost,
+        "maxTurns": max_turns,
+        "eligible": eligible,
+        "ineligibleReason": "too_many_turns" if eligible is False else None,
+    }
+
+
+def _episode_inputs(view: dict[str, Any]) -> list[dict[str, Any]]:
+    return [{k: e[k] for k in ("key", "title", "summary", "goal", "basis")} for e in view["episodes"]]
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_an_episode_turn_count_is_the_reply_count_the_chapter_turn_cap_refuses_on(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """구성안 화의 `turnCount` 는 그 화 근거 안의 모델 응답 수이고(여는 응답, 두 구간에 걸친 화, 사용자 말 없이 잇단 응답 포함), 장면
+    구성안이 그 화를 빠짐없이 덮으면 장면 구성안 상태의 `chapterTurnCount` 와 같다. 모델별 `eligible` 은 원고 요청의 턴 상한 409 와
+    경계(상한 = 턴 수 - 1 / = 턴 수)에서 같다. 깨지는 시나리오: 화면이 고를 수 있다고 보여 준 모델을 요청이 막거나, 화면이 미리 센 턴 수가
+    서버 판정과 어긋나 나눌 필요 없는 화를 나누게 한다."""
+    novel_id, _, keys = await _outlined(
+        db_client, db_session, monkeypatch, enqueued, llm, before=_inserting_reply(db_session)
+    )
+    room_id = await db_session.scalar(sa.select(Novel.chat_room_id).where(Novel.id == novel_id))
+    assert room_id is not None
+    episodes = (await db_client.get(f"/novels/{novel_id}/outline")).json()["approved"]["episodes"]
+
+    assert [e["turnCount"] for e in episodes] == [2, 3]
+    assert [await _replies_in_basis(db_session, room_id, e["basis"]) for e in episodes] == [2, 3]
+
+    for key, turns in zip(keys, (2, 3), strict=True):
+        await _scened(db_client, db_session, enqueued, llm, novel_id, key)
+        assert (await db_client.get(_scenes_url(novel_id, key))).json()["chapterTurnCount"] == turns
+
+        _caps(monkeypatch, gemini=turns - 1, sonnet=turns - 1, opus=turns - 1)
+        state = (await db_client.get(_scenes_url(novel_id, key))).json()
+        assert state["chapterModels"] == [_chapter_model("gemini", "Gemini", 20, turns - 1, False)]
+        refused = await _request_chapter(db_client, novel_id, key)
+        assert refused.json()["detail"] == {"code": "NOVEL_MODEL_INELIGIBLE", "reason": "too_many_turns"}
+
+        _caps(monkeypatch, gemini=turns, sonnet=turns, opus=turns)
+        state = (await db_client.get(_scenes_url(novel_id, key))).json()
+        assert state["chapterModels"] == [_chapter_model("gemini", "Gemini", 20, turns, True)]
+        accepted = await _request_chapter(db_client, novel_id, key)
+        assert accepted.status_code == 202, accepted.text
+        assert (await _run(db_session, llm, enqueued[-1])).status == "succeeded"
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_dropping_a_scene_lowers_the_chapter_turn_count_and_makes_a_model_eligible(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """장면을 빼서 승인하면 장면 구성안 상태의 턴 수가 준다 — 원고는 장면이 덮은 턴만 쓰기 때문이다. 상한을 넘던 모델이 그 상한 안으로
+    들어오면 적격이 된다. 구성안 화의 `turnCount` 는 화 근거로 세므로 그대로다. 깨지는 시나리오: 장면을 덜어 쓸 수 있게 된 화를 화면이 계속
+    막거나, 화 근거 수로 판정해 덜기가 소용없어진다."""
+    novel_id, _, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    approved = await _scened(db_client, db_session, enqueued, llm, novel_id, keys[1])
+    _caps(monkeypatch, gemini=2, sonnet=2, opus=2)
+    before = (await db_client.get(_scenes_url(novel_id, keys[1]))).json()
+    assert (before["chapterTurnCount"], before["chapterModels"][0]["eligible"]) == (3, False)
+
+    saved = await _save_scenes(
+        db_client, novel_id, keys[1], approved["revision"], [_scene_input(approved["scenes"][1])]
+    )
+    assert saved.status_code == 200, saved.text
+    after = await db_client.post(
+        f"{_scenes_url(novel_id, keys[1])}/approve", json={"revision": saved.json()["draft"]["revision"]}
+    )
+
+    assert after.status_code == 200, after.text
+    assert after.json()["chapterTurnCount"] == 2
+    assert after.json()["chapterModels"] == [_chapter_model("gemini", "Gemini", 20, 2, True)]
+    episodes = (await db_client.get(f"/novels/{novel_id}/outline")).json()["approved"]["episodes"]
+    assert [e["turnCount"] for e in episodes] == [2, 3]
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_eligibility_is_unknown_without_a_usable_approved_scene_outline(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """승인한 장면 구성안이 없거나(초안만 있음 포함) 그 장면 구성안이 낡았으면 원고 턴 수·적격을 판정하지 않는다(null) — 원고 요청도 그때는
+    턴 상한보다 장면 구성안 없음·낡음으로 먼저 막힌다. 상한(`maxTurns`)은 늘 싣는다. 깨지는 시나리오: 화면이 판정할 수 없는 화에 "쓸 수
+    있음"이나 "못 씀"을 지어 보여 준다."""
+    _caps(monkeypatch, gemini=45, sonnet=20, opus=20)
+    novel_id, ms, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    unknown = [_chapter_model("gemini", "Gemini", 20, 45, None)]
+
+    none = (await db_client.get(_scenes_url(novel_id, keys[0]))).json()
+    assert (none["chapterTurnCount"], none["chapterModels"]) == (None, unknown)
+    assert (await _request_scenes(db_client, novel_id, keys[0])).status_code == 202
+    await _run(db_session, llm, enqueued[-1])
+    drafted = (await db_client.get(_scenes_url(novel_id, keys[0]))).json()
+    assert (drafted["draft"] is not None, drafted["chapterTurnCount"], drafted["chapterModels"]) == (True, None, unknown)
+
+    await _scened(db_client, db_session, enqueued, llm, novel_id, keys[1])
+    outline = (await db_client.get(f"/novels/{novel_id}/outline")).json()["approved"]
+    first, second = _episode_inputs(outline)
+    drafted_outline = await db_client.put(
+        f"/novels/{novel_id}/outline/draft",
+        json={"baseRevision": outline["revision"], "episodes": [first, {**second, "basis": [_range(ms, 9, 12)]}]},
+    )
+    assert drafted_outline.status_code == 200, drafted_outline.text
+    assert [e["turnCount"] for e in drafted_outline.json()["draft"]["episodes"]] == [2, 2]
+    revision = drafted_outline.json()["draft"]["revision"]
+    assert (await db_client.post(f"/novels/{novel_id}/outline/approve", json={"revision": revision})).status_code == 200
+
+    stale = (await db_client.get(_scenes_url(novel_id, keys[1]))).json()
+    assert stale["approved"]["stale"] is True
+    assert (stale["chapterTurnCount"], stale["chapterModels"]) == (None, unknown)
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_turn_counts_are_unknown_when_the_room_or_a_basis_end_message_is_gone(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """근거 끝 메시지가 지워진 화는 `turnCount` 가 null 이고 다른 화는 그대로 센다. 방이 지워지면 모든 화의 `turnCount` 와 장면 구성안
+    상태의 판정이 null 이다. 깨지는 시나리오: 사라진 대화를 0턴으로 세어 쓸 수 있는 화처럼 보이거나, 조회가 500 으로 깨져 구성안을 못 연다."""
+    novel_id, ms, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    await _scened(db_client, db_session, enqueued, llm, novel_id, keys[0])
+
+    await db_session.execute(sa.delete(ChatMessage).where(ChatMessage.id == ms[12].id))
+    await db_session.commit()
+    episodes = (await db_client.get(f"/novels/{novel_id}/outline")).json()["approved"]["episodes"]
+    assert [e["turnCount"] for e in episodes] == [2, None]
+
+    await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(chat_room_id=None))
+    await db_session.commit()
+    gone = (await db_client.get(f"/novels/{novel_id}/outline")).json()
+    assert [e["turnCount"] for e in gone["approved"]["episodes"]] == [None, None]
+    scenes = (await db_client.get(_scenes_url(novel_id, keys[0]))).json()
+    assert scenes["chapterTurnCount"] is None
+    assert [m["eligible"] for m in scenes["chapterModels"]] == [None]
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_the_outline_and_scene_states_list_each_available_manuscript_models_turn_cap(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """구성안 상태의 `chapterTurnCaps` 와 장면 구성안 상태의 원고 모델 `maxTurns` 는 이 계정이 원고에 고를 수 있는 모델과 그 모델의 턴
+    상한이다 — 상위 모델 허용이 없으면 기본 모델 하나, 있으면 원고 모델 목록과 같은 순서로 셋. 구성안·장면 구성안 가격 목록에는 칸이
+    붙지 않는다. 깨지는 시나리오: 화면이 고를 수 없는 모델의 상한으로 경고하거나, 모델과 상한이 뒤바뀌어 엉뚱한 모델을 막는다."""
+    _caps(monkeypatch, gemini=41, sonnet=31, opus=21)
+    novel_id, _, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    await _scened(db_client, db_session, enqueued, llm, novel_id, keys[0])
+
+    state = (await db_client.get(f"/novels/{novel_id}/outline")).json()
+    assert state["chapterTurnCaps"] == [{"id": "gemini", "name": "Gemini", "maxTurns": 41}]
+
+    await _allow_novel_premium(db_session, monkeypatch, await _owner(db_session, novel_id))
+    state = (await db_client.get(f"/novels/{novel_id}/outline")).json()
+    scenes = (await db_client.get(_scenes_url(novel_id, keys[0]))).json()
+    names = {m["id"]: m["name"] for m in scenes["chapterModels"]}
+
+    assert state["chapterTurnCaps"] == [
+        {"id": "gemini", "name": "Gemini", "maxTurns": 41},
+        {"id": "sonnet", "name": names["sonnet"], "maxTurns": 31},
+        {"id": "opus", "name": names["opus"], "maxTurns": 21},
+    ]
+    assert [(m["id"], m["maxTurns"], m["eligible"]) for m in scenes["chapterModels"]] == [
+        ("gemini", 41, True),
+        ("sonnet", 31, True),
+        ("opus", 21, True),
+    ]
+    assert all(set(m) == {"id", "name", "cost"} for m in scenes["models"] + state["models"])
+
+
+async def _generated_draft(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> tuple[uuid.UUID, dict[str, Any]]:
+    """6턴 방의 소설에 선택을 승인하고 두 화짜리 구성안을 만들어 미승인으로 둔다. (소설 id, 초안)."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch, turns=6)
+    ms = await _room_messages(db_session, room.room_id)
+    await _select(db_client, novel_id, ms, _SECTIONS)
+    response = await db_client.post(f"/novels/{novel_id}/outline", json={"model": "gemini", "expectedCost": 11})
+    assert response.status_code == 202, response.text
+    assert (await _run(db_session, llm, enqueued[-1])).status == "succeeded"
+    draft: dict[str, Any] = (await db_client.get(f"/novels/{novel_id}/outline")).json()["draft"]
+    return novel_id, draft
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_an_outline_with_an_episode_no_available_model_can_write_is_saved_but_not_approved(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """이 계정이 원고에 고를 수 있는 모델의 가장 큰 턴 상한보다 긴 화가 있으면 승인이 409 `NOVEL_OUTLINE_EPISODE_TOO_LONG` 이고 그 화들의
+    키·턴 수와 상한을 싣는다(승인되지 않는다). 고친 판 저장은 막지 않는다. 고를 수 없는 상위 모델의 상한은 세지 않고, 상위 모델을 허용하면
+    그 상한으로 승인된다. 이미 승인한 최신 판을 다시 누르면 그대로 돌려준다. 깨지는 시나리오: 어떤 모델로도 원고를 쓸 수 없는 화가 있는
+    구성안으로 장면 구성안 값을 받거나, 쓸 수 없는 상위 모델 상한을 믿고 승인시킨다."""
+    _caps(monkeypatch, gemini=2, sonnet=3, opus=3)
+    novel_id, draft = await _generated_draft(db_client, db_session, monkeypatch, enqueued, llm)
+    first, second = draft["episodes"]
+    assert [first["turnCount"], second["turnCount"]] == [2, 3]
+
+    resaved = await db_client.put(
+        f"/novels/{novel_id}/outline/draft",
+        json={"baseRevision": draft["revision"], "episodes": _episode_inputs(draft)},
+    )
+    assert resaved.status_code == 200, resaved.text
+    revision = resaved.json()["draft"]["revision"]
+    refused = await db_client.post(f"/novels/{novel_id}/outline/approve", json={"revision": revision})
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {
+        "code": "NOVEL_OUTLINE_EPISODE_TOO_LONG",
+        "maxTurns": 2,
+        "episodes": [{"key": second["key"], "turnCount": 3}],
+    }
+    assert (await db_client.get(f"/novels/{novel_id}/outline")).json()["approved"] is None
+
+    await _allow_novel_premium(db_session, monkeypatch, await _owner(db_session, novel_id))
+    approved = await db_client.post(f"/novels/{novel_id}/outline/approve", json={"revision": revision})
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["approved"]["revision"] == revision
+
+    _caps(monkeypatch, gemini=1, sonnet=1, opus=1)
+    again = await db_client.post(f"/novels/{novel_id}/outline/approve", json={"revision": revision})
+    assert again.status_code == 200, again.text
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_an_episode_already_written_does_not_block_approving_a_later_outline_edit(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """원고가 된 화는 상한보다 길어도 승인을 막지 않는다 — 다시 쓸 화가 아니다(다시 만들기는 그 화가 쓴 장면 구성안으로 따로 판정한다).
+    남은 화가 모두 상한 안이면 승인된다. 깨지는 시나리오: 상한을 낮춘 뒤나 장면을 덜어 쓴 화가 있는 소설에서 구성안을 더는 고칠 수 없다."""
+    novel_id, ms, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    await _written(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    outline = (await db_client.get(f"/novels/{novel_id}/outline")).json()["approved"]
+    first, second = _episode_inputs(outline)
+    split = [
+        {**second, "basis": [_range(ms, 3, 4)]},
+        {**second, "key": None, "basis": [_range(ms, 9, 10)]},
+        {**second, "key": None, "basis": [_range(ms, 11, 12)]},
+    ]
+    saved = await db_client.put(
+        f"/novels/{novel_id}/outline/draft", json={"baseRevision": outline["revision"], "episodes": [first, *split]}
+    )
+    assert saved.status_code == 200, saved.text
+    assert [e["turnCount"] for e in saved.json()["draft"]["episodes"]] == [2, 1, 1, 1]
+    _caps(monkeypatch, gemini=1, sonnet=1, opus=1)
+
+    approved = await db_client.post(
+        f"/novels/{novel_id}/outline/approve", json={"revision": saved.json()["draft"]["revision"]}
+    )
+
+    assert approved.status_code == 200, approved.text

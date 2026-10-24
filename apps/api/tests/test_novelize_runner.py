@@ -10,11 +10,15 @@ import asyncio
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
+import anthropic
 import httpx
+import httpx2
 import pytest
 import sqlalchemy as sa
+from google.genai import errors as genai_errors
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core.config import settings
@@ -1674,3 +1678,97 @@ async def test_regenerating_gives_new_block_ids_even_to_paragraphs_with_the_same
     assert first.block_ids is not None and second.block_ids is not None
     assert len(second.block_ids) == len(split_paragraphs(second.body))
     assert set(second.block_ids).isdisjoint(first.block_ids)
+
+
+# ── 모델 호출 실패 로그 ─────────────────────────────────────────────────────
+_SECRET = "원문-본문-조각-로그에-실리면-안-된다"
+
+
+def _failed_call(cause: BaseException | None) -> LLMClientError:
+    """공급자 클라이언트가 올리는 꼴 — 원인 예외 글을 자기 글에 담고 원인으로 잇는다."""
+    error = LLMClientError(f"call failed: {cause} {_SECRET}")
+    error.__cause__ = cause
+    return error
+
+
+def _anthropic_status(status: int, headers: dict[str, str]) -> anthropic.APIStatusError:
+    response = httpx2.Response(status, headers=headers, request=httpx2.Request("POST", "https://llm.invalid/v1"))
+    return anthropic.APIStatusError(f"overloaded {_SECRET}", response=response, body={"detail": _SECRET})
+
+
+def _prompted() -> Any:
+    prompt = SimpleNamespace(prompt=f"프롬프트 {_SECRET}", system_instruction="지시문")
+    return SimpleNamespace(prompt=prompt, episode_count=1)
+
+
+async def _call_generate_batch(llm: LLMClient, usage: LLMCallContext) -> None:
+    await runner._generate_batch(llm, _prompted(), usage)
+
+
+async def _call_revise(llm: LLMClient, usage: LLMCallContext) -> None:
+    await runner._revise(llm, f"프롬프트 {_SECRET}", "지시문", usage)
+
+
+async def _call_revise_blocks(llm: LLMClient, usage: LLMCallContext) -> None:
+    await runner._revise_blocks(llm, _prompted(), usage)
+
+
+async def _call_outline(llm: LLMClient, usage: LLMCallContext) -> None:
+    await runner._outline(llm, _prompted(), usage)
+
+
+async def _call_episode_outline(llm: LLMClient, usage: LLMCallContext) -> None:
+    await runner._episode_outline(llm, _prompted(), usage)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        pytest.param(_call_generate_batch, id="generate_batch"),
+        pytest.param(_call_revise, id="revise"),
+        pytest.param(_call_revise_blocks, id="revise_blocks"),
+        pytest.param(_call_outline, id="outline"),
+        pytest.param(_call_episode_outline, id="episode_outline"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("cause", "expected"),
+    [
+        pytest.param(
+            _anthropic_status(529, {"request-id": "req_direct_1"}),
+            "LLMClientError 원인=APIStatusError 상태=529 요청=req_direct_1",
+            id="anthropic",
+        ),
+        pytest.param(
+            _anthropic_status(503, {"x-amzn-requestid": "amzn-req-2"}),
+            "LLMClientError 원인=APIStatusError 상태=503 요청=amzn-req-2",
+            id="bedrock",
+        ),
+        pytest.param(
+            genai_errors.APIError(503, {"error": {"code": 503, "message": _SECRET, "status": "UNAVAILABLE"}}),
+            "LLMClientError 원인=APIError 상태=503 요청=없음",
+            id="gemini",
+        ),
+        pytest.param(httpx.ReadTimeout(_SECRET), "LLMClientError 원인=ReadTimeout 상태=없음 요청=없음", id="timeout"),
+        pytest.param(None, "LLMClientError 원인=없음 상태=없음 요청=없음", id="no_cause"),
+    ],
+)
+async def test_a_failed_novel_model_call_logs_the_cause_type_status_and_request_id_without_any_text(
+    caplog: pytest.LogCaptureFixture,
+    call: Callable[[LLMClient, LLMCallContext], Awaitable[None]],
+    cause: BaseException | None,
+    expected: str,
+) -> None:
+    """소설 작업의 모델 호출(장 생성·문단 수정·여러 문단 수정·전체 구성안·장면 구성안)이 실패하면 경고 로그에 실패 예외 종류와 원인 예외
+    종류, HTTP 상태, 요청 id(공급자가 준 것 — 직접 API 는 `request-id`, Bedrock 은 `x-amzn-requestid` 헤더)를 남기고, 예외 글·프롬프트·응답
+    본문은 남기지 않는다. 실패 사유 코드는 그대로 `llm_error` 다. 깨지는 시나리오: 과부하·연결 실패를 로그로 가를 수 없어 재시도 여부를
+    정할 근거가 없거나, 로그에 사용자 대화가 샌다."""
+    llm = _NovelLLM(chunks=[], error=_failed_call(cause))
+    usage = LLMCallContext(call_site="novelize_chapter", user_id=None, room_id=None)
+
+    with caplog.at_level("WARNING", logger=runner.__name__), pytest.raises(runner._JobFailedError) as failed:
+        await call(llm, usage)
+
+    assert failed.value.code == "llm_error"
+    assert expected in caplog.text
+    assert _SECRET not in caplog.text
