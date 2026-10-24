@@ -61,14 +61,19 @@ def _edit(rows: list[Row], index: int = 0, **change: object) -> list[Row]:
     return edited
 
 
+_A_BODY = _edit(_A, body="합성 가 하나 고침.")
+_A_ORDER = _edit(_A_BODY, order=5)
+_A_CONDITIONAL = _edit(_A_ORDER, 1, conditional=False)
+
 _SAMPLES: dict[str, list[_Step]] = {
+    # 한 단계에 한 칸만 바꾼다 — 앞 단계 위에 고쳐 쌓아야 순서만·조건만 바뀐 갈래가 실제로 생긴다.
     "field-by-field": [
         _Step({"a": _A, "b": _B}),
-        _Step({"a": _edit(_A, body="합성 가 하나 고침."), "b": _B}),
-        _Step({"a": _edit(_A, order=5), "b": _B}, levels={"a": "minor"}),
-        _Step({"a": _edit(_edit(_A, order=5), 1, conditional=False), "b": _B}, levels={"a": "major"}),
-        _Step({"a": _edit(_edit(_A, order=5), 1, conditional=False), "b": _B}, labels=_RENAMED),
-        _Step({"a": _edit(_edit(_A, order=5), 1, conditional=False), "b": _B}, labels=_RENAMED),
+        _Step({"a": _A_BODY, "b": _B}),
+        _Step({"a": _A_ORDER, "b": _B}, levels={"a": "minor"}),
+        _Step({"a": _A_CONDITIONAL, "b": _B}, levels={"a": "major"}),
+        _Step({"a": _A_CONDITIONAL, "b": _B}, labels=_RENAMED),
+        _Step({"a": _A_CONDITIONAL, "b": _B}, labels=_RENAMED),
     ],
     "removed-and-returning": [
         _Step({"a": _A, "b": _B}),
