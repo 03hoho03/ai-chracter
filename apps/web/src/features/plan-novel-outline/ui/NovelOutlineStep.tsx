@@ -340,7 +340,8 @@ function OutlineEditor({
       {base.isStale && (
         <div className="flex flex-col gap-3 rounded-lg border border-border px-4 py-3">
           <p className="text-sm break-keep text-foreground">
-            {revert?.kind === "sourceChanged"
+            {/* 방이 지워졌으면 서버가 모든 구간을 원문 바뀜으로 싣는다 — 원인은 방 삭제라 그 안내(아래)를 따른다. */}
+            {revert?.kind === "sourceChanged" && !isRoomGone
               ? "구성안을 만든 뒤 대화 원문이 바뀌어 이 구성안은 낡았어요. 원문이 바뀐 대화는 구간을 되돌려도 그대로 돌아오지 않아요. 구성안을 다시 만들어주세요."
               : "담을 대화를 바꿔 이 구성안이 근거로 쓴 대화가 빠졌어요(낡음). 낡은 구성안은 고치거나 승인할 수 없어요. 다시 만들거나, 빠진 대화를 다시 담아 승인해주세요."}
           </p>
