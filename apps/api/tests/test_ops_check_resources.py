@@ -344,7 +344,13 @@ def test_main_still_pings_when_state_file_cannot_be_written(
     unwritable = tmp_path / "없는-디렉터리" / "resource-check.state"
     monkeypatch.setattr(
         "sys.argv",
-        ["check_resources.py", "--state-file", str(unwritable), "--worker-state-file", str(tmp_path / "novelize_worker")],
+        [
+            "check_resources.py",
+            "--state-file",
+            str(unwritable),
+            "--worker-state-file",
+            str(tmp_path / "novelize_worker"),
+        ],
     )
 
     assert check_resources.main() == 0
