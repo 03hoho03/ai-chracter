@@ -473,3 +473,32 @@ def test_worker_docker_binary_missing_is_a_worker_warning(monkeypatch: pytest.Mo
     assert len(sent) == 1
     assert "소설화 워커 상태를 읽지 못했다" in sent[0]
     assert pinged == ["https://hc-ping.com/resource-check"]
+
+
+@pytest.mark.parametrize(
+    "health",
+    [
+        {"worker_blue": "starting"},
+        {"worker_blue": "unhealthy", "worker_green": "starting"},
+    ],
+)
+def test_worker_starting_is_not_an_alert(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, health: dict[str, str]
+) -> None:
+    """교체가 새 워커를 띄운 직후 그 워커는 헬스체크 유예 동안 `starting` 이다 — 크론이 그 순간과 겹쳐도 경고가 아니다.
+    `starting` 이 이어지지 않는 것은 docker 가 보장한다(유예가 끝나고 실패가 이어지면 unhealthy 로 바뀐다)."""
+    sent, _ = _run_worker_check(monkeypatch, tmp_path, _docker_read(health), expected="on\n")
+    assert sent == []
+
+
+def test_worker_alerts_once_when_starting_worker_disappears(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """starting 은 조용히 지나가고, 그 뒤 워커가 사라지면 그때 한 번 알린다 — 상태가 바뀔 때만 알린다는 규약은 그대로다."""
+    sent, _ = _run_worker_check(monkeypatch, tmp_path, _docker_read({"worker_blue": "starting"}), expected="on\n")
+    assert sent == []
+
+    sent, _ = _run_worker_check(monkeypatch, tmp_path, _docker_read({}), expected="on\n")
+    assert len(sent) == 1
+    assert "blue=없음" in sent[0] and "green=없음" in sent[0]
+
+    sent, _ = _run_worker_check(monkeypatch, tmp_path, _docker_read({}), expected="on\n")
+    assert sent == []
