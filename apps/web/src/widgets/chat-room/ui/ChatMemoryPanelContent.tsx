@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode, type RefObject } from "react";
+import { useAtom } from "jotai";
 import { DialogBody } from "@ai-character-chat/ui/components/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { cn } from "@ai-character-chat/ui/lib/utils";
@@ -9,6 +10,7 @@ import { itemCountLabel, RoomMemoryFacts, RoomMemoryScenes } from "@/features/fo
 
 import { MEMORY_PANEL_DESCRIPTION } from "../config/memoryPanel";
 import { confirmClearMemoryNote } from "../lib/confirmClearMemoryNote";
+import { chatMemoryTabAtom, type ChatMemoryTab } from "../model/atoms";
 
 type ChatMemoryPanelLayout = "sidebar" | "dialog";
 
@@ -30,7 +32,7 @@ export function ChatMemoryPanelContent({ roomId, layout }: ChatMemoryPanelConten
   const memoryQuery = useChatRoomMemoryQuery(roomId);
 
   if (memoryQuery.data?.features.itemsVisible) {
-    // 방마다 탭과 편집 요청을 새로 시작한다(편집기 폼이 방마다 새로 만들어지는 것과 같은 이유).
+    // 방마다 편집 요청을 새로 시작한다(편집기 폼이 방마다 새로 만들어지는 것과 같은 이유). 고른 탭은 방 id 와 함께 든 atom 이 가른다.
     return <ChatMemoryTabs key={roomId} roomId={roomId} layout={layout} />;
   }
 
@@ -44,9 +46,7 @@ export function ChatMemoryPanelContent({ roomId, layout }: ChatMemoryPanelConten
   );
 }
 
-type MemoryTab = "notes" | "scenes" | "facts";
-
-function isMemoryTab(value: string): value is MemoryTab {
+function isMemoryTab(value: string): value is ChatMemoryTab {
   return value === "notes" || value === "scenes" || value === "facts";
 }
 
@@ -57,13 +57,14 @@ const TAB_PANEL_CLASS = "rounded-sm focus-visible:outline-solid focus-visible:ou
  * 스크롤 영역의 위 모서리다(Dialog 는 `DialogBody`의 `border-t`). */
 function ChatMemoryTabs({ roomId, layout }: { roomId: string; layout: ChatMemoryPanelLayout }) {
   const itemsQuery = useChatRoomMemoryItemsQuery(roomId);
-  const [tab, setTab] = useState<MemoryTab>("notes");
+  const [selectedTab, setSelectedTab] = useAtom(chatMemoryTabAtom);
+  const tab = selectedTab?.roomId === roomId ? selectedTab.tab : "notes";
   const [editSummaryRequest, setEditSummaryRequest] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   function handleTabChange(value: string) {
     if (!isMemoryTab(value)) return;
-    setTab(value);
+    setSelectedTab({ roomId, tab: value });
     // 스크롤 영역 하나를 세 탭이 함께 쓴다 — 긴 장면 목록을 내린 자리에서 다른 탭의 중간이 보이지 않게 맨 위로 올린다.
     scrollRef.current?.scrollTo({ top: 0 });
   }
