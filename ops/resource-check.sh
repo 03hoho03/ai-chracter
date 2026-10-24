@@ -15,7 +15,6 @@ export DISCORD_WEBHOOK_URL HEALTHCHECKS_RESOURCE_PING_URL
 STATE_DIR=/var/lib/ddona
 mkdir -p "$STATE_DIR"
 
-#
 # 소설화 워커를 감시할지는 교체 스크립트(`ops/swap-api.sh`)가 남기는 기대 상태 파일(`on`/`off`, 없으면 off)로 정한다 —
 # 스위치를 읽으려고 `.env` 를 열지 않는다.
 cd /opt/ddona/app/apps/api || exit 1
