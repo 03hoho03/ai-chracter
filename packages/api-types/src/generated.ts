@@ -5216,6 +5216,13 @@ export interface paths {
          * Delete Message
          * @description 개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다. 진행 중 턴이 있는 방이면 409 — 턴 입력이던
          *     메시지를 지워도 응답이 그 뒤에 붙는다(`chat/turn_lock.py`).
+         *
+         *     방의 마지막 AI 응답을 지우면 그 턴의 스탯을 턴 기록의 반영 전 값으로 되돌리고 `turn_count` 를 하나 줄인다. 중간 응답·사용자
+         *     메시지는 스탯·턴 수를 그대로 둔다(`chat/stat_rewind.py` 의 `rewind_deleted_message`). 엔딩 상태와 해금 기록은 되돌리지
+         *     않는다. 응답의 `statRewind` 로 화면이 안내 문구를 고른다.
+         *
+         *     락을 잡은 뒤 방 행을 잠그며 다시 읽는다 — 앞 턴이 올린 `turn_count` 를 보고, 그 행 잠금이 요약 되감기·스탯 쓰기보다 먼저다
+         *     (턴 쓰기 구간·되돌리기·잊게 하기도 방 행을 먼저 잡는다).
          */
         delete: operations["delete_message_chat_rooms__room_id__messages__message_id__delete"];
         options?: never;
@@ -5229,9 +5236,10 @@ export interface paths {
          *
          *     삭제되는 메시지 중 AI 응답 개수만큼 turn_count를 미리 되돌려둔다(그래야 턴 골격이 쓰는
          *     turn_count+1과 합쳐 실제 남은 대화 길이와 일치하고, 이후 엔딩 턴게이트 판정이 어긋나지 않는다).
-         *     다만 삭제된 턴들이 이미 반영해 둔 chat_room_stats/ending_reached 등의 상태까지 되돌리는
-         *     건 하지 않는다 — 이 롤백은 구현돼 있지 않다(요구사항에도 없다). 턴 기록에 스탯 변화가 남는 턴도
-         *     되돌리지 않고, 기록을 쓰기 전에 보낸 턴에는 되돌릴 근거가 되는 턴별 변경 이력부터 없다.
+         *     삭제된 턴들이 반영해 둔 스탯도 그 응답들의 턴 기록으로 그 턴들이 없던 값으로 되돌린다
+         *     (`chat/stat_rewind.py` 의 `rewind_removed_turns`) — 기록을 쓰기 전에 보낸 옛 턴은 되돌릴 근거가 없어
+         *     기록 있는 턴만 되돌린다. 엔딩 상태와 해금 기록은 되돌리지 않는다. 어떻게 되돌렸는지는 done 이벤트의
+         *     `statRewind` 로 알린다(지운 응답이 없으면 칸이 없다).
          */
         patch: operations["edit_message_chat_rooms__room_id__messages__message_id__patch"];
         trace?: never;
@@ -9665,6 +9673,14 @@ export interface components {
             content: string;
             /** Shortcutid */
             shortcutId?: string | null;
+        };
+        /**
+         * ChatMessageDeleteResponse
+         * @description 메시지 삭제의 응답. `stat_rewind` 로 화면이 안내 문구를 고른다(사용자 메시지·오프닝 삭제처럼 알릴 것이 없으면 null).
+         */
+        ChatMessageDeleteResponse: {
+            /** Statrewind */
+            statRewind: ("rewound" | "partial" | "kept") | null;
         };
         /** ChatMessageEditRequest */
         ChatMessageEditRequest: {
@@ -23726,11 +23742,13 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDeleteResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
