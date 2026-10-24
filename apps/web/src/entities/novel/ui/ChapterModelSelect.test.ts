@@ -172,6 +172,18 @@ describe.each([
     }
   });
 
+  // 닫힌 트리거에서 글자를 치면 Radix 는 비활성이 아닌 항목 중 그 글자로 시작하는 항목을 바로 고른다. 못 고르는 항목이 거기 걸리면
+  // 고르기가 막혀 값이 그대로라, 같은 글자를 다시 쳐도 그 항목에 다시 걸려 뒤의 고를 수 있는 항목("C" → Opus)에 닿지 못한다.
+  it("글자 찾기(타입어헤드)에 걸리지 않는다 — 찾기 글이 어떤 글자로도 시작하지 않는다", () => {
+    render([...options]);
+    for (const value of ineligible) {
+      const textValue = String(itemFor(value).textValue ?? "");
+      // 빈 글이면 Radix 가 항목 글로 채운다.
+      expect(textValue).not.toBe("");
+      for (const search of ["c", "claude", "g", "o", "s", " "]) expect(textValue.toLowerCase().startsWith(search)).toBe(false);
+    }
+  });
+
   it("마우스(pointerup)·터치(click)로도 고르지 못한다", () => {
     render([...options]);
     for (const value of ineligible) {
