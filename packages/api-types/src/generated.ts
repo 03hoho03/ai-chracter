@@ -8903,7 +8903,7 @@ export interface components {
              * Callsite
              * @enum {string}
              */
-            callSite: "chat_generate" | "chat_stat_judgment" | "chat_ending_judgment" | "chat_situational_image" | "chat_media_book_image" | "chat_memory_summary" | "chat_memory_episode" | "chat_memory_fact" | "chat_scene_judgment" | "preview_generate" | "preview_stat_judgment" | "preview_ending_judgment" | "preview_media_book_image" | "preview_scene_judgment" | "publish_filter_character" | "publish_filter_story" | "seed_story_generate" | "seed_similarity_review" | "novelize_chapter" | "novelize_revise" | "novelize_boundary" | "novelize_revise_recheck" | "novelize_outline" | "novelize_episode_outline" | "novel_publish_screen" | "novel_illustration_screen" | "replay_generate";
+            callSite: "chat_generate" | "chat_stat_judgment" | "chat_ending_judgment" | "chat_situational_image" | "chat_media_book_image" | "chat_memory_summary" | "chat_memory_episode" | "chat_memory_fact" | "chat_memory_impression" | "chat_scene_judgment" | "preview_generate" | "preview_stat_judgment" | "preview_ending_judgment" | "preview_media_book_image" | "preview_scene_judgment" | "publish_filter_character" | "publish_filter_story" | "seed_story_generate" | "seed_similarity_review" | "novelize_chapter" | "novelize_revise" | "novelize_boundary" | "novelize_revise_recheck" | "novelize_outline" | "novelize_episode_outline" | "novel_publish_screen" | "novel_illustration_screen" | "replay_generate";
             /**
              * Backend
              * @enum {string}

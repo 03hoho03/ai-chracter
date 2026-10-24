@@ -21926,6 +21926,7 @@
               "chat_memory_summary",
               "chat_memory_episode",
               "chat_memory_fact",
+              "chat_memory_impression",
               "chat_scene_judgment",
               "preview_generate",
               "preview_stat_judgment",
