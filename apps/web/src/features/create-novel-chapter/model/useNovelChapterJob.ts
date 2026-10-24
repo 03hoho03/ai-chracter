@@ -47,6 +47,12 @@ import { ChapterBoundaryModal } from "../ui/ChapterBoundaryModal";
 import { ProtagonistNameModal } from "../ui/ProtagonistNameModal";
 
 import { toChainProgress } from "./chainProgress";
+import {
+  isSelectionChangedFailure,
+  isSelectionChangedRefusal,
+  shouldReturnToSelection,
+  withoutSelectionChangedNotice,
+} from "./selectionChangedNotice";
 import { OUTLINE_SPEND_FOOTNOTE, toDoneMessage, toJobEpisodeKey, toRetryTarget, type RetryTarget } from "./chapterJobOutcome";
 import { toOutlineFlowAvailability } from "./regenerateAction";
 import { toRegenerateConfirmDescription } from "./regenerateConfirm";
@@ -89,7 +95,8 @@ type PreparingKind = "create" | "regenerate" | "outline" | "episodeOutline" | "o
 /** 화면에 남겨 두는 결과 문장. 작업이 끝나거나 요청이 거절된 **그 순간**에 기록하고 다음 동작에서만 지운다 —
  * 쿼리 상태에서 그때그때 파생하면 상세를 다시 받는 순간(진행 중 작업이 사라지는 순간) 안내도 함께 사라진다. */
 export type ChapterJobNotice =
-  | { tone: "error"; message: string; retry?: RetryTarget }
+  /** `isSelectionChanged` 는 승인한 담을 대화의 원문이 바뀌어 거절·실패했다는 뜻이다 — 담을 대화를 다시 승인하면 지운다. */
+  | { tone: "error"; message: string; retry?: RetryTarget; isSelectionChanged?: boolean }
   | { tone: "done"; message: string };
 
 type UseNovelChapterJobOptions = {
@@ -98,6 +105,8 @@ type UseNovelChapterJobOptions = {
   /** 작업이 성공해 그 장이 상세에 실린 뒤 부른다 — 화면이 그 장으로 옮기고 제목에 포커스를 둔다.
    * `isRegenerated` 는 있던 장을 다시 만들었는가다(그 장의 본문이 통째로 바뀌었다). */
   onChapterReady: (chapter: NovelChapterSummary, chapters: NovelChapterSummary[], isRegenerated: boolean) => void;
+  /** 장면 구성안·원고 요청이 담을 대화 원문 바뀜으로 거절됐다 — 화면이 바뀐 구간을 볼 수 있는 담을 대화로 옮긴다. */
+  onSelectionChanged: () => void;
 };
 
 /** 장 만들기·다시 만들기의 흐름 전체: 주인공 이름 → (만들기) 경계 제안·끝 턴 고르기 / (다시 만들기) 금액 확인 →
@@ -108,7 +117,7 @@ type UseNovelChapterJobOptions = {
  * 작업도 하나다. AI 수정 작업은 여기서 지켜보지 않고 버튼만 잠근다.
  *
  * 이 훅의 상태는 소설 하나에 묶인다 — 다른 소설로 옮겨 가면 호출부가 `key` 로 새로 마운트한다. */
-export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseNovelChapterJobOptions) {
+export function useNovelChapterJob({ novel, confirmSpend, onChapterReady, onSelectionChanged }: UseNovelChapterJobOptions) {
   const queryClient = useQueryClient();
   const statusId = useId();
   const [tracked, setTracked] = useState<TrackedJob | undefined>(undefined);
@@ -220,9 +229,14 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
         chapters: novel.chapters,
         episodeKey: episodeKeyByJobIdRef.current.get(finished.id) ?? null,
       });
-      setNotice({ tone: "error", message: toNovelJobFailureMessage(finished), retry });
+      setNotice({
+        tone: "error",
+        message: toNovelJobFailureMessage(finished),
+        retry,
+        isSelectionChanged: isSelectionChangedFailure(finished),
+      });
       void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
-      // 고른 대화가 바뀌어 실패한 구성안·장면 구성안·원고는 담을 대화에 바뀐 턴 표시가 생기고, 구성안의 낡음 표시가 바뀔 수 있다.
+      // 고른 대화가 바뀌어 실패한 구성안·장면 구성안·원고는 담을 대화에 바뀐 구간 표시가 생기고, 구성안의 낡음 표시가 바뀔 수 있다.
       if (
         finished.kind === "outline_generate" ||
         finished.kind === "episode_outline_generate" ||
@@ -269,8 +283,15 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
       else invalidateOutlineFlow();
     }
     if (result === null) return;
-    setNotice({ tone: "error", message: result.message });
+    setNotice({ tone: "error", message: result.message, isSelectionChanged: isSelectionChangedRefusal(error) });
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
+    // 화 화면에는 바뀐 구간도 담을 대화로 가는 길도 없다 — 누를 때마다 같은 거절을 받지 않게 담을 대화로 옮긴다(위에서 다시 받는다).
+    if (shouldReturnToSelection(error, action) && isMountedRef.current) onSelectionChanged();
+  }
+
+  /** 담을 대화를 다시 승인했다 — 그 탓으로 남은 작업 줄 오류는 원인이 풀렸으니 지운다. */
+  function clearSelectionChangedNotice() {
+    setNotice((current) => withoutSelectionChangedNotice(current));
   }
 
   /** 지금 캐시의 상세에 진행 중 작업이 있는가. 흐름을 시작할 때 받은 상세는 그 뒤에 시작된 AI 수정을 모를 수 있어,
@@ -646,6 +667,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     startEpisodeOutline,
     startOutlineChapter,
     reportEpisodeEditing,
+    clearSelectionChangedNotice,
     retry,
   };
 }

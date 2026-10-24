@@ -118,6 +118,8 @@ export function NovelPlanDocument({
         novel={novel}
         onDraftDirtyChange={(isDirty) => reportDirty("selection", isDirty)}
         restoreRequest={restoreRequest}
+        // 담을 대화 탓으로 거절·실패한 구성안·장면 구성안·원고의 작업 줄 오류는 다시 승인하면 원인이 풀린다.
+        onApproved={chapterFlow.clearSelectionChangedNotice}
       />
       <NovelOutlineStep
         novel={novel}
