@@ -58,6 +58,7 @@ import {
   toBlockBlockedReason,
   toBlockSelectionAnnouncement,
   toContiguousRange,
+  toReleaseOnSwitchOff,
   toSceneKeyOf,
   toSelectedIndexes,
   type BlockSelectionContext,
@@ -263,6 +264,26 @@ export function NovelChapterText({
     setMoving(null);
     setLiveMessage("");
   }, [isFixMode]);
+
+  // 여러 문단 고르기 스위치가 꺼지면(요청이 꺼짐으로 거절돼 가격을 다시 받았다) 고른 문단 표시와 동작 줄이 이미 사라졌다 — "선택
+  // 해제"처럼 풀고 알린다. 사라진 동작 줄에 있던 포커스는 `<body>` 로 떨어졌으니 마지막 고른 문단으로 옮긴다(다른 자리의 포커스는 둔다).
+  const wasMultiBlockEditOnRef = useRef(isMultiBlockEditOn);
+  useEffect(() => {
+    const release = toReleaseOnSwitchOff({
+      wasOn: wasMultiBlockEditOnRef.current,
+      isOn: isMultiBlockEditOn,
+      selection: blockSelection,
+      blockIds,
+    });
+    wasMultiBlockEditOnRef.current = isMultiBlockEditOn;
+    if (release === undefined) return;
+    setBlockSelection([]);
+    setLiveMessage("고른 문단을 풀었어요.");
+    if (document.activeElement === null || document.activeElement === document.body) {
+      paragraphButtonsRef.current.get(release.focusIndex)?.focus();
+    }
+    // 처리 시점은 스위치가 바뀐 순간이다. 고른 것·블록은 그 렌더의 값을 읽는다.
+  }, [isMultiBlockEditOn]);
 
   // 옮기는 동안 Esc 는 어디서 눌러도 옮기기만 그만둔다. 보드도 Esc 로 고른 화를 푸는데(편집 패널이 닫힌다) 그쪽은 React
   // 처리기라 문서에 버블로 걸면 늦는다 — 캡처로 먼저 받아 기본 동작을 막고, 패널은 막힌 Esc 를 무시한다.
