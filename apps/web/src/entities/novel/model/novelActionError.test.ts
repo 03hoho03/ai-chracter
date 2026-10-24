@@ -404,6 +404,11 @@ describe("toNovelActionError — 묶음 다시 검사", () => {
     });
   });
 
+  it("남은 시간은 분으로 올려 말한다 — 기다린 뒤 눌러도 아직 막히지 않게", () => {
+    const error = apiError(429, { code: "USER_LIMIT", retryAfterSeconds: 1501, window: "novelize" });
+    expect(toNovelActionError(error, "recheckBundle")?.message).toContain("26분 뒤");
+  });
+
   it("남은 시간이 1분보다 짧아도 1분이라 말한다", () => {
     const error = apiError(429, { code: "USER_LIMIT", retryAfterSeconds: 5, window: "novelize" });
     expect(toNovelActionError(error, "recheckBundle")?.message).toContain("1분 뒤");
