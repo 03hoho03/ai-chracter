@@ -36,7 +36,10 @@ export function ChainReadBy({ lane, model }: ChainReadByProps) {
     return (
       <div className="flex flex-col gap-1">
         <p className="max-w-prose break-keep text-xs text-foreground">
-          지금 운영에서 이 체인을 읽는 칸이 없어요. 게시해도 모델 배정 표가 이 체인을 고르기 전까지 쓰이지 않아요.{" "}
+          지금 운영에서 이 체인을 읽는 칸이 없어요.{" "}
+          {switchedOff.length > 0
+            ? "게시해도 상위 모델을 켜기 전까지 쓰이지 않아요."
+            : "게시해도 모델 배정 표가 이 체인을 고르기 전까지 쓰이지 않아요."}{" "}
           <Link
             to="/prompt-routing"
             className="admin-hit-area font-medium text-primary hover:underline focus-visible:underline"
