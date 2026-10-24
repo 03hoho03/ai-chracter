@@ -425,6 +425,9 @@ class RoomTurnStore:
             # 질의 임베딩은 생성보다 먼저 불렸다 — 부른 턴만 맨 앞에 한 칸이 붙고, 부르지 않은 턴의 목록은 그대로다.
             llm_calls=([dict(turn.memory_query)] if turn.memory_query is not None else [])
             + [self._call_record(turn, call) for call in turn.llm_calls],
+            # 단계별 배정 스냅샷은 늘 싣는다(배정 표가 비어도 출처 `env`·`room` 칸이 찬다). 재생성·수정도 그 요청에서 새로 푼
+            # 값이다(대체되는 기록에서 물려받지 않는다).
+            stage_routes=[dict(route) for route in turn.stage_routes],
         )
         # 회상한 턴만 칸을 채운다 — 비어 있으면 INSERT 에 칸을 싣지 않아 DB 기본값 `[]` 이 들어가고, INSERT 칸 목록이 회상
         # 전과 같다(서버 기본값이 있는 칸이라 RETURNING 에는 이 칸이 실린다).

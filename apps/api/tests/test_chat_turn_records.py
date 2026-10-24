@@ -8,6 +8,9 @@
   있는 스탯 효과는 원 턴의 것이고, 다음 재생성이 그 효과를 되돌릴 근거가 이 기록뿐이라서다. 대체되는 응답에 기록이 없으면
   (기록을 쓰기 전에 보낸 턴) 아무것도 쓰지 않는다 — 빈 효과로 쓰면 "원 턴이 실제로 아무것도 안 바꿨다"와 구별되지 않는다.
 - 미리보기는 방이 없어 쓰지 않는다.
+- 단계별 배정 스냅샷(`stage_routes`)은 그 레인의 단계마다 한 칸이다(스토리 8, 캐릭터 5). 배정 표가 비면 생성은 출처 `room`(방
+  모델·그 세트), 나머지는 출처 `env`(그 단계의 모델 설정 이름과 그 모델의 세트)로 채운다. 재생성도 이 재생성에서 새로 푼 값이다
+  (대체되는 기록에서 물려받지 않는다).
 
 LLM 호출 칸은 공급자 구현이 호출 컨텍스트의 사용량 목록에 더한 것이다. 여기서는 가짜 LLM 이 공급자 대신 그 목록에 더해,
 턴이 생성·판정 호출 전부에 같은 목록을 넘기는지를 본다. 공급자 구현이 실제로 더하는지는 아래 공급자 절이 SDK 경계만 가짜로
@@ -34,6 +37,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import router as chat_router
 from api.chat import turn_engine, turn_prompt
+from api.chat.prompt_builder import load_active_prompt_set
+from api.chat.prompt_stages import RoutingLane
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
@@ -288,7 +293,41 @@ def _row(record: ChatTurn) -> dict[str, Any]:
         "llm_calls": record.llm_calls,
         "stat_changes": record.stat_changes,
         "ending_entity_id": record.ending_entity_id,
+        "stage_routes": record.stage_routes,
     }
+
+
+# 배정 표가 빈 Gemini 방에서 단계마다 읽는 모델 설정의 이름. 테스트 설정은 판정·요약 모델이 모두 Gemini 라 체인·부를 모델·
+# 경로가 모두 gemini 이고 세트는 그 레인의 Gemini 활성 세트 하나다.
+_ENV_STAGES: dict[RoutingLane, list[tuple[str, str]]] = {
+    "story": [
+        ("stat_judgment", "STAT_JUDGMENT_MODEL"),
+        ("scene_judgment", "STAT_JUDGMENT_MODEL"),
+        ("ending_judgment", "ENDING_JUDGMENT_MODEL"),
+        ("media_book_image", "IMAGE_JUDGMENT_MODEL"),
+        ("memory_summary", "MEMORY_SUMMARY_MODEL"),
+        ("memory_episode", "MEMORY_EPISODE_MODEL"),
+        ("memory_fact", "MEMORY_FACT_MODEL"),
+    ],
+    "character": [
+        ("situational_image", "IMAGE_JUDGMENT_MODEL"),
+        ("memory_summary", "MEMORY_SUMMARY_MODEL"),
+        ("memory_episode", "MEMORY_EPISODE_MODEL"),
+        ("memory_fact", "MEMORY_FACT_MODEL"),
+    ],
+}
+
+
+async def _empty_table_stage_routes(db_session: AsyncSession, lane: RoutingLane) -> list[dict[str, Any]]:
+    gemini_set, _ = await load_active_prompt_set(db_session, lane=lane, model="gemini")
+    common = {"lane": lane, "chainModel": "gemini", "promptSetId": str(gemini_set.id), "callModel": "gemini"}
+    return [
+        {**common, "stage": "chat_generate", "backend": "gemini", "source": "room"},
+        *(
+            {**common, "stage": stage, "backend": "gemini", "source": "env", "sourceDetail": setting}
+            for stage, setting in _ENV_STAGES[lane]
+        ),
+    ]
 
 
 # ── 보내기·수정 ─────────────────────────────────────────────────────────────────────────
@@ -331,6 +370,7 @@ async def test_story_send_writes_one_record_with_the_turns_model_charge_calls_st
         ),
         "stat_changes": {stat_id: [73, 78]},
         "ending_entity_id": ending_id,
+        "stage_routes": await _empty_table_stage_routes(db_session, "story"),
     }
 
 
@@ -361,6 +401,7 @@ async def test_clover_charged_send_records_the_charge_and_its_ledger_row(
     # 캐릭터 방은 스탯·엔딩이 없고 판정은 상황 이미지 하나다.
     assert (record.stat_changes, record.ending_entity_id, record.shortcut_entity_id) == ({}, None, None)
     assert record.llm_calls == _calls("send", "chat_generate", "chat_situational_image")
+    assert record.stage_routes == await _empty_table_stage_routes(db_session, "character")
 
 
 async def test_each_send_and_edit_writes_one_record(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
@@ -464,6 +505,7 @@ async def _seed_record_for_last_reply(db_session: AsyncSession, room_id: uuid.UU
             "llm_calls": _calls("old", "chat_generate"),
             "stat_changes": {str(uuid.uuid4()): [10, 20]},
             "ending_entity_id": uuid.uuid4(),
+            "stage_routes": [{"stage": "chat_generate", "source": "row"}],
             **values,
         },
     )
@@ -493,6 +535,7 @@ async def test_regenerate_inherits_turn_stats_ending_and_shortcut_from_the_repla
         "llm_calls": _calls("regen", "chat_generate"),
         "stat_changes": old.stat_changes,
         "ending_entity_id": old.ending_entity_id,
+        "stage_routes": await _empty_table_stage_routes(db_session, "story"),
     }
 
 

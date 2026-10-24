@@ -858,6 +858,24 @@ async def test_chat_turn_insert_without_facts_column_gets_empty_list(db_session:
     assert await db_session.scalar(sa.select(ChatTurn.memory_facts).where(ChatTurn.id == turn_id)) == []
 
 
+async def test_chat_turn_insert_without_stage_routes_column_gets_empty_list(db_session: AsyncSession) -> None:
+    """단계별 배정 스냅샷 칸을 모르는 옛 이미지의 턴 기록 INSERT(배포 겹침·이미지 롤백)가 DB 기본값으로 성공한다. 기본값을
+    떼면 그 INSERT 가 NOT NULL 위반으로 실패하고 응답 커밋까지 함께 깨진다 — `alembic check` 는 기본값을 비교하지 않는다."""
+    room = await _make_chat_room(db_session)
+    turn_id = uuid.uuid4()
+
+    await db_session.execute(
+        sa.text(
+            "INSERT INTO chat_turns (id, chat_room_id, assistant_message_id, kind, turn_number, chat_model, "
+            "charge_source, clover_amount, llm_calls, memory_recall, memory_facts) "
+            "VALUES (:id, :room, :message, 'send', 1, 'gemini', 'free', 0, '[]', '[]', '[]')"
+        ),
+        {"id": turn_id, "room": room.id, "message": uuid.uuid4()},
+    )
+
+    assert await db_session.scalar(sa.select(ChatTurn.stage_routes).where(ChatTurn.id == turn_id)) == []
+
+
 @pytest.mark.parametrize("path", ["rewind", "reset", "room-deletion"])
 async def test_snapshot_delete_statements_succeed_over_fact_rows(db_session: AsyncSession, path: str) -> None:
     """되감기·초기화(`rewind_memory`)와 방 삭제·탈퇴(`delete_chat_rooms`)의 스냅샷 DELETE 문장은 사실 계층 테이블을

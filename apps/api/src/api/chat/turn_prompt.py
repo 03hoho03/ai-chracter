@@ -34,7 +34,7 @@ from api.chat.prompt_builder import (
 )
 from api.chat.prompt_routing import PromptRoutes, StageRoute, resolve_stage_route
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
-from api.chat.prompt_stages import PromptStage, RoutingLane
+from api.chat.prompt_stages import LANE_STAGES, PromptStage, RoutingLane, stage_call_sites
 from api.chat.room_stats import load_room_stats
 from api.chat.schemas import EndingRuleGroupItem, EndingRuleItem, EndingRuleListItem
 from api.chat.voyage_backoff import voyage_allowed
@@ -177,6 +177,10 @@ class JudgmentPromptSets:
     impression: PromptSetData
     routes: Mapping[JudgmentSlot, StageRoute] = field(default_factory=dict)
 
+    def prompt_set(self, slot: JudgmentSlot) -> PromptSetData:
+        prompt_set: PromptSetData = getattr(self, slot)
+        return prompt_set
+
     def call_model(self, slot: JudgmentSlot) -> PromptSetModelId | None:
         """그 칸에 배정 표의 행이 쓰였으면(자기 행이든 물려받은 행이든) 행이 정한 부를 모델, 아니면 None — None 이면 호출은
         지금처럼 판정·요약 모델 설정의 모델로 간다."""
@@ -210,6 +214,19 @@ _SLOT_STAGES: dict[RoutingLane, dict[JudgmentSlot, PromptStage]] = {
 }
 
 _NO_ROUTES = PromptRoutes.empty()
+
+# 판정·요약·추출 호출 위치(채팅·미리보기) → 그 호출이 읽는 칸. 두 레인이 같은 호출 위치를 같은 칸에 두므로 하나로 접는다.
+_SLOT_OF_CALL_SITE: dict[str, JudgmentSlot] = {
+    call_site: slot
+    for stages in _SLOT_STAGES.values()
+    for slot, stage in stages.items()
+    for call_site in stage_call_sites(stage)
+}
+
+
+def judgment_slot(call_site: str) -> JudgmentSlot | None:
+    """그 호출 위치가 읽는 판정·요약 칸. 생성처럼 칸이 없는 호출 위치면 None."""
+    return _SLOT_OF_CALL_SITE.get(call_site)
 
 
 def _routing_lane(lane: PromptLane) -> RoutingLane:
@@ -276,6 +293,58 @@ async def judgment_prompt_sets(
         impression=chosen["impression"],
         routes=resolved,
     )
+
+
+def _stage_route_record(
+    lane: RoutingLane, stage: PromptStage, route: StageRoute, prompt_set_id: uuid.UUID
+) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "lane": lane,
+        "stage": stage,
+        "chainModel": route.chain_model,
+        "promptSetId": str(prompt_set_id),
+        "callModel": route.call_model,
+        "backend": route.backend,
+        "source": route.source,
+    }
+    if route.source_detail is not None:
+        record["sourceDetail"] = route.source_detail
+    if route.skipped is not None:
+        record["skipped"] = {"stage": route.skipped.stage, "reason": route.skipped.reason}
+    return record
+
+
+def turn_stage_routes(
+    *,
+    lane: PromptLane,
+    routes: PromptRoutes,
+    room_model: ChatRoomModelId,
+    judgment_sets: JudgmentPromptSets,
+    generation_set_id: uuid.UUID,
+) -> tuple[dict[str, Any], ...]:
+    """방 턴 기록의 단계별 배정 스냅샷(`chat_turns.stage_routes`) — 그 레인의 단계마다 한 칸, 단계 표의 순서다. 칸은 그 단계를
+    푼 결과(읽은 체인·부를 모델·경로·출처, 건너뛴 행이 있으면 그 행의 단계와 이유)와 읽은 세트의 id 다. 판 번호는 싣지 않는다 —
+    세트 id 로 판 표와 이으면 된다.
+
+    판정·요약·추출 단계는 `judgment_sets` 가 이미 푼 값을 그대로 옮긴다(따로 풀면 기록과 실제로 읽은 세트가 갈릴 수 있다). 생성
+    단계는 여기서 푼다 — 생성 세트는 표가 아니라 방 모델로 고르므로(`generation_prompt_set`) 해석은 기록에만 쓰인다.
+    `room_model` 은 판정 세트를 고른 것과 같은 실효 방 모델이어야 한다. 부르는 쪽이 `judgment_prompt_sets` 로 만든 묶음을 넘겨야
+    한다 — 칸마다 푼 결과가 없는 묶음이면 `KeyError`(부르는 쪽의 버그)다. DB·Redis 를 부르지 않는다.
+
+    배정 표가 비어도 모든 칸을 채운다(출처 `env`·`room`). 이 턴이 그 칸을 부를 때 쓸 해석의 스냅샷이라, 턴 뒤에 돌거나 돌지 않을 수
+    있는 요약·추출 칸도 요청 때 정한 값이다."""
+    routing_lane = _routing_lane(lane)
+    slot_of_stage = {stage: slot for slot, stage in _SLOT_STAGES[routing_lane].items()}
+    records: list[dict[str, Any]] = []
+    for stage in LANE_STAGES[routing_lane]:
+        if stage == "chat_generate":
+            route = resolve_stage_route(routes, lane=routing_lane, room_model=room_model, stage=stage)
+            records.append(_stage_route_record(routing_lane, stage, route, generation_set_id))
+            continue
+        slot = slot_of_stage[stage]
+        prompt_set, _ = judgment_sets.prompt_set(slot)
+        records.append(_stage_route_record(routing_lane, stage, judgment_sets.routes[slot], prompt_set.id))
+    return tuple(records)
 
 
 def _situation_note_rules(note: SituationNote, room_id: uuid.UUID) -> list[EndingRuleListDraftItem]:
