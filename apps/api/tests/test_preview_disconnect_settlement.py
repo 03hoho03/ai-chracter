@@ -128,6 +128,7 @@ async def _drive(
             prompt_set_data=prompt_set_data,
             judgment_sets=JudgmentPromptSets(
                 stat=prompt_set_data,
+                scene=prompt_set_data,
                 ending=prompt_set_data,
                 image=prompt_set_data,
                 summary=prompt_set_data,

@@ -383,7 +383,8 @@ class TurnInput:
     generation: GenerationPrompt
     # 생성 프롬프트를 조립한 세트 — 정지 시퀀스의 사용자 라벨을 여기서 읽는다.
     generation_set: PromptSet
-    # 판정은 고른 모델과 무관하게 판정 종류마다 판정 모델의 세트로 한다(요약 접기는 라우트가 요약 세트를 따로 넘긴다).
+    # 판정은 판정 종류마다 모델 배정 표의 (레인, 실효 방 모델, 단계) 칸이 고른 세트로 한다 — 행이 없으면 판정 모델의 세트다(요약
+    # 접기는 라우트가 요약 세트를 따로 넘긴다).
     judgment_sets: JudgmentPromptSets
     # 생성 호출의 모델을 정한다.
     charge: ChatCharge

@@ -1,0 +1,1568 @@
+{
+ "generated_from": "8396e88e",
+ "fixed_settings": {
+  "llm_call_site_backends": {},
+  "memory_window_generation": true,
+  "memory_window_ending_judgment": true,
+  "memory_window_image_judgment": true,
+  "memory_episodes_extract": false,
+  "memory_facts_extract": false,
+  "memory_episodes_recall": false,
+  "memory_facts_inject": false,
+  "memory_knowledge_filter": false,
+  "memory_summary_secret_marking": false,
+  "memory_embed_write": false,
+  "memory_embed_recall": false,
+  "memory_items_visible": false,
+  "memory_model_scope": [
+   [
+    "story",
+    "opus"
+   ],
+   [
+    "character",
+    "opus"
+   ]
+  ],
+  "identity_gate_enabled": false,
+  "payments_enabled": false
+ },
+ "scenarios": {
+  "gemini-character-gemini-on-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ]
+   ],
+   "db_statements": 37,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-character-gemini-on-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ]
+   ],
+   "db_statements": 34,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-character-gemini-on-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ]
+   ],
+   "db_statements": 30,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-character-opus-off-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ]
+   ],
+   "db_statements": 37,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-character-opus-off-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ]
+   ],
+   "db_statements": 34,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-character-opus-off-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ]
+   ],
+   "db_statements": 30,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-character-opus-on-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:opus"
+    ],
+    [
+     "SET",
+     "character:opus"
+    ]
+   ],
+   "db_statements": 44,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  },
+  "gemini-character-opus-on-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:opus"
+    ],
+    [
+     "SET",
+     "character:opus"
+    ]
+   ],
+   "db_statements": 41,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  },
+  "gemini-character-opus-on-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:opus"
+    ],
+    [
+     "SET",
+     "character:opus"
+    ]
+   ],
+   "db_statements": 37,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  },
+  "gemini-story-gemini-on-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ]
+   ],
+   "db_statements": 51,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-story-gemini-on-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ]
+   ],
+   "db_statements": 41,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-story-gemini-on-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ]
+   ],
+   "db_statements": 43,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-story-opus-off-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ]
+   ],
+   "db_statements": 51,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-story-opus-off-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ]
+   ],
+   "db_statements": 41,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-story-opus-off-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ]
+   ],
+   "db_statements": 43,
+   "redis_commands": 7,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "gemini-story-opus-on-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:opus"
+    ],
+    [
+     "SET",
+     "story:opus"
+    ]
+   ],
+   "db_statements": 58,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  },
+  "gemini-story-opus-on-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:opus"
+    ],
+    [
+     "SET",
+     "story:opus"
+    ]
+   ],
+   "db_statements": 48,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  },
+  "gemini-story-opus-on-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "gemini",
+     "ending": "gemini",
+     "image": "gemini",
+     "summary": "gemini",
+     "episode": "gemini",
+     "fact": "gemini"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:opus"
+    ],
+    [
+     "SET",
+     "story:opus"
+    ]
+   ],
+   "db_statements": 50,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  },
+  "haiku-character-gemini-on-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 39,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-character-gemini-on-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 36,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-character-gemini-on-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 32,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-character-opus-off-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 39,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-character-opus-off-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 36,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-character-opus-off-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ]
+   ],
+   "db_statements": 32,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-character-opus-on-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ],
+    [
+     "GET",
+     "character:opus"
+    ],
+    [
+     "SET",
+     "character:opus"
+    ]
+   ],
+   "db_statements": 46,
+   "redis_commands": 11,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  },
+  "haiku-character-opus-on-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ],
+    [
+     "GET",
+     "character:opus"
+    ],
+    [
+     "SET",
+     "character:opus"
+    ]
+   ],
+   "db_statements": 43,
+   "redis_commands": 11,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  },
+  "haiku-character-opus-on-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "character:gemini"
+    ],
+    [
+     "SET",
+     "character:gemini"
+    ],
+    [
+     "GET",
+     "character:haiku"
+    ],
+    [
+     "SET",
+     "character:haiku"
+    ],
+    [
+     "GET",
+     "character:opus"
+    ],
+    [
+     "SET",
+     "character:opus"
+    ]
+   ],
+   "db_statements": 39,
+   "redis_commands": 11,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  },
+  "haiku-story-gemini-on-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 53,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-story-gemini-on-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 43,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-story-gemini-on-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 45,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-story-opus-off-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 53,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-story-opus-off-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 43,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-story-opus-off-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ]
+   ],
+   "db_statements": 45,
+   "redis_commands": 9,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "gemini"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": []
+  },
+  "haiku-story-opus-on-edit": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ],
+    [
+     "GET",
+     "story:opus"
+    ],
+    [
+     "SET",
+     "story:opus"
+    ]
+   ],
+   "db_statements": 60,
+   "redis_commands": 11,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  },
+  "haiku-story-opus-on-regenerate": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ],
+    [
+     "GET",
+     "story:opus"
+    ],
+    [
+     "SET",
+     "story:opus"
+    ]
+   ],
+   "db_statements": 50,
+   "redis_commands": 11,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  },
+  "haiku-story-opus-on-send": {
+   "status": 200,
+   "last_event": "done",
+   "slots": [
+    {
+     "stat": "haiku",
+     "ending": "haiku",
+     "image": "haiku",
+     "summary": "haiku",
+     "episode": "haiku",
+     "fact": "haiku"
+    }
+   ],
+   "prompt_set_redis": [
+    [
+     "GET",
+     "story:gemini"
+    ],
+    [
+     "SET",
+     "story:gemini"
+    ],
+    [
+     "GET",
+     "story:haiku"
+    ],
+    [
+     "SET",
+     "story:haiku"
+    ],
+    [
+     "GET",
+     "story:opus"
+    ],
+    [
+     "SET",
+     "story:opus"
+    ]
+   ],
+   "db_statements": 52,
+   "redis_commands": 11,
+   "llm_calls": [
+    [
+     "chat_generate",
+     "opus"
+    ],
+    [
+     "chat_stat_judgment",
+     "gemini"
+    ]
+   ],
+   "ledger": [
+    [
+     "chat_spend",
+     -120
+    ]
+   ]
+  }
+ }
+}

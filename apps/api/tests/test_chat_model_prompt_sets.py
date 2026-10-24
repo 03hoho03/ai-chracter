@@ -116,8 +116,8 @@ async def test_premium_turn_generates_from_its_model_set_and_judges_from_the_gem
     assert system_instruction is not None and _MARK in system_instruction
     assert _MARK in prompt
     assert stop_sequences == [f"\n{_OPUS_LABEL}:"]
-    # 스탯 판정은 Gemini 세트로 렌더됐다 — Opus 세트에도 판정 채널이 있고 표지가 붙어 있지만, 판정은 고른 모델과 무관하게
-    # Gemini 세트를 읽는다.
+    # 스탯 판정은 Gemini 세트로 렌더됐다 — Opus 세트에도 판정 채널이 있고 표지가 붙어 있지만, 배정 표가 비어 있으면 판정은
+    # 고른 모델과 무관하게 Gemini 세트를 읽는다.
     assert len(fake.structured_prompts) == 1
     assert "[STAT]신뢰" in fake.structured_prompts[0]
     assert _MARK not in fake.structured_prompts[0]
@@ -172,7 +172,8 @@ async def test_missing_model_set_is_an_error_event_with_a_refund(
 async def test_memory_fold_gets_the_gemini_set_in_a_premium_room(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """요약은 구조가 정해진 Gemini 호출이라 Gemini 세트를 받는다(Opus 세트에도 요약 채널이 있지만 고른 모델과 무관하다)."""
+    """요약은 구조가 정해진 Gemini 호출이라 Gemini 세트를 받는다(Opus 세트에도 요약 채널이 있지만 배정 표가 비어 있으면 고른 모델과
+    무관하다)."""
     room_id, _ = await _opus_story_room(db_client, db_session, monkeypatch)
     folded_with: list[str] = []
 

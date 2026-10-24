@@ -6,9 +6,9 @@
 
 import logging
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
-from typing import Any, NamedTuple
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Literal, NamedTuple
 
 from pydantic import ValidationError
 from sqlalchemy import or_, select
@@ -32,7 +32,9 @@ from api.chat.prompt_builder import (
     system_instruction_for,
     user_persona_rendered,
 )
+from api.chat.prompt_routing import PromptRoutes, StageRoute, resolve_stage_route
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
+from api.chat.prompt_stages import PromptStage, RoutingLane
 from api.chat.room_stats import load_room_stats
 from api.chat.schemas import EndingRuleGroupItem, EndingRuleItem, EndingRuleListItem
 from api.chat.voyage_backoff import voyage_allowed
@@ -52,8 +54,14 @@ from api.db.models.chat import ChatMessage, ChatRoom
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import KeywordNote, Shortcut, SituationNote, StartingSetup, StoryVersionDetail
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, PromptSetModelId, configured_call_site_model
-from api.llm.client import LLMCallSite
+from api.llm.chat_models import (
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_CHAT_ROOM_MODEL,
+    ChatModelId,
+    ChatRoomModelId,
+    PromptSetModelId,
+    configured_call_site_model,
+)
 from api.llm.voyage import VoyageEmbeddingClient
 
 logger = logging.getLogger(__name__)
@@ -124,8 +132,9 @@ async def generation_prompt_set(
     model: ChatModelId,
     gemini_set: tuple[PromptSet, list[PromptSection]],
 ) -> tuple[PromptSet, list[PromptSection]]:
-    """이 턴의 생성(바닥 지시문·생성 프롬프트·화자 라벨·정지 시퀀스)에 쓸 세트. 글쓰기 모델마다 독립 세트가 있고, 판정·요약은
-    방의 모델과 무관하게 판정·요약 모델의 세트를 쓴다(`judgment_prompt_sets`).
+    """이 턴의 생성(바닥 지시문·생성 프롬프트·화자 라벨·정지 시퀀스)에 쓸 세트. 글쓰기 모델마다 독립 세트가 있다. 판정·요약은
+    모델 배정 표의 (레인, 실효 방 모델, 단계) 칸이 고른 체인, 행이 없으면 판정·요약 모델 설정의 세트를 쓴다
+    (`judgment_prompt_sets`).
 
     Gemini 면 받은 Gemini 세트를 그대로 돌려준다 — 조회가 없고, Gemini 턴의 프롬프트는 모델별 세트가 생기기 전과 바이트까지
     같다. 그 밖의 모델은 캐시를 보고 없으면 (레인, 모델) 활성 세트를 읽는다. 모델은 차감 영수증에서 오므로 차감 뒤에 읽는다 —
@@ -142,63 +151,130 @@ async def generation_prompt_set(
 
 PromptSetData = tuple[PromptSet, list[PromptSection]]
 
+# 판정·요약 세트의 칸. 장면 헤더는 스탯 판정과 다른 체인을 고를 수 있어 따로 칸을 둔다.
+# 인상 칸은 단계로 풀지 않아 아래 `_SLOT_STAGES` 에 없다(세트는 인상 모델 설정으로 고르고 `routes` 에도 없다).
+JudgmentSlot = Literal["stat", "scene", "ending", "image", "summary", "episode", "fact", "impression"]
+
 
 @dataclass(frozen=True)
 class JudgmentPromptSets:
     """한 턴의 판정·요약이 렌더할 세트 — 판정 종류마다, 그리고 기억 요약·장면 기억 추출·관계·사실 기억 추출·인상 생성에 하나씩.
-    각각 그 종류의 판정·요약 모델 설정의 (레인, 모델) 활성 세트다. 모델이 같은 칸은 같은 객체다. 미리보기도 같은 함수로 모든 칸을
-    채우지만 미리보기에는 요약·추출·인상이 없어 그 네 칸은 쓰지 않는다."""
+    인상 칸을 뺀 칸마다 모델 배정 표의 (레인, 실효 방 모델, 단계) 칸을 풀어 고른 체인의 (레인, 모델) 활성 세트다. 그 칸의 행이
+    없으면 그 종류의 판정·요약 모델 설정의 세트다. 인상 칸은 배정 표 단계가 아니라 늘 env 설정(인상 모델 설정)으로 고른다 — 장기
+    기억 인상 기능이 아직 다듬어지는 중이라 단계 표 밖에 둔다. 모델이 같은 칸은 같은 객체다. 미리보기도 같은 함수로 모든 칸을
+    채우지만 미리보기에는 요약·추출·인상이 없어 그 네 칸은 쓰지 않는다.
+
+    `routes` 는 단계로 푼 칸마다의 결과(읽은 체인·부를 모델·경로와 출처)다. 인상 칸은 단계가 아니라 여기에 없다. 직접 만든
+    묶음(측정 도구·테스트)은 비워 둘 수 있다."""
 
     stat: PromptSetData
+    scene: PromptSetData
     ending: PromptSetData
     image: PromptSetData
     summary: PromptSetData
     episode: PromptSetData
     fact: PromptSetData
     impression: PromptSetData
+    routes: Mapping[JudgmentSlot, StageRoute] = field(default_factory=dict)
+
+    def call_model(self, slot: JudgmentSlot) -> PromptSetModelId | None:
+        """그 칸에 배정 표의 행이 쓰였으면(자기 행이든 물려받은 행이든) 행이 정한 부를 모델, 아니면 None — None 이면 호출은
+        지금처럼 판정·요약 모델 설정의 모델로 간다."""
+        route = self.routes.get(slot)
+        if route is None or route.source not in ("row", "inherited"):
+            return None
+        return route.call_model
 
 
-# 칸마다 모델을 읽는 호출 위치. 채팅·미리보기 판정은 같은 종류면 같은 모델 설정을 쓰므로 채팅 쪽 하나로 읽는다.
-_JUDGMENT_SET_CALL_SITES: dict[str, LLMCallSite] = {
-    "stat": "chat_stat_judgment",
-    "ending": "chat_ending_judgment",
-    "image": "chat_situational_image",
-    "summary": "chat_memory_summary",
-    "episode": "chat_memory_episode",
-    "fact": "chat_memory_fact",
-    "impression": "chat_memory_impression",
+# 레인마다 칸 → 그 칸을 푸는 단계. 그림 판정은 스토리에서 미디어 북 칸, 캐릭터에서 상황 이미지다. 캐릭터 레인의 스탯·장면 헤더·
+# 엔딩 칸은 그 레인의 단계가 아니라 늘 env 규칙으로 풀린다(행이 있을 수 없다). 칸 순서가 세트를 찾는 순서다.
+_SLOT_STAGES: dict[RoutingLane, dict[JudgmentSlot, PromptStage]] = {
+    "story": {
+        "stat": "stat_judgment",
+        "scene": "scene_judgment",
+        "ending": "ending_judgment",
+        "image": "media_book_image",
+        "summary": "memory_summary",
+        "episode": "memory_episode",
+        "fact": "memory_fact",
+    },
+    "character": {
+        "stat": "stat_judgment",
+        "scene": "scene_judgment",
+        "ending": "ending_judgment",
+        "image": "situational_image",
+        "summary": "memory_summary",
+        "episode": "memory_episode",
+        "fact": "memory_fact",
+    },
 }
+
+_NO_ROUTES = PromptRoutes.empty()
+
+
+def _routing_lane(lane: PromptLane) -> RoutingLane:
+    """판정 세트를 고르는 레인은 채팅 두 레인뿐이다. 그 밖의 레인이 오면 부르는 쪽의 버그다."""
+    if lane == "story":
+        return "story"
+    if lane == "character":
+        return "character"
+    raise ValueError(f"{lane} 레인에는 판정 세트가 없다")
 
 
 async def judgment_prompt_sets(
-    *, lane: PromptLane, gemini_set: PromptSetData, load: Callable[[PromptSetModelId], Awaitable[PromptSetData]]
+    *,
+    lane: PromptLane,
+    gemini_set: PromptSetData,
+    load: Callable[[PromptSetModelId], Awaitable[PromptSetData]],
+    routes: PromptRoutes = _NO_ROUTES,
+    room_model: ChatRoomModelId = DEFAULT_CHAT_ROOM_MODEL,
 ) -> JudgmentPromptSets:
-    """판정·요약 모델마다의 세트를 모은다. 모델이 Gemini 인 칸은 받은 Gemini 세트를 그대로 넘긴다 — 판정·요약 모델이 모두
-    기본값이면 조회가 하나도 늘지 않고, 프롬프트는 이 설정이 생기기 전과 바이트까지 같다. 그 밖의 모델은 모델마다 한 번만 캐시를
-    보고, 없으면 `load` 로 (레인, 모델) 활성 세트를 읽어 캐시에 채운다. `load` 는 부르는 쪽이 정한다 — 방은 요청 세션, 미리보기는
-    짧게 여닫는 세션으로 읽는다.
+    """칸마다 (레인, `room_model`, 단계)를 `routes` 로 풀어 고른 체인의 세트를 모은다. `room_model` 은 이 턴이 실제로 도는
+    방 모델(저장값이 아니라 지금 쓸 모델)이다. 표가 비었거나 그 칸의 행이 없으면 체인은 그 칸의 판정·요약 모델 설정이라, 표를 넘기지
+    않은 호출과 같은 세트를 고른다. 인상 칸은 배정 표 단계가 아니라 늘 env 설정(인상 모델 설정)으로 고른다 — 장기 기억 인상
+    기능이 아직 다듬어지는 중이라 단계 표 밖에 둔다. 그래서 표에 행이 있어도 인상 칸의 세트와 부를 모델은 바뀌지 않는다.
 
-    세트가 없으면 `PromptSetNotFoundError` 가 그대로 올라간다. 라우터의 의존성 단계에서 부르므로 스트림 전의 오류 응답이 되고
-    차감도 일어나지 않는다 — 판정 모델에 맞는 문안이 없는데 다른 모델용 문안으로 판정하지 않는다."""
+    체인이 Gemini 인 칸은 받은 Gemini 세트를 그대로 넘긴다 — 체인이 모두 Gemini 면 조회가 하나도 늘지 않고, 프롬프트는 이 설정이
+    생기기 전과 바이트까지 같다. 그 밖의 체인은 모델마다 한 번만 캐시를 보고, 없으면 `load` 로 (레인, 모델) 활성 세트를 읽어 캐시에
+    채운다. `load` 는 부르는 쪽이 정한다 — 방은 요청 세션, 미리보기는 짧게 여닫는 세션으로 읽는다.
+
+    세트가 없으면 `PromptSetNotFoundError` 가 그대로 올라간다(행이 고른 체인의 게시본이 저장 뒤 사라진 경우도 같다). 라우터의
+    의존성 단계에서 부르므로 스트림 전의 오류 응답이 되고 차감도 일어나지 않는다 — 판정 모델에 맞는 문안이 없는데 다른 모델용
+    문안으로 판정하지 않는다."""
+    routing_lane = _routing_lane(lane)
     by_model: dict[PromptSetModelId, PromptSetData] = {DEFAULT_CHAT_MODEL: gemini_set}
-    chosen: dict[str, PromptSetData] = {}
-    for kind, call_site in _JUDGMENT_SET_CALL_SITES.items():
-        model = configured_call_site_model(call_site)
+    chosen: dict[JudgmentSlot, PromptSetData] = {}
+    resolved: dict[JudgmentSlot, StageRoute] = {}
+    for slot, stage in _SLOT_STAGES[routing_lane].items():
+        route = resolve_stage_route(routes, lane=routing_lane, room_model=room_model, stage=stage)
+        model = route.chain_model
         if model not in by_model:
             cached = await get_cached_active_prompt_set(lane, model=model)
             if cached is None:
                 cached = await load(model)
                 await set_cached_active_prompt_set(lane, cached[0], cached[1], model=model)
             by_model[model] = cached
-        chosen[kind] = by_model[model]
+        chosen[slot] = by_model[model]
+        resolved[slot] = route
+    # 인상 칸은 배정 표 단계가 아니라 늘 env 설정으로 고른다(장기 기억 인상 기능이 다듬어지는 중이라 단계 표 밖에 둔다).
+    impression_model = configured_call_site_model("chat_memory_impression")
+    if impression_model not in by_model:
+        cached = await get_cached_active_prompt_set(lane, model=impression_model)
+        if cached is None:
+            cached = await load(impression_model)
+            await set_cached_active_prompt_set(lane, cached[0], cached[1], model=impression_model)
+        by_model[impression_model] = cached
+    chosen["impression"] = by_model[impression_model]
     return JudgmentPromptSets(
         stat=chosen["stat"],
+        scene=chosen["scene"],
         ending=chosen["ending"],
         image=chosen["image"],
         summary=chosen["summary"],
         episode=chosen["episode"],
         fact=chosen["fact"],
         impression=chosen["impression"],
+        routes=resolved,
     )
 
 

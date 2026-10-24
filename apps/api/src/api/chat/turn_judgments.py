@@ -1345,8 +1345,9 @@ def merge_story_scene(previous: StoryScene | None, judged: SceneJudgmentResult |
 
 
 class _StorySceneJudgmentBase:
-    """장면 헤더 판정 — 이번 턴 사용자 메시지·응답과 직전 장면만 보고 지금 장면의 장소·시간을 적는다. 스탯 판정 모델의 세트
-    (`ctx.prompt_sets.stat`)로 렌더한다 — 같은 판정 모델 설정을 따르므로 세트 로딩이 늘지 않는다.
+    """장면 헤더 판정 — 이번 턴 사용자 메시지·응답과 직전 장면만 보고 지금 장면의 장소·시간을 적는다. 장면 헤더 칸의 세트
+    (`ctx.prompt_sets.scene`)로 렌더한다. 모델 배정 표에 장면 헤더 칸의 행이 없으면 스탯 판정 칸과 같은 체인이라 세트 로딩이
+    늘지 않는다.
 
     자기 실패를 전부 흡수한다(첫 물결에서 다른 판정과 함께 부르므로 예외가 다른 판정 결과를 지우면 안 된다). 렌더가 비면(배포
     직후 캐시에 남은, 이 채널이 없는 옛 세트) 부르지 않는다. 판정이 없거나 실패해도 반영은 직전 장면으로 채운다 — 실패 표식은
@@ -1365,8 +1366,8 @@ class _StorySceneJudgmentBase:
         self._previous = previous
         try:
             prompt = build_scene_judgment_prompt(
-                prompt_set=ctx.prompt_sets.stat[0],
-                sections=ctx.prompt_sets.stat[1],
+                prompt_set=ctx.prompt_sets.scene[0],
+                sections=ctx.prompt_sets.scene[1],
                 previous_place=previous.place if previous is not None else None,
                 previous_time=previous.time if previous is not None else None,
                 user_message=ctx.user_message,

@@ -35,6 +35,7 @@ from api.chat.prompt_builder import (
     load_active_prompt_set,
 )
 from api.chat.router import _resolve_starting_setup
+from api.chat.turn_lock import hold_room_turn_lock
 from api.chat.turn_prompt import build_room_prompt
 from api.core import clover
 from api.core.config import settings
@@ -48,6 +49,7 @@ from api.db.models import (
     Content,
     User,
 )
+from api.db.models.prompt import PromptRoute, PromptSection, PromptSet
 from api.db.models.content import ModerationStatus
 from api.db.models.persona import UserPersona
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, request_timeout_ms
@@ -63,6 +65,7 @@ from factories import (
     _NeverCalledLLMClient,
     _open_room,
     _override_llm_client,
+    _parse_sse_events,
     _room_messages,
 )
 
@@ -604,6 +607,83 @@ async def test_fold_in_progress_discards_its_result_when_a_regenerate_commits_fi
     row = await _row(db_session, current)
     assert row is not None and row.summary_text == REGENERATED
     assert await _memory_version(db_session, room) == 1
+
+
+@pytest.mark.usefixtures("items_visible")
+async def test_regenerate_does_not_take_the_turn_lock_so_a_turn_in_progress_does_not_refuse_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """다시 만들기는 방 턴 락을 잡지 않는다 — 같은 방에 턴이 도는 중이어도 자기 규칙대로만 끝난다."""
+    room, current = await _room(db_client, db_session)
+
+    async with hold_room_turn_lock(room.room_id):
+        resp = await _regenerate(db_client, room, RegenerateLLMClient())
+
+    assert resp.status_code == 200, resp.text
+    row = await _row(db_session, current)
+    assert row is not None and row.summary_text == REGENERATED
+
+
+@pytest.mark.usefixtures("items_visible")
+async def test_a_turn_sent_while_a_regenerate_waits_on_the_model_is_not_refused(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """다시 만들기가 요약을 기다리는 동안 같은 방의 보내기는 턴 락에 막히지 않는다."""
+    room, _current = await _room(db_client, db_session)
+    sent: list[httpx.Response] = []
+
+    async def _send_while_waiting() -> str:
+        sent.append(await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "그사이 보낸 말"}))
+        return REGENERATED
+
+    first = await _regenerate(db_client, room, RegenerateLLMClient(_send_while_waiting))
+
+    (turn,) = sent
+    assert turn.status_code == 200, turn.text
+    assert _parse_sse_events(turn.text)[-1]["type"] == "done"
+    assert first.status_code == 200, first.text
+
+
+_HAIKU_SUMMARY_MARK = "하이쿠 요약 표지 문장"
+
+
+@pytest.mark.usefixtures("items_visible")
+@pytest.mark.parametrize("switch", [True, False], ids=["premium-on", "premium-off"])
+async def test_regenerate_reads_the_summary_chain_of_the_room_model_it_runs_on(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, switch: bool
+) -> None:
+    """다시 만들기도 접기와 같이 배정 표의 요약 칸을 따른다. 칸은 저장된 방 모델이 아니라 지금 쓸 모델로 본다 — 스위치를
+    끈 Opus 방은 Gemini 방 칸이다."""
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", switch)
+    room, _current = await _room(db_client, db_session)
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model="opus"))
+    haiku_set = sa.select(PromptSet.id).where(
+        PromptSet.lane == "character", PromptSet.model == "haiku", PromptSet.status == "published"
+    )
+    await db_session.execute(
+        sa.update(PromptSection)
+        .where(PromptSection.prompt_set_id.in_(haiku_set))
+        .values(body=PromptSection.body + "\n" + _HAIKU_SUMMARY_MARK)
+    )
+    db_session.add(
+        PromptRoute(
+            lane="character",
+            room_model="opus",
+            stage="memory_summary",
+            chain_model="haiku",
+            call_model="gemini",
+            backend="gemini",
+        )
+    )
+    await db_session.commit()
+    fake = RegenerateLLMClient()
+
+    resp = await _regenerate(db_client, room, fake)
+
+    assert resp.status_code == 200, resp.text
+    (prompt,) = fake.summary_prompts
+    assert (_HAIKU_SUMMARY_MARK in prompt) is switch
+    assert await _ledger(db_session, room.user_id) == [(_SPEND, -10)]
 
 
 # --- 일반 접기와 같은 프롬프트 ------------------------------------------------------------------

@@ -46,6 +46,8 @@ from api.chat.prompt_builder import (
     PromptSetNotFoundError,
     load_active_prompt_set,
 )
+from api.chat.prompt_routing import PromptRoutes
+from api.chat.prompt_routing_cache import load_prompt_routes
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
 from api.chat.room_deletion import delete_chat_rooms
 from api.chat.room_stats import seed_missing_room_stats
@@ -192,6 +194,7 @@ from api.llm.chat_models import (
     DEFAULT_CHAT_MODEL,
     DEFAULT_CHAT_ROOM_MODEL,
     ChatModelId,
+    ChatRoomModelId,
     PromptSetModelId,
     chat_turn_cost,
     is_chat_room_model,
@@ -296,6 +299,31 @@ async def _room_turn_lock_dependency(
         await release_room_turn_lock(lock)
 
 
+async def _effective_room_model_dependency(
+    # 락이 방보다 앞이다 — 같은 요청 안에서 두 의존성은 한 번씩만 해석되므로(요청 스코프 캐시) 여기서 받는 방은 락을
+    # 잡은 직후 다시 읽은 그 객체다.
+    _turn_lock: RoomTurnLock = Depends(_room_turn_lock_dependency),
+    room: ChatRoom = Depends(_playable_room_dependency),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomModelId:
+    """턴 세 경로(전송·재생성·편집)에서 이 턴이 실제로 도는 방 모델. 방이 고른 모델을 지금 쓸 모델로 읽는다(허용이 없거나,
+    레지스트리에서 내렸거나 채팅에서 고를 수 없는 모델이면 Gemini). 판정 세트 의존성과 차감 게이트가 이 의존성 하나를 받아
+    요청 스코프 캐시로 같은 값을 쓴다 — 따로 읽으면 그 사이 허용이 바뀐 요청이 한 모델의 판정 문안으로 판정하고 다른 모델
+    가격으로 깎일 수 있다."""
+    return await effective_room_model(db, user_id, room.chat_model)
+
+
+async def _unlocked_room_model_dependency(
+    room: ChatRoom = Depends(_owned_room_dependency),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomModelId:
+    """위 의존성과 같은 값을 방 턴 락 없이 읽는다 — 턴이 아닌 라우트(요약 다시 만들기)용이다. 위 의존성을 쓰면 그 라우트가 턴 락을
+    잡게 되어, 턴이 도는 중의 요청이 턴 락 409 로 거절되고 거꾸로 그 라우트가 모델을 기다리는 동안 그 방의 턴이 409 를 받는다."""
+    return await effective_room_model(db, user_id, room.chat_model)
+
+
 async def enforce_room_chat_charge(
     # 락이 방보다 앞이다 — 같은 요청 안에서 두 의존성은 한 번씩만 해석되므로(요청 스코프 캐시) 여기서 받는 방은 락을
     # 잡은 직후 다시 읽은 그 객체다. 라우트 시그니처가 이 순서를 이미 지키지만, 게이트가 스스로 보장하게 둔다.
@@ -304,9 +332,11 @@ async def enforce_room_chat_charge(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    # 판정 세트 의존성이 받은 것과 같은 값이다(요청 스코프 캐시).
+    model: ChatRoomModelId = Depends(_effective_room_model_dependency),
 ) -> ChatCharge:
-    """턴 세 경로(전송·재생성·편집)의 차감 게이트. 방이 고른 모델을 지금 쓸 모델로 읽어(허용이 없거나, 레지스트리에서 내렸거나
-    채팅에서 고를 수 없는 모델이면 Gemini) 그 모델의 가격으로 차감한다. 상한·차감 본문은 미리보기와 같은 `charge_chat_turn` 이다.
+    """턴 세 경로(전송·재생성·편집)의 차감 게이트. 이 턴이 실제로 도는 방 모델(`_effective_room_model_dependency`)의 가격으로
+    차감한다. 상한·차감 본문은 미리보기와 같은 `charge_chat_turn` 이다.
 
     영수증의 `model` 이 이 턴의 생성 모델이다 — 생성 쪽은 방을 다시 읽지 않는다. 이 게이트와 생성 사이에 방의 모델이
     바뀌어도(모델 지정 라우트는 턴 락을 잡지 않는다) 값을 낸 모델로 생성한다.
@@ -315,7 +345,6 @@ async def enforce_room_chat_charge(
 
     사용처는 이 방과 그 작품이다. 작품 소유자는 여기서 읽지 않는다 — 클로버를 실제로 깎는 턴에만 차감의 사용처 INSERT 가
     같은 문장에서 읽으므로, 대부분인 무료 턴에 작품 조회가 늘지 않는다."""
-    model = await effective_room_model(db, user_id, room.chat_model)
     return await charge_chat_turn(
         user_id,
         db,
@@ -414,19 +443,51 @@ async def _active_prompt_set_dependency(
     return prompt_set, sections
 
 
-async def _judgment_prompt_sets_dependency(
-    setup: StartingSetup | None = Depends(_starting_setup_dependency),
-    db: AsyncSession = Depends(get_db_session),
-    gemini_set: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
+async def _prompt_routes_dependency(db: AsyncSession = Depends(get_db_session)) -> PromptRoutes:
+    """모델 배정 표. 요청마다 한 번 읽는다(히트면 Redis GET 하나) — 이 값을 받는 의존성이 여럿이어도 요청 스코프 캐시로 같은
+    값이다."""
+    return await load_prompt_routes(db)
+
+
+async def _room_judgment_prompt_sets(
+    db: AsyncSession,
+    setup: StartingSetup | None,
+    gemini_set: tuple[PromptSet, list[PromptSection]],
+    routes: PromptRoutes,
+    room_model: ChatRoomModelId,
 ) -> JudgmentPromptSets:
-    """판정 종류마다·요약의 세트 — 방의 글쓰기 모델이 아니라 판정·요약 모델 설정의 세트다. 모델이 Gemini 인 칸은 위 Gemini
-    세트를 그대로 받아 조회가 늘지 않는다. 그 밖의 모델은 캐시를 보고 없으면 요청 세션으로 읽는다(위 의존성과 같은 이유)."""
     lane = _lane_for_setup(setup)
 
     async def load(model: PromptSetModelId) -> tuple[PromptSet, list[PromptSection]]:
         return await load_active_prompt_set(db, lane=lane, model=model)
 
-    return await judgment_prompt_sets(lane=lane, gemini_set=gemini_set, load=load)
+    return await judgment_prompt_sets(
+        lane=lane, gemini_set=gemini_set, load=load, routes=routes, room_model=room_model
+    )
+
+
+async def _judgment_prompt_sets_dependency(
+    setup: StartingSetup | None = Depends(_starting_setup_dependency),
+    db: AsyncSession = Depends(get_db_session),
+    gemini_set: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
+    routes: PromptRoutes = Depends(_prompt_routes_dependency),
+    room_model: ChatRoomModelId = Depends(_effective_room_model_dependency),
+) -> JudgmentPromptSets:
+    """턴 세 경로의 판정 종류마다·요약의 세트 — 모델 배정 표의 (레인, 이 턴의 실효 방 모델, 단계) 칸을 풀어 고른 체인의 세트다.
+    행이 없는 칸은 판정·요약 모델 설정의 세트다. 체인이 Gemini 인 칸은 위 Gemini 세트를 그대로 받아 조회가 늘지 않는다. 그 밖의
+    체인은 캐시를 보고 없으면 요청 세션으로 읽는다(위 의존성과 같은 이유)."""
+    return await _room_judgment_prompt_sets(db, setup, gemini_set, routes, room_model)
+
+
+async def _memory_regenerate_prompt_sets_dependency(
+    setup: StartingSetup | None = Depends(_starting_setup_dependency),
+    db: AsyncSession = Depends(get_db_session),
+    gemini_set: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
+    routes: PromptRoutes = Depends(_prompt_routes_dependency),
+    room_model: ChatRoomModelId = Depends(_unlocked_room_model_dependency),
+) -> JudgmentPromptSets:
+    """요약 다시 만들기의 세트 — 위 의존성과 같은 규칙이되 실효 방 모델을 턴 락 없이 읽는다(`_unlocked_room_model_dependency`)."""
+    return await _room_judgment_prompt_sets(db, setup, gemini_set, routes, room_model)
 
 
 # `_preview_prompt_set_dependency`는 여기 두지 않는다 — `_owned_preview_session_dependency`
@@ -2425,8 +2486,10 @@ async def regenerate_chat_room_memory_summary(
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
-    # 요약 모델의 세트 — 접기와 같은 의존성으로 고른다. 세트가 없으면 여기서 실패해 깎기 전이다.
-    judgment_sets: JudgmentPromptSets = Depends(_judgment_prompt_sets_dependency),
+    # 요약 칸의 세트 — 접기와 같은 규칙으로 고르되 방 턴 락은 잡지 않는다. 세트가 없으면 여기서 실패해 깎기 전이다.
+    judgment_sets: JudgmentPromptSets = Depends(_memory_regenerate_prompt_sets_dependency),
+    # 위 세트를 고를 때 쓴 실효 방 모델과 같은 값이다(요청 스코프 캐시).
+    writing_model: ChatRoomModelId = Depends(_unlocked_room_model_dependency),
 ) -> ChatRoomMemoryResponse:
     """방의 지금 요약을 AI 로 다시 만든다(`chat/memory_regenerate.py`). 고정 클로버(`MEMORY_SUMMARY_REGENERATE_COST`, 방 모델과
     무관)를 먼저 자기 트랜잭션에서 깎고, 어떤 실패로 끝나든 돌려준다. 채팅 상한 예외 계정도 내고 하루 무료 대화는 쓰지 않는다.
@@ -2464,7 +2527,6 @@ async def regenerate_chat_room_memory_summary(
                 raise _memory_conflict("MEMORY_SUMMARY_NOT_READY") from None
             is_story_chat = setup is not None
             names = await room_prompt_names(db, room, is_story_chat=is_story_chat)
-            writing_model = await effective_room_model(db, user_id, room.chat_model)
             # 요약을 기다리는 동안 커넥션을 쥐지 않는다(접기와 같다). 읽기만 했으므로 커밋은 트랜잭션을 닫을 뿐이다.
             await db.commit()
 

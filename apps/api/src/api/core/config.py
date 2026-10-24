@@ -331,7 +331,8 @@ class Settings(BaseSettings):
     # 배정은 아래 기동 검증이 거부한다. 호출 위치·구현 이름은 대소문자까지 정확해야 한다.
     llm_call_site_backends: Annotated[dict[LLMCallSite, BackendId], NoDecode] = {}
     # 판정 종류(스탯·엔딩·그림 매칭)와 기억 요약마다 쓰는 모델 — 값은 문안 체인의 모델 id(`gemini`·`sonnet`·`opus`·판정 전용
-    # `haiku`)이고, 판정은 그 모델의 활성 프롬프트 세트로 렌더된다. 방의 모델과 무관하다. 기본값 `gemini` 면 지금 동작 그대로이고,
+    # `haiku`)이고, 판정은 그 모델의 활성 프롬프트 세트로 렌더된다. 모델 배정 표에 그 (레인, 실효 방 모델, 단계) 칸의 행이 있으면
+    # 판정 문안은 행이 고른 체인을 읽는다(행이 없으면 방의 모델과 무관하다). 기본값 `gemini` 면 지금 동작 그대로이고,
     # 그때 실제 Gemini 모델은 위 `gemini_*_judgment_model_name` 이 고른다. 그 모델을 어느 구현이 서비스할지는 위 배정이 정하고,
     # 배정이 없으면 모델의 기본 구현이다(`haiku`·`sonnet`·`opus` → Bedrock). 배정이 그 모델을 서비스하지 않거나 가는 구현의
     # 자격이 비면 기동하지 않는다. 되돌리려면 env 줄을 지우고 재기동한다.

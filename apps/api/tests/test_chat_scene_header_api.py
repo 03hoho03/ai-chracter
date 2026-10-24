@@ -27,7 +27,7 @@ from api.chat.prompt_builder import (
 from api.chat.schemas import StoryScene
 from api.db.models import ChatMessage, ChatMessageRole, ChatRoom, StartingSetup
 from api.db.models.chat import ChatPreviousResponse
-from api.db.models.prompt import PromptSection
+from api.db.models.prompt import PromptRoute, PromptSection, PromptSet
 from api.db.models.story import StoryVersionDetail
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError
 from factories import (
@@ -318,6 +318,45 @@ async def test_a_room_with_the_toggle_off_makes_no_scene_call_event_or_scene(
     assert (await _last_assistant(db_session, room)).scene is None
     snapshot = (await db_client.get(f"/chat-rooms/{room.room_id}")).json()["contentSnapshot"]
     assert snapshot["sceneHeaderEnabled"] is False
+
+
+_HAIKU_SCENE_MARK = "하이쿠 장면 판정 표지 문장"
+
+
+@pytest.mark.parametrize("own_row", [True, False], ids=["own-row", "inherits-stat-row"])
+async def test_scene_judgment_reads_the_chain_of_its_route_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, own_row: bool
+) -> None:
+    """장면 헤더 칸의 배정 행은 장면 판정이 읽을 체인을 바꾸고 스탯 판정은 그대로 둔다. 자기 행이 없으면 스탯 판정 행을
+    물려받아 둘이 같은 체인을 읽는다. 판정 전용 체인의 모든 행에 표지를 붙여 어느 체인으로 렌더됐는지 본다."""
+    room = await _story_room(db_client, db_session, turns=0)
+    haiku_set = sa.select(PromptSet.id).where(
+        PromptSet.lane == "story", PromptSet.model == "haiku", PromptSet.status == "published"
+    )
+    await db_session.execute(
+        sa.update(PromptSection)
+        .where(PromptSection.prompt_set_id.in_(haiku_set))
+        .values(body=PromptSection.body + "\n" + _HAIKU_SCENE_MARK)
+    )
+    db_session.add(
+        PromptRoute(
+            lane="story",
+            room_model="gemini",
+            stage="scene_judgment" if own_row else "stat_judgment",
+            chain_model="haiku",
+            call_model="gemini",
+            backend="gemini",
+        )
+    )
+    await db_session.commit()
+    fake = _SceneLLM(scene=[SceneJudgmentResult(place="학교 옥상", time=None)])
+
+    await _send(db_client, fake, room)
+
+    (scene_prompt,) = fake.prompts("chat_scene_judgment")
+    (stat_prompt,) = fake.prompts("chat_stat_judgment")
+    assert _HAIKU_SCENE_MARK in scene_prompt
+    assert (_HAIKU_SCENE_MARK in stat_prompt) is not own_row
 
 
 # ── 수정·재생성·삭제·되돌리기 ───────────────────────────────────────────────────────────────────
