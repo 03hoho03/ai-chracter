@@ -29,6 +29,7 @@ import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 import { isIdentityVerificationRequiredError } from "@/entities/identity";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
 import { getSessionEndReason, resetSessionIfLost, sessionKeys, type SessionEndReason } from "@/entities/session";
+import { isApiError } from "@/shared/api/client";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 
 import { ensureUserMessageForSend } from "./ensureUserMessageForSend";
@@ -173,6 +174,9 @@ export function useSendMessage(
         ? countRepliesAfter(pending.messagesBeforeEdit ?? [], pending.payload.messageId)
         : 0;
     let statRewind: StatRewind | undefined;
+    // 서버가 HTTP 오류 응답으로 시작 전에 거절했는가 — `openChatStream` 은 그때만 `ApiError` 를 던지고, 스트림이 열린 뒤의 끊김은
+    // 네트워크 오류로 온다.
+    let wasRejected = false;
 
     try {
       for await (const event of openChatStream(pending.payload, chatStreamEventSchema)) {
@@ -205,6 +209,7 @@ export function useSendMessage(
       }
     } catch (error) {
       hasErrored = true;
+      wasRejected = isApiError(error);
       // SSE는 뮤테이션이 아니라 `app/AppProviders.tsx`의 MutationCache.onError가 못 본다.
       // 재동의 403을 여기서 잡지 않으면 채팅 4경로에서만 모달이 뜨지 않는다(세션을 다시 조회하면
       // ReconsentModal이 `GET /me`의 플래그로 뜬다 — 전역 MutationCache의 재동의 403 처리와 같은 처리다).
@@ -254,7 +259,12 @@ export function useSendMessage(
       });
     } finally {
       setStreamingText("");
-      settleTurnStreamEnd(queryClient, roomId, { dropped, hasCommitted });
+      settleTurnStreamEnd(queryClient, roomId, {
+        dropped,
+        hasCommitted,
+        isEdit: pending.payload.kind === "edit",
+        wasRejected,
+      });
       // 칩·안내는 턴이 확정된 뒤 한 번만 — 스트리밍 도중이나 응답이 커밋되지 않은 턴에는 알리지 않는다.
       // 안내 문장은 여기서 그 턴의 값으로 한 번 만들어 둔다 — 뒤에 값이 바뀌어도 다시 만들지 않는다. 스탯 이름·장면 글은 화면과
       // 같이 작가 매크로를 펼친 글로 읽는다.
@@ -275,11 +285,7 @@ export function useSendMessage(
       }
       if (!hasErrored) setStatus({ kind: "idle" });
       if (pending.kind === "regenerate" && committedMessage) onRegenerated?.(committedMessage);
-      if (pending.payload.kind === "edit" && hasCommitted) {
-        // 서버가 되돌린 스탯과 턴 수는 스트림 이벤트로 다 오지 않는다(이번 턴에 바뀐 스탯만 온다) — 방을 다시 받아 맞춘다.
-        void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
-        onEdited?.(statRewind);
-      }
+      if (pending.payload.kind === "edit" && hasCommitted) onEdited?.(statRewind);
     }
   }
 

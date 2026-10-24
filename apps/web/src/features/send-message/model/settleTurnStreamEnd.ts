@@ -9,18 +9,28 @@ type TurnStreamEnd = {
   dropped: ChatMessage | undefined;
   /** `done`을 방 캐시에 반영했는가("봤다"가 아니다 — 방 캐시가 없으면 반영도 없다). */
   hasCommitted: boolean;
+  /** 메시지 수정의 스트림인가. */
+  isEdit?: boolean;
+  /** 서버가 요청을 시작 전에 거절했는가(HTTP 오류 응답 — 재화 부족·앞 턴 진행 중 등). 그때 서버는 아무것도 바꾸지 않았다. */
+  wasRejected?: boolean;
 };
 
 /** 채팅 턴 스트림이 어떻게 끝나든(성공·스트림 안 오류·예외·끊김) 마지막에 한 번 부르는 캐시 정리다. */
 export function settleTurnStreamEnd(
   queryClient: QueryClient,
   roomId: string,
-  { dropped, hasCommitted }: TurnStreamEnd,
+  { dropped, hasCommitted, isEdit = false, wasRejected = false }: TurnStreamEnd,
 ): void {
   // 동기 롤백 + invalidate 둘 다. 롤백만으로는 서버가 실제로 커밋한 경우 화면이 서버와
   // 어긋난 채 남고, invalidate만으로는 왕복 동안 메시지가 빠진 화면이 유지된다.
   if (dropped && !hasCommitted) {
     restoreMessage(queryClient, roomId, dropped);
+    void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
+  }
+  // 수정은 뒤 대화 삭제·스탯 되돌리기·턴 수 감소를 새 답을 만들기 전에 커밋한다. 되돌린 스탯은 스트림 이벤트로 다 오지 않고(이번
+  // 턴에 바뀐 스탯만 온다), 생성이 실패해도(스트림 안 오류·끊김) 그 셋은 이미 서버에 있으므로 어떻게 끝나든 방을 다시 받는다.
+  // 시작 전에 거절됐으면 서버는 아무것도 바꾸지 않았고, 다시 받으면 잘라 둔 목록과 고쳐 쓴 글이 옛 목록으로 돌아가 버린다.
+  if (isEdit && !wasRejected) {
     void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
   }
   // 기억(노트·요약)은 스트림 이벤트로 오지 않으므로 끝날 때마다 낡음 표시만 한다. 편집·재생성의 요약
