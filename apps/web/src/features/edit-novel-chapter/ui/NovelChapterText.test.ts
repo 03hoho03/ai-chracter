@@ -46,6 +46,7 @@ const chapter = {
     ],
     illustrations: [illustration("placed", { anchorBlockId: "b0", placement: "after" })],
     unplacedIllustrations: [illustration("lost", { anchorBlockId: null, placement: null })],
+    scenes: [],
   },
 } satisfies NovelChapterResponse;
 

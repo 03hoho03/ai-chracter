@@ -30969,6 +30969,18 @@
                 "type": "null"
               }
             ]
+          },
+          "episodeOutlineId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episodeoutlineid"
           }
         },
         "type": "object",
@@ -30989,7 +31001,8 @@
           "authorNote",
           "charCount",
           "finishedReading",
-          "readingPosition"
+          "readingPosition",
+          "episodeOutlineId"
         ],
         "title": "NovelChapterSummary",
         "description": "목차의 화 한 줄. 본문은 화 조회로 따로 읽는다. `ordinal` 은 소설 전체의 화 번호다."
@@ -32539,6 +32552,28 @@
             },
             "type": "array",
             "title": "Basis"
+          },
+          "chapterId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapterid"
+          },
+          "sceneOutline": {
+            "type": "string",
+            "enum": [
+              "none",
+              "draft",
+              "approved",
+              "stale"
+            ],
+            "title": "Sceneoutline"
           }
         },
         "type": "object",
@@ -32547,10 +32582,12 @@
           "title",
           "summary",
           "goal",
-          "basis"
+          "basis",
+          "chapterId",
+          "sceneOutline"
         ],
         "title": "NovelOutlineEpisodeView",
-        "description": "구성안의 화 하나. `key` 는 리비전이 바뀌어도 같은 화를 가리키는 화 키, `basis` 는 이 화의 근거가 된 대화 구간(양 끝 포함,\n키 순)이다 — 근거는 그 구성안이 쓴 구간 선택의 include 구간 안에만 있다. 목록 순서가 화 순서다."
+        "description": "구성안의 화 하나. `key` 는 리비전이 바뀌어도 같은 화를 가리키는 화 키, `basis` 는 이 화의 근거가 된 대화 구간(양 끝 포함,\n키 순)이다 — 근거는 그 구성안이 쓴 구간 선택의 include 구간 안에만 있다. 목록 순서가 화 순서다.\n\n`chapter_id` 는 이 화 키를 이미 원고로 쓴 화(없으면 null), `scene_outline` 은 이 화 장면 구성안의 상태다. 둘 다 이 판이 아니라\n지금 상태다 — 승인본과 미승인 초안의 같은 화 키는 같은 값을 싣는다."
       },
       "NovelOutlineModel": {
         "properties": {
@@ -33531,6 +33568,13 @@
             },
             "type": "array",
             "title": "Unplacedillustrations"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/NovelRevisionScene"
+            },
+            "type": "array",
+            "title": "Scenes"
           }
         },
         "type": "object",
@@ -33544,7 +33588,8 @@
           "paragraphs",
           "blocks",
           "illustrations",
-          "unplacedIllustrations"
+          "unplacedIllustrations",
+          "scenes"
         ],
         "title": "NovelRevisionResponse"
       },
@@ -33561,6 +33606,34 @@
           "baseRevisionId"
         ],
         "title": "NovelRevisionRestoreRequest"
+      },
+      "NovelRevisionScene": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "blockIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Blockids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "blockIds"
+        ],
+        "title": "NovelRevisionScene",
+        "description": "개정의 장면 하나. `id` 는 장면 구성안의 장면 id, `title` 은 그 블록들을 쓴 장면 구성안 리비전의 장면 제목, `block_ids` 는 이\n장면에 든 블록 id(본문 차례)다. 여러 문단 수정은 한 장면 안의 블록만 함께 고를 수 있다."
       },
       "NovelRevisionSummary": {
         "properties": {

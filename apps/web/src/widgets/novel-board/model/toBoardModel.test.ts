@@ -23,6 +23,7 @@ function chapter(id: string, batchId: string, ordinal: number, extra: Partial<No
     charCount: 100,
     finishedReading: false,
     readingPosition: null,
+    episodeOutlineId: null,
     ...extra,
   };
 }

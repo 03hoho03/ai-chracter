@@ -28,6 +28,7 @@ function chapter(id: string, ordinal: number, extra: Partial<NovelChapterSummary
     charCount: 1,
     finishedReading: false,
     readingPosition: null,
+    episodeOutlineId: null,
     ...extra,
   };
 }
