@@ -35,7 +35,7 @@ from api.chat.prompt_builder import PromptSetNotFoundError, StatRuleJudgmentResu
 from api.chat.prompt_routing import PromptRoutes, RouteRow, RouteRowInput, parse_route_row
 from api.chat.prompt_routing_cache import PROMPT_ROUTES_CACHE_KEY, load_prompt_routes
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
-from api.chat.prompt_stages import RoutingLane
+from api.chat.prompt_stages import LANE_STAGES, RoutingLane
 from api.chat.turn_prompt import JudgmentSlot
 from api.core import clover
 from api.core.config import settings
@@ -383,6 +383,40 @@ async def test_empty_table_hands_every_slot_the_same_object_as_the_env_rule(
         assert sorted(store.loads) == ["haiku", "sonnet"]
         assert with_table.ending is gemini_set
         assert with_table.image is with_table.stat
+
+
+@pytest.mark.parametrize("impression_model", ["gemini", "haiku"])
+@pytest.mark.parametrize("table", ["empty", "rows"])
+@pytest.mark.parametrize("lane", LANES)
+async def test_impression_slot_follows_its_env_setting_whatever_the_table_holds(
+    monkeypatch: pytest.MonkeyPatch, impression_model: str, table: str, lane: RoutingLane
+) -> None:
+    """인상 생성은 장기 기억 인상 기능이 아직 다듬어지는 중이라 단계 표 밖에 둔다 — 표가 비었든, 그 레인의 모든 단계에 다른 체인을
+    고르는 행이 있든 인상 칸은 인상 모델 설정의 세트이고, 부를 모델은 실리지 않는다(None 이면 호출은 지금 경로로 간다)."""
+    fix_settings(monkeypatch, profile="gemini", premium=True)
+    monkeypatch.setattr(settings, "memory_impression_model", impression_model)
+    store = FakeSetStore(monkeypatch)
+    rows = (
+        []
+        if table == "empty"
+        else [_row(stage, lane=lane, chain_model="sonnet") for stage in LANE_STAGES[lane] if stage != "chat_generate"]
+    )
+
+    sets = await turn_prompt.judgment_prompt_sets(
+        lane=lane,
+        gemini_set=store.sets["gemini"],
+        load=store.load,
+        routes=PromptRoutes.from_rows(rows),
+        room_model="opus",
+    )
+
+    assert sets.impression is store.sets[impression_model]
+    assert sets.call_model("impression") is None
+    assert "impression" not in sets.routes
+    if table == "rows":
+        # 같은 표가 기억 요약 칸에는 실제로 쓰였다 — 인상 칸만 표를 보지 않는다는 대조다.
+        assert sets.summary is store.sets["sonnet"]
+        assert sets.call_model("summary") == "gemini"
 
 
 async def test_a_row_picks_the_chain_of_its_own_cell_only(monkeypatch: pytest.MonkeyPatch) -> None:
