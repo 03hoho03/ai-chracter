@@ -251,6 +251,62 @@ def test_the_production_env_judges_and_summarizes_with_haiku_through_anthropic(
         ), call_site
 
 
+# 운영 env 로 뜬 프로세스에서 호출 위치마다 (보낼 모델, 구현). 실린 모델이 기본(Gemini)인 호출 전부와, 사용자가 고른 상위 모델이
+# 실리는 글쓰기 호출 셋. 값은 판정·요약 호출이 모델 배정 표의 부를 모델을 받기 전 코드에서 같은 계산으로 적었다 — 표가 비면 그
+# 뒤에도 같아야 한다.
+_PRODUCTION_ROUTES: dict[tuple[LLMCallSite, PromptSetModelId], tuple[PromptSetModelId, str]] = {
+    ("chat_generate", "gemini"): ("gemini", "gemini"),
+    ("chat_stat_judgment", "gemini"): ("haiku", "anthropic"),
+    ("chat_ending_judgment", "gemini"): ("haiku", "anthropic"),
+    ("chat_situational_image", "gemini"): ("haiku", "anthropic"),
+    ("chat_media_book_image", "gemini"): ("haiku", "anthropic"),
+    ("chat_memory_summary", "gemini"): ("haiku", "anthropic"),
+    ("chat_memory_episode", "gemini"): ("haiku", "anthropic"),
+    ("chat_memory_fact", "gemini"): ("haiku", "anthropic"),
+    ("chat_scene_judgment", "gemini"): ("haiku", "anthropic"),
+    ("preview_generate", "gemini"): ("gemini", "gemini"),
+    ("preview_stat_judgment", "gemini"): ("haiku", "anthropic"),
+    ("preview_ending_judgment", "gemini"): ("haiku", "anthropic"),
+    ("preview_media_book_image", "gemini"): ("haiku", "anthropic"),
+    ("preview_scene_judgment", "gemini"): ("haiku", "anthropic"),
+    ("publish_filter_character", "gemini"): ("gemini", "gemini"),
+    ("publish_filter_story", "gemini"): ("gemini", "gemini"),
+    ("seed_story_generate", "gemini"): ("gemini", "gemini"),
+    ("seed_similarity_review", "gemini"): ("gemini", "gemini"),
+    ("novelize_chapter", "gemini"): ("gemini", "gemini"),
+    ("novelize_revise", "gemini"): ("gemini", "gemini"),
+    ("novelize_boundary", "gemini"): ("gemini", "gemini"),
+    ("novelize_revise_recheck", "gemini"): ("gemini", "gemini"),
+    ("novelize_outline", "gemini"): ("gemini", "gemini"),
+    ("novelize_episode_outline", "gemini"): ("gemini", "gemini"),
+    ("novel_publish_screen", "gemini"): ("gemini", "gemini"),
+    ("novel_illustration_screen", "gemini"): ("gemini", "gemini"),
+    ("replay_generate", "gemini"): ("gemini", "gemini"),
+    ("chat_generate", "opus"): ("opus", "anthropic"),
+    ("replay_generate", "opus"): ("opus", "anthropic"),
+    ("novelize_chapter", "opus"): ("opus", "anthropic"),
+}
+
+
+def test_the_production_env_starts_and_routes_every_call_site_as_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 키 조합(판정·요약·추출 모델 여섯 `haiku`, 상위 모델 스위치 켬, 판정·요약 호출 위치를 Anthropic 직결로 둔 배정, 자격은
+    가짜 값, Bedrock 자격 없음)으로 설정이 뜨고, 그 프로세스의 호출 위치마다 경로가 적어 둔 값과 같다. 기동 검증 규칙을 더하거나
+    바꿀 때 운영 env 그대로 새 이미지가 뜨는지를 여기서 먼저 본다."""
+    loaded = load_production_env(monkeypatch)
+
+    assert loaded.chat_premium_models_enabled
+    assert not loaded.bedrock_access_key_id
+    assert not loaded.bedrock_secret_access_key
+    assert {cs for cs, _ in _PRODUCTION_ROUTES} == set(CALL_POLICIES)
+    routes = {}
+    for call_site, carried in _PRODUCTION_ROUTES:
+        model = backends.call_site_model(call_site, lambda name: str(getattr(loaded, name)))
+        routes[(call_site, carried)] = backends.pick_backend(
+            call_site, carried, loaded.llm_call_site_backends, call_model=model
+        )
+    assert routes == _PRODUCTION_ROUTES
+
+
 # 배정을 다른 호출 위치에서 물려받는 호출(장면 헤더 판정)은 운영 배정에 자기 줄이 없어 아래 "한 줄 빠짐" 경우가 성립하지 않는다 —
 # 물려받는 쪽의 경우는 그 원래 호출 위치의 줄이 빠지는 경우가 덮는다.
 _JUDGED_CALL_SITES = [
