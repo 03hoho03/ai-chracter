@@ -22,6 +22,7 @@ import { isNoteSaveBlocked } from "../model/noteSaveGuard";
 import { browserStorage, isRollbackUnseen, readSeenRollback, writeSeenRollback } from "../model/rollbackNotice";
 import { countMemoryChars, createMemoryFormSchema, memoryFormOptions, type MemoryFormValues } from "../model/schema";
 import { serverToForm } from "../model/serverToForm";
+import { summaryFoldingCopy } from "../model/summaryFoldingCopy";
 import { summaryRevertHint } from "../model/summaryRevertHint";
 import { RegenerateSummaryModal } from "./RegenerateSummaryModal";
 
@@ -257,6 +258,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest, editSumm
   const summary = memory.summary;
   // 요약 다시 만들기는 장면·사실 목록과 같은 서버 스위치 뒤에 있다 — 꺼져 있으면 버튼도, 바뀐 되돌리기 안내도 없다.
   const canRegenerate = memory.features.itemsVisible;
+  const foldingCopy = summaryFoldingCopy(memory.features.summaryFolding);
   // 편집 중에 요약이 사라질 수 있다(다른 탭에서 초기화) — 그때는 편집 칸도 [저장]도 없다.
   const isSummaryEditOpen = isEditingSummary && summary !== undefined;
   const noteField = form.register("note");
@@ -273,7 +275,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest, editSumm
     // 첫 접기 전에는 고칠 요약이 없다(요약은 대화가 충분히 쌓여야 처음 만들어진다).
     summaryBody = (
       <p className="rounded-lg border border-dashed border-border px-3.5 py-3 text-sm break-keep text-muted-foreground">
-        아직 요약할 만큼 대화가 쌓이지 않았어요. 최근 대화는 전부 기억 중이에요.
+        {foldingCopy.emptySummary}
       </p>
     );
   } else if (isEditingSummary) {
@@ -375,7 +377,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest, editSumm
         {summaryBody}
 
         <ul className="flex flex-col gap-1 text-xs break-keep text-muted-foreground">
-          <li>대화를 이어 가면 AI가 이 요약을 다시 정리해요. 꼭 지켜야 할 내용은 &lsquo;꼭 기억할 것&rsquo;에 적어 주세요.</li>
+          <li>{foldingCopy.foldingHint}</li>
           <li>지난 대화가 바뀌면(고치기·지우기·다시 생성·방금 전 답변으로) 그 뒤의 요약은 직접 고친 내용까지 이전 요약으로 돌아가요.</li>
           {summary && (
             <li id={revertHintId}>{summaryRevertHint(canRegenerate)}</li>
