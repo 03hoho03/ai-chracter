@@ -1,10 +1,12 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { useCallback, useState } from "react";
 
+import { isRoutingLane, useRoutingQuery } from "@/entities/prompt-routing";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { UnsavedChangesGuard } from "@/shared/ui/UnsavedChangesGuard";
 
+import { chainReaders } from "../model/chainReads";
 import { isPromptLane, PROMPT_LANE_LABELS, PROMPT_LANES, type PromptLane } from "../model/lane";
 import {
   isPromptModel,
@@ -118,6 +120,11 @@ type LaneModelTabsProps = {
 /** 모델이 하나뿐인 레인(발행 심사)은 하위 탭 없이 편집기만 그린다. */
 function LaneModelTabs({ lane, activeModel, mountedChains, onSelectModel, onDirtyChange }: LaneModelTabsProps) {
   const models = promptModelsFor(lane);
+  const routingQuery = useRoutingQuery();
+  // 운영 읽힘은 배정 표가 다루는 채팅 두 레인에만 있다(소설·심사 레인은 표 밖이라 표시하지 않는다). 조회가 끝나기 전·실패는
+  // "안 읽힘"으로 읽지 않도록 아무 표시도 하지 않는다.
+  const isUnread = (model: PromptModel): boolean =>
+    isRoutingLane(lane) && routingQuery.data !== undefined && chainReaders(routingQuery.data, lane, model).length === 0;
 
   if (models.length === 1) {
     return <PromptLaneEditor lane={lane} model="gemini" onDirtyChange={onDirtyChange} />;
@@ -142,6 +149,7 @@ function LaneModelTabs({ lane, activeModel, mountedChains, onSelectModel, onDirt
               className="px-3 group-data-[variant=default]/tabs-list:data-active:shadow-none data-active:border-border"
             >
               {PROMPT_MODEL_LABELS[model]}
+              {isUnread(model) && <span className="text-muted-foreground">· 운영 안 읽힘</span>}
             </TabsTrigger>
           ))}
         </TabsList>

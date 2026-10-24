@@ -15,11 +15,13 @@ import { useState } from "react";
 import { type Control, Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import { isRoutingLane, useRoutingQuery, type RoutingLane } from "@/entities/prompt-routing";
 import { isApiError } from "@/shared/lib/api/client";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useDraftChangesQuery } from "../api/useDraftChangesQuery";
 import { usePublishMutation } from "../api/usePublishMutation";
+import { chainReaders } from "../model/chainReads";
 import { promptSectionLabel } from "../model/channels";
 import { PROMPT_LANE_LABELS, type PromptLane } from "../model/lane";
 import { PROMPT_MODEL_LABELS, type PromptModel } from "../model/model";
@@ -47,30 +49,34 @@ type PublishPromptSetDialogProps = {
   model: PromptModel;
 };
 
-// 레인화로 "다음 채팅 턴부터"가 거짓이 되는 레인이 있다.
-// `publish_filter`는 채팅 턴이 아니라 제작자가 발행 버튼을 누를 때(다음 발행 심사부터) 읽힌다.
-// 소설 문안은 소설 레인으로 옮겨, 채팅 레인 게시가 소설에 닿는 것은 원문 줄의 화자 라벨과 등급 규칙뿐이다(소설 호출이
-// 그 둘은 원작 종류의 채팅 Gemini 세트에서 읽는다). 소설 레인 Gemini 세트는 경계 제안·문단 수정·여러 문단 수정·묶음
-// 재검사와 Gemini 로 쓰는 화 생성·전체·장면 구성안에 읽힌다.
-const PUBLISH_EFFECT_COPY: Record<PromptLane, string> = {
-  story: "다음 채팅 턴부터 전 서비스에 즉시 반영되고(화자 라벨과 등급 규칙은 다음 소설 작업에도 쓰여요)",
-  character: "다음 채팅 턴부터 전 서비스에 즉시 반영되고(화자 라벨과 등급 규칙은 다음 소설 작업에도 쓰여요)",
+// 채팅 밖 레인은 읽히는 자리가 정해져 있다. `publish_filter`는 채팅 턴이 아니라 제작자가 발행 버튼을 누를 때(다음 발행 심사부터)
+// 읽힌다. 소설 레인 Gemini 세트는 경계 제안·문단 수정·여러 문단 수정·묶음 재검사와 Gemini 로 쓰는 화 생성·전체·장면 구성안에
+// 읽힌다. 채팅 두 레인은 모델과 무관하게 모델 배정 표가 고른 칸에서 읽히므로 아래 `chatPublishEffectCopy` 가 배정 표 조회로
+// 문장을 만든다.
+const NON_CHAT_PUBLISH_EFFECT_COPY: Record<Exclude<PromptLane, RoutingLane>, string> = {
   publish_filter: "다음 발행 심사부터 즉시 반영되고",
   novel: "다음 소설 경계 제안·문단 수정·여러 문단 수정·묶음 재검사와 Gemini 로 쓰는 다음 화 생성·구성안부터 즉시 반영되고",
   novel_screen: "다음 노벨 공개 심사부터 즉시 반영되고",
 };
 
-/** Claude 세트가 읽히는 자리는 레인마다 정해져 있어 문구가 레인을 따른다. 채팅 레인은 그 모델을 고른 방의 응답 생성에만
- * 읽히고(판정·요약은 Gemini 세트), 소설 레인은 그 모델로 쓰는 화 생성·전체·장면 구성안에만 읽힌다(경계 제안·문단
- * 수정·여러 문단 수정·묶음 재검사는 Gemini 세트). 상위 모델이 꺼져 있거나 허용이 없으면 그 자리도 Gemini 로 돌아 게시해도 아무 데도 쓰이지 않는다. */
-function toClaudePublishEffectCopy(lane: PromptLane): string {
-  if (lane === "novel") {
-    return "이 모델로 쓰는 다음 소설 화 생성·구성안부터 즉시 반영되고(상위 모델이 꺼져 있거나 허용이 없으면 쓰이지 않아요)";
-  }
-  return "이 모델을 고른 방의 다음 채팅 턴 응답 생성부터 즉시 반영되고(상위 모델이 꺼져 있으면 쓰이지 않아요)";
+/** 소설 레인 Claude 세트는 그 모델로 쓰는 화 생성·전체·장면 구성안에만 읽힌다(경계 제안·문단 수정·여러 문단 수정·묶음 재검사는
+ * Gemini 세트). 상위 모델이 꺼져 있거나 허용이 없으면 그 자리도 Gemini 로 돌아 게시해도 아무 데도 쓰이지 않는다. */
+const NOVEL_CLAUDE_PUBLISH_EFFECT_COPY =
+  "이 모델로 쓰는 다음 소설 화 생성·구성안부터 즉시 반영되고(상위 모델이 꺼져 있거나 허용이 없으면 쓰이지 않아요)";
+
+/** 채팅 레인 체인은 응답 생성이든 판정·요약이든 배정 표가 그 체인을 고른 칸에서만 읽힌다 — 읽는 칸 수는 배정 표 조회의 체인
+ * 목록 하나에서 온다. 화자 라벨·등급 규칙은 소설이 원작의 채팅 Gemini 세트에서 읽으므로(배정 표와 무관하다) Gemini 체인에만
+ * 그 괄호를 붙인다. */
+function chatPublishEffectCopy(routingQuery: ReturnType<typeof useRoutingQuery>, lane: RoutingLane, model: PromptModel) {
+  const novelNote = model === "gemini" ? "(화자 라벨과 등급 규칙은 다음 소설 작업에도 쓰여요)" : "";
+  if (routingQuery.isPending) return `운영에서 이 체인을 읽는 칸을 확인하는 중이고${novelNote}`;
+  if (routingQuery.isError) return `운영에서 이 체인을 읽는 칸을 확인하지 못했고(모델 배정 화면에서 확인하세요)${novelNote}`;
+  const count = chainReaders(routingQuery.data, lane, model).length;
+  if (count === 0) return `지금은 이 체인을 읽는 칸이 없어 게시해도 바로 쓰이지 않고${novelNote}`;
+  return `이 체인을 읽는 칸(${count}칸)의 다음 턴부터 즉시 반영되고${novelNote}`;
 }
 
-/** 게시는 전 서비스 채팅에 즉시 반영되는 되돌리기 어려운 행동이라 다이얼로그로 한 번
+/** 게시는 그 체인을 읽는 자리에 즉시 반영되는 되돌리기 어려운 행동이라 다이얼로그로 한 번
  * 더 확인받는다 — legal의 `PublishDialog`와 같은 어휘(react-call, 자체 호출형). 버전은
  * 서버가 자동 증가로 부여하므로 입력받지 않는다.
  *
@@ -83,6 +89,7 @@ function toClaudePublishEffectCopy(lane: PromptLane): string {
  * 거부는 모달을 닫지 않고 목록을 다시 받아 다시 고르게 한다. */
 export const PublishPromptSetDialog = createCallable<PublishPromptSetDialogProps, void>(({ call, lane, model }) => {
   const publishMutation = usePublishMutation(lane, model);
+  const routingQuery = useRoutingQuery();
   const changesQuery = useDraftChangesQuery(lane, model, !call.ended);
   const [conflictMessage, setConflictMessage] = useState<string>();
   const chainName = `${PROMPT_LANE_LABELS[lane]} · ${PROMPT_MODEL_LABELS[model]}`;
@@ -92,6 +99,11 @@ export const PublishPromptSetDialog = createCallable<PublishPromptSetDialogProps
     handleSubmit,
     formState: { isSubmitting },
   } = useForm<PublishFormValues>({ defaultValues: { note: "", levels: {} } });
+
+  const publishEffectCopy = (): string => {
+    if (isRoutingLane(lane)) return chatPublishEffectCopy(routingQuery, lane, model);
+    return model === "gemini" ? NON_CHAT_PUBLISH_EFFECT_COPY[lane] : NOVEL_CLAUDE_PUBLISH_EFFECT_COPY;
+  };
 
   const changes = changesQuery.data;
   // 다시 받는 동안에는 화면의 목록이 서버와 다를 수 있어 게시를 막는다.
@@ -138,8 +150,7 @@ export const PublishPromptSetDialog = createCallable<PublishPromptSetDialogProps
           <DialogTitle>프롬프트 세트 게시</DialogTitle>
           <DialogDescription className="break-keep">
             지금 저장된 <span className="font-medium text-foreground">{chainName}</span> 초안을 새 버전으로
-            게시해요. {model === "gemini" ? PUBLISH_EFFECT_COPY[lane] : toClaudePublishEffectCopy(lane)}, 초안은 게시
-            후에도 그대로 남아요.
+            게시해요. {publishEffectCopy()}, 초안은 게시 후에도 그대로 남아요.
           </DialogDescription>
         </DialogHeader>
 
