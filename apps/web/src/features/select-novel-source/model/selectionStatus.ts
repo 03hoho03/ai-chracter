@@ -32,6 +32,14 @@ export function hasChangedSource(view: NovelSourceSelectionView): boolean {
   return view.sections.some((section) => section.sourceChanged);
 }
 
+/** 구성안 다음 단계(장면 구성안·원고)가 쓰는 승인한 판의 상태 — 승인본이 없으면 `unapproved`, 승인본의 구간 하나라도 원문이 바뀌었으면
+ * `sourceChanged`(서버는 그중 맥락 구간이나 그 화의 근거가 든 구간이 바뀌었을 때 그 단계의 과금 요청을 409 로 막는다), 아니면 `ok`.
+ * 승인본 위의 새 초안은 보지 않는다: 그 단계는 승인본으로 만들고, 원문 바뀜을 고쳐 저장한 초안도 승인해야 풀린다. */
+export function toApprovedSourceStatus(state: NovelSourceSelectionState): "ok" | "sourceChanged" | "unapproved" {
+  if (state.approved === null) return "unapproved";
+  return hasChangedSource(state.approved) ? "sourceChanged" : "ok";
+}
+
 /** 고른 때의 고정 끝을 지금 대화에서 자리 잡을 수 없는가. 그 메시지가 지워졌어도 키(`roomEndMessageCreatedAt`)로 자리를 잡을 수
  * 있으면 잃은 것이 아니다 — 그 키까지가 고른 대화이고 뒤는 새 대화라, 저장은 지워진 고정 끝 id 그대로 보내도 서버가 받는다(확장하지
  * 않은 저장은 최신 판의 고정 끝 id 와 같은지만 본다). 키를 모를 때(서버가 그 칸을 싣기 전 응답)만 잃는다. */

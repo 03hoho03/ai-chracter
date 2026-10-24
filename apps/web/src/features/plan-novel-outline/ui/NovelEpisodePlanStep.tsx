@@ -42,6 +42,7 @@ import {
   toSceneMakeBlockedReason,
   toWriteBlockedReason,
   type ApprovedOutlineStatus,
+  type ApprovedSelectionStatus,
   type ManuscriptStatus,
 } from "../model/episodeStatus";
 import { toTurnIndex, type OutlineTurn } from "../model/outlineEdits";
@@ -75,6 +76,8 @@ type NovelEpisodePlanStepProps = {
   /** 담을 대화 단계와 같은 묶기로 만든 턴. 대화를 아직 못 받았으면 `undefined`. */
   turns: readonly OutlineTurn[] | undefined;
   isTurnsFailed: boolean;
+  /** 지금 승인한 담을 대화의 상태. 아직 받지 못했으면 `ok` 로 준다 — 서버가 같은 경우를 막는다. */
+  selection: ApprovedSelectionStatus;
   /** 화면 제목. 이 화면으로 옮기면 호출부가 여기로 포커스를 보낸다. */
   headingRef: RefObject<HTMLHeadingElement | null>;
   control: EpisodeJobControl;
@@ -169,6 +172,7 @@ function EpisodeEditor({
   episodeKey,
   turns,
   isTurnsFailed,
+  selection,
   control,
   onOpenChapter,
   onDraftDirtyChange,
@@ -245,6 +249,7 @@ function EpisodeEditor({
     isJobRunning: control.isJobRunning,
     isAiEditRunning: control.isAiEditRunning,
     outline: outlineStatus,
+    selection,
     isWritten,
     isDirty: isDirty || isFormOpen,
   });
@@ -257,6 +262,7 @@ function EpisodeEditor({
           isJobRunning: control.isJobRunning,
           isAiEditRunning: control.isAiEditRunning,
           outline: outlineStatus,
+          selection,
           order: manuscript.kind,
           hasApproved: state.approved !== null,
           hasNewerDraft: state.draft !== null,

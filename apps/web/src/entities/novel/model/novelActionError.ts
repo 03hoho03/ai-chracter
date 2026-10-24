@@ -251,9 +251,9 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     message: "다른 곳에서 고른 구간이 바뀌었어요. 새로 불러왔어요.",
     shouldRefetchNovel: false,
   },
-  // 저장 뒤 고른 대화가 고쳐지거나 지워졌다. 초안은 서버에 남아 있고, 다시 받으면 바뀐 턴에 표시가 붙는다.
+  // 저장 뒤 고른 대화가 고쳐지거나 지워졌다. 초안은 서버에 남아 있고, 다시 받으면 바뀐 구간(서버가 구간마다 알린다)의 턴에 표시가 붙는다.
   NOVEL_SOURCE_SELECTION_SOURCE_CHANGED: {
-    message: "고른 대화 중 바뀐 곳이 있어요. 표시한 턴을 확인한 뒤 다시 승인해주세요.",
+    message: "고른 대화 중 바뀐 곳이 있어요. 표시한 구간을 확인한 뒤 다시 승인해주세요.",
     shouldRefetchNovel: false,
   },
   // 아래 셋은 화면이 막는 값이 서버에 닿은 경우다(그사이 대화가 지워졌거나 화면 계산이 어긋났다). 무엇이 어긋났는지는 이용자가

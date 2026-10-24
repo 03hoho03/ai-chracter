@@ -240,6 +240,11 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
       }
       moveTo({ kind: "episode", id: readyChapter.id });
     },
+    onSelectionChanged: () => {
+      // 거절을 받은 화 화면에 아직 있을 때만 옮긴다 — 기다리는 사이 다른 곳으로 갔으면 끌고 오지 않는다. 구성 문서의 담을 대화가 바뀐
+      // 구간을 표시하고 펼쳐 둔다.
+      if (selectionRef.current?.kind === "planEpisode") void selectBoard({ kind: "plan" });
+    },
   });
   const aiEdit = useNovelAiEdit({
     novel,

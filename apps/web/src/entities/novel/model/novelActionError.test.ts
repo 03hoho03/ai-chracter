@@ -451,7 +451,7 @@ describe("toNovelActionError — 담을 대화 고르기", () => {
     [
       409,
       "NOVEL_SOURCE_SELECTION_SOURCE_CHANGED",
-      "고른 대화 중 바뀐 곳이 있어요. 표시한 턴을 확인한 뒤 다시 승인해주세요.",
+      "고른 대화 중 바뀐 곳이 있어요. 표시한 구간을 확인한 뒤 다시 승인해주세요.",
     ],
     [422, "NOVEL_SOURCE_SECTION_LOCKED", "이미 화로 쓴 대화는 다시 담을 수 없어요. 새로 불러왔어요."],
     [422, "NOVEL_SOURCE_SELECTION_EMPTY", "담을 대화를 하나 이상 골라주세요. AI 답이 든 턴이어야 해요."],
@@ -502,7 +502,7 @@ describe("toNovelActionError — 전체 구성안", () => {
       "담은 대화 중 그사이 화가 된 곳이 있어요. 담을 대화를 확인해 다시 승인해주세요.",
     );
     expect(toNovelActionError(apiError(409, { code: "NOVEL_SOURCE_SELECTION_SOURCE_CHANGED" }), "outline")?.message).toBe(
-      "고른 대화 중 바뀐 곳이 있어요. 표시한 턴을 확인한 뒤 다시 승인해주세요.",
+      "고른 대화 중 바뀐 곳이 있어요. 표시한 구간을 확인한 뒤 다시 승인해주세요.",
     );
   });
 

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { hasChangedSource, toSaveRoomEnd, toSourceSelectionBase, toSourceSelectionStatus } from "./selectionStatus";
+import {
+  hasChangedSource,
+  toApprovedSourceStatus,
+  toSaveRoomEnd,
+  toSourceSelectionBase,
+  toSourceSelectionStatus,
+} from "./selectionStatus";
 
 type State = Parameters<typeof toSourceSelectionStatus>[0];
 
@@ -59,6 +65,23 @@ describe("hasChangedSource", () => {
   it("구간 하나라도 원문이 바뀌었으면 참이다", () => {
     expect(hasChangedSource(view(1, null))).toBe(false);
     expect(hasChangedSource(view(1, null, true))).toBe(true);
+  });
+});
+
+describe("toApprovedSourceStatus", () => {
+  // 구성안 다음 단계(장면 구성안·원고)는 승인한 판으로 만든다 — 그 판만 본다. 승인본 위의 새 초안은 그 단계를 막지 않는다.
+  it("승인한 판이 없으면 승인 전, 승인한 판의 구간 하나라도 원문이 바뀌었으면 바뀜, 아니면 괜찮다", () => {
+    expect(toApprovedSourceStatus(state({ proposal: view(null, null) }))).toBe("unapproved");
+    expect(toApprovedSourceStatus(state({ draft: view(1, null) }))).toBe("unapproved");
+    expect(toApprovedSourceStatus(state({ approved: view(1, "2026-01-01T00:00:00Z", true) }))).toBe("sourceChanged");
+    expect(toApprovedSourceStatus(state({ approved: view(1, "2026-01-01T00:00:00Z") }))).toBe("ok");
+  });
+
+  it("새 초안이 원문 바뀜을 고쳐 저장했어도 승인 전이면 승인본의 바뀜이 남는다", () => {
+    expect(
+      toApprovedSourceStatus(state({ approved: view(1, "2026-01-01T00:00:00Z", true), draft: view(2, null) })),
+    ).toBe("sourceChanged");
+    expect(toApprovedSourceStatus(state({ approved: view(1, "2026-01-01T00:00:00Z"), draft: view(2, null, true) }))).toBe("ok");
   });
 });
 

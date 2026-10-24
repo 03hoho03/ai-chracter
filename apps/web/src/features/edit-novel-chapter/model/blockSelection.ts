@@ -88,6 +88,20 @@ export function toSelectedIndexes(selection: readonly string[], blockIds: readon
     .sort((a, b) => a - b);
 }
 
+/** 여러 문단 고르기 스위치가 켜졌다가 꺼졌을 때(요청이 꺼짐 404 로 거절돼 가격을 다시 받았다) 고른 문단을 "선택 해제"처럼 풀지 정한다.
+ * 고른 문단이 지금 판에 있으면 포커스를 둘 문단 — 본문 차례로 마지막 고른 문단, 사라진 동작 줄이 붙어 있던 자리 — 을 돌려준다. 풀 것이
+ * 없으면 `undefined`. */
+export function toReleaseOnSwitchOff(change: {
+  wasOn: boolean;
+  isOn: boolean;
+  selection: readonly string[];
+  blockIds: readonly string[];
+}): { focusIndex: number } | undefined {
+  if (!change.wasOn || change.isOn) return undefined;
+  const focusIndex = toSelectedIndexes(change.selection, change.blockIds).at(-1);
+  return focusIndex === undefined ? undefined : { focusIndex };
+}
+
 /** 고르지 않은 문단이 지금 왜 고를 수 없는가. 고른 것과 다른 장면이면 `outsideScene`, 상한만큼 골랐으면 `limit`. */
 export function toBlockBlockedReason(
   index: number,

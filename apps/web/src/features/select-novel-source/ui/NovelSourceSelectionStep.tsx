@@ -55,6 +55,8 @@ type NovelSourceSelectionStepProps = {
   /** 되돌려 달라는 대화 구간(낡은 구성안이 쓴 구간). `id` 가 바뀔 때마다 한 번 고침을 만든다. `isExact` 면 그 구성안이 쓴 선택의 담기
    * 구간이라 양 끝 그대로 되돌리고, 아니면(화들의 근거로 어림한 구간) 그 구간의 턴을 담기로 바꾸기만 한다. */
   restoreRequest?: { id: number; ranges: readonly SourceRange[]; isExact: boolean };
+  /** 이 단계에서 담을 대화를 승인했다 — 앞서 담을 대화 탓으로 실패한 다른 단계의 안내를 호출부가 거둔다. */
+  onApproved?: () => void;
 };
 
 /** 화면이 고친 선택. 고치기 시작한 판의 리비전을 들고 있다가 저장 때 보낸다 — 그사이 다른 탭이 저장했으면 서버가 409 로 막아,
@@ -70,7 +72,12 @@ type StepNotice = { tone: "error" | "done"; message: string };
  * 처음에는 서버의 기본 제안(아직 쓰지 않은 대화를 모두 담기)이나 저장된 최신 판을 보이고, 고치면 이 화면에만 있다가 "초안
  * 저장"·"이대로 승인"으로 서버에 간다. 고른 뒤 대화가 이어졌으면 저절로 붙이지 않고 "새 구간 추가"로 연다.
  */
-export function NovelSourceSelectionStep({ novel, onDraftDirtyChange, restoreRequest }: NovelSourceSelectionStepProps) {
+export function NovelSourceSelectionStep({
+  novel,
+  onDraftDirtyChange,
+  restoreRequest,
+  onApproved,
+}: NovelSourceSelectionStepProps) {
   if (novel.chatRoomId === null) {
     return (
       <StepShell status={undefined}>
@@ -86,6 +93,7 @@ export function NovelSourceSelectionStep({ novel, onDraftDirtyChange, restoreReq
       roomId={novel.chatRoomId}
       onDraftDirtyChange={onDraftDirtyChange}
       restoreRequest={restoreRequest}
+      onApproved={onApproved}
     />
   );
 }
@@ -95,6 +103,7 @@ function SelectionLoader({
   roomId,
   onDraftDirtyChange,
   restoreRequest,
+  onApproved,
 }: NovelSourceSelectionStepProps & { roomId: string }) {
   const queryClient = useQueryClient();
   const selectionQuery = useNovelSourceSelectionQuery(novel.id, { enabled: true });
@@ -162,6 +171,7 @@ function SelectionLoader({
       onRefetchMessages={() => void messagesQuery.refetch()}
       onDraftDirtyChange={onDraftDirtyChange}
       restoreRequest={restoreRequest}
+      onApproved={onApproved}
     />
   );
 }
@@ -183,6 +193,7 @@ function SelectionEditor({
   onRefetchMessages,
   onDraftDirtyChange,
   restoreRequest,
+  onApproved,
 }: SelectionEditorProps) {
   const queryClient = useQueryClient();
   const saveMutation = useSaveNovelSourceSelectionMutation();
@@ -397,6 +408,7 @@ function SelectionEditor({
         await approveMutation.mutateAsync({ novelId: novel.id, revision });
       }
       setNotice({ tone: "done", message: "담을 대화를 승인했어요." });
+      onApproved?.();
       // 승인하면 저장·승인 버튼이 사라진다 — 누른 버튼과 함께 포커스가 떨어지지 않게 단계 제목으로 옮긴다.
       headingRef.current?.focus();
     } catch (error) {
@@ -442,7 +454,8 @@ function SelectionEditor({
       )}
       {isSourceChanged && (
         <p className="rounded-lg border border-border px-3 py-2 text-sm break-keep text-foreground">
-          고른 뒤 대화가 바뀐 턴이 있어요("고른 뒤 바뀜"). 확인한 뒤 저장하거나 승인하면 지금 대화로 다시 담겨요.
+          고른 뒤 대화가 바뀐 구간이 있어요. "고른 뒤 바뀐 구간"이 붙은 턴들이 그 구간이고, 이 구간 어딘가가 고른 뒤 바뀌었어요. 확인한
+          뒤 저장하거나 승인하면 지금 대화로 다시 담겨요.
         </p>
       )}
       {isFixedEndMissing && (

@@ -25,7 +25,7 @@ const STATE_LABEL: Record<TurnState, string> = {
 type SourceTimelineProps = {
   turns: readonly SourceTurn[];
   states: ReadonlyMap<string, TurnState>;
-  /** 저장 뒤 원문이 바뀐 턴. */
+  /** 저장 뒤 원문이 바뀐 구간에 든 턴. 서버가 바뀜을 구간마다 알려, 그 턴 자체가 바뀌었는지는 모른다. */
   changedKeys: ReadonlySet<string>;
   /** 펼친 턴. 묶음의 턴 하나라도 여기 있으면 그 묶음은 펼쳐 있다 — 펼친 묶음 안의 턴을 담아 묶음이 둘로 갈려도 둘 다 펼친
    * 채로 남는다. */
@@ -203,7 +203,7 @@ function TurnRow({ turn, state, isChanged, onToggle }: TurnRowProps) {
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="text-xs text-muted-foreground tabular-nums">
           {turn.number}턴
-          {isChanged && <span className="font-medium text-foreground"> · 고른 뒤 바뀜</span>}
+          {isChanged && <span className="font-medium text-foreground"> · 고른 뒤 바뀐 구간</span>}
           {turn.isLocked && <span> · 이미 쓴 대화라 담을 수 없어요</span>}
         </span>
         <span className={cn("line-clamp-2 text-sm break-keep", state === "include" ? "text-foreground" : "text-muted-foreground")}>

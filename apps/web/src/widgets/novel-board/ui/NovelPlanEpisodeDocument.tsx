@@ -1,8 +1,9 @@
 import type { RefObject } from "react";
 
-import type { NovelDetailResponse } from "@/entities/novel";
+import { useNovelSourceSelectionQuery, type NovelDetailResponse } from "@/entities/novel";
 import type { NovelChapterJobFlow } from "@/features/create-novel-chapter";
 import { NovelEpisodePlanStep, type EpisodeJobControl } from "@/features/plan-novel-outline";
+import { toApprovedSourceStatus } from "@/features/select-novel-source";
 
 import { usePlanTurns } from "./usePlanTurns";
 
@@ -27,6 +28,10 @@ export function NovelPlanEpisodeDocument({
   onDraftDirtyChange,
 }: NovelPlanEpisodeDocumentProps) {
   const { turns, isTurnsFailed } = usePlanTurns(novel);
+  // 장면 구성안·원고는 승인한 담을 대화로 만든다 — 그 원문이 바뀌었으면 유료 버튼을 막는다. 이 화면이 지켜보고 있어야 거절 뒤 다시 받기도
+  // 곧바로 돈다. 방이 지워진 소설은 담을 대화를 읽지 않는다(그때는 방 없음이 먼저 막는다).
+  const selectionQuery = useNovelSourceSelectionQuery(novel.id, { enabled: novel.chatRoomId !== null });
+  const selection = selectionQuery.data === undefined ? "ok" : toApprovedSourceStatus(selectionQuery.data);
   const isPreparingHere = chapterFlow.preparingEpisodeKey === episodeKey;
   // 도는 작업의 화를 모르면(작업이 화 키를 싣기 전에 만든 작업) 이 화의 작업일 수도 있어 고치기를 막는다 — 끝나면 새 판이 올 수 있다.
   const isRunningHere = chapterFlow.runningEpisodeKey === null || chapterFlow.runningEpisodeKey === episodeKey;
@@ -52,6 +57,7 @@ export function NovelPlanEpisodeDocument({
       episodeKey={episodeKey}
       turns={turns}
       isTurnsFailed={isTurnsFailed}
+      selection={selection}
       headingRef={headingRef}
       control={control}
       onOpenChapter={onOpenChapter}
