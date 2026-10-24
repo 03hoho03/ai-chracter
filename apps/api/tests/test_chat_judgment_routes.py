@@ -35,6 +35,8 @@ from api.chat.prompt_builder import PromptSetNotFoundError, StatRuleJudgmentResu
 from api.chat.prompt_routing import PromptRoutes, RouteRow, RouteRowInput, parse_route_row
 from api.chat.prompt_routing_cache import PROMPT_ROUTES_CACHE_KEY, load_prompt_routes
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
+from api.chat.prompt_stages import RoutingLane
+from api.chat.turn_prompt import JudgmentSlot
 from api.core import clover
 from api.core.config import settings
 from api.core.redis import redis_client
@@ -42,6 +44,7 @@ from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.clover import CloverLedger
 from api.db.models.prompt import PromptRoute, PromptSection, PromptSet
 from api.llm import model_access
+from api.llm.chat_models import ChatRoomModelId
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
     _clear_llm_override,
@@ -284,7 +287,7 @@ async def test_empty_route_table_turn_matches_the_characterization(
 
 # ── 판정 세트 고르기가 배정 표를 따른다 ───────────────────────────────────────────────────────
 
-ALL_SLOTS = ("stat", "scene", "ending", "image", "summary", "episode", "fact")
+ALL_SLOTS: tuple[JudgmentSlot, ...] = ("stat", "scene", "ending", "image", "summary", "episode", "fact")
 
 
 def _set(model: str) -> tuple[PromptSet, list[PromptSection]]:
@@ -349,7 +352,7 @@ _MIXED_MODELS = {
 @pytest.mark.parametrize("lane", LANES)
 @pytest.mark.parametrize("room_model", ["gemini", "opus"])
 async def test_empty_table_hands_every_slot_the_same_object_as_the_env_rule(
-    monkeypatch: pytest.MonkeyPatch, models: str, lane: str, room_model: str
+    monkeypatch: pytest.MonkeyPatch, models: str, lane: RoutingLane, room_model: ChatRoomModelId
 ) -> None:
     """빈 표의 짝 — 표와 방 모델을 넘긴 호출과 넘기지 않은 호출이 칸마다 같은 객체를 내고, 세트 조회 순서도 같다."""
     fix_settings(monkeypatch, profile="gemini", premium=True)

@@ -327,6 +327,8 @@ async def _gate_statements(db_session: AsyncSession, room_id: uuid.UUID, user_id
             user_id=user_id,
             db=db_session,
             session_factory=_factory(db_session),
+            # 실효 모델은 이제 게이트 밖의 의존성이 정해 넘긴다 — 이 방은 Gemini 방이다.
+            model="gemini",
         )
     finally:
         sa.event.remove(connection, "before_cursor_execute", statements)
