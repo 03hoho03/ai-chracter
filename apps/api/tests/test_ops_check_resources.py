@@ -25,8 +25,15 @@ def _recording(calls: list[str]) -> Callable[[str], bool]:
 
 
 def _argv(tmp_path: Path) -> list[str]:
-    """`--state-file` 은 필수 인자다 — 테스트가 운영 경로(`/var/lib/ddona/...`)에 쓰지 않게 매번 임시 경로를 준다."""
-    return ["check_resources.py", "--state-file", str(tmp_path / "resource-check.state")]
+    """`--state-file`·`--worker-state-file` 은 필수 인자다 — 테스트가 운영 경로(`/var/lib/ddona/...`)를 읽거나 쓰지 않게
+    매번 임시 경로를 준다. 워커 기대 상태 파일은 만들지 않으면 없음(= 꺼짐)이라 워커는 감시하지 않는다."""
+    return [
+        "check_resources.py",
+        "--state-file",
+        str(tmp_path / "resource-check.state"),
+        "--worker-state-file",
+        str(tmp_path / "novelize_worker"),
+    ]
 
 
 _FREE_HEALTHY = """\
@@ -181,6 +188,7 @@ def _healthy_state() -> dict[str, check_resources.ItemState]:
     return {
         "memory": {"alerting": False, "last_notified_at": None},
         "disk": {"alerting": False, "last_notified_at": None},
+        "novelize_worker": {"alerting": False, "last_notified_at": None},
     }
 
 
@@ -334,9 +342,128 @@ def test_main_still_pings_when_state_file_cannot_be_written(
     pinged: list[str] = []
     monkeypatch.setattr(check_resources, "ping", _recording(pinged))
     unwritable = tmp_path / "없는-디렉터리" / "resource-check.state"
-    monkeypatch.setattr("sys.argv", ["check_resources.py", "--state-file", str(unwritable)])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["check_resources.py", "--state-file", str(unwritable), "--worker-state-file", str(tmp_path / "novelize_worker")],
+    )
 
     assert check_resources.main() == 0
 
     assert pinged == ["https://hc-ping.com/resource-check"]
     assert "상태 파일" in capsys.readouterr().err
+
+
+# ── 소설화 워커 ──────────────────────────────────────────────────────────────
+# 워커를 감시할지는 교체 스크립트가 남기는 기대 상태 파일(`on`/`off`)로 정한다 — 크론은 `.env` 를 읽지 않는다. 판정은
+# 두 워커 색 중 healthy 가 하나라도 있는지다. docker 를 못 읽어도 메모리·디스크·ping 은 계속 간다.
+
+
+def _docker_read(health: dict[str, str], *, fail: bool = False) -> Callable[[list[str]], str]:
+    """`free`·`df` 는 정상 출력을, `docker ps` 는 `health`(서비스 → 헬스 상태, 없으면 컨테이너 없음)대로 id 를,
+    `docker inspect` 는 그 id 의 헬스 상태를 돌려준다. `fail` 이면 docker 호출이 실패한다."""
+
+    def _fake(cmd: list[str]) -> str:
+        if cmd[0] == "free":
+            return _FREE_HEALTHY
+        if cmd[0] == "df":
+            return _DF_HEALTHY
+        assert cmd[0] == "docker", cmd
+        if fail:
+            raise RuntimeError("docker ps 실패:\nCannot connect to the Docker daemon")
+        if cmd[1] == "ps":
+            service = next(arg.split("=")[-1] for arg in cmd if "com.docker.compose.service=" in arg)
+            return f"id-{service}\n" if service in health else ""
+        assert cmd[1] == "inspect", cmd
+        return health[cmd[-1].removeprefix("id-")] + "\n"
+
+    return _fake
+
+
+def _run_worker_check(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, read: Callable[[list[str]], str], *, expected: str | None
+) -> tuple[list[str], list[str]]:
+    """기대 상태 파일을 `expected` 로 두고(None 이면 만들지 않는다) main 을 한 번 돌려 보낸 알림과 ping 을 돌려준다."""
+    if expected is not None:
+        (tmp_path / "novelize_worker").write_text(expected)
+    monkeypatch.setenv("HEALTHCHECKS_RESOURCE_PING_URL", "https://hc-ping.com/resource-check")
+    monkeypatch.setattr(check_resources, "_read", read)
+    sent: list[str] = []
+    pinged: list[str] = []
+    monkeypatch.setattr(check_resources, "notify", _recording(sent))
+    monkeypatch.setattr(check_resources, "ping", _recording(pinged))
+    monkeypatch.setattr("sys.argv", _argv(tmp_path))
+    assert check_resources.main() == 0
+    return sent, pinged
+
+
+@pytest.mark.parametrize("expected", [None, "off\n", "깨진 값"])
+def test_worker_is_not_watched_when_not_expected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, expected: str | None
+) -> None:
+    """스위치가 꺼져 있으면(파일 없음·off·알 수 없는 값) 워커가 없는 것이 정상이다 — docker 를 부르지도 않는다."""
+
+    def _no_docker(cmd: list[str]) -> str:
+        assert cmd[0] != "docker", cmd
+        return _FREE_HEALTHY if cmd[0] == "free" else _DF_HEALTHY
+
+    sent, _ = _run_worker_check(monkeypatch, tmp_path, _no_docker, expected=expected)
+    assert sent == []
+
+
+def test_worker_one_healthy_color_is_enough(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """교체 중에는 옛 워커(비우는 중)와 새 워커가 같이 있고, 평소에는 한 색만 있다 — healthy 가 하나면 정상이다."""
+    read = _docker_read({"worker_blue": "unhealthy", "worker_green": "healthy"})
+    sent, _ = _run_worker_check(monkeypatch, tmp_path, read, expected="on\n")
+    assert sent == []
+
+
+def test_worker_missing_while_expected_alerts_once(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """켜져 있는데 healthy 워커가 없으면 새 작업이 60초 뒤 환불로 끝난다 — 알리고, 다음 실행은 같은 경고를 반복하지 않는다."""
+    read = _docker_read({"worker_blue": "unhealthy"})
+    sent, pinged = _run_worker_check(monkeypatch, tmp_path, read, expected="on\n")
+    assert len(sent) == 1
+    assert "소설화 워커" in sent[0]
+    assert "blue=unhealthy" in sent[0] and "green=없음" in sent[0]
+    assert pinged == ["https://hc-ping.com/resource-check"]
+
+    sent_again, _ = _run_worker_check(monkeypatch, tmp_path, read, expected="on\n")
+    assert sent_again == []
+
+
+def test_worker_recovery_notice_names_the_worker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """복구 문구는 항목마다 맞아야 한다 — 워커는 "임계값" 이 없다."""
+    _run_worker_check(monkeypatch, tmp_path, _docker_read({}), expected="on\n")
+    sent, _ = _run_worker_check(monkeypatch, tmp_path, _docker_read({"worker_blue": "healthy"}), expected="on\n")
+    assert len(sent) == 1
+    assert "소설화 워커" in sent[0]
+    assert "임계값" not in sent[0]
+
+
+def test_worker_docker_failure_warns_only_that_item(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """docker 데몬을 못 읽는 것은 워커 항목의 경고일 뿐이다 — 메모리·디스크 판정과 ping 은 계속 간다. 여기서 죽으면
+    healthchecks.io 가 "VM 이 죽었다" 로 본다."""
+
+    def _read(cmd: list[str]) -> str:
+        if cmd[0] == "free":
+            return _FREE_UNDER_PRESSURE
+        return _docker_read({}, fail=True)(cmd)
+
+    sent, pinged = _run_worker_check(monkeypatch, tmp_path, _read, expected="on\n")
+    assert len(sent) == 2
+    assert any("메모리" in message for message in sent)
+    assert any("소설화 워커 상태를 읽지 못했다" in message for message in sent)
+    assert pinged == ["https://hc-ping.com/resource-check"]
+
+
+def test_worker_docker_binary_missing_is_a_worker_warning(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """docker 실행 파일이 없을 때 `subprocess.run` 은 `FileNotFoundError` 를 던진다 — 그것도 워커 항목 경고다."""
+
+    def _read(cmd: list[str]) -> str:
+        if cmd[0] == "docker":
+            raise FileNotFoundError("docker")
+        return _FREE_HEALTHY if cmd[0] == "free" else _DF_HEALTHY
+
+    sent, pinged = _run_worker_check(monkeypatch, tmp_path, _read, expected="on\n")
+    assert len(sent) == 1
+    assert "소설화 워커 상태를 읽지 못했다" in sent[0]
+    assert pinged == ["https://hc-ping.com/resource-check"]

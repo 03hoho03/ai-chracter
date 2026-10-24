@@ -2,7 +2,7 @@
 
     # VM 크론 (5분마다, ops/cron.d/ddona-resource-check 가 ops/resource-check.sh 를 부른다)
     cd /opt/ddona/app/apps/api && PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.check_resources \
-        --state-file /var/lib/ddona/resource-check.state
+        --state-file /var/lib/ddona/resource-check.state --worker-state-file /var/lib/ddona/novelize_worker
 
 알림은 **상태가 바뀔 때만** 간다(정상→경고, 경고→정상 "복구"). 5분마다 같은 경고를 보내면 채널이
 같은 줄로 덮여 정작 새 경고가 묻히기 때문이다. 경고가 이어지면 첫 알림이 묻혔을 때를 대비해
@@ -12,6 +12,11 @@
 GCP의 balloon 메트릭(`instance/memory/balloon/ram_used`) 대신 `free`/`df`를 직접 읽는 이유는
 우리 VM에서 실측 1.78GB로 `free -m`의 890MB와 2배 차이가 났고, 그
 메트릭은 e2 계열 전용이라 인스턴스 타입을 바꾸면 조용히 사라지기 때문이다.
+
+소설화 워커도 같은 방식으로 본다 — 교체 스크립트(`ops/swap-api.sh`)가 남기는 기대 상태 파일(`--worker-state-file`,
+`on`/`off`, 없으면 off)이 `on` 일 때만, 두 워커 색 중 docker 헬스 상태가 healthy 인 컨테이너가 하나라도 있는지 본다.
+스위치를 읽으려고 `.env` 를 열지 않는다. docker 를 못 읽는 실패는 그 항목의 경고로만 남기고 메모리·디스크·ping 은
+계속 간다 — 여기서 죽으면 docker 데몬 문제가 "VM 이 죽었다" 로 보인다.
 
 같은 실행이 healthchecks.io로도 ping한다 — VM 자체의 생사를 VM 밖에서 보기 위해서다
 (`ops/backup_db.py`의 healthchecks.io check-in과 같은 이유).
@@ -36,7 +41,13 @@ DEFAULT_DISK_THRESHOLD_PERCENT = 85.0
 RENOTIFY_AFTER_SECONDS = 24 * 60 * 60
 
 # 상태 파일의 항목 키와 복구 알림에 쓰는 이름. 순서가 로그·알림 순서다.
-_RESOURCE_LABELS = {"memory": "메모리", "disk": "디스크(/)"}
+_RESOURCE_LABELS = {"memory": "메모리", "disk": "디스크(/)", "novelize_worker": "소설화 워커"}
+# 복구 알림의 꼬리. 항목에 없으면 임계값 문구다.
+_RECOVERY_NOTES = {"novelize_worker": "healthy 워커가 다시 있다(또는 스위치를 껐다)"}
+_DEFAULT_RECOVERY_NOTE = "임계값 아래로 내려왔다"
+# 교체 스크립트가 띄우는 compose 프로젝트·서비스. 이름은 `docker-compose.prod.yml` 의 `name`·서비스명과 같아야 한다.
+_COMPOSE_PROJECT = "ddona"
+_WORKER_COLORS = ("blue", "green")
 _MESSAGE_PREFIX = "🖥️ ddona-api VM: "
 
 
@@ -89,6 +100,48 @@ def check_disk(df_output: str, *, threshold_percent: float, mount: str = "/") ->
     if used_percent >= threshold_percent:
         return f"디스크({mount}) 사용률 {used_percent:.1f}% (임계값 {threshold_percent:.0f}%)"
     return None
+
+
+def read_worker_expected(path: str | os.PathLike[str]) -> bool:
+    """교체 스크립트가 남긴 기대 상태가 `on` 인지. 파일이 없거나 다른 값이면 꺼짐으로 본다 — 스위치 줄을 넣고 아직
+    교체하지 않았으면 워커도 없으므로 꺼짐이 맞다."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read().strip() == "on"
+    except OSError:
+        return False
+
+
+def check_novelize_worker(expected: bool) -> str | None:
+    """워커를 기대하는데 healthy 인 워커 색이 없으면 경고 문구를 돌려준다. 정지 중인 옛 워커도 정지가 끝날 때까지는
+    healthy 라 하나로 센다. docker 를 못 읽으면 그 사실을 경고로 돌려준다(예외를 밖으로 내지 않는다)."""
+    if not expected:
+        return None
+    statuses: dict[str, str] = {}
+    try:
+        for color in _WORKER_COLORS:
+            ids = _read(
+                [
+                    "docker",
+                    "ps",
+                    "-q",
+                    "--filter",
+                    f"label=com.docker.compose.project={_COMPOSE_PROJECT}",
+                    "--filter",
+                    f"label=com.docker.compose.service=worker_{color}",
+                ]
+            ).split()
+            if not ids:
+                statuses[color] = "없음"
+                continue
+            health = _read(["docker", "inspect", "--format", "{{.State.Health.Status}}", ids[0]]).strip()
+            statuses[color] = health or "알 수 없음"
+    except (RuntimeError, OSError) as error:
+        return f"소설화 워커 상태를 읽지 못했다({type(error).__name__}) — docker 데몬을 확인한다"
+    if "healthy" in statuses.values():
+        return None
+    detail = ", ".join(f"{color}={status}" for color, status in statuses.items())
+    return f"소설화 워커가 healthy 가 아니다({detail}) — 새 소설화 작업이 60초 뒤 환불로 끝난다"
 
 
 def _healthy() -> ItemState:
@@ -151,7 +204,8 @@ def decide(
         message = current.get(key)
         if message is None:
             if before["alerting"]:
-                to_send[key] = f"{_MESSAGE_PREFIX}✅ {label} 복구 — 임계값 아래로 내려왔다"
+                note = _RECOVERY_NOTES.get(key, _DEFAULT_RECOVERY_NOTE)
+                to_send[key] = f"{_MESSAGE_PREFIX}✅ {label} 복구 — {note}"
             next_state[key] = _healthy()
         elif not before["alerting"]:
             to_send[key] = f"{_MESSAGE_PREFIX}{message}"
@@ -169,6 +223,9 @@ def main() -> int:
     # 기본값을 두지 않는다 — 기본값이 있으면 테스트(비 root)가 운영 경로에 쓰려 들고, 래퍼에서 인자가
     # 빠졌을 때 조용히 다른 곳에 상태를 쌓는다.
     parser.add_argument("--state-file", required=True, help="항목별 마지막 알림 상태를 남길 JSON 파일")
+    parser.add_argument(
+        "--worker-state-file", required=True, help="교체 스크립트가 남기는 소설화 워커 기대 상태 파일(on/off)"
+    )
     args = parser.parse_args()
 
     memory_threshold = float(
@@ -184,6 +241,7 @@ def main() -> int:
     current = {
         "memory": check_memory(free_output, threshold_percent=memory_threshold),
         "disk": check_disk(df_output, threshold_percent=disk_threshold),
+        "novelize_worker": check_novelize_worker(read_worker_expected(args.worker_state_file)),
     }
     previous = load_state(args.state_file)
     to_send, next_state = decide(previous, current, now=time.time())
