@@ -1011,6 +1011,11 @@ def cmd_judge_reason(args: argparse.Namespace) -> int:
         lines = lines + ja.control_lines(lines, json.loads(args.controls.read_text(encoding="utf-8")))
 
     model_id = settings.anthropic_haiku_model_id
+    out_dir: Path = args.out_dir or args.run / "s5" / "judge-reason"
+    prefix = "fake-" if args.fake_llm else ""
+    calls_path = out_dir / f"{prefix}calls.jsonl"
+    # 견적은 아직 결과가 없는 호출만 — 끊긴 실행을 이어 돌릴 때 이미 원장에 든 호출을 다시 얹지 않게(전송 오류 줄은 다시 부른다).
+    done = {key for key, row in ja.latest_calls(ja.read_calls(calls_path)).items() if row["status"] != "call_error"}
     estimate = jr.estimate(
         lines,
         args.reps,
@@ -1018,6 +1023,7 @@ def cmd_judge_reason(args: argparse.Namespace) -> int:
         tokens_per_char=args.tokens_per_char,
         plain_output_tokens=args.output_tokens,
         reason_output_tokens=args.reason_output_tokens,
+        done=done,
     )
     estimate["lines"] = jr.group_counts(groups, lines)
     estimate["controls"] = sum(1 for line in lines if line.control is not None)
@@ -1031,9 +1037,6 @@ def cmd_judge_reason(args: argparse.Namespace) -> int:
         _print(estimate)
         return 0
 
-    out_dir: Path = args.out_dir or args.run / "s5" / "judge-reason"
-    prefix = "fake-" if args.fake_llm else ""
-    calls_path = out_dir / f"{prefix}calls.jsonl"
     # 호출 견적의 출력 자리값은 두 판 중 큰 쪽 — 호출마다 원장 여유를 볼 때 한 호출을 작게 잡아 상한을 넘지 않게.
     per_call_output = max(args.output_tokens, args.reason_output_tokens)
     made = 0
@@ -1111,7 +1114,8 @@ def cmd_judge_reason(args: argparse.Namespace) -> int:
         out_dir / f"{prefix}lines.json",
         [{**row, "group": groups.get(row["lineId"])} for row in ja.line_table(lines, calls)],
     )
-    (out_dir / f"{prefix}tables.md").write_text(jr.render_tables(report), encoding="utf-8")
+    tables_path = out_dir / f"{prefix}tables.md"  # cite-ok: 도구가 쓰는 결과 파일 이름
+    tables_path.write_text(jr.render_tables(report), encoding="utf-8")
     _print({"meta": meta, "measuredTokensPerChar": report["measuredTokensPerChar"], "summary": report["summary"]})
     return 0
 

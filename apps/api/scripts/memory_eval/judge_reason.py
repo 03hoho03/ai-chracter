@@ -22,7 +22,7 @@ import math
 import random
 import statistics
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Container, Mapping, Sequence
 from os.path import commonpath
 from pathlib import Path
 from typing import Any
@@ -117,28 +117,28 @@ def estimate(
     tokens_per_char: float,
     plain_output_tokens: int,
     reason_output_tokens: int,
+    done: Container[str] = frozenset(),
 ) -> dict[str, Any]:
-    """호출 수 = 줄 수 × 반복 수 × 두 판. 원가 = 판마다 Σ(프롬프트 글자 × 글자당 토큰의 입력 + 출력 자리값) × 반복."""
+    """호출 수 = 줄 수 × 반복 수 × 두 판. 원가 = 판마다 Σ(프롬프트 글자 × 글자당 토큰의 입력 + 출력 자리값) × 반복.
+    `done` 은 결과가 이미 남은 호출 키(`<줄 id>|<판>|<반복>`) — 이어 돌리는 실행은 그 호출을 다시 부르지 않으므로 견적에서 뺀다."""
     per_variant: dict[str, Any] = {}
     for label, output_tokens in ((PLAIN, plain_output_tokens), (REASON, reason_output_tokens)):
-        usd = (
-            sum(
-                cost_usd(
-                    model_id,
-                    input_tokens=math.ceil(len(line.prompt) * tokens_per_char),
-                    cached_tokens=0,
-                    cache_write_tokens=0,
-                    output_tokens=output_tokens,
-                    thoughts_tokens=0,
-                )
-                for line in lines
+        pending = [line for line in lines for rep in range(reps) if f"{line.line_id}|{label}|{rep}" not in done]
+        usd = sum(
+            cost_usd(
+                model_id,
+                input_tokens=math.ceil(len(line.prompt) * tokens_per_char),
+                cached_tokens=0,
+                cache_write_tokens=0,
+                output_tokens=output_tokens,
+                thoughts_tokens=0,
             )
-            * reps
+            for line in pending
         )
-        per_variant[label] = {"calls": len(lines) * reps, "outputTokensPerCall": output_tokens, "usd": usd}
+        per_variant[label] = {"calls": len(pending), "outputTokensPerCall": output_tokens, "usd": usd}
     return {
         "modelId": model_id,
-        "calls": len(lines) * reps * len(VARIANTS),
+        "calls": sum(v["calls"] for v in per_variant.values()),
         "reps": reps,
         "promptChars": sum(len(line.prompt) for line in lines),
         "tokensPerChar": tokens_per_char,
