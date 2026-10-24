@@ -524,6 +524,7 @@ async def _active_job(db: AsyncSession, novel_id: uuid.UUID) -> NovelActiveJob |
         batch_id=job.batch_id,
         completed_batches=completed,
         planned_batches=planned,
+        episode_key=job.outline_episode_key,
     )
 
 
@@ -731,6 +732,7 @@ async def _job_response(db: AsyncSession, job: NovelJob) -> NovelJobResponse:
         batch_id=job.batch_id,
         completed_batches=completed,
         planned_batches=planned,
+        episode_key=job.outline_episode_key,
     )
 
 

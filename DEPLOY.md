@@ -247,7 +247,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `IDENTITY_CI_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 본인인증 CI 를 저장하기 전에 HMAC 으로 바꾸는 키. **한번 정하면 바꾸지 말 것** — 바뀌면 이미 인증한 사람과 대조가 어긋나 같은 사람이 다른 계정으로 다시 인증할 수 있게 된다. `WITHDRAWN_EMAIL_HMAC_KEY` 와 다른 값을 쓴다. 비면 본인인증이 꺼진다 |
 | `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 무료 대화·미션을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다) |
 | `PAYMENT_DISCORD_WEBHOOK_URL` | 결제 알림용 디스코드 채널 웹훅 주소 | 결제·환불 완료 알림(상품·금액·상태만, 회원·주문을 알아볼 단서는 싣지 않는다). 비면 건너뛴다. 크론 알림의 `DISCORD_WEBHOOK_URL` 과 다른 키다 |
-| `CREATOR_PAYOUT_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 크리에이터 정산 스위치. 스위치와 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다(지급 정보 입력·지급 신청은 `CREATOR_PAYOUT_ENCRYPTION_KEYS` 도 있어야 열리고, 정산 신청·적립·확정·조회는 키와 무관하다) — 신청 자격이 본인인증한 만 19세 이상(나이는 코드 상수라 env 가 없다)이라서다. 켜면 결제·게이트가 꺼져 있어도 본인인증 시작이 열린다. 꺼져 있으면 회원의 정산 조회·신청·지급 정보 입력·지급 신청이 503 이고, 어드민의 신청·지급 처리(승인·거절·승인 취소, 이체 기록·반려)는 스위치와 무관하게 열려 있다. 정산 신청·지급 신청 접수 알림은 `PAYMENT_DISCORD_WEBHOOK_URL` 채널을 같이 쓴다(건수·금액만, 회원을 알아볼 단서는 싣지 않는다) |
+| `CREATOR_PAYOUT_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 크리에이터 정산 스위치. 스위치와 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다(지급 정보 입력·지급 신청은 `CREATOR_PAYOUT_ENCRYPTION_KEYS` 도 있어야 열리고, 정산 신청·적립·확정·조회는 키와 무관하다) — 신청 자격이 본인인증한 만 19세 이상(나이는 코드 상수라 env 가 없다)이라서다. 켜면 결제·게이트가 꺼져 있어도 본인인증 시작이 열린다. 꺼져 있으면 회원의 정산 조회·신청·지급 정보 입력·지급 신청이 503 이고, 어드민의 신청·지급 처리(승인·거절·승인 취소, 이체 기록·반려)는 스위치와 무관하게 열려 있다. 정산 신청·지급 신청 접수 알림은 `PAYMENT_DISCORD_WEBHOOK_URL` 채널을 같이 쓴다(건수·금액만, 회원을 알아볼 단서는 싣지 않는다). 🔴 켤 때 "크리에이터 정산 월 확정 — settle cron" 절의 크론 설치를 함께 한다 — 켠 뒤 크론이 없으면 월 확정이 돌지 않는다(2026-10-24 확인 기준 VM 에는 설치돼 있지 않다) |
 | `CREATOR_PAYOUT_RATE_BPS` / `CREATOR_PAYOUT_RETRO_DAYS` | 설정 안 함(기본 `500` / `90`) | 정산 비율(bps, 500 = 공급가의 5%, 1~10000) / 첫 승인 때 거슬러 확정하는 소급 일수(1 이상). 범위 밖이면 api 가 뜨지 않는다. 비율은 확정할 때마다 확정 행에 남아, 바꿔도 이미 확정한 금액은 그대로다 |
 | `CREATOR_PAYOUT_MINIMUM_KRW` | 설정 안 함(기본 `10000`) | 지급을 신청할 수 있는 최소 확정 잔액(원, 1 이상). 탈퇴하려는 회원은 이보다 적어도 탈퇴 화면에서 신청할 수 있다. 범위 밖이면 api 가 뜨지 않는다 |
 | `CREATOR_PAYOUT_ENCRYPTION_KEYS` | 🔴 지급 기능을 열 때 넣는다. `k1:<base64url 32바이트>` | 크리에이터 지급 정보(실명·주민등록번호·계좌번호) 암호화 키 목록 `kid:키[,kid:키]`. 맨 앞 키로 암호화하고 모든 키로 복호화한다. 비면 지급만 닫힌다 — 지급 정보 입력·지급 신청이 503 이고 정산 조회 응답의 `payoutAvailable` 이 거짓이다(어드민 지급 상세·열람은 409). 정산 신청·적립·월 확정·조회는 키와 무관하게 돈다, 형식이 틀리면 api 가 뜨지 않는다. **키를 잃으면 지급 정보를 되살릴 수 없다** — 만들기·보관·회전 절차는 "크리에이터 지급 정보 암호화 키" 절. 비밀 |
@@ -400,8 +400,8 @@ web 프로젝트 → Settings → Environment variables(현 UI는 **Variables an
 
 **자동배포가 정상 경로다.** `main` push 시 `.github/workflows/deploy-api.yml`이 이미지 빌드 →
 Artifact Registry push → IAP SSH로 VM에서 `ops/swap-api.sh <태그>`(아래 blue/green 교체) → 인터넷 쪽 `/health`
-확인까지 한다(실측 1분 35초 — api 가 단일 컨테이너이던 시절 값이다. blue/green 교체는 옛 색에 남은 요청이 끝나기를
-기다리므로 그만큼 길어질 수 있다).
+확인까지 한다(실측: 2026-10-22~10-24 deploy-api 성공 30회 중앙값 약 2분 20초, 1분 39초~4분 35초. 그중 VM 에서 pull·교체·확인하는
+단계가 중앙값 약 1분 10초, 이미지 빌드·푸시가 약 40초다. 교체는 옛 색에 남은 요청이 끝나기를 기다리므로 그만큼 길어질 수 있다).
 트리거 경로는 `apps/api/**` · `docker-compose.prod.yml` · `Caddyfile` · 저장소 루트 `ops/**` ·
 워크플로 자신이다. 단 `apps/api/**` 중 런타임 코드가 읽지 않는 파일(`tests/`, 앱 최상위 md, `probe-runs/`,
 평가 도구 `scripts/memory_eval/`·`scripts/memory_eval_cli.py`, 쓰지 않는 `cloudbuild.yaml`)만 바뀐 병합은
@@ -436,6 +436,9 @@ Artifact Registry push → IAP SSH로 VM에서 `ops/swap-api.sh <태그>`(아래
    상태 파일을 새 색으로 쓴다. 마지막 로그 줄 `13) 완료: active=…`가 찍혀야 끝까지 돈 것이다.
 
 교체 소요 시간은 옛 색에 남은 가장 긴 요청에 비례한다(최대 정지 유예 65초) — 느린 게 아니라 드레인이 기다리는 것이다.
+드레인이 기다리는 것은 요청뿐이다. 응답 뒤에 붙인 `BackgroundTasks`(인증 메일·조회수 집계·턴 뒤 기억 요약·추출 등)는 요청의 일부라 종료 때
+끝까지 기다려지고(상한은 `stop_grace_period`), 응답 연결 없이 `asyncio.create_task` 로 도는 소설화 작업은 기다려지지 않고 프로세스와
+함께 끝난다 — 그 환불은 heartbeat 만료 정리가 맡는다("알려진 갭" 절의 무중단 교체 항목, "소설화 켜기 · 끄기 · 회수 · 롤백" 절).
 중간에 끊겨 두 색이 다 떠 있으면 같은 명령을 다시 부르면 이어서 끝난다 — 옛 색에 드레인 플래그가 서 있으면 그 색을 마저
 드레인·정지하고(같은 태그 재실행이면 거기서 끝), 플래그가 없으면 다시 만들 색을 먼저 드레인해 내린 뒤 교체한다. 어느 쪽도
 서빙 중인 색을 드레인 없이 멈추지 않는다. 워크플로 실행 중 SSH 가 끊기면 교체 스크립트가 실패 정리 없이 끝날 수 있는데, 그
@@ -1208,6 +1211,21 @@ tail -f /var/log/ddona-resource-check.log   # 다음 5분 주기에 크론이 �
 "백업 · 복원" 절의 백업 스크립트와 같은 이유로 `check_resources.py`의 `__main__`도 `(RuntimeError, ValueError)` 밖의
 예외에서는 실패를 남기지 않는다 — healthchecks.io의 grace time 초과 감지가 대신 잡는다.
 
+**Ops Agent 를 쓰지 않는다.** 2026-10-02 GCP OS 정책(Ops Agent 자동 설치 템플릿 배정)으로 VM 에 깔렸지만 VM 서비스 계정에
+메트릭 쓰기 권한(`monitoring.timeSeries.create`)이 없어 수집기가 권한 거부 오류만 하루 수천 건(실측 약 8,600건) 쏟았다. 2026-10-24
+정책 배정을 삭제하고 패키지를 제거했다(`apt-get remove`, 설정 파일은 남음). 배정 삭제만으로는 패키지·apt 소스가 남는다 — 그 apt
+소스·키 파일은 `/root/osconfig-ops-agent-backup/` 로 옮겨 두었다. 감시는 이 절의 크론과 healthchecks.io 가 맡는다. VM 라벨
+`goog-ops-agent-policy` 는 남아 있어, 같은 템플릿 배정이 다시 생기면 이 VM 에 붙는다.
+
+다시 깔 때는 둘 중 하나다:
+- 배정 재생성 — 지우기 전에 배정 정의를 `gcloud compute os-config os-policy-assignments describe` 로 저장해 두었다가(출력 전용
+  최상위 키 `baseline`·`etag`·`name`·`revisionCreateTime`·`revisionId`·`rolloutState`·`uid` 를 뺀다)
+  `gcloud compute os-config os-policy-assignments create <이름> --location=<존> --file=<저장한 YAML>` 로 만든다. 라벨이 붙어 있어
+  OS Config 가 저장소·패키지를 스스로 다시 깐다.
+- 손으로 — 백업 폴더의 apt 소스·키를 제자리로 되돌리고 `apt-get update && apt-get install google-cloud-ops-agent`.
+
+어느 쪽이든 VM 서비스 계정에 메트릭·로그 쓰기 권한(Monitoring Metric Writer·Logs Writer)을 먼저 준다 — 없으면 같은 오류가 다시 쏟아진다.
+
 ### 3-8. 이미지 생성 요청 파기 — purge cron
 
 `image_generation_requests`의 `status IN ('blocked',
@@ -1843,8 +1861,11 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
 (`tests/test_novel_outline_schema_migration.py` 가 옛 코드 꼴의 원시 DELETE 로 확인한다). 옛 이미지의 어드민은 새 세트·초안의 새 행을
 "잉여"로 보고 **소설 레인 게시만** 막는다 — 배포 뒤 열어 둔 어드민 소설 탭은 새로고침한다.
 
-- **병합 전**: 운영 최신 백업 성공을 보고, 소설 레인 활성 세트(체인마다 id·게시 시각)와 새 채널 행이 아직 없음을 아래 읽기 전용
-  SELECT 로 본다. 운영 `LLM_CALL_SITE_BACKENDS` 에 새 호출 위치 이름(`novelize_outline`·`novelize_episode_outline`)을 적지 않는다 — 두
+- **병합 전**(downgrade 뒤 다시 올릴 때도 같다): 운영 최신 백업 성공을 보고, 아래 첫 읽기 전용 SELECT 로 마이그레이션의 가정 검사를
+  사람이 먼저 본다 — 체인마다 활성 세트가 하나씩(세 줄, 게시 시각이 미래 아님), 그 세트에 화 생성(`novelize_chapter`) 행이 있고 새 슬롯
+  (`scene_plan`·`continuity_context`) 행과 새 채널 줄이 없음, 소설 레인 초안(있으면 제자리에서 채운다)과 채널별 행 수, 이 리비전의 세트 id 가
+  아직 없음(0), 소설 레인 어디에도 새 채널 행이 없음(0). 문안 본문은 출력하지 않는다. 운영 `LLM_CALL_SITE_BACKENDS` 에 새 호출 위치
+  이름(`novelize_outline`·`novelize_episode_outline`)을 적지 않는다 — 두
   호출은 장 생성의 배정을 물려받고, 그 이름을 모르는 옛 이미지는 그 줄이 있으면 기동하지 못한다.
 - **되돌리기**: 1순위는 이미지만 이 배포 직전의 운영 이미지로 되돌리기다(downgrade 없이 — 옛 코드는 새 스키마·문안 위에서 돈다).
   판정: 진행 중인 구성 흐름 작업 0(아래 SELECT, 이 배포만으로는 늘 0). 되돌려 둔 동안 판매돼 숨긴 소설의 작가가 탈퇴하면 옛 이미지의
@@ -1855,6 +1876,23 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   지우지 않는다.
 
 ```sh
+# 병합 전(읽기 전용): 활성 세트 · 활성 세트의 채널별 행 수와 새 슬롯 행 수 · 초안과 채널별 행 수 · 이 리비전의 세트 id 수 · 새 채널 행 수
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At \
+  -c "SELECT DISTINCT ON (model) model, id, published_at, published_at > now() AS in_future FROM prompt_sets
+        WHERE lane = 'novel' AND status = 'published' ORDER BY model, published_at DESC;" \
+  -c "WITH active AS (SELECT DISTINCT ON (model) model, id FROM prompt_sets
+                        WHERE lane = 'novel' AND status = 'published' ORDER BY model, published_at DESC)
+      SELECT a.model, s.channel, count(*),
+             count(*) FILTER (WHERE s.channel = 'novelize_chapter' AND s.slot IN ('scene_plan','continuity_context'))
+        FROM active a JOIN prompt_sections s ON s.prompt_set_id = a.id GROUP BY 1, 2 ORDER BY 1, 2;" \
+  -c "SELECT p.model, p.id, s.channel, count(*) FROM prompt_sets p JOIN prompt_sections s ON s.prompt_set_id = p.id
+        WHERE p.lane = 'novel' AND p.status = 'draft' GROUP BY 1, 2, 3 ORDER BY 1, 3;" \
+  -c "SELECT count(*) FROM prompt_sets WHERE id IN ('d9c50097-446d-4eef-9d20-61fe07c24825',
+        '8c828e43-b3f0-4864-a635-0d9a32d96f86', '9ab6d10e-2964-4f0b-8be5-7c4a83e6ab89');" \
+  -c "SELECT count(*) FROM prompt_sections s JOIN prompt_sets p ON p.id = s.prompt_set_id
+        WHERE p.lane = 'novel' AND s.channel IN ('novelize_outline','novelize_episode_outline');"
+# 되돌리기 판정: 구성 흐름 작업 수, 그중 진행 중, 구성안·화 구성안·장면 블록 행 수
 sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
   psql -U postgres -d ai_character_chat -At -c \
   "SELECT (SELECT count(*) FROM novel_jobs WHERE kind IN ('outline_generate','episode_outline_generate','outline_chapter_generate')),
@@ -1919,7 +1957,9 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   이름을 모르는 옛 이미지가 기동하지 못해 이미지 롤백의 하한이 생긴다. 새 env 두 키는 모두 설정 안 함이 기본이다.
 - 기존 경로에서 바뀌는 것은 패치 칸이 있는 행뿐이다: 화에 새 개정이 쌓인 뒤의 낡은 미리보기 비우기가 그 화의 대기 수정안 중 블록이
   바뀐 것을 낡음(문단 없음)으로 바꾸고 대기 수정안이 없어진 작업의 지시문을 비운다. 패치 작업의 환불과 옛 버리기는 대상·수정안의 기준
-  해시도 지운다(빈 문자열). 옛 연속 범위 수정의 저장·목록·적용·버리기는 그대로다.
+  해시를 모두 지운다(빈 문자열). 성공 저장·단위 적용·버리기·낡음 표시·재검사 분리는 대기 수정안이 없는 블록의 해시를 대상·수정안 양쪽에서
+  지운다 — 적용·버림·낡음이 된 수정안의 블록은 이 배포 뒤의 배포에서, 모델이 수정안을 내지 않은 대상은 아래 "응답 칸 추가" 배포에서
+  더했다. 옛 연속 범위 수정의 저장·목록·적용·버리기는 그대로다.
 - 평상시 겹침 교체로 배포한다: 겹침 동안 도는 직전 이미지(여러 문단 수정 요청까지 있는 판)는 이 판이 쓴 행을 그대로 읽는다 — 상태
   `applied`·`stale` 과 묶음·대상 칸 꼴은 그 판에 이미 있고, 지운 해시는 문자열이라 상세 조회가 깨지지 않는다. 그 판의 옛 버리기는 일부를
   적용한 작업(결과 개정이 찬 행)을 409 로 거절한다.
@@ -1936,6 +1976,28 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   "SELECT count(*), count(*) FILTER (WHERE result_revision_id IS NOT NULL) FROM novel_jobs
      WHERE block_edit IS NOT NULL AND dismissed_at IS NULL
        AND jsonb_path_exists(block_edit, '$.patches[*] ? (@.state == \"pending\")');"
+```
+
+**소설 스튜디오 응답 칸 추가·수정안 없는 대상의 해시 지우기 — 배포 · 되돌리기(마이그레이션 없음).** 코드만 오른다. 새 스위치·env 없음.
+- 응답 칸 추가만 한다(이름·뜻이 바뀐 칸 없음). 구간 선택 응답: 구간 양 끝·잠긴 구간의 `startMessageCreatedAt`·`endMessageCreatedAt`, 승인본·
+  초안·기본 제안의 `roomEndMessageCreatedAt`(값은 이미 행에 있다 — 질의 수 변화 없음). 전체 구성안 응답: 낡은 판에만 그 판이 쓴 선택의
+  include 구간 `sourceSections`(아니면 null). 작업 응답·상세의 진행 중 작업: 장면 구성안·원고 작업의 `episodeKey`(다른 작업은 null).
+  구간 선택·구성안 라우트는 구성 흐름 스위치 뒤라 꺼짐에선 지금처럼 404 이고, 꺼짐에서 보이는 차이는 작업 응답과 상세
+  `activeJob` 의 `episodeKey: null` 칸뿐이다.
+- 동작 변경은 하나다: 성공한 여러 문단 수정 작업에서 모델이 수정안을 내지 않은 대상의 기준 해시도 정산 때 지운다(위 문단). 지운 값은
+  기존과 같은 빈 문자열이라 직전 이미지가 그대로 읽고, 직전 이미지가 겹침 동안 남긴 해시는 다음 정산 때 이 판이 지운다. 칸이 있는 행은
+  여러 문단 수정 스위치를 켠 뒤에만 생긴다.
+- 평상시 겹침 교체로 배포한다(`skip_overlap` 불필요).
+- **병합 전**: 마이그레이션이 없어 백업 확인은 필요 없다. 아래 SELECT 로 패치 칸이 있는 작업 수와 그중 성공 수를 본다 — 0·0 이면 남은
+  해시를 정리할 행이 없다(0 이 아니어도 다음 정산 때 지워지므로 일회성 UPDATE 는 하지 않는다).
+- **되돌리기**: 이미지만 직전 판으로 되돌린다(downgrade 없음). 지운 해시는 되살리지 않는다(쓸 곳이 없다). 이 칸을 읽는 web 후속이 이미
+  나가 있으면 칸이 없을 때 지금 동작으로 돌아가는지 먼저 본다 — 그래서 web 후속은 이 배포를 확인한 뒤에 낸다.
+
+```sh
+# 병합 전(읽기 전용): 패치 칸이 있는 작업 수, 그중 성공
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c \
+  "SELECT count(*), count(*) FILTER (WHERE status = 'succeeded') FROM novel_jobs WHERE block_edit IS NOT NULL;"
 ```
 
 ### 3-12. 상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기
@@ -3032,11 +3094,13 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
 - **스테이징 환경 없음**: main push → 바로 prod. 대신 BE는 명령 한 줄 롤백(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전SHA>` 또는
   Actions 수동 실행의 `image_tag`, "BE → GCE VM" 절 — 평상시 배포와 같은 무중단 교체다), FE는 Pages 이전 배포로 롤백 가능 →
   문제 시 1순위는 롤백, fix는 그 다음.
-- **무중단 교체가 지키지 못하는 것 — 컨테이너 안 백그라운드 작업.** 드레인은 Caddy 를 거치는 HTTP 요청(SSE 채팅 턴 포함)만
-  기다린다. 응답을 보낸 뒤 컨테이너 안에서 도는 작업 — 이미지 생성 잡(운영 최대 약 42초), 소설 장 생성·문단 수정(상한 360초),
-  턴 뒤 기억 요약 — 은 옛 색이 멈출 때 함께 끊긴다(단일 컨테이너 시절의 완전교체도 같았다). 이미지 생성은 Redis 의 락·대기열
+- **무중단 교체가 지키지 못하는 것 — 컨테이너 안 백그라운드 작업.** 정지는 요청(SSE 채팅 턴 포함)과 그 요청에 붙은
+  `BackgroundTasks` 까지 기다린다 — 응답 뒤 `BackgroundTasks` 로 도는 턴 뒤 기억 요약·추출은 교체 때 기다려진다(상한
+  `stop_grace_period` 65초, 넘으면 끊긴다. 끊기면 기억 요약은 다음 턴에 다시 한다). 요청과 상관없이 `asyncio.create_task` 로
+  띄운 작업 — 이미지 생성 잡(운영 최대 약 42초), 소설 장 생성·문단 수정(상한 360초) — 은 기다리지 않고 옛 색이 멈출 때 함께
+  끊긴다(단일 컨테이너 시절의 완전교체도 같았다). 이미지 생성은 Redis 의 락·대기열
   칸이 TTL 로 풀리고("이미지 생성" 절), 잡 기록은 1시간 TTL 까지 진행 중으로 남는다 — 끊긴 잡의 환불 경로는 확인하지 않았다.
-  기억 요약은 다음 턴에 다시 한다. 소설 작업은 진행 중으로 남고, 새 프로세스가 기동 뒤 heartbeat 만료 + 10초(기본 70초)에 죽은
+  소설 작업은 진행 중으로 남고, 새 프로세스가 기동 뒤 heartbeat 만료 + 10초(기본 70초)에 죽은
   작업을 한 번 일괄 환불하는데, 이 정리는 "옛 프로세스가 새 프로세스보다 먼저 죽었다"는 전제다. blue/green 에서는 옛 색이 새 색
   기동 **뒤**(healthy 약 15~35초 + 드레인 최대 65초)에 멈추므로 옛 색에서 끊긴 작업의 heartbeat 가 그 일괄 정리 시점에 아직 만료되지
   않아 놓칠 수 있다 — 놓친 작업은 그 소설을 열거나 폴링할 때의 지연 정리가 환불하고, 그때까지 차감액이 묶인다. 소설화는 허용

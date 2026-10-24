@@ -12157,6 +12157,8 @@ export interface components {
             completedBatches: number | null;
             /** Plannedbatches */
             plannedBatches: number | null;
+            /** Episodekey */
+            episodeKey?: string | null;
         };
         /**
          * NovelAiEditPreview
@@ -13028,6 +13030,8 @@ export interface components {
             completedBatches: number | null;
             /** Plannedbatches */
             plannedBatches: number | null;
+            /** Episodekey */
+            episodeKey?: string | null;
         };
         /**
          * NovelLastRead
@@ -13285,6 +13289,11 @@ export interface components {
          * @description 구성안 한 판. `source` 는 모델이 만든 판(`generate`)인지 사용자가 고친 판(`edit`)인지, `model` 은 만든 모델(고친 판은 null)이다.
          *     `stale` 이 참이면 그 판이 근거로 삼은 include 구간이 지금 승인한 구간 선택에서 빠졌거나 바뀌었다 — 승인·편집할 수 없고, 구간
          *     선택에 맞춰 다시 만들어야 한다.
+         *
+         *     `source_sections` 는 낡은 판에만 싣는 그 판이 쓴 구간 선택의 include 구간이다(낡지 않았으면 null — 구간마다 원문을 다시 읽으므로
+         *     되돌릴 일이 있는 판에서만 읽는다). 화를 지웠어도 그 선택의 구간은 모두 들어 있어, 화면이 이 구간으로 선택을 되돌리면 낡음이
+         *     풀린다. 단 `source_changed` 가 참인 구간은 원문이 바뀌어 되돌려도 풀리지 않는다 — 다시 만들어야 한다. 고친 판은 기준 판의
+         *     선택을 물려받아 같은 구간을 싣는다.
          */
         NovelOutlineView: {
             /** Revision */
@@ -13307,6 +13316,8 @@ export interface components {
             stale: boolean;
             /** Episodes */
             episodes: components["schemas"]["NovelOutlineEpisodeView"][];
+            /** Sourcesections */
+            sourceSections?: components["schemas"]["NovelSourceSectionView"][] | null;
         };
         /**
          * NovelPatchDismissRequest
@@ -13920,6 +13931,37 @@ export interface components {
             linkable: boolean;
         };
         /**
+         * NovelSourceKeyedRange
+         * @description 응답의 구간 — 양 끝 id 와 그 메시지의 `created_at`(메시지 키 = (`created_at`, id)). 끝 메시지가 지워져 화면의 메시지 목록에
+         *     없어도 이 키로 구간의 정확한 자리를 잡는다. 요청 입력(`basis`)에는 쓰지 않는다.
+         *
+         *     datetime 은 방 메시지 `createdAt` 과 같은 기본 직렬화라 마이크로초가 0 이면 소수부가 빠진다(`…:03Z` 와 `…:03.000005Z`). 글자
+         *     비교는 순서를 뒤집고 JS `Date` 는 밀리초까지라, 순서를 비교하려면 소수부를 6자리로 맞춘 (초, 마이크로초, id) 로 본다. id 동률은
+         *     소문자 hex 글자 순이 DB 의 uuid 순과 같다.
+         */
+        NovelSourceKeyedRange: {
+            /**
+             * Startmessageid
+             * Format: uuid
+             */
+            startMessageId: string;
+            /**
+             * Endmessageid
+             * Format: uuid
+             */
+            endMessageId: string;
+            /**
+             * Startmessagecreatedat
+             * Format: date-time
+             */
+            startMessageCreatedAt: string;
+            /**
+             * Endmessagecreatedat
+             * Format: date-time
+             */
+            endMessageCreatedAt: string;
+        };
+        /**
          * NovelSourceRange
          * @description 양 끝 메시지로 가리킨 구간(양 끝 포함).
          */
@@ -13973,6 +14015,16 @@ export interface components {
              * Format: uuid
              */
             endMessageId: string;
+            /**
+             * Startmessagecreatedat
+             * Format: date-time
+             */
+            startMessageCreatedAt: string;
+            /**
+             * Endmessagecreatedat
+             * Format: date-time
+             */
+            endMessageCreatedAt: string;
             /**
              * Mode
              * @enum {string}
@@ -14032,7 +14084,7 @@ export interface components {
             draft: components["schemas"]["NovelSourceSelectionView"] | null;
             proposal: components["schemas"]["NovelSourceSelectionView"] | null;
             /** Lockedranges */
-            lockedRanges: components["schemas"]["NovelSourceRange"][];
+            lockedRanges: components["schemas"]["NovelSourceKeyedRange"][];
             /** Roomendmessageid */
             roomEndMessageId: string | null;
             /** Hasnewmessages */
@@ -14050,6 +14102,8 @@ export interface components {
             approvedAt: string | null;
             /** Roomendmessageid */
             roomEndMessageId: string | null;
+            /** Roomendmessagecreatedat */
+            roomEndMessageCreatedAt: string | null;
             /** Sections */
             sections: components["schemas"]["NovelSourceSectionView"][];
         };

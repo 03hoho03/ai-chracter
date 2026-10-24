@@ -17,6 +17,7 @@
 """
 
 import ast
+import functools
 from pathlib import Path
 
 import api.chat.router as chat_router
@@ -153,7 +154,11 @@ def _patched_router_name(call: ast.Call, aliases: set[str]) -> str | None:
     return None
 
 
-def _router_patches() -> list[tuple[str, str]]:
+# 아래 두 테스트가 같은 결과를 쓰는데 테스트 트리 전체를 파싱하는 데 CI 에서 20초 가까이 걸려, 한 프로세스에서는 한 번만
+# 훑는다(xdist 가 두 테스트를 다른 워커에 나누면 워커마다 한 번씩이다). 캐시는 프로세스 안에만 살아 다음 실행은 바뀐
+# 파일을 다시 읽는다. 돌려주는 값을 두 테스트가 공유하므로 바꿀 수 없는 튜플로 준다.
+@functools.cache
+def _router_patches() -> tuple[tuple[str, str], ...]:
     """테스트 파일 전체에서 라우터 네임스페이스 패치를 `(노드 id, 이름)` 으로 모은다."""
     found: list[tuple[str, str]] = []
 
@@ -176,7 +181,7 @@ def _router_patches() -> list[tuple[str, str]]:
     for test_file in sorted(TESTS_DIR.rglob("*.py")):
         tree = ast.parse(test_file.read_text(encoding="utf-8"))
         visit(tree, [], _router_aliases(tree), test_file.relative_to(TESTS_DIR).as_posix())
-    return found
+    return tuple(found)
 
 
 def test_no_test_patches_a_router_name_whose_callers_partly_moved_out() -> None:

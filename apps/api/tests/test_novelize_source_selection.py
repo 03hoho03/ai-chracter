@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 import pytest
 import sqlalchemy as sa
+from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
@@ -106,6 +107,28 @@ def _code(response: httpx.Response) -> tuple[int, str]:
     return response.status_code, response.json()["detail"]["code"]
 
 
+def _iso(at: datetime) -> str:
+    """응답 datetime 의 직렬화 글자(마이크로초가 0 이면 소수부가 없다)."""
+    return TypeAdapter(datetime).dump_json(at).decode()[1:-1]
+
+
+def _locked(start: ChatMessage, end: ChatMessage) -> dict[str, str]:
+    """잠긴 구간 응답 하나 — 양 끝 id 와 그 메시지의 `createdAt`."""
+    return {
+        "startMessageId": str(start.id),
+        "endMessageId": str(end.id),
+        "startMessageCreatedAt": _iso(start.created_at),
+        "endMessageCreatedAt": _iso(end.created_at),
+    }
+
+
+def _keys(sections: list[dict[str, Any]]) -> list[tuple[datetime, datetime]]:
+    return [
+        (datetime.fromisoformat(s["startMessageCreatedAt"]), datetime.fromisoformat(s["endMessageCreatedAt"]))
+        for s in sections
+    ]
+
+
 # ── 조회 — 기본 선택 ────────────────────────────────────────────────────────
 @pytest.mark.usefixtures("outline_flow_on")
 async def test_a_novel_without_chapters_proposes_the_whole_room_as_one_include_section(
@@ -126,6 +149,8 @@ async def test_a_novel_without_chapters_proposes_the_whole_room_as_one_include_s
     assert body["proposal"]["revision"] is None
     assert body["proposal"]["roomEndMessageId"] == str(ms[-1].id)
     assert _shown(body["proposal"]["sections"]) == [_ids("include", ms[0], ms[-1])]
+    assert _keys(body["proposal"]["sections"]) == [(ms[0].created_at, ms[-1].created_at)]
+    assert body["proposal"]["roomEndMessageCreatedAt"] == _iso(ms[-1].created_at)
     assert await _selections(db_session, novel_id) == []
 
 
@@ -152,7 +177,7 @@ async def test_a_novel_with_chapters_proposes_from_after_the_last_chapter_to_the
     body = (await db_client.get(_base(novel_id))).json()
 
     assert _shown(body["proposal"]["sections"]) == [("include", str(tie.id), str(ms[-1].id))]
-    assert body["lockedRanges"] == [{"startMessageId": str(ms[0].id), "endMessageId": str(ms[4].id)}]
+    assert body["lockedRanges"] == [_locked(ms[0], ms[4])]
 
 
 @pytest.mark.usefixtures("outline_flow_on")
@@ -167,6 +192,21 @@ async def test_a_novel_whose_chapters_reach_the_room_end_proposes_nothing(
     body = (await db_client.get(_base(novel_id))).json()
 
     assert body["proposal"]["sections"] == []
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_an_empty_room_proposes_no_fixed_end_and_no_key(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """메시지가 하나도 없는 방의 제안은 고정 끝 id 도 키도 null 이다. 깨지는 시나리오: 빈 방에서 끝 키를 만들다 500 이 난다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch, turns=1)
+    await db_session.execute(sa.delete(ChatMessage).where(ChatMessage.chat_room_id == room.room_id))
+    await db_session.commit()
+
+    body = (await db_client.get(_base(novel_id))).json()
+
+    proposal = body["proposal"]
+    assert (proposal["roomEndMessageId"], proposal["roomEndMessageCreatedAt"], proposal["sections"]) == (None, None, [])
 
 
 # ── 저장·승인 ───────────────────────────────────────────────────────────────
@@ -211,6 +251,36 @@ async def test_saving_and_approving_a_selection_stores_each_section_with_its_sha
     (selection,) = await _selections(db_session, novel_id)
     assert selection.approved_at is not None
     assert [r.id for r in await _sections_of(db_session, selection.id)] == [r.id for r in rows]
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_stored_sections_and_the_fixed_end_carry_their_keys_even_after_those_messages_are_deleted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장한 구간의 양 끝과 고정 끝은 행에 저장한 `createdAt` 을 마이크로초까지 그대로 싣는다(초안·승인본 모두). 끝 메시지와 고정 끝
+    메시지를 지운 뒤에도 그 키가 그대로 실린다. 깨지는 시나리오: 화면이 메시지 목록에서 지워진 끝을 찾지 못해 구간을 이웃으로 넓혀
+    잘못 그린다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch, turns=4)
+    ms = await _room_messages(db_session, room.room_id)
+    saved = await _save(db_client, novel_id, [_section("include", ms[0], ms[4]), _section("context", ms[5], ms[6])])
+    (selection,) = await _selections(db_session, novel_id)
+    rows = await _sections_of(db_session, selection.id)
+    stored = [(r.start_message_created_at, r.end_message_created_at) for r in rows]
+
+    assert saved.status_code == 200, saved.text
+    assert stored == [(ms[0].created_at, ms[4].created_at), (ms[5].created_at, ms[6].created_at)]
+    assert _keys(saved.json()["draft"]["sections"]) == stored
+    assert saved.json()["draft"]["roomEndMessageCreatedAt"] == _iso(selection.room_end_message_created_at)
+    assert (await _approve(db_client, novel_id, 1)).status_code == 200
+
+    await db_session.execute(sa.delete(ChatMessage).where(ChatMessage.id.in_([ms[4].id, ms[-1].id])))
+    await db_session.commit()
+    approved = (await db_client.get(_base(novel_id))).json()["approved"]
+
+    assert [s["endMessageId"] for s in approved["sections"]] == [str(ms[4].id), str(ms[6].id)]
+    assert _keys(approved["sections"]) == stored
+    assert approved["sections"][0]["endMessageCreatedAt"] == _iso(ms[4].created_at)
+    assert (approved["roomEndMessageId"], approved["roomEndMessageCreatedAt"]) == (str(ms[-1].id), _iso(ms[-1].created_at))
 
 
 @pytest.mark.usefixtures("outline_flow_on")
@@ -489,7 +559,7 @@ async def test_a_written_range_cannot_be_included_again_until_its_chapter_is_del
     assert _code(partial) == (422, "NOVEL_SOURCE_SECTION_LOCKED")
     assert _code(wrapping) == (422, "NOVEL_SOURCE_SECTION_LOCKED")
     assert around.status_code == 200, around.text
-    assert state["lockedRanges"] == [{"startMessageId": str(ms[3].id), "endMessageId": str(ms[6].id)}]
+    assert state["lockedRanges"] == [_locked(ms[3], ms[6])]
     assert deleted.status_code == 204, deleted.text
     assert after_delete.status_code == 200, after_delete.text
 

@@ -138,7 +138,14 @@ jobs:
           workload_identity_provider: projects/377499972563/locations/global/workloadIdentityPools/github/providers/github-oidc
           service_account: ddona-deployer@ddona-ai-character-chat.iam.gserviceaccount.com
 
-      - uses: google-github-actions/setup-gcloud@v2
+      # gcloud 는 러너에 깔린 것을 쓴다 — 이 워크플로가 부르는 명령(`auth configure-docker`,
+      # `compute ssh --tunnel-through-iap`)과 Docker 자격 도우미 `docker-credential-gcloud` 가 러너
+      # 기본 gcloud 에 다 있다. 전에 쓰던 `setup-gcloud` 액션은 매 실행 약 11초를 들여 러너 것보다 옛
+      # 판을 내려받아 PATH 앞에 뒀다. 그 액션이 하던 일 중 남겨야 하는 것은 위 auth 단계가 만든 자격
+      # 파일로 gcloud 에 로그인하는 것 하나라 그 명령만 그대로 옮긴다. 프로젝트는 auth 단계가 서비스
+      # 계정에서 뽑아 `CLOUDSDK_CORE_PROJECT` 로 내보내므로 따로 정하지 않는다(그 액션도 정하지 않았다).
+      - name: gcloud 로그인
+        run: gcloud --quiet auth login --force --cred-file="$GOOGLE_GHA_CREDS_PATH"
 
       - name: Artifact Registry 인증
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet

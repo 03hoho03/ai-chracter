@@ -33,6 +33,7 @@ from api.novelize.outline import (
     OutlineInvalidError,
     SectionLockedError,
     SelectionMissingError,
+    _include_rows,
     checked_episodes,
     load_outline_source,
     selection_still_holds,
@@ -62,7 +63,8 @@ from api.novelize.schemas import (
     NovelOutlineView,
     NovelSourceRange,
 )
-from api.novelize.selection_router import _require_outline_flow_enabled
+from api.novelize.selection import selection_sections
+from api.novelize.selection_router import _require_outline_flow_enabled, section_views
 
 outline_router = APIRouter(
     prefix="/novels",
@@ -82,16 +84,22 @@ async def _latest(db: AsyncSession, novel_id: uuid.UUID, *, approved: bool = Fal
     return outline
 
 
-async def _view(db: AsyncSession, outline: NovelOutline) -> NovelOutlineView:
+async def _view(db: AsyncSession, outline: NovelOutline, room_id: uuid.UUID | None) -> NovelOutlineView:
     keys = [uuid.UUID(str(episode["key"])) for episode in outline.episodes]
     progress = await episode_progress(db, outline.novel_id, keys)
+    stale = not await selection_still_holds(db, outline.novel_id, outline.selection_id)
     return NovelOutlineView(
         revision=outline.revision,
         source=outline.source,
         model=outline.model,
         approved_at=outline.approved_at,
         created_at=outline.created_at,
-        stale=not await selection_still_holds(db, outline.novel_id, outline.selection_id),
+        stale=stale,
+        source_sections=(
+            await section_views(db, room_id, _include_rows(await selection_sections(db, outline.selection_id)))
+            if stale
+            else None
+        ),
         episodes=[
             NovelOutlineEpisodeView(
                 key=key,
@@ -119,8 +127,8 @@ async def _state(db: AsyncSession, novel: Novel) -> NovelOutlineState:
     draft = latest if latest is not None and latest.approved_at is None else None
     chapter_models, _ = await _chapter_models(db, novel.user_id)
     return NovelOutlineState(
-        approved=None if approved is None else await _view(db, approved),
-        draft=None if draft is None else await _view(db, draft),
+        approved=None if approved is None else await _view(db, approved, novel.chat_room_id),
+        draft=None if draft is None else await _view(db, draft, novel.chat_room_id),
         max_episodes=settings.novelize_outline_max_episodes,
         models=[
             NovelOutlineModel(id=option.id, name=option.name, cost=job_price("outline_generate", option.id))

@@ -120,6 +120,9 @@ class NovelJobResponse(CamelModel):
     # "남은 대화 한 번에"(연쇄 생성)의 진행 — 끝낸 묶음 수와 계획한 묶음 수. 연쇄가 아닌 작업은 둘 다 null 이다.
     completed_batches: int | None
     planned_batches: int | None
+    # 장면 구성안·원고 작업이 맡은 전체 구성안의 화 키. 다른 작업은 null 이다. 기본값은 이 칸을 모르는 생성 타입·픽스처와의
+    # 호환용이고, 응답에는 항상 실린다.
+    episode_key: uuid.UUID | None = None
 
 
 # ── 소설 ───────────────────────────────────────────────────────────────────
@@ -184,6 +187,7 @@ class NovelActiveJob(CamelModel):
     batch_id: uuid.UUID | None
     completed_batches: int | None
     planned_batches: int | None
+    episode_key: uuid.UUID | None = None
 
 
 class NovelPendingAiEdit(CamelModel):
@@ -908,7 +912,19 @@ class NovelSourceRange(CamelModel):
     end_message_id: uuid.UUID
 
 
-class NovelSourceSectionView(NovelSourceRange):
+class NovelSourceKeyedRange(NovelSourceRange):
+    """응답의 구간 — 양 끝 id 와 그 메시지의 `created_at`(메시지 키 = (`created_at`, id)). 끝 메시지가 지워져 화면의 메시지 목록에
+    없어도 이 키로 구간의 정확한 자리를 잡는다. 요청 입력(`basis`)에는 쓰지 않는다.
+
+    datetime 은 방 메시지 `createdAt` 과 같은 기본 직렬화라 마이크로초가 0 이면 소수부가 빠진다(`…:03Z` 와 `…:03.000005Z`). 글자
+    비교는 순서를 뒤집고 JS `Date` 는 밀리초까지라, 순서를 비교하려면 소수부를 6자리로 맞춘 (초, 마이크로초, id) 로 본다. id 동률은
+    소문자 hex 글자 순이 DB 의 uuid 순과 같다."""
+
+    start_message_created_at: datetime
+    end_message_created_at: datetime
+
+
+class NovelSourceSectionView(NovelSourceKeyedRange):
     """저장된 구간 하나. `source_changed` 는 저장 때의 해시와 지금 방 원문의 해시가 다른가다 — 참이면 그 구간을 쓰는 다음 생성이
     원문 변경으로 막히므로 화면이 다시 고르라고 알린다."""
 
@@ -924,6 +940,8 @@ class NovelSourceSelectionView(CamelModel):
     revision: int | None
     approved_at: datetime | None
     room_end_message_id: uuid.UUID | None
+    # 고정 끝 메시지의 `created_at`(`room_end_message_id` 와 함께 null). 그 메시지가 지워져도 실린다.
+    room_end_message_created_at: datetime | None
     sections: list[NovelSourceSectionView]
 
 
@@ -938,7 +956,7 @@ class NovelSourceSelectionState(CamelModel):
     approved: NovelSourceSelectionView | None
     draft: NovelSourceSelectionView | None
     proposal: NovelSourceSelectionView | None
-    locked_ranges: list[NovelSourceRange]
+    locked_ranges: list[NovelSourceKeyedRange]
     room_end_message_id: uuid.UUID | None
     has_new_messages: bool
 
@@ -982,7 +1000,12 @@ class NovelOutlineEpisodeView(CamelModel):
 class NovelOutlineView(CamelModel):
     """구성안 한 판. `source` 는 모델이 만든 판(`generate`)인지 사용자가 고친 판(`edit`)인지, `model` 은 만든 모델(고친 판은 null)이다.
     `stale` 이 참이면 그 판이 근거로 삼은 include 구간이 지금 승인한 구간 선택에서 빠졌거나 바뀌었다 — 승인·편집할 수 없고, 구간
-    선택에 맞춰 다시 만들어야 한다."""
+    선택에 맞춰 다시 만들어야 한다.
+
+    `source_sections` 는 낡은 판에만 싣는 그 판이 쓴 구간 선택의 include 구간이다(낡지 않았으면 null — 구간마다 원문을 다시 읽으므로
+    되돌릴 일이 있는 판에서만 읽는다). 화를 지웠어도 그 선택의 구간은 모두 들어 있어, 화면이 이 구간으로 선택을 되돌리면 낡음이
+    풀린다. 단 `source_changed` 가 참인 구간은 원문이 바뀌어 되돌려도 풀리지 않는다 — 다시 만들어야 한다. 고친 판은 기준 판의
+    선택을 물려받아 같은 구간을 싣는다."""
 
     revision: int
     source: NovelOutlineSource
@@ -991,6 +1014,7 @@ class NovelOutlineView(CamelModel):
     created_at: datetime
     stale: bool
     episodes: list[NovelOutlineEpisodeView]
+    source_sections: list[NovelSourceSectionView] | None = None
 
 
 class NovelOutlineModel(CamelModel):
