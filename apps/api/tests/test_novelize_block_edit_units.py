@@ -24,6 +24,7 @@ from api.novelize.block_edits import (
     unit_stale_ids,
     with_applied,
     with_dismissed,
+    with_save_states,
     with_split,
     without_base_hashes,
 )
@@ -231,6 +232,19 @@ def test_stale_marking_turns_only_changed_pending_patches_stale_and_settles_fini
     ]
     assert [b.reason for b in marked.bundles] == [None]
     assert stale_marked(edit, ids, _PARAGRAPHS) == edit
+
+
+def test_a_save_that_finds_a_whole_bundle_edited_drops_its_reason() -> None:
+    """성공 저장 때 묶음 원소가 모두 이미 고쳐져 낡음이 되면 그 묶음의 이유(모델이 사용자 글을 읽고 쓴 문장)를 비운다 — 다른 독립
+    패치가 살아 저장은 성공하므로, 비우지 않으면 그 화에 다음 개정이 생길 때까지 남는다."""
+    ids = _ids()
+    edit = _edit(ids, [0, 1, 3], bundles=[[0, 1]])
+    edited = ["사용자가 고친 가.", "사용자가 고친 나.", *_PARAGRAPHS[2:]]
+
+    saved, fresh = with_save_states(edit, ids, edited)
+
+    assert fresh == 1
+    assert [b.reason for b in saved.bundles] == [None]
 
 
 # ── 재검사 ───────────────────────────────────────────────────────────────────

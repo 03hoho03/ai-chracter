@@ -463,6 +463,21 @@ async def test_dismissing_everything_marks_the_job_dismissed_even_after_a_partia
     assert _code(await _dismiss(db_client, novel_id, job.id, all=True)) == (409, {"code": "NOVEL_JOB_NOT_APPLICABLE"})
 
 
+async def test_dismissing_everything_is_refused_when_nothing_is_left_to_dismiss(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """수정안을 모두 적용한 작업에는 버릴 것이 없다 — 409 이고 버린 시각을 찍지 않는다(적용 기록이 "버림"으로 읽히지 않게)."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = await _current(db_session, chapter.id)
+    job = await _patch_job(db_session, novel_id, chapter, base, [0])
+    assert (await _apply(db_client, novel_id, job.id, patchId=_edit(job).patches[0].id)).status_code == 201
+
+    resp = await _dismiss(db_client, novel_id, job.id, all=True)
+
+    assert _code(resp) == (409, {"code": "NOVEL_JOB_NOT_APPLICABLE"})
+    assert (await _job(db_session, job.id)).dismissed_at is None
+
+
 async def test_dismiss_refuses_a_bundled_patch_alone_and_unknown_ids(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

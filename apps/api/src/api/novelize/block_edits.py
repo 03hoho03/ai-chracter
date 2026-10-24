@@ -196,7 +196,8 @@ def fresh_flags(edit: BlockEdit, block_ids: Sequence[uuid.UUID], paragraphs: Seq
 def with_save_states(
     edit: BlockEdit, block_ids: Sequence[uuid.UUID], paragraphs: Sequence[str]
 ) -> tuple[BlockEdit, int]:
-    """성공 저장 때 — 지금 개정에 쓸 수 없는 대기 패치를 낡음으로 바꾸고 문단을 비운다. 쓸 수 있는 패치 수를 함께 돌려준다."""
+    """성공 저장 때 — 지금 개정에 쓸 수 없는 대기 패치를 낡음으로 바꾸고 문단을 비우며, 대기 원소가 없게 된 묶음의 이유도 비운다(그
+    화에 다음 개정이 생길 때까지 모델이 쓴 문장이 남지 않게). 쓸 수 있는 패치 수를 함께 돌려준다."""
     patches: list[BlockEditPatch] = []
     fresh = 0
     for patch in edit.patches:
@@ -207,7 +208,7 @@ def with_save_states(
             patches.append(patch.model_copy(update={"state": "stale", "paragraphs": None}))
         else:
             patches.append(patch)
-    return edit.model_copy(update={"patches": patches}), fresh
+    return _settled(edit.model_copy(update={"patches": patches})), fresh
 
 
 def dismissed_all(edit: BlockEdit) -> BlockEdit:
@@ -341,7 +342,7 @@ def stale_marked(edit: BlockEdit, block_ids: Sequence[uuid.UUID], paragraphs: Se
     """새 개정 뒤 — 지금 개정에 쓸 수 없게 된 대기 패치를 낡음으로(문단 비움) 바꾸고 다 끝난 묶음의 이유를 비운다. 낡음은 영구다:
     같은 글로 되돌아와도 되살리지 않는다(되살릴 문단이 이미 없다)."""
     marked, _fresh = with_save_states(edit, block_ids, paragraphs)
-    return _settled(marked)
+    return marked
 
 
 @dataclass(frozen=True)

@@ -371,7 +371,8 @@ async def recheck_novel_block_edit_bundle(
     locked, latest_edit = await _patch_job(db, novel, job_id, lock=True)
     if latest_edit != edit:
         raise _not_applicable()
-    latest = await current_revision(db, chapter_id)
+    # 장 행도 잡는다(작업 행 → 장 행, 적용과 같은 순서) — 읽기만 하면 확인과 커밋 사이에 직접 수정이 커밋돼 옛 글에 대한 판정이 남는다.
+    latest = await _lock_current_revision(db, chapter_id)
     if latest is None or latest.id != basis_revision_id:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_REVISION_CONFLICT")
     if verdict.separable:
