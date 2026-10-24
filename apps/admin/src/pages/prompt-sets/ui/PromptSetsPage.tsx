@@ -100,7 +100,7 @@ export function PromptSetsPage() {
         ))}
       </Tabs>
 
-      <VersionHistorySection />
+      <VersionHistorySection dirtyByChain={dirtyByChain} />
 
       <UnsavedChangesGuard isDirty={hasUnsavedChain} />
     </PageContainer>
