@@ -53,6 +53,10 @@ describe("원고 차례", () => {
     ]);
   });
 
+  it("바로 앞 화만이 아니라 앞 화 모두가 원고여야 쓸 차례다", () => {
+    expect(toManuscriptStatuses([{ chapterId: null }, { chapterId: "c2" }, { chapterId: null }])[2]).toEqual({ kind: "waiting" });
+  });
+
   it("개요 한 줄은 원고 수를 센다", () => {
     expect(toManuscriptProgressLine([{ chapterId: "c1" }, { chapterId: null }, { chapterId: null }])).toBe(
       "화별 장면·원고 · 원고 1/3화",

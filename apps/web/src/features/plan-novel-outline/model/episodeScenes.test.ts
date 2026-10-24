@@ -90,6 +90,7 @@ describe("장면 편집", () => {
     const scenes = toSceneDrafts(view);
     expect(toggleFlashback(scenes, "s1")[0]?.flashback).toBe(true);
     expect(toggleFlashback(scenes, "s2")[1]?.flashback).toBe(false);
+    expect(isSameAsSceneView(toggleFlashback(scenes, "s1"), view)).toBe(false);
     expect(isSameAsSceneView(toggleFlashback(toggleFlashback(scenes, "s1"), "s1"), view)).toBe(true);
   });
 
