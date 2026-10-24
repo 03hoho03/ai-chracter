@@ -56,15 +56,16 @@ export type ApprovedOutlineStatus = "missing" | "stale" | "ok";
 
 /** 지금 승인한 담을 대화의 상태 — 승인본이 없음·승인본의 구간 어딘가 원문이 고른 뒤 바뀜·쓸 수 있음. 서버는 승인본이 없거나, 맥락 구간이나
  * 이 화의 근거가 든 구간의 원문이 바뀌었으면 장면 구성안·원고의 과금 요청을 막는다. 화면은 바뀐 구간이 이 화의 것인지 가리지 않고 하나라도
- * 바뀌었으면 막는다(서버보다 넓다) — 이 화면에는 바뀐 구간을 보이는 자리가 없고, 구성 문서의 담을 대화에서 다시 승인하면 풀린다. */
+ * 바뀌었으면 막는다(서버보다 넓다) — 이 화면에는 바뀐 구간을 보이는 자리가 없어 구성 문서의 담을 대화에서 다시 승인해야 한다. 다시
+ * 승인해도 바뀐 구간이 전체 구성안의 근거였으면 이번엔 전체 구성안이 낡아 막히므로, 까닭은 풀린다고 약속하지 않는다. */
 export type ApprovedSelectionStatus = "ok" | "sourceChanged" | "unapproved";
 
-/** 담을 대화 때문에 막힌 까닭. `verb` 는 버튼이 하는 일("만들"·"쓸")이다. */
-function toSelectionBlockedReason(selection: ApprovedSelectionStatus, verb: "만들" | "쓸"): string | undefined {
+/** 담을 대화 때문에 막힌 까닭. */
+function toSelectionBlockedReason(selection: ApprovedSelectionStatus): string | undefined {
   if (selection === "sourceChanged") {
-    return `담을 대화의 구간 어딘가가 고른 뒤 바뀌었어요. 구성으로 돌아가 담을 대화를 확인하고 다시 승인하면 ${verb} 수 있어요.`;
+    return "담을 대화의 구간 어딘가가 고른 뒤 바뀌었어요. 구성으로 돌아가 담을 대화를 확인해 다시 승인해주세요.";
   }
-  if (selection === "unapproved") return `담을 대화를 승인하면 ${verb} 수 있어요. 구성으로 돌아가 담을 대화를 승인해주세요.`;
+  if (selection === "unapproved") return "담을 대화를 먼저 승인해주세요. 구성으로 돌아가 승인할 수 있어요.";
   return undefined;
 }
 
@@ -84,16 +85,17 @@ export function toSceneMakeBlockedReason(status: {
   if (status.isAiEditRunning) return "AI로 고치는 중이에요. 끝나면 만들 수 있어요.";
   if (status.outline === "missing") return "전체 구성안을 먼저 승인해주세요.";
   if (status.outline === "stale") return "전체 구성안이 낡아 장면 구성안을 만들 수 없어요. 전체 구성안을 먼저 바로잡아주세요.";
-  const selectionReason = toSelectionBlockedReason(status.selection, "만들");
-  if (selectionReason !== undefined) return selectionReason;
+  // 원고를 쓴 화는 서버가 원문을 보기 전에 막는다 — 다시 승인해도 풀리지 않아 그 까닭이 먼저다.
   if (status.isWritten) return "원고를 쓴 화는 장면 구성안을 새로 만들지 않아요.";
+  const selectionReason = toSelectionBlockedReason(status.selection);
+  if (selectionReason !== undefined) return selectionReason;
   if (status.isDirty) return "고친 장면 구성안을 먼저 저장하거나 되돌려주세요.";
   return undefined;
 }
 
-/** 원고 쓰기(유료)를 지금 못 누르는 이유. 앞에 있는 것이 먼저다 — 방·작업처럼 기다리거나 못 푸는 것, 그다음 전체 구성안, 담을 대화(앞
- * 화를 써도 같은 거절이다), 원고 차례(앞 화를 써야 풀리는 쪽), 그 화의 장면 구성안 순이다. 승인하지 않은 새 초안이 있으면 막는다 —
- * 서버는 옛 승인 판으로 쓰지만, 화면에 보이는 판과 다른 판으로 클로버를 쓰지 않게 한다. */
+/** 원고 쓰기(유료)를 지금 못 누르는 이유. 앞에 있는 것이 먼저다 — 방·작업처럼 기다리거나 못 푸는 것, 그다음 전체 구성안, 뒤 화의
+ * 원고(풀리지 않는다), 담을 대화(앞 화를 써도 같은 거절이다), 원고 차례(앞 화를 써야 풀리는 쪽), 그 화의 장면 구성안 순이다. 승인하지
+ * 않은 새 초안이 있으면 막는다 — 서버는 옛 승인 판으로 쓰지만, 화면에 보이는 판과 다른 판으로 클로버를 쓰지 않게 한다. */
 export function toWriteBlockedReason(status: {
   isRoomGone: boolean;
   isJobRunning: boolean;
@@ -111,10 +113,11 @@ export function toWriteBlockedReason(status: {
   if (status.isAiEditRunning) return "AI로 고치는 중이에요. 끝나면 쓸 수 있어요.";
   if (status.outline === "missing") return "전체 구성안을 먼저 승인해주세요.";
   if (status.outline === "stale") return "전체 구성안이 낡아 원고를 쓸 수 없어요. 전체 구성안을 먼저 바로잡아주세요.";
-  const selectionReason = toSelectionBlockedReason(status.selection, "쓸");
+  // 뒤 화에 원고가 있으면 다시 승인해도 쓸 수 없어 그 까닭이 먼저다.
+  if (status.order === "laterWritten") return "뒤 화에 원고가 있어 이 화는 쓸 수 없어요.";
+  const selectionReason = toSelectionBlockedReason(status.selection);
   if (selectionReason !== undefined) return selectionReason;
   if (status.order === "waiting") return "앞 화 원고를 먼저 써주세요.";
-  if (status.order === "laterWritten") return "뒤 화에 원고가 있어 이 화는 쓸 수 없어요.";
   if (!status.hasApproved) return "장면 구성안을 승인하면 원고를 쓸 수 있어요.";
   if (status.hasNewerDraft) return "승인하지 않은 새 장면 구성안이 있어요. 승인한 뒤 원고를 쓸 수 있어요.";
   if (status.isApprovedStale) return "장면 구성안이 낡았어요. 다시 만들어 승인한 뒤 원고를 쓸 수 있어요.";
