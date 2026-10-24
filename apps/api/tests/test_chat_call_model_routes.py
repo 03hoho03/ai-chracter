@@ -52,6 +52,7 @@ from api.llm import bedrock as bedrock_module
 from api.llm import gemini as gemini_module
 from api.llm.anthropic_api import AnthropicLLMClient
 from api.llm.bedrock import BedrockLLMClient
+from api.llm.client import LLMCallContext, LLMClient
 from api.llm.gemini import GeminiLLMClient
 from api.llm.routing import RoutingLLMClient
 from factories import (
@@ -622,3 +623,78 @@ async def test_summary_regeneration_calls_the_model_of_the_summary_row(
     assert resp.status_code == 200, resp.text
     assert sdks.recorded == [("anthropic", "chat_memory_summary", "fixture-anthropic-sonnet")]
     assert sdks.sent == [("anthropic", "fixture-anthropic-sonnet")]
+
+
+# ── 빈 표·건너뛴 행에서는 호출에 부를 모델이 실리지 않는다 ─────────────────────────────────────────
+
+
+class UsageCapture(LLMClient):
+    """라우터 앞에서 호출마다 받은 `LLMCallContext` 를 모으고 그대로 넘긴다."""
+
+    def __init__(self, inner: LLMClient) -> None:
+        self.inner = inner
+        self.usages: list[LLMCallContext] = []
+
+    def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
+    ) -> AsyncIterator[str]:
+        self.usages.append(usage)
+        return self.inner.generate(prompt, system_instruction, stop_sequences, usage=usage)
+
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
+    ) -> Any:
+        self.usages.append(usage)
+        return await self.inner.generate_structured(prompt, response_schema, images, usage=usage)
+
+
+@pytest.mark.parametrize("table", ["empty", "skipped-rows"])
+@pytest.mark.parametrize(("surface", "room_model"), [(s, r) for profile, s, r in SCENARIOS if profile == "gemini"])
+async def test_no_call_carries_a_call_model_when_no_row_applies(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    routing_warnings: RoutingWarnings,
+    expected: dict[str, Any],
+    surface: str,
+    room_model: str,
+    table: str,
+) -> None:
+    """표가 비었거나, 행이 있어도 지금 env 배정으로는 그 경로로 갈 수 없어 건너뛰면(배정 없는 env 에서 Anthropic 직결 행) 모든
+    호출의 `call_model` 이 None 이고 호출은 빈 표의 특성 기대값과 같다."""
+    if table == "skipped-rows":
+        await put_routes(
+            db_session,
+            [
+                route(lane, room_model, stage, "opus", "anthropic")
+                for lane, stages in _LANE_STAGE_NAMES.items()
+                for stage in stages
+                if stage != "chat_generate"
+            ],
+        )
+    fix_settings(monkeypatch, "gemini", tmp_path / "dump.jsonl")
+    sdks = ProviderSdks(monkeypatch)
+    capture = UsageCapture(sdks.client())
+    monkeypatch.setattr(sdks, "client", lambda: capture)
+
+    observed = await observe(
+        db_client,
+        db_session,
+        monkeypatch,
+        tmp_path,
+        routing_warnings,
+        profile="gemini",
+        surface=surface,
+        room_model=room_model,
+        sdks=sdks,
+    )
+
+    assert observed == expected[scenario_id("gemini", surface, room_model)]
+    assert len(capture.usages) == len(observed["recorded"])
+    assert {usage.call_model for usage in capture.usages} == {None}
