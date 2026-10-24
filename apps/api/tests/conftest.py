@@ -83,6 +83,7 @@ if _xdist_worker is not None:
     _redis_base, _, _redis_index = os.environ["REDIS_URL"].rpartition("/")
     os.environ["REDIS_URL"] = f"{_redis_base}/{int(_redis_index) + int(_xdist_worker.removeprefix('gw'))}"
 
+from api.chat.prompt_routing_cache import PROMPT_ROUTES_CACHE_KEY_PREFIX
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
 from api.chat.voyage_backoff import VOYAGE_BACKOFF_KEY
 from api.content.publish_filter_memo import PASSED_KEY_PREFIX
@@ -173,6 +174,15 @@ async def _flush_prompt_set_cache() -> None:
     아래 `_flush_rate_limit_keys`와 같은 이유로 glob이다 — 레인이 늘 때 하드코딩된 키
     나열 중 한쪽만 갱신되는 사고를 막는다."""
     keys = await redis_client.keys(f"{ACTIVE_PROMPT_SET_KEY_PREFIX}*")
+    if keys:
+        await redis_client.delete(*keys)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _flush_prompt_routes_cache() -> None:
+    """`prompt_routes:all` 도 위 `_flush_prompt_set_cache` 와 같은 이유로 고정 키다 — 한 테스트가 캐시한 배정 표를 다음 테스트가
+    그대로 보지 않게 매 테스트 전에 지운다. 키 모양이 바뀌어도 함께 지우도록 접두 glob 이다."""
+    keys = await redis_client.keys(f"{PROMPT_ROUTES_CACHE_KEY_PREFIX}*")
     if keys:
         await redis_client.delete(*keys)
 
