@@ -5,6 +5,8 @@ import type { ReactNode, RefObject } from "react";
 
 import type { NovelChapterJobFlow } from "@/features/create-novel-chapter";
 
+import { isCreateChapterBlocked } from "../model/createChapterGate";
+
 type NovelBoardTopBarProps = {
   novelId: string;
   /** 소설 제목. 아직 모르면(상세를 받는 중, `undefined`) 막대를 그린다. 못 보이는 상태(없음·잠김·실패)에서는 그 안내가
@@ -30,6 +32,8 @@ type CreateChapterAction = {
   /** 누르면 할 일. 구성 흐름이 켜져 있으면 화면이 구성 모드로 옮기는 함수를 준다 — 다음 화는 구성 화면에서 만든다. 주지
    * 않으면 화 만들기 흐름(경계 고르기)을 시작한다. */
   onStart?: () => void;
+  /** 구성 흐름 스위치를 실은 가격 응답을 아직 받는 중인가. 그동안은 어느 흐름으로 갈지 몰라 막고 아이콘을 진행 표시로 둔다. */
+  isSwitchPending?: boolean;
 };
 
 /**
@@ -82,11 +86,18 @@ export function NovelBoardTopBar({ novelId, title, autosaveNotice, versions, cre
 }
 
 /** "다음 화 만들기". 못 누르는 동안에도 `disabled` 가 아니라 `aria-disabled` 다 — `disabled` 는 누른 순간 포커스를
- * 날리고 이유를 말하지 않는다. 이유와 진행은 패널 맨 위 작업 줄이 진다. 준비 중(이름·경계 고르기·확인)에는 아이콘만
+ * 날리고 이유를 말하지 않는다. 이유와 진행은 패널 맨 위 작업 줄이 진다. 준비 중(이름·경계 고르기·확인)과 구성 흐름 스위치를 아직 모를 때는 아이콘만
  * 스피너로 바뀌고 라벨은 그대로라 버튼 폭이 흔들리지 않는다 — 스피너는 진행 표시라 동작 줄이기 설정에서도 돈다. */
-function CreateChapterButton({ flow, hasChapters, blockedReasonId, buttonRef, onStart }: CreateChapterAction) {
-  const isBlocked = flow.isBusy || flow.isRoomGone;
-  const isPreparing = flow.preparing === "create";
+function CreateChapterButton({
+  flow,
+  hasChapters,
+  blockedReasonId,
+  buttonRef,
+  onStart,
+  isSwitchPending = false,
+}: CreateChapterAction) {
+  const isBlocked = isCreateChapterBlocked(flow, { isSwitchPending });
+  const isPreparing = flow.preparing === "create" || isSwitchPending;
   const label = hasChapters ? "다음 화 만들기" : "첫 화 만들기";
   const describedBy = blockedReasonId ?? (flow.isJobRunning ? flow.statusId : undefined);
 

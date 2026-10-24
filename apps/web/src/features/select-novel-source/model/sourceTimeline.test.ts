@@ -4,6 +4,7 @@ import {
   buildSourceTurns,
   countTurnStates,
   hasIncludedResponse,
+  includeTurnsInRanges,
   setTurnRange,
   setTurnsState,
   toBaseStates,
@@ -297,5 +298,33 @@ describe("toTimelineSegments", () => {
       ["exclude", [4]],
       ["context", [5]],
     ]);
+  });
+});
+
+// 구성안이 낡았을 때 "구간 되돌리기" — 구성안이 근거로 쓴 대화 가운데 지금 담기에 없는 턴을 다시 담는다.
+describe("includeTurnsInRanges", () => {
+  const turns = buildSourceTurns(room(5), {
+    fixedEndId: "a5",
+    roomEndId: "a5",
+    lockedRanges: [{ startMessageId: "a0", endMessageId: "a0" }],
+  });
+  const states = toBaseStates(turns, [{ mode: "include", startMessageId: "u1", endMessageId: "a1" }]);
+
+  it("구간이 덮는 턴 중 담기가 아닌 것만 담기로 바꾸고 바꾼 수를 센다", () => {
+    const result = includeTurnsInRanges(turns, states, [
+      { startMessageId: "u1", endMessageId: "a1" },
+      { startMessageId: "u3", endMessageId: "a4" },
+    ]);
+    expect(statesOf(turns, result.states)).toEqual(["locked", "include", "exclude", "include", "include", "exclude"]);
+    expect(result.count).toBe(2);
+  });
+
+  it("잠긴 턴은 담지 않고, 지금 대화에 없는 구간은 건너뛴다", () => {
+    const result = includeTurnsInRanges(turns, states, [
+      { startMessageId: "a0", endMessageId: "a0" },
+      { startMessageId: "gone-1", endMessageId: "gone-2" },
+    ]);
+    expect(result.count).toBe(0);
+    expect(statesOf(turns, result.states)).toEqual(statesOf(turns, states));
   });
 });

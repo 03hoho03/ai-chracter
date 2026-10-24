@@ -68,7 +68,9 @@ export function NovelBoardPanel({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto" onKeyDown={handleKeyDown}>
+    // 위치 기준(`relative`)은 안의 화면 읽기 전용 조각(`sr-only`, 절대 위치)이 이 영역을 기준으로 놓이게 한다 — 없으면 영역 밖을 기준으로
+    // 놓이고 이 영역이 잘라 내지 못해, 뷰포트 고정 화면의 문서가 그만큼 늘어날 수 있다.
+    <div className="relative min-h-0 flex-1 overflow-y-auto" onKeyDown={handleKeyDown}>
       {/* 구성 모드는 문서라 넓은 화면에서도 읽기 좋은 폭(최대 672px)의 가운데 한 열이다. */}
       <div
         className={cn("flex flex-col gap-6 px-4 py-6 sm:px-6", selection?.kind === "plan" && "mx-auto w-full max-w-2xl")}
@@ -163,7 +165,14 @@ function PanelContent({
         />
       );
     case "plan":
-      return <NovelPlanDocument novel={novel} headingRef={headingRef} onDraftDirtyChange={onDraftDirtyChange} />;
+      return (
+        <NovelPlanDocument
+          novel={novel}
+          chapterFlow={chapterFlow}
+          headingRef={headingRef}
+          onDraftDirtyChange={onDraftDirtyChange}
+        />
+      );
   }
 }
 

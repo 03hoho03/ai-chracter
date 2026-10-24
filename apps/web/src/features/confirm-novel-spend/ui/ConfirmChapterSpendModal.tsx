@@ -20,9 +20,11 @@ type ConfirmChapterSpendModalProps = {
   options: PricedChapterModelOption[];
   /** 열 때 골라 둘 모델. 고를 수 있는 항목이어야 한다(호출부가 `initialChapterModelId` 로 고른다). */
   initialModelId: NovelChapterModelId;
+  /** 금액 줄 아래 한 줄 — 돌려받는 조건처럼 금액에 붙는 말. 없으면 그리지 않는다. */
+  footnote?: string;
 };
 
-/** 화 작업(다시 만들기)의 금액 확인 + 글쓰기 모델 선택. 소설 상위 모델 허용이 없는 계정은 모델이 하나뿐이라 선택이
+/** 화 작업(다시 만들기)·전체 구성안 만들기의 금액 확인 + 글쓰기 모델 선택. 소설 상위 모델 허용이 없는 계정은 모델이 하나뿐이라 선택이
  * 그려지지 않아 `ConfirmNovelSpendModal` 과 똑같이 보인다.
  *
  * 확정하면 고른 모델과 이용자가 본 금액을 돌려준다 — 요청의 `expectedCost` 가 화면의 숫자와 같아야 서버 금액 대조가
@@ -31,7 +33,7 @@ type ConfirmChapterSpendModalProps = {
 export const ConfirmChapterSpendModal = createCallable<
   ConfirmChapterSpendModalProps,
   { model: NovelChapterModelId; cost: number } | null
->(({ call, title, description, confirmLabel, options, initialModelId }) => {
+>(({ call, title, description, confirmLabel, options, initialModelId, footnote }) => {
   const [modelId, setModelId] = useState(initialModelId);
   const cost = options.find((option) => option.id === modelId)?.cost ?? 0;
 
@@ -42,6 +44,7 @@ export const ConfirmChapterSpendModal = createCallable<
       description={description}
       cost={cost}
       confirmLabel={confirmLabel}
+      footnote={footnote}
       onCancel={() => call.end(null)}
       onConfirm={() => call.end({ model: modelId, cost })}
     >

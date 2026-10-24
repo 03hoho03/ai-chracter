@@ -1,5 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import type { NovelOutlineModel } from "../api/useNovelOutline";
+
 /** 서버가 이 계정에 허용한 글쓰기 모델 하나와 그 모델의 화 단가. 상위 모델은 허용이 있을 때만 실리고, 기본 모델은
  * 언제나 맨 앞에 있다. 단가는 화 하나의 값이라 화면이 금액으로 쓰지 않는다 — 금액은 서버가 동작마다 계산해 준다. */
 export type NovelChapterModel = components["schemas"]["NovelChapterModel"];
@@ -65,4 +67,10 @@ function toIneligibleReasonText(reason: NovelRegenerateOption["ineligibleReason"
 /** 새 화 만들기의 모델 목록 → 선택 항목. 금액은 끝 턴을 골라야 정해져(후보마다 화 수가 다르다) 항목에 싣지 않는다. */
 export function toProposalModelOptions(models: readonly NovelChapterModel[]): ChapterModelOption[] {
   return models.map((model) => ({ id: model.id, name: model.name, cost: undefined, disabledReason: undefined }));
+}
+
+/** 전체 구성안 조회의 모델 목록 → 선택 항목. 금액은 서버가 모델마다 준 구성안 고정가 그대로이고, 목록에 실린 모델은 모두 고를 수
+ * 있다(허용이 없는 상위 모델은 서버가 싣지 않는다). */
+export function toOutlineModelOptions(models: readonly NovelOutlineModel[]): PricedChapterModelOption[] {
+  return models.map((model) => ({ id: model.id, name: model.name, cost: model.cost, disabledReason: undefined }));
 }

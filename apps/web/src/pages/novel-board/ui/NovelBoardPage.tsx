@@ -315,7 +315,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
         target?.kind === "episode" ? novel.chapters.find((item) => item.id === target.id)?.ordinal : undefined;
       return await DiscardManualEditModal.call({
         chapterOrdinal,
-        // 구성 모드에서 버리는 것은 고르던 대화 구간이다.
+        // 구성 모드에서 버리는 것은 고르던 대화 구간이나 고치던 구성안이다.
         isSourceSelection: selectionRef.current?.kind === "plan",
       });
     } finally {
@@ -390,6 +390,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
           blockedReasonId: hasChapterBlockedReason(flow) ? blockedReasonId : undefined,
           buttonRef: createButtonRef,
           onStart: isOutlineFlowOn ? openPlan : undefined,
+          isSwitchPending: planAvailability === "loading",
         }}
         publishAction={<NovelPublishBoardButton novel={novel} />}
       />

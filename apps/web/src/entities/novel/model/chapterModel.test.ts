@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasChapterModelChoice,
   initialChapterModelId,
+  toOutlineModelOptions,
   toProposalModelOptions,
   toRegenerateModelOptions,
   type ChapterModelOption,
@@ -76,5 +77,20 @@ describe("toProposalModelOptions", () => {
   it("모델 항목에 금액을 싣지 않는다", () => {
     const options = toProposalModelOptions([{ id: "opus", name: "Claude Opus", chapterGenerate: 170, chapterRegenerate: 170 }]);
     expect(options).toEqual([{ id: "opus", name: "Claude Opus", cost: undefined, disabledReason: undefined }]);
+  });
+});
+
+describe("toOutlineModelOptions", () => {
+  // 구성안 금액은 서버가 모델마다 준 고정가 그대로다.
+  it("모델마다 서버가 준 구성안 금액을 싣고 모두 고를 수 있다", () => {
+    expect(
+      toOutlineModelOptions([
+        { id: "gemini", name: "Gemini", cost: 80 },
+        { id: "opus", name: "Claude Opus", cost: 240 },
+      ]),
+    ).toEqual([
+      { id: "gemini", name: "Gemini", cost: 80, disabledReason: undefined },
+      { id: "opus", name: "Claude Opus", cost: 240, disabledReason: undefined },
+    ]);
   });
 });

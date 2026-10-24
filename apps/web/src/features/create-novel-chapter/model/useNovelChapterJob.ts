@@ -6,13 +6,15 @@ import {
   hasNovelJobPollError,
   isNovelJobGone,
   isProtagonistNameRequiredError,
+  hasNovelErrorCode,
   isTerminalNovelJobStatus,
   novelKeys,
+  novelOutlineQueryOptions,
   toBatchRangeLabel,
   toNovelActionError,
   toNovelJobFailureMessage,
+  toOutlineModelOptions,
   toProposalModelOptions,
-  toRefundSentence,
   toRegenerateModelOptions,
   useNovelJobQuery,
   chaptersInBatch,
@@ -30,14 +32,16 @@ import {
 import { useChapterProposalMutation } from "../api/useChapterProposalMutation";
 import { useCreateChainMutation } from "../api/useCreateChainMutation";
 import { useCreateChapterMutation } from "../api/useCreateChapterMutation";
+import { useCreateOutlineMutation } from "../api/useCreateOutlineMutation";
 import { useRegenerateChapterMutation } from "../api/useRegenerateChapterMutation";
 import { ChapterBoundaryModal } from "../ui/ChapterBoundaryModal";
 import { ProtagonistNameModal } from "../ui/ProtagonistNameModal";
 
 import { toChainProgress } from "./chainProgress";
+import { OUTLINE_SPEND_FOOTNOTE, toDoneMessage, toRetryTarget, type RetryTarget } from "./chapterJobOutcome";
 import { toRegenerateConfirmDescription } from "./regenerateConfirm";
 
-/** 화 다시 만들기의 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
+/** 화 다시 만들기·전체 구성안 만들기의 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
  * 소설 상위 모델 허용이 있으면 모달이 모델도 고르게 하므로, 확정하면 고른 모델과 이용자가 본 금액을 돌려준다.
  * 그만두면 `null` 이다. */
 export type ConfirmChapterSpend = (props: {
@@ -47,14 +51,14 @@ export type ConfirmChapterSpend = (props: {
   /** 고를 수 있는 모델과 그 모델의 금액 — 상세의 묶음 다시 만들기 목록 그대로다. */
   options: PricedChapterModelOption[];
   initialModelId: NovelChapterModelId;
+  /** 금액 줄 아래 한 줄 — 돌려받는 조건처럼 금액에 붙는 말. */
+  footnote?: string;
 }) => Promise<{ model: NovelChapterModelId; cost: number } | null>;
 
 /** 이 흐름이 지켜보는 작업 — AI 수정을 뺀 전부다. 남은 대화 한 번에(연쇄)는 경계 고르기의 한 칸으로 시작한다. */
 type ChapterJobKind = Exclude<NovelJobResponse["kind"], "ai_edit">;
 
 type TrackedJob = { jobId: string; kind: ChapterJobKind; chapterId: string | null; batchId: string | null };
-
-type RetryTarget = { kind: "generate" } | { kind: "regenerate"; batchId: string };
 
 /** 화면에 남겨 두는 결과 문장. 작업이 끝나거나 요청이 거절된 **그 순간**에 기록하고 다음 동작에서만 지운다 —
  * 쿼리 상태에서 그때그때 파생하면 상세를 다시 받는 순간(진행 중 작업이 사라지는 순간) 안내도 함께 사라진다. */
@@ -83,12 +87,13 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
   const statusId = useId();
   const [tracked, setTracked] = useState<TrackedJob | undefined>(undefined);
   // 작업을 만들기 전 단계(이름·제안·고르기·확인·요청)가 진행 중인가, 그렇다면 어느 버튼에서 시작했나.
-  const [preparing, setPreparing] = useState<"create" | "regenerate" | undefined>(undefined);
+  const [preparing, setPreparing] = useState<"create" | "regenerate" | "outline" | undefined>(undefined);
   const [notice, setNotice] = useState<ChapterJobNotice | undefined>(undefined);
   const proposalMutation = useChapterProposalMutation();
   const createMutation = useCreateChapterMutation();
   const chainMutation = useCreateChainMutation();
   const regenerateMutation = useRegenerateChapterMutation();
+  const outlineMutation = useCreateOutlineMutation();
   // 소설 만들기 거절의 문장이 노벨 정책 스위치에 따라 다르다(`toNovelizeForbiddenCopy`).
   const pricing = useCloverPricingQuery().data;
   const isPolicyV2Enabled = pricing?.novelPublicPolicyV2Enabled === true;
@@ -175,6 +180,8 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     if (finished.status === "failed") {
       setNotice({ tone: "error", message: toNovelJobFailureMessage(finished), retry: toRetryTarget(finished) });
       void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
+      // 고른 대화가 바뀌어 실패한 구성안은 담을 대화에 바뀐 턴 표시가 생긴다.
+      if (finished.kind === "outline_generate") invalidateOutlineFlow();
       return;
     }
 
@@ -194,8 +201,20 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     if (fresh && chapter) onChapterReady(chapter, fresh.chapters, isRegenerated);
   }
 
+  /** 구성 화면의 두 단계(담을 대화·전체 구성안)를 다시 받는다 — 구성안 요청이 선택이나 구성안이 서버와 어긋났다는 이유로
+   * 거절됐거나 그 때문에 실패했다. */
+  function invalidateOutlineFlow() {
+    void queryClient.invalidateQueries({ queryKey: novelKeys.sourceSelection(novel.id) });
+    void queryClient.invalidateQueries({ queryKey: novelKeys.outline(novel.id) });
+  }
+
   function handleRequestError(error: unknown, action: NovelAction) {
     const result = toNovelActionError(error, action, { isPolicyV2Enabled });
+    if (action === "outline") {
+      // 스위치가 꺼졌으면 가격을 다시 받아 구성 화면을 거둔다. 그 밖의 거절은 대개 담을 대화가 바뀐 것이라 두 단계를 다시 받는다.
+      if (hasNovelErrorCode(error, "NOVEL_OUTLINE_FLOW_DISABLED")) void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
+      else invalidateOutlineFlow();
+    }
     if (result === null) return;
     setNotice({ tone: "error", message: result.message });
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
@@ -344,12 +363,57 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     }
   }
 
-  function retry(target: RetryTarget) {
-    if (target.kind === "generate") {
-      void startCreate();
-      return;
+  /** 지금 승인한 담을 대화로 전체 구성안을 만든다(유료). 모델과 금액은 확인 직전에 구성안 조회를 새로 받아 정한다 — 화면에
+   * 떠 있던 값은 그사이 허용 모델·가격이 바뀌었을 수 있다. 승인하지 않은 구성안은 돌려주지 않고, 만들지 못하면 서버가 모두
+   * 돌려준다(금액 줄 아래 한 줄로 알린다). */
+  async function startOutline() {
+    if (isBusy || isRoomGone) return;
+    setNotice(undefined);
+    setPreparing("outline");
+    try {
+      if (!(await ensureProtagonistName()) || !isMountedRef.current) return;
+      const state = await queryClient.fetchQuery(novelOutlineQueryOptions(novel.id));
+      if (!isMountedRef.current || hasActiveJobNow()) return;
+      const options = toOutlineModelOptions(state.models);
+      if (options.length === 0) {
+        setNotice({ tone: "error", message: "지금 고를 수 있는 모델이 없어 구성안을 만들 수 없어요." });
+        return;
+      }
+      const hasOutline = (state.draft ?? state.approved) !== null;
+      const choice = await confirmSpend({
+        title: hasOutline ? "전체 구성안을 다시 만들까요?" : "전체 구성안을 만들까요?",
+        description: hasOutline
+          ? "담은 대화로 구성안을 새로 만들어요. 새 구성안은 초안으로 오고, 고친 뒤 승인해야 다음 단계로 이어져요."
+          : "담은 대화를 화로 나눈 구성안을 만들어요. 고친 뒤 승인해야 다음 단계로 이어져요.",
+        confirmLabel: hasOutline ? "다시 만들기" : "구성안 만들기",
+        options,
+        initialModelId: initialChapterModelId(options, novel.lastChapterModel),
+        footnote: OUTLINE_SPEND_FOOTNOTE,
+      });
+      if (choice === null || !isMountedRef.current) return;
+      const started = await requestJob(() =>
+        outlineMutation.mutateAsync({ novelId: novel.id, expectedCost: choice.cost, model: choice.model }),
+      );
+      if (started) track(started);
+    } catch (error) {
+      handleRequestError(error, "outline");
+    } finally {
+      setPreparing(undefined);
     }
-    void startRegenerate(target.batchId);
+  }
+
+  function retry(target: RetryTarget) {
+    switch (target.kind) {
+      case "generate":
+        void startCreate();
+        return;
+      case "regenerate":
+        void startRegenerate(target.batchId);
+        return;
+      case "outline":
+        void startOutline();
+        return;
+    }
   }
 
   return {
@@ -366,29 +430,9 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     notice,
     startCreate,
     startRegenerate,
+    startOutline,
     retry,
   };
 }
 
 export type NovelChapterJobFlow = ReturnType<typeof useNovelChapterJob>;
-
-function toRetryTarget(job: NovelJobResponse): RetryTarget | undefined {
-  // 원래 대화가 바뀌어 실패한 재생성은 다시 해도 같은 결과라 다시 시도를 내밀지 않는다.
-  if (job.failureReason === "source_changed") return undefined;
-  // 남은 대화 한 번에도 다시 시도는 경계 고르기를 다시 여는 것이다 — 그사이 만든 묶음이 있으면 남은 대화가 줄어
-  // 견적이 바뀌므로 같은 요청을 그대로 다시 보내지 않는다.
-  if (job.kind === "chapter_generate" || job.kind === "chain_generate") return { kind: "generate" };
-  if (job.kind === "chapter_regenerate" && job.batchId !== null) return { kind: "regenerate", batchId: job.batchId };
-  return undefined;
-}
-
-/** 성공한 작업의 결과 문장. 만든 화들을 범위로 말하고, 덜 나온 화의 몫을 서버가 돌려줬으면 그 금액을 덧붙인다(성공도
- * 일부 환불일 수 있다). */
-function toDoneMessage(job: NovelJobResponse, chapters: readonly NovelChapterSummary[]): string {
-  const refund = toRefundSentence(job.refundedAmount);
-  if (job.kind === "chain_generate") return `남은 대화를 소설로 만들었어요.${refund}`;
-  const rangeLabel = job.batchId === null ? undefined : toBatchRangeLabel(chapters, job.batchId);
-  const verb = job.kind === "chapter_regenerate" ? "다시 만들었어요" : "만들었어요";
-  return `${rangeLabel === undefined ? "화를" : `${rangeLabel}를`} ${verb}.${refund}`;
-}
-

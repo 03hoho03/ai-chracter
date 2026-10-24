@@ -30,6 +30,7 @@ import {
   buildSourceTurns,
   countTurnStates,
   hasIncludedResponse,
+  includeTurnsInRanges,
   isSameStates,
   setTurnRange,
   setTurnsState,
@@ -37,6 +38,7 @@ import {
   toChangedTurnKeys,
   toggleTurn,
   toSaveSections,
+  type SourceRange,
   type SourceTurn,
   type TurnState,
 } from "../model/sourceTimeline";
@@ -47,6 +49,8 @@ type NovelSourceSelectionStepProps = {
   novel: NovelDetailResponse;
   /** 저장하지 않은 고침이 있는가를 알린다 — 보드가 다른 곳으로 옮기기 전에 버릴지 묻는다. */
   onDraftDirtyChange: (isDirty: boolean) => void;
+  /** 다시 담아 달라는 대화 구간(낡은 구성안의 근거). `id` 가 바뀔 때마다 한 번, 그 구간의 턴을 담기로 바꾼 고침을 만든다. */
+  restoreRequest?: { id: number; ranges: readonly SourceRange[] };
 };
 
 /** 화면이 고친 선택. 고치기 시작한 판의 리비전을 들고 있다가 저장 때 보낸다 — 그사이 다른 탭이 저장했으면 서버가 409 로 막아,
@@ -62,7 +66,7 @@ type StepNotice = { tone: "error" | "done"; message: string };
  * 처음에는 서버의 기본 제안(아직 쓰지 않은 대화를 모두 담기)이나 저장된 최신 판을 보이고, 고치면 이 화면에만 있다가 "초안
  * 저장"·"이대로 승인"으로 서버에 간다. 고른 뒤 대화가 이어졌으면 저절로 붙이지 않고 "새 구간 추가"로 연다.
  */
-export function NovelSourceSelectionStep({ novel, onDraftDirtyChange }: NovelSourceSelectionStepProps) {
+export function NovelSourceSelectionStep({ novel, onDraftDirtyChange, restoreRequest }: NovelSourceSelectionStepProps) {
   if (novel.chatRoomId === null) {
     return (
       <StepShell status={undefined}>
@@ -72,13 +76,21 @@ export function NovelSourceSelectionStep({ novel, onDraftDirtyChange }: NovelSou
       </StepShell>
     );
   }
-  return <SelectionLoader novel={novel} roomId={novel.chatRoomId} onDraftDirtyChange={onDraftDirtyChange} />;
+  return (
+    <SelectionLoader
+      novel={novel}
+      roomId={novel.chatRoomId}
+      onDraftDirtyChange={onDraftDirtyChange}
+      restoreRequest={restoreRequest}
+    />
+  );
 }
 
 function SelectionLoader({
   novel,
   roomId,
   onDraftDirtyChange,
+  restoreRequest,
 }: NovelSourceSelectionStepProps & { roomId: string }) {
   const queryClient = useQueryClient();
   const selectionQuery = useNovelSourceSelectionQuery(novel.id, { enabled: true });
@@ -145,6 +157,7 @@ function SelectionLoader({
       isMessagesFetching={messagesQuery.isFetching}
       onRefetchMessages={() => void messagesQuery.refetch()}
       onDraftDirtyChange={onDraftDirtyChange}
+      restoreRequest={restoreRequest}
     />
   );
 }
@@ -165,6 +178,7 @@ function SelectionEditor({
   isMessagesFetching,
   onRefetchMessages,
   onDraftDirtyChange,
+  restoreRequest,
 }: SelectionEditorProps) {
   const queryClient = useQueryClient();
   const saveMutation = useSaveNovelSourceSelectionMutation();
@@ -177,6 +191,10 @@ function SelectionEditor({
   const [expandedGapKeys, setExpandedGapKeys] = useState<ReadonlySet<string>>(new Set());
   const [notice, setNotice] = useState<StepNotice | undefined>(undefined);
   const [busy, setBusy] = useState<"save" | "approve" | undefined>(undefined);
+  // 승인한 선택은 타임라인을 접고 요약 한 줄만 둔다 — 수백 턴 타임라인 아래에 다음 단계(전체 구성안)가 묻히지 않게. 펼치면 고칠 수
+  // 있다.
+  const [isExpanded, setIsExpanded] = useState(false);
+  const handledRestoreIdRef = useRef<number | undefined>(undefined);
   // 턴이나 묶음 버튼을 누르면 그 턴이 다른 묶음으로 옮겨 다시 그려진다 — 커밋 뒤 그 턴(접혔으면 그 턴이 든 묶음의 버튼)으로
   // 포커스를 둔다.
   const [pendingFocusTurn, setPendingFocusTurn] = useState<number | undefined>(undefined);
@@ -220,6 +238,25 @@ function SelectionEditor({
     onDraftDirtyChange(isDirty);
   }, [isDirty]);
   useEffect(() => () => onDraftDirtyChange(false), []);
+
+  // 다시 담아 달라는 구간이 왔다(낡은 구성안의 "구간 되돌리기"). 그 턴을 담기로 바꾼 고침을 만들고 타임라인을 펼쳐 이 단계 제목으로
+  // 포커스를 옮긴다 — 이용자가 확인한 뒤 승인한다. 구성안이 낡은 까닭이 구간을 뺀 것이 아니면(구간 끝·원문이 바뀜) 다시 담을 턴이
+  // 없거나 담아도 낡음이 남는다 — 그때는 다시 만들라고 말한다.
+  useEffect(() => {
+    if (restoreRequest === undefined || handledRestoreIdRef.current === restoreRequest.id) return;
+    handledRestoreIdRef.current = restoreRequest.id;
+    const restored = includeTurnsInRanges(turns, states, restoreRequest.ranges);
+    if (restored.count > 0) edit(restored.states);
+    setIsExpanded(true);
+    setNotice({
+      tone: "done",
+      message:
+        restored.count > 0
+          ? `구성안이 쓴 대화 ${restored.count.toLocaleString()}턴을 다시 담았어요. 확인한 뒤 승인하면 구성안을 다시 쓸 수 있어요. 그래도 낡음이 남으면 구성안을 다시 만들어주세요.`
+          : "구성안의 화들이 근거로 쓴 대화는 이미 모두 담겨 있어요. 그래도 낡음이 남으면 구성안을 다시 만들어주세요.",
+    });
+    headingRef.current?.focus();
+  }, [restoreRequest?.id]);
 
   useEffect(() => {
     if (pendingFocusTurn === undefined) return;
@@ -353,12 +390,31 @@ function SelectionEditor({
   }
 
   const isApproveShown = status !== "approved" || needsSave;
+  const isCollapsed = status === "approved" && !needsSave && !isFixedEndMissing && !isExpanded;
   return (
     <StepShell status={status} isSourceChanged={isSourceChanged} headingRef={headingRef}>
-      <p id={helpId} className="text-sm break-keep text-muted-foreground">
-        소설로 옮길 대화를 턴마다 골라요. 줄을 누르면 담기와 빼기가 바뀌고, Shift를 누른 채 누르면 앞에 누른 턴부터 이어서
-        바뀌어요. 맥락으로 보낸 대화는 소설에 옮기지 않고 AI가 앞뒤 사정을 알도록 함께 읽어요.
-      </p>
+      {isCollapsed ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p className="min-w-0 flex-1 text-sm text-muted-foreground tabular-nums">{toCountsLine(counts)}</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              // 펼치면 이 버튼이 사라진다 — 포커스가 떨어지지 않게 단계 제목으로 먼저 옮긴다.
+              headingRef.current?.focus();
+              setIsExpanded(true);
+            }}
+          >
+            담을 대화 고치기
+          </Button>
+        </div>
+      ) : (
+        <p id={helpId} className="text-sm break-keep text-muted-foreground">
+          소설로 옮길 대화를 턴마다 골라요. 줄을 누르면 담기와 빼기가 바뀌고, Shift를 누른 채 누르면 앞에 누른 턴부터 이어서
+          바뀌어요. 맥락으로 보낸 대화는 소설에 옮기지 않고 AI가 앞뒤 사정을 알도록 함께 읽어요.
+        </p>
+      )}
       {isSourceChanged && (
         <p className="rounded-lg border border-border px-3 py-2 text-sm break-keep text-foreground">
           고른 뒤 대화가 바뀐 턴이 있어요("고른 뒤 바뀜"). 확인한 뒤 저장하거나 승인하면 지금 대화로 다시 담겨요.
@@ -380,36 +436,33 @@ function SelectionEditor({
           </Button>
         </div>
       )}
-      <SourceTimeline
-        turns={turns}
-        states={states}
-        changedKeys={changedKeys}
-        expandedGapKeys={expandedGapKeys}
-        foldableKeys={new Set(turns.filter((turn) => baseStates.get(turn.key) === "exclude").map((turn) => turn.key))}
-        activeKey={anchorKey}
-        onToggleTurn={handleToggleTurn}
-        onSetGap={handleSetGap}
-        onToggleGapExpanded={(gapTurns, isOpen) =>
-          setExpandedGapKeys((prev) => {
-            const next = new Set(prev);
-            for (const turn of gapTurns) {
-              if (isOpen) next.add(turn.key);
-              else next.delete(turn.key);
+      {!isCollapsed && (
+        <>
+          <SourceTimeline
+            turns={turns}
+            states={states}
+            changedKeys={changedKeys}
+            expandedGapKeys={expandedGapKeys}
+            foldableKeys={new Set(turns.filter((turn) => baseStates.get(turn.key) === "exclude").map((turn) => turn.key))}
+            activeKey={anchorKey}
+            onToggleTurn={handleToggleTurn}
+            onSetGap={handleSetGap}
+            onToggleGapExpanded={(gapTurns, isOpen) =>
+              setExpandedGapKeys((prev) => {
+                const next = new Set(prev);
+                for (const turn of gapTurns) {
+                  if (isOpen) next.add(turn.key);
+                  else next.delete(turn.key);
+                }
+                return next;
+              })
             }
-            return next;
-          })
-        }
-      />
-      <p aria-live="polite" aria-atomic className="text-sm text-muted-foreground tabular-nums">
-        {[
-          `담기 ${counts.include.toLocaleString()}턴`,
-          `맥락 ${counts.context.toLocaleString()}턴`,
-          `빼기 ${counts.exclude.toLocaleString()}턴`,
-          counts.locked > 0 ? `이미 씀 ${counts.locked.toLocaleString()}턴` : undefined,
-        ]
-          .filter((part) => part !== undefined)
-          .join(" · ")}
-      </p>
+          />
+          <p aria-live="polite" aria-atomic className="text-sm text-muted-foreground tabular-nums">
+            {toCountsLine(counts)}
+          </p>
+        </>
+      )}
       {notice?.tone === "error" && (
         <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
           {notice.message}
@@ -420,7 +473,7 @@ function SelectionEditor({
           {notice.message}
         </p>
       )}
-      {status === "approved" && !needsSave && (
+      {status === "approved" && !needsSave && !isCollapsed && (
         <p className="text-sm break-keep text-muted-foreground">승인한 선택이에요. 턴을 바꾸면 새 초안이 되고, 다시 승인해야 해요.</p>
       )}
       {(needsSave || isApproveShown) && (
@@ -484,6 +537,18 @@ function StepShell({ status, isSourceChanged = false, headingRef, children }: St
       {children}
     </section>
   );
+}
+
+/** 요약 줄 — 상태마다 턴 수. 이미 쓴 턴이 없으면 그 칸은 뺀다. */
+function toCountsLine(counts: ReturnType<typeof countTurnStates>): string {
+  return [
+    `담기 ${counts.include.toLocaleString()}턴`,
+    `맥락 ${counts.context.toLocaleString()}턴`,
+    `빼기 ${counts.exclude.toLocaleString()}턴`,
+    counts.locked > 0 ? `이미 씀 ${counts.locked.toLocaleString()}턴` : undefined,
+  ]
+    .filter((part) => part !== undefined)
+    .join(" · ");
 }
 
 /** 그 턴의 줄로, 접힌 묶음 안이면 그 묶음의 버튼으로 포커스를 옮긴다. */

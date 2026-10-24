@@ -5,3 +5,4 @@ export {
   toSourceSelectionStatus,
   type SourceSelectionStatus,
 } from "./model/selectionStatus";
+export { buildSourceTurns, type SourceRange, type SourceTurn } from "./model/sourceTimeline";

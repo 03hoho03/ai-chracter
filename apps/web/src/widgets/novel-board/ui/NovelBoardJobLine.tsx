@@ -5,6 +5,7 @@ import type { RefObject } from "react";
 
 import { NOVEL_ROOM_GONE_MESSAGE, type NovelChapterSummary } from "@/entities/novel";
 import { toChainRunningText, type NovelChapterJobFlow } from "@/features/create-novel-chapter";
+import { assertNever } from "@/shared/lib/assertNever";
 
 type NovelBoardJobLineProps = {
   flow: NovelChapterJobFlow;
@@ -100,20 +101,31 @@ function toBlockedReason(flow: NovelChapterJobFlow): string | undefined {
 function toStatusText(flow: NovelChapterJobFlow): string {
   if (flow.isJobRunning) {
     if (flow.hasPollError) return "진행 상황을 확인하지 못하고 있어요. 잠시 뒤 다시 확인할게요.";
-    return `${toRunningSubject(flow)} 이 화면을 떠나도 계속 써요.`;
+    return toRunningText(flow);
   }
   return flow.notice?.tone === "done" ? flow.notice.message : "";
 }
 
-/** 진행 중인 작업이 무엇을 쓰고 있나. 남은 대화 한 번에(연쇄)는 만든 묶음 / 만들 묶음까지 말한다. */
-function toRunningSubject(flow: NovelChapterJobFlow): string {
-  switch (flow.runningKind) {
+/** 진행 중인 작업이 무엇을 하고 있나. 남은 대화 한 번에(연쇄)는 만든 묶음 / 만들 묶음까지 말한다. 구성 흐름의 두 구성안은 글이
+ * 아니라 구성을 만드는 작업이라 "써요"가 아니라 "만들어요"다. 종류가 늘면 타입 검사가 이 분기를 짚는다. */
+function toRunningText(flow: NovelChapterJobFlow): string {
+  const kind = flow.runningKind;
+  switch (kind) {
+    case undefined:
+    case "chapter_generate":
+      return "새 화를 쓰고 있어요. 이 화면을 떠나도 계속 써요.";
     case "chapter_regenerate":
-      return `${flow.runningRangeLabel ?? "화"}를 다시 쓰고 있어요.`;
+      return `${flow.runningRangeLabel ?? "화"}를 다시 쓰고 있어요. 이 화면을 떠나도 계속 써요.`;
     case "chain_generate":
-      return toChainRunningText(flow.chainProgress);
+      return `${toChainRunningText(flow.chainProgress)} 이 화면을 떠나도 계속 써요.`;
+    case "outline_generate":
+      return "전체 구성안을 만들고 있어요. 이 화면을 떠나도 계속 만들어요.";
+    case "episode_outline_generate":
+      return "장면 구성안을 만들고 있어요. 이 화면을 떠나도 계속 만들어요.";
+    case "outline_chapter_generate":
+      return "구성안으로 새 화를 쓰고 있어요. 이 화면을 떠나도 계속 써요.";
     default:
-      return "새 화를 쓰고 있어요.";
+      return assertNever(kind);
   }
 }
 
