@@ -37,7 +37,7 @@ export function ChapterModelSelect({ options, value, onValueChange }: ChapterMod
         </SelectTrigger>
         <SelectContent>
           {options.map((option) => (
-            <SelectItem key={option.id} value={option.id} disabled={option.disabledReason !== undefined}>
+            <SelectItem key={option.id} value={option.id} {...(option.disabledReason === undefined ? {} : UNSELECTABLE_ITEM_PROPS)}>
               {toOptionLabel(option)}
             </SelectItem>
           ))}
@@ -46,6 +46,24 @@ export function ChapterModelSelect({ options, value, onValueChange }: ChapterMod
     </div>
   );
 }
+
+function preventSelect(event: { preventDefault: () => void }) {
+  event.preventDefault();
+}
+
+/** 고를 수 없는 항목. `disabled` 를 쓰지 않는다 — Radix 가 그 항목을 화살표 이동·타입어헤드에서 통째로 빼, 이유(항목 글이 곧 접근
+ * 이름이다)가 키보드·스크린리더에 닿지 않는다. 대신 `aria-disabled` 로 순회에 남기고, Radix 가 고르는 세 길(Enter·Space 키, 마우스
+ * pointerup, 터치 click)만 `preventDefault` 로 막는다 — Radix 의 항목 처리기는 앞선 처리기가 기본 동작을 막으면 건너뛴다. 화살표 키는
+ * 막지 않는다(목록의 이동 처리도 같은 검사를 거쳐, 막으면 이동이 멈춘다). 흐림은 프리미티브의 비활성 항목과 같은 값이다. */
+const UNSELECTABLE_ITEM_PROPS = {
+  "aria-disabled": true,
+  className: "aria-disabled:opacity-65",
+  onKeyDown: (event: { key: string; preventDefault: () => void }) => {
+    if (event.key === "Enter" || event.key === " ") event.preventDefault();
+  },
+  onPointerUp: preventSelect,
+  onClick: preventSelect,
+} as const;
 
 /** 항목 한 줄. 고를 수 없으면 금액 대신 이유다 — 못 고르는 항목의 금액은 비교할 거리가 아니다. */
 function toOptionLabel(option: ChapterModelOption): string {
