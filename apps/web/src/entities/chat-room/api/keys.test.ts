@@ -62,6 +62,14 @@ describe("chatRoomKeys 방 기억", () => {
     expect(cachedData(queryClient, chatRoomKeys.memory("room-1"))).toEqual(["memory", "items"]);
   });
 
+  it("사실 잊기 미리보기는 방 기억 키 아래이되 목록 키 밖이라, 잊은 뒤 목록을 다시 받아도 다시 묻지 않는다", () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(chatRoomKeys.memoryItems("room-1"), "items");
+    queryClient.setQueryData(chatRoomKeys.memoryForgetPreview("room-1", "fact:a"), "preview");
+    expect(cachedData(queryClient, chatRoomKeys.memory("room-1"))).toEqual(["items", "preview"]);
+    expect(cachedData(queryClient, chatRoomKeys.memoryItems("room-1"))).toEqual(["items"]);
+  });
+
   it("방 기억을 다시 받을 때 목록 쿼리는 기억 조회와 다른 키다", () => {
     expect(chatRoomKeys.memoryItems("room-1")).not.toEqual(chatRoomKeys.memory("room-1"));
   });

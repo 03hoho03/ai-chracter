@@ -5,6 +5,7 @@ import {
   forgetFactConfirmLabel,
   forgetSceneTitle,
   itemCountLabel,
+  MEMORY_COMEBACK_NOTICE,
   turnRangeLabel,
   usedInRepliesText,
 } from "./memoryItemText";
@@ -69,5 +70,13 @@ describe("forgetFactConfirmLabel", () => {
 
   it("is the plain label when no scene goes with it", () => {
     expect(forgetFactConfirmLabel(0)).toBe("잊게 하기");
+  });
+});
+
+describe("MEMORY_COMEBACK_NOTICE", () => {
+  it("names every way a forgotten memory can come back, in the privacy policy's words", () => {
+    expect(MEMORY_COMEBACK_NOTICE).toBe(
+      "최근 대화나 앞으로의 대화에 같은 내용이 나오거나, 앞의 대화를 고치거나 지우거나 다시 생성하면 같은 기억이 다시 생길 수 있어요.",
+    );
   });
 });
