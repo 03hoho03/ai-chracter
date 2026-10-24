@@ -11,6 +11,7 @@
 
 import re
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from typing import Any
@@ -44,6 +45,7 @@ from factories import (
     _novel_setup,
     _override_llm_client,
     _room_messages,
+    _run_worker_one_pass,
 )
 
 _EXCLUDED = "빼기로-한-구간-표지"
@@ -1219,6 +1221,57 @@ async def test_an_outline_chapter_is_regenerated_in_place_from_the_same_scene_ou
     assert (response.json()["kind"], response.json()["chargedAmount"]) == ("chapter_regenerate", 20)
     regenerated = await _run(db_session, llm, enqueued[-1])
     assert (regenerated.status, regenerated.failure_code) == ("succeeded", None)
+    (kind, prompt, _, usage) = llm.calls[-1]
+    assert (kind, usage.call_site) == ("chapter", "novelize_chapter")
+    assert "시작" in prompt and "이어짐" in prompt
+    assert await db_session.scalar(sa.select(sa.func.count()).select_from(NovelChapter)) == 1
+    revision = await _current_revision(db_session, job.chapter_id)
+    assert (revision.revision_no, revision.source, regenerated.result_revision_id) == (2, "regenerate", revision.id)
+    assert "다시 쓴 문단" in revision.body
+    rows = await _scene_rows(db_session, job.chapter_id)
+    assert set(revision.block_ids) <= set(rows)
+    assert await _novel_ledger(db_session, owner) == [
+        ("novelize_spend", -20),
+        ("novelize_spend", -20),
+        ("novelize_spend", -11),
+        ("novelize_spend", -7),
+    ]
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_with_the_worker_switched_on_an_outline_chapter_regenerate_runs_in_the_worker_from_the_scene_outline(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+    tmp_path: Path,
+) -> None:
+    """워커 스위치가 켜져 있으면 구성 흐름 화의 다시 만들기는 api 가 띄우지 않고 대기 행으로 남고, 소설화 워커가 집어 돌린다.
+    종류는 옛 다시 만들기와 같지만 실행 갈래가 다르다 — 워커 경로로 돌려도 api 안에서 돌린 것(위 테스트)과 같이 같은 장면
+    구성안의 장면 계획으로 새 개정(출처 regenerate)을 그 화에 쌓고 장면 경계 행을 만든다. 깨지는 시나리오: 워커가 이 행을 집지
+    않아 만료 환불로 끝나거나, 장면 구성안 칸을 모르는 옛 다시 만들기 갈래(원문 연속 구간 읽기)로 돌려 실패하거나 장면 경계가
+    끊긴 글을 저장한다."""
+    novel_id, _, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    owner = await _owner(db_session, novel_id)
+    job = await _written(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    assert job.chapter_id is not None
+    llm.body = _BODY.replace("문단.", "다시 쓴 문단.")
+    monkeypatch.setattr(settings, "novelize_worker_enabled", True)
+    handed_in_process = len(enqueued)
+
+    response = await db_client.post(
+        f"/novels/{novel_id}/outline/chapters/{job.chapter_id}/regenerate", json={"model": "gemini", "expectedCost": 20}
+    )
+
+    assert response.status_code == 202, response.text
+    regenerate_id = uuid.UUID(response.json()["id"])
+    assert len(enqueued) == handed_in_process
+    assert (await db_session.get_one(NovelJob, regenerate_id, populate_existing=True)).status == "queued"
+    claimed = await _run_worker_one_pass(monkeypatch, _factory(db_session), llm, tmp_path / "alive")
+    assert claimed == [regenerate_id]
+    regenerated = await db_session.get_one(NovelJob, regenerate_id, populate_existing=True)
+    assert (regenerated.kind, regenerated.status, regenerated.failure_code) == ("chapter_regenerate", "succeeded", None)
     (kind, prompt, _, usage) = llm.calls[-1]
     assert (kind, usage.call_site) == ("chapter", "novelize_chapter")
     assert "시작" in prompt and "이어짐" in prompt

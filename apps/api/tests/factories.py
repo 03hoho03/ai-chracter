@@ -24,7 +24,7 @@ import httpx
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, SessionTransaction
 from starlette.types import Message
 
@@ -2510,3 +2510,29 @@ def load_production_env(monkeypatch: pytest.MonkeyPatch, *, without: Collection[
     for name, value in extra.items():
         monkeypatch.setenv(name, value)
     return Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+async def _run_worker_one_pass(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: async_sessionmaker[AsyncSession],
+    llm_client: LLMClient,
+    alive_file: Path,
+) -> list[uuid.UUID]:
+    """소설화 워커 루프를 한 바퀴만 돌린다 — 첫 고르기가 끝나는 순간 정지를 세워, 그 바퀴에 집은 작업만 끝까지 돌리고 루프가
+    돌아온다. 집은 작업 id 를 돌려준다. 한 바퀴뿐이라 루프가 다음 고르기를 돌리지 않아, 테스트 커넥션 하나에 묶인 세션
+    팩토리로도 작업 실행과 고르기 조회가 겹치지 않는다."""
+    from api.novelize import worker
+
+    claimed: list[uuid.UUID] = []
+    stop = asyncio.Event()
+    original = worker.claim_candidates
+
+    async def claim_once(factory: async_sessionmaker[AsyncSession], limit: int) -> list[uuid.UUID]:
+        ids = await original(factory, limit)
+        claimed.extend(ids)
+        stop.set()
+        return ids
+
+    monkeypatch.setattr(worker, "claim_candidates", claim_once)
+    await asyncio.wait_for(worker.run_worker(session_factory, llm_client, stop, alive_file=alive_file), 30)
+    return claimed
