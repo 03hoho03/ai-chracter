@@ -12580,6 +12580,8 @@ export interface components {
             /** Finishedreading */
             finishedReading: boolean;
             readingPosition: components["schemas"]["NovelChapterReadingPosition"] | null;
+            /** Episodeoutlineid */
+            episodeOutlineId: string | null;
         };
         /**
          * NovelChapterUpdateRequest
@@ -13198,6 +13200,9 @@ export interface components {
          * NovelOutlineEpisodeView
          * @description 구성안의 화 하나. `key` 는 리비전이 바뀌어도 같은 화를 가리키는 화 키, `basis` 는 이 화의 근거가 된 대화 구간(양 끝 포함,
          *     키 순)이다 — 근거는 그 구성안이 쓴 구간 선택의 include 구간 안에만 있다. 목록 순서가 화 순서다.
+         *
+         *     `chapter_id` 는 이 화 키를 이미 원고로 쓴 화(없으면 null), `scene_outline` 은 이 화 장면 구성안의 상태다. 둘 다 이 판이 아니라
+         *     지금 상태다 — 승인본과 미승인 초안의 같은 화 키는 같은 값을 싣는다.
          */
         NovelOutlineEpisodeView: {
             /**
@@ -13213,6 +13218,13 @@ export interface components {
             goal: string;
             /** Basis */
             basis: components["schemas"]["NovelSourceRange"][];
+            /** Chapterid */
+            chapterId: string | null;
+            /**
+             * Sceneoutline
+             * @enum {string}
+             */
+            sceneOutline: "none" | "draft" | "approved" | "stale";
         };
         /**
          * NovelOutlineModel
@@ -13660,6 +13672,8 @@ export interface components {
             illustrations: components["schemas"]["NovelIllustration"][];
             /** Unplacedillustrations */
             unplacedIllustrations: components["schemas"]["NovelIllustration"][];
+            /** Scenes */
+            scenes: components["schemas"]["NovelRevisionScene"][];
         };
         /** NovelRevisionRestoreRequest */
         NovelRevisionRestoreRequest: {
@@ -13668,6 +13682,19 @@ export interface components {
              * Format: uuid
              */
             baseRevisionId: string;
+        };
+        /**
+         * NovelRevisionScene
+         * @description 개정의 장면 하나. `id` 는 장면 구성안의 장면 id, `title` 은 그 블록들을 쓴 장면 구성안 리비전의 장면 제목, `block_ids` 는 이
+         *     장면에 든 블록 id(본문 차례)다. 여러 문단 수정은 한 장면 안의 블록만 함께 고를 수 있다.
+         */
+        NovelRevisionScene: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Blockids */
+            blockIds: string[];
         };
         /** NovelRevisionSummary */
         NovelRevisionSummary: {

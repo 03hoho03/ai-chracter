@@ -63,6 +63,7 @@ from api.novelize.schemas import (
     OUTLINE_SUMMARY_MAX_LENGTH,
     SCENE_CHARACTERS_MAX_COUNT,
     NovelSceneInput,
+    NovelSceneOutlineStatus,
 )
 from api.novelize.selection import (
     hits_locked,
@@ -212,15 +213,58 @@ async def approved_episode(
 async def episode_basis_holds(db: AsyncSession, novel_id: uuid.UUID, outline_id: uuid.UUID, key: uuid.UUID) -> bool:
     """구성안 판 `outline_id` 에서 정한 화 `key` 의 근거가 지금도 쓸 수 있는가 — 지금 승인한 구성안이 낡지 않았고, 그 판에도 그 화가
     있으며 근거가 `outline_id` 판의 근거와 같다."""
+    return await _basis_holds_in(db, await _usable_approved_outline(db, novel_id), outline_id, key)
+
+
+async def _usable_approved_outline(db: AsyncSession, novel_id: uuid.UUID) -> NovelOutline | None:
+    """지금 승인한 구성안 — 없거나 낡았으면(근거 include 구간이 지금 승인한 구간 선택에 없으면) None."""
     latest = await latest_approved_outline(db, novel_id)
-    current = None if latest is None else find_episode(latest, key)
-    if latest is None or current is None or not await selection_still_holds(db, novel_id, latest.selection_id):
+    if latest is None or not await selection_still_holds(db, novel_id, latest.selection_id):
+        return None
+    return latest
+
+
+async def _basis_holds_in(
+    db: AsyncSession, usable: NovelOutline | None, outline_id: uuid.UUID, key: uuid.UUID
+) -> bool:
+    """`episode_basis_holds` 의 판정 — `usable` 은 `_usable_approved_outline` 의 결과다."""
+    current = None if usable is None else find_episode(usable, key)
+    if usable is None or current is None:
         return False
-    if outline_id == latest.id:
+    if outline_id == usable.id:
         return True
     base = await db.get(NovelOutline, outline_id)
     episode = None if base is None else find_episode(base, key)
     return episode is not None and episode["basis"] == current["basis"]
+
+
+async def episode_progress(
+    db: AsyncSession, novel_id: uuid.UUID, keys: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, tuple[uuid.UUID | None, NovelSceneOutlineStatus]]:
+    """화 키마다 (그 화 키를 원고로 쓴 화, 장면 구성안 상태). 상태는 그 화의 가장 최근 장면 구성안 판으로 정한다 — 없으면 none, 낡았으면
+    (`episode_basis_holds` 와 같은 판정) stale, 아니면 승인 여부. 화 수만큼 따로 조회하지 않게 소설 단위로 한 번에 읽는다."""
+    rows = await db.scalars(
+        select(NovelEpisodeOutline)
+        .distinct(NovelEpisodeOutline.episode_key)
+        .where(NovelEpisodeOutline.novel_id == novel_id, NovelEpisodeOutline.episode_key.in_(keys))
+        .order_by(NovelEpisodeOutline.episode_key, NovelEpisodeOutline.revision.desc())
+        .execution_options(populate_existing=True)
+    )
+    latest = {row.episode_key: row for row in rows.all()}
+    usable = await _usable_approved_outline(db, novel_id)
+    written = await written_episodes(db, novel_id)
+    progress: dict[uuid.UUID, tuple[uuid.UUID | None, NovelSceneOutlineStatus]] = {}
+    for key in keys:
+        row = latest.get(key)
+        status: NovelSceneOutlineStatus
+        if row is None:
+            status = "none"
+        elif not await _basis_holds_in(db, usable, row.outline_id, key):
+            status = "stale"
+        else:
+            status = "draft" if row.approved_at is None else "approved"
+        progress[key] = (written.get(str(key)), status)
+    return progress
 
 
 async def _require_usable_episode(

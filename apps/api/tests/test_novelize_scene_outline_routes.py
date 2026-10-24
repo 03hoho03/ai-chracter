@@ -1335,3 +1335,153 @@ async def test_an_outline_chapter_regenerate_refuses_a_changed_source_and_counts
     await _rewrite(db_session, (await _room_messages(db_session, room_id))[1], "고친 글")
     assert _code(await db_client.post(url, json=body)) == (409, "NOVEL_SOURCE_CHANGED")
     assert await _novel_ledger(db_session, owner) == before
+
+
+# ── 화면이 읽는 칸: 화별 진행·구성 흐름 화 표지·개정의 장면 ─────────────────
+def _progress(view: dict[str, Any]) -> list[tuple[str | None, str]]:
+    return [(e["chapterId"], e["sceneOutline"]) for e in view["episodes"]]
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_the_outline_lists_each_episode_with_its_chapter_and_scene_outline_state(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """전체 구성안의 화마다 원고가 된 화(`chapterId`)와 그 화 장면 구성안의 가장 최근 판 상태(`sceneOutline`)를 싣는다 — 없음 → 초안 →
+    승인, 승인 위에 새 초안이 있으면 초안, 화 근거가 바뀌어 낡았으면 초안·승인과 무관하게 낡음. 승인본과 미승인 초안 양쪽 화 목록에 같은
+    값이 실린다. 깨지는 시나리오: 화면이 화마다 장면 구성안을 따로 불러야 하거나, 낡은 장면 구성안을 쓸 수 있는 것처럼 보인다."""
+    novel_id, ms, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    outline_url = f"/novels/{novel_id}/outline"
+
+    async def approved_progress() -> list[tuple[str | None, str]]:
+        return _progress((await db_client.get(outline_url)).json()["approved"])
+
+    assert await approved_progress() == [(None, "none"), (None, "none")]
+    assert (await _request_scenes(db_client, novel_id, keys[0])).status_code == 202
+    await _run(db_session, llm, enqueued[-1])
+    assert await approved_progress() == [(None, "draft"), (None, "none")]
+
+    job = await _written(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    written = str(job.chapter_id)
+    assert await approved_progress() == [(written, "approved"), (None, "none")]
+
+    approved_scenes = (await db_client.get(_scenes_url(novel_id, keys[0]))).json()["approved"]
+    resaved = await db_client.put(
+        f"{_scenes_url(novel_id, keys[0])}/draft",
+        json={
+            "baseRevision": approved_scenes["revision"],
+            "scenes": [_scene_input(scene) for scene in approved_scenes["scenes"]],
+        },
+    )
+    assert resaved.status_code == 200, resaved.text
+    assert (await _request_scenes(db_client, novel_id, keys[1])).status_code == 202
+    await _run(db_session, llm, enqueued[-1])
+    assert await approved_progress() == [(written, "draft"), (None, "draft")]
+
+    outline = (await db_client.get(outline_url)).json()["approved"]
+    episodes = [{k: e[k] for k in ("key", "title", "summary", "goal", "basis")} for e in outline["episodes"]]
+    drafted = await db_client.put(
+        f"{outline_url}/draft",
+        json={"baseRevision": outline["revision"], "episodes": [episodes[0], {**episodes[1], "basis": [_range(ms, 9, 12)]}]},
+    )
+    assert drafted.status_code == 200, drafted.text
+    assert _progress(drafted.json()["draft"]) == [(written, "draft"), (None, "draft")]
+    approved = await db_client.post(f"{outline_url}/approve", json={"revision": drafted.json()["draft"]["revision"]})
+    assert approved.status_code == 200, approved.text
+
+    assert _progress(approved.json()["approved"]) == [(written, "draft"), (None, "stale")]
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_the_chapter_list_marks_outline_chapters_even_after_the_flow_switch_is_off(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """상세 목차의 화마다 구성 흐름 화이면 그 화를 쓴 장면 구성안 리비전 id(`episodeOutlineId`)를, 옛 흐름 화이면 null 을 싣는다.
+    스위치를 끈 뒤에도 같다(그 화의 다시 만들기를 막을 근거). 깨지는 시나리오: 구성 흐름 화에 옛 다시 만들기 버튼이 떠 409 가 나거나,
+    스위치를 끈 뒤 어느 화가 구성 흐름 화인지 알 길이 없다."""
+
+    async def two_old_chapters(novel_id: uuid.UUID, room: Any, ms: list[ChatMessage]) -> None:
+        await _add_chapter(db_session, novel_id, room, ms[0], ms[2])
+        await _add_chapter(db_session, novel_id, room, ms[3], ms[4])
+
+    llm.episodes = [{**_TWO_EPISODES[0], "start_turn": 1, "end_turn": 2}]
+    novel_id, _, keys = await _outlined(
+        db_client, db_session, monkeypatch, enqueued, llm, sections=(("include", 9, 12),), before=two_old_chapters
+    )
+    job = await _written(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    assert job.episode_outline_id is not None
+    monkeypatch.setattr(settings, "novelize_outline_flow_enabled", False)
+
+    chapters = (await db_client.get(f"/novels/{novel_id}")).json()["chapters"]
+
+    assert [(c["ordinal"], c["episodeOutlineId"]) for c in chapters] == [
+        (1, None),
+        (2, None),
+        (3, str(job.episode_outline_id)),
+    ]
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_a_revision_lists_its_scenes_with_their_blocks_and_an_old_chapter_has_none(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """화 조회의 개정은 장면마다 (장면 id, 그 화를 쓴 장면 구성안의 장면 제목, 그 장면의 블록 id 본문 차례)를 장면 차례대로 싣는다 —
+    블록 하나는 꼭 한 장면에 든다. 직접 수정으로 새로 생긴 문단도 장면 규칙(맨 앞은 뒤의 첫 장면, 중간은 앞 문단 장면)대로 든다. 장면
+    경계가 없는 옛 흐름 화는 빈 목록(화 전체가 한 장면)이다. 깨지는 시나리오: 화면이 다른 장면의 문단을 함께 고르게 둬 서버 422 로만
+    막거나, 수정 뒤 새 문단이 어느 장면에도 들지 않는다."""
+
+    async def one_old_chapter(novel_id: uuid.UUID, room: Any, ms: list[ChatMessage]) -> None:
+        await _add_chapter(db_session, novel_id, room, ms[0], ms[2])
+
+    llm.episodes = [{**_TWO_EPISODES[0], "start_turn": 1, "end_turn": 2}]
+    novel_id, _, keys = await _outlined(
+        db_client, db_session, monkeypatch, enqueued, llm, sections=(("include", 9, 12),), before=one_old_chapter
+    )
+    job = await _written(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    assert job.chapter_id is not None
+    scenes = (await db_client.get(_scenes_url(novel_id, keys[0]))).json()["approved"]["scenes"]
+    assert [scene["title"] for scene in scenes] == ["시작", "이어짐"]
+    first = await _current_revision(db_session, job.chapter_id)
+    rows = await _scene_rows(db_session, job.chapter_id)
+    chapter_url = f"/novels/{novel_id}/chapters/{job.chapter_id}"
+
+    def expected(block_ids: list[uuid.UUID], of: dict[uuid.UUID, str]) -> list[dict[str, Any]]:
+        return [
+            {"id": scene["id"], "title": scene["title"], "blockIds": [str(b) for b in block_ids if of[b] == scene["id"]]}
+            for scene in scenes
+        ]
+
+    shown = (await db_client.get(chapter_url)).json()["revision"]["scenes"]
+    assert shown == expected(first.block_ids, rows)
+    assert all(entry["blockIds"] for entry in shown)
+
+    paragraphs = first.body.split("\n\n")
+    ids: list[str | None] = [str(block) for block in first.block_ids]
+    edited = await db_client.post(
+        f"{chapter_url}/revisions",
+        json={
+            "baseRevisionId": str(first.id),
+            "body": "\n\n".join(["맨 앞에 넣은 문단.", *paragraphs[:3], "가운데 넣은 문단.", *paragraphs[3:]]),
+            "blockIds": [None, *ids[:3], None, *ids[3:]],
+        },
+    )
+    assert edited.status_code in (200, 201), edited.text
+    second = await _current_revision(db_session, job.chapter_id)
+    head, middle = second.block_ids[0], second.block_ids[4]
+    inherited = {**rows, head: rows[first.block_ids[0]], middle: rows[first.block_ids[2]]}
+    assert edited.json()["revision"]["scenes"] == expected(second.block_ids, inherited)
+
+    old = (await db_client.get(f"/novels/{novel_id}")).json()["chapters"][0]
+    assert old["episodeOutlineId"] is None
+    assert (await db_client.get(f"/novels/{novel_id}/chapters/{old['id']}")).json()["revision"]["scenes"] == []

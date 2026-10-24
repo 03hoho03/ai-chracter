@@ -25,6 +25,7 @@ function chapterAt(revisionId: string, paragraphs: string[], source: NovelChapte
       blocks: paragraphs.map((_, index) => ({ id: `block-${index}`, text: paragraphs[index] ?? "" })),
       illustrations: [],
       unplacedIllustrations: [],
+      scenes: [],
     },
   } satisfies NovelChapterResponse;
 }
