@@ -1,12 +1,12 @@
 import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { chatModelKeys, type ChatModelId } from "@/entities/chat-model";
+import type { ChatModelId } from "@/entities/chat-model";
 import { applyRoomChatModel, chatRoomKeys, type ChatRoomState } from "@/entities/chat-room";
-import { sessionKeys } from "@/entities/session";
 import { apiClient } from "@/shared/api/client";
 
 import { isChatModelNotAllowedError } from "../model/chatModelError";
+import { invalidateChatModelAccess } from "./invalidateChatModelAccess";
 
 type ChatRoomModelResponse = components["schemas"]["ChatRoomModelResponse"];
 
@@ -29,8 +29,7 @@ export function useSetRoomChatModelMutation(roomId: string) {
     },
     onError: (error) => {
       if (!isChatModelNotAllowedError(error)) return;
-      void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
-      void queryClient.invalidateQueries({ queryKey: chatModelKeys.all });
+      invalidateChatModelAccess(queryClient);
     },
   });
 }

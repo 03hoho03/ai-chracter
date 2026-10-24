@@ -182,3 +182,43 @@ describe("상위 모델 방의 클로버 부족 문구", () => {
     expect(formatChatRateLimitMessage(minute, "premiumChat", 12)).toBe(formatChatRateLimitMessage(minute, "chat", 12));
   });
 });
+
+/** 상위 모델 미리보기도 상위 모델 방과 같이 무료분이 없다 — 기본 모델 미리보기 문구의 "자정에 무료 한도가 돌아와요"는
+ * 거짓이 된다. 다만 미리보기 자리이므로 "채팅과 같은 한도"라는 사실은 먼저 말한다. */
+describe("상위 모델 미리보기의 클로버 부족 문구", () => {
+  const rateLimit = { window: "clover", retryAfterSeconds: 43200 } as const;
+
+  it("부족 사실을 말하고 자정·무료 한도를 약속하지 않는다", () => {
+    const message = formatChatRateLimitMessage(rateLimit, "premiumPreview", 43200);
+
+    expect(message).toContain("부족");
+    expect(message).not.toContain("자정");
+    expect(message).not.toContain("무료");
+  });
+
+  it("미리보기 머리말을 먼저 말한다", () => {
+    expect(formatChatRateLimitMessage(rateLimit, "premiumPreview", 43200)).toMatch(/^미리보기도 채팅과 같은 한도를 써요/);
+  });
+
+  it("읽어 주는 문장도 같은 문구다", () => {
+    expect(formatChatRateLimitAnnouncement(rateLimit, "premiumPreview")).toBe(
+      formatChatRateLimitMessage(rateLimit, "premiumPreview", 43200),
+    );
+  });
+
+  // 짝 테스트: 기본 모델 미리보기는 여전히 자정을 말한다.
+  it("기본 모델 미리보기 문구와 다르다", () => {
+    expect(formatChatRateLimitMessage(rateLimit, "preview", 43200)).toContain("자정");
+    expect(formatChatRateLimitMessage(rateLimit, "premiumPreview", 43200)).not.toBe(
+      formatChatRateLimitMessage(rateLimit, "preview", 43200),
+    );
+  });
+
+  it("분당 상한 문구와 안내 문장은 기본 모델 미리보기와 같다", () => {
+    const minute = { window: "minute", retryAfterSeconds: 30 } as const;
+
+    expect(formatChatRateLimitMessage(minute, "premiumPreview", 12)).toBe(formatChatRateLimitMessage(minute, "preview", 12));
+    expect(formatChatRateLimitMessage(minute, "premiumPreview", 0)).toBe(formatChatRateLimitMessage(minute, "preview", 0));
+    expect(formatChatRateLimitAnnouncement(minute, "premiumPreview")).toBe(formatChatRateLimitAnnouncement(minute, "preview"));
+  });
+});
