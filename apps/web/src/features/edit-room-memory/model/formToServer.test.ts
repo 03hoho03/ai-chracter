@@ -11,6 +11,7 @@ function memory(overrides: Partial<ChatRoomMemory> = {}): ChatRoomMemory {
     summary: { text: "둘은 비 오는 밤 처음 만났다.", source: "auto", canRevert: false, updatedAt: "2026-09-28T00:00:00Z" },
     version: 3,
     limits: { noteMaxLength: 1000, summaryMaxLength: 1500 },
+    features: { itemsVisible: false, summaryFolding: true },
     ...overrides,
   };
 }

@@ -20,5 +20,6 @@ export function toChatRoomMemory(dto: ChatRoomMemoryDto): ChatRoomMemory {
     version: dto.version,
     rolledBackAt: dto.rolledBackAt ?? undefined,
     limits: { noteMaxLength: dto.limits.noteMaxLength, summaryMaxLength: dto.limits.summaryMaxLength },
+    features: { itemsVisible: dto.features.itemsVisible, summaryFolding: dto.features.summaryFolding },
   };
 }

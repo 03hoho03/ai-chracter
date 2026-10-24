@@ -12,7 +12,7 @@ import { isApiError } from "./client";
  * 하나(둘을 가르는 것도 `code` — `AUTH_LIMIT`/`AUTH_COOLDOWN`), 발행 심사는 publish, 업로드 URL 발급은
  * upload 다(둘 다 `USER_LIMIT`). 소설화(`novelize/billing.py`)는 novelize 하나이고 같은 장 하루 상한은
  * `USER_LIMIT`, 잔액 부족은 `CLOVER_REQUIRED` 로 갈린다. 노벨 화 소장의 잔액 부족은 novel_read 이고, 노벨 공개 심사의
- * 시간당 호출 상한과 하루 거절 상한은 novel_screen_hourly·novel_screen_daily_reject 로 갈린다(풀리는 시각이 달라서). upload 는 화면이 따로 말하지 않지만, 값이 여기 없으면 그 429 가
+ * 시간당 호출 상한과 하루 거절 상한은 novel_screen_hourly·novel_screen_daily_reject 로 갈린다(풀리는 시각이 달라서). 대화방 요약 다시 만들기의 잔액 부족은 memory_summary 다. upload 는 화면이 따로 말하지 않지만, 값이 여기 없으면 그 429 가
  * 파싱 실패로 접히므로 BE 가 보내는 값은 전부 담는다.
  *
  * 🔴 이 enum 둘이 **1관문**이다. BE가 보내는 값이 여기 없으면
@@ -51,6 +51,7 @@ const rateLimitDetailSchema = z.object({
     "novel_read",
     "novel_screen_hourly",
     "novel_screen_daily_reject",
+    "memory_summary",
   ]),
 });
 

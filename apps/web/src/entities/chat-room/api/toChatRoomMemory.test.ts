@@ -30,6 +30,25 @@ describe("toChatRoomMemory", () => {
         limits: LIMITS,
         features: FEATURES,
       }),
-    ).toEqual({ note: "고양이", summary, version: 3, rolledBackAt: "2026-09-28T01:00:00Z", limits: LIMITS });
+    ).toEqual({
+      note: "고양이",
+      summary,
+      version: 3,
+      rolledBackAt: "2026-09-28T01:00:00Z",
+      limits: LIMITS,
+      features: FEATURES,
+    });
+  });
+
+  it("carries the server switches that decide whether the panel shows scene and fact lists", () => {
+    const memory = toChatRoomMemory({
+      note: "",
+      summary: null,
+      version: 0,
+      rolledBackAt: null,
+      limits: LIMITS,
+      features: { itemsVisible: true, summaryFolding: false },
+    });
+    expect(memory.features).toEqual({ itemsVisible: true, summaryFolding: false });
   });
 });

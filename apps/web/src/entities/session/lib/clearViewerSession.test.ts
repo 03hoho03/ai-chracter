@@ -29,6 +29,7 @@ const VIEWER_KEYS: QueryKey[] = [
   chatRoomKeys.list({ contentId: "c1", contentType: "character" }),
   chatRoomKeys.detail("r1"),
   chatRoomKeys.memory("r1"),
+  chatRoomKeys.memoryItems("r1"),
   chatRoomKeys.playGuide("r1"),
   chatRoomKeys.endingCollection("s1"),
   characterImageArchiveKeys.list("c1"),
