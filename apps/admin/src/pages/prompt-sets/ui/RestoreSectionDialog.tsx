@@ -27,8 +27,9 @@ type RestoreSectionDialogProps = {
   model: PromptModel;
 };
 
-/** 확인 → (저장된 초안의 그 섹션에 게시 안 한 편집이 있으면) 덮어쓰기 확인. */
-type Step = { kind: "confirm" } | { kind: "overwrite"; message: string };
+/** 확인 → (저장된 초안의 그 섹션에 게시 안 한 편집이 있으면) 덮어쓰기 확인. 덮어쓰기 안내는 서버 원문(채널 원문 이름과 API
+ * 요청 방법을 담는다)이 아니라 화면이 채널 이름표로 만든다. */
+type Step = { kind: "confirm" } | { kind: "overwrite" };
 
 const UNPUBLISHED_EDITS_RULE = "draft-channel-has-unpublished-edits";
 
@@ -56,7 +57,7 @@ export const RestoreSectionDialog = createCallable<RestoreSectionDialogProps, vo
       } catch (error) {
         const detail = ruleDetail(error);
         if (isApiError(error) && error.status === 409 && detail?.rule === UNPUBLISHED_EDITS_RULE) {
-          setStep({ kind: "overwrite", message: detail.message });
+          setStep({ kind: "overwrite" });
           return;
         }
         if (isApiError(error) && (error.status === 422 || error.status === 404)) {
@@ -79,7 +80,8 @@ export const RestoreSectionDialog = createCallable<RestoreSectionDialogProps, vo
             <DialogDescription className="break-keep">
               {isOverwrite ? (
                 <>
-                  {step.message} 덮어쓰면 그 편집은 사라지고 v{version ?? "?"}의 {sectionName} 섹션으로 바뀌어요.
+                  초안의 {sectionName} 섹션에 게시하지 않은 편집이 있어요. 덮어쓰면 그 편집은 사라지고 v{version ?? "?"}의{" "}
+                  {sectionName} 섹션으로 바뀌어요.
                 </>
               ) : (
                 <>
