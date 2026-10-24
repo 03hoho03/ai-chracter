@@ -2127,6 +2127,22 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   "SELECT count(*), count(*) FILTER (WHERE status = 'succeeded') FROM novel_jobs WHERE block_edit IS NOT NULL;"
 ```
 
+**구성안 화 턴 수·원고 모델 턴 상한·긴 화 승인 막기·모델 호출 실패 로그 — 배포 · 되돌리기(마이그레이션 없음).** 코드만 오른다. 새
+스위치·env·프롬프트 없음.
+- 응답 칸 추가(이름·뜻이 바뀐 칸 없음): 전체 구성안 응답의 화마다 `turnCount`(근거 안 모델 응답 수, 셀 수 없으면 null)와 상태의
+  `chapterTurnCaps`(원고에 고를 수 있는 모델별 `maxTurns`), 장면 구성안 응답의 `chapterTurnCount`(승인한 장면 구성안의 장면 턴 수,
+  판정 없으면 null)와 원고 모델 항목의 `maxTurns`(늘 실림)·`eligible`·`ineligibleReason`(판정 없으면 null). 두 라우트 모두 구성 흐름
+  스위치 뒤라 꺼짐에선 지금처럼 404 이고 옛 흐름 응답은 그대로다.
+- 동작 변경: 전체 구성안 **승인**이, 원고가 아직 안 된 화 중 이 계정이 고를 수 있는 원고 모델의 가장 큰 턴 상한을 넘는 화가 있으면 409
+  `NOVEL_OUTLINE_EPISODE_TOO_LONG`(+ `maxTurns`·`episodes[{key, turnCount}]`)이다. 고친 판 저장은 막지 않는다. 턴 상한 env
+  (`NOVELIZE_CHAPTER_MAX_TURNS*`)를 바꾸면 api 를 다시 띄운 뒤부터 그 값으로 판정된다.
+- 소설화 모델 호출 실패 경고 로그(장 생성·문단 수정·여러 문단 수정·전체 구성안·장면 구성안)에 원인 예외 종류·HTTP 상태·공급자 오류
+  종류·공급자 요청 id 가 붙는다(예외 글·본문은 넣지 않는다). 작업 종류·작업 행 칸은 바뀌지 않아, 겹침 동안 옛 이미지 워커가 작업을 받아도 결과는 같고
+  로그만 옛 꼴이다.
+- 평상시 겹침 교체로 배포한다(`skip_overlap` 불필요). **병합 전**: 마이그레이션이 없어 백업 확인·SELECT 는 필요 없다.
+- **되돌리기**: 이미지만 직전 판으로 되돌린다(downgrade 없음). 그 사이 승인된 구성안은 그대로 쓴다. 새 칸을 읽는 web 후속이 이미 나가
+  있으면 칸이 없을 때 안내만 사라지는지 먼저 본다 — 그래서 web 후속은 이 배포를 확인한 뒤에 낸다.
+
 ### 3-12. 상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기
 
 채팅 턴 생성(측정용 리플레이 포함)과 소설 장 생성은 Gemini 대신 Claude 로 돌 수 있다. 판정·요약은 고른

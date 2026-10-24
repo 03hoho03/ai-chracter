@@ -27,6 +27,7 @@ from api.llm.dependencies import get_llm_client
 from api.novel_public.no_store import NoStoreRoute
 from api.novelize.access import require_novelize_access
 from api.novelize.billing import _lock_user, job_price
+from api.novelize.episodes import chapter_max_turns
 from api.novelize.inputs import SourceChangedError
 from api.novelize.outline import (
     InputTooLargeError,
@@ -51,8 +52,9 @@ from api.novelize.router import (
     _source_room_id,
     _start_job,
 )
-from api.novelize.scene_outline import episode_progress
+from api.novelize.scene_outline import episode_progress, episode_turn_counts, written_episodes
 from api.novelize.schemas import (
+    NovelChapterTurnCap,
     NovelJobResponse,
     NovelOutlineApproveRequest,
     NovelOutlineCreateRequest,
@@ -87,6 +89,7 @@ async def _latest(db: AsyncSession, novel_id: uuid.UUID, *, approved: bool = Fal
 async def _view(db: AsyncSession, outline: NovelOutline, room_id: uuid.UUID | None) -> NovelOutlineView:
     keys = [uuid.UUID(str(episode["key"])) for episode in outline.episodes]
     progress = await episode_progress(db, outline.novel_id, keys)
+    turn_counts = await episode_turn_counts(db, room_id, outline.episodes)
     stale = not await selection_still_holds(db, outline.novel_id, outline.selection_id)
     return NovelOutlineView(
         revision=outline.revision,
@@ -115,8 +118,9 @@ async def _view(db: AsyncSession, outline: NovelOutline, room_id: uuid.UUID | No
                 ],
                 chapter_id=progress[key][0],
                 scene_outline=progress[key][1],
+                turn_count=turn_count,
             )
-            for key, episode in zip(keys, outline.episodes, strict=True)
+            for key, episode, turn_count in zip(keys, outline.episodes, turn_counts, strict=True)
         ],
     )
 
@@ -134,7 +138,37 @@ async def _state(db: AsyncSession, novel: Novel) -> NovelOutlineState:
             NovelOutlineModel(id=option.id, name=option.name, cost=job_price("outline_generate", option.id))
             for option in chapter_models
         ],
+        chapter_turn_caps=[
+            NovelChapterTurnCap(id=option.id, name=option.name, max_turns=chapter_max_turns(option.id))
+            for option in chapter_models
+        ],
     )
+
+
+async def _refuse_unwritable_episodes(db: AsyncSession, novel: Novel, outline: NovelOutline) -> None:
+    """이 계정이 원고에 고를 수 있는 어떤 모델의 턴 상한보다도 긴 화가 있으면 409 `NOVEL_OUTLINE_EPISODE_TOO_LONG` 으로 승인을 막는다 —
+    장면 구성안 값을 받기 전에 멈추게 하려는 것이다. 상세에 상한(`maxTurns`, 고를 수 있는 모델 중 가장 큰 값)과 넘는 화마다 키·턴 수
+    (`episodes[{key, turnCount}]`, 구성안 순서)를 실어 화면이 그 화를 짚고 나누기를 권하게 한다.
+
+    턴 수는 화 근거 안의 모델 응답 수다(`episode_turn_counts`). 장면 구성안이 턴을 덜면 원고 턴 수는 이보다 적지만 판정은 화 근거로만
+    한다 — 이 판정을 지난 구성안에는 상한을 넘는 화가 없으니, 장면을 덜어야만 쓸 수 있는 화는 이 판정이 없던 때 승인했거나 그 뒤 상한이
+    내려간(env 를 낮췄거나 상위 모델 허용이 빠진) 구성안에만 있다. 그런 승인본의 화는 지금도 장면 구성안을 사서 덜어 쓸 수 있지만, 그
+    구성안을 고쳐 새 판을 승인하려면 그 화도 나눠야 한다. 이미 원고가 된 화는 다시 쓸 화가 아니라 빼고, 셀 수 없는 화(근거 메시지
+    소실·방 없음)는 여기서 막지 않는다 — 다음 단계의 원문 검사가 막는다."""
+    options, _ = await _chapter_models(db, novel.user_id)
+    cap = max(chapter_max_turns(option.id) for option in options)
+    written = await written_episodes(db, novel.id)
+    counts = await episode_turn_counts(db, novel.chat_room_id, outline.episodes)
+    over = [
+        {"key": str(episode["key"]), "turnCount": count}
+        for episode, count in zip(outline.episodes, counts, strict=True)
+        if count is not None and count > cap and str(episode["key"]) not in written
+    ]
+    if over:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "NOVEL_OUTLINE_EPISODE_TOO_LONG", "maxTurns": cap, "episodes": over},
+        )
 
 
 async def _locked_latest(db: AsyncSession, novel: Novel, revision: int) -> NovelOutline:
@@ -152,7 +186,8 @@ async def get_novel_outline(
     novel: Novel = Depends(_owned_novel_dependency),
     db: AsyncSession = Depends(get_db_session),
 ) -> NovelOutlineState:
-    """전체 구성안 화면의 상태 — 승인본·초안(낡음 표시 포함)과 화 수 상한, 고를 수 있는 모델과 구성안 가격."""
+    """전체 구성안 화면의 상태 — 승인본·초안(낡음 표시·화마다 턴 수 포함)과 화 수 상한, 고를 수 있는 모델과 구성안 가격, 원고 모델별
+    턴 상한."""
     return await _state(db, novel)
 
 
@@ -245,11 +280,14 @@ async def approve_novel_outline(
     db: AsyncSession = Depends(get_db_session),
 ) -> NovelOutlineState:
     """가장 최근 리비전을 승인한다(무과금). 이미 승인한 최신 리비전이면 그대로 돌려준다(두 번 누름). 최신이 아니면 409
-    `NOVEL_OUTLINE_CONFLICT`, 낡은 판이면 409 `NOVEL_OUTLINE_STALE`."""
+    `NOVEL_OUTLINE_CONFLICT`, 낡은 판이면 409 `NOVEL_OUTLINE_STALE`, 이 계정이 고를 수 있는 어떤 원고 모델로도 쓸 수 없을 만큼 긴 화가
+    있으면 409 `NOVEL_OUTLINE_EPISODE_TOO_LONG` + `maxTurns`(고를 수 있는 모델 중 가장 큰 턴 상한)·`episodes`(넘는 화마다 `key`·
+    `turnCount`, 구성안 순서 — 이미 원고가 된 화는 빼고 센다). 고친 판 저장은 이것으로 막지 않는다 — 저장한 뒤 나눠서 승인하면 된다."""
     latest = await _locked_latest(db, novel, payload.revision)
     if latest.approved_at is None:
         if not await selection_still_holds(db, novel.id, latest.selection_id):
             raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_OUTLINE_STALE")
+        await _refuse_unwritable_episodes(db, novel, latest)
         await db.execute(
             update(NovelOutline)
             .where(NovelOutline.id == latest.id, NovelOutline.approved_at.is_(None))
