@@ -39,8 +39,13 @@ from api.chat.prompt_builder import (
     SceneJudgmentResult,
     StatRuleJudgmentResult,
 )
+from api.chat import memory_fold
+from api.chat.prompt_stages import LANE_STAGES
+from api.core import clover
 from api.core.config import settings
 from api.db.models import AssetStatus, ChatMessage, ChatMessageRole, ChatRoom
+from api.db.models.chat import ChatRoomMemorySnapshot
+from api.db.models.prompt import PromptRoute
 from api.db.models.story import StoryVersionDetail
 from api.llm import anthropic_api as anthropic_module
 from api.llm import bedrock as bedrock_module
@@ -430,3 +435,190 @@ async def test_empty_route_table_calls_match_the_characterization(
     )
 
     assert observed == expected[scenario_id(profile, surface, room_model)]
+
+
+# ── 행이 있는 표: 판정·요약·추출 호출이 행의 부를 모델로 간다 ─────────────────────────────────────
+
+
+def route(lane: str, room_model: str, stage: str, call_model: str, backend: str) -> PromptRoute:
+    """Haiku 체인을 읽고 `call_model` 을 `backend` 로 부르는 행."""
+    return PromptRoute(
+        lane=lane, room_model=room_model, stage=stage, chain_model="haiku", call_model=call_model, backend=backend
+    )
+
+
+async def put_routes(db_session: AsyncSession, routes: list[PromptRoute]) -> None:
+    db_session.add_all(routes)
+    await db_session.commit()
+
+
+def with_row_calls(base: dict[str, Any], row_calls: dict[str, tuple[str, str]]) -> dict[str, Any]:
+    """빈 표의 특성 기대값에서 행이 적용된 호출 위치만 (구현, 모델 id) 를 바꾼 기대값. SDK 가 받은 id 와 덤프 줄의 모델 칸도 같은
+    값으로 바뀐다."""
+    recorded = [
+        [row_calls[call_site][0], call_site, row_calls[call_site][1]] if call_site in row_calls else [b, call_site, m]
+        for b, call_site, m in base["recorded"]
+    ]
+    dump = [
+        [kind, call_site, chat_model, row_calls[call_site][1] if call_site in row_calls else model]
+        for kind, call_site, chat_model, model in base["dump"]
+    ]
+    return {
+        **base,
+        "recorded": sorted(recorded, key=json.dumps),
+        "sent": sorted([[b, m] for b, _, m in recorded], key=json.dumps),
+        "dump": sorted(dump, key=json.dumps),
+    }
+
+
+# 스토리 방의 판정 넷 — 단계 → (부를 모델, 경로), 호출 위치 → 기대하는 (구현, 보낸 id). 엔딩은 Gemini 로 되돌리는 행이라 Gemini
+# 구현이 판정 종류의 Gemini 모델 스위치를 그대로 적용한다.
+STORY_ROWS = {
+    "stat_judgment": ("opus", "anthropic"),
+    "scene_judgment": ("sonnet", "anthropic"),
+    "ending_judgment": ("gemini", "gemini"),
+    "media_book_image": ("sonnet", "anthropic"),
+}
+STORY_ROW_CALLS = {
+    "chat_stat_judgment": ("anthropic", "fixture-anthropic-opus"),
+    "chat_scene_judgment": ("anthropic", "fixture-anthropic-sonnet"),
+    "chat_ending_judgment": ("gemini", "fixture-gemini-ending"),
+    "chat_media_book_image": ("anthropic", "fixture-anthropic-sonnet"),
+}
+# 캐릭터 방의 그림 판정과 접기·두 추출.
+CHARACTER_ROWS = {
+    "situational_image": ("opus", "anthropic"),
+    "memory_summary": ("sonnet", "anthropic"),
+    "memory_episode": ("gemini", "gemini"),
+    "memory_fact": ("opus", "anthropic"),
+}
+CHARACTER_ROW_CALLS = {
+    "chat_situational_image": ("anthropic", "fixture-anthropic-opus"),
+    "chat_memory_summary": ("anthropic", "fixture-anthropic-sonnet"),
+    "chat_memory_episode": ("gemini", "fixture-gemini-base"),
+    "chat_memory_fact": ("anthropic", "fixture-anthropic-opus"),
+}
+_LANE_STAGE_NAMES: dict[str, tuple[str, ...]] = {lane: tuple(stages) for lane, stages in LANE_STAGES.items()}
+_OTHER_ROOM = {"gemini": "opus", "opus": "gemini"}
+_OTHER_LANE = {"story": "character", "character": "story"}
+_LANE_CASES = {
+    "story": ("story-edit", STORY_ROWS, STORY_ROW_CALLS),
+    "character": ("character-send", CHARACTER_ROWS, CHARACTER_ROW_CALLS),
+}
+
+
+@pytest.mark.parametrize("room_model", ROOM_MODELS)
+@pytest.mark.parametrize("lane", ["story", "character"])
+@pytest.mark.parametrize("rows_at", ["own-cell", "other-room", "other-lane"])
+async def test_judgment_summary_and_extraction_calls_go_to_the_model_their_row_calls(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    routing_warnings: RoutingWarnings,
+    expected: dict[str, Any],
+    room_model: str,
+    lane: str,
+    rows_at: str,
+) -> None:
+    """행이 있는 칸의 호출은 행의 부를 모델로, 행이 고른 구현에 가고, SDK 가 받은 id·사용량 기록의 모델 칸·덤프 줄의 모델 칸이
+    모두 그 모델의 id 다. 라우터는 경고를 남기지 않는다(라우터와 구현이 같은 모델을 본다). 다른 방 모델이나 다른 레인의 칸에 둔
+    행은 이 턴의 호출을 바꾸지 않는다."""
+    surface, rows, row_calls = _LANE_CASES[lane]
+    rows_lane = _OTHER_LANE[lane] if rows_at == "other-lane" else lane
+    rows_room = _OTHER_ROOM[room_model] if rows_at == "other-room" else room_model
+    # 다른 레인에 둘 때는 그 레인에 있는 단계의 행만 둔다(캐릭터 레인에는 스탯·장면 헤더·엔딩·미디어 북 단계가 없다).
+    await put_routes(
+        db_session,
+        [
+            route(rows_lane, rows_room, stage, *pair)
+            for stage, pair in rows.items()
+            if stage in _LANE_STAGE_NAMES[rows_lane]
+        ],
+    )
+
+    observed = await observe(
+        db_client,
+        db_session,
+        monkeypatch,
+        tmp_path,
+        routing_warnings,
+        profile="haiku-direct",
+        surface=surface,
+        room_model=room_model,
+    )
+
+    base = expected[scenario_id("haiku-direct", surface, room_model)]
+    assert observed == (with_row_calls(base, row_calls) if rows_at == "own-cell" else base)
+
+
+async def test_an_empty_summary_from_the_row_model_is_tagged_with_the_backend_it_went_to(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    routing_warnings: RoutingWarnings,
+) -> None:
+    """요약 칸의 행이 Gemini 로 부르고 env 의 요약 모델은 Anthropic 직결 Haiku 일 때, 빈 요약 실패의 공급자 태그는 요약이 실제로
+    간 Gemini 다."""
+    await put_routes(db_session, [route("character", "gemini", "memory_summary", "gemini", "gemini")])
+    # 구현은 만들 때 기본 모델 설정을 읽으므로 설정을 먼저 고정한다.
+    fix_settings(monkeypatch, "haiku-direct", tmp_path / "dump.jsonl")
+    sdks = ProviderSdks(monkeypatch)
+    sdks.answers[MemorySummaryResult] = MemorySummaryResult(summary="   ")
+    tags: list[str] = []
+    monkeypatch.setattr(memory_fold, "capture_dependency_failure", lambda exc, *, dependency: tags.append(dependency))
+
+    observed = await observe(
+        db_client,
+        db_session,
+        monkeypatch,
+        tmp_path,
+        routing_warnings,
+        profile="haiku-direct",
+        surface="character-send",
+        room_model="gemini",
+        sdks=sdks,
+    )
+
+    assert ["gemini", "chat_memory_summary", "fixture-gemini-base"] in observed["recorded"]
+    assert tags == ["gemini"]
+
+
+async def test_summary_regeneration_calls_the_model_of_the_summary_row(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """요약 다시 만들기도 요약 칸 행의 부를 모델로 부른다."""
+    fix_settings(monkeypatch, "haiku-direct", tmp_path / "dump.jsonl")
+    monkeypatch.setattr(settings, "memory_items_visible", True)
+    await put_routes(db_session, [route("character", "gemini", "memory_summary", "sonnet", "anthropic")])
+    user = await _make_user_with_clover_lot(db_session, clover_balance=1000)
+    room = await _open_room(db_client, db_session, turns=25, user=user)
+    for turn, text in ((10, "앞 요약"), (20, "AI가 접은 요약")):
+        assistant = room.turns[turn][1]
+        db_session.add(
+            ChatRoomMemorySnapshot(
+                chat_room_id=room.room_id,
+                cursor_created_at=assistant.created_at,
+                cursor_message_id=assistant.id,
+                summary_text=text,
+                source="auto",
+            )
+        )
+        await db_session.commit()
+    sdks = ProviderSdks(monkeypatch)
+    _override_llm_client(sdks.client())
+    try:
+        resp = await db_client.post(
+            f"/chat-rooms/{room.room_id}/memory/summary/regenerate",
+            json={"version": 0, "expectedCost": clover.MEMORY_SUMMARY_REGENERATE_COST},
+        )
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200, resp.text
+    assert sdks.recorded == [("anthropic", "chat_memory_summary", "fixture-anthropic-sonnet")]
+    assert sdks.sent == [("anthropic", "fixture-anthropic-sonnet")]
