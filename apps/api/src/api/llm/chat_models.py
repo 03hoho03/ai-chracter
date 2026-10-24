@@ -2,7 +2,8 @@
 
 id 는 공급사 모델명이 아닌 불투명 값(`gemini`·`sonnet`·`opus`)이다. 방·작업 행과 FE 가 이 값을 저장하고 주고받으므로,
 모델 버전을 바꿀 때는 실제 모델 id 설정만 바꾸고 이 값은 그대로 둔다. 판정·요약·심사처럼 구조화 출력이 필요한 호출은
-고른 모델과 무관하게 구현을 고른다 — 판정·요약은 판정·요약 모델 설정으로, 나머지는 기본 모델로(`llm/routing.py`). 모델을 어느 구현이 어느 설정의 id 로 서비스하는지는
+고른 모델과 무관하게 구현을 고른다 — 판정·요약은 모델 배정 표의 행이 정한 모델(호출에 실린 `call_model`), 행이 없으면 판정·요약
+모델 설정으로, 나머지는 기본 모델로(`llm/routing.py`). 모델을 어느 구현이 어느 설정의 id 로 서비스하는지는
 `llm/backends.py` 의 등록부가 정한다.
 
 정적 데이터만 둔다 — 누가 어느 모델을 쓸 수 있는지는 기능별 허용 판정이 정한다. 가격의 소스는 `core/clover.py` 이고,
@@ -121,13 +122,16 @@ def novel_episode_outline_unit_price(model_id: ChatModelId) -> int:
     assert_never(model_id)
 
 
-def structured_call_model(call_site: LLMCallSite, carried: PromptSetModelId) -> PromptSetModelId:
-    """구조화 호출 하나가 쓸 모델 — 실린 모델(`carried`)을 따르는 호출(구성안)이면 실린 모델, 아니면 그 호출의 모델(판정·요약은 그
-    설정의 모델, 나머지는 기본 모델). 라우터가 구현을, Claude 구현이 보낼 모델 id 를 이 함수 하나로 정한다 — 따로 계산하면
-    라우터가 고른 구현이 모르는 id 를 찾거나 값을 낸 모델과 다른 모델로 보낸다."""
+def structured_call_model(
+    call_site: LLMCallSite, carried: PromptSetModelId, call_model: PromptSetModelId | None = None
+) -> PromptSetModelId:
+    """구조화 호출 하나가 쓸 모델 — 실린 모델(`carried`)을 따르는 호출(구성안)이면 실린 모델, 아니면 모델 배정 표의 행이 정한
+    모델(`call_model`), 그것도 없으면 그 호출의 모델(판정·요약은 그 설정의 모델, 나머지는 기본 모델). 라우터가 구현을, Claude
+    구현이 보낼 모델 id 를 이 함수 하나에 같은 세 인자를 넘겨 정한다 — 따로 계산하면 라우터가 고른 구현이 모르는 id 를 찾거나 값을
+    낸 모델과 다른 모델로 보낸다."""
     if follows_carried_model(call_site):
         return carried
-    return configured_call_site_model(call_site)
+    return call_model or configured_call_site_model(call_site)
 
 
 def configured_call_site_model(call_site: LLMCallSite) -> PromptSetModelId:

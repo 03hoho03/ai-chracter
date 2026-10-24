@@ -1122,6 +1122,7 @@ def _fold_after_commit(
             is_story_chat=is_story_chat,
             names=names,
             writing_model=writing_model,
+            call_model=judgment_sets.call_model("summary"),
         )
         if settings.memory_episodes_extract:
             episode_set, episode_sections = judgment_sets.episode
@@ -1135,6 +1136,7 @@ def _fold_after_commit(
                 sections=episode_sections,
                 is_story_chat=is_story_chat,
                 names=names,
+                call_model=judgment_sets.call_model("episode"),
             )
         if settings.memory_facts_extract:
             fact_set, fact_sections = judgment_sets.fact
@@ -1148,6 +1150,7 @@ def _fold_after_commit(
                 sections=fact_sections,
                 is_story_chat=is_story_chat,
                 names=names,
+                call_model=judgment_sets.call_model("fact"),
             )
         if settings.memory_impressions_write:
             impression_set, impression_sections = judgment_sets.impression
@@ -2551,7 +2554,13 @@ async def regenerate_chat_room_memory_summary(
                     names=names,
                     writing_model=writing_model,
                 )
-                summary = await summarize(llm_client, prompt, user_id=user_id, room_id=room.id)
+                summary = await summarize(
+                    llm_client,
+                    prompt,
+                    user_id=user_id,
+                    room_id=room.id,
+                    call_model=judgment_sets.call_model("summary"),
+                )
                 try:
                     await write_regenerated(db, room.id, source, summary)
                 except RegenerateVersionConflictError:

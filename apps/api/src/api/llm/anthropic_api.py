@@ -245,7 +245,7 @@ class AnthropicLLMClient(LLMClient):
     async def _structured(
         self, prompt: str, response_schema: type[T], system: str | None, usage: LLMCallContext, method: str
     ) -> T:
-        model = backend_model_id("anthropic", structured_call_model(usage.call_site, usage.model))
+        model = backend_model_id("anthropic", structured_call_model(usage.call_site, usage.model, usage.call_model))
         thinking: ThinkingConfigParam | None
         effort: ClaudeEffort | None
         if follows_carried_model(usage.call_site):

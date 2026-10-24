@@ -95,6 +95,7 @@ from api.db.models.story import (
     StatDef,
     StatRule,
 )
+from api.llm.chat_models import PromptSetModelId
 from api.llm.client import (
     CallUsage,
     LLMCallContext,
@@ -432,7 +433,11 @@ async def _prepare_situational_image_judgment(
 
 
 async def _judge_situational_image(
-    llm_client: LLMClient, judgment: _SituationalImageJudgment, room: ChatRoom, usage_sink: list[CallUsage] | None
+    llm_client: LLMClient,
+    judgment: _SituationalImageJudgment,
+    room: ChatRoom,
+    usage_sink: list[CallUsage] | None,
+    call_model: PromptSetModelId | None,
 ) -> SituationalImage | None:
     """상황별 이미지 판정 LLM 호출 — DB 에 닿지 않는다. 응답(matchedImageEntityId)은 항상 단수라 "동시 매칭 시
     order 최상위만 발동"은 프롬프트 지시로 처리하고, 그 반환값이 실제 후보 목록에 있는지만 방어적으로 재확인한다.
@@ -443,7 +448,11 @@ async def _judge_situational_image(
         judgment.prompt,
         {image.entity_id for image in judgment.candidates},
         LLMCallContext(
-            call_site="chat_situational_image", user_id=room.user_id, room_id=room.id, usage_sink=usage_sink
+            call_site="chat_situational_image",
+            user_id=room.user_id,
+            room_id=room.id,
+            call_model=call_model,
+            usage_sink=usage_sink,
         ),
     )
     return next((image for image in judgment.candidates if image.entity_id == matched_id), None)
@@ -838,6 +847,7 @@ class StatJudgment:
                 call_site="chat_stat_judgment",
                 user_id=self._room.user_id,
                 room_id=self._room.id,
+                call_model=ctx.prompt_sets.call_model("stat"),
                 usage_sink=ctx.usage_sink,
             ),
             log_subject=ctx.log_subject,
@@ -946,6 +956,7 @@ class RegenerateStatJudgment:
                 call_site="chat_stat_judgment",
                 user_id=self._room.user_id,
                 room_id=self._room.id,
+                call_model=ctx.prompt_sets.call_model("stat"),
                 usage_sink=ctx.usage_sink,
             ),
             log_subject=ctx.log_subject,
@@ -1034,6 +1045,7 @@ class EndingJudgment:
                     call_site="chat_ending_judgment",
                     user_id=self._room.user_id,
                     room_id=self._room.id,
+                    call_model=ctx.prompt_sets.call_model("ending"),
                     usage_sink=ctx.usage_sink,
                 ),
             )
@@ -1085,6 +1097,7 @@ class MediaCellJudgment:
                 call_site="chat_media_book_image",
                 user_id=self._room.user_id,
                 room_id=self._room.id,
+                call_model=ctx.prompt_sets.call_model("image"),
                 usage_sink=ctx.usage_sink,
             ),
             log_subject=ctx.log_subject,
@@ -1121,7 +1134,9 @@ class SituationalImageJudgment:
     async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
         if self._judgment is None:
             return
-        self._matched = await _judge_situational_image(llm_client, self._judgment, self._room, ctx.usage_sink)
+        self._matched = await _judge_situational_image(
+            llm_client, self._judgment, self._room, ctx.usage_sink, ctx.prompt_sets.call_model("image")
+        )
 
     def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
         result.matched_image = self._matched
@@ -1170,7 +1185,12 @@ class PreviewStatJudgment:
         self._outcome = await _await_stat_judgment(
             llm_client,
             self._request,
-            LLMCallContext(call_site="preview_stat_judgment", user_id=self._user_id, room_id=None),
+            LLMCallContext(
+                call_site="preview_stat_judgment",
+                user_id=self._user_id,
+                room_id=None,
+                call_model=ctx.prompt_sets.call_model("stat"),
+            ),
             log_subject=ctx.log_subject,
             current_stats=self._current_stats,
             stat_defs=self._stat_defs,
@@ -1237,7 +1257,12 @@ class PreviewEndingJudgment:
             ending_judgment = await llm_client.generate_structured(
                 ending_judgment_prompt,
                 EndingJudgmentResult,
-                usage=LLMCallContext(call_site="preview_ending_judgment", user_id=self._user_id, room_id=None),
+                usage=LLMCallContext(
+                    call_site="preview_ending_judgment",
+                    user_id=self._user_id,
+                    room_id=None,
+                    call_model=ctx.prompt_sets.call_model("ending"),
+                ),
             )
             if not ending_judgment.triggered:
                 continue
@@ -1292,7 +1317,12 @@ class PreviewMediaCellJudgment:
         self._cell_id = await _judge_media_cell(
             llm_client,
             self._judgment,
-            LLMCallContext(call_site="preview_media_book_image", user_id=self._user_id, room_id=None),
+            LLMCallContext(
+                call_site="preview_media_book_image",
+                user_id=self._user_id,
+                room_id=None,
+                call_model=ctx.prompt_sets.call_model("image"),
+            ),
             log_subject=ctx.log_subject,
         )
 
@@ -1412,7 +1442,11 @@ class StorySceneJudgment(_StorySceneJudgmentBase):
 
     def _usage(self, ctx: JudgmentContext) -> LLMCallContext:
         return LLMCallContext(
-            call_site=self._CALL_SITE, user_id=self._user_id, room_id=self._room_id, usage_sink=ctx.usage_sink
+            call_site=self._CALL_SITE,
+            user_id=self._user_id,
+            room_id=self._room_id,
+            call_model=ctx.prompt_sets.call_model("scene"),
+            usage_sink=ctx.usage_sink,
         )
 
 
@@ -1429,7 +1463,12 @@ class PreviewStorySceneJudgment(_StorySceneJudgmentBase):
         self._render(ctx, self._session_previous)
 
     def _usage(self, ctx: JudgmentContext) -> LLMCallContext:
-        return LLMCallContext(call_site=self._CALL_SITE, user_id=self._user_id, room_id=None)
+        return LLMCallContext(
+            call_site=self._CALL_SITE,
+            user_id=self._user_id,
+            room_id=None,
+            call_model=ctx.prompt_sets.call_model("scene"),
+        )
 
 
 def new_turn_judgments(

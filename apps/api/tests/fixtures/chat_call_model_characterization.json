@@ -1,0 +1,2360 @@
+{
+ "generated_from": "8e9c9b3d",
+ "fixed_settings": {
+  "gemini_model_name": "fixture-gemini-base",
+  "gemini_stat_judgment_model_name": "fixture-gemini-stat",
+  "gemini_ending_judgment_model_name": "fixture-gemini-ending",
+  "gemini_image_judgment_model_name": null,
+  "gemini_seed": null,
+  "bedrock_sonnet_model_id": "fixture-bedrock-sonnet",
+  "bedrock_opus_model_id": "fixture-bedrock-opus",
+  "bedrock_haiku_model_id": "fixture-bedrock-haiku",
+  "anthropic_sonnet_model_id": "fixture-anthropic-sonnet",
+  "anthropic_opus_model_id": "fixture-anthropic-opus",
+  "anthropic_haiku_model_id": "fixture-anthropic-haiku",
+  "anthropic_chat_effort": "low",
+  "anthropic_structured_effort": "low",
+  "chat_premium_models_enabled": true,
+  "memory_window_generation": true,
+  "memory_window_ending_judgment": true,
+  "memory_window_image_judgment": true,
+  "memory_episodes_extract": true,
+  "memory_facts_extract": true,
+  "memory_episodes_recall": false,
+  "memory_facts_inject": false,
+  "memory_knowledge_filter": false,
+  "memory_summary_secret_marking": false,
+  "memory_embed_write": false,
+  "memory_embed_recall": false,
+  "identity_gate_enabled": false,
+  "payments_enabled": false
+ },
+ "profiles": {
+  "gemini": [
+   "gemini",
+   {}
+  ],
+  "haiku-bedrock": [
+   "haiku",
+   {}
+  ],
+  "haiku-direct": [
+   "haiku",
+   {
+    "chat_generate": "anthropic",
+    "replay_generate": "anthropic",
+    "novelize_chapter": "anthropic",
+    "chat_stat_judgment": "anthropic",
+    "chat_ending_judgment": "anthropic",
+    "chat_situational_image": "anthropic",
+    "chat_media_book_image": "anthropic",
+    "chat_memory_summary": "anthropic",
+    "chat_memory_episode": "anthropic",
+    "chat_memory_fact": "anthropic",
+    "preview_stat_judgment": "anthropic",
+    "preview_ending_judgment": "anthropic",
+    "preview_media_book_image": "anthropic"
+   }
+  ]
+ },
+ "scenarios": {
+  "gemini-character-regenerate-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_situational_image",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-gemini-base"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "gemini-character-regenerate-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_generate",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "gemini",
+     "chat_situational_image",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-gemini-base"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "gemini-character-send-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_memory_episode",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_memory_fact",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_memory_summary",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_situational_image",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "background",
+     "chat_memory_episode",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "background",
+     "chat_memory_fact",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "background",
+     "chat_memory_summary",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-gemini-base"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "gemini-character-send-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_generate",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "gemini",
+     "chat_memory_episode",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_memory_fact",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_memory_summary",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_situational_image",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "background",
+     "chat_memory_episode",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "background",
+     "chat_memory_fact",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "background",
+     "chat_memory_summary",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-gemini-base"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "gemini-preview-story-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-ending"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "recorded": [
+    [
+     "gemini",
+     "preview_ending_judgment",
+     "fixture-gemini-ending"
+    ],
+    [
+     "gemini",
+     "preview_generate",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "preview_media_book_image",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "preview_scene_judgment",
+     "fixture-gemini-stat"
+    ],
+    [
+     "gemini",
+     "preview_stat_judgment",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "preview_ending_judgment",
+     null,
+     "fixture-gemini-ending"
+    ],
+    [
+     "judgment",
+     "preview_media_book_image",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "preview_scene_judgment",
+     null,
+     "fixture-gemini-stat"
+    ],
+    [
+     "judgment",
+     "preview_stat_judgment",
+     null,
+     "fixture-gemini-stat"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "gemini-story-edit-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-ending"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "recorded": [
+    [
+     "gemini",
+     "chat_ending_judgment",
+     "fixture-gemini-ending"
+    ],
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_media_book_image",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_scene_judgment",
+     "fixture-gemini-stat"
+    ],
+    [
+     "gemini",
+     "chat_stat_judgment",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_ending_judgment",
+     null,
+     "fixture-gemini-ending"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-gemini-stat"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-gemini-stat"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "gemini-story-edit-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-ending"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_generate",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "gemini",
+     "chat_ending_judgment",
+     "fixture-gemini-ending"
+    ],
+    [
+     "gemini",
+     "chat_media_book_image",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_scene_judgment",
+     "fixture-gemini-stat"
+    ],
+    [
+     "gemini",
+     "chat_stat_judgment",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "judgment",
+     "chat_ending_judgment",
+     null,
+     "fixture-gemini-ending"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-gemini-stat"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-gemini-stat"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "gemini-story-regenerate-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "recorded": [
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_media_book_image",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_scene_judgment",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-gemini-stat"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "gemini-story-regenerate-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_generate",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "gemini",
+     "chat_media_book_image",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_scene_judgment",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-gemini-stat"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "gemini-story-send-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "recorded": [
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_media_book_image",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_scene_judgment",
+     "fixture-gemini-stat"
+    ],
+    [
+     "gemini",
+     "chat_stat_judgment",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-gemini-stat"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-gemini-stat"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "gemini-story-send-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_generate",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "gemini",
+     "chat_media_book_image",
+     "fixture-gemini-base"
+    ],
+    [
+     "gemini",
+     "chat_scene_judgment",
+     "fixture-gemini-stat"
+    ],
+    [
+     "gemini",
+     "chat_stat_judgment",
+     "fixture-gemini-stat"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-gemini-stat"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-gemini-stat"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-bedrock-character-regenerate-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_situational_image",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-bedrock-character-regenerate-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-opus"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_generate",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "bedrock",
+     "chat_situational_image",
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-bedrock-character-send-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_memory_episode",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_memory_fact",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_memory_summary",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_situational_image",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "background",
+     "chat_memory_episode",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "background",
+     "chat_memory_fact",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "background",
+     "chat_memory_summary",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-bedrock-character-send-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-opus"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_generate",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "bedrock",
+     "chat_memory_episode",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_memory_fact",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_memory_summary",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_situational_image",
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "dump": [
+    [
+     "background",
+     "chat_memory_episode",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "background",
+     "chat_memory_fact",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "background",
+     "chat_memory_summary",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-bedrock-preview-story-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "preview_ending_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "preview_media_book_image",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "preview_scene_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "preview_stat_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "preview_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "preview_ending_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "preview_media_book_image",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "preview_scene_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "preview_stat_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-bedrock-story-edit-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_ending_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_media_book_image",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_scene_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_stat_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_ending_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-bedrock-story-edit-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-opus"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_ending_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_generate",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "bedrock",
+     "chat_media_book_image",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_scene_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_stat_judgment",
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "judgment",
+     "chat_ending_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-bedrock-story-regenerate-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_media_book_image",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_scene_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-bedrock-story-regenerate-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-opus"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_generate",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "bedrock",
+     "chat_media_book_image",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_scene_judgment",
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-bedrock-story-send-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_media_book_image",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_scene_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_stat_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-bedrock-story-send-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "fixture-bedrock-opus"
+    ]
+   ],
+   "recorded": [
+    [
+     "bedrock",
+     "chat_generate",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "bedrock",
+     "chat_media_book_image",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_scene_judgment",
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "bedrock",
+     "chat_stat_judgment",
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-bedrock-opus"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-bedrock-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-direct-character-regenerate-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "anthropic",
+     "chat_situational_image",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-direct-character-regenerate-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-opus"
+    ]
+   ],
+   "recorded": [
+    [
+     "anthropic",
+     "chat_generate",
+     "fixture-anthropic-opus"
+    ],
+    [
+     "anthropic",
+     "chat_situational_image",
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-anthropic-opus"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-direct-character-send-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "anthropic",
+     "chat_memory_episode",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_memory_fact",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_memory_summary",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_situational_image",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "background",
+     "chat_memory_episode",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "background",
+     "chat_memory_fact",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "background",
+     "chat_memory_summary",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-direct-character-send-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-opus"
+    ]
+   ],
+   "recorded": [
+    [
+     "anthropic",
+     "chat_generate",
+     "fixture-anthropic-opus"
+    ],
+    [
+     "anthropic",
+     "chat_memory_episode",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_memory_fact",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_memory_summary",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_situational_image",
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "dump": [
+    [
+     "background",
+     "chat_memory_episode",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "background",
+     "chat_memory_fact",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "background",
+     "chat_memory_summary",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-anthropic-opus"
+    ],
+    [
+     "judgment",
+     "chat_situational_image",
+     null,
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-direct-preview-story-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "anthropic",
+     "preview_ending_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "preview_media_book_image",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "preview_scene_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "preview_stat_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "preview_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "preview_ending_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "preview_media_book_image",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "preview_scene_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "preview_stat_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-direct-story-edit-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "anthropic",
+     "chat_ending_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_media_book_image",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_scene_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_stat_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_ending_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-direct-story-edit-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-opus"
+    ]
+   ],
+   "recorded": [
+    [
+     "anthropic",
+     "chat_ending_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_generate",
+     "fixture-anthropic-opus"
+    ],
+    [
+     "anthropic",
+     "chat_media_book_image",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_scene_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_stat_judgment",
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-anthropic-opus"
+    ],
+    [
+     "judgment",
+     "chat_ending_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-direct-story-regenerate-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "anthropic",
+     "chat_media_book_image",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_scene_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-direct-story-regenerate-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-opus"
+    ]
+   ],
+   "recorded": [
+    [
+     "anthropic",
+     "chat_generate",
+     "fixture-anthropic-opus"
+    ],
+    [
+     "anthropic",
+     "chat_media_book_image",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_scene_judgment",
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-anthropic-opus"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-direct-story-send-gemini": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "fixture-gemini-base"
+    ]
+   ],
+   "recorded": [
+    [
+     "anthropic",
+     "chat_media_book_image",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_scene_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_stat_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "gemini",
+     "chat_generate",
+     "fixture-gemini-base"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "gemini",
+     "fixture-gemini-base"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  },
+  "haiku-direct-story-send-opus": {
+   "status": 200,
+   "last_event": "done",
+   "sent": [
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "fixture-anthropic-opus"
+    ]
+   ],
+   "recorded": [
+    [
+     "anthropic",
+     "chat_generate",
+     "fixture-anthropic-opus"
+    ],
+    [
+     "anthropic",
+     "chat_media_book_image",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_scene_judgment",
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "anthropic",
+     "chat_stat_judgment",
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "dump": [
+    [
+     "generation",
+     null,
+     "opus",
+     "fixture-anthropic-opus"
+    ],
+    [
+     "judgment",
+     "chat_media_book_image",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_scene_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ],
+    [
+     "judgment",
+     "chat_stat_judgment",
+     null,
+     "fixture-anthropic-haiku"
+    ]
+   ],
+   "routing_warnings": 0
+  }
+ }
+}
