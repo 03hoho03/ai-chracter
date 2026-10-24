@@ -11,6 +11,7 @@
 
 import re
 import uuid
+from datetime import datetime
 from types import SimpleNamespace
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from typing import Any
@@ -18,6 +19,7 @@ from typing import Any
 import httpx
 import pytest
 import sqlalchemy as sa
+from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core import clover
@@ -1146,7 +1148,55 @@ async def test_a_written_outline_chapter_locks_only_the_scene_ranges_it_used(
 
     state = (await db_client.get(f"/novels/{novel_id}/source-selection")).json()
 
-    assert state["lockedRanges"] == [_range(ms, 0, 0), _range(ms, 1, 2), _range(ms, 3, 4), _range(ms, 9, 12)]
+    assert state["lockedRanges"] == [_keyed(ms, 0, 0), _keyed(ms, 1, 2), _keyed(ms, 3, 4), _keyed(ms, 9, 12)]
+
+
+def _keyed(ms: list[ChatMessage], a: int, b: int) -> dict[str, str]:
+    """잠긴 구간 응답 하나 — 양 끝 id 와 그 메시지의 `createdAt`(장면 근거에 저장한 글자를 되읽은 값이 방 메시지 키와 같다)."""
+    return {
+        **_range(ms, a, b),
+        "startMessageCreatedAt": _iso(ms[a].created_at),
+        "endMessageCreatedAt": _iso(ms[b].created_at),
+    }
+
+
+def _iso(at: datetime) -> str:
+    """응답 datetime 의 직렬화 글자(마이크로초가 0 이면 소수부가 없다)."""
+    return TypeAdapter(datetime).dump_json(at).decode()[1:-1]
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_scene_outline_and_manuscript_jobs_carry_the_episode_key_they_work_on(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """장면 구성안·원고 작업은 요청 응답·폴링·상세의 진행 중 작업에 그 화 키를 싣고, 화 키가 없는 작업(전체 구성안)은 null 이다.
+    깨지는 시나리오: 새로고침하거나 다른 탭에서 시작한 작업이 어느 화의 것인지 몰라 그 화에 다시 시도를 줄 수 없다."""
+    novel_id, _, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    outline_job = enqueued[-1]
+    key = keys[1]
+
+    scenes = await _request_scenes(db_client, novel_id, key)
+    detail = (await db_client.get(f"/novels/{novel_id}")).json()
+    polled = (await db_client.get(f"/novels/{novel_id}/jobs/{enqueued[-1]}")).json()
+
+    assert scenes.status_code == 202, scenes.text
+    assert (scenes.json()["episodeKey"], polled["episodeKey"], detail["activeJob"]["episodeKey"]) == (key, key, key)
+    assert (await _run(db_session, llm, enqueued[-1])).status == "succeeded"
+    state = (await db_client.get(_scenes_url(novel_id, key))).json()
+    approved = await db_client.post(f"{_scenes_url(novel_id, key)}/approve", json={"revision": state["draft"]["revision"]})
+    assert approved.status_code == 200, approved.text
+
+    chapter = await _request_chapter(db_client, novel_id, key)
+    detail = (await db_client.get(f"/novels/{novel_id}")).json()
+    polled = (await db_client.get(f"/novels/{novel_id}/jobs/{enqueued[-1]}")).json()
+
+    assert chapter.status_code == 202, chapter.text
+    assert (chapter.json()["episodeKey"], polled["episodeKey"], detail["activeJob"]["episodeKey"]) == (key, key, key)
+    assert (await db_client.get(f"/novels/{novel_id}/jobs/{outline_job}")).json()["episodeKey"] is None
 
 
 @pytest.mark.usefixtures("outline_flow_on")

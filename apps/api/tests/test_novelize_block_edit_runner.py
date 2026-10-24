@@ -190,6 +190,26 @@ async def test_a_block_edit_keeps_patches_for_the_targets_only_and_writes_no_rev
     assert "[고치는 규칙]" in system_instruction
 
 
+async def test_a_target_the_model_leaves_alone_is_saved_without_its_base_hash(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """대상 셋 중 모델이 둘만 고쳐 보내면 저장된 칸에서 수정안이 없는 대상의 기준 해시만 지워진다 — 그 해시를 다시 읽을 판정이
+    없고, 짧은 문단은 해시로 글을 되찾을 수 있다. 대기 패치의 대상·패치 해시는 적용 판정에 쓰므로 남는다."""
+    novel, chapter = await _chapter(db_client, db_session)
+    job = await _block_job(db_session, novel, chapter, [0, 1, 3])
+    llm = _BlockLLM(
+        {"patches": [{"paragraph": 1, "paragraphs": ["고친 첫째."]}, {"paragraph": 4, "paragraphs": ["고친 넷째."]}], "bundles": []}
+    )
+
+    await runner.run_job(_factory(db_session), llm, job.id)
+
+    stored = await _job(db_session, job.id)
+    assert stored.status == "succeeded" and stored.block_edit is not None
+    kept = [block_hash(_PARAGRAPHS[0]), block_hash(_PARAGRAPHS[3])]
+    assert [t["baseHash"] for t in stored.block_edit["targets"]] == [kept[0], "", kept[1]]
+    assert [p["baseHash"] for p in stored.block_edit["patches"]] == kept
+
+
 async def test_a_chapter_with_scenes_sends_only_the_target_scene_as_context(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
