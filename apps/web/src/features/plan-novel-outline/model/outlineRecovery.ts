@@ -27,6 +27,8 @@ export function toOutlineRecovery(error: unknown): OutlineRecovery {
     return { ...NOTHING, resetEdits: true, refetchOutline: true, refetchMessages: reason === "basis_not_found" };
   }
   if (hasNovelErrorCode(error, "NOVEL_OUTLINE_FLOW_DISABLED")) return { ...NOTHING, refetchPricing: true };
+  // 고친 것은 남긴다(이용자가 그 화를 나눈다). 화마다 턴 수와 상한을 새로 받아 화면 안내를 서버 판정과 맞춘다.
+  if (hasNovelErrorCode(error, "NOVEL_OUTLINE_EPISODE_TOO_LONG")) return { ...NOTHING, refetchOutline: true };
   return NOTHING;
 }
 

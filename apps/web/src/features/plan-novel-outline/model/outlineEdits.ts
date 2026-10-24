@@ -11,6 +11,8 @@ export type OutlineTurn = {
   key: string;
   number: number;
   messageIds: readonly string[];
+  /** 턴 안의 모델 응답 메시지 id. 원고 턴 상한은 응답 하나를 한 턴으로 센다(`countBasisTurns`). */
+  responseIds: readonly string[];
   excerpt: string;
   /** 응답이 든 턴인가. 사용자 말 하나와 그 뒤 응답들이므로 참이면 턴의 마지막 메시지가 응답이다. */
   hasResponse: boolean;
@@ -48,20 +50,62 @@ export type TurnIndex = {
   /** 메시지 위치 → 그 메시지가 든 턴의 차례(`turns` 의 위치). */
   turnAt: readonly number[];
   messageIds: readonly string[];
+  /** 메시지 위치 → 모델 응답인가. */
+  isResponseAt: readonly boolean[];
 };
 
 export function toTurnIndex(turns: readonly OutlineTurn[]): TurnIndex {
   const positionById = new Map<string, number>();
   const turnAt: number[] = [];
   const messageIds: string[] = [];
+  const isResponseAt: boolean[] = [];
   turns.forEach((turn, turnIndex) => {
+    const responses = new Set(turn.responseIds);
     for (const id of turn.messageIds) {
       positionById.set(id, messageIds.length);
       messageIds.push(id);
       turnAt.push(turnIndex);
+      isResponseAt.push(responses.has(id));
     }
   });
-  return { turns, positionById, turnAt, messageIds };
+  return { turns, positionById, turnAt, messageIds, isResponseAt };
+}
+
+/** 메시지 위치 `from`~`to`(양 끝 포함) 안의 모델 응답 수. */
+function countResponses(index: TurnIndex, from: number, to: number): number {
+  let count = 0;
+  for (let position = from; position <= to; position += 1) if (index.isResponseAt[position] === true) count += 1;
+  return count;
+}
+
+/**
+ * 근거의 턴 수 — 근거 구간들 안의 모델 응답 수. 서버가 구성안 화의 턴 수와 원고 턴 상한을 세는 법(응답 하나가 한 턴, 사용자 말은 뒤
+ * 응답의 턴에 붙고 응답 없이 남은 말은 버림)과 같은 수라, 저장 전 화(나눈 조각·합친 결과)도 서버와 같게 센다. 근거 턴 이름(`n~m턴`)의
+ * 턴 묶음 수와는 응답이 연달아 있을 때 다르다. 근거 메시지를 지금 대화에서 못 찾으면 셀 수 없어 `undefined` 다(서버도 그때 셀 수
+ * 없다고 본다).
+ */
+export function countBasisTurns(index: TurnIndex, basis: readonly OutlineRange[]): number | undefined {
+  const positions = toPositions(index, basis);
+  if (positions === undefined) return undefined;
+  return positions.reduce((sum, [start, end]) => sum + countResponses(index, start, end), 0);
+}
+
+/** 화를 `cutMessageId` 뒤에서 나누면 앞 화와 뒤 화가 갖는 턴 수(`countBasisTurns` 와 같은 세기). 근거를 못 찾으면 `undefined`. */
+export function toSplitTurnCounts(
+  index: TurnIndex,
+  basis: readonly OutlineRange[],
+  cutMessageId: string,
+): { front: number; back: number } | undefined {
+  const positions = toPositions(index, basis);
+  const cut = index.positionById.get(cutMessageId);
+  if (positions === undefined || cut === undefined) return undefined;
+  let front = 0;
+  let back = 0;
+  for (const [start, end] of positions) {
+    front += countResponses(index, start, Math.min(end, cut));
+    back += countResponses(index, Math.max(start, cut + 1), end);
+  }
+  return { front, back };
 }
 
 export function toEpisodeDrafts(view: NovelOutlineView): OutlineEpisodeDraft[] {

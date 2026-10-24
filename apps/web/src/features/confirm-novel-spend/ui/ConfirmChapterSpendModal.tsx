@@ -22,6 +22,8 @@ type ConfirmChapterSpendModalProps = {
   initialModelId: NovelChapterModelId;
   /** 금액 줄 아래 한 줄 — 돌려받는 조건처럼 금액에 붙는 말. 없으면 그리지 않는다. */
   footnote?: string;
+  /** 그 아래 한 줄 더 — 이 동작 뒤에 걸릴 사정(원고 턴 상한처럼). 없으면 그리지 않는다. */
+  note?: string;
 };
 
 /** 화 작업(다시 만들기)·전체 구성안 만들기의 금액 확인 + 글쓰기 모델 선택. 소설 상위 모델 허용이 없는 계정은 모델이 하나뿐이라 선택이
@@ -33,7 +35,7 @@ type ConfirmChapterSpendModalProps = {
 export const ConfirmChapterSpendModal = createCallable<
   ConfirmChapterSpendModalProps,
   { model: NovelChapterModelId; cost: number } | null
->(({ call, title, description, confirmLabel, options, initialModelId, footnote }) => {
+>(({ call, title, description, confirmLabel, options, initialModelId, footnote, note }) => {
   const [modelId, setModelId] = useState(initialModelId);
   const cost = options.find((option) => option.id === modelId)?.cost ?? 0;
 
@@ -45,6 +47,7 @@ export const ConfirmChapterSpendModal = createCallable<
       cost={cost}
       confirmLabel={confirmLabel}
       footnote={footnote}
+      note={note}
       onCancel={() => call.end(null)}
       onConfirm={() => call.end({ model: modelId, cost })}
     >

@@ -30,6 +30,8 @@ export type SourceTurn = {
   /** 방 처음부터 센 턴 번호(1부터). */
   number: number;
   messageIds: string[];
+  /** 턴 안의 모델 응답 메시지 id(차례대로). 원고 턴 상한은 응답 하나를 한 턴으로 세어, 그 수는 턴 묶음 수와 다를 수 있다. */
+  responseIds: string[];
   /** 두 줄로 보일 발췌 — 응답 글(없으면 사용자 말)에서 채팅 표기를 지운 것. */
   excerpt: string;
   /** 응답이 하나라도 든 턴인가. 담은 턴 중 이런 턴이 하나는 있어야 저장된다. */
@@ -127,6 +129,7 @@ function toTurn(
     key: messages[0]?.id ?? "",
     number,
     messageIds: messages.map((message) => message.id),
+    responseIds: messages.filter((message) => message.role === "assistant").map((message) => message.id),
     excerpt: text.length > EXCERPT_MAX ? `${text.slice(0, EXCERPT_MAX)}…` : text,
     hasResponse: response !== undefined,
     ...flags,

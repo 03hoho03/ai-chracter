@@ -19,6 +19,8 @@ type NovelSpendDialogProps = {
   confirmLabel: string;
   /** 금액 줄 아래 한 줄. 없으면 그리지 않는다. */
   footnote?: string;
+  /** 그 아래 한 줄 더 — 이 동작 뒤에 걸릴 사정(원고 턴 상한처럼). 없으면 그리지 않는다. */
+  note?: string;
   onCancel: () => void;
   onConfirm: () => void;
   /** 금액 줄 위에 놓일 선택(장 모델). 없으면 금액 확인만 있다. */
@@ -38,6 +40,7 @@ export function NovelSpendDialog({
   cost,
   confirmLabel,
   footnote,
+  note,
   onCancel,
   onConfirm,
   children,
@@ -55,6 +58,7 @@ export function NovelSpendDialog({
         {children}
         <CloverSpendSummary cost={cost} balance={clover?.balance} />
         {footnote !== undefined && <p className="text-sm break-keep text-muted-foreground">{footnote}</p>}
+        {note !== undefined && <p className="text-sm break-keep text-muted-foreground">{note}</p>}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onCancel}>

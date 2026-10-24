@@ -279,6 +279,11 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
   },
   // 다른 탭이 먼저 저장·승인했다(또는 구성안 작업이 새 판을 냈다). 호출부가 고친 것을 버리고 구성안을 다시 받는다.
   NOVEL_OUTLINE_CONFLICT: { message: "다른 곳에서 구성안을 고쳤어요. 새로 불러왔어요.", shouldRefetchNovel: false },
+  // 이 계정이 고를 수 있는 어느 원고 모델의 턴 상한보다도 긴 화가 있어 승인을 막았다. 구성안 화면은 화 번호를 짚는 문구로 바꿔 말한다.
+  NOVEL_OUTLINE_EPISODE_TOO_LONG: {
+    message: "어느 모델로도 원고를 쓸 수 없을 만큼 긴 화가 있어요. 나눈 뒤 승인해주세요.",
+    shouldRefetchNovel: false,
+  },
   // 아래는 화별 장면 구성안·원고의 거절이다. 화면이 미리 막으므로 대개 그사이 다른 탭이 구성안·장면 구성안·원고를 바꾼 경우라, 호출부가
   // 구성안과 그 화를 다시 받는다.
   NOVEL_OUTLINE_REQUIRED: { message: "전체 구성안을 먼저 승인해주세요.", shouldRefetchNovel: false },

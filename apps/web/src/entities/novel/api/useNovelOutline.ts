@@ -9,6 +9,8 @@ export type NovelOutlineState = components["schemas"]["NovelOutlineState"];
 export type NovelOutlineView = components["schemas"]["NovelOutlineView"];
 export type NovelOutlineEpisode = components["schemas"]["NovelOutlineEpisodeView"];
 export type NovelOutlineModel = components["schemas"]["NovelOutlineModel"];
+/** 이 계정이 원고에 고를 수 있는 모델 하나와 그 턴(모델 응답) 수 상한. */
+export type NovelChapterTurnCap = components["schemas"]["NovelChapterTurnCap"];
 export type NovelOutlineSaveRequest = components["schemas"]["NovelOutlineSaveRequest"];
 export type NovelOutlineEpisodeInput = components["schemas"]["NovelOutlineEpisodeInput"];
 

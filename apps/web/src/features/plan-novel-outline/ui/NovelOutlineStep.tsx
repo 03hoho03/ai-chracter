@@ -33,6 +33,12 @@ import {
   type OutlineTurn,
 } from "../model/outlineEdits";
 import { toOutlineRecovery } from "../model/outlineRecovery";
+import {
+  toApproveTurnCapBlock,
+  toEpisodeTurnCapNotice,
+  toEpisodeTurnCounts,
+  toTooLongApprovalMessage,
+} from "../model/turnCapNotice";
 import { toSelectionRevert, type SelectionRevert } from "../model/selectionRevert";
 import {
   isEditBaseOutdated,
@@ -149,6 +155,7 @@ function OutlineEditor({
   const approveMutation = useApproveNovelOutlineMutation();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const makeReasonId = useId();
+  const approveReasonId = useId();
   const [edits, setEdits] = useState<Edits | undefined>(undefined);
   const [editingId, setEditingId] = useState<string | undefined>(undefined);
   const [splittingId, setSplittingId] = useState<string | undefined>(undefined);
@@ -171,6 +178,17 @@ function OutlineEditor({
   const ordinals = toEpisodeOrdinals(episodes, novel.chapters);
   const titleMaxLength = novel.limits.chapterTitleMaxLength;
   const canEdit = base !== undefined && !base.isStale && !isRoomGone && !make.isOutlineJobRunning && busy === undefined;
+  const turnCaps = state.chapterTurnCaps ?? [];
+  const turnCounts = toEpisodeTurnCounts(episodes, turnIndex, base?.view);
+  // 서버가 이런 화가 있는 판의 승인을 409 로 막는다 — 누르기 전에 같은 판정으로 막고 그 화를 짚는다.
+  const approveTurnCapBlock = toApproveTurnCapBlock(
+    episodes.map((episode, index) => ({
+      ordinal: ordinals[index] ?? index + 1,
+      turnCount: turnCounts[index],
+      isWritten: episode.chapterId !== null,
+    })),
+    turnCaps,
+  );
 
   useEffect(() => {
     onDraftDirtyChange(isDirty || isFormOpen);
@@ -217,8 +235,11 @@ function OutlineEditor({
     return `split-${newIdRef.current}`;
   }
 
-  function handleError(error: unknown, action: NovelAction) {
-    const result = toNovelActionError(error, action);
+  /** `labelled` 는 거절을 받은 판의 화 키와 화 번호 — 화 번호를 짚는 거절(턴 상한 승인 막기)의 문구에 쓴다. */
+  function handleError(error: unknown, action: NovelAction, labelled: readonly { key: string | null; ordinal: number }[] = []) {
+    const tooLong = toTooLongApprovalMessage(error, labelled);
+    const actionError = toNovelActionError(error, action);
+    const result = tooLong === undefined || actionError === null ? actionError : { ...actionError, message: tooLong };
     const recovery = toOutlineRecovery(error);
     if (recovery.resetEdits) {
       setEdits(undefined);
@@ -275,21 +296,26 @@ function OutlineEditor({
   }
 
   async function handleApprove() {
-    if (busy !== undefined || isFormOpen) return;
+    if (busy !== undefined || isFormOpen || approveTurnCapBlock !== undefined) return;
     setNotice(undefined);
     setBusy("approve");
     let action: NovelAction = "saveOutline";
+    let labelled: { key: string | null; ordinal: number }[] = [];
     try {
       const current = isDirty ? await saveDraft() : state;
       if (current === undefined) return;
       action = "approveOutline";
+      // 저장하면 나눈 화가 새 키를 받는다 — 거절이 짚는 화 키는 저장된 판의 키라 그 판으로 화 번호를 맞춘다.
+      const saved = current.draft?.episodes ?? [];
+      const savedOrdinals = toEpisodeOrdinals(saved, novel.chapters);
+      labelled = saved.map((episode, index) => ({ key: episode.key, ordinal: savedOrdinals[index] ?? index + 1 }));
       const revision = current.draft?.revision;
       if (revision !== undefined) await approveMutation.mutateAsync({ novelId: novel.id, revision });
       setNotice({ tone: "done", message: "전체 구성안을 승인했어요." });
       // 승인하면 저장·승인 버튼이 사라진다 — 누른 버튼과 함께 포커스가 떨어지지 않게 단계 제목으로 옮긴다.
       headingRef.current?.focus();
     } catch (error) {
-      handleError(error, action);
+      handleError(error, action, labelled);
     } finally {
       setBusy(undefined);
     }
@@ -388,6 +414,8 @@ function OutlineEditor({
               down: toMoveBlockedReason(episodes, episode.localId, 1),
             }}
             titleMaxLength={titleMaxLength}
+            // 원고가 된 화는 다시 쓸 화가 아니라 안내하지 않는다(서버의 승인 판정도 뺀다).
+            turnCapNotice={episode.chapterId === null ? toEpisodeTurnCapNotice(turnCounts[index], turnCaps) : undefined}
             onEdit={() => {
               setSplittingId(undefined);
               setEditingId(episode.localId);
@@ -493,7 +521,8 @@ function OutlineEditor({
             <Button
               type="button"
               variant="secondary"
-              aria-disabled={isActionBusy || make.isOutlineJobRunning}
+              aria-disabled={isActionBusy || make.isOutlineJobRunning || approveTurnCapBlock !== undefined}
+              aria-describedby={approveTurnCapBlock === undefined ? undefined : approveReasonId}
               className="aria-disabled:opacity-65"
               onClick={() => {
                 if (make.isOutlineJobRunning) return;
@@ -506,6 +535,11 @@ function OutlineEditor({
           )}
         </div>
       </div>
+      {isApproveShown && approveTurnCapBlock !== undefined && (
+        <p id={approveReasonId} className="text-sm break-keep text-muted-foreground sm:text-right">
+          {approveTurnCapBlock}
+        </p>
+      )}
     </StepShell>
   );
 }

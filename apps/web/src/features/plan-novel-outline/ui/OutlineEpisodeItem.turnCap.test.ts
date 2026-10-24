@@ -61,7 +61,9 @@ describe("구성안 화의 턴 상한 안내 줄", () => {
     expect(html).toContain("이 화는 25턴이라 원고는 Gemini 로만 쓸 수 있어요.");
     expect(html).toContain('aria-label="2화 나누기"');
     // 강조색·위험 틴트는 쓰지 않는다 — 다른 모델로는 쓸 수 있는 화라 오류가 아니다.
-    expect(html).not.toMatch(/destructive|primary/);
+    const noticeClass = /data-turn-cap-notice="partial" class="([^"]*)"/.exec(html)?.[1];
+    expect(noticeClass).toBeDefined();
+    expect(noticeClass).not.toMatch(/destructive|primary/);
   });
 
   it("고칠 수 없는 화(원고 있음·고치기 막힘)에는 나누기 바로가기가 없다", () => {
