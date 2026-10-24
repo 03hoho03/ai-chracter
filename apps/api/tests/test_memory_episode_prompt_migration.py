@@ -563,7 +563,6 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     connection = await db_session.connection()
 
     with pytest.raises(RuntimeError, match=f"{lane}/{model}"):
-        await connection.run_sync(_IMPRESSION.delete_seeded_rows)
         await connection.run_sync(_M.delete_seeded_rows)
 
     for pair in _ALL_PAIRS:

@@ -432,12 +432,12 @@ async def test_downgrade_stops_when_the_admin_published_a_claude_set_after_the_s
 ) -> None:
     """그 게시본에도 판정 행이 있어 되돌린 뒤 활성으로 남으면 이전 코드의 게시 검증이 그 체인을 막는다 — 풀 길이 옛 버전
     통째 복원뿐이라 사람이 판단하게 멈춘다. 아무것도 지우지 않는다."""
+    await (await db_session.connection()).run_sync(_IMPRESSION.delete_seeded_rows)
     db_session.add(_set(lane=lane, model=model, status="published", published_at=await _after_gemini(db_session, lane)))
     await db_session.flush()
     connection = await db_session.connection()
 
     with pytest.raises(RuntimeError, match=f"{lane}/{model}"):
-        await connection.run_sync(_IMPRESSION.delete_seeded_rows)
         await connection.run_sync(_M.delete_seeded_rows)
 
     for pair in _ALL_PAIRS:

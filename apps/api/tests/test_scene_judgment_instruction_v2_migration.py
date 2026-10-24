@@ -356,6 +356,7 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     db_session: AsyncSession, model: PromptSetModelId
 ) -> None:
     """시드 뒤에 어드민이 네 체인 중 하나라도 새 버전을 게시했으면 아무것도 지우지 않고 멈춘다."""
+    await _undo_later_revisions(db_session)
     seeded = await _get_set(db_session, _M.NEW_SET_IDS[("story", model)])
     assert seeded.published_at is not None
     db_session.add(_published(model=model, published_at=seeded.published_at + timedelta(seconds=1)))
@@ -363,7 +364,6 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     connection = await db_session.connection()
 
     with pytest.raises(RuntimeError, match=f"story/{model}"):
-        await connection.run_sync(_IMPRESSION.delete_seeded_rows)
         await connection.run_sync(_M.delete_seeded_rows)
 
     for other in _MODELS:
