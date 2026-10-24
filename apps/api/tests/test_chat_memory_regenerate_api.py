@@ -665,6 +665,43 @@ async def test_summary_prompt_is_byte_identical_to_the_fold_that_made_it(
     assert (_SLOT_HEAD in folded) is secret_marking
 
 
+@pytest.mark.usefixtures("items_visible")
+@pytest.mark.parametrize(
+    ("chat_model", "premium", "scope_model", "slot"),
+    [
+        pytest.param(None, False, "opus", False, id="gemini-room-outside-the-scope"),
+        pytest.param(None, False, "gemini", True, id="gemini-room-inside-the-scope"),
+        pytest.param("opus", False, "opus", False, id="opus-room-while-the-upper-model-switch-is-off"),
+        pytest.param("opus", True, "opus", True, id="opus-room-while-the-upper-model-switch-is-on"),
+    ],
+)
+async def test_summary_regenerate_marks_secrets_only_when_the_rooms_effective_model_is_in_scope(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    chat_model: str | None,
+    premium: bool,
+    scope_model: str,
+    slot: bool,
+) -> None:
+    """비밀 표기가 켜져 있어도 슬롯은 방이 지금 실제로 쓰는 글쓰기 모델이 기억 사용 범위에 들 때만 실린다. 상위 모델 스위치가
+    꺼지면 Opus 로 저장된 방도 Gemini 로 돌므로 Opus 만 든 범위에서는 슬롯이 없다. 깨지는 시나리오: 다시 만들기가 방에 저장된
+    모델로 범위를 갈라, 상위 모델을 끈 동안 Gemini 가 쓴 대화의 요약에만 비밀 표기가 붙어 일반 접기와 다른 지시로 만들어진다."""
+    monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", premium)
+    monkeypatch.setattr(settings, "memory_model_scope", [("character", scope_model)])
+    room, _current = await _room(db_client, db_session)
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model=chat_model))
+    await db_session.commit()
+    fake = RegenerateLLMClient()
+
+    resp = await _regenerate(db_client, room, fake)
+
+    assert resp.status_code == 200, resp.text
+    (prompt,) = fake.summary_prompts
+    assert (_SLOT_HEAD in prompt) is slot
+
+
 # --- 이름 헬퍼 -------------------------------------------------------------------------
 
 
