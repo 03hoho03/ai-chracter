@@ -702,6 +702,41 @@ async def test_no_call_carries_a_call_model_when_no_row_applies(
     assert {usage.call_model for usage in capture.usages} == {None}
 
 
+# 배정 표가 생기기 전 코드가 생성 줄에 쓰던 키, 쓰던 순서 그대로. 덤프 줄은 이 순서로 직렬화되므로 순서까지 같아야 바이트가
+# 같다.
+_GENERATION_DUMP_KEYS = ["roomId", "turn", "kind", "chatModel", "model", "seed", "systemInstruction", "prompt"]
+
+
+@pytest.mark.parametrize(("surface", "room_model"), [(s, r) for profile, s, r in SCENARIOS if profile == "gemini"])
+async def test_generation_dump_line_keys_are_unchanged_when_the_route_table_is_empty(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    routing_warnings: RoutingWarnings,
+    surface: str,
+    room_model: str,
+) -> None:
+    """표가 비면 생성 줄은 표가 생기기 전과 키 목록(순서 포함)이 같다. 특성 기대값은 생성 줄의 모델 칸만 보므로, 행이 없는데도
+    세트 키를 싣는 결함은 이 테스트가 잡는다. 프롬프트 본문은 보지 않는다."""
+    observed = await observe(
+        db_client,
+        db_session,
+        monkeypatch,
+        tmp_path,
+        routing_warnings,
+        profile="gemini",
+        surface=surface,
+        room_model=room_model,
+    )
+    assert observed["last_event"] == "done"
+
+    lines = [json.loads(raw) for raw in (tmp_path / "dump.jsonl").read_text(encoding="utf-8").splitlines()]
+    generation_keys = [list(line) for line in lines if line.get("kind") == "generation"]
+    assert generation_keys
+    assert generation_keys == [_GENERATION_DUMP_KEYS] * len(generation_keys)
+
+
 # ── 턴 기록의 단계별 배정과, 행이 적용된 호출의 덤프 키 ──────────────────────────────────────────
 
 
