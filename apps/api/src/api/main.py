@@ -280,3 +280,5 @@ async def ready(response: Response) -> dict[str, object]:
     if not ready:
         response.status_code = status_module.HTTP_503_SERVICE_UNAVAILABLE
     return {"status": "ready" if ready else "unavailable", "checks": checks}
+
+_ci_mypy_probe: int = "a"
