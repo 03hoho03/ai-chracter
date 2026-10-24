@@ -335,7 +335,8 @@ async def test_an_empty_nul_or_overlong_key_is_rejected(
 async def test_forgetting_a_scene_leaves_no_scene_or_embedding_row_and_keeps_the_rest(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """요약 버전은 그대로다(요약이 바뀌지 않아 열려 있던 요약 편집을 충돌로 만들지 않는다). 사실 쪽 잊기 세대도 그대로다."""
+    """요약 버전은 그대로다(요약이 바뀌지 않아 열려 있던 요약 편집을 충돌로 만들지 않는다). 방의 잊기 세대는 하나 오른다 — 장면을
+    입력으로 읽는 백그라운드 작업(인상)이 잊기 전에 읽은 결과를 넣기 직전에 버리는 신호다."""
     room, snapshots = await _room(db_client, db_session)
     episode_id = await _bakery(db_session, room, snapshots[2])
     await _fillers(db_session, room, snapshots[4], turn=3)
@@ -350,7 +351,7 @@ async def test_forgetting_a_scene_leaves_no_scene_or_embedding_row_and_keeps_the
     assert await _count(db_session, ChatMemoryEmbedding, ChatMemoryEmbedding.episode_id == episode_id) == 0
     assert await _count(db_session, ChatMemoryEpisode, ChatMemoryEpisode.chat_room_id == room.room_id) == 5
     after = await _room_row(db_session, room)
-    assert (after.memory_version, after.memory_forget_generation) == (version, generation)
+    assert (after.memory_version, after.memory_forget_generation) == (version, generation + 1)
 
 
 @pytest.mark.usefixtures("items_visible")

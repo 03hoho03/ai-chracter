@@ -52,7 +52,9 @@ export function NovelPlanDocument({
   const selectionQuery = useNovelSourceSelectionQuery(novel.id, { enabled: !isRoomGone });
   const outlineQuery = useNovelOutlineQuery(novel.id, { enabled: true });
   const { turns, isTurnsFailed } = usePlanTurns(novel);
-  const [restoreRequest, setRestoreRequest] = useState<{ id: number; ranges: OutlineRange[] } | undefined>(undefined);
+  const [restoreRequest, setRestoreRequest] = useState<
+    { id: number; ranges: OutlineRange[]; isExact: boolean } | undefined
+  >(undefined);
   // 두 단계가 따로 알리는 저장하지 않은 고침. 어느 쪽이든 있으면 보드가 옮기기 전에 버릴지 묻는다.
   const dirtyRef = useRef({ selection: false, outline: false });
 
@@ -127,7 +129,13 @@ export function NovelPlanDocument({
             : { hasApproved: selectionState.approved !== null, hasPendingDraft: selectionState.draft !== null }
         }
         make={make}
-        onRevertSelection={(ranges) => setRestoreRequest((previous) => ({ id: (previous?.id ?? 0) + 1, ranges }))}
+        onRevertSelection={(revert) =>
+          setRestoreRequest((previous) => ({
+            id: (previous?.id ?? 0) + 1,
+            ranges: revert.ranges,
+            isExact: revert.kind === "exact",
+          }))
+        }
         onDraftDirtyChange={(isDirty) => reportDirty("outline", isDirty)}
       />
       <NovelEpisodesStep novel={novel} onOpenEpisode={onOpenEpisode} onOpenChapter={onOpenChapter} />

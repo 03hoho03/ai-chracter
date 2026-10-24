@@ -9,6 +9,7 @@
 함께 지운다. 여기서 따로 먼저 지우지 않는다 — 스냅샷을 잠근 채 추출 기록을 갱신하는 추출 작업과 서로를 기다린다(교착).
 사실 계층 두 테이블(`chat_memory_facts`·`chat_memory_fact_extractions`)도 같은 이유로 스냅샷 FK 의 CASCADE 가 지운다.
 임베딩(`chat_memory_embeddings`)도 장면·사실 행 FK 의 CASCADE 가 지운다.
+인상(`chat_memory_impressions`)도 같은 이유로 스냅샷 FK 의 CASCADE 가 지운다.
 
 이 모듈은 라우터를 import하지 않는다."""
 

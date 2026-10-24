@@ -28,7 +28,7 @@ export function NovelPlanEpisodeDocument({
 }: NovelPlanEpisodeDocumentProps) {
   const { turns, isTurnsFailed } = usePlanTurns(novel);
   const isPreparingHere = chapterFlow.preparingEpisodeKey === episodeKey;
-  // 도는 작업의 화를 모르면(새로고침·다른 탭에서 시작) 이 화의 작업일 수도 있어 고치기를 막는다 — 끝나면 새 판이 올 수 있다.
+  // 도는 작업의 화를 모르면(작업이 화 키를 싣기 전에 만든 작업) 이 화의 작업일 수도 있어 고치기를 막는다 — 끝나면 새 판이 올 수 있다.
   const isRunningHere = chapterFlow.runningEpisodeKey === null || chapterFlow.runningEpisodeKey === episodeKey;
   const control: EpisodeJobControl = {
     onMakeScenes: () => void chapterFlow.startEpisodeOutline(episodeKey),
