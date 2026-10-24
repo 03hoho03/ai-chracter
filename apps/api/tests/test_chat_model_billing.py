@@ -436,12 +436,15 @@ def test_room_turns_charge_last_with_the_room_gate(route: Any) -> None:
 
 def test_room_gate_reads_the_room_after_the_turn_lock_refreshed_it() -> None:
     """게이트가 보는 방은 락을 잡은 뒤 다시 읽은 방이어야 한다 — 락 전에 읽힌 값으로 모델을 정하면 앞 턴과 겹친 사이에
-    바뀐 모델을 놓친다. 같은 요청 안에서 두 의존성은 한 번씩만 해석되므로, 게이트 시그니처에서 락이 방보다 앞이면 된다."""
-    dependencies = _dependencies(chat_router.enforce_room_chat_charge)
-
-    assert dependencies.index(chat_router._room_turn_lock_dependency) < dependencies.index(
-        chat_router._playable_room_dependency
-    )
+    바뀐 모델을 놓친다. 같은 요청 안에서 두 의존성은 한 번씩만 해석되므로, 시그니처에서 락이 방보다 앞이면 된다. 모델은 게이트와
+    판정 세트 의존성이 같은 실효 모델 의존성에서 받는다(요청 스코프 캐시로 한 값)."""
+    for function in (chat_router.enforce_room_chat_charge, chat_router._effective_room_model_dependency):
+        dependencies = _dependencies(function)
+        assert dependencies.index(chat_router._room_turn_lock_dependency) < dependencies.index(
+            chat_router._playable_room_dependency
+        )
+    assert chat_router._effective_room_model_dependency in _dependencies(chat_router.enforce_room_chat_charge)
+    assert chat_router._effective_room_model_dependency in _dependencies(chat_router._judgment_prompt_sets_dependency)
 
 
 def test_preview_keeps_the_gemini_gate() -> None:
