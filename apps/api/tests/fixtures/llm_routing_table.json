@@ -852,8 +852,8 @@
     },
     "opus": {
       "generate": {
-        "reached": "gemini",
-        "warned": true
+        "reached": "bedrock",
+        "warned": false
       },
       "generate_structured": {
         "reached": "gemini",
@@ -866,8 +866,8 @@
     },
     "sonnet": {
       "generate": {
-        "reached": "gemini",
-        "warned": true
+        "reached": "bedrock",
+        "warned": false
       },
       "generate_structured": {
         "reached": "gemini",
