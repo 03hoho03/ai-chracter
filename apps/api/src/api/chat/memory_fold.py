@@ -39,7 +39,7 @@ from api.db.models import (
     PromptSection,
     PromptSet,
 )
-from api.llm.chat_models import ChatModelId, configured_call_site_model
+from api.llm.chat_models import ChatModelId, PromptSetModelId, configured_call_site_model
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, LLMClientError, dependency_tag
 from api.llm.routing import resolve_backend
 
@@ -112,6 +112,7 @@ async def fold_memory(
     is_story_chat: bool,
     names: PromptNames,
     writing_model: ChatModelId,
+    call_model: PromptSetModelId | None = None,
 ) -> None:
     """접을 때가 된 방이면 요약을 만들어 스냅샷으로 커밋한다. 절대 예외를 내지 않는다.
 
@@ -122,6 +123,8 @@ async def fold_memory(
     새 세션으로 읽어 슬롯의 인물 이름 목록을 채운다(`_room_people`). 꺼져 있으면 읽지 않고 슬롯이 빠진다. 켜져 있어도 이 방의
     레인과 `writing_model`(이 접기를 예약한 턴에 응답을 쓴 모델)이 기억 사용 범위에 없으면 꺼진 것과 같다. 받은 세트는 요약 모델의
     세트라 그 모델로 판정하면 글쓰기 모델이 Opus 인 방도 범위 밖이 되므로, 판정은 세트의 레인과 글쓰기 모델로 한다.
+
+    `call_model` 은 모델 배정 표의 요약 칸 행이 정한 부를 모델이다(행이 없으면 None — 요약 모델 설정으로 간다).
 
     순서가 정합성의 전부다.
     1. 방의 `memory_version`을 **가장 먼저** 읽고, 그다음 현재 요약과 커서 뒤 메시지를 읽는다.
@@ -171,8 +174,9 @@ async def fold_memory(
             log=logger,
             turn=turn,
             cursor_message_id=plan.cursor[1],
+            call_model=call_model,
         )
-        summary = await summarize(llm_client, prompt, user_id=user_id, room_id=room_id)
+        summary = await summarize(llm_client, prompt, user_id=user_id, room_id=room_id, call_model=call_model)
 
         async with session_factory() as session:
             claimed = await session.scalar(
@@ -242,19 +246,28 @@ async def summary_prompt(
     return prompt
 
 
-async def summarize(llm_client: LLMClient, prompt: str, *, user_id: uuid.UUID, room_id: uuid.UUID) -> str:
+async def summarize(
+    llm_client: LLMClient,
+    prompt: str,
+    *,
+    user_id: uuid.UUID,
+    room_id: uuid.UUID,
+    call_model: PromptSetModelId | None = None,
+) -> str:
     """요약 모델을 한 번 불러 저장할 본문(앞뒤 공백을 걷고 상한에서 자른 것)을 돌려준다. 빈 본문이면 `LLMClientError` 다 — 빈
     요약을 커밋하면 접은 대화가 요약에도 원문에도 없게 된다. 실패의 공급자는 요약이 실제로 간 구현이다(요약 모델을 Claude 로
-    바꾸면 Gemini 가 아니다)."""
+    바꾸면 Gemini 가 아니다). `call_model` 은 모델 배정 표의 요약 칸 행이 정한 부를 모델이고, None 이면 요약 모델 설정이다."""
     result = await llm_client.generate_structured(
         prompt,
         MemorySummaryResult,
-        usage=LLMCallContext(call_site=SUMMARY_CALL_SITE, user_id=user_id, room_id=room_id),
+        usage=LLMCallContext(call_site=SUMMARY_CALL_SITE, user_id=user_id, room_id=room_id, call_model=call_model),
     )
     summary = result.summary.strip()[:SUMMARY_MAX_LENGTH]
     if not summary:
         empty = LLMClientError("요약 응답이 비었다")
-        empty.provider = resolve_backend(SUMMARY_CALL_SITE, configured_call_site_model(SUMMARY_CALL_SITE))[0]
+        empty.provider = resolve_backend(
+            SUMMARY_CALL_SITE, call_model or configured_call_site_model(SUMMARY_CALL_SITE), call_model
+        )[0]
         raise empty
     return summary
 

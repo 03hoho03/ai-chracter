@@ -18,7 +18,7 @@ from api.llm.call_policy import CALL_POLICIES, BackendId
 # `as LLMCallSite` 는 mypy strict 의 명시적 재export 요구 때문이다 — 이 이름을 `api.llm.client` 에서 가져오는 모듈이
 # 많아, 정의를 호출 정책 표 옆으로 옮겨도 기존 import 경로를 그대로 쓰게 둔다.
 from api.llm.call_policy import LLMCallSite as LLMCallSite
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, PromptSetModelId
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -157,12 +157,17 @@ class LLMCallContext:
     `model` 은 사용자가 고른 글쓰기 모델이다. 앞의 셋과 달리 기본값(Gemini)이 있다 — 모델을 고를 수 있는 호출은 채팅 턴
     생성, 지난 턴 다시 생성(측정용 리플레이), 소설 장 생성뿐이고, 나머지 호출부가 빠뜨려도 Gemini 로 가는 것이 맞는 동작이라서다.
     빠뜨리는 실수가 비싼 모델로 새는 방향이 아니다. 이 값을 보고 공급자를 고르는 것은 `llm/routing.py` 이고, 거기서도 그 호출들만
-    따른다."""
+    따른다.
+
+    `call_model` 은 판정·요약·추출 호출의 모델을 모델 배정 표의 행이 정했을 때만 싣는다. None 이면 그 호출은 지금처럼 그 호출의
+    판정·요약 모델 설정(나머지 호출은 기본 모델)으로 간다. 라우터가 구현을, Claude 구현이 보낼 모델 id 를 같은 함수
+    (`structured_call_model`)에 이 값을 넘겨 정한다. 비교·해시에 넣는다 — 귀속이 아니라 호출의 내용(어느 모델로 부르는가)이라서다."""
 
     call_site: LLMCallSite
     user_id: uuid.UUID | None
     room_id: uuid.UUID | None
     model: ChatModelId = DEFAULT_CHAT_MODEL
+    call_model: PromptSetModelId | None = None
     # 이 호출의 사용량을 모을 목록. 채팅 턴 골격만 넘기고(방 턴은 모은 것을 턴 기록에 싣는다) 나머지 호출부는 두지 않는다 —
     # 기본값이 None 이라 기존 호출부와 테스트 가짜는 그대로다. 비교·해시에서 빼는 것은 이 칸이 호출의 귀속(누구·어디)이 아니라
     # 모으는 자리라서이고, 목록은 해시할 수 없어 넣으면 이 frozen 데이터클래스의 해시가 TypeError 가 된다.

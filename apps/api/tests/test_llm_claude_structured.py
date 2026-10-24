@@ -258,6 +258,44 @@ async def test_the_structured_effort_setting_reaches_haiku_5_under_disabled_thin
     assert body["output_config"]["effort"] == "high"
 
 
+@pytest.mark.parametrize("haiku_id", ["claude-haiku-5-5", "claude-haiku-4-5"])
+async def test_a_judgment_carried_to_opus_by_the_route_table_gets_the_opus_thinking_and_effort(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any], haiku_id: str
+) -> None:
+    """판정 모델 설정이 Haiku 여도 배정 표의 행이 Opus 로 부르게 했으면, 사고·깊이는 실제로 보내는 Opus 기준이다 — 사고 없이
+    깊이만. 설정의 Haiku 기준으로 고르면 Haiku 5.x 에서는 Opus 가 거부하는 `thinking: disabled` 가 실리고, Haiku 4.5 에서는
+    깊이가 빠진다."""
+    monkeypatch.setattr(settings, "anthropic_haiku_model_id", haiku_id)
+    seen: list[httpx2.Request] = []
+    client = _build_anthropic(monkeypatch, _replying(_message(_VALID), seen))
+
+    await _judge(client, LLMCallContext("chat_stat_judgment", None, None, call_model="opus"))
+
+    body = _direct_body(seen, "opus")
+    assert "thinking" not in body
+    assert body["output_config"]["effort"] == "low"
+
+
+@pytest.mark.parametrize("backend", _BOTH)
+async def test_a_judgment_goes_to_the_model_the_route_table_carries_not_the_setting(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any], backend: _Backend
+) -> None:
+    """두 구현 모두 호출에 실린 표의 모델(`call_model`)로 보낸다 — 라우터가 그 모델로 구현을 골랐으니, 구현이 설정의 Haiku 로
+    보내면 고른 구현과 보낸 모델 id 가 어긋난다."""
+    seen: list[httpx2.Request] = []
+    client = backend.build(monkeypatch, _replying(_message(_VALID), seen))
+
+    await _judge(client, LLMCallContext("chat_stat_judgment", None, None, call_model="opus"))
+
+    (request,) = seen
+    sent = getattr(settings, f"{backend.name}_opus_model_id")
+    if backend.name == "bedrock":
+        assert request.url.path == f"/model/{sent}/invoke"
+    else:
+        assert json.loads(request.content)["model"] == sent
+    assert [(call_site, model) for call_site, model, _ in recorded] == [("chat_stat_judgment", sent)]
+
+
 @pytest.mark.parametrize(
     ("call_site", "timeout_setting"),
     [

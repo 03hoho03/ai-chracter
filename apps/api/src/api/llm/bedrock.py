@@ -238,7 +238,7 @@ class BedrockLLMClient(LLMClient):
     async def _structured(
         self, prompt: str, response_schema: type[T], system: str | None, usage: LLMCallContext, method: str
     ) -> T:
-        model = backend_model_id("bedrock", structured_call_model(usage.call_site, usage.model))
+        model = backend_model_id("bedrock", structured_call_model(usage.call_site, usage.model, usage.call_model))
         thinking = _structured_thinking(model)
         try:
             message = await self._sdk().messages.create(
