@@ -143,12 +143,19 @@ def _sorted(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda r: (r["lane"], r["roomModel"], r["stage"]))
 
 
-_ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
-    ("GET", "/admin/prompt-routing", None),
-    ("PUT", "/admin/prompt-routing", {"baseRevisionId": None, "rows": []}),
-    ("GET", "/admin/prompt-routing/revisions", None),
-    ("GET", f"/admin/prompt-routing/revisions/{uuid.uuid4()}", None),
-    ("POST", f"/admin/prompt-routing/revisions/{uuid.uuid4()}/restore", {"baseRevisionId": None}),
+# 경로의 이력 id 는 고정 값이다 — 모듈을 읽을 때마다 새로 만들면 병렬 실행의 워커마다 모은 테스트가 달라 수집이 깨진다.
+_MISSING_REVISION = "00000000-0000-4000-8000-000000000001"
+_ROUTES = [
+    pytest.param("GET", "/admin/prompt-routing", None, id="get-table"),
+    pytest.param("PUT", "/admin/prompt-routing", {"baseRevisionId": None, "rows": []}, id="save-table"),
+    pytest.param("GET", "/admin/prompt-routing/revisions", None, id="list-revisions"),
+    pytest.param("GET", f"/admin/prompt-routing/revisions/{_MISSING_REVISION}", None, id="get-revision"),
+    pytest.param(
+        "POST",
+        f"/admin/prompt-routing/revisions/{_MISSING_REVISION}/restore",
+        {"baseRevisionId": None},
+        id="restore-revision",
+    ),
 ]
 
 
