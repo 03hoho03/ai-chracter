@@ -981,6 +981,141 @@ def cmd_judge_agreement(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_judge_reason(args: argparse.Namespace) -> int:
+    """스탯 판정 줄을 운영 판정기(Haiku 직결) 그대로 이유 칸 없는 판·있는 판으로 반복 재판정해 두 판의 자기 반복·판 사이 일치율을
+    낸다. `--dry-run` 은 줄 수·호출 수·견적만, `--allow-paid` 는 실제 호출(원장 상한·멈춤 선·묶음 필수, 전체 견적이 묶음 여유를
+    넘으면 첫 호출 전에 멈춤), `--fake-llm` 은 가짜 판정기로 절차만(결과·원장 파일도 따로), 셋 다 없으면 이미 남은 결과로 집계만."""
+    from memory_eval import judge_agreement as ja
+    from memory_eval import judge_reason as jr
+    from memory_eval.ledger import BudgetExceededError
+
+    from api.core.config import settings
+
+    if args.fake_llm and args.allow_paid:
+        raise SystemExit("--fake-llm 과 --allow-paid 는 함께 쓰지 않는다")
+    if args.dev_dumps and args.dev_sample is None:
+        raise SystemExit("--dev-dumps 는 표본 크기 --dev-sample 을 함께 줘야 한다(개발 덤프 줄 전부를 기본으로 쓰지 않는다)")
+    if (args.dev_dumps or args.baseline_sample is not None) and args.seed is None:
+        raise SystemExit("표본을 고르는 실행은 씨앗 --seed 를 명시해야 한다(결과를 보기 전에 고른 표본이 다시 나와야 한다)")
+    baseline = jr.load_stat_lines(args.baseline_dumps or [])
+    if args.baseline_sample is not None:
+        baseline = jr.balanced_sample(baseline, args.baseline_sample, seed=args.seed)
+    dev = jr.load_stat_lines(args.dev_dumps or [], prefix=jr.DEV_GROUP)
+    if args.dev_dumps:
+        dev = jr.balanced_sample(dev, args.dev_sample, seed=args.seed)
+    lines = baseline + dev
+    if not lines:
+        raise SystemExit("스탯 판정 줄이 없다 — --baseline-dumps 나 --dev-dumps 를 준다")
+    groups = {line.line_id: jr.BASELINE_GROUP for line in baseline} | {line.line_id: jr.DEV_GROUP for line in dev}
+    if args.controls is not None:
+        lines = lines + ja.control_lines(lines, json.loads(args.controls.read_text(encoding="utf-8")))
+
+    model_id = settings.anthropic_haiku_model_id
+    estimate = jr.estimate(
+        lines,
+        args.reps,
+        model_id=model_id,
+        tokens_per_char=args.tokens_per_char,
+        plain_output_tokens=args.output_tokens,
+        reason_output_tokens=args.reason_output_tokens,
+    )
+    estimate["lines"] = jr.group_counts(groups, lines)
+    estimate["controls"] = sum(1 for line in lines if line.control is not None)
+    if args.dry_run:
+        book = _ledger(args)
+        estimate["ledgerSpentUsd"] = book.total_usd()
+        if args.cap_usd is not None:
+            estimate["bundleSpentUsd"] = book.bundle_usd()
+            estimate["capUsd"] = args.cap_usd
+            estimate["headroomUsd"] = args.cap_usd - book.bundle_usd() - estimate["totalUsd"]
+        _print(estimate)
+        return 0
+
+    out_dir: Path = args.out_dir or args.run / "s5" / "judge-reason"
+    prefix = "fake-" if args.fake_llm else ""
+    calls_path = out_dir / f"{prefix}calls.jsonl"
+    # 호출 견적의 출력 자리값은 두 판 중 큰 쪽 — 호출마다 원장 여유를 볼 때 한 호출을 작게 잡아 상한을 넘지 않게.
+    per_call_output = max(args.output_tokens, args.reason_output_tokens)
+    made = 0
+    if args.allow_paid:
+        book = _ledger(args)
+        limit = args.cap_usd if args.halt_usd is None else min(args.cap_usd, args.halt_usd)
+        if book.bundle_usd() + estimate["totalUsd"] > limit:
+            raise BudgetExceededError(
+                f"묶음 {args.bundle} 누적 ${book.bundle_usd():.4f} + 이번 전체 견적 ${estimate['totalUsd']:.4f} 가 "
+                f"상한·멈춤 선 ${limit:.4f} 를 넘는다 — 표본을 줄이거나 승인을 다시 받는다"
+            )
+        real = ja.real_models(["haiku"], gemini_model="")[0]
+        models = jr.variant_models(real.client, real.model_id, real.overrides)
+
+        async def paid_run() -> int:
+            with ja.without_usage_store():
+                return await ja.run_calls(
+                    lines,
+                    models,
+                    args.reps,
+                    ledger=book,
+                    calls_path=calls_path,
+                    stage=args.label,
+                    rates={"*": args.tokens_per_char},
+                    output_tokens=per_call_output,
+                )
+
+        made = asyncio.run(paid_run())
+    elif args.fake_llm:
+
+        def nothing_fired(prompt: str, schema: str, call_site: str) -> dict[str, Any]:
+            if schema == jr.ReasonedStatRuleJudgmentResult.__name__:
+                return {"fired_rule_ids": [], "reason": ""}
+            return {"fired_rule_ids": []}
+
+        made = asyncio.run(
+            ja.run_calls(
+                lines,
+                jr.variant_models(ja.FakeJudgeLLM(model_id, nothing_fired), model_id),
+                args.reps,
+                ledger=Ledger(out_dir / "fake-ledger.jsonl"),
+                calls_path=calls_path,
+                stage=args.label,
+                rates={"*": args.tokens_per_char},
+                output_tokens=per_call_output,
+            )
+        )
+
+    calls = ja.read_calls(calls_path)
+    meta = {
+        "dumps": {
+            str(path): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in [*(args.baseline_dumps or []), *(args.dev_dumps or [])]
+        },
+        "modelId": model_id,
+        "anthropicStructuredEffort": settings.anthropic_structured_effort,
+        "dumpModels": ja.dump_models(lines),
+        "dumpJudgedByJudgeModel": all(line.dump_model == model_id for line in lines if line.control is None),
+        "lines": jr.group_counts(groups, lines),
+        "sampleSeed": args.seed,
+        "baselineSample": args.baseline_sample,
+        "devSample": args.dev_sample,
+        "reps": args.reps,
+        "callsThisRun": made,
+        "fake": bool(args.fake_llm),
+    }
+    report = {
+        "meta": meta,
+        "estimate": estimate,
+        "measuredTokensPerChar": ja.measured_tokens_per_char(calls),
+        "summary": jr.summarize(lines, groups, calls),
+    }
+    _write(out_dir / f"{prefix}summary.json", report)
+    _write(
+        out_dir / f"{prefix}lines.json",
+        [{**row, "group": groups.get(row["lineId"])} for row in ja.line_table(lines, calls)],
+    )
+    (out_dir / f"{prefix}tables.md").write_text(jr.render_tables(report), encoding="utf-8")
+    _print({"meta": meta, "measuredTokensPerChar": report["measuredTokensPerChar"], "summary": report["summary"]})
+    return 0
+
+
 def cmd_judge_strata(args: argparse.Namespace) -> int:
     """드라이버 로그(층 태그를 `--tag` 로 준 턴)에서 judge-agreement `--strata` 표를 만든다."""
     from memory_eval import judge_sample as js
@@ -1673,6 +1808,36 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--label", default="judge-agreement", help="원장 단계 이름")
     p.add_argument("--out-dir", type=Path, help="기본 <원자료>/judge-agreement")
     p.set_defaults(fn=cmd_judge_agreement)
+
+    from memory_eval import judge_reason as jr
+
+    p = sub.add_parser(
+        "judge-reason",
+        help="스탯 판정 줄을 운영 판정기로 이유 칸 없는 판·있는 판 반복 재판정 — 판마다 자기 반복·판 사이 일치율(기본 집계만)",
+    )
+    paid(p)
+    p.add_argument("--fake-llm", action="store_true", help="가짜 판정기로 절차만(원장·결과 파일도 따로)")
+    p.add_argument(
+        "--baseline-dumps", type=Path, nargs="+", help="기준선 덤프(JSONL) — 줄 id 가 일치율 도구와 같은 꼴, 파일 이름이 겹치면 거부"
+    )
+    p.add_argument("--baseline-sample", type=int, help="기준선에서 방마다 고르게 고를 줄 수(기본 스탯 줄 전부)")
+    p.add_argument(
+        "--dev-dumps", type=Path, nargs="+", help="개발 측정 덤프(JSONL, 파일 이름이 같아도 된다 — 공통 상위 폴더의 상대 경로로 가른다)"
+    )
+    p.add_argument("--dev-sample", type=int, help="개발 덤프에서 방마다 고르게 고를 줄 수(--dev-dumps 와 함께 필수)")
+    p.add_argument("--seed", type=int, help="표본 고르기 씨앗(표본을 고르면 필수)")
+    p.add_argument("--controls", type=Path, help="망친 입력 대조군 명세 JSON(일치율 도구와 같은 꼴)")
+    p.add_argument("--reps", type=int, default=5, help="줄·판마다 반복 수")
+    p.add_argument("--tokens-per-char", type=float, default=ja.DEFAULT_TOKENS_PER_CHAR, help="견적 자리값: 글자당 입력 토큰")
+    p.add_argument(
+        "--output-tokens", type=int, default=jr.DEFAULT_PLAIN_OUTPUT_TOKENS, help="견적 자리값: 이유 없는 판의 호출당 출력 토큰"
+    )
+    p.add_argument(
+        "--reason-output-tokens", type=int, default=jr.DEFAULT_REASON_OUTPUT_TOKENS, help="견적 자리값: 이유 판의 호출당 출력 토큰"
+    )
+    p.add_argument("--label", default="judge-reason", help="원장 단계 이름")
+    p.add_argument("--out-dir", type=Path, help="기본 <원자료>/s5/judge-reason")
+    p.set_defaults(fn=cmd_judge_reason)
 
     p = sub.add_parser("judge-strata", help="드라이버 로그의 층 태그로 judge-agreement 층 표를 만든다")
     p.add_argument("--log", type=Path, required=True, help="드라이버 --log")

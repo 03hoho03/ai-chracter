@@ -124,18 +124,20 @@ class JudgmentLine:
         return hashlib.sha256(self.prompt.encode("utf-8")).hexdigest()
 
 
-def load_lines(paths: Sequence[Path], *, call_sites: set[str] | None = None) -> list[JudgmentLine]:
+def load_lines(
+    paths: Sequence[Path], *, call_sites: set[str] | None = None, name: Callable[[Path], str] | None = None
+) -> list[JudgmentLine]:
     """덤프 파일들에서 범위 안 판정 줄만 읽는다. 줄 id 는 `<파일 이름>:<파일 안 줄 번호>` 라 다시 실행해도 같다(덤프는 이어
-    쓰기만 한다). 지시문을 따로 실은 판정 줄이나 호출 위치와 다른 스키마는 거부한다 — 이 도구는 운영 판정과 같은 호출(지시문
+    쓰기만 한다). 파일 이름이 서로 같은 덤프 묶음(프로브마다 같은 이름)은 `name` 으로 줄 id 의 파일 부분을 따로 정한다. 지시문을 따로 실은 판정 줄이나 호출 위치와 다른 스키마는 거부한다 — 이 도구는 운영 판정과 같은 호출(지시문
     없는 구조화)만 다시 보낸다.
 
     같은 (방, 턴, 호출 위치, 프롬프트) 줄은 처음 줄 하나로 합친다. 측정 서버는 판정을 부르기 전에 덤프하므로 다시 부른 판정
     (재생성의 스탯 재판정)이 시도마다 한 줄이고, 합치지 않으면 같은 입력이 표본에 두 번 든다."""
-    names = [p.name for p in paths]
+    names = [p.name if name is None else name(p) for p in paths]
     if len(set(names)) != len(names):
         raise SystemExit(f"덤프 파일 이름이 겹친다(줄 id 가 겹친다): {names}")
     lines: dict[tuple[str | None, int, str, str], JudgmentLine] = {}
-    for path in paths:
+    for path, file_name in zip(paths, names, strict=True):
         for index, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if not raw.strip():
                 continue
@@ -145,7 +147,7 @@ def load_lines(paths: Sequence[Path], *, call_sites: set[str] | None = None) -> 
             call_site = str(record["callSite"])
             if call_site not in CALL_SITE_KINDS or (call_sites is not None and call_site not in call_sites):
                 continue
-            line_id = f"{path.name}:{index}"
+            line_id = f"{file_name}:{index}"
             if "systemInstruction" in record:
                 raise SystemExit(f"{line_id}: 지시문을 따로 실은 판정 줄은 다시 보내지 않는다")
             schema = str(record["schema"])
@@ -279,6 +281,8 @@ class JudgeModel:
     client: LLMClient
     # 호출 동안 덮어쓸 앱 설정.
     overrides: Mapping[str, Any] = field(default_factory=dict)
+    # 판정 줄의 응답 스키마 대신 보낼 스키마(같은 판정기를 스키마만 바꿔 견줄 때). 판정 줄 스키마의 하위 클래스여야 정규화가 같다.
+    response_schema: type[BaseModel] | None = None
 
 
 @contextlib.contextmanager
@@ -490,8 +494,9 @@ async def run_calls(
     calls_path.parent.mkdir(parents=True, exist_ok=True)
     made = 0
     for line in lines:
-        schema = SCHEMAS[line.schema]
+        line_schema = SCHEMAS[line.schema]
         for model in models:
+            schema = model.response_schema or line_schema
             for rep in range(reps):
                 key = f"{line.line_id}|{model.label}|{rep}"
                 if key in done:
@@ -504,6 +509,7 @@ async def run_calls(
                 status: Status = "ok"
                 first_status: Status | None = None
                 result: Any = None
+                extra: dict[str, Any] = {}
                 error: str | None = None
                 attempts = 0
                 with setting_overrides(model.overrides):
@@ -513,6 +519,8 @@ async def run_calls(
                             parsed = await model.client.generate_structured(line.prompt, schema, usage=usage)
                             status, error = "ok", None
                             result = normalize(line, parsed)
+                            # 바꿔 보낸 스키마가 더한 칸(판정 이유 등)은 일치를 따지지 않고 결과 옆에 남긴다.
+                            extra = parsed.model_dump(exclude=set(line_schema.model_fields))
                         except LLMClientError as exc:
                             status = _status(exc)
                             error = type(exc).__name__
@@ -545,6 +553,7 @@ async def run_calls(
                     "attempts": attempts,
                     "firstStatus": first_status or status,
                     "result": result,
+                    **({"extra": extra} if extra else {}),
                     "promptChars": len(line.prompt),
                     "inputTokens": sum(c.prompt_tokens or 0 for c in sink),
                     "outputTokens": sum(c.output_tokens or 0 for c in sink),
