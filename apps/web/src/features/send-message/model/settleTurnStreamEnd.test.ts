@@ -94,4 +94,37 @@ describe("settleTurnStreamEnd", () => {
 
     expect(isStale(queryClient, cloverKeys.balance())).toBe(true);
   });
+
+  // 서버는 수정의 뒤 대화 삭제·스탯 되돌리기·턴 수 감소를 새 답을 만들기 전에 커밋한다. 생성이 실패해도 그 셋은 이미
+  // 서버에 있어, 방을 다시 받지 않으면 스탯 게이지와 턴 수가 아무 안내 없이 낡은 채 남는다.
+  it("수정이 done 없이 끝나면(스트림 안 오류·끊김) 방을 다시 받는다", () => {
+    settleTurnStreamEnd(queryClient, ROOM_ID, { dropped: undefined, hasCommitted: false, isEdit: true });
+
+    expect(isStale(queryClient, chatRoomKeys.detail(ROOM_ID))).toBe(true);
+  });
+
+  it("수정이 done 을 반영한 뒤에도 방을 다시 받는다 — 되돌린 스탯은 스트림 이벤트로 다 오지 않는다", () => {
+    settleTurnStreamEnd(queryClient, ROOM_ID, { dropped: undefined, hasCommitted: true, isEdit: true });
+
+    expect(isStale(queryClient, chatRoomKeys.detail(ROOM_ID))).toBe(true);
+  });
+
+  // 시작 전 거절(재화 부족·앞 턴 진행 중 등)이면 서버는 아무것도 바꾸지 않았다. 다시 받으면 잘라 둔 목록이 서버의 옛 목록으로
+  // 돌아가 고쳐 쓴 글이 화면에서 사라진다.
+  it("서버가 시작 전에 거절한 수정은 방을 다시 받지 않는다", () => {
+    settleTurnStreamEnd(queryClient, ROOM_ID, {
+      dropped: undefined,
+      hasCommitted: false,
+      isEdit: true,
+      wasRejected: true,
+    });
+
+    expect(isStale(queryClient, chatRoomKeys.detail(ROOM_ID))).toBe(false);
+  });
+
+  it("보내기는 done 없이 끝나도 방을 다시 받지 않는다(지금 동작 유지)", () => {
+    settleTurnStreamEnd(queryClient, ROOM_ID, { dropped: undefined, hasCommitted: false });
+
+    expect(isStale(queryClient, chatRoomKeys.detail(ROOM_ID))).toBe(false);
+  });
 });
