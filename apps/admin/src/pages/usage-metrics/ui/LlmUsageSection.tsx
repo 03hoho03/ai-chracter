@@ -2,41 +2,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { useState } from "react";
 
+import { callSiteLabel } from "@/entities/llm-call-site";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { DenseTable } from "@/shared/ui/DenseTable";
 
 import { useLlmUsageQuery, type AdminLlmUsageResponse, type AdminLlmUsageRow } from "../api/useLlmUsageQuery";
 
 type LlmUsageView = "total" | "daily";
-
-// 운영자가 읽는 이름. 서버의 call_site 목록과 따로 관리되므로, 여기 없는 값은 원래 이름만 보인다.
-const CALL_SITE_LABELS: Record<string, string> = {
-  chat_generate: "채팅 생성",
-  chat_stat_judgment: "채팅 스탯 판정",
-  chat_ending_judgment: "채팅 엔딩 판정",
-  chat_situational_image: "상황 이미지 판정",
-  chat_media_book_image: "미디어 북 칸 판정",
-  chat_memory_summary: "기억 요약",
-  chat_memory_episode: "장면 기억 추출",
-  preview_generate: "미리보기 생성",
-  preview_stat_judgment: "미리보기 스탯 판정",
-  preview_ending_judgment: "미리보기 엔딩 판정",
-  preview_media_book_image: "미리보기 미디어 북 판정",
-  publish_filter_character: "발행 심사(캐릭터)",
-  publish_filter_story: "발행 심사(스토리)",
-  seed_story_generate: "시드 스토리 생성",
-  seed_similarity_review: "시드 유사도 심사",
-  novelize_boundary: "소설 장 경계 제안",
-  // 장 생성과 재생성이 같은 call site 를 쓴다.
-  novelize_chapter: "소설 장 생성",
-  // 한 범위 문단 수정과 여러 문단 수정이 같은 call site 를 쓴다(묶음 재검사만 따로).
-  novelize_revise: "소설 문단 수정",
-  novelize_revise_recheck: "소설 묶음 재검사",
-  novelize_outline: "소설 전체 구성안",
-  novelize_episode_outline: "소설 장면 구성안",
-  novel_publish_screen: "노벨 공개 심사(텍스트)",
-  novel_illustration_screen: "노벨 공개 심사(삽화)",
-};
 
 const CELL_CLASS = "text-right tabular-nums";
 const HEAD_START_CLASS = "text-muted-foreground";
@@ -189,8 +161,8 @@ function UsageTable({ rows, showDay }: UsageTableProps) {
               <TableRow key={`${row.day ?? "total"}|${row.callSite}|${row.model}`}>
                 {showDay && <TableCell className="tabular-nums text-foreground">{row.day}</TableCell>}
                 <TableCell>
-                  <span className="text-foreground">{CALL_SITE_LABELS[row.callSite] ?? row.callSite}</span>
-                  {CALL_SITE_LABELS[row.callSite] && (
+                  <span className="text-foreground">{callSiteLabel(row.callSite) ?? row.callSite}</span>
+                  {callSiteLabel(row.callSite) && (
                     <span className="block text-xs text-muted-foreground">{row.callSite}</span>
                   )}
                 </TableCell>
