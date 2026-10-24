@@ -343,3 +343,43 @@ def test_a_split_drops_the_base_hashes_of_the_edited_members() -> None:
 
     assert [p.base_hash for p in split.patches] == ["", block_hash(_PARAGRAPHS[2]), block_hash(_PARAGRAPHS[3])]
     assert [t.base_hash for t in split.targets] == ["", block_hash(_PARAGRAPHS[2]), block_hash(_PARAGRAPHS[3])]
+
+
+# ── 수정안이 없는 대상의 기준 해시 ───────────────────────────────────────────
+def _edit_without_patch_for(ids: list[uuid.UUID], targets: list[int], patched: list[int]) -> BlockEdit:
+    """`targets` 를 요청했는데 모델이 `patched` 만 고쳐 보낸 작업(정산 전 — 이전 판이 저장한 행과 같은 꼴)."""
+    requested = request_targets([ids[i] for i in targets], ids, _PARAGRAPHS)
+    patches, bundles, _ = normalized_result(requested, [(i + 1, [f"고친 {i + 1}."]) for i in patched], [])
+    return BlockEdit(targets=requested, scene_id=None, patches=patches, bundles=bundles)
+
+
+def test_a_successful_save_drops_the_base_hash_of_a_target_the_model_left_alone() -> None:
+    """성공 저장 때 모델이 수정안을 내지 않은 대상(3번 문단)의 기준 해시를 지운다 — 그 해시를 다시 읽을 판정이 없고, 짧은 문단은
+    해시로 글을 되찾을 수 있다. 수정안이 있는 대상·패치의 해시는 적용 판정에 쓰므로 그대로다."""
+    ids = _ids()
+    edit = _edit_without_patch_for(ids, [0, 2, 3], [0, 3])
+
+    saved, fresh = with_save_states(edit, ids, _PARAGRAPHS)
+
+    assert fresh == 2
+    assert [t.base_hash for t in saved.targets] == [block_hash(_PARAGRAPHS[0]), "", block_hash(_PARAGRAPHS[3])]
+    assert [p.base_hash for p in saved.patches] == [block_hash(_PARAGRAPHS[0]), block_hash(_PARAGRAPHS[3])]
+
+
+def test_applying_dismissing_or_marking_stale_also_cleans_a_target_hash_an_older_save_left() -> None:
+    """이전 판이 성공 저장에서 남긴 수정안 없는 대상의 해시도 다음 적용·버리기·낡음 표시에서 지운다(정산 자리마다 같은 규칙).
+    대기 패치의 해시는 그대로다."""
+    ids = _ids()
+    edit = _edit_without_patch_for(ids, [0, 2, 3], [0, 3])
+    first, last = edit.patches
+    edited = [*_PARAGRAPHS[:3], "사용자가 고친 라."]
+
+    applied = with_applied(edit, [first.id], uuid.uuid4())
+    dismissed = with_dismissed(edit, [first.id])
+    marked = stale_marked(edit, ids, edited)
+
+    for after in (applied, dismissed):
+        assert [t.base_hash for t in after.targets] == ["", "", block_hash(_PARAGRAPHS[3])]
+        assert [p.base_hash for p in after.patches] == ["", last.base_hash]
+    assert [t.base_hash for t in marked.targets] == [block_hash(_PARAGRAPHS[0]), "", ""]
+    assert [p.base_hash for p in marked.patches] == [first.base_hash, ""]

@@ -8,18 +8,20 @@
 요청 라우트는 작업을 띄우는 함수를 기록용으로 바꿔 끼우고, 실행은 그 작업을 `runner.run_job` 에 가짜 모델로 넘겨 이어 본다."""
 
 import uuid
+from datetime import datetime
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from typing import Any
 
 import httpx
 import pytest
 import sqlalchemy as sa
+from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core import clover
 from api.core.config import settings
 from api.db.models import ChatMessage, ChatRoom, Content, NovelJob
-from api.db.models.novel import NovelOutline
+from api.db.models.novel import Novel, NovelOutline
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError, T
 from api.novelize import router as novelize_router
 from api.novelize import runner
@@ -139,6 +141,18 @@ def _code(response: httpx.Response) -> tuple[int, str]:
 
 def _range(ms: list[ChatMessage], a: int, b: int) -> dict[str, str]:
     return {"startMessageId": str(ms[a].id), "endMessageId": str(ms[b].id)}
+
+
+def _source(ms: list[ChatMessage], a: int, b: int, assistants: int, *, changed: bool = False) -> dict[str, Any]:
+    """낡은 구성안이 쓴 담기 구간 하나의 응답 — 양 끝 id·`createdAt`, include, 응답 수, 원문이 바뀌었는가."""
+    return {
+        **_range(ms, a, b),
+        "startMessageCreatedAt": TypeAdapter(datetime).dump_json(ms[a].created_at).decode()[1:-1],
+        "endMessageCreatedAt": TypeAdapter(datetime).dump_json(ms[b].created_at).decode()[1:-1],
+        "mode": "include",
+        "assistantMessageCount": assistants,
+        "sourceChanged": changed,
+    }
 
 
 async def _rewrite(db: AsyncSession, message: ChatMessage, marker: str) -> None:
@@ -667,7 +681,9 @@ async def test_an_outline_whose_include_text_changed_and_was_reselected_is_stale
 
     await _select(db_client, novel_id, await _room_messages(db_session, ms[0].chat_room_id), _SECTIONS)
 
-    assert (await db_client.get(f"/novels/{novel_id}/outline")).json()["draft"]["stale"] is True
+    draft = (await db_client.get(f"/novels/{novel_id}/outline")).json()["draft"]
+    assert draft["stale"] is True
+    assert draft["sourceSections"] == [_source(ms, 0, 4, 3), _source(ms, 9, 12, 2, changed=True)]
     assert _code(await _approve(db_client, novel_id, 1)) == (409, "NOVEL_OUTLINE_STALE")
 
 
@@ -798,17 +814,51 @@ async def test_an_outline_whose_basis_section_left_the_selection_is_stale_and_ca
     novel_id, ms, state = await _generated(db_client, db_session, monkeypatch, enqueued, llm)
     episodes = [_episode_input(e) for e in state["draft"]["episodes"]]
 
+    assert state["draft"]["sourceSections"] is None
     await _select(db_client, novel_id, ms, (*_SECTIONS[:2], ("context", 7, 8), _SECTIONS[2]))
-    assert (await db_client.get(f"/novels/{novel_id}/outline")).json()["draft"]["stale"] is False
+    fresh = (await db_client.get(f"/novels/{novel_id}/outline")).json()["draft"]
+    assert (fresh["stale"], fresh["sourceSections"]) == (False, None)
     await _select(db_client, novel_id, ms, (("include", 0, 4), ("include", 9, 12)))
-    assert (await db_client.get(f"/novels/{novel_id}/outline")).json()["draft"]["stale"] is False
+    fresh = (await db_client.get(f"/novels/{novel_id}/outline")).json()["draft"]
+    assert (fresh["stale"], fresh["sourceSections"]) == (False, None)
 
     await _select(db_client, novel_id, ms, (("include", 0, 4), ("context", 9, 12)))
     after = (await db_client.get(f"/novels/{novel_id}/outline")).json()
 
     assert after["draft"]["stale"] is True
+    # 지금 선택(include 0..4 · context 9..12)이 아니라 그 구성안이 쓴 선택의 include 구간만이다 — 맥락 구간 5..6 은 빠진다.
+    assert after["draft"]["sourceSections"] == [_source(ms, 0, 4, 3), _source(ms, 9, 12, 2)]
     assert _code(await _approve(db_client, novel_id, 1)) == (409, "NOVEL_OUTLINE_STALE")
     assert _code(await _save(db_client, novel_id, 1, episodes)) == (409, "NOVEL_OUTLINE_STALE")
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_a_stale_edited_outline_carries_its_base_selection_even_where_no_episode_uses_it(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _OutlineLLM,
+) -> None:
+    """고친 판은 기준 판과 같은 선택의 담기 구간을 싣는다 — 화를 지워 어느 화의 근거도 아닌 구간(9..12)도 담기 구간이다. 방이 지워진
+    소설에서는 원문을 다시 읽을 수 없어 모든 구간이 원문 바뀜이다. 깨지는 시나리오: 화면이 화 근거를 모아 "구간 되돌리기"를 하다
+    지운 화의 구간을 빠뜨려 되돌려도 낡음이 풀리지 않는다."""
+    novel_id, ms, state = await _generated(db_client, db_session, monkeypatch, enqueued, llm)
+    first, _second = state["draft"]["episodes"]
+    assert (await _approve(db_client, novel_id, 1)).status_code == 200
+    assert (await _save(db_client, novel_id, 1, [_episode_input(first)])).status_code == 200
+
+    await _select(db_client, novel_id, ms, (("include", 0, 4),))
+    body = (await db_client.get(f"/novels/{novel_id}/outline")).json()
+    await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(chat_room_id=None))
+    await db_session.commit()
+    gone = (await db_client.get(f"/novels/{novel_id}/outline")).json()
+
+    expected = [_source(ms, 0, 4, 3), _source(ms, 9, 12, 2)]
+    assert [e["basis"] for e in body["draft"]["episodes"]] == [first["basis"]]
+    assert (body["approved"]["source"], body["draft"]["source"]) == ("generate", "edit")
+    assert body["approved"]["sourceSections"] == body["draft"]["sourceSections"] == expected
+    assert gone["draft"]["sourceSections"] == [{**section, "sourceChanged": True} for section in expected]
 
 
 @pytest.mark.usefixtures("outline_flow_on")

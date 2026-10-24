@@ -1841,8 +1841,11 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
 (`tests/test_novel_outline_schema_migration.py` 가 옛 코드 꼴의 원시 DELETE 로 확인한다). 옛 이미지의 어드민은 새 세트·초안의 새 행을
 "잉여"로 보고 **소설 레인 게시만** 막는다 — 배포 뒤 열어 둔 어드민 소설 탭은 새로고침한다.
 
-- **병합 전**: 운영 최신 백업 성공을 보고, 소설 레인 활성 세트(체인마다 id·게시 시각)와 새 채널 행이 아직 없음을 아래 읽기 전용
-  SELECT 로 본다. 운영 `LLM_CALL_SITE_BACKENDS` 에 새 호출 위치 이름(`novelize_outline`·`novelize_episode_outline`)을 적지 않는다 — 두
+- **병합 전**(downgrade 뒤 다시 올릴 때도 같다): 운영 최신 백업 성공을 보고, 아래 첫 읽기 전용 SELECT 로 마이그레이션의 가정 검사를
+  사람이 먼저 본다 — 체인마다 활성 세트가 하나씩(세 줄, 게시 시각이 미래 아님), 그 세트에 화 생성(`novelize_chapter`) 행이 있고 새 슬롯
+  (`scene_plan`·`continuity_context`) 행과 새 채널 줄이 없음, 소설 레인 초안(있으면 제자리에서 채운다)과 채널별 행 수, 이 리비전의 세트 id 가
+  아직 없음(0), 소설 레인 어디에도 새 채널 행이 없음(0). 문안 본문은 출력하지 않는다. 운영 `LLM_CALL_SITE_BACKENDS` 에 새 호출 위치
+  이름(`novelize_outline`·`novelize_episode_outline`)을 적지 않는다 — 두
   호출은 장 생성의 배정을 물려받고, 그 이름을 모르는 옛 이미지는 그 줄이 있으면 기동하지 못한다.
 - **되돌리기**: 1순위는 이미지만 이 배포 직전의 운영 이미지로 되돌리기다(downgrade 없이 — 옛 코드는 새 스키마·문안 위에서 돈다).
   판정: 진행 중인 구성 흐름 작업 0(아래 SELECT, 이 배포만으로는 늘 0). 되돌려 둔 동안 판매돼 숨긴 소설의 작가가 탈퇴하면 옛 이미지의
@@ -1853,6 +1856,23 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   지우지 않는다.
 
 ```sh
+# 병합 전(읽기 전용): 활성 세트 · 활성 세트의 채널별 행 수와 새 슬롯 행 수 · 초안과 채널별 행 수 · 이 리비전의 세트 id 수 · 새 채널 행 수
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At \
+  -c "SELECT DISTINCT ON (model) model, id, published_at, published_at > now() AS in_future FROM prompt_sets
+        WHERE lane = 'novel' AND status = 'published' ORDER BY model, published_at DESC;" \
+  -c "WITH active AS (SELECT DISTINCT ON (model) model, id FROM prompt_sets
+                        WHERE lane = 'novel' AND status = 'published' ORDER BY model, published_at DESC)
+      SELECT a.model, s.channel, count(*),
+             count(*) FILTER (WHERE s.channel = 'novelize_chapter' AND s.slot IN ('scene_plan','continuity_context'))
+        FROM active a JOIN prompt_sections s ON s.prompt_set_id = a.id GROUP BY 1, 2 ORDER BY 1, 2;" \
+  -c "SELECT p.model, p.id, s.channel, count(*) FROM prompt_sets p JOIN prompt_sections s ON s.prompt_set_id = p.id
+        WHERE p.lane = 'novel' AND p.status = 'draft' GROUP BY 1, 2, 3 ORDER BY 1, 3;" \
+  -c "SELECT count(*) FROM prompt_sets WHERE id IN ('d9c50097-446d-4eef-9d20-61fe07c24825',
+        '8c828e43-b3f0-4864-a635-0d9a32d96f86', '9ab6d10e-2964-4f0b-8be5-7c4a83e6ab89');" \
+  -c "SELECT count(*) FROM prompt_sections s JOIN prompt_sets p ON p.id = s.prompt_set_id
+        WHERE p.lane = 'novel' AND s.channel IN ('novelize_outline','novelize_episode_outline');"
+# 되돌리기 판정: 구성 흐름 작업 수, 그중 진행 중, 구성안·화 구성안·장면 블록 행 수
 sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
   psql -U postgres -d ai_character_chat -At -c \
   "SELECT (SELECT count(*) FROM novel_jobs WHERE kind IN ('outline_generate','episode_outline_generate','outline_chapter_generate')),
@@ -1917,7 +1937,9 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   이름을 모르는 옛 이미지가 기동하지 못해 이미지 롤백의 하한이 생긴다. 새 env 두 키는 모두 설정 안 함이 기본이다.
 - 기존 경로에서 바뀌는 것은 패치 칸이 있는 행뿐이다: 화에 새 개정이 쌓인 뒤의 낡은 미리보기 비우기가 그 화의 대기 수정안 중 블록이
   바뀐 것을 낡음(문단 없음)으로 바꾸고 대기 수정안이 없어진 작업의 지시문을 비운다. 패치 작업의 환불과 옛 버리기는 대상·수정안의 기준
-  해시도 지운다(빈 문자열). 옛 연속 범위 수정의 저장·목록·적용·버리기는 그대로다.
+  해시를 모두 지운다(빈 문자열). 성공 저장·단위 적용·버리기·낡음 표시·재검사 분리는 대기 수정안이 없는 블록의 해시를 대상·수정안 양쪽에서
+  지운다 — 적용·버림·낡음이 된 수정안의 블록은 이 배포 뒤의 배포에서, 모델이 수정안을 내지 않은 대상은 아래 "응답 칸 추가" 배포에서
+  더했다. 옛 연속 범위 수정의 저장·목록·적용·버리기는 그대로다.
 - 평상시 겹침 교체로 배포한다: 겹침 동안 도는 직전 이미지(여러 문단 수정 요청까지 있는 판)는 이 판이 쓴 행을 그대로 읽는다 — 상태
   `applied`·`stale` 과 묶음·대상 칸 꼴은 그 판에 이미 있고, 지운 해시는 문자열이라 상세 조회가 깨지지 않는다. 그 판의 옛 버리기는 일부를
   적용한 작업(결과 개정이 찬 행)을 409 로 거절한다.
@@ -1934,6 +1956,28 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   "SELECT count(*), count(*) FILTER (WHERE result_revision_id IS NOT NULL) FROM novel_jobs
      WHERE block_edit IS NOT NULL AND dismissed_at IS NULL
        AND jsonb_path_exists(block_edit, '$.patches[*] ? (@.state == \"pending\")');"
+```
+
+**소설 스튜디오 응답 칸 추가·수정안 없는 대상의 해시 지우기 — 배포 · 되돌리기(마이그레이션 없음).** 코드만 오른다. 새 스위치·env 없음.
+- 응답 칸 추가만 한다(이름·뜻이 바뀐 칸 없음). 구간 선택 응답: 구간 양 끝·잠긴 구간의 `startMessageCreatedAt`·`endMessageCreatedAt`, 승인본·
+  초안·기본 제안의 `roomEndMessageCreatedAt`(값은 이미 행에 있다 — 질의 수 변화 없음). 전체 구성안 응답: 낡은 판에만 그 판이 쓴 선택의
+  include 구간 `sourceSections`(아니면 null). 작업 응답·상세의 진행 중 작업: 장면 구성안·원고 작업의 `episodeKey`(다른 작업은 null).
+  구간 선택·구성안 라우트는 구성 흐름 스위치 뒤라 꺼짐에선 지금처럼 404 이고, 꺼짐에서 보이는 차이는 작업 응답과 상세
+  `activeJob` 의 `episodeKey: null` 칸뿐이다.
+- 동작 변경은 하나다: 성공한 여러 문단 수정 작업에서 모델이 수정안을 내지 않은 대상의 기준 해시도 정산 때 지운다(위 문단). 지운 값은
+  기존과 같은 빈 문자열이라 직전 이미지가 그대로 읽고, 직전 이미지가 겹침 동안 남긴 해시는 다음 정산 때 이 판이 지운다. 칸이 있는 행은
+  여러 문단 수정 스위치를 켠 뒤에만 생긴다.
+- 평상시 겹침 교체로 배포한다(`skip_overlap` 불필요).
+- **병합 전**: 마이그레이션이 없어 백업 확인은 필요 없다. 아래 SELECT 로 패치 칸이 있는 작업 수와 그중 성공 수를 본다 — 0·0 이면 남은
+  해시를 정리할 행이 없다(0 이 아니어도 다음 정산 때 지워지므로 일회성 UPDATE 는 하지 않는다).
+- **되돌리기**: 이미지만 직전 판으로 되돌린다(downgrade 없음). 지운 해시는 되살리지 않는다(쓸 곳이 없다). 이 칸을 읽는 web 후속이 이미
+  나가 있으면 칸이 없을 때 지금 동작으로 돌아가는지 먼저 본다 — 그래서 web 후속은 이 배포를 확인한 뒤에 낸다.
+
+```sh
+# 병합 전(읽기 전용): 패치 칸이 있는 작업 수, 그중 성공
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c \
+  "SELECT count(*), count(*) FILTER (WHERE status = 'succeeded') FROM novel_jobs WHERE block_edit IS NOT NULL;"
 ```
 
 ### 3-12. 상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기

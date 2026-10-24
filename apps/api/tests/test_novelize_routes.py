@@ -267,6 +267,7 @@ async def test_detail_shows_the_running_job_and_expires_a_dead_one_first(
         "batchId": None,
         "completedBatches": None,
         "plannedBatches": None,
+        "episodeKey": None,
     }
 
     await db_session.execute(

@@ -9,7 +9,18 @@ function view(revision: number | null, approvedAt: string | null, sourceChanged 
     revision,
     approvedAt,
     roomEndMessageId: "m9",
-    sections: [{ startMessageId: "m1", endMessageId: "m9", mode: "include" as const, assistantMessageCount: 3, sourceChanged }],
+    roomEndMessageCreatedAt: "2026-01-01T00:00:09Z",
+    sections: [
+      {
+        startMessageId: "m1",
+        endMessageId: "m9",
+        startMessageCreatedAt: "2026-01-01T00:00:01Z",
+        endMessageCreatedAt: "2026-01-01T00:00:09Z",
+        mode: "include" as const,
+        assistantMessageCount: 3,
+        sourceChanged,
+      },
+    ],
   };
 }
 
