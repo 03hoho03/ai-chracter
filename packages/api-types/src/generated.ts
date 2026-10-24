@@ -3544,7 +3544,8 @@ export interface paths {
         };
         /**
          * Get Novel Outline
-         * @description 전체 구성안 화면의 상태 — 승인본·초안(낡음 표시 포함)과 화 수 상한, 고를 수 있는 모델과 구성안 가격.
+         * @description 전체 구성안 화면의 상태 — 승인본·초안(낡음 표시·화마다 턴 수 포함)과 화 수 상한, 고를 수 있는 모델과 구성안 가격, 원고 모델별
+         *     턴 상한.
          */
         get: operations["get_novel_outline_novels__novel_id__outline_get"];
         put?: never;
@@ -3598,7 +3599,9 @@ export interface paths {
         /**
          * Approve Novel Outline
          * @description 가장 최근 리비전을 승인한다(무과금). 이미 승인한 최신 리비전이면 그대로 돌려준다(두 번 누름). 최신이 아니면 409
-         *     `NOVEL_OUTLINE_CONFLICT`, 낡은 판이면 409 `NOVEL_OUTLINE_STALE`.
+         *     `NOVEL_OUTLINE_CONFLICT`, 낡은 판이면 409 `NOVEL_OUTLINE_STALE`, 이 계정이 고를 수 있는 어떤 원고 모델로도 쓸 수 없을 만큼 긴 화가
+         *     있으면 409 `NOVEL_OUTLINE_EPISODE_TOO_LONG` + `maxTurns`(고를 수 있는 모델 중 가장 큰 턴 상한)·`episodes`(넘는 화마다 `key`·
+         *     `turnCount`, 구성안 순서 — 이미 원고가 된 화는 빼고 센다). 고친 판 저장은 이것으로 막지 않는다 — 저장한 뒤 나눠서 승인하면 된다.
          */
         post: operations["approve_novel_outline_novels__novel_id__outline_approve_post"];
         delete?: never;
@@ -12602,6 +12605,22 @@ export interface components {
             episodeOutlineId: string | null;
         };
         /**
+         * NovelChapterTurnCap
+         * @description 이 계정이 원고에 고를 수 있는 모델 하나와 그 모델이 원고 하나에 쓸 수 있는 턴(모델 응답) 수 상한. 상한은 작업 시간 상한에서 나온
+         *     값이라 모델마다 다르다.
+         */
+        NovelChapterTurnCap: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "gemini" | "sonnet" | "opus";
+            /** Name */
+            name: string;
+            /** Maxturns */
+            maxTurns: number;
+        };
+        /**
          * NovelChapterUpdateRequest
          * @description 보낸 칸만 바꾼다. 화 제목을 보내면 그 뒤 다시 만들기가 그 제목을 덮지 않는다(본문·요약·등장 인물은 새로 쓴다).
          *     `title` 에 null 을 보내면 제목을 비우고, 다음 다시 만들기가 AI 제목을 다시 쓴다.
@@ -12799,7 +12818,8 @@ export interface components {
         /**
          * NovelEpisodeOutlineState
          * @description 한 화의 장면 구성안 화면 상태. `approved` 는 가장 최근에 승인한 판, `draft` 는 그보다 새 미승인 판이다. `models` 는 장면 구성안
-         *     가격, `chapter_models` 는 원고 가격(화 단가)이고, `chapter_id` 는 이 화를 이미 원고로 쓴 화다(없으면 null).
+         *     가격, `chapter_models` 는 원고 가격(화 단가)·턴 상한·적격 여부이고, `chapter_id` 는 이 화를 이미 원고로 쓴 화다(없으면 null).
+         *     `chapter_turn_count` 는 승인한 장면 구성안의 장면이 쓰는 턴 수(원고 턴 상한 판정이 세는 수)이고, 판정하지 않을 때는 null 이다.
          */
         NovelEpisodeOutlineState: {
             /**
@@ -12812,9 +12832,11 @@ export interface components {
             /** Models */
             models: components["schemas"]["NovelOutlineModel"][];
             /** Chaptermodels */
-            chapterModels: components["schemas"]["NovelOutlineModel"][];
+            chapterModels: components["schemas"]["NovelOutlineChapterModel"][];
             /** Chapterid */
             chapterId: string | null;
+            /** Chapterturncount */
+            chapterTurnCount?: number | null;
         };
         /**
          * NovelEpisodeOutlineView
@@ -13169,6 +13191,30 @@ export interface components {
             revision: number;
         };
         /**
+         * NovelOutlineChapterModel
+         * @description 이 계정이 구성 흐름 원고에 고를 수 있는 모델 하나 — 원고 하나 가격(요청의 `expectedCost`), 턴 상한, 지금 승인한 장면 구성안으로
+         *     이 모델이 원고를 쓸 수 있는지. 장면이 쓰는 턴 수가 상한을 넘으면 `eligible` 이 거짓이고(요청하면 409 `NOVEL_MODEL_INELIGIBLE`)
+         *     `ineligible_reason` 이 그 이유다. 쓸 수 있는 승인한 장면 구성안이 없으면(없음·낡음·장면 근거 소실·방 없음) 판정하지 않아 둘 다
+         *     null 이다 — 그때 원고 요청은 턴 상한보다 장면 구성안 쪽 거절이 먼저 난다.
+         */
+        NovelOutlineChapterModel: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "gemini" | "sonnet" | "opus";
+            /** Name */
+            name: string;
+            /** Cost */
+            cost: number;
+            /** Maxturns */
+            maxTurns: number;
+            /** Eligible */
+            eligible?: boolean | null;
+            /** Ineligiblereason */
+            ineligibleReason?: "too_many_turns" | null;
+        };
+        /**
          * NovelOutlineChapterRequest
          * @description 구성 흐름 원고 쓰기·다시 만들기(과금). 금액은 고른 모델의 화 단가 하나다.
          */
@@ -13223,6 +13269,10 @@ export interface components {
          *
          *     `chapter_id` 는 이 화 키를 이미 원고로 쓴 화(없으면 null), `scene_outline` 은 이 화 장면 구성안의 상태다. 둘 다 이 판이 아니라
          *     지금 상태다 — 승인본과 미승인 초안의 같은 화 키는 같은 값을 싣는다.
+         *
+         *     `turn_count` 는 근거 구간 안의 모델 응답 수다. 원고 턴 상한 판정이 세는 턴과 같은 세기라(응답 하나가 한 턴), 장면 구성안이 이 화
+         *     근거를 빠짐없이 덮으면 원고가 쓰는 턴 수가 이 값이다. 장면 구성안은 턴을 뺄 수 있어 원고 턴 수는 이보다 적을 수 있다. 방이
+         *     지워졌거나 근거 양 끝 메시지가 사라져 셀 수 없으면 null 이다.
          */
         NovelOutlineEpisodeView: {
             /**
@@ -13245,6 +13295,8 @@ export interface components {
              * @enum {string}
              */
             sceneOutline: "none" | "draft" | "approved" | "stale";
+            /** Turncount */
+            turnCount?: number | null;
         };
         /**
          * NovelOutlineModel
@@ -13274,7 +13326,8 @@ export interface components {
         /**
          * NovelOutlineState
          * @description 전체 구성안 화면의 상태. `approved` 는 가장 최근에 승인한 판, `draft` 는 그보다 새 미승인 판(모델이 막 만든 판이거나 사용자가
-         *     고친 판)이다. `max_episodes` 는 구성안 화 수 상한, `models` 는 고를 수 있는 모델과 가격이다.
+         *     고친 판)이다. `max_episodes` 는 구성안 화 수 상한, `models` 는 고를 수 있는 모델과 가격이다. `chapter_turn_caps` 는 원고에 고를 수
+         *     있는 모델과 그 턴 상한이다(원고 모델 목록과 같은 모델·순서) — 화의 `turn_count` 와 견주어 상한을 넘는 화를 미리 알린다.
          */
         NovelOutlineState: {
             approved: components["schemas"]["NovelOutlineView"] | null;
@@ -13283,6 +13336,8 @@ export interface components {
             maxEpisodes: number;
             /** Models */
             models: components["schemas"]["NovelOutlineModel"][];
+            /** Chapterturncaps */
+            chapterTurnCaps?: components["schemas"]["NovelChapterTurnCap"][];
         };
         /**
          * NovelOutlineView

@@ -986,7 +986,11 @@ class NovelOutlineEpisodeView(CamelModel):
     키 순)이다 — 근거는 그 구성안이 쓴 구간 선택의 include 구간 안에만 있다. 목록 순서가 화 순서다.
 
     `chapter_id` 는 이 화 키를 이미 원고로 쓴 화(없으면 null), `scene_outline` 은 이 화 장면 구성안의 상태다. 둘 다 이 판이 아니라
-    지금 상태다 — 승인본과 미승인 초안의 같은 화 키는 같은 값을 싣는다."""
+    지금 상태다 — 승인본과 미승인 초안의 같은 화 키는 같은 값을 싣는다.
+
+    `turn_count` 는 근거 구간 안의 모델 응답 수다. 원고 턴 상한 판정이 세는 턴과 같은 세기라(응답 하나가 한 턴), 장면 구성안이 이 화
+    근거를 빠짐없이 덮으면 원고가 쓰는 턴 수가 이 값이다. 장면 구성안은 턴을 뺄 수 있어 원고 턴 수는 이보다 적을 수 있다. 방이
+    지워졌거나 근거 양 끝 메시지가 사라져 셀 수 없으면 null 이다."""
 
     key: uuid.UUID
     title: str
@@ -995,6 +999,7 @@ class NovelOutlineEpisodeView(CamelModel):
     basis: list[NovelSourceRange]
     chapter_id: uuid.UUID | None
     scene_outline: NovelSceneOutlineStatus
+    turn_count: int | None = None
 
 
 class NovelOutlineView(CamelModel):
@@ -1025,14 +1030,25 @@ class NovelOutlineModel(CamelModel):
     cost: int
 
 
+class NovelChapterTurnCap(CamelModel):
+    """이 계정이 원고에 고를 수 있는 모델 하나와 그 모델이 원고 하나에 쓸 수 있는 턴(모델 응답) 수 상한. 상한은 작업 시간 상한에서 나온
+    값이라 모델마다 다르다."""
+
+    id: ChatModelId
+    name: str
+    max_turns: int
+
+
 class NovelOutlineState(CamelModel):
     """전체 구성안 화면의 상태. `approved` 는 가장 최근에 승인한 판, `draft` 는 그보다 새 미승인 판(모델이 막 만든 판이거나 사용자가
-    고친 판)이다. `max_episodes` 는 구성안 화 수 상한, `models` 는 고를 수 있는 모델과 가격이다."""
+    고친 판)이다. `max_episodes` 는 구성안 화 수 상한, `models` 는 고를 수 있는 모델과 가격이다. `chapter_turn_caps` 는 원고에 고를 수
+    있는 모델과 그 턴 상한이다(원고 모델 목록과 같은 모델·순서) — 화의 `turn_count` 와 견주어 상한을 넘는 화를 미리 알린다."""
 
     approved: NovelOutlineView | None
     draft: NovelOutlineView | None
     max_episodes: int
     models: list[NovelOutlineModel]
+    chapter_turn_caps: list[NovelChapterTurnCap] = Field(default_factory=list)
 
 
 class NovelOutlineCreateRequest(CamelModel):
@@ -1100,16 +1116,35 @@ class NovelEpisodeOutlineView(CamelModel):
     scenes: list[NovelSceneView]
 
 
+OutlineChapterIneligibility = Literal["too_many_turns"]
+
+
+class NovelOutlineChapterModel(CamelModel):
+    """이 계정이 구성 흐름 원고에 고를 수 있는 모델 하나 — 원고 하나 가격(요청의 `expectedCost`), 턴 상한, 지금 승인한 장면 구성안으로
+    이 모델이 원고를 쓸 수 있는지. 장면이 쓰는 턴 수가 상한을 넘으면 `eligible` 이 거짓이고(요청하면 409 `NOVEL_MODEL_INELIGIBLE`)
+    `ineligible_reason` 이 그 이유다. 쓸 수 있는 승인한 장면 구성안이 없으면(없음·낡음·장면 근거 소실·방 없음) 판정하지 않아 둘 다
+    null 이다 — 그때 원고 요청은 턴 상한보다 장면 구성안 쪽 거절이 먼저 난다."""
+
+    id: ChatModelId
+    name: str
+    cost: int
+    max_turns: int
+    eligible: bool | None = None
+    ineligible_reason: OutlineChapterIneligibility | None = None
+
+
 class NovelEpisodeOutlineState(CamelModel):
     """한 화의 장면 구성안 화면 상태. `approved` 는 가장 최근에 승인한 판, `draft` 는 그보다 새 미승인 판이다. `models` 는 장면 구성안
-    가격, `chapter_models` 는 원고 가격(화 단가)이고, `chapter_id` 는 이 화를 이미 원고로 쓴 화다(없으면 null)."""
+    가격, `chapter_models` 는 원고 가격(화 단가)·턴 상한·적격 여부이고, `chapter_id` 는 이 화를 이미 원고로 쓴 화다(없으면 null).
+    `chapter_turn_count` 는 승인한 장면 구성안의 장면이 쓰는 턴 수(원고 턴 상한 판정이 세는 수)이고, 판정하지 않을 때는 null 이다."""
 
     episode_key: uuid.UUID
     approved: NovelEpisodeOutlineView | None
     draft: NovelEpisodeOutlineView | None
     models: list[NovelOutlineModel]
-    chapter_models: list[NovelOutlineModel]
+    chapter_models: list[NovelOutlineChapterModel]
     chapter_id: uuid.UUID | None
+    chapter_turn_count: int | None = None
 
 
 class NovelEpisodeOutlineCreateRequest(CamelModel):

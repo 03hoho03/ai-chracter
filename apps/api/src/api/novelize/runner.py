@@ -34,6 +34,8 @@ from collections.abc import Coroutine, Sequence
 from datetime import timedelta
 from typing import Any
 
+import anthropic
+from google.genai import errors as genai_errors
 from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -137,6 +139,28 @@ class _JobFailedError(Exception):
     def __init__(self, code: NovelJobFailureCode) -> None:
         super().__init__(code)
         self.code = code
+
+
+def _call_failure(exc: LLMClientError) -> str:
+    """실패한 모델 호출 경고에 붙일 원인 — 실패 예외 종류, 원인 예외 종류, HTTP 상태, 공급자 요청 id(알 수 있을 때, 없으면 "없음").
+    과부하(529)·서버 오류·연결 실패·시간 초과를 로그로 가르고 공급자에 문의할 요청 id 를 남기려는 것이다. 예외 글은 넣지 않는다 —
+    공급자 오류 글에는 오류 응답 본문이 통째로 실리고, 그 안에 요청 내용 일부가 섞일 수 있다.
+
+    Claude 는 SDK 상태 오류가 상태 코드와 헤더를 들고 온다(직접 API 는 `request-id`, Bedrock 은 `x-amzn-requestid`). Gemini SDK 오류는
+    상태 코드만 들고 요청 id 를 주지 않는다."""
+    cause = exc.__cause__
+    status: int | None = None
+    request_id: str | None = None
+    if isinstance(cause, anthropic.APIStatusError):
+        status = cause.status_code
+        request_id = cause.request_id or cause.response.headers.get("x-amzn-requestid")
+    elif isinstance(cause, genai_errors.APIError):
+        status = cause.code
+    cause_name = "없음" if cause is None else type(cause).__name__
+    return (
+        f"{type(exc).__name__} 원인={cause_name} 상태={'없음' if status is None else status} "
+        f"요청={request_id or '없음'}"
+    )
 
 
 def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -519,7 +543,7 @@ async def _generate_batch(llm_client: LLMClient, chapter_input: ChapterInput, us
     except LLMPolicyViolationError as exc:
         raise _JobFailedError("blocked") from exc
     except LLMClientError as exc:
-        logger.warning("소설화 장 생성 호출이 실패했다: %s", type(exc).__name__)
+        logger.warning("소설화 장 생성 호출이 실패했다: %s", _call_failure(exc))
         raise _JobFailedError("llm_error") from exc
     raw = "".join(chunks)
     try:
@@ -574,7 +598,7 @@ async def _revise(llm_client: LLMClient, prompt: str, system_instruction: str, u
     except LLMPolicyViolationError as exc:
         raise _JobFailedError("blocked") from exc
     except LLMClientError as exc:
-        logger.warning("소설화 문단 수정 호출이 실패했다: %s", type(exc).__name__)
+        logger.warning("소설화 문단 수정 호출이 실패했다: %s", _call_failure(exc))
         raise _JobFailedError("llm_error") from exc
     # 항목 안의 빈 줄은 문단을 나눈 것으로 보고, 앞에 붙어 온 `[n]` 번호는 걷는다.
     paragraphs = [
@@ -606,7 +630,7 @@ async def _revise_blocks(
     except LLMPolicyViolationError as exc:
         raise _JobFailedError("blocked") from exc
     except LLMClientError as exc:
-        logger.warning("소설화 여러 문단 수정 호출이 실패했다: %s", type(exc).__name__)
+        logger.warning("소설화 여러 문단 수정 호출이 실패했다: %s", _call_failure(exc))
         raise _JobFailedError("llm_error") from exc
     raw = [
         (
@@ -643,7 +667,7 @@ async def _outline(llm_client: LLMClient, outline_input: OutlineInput, usage: LL
     except LLMPolicyViolationError as exc:
         raise _JobFailedError("blocked") from exc
     except LLMClientError as exc:
-        logger.warning("소설화 전체 구성안 호출이 실패했다: %s", type(exc).__name__)
+        logger.warning("소설화 전체 구성안 호출이 실패했다: %s", _call_failure(exc))
         raise _JobFailedError("llm_error") from exc
     try:
         return outline_episodes(result, outline_input.source.spans)
@@ -711,7 +735,7 @@ async def _episode_outline(
     except LLMPolicyViolationError as exc:
         raise _JobFailedError("blocked") from exc
     except LLMClientError as exc:
-        logger.warning("소설화 장면 구성안 호출이 실패했다: %s", type(exc).__name__)
+        logger.warning("소설화 장면 구성안 호출이 실패했다: %s", _call_failure(exc))
         raise _JobFailedError("llm_error") from exc
     try:
         return model_scenes(result, episode_input.source.spans)

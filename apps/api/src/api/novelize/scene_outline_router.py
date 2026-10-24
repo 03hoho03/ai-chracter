@@ -30,6 +30,7 @@ from api.llm.dependencies import get_llm_client
 from api.novel_public.no_store import NoStoreRoute
 from api.novelize.access import require_novelize_access
 from api.novelize.billing import _lock_user, job_price
+from api.novelize.episodes import chapter_max_turns
 from api.novelize.inputs import SourceChangedError
 from api.novelize.outline import InputTooLargeError, SectionLockedError, SelectionMissingError
 from api.novelize.router import (
@@ -53,6 +54,7 @@ from api.novelize.scene_outline import (
     EpisodeWrittenError,
     OutlineMissingError,
     OutlineStaleError,
+    SceneSource,
     ScenesInvalidError,
     approved_episode,
     chapter_turn_cap_exceeded,
@@ -72,7 +74,9 @@ from api.novelize.schemas import (
     NovelEpisodeOutlineSaveRequest,
     NovelEpisodeOutlineState,
     NovelEpisodeOutlineView,
+    NovelChapterModel,
     NovelJobResponse,
+    NovelOutlineChapterModel,
     NovelOutlineChapterRequest,
     NovelOutlineModel,
     NovelSceneView,
@@ -146,11 +150,39 @@ async def _view(db: AsyncSession, novel_id: uuid.UUID, row: NovelEpisodeOutline)
     )
 
 
+async def _approved_scenes(
+    db: AsyncSession, novel: Novel, key: uuid.UUID, approved: NovelEpisodeOutline | None
+) -> SceneSource | None:
+    """원고 요청이 턴 상한을 판정할 장면 원문 — 그 화의 지금 승인한 장면 구성안이 낡지 않았으면 그 장면 근거를 원고 요청과 같은 함수로
+    읽는다. 승인한 판이 없거나 낡았거나 방·장면 근거 메시지가 사라졌으면 판정하지 않는다(None)."""
+    if approved is None or novel.chat_room_id is None:
+        return None
+    if not await episode_basis_holds(db, novel.id, approved.outline_id, key):
+        return None
+    try:
+        return await load_scene_source(db, novel.chat_room_id, approved.scenes)
+    except SourceChangedError:
+        return None
+
+
+def _chapter_model(option: NovelChapterModel, scenes: SceneSource | None) -> NovelOutlineChapterModel:
+    over = None if scenes is None else chapter_turn_cap_exceeded(scenes, option.id)
+    return NovelOutlineChapterModel(
+        id=option.id,
+        name=option.name,
+        cost=job_price("outline_chapter_generate", option.id),
+        max_turns=chapter_max_turns(option.id),
+        eligible=None if over is None else not over,
+        ineligible_reason="too_many_turns" if over else None,
+    )
+
+
 async def _state(db: AsyncSession, novel: Novel, key: uuid.UUID) -> NovelEpisodeOutlineState:
     latest = await latest_episode_outline(db, novel.id, key)
     approved = await latest_episode_outline(db, novel.id, key, approved=True)
     draft = latest if latest is not None and latest.approved_at is None else None
     options, _ = await _chapter_models(db, novel.user_id)
+    scenes = await _approved_scenes(db, novel, key, approved)
     return NovelEpisodeOutlineState(
         episode_key=key,
         approved=None if approved is None else await _view(db, novel.id, approved),
@@ -159,11 +191,9 @@ async def _state(db: AsyncSession, novel: Novel, key: uuid.UUID) -> NovelEpisode
             NovelOutlineModel(id=option.id, name=option.name, cost=job_price("episode_outline_generate", option.id))
             for option in options
         ],
-        chapter_models=[
-            NovelOutlineModel(id=option.id, name=option.name, cost=job_price("outline_chapter_generate", option.id))
-            for option in options
-        ],
+        chapter_models=[_chapter_model(option, scenes) for option in options],
         chapter_id=(await written_episodes(db, novel.id)).get(str(key)),
+        chapter_turn_count=None if scenes is None else len(scenes.turns),
     )
 
 

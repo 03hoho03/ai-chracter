@@ -585,6 +585,37 @@ class SceneSource:
     scene_plan: str
 
 
+async def _basis_turns(
+    db: AsyncSession, room_id: uuid.UUID, start: MessageKey, end: MessageKey
+) -> tuple[list[ChatMessage], list[SourceTurn]]:
+    """근거 구간 하나를 관문으로 읽어 턴으로 묶는다. 원고의 턴 상한 판정(장면 근거)과 구성안 화의 턴 수(화 근거)가 이 한 곳으로 세어,
+    화면이 구성안 단계에서 본 턴 수와 원고 요청이 막는 턴 수가 같은 세기가 된다."""
+    read = await read_source(db, room_id, [SourceRange(start, end)])
+    return read, group_turns(read)
+
+
+async def episode_turn_counts(
+    db: AsyncSession, room_id: uuid.UUID | None, episodes: Sequence[dict[str, Any]]
+) -> list[int | None]:
+    """구성안 화마다 근거 구간 안의 턴(모델 응답) 수 — 장면 구성안이 그 화 근거를 빠짐없이 덮을 때 원고 턴 상한 판정이 세는 수다. 방이
+    없거나 근거 양 끝 메시지 중 하나라도 사라진 화는 셀 수 없어 None 이다(0 으로 세면 쓸 수 있는 화처럼 보인다)."""
+    if room_id is None:
+        return [None] * len(episodes)
+    ids = {uuid.UUID(b[end]) for e in episodes for b in e["basis"] for end in ("start_message_id", "end_message_id")}
+    keys = await room_message_keys(db, room_id, ids)
+    counts: list[int | None] = []
+    for episode in episodes:
+        ends = [(uuid.UUID(b["start_message_id"]), uuid.UUID(b["end_message_id"])) for b in episode["basis"]]
+        if any(start not in keys or end not in keys for start, end in ends):
+            counts.append(None)
+            continue
+        total = 0
+        for start, end in ends:
+            total += len((await _basis_turns(db, room_id, keys[start], keys[end]))[1])
+        counts.append(total)
+    return counts
+
+
 async def load_scene_source(db: AsyncSession, room_id: uuid.UUID, scenes: Sequence[dict[str, Any]]) -> SceneSource:
     """장면 근거 구간만 관문으로 읽는다. 턴 번호는 근거 구간을 키 순으로 늘어놓고 1부터 세고, 장면 계획은 장면 차례대로 그 번호를 적는다."""
     keyed = sorted((stored_basis_key(basis), index) for index, scene in enumerate(scenes) for basis in scene["basis"])
@@ -593,10 +624,9 @@ async def load_scene_source(db: AsyncSession, room_id: uuid.UUID, scenes: Sequen
     numbers: dict[int, list[tuple[int, int]]] = {}
     weights = [0] * len(scenes)
     for (start, end), index in keyed:
-        read = await read_source(db, room_id, [SourceRange(start, end)])
+        read, grouped = await _basis_turns(db, room_id, start, end)
         if not read or message_key(read[0]) != start or message_key(read[-1]) != end:
             raise SourceChangedError("장면 근거의 양 끝 메시지가 사라졌다")
-        grouped = group_turns(read)
         if grouped:
             numbers.setdefault(index, []).append((len(turns) + 1, len(turns) + len(grouped)))
         messages += read
