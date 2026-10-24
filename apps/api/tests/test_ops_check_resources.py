@@ -366,7 +366,7 @@ def test_main_still_pings_when_state_file_cannot_be_written(
 
 def _docker_read(health: dict[str, str], *, fail: bool = False) -> Callable[[list[str]], str]:
     """`free`·`df` 는 정상 출력을, `docker ps` 는 `health`(서비스 → 헬스 상태, 없으면 컨테이너 없음)대로 id 를,
-    `docker inspect` 는 그 id 의 헬스 상태를 돌려준다. `fail` 이면 docker 호출이 실패한다."""
+    `docker inspect` 는 그 id 의 "헬스 상태 재시작 횟수" 를 돌려준다(값에 횟수가 없으면 0). `fail` 이면 docker 호출이 실패한다."""
 
     def _fake(cmd: list[str]) -> str:
         if cmd[0] == "free":
@@ -380,7 +380,8 @@ def _docker_read(health: dict[str, str], *, fail: bool = False) -> Callable[[lis
             service = next(arg.split("=")[-1] for arg in cmd if "com.docker.compose.service=" in arg)
             return f"id-{service}\n" if service in health else ""
         assert cmd[1] == "inspect", cmd
-        return health[cmd[-1].removeprefix("id-")] + "\n"
+        value = health[cmd[-1].removeprefix("id-")]
+        return (value if " " in value else f"{value} 0") + "\n"
 
     return _fake
 
@@ -485,8 +486,8 @@ def test_worker_docker_binary_missing_is_a_worker_warning(monkeypatch: pytest.Mo
 def test_worker_starting_is_not_an_alert(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, health: dict[str, str]
 ) -> None:
-    """교체가 새 워커를 띄운 직후 그 워커는 헬스체크 유예 동안 `starting` 이다 — 크론이 그 순간과 겹쳐도 경고가 아니다.
-    `starting` 이 이어지지 않는 것은 docker 가 보장한다(유예가 끝나고 실패가 이어지면 unhealthy 로 바뀐다)."""
+    """교체가 새 워커를 띄운 직후 그 워커는 헬스체크 유예 동안 `starting` 이다(재시작 0회) — 크론이 그 순간과 겹쳐도
+    경고가 아니다."""
     sent, _ = _run_worker_check(monkeypatch, tmp_path, _docker_read(health), expected="on\n")
     assert sent == []
 
@@ -502,3 +503,12 @@ def test_worker_alerts_once_when_starting_worker_disappears(monkeypatch: pytest.
 
     sent, _ = _run_worker_check(monkeypatch, tmp_path, _docker_read({}), expected="on\n")
     assert sent == []
+
+
+def test_worker_starting_after_restarts_is_an_alert(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """기동 직후 죽는 워커는 재시작마다 헬스가 `starting` 으로 돌아가고 유예 동안 실패를 세지 않아 계속 `starting` 으로
+    보인다 — 재시작한 적 있는 `starting` 은 크래시 루프로 보고 경고한다."""
+    read = _docker_read({"worker_blue": "starting 3"})
+    sent, _ = _run_worker_check(monkeypatch, tmp_path, read, expected="on\n")
+    assert len(sent) == 1
+    assert "blue=starting(재시작 3회)" in sent[0]

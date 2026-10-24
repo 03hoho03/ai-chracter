@@ -15,7 +15,7 @@ GCP의 balloon 메트릭(`instance/memory/balloon/ram_used`) 대신 `free`/`df`�
 
 소설화 워커도 같은 방식으로 본다 — 교체 스크립트(`ops/swap-api.sh`)가 남기는 기대 상태 파일(`--worker-state-file`,
 `on`/`off`, 없으면 off)이 `on` 일 때만, 두 워커 색 중 docker 헬스 상태가 healthy 또는 starting 인 컨테이너가 하나라도
-있는지 본다.
+있는지 본다(starting 은 재시작한 적 없을 때만 — 아래 `_STARTING_STATUS`).
 스위치를 읽으려고 `.env` 를 열지 않는다. docker 를 못 읽는 실패는 그 항목의 경고로만 남기고 메모리·디스크·ping 은
 계속 간다 — 여기서 죽으면 docker 데몬 문제가 "VM 이 죽었다" 로 보인다.
 
@@ -46,11 +46,13 @@ _RESOURCE_LABELS = {"memory": "메모리", "disk": "디스크(/)", "novelize_wor
 # 복구 알림의 꼬리. 항목에 없으면 임계값 문구다.
 _RECOVERY_NOTES = {"novelize_worker": "healthy 워커가 다시 있다(또는 스위치를 껐다)"}
 _DEFAULT_RECOVERY_NOTE = "임계값 아래로 내려왔다"
-# 경고가 아닌 워커 헬스 상태. `starting` 은 교체가 새 워커를 막 띄운 뒤 헬스체크 유예 동안의 상태다 — 교체는 그 워커를
-# 최대 60초 기다리고 크론은 5분마다 돌아서, 둘이 겹치면 곧 healthy 가 될 워커를 경고로 잡았다. `starting` 이 길게 이어질
-# 걱정은 없다: docker 는 유예(`start_period`)가 끝난 뒤 검사 실패가 `retries` 번 이어지면 unhealthy 로 바꾸므로, 지금 값
-# (docker-compose.prod.yml 워커 healthcheck)으로는 2분 안에 끝나고 다음 크론 실행은 이미 healthy 아니면 unhealthy 를 본다.
-_WORKER_OK_STATUSES = ("healthy", "starting")
+# 워커 판정에서 `starting` 은 재시작한 적 없는 컨테이너일 때만 정상이다. 교체가 새 워커를 막 띄운 뒤 헬스체크 유예
+# 동안 그 워커는 `starting` 인데, 교체는 최대 60초 기다리고 크론은 5분마다 돌아서 둘이 겹치면 곧 healthy 가 될 워커를
+# 경고로 잡았다. 새로 띄운 컨테이너는 재시작 횟수가 0 이다. 재시작한 `starting` 을 정상으로 보면 안 되는 이유: docker 가
+# 유예 뒤 실패가 이어지면 unhealthy 로 바꾸는 것은 컨테이너 한 생애 안에서만이고, 워커는 `restart: unless-stopped` 라
+# 재시작마다 헬스가 `starting` 으로 돌아가며 유예 동안의 실패는 세지 않는다 — 유예 안에 죽기를 되풀이하는 워커는 영영
+# `starting` 으로 보인다.
+_STARTING_STATUS = "starting"
 # 교체 스크립트가 띄우는 compose 프로젝트·서비스. 이름은 `docker-compose.prod.yml` 의 `name`·서비스명과 같아야 한다.
 _COMPOSE_PROJECT = "ddona"
 _WORKER_COLORS = ("blue", "green")
@@ -119,11 +121,12 @@ def read_worker_expected(path: str | os.PathLike[str]) -> bool:
 
 
 def check_novelize_worker(expected: bool) -> str | None:
-    """워커를 기대하는데 healthy(또는 막 뜨는 중인 starting) 워커 색이 없으면 경고 문구를 돌려준다. 정지 중인 옛 워커도 정지가 끝날 때까지는
+    """워커를 기대하는데 healthy(또는 재시작 없이 막 뜨는 중인 starting) 워커 색이 없으면 경고 문구를 돌려준다. 정지 중인 옛 워커도 정지가 끝날 때까지는
     healthy 라 하나로 센다. docker 를 못 읽으면 그 사실을 경고로 돌려준다(예외를 밖으로 내지 않는다)."""
     if not expected:
         return None
     statuses: dict[str, str] = {}
+    any_ok = False
     try:
         for color in _WORKER_COLORS:
             ids = _read(
@@ -140,11 +143,14 @@ def check_novelize_worker(expected: bool) -> str | None:
             if not ids:
                 statuses[color] = "없음"
                 continue
-            health = _read(["docker", "inspect", "--format", "{{.State.Health.Status}}", ids[0]]).strip()
-            statuses[color] = health or "알 수 없음"
+            output = _read(["docker", "inspect", "--format", "{{.State.Health.Status}} {{.RestartCount}}", ids[0]])
+            health, _, restarts = output.strip().partition(" ")
+            if health == "healthy" or (health == _STARTING_STATUS and restarts == "0"):
+                any_ok = True
+            statuses[color] = f"{health}(재시작 {restarts}회)" if health == _STARTING_STATUS else health or "알 수 없음"
     except (RuntimeError, OSError) as error:
         return f"소설화 워커 상태를 읽지 못했다({type(error).__name__}) — docker 데몬을 확인한다"
-    if any(status in _WORKER_OK_STATUSES for status in statuses.values()):
+    if any_ok:
         return None
     detail = ", ".join(f"{color}={status}" for color, status in statuses.items())
     return f"소설화 워커가 healthy 가 아니다({detail}) — 새 소설화 작업이 60초 뒤 환불로 끝난다"
