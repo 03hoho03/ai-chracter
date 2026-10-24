@@ -162,6 +162,13 @@ class ChatRoomMemoryItemsResponse(CamelModel):
     facts_used_in_replies: bool
 
 
+class ChatRoomMemoryFactForgetPreview(CamelModel):
+    """사실 키 하나를 잊기 전 확인 대화에 보일 것. `episode_count` 는 함께 잊을 장면 수다 — 아는 사람이 정해진(비밀) 사실이면
+    그 키의 근거 대화 구간과 겹치는 장면도 함께 잊는다(사실만 지우면 그 장면이 응답에 다시 실릴 수 있다). 공개 사실이면 0."""
+
+    episode_count: int
+
+
 class StoryScene(CamelModel):
     """장면 헤더의 장면 — 지금 장소와 시간. 모르는 칸은 null 이다. 같은 이름의 미디어 북 장면 축·장면 기억과는 다른 것이다."""
 

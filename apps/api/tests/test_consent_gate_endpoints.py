@@ -1,5 +1,5 @@
 """`require_legal_consent`가 "막는다" 60개에
-붙어 있고 "연다" 28개에는 안 붙어 있는지 3층으로 검증한다.
+붙어 있고 "연다" 30개에는 안 붙어 있는지 3층으로 검증한다.
 개수에는 대화 프로필 차단 4·개방 1과 방 기억 차단 3·개방 1이 들어 있다(그 전에는 21+15였다). 채팅 응답 신고 개방 1을 더해 18이다.
 소설 쓰기 차단 11(방의 소설 만들기·설정 노트·주인공 이름·장 경계 제안·장 생성·재생성·직접 수정·되돌리기·AI 수정·
 수정 적용·수정 버리기)과 자기 데이터 삭제 개방 2(소설·마지막 장)를 더해 39+20이었고, 방의 글쓰기 모델 지정 차단 1을 더해
@@ -8,11 +8,11 @@
 쓰기 차단 3(추가·고치기·합치기), 편집 보드 배치 저장 차단 1, 읽은 위치 저장 차단 1, 스냅샷 저장·복원 차단 2와 스냅샷 삭제
 개방 1을 더해 51+22였고, 작품의 소설화 허락 바꾸기 차단 1을 더해 52+22였고, 노벨 공개 차단 1과 공개 거두기 개방 1을 더해
 53+23이었다. 공개 노벨 독자 쪽 차단 3(화 구매, 독자 읽은 자리 저장, 화 댓글 쓰기)과 개방 5(좋아요·좋아요 취소, 내 댓글 지우기,
-노벨·화 신고, 댓글 신고)를 더해 56+28이었고, 크리에이터 정산 신청 차단 1을 더해 57+28이었고, 크리에이터 지급 정보 입력·지급 신청 차단 2를 더해 59+28이었고, 재생성이 밀어낸 직전 응답으로 되돌리기 차단 1을 더해 60+28이다(대화를 바꾸는 쓰기라 재생성과 같은 편이다). 클로버를 쓰거나 남이 보는 글을 새로 남기는 일은 막고, 내 표시를 거두거나
+노벨·화 신고, 댓글 신고)를 더해 56+28이었고, 크리에이터 정산 신청 차단 1을 더해 57+28이었고, 크리에이터 지급 정보 입력·지급 신청 차단 2를 더해 59+28이었고, 재생성이 밀어낸 직전 응답으로 되돌리기 차단 1을 더해 60+28이었고(대화를 바꾸는 쓰기라 재생성과 같은 편이다), 방 기억 잊게 하기 개방 2(장면 하나·사실 키 하나 — 자기 데이터 삭제)를 더해 60+30이다. 클로버를 쓰거나 남이 보는 글을 새로 남기는 일은 막고, 내 표시를 거두거나
 지우는 일과 신고(안전 경로)는 연다 — 작품 쪽의 같은 일과 같은 편이다. 다시 공개는 공개와 같은 라우트라 따로 세지 않는다. 읽은 위치 저장은 화면을 떠날 때 응답을
 기다리지 않고 보내는 요청이지만 쓰기라 막는다 — 막혀도 위치가 남지 않을 뿐 읽기는 된다. 소설 라우트는 소설화 허용 게이트가 재동의 게이트보다 먼저 돌아 (b)는 사용자에게 소설화를 허용해 둔 채 요청한다.
 
-(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 60개/28개의 실제 데코레이터를 대조한다.
+(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 60개/30개의 실제 데코레이터를 대조한다.
     이 저장소가 신형 FastAPI(0.139) 내부 구조를 쓴다 — `app.routes`는 평범한 `APIRoute` 목록이
     아니라 `_IncludedRouter`(`app.include_router()`의 결과)로 감싸여 있어, 공개 API인
     `fastapi.routing.iter_route_contexts()`로 펼쳐야 각 라우트의 `.dependant`에 닿는다
@@ -22,7 +22,7 @@
     해석되므로(fastapi.dependencies.utils.solve_dependencies가 그 리스트를 순서대로 돌며 첫
     HTTPException에서 곧장 전파한다) 경로 파라미터는 실존할 필요가 없다 — 라우터 본문의
     소유권 조회(404) 이전에 게이트가 먼저 막는다.
-(c) 28개 예외가 재동의가 실제로 필요한 상태에서도 여전히 200/204 — `require_legal_consent`를
+(c) 30개 예외가 재동의가 실제로 필요한 상태에서도 여전히 200/204 — `require_legal_consent`를
     `get_current_user_id`에 잘못 넣는 변이를 이 층만이 잡는다.
 
 `factories._make_user`는 기본적으로 어떤 게시본보다 큰 `terms_version`/`privacy_version`을
@@ -168,7 +168,7 @@ _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
     ("POST", "/me/creator-payout/payouts", {"forWithdrawal": False}),
 ]
 
-# ---- (a)/(c) 공통: "연다" 28개 ----
+# ---- (a)/(c) 공통: "연다" 30개 ----
 
 _OPEN_PATHS: list[tuple[str, str]] = [
     ("POST", "/legal/consent"),
@@ -189,6 +189,8 @@ _OPEN_PATHS: list[tuple[str, str]] = [
     ("DELETE", "/chat-rooms/{room_id}/messages/{message_id}"),
     ("DELETE", "/me/personas/{persona_id}"),  # "자기 데이터 삭제"는 예외
     ("DELETE", "/chat-rooms/{room_id}/memory/note"),
+    ("DELETE", "/chat-rooms/{room_id}/memory/episodes/{episode_id}"),
+    ("DELETE", "/chat-rooms/{room_id}/memory/facts"),
     ("DELETE", "/novels/{novel_id}"),
     ("DELETE", "/novels/{novel_id}/chapters/{chapter_id}"),
     ("DELETE", "/novels/{novel_id}/batches/{batch_id}"),
@@ -281,7 +283,7 @@ async def test_blocked_endpoint_returns_403_without_consent(
     assert resp.json()["detail"]["code"] == "LEGAL_RECONSENT_REQUIRED"
 
 
-# ---- (c) 28개 예외 — 재동의가 실제로 필요한 상태에서도 200/204 ----
+# ---- (c) 30개 예외 — 재동의가 실제로 필요한 상태에서도 200/204 ----
 
 
 async def _unconsented_user(db_client: httpx.AsyncClient, db_session: AsyncSession) -> User:
@@ -524,6 +526,23 @@ async def test_clear_memory_note_still_open_without_consent(
     assert cleared.status_code == 200
     stored = await db_session.scalar(select(ChatRoom.memory_note).where(ChatRoom.id == room.id))
     assert stored == ""
+
+
+async def test_forgetting_memory_items_still_open_without_consent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """장면·사실 기억 잊게 하기도 자기 데이터 삭제라 열려 있다 — 재동의 전에도 자기 기억을 지울 수 있어야 한다."""
+    monkeypatch.setattr(settings, "memory_items_visible", True)
+    user = await _unconsented_user(db_client, db_session)
+    room = await _owned_chat_room(db_session, user)
+
+    episode = await db_client.delete(f"/chat-rooms/{room.id}/memory/episodes/{uuid.uuid4()}")
+    fact = await db_client.delete(f"/chat-rooms/{room.id}/memory/facts", params={"key": "relation|민수|지아"})
+
+    # 지울 행이 없어 404 지만 재동의 게이트(403)에 막히지 않고 라우트 본문까지 왔다.
+    assert [(resp.status_code, resp.json()["detail"]) for resp in (episode, fact)] == [
+        (404, {"code": "MEMORY_ITEM_NOT_FOUND"})
+    ] * 2
 
 
 async def test_delete_novel_still_open_without_consent(

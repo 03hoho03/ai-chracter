@@ -75,6 +75,10 @@ class ChatRoom(Base):
     # 진행 중이던 요약을 무효로 만든다. 노트 저장은 올리지 않는다(노트 저장이 요약 편집을 충돌로
     # 만들지 않게).
     memory_version: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    # 방 주인이 사실 기억을 잊게 할 때마다 같은 트랜잭션에서 1씩 오르는 카운터(`chat/memory_forget.py`). 장면·사실 추출은 입력을
+    # 읽기 전과 결과를 넣기 직전에 이 값을 읽어 바뀌었으면 결과를 버린다 — 잊기 직전에 입력을 읽은 추출이 잊은 키를 다시 넣거나
+    # 잊은 비밀과 겹치는 장면을 가림 없이 넣지 못하게. 요약과 무관해서 `memory_version` 과 따로 둔다(잊기가 진행 중인 접기·요약 편집을 버리지 않게).
+    memory_forget_generation: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     # 메시지 편집·삭제로 요약 스냅샷이 실제로 한 행 이상 지워진 마지막 시각. 기억 패널이 "요약이
     # 되돌아갔다"는 알림을 한 번 띄우는 기준이다. 초기화는 되감기 안내 대상이 아니라 NULL로 둔다.
     memory_rolled_back_at: Mapped[datetime | None] = mapped_column(

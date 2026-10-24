@@ -2,6 +2,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
@@ -16,6 +17,13 @@ from api.chat.memory_embeddings import fill_pending_embeddings
 from api.chat.memory_episodes import extract_pending_episode
 from api.chat.memory_facts import extract_pending_facts
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
+from api.chat.memory_forget import (
+    MemoryItemMissingError,
+    RoomMissingError,
+    fact_forget_plan,
+    forget_episode,
+    forget_fact_key,
+)
 from api.chat.memory_items import InvalidItemsCursorError, memory_items, truth_label, used_in_replies
 from api.chat.memory_rewind import rewind_memory
 from api.chat.previous_response import clear_previous_response, previous_response_for, restore_previous_response
@@ -80,6 +88,7 @@ from api.chat.schemas import (
     ChatRoomEnding,
     ChatRoomListItem,
     ChatRoomMemoryEpisodeItem,
+    ChatRoomMemoryFactForgetPreview,
     ChatRoomMemoryFactItem,
     ChatRoomMemoryFeatures,
     ChatRoomMemoryItemsResponse,
@@ -124,11 +133,13 @@ from api.content.schemas import (
 from api.core.clover import SpendUsage
 from api.core.config import settings
 from api.core.rate_limit_gate import ChatCharge, charge_chat_turn, enforce_chat_rate_limit
+from api.core.schema import NoNul
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
+    FACT_KEY_MAX,
     CharacterImageExposure,
     ChatMessage,
     ChatMessageRole,
@@ -2120,6 +2131,77 @@ async def list_chat_room_memory_items(
         episodes_used_in_replies=episodes_used,
         facts_used_in_replies=facts_used,
     )
+
+
+# 잊게 할 사실 키 — 경로가 아니라 질의로 받는다(키에 `/`·`?` 가 들어갈 수 있다). 키 칸 상한을 넘거나 NUL 이 든 값은 그런 행이
+# 있을 수 없어 422 로 돌려준다(NUL 을 그대로 DB 에 보내면 500).
+_ForgetFactKey = Annotated[str, Query(min_length=1, max_length=FACT_KEY_MAX), NoNul]
+
+
+def _memory_item_missing() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "MEMORY_ITEM_NOT_FOUND"})
+
+
+@router.delete(
+    "/{room_id}/memory/episodes/{episode_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(_require_memory_items_visible)],
+)
+async def forget_chat_room_memory_episode(
+    room_id: uuid.UUID,
+    episode_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """장면 기억 하나를 실제로 지운다(임베딩 포함, `chat/memory_forget.py`). 기억 보기와 같은 스위치 뒤에 있고, 자기 데이터 삭제라
+    재동의 게이트를 걸지 않는다(노트 비우기와 같다)."""
+    await _get_owned_room(db, room_id, user_id)
+    try:
+        await forget_episode(db, room_id, episode_id)
+    except RoomMissingError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat room not found") from None
+    except MemoryItemMissingError:
+        raise _memory_item_missing() from None
+    await db.commit()
+
+
+@router.delete(
+    "/{room_id}/memory/facts",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(_require_memory_items_visible)],
+)
+async def forget_chat_room_memory_fact(
+    room_id: uuid.UUID,
+    key: _ForgetFactKey,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """사실 키 하나의 행 전부(옛 값 포함, 임베딩 포함)를 실제로 지운다. 비밀 사실이면 근거 구간이 겹치는 장면도 함께 지운다 —
+    그 수는 `forget-preview` 가 미리 알려 준다(`chat/memory_forget.py`). 스위치·재동의는 장면 잊기와 같다."""
+    await _get_owned_room(db, room_id, user_id)
+    try:
+        await forget_fact_key(db, room_id, key)
+    except RoomMissingError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat room not found") from None
+    except MemoryItemMissingError:
+        raise _memory_item_missing() from None
+    await db.commit()
+
+
+@router.get("/{room_id}/memory/facts/forget-preview", dependencies=[Depends(_require_memory_items_visible)])
+async def preview_chat_room_memory_fact_forget(
+    room_id: uuid.UUID,
+    key: _ForgetFactKey,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryFactForgetPreview:
+    """사실 키 하나를 잊으면 함께 잊을 장면 수. 잊기와 같은 함수로 고르므로 그사이 기억이 바뀌지 않으면 같은 수가 지워진다."""
+    await _get_owned_room(db, room_id, user_id)
+    try:
+        plan = await fact_forget_plan(db, room_id, key)
+    except MemoryItemMissingError:
+        raise _memory_item_missing() from None
+    return ChatRoomMemoryFactForgetPreview(episode_count=len(plan.episode_ids))
 
 
 async def _lock_room_for_note_write(db: AsyncSession, room_id: uuid.UUID) -> None:

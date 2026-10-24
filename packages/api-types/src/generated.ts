@@ -5443,6 +5443,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat-rooms/{room_id}/memory/episodes/{episode_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Forget Chat Room Memory Episode
+         * @description 장면 기억 하나를 실제로 지운다(임베딩 포함, `chat/memory_forget.py`). 기억 보기와 같은 스위치 뒤에 있고, 자기 데이터 삭제라
+         *     재동의 게이트를 걸지 않는다(노트 비우기와 같다).
+         */
+        delete: operations["forget_chat_room_memory_episode_chat_rooms__room_id__memory_episodes__episode_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/memory/facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Forget Chat Room Memory Fact
+         * @description 사실 키 하나의 행 전부(옛 값 포함, 임베딩 포함)를 실제로 지운다. 비밀 사실이면 근거 구간이 겹치는 장면도 함께 지운다 —
+         *     그 수는 `forget-preview` 가 미리 알려 준다(`chat/memory_forget.py`). 스위치·재동의는 장면 잊기와 같다.
+         */
+        delete: operations["forget_chat_room_memory_fact_chat_rooms__room_id__memory_facts_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/memory/facts/forget-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Chat Room Memory Fact Forget
+         * @description 사실 키 하나를 잊으면 함께 잊을 장면 수. 잊기와 같은 함수로 고르므로 그사이 기억이 바뀌지 않으면 같은 수가 지워진다.
+         */
+        get: operations["preview_chat_room_memory_fact_forget_chat_rooms__room_id__memory_facts_forget_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms/{room_id}/memory/note": {
         parameters: {
             query?: never;
@@ -9769,6 +9831,15 @@ export interface components {
             startTurn: number;
             /** Endturn */
             endTurn: number;
+        };
+        /**
+         * ChatRoomMemoryFactForgetPreview
+         * @description 사실 키 하나를 잊기 전 확인 대화에 보일 것. `episode_count` 는 함께 잊을 장면 수다 — 아는 사람이 정해진(비밀) 사실이면
+         *     그 키의 근거 대화 구간과 겹치는 장면도 함께 잊는다(사실만 지우면 그 장면이 응답에 다시 실릴 수 있다). 공개 사실이면 0.
+         */
+        ChatRoomMemoryFactForgetPreview: {
+            /** Episodecount */
+            episodeCount: number;
         };
         /**
          * ChatRoomMemoryFactItem
@@ -23920,6 +23991,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatRoomMemoryItemsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    forget_chat_room_memory_episode_chat_rooms__room_id__memory_episodes__episode_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    forget_chat_room_memory_fact_chat_rooms__room_id__memory_facts_delete: {
+        parameters: {
+            query: {
+                key: string;
+            };
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_chat_room_memory_fact_forget_chat_rooms__room_id__memory_facts_forget_preview_get: {
+        parameters: {
+            query: {
+                key: string;
+            };
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomMemoryFactForgetPreview"];
                 };
             };
             /** @description Validation Error */
