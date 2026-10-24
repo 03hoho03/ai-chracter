@@ -245,11 +245,11 @@ def _assign_semver(
                 {"id": base_set_id},
             )
         }
-        # 판 행 없이 내용만 있는 기준판 섹션은 물려줄 번호가 없어 기준판에 없던 섹션으로 본다(새로 들어온 섹션처럼 이어 올림).
+        # 판 행 없이 내용만 있는 기준판 섹션은 물려줄 번호가 없어, 초안에 있으면 기준판에 없던 섹션으로 본다(새로 들어온 섹션처럼
+        # 이어 올림). 초안에 없으면 기준판에 있던 내용이 빠진 것이라 빠진 섹션으로 센다.
+        full_base_contents = _section_contents(conn, base_set_id)
         base_contents = {
-            channel: content
-            for channel, content in _section_contents(conn, base_set_id).items()
-            if channel in base_numbers
+            channel: content for channel, content in full_base_contents.items() if channel in base_numbers
         }
         chain_max = {
             channel: (major, minor, patch)
@@ -267,7 +267,7 @@ def _assign_semver(
             channel
             for channel in set(contents) | set(base_contents)
             if contents.get(channel) != base_contents.get(channel)
-        }
+        } | (set(full_base_contents) - set(contents))
         not_changed = sorted(set(picked_levels) - changed)
         if not_changed:
             raise RuntimeError(f"바뀌지 않은 섹션에 판 단계를 골랐다: {not_changed}")

@@ -190,6 +190,15 @@ def test_plan_counts_a_removed_section_in_the_chain_level() -> None:
     assert plan.removed == ["generation"]
 
 
+def test_plan_counts_a_dropped_section_without_a_number_row_as_removed() -> None:
+    """기준판에 판 행 없이 내용만 있던 섹션을 지우면 그 섹션도 빠진 섹션이다 — 이름이 남고 고른 단계가 체인 상승에 들어간다.
+    깨지는 시나리오: 번호가 없다는 이유로 기준판에 없던 섹션으로 쳐서, 지운 섹션이 결과에서 사라지고 그 단계는 거부된다."""
+    base = replace(_base(), section_numbers={"system": (1, 1, 0), SPEAKER_LABELS: (1, 0, 0)})
+    plan = plan_semver(base, _contents(list(_ROWS[:2])), {"generation": "major"})
+    assert (plan.number, plan.level) == ((2, 0, 0), "major")
+    assert plan.removed == ["generation"]
+
+
 def test_plan_rejects_a_level_for_an_unchanged_or_unknown_section() -> None:
     """안 바뀐 섹션이나 없는 섹션에 단계를 고르면 거부한다. 깨지는 시나리오: 화면이 본 차이와 서버가 본 차이가 어긋났는데
     조용히 버려, 관리자가 major 로 고른 변경이 patch 로 나간다."""

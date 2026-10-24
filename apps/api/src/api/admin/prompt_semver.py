@@ -17,7 +17,7 @@
 import hashlib
 import json
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -80,11 +80,16 @@ class ChainBase:
     set_id: uuid.UUID
     number: Semver
     section_numbers: dict[str, Semver]
-    # 기준판의 섹션 내용 중 판 행이 있는 섹션만. 판 행 없이 내용만 있는 섹션(측정 도구가 게시 세트의 섹션을 제자리에서 덮어
-    # 생긴다)은 물려줄 번호가 없으므로 기준판에 없던 섹션으로 보고, 새로 들어온 섹션처럼 그 체인의 가장 큰 번호에서 이어 올린다.
+    # 기준판의 섹션 내용 전부. 판 행 없이 내용만 있는 섹션(측정 도구가 게시 세트의 섹션을 제자리에서 덮어 생긴다)도 들어 있다.
     contents: SectionContents
     # 그 체인에서 섹션마다 가장 큰 번호 — 기준판에서 빠졌다가 다시 들어온 섹션이 옛 번호를 다른 내용으로 다시 쓰지 않게 한다.
     section_maxima: dict[str, Semver]
+
+    @property
+    def unnumbered(self) -> frozenset[str]:
+        """기준판에 내용은 있지만 판 행이 없는 섹션. 물려줄 번호가 없으므로 초안에 있으면 새로 들어온 섹션처럼 그 체인의 가장 큰
+        번호에서 이어 올리고, 초안에 없으면 기준판에 있던 내용이 빠진 것이므로 빠진 섹션이다."""
+        return frozenset(self.contents) - frozenset(self.section_numbers)
 
 
 @dataclass(frozen=True)
@@ -133,15 +138,19 @@ def section_contents(labels: LabelSource, sections: Iterable[SectionRow]) -> Sec
     return contents
 
 
-def diff_sections(contents: SectionContents, base: SectionContents | None) -> dict[str, SectionChange]:
+def diff_sections(
+    contents: SectionContents, base: SectionContents | None, *, unnumbered: Collection[str] = ()
+) -> dict[str, SectionChange]:
+    """`unnumbered` 는 기준판에 판 행 없이 내용만 있는 섹션이다 — 초안에도 있으면 새로 들어온 섹션으로, 초안에 없으면 빠진
+    섹션으로 본다."""
     if base is None:
         return dict.fromkeys(contents, "initial")
     changes: dict[str, SectionChange] = {}
     for channel in sorted(set(contents) | set(base)):
-        if channel not in base:
-            changes[channel] = "added"
-        elif channel not in contents:
+        if channel not in contents:
             changes[channel] = "removed"
+        elif channel not in base or channel in unnumbered:
+            changes[channel] = "added"
         else:
             changes[channel] = "unchanged" if contents[channel] == base[channel] else "changed"
     return changes
@@ -168,7 +177,7 @@ def plan_semver(base: ChainBase | None, contents: SectionContents, levels: Mappi
             removed=[],
         )
 
-    changes = diff_sections(contents, base.contents)
+    changes = diff_sections(contents, base.contents, unnumbered=base.unnumbered)
     changed = {channel for channel, change in changes.items() if change != "unchanged"}
     not_changed = sorted(set(levels) - changed)
     if not_changed:
@@ -241,11 +250,7 @@ async def load_base(db: AsyncSession, lane: str, model: str) -> ChainBase | None
         set_id=row.prompt_set_id,
         number=(row.major, row.minor, row.patch),
         section_numbers=section_numbers,
-        contents={
-            channel: content
-            for channel, content in (await _contents_of(db, base_set)).items()
-            if channel in section_numbers
-        },
+        contents=await _contents_of(db, base_set),
         section_maxima={channel: (major, minor, patch) for channel, major, minor, patch in maxima},
     )
 

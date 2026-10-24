@@ -7,7 +7,7 @@
 
 입력은 리비전 시드가 아니라 아래 공용 표본이다 — 시드는 보통 "채널 하나 새로 들어옴"이나 "하나 바뀜·기본 patch" 갈래만 지나
 블록 사본의 비교 칸 누락·단계 리셋 누락·단계 검사 누락을 놓친다. 표본은 바뀜·새·빠짐·빠졌다 다시 들어옴·라벨만 바뀜·내용
-그대로·major/minor/patch 섞임·단계 오류·시작판·기준판에 판 행 없는 섹션을 지난다. 고친 본문은 모두 합성 문장이다."""
+그대로·major/minor/patch 섞임·단계 오류·시작판·기준판에 판 행 없는 섹션(남김·지움)을 지난다. 고친 본문은 모두 합성 문장이다."""
 
 import importlib.util
 import uuid
@@ -111,6 +111,11 @@ _SAMPLES: dict[str, list[_Step]] = {
         _Step({"a": _A, "b": _B}),
         _Step({"a": _A, "b": _edit(_B, body="합성 나 고침.")}, levels={"b": "minor"}, unnumbered=("b",)),
         _Step({"a": _A, "b": _edit(_B, body="합성 나 고침.")}),
+    ],
+    "unnumbered-base-section-dropped": [
+        _Step({"a": _A, "b": _B}),
+        _Step({"a": _A, "b": _edit(_B, body="합성 나 고침.")}, levels={"b": "minor"}, unnumbered=("b",)),
+        _Step({"a": _A}, levels={"b": "minor"}),
     ],
 }
 
@@ -243,6 +248,8 @@ async def test_the_samples_reach_every_branch_of_the_rule(db_session: AsyncSessi
     unnumbered = await _run_sample(db_session, _SAMPLES["unnumbered-base-section"], migration=None)
     assert ("chain", 2, (1, 1, 1), "patch", 1) in unnumbered
     assert ("section", 2, "b", (1, 0, 1), "patch") in unnumbered
+    dropped = await _run_sample(db_session, _SAMPLES["unnumbered-base-section-dropped"], migration=None)
+    assert ("chain", 2, (1, 2, 0), "minor", 1) in dropped
 
     assert ("level-error", 1) in await _run_sample(db_session, _SAMPLES["level-for-unchanged"], migration=None)
     started = await _run_sample(db_session, _SAMPLES["start-ignores-present-levels"], migration=None)

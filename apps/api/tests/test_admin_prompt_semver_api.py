@@ -409,6 +409,38 @@ async def test_a_section_without_a_number_row_in_the_base_is_numbered_as_a_retur
     assert resp.json()["semver"] == "1.1.1"
 
 
+async def test_dropping_a_base_section_without_a_number_row_still_shows_it_as_removed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """기준판에 판 행 없이 내용만 있는 섹션을 초안에서 지우면, 바뀐 섹션 조회가 그 섹션을 빠진 섹션으로 알린다. 판 행이
+    없다는 것은 번호를 물려받을 수 없다는 뜻일 뿐, 기준판에 그 내용이 있었던 사실은 그대로다. 깨지는 시나리오: 기준판 비교
+    내용을 판 행 있는 섹션으로만 좁혀, 지운 섹션이 조회 화면 어디에도 안 보인다."""
+    await _login_new_admin(db_client, db_session)
+    await _save_draft(db_client, "story", edit=("system",))
+    first = await _publish(db_client, "story", levels={"system": "minor"})
+    assert first.status_code == 200, first.text
+    await db_session.execute(
+        sa.delete(PromptSectionSemver).where(
+            PromptSectionSemver.prompt_set_id == uuid.UUID(first.json()["id"]), PromptSectionSemver.channel == "system"
+        )
+    )
+    await db_session.commit()
+    draft = (await db_client.get("/admin/prompt-sets/story/draft")).json()
+    put = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={"labels": draft["labels"], "sections": [s for s in draft["sections"] if s["channel"] != "system"]},
+    )
+    assert put.status_code == 200, put.text
+
+    changes = (await db_client.get("/admin/prompt-sets/story/draft/changes")).json()
+
+    assert {
+        item["channel"]: (item["change"], item["currentSemver"])
+        for item in changes["sections"]
+        if item["change"] != "unchanged"
+    } == {"system": ("removed", None)}
+
+
 async def test_changes_view_without_a_draft_is_400(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     await _login_new_admin(db_client, db_session)
     resp = await db_client.get("/admin/prompt-sets/story/draft/changes")

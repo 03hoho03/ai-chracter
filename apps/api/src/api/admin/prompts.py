@@ -1069,7 +1069,11 @@ async def get_prompt_draft_changes(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
     contents = section_contents(draft, await _sections_to_publish(db, draft, lane=lane, model=model))
     base = await load_base(db, lane, model)
-    changes = diff_sections(contents, base.contents if base is not None else None)
+    changes = (
+        diff_sections(contents, None)
+        if base is None
+        else diff_sections(contents, base.contents, unnumbered=base.unnumbered)
+    )
     return AdminPromptDraftChangesResponse(
         base_set_id=base.set_id if base is not None else None,
         base_semver=format_semver(base.number) if base is not None else None,
