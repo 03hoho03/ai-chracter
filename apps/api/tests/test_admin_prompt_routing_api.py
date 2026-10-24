@@ -697,6 +697,13 @@ async def test_every_cell_lists_the_model_id_and_price_of_each_pair_it_could_pic
         ("chat_ending_judgment", "test-gemini-base", None),
         ("preview_ending_judgment", "test-gemini-base", None),
     ]
+    # 화면이 셀렉트 목록을 단계 종류로 거르므로 칸마다 종류가 있다 — `gemini@gemini` 는 두 종류 모두의 쌍이라 후보만으로는
+    # 가를 수 없다.
+    assert {(c["stage"], c["kind"]) for c in body["cells"]} == {
+        (stage, "generation" if stage == "chat_generate" else "structured")
+        for stages in LANE_STAGES.values()
+        for stage in stages
+    }
     # 생성 칸은 방 모델로만 부르므로 후보가 그 방 모델의 쌍 하나다.
     assert _candidates(_cell(body, "character", "opus", "chat_generate")) == {
         ("opus", "anthropic"): [("chat_generate", "claude-opus-5-5", _price_body("claude-opus-5-5"))]
