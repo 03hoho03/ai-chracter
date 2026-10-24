@@ -29,7 +29,9 @@ const CALL_SITE_LABELS: Record<string, string> = {
   novelize_boundary: "소설 장 경계 제안",
   // 장 생성과 재생성이 같은 call site 를 쓴다.
   novelize_chapter: "소설 장 생성",
+  // 한 범위 문단 수정과 여러 문단 수정이 같은 call site 를 쓴다(묶음 재검사만 따로).
   novelize_revise: "소설 문단 수정",
+  novelize_revise_recheck: "소설 묶음 재검사",
   novelize_outline: "소설 전체 구성안",
   novelize_episode_outline: "소설 장면 구성안",
 };
