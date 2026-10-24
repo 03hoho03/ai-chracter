@@ -492,3 +492,102 @@ describe("toNovelActionError — 담을 대화 고르기", () => {
     );
   });
 });
+
+describe("toNovelActionError — 전체 구성안", () => {
+  it("만들기의 새 거절은 자기 문구를 갖는다", () => {
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_SOURCE_SELECTION_REQUIRED" }), "outline")?.message).toBe(
+      "먼저 담을 대화를 골라 승인해주세요.",
+    );
+    expect(toNovelActionError(apiError(422, { code: "NOVEL_SOURCE_SECTION_LOCKED" }), "outline")?.message).toBe(
+      "담은 대화 중 그사이 화가 된 곳이 있어요. 담을 대화를 확인해 다시 승인해주세요.",
+    );
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_SOURCE_SELECTION_SOURCE_CHANGED" }), "outline")?.message).toBe(
+      "고른 대화 중 바뀐 곳이 있어요. 표시한 턴을 확인한 뒤 다시 승인해주세요.",
+    );
+  });
+
+  // 토큰 수는 이용자에게 뜻이 없어 한도 대비 비율로만 말한다.
+  it("입력이 너무 길면 한도 대비 비율로 말하고, 값이 없으면 비율 없이 말한다", () => {
+    const error = apiError(422, {
+      code: "NOVEL_OUTLINE_INPUT_TOO_LARGE",
+      estimatedInputTokens: 180_000,
+      maxInputTokens: 150_000,
+    });
+    expect(toNovelActionError(error, "outline")?.message).toBe(
+      "고른 대화가 너무 길어요(한도의 120%). 담을 대화를 줄여 다시 승인해주세요.",
+    );
+    expect(toNovelActionError(apiError(422, { code: "NOVEL_OUTLINE_INPUT_TOO_LARGE" }), "outline")?.message).toBe(
+      "고른 대화가 너무 길어요. 담을 대화를 줄여 다시 승인해주세요.",
+    );
+  });
+
+  it("방이 지워졌으면 구성안을 만들거나 고칠 수 없다고 말하고 상세를 다시 받는다", () => {
+    for (const action of ["outline", "saveOutline"] as const) {
+      expect(toNovelActionError(apiError(409, { code: "NOVEL_ROOM_GONE" }), action)).toEqual({
+        message: "원래 대화방이 지워져 구성안을 새로 만들거나 고칠 수 없어요.",
+        shouldRefetchNovel: true,
+      });
+    }
+  });
+
+  it("저장·승인의 낡음·충돌은 자기 문구를 갖는다", () => {
+    for (const action of ["saveOutline", "approveOutline"] as const) {
+      expect(toNovelActionError(apiError(409, { code: "NOVEL_OUTLINE_STALE" }), action)?.message).toBe(
+        "구간을 바꿔 이 구성안은 낡았어요. 새로 만들거나 구간을 되돌려주세요.",
+      );
+      expect(toNovelActionError(apiError(409, { code: "NOVEL_OUTLINE_CONFLICT" }), action)?.message).toBe(
+        "다른 곳에서 구성안을 고쳤어요. 새로 불러왔어요.",
+      );
+    }
+  });
+
+  it.each([
+    ["too_many_episodes", "화가 너무 많아요. 화를 합치거나 지운 뒤 저장해주세요."],
+    ["unknown_key", "다른 곳에서 구성안이 바뀌어 저장하지 못했어요. 새로 불러왔어요."],
+    ["basis_not_found", "근거 대화 중 지워진 메시지가 있어 저장하지 못했어요. 대화와 구성안을 새로 불러왔어요."],
+    ["basis_outside_include", "담은 대화 밖의 턴은 화에 넣을 수 없어요. 구성안을 새로 불러왔어요."],
+    ["basis_overlap", "두 화가 같은 턴을 나눠 가질 수 없어요."],
+    ["basis_splits_turn", "대화 한 턴을 두 화로 가를 수 없어요."],
+    ["something_new", "구성안을 저장하지 못했어요. 새로 불러왔어요."],
+  ])("편집 검증 %s 는 이유별 문구다", (reason, message) => {
+    expect(toNovelActionError(apiError(422, { code: "NOVEL_OUTLINE_INVALID", reason }), "saveOutline")?.message).toBe(
+      message,
+    );
+  });
+
+  it("모르는 실패는 요청별 일반 문구로 접는다", () => {
+    expect(toNovelActionError(apiError(500, undefined), "outline")?.message).toBe(
+      "전체 구성안을 만들지 못했어요. 잠시 후 다시 시도해주세요.",
+    );
+    expect(toNovelActionError(apiError(500, undefined), "saveOutline")?.message).toBe(
+      "구성안을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+    );
+    expect(toNovelActionError(apiError(500, undefined), "approveOutline")?.message).toBe(
+      "구성안을 승인하지 못했어요. 잠시 후 다시 시도해주세요.",
+    );
+  });
+
+  // 같은 코드라도 화 만들기·구간 고르기의 문장은 그대로다.
+  it("다른 요청의 같은 코드 문장은 바뀌지 않는다", () => {
+    expect(toNovelActionError(apiError(422, { code: "NOVEL_SOURCE_SECTION_LOCKED" }), "saveSourceSelection")?.message).toBe(
+      "이미 화로 쓴 대화는 다시 담을 수 없어요. 새로 불러왔어요.",
+    );
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_ROOM_GONE" }), "regenerate")?.message).toBe(
+      NOVEL_ROOM_GONE_MESSAGE,
+    );
+  });
+});
+
+describe("toNovelJobFailureMessage — 전체 구성안", () => {
+  it("고른 대화가 바뀌어 실패했으면 담을 대화를 다시 승인하라고 말한다", () => {
+    expect(toNovelJobFailureMessage({ kind: "outline_generate", failureReason: "source_changed", refundedAmount: 80 })).toBe(
+      "고른 대화가 바뀌어 전체 구성안을 만들지 못했어요. 담을 대화를 확인해 다시 승인해주세요. 쓴 클로버 80개는 돌려드렸어요.",
+    );
+  });
+
+  it("다른 실패는 구성안 주어로 말한다", () => {
+    expect(toNovelJobFailureMessage({ kind: "outline_generate", failureReason: "malformed", refundedAmount: 80 })).toBe(
+      "전체 구성안을 만들지 못했어요. AI가 쓴 글의 형식이 맞지 않았어요. 쓴 클로버 80개는 돌려드렸어요.",
+    );
+  });
+});
