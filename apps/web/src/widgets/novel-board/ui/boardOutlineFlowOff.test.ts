@@ -20,7 +20,7 @@ const router = createRouter({
 });
 
 function inRouter(node: ReactNode): string {
-  return renderToStaticMarkup(createElement(RouterContextProvider, { router }, node));
+  return renderToStaticMarkup(createElement(RouterContextProvider, { router, children: node }));
 }
 
 const novel = {
