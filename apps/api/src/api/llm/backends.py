@@ -1,6 +1,7 @@
 """공급자 구현 등록부. 구현마다 무엇을 받을 수 있고(능력), 어느 모델을 어느 설정의 id 로 서비스하고, 경로를 넘겨받을 때
 어떤 자격이 있어야 하는지를 한 행에 적는다. 호출 하나가 어느 구현으로 가는지 정하는 순수 규칙(`pick_backend`)과 env 배정의
-기동 검증 규칙(`assignment_errors`)도 여기 둔다.
+기동 검증 규칙(`assignment_errors`)도 여기 둔다. 어드민의 모델 배정 저장 검사도 같은 깊이 상한 검사
+(`structured_effort_error`)와 자격 검사(`missing_credentials`)를 부른다.
 
 잎 모듈이다 — `core/config.py` 의 `Settings` 검증자가 이 모듈을 읽는데, `settings = Settings()` 는 `core/config.py` 를
 import 하는 도중에 돈다. 여기서 `settings` 나 그것을 import 하는 모듈을 부르면 설정을 만드는 도중에 설정을 찾다 기동이
@@ -175,8 +176,26 @@ def _takes(capabilities: BackendCapabilities, kind: CallKind) -> bool:
     return True
 
 
-def _missing_credentials(backend: BackendId, read_setting: Callable[[str], str]) -> list[str]:
+def missing_credentials(backend: BackendId, read_setting: Callable[[str], str]) -> list[str]:
+    """그 구현으로 경로를 옮길 때 비어 있는 자격의 env 이름들(등록부 순서)."""
     return [env_name for env_name, attr in BACKENDS[backend].credential_env if not read_setting(attr).strip()]
+
+
+def structured_effort_error(
+    backend: BackendId, model: PromptSetModelId, read_setting: Callable[[str], str]
+) -> str | None:
+    """Anthropic 직결 구조화 호출이 사고를 끄는 모델로 가는데 구조화 깊이가 사고를 끈 요청이 받는 범위 밖이면 그 까닭 한
+    문장, 아니면 None. 범위 밖이면 매 판정이 400 이다. Bedrock 구현은 판정에서 깊이를 보내지 않아 이 상한이 없다."""
+    if backend != "anthropic":
+        return None
+    model_id = read_setting(BACKENDS[backend].model_id_settings[model])
+    effort = read_setting("anthropic_structured_effort")
+    if turns_off_structured_thinking(model_id) and effort not in _EFFORTS_WITH_THINKING_OFF:
+        return (
+            f"{model_id} 는 사고를 끄고 판정하는데 ANTHROPIC_STRUCTURED_EFFORT={effort} 다"
+            f"(사고를 끈 요청은 {'·'.join(_EFFORTS_WITH_THINKING_OFF)} 만 받는다)"
+        )
+    return None
 
 
 def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting: Callable[[str], str]) -> list[str]:
@@ -220,7 +239,7 @@ def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting
             continue
         if all(MODEL_BACKENDS[model][0] == backend for model in served):
             continue
-        missing = _missing_credentials(backend, read_setting)
+        missing = missing_credentials(backend, read_setting)
         if missing:
             errors.append(f"{entry} — 경로를 {backend} 로 옮기는데 {', '.join(missing)} 가 비어 있다")
     for call_site, policy in CALL_POLICIES.items():
@@ -243,17 +262,10 @@ def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting
         if not _takes(BACKENDS[backend].capabilities, policy.call_kind):
             errors.append(f"{entry} — 가는 구현 {backend} 는 이 호출의 방식({policy.call_kind})을 받지 못한다")
             continue
-        missing = _missing_credentials(backend, read_setting)
+        missing = missing_credentials(backend, read_setting)
         if missing:
             errors.append(f"{entry} — 가는 구현 {backend} 의 {', '.join(missing)} 가 비어 있다")
-        # Bedrock 구현은 판정에서 깊이를 보내지 않아 이 상한이 없다.
-        if backend != "anthropic":
-            continue
-        model_id = read_setting(BACKENDS[backend].model_id_settings[model])
-        effort = read_setting("anthropic_structured_effort")
-        if turns_off_structured_thinking(model_id) and effort not in _EFFORTS_WITH_THINKING_OFF:
-            errors.append(
-                f"{entry} — {model_id} 는 사고를 끄고 판정하는데 ANTHROPIC_STRUCTURED_EFFORT={effort} 다"
-                f"(사고를 끈 요청은 {'·'.join(_EFFORTS_WITH_THINKING_OFF)} 만 받는다)"
-            )
+        effort_error = structured_effort_error(backend, model, read_setting)
+        if effort_error is not None:
+            errors.append(f"{entry} — {effort_error}")
     return errors
