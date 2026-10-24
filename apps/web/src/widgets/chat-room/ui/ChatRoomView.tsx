@@ -62,6 +62,7 @@ import { useRestorePreviousResponse } from "../lib/useRestorePreviousResponse";
 import { chatSidePanelAtom } from "../model/atoms";
 import { chatModelChipName } from "../model/chatModelChip";
 import { loadOlderKeepingScroll, restorePrependScroll } from "../model/prependScrollAnchor";
+import { statRewindNotice } from "../model/statRewindNotice";
 import { ChatMemorySidebar } from "./ChatMemorySidebar";
 import { ChatMemoryTrigger } from "./ChatMemoryTrigger";
 import { ChatModelChip } from "./ChatModelChip";
@@ -109,6 +110,10 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       return confirmCloverSpend(error, turnCost, "chat");
     },
     (message) => offerRestore(message.id),
+    (statRewind) => {
+      const notice = statRewindNotice("edit", statRewind, room?.endingStatus.reached ?? false);
+      if (notice) toast(notice);
+    },
   );
   const isSending = status.kind === "sending";
   // 턴이 시작되면(보내기·수정·다시 생성·재시도 모두 여기로 모인다) 재생성 직후의 되돌리기 안내를 거둔다.
@@ -166,6 +171,10 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
   function handleDeleteMessage(messageId: string) {
     deleteMessageMutation.mutate(messageId, {
+      onSuccess: (statRewind) => {
+        const notice = statRewindNotice("delete", statRewind, room?.endingStatus.reached ?? false);
+        if (notice) toast(notice);
+      },
       onError: () => toast.error("메시지 삭제에 실패했어요. 잠시 후 다시 시도해주세요."),
     });
   }
@@ -440,8 +449,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                         editMessage(message.id, newText);
                         setEditingMessageId(undefined);
                       };
-                      if (shouldConfirmEditTruncation(removedOnEditCount)) void confirmEditTruncation(removedOnEditCount, save);
-                      else save();
+                      if (shouldConfirmEditTruncation(removedOnEditCount)) {
+                        void confirmEditTruncation(removedOnEditCount, save, (snapshot?.stats.length ?? 0) > 0);
+                      } else {
+                        save();
+                      }
                     }}
                     onDelete={() => handleDeleteMessage(message.id)}
                     onReport={

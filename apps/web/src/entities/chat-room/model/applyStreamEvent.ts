@@ -11,6 +11,8 @@ type ApplyStreamEventOptions = {
   // 기본은 새 턴(전송·편집). 재생성은 turnCount를 올리지
   // 않고(서버도 안 올린다, chat/router.py:1121) done이 꼬리 assistant를 걷어낸다.
   kind?: "newTurn" | "regenerate";
+  // 수정이 편집 지점 뒤에서 지운 AI 응답 수. 서버는 그만큼 턴 수를 줄인 뒤 새 턴을 더한다(전송은 0).
+  removedReplyCount?: number;
   onDone?: (message: ChatMessage, prev: ChatRoomState) => void; // 'done' 처리 직후 호출되는 확장 훅(예: 이미지 보관함 invalidate)
 };
 
@@ -24,6 +26,7 @@ export function applyStreamEvent(
   opts: ApplyStreamEventOptions = {},
 ): void {
   const kind = opts.kind ?? "newTurn";
+  const removedReplyCount = opts.removedReplyCount ?? 0;
 
   switch (event.type) {
     case "token":
@@ -46,8 +49,9 @@ export function applyStreamEvent(
             endingStatus: {
               reached: true,
               endingId: event.endingId,
-              // 서버는 엔딩을 이 턴의 번호(턴 수 + 1)에 기록하는데, 턴 수를 올리는 done 은 이 이벤트 뒤에 온다.
-              reachedAtTurn: prev.turnCount + 1,
+              // 서버는 엔딩을 이 턴의 번호(턴 수 + 1)에 기록하는데, 턴 수를 올리는 done 은 이 이벤트 뒤에 온다. 수정이면 지운
+              // 응답만큼 줄인 턴 수가 기준이다.
+              reachedAtTurn: prev.turnCount - removedReplyCount + 1,
               epilogue: event.epilogue ?? undefined,
               mediaTagImages: event.mediaTagImages,
             },
@@ -80,7 +84,7 @@ export function applyStreamEvent(
           ...prev,
           messages: [...base, finalMessage],
           pendingScene: undefined,
-          turnCount: kind === "newTurn" ? prev.turnCount + 1 : prev.turnCount,
+          turnCount: kind === "newTurn" ? prev.turnCount - removedReplyCount + 1 : prev.turnCount,
           // 서버는 재생성이 옛 응답을 지우는 같은 커밋에서 그 응답을 보관하고, 보내기·수정은 보관을 지운다. 방을 다시
           // 받지 않고 그 결과를 따라 적어야 "방금 전 답변으로" 메뉴가 재생성 직후부터 맞게 선다.
           previousResponseFor: kind === "regenerate" ? event.finalMessage.id : undefined,

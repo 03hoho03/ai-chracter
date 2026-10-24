@@ -9,6 +9,7 @@ import {
   buildRegeneratePayload,
   buildSendPayload,
   chatRoomKeys,
+  countRepliesAfter,
   dropLastMessage,
   getChatRateLimit,
   isContentRestrictedError,
@@ -21,6 +22,7 @@ import type {
   ChatRoomState,
   ChatStreamRequest,
   StatDeltas,
+  StatRewind,
   StatTurnFeedback,
 } from "@/entities/chat-room";
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
@@ -93,6 +95,9 @@ export function useSendMessage(
   /** 재생성이 새 답을 방 캐시에 반영하고 스트림이 끝났을 때 그 답을 받는다(되돌리기 안내를 띄우는 자리). 재생성의 재시도·클로버
    * 동의 뒤 재전송이 성공해도 한 번 불린다. */
   onRegenerated?: (message: ChatMessage) => void,
+  /** 수정이 새 답을 방 캐시에 반영하고 스트림이 끝났을 때, 서버가 지운 턴의 스탯을 어떻게 했는지 받는다(안내 토스트를 띄우는
+   * 자리). 지운 턴이 없던 수정이거나 그 칸을 보내지 않는 서버면 undefined 다. */
+  onEdited?: (statRewind: StatRewind | undefined) => void,
 ) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<SendMessageStatus>({ kind: "idle" });
@@ -161,6 +166,13 @@ export function useSendMessage(
     // 같은 기준이라 그대로 쓴다.
     let deltas: StatDeltas = {};
     let hiddenSignal = false;
+    // 수정은 서버가 편집 지점 뒤에서 지운 응답 수만큼 턴 수를 줄인다. 첫 시도 직전 목록으로 센다 — 재시도 때 캐시는 이미
+    // 잘려 있어 세면 0 이다. 실패한 시도 사이에 방을 다시 받았으면 이 셈이 어긋날 수 있는데, done 뒤 방을 다시 받아 맞춘다.
+    const removedReplyCount =
+      pending.payload.kind === "edit"
+        ? countRepliesAfter(pending.messagesBeforeEdit ?? [], pending.payload.messageId)
+        : 0;
+    let statRewind: StatRewind | undefined;
 
     try {
       for await (const event of openChatStream(pending.payload, chatStreamEventSchema)) {
@@ -177,9 +189,12 @@ export function useSendMessage(
           deltas = addStatDelta(deltas, event.statId, previous, event.newValue);
         } else if (event.type === "hiddenStatSignal") {
           hiddenSignal = true;
+        } else if (event.type === "done") {
+          statRewind = event.statRewind;
         }
         applyStreamEvent(queryClient, roomId, event, {
           kind: pending.kind,
+          removedReplyCount,
           onDone: (message) => {
             hasCommitted = true;
             committedMessage = message;
@@ -244,6 +259,9 @@ export function useSendMessage(
       // 안내 문장은 여기서 그 턴의 값으로 한 번 만들어 둔다 — 뒤에 값이 바뀌어도 다시 만들지 않는다. 스탯 이름·장면 글은 화면과
       // 같이 작가 매크로를 펼친 글로 읽는다.
       if (hasCommitted && committedMessage) {
+        // 수정이 지운 턴의 스탯을 되돌렸으면 캐시의 직전 값은 되돌리기 전 값이라 그 차는 이번 턴의 변화가 아니다 — 재생성과
+        // 같은 이유로 칩을 세우지 않는다.
+        if (statRewind !== undefined) deltas = {};
         const room = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(roomId));
         turnFeedbackSeqRef.current += 1;
         setTurnFeedback({
@@ -257,6 +275,11 @@ export function useSendMessage(
       }
       if (!hasErrored) setStatus({ kind: "idle" });
       if (pending.kind === "regenerate" && committedMessage) onRegenerated?.(committedMessage);
+      if (pending.payload.kind === "edit" && hasCommitted) {
+        // 서버가 되돌린 스탯과 턴 수는 스트림 이벤트로 다 오지 않는다(이번 턴에 바뀐 스탯만 온다) — 방을 다시 받아 맞춘다.
+        void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
+        onEdited?.(statRewind);
+      }
     }
   }
 

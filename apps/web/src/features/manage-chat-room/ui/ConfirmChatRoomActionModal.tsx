@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
 import { Button } from "@ai-character-chat/ui/components/button";
+import { History } from "lucide-react";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
 
 import { createCallable } from "@/shared/lib/callable/createCallable";
@@ -15,6 +16,8 @@ type ConfirmChatRoomActionModalProps = {
   title: string;
   description: string;
   confirmLabel: string;
+  /** 설명 아래 한 줄로 덧붙이는, 확정하면 함께 바뀌는 것(예: 수정이 지우는 대화의 스탯). 없으면 줄도 없다. */
+  note?: string;
   mutationFn: MutationFn<void>;
 };
 
@@ -23,7 +26,7 @@ type ConfirmChatRoomActionModalProps = {
  * 동일하게 실제 API 호출/토스트는 호출부의 mutationFn이 담당하고, 이 컴포넌트는 확인 UI + 제출 상태
  * 표시만 책임진다. */
 export const ConfirmChatRoomActionModal = createCallable<ConfirmChatRoomActionModalProps, void>(
-  ({ call, title, description, confirmLabel, mutationFn }) => {
+  ({ call, title, description, confirmLabel, note, mutationFn }) => {
     const submit = useMutationFlow(call, mutationFn);
 
     return (
@@ -33,6 +36,13 @@ export const ConfirmChatRoomActionModal = createCallable<ConfirmChatRoomActionMo
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>{description}</DialogDescription>
           </DialogHeader>
+
+          {note && (
+            <p className="flex gap-2 text-sm break-keep text-foreground">
+              <History aria-hidden className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
+              {note}
+            </p>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => call.end()}>
