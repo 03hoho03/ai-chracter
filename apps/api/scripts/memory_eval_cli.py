@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from memory_eval import cli_infra, cli_judge, head_check
+from memory_eval import cli_impression, cli_infra, cli_judge, head_check
 from memory_eval.cli_common import add_global_args, read_status, update_status, write_status
 from memory_eval.ledger import EXIT_BUDGET, BudgetExceededError
 
@@ -37,7 +37,7 @@ EXIT_INTERRUPTED = 130
 
 Register = Callable[["argparse._SubParsersAction[argparse.ArgumentParser]"], None]
 # 하위 명령 묶음의 등록 함수. 판정·집계 묶음은 인프라 묶음의 두 명령에 인자를 덧붙이므로 인프라 뒤에 둔다.
-COMMAND_GROUPS: tuple[Register, ...] = (cli_infra.register, cli_judge.register)
+COMMAND_GROUPS: tuple[Register, ...] = (cli_infra.register, cli_judge.register, cli_impression.register)
 
 
 def build_parser() -> argparse.ArgumentParser:
