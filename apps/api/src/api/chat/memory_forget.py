@@ -9,21 +9,26 @@
   범위가 겹치는(양 끝 포함) 장면도 함께 지운다. 회상은 그 키를 모르는 인물 앞에서 이 장면들을 가리는데(`chat/memory_knowledge.py`),
   사실만 지우면 가림이 풀려 잊은 비밀이 장면으로 다시 실린다. 이긴 행이 공개면 회상이 그 키로 아무것도 가리지 않으므로 장면을
   지우지 않는다. 확인 대화가 함께 지울 장면 수를 미리 보여 주므로 미리 보기와 지우기가 같은 함수(`fact_forget_plan`)로 고른다.
+- 장면이든 사실이든 잊으면 그 방의 인상(`chat_memory_impressions`)을 전부 지운다. 인상은 장면·사실을 읽고 쓴 글이라 잊은 내용을
+  품고 있을 수 있는데, 잊기는 스냅샷을 지우지 않아 인상의 스냅샷 CASCADE 가 걸리지 않는다. 잊은 행이 근거인 인상만 고르지 않고
+  모두 지운다 — 인상은 생성에도 화면에도 쓰이지 않아 남겨서 얻는 것이 없고, 다음 묶음부터 새로 쌓인다.
 
 잠금 순서 — 한 트랜잭션, 커밋은 호출부
 1. 방 행 `FOR NO KEY UPDATE`. 스냅샷을 지우는 경로(되감기·초기화·방 삭제)와 요약 접기 커밋·요약 편집이 모두 방 행을 먼저 잡으므로
    그들과는 여기서 줄을 선다. 방이 이미 지워졌으면 `RoomMissingError`. 스냅샷을 지우는 새 경로도 방 행을 먼저 잡아야 한다 — 아니면
    아래 2 와 다른 순서로 스냅샷을 잡아 교착할 수 있다.
-2. 그 방 스냅샷 전부 `FOR UPDATE`(커서 순). 장면·사실 추출과 임베딩 채우기는 방 행을 잡지 않고 마지막 트랜잭션에서 자기 스냅샷
-   하나만 `FOR KEY SHARE` 로 잡는데, 그것과 충돌하는 행 잠금은 `FOR UPDATE` 뿐이다. 그래서 그들이 먼저 잡았으면 잊기가 그 커밋을
+2. 그 방 스냅샷 전부 `FOR UPDATE`(커서 순). 장면·사실 추출·인상 생성과 임베딩 채우기는 방 행을 잡지 않고 마지막 트랜잭션에서
+   자기 스냅샷 하나만 `FOR KEY SHARE` 로 잡는데, 그것과 충돌하는 행 잠금은 `FOR UPDATE` 뿐이다. 그래서 그들이 먼저 잡았으면 잊기가 그 커밋을
    기다렸다가(대상은 기다린 뒤의 문장으로 고르므로) 방금 들어간 행까지 보고 지우고, 잊기가 먼저면 그들이 잊기 커밋을 기다린다.
    그들은 스냅샷 하나만 쥐고 잊기가 쥔 다른 잠금을 기다리지 않으므로 순환이 없다. 임베딩 채우기가 지운 행에 넣으려 하면 FK 위반을
    경합으로 보고 건너뛴다(`chat/memory_embeddings.py`).
-3. 대상을 고르고 DELETE. 사실을 지웠으면 같은 트랜잭션에서 방의 잊기 세대(`memory_forget_generation`)를 하나 올린다 — 잊기 전에
-   입력(앞 사실 목록)을 읽은 사실 추출은 그 키를 다시 낼 수 있고, 잊기 전에 창을 읽은 장면 추출은 잊은 비밀과 겹치는 장면을 가려
-   줄 사실 없이 넣게 된다(함께 지우는 장면은 잊는 순간 있던 것뿐이다). 그래서 두 추출 모두 넣기 직전에 세대가 바뀐 것을 보면 결과를
-   버린다(`chat/memory_facts.py`·`chat/memory_episodes.py`). 버린 스냅샷은 다시 쥐어지고 창 원문은 그대로라 같은 장면·사실이 다시
-   뽑힐 수 있다 — 세대 확인은 잊기와 겹친 그 한 번의 결과만 막는다.
+3. 대상을 고르고 DELETE, 그 방의 인상 DELETE. 그리고 같은 트랜잭션에서 방의 잊기 세대(`memory_forget_generation`)를 하나 올린다
+   — 장면을 잊어도 사실을 잊어도 오른다. 잊기 전에 입력(앞 사실 목록)을 읽은 사실 추출은 그 키를 다시 낼 수 있고, 잊기 전에 창을
+   읽은 장면 추출은 잊은 비밀과 겹치는 장면을 가려 줄 사실 없이 넣게 되며(함께 지우는 장면은 잊는 순간 있던 것뿐이다), 잊기 전에
+   장면·사실 행을 읽은 인상 생성은 잊은 내용을 품은 글을 넣게 된다. 그래서 셋 모두 넣기 직전에 세대가 바뀐 것을 보면 결과를
+   버린다(`chat/memory_facts.py`·`chat/memory_episodes.py`·`chat/memory_impressions.py`). 장면 잊기의 세대는 장면 행을 읽는 인상
+   생성 때문에 오르지만, 진행 중인 두 추출도 그 회차를 버리게 된다(다음 턴 뒤 다시 쥔다). 버린 스냅샷은 다시 쥐어지고 창 원문은
+   그대로라 같은 장면·사실이 다시 뽑힐 수 있다 — 세대 확인은 잊기와 겹친 그 한 번의 결과만 막는다.
 
 `memory_version` 은 올리지 않는다 — 요약이 바뀌지 않으므로 진행 중 접기와 열려 있던 요약 편집을 버릴 이유가 없다.
 
@@ -42,7 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_knowledge import latest_by_key, overlaps
 from api.chat.memory_window import MessageKey
-from api.db.models.chat import ChatMemoryEpisode, ChatMemoryFact, ChatRoom, ChatRoomMemorySnapshot
+from api.db.models.chat import ChatMemoryEpisode, ChatMemoryFact, ChatMemoryImpression, ChatRoom, ChatRoomMemorySnapshot
 
 
 class RoomMissingError(LookupError):
@@ -106,8 +111,19 @@ async def fact_forget_plan(db: AsyncSession, room_id: uuid.UUID, key: str) -> Fa
     return FactForgetPlan(episode_ids=overlapping)
 
 
+async def _forget_derived(db: AsyncSession, room_id: uuid.UUID) -> None:
+    """잠금 순서 3 의 뒷부분 — 그 방의 인상을 전부 지우고 잊기 세대를 올린다(모듈 설명)."""
+    await db.execute(delete(ChatMemoryImpression).where(ChatMemoryImpression.chat_room_id == room_id))
+    await db.execute(
+        update(ChatRoom)
+        .where(ChatRoom.id == room_id)
+        .values(memory_forget_generation=ChatRoom.memory_forget_generation + 1)
+    )
+
+
 async def forget_episode(db: AsyncSession, room_id: uuid.UUID, episode_id: uuid.UUID) -> None:
-    """방의 장면 하나를 지운다(커밋은 호출부). 방이 없으면 `RoomMissingError`, 그 방의 장면이 아니면 `MemoryItemMissingError`."""
+    """방의 장면 하나를 지우고 그 방의 인상을 지운 뒤 잊기 세대를 올린다(커밋은 호출부). 방이 없으면 `RoomMissingError`, 그 방의
+    장면이 아니면 `MemoryItemMissingError`."""
     await _lock_room_memory(db, room_id)
     removed = await db.scalar(
         delete(ChatMemoryEpisode)
@@ -116,11 +132,12 @@ async def forget_episode(db: AsyncSession, room_id: uuid.UUID, episode_id: uuid.
     )
     if removed is None:
         raise MemoryItemMissingError
+    await _forget_derived(db, room_id)
 
 
 async def forget_fact_key(db: AsyncSession, room_id: uuid.UUID, key: str) -> None:
-    """방의 사실 키 하나(비밀이면 겹치는 장면까지)를 지우고 잊기 세대를 올린다(커밋은 호출부). 방이 없으면 `RoomMissingError`,
-    그 키 행이 없으면 `MemoryItemMissingError`."""
+    """방의 사실 키 하나(비밀이면 겹치는 장면까지)를 지우고 그 방의 인상을 지운 뒤 잊기 세대를 올린다(커밋은 호출부). 방이 없으면
+    `RoomMissingError`, 그 키 행이 없으면 `MemoryItemMissingError`."""
     await _lock_room_memory(db, room_id)
     plan = await fact_forget_plan(db, room_id, key)
     await db.execute(
@@ -128,8 +145,4 @@ async def forget_fact_key(db: AsyncSession, room_id: uuid.UUID, key: str) -> Non
     )
     if plan.episode_ids:
         await db.execute(delete(ChatMemoryEpisode).where(ChatMemoryEpisode.id.in_(plan.episode_ids)))
-    await db.execute(
-        update(ChatRoom)
-        .where(ChatRoom.id == room_id)
-        .values(memory_forget_generation=ChatRoom.memory_forget_generation + 1)
-    )
+    await _forget_derived(db, room_id)

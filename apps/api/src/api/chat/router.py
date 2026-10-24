@@ -16,6 +16,7 @@ from api.chat.chat_count import record_chat_participant
 from api.chat.memory_embeddings import fill_pending_embeddings
 from api.chat.memory_episodes import extract_pending_episode
 from api.chat.memory_facts import extract_pending_facts
+from api.chat.memory_impressions import generate_pending_impression
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, _dependency_tag, fold_memory, summarize, summary_prompt
 from api.chat.memory_forget import (
     MemoryItemMissingError,
@@ -1037,6 +1038,10 @@ def _fold_after_commit(
     예약한다. Starlette 는 background 태스크를 차례로 부르고 한 태스크가 예외를 내면 남은 태스크를 부르지 않는다 — 그래서
     접기와 두 추출은 모두 어떤 예외도 밖으로 내지 않는다.
 
+    인상 쓰기 스위치가 켜져 있으면 두 추출 뒤에 인상 생성(`generate_pending_impression`, 인상 모델의 세트)을 따로 예약한다 — 두
+    추출이 이 턴에 끝낸 스냅샷까지 보고 묶음의 추출이 다 끝났는지 가린다. 기억 사용 범위 판정은 접기처럼 `writing_model` 로 작업이
+    한다. 이것도 예외를 밖으로 내지 않는다. 꺼져 있으면 예약하지 않아 인상 호출도 인상 표 SELECT·INSERT 도 없다.
+
     기억 임베딩 쓰기 스위치가 켜져 있으면 맨 뒤에 임베딩 채우기(`fill_pending_embeddings`)를 따로 예약한다 — 두 추출이 이 턴에
     넣은 행까지 본다. 이것도 예외를 밖으로 내지 않는다. 꺼져 있으면 예약하지 않아 Voyage 호출도 임베딩 표 SELECT·INSERT 도 없다."""
 
@@ -1082,6 +1087,19 @@ def _fold_after_commit(
                 sections=fact_sections,
                 is_story_chat=is_story_chat,
                 names=names,
+            )
+        if settings.memory_impressions_write:
+            impression_set, impression_sections = judgment_sets.impression
+            background_tasks.add_task(
+                generate_pending_impression,
+                session_factory,
+                llm_client,
+                room_id=room.id,
+                user_id=room.user_id,
+                prompt_set=impression_set,
+                sections=impression_sections,
+                is_story_chat=is_story_chat,
+                writing_model=writing_model,
             )
         if settings.memory_embed_write:
             background_tasks.add_task(fill_pending_embeddings, session_factory, embedding_client, room_id=room.id)

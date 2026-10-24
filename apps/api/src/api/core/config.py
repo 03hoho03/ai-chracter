@@ -343,6 +343,8 @@ class Settings(BaseSettings):
     memory_episode_model: PromptSetModelId = "gemini"
     # 요약 접기 뒤 관계·사실 기억 추출(`chat/memory_facts.py`)의 모델. 위 판정·요약 모델과 같은 규칙이다.
     memory_fact_model: PromptSetModelId = "gemini"
+    # 요약 접기 뒤 인상 생성(`chat/memory_impressions.py`)의 모델. 위 판정·요약 모델과 같은 규칙이다.
+    memory_impression_model: PromptSetModelId = "gemini"
 
     @field_validator("llm_call_site_backends", mode="before")
     @classmethod
@@ -392,6 +394,7 @@ class Settings(BaseSettings):
         "memory_summary_model",
         "memory_episode_model",
         "memory_fact_model",
+        "memory_impression_model",
         mode="before",
     )
     @classmethod

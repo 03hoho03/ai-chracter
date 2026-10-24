@@ -318,9 +318,12 @@ async def test_a_due_group_becomes_one_impression_built_only_from_public_rows(
         truth_status="claimed",
     )
 
+    kwargs = await _kwargs(db_session, room)
+    # 셋업이 같은 세션에 남긴 트랜잭션을 닫아 기준값을 0 으로 만든다.
+    await db_session.commit()
     with _open_transaction_probe() as open_sessions:
         fake = ImpressionLLMClient(open_sessions=open_sessions)
-        await _generate(db_session, room, fake)
+        await generate_pending_impression(_savepoint_factory(db_session), fake, **kwargs)
 
     assert fake.open_at_call == [0]
     assert (fake.usages[0].call_site, fake.usages[0].room_id, fake.usages[0].user_id) == (

@@ -29,6 +29,9 @@ _BEDROCK_KEYS = ("BEDROCK_ACCESS_KEY_ID", "BEDROCK_SECRET_ACCESS_KEY", "BEDROCK_
 _ANTHROPIC_KEY = "ANTHROPIC_DIRECT_API_KEY"
 _ASSIGN = "LLM_CALL_SITE_BACKENDS"
 _HAIKU_ID_KEYS = ("BEDROCK_HAIKU_MODEL_ID", "ANTHROPIC_HAIKU_MODEL_ID")
+# 운영 env 에 아직 모델 줄·배정이 없는 호출 위치. 인상 생성은 쓰기 스위치가 꺼져 있어 운영에서 부르지 않고, 그래서 모델은 코드
+# 기본값(`gemini`)이다 — 스위치를 켤 때 모델 줄(`MEMORY_IMPRESSION_MODEL=haiku`)과 배정을 운영 env 에 넣고 여기서 뺀다.
+_NOT_YET_IN_PRODUCTION = frozenset({"chat_memory_impression"})
 _EFFORT_KEYS = ("ANTHROPIC_CHAT_EFFORT", "ANTHROPIC_STRUCTURED_EFFORT")
 _BEDROCK_CREDENTIALS = {
     "BEDROCK_ACCESS_KEY_ID": "AKIATEST",
@@ -234,7 +237,11 @@ def test_the_production_env_judges_and_summarizes_with_haiku_through_anthropic(
     ]
     assert models == ["haiku"] * 6
     assert loaded.anthropic_haiku_model_id.startswith("claude-haiku-5")
-    judged = [cs for cs, policy in CALL_POLICIES.items() if policy.model_setting is not None]
+    judged = [
+        cs
+        for cs, policy in CALL_POLICIES.items()
+        if policy.model_setting is not None and cs not in _NOT_YET_IN_PRODUCTION
+    ]
     assert judged
     for call_site in judged:
         model = backends.call_site_model(call_site, lambda name: str(getattr(loaded, name)))
@@ -247,7 +254,9 @@ def test_the_production_env_judges_and_summarizes_with_haiku_through_anthropic(
 # 배정을 다른 호출 위치에서 물려받는 호출(장면 헤더 판정)은 운영 배정에 자기 줄이 없어 아래 "한 줄 빠짐" 경우가 성립하지 않는다 —
 # 물려받는 쪽의 경우는 그 원래 호출 위치의 줄이 빠지는 경우가 덮는다.
 _JUDGED_CALL_SITES = [
-    cs for cs, policy in CALL_POLICIES.items() if policy.model_setting is not None and policy.backend_from is None
+    cs
+    for cs, policy in CALL_POLICIES.items()
+    if policy.model_setting is not None and policy.backend_from is None and cs not in _NOT_YET_IN_PRODUCTION
 ]
 
 

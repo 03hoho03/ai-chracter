@@ -258,7 +258,7 @@ async def extract_pending_facts(
     4. 세션 없이 모델을 부른다 — 기다리는 동안 커넥션을 쥐지 않는다.
     5. 정규화(`normalize_facts`). 버린 행이 있으면 그 수를 경고로 남긴다.
     6. 새 세션 한 트랜잭션: **먼저 스냅샷을 `FOR KEY SHARE` 로 잠근다**(없으면 되감겼다 — 끝). 잠근 뒤 방의 잊기 세대를 다시 읽어
-       3 과 다르면(그사이 방 주인이 사실을 잊게 했다) 결과를 버리고 내 선점 그대로일 때만 `failed` 로 적는다 — 기존 키로 읽은 잊은
+       3 과 다르면(그사이 방 주인이 장면이나 사실을 잊게 했다) 결과를 버리고 내 선점 그대로일 때만 `failed` 로 적는다 — 기존 키로 읽은 잊은
        키를 모델이 다시 냈을 수 있다. 다음 턴 뒤에 다시 쥐며 시도 하나를 쓴다. 잊기는 스냅샷을 `FOR UPDATE` 로 잡으므로 이 잠금을
        쥔 동안에는 끝나지 않고, 이 잠금 앞에서 기다렸다면 바뀐 세대가 보인다(`chat/memory_forget.py`). 그다음 추출 기록을 "내 선점
        시각 그대로일 때만" `done` 으로 바꾸고(0행이면 다른 작업이 다시 쥐었다 — 버린다) 사실을 넣고 커밋한다. 스냅샷을 먼저 잡는
@@ -320,7 +320,7 @@ async def extract_pending_facts(
             if await _forget_generation(session, candidate.room_id) != generation:
                 await session.rollback()
                 logger.warning(
-                    "스냅샷 %s 사실 기억 추출 결과를 버린다 — 입력을 읽은 뒤 방 주인이 사실을 잊게 했다", candidate.snapshot_id
+                    "스냅샷 %s 사실 기억 추출 결과를 버린다 — 입력을 읽은 뒤 방 주인이 장면이나 사실을 잊게 했다", candidate.snapshot_id
                 )
                 await _mark_failed(session_factory, candidate.snapshot_id, claimed_at, usage_sink)
                 return
@@ -467,7 +467,7 @@ async def _prior_facts(session: AsyncSession, candidate: _Candidate) -> list[_Pr
 
 
 async def _forget_generation(session: AsyncSession, room_id: uuid.UUID) -> int | None:
-    """방의 잊기 세대(방 주인이 사실을 잊게 할 때마다 오른다). 방이 없으면 None."""
+    """방의 잊기 세대(방 주인이 장면이나 사실을 잊게 할 때마다 오른다). 방이 없으면 None."""
     generation: int | None = await session.scalar(
         select(ChatRoom.memory_forget_generation).where(ChatRoom.id == room_id)
     )
