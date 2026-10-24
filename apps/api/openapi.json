@@ -2831,6 +2831,183 @@
         }
       }
     },
+    "/admin/prompt-routing": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Prompt Routing",
+        "operationId": "get_prompt_routing_admin_prompt_routing_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptRoutingResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Save Prompt Routing",
+        "operationId": "save_prompt_routing_admin_prompt_routing_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPromptRoutingSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptRoutingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/prompt-routing/revisions": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Prompt Route Revisions",
+        "operationId": "list_prompt_route_revisions_admin_prompt_routing_revisions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptRouteRevisionListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/prompt-routing/revisions/{id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Prompt Route Revision",
+        "operationId": "get_prompt_route_revision_admin_prompt_routing_revisions__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptRouteRevisionDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/prompt-routing/revisions/{id}/restore": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Restore Prompt Route Revision",
+        "operationId": "restore_prompt_route_revision_admin_prompt_routing_revisions__id__restore_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPromptRoutingRestoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptRoutingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/llm-usage": {
       "get": {
         "tags": [
@@ -21697,6 +21874,746 @@
         "type": "object",
         "title": "AdminPromptPublishRequest",
         "description": "`version`을 받지 않는다 — 서버가 자동 증가 정수를 부여한다. `note`가 \"왜\n바꿨나\"를 대신 받는다."
+      },
+      "AdminPromptRouteAllowedPair": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "generation",
+              "structured"
+            ],
+            "title": "Kind"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus",
+              "haiku"
+            ],
+            "title": "Model"
+          },
+          "backend": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "bedrock",
+              "anthropic"
+            ],
+            "title": "Backend"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "model",
+          "backend"
+        ],
+        "title": "AdminPromptRouteAllowedPair"
+      },
+      "AdminPromptRouteCall": {
+        "properties": {
+          "callSite": {
+            "type": "string",
+            "enum": [
+              "chat_generate",
+              "chat_stat_judgment",
+              "chat_ending_judgment",
+              "chat_situational_image",
+              "chat_media_book_image",
+              "chat_memory_summary",
+              "chat_memory_episode",
+              "chat_memory_fact",
+              "chat_memory_impression",
+              "chat_scene_judgment",
+              "preview_generate",
+              "preview_stat_judgment",
+              "preview_ending_judgment",
+              "preview_media_book_image",
+              "preview_scene_judgment",
+              "publish_filter_character",
+              "publish_filter_story",
+              "seed_story_generate",
+              "seed_similarity_review",
+              "novelize_chapter",
+              "novelize_revise",
+              "novelize_boundary",
+              "novelize_revise_recheck",
+              "novelize_outline",
+              "novelize_episode_outline",
+              "novel_publish_screen",
+              "novel_illustration_screen",
+              "replay_generate"
+            ],
+            "title": "Callsite"
+          },
+          "backend": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "bedrock",
+              "anthropic"
+            ],
+            "title": "Backend"
+          },
+          "modelId": {
+            "type": "string",
+            "title": "Modelid"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminPromptRoutePrice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "callSite",
+          "backend",
+          "modelId",
+          "price"
+        ],
+        "title": "AdminPromptRouteCall",
+        "description": "칸 하나를 읽는 호출 위치 하나가 실제로 보낼 모델 id 와 경로. 단가 표에 없는 id 면 `price` 가 null 이다(0 이 아니다)."
+      },
+      "AdminPromptRouteCell": {
+        "properties": {
+          "lane": {
+            "type": "string",
+            "enum": [
+              "story",
+              "character"
+            ],
+            "title": "Lane"
+          },
+          "roomModel": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "opus"
+            ],
+            "title": "Roommodel"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "chat_generate",
+              "stat_judgment",
+              "scene_judgment",
+              "ending_judgment",
+              "situational_image",
+              "media_book_image",
+              "memory_summary",
+              "memory_episode",
+              "memory_fact"
+            ],
+            "title": "Stage"
+          },
+          "configured": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminPromptRouteRow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effective": {
+            "$ref": "#/components/schemas/AdminPromptRouteEffective"
+          },
+          "skipped": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminPromptRouteSkip"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRouteCall"
+            },
+            "type": "array",
+            "title": "Calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lane",
+          "roomModel",
+          "stage",
+          "configured",
+          "effective",
+          "skipped",
+          "calls"
+        ],
+        "title": "AdminPromptRouteCell",
+        "description": "(레인, 방 모델, 단계) 한 칸. `configured` 는 그 칸 자신의 행이고, `effective` 는 채팅 호출 위치로 푼 값이다."
+      },
+      "AdminPromptRouteChain": {
+        "properties": {
+          "lane": {
+            "type": "string",
+            "enum": [
+              "story",
+              "character"
+            ],
+            "title": "Lane"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus",
+              "haiku"
+            ],
+            "title": "Model"
+          },
+          "readBy": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRouteChainReader"
+            },
+            "type": "array",
+            "title": "Readby"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lane",
+          "model",
+          "readBy"
+        ],
+        "title": "AdminPromptRouteChain",
+        "description": "한 체인(레인, 모델)을 지금 어느 칸이 어느 채널로 읽는가. 칸들의 실효 체인을 묶은 값이라 화면이 스스로 조합하지 않는다."
+      },
+      "AdminPromptRouteChainReader": {
+        "properties": {
+          "roomModel": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "opus"
+            ],
+            "title": "Roommodel"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "chat_generate",
+              "stat_judgment",
+              "scene_judgment",
+              "ending_judgment",
+              "situational_image",
+              "media_book_image",
+              "memory_summary",
+              "memory_episode",
+              "memory_fact"
+            ],
+            "title": "Stage"
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "roomModel",
+          "stage",
+          "channels"
+        ],
+        "title": "AdminPromptRouteChainReader"
+      },
+      "AdminPromptRouteEffective": {
+        "properties": {
+          "chainModel": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus",
+              "haiku"
+            ],
+            "title": "Chainmodel"
+          },
+          "callModel": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus",
+              "haiku"
+            ],
+            "title": "Callmodel"
+          },
+          "backend": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "bedrock",
+              "anthropic"
+            ],
+            "title": "Backend"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "row",
+              "inherited",
+              "env",
+              "room"
+            ],
+            "title": "Source"
+          },
+          "sourceDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcedetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chainModel",
+          "callModel",
+          "backend",
+          "source",
+          "sourceDetail"
+        ],
+        "title": "AdminPromptRouteEffective"
+      },
+      "AdminPromptRoutePrice": {
+        "properties": {
+          "inputUsdPerMillion": {
+            "type": "number",
+            "title": "Inputusdpermillion"
+          },
+          "cachedInputUsdPerMillion": {
+            "type": "number",
+            "title": "Cachedinputusdpermillion"
+          },
+          "outputUsdPerMillion": {
+            "type": "number",
+            "title": "Outputusdpermillion"
+          },
+          "cacheWriteUsdPerMillion": {
+            "type": "number",
+            "title": "Cachewriteusdpermillion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "inputUsdPerMillion",
+          "cachedInputUsdPerMillion",
+          "outputUsdPerMillion",
+          "cacheWriteUsdPerMillion"
+        ],
+        "title": "AdminPromptRoutePrice",
+        "description": "USD / 1M 토큰. 원가 표(`llm/pricing.py`)의 값을 그대로 옮긴다."
+      },
+      "AdminPromptRouteRevisionDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "adminId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Adminid"
+          },
+          "restoredFromId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restoredfromid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "rowCount": {
+            "type": "integer",
+            "title": "Rowcount"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRouteRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "droppedRowCount": {
+            "type": "integer",
+            "title": "Droppedrowcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "number",
+          "note",
+          "adminId",
+          "restoredFromId",
+          "createdAt",
+          "rowCount",
+          "rows",
+          "droppedRowCount"
+        ],
+        "title": "AdminPromptRouteRevisionDetailResponse",
+        "description": "지금 코드가 모르는 값(내린 모델 등)이 든 스냅샷 행은 응답 검증에서 500 이 나지 않게 `rows` 에서 빼고, 뺀 개수를\n`dropped_row_count` 로 알린다. 그런 스냅샷을 되돌리면 저장 검사가 거부한다."
+      },
+      "AdminPromptRouteRevisionListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRouteRevisionSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AdminPromptRouteRevisionListResponse"
+      },
+      "AdminPromptRouteRevisionSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "adminId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Adminid"
+          },
+          "restoredFromId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restoredfromid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "rowCount": {
+            "type": "integer",
+            "title": "Rowcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "number",
+          "note",
+          "adminId",
+          "restoredFromId",
+          "createdAt",
+          "rowCount"
+        ],
+        "title": "AdminPromptRouteRevisionSummary"
+      },
+      "AdminPromptRouteRow": {
+        "properties": {
+          "lane": {
+            "type": "string",
+            "enum": [
+              "story",
+              "character"
+            ],
+            "title": "Lane"
+          },
+          "roomModel": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "opus"
+            ],
+            "title": "Roommodel"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "chat_generate",
+              "stat_judgment",
+              "scene_judgment",
+              "ending_judgment",
+              "situational_image",
+              "media_book_image",
+              "memory_summary",
+              "memory_episode",
+              "memory_fact"
+            ],
+            "title": "Stage"
+          },
+          "chainModel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "gemini",
+                  "sonnet",
+                  "opus",
+                  "haiku"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chainmodel"
+          },
+          "callModel": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus",
+              "haiku"
+            ],
+            "title": "Callmodel"
+          },
+          "backend": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "bedrock",
+              "anthropic"
+            ],
+            "title": "Backend"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lane",
+          "roomModel",
+          "stage",
+          "chainModel",
+          "callModel",
+          "backend"
+        ],
+        "title": "AdminPromptRouteRow",
+        "description": "모델 배정 표의 한 행. 생성 행은 `chain_model` 이 없다(늘 방 모델의 체인을 읽는다)."
+      },
+      "AdminPromptRouteSkip": {
+        "properties": {
+          "stage": {
+            "type": "string",
+            "enum": [
+              "chat_generate",
+              "stat_judgment",
+              "scene_judgment",
+              "ending_judgment",
+              "situational_image",
+              "media_book_image",
+              "memory_summary",
+              "memory_episode",
+              "memory_fact"
+            ],
+            "title": "Stage"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "pair-not-allowed",
+              "backend-mismatch",
+              "structured-effort"
+            ],
+            "title": "Reason"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stage",
+          "reason",
+          "message"
+        ],
+        "title": "AdminPromptRouteSkip",
+        "description": "그 칸에 쓸 행이 있었지만 지금 env 로는 적용되지 않는다. `stage` 는 그 행의 단계다(물려받으려던 행이면 물려준 단계)."
+      },
+      "AdminPromptRoutingResponse": {
+        "properties": {
+          "revisionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revisionid"
+          },
+          "revisionNumber": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revisionnumber"
+          },
+          "pricesAsOf": {
+            "type": "string",
+            "format": "date",
+            "title": "Pricesasof"
+          },
+          "allowedPairs": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRouteAllowedPair"
+            },
+            "type": "array",
+            "title": "Allowedpairs"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRouteCell"
+            },
+            "type": "array",
+            "title": "Cells"
+          },
+          "chains": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRouteChain"
+            },
+            "type": "array",
+            "title": "Chains"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revisionId",
+          "revisionNumber",
+          "pricesAsOf",
+          "allowedPairs",
+          "cells",
+          "chains"
+        ],
+        "title": "AdminPromptRoutingResponse",
+        "description": "`revision_id`·`revision_number` 는 최신 이력이고, 한 번도 저장한 적 없으면 null 이다."
+      },
+      "AdminPromptRoutingRestoreRequest": {
+        "properties": {
+          "baseRevisionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baserevisionid"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "baseRevisionId"
+        ],
+        "title": "AdminPromptRoutingRestoreRequest"
+      },
+      "AdminPromptRoutingSaveRequest": {
+        "properties": {
+          "baseRevisionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baserevisionid"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRouteRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "baseRevisionId",
+          "rows"
+        ],
+        "title": "AdminPromptRoutingSaveRequest",
+        "description": "표 전체를 갈아 끼운다 — 부분 패치가 아니다. 빈 `rows` 는 표를 비워 전부 env 규칙으로 돌린다. `base_revision_id` 는 화면이\n읽은 최신 이력이고(이력이 없으면 null), 그 사이 다른 저장이 있었으면 409 다."
       },
       "AdminPromptSectionInput": {
         "properties": {

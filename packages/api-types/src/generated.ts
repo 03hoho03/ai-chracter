@@ -1205,6 +1205,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/prompt-routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prompt Routing */
+        get: operations["get_prompt_routing_admin_prompt_routing_get"];
+        /** Save Prompt Routing */
+        put: operations["save_prompt_routing_admin_prompt_routing_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompt-routing/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Prompt Route Revisions */
+        get: operations["list_prompt_route_revisions_admin_prompt_routing_revisions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompt-routing/revisions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prompt Route Revision */
+        get: operations["get_prompt_route_revision_admin_prompt_routing_revisions__id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompt-routing/revisions/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Prompt Route Revision */
+        post: operations["restore_prompt_route_revision_admin_prompt_routing_revisions__id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/llm-usage": {
         parameters: {
             query?: never;
@@ -8806,6 +8875,304 @@ export interface components {
              * @default
              */
             note: string;
+        };
+        /** AdminPromptRouteAllowedPair */
+        AdminPromptRouteAllowedPair: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "generation" | "structured";
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus" | "haiku";
+            /**
+             * Backend
+             * @enum {string}
+             */
+            backend: "gemini" | "bedrock" | "anthropic";
+        };
+        /**
+         * AdminPromptRouteCall
+         * @description 칸 하나를 읽는 호출 위치 하나가 실제로 보낼 모델 id 와 경로. 단가 표에 없는 id 면 `price` 가 null 이다(0 이 아니다).
+         */
+        AdminPromptRouteCall: {
+            /**
+             * Callsite
+             * @enum {string}
+             */
+            callSite: "chat_generate" | "chat_stat_judgment" | "chat_ending_judgment" | "chat_situational_image" | "chat_media_book_image" | "chat_memory_summary" | "chat_memory_episode" | "chat_memory_fact" | "chat_memory_impression" | "chat_scene_judgment" | "preview_generate" | "preview_stat_judgment" | "preview_ending_judgment" | "preview_media_book_image" | "preview_scene_judgment" | "publish_filter_character" | "publish_filter_story" | "seed_story_generate" | "seed_similarity_review" | "novelize_chapter" | "novelize_revise" | "novelize_boundary" | "novelize_revise_recheck" | "novelize_outline" | "novelize_episode_outline" | "novel_publish_screen" | "novel_illustration_screen" | "replay_generate";
+            /**
+             * Backend
+             * @enum {string}
+             */
+            backend: "gemini" | "bedrock" | "anthropic";
+            /** Modelid */
+            modelId: string;
+            price: components["schemas"]["AdminPromptRoutePrice"] | null;
+        };
+        /**
+         * AdminPromptRouteCell
+         * @description (레인, 방 모델, 단계) 한 칸. `configured` 는 그 칸 자신의 행이고, `effective` 는 채팅 호출 위치로 푼 값이다.
+         */
+        AdminPromptRouteCell: {
+            /**
+             * Lane
+             * @enum {string}
+             */
+            lane: "story" | "character";
+            /**
+             * Roommodel
+             * @enum {string}
+             */
+            roomModel: "gemini" | "opus";
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact";
+            configured: components["schemas"]["AdminPromptRouteRow"] | null;
+            effective: components["schemas"]["AdminPromptRouteEffective"];
+            skipped: components["schemas"]["AdminPromptRouteSkip"] | null;
+            /** Calls */
+            calls: components["schemas"]["AdminPromptRouteCall"][];
+        };
+        /**
+         * AdminPromptRouteChain
+         * @description 한 체인(레인, 모델)을 지금 어느 칸이 어느 채널로 읽는가. 칸들의 실효 체인을 묶은 값이라 화면이 스스로 조합하지 않는다.
+         */
+        AdminPromptRouteChain: {
+            /**
+             * Lane
+             * @enum {string}
+             */
+            lane: "story" | "character";
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus" | "haiku";
+            /** Readby */
+            readBy: components["schemas"]["AdminPromptRouteChainReader"][];
+        };
+        /** AdminPromptRouteChainReader */
+        AdminPromptRouteChainReader: {
+            /**
+             * Roommodel
+             * @enum {string}
+             */
+            roomModel: "gemini" | "opus";
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact";
+            /** Channels */
+            channels: string[];
+        };
+        /** AdminPromptRouteEffective */
+        AdminPromptRouteEffective: {
+            /**
+             * Chainmodel
+             * @enum {string}
+             */
+            chainModel: "gemini" | "sonnet" | "opus" | "haiku";
+            /**
+             * Callmodel
+             * @enum {string}
+             */
+            callModel: "gemini" | "sonnet" | "opus" | "haiku";
+            /**
+             * Backend
+             * @enum {string}
+             */
+            backend: "gemini" | "bedrock" | "anthropic";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "row" | "inherited" | "env" | "room";
+            /** Sourcedetail */
+            sourceDetail: string | null;
+        };
+        /**
+         * AdminPromptRoutePrice
+         * @description USD / 1M 토큰. 원가 표(`llm/pricing.py`)의 값을 그대로 옮긴다.
+         */
+        AdminPromptRoutePrice: {
+            /** Inputusdpermillion */
+            inputUsdPerMillion: number;
+            /** Cachedinputusdpermillion */
+            cachedInputUsdPerMillion: number;
+            /** Outputusdpermillion */
+            outputUsdPerMillion: number;
+            /** Cachewriteusdpermillion */
+            cacheWriteUsdPerMillion: number;
+        };
+        /**
+         * AdminPromptRouteRevisionDetailResponse
+         * @description 지금 코드가 모르는 값(내린 모델 등)이 든 스냅샷 행은 응답 검증에서 500 이 나지 않게 `rows` 에서 빼고, 뺀 개수를
+         *     `dropped_row_count` 로 알린다. 그런 스냅샷을 되돌리면 저장 검사가 거부한다.
+         */
+        AdminPromptRouteRevisionDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Number */
+            number: number;
+            /** Note */
+            note: string;
+            /**
+             * Adminid
+             * Format: uuid
+             */
+            adminId: string;
+            /** Restoredfromid */
+            restoredFromId: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Rowcount */
+            rowCount: number;
+            /** Rows */
+            rows: components["schemas"]["AdminPromptRouteRow"][];
+            /** Droppedrowcount */
+            droppedRowCount: number;
+        };
+        /** AdminPromptRouteRevisionListResponse */
+        AdminPromptRouteRevisionListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminPromptRouteRevisionSummary"][];
+        };
+        /** AdminPromptRouteRevisionSummary */
+        AdminPromptRouteRevisionSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Number */
+            number: number;
+            /** Note */
+            note: string;
+            /**
+             * Adminid
+             * Format: uuid
+             */
+            adminId: string;
+            /** Restoredfromid */
+            restoredFromId: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Rowcount */
+            rowCount: number;
+        };
+        /**
+         * AdminPromptRouteRow
+         * @description 모델 배정 표의 한 행. 생성 행은 `chain_model` 이 없다(늘 방 모델의 체인을 읽는다).
+         */
+        AdminPromptRouteRow: {
+            /**
+             * Lane
+             * @enum {string}
+             */
+            lane: "story" | "character";
+            /**
+             * Roommodel
+             * @enum {string}
+             */
+            roomModel: "gemini" | "opus";
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact";
+            /** Chainmodel */
+            chainModel: ("gemini" | "sonnet" | "opus" | "haiku") | null;
+            /**
+             * Callmodel
+             * @enum {string}
+             */
+            callModel: "gemini" | "sonnet" | "opus" | "haiku";
+            /**
+             * Backend
+             * @enum {string}
+             */
+            backend: "gemini" | "bedrock" | "anthropic";
+        };
+        /**
+         * AdminPromptRouteSkip
+         * @description 그 칸에 쓸 행이 있었지만 지금 env 로는 적용되지 않는다. `stage` 는 그 행의 단계다(물려받으려던 행이면 물려준 단계).
+         */
+        AdminPromptRouteSkip: {
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact";
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "pair-not-allowed" | "backend-mismatch" | "structured-effort";
+            /** Message */
+            message: string;
+        };
+        /**
+         * AdminPromptRoutingResponse
+         * @description `revision_id`·`revision_number` 는 최신 이력이고, 한 번도 저장한 적 없으면 null 이다.
+         */
+        AdminPromptRoutingResponse: {
+            /** Revisionid */
+            revisionId: string | null;
+            /** Revisionnumber */
+            revisionNumber: number | null;
+            /**
+             * Pricesasof
+             * Format: date
+             */
+            pricesAsOf: string;
+            /** Allowedpairs */
+            allowedPairs: components["schemas"]["AdminPromptRouteAllowedPair"][];
+            /** Cells */
+            cells: components["schemas"]["AdminPromptRouteCell"][];
+            /** Chains */
+            chains: components["schemas"]["AdminPromptRouteChain"][];
+        };
+        /** AdminPromptRoutingRestoreRequest */
+        AdminPromptRoutingRestoreRequest: {
+            /** Baserevisionid */
+            baseRevisionId: string | null;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
+        /**
+         * AdminPromptRoutingSaveRequest
+         * @description 표 전체를 갈아 끼운다 — 부분 패치가 아니다. 빈 `rows` 는 표를 비워 전부 env 규칙으로 돌린다. `base_revision_id` 는 화면이
+         *     읽은 최신 이력이고(이력이 없으면 null), 그 사이 다른 저장이 있었으면 409 다.
+         */
+        AdminPromptRoutingSaveRequest: {
+            /** Baserevisionid */
+            baseRevisionId: string | null;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Rows */
+            rows: components["schemas"]["AdminPromptRouteRow"][];
         };
         /** AdminPromptSectionInput */
         AdminPromptSectionInput: {
@@ -17107,6 +17474,145 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminPromptSetListResponse"];
+                };
+            };
+        };
+    };
+    get_prompt_routing_admin_prompt_routing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptRoutingResponse"];
+                };
+            };
+        };
+    };
+    save_prompt_routing_admin_prompt_routing_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPromptRoutingSaveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptRoutingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_prompt_route_revisions_admin_prompt_routing_revisions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptRouteRevisionListResponse"];
+                };
+            };
+        };
+    };
+    get_prompt_route_revision_admin_prompt_routing_revisions__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptRouteRevisionDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_prompt_route_revision_admin_prompt_routing_revisions__id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPromptRoutingRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptRoutingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
