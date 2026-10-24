@@ -49,6 +49,7 @@ import { toChainProgress } from "./chainProgress";
 import { OUTLINE_SPEND_FOOTNOTE, toDoneMessage, toRetryTarget, type RetryTarget } from "./chapterJobOutcome";
 import { toOutlineFlowAvailability } from "./regenerateAction";
 import { toRegenerateConfirmDescription } from "./regenerateConfirm";
+import { toEpisodeJobRefusal } from "./episodeJobGuard";
 
 /** 화 다시 만들기·전체 구성안 만들기의 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
  * 소설 상위 모델 허용이 있으면 모달이 모델도 고르게 하므로, 확정하면 고른 모델과 이용자가 본 금액을 돌려준다.
@@ -121,6 +122,8 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
   const outlineRegenerateMutation = useRegenerateOutlineChapterMutation();
   // 이 화면이 시작한 장면 구성안·원고 작업의 화 키. 작업이 끝난 뒤 다시 시도를 그 화로 잇는 데 쓴다.
   const episodeKeyByJobIdRef = useRef(new Map<string, string>());
+  // 장면 구성안을 고치는 중인 화 키 — 화 화면이 알려 준다. 작업 줄의 다시 시도는 그 화면의 막기를 거치지 않아 여기서 본다.
+  const editingEpisodeKeysRef = useRef(new Set<string>());
   // 소설 만들기 거절의 문장이 노벨 정책 스위치에 따라 다르다(`toNovelizeForbiddenCopy`).
   const pricing = useCloverPricingQuery().data;
   const isPolicyV2Enabled = pricing?.novelPublicPolicyV2Enabled === true;
@@ -526,6 +529,11 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
         queryClient.fetchQuery(novelOutlineQueryOptions(novel.id)),
       ]);
       if (!isMountedRef.current || hasActiveJobNow()) return;
+      const refusal = toEpisodeJobRefusal(kind, state, editingEpisodeKeysRef.current.has(episodeKey));
+      if (refusal !== undefined) {
+        setNotice({ tone: "error", message: refusal });
+        return;
+      }
       const options = toOutlineModelOptions(kind === "episodeOutline" ? state.models : state.chapterModels);
       if (options.length === 0) {
         setNotice({ tone: "error", message: "지금 고를 수 있는 모델이 없어요." });
@@ -567,6 +575,12 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
       setPreparing(undefined);
       setPreparingEpisodeKey(undefined);
     }
+  }
+
+  /** 화 화면이 그 화의 장면 구성안을 고치는 중인지 알린다(저장하지 않은 고침이나 열린 고치기 폼). */
+  function reportEpisodeEditing(episodeKey: string, isEditing: boolean) {
+    if (isEditing) editingEpisodeKeysRef.current.add(episodeKey);
+    else editingEpisodeKeysRef.current.delete(episodeKey);
   }
 
   function retry(target: RetryTarget) {
@@ -616,6 +630,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     startOutlineRegenerate,
     startEpisodeOutline,
     startOutlineChapter,
+    reportEpisodeEditing,
     retry,
   };
 }

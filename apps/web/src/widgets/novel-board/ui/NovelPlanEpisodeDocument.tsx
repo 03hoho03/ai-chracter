@@ -40,6 +40,7 @@ export function NovelPlanEpisodeDocument({
     // 다른 화·다른 버튼에서 시작한 준비(경계 고르기·다시 만들기·구성안 확인)도 진행 중인 작업처럼 막는다.
     isJobRunning: chapterFlow.isJobRunning || (chapterFlow.preparing !== undefined && !isPreparingHere),
     isSceneJobRunningHere: chapterFlow.runningKind === "episode_outline_generate" && isRunningHere,
+    isRunningEpisodeUnknown: chapterFlow.runningEpisodeKey === null,
     isWriteJobRunningHere: chapterFlow.runningKind === "outline_chapter_generate" && isRunningHere,
     isAiEditRunning: chapterFlow.isAiEditRunning,
     statusId: chapterFlow.statusId,
@@ -54,7 +55,11 @@ export function NovelPlanEpisodeDocument({
       headingRef={headingRef}
       control={control}
       onOpenChapter={onOpenChapter}
-      onDraftDirtyChange={onDraftDirtyChange}
+      onDraftDirtyChange={(isDirty) => {
+        // 작업 줄의 다시 시도도 고치던 화의 유료 작업을 막게 흐름에 알린다.
+        chapterFlow.reportEpisodeEditing(episodeKey, isDirty);
+        onDraftDirtyChange(isDirty);
+      }}
     />
   );
 }

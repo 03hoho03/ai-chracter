@@ -62,6 +62,8 @@ export type EpisodeJobControl = {
   isSceneJobRunningHere: boolean;
   /** 이 화의 원고 작업이 도는 중인가. */
   isWriteJobRunningHere: boolean;
+  /** 도는 작업의 화를 모르는가(새로고침·다른 탭에서 시작) — 그때는 이 화의 작업이라고 단정하지 않는다. */
+  isRunningEpisodeUnknown: boolean;
   isAiEditRunning: boolean;
   /** 작업 줄의 진행 문장 id. 작업이 도는 동안 못 누르는 버튼이 이 문장을 가리킨다. */
   statusId: string;
@@ -390,7 +392,11 @@ function EpisodeEditor({
           </p>
         )}
         {control.isSceneJobRunningHere && (
-          <RunningLine>장면 구성안을 만들고 있어요. 끝나면 새 초안이 여기 와요.</RunningLine>
+          <RunningLine>
+            {control.isRunningEpisodeUnknown
+              ? "장면 구성안 작업이 진행 중이에요. 끝나면 고치거나 승인할 수 있어요."
+              : "장면 구성안을 만들고 있어요. 끝나면 새 초안이 여기 와요."}
+          </RunningLine>
         )}
 
         {base === undefined ? (
@@ -565,7 +571,11 @@ function EpisodeEditor({
               승인한 장면 구성안대로 이 화의 원고를 써요. 다 쓰면 보드에 새 화로 놓여요.
             </p>
             {control.isWriteJobRunningHere && (
-              <RunningLine>원고를 쓰고 있어요. 다 쓰면 보드의 새 화로 옮겨 가요.</RunningLine>
+              <RunningLine>
+                {control.isRunningEpisodeUnknown
+                  ? "원고 작업이 진행 중이에요. 끝나면 쓸 수 있어요."
+                  : "원고를 쓰고 있어요. 다 쓰면 보드의 새 화로 옮겨 가요."}
+              </RunningLine>
             )}
             <PaidButton
               label="원고 쓰기"
