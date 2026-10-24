@@ -33,6 +33,8 @@ export function useSaveNovelOutlineMutation() {
       (await apiClient.put<NovelOutlineState>(`/novels/${novelId}/outline/draft`, body)).data,
     onSuccess: (state, { novelId }) => {
       queryClient.setQueryData(novelKeys.outline(novelId), state);
+      // 화마다의 근거가 바뀌면 그 화 장면 구성안의 낡음 표시가 바뀐다.
+      void queryClient.invalidateQueries({ queryKey: novelKeys.episodeOutlineAll(novelId) });
     },
   });
 }
@@ -45,6 +47,8 @@ export function useApproveNovelOutlineMutation() {
       (await apiClient.post<NovelOutlineState>(`/novels/${novelId}/outline/approve`, { revision })).data,
     onSuccess: (state, { novelId }) => {
       queryClient.setQueryData(novelKeys.outline(novelId), state);
+      // 화마다의 근거가 바뀌면 그 화 장면 구성안의 낡음 표시가 바뀐다.
+      void queryClient.invalidateQueries({ queryKey: novelKeys.episodeOutlineAll(novelId) });
     },
   });
 }

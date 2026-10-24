@@ -8,6 +8,7 @@ export function toRegenerateConfirmDescription({
   episodeCount,
   hasPendingAiEdits,
   isIllustrationsOn = false,
+  isOutlineFlow = false,
 }: {
   /** 함께 바뀌는 화들의 이름(`3~5화`). */
   rangeLabel: string;
@@ -15,15 +16,30 @@ export function toRegenerateConfirmDescription({
   hasPendingAiEdits: boolean;
   /** 삽화 스위치가 켜져 있는가(`isNovelIllustrationsOn`). */
   isIllustrationsOn?: boolean;
+  /** 구성안(장면 구성안)으로 쓴 화인가 — 같은 대화가 아니라 같은 장면 구성안으로 다시 쓴다. 구성안으로 쓴 화는 늘 한 화다. */
+  isOutlineFlow?: boolean;
 }): string {
   const isSingle = episodeCount <= 1;
-  const base = isSingle
-    ? "같은 대화로 이 화를 새로 써요. 지금 글은 이력에 남아요."
-    : `같은 대화로 함께 만든 ${rangeLabel}를 모두 새로 써요. 화 수는 그대로이고 지금 글은 이력에 남아요.`;
+  const base = toBaseSentence({ rangeLabel, isSingle, isOutlineFlow });
   const where = isSingle ? "이 화" : "이 화들";
   const pending = hasPendingAiEdits
     ? ` 다시 만들면 ${where}에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.`
     : "";
   const illustrations = isIllustrationsOn ? " 넣어 둔 삽화는 자리를 잃고 위치 확인 필요로 옮겨져요." : "";
   return `${base}${pending}${illustrations}`;
+}
+
+function toBaseSentence({
+  rangeLabel,
+  isSingle,
+  isOutlineFlow,
+}: {
+  rangeLabel: string;
+  isSingle: boolean;
+  isOutlineFlow: boolean;
+}): string {
+  if (isOutlineFlow) return "같은 장면 구성안으로 이 화를 새로 써요. 지금 글은 이력에 남아요.";
+  return isSingle
+    ? "같은 대화로 이 화를 새로 써요. 지금 글은 이력에 남아요."
+    : `같은 대화로 함께 만든 ${rangeLabel}를 모두 새로 써요. 화 수는 그대로이고 지금 글은 이력에 남아요.`;
 }

@@ -47,20 +47,25 @@ function sortEpisodes(model: BoardModel): BoardEpisode[] {
   );
 }
 
-/** 자동 배치 — 화는 세로 한 열, 묶음이 바뀌면 간격을 더 둔다. 결과는 정렬된 화와 같은 순서다. */
-function placeEpisodes(episodes: BoardEpisode[]): BoardPosition[] {
+/** 자동 배치 — 화는 세로 한 열, 묶음이 바뀌면 간격을 더 둔다. 구성안으로 쓴 화는 화마다 묶음이 따로지만 틀이 없어, 이어진 그런 화
+ * 사이는 한 묶음처럼 좁게 둔다. 결과는 정렬된 화와 같은 순서다. */
+function placeEpisodes(episodes: BoardEpisode[], outlineBatchIds: ReadonlySet<string>): BoardPosition[] {
   const positions: BoardPosition[] = [];
   let y = 0;
-  let previousBatchId: string | undefined;
+  let previousGroup: string | undefined;
   for (const episode of episodes) {
-    if (previousBatchId !== undefined) {
-      y += EPISODE_NODE_HEIGHT + (episode.batchId === previousBatchId ? EPISODE_GAP : BATCH_GAP);
+    const group = outlineBatchIds.has(episode.batchId) ? OUTLINE_GROUP : episode.batchId;
+    if (previousGroup !== undefined) {
+      y += EPISODE_NODE_HEIGHT + (group === previousGroup ? EPISODE_GAP : BATCH_GAP);
     }
     positions.push({ x: EPISODE_COLUMN_X, y });
-    previousBatchId = episode.batchId;
+    previousGroup = group;
   }
   return positions;
 }
+
+/** 이어진 구성안 화들이 함께 쓰는 배치 덩어리 이름 — 묶음 id(uuid)와 겹치지 않는다. */
+const OUTLINE_GROUP = "outline-flow";
 
 /** 인물은 오른쪽 레인에서 처음 나온 화의 높이에 둔다. 같은 높이에 몰리면 앞 인물 아래로 민다.
  * 나온 화가 보드에 하나도 없는 인물은 나온 인물들 뒤에 쌓는다. */
@@ -132,7 +137,8 @@ export function layoutBoard(
   saved: NovelBoardLayout | null | undefined,
 ): { nodes: BoardNode[]; edges: Edge[] } {
   const episodes = sortEpisodes(model);
-  const autoEpisodePositions = placeEpisodes(episodes);
+  const outlineBatchIds = new Set(model.batches.filter((batch) => batch.isOutlineFlow === true).map((batch) => batch.id));
+  const autoEpisodePositions = placeEpisodes(episodes, outlineBatchIds);
 
   const episodeNodes: EpisodeNode[] = episodes.map(({ id, ...display }, index) => ({
     id: episodeNodeKey(id),

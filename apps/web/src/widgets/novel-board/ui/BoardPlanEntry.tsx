@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { useId } from "react";
 
 import { useNovelOutlineQuery, useNovelSourceSelectionQuery, type NovelDetailResponse } from "@/entities/novel";
-import { OUTLINE_STATUS_LABEL, toOutlineBase } from "@/features/plan-novel-outline";
+import { OUTLINE_STATUS_LABEL, toManuscriptProgressLine, toOutlineBase } from "@/features/plan-novel-outline";
 import { SOURCE_SELECTION_STATUS_LABEL, hasChangedSource, toSourceSelectionStatus } from "@/features/select-novel-source";
 
 type BoardPlanEntryProps = {
@@ -23,6 +23,9 @@ export function BoardPlanEntry({ novel, onOpen }: BoardPlanEntryProps) {
   const query = useNovelSourceSelectionQuery(novel.id, { enabled: !isRoomGone });
   const outlineQuery = useNovelOutlineQuery(novel.id, { enabled: true });
   const outlineLine = toOutlineLine(outlineQuery.data === undefined ? undefined : toOutlineBase(outlineQuery.data));
+  // 승인한 구성안이 있으면 셋째 단계(화별 장면·원고)의 원고 수를 한 줄 더한다.
+  const approvedEpisodes = outlineQuery.data?.approved?.episodes;
+  const manuscriptLine = approvedEpisodes === undefined ? undefined : toManuscriptProgressLine(approvedEpisodes);
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col items-start gap-2 rounded-xl border border-border p-4">
@@ -31,6 +34,7 @@ export function BoardPlanEntry({ novel, onOpen }: BoardPlanEntryProps) {
       </h3>
       <p className="text-sm break-keep text-muted-foreground">{toStatusLine(isRoomGone, query)}</p>
       {outlineLine !== undefined && <p className="text-sm break-keep text-muted-foreground">{outlineLine}</p>}
+      {manuscriptLine !== undefined && <p className="text-sm break-keep text-muted-foreground">{manuscriptLine}</p>}
       <Button type="button" variant="outline" size="sm" data-board-key="plan" onClick={onOpen}>
         구성 열기
       </Button>

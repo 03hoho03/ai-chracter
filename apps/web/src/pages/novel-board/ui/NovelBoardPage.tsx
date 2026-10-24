@@ -40,6 +40,7 @@ import {
   NovelFlowList,
   canSaveBoardLayout,
   hasChapterBlockedReason,
+  isPlanSelection,
   nodeKeyToSelection,
   parseBoardSelection,
   resolveBoardSelection,
@@ -228,11 +229,11 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
       // 다시 만든 화는 본문이 통째로 바뀌어, 화 머리에 남은 지난 고치기 결과는 이제 옛 글의 이야기다. 본문을 바꾸는
       // 다른 동작이 시작할 때처럼 그 문장을 지운다. 새 화를 만든 것은 있던 화의 본문을 바꾸지 않아 그대로 둔다.
       if (isRegenerated) aiEdit.report({ type: "started" });
-      // 그 화로 끌고 가는 것은 고른 것이 없거나 화를 보고 있고 저장하지 않은 입력이 없을 때뿐이다. 입력이 있으면
-      // 옮기면 사라지고, 인물·노트·버전 패널을 보던 이용자를 화로 끌고 가지도 않는다(인물 이름·별칭처럼 보고하지
+      // 그 화로 끌고 가는 것은 고른 것이 없거나 화를 보고 있거나 구성 모드(원고를 쓴 자리)이고 저장하지 않은 입력이 없을 때뿐이다.
+      // 입력이 있으면 옮기면 사라지고, 인물·노트·버전 패널을 보던 이용자를 화로 끌고 가지도 않는다(인물 이름·별칭처럼 보고하지
       // 않는 입력칸도 있다) — 그때는 작업 줄의 링크로 알리고 옮길지는 이용자가 정한다.
       const current = selectionRef.current;
-      const isOnEpisodeOrNothing = current === undefined || current.kind === "episode";
+      const isOnEpisodeOrNothing = current === undefined || current.kind === "episode" || isPlanSelection(current);
       if (isDraftDirtyRef.current || !isOnEpisodeOrNothing) {
         setHeldChapterId(readyChapter.id);
         return;
@@ -315,8 +316,8 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
         target?.kind === "episode" ? novel.chapters.find((item) => item.id === target.id)?.ordinal : undefined;
       return await DiscardManualEditModal.call({
         chapterOrdinal,
-        // 구성 모드에서 버리는 것은 고르던 대화 구간이나 고치던 구성안이다.
-        isSourceSelection: selectionRef.current?.kind === "plan",
+        // 구성 모드에서 버리는 것은 고르던 대화 구간이나 고치던 구성안·장면 구성안이다.
+        isSourceSelection: isPlanSelection(selectionRef.current),
       });
     } finally {
       openDiscardConfirmCountRef.current -= 1;
@@ -369,7 +370,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
   const isLayoutFailed = layoutQuery.isError && layoutQuery.data === undefined;
   const showPanel = isCanvasLayout || selection !== undefined;
   // 구성 모드는 넓은 화면에서도 캔버스·옆 패널 대신 한 열 문서다. 패널 자리가 그 문서가 되어, 창 폭이 바뀌어도 고르던 구간이 남는다.
-  const isPlan = selection?.kind === "plan";
+  const isPlan = isPlanSelection(selection);
   const showCanvas = isCanvasLayout && !isPlan;
   const openPlan = () => void selectBoard({ kind: "plan" });
   const planEntry = isOutlineFlowOn ? <BoardPlanEntry novel={novel} onOpen={openPlan} /> : undefined;

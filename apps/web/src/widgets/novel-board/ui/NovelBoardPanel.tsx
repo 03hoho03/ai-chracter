@@ -10,11 +10,12 @@ import { CharacterCardEditor } from "@/features/edit-novel-character";
 import { NovelNotesEditor } from "@/features/edit-novel-notes";
 import { NovelSnapshotsPanel } from "@/features/novel-snapshots";
 
-import type { BoardSelection } from "../model/boardSelection";
+import { isPlanSelection, type BoardSelection } from "../model/boardSelection";
 
 import { BoardEpisodePanel } from "./BoardEpisodePanel";
 import { BoardOverviewPanel } from "./BoardOverviewPanel";
 import { NovelPlanDocument } from "./NovelPlanDocument";
+import { NovelPlanEpisodeDocument } from "./NovelPlanEpisodeDocument";
 
 type NovelBoardPanelProps = {
   novel: NovelDetailResponse;
@@ -25,7 +26,8 @@ type NovelBoardPanelProps = {
   /** 패널 제목. 고를 때 호출부가 여기로 포커스를 보낸다. */
   headingRef: RefObject<HTMLHeadingElement | null>;
   onSelect: (selection: BoardSelection | undefined) => void;
-  /** 고르기를 풀고 돌아가기. 주면 맨 위에 돌아가기 버튼을 둔다 — 좁은 화면의 목록으로, 넓은 화면의 구성 모드에서는 캔버스로. */
+  /** 고르기를 풀고 돌아가기. 주면 맨 위에 돌아가기 버튼을 둔다 — 좁은 화면의 목록으로, 넓은 화면의 구성 모드에서는 캔버스로. 구성
+   * 모드의 화 하나에서는 이것 대신 구성 문서로 돌아가는 버튼을 둔다. */
   onBackToList?: () => void;
   /** 돌아가기 버튼 이름. 없으면 "목록"이다. */
   backLabel?: string;
@@ -73,13 +75,21 @@ export function NovelBoardPanel({
     <div className="relative min-h-0 flex-1 overflow-y-auto" onKeyDown={handleKeyDown}>
       {/* 구성 모드는 문서라 넓은 화면에서도 읽기 좋은 폭(최대 672px)의 가운데 한 열이다. */}
       <div
-        className={cn("flex flex-col gap-6 px-4 py-6 sm:px-6", selection?.kind === "plan" && "mx-auto w-full max-w-2xl")}
+        className={cn("flex flex-col gap-6 px-4 py-6 sm:px-6", isPlanSelection(selection) && "mx-auto w-full max-w-2xl")}
       >
-        {onBackToList !== undefined && (
+        {selection?.kind === "planEpisode" ? (
+          // 화 하나는 구성 문서의 한 단계 아래라, 넓은 화면에서도 돌아가는 곳은 구성 문서다(뒤로 가기와 같은 곳).
+          <Button type="button" variant="ghost" size="sm" className="-ml-2 self-start" onClick={() => onSelect({ kind: "plan" })}>
+            <ArrowLeft aria-hidden />
+            구성
+          </Button>
+        ) : (
+          onBackToList !== undefined && (
           <Button type="button" variant="ghost" size="sm" className="-ml-2 self-start" onClick={onBackToList}>
             <ArrowLeft aria-hidden />
             {backLabel}
           </Button>
+          )
         )}
         <PanelContent
           novel={novel}
@@ -170,6 +180,19 @@ function PanelContent({
           novel={novel}
           chapterFlow={chapterFlow}
           headingRef={headingRef}
+          onOpenEpisode={(key) => onSelect({ kind: "planEpisode", key })}
+          onOpenChapter={(chapterId) => onSelect({ kind: "episode", id: chapterId })}
+          onDraftDirtyChange={onDraftDirtyChange}
+        />
+      );
+    case "planEpisode":
+      return (
+        <NovelPlanEpisodeDocument
+          novel={novel}
+          episodeKey={selection.key}
+          chapterFlow={chapterFlow}
+          headingRef={headingRef}
+          onOpenChapter={(chapterId) => onSelect({ kind: "episode", id: chapterId })}
           onDraftDirtyChange={onDraftDirtyChange}
         />
       );

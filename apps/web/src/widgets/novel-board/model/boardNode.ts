@@ -24,6 +24,9 @@ export type BoardEpisode = Pick<NovelChapterSummary, "id" | "batchId" | "ordinal
 export type BoardBatch = Pick<NovelBatchSummary, "id" | "ordinal"> & {
   /** 묶음에 든 화 범위(`3~5화`). 화가 없는 묶음(낡은 상세)은 `undefined`. */
   rangeLabel: string | undefined;
+  /** 구성안으로 쓴 화의 묶음인가(그 화 하나뿐이다). 한 번에 만든 화들이라는 묶음의 뜻이 없어 틀·머리를 그리지 않고, 이어진 이런 화들은
+   * 한 덩어리로 놓는다. 대화로 바로 만든 묶음에는 칸이 없다. */
+  isOutlineFlow?: true;
 };
 export type BoardCharacter = Pick<NovelCharacterResponse, "id" | "name" | "aliases" | "memo" | "chapterIds">;
 
