@@ -378,6 +378,37 @@ async def test_the_changes_view_matches_what_the_publish_records(
     assert {item["currentSemver"] for item in changes["sections"]} == {"1.0.0"}
 
 
+async def test_a_section_without_a_number_row_in_the_base_is_numbered_as_a_returning_section(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """기준판에 내용은 있지만 판 행이 없는 섹션(측정 도구가 게시 세트의 섹션을 제자리에서 덮어 생긴다)은 새로 들어온 섹션처럼
+    그 체인에서 그 섹션의 가장 큰 번호에서 이어 올리고, 바뀐 섹션 조회도 같은 섹션을 새로 들어왔다고 알린다. 깨지는 시나리오:
+    안 바뀐 섹션이라 기준판 번호를 물려받으려다 그 번호가 없어 게시가 500 으로 죽고, 조회 화면에는 아무 차이도 안 보인다."""
+    await _login_new_admin(db_client, db_session)
+    await _save_draft(db_client, "story", edit=("system",))
+    first = await _publish(db_client, "story", levels={"system": "minor"})
+    assert first.status_code == 200, first.text
+    await db_session.execute(
+        sa.delete(PromptSectionSemver).where(
+            PromptSectionSemver.prompt_set_id == uuid.UUID(first.json()["id"]), PromptSectionSemver.channel == "system"
+        )
+    )
+    await db_session.commit()
+    await _save_draft(db_client, "story")
+
+    changes = (await db_client.get("/admin/prompt-sets/story/draft/changes")).json()
+    resp = await _publish(db_client, "story")
+
+    assert resp.status_code == 200, resp.text
+    assert {item["channel"]: item["change"] for item in changes["sections"] if item["change"] != "unchanged"} == {
+        "system": "added"
+    }
+    sections = _sections_by_channel(resp.json())
+    assert sections.pop("system") == ("1.0.1", "patch")
+    assert set(sections.values()) == {("1.0.0", None)}
+    assert resp.json()["semver"] == "1.1.1"
+
+
 async def test_changes_view_without_a_draft_is_400(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     await _login_new_admin(db_client, db_session)
     resp = await db_client.get("/admin/prompt-sets/story/draft/changes")

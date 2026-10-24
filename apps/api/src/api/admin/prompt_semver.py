@@ -80,6 +80,8 @@ class ChainBase:
     set_id: uuid.UUID
     number: Semver
     section_numbers: dict[str, Semver]
+    # 기준판의 섹션 내용 중 판 행이 있는 섹션만. 판 행 없이 내용만 있는 섹션(측정 도구가 게시 세트의 섹션을 제자리에서 덮어
+    # 생긴다)은 물려줄 번호가 없으므로 기준판에 없던 섹션으로 보고, 새로 들어온 섹션처럼 그 체인의 가장 큰 번호에서 이어 올린다.
     contents: SectionContents
     # 그 체인에서 섹션마다 가장 큰 번호 — 기준판에서 빠졌다가 다시 들어온 섹션이 옛 번호를 다른 내용으로 다시 쓰지 않게 한다.
     section_maxima: dict[str, Semver]
@@ -239,7 +241,11 @@ async def load_base(db: AsyncSession, lane: str, model: str) -> ChainBase | None
         set_id=row.prompt_set_id,
         number=(row.major, row.minor, row.patch),
         section_numbers=section_numbers,
-        contents=await _contents_of(db, base_set),
+        contents={
+            channel: content
+            for channel, content in (await _contents_of(db, base_set)).items()
+            if channel in section_numbers
+        },
         section_maxima={channel: (major, minor, patch) for channel, major, minor, patch in maxima},
     )
 

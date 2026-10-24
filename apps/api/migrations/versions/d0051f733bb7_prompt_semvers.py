@@ -226,7 +226,6 @@ def _assign_semver(
         section_rows = {channel: ((1, 0, 0), None) for channel in contents}
     else:
         base_set_id = base.prompt_set_id
-        base_contents = _section_contents(conn, base_set_id)
         base_numbers = {
             channel: (major, minor, patch)
             for channel, major, minor, patch in conn.execute(
@@ -235,6 +234,12 @@ def _assign_semver(
                 ),
                 {"id": base_set_id},
             )
+        }
+        # 판 행 없이 내용만 있는 기준판 섹션은 물려줄 번호가 없어 기준판에 없던 섹션으로 본다(새로 들어온 섹션처럼 이어 올림).
+        base_contents = {
+            channel: content
+            for channel, content in _section_contents(conn, base_set_id).items()
+            if channel in base_numbers
         }
         chain_max = {
             channel: (major, minor, patch)
