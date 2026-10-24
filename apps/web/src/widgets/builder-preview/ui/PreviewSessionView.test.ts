@@ -67,3 +67,24 @@ describe("PreviewSessionView rate limit surface", () => {
     expect(viewSource).not.toContain('surface="preview"');
   });
 });
+
+// 모델을 바꾸면 세션 id 가 비고 대화가 처음으로 돌아간다. 앞 세션 턴의 배너(레이트리밋·본인인증·그만둠·실패)가 남으면 막히지 않은
+// 새 모델 위에 옛 배너가 남고, 레이트리밋 문구가 새 모델로 다시 골라져 거짓이 된다.
+describe("PreviewSessionView send error after the session is cleared", () => {
+  it("draws the send-result banners only while a session id is set", () => {
+    expect(viewSource).toContain(
+      'const sendError = status.kind === "error" && previewSessionId !== undefined ? status : undefined;',
+    );
+    expect(viewSource).toContain("} else if (sendError) {");
+    expect(viewSource).toContain("rateLimit={sendError.rateLimit}");
+    expect(viewSource).toContain("} else if (sendError.identityRequired) {");
+    expect(viewSource).toContain("} else if (sendError.declined) {");
+    expect(viewSource).not.toMatch(/status\.(rateLimit|identityRequired|declined)/);
+  });
+
+  it("changing the model clears the session id", () => {
+    const chooseStart = viewSource.indexOf("async function handleChooseModel() {");
+    const choose = viewSource.slice(chooseStart, viewSource.indexOf("\n  }\n", chooseStart));
+    expect(choose).toContain("setPreviewSessionId(undefined);");
+  });
+});

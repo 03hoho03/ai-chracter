@@ -235,21 +235,25 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   // no-nested-ternary — 갈래(세션 끝남/레이트리밋/본인인증/거절/실패)를 렌더 전에 미리 갈라 둔다.
   let errorNotice: ReactNode = null;
   const sessionEnded = startSessionEnded ?? (status.kind === "error" ? status.sessionEnded : undefined);
+  // 레이트리밋·본인인증·그만둠·실패는 그 세션에 보낸 턴의 결과다. 모델을 바꾸면 세션 id 가 비고 대화가 처음으로 돌아가므로
+  // 앞 세션의 결과를 남기지 않는다 — 남기면 막히지 않은 새 모델 위에 옛 배너가 남고, 레이트리밋 문구는 새 모델로 다시 골라져
+  // 거짓이 된다. 세션 끝남은 세션이 아니라 로그인의 상태라 위에서 그대로 보인다.
+  const sendError = status.kind === "error" && previewSessionId !== undefined ? status : undefined;
   if (sessionEnded) {
     // 응답 생성이 실패한 것이 아니라 로그인이 풀렸거나 정지된 것이다.
     errorNotice = <SessionEndedNotice reason={sessionEnded} />;
-  } else if (status.kind === "error") {
-    if (status.rateLimit) {
+  } else if (sendError) {
+    if (sendError.rateLimit) {
       // 상위 모델 미리보기에는 돌아올 무료 한도가 없어 자정 약속을 하지 않는 문구로 간다.
       errorNotice = (
         <RateLimitNotice
-          rateLimit={status.rateLimit}
+          rateLimit={sendError.rateLimit}
           surface={isPremiumChatModel(displayModelId) ? "premiumPreview" : "preview"}
         />
       );
-    } else if (status.identityRequired) {
+    } else if (sendError.identityRequired) {
       errorNotice = <IdentityRequiredNotice reason="free-rewards" dailyFreeChatTurns={me?.dailyFreeChatTurns} />;
-    } else if (status.declined) {
+    } else if (sendError.declined) {
       // 확인 모달에서 그만둔 것은 실패가 아니라 사용자의 선택이라
       // `destructive`도 `role="alert"`도 쓰지 않는다(경고할 일이 없다).
       errorNotice = (
