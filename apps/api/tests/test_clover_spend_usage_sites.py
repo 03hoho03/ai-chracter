@@ -617,9 +617,11 @@ def _spend_calls() -> Iterator[tuple[str, ast.Call]]:
 
 def test_every_chat_and_novel_spend_in_src_passes_a_usage() -> None:
     """`src/` 의 `spend`·`spend_in_new_transaction` 호출 중 채팅·소설 차감은 모두 `usage=` 를 넘긴다(`None` 리터럴은 안
-    된다). 종류를 변수로 넘기는 호출(차감 래퍼)도 `usage` 를 그대로 넘겨야 한다. 알려진 종류는 모두 실제로 한 번 이상
+    된다). 종류를 변수로 넘기는 호출(차감 래퍼)도 `usage` 를 그대로 넘겨야 한다. 거꾸로 사용처를 남기지 않는 종류는
+    `usage=` 를 넘기지 않는다 — 넘기면 정산에서 빠져야 할 차감이 정산에 들어간다. 알려진 종류는 모두 실제로 한 번 이상
     나와야 한다 — 목록이 낡아 아무것도 검사하지 않게 되는 것을 막는다."""
     missing: list[str] = []
+    unexpected: list[str] = []
     unknown: list[str] = []
     seen: set[str] = set()
     for where, call in _spend_calls():
@@ -631,12 +633,15 @@ def test_every_chat_and_novel_spend_in_src_passes_a_usage() -> None:
             seen.add(kind.value)
             if kind.value in _USAGE_REQUIRED_KINDS and not has_usage:
                 missing.append(where)
+            elif kind.value in _NO_USAGE_KINDS and has_usage:
+                unexpected.append(f"{where} {kind.value}")
             elif kind.value not in _USAGE_REQUIRED_KINDS | _NO_USAGE_KINDS:
                 unknown.append(f"{where} {kind.value}")
         elif not has_usage:
             missing.append(where)
 
     assert missing == []
+    assert unexpected == []
     assert unknown == []
     assert seen == _USAGE_REQUIRED_KINDS | _NO_USAGE_KINDS
 

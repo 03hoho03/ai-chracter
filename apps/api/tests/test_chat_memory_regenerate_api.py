@@ -25,7 +25,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from api.chat import memory_fold
+from api.chat import memory_fold, memory_regenerate
 from api.chat.prompt_builder import (
     MemorySummaryResult,
     PromptLane,
@@ -44,12 +44,13 @@ from api.db.models import (
     ChatRoom,
     ChatRoomMemorySnapshot,
     CloverLedger,
+    CloverSpendUsage,
     Content,
     User,
 )
 from api.db.models.content import ModerationStatus
 from api.db.models.persona import UserPersona
-from api.llm.client import LLMCallContext, LLMClient, LLMClientError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError, request_timeout_ms
 from factories import (
     Room,
     _clear_llm_override,
@@ -168,6 +169,17 @@ async def _ledger(db_session: AsyncSession, user_id: uuid.UUID) -> list[tuple[st
     return [(kind, amount) for kind, amount in rows.all()]
 
 
+async def _usage_count(db_session: AsyncSession, user_id: uuid.UUID) -> int:
+    """그 사용자의 원장 행에 매달린 사용처 행 수. 요약 다시 만들기는 정산에서 빠지므로 차감·환불 어느 쪽에도 0 이어야 한다."""
+    count: int | None = await db_session.scalar(
+        sa.select(sa.func.count())
+        .select_from(CloverSpendUsage)
+        .join(CloverLedger, CloverLedger.id == CloverSpendUsage.spend_ledger_id)
+        .where(CloverLedger.user_id == user_id)
+    )
+    return count or 0
+
+
 async def _balance(db_session: AsyncSession, user_id: uuid.UUID) -> int | None:
     balance: int | None = await db_session.scalar(sa.select(User.clover_balance).where(User.id == user_id))
     return balance
@@ -257,6 +269,7 @@ async def test_regenerate_refolds_the_previous_summary_and_the_folded_turns_in_p
     assert await _memory_version(db_session, room) == 1
     assert await _ledger(db_session, room.user_id) == [(_SPEND, -10)]
     assert await _balance(db_session, room.user_id) == 90
+    assert await _usage_count(db_session, room.user_id) == 0
 
 
 @pytest.mark.usefixtures("items_visible")
@@ -458,6 +471,7 @@ async def test_failed_call_refunds_and_leaves_the_summary_alone(
     assert resp.json()["detail"] == {"code": "MEMORY_SUMMARY_REGENERATE_UNAVAILABLE"}
     assert await _ledger(db_session, room.user_id) == [(_SPEND, -10), (_REFUND, 10)]
     assert await _balance(db_session, room.user_id) == 100
+    assert await _usage_count(db_session, room.user_id) == 0
     row = await _row(db_session, current)
     assert row is not None and (row.summary_text, row.previous_text) == ("AI가 접은 요약", None)
     assert await _memory_version(db_session, room) == 0
@@ -504,6 +518,32 @@ async def test_second_request_while_one_is_in_flight_is_rejected_without_chargin
     assert await _ledger(db_session, room.user_id) == [(_SPEND, -10), (_SPEND, -10)]
     row = await _row(db_session, current)
     assert row is not None and row.previous_text == REGENERATED
+
+
+def test_in_progress_marker_outlives_the_summary_call_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """진행 표시가 요약 호출보다 먼저 풀리면 그사이 들어온 두 번째 요청이 깎인다. 표시의 수명은 요약 호출이 요청에 싣는
+    시간 상한보다 길고, 그 상한 설정을 바꾸면 따라간다."""
+    assert memory_regenerate.regenerate_lock_ttl_ms() > request_timeout_ms(memory_fold.SUMMARY_CALL_SITE)
+    monkeypatch.setattr(settings, "gemini_memory_summary_timeout_ms", 180_000)
+    assert memory_regenerate.regenerate_lock_ttl_ms() > 180_000
+
+
+async def test_in_progress_marker_is_taken_with_the_derived_lifetime(monkeypatch: pytest.MonkeyPatch) -> None:
+    taken: list[int] = []
+
+    async def _acquire(_client: Any, _key: str, *, ttl_ms: int) -> str:
+        taken.append(ttl_ms)
+        return "token"
+
+    async def _release(_client: Any, _key: str, _token: str) -> bool:
+        return True
+
+    monkeypatch.setattr(memory_regenerate, "try_acquire_lock", _acquire)
+    monkeypatch.setattr(memory_regenerate, "release_lock", _release)
+    async with memory_regenerate.hold_regenerate_lock(uuid.uuid4()):
+        pass
+
+    assert taken == [memory_regenerate.regenerate_lock_ttl_ms()]
 
 
 @pytest.mark.usefixtures("items_visible")
