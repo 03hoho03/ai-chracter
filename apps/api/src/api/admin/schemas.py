@@ -702,6 +702,13 @@ class AdminPromptPublishRequest(CamelModel):
     draft_hash: str | None = None
 
 
+class AdminPromptSectionRestoreRequest(CamelModel):
+    """옛 게시본의 섹션 하나를 지금 초안으로 가져온다. 그 섹션에 게시 안 한 편집이 초안에 있으면 409 로 멈추고, 이 값을 켜고
+    다시 보내면 그 편집을 덮어쓴다(다른 섹션의 게시 안 한 편집은 어느 쪽이든 그대로 둔다)."""
+
+    overwrite_draft_changes: bool = False
+
+
 class AdminPromptSectionChange(CamelModel):
     """게시 전 섹션 하나의 변화. `initial` 은 체인에 기준판이 없어 이 게시가 1.0.0 으로 시작한다는 뜻이다(단계를 고를 것이
     없다). `current_semver` 는 기준판에서의 번호이고, 기준판에 없던 섹션이면 null 이다."""
