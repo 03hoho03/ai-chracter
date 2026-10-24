@@ -11,7 +11,8 @@ import {
   type TurnState,
 } from "../model/sourceTimeline";
 
-/** 뺀 대화 묶음이 이만큼 길면 접어 둔다 — 수백 턴 방에서 고르지 않은 대화가 화면을 다 차지하지 않게. 짧은 묶음은 늘 펼친다. */
+/** 처음부터 뺀 대화 묶음이 이만큼 길면 접어 둔다 — 수백 턴 방에서 고르지 않은 대화가 화면을 다 차지하지 않게. 짧은 묶음은 늘
+ * 펼친다. */
 const GAP_FOLD_MIN = 4;
 
 const STATE_LABEL: Record<TurnState, string> = {
@@ -28,6 +29,11 @@ type SourceTimelineProps = {
   changedKeys: ReadonlySet<string>;
   /** 펼친 긴 뺀 대화 묶음(첫 턴의 열쇠). */
   expandedGapKeys: ReadonlySet<string>;
+  /** 접을 수 있는 턴 — 처음부터(저장된 판에서) 뺀 턴. 이용자가 방금 뺀 턴이 든 묶음은 접지 않는다: 누른 줄이 사라져 포커스와
+   * 자리를 잃는다. */
+  foldableKeys: ReadonlySet<string>;
+  /** 마지막으로 누른 턴. 이 턴이 든 묶음도 접지 않는다(같은 이유). */
+  activeKey: string | undefined;
   onToggleTurn: (turn: SourceTurn, options: { isRange: boolean }) => void;
   /** 묶음 전체를 맥락으로 보내거나 맥락에서 뺀다. */
   onSetGap: (turns: readonly SourceTurn[], target: "context" | "exclude") => void;
@@ -50,6 +56,8 @@ export function SourceTimeline({
   states,
   changedKeys,
   expandedGapKeys,
+  foldableKeys,
+  activeKey,
   onToggleTurn,
   onSetGap,
   onToggleGapExpanded,
@@ -63,6 +71,11 @@ export function SourceTimeline({
           segment={segment}
           changedKeys={changedKeys}
           isExpanded={expandedGapKeys.has(segment.turns[0]?.key ?? "")}
+          isFoldable={
+            segment.state === "exclude" &&
+            segment.turns.length >= GAP_FOLD_MIN &&
+            segment.turns.every((turn) => foldableKeys.has(turn.key) && turn.key !== activeKey)
+          }
           onToggleTurn={onToggleTurn}
           onSetGap={onSetGap}
           onToggleGapExpanded={onToggleGapExpanded}
@@ -72,12 +85,21 @@ export function SourceTimeline({
   );
 }
 
-type SegmentItemsProps = Omit<SourceTimelineProps, "turns" | "states" | "expandedGapKeys"> & {
+type SegmentItemsProps = Pick<SourceTimelineProps, "changedKeys" | "onToggleTurn" | "onSetGap" | "onToggleGapExpanded"> & {
   segment: TimelineSegment;
   isExpanded: boolean;
+  isFoldable: boolean;
 };
 
-function SegmentItems({ segment, changedKeys, isExpanded, onToggleTurn, onSetGap, onToggleGapExpanded }: SegmentItemsProps) {
+function SegmentItems({
+  segment,
+  changedKeys,
+  isExpanded,
+  isFoldable,
+  onToggleTurn,
+  onSetGap,
+  onToggleGapExpanded,
+}: SegmentItemsProps) {
   const rangeLabel = toTurnRangeLabel(segment.turns);
   const firstKey = segment.turns[0]?.key ?? "";
 
@@ -98,7 +120,6 @@ function SegmentItems({ segment, changedKeys, isExpanded, onToggleTurn, onSetGap
   ));
   if (segment.state === "include") return rows;
 
-  const isFoldable = segment.state === "exclude" && segment.turns.length >= GAP_FOLD_MIN;
   const isOpen = !isFoldable || isExpanded;
   const groupId = `source-gap-${firstKey}`;
   return (

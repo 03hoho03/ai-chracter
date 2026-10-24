@@ -379,7 +379,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
       <NovelBoardTopBar
         novelId={novel.id}
         title={novel.title ?? "제목 미정"}
-        autosaveNotice={isCanvasLayout && !isEmpty ? "카드 자리는 자동으로 저장돼요" : undefined}
+        autosaveNotice={showCanvas && !isEmpty ? "카드 자리는 자동으로 저장돼요" : undefined}
         versions={{
           isOpen: selection?.kind === "versions",
           onToggle: () => void selectBoard(selection?.kind === "versions" ? undefined : { kind: "versions" }),

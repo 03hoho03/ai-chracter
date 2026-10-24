@@ -176,7 +176,8 @@ function SelectionEditor({
   const [expandedGapKeys, setExpandedGapKeys] = useState<ReadonlySet<string>>(new Set());
   const [notice, setNotice] = useState<StepNotice | undefined>(undefined);
   const [busy, setBusy] = useState<"save" | "approve" | undefined>(undefined);
-  // 묶음 버튼을 누르면 그 묶음이 이웃과 합쳐지며 다시 그려진다 — 커밋 뒤 그 턴(접혔으면 그 턴이 든 묶음의 버튼)으로 포커스를 둔다.
+  // 턴이나 묶음 버튼을 누르면 그 턴이 다른 묶음으로 옮겨 다시 그려진다 — 커밋 뒤 그 턴(접혔으면 그 턴이 든 묶음의 버튼)으로
+  // 포커스를 둔다.
   const [pendingFocusTurn, setPendingFocusTurn] = useState<number | undefined>(undefined);
 
   const base = toSourceSelectionBase(state);
@@ -236,6 +237,8 @@ function SelectionEditor({
     if (anchor === undefined) edit(toggleTurn(states, turn));
     else edit(setTurnRange(states, turns, anchor, turn.key, states.get(turn.key) === "include" ? "exclude" : "include"));
     setAnchorKey(turn.key);
+    // 상태가 바뀐 턴은 다른 묶음으로 옮겨 다시 그려진다 — 누른 줄에 포커스를 되돌린다.
+    setPendingFocusTurn(turn.number);
   }
 
   function handleSetGap(segmentTurns: readonly SourceTurn[], target: "context" | "exclude") {
@@ -367,6 +370,8 @@ function SelectionEditor({
         states={states}
         changedKeys={changedKeys}
         expandedGapKeys={expandedGapKeys}
+        foldableKeys={new Set(turns.filter((turn) => baseStates.get(turn.key) === "exclude").map((turn) => turn.key))}
+        activeKey={anchorKey}
         onToggleTurn={handleToggleTurn}
         onSetGap={handleSetGap}
         onToggleGapExpanded={(key) =>

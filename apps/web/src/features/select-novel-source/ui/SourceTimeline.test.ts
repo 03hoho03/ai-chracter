@@ -36,13 +36,15 @@ const states = new Map<string, TurnState>([
   ["u9", "context"],
 ]);
 
-function render(expandedGapKeys: string[] = [], changedKeys: string[] = []): string {
+function render(expandedGapKeys: string[] = [], changedKeys: string[] = [], activeKey?: string): string {
   return renderToStaticMarkup(
     createElement(SourceTimeline, {
       turns,
       states,
       changedKeys: new Set(changedKeys),
       expandedGapKeys: new Set(expandedGapKeys),
+      foldableKeys: new Set(["u3", "u5", "u6", "u7", "u8"]),
+      activeKey,
       onToggleTurn: () => {},
       onSetGap: () => {},
       onToggleGapExpanded: () => {},
@@ -85,6 +87,29 @@ describe("SourceTimeline", () => {
     const opened = render(["u5"]);
     expect(turnButton(opened, 6)).not.toBe("");
     expect(opened).toMatch(/<button[^>]*aria-expanded="true"[^>]*>접기/);
+  });
+
+  // 방금 누른 줄이 접힌 묶음 안으로 사라지면 키보드 포커스와 보던 자리를 함께 잃는다.
+  it("마지막으로 누른 턴이 든 긴 묶음은 접지 않는다", () => {
+    expect(turnButton(render([], [], "u6"), 7)).not.toBe("");
+  });
+
+  it("이용자가 방금 뺀 턴(저장된 판에서는 담긴 턴)이 든 긴 묶음은 접지 않는다", () => {
+    const html = renderToStaticMarkup(
+      createElement(SourceTimeline, {
+        turns,
+        states,
+        changedKeys: new Set<string>(),
+        expandedGapKeys: new Set<string>(),
+        foldableKeys: new Set(["u3", "u5", "u7", "u8"]),
+        activeKey: undefined,
+        onToggleTurn: () => {},
+        onSetGap: () => {},
+        onToggleGapExpanded: () => {},
+      }),
+    );
+    expect(turnButton(html, 6)).not.toBe("");
+    expect(html).not.toMatch(/aria-expanded="/);
   });
 
   it("원문이 바뀐 턴에 표시를 단다", () => {
