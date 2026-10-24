@@ -69,3 +69,27 @@ describe("toChapterNotice — 여러 문단 수정안", () => {
     });
   });
 });
+
+// 다시 검사 결과는 서버가 저장하지 않는 판단 이유를 그대로 함께 보인다 — 모델이 쓴 문장임을 앞말로 가른다.
+describe("toChapterNotice — 묶음 다시 검사", () => {
+  it("따로 적용해도 되면 남은 수정안을 따로 적용할 수 있다고 말한다", () => {
+    expect(toChapterNotice({ type: "bundleRechecked", chapterOrdinal: 2, separable: true, reason: "서로 기대지 않아요." })).toEqual({
+      tone: "info",
+      message: "2화 묶음을 다시 검사했어요. 남은 수정안은 따로 적용할 수 있어요. AI 판단: 서로 기대지 않아요.",
+    });
+  });
+
+  it("따로 적용할 수 없으면 묶음이 그대로이고 함께 버릴 수 있다고 말한다", () => {
+    expect(toChapterNotice({ type: "bundleRechecked", chapterOrdinal: 2, separable: false, reason: "대사를 받아요." })).toEqual({
+      tone: "info",
+      message:
+        "2화 묶음을 다시 검사했어요. 남은 수정안도 고친 문단과 이어져 있어 따로 적용할 수 없어요. 함께 버릴 수 있어요. AI 판단: 대사를 받아요.",
+    });
+  });
+
+  it("판단 이유가 비었으면 앞말 없이 끝낸다", () => {
+    expect(toChapterNotice({ type: "bundleRechecked", chapterOrdinal: 2, separable: true, reason: "  " })?.message).toBe(
+      "2화 묶음을 다시 검사했어요. 남은 수정안은 따로 적용할 수 있어요.",
+    );
+  });
+});

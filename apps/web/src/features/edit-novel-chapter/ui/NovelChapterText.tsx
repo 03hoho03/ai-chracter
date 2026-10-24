@@ -52,7 +52,7 @@ import {
   type IllustrationSource,
   type MovingIllustration,
 } from "../model/boardIllustrations";
-import { countFreshPatchesInBlocks, toPatchLayout } from "../model/blockEditPatches";
+import { countFreshPatchesInBlocks, toPatchLayout, type PatchUnitView } from "../model/blockEditPatches";
 import {
   nextBlockSelection,
   toBlockBlockedReason,
@@ -78,7 +78,8 @@ import {
   type ParagraphRange,
 } from "../model/paragraphRange";
 import { toIllustrationUploadErrorMessage, type PickIllustrationImage } from "../model/illustrationUpload";
-import type { NovelAiEditFlow } from "../model/useNovelAiEdit";
+import { toSceneHeadings } from "../model/sceneHeadings";
+import { toRecheckKey, type NovelAiEditFlow } from "../model/useNovelAiEdit";
 
 import { AiEditPreview } from "./AiEditPreview";
 import { BlockPatchCard, PatchBundleRow, PatchJobRow } from "./BlockEditPatches";
@@ -238,6 +239,9 @@ export function NovelChapterText({
     ? toSelectedIndexes(blockSelection, blockIds).filter((index) => selectionContext.isSelectable(index))
     : [];
   const selectedBlockIds = selectedIndexes.map((index) => blockIds[index]).filter((id) => id !== undefined);
+  // 장면 경계가 있는 화(구성안으로 쓴 화)의 장면 머리줄. 같은 장면 안에서만 함께 고르는 규칙이 스위치 뒤라 머리줄도 스위치 뒤다.
+  const sceneHeadings = isMultiBlockEditOn ? toSceneHeadings(chapter.revision) : new Map<number, never>();
+  const selectedSceneKey = selectedBlockIds[0] === undefined ? undefined : selectionContext.sceneKeyOf(selectedBlockIds[0]);
   // 직접 고치기·그림 붙이기는 이어진 문단에만 된다 — 여러 문단 고르기에서는 고른 것이 이어져 있을 때의 범위다.
   const actionRange = isBlockMode ? toContiguousRange(selectedIndexes) : activeRange;
   const isPlacing = moveMutation.isPending || detachMutation.isPending || imageRequest !== undefined;
@@ -677,6 +681,12 @@ export function NovelChapterText({
     onFocusFallback();
   }
 
+  /** 묶음 다시 검사. 따로 적용해도 된다는 판정이면 묶음이 풀려 누른 버튼이 사라지므로 장 머리로 포커스를 옮기고, 아니면(판정이
+   * 묶음 유지이거나 실패) 버튼이 남아 포커스를 그대로 둔다 — 결과는 안내 줄이 알린다. */
+  async function recheckBundle(unit: PatchUnitView) {
+    if (await aiEdit.recheckBundle(unit, chapter.ordinal)) onFocusFallback();
+  }
+
   function previewsEndingAt(index: number): NovelPendingAiEdit[] {
     const lastIndex = paragraphs.length - 1;
     return pendingEdits.filter((edit) => Math.min(edit.paragraphEnd, lastIndex) === index);
@@ -813,10 +823,26 @@ export function NovelChapterText({
             const cards = patchLayout.cardsAt.get(index);
             // 직접 고치는 범위의 그림은 입력칸이 대신하는 자리라 그리지 않고 입력칸 아래 한 줄로 접는다.
             const isInEditRange = editRange !== null && manualEdit !== null && isParagraphInRange(editRange, index);
+            const sceneHeading = sceneHeadings.get(index);
             return (
               // 서버가 준 문단 순서가 곧 정체성이다(문단에 안정 id 가 없다 — 고르기 범위도 같은 인덱스를 쓴다).
               <Fragment key={index}>
-                {!isInEditRange && renderIllustrations(spots.before[index] ?? [], index, "before")}
+                {/* 장면 머리줄은 앞 그림과 같은 칸에 넣는다 — 칸을 하나 더 두면 머리줄이 없는 화면(스위치 꺼짐)에서도 뒤 형제의 자리가
+                    밀려 `useId` 값이 바뀐다. */}
+                {sceneHeading === undefined
+                  ? !isInEditRange && renderIllustrations(spots.before[index] ?? [], index, "before")
+                  : [
+                      <h3
+                        key="scene-heading"
+                        className={cn("text-xs font-medium break-keep text-muted-foreground", index > 0 && "pt-3")}
+                      >
+                        {sceneHeading.label}
+                        {isBlockMode && selectedSceneKey !== undefined && selectedSceneKey !== sceneHeading.sceneKey
+                          ? " · 다른 장면이라 함께 고를 수 없어요"
+                          : null}
+                      </h3>,
+                      ...(isInEditRange ? [] : renderIllustrations(spots.before[index] ?? [], index, "before")),
+                    ]}
                 {cards !== undefined && !isInEditRange
                   ? cards.map((card) => (
                       <BlockPatchCard
@@ -904,6 +930,14 @@ export function NovelChapterText({
                     onApply={(target) => void handlePreviewAction(() => aiEdit.applyPatchUnit(target, chapter.ordinal))}
                     onDismiss={(target) =>
                       void handlePreviewAction(() => aiEdit.dismissPatches({ unit: target }, chapter.ordinal))
+                    }
+                    recheck={
+                      isMultiBlockEditOn
+                        ? {
+                            isRechecking: aiEdit.actingEditId === toRecheckKey(unit),
+                            onRecheck: (target) => void recheckBundle(target),
+                          }
+                        : undefined
                     }
                   />
                 ))}

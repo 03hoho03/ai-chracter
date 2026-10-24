@@ -109,3 +109,52 @@ describe("countFreshPatches", () => {
     expect(countFreshPatchesInBlocks([mockup], new Set(["b0"]))).toBe(0);
   });
 });
+
+// 다시 검사는 서버가 물을 거리가 있을 때만 받는다 — 고친 원소가 지금 판에 있고(지워졌으면 보여 줄 글이 없다), 따로 적용할 남은
+// 원소가 있어야 한다. 그 밖이면 버튼이 없다(누르면 409 뿐이다).
+describe("toPatchLayout — 묶음 다시 검사", () => {
+  function bundleOf(edit: NovelPendingBlockEdit) {
+    return [...toPatchLayout([edit], BLOCKS).bundlesAfter.values()].flat()[0];
+  }
+
+  it("고친 원소와 쓸 수 있는 원소가 함께 있는 묶음은 다시 검사할 수 있다", () => {
+    expect(bundleOf(mockup)?.canRecheck).toBe(true);
+  });
+
+  it("서버가 낡음으로 바꾼 원소도 고친 원소다", () => {
+    const edit = job(
+      "j1",
+      [patch("p3", "b3"), patch("p4", "b4", { state: "stale", paragraphs: null, fresh: false })],
+      [{ id: "u1", patchIds: ["p3", "p4"], reason: null }],
+    );
+    expect(bundleOf(edit)?.canRecheck).toBe(true);
+  });
+
+  it("원소가 모두 쓸 수 있으면 다시 검사할 것이 없다(함께 적용하면 된다)", () => {
+    const edit = job("j1", [patch("p3", "b3"), patch("p4", "b4")], [{ id: "u1", patchIds: ["p3", "p4"], reason: null }]);
+    expect(bundleOf(edit)?.canRecheck).toBe(false);
+  });
+
+  it("고친 원소의 문단이 지워졌으면 다시 검사할 수 없다", () => {
+    const edit = job(
+      "j1",
+      [patch("p3", "b3"), patch("p4", "gone", { fresh: false })],
+      [{ id: "u1", patchIds: ["p3", "p4"], reason: null }],
+    );
+    expect(bundleOf(edit)?.canRecheck).toBe(false);
+  });
+
+  it("쓸 수 있는 원소가 없으면 다시 검사할 수 없다", () => {
+    const edit = job(
+      "j1",
+      [patch("p3", "b3", { fresh: false }), patch("p4", "b4", { fresh: false })],
+      [{ id: "u1", patchIds: ["p3", "p4"], reason: null }],
+    );
+    expect(bundleOf(edit)?.canRecheck).toBe(false);
+  });
+
+  it("묶음에 들지 않은 수정안은 다시 검사하지 않는다", () => {
+    const layout = toPatchLayout([job("j1", [patch("p1", "b1", { fresh: false })])], BLOCKS);
+    expect(layout.cardsAt.get(1)?.[0]?.unit?.canRecheck).toBe(false);
+  });
+});

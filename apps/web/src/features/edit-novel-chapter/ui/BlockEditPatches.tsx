@@ -85,17 +85,29 @@ function toCardStatus(card: PatchCardView): string {
   return card.bundleId === undefined ? "AI 수정안" : "함께 적용해야 해요";
 }
 
+/** 묶음 다시 검사(여러 문단 수정 스위치가 켜졌을 때만 넘긴다). */
+type BundleRecheck = {
+  /** 이 묶음을 다시 검사하는 중인가. */
+  isRechecking: boolean;
+  onRecheck: (unit: PatchUnitView) => void;
+};
+
 type PatchBundleRowProps = {
   unit: PatchUnitView;
   isActing: boolean;
   onApply: (unit: PatchUnitView) => void;
   onDismiss: (unit: PatchUnitView) => void;
+  /** 넘기면 고친 원소가 있는 묶음에 다시 검사가 선다. 스위치가 꺼졌으면 넘기지 않는다(서버가 404 다). */
+  recheck?: BundleRecheck;
 };
 
 /** 묶음의 함께 적용·함께 버리기 — 마지막 원소 카드 바로 뒤에 선다. 원소 하나라도 쓸 수 없으면 서버가 묶음째 거절하므로 함께
- * 적용을 막고 까닭을 단다. */
-export function PatchBundleRow({ unit, isActing, onApply, onDismiss }: PatchBundleRowProps) {
+ * 적용을 막고 까닭을 단다. 사용자가 고친 원소가 있으면 다시 검사(무료)를 버리기 앞에 두어, 남은 수정안을 따로 적용해도 되는지
+ * 물을 수 있게 한다 — 결과는 장 머리 아래 안내 줄이 말한다. */
+export function PatchBundleRow({ unit, isActing, onApply, onDismiss, recheck }: PatchBundleRowProps) {
   const reasonId = useId();
+  const recheckHintId = useId();
+  const isRecheckShown = recheck !== undefined && unit.canRecheck;
   return (
     <div className="flex flex-col gap-1.5 py-1">
       <p className="text-sm break-keep text-muted-foreground">
@@ -106,6 +118,11 @@ export function PatchBundleRow({ unit, isActing, onApply, onDismiss }: PatchBund
           글이 바뀐 문단이 있어 함께 적용할 수 없어요. 함께 버릴 수 있어요.
         </p>
       )}
+      {isRecheckShown && (
+        <p id={recheckHintId} className="text-sm break-keep text-muted-foreground">
+          다시 검사하면 남은 수정안을 따로 적용해도 되는지 AI가 살펴봐요. 클로버는 쓰지 않아요.
+        </p>
+      )}
       <UnitButtons
         unit={unit}
         isActing={isActing}
@@ -114,6 +131,7 @@ export function PatchBundleRow({ unit, isActing, onApply, onDismiss }: PatchBund
         applyBlockedReasonId={unit.isApplicable ? undefined : reasonId}
         onApply={onApply}
         onDismiss={onDismiss}
+        recheck={isRecheckShown ? { ...recheck, hintId: recheckHintId } : undefined}
       />
     </div>
   );
@@ -166,10 +184,12 @@ type UnitButtonsProps = {
   applyBlockedReasonId?: string;
   onApply: (unit: PatchUnitView) => void;
   onDismiss: (unit: PatchUnitView) => void;
+  /** 있으면 버리기 앞에 다시 검사가 선다. `hintId` 는 무엇을 하는지 적은 문장. */
+  recheck?: BundleRecheck & { hintId: string };
 };
 
-/** 버리기 먼저(확인 단계의 `취소` 먼저와 같은 자리), 적용은 회색 채움. 쓸 수 없는 독립 수정안에는 적용이 없다. 보내는 동안은
- * `aria-disabled` 로 막아 누른 버튼의 포커스를 지킨다. */
+/** 버리기 먼저(확인 단계의 `취소` 먼저와 같은 자리), 적용은 회색 채움. 쓸 수 없는 독립 수정안에는 적용이 없다. 다시 검사는 가장
+ * 앞의 테두리 없는 버튼이다(무료 보조 동작). 보내는 동안은 `aria-disabled` 로 막아 누른 버튼의 포커스를 지킨다. */
 function UnitButtons({
   unit,
   isActing,
@@ -178,10 +198,27 @@ function UnitButtons({
   applyBlockedReasonId,
   onApply,
   onDismiss,
+  recheck,
 }: UnitButtonsProps) {
   const isApplyBlocked = isActing || applyBlockedReasonId !== undefined;
   return (
     <div className="flex flex-wrap gap-2">
+      {recheck !== undefined && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-disabled={isActing}
+          aria-describedby={recheck.hintId}
+          className="aria-disabled:opacity-65"
+          onClick={() => {
+            if (isActing) return;
+            recheck.onRecheck(unit);
+          }}
+        >
+          {recheck.isRechecking ? "다시 검사하는 중…" : "다시 검사(무료)"}
+        </Button>
+      )}
       <Button
         type="button"
         variant="outline"

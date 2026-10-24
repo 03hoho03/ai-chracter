@@ -147,3 +147,51 @@ describe("NovelChapterText 스위치 꺼짐 — 장면·남은 수정안이 있�
     expect(markup).toMatchSnapshot();
   });
 });
+
+describe("NovelChapterText 장면 머리줄", () => {
+  it.each([true, false])("스위치가 켜졌으면 고치기 모드(%s)와 상관없이 장면마다 머리줄이 선다", (isFixMode) => {
+    const markup = render({ novel: novelWith([]), chapter: chapterWith(TWO_SCENES), isFixMode, isMultiBlockEditOn: true });
+    expect(markup).toContain("장면 1 · 문 앞");
+    expect(markup).toContain("장면 2 · 회랑");
+    // 머리줄은 그 장면 첫 문단 앞이다.
+    expect(markup.indexOf("장면 2 · 회랑")).toBeLessThan(markup.indexOf("회랑은 길고 어두웠다."));
+    expect(markup.indexOf("장면 2 · 회랑")).toBeGreaterThan(markup.indexOf("그는 문고리를 잡았다."));
+  });
+
+  it("장면 경계가 없는 화에는 머리줄이 없다", () => {
+    const markup = render({ novel: novelWith([]), chapter: chapterWith([]), isFixMode: true, isMultiBlockEditOn: true });
+    expect(markup).not.toContain("장면 1");
+  });
+
+  it("스위치가 꺼졌으면 머리줄이 없다", () => {
+    const markup = render({ novel: novelWith([]), chapter: chapterWith(TWO_SCENES), isFixMode: true, isMultiBlockEditOn: false });
+    expect(markup).not.toContain("장면 1 · 문 앞");
+  });
+});
+
+describe("NovelChapterText 묶음 다시 검사", () => {
+  it("스위치가 켜졌고 고친 원소가 있는 묶음에는 다시 검사가 함께 버리기 앞에 있다", () => {
+    const markup = render({ novel: novelWith([bundleJob]), chapter: chapterWith(TWO_SCENES), isFixMode: false, isMultiBlockEditOn: true });
+    expect(markup).toContain("다시 검사(무료)");
+    expect(markup.indexOf("다시 검사(무료)")).toBeLessThan(markup.indexOf("함께 버리기"));
+    expect(markup).toContain("다시 검사하면 남은 수정안을 따로 적용해도 되는지 AI가 살펴봐요. 클로버는 쓰지 않아요.");
+  });
+
+  it("스위치가 꺼졌으면 다시 검사가 없고 함께 버리기는 남는다", () => {
+    const markup = render({ novel: novelWith([bundleJob]), chapter: chapterWith(TWO_SCENES), isFixMode: false, isMultiBlockEditOn: false });
+    expect(markup).not.toContain("다시 검사");
+    expect(markup).toContain("함께 버리기");
+  });
+
+  it("고친 원소가 없는 묶음에는 다시 검사가 없다", () => {
+    const fresh: NovelPendingBlockEdit = {
+      ...bundleJob,
+      patches: [
+        { id: "p0", blockId: "b0", state: "pending", paragraphs: ["문을 세게 두드렸다."], fresh: true },
+        { id: "p2", blockId: "b2", state: "pending", paragraphs: ["문고리가 차가웠다."], fresh: true },
+      ],
+    };
+    const markup = render({ novel: novelWith([fresh]), chapter: chapterWith(TWO_SCENES), isFixMode: false, isMultiBlockEditOn: true });
+    expect(markup).not.toContain("다시 검사");
+  });
+});

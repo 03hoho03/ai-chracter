@@ -20,6 +20,11 @@ export type BlockSelectionStep = { selection: string[]; outcome: BlockSelectionO
 
 const WHOLE_CHAPTER = "chapter";
 
+/** 장면 하나의 열쇠. 고르기와 장면 머리줄이 같은 값으로 장면을 가리킨다. */
+export function toSceneKey(sceneId: string): string {
+  return `scene:${sceneId}`;
+}
+
 /** 블록 → 장면 열쇠. 서버의 "같은 장면" 판정과 같은 읽기다 — 개정의 `scenes` 가 비었으면(장면 경계가 없는 화) 화 전체가 한
  * 장면이고, 아니면 그 블록이 든 장면이다. 목록에 없는 블록은 어느 장면과도 묶지 않는다(서버 422 를 미리 막는 쪽으로 접는다). */
 export function toSceneKeyOf(revision: {
@@ -29,7 +34,7 @@ export function toSceneKeyOf(revision: {
   if (revision.scenes.length === 0) return () => WHOLE_CHAPTER;
   const sceneByBlock = new Map<string, string>();
   for (const scene of revision.scenes) {
-    for (const blockId of scene.blockIds) sceneByBlock.set(blockId, `scene:${scene.id}`);
+    for (const blockId of scene.blockIds) sceneByBlock.set(blockId, toSceneKey(scene.id));
   }
   return (blockId) => sceneByBlock.get(blockId) ?? `block:${blockId}`;
 }

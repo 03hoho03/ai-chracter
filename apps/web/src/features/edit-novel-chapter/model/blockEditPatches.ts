@@ -17,6 +17,9 @@ export type PatchUnitView = {
   reason: string | null;
   /** 원소가 모두 대기이고 지금 판에 쓸 수 있는가. 하나라도 아니면 적용하지 못하고 버리기만 된다. */
   isApplicable: boolean;
+  /** 다시 검사로 남은 원소를 따로 적용해도 되는지 물을 수 있는가 — 묶음에 사용자가 고친 원소(지금 판에 그 문단이 있는)와 아직 쓸 수
+   * 있는 원소가 함께 있을 때만이다. 서버도 그 밖에는 모델을 부르지 않고 409 로 거절한다. 독립 수정안은 늘 거짓이다. */
+  canRecheck: boolean;
 };
 
 /** 블록 자리에 놓이는 수정안 하나. */
@@ -118,6 +121,7 @@ export function toPatchLayout(edits: readonly NovelPendingBlockEdit[], blockIds:
           indexes: members.map(indexOf).filter((index) => index >= 0).sort((a, b) => a - b),
           reason: bundle.reason,
           isApplicable: members.every(isFresh),
+          canRecheck: members.some((patch) => !isFresh(patch) && indexOf(patch) >= 0) && members.some(isFresh),
         },
         members,
       );
@@ -135,6 +139,7 @@ export function toPatchLayout(edits: readonly NovelPendingBlockEdit[], blockIds:
           indexes: index < 0 ? [] : [index],
           reason: null,
           isApplicable: isFresh(patch),
+          canRecheck: false,
         },
         [patch],
       );

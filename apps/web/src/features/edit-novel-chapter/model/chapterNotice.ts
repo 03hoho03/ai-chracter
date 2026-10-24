@@ -13,6 +13,7 @@ export type ChapterNoticeEvent =
   | { type: "dismissed"; chapterOrdinal: number }
   | { type: "patchesApplied"; chapterOrdinal: number; count: number }
   | { type: "patchesDismissed"; chapterOrdinal: number; count: number }
+  | { type: "bundleRechecked"; chapterOrdinal: number; separable: boolean; reason: string }
   | { type: "restored"; chapterOrdinal: number; revisionNo: number }
   | { type: "rejected"; message: string };
 
@@ -41,6 +42,17 @@ export function toChapterNotice(event: ChapterNoticeEvent): ChapterNotice | unde
     case "patchesDismissed":
       if (event.count <= 1) return toChapterNotice({ type: "dismissed", chapterOrdinal: event.chapterOrdinal });
       return { tone: "info", message: `${event.chapterOrdinal}화 수정안 ${event.count}개를 버렸어요.` };
+    case "bundleRechecked": {
+      // 판단 이유는 모델이 쓴 한 문장이라(서버가 저장하지 않는다) 앞말로 우리 문장과 가른다.
+      const reason = event.reason.trim();
+      const verdict = event.separable
+        ? "남은 수정안은 따로 적용할 수 있어요."
+        : "남은 수정안도 고친 문단과 이어져 있어 따로 적용할 수 없어요. 함께 버릴 수 있어요.";
+      return {
+        tone: "info",
+        message: `${event.chapterOrdinal}화 묶음을 다시 검사했어요. ${verdict}${reason === "" ? "" : ` AI 판단: ${reason}`}`,
+      };
+    }
     case "restored":
       return {
         tone: "info",
