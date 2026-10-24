@@ -291,7 +291,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `MEMORY_EMBED_RECALL_MAX_DISTANCE` / `MEMORY_EMBED_RECALL_VECTOR_LIMIT` / `MEMORY_EMBED_RECALL_DF_MAX` | 설정 안 함(기본 `2.0` / `10` / 비어 있음) | 벡터 순위에 넣는 코사인 거리 상한 / 회상의 벡터 순위에 넣는 거리 순 앞 개수 / 흔한 명사의 절대 상한(비면 비율 기준만). 🔴 거리 상한 `2.0` 은 코사인 거리의 최댓값이라 **아무것도 거르지 않는다** — 그래서 보통 턴에도 거의 매번 가장 가까운 장면 하나가 실린다. 측정 격자에서 상한을 둔 점과 목적함수가 같아 기본값에 가장 가까운 점(`2.0`·`10`·비어 있음)을 골랐고, 보통 턴 주입률이 명사 단독 0.95 에서 1.00 으로 오르는 것을 받아들였다. 사실 섹션 관련 몫도 같은 거리 상한을 쓴다 |
 | `MEMORY_ITEMS_VISIBLE` | **운영 `true`**(2026-10-24부터, 코드 기본값 `false`) — 기억 열람·잊게 하기를 적은 처리방침 판이 게시된 뒤에만 켠다 | 방 주인이 그 방의 장면·사실 기억을 보고 고르는 라우트를 연다 — 목록(`GET /chat-rooms/{id}/memory/items`), 장면·사실 잊게 하기(`DELETE /chat-rooms/{id}/memory/episodes/{episodeId}`·`DELETE /chat-rooms/{id}/memory/facts?key=`)와 사실 잊기 미리 보기(`GET /chat-rooms/{id}/memory/facts/forget-preview`), 요약 다시 만들기(`POST /chat-rooms/{id}/memory/summary/regenerate`, 유료). 꺼져 있으면 이 라우트가 모두 404 `MEMORY_ITEMS_DISABLED` 이고(인증보다 먼저 본다), 기억 응답(`GET /chat-rooms/{id}/memory`)의 `features.itemsVisible` 이 `false` 라 웹 기억 패널은 탭 없는 예전 모양(노트 편집기 하나, 목록 요청 없음)이다. 목록은 읽기만 해서 생성·요약·추출 프롬프트와 무관하다. 켜는 법은 줄 추가(`MEMORY_ITEMS_VISIBLE=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 요청부터 다시 404 이고 패널은 예전 모양으로 돌아간다. 🔴 끄거나 이미지를 되돌려도 이미 잊게 한 장면·사실은 돌아오지 않는다(실제로 지운 행이다). 잊게 하기·다시 만들기의 운영 성질은 「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절 |
 | `STAT_EVENT_LOG` | **운영 `true`**(2026-10-24부터, 코드 기본값 `false`) — 처리방침 「턴 기록」 항목에는 판정 규칙 식별자를 남긴다는 문구 한 줄이 다음 판에 더해진다 | 턴 기록(`chat_turns.stat_events`)에 그 턴 스탯 판정이 스탯마다 발동한 규칙·적용한 규칙(판본을 넘어 같은 규칙 id 와 그 판본의 규칙 행 id 쌍)·폭·범위에 잘렸는지와 카운터 스탯의 한 칸을 남긴다(조건 글은 싣지 않는다). 꺼져 있으면 칸이 DB 기본값 `[]` 이고 턴 기록 INSERT 의 칸 목록도 이 칸이 생기기 전과 같다(서버 기본값이 있는 칸이라 RETURNING 에는 이 칸이 더해진다). 켜도 꺼도 판정·생성 프롬프트와 스탯 값은 같다 — 기록만 더한다. 방의 기억 사용 범위와 무관하게 모든 방에 쓴다. 켜는 법은 줄 추가(`STAT_EVENT_LOG=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 다시 `[]` 이고 이미 쓴 이벤트는 남는다(방 초기화·삭제·탈퇴 때 턴 기록과 함께 지워진다) |
-| `MEMORY_IMPRESSIONS_WRITE` | 설정 안 함(기본 `false`) — 처리방침에 인상 항목을 게시한 뒤 켤 때 `true` | 요약 접기 몇 번마다(`MEMORY_IMPRESSION_EVERY_N_FOLDS`) 방 하나에 인상 한 행을 `chat_memory_impressions` 에 쌓는 백그라운드 작업(턴 뒤, 두 추출 다음 · 임베딩 채우기 앞). 입력은 그 접기들에서 뽑힌 장면·사실 행 중 아는 사람이 정해지지 않은 것뿐이고(요약 글·원문은 싣지 않는다) 묶음의 장면·사실 추출이 모두 끝나야 돈다 — 그래서 두 추출이 꺼져 있으면 아무것도 쌓이지 않는다. 기억 사용 범위(`MEMORY_MODEL_SCOPE`) 밖 방에서는 돌지 않는다. 저장만 한다 — 생성 프롬프트에 싣지 않고 화면에도 보이지 않는다. 꺼져 있으면 예약하지 않아 인상 호출도 인상 표 SELECT·INSERT 도 없다. 장면·사실 잊게 하기는 이 스위치와 무관하게 그 방의 인상을 모두 지우고 잊기 세대를 올린다. 🔴 운영에서 켜기 전에 인상 생성에 시도 상한이나 백오프를 먼저 넣는다 — 지금은 묶음에 선점·시도 기록이 없어, 행을 넣지 못한 묶음은 다음 접기가 스냅샷을 더해 그 묶음이 가장 새 묶음에서 밀려날 때까지 사용 범위 안 턴마다 다시 시도한다. 모델 오류·응답 형식 위반·빈 글이 계속되면 그 턴마다 모델 호출이 한 번씩 나가고(접기는 대략 10턴마다라 묶음 하나에 약 10번), 렌더 오류(인상 channel 이 빔)는 호출 없이 턴마다 Bugsink 경고만 쌓인다. 켜는 법은 `MEMORY_IMPRESSION_MODEL=haiku`·배정 `chat_memory_impression:anthropic`·이 줄 추가 → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 이 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 쌓인 행은 남는다(되감기·초기화·방 삭제·탈퇴·잊게 하기 때 지워진다) |
+| `MEMORY_IMPRESSIONS_WRITE` | 설정 안 함(기본 `false`) — 처리방침에 인상 항목을 게시한 뒤 켤 때 `true` | 요약 접기 몇 번마다(`MEMORY_IMPRESSION_EVERY_N_FOLDS`) 방 하나에 인상 한 행을 `chat_memory_impressions` 에 쌓는 백그라운드 작업(턴 뒤, 두 추출 다음 · 임베딩 채우기 앞). 입력은 그 접기들에서 뽑힌 장면·사실 행 중 아는 사람이 정해지지 않은 것뿐이고(요약 글·원문은 싣지 않는다) 묶음의 장면·사실 추출이 모두 끝나야 돈다 — 그래서 두 추출이 꺼져 있으면 아무것도 쌓이지 않는다. 기억 사용 범위(`MEMORY_MODEL_SCOPE`) 밖 방에서는 돌지 않는다. 저장만 한다 — 생성 프롬프트에 싣지 않고 화면에도 보이지 않는다. 꺼져 있으면 예약하지 않아 인상 호출도 인상 표 SELECT·INSERT 도 없다. 장면·사실 잊게 하기는 이 스위치와 무관하게 그 방의 인상을 모두 지우고 잊기 세대를 올린다. 🔴 운영에서 켜기 전에 인상 생성에 시도 상한이나 백오프를 먼저 넣는다 — 지금은 묶음에 선점·시도 기록이 없어, 행을 넣지 못한 묶음은 다음 접기가 스냅샷을 더해 그 묶음이 가장 새 묶음에서 밀려날 때까지 사용 범위 안 턴마다 다시 시도한다. 모델 오류·응답 형식 위반·빈 글이 계속되면 그 턴마다 모델 호출이 한 번씩 나가고(접기는 대략 10턴마다라 묶음 하나에 약 10번), 렌더 오류(인상 channel 이 빔)는 호출 없이 턴마다 Bugsink 경고만 쌓인다. 켜는 법은 `MEMORY_IMPRESSION_MODEL=haiku`·배정 `chat_memory_impression:anthropic`·이 줄 추가 → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 이 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 쌓인 행은 남는다(되감기·초기화·방 삭제·탈퇴·잊게 하기 때 지워진다). 켜기 전 조건 전부와 되돌리는 차례는 「3-15. 장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절의 「판정 이벤트 기록 · 인상」 문단 |
 | `MEMORY_IMPRESSION_EVERY_N_FOLDS` | 설정 안 함(기본 `3`) | 인상 하나가 덮는 요약 스냅샷 수. 방의 스냅샷 수가 이 값의 배수가 된 접기 뒤에 가장 새 스냅샷까지 이만큼을 묶는다 — 접기는 대략 10턴마다라 `3` 이면 약 30턴마다 한 번이다. 1 이상이어야 기동한다. 개발 측정에서 다시 정한다 |
 | `NOVELIZE_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 소설화(대화를 장편 소설의 장으로 옮겨 쓰기) 전역 스위치. 쓰려면 이 스위치·아래 명단·어드민이 준 계정별 허용 셋이 모두 있어야 한다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 모든 소설 화면·API 가 403 이고 허용 행은 남는다(다시 켜면 그대로 돌아온다). 켜기·끄기·회수·롤백은 "소설화 켜기 · 끄기 · 회수 · 롤백" 절 |
 | `NOVELIZE_GRANT_ALLOWLIST` | 허용할 수 있는 계정 id, **쉼표 구분**(공백·따옴표 없이) | 어드민이 허용을 줄 때와 사용자가 접근할 때 둘 다 본다 — 명단 밖 계정에는 어드민이 허용을 줄 수 없고(422), 명단에서 빼고 재기동하면 허용 행이 남아 있어도 바로 막힌다. 비면 아무에게도 줄 수 없다(기본값). UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 개인정보 처리방침이 소설화를 적기 전에는 운영자 계정만 넣는다 |
@@ -315,7 +315,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `BEDROCK_CHAT_TIMEOUT_MS` / `BEDROCK_CHAPTER_TIMEOUT_MS` | 설정 안 함(기본 `45000` / `300000`) | 상위 모델 채팅 턴 / 소설 장 생성의 요청 타임아웃(ms). 스트리밍이라 "다음 청크까지"의 상한이다. 재시도는 하지 않는다 |
 | `BEDROCK_CHAT_MAX_TOKENS` / `BEDROCK_CHAPTER_MAX_TOKENS` | 설정 안 함(기본 `4096` / `32768`) | 출력 상한. Bedrock 은 요청의 출력 상한만큼 분당 토큰 쿼터를 먼저 잡으므로 올리면 동시 요청이 스로틀되기 쉽다. 장이 잘리면 실패·환불이다 |
 | `ANTHROPIC_DIRECT_API_KEY` | Anthropic 콘솔에서 만든 이 서비스 전용 API 키 | 상위 모델을 Anthropic API 로 직접 보낼 때의 자격. SDK 가 스스로 읽는 `ANTHROPIC_API_KEY` 와 이름을 나눴다. 아래 배정이 호출을 직결로 옮기는데 비어 있으면 스위치와 무관하게 api 가 기동하지 못한다. 직결의 모델 id·타임아웃·출력 상한·사고 깊이(나머지 `ANTHROPIC_*`)는 설정 안 함이 기본이다(기본값은 `.env.example`) |
-| `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음) | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 장면 헤더 판정 호출 위치(`chat_scene_judgment`·`preview_scene_judgment`)는 줄을 두지 않고 짝인 스탯 판정 호출 위치의 배정을 물려받는다 — **스탯 판정 배정을 바꾸면 장면 판정도 함께 움직인다**(줄을 따로 넣으면 그 이름을 모르는 옛 이미지가 뜨지 못한다). 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
+| `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음). 인상 생성 `chat_memory_impression` 은 아직 넣지 않았다 — 인상 쓰기를 켤 때 모델 줄과 함께 넣는다 | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 장면 헤더 판정 호출 위치(`chat_scene_judgment`·`preview_scene_judgment`)는 줄을 두지 않고 짝인 스탯 판정 호출 위치의 배정을 물려받는다 — **스탯 판정 배정을 바꾸면 장면 판정도 함께 움직인다**(줄을 따로 넣으면 그 이름을 모르는 옛 이미지가 뜨지 못한다). 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
 | `CHAT_PREMIUM_MODELS_ENABLED` | 켤 때 `true`(코드 기본값은 꺼짐) | 채팅 상위 모델 스위치. 켜면 로그인 회원 모두가 채팅방에 상위 모델(Opus)을 고를 수 있다 — 명단·계정별 허용은 없다. 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 지금 이미지가 읽지 않지만 지우지 않는다(채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단을 다시 읽는다). 켜고 끄는 법은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
 | `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같고, 어드민이 준 계정별 허용 행도 있어야 한다. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
 | `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
@@ -2935,6 +2935,52 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
   (`MEMORY_SUMMARY_MODEL`)·같은 호출 위치(`chat_memory_summary`)라 일 단위 원가 집계에서 접기와 갈리지 않는다. 다시 만든 글은 지금
   스냅샷을 제자리에서 고치고 직전 글은 되돌리기 칸 하나에 들어간다 — 사용자가 고친 요약을 다시 만들면 고치기 전 글로는 돌아갈 수
   없다.
+
+**판정 이벤트 기록 · 인상(`STAT_EVENT_LOG`·`MEMORY_IMPRESSIONS_WRITE`).** 판정 이벤트 기록은 2026-10-24 17:45 KST 교체부터 켜져
+있고(env 표 그 행), 인상 쓰기는 꺼져 있다 — 인상 모델 줄(`MEMORY_IMPRESSION_MODEL`)과 배정 항목(`chat_memory_impression`)도 운영
+`.env` 에 없다. 둘 다 위 「켜는 순서」와 따로 켜고 끈다.
+
+- **인상 문안은 프롬프트 세트 데이터다.** 채널 `memory_impression`(지시문·장면 줄·사실 줄 세 행)은 리비전 `6558ab4d3dbc` 가 채팅
+  두 레인의 여덟 체인(gemini·sonnet·opus·haiku)에 새 게시 세트로 심었고, 고칠 때는 어드민 프롬프트 세트 화면에서 게시한다. 스위치가
+  꺼져 있는 동안은 어떤 호출도 이 채널을 렌더하지 않는다. 이 채널을 모르는 이미지(인상 문안 시드 이전)는 렌더는 그대로이고, 그 여덟
+  체인의 어드민 게시만 새 행을 잉여로 보고 막는다.
+- **인상 쓰기를 켜기 전 조건** — 넷이 모두 끝나야 켠다.
+  1. 인상 생성에 시도 상한이나 백오프를 넣은 코드가 배포돼 있다(env 표 `MEMORY_IMPRESSIONS_WRITE` 행의 🔴 — 지금은 실패한 묶음을
+     사용 범위 안 턴마다 다시 시도한다).
+  2. 개인정보처리방침의 대화방별 기억 항목에 인상(장면·사실 기억에서 만든, 인물 사이 감정·태도의 흐름을 적은 짧은 글 — 저장만 하고
+     생성에 싣지 않는다)과 그것을 만드는 모델 호출을 더한 판이 게시돼 있다.
+  3. `MEMORY_IMPRESSION_MODEL=haiku` 줄과 `LLM_CALL_SITE_BACKENDS` 의 `chat_memory_impression:anthropic` 항목을 스위치 줄과 **한
+     편집에서** 넣는다(모델 줄과 배정은 짝이다 — `STAT_JUDGMENT_MODEL` 행).
+  4. 운영 설정 기동 테스트가 인상 호출 위치를 빼 두는 제외(`apps/api/tests/test_config_judgment_models.py` 의
+     `_NOT_YET_IN_PRODUCTION`)를 지우고, 테스트가 흉내 내는 운영 값(`apps/api/tests/factories.py` 의 `PRODUCTION_ENV_NAMES`·
+     `PRODUCTION_CALL_SITE_BACKENDS`)에 같은 모델 줄과 배정을 더한다 — 그래야 운영 조합의 기동을 테스트가 계속 검사한다.
+- **끄기 — 켠 역순.** 인상 쓰기를 켰다면 그것부터: 스위치 줄과 모델 줄·배정 항목을 한 편집에서 지운다(모델 줄 `haiku` 를 남기고
+  배정만 지우면 운영 `.env` 에 `BEDROCK_*` 키가 없어 기동하지 못한다). 그다음 `STAT_EVENT_LOG` 줄 — 다음 턴부터 칸이 `[]` 다. 이미
+  쓴 이벤트와 쌓인 인상 행은 남는다.
+- **되돌리기 — 스위치 → 워커 → (문안 데이터) → 이미지 → (스키마).**
+  - 🔴 배정 항목 `chat_memory_impression` 은 인상 호출 위치를 모르는 이미지(인상 표 도입 이전)로 내리기 **전에** 지운다 — 남아
+    있으면 그 이미지가 모르는 이름으로 거부해 기동하지 못한다.
+  - 🔴 소설화 워커가 켜져 있으면 이미지 롤백·downgrade 전에 "BE → GCE VM" 절 「롤백」의 스위치 끄기 → 워커 비우기를 먼저 한다. 그
+    끄기는 태그 없는 교체라 서빙 이미지로 `alembic upgrade head` 를 다시 돌리므로 문안 downgrade 보다 **앞에** 둔다(뒤에 두면 지운
+    시드가 되살아난다).
+  - 이미지 롤백은 `sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전SHA>` 가 1순위다. 옛 이미지는 세 리비전 위에서 그대로 돈다 — 판정
+    이벤트 칸과 인상 표를 모르고 지나가고(턴 기록 칸은 서버 기본값 `[]`, 스냅샷 삭제는 인상 행을 CASCADE 로 지운다), 인상 문안
+    세트는 위처럼 여덟 체인의 어드민 게시만 막힌다. 🔴 다만 인상 행이 있는 채 인상 표 이전 이미지로 내리면 그 이미지의 잊게 하기는
+    인상을 지우지 않는다 — 그때는 아래 2 까지 내린다.
+
+| 순서 | 리비전 | 바꾼 것 | downgrade 목표 | downgrade 가 하는 일 · 돌릴 때 |
+|---|---|---|---|---|
+| 1 | `6558ab4d3dbc` | 인상 문안 채널을 더한 새 세트(8 체인)와 두 레인 초안의 그 채널 행 | `8b045061cad4` | 시드한 세트를 리터럴 id 로 지워 그 앞 활성 세트가 다시 활성이 되고, 초안의 그 채널 행을 지운다. 시드 뒤 어드민이 여덟 체인 중 하나에 게시했으면 아무것도 지우지 않고 멈춘다 — 사람이 판단한다(그 게시본을 손으로 지우지 않는다). 데이터 리비전이라 이미지 롤백 전이면 서빙 이미지로, 롤백 뒤면 이 리비전 파일을 가진 이미지의 일회성 컨테이너로 돌린다 |
+| 2 | `8b045061cad4` | 인상 표 `chat_memory_impressions` | `18d0cb76b3ca` | 표를 지운다(인상 행이 사라진다). 이 표를 아는 이미지는 잊게 하기가 인상을 지우다 실패하므로 **인상 표 이전 이미지로 먼저 내린 뒤** 이 리비전 파일을 가진 이미지의 일회성 컨테이너로 돌린다 |
+| 3 | `18d0cb76b3ca` | 턴 기록 `chat_turns.stat_events` 칸 | `914b076c9291` | 칸을 지운다(쌓인 이벤트가 사라진다). 칸을 매핑한 이미지는 턴 기록 INSERT·조회가 실패하므로 **판정 이벤트 칸 이전 이미지로 먼저 내린 뒤** 일회성 컨테이너로 돌린다 |
+
+- 위(head 쪽)부터 차례로만 내려간다. 일회성 컨테이너는 아래 문안 리비전 downgrade 와 같은 꼴(`sudo docker run --rm --network ddona_default
+  --env-file /opt/ddona/.env <IMAGE>:<그 리비전 파일을 가진 태그> alembic downgrade <목표>`)이고 먼저 `sudo /opt/ddona/backup.sh`.
+  목표 위에 다른 작업의 리비전이 더 쌓였으면 멈추고 판단한다.
+- 🔴 downgrade 뒤 그 리비전 파일을 가진 이미지로 교체되면(`main` push 자동 배포, `image_tag` 를 비운 실행, 그런 이미지가 서빙 중일
+  때의 태그 없는 교체) `alembic upgrade head` 가 지운 것을 되살린다. downgrade 와 revert 병합 사이에 다른 API 병합을 하지 않고, 롤백해
+  둔 동안의 env 반영 교체는 `DDONA_ROLLBACK=1` 을 붙인다.
+- revert 병합도 배포다(`apps/api/**`). 병합의 역순으로, 리비전을 지우는 revert 는 그 downgrade 를 마친 뒤에 병합한다.
 
 **끄기 — 켠 역순.** 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh`. 역순이면 되돌리는 도중의 상태도 전부 잰 조합이다.
 🔴 사실 주입이 켜져 있는 동안에는 `MEMORY_KNOWLEDGE_FILTER` 를 먼저 끄지 않는다 — 처리방침의 "비밀을 아는 인물이 장면에 없으면
