@@ -149,6 +149,7 @@ class ChatRoomMemorySnapshot(Base):
     지운다. 이 행을 지우면 그 접기에서 뽑은 장면 기억(`ChatMemoryEpisode`)과 추출 기록
     (`ChatMemoryExtraction`)은 그 두 테이블 쪽 `ON DELETE CASCADE`로 함께 지워진다.
     사실 기억(`ChatMemoryFact`)과 그 추출 기록(`ChatMemoryFactExtraction`)도 같은 CASCADE 로 함께 지워진다.
+    인상(`ChatMemoryImpression`)도 같은 CASCADE 로 함께 지워진다.
     """
 
     __tablename__ = "chat_room_memory_snapshots"
@@ -481,6 +482,58 @@ class ChatMemoryFactExtraction(Base):
             "(status = 'done') = (fact_count IS NOT NULL)", name="ck_chat_memory_fact_extractions_done_count"
         ),
         Index("ix_chat_memory_fact_extractions_room", "chat_room_id"),
+    )
+
+
+# 인상 글의 DB 상한. 모델 결과를 자르는 쪽이 같은 상수를 쓴다 — 값이 갈리면 잘라 낸 글이 CHECK 에 막힌다.
+IMPRESSION_TEXT_MAX = 600
+
+
+class ChatMemoryImpression(Base):
+    """요약 접기 몇 번마다(설정 `memory_impression_every_n_folds`) 방 하나에 쌓는 인상 한 행 — 그 접기들에서 뽑힌 장면·사실
+    기억을 읽고 인물 사이의 감정·태도가 어떻게 흘렀는지를 짧은 글로 적은 것이다. 저장만 한다: 생성 프롬프트에 싣지 않고 화면에도
+    보이지 않는다. 한 번 쓰면 고쳐 쓰지 않는다.
+
+    한 행은 연달아 접힌 스냅샷 묶음 하나를 덮는다. `snapshot_id` 는 그 묶음에서 커서가 가장 큰 스냅샷이다 — 되감기는 바뀐 메시지
+    이상을 덮는 스냅샷을 전부 지우므로 묶음의 어느 스냅샷이 지워져도 이 스냅샷이 함께 지워지고, 그 FK 의 `ON DELETE CASCADE` 가
+    이 행을 지운다(장면 기억과 같은 이유 — 이 테이블을 모르는 옛 이미지의 스냅샷 DELETE 가 FK 위반으로 실패하지 않고, 새 코드도
+    스냅샷보다 먼저 지우지 않아 스냅샷을 잠근 생성 작업과 교착하지 않는다). 스냅샷마다 한 행이라 같은 묶음이 두 번 들어가지 않는다.
+    잊게 하기는 스냅샷을 지우지 않으므로 그 방의 인상 행을 같은 트랜잭션에서 전부 지운다(`chat/memory_forget.py`).
+
+    칸:
+    - `first_cursor_*` 는 묶음에서 커서가 가장 작은 스냅샷의 커서다. 묶음은 그 방에서 커서가 이 값 이상이고 `snapshot_id` 의
+      커서 이하인 스냅샷이다.
+    - `text` 는 인상 글이다.
+    - `episode_ids`·`fact_ids` 는 입력에 실은 장면·사실 행 id 의 JSON 배열(문자열 UUID)이다 — 묶음의 행 중 아는 사람이 정해지지
+      않은 것뿐이다. FK 가 아니다. 그 행이 지워지는 길(스냅샷 CASCADE·잊게 하기)은 둘 다 이 행도 지운다."""
+
+    __tablename__ = "chat_memory_impressions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    chat_room_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("chat_rooms.id"), nullable=False)
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("chat_room_memory_snapshots.id", ondelete="CASCADE"), nullable=False
+    )
+    first_cursor_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    first_cursor_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    episode_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    fact_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 아래 CHECK 의 검증은 행위 테스트가 유일하다.
+    # 유니크가 스냅샷 DELETE 의 CASCADE 가 이 테이블을 찾는 인덱스를 겸한다. 방 인덱스는 잊게 하기의 방 단위 DELETE 와 방 DELETE
+    # 의 FK 확인을 받는다.
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", name="ux_chat_memory_impressions_snapshot"),
+        CheckConstraint(
+            f"char_length(text) BETWEEN 1 AND {IMPRESSION_TEXT_MAX}", name="ck_chat_memory_impressions_text_length"
+        ),
+        CheckConstraint("jsonb_typeof(episode_ids) = 'array'", name="ck_chat_memory_impressions_episode_ids_array"),
+        CheckConstraint("jsonb_typeof(fact_ids) = 'array'", name="ck_chat_memory_impressions_fact_ids_array"),
+        Index("ix_chat_memory_impressions_room", "chat_room_id"),
     )
 
 
