@@ -15,20 +15,28 @@ src 를 `sys.path` 맨 앞에 둔 생성 스크립트가, 이미 있던 함수�
 
 import json
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, get_args
 
 import pytest
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_routing import (
     ALLOWED_ROUTE_PAIRS,
     PromptRoutes,
     RouteRow,
+    RouteRowInput,
     StageRoute,
+    parse_route_row,
     resolve_stage_route,
+    route_chain_errors,
+    route_row_errors,
 )
 from api.chat.prompt_stages import LANE_STAGES, STAGES, RoutingLane, stage_call_sites
 from api.core.config import settings
+from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.call_policy import CALL_POLICIES, BackendId, LLMCallSite
 from api.llm.chat_models import ChatRoomModelId, PromptSetModelId, backend_model_id
 from api.llm.client import structured_model
@@ -425,3 +433,234 @@ def test_every_lane_stage_resolves_on_an_empty_table_without_error(fixed_setting
     for lane, stages in LANE_STAGES.items():
         for stage in stages:
             assert _resolve(PromptRoutes.empty(), lane, "gemini", stage).skipped is None
+
+
+# --- 어드민 저장 검사 ---------------------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def save_env(judgments_on_anthropic: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
+    judgments_on_anthropic.setattr(settings, "anthropic_direct_api_key", "sk-test")
+    for name in ("bedrock_access_key_id", "bedrock_secret_access_key", "bedrock_region"):
+        judgments_on_anthropic.setattr(settings, name, "")
+    return judgments_on_anthropic
+
+
+def _input(
+    stage: str,
+    *,
+    lane: str = "story",
+    room_model: str = "opus",
+    chain_model: str | None = "haiku",
+    call_model: str = "haiku",
+    backend: str = "anthropic",
+) -> RouteRowInput:
+    return RouteRowInput(
+        lane=lane, room_model=room_model, stage=stage, chain_model=chain_model, call_model=call_model, backend=backend
+    )
+
+
+def _rules(rows: list[RouteRowInput]) -> list[tuple[int, str]]:
+    return [(error.index, error.rule) for error in route_row_errors(rows)]
+
+
+def test_every_allowed_structured_pair_saves_when_the_env_routes_it_there(save_env: pytest.MonkeyPatch) -> None:
+    rows = [
+        _input("stat_judgment", chain_model="gemini", call_model="gemini", backend="gemini"),
+        _input("ending_judgment", chain_model="opus", call_model="haiku"),
+        _input("media_book_image", chain_model="sonnet", call_model="sonnet"),
+        _input("memory_fact", lane="character", chain_model="opus", call_model="opus"),
+        _input("chat_generate", chain_model=None, call_model="opus"),
+        _input("chat_generate", room_model="gemini", chain_model=None, call_model="gemini", backend="gemini"),
+    ]
+
+    assert route_row_errors(rows) == []
+
+
+@pytest.mark.parametrize(
+    ("row", "rule"),
+    [
+        pytest.param(_input("stat_judgment", lane="character"), "unknown-stage", id="stat-is-not-a-character-stage"),
+        pytest.param(_input("situational_image"), "unknown-stage", id="situational-is-not-a-story-stage"),
+        pytest.param(_input("memory_fact", lane="novel"), "unknown-stage", id="novel-lane"),
+        pytest.param(_input("memory_fact", room_model="sonnet"), "unknown-stage", id="sonnet-room"),
+        pytest.param(
+            _input("chat_generate", chain_model="opus", call_model="opus"), "generation-chain", id="gen-chain"
+        ),
+        pytest.param(_input("memory_fact", chain_model=None), "generation-chain", id="judgment-without-chain"),
+        pytest.param(_input("memory_fact", chain_model="flash"), "generation-chain", id="chain-off-the-model-axis"),
+        pytest.param(
+            _input("chat_generate", chain_model=None, call_model="haiku"), "generation-call-model", id="gen-haiku"
+        ),
+        pytest.param(
+            _input("chat_generate", chain_model=None, call_model="opus", backend="bedrock"),
+            "pair-not-allowed",
+            id="gen-opus-on-bedrock",
+        ),
+        pytest.param(
+            _input("chat_generate", room_model="gemini", chain_model=None, call_model="gemini", backend="anthropic"),
+            "pair-not-allowed",
+            id="gen-gemini-on-anthropic",
+        ),
+        pytest.param(_input("memory_fact", call_model="gpt"), "pair-not-allowed", id="call-model-off-the-axis"),
+    ],
+)
+def test_a_row_breaking_a_shape_rule_is_refused_by_that_rule(
+    save_env: pytest.MonkeyPatch, row: RouteRowInput, rule: str
+) -> None:
+    assert _rules([row]) == [(0, rule)]
+
+
+def test_a_bedrock_pair_is_refused_even_when_assigned_and_credentialed(save_env: pytest.MonkeyPatch) -> None:
+    """처리방침의 수탁자 밖 경로라 env 가 그 경로를 받쳐도 표에는 둘 수 없다."""
+    save_env.setattr(settings, "llm_call_site_backends", {"chat_memory_fact": "bedrock"})
+    save_env.setattr(settings, "bedrock_access_key_id", "AKIATEST")
+    save_env.setattr(settings, "bedrock_secret_access_key", "secret")
+    save_env.setattr(settings, "bedrock_region", "ap-northeast-2")
+
+    assert _rules([_input("memory_fact", chain_model="sonnet", call_model="sonnet", backend="bedrock")]) == [
+        (0, "pair-not-allowed")
+    ]
+
+
+def test_a_second_row_for_the_same_cell_is_refused(save_env: pytest.MonkeyPatch) -> None:
+    rows = [_input("ending_judgment"), _input("ending_judgment", call_model="sonnet", chain_model="sonnet")]
+
+    assert _rules(rows) == [(1, "duplicate-row")]
+
+
+def test_a_row_assigned_for_chat_but_not_for_preview_is_a_backend_mismatch(save_env: pytest.MonkeyPatch) -> None:
+    assignments = dict(_JUDGMENTS_ON_ANTHROPIC["llm_call_site_backends"])
+    del assignments["preview_ending_judgment"]
+    save_env.setattr(settings, "llm_call_site_backends", assignments)
+
+    errors = route_row_errors([_input("ending_judgment")])
+
+    assert [(error.index, error.rule) for error in errors] == [(0, "backend-mismatch")]
+    assert "preview_ending_judgment" in errors[0].message
+
+
+def test_a_stat_row_inherited_by_a_scene_header_on_another_path_is_a_backend_mismatch(
+    save_env: pytest.MonkeyPatch,
+) -> None:
+    """장면 헤더 호출 위치는 자기 env 배정을 먼저 본다. 장면 헤더 행 없이 스탯 행만 저장하면 장면 헤더가 그 행을 물려받으므로,
+    장면 헤더 호출 위치에서도 같은 경로로 가야 한다."""
+    save_env.setattr(
+        settings,
+        "llm_call_site_backends",
+        {**_JUDGMENTS_ON_ANTHROPIC["llm_call_site_backends"], "chat_scene_judgment": "bedrock"},
+    )
+    stat_row = _input("stat_judgment", chain_model="sonnet", call_model="sonnet")
+
+    alone = route_row_errors([stat_row])
+    with_scene_row = route_row_errors(
+        [stat_row, _input("scene_judgment", chain_model="gemini", call_model="gemini", backend="gemini")]
+    )
+
+    assert [(error.index, error.rule) for error in alone] == [(0, "backend-mismatch")]
+    assert "chat_scene_judgment" in alone[0].message
+    assert with_scene_row == []
+
+
+def test_a_direct_route_without_its_key_is_refused(save_env: pytest.MonkeyPatch) -> None:
+    save_env.setattr(settings, "anthropic_direct_api_key", " ")
+
+    errors = route_row_errors([_input("memory_fact")])
+
+    assert [(error.index, error.rule) for error in errors] == [(0, "missing-credentials")]
+    assert "ANTHROPIC_DIRECT_API_KEY" in errors[0].message
+
+
+def test_a_haiku_5_judgment_over_the_effort_ceiling_is_refused_but_haiku_4_is_not(save_env: pytest.MonkeyPatch) -> None:
+    save_env.setattr(settings, "anthropic_structured_effort", "xhigh")
+    save_env.setattr(settings, "anthropic_haiku_model_id", "claude-haiku-5-5")
+    over = route_row_errors([_input("memory_fact")])
+    save_env.setattr(settings, "anthropic_haiku_model_id", "claude-haiku-4-5")
+    under = route_row_errors([_input("memory_fact")])
+
+    assert [(error.index, error.rule) for error in over] == [(0, "structured-effort")]
+    assert "ANTHROPIC_STRUCTURED_EFFORT=xhigh" in over[0].message
+    assert under == []
+
+
+def test_each_row_reports_only_its_first_broken_rule(save_env: pytest.MonkeyPatch) -> None:
+    save_env.setattr(settings, "anthropic_direct_api_key", "")
+
+    rows = [
+        _input("memory_fact", call_model="sonnet", chain_model="sonnet", backend="bedrock"),
+        _input("memory_fact", lane="character"),
+        _input("memory_episode", chain_model=None),
+    ]
+
+    assert _rules(rows) == [(0, "pair-not-allowed"), (1, "missing-credentials"), (2, "generation-chain")]
+
+
+def test_a_parsed_row_keeps_its_values_and_an_out_of_range_row_is_none() -> None:
+    assert parse_route_row(_input("chat_generate", chain_model=None, call_model="opus")) == _row(
+        "chat_generate", chain_model=None, call_model="opus"
+    )
+    assert parse_route_row(_input("memory_fact", lane="character", chain_model="opus")) == _row(
+        "memory_fact", lane="character", chain_model="opus"
+    )
+    assert parse_route_row(_input("stat_judgment", lane="character")) is None
+    assert parse_route_row(_input("memory_fact", backend="openai")) is None
+    assert parse_route_row(_input("memory_fact", chain_model=None)) is None
+    assert parse_route_row(_input("chat_generate", chain_model="opus", call_model="opus")) is None
+
+
+async def _publish_haiku_story_set_with(db_session: AsyncSession, channels: list[str]) -> None:
+    """이미 있는 체인보다 늦은 게시 시각으로, 주어진 채널만 가진 (story, haiku) 세트를 게시한다."""
+    prompt_set = PromptSet(
+        status="published",
+        lane="story",
+        model="haiku",
+        user_label="사용자",
+        story_assistant_label="서술자",
+        story_example_label="예시",
+        character_assistant_label="캐릭터",
+        published_at=datetime(2099, 1, 1, tzinfo=UTC),
+    )
+    db_session.add(prompt_set)
+    await db_session.flush()
+    for order, channel in enumerate(channels):
+        db_session.add(
+            PromptSection(
+                prompt_set_id=prompt_set.id,
+                channel=channel,
+                scope="both",
+                slot="instruction",
+                variant="",
+                body="합성 문안",
+                conditional=False,
+                order=order,
+            )
+        )
+    await db_session.flush()
+
+
+async def test_a_chain_without_a_channel_its_stage_reads_is_refused(db_session: AsyncSession) -> None:
+    await _publish_haiku_story_set_with(db_session, ["stat_rule_judgment", "memory_fact"])
+    rows = [
+        _row("stat_judgment", chain_model="haiku"),
+        _row("scene_judgment", chain_model="haiku"),
+        _row("memory_fact", chain_model="haiku"),
+    ]
+
+    errors = await route_chain_errors(db_session, rows)
+
+    assert [(error.index, error.rule) for error in errors] == [(1, "chain-missing-channel")]
+    assert "scene_judgment" in errors[0].message
+
+
+async def test_a_chain_with_no_published_set_is_refused(db_session: AsyncSession) -> None:
+    await db_session.execute(
+        update(PromptSet).where(PromptSet.lane == "character", PromptSet.model == "sonnet").values(status="archived")
+    )
+    rows = [
+        _row("memory_fact", lane="character", chain_model="sonnet"),
+        _row("chat_generate", lane="character", room_model="gemini", chain_model=None, call_model="gemini"),
+    ]
+
+    errors = await route_chain_errors(db_session, rows)
+
+    assert [(error.index, error.rule) for error in errors] == [(0, "chain-not-published")]
