@@ -177,7 +177,8 @@ describe.each([
   it("글자 찾기(타입어헤드)에 걸리지 않는다 — 찾기 글이 어떤 글자로도 시작하지 않는다", () => {
     render([...options]);
     for (const value of ineligible) {
-      const textValue = String(itemFor(value).textValue ?? "");
+      const raw = itemFor(value).textValue;
+      const textValue = typeof raw === "string" ? raw : "";
       // 빈 글이면 Radix 가 항목 글로 채운다.
       expect(textValue).not.toBe("");
       for (const search of ["c", "claude", "g", "o", "s", " "]) expect(textValue.toLowerCase().startsWith(search)).toBe(false);
