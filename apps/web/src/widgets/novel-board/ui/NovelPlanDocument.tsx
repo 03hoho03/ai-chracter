@@ -1,13 +1,20 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { useMemo, useRef, useState, type RefObject } from "react";
+import { useRef, useState, type RefObject } from "react";
 
-import { useChatRoomSourceMessagesQuery } from "@/entities/chat-room";
 import { useNovelOutlineQuery, useNovelSourceSelectionQuery, type NovelDetailResponse } from "@/entities/novel";
 import type { NovelChapterJobFlow } from "@/features/create-novel-chapter";
-import { NovelOutlineStep, toOutlineBase, type OutlineMakeControl, type OutlineRange } from "@/features/plan-novel-outline";
-import { buildSourceTurns, NovelSourceSelectionStep, toSourceSelectionStatus } from "@/features/select-novel-source";
+import {
+  NovelEpisodesStep,
+  NovelOutlineStep,
+  toOutlineBase,
+  type OutlineMakeControl,
+  type OutlineRange,
+} from "@/features/plan-novel-outline";
+import { NovelSourceSelectionStep, toSourceSelectionStatus } from "@/features/select-novel-source";
 
 import { toCurrentPlanStep } from "../model/planStep";
+
+import { usePlanTurns } from "./usePlanTurns";
 
 type NovelPlanDocumentProps = {
   novel: NovelDetailResponse;
@@ -15,6 +22,10 @@ type NovelPlanDocumentProps = {
   chapterFlow: NovelChapterJobFlow;
   /** 문서 제목. 구성 모드로 옮기면 호출부가 여기로 포커스를 보낸다. */
   headingRef: RefObject<HTMLHeadingElement | null>;
+  /** 3단계의 화 하나(장면 구성안·원고)를 연다. */
+  onOpenEpisode: (episodeKey: string) => void;
+  /** 원고가 된 화를 보드에서 고른다. */
+  onOpenChapter: (chapterId: string) => void;
   onDraftDirtyChange: (isDirty: boolean) => void;
 };
 
@@ -25,26 +36,26 @@ const STEPS = ["담을 대화", "전체 구성안", "화별 장면·원고"] as 
  * 편집 보드의 구성 모드(`?select=plan`) — 대화를 골라 화 구성을 세우는 한 열 문서. 넓은 화면에서도 캔버스·옆 패널 대신 이
  * 문서 하나가 보이고(폭은 호출부가 정한다), 상단바·작업 줄·떠날 때의 버림 확인은 보드 것을 그대로 쓴다.
  *
- * 지금은 담을 대화와 전체 구성안 두 단계가 있다. 두 단계는 서로 다른 기능이라 이 문서가 잇는다 — 구성안 단계의 근거 턴 번호는
- * 담을 대화 단계와 같은 묶기로 세고(같은 대화방 메시지 캐시), 낡은 구성안의 "구간 되돌리기"는 담을 대화 단계에 고침으로 넘긴다.
+ * 단계는 셋이다 — 담을 대화, 전체 구성안, 화별 장면·원고(화 목록 — 화 하나는 `?select=plan:{화 키}` 화면). 앞 두 단계는 서로 다른
+ * 기능이라 이 문서가 잇는다 — 구성안 단계의 근거 턴 번호는 담을 대화 단계와 같은 묶기로 세고(같은 대화방 메시지 캐시), 낡은 구성안의
+ * "구간 되돌리기"는 담을 대화 단계에 고침으로 넘긴다.
  */
-export function NovelPlanDocument({ novel, chapterFlow, headingRef, onDraftDirtyChange }: NovelPlanDocumentProps) {
+export function NovelPlanDocument({
+  novel,
+  chapterFlow,
+  headingRef,
+  onOpenEpisode,
+  onOpenChapter,
+  onDraftDirtyChange,
+}: NovelPlanDocumentProps) {
   const isRoomGone = novel.chatRoomId === null;
   const selectionQuery = useNovelSourceSelectionQuery(novel.id, { enabled: !isRoomGone });
   const outlineQuery = useNovelOutlineQuery(novel.id, { enabled: true });
-  const messagesQuery = useChatRoomSourceMessagesQuery(novel.chatRoomId, { enabled: !isRoomGone });
+  const { turns, isTurnsFailed } = usePlanTurns(novel);
   const [restoreRequest, setRestoreRequest] = useState<{ id: number; ranges: OutlineRange[] } | undefined>(undefined);
   // 두 단계가 따로 알리는 저장하지 않은 고침. 어느 쪽이든 있으면 보드가 옮기기 전에 버릴지 묻는다.
   const dirtyRef = useRef({ selection: false, outline: false });
 
-  const messages = messagesQuery.data;
-  const turns = useMemo(
-    () =>
-      messages === undefined
-        ? undefined
-        : buildSourceTurns(messages, { fixedEndId: null, roomEndId: messages.at(-1)?.id ?? null, lockedRanges: [] }),
-    [messages],
-  );
   const selectionState = selectionQuery.data;
   const outlineBase = outlineQuery.data === undefined ? undefined : toOutlineBase(outlineQuery.data);
   const currentStep = toCurrentPlanStep({
@@ -109,7 +120,7 @@ export function NovelPlanDocument({ novel, chapterFlow, headingRef, onDraftDirty
       <NovelOutlineStep
         novel={novel}
         turns={turns}
-        isTurnsFailed={messagesQuery.isError && messages === undefined}
+        isTurnsFailed={isTurnsFailed}
         selection={
           selectionState === undefined
             ? undefined
@@ -119,6 +130,7 @@ export function NovelPlanDocument({ novel, chapterFlow, headingRef, onDraftDirty
         onRevertSelection={(ranges) => setRestoreRequest((previous) => ({ id: (previous?.id ?? 0) + 1, ranges }))}
         onDraftDirtyChange={(isDirty) => reportDirty("outline", isDirty)}
       />
+      <NovelEpisodesStep novel={novel} onOpenEpisode={onOpenEpisode} onOpenChapter={onOpenChapter} />
     </div>
   );
 }

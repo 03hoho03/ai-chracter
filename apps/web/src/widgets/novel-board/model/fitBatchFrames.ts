@@ -38,7 +38,7 @@ function union(a: Bounds | undefined, b: Bounds): Bounds {
  * 상대값이 되어 저장된 좌표가 묶음 구성에 매이고, 테두리를 화에 맞춰 키우는 일도 따로 해야 한다. 대신 구성 화의 경계
  * 상자를 둘러싼, 끌거나 고를 수 없는 배경 노드로 두고 노드 배열 맨 앞에 놓는다 — 배열 순서가 그리는 순서라 화 카드
  * 뒤에 깔린다.
- * 화가 하나도 없는 묶음은 테두리를 그리지 않는다.
+ * 화가 하나도 없는 묶음과 구성안으로 쓴 화의 묶음(화 하나뿐이라 "한 번에 만든 화들"이라는 뜻이 없다)은 테두리를 그리지 않는다.
  *
  * 입력에 같은 자리·크기·머리 줄의 테두리가 이미 있으면 그 객체를 그대로 돌려준다. 라이브러리는 노드 객체가 바뀌면
  * 그 노드를 다시 재는데, 다시 계산할 때마다 새 테두리를 주면 잰 크기가 사라져 재기 → 다시 계산 → 재기가 끝없이 돈다.
@@ -63,7 +63,7 @@ export function fitBatchFrames(nodes: BoardNode[], model: BoardModel): BoardNode
     .sort((a, b) => a.ordinal - b.ordinal)
     .flatMap((batch) => {
       const bounds = boundsByBatch.get(batch.id);
-      if (!bounds) return [];
+      if (!bounds || batch.isOutlineFlow === true) return [];
       const top = bounds.minY - BATCH_FRAME_PADDING - BATCH_FRAME_LABEL_HEIGHT;
       const left = bounds.minX - BATCH_FRAME_PADDING;
       const frame: BatchFrameNode = {

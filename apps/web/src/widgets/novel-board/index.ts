@@ -1,5 +1,6 @@
 export { useIsNovelBoardCanvasLayout } from "./lib/useIsNovelBoardCanvasLayout";
 export {
+  isPlanSelection,
   nodeKeyToSelection,
   parseBoardSelection,
   resolveBoardSelection,

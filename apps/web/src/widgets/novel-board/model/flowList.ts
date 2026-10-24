@@ -1,6 +1,8 @@
+import { toEpisodeRangeLabel } from "@/entities/novel";
+
 import type { BoardModel, CharacterNodeData, EpisodeNodeData } from "./boardNode";
 
-/** 좁은 화면 흐름 목록의 화 탭 한 덩어리 — 묶음 하나와 그 화들. */
+/** 좁은 화면 흐름 목록의 화 탭 한 덩어리 — 묶음 하나와 그 화들, 또는 이어진 구성안 화들. */
 export type FlowListSection = { key: string; label: string; episodes: EpisodeNodeData[] };
 
 function compareIds(a: string, b: string): number {
@@ -9,7 +11,8 @@ function compareIds(a: string, b: string): number {
 }
 
 /** 화 탭 — 묶음 번호 순, 묶음 안은 화 번호 순. 캔버스의 화 열과 같은 순서다. 목록에 없는 묶음의 화(낡은 상세)는 머리
- * 없이 맨 뒤 덩어리로 모은다. 화가 없는 묶음은 덩어리를 만들지 않는다. */
+ * 없이 맨 뒤 덩어리로 모은다. 화가 없는 묶음은 덩어리를 만들지 않는다. 구성안으로 쓴 화는 화마다 묶음이 따로라 묶음 머리가 뜻이
+ * 없어, 이어진 그런 화들을 "구성안으로 쓴 화" 한 덩어리로 모은다. */
 export function toFlowListSections(model: BoardModel): FlowListSection[] {
   const byBatch = new Map<string, EpisodeNodeData[]>();
   for (const { id, ...display } of [...model.episodes].sort((a, b) => a.ordinal - b.ordinal || compareIds(a.id, b.id))) {
@@ -22,6 +25,16 @@ export function toFlowListSections(model: BoardModel): FlowListSection[] {
     const episodes = byBatch.get(batch.id);
     if (episodes === undefined) continue;
     byBatch.delete(batch.id);
+    if (batch.isOutlineFlow === true) {
+      const previous = sections.at(-1);
+      if (previous !== undefined && previous.key.startsWith(OUTLINE_SECTION_PREFIX)) {
+        previous.episodes.push(...episodes);
+        previous.label = toOutlineSectionLabel(previous.episodes);
+      } else {
+        sections.push({ key: `${OUTLINE_SECTION_PREFIX}${batch.id}`, label: toOutlineSectionLabel(episodes), episodes: [...episodes] });
+      }
+      continue;
+    }
     sections.push({
       key: batch.id,
       label: batch.rangeLabel === undefined ? `묶음 ${batch.ordinal}` : `묶음 ${batch.ordinal} · ${batch.rangeLabel}`,
@@ -31,6 +44,16 @@ export function toFlowListSections(model: BoardModel): FlowListSection[] {
   const orphans = [...byBatch.values()].flat();
   if (orphans.length > 0) sections.push({ key: "orphans", label: "묶음 정보 없음", episodes: orphans });
   return sections;
+}
+
+const OUTLINE_SECTION_PREFIX = "outline:";
+
+function toOutlineSectionLabel(episodes: readonly EpisodeNodeData[]): string {
+  const first = episodes[0];
+  const last = episodes.at(-1);
+  return first === undefined || last === undefined
+    ? "구성안으로 쓴 화"
+    : `구성안으로 쓴 화 · ${toEpisodeRangeLabel(first.ordinal, last.ordinal)}`;
 }
 
 /** 인물 탭 — 처음 나온 화 순(캔버스 인물 레인과 같은 순서), 나온 화가 지금 없으면 뒤로. 나온 화 수는 지금 있는 화만 센다. */

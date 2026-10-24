@@ -1,14 +1,16 @@
 import { NOTES_NODE_KEY, characterNodeKey, episodeNodeKey } from "./boardNode";
 
 /** 편집 보드에서 고른 것. 주소의 `?select=` 하나가 정하고, 값은 배치 저장 키와 같은 말이다(`episode:{id}`·
- * `character:{id}`·`notes`) — 거기에 버전 패널(`versions`)과 구성 모드(`plan`)가 더해진다. 없으면 고른 것 없음(소설 개요)이다.
- * 구성 모드는 대화를 골라 화 구성을 세우는 문서 화면이라, 넓은 화면에서도 캔버스와 옆 패널 대신 한 열로 보인다. */
+ * `character:{id}`·`notes`) — 거기에 버전 패널(`versions`)과 구성 모드(`plan`), 구성 모드의 화 하나(`plan:{화 키}`, 그 화의 장면
+ * 구성안·원고)가 더해진다. 없으면 고른 것 없음(소설 개요)이다. 구성 모드는 대화를 골라 화 구성을 세우는 문서 화면이라, 넓은
+ * 화면에서도 캔버스와 옆 패널 대신 한 열로 보인다. */
 export type BoardSelection =
   | { kind: "episode"; id: string }
   | { kind: "character"; id: string }
   | { kind: "notes" }
   | { kind: "versions" }
-  | { kind: "plan" };
+  | { kind: "plan" }
+  | { kind: "planEpisode"; key: string };
 
 export const VERSIONS_SELECT_VALUE = "versions";
 export const PLAN_SELECT_VALUE = "plan";
@@ -19,6 +21,7 @@ export type PlanAvailability = "on" | "off" | "loading";
 const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 const EPISODE_PATTERN = new RegExp(`^episode:(${UUID})$`);
 const CHARACTER_PATTERN = new RegExp(`^character:(${UUID})$`);
+const PLAN_EPISODE_PATTERN = new RegExp(`^${PLAN_SELECT_VALUE}:(${UUID})$`);
 
 /** 주소 값을 고른 것으로 편다. 모르는 꼴(손으로 고친 주소·옛 링크)은 `undefined`(고른 것 없음)로 접는다 — 던지면
  * 화면이 통째로 죽는다. */
@@ -31,6 +34,8 @@ export function parseBoardSelection(value: string | undefined): BoardSelection |
   if (episode !== undefined) return { kind: "episode", id: episode };
   const character = CHARACTER_PATTERN.exec(value)?.[1];
   if (character !== undefined) return { kind: "character", id: character };
+  const planEpisode = PLAN_EPISODE_PATTERN.exec(value)?.[1];
+  if (planEpisode !== undefined) return { kind: "planEpisode", key: planEpisode };
   return undefined;
 }
 
@@ -47,12 +52,19 @@ export function toBoardSelectValue(selection: BoardSelection): string {
       return VERSIONS_SELECT_VALUE;
     case "plan":
       return PLAN_SELECT_VALUE;
+    case "planEpisode":
+      return `${PLAN_SELECT_VALUE}:${selection.key}`;
   }
+}
+
+/** 구성 모드(구성 문서나 그 안의 화 하나)인가 — 넓은 화면에서도 캔버스·옆 패널 대신 한 열 문서다. */
+export function isPlanSelection(selection: BoardSelection | undefined): boolean {
+  return selection?.kind === "plan" || selection?.kind === "planEpisode";
 }
 
 /** 고른 것이 캔버스의 어느 노드인가. 버전 패널·구성 모드는 노드가 없다. */
 export function toSelectedNodeKey(selection: BoardSelection | undefined): string | undefined {
-  if (selection === undefined || selection.kind === "versions" || selection.kind === "plan") return undefined;
+  if (selection === undefined || selection.kind === "versions" || isPlanSelection(selection)) return undefined;
   return toBoardSelectValue(selection);
 }
 
@@ -67,7 +79,7 @@ export function resolveBoardSelection(
   options: { plan?: PlanAvailability } = {},
 ): BoardSelection | undefined {
   if (selection === undefined) return undefined;
-  if (selection.kind === "plan") return (options.plan ?? "off") === "off" ? undefined : selection;
+  if (isPlanSelection(selection)) return (options.plan ?? "off") === "off" ? undefined : selection;
   if (selection.kind === "episode") return chapterIds.includes(selection.id) ? selection : undefined;
   if (selection.kind === "character") {
     if (characterIds === undefined) return selection;
@@ -80,5 +92,5 @@ export function resolveBoardSelection(
  * `undefined`. */
 export function nodeKeyToSelection(nodeKey: string): BoardSelection | undefined {
   const selection = parseBoardSelection(nodeKey);
-  return selection?.kind === "versions" || selection?.kind === "plan" ? undefined : selection;
+  return selection?.kind === "versions" || isPlanSelection(selection) ? undefined : selection;
 }

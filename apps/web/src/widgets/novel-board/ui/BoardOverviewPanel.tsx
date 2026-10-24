@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode, RefObject } from "react";
 
-import { toNovelReadProgress, type NovelDetailResponse } from "@/entities/novel";
+import { isOutlineFlowBatch, toNovelReadProgress, type NovelDetailResponse } from "@/entities/novel";
 
 type BoardOverviewPanelProps = {
   novel: NovelDetailResponse;
@@ -16,9 +16,12 @@ type BoardOverviewPanelProps = {
  * 고를 때마다 캔버스 폭이 바뀌면 보던 카드가 옆으로 밀려서다. */
 export function BoardOverviewPanel({ novel, characterCount, headingRef, planEntry }: BoardOverviewPanelProps) {
   const progress = toNovelReadProgress(novel.chapters);
+  // 묶음은 한 번에 만든 화들이다 — 구성안으로 쓴 화의 묶음(화 하나뿐)은 세지 않고, 그런 묶음만 있으면 칸을 뺀다.
+  const batchCount = novel.batches.filter((batch) => !isOutlineFlowBatch(novel.chapters, batch.id)).length;
+  const hasOutlineFlowBatch = batchCount < novel.batches.length;
   const facts = [
     `${novel.chapters.length}화`,
-    `묶음 ${novel.batches.length}개`,
+    batchCount === 0 && hasOutlineFlowBatch ? undefined : `묶음 ${batchCount}개`,
     characterCount === undefined ? undefined : `인물 ${characterCount}명`,
   ]
     .filter((part) => part !== undefined)

@@ -8,6 +8,7 @@ import {
   isProtagonistNameRequiredError,
   hasNovelErrorCode,
   isTerminalNovelJobStatus,
+  novelEpisodeOutlineQueryOptions,
   novelKeys,
   novelOutlineQueryOptions,
   toBatchRangeLabel,
@@ -20,6 +21,7 @@ import {
   chaptersInBatch,
   initialChapterModelId,
   isNovelIllustrationsOn,
+  isOutlineFlowChapter,
   hasPendingEdits,
   type NovelAction,
   type NovelChapterModelId,
@@ -28,18 +30,26 @@ import {
   type NovelJobResponse,
   type PricedChapterModelOption,
 } from "@/entities/novel";
+import { assertNever } from "@/shared/lib/assertNever";
 
 import { useChapterProposalMutation } from "../api/useChapterProposalMutation";
 import { useCreateChainMutation } from "../api/useCreateChainMutation";
 import { useCreateChapterMutation } from "../api/useCreateChapterMutation";
 import { useCreateOutlineMutation } from "../api/useCreateOutlineMutation";
+import {
+  useCreateEpisodeOutlineMutation,
+  useCreateOutlineChapterMutation,
+  useRegenerateOutlineChapterMutation,
+} from "../api/useOutlineEpisodeJobMutations";
 import { useRegenerateChapterMutation } from "../api/useRegenerateChapterMutation";
 import { ChapterBoundaryModal } from "../ui/ChapterBoundaryModal";
 import { ProtagonistNameModal } from "../ui/ProtagonistNameModal";
 
 import { toChainProgress } from "./chainProgress";
 import { OUTLINE_SPEND_FOOTNOTE, toDoneMessage, toRetryTarget, type RetryTarget } from "./chapterJobOutcome";
+import { toOutlineFlowAvailability } from "./regenerateAction";
 import { toRegenerateConfirmDescription } from "./regenerateConfirm";
+import { toEpisodeJobRefusal } from "./episodeJobGuard";
 
 /** 화 다시 만들기·전체 구성안 만들기의 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
  * 소설 상위 모델 허용이 있으면 모달이 모델도 고르게 하므로, 확정하면 고른 모델과 이용자가 본 금액을 돌려준다.
@@ -58,7 +68,18 @@ export type ConfirmChapterSpend = (props: {
 /** 이 흐름이 지켜보는 작업 — AI 수정을 뺀 전부다. 남은 대화 한 번에(연쇄)는 경계 고르기의 한 칸으로 시작한다. */
 type ChapterJobKind = Exclude<NovelJobResponse["kind"], "ai_edit">;
 
-type TrackedJob = { jobId: string; kind: ChapterJobKind; chapterId: string | null; batchId: string | null };
+/** `episodeKey` 는 이 화면이 시작한 장면 구성안·원고 작업의 화 키다 — 작업 응답에 화 키가 없어, 상세의 진행 중 작업으로 알게 된 작업
+ * (새로고침·다른 탭)은 `null` 이다. */
+type TrackedJob = {
+  jobId: string;
+  kind: ChapterJobKind;
+  chapterId: string | null;
+  batchId: string | null;
+  episodeKey: string | null;
+};
+
+/** 작업을 만들기 전 단계(이름·제안·고르기·확인·요청)를 어느 버튼에서 시작했나. */
+type PreparingKind = "create" | "regenerate" | "outline" | "episodeOutline" | "outlineChapter";
 
 /** 화면에 남겨 두는 결과 문장. 작업이 끝나거나 요청이 거절된 **그 순간**에 기록하고 다음 동작에서만 지운다 —
  * 쿼리 상태에서 그때그때 파생하면 상세를 다시 받는 순간(진행 중 작업이 사라지는 순간) 안내도 함께 사라진다. */
@@ -87,18 +108,29 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
   const statusId = useId();
   const [tracked, setTracked] = useState<TrackedJob | undefined>(undefined);
   // 작업을 만들기 전 단계(이름·제안·고르기·확인·요청)가 진행 중인가, 그렇다면 어느 버튼에서 시작했나.
-  const [preparing, setPreparing] = useState<"create" | "regenerate" | "outline" | undefined>(undefined);
+  const [preparing, setPreparing] = useState<PreparingKind | undefined>(undefined);
+  // 장면 구성안·원고를 준비하는 화 키 — 그 화 화면의 버튼만 진행 표시를 단다.
+  const [preparingEpisodeKey, setPreparingEpisodeKey] = useState<string | undefined>(undefined);
   const [notice, setNotice] = useState<ChapterJobNotice | undefined>(undefined);
   const proposalMutation = useChapterProposalMutation();
   const createMutation = useCreateChapterMutation();
   const chainMutation = useCreateChainMutation();
   const regenerateMutation = useRegenerateChapterMutation();
   const outlineMutation = useCreateOutlineMutation();
+  const episodeOutlineMutation = useCreateEpisodeOutlineMutation();
+  const outlineChapterMutation = useCreateOutlineChapterMutation();
+  const outlineRegenerateMutation = useRegenerateOutlineChapterMutation();
+  // 이 화면이 시작한 장면 구성안·원고 작업의 화 키. 작업이 끝난 뒤 다시 시도를 그 화로 잇는 데 쓴다.
+  const episodeKeyByJobIdRef = useRef(new Map<string, string>());
+  // 장면 구성안을 고치는 중인 화 키 — 화 화면이 알려 준다. 작업 줄의 다시 시도는 그 화면의 막기를 거치지 않아 여기서 본다.
+  const editingEpisodeKeysRef = useRef(new Set<string>());
   // 소설 만들기 거절의 문장이 노벨 정책 스위치에 따라 다르다(`toNovelizeForbiddenCopy`).
   const pricing = useCloverPricingQuery().data;
   const isPolicyV2Enabled = pricing?.novelPublicPolicyV2Enabled === true;
   // 다시 만들면 붙인 삽화가 자리를 잃는다는 문장은 삽화를 쓸 수 있을 때만 확인 화면에 싣는다.
   const isIllustrationsOn = isNovelIllustrationsOn(pricing);
+  // 구성안으로 쓴 화의 다시 만들기는 구성 흐름 스위치 뒤에 있다. 가격을 받는 중이면 아직 모른다.
+  const outlineFlow = toOutlineFlowAvailability(pricing);
 
   const activeChapterJob: TrackedJob | undefined =
     novel.activeJob && novel.activeJob.kind !== "ai_edit"
@@ -107,6 +139,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
           kind: novel.activeJob.kind,
           chapterId: novel.activeJob.chapterId,
           batchId: novel.activeJob.batchId,
+          episodeKey: episodeKeyByJobIdRef.current.get(novel.activeJob.id) ?? null,
         }
       : undefined;
   // 서버가 진행 중이라고 알려 온 작업이 먼저다 — 이 화면이 지켜보던 작업이 끝난 뒤 다른 탭이 새 작업을 시작했으면
@@ -178,10 +211,20 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     void queryClient.invalidateQueries({ queryKey: cloverKeys.all });
 
     if (finished.status === "failed") {
-      setNotice({ tone: "error", message: toNovelJobFailureMessage(finished), retry: toRetryTarget(finished) });
+      const retry = toRetryTarget(finished, {
+        chapters: novel.chapters,
+        episodeKey: episodeKeyByJobIdRef.current.get(finished.id) ?? null,
+      });
+      setNotice({ tone: "error", message: toNovelJobFailureMessage(finished), retry });
       void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
-      // 고른 대화가 바뀌어 실패한 구성안은 담을 대화에 바뀐 턴 표시가 생긴다.
-      if (finished.kind === "outline_generate") invalidateOutlineFlow();
+      // 고른 대화가 바뀌어 실패한 구성안·장면 구성안·원고는 담을 대화에 바뀐 턴 표시가 생기고, 구성안의 낡음 표시가 바뀔 수 있다.
+      if (
+        finished.kind === "outline_generate" ||
+        finished.kind === "episode_outline_generate" ||
+        finished.kind === "outline_chapter_generate"
+      ) {
+        invalidateOutlineFlow();
+      }
       return;
     }
 
@@ -201,16 +244,21 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     if (fresh && chapter) onChapterReady(chapter, fresh.chapters, isRegenerated);
   }
 
-  /** 구성 화면의 두 단계(담을 대화·전체 구성안)를 다시 받는다 — 구성안 요청이 선택이나 구성안이 서버와 어긋났다는 이유로
-   * 거절됐거나 그 때문에 실패했다. */
+  /** 구성 화면의 단계(담을 대화·전체 구성안·화별 장면 구성안)를 다시 받는다 — 구성 흐름 요청이 선택이나 구성안이 서버와 어긋났다는
+   * 이유로 거절됐거나 그 때문에 실패했다. */
   function invalidateOutlineFlow() {
     void queryClient.invalidateQueries({ queryKey: novelKeys.sourceSelection(novel.id) });
     void queryClient.invalidateQueries({ queryKey: novelKeys.outline(novel.id) });
+    void queryClient.invalidateQueries({ queryKey: novelKeys.episodeOutlineAll(novel.id) });
   }
 
   function handleRequestError(error: unknown, action: NovelAction) {
     const result = toNovelActionError(error, action, { isPolicyV2Enabled });
-    if (action === "outline") {
+    if (action === "outlineRegenerate" && hasNovelErrorCode(error, "NOVEL_OUTLINE_FLOW_DISABLED")) {
+      // 스위치가 꺼졌으면 가격을 다시 받아 그 화의 다시 만들기를 막는다.
+      void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
+    }
+    if (action === "outline" || action === "episodeOutline" || action === "outlineChapter") {
       // 스위치가 꺼졌으면 가격을 다시 받아 구성 화면을 거둔다. 그 밖의 거절은 대개 담을 대화가 바뀐 것이라 두 단계를 다시 받는다.
       if (hasNovelErrorCode(error, "NOVEL_OUTLINE_FLOW_DISABLED")) void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
       else invalidateOutlineFlow();
@@ -254,9 +302,10 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     }
   }
 
-  function track(started: NovelJobResponse) {
+  function track(started: NovelJobResponse, episodeKey: string | null = null) {
     if (started.kind === "ai_edit") return;
-    setTracked({ jobId: started.id, kind: started.kind, chapterId: started.chapterId, batchId: started.batchId });
+    if (episodeKey !== null) episodeKeyByJobIdRef.current.set(started.id, episodeKey);
+    setTracked({ jobId: started.id, kind: started.kind, chapterId: started.chapterId, batchId: started.batchId, episodeKey });
   }
 
   async function startCreate() {
@@ -402,6 +451,138 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     }
   }
 
+  /** 구성안으로 쓴 화 하나를 같은 장면 구성안으로 다시 쓴다(새 라우트). 고를 수 있는 모델과 금액은 상세의 그 화 묶음 다시 만들기 목록이
+   * 정한다 — 구성안으로 쓴 화는 화 하나짜리 묶음이라 그 금액이 서버의 이 동작 금액과 같다. 옛 묶음 다시 만들기 라우트는 이 화를 거절한다. */
+  async function startOutlineRegenerate(chapterId: string) {
+    if (isBusy || isRoomGone || outlineFlow !== "on") return;
+    setNotice(undefined);
+    const chapter = novel.chapters.find((item) => item.id === chapterId);
+    const batch = chapter === undefined ? undefined : novel.batches.find((item) => item.id === chapter.batchId);
+    if (chapter === undefined || batch === undefined || !isOutlineFlowChapter(chapter)) {
+      // 상세가 낡았다(다른 탭에서 지웠다) — 다시 받으면 목차와 버튼이 맞아진다.
+      setNotice({ tone: "error", message: "다시 만들 화를 찾을 수 없어요. 소설을 다시 불러왔어요." });
+      void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
+      return;
+    }
+    const label = `${chapter.ordinal}화`;
+    const options = toRegenerateModelOptions(batch.regenerateOptions);
+    if (!options.some((option) => option.disabledReason === undefined)) {
+      setNotice({ tone: "error", message: `${label}는 지금 고를 수 있는 모델로 다시 만들 수 없어요.` });
+      return;
+    }
+    setPreparing("regenerate");
+    try {
+      if (!(await ensureProtagonistName()) || !isMountedRef.current || hasActiveJobNow()) return;
+      const choice = await confirmSpend({
+        title: `${label}를 다시 만들까요?`,
+        description: toRegenerateConfirmDescription({
+          rangeLabel: label,
+          episodeCount: 1,
+          hasPendingAiEdits: hasPendingEdits(novel, new Set([chapter.id])),
+          isIllustrationsOn,
+          isOutlineFlow: true,
+        }),
+        confirmLabel: "다시 만들기",
+        options,
+        initialModelId: initialChapterModelId(options, novel.lastChapterModel),
+      });
+      if (choice === null || !isMountedRef.current) return;
+      const started = await requestJob(() =>
+        outlineRegenerateMutation.mutateAsync({
+          novelId: novel.id,
+          chapterId: chapter.id,
+          expectedCost: choice.cost,
+          model: choice.model,
+        }),
+      );
+      if (started) track(started);
+    } catch (error) {
+      handleRequestError(error, "outlineRegenerate");
+    } finally {
+      setPreparing(undefined);
+    }
+  }
+
+  /** 승인한 전체 구성안의 한 화로 장면 구성안을 만든다(유료). 승인하지 않은 장면 구성안은 돌려주지 않고, 만들지 못하면 서버가 모두
+   * 돌려준다(금액 줄 아래 한 줄로 알린다). */
+  async function startEpisodeOutline(episodeKey: string) {
+    await startEpisodeJob(episodeKey, "episodeOutline");
+  }
+
+  /** 그 화의 승인한 장면 구성안으로 원고를 쓴다(유료, 화 단가 하나). */
+  async function startOutlineChapter(episodeKey: string) {
+    await startEpisodeJob(episodeKey, "outlineChapter");
+  }
+
+  /** 장면 구성안·원고의 공통 흐름. 모델·금액은 확인 직전에 그 화의 장면 구성안 조회를 새로 받아 정한다(장면 구성안은 `models`, 원고는
+   * `chapterModels`) — 화면에 떠 있던 값은 그사이 허용 모델·가격이 바뀌었을 수 있다. 확인 창이 어느 화의 일인지 말하도록 화 제목은 전체
+   * 구성안 조회에서 읽는다(작업 줄의 다시 시도로 열면 화 화면 밖일 수 있다). */
+  async function startEpisodeJob(episodeKey: string, kind: "episodeOutline" | "outlineChapter") {
+    if (isBusy || isRoomGone) return;
+    setNotice(undefined);
+    setPreparing(kind);
+    setPreparingEpisodeKey(episodeKey);
+    try {
+      if (!(await ensureProtagonistName()) || !isMountedRef.current) return;
+      const [state, outline] = await Promise.all([
+        queryClient.fetchQuery(novelEpisodeOutlineQueryOptions(novel.id, episodeKey)),
+        queryClient.fetchQuery(novelOutlineQueryOptions(novel.id)),
+      ]);
+      if (!isMountedRef.current || hasActiveJobNow()) return;
+      const refusal = toEpisodeJobRefusal(kind, state, editingEpisodeKeysRef.current.has(episodeKey));
+      if (refusal !== undefined) {
+        setNotice({ tone: "error", message: refusal });
+        return;
+      }
+      const options = toOutlineModelOptions(kind === "episodeOutline" ? state.models : state.chapterModels);
+      if (options.length === 0) {
+        setNotice({ tone: "error", message: "지금 고를 수 있는 모델이 없어요." });
+        return;
+      }
+      const title = outline.approved?.episodes.find((episode) => episode.key === episodeKey)?.title.trim();
+      const named = title === undefined || title === "" ? "이 화" : `「${title}」 화`;
+      const hasSceneOutline = (state.draft ?? state.approved) !== null;
+      const initialModelId = initialChapterModelId(options, novel.lastChapterModel);
+      const choice = await confirmSpend(
+        kind === "episodeOutline"
+          ? {
+              title: hasSceneOutline ? "장면 구성안을 다시 만들까요?" : "장면 구성안을 만들까요?",
+              description: hasSceneOutline
+                ? `${named}의 장면 구성안을 새로 만들어요. 새 구성안은 초안으로 오고, 고친 뒤 승인해야 원고로 이어져요.`
+                : `${named}의 근거 대화를 장면으로 나눈 구성안을 만들어요. 고친 뒤 승인해야 원고로 이어져요.`,
+              confirmLabel: hasSceneOutline ? "다시 만들기" : "장면 구성안 만들기",
+              options,
+              initialModelId,
+              footnote: OUTLINE_SPEND_FOOTNOTE,
+            }
+          : {
+              title: "원고를 쓸까요?",
+              description: `${named}를 승인한 장면 구성안대로 써요. 다 쓰면 보드에 새 화로 놓여요.`,
+              confirmLabel: "원고 쓰기",
+              options,
+              initialModelId,
+            },
+      );
+      if (choice === null || !isMountedRef.current) return;
+      const mutation = kind === "episodeOutline" ? episodeOutlineMutation : outlineChapterMutation;
+      const started = await requestJob(() =>
+        mutation.mutateAsync({ novelId: novel.id, episodeKey, expectedCost: choice.cost, model: choice.model }),
+      );
+      if (started) track(started, episodeKey);
+    } catch (error) {
+      handleRequestError(error, kind);
+    } finally {
+      setPreparing(undefined);
+      setPreparingEpisodeKey(undefined);
+    }
+  }
+
+  /** 화 화면이 그 화의 장면 구성안을 고치는 중인지 알린다(저장하지 않은 고침이나 열린 고치기 폼). */
+  function reportEpisodeEditing(episodeKey: string, isEditing: boolean) {
+    if (isEditing) editingEpisodeKeysRef.current.add(episodeKey);
+    else editingEpisodeKeysRef.current.delete(episodeKey);
+  }
+
   function retry(target: RetryTarget) {
     switch (target.kind) {
       case "generate":
@@ -410,9 +591,20 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
       case "regenerate":
         void startRegenerate(target.batchId);
         return;
+      case "outlineRegenerate":
+        void startOutlineRegenerate(target.chapterId);
+        return;
       case "outline":
         void startOutline();
         return;
+      case "episodeOutline":
+        void startEpisodeOutline(target.episodeKey);
+        return;
+      case "outlineChapter":
+        void startOutlineChapter(target.episodeKey);
+        return;
+      default:
+        assertNever(target);
     }
   }
 
@@ -425,12 +617,20 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     isBusy,
     hasPollError,
     runningKind: isJobRunning ? watched?.kind : undefined,
+    /** 도는 장면 구성안·원고 작업의 화 키. 이 화면이 시작하지 않은 작업이면 모른다(`null`). */
+    runningEpisodeKey: isJobRunning ? (watched?.episodeKey ?? null) : null,
+    preparingEpisodeKey,
+    outlineFlow,
     runningRangeLabel,
     chainProgress,
     notice,
     startCreate,
     startRegenerate,
     startOutline,
+    startOutlineRegenerate,
+    startEpisodeOutline,
+    startOutlineChapter,
+    reportEpisodeEditing,
     retry,
   };
 }

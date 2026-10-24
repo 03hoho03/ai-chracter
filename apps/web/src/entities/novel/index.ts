@@ -37,6 +37,17 @@ export {
   type NovelOutlineView,
 } from "./api/useNovelOutline";
 export {
+  novelEpisodeOutlineQueryOptions,
+  useApproveNovelEpisodeOutlineMutation,
+  useNovelEpisodeOutlineQuery,
+  useSaveNovelEpisodeOutlineMutation,
+  type NovelEpisodeOutlineSaveRequest,
+  type NovelEpisodeOutlineState,
+  type NovelEpisodeOutlineView,
+  type NovelSceneInput,
+  type NovelSceneView,
+} from "./api/useNovelEpisodeOutline";
+export {
   useApproveNovelSourceSelectionMutation,
   useNovelSourceSelectionQuery,
   useSaveNovelSourceSelectionMutation,
@@ -126,6 +137,7 @@ export { toNovelReadProgress, type NovelReadProgress } from "./model/novelReadPr
 export { isNovelIllustrationsOn } from "./model/illustrationSwitch";
 export { isNovelMultiBlockEditOn } from "./model/multiBlockEditSwitch";
 export { isNovelOutlineFlowOn } from "./model/outlineFlowSwitch";
+export { isOutlineFlowBatch, isOutlineFlowChapter } from "./model/outlineFlowChapter";
 export {
   hasPendingBlockEdits,
   hasPendingEdits,

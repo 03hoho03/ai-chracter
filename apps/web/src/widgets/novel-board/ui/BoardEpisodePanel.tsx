@@ -9,6 +9,7 @@ import {
   hasPendingBlockEdits,
   isNovelIllustrationsOn,
   isNovelMultiBlockEditOn,
+  isOutlineFlowChapter,
   toEpisodeRangeLabel,
   useNovelChapterQuery,
   type NovelChapterSummary,
@@ -24,6 +25,8 @@ import {
 } from "@/features/edit-novel-chapter";
 import { AuthorNoteEditor, EpisodeTitleEditor } from "@/features/edit-novel-episode";
 import { NovelRevisionHistoryModal } from "@/features/novel-revision-history";
+
+import { toEpisodeBatchCopy } from "../model/episodeBatchCopy";
 
 import { useIllustrationImagePicker } from "./useIllustrationImagePicker";
 
@@ -78,6 +81,12 @@ export function BoardEpisodePanel({
   const firstInBatch = batchChapters[0] ?? chapter;
   const lastInBatch = batchChapters.at(-1) ?? chapter;
   const batchRangeLabel = toEpisodeRangeLabel(firstInBatch.ordinal, lastInBatch.ordinal);
+  const batchCopy = toEpisodeBatchCopy({
+    isOutlineFlow: isOutlineFlowChapter(chapter),
+    batchOrdinal: batch?.ordinal,
+    rangeLabel: batchRangeLabel,
+    episodeCount: batchChapters.length,
+  });
   // 진행 중 작업이 있거나 노벨에서 그 묶음 화를 소장한 회원이 있으면 서버가 마지막 묶음 지우기를 409 로 막는다 —
   // 미리 막고 까닭을 말한다(진행 중 작업이 먼저다 — 끝나기를 기다리면 풀리는 쪽).
   const isJobRunning = novel.activeJob !== null || chapterFlow.isBusy || aiEdit.isRunning;
@@ -172,15 +181,11 @@ export function BoardEpisodePanel({
 
       <section aria-labelledby={batchHeadingId} className="flex flex-col gap-3 border-t border-border pt-4">
         <h3 id={batchHeadingId} className="text-sm font-semibold text-foreground tabular-nums">
-          {batch === undefined ? batchRangeLabel : `묶음 ${batch.ordinal} · ${batchRangeLabel}`}
+          {batchCopy.heading}
         </h3>
         {/* 대화방이 지워진 소설은 다시 만들 수 없어(버튼이 없다) 다시 만들기 안내도 두지 않는다. */}
         {!chapterFlow.isRoomGone && (
-          <p className="text-xs break-keep text-muted-foreground">
-            {batchChapters.length > 1
-              ? "한 번에 만든 화들이라 다시 만들거나 지울 때 함께 바뀌어요. 고친 화 제목은 다시 만들어도 그대로예요."
-              : "다시 만들어도 고친 화 제목은 그대로예요."}
-          </p>
+          <p className="text-xs break-keep text-muted-foreground">{batchCopy.note}</p>
         )}
         <div className="flex flex-wrap gap-2">
           {/* AI 수정을 준비·요청하는 동안과 202 뒤 상세를 다시 받기 전에는 상세에 진행 중 작업이 아직 없어 화 작업
@@ -223,7 +228,7 @@ export function BoardEpisodePanel({
             {isJobRunning ? "진행 중인 작업이 끝나면 지울 수 있어요." : LAST_BATCH_SOLD_REASON}
           </p>
         )}
-        {!isLastBatch && <p className="text-xs break-keep text-muted-foreground">지우기는 마지막 묶음만 할 수 있어요.</p>}
+        {!isLastBatch && <p className="text-xs break-keep text-muted-foreground">{batchCopy.notLastHint}</p>}
       </section>
     </div>
   );

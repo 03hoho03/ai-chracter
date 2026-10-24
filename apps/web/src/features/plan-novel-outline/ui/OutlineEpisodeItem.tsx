@@ -207,7 +207,7 @@ type BasisToggleProps = {
 };
 
 /** 근거 대화를 펼치는 버튼. 대화를 아직 못 받았거나 근거 메시지를 못 찾으면 버튼 대신 그 사정을 한 줄로 말한다. */
-function BasisToggle({ status, basisLabel, isOpen, controlsId, onToggle }: BasisToggleProps) {
+export function BasisToggle({ status, basisLabel, isOpen, controlsId, onToggle }: BasisToggleProps) {
   if (status === "gone") return <p className="text-xs text-muted-foreground">원래 대화방이 지워져 근거 대화를 볼 수 없어요.</p>;
   if (status === "loading") return <p className="text-xs text-muted-foreground">근거 대화를 불러오는 중이에요.</p>;
   if (status === "error") return <p className="text-xs text-muted-foreground">근거 대화를 불러오지 못했어요.</p>;
@@ -230,7 +230,7 @@ function BasisToggle({ status, basisLabel, isOpen, controlsId, onToggle }: Basis
   );
 }
 
-function TurnLine({ number, excerpt }: { number: number; excerpt: string }) {
+export function TurnLine({ number, excerpt }: { number: number; excerpt: string }) {
   return (
     <div className="flex flex-col gap-0.5 rounded-lg border border-border px-3 py-2">
       <span className="text-xs text-muted-foreground tabular-nums">{number}턴</span>
@@ -380,7 +380,7 @@ type MenuActionProps = {
 
 /** 메뉴 항목 하나. 못 하면 `disabled` 가 아니라 `aria-disabled` 로 순회에 남기고, 이유를 바로 아래 줄에 둔다(구분선 없이 — 위 항목의
  * 설명이라서). */
-function MenuAction({ icon, blockedReason, variant = "default", onSelect, children }: MenuActionProps) {
+export function MenuAction({ icon, blockedReason, variant = "default", onSelect, children }: MenuActionProps) {
   const reasonId = useId();
   const isBlocked = blockedReason !== undefined;
   return (

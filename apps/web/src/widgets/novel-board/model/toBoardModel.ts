@@ -1,5 +1,6 @@
 import {
   isChapterRegenerating,
+  isOutlineFlowBatch,
   readChapterReadingPosition,
   toBatchRangeLabel,
   toPendingBlockEdits,
@@ -52,6 +53,7 @@ export function toBoardModel(
       id: batch.id,
       ordinal: batch.ordinal,
       rangeLabel: toBatchRangeLabel(novel.chapters, batch.id),
+      ...(isOutlineFlowBatch(novel.chapters, batch.id) && { isOutlineFlow: true as const }),
     })),
     episodes: novel.chapters.map((chapter) => ({
       id: chapter.id,
