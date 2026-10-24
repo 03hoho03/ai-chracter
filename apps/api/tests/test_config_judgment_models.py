@@ -263,6 +263,8 @@ _PRODUCTION_ROUTES: dict[tuple[LLMCallSite, PromptSetModelId], tuple[PromptSetMo
     ("chat_memory_summary", "gemini"): ("haiku", "anthropic"),
     ("chat_memory_episode", "gemini"): ("haiku", "anthropic"),
     ("chat_memory_fact", "gemini"): ("haiku", "anthropic"),
+    # 인상 생성은 운영 env 에 모델 줄도 배정 줄도 아직 없어 기본(Gemini)으로 간다.
+    ("chat_memory_impression", "gemini"): ("gemini", "gemini"),
     ("chat_scene_judgment", "gemini"): ("haiku", "anthropic"),
     ("preview_generate", "gemini"): ("gemini", "gemini"),
     ("preview_stat_judgment", "gemini"): ("haiku", "anthropic"),
