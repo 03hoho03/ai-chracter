@@ -22,3 +22,16 @@ describe("PreviewSessionView session-ended notice", () => {
     expect(notice).toBeLessThan(viewSource.indexOf("응답 생성에 실패했습니다."));
   });
 });
+
+// 확인 모달에 넘기는 한 턴 가격은 지금 답을 쓰는 모델의 가격이어야 한다. 기본 모델 가격을 고정해 넘기면 상위 모델을 고른 화면에서 숫자가 틀린다.
+describe("PreviewSessionView turn cost", () => {
+  it("confirms clover spend with the displayed model's price, not the default model's", () => {
+    expect(viewSource).not.toContain("defaultChatTurnCost");
+    expect(viewSource).toContain("const turnCost = previewTurnCost(models, displayModelId);");
+    expect(viewSource).toContain("confirmCloverSpend(error, turnCost, \"chat\")");
+  });
+
+  it("starts the session with the displayed model's query", () => {
+    expect(viewSource).toContain("query: previewStartQuery(displayModelId),");
+  });
+});

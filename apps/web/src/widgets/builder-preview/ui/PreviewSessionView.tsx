@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { RotateCw, Send, TriangleAlert } from "lucide-react";
+import { ChevronDown, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
-import { defaultChatTurnCost, useChatModelsQuery } from "@/entities/chat-model";
+import { DEFAULT_CHAT_MODEL, isPremiumChatModel, useChatModelsQuery, type ChatModelId } from "@/entities/chat-model";
 import type { PreviewShortcut, PreviewStartPayload } from "@/entities/preview-session";
 import {
   AuthorMacroNamesProvider,
@@ -21,6 +21,7 @@ import {
   TypingIndicator,
   shouldShowSuggestedReplies,
 } from "@/entities/chat-room";
+import { CloverBalance, isCloverInsufficient, shouldShowCloverBalance, useCloverBalanceQuery } from "@/entities/clover";
 import { IdentityRequiredNotice } from "@/entities/identity";
 import type { MediaTagImages } from "@/entities/media-book";
 import { usePersonasQuery } from "@/entities/persona";
@@ -34,8 +35,15 @@ import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 import { expandAuthorMacros } from "@/shared/lib/text/authorMacros";
 
 import { previewAuthorMacroNames } from "../model/previewAuthorMacroNames";
+import {
+  isPreviewModelSelectable,
+  previewDisplayModel,
+  previewStartQuery,
+  previewTurnCost,
+} from "../model/previewChatModel";
 import { previewEmptyHint } from "../model/previewEmptyHint";
 import { previewPersonaLabel } from "../model/previewPersonaLabel";
+import { PreviewChatModelModal } from "./PreviewChatModelModal";
 
 type PreviewSessionViewProps = {
   getPayload: () => PreviewStartPayload;
@@ -81,13 +89,36 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
     ? expandStoryScene(selectCurrentScene(state.messages, state.initialScene), expandForPreview)
     : undefined;
 
+  // 고른 모델은 이 화면의 지역 상태다 — 빌더를 떠나면 기본 모델로 돌아온다(확인은 고른 그 순간의 동의라 다음 방문에
+  // 확인 없이 상위 모델 가격이 나가지 않게 한다). 화면이 말하는 모델은 저장하지 않고 세션의 기능 목록으로 매번 정한다.
+  const [chosenModelId, setChosenModelId] = useState<ChatModelId>(DEFAULT_CHAT_MODEL);
+  const { data: me } = useSessionQuery();
+  const displayModelId = previewDisplayModel(me?.enabledFeatures, chosenModelId);
+  const models = useChatModelsQuery().data;
+  // 기능이 꺼진 계정에는 칩이 없다. 목록이 아직 없으면 이름을 모르므로 칩을 미룬다 — 기본 모델 이름을 지어 넣지 않는다.
+  const modelChipName = isPreviewModelSelectable(me?.enabledFeatures)
+    ? models?.find((model) => model.id === displayModelId)?.name
+    : undefined;
   // 미리보기도 채팅 4경로와 **같은 게이트**를 지나므로 같은
   // 확인이 필요하다. 트리거를 위젯이 만들어 넘기는 이유와 단가를 여기서 묶는 이유는
-  // `ChatRoomView`와 같다 — 한 턴 단가다. 미리보기는 언제나 기본 모델이라 그 가격을 모델 목록의 기본 모델 항목에서
-  // 읽는다(방이 없어 방 응답의 가격이 없다). 목록을 못 받았으면 확인 문구가 숫자 없이 말한다.
+  // `ChatRoomView`와 같다 — 한 턴 단가다. 방이 없어 방 응답의 가격이 없으므로 지금 답을 쓰는 모델의 가격을 모델 목록에서
+  // 읽는다. 하루 한 번 확인은 기본 모델 턴에서만 오므로 실제로는 기본 모델 가격이 실린다. 목록을 못 받았으면 확인 문구가
+  // 숫자 없이 말한다.
   const confirmCloverSpend = useConfirmCloverSpend();
-  const turnCost = defaultChatTurnCost(useChatModelsQuery().data);
-  const { data: me } = useSessionQuery();
+  const turnCost = previewTurnCost(models, displayModelId);
+  // 잔량은 대화방 입력 바와 같은 판정이다 — 상위 모델은 첫 턴부터 턴마다 깎이므로 언제나, 기본 모델은 무료분을 쓴 뒤나
+  // 부족할 때만. 세션을 잃은 뒤에는 내린다(옛 잔액이 캐시에 남는다).
+  const { data: clover } = useCloverBalanceQuery();
+  const cloverBalance = clover?.balance ?? 0;
+  const isCloverShort = turnCost !== undefined && isCloverInsufficient(cloverBalance, turnCost);
+  const shouldShowClover =
+    clover !== undefined &&
+    me !== undefined &&
+    shouldShowCloverBalance({
+      spendConfirmedToday: clover.spendConfirmedToday,
+      hasCloverShortage: isCloverShort,
+      chargesEveryTurn: isPremiumChatModel(displayModelId),
+    });
   const { send, status, policyWarning, streamingText } = usePreviewSendMessage(
     (error) =>
       // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 일일 버킷을 쓰므로 자정 사유가 참이다.
@@ -113,6 +144,7 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
     try {
       const nextState = await startMutation.mutateAsync({
         payload: getPayload(),
+        query: previewStartQuery(displayModelId),
         mediaBookImages: getMediaBookImages?.(),
       });
       setPreviewSessionId(nextState.previewSessionId);
@@ -134,6 +166,19 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   async function ensurePreviewSession(): Promise<string | undefined> {
     if (previewSessionId) return previewSessionId;
     return startPreview();
+  }
+
+  // 모델을 바꾸면 세션 id 만 비운다 — 화면은 곧바로 로컬 시작 상태(처음 화면)가 되고, 새 세션은 다음 전송이 고른 모델로
+  // 연다. 모달 안에서 바로 열지 않는 것은 시작 실패(권한·세션 끝남)를 지금처럼 전송 자리 한 곳에서만 다루려는 것이다.
+  async function handleChooseModel() {
+    if (isSending || isStarting) return;
+    const nextModelId = await PreviewChatModelModal.call({
+      currentModelId: displayModelId,
+      hasSession: previewSessionId !== undefined,
+    });
+    if (nextModelId === undefined || nextModelId === displayModelId) return;
+    setChosenModelId(nextModelId);
+    setPreviewSessionId(undefined);
   }
 
   useEffect(() => {
@@ -198,6 +243,9 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
 
   return (
     <div className="flex h-below-header flex-col">
+      {/* `__root` 가 아니라 여기 마운트한다 — 루트가 이 위젯을 import 하면 빌더 미리보기까지 메인 청크로 끌려온다(대화방
+          모델 모달과 같은 이유). 여는 곳은 이 화면의 모델 칩 하나뿐이다. */}
+      <PreviewChatModelModal />
       <PreviewCloseHeader
         title="미리보기"
         onClose={onClose}
@@ -294,7 +342,36 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
           {/* 헤더(`PreviewCloseHeader`)가 아니라 여기인 이유: 헤더 행은 `h-8` 고정 한 줄이라 360px에서
               `미리보기 초기화` 옆에 두면 "대화 프로필:…"로 말줄임돼 이름이 통째로 안 보였다(실측). 입력창 위는 전체 폭을
               쓰고, 작가가 말을 거는 바로 그 자리에서 "누구로 대화하는지"를 읽는다. */}
-          {personaCaption !== undefined && <p className="mb-2 text-xs break-words break-keep text-muted-foreground">{personaCaption}</p>}
+          {/* 모델 칩과 클로버 잔량도 새 줄을 만들지 않고 이 캡션 줄에 든다(칩 왼쪽 · 잔량 오른쪽 — 대화방 좁은 화면의 입력 바
+              위 줄과 같은 문법). 머리 줄이 아닌 이유는 위 캡션과 같다: 2단 빌더의 미리보기 열은 폰보다 좁다. */}
+          {(modelChipName !== undefined || personaCaption !== undefined || shouldShowClover) && (
+            <div className="mb-2 flex items-center gap-2">
+              {modelChipName !== undefined && (
+                // 대화방 모델 칩과 같은 모양·같은 접근 이름 조립("AI 모델 {이름}, 바꾸기"). 전송 중에는 세션이 바뀌면
+                // 안 되므로 막되, 누른 칩에서 포커스가 빠지지 않게 `aria-disabled` 로 막는다.
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-haspopup="dialog"
+                  aria-disabled={isSending || isStarting}
+                  onClick={() => void handleChooseModel()}
+                  className="relative max-w-40 shrink-0 rounded-full text-muted-foreground aria-disabled:opacity-65 pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1"
+                >
+                  <span className="sr-only">AI 모델 </span>
+                  <span className="min-w-0 truncate">{modelChipName}</span>
+                  <span className="sr-only">, 바꾸기</span>
+                  <ChevronDown data-icon="inline-end" aria-hidden />
+                </Button>
+              )}
+              {personaCaption !== undefined && (
+                <p className="min-w-0 flex-1 text-xs break-words break-keep text-muted-foreground">{personaCaption}</p>
+              )}
+              {shouldShowClover && (
+                <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} className="ml-auto shrink-0" />
+              )}
+            </div>
+          )}
           {/* 실제 채팅방(ChatRoomView)과 동일한 규칙 — 첫 턴 전송을 시작한 순간부터 감춘다.
               사용자 메시지가 전송 즉시 캐시에 추가되므로, turnCount가 오르기를 기다리는
               동안(스트리밍 구간) 죽은 칩 줄이 남는 것도 이 항이 함께 막는다. */}
