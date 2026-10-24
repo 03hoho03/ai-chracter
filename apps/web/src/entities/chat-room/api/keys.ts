@@ -26,6 +26,9 @@ export const chatRoomKeys = {
   // 잊게 하기가 끝나며 목록을 다시 받을 때 아직 닫히는 중인 확인 대화가 이 수를 다시 묻지 않게.
   memoryForgetPreview: (roomId: string, factKey: string) =>
     [...chatRoomKeys.memory(roomId), "forget-preview", factKey] as const,
+  // 소설 구간 고르기가 읽는 방의 메시지 전부. 채팅 화면의 방 상세(최근 몇 개만 싣고 위로 불러 붙인다)와 깊이가 달라 섞이지
+  // 않게 따로 둔다 — 같은 키면 채팅 화면이 받은 얕은 목록이 고르기 화면에 그려지거나, 반대로 채팅 화면이 메시지 전부를 받는다.
+  sourceMessages: (roomId: string) => [...chatRoomKeys.all, "source-messages", roomId] as const,
   playGuide: (roomId: string) => [...chatRoomKeys.all, "play-guide", roomId] as const,
   endingCollection: (startingSetupId: string) =>
     [...chatRoomKeys.all, "ending-collection", startingSetupId] as const,

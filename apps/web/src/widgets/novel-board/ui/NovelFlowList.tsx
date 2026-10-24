@@ -19,6 +19,8 @@ type NovelFlowListProps = {
   characterStatus: "ready" | "loading" | "error";
   onRetryCharacters: () => void;
   onSelect: (selection: BoardSelection) => void;
+  /** 구성 화면 입구. 구성 흐름 스위치가 켜졌을 때만 호출부가 주고, 탭 위에 놓인다. */
+  planEntry?: ReactNode;
 };
 
 // 포커스는 하우스 레시피(불투명 `border-ring` 이 3:1 을 지고 바깥 반투명 링을 더한다).
@@ -33,12 +35,12 @@ const ROW_CLASS =
  * 패널 화면이 떠 있는 동안에도 호출부는 이 목록을 숨긴 채 마운트해 둔다 — 돌아오면 고른 탭과 스크롤 자리가 그대로다.
  * 행마다 `data-board-key` 를 달아, 돌아올 때 호출부가 고르던 행으로 포커스를 돌려준다.
  */
-export function NovelFlowList({ model, characterStatus, onRetryCharacters, onSelect }: NovelFlowListProps) {
+export function NovelFlowList({ model, characterStatus, onRetryCharacters, onSelect, planEntry }: NovelFlowListProps) {
   const [tab, setTab] = useState<FlowListTab>("episodes");
   const sections = toFlowListSections(model);
   const characters = toFlowListCharacters(model);
 
-  return (
+  const tabs = (
     <Tabs value={tab} onValueChange={(value) => setTab(TABS.find((item) => item === value) ?? "episodes")} className="gap-4">
       <TabsList variant="line">
         {TABS.map((item) => (
@@ -94,6 +96,13 @@ export function NovelFlowList({ model, characterStatus, onRetryCharacters, onSel
         </button>
       </TabsContent>
     </Tabs>
+  );
+  if (planEntry === undefined) return tabs;
+  return (
+    <div className="flex flex-col gap-6">
+      {planEntry}
+      {tabs}
+    </div>
   );
 }
 

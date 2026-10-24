@@ -217,7 +217,7 @@ describe("toSaveSections", () => {
 
 describe("hasIncludedResponse · countTurnStates", () => {
   const messages: SourceMessage[] = [...room(2), { id: "u3", role: "user", content: "답 없는 말" }];
-  const turns = buildSourceTurns(messages, { fixedEndId: "u3", roomEndId: "u3", lockedRanges: [] });
+  const turns = buildSourceTurns(messages, { fixedEndId: "u3", roomEndId: "u3", lockedRanges: [{ startMessageId: "a0", endMessageId: "a0" }] });
 
   it("응답이 든 턴을 하나라도 담아야 참이다 — 사용자 말뿐인 턴만 담으면 거짓", () => {
     expect(hasIncludedResponse(turns, new Map([["u3", "include"]]))).toBe(false);
@@ -237,7 +237,7 @@ describe("hasIncludedResponse · countTurnStates", () => {
 
 describe("toTimelineSegments", () => {
   it("맞닿은 같은 상태의 턴을 한 묶음으로 모은다", () => {
-    const turns = buildSourceTurns(room(4), { fixedEndId: "a4", roomEndId: "a4", lockedRanges: [] });
+    const turns = buildSourceTurns(room(4), { fixedEndId: "a4", roomEndId: "a4", lockedRanges: [{ startMessageId: "a0", endMessageId: "a0" }] });
     const states = new Map<string, TurnState>([
       ["a0", "locked"],
       ["u1", "include"],

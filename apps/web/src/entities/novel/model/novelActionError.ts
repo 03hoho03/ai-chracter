@@ -36,7 +36,9 @@ export type NovelAction =
   | "attachIllustration"
   | "moveIllustration"
   | "replaceIllustration"
-  | "detachIllustration";
+  | "detachIllustration"
+  | "saveSourceSelection"
+  | "approveSourceSelection";
 
 export type NovelActionErrorNotice = {
   message: string;
@@ -76,11 +78,15 @@ const ACTION_OBJECT: Record<NovelAction, string> = {
   moveIllustration: "삽화를 옮기지",
   replaceIllustration: "삽화를 바꾸지",
   detachIllustration: "삽화를 떼지",
+  saveSourceSelection: "고른 구간을 저장하지",
+  approveSourceSelection: "고른 구간을 승인하지",
 };
 
 /** 원래 대화방이 지워져 화를 만들 수도 다시 만들 수도 없을 때의 문장. 만들기 버튼 아래 사유 문장과 두 요청의 409 가
  * 같은 문장을 쓴다 — 409 문구는 요청 종류를 보지 않아서, 만들기만 말하면 다시 만들기에서 받았을 때 틀린 말이 된다. */
 export const NOVEL_ROOM_GONE_MESSAGE = "원래 대화방이 지워져 새 화를 만들거나 다시 만들 수 없어요.";
+
+const SOURCE_MISMATCH_MESSAGE = "고른 구간을 대화와 맞추지 못했어요. 대화를 새로 불러왔어요. 구간을 다시 골라주세요.";
 
 /** 코드 → 문구. 기다려도 풀리지 않는 거부는 "다시 시도"를 말하지 않고, 이용자가 할 수 있는 다음 일을 말한다. */
 const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
@@ -221,6 +227,32 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
   NOVEL_PATCH_NOT_FOUND: {
     message: "이 수정안을 찾을 수 없어요. 최신 내용을 불러왔어요.",
     shouldRefetchNovel: true,
+  },
+  // 구성 흐름 스위치가 꺼졌다. 호출부가 가격 응답도 다시 받아 구성 화면을 거둔다.
+  NOVEL_OUTLINE_FLOW_DISABLED: { message: "지금은 구성 흐름을 쓸 수 없어요.", shouldRefetchNovel: false },
+  // 다른 탭이 먼저 저장·승인했다. 호출부가 고친 것을 버리고 선택을 다시 받는다.
+  NOVEL_SOURCE_SELECTION_CONFLICT: {
+    message: "다른 곳에서 고른 구간이 바뀌었어요. 새로 불러왔어요.",
+    shouldRefetchNovel: false,
+  },
+  // 저장 뒤 고른 대화가 고쳐지거나 지워졌다. 초안은 서버에 남아 있고, 다시 받으면 바뀐 턴에 표시가 붙는다.
+  NOVEL_SOURCE_SELECTION_SOURCE_CHANGED: {
+    message: "고른 대화 중 바뀐 곳이 있어요. 표시한 턴을 확인한 뒤 다시 승인해주세요.",
+    shouldRefetchNovel: false,
+  },
+  // 아래 셋은 화면이 막는 값이 서버에 닿은 경우다(그사이 대화가 지워졌거나 화면 계산이 어긋났다). 무엇이 어긋났는지는 이용자가
+  // 할 일을 바꾸지 않아 한 문장이다.
+  NOVEL_SOURCE_MESSAGE_NOT_FOUND: { message: SOURCE_MISMATCH_MESSAGE, shouldRefetchNovel: false },
+  NOVEL_SOURCE_SECTION_INVALID: { message: SOURCE_MISMATCH_MESSAGE, shouldRefetchNovel: false },
+  NOVEL_SOURCE_SECTION_OUT_OF_RANGE: { message: SOURCE_MISMATCH_MESSAGE, shouldRefetchNovel: false },
+  // 그사이 그 구간으로 화가 생겼다. 다시 받은 잠금이 그 턴을 담기에서 뺀다.
+  NOVEL_SOURCE_SECTION_LOCKED: {
+    message: "이미 화로 쓴 대화는 다시 담을 수 없어요. 새로 불러왔어요.",
+    shouldRefetchNovel: false,
+  },
+  NOVEL_SOURCE_SELECTION_EMPTY: {
+    message: "담을 대화를 하나 이상 골라주세요. AI 답이 든 턴이어야 해요.",
+    shouldRefetchNovel: false,
   },
   CONTENT_RESTRICTED: {
     message: "이용이 제한된 작품이라 새로 쓰는 작업을 할 수 없어요. 지금까지 만든 화는 그대로 볼 수 있어요.",
@@ -367,6 +399,10 @@ export function toNovelActionError(
   }
   if (code === "NOVEL_JOB_NOT_APPLICABLE" && action === "dismissPatch") {
     return { message: "이미 적용했거나 버린 수정안이에요. 최신 내용을 불러왔어요.", shouldRefetchNovel: true };
+  }
+  // 표의 문구는 화를 만들 때의 말이다. 구간 고르기에서 받으면 고를 대화 자체가 없다.
+  if (code === "NOVEL_ROOM_GONE" && (action === "saveSourceSelection" || action === "approveSourceSelection")) {
+    return { message: "원래 대화방이 지워져 담을 대화를 고를 수 없어요.", shouldRefetchNovel: true };
   }
   if (code === "NOVEL_BLOCK_IDS_INVALID" && action === "aiEdit") {
     return { message: "고른 문단이 바뀌었어요. 최신 내용을 불러왔어요. 다시 골라 주세요.", shouldRefetchNovel: true };

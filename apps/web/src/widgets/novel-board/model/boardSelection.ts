@@ -1,14 +1,20 @@
 import { NOTES_NODE_KEY, characterNodeKey, episodeNodeKey } from "./boardNode";
 
 /** 편집 보드에서 고른 것. 주소의 `?select=` 하나가 정하고, 값은 배치 저장 키와 같은 말이다(`episode:{id}`·
- * `character:{id}`·`notes`) — 거기에 버전 패널(`versions`)이 더해진다. 없으면 고른 것 없음(소설 개요)이다. */
+ * `character:{id}`·`notes`) — 거기에 버전 패널(`versions`)과 구성 모드(`plan`)가 더해진다. 없으면 고른 것 없음(소설 개요)이다.
+ * 구성 모드는 대화를 골라 화 구성을 세우는 문서 화면이라, 넓은 화면에서도 캔버스와 옆 패널 대신 한 열로 보인다. */
 export type BoardSelection =
   | { kind: "episode"; id: string }
   | { kind: "character"; id: string }
   | { kind: "notes" }
-  | { kind: "versions" };
+  | { kind: "versions" }
+  | { kind: "plan" };
 
 export const VERSIONS_SELECT_VALUE = "versions";
+export const PLAN_SELECT_VALUE = "plan";
+
+/** 구성 모드를 열 수 있는가 — 구성 흐름 스위치가 켜졌나(`on`)·꺼졌나(`off`)·아직 모르나(`loading`, 가격 응답을 받는 중). */
+export type PlanAvailability = "on" | "off" | "loading";
 
 const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 const EPISODE_PATTERN = new RegExp(`^episode:(${UUID})$`);
@@ -20,6 +26,7 @@ export function parseBoardSelection(value: string | undefined): BoardSelection |
   if (value === undefined) return undefined;
   if (value === NOTES_NODE_KEY) return { kind: "notes" };
   if (value === VERSIONS_SELECT_VALUE) return { kind: "versions" };
+  if (value === PLAN_SELECT_VALUE) return { kind: "plan" };
   const episode = EPISODE_PATTERN.exec(value)?.[1];
   if (episode !== undefined) return { kind: "episode", id: episode };
   const character = CHARACTER_PATTERN.exec(value)?.[1];
@@ -38,23 +45,29 @@ export function toBoardSelectValue(selection: BoardSelection): string {
       return NOTES_NODE_KEY;
     case "versions":
       return VERSIONS_SELECT_VALUE;
+    case "plan":
+      return PLAN_SELECT_VALUE;
   }
 }
 
-/** 고른 것이 캔버스의 어느 노드인가. 버전 패널은 노드가 없다. */
+/** 고른 것이 캔버스의 어느 노드인가. 버전 패널·구성 모드는 노드가 없다. */
 export function toSelectedNodeKey(selection: BoardSelection | undefined): string | undefined {
-  if (selection === undefined || selection.kind === "versions") return undefined;
+  if (selection === undefined || selection.kind === "versions" || selection.kind === "plan") return undefined;
   return toBoardSelectValue(selection);
 }
 
 /** 지금 없는 대상(지운 화·합쳐 사라진 인물)을 고른 주소는 고른 것 없음으로 접는다. 인물 목록을 아직 받지 못했으면
- * (`undefined`) 인물은 있는 것으로 두고 패널이 기다린다 — 그사이 개요로 튀었다가 돌아오지 않게. */
+ * (`undefined`) 인물은 있는 것으로 두고 패널이 기다린다 — 그사이 개요로 튀었다가 돌아오지 않게. 구성 모드도 같다: 스위치가
+ * 꺼졌으면 접고(구성 흐름 조회는 404 다 — 손으로 친 주소·옛 링크도 열리지 않는다), 아직 모르면 그대로 둔다. 알려 주지 않으면
+ * 꺼짐이다. */
 export function resolveBoardSelection(
   selection: BoardSelection | undefined,
   chapterIds: readonly string[],
   characterIds: readonly string[] | undefined,
+  options: { plan?: PlanAvailability } = {},
 ): BoardSelection | undefined {
   if (selection === undefined) return undefined;
+  if (selection.kind === "plan") return (options.plan ?? "off") === "off" ? undefined : selection;
   if (selection.kind === "episode") return chapterIds.includes(selection.id) ? selection : undefined;
   if (selection.kind === "character") {
     if (characterIds === undefined) return selection;
@@ -67,5 +80,5 @@ export function resolveBoardSelection(
  * `undefined`. */
 export function nodeKeyToSelection(nodeKey: string): BoardSelection | undefined {
   const selection = parseBoardSelection(nodeKey);
-  return selection?.kind === "versions" ? undefined : selection;
+  return selection?.kind === "versions" || selection?.kind === "plan" ? undefined : selection;
 }

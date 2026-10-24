@@ -25,6 +25,14 @@ export {
 } from "./api/useNovelCharactersQuery";
 export { useNovelRevisionQuery } from "./api/useNovelRevisionQuery";
 export {
+  useApproveNovelSourceSelectionMutation,
+  useNovelSourceSelectionQuery,
+  useSaveNovelSourceSelectionMutation,
+  type NovelSourceSelectionSaveRequest,
+  type NovelSourceSelectionState,
+  type NovelSourceSelectionView,
+} from "./api/useNovelSourceSelection";
+export {
   useCreateNovelSnapshotMutation,
   useDeleteNovelSnapshotMutation,
   useNovelSnapshotQuery,
@@ -104,6 +112,7 @@ export {
 export { toNovelReadProgress, type NovelReadProgress } from "./model/novelReadProgress";
 export { isNovelIllustrationsOn } from "./model/illustrationSwitch";
 export { isNovelMultiBlockEditOn } from "./model/multiBlockEditSwitch";
+export { isNovelOutlineFlowOn } from "./model/outlineFlowSwitch";
 export {
   hasPendingBlockEdits,
   hasPendingEdits,

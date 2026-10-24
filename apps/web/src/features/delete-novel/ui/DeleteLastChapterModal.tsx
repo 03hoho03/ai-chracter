@@ -72,10 +72,10 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
       }
       await queryClient.invalidateQueries({ queryKey: novelKeys.detail(novelId) });
       void queryClient.invalidateQueries({ queryKey: novelKeys.list() });
-      // 지운 화가 빠지며 인물의 나온 화·버전 안 그 화 항목(지워진 화가 된다)·남은 대화 견적도 바뀌었다.
+      // 지운 화가 빠지며 인물의 나온 화·버전 안 그 화 항목(지워진 화가 된다)·남은 대화 견적·이미 쓴 대화 구간도 바뀌었다.
       void queryClient.invalidateQueries({
         queryKey: novelKeys.all,
-        predicate: novelScoped(novelId, ["characters", "snapshots", "snapshot", "chainEstimate"]),
+        predicate: novelScoped(novelId, ["characters", "snapshots", "snapshot", "chainEstimate", "sourceSelection"]),
       });
       call.end(true);
     }

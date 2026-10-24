@@ -27,6 +27,9 @@ type CreateChapterAction = {
   blockedReasonId: string | undefined;
   /** 작업 줄의 "다시 시도"가 사라지기 전에 포커스를 옮겨 둘 자리. */
   buttonRef: RefObject<HTMLButtonElement | null>;
+  /** 누르면 할 일. 구성 흐름이 켜져 있으면 화면이 구성 모드로 옮기는 함수를 준다 — 다음 화는 구성 화면에서 만든다. 주지
+   * 않으면 화 만들기 흐름(경계 고르기)을 시작한다. */
+  onStart?: () => void;
 };
 
 /**
@@ -81,7 +84,7 @@ export function NovelBoardTopBar({ novelId, title, autosaveNotice, versions, cre
 /** "다음 화 만들기". 못 누르는 동안에도 `disabled` 가 아니라 `aria-disabled` 다 — `disabled` 는 누른 순간 포커스를
  * 날리고 이유를 말하지 않는다. 이유와 진행은 패널 맨 위 작업 줄이 진다. 준비 중(이름·경계 고르기·확인)에는 아이콘만
  * 스피너로 바뀌고 라벨은 그대로라 버튼 폭이 흔들리지 않는다 — 스피너는 진행 표시라 동작 줄이기 설정에서도 돈다. */
-function CreateChapterButton({ flow, hasChapters, blockedReasonId, buttonRef }: CreateChapterAction) {
+function CreateChapterButton({ flow, hasChapters, blockedReasonId, buttonRef, onStart }: CreateChapterAction) {
   const isBlocked = flow.isBusy || flow.isRoomGone;
   const isPreparing = flow.preparing === "create";
   const label = hasChapters ? "다음 화 만들기" : "첫 화 만들기";
@@ -98,7 +101,8 @@ function CreateChapterButton({ flow, hasChapters, blockedReasonId, buttonRef }: 
       className="aria-disabled:opacity-65"
       onClick={() => {
         if (isBlocked) return;
-        void flow.startCreate();
+        if (onStart !== undefined) onStart();
+        else void flow.startCreate();
       }}
     >
       {isPreparing ? <Loader2 aria-hidden className="animate-spin" /> : <Plus aria-hidden />}
