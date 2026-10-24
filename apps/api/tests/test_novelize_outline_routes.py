@@ -23,6 +23,7 @@ from api.core.config import settings
 from api.db.models import ChatMessage, ChatRoom, Content, NovelJob
 from api.db.models.novel import Novel, NovelOutline
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError, T
+from api.novelize import outline as outline_module
 from api.novelize import router as novelize_router
 from api.novelize import runner
 from factories import (
@@ -315,6 +316,39 @@ async def test_an_oversized_selection_is_refused_before_charging_with_a_reduce_s
 
     monkeypatch.setattr(settings, "novelize_outline_max_input_tokens", without_context)
     assert (await _request(db_client, novel_id)).status_code == 202
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+@pytest.mark.parametrize(("estimated", "status"), [(139_999, 202), (140_000, 202), (140_001, 422)])
+async def test_the_default_input_cap_takes_up_to_140_000_estimated_characters(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    estimated: int,
+    status: int,
+) -> None:
+    """기본 입력 상한은 견적 140,000 이다 — 상한과 같은 견적까지 받고 하나라도 넘으면 422 `NOVEL_OUTLINE_INPUT_TOO_LARGE`.
+    운영 env 가 상한을 따로 두지 않아 기본값이 곧 운영 값이고, 구성안 가격이 이 길이의 원가로 정해져 있다. 견적은 원문 줄 글자 수라
+    원문 줄을 그 길이로 바꿔 끼운다. 깨지는 시나리오: 상한이 가격을 정한 길이보다 커져 긴 선택의 원가가 값을 넘는다."""
+    _, novel_id, _ = await _ready(db_client, db_session, monkeypatch)
+    default_cap = type(settings).model_fields["novelize_outline_max_input_tokens"].default
+    monkeypatch.setattr(settings, "novelize_outline_max_input_tokens", default_cap)
+    monkeypatch.setattr(outline_module, "format_turn_lines", lambda *_args, **_kwargs: "가" * estimated)
+    monkeypatch.setattr(outline_module, "format_context_lines", lambda *_args, **_kwargs: "")
+
+    response = await _request(db_client, novel_id)
+
+    assert response.status_code == status, response.text
+    if status == 422:
+        assert response.json()["detail"]["code"] == "NOVEL_OUTLINE_INPUT_TOO_LARGE"
+        assert (response.json()["detail"]["estimatedInputTokens"], response.json()["detail"]["maxInputTokens"]) == (
+            140_001,
+            140_000,
+        )
+        assert enqueued == []
+    else:
+        assert len(enqueued) == 1
 
 
 @pytest.mark.usefixtures("outline_flow_on")
