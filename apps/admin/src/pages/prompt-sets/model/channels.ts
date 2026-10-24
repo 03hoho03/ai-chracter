@@ -15,6 +15,7 @@ export const PROMPT_CHANNEL_LABELS = {
   image_judgment: "이미지 판정",
   memory_summary: "기억 요약",
   memory_episode: "장면 기억 추출",
+  memory_fact: "사실 기억 추출",
   publish_filter: "발행 검열",
   novelize_boundary: "소설 경계 제안",
   novelize_chapter: "소설 화 생성",
