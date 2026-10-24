@@ -443,3 +443,52 @@ describe("toNovelActionError — 묶음 다시 검사", () => {
     );
   });
 });
+
+describe("toNovelActionError — 담을 대화 고르기", () => {
+  const SELECTION_CODES: [number, string, string][] = [
+    [404, "NOVEL_OUTLINE_FLOW_DISABLED", "지금은 구성 흐름을 쓸 수 없어요."],
+    [409, "NOVEL_SOURCE_SELECTION_CONFLICT", "다른 곳에서 고른 구간이 바뀌었어요. 새로 불러왔어요."],
+    [
+      409,
+      "NOVEL_SOURCE_SELECTION_SOURCE_CHANGED",
+      "고른 대화 중 바뀐 곳이 있어요. 표시한 턴을 확인한 뒤 다시 승인해주세요.",
+    ],
+    [422, "NOVEL_SOURCE_SECTION_LOCKED", "이미 화로 쓴 대화는 다시 담을 수 없어요. 새로 불러왔어요."],
+    [422, "NOVEL_SOURCE_SELECTION_EMPTY", "담을 대화를 하나 이상 골라주세요. AI 답이 든 턴이어야 해요."],
+  ];
+
+  it.each(SELECTION_CODES)("%i %s 는 자기 문구를 갖는다", (status, code, message) => {
+    for (const action of ["saveSourceSelection", "approveSourceSelection"] as const) {
+      expect(toNovelActionError(apiError(status, { code }), action)?.message).toBe(message);
+    }
+  });
+
+  // 화면이 막아야 하는 값이 서버에 닿은 경우다(그사이 대화가 지워졌거나 화면 계산이 어긋났다). 무엇이 어긋났는지는 이용자가 할
+  // 일을 바꾸지 않아 한 문장으로 말한다.
+  it.each(["NOVEL_SOURCE_MESSAGE_NOT_FOUND", "NOVEL_SOURCE_SECTION_INVALID", "NOVEL_SOURCE_SECTION_OUT_OF_RANGE"])(
+    "%s 는 대화를 새로 불러와 다시 고르라고 말한다",
+    (code) => {
+      expect(toNovelActionError(apiError(422, { code }), "saveSourceSelection")?.message).toBe(
+        "고른 구간을 대화와 맞추지 못했어요. 대화를 새로 불러왔어요. 구간을 다시 골라주세요.",
+      );
+    },
+  );
+
+  // 화를 만들 때의 문장("새 화를 만들거나 다시 만들 수 없어요")은 구간 고르기에서 받으면 틀린 말이다.
+  it("대화방이 지워졌으면 구간을 고를 수 없다고 말하고 상세를 다시 받는다", () => {
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_ROOM_GONE" }), "saveSourceSelection")).toEqual({
+      message: "원래 대화방이 지워져 담을 대화를 고를 수 없어요.",
+      shouldRefetchNovel: true,
+    });
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_ROOM_GONE" }), "generate")?.message).toBe(NOVEL_ROOM_GONE_MESSAGE);
+  });
+
+  it("모르는 실패는 저장·승인의 일반 문구로 접는다", () => {
+    expect(toNovelActionError(apiError(500, undefined), "saveSourceSelection")?.message).toBe(
+      "고른 구간을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+    );
+    expect(toNovelActionError(apiError(500, undefined), "approveSourceSelection")?.message).toBe(
+      "고른 구간을 승인하지 못했어요. 잠시 후 다시 시도해주세요.",
+    );
+  });
+});

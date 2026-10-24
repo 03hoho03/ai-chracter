@@ -80,3 +80,28 @@ describe("resolveBoardSelection", () => {
     expect(resolveBoardSelection({ kind: "versions" }, [], undefined)).toEqual({ kind: "versions" });
   });
 });
+
+describe("구성 모드(plan)", () => {
+  it("plan 을 고른 것으로 펴고 주소 값으로 되돌리면 같은 값이다", () => {
+    const selection = parseBoardSelection("plan");
+    expect(selection).toEqual({ kind: "plan" });
+    expect(selection && toBoardSelectValue(selection)).toBe("plan");
+  });
+
+  it("캔버스 노드가 아니다 — 고를 노드도 없고 노드에서 오지도 않는다", () => {
+    expect(toSelectedNodeKey({ kind: "plan" })).toBeUndefined();
+    expect(nodeKeyToSelection("plan")).toBeUndefined();
+  });
+
+  // 스위치가 꺼졌으면 손으로 친 주소나 옛 링크로도 구성 화면이 열리지 않는다(구성 흐름 조회는 404 다).
+  it("구성 흐름을 쓸 수 없으면 고른 것 없음으로 접는다", () => {
+    expect(resolveBoardSelection({ kind: "plan" }, [], [], { plan: "off" })).toBeUndefined();
+    expect(resolveBoardSelection({ kind: "plan" }, [], [])).toBeUndefined();
+  });
+
+  // 스위치를 담은 가격 응답을 받는 동안 개요로 튀었다가 돌아오지 않게 그대로 두고 패널이 기다린다.
+  it("쓸 수 있거나 아직 모르면 그대로다", () => {
+    expect(resolveBoardSelection({ kind: "plan" }, [], [], { plan: "on" })).toEqual({ kind: "plan" });
+    expect(resolveBoardSelection({ kind: "plan" }, [], [], { plan: "loading" })).toEqual({ kind: "plan" });
+  });
+});
