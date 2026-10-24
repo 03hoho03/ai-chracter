@@ -65,6 +65,7 @@ from api.chat.turn_prompt import (
     format_persona,
     generation_prompt_set,
     judgment_prompt_sets,
+    turn_stage_routes,
     room_prompt_names,
 )
 from api.chat.turn_engine import (
@@ -1195,6 +1196,9 @@ async def send_message(
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     # 판정·요약 모델마다의 세트. 세트가 없으면 여기서 실패해 스트림 전 오류 응답이고 차감 게이트(`charge`)보다 앞이다.
     judgment_sets: JudgmentPromptSets = Depends(_judgment_prompt_sets_dependency),
+    # 턴 기록의 단계별 배정을 푸는 표와 실효 방 모델 — 판정 세트 의존성이 이미 받은 값이다(요청 스코프 캐시라 다시 읽지 않는다).
+    routes: PromptRoutes = Depends(_prompt_routes_dependency),
+    room_model: ChatRoomModelId = Depends(_effective_room_model_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     # 차감 게이트: 반환형이 `None`에서
     # `ChatCharge`로 바뀌었다(무엇으로 냈는지가 환불 대상을 가른다).
@@ -1277,6 +1281,13 @@ async def send_message(
                     judgment_sets=judgment_sets,
                     charge=charge,
                     started_at=started_at,
+                    stage_routes=turn_stage_routes(
+                        lane=_lane_for_setup(setup),
+                        routes=routes,
+                        room_model=room_model,
+                        judgment_sets=judgment_sets,
+                        generation_set_id=generation_set.id,
+                    ),
                 ),
                 llm=llm_client,
                 judgments=new_turn_judgments(
@@ -1354,6 +1365,9 @@ async def regenerate_message(
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     # 판정·요약 모델마다의 세트. 세트가 없으면 여기서 실패해 스트림 전 오류 응답이고 차감 게이트(`charge`)보다 앞이다.
     judgment_sets: JudgmentPromptSets = Depends(_judgment_prompt_sets_dependency),
+    # 턴 기록의 단계별 배정을 푸는 표와 실효 방 모델 — 판정 세트 의존성이 이미 받은 값이다(요청 스코프 캐시라 다시 읽지 않는다).
+    routes: PromptRoutes = Depends(_prompt_routes_dependency),
+    room_model: ChatRoomModelId = Depends(_effective_room_model_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조)
@@ -1438,6 +1452,13 @@ async def regenerate_message(
                     judgment_sets=judgment_sets,
                     charge=charge,
                     started_at=started_at,
+                    stage_routes=turn_stage_routes(
+                        lane=_lane_for_setup(setup),
+                        routes=routes,
+                        room_model=room_model,
+                        judgment_sets=judgment_sets,
+                        generation_set_id=generation_set.id,
+                    ),
                 ),
                 llm=llm_client,
                 judgments=regenerate_judgments(
@@ -1505,6 +1526,9 @@ async def edit_message(
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     # 판정·요약 모델마다의 세트. 세트가 없으면 여기서 실패해 스트림 전 오류 응답이고 차감 게이트(`charge`)보다 앞이다.
     judgment_sets: JudgmentPromptSets = Depends(_judgment_prompt_sets_dependency),
+    # 턴 기록의 단계별 배정을 푸는 표와 실효 방 모델 — 판정 세트 의존성이 이미 받은 값이다(요청 스코프 캐시라 다시 읽지 않는다).
+    routes: PromptRoutes = Depends(_prompt_routes_dependency),
+    room_model: ChatRoomModelId = Depends(_effective_room_model_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조)
@@ -1599,6 +1623,13 @@ async def edit_message(
                     judgment_sets=judgment_sets,
                     charge=charge,
                     started_at=started_at,
+                    stage_routes=turn_stage_routes(
+                        lane=_lane_for_setup(setup),
+                        routes=routes,
+                        room_model=room_model,
+                        judgment_sets=judgment_sets,
+                        generation_set_id=generation_set.id,
+                    ),
                 ),
                 llm=llm_client,
                 judgments=new_turn_judgments(
@@ -3199,6 +3230,7 @@ async def send_preview_message(
                     judgment_sets=judgment_sets,
                     charge=charge,
                     started_at=started_at,
+                    stage_routes=(),
                 ),
                 llm=llm_client,
                 judgments=preview_judgments(state, media_images, user_id, log=logger),

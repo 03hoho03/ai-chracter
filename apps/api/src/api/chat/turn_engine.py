@@ -44,7 +44,7 @@ from api.chat.turn_judgments import (
     _llm_dependency_tag,
     player_stat_events,
 )
-from api.chat.turn_prompt import GenerationPrompt, JudgmentPromptSets
+from api.chat.turn_prompt import GenerationPrompt, JudgmentPromptSets, judgment_slot
 from api.chat.turn_settlement import TurnSettlement
 from api.content.schemas import MediaTagImage
 from api.core.config import settings
@@ -119,6 +119,7 @@ def _dump_prompt(
     turn: int,
     prompt: str,
     system_instruction: str,
+    route_keys: dict[str, str] | None = None,
 ) -> None:
     """회차 재현용으로 조립된 프롬프트를 JSONL 한
     줄로 남긴다. 호출부는 `settings.prompt_dump_path is not None`일 때만 부른다.
@@ -129,7 +130,10 @@ def _dump_prompt(
     (`resolve_backend`)으로 얻는다 — 호출 위치의 배정으로 구현이 바뀌면 그 구현의 id 다.
 
     같은 파일에 판정 프롬프트 줄(`_dump_judgment_prompt`)도 남으므로 `kind` 로 가른다. 이 칸이 없는 옛 덤프의 줄은 모두
-    생성 줄이다."""
+    생성 줄이다.
+
+    `route_keys` 는 모델 배정 표의 행이 이 생성에 적용됐을 때만 차는 세트 키(`_route_dump_keys`)이고 줄 끝에 붙는다. 행이 없는
+    줄은 키가 늘지 않아 표가 생기기 전과 바이트까지 같다."""
     record = {
         "roomId": str(room_id) if room_id is not None else None,
         "turn": turn,
@@ -139,10 +143,26 @@ def _dump_prompt(
         "seed": settings.gemini_seed if model == "gemini" else None,
         "systemInstruction": system_instruction,
         "prompt": prompt,
+        **(route_keys or {}),
     }
     assert settings.prompt_dump_path is not None
     with open(settings.prompt_dump_path, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _route_dump_keys(prompt_set_id: str, chain_model: str, source: str) -> dict[str, str]:
+    """행이 적용된 호출의 덤프 줄에 더하는 세트 키 — 읽은 세트 id, 그 체인의 모델, 출처(`row`·`inherited`). 실제로 보낸
+    모델 id 는 원래 있던 `model` 칸이다."""
+    return {"promptSetId": prompt_set_id, "chainModel": chain_model, "routeSource": source}
+
+
+def _generation_route_keys(stage_routes: Sequence[dict[str, Any]]) -> dict[str, str]:
+    """생성 줄의 세트 키. 턴 기록의 생성 칸이 행에서 왔을 때만 차고, 건너뛴 행이나 방 모델 규칙이면 비어 있다(생성 행은
+    물려받는 단계가 없다). 미리보기는 턴 기록이 없어 늘 비어 있다."""
+    for record in stage_routes:
+        if record["stage"] == "chat_generate" and record["source"] == "row":
+            return _route_dump_keys(record["promptSetId"], record["chainModel"], record["source"])
+    return {}
 
 
 def _dump_judgment_prompt(
@@ -154,6 +174,7 @@ def _dump_judgment_prompt(
     prompt: str,
     system_instruction: str | None = None,
     call_model: PromptSetModelId | None = None,
+    route_keys: dict[str, str] | None = None,
 ) -> None:
     """판정 호출 하나의 프롬프트를 생성 프롬프트와 같은 덤프 파일에 한 줄로 남긴다. 판정 모델을 바꿔 볼 때 같은 판정 입력을
     다시 보내 지금 판정과 맞춰 보는 재료다. 방·턴 번호는 그 턴의 생성 줄과 같아서 둘을 짝지을 수 있고, `kind` 가
@@ -163,7 +184,8 @@ def _dump_judgment_prompt(
     id 다. 판정은 방의 모델이 아니라 모델 배정 표의 행이 정한 모델(`call_model`, 호출에 실린 값), 없으면 판정 종류의 판정 모델
     설정으로 구현을 고르고(`configured_call_site_model`), 그 구현이
     Gemini 면 판정 종류마다 실제 Gemini 모델을 따로 고른다(`structured_model`). 지시문을 따로 보내는 구조화 호출(`generate_structured_with_instruction`)이면 그 지시문을
-    `systemInstruction` 으로 함께 남긴다 — 생성 줄과 같은 키다. 지시문 없이 부른 판정 줄에는 이 키가 없다."""
+    `systemInstruction` 으로 함께 남긴다 — 생성 줄과 같은 키다. 지시문 없이 부른 판정 줄에는 이 키가 없다. 행이 이 판정에
+    적용됐으면 세트 키(`route_keys`)를 줄 끝에 더하고, 아니면 줄이 표가 생기기 전과 같다."""
     backend, sent = resolve_backend(call_site, call_model or configured_call_site_model(call_site), call_model)
     record = {
         "roomId": str(room_id) if room_id is not None else None,
@@ -176,6 +198,8 @@ def _dump_judgment_prompt(
     }
     if system_instruction is not None:
         record["systemInstruction"] = system_instruction
+    if route_keys:
+        record |= route_keys
     assert settings.prompt_dump_path is not None
     with open(settings.prompt_dump_path, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -187,12 +211,26 @@ class _JudgmentPromptDump(LLMClient):
     그대로 넘긴다 — 하나라도 빠지면 기반 클래스 구현(`NotImplementedError`)이 불려 그 호출이 측정 서버에서만 실패한다.
 
     덤프는 호출 앞에서 한다 — 실패한 판정의 입력도 남고, 다시 부르는 판정(재생성의 스탯 재판정)은 시도마다 한 줄이다. 덤프
-    실패는 경고만 남기고 판정을 막지 않는다(생성 덤프와 같은 이유)."""
+    실패는 경고만 남기고 판정을 막지 않는다(생성 덤프와 같은 이유). 세트 키는 이 턴의 판정 세트 묶음에서 호출 위치의 칸으로
+    찾는다 — 그 칸에 행이 적용됐을 때만 싣는다. 묶음 없이 만든 래퍼는 세트 키를 싣지 않는다."""
 
-    def __init__(self, inner: LLMClient, *, turn: int, log: logging.Logger) -> None:
+    def __init__(
+        self, inner: LLMClient, *, turn: int, log: logging.Logger, judgment_sets: JudgmentPromptSets | None = None
+    ) -> None:
         self._inner = inner
         self._turn = turn
         self._log = log
+        self._judgment_sets = judgment_sets
+
+    def _route_keys(self, call_site: LLMCallSite) -> dict[str, str] | None:
+        if self._judgment_sets is None:
+            return None
+        slot = judgment_slot(call_site)
+        if slot is None or self._judgment_sets.call_model(slot) is None:
+            return None
+        route = self._judgment_sets.routes[slot]
+        prompt_set, _ = self._judgment_sets.prompt_set(slot)
+        return _route_dump_keys(str(prompt_set.id), route.chain_model, route.source)
 
     def generate(
         self,
@@ -245,6 +283,7 @@ class _JudgmentPromptDump(LLMClient):
                 prompt=prompt,
                 system_instruction=system_instruction,
                 call_model=usage.call_model,
+                route_keys=self._route_keys(usage.call_site),
             )
         except Exception:
             self._log.warning(
@@ -267,6 +306,7 @@ async def _stream_generated_tokens(
     turn: int,
     log: logging.Logger,
     timing: _FirstTokenTiming | None = None,
+    route_keys: dict[str, str] | None = None,
 ) -> AsyncIterator[ChatTokenEvent]:
     """`llm_client.generate()`의 각 델타를 그대로 relay하며 호출부가 넘긴 빈 리스트 `chunks`에
     누적한다 — 제너레이터는 반환값과 yield를 동시에 쓸 수 없어, 스트림 종료 후 조립할 전체
@@ -295,6 +335,7 @@ async def _stream_generated_tokens(
                 turn=turn,
                 prompt=prompt,
                 system_instruction=system_instruction,
+                route_keys=route_keys,
             )
         except Exception:
             log.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", usage.room_id, turn, exc_info=True)
@@ -395,6 +436,9 @@ class TurnInput:
     # 지연이 그 조립에서 생기므로, 첫 글자 지연을 여기서부터 재야 그 증가분이 보인다. 기본값을 두지 않는다 — 만드는 곳이
     # 라우트 넷뿐이고, 빠뜨리면 그 경로의 턴 시작 지연이 조용히 사라진다.
     started_at: float
+    # 방 턴 기록의 단계별 배정 스냅샷(`turn_prompt.turn_stage_routes`). 미리보기는 턴 기록이 없어 빈 튜플이다. 생성 덤프 줄의
+    # 세트 키도 여기서 읽는다. `started_at` 과 같은 이유로 기본값을 두지 않는다.
+    stage_routes: tuple[dict[str, Any], ...]
 
 
 @dataclass
@@ -423,6 +467,8 @@ class TurnResult:
     # 글자가 없어 둘 다 `None` 이다 — 0 으로 채우면 분포에 가짜 빠른 값이 섞인다. 방 턴 기록의 생성 칸 `firstTokenMs`·`streamFirstTokenMs` 다.
     first_token_ms: int | None = None
     stream_first_token_ms: int | None = None
+    # 이 턴의 단계별 배정 스냅샷(`TurnInput.stage_routes` 그대로). 방 턴 기록의 `stage_routes` 다.
+    stage_routes: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass
@@ -528,6 +574,7 @@ async def run_turn(
             turn=next_turn,
             log=log,
             timing=timing,
+            route_keys=_generation_route_keys(inp.stage_routes),
         ):
             yield token_event
     except LLMPolicyViolationError:
@@ -571,7 +618,11 @@ async def run_turn(
     # 풀로 돌아가 그걸 집어간 **무관한 다른 요청**이 InterfaceError로 500이 난다(부하 실측).
     # 이미 응답은 스트리밍됐으니, 그 턴의 판정만 포기하고(그 전까지 나온 판정 결과는 그대로 쓴다)
     # 정상적으로 커밋 → done 이벤트까지 마무리하는 것이 실패의 폭발 반경을 그 턴에 가둔다.
-    judge_llm = _JudgmentPromptDump(llm, turn=next_turn, log=log) if settings.prompt_dump_path is not None else llm
+    judge_llm = (
+        _JudgmentPromptDump(llm, turn=next_turn, log=log, judgment_sets=inp.judgment_sets)
+        if settings.prompt_dump_path is not None
+        else llm
+    )
     try:
         # 입력 읽기(방은 DB 읽기)는 전부 목록 순서대로 판정 LLM 앞(그리고 반납 앞)에서 하고, 쓰기는 전부 쓰기 구간이다.
         for judgment in judgments:
@@ -609,6 +660,7 @@ async def run_turn(
         memory_query=generation.memory_query,
         first_token_ms=first_token_ms,
         stream_first_token_ms=stream_first_token_ms,
+        stage_routes=inp.stage_routes,
     )
     # 쓰기 구간은 예외를 흡수하지 않는다 — 쓰기·커밋 실패는 제너레이터를 뚫고 정산 가드가 응답 행을 확인해 정산한다.
     written = await store.write(turn, settlement)

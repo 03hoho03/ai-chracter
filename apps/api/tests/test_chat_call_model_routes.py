@@ -721,7 +721,8 @@ async def test_a_room_turn_records_each_stages_route_and_dumps_set_keys_only_for
     tmp_path: Path,
     generation_row: str,
 ) -> None:
-    """Opus 스토리 방의 한 턴. 생성 행(Opus 를 Anthropic 직결로)과 스탯 행(Haiku 체인, Opus 를 Anthropic 직결로)만 둔다.
+    """Opus 스토리 방의 수정 한 턴(엔딩 판정까지 부른다). 생성 행(Opus 를 Anthropic 직결로)과 스탯 행(Haiku 체인, Opus 를
+    Anthropic 직결로)만 둔다.
 
     턴 기록에는 스토리 레인의 단계 여덟이 차례대로 한 칸씩 남는다 — 스탯은 자기 행, 장면 헤더는 스탯 행을 물려받음(물려준 단계와
     함께), 나머지 판정·요약·추출은 모델 설정. 칸마다 읽은 세트의 id 가 실린다. 생성 행은 생성 호출 위치의 env 배정이 Anthropic
@@ -734,7 +735,7 @@ async def test_a_room_turn_records_each_stages_route_and_dumps_set_keys_only_for
         assignment = dict(_DIRECT_ASSIGNMENT)
         del assignment["chat_generate"]
         monkeypatch.setattr(settings, "llm_call_site_backends", assignment)
-    method, path, body = await prepare(db_client, db_session, "story-send", "opus")
+    method, path, body = await prepare(db_client, db_session, "story-edit", "opus")
     room_id = uuid.UUID(path.split("/")[2])
     await put_routes(
         db_session,
