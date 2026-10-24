@@ -17,9 +17,13 @@ import urllib.error
 import urllib.request
 
 _TIMEOUT_SECONDS = 10
+# Discord 앞단의 Cloudflare 는 urllib 기본 User-Agent(`Python-urllib/x.y`)를 403(`error code: 1010`)으로 막는다 —
+# 이 헤더가 없던 동안 운영 알림이 하나도 나가지 않았다(감시 로그 끝의 "알림 실패"). 꼴은 Discord HTTP API 문서가
+# 요구하는 `DiscordBot (url, version)` 이다.
+_DISCORD_USER_AGENT = "DiscordBot (https://api.ddona.site, 1.0)"
 
 
-def _fire(url: str, *, data: bytes | None = None) -> bool:
+def _fire(url: str, *, data: bytes | None = None, user_agent: str | None = None) -> bool:
     """`url`을 호출한다(`data`가 있으면 JSON POST, 없으면 GET). 실패해도 예외를 던지지 않는다.
 
     `Request()` 생성도 `try` 안에 있다 — 스킴 없는 URL은 `urlopen`이 아니라 `Request()` 생성
@@ -30,6 +34,8 @@ def _fire(url: str, *, data: bytes | None = None) -> bool:
         request = urllib.request.Request(url, data=data)
         if data is not None:
             request.add_header("Content-Type", "application/json")
+        if user_agent is not None:
+            request.add_header("User-Agent", user_agent)
         with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
             return bool(200 <= response.status < 300)
     except (urllib.error.URLError, OSError, ValueError, http.client.InvalidURL):
@@ -46,7 +52,7 @@ def notify(message: str) -> bool:
     url = os.environ.get("DISCORD_WEBHOOK_URL")
     if not url:
         return True
-    return _fire(url, data=json.dumps({"content": message}).encode())
+    return _fire(url, data=json.dumps({"content": message}).encode(), user_agent=_DISCORD_USER_AGENT)
 
 
 def ping(url: str) -> bool:

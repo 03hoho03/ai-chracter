@@ -47,6 +47,35 @@ def test_notify_posts_json_content_to_configured_webhook_url(monkeypatch: pytest
     assert captured["content_type"] == "application/json"
 
 
+def test_notify_sends_explicit_user_agent_in_discord_bot_form(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Discord 앞단의 Cloudflare 는 urllib 기본 User-Agent(`Python-urllib/x.y`)를 403(error code 1010)으로 막는다 —
+    헤더를 빼면 운영 알림이 전부 조용히 실패한다. 형식은 Discord HTTP API 문서가 요구하는 `DiscordBot (url, version)` 꼴이다."""
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/1/abc")
+
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        status = 204
+
+        def __enter__(self) -> "_FakeResponse":
+            return self
+
+        def __exit__(self, *exc_info: object) -> None:
+            return None
+
+    def _fake_urlopen(request: urllib.request.Request, timeout: float) -> _FakeResponse:
+        captured["user_agent"] = request.get_header("User-agent")
+        return _FakeResponse()
+
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+
+    assert notify_module.notify("워커 경고") is True
+    user_agent = captured["user_agent"]
+    assert isinstance(user_agent, str)
+    assert user_agent.startswith("DiscordBot (https://")
+    assert "Python-urllib" not in user_agent
+
+
 def test_notify_skips_network_call_and_returns_true_when_webhook_url_not_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
