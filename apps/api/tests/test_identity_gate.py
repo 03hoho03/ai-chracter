@@ -24,7 +24,8 @@ from api.auth.withdrawal import erase_account
 from api.core import clover, rate_limit_gate
 from api.core.config import settings
 from api.core.rate_limit import check_rate_limit
-from api.core.rate_limit_gate import ChatCharge, charge_chat_turn, enforce_chat_rate_limit
+from api.chat.router import enforce_preview_chat_charge
+from api.core.rate_limit_gate import ChatCharge, charge_chat_turn
 from api.core.security import hash_identity_ci
 from api.db.models.auth import User, WithdrawnIdentity
 from api.db.models.clover import CloverLedger
@@ -252,9 +253,13 @@ async def test_builder_preview_is_gated_too(db_session: AsyncSession, monkeypatc
     funded = await _member(db_session, balance=100, **_confirmed_today())
 
     detail = await _forbidden(
-        lambda: enforce_chat_rate_limit(user_id=broke.id, db=db_session, session_factory=_factory(db_session))
+        lambda: enforce_preview_chat_charge(
+            user_id=broke.id, db=db_session, session_factory=_factory(db_session), model="gemini"
+        )
     )
-    charge = await enforce_chat_rate_limit(user_id=funded.id, db=db_session, session_factory=_factory(db_session))
+    charge = await enforce_preview_chat_charge(
+        user_id=funded.id, db=db_session, session_factory=_factory(db_session), model="gemini"
+    )
 
     assert detail == {"code": "IDENTITY_VERIFICATION_REQUIRED"}
     assert charge.source == "clover"

@@ -47,7 +47,7 @@ from api.chat.prompt_builder import (
     load_active_prompt_set,
 )
 from api.chat.prompt_routing import PromptRoutes
-from api.chat.prompt_routing_cache import load_prompt_routes
+from api.chat.prompt_routing_cache import load_prompt_routes, load_prompt_routes_with
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
 from api.chat.room_deletion import delete_chat_rooms
 from api.chat.room_stats import seed_missing_room_stats
@@ -151,7 +151,7 @@ from api.core import clover
 from api.core.clover import SpendUsage
 from api.core.config import settings
 from api.core.rate_limit import seconds_until_kst_midnight
-from api.core.rate_limit_gate import ChatCharge, _too_many_requests, charge_chat_turn, enforce_chat_rate_limit
+from api.core.rate_limit_gate import ChatCharge, _too_many_requests, charge_chat_turn
 from api.core.schema import NoNul
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
@@ -2893,11 +2893,19 @@ def _build_preview_start_state(payload: CharacterDraftPayload | StoryDraftPayloa
 async def start_preview_session(
     payload: CharacterDraftPayload | StoryDraftPayload,
     user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+    model: ChatRoomModelId = Query(DEFAULT_CHAT_ROOM_MODEL),
 ) -> PreviewSessionStartResponse:
     """`payload` is whatever
     `formToServer(getValues())` produced (same shape as `PATCH /contents/{id}/draft`'s body)
-    and is stored in Redis with no validation, mirroring autosave's unvalidated path."""
+    and is stored in Redis with no validation, mirroring autosave's unvalidated path.
+
+    `model` 은 이 세션이 쓸 글쓰기 모델이다. 상위 모델은 채팅방에서 모델을 고를 때와 같은 허용(`has_chat_premium_access`)이 있어야
+    하고, 없으면 같은 403 `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 다. 모델을 바꾸려면 새 세션을 시작한다."""
+    if model != DEFAULT_CHAT_ROOM_MODEL and not await has_chat_premium_access(db, user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "CHAT_MODEL_NOT_ALLOWED"})
     state = _build_preview_start_state(payload)
+    state.chat_model = model
     session_id = await create_preview_session(state)
     return PreviewSessionStartResponse(preview_session_id=session_id)
 
@@ -2920,7 +2928,8 @@ async def _preview_prompt_set_dependency(
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> tuple[PromptSet, list[PromptSection]]:
-    """미리보기는 Gemini 로만 돌므로 그 레인의 Gemini 세트를 읽는다.
+    """그 레인의 Gemini 세트 — 기본 모델 세션의 생성 세트이고, 판정 모델이 Gemini 인 판정도 이 세트를 읽는다
+    (`_preview_generation_set_dependency`·`_preview_judgment_prompt_sets_dependency`).
 
     미리보기의 DB 읽기는 요청 스코프 세션에 얹지 않는다 — `Depends`가
     세션이 아니라 값(활성 세트)을 반환하게 만들어, 세션을 짧게 열고 즉시 닫는다. 레인은
@@ -2942,20 +2951,86 @@ async def _preview_prompt_set_dependency(
     return prompt_set, sections
 
 
+async def _preview_effective_model_dependency(
+    state: PreviewSessionState = Depends(_owned_preview_session_dependency),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomModelId:
+    """이 미리보기 턴이 실제로 도는 모델. 세션이 고른 모델을 채팅방과 같은 함수로 읽는다 — 상위 모델 스위치가 꺼졌으면 Gemini 다.
+    생성 세트·판정 세트·차감 게이트가 이 의존성 하나를 받아 요청 스코프 캐시로 같은 값을 쓴다(방의 `_effective_room_model_dependency`
+    와 같은 이유)."""
+    return await effective_room_model(db, user_id, state.chat_model)
+
+
+async def _preview_prompt_routes_dependency(
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> PromptRoutes:
+    """모델 배정 표. 위 Gemini 세트 의존성처럼 캐시 미스일 때만 짧은 세션을 연다."""
+    return await load_prompt_routes_with(session_factory)
+
+
+async def _preview_generation_set_dependency(
+    state: PreviewSessionState = Depends(_owned_preview_session_dependency),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    gemini_set: tuple[PromptSet, list[PromptSection]] = Depends(_preview_prompt_set_dependency),
+    model: ChatRoomModelId = Depends(_preview_effective_model_dependency),
+) -> tuple[PromptSet, list[PromptSection]]:
+    """이 턴의 생성 세트 — 방의 `generation_prompt_set` 과 같은 규칙이다. Gemini 면 위 Gemini 세트를 그대로 받아 조회가 없고, 그
+    밖의 모델은 캐시를 보고 없으면 짧은 세션으로 (레인, 모델) 활성 세트를 읽는다.
+
+    차감 게이트보다 앞에 둔다 — 그 모델의 세트가 없으면(`PromptSetNotFoundError`) 스트림 전 오류이고 깎지 않는다."""
+    if model == DEFAULT_CHAT_ROOM_MODEL:
+        return gemini_set
+    lane = _lane_for_preview_payload(state.payload)
+    cached = await get_cached_active_prompt_set(lane, model=model)
+    if cached is not None:
+        return cached
+    async with session_factory() as session:
+        prompt_set, sections = await load_active_prompt_set(session, lane=lane, model=model)
+    await set_cached_active_prompt_set(lane, prompt_set, sections, model=model)
+    return prompt_set, sections
+
+
 async def _preview_judgment_prompt_sets_dependency(
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     gemini_set: tuple[PromptSet, list[PromptSection]] = Depends(_preview_prompt_set_dependency),
+    routes: PromptRoutes = Depends(_preview_prompt_routes_dependency),
+    room_model: ChatRoomModelId = Depends(_preview_effective_model_dependency),
 ) -> JudgmentPromptSets:
-    """미리보기 판정의 세트 — 방과 같은 규칙(`_judgment_prompt_sets_dependency`)이되, 읽을 때는 위 Gemini 세트 의존성처럼
-    세션을 짧게 열고 바로 닫는다."""
+    """미리보기 판정의 세트 — 방과 같은 규칙(`_judgment_prompt_sets_dependency`)으로 모델 배정 표의 (레인, 이 턴의 실효 모델,
+    단계) 칸을 푼다. 읽을 때는 위 Gemini 세트 의존성처럼 세션을 짧게 열고 바로 닫는다."""
     lane = _lane_for_preview_payload(state.payload)
 
     async def load(model: PromptSetModelId) -> tuple[PromptSet, list[PromptSection]]:
         async with session_factory() as session:
             return await load_active_prompt_set(session, lane=lane, model=model)
 
-    return await judgment_prompt_sets(lane=lane, gemini_set=gemini_set, load=load)
+    return await judgment_prompt_sets(
+        lane=lane, gemini_set=gemini_set, load=load, routes=routes, room_model=room_model
+    )
+
+
+async def enforce_preview_chat_charge(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    # 생성 세트·판정 세트 의존성이 받은 것과 같은 값이다(요청 스코프 캐시).
+    model: ChatRoomModelId = Depends(_preview_effective_model_dependency),
+) -> ChatCharge:
+    """빌더 미리보기의 차감 게이트. 이 턴이 실제로 도는 모델의 턴 가격으로 깎는다 — 상한·차감 본문은 방과 같은
+    `charge_chat_turn` 이다(상위 모델이면 그 안에서 상위 모델 차감으로 간다). 영수증의 `model` 이 이 턴의 생성 모델이다.
+
+    사용처는 작품을 가리키지 않는 `preview` 다 — 작가가 자기 초안을 시험하는 차감이라 정산 대상이 아니다. 그래도
+    `preview` 로 기록하는 것은 "사용처 없는 채팅 차감"을 배포 겹침 같은 이상 신호로만 남기려는 것이다."""
+    return await charge_chat_turn(
+        user_id,
+        db,
+        session_factory,
+        model=model,
+        price=chat_turn_cost(model),
+        usage=SpendUsage("preview"),
+    )
 
 
 async def _preview_persona_dependency(
@@ -3047,7 +3122,8 @@ async def send_preview_message(
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
     shortcut: ShortcutDraftItem | None = Depends(_validate_preview_shortcut),
     llm_client: LLMClient = Depends(get_llm_client),
-    prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_preview_prompt_set_dependency),
+    # 이 턴이 도는 모델의 생성 세트. 그 모델의 세트가 없으면 차감 전에 실패하도록 게이트보다 앞이다.
+    generation_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_preview_generation_set_dependency),
     # 판정 모델마다의 세트(미리보기에는 요약이 없다). 차감 게이트보다 앞이다.
     judgment_sets: JudgmentPromptSets = Depends(_preview_judgment_prompt_sets_dependency),
     # 작가의 기본 대화 프로필. `charge`보다 앞이다.
@@ -3057,21 +3133,21 @@ async def send_preview_message(
     # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조). 미리보기에서 앞에
     # 두면 만료·남의 세션(404)에서 차감만 남는다.
-    charge: ChatCharge = Depends(enforce_chat_rate_limit),
+    charge: ChatCharge = Depends(enforce_preview_chat_charge),
 ) -> AsyncIterator[ChatStreamEvent]:
     """미리보기 메시지 전송 SSE. 사용자 메시지를 세션에 덧붙이고 생성 프롬프트를 초안에서 조립한 뒤, 실제 생성+판단
     파이프라인은 실채팅과 같은 턴 골격(`chat/turn_engine.py` 의 `run_turn`)이 담당한다 — 판정은 초안에서 읽는 미리보기판
     (`preview_judgments`), 쓰기는 세션 상태에 하는 저장소(`PreviewTurnStore`)다. `chat_rooms`/조회수/대화수 등 어떤 지표
     테이블도 이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
-    세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일
-    때만 짧게 연 세션으로 활성 세트를 읽는다."""
+    세트와 모델 배정 표만은 예외다 — 그 의존성들이 캐시 히트면 DB에 닿지 않고, 미스일
+    때만 짧게 연 세션으로 읽는다."""
     # 정산 가드는 `send_message` 와 같다. 미리보기는 턴 락이 없어 가드 하나로 감싼다.
     settlement = TurnSettlement(charge=charge, user_id=user_id, session_factory=session_factory)
     async with settlement.guard():
         # 의존성들이 연 요청 세션 트랜잭션을 반납한다(위 `db` 자리 주석).
         await db.commit()
 
-        prompt_set, prompt_sections = prompt_set_data
+        prompt_set, prompt_sections = generation_set_data
         # 실제 방과 같은 규칙으로 고른 이름 — 프로필은 작가의 기본 프로필이다.
         names = PromptNames(
             persona_name=persona.name if persona is not None else None,
@@ -3118,7 +3194,6 @@ async def send_preview_message(
                     history=history,
                     user_content=payload.content,
                     generation=generation,
-                    # 미리보기는 Gemini 로만 돌아 생성·판정이 같은 세트다.
                     generation_set=prompt_set,
                     judgment_sets=judgment_sets,
                     charge=charge,

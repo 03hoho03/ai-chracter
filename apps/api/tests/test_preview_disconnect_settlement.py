@@ -125,7 +125,7 @@ async def _drive(
             state=state,
             shortcut=None,
             llm_client=_PreviewLLM(cell_id),
-            prompt_set_data=prompt_set_data,
+            generation_set_data=prompt_set_data,
             judgment_sets=JudgmentPromptSets(
                 stat=prompt_set_data,
                 scene=prompt_set_data,

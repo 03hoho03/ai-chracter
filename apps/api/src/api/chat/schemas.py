@@ -470,6 +470,12 @@ class PreviewSessionState(CamelModel):
     # 장면 헤더를 켠 초안의 지금 장면 — 시작은 첫 시작설정의 첫 장면이고, 턴마다 장면 판정이 적은 장면으로 바뀐다. 켜지
     # 않았으면 null 이다. 다음 턴 장면 판정이 이 값을 직전 장면으로 잇는다.
     story_scene: StoryScene | None = None
+    # 세션을 시작할 때 고른 글쓰기 모델(`POST /preview-sessions?model=`). 본문을 감싸지 않고 옆 칸으로 두어, 이 칸을 모르는 이미지도
+    # 본문을 그대로 읽고 모르는 키를 버린 채 Gemini 로 돈다. 기본 모델이면 싣지 않는다 — 기본 세션의 상태 JSON 이 이 칸이 생기기 전과
+    # 같다. 모델을 바꾸려면 새 세션을 시작한다(턴 도중에 이 값을 바꾸는 길은 없다).
+    chat_model: ChatRoomModelId = Field(
+        default=DEFAULT_CHAT_ROOM_MODEL, exclude_if=lambda value: value == DEFAULT_CHAT_ROOM_MODEL
+    )
 
 
 class PreviewSessionStartResponse(CamelModel):
