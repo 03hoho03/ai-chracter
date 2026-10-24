@@ -77,7 +77,7 @@ async def test_matching_settings_let_a_fake_client_fold_leave_a_dump_line(
 
     room = await _open_room(db_client, db_session, turns=memory_fold.FOLD_AT_TURNS, lane="character")
     ctx = await runtime.load_room(db_session, room.room_id)
-    sets = await runtime.judgment_sets(db_session, lane=ctx.lane)
+    sets = await runtime.judgment_sets(db_session, ctx)
     await memory_fold.fold_memory(
         async_sessionmaker(bind=db_session.bind, expire_on_commit=False),
         FakeMemoryLLM(),

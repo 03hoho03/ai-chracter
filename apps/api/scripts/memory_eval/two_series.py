@@ -28,7 +28,7 @@ from api.chat.memory_window import load_current_summary, select_current_snapshot
 from api.chat.prompt_builder import MemorySummaryResult, PromptNames, build_memory_summary_prompt
 from api.core.config import settings
 from api.db.models import ChatMessage, ChatRoomMemorySnapshot, PromptSection, PromptSet
-from api.llm.chat_models import ChatModelId
+from api.llm.chat_models import ChatModelId, PromptSetModelId
 from api.llm.client import LLMCallContext, LLMClient
 
 from memory_eval.arm_env import B_SERIES_SUFFIX
@@ -147,10 +147,12 @@ async def fold_both(
     names: PromptNames,
     series: BSeries | None,
     writing_model: ChatModelId,
+    call_model: PromptSetModelId | None = None,
 ) -> dict[str, Any]:
     """A 판 접기(앱 함수, 슬롯 꺼짐)와, `series` 를 주면 그 접기가 스냅샷을 만들었을 때 같은 구간의 B 판. 접은 스냅샷의 커서가
     미리 계산한 구간과 다르면(그사이 방이 바뀌었다) B 판을 만들지 않고 멈춘다. `writing_model` 은 넣은 턴에 응답을 쓴 것으로 칠
-    모델(투입의 생성 모델)이다 — 앱 접기는 이 모델과 방 레인으로 기억 사용 범위를 가른다."""
+    모델(투입의 생성 모델)이다 — 앱 접기는 이 모델과 방 레인으로 기억 사용 범위를 가른다. `call_model` 은 앱 접기에 그대로 넘기는
+    요약 칸의 부를 모델이다(모델 배정 표의 행이 정한 값, 행이 없으면 None 이라 요약 모델 설정으로 간다)."""
     plan = None
     b_prompt = None
     async with session_factory() as db:
@@ -167,7 +169,7 @@ async def fold_both(
     with secret_marking(False):
         await memory_fold.fold_memory(
             session_factory, llm, room_id=room_id, user_id=user_id, prompt_set=prompt_set, sections=sections,
-            is_story_chat=is_story_chat, names=names, writing_model=writing_model,
+            is_story_chat=is_story_chat, names=names, writing_model=writing_model, call_model=call_model,
         )  # fmt: skip
     async with session_factory() as db:
         after = await current_snapshot(db, room_id)

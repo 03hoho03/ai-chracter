@@ -349,7 +349,7 @@ async def replay_summaries(
     _refuse_existing(out_path)
     async with session_factory() as db:
         state = await _room_state(db, room_id, lane)
-        sets = await judgment_sets(db, lane=state.ctx.lane)
+        sets = await judgment_sets(db, state.ctx)
         facts = await room_fact_rows(db, room_id)
     _check_count(state, expect_snapshots)
     _start_output(out_path, {**header, "userNames": excluded_user_names(state.ctx.names)})
@@ -381,6 +381,7 @@ async def replay_summaries(
                 names=state.ctx.names,
                 # 접기는 그 구간 응답을 쓴 모델이 기억 사용 범위 안일 때만 요약 비밀 표기 칸을 쓴다 — 템플릿 투입의 생성 모델을 준다.
                 writing_model=writing_model,
+                call_model=sets.call_model("summary"),
             )
             async with session_factory() as db:
                 count = int(
@@ -441,7 +442,7 @@ async def replay_facts(
     _refuse_existing(out_path)
     async with session_factory() as db:
         state = await _room_state(db, room_id, lane)
-        sets = await judgment_sets(db, lane=state.ctx.lane)
+        sets = await judgment_sets(db, state.ctx)
     _check_count(state, expect_snapshots)
     _start_output(out_path, {**header, "userNames": excluded_user_names(state.ctx.names)})
     async with session_factory() as db:
@@ -463,6 +464,7 @@ async def replay_facts(
             sections=sections,
             is_story_chat=state.ctx.lane == "story",
             names=state.ctx.names,
+            call_model=sets.call_model("fact"),
         )
         async with session_factory() as db:
             after = int(await db.scalar(text(_DONE_FACTS_SQL), {"room": room_id}) or 0)

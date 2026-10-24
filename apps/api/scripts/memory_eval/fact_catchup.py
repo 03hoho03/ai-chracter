@@ -84,7 +84,7 @@ class OperationalFacts:
 
         async with session_factory() as db:
             ctx = await load_room(db, room_id)
-            sets = await judgment_sets(db, lane=ctx.lane)
+            sets = await judgment_sets(db, ctx)
             pending = await _count(db, _PENDING_SQL, room_id)
             done_before = await _count(db, _DONE_SQL, room_id)
         fact_set = getattr(sets, "fact", None)
@@ -99,6 +99,7 @@ class OperationalFacts:
             sections=fact_set[1],
             is_story_chat=ctx.lane == "story",
             names=ctx.names,
+            call_model=sets.call_model("fact"),
         )
         async with session_factory() as db:
             done_after = await _count(db, _DONE_SQL, room_id)
@@ -126,7 +127,7 @@ async def load_windows_from_db(session_factory: SessionFactory, room_id: uuid.UU
     async with session_factory() as db:
         ctx = await load_room(db, room_id)
         windows = await build_windows(db, room_id)
-        sets = await judgment_sets(db, lane=ctx.lane)
+        sets = await judgment_sets(db, ctx)
     prompt_set = sets.summary[0]
     return LoadedWindows(
         windows=windows,

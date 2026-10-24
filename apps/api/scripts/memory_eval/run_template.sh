@@ -11,7 +11,7 @@
 set -euo pipefail
 
 MEASURE_COMMIT="${MEASURE_COMMIT:?측정 커밋 sha 를 env MEASURE_COMMIT 로 준다}"
-# 운영 활성 세트 내보내기(꼴 2) — 저장소 밖 원자료 폴더에 0600 으로 둔다.
+# 운영 활성 세트·모델 배정 표 내보내기(꼴 3) — 저장소 밖 원자료 폴더에 0600 으로 둔다.
 PROMPT_EXPORT="${PROMPT_EXPORT:?운영 활성 세트 내보내기 파일 경로를 env PROMPT_EXPORT 로 준다}"
 
 API_DIR="<저장소>/apps/api"

@@ -36,8 +36,8 @@ def _labels(lane: str, model: str) -> dict[str, str]:
 def _row(lane: str, model: str, label: str, slot: str, *, order: int, conditional: bool = False) -> dict[str, Any]:
     body = _body(lane, model, slot)
     return {
-        "export_format": ps.EXPORT_FORMAT, "lane": lane, "model": model, "set_version": label,
-        "set_id": str(uuid.uuid4()), **_labels(lane, model),
+        "export_format": ps.EXPORT_FORMAT, "kind": "section", "route_revision": None, "lane": lane, "model": model,
+        "set_version": label, "set_id": str(uuid.uuid4()), **_labels(lane, model),
         "channel": "system", "scope": "both", "slot": slot, "variant": "", "order": order,
         "conditional": conditional, "md5": hashlib.md5(body.encode()).hexdigest(), "chars": len(body), "body": body,
     }  # fmt: skip
@@ -97,7 +97,7 @@ async def _active_id(db: AsyncSession, lane: str, model: str) -> uuid.UUID:
     return set_id
 
 
-async def _synced(db_session: AsyncSession, tmp_path: Path) -> dict[tuple[str, str], Any]:
+async def _synced(db_session: AsyncSession, tmp_path: Path) -> Any:
     exported = ps.load_export(await _export_file(db_session, tmp_path))
     await ps.overwrite(db_session, exported)
     return exported
@@ -110,7 +110,7 @@ async def test_overwrite_then_compare_finds_no_difference_and_exits_zero(
     report = await ps.compare(db_session, exported)
     assert report["differences"] == 0
     assert ps.exit_code(report) == 0
-    lane, model = sorted(exported)[0]
+    lane, model = sorted(exported.sets)[0]
     active = await db_session.get(PromptSet, await _active_id(db_session, lane, model))
     assert active is not None and active.version == f"lab-{lane}-{model}"
     assert {field: getattr(active, field) for field in ps.LABEL_FIELDS} == _labels(lane, model)
@@ -124,7 +124,7 @@ async def test_check_only_counts_one_body_difference_by_its_key_and_exits_non_ze
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     exported = await _synced(db_session, tmp_path)
-    lane, model = sorted(exported)[0]
+    lane, model = sorted(exported.sets)[0]
     set_id = await _active_id(db_session, lane, model)
     await db_session.execute(
         sa.update(PromptSection)
@@ -143,7 +143,7 @@ async def test_only_the_condition_or_only_the_order_changed_still_exits_non_zero
     db_session: AsyncSession, tmp_path: Path, field: str
 ) -> None:
     exported = await _synced(db_session, tmp_path)
-    lane, model = sorted(exported)[0]
+    lane, model = sorted(exported.sets)[0]
     set_id = await _active_id(db_session, lane, model)
     values = {"conditional": True} if field == "conditional" else {"order": 7}
     await db_session.execute(
@@ -159,7 +159,7 @@ async def test_only_the_condition_or_only_the_order_changed_still_exits_non_zero
 
 async def test_only_the_set_label_changed_still_exits_non_zero(db_session: AsyncSession, tmp_path: Path) -> None:
     exported = await _synced(db_session, tmp_path)
-    lane, model = sorted(exported)[0]
+    lane, model = sorted(exported.sets)[0]
     await db_session.execute(
         sa.update(PromptSet).where(PromptSet.id == await _active_id(db_session, lane, model)).values(version="다른-판")
     )
@@ -176,7 +176,7 @@ async def test_only_one_speaker_label_changed_still_exits_non_zero(
     db_session: AsyncSession, tmp_path: Path, field: str
 ) -> None:
     exported = await _synced(db_session, tmp_path)
-    lane, model = sorted(exported)[0]
+    lane, model = sorted(exported.sets)[0]
     await db_session.execute(
         sa.update(PromptSet)
         .where(PromptSet.id == await _active_id(db_session, lane, model))
@@ -223,7 +223,7 @@ async def test_a_label_clash_on_the_last_chain_is_refused_before_any_chain_is_wr
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     exported = ps.load_export(await _export_file(db_session, tmp_path))
-    lane, model = sorted(exported)[-1]
+    lane, model = sorted(exported.sets)[-1]
     older = _published_set(lane, model)
     older.version = f"lab-{lane}-{model}"
     older.published_at = datetime(2000, 1, 1, tzinfo=UTC)
@@ -306,7 +306,7 @@ async def test_sections_only_in_the_export_or_only_in_the_database_are_differenc
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     exported = await _synced(db_session, tmp_path)
-    lane, model = sorted(exported)[0]
+    lane, model = sorted(exported.sets)[0]
     set_id = await _active_id(db_session, lane, model)
     await db_session.execute(
         sa.delete(PromptSection).where(PromptSection.prompt_set_id == set_id, PromptSection.slot == "a")
@@ -327,7 +327,7 @@ async def test_sections_only_in_the_export_or_only_in_the_database_are_differenc
 
 async def test_report_carries_counts_and_keys_but_no_body_text(db_session: AsyncSession, tmp_path: Path) -> None:
     exported = await _synced(db_session, tmp_path)
-    lane, model = sorted(exported)[0]
+    lane, model = sorted(exported.sets)[0]
     set_id = await _active_id(db_session, lane, model)
     await db_session.execute(
         sa.update(PromptSection)
@@ -360,7 +360,7 @@ def test_export_keeps_only_the_story_and_character_lanes(tmp_path: Path) -> None
     rows = [_row("story", "gemini", "s", "a", order=0), _row("novel", "gemini", "n", "a", order=0)]
     path = tmp_path / "export.json"
     path.write_text("BEGIN\n" + json.dumps(rows, ensure_ascii=False) + "\nROLLBACK\n", encoding="utf-8")
-    assert sorted(ps.load_export(path)) == [("story", "gemini")]
+    assert sorted(ps.load_export(path).sets) == [("story", "gemini")]
 
 
 async def test_clearing_the_cache_deletes_only_active_prompt_set_keys() -> None:
@@ -420,7 +420,7 @@ def _probe_plants(tmp_path: Path) -> tuple[Path, Path]:
 
 
 async def _export_rows_of(url: str) -> list[dict[str, Any]]:
-    """그 DB 의 story·character 활성 세트를 꼴 2 원소로 — 운영 읽기 명령이 내는 것과 같은 칸. 테스트 DB 의 시드 문안을 읽어
+    """그 DB 의 story·character 활성 세트를 지금 꼴의 섹션 원소로 — 운영 읽기 명령이 내는 것과 같은 칸. 테스트 DB 의 시드 문안을 읽어
     임시 파일로만 쓴다."""
     from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy.pool import NullPool
@@ -434,8 +434,8 @@ async def _export_rows_of(url: str) -> list[dict[str, Any]]:
                 for section in sections:
                     rows.append(
                         {
-                            "export_format": ps.EXPORT_FORMAT, "lane": lane, "model": model,
-                            "set_version": active.version, "set_id": str(active.id),
+                            "export_format": ps.EXPORT_FORMAT, "kind": "section", "route_revision": None,
+                            "lane": lane, "model": model, "set_version": active.version, "set_id": str(active.id),
                             **{field: getattr(active, field) for field in ps.LABEL_FIELDS},
                             "channel": section.channel, "scope": section.scope, "slot": section.slot,
                             "variant": section.variant, "order": section.order, "conditional": section.conditional,
@@ -489,3 +489,232 @@ def test_probe_refuses_an_unsynced_template_before_any_probe_work_and_passes_a_s
 
     assert main([*argv, "--prompt-export", str(synced)]) == 0
     assert json.loads(capsys.readouterr().out)["plan"]
+
+
+# --- 모델 배정 표 — 운영 표를 그대로 옮기고, 비었으면 측정 표도 비운다 -------------------------------------------------
+
+
+def _route(
+    lane: str,
+    room_model: str,
+    stage: str,
+    *,
+    chain_model: str | None = "gemini",
+    call_model: str = "gemini",
+    backend: str = "gemini",
+) -> dict[str, Any]:
+    """내보낸 배정 표 한 행 — 운영 읽기 명령이 섹션 원소와 같은 배열에 싣는 꼴."""
+    return {
+        "export_format": ps.EXPORT_FORMAT, "kind": "route", "lane": lane, "room_model": room_model, "stage": stage,
+        "chain_model": chain_model, "call_model": call_model, "backend": backend,
+    }  # fmt: skip
+
+
+def _route_row(lane: str, room_model: str, stage: str, *, chain_model: str = "gemini", backend: str = "gemini") -> Any:
+    from api.db.models.prompt import PromptRoute
+
+    return PromptRoute(
+        lane=lane, room_model=room_model, stage=stage, chain_model=chain_model, call_model="gemini", backend=backend
+    )
+
+
+async def _table(db: AsyncSession) -> list[tuple[Any, ...]]:
+    from api.db.models.prompt import PromptRoute
+
+    rows = await db.execute(
+        sa.select(
+            PromptRoute.lane, PromptRoute.room_model, PromptRoute.stage, PromptRoute.chain_model,
+            PromptRoute.call_model, PromptRoute.backend,
+        )
+    )  # fmt: skip
+    return sorted(tuple(r) for r in rows.all())
+
+
+ROUTES = [_route("story", "opus", "stat_judgment"), _route("story", "opus", "ending_judgment")]
+
+
+async def test_exported_routes_replace_the_measurement_table_and_compare_clean(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    db_session.add(_route_row("story", "gemini", "memory_summary"))
+    await db_session.flush()
+    rows = [dict(r) for r in ROUTES]
+    exported = ps.load_export(await _export_file(db_session, tmp_path, extra=rows))
+    result = await ps.overwrite(db_session, exported)
+    assert result["routes"] == {"removed": 1, "inserted": 2}
+    assert await _table(db_session) == [
+        ("story", "opus", "ending_judgment", "gemini", "gemini", "gemini"),
+        ("story", "opus", "stat_judgment", "gemini", "gemini", "gemini"),
+    ]
+    report = await ps.compare(db_session, exported)
+    assert report["differences"] == 0
+    assert report["routes"] == 2
+
+
+async def test_an_export_with_an_empty_route_table_empties_the_measurement_table(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    db_session.add(_route_row("story", "opus", "stat_judgment"))
+    await db_session.flush()
+    exported = ps.load_export(await _export_file(db_session, tmp_path))
+    before = await ps.compare(db_session, exported)
+    assert before["keys"]["extraRoutes"] == ["story/opus/stat_judgment"]
+
+    await ps.overwrite(db_session, exported)
+    assert await _table(db_session) == []
+    assert (await ps.compare(db_session, exported))["differences"] == 0
+
+
+async def test_route_differences_are_counted_by_their_own_kinds(db_session: AsyncSession, tmp_path: Path) -> None:
+    from api.db.models.prompt import PromptRoute
+
+    exported = ps.load_export(await _export_file(db_session, tmp_path, extra=[dict(r) for r in ROUTES]))
+    await ps.overwrite(db_session, exported)
+    await db_session.execute(sa.delete(PromptRoute).where(PromptRoute.stage == "stat_judgment"))
+    await db_session.execute(
+        sa.update(PromptRoute).where(PromptRoute.stage == "ending_judgment").values(backend="anthropic")
+    )
+    db_session.add(_route_row("character", "opus", "memory_fact"))
+    await db_session.flush()
+
+    report = await ps.compare(db_session, exported)
+    assert report["keys"]["missingRoutes"] == ["story/opus/stat_judgment"]
+    assert report["keys"]["extraRoutes"] == ["character/opus/memory_fact"]
+    assert report["keys"]["route"] == ["story/opus/ending_judgment/backend"]
+    assert report["counts"]["missingRoutes"] == report["counts"]["extraRoutes"] == report["counts"]["route"] == 1
+    assert report["differences"] == 3
+    assert ps.exit_code(report) != 0
+
+
+async def test_the_route_revision_rides_on_the_section_rows_and_reaches_the_report(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    path = await _export_file(db_session, tmp_path)
+    rows = json.loads(path.read_text(encoding="utf-8").splitlines()[1])
+    for row in rows:
+        row["route_revision"] = 7
+    exported = ps.load_export(_write_export(tmp_path / "rev.json", rows))
+    assert exported.route_revision == 7
+    await ps.overwrite(db_session, exported)
+    assert (await ps.compare(db_session, exported))["routeRevision"] == 7
+
+
+def test_a_format_two_export_is_refused_by_the_fields_it_lacks(tmp_path: Path) -> None:
+    row = _row("story", "gemini", "lab", "a", order=0)
+    del row["kind"], row["route_revision"]
+    row["export_format"] = 2
+    with pytest.raises(SystemExit) as stop:
+        ps.load_export(_write_export(tmp_path / "v2.json", [row]))
+    message = str(stop.value.code)
+    assert "kind" in message and "route_revision" in message
+    assert BODY_MARK not in message and "지어낸" not in message
+
+
+@pytest.mark.parametrize(
+    ("case", "needle"),
+    [
+        ("chain-missing", "story/opus/stat_judgment"),
+        ("duplicate", "story/opus/stat_judgment"),
+        ("revisions-disagree", "route_revision"),
+        ("unknown-kind", "kind"),
+    ],
+)
+def test_inconsistent_route_rows_are_refused_before_anything_is_written(tmp_path: Path, case: str, needle: str) -> None:
+    rows = [_row("story", "gemini", "s", "a", order=0), _row("story", "gemini", "s", "b", order=1)]
+    if case == "chain-missing":
+        rows.append(_route("story", "opus", "stat_judgment", chain_model="sonnet"))
+    elif case == "duplicate":
+        rows += [_route("story", "opus", "stat_judgment"), _route("story", "opus", "stat_judgment")]
+    elif case == "revisions-disagree":
+        rows[1]["route_revision"] = 3
+    else:
+        rows[1]["kind"] = "revision"
+    with pytest.raises(SystemExit) as stop:
+        ps.load_export(_write_export(tmp_path / "bad.json", rows))
+    assert needle in str(stop.value.code)
+    assert BODY_MARK not in str(stop.value.code)
+
+
+async def test_the_overwrite_run_clears_the_route_table_cache(db_session: AsyncSession, tmp_path: Path) -> None:
+    from api.chat.prompt_routing_cache import PROMPT_ROUTES_CACHE_KEY
+
+    exported = ps.load_export(await _export_file(db_session, tmp_path))
+    await redis_client.set(PROMPT_ROUTES_CACHE_KEY, "x")
+    result = await ps.run_sync(_open(db_session), exported, check_only=False, redis_url=settings.redis_url)
+    assert result["routesCacheDeleted"] == 1
+    assert await redis_client.exists(PROMPT_ROUTES_CACHE_KEY) == 0
+
+
+# --- 제자리 덮기와 판 표 — 같은 (체인, 섹션, 번호)는 같은 내용이어야 한다 ---------------------------------------------
+
+
+async def _semver_rows(db: AsyncSession, set_id: uuid.UUID) -> tuple[int, int]:
+    from api.db.models.prompt import PromptSectionSemver, PromptSetSemver
+
+    sets = await db.scalar(sa.select(sa.func.count()).where(PromptSetSemver.prompt_set_id == set_id))
+    sections = await db.scalar(sa.select(sa.func.count()).where(PromptSectionSemver.prompt_set_id == set_id))
+    return int(sets or 0), int(sections or 0)
+
+
+def _numbered(set_id: uuid.UUID, lane: str, model: str, major: int, *, base: uuid.UUID | None = None) -> list[Any]:
+    """번호를 매긴 게시본의 판 행 둘(체인 판·섹션 판). 섹션 판은 시드가 이미 매긴 채널과 겹치지 않게 지어낸 채널 이름이다."""
+    from api.db.models.prompt import PromptSectionSemver, PromptSetSemver
+
+    return [
+        PromptSetSemver(
+            prompt_set_id=set_id, lane=lane, model=model, major=major, minor=0, patch=0,
+            level=None if base is None else "major", base_set_id=base,
+        ),
+        PromptSectionSemver(prompt_set_id=set_id, channel="지어낸채널", major=major, minor=0, patch=0, level=None),
+    ]  # fmt: skip
+
+
+async def _older_numbered_set(db: AsyncSession, lane: str, model: str, major: int, *, base: uuid.UUID | None) -> Any:
+    older = _published_set(lane, model)
+    older.published_at = datetime(2000, 1, 1, tzinfo=UTC)
+    db.add(older)
+    await db.flush()
+    db.add_all(_numbered(older.id, lane, model, major, base=base))
+    await db.flush()
+    return older
+
+
+async def test_overwrite_strips_the_version_rows_of_the_set_it_rewrites_in_place(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    exported = ps.load_export(await _export_file(db_session, tmp_path))
+    lane, model = sorted(exported.sets)[0]
+    target = await _active_id(db_session, lane, model)
+    older = await _older_numbered_set(db_session, lane, model, 901, base=None)
+    # 시드가 이미 매겼을 수 있는 체인 판은 그대로 두고, 섹션 판 하나는 늘 더한다 — 덮는 세트에 판 행이 있는 상태를 보장한다.
+    if (await _semver_rows(db_session, target))[0] == 0:
+        db_session.add_all(_numbered(target, lane, model, 902, base=older.id))
+    else:
+        db_session.add(_numbered(target, lane, model, 902)[1])
+    await db_session.flush()
+    numbered = sum(await _semver_rows(db_session, target))
+    assert numbered >= 2
+
+    result = await ps.overwrite(db_session, exported)
+    assert result[f"{lane}/{model}"]["semverRowsRemoved"] == numbered
+    assert await _semver_rows(db_session, target) == (0, 0)
+    assert await _semver_rows(db_session, older.id) == (1, 1)
+
+
+async def test_overwrite_refuses_when_another_version_row_takes_the_set_as_its_base(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    exported = ps.load_export(await _export_file(db_session, tmp_path))
+    lane, model = sorted(exported.sets)[-1]
+    target = await _active_id(db_session, lane, model)
+    db_session.add(_numbered(target, lane, model, 903)[1])
+    await _older_numbered_set(db_session, lane, model, 904, base=target)
+    before = await _chain_state(db_session)
+    numbered = await _semver_rows(db_session, target)
+
+    with pytest.raises(SystemExit) as stop:
+        await ps.overwrite(db_session, exported)
+    assert f"{lane}/{model}" in str(stop.value.code)
+    assert await _chain_state(db_session) == before
+    assert await _semver_rows(db_session, target) == numbered
+    assert BODY_MARK not in str(stop.value.code)
