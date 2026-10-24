@@ -109,3 +109,91 @@ describe("countFreshPatches", () => {
     expect(countFreshPatchesInBlocks([mockup], new Set(["b0"]))).toBe(0);
   });
 });
+
+// 다시 검사는 서버가 물을 거리가 있을 때만 받는다 — 고친 원소가 지금 판에 있고(지워졌으면 보여 줄 글이 없다), 따로 적용할 남은
+// 원소가 있어야 한다. 그 밖이면 버튼이 없다(누르면 409 뿐이다).
+describe("toPatchLayout — 묶음 다시 검사", () => {
+  function bundleOf(edit: NovelPendingBlockEdit) {
+    return [...toPatchLayout([edit], BLOCKS).bundlesAfter.values()].flat()[0];
+  }
+
+  it("고친 원소와 쓸 수 있는 원소가 함께 있는 묶음은 다시 검사할 수 있다", () => {
+    expect(bundleOf(mockup)?.canRecheck).toBe(true);
+  });
+
+  it("서버가 낡음으로 바꾼 원소도 고친 원소다", () => {
+    const edit = job(
+      "j1",
+      [patch("p3", "b3"), patch("p4", "b4", { state: "stale", paragraphs: null, fresh: false })],
+      [{ id: "u1", patchIds: ["p3", "p4"], reason: null }],
+    );
+    expect(bundleOf(edit)?.canRecheck).toBe(true);
+  });
+
+  it("원소가 모두 쓸 수 있으면 다시 검사할 것이 없다(함께 적용하면 된다)", () => {
+    const edit = job("j1", [patch("p3", "b3"), patch("p4", "b4")], [{ id: "u1", patchIds: ["p3", "p4"], reason: null }]);
+    expect(bundleOf(edit)?.canRecheck).toBe(false);
+  });
+
+  it("고친 원소의 문단이 지워졌으면 다시 검사할 수 없다", () => {
+    const edit = job(
+      "j1",
+      [patch("p3", "b3"), patch("p4", "gone", { fresh: false })],
+      [{ id: "u1", patchIds: ["p3", "p4"], reason: null }],
+    );
+    expect(bundleOf(edit)?.canRecheck).toBe(false);
+  });
+
+  it("쓸 수 있는 원소가 없으면 다시 검사할 수 없다", () => {
+    const edit = job(
+      "j1",
+      [patch("p3", "b3", { fresh: false }), patch("p4", "b4", { fresh: false })],
+      [{ id: "u1", patchIds: ["p3", "p4"], reason: null }],
+    );
+    expect(bundleOf(edit)?.canRecheck).toBe(false);
+  });
+
+  it("묶음에 들지 않은 수정안은 다시 검사하지 않는다", () => {
+    const layout = toPatchLayout([job("j1", [patch("p1", "b1", { fresh: false })])], BLOCKS);
+    expect(layout.cardsAt.get(1)?.[0]?.unit?.canRecheck).toBe(false);
+  });
+});
+
+// 한 화에 요청이 둘 이상이면 카드·묶음·요청 줄이 어느 요청의 것인지 번호로 짝짓는다(먼저 맡긴 것이 1). 서버는 최신부터 준다.
+describe("toPatchLayout — 요청 번호", () => {
+  const older = {
+    ...job("j-old", [patch("p1", "b1"), patch("p3", "b3")], [{ id: "u1", patchIds: ["p1", "p3"], reason: null }]),
+    createdAt: "2026-10-24T00:00:00Z",
+  };
+  const newer = { ...job("j-new", [patch("q2", "b2"), patch("q4", "b4")]), createdAt: "2026-10-24T00:05:00Z" };
+
+  it("요청이 하나면 번호가 없다", () => {
+    const layout = toPatchLayout([older], BLOCKS);
+    expect(layout.cardsAt.get(1)?.[0]?.jobLabel).toBeUndefined();
+    expect(layout.bundlesAfter.get(3)?.[0]?.jobLabel).toBeUndefined();
+    expect(layout.jobsAfter.get(3)?.[0]?.jobLabel).toBeUndefined();
+  });
+
+  it("둘 이상이면 맡긴 차례로 번호를 매겨 카드·묶음·꼬리 줄에 같은 번호를 단다", () => {
+    const layout = toPatchLayout([newer, older], BLOCKS);
+    expect(layout.cardsAt.get(1)?.[0]?.jobLabel).toBe("요청 1");
+    expect(layout.cardsAt.get(2)?.[0]?.jobLabel).toBe("요청 2");
+    expect(layout.cardsAt.get(2)?.[0]?.unit?.jobLabel).toBe("요청 2");
+    expect(layout.bundlesAfter.get(3)?.[0]?.jobLabel).toBe("요청 1");
+    expect(layout.jobsAfter.get(3)?.[0]?.jobLabel).toBe("요청 1");
+    expect(layout.jobsAfter.get(4)?.[0]?.jobLabel).toBe("요청 2");
+  });
+
+  it("시각은 값으로 견준다 — 소수 초 자릿수가 달라도 먼저 맡긴 것이 1", () => {
+    const a = { ...job("j-z", [patch("p1", "b1")]), createdAt: "2026-10-24T00:00:03Z" };
+    const b = { ...job("j-a", [patch("q2", "b2")]), createdAt: "2026-10-24T00:00:03.1Z" };
+    expect(toPatchLayout([b, a], BLOCKS).cardsAt.get(1)?.[0]?.jobLabel).toBe("요청 1");
+  });
+
+  it("같은 시각이면 id 차례로 정해 받은 차례가 바뀌어도 번호가 같다", () => {
+    const a = { ...job("j-a", [patch("p1", "b1")]), createdAt: "2026-10-24T00:00:00Z" };
+    const b = { ...job("j-b", [patch("q2", "b2")]), createdAt: "2026-10-24T00:00:00Z" };
+    expect(toPatchLayout([b, a], BLOCKS).cardsAt.get(1)?.[0]?.jobLabel).toBe("요청 1");
+    expect(toPatchLayout([a, b], BLOCKS).cardsAt.get(1)?.[0]?.jobLabel).toBe("요청 1");
+  });
+});

@@ -23,6 +23,7 @@ import {
 import { useApplyAiEditMutation } from "../api/useApplyAiEditMutation";
 import { useDismissAiEditMutation } from "../api/useDismissAiEditMutation";
 import { useApplyPatchUnitMutation, useDismissPatchUnitMutation } from "../api/usePatchUnitMutations";
+import { useRecheckBundleMutation } from "../api/useRecheckBundleMutation";
 import { useStartAiEditMutation } from "../api/useStartAiEditMutation";
 import { useStartBlockEditMutation } from "../api/useStartBlockEditMutation";
 import { AiEditInstructionModal } from "../ui/AiEditInstructionModal";
@@ -101,6 +102,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
   const startBlocksMutation = useStartBlockEditMutation();
   const applyPatchMutation = useApplyPatchUnitMutation();
   const dismissPatchMutation = useDismissPatchUnitMutation();
+  const recheckMutation = useRecheckBundleMutation();
 
   const activeAiEdit: TrackedJob | undefined =
     novel.activeJob?.kind === "ai_edit" && novel.activeJob.chapterId !== null
@@ -205,9 +207,11 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     setNotice(toChapterNotice(event));
   }
 
-  function handleRequestError(error: unknown, action: NovelAction) {
+  /** 거절을 안내 줄에 남기고 필요한 캐시를 다시 받는다. 상세를 다시 받는 거절이면 `true` — 다시 받은 화면에서 누른 버튼이 사라질 수
+   * 있다는 뜻이다. */
+  function handleRequestError(error: unknown, action: NovelAction): boolean {
     const result = toNovelActionError(error, action);
-    if (result === null) return;
+    if (result === null) return false;
     report({ type: "rejected", message: result.message });
     // 여러 문단 수정 스위치가 꺼졌다 — 가격을 다시 받아 고르기를 거둔다.
     if (hasNovelErrorCode(error, "NOVEL_MULTI_BLOCK_EDIT_DISABLED")) {
@@ -221,6 +225,8 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
       );
     }
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
+    // 가격을 다시 받는 스위치 꺼짐도 버튼을 거둔다.
+    return result.shouldRefetchNovel || hasNovelErrorCode(error, "NOVEL_MULTI_BLOCK_EDIT_DISABLED");
   }
 
   /** 지시를 받고 금액을 확인받아 작업을 만든다. 작업을 만들었으면 `true` — 호출부가 고른 범위를 푼다. */
@@ -358,6 +364,29 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     }
   }
 
+  /** 묶음을 다시 검사한다(무료). 누른 버튼이 사라질 수 있으면 `true` — 호출부가 포커스를 옮긴다. 따로 적용해도 된다는 판정이면
+   * 묶음이 다시 받은 상세에서 풀리고, 상세를 다시 받는 거절(고친 문단이 없어짐·묶음이 바뀜·스위치 꺼짐)도 그 묶음의 버튼을 거둘 수
+   * 있다. 묶음 유지 판정과 상세를 다시 받지 않는 실패(상한·판정 실패)에는 버튼이 그대로 남아 `false` 다. 적용·버리기와 같은 줄을
+   * 서 한 번에 하나만 보낸다. */
+  async function recheckBundle(unit: PatchUnitView, chapterOrdinal: number): Promise<boolean> {
+    if (actingEditId !== undefined || !("bundleId" in unit.request)) return false;
+    report({ type: "started" });
+    setActingEditId(toRecheckKey(unit));
+    try {
+      const verdict = await recheckMutation.mutateAsync({
+        novelId: novel.id,
+        jobId: unit.jobId,
+        bundleId: unit.request.bundleId,
+      });
+      report({ type: "bundleRechecked", chapterOrdinal, separable: verdict.separable, reason: verdict.reason });
+      return verdict.separable;
+    } catch (error) {
+      return handleRequestError(error, "recheckBundle");
+    } finally {
+      setActingEditId(undefined);
+    }
+  }
+
   async function apply(edit: NovelPendingAiEdit, chapterOrdinal: number) {
     if (actingEditId !== undefined) return;
     report({ type: "started" });
@@ -402,8 +431,14 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     dismiss,
     applyPatchUnit,
     dismissPatches,
+    recheckBundle,
     report,
   };
+}
+
+/** 다시 검사 중인 묶음을 가리키는 `actingEditId` — 같은 묶음의 적용·버리기 열쇠와 갈라 어느 버튼이 진행 중인지 보인다. */
+export function toRecheckKey(unit: PatchUnitView): string {
+  return `${unit.key}:recheck`;
 }
 
 export type NovelAiEditFlow = ReturnType<typeof useNovelAiEdit>;

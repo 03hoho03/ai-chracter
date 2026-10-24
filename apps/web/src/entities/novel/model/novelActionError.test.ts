@@ -392,3 +392,54 @@ describe("toNovelJobFailureMessage", () => {
     expect(toNovelJobFailureMessage({ ...base, failureReason: "refused" })).toContain("안전 기준");
   });
 });
+
+// 묶음 다시 검사는 무료 호출이라 시간당 상한만 있다. 같은 429(`USER_LIMIT`·`novelize`)가 화 만들기의 하루 상한과 같이 오므로
+// 요청으로 가른다 — 자정을 말하면 틀린다.
+describe("toNovelActionError — 묶음 다시 검사", () => {
+  it("시간당 상한은 자정이 아니라 남은 분을 말하고 묶음이 그대로라고 한다", () => {
+    const error = apiError(429, { code: "USER_LIMIT", retryAfterSeconds: 1500, window: "novelize" });
+    expect(toNovelActionError(error, "recheckBundle")).toEqual({
+      message: "다시 검사를 너무 자주 했어요. 25분 뒤에 다시 검사할 수 있어요. 묶음은 그대로예요.",
+      shouldRefetchNovel: false,
+    });
+  });
+
+  it("남은 시간은 분으로 올려 말한다 — 기다린 뒤 눌러도 아직 막히지 않게", () => {
+    const error = apiError(429, { code: "USER_LIMIT", retryAfterSeconds: 1501, window: "novelize" });
+    expect(toNovelActionError(error, "recheckBundle")?.message).toContain("26분 뒤");
+  });
+
+  it("남은 시간이 1분보다 짧아도 1분이라 말한다", () => {
+    const error = apiError(429, { code: "USER_LIMIT", retryAfterSeconds: 5, window: "novelize" });
+    expect(toNovelActionError(error, "recheckBundle")?.message).toContain("1분 뒤");
+  });
+
+  it.each([
+    [409, "NOVEL_RECHECK_NOT_NEEDED", "고친 문단이 없어 묶음째 적용하면 돼요. 최신 내용을 불러왔어요.", true],
+    [503, "NOVEL_RECHECK_UNAVAILABLE", "지금 다시 검사하지 못했어요. 묶음은 그대로예요. 잠시 후 다시 해 주세요.", false],
+    [409, "NOVEL_JOB_NOT_APPLICABLE", "이 묶음은 그사이 바뀌어 다시 검사하지 못했어요. 최신 내용을 불러왔어요.", true],
+    [404, "NOVEL_MULTI_BLOCK_EDIT_DISABLED", "지금은 묶음을 다시 검사할 수 없어요. 함께 버릴 수 있어요.", true],
+    [409, "NOVEL_REVISION_CONFLICT", "그사이 이 화의 글이 바뀌어 다시 검사 결과를 쓰지 않았어요. 최신 내용을 불러왔어요.", true],
+  ])("%i %s 는 다시 검사의 말로 알린다", (status, code, message, shouldRefetchNovel) => {
+    expect(toNovelActionError(apiError(status, { code }), "recheckBundle")).toEqual({ message, shouldRefetchNovel });
+  });
+
+  it("다른 요청에서 받은 같은 코드의 문구는 그대로다", () => {
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_JOB_NOT_APPLICABLE" }), "applyPatch")?.message).toBe(
+      "이 수정안은 더 이상 적용할 수 없어요.",
+    );
+    expect(toNovelActionError(apiError(404, { code: "NOVEL_MULTI_BLOCK_EDIT_DISABLED" }), "aiEdit")?.message).toBe(
+      "지금은 여러 문단을 함께 고칠 수 없어요.",
+    );
+    expect(
+      toNovelActionError(apiError(429, { code: "USER_LIMIT", retryAfterSeconds: 100, window: "novelize" }), "regenerate")
+        ?.message,
+    ).toContain("자정");
+  });
+
+  it("모르는 실패는 다시 검사의 일반 문구로 접는다", () => {
+    expect(toNovelActionError(apiError(500, undefined), "recheckBundle")?.message).toBe(
+      "묶음을 다시 검사하지 못했어요. 잠시 후 다시 시도해주세요.",
+    );
+  });
+});

@@ -15,6 +15,7 @@ export type NovelAction =
   | "dismissAiEdit"
   | "applyPatch"
   | "dismissPatch"
+  | "recheckBundle"
   | "edit"
   | "restore"
   | "notes"
@@ -53,6 +54,7 @@ const ACTION_OBJECT: Record<NovelAction, string> = {
   dismissAiEdit: "수정안을 버리지",
   applyPatch: "수정안을 적용하지",
   dismissPatch: "수정안을 버리지",
+  recheckBundle: "묶음을 다시 검사하지",
   edit: "고친 내용을 저장하지",
   restore: "이 판으로 되돌리지",
   notes: "설정 노트를 저장하지",
@@ -206,6 +208,16 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     message: "그사이 글이 바뀐 문단이 있어 적용하지 않았어요.",
     shouldRefetchNovel: true,
   },
+  // 묶음에 고친 원소가 없다 — 화면이 미리 막으므로 그사이 다른 곳에서 그 문단을 되돌린 경우다. 다시 받으면 함께 적용이 열린다.
+  NOVEL_RECHECK_NOT_NEEDED: {
+    message: "고친 문단이 없어 묶음째 적용하면 돼요. 최신 내용을 불러왔어요.",
+    shouldRefetchNovel: true,
+  },
+  // 판정 모델을 부르지 못했다. 서버는 묶음을 바꾸지 않았다.
+  NOVEL_RECHECK_UNAVAILABLE: {
+    message: "지금 다시 검사하지 못했어요. 묶음은 그대로예요. 잠시 후 다시 해 주세요.",
+    shouldRefetchNovel: false,
+  },
   NOVEL_PATCH_NOT_FOUND: {
     message: "이 수정안을 찾을 수 없어요. 최신 내용을 불러왔어요.",
     shouldRefetchNovel: true,
@@ -268,6 +280,14 @@ export function toNovelActionError(
   if (rateLimit?.window === "novelize") {
     if (rateLimit.code === "CLOVER_REQUIRED") {
       return { message: "클로버가 부족해요. 클로버를 채운 뒤 다시 해주세요.", shouldRefetchNovel: false };
+    }
+    if (rateLimit.code === "USER_LIMIT" && action === "recheckBundle") {
+      // 다시 검사는 무료라 시간당 상한만 있다 — 서버가 준 남은 시간을 분으로 올려 말한다.
+      const minutes = Math.max(1, Math.ceil(rateLimit.retryAfterSeconds / 60));
+      return {
+        message: `다시 검사를 너무 자주 했어요. ${minutes.toLocaleString()}분 뒤에 다시 검사할 수 있어요. 묶음은 그대로예요.`,
+        shouldRefetchNovel: false,
+      };
     }
     if (rateLimit.code === "USER_LIMIT") {
       return action === "proposal"
@@ -333,6 +353,18 @@ export function toNovelActionError(
   }
   // 표의 문구는 직접 수정 저장의 말이다("쓴 글을 복사해 두고…"). AI 수정 요청에서는 고른 문단이 지금 판과 어긋난 것이다.
   // 표의 문구는 적용의 말이다. 버리기에서 받으면 그 수정안은 다른 곳에서 이미 적용했거나 버린 것이다.
+  // 다시 검사에서는 묶음이 그사이 바뀌었거나(다른 곳에서 적용·버림) 물을 거리가 없어졌다는 뜻이고, 스위치가 꺼졌으면 남은 길은
+  // 함께 버리기다.
+  if (code === "NOVEL_JOB_NOT_APPLICABLE" && action === "recheckBundle") {
+    return { message: "이 묶음은 그사이 바뀌어 다시 검사하지 못했어요. 최신 내용을 불러왔어요.", shouldRefetchNovel: true };
+  }
+  // 판정을 기다리는 몇 초 사이 이 화의 글이 바뀌었다(같은 화면의 직접 고치기일 수도 있어 "다른 곳"이라 말하지 않는다).
+  if (code === "NOVEL_REVISION_CONFLICT" && action === "recheckBundle") {
+    return { message: "그사이 이 화의 글이 바뀌어 다시 검사 결과를 쓰지 않았어요. 최신 내용을 불러왔어요.", shouldRefetchNovel: true };
+  }
+  if (code === "NOVEL_MULTI_BLOCK_EDIT_DISABLED" && action === "recheckBundle") {
+    return { message: "지금은 묶음을 다시 검사할 수 없어요. 함께 버릴 수 있어요.", shouldRefetchNovel: true };
+  }
   if (code === "NOVEL_JOB_NOT_APPLICABLE" && action === "dismissPatch") {
     return { message: "이미 적용했거나 버린 수정안이에요. 최신 내용을 불러왔어요.", shouldRefetchNovel: true };
   }
