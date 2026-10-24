@@ -211,6 +211,8 @@ describe("NovelChapterText 요청 번호", () => {
     expect(markup).toContain("요청 2: 회랑 묘사를 더해 주세요");
     expect(markup).toContain("요청 1 남은 수정안 모두 버리기 (2개)");
     expect(markup).toContain("요청 2 남은 수정안 모두 버리기 (2개)");
+    // 같은 문단에 두 요청의 카드가 겹쳐도 보기 칩 묶음의 이름이 갈린다.
+    expect(markup).toContain('aria-label="4번째 문단 요청 2 보기"');
   });
 
   it("요청이 하나면 번호가 없다", () => {

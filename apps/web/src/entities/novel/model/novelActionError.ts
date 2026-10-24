@@ -358,6 +358,10 @@ export function toNovelActionError(
   if (code === "NOVEL_JOB_NOT_APPLICABLE" && action === "recheckBundle") {
     return { message: "이 묶음은 그사이 바뀌어 다시 검사하지 못했어요. 최신 내용을 불러왔어요.", shouldRefetchNovel: true };
   }
+  // 판정을 기다리는 몇 초 사이 이 화의 글이 바뀌었다(같은 화면의 직접 고치기일 수도 있어 "다른 곳"이라 말하지 않는다).
+  if (code === "NOVEL_REVISION_CONFLICT" && action === "recheckBundle") {
+    return { message: "그사이 이 화의 글이 바뀌어 다시 검사 결과를 쓰지 않았어요. 최신 내용을 불러왔어요.", shouldRefetchNovel: true };
+  }
   if (code === "NOVEL_MULTI_BLOCK_EDIT_DISABLED" && action === "recheckBundle") {
     return { message: "지금은 묶음을 다시 검사할 수 없어요. 함께 버릴 수 있어요.", shouldRefetchNovel: true };
   }

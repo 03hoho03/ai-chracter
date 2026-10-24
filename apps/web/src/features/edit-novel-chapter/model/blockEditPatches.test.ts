@@ -184,6 +184,12 @@ describe("toPatchLayout — 요청 번호", () => {
     expect(layout.jobsAfter.get(4)?.[0]?.jobLabel).toBe("요청 2");
   });
 
+  it("시각은 값으로 견준다 — 소수 초 자릿수가 달라도 먼저 맡긴 것이 1", () => {
+    const a = { ...job("j-z", [patch("p1", "b1")]), createdAt: "2026-10-24T00:00:03Z" };
+    const b = { ...job("j-a", [patch("q2", "b2")]), createdAt: "2026-10-24T00:00:03.1Z" };
+    expect(toPatchLayout([b, a], BLOCKS).cardsAt.get(1)?.[0]?.jobLabel).toBe("요청 1");
+  });
+
   it("같은 시각이면 id 차례로 정해 받은 차례가 바뀌어도 번호가 같다", () => {
     const a = { ...job("j-a", [patch("p1", "b1")]), createdAt: "2026-10-24T00:00:00Z" };
     const b = { ...job("j-b", [patch("q2", "b2")]), createdAt: "2026-10-24T00:00:00Z" };

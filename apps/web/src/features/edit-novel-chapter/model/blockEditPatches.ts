@@ -72,7 +72,10 @@ function push<T>(map: Map<number, T[]>, index: number, item: T) {
  * 꼬리 줄의 요청 문장만으로는 어느 카드가 어느 요청의 것인지 알 수 없다. 하나면 번호가 없다(지금과 같은 화면). */
 function toJobLabels(edits: readonly NovelPendingBlockEdit[]): Map<string, string> {
   if (edits.length < 2) return new Map();
-  const ordered = [...edits].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  // 시각은 문자열이 아니라 값으로 견준다 — 소수 초 자릿수가 다른 두 표기는 글자 차례와 시간 차례가 어긋날 수 있다.
+  const ordered = [...edits].sort(
+    (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id),
+  );
   return new Map(ordered.map((edit, rank) => [edit.id, `요청 ${rank + 1}`]));
 }
 

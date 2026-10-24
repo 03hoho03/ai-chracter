@@ -42,7 +42,7 @@ export function BlockPatchCard({ card, currentText, isActing, onApply, onDismiss
             type="single"
             variant="neutral"
             size="sm"
-            aria-label={`${formatParagraphIndexes([index])} 보기`}
+            aria-label={`${formatParagraphIndexes([index])}${card.jobLabel === undefined ? "" : ` ${card.jobLabel}`} 보기`}
             value={view}
             onValueChange={(value) => {
               // 단일 토글 그룹은 고른 칸을 다시 누르면 빈 값을 보낸다 — 보기는 늘 하나라 해제를 받지 않는다.

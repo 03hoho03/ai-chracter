@@ -419,6 +419,7 @@ describe("toNovelActionError — 묶음 다시 검사", () => {
     [503, "NOVEL_RECHECK_UNAVAILABLE", "지금 다시 검사하지 못했어요. 묶음은 그대로예요. 잠시 후 다시 해 주세요.", false],
     [409, "NOVEL_JOB_NOT_APPLICABLE", "이 묶음은 그사이 바뀌어 다시 검사하지 못했어요. 최신 내용을 불러왔어요.", true],
     [404, "NOVEL_MULTI_BLOCK_EDIT_DISABLED", "지금은 묶음을 다시 검사할 수 없어요. 함께 버릴 수 있어요.", true],
+    [409, "NOVEL_REVISION_CONFLICT", "그사이 이 화의 글이 바뀌어 다시 검사 결과를 쓰지 않았어요. 최신 내용을 불러왔어요.", true],
   ])("%i %s 는 다시 검사의 말로 알린다", (status, code, message, shouldRefetchNovel) => {
     expect(toNovelActionError(apiError(status, { code }), "recheckBundle")).toEqual({ message, shouldRefetchNovel });
   });

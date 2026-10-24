@@ -681,8 +681,8 @@ export function NovelChapterText({
     onFocusFallback();
   }
 
-  /** 묶음 다시 검사. 따로 적용해도 된다는 판정이면 묶음이 풀려 누른 버튼이 사라지므로 장 머리로 포커스를 옮기고, 아니면(판정이
-   * 묶음 유지이거나 실패) 버튼이 남아 포커스를 그대로 둔다 — 결과는 안내 줄이 알린다. */
+  /** 묶음 다시 검사. 누른 버튼이 사라질 수 있으면(분리 판정, 상세를 다시 받는 거절) 결과 안내가 있는 장 머리로 포커스를 옮기고,
+   * 버튼이 남으면(묶음 유지 판정, 상한·판정 실패) 포커스를 그대로 둔다 — 결과는 안내 줄이 알린다. */
   async function recheckBundle(unit: PatchUnitView) {
     if (await aiEdit.recheckBundle(unit, chapter.ordinal)) onFocusFallback();
   }
