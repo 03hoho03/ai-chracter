@@ -17,7 +17,7 @@ import {
   SheetTitle,
 } from "@ai-character-chat/ui/components/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
-import { Loader2 } from "lucide-react";
+import { Info, Loader2 } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
 import { CloverSpendSummary, useCloverBalanceQuery, useCloverPricingQuery } from "@/entities/clover";
@@ -297,6 +297,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
             <DialogHeader>
               <DialogTitle className="break-keep">{title}</DialogTitle>
               <DialogDescription className="break-keep">{description}</DialogDescription>
+              <ChapterEndChangeNotice />
             </DialogHeader>
             {modelPicker}
             <DialogBody scrollLabel={LIST_LABEL}>{list}</DialogBody>
@@ -322,6 +323,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
           <SheetHeader className="pr-12">
             <SheetTitle className="break-keep">{title}</SheetTitle>
             <SheetDescription className="break-keep">{description}</SheetDescription>
+            <ChapterEndChangeNotice />
           </SheetHeader>
           {modelPicker !== null && <div className="px-4 pb-4">{modelPicker}</div>}
           {/* 다이얼로그의 `DialogBody scrollLabel` 과 같은 몫 — 닫기 X 가 목록 밖이라 목록 자체가 Tab 정지이자 이름
@@ -350,3 +352,16 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
     );
   },
 );
+
+/** 화를 만든 뒤 그 화의 마지막 답을 바꾸면 생기는 일. 화의 범위는 끝 답으로 정해 두므로, 그 답을 다시 생성하면 새 답은 다음
+ * 화의 첫머리가 되고, 방금 전 답변으로 돌리면 돌아온 답이 그 화 범위 안에 들어와 원문이 달라진다 — 어느 쪽이든 그 화는 다시
+ * 만들 수 없다. 대화 화면에서는 알릴 자리가 없어(어느 답이 화의 끝인지 채팅 응답에 없다) 범위를 고르는 이 화면에서 미리
+ * 말한다. */
+function ChapterEndChangeNotice() {
+  return (
+    <p className="flex gap-2 text-sm break-keep text-muted-foreground">
+      <Info aria-hidden className="mt-1 size-3.5 shrink-0" />
+      만든 화의 마지막 답을 다시 생성하거나 방금 전 답변으로 돌리면 그 화는 다시 만들 수 없어요. 다시 생성한 답은 다음 화에 담겨요.
+    </p>
+  );
+}
