@@ -1,18 +1,15 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import { PROMPT_MODEL_LABELS } from "@/entities/prompt-routing";
+
 import type { PromptLane } from "./lane";
 
 /** 세트의 모델 축. 레인 × 모델마다 초안·게시·복원·활성 판정이 따로인 독립 체인이다. 글쓰기 모델 셋에 판정 전용
  * 모델(`haiku` — 판정·요약 문안만 있고 그 모델로는 글을 쓰지 않는다)이 더해진다. */
 export type PromptModel = components["schemas"]["AdminPromptSetSummary"]["model"];
 
-/** 스키마에 모델이 늘면 이 `Record`가 컴파일 에러로 잡는다. */
-export const PROMPT_MODEL_LABELS: Record<PromptModel, string> = {
-  gemini: "Gemini",
-  sonnet: "Claude Sonnet 5.5",
-  opus: "Claude Opus 5.5",
-  haiku: "Claude Haiku · 판정 전용",
-};
+/** 모델 이름은 배정 표 화면과 같은 말이라 한 곳(`entities/prompt-routing`)에 두고 여기서는 다시 내보낸다. */
+export { PROMPT_MODEL_LABELS };
 
 export function isPromptModel(value: string): value is PromptModel {
   return value in PROMPT_MODEL_LABELS;
