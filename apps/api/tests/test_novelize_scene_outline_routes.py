@@ -1764,14 +1764,26 @@ async def test_turn_counts_are_unknown_when_the_room_or_a_basis_end_message_is_g
     llm: _FlowLLM,
 ) -> None:
     """근거 끝 메시지가 지워진 화는 `turnCount` 가 null 이고 다른 화는 그대로 센다. 방이 지워지면 모든 화의 `turnCount` 와 장면 구성안
-    상태의 판정이 null 이다. 깨지는 시나리오: 사라진 대화를 0턴으로 세어 쓸 수 있는 화처럼 보이거나, 조회가 500 으로 깨져 구성안을 못 연다."""
+    상태의 판정이 null 이다. 셀 수 없는 화는 승인을 막지 않는다(다음 단계의 원문 검사가 막는다). 깨지는 시나리오: 사라진 대화를 0턴으로
+    세어 쓸 수 있는 화처럼 보이거나, 조회·승인이 500 으로 깨져 구성안을 못 연다."""
     novel_id, ms, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
     await _scened(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    outline = (await db_client.get(f"/novels/{novel_id}/outline")).json()["approved"]
+    copied = await db_client.put(
+        f"/novels/{novel_id}/outline/draft",
+        json={"baseRevision": outline["revision"], "episodes": _episode_inputs(outline)},
+    )
+    assert copied.status_code == 200, copied.text
 
     await db_session.execute(sa.delete(ChatMessage).where(ChatMessage.id == ms[12].id))
     await db_session.commit()
     episodes = (await db_client.get(f"/novels/{novel_id}/outline")).json()["approved"]["episodes"]
     assert [e["turnCount"] for e in episodes] == [2, None]
+    _caps(monkeypatch, gemini=2, sonnet=2, opus=2)
+    approved = await db_client.post(
+        f"/novels/{novel_id}/outline/approve", json={"revision": copied.json()["draft"]["revision"]}
+    )
+    assert approved.status_code == 200, approved.text
 
     await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(chat_room_id=None))
     await db_session.commit()

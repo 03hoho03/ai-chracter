@@ -1691,9 +1691,11 @@ def _failed_call(cause: BaseException | None) -> LLMClientError:
     return error
 
 
-def _anthropic_status(status: int, headers: dict[str, str]) -> anthropic.APIStatusError:
+def _anthropic_status(status: int, headers: dict[str, str], kind: str = "api_error") -> anthropic.APIStatusError:
+    """SDK 상태 오류 — 본문은 공급자 오류 꼴(`{"type": "error", "error": {"type": 종류, "message": 글}}`)이고 글에 본문 조각이 실린다."""
     response = httpx2.Response(status, headers=headers, request=httpx2.Request("POST", "https://llm.invalid/v1"))
-    return anthropic.APIStatusError(f"overloaded {_SECRET}", response=response, body={"detail": _SECRET})
+    body = {"type": "error", "error": {"type": kind, "message": _SECRET}}
+    return anthropic.APIStatusError(f"{body}", response=response, body=body)
 
 
 def _prompted() -> Any:
@@ -1735,22 +1737,27 @@ async def _call_episode_outline(llm: LLMClient, usage: LLMCallContext) -> None:
     ("cause", "expected"),
     [
         pytest.param(
-            _anthropic_status(529, {"request-id": "req_direct_1"}),
-            "LLMClientError 원인=APIStatusError 상태=529 요청=req_direct_1",
+            _anthropic_status(529, {"request-id": "req_direct_1"}, "overloaded_error"),
+            "LLMClientError 원인=APIStatusError 상태=529 종류=overloaded_error 요청=req_direct_1",
             id="anthropic",
         ),
         pytest.param(
-            _anthropic_status(503, {"x-amzn-requestid": "amzn-req-2"}),
-            "LLMClientError 원인=APIStatusError 상태=503 요청=amzn-req-2",
+            _anthropic_status(200, {"request-id": "req_stream_3"}, "overloaded_error"),
+            "LLMClientError 원인=APIStatusError 상태=200 종류=overloaded_error 요청=req_stream_3",
+            id="anthropic_mid_stream",
+        ),
+        pytest.param(
+            _anthropic_status(503, {"x-amzn-requestid": "amzn-req-2"}, "ThrottlingException"),
+            "LLMClientError 원인=APIStatusError 상태=503 종류=ThrottlingException 요청=amzn-req-2",
             id="bedrock",
         ),
         pytest.param(
             genai_errors.APIError(503, {"error": {"code": 503, "message": _SECRET, "status": "UNAVAILABLE"}}),
-            "LLMClientError 원인=APIError 상태=503 요청=없음",
+            "LLMClientError 원인=APIError 상태=503 종류=없음 요청=없음",
             id="gemini",
         ),
-        pytest.param(httpx.ReadTimeout(_SECRET), "LLMClientError 원인=ReadTimeout 상태=없음 요청=없음", id="timeout"),
-        pytest.param(None, "LLMClientError 원인=없음 상태=없음 요청=없음", id="no_cause"),
+        pytest.param(httpx.ReadTimeout(_SECRET), "LLMClientError 원인=ReadTimeout 상태=없음 종류=없음 요청=없음", id="timeout"),
+        pytest.param(None, "LLMClientError 원인=없음 상태=없음 종류=없음 요청=없음", id="no_cause"),
     ],
 )
 async def test_a_failed_novel_model_call_logs_the_cause_type_status_and_request_id_without_any_text(
@@ -1760,7 +1767,7 @@ async def test_a_failed_novel_model_call_logs_the_cause_type_status_and_request_
     expected: str,
 ) -> None:
     """소설 작업의 모델 호출(장 생성·문단 수정·여러 문단 수정·전체 구성안·장면 구성안)이 실패하면 경고 로그에 실패 예외 종류와 원인 예외
-    종류, HTTP 상태, 요청 id(공급자가 준 것 — 직접 API 는 `request-id`, Bedrock 은 `x-amzn-requestid` 헤더)를 남기고, 예외 글·프롬프트·응답
+    종류, HTTP 상태, 공급자 오류 종류(스트림 도중 오류는 상태가 200 이라 이것으로 가른다), 요청 id(공급자가 준 것 — 직접 API 는 `request-id`, Bedrock 은 `x-amzn-requestid` 헤더)를 남기고, 예외 글·프롬프트·응답
     본문은 남기지 않는다. 실패 사유 코드는 그대로 `llm_error` 다. 깨지는 시나리오: 과부하·연결 실패를 로그로 가를 수 없어 재시도 여부를
     정할 근거가 없거나, 로그에 사용자 대화가 샌다."""
     llm = _NovelLLM(chunks=[], error=_failed_call(cause))

@@ -13195,7 +13195,7 @@ export interface components {
          * @description 이 계정이 구성 흐름 원고에 고를 수 있는 모델 하나 — 원고 하나 가격(요청의 `expectedCost`), 턴 상한, 지금 승인한 장면 구성안으로
          *     이 모델이 원고를 쓸 수 있는지. 장면이 쓰는 턴 수가 상한을 넘으면 `eligible` 이 거짓이고(요청하면 409 `NOVEL_MODEL_INELIGIBLE`)
          *     `ineligible_reason` 이 그 이유다. 쓸 수 있는 승인한 장면 구성안이 없으면(없음·낡음·장면 근거 소실·방 없음) 판정하지 않아 둘 다
-         *     null 이다 — 그때 원고 요청은 턴 상한보다 장면 구성안 쪽 거절이 먼저 난다.
+         *     null 이다 — 그때 원고 요청은 턴 상한보다 먼저 다른 409 로 막힌다(장면 구성안 없음·낡음, 원문 변경, 방 없음).
          */
         NovelOutlineChapterModel: {
             /**

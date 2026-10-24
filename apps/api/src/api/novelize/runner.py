@@ -146,20 +146,27 @@ def _call_failure(exc: LLMClientError) -> str:
     과부하(529)·서버 오류·연결 실패·시간 초과를 로그로 가르고 공급자에 문의할 요청 id 를 남기려는 것이다. 예외 글은 넣지 않는다 —
     공급자 오류 글에는 오류 응답 본문이 통째로 실리고, 그 안에 요청 내용 일부가 섞일 수 있다.
 
-    Claude 는 SDK 상태 오류가 상태 코드와 헤더를 들고 온다(직접 API 는 `request-id`, Bedrock 은 `x-amzn-requestid`). Gemini SDK 오류는
-    상태 코드만 들고 요청 id 를 주지 않는다."""
+    Claude 는 SDK 상태 오류가 상태 코드와 헤더를 들고 온다(직접 API 는 `request-id`, Bedrock 은 `x-amzn-requestid`). 스트림을 흘리던
+    도중의 오류(장 생성의 과부하·스로틀)는 응답 상태가 이미 200 이라 상태 코드로는 가를 수 없어, 오류 본문의 오류 종류(직접 API 의
+    `overloaded_error`, Bedrock 의 `ThrottlingException` 같은 고정 이름)도 남긴다 — 같은 본문의 메시지 글은 넣지 않는다. 여기서는 Gemini
+    SDK 오류의 상태 코드만 읽고 요청 id 는 남기지 않는다."""
     cause = exc.__cause__
     status: int | None = None
     request_id: str | None = None
+    kind: str | None = None
     if isinstance(cause, anthropic.APIStatusError):
         status = cause.status_code
         request_id = cause.request_id or cause.response.headers.get("x-amzn-requestid")
+        body = cause.body
+        error = body.get("error") if isinstance(body, dict) else None
+        if isinstance(error, dict) and isinstance(error.get("type"), str):
+            kind = error["type"][:64]
     elif isinstance(cause, genai_errors.APIError):
         status = cause.code
     cause_name = "없음" if cause is None else type(cause).__name__
     return (
         f"{type(exc).__name__} 원인={cause_name} 상태={'없음' if status is None else status} "
-        f"요청={request_id or '없음'}"
+        f"종류={kind or '없음'} 요청={request_id or '없음'}"
     )
 
 

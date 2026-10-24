@@ -151,9 +151,10 @@ async def _refuse_unwritable_episodes(db: AsyncSession, novel: Novel, outline: N
     (`episodes[{key, turnCount}]`, 구성안 순서)를 실어 화면이 그 화를 짚고 나누기를 권하게 한다.
 
     턴 수는 화 근거 안의 모델 응답 수다(`episode_turn_counts`). 장면 구성안이 턴을 덜면 원고 턴 수는 이보다 적지만 판정은 화 근거로만
-    한다 — 상한을 넘는 화는 이 판정 때문에 승인되지 않아 장면 구성안을 살 길이 없고, 이미 산 장면 구성안이 턴을 덜어 둔 화는 상한을
-    낮추기 전에 승인한 구성안에만 있다(그 화도 나눠야 승인된다). 이미 원고가 된 화는 다시 쓸 화가 아니라 빼고, 셀 수 없는 화(근거
-    메시지 소실·방 없음)는 여기서 막지 않는다 — 다음 단계의 원문 검사가 막는다."""
+    한다 — 이 판정을 지난 구성안에는 상한을 넘는 화가 없으니, 장면을 덜어야만 쓸 수 있는 화는 이 판정이 없던 때 승인했거나 그 뒤 상한이
+    내려간(env 를 낮췄거나 상위 모델 허용이 빠진) 구성안에만 있다. 그런 승인본의 화는 지금도 장면 구성안을 사서 덜어 쓸 수 있지만, 그
+    구성안을 고쳐 새 판을 승인하려면 그 화도 나눠야 한다. 이미 원고가 된 화는 다시 쓸 화가 아니라 빼고, 셀 수 없는 화(근거 메시지
+    소실·방 없음)는 여기서 막지 않는다 — 다음 단계의 원문 검사가 막는다."""
     options, _ = await _chapter_models(db, novel.user_id)
     cap = max(chapter_max_turns(option.id) for option in options)
     written = await written_episodes(db, novel.id)
