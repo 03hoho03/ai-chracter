@@ -319,7 +319,7 @@ function SplitPicker({ label, rows, toCounts, onSplit, onCancel }: SplitPickerPr
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="min-w-0 flex-1 text-sm break-keep text-foreground">
-          {label}을 나눌 자리를 고르세요. 고른 자리까지가 앞 화, 그 뒤부터가 새 화예요.
+          {label}를 나눌 자리를 고르세요. 고른 자리까지가 앞 화, 그 뒤부터가 새 화예요.
         </p>
         <Button type="button" variant="ghost" size="xs" data-outline-split-cancel onClick={onCancel}>
           나누기 취소

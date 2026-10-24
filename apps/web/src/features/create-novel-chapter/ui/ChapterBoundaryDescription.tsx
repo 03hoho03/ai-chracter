@@ -27,7 +27,8 @@ export function ChapterBoundaryDescription({ layout, description }: ChapterBound
 /** 화를 만든 뒤 그 화의 마지막 답을 바꾸면 생기는 일. 화의 범위는 끝 답으로 정해 두므로, 그 답을 다시 생성하면 새 답은 다음
  * 화의 첫머리가 되고, 방금 전 답변으로 돌리면 돌아온 답이 그 화 범위 안에 들어와 원문이 달라진다 — 어느 쪽이든 그 화는 다시
  * 만들 수 없다. 대화 화면에서는 알릴 자리가 없어(어느 답이 화의 끝인지 채팅 응답에 없다) 범위를 고르는 이 화면에서 미리
- * 말한다. */
+ * 말한다. 대화로 바로 만드는 화의 안내다 — 구성안으로 쓰는 화는 다시 생성한 답이 다음 화에 담기지 않아 원고 확인 창이 따로
+ * 말한다(`toOutlineChapterConfirm`). */
 function ChapterEndChangeNotice() {
   return (
     <p className="flex gap-2">

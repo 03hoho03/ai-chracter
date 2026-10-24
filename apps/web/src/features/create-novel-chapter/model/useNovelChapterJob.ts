@@ -52,6 +52,7 @@ import { toOutlineFlowAvailability } from "./regenerateAction";
 import { toRegenerateConfirmDescription } from "./regenerateConfirm";
 import { toEpisodeJobRefusal } from "./episodeJobGuard";
 import { toNoWritableModelRefusal, toSceneOutlineTurnNote } from "./episodeTurnCap";
+import { toOutlineChapterConfirm } from "./outlineChapterConfirm";
 
 /** 화 다시 만들기·전체 구성안 만들기의 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
  * 소설 상위 모델 허용이 있으면 모달이 모델도 고르게 하므로, 확정하면 고른 모델과 이용자가 본 금액을 돌려준다.
@@ -575,13 +576,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
               footnote: OUTLINE_SPEND_FOOTNOTE,
               note: toSceneOutlineTurnNote(episode?.turnCount, state.chapterModels),
             }
-          : {
-              title: "원고를 쓸까요?",
-              description: `${named}를 승인한 장면 구성안대로 써요. 다 쓰면 보드에 새 화로 놓여요.`,
-              confirmLabel: "원고 쓰기",
-              options,
-              initialModelId,
-            },
+          : { ...toOutlineChapterConfirm(named), options, initialModelId },
       );
       if (choice === null || !isMountedRef.current) return;
       const mutation = kind === "episodeOutline" ? episodeOutlineMutation : outlineChapterMutation;

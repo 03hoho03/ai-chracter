@@ -35,7 +35,9 @@ export function ChapterModelSelect({ options, value, onValueChange }: ChapterMod
         <SelectTrigger id={triggerId}>
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        {/* 열린 목록은 가장 긴 항목 글만큼 넓어진다 — 못 고르는 항목의 이유 글은 좁은 화면(390)의 폭을 넘겨 목록 오른쪽이 화면 밖으로
+            나갔다. 폭을 화면 안 남은 폭으로 묶고 넘는 글은 낱말 단위로 줄을 바꾼다. */}
+        <SelectContent className="max-w-(--radix-select-content-available-width) break-keep">
           {options.map((option) => (
             <SelectItem key={option.id} value={option.id} {...(option.disabledReason === undefined ? {} : UNSELECTABLE_ITEM_PROPS)}>
               {toOptionLabel(option)}
