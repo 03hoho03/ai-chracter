@@ -106,8 +106,8 @@ export const PublishPromptSetDialog = createCallable<PublishPromptSetDialogProps
   };
 
   const changes = changesQuery.data;
-  // 다시 받는 동안에는 화면의 목록이 서버와 다를 수 있어 게시를 막는다.
-  const isChangesReady = changes !== undefined && !changesQuery.isFetching;
+  // 다시 받는 동안이나 다시 받기에 실패했을 때는 화면의 목록이 서버와 다를 수 있어 게시를 막는다.
+  const isChangesReady = changes !== undefined && !changesQuery.isFetching && !changesQuery.isError;
 
   const onSubmit = async (values: PublishFormValues) => {
     if (!isChangesReady) return;
