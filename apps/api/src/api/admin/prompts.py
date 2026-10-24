@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.admin.action_log import record_admin_action
 from api.admin.dependencies import get_current_admin_id
 from api.admin.prompt_semver import (
+    SPEAKER_LABELS,
     SemverLevelError,
     SemverPlan,
     diff_sections,
@@ -37,6 +38,7 @@ from api.admin.schemas import (
     AdminPromptPublishRequest,
     AdminPromptSectionChange,
     AdminPromptSectionItem,
+    AdminPromptSectionRestoreRequest,
     AdminPromptSectionSemver,
     AdminPromptSetDetailResponse,
     AdminPromptSetListResponse,
@@ -1242,6 +1244,92 @@ async def restore_prompt_set(
         id=draft.id,
         model=model,
         labels=_to_labels(draft),
+        sections=[_to_section_item(s) for s in _visible_sections(lane, model, sections)],
+    )
+
+
+@router.post("/admin/prompt-sets/{id}/sections/{channel}/restore")
+async def restore_prompt_section(
+    id: uuid.UUID,
+    channel: str,
+    body: AdminPromptSectionRestoreRequest,
+    _admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminPromptDraftResponse:
+    """옛 게시본의 섹션 하나(채널 하나 또는 화자 라벨 넷 묶음 `speaker_labels`)만 그 체인의 초안으로 가져온다. 통째 복원은 다른
+    채널의 게시 안 한 편집까지 옛 값으로 돌리므로, 한 채널만 되돌릴 때 이 라우트를 쓴다. 게시하지 않는다 — 복원한 섹션은 다음
+    게시에서 기준판과 다른 섹션으로 잡혀 새 번호로 오른다(옛 번호로 돌아가지 않는다).
+
+    체인은 원본 세트의 (레인, 모델)이다. 거절은 모두 아무것도 쓰기 전에 한다. 초안이 없으면 활성판을 바탕으로 초안을 만든다
+    (`GET /draft` 와 같은 폴백). 그 섹션의 초안 내용이 활성판과 다르면(게시 안 한 편집이 있으면) 요청이 덮어쓰기를 켜지 않은 한
+    409 다. 경로가 세그먼트 4개라 `/{id}/restore`·`/{lane}/draft` 와 겹치지 않는다."""
+    source = await db.get(PromptSet, id)
+    if source is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="해당 버전을 찾을 수 없습니다.")
+    if source.status != "published":
+        raise _validation_error("restore-source-not-published", "초안은 되돌릴 판이 아닙니다. 게시된 버전을 고르세요.")
+    lane = as_prompt_lane(source.lane)
+    if lane is None:
+        raise _validation_error("legacy-lane", "레인 분리 이전 버전은 복원할 수 없습니다.")
+    model = parse_prompt_set_model_id(source.model)
+    if model is None:
+        raise _validation_error("unknown-model", "지금은 없는 모델의 버전은 복원할 수 없습니다.")
+
+    source_sections = await _sections_of(db, source.id)
+    is_labels = channel == SPEAKER_LABELS
+    source_rows = [s for s in source_sections if s.channel == channel]
+    if not is_labels:
+        if not source_rows:
+            raise _validation_error("restore-channel-not-in-source", f"그 버전에는 '{channel}' 섹션이 없습니다.")
+        expected = _expected_slots(lane, model)
+        if channel not in expected:
+            raise _validation_error("restore-channel-not-in-chain", f"이 체인에는 '{channel}' 섹션이 없습니다.")
+        if _freezes_novel_rows(lane, model) and channel in _NOVELIZE_CHANNELS:
+            raise _validation_error(
+                "restore-frozen-channel",
+                "채팅 레인의 소설 섹션은 게시 때 지금 값으로 고정되므로 복원할 수 없습니다. 소설 레인에서 고치세요.",
+            )
+        source_slots = {(s.scope, s.slot) for s in source_rows}
+        if source_slots != expected[channel]:
+            raise _validation_error(
+                "restore-slots-mismatch",
+                f"그 버전의 '{channel}' 슬롯이 지금과 다릅니다(빠진 슬롯 {sorted(expected[channel] - source_slots)}, "
+                f"남는 슬롯 {sorted(source_slots - expected[channel])}).",
+            )
+
+    draft = await _get_draft(db, lane, model)
+    if draft is not None:
+        base_set: PromptSet = draft
+        base_sections = await _sections_of(db, draft.id)
+        active_set, active_sections = await load_active_prompt_set(db, lane=lane, model=model)
+        draft_contents = section_contents(draft, base_sections)
+        active_contents = section_contents(active_set, active_sections)
+        if draft_contents.get(channel) != active_contents.get(channel) and not body.overwrite_draft_changes:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "rule": "draft-channel-has-unpublished-edits",
+                    "message": f"초안의 '{channel}' 섹션에 게시하지 않은 편집이 있습니다. 덮어쓰려면 덮어쓰기를 켜고 다시 "
+                    "요청하세요.",
+                },
+            )
+    else:
+        base_set, base_sections = await load_active_prompt_set(db, lane=lane, model=model)
+
+    if is_labels:
+        labels = _to_labels(source)
+        fields = [_section_fields(s) for s in base_sections]
+    else:
+        labels = _to_labels(base_set)
+        fields = [_section_fields(s) for s in base_sections if s.channel != channel] + [
+            _section_fields(s) for s in source_rows
+        ]
+    saved = await _replace_draft_content(db, lane=lane, model=model, labels=labels, sections=fields)
+    sections = await _sections_of(db, saved.id)
+    return AdminPromptDraftResponse(
+        id=saved.id,
+        model=model,
+        labels=_to_labels(saved),
         sections=[_to_section_item(s) for s in _visible_sections(lane, model, sections)],
     )
 

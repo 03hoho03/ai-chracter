@@ -327,8 +327,16 @@ async def test_publishing_after_a_restore_gives_the_restored_channel_a_new_numbe
 ) -> None:
     """한 채널을 1.0.1 → 1.0.2 로 올린 뒤 1.0.1 의 그 채널을 복원해 게시하면, 그 채널은 옛 번호가 아니라 1.0.3 으로 오르고 체인도
     오르며 다른 섹션은 번호를 물려받는다. 게시된 그 채널 내용은 1.0.1 의 것이다. 깨지는 시나리오: 복원이 옛 번호를 되살려 같은
-    번호가 두 내용을 가리키거나, 복원한 섹션이 바뀐 섹션으로 잡히지 않는다."""
+    번호가 두 내용을 가리키거나, 복원한 섹션이 바뀐 섹션으로 잡히지 않는다.
+
+    게시 전에 게시된 세트를 전부 사흘 앞당긴다 — 테스트 세션 시작 때 한꺼번에 돈 시드 마이그레이션이 마지막 시드 세트를 벽시계보다
+    몇 초 미래에 두므로, 그대로면 방금 게시한 세트가 활성판이 되지 못해 복원이 활성판과 견주는 편집 검사가 엉뚱한 세트를 본다."""
     await _login_new_admin(db_client, db_session)
+    await db_session.execute(
+        sa.update(PromptSet)
+        .where(PromptSet.status == "published")
+        .values(published_at=PromptSet.published_at - timedelta(days=3))
+    )
     await _save_draft(db_client, "character", edit=("system",))
     first = await _publish(db_client, "character")
     await _save_draft(db_client, "character", edit=("system",))
