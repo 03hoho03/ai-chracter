@@ -371,7 +371,7 @@ async def test_list_chat_rooms_with_no_messages_returns_200_with_blank_preview(
     message_id = create_resp.json()["messages"][0]["id"]
 
     del_resp = await db_client.delete(f"/chat-rooms/{room_id}/messages/{message_id}")
-    assert del_resp.status_code == 204
+    assert del_resp.status_code == 200
 
     resp = await db_client.get("/chat-rooms", params={"contentId": str(content.id)})
     assert resp.status_code == 200
@@ -1614,7 +1614,7 @@ async def test_my_chat_rooms_includes_empty_room_with_blank_preview(
     # 오프닝 메시지를 지워 메시지 0개인 방을 만든다 — delete_message는 오프닝 메시지도
     # 가드 없이 지운다.
     del_resp = await db_client.delete(f"/chat-rooms/{room_id}/messages/{message_id}")
-    assert del_resp.status_code == 204
+    assert del_resp.status_code == 200
 
     resp = await db_client.get("/me/chat-rooms")
     assert resp.status_code == 200

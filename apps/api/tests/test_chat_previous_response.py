@@ -668,7 +668,7 @@ async def _edit_that_fails(client: httpx.AsyncClient, room: Room, messages_now: 
 
 async def _delete_the_opening(client: httpx.AsyncClient, room: Room, messages_now: list[_Message]) -> None:
     response = await client.delete(f"/chat-rooms/{room.room_id}/messages/{messages_now[0][0]}")
-    assert response.status_code == 204, response.text
+    assert response.status_code == 200, response.text
 
 
 async def _reset(client: httpx.AsyncClient, room: Room, _messages_now: list[_Message]) -> None:

@@ -150,7 +150,7 @@ async def _regenerate(db_client: httpx.AsyncClient, room: Room, fake: LLMClient)
 
 async def _delete(db_client: httpx.AsyncClient, room: Room, message: ChatMessage) -> None:
     response = await db_client.delete(f"/chat-rooms/{room.room_id}/messages/{message.id}")
-    assert response.status_code == 204, response.text
+    assert response.status_code == 200, response.text
 
 
 async def _rewind_via(action: str, db_client: httpx.AsyncClient, room: Room, message: ChatMessage) -> None:

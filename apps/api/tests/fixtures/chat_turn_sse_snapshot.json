@@ -32,6 +32,7 @@
           "role": "assistant",
           "scene": null
         },
+        "statRewind": "partial",
         "type": "done"
       }
     ],
