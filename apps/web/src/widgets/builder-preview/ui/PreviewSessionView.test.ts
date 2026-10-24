@@ -35,3 +35,35 @@ describe("PreviewSessionView turn cost", () => {
     expect(viewSource).toContain("query: previewStartQuery(displayModelId),");
   });
 });
+
+// 상위 모델 허용이 그 사이 꺼져 시작이 403 으로 거절되면, 다시 보내면 기본 모델로 열리므로 이용자가 쓴 글이 사라지면 안 된다.
+describe("PreviewSessionView model-not-allowed start rejection", () => {
+  const branchStart = viewSource.indexOf("if (isChatModelNotAllowedError(error)) {");
+  const branch = viewSource.slice(branchStart, viewSource.indexOf("return undefined;", branchStart));
+
+  it("handles the rejection before the session-ended branch", () => {
+    expect(branchStart).toBeGreaterThan(-1);
+    expect(branchStart).toBeLessThan(viewSource.indexOf("const sessionEnded = getSessionEndReason(error);"));
+  });
+
+  it("falls back to the default model, refreshes access and restores the typed text", () => {
+    expect(branch).toContain("toast.error(CHAT_MODEL_NOT_ALLOWED_MESSAGE);");
+    expect(branch).toContain("setChosenModelId(DEFAULT_CHAT_MODEL);");
+    expect(branch).toContain("invalidateChatModelAccess(queryClient);");
+    expect(branch).toContain("onModelNotAllowed?.();");
+  });
+
+  it("the input send path passes a callback that puts the sent text back", () => {
+    expect(viewSource).toContain(
+      "void sendWithSession(trimmed, undefined, () => setText((current) => (current === \"\" ? text : current)));",
+    );
+  });
+});
+
+// 상위 모델 미리보기의 클로버 부족 배너는 자정 약속이 없는 문구여야 한다.
+describe("PreviewSessionView rate limit surface", () => {
+  it("picks the premium preview surface from the displayed model", () => {
+    expect(viewSource).toContain('surface={isPremiumChatModel(displayModelId) ? "premiumPreview" : "preview"}');
+    expect(viewSource).not.toContain('surface="preview"');
+  });
+});

@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { isPremiumChatModel, type ChatModel, type ChatModelId } from "@/entities/chat-model";
 
 import { useSetRoomChatModelMutation } from "../api/useSetRoomChatModelMutation";
-import { isChatModelNotAllowedError } from "../model/chatModelError";
+import { CHAT_MODEL_NOT_ALLOWED_MESSAGE, isChatModelNotAllowedError } from "../model/chatModelError";
 import { ChatModelOptions } from "./ChatModelOptions";
 
 type ChatModelPickerProps = {
@@ -34,7 +34,7 @@ export function ChatModelPicker({ roomId, currentModelId, models, onChanged }: C
         cancelConfirm();
         toast.error(
           isChatModelNotAllowedError(error)
-            ? "이 모델을 지금 이 계정에서 쓸 수 없어요."
+            ? CHAT_MODEL_NOT_ALLOWED_MESSAGE
             : "모델을 바꾸지 못했어요. 잠시 후 다시 시도해주세요.",
         );
       },

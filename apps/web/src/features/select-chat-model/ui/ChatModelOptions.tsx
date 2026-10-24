@@ -29,6 +29,8 @@ type ChatModelOptionsProps = {
   needsConfirm: (modelId: ChatModelId) => boolean;
   /** 확인 문장 뒤에 덧붙일 문장. 상위 모델이 아닌 모델의 확인 블록에서는 이 문장만 보인다. */
   confirmNote?: string;
+  /** 클로버 충전 링크 뒤에 덧붙일 문장 — 충전하러 가면 이 화면에서 잃는 것이 있을 때 그 사실을 링크 옆에서 말한다. */
+  chargeLinkNote?: string;
   /** 고른 모델을 반영한다. 반영이 실패하면 `cancelConfirm` 을 불러 확인 블록을 거둔다. */
   onCommit: (modelId: ChatModelId, cancelConfirm: () => void) => void;
 };
@@ -58,6 +60,7 @@ export function ChatModelOptions({
   isCommitting,
   needsConfirm,
   confirmNote,
+  chargeLinkNote,
   onCommit,
 }: ChatModelOptionsProps) {
   const { data: clover } = useCloverBalanceQuery();
@@ -163,6 +166,7 @@ export function ChatModelOptions({
               <Link to="/clover" className={INLINE_LINK_CLASS}>
                 클로버 충전하기
               </Link>
+              {chargeLinkNote !== undefined && ` ${chargeLinkNote}`}
             </p>
           )}
           {/* 버튼 순서는 `취소` 먼저 — 확인 모달 푸터와 같다. 반영 중에는 실행을 `disabled` 대신 `aria-disabled` 로

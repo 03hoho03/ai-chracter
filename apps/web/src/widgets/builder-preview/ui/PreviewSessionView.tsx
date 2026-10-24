@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ChevronDown, RotateCw, Send, TriangleAlert } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { DEFAULT_CHAT_MODEL, isPremiumChatModel, useChatModelsQuery, type ChatModelId } from "@/entities/chat-model";
@@ -30,6 +31,11 @@ import { getSessionEndReason, SessionEndedNotice, useSessionQuery, type SessionE
 import { PreviewCloseHeader } from "@/features/build-common";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { NarrationMarkerButton } from "@/features/insert-narration-marker";
+import {
+  CHAT_MODEL_NOT_ALLOWED_MESSAGE,
+  invalidateChatModelAccess,
+  isChatModelNotAllowedError,
+} from "@/features/select-chat-model";
 import { usePreviewSendMessage } from "@/features/preview-chat";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 import { expandAuthorMacros } from "@/shared/lib/text/authorMacros";
@@ -66,6 +72,7 @@ type PreviewSessionViewProps = {
 // ensurePreviewSession()을 거쳐 세션을 보장한 뒤에야 usePreviewSendMessage의 send()를 부른다.
 export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: PreviewSessionViewProps) {
   const startMutation = useStartPreviewMutation();
+  const queryClient = useQueryClient();
   const [previewSessionId, setPreviewSessionId] = useState<string>();
   const stateQuery = usePreviewSessionQuery(previewSessionId);
   // usePreviewSessionQuery는 enabled:false라 캐시는 오직
@@ -138,7 +145,9 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   // mutateAsync+await+로컬 로딩 state"와 같은 이유(widgets/content-detail/lib/usePlayContent.ts의
   // start()도 동일)로, 이 함수는 이제 마운트가 아니라 첫 전송 시점에 호출되지만 StrictMode
   // 마운트→언마운트→재마운트 취약성은 뮤테이션 훅 자체의 성질이라 여전히 적용된다.
-  async function startPreview(): Promise<string | undefined> {
+  //
+  // `onModelNotAllowed` 는 상위 모델 허용이 그 사이 꺼져 시작이 거절됐을 때만 불린다 — 입력창에서 보낸 글을 되돌려 놓는 데 쓴다.
+  async function startPreview(onModelNotAllowed?: () => void): Promise<string | undefined> {
     setIsStarting(true);
     setStartSessionEnded(undefined);
     try {
@@ -150,6 +159,15 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
       setPreviewSessionId(nextState.previewSessionId);
       return nextState.previewSessionId;
     } catch (error) {
+      // 칩이 보이던 사이 상위 모델 허용이 꺼졌다. 기본 모델로 되돌리고 세션·모델 목록을 다시 읽어 칩을 거둔다. 다시 보내면
+      // 기본 모델로 열리므로 이용자가 쓴 글은 지우지 않고 입력창에 되돌려 둔다.
+      if (isChatModelNotAllowedError(error)) {
+        toast.error(CHAT_MODEL_NOT_ALLOWED_MESSAGE);
+        setChosenModelId(DEFAULT_CHAT_MODEL);
+        invalidateChatModelAccess(queryClient);
+        onModelNotAllowed?.();
+        return undefined;
+      }
       // 로그인이 풀렸거나 정지돼 거절된 것이면 "잠시 후 다시 시도"가 거짓이다(기다려도 같은 거절) — 첫 전송이 이 요청에서
       // 막혀도 세션이 있을 때의 전송 거절과 같은 안내(다시 로그인 / 문의처)를 띄운다.
       const sessionEnded = getSessionEndReason(error);
@@ -163,9 +181,9 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
 
   // 세 전송 경로(입력창·단축어·추천답변) 공통 "세션 보장" 함수 — 이미 세션이 있으면 그대로 쓰고,
   // 없으면 이 시점의 getPayload()로 새로 만든다.
-  async function ensurePreviewSession(): Promise<string | undefined> {
+  async function ensurePreviewSession(onModelNotAllowed?: () => void): Promise<string | undefined> {
     if (previewSessionId) return previewSessionId;
-    return startPreview();
+    return startPreview(onModelNotAllowed);
   }
 
   // 모델을 바꾸면 세션 id 만 비운다 — 화면은 곧바로 로컬 시작 상태(처음 화면)가 되고, 새 세션은 다음 전송이 고른 모델로
@@ -189,8 +207,8 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   // 파라미터 대신 호출마다 id를 받는 이유(features/preview-chat/model/usePreviewSendMessage.ts 참고)가
   // 바로 이 지점: 세션을 막 만든 직후엔 컴포넌트가 아직 그 id로 재렌더되지 않아 previewSessionId
   // state를 참조하면 stale한 undefined를 잡는다.
-  async function sendWithSession(content: string, shortcutId?: string) {
-    const id = await ensurePreviewSession();
+  async function sendWithSession(content: string, shortcutId?: string, onModelNotAllowed?: () => void) {
+    const id = await ensurePreviewSession(onModelNotAllowed);
     if (!id) return;
     void send(id, content, shortcutId);
   }
@@ -199,7 +217,8 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
     const trimmed = text.trim();
     if (!trimmed || isSending || isStarting) return;
     setText("");
-    void sendWithSession(trimmed);
+    // 기다리는 사이 새로 쓴 글이 있으면 덮지 않는다.
+    void sendWithSession(trimmed, undefined, () => setText((current) => (current === "" ? text : current)));
   }
 
   function handleShortcutSelect(shortcut: PreviewShortcut) {
@@ -221,7 +240,13 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
     errorNotice = <SessionEndedNotice reason={sessionEnded} />;
   } else if (status.kind === "error") {
     if (status.rateLimit) {
-      errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="preview" />;
+      // 상위 모델 미리보기에는 돌아올 무료 한도가 없어 자정 약속을 하지 않는 문구로 간다.
+      errorNotice = (
+        <RateLimitNotice
+          rateLimit={status.rateLimit}
+          surface={isPremiumChatModel(displayModelId) ? "premiumPreview" : "preview"}
+        />
+      );
     } else if (status.identityRequired) {
       errorNotice = <IdentityRequiredNotice reason="free-rewards" dailyFreeChatTurns={me?.dailyFreeChatTurns} />;
     } else if (status.declined) {

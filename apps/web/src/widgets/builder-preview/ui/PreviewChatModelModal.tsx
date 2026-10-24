@@ -24,6 +24,9 @@ type PreviewChatModelModalProps = {
 
 const RESTART_NOTE = "바꾸면 미리보기 대화가 처음부터 다시 시작돼요.";
 
+/** 충전 링크는 같은 탭에서 빌더를 떠난다. 초안은 떠날 때 저장되지만 미리보기 대화는 화면에만 있어 사라진다. */
+const CHARGE_LINK_NOTE = "충전하러 가면 미리보기 대화는 사라져요(초안은 저장돼요).";
+
 /** 빌더 미리보기의 글쓰기 모델 선택. 고른 모델을 돌려줄 뿐 저장하지 않는다 — 미리보기의 모델은 그 화면의 지역 상태이고,
  * 세션을 다시 여는 일은 부른 쪽이 한다. 닫거나 취소하면 undefined 다.
  *
@@ -58,6 +61,7 @@ export const PreviewChatModelModal = createCallable<PreviewChatModelModalProps, 
           isCommitting={false}
           needsConfirm={(modelId) => previewModelNeedsConfirm(modelId, hasSession)}
           confirmNote={hasSession ? RESTART_NOTE : undefined}
+          chargeLinkNote={CHARGE_LINK_NOTE}
           onCommit={(modelId) => call.end(modelId)}
         />
       );
