@@ -358,8 +358,12 @@ async def test_forgetting_a_key_removes_every_row_of_that_key_with_their_embeddi
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """같은 키의 행이 세 스냅샷에 걸쳐 있다(값이 바뀐 옛 행 포함). 키 하나를 잊으면 셋 다, 그 임베딩까지 사라지고 다른 키는
-    남는다. 공개 키라 장면은 함께 지우지 않는다. 방의 잊기 세대가 하나 오른다(진행 중인 사실 추출이 결과를 버리는 신호)."""
+    남는다. 다른 방에 있는 같은 키 행도 남는다. 공개 키라 장면은 함께 지우지 않는다. 방의 잊기 세대가 하나 오른다(진행 중인
+    사실 추출이 결과를 버리는 신호)."""
     room, snapshots = await _room(db_client, db_session)
+    other, other_snapshots = await _room(db_client, db_session)
+    await _login_as(db_client, room.user_id)
+    elsewhere = await _fact(db_session, other, other_snapshots[2], value="이웃", first=1, last=1)
     await _fillers(db_session, room, snapshots[2], turn=1)
     old = await _fact(db_session, room, snapshots[2], value="이웃", first=1, last=1)
     middle = await _fact(db_session, room, snapshots[4], value="친구", first=3, last=3)
@@ -380,6 +384,7 @@ async def test_forgetting_a_key_removes_every_row_of_that_key_with_their_embeddi
     assert await _count(db_session, ChatMemoryEmbedding, ChatMemoryEmbedding.fact_id.in_([old, latest])) == 0
     assert await _count(db_session, ChatMemoryFact, ChatMemoryFact.id == kept) == 1
     assert await _count(db_session, ChatMemoryEmbedding, ChatMemoryEmbedding.fact_id == kept) == 1
+    assert await _count(db_session, ChatMemoryFact, ChatMemoryFact.id == elsewhere) == 1
     assert await _count(db_session, ChatMemoryEpisode, ChatMemoryEpisode.chat_room_id == room.room_id) == 5
     assert (await _room_row(db_session, room)).memory_forget_generation == generation + 1
 
