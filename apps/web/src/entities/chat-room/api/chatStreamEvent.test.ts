@@ -105,6 +105,27 @@ describe("chatStreamEventSchema", () => {
     expect(withoutScene.type === "done" && withoutScene.finalMessage.scene).toBeUndefined();
   });
 
+  it("수정의 done 은 지운 턴의 스탯을 어떻게 되돌렸는지 싣고, 칸이 없으면 undefined 다", () => {
+    const finalMessage = { id: "m1", role: "assistant", content: "본문", createdAt: "2026-08-29T00:00:00Z" };
+
+    const edited = chatStreamEventSchema.parse({ type: "done", finalMessage, statRewind: "partial" });
+    expect(edited.type === "done" && edited.statRewind).toBe("partial");
+
+    const plain = chatStreamEventSchema.parse({ type: "done", finalMessage });
+    expect(plain.type === "done" && plain.statRewind).toBeUndefined();
+  });
+
+  // 서버가 값을 하나 더 만들어도 답이 사라지면 안 된다 — done 이 튕기면 흐르던 답이 화면에서 지워진다.
+  it("done 의 모르는 statRewind 값은 버리고 답은 받는다", () => {
+    const parsed = chatStreamEventSchema.safeParse({
+      type: "done",
+      finalMessage: { id: "m1", role: "assistant", content: "본문", createdAt: "2026-08-29T00:00:00Z" },
+      statRewind: "someday",
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.type === "done" && parsed.data.statRewind).toBeUndefined();
+  });
+
   it("모르는 타입과 필드가 빠진 이벤트는 거부한다 — 이게 `as` 단언과 갈리는 지점이다", () => {
     expect(chatStreamEventSchema.safeParse({ type: "somethingNew", x: 1 }).success).toBe(false);
     expect(chatStreamEventSchema.safeParse({ type: "token" }).success).toBe(false);

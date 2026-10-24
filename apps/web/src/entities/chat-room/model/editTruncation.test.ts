@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ChatMessage } from "../api/chatStream";
-import { countMessagesAfter, shouldConfirmEditTruncation } from "./editTruncation";
+import { countMessagesAfter, countRepliesAfter, shouldConfirmEditTruncation } from "./editTruncation";
 
 function message(id: string, role: ChatMessage["role"]): ChatMessage {
   return { id, role, content: id, createdAt: "2026-10-15T00:00:00Z" };
@@ -30,6 +30,19 @@ describe("countMessagesAfter", () => {
 
   it("is zero when the message is not in the list", () => {
     expect(countMessagesAfter(MESSAGES, "missing")).toBe(0);
+  });
+});
+
+describe("countRepliesAfter", () => {
+  // 서버는 지운 메시지 중 AI 응답 수만큼 턴 수를 줄인다 — 사용자 메시지는 세지 않는다.
+  it("counts only the AI replies after the edited message", () => {
+    expect(countRepliesAfter(MESSAGES, "u1")).toBe(2);
+    expect(countRepliesAfter(MESSAGES, "u2")).toBe(1);
+  });
+
+  it("is zero when nothing follows or the message is not in the list", () => {
+    expect(countRepliesAfter([message("a1", "assistant"), message("u1", "user")], "u1")).toBe(0);
+    expect(countRepliesAfter(MESSAGES, "missing")).toBe(0);
   });
 });
 
