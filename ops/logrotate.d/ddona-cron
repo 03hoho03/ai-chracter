@@ -10,6 +10,11 @@
     weekly
     rotate 4
 
+    # /var/log 는 root:syslog 775 라 su 없이는 logrotate 가 "insecure permissions" 로 건너뛴다.
+    # 정기 실행은 /etc/logrotate.conf 전역 `su root adm` 을 물려받지만, 이 파일만 읽는 단독
+    # 실행·dry-run(DEPLOY.md 의 검증 명령)에서도 같게 돌도록 여기에 직접 둔다.
+    su root adm
+
     # 크론 줄은 `>>`(O_APPEND)로 실행마다 파일을 새로 연다. 옮기는 방식이면 회전 순간 돌고 있던
     # 실행의 나머지 출력이 옛 inode, 즉 회전분으로 갈라진다. 복사 후 비우면 O_APPEND
     # 쓰기가 비운 파일 끝에 이어 붙어 한 실행의 출력이 한 파일에 남는다(복사와 비우기 사이에
