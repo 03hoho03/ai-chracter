@@ -6,6 +6,8 @@ from typing import Literal
 from pydantic import AwareDatetime, ConfigDict, EmailStr, Field
 
 from api.chat.prompt_builder import PromptLane
+from api.chat.prompt_routing import RouteSource, SkipReason
+from api.chat.prompt_stages import PromptStage, RoutingLane, StageKind
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType, ContentVisibility, DerivativeNovelsChoice, ModerationStatus
@@ -24,7 +26,8 @@ from api.db.models.moderation import (
 from api.db.models.novel import NovelPublicationModerationStatus, NovelPublicationVisibility
 from api.db.models.payment import PaymentStatus
 from api.legal.schemas import LegalConsentUnit, LegalDocumentKind
-from api.llm.chat_models import PromptSetModelId
+from api.llm.call_policy import BackendId, LLMCallSite
+from api.llm.chat_models import ChatRoomModelId, PromptSetModelId
 
 
 class AdminLoginRequest(CamelModel):
@@ -678,6 +681,130 @@ class AdminPromptPreviewItem(CamelModel):
 
 class AdminPromptPreviewResponse(CamelModel):
     items: list[AdminPromptPreviewItem]
+
+
+class AdminPromptRouteRow(CamelModel):
+    """모델 배정 표의 한 행. 생성 행은 `chain_model` 이 없다(늘 방 모델의 체인을 읽는다)."""
+
+    lane: RoutingLane
+    room_model: ChatRoomModelId
+    stage: PromptStage
+    chain_model: PromptSetModelId | None
+    call_model: PromptSetModelId
+    backend: BackendId
+
+
+class AdminPromptRoutingSaveRequest(CamelModel):
+    """표 전체를 갈아 끼운다 — 부분 패치가 아니다. 빈 `rows` 는 표를 비워 전부 env 규칙으로 돌린다. `base_revision_id` 는 화면이
+    읽은 최신 이력이고(이력이 없으면 null), 그 사이 다른 저장이 있었으면 409 다."""
+
+    base_revision_id: uuid.UUID | None
+    note: str = ""
+    rows: list[AdminPromptRouteRow]
+
+
+class AdminPromptRoutingRestoreRequest(CamelModel):
+    base_revision_id: uuid.UUID | None
+    note: str = ""
+
+
+class AdminPromptRouteAllowedPair(CamelModel):
+    kind: StageKind
+    model: PromptSetModelId
+    backend: BackendId
+
+
+class AdminPromptRoutePrice(CamelModel):
+    """USD / 1M 토큰. 원가 표(`llm/pricing.py`)의 값을 그대로 옮긴다."""
+
+    input_usd_per_million: float
+    cached_input_usd_per_million: float
+    output_usd_per_million: float
+    cache_write_usd_per_million: float
+
+
+class AdminPromptRouteCall(CamelModel):
+    """칸 하나를 읽는 호출 위치 하나가 실제로 보낼 모델 id 와 경로. 단가 표에 없는 id 면 `price` 가 null 이다(0 이 아니다)."""
+
+    call_site: LLMCallSite
+    backend: BackendId
+    model_id: str
+    price: AdminPromptRoutePrice | None
+
+
+class AdminPromptRouteSkip(CamelModel):
+    """그 칸에 쓸 행이 있었지만 지금 env 로는 적용되지 않는다. `stage` 는 그 행의 단계다(물려받으려던 행이면 물려준 단계)."""
+
+    stage: PromptStage
+    reason: SkipReason
+    message: str
+
+
+class AdminPromptRouteEffective(CamelModel):
+    chain_model: PromptSetModelId
+    call_model: PromptSetModelId
+    backend: BackendId
+    source: RouteSource
+    source_detail: str | None
+
+
+class AdminPromptRouteCell(CamelModel):
+    """(레인, 방 모델, 단계) 한 칸. `configured` 는 그 칸 자신의 행이고, `effective` 는 채팅 호출 위치로 푼 값이다."""
+
+    lane: RoutingLane
+    room_model: ChatRoomModelId
+    stage: PromptStage
+    configured: AdminPromptRouteRow | None
+    effective: AdminPromptRouteEffective
+    skipped: AdminPromptRouteSkip | None
+    calls: list[AdminPromptRouteCall]
+
+
+class AdminPromptRouteChainReader(CamelModel):
+    room_model: ChatRoomModelId
+    stage: PromptStage
+    channels: list[str]
+
+
+class AdminPromptRouteChain(CamelModel):
+    """한 체인(레인, 모델)을 지금 어느 칸이 어느 채널로 읽는가. 칸들의 실효 체인을 묶은 값이라 화면이 스스로 조합하지 않는다."""
+
+    lane: RoutingLane
+    model: PromptSetModelId
+    read_by: list[AdminPromptRouteChainReader]
+
+
+class AdminPromptRoutingResponse(CamelModel):
+    """`revision_id`·`revision_number` 는 최신 이력이고, 한 번도 저장한 적 없으면 null 이다."""
+
+    revision_id: uuid.UUID | None
+    revision_number: int | None
+    prices_as_of: date
+    allowed_pairs: list[AdminPromptRouteAllowedPair]
+    cells: list[AdminPromptRouteCell]
+    chains: list[AdminPromptRouteChain]
+
+
+class AdminPromptRouteRevisionSummary(CamelModel):
+    id: uuid.UUID
+    number: int
+    note: str
+    admin_id: uuid.UUID
+    restored_from_id: uuid.UUID | None
+    created_at: datetime
+    row_count: int
+
+
+class AdminPromptRouteRevisionListResponse(CamelModel):
+    items: list[AdminPromptRouteRevisionSummary]
+
+
+class AdminPromptRouteRevisionDetailResponse(AdminPromptRouteRevisionSummary):
+    """지금 코드가 모르는 값(내린 모델 등)이 든 스냅샷 행은 응답 검증에서 500 이 나지 않게 `rows` 에서 빼고, 뺀 개수를
+    `dropped_row_count` 로 알린다. 그런 스냅샷을 되돌리면 저장 검사가 거부한다."""
+
+    rows: list[AdminPromptRouteRow]
+    dropped_row_count: int
 
 
 class AdminLlmUsageRow(CamelModel):
