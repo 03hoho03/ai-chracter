@@ -65,6 +65,7 @@ describe("구성안 만들기를 못 누르는 이유", () => {
       "담을 대화를 먼저 승인해주세요.",
     );
     expect(toMakeBlockedReason({ ...idle, isDirty: true })).toBe("고친 구성안을 먼저 저장하거나 되돌려주세요.");
+    expect(toMakeBlockedReason({ ...idle, hasApprovedSelection: undefined })).toBe("담을 대화를 확인하는 중이에요.");
   });
 });
 

@@ -24,12 +24,14 @@ export function toMakeBlockedReason(status: {
   isRoomGone: boolean;
   isJobRunning: boolean;
   isAiEditRunning: boolean;
-  hasApprovedSelection: boolean;
+  /** 담을 대화의 승인 여부. 아직 받는 중이면 `undefined` 다. */
+  hasApprovedSelection: boolean | undefined;
   isDirty: boolean;
 }): string | undefined {
   if (status.isRoomGone) return "원래 대화방이 지워져 구성안을 새로 만들 수 없어요.";
   if (status.isJobRunning) return "다른 작업이 끝나면 만들 수 있어요.";
   if (status.isAiEditRunning) return "AI로 고치는 중이에요. 끝나면 만들 수 있어요.";
+  if (status.hasApprovedSelection === undefined) return "담을 대화를 확인하는 중이에요.";
   if (!status.hasApprovedSelection) return "담을 대화를 먼저 승인해주세요.";
   if (status.isDirty) return "고친 구성안을 먼저 저장하거나 되돌려주세요.";
   return undefined;

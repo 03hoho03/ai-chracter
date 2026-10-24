@@ -50,6 +50,7 @@ export function NovelPlanDocument({ novel, chapterFlow, headingRef, onDraftDirty
   const currentStep = toCurrentPlanStep({
     selection: selectionState === undefined ? undefined : toSourceSelectionStatus(selectionState),
     outline: outlineBase?.status,
+    isOutlineStale: outlineBase?.isStale,
   });
   const make: OutlineMakeControl = {
     onStart: () => void chapterFlow.startOutline(),

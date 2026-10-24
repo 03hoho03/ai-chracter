@@ -180,7 +180,8 @@ function OutlineEditor({
     isRoomGone,
     isJobRunning: make.isJobRunning,
     isAiEditRunning: make.isAiEditRunning,
-    hasApprovedSelection: selection?.hasApproved ?? false,
+    // 방이 지워진 소설은 담을 대화를 읽지 않는다 — 그때는 방 없음이 먼저라 이 값은 쓰이지 않는다.
+    hasApprovedSelection: selection?.hasApproved,
     isDirty: isDirty || isFormOpen,
   });
   const isMakeBlocked = makeBlockedReason !== undefined || make.isPreparing;

@@ -9,7 +9,7 @@ import {
 } from "@ai-character-chat/ui/components/dropdown-menu";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ArrowDown, ArrowUp, ChevronDown, Combine, Ellipsis, Pencil, Scissors, Trash2 } from "lucide-react";
-import { Fragment, useId, useState, type ReactNode } from "react";
+import { Fragment, useId, useRef, useState, type ReactNode } from "react";
 
 import {
   toBasisLabel,
@@ -310,6 +310,12 @@ function EpisodeMenu({
   onStartSplit,
   onRemove,
 }: EpisodeMenuProps) {
+  // 합치기·나누기·지우기는 포커스를 다른 자리(열린 고치기·나누기 취소·이웃 화 메뉴)로 옮긴다. 메뉴가 열린 동안에는 포커스가 메뉴
+  // 안에 갇혀 옮길 수 없고, 닫히면 트리거로 되돌아가 그 이동을 덮는다 — 그래서 셋은 메뉴가 닫힌 순간 트리거 되돌리기를 막고 실행한다.
+  const afterCloseRef = useRef<(() => void) | undefined>(undefined);
+  const leaving = (action: () => void) => () => {
+    afterCloseRef.current = action;
+  };
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -317,7 +323,17 @@ function EpisodeMenu({
           <Ellipsis aria-hidden />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-auto">
+      <DropdownMenuContent
+        align="end"
+        className="w-auto"
+        onCloseAutoFocus={(event) => {
+          const action = afterCloseRef.current;
+          if (action === undefined) return;
+          afterCloseRef.current = undefined;
+          event.preventDefault();
+          action();
+        }}
+      >
         <MenuAction
           icon={<ArrowUp aria-hidden />}
           blockedReason={index === 0 ? "맨 앞 화예요." : undefined}
@@ -333,10 +349,10 @@ function EpisodeMenu({
           아래로 옮기기
         </MenuAction>
         <DropdownMenuSeparator />
-        <MenuAction icon={<Combine aria-hidden />} blockedReason={mergeBlockedReason} onSelect={onMerge}>
+        <MenuAction icon={<Combine aria-hidden />} blockedReason={mergeBlockedReason} onSelect={leaving(onMerge)}>
           다음 화와 합치기
         </MenuAction>
-        <MenuAction icon={<Scissors aria-hidden />} blockedReason={splitBlockedReason} onSelect={onStartSplit}>
+        <MenuAction icon={<Scissors aria-hidden />} blockedReason={splitBlockedReason} onSelect={leaving(onStartSplit)}>
           나누기
         </MenuAction>
         <DropdownMenuSeparator />
@@ -344,7 +360,7 @@ function EpisodeMenu({
           icon={<Trash2 aria-hidden />}
           variant="destructive"
           blockedReason={count <= 1 ? "구성안에는 화가 하나 이상 있어야 해요." : undefined}
-          onSelect={onRemove}
+          onSelect={leaving(onRemove)}
         >
           지우기
         </MenuAction>

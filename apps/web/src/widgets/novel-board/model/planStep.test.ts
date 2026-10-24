@@ -18,6 +18,10 @@ describe("구성 모드 현재 단계", () => {
     expect(toCurrentPlanStep({ selection: "approved", outline: "approved" })).toBe(2);
   });
 
+  it("승인한 구성안이 낡았으면 전체 구성안이다(다시 만들거나 구간을 되돌려야 한다)", () => {
+    expect(toCurrentPlanStep({ selection: "approved", outline: "approved", isOutlineStale: true })).toBe(1);
+  });
+
   // 방이 지워진 소설은 담을 대화를 읽지 않는다(서버가 막는다) — 구성안이 있으면 그것으로 정한다.
   it("담을 대화 상태를 모르면 구성안으로 정하고, 둘 다 없으면 담을 대화다", () => {
     expect(toCurrentPlanStep({ selection: undefined, outline: undefined })).toBe(0);
