@@ -45,6 +45,16 @@ describe("buildSourceTurns", () => {
     expect(turns.map((turn) => turn.responseIds)).toEqual([["a0"], ["a1", "a1b"], []]);
   });
 
+  // 구성안 나누기는 연달은 응답 사이에서도 자를 수 있어, 그 자리를 보이려면 응답마다 발췌가 있어야 한다.
+  it("턴마다 응답 발췌를 응답 id 와 같은 차례로 싣는다", () => {
+    const messages: SourceMessage[] = [...room(1), { id: "a1b", role: "assistant", content: "*고개를 든다* 덧붙임" }, { id: "u2", role: "user", content: "말" }];
+    const turns = buildSourceTurns(messages, { fixedEndId: null, roomEndId: "u2", lockedRanges: [] });
+    expect(turns[1]?.responseExcerpts).toHaveLength(2);
+    expect(turns[1]?.responseExcerpts[0]).toBe(turns[1]?.excerpt);
+    expect(turns[1]?.responseExcerpts[1]).toBe("고개를 든다 덧붙임");
+    expect(turns[2]?.responseExcerpts).toEqual([]);
+  });
+
   it("발췌는 응답 글에서 지문 표기를 지운 것이고, 응답이 없으면 사용자 말이다", () => {
     const messages: SourceMessage[] = [...room(1), { id: "u2", role: "user", content: "아직 답이 없는 말" }];
     const turns = buildSourceTurns(messages, { fixedEndId: "u2", roomEndId: "u2", lockedRanges: [] });

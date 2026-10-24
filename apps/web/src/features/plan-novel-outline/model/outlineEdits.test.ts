@@ -15,6 +15,7 @@ import {
   toOutlineProblems,
   toSaveEpisodes,
   toSplitPoints,
+  toSplitRows,
   toTurnIndex,
   updateEpisodeText,
   type OutlineEpisodeDraft,
@@ -23,12 +24,12 @@ import {
 
 // 메시지 차례: u1 a1 | u2 a2 | u3 a3 a3b | u4 | u5 a5 | u6 a6 — 4턴은 응답 없는 말 하나다.
 const TURNS: OutlineTurn[] = [
-  { key: "u1", number: 1, messageIds: ["u1", "a1"], responseIds: ["a1"], excerpt: "첫째", hasResponse: true },
-  { key: "u2", number: 2, messageIds: ["u2", "a2"], responseIds: ["a2"], excerpt: "둘째", hasResponse: true },
-  { key: "u3", number: 3, messageIds: ["u3", "a3", "a3b"], responseIds: ["a3", "a3b"], excerpt: "셋째", hasResponse: true },
-  { key: "u4", number: 4, messageIds: ["u4"], responseIds: [], excerpt: "넷째", hasResponse: false },
-  { key: "u5", number: 5, messageIds: ["u5", "a5"], responseIds: ["a5"], excerpt: "다섯째", hasResponse: true },
-  { key: "u6", number: 6, messageIds: ["u6", "a6"], responseIds: ["a6"], excerpt: "여섯째", hasResponse: true },
+  { key: "u1", number: 1, messageIds: ["u1", "a1"], responseIds: ["a1"], responseExcerpts: ["a1 발췌"], excerpt: "첫째", hasResponse: true },
+  { key: "u2", number: 2, messageIds: ["u2", "a2"], responseIds: ["a2"], responseExcerpts: ["a2 발췌"], excerpt: "둘째", hasResponse: true },
+  { key: "u3", number: 3, messageIds: ["u3", "a3", "a3b"], responseIds: ["a3", "a3b"], responseExcerpts: ["a3 발췌", "a3b 발췌"], excerpt: "셋째", hasResponse: true },
+  { key: "u4", number: 4, messageIds: ["u4"], responseIds: [], responseExcerpts: [], excerpt: "넷째", hasResponse: false },
+  { key: "u5", number: 5, messageIds: ["u5", "a5"], responseIds: ["a5"], responseExcerpts: ["a5 발췌"], excerpt: "다섯째", hasResponse: true },
+  { key: "u6", number: 6, messageIds: ["u6", "a6"], responseIds: ["a6"], responseExcerpts: ["a6 발췌"], excerpt: "여섯째", hasResponse: true },
 ];
 const INDEX = toTurnIndex(TURNS);
 
@@ -115,15 +116,34 @@ describe("구성안 편집 — 근거 턴", () => {
 });
 
 describe("구성안 편집 — 나누기", () => {
-  it("응답으로 끝나는 턴 뒤만 나눌 수 있다(응답 없는 말 하나뿐인 턴 뒤는 안 된다)", () => {
+  // 서버는 근거가 응답에서 끝나고 응답 바로 뒤에서 시작하면 받는다 — 연달은 응답 사이(3턴의 a3 뒤)도 그 자리다.
+  it("화 끝을 뺀 모든 응답 뒤에서 나눌 수 있고, 응답 없는 말 뒤는 안 된다", () => {
     expect(toSplitPoints(INDEX, B.basis)).toEqual([
-      { afterTurnNumber: 3, cutMessageId: "a3b" },
-      { afterTurnNumber: 5, cutMessageId: "a5" },
+      { turnNumber: 3, cutMessageId: "a3", responseNumber: 1, responseCount: 2 },
+      { turnNumber: 3, cutMessageId: "a3b", responseNumber: 2, responseCount: 2 },
+      { turnNumber: 5, cutMessageId: "a5", responseNumber: 1, responseCount: 1 },
     ]);
   });
 
   it("턴 하나뿐인 화는 나눌 곳이 없다", () => {
     expect(toSplitPoints(INDEX, [range("u2", "a2")])).toEqual([]);
+  });
+
+  it("응답이 둘인 턴 하나뿐인 화는 두 응답 사이에서 나눈다", () => {
+    expect(toSplitPoints(INDEX, [range("u3", "a3b")])).toEqual([
+      { turnNumber: 3, cutMessageId: "a3", responseNumber: 1, responseCount: 2 },
+    ]);
+  });
+
+  it("같은 턴의 두 응답 사이에서 자르면 앞 화는 첫 응답까지, 뒤 화는 둘째 응답부터다", () => {
+    const result = splitEpisode([B], "B", "a3", INDEX, "new-1");
+    expect(result?.map((item) => item.basis)).toEqual([[range("u3", "a3")], [range("a3b", "a6")]]);
+  });
+
+  it("턴 안 응답에서 시작하는 화는 그 응답부터만 나눌 자리로 친다", () => {
+    expect(toSplitPoints(INDEX, [range("a3b", "a5")])).toEqual([
+      { turnNumber: 3, cutMessageId: "a3b", responseNumber: 2, responseCount: 2 },
+    ]);
   });
 
   it("구간 가운데서 자르면 앞 화는 그 턴 응답까지, 뒤 화는 바로 다음 메시지부터다", () => {
@@ -141,9 +161,11 @@ describe("구성안 편집 — 나누기", () => {
     expect(result?.map((item) => item.basis)).toEqual([[range("u1", "a1")], [range("u3", "a3b")]]);
   });
 
-  it("나눌 수 없는 자리(응답이 아닌 메시지·화 끝)는 거절한다", () => {
+  it("나눌 수 없는 자리(응답이 아닌 메시지·화 끝·화 밖)는 거절한다", () => {
     expect(splitEpisode([B], "B", "u4", INDEX, "new-1")).toBeUndefined();
+    expect(splitEpisode([B], "B", "u5", INDEX, "new-1")).toBeUndefined();
     expect(splitEpisode([B], "B", "a6", INDEX, "new-1")).toBeUndefined();
+    expect(splitEpisode([B], "B", "a1", INDEX, "new-1")).toBeUndefined();
   });
 
   it("뒤 화 제목은 상한 안에서 앞 제목을 줄여 표시를 붙인다", () => {
@@ -151,6 +173,33 @@ describe("구성안 편집 — 나누기", () => {
     const title = splitEpisode([long], "L", "a5", INDEX, "new-1", { titleMaxLength: 100 })?.[1]?.title ?? "";
     expect([...title].length).toBe(100);
     expect(title.endsWith(" (뒤)")).toBe(true);
+  });
+});
+
+describe("구성안 편집 — 나눌 자리 고르기 줄", () => {
+  const summarize = (rows: ReturnType<typeof toSplitRows>) =>
+    rows.map((row) => [row.key, row.turnNumber, row.part, row.excerpt, row.cut?.cutMessageId]);
+
+  it("응답이 하나인 턴은 한 줄, 응답이 여럿인 턴은 응답마다 한 줄이고 줄마다 그 뒤 나눌 자리가 붙는다", () => {
+    expect(summarize(toSplitRows(INDEX, B.basis))).toEqual([
+      ["a3", 3, { number: 1, count: 2 }, "a3 발췌", "a3"],
+      ["a3b", 3, { number: 2, count: 2 }, "a3b 발췌", "a3b"],
+      ["u4", 4, undefined, "넷째", undefined],
+      ["u5", 5, undefined, "다섯째", "a5"],
+      ["u6", 6, undefined, "여섯째", undefined],
+    ]);
+  });
+
+  it("턴 가운데서 시작하는 화는 화 안의 응답만 줄로 보인다", () => {
+    expect(summarize(toSplitRows(INDEX, [range("a3b", "a5")]))).toEqual([
+      ["a3b", 3, { number: 2, count: 2 }, "a3b 발췌", "a3b"],
+      ["u4", 4, undefined, "넷째", undefined],
+      ["u5", 5, undefined, "다섯째", undefined],
+    ]);
+  });
+
+  it("근거를 못 찾으면 줄이 없다", () => {
+    expect(toSplitRows(INDEX, [range("u1", "gone")])).toEqual([]);
   });
 });
 

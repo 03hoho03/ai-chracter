@@ -134,3 +134,52 @@ describe("ChapterModelSelect — 원고 확인 창", () => {
     expect(picked).toEqual([]);
   });
 });
+
+function keyEvent(key: string) {
+  return { key, preventDefault: vi.fn() };
+}
+
+// 못 고르는 항목을 `disabled` 로 두면 Radix 가 화살표 이동·타입어헤드에서 빼 이유가 키보드·스크린리더에 닿지 않는다. 그래서 순회에는
+// 남기고(`aria-disabled`) 고르기만 막는다.
+describe.each([
+  ["옛 흐름 다시 만들기 창", REGENERATE, ["opus"]],
+  ["원고 확인 창", MANUSCRIPT, ["sonnet", "opus"]],
+] as const)("ChapterModelSelect — %s의 못 고르는 항목은 키보드로 닿는다", (_, options, ineligible) => {
+  it("비활성(`disabled`)이 아니라 `aria-disabled` 이고, 비활성과 같은 흐림을 쓴다", () => {
+    render([...options]);
+    for (const value of ineligible) {
+      const item = itemFor(value);
+      expect(item.disabled).toBeFalsy();
+      expect(item["aria-disabled"]).toBe(true);
+      expect(String(item.className)).toContain("aria-disabled:opacity-65");
+    }
+  });
+
+  it("Enter·Space 로는 고르지 못하고, 화살표 이동은 그대로 목록에 넘긴다", () => {
+    render([...options]);
+    for (const value of ineligible) {
+      const onKeyDown = itemFor(value).onKeyDown as (event: ReturnType<typeof keyEvent>) => void;
+      for (const key of ["Enter", " "]) {
+        const event = keyEvent(key);
+        onKeyDown(event);
+        expect(event.preventDefault).toHaveBeenCalled();
+      }
+      for (const key of ["ArrowDown", "ArrowUp", "Home", "End", "Tab", "a"]) {
+        const event = keyEvent(key);
+        onKeyDown(event);
+        expect(event.preventDefault).not.toHaveBeenCalled();
+      }
+    }
+  });
+
+  it("마우스(pointerup)·터치(click)로도 고르지 못한다", () => {
+    render([...options]);
+    for (const value of ineligible) {
+      for (const handler of ["onPointerUp", "onClick"]) {
+        const event = { preventDefault: vi.fn() };
+        (itemFor(value)[handler] as (e: typeof event) => void)(event);
+        expect(event.preventDefault).toHaveBeenCalled();
+      }
+    }
+  });
+});
