@@ -1,0 +1,22 @@
+# 앱 크론 로그 회전. ops/cron.d 의 크론들이 /var/log/ddona-<이름>.log 에 출력을 덧붙이기만 하고
+# 회전 규칙이 없어 끝없이 자란다(5분마다 도는 resource-check 가 가장 빠르다). 조회는 최근
+# 실행 확인이 전부라 주 단위 4개면 충분하다.
+#
+# Caddy 접근 로그(ddona-caddy)는 /opt/ddona/logs/caddy/ 아래라 이 글롭에 걸리지 않는다.
+#
+# 설치 절차·dry-run 검증은 DEPLOY.md 참고.
+
+/var/log/ddona-*.log {
+    weekly
+    rotate 4
+
+    # 크론 줄은 `>>`(O_APPEND)로 실행마다 파일을 새로 연다. 옮기는 방식이면 회전 순간 돌고 있던
+    # 실행의 나머지 출력이 옛 inode, 즉 회전분으로 갈라진다. 복사 후 비우면 O_APPEND
+    # 쓰기가 비운 파일 끝에 이어 붙어 한 실행의 출력이 한 파일에 남는다(복사와 비우기 사이에
+    # 쓰인 몇 줄은 잃을 수 있다 — 이 로그는 최근 실행 확인용이라 감수한다).
+    copytruncate
+
+    missingok
+    notifempty
+    compress
+}

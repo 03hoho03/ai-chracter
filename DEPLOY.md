@@ -490,6 +490,37 @@ sudo ln -sf /opt/ddona/app/ops/logrotate.d/ddona-caddy /etc/logrotate.d/ddona-ca
 sudo logrotate -d /etc/logrotate.d/ddona-caddy
 ```
 
+**최초 1회 — 크론 로그 회전(logrotate)·journald 상한 설치**. `ops/cron.d`의 크론들은
+`/var/log/ddona-<이름>.log`에 덧붙이기만 하고 회전 규칙이 없어 끝없이 자란다. journald 도 VM 기본
+설정에 용량 상한이 없어 1GB 넘게 쌓였다. 둘 다 위 접근 로그와 같은 이유로 복사가 아니라 저장소 파일을
+심볼릭 링크한다. 크론 로그 규칙은 `/var/log/ddona-*.log` 만 잡아 위 `ddona-caddy`(`/opt/ddona/logs/caddy/`)와
+대상이 겹치지 않는다. 컨테이너 로그는 journald 가 아니라 Docker json-file 이 쓰므로 journald 상한과 무관하다.
+
+```sh
+# 크론 로그 회전 — 링크 후 dry-run(-d 는 실제로 회전하지 않는다). 출력에 ddona-*.log 들이
+# 나오고 오류 줄이 없어야 한다.
+sudo ln -sf /opt/ddona/app/ops/logrotate.d/ddona-cron /etc/logrotate.d/ddona-cron
+sudo logrotate -d /etc/logrotate.d/ddona-cron
+
+# journald 상한 — drop-in 링크 후 재시작, 이미 쌓인 분을 상한까지 줄인다.
+sudo mkdir -p /etc/systemd/journald.conf.d
+sudo ln -sf /opt/ddona/app/ops/journald.conf.d/ddona.conf /etc/systemd/journald.conf.d/ddona.conf
+sudo systemctl restart systemd-journald
+sudo journalctl --vacuum-size=200M
+
+# 검증 — drop-in 이 읽혔는지, 사용량이 200M 이하인지
+systemd-analyze cat-config systemd/journald.conf | grep -n SystemMaxUse
+sudo journalctl --disk-usage
+```
+
+되돌리기 — 링크만 지우면 된다(저장소 파일은 그대로 둔다).
+
+```sh
+sudo rm /etc/logrotate.d/ddona-cron
+sudo rm /etc/systemd/journald.conf.d/ddona.conf
+sudo systemctl restart systemd-journald
+```
+
 **롤백** — 평상시 배포와 같은 무중단 교체로 이전 태그를 올린다. 둘 중 하나:
 
 ```sh
