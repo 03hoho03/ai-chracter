@@ -132,8 +132,9 @@ async def generation_prompt_set(
     model: ChatModelId,
     gemini_set: tuple[PromptSet, list[PromptSection]],
 ) -> tuple[PromptSet, list[PromptSection]]:
-    """이 턴의 생성(바닥 지시문·생성 프롬프트·화자 라벨·정지 시퀀스)에 쓸 세트. 글쓰기 모델마다 독립 세트가 있고, 판정·요약은
-    방의 모델과 무관하게 판정·요약 모델의 세트를 쓴다(`judgment_prompt_sets`).
+    """이 턴의 생성(바닥 지시문·생성 프롬프트·화자 라벨·정지 시퀀스)에 쓸 세트. 글쓰기 모델마다 독립 세트가 있다. 판정·요약은
+    모델 배정 표의 (레인, 실효 방 모델, 단계) 칸이 고른 체인, 행이 없으면 판정·요약 모델 설정의 세트를 쓴다
+    (`judgment_prompt_sets`).
 
     Gemini 면 받은 Gemini 세트를 그대로 돌려준다 — 조회가 없고, Gemini 턴의 프롬프트는 모델별 세트가 생기기 전과 바이트까지
     같다. 그 밖의 모델은 캐시를 보고 없으면 (레인, 모델) 활성 세트를 읽는다. 모델은 차감 영수증에서 오므로 차감 뒤에 읽는다 —

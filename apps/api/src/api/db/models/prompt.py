@@ -38,8 +38,8 @@ class PromptSet(Base):
     전용 id(`haiku`)다. story·character 레인은 모델마다 초안·게시·복원·활성 판정이 따로 가는 독립 버전 체인을 갖는다.
     Gemini 세트는 모든 채널을 담는다. Claude 세트(sonnet·opus)는 생성에 쓰는 `system`·`generation` 채널과 그 레인의
     판정·요약 채널을, 판정 전용 세트는 판정·요약 채널만 갖는다(채널 집합의 소스는 `admin/prompts.py` 의 게시 검증 표다).
-    판정·요약은 고른 모델과 무관하게 판정·요약 모델 설정(기본 Gemini)의 세트를, 심사·소설 묶음 경계·문단 수정은 Gemini 세트를
-    읽는다. 심사 레인은 Gemini 세트뿐이다.
+    판정·요약은 모델 배정 표(`PromptRoute`)의 (레인, 실효 방 모델, 단계) 칸이 고른 체인의 세트를, 그 칸의 행이 없으면 판정·요약
+    모델 설정(기본 Gemini)의 세트를 읽는다. 심사·소설 묶음 경계·문단 수정은 Gemini 세트를 읽는다. 심사 레인은 Gemini 세트뿐이다.
     `lane` 과 달리
     `server_default` 를 남긴다 — 이 열을 모르는 옛 이미지로 되돌린 동안 어드민이 게시한 행도 Gemini 체인에 들어가고,
     모델을 적지 않은 생성 지점은 가장 안전한 쪽(지금까지와 같은 Gemini)으로 간다. 버전 번호는 레인·모델을 가리지 않는
@@ -159,7 +159,8 @@ class PublishFilterTextSectionBackup(Base):
 class PromptRoute(Base):
     """채팅 방 모델별 단계 배정 — (레인, 실효 방 모델, 단계)마다 어느 프롬프트 체인을 읽고 어느 모델을 부를지 한 행.
 
-    표가 비어 있거나 그 키의 행이 없으면 지금까지의 환경 변수 규칙을 따른다(이 표를 읽는 코드는 아직 없다).
+    표가 비어 있거나 그 키의 행이 없으면 지금까지의 환경 변수 규칙을 따른다. 어드민 배정 화면 말고도 채팅 방 턴과 요약 다시
+    만들기의 판정·요약·추출 세트 고르기가 이 표를 읽는다(`chat/turn_prompt.py` 의 `judgment_prompt_sets`).
     `lane`·`room_model`·`stage`·`chain_model`·`call_model`·`backend` 는 모두 enum 없는 Text 이고 값 목록 CHECK 도 두지
     않는다 — 단계나 모델이 늘 때마다 CHECK 를 DROP→ADD 하는 마이그레이션이 필요해지므로 값 범위는 앱의 저장 검사가 맡는다.
 
