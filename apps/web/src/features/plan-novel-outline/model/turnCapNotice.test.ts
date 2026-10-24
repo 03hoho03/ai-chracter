@@ -178,6 +178,11 @@ describe("승인 409 `NOVEL_OUTLINE_EPISODE_TOO_LONG` 문구", () => {
     expect(toTooLongApprovalMessage(tooLong({ maxTurns: 45, episodes: [{ key: "zz", turnCount: 48 }] }), episodes)).toBe(
       "어느 모델로도 원고를 쓸 수 없을 만큼 긴 화가 있어요(45턴까지). 나눈 뒤 승인해주세요.",
     );
+    // 하나만 짚으면 짚지 못한 화를 빠뜨린 채 "이 화만 나누면 된다"고 읽힌다.
+    const partly = { maxTurns: 45, episodes: [{ key: "k1", turnCount: 48 }, { key: "zz", turnCount: 50 }] };
+    expect(toTooLongApprovalMessage(tooLong(partly), episodes)).toBe(
+      "어느 모델로도 원고를 쓸 수 없을 만큼 긴 화가 있어요(45턴까지). 나눈 뒤 승인해주세요.",
+    );
     expect(toTooLongApprovalMessage(tooLong({}), episodes)).toBe(
       "어느 모델로도 원고를 쓸 수 없을 만큼 긴 화가 있어요. 나눈 뒤 승인해주세요.",
     );
