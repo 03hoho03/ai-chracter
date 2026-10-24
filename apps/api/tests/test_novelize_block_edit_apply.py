@@ -584,3 +584,33 @@ async def test_a_refunded_patch_job_keeps_no_base_hash(
         (base.block_ids[0], 1, ""),
         (base.block_ids[2], 3, ""),
     ]
+
+
+# ── 적용·낡음 뒤 기준 해시 ──────────────────────────────────────────────────
+async def test_an_applied_patch_and_a_patch_gone_stale_keep_no_base_hash(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """적용한 패치와 직접 수정으로 낡은 패치는 그 블록의 기준 해시를 대상·패치 양쪽에서 지운다 — 이제 어떤 판정도 그 해시를 읽지 않고,
+    짧은 문단은 해시로 글을 되찾을 수 있다. 아직 대기인 패치의 해시는 적용 판정에 쓰므로 남는다. 상태·블록 id 는 건수 기록으로 남는다.
+    깨지는 시나리오: 적용했거나 낡은 수정안의 기준 해시가 작업 행에 영영 남는다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = await _current(db_session, chapter.id)
+    job = await _patch_job(db_session, novel_id, chapter, base, [0, 1, 2])
+    applied = _edit(job).patches[0]
+
+    assert (await _apply(db_client, novel_id, job.id, patchId=applied.id)).status_code == 201
+    await _edit_directly(
+        db_client, novel_id, chapter.id, await _current(db_session, chapter.id), "둘째 문단이다.", "사용자가 고친 둘째."
+    )
+
+    after = _edit(await _job(db_session, job.id))
+    assert [(p.block_id, p.state, p.base_hash) for p in after.patches] == [
+        (base.block_ids[0], "applied", ""),
+        (base.block_ids[1], "stale", ""),
+        (base.block_ids[2], "pending", block_hash("셋째 문단이다.")),
+    ]
+    assert [(t.block_id, t.base_hash) for t in after.targets] == [
+        (base.block_ids[0], ""),
+        (base.block_ids[1], ""),
+        (base.block_ids[2], block_hash("셋째 문단이다.")),
+    ]

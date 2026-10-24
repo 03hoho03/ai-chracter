@@ -299,3 +299,47 @@ def test_a_split_takes_the_edited_members_out_and_marks_them_stale(
         [ids[i] for i in group] for group in expected_bundles
     ]
     assert all(p.state == "pending" for p in split.patches if p.block_id != ids[0])
+
+
+# ── 끝난 패치의 기준 해시 ───────────────────────────────────────────────────
+def test_applying_a_unit_drops_its_base_hashes_and_keeps_the_waiting_ones() -> None:
+    """적용한 패치는 그 블록의 기준 해시를 대상·패치 양쪽에서 지운다. 대기 패치의 해시는 다음 적용 판정에 쓰므로 그대로다."""
+    ids = _ids()
+    edit = _edit(ids, [0, 2])
+    a, _b = edit.patches
+
+    after = with_applied(edit, [a.id], uuid.uuid4())
+
+    assert [p.base_hash for p in after.patches] == ["", block_hash(_PARAGRAPHS[2])]
+    assert [t.base_hash for t in after.targets] == ["", block_hash(_PARAGRAPHS[2])]
+
+
+def test_patches_turned_stale_by_a_save_or_a_new_revision_lose_their_base_hashes() -> None:
+    """성공 저장·새 개정 뒤 비우기가 낡음으로 바꾼 패치는 그 블록의 기준 해시를 지운다(낡음은 영구라 다시 읽지 않는다). 신선한 대기
+    패치의 해시는 그대로다."""
+    ids = _ids()
+    edit = _edit(ids, [0, 3])
+    edited = ["사용자가 고친 가.", *_PARAGRAPHS[1:]]
+
+    saved, _fresh = with_save_states(edit, ids, edited)
+    marked = stale_marked(edit, ids, edited)
+
+    for after in (saved, marked):
+        assert [(p.state, p.base_hash) for p in after.patches] == [
+            ("stale", ""),
+            ("pending", block_hash(_PARAGRAPHS[3])),
+        ]
+        assert [t.base_hash for t in after.targets] == ["", block_hash(_PARAGRAPHS[3])]
+
+
+def test_a_split_drops_the_base_hashes_of_the_edited_members() -> None:
+    """재검사 분리로 낡음이 된 원소는 그 블록의 기준 해시를 지운다. 남은 원소의 해시는 그대로다."""
+    ids = _ids()
+    edit = _edit(ids, [0, 2, 3], bundles=[[0, 2, 3]])
+    (bundle,) = edit.bundles
+    edited = ["사용자가 고친 가.", *_PARAGRAPHS[1:]]
+
+    split = with_split(edit, bundle.id, recheck_plan(edit, bundle.id, ids, edited))
+
+    assert [p.base_hash for p in split.patches] == ["", block_hash(_PARAGRAPHS[2]), block_hash(_PARAGRAPHS[3])]
+    assert [t.base_hash for t in split.targets] == ["", block_hash(_PARAGRAPHS[2]), block_hash(_PARAGRAPHS[3])]

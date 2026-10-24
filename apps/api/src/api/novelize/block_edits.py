@@ -3,7 +3,8 @@
 **작업 행의 칸 하나**(`NovelJob.block_edit`, JSON)가 한 작업의 전부다: 요청 때 서버가 지금 개정에서 계산한 대상(블록 id·기준 해시·
 화 전체에서 센 문단 번호), 대상 장면, 그리고 성공 저장 때 쓰는 블록마다의 패치와 의존 묶음. 사용자 글에서 나온 것은 패치 문단과
 묶음 이유뿐이다 — 패치가 대기에서 벗어나는 순간(적용·버림·낡음) 그 문단을 비우고, 대기 원소가 없게 된 묶음의 이유도 비운다. 상태·
-블록 id·번호는 건수 기록으로 남는다. 기준 해시는 짧은 문단이면 글을 되찾을 수 있어, 버린 패치와 환불한 작업에서는 지운다. 지운
+블록 id·번호는 건수 기록으로 남는다. 기준 해시는 짧은 문단이면 글을 되찾을 수 있어, 대기에서 벗어난(적용·버림·낡음) 패치의 블록과
+환불한 작업에서는 지운다(성공한 작업에서 모델이 패치를 내지 않은 대상의 해시는 남는다). 지운
 해시는 빈 문자열이다 — `None` 으로 두면 이 칸을 문자열로 읽는 옛 이미지가 배포 겹침 동안 상세 조회에서 깨지고, 빈 문자열은 어떤
 문단의 sha256 과도 같지 않아 그 패치를 다시 쓸 길이 없다.
 
@@ -196,8 +197,8 @@ def fresh_flags(edit: BlockEdit, block_ids: Sequence[uuid.UUID], paragraphs: Seq
 def with_save_states(
     edit: BlockEdit, block_ids: Sequence[uuid.UUID], paragraphs: Sequence[str]
 ) -> tuple[BlockEdit, int]:
-    """성공 저장 때 — 지금 개정에 쓸 수 없는 대기 패치를 낡음으로 바꾸고 문단을 비우며, 대기 원소가 없게 된 묶음의 이유도 비운다(그
-    화에 다음 개정이 생길 때까지 모델이 쓴 문장이 남지 않게). 쓸 수 있는 패치 수를 함께 돌려준다."""
+    """성공 저장 때 — 지금 개정에 쓸 수 없는 대기 패치를 낡음으로 바꾸고 문단과 그 블록의 기준 해시를 비우며, 대기 원소가 없게 된
+    묶음의 이유도 비운다(그 화에 다음 개정이 생길 때까지 모델이 쓴 문장이 남지 않게). 쓸 수 있는 패치 수를 함께 돌려준다."""
     patches: list[BlockEditPatch] = []
     fresh = 0
     for patch in edit.patches:
@@ -225,7 +226,8 @@ def dismissed_all(edit: BlockEdit) -> BlockEdit:
 
 
 def _settled(edit: BlockEdit) -> BlockEdit:
-    """대기 원소가 하나도 없는 묶음의 이유를 비운다(이유는 모델이 사용자 글을 읽고 쓴 글이다)."""
+    """대기 원소가 하나도 없는 묶음의 이유를 비우고(이유는 모델이 사용자 글을 읽고 쓴 글이다), 끝난(적용·버림·낡음) 패치 블록의 기준
+    해시를 대상·패치 양쪽에서 지운다 — 기준 해시는 대기 패치의 적용 판정에만 쓰고, 짧은 문단은 해시로 글을 되찾을 수 있다."""
     states = {patch.id: patch.state for patch in edit.patches}
     bundles = [
         bundle
@@ -233,7 +235,8 @@ def _settled(edit: BlockEdit) -> BlockEdit:
         else bundle.model_copy(update={"reason": None})
         for bundle in edit.bundles
     ]
-    return edit.model_copy(update={"bundles": bundles})
+    finished = {patch.block_id for patch in edit.patches if patch.state != "pending"}
+    return _without_hashes_of(edit.model_copy(update={"bundles": bundles}), finished)
 
 
 def _without_hashes_of(edit: BlockEdit, blocks: set[uuid.UUID] | None) -> BlockEdit:
@@ -313,7 +316,7 @@ def applied_body(
 
 
 def with_applied(edit: BlockEdit, patch_ids: Sequence[str], revision_id: uuid.UUID) -> BlockEdit:
-    """`patch_ids` 를 적용했다 — 상태 적용, 문단 비움, 적용한 개정 id. 다 끝난 묶음의 이유를 비운다."""
+    """`patch_ids` 를 적용했다 — 상태 적용, 문단·그 블록의 기준 해시 비움, 적용한 개정 id. 다 끝난 묶음의 이유를 비운다."""
     chosen = set(patch_ids)
     patches = [
         patch.model_copy(update={"state": "applied", "paragraphs": None, "revision_id": revision_id})
@@ -334,12 +337,11 @@ def with_dismissed(edit: BlockEdit, patch_ids: Sequence[str]) -> BlockEdit:
         patch.model_copy(update={"state": "dismissed", "paragraphs": None}) if patch.id in chosen else patch
         for patch in edit.patches
     ]
-    dropped = {patch.block_id for patch in edit.patches if patch.id in chosen}
-    return _settled(_without_hashes_of(edit.model_copy(update={"patches": patches}), dropped))
+    return _settled(edit.model_copy(update={"patches": patches}))
 
 
 def stale_marked(edit: BlockEdit, block_ids: Sequence[uuid.UUID], paragraphs: Sequence[str]) -> BlockEdit:
-    """새 개정 뒤 — 지금 개정에 쓸 수 없게 된 대기 패치를 낡음으로(문단 비움) 바꾸고 다 끝난 묶음의 이유를 비운다. 낡음은 영구다:
+    """새 개정 뒤 — 지금 개정에 쓸 수 없게 된 대기 패치를 낡음으로(문단·기준 해시 비움) 바꾸고 다 끝난 묶음의 이유를 비운다. 낡음은 영구다:
     같은 글로 되돌아와도 되살리지 않는다(되살릴 문단이 이미 없다)."""
     marked, _fresh = with_save_states(edit, block_ids, paragraphs)
     return marked
@@ -394,8 +396,8 @@ def recheck_context_positions(plan: RecheckPlan, scenes: Sequence[str | None], s
 
 
 def with_split(edit: BlockEdit, bundle_id: str, plan: RecheckPlan) -> BlockEdit:
-    """남은 원소를 따로 적용해도 된다는 판정 — 고친 원소를 묶음에서 빼 낡음(문단 없음)으로 두고, 남은 원소가 하나면 묶음을 없애 독립
-    패치로, 둘 이상이면 그 원소들끼리 묶음으로 남긴다(남은 원소끼리 기대는지는 처음 판정 그대로다)."""
+    """남은 원소를 따로 적용해도 된다는 판정 — 고친 원소를 묶음에서 빼 낡음(문단·기준 해시 없음)으로 두고, 남은 원소가 하나면 묶음을
+    없애 독립 패치로, 둘 이상이면 그 원소들끼리 묶음으로 남긴다(남은 원소끼리 기대는지는 처음 판정 그대로다)."""
     edited = set(plan.edited_patch_ids)
     patches = [
         patch.model_copy(update={"state": "stale", "paragraphs": None}) if patch.id in edited else patch
@@ -409,4 +411,4 @@ def with_split(edit: BlockEdit, bundle_id: str, plan: RecheckPlan) -> BlockEdit:
         kept = [patch_id for patch_id in bundle.patch_ids if patch_id not in edited]
         if len(kept) >= 2:
             bundles.append(bundle.model_copy(update={"patch_ids": kept}))
-    return edit.model_copy(update={"patches": patches, "bundles": bundles})
+    return _settled(edit.model_copy(update={"patches": patches, "bundles": bundles}))
