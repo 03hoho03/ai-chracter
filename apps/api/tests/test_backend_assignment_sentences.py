@@ -20,6 +20,7 @@ _BASE_SETTINGS: dict[str, str] = {
     "memory_summary_model": "gemini",
     "memory_episode_model": "gemini",
     "memory_fact_model": "gemini",
+    "memory_impression_model": "gemini",
     "gemini_model_name": "gemini-test-flash",
     "bedrock_access_key_id": "",
     "bedrock_secret_access_key": "",
