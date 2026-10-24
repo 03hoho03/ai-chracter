@@ -120,6 +120,9 @@ class NovelJobResponse(CamelModel):
     # "남은 대화 한 번에"(연쇄 생성)의 진행 — 끝낸 묶음 수와 계획한 묶음 수. 연쇄가 아닌 작업은 둘 다 null 이다.
     completed_batches: int | None
     planned_batches: int | None
+    # 장면 구성안·원고 작업이 맡은 전체 구성안의 화 키. 다른 작업은 null 이다. 기본값은 이 칸을 모르는 생성 타입·픽스처와의
+    # 호환용이고, 응답에는 항상 실린다.
+    episode_key: uuid.UUID | None = None
 
 
 # ── 소설 ───────────────────────────────────────────────────────────────────
@@ -184,6 +187,7 @@ class NovelActiveJob(CamelModel):
     batch_id: uuid.UUID | None
     completed_batches: int | None
     planned_batches: int | None
+    episode_key: uuid.UUID | None = None
 
 
 class NovelPendingAiEdit(CamelModel):

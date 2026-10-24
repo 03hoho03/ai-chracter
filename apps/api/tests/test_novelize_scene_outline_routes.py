@@ -1177,7 +1177,7 @@ async def test_scene_outline_and_manuscript_jobs_carry_the_episode_key_they_work
     깨지는 시나리오: 새로고침하거나 다른 탭에서 시작한 작업이 어느 화의 것인지 몰라 그 화에 다시 시도를 줄 수 없다."""
     novel_id, _, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
     outline_job = enqueued[-1]
-    key = keys[1]
+    key = keys[0]
 
     scenes = await _request_scenes(db_client, novel_id, key)
     detail = (await db_client.get(f"/novels/{novel_id}")).json()
