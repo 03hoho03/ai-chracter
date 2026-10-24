@@ -5,6 +5,19 @@ on:
     branches: [main]
     paths:
       - "apps/api/**"
+      # 아래 둘은 런타임 코드도, 이 워크플로의 검사·테스트도 읽지 않는 파일이라 그것만 바뀐 커밋에는
+      # CI 를 돌리지 않는다. 대상은 앱 최상위 md(`CLAUDE.md`·`README.md`)와 `probe-runs/` 아래 기록
+      # 전부(html·json·md, 기록을 읽기용 HTML 로 굳히는 일회성 도구 .py 포함)다. 거기 .py 가 섞여 있어도 ruff·mypy 는
+      # `src migrations scripts tests`, pytest 는 `tests`, 커버리지는 `api` 패키지만 보므로 검사 경로 밖이다.
+      # `README.md` 는 `pyproject.toml` 의 `readme` 라 `uv sync` 가 설치 때 읽기는 하지만, 내용만 바뀐
+      # README 는 패키지 설명 메타데이터 말고는 검사 결과를 바꾸지 않는다. README 를 지우거나 이름을
+      # 바꾸는 변경은 설치를 깰 수 있는데 이 필터 때문에 CI 가 안 돌 수 있으니(이 워크플로는 손으로
+      # 돌릴 수 없다), 같은 PR 에 `apps/api` 의 다른 변경(예: `src` 한 줄)을 섞어 검사가 돌게 한다.
+      # `*` 는 `/` 를 넘지 않아 `apps/api` 바로 아래 md 만 빠진다 — 하위 디렉터리 md 는 앞으로 코드가
+      # 읽을 수 있어 일부러 거르지 않는다. 부정 패턴은 뒤에 오는 패턴이 이기므로, 아래 양성 패턴들이
+      # 이 파일들을 다시 포함하지 않는지 순서를 지킨다.
+      - "!apps/api/*.md"
+      - "!apps/api/probe-runs/**"
       # 자기 자신이 필터에 있는 이유: 이 워크플로의 검사 단계를 고친 커밋은 그 검사를
       # 한 번도 안 거친 채 병합된다(`deploy-api.yml` 이 같은 이유로 자기 파일을 넣어 뒀다).
       - ".github/workflows/api.yml"
@@ -15,11 +28,22 @@ on:
   pull_request:
     paths:
       - "apps/api/**"
+      # 제외 이유는 push 쪽 주석과 같다.
+      - "!apps/api/*.md"
+      - "!apps/api/probe-runs/**"
       - ".github/workflows/api.yml"
       # 튜토리얼 시드 테스트가 빌더가 고를 수 있는 값(스탯 아이콘·색·턴 하한)을 이 FE 소스에서 직접 읽는다.
       - "apps/web/src/entities/chat-room/model/statIcons.ts"
       - "packages/ui/src/lib/color-palette.ts"
       - "apps/web/src/features/build-story/model/schema.ts"
+
+# PR 은 같은 브랜치의 새 push 가 옛 실행을 취소한다. main push 는 실행마다 고유 그룹(run_id)이라
+# 취소도 대체도 없다 — main 끼리 한 그룹을 쓰면 `cancel-in-progress: false` 여도 그룹당 대기 실행이
+# 하나만 남아, 연속 병합 때 중간 커밋의 main 검사가 사라진다. main push 검사는 쌓인 PR 을 연달아
+# 병합했을 때의 사후 경보라 하나도 잃지 않게 둔다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
