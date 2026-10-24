@@ -8,17 +8,19 @@ import {
   DropdownMenuTrigger,
 } from "@ai-character-chat/ui/components/dropdown-menu";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { ArrowDown, ArrowUp, ChevronDown, Combine, Ellipsis, Pencil, Scissors, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Combine, Ellipsis, Info, Pencil, Scissors, Trash2 } from "lucide-react";
 import { Fragment, useId, useRef, useState, type ReactNode } from "react";
 
 import {
   toBasisLabel,
   toEpisodeTurns,
   toSplitPoints,
+  toSplitTurnCounts,
   type OutlineEpisodeDraft,
   type OutlineEpisodeText,
   type TurnIndex,
 } from "../model/outlineEdits";
+import type { TurnCapNotice } from "../model/turnCapNotice";
 
 import { OutlineEpisodeForm } from "./OutlineEpisodeForm";
 
@@ -40,6 +42,8 @@ type OutlineEpisodeItemProps = {
   /** 위로·아래로 옮기지 못하는 이유. */
   moveBlockedReasons: { up: string | undefined; down: string | undefined };
   titleMaxLength: number;
+  /** 이 화의 턴 수가 원고 모델 상한을 넘으면 그 안내. 없으면 그리지 않는다. */
+  turnCapNotice: TurnCapNotice | undefined;
   onEdit: () => void;
   onApply: (text: OutlineEpisodeText) => void;
   onCancelEdit: () => void;
@@ -70,6 +74,7 @@ export function OutlineEpisodeItem({
   mergeBlockedReason,
   moveBlockedReasons,
   titleMaxLength,
+  turnCapNotice,
   onEdit,
   onApply,
   onCancelEdit,
@@ -158,11 +163,27 @@ export function OutlineEpisodeItem({
         </>
       )}
 
-      {isSplitting && turns !== undefined ? (
+      {turnCapNotice !== undefined && (
+        <TurnCapNoticeLine
+          notice={turnCapNotice}
+          label={label}
+          // 바로가기는 메뉴의 "나누기"와 같은 조건에서만 — 못 나누는 화에 누를 수 없는 버튼을 두지 않는다.
+          onStartSplit={isEditable && !isEditing && !isSplitting && splitBlockedReason === undefined ? onStartSplit : undefined}
+        />
+      )}
+
+      {isSplitting && turns !== undefined && turnIndex !== undefined ? (
         <SplitPicker
           label={label}
           turns={turns}
-          splitAfter={new Map(splitPoints.map((point) => [point.afterTurnNumber, point.cutMessageId]))}
+          splitAfter={
+            new Map(
+              splitPoints.map((point) => [
+                point.afterTurnNumber,
+                { cutMessageId: point.cutMessageId, counts: toSplitTurnCounts(turnIndex, episode.basis, point.cutMessageId) },
+              ]),
+            )
+          }
           onSplit={onSplit}
           onCancel={onCancelSplit}
         />
@@ -187,6 +208,40 @@ export function OutlineEpisodeItem({
         </div>
       )}
     </li>
+  );
+}
+
+type TurnCapNoticeLineProps = {
+  notice: TurnCapNotice;
+  label: string;
+  /** 나누기 바로가기. 없으면(못 나누는 화) 버튼을 그리지 않는다. */
+  onStartSplit: (() => void) | undefined;
+};
+
+/** 원고 턴 상한 안내 줄 + 나누기 바로가기. 일부 모델만 못 쓰는 화는 다른 모델로는 쓸 수 있어 오류가 아니라 무채 보조 글씨이고, 어느
+ * 모델로도 못 쓰는 화(승인이 막힌다)는 테두리와 본문 글씨로 한 단계 세운다 — 위험 틴트는 쓰지 않는다(지울 것도 잃을 것도 없고, 나누면
+ * 풀린다). */
+function TurnCapNoticeLine({ notice, label, onStartSplit }: TurnCapNoticeLineProps) {
+  const isBlocking = notice.tone === "blocking";
+  return (
+    <div
+      data-turn-cap-notice={notice.tone}
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-2",
+        isBlocking ? "rounded-lg border border-border px-3 py-2 text-foreground" : "text-muted-foreground",
+      )}
+    >
+      <p className="flex min-w-0 flex-1 basis-60 items-start gap-1.5 text-sm break-keep">
+        <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+        {notice.message}
+      </p>
+      {onStartSplit !== undefined && (
+        <Button type="button" variant="outline" size="xs" aria-label={`${label} 나누기`} onClick={onStartSplit}>
+          <Scissors aria-hidden />
+          나누기
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -242,13 +297,14 @@ export function TurnLine({ number, excerpt }: { number: number; excerpt: string 
 type SplitPickerProps = {
   label: string;
   turns: readonly { key: string; number: number; excerpt: string }[];
-  /** 그 턴 뒤에서 나눌 수 있으면 자를 메시지 id. */
-  splitAfter: ReadonlyMap<number, string>;
+  /** 그 턴 뒤에서 나눌 수 있으면 자를 메시지 id 와, 거기서 나누면 앞뒤 화가 갖는 턴(모델 응답) 수. */
+  splitAfter: ReadonlyMap<number, { cutMessageId: string; counts: { front: number; back: number } | undefined }>;
   onSplit: (cutMessageId: string) => void;
   onCancel: () => void;
 };
 
-/** 나눌 자리 고르기 — 근거 턴 사이마다 "n턴 뒤에서 나누기". 나눌 수 없는 사이(앞 턴이 응답 없이 끝남)에는 버튼이 없다. */
+/** 나눌 자리 고르기 — 근거 턴 사이마다 "n턴 뒤에서 나누기"와 거기서 나눈 앞뒤 화의 턴 수(원고 턴 상한이 세는 수라, 상한에 맞게 자를
+ * 자리를 고를 수 있다). 나눌 수 없는 사이(앞 턴이 응답 없이 끝남)에는 버튼이 없다. */
 function SplitPicker({ label, turns, splitAfter, onSplit, onCancel }: SplitPickerProps) {
   return (
     <div className="flex flex-col gap-2">
@@ -271,10 +327,15 @@ function SplitPicker({ label, turns, splitAfter, onSplit, onCancel }: SplitPicke
               {cut !== undefined && (
                 <li className="flex items-center gap-2 py-0.5">
                   <span aria-hidden className="h-px flex-1 border-t border-dashed border-border" />
-                  <Button type="button" variant="outline" size="xs" onClick={() => onSplit(cut)}>
+                  <Button type="button" variant="outline" size="xs" onClick={() => onSplit(cut.cutMessageId)}>
                     <Scissors aria-hidden />
                     {turn.number}턴 뒤에서 나누기
                   </Button>
+                  {cut.counts !== undefined && (
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      앞 {cut.counts.front.toLocaleString()}턴 · 뒤 {cut.counts.back.toLocaleString()}턴
+                    </span>
+                  )}
                   <span aria-hidden className="h-px flex-1 border-t border-dashed border-border" />
                 </li>
               )}

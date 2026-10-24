@@ -54,3 +54,13 @@ describe("구성안 저장·승인 거절 뒤 맞추기", () => {
     expect(toOutlineRecovery(new Error("network"))).toEqual(NOTHING);
   });
 });
+
+describe("어느 모델로도 못 쓰는 화가 있어 승인을 못 했을 때", () => {
+  // 고친 것은 이미 저장된 판이거나 이용자가 나눌 판이라 남기고, 화마다 턴 수를 새로 받아 안내를 서버와 맞춘다.
+  it("고친 것을 남기고 구성안만 다시 받는다", () => {
+    expect(toOutlineRecovery(apiError(409, { code: "NOVEL_OUTLINE_EPISODE_TOO_LONG", maxTurns: 45, episodes: [] }))).toEqual({
+      ...NOTHING,
+      refetchOutline: true,
+    });
+  });
+});

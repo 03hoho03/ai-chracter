@@ -7,6 +7,8 @@ import { novelKeys } from "./keys";
 
 export type NovelEpisodeOutlineState = components["schemas"]["NovelEpisodeOutlineState"];
 export type NovelEpisodeOutlineView = components["schemas"]["NovelEpisodeOutlineView"];
+/** 원고에 고를 수 있는 모델 하나 — 원고 금액·턴 상한과, 승인한 장면 구성안으로 이 모델이 쓸 수 있는지(판정 없으면 null). */
+export type NovelOutlineChapterModel = components["schemas"]["NovelOutlineChapterModel"];
 export type NovelSceneView = components["schemas"]["NovelSceneView"];
 export type NovelSceneInput = components["schemas"]["NovelSceneInput"];
 export type NovelEpisodeOutlineSaveRequest = components["schemas"]["NovelEpisodeOutlineSaveRequest"];

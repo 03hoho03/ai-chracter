@@ -134,3 +134,13 @@ describe("toNovelJobFailureMessage — 화별 장면 구성안·원고", () => {
     );
   });
 });
+
+describe("toNovelActionError — 구성안 승인의 턴 상한 거절", () => {
+  // 화면이 화 번호를 아는 자리에서는 그 문구로 바꾸지만, 그 밖에서도 일반 실패 문구로 접히지 않는다.
+  it("어느 모델로도 못 쓰는 화가 있다고 말한다", () => {
+    const detail = { code: "NOVEL_OUTLINE_EPISODE_TOO_LONG", maxTurns: 45, episodes: [{ key: "k", turnCount: 48 }] };
+    expect(message(409, detail, "approveOutline")).toBe(
+      "어느 모델로도 원고를 쓸 수 없을 만큼 긴 화가 있어요. 나눈 뒤 승인해주세요.",
+    );
+  });
+});

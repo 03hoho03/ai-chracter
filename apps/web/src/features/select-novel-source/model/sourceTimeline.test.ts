@@ -38,6 +38,13 @@ describe("buildSourceTurns", () => {
     expect(turns.map((turn) => turn.key)).toEqual(["a0", "u1", "u2"]);
   });
 
+  // 원고 턴 상한은 응답 하나를 한 턴으로 센다 — 턴 묶음 안의 응답을 따로 알아야 그 수를 셀 수 있다.
+  it("턴마다 응답 메시지 id 를 차례대로 싣는다", () => {
+    const messages: SourceMessage[] = [...room(1), { id: "a1b", role: "assistant", content: "덧붙임" }, { id: "u2", role: "user", content: "말" }];
+    const turns = buildSourceTurns(messages, { fixedEndId: null, roomEndId: "u2", lockedRanges: [] });
+    expect(turns.map((turn) => turn.responseIds)).toEqual([["a0"], ["a1", "a1b"], []]);
+  });
+
   it("발췌는 응답 글에서 지문 표기를 지운 것이고, 응답이 없으면 사용자 말이다", () => {
     const messages: SourceMessage[] = [...room(1), { id: "u2", role: "user", content: "아직 답이 없는 말" }];
     const turns = buildSourceTurns(messages, { fixedEndId: "u2", roomEndId: "u2", lockedRanges: [] });

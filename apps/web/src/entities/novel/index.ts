@@ -29,6 +29,7 @@ export {
   useApproveNovelOutlineMutation,
   useNovelOutlineQuery,
   useSaveNovelOutlineMutation,
+  type NovelChapterTurnCap,
   type NovelOutlineEpisode,
   type NovelOutlineEpisodeInput,
   type NovelOutlineModel,
@@ -44,6 +45,7 @@ export {
   type NovelEpisodeOutlineSaveRequest,
   type NovelEpisodeOutlineState,
   type NovelEpisodeOutlineView,
+  type NovelOutlineChapterModel,
   type NovelSceneInput,
   type NovelSceneView,
 } from "./api/useNovelEpisodeOutline";
@@ -96,6 +98,7 @@ export { writeNovelChapterRevision } from "./api/writeNovelChapterRevision";
 export {
   hasChapterModelChoice,
   initialChapterModelId,
+  toOutlineChapterModelOptions,
   toOutlineModelOptions,
   toProposalModelOptions,
   toRegenerateModelOptions,
@@ -104,6 +107,7 @@ export {
   type NovelChapterModelId,
   type PricedChapterModelOption,
 } from "./model/chapterModel";
+export { toOverCapPhrase, toTurnCapFit, type ChapterTurnCap, type TurnCapFit } from "./model/chapterTurnCap";
 export { CHAPTER_REGENERATING_MESSAGE, isChapterRegenerating } from "./model/chapterRegenerationLock";
 export { toAdjacentChapters } from "./model/adjacentChapters";
 export { readChapterReadingPosition } from "./model/chapterReadingPosition";

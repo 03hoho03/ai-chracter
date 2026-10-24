@@ -14,6 +14,7 @@ import {
   toBatchRangeLabel,
   toNovelActionError,
   toNovelJobFailureMessage,
+  toOutlineChapterModelOptions,
   toOutlineModelOptions,
   toProposalModelOptions,
   toRegenerateModelOptions,
@@ -50,6 +51,7 @@ import { OUTLINE_SPEND_FOOTNOTE, toDoneMessage, toJobEpisodeKey, toRetryTarget, 
 import { toOutlineFlowAvailability } from "./regenerateAction";
 import { toRegenerateConfirmDescription } from "./regenerateConfirm";
 import { toEpisodeJobRefusal } from "./episodeJobGuard";
+import { toNoWritableModelRefusal, toSceneOutlineTurnNote } from "./episodeTurnCap";
 
 /** 화 다시 만들기·전체 구성안 만들기의 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
  * 소설 상위 모델 허용이 있으면 모달이 모델도 고르게 하므로, 확정하면 고른 모델과 이용자가 본 금액을 돌려준다.
@@ -63,6 +65,8 @@ export type ConfirmChapterSpend = (props: {
   initialModelId: NovelChapterModelId;
   /** 금액 줄 아래 한 줄 — 돌려받는 조건처럼 금액에 붙는 말. */
   footnote?: string;
+  /** 그 아래 한 줄 더 — 이 동작 뒤에 걸릴 사정(원고 턴 상한처럼). 없으면 그리지 않는다. */
+  note?: string;
 }) => Promise<{ model: NovelChapterModelId; cost: number } | null>;
 
 /** 이 흐름이 지켜보는 작업 — AI 수정을 뺀 전부다. 남은 대화 한 번에(연쇄)는 경계 고르기의 한 칸으로 시작한다. */
@@ -540,12 +544,21 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
         setNotice({ tone: "error", message: refusal });
         return;
       }
-      const options = toOutlineModelOptions(kind === "episodeOutline" ? state.models : state.chapterModels);
+      const options =
+        kind === "episodeOutline"
+          ? toOutlineModelOptions(state.models)
+          : toOutlineChapterModelOptions(state.chapterModels, state.chapterTurnCount);
       if (options.length === 0) {
         setNotice({ tone: "error", message: "지금 고를 수 있는 모델이 없어요." });
         return;
       }
-      const title = outline.approved?.episodes.find((episode) => episode.key === episodeKey)?.title.trim();
+      const unwritable = kind === "outlineChapter" ? toNoWritableModelRefusal(options, state.chapterTurnCount) : undefined;
+      if (unwritable !== undefined) {
+        setNotice({ tone: "error", message: unwritable });
+        return;
+      }
+      const episode = outline.approved?.episodes.find((item) => item.key === episodeKey);
+      const title = episode?.title.trim();
       const named = title === undefined || title === "" ? "이 화" : `「${title}」 화`;
       const hasSceneOutline = (state.draft ?? state.approved) !== null;
       const initialModelId = initialChapterModelId(options, novel.lastChapterModel);
@@ -560,6 +573,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
               options,
               initialModelId,
               footnote: OUTLINE_SPEND_FOOTNOTE,
+              note: toSceneOutlineTurnNote(episode?.turnCount, state.chapterModels),
             }
           : {
               title: "원고를 쓸까요?",

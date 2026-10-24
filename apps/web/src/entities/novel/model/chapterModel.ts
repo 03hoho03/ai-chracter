@@ -1,5 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import type { NovelOutlineChapterModel } from "../api/useNovelEpisodeOutline";
 import type { NovelOutlineModel } from "../api/useNovelOutline";
 
 /** 서버가 이 계정에 허용한 글쓰기 모델 하나와 그 모델의 화 단가. 상위 모델은 허용이 있을 때만 실리고, 기본 모델은
@@ -73,4 +74,27 @@ export function toProposalModelOptions(models: readonly NovelChapterModel[]): Ch
  * 있다(허용이 없는 상위 모델은 서버가 싣지 않는다). */
 export function toOutlineModelOptions(models: readonly NovelOutlineModel[]): PricedChapterModelOption[] {
   return models.map((model) => ({ id: model.id, name: model.name, cost: model.cost, disabledReason: undefined }));
+}
+
+/** 구성 흐름 원고의 모델 목록 → 선택 항목. 서버가 승인한 장면 구성안의 턴 수로 판정해 못 쓰는 모델(`eligible` 거짓)은 빼지 않고
+ * 비활성 + 이유로 남기고, 장면이 쓰는 턴 수를 알면 그 수와 상한을 괄호로 더한다. 판정이 없으면(null — 승인한 장면 구성안이 없거나
+ * 낡음) 모두 고를 수 있다 — 그때 원고 요청은 턴 상한보다 다른 거절이 먼저 난다. */
+export function toOutlineChapterModelOptions(
+  models: readonly NovelOutlineChapterModel[],
+  turnCount: number | null | undefined,
+): PricedChapterModelOption[] {
+  return models.map((model) => ({
+    id: model.id,
+    name: model.name,
+    cost: model.cost,
+    disabledReason:
+      model.eligible === false
+        ? withTurnNumbers(toIneligibleReasonText(model.ineligibleReason ?? null), turnCount, model.maxTurns)
+        : undefined,
+  }));
+}
+
+function withTurnNumbers(reason: string, turnCount: number | null | undefined, maxTurns: number): string {
+  if (turnCount === null || turnCount === undefined) return reason;
+  return `${reason} (${turnCount.toLocaleString()}턴 · ${maxTurns.toLocaleString()}턴까지)`;
 }
