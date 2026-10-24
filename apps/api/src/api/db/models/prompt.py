@@ -221,3 +221,88 @@ class PromptRouteRevision(Base):
         Index("ix_prompt_route_revisions_number", "number", unique=True),
         CheckConstraint("number > 0", name="ck_prompt_route_revisions_number_positive"),
     )
+
+
+class PromptSetSemver(Base):
+    """게시 세트 하나의 체인 판(`major.minor.patch`) — 세트당 최대 한 행.
+
+    체인은 (레인, 모델) 세트 줄기다. 판을 `prompt_sets` 의 칸으로 두지 않고 따로 둔다 — 세트 칸이 늘면 활성 세트 캐시 직렬화·
+    생성 리플레이 기록·측정 하네스의 내보내기가 그 칸을 다뤄야 하고, 이 표로 두면 서빙 경로가 판을 볼 길이 없다. 행이 없는 게시
+    세트는 "번호 없는 옛 게시"다(이 표가 생기기 전의 게시, 이 표를 모르는 옛 이미지가 게시한 세트).
+
+    `lane`·`model` 은 체인 안 번호 유니크를 걸려고 세트 칸을 복사한 값이다(게시 세트의 레인·모델은 바뀌지 않는다).
+    `base_set_id` 는 이 판을 매길 때 견준 기준판(그 체인에서 판이 가장 큰 세트)이고 `level` 은 이번에 올린 단계다 — 기준판이
+    없어 1.0.0 으로 시작한 판은 둘 다 NULL 이다. `base_set_id` 유니크는 "한 판은 다음 판의 기준이 한 번만 된다"를 지켜, 같은
+    기준판을 읽은 동시 게시 둘이 서로 다른 단계로 올려 번호가 갈려도 뒤 커밋을 막는다.
+
+    세트 FK 는 `ON DELETE CASCADE` 다 — 판은 세트의 부속 기록이라 세트가 지워지면 함께 지워진다. 기준판 FK 는 `ondelete` 를
+    두지 않아 Postgres 기본값 `NO ACTION` 이다 — 다음 판의 기준이 된 세트를 지우면 판 사슬이 끊기므로 막는다. 막히는 쪽은 판이
+    쌓인 세트를 지우려는 쪽이다: 판 매기기 블록을 쓰는 앞으로의 문안 마이그레이션의 downgrade, 체인을 지우는 테스트·코드. 그
+    세트 위에 쌓인 나중 게시가 활성이라 그 세트를 지워도 서빙 문안이 실제로 되돌아가지 않으므로, 조용히 지우지 않고 멈추는 것이
+    맞는 신호다. (이 표를 만든 리비전보다 앞선 리비전의 downgrade 는 여기 걸리지 않는다 — 이 표를 만든 리비전의 downgrade 가
+    먼저 돌아 표를 지운 뒤에만 돌 수 있다.) 게시가 쌓인 체인은 한 문장으로 통째로 지워도 막힐 수 있다(지우는 행 순서에 따라
+    기준판 FK 검사가 같은 문장의 다른 행이 일으킨 CASCADE 보다 먼저 돈다) — 나중 판부터 지운다.
+
+    `relationship()` 은 선언하지 않는다(리포 규약).
+    """
+
+    __tablename__ = "prompt_set_semvers"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    prompt_set_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("prompt_sets.id", ondelete="CASCADE"), nullable=False
+    )
+    lane: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    major: Mapped[int] = mapped_column(Integer, nullable=False)
+    minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    patch: Mapped[int] = mapped_column(Integer, nullable=False)
+    level: Mapped[str | None] = mapped_column(Text, nullable=True)
+    base_set_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("prompt_sets.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_prompt_set_semvers_prompt_set_id", "prompt_set_id", unique=True),
+        Index("ix_prompt_set_semvers_chain_semver", "lane", "model", "major", "minor", "patch", unique=True),
+        Index("ix_prompt_set_semvers_base_set_id", "base_set_id", unique=True),
+        CheckConstraint("major >= 1 AND minor >= 0 AND patch >= 0", name="ck_prompt_set_semvers_parts_range"),
+        CheckConstraint(
+            "level IS NULL OR level IN ('major', 'minor', 'patch')", name="ck_prompt_set_semvers_level_values"
+        ),
+        CheckConstraint("(level IS NULL) = (base_set_id IS NULL)", name="ck_prompt_set_semvers_level_iff_base"),
+        CheckConstraint(
+            "base_set_id IS NULL OR base_set_id <> prompt_set_id", name="ck_prompt_set_semvers_not_own_base"
+        ),
+    )
+
+
+class PromptSectionSemver(Base):
+    """게시 세트의 섹션 하나의 판 — (세트, 섹션)마다 한 행.
+
+    섹션은 `prompt_sections.channel` 값 하나(그 채널의 모든 행 묶음)이거나, 세트의 화자 라벨 넷을 묶은 예약 이름
+    `speaker_labels` 다. 라벨은 생성 프롬프트의 대화 줄·예시 라벨과 정지 시퀀스로 실리므로 바뀌면 판이 바뀌어야 한다.
+    `level` 은 이 게시에서 바뀌었으면 고른 단계, 안 바뀌었거나(기준판의 번호를 그대로 물려받음) 시작판이면 NULL 이다.
+    같은 체인 안에서 같은 (섹션, 번호)는 늘 같은 내용을 가리킨다 — 그래서 번호를 매긴 게시본은 제자리에서 고치지 않는다.
+
+    세트 FK 가 `ON DELETE CASCADE` 인 이유는 `PromptSetSemver` 와 같다. `relationship()` 은 선언하지 않는다(리포 규약).
+    """
+
+    __tablename__ = "prompt_section_semvers"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    prompt_set_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("prompt_sets.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    major: Mapped[int] = mapped_column(Integer, nullable=False)
+    minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    patch: Mapped[int] = mapped_column(Integer, nullable=False)
+    level: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_prompt_section_semvers_set_channel", "prompt_set_id", "channel", unique=True),
+        CheckConstraint("major >= 1 AND minor >= 0 AND patch >= 0", name="ck_prompt_section_semvers_parts_range"),
+        CheckConstraint(
+            "level IS NULL OR level IN ('major', 'minor', 'patch')", name="ck_prompt_section_semvers_level_values"
+        ),
+    )

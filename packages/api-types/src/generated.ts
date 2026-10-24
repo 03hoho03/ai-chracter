@@ -1129,6 +1129,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/prompt-sets/{lane}/draft/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Prompt Draft Changes
+         * @description 게시하면 판이 어떻게 갈릴지 미리 본다(읽기만 한다). 계산은 게시와 같은 함수다 — 얼린 소설 행 갈아 끼우기까지 같아야
+         *     화면이 단계를 고르게 한 섹션과 실제로 올라가는 섹션이 같다. 경로가 세그먼트 3개라 `GET /{id}` 와 겹치지 않는다.
+         */
+        get: operations["get_prompt_draft_changes_admin_prompt_sets__lane__draft_changes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/prompt-sets/{lane}/publish": {
         parameters: {
             query?: never;
@@ -8813,6 +8834,21 @@ export interface components {
             accountNumber: string;
         };
         /**
+         * AdminPromptDraftChangesResponse
+         * @description `GET /admin/prompt-sets/{lane}/draft/changes` — 게시하면 판이 어떻게 갈릴지 미리 본다. `base_set_id`·`draft_hash` 를
+         *     게시 요청에 그대로 돌려보내면, 그 사이 다른 게시나 초안 저장이 끼어들었을 때 게시가 409 로 멈춘다.
+         */
+        AdminPromptDraftChangesResponse: {
+            /** Basesetid */
+            baseSetId: string | null;
+            /** Basesemver */
+            baseSemver: string | null;
+            /** Drafthash */
+            draftHash: string;
+            /** Sections */
+            sections: components["schemas"]["AdminPromptSectionChange"][];
+        };
+        /**
          * AdminPromptDraftResponse
          * @description `id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성
          *     세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는
@@ -8868,6 +8904,13 @@ export interface components {
          * AdminPromptPublishRequest
          * @description `version`을 받지 않는다 — 서버가 자동 증가 정수를 부여한다. `note`가 "왜
          *     바꿨나"를 대신 받는다.
+         *
+         *     판 칸 셋은 모두 생략할 수 있다 — 생략하면 바뀐 섹션 전부가 patch 이고 기준값을 견주지 않는다(단계를 고르지 않는 화면).
+         *     - `levels`: 바뀐 섹션마다 고른 단계. 바뀌지 않은 섹션이나 없는 섹션 이름이 있으면 422 다. 체인의 첫 판(기준판 없음)에서는
+         *       이 세트에 있는 섹션의 단계를 무시한다(전부 1.0.0).
+         *     - `base_set_id`: 바뀐 섹션 조회 때 받은 기준판 id(기준판이 없었으면 null 을 그대로). 보냈는데 지금 기준판과 다르면 409 다.
+         *     - `draft_hash`: 바뀐 섹션 조회 때 받은 초안 내용 해시. 보냈는데 지금 초안과 다르면 409 다 — 그 사이 다른 관리자가 초안을
+         *       고쳐, 화면이 보지도 고르지도 않은 변경이 patch 로 나가는 것을 막는다.
          */
         AdminPromptPublishRequest: {
             /**
@@ -8875,6 +8918,14 @@ export interface components {
              * @default
              */
             note: string;
+            /** Levels */
+            levels?: {
+                [key: string]: "major" | "minor" | "patch";
+            };
+            /** Basesetid */
+            baseSetId?: string | null;
+            /** Drafthash */
+            draftHash?: string | null;
         };
         /** AdminPromptRouteAllowedPair */
         AdminPromptRouteAllowedPair: {
@@ -9174,6 +9225,22 @@ export interface components {
             /** Rows */
             rows: components["schemas"]["AdminPromptRouteRow"][];
         };
+        /**
+         * AdminPromptSectionChange
+         * @description 게시 전 섹션 하나의 변화. `initial` 은 체인에 기준판이 없어 이 게시가 1.0.0 으로 시작한다는 뜻이다(단계를 고를 것이
+         *     없다). `current_semver` 는 기준판에서의 번호이고, 기준판에 없던 섹션이면 null 이다.
+         */
+        AdminPromptSectionChange: {
+            /** Channel */
+            channel: string;
+            /**
+             * Change
+             * @enum {string}
+             */
+            change: "changed" | "added" | "removed" | "unchanged" | "initial";
+            /** Currentsemver */
+            currentSemver: string | null;
+        };
         /** AdminPromptSectionInput */
         AdminPromptSectionInput: {
             /** Channel */
@@ -9212,8 +9279,24 @@ export interface components {
             order: number;
         };
         /**
+         * AdminPromptSectionSemver
+         * @description 섹션 하나의 판. `channel` 은 채널 이름이거나 화자 라벨 넷 묶음 `speaker_labels` 다. `level` 은 그 게시에서 바뀌어 올린
+         *     단계이고, 바뀌지 않아 기준판의 번호를 물려받았거나 체인의 시작판이면 null 이다.
+         */
+        AdminPromptSectionSemver: {
+            /** Channel */
+            channel: string;
+            /** Semver */
+            semver: string;
+            /** Level */
+            level: ("major" | "minor" | "patch") | null;
+        };
+        /**
          * AdminPromptSetDetailResponse
-         * @description `GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문.
+         * @description `GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문. 게시 응답도 이 꼴이다.
+         *
+         *     `semver`·`section_semvers` 는 판이 없는 세트면 null·빈 목록이다. `removed_sections` 는 게시 응답에서만 채운다(기준판에
+         *     있었는데 이번 게시에 없는 섹션) — 상세 조회는 기준판과 다시 견주지 않아 늘 빈 목록이다.
          */
         AdminPromptSetDetailResponse: {
             /**
@@ -9247,6 +9330,12 @@ export interface components {
             labels: components["schemas"]["AdminPromptLabels"];
             /** Sections */
             sections: components["schemas"]["AdminPromptSectionItem"][];
+            /** Semver */
+            semver?: string | null;
+            /** Sectionsemvers */
+            sectionSemvers?: components["schemas"]["AdminPromptSectionSemver"][];
+            /** Removedsections */
+            removedSections?: string[];
         };
         /** AdminPromptSetListResponse */
         AdminPromptSetListResponse: {
@@ -9289,6 +9378,8 @@ export interface components {
             model: "gemini" | "sonnet" | "opus" | "haiku";
             /** Isactive */
             isActive: boolean;
+            /** Semver */
+            semver?: string | null;
         };
         /** AdminRefundQuoteResponse */
         AdminRefundQuoteResponse: {
@@ -17345,6 +17436,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminPromptPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prompt_draft_changes_admin_prompt_sets__lane__draft_changes_get: {
+        parameters: {
+            query?: {
+                /** @description 세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다. */
+                model?: "gemini" | "sonnet" | "opus" | "haiku";
+            };
+            header?: never;
+            path: {
+                lane: "story" | "character" | "publish_filter" | "novel" | "novel_screen";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptDraftChangesResponse"];
                 };
             };
             /** @description Validation Error */

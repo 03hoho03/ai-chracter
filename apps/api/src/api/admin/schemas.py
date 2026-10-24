@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import AwareDatetime, ConfigDict, EmailStr, Field
 
+from api.admin.prompt_semver import SectionChange, SemverLevel
 from api.chat.prompt_builder import PromptLane
 from api.chat.prompt_routing import RouteSource, SkipReason
 from api.chat.prompt_stages import PromptStage, RoutingLane, StageKind
@@ -600,6 +601,9 @@ class AdminPromptSetSummary(CamelModel):
     lane: PromptLane
     model: PromptSetModelId
     is_active: bool
+    # 체인 판(`1.2.0` 꼴). 판이 없는 게시본(판을 매기기 전의 게시, 옛 이미지의 게시)과 초안은 null 이다 — 화면은 정수 `version` 으로
+    # 옛 판을 보여 준다.
+    semver: str | None = None
 
 
 class AdminPromptSetListResponse(CamelModel):
@@ -623,8 +627,20 @@ class AdminPromptSectionItem(CamelModel):
     order: int
 
 
+class AdminPromptSectionSemver(CamelModel):
+    """섹션 하나의 판. `channel` 은 채널 이름이거나 화자 라벨 넷 묶음 `speaker_labels` 다. `level` 은 그 게시에서 바뀌어 올린
+    단계이고, 바뀌지 않아 기준판의 번호를 물려받았거나 체인의 시작판이면 null 이다."""
+
+    channel: str
+    semver: str
+    level: SemverLevel | None
+
+
 class AdminPromptSetDetailResponse(CamelModel):
-    """`GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문."""
+    """`GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문. 게시 응답도 이 꼴이다.
+
+    `semver`·`section_semvers` 는 판이 없는 세트면 null·빈 목록이다. `removed_sections` 는 게시 응답에서만 채운다(기준판에
+    있었는데 이번 게시에 없는 섹션) — 상세 조회는 기준판과 다시 견주지 않아 늘 빈 목록이다."""
 
     id: uuid.UUID
     version: str | None
@@ -636,6 +652,9 @@ class AdminPromptSetDetailResponse(CamelModel):
     published_at: datetime | None
     labels: AdminPromptLabels
     sections: list[AdminPromptSectionItem]
+    semver: str | None = None
+    section_semvers: list[AdminPromptSectionSemver] = Field(default_factory=list)
+    removed_sections: list[str] = Field(default_factory=list)
 
 
 class AdminPromptDraftResponse(CamelModel):
@@ -668,9 +687,38 @@ class AdminPromptDraftUpsertRequest(CamelModel):
 
 class AdminPromptPublishRequest(CamelModel):
     """`version`을 받지 않는다 — 서버가 자동 증가 정수를 부여한다. `note`가 "왜
-    바꿨나"를 대신 받는다."""
+    바꿨나"를 대신 받는다.
+
+    판 칸 셋은 모두 생략할 수 있다 — 생략하면 바뀐 섹션 전부가 patch 이고 기준값을 견주지 않는다(단계를 고르지 않는 화면).
+    - `levels`: 바뀐 섹션마다 고른 단계. 바뀌지 않은 섹션이나 없는 섹션 이름이 있으면 422 다. 체인의 첫 판(기준판 없음)에서는
+      이 세트에 있는 섹션의 단계를 무시한다(전부 1.0.0).
+    - `base_set_id`: 바뀐 섹션 조회 때 받은 기준판 id(기준판이 없었으면 null 을 그대로). 보냈는데 지금 기준판과 다르면 409 다.
+    - `draft_hash`: 바뀐 섹션 조회 때 받은 초안 내용 해시. 보냈는데 지금 초안과 다르면 409 다 — 그 사이 다른 관리자가 초안을
+      고쳐, 화면이 보지도 고르지도 않은 변경이 patch 로 나가는 것을 막는다."""
 
     note: str = ""
+    levels: dict[str, SemverLevel] = Field(default_factory=dict)
+    base_set_id: uuid.UUID | None = None
+    draft_hash: str | None = None
+
+
+class AdminPromptSectionChange(CamelModel):
+    """게시 전 섹션 하나의 변화. `initial` 은 체인에 기준판이 없어 이 게시가 1.0.0 으로 시작한다는 뜻이다(단계를 고를 것이
+    없다). `current_semver` 는 기준판에서의 번호이고, 기준판에 없던 섹션이면 null 이다."""
+
+    channel: str
+    change: SectionChange
+    current_semver: str | None
+
+
+class AdminPromptDraftChangesResponse(CamelModel):
+    """`GET /admin/prompt-sets/{lane}/draft/changes` — 게시하면 판이 어떻게 갈릴지 미리 본다. `base_set_id`·`draft_hash` 를
+    게시 요청에 그대로 돌려보내면, 그 사이 다른 게시나 초안 저장이 끼어들었을 때 게시가 409 로 멈춘다."""
+
+    base_set_id: uuid.UUID | None
+    base_semver: str | None
+    draft_hash: str
+    sections: list[AdminPromptSectionChange]
 
 
 class AdminPromptPreviewItem(CamelModel):

@@ -133,7 +133,9 @@ from api.db.models.prompt import (
     PromptRoute,
     PromptRouteRevision,
     PromptSection,
+    PromptSectionSemver,
     PromptSet,
+    PromptSetSemver,
     PublishFilterTextSectionBackup,
 )
 from api.db.models.story import (
@@ -281,7 +283,9 @@ __all__ = [
     "PromptRoute",
     "PromptRouteRevision",
     "PromptSection",
+    "PromptSectionSemver",
     "PromptSet",
+    "PromptSetSemver",
     "PublishFilterTextSectionBackup",
     "Report",
     "ReportReasonCategory",
