@@ -1,4 +1,5 @@
-"""여러 문단 수정 호출의 입력 — 문맥 문단(장면 있는 화는 그 장면, 없으면 화 전체)과 입력 견적, 그리고 실행 때의 프롬프트.
+"""여러 문단 수정 호출의 입력 — 문맥 문단(장면 있는 화는 그 장면, 없으면 화 전체)과 입력 견적, 실행 때의 프롬프트, 그리고 묶음
+재검사의 프롬프트.
 
 읽기만 하고 쓰지 않는다. 요청 라우트가 차감 전에 견적을 보고, 작업 실행이 짧은 세션 하나에서 프롬프트를 만든 뒤 세션을 닫고 모델을
 부른다. 문맥은 작업의 기준 개정에서 읽는다(요청 때 지금 개정 = 기준 개정이다)."""
@@ -8,9 +9,13 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models.novel import Novel, NovelChapterRevision, NovelJob
-from api.novelize.block_edits import BlockEdit, context_positions
+from api.novelize.block_edits import BlockEdit, RecheckPlan, context_positions, recheck_context_positions
 from api.novelize.inputs import _version_id, load_novel_prompt_source, load_work_setting
-from api.novelize.prompts import NovelizePrompt, build_novelize_revise_blocks_prompt
+from api.novelize.prompts import (
+    NovelizePrompt,
+    build_novelize_revise_blocks_prompt,
+    build_novelize_revise_recheck_prompt,
+)
 from api.novelize.scenes import revision_scenes
 from api.novelize.text import split_paragraphs
 
@@ -73,3 +78,25 @@ async def build_block_edit_input(db: AsyncSession, job: NovelJob, novel: Novel) 
         user_request=job.instruction or "",
     )
     return BlockEditInput(prompt=prompt, edit=edit)
+
+
+def _numbered(position: int, paragraphs: list[str]) -> str:
+    """화 전체에서 센 번호 `[n] ` 을 앞에 단 글. 패치가 문단 여럿이면 줄을 바꿔 잇는다(블록 하나를 대신하는 한 덩어리다)."""
+    return f"[{position + 1}] " + "\n".join(paragraphs)
+
+
+async def build_recheck_prompt(
+    db: AsyncSession, novel: Novel, revision: NovelChapterRevision, edit: BlockEdit, plan: RecheckPlan
+) -> NovelizePrompt:
+    """묶음 재검사의 프롬프트. 사용자가 고친 문단의 지금 글, 남은 수정안, 그 둘레의 지금 글(같은 장면)을 지금 개정(`revision`)에서 센
+    번호로 싣는다. 문안은 소설 레인 Gemini 체인에서 읽는다(여러 문단 수정과 같다)."""
+    paragraphs = split_paragraphs(revision.body)
+    scenes = await revision_scenes(db, revision.chapter_id, revision.block_ids)
+    source = await load_novel_prompt_source(db, novel)
+    return build_novelize_revise_recheck_prompt(
+        sections=source.sections,
+        is_story_chat=novel.content_type == "story",
+        edited_lines="\n\n".join(_numbered(position, [text]) for position, text in plan.edited),
+        patch_lines="\n\n".join(_numbered(position, patch.paragraphs or []) for position, patch in plan.remaining),
+        paragraph_lines=context_lines(paragraphs, recheck_context_positions(plan, scenes, edit.scene_id)),
+    )

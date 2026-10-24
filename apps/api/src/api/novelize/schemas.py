@@ -2,9 +2,9 @@
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import Field, FiniteFloat, StringConstraints, field_validator
+from pydantic import Field, FiniteFloat, StringConstraints, field_validator, model_validator
 
 from api.content.author_macros import user_name_error
 from api.core.schema import CamelModel
@@ -660,6 +660,41 @@ class NovelBlockEditRequest(CamelModel):
     block_ids: list[uuid.UUID]
     instruction: InstructionText
     expected_cost: int
+
+
+class NovelPatchUnitRequest(CamelModel):
+    """여러 문단 수정의 적용 단위 — 묶음에 들지 않은 수정안 하나(`patchId`) 또는 묶음 하나(`bundleId`). 둘 중 하나만 보낸다."""
+
+    patch_id: str | None = None
+    bundle_id: str | None = None
+
+    @model_validator(mode="after")
+    def _one_unit(self) -> Self:
+        if (self.patch_id is None) == (self.bundle_id is None):
+            raise ValueError("patchId 와 bundleId 중 하나만 보낸다")
+        return self
+
+
+class NovelPatchDismissRequest(CamelModel):
+    """버릴 것 — 적용 단위 하나(`patchId`·`bundleId`) 또는 남은 수정안 전부(`all: true`). 셋 중 하나만 보낸다."""
+
+    patch_id: str | None = None
+    bundle_id: str | None = None
+    all: bool = False
+
+    @model_validator(mode="after")
+    def _one_choice(self) -> Self:
+        if [self.patch_id is not None, self.bundle_id is not None, self.all].count(True) != 1:
+            raise ValueError("patchId·bundleId·all 중 하나만 보낸다")
+        return self
+
+
+class NovelBundleRecheckResponse(CamelModel):
+    """묶음 재검사 판정. `separable` 이 참이면 사용자가 고친 수정안이 묶음에서 빠져 남은 수정안을 따로 적용할 수 있다(상세를 다시
+    받아 본다). 거짓이면 묶음은 그대로라 버리기만 된다. `reason` 은 판정 이유 한 문장이다(저장하지 않는다)."""
+
+    separable: bool
+    reason: str
 
 
 # ── 인물 카드 ───────────────────────────────────────────────────────────────

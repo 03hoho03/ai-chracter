@@ -43,6 +43,7 @@ from api.db.models.novel import (
     NovelJobKind,
     NovelJobStatus,
 )
+from api.novelize.block_edits import BlockEdit, without_base_hashes
 from api.llm.chat_models import (
     DEFAULT_CHAT_MODEL,
     ChatModelId,
@@ -412,6 +413,15 @@ async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: Novel
     )
     if moved is None:
         return None
+    # 여러 문단 수정이면 대상의 기준 해시도 지운다 — 짧은 문단은 해시에서 글을 되찾을 수 있고, 실패한 작업은 그 해시를 더 쓸 데가
+    # 없다. 블록 id·번호는 건수 기록으로 남긴다. 전이가 행을 잠갔으므로 같은 트랜잭션에서 읽고 쓴다.
+    stored_edit = await db.scalar(select(NovelJob.block_edit).where(NovelJob.id == job_id))
+    if stored_edit is not None:
+        await db.execute(
+            update(NovelJob)
+            .where(NovelJob.id == job_id)
+            .values(block_edit=without_base_hashes(BlockEdit.model_validate(stored_edit)).to_json())
+        )
     # 연쇄 부모면 묶음을 맡아 돌던 자식도 같은 사유로 끝낸다(자식은 차감 0 이라 환불도 0). 자식이 진행 중으로 남으면
     # 부모가 끝난 뒤에도 소설이 진행 중으로 보이고, 자식 결과가 늦게 와도 저장은 부모가 진행 중일 때만 되므로 남길 이유가
     # 없다. 연쇄 부모가 아니면 자식이 없어 바뀌는 행이 없다.

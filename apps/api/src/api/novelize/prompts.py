@@ -94,6 +94,15 @@ class NovelizeBlockEditResult(BaseModel):
     )
 
 
+class NovelizeRecheckResult(BaseModel):
+    """묶음 재검사의 응답 스키마. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
+
+    separable: bool = Field(
+        description="[남은 수정안]을 지금 글 위에 따로 적용해도 이야기가 어긋나지 않으면 true, 아니거나 판단이 서지 않으면 false."
+    )
+    reason: str = Field(description="그렇게 판정한 이유. 이야기 속 사실로 쓴 한 문장, 60자 이내.")
+
+
 class NovelizeBoundaryResult(BaseModel):
     """묶음 경계 제안의 응답 스키마. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
 

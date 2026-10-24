@@ -1,4 +1,5 @@
-"""여러 문단 수정 작업이 다른 쓰기와 실제로 겹칠 때(독립 커넥션) — 같은 소설의 두 요청, 실행 저장과 만료 환불.
+"""여러 문단 수정 작업이 다른 쓰기와 실제로 겹칠 때(독립 커넥션) — 같은 소설의 두 요청, 실행 저장과 만료 환불, 같은 블록을 고치는
+두 작업의 동시 적용.
 
 같은 커넥션의 테스트로는 두 요청이 순서대로 돌아 경쟁이 드러나지 않는다. 상대 트랜잭션이 잠금을 쥔 채 커밋하지 않은 상태에서 함수를
 띄우고, 그 함수가 정말 막혀 있는 것(`_assert_blocked`)을 먼저 확인한 뒤 상대를 커밋한다."""
@@ -21,10 +22,12 @@ from api.db.models.clover import (
     CloverSpendRefund,
     CloverSpendUsage,
 )
-from api.db.models.novel import Novel, NovelChapterRevision, NovelJob
+from api.db.models.novel import Novel, NovelChapter, NovelChapterRevision, NovelJob
 from api.novelize import billing, runner
-from api.novelize.block_edits import BlockEdit, BlockEditPatch, request_targets
+from api.novelize.block_edit_router import apply_novel_block_edit
+from api.novelize.block_edits import BlockEdit, BlockEditPatch, normalized_result, request_targets
 from api.novelize.deletion import delete_novels
+from api.novelize.schemas import NovelPatchUnitRequest
 from api.novelize.text import split_paragraphs
 from factories import _assert_blocked, _make_draft_content, _make_novel_tree, _make_user_with_clover_lot
 
@@ -47,7 +50,9 @@ async def independent_factory(db_engine: AsyncEngine) -> AsyncGenerator[async_se
                 CloverSpendAllocation.spend_ledger_id.in_(spend_ledger_ids)
             )
             await cleanup.execute(delete(CloverSpendRefund).where(CloverSpendRefund.allocation_id.in_(allocation_ids)))
-            await cleanup.execute(delete(CloverSpendUsage).where(CloverSpendUsage.spend_ledger_id.in_(spend_ledger_ids)))
+            await cleanup.execute(
+                delete(CloverSpendUsage).where(CloverSpendUsage.spend_ledger_id.in_(spend_ledger_ids))
+            )
             await cleanup.execute(
                 delete(CloverSpendAllocation).where(CloverSpendAllocation.spend_ledger_id.in_(spend_ledger_ids))
             )
@@ -163,4 +168,71 @@ async def test_a_save_racing_an_expiry_refund_loses_and_the_refund_happens_once(
         stored = await s.get_one(NovelJob, job.id)
         assert (stored.status, stored.failure_code) == ("failed", "expired")
         assert stored.block_edit is not None and stored.block_edit["patches"] == []
+        assert [target["baseHash"] for target in stored.block_edit["targets"]] == [""]
     assert await _ledger(independent_factory, user_id) == [("novelize_spend", -30), ("novelize_refund", 30)]
+
+
+async def test_two_jobs_applying_patches_to_the_same_block_at_once_never_overwrite(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """같은 블록에 수정안을 낸 두 작업을 동시에 적용하면 둘 다 장 행에서 줄을 서고, 먼저 잡은 쪽만 개정을 쌓으며 뒤 쪽은 바뀐 블록을
+    보고 409 `NOVEL_PATCH_STALE` 이다 — 개정은 하나만 늘고 그 블록은 앞 작업의 글이다. 깨지는 시나리오: 두 적용이 같은 개정을 기준으로
+    차례로 쌓여 뒤 것이 앞 것의 수정을 덮어쓴다."""
+    user_id, novel_id, revision = await _seed(independent_factory)
+    job_ids: list[uuid.UUID] = []
+    async with independent_factory() as s:
+        for text in ("앞 작업의 글.", "뒤 작업의 글."):
+            job = _patch_job(novel_id, user_id, revision)
+            edit = BlockEdit.model_validate(job.block_edit)
+            patches, _, _ = normalized_result(edit.targets, [(1, [text])], [])
+            job.block_edit = edit.model_copy(update={"patches": patches}).to_json()
+            job.status = "succeeded"
+            job.charged_amount = 30
+            s.add(job)
+            await s.flush()
+            job_ids.append(job.id)
+        await s.commit()
+
+    async def apply(job_id: uuid.UUID) -> object:
+        async with independent_factory() as s:
+            novel = await s.get_one(Novel, novel_id)
+            stored = await s.get_one(NovelJob, job_id)
+            patch_id = BlockEdit.model_validate(stored.block_edit).patches[0].id
+            await s.commit()
+            try:
+                return await apply_novel_block_edit(
+                    job_id=job_id, payload=NovelPatchUnitRequest(patch_id=patch_id), novel=novel, db=s
+                )
+            except HTTPException as exc:
+                return exc
+
+    blocker = independent_factory()
+    try:
+        # 다른 개정 쓰기가 장 행을 쥔 채 커밋 전 — 두 적용이 모두 그 뒤에서 기다린다.
+        await blocker.execute(
+            select(NovelChapter.id).where(NovelChapter.id == revision.chapter_id).with_for_update(key_share=True)
+        )
+        tasks = [asyncio.ensure_future(apply(job_id)) for job_id in job_ids]
+        for task in tasks:
+            await _assert_blocked(task)
+        await blocker.rollback()
+        results = await asyncio.gather(*tasks)
+    finally:
+        await blocker.close()
+
+    refused = [r for r in results if isinstance(r, HTTPException)]
+    assert len(refused) == 1
+    detail: object = refused[0].detail
+    assert refused[0].status_code == 409
+    assert isinstance(detail, dict) and detail["code"] == "NOVEL_PATCH_STALE"
+    async with independent_factory() as s:
+        revisions = (
+            await s.scalars(
+                select(NovelChapterRevision)
+                .where(NovelChapterRevision.chapter_id == revision.chapter_id)
+                .order_by(NovelChapterRevision.revision_no)
+            )
+        ).all()
+    assert [r.revision_no for r in revisions] == [1, 2, 3]
+    winner = 0 if not isinstance(results[0], HTTPException) else 1
+    assert split_paragraphs(revisions[-1].body) == [("앞 작업의 글.", "뒤 작업의 글.")[winner]]

@@ -66,6 +66,7 @@ _INT_SETTINGS = (
     "gemini_novelize_chapter_timeout_ms",
     "gemini_novelize_revise_timeout_ms",
     "gemini_novelize_boundary_timeout_ms",
+    "gemini_novelize_recheck_timeout_ms",
     "gemini_max_output_tokens",
     "gemini_novelize_max_output_tokens",
     "gemini_thinking_budget",

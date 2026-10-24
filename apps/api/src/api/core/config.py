@@ -266,6 +266,8 @@ class Settings(BaseSettings):
     gemini_novelize_chapter_timeout_ms: int = 300_000
     gemini_novelize_revise_timeout_ms: int = 120_000
     gemini_novelize_boundary_timeout_ms: int = 30_000
+    # 여러 문단 수정의 묶음 재검사. 경계 제안처럼 사용자가 화면에서 기다리는 짧은 판정이라 같은 값으로 짧게 끊는다.
+    gemini_novelize_recheck_timeout_ms: int = 30_000
 
     # 상위 모델(AWS Bedrock 의 Claude). 채팅 턴 생성(측정용 리플레이 포함)과 소설 장 생성만 이 모델로 갈 수 있고 나머지 호출은 Gemini 다.
     # 🔴 env 이름을 `AWS_` 로 시작하지 않는다 — 그 이름들은 R2 용이고 boto3 가 프로세스 env 에서 직접 읽는다. 자격은 Bedrock
@@ -773,6 +775,9 @@ class Settings(BaseSettings):
     # 설정 노트·지시의 글자 수 합이다. 넘으면 모델을 부르기 전·차감 전에 거절한다(조용히 잘라 보내지 않는다). 옛 연속 범위 수정이
     # 받는 화(직접 수정 본문 상한 10만 자)를 막지 않는 값으로 둔 임시값이고, 지연·원가를 잰 뒤 다시 정한다.
     novelize_block_edit_max_input_chars: int = Field(default=120_000, ge=1)
+    # 여러 문단 수정 묶음 재검사(무과금 모델 호출)를 한 사용자가 한 시간에 몇 번까지 부를 수 있는지. 따로 적용할 수 없다는 판정을
+    # 받은 묶음은 다시 물을 수 있어 이 상한이 유일한 제동이다. 면제 계정도 똑같이 센다. 재검사 원가를 재기 전의 임시값.
+    novelize_recheck_hourly_limit: int = Field(default=10, ge=1)
 
     @field_validator(
         "novelize_grant_allowlist",
