@@ -54,9 +54,15 @@ function preventSelect(event: { preventDefault: () => void }) {
 /** 고를 수 없는 항목. `disabled` 를 쓰지 않는다 — Radix 가 그 항목을 화살표 이동·타입어헤드에서 통째로 빼, 이유(항목 글이 곧 접근
  * 이름이다)가 키보드·스크린리더에 닿지 않는다. 대신 `aria-disabled` 로 순회에 남기고, Radix 가 고르는 세 길(Enter·Space 키, 마우스
  * pointerup, 터치 click)만 `preventDefault` 로 막는다 — Radix 의 항목 처리기는 앞선 처리기가 기본 동작을 막으면 건너뛴다. 화살표 키는
- * 막지 않는다(목록의 이동 처리도 같은 검사를 거쳐, 막으면 이동이 멈춘다). 흐림은 프리미티브의 비활성 항목과 같은 값이다. */
+ * 막지 않는다(목록의 이동 처리도 같은 검사를 거쳐, 막으면 이동이 멈춘다). 흐림은 프리미티브의 비활성 항목과 같은 값이다.
+ *
+ * 글자 찾기(타입어헤드)에서는 `disabled` 때처럼 빠져야 한다 — 닫힌 트리거에서 글자를 치면 Radix 가 그 글자로 시작하는 항목을 바로
+ * 고르는데, 못 고르는 항목이 걸리면 고르기가 막혀 값이 그대로라 같은 글자로 뒤의 고를 수 있는 항목에 닿지 못한다. 그래서 찾기 글
+ * (`textValue`)을 칠 수 없는 글자(폭 없는 공백) 하나로 둔다. 빈 글이면 Radix 가 항목 글로 채운다. 접근 이름은 찾기 글이 아니라 항목
+ * 글이 정한다(`aria-labelledby`). */
 const UNSELECTABLE_ITEM_PROPS = {
   "aria-disabled": true,
+  textValue: "​",
   className: "aria-disabled:opacity-65",
   onKeyDown: (event: { key: string; preventDefault: () => void }) => {
     if (event.key === "Enter" || event.key === " ") event.preventDefault();
