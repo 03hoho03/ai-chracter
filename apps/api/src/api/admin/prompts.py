@@ -51,6 +51,7 @@ from api.chat.prompt_builder import (
 from api.chat.prompt_builder import build_ending_judgment_prompt as _build_ending_judgment_prompt
 from api.chat.prompt_builder import build_image_judgment_prompt as _build_image_judgment_prompt
 from api.chat.prompt_set_cache import invalidate_active_prompt_set
+from api.chat.prompt_stages import stage_channels
 from api.content.author_macros import expand_author_macros
 from api.content.publish import (
     MediaBookFilterCell,
@@ -425,23 +426,14 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str]]]]
 }
 
 # 채팅 레인의 판정(스탯 규칙·장면 헤더·엔딩·그림)·기억 요약·장면 기억 추출·관계·사실 기억 추출·인상 생성 호출이 읽는 채널. 옛 `stat_judgment` 은 읽는 코드가 없어
-# Gemini 체인에만 남아 있다. 판정·요약 문안 체인이 있는 레인은 story·character 뿐이다.
+# Gemini 체인에만 남아 있다. 판정·요약 문안 체인이 있는 레인은 story·character 뿐이다. 채팅 두 레인의 값은 단계 표에서 생성을
+# 뺀 단계들의 채널로 도출한다 — 모델 배정 저장 검사도 같은 표로 체인의 채널을 보므로, 따로 적으면 한쪽만 고쳐진다.
+# 인상 생성은 모델 배정 표 밖에 둔다 — 턴이 부르는 단계가 아니라 요약 접기 몇 번마다 도는 백그라운드 작업이라 단계 표에 없고, 그래도
+# 인상 모델을 Gemini 밖으로 바꾸면 Claude·판정 전용 체인의 인상 문안을 읽으므로 그 채널을 여기서 따로 합친다.
+_CHANNELS_OUTSIDE_STAGE_TABLE = frozenset({"memory_impression"})
 _JUDGMENT_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
-    "story": frozenset(
-        {
-            "stat_rule_judgment",
-            "scene_judgment",
-            "ending_judgment",
-            "image_judgment",
-            "memory_summary",
-            "memory_episode",
-            "memory_fact",
-            "memory_impression",
-        }
-    ),
-    "character": frozenset(
-        {"image_judgment", "memory_summary", "memory_episode", "memory_fact", "memory_impression"}
-    ),
+    "story": stage_channels("story", "structured") | _CHANNELS_OUTSIDE_STAGE_TABLE,
+    "character": stage_channels("character", "structured") | _CHANNELS_OUTSIDE_STAGE_TABLE,
     "publish_filter": frozenset(),
     "novel": frozenset(),
     "novel_screen": frozenset(),
