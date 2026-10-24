@@ -2482,7 +2482,7 @@ INSERT·SELECT 는 그대로다.
   지워 downgrade 를 통과시키지 않는다.
 - downgrade 명령은 고정 id 가 아니라 **상대 지정**(`495e9a75bb46-1`, 한 단계 아래까지)으로 친다 — 병합 전 리베이스로 앞 리비전이
   바뀔 수 있다. 치기 직전에 서빙 이미지 안 이 파일의 `down_revision` 을 읽어 `alembic history` 의 바로 아래 리비전과 같은지 보고,
-  이 리비전 **위에** 다른 런의 리비전이 쌓였으면(바로 위 프롬프트 판 표 리비전 말고 다른 것이 history 에 보이면) downgrade 가
+  이 리비전 **위에** 다른 런의 리비전이 쌓였으면(바로 위 프롬프트 판 표 리비전과 그 위 턴 기록 배정 칸 리비전 말고 다른 것이 history 에 보이면) downgrade 가
   그것까지 내리므로 스키마는 되돌리지 않고 위의 "스키마를 남긴다"로 간다. 판 표 리비전이 함께 올라 있으면 그 리비전 downgrade 의 멈춤
   조건도 함께 걸린다.
 
@@ -2538,6 +2538,45 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
 sudo /opt/ddona/backup.sh
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic history -r-3:current
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic downgrade d0051f733bb7-1
+```
+
+**턴 기록 단계별 배정 칸(`265a8f26c44a`) — 배포 · 되돌리기.** 턴 기록 `chat_turns` 에 `stage_routes` 칸(JSONB, NOT NULL, 서버 기본값
+`[]`)을 더한다. 이 배포부터 방 턴(보내기·수정·재생성)이 그 레인의 단계마다 읽은 체인·세트 id·부를 모델·경로·출처(배정 표 행·물려받은
+행·모델 설정·방 모델, 건너뛴 행이면 그 단계와 이유)를 한 칸씩 적는다. 배정 표가 비어도 출처 `env`·`room` 칸으로 늘 채운다. 판 번호는
+싣지 않는다(세트 id 로 판 표와 잇는다). 미리보기는 지금처럼 턴 기록이 없다. 같은 배포에서 측정 서버의 프롬프트 덤프
+(`PROMPT_DUMP_PATH`)는 행이 적용된 생성·판정 줄에만 `promptSetId`·`chainModel`·`routeSource` 를 더한다 — 운영은 덤프 경로가 없어
+해당 없다. `llm_calls` 칸의 모양은 바꾸지 않는다.
+- 업그레이드 첫 문장이 `lock_timeout 5s` 다. 상수 기본값 칸 추가라 표를 다시 쓰지는 않지만 `chat_turns` 에 `ACCESS EXCLUSIVE` 를
+  잠깐 잡아야 해서, 이 표를 만진 채 열려 있는 트랜잭션(턴 쓰기 구간, 재생성·되돌리기의 기록 읽기, 원가 보기 스크립트)이 끝나기를
+  기다리고 그동안 뒤의 턴 쓰기가 줄을 선다. 5초 안에 못 잡으면 실패한다 — 다시 돌리면 된다.
+
+평상시 겹침 교체로 배포한다(`skip_overlap` 불필요): 겹침 동안 도는 옛 이미지는 칸을 모르고, 그 턴 기록 INSERT 는 칸을 빼고 나가
+기본값 `[]` 이 들어간다.
+
+- **병합 전**: 운영 최신 백업 성공을 보고, 운영 DB 리비전이 이 파일의 `down_revision`(보통 바로 위 판 표 리비전)과 같은지 아래 읽기
+  전용 SELECT 로 본다 — 다르면 다른 런의 리비전이 먼저 들어간 것이니 이 리비전을 그 위로 다시 잇는다.
+- **되돌리기**: 1순위는 이미지만 되돌리기다(downgrade 없이 — 옛 코드는 이 칸이 있어도 돈다). 이 리비전을 아는 이미지에서 모르는
+  이미지로 갈 때는 `DDONA_ROLLBACK=1` 이 필요하다. 스키마까지 내리려면 순서가 고정이다: ① 칸을 쓰는 코드의 revert 를 먼저 모두
+  병합·배포하거나 칸을 모르는 이미지로 태그 롤백한다 — 칸을 매핑한 이미지가 서빙 중에 칸을 지우면 그 이미지의 턴 기록 INSERT 와
+  기록 읽기가 실패해 모든 방 턴의 쓰기 구간이 깨진다 → ② 이 리비전을 아는 이미지로 downgrade → ③ 스키마까지 지우는 revert 를 병합.
+  ②~③ 사이에는 어떤 `main` 병합도 하지 않는다(그 사이 배포의 `alembic upgrade head` 가 칸을 다시 만든다).
+- downgrade 는 칸만 지우고 멈춤 조건이 없다. 버리는 것은 턴마다의 배정 스냅샷이라 사용자에게 보이지 않지만, 다시 올려도 돌아오지
+  않는다(그 사이와 그 전 행은 `[]`). 배정 표 행이 어느 턴에 적용됐는지 되짚어야 할 일이 남았으면 내리기 전에 필요한 행을 따로 뽑아 둔다.
+- downgrade 명령은 상대 지정 `265a8f26c44a-1` 로 친다. 치기 직전에 서빙 이미지 안 이 파일의 `down_revision` 을 읽어 `alembic history`
+  의 바로 아래 리비전과 같은지 보고, 이 리비전 위에 다른 런의 리비전이 쌓였으면 downgrade 가 그것까지 내리므로 스키마는 되돌리지
+  않고 이미지만 되돌린다. 아래 두 리비전(판 표·모델 배정 표)을 상대 지정으로 내리면 이 리비전이 먼저 내려가므로, 그때도 위 ① 의
+  순서(칸을 쓰는 이미지를 먼저 내림)를 지킨다.
+
+```sh
+# 병합 전·downgrade 전 — 읽기 전용: 지금 DB 리비전, (이 리비전이 오른 뒤) 칸이 찬 턴 기록 수
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c "SELECT version_num FROM alembic_version;"
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c "SELECT count(*), count(*) FILTER (WHERE stage_routes <> '[]'::jsonb) FROM chat_turns;"
+# downgrade(백업 먼저, 이 리비전 파일이 든 이미지로)
+sudo /opt/ddona/backup.sh
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic history -r-3:current
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic downgrade 265a8f26c44a-1
 ```
 
 ### 3-13. 노벨(공개 소설) 켜기 · 끄기
