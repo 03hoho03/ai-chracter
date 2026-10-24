@@ -53,7 +53,7 @@ export function buildSourceTurns(messages: readonly SourceMessage[], options: Bu
   const indexById = new Map(messages.map((message, index) => [message.id, index]));
   const roomEndIndex = options.roomEndId === null ? -1 : (indexById.get(options.roomEndId) ?? messages.length - 1);
   const fixedEndIndex = options.fixedEndId === null ? roomEndIndex : (indexById.get(options.fixedEndId) ?? roomEndIndex);
-  const lockedIndexRanges = toIndexRanges(options.lockedRanges, indexById);
+  const lockedIndexRanges = toIndexRanges(options.lockedRanges, indexById, roomEndIndex);
 
   const turns: SourceTurn[] = [];
   let current: SourceMessage[] = [];
@@ -94,44 +94,66 @@ function toTurn(messages: SourceMessage[], number: number, isNew: boolean, isLoc
 
 type IndexRange = [number, number];
 
-/** 구간을 메시지 위치로 편다. 양 끝 중 하나라도 목록에 없으면 그 구간은 어느 턴도 덮지 않는다. */
-function toIndexRanges(ranges: readonly SourceRange[], indexById: ReadonlyMap<string, number>): IndexRange[] {
-  return ranges.flatMap((range): IndexRange[] => {
-    const start = indexById.get(range.startMessageId);
-    const end = indexById.get(range.endMessageId);
-    return start === undefined || end === undefined ? [] : [[start, end]];
+/**
+ * 구간들(키 순)을 메시지 위치로 편다. 저장된 구간의 끝 메시지가 지금 대화에 없을 수 있다 — 마지막 답을 다시 만들면 그 답은 새
+ * id 로 다시 쓰이고, 메시지를 고치거나 지우면 사라진다. 그 구간을 버리면 담았던 대화가 통째로 빼기로 보이고, 이용자가 모른 채
+ * 승인하면 그대로 빠진다. 그래서 찾지 못한 끝은 이웃까지 넓힌다: 끝이 없으면 다음 구간 시작 바로 앞(없으면 `lastIndex`)까지,
+ * 시작이 없으면 앞 구간 끝 바로 뒤(없으면 처음)부터다. 양 끝이 다 없으면 자리를 알 수 없어 그 구간은 어느 턴도 덮지 않는다.
+ * 저장된 선택 구간이면 원문이 바뀐 구간이라 서버가 바뀜 표시를 함께 준다.
+ */
+function toIndexRanges(
+  ranges: readonly SourceRange[],
+  indexById: ReadonlyMap<string, number>,
+  lastIndex: number,
+): IndexRange[] {
+  const found = ranges.map((range) => ({
+    start: indexById.get(range.startMessageId),
+    end: indexById.get(range.endMessageId),
+  }));
+  const resolved: IndexRange[] = [];
+  found.forEach(({ start, end }, index) => {
+    if (start === undefined && end === undefined) return;
+    const previousEnd = resolved.at(-1)?.[1];
+    const nextStart = found.slice(index + 1).find((item) => item.start !== undefined)?.start;
+    const from = start ?? (previousEnd === undefined ? 0 : previousEnd + 1);
+    const to = end ?? (nextStart === undefined ? lastIndex : nextStart - 1);
+    if (from <= to) resolved.push([from, to]);
   });
+  return resolved;
 }
 
 function overlapsAny([start, end]: IndexRange, ranges: readonly IndexRange[]): boolean {
   return ranges.some(([rangeStart, rangeEnd]) => start <= rangeEnd && rangeStart <= end);
 }
 
-/** 턴마다 메시지 위치 범위. 턴들이 같은 목록에서 나왔으므로 턴 순서대로 이어 센다. */
-function turnIndexRanges(turns: readonly SourceTurn[]): { indexById: Map<string, number>; ranges: IndexRange[] } {
+/** 턴마다 메시지 위치 범위. 턴들이 같은 목록에서 나왔으므로 턴 순서대로 이어 센다. `lastOldIndex` 는 고정 끝(새 턴 앞)의 마지막
+ * 메시지 위치다 — 저장된 구간은 그 뒤로 넘지 않는다. */
+function turnIndexRanges(turns: readonly SourceTurn[]): {
+  indexById: Map<string, number>;
+  ranges: IndexRange[];
+  lastOldIndex: number;
+} {
   const indexById = new Map<string, number>();
   const ranges: IndexRange[] = [];
   let next = 0;
+  let lastOldIndex = -1;
   for (const turn of turns) {
     ranges.push([next, next + turn.messageIds.length - 1]);
     for (const id of turn.messageIds) indexById.set(id, next++);
+    if (!turn.isNew) lastOldIndex = next - 1;
   }
-  return { indexById, ranges };
+  return { indexById, ranges, lastOldIndex };
 }
 
 /** 저장된 판(또는 제안)을 턴 상태로 편다. 구간이 턴 가운데서 시작하거나 끝나도 그 턴을 덮는다 — 담기가 맥락보다 앞선다.
  * 잠긴 턴은 맥락이 아니면 잠김이다(담기 구간에 들었어도 담지 않는다 — 서버가 거절한다). 고정 끝 뒤 새 턴은 담기로 둔다:
  * "새 구간 추가"로 열면 새로 이어진 대화를 담은 채 보인다. */
 export function toBaseStates(turns: readonly SourceTurn[], sections: readonly SourceSection[]): Map<string, TurnState> {
-  const { indexById, ranges } = turnIndexRanges(turns);
-  const includeRanges = toIndexRanges(
-    sections.filter((section) => section.mode === "include"),
-    indexById,
-  );
-  const contextRanges = toIndexRanges(
-    sections.filter((section) => section.mode === "context"),
-    indexById,
-  );
+  const { indexById, ranges, lastOldIndex } = turnIndexRanges(turns);
+  // 끝을 찾지 못한 구간을 이웃까지 넓히려면 mode 와 상관없이 모든 구간의 차례를 함께 봐야 한다.
+  const resolved = toIndexRanges(sections, indexById, lastOldIndex);
+  const includeRanges = resolved.filter((_, index) => sections[index]?.mode === "include");
+  const contextRanges = resolved.filter((_, index) => sections[index]?.mode === "context");
   return new Map(
     turns.map((turn, index): [string, TurnState] => {
       const range = ranges[index] ?? [0, -1];
@@ -149,11 +171,9 @@ export function toChangedTurnKeys(
   turns: readonly SourceTurn[],
   sections: readonly (SourceRange & { sourceChanged: boolean })[],
 ): Set<string> {
-  const { indexById, ranges } = turnIndexRanges(turns);
-  const changed = toIndexRanges(
-    sections.filter((section) => section.sourceChanged),
-    indexById,
-  );
+  const { indexById, ranges, lastOldIndex } = turnIndexRanges(turns);
+  const resolved = toIndexRanges(sections, indexById, lastOldIndex);
+  const changed = resolved.filter((_, index) => sections[index]?.sourceChanged === true);
   return new Set(turns.filter((_, index) => overlapsAny(ranges[index] ?? [0, -1], changed)).map((turn) => turn.key));
 }
 

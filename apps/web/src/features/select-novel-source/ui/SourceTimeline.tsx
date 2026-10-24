@@ -27,7 +27,8 @@ type SourceTimelineProps = {
   states: ReadonlyMap<string, TurnState>;
   /** 저장 뒤 원문이 바뀐 턴. */
   changedKeys: ReadonlySet<string>;
-  /** 펼친 긴 뺀 대화 묶음(첫 턴의 열쇠). */
+  /** 펼친 턴. 묶음의 턴 하나라도 여기 있으면 그 묶음은 펼쳐 있다 — 펼친 묶음 안의 턴을 담아 묶음이 둘로 갈려도 둘 다 펼친
+   * 채로 남는다. */
   expandedGapKeys: ReadonlySet<string>;
   /** 접을 수 있는 턴 — 처음부터(저장된 판에서) 뺀 턴. 이용자가 방금 뺀 턴이 든 묶음은 접지 않는다: 누른 줄이 사라져 포커스와
    * 자리를 잃는다. */
@@ -37,7 +38,8 @@ type SourceTimelineProps = {
   onToggleTurn: (turn: SourceTurn, options: { isRange: boolean }) => void;
   /** 묶음 전체를 맥락으로 보내거나 맥락에서 뺀다. */
   onSetGap: (turns: readonly SourceTurn[], target: "context" | "exclude") => void;
-  onToggleGapExpanded: (key: string) => void;
+  /** 묶음을 펼치거나 접는다 — 그 묶음의 턴 전부. */
+  onToggleGapExpanded: (turns: readonly SourceTurn[], isOpen: boolean) => void;
 };
 
 /**
@@ -70,7 +72,7 @@ export function SourceTimeline({
           key={segment.turns[0]?.key}
           segment={segment}
           changedKeys={changedKeys}
-          isExpanded={expandedGapKeys.has(segment.turns[0]?.key ?? "")}
+          isExpanded={segment.turns.some((turn) => expandedGapKeys.has(turn.key))}
           isFoldable={
             segment.state === "exclude" &&
             segment.turns.length >= GAP_FOLD_MIN &&
@@ -148,7 +150,7 @@ function SegmentItems({
               size="xs"
               aria-expanded={isOpen}
               aria-controls={groupId}
-              onClick={() => onToggleGapExpanded(firstKey)}
+              onClick={() => onToggleGapExpanded(segment.turns, !isOpen)}
             >
               {isOpen ? "접기" : "펼치기"}
               <ChevronDown aria-hidden className={cn("motion-safe:transition-transform", isOpen && "rotate-180")} />

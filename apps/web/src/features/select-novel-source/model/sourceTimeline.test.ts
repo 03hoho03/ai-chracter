@@ -62,6 +62,25 @@ describe("buildSourceTurns", () => {
     expect(turns.at(-1)?.messageIds).toEqual(["u2", "a2"]);
   });
 
+  // 끝을 찾지 못한 잠금을 버리면 이미 쓴 대화가 풀린 것처럼 보이고, 담으면 서버가 거절해 같은 거절이 되풀이된다.
+  it("끝 메시지를 찾지 못한 이미 쓴 구간은 다음 잠금 앞(없으면 방 끝)까지 잠근다", () => {
+    const turns = buildSourceTurns(room(3), {
+      fixedEndId: "a3",
+      roomEndId: "a3",
+      lockedRanges: [
+        { startMessageId: "a0", endMessageId: "gone" },
+        { startMessageId: "u3", endMessageId: "a3" },
+      ],
+    });
+    expect(turns.map((turn) => turn.isLocked)).toEqual([true, true, true, true]);
+    const tail = buildSourceTurns(room(3), {
+      fixedEndId: "a3",
+      roomEndId: "a3",
+      lockedRanges: [{ startMessageId: "u2", endMessageId: "gone" }],
+    });
+    expect(tail.map((turn) => turn.isLocked)).toEqual([false, false, true, true]);
+  });
+
   it("이미 쓴 구간에 메시지가 하나라도 든 턴은 잠긴다", () => {
     const turns = buildSourceTurns(room(3), {
       fixedEndId: "a3",
@@ -111,9 +130,36 @@ describe("toBaseStates", () => {
     expect(statesOf(withNew, states)).toEqual(["exclude", "include", "include", "include"]);
   });
 
-  it("양 끝을 메시지 목록에서 못 찾은 구간은 어느 턴도 덮지 않는다", () => {
-    const states = toBaseStates(turns, [{ startMessageId: "gone", endMessageId: "a4", mode: "include" }]);
+  // 마지막 답을 다시 만들면 담았던 구간의 끝 메시지가 새 id 가 된다. 그 구간을 버리면 담은 대화가 통째로 빼기로 보이고, 모른 채
+  // 승인하면 그대로 빠진다.
+  it("끝 메시지를 찾지 못한 구간은 다음 구간 앞(없으면 고정 끝)까지 넓힌다", () => {
+    const states = toBaseStates(turns, [
+      { startMessageId: "u2", endMessageId: "gone", mode: "include" },
+      { startMessageId: "u4", endMessageId: "a4", mode: "context" },
+    ]);
+    expect(statesOf(turns, states)).toEqual(["locked", "locked", "include", "include", "context"]);
+    const last = toBaseStates(turns, [{ startMessageId: "u3", endMessageId: "gone", mode: "include" }]);
+    expect(statesOf(turns, last)).toEqual(["locked", "locked", "exclude", "include", "include"]);
+  });
+
+  it("시작 메시지를 찾지 못한 구간은 앞 구간 뒤(없으면 처음)부터로 넓힌다", () => {
+    const states = toBaseStates(turns, [
+      { startMessageId: "u2", endMessageId: "a2", mode: "context" },
+      { startMessageId: "gone", endMessageId: "a4", mode: "include" },
+    ]);
+    expect(statesOf(turns, states)).toEqual(["locked", "locked", "context", "include", "include"]);
+  });
+
+  it("양 끝을 모두 찾지 못한 구간은 자리를 알 수 없어 어느 턴도 덮지 않는다", () => {
+    const states = toBaseStates(turns, [{ startMessageId: "gone", endMessageId: "gone2", mode: "include" }]);
     expect(states.get("u4")).toBe("exclude");
+  });
+
+  it("고정 끝 뒤 새 턴까지는 넓히지 않는다", () => {
+    const withNew = buildSourceTurns(room(3), { fixedEndId: "a2", roomEndId: "a3", lockedRanges: [] });
+    const states = toBaseStates(withNew, [{ startMessageId: "u2", endMessageId: "gone", mode: "context" }]);
+    expect(states.get("u2")).toBe("context");
+    expect(states.get("u3")).toBe("include");
   });
 });
 

@@ -84,7 +84,8 @@ describe("SourceTimeline", () => {
     expect(turnButton(folded, 4)).not.toBe("");
     expect(turnButton(folded, 6)).toBe("");
     expect(folded).toMatch(/<button[^>]*aria-expanded="false"[^>]*>펼치기/);
-    const opened = render(["u5"]);
+    // 펼친 묶음의 턴 하나라도 펼친 턴이면 펼쳐 있다(묶음이 둘로 갈린 뒤에도).
+    const opened = render(["u7"]);
     expect(turnButton(opened, 6)).not.toBe("");
     expect(opened).toMatch(/<button[^>]*aria-expanded="true"[^>]*>접기/);
   });

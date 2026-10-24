@@ -366,8 +366,8 @@ function SelectionEditor({
       )}
       {isFixedEndMissing && (
         <p className="rounded-lg border border-border px-3 py-2 text-sm break-keep text-foreground">
-          고른 때의 마지막 대화가 다시 쓰였거나 지워졌어요. 저장하면 지금 대화 끝까지를 고르는 범위로 삼아요. 그사이 생긴 대화는
-          빼기로 두었어요.
+          고른 때의 마지막 대화가 다시 쓰였거나 지워졌어요. 저장하면 지금 대화 끝까지를 고르는 범위로 삼아요. 담기·빼기를 확인한
+          뒤 저장하거나 승인해주세요.
         </p>
       )}
       {state.hasNewMessages && !isExtended && newTurnCount > 0 && (
@@ -389,11 +389,13 @@ function SelectionEditor({
         activeKey={anchorKey}
         onToggleTurn={handleToggleTurn}
         onSetGap={handleSetGap}
-        onToggleGapExpanded={(key) =>
+        onToggleGapExpanded={(gapTurns, isOpen) =>
           setExpandedGapKeys((prev) => {
             const next = new Set(prev);
-            if (next.has(key)) next.delete(key);
-            else next.add(key);
+            for (const turn of gapTurns) {
+              if (isOpen) next.add(turn.key);
+              else next.delete(turn.key);
+            }
             return next;
           })
         }
