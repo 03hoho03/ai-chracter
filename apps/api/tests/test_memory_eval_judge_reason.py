@@ -397,3 +397,55 @@ def test_fake_run_writes_its_own_files_and_a_comparison_table(
     tables = (out / "fake-tables.md").read_text(encoding="utf-8")  # cite-ok: 도구가 쓰는 결과 파일 이름
     assert "| all |" in tables and "| baseline |" in tables and "| dev |" in tables
     capsys.readouterr()
+
+
+def test_a_resumed_paid_run_checks_only_the_calls_still_missing_against_the_cap(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 깨지는 시나리오: 중간에 끊긴 실행을 이어 돌릴 때 전체 견적을 이미 쓴 돈 위에 다시 얹어, 남은 호출이 승인 안에 드는데도
+    # 거부하고 상한을 승인보다 올려야만 이어지게 된다.
+    from memory_eval_cli import main
+
+    baseline, _ = _cli_dumps(tmp_path)
+    run = tmp_path / "run"
+    lines = jr.load_stat_lines([baseline])
+    calls_path = run / "s5" / "judge-reason" / "calls.jsonl"
+    answer = _variant_answer({}, {})
+
+    async def first_half() -> None:
+        # 줄 하나만 끝낸 채 끊긴 실행.
+        await ja.run_calls(
+            lines[:1],
+            _models(answer),
+            1,
+            ledger=Ledger(tmp_path / "scratch-ledger.jsonl"),
+            calls_path=calls_path,
+            stage="test",
+            rates={},
+            output_tokens=400,
+        )
+
+    import asyncio
+
+    asyncio.run(first_half())
+    per_line = jr.estimate(
+        lines[:1], 1, model_id=HAIKU, tokens_per_char=0.6, plain_output_tokens=60, reason_output_tokens=400
+    )["totalUsd"]
+    spent = Ledger(run / "ledger.jsonl", bundle="b")
+    spent.append(
+        stage="judge-reason",
+        call_site="chat_stat_judgment",
+        model=HAIKU,
+        input_tokens=0,
+        cached_tokens=0,
+        cache_write_tokens=0,
+        output_tokens=round(per_line * 1_000_000 / 0.50),
+        thoughts_tokens=0,
+    )
+    monkeypatch.setattr(ja, "real_models", lambda *_a, **_k: _models(answer)[:1])
+    cap = f"{spent.bundle_usd() + per_line * 1.5:.8f}"
+    argv = ["--run", str(run), "--cap-usd", cap, "--halt-usd", cap, "--bundle", "b", "judge-reason"]
+    argv += ["--baseline-dumps", str(baseline), "--reps", "1", "--tokens-per-char", "0.6", "--allow-paid"]
+    assert main(argv) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["meta"]["callsThisRun"] == 2
