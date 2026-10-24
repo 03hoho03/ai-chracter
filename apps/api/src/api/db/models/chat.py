@@ -628,6 +628,11 @@ class ChatTurn(Base):
       순위 `vectorRank` 가 더해지고, 명사 쪽에 없던 장면은 `score`·`rank` 가 null 이다.
     - `memory_facts` 는 그 턴 프롬프트에 실은 사실 기억 목록이다(글은 싣지 않는다). 기본값은 `memory_recall` 과 같은 이유로
       `[]` 다.
+    - `stat_events` 는 그 턴 스탯 판정이 무엇을 발동해 무엇을 적용했는지다(`STAT_EVENT_LOG` 를 켠 동안만 채운다 — 꺼져 있을
+      때와 이 칸을 모르는 옛 이미지가 넣은 행은 DB 기본값 `[]`). 원소 꼴과 `stat_changes` 와의 관계는 `chat/stats.py` 의
+      `apply_rule_judgment_with_events` 에 있다. 규칙 조건 글은 싣지 않는다 — 규칙은 id 로만 가리킨다.
+      빈 `[]` 은 "기록 없음"이다 — 스위치를 켜기 전 행, 그런 행에서 옮겨 온 재판정 없는 재생성, 판정 실패, 아무 규칙도 발동하지
+      않은 턴(카운터 스탯이 없는 작품)이 모두 `[]` 라, 분석은 `[]` 을 "변화 없음"이 아니라 "모름 또는 없음"으로 읽어야 한다.
 
     응답이 재생성·수정·메시지 삭제로 지워져도 그 행은 방이 지워지거나 초기화될 때까지 남는다. 그래서 한 방 안에서
     `(chat_room_id, turn_number)` 는 유일하지 않고(수정 뒤 같은 턴 번호가 둘, 재생성 체인은 같은 턴의 스탯 효과를
@@ -658,6 +663,9 @@ class ChatTurn(Base):
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     memory_facts: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    stat_events: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     ending_entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
