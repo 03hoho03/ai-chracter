@@ -9236,6 +9236,10 @@ export interface components {
         /**
          * AdminPromptRoutingResponse
          * @description `revision_id`·`revision_number` 는 최신 이력이고, 한 번도 저장한 적 없으면 null 이다.
+         *
+         *     `chat_premium_models_enabled` 는 채팅 상위 모델 스위치의 지금 값이다. 꺼져 있으면 Opus 방이 기본 모델로 돌아 Opus 방의
+         *     칸은 운영에서 읽히지 않는다. `chains` 의 읽는 칸 목록은 그래도 그 칸을 그대로 담는다 — 배정 표의 칸 설정과 같은 뜻을
+         *     지키고, 지금 읽히는지는 화면이 이 값으로 가른다.
          */
         AdminPromptRoutingResponse: {
             /** Revisionid */
@@ -9247,6 +9251,8 @@ export interface components {
              * Format: date
              */
             pricesAsOf: string;
+            /** Chatpremiummodelsenabled */
+            chatPremiumModelsEnabled: boolean;
             /** Allowedpairs */
             allowedPairs: components["schemas"]["AdminPromptRouteAllowedPair"][];
             /** Cells */
