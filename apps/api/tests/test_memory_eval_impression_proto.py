@@ -148,10 +148,10 @@ async def test_load_room_inputs_excludes_secret_rows_and_keeps_production_order(
                 room_id,
                 snap,
                 ordinal=1,
-                kind="attribute",
+                kind="fact",
                 object=None,
                 attribute="비밀",
-                fact_key=f"attribute|민수|비밀{index}",
+                fact_key=f"fact|민수|비밀{index}",
                 value=f"비밀값{index}",
                 known_by=["민수"],
             ),
@@ -189,7 +189,11 @@ async def test_load_room_inputs_skips_groups_whose_extractions_are_not_all_done(
         rows.append(_make_memory_fact(room_id, snap, value=f"값{index}"))
         rows.append(_make_memory_extraction(room_id, snap))
         # 둘째 묶음의 한 스냅샷은 사실 추출이 실패로 남았다.
-        rows.append(_make_memory_fact_extraction(room_id, snap, status="failed" if index == 4 else "done"))
+        rows.append(
+            _make_memory_fact_extraction(
+                room_id, snap, **({"status": "failed", "fact_count": None} if index == 4 else {})
+            )
+        )
     db_session.add_all(rows)
     await db_session.flush()
 
@@ -246,6 +250,9 @@ def test_finalize_matches_production_trim_and_cut() -> None:
     text, raw_chars, truncated = ip.finalize(long_text)
     assert len(text) == IMPRESSION_TEXT_MAX and raw_chars == IMPRESSION_TEXT_MAX + 5 and truncated
     assert ip.finalize("   ") == ("", 0, False)
+    # 상한에서 자른 끝이 공백이면 운영처럼 한 번 더 걷는다.
+    cut_at_space = "가" * (IMPRESSION_TEXT_MAX - 1) + " 나다"
+    assert ip.finalize(cut_at_space)[0] == "가" * (IMPRESSION_TEXT_MAX - 1)
 
 
 # ---------------------------------------------------------------- 생성
@@ -320,7 +327,7 @@ def test_estimate_counts_only_calls_not_yet_done(tmp_path: Path) -> None:
 
 
 def test_length_report() -> None:
-    rows = [
+    rows: list[dict[str, Any]] = [
         {"status": "ok", "text": "가" * 100, "rawChars": 100, "truncated": False},
         {"status": "ok", "text": "가" * 600, "rawChars": 700, "truncated": True},
         {"status": "ok", "text": "", "rawChars": 0, "truncated": False},
@@ -440,7 +447,7 @@ def test_judge_report_gate_passes_only_at_threshold_and_without_inability() -> N
     report = ip.judge_report([_row(gold, two_wrong)])
     assert report["gate"]["pass"] is False and report["gate"]["accuracy"] == pytest.approx(0.8)
 
-    unable = list(gold)
+    unable: list[str | None] = list(gold)
     unable[5] = None
     report = ip.judge_report([_row(gold * 10, gold * 9 + unable)])
     assert report["gate"]["accuracy"] >= 0.9 and report["gate"]["inability"] == 1 and report["gate"]["pass"] is False
@@ -465,7 +472,7 @@ def test_judge_report_rates_without_gold() -> None:
 
 def test_items_from_results_joins_inputs_and_settings() -> None:
     item = _item("room-1:1")
-    rows = [
+    rows: list[dict[str, Any]] = [
         {"key": "room-1:1", "status": "ok", "text": "하나다. 둘이다."},
         {"key": "room-1:2", "status": "call_error", "text": None},
     ]
@@ -513,3 +520,15 @@ async def test_judge_items_writes_rows_and_resumes(tmp_path: Path) -> None:
     assert [r["itemId"] for r in rows] == ["x1", "x2"]
     assert rows[0]["decided"] == ["supported", "unsupported", "conflict"]
     assert rows[0]["promptSha"] == ip.sha256_text(ip.render_judge_prompt(TEMPLATE, items[0]))
+
+
+def test_cli_registers_impression_commands(tmp_path: Path) -> None:
+    import memory_eval_cli
+
+    parser = memory_eval_cli.build_parser()
+    args = parser.parse_args(
+        ["--run", str(tmp_path), "impression-proto", "--inputs", "a.jsonl", "--candidate", "c.json", "--out", "o.jsonl"]
+    )
+    assert args.dry_run is False and args.allow_paid is False and args.label == "impression-proto"
+    args = parser.parse_args(["--run", str(tmp_path), "impression-judge", "--wording", "w.json", "--out", "j.jsonl"])
+    assert args.judge_model == "claude-opus-5-5"
