@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { isIllustrationOnlyChange, shouldWarnPendingAiEditsLost, type ComparableRevision } from "./revisionComparison";
+import {
+  isIllustrationOnlyChange,
+  shouldWarnPendingAiEditsLost,
+  toPendingLossSentence,
+  type ComparableRevision,
+} from "./revisionComparison";
 
 type Illustration = NonNullable<ComparableRevision["illustrations"]>[number];
 
@@ -113,6 +118,21 @@ describe("shouldWarnPendingAiEditsLost", () => {
   it("수정안이 없으면 말하지 않는다", () => {
     expect(shouldWarnPendingAiEditsLost({ hasPendingAiEdits: false, target: same, current: { paragraphs: ["다른"] } })).toBe(
       false,
+    );
+  });
+});
+
+describe("toPendingLossSentence", () => {
+  // 옛 수정안은 글이 바뀌면 모두 사라진다. 여러 문단 수정안은 블록 단위라 글이 바뀌는 문단의 것만 쓸 수 없게 된다.
+  it("옛 수정안이 있으면 모두 사라진다고 말한다", () => {
+    expect(toPendingLossSentence({ hasPendingAiEdits: true, hasPendingBlockEdits: true })).toBe(
+      "되돌리면 이 화에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.",
+    );
+  });
+
+  it("여러 문단 수정안만 있으면 글이 바뀌는 문단의 수정안을 말한다", () => {
+    expect(toPendingLossSentence({ hasPendingAiEdits: false, hasPendingBlockEdits: true })).toBe(
+      "되돌리면 글이 바뀌는 문단의 AI 수정안은 적용할 수 없게 되고, 쓴 클로버는 돌아오지 않아요.",
     );
   });
 });

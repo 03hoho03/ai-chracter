@@ -13,6 +13,8 @@ export type NovelAction =
   | "aiEdit"
   | "applyAiEdit"
   | "dismissAiEdit"
+  | "applyPatch"
+  | "dismissPatch"
   | "edit"
   | "restore"
   | "notes"
@@ -49,6 +51,8 @@ const ACTION_OBJECT: Record<NovelAction, string> = {
   aiEdit: "AI로 고치지",
   applyAiEdit: "수정안을 적용하지",
   dismissAiEdit: "수정안을 버리지",
+  applyPatch: "수정안을 적용하지",
+  dismissPatch: "수정안을 버리지",
   edit: "고친 내용을 저장하지",
   restore: "이 판으로 되돌리지",
   notes: "설정 노트를 저장하지",
@@ -182,6 +186,30 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     message: "이미 진행 중인 작업이 있어요. 끝나면 다시 해주세요.",
     shouldRefetchNovel: true,
   },
+  // 여러 문단 수정 스위치가 꺼졌다. 호출부가 가격 응답도 다시 받아 여러 문단 고르기를 거둔다(받은 수정안의 적용·버리기는 남는다).
+  NOVEL_MULTI_BLOCK_EDIT_DISABLED: {
+    message: "지금은 여러 문단을 함께 고칠 수 없어요.",
+    shouldRefetchNovel: true,
+  },
+  // 고른 문단들이 두 장면에 걸쳤다. 화면이 미리 막으므로 그사이 장면 경계가 바뀐 경우뿐이다 — 다시 받아 고르게 한다.
+  NOVEL_BLOCKS_NOT_IN_ONE_SCENE: {
+    message: "같은 장면 안의 문단만 함께 고칠 수 있어요. 최신 내용을 불러왔어요. 다시 골라 주세요.",
+    shouldRefetchNovel: true,
+  },
+  // 모델에 보낼 글(그 장면 전체와 설정)이 상한을 넘었다. 문단을 덜 골라도 장면은 그대로라 같은 결과다.
+  NOVEL_EDIT_INPUT_TOO_LONG: {
+    message: "이 장면이 길어 AI로 고칠 수 없어요. 직접 고쳐 주세요.",
+    shouldRefetchNovel: false,
+  },
+  // 단위의 블록 중 하나라도 그사이 바뀌었다(서버는 아무것도 쓰지 않았다). 다시 받으면 그 수정안이 쓸 수 없음으로 보인다.
+  NOVEL_PATCH_STALE: {
+    message: "그사이 글이 바뀐 문단이 있어 적용하지 않았어요.",
+    shouldRefetchNovel: true,
+  },
+  NOVEL_PATCH_NOT_FOUND: {
+    message: "이 수정안을 찾을 수 없어요. 최신 내용을 불러왔어요.",
+    shouldRefetchNovel: true,
+  },
   CONTENT_RESTRICTED: {
     message: "이용이 제한된 작품이라 새로 쓰는 작업을 할 수 없어요. 지금까지 만든 화는 그대로 볼 수 있어요.",
     shouldRefetchNovel: false,
@@ -204,6 +232,21 @@ function currentCostOf(detail: unknown): number | undefined {
   if (!detail || typeof detail !== "object" || !("currentCost" in detail)) return undefined;
   const { currentCost } = detail;
   return typeof currentCost === "number" ? currentCost : undefined;
+}
+
+function numberOf(detail: unknown, key: string): number | undefined {
+  if (!detail || typeof detail !== "object") return undefined;
+  const value: unknown = Object.entries(detail).find(([name]) => name === key)?.[1];
+  return typeof value === "number" ? value : undefined;
+}
+
+/** 적용이 낡음 409 로 거절됐을 때 서버가 짚은 수정안 id. 다른 실패면 빈 목록이다. */
+export function toStalePatchIds(error: unknown): string[] {
+  if (!isApiError(error) || detailCode(error.detail) !== "NOVEL_PATCH_STALE") return [];
+  const { detail } = error;
+  if (!detail || typeof detail !== "object" || !("stalePatchIds" in detail)) return [];
+  const { stalePatchIds } = detail;
+  return Array.isArray(stalePatchIds) ? stalePatchIds.filter((id): id is string => typeof id === "string") : [];
 }
 
 function fallback(action: NovelAction): NovelActionErrorNotice {
@@ -267,6 +310,34 @@ export function toNovelActionError(
     if (reason === "too_many_episodes") {
       return { message: "화가 많아 고른 모델로는 이 화들을 다시 만들 수 없어요. 다른 모델을 골라주세요.", shouldRefetchNovel: true };
     }
+  }
+  if (code === "NOVEL_TOO_MANY_BLOCKS") {
+    const maxBlocks = numberOf(error.detail, "maxBlocks");
+    return {
+      message:
+        maxBlocks === undefined
+          ? "한 번에 고칠 수 있는 문단 수를 넘었어요. 문단을 줄여 다시 골라 주세요."
+          : `한 번에 ${maxBlocks.toLocaleString()}개 문단까지 고칠 수 있어요.`,
+      shouldRefetchNovel: true,
+    };
+  }
+  if (code === "NOVEL_CHAPTER_TOO_LONG") {
+    const maxChars = numberOf(error.detail, "maxChars");
+    return {
+      message:
+        maxChars === undefined
+          ? "적용하면 화가 너무 길어져요. 다른 문단을 줄인 뒤 적용해 주세요."
+          : `적용하면 화가 ${maxChars.toLocaleString()}자를 넘어요. 다른 문단을 줄인 뒤 적용해 주세요.`,
+      shouldRefetchNovel: false,
+    };
+  }
+  // 표의 문구는 직접 수정 저장의 말이다("쓴 글을 복사해 두고…"). AI 수정 요청에서는 고른 문단이 지금 판과 어긋난 것이다.
+  // 표의 문구는 적용의 말이다. 버리기에서 받으면 그 수정안은 다른 곳에서 이미 적용했거나 버린 것이다.
+  if (code === "NOVEL_JOB_NOT_APPLICABLE" && action === "dismissPatch") {
+    return { message: "이미 적용했거나 버린 수정안이에요. 최신 내용을 불러왔어요.", shouldRefetchNovel: true };
+  }
+  if (code === "NOVEL_BLOCK_IDS_INVALID" && action === "aiEdit") {
+    return { message: "고른 문단이 바뀌었어요. 최신 내용을 불러왔어요. 다시 골라 주세요.", shouldRefetchNovel: true };
   }
   return MESSAGE_BY_CODE[code] ?? fallback(action);
 }

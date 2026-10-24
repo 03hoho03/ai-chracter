@@ -97,3 +97,60 @@ describe("writeNovelChapterRevision", () => {
     ).toBe("r2");
   });
 });
+
+describe("writeNovelChapterRevision — 여러 문단 수정안", () => {
+  function patch(id: string, blockId: string) {
+    return { id, blockId, state: "pending", paragraphs: [`${id} 수정안`], fresh: true };
+  }
+
+  /** 지금 판 `r1` 의 그 화에 여러 문단 수정 작업 둘(j1: p1·p2, j2: p3)이 있는 캐시. */
+  function seedBlockEdits() {
+    const queryClient = seed(["하나", "둘"]);
+    const detail = queryClient.getQueryData<object>(novelKeys.detail(NOVEL_ID));
+    queryClient.setQueryData(novelKeys.detail(NOVEL_ID), {
+      ...detail,
+      pendingBlockEdits: [
+        { id: "j1", chapterId: CHAPTER_ID, instruction: "짧게", patches: [patch("p1", "block-0"), patch("p2", "block-1")], bundles: [] },
+        { id: "j2", chapterId: CHAPTER_ID, instruction: "길게", patches: [patch("p3", "block-1")], bundles: [] },
+      ],
+    });
+    return queryClient;
+  }
+
+  function patchStates(queryClient: QueryClient) {
+    return queryClient
+      .getQueryData<{ pendingBlockEdits: { id: string; patches: { id: string; state: string }[] }[] }>(novelKeys.detail(NOVEL_ID))
+      ?.pendingBlockEdits.map((edit) => [edit.id, edit.patches.map((item) => `${item.id}:${item.state}`)]);
+  }
+
+  // 서버는 블록 단위로 낡음을 판정한다 — 글이 바뀐 판이어도 다른 블록의 수정안은 살아 있다. 화 단위로 빼면 다시 받을 때 되살아나 깜빡인다.
+  it("글이 바뀐 판이어도 여러 문단 수정안은 빼지 않는다", () => {
+    const queryClient = seedBlockEdits();
+    writeNovelChapterRevision(queryClient, chapterAt("r2", ["하나", "둘 고침"], "manual_edit"));
+    expect(patchStates(queryClient)).toEqual([
+      ["j1", ["p1:pending", "p2:pending"]],
+      ["j2", ["p3:pending"]],
+    ]);
+  });
+
+  it("단위를 적용한 응답이면 그 수정안만 적용으로 바꾸고 옛 수정안 규칙은 그대로 쓴다", () => {
+    const queryClient = seedBlockEdits();
+    writeNovelChapterRevision(queryClient, chapterAt("r2", ["하나 고침", "둘"], "ai_edit"), {
+      appliedPatches: { jobId: "j1", patchIds: ["p1"] },
+    });
+    expect(patchStates(queryClient)).toEqual([
+      ["j1", ["p1:applied", "p2:pending"]],
+      ["j2", ["p3:pending"]],
+    ]);
+    // 글이 바뀌었으니 옛 연속 범위 수정안은 그 화에서 빠진다(서버와 같은 규칙).
+    expect(pendingIds(queryClient)).toEqual(["edit-other"]);
+  });
+
+  it("마지막 대기 수정안을 적용한 작업은 목록에서 빠진다", () => {
+    const queryClient = seedBlockEdits();
+    writeNovelChapterRevision(queryClient, chapterAt("r2", ["하나", "셋"], "ai_edit"), {
+      appliedPatches: { jobId: "j2", patchIds: ["p3"] },
+    });
+    expect(patchStates(queryClient)?.map(([id]) => id)).toEqual(["j1"]);
+  });
+});

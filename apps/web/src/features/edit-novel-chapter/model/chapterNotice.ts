@@ -11,6 +11,8 @@ export type ChapterNoticeEvent =
   | { type: "manualCancelled"; chapterOrdinal: number }
   | { type: "applied"; chapterOrdinal: number }
   | { type: "dismissed"; chapterOrdinal: number }
+  | { type: "patchesApplied"; chapterOrdinal: number; count: number }
+  | { type: "patchesDismissed"; chapterOrdinal: number; count: number }
   | { type: "restored"; chapterOrdinal: number; revisionNo: number }
   | { type: "rejected"; message: string };
 
@@ -30,6 +32,15 @@ export function toChapterNotice(event: ChapterNoticeEvent): ChapterNotice | unde
       return { tone: "info", message: `${event.chapterOrdinal}화에 수정안을 적용했어요. 이전 글은 판 이력에 남아요.` };
     case "dismissed":
       return { tone: "info", message: `${event.chapterOrdinal}화 수정안을 버렸어요.` };
+    case "patchesApplied":
+      if (event.count <= 1) return toChapterNotice({ type: "applied", chapterOrdinal: event.chapterOrdinal });
+      return {
+        tone: "info",
+        message: `${event.chapterOrdinal}화에 수정안 ${event.count}개를 함께 적용했어요. 이전 글은 판 이력에 남아요.`,
+      };
+    case "patchesDismissed":
+      if (event.count <= 1) return toChapterNotice({ type: "dismissed", chapterOrdinal: event.chapterOrdinal });
+      return { tone: "info", message: `${event.chapterOrdinal}화 수정안 ${event.count}개를 버렸어요.` };
     case "restored":
       return {
         tone: "info",

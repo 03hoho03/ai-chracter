@@ -30,7 +30,11 @@ import { LazyDiffView } from "@/shared/ui/LazyDiffView";
 
 import { useNovelRevisionsQuery, type NovelRevisionSummary } from "../api/useNovelRevisionsQuery";
 import { useRestoreRevisionMutation } from "../api/useRestoreRevisionMutation";
-import { isIllustrationOnlyChange, shouldWarnPendingAiEditsLost } from "../model/revisionComparison";
+import {
+  isIllustrationOnlyChange,
+  shouldWarnPendingAiEditsLost,
+  toPendingLossSentence,
+} from "../model/revisionComparison";
 import { toInitialPreviewMode, type RevisionPreviewMode } from "../model/revisionPreviewMode";
 import { toRevisionSourceLabel } from "../model/revisionLabel";
 
@@ -40,6 +44,8 @@ type NovelRevisionHistoryModalProps = {
   chapterOrdinal: number;
   /** 이 장에 적용하지 않은 AI 수정안이 있는가. 되돌리면 서버가 그 수정안을 버린다. */
   hasPendingAiEdits: boolean;
+  /** 이 장에 적용하지 않은 여러 문단 수정안이 있는가. 되돌리면 글이 바뀌는 문단의 것만 쓸 수 없게 된다. */
+  hasPendingBlockEdits?: boolean;
 };
 
 /** 장 하나의 판 이력. 판을 펼치면 그 판의 글이 보이고, 옛 판은 되돌릴 수 있다. 되돌리기는 옛 판을 **새 판으로**
@@ -56,7 +62,7 @@ type NovelRevisionHistoryModalProps = {
  * 읽는다. 상세는 받은 즉시 낡은 것으로 치는 쿼리라 모달을 열 때 한 번 다시 받는다 — 연 순간의 진행 중 작업도 그만큼
  * 최신이 된다. */
 export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModalProps, number | null>(
-  ({ call, novelId, chapterId, chapterOrdinal, hasPendingAiEdits }) => {
+  ({ call, novelId, chapterId, chapterOrdinal, hasPendingAiEdits, hasPendingBlockEdits = false }) => {
     const queryClient = useQueryClient();
     const revisionsQuery = useNovelRevisionsQuery(novelId, chapterId);
     const restoreMutation = useRestoreRevisionMutation();
@@ -117,6 +123,7 @@ export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModa
               isRestoring={restoreMutation.isPending}
               isRegenerating={isRegenerating}
               hasPendingAiEdits={hasPendingAiEdits}
+              hasPendingBlockEdits={hasPendingBlockEdits}
               onToggle={(id) => setExpandedId((open) => (open === id ? undefined : id))}
               onRestore={(revision) => void restore(revision)}
             />
@@ -135,6 +142,7 @@ type RevisionListBodyProps = {
   isRestoring: boolean;
   isRegenerating: boolean;
   hasPendingAiEdits: boolean;
+  hasPendingBlockEdits: boolean;
   onToggle: (id: string) => void;
   onRestore: (revision: NovelRevisionSummary) => void;
 };
@@ -149,6 +157,7 @@ function RevisionListBody({
   isRestoring,
   isRegenerating,
   hasPendingAiEdits,
+  hasPendingBlockEdits,
   onToggle,
   onRestore,
 }: RevisionListBodyProps) {
@@ -199,6 +208,7 @@ function RevisionListBody({
           isRestoring={isRestoring}
           isRegenerating={isRegenerating}
           hasPendingAiEdits={hasPendingAiEdits}
+          hasPendingBlockEdits={hasPendingBlockEdits}
           novelId={novelId}
           chapterId={chapterId}
           onToggle={() => onToggle(revision.id)}
@@ -223,6 +233,7 @@ type RevisionRowProps = {
   /** 이 장을 다시 만드는 중인가. 그동안은 되돌리기를 막는다. */
   isRegenerating: boolean;
   hasPendingAiEdits: boolean;
+  hasPendingBlockEdits: boolean;
   novelId: string;
   chapterId: string;
   onToggle: () => void;
@@ -243,6 +254,7 @@ function RevisionRow({
   isRestoring,
   isRegenerating,
   hasPendingAiEdits,
+  hasPendingBlockEdits,
   novelId,
   chapterId,
   onToggle,
@@ -254,11 +266,12 @@ function RevisionRow({
   const isRestoreBlocked = isRestoring || isRegenerating;
   // 되돌릴 판 글이 지금 글과 같으면 서버가 수정안을 남기므로 사라진다고 말하지 않는다. 두 판 글은 미리보기와 같은 판 캐시로
   // 읽고, 펼친 옛 판에 수정안이 있을 때만 받는다.
-  const shouldCompareText = isExpanded && !isCurrent && hasPendingAiEdits;
+  const hasPending = hasPendingAiEdits || hasPendingBlockEdits;
+  const shouldCompareText = isExpanded && !isCurrent && hasPending;
   const targetQuery = useNovelRevisionQuery(novelId, chapterId, shouldCompareText ? revision.id : undefined);
   const currentTextQuery = useNovelRevisionQuery(novelId, chapterId, shouldCompareText ? current?.id : undefined);
   const isPendingLossNoted = shouldWarnPendingAiEditsLost({
-    hasPendingAiEdits,
+    hasPendingAiEdits: hasPending,
     target: targetQuery.data,
     current: currentTextQuery.data,
   });
@@ -301,7 +314,7 @@ function RevisionRow({
           )}
           {!isCurrent && isPendingLossNoted && (
             <p id={pendingNoteId} className="text-sm break-keep text-muted-foreground">
-              되돌리면 이 화에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.
+              {toPendingLossSentence({ hasPendingAiEdits, hasPendingBlockEdits })}
             </p>
           )}
           {!isCurrent && (

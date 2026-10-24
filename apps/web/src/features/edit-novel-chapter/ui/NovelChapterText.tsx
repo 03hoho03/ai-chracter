@@ -1,5 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownToLine, ArrowUpToLine, RotateCcw, X } from "lucide-react";
 import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
@@ -16,6 +17,7 @@ import {
   type NovelChapterResponse,
   type NovelDetailResponse,
   type NovelPendingAiEdit,
+  toPendingBlockEdits,
 } from "@/entities/novel";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
@@ -50,6 +52,16 @@ import {
   type IllustrationSource,
   type MovingIllustration,
 } from "../model/boardIllustrations";
+import { countFreshPatchesInBlocks, toPatchLayout } from "../model/blockEditPatches";
+import {
+  nextBlockSelection,
+  toBlockBlockedReason,
+  toBlockSelectionAnnouncement,
+  toContiguousRange,
+  toSceneKeyOf,
+  toSelectedIndexes,
+  type BlockSelectionContext,
+} from "../model/blockSelection";
 import {
   countChapterChars,
   isManualEditStale,
@@ -69,6 +81,7 @@ import { toIllustrationUploadErrorMessage, type PickIllustrationImage } from "..
 import type { NovelAiEditFlow } from "../model/useNovelAiEdit";
 
 import { AiEditPreview } from "./AiEditPreview";
+import { BlockPatchCard, PatchBundleRow, PatchJobRow } from "./BlockEditPatches";
 import { BoardIllustrationBlock } from "./BoardIllustrationBlock";
 import { ParagraphActionRow } from "./ParagraphActionRow";
 import { UnplacedIllustrationList } from "./UnplacedIllustrationList";
@@ -94,6 +107,10 @@ type NovelChapterTextProps = {
   /** 새 판의 본문을 받는 중이라 화면이 아직 옛 판을 보이는가(다시 받는 동안 옛 본문을 자리표시로 둔다). 그동안 삽화 요청을
    * 막는다 — 보이는 판을 기준으로 보내면 방금 받은 충돌을 한 번 더 받는다. */
   isRevisionRefreshing: boolean;
+  /** 여러 문단 수정 스위치가 켜져 있는가(`isNovelMultiBlockEditOn`). 켜져 있으면 고치기 모드의 문단 고르기가 같은 장면 안의 떨어진
+   * 문단을 하나씩 켜고 끄는 고르기가 되고, AI 수정은 블록별 수정안으로 맡긴다. 꺼져 있으면 옛 연속 범위 고르기 그대로다. 이미
+   * 받은 여러 문단 수정안은 이 값과 상관없이 그 블록 자리에 보이고 적용·버릴 수 있다. */
+  isMultiBlockEditOn?: boolean;
 };
 
 /** 붙이기·바꾸기 하나가 지금 어느 단계인가. 고른 그림을 올리는 중이면 `uploading`, 요청이 도는 중이면 `sending` 이다. 바꾸기면
@@ -147,13 +164,19 @@ export function NovelChapterText({
   onFixModeRequest,
   onPickImage,
   isRevisionRefreshing,
+  isMultiBlockEditOn = false,
 }: NovelChapterTextProps) {
   const queryClient = useQueryClient();
   const groupLabelId = useId();
   const editorId = useId();
   const actionBlockedReasonId = useId();
+  const outsideSceneReasonId = useId();
+  const blockLimitReasonId = useId();
   const paragraphs = chapter.revision.paragraphs;
   const [range, setRange] = useState<ParagraphRange | null>(null);
+  // 여러 문단 고르기(스위치 켜짐)의 고른 블록 id — 누른 차례이고 마지막이 Shift 이어 고르기의 시작점이다. 블록 id 라 다른 곳의
+  // 수정으로 문단 차례가 바뀌어도 같은 문단을 가리킨다(지워진 블록은 아래에서 빠진다).
+  const [blockSelection, setBlockSelection] = useState<string[]>([]);
   const [manualEdit, setManualEdit] = useState<ManualEdit | null>(null);
   // 저장 실패 문장. 저장을 누른 순간에 기록하고 다음 저장·취소에서만 지운다 — 409 뒤 상세를 다시 받아도 남는다.
   const [editError, setEditError] = useState<string | undefined>(undefined);
@@ -193,12 +216,30 @@ export function NovelChapterText({
   const isDraftDirty =
     manualEdit !== null && manualEdit.draft !== joinParagraphRange(manualEdit.base.paragraphs, manualEdit.base.range);
   const pendingEdits = novel.pendingAiEdits.filter((edit) => edit.chapterId === chapter.id);
+  const blockIds = chapter.revision.blocks.map((block) => block.id);
+  const blockEdits = toPendingBlockEdits(novel, chapter.id);
+  // 여러 문단 수정안은 그 블록 자리에 문단 대신 선다. 그 자리는 고르기 버튼이 아니다.
+  const patchLayout = toPatchLayout(blockEdits, blockIds);
+  const selectionContext: BlockSelectionContext = {
+    blockIds,
+    sceneKeyOf: toSceneKeyOf(chapter.revision),
+    maxBlocks: novel.limits.blockEditMaxBlocks,
+    isSelectable: (index) => !patchLayout.cardBlockIndexes.has(index),
+  };
   const isSaving = saveMutation.isPending;
   // 다시 만들기는 묶음 단위라 이 화가 든 묶음을 상세 목차에서 찾는다(화 본문 응답에는 묶음이 없다).
   const batchId = novel.chapters.find((item) => item.id === chapter.id)?.batchId;
   const isRegenerating = isChapterRegenerating(novel.activeJob, chapter.id, batchId);
   const spots = toIllustrationSpots(chapter.revision);
   const activeMove = toActiveMove({ isIllustrationsOn, moving, revision: chapter.revision });
+  // 여러 문단 고르기는 스위치가 켜진 고치기 모드에서, 삽화를 옮기는 중이 아닐 때만이다(놓을 자리는 문단 하나).
+  const isBlockMode = isMultiBlockEditOn && isFixMode && activeMove === null;
+  const selectedIndexes = isBlockMode
+    ? toSelectedIndexes(blockSelection, blockIds).filter((index) => selectionContext.isSelectable(index))
+    : [];
+  const selectedBlockIds = selectedIndexes.map((index) => blockIds[index]).filter((id) => id !== undefined);
+  // 직접 고치기·그림 붙이기는 이어진 문단에만 된다 — 여러 문단 고르기에서는 고른 것이 이어져 있을 때의 범위다.
+  const actionRange = isBlockMode ? toContiguousRange(selectedIndexes) : activeRange;
   const isPlacing = moveMutation.isPending || detachMutation.isPending || imageRequest !== undefined;
   // 직접 고치기 저장과 삽화 요청은 같은 판을 기준으로 가므로 한쪽이 도는 동안 다른 쪽을 막는다 — 둘이 함께 나가면 늦은 쪽이
   // 같은 화면의 요청과 충돌해 409 로 끝난다.
@@ -214,6 +255,7 @@ export function NovelChapterText({
   useEffect(() => {
     if (isFixMode) return;
     setRange(null);
+    setBlockSelection([]);
     setMoving(null);
     setLiveMessage("");
   }, [isFixMode]);
@@ -268,6 +310,16 @@ export function NovelChapterText({
       setLiveMessage(isSame ? "고른 문단이 없어요." : `${index + 1}번째 문단을 골랐어요. 앞이나 뒤에 놓으세요.`);
       return;
     }
+    if (isBlockMode) {
+      // 누른 차례를 지켜 넘긴다 — 마지막으로 누른 문단이 Shift 이어 고르기의 시작점이다(본문 차례로 정렬하면 맨 뒤 문단이 된다).
+      const clicked = blockSelection.filter((id) => selectedBlockIds.includes(id));
+      const step = nextBlockSelection(clicked, index, { extend }, selectionContext);
+      setBlockSelection(step.selection);
+      setLiveMessage(
+        toBlockSelectionAnnouncement(toSelectedIndexes(step.selection, blockIds), step.outcome, selectionContext.maxBlocks),
+      );
+      return;
+    }
     const next = nextParagraphRange(activeRange, index, { extend });
     setRange(next);
     setLiveMessage(toParagraphSelectionAnnouncement(next));
@@ -282,6 +334,7 @@ export function NovelChapterText({
     setPlacementError(undefined);
     setMoving({ illustrationId: illustration.id, revisionId: chapter.revision.id });
     setRange(null);
+    setBlockSelection([]);
     setLiveMessage("놓을 문단을 누르세요. 그 문단 앞이나 뒤에 놓을 수 있어요. Esc 로 취소해요.");
   }
 
@@ -354,6 +407,7 @@ export function NovelChapterText({
   function handlePlacementError(error: unknown, action: NovelAction): NovelActionErrorNotice | null {
     setMoving(null);
     setRange(null);
+    setBlockSelection([]);
     setLiveMessage("");
     // 다시 받은 판에서는 배치 id 가 바뀌어 누른 그림도 새로 그려진다 — 사라지지 않는 장 제목으로 옮긴다.
     onFocusFallback();
@@ -396,8 +450,8 @@ export function NovelChapterText({
 
   /** 고른 범위의 앞·뒤에 그림을 붙인다. */
   async function attach(source: IllustrationSource, placement: IllustrationPlacement) {
-    if (activeRange === null || isPlacementBlocked || isIllustrationLimitReached(chapter.revision)) return;
-    const target = toAttachTarget(chapter.revision, activeRange, placement);
+    if (actionRange === null || isPlacementBlocked || isIllustrationLimitReached(chapter.revision)) return;
+    const target = toAttachTarget(chapter.revision, actionRange, placement);
     if (target === null) return;
     setPlacementError(undefined);
     const asset = await pickAsset(source, undefined, undefined);
@@ -423,6 +477,7 @@ export function NovelChapterText({
       pendingFigureFocusRef.current = toMovedIllustrationId(next.revision, request.target);
       setFailedAttach(null);
       setRange(null);
+      setBlockSelection([]);
       setLiveMessage(toAttachedMessage(next.revision.blocks, request));
     } catch (error) {
       const result = handlePlacementError(error, "attachIllustration");
@@ -512,6 +567,7 @@ export function NovelChapterText({
 
   function clearSelection(focusIndex: number) {
     setRange(null);
+    setBlockSelection([]);
     setLiveMessage("고른 문단을 풀었어요.");
     // 동작 줄이 사라지며 누른 버튼도 사라진다 — 마지막으로 고른 문단으로 포커스를 옮겨 둔다.
     paragraphButtonsRef.current.get(focusIndex)?.focus();
@@ -530,6 +586,7 @@ export function NovelChapterText({
       draft: joinParagraphRange(paragraphs, target),
     });
     setRange(null);
+    setBlockSelection([]);
     setLiveMessage("");
   }
 
@@ -597,6 +654,23 @@ export function NovelChapterText({
     paragraphButtonsRef.current.get(target.start)?.focus();
   }
 
+  /** 고른 블록들을 여러 문단 수정으로 맡긴다. 맡겼으면 고른 것을 풀고 고른 첫 문단으로 포커스를 둔다(사라지는 동작 줄 대신). */
+  async function startBlockEdit(indexes: readonly number[]) {
+    const isStarted = await aiEdit.startBlocks({
+      chapterId: chapter.id,
+      chapterOrdinal: chapter.ordinal,
+      revisionId: chapter.revision.id,
+      paragraphs,
+      blockIds: indexes.map((index) => blockIds[index]).filter((id) => id !== undefined),
+      indexes,
+    });
+    if (!isStarted) return;
+    setBlockSelection([]);
+    setLiveMessage("");
+    const first = indexes[0];
+    if (first !== undefined) paragraphButtonsRef.current.get(first)?.focus();
+  }
+
   async function handlePreviewAction(action: () => Promise<void>) {
     await action();
     // 적용하든 버리든 그 수정안 상자가 사라지며 누른 버튼도 사라진다 — 결과 안내가 있는 장 머리로 옮긴다.
@@ -622,6 +696,12 @@ export function NovelChapterText({
           isStale={isEditStale}
           isRegenerating={isRegenerating}
           hasPendingAiEdits={pendingEdits.length > 0}
+          hasPendingPatches={
+            countFreshPatchesInBlocks(
+              blockEdits,
+              new Set(manualEdit.base.blockIds.slice(manualEdit.base.range.start, manualEdit.base.range.end + 1)),
+            ) > 0
+          }
           illustrationCount={countIllustrationsInRange(spots, editRange)}
           isSaving={isSaving}
           isPlacing={isPlacing}
@@ -639,12 +719,20 @@ export function NovelChapterText({
             else paragraphButtonsRef.current.delete(index);
           }}
           text={paragraph}
-          isSelected={isParagraphInRange(activeRange, index)}
+          isSelected={isBlockMode ? selectedIndexes.includes(index) : isParagraphInRange(activeRange, index)}
+          blockedReasonId={isBlockMode ? toBlockedReasonId(index) : undefined}
           onSelect={(extend) => select(index, extend)}
         />
       );
     }
     return <p className="-mx-2 px-2 py-1 whitespace-pre-line">{paragraph}</p>;
+  }
+
+  /** 여러 문단 고르기에서 그 문단을 지금 고를 수 없는 까닭 문장의 id. */
+  function toBlockedReasonId(index: number): string | undefined {
+    const reason = toBlockBlockedReason(index, selectedBlockIds, selectionContext);
+    if (reason === "outsideScene") return outsideSceneReasonId;
+    return reason === "limit" ? blockLimitReasonId : undefined;
   }
 
   const isAiBlocked = aiEdit.isBlocked;
@@ -659,8 +747,20 @@ export function NovelChapterText({
       {isFixMode && (
         <div className="flex flex-col gap-1">
           <p id={groupLabelId} className="text-sm break-keep text-muted-foreground">
-            고칠 문단을 눌러 고르세요. 이어진 문단을 함께 고를 수 있어요.
+            {isMultiBlockEditOn
+              ? `고칠 문단을 눌러 고르세요. 같은 장면 안이면 떨어진 문단도 함께 고를 수 있어요(한 번에 ${novel.limits.blockEditMaxBlocks}개까지). Shift를 누른 채 누르면 사이 문단까지 골라요.`
+              : "고칠 문단을 눌러 고르세요. 이어진 문단을 함께 고를 수 있어요."}
           </p>
+          {isBlockMode && blockIds.some((_, index) => toBlockBlockedReason(index, selectedBlockIds, selectionContext) === "outsideScene") && (
+            <p id={outsideSceneReasonId} className="text-sm break-keep text-muted-foreground">
+              다른 장면의 문단은 함께 고를 수 없어요. 다른 장면을 고치려면 고른 문단을 먼저 풀어 주세요.
+            </p>
+          )}
+          {isBlockMode && selectedBlockIds.length >= selectionContext.maxBlocks && (
+            <p id={blockLimitReasonId} className="text-sm break-keep text-muted-foreground">
+              {`한 번에 ${selectionContext.maxBlocks}개 문단까지 고를 수 있어요. 고른 문단을 풀면 다른 문단을 고를 수 있어요.`}
+            </p>
+          )}
         </div>
       )}
       {/* 항상 마운트된 알림 줄 — 조건부로 붙이면 붙는 순간의 문장을 화면 낭독기가 놓친다. */}
@@ -707,15 +807,28 @@ export function NovelChapterText({
           {paragraphs.map((paragraph, index) => {
             // 옮기는 중이면 직접 고치는 입력칸이 열려 있어도 범위 밖 문단에 놓을 수 있다(같은 글·같은 블록의 새 판이라
             // 저장이 막히지 않는다).
-            const isActionRowHere =
-              activeRange !== null && activeRange.end === index && (manualEdit === null || activeMove !== null);
+            const isActionRowHere = isBlockMode
+              ? selectedIndexes.at(-1) === index && manualEdit === null
+              : activeRange !== null && activeRange.end === index && (manualEdit === null || activeMove !== null);
+            const cards = patchLayout.cardsAt.get(index);
             // 직접 고치는 범위의 그림은 입력칸이 대신하는 자리라 그리지 않고 입력칸 아래 한 줄로 접는다.
             const isInEditRange = editRange !== null && manualEdit !== null && isParagraphInRange(editRange, index);
             return (
               // 서버가 준 문단 순서가 곧 정체성이다(문단에 안정 id 가 없다 — 고르기 범위도 같은 인덱스를 쓴다).
               <Fragment key={index}>
                 {!isInEditRange && renderIllustrations(spots.before[index] ?? [], index, "before")}
-                {renderParagraph(paragraph, index)}
+                {cards !== undefined && !isInEditRange
+                  ? cards.map((card) => (
+                      <BlockPatchCard
+                        key={card.patch.id}
+                        card={card}
+                        currentText={paragraph}
+                        isActing={aiEdit.actingEditId !== undefined}
+                        onApply={(unit) => void handlePreviewAction(() => aiEdit.applyPatchUnit(unit, chapter.ordinal))}
+                        onDismiss={(unit) => void handlePreviewAction(() => aiEdit.dismissPatches({ unit }, chapter.ordinal))}
+                      />
+                    ))
+                  : renderParagraph(paragraph, index)}
 
                 {isActionRowHere && activeMove !== null && (
                   <MoveTargetRow
@@ -727,7 +840,35 @@ export function NovelChapterText({
                   />
                 )}
 
-                {isActionRowHere && activeMove === null && (
+                {isActionRowHere && activeMove === null && isBlockMode && (
+                  <>
+                    <ParagraphActionRow
+                      actions={toParagraphActions({ isMoving: false, isIllustrationsOn }).filter(
+                        (action) => actionRange !== null || (action !== "manualEdit" && action !== "attach"),
+                      )}
+                      isAiBlocked={isAiBlocked}
+                      isRegenerating={isRegenerating}
+                      blockedReason={actionBlockedReason}
+                      reasonId={actionBlockedReasonId}
+                      isLimitReached={isIllustrationLimitReached(chapter.revision)}
+                      isAttachBusy={isPlacementBlocked}
+                      attachPendingLabel={attachPendingLabel}
+                      onAiEdit={() => void startBlockEdit(selectedIndexes)}
+                      onManualEdit={() => {
+                        if (actionRange !== null) startManualEdit(actionRange);
+                      }}
+                      onClearSelection={() => clearSelection(index)}
+                      onAttach={(source, placement) => void attach(source, placement)}
+                    />
+                    {actionRange === null && (
+                      <p className="text-sm break-keep text-muted-foreground">
+                        떨어진 문단은 AI로만 함께 고칠 수 있어요. 직접 고치기와 그림 붙이기는 이어진 문단을 고르면 할 수 있어요.
+                      </p>
+                    )}
+                  </>
+                )}
+
+                {isActionRowHere && activeMove === null && !isBlockMode && activeRange !== null && (
                   <ParagraphActionRow
                     actions={toParagraphActions({ isMoving: false, isIllustrationsOn })}
                     isAiBlocked={isAiBlocked}
@@ -755,6 +896,36 @@ export function NovelChapterText({
                   />
                 ))}
                 {!isInEditRange && renderIllustrations(spots.after[index] ?? [], index, "after")}
+                {patchLayout.bundlesAfter.get(index)?.map((unit) => (
+                  <PatchBundleRow
+                    key={unit.key}
+                    unit={unit}
+                    isActing={aiEdit.actingEditId !== undefined}
+                    onApply={(target) => void handlePreviewAction(() => aiEdit.applyPatchUnit(target, chapter.ordinal))}
+                    onDismiss={(target) =>
+                      void handlePreviewAction(() => aiEdit.dismissPatches({ unit: target }, chapter.ordinal))
+                    }
+                  />
+                ))}
+                {patchLayout.jobsAfter.get(index)?.map((job) => {
+                  const remainingCount =
+                    blockEdits
+                      .find((edit) => edit.id === job.jobId)
+                      ?.patches.filter((patch) => patch.state === "pending" || patch.state === "stale").length ?? 0;
+                  return (
+                    <PatchJobRow
+                      key={job.jobId}
+                      job={job}
+                      remainingCount={remainingCount}
+                      isActing={aiEdit.actingEditId !== undefined}
+                      onDismissAll={() =>
+                        void handlePreviewAction(() =>
+                          aiEdit.dismissPatches({ jobId: job.jobId, remainingCount }, chapter.ordinal),
+                        )
+                      }
+                    />
+                  );
+                })}
               </Fragment>
             );
           })}
@@ -890,6 +1061,9 @@ type ParagraphButtonProps = {
   ref: (element: HTMLButtonElement | null) => void;
   text: string;
   isSelected: boolean;
+  /** 여러 문단 고르기에서 지금 고를 수 없는 까닭 문장의 id(다른 장면·상한). 있으면 `aria-disabled` 로 흐리고 그 문장을 가리킨다 —
+   * 누르면 까닭을 알림 줄로 다시 말한다(버튼에서 포커스를 빼지 않는다). */
+  blockedReasonId?: string;
   /** `extend` 는 Shift 를 누른 채 눌렀는가. */
   onSelect: (extend: boolean) => void;
 };
@@ -907,13 +1081,19 @@ type ParagraphButtonProps = {
  *   다른 쌍은 생기지 않는다. 바깥 경계 한 줄이 3:1 을 지므로 표시는 통과다.
  * 고름은 안쪽 그림자, 포커스는 바깥 링이라 Tailwind 4 가 한 `box-shadow` 에 함께 싣는다 — 고른 문단에 포커스가
  * 있어도(Enter 로 고른 직후가 그 상태다) 서로 덮지 않는다. */
-function ParagraphButton({ ref, text, isSelected, onSelect }: ParagraphButtonProps) {
+function ParagraphButton({ ref, text, isSelected, blockedReasonId, onSelect }: ParagraphButtonProps) {
+  const isBlocked = blockedReasonId !== undefined;
   return (
     <button
       ref={ref}
       type="button"
       aria-pressed={isSelected}
-      className="-mx-2 cursor-pointer rounded-md px-2 py-1 text-left whitespace-pre-line motion-safe:transition-colors hover:bg-muted aria-pressed:bg-secondary aria-pressed:inset-ring-1 aria-pressed:inset-ring-input aria-pressed:hover:bg-secondary focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+      aria-disabled={isBlocked || undefined}
+      aria-describedby={blockedReasonId}
+      className={cn(
+        "-mx-2 cursor-pointer rounded-md px-2 py-1 text-left whitespace-pre-line motion-safe:transition-colors hover:bg-muted aria-pressed:bg-secondary aria-pressed:inset-ring-1 aria-pressed:inset-ring-input aria-pressed:hover:bg-secondary focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+        isBlocked && "cursor-default text-muted-foreground hover:bg-transparent",
+      )}
       onClick={(event: MouseEvent<HTMLButtonElement>) => onSelect(event.shiftKey)}
       onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
         if (event.key !== "Enter" || !event.shiftKey) return;
@@ -937,6 +1117,9 @@ type ManualEditorProps = {
   isRegenerating: boolean;
   /** 이 장에 적용하지 않은 AI 수정안이 있는가. 저장하면 서버가 그 수정안을 버린다. */
   hasPendingAiEdits: boolean;
+  /** 고치는 범위의 블록에 지금 쓸 수 있는 여러 문단 수정안이 있는가. 그 문단을 고쳐 저장하면 그 수정안은 쓸 수 없게 된다(다른
+   * 블록의 수정안은 그대로다). */
+  hasPendingPatches: boolean;
   /** 고치는 범위 문단들의 앞·뒤 삽화 수. 입력칸이 그 자리를 대신해 그림이 보이지 않으므로 수와 결과를 한 줄로 말한다. */
   illustrationCount: number;
   isSaving: boolean;
@@ -960,6 +1143,7 @@ function ManualEditor({
   isStale,
   isRegenerating,
   hasPendingAiEdits,
+  hasPendingPatches,
   illustrationCount,
   isSaving,
   isPlacing,
@@ -968,7 +1152,11 @@ function ManualEditor({
   onSave,
 }: ManualEditorProps) {
   const isSaveBlocked = isSaving || isPlacing || isRegenerating;
-  const saveDescribedBy = [isRegenerating && `${id}-regenerating`, hasPendingAiEdits && `${id}-pending`]
+  const saveDescribedBy = [
+    isRegenerating && `${id}-regenerating`,
+    hasPendingAiEdits && `${id}-pending`,
+    hasPendingPatches && `${id}-patches`,
+  ]
     .filter((part) => part !== false)
     .join(" ");
 
@@ -1013,6 +1201,11 @@ function ManualEditor({
       {hasPendingAiEdits && (
         <p id={`${id}-pending`} className="text-sm break-keep text-muted-foreground">
           저장하면 이 장에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.
+        </p>
+      )}
+      {hasPendingPatches && (
+        <p id={`${id}-patches`} className="text-sm break-keep text-muted-foreground">
+          저장하면 고친 문단의 AI 수정안은 적용할 수 없게 되고, 쓴 클로버는 돌아오지 않아요.
         </p>
       )}
       <div className="flex flex-wrap gap-2">

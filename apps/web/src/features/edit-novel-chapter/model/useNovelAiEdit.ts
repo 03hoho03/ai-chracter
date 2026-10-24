@@ -3,13 +3,17 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { cloverKeys } from "@/entities/clover";
 import {
+  hasNovelErrorCode,
   hasNovelJobPollError,
   isNovelJobGone,
   isTerminalNovelJobStatus,
   novelKeys,
   toNovelActionError,
   toNovelJobFailureMessage,
+  toPendingBlockEdits,
+  toStalePatchIds,
   useNovelJobQuery,
+  withStalePatches,
   type NovelAction,
   type NovelDetailResponse,
   type NovelJobResponse,
@@ -18,10 +22,14 @@ import {
 
 import { useApplyAiEditMutation } from "../api/useApplyAiEditMutation";
 import { useDismissAiEditMutation } from "../api/useDismissAiEditMutation";
+import { useApplyPatchUnitMutation, useDismissPatchUnitMutation } from "../api/usePatchUnitMutations";
 import { useStartAiEditMutation } from "../api/useStartAiEditMutation";
+import { useStartBlockEditMutation } from "../api/useStartBlockEditMutation";
 import { AiEditInstructionModal } from "../ui/AiEditInstructionModal";
 
-import { toAiEditOutcome } from "./aiEditOutcome";
+import { toAiEditOutcome, toBlockEditArrivedMessage } from "./aiEditOutcome";
+import { countFreshPatches, type PatchUnitView } from "./blockEditPatches";
+import { formatParagraphIndexes, toBlockSelectionLabel, withObjectParticle } from "./blockSelection";
 import { toChapterNotice, type ChapterNotice, type ChapterNoticeEvent } from "./chapterNotice";
 import { formatParagraphRange, type ParagraphRange } from "./paragraphRange";
 
@@ -44,6 +52,16 @@ export type AiEditTarget = {
   revisionId: string;
   paragraphs: readonly string[];
   range: ParagraphRange;
+};
+
+/** 여러 문단 고르기로 맡길 때 화면이 아는 장의 모습. 블록 id 와 문단 인덱스는 같은 차례(본문 차례)다. */
+export type BlockEditTarget = {
+  chapterId: string;
+  chapterOrdinal: number;
+  revisionId: string;
+  paragraphs: readonly string[];
+  blockIds: readonly string[];
+  indexes: readonly number[];
 };
 
 type UseNovelAiEditOptions = {
@@ -70,7 +88,9 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
   // 상세를 다시 받는 순간(진행 중 작업·수정안이 바뀌는 순간) 안내도 함께 사라진다. AI 수정 말고 같은 장의 직접
   // 고치기·되돌리기 결과도 `report` 로 여기 남긴다 — 문장이 한 줄이어야 지난 결과가 다음 동작 뒤에 남지 않는다.
   const [notice, setNotice] = useState<ChapterNotice | undefined>(undefined);
-  // 적용·버리기 중인 수정안. 한 번에 하나만 처리한다.
+  // 안내를 바꾸는 동작마다 하나씩 오른다. 늦게 끝나는 안내(여러 문단 수정안 수 세기)가 그사이의 새 안내를 덮지 않게 한다.
+  const noticeSeqRef = useRef(0);
+  // 적용·버리기 중인 수정안(옛 수정안은 작업 id, 여러 문단 수정안은 단위 열쇠). 어느 쪽이든 한 번에 하나만 처리한다.
   const [actingEditId, setActingEditId] = useState<string | undefined>(undefined);
   // 마지막으로 적은 지시. 금액 확인에서 물렀거나 작업이 실패하면 다음에 지시 칸을 이 값으로 연다 — 환불된 작업은
   // 서버가 지시문을 지우므로 다시 채울 곳이 여기뿐이다.
@@ -78,6 +98,9 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
   const startMutation = useStartAiEditMutation();
   const applyMutation = useApplyAiEditMutation();
   const dismissMutation = useDismissAiEditMutation();
+  const startBlocksMutation = useStartBlockEditMutation();
+  const applyPatchMutation = useApplyPatchUnitMutation();
+  const dismissPatchMutation = useDismissPatchUnitMutation();
 
   const activeAiEdit: TrackedJob | undefined =
     novel.activeJob?.kind === "ai_edit" && novel.activeJob.chapterId !== null
@@ -142,6 +165,29 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
       return;
     }
     const outcome = toAiEditOutcome(finished);
+    if (outcome.kind === "patches") {
+      setLastInstruction("");
+      // 수정안은 상세에 블록마다 실린다 — 다시 받은 상세에서 그 작업의 쓸 수 있는 수정안을 세어 알린다. 위에서 건 다시 받기를
+      // 기다린다(새로 보내지 않는다). 받지 못했으면 수를 말하지 않는다 — 옛 상세로 세면 "없어요"라고 틀리게 말한다. 기다리는
+      // 사이 다른 일이 안내를 바꿨으면 덮지 않는다.
+      const ordinal = novel.chapters.find((chapter) => chapter.id === finished.chapterId)?.ordinal;
+      const seq = noticeSeqRef.current;
+      void queryClient
+        .refetchQueries({ queryKey: novelKeys.detail(novel.id), exact: true }, { throwOnError: true, cancelRefetch: false })
+        .then(
+          () => {
+            const detail = queryClient.getQueryData<NovelDetailResponse>(novelKeys.detail(novel.id));
+            const edit = detail === undefined ? undefined : toPendingBlockEdits(detail).find((item) => item.id === finished.id);
+            return edit === undefined ? 0 : countFreshPatches(edit);
+          },
+          () => undefined,
+        )
+        .then((freshCount) => {
+          if (noticeSeqRef.current !== seq) return;
+          setNotice({ tone: "info", message: toBlockEditArrivedMessage(ordinal, freshCount) });
+        });
+      return;
+    }
     if (outcome.kind === "unavailable") {
       setNotice({ tone: "info", message: outcome.message });
       return;
@@ -155,6 +201,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
   }
 
   function report(event: ChapterNoticeEvent) {
+    noticeSeqRef.current += 1;
     setNotice(toChapterNotice(event));
   }
 
@@ -162,6 +209,17 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     const result = toNovelActionError(error, action);
     if (result === null) return;
     report({ type: "rejected", message: result.message });
+    // 여러 문단 수정 스위치가 꺼졌다 — 가격을 다시 받아 고르기를 거둔다.
+    if (hasNovelErrorCode(error, "NOVEL_MULTI_BLOCK_EDIT_DISABLED")) {
+      void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
+    }
+    // 낡아 거절된 수정안은 다시 받기 전에도 적용 버튼을 거둔다.
+    const stalePatchIds = toStalePatchIds(error);
+    if (stalePatchIds.length > 0) {
+      queryClient.setQueryData<NovelDetailResponse>(novelKeys.detail(novel.id), (detail) =>
+        detail === undefined ? undefined : { ...detail, pendingBlockEdits: withStalePatches(detail.pendingBlockEdits, stalePatchIds) },
+      );
+    }
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
   }
 
@@ -208,6 +266,98 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     }
   }
 
+  /** 고른 블록들(같은 장면)을 지시대로 고친 수정안을 맡긴다 — 지시 → 금액 확인 → 작업. 작업을 만들었으면 `true`. 스위치가
+   * 켜져 있을 때만 화면이 부른다(꺼짐이면 서버가 404 다). 연속 범위로 골랐어도 이 길 하나로 보낸다. */
+  async function startBlocks(target: BlockEditTarget): Promise<boolean> {
+    if (isBlocked) return false;
+    report({ type: "started" });
+    setIsPreparing(true);
+    try {
+      const label = toBlockSelectionLabel(target.indexes);
+      const instruction = await AiEditInstructionModal.call({
+        rangeLabel: label,
+        paragraphs: target.indexes.map((index) => target.paragraphs[index] ?? ""),
+        paragraphLabels: target.indexes.map((index) => formatParagraphIndexes([index])),
+        hasKindChips: true,
+        maxLength: novel.limits.aiEditInstructionMaxLength,
+        defaultInstruction: lastInstruction,
+      });
+      if (instruction === null || !isMountedRef.current) return false;
+      setLastInstruction(instruction);
+      const cost = novel.prices.aiEdit;
+      const isConfirmed = await confirmSpend({
+        title: `${target.chapterOrdinal}화 ${withObjectParticle(label)} AI로 고칠까요?`,
+        description:
+          "적은 대로 고른 문단마다 수정안을 만들어요. 수정안은 적용하기 전까지 본문을 바꾸지 않아요. 마음에 들지 않아 버려도 쓴 클로버는 돌려드리지 않아요.",
+        cost,
+        confirmLabel: "AI로 고치기",
+      });
+      if (!isConfirmed || !isMountedRef.current) return false;
+      const started = await startBlocksMutation.mutateAsync({
+        novelId: novel.id,
+        chapterId: target.chapterId,
+        baseRevisionId: target.revisionId,
+        blockIds: [...target.blockIds],
+        instruction,
+        expectedCost: cost,
+      });
+      setTracked({ jobId: started.id, chapterId: target.chapterId });
+      return true;
+    } catch (error) {
+      handleRequestError(error, "aiEdit");
+      return false;
+    } finally {
+      setIsPreparing(false);
+    }
+  }
+
+  /** 적용 단위(독립 수정안 하나·묶음 하나)를 적용한다. */
+  async function applyPatchUnit(unit: PatchUnitView, chapterOrdinal: number) {
+    if (actingEditId !== undefined) return;
+    report({ type: "started" });
+    setActingEditId(unit.key);
+    try {
+      await applyPatchMutation.mutateAsync({
+        novelId: novel.id,
+        jobId: unit.jobId,
+        unit: unit.request,
+        patchIds: unit.patchIds,
+      });
+      report({ type: "patchesApplied", chapterOrdinal, count: unit.patchIds.length });
+    } catch (error) {
+      handleRequestError(error, "applyPatch");
+    } finally {
+      setActingEditId(undefined);
+    }
+  }
+
+  /** 적용 단위 하나를 버리거나(`unit`), 한 작업의 남은 수정안을 모두 버린다(`jobId` 만). */
+  async function dismissPatches(
+    target: { unit: PatchUnitView } | { jobId: string; remainingCount: number },
+    chapterOrdinal: number,
+  ) {
+    if (actingEditId !== undefined) return;
+    report({ type: "started" });
+    const isUnit = "unit" in target;
+    setActingEditId(isUnit ? target.unit.key : `${target.jobId}:all`);
+    try {
+      await dismissPatchMutation.mutateAsync(
+        isUnit
+          ? { novelId: novel.id, jobId: target.unit.jobId, unit: target.unit.request, patchIds: target.unit.patchIds }
+          : { novelId: novel.id, jobId: target.jobId, unit: "all", patchIds: "all" },
+      );
+      report({
+        type: "patchesDismissed",
+        chapterOrdinal,
+        count: isUnit ? target.unit.patchIds.length : target.remainingCount,
+      });
+    } catch (error) {
+      handleRequestError(error, "dismissPatch");
+    } finally {
+      setActingEditId(undefined);
+    }
+  }
+
   async function apply(edit: NovelPendingAiEdit, chapterOrdinal: number) {
     if (actingEditId !== undefined) return;
     report({ type: "started" });
@@ -247,8 +397,11 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     notice,
     actingEditId,
     start,
+    startBlocks,
     apply,
     dismiss,
+    applyPatchUnit,
+    dismissPatches,
     report,
   };
 }

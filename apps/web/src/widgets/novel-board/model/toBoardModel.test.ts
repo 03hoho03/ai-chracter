@@ -94,6 +94,31 @@ describe("toBoardModel", () => {
     ]);
   });
 
+  it("marks an episode that only has multi-paragraph suggestions waiting", () => {
+    const model = toBoardModel(
+      {
+        ...novel,
+        pendingAiEdits: [],
+        pendingBlockEdits: [
+          {
+            id: "j3",
+            chapterId: "e3",
+            instruction: "짧게",
+            patches: [{ id: "p1", blockId: "x", state: "pending", paragraphs: ["새 글"], fresh: true }],
+            bundles: [],
+            createdAt: "2026-10-08T00:00:00Z",
+          },
+        ],
+      },
+      undefined,
+    );
+    expect(model.episodes.map((episode) => [episode.id, episode.hasPendingAiEdit])).toEqual([
+      ["e1", false],
+      ["e2", false],
+      ["e3", true],
+    ]);
+  });
+
   it("draws the episode column without a character lane while characters are missing", () => {
     expect(toBoardModel(novel, undefined).characters).toEqual([]);
   });

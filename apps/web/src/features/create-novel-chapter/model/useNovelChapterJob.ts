@@ -18,6 +18,7 @@ import {
   chaptersInBatch,
   initialChapterModelId,
   isNovelIllustrationsOn,
+  hasPendingEdits,
   type NovelAction,
   type NovelChapterModelId,
   type NovelChapterSummary,
@@ -319,7 +320,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
         description: toRegenerateConfirmDescription({
           rangeLabel,
           episodeCount: batchChapters.length,
-          hasPendingAiEdits: novel.pendingAiEdits.some((edit) => batchChapterIds.has(edit.chapterId)),
+          hasPendingAiEdits: hasPendingEdits(novel, batchChapterIds),
           isIllustrationsOn,
         }),
         confirmLabel: "다시 만들기",

@@ -6,7 +6,9 @@ import { useEffect, useId, useState, type RefObject } from "react";
 import { useCloverPricingQuery } from "@/entities/clover";
 import {
   chaptersInBatch,
+  hasPendingBlockEdits,
   isNovelIllustrationsOn,
+  isNovelMultiBlockEditOn,
   toEpisodeRangeLabel,
   useNovelChapterQuery,
   type NovelChapterSummary,
@@ -59,8 +61,10 @@ export function BoardEpisodePanel({
   const batchHeadingId = useId();
   const [isFixMode, setIsFixMode] = useState(false);
   const chapterQuery = useNovelChapterQuery(novel.id, chapter.id, chapter.currentRevisionId);
-  // 삽화 조작은 스위치가 켜졌을 때만 있다 — 한 번 읽어 본문으로 내린다.
-  const isIllustrationsOn = isNovelIllustrationsOn(useCloverPricingQuery().data);
+  // 삽화 조작과 여러 문단 고르기는 각자 스위치가 켜졌을 때만 있다 — 한 번 읽어 본문으로 내린다.
+  const pricing = useCloverPricingQuery().data;
+  const isIllustrationsOn = isNovelIllustrationsOn(pricing);
+  const isMultiBlockEditOn = isNovelMultiBlockEditOn(pricing);
   const illustrationPicker = useIllustrationImagePicker(novel.id);
   // 지우기는 마지막에 한 번에 만든 화들(마지막 묶음) 단위다 — 그 묶음의 어느 화에서든 지울 수 있고, 함께 지워지는
   // 화들의 범위를 버튼이 말한다.
@@ -80,6 +84,7 @@ export function BoardEpisodePanel({
   const isBatchSold = isLastBatchSold(novel.purchaseRefunds);
   const isDeleteBlocked = isJobRunning || isBatchSold;
   const hasPendingAiEdits = novel.pendingAiEdits.some((edit) => edit.chapterId === chapter.id);
+  const hasPendingPatches = hasPendingBlockEdits(novel, new Set([chapter.id]));
   const revision = chapterQuery.data?.revision;
 
   // 판 이력 모달은 루트에 마운트돼 화를 옮겨도 남는다 — 이 화를 떠나면(다른 카드 고르기·작업이 끝난 뒤의 자동 이동·
@@ -125,6 +130,7 @@ export function BoardEpisodePanel({
                 chapterId: chapter.id,
                 chapterOrdinal: chapter.ordinal,
                 hasPendingAiEdits,
+                hasPendingBlockEdits: hasPendingPatches,
               }).then((restoredRevisionNo) => {
                 if (restoredRevisionNo === null) return;
                 aiEdit.report({ type: "restored", chapterOrdinal: chapter.ordinal, revisionNo: restoredRevisionNo });
@@ -155,6 +161,7 @@ export function BoardEpisodePanel({
         onFocusFallback={focusHeading}
         onDraftDirtyChange={onDraftDirtyChange}
         isIllustrationsOn={isIllustrationsOn}
+        isMultiBlockEditOn={isMultiBlockEditOn}
         onFixModeRequest={() => setIsFixMode(true)}
         onPickImage={illustrationPicker.pickImage}
       />
@@ -230,6 +237,7 @@ type ChapterBodyProps = {
   onFocusFallback: () => void;
   onDraftDirtyChange: (isDirty: boolean) => void;
   isIllustrationsOn: boolean;
+  isMultiBlockEditOn: boolean;
   onFixModeRequest: () => void;
   onPickImage: PickIllustrationImage;
 };
@@ -243,6 +251,7 @@ function ChapterBody({
   onFocusFallback,
   onDraftDirtyChange,
   isIllustrationsOn,
+  isMultiBlockEditOn,
   onFixModeRequest,
   onPickImage,
 }: ChapterBodyProps) {
@@ -256,6 +265,7 @@ function ChapterBody({
         onFocusFallback={onFocusFallback}
         onDraftDirtyChange={onDraftDirtyChange}
         isIllustrationsOn={isIllustrationsOn}
+        isMultiBlockEditOn={isMultiBlockEditOn}
         onFixModeRequest={onFixModeRequest}
         onPickImage={onPickImage}
         isRevisionRefreshing={query.isPlaceholderData}

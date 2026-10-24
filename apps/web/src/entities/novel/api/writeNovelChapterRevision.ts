@@ -1,5 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 
+import { withSettledPatches } from "../model/pendingBlockEdits";
+
 import { novelKeys } from "./keys";
 import type { NovelChapterResponse } from "./useNovelChapterQuery";
 import type { NovelDetailResponse } from "./useNovelQuery";
@@ -15,11 +17,17 @@ import type { NovelDetailResponse } from "./useNovelQuery";
  *   갖고 있지 않으면 뺀다 — 남기면 적용이 충돌로 끝나는 낡은 수정안이 한 번 보인다. 수정안을 적용한 응답이면
  *   (`appliedEditId`) 그 수정안은 글이 같아도 뺀다 — 서버가 적용한 작업을 목록에서 빼므로 남기면 다시 적용할 수 없는 카드가
  *   보인다(고칠 곳이 없어 글이 그대로인 수정안).
+ * - 여러 문단 수정안은 화 단위로 빼지 않는다. 서버는 블록마다 낡음을 판정해 글이 바뀐 블록의 수정안만 쓸 수 없게 하므로, 화
+ *   단위로 빼면 같은 작업의 다른 블록 수정안이 다시 받을 때 되살아나 깜빡인다. 단위를 적용한 응답이면(`appliedPatches`) 그
+ *   수정안만 적용으로 바꾼다. 나머지 낡음은 다시 받은 상세가 알려 준다.
  * - 그래도 상세(갱신 시각·다른 장)와 개정 목록은 낡았으니 다시 받게 표시한다. */
 export function writeNovelChapterRevision(
   queryClient: QueryClient,
   chapter: NovelChapterResponse,
-  { appliedEditId }: { appliedEditId?: string } = {},
+  {
+    appliedEditId,
+    appliedPatches,
+  }: { appliedEditId?: string; appliedPatches?: { jobId: string; patchIds: readonly string[] } } = {},
 ) {
   const { novelId, id: chapterId, revision } = chapter;
   const isSameText = isSameAsPreviousText(queryClient, chapter);
@@ -43,6 +51,16 @@ export function writeNovelChapterRevision(
           pendingAiEdits: novel.pendingAiEdits.filter(
             (edit) => edit.id !== appliedEditId && (isSameText || edit.chapterId !== chapterId),
           ),
+          ...(appliedPatches === undefined
+            ? {}
+            : {
+                pendingBlockEdits: withSettledPatches(
+                  novel.pendingBlockEdits,
+                  appliedPatches.jobId,
+                  appliedPatches.patchIds,
+                  "applied",
+                ),
+              }),
         },
   );
   void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novelId) });
