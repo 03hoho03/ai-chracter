@@ -394,3 +394,73 @@ def test_scene_judgment_needs_the_credentials_of_the_backend_it_inherits(monkeyp
             **{_ASSIGN: "chat_stat_judgment:anthropic,preview_stat_judgment:anthropic"},
         )
 
+
+# ── 미리보기 호출의 배정 물려받기 ────────────────────────────────────────────────────────────
+
+# 미리보기 호출 → 배정을 물려받는 채팅 짝. 자기 env 줄이 없으면 짝의 배정으로 가고, 있으면 짝의 배정과 같아야 뜬다 — 기동한
+# 프로세스에서 미리보기와 채팅이 같은 문안을 다른 경로로 부르는 일이 없다.
+_PREVIEW_PAIRS: dict[LLMCallSite, LLMCallSite] = {
+    "preview_generate": "chat_generate",
+    "preview_stat_judgment": "chat_stat_judgment",
+    "preview_ending_judgment": "chat_ending_judgment",
+    "preview_media_book_image": "chat_media_book_image",
+    "preview_scene_judgment": "chat_scene_judgment",
+}
+
+
+def _production_assignment_with(call_site: str, backend: str) -> str:
+    return f"{_production_assignment_without(call_site)},{call_site}:{backend}"
+
+
+@pytest.mark.parametrize("call_site", list(_PREVIEW_PAIRS))
+def test_production_env_with_a_preview_line_unlike_its_chat_pair_refuses_to_start(
+    monkeypatch: pytest.MonkeyPatch, call_site: LLMCallSite
+) -> None:
+    """운영 배정에 미리보기 줄을 채팅 짝과 다른 구현으로 적으면 뜨지 않는다. Bedrock 자격을 채워 다른 이유로는 거부되지 않게 한다."""
+    with pytest.raises(ValidationError, match=f"{call_site}:bedrock — 물려받는 {_PREVIEW_PAIRS[call_site]}"):
+        load_production_env(
+            monkeypatch, **{_ASSIGN: _production_assignment_with(call_site, "bedrock")}, **_BEDROCK_CREDENTIALS
+        )
+
+
+@pytest.mark.parametrize("call_site", list(_PREVIEW_PAIRS))
+def test_production_env_with_a_preview_line_like_its_chat_pair_starts(
+    monkeypatch: pytest.MonkeyPatch, call_site: LLMCallSite
+) -> None:
+    loaded = load_production_env(monkeypatch, **{_ASSIGN: _production_assignment_with(call_site, "anthropic")})
+
+    assert loaded.llm_call_site_backends[call_site] == "anthropic"
+
+
+_PRODUCTION_PREVIEW_LINES: list[LLMCallSite] = [
+    call_site
+    for call_site in _PREVIEW_PAIRS
+    if f"{call_site}:anthropic" in PRODUCTION_ENV_TYPED_VALUES[_ASSIGN].split(",")
+]
+
+
+@pytest.mark.parametrize("call_site", _PRODUCTION_PREVIEW_LINES)
+def test_production_env_missing_a_preview_judgment_line_starts_on_its_chat_pair(
+    monkeypatch: pytest.MonkeyPatch, call_site: LLMCallSite
+) -> None:
+    """운영 배정에서 미리보기 판정 줄 하나만 빠지면 그 판정은 채팅 짝의 배정(Anthropic 직결)을 물려받아 뜬다 — 자격이 없는
+    Bedrock 으로 풀려 기동을 막던 경우가 아니다."""
+    loaded = load_production_env(monkeypatch, **{_ASSIGN: _production_assignment_without(call_site)})
+
+    assert call_site not in loaded.llm_call_site_backends
+    assert _resolved(loaded, call_site) == _resolved(loaded, _PREVIEW_PAIRS[call_site]) == ("haiku", "anthropic")
+
+
+def test_production_env_sends_a_premium_preview_where_it_sends_a_premium_chat_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """운영 env 에는 미리보기 생성 줄이 없다 — Opus 미리보기는 채팅 생성의 배정을 물려받아 Anthropic 직결로 가고, 상위 모델 스위치의
+    자격 검사도 그 경로를 본다. 기본(Gemini) 미리보기는 그대로 Gemini 다."""
+    loaded = load_production_env(monkeypatch)
+
+    assert "preview_generate" not in loaded.llm_call_site_backends
+    for carried in ("gemini", "opus"):
+        assert backends.pick_backend("preview_generate", carried, loaded.llm_call_site_backends) == (
+            backends.pick_backend("chat_generate", carried, loaded.llm_call_site_backends)
+        )
+    assert backends.pick_backend("preview_generate", "opus", loaded.llm_call_site_backends) == ("opus", "anthropic")
