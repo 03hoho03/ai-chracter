@@ -32,6 +32,7 @@ import { getSessionEndReason, resetSessionIfLost, sessionKeys, type SessionEndRe
 import { isApiError } from "@/shared/api/client";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 
+import { addOptimisticUserMessage } from "./addOptimisticUserMessage";
 import { ensureUserMessageForSend } from "./ensureUserMessageForSend";
 import { expandUserTextForRoom } from "./expandUserTextForRoom";
 import { imageArchiveKeyToInvalidate, type ImageArchiveTarget } from "./imageArchiveKeyToInvalidate";
@@ -299,10 +300,7 @@ export function useSendMessage(
       content: text,
       createdAt: new Date().toISOString(),
     };
-    queryClient.setQueryData<ChatRoomState>(
-      chatRoomKeys.detail(roomId),
-      (prev) => prev && { ...prev, messages: [...prev.messages, optimisticMessage] },
-    );
+    addOptimisticUserMessage(queryClient, roomId, optimisticMessage);
 
     void openStream({ payload: buildSendPayload({ roomId, text, shortcutId }), kind: "newTurn" });
   }

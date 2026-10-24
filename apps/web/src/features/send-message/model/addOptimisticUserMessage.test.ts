@@ -56,8 +56,7 @@ describe("addOptimisticUserMessage", () => {
     expect(cachedMessages(queryClient)).toEqual([...SERVER_MESSAGES, OPTIMISTIC]);
   });
 
-  // 삭제·수정 뒤 방을 다시 받는 중에 보내면, 그 조회가 늦게 도착해 방금 둔 말풍선을 지운다. 취소는 시작 시점 값으로 되돌리지
-  // 않아야 한다 — 되돌리면 그 되돌림이 늦게 일어나 같은 말풍선을 지운다.
+  // 삭제·수정 뒤 방을 다시 받는 중에 보내면, 그 조회가 늦게 도착해 방금 둔 말풍선을 지운다.
   it("keeps the message when a refetch that was already in flight finishes or is cancelled", async () => {
     let resolveFetch: (state: ChatRoomState) => void = () => {};
     const inFlight = queryClient
