@@ -52,3 +52,17 @@ describe("chatRoomKeys 내 방 목록", () => {
     expect(queryClient.getQueryData(chatRoomKeys.detail("room-1"))).toEqual({ id: "room-1" });
   });
 });
+
+describe("chatRoomKeys 방 기억", () => {
+  it("장면·사실 목록은 방 기억 키 아래에 있어, 턴 뒤·되감기 뒤 기억을 낡게 표시하면 목록도 함께 낡는다", () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(chatRoomKeys.memory("room-1"), "memory");
+    queryClient.setQueryData(chatRoomKeys.memoryItems("room-1"), "items");
+    queryClient.setQueryData(chatRoomKeys.memoryItems("room-2"), "other-room-items");
+    expect(cachedData(queryClient, chatRoomKeys.memory("room-1"))).toEqual(["memory", "items"]);
+  });
+
+  it("방 기억을 다시 받을 때 목록 쿼리는 기억 조회와 다른 키다", () => {
+    expect(chatRoomKeys.memoryItems("room-1")).not.toEqual(chatRoomKeys.memory("room-1"));
+  });
+});

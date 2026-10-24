@@ -96,6 +96,16 @@ describe("getRateLimitDetail", () => {
     ).toEqual({ code: "CLOVER_REQUIRED", retryAfterSeconds: 12345, window: "clover" });
   });
 
+  it("429 + 요약 다시 만들기 CLOVER_REQUIRED 바디를 파싱한다", () => {
+    expect(
+      getRateLimitDetail({
+        status: 429,
+        detail: { code: "CLOVER_REQUIRED", retryAfterSeconds: 600, window: "memory_summary" },
+        message: "x",
+      }),
+    ).toEqual({ code: "CLOVER_REQUIRED", retryAfterSeconds: 600, window: "memory_summary" });
+  });
+
   it("429 + 이미지 CLOVER_REQUIRED 바디를 파싱한다 — window는 image를 유지한다", () => {
     expect(
       getRateLimitDetail({
