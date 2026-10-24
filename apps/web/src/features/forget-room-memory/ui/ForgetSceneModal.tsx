@@ -12,6 +12,7 @@ import { Info } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { chatRoomKeys, type ChatRoomMemoryEpisode } from "@/entities/chat-room";
+import { createSingleFlight } from "@/shared/lib/async/singleFlight";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useForgetEpisodeMutation } from "../api/forgetMemoryMutations";
@@ -33,8 +34,14 @@ export const ForgetSceneModal = createCallable<ForgetSceneModalProps, ForgetOutc
   const queryClient = useQueryClient();
   const forget = useForgetEpisodeMutation(roomId);
   const [error, setError] = useState<string | undefined>(undefined);
+  // 같은 순간 두 번 누르면 `isPending`이 다시 그려지기 전에 두 번째가 들어와 요청이 둘 나간다 — 렌더를 기다리지 않고 막는다.
+  const [runExclusive] = useState(createSingleFlight);
 
   async function handleConfirm() {
+    await runExclusive(confirm);
+  }
+
+  async function confirm() {
     if (forget.isPending) return;
     setError(undefined);
     try {

@@ -20,6 +20,7 @@ import {
   useCloverBalanceQuery,
   useCloverPricingQuery,
 } from "@/entities/clover";
+import { createSingleFlight } from "@/shared/lib/async/singleFlight";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useRegenerateMemorySummaryMutation } from "../api/memoryMutations";
@@ -48,6 +49,8 @@ export const RegenerateSummaryModal = createCallable<RegenerateSummaryModalProps
   const [isServerShort, setIsServerShort] = useState(false);
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const [isClosedByServer, setIsClosedByServer] = useState(false);
+  // 같은 순간 두 번 누르면 `isPending`이 다시 그려지기 전에 두 번째가 들어와 요청이 둘 나간다 — 렌더를 기다리지 않고 막는다.
+  const [runExclusive] = useState(createSingleFlight);
 
   const memory = memoryQuery.data;
   const summary = memory?.summary;
@@ -58,6 +61,10 @@ export const RegenerateSummaryModal = createCallable<RegenerateSummaryModalProps
   const isConfirmBlocked = regenerate.isPending || cost === undefined || summary === undefined || isClosedByServer;
 
   async function handleConfirm() {
+    await runExclusive(confirm);
+  }
+
+  async function confirm() {
     if (regenerate.isPending || cost === undefined || memory === undefined || summary === undefined || isClosedByServer) {
       return;
     }
