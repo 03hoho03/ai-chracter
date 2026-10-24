@@ -126,11 +126,43 @@ async def load_room(db: AsyncSession, room_id: uuid.UUID, *, lane: Lane | None =
     return RoomContext(room=room, setup=setup, names=names, lane=room_lane)
 
 
+# 배정 표 해석이 읽는 설정 칸 가운데 측정 서버 env 표의 공통 줄이 정하는 것 — 실효 방 모델을 가르는 상위 모델 스위치, 행의 경로
+# 대조가 읽는 호출 위치 배정, 구조화 깊이 대조가 읽는 Haiku 모델 이름. 측정 서버는 이 값으로 뜨고 하네스 프로세스는 로컬 env 로
+# 뜨므로, 하네스가 자기 값으로 풀면 같은 측정 안에서 서버의 턴 판정과 하네스의 접기·추출이 다른 칸을 읽는다. 해석이 읽는 나머지
+# 칸(구조화 깊이, 다른 Claude 모델 이름)은 공통 줄에 없어 두 프로세스가 같은 로컬 env 에서 읽고, Bedrock 자격은 해석이 읽지 않는다.
+SERVER_ROUTE_SETTINGS = ("chat_premium_models_enabled", "llm_call_site_backends", "anthropic_haiku_model_id")
+
+
+def _server_route_setting(name: str) -> object:
+    """공통 줄의 env 글을 앱 설정이 env 를 읽을 때와 같은 해석으로 편 값."""
+    raw = dict(COMMON_ENV)[name.upper()]
+    if name == "llm_call_site_backends":
+        return Settings._split_call_site_backends(raw)
+    if isinstance(getattr(settings, name), bool):
+        return raw == "true"
+    return raw
+
+
+@contextlib.contextmanager
+def _server_route_settings() -> Iterator[None]:
+    saved = {name: getattr(settings, name) for name in SERVER_ROUTE_SETTINGS}
+    try:
+        for name in SERVER_ROUTE_SETTINGS:
+            setattr(settings, name, _server_route_setting(name))
+        yield
+    finally:
+        for name, value in saved.items():
+            setattr(settings, name, value)
+
+
 async def judgment_sets(db: AsyncSession, ctx: RoomContext) -> JudgmentPromptSets:
     """그 방 레인의 판정·요약·추출 세트 — 앱 방 턴의 `judgment_prompt_sets` 와 같은 고르기다. 모델 배정 표는 Redis 캐시가 아니라
     측정 DB 에서 바로 읽는다(이 프로세스의 Redis 는 측정 서버의 것과 다를 수 있고, 맞추기는 서버 쪽 캐시만 지운다). 지금 코드가
-    모르는 값의 행은 앱처럼 버려 그 칸이 env 규칙으로 풀린다. 칸의 방 모델은 방 주인의 실효 방 모델이다(이 프로세스 설정의 상위
-    모델 스위치로 읽는다 — 앱 서버와 같은 판정). 표가 비면 표를 넘기지 않은 호출과 같은 세트를 고른다."""
+    모르는 값의 행은 앱처럼 버려 그 칸이 env 규칙으로 풀린다.
+
+    표에 행이 있으면 칸의 방 모델(방 주인의 실효 방 모델)과 행의 경로·깊이 대조를 이 프로세스 설정이 아니라 측정 서버 env 표의
+    공통 줄 값(`SERVER_ROUTE_SETTINGS`)으로 푼다 — 측정 서버의 턴 판정과 같은 칸을 읽게. 표가 비면 그 값들이 세트 고르기에 닿지
+    않으므로 씌우지 않고, 표를 넘기지 않은 호출과 같은 세트를 고른다."""
     lane = ctx.lane
     gemini = await load_active_prompt_set(db, lane=lane, model="gemini")
 
@@ -139,8 +171,9 @@ async def judgment_sets(db: AsyncSession, ctx: RoomContext) -> JudgmentPromptSet
 
     parsed = [parse_route_row(raw) for raw in await load_prompt_routes_from_db(db)]
     routes = PromptRoutes.from_rows(row for row in parsed if row is not None)
-    room_model = await effective_room_model(db, ctx.room.user_id, ctx.room.chat_model)
-    return await judgment_prompt_sets(lane=lane, gemini_set=gemini, load=load, routes=routes, room_model=room_model)
+    with _server_route_settings() if routes.rows else contextlib.nullcontext():
+        room_model = await effective_room_model(db, ctx.room.user_id, ctx.room.chat_model)
+        return await judgment_prompt_sets(lane=lane, gemini_set=gemini, load=load, routes=routes, room_model=room_model)
 
 
 async def generation_set(db: AsyncSession, model: ChatModelId, *, lane: Lane) -> tuple[PromptSet, list[PromptSection]]:

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from memory_eval import checkpoint, holdout, ledger as ledger_mod, plants as plants_mod, workers
-from memory_eval.arm_env import BUNDLE1_ARMS
+from memory_eval.arm_env import BUNDLE1_ARMS, COMMON_ENV
 from memory_eval.ledger import Ledger
 from memory_eval.cli_common import (
     DEFAULT_SEED_JSON,
@@ -853,7 +853,8 @@ def cmd_probe(args: argparse.Namespace) -> int:
             }
         )
         return 0
-    overrides: dict[str, str] = {"CHAT_PREMIUM_MODELS_ENABLED": "true"}
+    # 하네스 쪽 배정 표 해석도 이 값을 쓴다(`runtime.judgment_sets`) — 둘이 갈리지 않게 같은 공통 줄에서 읽는다.
+    overrides: dict[str, str] = {"CHAT_PREMIUM_MODELS_ENABLED": dict(COMMON_ENV)["CHAT_PREMIUM_MODELS_ENABLED"]}
     if args.server_env:
         for line in args.server_env.read_text(encoding="utf-8").splitlines():
             if line.strip() and not line.startswith("#"):

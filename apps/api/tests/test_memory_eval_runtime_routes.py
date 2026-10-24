@@ -101,24 +101,59 @@ async def test_a_row_in_the_measurement_table_picks_its_chain_and_call_model(
     assert sets.stat[0].model == "gemini" and sets.call_model("stat") is None
 
 
-@pytest.mark.parametrize(("premium", "applies"), [(True, True), (False, False)])
-async def test_the_cell_is_the_rooms_effective_model(
+@pytest.mark.parametrize("harness_premium", [True, False])
+async def test_an_opus_room_reads_the_opus_cell_whatever_the_harness_process_switch_says(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
-    premium: bool,
-    applies: bool,
+    harness_premium: bool,
 ) -> None:
-    """Opus 로 저장된 방은 상위 모델 스위치가 켜져 있을 때만 Opus 칸을 읽는다 — 꺼지면 그 턴은 Gemini 방으로 돌아 Gemini 칸이다."""
-    monkeypatch.setattr(settings, "chat_premium_models_enabled", premium)
+    """측정 서버는 상위 모델 스위치를 켜고 뜨므로 Opus 로 저장된 방의 턴 판정은 Opus 칸을 읽는다. 하네스 프로세스는 로컬 env 로 떠서
+    그 스위치가 꺼져 있을 수 있는데, 그 값으로 칸을 고르면 같은 측정 안에서 하네스의 접기·추출만 Gemini 칸으로 갈린다."""
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", harness_premium)
     ctx = await _story_room(db_client, db_session, stored="opus")
     chain_id = await _row_chain(db_session)
     db_session.add(_route("opus", "memory_summary"))
     await db_session.flush()
 
     sets = await runtime.judgment_sets(db_session, ctx)
-    assert (sets.summary[0].id == chain_id) is applies
-    assert sets.call_model("summary") == ("gemini" if applies else None)
+    assert sets.summary[0].id == chain_id
+    assert sets.call_model("summary") == "gemini"
+    assert settings.chat_premium_models_enabled is harness_premium
+
+
+async def test_a_gemini_room_reads_the_gemini_cell_not_the_opus_cell(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    ctx = await _story_room(db_client, db_session, stored="gemini")
+    await _row_chain(db_session)
+    db_session.add(_route("opus", "memory_summary"))
+    await db_session.flush()
+
+    sets = await runtime.judgment_sets(db_session, ctx)
+    assert sets.summary[0].model == "gemini" and sets.call_model("summary") is None
+
+
+async def test_a_rows_path_is_checked_against_the_measurement_server_assignment_not_the_harness_process(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Anthropic 직결로 부르는 행은 측정 서버의 호출 위치 배정으로는 경로가 맞는다. 하네스 프로세스에 그 배정이 없어(여기서는 비움)
+    그 값으로 대조하면 같은 행을 경로 불일치로 건너뛰어, 서버의 턴과 하네스의 접기가 다른 체인을 읽는다."""
+    monkeypatch.setattr(settings, "anthropic_structured_effort", "low")
+    ctx = await _story_room(db_client, db_session)
+    chain_id = await _row_chain(db_session)
+    db_session.add(
+        PromptRoute(
+            lane="story", room_model="gemini", stage="memory_summary", chain_model=ROW_CHAIN, call_model="haiku",
+            backend="anthropic",
+        )
+    )  # fmt: skip
+    await db_session.flush()
+
+    sets = await runtime.judgment_sets(db_session, ctx)
+    assert sets.summary[0].id == chain_id
+    assert sets.call_model("summary") == "haiku"
+    assert settings.llm_call_site_backends == {}
 
 
 async def test_episode_extraction_in_the_harness_carries_the_rows_call_model(
