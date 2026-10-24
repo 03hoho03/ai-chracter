@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasChapterModelChoice,
   initialChapterModelId,
+  toOutlineChapterModelOptions,
   toOutlineModelOptions,
   toProposalModelOptions,
   toRegenerateModelOptions,
@@ -92,5 +93,37 @@ describe("toOutlineModelOptions", () => {
       { id: "gemini", name: "Gemini", cost: 80, disabledReason: undefined },
       { id: "opus", name: "Claude Opus", cost: 240, disabledReason: undefined },
     ]);
+  });
+});
+
+describe("toOutlineChapterModelOptions", () => {
+  const model = (id: "gemini" | "sonnet" | "opus", eligible: boolean | null, maxTurns: number) => ({
+    id,
+    name: id,
+    cost: 100,
+    maxTurns,
+    eligible,
+    ineligibleReason: eligible === false ? ("too_many_turns" as const) : null,
+  });
+
+  it("못 쓰는 모델은 빼지 않고 비활성 + 이유(장면 턴 수 · 상한)로 남긴다", () => {
+    expect(toOutlineChapterModelOptions([model("gemini", true, 45), model("opus", false, 20)], 25)).toEqual([
+      { id: "gemini", name: "gemini", cost: 100, disabledReason: undefined },
+      { id: "opus", name: "opus", cost: 100, disabledReason: "대화가 길어 이 모델로는 못 써요 (25턴 · 20턴까지)" },
+    ]);
+  });
+
+  // 서버가 판정하지 않았으면(승인한 장면 구성안 없음·낡음) 지금처럼 모두 고를 수 있다 — 그때는 다른 거절이 먼저 난다.
+  it("판정이 없으면(null) 모두 고를 수 있다", () => {
+    expect(toOutlineChapterModelOptions([model("gemini", null, 45), model("opus", null, 20)], null)).toEqual([
+      { id: "gemini", name: "gemini", cost: 100, disabledReason: undefined },
+      { id: "opus", name: "opus", cost: 100, disabledReason: undefined },
+    ]);
+  });
+
+  it("턴 수를 모르는 부적격은 숫자 없이 이유만 말한다", () => {
+    expect(toOutlineChapterModelOptions([model("opus", false, 20)], null)[0]?.disabledReason).toBe(
+      "대화가 길어 이 모델로는 못 써요",
+    );
   });
 });

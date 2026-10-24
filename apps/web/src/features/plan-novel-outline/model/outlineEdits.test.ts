@@ -23,12 +23,12 @@ import {
 
 // 메시지 차례: u1 a1 | u2 a2 | u3 a3 a3b | u4 | u5 a5 | u6 a6 — 4턴은 응답 없는 말 하나다.
 const TURNS: OutlineTurn[] = [
-  { key: "u1", number: 1, messageIds: ["u1", "a1"], excerpt: "첫째", hasResponse: true },
-  { key: "u2", number: 2, messageIds: ["u2", "a2"], excerpt: "둘째", hasResponse: true },
-  { key: "u3", number: 3, messageIds: ["u3", "a3", "a3b"], excerpt: "셋째", hasResponse: true },
-  { key: "u4", number: 4, messageIds: ["u4"], excerpt: "넷째", hasResponse: false },
-  { key: "u5", number: 5, messageIds: ["u5", "a5"], excerpt: "다섯째", hasResponse: true },
-  { key: "u6", number: 6, messageIds: ["u6", "a6"], excerpt: "여섯째", hasResponse: true },
+  { key: "u1", number: 1, messageIds: ["u1", "a1"], responseIds: ["a1"], excerpt: "첫째", hasResponse: true },
+  { key: "u2", number: 2, messageIds: ["u2", "a2"], responseIds: ["a2"], excerpt: "둘째", hasResponse: true },
+  { key: "u3", number: 3, messageIds: ["u3", "a3", "a3b"], responseIds: ["a3", "a3b"], excerpt: "셋째", hasResponse: true },
+  { key: "u4", number: 4, messageIds: ["u4"], responseIds: [], excerpt: "넷째", hasResponse: false },
+  { key: "u5", number: 5, messageIds: ["u5", "a5"], responseIds: ["a5"], excerpt: "다섯째", hasResponse: true },
+  { key: "u6", number: 6, messageIds: ["u6", "a6"], responseIds: ["a6"], excerpt: "여섯째", hasResponse: true },
 ];
 const INDEX = toTurnIndex(TURNS);
 
