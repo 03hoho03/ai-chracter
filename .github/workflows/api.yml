@@ -96,6 +96,19 @@ jobs:
 
       - run: uv run ruff check src migrations scripts tests
 
+      # mypy 증분 캐시를 run 사이에 이어 쓴다. 캐시가 있어도 mypy 는 내용이 바뀐 파일과 그 파일에
+      # 기대는 모듈을 다시 검사하므로 판정은 캐시 없이 돌린 것과 같다. 의존성 버전(uv.lock)이나
+      # 설정(pyproject.toml)이 바뀌면 키가 바뀐다 — 마지막 줄 restore-keys 로 옛 캐시를 받더라도
+      # mypy 가 바뀐 라이브러리 파일과 설정을 알아보고 해당 모듈을 다시 검사한다.
+      # `actions/cache` 는 잡의 working-directory 를 따르지 않아 경로를 저장소 루트 기준으로 적는다.
+      - uses: actions/cache@v4
+        with:
+          path: apps/api/.mypy_cache
+          key: mypy-${{ runner.os }}-${{ hashFiles('apps/api/uv.lock', 'apps/api/pyproject.toml') }}-${{ github.sha }}
+          restore-keys: |
+            mypy-${{ runner.os }}-${{ hashFiles('apps/api/uv.lock', 'apps/api/pyproject.toml') }}-
+            mypy-${{ runner.os }}-
+
       - run: uv run mypy src migrations scripts tests
 
       # `openapi.json` 은 커밋되는 생성물이다. 스키마를 고치고 재생성을
