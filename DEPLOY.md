@@ -211,6 +211,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 `MEMORY_EMBED_WRITE`·`VOYAGE_API_KEY`·`MEMORY_EMBED_RECALL`·`MEMORY_EMBED_RECALL_TIMEOUT_MS`)이 더 들어갔고 그 뒤 VM 파일은 다시 세지 않았다.
 그날 켜기 뒤 서빙 컨테이너(`docker exec … env`)의 키 이름은 91개로, 켜기 전 84개에서 그 7개만큼 늘었고 `MEMORY_`·`VOYAGE_` 키는
 12개(위 7개 + `MEMORY_EPISODES_EXTRACT`·`MEMORY_EPISODE_MODEL`·`MEMORY_FACTS_EXTRACT`·`MEMORY_FACT_MODEL`·`MEMORY_SUMMARY_MODEL`)다.
+2026-10-24 기억 보기 켜기에서 `MEMORY_ITEMS_VISIBLE` 한 줄이 더 들어갔고, 그 뒤에도 VM 파일과 컨테이너 키 수는 다시 세지 않았다.
 컨테이너 수는 이 파일 키 수가 아니다 — `env_file` 로 받은 파일 키에 베이스 이미지·Dockerfile·Docker 가 넣는 키(`PATH`·`HOSTNAME` 등)가
 더해진 수라, 파일 키 수는 VM 에서 아래 명령으로 따로 센다.
 이 수는 날짜가 붙은 실측값이라 VM에 키를 넣거나 빼면 낡는다 — 그때 VM에서 다시 세어 이 문장을 고친다
@@ -292,7 +293,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `MEMORY_EMBED_RECALL_RRF_K` | 설정 안 함(기본 `20`) | RRF `Σ 1/(k + 순위)` 의 k. 장면 회상과 사실 섹션 관련 몫이 함께 쓴다. 기본값이 측정이 고른 값이다 |
 | `MEMORY_EMBED_RECALL_MAX_PLAIN` / `MEMORY_EMBED_RECALL_MAX_CUE` | 설정 안 함(기본 `1` / `3`) | 벡터 쪽이 비지 않은 턴의 회상 주입 상한 — 보통 턴 / 회상 단서("예전에"·"기억나" 등)가 있는 턴. 명사 단독의 상한과 같은 값이고 측정이 고른 값도 같다 |
 | `MEMORY_EMBED_RECALL_MAX_DISTANCE` / `MEMORY_EMBED_RECALL_VECTOR_LIMIT` / `MEMORY_EMBED_RECALL_DF_MAX` | 설정 안 함(기본 `2.0` / `10` / 비어 있음) | 벡터 순위에 넣는 코사인 거리 상한 / 회상의 벡터 순위에 넣는 거리 순 앞 개수 / 흔한 명사의 절대 상한(비면 비율 기준만). 🔴 거리 상한 `2.0` 은 코사인 거리의 최댓값이라 **아무것도 거르지 않는다** — 그래서 보통 턴에도 거의 매번 가장 가까운 장면 하나가 실린다. 측정 격자에서 상한을 둔 점과 목적함수가 같아 기본값에 가장 가까운 점(`2.0`·`10`·비어 있음)을 골랐고, 보통 턴 주입률이 명사 단독 0.95 에서 1.00 으로 오르는 것을 받아들였다. 사실 섹션 관련 몫도 같은 거리 상한을 쓴다 |
-| `MEMORY_ITEMS_VISIBLE` | 설정 안 함(기본 `false`) — 처리방침에 기억 열람 항목을 게시한 뒤 켤 때 `true` | 방 주인에게 그 방의 장면·사실 기억 목록을 보여 주는 API(`GET /chat-rooms/{id}/memory/items`)를 연다. 꺼져 있으면 그 라우트가 404 `MEMORY_ITEMS_DISABLED` 이고, 기억 응답(`GET /chat-rooms/{id}/memory`)의 `features.itemsVisible` 이 `false` 라 화면이 목록을 부르지 않는다. 목록은 읽기만 해서 생성·요약·추출 프롬프트와 무관하다. 켜는 법은 줄 추가(`MEMORY_ITEMS_VISIBLE=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 요청부터 다시 404 다 |
+| `MEMORY_ITEMS_VISIBLE` | **운영 `true`**(2026-10-24부터, 코드 기본값 `false`) — 기억 열람·잊게 하기를 적은 처리방침 판이 게시된 뒤에만 켠다 | 방 주인이 그 방의 장면·사실 기억을 보고 고르는 라우트를 연다 — 목록(`GET /chat-rooms/{id}/memory/items`), 장면·사실 잊게 하기(`DELETE /chat-rooms/{id}/memory/episodes/{episodeId}`·`DELETE /chat-rooms/{id}/memory/facts?key=`)와 사실 잊기 미리 보기(`GET /chat-rooms/{id}/memory/facts/forget-preview`), 요약 다시 만들기(`POST /chat-rooms/{id}/memory/summary/regenerate`, 유료). 꺼져 있으면 이 라우트가 모두 404 `MEMORY_ITEMS_DISABLED` 이고(인증보다 먼저 본다), 기억 응답(`GET /chat-rooms/{id}/memory`)의 `features.itemsVisible` 이 `false` 라 웹 기억 패널은 탭 없는 예전 모양(노트 편집기 하나, 목록 요청 없음)이다. 목록은 읽기만 해서 생성·요약·추출 프롬프트와 무관하다. 켜는 법은 줄 추가(`MEMORY_ITEMS_VISIBLE=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 요청부터 다시 404 이고 패널은 예전 모양으로 돌아간다. 🔴 끄거나 이미지를 되돌려도 이미 잊게 한 장면·사실은 돌아오지 않는다(실제로 지운 행이다). 잊게 하기·다시 만들기의 운영 성질은 「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절 |
 | `NOVELIZE_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 소설화(대화를 장편 소설의 장으로 옮겨 쓰기) 전역 스위치. 쓰려면 이 스위치·아래 명단·어드민이 준 계정별 허용 셋이 모두 있어야 한다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 모든 소설 화면·API 가 403 이고 허용 행은 남는다(다시 켜면 그대로 돌아온다). 켜기·끄기·회수·롤백은 "소설화 켜기 · 끄기 · 회수 · 롤백" 절 |
 | `NOVELIZE_GRANT_ALLOWLIST` | 허용할 수 있는 계정 id, **쉼표 구분**(공백·따옴표 없이) | 어드민이 허용을 줄 때와 사용자가 접근할 때 둘 다 본다 — 명단 밖 계정에는 어드민이 허용을 줄 수 없고(422), 명단에서 빼고 재기동하면 허용 행이 남아 있어도 바로 막힌다. 비면 아무에게도 줄 수 없다(기본값). UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 개인정보 처리방침이 소설화를 적기 전에는 운영자 계정만 넣는다 |
 | `GEMINI_NOVELIZE_MODEL_NAME` | 설정 안 함(기본값은 `apps/api/.env.example` 주석 줄) | 소설화 장 생성·문단 수정 모델. 장 경계 제안은 이 키가 아니라 `GEMINI_MODEL_NAME` 을 쓴다. 값이 비면 `GEMINI_MODEL_NAME` |
@@ -2625,6 +2626,7 @@ sudo bash ops/swap-api.sh
 `MEMORY_KNOWLEDGE_FILTER`·`VOYAGE_API_KEY`·`MEMORY_EMBED_WRITE`(2026-10-23 21:17 KST 교체), 편집 ② `MEMORY_EMBED_RECALL`·
 `MEMORY_EMBED_RECALL_TIMEOUT_MS=3000`(같은 날 21:47 KST 교체, 미임베딩 행 0 을 확인한 뒤). 단계 사이 관측 대신 편집마다 그 자리에서
 운영 Opus 방 턴으로 오류·섹션 실림·질의 임베딩 결과를 봤다. 끌 때는 편집 단위로 ② → ①, 단계별로는 아래 「끄기」 순서다.
+2026-10-24 부터는 기억 보기 스위치(`MEMORY_ITEMS_VISIBLE`)도 켜져 있다 — 아래 「기억 보기 · 잊게 하기 · 요약 다시 만들기」.
 사실 추출의 비밀 규칙 문안(비밀의 주인은 늘 아는 사람에 넣고 남이 몰래 본 비밀은 주인과 본 인물, 여럿이 함께 숨긴 비밀은 그
 자리의 인물 모두를 적는다, 털어놓은 장면의 관계 행 두 인물을 비밀 내용 행의 아는 사람으로 물려준다, 같은 키를 다시 쓸 때 앞서
 알던 인물을 지우지 않는다, 아는 사람을 정하는 차례)과 장면 추출의 아는 사람·말한 인물 규칙 문안은 프롬프트 세트 데이터라 스위치
@@ -2695,6 +2697,32 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
 **첫 글자 지연 보기.** 턴 기록 `chat_turns.llm_calls` 의 생성 칸에는 첫 글자 지연이 둘 붙는다 — `firstTokenMs` 는 턴 시작부터,
 `streamFirstTokenMs` 는 생성 호출(스트림)을 연 때부터 처음 글이 든 조각이 올 때까지(ms)다. 둘의 차가 생성 호출 앞의 준비 시간이라
 질의 임베딩·기억 읽기가 늘린 지연은 그 차로 본다. 글 없이 끝난 생성은 두 키 다 없고, 판정·임베딩 칸에는 붙지 않는다.
+
+**기억 보기 · 잊게 하기 · 요약 다시 만들기(`MEMORY_ITEMS_VISIBLE`).** 기억 열람·잊게 하기를 적은 처리방침 판(2026-10-24 판)을
+게시한 뒤 같은 날 켰다(14:46 KST 교체). 읽기와 방 주인의 삭제·다시 만들기만 여는 스위치라 위 「켜는 순서」와 따로 켜고 끈다.
+끄면 라우트가 404 로 돌아가고 웹 패널은 예전 모양이 되지만, 이미 잊게 한 행은 돌아오지 않는다.
+
+- **잊게 하기는 실제 삭제다.** 장면은 그 행 하나, 사실은 그 방의 같은 키 행 전부(옛 값 포함)를 지운다. 임베딩은 장면·사실 FK 의
+  CASCADE 가 함께 지운다. 비밀 사실(아는 사람이 정해진 키)이면 근거 메시지 구간이 겹치는 장면도 함께 지우고, 그 수는 확인 대화 전에
+  미리 보기 라우트가 알려 준다. 턴 기록(`chat_turns.memory_recall`·`memory_facts`)에는 실었던 행의 id 만 남고(글 없음), 정기 백업에는
+  보관 기간 동안 남는다. 요약 글과 최근 원문 창은 건드리지 않는다 — 요약에서 빼려면 사용자가 요약을 고친다.
+- **같은 내용이 다시 뽑힐 수 있다.** 잊게 하기는 원문을 지우지 않는다. 잊은 행을 뽑은 접힌 구간 안이나 그보다 앞의 메시지를
+  고치거나 지우거나 재생성하면 되감기가 그 메시지 이상을 덮는 스냅샷을 전부 지우므로, 그 구간이 다시 접힐 때 같은 원문에서 같은
+  장면·사실이 다시 뽑힐 수 있다. 아직 접히지 않은 대화나 그 뒤에 이어진 대화에 같은 내용이 있어도 다음 접기에서 새로 뽑힌다.
+- **잊기 세대.** 사실을 잊으면 같은 트랜잭션에서 방의 잊기 세대(`chat_rooms.memory_forget_generation`, 리비전 `914b076c9291`)가
+  오르고, 그때 진행 중이던 장면·사실 추출은 넣기 직전에 세대가 바뀐 것을 보면 결과를 버린다(그 시도는 실패 한 번으로 적혀 시도 한도 안에서
+  다음 추출 때 다시 쥐어지므로 위와 같은 이유로 같은 내용이 다시 나올 수 있다). 장면만 잊으면 세대는 그대로다. 옛 이미지는 이 칸을 몰라도 돈다(서버 기본값 0) —
+  이미지만 되돌리는 데 downgrade 는 필요 없고, 칸을 내릴 때는 이미지를 먼저 되돌린 뒤 내린다(칸을 매핑한 이미지는 칸이 사라지면 방
+  조회가 실패한다). 내려도 잊은 행은 돌아오지 않는다.
+- **요약 다시 만들기**는 방 모델과 무관한 고정 10 클로버(`apps/api/src/api/core/clover.py` 의 `MEMORY_SUMMARY_REGENERATE_COST`, 웹은
+  `/clover/pricing` 의 `memorySummaryRegenerateCost` 를 읽는다)이고, 깎은 뒤의 실패(요약 호출 실패·빈 요약 503, 요약을 기다리는 사이
+  기억이 바뀐 409)는 전부 환불한다. 원장 kind 는 `memory_summary_spend`·`memory_summary_refund` 이고 사용처 행을 남기지 않는다(정산
+  대상이 아니다). 같은 방에는 한 번에 하나만 받는다 — 진행 중이면 깎기 전에 409 `MEMORY_SUMMARY_REGENERATE_IN_PROGRESS`. 진행 표시는
+  Redis 키이고 수명은 요약 호출 상한(`GEMINI_MEMORY_SUMMARY_TIMEOUT_MS`) + 30초라 배포·크래시로 남은 표시도 그 뒤 풀린다. Redis 장애면
+  표시 없이 진행해 겹친 두 요청이 둘 다 깎을 수 있지만, 늦게 쓰는 쪽이 버전 충돌로 환불받는다. 호출은 요약 접기와 같은 모델
+  (`MEMORY_SUMMARY_MODEL`)·같은 호출 위치(`chat_memory_summary`)라 일 단위 원가 집계에서 접기와 갈리지 않는다. 다시 만든 글은 지금
+  스냅샷을 제자리에서 고치고 직전 글은 되돌리기 칸 하나에 들어간다 — 사용자가 고친 요약을 다시 만들면 고치기 전 글로는 돌아갈 수
+  없다.
 
 **끄기 — 켠 역순.** 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh`. 역순이면 되돌리는 도중의 상태도 전부 잰 조합이다.
 🔴 사실 주입이 켜져 있는 동안에는 `MEMORY_KNOWLEDGE_FILTER` 를 먼저 끄지 않는다 — 처리방침의 "비밀을 아는 인물이 장면에 없으면

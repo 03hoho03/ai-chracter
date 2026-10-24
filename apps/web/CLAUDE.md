@@ -150,6 +150,7 @@
 - **이미지 로딩 정책**: 기본은 `loading="lazy"` + `decoding="async"`. 예외 둘 — (1) 목록 첫 화면 카드는 `priority` prop으로 `eager`(호출부가 `index < toPriorityCount(aspect)`를 준다 — 그 사다리의 **최대 열 수**다). **손으로 적은 숫자를 쓰지 말 것**: 2026-09-11 에 열 사다리를 바꿨을 때 호출부 4곳의 `index < 4`가 그대로 남아 md 이상에서 **첫 줄 마지막 카드가 lazy 로 빠졌다** — 그래서 값을 `cardLayout.ts` 의 사다리에서 도출하게 바꿨다, 그중 `fetchPriority="high"`는 LCP 후보 **1장**에만(여러 장에 주면 신호가 희석된다), (2) 모달·상세의 주인공 이미지는 이미 뷰포트에 있으므로 `decoding="async"`만.
 - **비율을 모르는 원격 이미지는 `max-h-*`로 흘려보내지 말고 `aspect-*` 웰을 먼저 깔고 `object-contain`/`object-cover`로 채운다** — 안 그러면 도착하는 순간 아래 콘텐츠가 밀린다(CLS). 웰 배경은 다크에서 순백이 되면 안 되므로 `bg-muted`다 — **단 모달·시트·`bg-card` 위에서는 `bg-secondary`**(`muted`가 그 표면과 같은 값이라 사라진다. `DESIGN.md` §Colors "표면 위 채움 규칙", 가드 `shared/lib/surface-contract/mutedOnSurfaceContract.test.ts`).
 - **탭은 `variant="line"`**(활성 탭은 `primary`가 아니라 `foreground` 밑줄 — `DESIGN.md` One-Accent Rule).
+- **스크롤 영역(`overflow-*-auto`) 안에 `sr-only` 조각이 있으면 그 영역에 `relative`(위치 기준)를 준다.** `sr-only` 는 `absolute` 라 조각에서 영역까지(영역 포함) 위치 기준 조상이 없으면 영역 바깥을 기준으로 놓이고, 스크롤 영역은 그 조각을 잘라 내지 못해 그 자리만큼 문서 높이가 늘어난다 — 뷰포트 고정 화면(채팅)이 문서 스크롤에 밀려 아래에 빈 띠가 생긴다. 화면에는 안 보여서 문서 `scrollHeight` 로만 잡힌다.
 - **`width` 없는 `absolute` 안의 `grid-cols-N`은 intrinsic 폭이 0으로 붕괴한다** → 명시 `w-*` 필수.
 - **인라인 편집 우선** — 리스트 항목 하나를 즉석 수정하는 액션은 모달 대신 항목의 `isEditing` 로컬 state로 스위칭한다(편집 대상 id는 호출부 단일 state).
 - **자기완결 위젯** — 트리거 + Sheet/Dropdown 콘텐츠를 위젯이 통째로 소유하고(열림 atom도 내부) 호출부는 컴포넌트 하나만 배치한다.
