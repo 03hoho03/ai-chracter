@@ -7,9 +7,9 @@ import { toTurnIndex, type OutlineTurn } from "../model/outlineEdits";
 import { OutlineEpisodeItem } from "./OutlineEpisodeItem";
 
 const TURNS: OutlineTurn[] = [
-  { key: "u1", number: 1, messageIds: ["u1", "a1"], responseIds: ["a1"], excerpt: "첫째", hasResponse: true },
-  { key: "u2", number: 2, messageIds: ["u2", "a2", "a2b"], responseIds: ["a2", "a2b"], excerpt: "둘째", hasResponse: true },
-  { key: "u3", number: 3, messageIds: ["u3", "a3"], responseIds: ["a3"], excerpt: "셋째", hasResponse: true },
+  { key: "u1", number: 1, messageIds: ["u1", "a1"], responseIds: ["a1"], responseExcerpts: ["a1 발췌"], excerpt: "첫째", hasResponse: true },
+  { key: "u2", number: 2, messageIds: ["u2", "a2", "a2b"], responseIds: ["a2", "a2b"], responseExcerpts: ["a2 발췌", "a2b 발췌"], excerpt: "둘째", hasResponse: true },
+  { key: "u3", number: 3, messageIds: ["u3", "a3"], responseIds: ["a3"], responseExcerpts: ["a3 발췌"], excerpt: "셋째", hasResponse: true },
 ];
 
 function render(extra: Partial<ComponentProps<typeof OutlineEpisodeItem>> = {}) {
@@ -76,5 +76,19 @@ describe("구성안 화의 턴 상한 안내 줄", () => {
     const html = render({ isSplitting: true });
     expect(html).toContain("앞 1턴 · 뒤 3턴");
     expect(html).toContain("앞 3턴 · 뒤 1턴");
+  });
+
+  // 서버는 연달은 응답 사이에서도 나눔을 받는다 — 응답이 둘인 2턴은 응답마다 한 줄이고 그 사이에도 나눌 자리가 있다.
+  it("응답이 여럿인 턴은 응답마다 줄을 나누고 그 사이에서도 나눌 수 있다", () => {
+    const html = render({ isSplitting: true });
+    expect(html).toContain("2턴 · 응답 1/2");
+    expect(html).toContain("2턴 · 응답 2/2");
+    expect(html).toContain("a2 발췌");
+    expect(html).toContain("a2b 발췌");
+    expect(html).toContain("2턴 응답 1 뒤에서 나누기");
+    expect(html).toContain("앞 2턴 · 뒤 2턴");
+    expect(html).toContain("2턴 뒤에서 나누기");
+    expect(html).toContain("1턴 뒤에서 나누기");
+    expect(html).not.toContain("3턴 뒤에서 나누기");
   });
 });

@@ -13,6 +13,8 @@ export type OutlineTurn = {
   messageIds: readonly string[];
   /** 턴 안의 모델 응답 메시지 id. 원고 턴 상한은 응답 하나를 한 턴으로 센다(`countBasisTurns`). */
   responseIds: readonly string[];
+  /** 응답마다 발췌(`responseIds` 와 같은 차례). 나눌 자리 고르기가 연달은 응답을 한 줄씩 보일 때 쓴다. */
+  responseExcerpts: readonly string[];
   excerpt: string;
   /** 응답이 든 턴인가. 사용자 말 하나와 그 뒤 응답들이므로 참이면 턴의 마지막 메시지가 응답이다. */
   hasResponse: boolean;
@@ -182,23 +184,77 @@ export function toBasisLabel(index: TurnIndex, basis: readonly OutlineRange[]): 
   return runs.map(([first, last]) => (first === last ? `${first}턴` : `${first}~${last}턴`)).join(" · ");
 }
 
-/** 화를 나눌 수 있는 자리 — 화 안의 턴 사이 가운데 앞 턴이 응답으로 끝나는 곳. 서버는 근거가 응답에서 끝나고 응답 바로 뒤에서
- * 시작해야 받는다(턴 하나를 두 화로 가르지 않는다). 응답 없는 말 하나뿐인 턴 뒤는 그 말이 다음 응답과 한 턴이라 나눌 수 없다. */
-export function toSplitPoints(
-  index: TurnIndex,
-  basis: readonly OutlineRange[],
-): { afterTurnNumber: number; cutMessageId: string }[] {
+/** 화를 나눌 수 있는 자리 하나 — 그 응답 뒤에서 자른다. */
+export type SplitPoint = {
+  cutMessageId: string;
+  /** 자르는 응답이 든 턴의 번호. */
+  turnNumber: number;
+  /** 자르는 응답이 그 턴의 몇째 응답인가(1부터)와 턴의 응답 수. 둘이 같으면 턴 끝에서 자른다. */
+  responseNumber: number;
+  responseCount: number;
+};
+
+/** 화를 나눌 수 있는 자리 — 화 근거 안의 모델 응답 뒤마다(화 끝 응답은 빼고). 서버는 근거가 응답에서 끝나고 응답 바로 뒤에서 시작하면
+ * 받는다: 서버의 턴은 응답 하나와 그 앞 사용자 말이라, 응답 뒤에서 자르면 어떤 턴도 두 화로 갈리지 않는다. 그래서 화면 턴 묶음 안의
+ * 연달은 응답 사이(방 맨 앞 첫 인사 둘 사이 같은)도 나눌 자리다. 사용자 말 뒤는 그 말이 다음 응답과 한 턴이라 나눌 수 없다. */
+export function toSplitPoints(index: TurnIndex, basis: readonly OutlineRange[]): SplitPoint[] {
   const positions = toPositions(index, basis);
-  const turns = toEpisodeTurns(index, basis);
-  if (positions === undefined || turns === undefined) return [];
+  if (positions === undefined) return [];
   const lastPosition = positions.at(-1)?.[1] ?? -1;
-  const inEpisode = (position: number) => positions.some(([start, end]) => start <= position && position <= end);
-  return turns.flatMap((turn) => {
-    const cutMessageId = turn.messageIds.at(-1);
-    const cut = cutMessageId === undefined ? undefined : index.positionById.get(cutMessageId);
-    if (!turn.hasResponse || cutMessageId === undefined || cut === undefined) return [];
-    if (!inEpisode(cut) || cut >= lastPosition) return [];
-    return [{ afterTurnNumber: turn.number, cutMessageId }];
+  const points: SplitPoint[] = [];
+  for (const [start, end] of positions) {
+    for (let position = start; position <= end && position < lastPosition; position += 1) {
+      const cutMessageId = index.messageIds[position];
+      const turnIndex = index.turnAt[position];
+      const turn = turnIndex === undefined ? undefined : index.turns[turnIndex];
+      if (index.isResponseAt[position] !== true || cutMessageId === undefined || turn === undefined) continue;
+      points.push({
+        cutMessageId,
+        turnNumber: turn.number,
+        responseNumber: turn.responseIds.indexOf(cutMessageId) + 1,
+        responseCount: turn.responseIds.length,
+      });
+    }
+  }
+  return points;
+}
+
+/** 나눌 자리 고르기의 한 줄. 응답이 하나 이하인 턴은 턴째 한 줄이고, 응답이 여럿인 턴은 화 안의 응답마다 한 줄이다(`part`). */
+export type SplitRow = {
+  key: string;
+  turnNumber: number;
+  /** 응답이 여럿인 턴에서 이 줄이 몇째 응답인가와 턴의 응답 수. 턴째 한 줄이면 없다. */
+  part: { number: number; count: number } | undefined;
+  excerpt: string;
+  /** 이 줄 뒤에서 나눌 수 있으면 그 자리. */
+  cut: SplitPoint | undefined;
+};
+
+/** 나눌 자리 고르기의 줄들 — 근거 턴을 차례대로 펴되, 연달은 응답 사이도 나눌 자리라(`toSplitPoints`) 응답이 여럿인 턴은 응답마다 한
+ * 줄로 펴 그 사이에 자리를 둔다. 턴 가운데서 시작·끝나는 화는 화 안의 응답만 줄이 된다. 근거를 못 찾으면 빈 목록이다. */
+export function toSplitRows(index: TurnIndex, basis: readonly OutlineRange[]): SplitRow[] {
+  const turns = toEpisodeTurns(index, basis);
+  const positions = toPositions(index, basis);
+  if (turns === undefined || positions === undefined) return [];
+  const pointById = new Map(toSplitPoints(index, basis).map((point) => [point.cutMessageId, point]));
+  const inEpisode = (id: string) => {
+    const position = index.positionById.get(id);
+    return position !== undefined && positions.some(([start, end]) => start <= position && position <= end);
+  };
+  return turns.flatMap((turn): SplitRow[] => {
+    const responses = turn.responseIds.flatMap((id, at) => (inEpisode(id) ? [{ id, at }] : []));
+    if (turn.responseIds.length <= 1 || responses.length === 0) {
+      const lastId = turn.messageIds.at(-1);
+      const cut = lastId === undefined ? undefined : pointById.get(lastId);
+      return [{ key: turn.key, turnNumber: turn.number, part: undefined, excerpt: turn.excerpt, cut }];
+    }
+    return responses.map(({ id, at }) => ({
+      key: id,
+      turnNumber: turn.number,
+      part: { number: at + 1, count: turn.responseIds.length },
+      excerpt: turn.responseExcerpts[at] ?? "",
+      cut: pointById.get(id),
+    }));
   });
 }
 

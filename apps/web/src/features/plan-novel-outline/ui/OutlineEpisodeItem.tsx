@@ -15,9 +15,12 @@ import {
   toBasisLabel,
   toEpisodeTurns,
   toSplitPoints,
+  toSplitRows,
   toSplitTurnCounts,
   type OutlineEpisodeDraft,
   type OutlineEpisodeText,
+  type SplitPoint,
+  type SplitRow,
   type TurnIndex,
 } from "../model/outlineEdits";
 import type { TurnCapNotice } from "../model/turnCapNotice";
@@ -57,7 +60,7 @@ type OutlineEpisodeItemProps = {
 
 /**
  * 구성안 화 하나 — 화 번호·제목·줄거리·목표와 근거 대화. 근거 대화는 접혀 있다가 "근거 n~m턴"을 누르면 턴마다 두 줄 발췌로 펼친다.
- * 근거는 직접 끌어 고치지 않는다 — 이웃 화와 합치거나 턴 사이에서 나누는 것으로만 바뀐다(어느 턴이든 한 화에만, 턴은 가르지 않음).
+ * 근거는 직접 끌어 고치지 않는다 — 이웃 화와 합치거나 모델 응답 뒤에서 나누는 것으로만 바뀐다(사용자 말과 그 응답은 한 화에만 — 서버가 턴을 가르는 근거를 받지 않는다).
  *
  * 구조 바꾸기(차례·합치기·나누기·지우기)는 "⋯" 메뉴에 모은다. 못 하는 항목은 메뉴에 남겨 두고 `aria-disabled` + 바로 아래 이유 줄을
  * 단다. 원고가 있는 화는 고치지 않는다.
@@ -175,15 +178,8 @@ export function OutlineEpisodeItem({
       {isSplitting && turns !== undefined && turnIndex !== undefined ? (
         <SplitPicker
           label={label}
-          turns={turns}
-          splitAfter={
-            new Map(
-              splitPoints.map((point) => [
-                point.afterTurnNumber,
-                { cutMessageId: point.cutMessageId, counts: toSplitTurnCounts(turnIndex, episode.basis, point.cutMessageId) },
-              ]),
-            )
-          }
+          rows={toSplitRows(turnIndex, episode.basis)}
+          toCounts={(cutMessageId) => toSplitTurnCounts(turnIndex, episode.basis, cutMessageId)}
           onSplit={onSplit}
           onCancel={onCancelSplit}
         />
@@ -285,10 +281,21 @@ export function BasisToggle({ status, basisLabel, isOpen, controlsId, onToggle }
   );
 }
 
-export function TurnLine({ number, excerpt }: { number: number; excerpt: string }) {
+/** 턴 한 줄. `part` 가 있으면 응답이 여럿인 턴의 응답 하나다(나눌 자리 고르기가 연달은 응답을 한 줄씩 펼 때). */
+export function TurnLine({
+  number,
+  excerpt,
+  part,
+}: {
+  number: number;
+  excerpt: string;
+  part?: { number: number; count: number };
+}) {
   return (
     <div className="flex flex-col gap-0.5 rounded-lg border border-border px-3 py-2">
-      <span className="text-xs text-muted-foreground tabular-nums">{number}턴</span>
+      <span className="text-xs text-muted-foreground tabular-nums">
+        {number}턴{part !== undefined && ` · 응답 ${part.number}/${part.count}`}
+      </span>
       <span className="line-clamp-2 text-sm break-keep text-foreground">{excerpt === "" ? "(빈 메시지)" : excerpt}</span>
     </div>
   );
@@ -296,44 +303,47 @@ export function TurnLine({ number, excerpt }: { number: number; excerpt: string 
 
 type SplitPickerProps = {
   label: string;
-  turns: readonly { key: string; number: number; excerpt: string }[];
-  /** 그 턴 뒤에서 나눌 수 있으면 자를 메시지 id 와, 거기서 나누면 앞뒤 화가 갖는 턴(모델 응답) 수. */
-  splitAfter: ReadonlyMap<number, { cutMessageId: string; counts: { front: number; back: number } | undefined }>;
+  /** 근거 턴을 편 줄들과 줄마다 그 뒤 나눌 자리(`toSplitRows`). */
+  rows: readonly SplitRow[];
+  /** 그 자리에서 나누면 앞뒤 화가 갖는 턴(모델 응답) 수. */
+  toCounts: (cutMessageId: string) => { front: number; back: number } | undefined;
   onSplit: (cutMessageId: string) => void;
   onCancel: () => void;
 };
 
-/** 나눌 자리 고르기 — 근거 턴 사이마다 "n턴 뒤에서 나누기"와 거기서 나눈 앞뒤 화의 턴 수(원고 턴 상한이 세는 수라, 상한에 맞게 자를
- * 자리를 고를 수 있다). 나눌 수 없는 사이(앞 턴이 응답 없이 끝남)에는 버튼이 없다. */
-function SplitPicker({ label, turns, splitAfter, onSplit, onCancel }: SplitPickerProps) {
+/** 나눌 자리 고르기 — 근거 줄 사이마다 "n턴 뒤에서 나누기"와 거기서 나눈 앞뒤 화의 턴 수(원고 턴 상한이 세는 수라, 상한에 맞게 자를
+ * 자리를 고를 수 있다). 응답이 여럿인 턴은 응답마다 한 줄이라 그 사이에서도 나눈다("n턴 응답 i 뒤에서 나누기"). 나눌 수 없는 사이(앞
+ * 줄이 응답 없이 끝남)에는 버튼이 없다. */
+function SplitPicker({ label, rows, toCounts, onSplit, onCancel }: SplitPickerProps) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="min-w-0 flex-1 text-sm break-keep text-foreground">
-          {label}을 나눌 자리를 고르세요. 그 턴까지가 앞 화, 다음 턴부터가 새 화예요.
+          {label}을 나눌 자리를 고르세요. 고른 자리까지가 앞 화, 그 뒤부터가 새 화예요.
         </p>
         <Button type="button" variant="ghost" size="xs" data-outline-split-cancel onClick={onCancel}>
           나누기 취소
         </Button>
       </div>
       <ol aria-label={`${label} 나눌 자리`} className="flex flex-col gap-1">
-        {turns.map((turn) => {
-          const cut = splitAfter.get(turn.number);
+        {rows.map((row) => {
+          const cut = row.cut;
+          const counts = cut === undefined ? undefined : toCounts(cut.cutMessageId);
           return (
-            <Fragment key={turn.key}>
+            <Fragment key={row.key}>
               <li>
-                <TurnLine number={turn.number} excerpt={turn.excerpt} />
+                <TurnLine number={row.turnNumber} excerpt={row.excerpt} part={row.part} />
               </li>
               {cut !== undefined && (
                 <li className="flex items-center gap-2 py-0.5">
                   <span aria-hidden className="h-px flex-1 border-t border-dashed border-border" />
                   <Button type="button" variant="outline" size="xs" onClick={() => onSplit(cut.cutMessageId)}>
                     <Scissors aria-hidden />
-                    {turn.number}턴 뒤에서 나누기
+                    {toSplitLabel(cut)}
                   </Button>
-                  {cut.counts !== undefined && (
+                  {counts !== undefined && (
                     <span className="text-xs text-muted-foreground tabular-nums">
-                      앞 {cut.counts.front.toLocaleString()}턴 · 뒤 {cut.counts.back.toLocaleString()}턴
+                      앞 {counts.front.toLocaleString()}턴 · 뒤 {counts.back.toLocaleString()}턴
                     </span>
                   )}
                   <span aria-hidden className="h-px flex-1 border-t border-dashed border-border" />
@@ -345,6 +355,12 @@ function SplitPicker({ label, turns, splitAfter, onSplit, onCancel }: SplitPicke
       </ol>
     </div>
   );
+}
+
+/** 나누기 버튼 글. 턴 끝이면 "n턴 뒤", 턴 안 연달은 응답 사이면 "n턴 응답 i 뒤"다. */
+function toSplitLabel(point: SplitPoint): string {
+  if (point.responseNumber < point.responseCount) return `${point.turnNumber}턴 응답 ${point.responseNumber} 뒤에서 나누기`;
+  return `${point.turnNumber}턴 뒤에서 나누기`;
 }
 
 type EpisodeMenuProps = {
