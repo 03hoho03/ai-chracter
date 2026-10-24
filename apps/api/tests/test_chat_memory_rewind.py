@@ -2021,3 +2021,55 @@ async def test_a_forgotten_scene_and_fact_come_back_when_a_rewind_refolds_their_
     assert without_rewind == ([], [])
     assert await _scene_titles(committed_engine, room) == ["정류장"]
     assert await _fact_keys(committed_engine, room) == [_FORGOTTEN_KEY]
+
+
+async def test_a_scene_extraction_that_read_its_window_before_a_secret_fact_was_forgotten_discards_its_scene(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """턴 20 스냅샷의 사실 추출은 끝났고(지아만 아는 사실 — 근거 턴 15) 장면 추출은 아직이다. 장면 추출이 창을 읽고 모델을 기다리는
+    사이 사용자가 그 비밀 사실을 잊고 커밋한다. 그때는 겹치는 장면이 아직 없어 함께 지울 것이 없고, 추출이 곧 넣을 장면(턴 11~20)은
+    그 비밀과 겹치지만 가려 줄 사실이 사라졌다. 추출은 넣기 직전에 방의 잊기 세대가 바뀐 것을 보고 결과를 버리고 실패로 적는다
+    (시도 하나를 쓴다, Bugsink 로 올리지 않는다). 세대를 다시 확인하지 않으면 그 장면이 가림 없이 남는다.
+
+    한계도 함께 고정한다 — 버린 스냅샷은 다음 턴 뒤 다시 쥐어지고, 창 원문은 그대로라 같은 장면이 다시 뽑힌다(가리던 사실은
+    이미 없다). 세대 확인은 잊기와 겹친 그 한 번의 결과를 막을 뿐이다."""
+    captured = _capture_episode_failures(monkeypatch)
+    room = await _seed_committed_room(committed_engine, turns=20)
+    await _commit_snapshot(committed_engine, room, turn=10)
+    await _commit_snapshot(committed_engine, room, turn=20)
+    first = await _snapshot_id_at(committed_engine, room, turn=10)
+    second = await _snapshot_id_at(committed_engine, room, turn=20)
+    secret_turn = room.turns[15][1]
+    async with async_sessionmaker(committed_engine, expire_on_commit=False)() as session:
+        session.add_all(
+            [
+                _make_memory_extraction(room.room_id, first),
+                _make_memory_fact(
+                    room.room_id,
+                    second,
+                    fact_key=_FORGOTTEN_KEY,
+                    value="몰래 사귐",
+                    known_by=["지아"],
+                    start_created_at=secret_turn.created_at,
+                    start_message_id=secret_turn.id,
+                    end_created_at=secret_turn.created_at,
+                    end_message_id=secret_turn.id,
+                ),
+                _make_memory_fact_extraction(room.room_id, second),
+            ]
+        )
+        await session.commit()
+    outcomes: list[str] = []
+
+    async def _user_forgets_the_secret() -> None:
+        outcomes.append(await _forget_committed(committed_engine, room, key=_FORGOTTEN_KEY))
+
+    llm = _EpisodeClient(before_answer=_user_forgets_the_secret)
+    await _run_extraction(committed_engine, room, llm)
+
+    assert (llm.calls, outcomes, captured) == (1, ["forgotten"], [])
+    episodes, records = await _committed_episode_state(committed_engine, room)
+    assert (episodes, sorted(records)) == (0, [("done", 1), ("failed", 1)])
+
+    await _run_extraction(committed_engine, room, _EpisodeClient())
+    assert await _scene_titles(committed_engine, room) == ["정류장"]
