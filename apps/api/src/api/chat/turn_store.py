@@ -426,7 +426,8 @@ class RoomTurnStore:
             llm_calls=([dict(turn.memory_query)] if turn.memory_query is not None else [])
             + [self._call_record(turn, call) for call in turn.llm_calls],
         )
-        # 회상한 턴만 칸을 채운다 — 비어 있으면 INSERT 에 칸을 싣지 않아 DB 기본값 `[]` 이 들어가고, 문장이 회상 전과 같다.
+        # 회상한 턴만 칸을 채운다 — 비어 있으면 INSERT 에 칸을 싣지 않아 DB 기본값 `[]` 이 들어가고, INSERT 칸 목록이 회상
+        # 전과 같다(서버 기본값이 있는 칸이라 RETURNING 에는 이 칸이 실린다).
         # 재생성·수정도 그 턴에 새로 조립한 프롬프트의 회상이다(대체되는 기록에서 물려받지 않는다).
         if turn.memory_recall:
             record.memory_recall = list(turn.memory_recall)
@@ -453,7 +454,7 @@ class RoomTurnStore:
             record.ending_entity_id = replaced_record.ending_entity_id
             record.shortcut_entity_id = replaced_record.shortcut_entity_id
         # 켠 동안 이벤트가 있을 때만 칸을 채운다 — 꺼져 있거나 비어 있으면 INSERT 에 칸을 싣지 않아 DB 기본값 `[]` 이 들어가고,
-        # 문장이 이 칸이 생기기 전과 같다.
+        # INSERT 칸 목록이 이 칸이 생기기 전과 같다(서버 기본값이 있는 칸이라 RETURNING 에는 이 칸이 더해진다).
         if settings.stat_event_log and stat_events:
             record.stat_events = list(stat_events)
         self.db.add(record)
