@@ -1,3 +1,4 @@
+# CI mypy 캐시 적중 시험용 임시 주석(되돌린다).
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator
