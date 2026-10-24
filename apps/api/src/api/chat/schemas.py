@@ -79,9 +79,17 @@ class ChatRoomMemoryRevertRequest(CamelModel):
     version: int
 
 
+class ChatRoomMemoryRegenerateRequest(CamelModel):
+    """`version` 은 확인 대화를 연 시점의 `memoryVersion`, `expected_cost` 는 확인 대화에 보인 가격이다. 버전이 다르면(그사이
+    요약이 새로 접혔거나 고쳐졌거나 되감겼다) 409, 가격이 지금 가격과 다르면 409 — 둘 다 클로버를 깎기 전에 거절한다."""
+
+    version: int
+    expected_cost: int
+
+
 class ChatRoomMemorySummary(CamelModel):
-    """방의 현재 요약. `can_revert`는 사용자가 이 요약을 고친 적이 있어 고치기 직전 본문으로 한 번
-    되돌릴 수 있는가다 — AI가 새로 접은 요약은 되돌릴 대상이 없다."""
+    """방의 현재 요약. `can_revert`는 사용자가 이 요약을 고쳤거나 AI 로 다시 만들어 그 직전 본문으로 한 번
+    되돌릴 수 있는가다 — 대화가 길어져 AI가 새로 접은 요약은 되돌릴 대상이 없다."""
 
     text: str
     source: Literal["auto", "user"]

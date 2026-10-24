@@ -45,7 +45,8 @@ from api.llm.routing import resolve_backend
 
 logger = logging.getLogger(__name__)
 
-_SUMMARY_CALL_SITE: LLMCallSite = "chat_memory_summary"
+# 접기와 요약 다시 만들기가 함께 쓰는 호출 위치 — 요약 모델 설정·호출 정책·배정 표가 둘에 똑같이 걸린다.
+SUMMARY_CALL_SITE: LLMCallSite = "chat_memory_summary"
 
 # 한 번에 접는 턴 수. 원문은 접은 뒤 20턴, 다음 접기 직전 29턴 사이를 오간다.
 FOLD_TURNS = 10
@@ -151,46 +152,27 @@ async def fold_memory(
         if plan is None:
             return
 
-        people = (
-            await _room_people(
-                session_factory, room_id, is_story_chat=is_story_chat, names=names, user_label=prompt_set.user_label
-            )
-            if settings.memory_summary_secret_marking
-            and memory_model_in_scope(prompt_set.lane, writing_model, settings.memory_model_scope)
-            else None
-        )
-        prompt = build_memory_summary_prompt(
+        prompt = await summary_prompt(
+            session_factory,
+            room_id=room_id,
             prompt_set=prompt_set,
             sections=sections,
             is_story_chat=is_story_chat,
             previous_summary=current.text if current else "",
             turns=plan.turns,
             names=names,
-            room_people=people,
+            writing_model=writing_model,
         )
-        if not prompt:
-            raise PromptRenderError("요약 channel 이 비어 있다 — 활성 세트에 요약 지시문이 없다")
         dump_background_prompt(
             room_id=room_id,
-            call_site=_SUMMARY_CALL_SITE,
+            call_site=SUMMARY_CALL_SITE,
             schema=MemorySummaryResult.__name__,
             prompt=prompt,
             log=logger,
             turn=turn,
             cursor_message_id=plan.cursor[1],
         )
-        result = await llm_client.generate_structured(
-            prompt,
-            MemorySummaryResult,
-            usage=LLMCallContext(call_site=_SUMMARY_CALL_SITE, user_id=user_id, room_id=room_id),
-        )
-        summary = result.summary.strip()[:SUMMARY_MAX_LENGTH]
-        if not summary:
-            # 빈 요약을 커밋하면 접은 10턴이 요약에도 원문에도 없게 된다. 실패의 공급자는 요약이 실제로 간 구현이다
-            # (요약 모델을 Claude 로 바꾸면 Gemini 가 아니다).
-            empty = LLMClientError("요약 응답이 비었다")
-            empty.provider = resolve_backend(_SUMMARY_CALL_SITE, configured_call_site_model(_SUMMARY_CALL_SITE))[0]
-            raise empty
+        summary = await summarize(llm_client, prompt, user_id=user_id, room_id=room_id)
 
         async with session_factory() as session:
             claimed = await session.scalar(
@@ -220,6 +202,61 @@ async def fold_memory(
         capture_dependency_failure(exc, dependency=_dependency_tag(exc))
         if turn is not None:
             await _record_failure(room_id, turn)
+
+
+async def summary_prompt(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    room_id: uuid.UUID,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
+    is_story_chat: bool,
+    previous_summary: str,
+    turns: list[ChatMessage],
+    names: PromptNames,
+    writing_model: ChatModelId,
+) -> str:
+    """요약 호출 하나의 프롬프트 — 접기와 요약 다시 만들기가 같은 입력이면 바이트까지 같은 글을 받도록 둘이 이 함수 하나를 쓴다.
+
+    비밀 표기 스위치가 켜져 있고 이 방의 레인과 `writing_model` 이 기억 사용 범위에 들 때만 이름 출처를 새 세션으로 읽어 슬롯을
+    채운다(`_room_people`). 렌더 결과가 비면(활성 세트에 요약 지시문이 없다) `PromptRenderError` 다."""
+    people = (
+        await _room_people(
+            session_factory, room_id, is_story_chat=is_story_chat, names=names, user_label=prompt_set.user_label
+        )
+        if settings.memory_summary_secret_marking
+        and memory_model_in_scope(prompt_set.lane, writing_model, settings.memory_model_scope)
+        else None
+    )
+    prompt = build_memory_summary_prompt(
+        prompt_set=prompt_set,
+        sections=sections,
+        is_story_chat=is_story_chat,
+        previous_summary=previous_summary,
+        turns=turns,
+        names=names,
+        room_people=people,
+    )
+    if not prompt:
+        raise PromptRenderError("요약 channel 이 비어 있다 — 활성 세트에 요약 지시문이 없다")
+    return prompt
+
+
+async def summarize(llm_client: LLMClient, prompt: str, *, user_id: uuid.UUID, room_id: uuid.UUID) -> str:
+    """요약 모델을 한 번 불러 저장할 본문(앞뒤 공백을 걷고 상한에서 자른 것)을 돌려준다. 빈 본문이면 `LLMClientError` 다 — 빈
+    요약을 커밋하면 접은 대화가 요약에도 원문에도 없게 된다. 실패의 공급자는 요약이 실제로 간 구현이다(요약 모델을 Claude 로
+    바꾸면 Gemini 가 아니다)."""
+    result = await llm_client.generate_structured(
+        prompt,
+        MemorySummaryResult,
+        usage=LLMCallContext(call_site=SUMMARY_CALL_SITE, user_id=user_id, room_id=room_id),
+    )
+    summary = result.summary.strip()[:SUMMARY_MAX_LENGTH]
+    if not summary:
+        empty = LLMClientError("요약 응답이 비었다")
+        empty.provider = resolve_backend(SUMMARY_CALL_SITE, configured_call_site_model(SUMMARY_CALL_SITE))[0]
+        raise empty
+    return summary
 
 
 async def _load_name_sources(

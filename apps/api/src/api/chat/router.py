@@ -16,7 +16,7 @@ from api.chat.chat_count import record_chat_participant
 from api.chat.memory_embeddings import fill_pending_embeddings
 from api.chat.memory_episodes import extract_pending_episode
 from api.chat.memory_facts import extract_pending_facts
-from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
+from api.chat.memory_fold import SUMMARY_MAX_LENGTH, _dependency_tag, fold_memory, summarize, summary_prompt
 from api.chat.memory_forget import (
     MemoryItemMissingError,
     RoomMissingError,
@@ -25,6 +25,15 @@ from api.chat.memory_forget import (
     forget_fact_key,
 )
 from api.chat.memory_items import InvalidItemsCursorError, memory_items, truth_label, used_in_replies
+from api.chat.memory_regenerate import (
+    RegenerateInProgressError,
+    RegenerateNothingToFoldError,
+    RegenerateRoomMissingError,
+    RegenerateVersionConflictError,
+    hold_regenerate_lock,
+    load_regenerate_input,
+    write_regenerated,
+)
 from api.chat.memory_rewind import rewind_memory
 from api.chat.previous_response import clear_previous_response, previous_response_for, restore_previous_response
 from api.chat.memory_window import select_current_snapshot
@@ -53,6 +62,7 @@ from api.chat.turn_prompt import (
     format_persona,
     generation_prompt_set,
     judgment_prompt_sets,
+    room_prompt_names,
 )
 from api.chat.turn_engine import (
     _GENERATION_ERROR_MESSAGE,
@@ -94,6 +104,7 @@ from api.chat.schemas import (
     ChatRoomMemoryItemsResponse,
     ChatRoomMemoryLimits,
     ChatRoomMemoryNoteRequest,
+    ChatRoomMemoryRegenerateRequest,
     ChatRoomMemoryResponse,
     ChatRoomMemoryRevertRequest,
     ChatRoomMemorySummary,
@@ -130,9 +141,11 @@ from api.content.schemas import (
     ShortcutDraftItem,
     StoryDraftPayload,
 )
+from api.core import clover
 from api.core.clover import SpendUsage
 from api.core.config import settings
-from api.core.rate_limit_gate import ChatCharge, charge_chat_turn, enforce_chat_rate_limit
+from api.core.rate_limit import seconds_until_kst_midnight
+from api.core.rate_limit_gate import ChatCharge, _too_many_requests, charge_chat_turn, enforce_chat_rate_limit
 from api.core.schema import NoNul
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
@@ -179,7 +192,7 @@ from api.llm.chat_models import (
     chat_turn_cost,
     is_chat_room_model,
 )
-from api.llm.client import LLMClient
+from api.llm.client import LLMClient, LLMClientError
 from api.llm.dependencies import get_embedding_client, get_llm_client
 from api.llm.model_access import effective_room_model, has_chat_premium_access
 from api.llm.voyage import VoyageEmbeddingClient
@@ -2326,10 +2339,10 @@ async def revert_chat_room_memory_summary(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatRoomMemoryResponse:
-    """사용자가 고친 요약을 고치기 직전 본문과 그 출처로 한 번 되돌린다 — AI 요약을 고쳤다 되돌리면
-    다시 AI 요약으로 보인다. 되돌린 뒤에는 되돌릴 것이 없다.
-    AI가 새로 접은 요약은 직전 본문을 갖지 않아 되돌릴 수 없다 — 본문만 되돌리면 방금 접힌 대화가
-    요약에서도 원문에서도 빠진다."""
+    """사용자가 고쳤거나 AI 로 다시 만든 요약을 그 직전 본문과 출처로 한 번 되돌린다 — AI 요약을 고쳤다
+    되돌리면 다시 AI 요약으로, 고친 요약을 다시 만들었다 되돌리면 다시 고친 요약으로 보인다. 되돌린 뒤에는 되돌릴 것이 없다.
+    대화가 길어져 AI가 새로 접은 요약은 직전 본문을 갖지 않아 되돌릴 수 없다 — 본문만 되돌리면 방금 접힌 대화가
+    요약에서도 원문에서도 빠진다. 다시 만든 요약은 같은 구간을 다시 요약한 것이라 되돌려도 빠지는 대화가 없다."""
     await _get_owned_room(db, room_id, user_id)
     snapshot_id, _current, previous_text = await _lock_current_summary_for_edit(db, room_id, payload.version)
     if previous_text is None:
@@ -2349,6 +2362,118 @@ async def revert_chat_room_memory_summary(
     response = await _memory_response(db, room_id)
     await db.commit()
     return response
+
+
+# 요약 다시 만들기의 클로버 부족 429 의 `window`. 다른 유료 기능과 같은 바디 모양(`CLOVER_REQUIRED`)이고 이 값으로 기능을 가른다.
+MEMORY_SUMMARY_WINDOW = "memory_summary"
+
+
+@router.post(
+    "/{room_id}/memory/summary/regenerate",
+    dependencies=[Depends(_require_memory_items_visible), Depends(require_legal_consent)],
+)
+async def regenerate_chat_room_memory_summary(
+    room_id: uuid.UUID,
+    payload: ChatRoomMemoryRegenerateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+    # 차감·환불은 각자 자기 트랜잭션이라 요청 세션으로는 못 한다(보내기와 같은 이유).
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    llm_client: LLMClient = Depends(get_llm_client),
+    setup: StartingSetup | None = Depends(_starting_setup_dependency),
+    # 요약 모델의 세트 — 접기와 같은 의존성으로 고른다. 세트가 없으면 여기서 실패해 깎기 전이다.
+    judgment_sets: JudgmentPromptSets = Depends(_judgment_prompt_sets_dependency),
+) -> ChatRoomMemoryResponse:
+    """방의 지금 요약을 AI 로 다시 만든다(`chat/memory_regenerate.py`). 고정 클로버(`MEMORY_SUMMARY_REGENERATE_COST`, 방 모델과
+    무관)를 먼저 자기 트랜잭션에서 깎고, 어떤 실패로 끝나든 돌려준다. 채팅 상한 예외 계정도 내고 하루 무료 대화는 쓰지 않는다.
+    사용처 행을 남기지 않는다(원작자 몫이 붙는 사용이 아니다). 사용자가 고친 요약도 다시 만들 수 있다 — 확인은 화면이 받는다.
+
+    깎기 전에 거절하는 것: 스위치 꺼짐 404 `MEMORY_ITEMS_DISABLED`, 재동의 403, 남의 방 403, 제한 작품 403 `CONTENT_RESTRICTED`,
+    확인한 가격과 지금 가격이 다름 409 `MEMORY_SUMMARY_REGENERATE_PRICE_CHANGED` + `currentCost`, 같은 방에 진행 중 409
+    `MEMORY_SUMMARY_REGENERATE_IN_PROGRESS`, 버전 불일치 409 `MEMORY_VERSION_CONFLICT`, 요약 없음 409 `MEMORY_SUMMARY_NOT_READY`.
+    클로버 부족은 429 `CLOVER_REQUIRED`(`window: "memory_summary"`).
+
+    깎은 뒤의 실패는 전부 환불한다: 요약 호출·렌더 실패와 빈 요약은 503 `MEMORY_SUMMARY_REGENERATE_UNAVAILABLE`, 요약을 기다리는
+    사이 기억이 바뀌었으면 409 `MEMORY_VERSION_CONFLICT`.
+
+    이름은 방 프로필로 다시 만들고(턴이 없다), 비밀 표기 범위는 방이 지금 쓰는 글쓰기 모델로 가른다 — 둘 다 접기가 그 턴에서 받는
+    값과 같은 규칙이라 입력이 같으면 요약 프롬프트가 일반 접기와 바이트까지 같다."""
+    room = await _get_owned_room(db, room_id, user_id)
+    content = await db.get(Content, room.content_id)
+    assert content is not None
+    _ensure_content_playable(content)
+    price = clover.MEMORY_SUMMARY_REGENERATE_COST
+    if payload.expected_cost != price:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "MEMORY_SUMMARY_REGENERATE_PRICE_CHANGED", "currentCost": price},
+        )
+    try:
+        async with hold_regenerate_lock(room.id):
+            try:
+                source = await load_regenerate_input(db, room.id, expected_version=payload.version)
+            except RegenerateRoomMissingError:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat room not found") from None
+            except RegenerateVersionConflictError:
+                raise _memory_conflict("MEMORY_VERSION_CONFLICT") from None
+            except RegenerateNothingToFoldError:
+                raise _memory_conflict("MEMORY_SUMMARY_NOT_READY") from None
+            is_story_chat = setup is not None
+            names = await room_prompt_names(db, room, is_story_chat=is_story_chat)
+            writing_model = await effective_room_model(db, user_id, room.chat_model)
+            # 요약을 기다리는 동안 커넥션을 쥐지 않는다(접기와 같다). 읽기만 했으므로 커밋은 트랜잭션을 닫을 뿐이다.
+            await db.commit()
+
+            spent = await clover.spend_in_new_transaction(
+                session_factory, user_id=user_id, amount=price, kind="memory_summary_spend"
+            )
+            if spent is None:
+                raise _too_many_requests(
+                    user_id, MEMORY_SUMMARY_WINDOW, seconds_until_kst_midnight(datetime.now(UTC)), code="CLOVER_REQUIRED"
+                )
+            written = False
+            try:
+                summary_set, summary_sections = judgment_sets.summary
+                prompt = await summary_prompt(
+                    session_factory,
+                    room_id=room.id,
+                    prompt_set=summary_set,
+                    sections=summary_sections,
+                    is_story_chat=is_story_chat,
+                    previous_summary=source.previous_summary,
+                    turns=source.turns,
+                    names=names,
+                    writing_model=writing_model,
+                )
+                summary = await summarize(llm_client, prompt, user_id=user_id, room_id=room.id)
+                try:
+                    await write_regenerated(db, room.id, source, summary)
+                except RegenerateVersionConflictError:
+                    # 조건부 UPDATE 가 0행이라 쓴 것이 없다 — 요청 세션은 닫히며 버려진다.
+                    raise _memory_conflict("MEMORY_VERSION_CONFLICT") from None
+                response = await _memory_response(db, room.id)
+                await db.commit()
+                written = True
+                return response
+            except (LLMClientError, PromptRenderError) as exc:
+                logger.warning("대화방 %s 요약 다시 만들기 실패 — 클로버를 돌려준다: %s", room.id, exc)
+                capture_dependency_failure(exc, dependency=_dependency_tag(exc))
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={"code": "MEMORY_SUMMARY_REGENERATE_UNAVAILABLE"},
+                ) from exc
+            finally:
+                # 끊김으로 인한 취소까지 포함해 쓰지 못하고 끝난 모든 경로가 여기를 지난다. 환불은 취소에서 차폐된다.
+                if not written:
+                    await clover.refund_spend_in_new_transaction(
+                        session_factory,
+                        user_id=user_id,
+                        spend_ledger_id=spent.ledger_id,
+                        amount=price,
+                        kind="memory_summary_refund",
+                    )
+    except RegenerateInProgressError:
+        raise _memory_conflict("MEMORY_SUMMARY_REGENERATE_IN_PROGRESS") from None
 
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)

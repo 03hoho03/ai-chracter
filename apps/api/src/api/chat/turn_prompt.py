@@ -251,6 +251,19 @@ def format_persona(persona: UserPersona | None) -> str:
     return format_user_persona(name=persona.name, gender=persona.gender, description=persona.description)
 
 
+async def room_prompt_names(db: AsyncSession, room: ChatRoom, *, is_story_chat: bool) -> PromptNames:
+    """턴 밖에서 방의 이름(`PromptNames`)을 만든다 — 방이 지금 고른 대화 프로필의 이름과, 캐릭터 방이면 고정한 버전의 캐릭터
+    이름. 턴이 없는 요약 다시 만들기가 쓴다. `build_room_prompt` 가 주입 상태 없이 만드는 이름과 같은 규칙이다(같은 방이면 같은
+    값 — 테스트가 둘을 맞대 본다). 프로필이 지워졌으면 이름 없음이다."""
+    persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
+    persona_name = persona.name if persona is not None else None
+    if is_story_chat:
+        return PromptNames(persona_name=persona_name, char_name=None)
+    detail = await db.get(CharacterVersionDetail, room.content_version_id)
+    assert detail is not None
+    return PromptNames(persona_name=persona_name, char_name=detail.name)
+
+
 async def build_room_prompt(
     db: AsyncSession,
     room: ChatRoom,

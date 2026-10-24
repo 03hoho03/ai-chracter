@@ -5564,12 +5564,45 @@ export interface paths {
         put?: never;
         /**
          * Revert Chat Room Memory Summary
-         * @description 사용자가 고친 요약을 고치기 직전 본문과 그 출처로 한 번 되돌린다 — AI 요약을 고쳤다 되돌리면
-         *     다시 AI 요약으로 보인다. 되돌린 뒤에는 되돌릴 것이 없다.
-         *     AI가 새로 접은 요약은 직전 본문을 갖지 않아 되돌릴 수 없다 — 본문만 되돌리면 방금 접힌 대화가
-         *     요약에서도 원문에서도 빠진다.
+         * @description 사용자가 고쳤거나 AI 로 다시 만든 요약을 그 직전 본문과 출처로 한 번 되돌린다 — AI 요약을 고쳤다
+         *     되돌리면 다시 AI 요약으로, 고친 요약을 다시 만들었다 되돌리면 다시 고친 요약으로 보인다. 되돌린 뒤에는 되돌릴 것이 없다.
+         *     대화가 길어져 AI가 새로 접은 요약은 직전 본문을 갖지 않아 되돌릴 수 없다 — 본문만 되돌리면 방금 접힌 대화가
+         *     요약에서도 원문에서도 빠진다. 다시 만든 요약은 같은 구간을 다시 요약한 것이라 되돌려도 빠지는 대화가 없다.
          */
         post: operations["revert_chat_room_memory_summary_chat_rooms__room_id__memory_summary_revert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/memory/summary/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate Chat Room Memory Summary
+         * @description 방의 지금 요약을 AI 로 다시 만든다(`chat/memory_regenerate.py`). 고정 클로버(`MEMORY_SUMMARY_REGENERATE_COST`, 방 모델과
+         *     무관)를 먼저 자기 트랜잭션에서 깎고, 어떤 실패로 끝나든 돌려준다. 채팅 상한 예외 계정도 내고 하루 무료 대화는 쓰지 않는다.
+         *     사용처 행을 남기지 않는다(원작자 몫이 붙는 사용이 아니다). 사용자가 고친 요약도 다시 만들 수 있다 — 확인은 화면이 받는다.
+         *
+         *     깎기 전에 거절하는 것: 스위치 꺼짐 404 `MEMORY_ITEMS_DISABLED`, 재동의 403, 남의 방 403, 제한 작품 403 `CONTENT_RESTRICTED`,
+         *     확인한 가격과 지금 가격이 다름 409 `MEMORY_SUMMARY_REGENERATE_PRICE_CHANGED` + `currentCost`, 같은 방에 진행 중 409
+         *     `MEMORY_SUMMARY_REGENERATE_IN_PROGRESS`, 버전 불일치 409 `MEMORY_VERSION_CONFLICT`, 요약 없음 409 `MEMORY_SUMMARY_NOT_READY`.
+         *     클로버 부족은 429 `CLOVER_REQUIRED`(`window: "memory_summary"`).
+         *
+         *     깎은 뒤의 실패는 전부 환불한다: 요약 호출·렌더 실패와 빈 요약은 503 `MEMORY_SUMMARY_REGENERATE_UNAVAILABLE`, 요약을 기다리는
+         *     사이 기억이 바뀌었으면 409 `MEMORY_VERSION_CONFLICT`.
+         *
+         *     이름은 방 프로필로 다시 만들고(턴이 없다), 비밀 표기 범위는 방이 지금 쓰는 글쓰기 모델로 가른다 — 둘 다 접기가 그 턴에서 받는
+         *     값과 같은 규칙이라 입력이 같으면 요약 프롬프트가 일반 접기와 바이트까지 같다.
+         */
+        post: operations["regenerate_chat_room_memory_summary_chat_rooms__room_id__memory_summary_regenerate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9936,6 +9969,17 @@ export interface components {
             note: string;
         };
         /**
+         * ChatRoomMemoryRegenerateRequest
+         * @description `version` 은 확인 대화를 연 시점의 `memoryVersion`, `expected_cost` 는 확인 대화에 보인 가격이다. 버전이 다르면(그사이
+         *     요약이 새로 접혔거나 고쳐졌거나 되감겼다) 409, 가격이 지금 가격과 다르면 409 — 둘 다 클로버를 깎기 전에 거절한다.
+         */
+        ChatRoomMemoryRegenerateRequest: {
+            /** Version */
+            version: number;
+            /** Expectedcost */
+            expectedCost: number;
+        };
+        /**
          * ChatRoomMemoryResponse
          * @description `summary`는 첫 접기 전이면 null이다(그때는 요약을 고칠 수 없다). `rolled_back_at`은 지난
          *     메시지를 고치거나 지워 요약이 이전 판으로 돌아간 마지막 시각이고, 초기화하면 null로 돌아간다.
@@ -9958,8 +10002,8 @@ export interface components {
         };
         /**
          * ChatRoomMemorySummary
-         * @description 방의 현재 요약. `can_revert`는 사용자가 이 요약을 고친 적이 있어 고치기 직전 본문으로 한 번
-         *     되돌릴 수 있는가다 — AI가 새로 접은 요약은 되돌릴 대상이 없다.
+         * @description 방의 현재 요약. `can_revert`는 사용자가 이 요약을 고쳤거나 AI 로 다시 만들어 그 직전 본문으로 한 번
+         *     되돌릴 수 있는가다 — 대화가 길어져 AI가 새로 접은 요약은 되돌릴 대상이 없다.
          */
         ChatRoomMemorySummary: {
             /** Text */
@@ -10256,6 +10300,8 @@ export interface components {
             novelReadCost: number;
             /** Novelfreechaptercount */
             novelFreeChapterCount: number;
+            /** Memorysummaryregeneratecost */
+            memorySummaryRegenerateCost: number;
             /** Novelpublicenabled */
             novelPublicEnabled: boolean;
             /** Novelpublicpolicyv2Enabled */
@@ -24211,6 +24257,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ChatRoomMemoryRevertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomMemoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_chat_room_memory_summary_chat_rooms__room_id__memory_summary_regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRoomMemoryRegenerateRequest"];
             };
         };
         responses: {

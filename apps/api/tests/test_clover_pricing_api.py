@@ -8,7 +8,7 @@
 3. 상위 모델 단가와 소설 단가(화·AI 수정)도 응답에 실린다 — 구매 전 안내에 없는 사용처 가격은 숨은 가격으로 읽힌다.
    모델 목록은 채팅에서 고를 수 있는 모델만 싣고, 베타 표시는 스위치와 무관한 고정 값이다. 허용된 계정만 쓰는 소설은
    그 사실이 함께 실린다. 소설 상위 모델의 화 단가는 일반 회원이 살 수 없어 따로 싣지 않는다. 노벨 화 소장 가격과
-   무료 화 수도 싣는다.
+   무료 화 수, 대화방 요약 다시 만들기 가격도 싣는다.
 4. 상품 정의가 지금의 가격 규칙을 지킨다(아래 테스트 docstring).
 
 `db_client` 를 쓰는 이유는 DB 가 아니라 쿠키다 — 세션 스코프 `api_client` 는 앞 테스트의 세션 쿠키를 들고 있을 수
@@ -56,6 +56,7 @@ async def test_response_follows_products_and_cost_constants(
     monkeypatch.setattr(clover, "IMAGE_UNIT_COST", 998)
     monkeypatch.setattr(clover, "NOVEL_READ_COST", 996)
     monkeypatch.setattr(clover, "NOVEL_FREE_CHAPTER_COUNT", 995)
+    monkeypatch.setattr(clover, "MEMORY_SUMMARY_REGENERATE_COST", 994)
 
     resp = await db_client.get("/clover/pricing")
 
@@ -88,6 +89,7 @@ async def test_response_follows_products_and_cost_constants(
         "imageCost": 998,
         "novelReadCost": 996,
         "novelFreeChapterCount": 995,
+        "memorySummaryRegenerateCost": 994,
     }
 
 
