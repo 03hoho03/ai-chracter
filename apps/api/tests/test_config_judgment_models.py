@@ -324,10 +324,17 @@ _JUDGED_CALL_SITES = [
 def test_every_judgment_call_site_has_a_missing_line_case() -> None:
     """운영 배정에서 줄 하나가 빠진 경우를 판정 호출 위치마다 한 규칙이 덮는다 — 자기 줄로 가는 호출은 기동 거부(아래), 미리보기
     판정은 채팅 짝 물려받기(이 파일 끝). 장면 헤더 둘은 운영에 자기 줄이 없어 물려받는 원래 호출 위치의 경우가 덮는다. 물려받는
-    호출이 늘어 위 목록에서 조용히 빠지는 호출이 없게 한다."""
+    호출이 늘어 위 목록에서 조용히 빠지는 호출이 없게 한다. 운영 env 에 아직 줄이 없는 호출(위 `_NOT_YET_IN_PRODUCTION`)은 빠질
+    줄이 없어 따로 센다."""
     judged = {call_site for call_site, policy in CALL_POLICIES.items() if policy.model_setting is not None}
 
-    assert judged == {*_JUDGED_CALL_SITES, *_PRODUCTION_PREVIEW_LINES, "chat_scene_judgment", "preview_scene_judgment"}
+    assert judged == {
+        *_JUDGED_CALL_SITES,
+        *_PRODUCTION_PREVIEW_LINES,
+        *_NOT_YET_IN_PRODUCTION,
+        "chat_scene_judgment",
+        "preview_scene_judgment",
+    }
 
 
 def _production_assignment_without(call_site: str) -> str:
