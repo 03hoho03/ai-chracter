@@ -60,7 +60,8 @@ export function PromptRoutingPage() {
         <ul className="flex list-disc flex-col gap-1 pl-5">
           <li className="break-keep">
             Claude 직결 행은 그 단계의 env 판정 모델이 Claude 인 동안에만 저장할 수 있어요. env 가 바뀌어 경로가 달라지면 그
-            행은 "적용 안 됨"이 되고 env 값으로 돌아가요.
+            행은 "적용 안 됨"이 되고 env 값으로 돌아가요. "적용 안 됨" 행이 남아 있으면 그 칸을 env 기본값으로 돌려야 표를
+            저장할 수 있어요.
           </li>
           <li className="break-keep">
             응답 생성 칸은 방 모델로만 부르고(대화 차감이 방 모델 단가예요) 경로만 고를 수 있어요.
