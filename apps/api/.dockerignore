@@ -11,7 +11,8 @@ Dockerfile
 .dockerignore
 # 아래는 컨테이너 안에서 아무도 읽지 않는 파일이다. README.md 는 pyproject.toml 의 readme 라
 # uv sync 가 프로젝트를 설치할 때 읽으므로 넣지 않는다. scripts/ 의 나머지·alembic.ini·
-# migrations/ 는 운영 절차와 크론이 컨테이너 안에서 실행하므로 남긴다.
+# migrations/ 는 운영 절차(DEPLOY.md 의 exec·run)와 배포 교체의 `alembic upgrade` 가
+# 컨테이너 안에서 실행하므로 남긴다.
 # 로컬 채팅 프로브 출력(gitignore 대상)
 probe-runs/
 # 에이전트용 작업 안내 문서
