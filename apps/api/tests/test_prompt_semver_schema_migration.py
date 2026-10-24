@@ -297,6 +297,49 @@ async def test_backfill_marks_only_each_chains_active_set_and_leaves_existing_ro
     assert sections_after == sections_before
 
 
+async def test_backfill_picks_the_latest_published_set_even_when_an_older_one_has_the_larger_version(
+    ddl_engine: AsyncEngine,
+) -> None:
+    """한 체인에서 정수 번호는 더 크지만 더 일찍 게시된 세트와, 번호는 작지만 더 늦게 게시된 세트가 있으면 백필은 늦게 게시된
+    쪽(서빙이 활성으로 쓰는 쪽)에만 1.0.0 을 준다. 깨지는 시나리오: 백필이 정수 번호 최대를 활성판으로 집어, 서빙 중인 세트에는
+    판이 없고 서빙하지 않는 세트가 다음 게시의 기준판이 된다."""
+    chain = ("story", "semver-backfill-order")
+    later_id, earlier_id = uuid.uuid4(), uuid.uuid4()
+    async with ddl_engine.connect() as connection:
+        transaction = await connection.begin()
+        try:
+            await _run(connection, _M.downgrade)
+            for set_id, version, published_at in (
+                (later_id, "99001", datetime(2026, 1, 2, tzinfo=UTC)),
+                (earlier_id, "99002", datetime(2026, 1, 1, tzinfo=UTC)),
+            ):
+                await connection.execute(
+                    sa.text(
+                        "INSERT INTO prompt_sets (id, version, status, lane, model, user_label, story_assistant_label,"
+                        " story_example_label, character_assistant_label, note, published_at) VALUES (:id, :version,"
+                        " 'published', :lane, :model, '사용자', '진행자', '서술자', '캐릭터', '', :published_at)"
+                    ),
+                    {
+                        "id": set_id,
+                        "version": version,
+                        "lane": chain[0],
+                        "model": chain[1],
+                        "published_at": published_at,
+                    },
+                )
+            await _run(connection, _M.upgrade)
+            numbered = (
+                await connection.execute(
+                    sa.text("SELECT prompt_set_id, major, minor, patch FROM prompt_set_semvers WHERE model = :model"),
+                    {"model": chain[1]},
+                )
+            ).all()
+        finally:
+            await transaction.rollback()
+
+    assert [tuple(row) for row in numbered] == [(later_id, 1, 0, 0)]
+
+
 async def test_downgrade_refuses_once_a_publish_assigned_a_semver_and_round_trips_otherwise(
     ddl_engine: AsyncEngine,
 ) -> None:
