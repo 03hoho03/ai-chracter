@@ -15,6 +15,11 @@
 # 색을 새 이미지로 띄워 healthy 를 확인한 뒤 옛 색을 드레인하고 내린다 — Caddy 가 두 색을 고정
 # 업스트림으로 들고 있어 요청이 끊기지 않는다(Caddyfile 참조).
 #
+# 소설화 워커도 `worker_blue`·`worker_green` 두 서비스다(api 와 같은 이미지, 명령만 다름). 소설화 워커 스위치가 켜져
+# 있을 때만 교체 스크립트가 빈 슬롯에 새 워커를 띄우고, 새 워커가 healthy 가 된 뒤 옛 워커를 정지시킨다 — 옛 워커는 돌던
+# 작업을 마칠 때까지(최대 420초) 내려가지 않는다. 서비스명 없는 `up -d` 는 두 워커 색까지 띄운다(두 워커가 같이 떠도
+# 작업이 두 번 돌지는 않지만 메모리를 쓴다).
+#
 # 필요한 env(전부 `/opt/ddona/.env`):
 #   API_IMAGE_BLUE       각 색이 띄울 이미지 전체 참조(태그는 커밋 SHA). 교체 스크립트가 고친다 —
 #   API_IMAGE_GREEN      교체가 끝나면 두 줄이 같은 참조를 가리킨다. ⚠️ 둘 중 하나라도 비거나 없으면
@@ -82,6 +87,37 @@ x-api: &api-common
   stop_grace_period: 65s
   logging: *rotated-logs
 
+# 소설화 워커 두 색 공용. api 와 같은 이미지·env·의존성·로그 회전에 명령·헬스체크·정지 유예와 DB 풀 크기만 다르다.
+# 띄우고 내리는 것은 교체 스크립트만 한다 — 스위치(`NOVELIZE_WORKER_ENABLED`)가 꺼져 있거나 이미지에 워커 모듈이 없으면
+# 띄우지 않는다. 손으로 `up worker_<색>` 을 하면 그 판정을 건너뛰어, 워커가 없는 옛 이미지에서는 모듈을 못 찾고 재시작을
+# 되풀이한다.
+x-novelize-worker: &novelize-worker-common
+  <<: *api-common
+  command: ["python", "-m", "api.novelize.worker"]
+  # 엔진은 import 때 `DB_POOL_SIZE`·`DB_MAX_OVERFLOW` 로 만들어진다. 워커는 동시 작업 상한(기본 4)만큼만 세션을 짧게
+  # 쥐므로 api 의 풀(10+7)보다 작게 덮는다 — `environment` 가 `env_file` 을 이긴다. DB 연결 총량 식은 DEPLOY.md 「BE 런타임」.
+  environment:
+    DB_POOL_SIZE: "3"
+    DB_MAX_OVERFLOW: "2"
+  # 워커는 HTTP 를 열지 않는다. 대기 작업 조회가 성공할 때마다(정지 뒤 비우는 동안은 기다릴 때마다) 워커가 만지는 파일의
+  # 수정 시각을 본다 — 30초(폴링 약 15회) 넘게 안 만졌거나 파일이 없으면 unhealthy. DB 가 계속 안 되면 unhealthy 가 된다.
+  # 앵커 병합은 얕아서 api 의 healthcheck 를 통째로 갈아 끼운다(칸을 모두 다시 적는다).
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - "import os,sys,time; sys.exit(time.time() - os.stat('/tmp/novelize-worker.alive').st_mtime > 30)"
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 40s
+    start_interval: 1s
+  # 정지 신호를 받으면 새 작업을 집지 않고 돌던 작업을 끝까지 마친다. 420초 = 작업 하나의 상한
+  # (`NOVELIZE_JOB_TIMEOUT_SECONDS` 기본 360초) + 실패·환불 쓰기와 종료 여유 60초. 그 키를 올리면 이 값과 교체 스크립트의
+  # 워커 대기(`WORKER_DRAIN_WAIT`)도 함께 올린다.
+  stop_grace_period: 420s
+
 services:
   caddy:
     image: caddy:2-alpine
@@ -119,6 +155,16 @@ services:
 
   api_green:
     <<: *api-common
+    image: ${API_IMAGE_GREEN}
+
+  # 이미지 변수는 api 색 줄을 함께 쓴다 — 따로 두면 이 정의가 들어가는 배포 전에 운영 `.env` 에 줄을 먼저 넣어야 하고,
+  # 빠지면 compose 가 프로젝트를 못 불러와 모든 교체가 멈춘다. 교체 스크립트는 두 줄이 같은 이미지가 된 뒤에 워커를 띄운다.
+  worker_blue:
+    <<: *novelize-worker-common
+    image: ${API_IMAGE_BLUE}
+
+  worker_green:
+    <<: *novelize-worker-common
     image: ${API_IMAGE_GREEN}
 
   postgres:

@@ -176,6 +176,7 @@ jobs:
           echo "레지스트리 확인: $IMAGE:$TAG"
 
       - name: VM 에 배포
+        id: deploy
         # IAP 터널로 들어간다 — VM 의 22번은 인터넷에 열려 있지 않다(IAP 대역만 허용).
         #
         # **전부 sudo 로 돈다.** OS Login 은 접속 주체마다 별도 POSIX 사용자를 만들기 때문에,
@@ -328,6 +329,14 @@ jobs:
             echo "::error::원격 배포 스크립트의 완료 표식이 출력에 없다 — 중간에 stdin 이 삼켜져 남은 줄이 돌지 않았을 수 있다. 위 원격 출력이 어디서 끊겼는지 본다"
             exit 1
           fi
+          # 교체 스크립트는 api 교체를 끝낸 뒤 소설화 워커 단계만 실패하면 0 으로 끝나고 이 표식을 줄 머리에 찍는다(원격
+          # 스크립트가 그 자리에서 멈추지 않고 caddy 반영·실행 이미지 확인·이미지 정리까지 가게). 줄 머리에 고정하는 이유:
+          # 원격 출력에는 `git reset` 이 찍는 커밋 제목도 실려, 제목에 같은 낱말이 든 배포가 워커와 무관하게 실패로 보이면
+          # 안 된다. 여기서 실패시키지 않고 결과만 넘긴다 — api 는 이미 갈렸으니 아래 외부 확인은 그대로 돌아야 하고, run 은
+          # 마지막 step 이 실패로 표시한다.
+          if grep -q '^DDONA_WORKER_STEP_FAILED ' "$REMOTE_LOG"; then
+            echo "worker_failed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: 배포 검증
         # 컨테이너가 떴다는 것과 인터넷에서 응답한다는 것은 다른 주장이다. 밖에서 확인한다.
@@ -342,3 +351,10 @@ jobs:
             echo "  대기 ${i}/12 (HTTP ${code})"; sleep 5
           done
           echo "::error::배포 후 /health 가 200 이 아니다"; exit 1
+
+      - name: 소설화 워커 단계 결과
+        # 위 배포 step 이 원격 출력에서 워커 단계 실패 표식을 봤을 때만 돈다. api 교체와 외부 확인은 이미 끝났다.
+        if: steps.deploy.outputs.worker_failed == 'true'
+        run: |
+          echo "::error::api 교체는 끝났지만 소설화 워커 단계가 실패했다 — 'VM 에 배포' step 의 '12-1)' 줄을 본다. 원인을 고친 뒤 이 워크플로를 다시 돌리면(같은 태그) 워커 단계를 다시 한다"
+          exit 1
