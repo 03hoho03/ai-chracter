@@ -96,7 +96,8 @@ export const SaveRoutingDialog = createCallable<SaveRoutingDialogProps, RoutingO
                   {mismatchCount}칸은 읽을 체인과 부를 모델이 달라요 — 그 체인 문안은 다른 모델에 맞춰 썼을 수 있어요.
                 </p>
               )}
-              <div className="shrink-0 overflow-hidden rounded-lg border border-border">
+              <ChangeList changes={changes} data={data} />
+              <div className="hidden shrink-0 overflow-hidden rounded-lg border border-border sm:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -157,6 +158,34 @@ export const SaveRoutingDialog = createCallable<SaveRoutingDialogProps, RoutingO
     );
   },
 );
+
+/** 좁은 폭에서는 네 열 표가 칸 이름을 한 단어씩 끊고 단가 열을 밀어내므로, 바뀌는 칸마다 항목을 세로로 쌓아 같은 정보를 보인다. */
+function ChangeList({ changes, data }: { changes: RoutingChange[]; data: AdminPromptRoutingResponse }) {
+  return (
+    <ul className="flex min-w-0 shrink-0 flex-col divide-y divide-border rounded-lg border border-border text-sm sm:hidden">
+      {changes.map(({ cell, before, after }) => (
+        <li key={`${cell.lane}|${cell.roomModel}|${cell.stage}`} className="flex flex-col gap-2 px-3 py-2">
+          <p className="break-keep font-medium text-foreground">
+            {ROUTING_LANE_LABELS[cell.lane]} · {ROOM_MODEL_LABELS[cell.roomModel]} · {ROUTING_STAGE_LABELS[cell.stage]}
+          </p>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+            <dt className="text-muted-foreground">지금</dt>
+            <dd className="break-keep wrap-anywhere text-muted-foreground">{describeCellForm(cell, before, data)}</dd>
+            <dt className="text-muted-foreground">바꿀 값</dt>
+            <dd className="break-keep wrap-anywhere text-foreground">{describeCellForm(cell, after, data)}</dd>
+            <dt className="text-muted-foreground">단가</dt>
+            <dd className="break-keep wrap-anywhere tabular-nums">
+              <PriceChange
+                now={cell.calls[0]}
+                next={after.mode === "row" ? candidateCalls(cell, after.pair)?.[0] : undefined}
+              />
+            </dd>
+          </dl>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function PriceChange({ now, next }: { now: AdminPromptRouteCall | undefined; next: AdminPromptRouteCall | undefined }) {
   return (
