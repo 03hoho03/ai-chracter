@@ -35,6 +35,7 @@ const CALL_SITE_LABELS: Record<string, string> = {
   novelize_outline: "소설 전체 구성안",
   novelize_episode_outline: "소설 장면 구성안",
   novel_publish_screen: "노벨 공개 심사(텍스트)",
+  novel_illustration_screen: "노벨 공개 심사(삽화)",
 };
 
 const CELL_CLASS = "text-right tabular-nums";
