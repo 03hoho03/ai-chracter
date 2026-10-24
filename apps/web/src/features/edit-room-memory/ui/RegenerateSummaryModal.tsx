@@ -80,10 +80,12 @@ export const RegenerateSummaryModal = createCallable<RegenerateSummaryModalProps
           }
           setNotice(failure.message);
           return;
-        case "stale":
-          await memoryQuery.refetch();
-          setNotice(failure.message);
+        case "stale": {
+          // 요약이 사라졌으면 "아직 다시 만들 요약이 없어요" 한 줄만 남긴다 — 바뀐 요약을 확인하라는 문장은 그때 틀린 말이다.
+          const refetched = await memoryQuery.refetch();
+          if (refetched.data?.summary !== undefined) setNotice(failure.message);
           return;
+        }
         case "disabled":
           // 기억 응답을 다시 받으면 기능 칸이 꺼져 패널에서 다시 만들기 버튼이 사라진다.
           void queryClient.invalidateQueries({ queryKey: chatRoomKeys.memory(roomId) });

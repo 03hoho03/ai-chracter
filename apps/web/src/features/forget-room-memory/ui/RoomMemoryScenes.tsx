@@ -28,7 +28,7 @@ type RoomMemoryScenesProps = {
 /** 방의 장면 기억 목록. 30개씩 "더 보기"로 이어 받는다. 행마다 지우개 버튼이 잊게 하기 확인을 연다. */
 export function RoomMemoryScenes({ roomId, onEditSummaryRequest }: RoomMemoryScenesProps) {
   const queryClient = useQueryClient();
-  const itemsQuery = useChatRoomMemoryItemsQuery(roomId, true);
+  const itemsQuery = useChatRoomMemoryItemsQuery(roomId);
   const { notice, noticeRef, showOutcome } = useForgetResultNotice();
 
   if (itemsQuery.isPending) return <MemoryItemsSkeleton />;

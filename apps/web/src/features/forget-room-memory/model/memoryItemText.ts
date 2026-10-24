@@ -38,4 +38,4 @@ export function forgetFactConfirmLabel(episodeCount: number): string {
 
 /** 두 확인 대화와 두 목록 끝에 함께 두는 안내 — 잊게 한 기억이 다시 생기는 길들. */
 export const MEMORY_COMEBACK_NOTICE =
-  "최근 대화나 앞으로의 대화에 같은 내용이 나오거나, 앞의 대화를 고치거나 다시 생성하면 같은 기억이 다시 생길 수 있어요.";
+  "최근 대화나 앞으로의 대화에 같은 내용이 나오거나, 앞의 대화를 고치거나 지우거나 다시 생성하면 같은 기억이 다시 생길 수 있어요.";

@@ -22,6 +22,10 @@ export const chatRoomKeys = {
   // 장면·사실 목록은 방 기억 키 아래에 둔다 — 턴이 끝나거나 대화가 되감겨 기억을 낡게 표시하는 곳들이 목록도 함께 낡게
   // 표시한다(새 장면이 접히거나 되감기가 지운다). 목록을 열어 둔 적이 없으면 캐시가 없어 아무것도 다시 받지 않는다.
   memoryItems: (roomId: string) => [...chatRoomKeys.memory(roomId), "items"] as const,
+  // 사실 하나를 잊으면 함께 지워질 장면 수. 방 기억 키 아래(로그아웃 정리·턴 뒤 무효화에 함께 걸린다)지만 목록 키 밖이다 —
+  // 잊게 하기가 끝나며 목록을 다시 받을 때 아직 닫히는 중인 확인 대화가 이 수를 다시 묻지 않게.
+  memoryForgetPreview: (roomId: string, factKey: string) =>
+    [...chatRoomKeys.memory(roomId), "forget-preview", factKey] as const,
   playGuide: (roomId: string) => [...chatRoomKeys.all, "play-guide", roomId] as const,
   endingCollection: (startingSetupId: string) =>
     [...chatRoomKeys.all, "ending-collection", startingSetupId] as const,

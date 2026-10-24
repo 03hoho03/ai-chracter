@@ -50,7 +50,7 @@ const TAB_PANEL_CLASS = "rounded-sm focus-visible:outline-solid focus-visible:ou
 /** 탭 줄은 스크롤 영역 밖의 흐름 줄이다 — 목록을 내려 읽는 동안에도 탭이 보이고, sticky 를 쓰지 않는다. 탭 줄 아래 선은
  * 스크롤 영역의 위 모서리다(Dialog 는 `DialogBody`의 `border-t`). */
 function ChatMemoryTabs({ roomId, layout }: { roomId: string; layout: ChatMemoryPanelLayout }) {
-  const itemsQuery = useChatRoomMemoryItemsQuery(roomId, true);
+  const itemsQuery = useChatRoomMemoryItemsQuery(roomId);
   const [tab, setTab] = useState<MemoryTab>("notes");
   const [editSummaryRequest, setEditSummaryRequest] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);

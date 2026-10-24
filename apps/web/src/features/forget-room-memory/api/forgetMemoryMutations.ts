@@ -30,12 +30,11 @@ export function useForgetFactMutation(roomId: string) {
 }
 
 /** 사실 하나를 잊으면 함께 지워질 장면 수. 확인 대화를 열 때마다 새로 묻는다(`staleTime`·`gcTime` 0) — 대화가 이어지는
- * 사이 수가 바뀔 수 있고, 지난번 수를 먼저 그리면 지울 범위를 잘못 알린다. 키는 방 기억 키 아래(로그아웃 정리에 함께
- * 걸린다)지만 목록 키 밖이다 — 잊게 하기가 끝나며 목록을 다시 받을 때 아직 닫히는 중인 확인 대화가 이 수를 다시 묻지 않게.
- * 실패는 곧바로 보인다(`retry` 없음) — 확인 대화가 "다시 확인"을 둔다. */
+ * 사이 수가 바뀔 수 있고, 지난번 수를 먼저 그리면 지울 범위를 잘못 알린다. 실패는 곧바로 보인다(`retry` 없음) — 확인
+ * 대화가 실패 갈래마다 다음 일을 정한다. */
 export function useForgetFactPreviewQuery(roomId: string, factKey: string) {
   return useQuery<ForgetPreviewDto, ApiError>({
-    queryKey: [...chatRoomKeys.memory(roomId), "forget-preview", factKey],
+    queryKey: chatRoomKeys.memoryForgetPreview(roomId, factKey),
     queryFn: async () =>
       (
         await apiClient.get<ForgetPreviewDto>(`/chat-rooms/${roomId}/memory/facts/forget-preview`, {

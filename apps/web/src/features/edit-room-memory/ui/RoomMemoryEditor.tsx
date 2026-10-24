@@ -22,6 +22,7 @@ import { isNoteSaveBlocked } from "../model/noteSaveGuard";
 import { browserStorage, isRollbackUnseen, readSeenRollback, writeSeenRollback } from "../model/rollbackNotice";
 import { countMemoryChars, createMemoryFormSchema, memoryFormOptions, type MemoryFormValues } from "../model/schema";
 import { serverToForm } from "../model/serverToForm";
+import { isSummaryRegenerateOffered } from "../model/regenerateOffer";
 import { summaryFoldingCopy } from "../model/summaryFoldingCopy";
 import { summaryRevertHint } from "../model/summaryRevertHint";
 import { RegenerateSummaryModal } from "./RegenerateSummaryModal";
@@ -256,8 +257,11 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest, editSumm
   const noteId = `${fieldId}-note`;
   const revertHintId = `${fieldId}-revert-hint`;
   const summary = memory.summary;
-  // 요약 다시 만들기는 장면·사실 목록과 같은 서버 스위치 뒤에 있다 — 꺼져 있으면 버튼도, 바뀐 되돌리기 안내도 없다.
-  const canRegenerate = memory.features.itemsVisible;
+  // 요약 다시 만들기는 장면·사실 목록과 같은 서버 스위치 뒤에 있다. 버튼은 요약 접기가 꺼진 방에서도 숨기지만(쓰이지 않는
+  // 요약에 클로버를 쓰게 하지 않으려고) 되돌리기 안내는 라우트가 열려 있는 한 바뀐 문장이다 — 앞서 다시 만든 요약은 접기가
+  // 꺼진 뒤에도 되돌릴 수 있다.
+  const isRegenerateOpen = memory.features.itemsVisible;
+  const isRegenerateOffered = isSummaryRegenerateOffered(memory.features);
   const foldingCopy = summaryFoldingCopy(memory.features.summaryFolding);
   // 편집 중에 요약이 사라질 수 있다(다른 탭에서 초기화) — 그때는 편집 칸도 [저장]도 없다.
   const isSummaryEditOpen = isEditingSummary && summary !== undefined;
@@ -336,7 +340,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest, editSumm
           >
             되돌리기
           </Button>
-          {canRegenerate && <RegenerateSummaryButton onClick={() => void handleRegenerate()} />}
+          {isRegenerateOffered && <RegenerateSummaryButton onClick={() => void handleRegenerate()} />}
         </div>
       </div>
     );
@@ -380,7 +384,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest, editSumm
           <li>{foldingCopy.foldingHint}</li>
           <li>지난 대화가 바뀌면(고치기·지우기·다시 생성·방금 전 답변으로) 그 뒤의 요약은 직접 고친 내용까지 이전 요약으로 돌아가요.</li>
           {summary && (
-            <li id={revertHintId}>{summaryRevertHint(canRegenerate)}</li>
+            <li id={revertHintId}>{summaryRevertHint(isRegenerateOpen)}</li>
           )}
         </ul>
       </section>

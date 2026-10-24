@@ -25,7 +25,7 @@ type RoomMemoryFactsProps = {
 /** 방의 사실 기억 목록. 키마다 지금 이긴 사실 하나씩이고 페이지가 없다(장면 목록과 같은 응답에 전부 온다). */
 export function RoomMemoryFacts({ roomId, onEditSummaryRequest }: RoomMemoryFactsProps) {
   const queryClient = useQueryClient();
-  const itemsQuery = useChatRoomMemoryItemsQuery(roomId, true);
+  const itemsQuery = useChatRoomMemoryItemsQuery(roomId);
   const { notice, noticeRef, showOutcome } = useForgetResultNotice();
 
   if (itemsQuery.isPending) return <MemoryItemsSkeleton />;

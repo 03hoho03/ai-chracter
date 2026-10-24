@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   Dialog,
@@ -15,7 +15,7 @@ import { chatRoomKeys, type ChatRoomMemoryFact } from "@/entities/chat-room";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useForgetFactMutation, useForgetFactPreviewQuery } from "../api/forgetMemoryMutations";
-import { toForgetFailure } from "../model/forgetFailure";
+import { toForgetFailure, toPreviewFailure } from "../model/forgetFailure";
 import type { ForgetOutcome } from "../model/forgetOutcome";
 import { forgetFactConfirmLabel, MEMORY_COMEBACK_NOTICE } from "../model/memoryItemText";
 import { FactSummary } from "./FactSummary";
@@ -27,8 +27,9 @@ type ForgetFactModalProps = {
 };
 
 /** 사실 하나를 잊게 하기 전 확인. 열자마자 함께 지워질 장면 수를 묻고, 답이 오기 전에는 실행 버튼을 막는다 — 비밀 사실은
- * 근거 대화와 겹치는 장면까지 지우는데, 그 수를 모른 채 누르게 하면 지울 범위를 알리지 않고 지운다. 수를 묻지 못했으면
- * "다시 확인"을 두고 계속 막는다.
+ * 근거 대화와 겹치는 장면까지 지우는데, 그 수를 모른 채 누르게 하면 지울 범위를 알리지 않고 지운다. 수를 묻지 못하면
+ * 실패 갈래(`toPreviewFailure`)대로 한다 — 그 기억이 이미 없거나 스위치가 꺼졌으면 해당 캐시를 다시 받게 하고 닫으며, 연결·서버
+ * 오류에만 "다시 확인"을 두고, 그 밖에는 실행을 막은 채 닫기만 남긴다.
  *
  * 다시 생기는 길은 설명 안에 둔다(대화 상자의 설명으로 함께 읽힌다). 실행 버튼은 틴트(`destructive`)이고 막을 때는
  * `aria-disabled` 다(`disabled` 는 포커스를 빼앗는다). 버튼 순서는 `취소` 먼저(푸터 프리미티브가 강제). */
@@ -37,6 +38,23 @@ export const ForgetFactModal = createCallable<ForgetFactModalProps, ForgetOutcom
   const preview = useForgetFactPreviewQuery(roomId, fact.factKey);
   const forget = useForgetFactMutation(roomId);
   const [error, setError] = useState<string | undefined>(undefined);
+
+  const previewFailure = preview.isError ? toPreviewFailure(preview.error) : undefined;
+  const previewFailureKind = previewFailure?.kind;
+  const previewFailureMessage = previewFailure?.message;
+
+  // 다시 물어도 풀리지 않는 두 갈래는 닫는다 — 목록 위 알림이 같은 문장을 남긴다.
+  useEffect(() => {
+    if (previewFailureMessage === undefined || call.ended) return;
+    if (previewFailureKind === "gone") {
+      void queryClient.invalidateQueries({ queryKey: chatRoomKeys.memoryItems(roomId) });
+    } else if (previewFailureKind === "disabled") {
+      void queryClient.invalidateQueries({ queryKey: chatRoomKeys.memory(roomId) });
+    } else {
+      return;
+    }
+    call.end({ kind: "notice", message: previewFailureMessage });
+  }, [call, previewFailureKind, previewFailureMessage, queryClient, roomId]);
 
   const episodeCount = preview.data?.episodeCount;
   const isConfirmBlocked = episodeCount === undefined || forget.isPending;
@@ -82,8 +100,8 @@ export const ForgetFactModal = createCallable<ForgetFactModalProps, ForgetOutcom
             <ForgetPreviewLine
               episodeCount={episodeCount}
               isPending={preview.isPending}
-              errorMessage={preview.isError ? toForgetFailure(preview.error, "preview").message : undefined}
-              onRetry={() => void preview.refetch()}
+              errorMessage={previewFailureMessage}
+              onRetry={previewFailureKind === "retry" ? () => void preview.refetch() : undefined}
             />
           </div>
           {error !== undefined && (
@@ -116,7 +134,8 @@ type ForgetPreviewLineProps = {
   episodeCount: number | undefined;
   isPending: boolean;
   errorMessage: string | undefined;
-  onRetry: () => void;
+  /** 없으면 "다시 확인"을 두지 않는다(다시 물어도 같은 거절이다). */
+  onRetry: (() => void) | undefined;
 };
 
 function ForgetPreviewLine({ episodeCount, isPending, errorMessage, onRetry }: ForgetPreviewLineProps) {
@@ -126,9 +145,11 @@ function ForgetPreviewLine({ episodeCount, isPending, errorMessage, onRetry }: F
         <MemoryNote icon={TriangleAlert} isEmphasized>
           {errorMessage}
         </MemoryNote>
-        <Button type="button" variant="outline" size="sm" className="hover:bg-secondary" onClick={onRetry}>
-          다시 확인
-        </Button>
+        {onRetry && (
+          <Button type="button" variant="outline" size="sm" className="hover:bg-secondary" onClick={onRetry}>
+            다시 확인
+          </Button>
+        )}
       </div>
     );
   }

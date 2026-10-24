@@ -26,6 +26,23 @@ export function toForgetFailure(error: unknown, action: "forget" | "preview"): F
   return { kind: "message", message: FALLBACK_MESSAGE[action] };
 }
 
+/** 함께 지울 장면 수를 묻다 실패했을 때 확인 대화가 할 일. 다시 물어 풀릴 수 있는 실패(연결·서버 오류)만 `retry`로 "다시 확인"을
+ * 둔다. 그 기억이 이미 없으면(`gone`) 목록을 다시 받고, 스위치가 꺼졌으면(`disabled`) 기억 응답을 다시 받아 패널을 목록 없는
+ * 모양으로 돌린 뒤 둘 다 대화를 닫는다. 그 밖의 거절(`stopped`)은 다시 물어도 같아 실행을 막은 채 닫기만 남긴다. */
+export type PreviewFailure =
+  | { kind: "gone"; message: string }
+  | { kind: "disabled"; message: string }
+  | { kind: "retry"; message: string }
+  | { kind: "stopped"; message: string };
+
+export function toPreviewFailure(error: unknown): PreviewFailure {
+  const failure = toForgetFailure(error, "preview");
+  if (failure.kind !== "message") return failure;
+  const isTransient = !isApiError(error) || error.status === 0 || error.status >= 500;
+  if (isTransient) return { kind: "retry", message: failure.message };
+  return { kind: "stopped", message: "지금은 이 사실을 잊게 할 수 없어요. 대화 상자를 닫고 목록을 다시 확인해 주세요." };
+}
+
 function detailCode(detail: unknown): string | undefined {
   if (!detail || typeof detail !== "object" || !("code" in detail)) return undefined;
   const { code } = detail;
