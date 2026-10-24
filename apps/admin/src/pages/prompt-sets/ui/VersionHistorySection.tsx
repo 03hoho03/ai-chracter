@@ -11,7 +11,9 @@ import { useVersionDetailQuery } from "../api/useVersionDetailQuery";
 import { useVersionListQuery } from "../api/useVersionListQuery";
 import { PROMPT_LANE_LABELS } from "../model/lane";
 import { PROMPT_MODEL_LABELS } from "../model/model";
+import { semverText } from "../model/semver";
 import { RestorePromptSetDialog } from "./RestorePromptSetDialog";
+import { VersionSectionTable } from "./VersionSectionTable";
 
 /** 제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 `VersionTable`로 갈라낸다
  * (`pages/appeals`의 `AppealsTable`과 같은 결). */
@@ -52,7 +54,7 @@ function VersionTable() {
 
   return (
     <>
-      {/* 여섯 칸이라 좁은 화면에서는 표만 가로로 스크롤하고 버전 칸은 왼쪽에 고정한다. */}
+      {/* 일곱 칸이라 좁은 화면에서는 표만 가로로 스크롤하고 버전 칸은 왼쪽에 고정한다. */}
       <div className="overflow-hidden rounded-lg border border-border">
         <DenseTable surface="card">
           <Table>
@@ -65,6 +67,7 @@ function VersionTable() {
                     버전
                   </span>
                 </TableHead>
+                <TableHead>판</TableHead>
                 <TableHead>레인</TableHead>
                 <TableHead>모델</TableHead>
                 <TableHead>게시일</TableHead>
@@ -103,6 +106,7 @@ function VersionTable() {
                         </span>
                       </button>
                     </TableCell>
+                    <TableCell className="tabular-nums">{semverText(item.semver, item.version)}</TableCell>
                     <TableCell>{PROMPT_LANE_LABELS[item.lane]}</TableCell>
                     <TableCell>{PROMPT_MODEL_LABELS[item.model]}</TableCell>
                     <TableCell>{formatDateTime(item.publishedAt)}</TableCell>
@@ -158,7 +162,7 @@ function VersionDetailPanel({ id }: VersionDetailPanelProps) {
           <dd className="text-foreground">{detail.labels.characterAssistantLabel}</dd>
         </div>
       </dl>
-      <p className="text-xs text-muted-foreground">섹션 {detail.sections.length}개</p>
+      <VersionSectionTable detail={detail} />
       <div>
         <Button
           type="button"

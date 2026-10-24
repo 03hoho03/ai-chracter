@@ -35,6 +35,11 @@ export const SECTION_CHANGE_LABELS = {
   initial: "첫 판",
 } satisfies Record<SectionChangeKind, string>;
 
+/** 판 행이 없는 옛 게시본(판을 매기기 전에 게시된 것)은 정수 버전으로 "옛 vN" 이라 부른다. */
+export function semverText(semver: string | null | undefined, version: string | null): string {
+  return semver ?? `옛 v${version ?? "?"}`;
+}
+
 const semverConflictSchema = z.object({
   rule: z.enum(["semver-draft-changed", "semver-base-moved", "semver-level-for-unchanged-section"]),
   message: z.string(),
