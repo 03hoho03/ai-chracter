@@ -6414,6 +6414,9 @@ export interface paths {
          * @description `payload` is whatever
          *     `formToServer(getValues())` produced (same shape as `PATCH /contents/{id}/draft`'s body)
          *     and is stored in Redis with no validation, mirroring autosave's unvalidated path.
+         *
+         *     `model` 은 이 세션이 쓸 글쓰기 모델이다. 상위 모델은 채팅방에서 모델을 고를 때와 같은 허용(`has_chat_premium_access`)이 있어야
+         *     하고, 없으면 같은 403 `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 다. 모델을 바꾸려면 새 세션을 시작한다.
          */
         post: operations["start_preview_session_preview_sessions_post"];
         delete?: never;
@@ -6437,8 +6440,8 @@ export interface paths {
          *     파이프라인은 실채팅과 같은 턴 골격(`chat/turn_engine.py` 의 `run_turn`)이 담당한다 — 판정은 초안에서 읽는 미리보기판
          *     (`preview_judgments`), 쓰기는 세션 상태에 하는 저장소(`PreviewTurnStore`)다. `chat_rooms`/조회수/대화수 등 어떤 지표
          *     테이블도 이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
-         *     세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일
-         *     때만 짧게 연 세션으로 활성 세트를 읽는다.
+         *     세트와 모델 배정 표만은 예외다 — 그 의존성들이 캐시 히트면 DB에 닿지 않고, 미스일
+         *     때만 짧게 연 세션으로 읽는다.
          */
         post: operations["send_preview_message_preview_sessions__id__messages_post"];
         delete?: never;
@@ -26026,7 +26029,9 @@ export interface operations {
     };
     start_preview_session_preview_sessions_post: {
         parameters: {
-            query?: never;
+            query?: {
+                model?: "gemini" | "opus";
+            };
             header?: never;
             path?: never;
             cookie?: never;
