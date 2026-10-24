@@ -41,7 +41,7 @@ const PUBLISH_EFFECT_COPY: Record<PromptLane, string> = {
   novel_screen: "다음 노벨 공개 심사부터 즉시 반영되고",
 };
 
-/** Claude 세트는 레인마다 읽히는 자리가 하나뿐이라 문구가 레인을 따른다. 채팅 레인은 그 모델을 고른 방의 응답 생성에만
+/** Claude 세트가 읽히는 자리는 레인마다 정해져 있어 문구가 레인을 따른다. 채팅 레인은 그 모델을 고른 방의 응답 생성에만
  * 읽히고(판정·요약은 Gemini 세트), 소설 레인은 그 모델로 쓰는 화 생성·전체·장면 구성안에만 읽힌다(경계 제안·문단
  * 수정·여러 문단 수정·묶음 재검사는 Gemini 세트). 상위 모델이 꺼져 있거나 허용이 없으면 그 자리도 Gemini 로 돌아 게시해도 아무 데도 쓰이지 않는다. */
 function toClaudePublishEffectCopy(lane: PromptLane): string {
