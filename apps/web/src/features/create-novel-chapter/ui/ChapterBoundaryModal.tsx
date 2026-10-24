@@ -3,7 +3,6 @@ import {
   Dialog,
   DialogBody,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -11,7 +10,6 @@ import {
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
@@ -41,6 +39,7 @@ import {
   toSelectionAfterModelChange,
 } from "../model/chainChoice";
 import { toInitialChapterEnd } from "../model/chapterBoundarySelection";
+import { ChapterBoundaryDescription } from "./ChapterBoundaryDescription";
 
 type ChapterBoundaryModalProps = {
   novelId: string;
@@ -296,7 +295,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
           <DialogContent className="sm:max-w-md" onOpenAutoFocus={focusSelection}>
             <DialogHeader>
               <DialogTitle className="break-keep">{title}</DialogTitle>
-              <DialogDescription className="break-keep">{description}</DialogDescription>
+              <ChapterBoundaryDescription layout="dialog" description={description} />
             </DialogHeader>
             {modelPicker}
             <DialogBody scrollLabel={LIST_LABEL}>{list}</DialogBody>
@@ -321,7 +320,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
         <SheetContent side="bottom" className="max-h-below-header gap-0 rounded-t-xl" onOpenAutoFocus={focusSelection}>
           <SheetHeader className="pr-12">
             <SheetTitle className="break-keep">{title}</SheetTitle>
-            <SheetDescription className="break-keep">{description}</SheetDescription>
+            <ChapterBoundaryDescription layout="sheet" description={description} />
           </SheetHeader>
           {modelPicker !== null && <div className="px-4 pb-4">{modelPicker}</div>}
           {/* 다이얼로그의 `DialogBody scrollLabel` 과 같은 몫 — 닫기 X 가 목록 밖이라 목록 자체가 Tab 정지이자 이름

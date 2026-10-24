@@ -113,6 +113,31 @@ describe("applyStreamEvent", () => {
     expect(next?.turnCount).toBe(4);
   });
 
+  // 수정은 서버가 편집 지점 뒤에서 지운 응답 수만큼 턴 수를 줄인 뒤 새 턴을 하나 더한다 — 화면도 같은 셈이어야 한다.
+  it("done on an edit counts the turns the edit removed before adding the new one", () => {
+    const finalMessage: ChatMessage = { id: "m2", role: "assistant", content: "고친 뒤 답", createdAt: "2026-07-08T00:01:00Z" };
+
+    applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage }, { removedReplyCount: 2 });
+
+    expect(queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID))?.turnCount).toBe(2);
+  });
+
+  it("an ending reached by an edit's turn is recorded at the turn the server counts after the removal", () => {
+    const finalMessage: ChatMessage = { id: "m2", role: "assistant", content: "고친 뒤 답", createdAt: "2026-07-08T00:01:00Z" };
+
+    applyStreamEvent(
+      queryClient,
+      ROOM_ID,
+      { type: "endingReached", endingId: "ending-1", epilogue: null },
+      { removedReplyCount: 2 },
+    );
+    applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage }, { removedReplyCount: 2 });
+
+    const next = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID));
+    expect(next?.endingStatus.reachedAtTurn).toBe(2);
+    expect(next?.turnCount).toBe(2);
+  });
+
   // turnCount는 3(서버도 안 올린다, chat/router.py:1121, 테스트
   // test_..._without_new_turn).
   it("done on regenerate drops the trailing assistant and does NOT increment turnCount", () => {

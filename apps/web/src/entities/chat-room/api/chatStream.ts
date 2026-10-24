@@ -61,6 +61,12 @@ const chatMessageSchema = z.object({
   createdAt: z.string(),
 });
 
+/** 메시지 수정·삭제가 지운 턴의 스탯을 어떻게 했는지. `rewound` 는 전부 그 턴 전으로 되돌림, `partial` 은 기록이 없는 옛 턴이
+ * 섞여 기록 있는 턴만 되돌림(하나도 못 되돌렸을 수 있다), `kept` 는 되돌리지 않음(중간 답 삭제처럼 정확히 되돌릴 수 없을 때). */
+export const statRewindSchema = z.enum(["rewound", "partial", "kept"]);
+
+export type StatRewind = z.infer<typeof statRewindSchema>;
+
 export const chatStreamEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("token"), delta: z.string() }),
   z.object({ type: z.literal("statChange"), statId: z.string(), newValue: z.number() }),
@@ -84,7 +90,12 @@ export const chatStreamEventSchema = z.discriminatedUnion("type", [
   }),
   // 캐시 변경 없음
   z.object({ type: z.literal("policyWarning"), message: z.string() }),
-  z.object({ type: z.literal("done"), finalMessage: chatMessageSchema }),
+  // `statRewind` 는 지운 턴이 있던 수정의 done 에만 온다. 모르는 값은 버린다 — done 이 튕기면 흐르던 답이 화면에서 사라진다.
+  z.object({
+    type: z.literal("done"),
+    finalMessage: chatMessageSchema,
+    statRewind: statRewindSchema.optional().catch(undefined),
+  }),
   // 캐시 변경 없음
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);

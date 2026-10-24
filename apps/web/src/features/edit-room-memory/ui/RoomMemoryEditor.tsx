@@ -17,6 +17,7 @@ import {
 } from "../api/memoryMutations";
 import { toNoteRequest, toSummaryRequest } from "../model/formToServer";
 import { toMemoryWriteError, type MemoryWriteError } from "../model/memoryWriteError";
+import { isNoteSaveBlocked } from "../model/noteSaveGuard";
 import { browserStorage, isRollbackUnseen, readSeenRollback, writeSeenRollback } from "../model/rollbackNotice";
 import { countMemoryChars, createMemoryFormSchema, memoryFormOptions, type MemoryFormValues } from "../model/schema";
 import { serverToForm } from "../model/serverToForm";
@@ -226,8 +227,12 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   const isSummaryEditOpen = isEditingSummary && summary !== undefined;
   const noteField = form.register("note");
   const isNoteSaving = saveNoteMutation.isPending || clearNoteMutation.isPending;
-  // [저장]의 비활성 표시와 클릭 가드가 같은 값을 본다 — 비우기가 진행 중일 때도 저장 요청을 보내지 않는다.
-  const isNoteSaveBlocked = isNoteSaving || isSubmitting;
+  // [저장]의 비활성 표시와 클릭 가드가 이 값 하나를 본다.
+  const isNoteSaveDisabled = isNoteSaveBlocked({
+    isSavePending: saveNoteMutation.isPending,
+    isClearPending: clearNoteMutation.isPending,
+    isSubmitting,
+  });
 
   let summaryBody: ReactNode;
   if (summary === undefined) {
@@ -240,9 +245,12 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   } else if (isEditingSummary) {
     summaryBody = (
       <div className="flex flex-col gap-1.5">
+        {/* 글만큼 자라되 상한에서 멈추고 칸 안에서 스크롤한다 — 상한이 없으면 긴 요약에서 칸 아래 글자 수·[저장]이 작은 화면
+            밖으로 밀려난다. */}
         <Textarea
           id={summaryId}
           rows={8}
+          className="max-h-80"
           autoFocus
           aria-label="지금까지의 이야기"
           aria-invalid={!!errors.summary}
@@ -321,7 +329,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
         {shownRollbackAt !== undefined && (
           <p className="flex gap-2 rounded-lg border border-border px-3.5 py-2.5 text-xs break-keep text-foreground">
             <History aria-hidden className="mt-px size-3.5 shrink-0 text-muted-foreground" />
-            지난 메시지를 고치거나 지워서 요약이 이전 판으로 돌아갔어요.
+            지난 대화가 바뀌어서 요약이 이전 판으로 돌아갔어요.
           </p>
         )}
 
@@ -333,7 +341,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
 
         <ul className="flex flex-col gap-1 text-xs break-keep text-muted-foreground">
           <li>대화를 이어 가면 AI가 이 요약을 다시 정리해요. 꼭 지켜야 할 내용은 &lsquo;꼭 기억할 것&rsquo;에 적어 주세요.</li>
-          <li>지난 메시지를 고치거나 지우면 그 뒤의 요약은 직접 고친 내용까지 이전 요약으로 돌아가요.</li>
+          <li>지난 대화가 바뀌면(고치기·지우기·다시 생성·방금 전 답변으로) 그 뒤의 요약은 직접 고친 내용까지 이전 요약으로 돌아가요.</li>
           {summary && (
             <li id={revertHintId}>되돌리기는 직접 고친 내용만 돼요. AI가 다시 정리한 요약은 되돌릴 수 없어요.</li>
           )}
@@ -347,9 +355,11 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
         {writeError?.section === "note" && (
           <WriteErrorNotice error={writeError.error} onReload={() => void handleReloadAfterConflict()} />
         )}
+        {/* 요약 칸과 같은 이유로 상한을 둔다(상한까지 다 채우면 390px 폭 시트에서 칸 하나가 화면 높이를 넘었다). */}
         <Textarea
           id={noteId}
           rows={5}
+          className="max-h-60"
           placeholder="캐릭터가 이 대화방에서 잊지 않았으면 하는 것"
           aria-invalid={!!errors.note}
           aria-describedby={errors.note ? `${noteId}-error ${noteId}-count` : `${noteId}-count`}
@@ -386,10 +396,10 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
           <Button
             type="button"
             variant={isSummaryEditOpen ? "outline" : "default"}
-            aria-disabled={isNoteSaveBlocked}
+            aria-disabled={isNoteSaveDisabled}
             className={cn("aria-disabled:opacity-65", isSummaryEditOpen && "hover:bg-secondary")}
             onClick={() => {
-              if (!isNoteSaveBlocked) void form.handleSubmit(handleSaveNote)();
+              if (!isNoteSaveDisabled) void form.handleSubmit(handleSaveNote)();
             }}
           >
             {saveNoteMutation.isPending ? "저장 중..." : "저장"}
