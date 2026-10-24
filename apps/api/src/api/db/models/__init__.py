@@ -129,7 +129,13 @@ from api.db.models.payment import (
     PaymentStatus,
 )
 from api.db.models.persona import UserPersona
-from api.db.models.prompt import PromptSection, PromptSet, PublishFilterTextSectionBackup
+from api.db.models.prompt import (
+    PromptRoute,
+    PromptRouteRevision,
+    PromptSection,
+    PromptSet,
+    PublishFilterTextSectionBackup,
+)
 from api.db.models.story import (
     Ending,
     EndingRule,
@@ -272,6 +278,8 @@ __all__ = [
     "PaymentCancellationSource",
     "PaymentCancellationStatus",
     "PaymentStatus",
+    "PromptRoute",
+    "PromptRouteRevision",
     "PromptSection",
     "PromptSet",
     "PublishFilterTextSectionBackup",

@@ -2439,6 +2439,46 @@ Anthropic 을 게시한 뒤에는 가입 화면의 국외이전 고지 사본(`a
    sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic downgrade a966fc016bf1
    ```
 
+**모델 배정 설정·이력 표(`495e9a75bb46`) — 배포 · 되돌리기.** 방 모델별로 채팅 단계마다 어느 프롬프트 체인을 읽고 어느 모델을
+부를지 담을 표 둘을 더한다. 이 리비전이 오르는 배포에는 두 표를 읽는 채팅·판정 코드가 없다 — 표에 행이 있어도 채팅·판정·
+미리보기는 위 env 규칙 그대로 돈다.
+- 생기는 것: 설정 표 `prompt_routes`((레인, 방 모델, 단계)마다 한 행, 유니크 인덱스, 행 모양 CHECK 둘, FK 없음)와 저장 이력 표
+  `prompt_route_revisions`(저장 한 번 = 한 행, 표 전체 JSONB 스냅샷, 운영자 `admin_users` FK, 되돌리기 원본 자기 참조 FK). 기존 표에는
+  칸을 더하지 않는다. 업그레이드 첫 문장이 `lock_timeout 5s` 라 `admin_users` 잠금을 5초 안에 못 잡으면 실패한다 — 다시 돌리면 된다.
+
+평상시 겹침 교체로 배포한다(`skip_overlap` 불필요): 겹침 동안 도는 옛 이미지는 두 표를 모르고 읽지도 쓰지도 않으며, 기존 표의
+INSERT·SELECT 는 그대로다.
+
+- **병합 전**: 운영 최신 백업 성공을 보고, 운영 DB 리비전이 이 파일의 `down_revision` 과 같은지(아래 읽기 전용 SELECT) 본다 — 다르면
+  다른 런의 리비전이 먼저 들어간 것이니 이 리비전을 그 위로 다시 잇는다.
+- **되돌리기**: 1순위는 이미지만 되돌리기다(downgrade 없이 — 옛 코드는 두 표가 있어도 무해하다). 스키마까지 내리려면 순서가
+  고정이다: ① 이 표를 읽는 코드가 서빙 중이면 그 코드의 revert 를 **먼저 모두 병합·배포**하거나(그 뒤 서빙 이미지가 표를 읽지
+  않으면 다음 단계의 태그 롤백은 건너뛴다), 표를 읽지 않는 이미지로 태그 롤백(`DDONA_ROLLBACK=1`)한다 → ② 이 리비전을 아는
+  이미지로 downgrade → ③ 스키마까지 지우는 revert 를 병합. 읽는 코드의 revert 를 ② 뒤로 미룰 수밖에 없으면 그것과 이 revert 를
+  **PR 하나로 묶어** ③ 에서 한 번에 병합한다. ②~③ 사이에는 이 작업 자신의 다른 revert 를 포함해 **어떤 `main` 병합도 하지 않는다** —
+  그 사이 배포가 `alembic upgrade head` 로 방금 내린 표를 다시 만들고, 이어지는 revert 배포가 "DB 리비전을 모른다"로 멈춘다.
+- downgrade 는 **이력 행이 하나라도 있으면** 아무것도 바꾸기 전에 `RuntimeError` 로 멈춘다. 어드민이 한 번이라도 저장했으면 늘
+  멈춘다 — 표를 비우는 저장도 이력 한 행을 남긴다. 그때는 스키마를 남긴다: 이미지만 되돌리고, 마이그레이션 파일·ORM 모델은 남긴 채
+  코드만 revert 한다(남긴 리비전이 head 사슬에 그대로 있어 다음 배포의 `alembic upgrade head` 는 no-op 이다). 이력 행을 손 SQL 로
+  지워 downgrade 를 통과시키지 않는다.
+- downgrade 명령은 고정 id 가 아니라 **상대 지정**(`495e9a75bb46-1`, 한 단계 아래까지)으로 친다 — 병합 전 리베이스로 앞 리비전이
+  바뀔 수 있다. 치기 직전에 서빙 이미지 안 이 파일의 `down_revision` 을 읽어 `alembic history` 의 바로 아래 리비전과 같은지 보고,
+  이 리비전 **위에** 다른 런의 리비전이 쌓였으면(바로 위 프롬프트 판 표 리비전 말고 다른 것이 history 에 보이면) downgrade 가
+  그것까지 내리므로 스키마는 되돌리지 않고 위의 "스키마를 남긴다"로 간다. 판 표 리비전이 함께 올라 있으면 그 리비전 downgrade 의 멈춤
+  조건도 함께 걸린다.
+
+```sh
+# 병합 전·downgrade 전 — 읽기 전용: 지금 DB 리비전과 이력 행 수(두 번째는 이 리비전이 오른 뒤에만)
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c "SELECT version_num FROM alembic_version;"
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c "SELECT (SELECT count(*) FROM prompt_routes), (SELECT count(*) FROM prompt_route_revisions);"
+# downgrade(백업 먼저, 이 리비전 파일이 든 이미지로)
+sudo /opt/ddona/backup.sh
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic history -r-3:current
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<이 리비전을 아는 TAG> alembic downgrade 495e9a75bb46-1
+```
+
 ### 3-13. 노벨(공개 소설) 켜기 · 끄기
 
 노벨은 소설화를 쓸 수 있는 계정이 자기 소설을 공개하는 기능이라 두 겹으로 닫혀 있다 — 소설화 세 겹("소설화 켜기 · 끄기 ·

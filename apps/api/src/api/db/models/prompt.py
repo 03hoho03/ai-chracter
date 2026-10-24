@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Text, Uuid, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, Uuid, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -152,3 +154,70 @@ class PublishFilterTextSectionBackup(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     conditional: Mapped[bool] = mapped_column(Boolean, nullable=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class PromptRoute(Base):
+    """채팅 방 모델별 단계 배정 — (레인, 실효 방 모델, 단계)마다 어느 프롬프트 체인을 읽고 어느 모델을 부를지 한 행.
+
+    표가 비어 있거나 그 키의 행이 없으면 지금까지의 환경 변수 규칙을 따른다(이 표를 읽는 코드는 아직 없다).
+    `lane`·`room_model`·`stage`·`chain_model`·`call_model`·`backend` 는 모두 enum 없는 Text 이고 값 목록 CHECK 도 두지
+    않는다 — 단계나 모델이 늘 때마다 CHECK 를 DROP→ADD 하는 마이그레이션이 필요해지므로 값 범위는 앱의 저장 검사가 맡는다.
+
+    CHECK 둘은 값 목록이 아니라 행의 모양을 지킨다.
+    - 생성 단계(`chat_generate`)는 `chain_model` 이 NULL 이고 나머지 단계는 반드시 둔다 — 생성은 늘 방 모델의 체인을 읽으므로
+      따로 적을 체인이 없고, 판정·요약·추출은 어느 체인을 읽을지가 그 행의 뜻이다.
+    - 생성 단계의 `call_model` 은 `room_model` 과 같다 — 대화 차감이 방 모델 단가로 매겨지므로 다른 모델을 부르면 값과 원가가
+      어긋난다.
+
+    다른 표를 가리키지 않아 FK 가 없다. 저장 이력은 `PromptRouteRevision` 이 표 전체 스냅샷으로 남긴다.
+    """
+
+    __tablename__ = "prompt_routes"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    lane: Mapped[str] = mapped_column(Text, nullable=False)
+    room_model: Mapped[str] = mapped_column(Text, nullable=False)
+    stage: Mapped[str] = mapped_column(Text, nullable=False)
+    chain_model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    call_model: Mapped[str] = mapped_column(Text, nullable=False)
+    backend: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_prompt_routes_lane_room_model_stage", "lane", "room_model", "stage", unique=True),
+        CheckConstraint(
+            "(stage = 'chat_generate') = (chain_model IS NULL)", name="ck_prompt_routes_generation_has_no_chain"
+        ),
+        CheckConstraint(
+            "stage <> 'chat_generate' OR call_model = room_model",
+            name="ck_prompt_routes_generation_calls_room_model",
+        ),
+    )
+
+
+class PromptRouteRevision(Base):
+    """단계 배정 저장 한 번 = 한 행. 저장한 뒤의 `prompt_routes` 전체를 `rows` 에 스냅샷으로 남기고 쌓기만 한다.
+
+    `rows` 는 `[{lane, roomModel, stage, chainModel, callModel, backend}]` 이고, 빈 배열은 표를 비워 전부 환경 변수 규칙으로
+    돌린 저장이다 — 그래서 표가 비어 있어도 어드민이 쓴 적이 있는지는 이 표만 안다. `number` 는 저장 순번이고 유니크 인덱스가
+    동시 저장 둘이 같은 번호를 계산했을 때 뒤 커밋을 막는다. `restored_from_id` 는 되돌리기로 만든 행이면 그 원본 행이다.
+
+    `relationship()` 은 선언하지 않는다(리포 규약) — FK 만 둔다.
+    """
+
+    __tablename__ = "prompt_route_revisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    rows: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    admin_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("admin_users.id"), nullable=False)
+    restored_from_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("prompt_route_revisions.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_prompt_route_revisions_number", "number", unique=True),
+        CheckConstraint("number > 0", name="ck_prompt_route_revisions_number_positive"),
+    )
