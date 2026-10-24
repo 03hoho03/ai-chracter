@@ -139,14 +139,18 @@ async def _checked_sections(
     return sections
 
 
-async def _section_views(
-    db: AsyncSession, room_id: uuid.UUID, rows: Sequence[NovelSourceSection]
+async def section_views(
+    db: AsyncSession, room_id: uuid.UUID | None, rows: Sequence[NovelSourceSection]
 ) -> list[NovelSourceSectionView]:
-    """저장된 구간 행의 응답 — 양 끝 키와, 지금 방 원문으로 다시 읽은 해시가 저장 해시와 다른가."""
+    """저장된 구간 행의 응답 — 양 끝 키와, 지금 방 원문으로 다시 읽은 해시가 저장 해시와 다른가. 방이 지워졌으면(`room_id` 가 None)
+    원문을 다시 읽을 수 없어 모두 바뀐 것으로 본다(지운 방의 메시지도 함께 지워져 해시가 같을 수 없다)."""
     views = []
     for row in rows:
         start, end = section_key(row)
-        changed = (await range_shape(db, room_id, SourceRange(start, end))).source_hash != row.source_hash
+        changed = (
+            room_id is None
+            or (await range_shape(db, room_id, SourceRange(start, end))).source_hash != row.source_hash
+        )
         views.append(
             NovelSourceSectionView(
                 start_message_id=row.start_message_id,
@@ -167,7 +171,7 @@ async def _view(db: AsyncSession, room_id: uuid.UUID, selection: NovelSourceSele
         approved_at=selection.approved_at,
         room_end_message_id=selection.room_end_message_id,
         room_end_message_created_at=selection.room_end_message_created_at,
-        sections=await _section_views(db, room_id, await selection_sections(db, selection.id)),
+        sections=await section_views(db, room_id, await selection_sections(db, selection.id)),
     )
 
 

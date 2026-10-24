@@ -996,7 +996,12 @@ class NovelOutlineEpisodeView(CamelModel):
 class NovelOutlineView(CamelModel):
     """구성안 한 판. `source` 는 모델이 만든 판(`generate`)인지 사용자가 고친 판(`edit`)인지, `model` 은 만든 모델(고친 판은 null)이다.
     `stale` 이 참이면 그 판이 근거로 삼은 include 구간이 지금 승인한 구간 선택에서 빠졌거나 바뀌었다 — 승인·편집할 수 없고, 구간
-    선택에 맞춰 다시 만들어야 한다."""
+    선택에 맞춰 다시 만들어야 한다.
+
+    `source_sections` 는 낡은 판에만 싣는 그 판이 쓴 구간 선택의 include 구간이다(낡지 않았으면 null — 구간마다 원문을 다시 읽으므로
+    되돌릴 일이 있는 판에서만 읽는다). 화를 지웠어도 그 선택의 구간은 모두 들어 있어, 화면이 이 구간으로 선택을 되돌리면 낡음이
+    풀린다. 단 `source_changed` 가 참인 구간은 원문이 바뀌어 되돌려도 풀리지 않는다 — 다시 만들어야 한다. 고친 판은 기준 판의
+    선택을 물려받아 같은 구간을 싣는다."""
 
     revision: int
     source: NovelOutlineSource
@@ -1005,6 +1010,7 @@ class NovelOutlineView(CamelModel):
     created_at: datetime
     stale: bool
     episodes: list[NovelOutlineEpisodeView]
+    source_sections: list[NovelSourceSectionView] | None = None
 
 
 class NovelOutlineModel(CamelModel):
