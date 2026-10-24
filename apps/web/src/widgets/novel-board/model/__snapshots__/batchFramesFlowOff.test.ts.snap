@@ -1,0 +1,149 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`옛 흐름 화만 있는 보드 > 보드 모델 1`] = `
+{
+  "batches": [
+    {
+      "id": "b1",
+      "ordinal": 1,
+      "rangeLabel": "1화",
+    },
+    {
+      "id": "b2",
+      "ordinal": 2,
+      "rangeLabel": "2~3화",
+    },
+  ],
+  "characters": [],
+  "episodes": [
+    {
+      "batchId": "b1",
+      "charCount": 4812,
+      "hasPendingAiEdit": false,
+      "id": "c1",
+      "isRegenerating": false,
+      "ordinal": 1,
+      "publicMark": undefined,
+      "readState": {
+        "kind": "unread",
+      },
+      "summary": null,
+      "title": "첫 밤",
+    },
+    {
+      "batchId": "b2",
+      "charCount": 5120,
+      "hasPendingAiEdit": false,
+      "id": "c2",
+      "isRegenerating": false,
+      "ordinal": 2,
+      "publicMark": undefined,
+      "readState": {
+        "kind": "finished",
+      },
+      "summary": "요약",
+      "title": null,
+    },
+    {
+      "batchId": "b2",
+      "charCount": 300,
+      "hasPendingAiEdit": false,
+      "id": "c3",
+      "isRegenerating": false,
+      "ordinal": 3,
+      "publicMark": undefined,
+      "readState": {
+        "kind": "unread",
+      },
+      "summary": null,
+      "title": null,
+    },
+  ],
+  "notes": "",
+}
+`;
+
+exports[`옛 흐름 화만 있는 보드 > 자동 배치와 묶음 틀 1`] = `
+[
+  {
+    "height": 176,
+    "id": "batch:b1",
+    "position": {
+      "x": -16,
+      "y": -40,
+    },
+    "type": "batchFrame",
+    "width": 272,
+  },
+  {
+    "height": 320,
+    "id": "batch:b2",
+    "position": {
+      "x": -16,
+      "y": 152,
+    },
+    "type": "batchFrame",
+    "width": 272,
+  },
+  {
+    "height": undefined,
+    "id": "notes",
+    "position": {
+      "x": -320,
+      "y": 0,
+    },
+    "type": "notes",
+    "width": undefined,
+  },
+  {
+    "height": undefined,
+    "id": "episode:c1",
+    "position": {
+      "x": 0,
+      "y": 0,
+    },
+    "type": "episode",
+    "width": undefined,
+  },
+  {
+    "height": undefined,
+    "id": "episode:c2",
+    "position": {
+      "x": 0,
+      "y": 192,
+    },
+    "type": "episode",
+    "width": undefined,
+  },
+  {
+    "height": undefined,
+    "id": "episode:c3",
+    "position": {
+      "x": 0,
+      "y": 336,
+    },
+    "type": "episode",
+    "width": undefined,
+  },
+]
+`;
+
+exports[`옛 흐름 화만 있는 보드 > 좁은 화면 목록의 덩어리 1`] = `
+[
+  {
+    "ids": [
+      "c1",
+    ],
+    "key": "b1",
+    "label": "묶음 1 · 1화",
+  },
+  {
+    "ids": [
+      "c2",
+      "c3",
+    ],
+    "key": "b2",
+    "label": "묶음 2 · 2~3화",
+  },
+]
+`;
