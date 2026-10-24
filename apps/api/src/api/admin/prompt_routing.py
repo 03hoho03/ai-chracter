@@ -188,6 +188,7 @@ async def _routing_response(db: AsyncSession) -> AdminPromptRoutingResponse:
                         lane=lane,
                         room_model=room_model,
                         stage=stage,
+                        kind=STAGES[stage].kind,
                         configured=None if configured is None else _row_out(configured),
                         effective=AdminPromptRouteEffective(
                             chain_model=route.chain_model,

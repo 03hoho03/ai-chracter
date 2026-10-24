@@ -818,6 +818,8 @@ class AdminPromptRouteCell(CamelModel):
     lane: RoutingLane
     room_model: ChatRoomModelId
     stage: PromptStage
+    # 그 단계의 종류. 행이 고를 수 있는 쌍이 종류마다 다르다(`allowed_pairs` 의 `kind`).
+    kind: StageKind
     configured: AdminPromptRouteRow | None
     effective: AdminPromptRouteEffective
     skipped: AdminPromptRouteSkip | None
