@@ -67,6 +67,9 @@ _FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
 # 그 뒤 여덟 체인의 요약 비밀 표기 슬롯 본문에 미확인 주장의 출처 규칙을 더한 세트를 게시하는 리비전 — character 레인
 # 활성 Gemini 세트가 그 세트다.
 _SOURCE_MARKING = _load("0c1a85bc5c2f")
+# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
+# 때는 이것부터다.
+_IMPRESSION = _load("6558ab4d3dbc")
 
 _NEW_KEY = ("generation", "story", "situation_notes", "")
 
@@ -241,6 +244,7 @@ async def test_character_lane_is_untouched(db_session: AsyncSession) -> None:
         _EPISODE_KNOWN_BY_MIGRATION.NEW_SET_IDS[("character", "gemini")],
         _FACT_KNOWN_BY_ORDER.NEW_SET_IDS[("character", "gemini")],
         _SOURCE_MARKING.NEW_SET_IDS[("character", "gemini")],
+        _IMPRESSION.NEW_SET_IDS[("character", "gemini")],
     )
     assert all(s.slot != "situation_notes" for s in sections)
 
@@ -338,6 +342,7 @@ async def test_patch_draft_adds_the_row_in_place_and_draft_then_publishes(
     assert await connection.run_sync(_MEMORY_FACT_MIGRATION._patch_drafts) == [("story", "gemini")]
     assert await connection.run_sync(_SECRET_MARKING_MIGRATION._patch_drafts) == [("story", "gemini")]
     await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
+    await connection.run_sync(_IMPRESSION._patch_drafts)
     sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None

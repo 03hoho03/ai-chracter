@@ -17,6 +17,7 @@ from types import ModuleType
 
 import pytest
 import sqlalchemy as sa
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.prompts import _validate_prompt_draft_for_publish
@@ -51,6 +52,9 @@ _PREVIOUS = _load("c1f3945cb802")
 # 세트들이 활성이라, "이 리비전 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 그 리비전을 먼저 되돌린다(실제
 # downgrade 순서).
 _LATER = _load("0f82ea9f9fa5")
+# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
+# 때는 이것부터다.
+_IMPRESSION = _load("6558ab4d3dbc")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
@@ -109,6 +113,7 @@ async def _lane_only_active_id(db_session: AsyncSession, lane: PromptLane) -> uu
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
 
 
@@ -248,6 +253,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.status == "published",
                 PromptSet.id.not_in(order), PromptSet.id.not_in(_NOVEL_OUTLINE_SET_IDS),
                 PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
             )
         )
     ).all()
@@ -259,11 +265,16 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
 async def test_seeded_sets_pass_publish_validation(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
-    """이 리비전은 행 집합·자리표시자를 바꾸지 않으므로 새 세트가 지금 코드 표의 게시 검증을 통과한다."""
+    """이 리비전은 행 집합·자리표시자를 바꾸지 않는다. 지금 코드 표는 뒤 리비전(인상 생성 채널)까지 기준이라 이 세트는 그 채널
+    "누락"으로만 막히고, 그 채널을 더한 head 활성 세트는 통과한다."""
     # 행을 먼저 읽는다: `_sections_of` 가 세션을 만료시키므로, 세트를 먼저 읽으면 검증이 동기 문맥에서 만료된 속성을 다시 읽으려다 실패한다.
     sections = await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)])
     prompt_set = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
-    _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
+    with pytest.raises(HTTPException):
+        _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
+    later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
+    assert later_set.id == _IMPRESSION.NEW_SET_IDS[(lane, model)]
+    _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
 
 
 # ---- 요약 프롬프트 ------------------------------------------------------------------------------
@@ -353,6 +364,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
@@ -378,6 +390,7 @@ async def test_upgrade_copies_a_summary_instruction_the_admin_edited(db_session:
     """운영 story 요약 지시문처럼 어드민이 고쳐 게시한 지시문이 활성이어도 멈추지 않고 그 본문을 그대로 옮긴다 — 가정 검사와
     교체는 비밀 표기 슬롯만 본다. 검사가 지시문 본문을 견주게 바뀌면 여기서 `RuntimeError` 로 깨진다."""
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     edited = "운영자가 어드민에서 고쳐 게시한 요약 지시문"
@@ -408,6 +421,7 @@ async def test_upgrade_refuses_to_overwrite_a_slot_body_the_admin_edited(
     """활성 슬롯 본문이 앞 리비전 문안과 한 글자라도 다르면 어드민이 고친 운영 문안이다 — 조용히 덮어쓰지 않고, 그 레인에는 아무
     세트도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
@@ -429,6 +443,7 @@ async def test_upgrade_refuses_to_overwrite_a_slot_body_the_admin_edited(
 
 async def test_upgrade_stops_when_the_slot_row_is_not_exactly_one(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
@@ -455,6 +470,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])
@@ -480,6 +496,7 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     connection = await db_session.connection()
 
     with pytest.raises(RuntimeError, match=f"{lane}/{model}"):
+        await connection.run_sync(_IMPRESSION.delete_seeded_rows)
         await connection.run_sync(_M.delete_seeded_rows)
 
     for pair in _PAIRS:
@@ -502,9 +519,11 @@ async def test_patch_drafts_swaps_the_slot_body_in_place_and_the_draft_publishes
     assert await connection.run_sync(_M._patch_drafts) == [(lane, model)]
 
     assert _keyed(await _sections_of(db_session, draft_id)) == _expected_after(before)
+    await connection.run_sync(_IMPRESSION._patch_drafts)
     sections = await _sections_of(db_session, draft_id)
     _validate_prompt_draft_for_publish(await _get_set(db_session, draft_id), sections, lane=lane, model=model)
 
+    await connection.run_sync(_IMPRESSION._delete_draft_rows)
     assert await connection.run_sync(_M._delete_draft_rows) == [(lane, model)]
     assert _keyed(await _sections_of(db_session, draft_id)) == before
 

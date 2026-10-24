@@ -9,8 +9,8 @@
 - 쓰기: 마지막 트랜잭션은 가장 새 스냅샷을 `FOR KEY SHARE` 로 잠근 뒤 방의 잊기 세대를 다시 읽고, 입력을 읽을 때와 다르면 결과를
   버린다. 잊게 하기(장면·사실 모두)는 그 방의 인상을 전부 지우고 잊기 세대를 올린다.
 
-진짜 두 세션의 경합(잊기가 생성 커밋을 기다리는가)은 `test_chat_memory_rewind.py` 의 커밋되는 독립 커넥션 절에 있다. 문안은 아직
-DB 세트에 없어 테스트가 합성 섹션을 직접 넘긴다.
+진짜 두 세션의 경합(잊기가 생성 커밋을 기다리는가)은 `test_chat_memory_rewind.py` 의 커밋되는 독립 커넥션 절에 있다. 운영 문안이
+바뀌어도 깨지지 않게 테스트는 세트의 인상 문안을 합성 섹션으로 바꿔 넘긴다.
 """
 
 import uuid
@@ -122,7 +122,7 @@ async def _kwargs(
         "room_id": room.room_id,
         "user_id": room.user_id,
         "prompt_set": prompt_set,
-        "sections": [*sections, *_impression_sections(prompt_set)],
+        "sections": _impression_sections(prompt_set, sections),
         "is_story_chat": lane == "story",
         "writing_model": writing_model,
     }
@@ -567,14 +567,15 @@ async def test_a_model_error_stays_inside_and_later_background_tasks_still_run(
 async def test_a_missing_channel_is_a_render_failure_without_a_call(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """활성 세트에 인상 문안이 없으면(문안을 심기 전) 모델을 부르지 않고 렌더 실패로 올린다."""
+    """세트에 인상 문안이 없으면(문안을 심기 전의 세트) 모델을 부르지 않고 렌더 실패로 올린다."""
     captured = _capture_failures(monkeypatch)
     room, (first, _, _) = await _three_part_room(db_client, db_session)
     await _scene(db_session, room, first)
     prompt_set, sections = await load_active_prompt_set(db_session, lane="character")
+    without_channel = [section for section in sections if section.channel != "memory_impression"]
     fake = ImpressionLLMClient()
 
-    await _generate(db_session, room, fake, prompt_set=prompt_set, sections=sections)
+    await _generate(db_session, room, fake, prompt_set=prompt_set, sections=without_channel)
 
     assert fake.prompts == []
     assert captured == ["prompt_render"]

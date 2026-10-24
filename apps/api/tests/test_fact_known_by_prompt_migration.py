@@ -62,6 +62,9 @@ _FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
 _SOURCE_MARKING = _load("0c1a85bc5c2f")
 # 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는 이것부터다.
 _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
+# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
+# 때는 이것부터다.
+_IMPRESSION = _load("6558ab4d3dbc")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
@@ -105,6 +108,7 @@ def _expected_after(before: dict[Key, Value]) -> dict[Key, Value]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -247,6 +251,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(list(_FACT_KNOWN_BY_ORDER.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SOURCE_MARKING.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
             )
         )
     ).all()
@@ -259,16 +264,15 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
 async def test_seeded_sets_pass_publish_validation_but_for_the_later_summary_slot(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
-    """이 리비전은 행 집합·자리표시자를 바꾸지 않는다. 지금 코드 표는 뒤 리비전(요약 비밀 표기 슬롯)까지 기준이라 이 세트는 그
-    슬롯 "누락"으로 막히고, 그 슬롯이 있는 head 활성 세트(story 는 장면 판정 지시문 교체 리비전, character 는 요약 비밀
-    표기 출처 리비전의 것)는 통과한다."""
+    """이 리비전은 행 집합·자리표시자를 바꾸지 않는다. 지금 코드 표는 뒤 리비전(요약 비밀 표기 슬롯·인상 생성 채널)까지 기준이라 이
+    세트는 그 행 "누락"으로 막히고, 그 행이 있는 head 활성 세트(인상 생성 문안 리비전의 것)는 통과한다."""
     prompt_set = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(
             prompt_set, await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)]), lane=lane, model=model
         )
     later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert later_set.id == (_SCENE_INSTRUCTION_V2 if lane == "story" else _SOURCE_MARKING).NEW_SET_IDS[(lane, model)]
+    assert later_set.id == _IMPRESSION.NEW_SET_IDS[(lane, model)]
     _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
 
 
@@ -332,6 +336,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
 
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
@@ -365,6 +370,7 @@ async def test_upgrade_refuses_to_overwrite_an_instruction_the_admin_edited(
     """활성 지시문이 앞 리비전 문안과 한 글자라도 다르면 어드민이 고친 운영 문안이다 — 조용히 덮어쓰지 않고, 그 레인에는 아무
     세트도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -391,6 +397,7 @@ async def test_upgrade_refuses_to_overwrite_an_instruction_the_admin_edited(
 
 async def test_upgrade_stops_when_the_instruction_row_is_not_exactly_one(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -422,6 +429,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -452,6 +460,7 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     connection = await db_session.connection()
 
     with pytest.raises(RuntimeError, match=f"{lane}/{model}"):
+        await connection.run_sync(_IMPRESSION.delete_seeded_rows)
         await connection.run_sync(_M.delete_seeded_rows)
 
     for pair in _PAIRS:
@@ -477,10 +486,12 @@ async def test_patch_drafts_swaps_the_instruction_in_place_and_the_draft_publish
     # 코드 표는 head 기준이라, 체인이 실제로 하듯 뒤 리비전(요약 비밀 표기 슬롯)의 초안 패치도 거친 뒤 게시 게이트를 태운다.
     assert await connection.run_sync(_LATER._patch_drafts) == [(lane, model)]
     await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
+    await connection.run_sync(_IMPRESSION._patch_drafts)
     sections = await _sections_of(db_session, draft_id)
     _validate_prompt_draft_for_publish(await _get_set(db_session, draft_id), sections, lane=lane, model=model)
 
     # 되돌리기도 실제 순서대로 뒤 리비전부터.
+    await connection.run_sync(_IMPRESSION._delete_draft_rows)
     await connection.run_sync(_SCENE_JUDGMENT._delete_draft_rows)
     assert await connection.run_sync(_LATER._delete_draft_rows) == [(lane, model)]
     assert await connection.run_sync(_M._delete_draft_rows) == [(lane, model)]

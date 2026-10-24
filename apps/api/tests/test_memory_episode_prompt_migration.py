@@ -81,6 +81,9 @@ _FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
 _SOURCE_MARKING = _load("0c1a85bc5c2f")
 # 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는 이것부터다.
 _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
+# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
+# 때는 이것부터다.
+_IMPRESSION = _load("6558ab4d3dbc")
 
 Key = tuple[str, str, str, str]
 Value = tuple[str, bool, int]
@@ -122,6 +125,7 @@ def _expected_after(before: dict[Key, Value], model: str) -> dict[Key, Value]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -310,6 +314,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(list(_FACT_KNOWN_BY_ORDER.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SOURCE_MARKING.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
             )
         )
     ).all()
@@ -328,8 +333,8 @@ async def test_no_drafts_are_seeded(db_session: AsyncSession) -> None:
 async def test_seeded_sets_pass_publish_validation_and_the_previous_sets_no_longer_do(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
-    """게시 검증의 기대 집합과 시드가 맞물린다 — head 코드 표와의 차이는 뒤 리비전(관계·사실 기억 문안·요약 비밀 표기 슬롯)이
-    더한 행뿐이고, 그 행을 더한 뒤 리비전의 세트가 게시 검증을 통과한다. 새 행이 없는 이전 세트는 슬롯 집합 검사에 막힌다(이 리비전 이전 버전을
+    """게시 검증의 기대 집합과 시드가 맞물린다 — head 코드 표와의 차이는 뒤 리비전(관계·사실 기억 문안·요약 비밀 표기 슬롯·인상
+    생성 채널)이 더한 행뿐이고, 그 행을 더한 뒤 리비전의 세트가 게시 검증을 통과한다. 새 행이 없는 이전 세트는 슬롯 집합 검사에 막힌다(이 리비전 이전 버전을
     복원해 게시할 수 없다)."""
     sections = await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)])
     later = {(row[0], row[1], row[2]) for row in _LATER.FACT_CHANNEL_ROWS}
@@ -338,11 +343,12 @@ async def test_seeded_sets_pass_publish_validation_and_the_previous_sets_no_long
     later.add((_SECRET_MARKING.SUMMARY_CHANNEL, _SECRET_MARKING.SCOPE, _SECRET_MARKING.SLOT))
     if lane == "story":
         later |= {(row[0], row[1], row[2]) for row in _SCENE_JUDGMENT.NEW_ROWS}
+    later |= {(row[0], row[1], row[2]) for row in _IMPRESSION.NEW_ROWS}
     seeded = {(s.channel, s.scope, s.slot) for s in sections}
     expected = {(channel, scope, slot) for channel, slots in _expected_slots(lane, model).items() for scope, slot in slots}
     assert seeded | later == expected and not seeded & later
     later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert later_set.id == (_SCENE_INSTRUCTION_V2 if lane == "story" else _SOURCE_MARKING).NEW_SET_IDS[(lane, model)]
+    assert later_set.id == _IMPRESSION.NEW_SET_IDS[(lane, model)]
     _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
 
     previous_sections = await _sections_of(db_session, _PREVIOUS_SET_IDS[(lane, model)])
@@ -418,6 +424,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
 
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
@@ -450,6 +457,7 @@ async def test_upgrade_copies_the_operators_edited_text_not_the_seed(db_session:
     """운영 요약 문안처럼 어드민이 고쳐 게시한 문안이 활성이면 새 세트에 그 문안이 그대로 실린다 — 시드 상수로 만들면 조용히
     되돌아간다."""
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -485,6 +493,7 @@ async def test_upgrade_copies_each_chains_own_labels(db_session: AsyncSession) -
     """라벨도 그 체인 활성 세트의 것이다 — 어드민은 체인마다 라벨을 따로 고칠 수 있다(테스트 DB 의 시드는 모든 체인 라벨이
     같아, 한 체인만 바꿔야 Gemini 라벨을 복사하는 실수와 갈린다)."""
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -516,6 +525,7 @@ async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_s
     """어드민이 Gemini 가 아닌 체인을 Gemini 활성보다 나중에 게시했으면 레인만 보는 조회가 이미 그 세트를 집는다 — 아무것도
     넣지 않고 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
@@ -553,6 +563,7 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     connection = await db_session.connection()
 
     with pytest.raises(RuntimeError, match=f"{lane}/{model}"):
+        await connection.run_sync(_IMPRESSION.delete_seeded_rows)
         await connection.run_sync(_M.delete_seeded_rows)
 
     for pair in _ALL_PAIRS:
@@ -581,11 +592,13 @@ async def test_patch_drafts_adds_the_rows_in_place_and_the_draft_publishes(
     assert await connection.run_sync(_LATER._patch_drafts) == [(lane, model)]
     assert await connection.run_sync(_SECRET_MARKING._patch_drafts) == [(lane, model)]
     await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
+    await connection.run_sync(_IMPRESSION._patch_drafts)
     sections = await _sections_of(db_session, draft_id)
     draft = await _get_set(db_session, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
 
     # 되돌리기도 실제 순서대로 뒤 리비전부터.
+    await connection.run_sync(_IMPRESSION._delete_draft_rows)
     await connection.run_sync(_SCENE_JUDGMENT._delete_draft_rows)
     await connection.run_sync(_SECRET_MARKING._delete_draft_rows)
     await connection.run_sync(_LATER._delete_draft_rows)

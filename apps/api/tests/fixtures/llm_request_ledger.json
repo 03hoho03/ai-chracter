@@ -971,7 +971,7 @@
         "hasUser": true,
         "method": "generate_structured",
         "model": "gemini",
-        "promptSha": "4084f9bcf9fd95f3e8934462ea531363f7fa2633dd5754cf20e882c4367fb648",
+        "promptSha": "ed9b538b15d015e182f961b048821b55b1e0a3b835d2253ef1a5a7a02c7b3674",
         "provider": "gemini",
         "responseSchema": "MemoryImpressionResult",
         "segments": null,

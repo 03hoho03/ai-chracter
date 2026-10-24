@@ -50,7 +50,8 @@ from api.db.models.story import StoryPromptTemplate
 # 추출 채널 `memory_episode` 4행을 더해 story 67 / character 43 이고, `5cab2abe4e7b`가 두 레인에 사실 슬롯 `memory_facts` 1행과
 # 관계·사실 기억 추출 채널 `memory_fact` 4행을 더해 story 72 / character 48 이고, `0aeadefcf159`가 두 레인 요약 채널에 비밀
 # 표기 슬롯 `secret_marking` 1행을 더해 story 73 / character 49 이고, `0346abdbcc92`가 story 레인에 장면 헤더 판정 채널
-# `scene_judgment` 3행을 더해 story 76 이다.
+# `scene_judgment` 3행을 더해 story 76 이고, `6558ab4d3dbc`가 두 레인에 인상 생성 채널 `memory_impression` 3행을 더해 story 79 /
+# character 52 다.
 # system/generation 채널의 `scope='both'` 행은 story·character 두 레인에 사본으로 들어간다.
 _NOVELIZE_SLOTS: dict[str, set[tuple[str, str, str]]] = {
     "novelize_boundary": {
@@ -152,6 +153,11 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "existing_facts", ""),
             ("both", "turn_context", ""),
         },
+        "memory_impression": {
+            ("both", "instruction", ""),
+            ("both", "episodes", ""),
+            ("both", "facts", ""),
+        },
         "image_judgment": {
             ("story", "image_list_intro", ""),
             ("story", "user_name", ""),
@@ -205,6 +211,11 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "user_name", ""),
             ("both", "existing_facts", ""),
             ("both", "turn_context", ""),
+        },
+        "memory_impression": {
+            ("both", "instruction", ""),
+            ("both", "episodes", ""),
+            ("both", "facts", ""),
         },
         **_NOVELIZE_SLOTS,
     },

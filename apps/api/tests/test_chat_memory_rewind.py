@@ -2188,7 +2188,7 @@ async def _run_impression(engine: AsyncEngine, room: Room, llm: LLMClient) -> No
         room_id=room.room_id,
         user_id=room.user_id,
         prompt_set=prompt_set,
-        sections=[*sections, *_impression_sections(prompt_set)],
+        sections=_impression_sections(prompt_set, sections),
         is_story_chat=False,
         writing_model="opus",
     )

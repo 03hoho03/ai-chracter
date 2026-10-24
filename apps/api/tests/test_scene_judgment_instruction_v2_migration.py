@@ -37,6 +37,9 @@ def _load(revision: str) -> ModuleType:
 
 
 _M = _load("0f82ea9f9fa5")
+# 이 리비전 뒤에 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — head 활성이라 "이 리비전 직후
+# 상태"를 보는 테스트는 이것부터 되돌린다(실제 downgrade 순서).
+_IMPRESSION = _load("6558ab4d3dbc")
 # 소설 레인 세 체인에 구성안 문안을 심은 리비전의 세트 — 다른 레인과 무관하지만 전역 버전 번호를 이 리비전 뒤에서 이어
 # 쓰므로 버전 차례를 보는 시험에서 뺀다.
 _NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values()) + list(
@@ -98,6 +101,10 @@ async def _get_set(db_session: AsyncSession, set_id: uuid.UUID) -> PromptSet:
     return prompt_set
 
 
+async def _undo_later_revisions(db_session: AsyncSession) -> None:
+    await (await db_session.connection()).run_sync(_IMPRESSION.delete_seeded_rows)
+
+
 def _published(*, model: str, published_at: datetime) -> PromptSet:
     return PromptSet(
         id=uuid.uuid4(),
@@ -136,6 +143,7 @@ def test_new_instruction_is_the_reviewed_wording_without_placeholders() -> None:
 async def test_each_story_chain_is_active_at_its_seeded_set_with_the_new_instruction(
     db_session: AsyncSession, model: PromptSetModelId
 ) -> None:
+    await _undo_later_revisions(db_session)
     assert await _active_id(db_session, model) == _M.NEW_SET_IDS[("story", model)]
     _prompt_set, sections = await load_active_prompt_set(db_session, lane="story", model=model)
     (instruction,) = [s for s in sections if (s.channel, s.slot) == ("scene_judgment", "instruction")]
@@ -145,6 +153,7 @@ async def test_each_story_chain_is_active_at_its_seeded_set_with_the_new_instruc
 async def test_the_lane_only_select_picks_the_new_gemini_set_and_character_is_untouched(
     db_session: AsyncSession,
 ) -> None:
+    await _undo_later_revisions(db_session)
     assert await _lane_only_active_id(db_session) == _M.NEW_SET_IDS[("story", "gemini")]
     _set, sections = await load_active_prompt_set(db_session, lane="character", model="gemini")
     assert not any(s.channel == "scene_judgment" for s in sections)
@@ -187,13 +196,17 @@ async def test_new_sets_are_published_in_the_window_of_both_active_rules(db_sess
 
 
 async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: AsyncSession) -> None:
-    """전 레인·전 모델 published 최대 + 1 을 gemini·sonnet·opus·haiku 순서로. 테스트 DB에는 이 리비전 뒤에 게시한 세트가 없다."""
+    """전 레인·전 모델 published 최대 + 1 을 gemini·sonnet·opus·haiku 순서로. 테스트 DB에 이 리비전 뒤에 게시한 세트는 소설
+    레인 문안 리비전과 인상 생성 문안 리비전의 것뿐이라 그 둘을 뺀다."""
     order = [_M.NEW_SET_IDS[("story", model)] for model in _MODELS]
     versions = [int((await _get_set(db_session, set_id)).version or "0") for set_id in order]
     others = (
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
-                PromptSet.status == "published", PromptSet.id.not_in(order), PromptSet.id.not_in(_NOVEL_OUTLINE_SET_IDS)
+                PromptSet.status == "published",
+                PromptSet.id.not_in(order),
+                PromptSet.id.not_in(_NOVEL_OUTLINE_SET_IDS),
+                PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
             )
         )
     ).all()
@@ -202,10 +215,15 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
 
 @pytest.mark.parametrize("model", _MODELS)
 async def test_seeded_sets_pass_publish_validation(db_session: AsyncSession, model: PromptSetModelId) -> None:
-    """행 집합·자리표시자가 앞 리비전과 같아 지금 코드의 게시 검증을 그대로 통과한다."""
-    prompt_set, sections = await load_active_prompt_set(db_session, lane="story", model=model)
-    assert prompt_set.id == _M.NEW_SET_IDS[("story", model)]
-    _validate_prompt_draft_for_publish(prompt_set, sections, lane="story", model=model)
+    """행 집합·자리표시자가 앞 리비전과 같다. 지금 코드 표는 뒤 리비전(인상 생성 채널)까지 기준이라 이 세트는 그 채널 "누락"으로만
+    막히고, 그 채널을 더한 head 활성 세트는 통과한다."""
+    sections = await _sections_of(db_session, _M.NEW_SET_IDS[("story", model)])
+    prompt_set = await _get_set(db_session, _M.NEW_SET_IDS[("story", model)])
+    with pytest.raises(HTTPException):
+        _validate_prompt_draft_for_publish(prompt_set, sections, lane="story", model=model)
+    later_set, later_sections = await load_active_prompt_set(db_session, lane="story", model=model)
+    assert later_set.id == _IMPRESSION.NEW_SET_IDS[("story", model)]
+    _validate_prompt_draft_for_publish(later_set, later_sections, lane="story", model=model)
 
 
 @pytest.mark.parametrize("model", _MODELS)
@@ -242,6 +260,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
     for model in _MODELS:
@@ -269,6 +288,7 @@ async def test_upgrade_refuses_to_overwrite_an_instruction_the_admin_edited(
     """활성 지시문이 앞 리비전 문안과 한 글자라도 다르면 어드민이 고친 운영 문안이다 — 조용히 덮어쓰지 않고, 네 체인 어디에도
     세트를 넣지 않은 채 멈춘다. 고친 본문도 그대로다."""
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     edited = _SCENE_JUDGMENT.INSTRUCTION_BODY + " "
     await db_session.execute(
@@ -292,6 +312,7 @@ async def test_upgrade_refuses_to_overwrite_an_instruction_the_admin_edited(
 
 async def test_upgrade_stops_when_the_instruction_row_is_not_exactly_one(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
         sa.delete(PromptSection).where(
@@ -317,6 +338,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])
     assert previous.published_at is not None
@@ -341,6 +363,7 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     connection = await db_session.connection()
 
     with pytest.raises(RuntimeError, match=f"story/{model}"):
+        await connection.run_sync(_IMPRESSION.delete_seeded_rows)
         await connection.run_sync(_M.delete_seeded_rows)
 
     for other in _MODELS:
@@ -401,8 +424,11 @@ async def test_patch_drafts_swaps_the_instruction_in_place_and_the_draft_publish
 
     sections = await _sections_of(db_session, draft_id)
     assert _keyed(sections) == _expected_after(before)
+    await connection.run_sync(_IMPRESSION._patch_drafts)
+    sections = await _sections_of(db_session, draft_id)
     _validate_prompt_draft_for_publish(await _get_set(db_session, draft_id), sections, lane="story", model=model)
 
+    await connection.run_sync(_IMPRESSION._delete_draft_rows)
     assert await connection.run_sync(_M._delete_draft_rows) == [("story", model)]
     assert _keyed(await _sections_of(db_session, draft_id)) == before
 
