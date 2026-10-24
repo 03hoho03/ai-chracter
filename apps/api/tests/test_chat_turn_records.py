@@ -389,8 +389,8 @@ async def test_each_send_and_edit_writes_one_record(db_client: httpx.AsyncClient
     records = sorted(await _records(db_session, room.room_id), key=lambda r: (r.turn_number, r.kind))
     assert [(r.kind, r.turn_number, r.stat_changes) for r in records] == [
         ("send", 2, {stat_id: [73, 78]}),
-        # 수정은 지운 턴의 스탯을 되돌리지 않으므로 83 에서 시작한다.
-        ("edit", 3, {stat_id: [83, 88]}),
+        # 수정은 지운 턴의 스탯을 되돌린 뒤 판정하므로 78 에서 시작한다.
+        ("edit", 3, {stat_id: [78, 83]}),
         ("send", 3, {stat_id: [78, 83]}),
     ]
     assert records[1].assistant_message_id == await _last_assistant_id(db_session, room.room_id)
@@ -530,17 +530,18 @@ async def test_regenerating_a_regeneration_keeps_the_first_records_values(
 async def test_regenerating_an_earlier_reply_after_deleting_later_turns_keeps_that_replys_turn_number(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """뒤 턴을 지워 앞 응답이 마지막 메시지가 되면 방 `turn_count` 는 지운 턴까지 센 값 그대로다. 재생성 기록은 그 값이
-    아니라 대체되는 응답이 속한 턴 번호여야 한다 — 다음 재생성이 이 기록을 보고 "방의 마지막 턴"인지 가른다."""
+    """마지막 응답을 지워도 턴 수를 줄이지 않던 옛 이미지의 삭제가 뒤 턴을 지운 방에서는 앞 응답이 마지막 메시지가 돼도 방
+    `turn_count` 가 지운 턴까지 센 값 그대로다. 재생성 기록은 그 값이 아니라 대체되는 응답이 속한 턴 번호여야 한다 — 다음
+    재생성이 이 기록을 보고 "방의 마지막 턴"인지 가른다."""
     room = await _open_room(db_client, db_session, turns=2, lane="story")
     _, first_reply = room.turns[1]
     second_user, second_reply = room.turns[2]
+    dropped = [second_reply.id, second_user.id]
     db_session.add(_make_chat_turn(room.room_id, assistant_message_id=first_reply.id, turn_number=1))
     db_session.add(_make_chat_turn(room.room_id, assistant_message_id=second_reply.id, turn_number=2))
     await db_session.commit()
-    for message in (second_reply, second_user):
-        deleted = await db_client.delete(f"/chat-rooms/{room.room_id}/messages/{message.id}")
-        assert deleted.status_code == 204, deleted.text
+    await db_session.execute(sa.delete(ChatMessage).where(ChatMessage.id.in_(dropped)))
+    await db_session.commit()
 
     await _post(db_client, "POST", f"/chat-rooms/{room.room_id}/regenerate", None, _SinkLLMClient(tag="regen"))
 

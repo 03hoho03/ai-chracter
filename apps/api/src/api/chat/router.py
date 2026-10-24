@@ -83,11 +83,14 @@ from api.chat.turn_judgments import (
     preview_judgments,
     regenerate_judgments,
 )
+from api.chat.stat_rewind import rewind_deleted_message, rewind_removed_turns
 from api.chat.turn_settlement import TurnSettlement
 from api.chat.schemas import (
     ChangeStartingSetupRequest,
+    ChatDoneEvent,
     ChatErrorEvent,
     ChatMessageCreateRequest,
+    ChatMessageDeleteResponse,
     ChatMessageEditRequest,
     ChatMessagePageResponse,
     ChatMessageResponse,
@@ -1431,9 +1434,10 @@ async def edit_message(
 
     삭제되는 메시지 중 AI 응답 개수만큼 turn_count를 미리 되돌려둔다(그래야 턴 골격이 쓰는
     turn_count+1과 합쳐 실제 남은 대화 길이와 일치하고, 이후 엔딩 턴게이트 판정이 어긋나지 않는다).
-    다만 삭제된 턴들이 이미 반영해 둔 chat_room_stats/ending_reached 등의 상태까지 되돌리는
-    건 하지 않는다 — 이 롤백은 구현돼 있지 않다(요구사항에도 없다). 턴 기록에 스탯 변화가 남는 턴도
-    되돌리지 않고, 기록을 쓰기 전에 보낸 턴에는 되돌릴 근거가 되는 턴별 변경 이력부터 없다.
+    삭제된 턴들이 반영해 둔 스탯도 그 응답들의 턴 기록으로 그 턴들이 없던 값으로 되돌린다
+    (`chat/stat_rewind.py` 의 `rewind_removed_turns`) — 기록을 쓰기 전에 보낸 옛 턴은 되돌릴 근거가 없어
+    기록 있는 턴만 되돌린다. 엔딩 상태와 해금 기록은 되돌리지 않는다. 어떻게 되돌렸는지는 done 이벤트의
+    `statRewind` 로 알린다(지운 응답이 없으면 칸이 없다).
     """
     # 정산 가드는 `send_message` 와 같다. 첫 `yield` 전 구간은 조회·DELETE·커밋이 다 들어 있어 세 라우트 중 위험이 가장 크다.
     settlement = TurnSettlement(charge=charge, user_id=room.user_id, session_factory=session_factory)
@@ -1457,8 +1461,11 @@ async def edit_message(
             history = all_messages[:edited_index]
             trailing = all_messages[edited_index + 1 :]
 
+            removed_replies = [m.id for m in trailing if m.role == ChatMessageRole.ASSISTANT]
+            # 지우기 전에 되돌린다 — 지운 응답의 턴 기록으로 스탯을 그 턴들이 없던 값으로 돌린다(`chat/stat_rewind.py`).
+            stat_rewind = await rewind_removed_turns(db, room, setup, removed_replies)
             if trailing:
-                removed_turns = sum(1 for m in trailing if m.role == ChatMessageRole.ASSISTANT)
+                removed_turns = len(removed_replies)
                 room.turn_count -= removed_turns
                 await db.execute(
                     delete(ChatMessage).where(ChatMessage.id.in_([m.id for m in trailing]))
@@ -1529,23 +1536,40 @@ async def edit_message(
                 ),
                 log=logger,
             ):
+                if isinstance(event, ChatDoneEvent):
+                    event = event.model_copy(update={"stat_rewind": stat_rewind})
                 yield event
     finally:
         # 방 락 해제의 첫 자리(`send_message` 의 같은 자리 주석 참조).
         await release_room_turn_lock(turn_lock)
 
 
-@router.delete("/{room_id}/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{room_id}/messages/{message_id}")
 async def delete_message(
     room_id: uuid.UUID,
     message_id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
-) -> None:
+) -> ChatMessageDeleteResponse:
     """개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다. 진행 중 턴이 있는 방이면 409 — 턴 입력이던
-    메시지를 지워도 응답이 그 뒤에 붙는다(`chat/turn_lock.py`)."""
+    메시지를 지워도 응답이 그 뒤에 붙는다(`chat/turn_lock.py`).
+
+    방의 마지막 AI 응답을 지우면 그 턴의 스탯을 턴 기록의 반영 전 값으로 되돌리고 `turn_count` 를 하나 줄인다. 중간 응답·사용자
+    메시지는 스탯·턴 수를 그대로 둔다(`chat/stat_rewind.py` 의 `rewind_deleted_message`). 엔딩 상태와 해금 기록은 되돌리지
+    않는다. 응답의 `statRewind` 로 화면이 안내 문구를 고른다.
+
+    락을 잡은 뒤 방 행을 잠그며 다시 읽는다 — 앞 턴이 올린 `turn_count` 를 보고, 그 행 잠금이 요약 되감기·스탯 쓰기보다 먼저다
+    (턴 쓰기 구간·되돌리기·잊게 하기도 방 행을 먼저 잡는다)."""
     room = await _get_owned_room(db, room_id, user_id)
     async with hold_room_turn_lock(room.id):
+        locked = await db.scalar(
+            select(ChatRoom)
+            .where(ChatRoom.id == room.id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+        if locked is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat room not found")
         message = await db.get(ChatMessage, message_id)
         if message is None or message.chat_room_id != room.id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
@@ -1553,8 +1577,10 @@ async def delete_message(
         await rewind_memory(db, room.id, (message.created_at, message.id))
         # 어느 메시지를 지워도 재생성이 밀어낸 직전 응답의 보관본을 지운다 — 지운 맥락에 옛 응답을 되살리지 않는다.
         await clear_previous_response(db, room.id)
+        stat_rewind = await rewind_deleted_message(db, room, await _resolve_starting_setup(db, room), message)
         await db.delete(message)
         await db.commit()
+    return ChatMessageDeleteResponse(stat_rewind=stat_rewind)
 
 
 @router.post(

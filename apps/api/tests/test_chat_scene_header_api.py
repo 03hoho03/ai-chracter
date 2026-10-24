@@ -392,7 +392,7 @@ async def test_a_second_regenerate_keeps_the_first_regenerated_scene(
 async def _delete_turn(db_client: httpx.AsyncClient, room: Room, turn: int) -> None:
     for message in room.turns[turn]:
         deleted = await db_client.delete(f"/chat-rooms/{room.room_id}/messages/{message.id}")
-        assert deleted.status_code == 204, deleted.text
+        assert deleted.status_code == 200, deleted.text
 
 
 async def test_after_deleting_the_last_turn_the_next_turn_judges_from_the_remaining_last_scene(
@@ -434,7 +434,7 @@ async def test_deleting_only_the_user_message_keeps_the_scene_saved_on_the_answe
     user_message, answer = room.turns[1]
     await _set_scene(db_session, answer, {"place": "교실", "time": "아침"})
     deleted = await db_client.delete(f"/chat-rooms/{room.room_id}/messages/{user_message.id}")
-    assert deleted.status_code == 204, deleted.text
+    assert deleted.status_code == 200, deleted.text
     fake = _SceneLLM(scene=[SceneJudgmentResult(place=None, time=None)])
 
     await _send(db_client, fake, room)

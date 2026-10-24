@@ -492,6 +492,11 @@ async def ensure_rewind_ready(
     raise SystemExit(f"되감기 전 추출이 {attempts}번 안에 끝나지 않았다 — 넣기를 멈춘다: {state}")
 
 
+def delete_succeeded(status_code: int) -> bool:
+    """메시지 삭제가 됐는가. 지금 서버는 200 과 스탯 되감기 결과를, 그 전 서버는 본문 없는 204 를 돌려준다."""
+    return status_code in (200, 204)
+
+
 async def _maybe_rewind(
     session_factory: async_sessionmaker[AsyncSession],
     room_id: uuid.UUID,
@@ -541,7 +546,7 @@ async def _maybe_rewind(
         raise SystemExit("되감기 항목을 지우려면 세션 쿠키 파일이 필요하다(실제 삭제 API 를 부른다)")
     async with app_client(cookie_value) as client:
         response = await client.delete(f"/chat-rooms/{room_id}/messages/{key[1]}")
-    if response.status_code != 204:
+    if not delete_succeeded(response.status_code):
         raise SystemExit(f"메시지 삭제 API 가 {response.status_code}: {response.text[:200]}")
     async with session_factory() as db:
         after = await _snapshot_count(db, room_id)

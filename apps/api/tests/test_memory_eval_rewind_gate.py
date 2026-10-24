@@ -5,7 +5,7 @@ import asyncio
 
 import pytest
 
-from memory_eval.insert import RewindState, ensure_rewind_ready, rewind_ready
+from memory_eval.insert import RewindState, delete_succeeded, ensure_rewind_ready, rewind_ready
 
 
 def _state(status: str | None, episodes: int | None) -> RewindState:
@@ -66,3 +66,10 @@ def test_run_without_extraction_records_the_state_without_extracting() -> None:
 
     assert asyncio.run(ensure_rewind_ready(read, extract, extract_enabled=False, attempts=3)) == _state(None, None)
     assert calls == []
+
+
+@pytest.mark.parametrize(("status", "ok"), [(200, True), (204, True), (404, False), (409, False), (500, False)])
+def test_message_delete_counts_as_done_on_200_with_a_body_and_on_204_from_older_servers(status: int, ok: bool) -> None:
+    """지금 서버는 메시지 삭제에 200 과 스탯 되감기 결과를 돌려주고, 그 전 서버는 본문 없는 204 를 돌려준다. 둘 다 지운 것이므로
+    투입이 되감기 도중 멈추면 안 된다."""
+    assert delete_succeeded(status) is ok

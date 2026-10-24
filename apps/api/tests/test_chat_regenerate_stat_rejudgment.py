@@ -378,28 +378,30 @@ async def test_regenerating_does_not_judge_endings(
     assert await db_session.scalar(sa.select(ChatRoom.ending_reached).where(ChatRoom.id == room.room_id)) is False
 
 
-async def _send_two_and_delete_the_second(
+async def _send_two_and_drop_the_second_like_an_older_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, room: Room
 ) -> None:
+    """둘째 턴의 두 메시지를 스탯·턴 수를 건드리지 않고 지운다 — 마지막 응답을 지워도 턴을 되돌리지 않던 옛 이미지의 메시지
+    삭제가 남긴 방(지금 삭제는 마지막 응답의 턴을 되돌린다)."""
     await _send(db_client, monkeypatch, room, "첫 턴", "a1")
     await _send(db_client, monkeypatch, room, "둘째 턴", "a1")
     second_reply = await _last_reply(db_session, room)
-    second_user = await db_session.scalar(
-        sa.select(ChatMessage).where(ChatMessage.chat_room_id == room.room_id, ChatMessage.content == "둘째 턴")
+    await db_session.execute(
+        sa.delete(ChatMessage).where(
+            ChatMessage.chat_room_id == room.room_id,
+            sa.or_(ChatMessage.id == second_reply.id, ChatMessage.content == "둘째 턴"),
+        )
     )
-    assert second_user is not None
-    for message in (second_reply, second_user):
-        deleted = await db_client.delete(f"/chat-rooms/{room.room_id}/messages/{message.id}")
-        assert deleted.status_code == 204, deleted.text
+    await db_session.commit()
 
 
 async def test_regenerating_an_earlier_reply_after_deleting_later_turns_does_not_revert(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """뒤 턴을 지워 앞 응답이 마지막이 되면 그 기록의 반영 전 값은 지운 턴의 효과까지 지운다 — 되돌리지 않는다. 메시지
-    삭제는 지운 턴의 효과를 남기므로 값은 둘째 턴 뒤 그대로다."""
+    """옛 삭제가 뒤 턴을 지워 앞 응답이 마지막이 된 방에서는 그 기록의 반영 전 값이 지운 턴의 효과까지 지운다 — 되돌리지
+    않는다. 옛 삭제는 지운 턴의 효과를 남겼으므로 값은 둘째 턴 뒤 그대로다."""
     room, stats = await _story_room(db_session, db_client)
-    await _send_two_and_delete_the_second(db_client, db_session, monkeypatch, room)
+    await _send_two_and_drop_the_second_like_an_older_image(db_client, db_session, monkeypatch, room)
     first_record = _inherited(await _record_of_last_reply(db_session, room))
     assert await _values(db_session, room, stats) == (83, 28)
 
@@ -416,7 +418,7 @@ async def test_regenerating_that_regeneration_again_still_does_not_revert(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     room, stats = await _story_room(db_session, db_client)
-    await _send_two_and_delete_the_second(db_client, db_session, monkeypatch, room)
+    await _send_two_and_drop_the_second_like_an_older_image(db_client, db_session, monkeypatch, room)
     first_record = _inherited(await _record_of_last_reply(db_session, room))
     await _regenerate(db_client, room, _TurnLLM(monkeypatch, "다시", []))
 
@@ -433,14 +435,14 @@ async def test_regenerating_a_turn_sent_after_deleting_later_turns_reverts_only_
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     room, stats = await _story_room(db_session, db_client)
-    await _send_two_and_delete_the_second(db_client, db_session, monkeypatch, room)
+    await _send_two_and_drop_the_second_like_an_older_image(db_client, db_session, monkeypatch, room)
     await _send(db_client, monkeypatch, room, "셋째 턴", "a1")
     assert await _values(db_session, room, stats) == (88, 27)
 
     fake = _TurnLLM(monkeypatch, "어긴다", [_fired("a2")])
     await _regenerate(db_client, room, fake)
 
-    # 셋째 턴의 반영 전 값(83, 28)으로 되돌린다 — 지운 둘째 턴의 효과(78→83, 29→28)는 남는다.
+    # 셋째 턴의 반영 전 값(83, 28)으로 되돌린다 — 옛 삭제가 지운 둘째 턴의 효과(78→83, 29→28)는 남는다.
     assert fake.stat_calls() == 1
     assert await _values(db_session, room, stats) == (81, 27)
 
@@ -542,5 +544,5 @@ async def test_a_new_turns_stat_judgment_is_not_retried_on_a_transient_failure(
         )
 
     assert fake.stat_calls() == 1
-    # 판정이 실패한 턴은 카운터도 굴리지 않는다.
-    assert await _values(db_session, room, stats) == (78, 29)
+    # 판정이 실패한 턴은 카운터도 굴리지 않는다. 수정은 지운 첫 턴의 효과를 먼저 되돌려 시작값이다.
+    assert await _values(db_session, room, stats) == ((78, 29) if kind == "send" else (73, 30))

@@ -44,7 +44,7 @@ GUARDED = frozenset(
         "_llm_dependency_tag",
         "StatDef",
         # 턴 골격(`turn_engine`)과 턴 저장소(`turn_store`)가 부르는 것. 라우터의 다른 라우트가 쓴다(폐기 기록과 `delete` 는
-        # 편집·메시지 삭제가 라우터에서 계속 쓴다).
+        # 편집·메시지 삭제가 라우터에서 계속 쓴다. `ChatDoneEvent` 는 편집이 done 이벤트에 스탯 되감기 결과를 붙일 때 쓴다).
         "TurnResult",
         "ChatMessage",
         "DiscardedResponse",
@@ -55,6 +55,7 @@ GUARDED = frozenset(
         "CharacterImageExposure",
         "StoryEndingUnlock",
         "ChatErrorEvent",
+        "ChatDoneEvent",
         "run_in_threadpool",
         "resolve_media_tag_images",
         "normalize_texts",

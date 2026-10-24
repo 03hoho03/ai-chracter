@@ -1140,10 +1140,10 @@ async def test_delete_message_removes_user_and_assistant_messages(
     assistant_message_id = next(m.id for m in messages if m.content == "봇 응답")
 
     resp = await db_client.delete(f"/chat-rooms/{room_id}/messages/{user_message_id}")
-    assert resp.status_code == 204
+    assert resp.status_code == 200
 
     resp = await db_client.delete(f"/chat-rooms/{room_id}/messages/{assistant_message_id}")
-    assert resp.status_code == 204
+    assert resp.status_code == 200
 
     remaining = await _room_messages(db_session, room_id)
     assert len(remaining) == 1
@@ -1279,7 +1279,7 @@ async def test_edit_that_removes_only_user_messages_records_nothing(
     by_content = {m.content: m.id for m in messages}
     # AI 응답 둘을 지워 [오프닝, 안녕, 안녕2] 로 만든다 — "안녕" 편집은 USER 메시지 하나만 지운다.
     for content in ("봇1", "봇2"):
-        assert (await db_client.delete(f"/chat-rooms/{room_id}/messages/{by_content[content]}")).status_code == 204
+        assert (await db_client.delete(f"/chat-rooms/{room_id}/messages/{by_content[content]}")).status_code == 200
 
     _override_llm_client(_FakeLLMClient(tokens=["수정후응답"]))
     try:
@@ -1300,7 +1300,7 @@ async def test_message_delete_and_room_reset_record_nothing(
     await _send_message(db_client, room_id, "안녕2", ["봇2"])
     bot_message_id = next(m.id for m in await _room_messages(db_session, room_id) if m.content == "봇2")
 
-    assert (await db_client.delete(f"/chat-rooms/{room_id}/messages/{bot_message_id}")).status_code == 204
+    assert (await db_client.delete(f"/chat-rooms/{room_id}/messages/{bot_message_id}")).status_code == 200
     assert (await db_client.post(f"/chat-rooms/{room_id}/reset")).status_code == 200
 
     assert await _discarded_rows(db_session, user_id) == []

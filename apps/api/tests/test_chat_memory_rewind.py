@@ -150,7 +150,7 @@ async def _regenerate(db_client: httpx.AsyncClient, room: Room, fake: LLMClient)
 
 async def _delete(db_client: httpx.AsyncClient, room: Room, message: ChatMessage) -> None:
     response = await db_client.delete(f"/chat-rooms/{room.room_id}/messages/{message.id}")
-    assert response.status_code == 204, response.text
+    assert response.status_code == 200, response.text
 
 
 async def _rewind_via(action: str, db_client: httpx.AsyncClient, room: Room, message: ChatMessage) -> None:
@@ -945,6 +945,46 @@ async def test_a_room_deleted_while_a_turn_write_holds_it_takes_the_turn_record_
             )
             == 0
         )
+
+
+async def test_a_last_reply_deleted_while_a_turn_count_write_holds_the_room_sees_the_new_count(
+    committed_engine: AsyncEngine, db_client: httpx.AsyncClient
+) -> None:
+    """메시지 삭제는 마지막 응답의 기록 번호가 방 턴 수와 같을 때만 턴 수를 하나 줄인다. 다른 트랜잭션이 방 행을 잡고 턴 수를
+    올린 채 커밋 직전일 때 마지막 응답을 지운다. 삭제가 방 행을 잠그며 다시 읽으면 그 커밋을 기다렸다가 올라간 턴 수를 보고,
+    번호가 어긋나니 턴 수를 그대로 둔다. 잠그지 않고 읽으면 옛 턴 수로 판단해 줄인 값을 써서 다른 쪽이 올린 것을 덮어쓴다."""
+    room = await _seed_committed_room(committed_engine, turns=1)
+    factory = async_sessionmaker(committed_engine, expire_on_commit=False)
+    async with factory() as session:
+        session.add(_make_chat_turn(room.room_id, assistant_message_id=room.turns[1][1].id, turn_number=1))
+        await session.commit()
+
+    async def _request_session() -> AsyncGenerator[AsyncSession, None]:
+        async with factory() as session:
+            yield session
+
+    saved = {key: app.dependency_overrides[key] for key in (get_db_session, get_session_factory)}
+    app.dependency_overrides[get_db_session] = _request_session
+    app.dependency_overrides[get_session_factory] = lambda: factory
+    writer = factory()
+    deletion: asyncio.Task[httpx.Response] | None = None
+    try:
+        await _login_as(db_client, room.user_id)
+        await writer.execute(
+            sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(turn_count=ChatRoom.turn_count + 1)
+        )
+        deletion = asyncio.create_task(db_client.delete(f"/chat-rooms/{room.room_id}/messages/{room.turns[1][1].id}"))
+        await _wait_until_a_lock_is_awaited(committed_engine)
+        await writer.commit()
+    finally:
+        await writer.close()
+        response = await asyncio.wait_for(deletion, 10) if deletion is not None else None
+        app.dependency_overrides.update(saved)
+
+    assert response is not None
+    assert response.status_code == 200, response.text
+    async with factory() as session:
+        assert await session.scalar(sa.select(ChatRoom.turn_count).where(ChatRoom.id == room.room_id)) == 2
 
 
 async def test_a_message_deleted_after_the_fold_read_its_input_voids_the_fold(

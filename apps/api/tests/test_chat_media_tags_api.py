@@ -308,7 +308,7 @@ async def test_room_response_ignores_cells_in_model_reply_left_first_after_openi
     deleted = await db_client.delete(f"/chat-rooms/{room['id']}/messages/{room['messages'][0]['id']}")
     resp = await db_client.get(f"/chat-rooms/{room['id']}")
 
-    assert deleted.status_code == 204
+    assert deleted.status_code == 200
     assert resp.json()["messages"][0]["role"] == "assistant"
     # 작성자 첫 메시지가 가리키는 칸(교실)만 남고, 응답이 끌어온 칸(옥상)은 빠진다.
     assert list(resp.json()["mediaTagImages"]) == [str(classroom.entity_id)]

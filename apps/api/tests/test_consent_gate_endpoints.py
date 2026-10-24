@@ -476,7 +476,7 @@ async def test_delete_chat_message_still_open_without_consent(
 
     resp = await db_client.delete(f"/chat-rooms/{room.id}/messages/{message.id}")
 
-    assert resp.status_code == 204
+    assert resp.status_code == 200
 
 
 async def test_delete_persona_still_open_without_consent(
