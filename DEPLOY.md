@@ -1962,7 +1962,8 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
 - 응답 칸 추가만 한다(이름·뜻이 바뀐 칸 없음). 구간 선택 응답: 구간 양 끝·잠긴 구간의 `startMessageCreatedAt`·`endMessageCreatedAt`, 승인본·
   초안·기본 제안의 `roomEndMessageCreatedAt`(값은 이미 행에 있다 — 질의 수 변화 없음). 전체 구성안 응답: 낡은 판에만 그 판이 쓴 선택의
   include 구간 `sourceSections`(아니면 null). 작업 응답·상세의 진행 중 작업: 장면 구성안·원고 작업의 `episodeKey`(다른 작업은 null).
-  구간 선택·구성안 라우트는 구성 흐름 스위치 뒤라 꺼짐에선 지금처럼 404 이고, 꺼짐에서 보이는 차이는 작업 응답의 `episodeKey: null` 하나다.
+  구간 선택·구성안 라우트는 구성 흐름 스위치 뒤라 꺼짐에선 지금처럼 404 이고, 꺼짐에서 보이는 차이는 작업 응답과 상세
+  `activeJob` 의 `episodeKey: null` 칸뿐이다.
 - 동작 변경은 하나다: 성공한 여러 문단 수정 작업에서 모델이 수정안을 내지 않은 대상의 기준 해시도 정산 때 지운다(위 문단). 지운 값은
   기존과 같은 빈 문자열이라 직전 이미지가 그대로 읽고, 직전 이미지가 겹침 동안 남긴 해시는 다음 정산 때 이 판이 지운다. 칸이 있는 행은
   여러 문단 수정 스위치를 켠 뒤에만 생긴다.
