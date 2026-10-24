@@ -329,7 +329,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
         {shownRollbackAt !== undefined && (
           <p className="flex gap-2 rounded-lg border border-border px-3.5 py-2.5 text-xs break-keep text-foreground">
             <History aria-hidden className="mt-px size-3.5 shrink-0 text-muted-foreground" />
-            앞 대화가 바뀌어서 요약이 이전 판으로 돌아갔어요.
+            지난 대화가 바뀌어서 요약이 이전 판으로 돌아갔어요.
           </p>
         )}
 
