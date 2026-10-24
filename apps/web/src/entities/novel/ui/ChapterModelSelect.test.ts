@@ -214,7 +214,8 @@ describe.each([
 ] as const)("ChapterModelSelect — %s의 열린 목록은 화면 폭을 넘지 않는다", (_, options) => {
   it("목록 폭의 상한이 화면 안 남은 폭이고, 항목 글은 낱말 단위로 줄을 바꾼다", () => {
     render([...options]);
-    const classes = String(captured.content?.className ?? "").split(/\s+/);
+    const raw = captured.content?.className;
+    const classes = (typeof raw === "string" ? raw : "").split(/\s+/);
     expect(classes).toContain("max-w-(--radix-select-content-available-width)");
     expect(classes).toContain("break-keep");
   });
