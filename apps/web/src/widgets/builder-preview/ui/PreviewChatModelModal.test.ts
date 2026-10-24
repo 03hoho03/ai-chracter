@@ -22,3 +22,27 @@ describe("preview chat model modal", () => {
     expect(modalSource).toContain("needsConfirm={(modelId) => previewModelNeedsConfirm(modelId, hasSession)}");
   });
 });
+
+// 세션 중에 바꾸면 처음부터 다시 시작한다는 문장은 모달에 한 번만 보여야 한다. 설명과 확인 블록 양쪽에 두면 눈으로도
+// 낭독기로도 두 번이고, 상위 모델 확인 문장의 "바꾸면 …" 뒤에 같은 머리말이 이어 붙는다.
+describe("preview chat model modal restart note", () => {
+  const description = modalSource.slice(
+    modalSource.indexOf("<DialogDescription"),
+    modalSource.indexOf("</DialogDescription>"),
+  );
+
+  it("다이얼로그 설명에는 다시 시작 문장이 없다", () => {
+    expect(description).not.toBe("");
+    expect(description).not.toContain("RESTART_NOTE");
+    expect(description).not.toContain("처음부터 다시");
+  });
+
+  it("다시 시작 문장은 세션이 있을 때 확인 블록 하나에만 간다", () => {
+    expect(modalSource).toContain("confirmNote={hasSession ? RESTART_NOTE : undefined}");
+    expect(modalSource.match(/\{?RESTART_NOTE\b/g)).toHaveLength(2);
+  });
+
+  it("다시 시작 문장은 상위 모델 확인 문장과 머리말이 겹치지 않는다", () => {
+    expect(modalSource).not.toMatch(/const RESTART_NOTE = "바꾸면/);
+  });
+});

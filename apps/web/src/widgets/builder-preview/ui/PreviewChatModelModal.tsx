@@ -22,7 +22,9 @@ type PreviewChatModelModalProps = {
   hasSession: boolean;
 };
 
-const RESTART_NOTE = "바꾸면 미리보기 대화가 처음부터 다시 시작돼요.";
+/** 세션이 있을 때 확인 블록에만 둔다 — 다이얼로그 설명에도 두면 한 모달에 같은 문장이 두 번 보이고 낭독기도 두 번 읽는다.
+ * "바꾸면"으로 시작하지 않는 것은 상위 모델 확인 문장(대화방과 같은 문장이라 고치지 않는다)의 "바꾸면 …" 바로 뒤에 붙기 때문이다. */
+const RESTART_NOTE = "지금 미리보기 대화는 처음부터 다시 시작돼요.";
 
 /** 충전 링크는 같은 탭에서 빌더를 떠난다. 초안은 떠날 때 저장되지만 미리보기 대화는 화면에만 있어 사라진다. */
 const CHARGE_LINK_NOTE = "충전하러 가면 미리보기 대화는 사라져요(초안은 저장돼요).";
@@ -74,7 +76,6 @@ export const PreviewChatModelModal = createCallable<PreviewChatModelModalProps, 
             <DialogTitle>AI 모델</DialogTitle>
             <DialogDescription className="break-keep">
               이 미리보기에서 캐릭터의 답을 쓰는 모델이에요. 모델마다 문체가 달라 답의 느낌이 바뀔 수 있어요.
-              {hasSession && ` ${RESTART_NOTE}`}
             </DialogDescription>
           </DialogHeader>
 
