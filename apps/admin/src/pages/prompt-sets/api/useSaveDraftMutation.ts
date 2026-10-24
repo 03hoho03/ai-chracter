@@ -22,6 +22,7 @@ export function useSaveDraftMutation(lane: PromptLane, model: PromptModel) {
     onSuccess: (data) => {
       queryClient.setQueryData(promptSetKeys.draft(lane, model), data);
       void queryClient.invalidateQueries({ queryKey: promptSetKeys.preview(lane, model) });
+      void queryClient.invalidateQueries({ queryKey: promptSetKeys.draftChanges(lane, model) });
     },
   });
 }
