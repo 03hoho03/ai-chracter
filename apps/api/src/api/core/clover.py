@@ -79,6 +79,10 @@ NOVELIZE_OUTLINE_COST_OPUS = 300
 NOVELIZE_EPISODE_OUTLINE_COST = 80
 NOVELIZE_EPISODE_OUTLINE_COST_SONNET = 180
 NOVELIZE_EPISODE_OUTLINE_COST_OPUS = 300
+# 대화방 요약을 AI 로 다시 만드는 한 번의 클로버 — 방 모델과 무관한 고정가. 다시 만들기는 방의 글쓰기 모델이 아니라 요약 모델로
+# 한 번 부르므로 원가가 방 모델을 따라가지 않는다. 값은 기본 모델 채팅 턴 하나와 같게 정했지만 그 상수에서 끌어오지 않는다 —
+# 턴 가격을 바꿔도 이 값은 그대로다. 가격 안내 응답과 다시 만들기 라우트가 호출 때마다 여기서 읽는다.
+MEMORY_SUMMARY_REGENERATE_COST = 10
 
 # `db/models/clover.py`의 `kind` 컬럼 주석과 같은 목록이다. 컬럼은 Text라 DB가 값을 막지
 # 않으므로(마이그레이션 없이 넓히기 위해서다) 이 `Literal`이 유일한 강제 지점이다.
@@ -106,6 +110,10 @@ CloverKind = Literal[
     # 노벨 화 소장 구매의 차감과, 게시자가 산 화를 지워 돌려준 환급(`novel_public/purchases.py`).
     "novel_read_spend",
     "novel_read_refund",
+    # 대화방 요약 다시 만들기의 차감과, 다시 만들기가 실패해 돌려준 환불(`chat/router.py`). 사용처 행을 남기지 않는다 — 작품
+    # 원작자 몫이 붙는 사용이 아니라서 정산 대상이 아니다.
+    "memory_summary_spend",
+    "memory_summary_refund",
 ]
 
 # 구매로 생기는 로트 kind. 차감 정렬은 이 둘만 이름으로 집고 나머지 kind 는 전부 무료로 본다 — 무료 kind 를 나열하면

@@ -596,7 +596,8 @@ class _ChainOutputs(LLMClient):
 # 사용처가 있어야 하는 차감 종류와, 작품 맥락이 없어 사용처를 남기지 않는 종류. 둘 다에 없는 종류가 `src/` 에 나타나면
 # 어느 쪽인지 정할 때까지 이 테스트가 깬다.
 _USAGE_REQUIRED_KINDS = {"chat_spend", "novelize_spend", "novel_read_spend"}
-_NO_USAGE_KINDS = {"image_spend"}
+# 요약 다시 만들기는 방의 기억을 다시 정리하는 사용이라 원작자 몫이 붙지 않는다 — 사용처를 남기지 않아 정산에서 빠진다.
+_NO_USAGE_KINDS = {"image_spend", "memory_summary_spend"}
 
 
 def _spend_calls() -> Iterator[tuple[str, ast.Call]]:
