@@ -2,10 +2,11 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "rea
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { History, TriangleAlert } from "lucide-react";
+import { History, RefreshCw, TriangleAlert } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { useChatRoomMemoryQuery, type ChatRoomMemory } from "@/entities/chat-room";
+import { CloverIcon, useCloverPricingQuery } from "@/entities/clover";
 import { formatRelativeTime } from "@/shared/lib/time/formatRelativeTime";
 import { CharacterCount } from "@/shared/ui/CharacterCount";
 
@@ -21,12 +22,17 @@ import { isNoteSaveBlocked } from "../model/noteSaveGuard";
 import { browserStorage, isRollbackUnseen, readSeenRollback, writeSeenRollback } from "../model/rollbackNotice";
 import { countMemoryChars, createMemoryFormSchema, memoryFormOptions, type MemoryFormValues } from "../model/schema";
 import { serverToForm } from "../model/serverToForm";
+import { summaryRevertHint } from "../model/summaryRevertHint";
+import { RegenerateSummaryModal } from "./RegenerateSummaryModal";
 
 type RoomMemoryEditorProps = {
   roomId: string;
   /** 노트 비우기 확인. 확인 모달은 다른 feature(`manage-chat-room`)라 위젯이 주입한다 — 확인되면 `clear`를
    * 부른다(`clear`는 던지지 않는다). */
   onClearNoteRequest: (clear: () => Promise<void>) => Promise<void>;
+  /** 바뀔 때마다 요약 편집을 연다(요약이 있고 아직 편집 중이 아니면). 패널의 다른 탭이 "요약 고치기"로 이 칸에 넘겨줄 때 쓴다 —
+   * 값 자체는 뜻이 없고 바뀌었다는 것만 본다. 주지 않으면 아무 일도 없다. */
+  editSummaryRequest?: number;
 };
 
 type WriteErrorState = { section: "summary" | "note"; error: MemoryWriteError };
@@ -37,7 +43,7 @@ const SOURCE_LABEL: Record<NonNullable<ChatRoomMemory["summary"]>["source"], str
 };
 
 /** 기억 노트 패널의 본문. lg 인라인 패널과 lg 미만 Dialog가 같은 본문을 쓴다(제목은 각 컨테이너가 든다). */
-export function RoomMemoryEditor({ roomId, onClearNoteRequest }: RoomMemoryEditorProps) {
+export function RoomMemoryEditor({ roomId, onClearNoteRequest, editSummaryRequest }: RoomMemoryEditorProps) {
   const memoryQuery = useChatRoomMemoryQuery(roomId);
 
   if (memoryQuery.isPending) {
@@ -64,6 +70,7 @@ export function RoomMemoryEditor({ roomId, onClearNoteRequest }: RoomMemoryEdito
         await memoryQuery.refetch();
       }}
       onClearNoteRequest={onClearNoteRequest}
+      editSummaryRequest={editSummaryRequest}
     />
   );
 }
@@ -73,9 +80,10 @@ type RoomMemoryFormProps = {
   memory: ChatRoomMemory;
   onReload: () => Promise<void>;
   onClearNoteRequest: RoomMemoryEditorProps["onClearNoteRequest"];
+  editSummaryRequest: RoomMemoryEditorProps["editSummaryRequest"];
 };
 
-function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMemoryFormProps) {
+function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest, editSummaryRequest }: RoomMemoryFormProps) {
   const fieldId = useId();
   const schema = useMemo(() => createMemoryFormSchema(memory.limits), [memory.limits]);
   // 기준값은 처음 한 번만 굳힌다 — 편집 중에 새 요약이 도착해도(턴 뒤 리페치) 입력을 덮지 않는다.
@@ -138,6 +146,18 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
     setIsEditingSummary(true);
   }
 
+  // 다른 탭의 "요약 고치기". 요청 값이 바뀐 렌더에서만 한 번 연다 — 같은 요청으로 편집을 닫은 뒤 다시 열리지 않게.
+  const handledEditRequestRef = useRef(editSummaryRequest);
+  useEffect(() => {
+    if (editSummaryRequest === handledEditRequestRef.current) return;
+    handledEditRequestRef.current = editSummaryRequest;
+    if (memory.summary === undefined || isEditingSummary) return;
+    form.resetField("summary", { defaultValue: memory.summary.text });
+    setEditBaseVersion(memory.version);
+    setWriteError(undefined);
+    setIsEditingSummary(true);
+  }, [editSummaryRequest, form, isEditingSummary, memory.summary, memory.version]);
+
   function stopSummaryEdit() {
     // 두 칸의 저장이 폼 전체를 검증하므로, 닫은 편집 칸에 상한을 넘긴 값이 남으면 보이지 않는 오류가 노트
     // 저장을 막는다 — 기준값으로 되돌린다(오류도 함께 풀린다).
@@ -193,6 +213,18 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
     }
   }
 
+  async function handleRegenerate() {
+    setWriteError(undefined);
+    // 다시 만든 요약은 이 자리에서 따로 알리므로, 패널이 열린 동안의 요약 갱신 알림은 건너뛴다.
+    isOwnWriteRef.current = true;
+    const isRegenerated = await RegenerateSummaryModal.call({ roomId });
+    if (isRegenerated) {
+      setAnnouncement("요약을 다시 만들었어요. 다음 대화부터 반영돼요.");
+    } else {
+      isOwnWriteRef.current = false;
+    }
+  }
+
   async function handleSaveNote(values: MemoryFormValues) {
     setWriteError(undefined);
     try {
@@ -223,6 +255,8 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   const noteId = `${fieldId}-note`;
   const revertHintId = `${fieldId}-revert-hint`;
   const summary = memory.summary;
+  // 요약 다시 만들기는 장면·사실 목록과 같은 서버 스위치 뒤에 있다 — 꺼져 있으면 버튼도, 바뀐 되돌리기 안내도 없다.
+  const canRegenerate = memory.features.itemsVisible;
   // 편집 중에 요약이 사라질 수 있다(다른 탭에서 초기화) — 그때는 편집 칸도 [저장]도 없다.
   const isSummaryEditOpen = isEditingSummary && summary !== undefined;
   const noteField = form.register("note");
@@ -300,6 +334,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
           >
             되돌리기
           </Button>
+          {canRegenerate && <RegenerateSummaryButton onClick={() => void handleRegenerate()} />}
         </div>
       </div>
     );
@@ -343,7 +378,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
           <li>대화를 이어 가면 AI가 이 요약을 다시 정리해요. 꼭 지켜야 할 내용은 &lsquo;꼭 기억할 것&rsquo;에 적어 주세요.</li>
           <li>지난 대화가 바뀌면(고치기·지우기·다시 생성·방금 전 답변으로) 그 뒤의 요약은 직접 고친 내용까지 이전 요약으로 돌아가요.</li>
           {summary && (
-            <li id={revertHintId}>되돌리기는 직접 고친 내용만 돼요. AI가 다시 정리한 요약은 되돌릴 수 없어요.</li>
+            <li id={revertHintId}>{summaryRevertHint(canRegenerate)}</li>
           )}
         </ul>
       </section>
@@ -413,6 +448,27 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
         {announcement}
       </p>
     </div>
+  );
+}
+
+/** 요약 다시 만들기 버튼. 값을 받기 전에는 가격을 빼고 그린다(확인 대화가 가격을 다시 보인다). 화면의 유일한 채움 버튼은
+ * 노트 [저장]이라 이 버튼은 윤곽이다. */
+function RegenerateSummaryButton({ onClick }: { onClick: () => void }) {
+  const cost = useCloverPricingQuery().data?.memorySummaryRegenerateCost;
+  return (
+    <Button type="button" variant="outline" className="hover:bg-secondary" onClick={onClick}>
+      <RefreshCw aria-hidden className="size-4" />
+      다시 만들기
+      {cost !== undefined && (
+        <>
+          <span aria-hidden className="inline-flex items-center gap-1 text-muted-foreground tabular-nums">
+            <CloverIcon />
+            {cost.toLocaleString()}
+          </span>
+          <span className="sr-only">(클로버 {cost.toLocaleString()}개)</span>
+        </>
+      )}
+    </Button>
   );
 }
 

@@ -3,7 +3,6 @@ import { useAtom } from "jotai";
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   Dialog,
-  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -12,12 +11,10 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { NotebookPen } from "lucide-react";
 
-import { RoomMemoryEditor } from "@/features/edit-room-memory";
-
 import { MEMORY_PANEL_DESCRIPTION } from "../config/memoryPanel";
-import { confirmClearMemoryNote } from "../lib/confirmClearMemoryNote";
 import { useIsChatMoreSidebarLayout } from "../lib/useIsChatMoreSidebarLayout";
 import { chatSidePanelAtom } from "../model/atoms";
+import { ChatMemoryPanelContent } from "./ChatMemoryPanelContent";
 
 export type ChatMemoryTriggerProps = {
   roomId: string;
@@ -54,16 +51,14 @@ export function ChatMemoryTrigger({ roomId, triggerRef }: ChatMemoryTriggerProps
           <NotebookPen aria-hidden className="size-4" />
         </Button>
       </DialogTrigger>
-      {/* 요약 1,500자 + 노트 편집 칸이라 길어진다 — 편집기를 `DialogBody` 에 넣어 그것만 스크롤하고 제목·닫기는 위에
-          남긴다. 편집기에 버튼·입력 칸이 있어 본문을 따로 Tab 정지로 두지 않는다. */}
+      {/* 요약 1,500자 + 노트 편집 칸이라 길어진다 — 본문(`ChatMemoryPanelContent` 의 `DialogBody`)만 스크롤하고 제목·닫기는
+          위에 남긴다. 편집기·목록에 버튼·입력 칸이 있어 본문을 따로 Tab 정지로 두지 않는다. */}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>기억 노트</DialogTitle>
           <DialogDescription className="break-keep">{MEMORY_PANEL_DESCRIPTION}</DialogDescription>
         </DialogHeader>
-        <DialogBody>
-          <RoomMemoryEditor roomId={roomId} onClearNoteRequest={confirmClearMemoryNote} />
-        </DialogBody>
+        <ChatMemoryPanelContent roomId={roomId} layout="dialog" />
       </DialogContent>
     </Dialog>
   );

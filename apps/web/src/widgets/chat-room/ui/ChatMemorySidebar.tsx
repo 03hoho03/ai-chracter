@@ -3,12 +3,9 @@ import { useAtom } from "jotai";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { X } from "lucide-react";
 
-import { RoomMemoryEditor } from "@/features/edit-room-memory";
-
-import { MEMORY_PANEL_DESCRIPTION } from "../config/memoryPanel";
-import { confirmClearMemoryNote } from "../lib/confirmClearMemoryNote";
 import { useIsChatMoreSidebarLayout } from "../lib/useIsChatMoreSidebarLayout";
 import { chatSidePanelAtom } from "../model/atoms";
+import { ChatMemoryPanelContent } from "./ChatMemoryPanelContent";
 import type { ChatMemoryTriggerProps } from "./ChatMemoryTrigger";
 
 type ChatMemorySidebarProps = ChatMemoryTriggerProps;
@@ -59,10 +56,7 @@ export function ChatMemorySidebar({ roomId, triggerRef }: ChatMemorySidebarProps
           <X aria-hidden className="size-4" />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-        <p className="mb-5 text-xs break-keep text-muted-foreground">{MEMORY_PANEL_DESCRIPTION}</p>
-        <RoomMemoryEditor roomId={roomId} onClearNoteRequest={confirmClearMemoryNote} />
-      </div>
+      <ChatMemoryPanelContent roomId={roomId} layout="sidebar" />
     </aside>
   );
 }

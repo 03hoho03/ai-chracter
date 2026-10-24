@@ -49,6 +49,8 @@ import { useContentDetailQuery } from "@/entities/content";
 import { IdentityRequiredNotice } from "@/entities/identity";
 import { SessionEndedNotice, useSessionQuery } from "@/entities/session";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
+import { RegenerateSummaryModal } from "@/features/edit-room-memory";
+import { ForgetFactModal, ForgetSceneModal } from "@/features/forget-room-memory";
 import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import { ReportChatMessageModal } from "@/features/report-chat-message";
 import { useSendMessage } from "@/features/send-message";
@@ -623,6 +625,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           733 → 755kB). 두 모달을 여는 곳은 이 위젯의 `ChatMoreNav` 하나뿐이다. */}
       <RoomPersonaModal />
       <RoomChatModelModal />
+      {/* 기억 패널의 확인 대화 셋도 같은 이유로 여기 둔다(여는 곳은 기억 패널뿐이다). 패널 안에 두면 패널이 닫히거나
+          탭이 바뀔 때 함께 사라지고, ESC 가 React 트리를 타고 인라인 패널의 닫기 처리까지 올라간다. */}
+      <RegenerateSummaryModal />
+      <ForgetSceneModal />
+      <ForgetFactModal />
     </div>
   );
 }

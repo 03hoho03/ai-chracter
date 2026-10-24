@@ -25,6 +25,12 @@ export { useLoadOlderMessagesMutation } from "./api/useLoadOlderMessagesMutation
 export { useChatRoomMemoryQuery } from "./api/useChatRoomMemoryQuery";
 export type { ChatRoomMemory } from "./model/chatRoomMemory";
 export { toChatRoomMemory } from "./api/toChatRoomMemory";
+export { useChatRoomMemoryItemsQuery } from "./api/useChatRoomMemoryItemsQuery";
+export type {
+  ChatRoomMemoryEpisode,
+  ChatRoomMemoryFact,
+  ChatRoomMemoryItems,
+} from "./model/chatRoomMemoryItems";
 export { useChatRoomPlayGuideQuery } from "./api/useChatRoomPlayGuideQuery";
 export { useEndingCollectionQuery, type EndingCollectionItem } from "./api/useEndingCollectionQuery";
 export { useChatRoomListQuery, type ChatRoomListItem } from "./api/useChatRoomListQuery";

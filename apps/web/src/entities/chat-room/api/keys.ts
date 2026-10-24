@@ -19,6 +19,9 @@ export const chatRoomKeys = {
   // 방 기억(노트·요약)은 `details()` 접두 밖에 둔다 — 대화 프로필 삭제가 방 상세를 접두로 무효화할 때마다
   // 기억까지 다시 받을 이유가 없다.
   memory: (roomId: string) => [...chatRoomKeys.all, "memory", roomId] as const,
+  // 장면·사실 목록은 방 기억 키 아래에 둔다 — 턴이 끝나거나 대화가 되감겨 기억을 낡게 표시하는 곳들이 목록도 함께 낡게
+  // 표시한다(새 장면이 접히거나 되감기가 지운다). 목록을 열어 둔 적이 없으면 캐시가 없어 아무것도 다시 받지 않는다.
+  memoryItems: (roomId: string) => [...chatRoomKeys.memory(roomId), "items"] as const,
   playGuide: (roomId: string) => [...chatRoomKeys.all, "play-guide", roomId] as const,
   endingCollection: (startingSetupId: string) =>
     [...chatRoomKeys.all, "ending-collection", startingSetupId] as const,

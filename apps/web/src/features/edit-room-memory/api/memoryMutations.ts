@@ -2,6 +2,7 @@ import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { chatRoomKeys, toChatRoomMemory, type ChatRoomMemory } from "@/entities/chat-room";
+import { cloverKeys } from "@/entities/clover";
 import { apiClient } from "@/shared/api/client";
 
 type ChatRoomMemoryDto = components["schemas"]["ChatRoomMemoryResponse"];
@@ -43,4 +44,20 @@ export function useRevertMemorySummaryMutation(roomId: string) {
       (await apiClient.post<ChatRoomMemoryDto>(`/chat-rooms/${roomId}/memory/summary/revert`, { version })).data,
     ),
   );
+}
+
+type RegenerateRequest = components["schemas"]["ChatRoomMemoryRegenerateRequest"];
+
+/** 요약 다시 만들기. 성공 응답은 다른 쓰기와 같은 전체 기억이라 캐시를 그 응답으로 바꾼다. 클로버는 성공이든 실패든
+ * 다시 받는다 — 성공은 깎였고, 깎은 뒤의 실패는 돌려받았고, 잔액 부족은 지금 잔액을 보여야 한다. */
+export function useRegenerateMemorySummaryMutation(roomId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<ChatRoomMemory, ApiError, RegenerateRequest>({
+    mutationFn: async (payload) =>
+      toChatRoomMemory(
+        (await apiClient.post<ChatRoomMemoryDto>(`/chat-rooms/${roomId}/memory/summary/regenerate`, payload)).data,
+      ),
+    onSuccess: (memory) => queryClient.setQueryData(chatRoomKeys.memory(roomId), memory),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: cloverKeys.all }),
+  });
 }
