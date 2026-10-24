@@ -311,7 +311,9 @@ export function NovelChapterText({
       return;
     }
     if (isBlockMode) {
-      const step = nextBlockSelection(selectedBlockIds, index, { extend }, selectionContext);
+      // 누른 차례를 지켜 넘긴다 — 마지막으로 누른 문단이 Shift 이어 고르기의 시작점이다(본문 차례로 정렬하면 맨 뒤 문단이 된다).
+      const clicked = blockSelection.filter((id) => selectedBlockIds.includes(id));
+      const step = nextBlockSelection(clicked, index, { extend }, selectionContext);
       setBlockSelection(step.selection);
       setLiveMessage(
         toBlockSelectionAnnouncement(toSelectedIndexes(step.selection, blockIds), step.outcome, selectionContext.maxBlocks),

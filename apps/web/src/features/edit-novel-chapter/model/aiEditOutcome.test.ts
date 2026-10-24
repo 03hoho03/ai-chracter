@@ -58,6 +58,10 @@ describe("toBlockEditArrivedMessage", () => {
     expect(toBlockEditArrivedMessage(3, 0)).toBe("3화 수정안이 왔지만 지금 적용할 수 있는 수정안이 없어요.");
   });
 
+  it("상세를 받지 못해 수를 모르면 수를 말하지 않는다", () => {
+    expect(toBlockEditArrivedMessage(3, undefined)).toBe("3화 수정안이 왔어요. 고른 문단 자리에서 적용하거나 버릴 수 있어요.");
+  });
+
   it("화를 모르면 화 번호를 빼고 말한다", () => {
     expect(toBlockEditArrivedMessage(undefined, 1)).toBe("수정안 1개가 왔어요. 고른 문단 자리에서 적용하거나 버릴 수 있어요.");
   });

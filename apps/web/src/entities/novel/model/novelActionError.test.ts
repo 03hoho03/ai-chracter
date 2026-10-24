@@ -334,6 +334,16 @@ describe("toNovelActionError — 여러 문단 수정", () => {
     );
   });
 
+  it("버리기의 적용 불가 409 는 이미 처리됐다고 말하고, 적용에서는 옛 문구 그대로다", () => {
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_JOB_NOT_APPLICABLE" }), "dismissPatch")).toEqual({
+      message: "이미 적용했거나 버린 수정안이에요. 최신 내용을 불러왔어요.",
+      shouldRefetchNovel: true,
+    });
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_JOB_NOT_APPLICABLE" }), "applyPatch")?.message).toBe(
+      "이 수정안은 더 이상 적용할 수 없어요.",
+    );
+  });
+
   it("낡은 수정안 id 를 읽는다", () => {
     expect(toStalePatchIds(apiError(409, { code: "NOVEL_PATCH_STALE", stalePatchIds: ["p1", "p2"] }))).toEqual(["p1", "p2"]);
     expect(toStalePatchIds(apiError(409, { code: "NOVEL_JOB_NOT_APPLICABLE" }))).toEqual([]);

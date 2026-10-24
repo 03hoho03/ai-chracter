@@ -88,6 +88,8 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
   // 상세를 다시 받는 순간(진행 중 작업·수정안이 바뀌는 순간) 안내도 함께 사라진다. AI 수정 말고 같은 장의 직접
   // 고치기·되돌리기 결과도 `report` 로 여기 남긴다 — 문장이 한 줄이어야 지난 결과가 다음 동작 뒤에 남지 않는다.
   const [notice, setNotice] = useState<ChapterNotice | undefined>(undefined);
+  // 안내를 바꾸는 동작마다 하나씩 오른다. 늦게 끝나는 안내(여러 문단 수정안 수 세기)가 그사이의 새 안내를 덮지 않게 한다.
+  const noticeSeqRef = useRef(0);
   // 적용·버리기 중인 수정안(옛 수정안은 작업 id, 여러 문단 수정안은 단위 열쇠). 어느 쪽이든 한 번에 하나만 처리한다.
   const [actingEditId, setActingEditId] = useState<string | undefined>(undefined);
   // 마지막으로 적은 지시. 금액 확인에서 물렀거나 작업이 실패하면 다음에 지시 칸을 이 값으로 연다 — 환불된 작업은
@@ -165,13 +167,25 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     const outcome = toAiEditOutcome(finished);
     if (outcome.kind === "patches") {
       setLastInstruction("");
-      // 수정안은 상세에 블록마다 실린다 — 다시 받은 상세에서 그 작업의 쓸 수 있는 수정안을 세어 알린다.
-      void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) }).then(() => {
-        const detail = queryClient.getQueryData<NovelDetailResponse>(novelKeys.detail(novel.id));
-        const edit = detail === undefined ? undefined : toPendingBlockEdits(detail).find((item) => item.id === finished.id);
-        const ordinal = detail?.chapters.find((chapter) => chapter.id === finished.chapterId)?.ordinal;
-        setNotice({ tone: "info", message: toBlockEditArrivedMessage(ordinal, edit === undefined ? 0 : countFreshPatches(edit)) });
-      });
+      // 수정안은 상세에 블록마다 실린다 — 다시 받은 상세에서 그 작업의 쓸 수 있는 수정안을 세어 알린다. 위에서 건 다시 받기를
+      // 기다린다(새로 보내지 않는다). 받지 못했으면 수를 말하지 않는다 — 옛 상세로 세면 "없어요"라고 틀리게 말한다. 기다리는
+      // 사이 다른 일이 안내를 바꿨으면 덮지 않는다.
+      const ordinal = novel.chapters.find((chapter) => chapter.id === finished.chapterId)?.ordinal;
+      const seq = noticeSeqRef.current;
+      void queryClient
+        .refetchQueries({ queryKey: novelKeys.detail(novel.id), exact: true }, { throwOnError: true, cancelRefetch: false })
+        .then(
+          () => {
+            const detail = queryClient.getQueryData<NovelDetailResponse>(novelKeys.detail(novel.id));
+            const edit = detail === undefined ? undefined : toPendingBlockEdits(detail).find((item) => item.id === finished.id);
+            return edit === undefined ? 0 : countFreshPatches(edit);
+          },
+          () => undefined,
+        )
+        .then((freshCount) => {
+          if (noticeSeqRef.current !== seq) return;
+          setNotice({ tone: "info", message: toBlockEditArrivedMessage(ordinal, freshCount) });
+        });
       return;
     }
     if (outcome.kind === "unavailable") {
@@ -187,6 +201,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
   }
 
   function report(event: ChapterNoticeEvent) {
+    noticeSeqRef.current += 1;
     setNotice(toChapterNotice(event));
   }
 

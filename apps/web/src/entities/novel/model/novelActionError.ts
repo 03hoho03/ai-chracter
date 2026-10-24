@@ -332,6 +332,10 @@ export function toNovelActionError(
     };
   }
   // 표의 문구는 직접 수정 저장의 말이다("쓴 글을 복사해 두고…"). AI 수정 요청에서는 고른 문단이 지금 판과 어긋난 것이다.
+  // 표의 문구는 적용의 말이다. 버리기에서 받으면 그 수정안은 다른 곳에서 이미 적용했거나 버린 것이다.
+  if (code === "NOVEL_JOB_NOT_APPLICABLE" && action === "dismissPatch") {
+    return { message: "이미 적용했거나 버린 수정안이에요. 최신 내용을 불러왔어요.", shouldRefetchNovel: true };
+  }
   if (code === "NOVEL_BLOCK_IDS_INVALID" && action === "aiEdit") {
     return { message: "고른 문단이 바뀌었어요. 최신 내용을 불러왔어요. 다시 골라 주세요.", shouldRefetchNovel: true };
   }

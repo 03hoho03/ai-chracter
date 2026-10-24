@@ -29,9 +29,11 @@ export function toAiEditOutcome(job: Pick<NovelJobResponse, "revisionId" | "chap
 }
 
 /** 여러 문단 수정 작업이 끝난 순간의 안내. `freshCount` 는 다시 받은 상세에서 그 작업의 지금 쓸 수 있는 수정안 수다 —
- * 모델이 고칠 곳이 없다고 했거나 그사이 고른 문단이 바뀌어 하나도 없을 수 있다. */
-export function toBlockEditArrivedMessage(chapterOrdinal: number | undefined, freshCount: number): string {
+ * 모델이 고칠 곳이 없다고 했거나 그사이 고른 문단이 바뀌어 하나도 없을 수 있다. 상세를 받지 못했으면 `undefined` 다. */
+export function toBlockEditArrivedMessage(chapterOrdinal: number | undefined, freshCount: number | undefined): string {
   const where = chapterOrdinal === undefined ? "" : `${chapterOrdinal}화 `;
+  // 상세를 다시 받지 못해 수를 모른다.
+  if (freshCount === undefined) return `${where}수정안이 왔어요. 고른 문단 자리에서 적용하거나 버릴 수 있어요.`;
   if (freshCount === 0) return `${where}수정안이 왔지만 지금 적용할 수 있는 수정안이 없어요.`;
   return `${where}수정안 ${freshCount}개가 왔어요. 고른 문단 자리에서 적용하거나 버릴 수 있어요.`;
 }
