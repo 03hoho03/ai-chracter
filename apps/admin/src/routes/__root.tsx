@@ -15,6 +15,7 @@ import {
   NovelSalesConfirmModal,
 } from "../pages/novel-detail";
 import { PublishNoticeDialog } from "../pages/notice-detail";
+import { DiscardEditsDialog, RestoreRoutingDialog, SaveRoutingDialog } from "../pages/prompt-routing";
 import { PublishPromptSetDialog, RestorePromptSetDialog } from "../pages/prompt-sets";
 import { RefundPaymentModal, UserActionConfirmModal } from "../pages/user-detail";
 import { AdminShell } from "../widgets/admin-shell";
@@ -60,6 +61,9 @@ function RootComponent() {
       <PublishNoticeDialog />
       <PublishPromptSetDialog />
       <RestorePromptSetDialog />
+      <SaveRoutingDialog />
+      <RestoreRoutingDialog />
+      <DiscardEditsDialog />
       <ApproveApplicationModal />
       <DecisionReasonModal />
     </>
