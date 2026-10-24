@@ -908,7 +908,19 @@ class NovelSourceRange(CamelModel):
     end_message_id: uuid.UUID
 
 
-class NovelSourceSectionView(NovelSourceRange):
+class NovelSourceKeyedRange(NovelSourceRange):
+    """응답의 구간 — 양 끝 id 와 그 메시지의 `created_at`(메시지 키 = (`created_at`, id)). 끝 메시지가 지워져 화면의 메시지 목록에
+    없어도 이 키로 구간의 정확한 자리를 잡는다. 요청 입력(`basis`)에는 쓰지 않는다.
+
+    datetime 은 방 메시지 `createdAt` 과 같은 기본 직렬화라 마이크로초가 0 이면 소수부가 빠진다(`…:03Z` 와 `…:03.000005Z`). 글자
+    비교는 순서를 뒤집고 JS `Date` 는 밀리초까지라, 순서를 비교하려면 소수부를 6자리로 맞춘 (초, 마이크로초, id) 로 본다. id 동률은
+    소문자 hex 글자 순이 DB 의 uuid 순과 같다."""
+
+    start_message_created_at: datetime
+    end_message_created_at: datetime
+
+
+class NovelSourceSectionView(NovelSourceKeyedRange):
     """저장된 구간 하나. `source_changed` 는 저장 때의 해시와 지금 방 원문의 해시가 다른가다 — 참이면 그 구간을 쓰는 다음 생성이
     원문 변경으로 막히므로 화면이 다시 고르라고 알린다."""
 
@@ -924,6 +936,8 @@ class NovelSourceSelectionView(CamelModel):
     revision: int | None
     approved_at: datetime | None
     room_end_message_id: uuid.UUID | None
+    # 고정 끝 메시지의 `created_at`(`room_end_message_id` 와 함께 null). 그 메시지가 지워져도 실린다.
+    room_end_message_created_at: datetime | None
     sections: list[NovelSourceSectionView]
 
 
@@ -938,7 +952,7 @@ class NovelSourceSelectionState(CamelModel):
     approved: NovelSourceSelectionView | None
     draft: NovelSourceSelectionView | None
     proposal: NovelSourceSelectionView | None
-    locked_ranges: list[NovelSourceRange]
+    locked_ranges: list[NovelSourceKeyedRange]
     room_end_message_id: uuid.UUID | None
     has_new_messages: bool
 

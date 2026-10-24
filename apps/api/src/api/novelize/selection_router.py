@@ -11,6 +11,7 @@
 두지 않게(`no_store.py`)."""
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -41,7 +42,7 @@ from api.novelize.selection import (
     selection_sections,
 )
 from api.novelize.schemas import (
-    NovelSourceRange,
+    NovelSourceKeyedRange,
     NovelSourceSectionView,
     NovelSourceSelectionApproveRequest,
     NovelSourceSelectionSaveRequest,
@@ -138,25 +139,35 @@ async def _checked_sections(
     return sections
 
 
-async def _view(db: AsyncSession, room_id: uuid.UUID, selection: NovelSourceSelection) -> NovelSourceSelectionView:
-    sections = []
-    for row in await selection_sections(db, selection.id):
+async def _section_views(
+    db: AsyncSession, room_id: uuid.UUID, rows: Sequence[NovelSourceSection]
+) -> list[NovelSourceSectionView]:
+    """저장된 구간 행의 응답 — 양 끝 키와, 지금 방 원문으로 다시 읽은 해시가 저장 해시와 다른가."""
+    views = []
+    for row in rows:
         start, end = section_key(row)
-        shape = await range_shape(db, room_id, SourceRange(start, end))
-        sections.append(
+        changed = (await range_shape(db, room_id, SourceRange(start, end))).source_hash != row.source_hash
+        views.append(
             NovelSourceSectionView(
                 start_message_id=row.start_message_id,
                 end_message_id=row.end_message_id,
+                start_message_created_at=row.start_message_created_at,
+                end_message_created_at=row.end_message_created_at,
                 mode=row.mode,
                 assistant_message_count=row.assistant_message_count,
-                source_changed=shape.source_hash != row.source_hash,
+                source_changed=changed,
             )
         )
+    return views
+
+
+async def _view(db: AsyncSession, room_id: uuid.UUID, selection: NovelSourceSelection) -> NovelSourceSelectionView:
     return NovelSourceSelectionView(
         revision=selection.revision,
         approved_at=selection.approved_at,
         room_end_message_id=selection.room_end_message_id,
-        sections=sections,
+        room_end_message_created_at=selection.room_end_message_created_at,
+        sections=await _section_views(db, room_id, await selection_sections(db, selection.id)),
     )
 
 
@@ -174,6 +185,8 @@ async def _proposal(
             NovelSourceSectionView(
                 start_message_id=start[1],
                 end_message_id=room_end[1],
+                start_message_created_at=start[0],
+                end_message_created_at=room_end[0],
                 mode="include",
                 assistant_message_count=shape.assistant_message_count,
                 source_changed=False,
@@ -183,6 +196,7 @@ async def _proposal(
         revision=None,
         approved_at=None,
         room_end_message_id=None if room_end is None else room_end[1],
+        room_end_message_created_at=None if room_end is None else room_end[0],
         sections=sections,
     )
 
@@ -204,7 +218,13 @@ async def _state(db: AsyncSession, novel: Novel, room_id: uuid.UUID) -> NovelSou
         draft=None if draft is None else await _view(db, room_id, draft),
         proposal=await _proposal(db, room_id, locked, room_end) if latest is None else None,
         locked_ranges=[
-            NovelSourceRange(start_message_id=start[1], end_message_id=end[1]) for start, end in locked
+            NovelSourceKeyedRange(
+                start_message_id=start[1],
+                end_message_id=end[1],
+                start_message_created_at=start[0],
+                end_message_created_at=end[0],
+            )
+            for start, end in locked
         ],
         room_end_message_id=None if room_end is None else room_end[1],
         has_new_messages=has_new,
