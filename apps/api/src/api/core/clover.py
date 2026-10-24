@@ -79,6 +79,7 @@ NOVELIZE_EPISODE_COST_OPUS = 300
 # 중앙값으로 낸 상한 길이 원가는 Gemini 약 $0.162(2027년 정가 기준)·Sonnet 약 $0.342·Opus 약 $0.693 이다. 입력 상한을 올리면 이
 # 값도 다시 계산한다.
 # 장면 구성안 80·180·300 은 같은 모델의 화 단가와 같게 둔 값이다. 잰 원가(p90)가 셋 다 쓸 수 있는 돈의 50% 안에 들어 그대로 둔다.
+# 전체 구성안과 달리 상한 길이 원가로 정한 값이 아니다 — 상한에 가까운 아주 긴 화의 원가는 아직 재지 않았다.
 NOVELIZE_OUTLINE_COST = 140
 NOVELIZE_OUTLINE_COST_SONNET = 290
 NOVELIZE_OUTLINE_COST_OPUS = 590
