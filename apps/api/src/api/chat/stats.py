@@ -1,5 +1,7 @@
 import logging
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any
 
 from api.db.models.story import StatDef, StatRule
 
@@ -35,19 +37,67 @@ def apply_rule_judgment(
     대응표에 없는 id(모델이 지어낸 것)는 버리고 경고를 남긴다. 같은 id 가 여러 번 와도 한 번이다. 대응표가 `defs` 에 없는
     스탯이나 카운터 스탯을 가리키면 그 규칙은 쓰지 않는다. 발동한 규칙이 없는 스탯은 값 그대로다.
 
-    호출부가 턴당 정확히 한 번만 부르는 것이 이 함수의 전제다(`chat/turn_judgments.py` 의 `_await_stat_judgment` — 방·미리보기 스탯 판정이 함께 부른다 — 와, 재생성의 재판정이 성공한 결과 하나에 부르는 `_await_stat_rejudgment`). 판정 LLM 호출이
-    실패하면 이 함수 자체가 호출되지 않아 그 턴은 카운터도 함께 멈춘다 — 턴 전체를 무효로 보는 기존 실패 처리와 같은 결이다.
+    턴은 값과 함께 판정 이벤트도 받는 `apply_rule_judgment_with_events` 를 부른다 — 반영은 그 함수 하나이고 이 함수는 그 값만
+    돌려준다. 호출부가 턴당 정확히 한 번만 부르는 것이 전제다(`chat/turn_judgments.py` 의 `_await_stat_judgment` — 방·미리보기 스탯 판정이 함께 부른다 — 와, 재생성의 재판정이 성공한 결과 하나에 부르는 `_await_stat_rejudgment`). 판정 LLM 호출이
+    실패하면 반영 자체가 호출되지 않아 그 턴은 카운터도 함께 멈춘다 — 턴 전체를 무효로 보는 기존 실패 처리와 같은 결이다.
     """
-    defs_by_id = {str(stat_def.entity_id): stat_def for stat_def in defs}
-    result = dict(current)
+    return apply_rule_judgment_with_events(current, fired_rule_ids, rule_ids, defs).values
 
+
+@dataclass(frozen=True)
+class RuleJudgmentOutcome:
+    """반영 결과 — 스탯 값(키 → 값, 바뀌지 않은 스탯 포함)과 그 값을 만든 판정 이벤트 목록."""
+
+    values: dict[str, float]
+    events: list[dict[str, Any]]
+
+
+def _rule_ref(rule: StatRule) -> dict[str, str]:
+    """규칙 하나를 가리키는 쌍 — `entityId` 는 판본을 넘어 같은 규칙, `id` 는 그 판본의 규칙 행이다. 방이 대화 중에 새 판본으로
+    옮겨지면(최신 판본 고정·이용제한 승격) 같은 `entityId` 가 조건 글이나 폭이 바뀐 규칙을 가리킬 수 있어, 판정기가 그때 본 규칙을
+    되짚으려면 행 id 가 함께 있어야 한다."""
+    return {"entityId": str(rule.entity_id), "id": str(rule.id)}
+
+
+def apply_rule_judgment_with_events(
+    current: dict[str, float],
+    fired_rule_ids: Sequence[str],
+    rule_ids: Mapping[str, tuple[str, StatRule]],
+    defs: list[StatDef],
+) -> RuleJudgmentOutcome:
+    """`apply_rule_judgment` 와 같은 반영을 하고, 그 값이 어떻게 나왔는지를 이벤트 목록으로 함께 돌려준다. 턴 기록의
+    `stat_events` 가 이 목록이다. 원소는 `defs` 순서로 스탯마다 하나다.
+
+    - 판정 스탯은 그 스탯에 대응하는 발동 규칙이 하나라도 있을 때만 원소가 있다 —
+      `{statEntityId, firedRuleIds, appliedRuleId, delta, clamped}`. `firedRuleIds` 는 발동한 그 스탯의 규칙 전부(작가 순서),
+      `appliedRuleId` 는 값 반영이 고른 하나, `delta` 는 그 규칙의 폭, `clamped` 는 `시작 값 + 폭` 이 최소·최대를 벗어나 잘렸는지다.
+      규칙은 `{entityId, id}` 쌍(`_rule_ref`)으로 가리키고 조건 글은 싣지 않는다. 이미 최대인 스탯에 양의 폭이 적용되면 값은
+      그대로지만 원소는 남는다(적용됐고 잘렸다).
+    - 카운터 스탯은 매 턴 `{statEntityId, counter: true, delta, clamped}` 하나다 — 발동 규칙 없이 턴당 폭만큼 움직이므로.
+    - 대응표에 없는 짧은 id(모델이 지어낸 것)는 하나라도 있으면 맨 끝에 `{unknownRuleIdCount}` 하나로 개수만 남긴다. 짧은 id 는
+      프롬프트마다 다시 매기는 글자라 원문은 뜻이 없다. `defs` 에 없거나 카운터인 스탯을 가리키는 규칙은 값처럼 원소에서도 뺀다.
+
+    그래서 이벤트만으로 값이 다시 나온다: 스탯마다 원소가 있으면 `clamp(시작 값 + delta)`, 없으면 시작 값이다(시작 값은 `current`,
+    없으면 `initial_value`). 턴 기록에서는 이 값이 시작 값과 다를 때만 `stat_changes` 에 `[시작 값, 그 값]` 으로 오른다."""
+    defs_by_id = {str(stat_def.entity_id): stat_def for stat_def in defs}
+    values = dict(current)
+    event_by_stat_id: dict[str, dict[str, Any]] = {}
+
+    # 값의 키 순서는 이 함수가 생기기 전과 같게 둔다(카운터 먼저 `defs` 순서, 그다음 판정 스탯은 처음 발동한 순서) — 반영
+    # 결과의 키 순서가 `statChange` 이벤트와 `stat_changes` 의 순서가 된다.
     for stat_id, counter in defs_by_id.items():
         if counter.per_turn_delta is None:
             continue
-        base = result.get(stat_id, float(counter.initial_value))
-        result[stat_id] = _clamp(base + counter.per_turn_delta, counter)
+        raw = values.get(stat_id, float(counter.initial_value)) + counter.per_turn_delta
+        values[stat_id] = _clamp(raw, counter)
+        event_by_stat_id[stat_id] = {
+            "statEntityId": stat_id,
+            "counter": True,
+            "delta": counter.per_turn_delta,
+            "clamped": values[stat_id] != raw,
+        }
 
-    chosen_by_stat_id: dict[str, StatRule] = {}
+    fired_by_stat_id: dict[str, list[StatRule]] = {}
     unknown_ids: list[str] = []
     for rule_id in dict.fromkeys(fired_rule_ids):
         target = rule_ids.get(rule_id)
@@ -55,16 +105,27 @@ def apply_rule_judgment(
             unknown_ids.append(rule_id)
             continue
         stat_id, rule = target
-        chosen = chosen_by_stat_id.get(stat_id)
-        if chosen is None or (abs(rule.delta), -rule.order) > (abs(chosen.delta), -chosen.order):
-            chosen_by_stat_id[stat_id] = rule
+        fired_by_stat_id.setdefault(stat_id, []).append(rule)
     if unknown_ids:
         logger.warning("스탯 규칙 판정이 모르는 규칙 id 를 냈다 — 버린다: %s", unknown_ids)
 
-    for stat_id, rule in chosen_by_stat_id.items():
+    for stat_id, fired in fired_by_stat_id.items():
         judged = defs_by_id.get(stat_id)
         if judged is None or judged.per_turn_delta is not None:
             continue
-        start = current[stat_id] if stat_id in current else float(judged.initial_value)
-        result[stat_id] = _clamp(start + rule.delta, judged)
-    return result
+        # |폭| 이 가장 크고, 같으면 작가 순서(`order`)가 앞선 규칙 하나 — 모델이 낸 목록 순서와 무관하다.
+        applied = max(fired, key=lambda rule: (abs(rule.delta), -rule.order))
+        raw = (current[stat_id] if stat_id in current else float(judged.initial_value)) + applied.delta
+        values[stat_id] = _clamp(raw, judged)
+        event_by_stat_id[stat_id] = {
+            "statEntityId": stat_id,
+            "firedRuleIds": [_rule_ref(rule) for rule in sorted(fired, key=lambda rule: rule.order)],
+            "appliedRuleId": _rule_ref(applied),
+            "delta": applied.delta,
+            "clamped": values[stat_id] != raw,
+        }
+
+    events = [event_by_stat_id[stat_id] for stat_id in defs_by_id if stat_id in event_by_stat_id]
+    if unknown_ids:
+        events.append({"unknownRuleIdCount": len(unknown_ids)})
+    return RuleJudgmentOutcome(values=values, events=events)

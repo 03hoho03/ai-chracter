@@ -54,11 +54,12 @@ async def _room_id(connection: AsyncConnection) -> uuid.UUID:
     await session.flush()
     genre = await _get_genre(session)
     content = await _make_published_character(session, creator_user_id=user.id, genre_id=genre.id)
-    room_id: uuid.UUID = await connection.scalar(
+    room_id = await connection.scalar(
         sa.insert(ChatRoom)
         .values(user_id=user.id, content_id=content.id, content_version_id=content.current_published_version_id)
         .returning(ChatRoom.id)
     )
+    assert room_id is not None
     return room_id
 
 

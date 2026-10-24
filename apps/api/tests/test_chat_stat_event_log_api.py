@@ -52,6 +52,7 @@ class _ScriptedLLM(LLMClient):
     def __init__(self, *script: Fired) -> None:
         self._script = list(script)
         self.stat_calls = 0
+        self.prompts: list[tuple[str, str]] = []
 
     async def generate(
         self,
@@ -61,11 +62,13 @@ class _ScriptedLLM(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> AsyncIterator[str]:
+        self.prompts.append((usage.call_site, prompt))
         yield "응답"
 
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
+        self.prompts.append((usage.call_site, prompt))
         if response_schema is StatRuleJudgmentResult:
             self.stat_calls += 1
             outcome = self._script.pop(0) if self._script else []
@@ -80,7 +83,7 @@ class _ScriptedLLM(LLMClient):
 
 @pytest.fixture
 def event_log_on(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "stat_event_log", True, raising=False)
+    monkeypatch.setattr(settings, "stat_event_log", True)
 
 
 async def _stream(client: httpx.AsyncClient, method: str, path: str, body: object, fake: LLMClient) -> None:
@@ -93,12 +96,16 @@ async def _stream(client: httpx.AsyncClient, method: str, path: str, body: objec
     assert _parse_sse_events(response.text)[-1]["type"] == "done", response.text
 
 
-async def _send(client: httpx.AsyncClient, room: Room, *script: Fired) -> None:
-    await _stream(client, "POST", f"/chat-rooms/{room.room_id}/messages", {"content": "말"}, _ScriptedLLM(*script))
+async def _send(client: httpx.AsyncClient, room: Room, *script: Fired) -> _ScriptedLLM:
+    fake = _ScriptedLLM(*script)
+    await _stream(client, "POST", f"/chat-rooms/{room.room_id}/messages", {"content": "말"}, fake)
+    return fake
 
 
-async def _regenerate(client: httpx.AsyncClient, room: Room, *script: Fired) -> None:
-    await _stream(client, "POST", f"/chat-rooms/{room.room_id}/regenerate", None, _ScriptedLLM(*script))
+async def _regenerate(client: httpx.AsyncClient, room: Room, *script: Fired) -> _ScriptedLLM:
+    fake = _ScriptedLLM(*script)
+    await _stream(client, "POST", f"/chat-rooms/{room.room_id}/regenerate", None, fake)
+    return fake
 
 
 async def _replies(db_session: AsyncSession, room: Room) -> list[ChatMessage]:
@@ -226,6 +233,26 @@ async def test_with_the_switch_off_no_path_fills_the_column_and_stats_move_the_s
     assert sent == ({stats.trust: [73, 78], stats.days: [30, 29]}, [])
     assert rejudged == kept == ({stats.trust: [73, 71], stats.days: [30, 29]}, [])
     assert await _stat_values(db_session, room, stats) == (71, 29)
+
+
+async def test_the_switch_changes_neither_the_prompts_nor_the_stats(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 방에서 스위치만 바꿔 같은 턴(보내기·재판정 재생성·다음 보내기)을 두 번 돌리면 생성·판정 프롬프트와 스탯이 같다 —
+    스위치는 기록 칸만 바꾼다. 둘째 판은 첫 판의 방을 되돌리지 않고 새 방에서 돈다(같은 공장이라 같은 글이 나온다)."""
+    runs: list[tuple[list[tuple[str, str]], tuple[float, float]]] = []
+    for enabled in (False, True):
+        monkeypatch.setattr(settings, "stat_event_log", enabled)
+        room, stats = await _story_room(db_session, db_client)
+        prompts = [
+            *(await _send(db_client, room, ["a1"])).prompts,
+            *(await _regenerate(db_client, room, ["a2"])).prompts,
+            *(await _send(db_client, room, ["a1", "zz9"])).prompts,
+        ]
+        runs.append((prompts, await _stat_values(db_session, room, stats)))
+
+    assert runs[0] == runs[1]
+    assert {call_site for call_site, _ in runs[0][0]} >= {"chat_stat_judgment"}
 
 
 # ── 재생성 ────────────────────────────────────────────────────────────────────────────────

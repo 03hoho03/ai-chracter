@@ -137,11 +137,11 @@ def test_unknown_short_ids_are_counted_but_not_kept() -> None:
     rule = _rule(4, 0)
 
     outcome = apply_rule_judgment_with_events(
-        {str(stat.entity_id): 50.0}, ["zz9", "a1", "b7", "zz9"], _ids(stat, rule), [stat]
+        {str(stat.entity_id): 50.0}, ["zz9", "a1", "qq7", "zz9"], _ids(stat, rule), [stat]
     )
 
     assert outcome.events[-1] == {"unknownRuleIdCount": 2}
-    assert "zz9" not in repr(outcome.events) and "b7" not in repr(outcome.events)
+    assert "zz9" not in repr(outcome.events) and "qq7" not in repr(outcome.events)
 
 
 def test_a_turn_with_nothing_fired_and_no_counter_has_no_events() -> None:

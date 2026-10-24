@@ -33,6 +33,7 @@ from api.core.rate_limit_gate import ChatCharge
 from api.content.media_book import normalize_texts, normalize_texts_for_display, resolve_media_tag_images
 from api.content.media_tags import strip_media_tags
 from api.content.schemas import MediaTagImage
+from api.core.config import settings
 from api.core.s3 import generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.chat import (
@@ -233,7 +234,9 @@ class RoomTurnStore:
     크기 때문이다.
     바꾸는 응답에 기록이 없으면(기록을 쓰기 전에 보낸 턴) 쓰지 않는다 — 빈 효과로 쓰면 "원 턴이 아무것도 바꾸지 않았다"와
     구별되지 않는다. 바꾼 응답의 옛 기록은 지우지 않는다(그 호출의 원가도 실제로 났다). 회상한 장면(`memory_recall`)과 실은 사실
-    (`memory_facts`)은 두 모드 모두 이 턴의 프롬프트가 실은 것이다.
+    (`memory_facts`)은 두 모드 모두 이 턴의 프롬프트가 실은 것이다. 스탯 판정 이벤트(`stat_events`)는 스위치
+    (`stat_event_log`)를 켠 동안만 싣고 스탯 변화와 같은 규칙을 따른다 — append 는 이 턴의 판정, replace 는 재판정했으면 그
+    판정이고 아니면 바꾸는 응답 기록의 이벤트를 옮긴다(옮기지 않으면 이어받은 스탯 변화를 설명할 이벤트가 그 행에 없다).
 
     트랜잭션 반납은 `commit()` 이다 — 읽기만 한 트랜잭션이라 끝내기만 하고, `expire_on_commit=False` 라 읽어 둔 객체를
     그대로 쓴다(`rollback()` 은 객체를 만료시켜 다음 속성 접근이 실패한다)."""
@@ -436,6 +439,7 @@ class RoomTurnStore:
             record.kind = turn.kind
             record.turn_number = turn.turn_number
             record.stat_changes = turn.judgments.stat_changes
+            stat_events = turn.judgments.stat_events
             record.ending_entity_id = reached_ending.entity_id if reached_ending is not None else None
             record.shortcut_entity_id = self._shortcut_entity_id
         else:
@@ -443,11 +447,15 @@ class RoomTurnStore:
                 return
             record.kind = "regenerate"
             record.turn_number = replaced_record.turn_number
-            record.stat_changes = (
-                turn.judgments.stat_changes if turn.judgments.stats_rejudged else replaced_record.stat_changes
-            )
+            rejudged = turn.judgments.stats_rejudged
+            record.stat_changes = turn.judgments.stat_changes if rejudged else replaced_record.stat_changes
+            stat_events = turn.judgments.stat_events if rejudged else replaced_record.stat_events
             record.ending_entity_id = replaced_record.ending_entity_id
             record.shortcut_entity_id = replaced_record.shortcut_entity_id
+        # 켠 동안 이벤트가 있을 때만 칸을 채운다 — 꺼져 있거나 비어 있으면 INSERT 에 칸을 싣지 않아 DB 기본값 `[]` 이 들어가고,
+        # 문장이 이 칸이 생기기 전과 같다.
+        if settings.stat_event_log and stat_events:
+            record.stat_events = list(stat_events)
         self.db.add(record)
 
     async def present(self, turn: TurnResult, written: TurnWrite) -> TurnPresentation:

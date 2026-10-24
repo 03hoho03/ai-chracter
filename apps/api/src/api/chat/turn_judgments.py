@@ -24,7 +24,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 from sqlalchemy import and_, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -67,7 +67,7 @@ from api.chat.schemas import (
     StoryScene,
     story_scene_of,
 )
-from api.chat.stats import apply_rule_judgment
+from api.chat.stats import RuleJudgmentOutcome, apply_rule_judgment_with_events
 from api.chat.turn_prompt import JudgmentPromptSets, preview_ending_rule_list_item
 from api.content.media_tags import normalize_media_tags
 from api.content.schemas import (
@@ -265,18 +265,20 @@ async def _await_stat_judgment(
     log_subject: str,
     current_stats: dict[str, float],
     stat_defs: list[StatDef],
-) -> dict[str, float] | None:
-    """스탯 판정 LLM 호출과 반영. 반영한 스탯 값(키 → 값, 바뀌지 않은 스탯 포함)을 돌려준다. 판정 LLM 이 고른 규칙을
-    `apply_rule_judgment` 로 반영한다. 요청에 프롬프트가 없으면(`prepare_stat_judgment` 가 판정할 규칙이 없다고 정했다)
+) -> RuleJudgmentOutcome | None:
+    """스탯 판정 LLM 호출과 반영. 반영한 스탯 값(키 → 값, 바뀌지 않은 스탯 포함)과 그 판정 이벤트를 돌려준다. 판정 LLM 이 고른
+    규칙을 `apply_rule_judgment_with_events` 로 반영한다. 요청에 프롬프트가 없으면(`prepare_stat_judgment` 가 판정할 규칙이 없다고 정했다)
     LLM 을 부르지 않고 발동 규칙 없이 반영한다 — 카운터는 굴러가고, 결과가 `None` 이 아니라 엔딩 판정도 이어진다.
 
     LLM 실패는 흡수해 `None` — 칸 판정과 동시에 돌 때 이 실패가 칸 결과를 지우지 않게 한다. `None` 이면 호출부는 지금처럼
     스탯·엔딩 판정을 함께 건너뛴다."""
     if request.prompt is None:
-        return apply_rule_judgment(current_stats, [], request.rule_ids, stat_defs)
+        return apply_rule_judgment_with_events(current_stats, [], request.rule_ids, stat_defs)
     try:
         rule_judgment = await llm_client.generate_structured(request.prompt, StatRuleJudgmentResult, usage=usage)
-        return apply_rule_judgment(current_stats, rule_judgment.fired_rule_ids, request.rule_ids, stat_defs)
+        return apply_rule_judgment_with_events(
+            current_stats, rule_judgment.fired_rule_ids, request.rule_ids, stat_defs
+        )
     except LLMClientError as exc:
         logger.warning("%s 스탯 판정 실패 — 이번 턴의 스탯·엔딩 판정을 건너뛴다: %s", log_subject, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
@@ -291,17 +293,17 @@ async def _await_stat_rejudgment(
     log_subject: str,
     current_stats: dict[str, float],
     stat_defs: list[StatDef],
-) -> dict[str, float] | None:
+) -> RuleJudgmentOutcome | None:
     """재생성의 스탯 재판정 — `_await_stat_judgment` 와 같되, 첫 호출이 곧바로 다시 부를 만한 실패
     (`is_retryable_judgment_failure`)면 한 번만 더 부른다. 재생성은 원 턴의 효과가 이미 반영된 상태에서 시작해 실패하면 새 응답에
     맞지 않는 스탯이 남으므로 다시 부를 만한 실패에서는 한 번 더 시도할 값이 있다. 보내기·수정의 판정은 실패해도 "그 턴의 효과
     없음"으로 일관되므로 다시 부르지 않는다 — 그래서 재시도를 공통 헬퍼가 아니라 여기에만 둔다.
 
-    다시 부르는 것은 LLM 호출뿐이고 반영(`apply_rule_judgment`)은 성공한 결과 하나에 한 번이다. 실패한 호출마다 경고를 한 줄씩
+    다시 부르는 것은 LLM 호출뿐이고 반영(`apply_rule_judgment_with_events`)은 성공한 결과 하나에 한 번이다. 실패한 호출마다 경고를 한 줄씩
     남기고(보내기·수정의 판정 실패 경고와 같은 "스탯 판정 실패"가 들어 있어 실패율을 함께 셀 수 있다), Bugsink 승격은 끝내
     실패했을 때 한 번이다. 끝내 실패하면 `None` 이다."""
     if request.prompt is None:
-        return apply_rule_judgment(current_stats, [], request.rule_ids, stat_defs)
+        return apply_rule_judgment_with_events(current_stats, [], request.rule_ids, stat_defs)
     attempt = 1
     while True:
         try:
@@ -314,7 +316,7 @@ async def _await_stat_rejudgment(
             logger.warning("%s 스탯 판정 실패 — 옛 응답의 스탯 효과를 그대로 둔다: %s", log_subject, exc)
             capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
             return None
-        return apply_rule_judgment(current_stats, rule_judgment.fired_rule_ids, request.rule_ids, stat_defs)
+        return apply_rule_judgment_with_events(current_stats, rule_judgment.fired_rule_ids, request.rule_ids, stat_defs)
 
 
 async def _no_judgment() -> None:
@@ -690,6 +692,9 @@ class TurnJudgmentResult:
     stat_changes: dict[str, list[float | None]] = field(default_factory=dict)
     # 재생성이 스탯을 다시 판정해 위 칸들을 채웠는가. 거짓이면 재생성 기록은 바꾸는 응답의 기록에서 스탯 변화를 이어받는다.
     stats_rejudged: bool = False
+    # 이번 판정의 이벤트(`apply_rule_judgment_with_events`) — 턴 기록의 `stat_events` 가 이 값이다(스위치를 켠 동안만 싣는다).
+    # 재생성은 재판정했을 때만 채우고, 아니면 비어 있어 기록은 바꾸는 응답의 기록에서 이어받는다(`stat_changes` 와 같은 규칙).
+    stat_events: list[dict[str, Any]] = field(default_factory=list)
     stat_change_events: list[ChatStatChangeEvent] = field(default_factory=list)
     # 플레이어에게 숨긴 스탯 id 와, 그중 바뀌면 익명 신호를 주는 스탯 id. 방 스탯 판정(보내기·수정·재생성)만 채우고 빌더
     # 미리보기는 비워 둔다 — 미리보기는 작가 전용이라 거르지 않는다. 판정·쓰기는 이 칸을 보지 않고, 스트림으로 내보낼 때만
@@ -747,14 +752,15 @@ def _apply_stat_result(
     ctx: JudgmentContext,
     result: TurnJudgmentResult,
     current: dict[str, float],
-    updated: dict[str, float] | None,
+    outcome: RuleJudgmentOutcome | None,
 ) -> None:
     """스탯 판정의 반영 — 엔딩 판정이 읽을 값을 넘기고, 바뀐 스탯만 쓸 값과 `statChange` 이벤트(반영 결과의 키 순서)로
-    옮긴다. 방·미리보기 스탯 판정이 함께 쓴다."""
-    ctx.stat_after = updated
-    if updated is None:
+    옮기고, 판정 이벤트를 결과에 싣는다. 방·미리보기 스탯 판정이 함께 쓴다(미리보기는 기록이 없어 이벤트를 읽는 곳이 없다)."""
+    ctx.stat_after = outcome.values if outcome is not None else None
+    if outcome is None:
         return
-    for stat_id, new_value in updated.items():
+    result.stat_events = outcome.events
+    for stat_id, new_value in outcome.values.items():
         if new_value != current.get(stat_id):
             result.stat_writes[stat_id] = new_value
             result.stat_changes[stat_id] = [current.get(stat_id), new_value]
@@ -804,7 +810,7 @@ class StatJudgment:
         self._stat_rows: dict[str, ChatRoomStat] = {}
         self._current_stats: dict[str, float] = {}
         self._request: StatJudgmentRequest | None = None
-        self._updated: dict[str, float] | None = None
+        self._outcome: RuleJudgmentOutcome | None = None
 
     async def prepare(self, ctx: JudgmentContext) -> None:
         if self._room.ending_reached:
@@ -825,7 +831,7 @@ class StatJudgment:
     async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
         if self._request is None:
             return
-        self._updated = await _await_stat_judgment(
+        self._outcome = await _await_stat_judgment(
             llm_client,
             self._request,
             LLMCallContext(
@@ -842,7 +848,7 @@ class StatJudgment:
     def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
         result.stat_rows = self._stat_rows
         _mark_hidden_stats(result, self._stat_defs)
-        _apply_stat_result(ctx, result, self._current_stats, self._updated)
+        _apply_stat_result(ctx, result, self._current_stats, self._outcome)
 
 
 def _starting_values(
@@ -906,7 +912,7 @@ class RegenerateStatJudgment:
         self._current_stats: dict[str, float] = {}
         self._starting_stats: dict[str, float] = {}
         self._request: StatJudgmentRequest | None = None
-        self._updated: dict[str, float] | None = None
+        self._outcome: RuleJudgmentOutcome | None = None
 
     async def prepare(self, ctx: JudgmentContext) -> None:
         if self._room.ending_reached:
@@ -933,7 +939,7 @@ class RegenerateStatJudgment:
     async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
         if self._request is None:
             return
-        self._updated = await _await_stat_rejudgment(
+        self._outcome = await _await_stat_rejudgment(
             llm_client,
             self._request,
             LLMCallContext(
@@ -950,12 +956,14 @@ class RegenerateStatJudgment:
     def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
         """쓸 값과 `statChange` 는 지금 DB 값과 달라진 스탯이다 — 되돌리기만 하고 새 판정이 다시 바꾸지 않은 스탯도 써야 하고,
         화면은 지금 DB 값을 들고 있다. 기록에 남길 변화는 턴이 시작할 때의 값 대비다(이 응답에 귀속된 효과)."""
-        updated = self._updated
-        ctx.stat_after = updated
-        if updated is None:
+        outcome = self._outcome
+        ctx.stat_after = outcome.values if outcome is not None else None
+        if outcome is None:
             return
+        updated = outcome.values
         result.stat_rows = self._stat_rows
         result.stats_rejudged = True
+        result.stat_events = outcome.events
         _mark_hidden_stats(result, self._stat_defs)
         for stat_id, new_value in updated.items():
             if new_value != self._current_stats.get(stat_id):
@@ -1143,7 +1151,7 @@ class PreviewStatJudgment:
         self._log = log
         self._stat_defs: list[StatDef] = []
         self._request: StatJudgmentRequest | None = None
-        self._updated: dict[str, float] | None = None
+        self._outcome: RuleJudgmentOutcome | None = None
 
     async def prepare(self, ctx: JudgmentContext) -> None:
         if self._ending_reached:
@@ -1159,7 +1167,7 @@ class PreviewStatJudgment:
     async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
         if self._request is None:
             return
-        self._updated = await _await_stat_judgment(
+        self._outcome = await _await_stat_judgment(
             llm_client,
             self._request,
             LLMCallContext(call_site="preview_stat_judgment", user_id=self._user_id, room_id=None),
@@ -1169,7 +1177,7 @@ class PreviewStatJudgment:
         )
 
     def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
-        _apply_stat_result(ctx, result, self._current_stats, self._updated)
+        _apply_stat_result(ctx, result, self._current_stats, self._outcome)
 
 
 class PreviewEndingJudgment:
