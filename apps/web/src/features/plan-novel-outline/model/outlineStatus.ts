@@ -37,6 +37,12 @@ export function toMakeBlockedReason(status: {
   return undefined;
 }
 
+/** 이 화면의 고침이 서버의 더 새 판 앞에서 낡았는가 — 고치는 사이 구성안 작업(다시 시도 포함)이나 다른 탭이 새 판을 냈다. 그대로
+ * 두면 화면은 옛 판 위의 고침을 새 판처럼 보이고, 저장하면 409 로 버려진다. */
+export function isEditBaseOutdated(editBaseRevision: number | undefined, latestRevision: number | undefined): boolean {
+  return editBaseRevision !== undefined && latestRevision !== undefined && latestRevision > editBaseRevision;
+}
+
 /** 구성안 화마다 붙일 화 번호. 원고가 있는 화는 그 화 번호이고, 나머지는 구성안 밖의 화(옛 흐름으로 쓴 화)의 마지막 번호 다음부터
  * 구성안 차례대로다 — 원고는 구성안 차례대로만 쓰므로 그 번호가 된다. */
 export function toEpisodeOrdinals(

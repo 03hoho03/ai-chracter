@@ -11,6 +11,7 @@ import {
   toBasisLabel,
   toEpisodeDrafts,
   toEpisodeTurns,
+  toMoveBlockedReason,
   toOutlineProblems,
   toSaveEpisodes,
   toSplitPoints,
@@ -197,6 +198,16 @@ describe("구성안 편집 — 차례·지우기·글", () => {
     expect(moveEpisode([A, B], "A", 1)).toEqual([B, A]);
     expect(moveEpisode([A, B], "A", -1)).toEqual([A, B]);
     expect(moveEpisode([A, B], "B", 1)).toEqual([A, B]);
+  });
+
+  // 원고는 구성안 차례대로 쓴다 — 원고 있는 화와 자리를 바꾸면 화 번호가 원고와 어긋난다.
+  it("원고가 있는 화와는 차례를 바꾸지 않고 이유를 준다", () => {
+    const written = { ...A, chapterId: "c1" };
+    expect(moveEpisode([written, B], "B", -1)).toEqual([written, B]);
+    expect(toMoveBlockedReason([written, B], "B", -1)).toBe("원고가 있는 화와는 차례를 바꿀 수 없어요.");
+    expect(toMoveBlockedReason([A, B], "A", -1)).toBe("맨 앞 화예요.");
+    expect(toMoveBlockedReason([A, B], "B", 1)).toBe("맨 뒤 화예요.");
+    expect(toMoveBlockedReason([A, B], "A", 1)).toBeUndefined();
   });
 
   it("지우기는 그 화만 빼고, 마지막 남은 화는 지우지 않는다", () => {

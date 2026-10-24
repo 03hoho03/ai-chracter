@@ -253,7 +253,7 @@ function SelectionEditor({
       message:
         restored.count > 0
           ? `구성안이 쓴 대화 ${restored.count.toLocaleString()}턴을 다시 담았어요. 확인한 뒤 승인하면 구성안을 다시 쓸 수 있어요. 그래도 낡음이 남으면 구성안을 다시 만들어주세요.`
-          : "구성안이 쓴 대화는 이미 모두 담겨 있어요. 구간 끝이나 대화가 바뀌어 낡았다면 구성안을 다시 만들어주세요.",
+          : "구성안의 화들이 근거로 쓴 대화는 이미 모두 담겨 있어요. 그래도 낡음이 남으면 구성안을 다시 만들어주세요.",
     });
     headingRef.current?.focus();
   }, [restoreRequest?.id]);

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { NovelOutlineState, NovelOutlineView } from "@/entities/novel";
 
-import { toEpisodeOrdinals, toMakeBlockedReason, toOutlineBase } from "./outlineStatus";
+import { isEditBaseOutdated, toEpisodeOrdinals, toMakeBlockedReason, toOutlineBase } from "./outlineStatus";
 
 function view(revision: number, extra: Partial<NovelOutlineView> = {}): NovelOutlineView {
   return {
@@ -66,6 +66,14 @@ describe("구성안 만들기를 못 누르는 이유", () => {
     );
     expect(toMakeBlockedReason({ ...idle, isDirty: true })).toBe("고친 구성안을 먼저 저장하거나 되돌려주세요.");
     expect(toMakeBlockedReason({ ...idle, hasApprovedSelection: undefined })).toBe("담을 대화를 확인하는 중이에요.");
+  });
+});
+
+describe("고침이 새 판 앞에서 낡았나", () => {
+  it("고치기 시작한 판보다 새 판이 오면 낡았다", () => {
+    expect(isEditBaseOutdated(2, 3)).toBe(true);
+    expect(isEditBaseOutdated(2, 2)).toBe(false);
+    expect(isEditBaseOutdated(undefined, 3)).toBe(false);
   });
 });
 

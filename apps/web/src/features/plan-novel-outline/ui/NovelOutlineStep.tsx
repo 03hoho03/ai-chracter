@@ -24,6 +24,7 @@ import {
   removeEpisode,
   splitEpisode,
   toEpisodeDrafts,
+  toMoveBlockedReason,
   toOutlineProblems,
   toSaveEpisodes,
   toTurnIndex,
@@ -33,7 +34,14 @@ import {
   type OutlineTurn,
 } from "../model/outlineEdits";
 import { toOutlineRecovery } from "../model/outlineRecovery";
-import { OUTLINE_STATUS_LABEL, toEpisodeOrdinals, toMakeBlockedReason, toOutlineBase, type OutlineStatus } from "../model/outlineStatus";
+import {
+  isEditBaseOutdated,
+  OUTLINE_STATUS_LABEL,
+  toEpisodeOrdinals,
+  toMakeBlockedReason,
+  toOutlineBase,
+  type OutlineStatus,
+} from "../model/outlineStatus";
 
 import { OutlineEpisodeItem, type OutlineTurnsStatus } from "./OutlineEpisodeItem";
 
@@ -167,6 +175,17 @@ function OutlineEditor({
     onDraftDirtyChange(isDirty || isFormOpen);
   }, [isDirty, isFormOpen]);
   useEffect(() => () => onDraftDirtyChange(false), []);
+
+  // 고치는 사이 새 판이 왔다(구성안 작업의 다시 시도·다른 탭) — 옛 판 위의 고침은 저장해도 409 로 버려지므로 지금 버리고 알린다.
+  const latestRevision = base?.view.revision;
+  useEffect(() => {
+    // 저장·승인 중에는 이 화면이 낸 새 판이다 — 저장이 끝나며 고침을 비운다.
+    if (busy !== undefined || !isEditBaseOutdated(edits?.baseRevision, latestRevision)) return;
+    setEdits(undefined);
+    setEditingId(undefined);
+    setSplittingId(undefined);
+    setNotice({ tone: "error", message: "그사이 새 구성안이 와서 고치던 것은 버렸어요. 새 구성안을 확인해주세요." });
+  }, [latestRevision]);
 
   useEffect(() => {
     if (pendingFocus === undefined) return;
@@ -357,7 +376,6 @@ function OutlineEditor({
             key={episode.localId}
             episode={episode}
             ordinal={ordinals[index] ?? index + 1}
-            index={index}
             count={episodes.length}
             turnIndex={turnIndex}
             turnsStatus={turnsStatus}
@@ -365,6 +383,10 @@ function OutlineEditor({
             isEditing={editingId === episode.localId}
             isSplitting={splittingId === episode.localId}
             mergeBlockedReason={toMergeBlockedReason(episodes, episode.localId, turnIndex)}
+            moveBlockedReasons={{
+              up: toMoveBlockedReason(episodes, episode.localId, -1),
+              down: toMoveBlockedReason(episodes, episode.localId, 1),
+            }}
             titleMaxLength={titleMaxLength}
             onEdit={() => {
               setSplittingId(undefined);
@@ -455,7 +477,7 @@ function OutlineEditor({
               고친 것 되돌리기
             </Button>
           )}
-          {isDirty && (
+          {isDirty && !base.isStale && (
             <Button
               type="button"
               variant="outline"

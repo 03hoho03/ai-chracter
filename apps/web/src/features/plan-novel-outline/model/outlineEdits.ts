@@ -229,14 +229,28 @@ function joinText(a: string, b: string): string {
   return [a.trim(), b.trim()].filter((text) => text !== "").join("\n");
 }
 
-/** 화 하나를 한 칸 위(-1)·아래(1)로 옮긴다. 끝에서는 그대로다. */
+/** 화 하나를 한 칸 위(-1)·아래(1)로 옮기지 못하는 이유. 끝이거나, 원고가 있는 화와 자리를 바꾸게 되면 못 옮긴다 — 원고는 구성안
+ * 차례대로 쓰므로 원고 있는 화의 앞뒤가 바뀌면 화 번호가 원고와 어긋난다. 옮길 수 있으면 `undefined`. */
+export function toMoveBlockedReason(
+  episodes: readonly OutlineEpisodeDraft[],
+  localId: string,
+  delta: -1 | 1,
+): string | undefined {
+  const at = episodes.findIndex((episode) => episode.localId === localId);
+  const other = episodes[at + delta];
+  if (at === -1 || other === undefined) return delta === -1 ? "맨 앞 화예요." : "맨 뒤 화예요.";
+  if (episodes[at]?.chapterId !== null || other.chapterId !== null) return "원고가 있는 화와는 차례를 바꿀 수 없어요.";
+  return undefined;
+}
+
+/** 화 하나를 한 칸 위(-1)·아래(1)로 옮긴다. 못 옮기는 자리(`toMoveBlockedReason`)면 그대로다. */
 export function moveEpisode(episodes: readonly OutlineEpisodeDraft[], localId: string, delta: -1 | 1): OutlineEpisodeDraft[] {
   const at = episodes.findIndex((episode) => episode.localId === localId);
   const to = at + delta;
   const next = [...episodes];
   const moving = next[at];
   const other = next[to];
-  if (at === -1 || moving === undefined || other === undefined) return next;
+  if (moving === undefined || other === undefined || toMoveBlockedReason(episodes, localId, delta) !== undefined) return next;
   next[at] = other;
   next[to] = moving;
   return next;

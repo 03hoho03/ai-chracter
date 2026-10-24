@@ -28,7 +28,6 @@ export type OutlineTurnsStatus = "ready" | "loading" | "error" | "gone";
 type OutlineEpisodeItemProps = {
   episode: OutlineEpisodeDraft;
   ordinal: number;
-  index: number;
   count: number;
   turnIndex: TurnIndex | undefined;
   turnsStatus: OutlineTurnsStatus;
@@ -38,6 +37,8 @@ type OutlineEpisodeItemProps = {
   isSplitting: boolean;
   /** 다음 화와 합치지 못하는 이유. 없으면 합칠 수 있다. */
   mergeBlockedReason: string | undefined;
+  /** 위로·아래로 옮기지 못하는 이유. */
+  moveBlockedReasons: { up: string | undefined; down: string | undefined };
   titleMaxLength: number;
   onEdit: () => void;
   onApply: (text: OutlineEpisodeText) => void;
@@ -60,7 +61,6 @@ type OutlineEpisodeItemProps = {
 export function OutlineEpisodeItem({
   episode,
   ordinal,
-  index,
   count,
   turnIndex,
   turnsStatus,
@@ -68,6 +68,7 @@ export function OutlineEpisodeItem({
   isEditing,
   isSplitting,
   mergeBlockedReason,
+  moveBlockedReasons,
   titleMaxLength,
   onEdit,
   onApply,
@@ -125,9 +126,9 @@ export function OutlineEpisodeItem({
             <EpisodeMenu
               label={label}
               localId={episode.localId}
-              index={index}
               count={count}
               mergeBlockedReason={mergeBlockedReason}
+              moveBlockedReasons={moveBlockedReasons}
               splitBlockedReason={splitBlockedReason}
               onMove={onMove}
               onMerge={onMerge}
@@ -288,9 +289,9 @@ function SplitPicker({ label, turns, splitAfter, onSplit, onCancel }: SplitPicke
 type EpisodeMenuProps = {
   label: string;
   localId: string;
-  index: number;
   count: number;
   mergeBlockedReason: string | undefined;
+  moveBlockedReasons: { up: string | undefined; down: string | undefined };
   splitBlockedReason: string | undefined;
   onMove: (delta: -1 | 1) => void;
   onMerge: () => void;
@@ -301,9 +302,9 @@ type EpisodeMenuProps = {
 function EpisodeMenu({
   label,
   localId,
-  index,
   count,
   mergeBlockedReason,
+  moveBlockedReasons,
   splitBlockedReason,
   onMove,
   onMerge,
@@ -336,14 +337,14 @@ function EpisodeMenu({
       >
         <MenuAction
           icon={<ArrowUp aria-hidden />}
-          blockedReason={index === 0 ? "맨 앞 화예요." : undefined}
+          blockedReason={moveBlockedReasons.up}
           onSelect={() => onMove(-1)}
         >
           위로 옮기기
         </MenuAction>
         <MenuAction
           icon={<ArrowDown aria-hidden />}
-          blockedReason={index === count - 1 ? "맨 뒤 화예요." : undefined}
+          blockedReason={moveBlockedReasons.down}
           onSelect={() => onMove(1)}
         >
           아래로 옮기기
