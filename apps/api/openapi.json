@@ -14018,6 +14018,156 @@
         }
       }
     },
+    "/chat-rooms/{room_id}/memory/episodes/{episode_id}": {
+      "delete": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Forget Chat Room Memory Episode",
+        "description": "장면 기억 하나를 실제로 지운다(임베딩 포함, `chat/memory_forget.py`). 기억 보기와 같은 스위치 뒤에 있고, 자기 데이터 삭제라\n재동의 게이트를 걸지 않는다(노트 비우기와 같다).",
+        "operationId": "forget_chat_room_memory_episode_chat_rooms__room_id__memory_episodes__episode_id__delete",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          },
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Episode Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-rooms/{room_id}/memory/facts": {
+      "delete": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Forget Chat Room Memory Fact",
+        "description": "사실 키 하나의 행 전부(옛 값 포함, 임베딩 포함)를 실제로 지운다. 비밀 사실이면 근거 구간이 겹치는 장면도 함께 지운다 —\n그 수는 `forget-preview` 가 미리 알려 준다(`chat/memory_forget.py`). 스위치·재동의는 장면 잊기와 같다.",
+        "operationId": "forget_chat_room_memory_fact_chat_rooms__room_id__memory_facts_delete",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-rooms/{room_id}/memory/facts/forget-preview": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Preview Chat Room Memory Fact Forget",
+        "description": "사실 키 하나를 잊으면 함께 잊을 장면 수. 잊기와 같은 함수로 고르므로 그사이 기억이 바뀌지 않으면 같은 수가 지워진다.",
+        "operationId": "preview_chat_room_memory_fact_forget_chat_rooms__room_id__memory_facts_forget_preview_get",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomMemoryFactForgetPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms/{room_id}/memory/note": {
       "put": {
         "tags": [
@@ -24186,6 +24336,20 @@
         ],
         "title": "ChatRoomMemoryEpisodeItem",
         "description": "장면 기억 하나. `asserted_by` 는 장면의 내용을 누가 말했는가(사용자·캐릭터·서술·섞임)다 — 캐릭터가 대사로만 말한 장면은\n회상에 실리지 않는다. 턴은 추출 시점의 응답 순번이라 그 뒤 메시지가 지워졌으면 근사값이다."
+      },
+      "ChatRoomMemoryFactForgetPreview": {
+        "properties": {
+          "episodeCount": {
+            "type": "integer",
+            "title": "Episodecount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "episodeCount"
+        ],
+        "title": "ChatRoomMemoryFactForgetPreview",
+        "description": "사실 키 하나를 잊기 전 확인 대화에 보일 것. `episode_count` 는 함께 잊을 장면 수다 — 아는 사람이 정해진(비밀) 사실이면\n그 키의 근거 대화 구간과 겹치는 장면도 함께 잊는다(사실만 지우면 그 장면이 응답에 다시 실릴 수 있다). 공개 사실이면 0."
       },
       "ChatRoomMemoryFactItem": {
         "properties": {
