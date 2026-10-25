@@ -134,7 +134,7 @@ function SegmentItems({
         <p className="min-w-0 flex-1 text-sm break-keep text-muted-foreground">
           {segment.state === "exclude" ? (
             <>
-              뺀 대화 {rangeLabel} · <span className="whitespace-nowrap">AI에 보내지 않아요</span>
+              뺀 대화 {rangeLabel} · <span className="whitespace-nowrap">원문을 AI에 보내지 않아요</span>
             </>
           ) : (
             <>
