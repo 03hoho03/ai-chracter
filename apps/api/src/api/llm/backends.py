@@ -149,19 +149,28 @@ def pick_backend(
     1. 모델을 고를 수 없는 호출에 다른 모델이 실려 오면 그 호출의 모델(`call_model`)로 읽는다. 사용자가 고른 적 없는 호출에
        방의 비싼 모델 원가가 붙지 않게 한다. 그 호출의 모델은 판정·요약이면 그 설정의 모델이고 나머지는 기본 모델이다 —
        설정을 읽는 것은 부르는 쪽이다(`call_site_model`, 이 함수는 순수하게 둔다).
-    2. 배정은 `assignments`(env), 없으면 정책 표 행의 `backend`. 행이 배정을 물려받는 호출(`backend_from`)이면 자기 env 배정이
-       없을 때 그 호출 위치의 env 배정, 그것도 없으면 그 호출 위치 행의 `backend` 다.
+    2. 배정은 `assignments`(env), 없으면 물려받는 배정(`inherited_assignment`).
     3. 배정된 구현이 그 모델을 서비스하면 배정을, 아니면 그 모델의 기본 구현을 쓴다."""
     policy = CALL_POLICIES[call_site]
     if model != call_model and not policy.model_selectable:
         model = call_model
     assigned = assignments.get(call_site)
     if assigned is None:
-        source = policy.backend_from or call_site
-        assigned = assignments.get(source, CALL_POLICIES[source].backend)
+        assigned = inherited_assignment(call_site, assignments)
     if assigned is not None and model in BACKENDS[assigned].model_id_settings:
         return model, assigned
     return model, MODEL_BACKENDS[model][0]
+
+
+def inherited_assignment(call_site: LLMCallSite, assignments: Mapping[LLMCallSite, BackendId]) -> BackendId | None:
+    """이 호출 위치 자신의 env 배정이 없을 때 쓰는 배정. 배정을 물려받는 호출(`backend_from`)이면 그 호출 위치의 env 배정, 그것도
+    없으면 그 호출 위치가 같은 규칙으로 물려받는 배정이다(미리보기 장면 헤더 → 채팅 장면 헤더 → 채팅 스탯 판정). 물려받지 않는
+    호출이면 정책 표 행의 `backend` 다."""
+    policy = CALL_POLICIES[call_site]
+    if policy.backend_from is None:
+        return policy.backend
+    source = policy.backend_from
+    return assignments.get(source) or inherited_assignment(source, assignments)
 
 
 def _takes(capabilities: BackendCapabilities, kind: CallKind) -> bool:
@@ -214,8 +223,12 @@ def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting
 
     모델 설정이 있는 호출(판정·요약)은 배정이 있든 없든 그 호출이 실제로 갈 구현을 해석해, 방식을 받지 못하거나 자격이 비어
     있으면 거부한다 — 판정 모델만 바꾸고 배정을 두지 않으면 판정은 그 모델의 기본 구현(Claude 면 Bedrock)으로 가는데, 그
-    자격이 비어 있으면 매 판정이 실패한다. 채팅 판정과 미리보기 판정은 모델 설정을 함께 쓰지만 배정은 호출 위치마다라
-    따로 본다. 배정을 물려받는 호출(장면 헤더 판정)은 물려받은 배정으로 해석해 같은 근거로 본다. 그 호출이 Anthropic 직결에서 사고를 끄는 모델로 가면 구조화 깊이가 사고를 끈 요청이 받는 범위인지도 본다 —
+    자격이 비어 있으면 매 판정이 실패한다. 배정을 물려받는 호출(장면 헤더 판정, 미리보기 생성·판정)은 물려받은 배정으로 해석해
+    같은 근거로 본다.
+
+    물려받은 배정과 같아야 하는 호출(`backend_from_strict`, 미리보기 생성·판정)은 자기 env 배정으로 가는 경로가 그 줄이 없을 때
+    물려받아 가는 경로와 하나라도 다르면 거부한다 — 채팅과 미리보기가 같은 문안을 다른 경로로 부르는 프로세스가 뜨지 않게 한다.
+    경로로 견주므로 지금 가는 구현을 그대로 적은 줄은 받는다. 거부한 배정의 다른 검사는 하지 않는다. 그 호출이 Anthropic 직결에서 사고를 끄는 모델로 가면 구조화 깊이가 사고를 끈 요청이 받는 범위인지도 본다 —
     아니면 매 판정이 400 이다."""
     errors: list[str] = []
     for call_site, backend in assignments.items():
@@ -231,6 +244,18 @@ def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting
         if not served:
             errors.append(f"{entry} — {backend} 는 이 호출의 모델({', '.join(models)})을 하나도 서비스하지 않는다")
             continue
+        if policy.backend_from_strict and policy.backend_from is not None:
+            others = {site: value for site, value in assignments.items() if site != call_site}
+            if any(
+                pick_backend(call_site, model, assignments, call_model=model)
+                != pick_backend(call_site, model, others, call_model=model)
+                for model in models
+            ):
+                inherited = inherited_assignment(call_site, assignments)
+                errors.append(
+                    f"{entry} — 물려받는 {policy.backend_from} 의 배정({inherited or '없음'})으로 가는 경로와 다르다"
+                )
+                continue
         if policy.model_setting is not None:
             # 방식과 자격은 아래에서 배정 없는 경우와 함께 본다.
             continue

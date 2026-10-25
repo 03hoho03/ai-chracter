@@ -22,7 +22,7 @@ from api.chat import router as chat_router
 from api.chat.prompt_builder import PromptRenderError
 from api.core import clover, rate_limit_gate
 from api.core.config import settings
-from api.core.rate_limit_gate import charge_chat_turn, enforce_chat_rate_limit
+from api.core.rate_limit_gate import charge_chat_turn
 from api.db.models import User
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.clover import CloverLedger
@@ -431,7 +431,7 @@ def test_room_turns_charge_last_with_the_room_gate(route: Any) -> None:
     dependencies = _dependencies(route)
 
     assert dependencies[-1] is chat_router.enforce_room_chat_charge
-    assert enforce_chat_rate_limit not in dependencies
+    assert chat_router.enforce_preview_chat_charge not in dependencies
 
 
 def test_room_gate_reads_the_room_after_the_turn_lock_refreshed_it() -> None:
@@ -447,8 +447,15 @@ def test_room_gate_reads_the_room_after_the_turn_lock_refreshed_it() -> None:
     assert chat_router._effective_room_model_dependency in _dependencies(chat_router._judgment_prompt_sets_dependency)
 
 
-def test_preview_keeps_the_gemini_gate() -> None:
-    """미리보기는 방이 없고 언제나 Gemini 다."""
+def test_preview_charges_last_with_the_preview_gate() -> None:
+    """미리보기는 방이 없어 세션이 고른 모델을 읽는 자기 게이트를 맨 뒤에 쓴다. 게이트·생성 세트·판정 세트가 같은 실효 모델
+    의존성에서 모델을 받는다(요청 스코프 캐시로 한 값)."""
     dependencies = _dependencies(chat_router.send_preview_message)
 
-    assert dependencies[-1] is enforce_chat_rate_limit
+    assert dependencies[-1] is chat_router.enforce_preview_chat_charge
+    for function in (
+        chat_router.enforce_preview_chat_charge,
+        chat_router._preview_generation_set_dependency,
+        chat_router._preview_judgment_prompt_sets_dependency,
+    ):
+        assert chat_router._preview_effective_model_dependency in _dependencies(function)

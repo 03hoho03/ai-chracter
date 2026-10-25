@@ -18,7 +18,6 @@ from api.chat.prompt_builder import (
 )
 from api.chat.preview_session import get_preview_session
 from api.chat.schemas import PreviewSessionState
-from api.core.rate_limit_gate import enforce_chat_rate_limit
 from api.db.models.chat import ChatMessageRole, ChatRoom
 from api.db.models.persona import UserPersona
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
@@ -1098,5 +1097,5 @@ def test_send_preview_message_resolves_persona_before_the_clover_charge() -> Non
         if hasattr(param.default, "dependency")
     ]
     assert dependencies.index(chat_router._preview_persona_dependency) < dependencies.index(
-        enforce_chat_rate_limit
+        chat_router.enforce_preview_chat_charge
     )

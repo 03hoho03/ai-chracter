@@ -78,11 +78,10 @@ def test_an_unknown_call_site_or_backend_refuses_to_start(monkeypatch: pytest.Mo
 @pytest.mark.parametrize(
     "value",
     [
-        # 판정·요약·심사·미리보기는 모델을 고를 수 없어 기본 모델만 받는데, Bedrock 은 그 모델을 서비스하지 않는다.
+        # 판정·요약·심사는 모델을 고를 수 없어 기본 모델만 받는데, Bedrock 은 그 모델을 서비스하지 않는다.
         "chat_stat_judgment:bedrock",
         "novelize_revise:bedrock",
         "publish_filter_story:bedrock",
-        "preview_generate:bedrock",
     ],
 )
 def test_assigning_a_backend_that_serves_no_model_of_that_call_refuses_to_start(
@@ -102,6 +101,9 @@ def test_assigning_a_backend_that_serves_no_model_of_that_call_refuses_to_start(
         "chat_generate:gemini",
         "chat_stat_judgment:gemini",
         "chat_generate:gemini,novelize_chapter:bedrock,publish_filter_character:gemini",
+        # 미리보기 생성은 채팅 생성의 배정을 물려받는다 — 채팅 생성 줄이 없으면 상위 모델은 기본(Bedrock)으로 가므로 그 경로를 그대로
+        # 적은 줄이다.
+        "preview_generate:bedrock",
     ],
 )
 def test_assignments_that_some_model_of_the_call_can_use_start(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
@@ -145,7 +147,8 @@ def test_moving_a_call_to_anthropic_with_its_key_starts(monkeypatch: pytest.Monk
 def test_assigning_anthropic_to_a_call_that_cannot_pick_a_premium_model_refuses_to_start(
     monkeypatch: pytest.MonkeyPatch, call_site: str
 ) -> None:
-    """이 호출들은 기본 모델만 받는데 Anthropic 구현은 그 모델을 서비스하지 않는다 — 키가 있어도 배정이 아무 일도 하지 않는다."""
+    """판정·요약은 기본 모델만 받는데 Anthropic 구현은 그 모델을 서비스하지 않는다 — 키가 있어도 배정이 아무 일도 하지 않는다.
+    미리보기 생성은 채팅 생성 줄이 없어 물려받는 경로가 Bedrock 이라, 상위 모델을 Anthropic 으로 보내는 자기 줄은 그 경로와 다르다."""
     with pytest.raises(ValidationError, match=call_site):
         _load_env(monkeypatch, **{_ENV: f"{call_site}:anthropic", _ANTHROPIC_KEY: "sk-ant-test"})
 

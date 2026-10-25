@@ -410,12 +410,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _premium_models_need_backend_credentials(self) -> "Settings":
-        """켜진 스위치가 여는 호출(채팅: 턴 생성과 측정용 다시 생성, 소설: 장 생성과 구성안 두 호출)이 상위 모델로 실제로 갈 구현마다 그
-        자격이 모두 있어야 한다. 배정이 없으면 그 구현은 Bedrock 이라 키·비밀 키·리전 셋을 본다. 켜진 채 빈 값으로 뜨면 첫
+        """켜진 스위치가 여는 호출(채팅: 턴 생성과 빌더 미리보기 생성과 측정용 다시 생성, 소설: 장 생성과 구성안 두 호출)이 상위
+        모델로 실제로 갈 구현마다 그 자격이 모두 있어야 한다. 배정이 없으면 그 구현은 Bedrock 이라 키·비밀 키·리전 셋을 본다. 켜진 채 빈 값으로 뜨면 첫
         상위 모델 호출에서야 실패하고(그 턴은 환불된다), Bedrock 은 클라이언트가 막지 못한 경로가 생기면 R2 자격으로 서명된다."""
         call_sites: list[LLMCallSite] = []
         if self.chat_premium_models_enabled:
-            call_sites += ["chat_generate", "replay_generate"]
+            call_sites += ["chat_generate", "preview_generate", "replay_generate"]
         if self.novelize_premium_models_enabled:
             call_sites += ["novelize_chapter", "novelize_outline", "novelize_episode_outline"]
         # 글쓰기 모델만 본다 — 구현 등록부의 모델 표에는 판정 전용 id 도 있어, 그 표로 고르면 스위치가 열지 않는 경로의

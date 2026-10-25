@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from pydantic import BaseModel, ValidationError
 from redis.exceptions import RedisError
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.prompt_routing import PromptRoutes, RouteKey, RouteRow, RouteRowInput, parse_route_row
 from api.core.config import settings
@@ -140,6 +140,17 @@ async def load_prompt_routes(db: AsyncSession) -> PromptRoutes:
     rows = await _get_cached()
     if rows is None:
         rows = await load_prompt_routes_from_db(db)
+        await _set_cached(rows)
+    return _to_routes(rows)
+
+
+async def load_prompt_routes_with(session_factory: async_sessionmaker[AsyncSession]) -> PromptRoutes:
+    """`load_prompt_routes` 와 같되 캐시 미스일 때만 `session_factory` 로 짧은 세션을 열어 읽는다 — 히트면 세션을 열지 않는다.
+    요청 세션에 기대지 않는 미리보기 의존성이 쓴다."""
+    rows = await _get_cached()
+    if rows is None:
+        async with session_factory() as session:
+            rows = await load_prompt_routes_from_db(session)
         await _set_cached(rows)
     return _to_routes(rows)
 

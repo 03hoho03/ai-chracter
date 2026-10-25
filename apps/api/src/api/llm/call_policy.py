@@ -120,11 +120,16 @@ class CallPolicy:
     # 이 호출 위치의 구현 배정. None 이면 모델의 기본 구현이다. env `LLM_CALL_SITE_BACKENDS` 의 배정이 이 값보다 앞서고,
     # 어느 배정이든 그 구현이 그 모델을 서비스할 때만 따른다(`llm/backends.py` 의 `pick_backend`).
     backend: BackendId | None = None
-    # 구현 배정을 물려받을 다른 호출 위치. 그 호출 위치의 env 배정(없으면 정책 표의 `backend`)을 이 호출의 배정으로 쓴다 —
-    # 이 호출 위치 자신의 env 배정이 있으면 그것이 앞선다. 장면 헤더 판정이 스탯 판정과 같은 구현으로 가게 하려고 둔다:
-    # 운영 env 는 스탯 판정 호출 위치만 배정하므로, 물려받지 않으면 장면 판정은 모델의 기본 구현으로 가 그 자격을 따로
-    # 요구한다. 모델은 이것이 아니라 `model_setting` 이 정한다.
+    # 구현 배정을 물려받을 다른 호출 위치. 그 호출 위치의 env 배정(없으면 그 호출 위치가 물려받는 배정, 끝내 없으면 그 행의
+    # `backend`)을 이 호출의 배정으로 쓴다 — 이 호출 위치 자신의 env 배정이 있으면 그것이 앞선다. 장면 헤더 판정이 스탯 판정과
+    # 같은 구현으로 가게 하려고 둔다: 운영 env 는 스탯 판정 호출 위치만 배정하므로, 물려받지 않으면 장면 판정은 모델의 기본 구현으로
+    # 가 그 자격을 따로 요구한다. 미리보기 생성·판정은 채팅 짝을 물려받는다(미리보기 장면 헤더는 채팅 장면 헤더를 거쳐 채팅 스탯
+    # 판정까지). 모델은 이것이 아니라 `model_setting`(모델을 고르는 호출은 실린 모델)이 정한다.
     backend_from: LLMCallSite | None = None
+    # 이 호출 위치 자신의 env 배정으로 가는 경로가 물려받는 배정으로 가는 경로와 다르면 기동을 거부하는가. 미리보기는 채팅과 같은
+    # 문안을 같은 경로로 불러야 한다 — 자기 줄이 있으면 우선순위로는 자기 줄이 이기지만, 다른 경로로 보내는 줄로는 뜨지 않으므로
+    # 기동한 프로세스에서는 늘 채팅 짝의 경로다.
+    backend_from_strict: bool = False
     # 사용자가 고른 모델(상위 모델이면 Bedrock)을 따르는 호출인가. 아니면 상위 모델이 실려 와도 경고 후 Gemini 로 간다.
     # 구조화 호출에서 이 값이 참이면(구성안 두 호출) 라우터와 Claude 구현이 판정·요약처럼 그 호출의 모델이 아니라 실린 모델로
     # 구현과 모델 id 를 고른다(`llm/backends.py` 의 `follows_carried_model`).
@@ -221,31 +226,49 @@ CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
         model_setting="stat_judgment_model",
         backend_from="chat_stat_judgment",
     ),
-    "preview_generate": CallPolicy(gemini_timeout="gemini_generate_timeout_ms", call_kind="stream"),
+    # 빌더 미리보기는 세션을 시작할 때 고른 모델로 생성한다. 구현 배정은 채팅 생성의 것을 물려받는다 — 운영 env 는 채팅 생성 호출
+    # 위치만 배정하고, 물려받지 않으면 Opus 미리보기가 모델의 기본 구현(Bedrock)으로 가 그 자격을 따로 요구한다. 프롬프트는 채팅과
+    # 같은 빌더가 나눈 블록이라 같은 캐시 체크포인트를 싣는다(Gemini 경로에는 영향이 없다).
+    "preview_generate": CallPolicy(
+        gemini_timeout="gemini_generate_timeout_ms",
+        call_kind="stream",
+        model_selectable=True,
+        backend_from="chat_generate",
+        backend_from_strict=True,
+        claude_cache_checkpoint=True,
+    ),
+    # 미리보기 판정 넷은 채팅 판정 짝과 같은 모델 설정을 쓰고 구현 배정도 짝에서 물려받는다.
     "preview_stat_judgment": CallPolicy(
         gemini_timeout="gemini_judgment_timeout_ms",
         call_kind="structured",
         judgment_kind="stat",
         model_setting="stat_judgment_model",
+        backend_from="chat_stat_judgment",
+        backend_from_strict=True,
     ),
     "preview_ending_judgment": CallPolicy(
         gemini_timeout="gemini_judgment_timeout_ms",
         call_kind="structured",
         judgment_kind="ending",
         model_setting="ending_judgment_model",
+        backend_from="chat_ending_judgment",
+        backend_from_strict=True,
     ),
     "preview_media_book_image": CallPolicy(
         gemini_timeout="gemini_judgment_timeout_ms",
         call_kind="structured",
         judgment_kind="image",
         model_setting="image_judgment_model",
+        backend_from="chat_media_book_image",
+        backend_from_strict=True,
     ),
     "preview_scene_judgment": CallPolicy(
         gemini_timeout="gemini_judgment_timeout_ms",
         call_kind="structured",
         judgment_kind="stat",
         model_setting="stat_judgment_model",
-        backend_from="preview_stat_judgment",
+        backend_from="chat_scene_judgment",
+        backend_from_strict=True,
     ),
     "publish_filter_character": CallPolicy(
         gemini_timeout="gemini_publish_filter_timeout_ms", call_kind="structured_images", publish_filter=True

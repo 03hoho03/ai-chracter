@@ -125,16 +125,19 @@ def test_a_judgment_moved_to_anthropic_needs_its_key_and_not_bedrocks(monkeypatc
     assert loaded.bedrock_access_key_id == ""
 
 
-def test_a_judgment_left_on_bedrock_while_its_preview_moves_to_anthropic_still_needs_bedrock(
+def test_a_judgment_moved_to_anthropic_takes_its_preview_along_without_bedrock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """채팅 판정과 미리보기 판정은 모델 설정을 함께 쓰지만 배정은 호출 위치마다다 — 한쪽만 옮기면 남은 쪽은 Bedrock 이다."""
-    with pytest.raises(ValidationError, match="BEDROCK_ACCESS_KEY_ID"):
-        _load(
-            monkeypatch,
-            STAT_JUDGMENT_MODEL="haiku",
-            **{_ASSIGN: "chat_stat_judgment:anthropic", _ANTHROPIC_KEY: "sk-ant-test"},
-        )
+    """미리보기 판정은 자기 줄이 없으면 채팅 판정 짝의 배정을 물려받는다 — 채팅 판정 줄만 옮겨도 미리보기 판정(장면 헤더 포함)이
+    함께 Anthropic 으로 가고, Bedrock 자격을 요구하지 않는다."""
+    loaded = _load(
+        monkeypatch,
+        STAT_JUDGMENT_MODEL="haiku",
+        **{_ASSIGN: "chat_stat_judgment:anthropic", _ANTHROPIC_KEY: "sk-ant-test"},
+    )
+
+    for call_site in ("preview_stat_judgment", "preview_scene_judgment"):
+        assert _resolved(loaded, call_site) == ("haiku", "anthropic"), call_site
 
 
 _HAIKU_ON_ANTHROPIC = {
@@ -309,13 +312,29 @@ def test_the_production_env_starts_and_routes_every_call_site_as_recorded(monkey
     assert routes == _PRODUCTION_ROUTES
 
 
-# 배정을 다른 호출 위치에서 물려받는 호출(장면 헤더 판정)은 운영 배정에 자기 줄이 없어 아래 "한 줄 빠짐" 경우가 성립하지 않는다 —
-# 물려받는 쪽의 경우는 그 원래 호출 위치의 줄이 빠지는 경우가 덮는다.
+# 배정을 다른 호출 위치에서 물려받는 호출은 아래 "한 줄 빠짐" 경우가 거부가 아니다 — 장면 헤더 판정은 운영 배정에 자기 줄이 없어
+# 원래 호출 위치의 줄이 빠지는 경우가 덮고, 미리보기 판정은 줄이 빠지면 채팅 짝을 물려받아 뜬다(이 파일 끝).
 _JUDGED_CALL_SITES = [
     cs
     for cs, policy in CALL_POLICIES.items()
     if policy.model_setting is not None and policy.backend_from is None and cs not in _NOT_YET_IN_PRODUCTION
 ]
+
+
+def test_every_judgment_call_site_has_a_missing_line_case() -> None:
+    """운영 배정에서 줄 하나가 빠진 경우를 판정 호출 위치마다 한 규칙이 덮는다 — 자기 줄로 가는 호출은 기동 거부(아래), 미리보기
+    판정은 채팅 짝 물려받기(이 파일 끝). 장면 헤더 둘은 운영에 자기 줄이 없어 물려받는 원래 호출 위치의 경우가 덮는다. 물려받는
+    호출이 늘어 위 목록에서 조용히 빠지는 호출이 없게 한다. 운영 env 에 아직 줄이 없는 호출(위 `_NOT_YET_IN_PRODUCTION`)은 빠질
+    줄이 없어 따로 센다."""
+    judged = {call_site for call_site, policy in CALL_POLICIES.items() if policy.model_setting is not None}
+
+    assert judged == {
+        *_JUDGED_CALL_SITES,
+        *_PRODUCTION_PREVIEW_LINES,
+        *_NOT_YET_IN_PRODUCTION,
+        "chat_scene_judgment",
+        "preview_scene_judgment",
+    }
 
 
 def _production_assignment_without(call_site: str) -> str:
@@ -350,7 +369,7 @@ def test_judgment_model_values_are_the_prompt_chain_ids() -> None:
 
 _SCENE_SOURCES: dict[LLMCallSite, LLMCallSite] = {
     "chat_scene_judgment": "chat_stat_judgment",
-    "preview_scene_judgment": "preview_stat_judgment",
+    "preview_scene_judgment": "chat_scene_judgment",
 }
 
 
@@ -360,8 +379,8 @@ def _resolved(loaded: Settings, call_site: LLMCallSite) -> tuple[str, str]:
 
 
 def test_scene_judgment_follows_each_stat_judgment_assignment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """장면 판정은 자기 배정 줄이 없어도 짝인 스탯 판정 호출 위치의 배정으로 간다 — 채팅·미리보기를 서로 다르게 배정하면 각자
-    자기 짝을 따른다."""
+    """장면 판정은 자기 배정 줄이 없어도 스탯 판정의 배정으로 간다 — 채팅 장면은 채팅 스탯 판정을, 미리보기 장면은 채팅 장면을
+    거쳐 같은 배정을 물려받으므로 채팅 스탯 판정 줄 하나로 넷이 함께 움직인다."""
     loaded = _load(
         monkeypatch,
         STAT_JUDGMENT_MODEL="haiku",
@@ -370,7 +389,7 @@ def test_scene_judgment_follows_each_stat_judgment_assignment(monkeypatch: pytes
     )
 
     assert _resolved(loaded, "chat_scene_judgment") == ("haiku", "anthropic")
-    assert _resolved(loaded, "preview_scene_judgment") == ("haiku", "bedrock")
+    assert _resolved(loaded, "preview_scene_judgment") == ("haiku", "anthropic")
     for scene, source in _SCENE_SOURCES.items():
         assert _resolved(loaded, scene) == _resolved(loaded, source)
 
@@ -394,3 +413,73 @@ def test_scene_judgment_needs_the_credentials_of_the_backend_it_inherits(monkeyp
             **{_ASSIGN: "chat_stat_judgment:anthropic,preview_stat_judgment:anthropic"},
         )
 
+
+# ── 미리보기 호출의 배정 물려받기 ────────────────────────────────────────────────────────────
+
+# 미리보기 호출 → 배정을 물려받는 채팅 짝. 자기 env 줄이 없으면 짝의 배정으로 가고, 있으면 짝의 배정과 같아야 뜬다 — 기동한
+# 프로세스에서 미리보기와 채팅이 같은 문안을 다른 경로로 부르는 일이 없다.
+_PREVIEW_PAIRS: dict[LLMCallSite, LLMCallSite] = {
+    "preview_generate": "chat_generate",
+    "preview_stat_judgment": "chat_stat_judgment",
+    "preview_ending_judgment": "chat_ending_judgment",
+    "preview_media_book_image": "chat_media_book_image",
+    "preview_scene_judgment": "chat_scene_judgment",
+}
+
+
+def _production_assignment_with(call_site: str, backend: str) -> str:
+    return f"{_production_assignment_without(call_site)},{call_site}:{backend}"
+
+
+@pytest.mark.parametrize("call_site", list(_PREVIEW_PAIRS))
+def test_production_env_with_a_preview_line_unlike_its_chat_pair_refuses_to_start(
+    monkeypatch: pytest.MonkeyPatch, call_site: LLMCallSite
+) -> None:
+    """운영 배정에 미리보기 줄을 채팅 짝과 다른 구현으로 적으면 뜨지 않는다. Bedrock 자격을 채워 다른 이유로는 거부되지 않게 한다."""
+    with pytest.raises(ValidationError, match=f"{call_site}:bedrock — 물려받는 {_PREVIEW_PAIRS[call_site]}"):
+        load_production_env(
+            monkeypatch, **{_ASSIGN: _production_assignment_with(call_site, "bedrock")}, **_BEDROCK_CREDENTIALS
+        )
+
+
+@pytest.mark.parametrize("call_site", list(_PREVIEW_PAIRS))
+def test_production_env_with_a_preview_line_like_its_chat_pair_starts(
+    monkeypatch: pytest.MonkeyPatch, call_site: LLMCallSite
+) -> None:
+    loaded = load_production_env(monkeypatch, **{_ASSIGN: _production_assignment_with(call_site, "anthropic")})
+
+    assert loaded.llm_call_site_backends[call_site] == "anthropic"
+
+
+_PRODUCTION_PREVIEW_LINES: list[LLMCallSite] = [
+    call_site
+    for call_site in _PREVIEW_PAIRS
+    if f"{call_site}:anthropic" in PRODUCTION_ENV_TYPED_VALUES[_ASSIGN].split(",")
+]
+
+
+@pytest.mark.parametrize("call_site", _PRODUCTION_PREVIEW_LINES)
+def test_production_env_missing_a_preview_judgment_line_starts_on_its_chat_pair(
+    monkeypatch: pytest.MonkeyPatch, call_site: LLMCallSite
+) -> None:
+    """운영 배정에서 미리보기 판정 줄 하나만 빠지면 그 판정은 채팅 짝의 배정(Anthropic 직결)을 물려받아 뜬다 — 자격이 없는
+    Bedrock 으로 풀려 기동을 막던 경우가 아니다."""
+    loaded = load_production_env(monkeypatch, **{_ASSIGN: _production_assignment_without(call_site)})
+
+    assert call_site not in loaded.llm_call_site_backends
+    assert _resolved(loaded, call_site) == _resolved(loaded, _PREVIEW_PAIRS[call_site]) == ("haiku", "anthropic")
+
+
+def test_production_env_sends_a_premium_preview_where_it_sends_a_premium_chat_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """운영 env 에는 미리보기 생성 줄이 없다 — Opus 미리보기는 채팅 생성의 배정을 물려받아 Anthropic 직결로 가고, 상위 모델 스위치의
+    자격 검사도 그 경로를 본다. 기본(Gemini) 미리보기는 그대로 Gemini 다."""
+    loaded = load_production_env(monkeypatch)
+
+    assert "preview_generate" not in loaded.llm_call_site_backends
+    for carried in ("gemini", "opus"):
+        assert backends.pick_backend("preview_generate", carried, loaded.llm_call_site_backends) == (
+            backends.pick_backend("chat_generate", carried, loaded.llm_call_site_backends)
+        )
+    assert backends.pick_backend("preview_generate", "opus", loaded.llm_call_site_backends) == ("opus", "anthropic")
