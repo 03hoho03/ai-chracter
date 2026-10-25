@@ -79,6 +79,14 @@ describe("SourceTimeline", () => {
     expect(html).toContain('aria-label="10턴을 맥락에서 빼기"');
   });
 
+  // 빼기가 막는 것은 그 구간의 원문뿐이다 — 앞 화의 요약·끝부분은 그 구간과 상관없이 함께 보낸다. "AI에 보내지 않아요"만 쓰면
+  // 그 대화의 내용이 AI에 전혀 닿지 않는다고 읽힌다.
+  it("뺀 대화 묶음은 원문을 보내지 않는다고 말하고, 맥락 묶음은 소설에 옮기지 않는다고 말한다", () => {
+    const html = render();
+    expect(html).toContain('뺀 대화 4턴 · <span class="whitespace-nowrap">원문을 AI에 보내지 않아요</span>');
+    expect(html).toContain('맥락으로만 보내는 대화 10턴 · <span class="whitespace-nowrap">소설에는 옮기지 않아요</span>');
+  });
+
   it("긴 뺀 대화 묶음은 접혀 있다가 펼치면 턴이 보인다. 짧은 묶음은 늘 펼쳐 있다", () => {
     const folded = render();
     expect(turnButton(folded, 4)).not.toBe("");
