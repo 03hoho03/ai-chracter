@@ -16,13 +16,14 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
-from api.db.models import User
+from api.db.models import Asset, AssetKind, AssetStatus, User
 from api.db.models.novel import (
     Novel,
     NovelBatch,
     NovelChapter,
     NovelChapterCharacter,
     NovelChapterEdition,
+    NovelChapterIllustration,
     NovelChapterPublication,
     NovelChapterRevision,
     NovelCharacter,
@@ -34,6 +35,7 @@ from api.db.models.novel import (
     NovelScreening,
     NovelSnapshot,
 )
+from api.novelize import illustrations
 from factories import (
     revision_row,
     PublicNovel,
@@ -365,17 +367,44 @@ async def test_a_withdrawal_keeps_only_what_readers_read_of_a_sold_novel(
 
 
 async def test_deleting_a_sold_novel_keeps_only_what_readers_read_like_a_withdrawal(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """작가가 팔린 소설을 지우면 숨겨 남기는 소설에서 탈퇴 때와 같은 작가 전용 데이터가 사라지고, 화 공개본·판 행이 가리키는 개정과
-    화만 남는다 — 산 사람의 지난 판도 남는다. 산 사람·운영자의 읽기 경로는 모두 그대로 열린다. 깨지는 시나리오: 작가가 지워 달라고
-    한 설정 노트·주인공 이름·스냅숏·초고가 소장자 때문에 남거나, 정리가 산 사람이 고르는 지난 판의 본문까지 지운다."""
+    화만 남는다 — 산 사람의 지난 판도 남는다. 지운 초고만 쓰던 업로드 삽화는 파일까지 지운다. 산 사람·운영자의 읽기 경로는 모두
+    그대로 열린다. 깨지는 시나리오: 작가가 지워 달라고 한 설정 노트·주인공 이름·스냅숏·초고가 소장자 때문에 남거나, 정리가 산 사람이
+    고르는 지난 판의 본문까지 지우거나, 초고와 함께 행이 사라진 삽화 파일이 저장소에 고아로 남는다."""
     planted = await _plant_author_data(db_client, db_session)
+    removed: list[str] = []
+    monkeypatch.setattr(illustrations, "delete_object", removed.append)
+    draft = await db_session.get_one(NovelChapterRevision, planted.draft_revision_ids[1])
+    upload = Asset(
+        owner_user_id=planted.novel.publisher_id,
+        storage_key=f"{illustrations.UPLOAD_KEY_PREFIX}{uuid.uuid4()}.webp",
+        kind=AssetKind.ORIGINAL,
+        status=AssetStatus.READY,
+        width=300,
+        height=400,
+    )
+    db_session.add(upload)
+    await db_session.flush()
+    db_session.add(
+        NovelChapterIllustration(
+            revision_id=draft.id,
+            anchor_block_id=draft.block_ids[0],
+            placement="after",
+            sort_order=0,
+            asset_id=upload.id,
+            source="upload",
+        )
+    )
+    await db_session.commit()
 
     await _login_as(db_client, planted.novel.publisher_id)
     assert (await db_client.delete(f"/novels/{planted.novel.novel_id}")).status_code == 204
 
     await _assert_only_reader_rows_remain(db_session, planted)
+    assert await db_session.get(Asset, upload.id, populate_existing=True) is None
+    assert upload.storage_key in removed
     await _assert_readers_still_read(db_client, db_session, planted)
 
 
