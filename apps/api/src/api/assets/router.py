@@ -1,6 +1,6 @@
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -54,7 +54,7 @@ from api.core.s3 import (
 from api.core.sentry import capture_dependency_failure
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import Content, ContentType, ContentVersion
-from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.db.models.novel import Novel, NovelChapter, NovelChapterIllustration, NovelChapterRevision
 from api.db.models.story import MediaBookCell, StoryVersionDetail
 from api.db.session import get_db_session, get_session_factory
@@ -582,6 +582,37 @@ async def collect_novel_asset_usages(
     return {asset_id: list(entries.values()) for asset_id, entries in merged.items()}
 
 
+async def delete_emptied_generation_requests(db: AsyncSession, request_ids: Iterable[uuid.UUID]) -> None:
+    """방금 지운 생성 이미지들의 요청 `request_ids` 중 그림이 하나도 남지 않은 생성 요청 행(프롬프트 원문)을 지운다. 그림
+    행의 DELETE 가 먼저 반영돼 있어야 한다(호출자가 flush). 같은 요청의 다른 그림이 남아 있으면 요청 행도 남는다 — 남은
+    그림의 `assets.request_id` 가 그 행을 가리킨다. 커밋은 호출자가 한다.
+
+    아직 생성 중인(`pending`) 요청 행은 남긴다. 생성 작업은 그림을 한 장씩 따로 커밋하고 요청 행의 상태는 모든 장이 끝난
+    뒤에 바꾸므로, 첫 장을 갤러리에서 지운 순간 그 요청의 그림이 하나도 없어 보일 수 있다 — 그때 행을 지우면 다음 장의
+    자산 행 INSERT 가 외래 키에 걸려 이미 올린 파일만 저장소에 남는다. 그렇게 남은 행에 끝내 그림이 남지 않으면(다음 장이
+    실패한 경우) 이 함수로는 지워지지 않는다.
+
+    요청 행을 먼저 잠그고(`FOR UPDATE`) 남은 그림은 그다음 문장에서 본다. 같은 요청의 두 그림을 두 트랜잭션이 동시에
+    지우면, 잠그지 않을 때 각자 상대의 커밋 전 삭제를 못 봐 "다른 그림이 남았다"고 읽고 둘 다 행을 남긴다. 잠그면 뒤에 온
+    쪽이 앞쪽 커밋을 기다렸다가 새 스냅숏으로 다시 본다."""
+    ids = sorted(set(request_ids))
+    if not ids:
+        return
+    await db.execute(
+        select(ImageGenerationRequest.id)
+        .where(ImageGenerationRequest.id.in_(ids))
+        .order_by(ImageGenerationRequest.id)
+        .with_for_update()
+    )
+    await db.execute(
+        delete(ImageGenerationRequest).where(
+            ImageGenerationRequest.id.in_(ids),
+            ImageGenerationRequest.status != "pending",
+            ~select(Asset.id).where(Asset.request_id == ImageGenerationRequest.id).exists(),
+        )
+    )
+
+
 def _in_use_detail(usages: list[GeneratedImageUsage], novel_usages: list[NovelImageUsage]) -> dict[str, object]:
     return {
         "usages": [usage.model_dump(mode="json", by_alias=True) for usage in usages],
@@ -668,5 +699,9 @@ async def delete_generated_image(
     novel_usages = (await collect_novel_asset_usages(db, [asset_id], viewer_id=current_user_id)).get(asset_id, [])
     if usages or novel_usages:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_in_use_detail(usages, novel_usages))
+    request_id = asset.request_id
     await db.delete(asset)
+    if request_id is not None:
+        await db.flush()
+        await delete_emptied_generation_requests(db, [request_id])
     await db.commit()

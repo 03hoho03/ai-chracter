@@ -765,3 +765,114 @@ async def test_delete_generated_image_is_409_when_it_becomes_used_while_deleting
         }
     ]
     assert await db_session.scalar(select(Asset.id).where(Asset.id == asset.id)) == asset.id
+
+
+# ── 생성 이미지를 지우면 그 요청의 그림이 하나도 남지 않은 생성 요청 행(프롬프트 원문)도 함께 지운다 ──────────────
+
+
+async def _make_succeeded_request(
+    db_session: AsyncSession, owner_user_id: uuid.UUID, *, count: int
+) -> ImageGenerationRequest:
+    request = ImageGenerationRequest(
+        owner_user_id=owner_user_id,
+        prompt="a cat",
+        style="soft_portrait",
+        aspect_ratio="1:1",
+        model="v1",
+        requested_count=count,
+        status="succeeded",
+        completed_count=count,
+    )
+    db_session.add(request)
+    await db_session.flush()
+    return request
+
+
+async def _make_generated_asset_of(db_session: AsyncSession, request: ImageGenerationRequest) -> Asset:
+    asset = await _make_generated_asset(db_session, request.owner_user_id)
+    asset.request_id = request.id
+    await db_session.flush()
+    return asset
+
+
+async def _request_row_exists(db_session: AsyncSession, request_id: uuid.UUID) -> bool:
+    found = await db_session.scalar(select(ImageGenerationRequest.id).where(ImageGenerationRequest.id == request_id))
+    return found is not None
+
+
+async def test_delete_generated_image_also_deletes_its_request_row_when_no_image_of_it_remains(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """판정 기준: 하나뿐인 그림을 지우면 그 요청 행도 사라진다. 남으면 실패다. 처음부터 그림이 없던 같은 회원의 차단
+    요청 행은 이 삭제와 무관해 남는다(보관 기간이 지나면 지우는 크론의 몫)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    request = await _make_succeeded_request(db_session, user.id, count=1)
+    asset = await _make_generated_asset_of(db_session, request)
+    blocked = await _make_succeeded_request(db_session, user.id, count=1)
+    blocked.status, blocked.completed_count, blocked.blocked_count = "blocked", 0, 1
+    await db_session.commit()
+    request_id, asset_id, blocked_id = request.id, asset.id, blocked.id
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{asset_id}")
+
+    assert resp.status_code == 204
+    assert await db_session.scalar(select(Asset.id).where(Asset.id == asset_id)) is None
+    assert not await _request_row_exists(db_session, request_id)
+    assert await _request_row_exists(db_session, blocked_id)
+
+
+async def test_delete_generated_image_keeps_its_request_row_while_another_image_of_it_remains(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """판정 기준: 두 장 중 한 장을 지우면 요청 행은 남고(남은 그림이 그 행을 가리킨다), 나머지 한 장까지 지우면
+    사라진다. 다른 사람의 요청 행은 건드리지 않는다."""
+    user = _make_user()
+    other = _make_user()
+    db_session.add_all([user, other])
+    await db_session.flush()
+    request = await _make_succeeded_request(db_session, user.id, count=2)
+    first = await _make_generated_asset_of(db_session, request)
+    second = await _make_generated_asset_of(db_session, request)
+    others_request = await _make_succeeded_request(db_session, other.id, count=1)
+    await _make_generated_asset_of(db_session, others_request)
+    await db_session.commit()
+    request_id, others_request_id, first_id, second_id = request.id, others_request.id, first.id, second.id
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{first_id}")
+
+    assert resp.status_code == 204
+    assert await _request_row_exists(db_session, request_id)
+    assert await db_session.scalar(select(Asset.request_id).where(Asset.id == second_id)) == request_id
+
+    resp = await db_client.delete(f"/me/generated-images/{second_id}")
+
+    assert resp.status_code == 204
+    assert not await _request_row_exists(db_session, request_id)
+    assert await _request_row_exists(db_session, others_request_id)
+
+
+async def test_delete_generated_image_keeps_the_request_row_of_a_generation_still_running(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """판정 기준: 두 장을 만드는 요청의 첫 장이 커밋된 뒤 둘째 장이 아직 생성 중일 때(요청 행 `pending`) 첫 장을 지우면
+    요청 행은 남는다. 지워지면 둘째 장의 자산 행이 들어갈 자리를 잃는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    request = await _make_succeeded_request(db_session, user.id, count=2)
+    request.status, request.completed_count = "pending", 0
+    asset = await _make_generated_asset_of(db_session, request)
+    await db_session.commit()
+    request_id, asset_id = request.id, asset.id
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{asset_id}")
+
+    assert resp.status_code == 204
+    assert await db_session.scalar(select(Asset.id).where(Asset.id == asset_id)) is None
+    assert await _request_row_exists(db_session, request_id)
+
