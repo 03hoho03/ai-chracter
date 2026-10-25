@@ -38,13 +38,14 @@ from api.chat.prompt_builder import (
     MemorySummaryResult,
     SceneJudgmentResult,
     StatRuleJudgmentResult,
+    load_active_prompt_set,
 )
 from api.chat import memory_fold
-from api.chat.prompt_stages import LANE_STAGES
+from api.chat.prompt_stages import LANE_STAGES, RoutingLane
 from api.core import clover
 from api.core.config import settings
 from api.db.models import AssetStatus, ChatMessage, ChatMessageRole, ChatRoom
-from api.db.models.chat import ChatRoomMemorySnapshot
+from api.db.models.chat import ChatRoomMemorySnapshot, ChatTurn
 from api.db.models.prompt import PromptRoute
 from api.db.models.story import StoryVersionDetail
 from api.llm import anthropic_api as anthropic_module
@@ -52,6 +53,7 @@ from api.llm import bedrock as bedrock_module
 from api.llm import gemini as gemini_module
 from api.llm.anthropic_api import AnthropicLLMClient
 from api.llm.bedrock import BedrockLLMClient
+from api.llm.chat_models import PromptSetModelId
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.gemini import GeminiLLMClient
 from api.llm.routing import RoutingLLMClient
@@ -698,3 +700,160 @@ async def test_no_call_carries_a_call_model_when_no_row_applies(
     assert observed == expected[scenario_id("gemini", surface, room_model)]
     assert len(capture.usages) == len(observed["recorded"])
     assert {usage.call_model for usage in capture.usages} == {None}
+
+
+# 배정 표가 생기기 전 코드가 생성 줄에 쓰던 키, 쓰던 순서 그대로. 덤프 줄은 이 순서로 직렬화되므로 순서까지 같아야 바이트가
+# 같다.
+_GENERATION_DUMP_KEYS = ["roomId", "turn", "kind", "chatModel", "model", "seed", "systemInstruction", "prompt"]
+
+
+@pytest.mark.parametrize(("surface", "room_model"), [(s, r) for profile, s, r in SCENARIOS if profile == "gemini"])
+async def test_generation_dump_line_keys_are_unchanged_when_the_route_table_is_empty(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    routing_warnings: RoutingWarnings,
+    surface: str,
+    room_model: str,
+) -> None:
+    """표가 비면 생성 줄은 표가 생기기 전과 키 목록(순서 포함)이 같다. 특성 기대값은 생성 줄의 모델 칸만 보므로, 행이 없는데도
+    세트 키를 싣는 결함은 이 테스트가 잡는다. 프롬프트 본문은 보지 않는다."""
+    observed = await observe(
+        db_client,
+        db_session,
+        monkeypatch,
+        tmp_path,
+        routing_warnings,
+        profile="gemini",
+        surface=surface,
+        room_model=room_model,
+    )
+    assert observed["last_event"] == "done"
+
+    lines = [json.loads(raw) for raw in (tmp_path / "dump.jsonl").read_text(encoding="utf-8").splitlines()]
+    generation_keys = [list(line) for line in lines if line.get("kind") == "generation"]
+    assert generation_keys
+    assert generation_keys == [_GENERATION_DUMP_KEYS] * len(generation_keys)
+
+
+# ── 턴 기록의 단계별 배정과, 행이 적용된 호출의 덤프 키 ──────────────────────────────────────────
+
+
+async def _set_id(db_session: AsyncSession, lane: RoutingLane, model: PromptSetModelId) -> str:
+    prompt_set, _ = await load_active_prompt_set(db_session, lane=lane, model=model)
+    return str(prompt_set.id)
+
+
+_DUMP_ROUTE_KEYS = ("promptSetId", "chainModel", "routeSource")
+
+
+@pytest.mark.parametrize("generation_row", ["applied", "skipped"])
+async def test_a_room_turn_records_each_stages_route_and_dumps_set_keys_only_for_calls_a_row_applied_to(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    generation_row: str,
+) -> None:
+    """Opus 스토리 방의 수정 한 턴(엔딩 판정까지 부른다). 생성 행(Opus 를 Anthropic 직결로)과 스탯 행(Haiku 체인, Opus 를
+    Anthropic 직결로)만 둔다.
+
+    턴 기록에는 스토리 레인의 단계 여덟이 차례대로 한 칸씩 남는다 — 스탯은 자기 행, 장면 헤더는 스탯 행을 물려받음(물려준 단계와
+    함께), 나머지 판정·요약·추출은 모델 설정. 칸마다 읽은 세트의 id 가 실린다. 생성 행은 생성 호출 위치의 env 배정이 Anthropic
+    직결이면 쓰이고, 배정을 빼면 경로가 어긋나 건너뛰어 방 모델의 기본 경로(Bedrock)로 가며 건너뛴 행과 이유가 남는다.
+
+    덤프는 행이 적용된 호출의 줄에만 세트 id·체인·출처 키를 더한다. 건너뛴 생성 행과 모델 설정으로 간 판정 줄에는 없다."""
+    dump_path = tmp_path / "dump.jsonl"
+    fix_settings(monkeypatch, "haiku-direct", dump_path)
+    if generation_row == "skipped":
+        assignment = dict(_DIRECT_ASSIGNMENT)
+        del assignment["chat_generate"]
+        monkeypatch.setattr(settings, "llm_call_site_backends", assignment)
+    method, path, body = await prepare(db_client, db_session, "story-edit", "opus")
+    room_id = uuid.UUID(path.split("/")[2])
+    await put_routes(
+        db_session,
+        [
+            PromptRoute(
+                lane="story",
+                room_model="opus",
+                stage="chat_generate",
+                chain_model=None,
+                call_model="opus",
+                backend="anthropic",
+            ),
+            route("story", "opus", "stat_judgment", "opus", "anthropic"),
+        ],
+    )
+    sdks = ProviderSdks(monkeypatch)
+    _override_llm_client(sdks.client())
+    try:
+        resp = await db_client.request(method, path, json=body)
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200, resp.text
+    assert _parse_sse_events(resp.text)[-1]["type"] == "done"
+
+    opus_set = await _set_id(db_session, "story", "opus")
+    haiku_set = await _set_id(db_session, "story", "haiku")
+    generation: dict[str, object] = {
+        "lane": "story",
+        "stage": "chat_generate",
+        "chainModel": "opus",
+        "promptSetId": opus_set,
+    }
+    if generation_row == "applied":
+        generation |= {"callModel": "opus", "backend": "anthropic", "source": "row"}
+    else:
+        generation |= {
+            "callModel": "opus",
+            "backend": "bedrock",
+            "source": "room",
+            "skipped": {"stage": "chat_generate", "reason": "backend-mismatch"},
+        }
+    stat_row = {
+        "lane": "story",
+        "chainModel": "haiku",
+        "promptSetId": haiku_set,
+        "callModel": "opus",
+        "backend": "anthropic",
+    }
+    env = {
+        "lane": "story",
+        "chainModel": "haiku",
+        "promptSetId": haiku_set,
+        "callModel": "haiku",
+        "backend": "anthropic",
+    }
+    db_session.expire_all()
+    [stage_routes] = (
+        await db_session.scalars(select(ChatTurn.stage_routes).where(ChatTurn.chat_room_id == room_id))
+    ).all()
+    assert stage_routes == [
+        generation,
+        {**stat_row, "stage": "stat_judgment", "source": "row"},
+        {**stat_row, "stage": "scene_judgment", "source": "inherited", "sourceDetail": "stat_judgment"},
+        {**env, "stage": "ending_judgment", "source": "env", "sourceDetail": "ENDING_JUDGMENT_MODEL"},
+        {**env, "stage": "media_book_image", "source": "env", "sourceDetail": "IMAGE_JUDGMENT_MODEL"},
+        {**env, "stage": "memory_summary", "source": "env", "sourceDetail": "MEMORY_SUMMARY_MODEL"},
+        {**env, "stage": "memory_episode", "source": "env", "sourceDetail": "MEMORY_EPISODE_MODEL"},
+        {**env, "stage": "memory_fact", "source": "env", "sourceDetail": "MEMORY_FACT_MODEL"},
+    ]
+
+    dumped = {}
+    for raw in dump_path.read_text(encoding="utf-8").splitlines():
+        line = json.loads(raw)
+        dumped[(line["kind"], line.get("callSite"))] = {key: line[key] for key in _DUMP_ROUTE_KEYS if key in line}
+    applied_generation = {"promptSetId": opus_set, "chainModel": "opus", "routeSource": "row"}
+    assert dumped == {
+        ("generation", None): applied_generation if generation_row == "applied" else {},
+        ("judgment", "chat_stat_judgment"): {"promptSetId": haiku_set, "chainModel": "haiku", "routeSource": "row"},
+        ("judgment", "chat_scene_judgment"): {
+            "promptSetId": haiku_set,
+            "chainModel": "haiku",
+            "routeSource": "inherited",
+        },
+        ("judgment", "chat_ending_judgment"): {},
+        ("judgment", "chat_media_book_image"): {},
+    }

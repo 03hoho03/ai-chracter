@@ -686,6 +686,10 @@ class ChatTurn(Base):
       `apply_rule_judgment_with_events` 에 있다. 규칙 조건 글은 싣지 않는다 — 규칙은 id 로만 가리킨다.
       빈 `[]` 은 "기록 없음"이다 — 스위치를 켜기 전 행, 그런 행에서 옮겨 온 재판정 없는 재생성, 판정 실패, 아무 규칙도 발동하지
       않은 턴(카운터 스탯이 없는 작품)이 모두 `[]` 라, 분석은 `[]` 을 "변화 없음"이 아니라 "모름 또는 없음"으로 읽어야 한다.
+    - `stage_routes` 는 그 턴이 단계마다 쓸 모델 배정의 스냅샷이다 — 그 레인의 단계마다 한 칸
+      `{lane, stage, chainModel, promptSetId, callModel, backend, source, sourceDetail?, skipped?: {stage, reason}}`.
+      `promptSetId` 는 읽은 세트 id 이고 판 번호는 싣지 않는다(세트 id 로 판 표와 잇는다). 배정 표가 비어도 출처 `env`·`room`
+      으로 채운다. 이 칸을 모르는 옛 이미지가 넣은 행은 DB 기본값 `[]` 이다.
 
     응답이 재생성·수정·메시지 삭제로 지워져도 그 행은 방이 지워지거나 초기화될 때까지 남는다. 그래서 한 방 안에서
     `(chat_room_id, turn_number)` 는 유일하지 않고(수정 뒤 같은 턴 번호가 둘, 재생성 체인은 같은 턴의 스탯 효과를
@@ -719,6 +723,9 @@ class ChatTurn(Base):
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     stat_events: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    stage_routes: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     ending_entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
