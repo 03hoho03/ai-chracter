@@ -42,7 +42,7 @@ from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import CharacterImageExposure, StoryMediaExposure
 from api.db.models.content import Content, ContentType
 from api.db.models.inquiry import Inquiry
-from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.db.models.novel import (
     Novel,
     NovelChapterIllustration,
@@ -311,7 +311,11 @@ async def delete_unused_illustration_assets(db: AsyncSession, asset_ids: Iterabl
 
     배치뿐 아니라 다른 자리(작품 그림·문의 첨부·프로필·소설 표지)가 가리키는 것도 남긴다 — 업로드 API 는 용도와 무관하게 내 자산을
     받는 자리가 있어서다. 후보 자산 행을 먼저 잠근다(`FOR UPDATE`) — 붙이기는 그림 행을 키 공유 잠금으로 확인하므로, 같은 그림을
-    다른 소설에 붙이는 중이면 그 커밋을 기다렸다가 새 배치를 사용처로 본다(잠그지 않으면 행 DELETE 가 그 배치 FK 에 걸려 500)."""
+    다른 소설에 붙이는 중이면 그 커밋을 기다렸다가 새 배치를 사용처로 본다(잠그지 않으면 행 DELETE 가 그 배치 FK 에 걸려 500).
+
+    지운 생성 이미지의 생성 요청 행(프롬프트 원문)은 그 요청의 그림이 하나도 남지 않았으면 함께 지운다 — 탈퇴 파기가 요청 행을
+    그림과 같은 수명으로 지우는 것과 같다(`auth/withdrawal.py`). 같은 요청의 다른 그림이 남아 있으면 요청 행도 남는다. 그림을 지우지
+    않은 요청(애초에 그림이 없던 차단·실패 요청 포함)은 보지 않는다 — 그쪽은 보관 기간이 지나면 지우는 크론의 몫이다."""
     ids = set(asset_ids)
     if not ids:
         return []
@@ -344,12 +348,22 @@ async def delete_unused_illustration_assets(db: AsyncSession, asset_ids: Iterabl
     ):
         referenced |= set((await db.scalars(select(column).where(column.in_(candidate_ids)))).all())
     keys: list[str] = []
+    request_ids: set[uuid.UUID] = set()
     for asset in assets:
         if asset.id in referenced:
             continue
         keys += [asset.storage_key, *build_variant_keys(asset.storage_key)]
+        if asset.request_id is not None:
+            request_ids.add(asset.request_id)
         await db.delete(asset)
     await db.flush()
+    if request_ids:
+        await db.execute(
+            delete(ImageGenerationRequest).where(
+                ImageGenerationRequest.id.in_(request_ids),
+                ~select(Asset.id).where(Asset.request_id == ImageGenerationRequest.id).exists(),
+            )
+        )
     return keys
 
 
