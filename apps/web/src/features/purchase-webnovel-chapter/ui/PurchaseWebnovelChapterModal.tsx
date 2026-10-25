@@ -12,11 +12,18 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { CloverBalance, CloverIcon, isCloverInsufficient, useCloverBalanceQuery } from "@/entities/clover";
+import {
+  CloverBalance,
+  CloverIcon,
+  isCloverInsufficient,
+  useCloverBalanceQuery,
+  useCloverPricingQuery,
+} from "@/entities/clover";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { usePurchaseWebnovelChapterMutation } from "../api/usePurchaseWebnovelChapterMutation";
 import { toPurchaseFailure } from "../model/purchaseFailure";
+import { toPurchaseNotice } from "../model/purchaseNotice";
 
 type PurchaseWebnovelChapterModalProps = {
   novelId: string;
@@ -39,14 +46,16 @@ type PurchaseWebnovelChapterModalProps = {
  * 모자란 수를 문장으로 말하며, 실행 버튼이 "클로버 채우기"(클로버 화면으로 가는 링크)로 바뀐다 — 이 화면에서 할 수
  * 있는 다음 일이 그것뿐이라서다. 화면의 잔액이 낡아 서버가 잔액 부족으로 거절해도 같은 모양으로 바꾼다.
  *
- * 구매 전 고지는 약관의 유료 열람 조항과 같은 내용이다 — 문장을 바꾸면 두 곳을 함께 바꾼다. 테두리 상자에 담고 첫
- * 문장만 본문 잉크로 둔다(무엇을 사는가). 고지가 길어 낮은 화면에서는 본문만 스크롤한다(`DialogBody`).
+ * 구매 전 고지는 약관의 유료 열람 조항과 같은 내용이고 노벨 정책 스위치에 따라 문장이 다르다(`toPurchaseNotice`).
+ * 테두리 상자에 담고 첫 문단만 본문 잉크로 둔다(무엇을 사는가). 고지가 길어 낮은 화면에서는 본문만
+ * 스크롤한다(`DialogBody`).
  *
  * 버튼 순서는 `취소` 먼저다(푸터 프리미티브가 강제). 요청 중에는 실행 버튼을 `aria-disabled` 로 막는다 — `disabled`
  * 는 포커스를 빼앗는다. 노벨 화면 위젯 안에 마운트한다(루트에 두면 노벨 코드가 첫 화면 번들로 끌려온다). */
 export const PurchaseWebnovelChapterModal = createCallable<PurchaseWebnovelChapterModalProps, boolean>(
   ({ call, novelId, chapterId, ordinal, novelTitle, episodeLabel, price: initialPrice, freeChapterCount }) => {
     const { data: clover } = useCloverBalanceQuery();
+    const purchaseNotice = toPurchaseNotice(useCloverPricingQuery().data);
     const purchase = usePurchaseWebnovelChapterMutation();
     const [price, setPrice] = useState(initialPrice);
     const [isServerShort, setIsServerShort] = useState(false);
@@ -123,11 +132,9 @@ export const PurchaseWebnovelChapterModal = createCallable<PurchaseWebnovelChapt
             </div>
 
             <div className="flex flex-col gap-1.5 rounded-lg border border-border p-3 text-xs text-pretty break-keep text-muted-foreground">
-              <p className="text-foreground">구매한 화는 공개가 유지되는 동안 볼 수 있어요.</p>
+              <p className="text-foreground">{purchaseNotice.lead}</p>
               <p>
-                소장하면 바로 열려 구매를 취소할 수 없고, 게시자의 공개 철회·탈퇴나 원작 제한·운영 조치로 공개가 끝나도
-                열람에 쓴 클로버는 돌려드리지 않아요(운영자의 잘못으로 끝난 경우는 제외). 게시자가 소설을 삭제하면 클로버가
-                자동으로 돌아와요.
+                {purchaseNotice.detail}
                 {freeChapterCount > 0 && ` 앞 ${freeChapterCount}화는 무료로 미리 볼 수 있어요.`}
               </p>
             </div>
