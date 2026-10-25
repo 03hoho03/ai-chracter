@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.assets.router import delete_emptied_generation_requests
 from api.db.models import User
-from api.images import router as images_router
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
+from api.images import router as images_router
 from factories import _assert_blocked, _make_user
 
 
