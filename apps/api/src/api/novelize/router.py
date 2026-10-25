@@ -93,6 +93,7 @@ from api.novelize.deletion import (
     delete_batch,
     delete_novels,
     erase_stale_ai_edit_previews,
+    strip_author_only_data,
 )
 from api.novelize.blocks import (
     BlockIdsInvalidError,
@@ -220,6 +221,15 @@ NOVEL_PAGE_SIZE = 20
 
 def _novel_error(status_code: int, code: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code})
+
+
+async def _refuse_while_outline_flow_on() -> None:
+    """구성 흐름 스위치가 켜져 있으면 옛 이어 쓰기(경계 제안·묶음 생성·연쇄)를 409 `NOVEL_OUTLINE_FLOW_REQUIRED` 로 거절한다. 이
+    길은 마지막 화의 끝부터 방의 대화를 그대로 이어 읽어 모델에 보내므로 작가가 구간 선택에서 뺀 대화까지 보낸다 — 화면이 구성
+    흐름으로만 다음 화를 만드는 동안 직접 호출로도 그 대화가 나가지 않게 서버에서 닫는다. 이어 쓰기로 이미 만든 화의 다시 만들기는
+    닫지 않는다 — 그 화를 만든 구간만 다시 읽고, 그 화는 구성 흐름으로 다시 만들 길이 없다."""
+    if settings.novelize_outline_flow_enabled:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_OUTLINE_FLOW_REQUIRED")
 
 
 # ── 소유권 ──────────────────────────────────────────────────────────────────
@@ -896,24 +906,28 @@ async def delete_novel(
 
     정책 스위치가 켜져 있고 노벨로 팔린 소설(`novel_was_sold`)이면 지우지 않고 숨긴다 — 산 사람이 계속 읽어야 해서다. 진행
     중 작업을 환불하고, 공개를 거두고(새로 보이거나 팔리지 않는다), 숨긴 시각을 찍고 방 칸을 비운다(같은 방에서 새 소설을
-    만들 수 있고, 진행 중이던 연쇄 생성도 방이 없어 다음 묶음을 만들지 않는다). 환급은 없다. 숨긴 소설은 작가의 목록·주소
-    에서 사라지고(`_get_owned_novel`), 미환급 소장자가 모두 사라지면 하루 한 번 도는 파기가 지운다(`hidden_purge.py`).
-    판정은 사용자 행을 잠근 뒤에 한다 — 구매가 게시자 행을 잡으므로 그 뒤로는 새 구매가 끼지 않는다.
+    만들 수 있고, 진행 중이던 연쇄 생성도 방이 없어 다음 묶음을 만들지 않는다). 환급은 없다. 숨기기 전에 탈퇴 때와 같이 작가만
+    쓰던 것을 지운다(`strip_author_only_data` — 산 사람이 읽는 공개본·판과 그 본문만 남는다) — 작가가 지워 달라고 한 설정 노트·
+    초고·스냅숏 등은 산 사람의 열람에 필요 없다. 숨긴 소설은 작가의 목록·주소에서 사라지고(`_get_owned_novel`), 미환급 소장자가
+    모두 사라지면 하루 한 번 도는 파기가 지운다(`hidden_purge.py`). 판정은 사용자 행을 잠근 뒤에 한다 — 구매가 게시자 행을
+    잡으므로 그 뒤로는 새 구매가 끼지 않는다.
 
-    지운 소설만 쓰던 업로드 삽화 파일은 커밋 뒤에 저장소에서 지운다(`deletion.py` 모듈 docstring)."""
+    지운 소설(숨길 때는 지운 개정)만 쓰던 업로드 삽화 파일은 커밋 뒤에 저장소에서 지운다(`deletion.py` 모듈 docstring)."""
     novel_id, publisher_id = novel.id, novel.user_id
     locked = await lock_publisher_and_buyers(db, publisher_id=publisher_id, novel_id=novel_id)
     # 행이 곧 지워져 남지 않으므로 사유 칸은 어느 값이든 같다 — 우리 쪽 사정으로 끝낸 작업이라 `internal` 이다.
     await refund_active_jobs(db, novel_id=novel_id, failure_code="internal")
+    freed: list[str] = []
     if settings.novel_public_policy_v2_enabled and await novel_was_sold(db, novel_id):
+        await strip_author_only_data(db, [novel_id], freed_storage_keys=freed)
         await db.execute(
             update(NovelPublication).where(NovelPublication.novel_id == novel_id).values(visibility="withdrawn")
         )
         await db.execute(update(Novel).where(Novel.id == novel_id).values(hidden_at=func.now(), chat_room_id=None))
         await db.commit()
+        await delete_storage_objects(freed)
         return
     await refund_deleted_purchases(db, novel_id=novel_id, locked_user_ids=locked)
-    freed: list[str] = []
     await delete_novels(db, [novel_id], freed_storage_keys=freed)
     await db.commit()
     await delete_storage_objects(freed)
@@ -1185,7 +1199,10 @@ async def _check_proposal_limit(user_id: uuid.UUID) -> None:
         raise _too_many_requests(user_id, "novelize", retry_after)
 
 
-@router.post("/{novel_id}/chapter-proposal", dependencies=[Depends(require_legal_consent)])
+@router.post(
+    "/{novel_id}/chapter-proposal",
+    dependencies=[Depends(require_legal_consent), Depends(_refuse_while_outline_flow_on)],
+)
 async def propose_novel_chapter(
     payload: NovelChapterProposalRequest | None = None,
     novel: Novel = Depends(_owned_novel_dependency),
@@ -1245,7 +1262,9 @@ async def propose_novel_chapter(
 
 # ── 묶음 생성·다시 만들기 ───────────────────────────────────────────────────
 @router.post(
-    "/{novel_id}/chapters", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_legal_consent)]
+    "/{novel_id}/chapters",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_legal_consent), Depends(_refuse_while_outline_flow_on)],
 )
 async def create_novel_chapter(
     payload: NovelChapterCreateRequest,
@@ -1337,7 +1356,11 @@ async def estimate_novel_chain(
     return NovelChainEstimateResponse(options=options)
 
 
-@router.post("/{novel_id}/chain", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_legal_consent)])
+@router.post(
+    "/{novel_id}/chain",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_legal_consent), Depends(_refuse_while_outline_flow_on)],
+)
 async def create_novel_chain(
     payload: NovelChainCreateRequest,
     novel: Novel = Depends(_owned_novel_dependency),
