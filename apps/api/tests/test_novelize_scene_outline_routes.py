@@ -1535,6 +1535,94 @@ async def test_an_outline_chapter_regenerate_refuses_a_changed_source_and_counts
     assert await _novel_ledger(db_session, owner) == before
 
 
+async def _written_after_measuring(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> tuple[uuid.UUID, NovelJob, int]:
+    """1화의 장면 구성안을 승인하고, 상한을 10 으로 낮춰 원고 요청이 내는 입력 견적을 읽은 뒤 상한을 되돌려 원고를 써 둔다. 기본 장면
+    구성안은 화 근거 전체를 덮으므로 그 화의 다시 만들기 입력도 같은 턴 줄과 맥락 줄이다. (소설 id, 원고 작업, 원고 요청의 견적)."""
+    novel_id, _, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    await _scened(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    cap = settings.novelize_outline_max_input_tokens
+    monkeypatch.setattr(settings, "novelize_outline_max_input_tokens", 10)
+    measured = await _request_chapter(db_client, novel_id, keys[0])
+    assert _code(measured) == (422, "NOVEL_OUTLINE_INPUT_TOO_LARGE")
+    monkeypatch.setattr(settings, "novelize_outline_max_input_tokens", cap)
+    response = await _request_chapter(db_client, novel_id, keys[0])
+    assert response.status_code == 202, response.text
+    job = await _run(db_session, llm, enqueued[-1])
+    assert job.status == "succeeded", job.failure_code
+    estimated: int = measured.json()["detail"]["estimatedInputTokens"]
+    return novel_id, job, estimated
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_an_outline_chapter_regenerate_over_the_input_cap_is_refused_before_charging(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """다시 만들기도 원고 요청과 같은 입력 상한을 본다 — 장면이 쓰는 턴 줄과 맥락 줄의 견적이 상한을 넘으면 차감 전·작업을 띄우기
+    전에 422 `NOVEL_OUTLINE_INPUT_TOO_LARGE` 와 견적·상한이고, 상한과 같은 견적은 받는다. 장면이 화 근거 전체를 덮으면 견적은 원고
+    요청의 견적과 같다. 깨지는 시나리오: 상한을 넘는 화를 다시 만들 때마다 값을 깎고 원가가 값을 넘는 입력으로 모델을 부른다."""
+    novel_id, job, estimated = await _written_after_measuring(db_client, db_session, monkeypatch, enqueued, llm)
+    owner = await _owner(db_session, novel_id)
+    before = await _novel_ledger(db_session, owner)
+    handed = len(enqueued)
+    url = f"/novels/{novel_id}/outline/chapters/{job.chapter_id}/regenerate"
+    body = {"model": "gemini", "expectedCost": 20}
+
+    monkeypatch.setattr(settings, "novelize_outline_max_input_tokens", estimated - 1)
+    refused = await db_client.post(url, json=body)
+
+    assert _code(refused) == (422, "NOVEL_OUTLINE_INPUT_TOO_LARGE")
+    detail = refused.json()["detail"]
+    assert (detail["estimatedInputTokens"], detail["maxInputTokens"]) == (estimated, estimated - 1)
+    assert await _novel_ledger(db_session, owner) == before
+    assert len(enqueued) == handed
+
+    monkeypatch.setattr(settings, "novelize_outline_max_input_tokens", estimated)
+    assert (await db_client.post(url, json=body)).status_code == 202
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_an_outline_chapter_regenerate_over_the_input_cap_at_run_time_is_refunded_without_calling_the_model(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """요청 뒤 실행 전에 상한이 견적 아래로 내려가면(배포로 상한을 줄인 경우) 실행도 같은 상한을 보고 모델을 부르지 않은 채
+    `source_changed` 로 전액 환불하며 화의 개정을 쌓지 않는다 — 다른 구성 흐름 작업의 실행과 같다. 깨지는 시나리오: 요청 때만 보고
+    실행은 상한을 넘는 입력으로 모델을 불러 원가가 값을 넘는다."""
+    novel_id, job, estimated = await _written_after_measuring(db_client, db_session, monkeypatch, enqueued, llm)
+    assert job.chapter_id is not None
+    revision = await _current_revision(db_session, job.chapter_id)
+    monkeypatch.setattr(settings, "novelize_outline_max_input_tokens", estimated)
+    response = await db_client.post(
+        f"/novels/{novel_id}/outline/chapters/{job.chapter_id}/regenerate", json={"model": "gemini", "expectedCost": 20}
+    )
+    assert response.status_code == 202, response.text
+    calls = len(llm.calls)
+    monkeypatch.setattr(settings, "novelize_outline_max_input_tokens", estimated - 1)
+
+    regenerated = await _run(db_session, llm, enqueued[-1])
+
+    assert (regenerated.status, regenerated.failure_code, regenerated.refunded_amount) == (
+        "failed",
+        "source_changed",
+        20,
+    )
+    assert len(llm.calls) == calls
+    assert (await _current_revision(db_session, job.chapter_id)).id == revision.id
+
+
 # ── 화면이 읽는 칸: 화별 진행·구성 흐름 화 표지·개정의 장면 ─────────────────
 def _progress(view: dict[str, Any]) -> list[tuple[str | None, str]]:
     return [(e["chapterId"], e["sceneOutline"]) for e in view["episodes"]]

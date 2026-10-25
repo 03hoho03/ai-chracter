@@ -304,13 +304,6 @@ async def _context_lines(db: AsyncSession, novel: Novel, room_id: uuid.UUID, cha
     return format_context_lines(blocks, **_line_labels(novel, chat_set))
 
 
-async def check_context_sections(db: AsyncSession, novel: Novel, room_id: uuid.UUID) -> None:
-    """지금 승인한 구간 선택의 맥락 구간 원문이 고를 때와 같은지 본다(다르면 `SourceChangedError`) — 맥락을 싣는 요청이 차감 전에
-    부른다. 실행이 같은 검사로 실패·환불만 되풀이하지 않게."""
-    chat_set, _ = await load_active_prompt_set(db, lane=novel.content_type)
-    await _context_lines(db, novel, room_id, chat_set)
-
-
 def _line_labels(novel: Novel, chat_set: PromptSet) -> dict[str, Any]:
     """원문 줄의 이름·라벨 — 대화가 쓰던 라벨이라 채팅 세트에서 읽는다(화 생성 입력과 같다)."""
     return {
@@ -650,6 +643,23 @@ async def load_scene_source(db: AsyncSession, room_id: uuid.UUID, scenes: Sequen
     )
 
 
+async def check_regenerate_input(db: AsyncSession, novel: Novel, room_id: uuid.UUID, scenes: SceneSource) -> None:
+    """구성 흐름 화 다시 만들기 요청이 차감 전에 부른다 — 지금 승인한 구간 선택의 맥락 구간 원문이 고를 때와 같은지(다르면
+    `SourceChangedError`), 입력 견적이 상한 안인지(넘으면 `InputTooLargeError`) 본다. 실행이 같은 검사로 실패·환불만 되풀이하지
+    않게."""
+    chat_set, _ = await load_active_prompt_set(db, lane=novel.content_type)
+    context_lines = await _context_lines(db, novel, room_id, chat_set)
+    _require_regenerate_within_cap(novel, chat_set, scenes, context_lines)
+
+
+def _require_regenerate_within_cap(novel: Novel, chat_set: PromptSet, scenes: SceneSource, context_lines: str) -> None:
+    """다시 만들기의 입력 견적 — 프롬프트에 싣는 장면 턴 줄과 맥락 줄의 글자 수다. 원고 요청과 같은 상한으로 막는다(다시 만들기는 화
+    근거가 아니라 그 화가 쓴 장면 원문을 다시 읽으므로 견적도 장면 턴으로 센다)."""
+    estimated = len(format_turn_lines(scenes.turns, **_line_labels(novel, chat_set))) + len(context_lines)
+    if estimated > settings.novelize_outline_max_input_tokens:
+        raise InputTooLargeError(estimated, settings.novelize_outline_max_input_tokens)
+
+
 @dataclass(frozen=True)
 class OutlineChapterSource:
     """원고 요청·실행이 검사를 마친 원고 입력 재료."""
@@ -784,8 +794,8 @@ async def build_outline_regenerate_input(
     db: AsyncSession, novel: Novel, chapter: NovelChapter, *, model: ChatModelId
 ) -> ChapterInput:
     """구성 흐름 화 다시 만들기의 입력 — 그 화가 쓴 장면 구성안 리비전의 장면 근거를 다시 읽어 화를 만든 때의 해시와 대조하고(다르면
-    `SourceChangedError`), 같은 장면 계획으로 그 화를 다시 쓰게 한다. 구성안·선택이 그 뒤 바뀌었어도 막지 않는다 — 이미 쓴 구간은 다시
-    고를 수 없어 그 화의 근거는 그대로다."""
+    `SourceChangedError`), 입력 견적을 요청 때와 같은 상한으로 다시 보고(넘으면 `InputTooLargeError`), 같은 장면 계획으로 그 화를 다시
+    쓰게 한다. 구성안·선택이 그 뒤 바뀌었어도 막지 않는다 — 이미 쓴 구간은 다시 고를 수 없어 그 화의 근거는 그대로다."""
     if novel.chat_room_id is None or chapter.episode_outline_id is None:
         raise SourceChangedError(f"chapter={chapter.id} 방이나 장면 구성안이 없다")
     episode_outline = await db.get(NovelEpisodeOutline, chapter.episode_outline_id)
@@ -796,6 +806,7 @@ async def build_outline_regenerate_input(
         raise SourceChangedError(f"chapter={chapter.id} 장면 원문이 바뀌었다")
     prompt_source = await load_novel_prompt_source(db, novel, model=model)
     context_lines = await _context_lines(db, novel, novel.chat_room_id, prompt_source.chat_set)
+    _require_regenerate_within_cap(novel, prompt_source.chat_set, scenes, context_lines)
     is_first = chapter.ordinal == 1
     prompt, version_id = await _chapter_prompt(
         db, novel, prompt_source, scenes, context_lines, before_ordinal=chapter.ordinal, is_first=is_first
