@@ -20,6 +20,7 @@ from api.assets.image_processing import (
     run_image_work,
     validate_reference_image,
 )
+from api.assets.router import delete_emptied_generation_requests
 from api.core import clover
 from api.core.config import settings
 from api.core.rate_limit_gate import (
@@ -251,7 +252,16 @@ async def _record_request_outcome(
     input_error: ImageInputError | None,
     error: str | None,
 ) -> None:
-    """생성이 끝난 요청 행에 종료 상태와 집계를 한 번에 기록하고 커밋한다."""
+    """생성이 끝난 요청 행에 종료 상태와 집계를 한 번에 기록하고 커밋한다.
+
+    성공으로 끝났는데 그림이 하나도 남지 않았으면 같은 트랜잭션에서 행을 지운다. 갤러리 삭제는 생성 중(`pending`)인
+    요청 행을 남기므로, 생성 도중 나온 그림을 다 지웠다면 그 행(프롬프트 원문)은 여기서밖에 지울 수 없다 — 탈퇴는 남은
+    그림으로 요청을 찾고, 90일 정리는 차단·실패 행만 본다. 그림이 처음부터 없던 차단·실패 행은 그 정리의 몫이라 남긴다.
+
+    상태 UPDATE 를 먼저 반영해 요청 행을 잠근 뒤 남은 그림을 본다. 생성은 이미 모든 장을 마쳐 새 그림이 붙지 않고, 이 쪽은
+    그림 행을 잠그지 않으므로 그림 행 다음 요청 행 순서로 잠그는 갤러리 삭제와 엇갈려 잠글 일이 없다. 갤러리 삭제가 요청
+    행을 먼저 잠갔으면 그 커밋을 기다렸다가 새로 보고 지우고, 이 쪽이 먼저 커밋했으면 갤러리 삭제가 바뀐 상태를 보고
+    지운다."""
     async with session_factory() as session:
         request_row = await session.get(ImageGenerationRequest, request_id)
         assert request_row is not None
@@ -262,6 +272,9 @@ async def _record_request_outcome(
         request_row.blocked_reason = blocked_reason
         request_row.input_error = input_error
         request_row.error = error
+        if status == "succeeded":
+            await session.flush()
+            await delete_emptied_generation_requests(session, [request_id])
         await session.commit()
 
 
