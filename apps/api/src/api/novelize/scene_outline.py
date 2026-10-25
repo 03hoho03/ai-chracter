@@ -740,7 +740,7 @@ def _chapter_input(
     scenes: SceneSource,
     episode_outline_id: uuid.UUID,
     *,
-    is_first: bool,
+    ordinal: int,
     novel: Novel,
     version_id: uuid.UUID | None,
 ) -> ChapterInput:
@@ -750,10 +750,11 @@ def _chapter_input(
         assistant_count=len(scenes.turns),
         source_hash=segment_hash(scenes.messages),
         episode_count=1,
-        writes_novel_title=is_first and novel.title_edited_at is None,
+        writes_novel_title=ordinal == 1 and novel.title_edited_at is None,
         content_version_id=version_id,
         episode_outline_id=episode_outline_id,
         scene_weights=tuple(scenes.scenes),
+        episode_number=ordinal,
     )
 
 
@@ -764,16 +765,16 @@ async def build_outline_chapter_input(
     prompt_source = await load_novel_prompt_source(db, novel, model=model)
     source = await load_outline_chapter_source(db, novel, key, episode_outline_id=episode_outline_id)
     assert novel.chat_room_id is not None  # 원문을 읽었으면 방이 있다
-    is_first = await next_ordinal(db, novel.id) == 1
+    ordinal = await next_ordinal(db, novel.id)
     prompt, version_id = await _chapter_prompt(
-        db, novel, prompt_source, source.scenes, source.episode.context_lines, before_ordinal=None, is_first=is_first
+        db, novel, prompt_source, source.scenes, source.episode.context_lines, before_ordinal=None, is_first=ordinal == 1
     )
     return _chapter_input(
         prompt,
         novel.chat_room_id,
         source.scenes,
         source.episode_outline.id,
-        is_first=is_first,
+        ordinal=ordinal,
         novel=novel,
         version_id=version_id,
     )
@@ -800,5 +801,11 @@ async def build_outline_regenerate_input(
         db, novel, prompt_source, scenes, context_lines, before_ordinal=chapter.ordinal, is_first=is_first
     )
     return _chapter_input(
-        prompt, novel.chat_room_id, scenes, episode_outline.id, is_first=is_first, novel=novel, version_id=version_id
+        prompt,
+        novel.chat_room_id,
+        scenes,
+        episode_outline.id,
+        ordinal=chapter.ordinal,
+        novel=novel,
+        version_id=version_id,
     )

@@ -126,6 +126,9 @@ class ChapterInput:
     # 구성안을 적고 새 개정의 블록마다 장면 경계 행을 쓴다(`scenes.scene_block_rows`). 옛 흐름은 비어 있어 둘 다 하지 않는다.
     episode_outline_id: uuid.UUID | None = None
     scene_weights: tuple[tuple[str, int], ...] = ()
+    # 구성 흐름 원고·다시 만들기만 채운다 — 이 호출이 쓰는 화의 화 번호. 출력 머리 줄이 `1화` 대신 이 번호여도 받는다
+    # (`output.parse_batch_output`). 옛 흐름 묶음은 묶음 안에서 1부터 세므로 비워 둔다.
+    episode_number: int | None = None
 
 
 class SourceChangedError(Exception):

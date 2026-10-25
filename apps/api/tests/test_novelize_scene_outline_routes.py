@@ -44,6 +44,7 @@ from factories import (
     _allow_novel_premium,
     _batch_output,
     _clear_llm_override,
+    _episode_text,
     _make_user,
     _novel_ledger,
     _novel_setup,
@@ -1019,6 +1020,68 @@ async def test_a_chapter_output_with_two_episodes_is_refunded_without_a_chapter(
 
 
 @pytest.mark.usefixtures("outline_flow_on")
+@pytest.mark.parametrize(
+    ("header", "status", "failure"),
+    [(1, "succeeded", None), (2, "succeeded", None), (3, "failed", "malformed")],
+)
+async def test_a_manuscript_header_may_be_1_or_the_episodes_own_number_but_nothing_else(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+    header: int,
+    status: str,
+    failure: str | None,
+) -> None:
+    """2화 원고의 머리 줄은 지시문의 `1화` 여도, 지난 화 요약에 이어 붙인 `2화` 여도 그 화로 저장한다. 다른 번호는 여전히 `malformed`
+    로 환불한다. 깨지는 시나리오: 모델이 그 화 번호를 쓴 원고가 형식 오류로 환불되고 호출 원가만 버린다."""
+    novel_id, _, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    await _written(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    await _scened(db_client, db_session, enqueued, llm, novel_id, keys[1])
+    llm.raw = _episode_text(_BODY, number=header)
+
+    assert (await _request_chapter(db_client, novel_id, keys[1])).status_code == 202
+    job = await _run(db_session, llm, enqueued[-1])
+
+    assert (job.status, job.failure_code) == (status, failure)
+    ordinals = await db_session.scalars(sa.select(NovelChapter.ordinal).order_by(NovelChapter.ordinal))
+    assert list(ordinals) == ([1, 2] if failure is None else [1])
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+@pytest.mark.parametrize(("header", "status"), [(2, "succeeded"), (3, "failed")])
+async def test_an_outline_chapter_regenerate_reads_the_chapters_own_number_as_its_header(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+    header: int,
+    status: str,
+) -> None:
+    """구성 흐름 2화의 다시 만들기도 머리 줄 `2화` 를 받고, 그 밖의 번호는 `malformed` 다. 깨지는 시나리오: 다시 만들기가 그 화 번호를
+    쓴 출력을 형식 오류로 환불한다."""
+    novel_id, _, keys = await _outlined(db_client, db_session, monkeypatch, enqueued, llm)
+    await _written(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    second = await _written(db_client, db_session, enqueued, llm, novel_id, keys[1])
+    assert second.chapter_id is not None
+    llm.raw = _episode_text(_BODY.replace("문단.", "다시 쓴 문단."), number=header)
+
+    response = await db_client.post(
+        f"/novels/{novel_id}/outline/chapters/{second.chapter_id}/regenerate", json={"model": "gemini", "expectedCost": 20}
+    )
+
+    assert response.status_code == 202, response.text
+    regenerated = await _run(db_session, llm, enqueued[-1])
+    assert (regenerated.status, regenerated.failure_code) == (
+        (status, None) if status == "succeeded" else (status, "malformed")
+    )
+    revision = await _current_revision(db_session, second.chapter_id)
+    assert revision.revision_no == (2 if status == "succeeded" else 1)
+
+
+@pytest.mark.usefixtures("outline_flow_on")
 async def test_an_episode_already_written_cannot_be_bought_again_even_with_a_new_scene_revision(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -1078,6 +1141,36 @@ async def test_an_existing_novel_switches_to_the_outline_flow_after_its_old_chap
 
     chapter = await db_session.get_one(NovelChapter, job.chapter_id)
     assert (chapter.ordinal, chapter.start_message_id, chapter.end_message_id) == (3, ms[9].id, ms[12].id)
+
+
+@pytest.mark.usefixtures("outline_flow_on")
+async def test_after_old_chapters_a_manuscript_header_may_be_the_number_the_chapter_gets(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    llm: _FlowLLM,
+) -> None:
+    """옛 흐름 화가 둘 있는 소설에서 구성안 첫 화의 원고는 3화가 된다 — 지시문에 실리는 지난 화 요약도 1화·2화라, 모델이 이어 붙이는
+    번호는 구성안 안의 차례(1)가 아니라 그 화가 받을 화 번호(3)다. 머리 줄 `3화` 를 받는다. 깨지는 시나리오: 구성안 안의 차례로만
+    판정해 옛 화 뒤의 원고가 `3화` 로 와 형식 오류로 환불된다."""
+
+    async def two_old_chapters(novel_id: uuid.UUID, room: Any, ms: list[ChatMessage]) -> None:
+        await _add_chapter(db_session, novel_id, room, ms[0], ms[2])
+        await _add_chapter(db_session, novel_id, room, ms[3], ms[4])
+
+    llm.episodes = [{**_TWO_EPISODES[0], "start_turn": 1, "end_turn": 2}]
+    novel_id, _, keys = await _outlined(
+        db_client, db_session, monkeypatch, enqueued, llm, sections=(("include", 9, 12),), before=two_old_chapters
+    )
+    await _scened(db_client, db_session, enqueued, llm, novel_id, keys[0])
+    llm.raw = _episode_text(_BODY, number=3)
+
+    assert (await _request_chapter(db_client, novel_id, keys[0])).status_code == 202
+    job = await _run(db_session, llm, enqueued[-1])
+
+    assert (job.status, job.failure_code) == ("succeeded", None)
+    assert (await db_session.get_one(NovelChapter, job.chapter_id)).ordinal == 3
 
 
 @pytest.mark.usefixtures("outline_flow_on")

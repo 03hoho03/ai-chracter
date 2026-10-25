@@ -298,6 +298,24 @@ async def test_next_chapter_carries_the_end_of_the_previous_chapter_and_gets_the
     assert "[턴 1] 사용자: [U02]" in prompt
 
 
+async def test_an_old_flow_batch_must_still_start_at_1_even_when_its_episode_becomes_chapter_2(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """옛 흐름 묶음의 화 번호는 묶음 안에서 1부터 센다 — 둘째 화가 될 한 화 묶음이 `2화` 로 시작하면 여전히 `malformed` 다. 구성 흐름
+    원고만 그 화 번호를 머리 줄로 받는다. 깨지는 시나리오: 옛 흐름에도 화 번호를 받게 넓혀 묶음 경계 판정이 흐려진다."""
+    room, novel = await _novel_for(db_client, db_session)
+    messages = await _room_messages(db_session, room.room_id)
+    first = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
+    await runner.run_job(_factory(db_session), _NovelLLM(), first.id)
+    second = await _chapter_job(db_session, novel, room.turns[2][0], room.turns[3][1])
+
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_episode_text(_BODY, number=2)]), second.id)
+
+    stored = await _job(db_session, second.id)
+    assert (stored.status, stored.failure_code, stored.refunded_amount) == ("failed", "malformed", 40)
+    assert [c.ordinal for c in await _chapters(db_session, novel.id)] == [1]
+
+
 async def test_story_novel_uses_the_story_setting_and_the_narrator_label(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
