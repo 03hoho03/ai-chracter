@@ -23,6 +23,7 @@ from api.chat.prompt_stages import LANE_STAGES
 from api.chat.turn_prompt import judgment_prompt_sets
 from api.core.config import settings
 from api.core.redis import redis_client
+from api.db.models.moderation import AdminActionLog
 from api.db.models.prompt import PromptRoute, PromptRouteRevision, PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
 from api.llm.pricing import MODEL_PRICES, PRICES_AS_OF
@@ -649,3 +650,173 @@ async def test_a_saved_row_does_not_change_which_judgment_sets_a_chat_turn_reads
 
     assert after.stat[0].id == before.stat[0].id
     assert after.stat[0].model == "sonnet"
+
+
+def _price_body(model_id: str) -> dict[str, float] | None:
+    price = MODEL_PRICES.get(model_id)
+    if price is None:
+        return None
+    return {
+        "inputUsdPerMillion": price.input_usd_per_million,
+        "cachedInputUsdPerMillion": price.cached_input_usd_per_million,
+        "outputUsdPerMillion": price.output_usd_per_million,
+        "cacheWriteUsdPerMillion": price.cache_write_usd_per_million,
+    }
+
+
+def _candidates(cell: dict[str, Any]) -> dict[tuple[str, str], list[tuple[str, str, dict[str, float] | None]]]:
+    candidates: list[dict[str, Any]] = cell["candidates"]
+    return {
+        (c["model"], c["backend"]): [(call["callSite"], call["modelId"], call["price"]) for call in c["calls"]]
+        for c in candidates
+    }
+
+
+async def test_every_cell_lists_the_model_id_and_price_of_each_pair_it_could_pick(
+    routing_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, admin_id: uuid.UUID
+) -> None:
+    """저장 전에 새로 고른 쌍의 단가를 화면이 보이려면 칸마다 고를 수 있는 쌍이 실제로 보낼 모델 id 와 단가가 있어야 한다.
+    Gemini 판정은 판정 종류마다 모델명 설정이 달라 쌍만으로는 화면이 id 를 알 수 없다."""
+    await _saved(db_client, [_STAT_ROW])
+
+    body = (await db_client.get("/admin/prompt-routing")).json()
+
+    stat_sites = ("chat_stat_judgment", "preview_stat_judgment")
+    stat = _candidates(_cell(body, "story", "opus", "stat_judgment"))
+    assert stat == {
+        ("gemini", "gemini"): [(site, "gemini-2.5-flash", _price_body("gemini-2.5-flash")) for site in stat_sites],
+        ("haiku", "anthropic"): [(site, "claude-haiku-5-5", _price_body("claude-haiku-5-5")) for site in stat_sites],
+        ("sonnet", "anthropic"): [(site, "claude-sonnet-5-5", _price_body("claude-sonnet-5-5")) for site in stat_sites],
+        ("opus", "anthropic"): [(site, "claude-opus-5-5", _price_body("claude-opus-5-5")) for site in stat_sites],
+    }
+    # 행이 있든 없든 후보는 같다 — 지금 운영 값이 아니라 그 쌍을 고르면 보낼 값이다.
+    assert _candidates(_cell(body, "story", "gemini", "stat_judgment")) == stat
+    # 판정 종류의 모델명 설정이 비면 기본 모델명이고, 단가 표에 없는 id 는 0 이 아니라 단가 없음이다.
+    ending = _candidates(_cell(body, "story", "opus", "ending_judgment"))
+    assert ending[("gemini", "gemini")] == [
+        ("chat_ending_judgment", "test-gemini-base", None),
+        ("preview_ending_judgment", "test-gemini-base", None),
+    ]
+    # 화면이 셀렉트 목록을 단계 종류로 거르므로 칸마다 종류가 있다 — `gemini@gemini` 는 두 종류 모두의 쌍이라 후보만으로는
+    # 가를 수 없다.
+    assert {(c["stage"], c["kind"]) for c in body["cells"]} == {
+        (stage, "generation" if stage == "chat_generate" else "structured")
+        for stages in LANE_STAGES.values()
+        for stage in stages
+    }
+    # 생성 칸은 방 모델로만 부르므로 후보가 그 방 모델의 쌍 하나다.
+    assert _candidates(_cell(body, "character", "opus", "chat_generate")) == {
+        ("opus", "anthropic"): [("chat_generate", "claude-opus-5-5", _price_body("claude-opus-5-5"))]
+    }
+    assert _candidates(_cell(body, "character", "gemini", "chat_generate")) == {
+        ("gemini", "gemini"): [("chat_generate", "test-gemini-base", None)]
+    }
+
+
+async def _action_logs(db_session: AsyncSession) -> list[AdminActionLog]:
+    db_session.expire_all()
+    return list(
+        (
+            await db_session.scalars(
+                sa.select(AdminActionLog).where(
+                    AdminActionLog.action_type.in_(["prompt-routing-save", "prompt-routing-restore"])
+                )
+            )
+        ).all()
+    )
+
+
+def _targets(log: AdminActionLog) -> tuple[uuid.UUID | None, ...]:
+    return (
+        log.target_user_id,
+        log.target_content_id,
+        log.target_chat_room_id,
+        log.target_comment_id,
+        log.target_novel_id,
+    )
+
+
+async def test_a_save_leaves_one_audit_row_with_its_note_and_no_target(
+    routing_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    await _put(db_client, [_STAT_ROW], note="스탯 판정을 가벼운 모델로")
+
+    (log,) = await _action_logs(db_session)
+    assert (log.action_type, log.admin_id, log.reason_text) == (
+        "prompt-routing-save",
+        admin_id,
+        "스탯 판정을 가벼운 모델로",
+    )
+    assert _targets(log) == (None, None, None, None, None)
+
+
+async def test_a_restore_leaves_its_own_audit_row(
+    routing_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    first = await _saved(db_client, [_STAT_ROW])
+    second = await _saved(db_client, [], first["revisionId"])
+
+    resp = await db_client.post(
+        f"/admin/prompt-routing/revisions/{first['revisionId']}/restore",
+        json={"baseRevisionId": second["revisionId"], "note": "되돌림"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    # 한 테스트 안에서는 `now()` 가 같아 시각으로 순서를 가를 수 없다 — 종류별로 센다.
+    logs = await _action_logs(db_session)
+    assert sorted((log.action_type, log.reason_text) for log in logs) == [
+        ("prompt-routing-restore", "되돌림"),
+        ("prompt-routing-save", ""),
+        ("prompt-routing-save", ""),
+    ]
+    (restore,) = [log for log in logs if log.action_type == "prompt-routing-restore"]
+    assert (restore.admin_id, _targets(restore)) == (admin_id, (None, None, None, None, None))
+
+
+async def test_a_refused_or_conflicting_save_leaves_no_audit_row(
+    routing_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    refused = await _put(db_client, [_row("ending_judgment")])
+    assert refused.status_code == 422
+    assert await _action_logs(db_session) == []
+
+    first = await _saved(db_client, [_STAT_ROW])
+    stale = await _put(db_client, [])
+    assert stale.status_code == 409
+    assert len(await _action_logs(db_session)) == 1
+
+    # 번호 경쟁: 검사 도중 다른 저장이 먼저 커밋되면 뒤 저장의 이력 행이 번호 유니크에 걸려 되감기고, 감사 행도 함께 사라져야 한다.
+    raced: list[int] = []
+
+    async def chain_errors_with_a_save_in_between(db: AsyncSession, rows: Any) -> Any:
+        if not raced:
+            raced.append(1)
+            other = await _put(db_client, [_FACT_ROW], first["revisionId"])
+            raced.append(other.status_code)
+        return await route_chain_errors(db, rows)
+
+    routing_env.setattr(admin_prompt_routing, "route_chain_errors", chain_errors_with_a_save_in_between)
+    lost = await _put(db_client, [_STAT_ROW], first["revisionId"], note="경쟁에서 진 저장")
+
+    assert (raced, lost.status_code) == ([1, 200], 409)
+    logs = await _action_logs(db_session)
+    assert len(logs) == 2
+    assert "경쟁에서 진 저장" not in [log.reason_text for log in logs]
+
+
+async def test_a_member_detail_does_not_read_audit_rows_without_a_target(
+    routing_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    """감사 로그를 읽는 곳은 회원 상세 하나이고 그 회원이나 그 회원 작품이 대상인 행만 고른다. 그래서 대상 없는 배정 표 행은
+    거기 실리지 않고, 이 조치 종류를 모르는 옛 이미지로 되돌려도 회원 상세 응답 검증이 깨지지 않는다 — 모르는 종류의 대상 없는
+    행을 직접 심어 그 사실을 고정한다."""
+    user = _make_user()
+    db_session.add(user)
+    db_session.add(AdminActionLog(admin_id=admin_id, action_type="an-action-this-code-does-not-know"))
+    await db_session.commit()
+    await _saved(db_client, [_STAT_ROW])
+
+    resp = await db_client.get(f"/admin/users/{user.id}")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["actionLogs"] == []

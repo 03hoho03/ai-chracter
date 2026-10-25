@@ -22212,6 +22212,44 @@
         "title": "AdminPromptRouteCall",
         "description": "칸 하나를 읽는 호출 위치 하나가 실제로 보낼 모델 id 와 경로. 단가 표에 없는 id 면 `price` 가 null 이다(0 이 아니다)."
       },
+      "AdminPromptRouteCandidate": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus",
+              "haiku"
+            ],
+            "title": "Model"
+          },
+          "backend": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "bedrock",
+              "anthropic"
+            ],
+            "title": "Backend"
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRouteCall"
+            },
+            "type": "array",
+            "title": "Calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "backend",
+          "calls"
+        ],
+        "title": "AdminPromptRouteCandidate",
+        "description": "칸의 행이 고를 수 있는 (부를 모델, 경로) 하나와, 그 쌍을 고르면 그 단계의 호출 위치마다 보낼 모델 id·단가. 지금 표·env\n배정과 무관한 값이다 — 저장 전에 새로 고른 쌍의 단가를 보이려는 것이고, 그 쌍이 지금 env 로 저장되는지는 저장 검사가 본다."
+      },
       "AdminPromptRouteCell": {
         "properties": {
           "lane": {
@@ -22245,6 +22283,14 @@
             ],
             "title": "Stage"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "generation",
+              "structured"
+            ],
+            "title": "Kind"
+          },
           "configured": {
             "anyOf": [
               {
@@ -22274,6 +22320,13 @@
             },
             "type": "array",
             "title": "Calls"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRouteCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
           }
         },
         "type": "object",
@@ -22281,10 +22334,12 @@
           "lane",
           "roomModel",
           "stage",
+          "kind",
           "configured",
           "effective",
           "skipped",
-          "calls"
+          "calls",
+          "candidates"
         ],
         "title": "AdminPromptRouteCell",
         "description": "(레인, 방 모델, 단계) 한 칸. `configured` 는 그 칸 자신의 행이고, `effective` 는 채팅 호출 위치로 푼 값이다."
@@ -23605,6 +23660,8 @@
               "novel-review-reject",
               "novel-sales-resume",
               "novel-sales-stop",
+              "prompt-routing-restore",
+              "prompt-routing-save",
               "prompt-set-publish",
               "report-reject",
               "user-beta-off",

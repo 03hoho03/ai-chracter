@@ -13,6 +13,7 @@ import {
   ScrollText,
   SquareTerminal,
   Users,
+  Waypoints,
 } from "lucide-react";
 
 // 그룹 배열 전체에 `as const` — 원소 객체와 `to` 가 리터럴로 남아 `Link` 의 경로 유니온과 대조된다.
@@ -50,6 +51,7 @@ export const ADMIN_NAV_GROUPS = [
       { label: "공지 관리", to: "/notices", icon: Megaphone },
       { label: "약관 관리", to: "/legal", icon: ScrollText },
       { label: "프롬프트 관리", to: "/prompt-sets", icon: SquareTerminal },
+      { label: "모델 배정", to: "/prompt-routing", icon: Waypoints },
     ],
   },
 ] as const;

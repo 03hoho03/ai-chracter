@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsageMetricsRouteImport } from './routes/usage-metrics'
 import { Route as PromptSetsRouteImport } from './routes/prompt-sets'
+import { Route as PromptRoutingRouteImport } from './routes/prompt-routing'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LegalRouteImport } from './routes/legal'
 import { Route as CreatorPayoutApplicationsRouteImport } from './routes/creator-payout-applications'
@@ -42,6 +43,11 @@ const UsageMetricsRoute = UsageMetricsRouteImport.update({
 const PromptSetsRoute = PromptSetsRouteImport.update({
   id: '/prompt-sets',
   path: '/prompt-sets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PromptRoutingRoute = PromptRoutingRouteImport.update({
+  id: '/prompt-routing',
+  path: '/prompt-routing',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -163,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
+  '/prompt-routing': typeof PromptRoutingRoute
   '/prompt-sets': typeof PromptSetsRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
@@ -189,6 +196,7 @@ export interface FileRoutesByTo {
   '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
+  '/prompt-routing': typeof PromptRoutingRoute
   '/prompt-sets': typeof PromptSetsRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
@@ -216,6 +224,7 @@ export interface FileRoutesById {
   '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
+  '/prompt-routing': typeof PromptRoutingRoute
   '/prompt-sets': typeof PromptSetsRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
@@ -244,6 +253,7 @@ export interface FileRouteTypes {
     | '/creator-payout-applications'
     | '/legal'
     | '/login'
+    | '/prompt-routing'
     | '/prompt-sets'
     | '/usage-metrics'
     | '/contents/$contentId'
@@ -270,6 +280,7 @@ export interface FileRouteTypes {
     | '/creator-payout-applications'
     | '/legal'
     | '/login'
+    | '/prompt-routing'
     | '/prompt-sets'
     | '/usage-metrics'
     | '/contents/$contentId'
@@ -296,6 +307,7 @@ export interface FileRouteTypes {
     | '/creator-payout-applications'
     | '/legal'
     | '/login'
+    | '/prompt-routing'
     | '/prompt-sets'
     | '/usage-metrics'
     | '/contents/$contentId'
@@ -323,6 +335,7 @@ export interface RootRouteChildren {
   CreatorPayoutApplicationsRoute: typeof CreatorPayoutApplicationsRoute
   LegalRoute: typeof LegalRoute
   LoginRoute: typeof LoginRoute
+  PromptRoutingRoute: typeof PromptRoutingRoute
   PromptSetsRoute: typeof PromptSetsRoute
   UsageMetricsRoute: typeof UsageMetricsRoute
   ContentsContentIdRoute: typeof ContentsContentIdRoute
@@ -358,6 +371,13 @@ declare module '@tanstack/react-router' {
       path: '/prompt-sets'
       fullPath: '/prompt-sets'
       preLoaderRoute: typeof PromptSetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prompt-routing': {
+      id: '/prompt-routing'
+      path: '/prompt-routing'
+      fullPath: '/prompt-routing'
+      preLoaderRoute: typeof PromptRoutingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -523,6 +543,7 @@ const rootRouteChildren: RootRouteChildren = {
   CreatorPayoutApplicationsRoute: CreatorPayoutApplicationsRoute,
   LegalRoute: LegalRoute,
   LoginRoute: LoginRoute,
+  PromptRoutingRoute: PromptRoutingRoute,
   PromptSetsRoute: PromptSetsRoute,
   UsageMetricsRoute: UsageMetricsRoute,
   ContentsContentIdRoute: ContentsContentIdRoute,

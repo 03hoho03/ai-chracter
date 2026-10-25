@@ -6,8 +6,13 @@
 
 조회는 캐시가 아니라 DB 를 읽는다 — 운영자가 보는 값은 방금 저장한 값이어야 하고, 저장 직후 조회가 캐시를 다시 채우지 않게 한다.
 
-감사 로그(`admin_action_logs`)에는 쓰지 않는다. 이력 표가 누가·언제·무엇을 저장했는지를 이미 담고, 조치 종류에 새 값을 더하면
-그 값을 모르는 옛 판으로 이미지를 되돌릴 때 회원 상세 응답 검증이 500 을 낼 수 있다.
+저장·되돌리기는 감사 로그(`admin_action_logs`)에도 이력 행과 같은 트랜잭션에서 한 행씩 남긴다. 이력 표는 표의 내용이고 감사
+로그는 운영자의 행동이라, 프롬프트 세트 게시처럼 감사 로그 한 곳에서 운영 조치 전부를 시간순으로 볼 수 있게 한다. 이 행은 대상
+회원·작품이 없다. 감사 로그를 읽는 곳은 회원 상세의 조치 이력 하나이고 그 회원이나 그 회원 작품이 대상인 행만 고르므로, 이 두
+조치 종류를 모르는 옛 이미지로 되돌려도 그 응답 검증은 깨지지 않는다.
+
+칸마다의 후보(`candidates`)는 그 칸이 고를 수 있는 쌍마다 호출 위치가 실제로 보낼 모델 id 와 단가다. 저장 전에 새로 고른 쌍의
+단가를 화면이 보이려는 읽기 전용 계산이라, 운영 값(`effective`·`calls`)과 달리 지금 표·env 배정과 무관하다.
 """
 
 import logging
@@ -21,10 +26,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.admin.action_log import record_admin_action
 from api.admin.dependencies import get_current_admin_id
 from api.admin.schemas import (
     AdminPromptRouteAllowedPair,
     AdminPromptRouteCall,
+    AdminPromptRouteCandidate,
     AdminPromptRouteCell,
     AdminPromptRouteChain,
     AdminPromptRouteChainReader,
@@ -51,9 +58,10 @@ from api.chat.prompt_routing import (
     route_row_errors,
 )
 from api.chat.prompt_routing_cache import invalidate_prompt_routes, load_prompt_routes_from_db
-from api.chat.prompt_stages import LANE_STAGES, STAGES, RoutingLane, stage_call_sites
+from api.chat.prompt_stages import LANE_STAGES, STAGES, PromptStage, RoutingLane, stage_call_sites
 from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
+from api.db.models.moderation import AdminActionType
 from api.db.models.prompt import PromptRoute, PromptRouteRevision
 from api.db.session import get_db_session
 from api.llm.call_policy import BackendId, LLMCallSite
@@ -129,6 +137,26 @@ def _price(model_id: str) -> AdminPromptRoutePrice | None:
     )
 
 
+def _call(call_site: LLMCallSite, backend: BackendId, model: PromptSetModelId) -> AdminPromptRouteCall:
+    model_id = _model_id(call_site, backend, model)
+    return AdminPromptRouteCall(call_site=call_site, backend=backend, model_id=model_id, price=_price(model_id))
+
+
+def _candidates(room_model: ChatRoomModelId, stage: PromptStage) -> list[AdminPromptRouteCandidate]:
+    """그 칸의 행이 고를 수 있는 쌍마다 그 단계의 호출 위치가 보낼 모델 id·단가. 생성 단계는 방 모델로만 부르므로 방 모델의
+    쌍뿐이다(저장 검사가 다른 모델을 거부한다)."""
+    kind = STAGES[stage].kind
+    return [
+        AdminPromptRouteCandidate(
+            model=model,
+            backend=backend,
+            calls=[_call(call_site, backend, model) for call_site in stage_call_sites(stage)],
+        )
+        for model, backend in sorted(ALLOWED_ROUTE_PAIRS[kind])
+        if kind != "generation" or model == room_model
+    ]
+
+
 async def _latest_revision(db: AsyncSession) -> PromptRouteRevision | None:
     result: PromptRouteRevision | None = await db.scalar(
         select(PromptRouteRevision).order_by(PromptRouteRevision.number.desc()).limit(1)
@@ -151,12 +179,7 @@ async def _routing_response(db: AsyncSession) -> AdminPromptRoutingResponse:
                     route = resolve_stage_route(
                         routes, lane=lane, room_model=room_model, stage=stage, call_site=call_site
                     )
-                    model_id = _model_id(call_site, route.backend, route.call_model)
-                    calls.append(
-                        AdminPromptRouteCall(
-                            call_site=call_site, backend=route.backend, model_id=model_id, price=_price(model_id)
-                        )
-                    )
+                    calls.append(_call(call_site, route.backend, route.call_model))
                 # 칸의 대표 값은 채팅 호출 위치로 푼 값이다(호출 위치마다의 값은 `calls`).
                 route = resolve_stage_route(routes, lane=lane, room_model=room_model, stage=stage)
                 configured = routes.get(lane, room_model, stage)
@@ -165,6 +188,7 @@ async def _routing_response(db: AsyncSession) -> AdminPromptRoutingResponse:
                         lane=lane,
                         room_model=room_model,
                         stage=stage,
+                        kind=STAGES[stage].kind,
                         configured=None if configured is None else _row_out(configured),
                         effective=AdminPromptRouteEffective(
                             chain_model=route.chain_model,
@@ -179,6 +203,7 @@ async def _routing_response(db: AsyncSession) -> AdminPromptRoutingResponse:
                             stage=route.skipped.stage, reason=route.skipped.reason, message=route.skipped.message
                         ),
                         calls=calls,
+                        candidates=_candidates(room_model, stage),
                     )
                 )
                 readers.setdefault((lane, route.chain_model), []).append(
@@ -227,9 +252,10 @@ async def _save_routes(
     note: str,
     rows: Sequence[RouteRowInput],
     restored_from_id: uuid.UUID | None,
+    action_type: AdminActionType,
 ) -> None:
-    """저장과 되돌리기가 함께 쓰는 순서: 최신 이력 확인 → 행 검사 → 체인 검사 → 한 트랜잭션에서 이력 행 + 표 교체 → 커밋 → 캐시
-    무효화."""
+    """저장과 되돌리기가 함께 쓰는 순서: 최신 이력 확인 → 행 검사 → 체인 검사 → 한 트랜잭션에서 이력 행 + 표 교체 + 감사 로그 →
+    커밋 → 캐시 무효화."""
     latest = await _latest_revision(db)
     if (None if latest is None else latest.id) != base_revision_id:
         raise HTTPException(
@@ -256,7 +282,7 @@ async def _save_routes(
     # 번호는 낡은 기준 확인에 쓴 그 최신 이력에서 정한다. 검사 뒤에 최대 번호를 다시 읽으면 READ COMMITTED 의 새 스냅샷에 그 사이
     # 커밋된 다른 저장이 보여 그 다음 번호를 잡고, 다른 저장의 표를 지운 채 성공한다. 이 번호를 다른 저장이 이미 쥐었으면 번호 유니크
     # 인덱스가 막는다 — 프롬프트 세트 게시와 같은 이유로 SAVEPOINT 로 감싸, 서로 다른 두 표 중 하나를 잃는 경쟁을 덮어쓰지 않고
-    # 409 로 다시 저장하게 한다.
+    # 409 로 다시 저장하게 한다. 감사 로그 행도 같은 SAVEPOINT 안에 두어, 번호 경쟁으로 되감긴 저장이 감사 로그에만 남지 않게 한다.
     number = 1 if latest is None else latest.number + 1
     try:
         async with db.begin_nested():
@@ -281,6 +307,7 @@ async def _save_routes(
                         backend=row.backend,
                     )
                 )
+            await record_admin_action(db, admin_id=admin_id, action_type=action_type, reason_text=note)
             await db.flush()
     except IntegrityError:
         raise HTTPException(
@@ -349,6 +376,7 @@ async def save_prompt_routing(
         note=body.note,
         rows=rows,
         restored_from_id=None,
+        action_type="prompt-routing-save",
     )
     return await _routing_response(db)
 
@@ -393,5 +421,6 @@ async def restore_prompt_route_revision(
         note=body.note,
         rows=_snapshot_inputs(revision.rows),
         restored_from_id=revision.id,
+        action_type="prompt-routing-restore",
     )
     return await _routing_response(db)

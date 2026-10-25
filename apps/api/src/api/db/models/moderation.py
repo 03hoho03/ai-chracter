@@ -194,6 +194,8 @@ class Appeal(Base):
 # 값을 추가할 때 마이그레이션은 필요 없다(컬럼은 Text) — 이 목록과 FE 라벨만 늘린다.
 # 🔴 다만 이 Literal 은 응답 칸이기도 하다(회원 상세의 조치 이력). 새 값으로 쓴 행이 생긴 뒤 이미지를 그 값을 모르는 옛 판으로
 # 되돌리면 그 행이 걸리는 회원 상세가 응답 검증에서 500 이 된다 — 값을 쓰는 코드를 되돌릴 때는 그 행이 있는지 먼저 본다.
+# 회원 상세는 그 회원이나 그 회원 작품이 대상인 행만 읽으므로, 대상 칸이 전부 빈 조치(약관·공지·프롬프트 세트 게시, 모델 배정
+# 저장·되돌리기 등)는 이 위험이 없다.
 AdminActionType = Literal[
     "appeal-accept",
     "chat-report-reject",
@@ -228,6 +230,8 @@ AdminActionType = Literal[
     "novel-review-reject",
     "novel-sales-resume",
     "novel-sales-stop",
+    "prompt-routing-restore",
+    "prompt-routing-save",
     "prompt-set-publish",
     "report-reject",
     "user-beta-off",
