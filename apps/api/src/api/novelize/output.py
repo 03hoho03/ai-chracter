@@ -13,7 +13,7 @@
     ===2화===
     …
 
-파서는 경계에서 엄격하다. 1부터 이어지는 화 번호, 필드 세 줄의 이름과 순서, 구분 줄 중 하나라도 어긋나면
+파서는 경계에서 엄격하다. 1부터 이어지는 화 번호(예외는 아래 `episode_number`), 필드 세 줄의 이름과 순서, 구분 줄 중 하나라도 어긋나면
 `MalformedOutputError` 다 — 형식이 어긋난 출력은 화 경계·제목·요약을 믿을 수 없어, 고쳐 읽다가 남의 화에 본문이 붙는
 것보다 실패·환불이 낫다. 대신 경계 판단을 흐리지 않는 장식은 받는다. 모델이 흔히 붙이는데 어느 줄이 머리 줄인지는
 그대로 드러나서, 장식 때문에 묶음 전체를 환불하면 원가만 버린다.
@@ -136,7 +136,10 @@ def _split_names(raw: str) -> tuple[str, ...]:
     return tuple(names)
 
 
-def parse_batch_output(text: str) -> ParsedBatch:
+def parse_batch_output(text: str, *, episode_number: int | None = None) -> ParsedBatch:
+    """`episode_number` 는 화 하나만 쓰게 한 호출(구성 흐름 원고·그 다시 만들기)이 넘기는 그 화의 화 번호다. 주면 첫 머리 줄이
+    `1화` 대신 그 번호여도 받는다 — 지시문의 형식은 `1화` 지만 지난 화 요약이 `n화: …` 로 실려, 모델이 이어지는 번호를 쓰기도 한다.
+    둘째 머리 줄부터는 그대로 2, 3, … 이어야 한다(한 화를 넘는 출력의 화 수 판정은 호출부가 한다)."""
     raw_lines = text.splitlines()
     # 출력 맨 앞·맨 뒤의 코드 펜스 줄은 버린다(빈 줄을 건너 첫·마지막 줄만).
     nonblank = [i for i, line in enumerate(raw_lines) if line.strip()]
@@ -176,7 +179,8 @@ def parse_batch_output(text: str) -> ParsedBatch:
         header = _EPISODE_HEADER.match(_bare(lines[pos]))
         if header is None:
             raise MalformedOutputError(f"{len(episodes) + 1}화 머리 줄이 있어야 할 자리다")
-        if int(header.group(1)) != len(episodes) + 1:
+        number = int(header.group(1))
+        if number != len(episodes) + 1 and not (not episodes and number == episode_number):
             raise MalformedOutputError(f"화 번호가 {len(episodes) + 1} 이어야 하는데 {header.group(1)} 이다")
         pos += 1
         values: list[str] = []

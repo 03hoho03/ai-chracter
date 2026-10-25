@@ -554,7 +554,7 @@ async def _generate_batch(llm_client: LLMClient, chapter_input: ChapterInput, us
         raise _JobFailedError("llm_error") from exc
     raw = "".join(chunks)
     try:
-        parsed = parse_batch_output(raw)
+        parsed = parse_batch_output(raw, episode_number=chapter_input.episode_number)
     except MalformedOutputError as exc:
         if chapter_input.episode_count == 1 and not has_structure_lines(raw):
             # 구분자 형식을 아예 쓰지 않은 한 화 목표 출력은 옛 형식(장 본문만)으로 받는다. 새 코드가 배포된 뒤 소설 문안이

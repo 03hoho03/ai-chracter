@@ -160,3 +160,28 @@ def test_scene_breaks_inside_a_body_become_blank_lines() -> None:
 def test_output_off_the_format_is_malformed(text: str) -> None:
     with pytest.raises(MalformedOutputError):
         parse_batch_output(text)
+
+
+@pytest.mark.parametrize("header", [1, 3])
+def test_a_one_episode_call_reads_its_header_as_1_or_as_its_own_episode_number(header: int) -> None:
+    """화 하나만 쓰게 한 호출(구성 흐름 원고)은 호출부가 그 화의 화 번호를 넘긴다 — 머리 줄이 지시문의 `1화` 여도, 지난 화 요약에
+    이어 붙인 그 화의 번호여도 받는다. 깨지는 시나리오: 3화 원고가 `===3화===` 로 와 형식 오류로 환불되고 호출 원가만 버린다."""
+    (episode,) = parse_batch_output(_episode_text(_BODY_1, number=header), episode_number=3).episodes
+
+    assert (episode.title, episode.body) == ("비 오는 저녁", _BODY_1)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param(_episode_text(_BODY_1, number=2), id="neither-1-nor-its-own-number"),
+        pytest.param(_episode_text(_BODY_1, number=4), id="one-past-its-own-number"),
+        pytest.param(_episode_text(_BODY_1, number=3) + "\n" + _episode_text(_BODY_2, number=4), id="its-own-then-next"),
+        pytest.param(_episode_text(_BODY_1) + "\n" + _episode_text(_BODY_2, number=3), id="1-then-its-own"),
+    ],
+)
+def test_a_one_episode_call_still_refuses_any_other_header_number(text: str) -> None:
+    """그 화의 번호로 받는 것은 첫 머리 줄 하나뿐이고 다른 번호는 그대로 형식 오류다. 깨지는 시나리오: 화 번호 판정이 아무 번호나
+    받아 경계를 믿을 수 없는 출력을 저장한다."""
+    with pytest.raises(MalformedOutputError):
+        parse_batch_output(text, episode_number=3)
