@@ -122,7 +122,7 @@ async def test_b_prompt_is_byte_identical_to_the_fold_with_the_marking_switch_on
     room = await _story_room(db_client, db_session, turns=memory_fold.FOLD_AT_TURNS)
     factory = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
     ctx = await runtime.load_room(db_session, room.room_id)
-    summary_set, sections = (await runtime.judgment_sets(db_session, lane=ctx.lane)).summary
+    summary_set, sections = (await runtime.judgment_sets(db_session, ctx)).summary
     current = await load_current_summary(db_session, room.room_id)
     unsummarized = await memory_fold._load_unsummarized(db_session, room.room_id, current.cursor if current else None)
     plan = memory_fold.plan_fold(unsummarized)
@@ -162,7 +162,7 @@ async def test_fold_both_commits_the_a_summary_with_the_switch_off_and_chains_th
     room = await _story_room(db_client, db_session, turns=memory_fold.FOLD_AT_TURNS)
     factory = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
     ctx = await runtime.load_room(db_session, room.room_id)
-    summary_set, sections = (await runtime.judgment_sets(db_session, lane=ctx.lane)).summary
+    summary_set, sections = (await runtime.judgment_sets(db_session, ctx)).summary
     path = two_series.summaries_path(tmp_path, "b1-measure")
     series = two_series.BSeries(path)
     llm = CapturingLLM()

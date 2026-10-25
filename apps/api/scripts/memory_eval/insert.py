@@ -232,7 +232,7 @@ async def _extract_once(
         raise SystemExit("추출 켬 실행은 추출을 구현한 코드에서만 돈다(에피소드 추출 모듈이 없다)") from exc
     async with session_factory() as db:
         ctx = await load_room(db, room_id)
-        sets = await judgment_sets(db, lane=ctx.lane)
+        sets = await judgment_sets(db, ctx)
         pending = await _pending_extractions(db, room_id)
         done_before = await _done_extractions(db, room_id)
     episode_set = getattr(sets, "episode", None)
@@ -247,6 +247,7 @@ async def _extract_once(
         sections=episode_set[1],
         is_story_chat=ctx.lane == "story",
         names=ctx.names,
+        call_model=sets.call_model("episode"),
     )
     async with session_factory() as db:
         done_after = await _done_extractions(db, room_id)
@@ -311,7 +312,7 @@ async def run_insert(
         async with session_factory() as db:
             ctx = await load_room(db, room_id, lane=plant_lane(plant_set))
             start = ctx.room.turn_count + 1
-            sets = await judgment_sets(db, lane=ctx.lane)
+            sets = await judgment_sets(db, ctx)
             if pinned_doc is not None:
                 if ctx.setup is None:
                     raise SystemExit("스탯 고정은 스토리 방만 된다(캐릭터 방은 스탯이 없다)")
@@ -346,6 +347,7 @@ async def run_insert(
                 names=ctx.names,
                 series=b_series,
                 writing_model=trajectory_model,
+                call_model=sets.call_model("summary"),
             )
             async with session_factory() as db:
                 after = await _snapshot_count(db, room_id)

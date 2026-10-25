@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from memory_eval import checkpoint, holdout, ledger as ledger_mod, plants as plants_mod, workers
-from memory_eval.arm_env import BUNDLE1_ARMS
+from memory_eval.arm_env import BUNDLE1_ARMS, COMMON_ENV
 from memory_eval.ledger import Ledger
 from memory_eval.cli_common import (
     DEFAULT_SEED_JSON,
@@ -853,7 +853,8 @@ def cmd_probe(args: argparse.Namespace) -> int:
             }
         )
         return 0
-    overrides: dict[str, str] = {"CHAT_PREMIUM_MODELS_ENABLED": "true"}
+    # 하네스 쪽 배정 표 해석도 이 값을 쓴다(`runtime.judgment_sets`) — 둘이 갈리지 않게 같은 공통 줄에서 읽는다.
+    overrides: dict[str, str] = {"CHAT_PREMIUM_MODELS_ENABLED": dict(COMMON_ENV)["CHAT_PREMIUM_MODELS_ENABLED"]}
     if args.server_env:
         for line in args.server_env.read_text(encoding="utf-8").splitlines():
             if line.strip() and not line.startswith("#"):
@@ -1102,7 +1103,7 @@ def cmd_prototype_facts(args: argparse.Namespace) -> int:
             async with factory() as db:
                 ctx = await load_room(db, args.room)
                 windows = await pe.build_windows(db, args.room)
-                sets = await judgment_sets(db, lane=ctx.lane)
+                sets = await judgment_sets(db, ctx)
         finally:
             await engine.dispose()
         prompt_set = sets.summary[0]
@@ -1282,8 +1283,9 @@ def cmd_filter_recompute(args: argparse.Namespace) -> int:
 
 def cmd_sync_prompts(args: argparse.Namespace) -> int:
     """운영 활성 세트를 내보낸 파일로 측정 DB 의 story·character 활성 세트를 통째로 바꾸고(`--check-only` 면 바꾸지 않고), DB 를
-    다시 읽어 섹션 키별 본문 해시·조건·순서와 세트 라벨을 견준다. 차이 건수와 키만 내고 차이가 있으면 종료 코드 1. 측정 DB
-    (`lm_eval_`)만 받는다 — 운영 DB 에는 닿지 않는다. 덮어쓰면 측정 서버 Redis 의 활성 세트 캐시를 지운다. 같은 자원을 쓰는
+    다시 읽어 섹션 키별 본문 해시·조건·순서와 세트 라벨을 견준다. 모델 배정 표도 운영 표와 같게 바꾸고(운영 표가 비었으면
+    비운다) 칸마다 견준다. 차이 건수와 키만 내고 차이가 있으면 종료 코드 1. 측정 DB (`lm_eval_`)만 받는다 — 운영 DB 에는 닿지
+    않는다. 덮어쓰면 측정 서버 Redis 의 활성 세트 캐시와 배정 표 캐시를 지운다. 같은 자원을 쓰는
     측정 서버가 떠 있으면 거부한다 — 떠 있는 서버가 덮어쓰기 사이에 옛 세트를 다시 캐시할 수 있다."""
     from memory_eval import prompt_sync as ps
     from memory_eval import server
@@ -1704,9 +1706,9 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
         "--export",
         type=Path,
         required=True,
-        help="운영 활성 세트 섹션 내보내기 파일(psql 출력, JSON 한 줄, 화자 라벨을 실은 꼴 2)",
+        help="운영 활성 세트 섹션·모델 배정 표 내보내기 파일(psql 출력, JSON 한 줄, 배정 표 행을 실은 꼴 3)",
     )
-    p.add_argument("--redis-url", help="측정 서버가 쓰는 Redis — 덮어쓴 뒤 활성 세트 캐시 키를 지운다")
+    p.add_argument("--redis-url", help="측정 서버가 쓰는 Redis — 덮어쓴 뒤 활성 세트·배정 표 캐시 키를 지운다")
     p.add_argument("--check-only", action="store_true", help="덮어쓰지 않고 대조만")
     p.set_defaults(fn=cmd_sync_prompts)
 

@@ -558,7 +558,7 @@ def cmd_prototype_extract(args: argparse.Namespace) -> int:
             async with factory() as db:
                 ctx = await load_room(db, args.room)
                 windows = await pe.build_windows(db, args.room)
-                sets = await judgment_sets(db, lane=ctx.lane)
+                sets = await judgment_sets(db, ctx)
         finally:
             await engine.dispose()
         prompt_set, base_sections = sets.episode
