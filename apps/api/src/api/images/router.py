@@ -239,6 +239,32 @@ async def _refund_unmade_images(
         capture_dependency_failure(exc, dependency="clover")
 
 
+async def _record_request_outcome(
+    session_factory: async_sessionmaker[AsyncSession],
+    request_id: uuid.UUID,
+    *,
+    status: str,
+    completed_count: int,
+    blocked_count: int,
+    input_error_count: int,
+    blocked_reason: ImageBlockedReason | None,
+    input_error: ImageInputError | None,
+    error: str | None,
+) -> None:
+    """생성이 끝난 요청 행에 종료 상태와 집계를 한 번에 기록하고 커밋한다."""
+    async with session_factory() as session:
+        request_row = await session.get(ImageGenerationRequest, request_id)
+        assert request_row is not None
+        request_row.status = status
+        request_row.completed_count = completed_count
+        request_row.blocked_count = blocked_count
+        request_row.input_error_count = input_error_count
+        request_row.blocked_reason = blocked_reason
+        request_row.input_error = input_error
+        request_row.error = error
+        await session.commit()
+
+
 async def _run_generation(
     job_id: str,
     owner_user_id: uuid.UUID,
@@ -384,17 +410,17 @@ async def _run_generation(
             else None
         )
         try:
-            async with session_factory() as session:
-                request_row = await session.get(ImageGenerationRequest, request_id)
-                assert request_row is not None
-                request_row.status = request_status
-                request_row.completed_count = succeeded_count
-                request_row.blocked_count = blocked_count
-                request_row.input_error_count = input_error_count
-                request_row.blocked_reason = blocked_reason
-                request_row.input_error = input_error
-                request_row.error = request_error
-                await session.commit()
+            await _record_request_outcome(
+                session_factory,
+                request_id,
+                status=request_status,
+                completed_count=succeeded_count,
+                blocked_count=blocked_count,
+                input_error_count=input_error_count,
+                blocked_reason=blocked_reason,
+                input_error=input_error,
+                error=request_error,
+            )
         except Exception as exc:
             # test_generate_unexpected_error_marks_job_failed의
             # hang 방지 불변식: 요청 행 기록은 부가 기능이다 — 이 UPDATE가 실패해도(커넥션 끊김 등)
