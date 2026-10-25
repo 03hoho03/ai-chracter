@@ -34,15 +34,21 @@ export function getChatRateLimit(error: unknown): ChatRateLimit | undefined {
  * - `chat`: 기본 모델 방. 무료 일일분이 있어 클로버가 없어도 자정에 다시 보낼 수 있다.
  * - `premiumChat`: 상위 모델 방. 무료분이 없어 턴마다 클로버를 쓴다 — 자정이 와도 풀리지 않으므로 부족 사실만 말한다.
  *   서버가 같은 `CLOVER_REQUIRED` 에 자정까지의 초를 싣지만 이 방에서는 그 값이 다시 보낼 수 있는 시점이 아니다.
- * - `preview`: 빌더 미리보기. 늘 기본 모델이고 실제 채팅과 같은 한도를 쓴다. */
-export type ChatRateLimitSurface = "chat" | "premiumChat" | "preview";
+ * - `preview`: 기본 모델 빌더 미리보기. 실제 채팅과 같은 한도를 쓰고, 무료 일일분도 같아 자정 약속이 참이다.
+ * - `premiumPreview`: 상위 모델 빌더 미리보기. 같은 한도를 쓰지만 상위 모델 방처럼 무료분이 없어 자정 약속을 하지 않는다. */
+export type ChatRateLimitSurface = "chat" | "premiumChat" | "preview" | "premiumPreview";
 
 /** 미리보기는 실제 채팅과 같은 상한을 공유한다(BE는 채팅 4경로에 같은 게이트를 건다) — 빌더에서
  * 갑자기 막히면 "미리보기만의 제약"으로 읽히므로 그 사실을 문구가 먼저 말한다. */
 const PREVIEW_LEAD = "미리보기도 채팅과 같은 한도를 써요";
 
+/** 미리보기 자리인가 — 모델과 무관하게 "채팅과 같은 한도"라는 사실을 먼저 말한다. */
+export function isPreviewSurface(surface: ChatRateLimitSurface): boolean {
+  return surface === "preview" || surface === "premiumPreview";
+}
+
 function minuteLead(surface: ChatRateLimitSurface): string {
-  return surface === "preview" ? PREVIEW_LEAD : "너무 빠르게 보냈어요";
+  return isPreviewSurface(surface) ? PREVIEW_LEAD : "너무 빠르게 보냈어요";
 }
 
 /** 기본 모델 방의 문구는 **두 사실을 함께** 말한다: 지금 막힌 이유(클로버가 없다)와
@@ -62,6 +68,9 @@ function cloverMessage(surface: ChatRateLimitSurface): string {
       return "클로버가 부족해요";
     case "preview":
       return `${PREVIEW_LEAD} · 자정에 무료 한도가 돌아와요`;
+    case "premiumPreview":
+      // 상위 모델 방과 같은 이유로 자정을 약속하지 않는다 — 상위 모델 턴에는 돌아올 무료 한도가 없다.
+      return `${PREVIEW_LEAD} · 클로버가 부족해요`;
     default:
       return assertNever(surface);
   }

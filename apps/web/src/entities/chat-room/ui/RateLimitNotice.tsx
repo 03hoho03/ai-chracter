@@ -6,6 +6,7 @@ import { RotateCw } from "lucide-react";
 import {
   formatChatRateLimitAnnouncement,
   formatChatRateLimitMessage,
+  isPreviewSurface,
   type ChatRateLimit,
   type ChatRateLimitSurface,
 } from "../model/chatRateLimit";
@@ -65,7 +66,7 @@ export function RateLimitNotice({ rateLimit, surface, onRetry }: RateLimitNotice
       </span>
       {/* 클로버가 모자라면 채울 곳(구매·미션이 있는 허브)으로 잇는다. 빌더 미리보기에는 두지 않는다 — 누르면
           만들던 화면을 떠난다. */}
-      {rateLimit.window === "clover" && surface !== "preview" && (
+      {rateLimit.window === "clover" && !isPreviewSurface(surface) && (
         <Button asChild variant="destructive" size="sm" className="shrink-0">
           <Link to="/clover">클로버 채우기</Link>
         </Button>

@@ -1,4 +1,4 @@
-import type { ApiError, components } from "@ai-character-chat/api-types";
+import type { ApiError, components, operations } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/client";
@@ -11,8 +11,12 @@ import type { PreviewSessionState } from "../model/previewSessionState";
 
 type PreviewSessionStartResponseDto = components["schemas"]["PreviewSessionStartResponse"];
 
-/** 서버로 보내는 페이로드와, 첫 메시지 속 미디어 북 태그를 그릴 빌더의 칸 그림(`{칸 id: 그림}` — 서버로는 안 간다). */
-export type StartPreviewInput = { payload: PreviewStartPayload; mediaBookImages?: MediaTagImages };
+/** 세션 시작 요청의 쿼리 — 답을 쓸 모델. 없으면 서버가 기본 모델로 연다. */
+export type PreviewStartQuery = NonNullable<operations["start_preview_session_preview_sessions_post"]["parameters"]["query"]>;
+
+/** 서버로 보내는 페이로드와 쿼리, 그리고 첫 메시지 속 미디어 북 태그를 그릴 빌더의 칸 그림(`{칸 id: 그림}` — 서버로는
+ * 안 간다). */
+export type StartPreviewInput = { payload: PreviewStartPayload; query?: PreviewStartQuery; mediaBookImages?: MediaTagImages };
 
 /**
  * formToServer(getValues())를 검증 없이 그대로 전송해 미리보기
@@ -24,8 +28,8 @@ export function useStartPreviewMutation() {
   const queryClient = useQueryClient();
 
   return useMutation<PreviewSessionState, ApiError, StartPreviewInput>({
-    mutationFn: async ({ payload, mediaBookImages }) => {
-      const { data } = await apiClient.post<PreviewSessionStartResponseDto>("/preview-sessions", payload);
+    mutationFn: async ({ payload, query, mediaBookImages }) => {
+      const { data } = await apiClient.post<PreviewSessionStartResponseDto>("/preview-sessions", payload, { params: query });
       return buildPreviewStartState(data.previewSessionId, payload, mediaBookImages);
     },
     onSuccess: (state) => {

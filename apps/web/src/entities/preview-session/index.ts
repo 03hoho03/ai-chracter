@@ -1,6 +1,6 @@
 export { previewSessionKeys } from "./api/keys";
 export { usePreviewSessionQuery } from "./api/usePreviewSessionQuery";
-export { useStartPreviewMutation } from "./api/useStartPreviewMutation";
+export { useStartPreviewMutation, type PreviewStartQuery } from "./api/useStartPreviewMutation";
 export type {
   PreviewChatMessage,
   PreviewStartPayload,
