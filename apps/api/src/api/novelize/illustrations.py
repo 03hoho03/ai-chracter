@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from starlette.concurrency import run_in_threadpool
 
-from api.assets.router import collect_asset_usages
+from api.assets.router import collect_asset_usages, delete_emptied_generation_requests
 from api.assets.schemas import AssetPurpose
 from api.content.access import is_open_to_participant
 from api.core.s3 import build_display_key, build_variant_keys, delete_object, generate_presigned_get_url
@@ -42,7 +42,7 @@ from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import CharacterImageExposure, StoryMediaExposure
 from api.db.models.content import Content, ContentType
 from api.db.models.inquiry import Inquiry
-from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
+from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.novel import (
     Novel,
     NovelChapterIllustration,
@@ -357,13 +357,7 @@ async def delete_unused_illustration_assets(db: AsyncSession, asset_ids: Iterabl
             request_ids.add(asset.request_id)
         await db.delete(asset)
     await db.flush()
-    if request_ids:
-        await db.execute(
-            delete(ImageGenerationRequest).where(
-                ImageGenerationRequest.id.in_(request_ids),
-                ~select(Asset.id).where(Asset.request_id == ImageGenerationRequest.id).exists(),
-            )
-        )
+    await delete_emptied_generation_requests(db, request_ids)
     return keys
 
 
