@@ -809,7 +809,7 @@ def test_policy_constants_match_decisions() -> None:
     assert NOVELIZE_EPISODE_COST == 80
     assert NOVELIZE_AI_EDIT_COST == 30
     assert CHAT_TURN_COST_SONNET == 60
-    assert CHAT_TURN_COST_OPUS == 120
+    assert CHAT_TURN_COST_OPUS == 200
     assert NOVELIZE_EPISODE_COST_SONNET == 180
     assert NOVELIZE_EPISODE_COST_OPUS == 300
     assert (NOVELIZE_OUTLINE_COST, NOVELIZE_OUTLINE_COST_SONNET, NOVELIZE_OUTLINE_COST_OPUS) == (140, 290, 590)
