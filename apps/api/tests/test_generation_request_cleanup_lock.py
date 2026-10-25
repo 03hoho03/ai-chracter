@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from api.assets.router import delete_emptied_generation_requests
 from api.db.models import User
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
+from api.images import router as images_router
 from factories import _assert_blocked, _make_user
 
 
@@ -102,3 +103,112 @@ async def test_concurrent_deletes_of_both_images_of_a_request_leave_no_request_r
             sa.select(ImageGenerationRequest.id).where(ImageGenerationRequest.id == committed_pair.request_id)
         )
     assert remaining is None
+
+
+@dataclass(frozen=True)
+class _CommittedPendingImage:
+    factory: async_sessionmaker[AsyncSession]
+    request_id: uuid.UUID
+    asset_id: uuid.UUID
+
+
+@pytest_asyncio.fixture
+async def committed_pending_image(db_engine: AsyncEngine) -> AsyncGenerator[_CommittedPendingImage, None]:
+    """아직 생성 중(`pending`)인 한 장짜리 요청과, 그 요청에서 이미 커밋된 그림 한 장."""
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    async with factory() as db:
+        user = _make_user()
+        db.add(user)
+        await db.flush()
+        request = ImageGenerationRequest(
+            owner_user_id=user.id,
+            prompt="a cat",
+            style="soft_portrait",
+            aspect_ratio="1:1",
+            model="v1",
+            requested_count=1,
+            status="pending",
+        )
+        db.add(request)
+        await db.flush()
+        asset_id = uuid.uuid4()
+        db.add(
+            Asset(
+                id=asset_id,
+                owner_user_id=user.id,
+                storage_key=f"assets/generated/{asset_id}.png",
+                kind=AssetKind.GENERATED,
+                status=AssetStatus.READY,
+                request_id=request.id,
+            )
+        )
+        await db.commit()
+    try:
+        yield _CommittedPendingImage(factory, request.id, asset_id)
+    finally:
+        async with factory() as db:
+            await db.execute(sa.delete(Asset).where(Asset.id == asset_id))
+            await db.execute(sa.delete(ImageGenerationRequest).where(ImageGenerationRequest.id == request.id))
+            await db.execute(sa.delete(User).where(User.id == user.id))
+            await db.commit()
+
+
+async def _finish_as_succeeded(factory: async_sessionmaker[AsyncSession], request_id: uuid.UUID) -> None:
+    await images_router._record_request_outcome(
+        factory,
+        request_id,
+        status="succeeded",
+        completed_count=1,
+        blocked_count=0,
+        input_error_count=0,
+        blocked_reason=None,
+        input_error=None,
+        error=None,
+    )
+
+
+async def _request_row_exists(factory: async_sessionmaker[AsyncSession], request_id: uuid.UUID) -> bool:
+    async with factory() as db:
+        found = await db.scalar(sa.select(ImageGenerationRequest.id).where(ImageGenerationRequest.id == request_id))
+    return found is not None
+
+
+async def test_finishing_waits_for_a_gallery_delete_holding_the_request_row_then_removes_the_emptied_row(
+    committed_pending_image: _CommittedPendingImage,
+) -> None:
+    """판정 기준(결과를 보기 전에 적었다): 갤러리 삭제가 생성 중인 요청의 마지막 그림을 지우고 요청 행을 잠근 채 커밋하지
+    않은 동안, 생성 종료 기록은 잠금에서 멈춰 있어야 하고(`_assert_blocked`), 갤러리 삭제가 커밋한 뒤 끝난 종료 기록은
+    그림이 남지 않은 요청 행을 지워야 한다. 갤러리 쪽은 그때 행이 `pending` 이라 남기므로, 종료 쪽이 지우지 않으면 행이
+    남는다."""
+    factory = committed_pending_image.factory
+    request_id = committed_pending_image.request_id
+    async with factory() as gallery:
+        await _delete_asset_and_emptied_request(gallery, committed_pending_image.asset_id, request_id)
+
+        finishing = asyncio.create_task(_finish_as_succeeded(factory, request_id))
+        await _assert_blocked(finishing)
+
+        await gallery.commit()
+        await finishing
+
+    assert not await _request_row_exists(factory, request_id)
+
+
+async def test_finishing_does_not_wait_on_an_uncommitted_image_delete_and_the_gallery_then_removes_the_row(
+    committed_pending_image: _CommittedPendingImage,
+) -> None:
+    """판정 기준(결과를 보기 전에 적었다): 갤러리 삭제가 그림 행만 지우고 아직 요청 행을 보지 않은 채 커밋하지 않았으면,
+    생성 종료 기록은 그림 행 잠금에 막히지 않고 끝나며(그림이 아직 보이므로) 요청 행을 남긴다. 그 뒤 갤러리 삭제가 요청
+    행을 보면 이미 `succeeded` 라 지운다. 종료 기록이 멈추거나, 마지막에 행이 남으면 실패다."""
+    factory = committed_pending_image.factory
+    request_id = committed_pending_image.request_id
+    async with factory() as gallery:
+        await gallery.execute(sa.delete(Asset).where(Asset.id == committed_pending_image.asset_id))
+
+        await asyncio.wait_for(_finish_as_succeeded(factory, request_id), timeout=5)
+        assert await _request_row_exists(factory, request_id)
+
+        await delete_emptied_generation_requests(gallery, {request_id})
+        await gallery.commit()
+
+    assert not await _request_row_exists(factory, request_id)

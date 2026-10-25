@@ -965,6 +965,160 @@ async def test_generate_returns_429_creates_no_request_row(
     assert count == 0
 
 
+# ---- 생성 중 갤러리 삭제로 그림이 다 사라진 요청 행 ----
+#
+# 갤러리 삭제는 아직 생성 중(`pending`)인 요청 행을 남긴다. 생성 작업이 그림을 한 장씩 커밋하고 상태는 끝에 바꾸므로, 그
+# 사이에 지운 그림의 요청 행은 생성이 끝나는 자리가 마저 정리해야 한다 — 안 그러면 그림 없는 `succeeded` 행(프롬프트
+# 원문)이 탈퇴에도 90일 정리에도 걸리지 않고 남는다.
+
+
+def _delete_from_gallery_before_finish(
+    monkeypatch: pytest.MonkeyPatch, db_client: httpx.AsyncClient, *, keep: int, statuses: list[int]
+) -> None:
+    """모든 장이 끝나고 요청 행 상태를 바꾸기 직전(못 만든 장수의 환불 자리)에, 그때까지 나온 그림 중 앞의 `keep` 장을
+    빼고 갤러리 삭제 API 로 지운다. 백그라운드 태스크 안이라 응답 코드는 `statuses` 에 모아 테스트가 단언한다."""
+    original_refund = images_router._refund_unmade_images
+
+    async def refund_then_delete(
+        owner_user_id: uuid.UUID,
+        charge: rate_limit_gate.ImageCharge,
+        unmade_count: int,
+        session_factory: Any,
+        job_id: str,
+    ) -> None:
+        await original_refund(owner_user_id, charge, unmade_count, session_factory, job_id)
+        job = await get_job(job_id, owner_user_id)
+        assert job is not None
+        for asset_id in job.asset_ids[keep:]:
+            statuses.append((await db_client.delete(f"/me/generated-images/{asset_id}")).status_code)
+
+    monkeypatch.setattr(images_router, "_refund_unmade_images", refund_then_delete)
+
+
+async def test_request_whose_only_image_was_deleted_during_generation_is_removed_when_it_finishes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """한 장짜리 요청의 그림을 상태가 바뀌기 직전에 지우면, 생성이 끝날 때 요청 행도 사라진다. 잡 응답은 그대로
+    성공·1장이고(사용자는 그 그림을 받았다가 지웠다), 지운 그림은 이미지 목록에서 빠진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+    statuses: list[int] = []
+    _delete_from_gallery_before_finish(monkeypatch, db_client, keep=0, statuses=statuses)
+
+    _override_image_client(lambda: (_png_bytes(), "image/png"))
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+    job_id = resp.json()["jobId"]
+    job = await _wait_for_job_completion(job_id, user.id)
+
+    assert statuses == [204]
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+    assert job.completed_count == 1
+    assert await _request_rows(db_session, user.id) == []
+    job_resp = await db_client.get(f"/images/jobs/{job_id}")
+    assert job_resp.status_code == 200
+    assert job_resp.json()["status"] == "succeeded"
+    assert job_resp.json()["images"] == []
+
+
+async def test_request_whose_surviving_image_was_deleted_after_the_other_failed_is_removed_and_refund_is_unchanged(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """두 장 중 한 장이 실패하고 나온 한 장을 지우면 그림이 하나도 남지 않으므로 요청 행이 사라진다. 환불은 못 만든
+    한 장분 그대로다 — 지운 그림은 사용자가 받은 그림이다."""
+    _stub_capabilities_ready(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    statuses: list[int] = []
+    _delete_from_gallery_before_finish(monkeypatch, db_client, keep=0, statuses=statuses)
+
+    call_count = {"n": 0}
+
+    def generate() -> tuple[bytes, str]:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise LLMClientError("temporary blip")
+        return _png_bytes(), "image/png"
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+
+    assert statuses == [204]
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+    assert job.completed_count == 1
+    assert await _request_rows(db_session, user.id) == []
+    spent, refunded = _spent_and_refunded(await _clover_ledger(db_session, user.id))
+    assert spent == -2 * clover.IMAGE_UNIT_COST
+    assert refunded == clover.IMAGE_UNIT_COST
+
+
+async def test_request_keeps_its_row_when_an_image_survives_a_deletion_during_generation(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """두 장 중 한 장만 지우면 남은 그림이 요청 행을 가리키므로 행과 집계가 그대로 남는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+    statuses: list[int] = []
+    _delete_from_gallery_before_finish(monkeypatch, db_client, keep=1, statuses=statuses)
+
+    _override_image_client(lambda: (_png_bytes(), "image/png"))
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+
+    assert statuses == [204]
+    rows = await _request_rows(db_session, user.id)
+    assert [(row.status, row.completed_count) for row in rows] == [("succeeded", 2)]
+    survivor = await db_session.get(Asset, job.asset_ids[0])
+    assert survivor is not None
+    assert survivor.request_id == rows[0].id
+
+
+async def test_request_that_made_no_image_keeps_its_failed_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """그림이 처음부터 하나도 나오지 않은 요청은 생성이 끝나도 `failed` 행으로 남는다 — 이런 행의 정리는 90일 정리
+    작업의 몫이고, 생성이 끝나는 자리는 지운 그림이 있던 성공 요청만 정리한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    def generate() -> tuple[bytes, str]:
+        raise LLMClientError("unavailable")
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+
+    assert job.status == ImageGenerationJobStatus.FAILED
+    rows = await _request_rows(db_session, user.id)
+    assert [(row.status, row.completed_count, row.error) for row in rows] == [
+        ("failed", 0, "이미지 생성에 모두 실패했습니다")
+    ]
+
+
 async def test_generate_unexpected_error_marks_job_failed(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
