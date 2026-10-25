@@ -11,7 +11,7 @@ export type AdminPromptPublishRequest = components["schemas"]["AdminPromptPublis
 export type AdminPromptSetDetailResponse = components["schemas"]["AdminPromptSetDetailResponse"];
 
 /** 게시는 저장된 초안을 새 버전으로 복제할 뿐 초안 자체는 그대로 남는다(legal과 같다) —
- * 그래서 초안 캐시는 건드리지 않고 버전 목록·미리보기만 무효화한다. `list()`는 레인이 없는
+ * 그래서 초안 캐시는 건드리지 않고 버전 목록·미리보기와, 기준판이 바뀌어 낡은 바뀐 섹션 목록만 무효화한다. `list()`는 레인이 없는
  * 한 엔드포인트라 체인을 가로질러 무효화한다 — 그래야 다른 체인의 `isActive` 배지가
  * 함께 갱신된다. */
 export function usePublishMutation(lane: PromptLane, model: PromptModel) {
@@ -27,6 +27,7 @@ export function usePublishMutation(lane: PromptLane, model: PromptModel) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: promptSetKeys.list() });
       void queryClient.invalidateQueries({ queryKey: promptSetKeys.preview(lane, model) });
+      void queryClient.invalidateQueries({ queryKey: promptSetKeys.draftChanges(lane, model) });
     },
   });
 }

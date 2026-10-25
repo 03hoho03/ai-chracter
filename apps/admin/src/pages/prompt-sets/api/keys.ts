@@ -9,6 +9,7 @@ export const promptSetKeys = {
   chain: (lane: PromptLane, model: PromptModel) => [...promptSetKeys.all, lane, model] as const,
   draft: (lane: PromptLane, model: PromptModel) => [...promptSetKeys.chain(lane, model), "draft"] as const,
   preview: (lane: PromptLane, model: PromptModel) => [...promptSetKeys.chain(lane, model), "preview"] as const,
+  draftChanges: (lane: PromptLane, model: PromptModel) => [...promptSetKeys.chain(lane, model), "draftChanges"] as const,
   list: () => [...promptSetKeys.all, "list"] as const,
   detail: (id: string) => [...promptSetKeys.all, "detail", id] as const,
 };

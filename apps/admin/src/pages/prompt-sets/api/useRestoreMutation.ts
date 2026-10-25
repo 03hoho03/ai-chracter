@@ -21,6 +21,7 @@ export function useRestoreMutation(lane: PromptLane) {
     onSuccess: (data) => {
       queryClient.setQueryData(promptSetKeys.draft(lane, data.model), data);
       void queryClient.invalidateQueries({ queryKey: promptSetKeys.preview(lane, data.model) });
+      void queryClient.invalidateQueries({ queryKey: promptSetKeys.draftChanges(lane, data.model) });
     },
   });
 }

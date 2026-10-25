@@ -245,6 +245,23 @@ async def test_the_chain_list_follows_the_env_judgment_model(
     ]
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_the_response_carries_the_premium_model_switch_and_keeps_opus_room_readers_either_way(
+    enabled: bool, routing_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, admin_id: uuid.UUID
+) -> None:
+    # 스위치가 꺼지면 Opus 방은 기본 모델로 돌아 그 방의 칸은 운영에서 읽히지 않는다. 그 판단은 화면이 스위치 값으로 하고,
+    # 읽는 칸 목록은 배정 표 칸 설정과 같은 뜻을 지키려고 스위치와 무관하게 그대로 둔다.
+    routing_env.setattr(settings, "chat_premium_models_enabled", enabled)
+
+    body = (await db_client.get("/admin/prompt-routing")).json()
+
+    assert body["chatPremiumModelsEnabled"] is enabled
+    chains = {(c["lane"], c["model"]): c["readBy"] for c in body["chains"]}
+    assert {"roomModel": "opus", "stage": "chat_generate", "channels": ["system", "generation"]} in chains[
+        ("story", "opus")
+    ]
+
+
 async def test_saving_replaces_the_table_records_one_revision_and_shows_the_rows(
     routing_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
 ) -> None:

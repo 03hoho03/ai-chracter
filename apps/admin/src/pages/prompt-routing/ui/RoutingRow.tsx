@@ -4,6 +4,7 @@ import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import {
   isPromptSetModelId,
+  isRoomLive,
   PROMPT_MODEL_LABELS,
   ROOM_MODEL_LABELS,
   ROUTING_LANE_LABELS,
@@ -83,7 +84,10 @@ export function RoutingRow({ cell, data, showsStage, saved }: RoutingRowProps) {
             </span>
           </span>
         </th>
-        <TableCell className="align-top text-muted-foreground">{ROOM_MODEL_LABELS[cell.roomModel]}</TableCell>
+        <TableCell className="align-top text-muted-foreground">
+          {ROOM_MODEL_LABELS[cell.roomModel]}
+          {!isRoomLive(data, cell.roomModel) && <span className="block text-xs">지금 안 읽힘</span>}
+        </TableCell>
         <TableCell className="align-top">
           <div className="flex w-60 flex-col gap-1 whitespace-normal">
             <Controller

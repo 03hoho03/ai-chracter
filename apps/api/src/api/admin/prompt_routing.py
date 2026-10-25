@@ -216,6 +216,7 @@ async def _routing_response(db: AsyncSession) -> AdminPromptRoutingResponse:
         revision_id=None if latest is None else latest.id,
         revision_number=None if latest is None else latest.number,
         prices_as_of=PRICES_AS_OF,
+        chat_premium_models_enabled=settings.chat_premium_models_enabled,
         allowed_pairs=[
             AdminPromptRouteAllowedPair(kind=kind, model=model, backend=backend)
             for kind, pairs in ALLOWED_ROUTE_PAIRS.items()

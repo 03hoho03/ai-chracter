@@ -15,6 +15,7 @@ export const PROMPT_CHANNEL_LABELS = {
   image_judgment: "이미지 판정",
   memory_summary: "기억 요약",
   memory_episode: "장면 기억 추출",
+  memory_fact: "사실 기억 추출",
   publish_filter: "발행 검열",
   novelize_boundary: "소설 경계 제안",
   novelize_chapter: "소설 화 생성",
@@ -33,6 +34,16 @@ export function isPromptChannel(value: string): value is PromptChannel {
 }
 
 export const PROMPT_CHANNELS = Object.keys(PROMPT_CHANNEL_LABELS).filter(isPromptChannel);
+
+/** 판·복원의 섹션 단위는 채널 하나이거나, 화자 라벨 넷을 한 섹션으로 묶은 이 이름이다(라벨은 채널 행이 아니라 세트 칸이라 채널
+ * 목록에 없다). */
+export const SPEAKER_LABELS_SECTION = "speaker_labels";
+
+/** 판·변경 목록에 오는 섹션 이름 → 운영자가 읽는 말. 지금 코드가 모르는 채널(옛 게시본에만 있는 것)은 원문 그대로 보인다. */
+export function promptSectionLabel(section: string): string {
+  if (section === SPEAKER_LABELS_SECTION) return "화자 라벨";
+  return isPromptChannel(section) ? PROMPT_CHANNEL_LABELS[section] : section;
+}
 
 const NOVEL_CHANNELS: ReadonlySet<PromptChannel> = new Set(["novelize_boundary", "novelize_chapter", "novelize_revise"]);
 

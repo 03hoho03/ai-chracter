@@ -10,16 +10,28 @@ import { DenseTable } from "@/shared/ui/DenseTable";
 import { useVersionDetailQuery } from "../api/useVersionDetailQuery";
 import { useVersionListQuery } from "../api/useVersionListQuery";
 import { PROMPT_LANE_LABELS } from "../model/lane";
-import { PROMPT_MODEL_LABELS } from "../model/model";
+import { PROMPT_MODEL_LABELS, promptChainKey, type PromptChainKey } from "../model/model";
+import { semverText } from "../model/semver";
 import { RestorePromptSetDialog } from "./RestorePromptSetDialog";
+import { VersionSectionTable } from "./VersionSectionTable";
+
+const CHAIN_DIRTY_RESTORE_REASON = "이 체인에 저장 안 한 편집이 있어요 — 저장하거나 되돌린 뒤 복원하세요.";
+
+type DirtyByChain = Partial<Record<PromptChainKey, boolean>>;
+
+type VersionHistorySectionProps = {
+  /** 체인마다 저장하지 않은 편집이 있는가. 복원 응답은 초안 캐시를 갈아 끼워 그 체인 폼을 다시 맞추므로, 편집이 있는 체인은
+   * 복원을 막아 서버가 모르는 로컬 편집이 소리 없이 사라지지 않게 한다(서버의 덮어쓰기 확인은 저장된 초안만 지킨다). */
+  dirtyByChain: DirtyByChain;
+};
 
 /** 제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 `VersionTable`로 갈라낸다
  * (`pages/appeals`의 `AppealsTable`과 같은 결). */
-export function VersionHistorySection() {
+export function VersionHistorySection({ dirtyByChain }: VersionHistorySectionProps) {
   return (
     <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
       <h2 className="text-lg font-semibold text-foreground">게시 이력</h2>
-      <VersionTable />
+      <VersionTable dirtyByChain={dirtyByChain} />
     </section>
   );
 }
@@ -28,7 +40,7 @@ export function VersionHistorySection() {
  * null`)도 함께 내려온다(버전 이력이 아니다) — 그래서 여기서 `published`만 걸러
  * 보여준다. 선택한 행의 라벨·섹션 개수는 목록에 없어(메타만) `GET /{id}`로 따로 받는다
  * (appeals의 "목록에서 find" 패턴을 못 쓰는 이유이기도 하다). */
-function VersionTable() {
+function VersionTable({ dirtyByChain }: VersionHistorySectionProps) {
   const versionListQuery = useVersionListQuery();
   const [selectedId, setSelectedId] = useState<string>();
 
@@ -52,7 +64,7 @@ function VersionTable() {
 
   return (
     <>
-      {/* 여섯 칸이라 좁은 화면에서는 표만 가로로 스크롤하고 버전 칸은 왼쪽에 고정한다. */}
+      {/* 일곱 칸이라 좁은 화면에서는 표만 가로로 스크롤하고 버전 칸은 왼쪽에 고정한다. */}
       <div className="overflow-hidden rounded-lg border border-border">
         <DenseTable surface="card">
           <Table>
@@ -65,6 +77,7 @@ function VersionTable() {
                     버전
                   </span>
                 </TableHead>
+                <TableHead>판</TableHead>
                 <TableHead>레인</TableHead>
                 <TableHead>모델</TableHead>
                 <TableHead>게시일</TableHead>
@@ -103,6 +116,7 @@ function VersionTable() {
                         </span>
                       </button>
                     </TableCell>
+                    <TableCell className="tabular-nums">{semverText(item.semver, item.version)}</TableCell>
                     <TableCell>{PROMPT_LANE_LABELS[item.lane]}</TableCell>
                     <TableCell>{PROMPT_MODEL_LABELS[item.model]}</TableCell>
                     <TableCell>{formatDateTime(item.publishedAt)}</TableCell>
@@ -116,16 +130,17 @@ function VersionTable() {
         </DenseTable>
       </div>
 
-      {selectedId !== undefined && <VersionDetailPanel id={selectedId} />}
+      {selectedId !== undefined && <VersionDetailPanel id={selectedId} dirtyByChain={dirtyByChain} />}
     </>
   );
 }
 
 type VersionDetailPanelProps = {
   id: string;
+  dirtyByChain: DirtyByChain;
 };
 
-function VersionDetailPanel({ id }: VersionDetailPanelProps) {
+function VersionDetailPanel({ id, dirtyByChain }: VersionDetailPanelProps) {
   const versionDetailQuery = useVersionDetailQuery(id);
 
   if (versionDetailQuery.isPending) {
@@ -137,6 +152,8 @@ function VersionDetailPanel({ id }: VersionDetailPanelProps) {
   }
 
   const detail = versionDetailQuery.data;
+  const isChainDirty = dirtyByChain[promptChainKey(detail.lane, detail.model)] === true;
+  const restoreBlockedId = `prompt-version-${detail.id}-restore-blocked`;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
@@ -158,24 +175,34 @@ function VersionDetailPanel({ id }: VersionDetailPanelProps) {
           <dd className="text-foreground">{detail.labels.characterAssistantLabel}</dd>
         </div>
       </dl>
-      <p className="text-xs text-muted-foreground">섹션 {detail.sections.length}개</p>
-      <div>
+      <VersionSectionTable detail={detail} restoreBlockedBy={isChainDirty ? restoreBlockedId : null} />
+      <div className="flex flex-wrap items-center gap-2">
+        {/* 막힌 사유가 읽히도록 `disabled` 대신 `aria-disabled` 로 포커스 순회에 남긴다. */}
         <Button
           type="button"
           variant="outline"
           size="sm"
-          onClick={() =>
+          aria-disabled={isChainDirty}
+          aria-describedby={isChainDirty ? restoreBlockedId : undefined}
+          className="aria-disabled:opacity-65"
+          onClick={() => {
+            if (isChainDirty) return;
             void RestorePromptSetDialog.call({
               id: detail.id,
               version: detail.version,
               publishedAt: detail.publishedAt,
               lane: detail.lane,
               model: detail.model,
-            })
-          }
+            });
+          }}
         >
           이 버전으로 복원
         </Button>
+        {isChainDirty && (
+          <span id={restoreBlockedId} className="break-keep text-xs text-muted-foreground">
+            {CHAIN_DIRTY_RESTORE_REASON}
+          </span>
+        )}
       </div>
     </div>
   );
