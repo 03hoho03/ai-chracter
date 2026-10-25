@@ -27,6 +27,7 @@ from api.db.models import (
     NovelOutline,
     NovelSceneBlock,
 )
+from api.novelize import block_edit_router
 from api.novelize import router as novelize_router
 from api.novelize.block_edits import BlockEdit, block_hash, normalized_result, request_targets
 from api.novelize.blocks import build_revision
@@ -297,6 +298,43 @@ async def test_an_input_over_the_cap_is_422_before_charging_and_the_cap_itself_p
     assert jobs_before == []
     assert at_cap.status_code == 202, at_cap.text
     assert await _novel_ledger(db_session, user_id) == [("novelize_spend", -20)]
+
+
+@pytest.mark.parametrize(("estimated", "status"), [(59_999, 202), (60_000, 202), (60_001, 422)])
+async def test_the_default_input_cap_takes_up_to_60_000_estimated_characters(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+    switch_on: None,
+    estimated: int,
+    status: int,
+) -> None:
+    """기본 입력 상한은 견적 60,000자다 — 상한과 같은 견적까지 받고 하나라도 넘으면 차감 전 422 `NOVEL_EDIT_INPUT_TOO_LONG`.
+    운영 env 가 상한을 따로 두지 않아 기본값이 곧 운영 값이다. 견적을 그 값으로 바꿔 끼운다. 깨지는 시나리오: 상한이 다시 커져
+    큰 입력에 문단 여럿을 고치는 요청이 수정 호출 타임아웃에 걸려 실패·환불된다."""
+    user_id, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = await _current(db_session, chapter.id)
+    default_cap = type(settings).model_fields["novelize_block_edit_max_input_chars"].default
+    monkeypatch.setattr(settings, "novelize_block_edit_max_input_chars", default_cap)
+
+    async def fixed_estimate(*_args: object, **_kwargs: object) -> int:
+        return estimated
+
+    monkeypatch.setattr(block_edit_router, "input_estimate", fixed_estimate)
+
+    response = await db_client.post(_url(novel_id, chapter.id), json=_request(base, [0]))
+
+    assert response.status_code == status, response.text
+    if status == 422:
+        assert response.json()["detail"] == {
+            "code": "NOVEL_EDIT_INPUT_TOO_LONG",
+            "estimatedInputChars": estimated,
+            "maxInputChars": 60_000,
+        }
+        assert await _novel_ledger(db_session, user_id) == []
+    else:
+        assert await _novel_ledger(db_session, user_id) == [("novelize_spend", -20)]
 
 
 async def test_the_input_estimate_of_a_chapter_with_scenes_counts_only_the_scene(

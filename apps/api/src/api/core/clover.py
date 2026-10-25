@@ -74,16 +74,17 @@ NOVELIZE_EPISODE_COST_OPUS = 300
 # 구성 흐름의 전체 구성안 한 번과 화 하나의 장면 구성안 한 번의 클로버 — 모델별 고정가. 구성 흐름 스위치
 # (`NOVELIZE_OUTLINE_FLOW_ENABLED`)가 꺼져 있는 동안은 이 값으로 차감하는 경로가 없다. 원고(승인한 장면 구성안으로 쓰는 화 하나)는
 # 위 화 단가를 쓴다.
-# 전체 구성안 140·290·590 은 잰 원가로 정했다. 고른 대화 길이와 무관한 고정가라 가장 긴 입력이 값을 정한다 — 입력 상한
-# (`novelize_outline_max_input_tokens`, 14만 자)에 원문 밖 프롬프트 몫(측정 5,451자)을 더한 길이의 예상 원가가 쓸 수 있는 돈의 67%
-# 안에, 중간 길이 방에서 잰 원가가 50% 안에 드는 가장 작은 10 단위 값이다. 실측 토큰/글자 비(Gemini 0.636·Claude 1.087)와 실측 출력
-# 중앙값으로 낸 상한 길이 원가는 Gemini 약 $0.162(2027년 정가 기준)·Sonnet 약 $0.342·Opus 약 $0.693 이다. 입력 상한을 올리면 이
-# 값도 다시 계산한다.
+# 전체 구성안 190·330·690 은 입력 상한 길이의 원가로 정했다. 고른 대화 길이와 무관한 고정가라 가장 긴 입력이 값을 정한다 — 입력
+# 상한(`novelize_outline_max_input_tokens`, 14만 자) 길이의 원가가 쓸 수 있는 돈의 67% 안에 드는 가장 작은 10 단위 값이다. 상한
+# 길이의 방은 화가 많아(상한에 가까운 견적 139,740자 방에서 22화) 짧은 방보다 출력이 훨씬 크다 — 그 방에서 잰 Gemini 구성안 원가
+# $0.2135 는 출력을 여러 길이의 중앙값으로 쳐서 정했던 140클로버로는 쓸 수 있는 돈의 86% 였다. Claude 두 값은 상한 길이에서 재지
+# 않았고, 긴 방에서 잰 화당 출력·사고 토큰에 22화를 곱해 외삽했다. 상한 길이 원가(2027년 정가 기준)는 Gemini 약 $0.214·Sonnet 약
+# $0.384·Opus 약 $0.815 다. 입력 상한을 올리면 이 값도 다시 계산한다.
 # 장면 구성안 80·180·300 은 같은 모델의 화 단가와 같게 둔 값이다. 잰 원가(p90)가 셋 다 쓸 수 있는 돈의 50% 안에 들어 그대로 둔다.
 # 전체 구성안과 달리 상한 길이 원가로 정한 값이 아니다 — 상한에 가까운 아주 긴 화의 원가는 아직 재지 않았다.
-NOVELIZE_OUTLINE_COST = 140
-NOVELIZE_OUTLINE_COST_SONNET = 290
-NOVELIZE_OUTLINE_COST_OPUS = 590
+NOVELIZE_OUTLINE_COST = 190
+NOVELIZE_OUTLINE_COST_SONNET = 330
+NOVELIZE_OUTLINE_COST_OPUS = 690
 NOVELIZE_EPISODE_OUTLINE_COST = 80
 NOVELIZE_EPISODE_OUTLINE_COST_SONNET = 180
 NOVELIZE_EPISODE_OUTLINE_COST_OPUS = 300
