@@ -43,7 +43,7 @@ from api.novel_public.admin_schemas import (
 from api.novel_public.purchases import NovelChapterPurchaseResponse, purchase_chapter
 from api.novelize import router as novelize_router
 from api.novelize.deletion import delete_novels
-from api.novelize.hidden_purge import purge_hidden_novels, strip_withdrawn_publisher_novels
+from api.novelize.hidden_purge import purge_hidden_novels, strip_hidden_novels
 
 _SETTLE_SECONDS = 10
 
@@ -527,8 +527,8 @@ async def test_two_overlapping_strips_of_a_withdrawn_publishers_hidden_novel_cou
         )
         await s.commit()
     holder = await _hold_user(world, publisher)
-    first = _in_own_session(world, strip_withdrawn_publisher_novels)
-    second = _in_own_session(world, strip_withdrawn_publisher_novels)
+    first = _in_own_session(world, strip_hidden_novels)
+    second = _in_own_session(world, strip_hidden_novels)
     try:
         await _assert_blocked(first)
         await _assert_blocked(second)

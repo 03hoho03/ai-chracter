@@ -645,6 +645,83 @@ async def test_regenerating_a_chapter_of_another_novel_is_404(
     assert resp.status_code == 404 and resp.json()["detail"] == {"code": "NOVEL_CHAPTER_NOT_FOUND"}
 
 
+# ── 구성 흐름이 켜진 동안의 옛 이어 쓰기 ────────────────────────────────────
+async def _continue_old_flow(route: str, client: httpx.AsyncClient, room: Room, novel_id: uuid.UUID) -> httpx.Response:
+    """옛 이어 쓰기 라우트 하나를 그 라우트가 받아들일 본문으로 부른다 — 연쇄는 견적이 준 첫 모델의 금액으로."""
+    if route == "proposal":
+        return await client.post(f"/novels/{novel_id}/chapter-proposal")
+    if route == "chapter":
+        return await client.post(
+            f"/novels/{novel_id}/chapters", json={"endMessageId": str(room.turns[2][1].id), "expectedCost": 40}
+        )
+    option = (await client.get(f"/novels/{novel_id}/chain-estimate")).json()["options"][0]
+    return await client.post(
+        f"/novels/{novel_id}/chain",
+        json={"model": option["model"], "expectedCost": option["cost"], "maxBatches": option["batchCount"]},
+    )
+
+
+@pytest.mark.parametrize("route", ["proposal", "chapter", "chain"])
+@pytest.mark.parametrize("outline_flow", [pytest.param(True, id="outline-on"), pytest.param(False, id="outline-off")])
+async def test_continuing_from_the_last_chapter_is_refused_while_the_outline_flow_is_on(
+    route: str,
+    outline_flow: bool,
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    """구성 흐름 스위치가 켜져 있으면 옛 이어 쓰기(경계 제안·묶음 생성·연쇄)는 409 `NOVEL_OUTLINE_FLOW_REQUIRED` 이고 모델을
+    부르지도, 차감하지도, 작업을 만들지도 않는다. 꺼져 있으면 지금처럼 받는다. 깨지는 시나리오: 화면은 구성 흐름으로만 보내는데
+    직접 호출한 옛 라우트가 작가가 담지 않은 대화 구간까지 모델에 보낸다."""
+    monkeypatch.setattr(settings, "novelize_outline_flow_enabled", outline_flow)
+    chained: list[uuid.UUID] = []
+
+    async def record_chain(_factory: Any, _llm: Any, job_id: uuid.UUID) -> None:
+        chained.append(job_id)
+
+    monkeypatch.setattr(novelize_router, "enqueue_chain_job", record_chain)
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    await clover.grant(db_session, user_id=room.user_id, amount=2000, kind="admin_grant")  # 연쇄 한 묶음 몫이 100 을 넘는다
+    await db_session.commit()
+
+    resp = await _continue_old_flow(route, db_client, room, novel_id)
+
+    jobs = (await db_session.scalars(sa.select(NovelJob.kind).where(NovelJob.novel_id == novel_id))).all()
+    if outline_flow:
+        assert resp.status_code == 409 and resp.json()["detail"] == {"code": "NOVEL_OUTLINE_FLOW_REQUIRED"}
+        assert (llm.boundary_calls, enqueued, chained, jobs) == ([], [], [], [])
+        assert await _novel_ledger(db_session, room.user_id) == []
+        return
+    assert resp.status_code == {"proposal": 200, "chapter": 202, "chain": 202}[route], resp.text
+    assert (len(llm.boundary_calls), jobs) == {
+        "proposal": (1, []),
+        "chapter": (0, ["chapter_generate"]),
+        "chain": (0, ["chain_generate"]),
+    }[route]
+
+
+async def test_regenerating_a_chapter_of_the_old_flow_stays_open_while_the_outline_flow_is_on(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    """구성 흐름을 켜도 이미 이어 쓰기로 만든 화의 다시 만들기는 그대로 받는다 — 그 화는 구성 흐름으로 다시 만들 길이
+    없다. 깨지는 시나리오: 옛 흐름을 닫으며 옛 화의 다시 만들기까지 막아, 켜기 전에 쓴 화를 고칠 길이 사라진다."""
+    monkeypatch.setattr(settings, "novelize_outline_flow_enabled", True)
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
+
+    by_chapter = await db_client.post(f"/novels/{novel_id}/chapters/{chapter.id}/regenerate", json={"expectedCost": 40})
+
+    assert by_chapter.status_code == 202, by_chapter.text
+    assert (await _job_row(db_session, uuid.UUID(by_chapter.json()["id"]))).kind == "chapter_regenerate"
+
+
 # ── 마지막 장 삭제 ──────────────────────────────────────────────────────────
 async def test_deleting_the_last_chapter_keeps_its_jobs_and_rewinds_the_next_start(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _NovelRouteLLM

@@ -24,6 +24,7 @@ from api.db.models import (
     CloverLedger,
     Content,
     ContentType,
+    ImageGenerationRequest,
     Novel,
     NovelChapter,
     NovelChapterIllustration,
@@ -836,6 +837,63 @@ async def test_purging_a_withdrawn_authors_hidden_novel_deletes_the_generated_pi
 
     assert await db_session.get(Asset, picture.id, populate_existing=True) is None
     assert picture.storage_key in deleted_keys
+
+
+async def _request(db: AsyncSession, owner_id: uuid.UUID, *pictures: Asset, status: str = "succeeded") -> uuid.UUID:
+    """`pictures` 를 만든 이미지 생성 요청 행 하나(커밋)."""
+    request = ImageGenerationRequest(
+        owner_user_id=owner_id,
+        prompt="요청 프롬프트",
+        style="anime",
+        aspect_ratio="3:4",
+        model="test-model",
+        requested_count=max(len(pictures), 1),
+        status=status,
+    )
+    db.add(request)
+    await db.flush()
+    for picture in pictures:
+        await db.execute(sa.update(Asset).where(Asset.id == picture.id).values(request_id=request.id))
+    await db.commit()
+    return request.id
+
+
+@pytest.mark.usefixtures("illustrations_on")
+async def test_purging_a_withdrawn_authors_hidden_novel_deletes_the_requests_left_without_a_picture(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, deleted_keys: list[str]
+) -> None:
+    """숨겨 남긴 소설이 파기되어 탈퇴자의 생성 이미지가 지워지면, 그림이 하나도 남지 않은 그 이미지의 생성 요청 행(프롬프트 원문)도
+    함께 지운다. 같은 요청의 다른 그림이 남아 있으면 요청 행도 남고, 처음부터 그림이 없던 요청(차단·실패)은 보관 기간 정리의 몫이라
+    건드리지 않는다. 깨지는 시나리오: 이미지와 함께 파기한다는 프롬프트 원문이 그림이 사라진 뒤에도 기한 없이 남거나, 남은 그림이
+    가리키는 요청 행을 지워 외래 키 오류로 파기 전체가 실패한다."""
+    from api.db.models import User
+    from api.novelize.hidden_purge import purge_hidden_novels
+
+    room, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    alone, paired, sibling = [await _asset(db_session, room.user_id) for _ in range(3)]
+    alone_request = await _request(db_session, room.user_id, alone)
+    paired_request = await _request(db_session, room.user_id, paired, sibling)
+    blocked_request = await _request(db_session, room.user_id, status="blocked")
+    first = await _current(db_session, chapter.id)
+    await _ok(await _attach(db_client, novel_id, chapter.id, first, first.block_ids[0], alone.id))
+    second = await _current(db_session, chapter.id)
+    await _ok(await _attach(db_client, novel_id, chapter.id, second, second.block_ids[0], paired.id))
+    await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(hidden_at=sa.func.now(), chat_room_id=None))
+    await db_session.execute(sa.update(User).where(User.id == room.user_id).values(deleted_at=sa.func.now()))
+    await db_session.commit()
+
+    assert await purge_hidden_novels(db_session) == 1
+
+    left = set(
+        (
+            await db_session.scalars(
+                sa.select(ImageGenerationRequest.id).where(ImageGenerationRequest.owner_user_id == room.user_id)
+            )
+        ).all()
+    )
+    assert left == {paired_request, blocked_request}
+    assert await db_session.get(Asset, sibling.id, populate_existing=True) is not None
+    assert {alone.storage_key, paired.storage_key} <= set(deleted_keys)
 
 
 @pytest.mark.parametrize("switch_on", [pytest.param(True, id="on"), pytest.param(False, id="off")])

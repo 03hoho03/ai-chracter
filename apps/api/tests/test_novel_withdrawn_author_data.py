@@ -1,9 +1,9 @@
-"""탈퇴한 게시자의 숨겨 남긴 소설 — 독자가 읽는 것만 남기고 작가 전용 데이터를 지운다.
+"""숨겨 남긴 팔린 소설(게시자 탈퇴·작가의 삭제) — 독자가 읽는 것만 남기고 작가 전용 데이터를 지운다.
 
-정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면 탈퇴는 팔린 소설을 지우지 않고 숨겨 남긴다(산 사람이 계속 읽는다).
+정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면 탈퇴와 작가의 삭제는 팔린 소설을 지우지 않고 숨겨 남긴다(산 사람이 계속 읽는다).
 남기는 것은 공개 상태 행, 화 공개본과 판 행, 그 둘이 가리키는 개정과 화 행뿐이다. 스냅숏·등장인물·작가 읽은 자리·설정 노트·
 주인공 이름·작업본 제목과 소개·편집 보드·표지 연결·공개되지 않은 화와 개정, 화의 작업본 제목·요약·작가의 말은 지운다. 이미
-숨겨 남은 소설(배포 겹침 동안 옛 이미지가 숨긴 것, 탈퇴 직후 늦게 도착한 작가 쓰기)은 하루 한 번 파기 크론이 같은 정리를 한다.
+숨겨 남은 소설(배포 겹침 동안 옛 이미지가 숨긴 것, 숨긴 직후 늦게 도착한 작가 쓰기)은 하루 한 번 파기 크론이 같은 정리를 한다.
 
 공개 소설은 `_make_public_novel`(6화 + 2화 묶음, 전부 공개, 앞 5화 무료)로 만든다."""
 
@@ -364,14 +364,29 @@ async def test_a_withdrawal_keeps_only_what_readers_read_of_a_sold_novel(
     await _assert_readers_still_read(db_client, db_session, planted)
 
 
-async def test_the_daily_purge_strips_author_data_left_on_a_withdrawn_publishers_hidden_novel(
+async def test_deleting_a_sold_novel_keeps_only_what_readers_read_like_a_withdrawal(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """탈퇴한 게시자의 숨긴 소설에 작가 전용 데이터가 남아 있으면(배포 겹침 동안 옛 이미지가 정리 없이 숨겼거나, 탈퇴 직후 늦게
-    도착한 작가 쓰기) 하루 한 번 크론이 같은 정리를 하고 정리한 소설 수를 센다. 두 번째 실행은 바꿀 것이 없어 0 이다. 살아 있는
-    게시자가 지워 숨긴 소설과 숨기지 않은 소설은 건드리지 않는다. 깨지는 시나리오: 옛 이미지가 남긴 탈퇴자의 초고가 기한 없이
-    남거나, 크론이 작가가 살아 있는 소설이나 숨겨 남긴 것이 아닌 소설의 작업 데이터를 지운다."""
-    from api.novelize.hidden_purge import strip_withdrawn_publisher_novels
+    """작가가 팔린 소설을 지우면 숨겨 남기는 소설에서 탈퇴 때와 같은 작가 전용 데이터가 사라지고, 화 공개본·판 행이 가리키는 개정과
+    화만 남는다 — 산 사람의 지난 판도 남는다. 산 사람·운영자의 읽기 경로는 모두 그대로 열린다. 깨지는 시나리오: 작가가 지워 달라고
+    한 설정 노트·주인공 이름·스냅숏·초고가 소장자 때문에 남거나, 정리가 산 사람이 고르는 지난 판의 본문까지 지운다."""
+    planted = await _plant_author_data(db_client, db_session)
+
+    await _login_as(db_client, planted.novel.publisher_id)
+    assert (await db_client.delete(f"/novels/{planted.novel.novel_id}")).status_code == 204
+
+    await _assert_only_reader_rows_remain(db_session, planted)
+    await _assert_readers_still_read(db_client, db_session, planted)
+
+
+async def test_the_daily_purge_strips_author_data_left_on_a_hidden_novel(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """숨긴 소설에 작가 전용 데이터가 남아 있으면(배포 겹침 동안 옛 이미지가 정리 없이 숨겼거나, 숨긴 직후 늦게 도착한 작가 쓰기)
+    하루 한 번 크론이 같은 정리를 하고 정리한 소설 수를 센다 — 게시자가 탈퇴해 숨긴 소설이든 살아 있는 작가가 지워 숨긴 소설이든
+    같다. 두 번째 실행은 바꿀 것이 없어 0 이다. 숨기지 않은 소설은 건드리지 않는다. 깨지는 시나리오: 옛 이미지가 남긴 작가의
+    초고가 기한 없이 남거나, 크론이 숨겨 남긴 것이 아닌 소설의 작업 데이터를 지운다."""
+    from api.novelize.hidden_purge import strip_hidden_novels
 
     planted = await _plant_author_data(db_client, db_session)
     # 옛 이미지의 탈퇴 — 작가 행을 탈퇴로 표시하고 소설을 숨기기만 한다.
@@ -397,19 +412,21 @@ async def test_the_daily_purge_strips_author_data_left_on_a_withdrawn_publishers
     visible = await _make_public_novel(db_session, living.id)
     # 숨기지 않은 채 남은 탈퇴자의 소설(소설화 테이블을 모르던 옛 코드의 탈퇴가 남긴 꼴) — 숨겨 남긴 소설이 아니라 건드리지 않는다.
     unhidden = await _make_public_novel(db_session, planted.novel.publisher_id)
-    untouched = [kept_by_author.novel_id, visible.novel_id, unhidden.novel_id]
+    untouched = [visible.novel_id, unhidden.novel_id]
     await db_session.execute(
-        sa.update(Novel).where(Novel.id.in_(untouched)).values(setting_notes="남아야 하는 노트")
+        sa.update(Novel)
+        .where(Novel.id.in_([*untouched, kept_by_author.novel_id]))
+        .values(setting_notes="남아야 하는 노트")
     )
     await db_session.execute(
         sa.update(Novel).where(Novel.id == kept_by_author.novel_id).values(hidden_at=sa.func.now())
     )
     await db_session.commit()
 
-    first = await strip_withdrawn_publisher_novels(db_session)
-    again = await strip_withdrawn_publisher_novels(db_session)
+    first = await strip_hidden_novels(db_session)
+    again = await strip_hidden_novels(db_session)
 
-    assert (first, again) == (2, 0)
+    assert (first, again) == (3, 0)
     assert await db_session.scalar(
         sa.select(Novel.cover_asset_id)
         .where(Novel.id == cover_only.novel_id)
@@ -421,7 +438,12 @@ async def test_the_daily_purge_strips_author_data_left_on_a_withdrawn_publishers
             sa.select(Novel.setting_notes).where(Novel.id.in_(untouched)).execution_options(populate_existing=True)
         )
     ).all()
-    assert notes == ["남아야 하는 노트"] * 3
+    assert notes == ["남아야 하는 노트"] * 2
+    assert await db_session.scalar(
+        sa.select(Novel.setting_notes)
+        .where(Novel.id == kept_by_author.novel_id)
+        .execution_options(populate_existing=True)
+    ) == ""
     await _assert_readers_still_read(db_client, db_session, planted)
 
 
