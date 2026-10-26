@@ -14,3 +14,14 @@ export function isImageCloverShort(balance: number, imageCost: number | undefine
 export function imageRequestCloverCost(count: number, imageCost: number | undefined): number | undefined {
   return imageCost === undefined ? undefined : count * imageCost;
 }
+
+/** 생성 버튼 옆에 늘 보이는 금액 안내. 서버는 무료 생성 횟수가 이번 장수만큼 남아 있으면 클로버를 깎지 않고, 모자라면
+ * 그 요청 전체를 클로버로 받는다(일부만 무료로 치지 않는다). 웹은 남은 무료 생성 횟수를 알 수 없으므로 "모자라면"이라는
+ * 조건으로 말한다 — 무조건 깎인다고 하면 무료로 만드는 사람에게 거짓이 된다. 단가를 모르면 숫자 없는 문장을 보이지 않고
+ * 안내 자체를 숨긴다(부족 판정을 생략하는 것과 같은 이유). */
+export function formatImageCostHint(count: number, imageCost: number | undefined): string | undefined {
+  const total = imageRequestCloverCost(count, imageCost);
+  if (total === undefined || imageCost === undefined) return undefined;
+  const totalText = `무료 생성 횟수가 모자라면 클로버 ${total.toLocaleString()}개`;
+  return count > 1 ? `${totalText} · 장당 ${imageCost.toLocaleString()}개` : totalText;
+}
