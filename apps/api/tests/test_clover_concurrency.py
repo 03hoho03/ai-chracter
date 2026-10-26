@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.clover.missions import MISSION_REWARDS, mission_idempotency_key
 from api.core.clover import (
-    CHAT_TURN_COST,
+    CLOVER_MODEL_PRICES,
     CloverLotShortfallError,
     burn_all,
     grant,
@@ -37,6 +37,9 @@ from api.core.clover import (
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund
 from factories import _assert_blocked, _make_user_with_clover_lot
+
+# 차감 금액으로 쓰는 값(기본 모델 채팅 턴 하나).
+_CHAT_TURN_COST = CLOVER_MODEL_PRICES["gemini"].chat_turn
 
 # teardown이 지울 대상을 고르는 표지다. 이 파일이 만든 유저만 지우므로 다른 테스트의 행을
 # 건드리지 않는다 — 아래 픽스처 docstring의 "위험 1" 참조.
@@ -159,7 +162,7 @@ async def test_spend_in_new_transaction_commits_without_the_caller(
     user_id = await _seed_user(independent_session_factory, clover_balance=100)
 
     charged = await spend_in_new_transaction(
-        independent_session_factory, user_id=user_id, amount=CHAT_TURN_COST, kind="chat_spend"
+        independent_session_factory, user_id=user_id, amount=_CHAT_TURN_COST, kind="chat_spend"
     )
 
     assert charged is not None and charged.balance_after == 90
@@ -179,7 +182,7 @@ async def test_spend_in_new_transaction_writes_nothing_when_short(
     user_id = await _seed_user(independent_session_factory, clover_balance=5)
 
     charged = await spend_in_new_transaction(
-        independent_session_factory, user_id=user_id, amount=CHAT_TURN_COST, kind="chat_spend"
+        independent_session_factory, user_id=user_id, amount=_CHAT_TURN_COST, kind="chat_spend"
     )
 
     assert charged is None
@@ -217,7 +220,7 @@ async def test_charge_survives_the_callers_rollback(
             update(User).where(User.id == bystander_id).values(nickname="롤백될 이름")
         )
         charged = await spend_in_new_transaction(
-            independent_session_factory, user_id=user_id, amount=CHAT_TURN_COST, kind="chat_spend"
+            independent_session_factory, user_id=user_id, amount=_CHAT_TURN_COST, kind="chat_spend"
         )
         assert charged is not None and charged.balance_after == 90
         await outer.rollback()
@@ -254,7 +257,7 @@ async def test_concurrent_spend_cannot_overdraw(
     데드락은 이 한 유저짜리 시나리오에서는 재현되지 않는다(같은 행에 대한 users UPDATE
     자체가 이미 A/B를 완전히 직렬화하기 때문), 그래서 순서를 직접 기록해 고정한다.
     """
-    user_id = await _seed_user(independent_session_factory, clover_balance=CHAT_TURN_COST)
+    user_id = await _seed_user(independent_session_factory, clover_balance=_CHAT_TURN_COST)
 
     statements: list[str] = []
 
@@ -279,7 +282,7 @@ async def test_concurrent_spend_cannot_overdraw(
         event.listen(db_engine.sync_engine, "before_cursor_execute", _record)
         try:
             first_result = await spend(
-                first, user_id=user_id, amount=CHAT_TURN_COST, kind="chat_spend"
+                first, user_id=user_id, amount=_CHAT_TURN_COST, kind="chat_spend"
             )
         finally:
             event.remove(db_engine.sync_engine, "before_cursor_execute", _record)
@@ -288,7 +291,7 @@ async def test_concurrent_spend_cannot_overdraw(
 
         # B: 같은 행에 같은 UPDATE를 낸다 → A가 커밋할 때까지 막힌다.
         task = asyncio.create_task(
-            spend(second, user_id=user_id, amount=CHAT_TURN_COST, kind="chat_spend")
+            spend(second, user_id=user_id, amount=_CHAT_TURN_COST, kind="chat_spend")
         )
         await _assert_blocked(task)
 
@@ -445,7 +448,7 @@ async def test_burn_all_burns_the_balance_the_row_actually_holds(
         assert loaded == 100
 
         # ② 그 사이 다른 트랜잭션이 차감하고 **커밋한다** — 실제 잔액은 이제 90이다.
-        spent = await spend(spender, user_id=user_id, amount=CHAT_TURN_COST, kind="chat_spend")
+        spent = await spend(spender, user_id=user_id, amount=_CHAT_TURN_COST, kind="chat_spend")
         assert spent is not None and spent.balance_after == 90
         await spender.commit()
 

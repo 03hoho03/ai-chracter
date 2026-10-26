@@ -13678,6 +13678,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ChatTurnRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -25225,6 +25242,17 @@
       },
       "ChatMessageCreateRequest": {
         "properties": {
+          "priceVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priceversion"
+          },
           "content": {
             "type": "string",
             "minLength": 1,
@@ -25277,6 +25305,17 @@
       },
       "ChatMessageEditRequest": {
         "properties": {
+          "priceVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priceversion"
+          },
           "content": {
             "type": "string",
             "minLength": 1,
@@ -26398,6 +26437,24 @@
         ],
         "title": "ChatRoomResponse"
       },
+      "ChatTurnRequest": {
+        "properties": {
+          "priceVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priceversion"
+          }
+        },
+        "type": "object",
+        "title": "ChatTurnRequest",
+        "description": "채팅 턴(전송·재생성·편집·빌더 미리보기) 요청이 함께 싣는 칸. 재생성은 이 칸만 있는 본문을 받는다(본문 없이도 된다).\n\n`price_version` 은 화면이 공개 가격 응답에서 받은 가격표 버전이다. 이 턴이 클로버로 낼 턴인데 서버 버전과 다르면 차감\n게이트가 깎기 전에 409 로 멈춘다(`core/rate_limit_gate.py`). 비우면 대조하지 않는다 — 버전을 모르는 배포 전 화면이 그렇다."
+      },
       "ChatViewReasonCategory": {
         "type": "string",
         "enum": [
@@ -26685,6 +26742,10 @@
             "type": "array",
             "title": "Products"
           },
+          "priceVersion": {
+            "type": "integer",
+            "title": "Priceversion"
+          },
           "chatTurnCost": {
             "type": "integer",
             "title": "Chatturncost"
@@ -26767,6 +26828,7 @@
         "type": "object",
         "required": [
           "products",
+          "priceVersion",
           "chatTurnCost",
           "imageCost",
           "models",
@@ -29461,6 +29523,17 @@
               }
             ],
             "title": "Referenceassetid"
+          },
+          "priceVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priceversion"
           }
         },
         "type": "object",

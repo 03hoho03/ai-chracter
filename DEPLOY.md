@@ -2239,7 +2239,7 @@ sudo bash ops/swap-api.sh
 `restart` 는 env 를 다시 읽지 않으므로 교체 스크립트를 태그 없이 부른다("env 반영 재기동" 절). 위 확인 명령의 마지막 값이
 `True` 인지 보고, 줄을 넣었으니 키 개수 문장을 다시 센다. 로그인 회원이 web 을 새로고침하면(세션 정보를 다시 받는다) 채팅
 화면의 모델 선택 입구(헤더 칩 또는 더보기 「AI 모델」)가 보인다. 고른 모델은 방마다 저장되고 다음 턴부터 그 모델·그 가격으로 돈다. 상위 모델 턴은 레이트리밋
-면제 계정도 값을 내고(턴 단가 `CHAT_TURN_COST_OPUS`, 값은 `api/core/clover.py` 에서 확인한다), 하루 무료분은 Gemini 턴에만
+면제 계정도 값을 내고(턴 단가는 `api/core/clover.py` 의 가격 등록부 `CLOVER_MODEL_PRICES` Opus 행에서 확인한다), 하루 무료분은 Gemini 턴에만
 쓰인다. 소설 장의 상위 모델도 열 때는 `NOVELIZE_PREMIUM_*` 두 줄(스위치·명단)을 같은 방식으로 더한다.
 
 **소설 계정 허용.** 소설 상위 모델은 스위치와 명단만으로는 아직 아무도 못 쓴다 — 계정마다 허용 행이 있어야 한다.
@@ -2249,8 +2249,8 @@ sudo bash ops/swap-api.sh
 2. 어드민 유저 상세에서 허용을 켠다 — API 로는 `POST /admin/users/{id}/novelize-premium-models-grant` 에
    `{"granted": true, "adminComment": "…"}`. 스위치가 꺼져 있어도 미리 줄 수 있다. 그 계정에 소설화 허용(3-11 절)도 있어야
    보인다.
-3. 클로버를 지급한다. 소설 화는 레이트리밋 면제 계정도 값을 낸다(화 하나당 `NOVELIZE_EPISODE_COST_SONNET`·
-   `NOVELIZE_EPISODE_COST_OPUS` 이고 생성 한 번이 화 수 × 화 단가다 — 값은 `api/core/clover.py` 에서 확인한다).
+3. 클로버를 지급한다. 소설 화는 레이트리밋 면제 계정도 값을 낸다(화 하나당 값은 `api/core/clover.py` 의 가격 등록부
+   `CLOVER_MODEL_PRICES` Sonnet·Opus 행의 화 단가이고 생성 한 번이 화 수 × 화 단가다).
 4. 소설 상위 모델은 장 생성·재생성 요청마다 고른다(방처럼 저장하지 않는다). 허용이 들어갔는지는 그 계정으로 소설 상세
    (`GET /novels/{id}`)를 열어 `chapterModels` 에 Sonnet·Opus 가 실렸는지로 본다 — 허용이 없으면 Gemini 하나뿐이다. 장 작업은
    요청한 모델을 `novel_jobs.model` 에 적고, 실행은 그 값으로 돈다.
@@ -3325,7 +3325,9 @@ base64로 싣는다(리사이즈 없음). 싣기 전에 서버가 형식(PNG·JP
 429를 낸다(분당 10은 `USER_LIMIT`·`window` `minute`, 일일 30 초과분은 클로버 차감으로 넘어가 부족·미동의면
 `CLOVER_REQUIRED`/`CLOVER_CONFIRM_REQUIRED`·`window` `clover`) — 서버 로그의 `user_limit_exceeded`는
 이미지·채팅 공용이라 `code`/`window`로 가른다. auth 발송 상한의 429(`core/rate_limit.py`, 가입·재발송·
-비밀번호 재설정)도 같은 모양이다(`window` `auth`, `auth/router.py`의 `_auth_too_many_requests`). 생성 전에는 `GET /capabilities`를 TTL 캐시
+비밀번호 재설정)도 같은 모양이다(`window` `auth`, `auth/router.py`의 `_auth_too_many_requests`). 429 가 아닌 것이 하나 있다 — 클로버로 낼 채팅 턴·이미지 요청이
+실어 보낸 가격표 버전(`priceVersion`)이 서버 가격표(`core/clover.py` 의 `PRICE_VERSION`)와 다르면 깎기 전에 409
+`CLOVER_PRICE_CHANGED`(+ 그 요청의 지금 금액 `currentCost`)다. 버전을 싣지 않은 요청과 무료·토큰으로 지나는 요청은 대조하지 않는다. 생성 전에는 `GET /capabilities`를 TTL 캐시
 (`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`, 기본 30초)로 프로브해 집 PC가 꺼져 있으면 **생성 시도 전에**
 503으로 차단한다.
 

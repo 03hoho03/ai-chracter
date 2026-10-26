@@ -18,7 +18,6 @@ import sqlalchemy as sa
 from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from api.core import clover
 from api.core.config import settings
 from api.db.models import ChatMessage, ChatRoom, Content, NovelJob
 from api.db.models.novel import Novel, NovelOutline
@@ -27,6 +26,7 @@ from api.novelize import outline as outline_module
 from api.novelize import router as novelize_router
 from api.novelize import runner
 from factories import (
+    _set_model_price,
     _add_chapter,
     _allow_novel_premium,
     _clear_llm_override,
@@ -100,9 +100,9 @@ def outline_flow_on(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def _outline_prices(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(clover, "NOVELIZE_OUTLINE_COST", 11)
-    monkeypatch.setattr(clover, "NOVELIZE_OUTLINE_COST_SONNET", 12)
-    monkeypatch.setattr(clover, "NOVELIZE_OUTLINE_COST_OPUS", 13)
+    _set_model_price(monkeypatch, "gemini", novel_outline=11)
+    _set_model_price(monkeypatch, "sonnet", novel_outline=12)
+    _set_model_price(monkeypatch, "opus", novel_outline=13)
 
 
 @pytest.fixture

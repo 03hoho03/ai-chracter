@@ -137,13 +137,13 @@ async def test_daily_exhausted_with_balance_spends_clover_and_passes(
     assert resp.status_code == 200
 
     await db_session.refresh(user)
-    assert user.clover_balance == 100 - clover.CHAT_TURN_COST
+    assert user.clover_balance == 100 - clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
 
     rows = await _ledger_for(db_session, user.id)
     assert len(rows) == 1
     assert rows[0].kind == "chat_spend"
-    assert rows[0].amount == -clover.CHAT_TURN_COST
-    assert rows[0].balance_after == 100 - clover.CHAT_TURN_COST
+    assert rows[0].amount == -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
+    assert rows[0].balance_after == 100 - clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
 
 
 async def test_daily_exhausted_without_balance_is_the_control(
@@ -173,7 +173,7 @@ async def test_insufficient_clover_returns_clover_required_body(
     """`retryAfterSeconds`가 자정까지 초인 이유는 그때 하루
     무료분이 돌아오기 때문이다 — 값이 거짓이 아니다."""
     user = await _consented_user(
-        db_client, db_session, clover_balance=clover.CHAT_TURN_COST - 1, **_confirmed_today()
+        db_client, db_session, clover_balance=clover.CLOVER_MODEL_PRICES["gemini"].chat_turn - 1, **_confirmed_today()
     )
     room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
@@ -200,7 +200,7 @@ async def test_insufficient_clover_does_not_write_a_ledger_row(
     """부족해서 거절된 요청은 잔액도 원장도 건드리지 않는다 — 조건부 UPDATE가 행을 못 잡으면
     원장 INSERT까지 가지 않는다(`core/clover.py`의 `_apply`)."""
     user = await _consented_user(
-        db_client, db_session, clover_balance=clover.CHAT_TURN_COST - 1, **_confirmed_today()
+        db_client, db_session, clover_balance=clover.CLOVER_MODEL_PRICES["gemini"].chat_turn - 1, **_confirmed_today()
     )
     room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
@@ -208,7 +208,7 @@ async def test_insufficient_clover_does_not_write_a_ledger_row(
     assert (await _send(db_client, room_id)).status_code == 429
 
     await db_session.refresh(user)
-    assert user.clover_balance == clover.CHAT_TURN_COST - 1
+    assert user.clover_balance == clover.CLOVER_MODEL_PRICES["gemini"].chat_turn - 1
     assert await _ledger_for(db_session, user.id) == []
 
 

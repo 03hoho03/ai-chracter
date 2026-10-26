@@ -207,6 +207,7 @@ async def get_clover_pricing() -> CloverPricingResponse:
             )
             for p in products.CLOVER_PRODUCTS
         ],
+        price_version=clover.PRICE_VERSION,
         chat_turn_cost=chat_turn_cost(DEFAULT_CHAT_MODEL),
         image_cost=clover.IMAGE_UNIT_COST,
         models=[

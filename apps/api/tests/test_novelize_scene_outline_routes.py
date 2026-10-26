@@ -23,7 +23,6 @@ import sqlalchemy as sa
 from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from api.core import clover
 from api.core.config import settings
 from api.db.models import ChatMessage, ChatRoom, Content, NovelJob
 from api.db.models.chat import ChatMessageRole
@@ -40,6 +39,7 @@ from api.novelize import router as novelize_router
 from api.novelize import runner
 from api.novelize.source import segment_hash
 from factories import (
+    _set_model_price,
     _add_chapter,
     _allow_novel_premium,
     _batch_output,
@@ -146,11 +146,11 @@ def outline_flow_on(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def _prices(monkeypatch: pytest.MonkeyPatch) -> None:
     """흐름 시험용 고정 단가. 화 단가를 공용 고정값(40)보다 낮춰 잔액 100 안에서 구성안·장면 구성안 둘·원고 둘을 함께 산다."""
-    monkeypatch.setattr(clover, "NOVELIZE_OUTLINE_COST", 11)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_OUTLINE_COST", 7)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_OUTLINE_COST_SONNET", 8)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_OUTLINE_COST_OPUS", 9)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 20)
+    _set_model_price(monkeypatch, "gemini", novel_outline=11)
+    _set_model_price(monkeypatch, "gemini", novel_episode_outline=7)
+    _set_model_price(monkeypatch, "sonnet", novel_episode_outline=8)
+    _set_model_price(monkeypatch, "opus", novel_episode_outline=9)
+    _set_model_price(monkeypatch, "gemini", novel_episode=20)
 
 
 @pytest.fixture

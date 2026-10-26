@@ -16,6 +16,7 @@ import httpx2
 import pytest
 import sqlalchemy as sa
 from factories import (
+    _set_model_price,
     _enable_chat_premium,
     Room,
     _add_chapter,
@@ -201,7 +202,7 @@ async def test_a_request_without_a_model_is_a_gemini_chapter_at_the_gemini_price
     """옛 화면은 `model` 을 보내지 않는다 — 배포가 어긋나 있는 동안에도 지금처럼 Gemini 장이 돼야 한다. Gemini 를 직접
     고르는 것도 상위 모델 허용 없이 된다."""
     room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=False)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 31)
+    _set_model_price(monkeypatch, "gemini", novel_episode=31)
     messages = await _room_messages(db_session, room.room_id)
     chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
 
@@ -338,9 +339,9 @@ def _expected_models(*, premium: bool) -> list[dict[str, Any]]:
 
 
 def _distinct_prices(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 31)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST_SONNET", 106)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST_OPUS", 171)
+    _set_model_price(monkeypatch, "gemini", novel_episode=31)
+    _set_model_price(monkeypatch, "sonnet", novel_episode=106)
+    _set_model_price(monkeypatch, "opus", novel_episode=171)
 
 
 @pytest.mark.parametrize("premium", [pytest.param(True, id="premium"), pytest.param(False, id="gemini-only")])

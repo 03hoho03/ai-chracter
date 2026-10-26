@@ -28,7 +28,7 @@ from api.chat import router as chat_router
 from api.chat.prompt_builder import PromptRenderError
 from api.core import clover, rate_limit_gate
 from api.db.models import User
-from api.db.models.chat import ChatMessage, ChatMessageRole
+from api.db.models.chat import ChatMessage
 from api.db.models.clover import CloverLedger, CloverSpendAllocation
 from api.main import app
 from api.llm.client import LLMClientError, LLMPolicyViolationError
@@ -38,15 +38,16 @@ from factories import (
     _clover_lots,
     _FakeLLMClient,
     _HangingLLMClient,
-    _get_genre,
     _login_as,
-    _make_published_character,
     _make_user_with_clover_lot,
     _override_llm_client,
     _parse_sse_events,
+    _prepare_paid_turn,
+    _setup_chat_room,
+    _user_message_id,
 )
 
-_CHAT_COST = clover.CHAT_TURN_COST
+_CHAT_COST = clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
 _START_BALANCE = 100
 
 
@@ -61,35 +62,6 @@ async def _ledger_pairs(db_session: AsyncSession, user_id: uuid.UUID) -> list[tu
         await db_session.scalars(select(CloverLedger).where(CloverLedger.user_id == user_id))
     ).all()
     return [(row.kind, row.amount) for row in rows]
-
-
-async def _setup_chat_room(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, user: User
-) -> uuid.UUID:
-    genre = await _get_genre(db_session)
-    content = await _make_published_character(
-        db_session, creator_user_id=user.id, genre_id=genre.id
-    )
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-    resp = await db_client.post(
-        "/chat-rooms", json={"contentId": str(content.id), "contentType": "character"}
-    )
-    assert resp.status_code == 201
-    return uuid.UUID(resp.json()["id"])
-
-
-async def _user_message_id(db_session: AsyncSession, room_id: uuid.UUID) -> uuid.UUID:
-    """편집 대상(그 방의 사용자 메시지) id. 셋업 전송이 남긴 한 건을 쓴다."""
-    rows = (
-        await db_session.scalars(
-            select(ChatMessage).where(
-                ChatMessage.chat_room_id == room_id, ChatMessage.role == ChatMessageRole.USER
-            )
-        )
-    ).all()
-    assert len(rows) == 1
-    return rows[0].id
 
 
 def _failing_llm(failure: str) -> _FakeLLMClient:
@@ -117,84 +89,6 @@ def _patch_render_failure(monkeypatch: pytest.MonkeyPatch, surface: str) -> None
     monkeypatch.setattr(chat_router, "build_room_prompt", _raise)
 
 
-async def _prepare_paid_turn(
-    db_client: httpx.AsyncClient,
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    surface: str,
-) -> tuple[User, str, str, dict[str, object] | None]:
-    """`surface`(전송/편집/재생성/미리보기)의 턴 하나를 클로버로 낼 수밖에 없는 상태를 만들고 `(유저, 메서드, 경로, 본문)`을
-    돌려준다.
-
-    상한 패치는 **셋업이 끝난 뒤** 건다 — 방 생성과 첫 전송은 무료분으로 통과해야 원장에
-    셋업 잡음이 안 남는다.
-    """
-    # 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
-    # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
-    # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
-    # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
-    # 이 유저들은 실제로 chat_spend를 태우므로 매칭 로트가
-    # 없으면 `CloverLotShortfallError`가 난다.
-    user = await _make_user_with_clover_lot(
-        db_session,
-        clover_balance=_START_BALANCE,
-        clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC)),
-    )
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    room_id: uuid.UUID | None = None
-    session_id: str | None = None
-    message_id: uuid.UUID | None = None
-
-    if surface == "preview":
-        payload: dict[str, object] = {
-            "name": "아리아",
-            "oneLiner": "한 줄 소개",
-            "thumbnailAssetId": None,
-            "intro": "안녕하세요, 아리아예요",
-            "exampleDialogues": [],
-            "characterPrompt": "너는 아리아다.",
-            "playguide": None,
-            "situationalImages": [],
-            "description": "상세 설명",
-            "genreId": None,
-            "target": None,
-            "hashtags": [],
-            "visibility": "private",
-        }
-        resp = await db_client.post("/preview-sessions", json=payload)
-        assert resp.status_code == 201
-        session_id = resp.json()["previewSessionId"]
-    else:
-        room_id = await _setup_chat_room(db_client, db_session, user)
-        if surface in ("regenerate", "edit"):
-            # 재생성은 "마지막 메시지가 AI 응답"인 상태를, 편집은 "고칠 사용자 메시지"를
-            # 요구한다 — 성공하는 전송을 한 번 먼저 태운다. 이 전송은 상한 패치 전이라
-            # 무료분으로 통과한다.
-            _override_llm_client(_FakeLLMClient(tokens=["첫", "응답"]))
-            try:
-                sent = await db_client.post(
-                    f"/chat-rooms/{room_id}/messages", json={"content": "안녕"}
-                )
-            finally:
-                _clear_llm_override()
-            assert sent.status_code == 200
-        if surface == "edit":
-            message_id = await _user_message_id(db_session, room_id)
-
-    # 여기서부터 클로버로 낸다.
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
-    if surface == "preview":
-        return user, "POST", f"/preview-sessions/{session_id}/messages", {"content": "안녕"}
-    if surface == "regenerate":
-        return user, "POST", f"/chat-rooms/{room_id}/regenerate", None
-    if surface == "edit":
-        return user, "PATCH", f"/chat-rooms/{room_id}/messages/{message_id}", {"content": "고친 내용"}
-    return user, "POST", f"/chat-rooms/{room_id}/messages", {"content": "안녕"}
-
-
 async def _run_failing_turn(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -204,7 +98,9 @@ async def _run_failing_turn(
     failure: str,
 ) -> tuple[User, httpx.Response]:
     """`surface`(전송/재생성/미리보기)에서 `failure` 종류의 실패를 일으키고 응답을 돌려준다."""
-    user, method, path, body = await _prepare_paid_turn(db_client, db_session, monkeypatch, surface=surface)
+    user, method, path, body = await _prepare_paid_turn(
+        db_client, db_session, monkeypatch, surface=surface, balance=_START_BALANCE
+    )
     if failure == "render":
         _patch_render_failure(monkeypatch, surface)
 
@@ -330,7 +226,9 @@ async def test_disconnect_mid_generation_refunds_to_the_original_lot(
 ) -> None:
     """판정 기준: 첫 토큰 뒤 LLM 을 기다리는 중 끊기면 원장에 `chat_spend`·`chat_refund` 한 쌍이 남고, 깎은 로트가 원래
     잔여로 돌아오며, 그 차감의 배분이 전부 환급된 것으로 표시된다. 가드가 없으면 원장에 `chat_spend` 만 남는다."""
-    user, method, path, body = await _prepare_paid_turn(db_client, db_session, monkeypatch, surface=surface)
+    user, method, path, body = await _prepare_paid_turn(
+        db_client, db_session, monkeypatch, surface=surface, balance=_START_BALANCE
+    )
     started = asyncio.Event()
 
     _override_llm_client(_HangingLLMClient(started))
@@ -361,7 +259,7 @@ async def test_disconnect_mid_generation_refunds_to_the_original_lot(
 # 달리 예외를 삼키지 않고 **다시 올린다** — 여기서는 500 이 정상 경로다.
 #
 # 주입 지점이 라우트마다 다른 이유: 게이트(`charge`)는 이제 조회·검증 의존성 **전부보다 뒤**에
-# 선언돼 있고 `Depends` 는 시그니처 순서대로 resolve 된다(`apps/api/CLAUDE.md` §API 라우터).
+# 선언돼 있고 `Depends` 는 시그니처 순서대로 resolve 된다(`apps/api/CLAUDE.md` 의 "API 라우터" 절).
 # 그래서 의존성이 쓰는 모듈 전역을 패치하면 **차감 전에** 터져 아래 `test_dependency_failure_
 # does_not_spend_clover` 쪽(원장 0행)이 되어 버리고, 본문 창은 만들어지지 않는다. 그래서
 # 라우트별로 **본문에만 있는** 것을 골랐다.
@@ -480,7 +378,7 @@ async def _run_body_failure(
             # 재생성 본문의 `history[-1]`이 IndexError 를 낸다. "마지막 앞에 사용자 메시지가
             # 있어야 한다"는 의존성 가드를 오버라이드로 뚫어 재현한다 — 그 가드가 언젠가
             # 느슨해져도 환불은 되어야 한다. (LLM·의존성 교체는 `app.dependency_overrides`가
-            # 이 저장소 관례다 — `apps/api/CLAUDE.md` §테스트 정책)
+            # 이 저장소 관례다 — `apps/api/CLAUDE.md` 의 "테스트 정책" 절)
             opening = await _opening_message(db_session, room_id)
             app.dependency_overrides[chat_router._regeneratable_last_message_dependency] = (
                 lambda: opening
@@ -525,7 +423,7 @@ async def test_route_body_failure_refunds_clover(
 # 본문 창(위)이 "차감한 뒤 본문이 터지면 되돌린다"라면, 이쪽은 **차감 자체가 일어나면 안 되는**
 # 자리다. 게이트가 `room`·`state` 같은 조회 의존성보다 **뒤에** 선언돼 있어야 성립한다 —
 # `Depends`는 시그니처 순서대로 순차 resolve되고 앞의 것이 raise하면 뒤는 호출조차 안 되기
-# 때문이다(`apps/api/CLAUDE.md` §API 라우터).
+# 때문이다(`apps/api/CLAUDE.md` 의 "API 라우터" 절).
 #
 # 🔴 본문 창과 단언이 다르다. 본문 창은 원장에 `chat_spend` + `chat_refund` 두 행이 남고, 이쪽은
 # **0행**이다. 환불로 되돌린 것과 애초에 안 깎은 것은 사용자에게는 같아 보여도 원장에서는

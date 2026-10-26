@@ -123,6 +123,9 @@ class CloverPricingResponse(CamelModel):
     Opus 행의 소설 화 단가는 계속 보인다."""
 
     products: list[CloverProductItem]
+    # 이 가격표의 버전(`core/clover.py` 의 `PRICE_VERSION`). 화면은 클로버를 쓰는 채팅·이미지 요청에 이 값을 실어 보내고, 서버
+    # 버전과 다르면 그 요청은 깎기 전에 409 로 멈춘다 — 가격이 바뀐 뒤 옛 가격을 보여 주던 화면에서 새 가격으로 깎이지 않게.
+    price_version: int
     # 기본 모델로 쓰는 채팅 턴 하나와 이미지 한 장의 클로버. 채팅 턴은 `models` 의 기본 모델 값과 같다 — 모델별 목록이
     # 생기기 전에 배포된 화면이 이 칸을 읽으므로 남겨 둔다.
     chat_turn_cost: int

@@ -20,7 +20,7 @@
 **검사는 `Depends`로만 한다.** 네 경로 전부 SSE(`EventSourceResponse`) 라우트라
 제너레이터 본문에서 `HTTPException`을 던지면 이미 시작된 스트림을 뚫고 나가 커넥션이 깨지고,
 최악에는 망가진 asyncpg 커넥션이 풀로 반환돼 무관한 요청이 500이 된다(`apps/api/CLAUDE.md`
-§SSE 스트리밍). 그래서 라우트 시그니처의 `Depends` 자리에서만 429를 낸다.
+의 "SSE 스트리밍" 절). 그래서 라우트 시그니처의 `Depends` 자리에서만 429를 낸다. 가격 버전 대조의 409 도 같은 자리에서 낸다.
 
 **이미지 생성도 이 모듈이 맡는다.** 기구가 다르고(고정 창이
 아니라 토큰 버킷) 세는 단위도 다르지만(요청 1건이 아니라 이미지 장수), 정책이 한 모듈에
@@ -140,6 +140,11 @@ _CLOVER_CONFIRM_CODE = "CLOVER_CONFIRM_REQUIRED"
 # 상한 계약이라서다 — 이것은 장애라 화면은 일반 오류로 다룬다.
 _CHAT_MODEL_UNAVAILABLE_CODE = "CHAT_MODEL_UNAVAILABLE"
 
+# 화면이 실어 보낸 가격 버전이 서버 가격표(`clover.PRICE_VERSION`)와 다를 때의 거절. 429 가 아닌 이유는 기다려도 풀리지 않아서다 —
+# 화면이 가격표를 다시 받아 새 가격을 보여 준 뒤 다시 보내야 한다. 소설 작업·요약 다시 만들기가 확인한 금액과 지금 금액이 다를
+# 때 내는 409 와 같은 모양으로 지금 금액(`currentCost`)을 싣는다.
+_PRICE_CHANGED_CODE = "CLOVER_PRICE_CHANGED"
+
 _last_redis_failure_reported_at: float | None = None
 
 
@@ -155,6 +160,19 @@ def _report_redis_failure() -> None:
     # `user_id`를 넘기지 않는다 — `capture_dependency_failure`의 태그에는 리터럴
     # `dependency` 문자열 외에 아무것도 싣지 않는다(PII 금지).
     capture_dependency_failure(dependency="redis")
+
+
+def _check_price_version(price_version: int | None, cost: int) -> None:
+    """클로버를 실제로 깎기 직전에 요청의 가격 버전을 대조한다. 버전이 없는 요청(가격 버전을 모르는 배포 전 화면)은 지금처럼
+    지나간다. 무료분·면제·토큰으로 내는 요청에서는 부르지 않는다 — 깎지 않는 요청을 막으면 가격이 바뀐 날 옛 화면을 연 무료
+    사용자까지 이유 없이 멈춘다. 그래서 대조를 게이트 맨 앞이 아니라 각 차감 갈래 안, 그 갈래가 유료로 정해진 뒤에 둔다.
+
+    하루 1회 확인보다 앞이다 — 확인 대화는 화면이 가진 가격으로 "클로버 N 개를 써요"를 묻는데, 그 가격이 옛 값이면 옛 가격에
+    동의를 받는 것이다. `cost` 는 이 요청의 지금 금액이다(채팅은 턴 가격, 이미지는 장수 × 장당 가격)."""
+    if price_version is not None and price_version != clover.PRICE_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": _PRICE_CHANGED_CODE, "currentCost": cost}
+        )
 
 
 def _too_many_requests(
@@ -266,9 +284,13 @@ async def charge_chat_turn(
     model: ChatModelId,
     price: int,
     usage: clover.SpendUsage,
+    price_version: int | None = None,
 ) -> ChatCharge:
     """채팅 턴 하나의 상한 검사와 차감. 키는 `user_id`다 — IP가 아니라 계정이 비용의 단위다. `model` 은 이 턴을 생성할
     모델이고 `price` 는 그 모델의 턴 가격이다(호출부가 레지스트리에서 정한다).
+
+    `price_version` 은 화면이 실어 보낸 가격표 버전이다. 클로버를 깎는 세 갈래가 깎기 전에 대조하고(`_check_price_version`), 무료·면제
+    턴은 대조하지 않는다.
 
     `usage` 는 클로버를 깎는 세 갈래(무료분 소진 뒤·미인증·상위 모델)가 차감과 같은 커밋에 남길 사용처다. 크리에이터
     정산이 사용처에서 출발하므로 빠뜨리면 그 차감이 정산에서 조용히 빠진다 — 그래서 기본값 없이 받는다. 무료·면제
@@ -302,7 +324,9 @@ async def charge_chat_turn(
             raise _too_many_requests(user_id, "minute", burst_retry_after)
 
         if model != DEFAULT_CHAT_MODEL:
-            return await _charge_premium_turn(user_id, session_factory, now, model=model, price=price, usage=usage)
+            return await _charge_premium_turn(
+                user_id, session_factory, now, model=model, price=price, usage=usage, price_version=price_version
+            )
 
         # 면제 대상은 버스트를 그대로 받고 일일만 건너뛴다. 건너뛰는 것이라 일일
         # 카운터도 올라가지 않는다 — 어드민이 도중에 면제를 거두면 그날 그때까지의 요청은
@@ -314,7 +338,9 @@ async def charge_chat_turn(
         # 미인증 회원은 무료분이 0 이다. 일일 창보다 **앞**이라 그 카운터를 올리지 않고(인증한 날도 하루 무료분 0 에서 시작한다),
         # Redis 를 쓰지 않는 차감으로 바로 간다.
         if user is not None and is_identity_gated(user):
-            return await _charge_unverified_turn(user_id, db, session_factory, now, price=price, usage=usage)
+            return await _charge_unverified_turn(
+                user_id, db, session_factory, now, price=price, usage=usage, price_version=price_version
+            )
 
         # 일일 창은 KST 자정에 끊긴다. 기구에는 "자정"이라는 개념이 없으므로 호출자가
         # 키에 KST 날짜를 섞고(날짜가 바뀌면 키 자체가 바뀐다) TTL로 남은 초를 넘긴다 —
@@ -342,6 +368,9 @@ async def charge_chat_turn(
             # 🔴 이 검사는 **일일 분기 안**이다. 밖으로 옮기면 무료분이 남은 사용자까지 429를
             # 받는다 — "소진 시 하루 1회 확인"의 "소진 시"가 지켜지지 않는다. 그리고 면제 `return`(위)보다 뒤라
             # 예외 계정에게는 묻지 않는다.
+            #
+            # 가격 버전 대조는 이 턴이 클로버로 낼 턴으로 정해진 이 자리, 확인보다 앞이다(`_check_price_version`).
+            _check_price_version(price_version, price)
             if await _needs_clover_spend_confirmation(user_id, db, now, price):
                 # `retryAfterSeconds`는 부족(`CLOVER_REQUIRED`)과 같은 자정까지 초다 — 동의를
                 # 안 하고 기다리기만 해도 그때 무료 일일분이 돌아오므로 여전히 참값이다.
@@ -397,7 +426,9 @@ async def charge_chat_turn(
         # 게이트에 걸린 회원은 일일 창에 닿지 않는다).
         user = await db.get(User, user_id)
         if user is not None and is_identity_gated(user):
-            return await _charge_unverified_turn(user_id, db, session_factory, now, price=price, usage=usage)
+            return await _charge_unverified_turn(
+                user_id, db, session_factory, now, price=price, usage=usage, price_version=price_version
+            )
         # 차감이 없었으므로 환불 대상도 아니다 — 이미지 쪽 `:279`와 같은 결론이다.
         return ChatCharge(source="skipped")
 
@@ -410,13 +441,15 @@ async def _charge_unverified_turn(
     *,
     price: int,
     usage: clover.SpendUsage,
+    price_version: int | None,
 ) -> ChatCharge:
     """본인인증 게이트에 걸린 회원의 Gemini 턴. 무료분이 0 이라 처음부터 무료분을 다 쓴 사람과 같은 길(하루 1회 확인 →
     차감)을 가되, 클로버가 모자라면 `CLOVER_REQUIRED` 가 아니라 403 `IDENTITY_VERIFICATION_REQUIRED` 다 — 그 429 의 "자정에
     무료분이 돌아온다"는 이 회원에게 거짓이고, 풀 길은 인증이다.
 
     확인 429 는 지금 모양 그대로다(`retryAfterSeconds` 는 자정까지). 화면이 이 회원에게 "오늘 무료 한도를 다 썼어요"를
-    보이지 않게 하는 분기는 화면 몫이다."""
+    보이지 않게 하는 분기는 화면 몫이다. 늘 클로버로 내는 갈래라 가격 버전을 맨 앞에서 대조한다."""
+    _check_price_version(price_version, price)
     if await _needs_clover_spend_confirmation(user_id, db, now, price):
         raise _too_many_requests(user_id, _CLOVER_WINDOW, seconds_until_kst_midnight(now), code=_CLOVER_CONFIRM_CODE)
     spent = await clover.spend_in_new_transaction(
@@ -435,6 +468,7 @@ async def _charge_premium_turn(
     model: ChatModelId,
     price: int,
     usage: clover.SpendUsage,
+    price_version: int | None,
 ) -> ChatCharge:
     """상위 모델 턴의 차감. 면제·일일 무료분·하루 1회 확인을 보지 않는다 — 면제는 횟수 상한만 비켜 가고(소설화의 상위
     모델 장도 면제 계정이 낸다), 무료분은 Gemini 턴의 것이라 상위 모델 턴이 쓰지도 깎지도 않고, 확인은 모델을 고를 때
@@ -442,7 +476,8 @@ async def _charge_premium_turn(
 
     부족이면 Gemini 와 같은 `CLOVER_REQUIRED` 429 다. 그 `retryAfterSeconds`(자정까지)는 이 갈래에서는 약속이 아니다 —
     자정에 돌아오는 무료분은 Gemini 턴에만 쓰인다. 값은 계약 모양을 지키려고 그대로 싣고, 상위 모델 방의 화면은 이 값으로
-    "자정에 다시"를 안내하지 않는다."""
+    "자정에 다시"를 안내하지 않는다. 늘 클로버로 내는 갈래라 가격 버전을 맨 앞에서 대조한다."""
+    _check_price_version(price_version, price)
     spent = await clover.spend_in_new_transaction(
         session_factory, user_id=user_id, amount=price, kind="chat_spend", usage=usage
     )
@@ -485,8 +520,8 @@ async def enforce_image_rate_limit(
     파싱해 게이트와 라우트가 각각 검증한다 — 같은 값이지만 서로 **다른 인스턴스**다(202 요청
     하나당 `GenerateImageRequest` 검증 2회, 실측). 같은 객체가 아니므로 한쪽에서 바디를
     고쳐 다른 쪽에 넘기는 식의 배선은 성립하지 않는다(`chat/router.py`의 `_validate_shortcut`
-    선례, `apps/api/CLAUDE.md` §SSE). 게이트가 바디를 봐야 하는 이유는 차감량이 요청 수가
-    아니라 **장수**(`count`)이기 때문이다.
+    선례, `apps/api/CLAUDE.md` 의 "SSE 스트리밍" 절). 게이트가 바디를 봐야 하는 이유는 차감량이 요청 수가
+    아니라 **장수**(`count`)이기 때문이고, 클로버로 낼 요청이면 바디의 가격 버전을 대조하기 때문이다.
 
     검사를 라우트 본문이 아니라 `Depends`에 두는 이유는 채팅과 **같지 않다** — 이
     라우트는 SSE 제너레이터가 아니라 본문에서 raise해도 스트림이 깨지지 않는다. 여기서
@@ -533,6 +568,9 @@ async def enforce_image_rate_limit(
         # `retryAfterSeconds`는 `take_tokens`가 준 값 그대로다 — 🔴 자정까지 초를 쓰면 이미지는
         # 시간당 충전이라 최대 24시간짜리 거짓이 된다(아래 클로버 부족 429와 같은 이유).
         clover_amount = payload.count * clover.IMAGE_UNIT_COST
+        # 클로버로 낼 요청으로 정해진 자리라 여기서 가격 버전을 대조한다(토큰으로 내는 요청은 대조하지 않는다). 확인보다 앞인
+        # 이유는 채팅과 같다(`_check_price_version`).
+        _check_price_version(payload.price_version, clover_amount)
         if await _needs_clover_spend_confirmation(
             user_id, db, datetime.now(UTC), clover_amount
         ):

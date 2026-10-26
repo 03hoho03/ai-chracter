@@ -12,7 +12,6 @@ from fastapi import HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core import clover
 from api.core.config import settings
 from api.core.rate_limit import KST, seconds_until_kst_midnight
 from api.db.models import Novel, NovelChapter, NovelJob, User
@@ -22,7 +21,7 @@ from api.llm.chat_models import ChatModelId
 from api.novelize import billing
 from api.novelize.router import _last_chapter_model
 from api.novelize.writing_lock import first_saved_chapter_at
-from factories import _make_draft_content, _make_user_with_clover_lot
+from factories import _make_draft_content, _make_user_with_clover_lot, _set_model_price
 
 pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
 
@@ -32,12 +31,12 @@ _OUTLINE_KINDS: tuple[NovelJobKind, ...] = ("outline_generate", "episode_outline
 @pytest.fixture(autouse=True)
 def _outline_prices(monkeypatch: pytest.MonkeyPatch) -> None:
     """구성안 두 종의 임시 단가를 서로 다르고 화 단가와도 다른 값으로 둔다 — 분기가 엉뚱한 상수를 읽으면 금액이 갈린다."""
-    monkeypatch.setattr(clover, "NOVELIZE_OUTLINE_COST", 11)
-    monkeypatch.setattr(clover, "NOVELIZE_OUTLINE_COST_SONNET", 12)
-    monkeypatch.setattr(clover, "NOVELIZE_OUTLINE_COST_OPUS", 13)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_OUTLINE_COST", 21)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_OUTLINE_COST_SONNET", 22)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_OUTLINE_COST_OPUS", 23)
+    _set_model_price(monkeypatch, "gemini", novel_outline=11)
+    _set_model_price(monkeypatch, "sonnet", novel_outline=12)
+    _set_model_price(monkeypatch, "opus", novel_outline=13)
+    _set_model_price(monkeypatch, "gemini", novel_episode_outline=21)
+    _set_model_price(monkeypatch, "sonnet", novel_episode_outline=22)
+    _set_model_price(monkeypatch, "opus", novel_episode_outline=23)
 
 
 def _detail(exc: HTTPException) -> object:
@@ -119,8 +118,8 @@ def test_outline_flow_jobs_are_priced_per_model_and_a_manuscript_is_one_episode(
 
 def test_the_outline_prices_are_read_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
     """단가를 바꾸면 다음 호출부터 바뀐 값이다 — 응답에 내린 금액과 차감액이 같은 함수에서 나와야 어긋나지 않는다."""
-    monkeypatch.setattr(clover, "NOVELIZE_OUTLINE_COST_OPUS", 77)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_OUTLINE_COST", 5)
+    _set_model_price(monkeypatch, "opus", novel_outline=77)
+    _set_model_price(monkeypatch, "gemini", novel_episode_outline=5)
     assert billing.job_price("outline_generate", "opus") == 77
     assert billing.job_price("episode_outline_generate", "gemini") == 5
 
