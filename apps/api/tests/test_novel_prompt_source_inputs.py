@@ -256,16 +256,19 @@ async def test_the_old_flow_chapter_and_regenerate_inputs_never_carry_the_chat_s
     세트의 라벨이 실린다."""
     room, novel_id = await _novel_setup(db_client, db_session, monkeypatch, turns=3)
     ms = await _room_messages(db_session, room.room_id)
+    start, end = ms[0], room.turns[2][1]
+    # 표지를 다는 쪽이 커밋하고 식별자 맵을 만료시키므로, 메시지 칸은 그 전에 값으로 옮겨 둔다(만료된 속성의 지연 로드는 이
+    # 비동기 세션에서 실패한다).
+    start_key, end_key = (start.created_at, start.id), (end.created_at, end.id)
     await _mark_chat_sets(db_session)
     novel = await db_session.get_one(Novel, novel_id, populate_existing=True)
     rating = await _novel_rating_body(db_session, scope="character")
     label_set = (await load_novel_prompt_source(db_session)).label_set
-    start, end = ms[0], room.turns[2][1]
     segment: dict[str, Any] = {
-        "start_message_id": start.id,
-        "start_message_created_at": start.created_at,
-        "end_message_id": end.id,
-        "end_message_created_at": end.created_at,
+        "start_message_id": start_key[1],
+        "start_message_created_at": start_key[0],
+        "end_message_id": end_key[1],
+        "end_message_created_at": end_key[0],
     }
 
     generate = NovelJob(
@@ -273,9 +276,7 @@ async def test_the_old_flow_chapter_and_regenerate_inputs_never_carry_the_chat_s
     )
     built = await inputs.build_chapter_input(db_session, generate, novel)
 
-    messages = await load_segment(
-        db_session, room.room_id, (start.created_at, start.id), (end.created_at, end.id)
-    )
+    messages = await load_segment(db_session, room.room_id, start_key, end_key)
     stored: dict[str, Any] = {**segment, "assistant_message_count": len(group_turns(messages))}
     batch = NovelBatch(novel_id=novel.id, ordinal=1, target_episode_count=1, source_hash=segment_hash(messages), **stored)
     db_session.add(batch)
@@ -304,13 +305,13 @@ async def test_the_boundary_suggestion_never_carries_the_chat_sets_labels(
     Gemini 체인 세트의 것이다(경계 제안은 등급 규칙을 붙이지 않는다)."""
     room, novel_id = await _novel_setup(db_client, db_session, monkeypatch, turns=3)
     ms = await _room_messages(db_session, room.room_id)
+    end = room.turns[3][1]
+    # 표지를 다는 쪽이 커밋하고 식별자 맵을 만료시키므로, 메시지 칸은 그 전에 값으로 옮겨 둔다.
+    start_key, end_key = (ms[0].created_at, ms[0].id), (end.created_at, end.id)
     await _mark_chat_sets(db_session)
     novel = await db_session.get_one(Novel, novel_id, populate_existing=True)
     source = await load_novel_prompt_source(db_session)
-    end = room.turns[3][1]
-    turns = group_turns(
-        await load_segment(db_session, room.room_id, (ms[0].created_at, ms[0].id), (end.created_at, end.id))
-    )
+    turns = group_turns(await load_segment(db_session, room.room_id, start_key, end_key))
 
     suggested = await suggest_end_turn(
         llm, novel=novel, turns=turns, sections=source.sections, label_set=source.label_set, room_id=room.room_id

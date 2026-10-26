@@ -46,6 +46,12 @@ _M = _load("6558ab4d3dbc")
 # 세트다(그 뒤 채팅 레인에 프롬프트를 게시한 리비전이 없다).
 _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
 _SOURCE_MARKING = _load("0c1a85bc5c2f")
+# 이 리비전 위에서 소설 레인 세트를 게시한 두 리비전(Claude 소설 체인 채널, 소설 세 체인 등급 규칙 채널) — 이 리비전보다 뒤에
+# 버전을 받으므로 버전 차례 비교에서 뺀다.
+_LATER_NOVEL_SET_IDS: list[uuid.UUID] = [
+    *_load("fe3df6f8e4d5").NEW_SET_IDS.values(),
+    *_load("e4df46a80bfa").NEW_SET_IDS.values(),
+]
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
@@ -189,11 +195,13 @@ async def test_new_sets_are_published_in_the_window_of_both_active_rules(db_sess
 async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: AsyncSession) -> None:
     order = [_M.NEW_SET_IDS[chain] for chain in _CHAINS]
     versions = [int((await _get_set(db_session, set_id)).version or "0") for set_id in order]
-    # 이 리비전이 프롬프트를 게시한 마지막 리비전이라 다른 게시본은 모두 이 리비전보다 앞 버전이다.
+    # 이 리비전 위에서 게시된 소설 레인 세트를 빼면 다른 게시본은 모두 이 리비전보다 앞 버전이다.
     others = (
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
-                PromptSet.status == "published", PromptSet.id.not_in(order)
+                PromptSet.status == "published",
+                PromptSet.id.not_in(order),
+                PromptSet.id.not_in(_LATER_NOVEL_SET_IDS),
             )
         )
     ).all()

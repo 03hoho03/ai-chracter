@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import PromptLane, load_active_prompt_set
-from api.db.models.prompt import PromptSection, PromptSet
+from api.db.models.prompt import PromptSection, PromptSet, PromptSetSemver
 from api.llm.chat_models import ChatModelId
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
@@ -208,6 +208,10 @@ async def test_delete_non_gemini_sets_also_removes_admin_made_claude_rows(db_ses
         .where(PromptSet.model == "gemini")
     )
 
+    # 판 표는 이 리비전보다 한참 뒤에 생기므로 실제 downgrade 가 이 헬퍼에 닿을 때는 이미 없다. head 스키마에서 헬퍼를 직접
+    # 부르는 이 테스트만 Claude 세트를 기준판으로 가리키는 판 행을 먼저 지운다(그 칸은 세트 삭제를 막는다).
+    non_gemini = sa.select(PromptSet.id).where(PromptSet.model != "gemini")
+    await db_session.execute(sa.delete(PromptSetSemver).where(PromptSetSemver.base_set_id.in_(non_gemini)))
     connection = await db_session.connection()
     await connection.run_sync(_M._delete_non_gemini_sets)
 

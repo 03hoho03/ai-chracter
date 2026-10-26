@@ -216,7 +216,10 @@ async def test_restoring_one_channel_keeps_the_other_channels_unpublished_edits_
     assert any(_DRAFT_EDIT in row[3] for row in _rows(restored["sections"], "generation"))
     assert restored["labels"] == draft["labels"]
     assert restored["labels"]["userLabel"] == "합성 사용자"
-    assert restored == await _get_draft(db_client, "story")
+    # 복원 응답만 등급 규칙 비교를 싣는다 — 스토리 Gemini 체인의 등급 규칙을 소설 레인 체인 활성판의 같은 scope 와 견준 항목들이다.
+    drift = restored["ratingDrift"]
+    assert drift and {(item["scope"], item["otherLane"]) for item in drift} == {("story", "novel")}
+    assert restored == {**await _get_draft(db_client, "story"), "ratingDrift": drift}
 
 
 async def test_saving_with_the_hash_from_a_section_restore_response_succeeds(

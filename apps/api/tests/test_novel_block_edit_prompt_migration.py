@@ -167,8 +167,9 @@ async def _copy_set(
 
 async def _later_rows(db_session: AsyncSession, model: str) -> list[PromptSection]:
     """지금 코드의 게시 검증·렌더는 뒤 두 리비전이 더한 행(세 체인의 등급 규칙 두 행, Claude 체인의 네 채널)도 요구한다 — 이
-    리비전의 세트·초안에 그 행만 얹어 본다. 등급 규칙은 채팅 Gemini 활성의 등급 규칙 본문, Claude 네 채널은 이 리비전 직전 Gemini
-    활성의 행이다(뒤 리비전이 옮기는 원본과 같다)."""
+    리비전의 세트·초안에 그 행만 얹어 본다. 등급 규칙은 채팅 Gemini 활성의 등급 규칙 본문, Claude 네 채널은 이 리비전이 심은 Gemini
+    세트의 행이다 — 뒤 리비전은 그때의 Gemini 활성(곧 이 세트)에서 네 채널을 옮기고, 여러 문단 수정·묶음 재검사 두 채널은 이
+    리비전 직전 세트에는 아직 없다."""
     rows: list[PromptSection] = []
     for scope in ("story", "character"):
         chat_set, _ = await load_active_prompt_set(db_session, lane=scope)
@@ -188,7 +189,7 @@ async def _later_rows(db_session: AsyncSession, model: str) -> list[PromptSectio
         )
     if model != "gemini":
         rows += [
-            s for s in await _sections_of(db_session, _PREVIOUS_SET_IDS["gemini"]) if s.channel in _CLAUDE_LATER_CHANNELS
+            s for s in await _sections_of(db_session, _M.NEW_SET_IDS["gemini"]) if s.channel in _CLAUDE_LATER_CHANNELS
         ]
     return rows
 

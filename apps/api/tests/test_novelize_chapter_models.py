@@ -35,7 +35,7 @@ from api.core import clover
 from api.core.config import settings
 from api.chat.prompt_builder import PromptLane, load_active_prompt_set
 from api.db.models import Novel, NovelJob
-from api.db.models.prompt import PromptSection, PromptSet
+from api.db.models.prompt import PromptSection, PromptSet, PromptSetSemver
 from api.llm import bedrock as bedrock_module
 from api.llm.bedrock import BedrockLLMClient
 from api.llm.chat_models import ChatModelId
@@ -477,25 +477,29 @@ async def test_an_old_chapter_job_without_a_model_runs_on_gemini(
 
 
 async def _set_instruction(
-    db: AsyncSession, *, lane: PromptLane, model: ChatModelId, channel: str, slot: str, body: str
+    db: AsyncSession, *, lane: PromptLane, model: ChatModelId, channel: str, slot: str, body: str, scope: str | None = None
 ) -> None:
-    """(lane, model) 활성 세트의 한 행 문안을 바꾼다 — 어느 세트에서 읽었는지 글자로 가르려는 것이다."""
+    """(lane, model) 활성 세트의 한 행 문안을 바꾼다 — 어느 세트에서 읽었는지 글자로 가르려는 것이다. 같은 슬롯이 scope 별로
+    여러 행이면 `scope` 로 고른다."""
     _, sections = await load_active_prompt_set(db, lane=lane, model=model)
-    row = next(s for s in sections if s.channel == channel and s.slot == slot)
+    row = next(
+        s for s in sections if s.channel == channel and s.slot == slot and (scope is None or s.scope == scope)
+    )
     row.body = body
     await db.commit()
 
 
-async def test_a_premium_chapter_uses_its_models_novel_chain_and_the_chat_gemini_rating_rule(
+async def test_a_premium_chapter_uses_its_models_novel_chain_for_the_instruction_and_the_rating_rule(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     llm: _ModelLLM,
     enqueued: list[uuid.UUID],
 ) -> None:
-    """화 문안은 작업 모델의 소설 체인에서 읽는다 — Sonnet 다시 만들기는 (novel, sonnet) 세트의 지시문, Gemini 생성은
-    (novel, gemini) 세트의 지시문이다. 등급 규칙은 모델과 무관하게 원작 종류 채팅 레인의 Gemini 세트에서 붙인다(Claude
-    채팅 세트의 등급 규칙이 따로 손질돼 있어도). 세 세트의 문안을 서로 다른 글자로 바꿔 어느 세트를 읽었는지 가른다."""
+    """화 지시문과 등급 규칙을 둘 다 작업 모델의 소설 체인에서 읽는다 — Sonnet 다시 만들기는 (novel, sonnet) 세트의 지시문과
+    등급 규칙, Gemini 생성은 (novel, gemini) 세트의 것이다. 원작 종류 채팅 레인 세트의 등급 규칙은 손질돼 있어도 붙지 않는다 —
+    소설 레인만 따로 고칠 수 있으려면 채팅 문안을 빌려 읽지 않아야 한다. 세트마다 문안을 다른 글자로 바꿔 어느 세트를 읽었는지
+    가른다."""
     room, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
     content = (await db_session.get_one(Novel, novel_id)).content_type
     await _set_instruction(
@@ -505,10 +509,25 @@ async def test_a_premium_chapter_uses_its_models_novel_chain_and_the_chat_gemini
         db_session, lane="novel", model="sonnet", channel="novelize_chapter", slot="instruction", body="소네트 화 지시"
     )
     await _set_instruction(
-        db_session, lane=content, model="gemini", channel="system", slot="rule_rating", body="[수위] 채팅 제미나이"
+        db_session,
+        lane="novel",
+        model="gemini",
+        channel="novelize_rating",
+        slot="rule_rating",
+        scope=content,
+        body="[수위] 소설 제미나이",
     )
     await _set_instruction(
-        db_session, lane=content, model="sonnet", channel="system", slot="rule_rating", body="[수위] 채팅 소네트"
+        db_session,
+        lane="novel",
+        model="sonnet",
+        channel="novelize_rating",
+        slot="rule_rating",
+        scope=content,
+        body="[수위] 소설 소네트",
+    )
+    await _set_instruction(
+        db_session, lane=content, model="gemini", channel="system", slot="rule_rating", body="[수위] 채팅 제미나이"
     )
 
     first = await _create(db_client, novel_id, room, cost=40, model="gemini")
@@ -519,8 +538,8 @@ async def test_a_premium_chapter_uses_its_models_novel_chain_and_the_chat_gemini
 
     (_, gemini_system, gemini_usage), (_, sonnet_system, sonnet_usage) = llm.calls
     assert (gemini_usage.model, sonnet_usage.model) == ("gemini", "sonnet")
-    assert gemini_system == "제미나이 화 지시\n\n[수위] 채팅 제미나이"
-    assert sonnet_system == "소네트 화 지시\n\n[수위] 채팅 제미나이"
+    assert gemini_system == "제미나이 화 지시\n\n[수위] 소설 제미나이"
+    assert sonnet_system == "소네트 화 지시\n\n[수위] 소설 소네트"
     assert {job.status for job in await _jobs(db_session, novel_id)} == {"succeeded"}
 
 
@@ -537,6 +556,12 @@ async def test_a_chapter_whose_model_has_no_novel_chain_fails_and_refunds_withou
     resp = await _create(db_client, novel_id, room, cost=170, model="opus")
     assert resp.status_code == 202, resp.text
     opus_sets = sa.select(PromptSet.id).where(PromptSet.lane == "novel", PromptSet.model == "opus")
+    # 판 행의 기준판 칸은 세트 삭제를 막으므로(자기 세트 칸만 함께 지워진다) 그 체인 세트를 가리키는 판 행부터 지운다.
+    await db_session.execute(
+        sa.delete(PromptSetSemver).where(
+            sa.or_(PromptSetSemver.prompt_set_id.in_(opus_sets), PromptSetSemver.base_set_id.in_(opus_sets))
+        )
+    )
     await db_session.execute(sa.delete(PromptSection).where(PromptSection.prompt_set_id.in_(opus_sets)))
     await db_session.execute(sa.delete(PromptSet).where(PromptSet.lane == "novel", PromptSet.model == "opus"))
     await db_session.commit()
