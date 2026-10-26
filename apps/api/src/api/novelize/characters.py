@@ -81,8 +81,9 @@ async def update_character(
     name: str | None,
     aliases: list[str] | None,
     memo: str | None,
-) -> None:
-    """보낸 칸만 바꾼다. 이름을 바꾸면서 별칭은 보내지 않았으면, 지금 별칭에서 새 이름과 같은 값을 뺀다."""
+) -> bool:
+    """보낸 칸만 바꾸고, 이름·별칭(정리한 뒤)·메모 중 하나라도 바뀌었는지 돌려준다. 이름을 바꾸면서 별칭은 보내지
+    않았으면, 지금 별칭에서 새 이름과 같은 값을 뺀다."""
     new_name = name if name is not None else card.name
     new_aliases = clean_aliases(new_name, aliases if aliases is not None else card.aliases)
     cards = await load_cards(db, card.novel_id)
@@ -90,7 +91,9 @@ async def update_character(
     values: dict[str, object] = {"name": new_name, "aliases": new_aliases, "updated_at": func.now()}
     if memo is not None:
         values["memo"] = memo
+    changed = new_name != card.name or new_aliases != list(card.aliases) or (memo is not None and memo != card.memo)
     await db.execute(update(NovelCharacter).where(NovelCharacter.id == card.id).values(**values))
+    return changed
 
 
 async def merge_characters(db: AsyncSession, absorbed: NovelCharacter, into: NovelCharacter) -> None:

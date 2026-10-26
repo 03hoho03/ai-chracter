@@ -2043,7 +2043,7 @@ async def _get_character(db: AsyncSession, novel: Novel, character_id: uuid.UUID
 
 async def _touch_novel(db: AsyncSession, novel_id: uuid.UUID) -> None:
     """인물 카드를 실제로 바꾼 작가 행동은 소설 수정 시각을 민다 — 작가의 작품 목록이 최근 수정 순이다. 아무것도 안
-    바뀐 요청(이미 있는 이름의 카드 추가)은 부르지 않는다."""
+    바뀐 요청(이미 있는 이름의 카드 추가, 고치지 않고 저장한 카드)은 부르지 않는다."""
     await db.execute(update(Novel).where(Novel.id == novel_id).values(updated_at=func.now()))
 
 
@@ -2098,10 +2098,11 @@ async def update_novel_character(
     await _lock_user(db, novel.user_id)
     card = await _get_character(db, novel, character_id)
     try:
-        await update_character(db, card, name=payload.name, aliases=payload.aliases, memo=payload.memo)
+        changed = await update_character(db, card, name=payload.name, aliases=payload.aliases, memo=payload.memo)
     except CharacterNameTakenError as exc:
         raise _name_taken(exc) from exc
-    await _touch_novel(db, novel.id)
+    if changed:
+        await _touch_novel(db, novel.id)
     await db.commit()
     return await _character_list(db, novel.id)
 
