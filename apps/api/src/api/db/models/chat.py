@@ -537,6 +537,52 @@ class ChatMemoryImpression(Base):
     )
 
 
+# 인상 시도 기록은 두 추출 기록과 같은 상태 흐름을 쓴다.
+ImpressionAttemptStatus = EpisodeExtractionStatus
+
+
+class ChatMemoryImpressionAttempt(Base):
+    """인상 묶음 하나의 생성 시도 기록 — 한 묶음 = 한 행. 두 추출 기록(`ChatMemoryFactExtraction`)과 같은 모양이고, 묶음마다
+    두 가지를 겸한다.
+    - 같은 묶음을 두 작업이 동시에 만들지 않게 하는 선점: PK 가 묶음의 가장 새 스냅샷(인상 행이 걸리는 그 스냅샷)이다.
+    - 재시도 상한과 호출 원가: 실패할 때마다 `attempts` 가 쌓여 상한에 닿으면 그 묶음을 더 고르지 않고, 모델 id 와 토큰(`prompt_tokens`
+      는 캐시 포함 입력 전체 — 사용량 기록과 같은 뜻)을 묶음 단위로 남긴다.
+
+    스냅샷과 함께 지워진다(`ChatMemoryImpression` 과 같은 이유 — 이 테이블을 모르는 옛 이미지의 스냅샷 DELETE 가 FK 위반으로
+    실패하지 않고, 스냅샷을 잠근 생성 작업과 되감기가 교착하지 않는다). 되감기는 묶음의 어느 스냅샷을 지워도 가장 새 스냅샷까지
+    지우므로 이 행도 함께 사라진다.
+    `status` 는 `running`(작업이 쥠)·`done`(인상 행을 넣음)·`failed`(실패 — 상한 아래면 재시도 대상)이고, native enum 이 아니라
+    Text 다. `attempts` 는 선점할 때마다 센다. 캐시 쓰기 토큰 칸은 두 추출과 같은 이유로 두지 않는다 — 이 호출은 캐시 체크포인트를
+    보내지 않는다."""
+
+    __tablename__ = "chat_memory_impression_attempts"
+
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("chat_room_memory_snapshots.id", ondelete="CASCADE"), primary_key=True
+    )
+    chat_room_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("chat_rooms.id"), nullable=False)
+    status: Mapped[ImpressionAttemptStatus] = mapped_column(Text, nullable=False)
+    attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    thoughts_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 아래 CHECK 의 검증은 행위 테스트가 유일하다.
+    # 방 인덱스는 방 DELETE 의 FK 확인과 잊게 하기의 방 단위 DELETE 가 이 테이블을 방으로 찾기 위한 것이다(Postgres 는 FK 열에
+    # 인덱스를 만들지 않는다).
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ({_sql_in_list(ImpressionAttemptStatus)})", name="ck_chat_memory_impression_attempts_status"
+        ),
+        CheckConstraint("attempts >= 1", name="ck_chat_memory_impression_attempts_attempts"),
+        Index("ix_chat_memory_impression_attempts_room", "chat_room_id"),
+    )
+
+
 # pgvector 의 halfvec 이 담을 수 있는 최대 차원.
 EMBEDDING_DIMS_MAX = 16000
 

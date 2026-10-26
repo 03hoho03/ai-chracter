@@ -15,7 +15,9 @@
 
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -40,9 +42,9 @@ from api.chat.prompt_builder import (
 )
 from api.chat.room_deletion import delete_chat_rooms
 from api.core.config import settings
-from api.db.models import ChatMemoryImpression, ChatRoom, ChatRoomMemorySnapshot
+from api.db.models import ChatMemoryImpression, ChatMemoryImpressionAttempt, ChatRoom, ChatRoomMemorySnapshot
 from api.db.models.chat import IMPRESSION_TEXT_MAX
-from api.llm.client import LLMCallContext, LLMClient, LLMClientError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError, collect_usage
 from factories import (
     IMPRESSION_SYNTHETIC_INSTRUCTION,
     Room,
@@ -65,11 +67,18 @@ ImpressionOutcome = MemoryImpressionResult | Exception | Callable[[], Awaitable[
 class ImpressionLLMClient(LLMClient):
     """생성은 고정 응답, 요약은 고정 본문, 스탯 판정은 변화 없음, 두 추출은 빈 결과. 인상 호출에는 `outcomes` 를 차례로 준다
     (결과는 그대로, 예외는 raise, 콜러블은 불러서 그 결과를 — 호출 도중의 경합을 흉내 낸다). 다 쓰면 고정 인상이다.
-    `open_sessions` 가 있으면 인상 호출 순간 열린 루트 트랜잭션 수를 적는다."""
+    `open_sessions` 가 있으면 인상 호출 순간 열린 루트 트랜잭션 수를 적는다. `usage_metadata` 가 있으면 그 사용량을 호출의
+    `usage_sink` 에 더한다(공급자 구현이 하는 일과 같다 — 결과를 내기 전, 예외를 내는 호출도)."""
 
-    def __init__(self, *outcomes: ImpressionOutcome, open_sessions: set[int] | None = None) -> None:
+    def __init__(
+        self,
+        *outcomes: ImpressionOutcome,
+        open_sessions: set[int] | None = None,
+        usage_metadata: object | None = None,
+    ) -> None:
         self.outcomes = list(outcomes)
         self.open_sessions = open_sessions
+        self.usage_metadata = usage_metadata
         self.prompts: list[str] = []
         self.usages: list[LLMCallContext] = []
         self.open_at_call: list[int] = []
@@ -100,6 +109,8 @@ class ImpressionLLMClient(LLMClient):
         self.usages.append(usage)
         if self.open_sessions is not None:
             self.open_at_call.append(len(self.open_sessions))
+        if self.usage_metadata is not None:
+            collect_usage(usage, "claude-haiku-5-5", self.usage_metadata)
         outcome = (
             self.outcomes.pop(0) if self.outcomes else MemoryImpressionResult(impression="  서로를 믿기 시작했다.  ")
         )
@@ -197,6 +208,23 @@ async def _impressions(db_session: AsyncSession, room: Room) -> list[Any]:
     )
 
 
+async def _attempts(db_session: AsyncSession, room: Room) -> list[Any]:
+    """방의 인상 시도 기록 — (스냅샷, 상태, 시도 수, 끝난 시각이 있는가)."""
+    attempt = ChatMemoryImpressionAttempt
+    return list(
+        (
+            await db_session.execute(
+                sa.select(
+                    attempt.snapshot_id,
+                    attempt.status,
+                    attempt.attempts,
+                    attempt.finished_at.is_not(None).label("finished"),
+                ).where(attempt.chat_room_id == room.room_id)
+            )
+        ).all()
+    )
+
+
 async def _generation(db_session: AsyncSession, room: Room) -> int:
     value = await db_session.scalar(sa.select(ChatRoom.memory_forget_generation).where(ChatRoom.id == room.room_id))
     assert value is not None
@@ -252,6 +280,7 @@ async def test_impression_is_not_scheduled_when_switch_is_off(
     assert scheduled == ["fold_memory", "extract_pending_episode", "extract_pending_facts"]
     assert fake.prompts == []
     assert await _impressions(db_session, room) == []
+    assert await _attempts(db_session, room) == []
 
 
 async def test_impression_is_scheduled_after_both_extractions_and_skips_a_room_outside_the_memory_scope(
@@ -456,6 +485,7 @@ async def test_nothing_runs_outside_the_memory_model_scope(
 
     assert fake.prompts == []
     assert await _impressions(db_session, room) == []
+    assert await _attempts(db_session, room) == []
 
 
 async def test_a_group_that_already_has_its_impression_is_not_redone(
@@ -599,6 +629,207 @@ def test_the_impression_module_never_reads_summaries_messages_or_notes() -> None
     ):
         assert name not in source, name
     assert "delete(" not in source
+
+
+# --- 시도 기록 ------------------------------------------------------------------------------------
+#
+# 묶음마다(가장 새 스냅샷마다) 시도 기록 한 행이 선점·재시도 상한·호출 원가를 겸한다 — 두 추출 기록과 같은 꼴이다. 같은 묶음을
+# 두 작업이 함께 고른 경합은 커밋되는 독립 커넥션이 필요해 `test_chat_memory_rewind.py` 의 인상 경합 절에 있다.
+
+
+def _plant_attempt(room: Room, snapshot_id: uuid.UUID, **overrides: Any) -> ChatMemoryImpressionAttempt:
+    values: dict[str, Any] = {
+        "chat_room_id": room.room_id,
+        "snapshot_id": snapshot_id,
+        "status": "running",
+        "attempts": 1,
+        "claimed_at": datetime.now(UTC),
+    }
+    values.update(overrides)
+    return ChatMemoryImpressionAttempt(**values)
+
+
+async def test_a_failing_group_is_called_three_times_and_then_left_alone(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """모델이 계속 실패하면 시도마다 기록이 `failed` 로 하나씩 오르고, 세 번째 실패 뒤에는 그 묶음이 가장 새 묶음으로 남아 있어도
+    더 부르지 않는다. 기록이 없으면 다음 접기 전까지 턴마다 같은 묶음을 다시 부른다."""
+    captured = _capture_failures(monkeypatch)
+    room, (first, _, third) = await _three_part_room(db_client, db_session)
+    await _scene(db_session, room, first)
+    fake = ImpressionLLMClient(*(LLMClientError("모델 실패") for _ in range(3)))
+
+    for attempt in range(1, 4):
+        await _generate(db_session, room, fake)
+        assert await _attempts(db_session, room) == [(third, "failed", attempt, False)]
+
+    await _generate(db_session, room, fake)
+
+    assert len(fake.prompts) == 3
+    assert captured == ["gemini"] * 3
+    assert await _impressions(db_session, room) == []
+
+
+@pytest.mark.parametrize("failure", ["blank-text", "render-failure", "forgotten-during-the-call"])
+async def test_every_way_of_writing_nothing_counts_as_a_failed_attempt(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """모델 실패만이 아니라 빈 글, 렌더 실패(세트에 인상 문안이 없다), 입력을 읽은 뒤 잊기 세대가 오른 것도 시도 하나를 쓴 실패다
+    — 셋 다 그대로 두면 다음 턴이 같은 묶음을 다시 고르고, 상한이 없으면 끝없이 고른다."""
+    _capture_failures(monkeypatch)
+    room, (first, _, third) = await _three_part_room(db_client, db_session)
+    await _scene(db_session, room, first)
+    overrides: dict[str, Any] = {}
+    if failure == "blank-text":
+        fake = ImpressionLLMClient(MemoryImpressionResult(impression="   "))
+    elif failure == "render-failure":
+        fake = ImpressionLLMClient()
+        prompt_set, sections = await load_active_prompt_set(db_session, lane="character")
+        overrides = {
+            "prompt_set": prompt_set,
+            "sections": [section for section in sections if section.channel != "memory_impression"],
+        }
+    else:
+
+        async def _owner_forgets() -> MemoryImpressionResult:
+            await db_session.execute(
+                sa.update(ChatRoom)
+                .where(ChatRoom.id == room.room_id)
+                .values(memory_forget_generation=ChatRoom.memory_forget_generation + 1)
+            )
+            await db_session.commit()
+            return MemoryImpressionResult(impression="잊은 장면이 담긴 인상")
+
+        fake = ImpressionLLMClient(_owner_forgets)
+
+    await _generate(db_session, room, fake, **overrides)
+
+    assert await _impressions(db_session, room) == []
+    assert await _attempts(db_session, room) == [(third, "failed", 1, False)]
+
+
+@pytest.mark.parametrize(
+    ("status", "minutes_ago", "attempts", "retaken"),
+    [
+        pytest.param("running", 11, 1, True, id="stale-running"),
+        pytest.param("running", 11, 3, False, id="stale-running-at-the-attempt-limit"),
+        pytest.param("running", 9, 1, False, id="fresh-running"),
+        pytest.param("failed", 0, 2, True, id="failed-twice"),
+        pytest.param("failed", 0, 3, False, id="failed-three-times"),
+    ],
+)
+async def test_a_stale_or_failed_claim_is_retaken_within_the_attempt_limit(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    status: str,
+    minutes_ago: int,
+    attempts: int,
+    retaken: bool,
+) -> None:
+    """작업이 죽어(배포 교체) `running` 이 남으면 10분이 지난 뒤 다음 작업이 다시 쥔다. 10분 안의 `running` 은 아직 도는 작업의
+    것이라 건드리지 않는다. 실패도 다시 쥔다. 어느 쪽이든 시도는 세 번까지다."""
+    room, (first, _, third) = await _three_part_room(db_client, db_session)
+    await _scene(db_session, room, first)
+    db_session.add(
+        _plant_attempt(
+            room,
+            third,
+            status=status,
+            attempts=attempts,
+            claimed_at=datetime.now(UTC) - timedelta(minutes=minutes_ago),
+        )
+    )
+    await db_session.commit()
+    fake = ImpressionLLMClient()
+
+    await _generate(db_session, room, fake)
+
+    assert len(fake.prompts) == (1 if retaken else 0)
+    if retaken:
+        assert await _attempts(db_session, room) == [(third, "done", attempts + 1, True)]
+        assert len(await _impressions(db_session, room)) == 1
+    else:
+        assert await _attempts(db_session, room) == [(third, status, attempts, False)]
+        assert await _impressions(db_session, room) == []
+
+
+async def test_a_written_impression_records_its_model_and_tokens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """성공한 시도는 `done` 이 되고, 그 호출의 모델 id 와 토큰 넷을 묶음 단위로 남긴다(입력은 캐시 포함 전체 — 사용량 기록과 같은
+    뜻)."""
+    room, (first, _, third) = await _three_part_room(db_client, db_session)
+    await _scene(db_session, room, first)
+    metadata = SimpleNamespace(
+        prompt_token_count=5_000, cached_content_token_count=1_200, candidates_token_count=900, thoughts_token_count=0
+    )
+
+    await _generate(db_session, room, ImpressionLLMClient(usage_metadata=metadata))
+
+    attempt = ChatMemoryImpressionAttempt
+    rows = (
+        await db_session.execute(
+            sa.select(
+                attempt.snapshot_id,
+                attempt.status,
+                attempt.attempts,
+                attempt.model,
+                attempt.prompt_tokens,
+                attempt.cached_tokens,
+                attempt.output_tokens,
+                attempt.thoughts_tokens,
+            ).where(attempt.chat_room_id == room.room_id)
+        )
+    ).all()
+    assert [tuple(row) for row in rows] == [(third, "done", 1, "claude-haiku-5-5", 5_000, 1_200, 900, 0)]
+    assert len(await _impressions(db_session, room)) == 1
+
+
+@pytest.mark.parametrize("path", ["rewind-into-the-group", "reset", "room-deletion"])
+async def test_rewind_reset_and_room_deletion_leave_no_attempt(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, path: str
+) -> None:
+    """시도 기록은 묶음의 가장 새 스냅샷에 걸린다. 되감기가 묶음의 가장 오래된 스냅샷까지 지우든, 초기화든, 방 삭제든 스냅샷 DELETE
+    의 CASCADE 가 기록을 함께 지운다 — 되감기·방 삭제 코드는 이 테이블을 모르고, 모르는 옛 이미지의 DELETE 도 FK 위반이 되지 않는다."""
+    room, (_, _, third) = await _three_part_room(db_client, db_session)
+    db_session.add(_plant_attempt(room, third, status="failed", attempts=3))
+    await db_session.commit()
+    assert len(await _attempts(db_session, room)) == 1
+
+    if path == "rewind-into-the-group":
+        first_user = room.turns[5][0]
+        await rewind_memory(db_session, room.room_id, (first_user.created_at, first_user.id))
+    elif path == "reset":
+        await rewind_memory(db_session, room.room_id, None)
+    else:
+        await delete_chat_rooms(db_session, [room.room_id])
+    await db_session.commit()
+
+    assert await _attempts(db_session, room) == []
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"status": "pending"}, id="unknown-status"),
+        pytest.param({"attempts": 0}, id="zero-attempts"),
+    ],
+)
+async def test_the_attempt_table_rejects_rows_outside_its_checks(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, overrides: dict[str, Any]
+) -> None:
+    """`alembic check` 는 CHECK 를 비교하지 않는다 — 이 거부가 두 제약의 유일한 검증이다. 같은 스냅샷에 경계 안쪽 값(`attempts`
+    1, 알려진 상태)은 들어가므로 거부가 그 칸 값 때문임이 드러난다."""
+    room = await _open_room(db_client, db_session, turns=10)
+    snapshot_id = await _plant(db_session, room, 10)
+
+    with pytest.raises(IntegrityError):
+        async with db_session.begin_nested():
+            db_session.add(_plant_attempt(room, snapshot_id, **overrides))
+            await db_session.flush()
+
+    db_session.add(_plant_attempt(room, snapshot_id, status="failed", attempts=1))
+    await db_session.flush()
 
 
 # --- 지워지는 길 ----------------------------------------------------------------------------------

@@ -53,6 +53,7 @@ from api.db.models import (
     ChatMemoryFact,
     ChatMemoryFactExtraction,
     ChatMemoryImpression,
+    ChatMemoryImpressionAttempt,
     ChatMessage,
     ChatMessageRole,
     ChatPreviousResponse,
@@ -2234,3 +2235,38 @@ async def test_an_impression_that_read_its_input_before_a_scene_was_forgotten_di
 
     assert (llm.calls, outcomes) == (1, ["forgotten"])
     assert await _committed_impressions(committed_engine, room) == 0
+
+
+async def test_concurrent_impressions_of_one_group_call_the_model_once(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """두 턴의 백그라운드가 다른 워커에서 같은 묶음을 골랐다(앞 턴의 호출이 끝나기 전에 다음 턴이 끝났다). 선점은 하나만 이기고
+    모델은 한 번만 불린다 — 인상 행의 스냅샷 유니크는 두 번째 행만 막을 뿐 두 번째 호출의 원가는 막지 못한다. 두 작업은 묶음을
+    고른 직후(선점 전)에 서로를 기다려 순서를 시간이 아니라 상태로 강제한다."""
+    room, _ = await _room_ready_for_an_impression(committed_engine, monkeypatch)
+    both_picked = asyncio.Barrier(2)
+    pick = memory_impressions._due_group
+
+    async def _both_pick_before_either_claims(*args: Any, **kwargs: Any) -> Any:
+        group = await pick(*args, **kwargs)
+        await both_picked.wait()
+        return group
+
+    monkeypatch.setattr(memory_impressions, "_due_group", _both_pick_before_either_claims)
+    llm = _ImpressionClient()
+
+    await asyncio.wait_for(
+        asyncio.gather(_run_impression(committed_engine, room, llm), _run_impression(committed_engine, room, llm)), 15
+    )
+
+    assert llm.calls == 1
+    assert await _committed_impressions(committed_engine, room) == 1
+    async with async_sessionmaker(committed_engine, expire_on_commit=False)() as session:
+        attempts = (
+            await session.execute(
+                sa.select(ChatMemoryImpressionAttempt.status, ChatMemoryImpressionAttempt.attempts).where(
+                    ChatMemoryImpressionAttempt.chat_room_id == room.room_id
+                )
+            )
+        ).all()
+    assert [tuple(row) for row in attempts] == [("done", 1)]
