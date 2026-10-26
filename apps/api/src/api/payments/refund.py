@@ -66,7 +66,8 @@ SEND_CLAIM_SECONDS = portone.PORTONE_TIMEOUT_SECONDS * 3
 # 포트원에 넘기는 취소 사유. 어드민이 적은 사유는 내부 감사용이라 결제대행사로 보내지 않는다.
 PORTONE_CANCEL_REASON = "클로버 구매 환불"
 
-_REFUNDABLE = ("paid", "partially_cancelled")
+# 환불할 수 있는 결제 상태. 환불 견적 추출 스크립트(`scripts/ops/quote_refunds.py`)도 이 목록으로 대상을 고른다.
+REFUNDABLE_STATUSES = ("paid", "partially_cancelled")
 # 이 거절은 "우리 취소가 이미 처리됐다"일 수 있다(이중 클릭·웹훅 경합). 실패로 확정하기 전에 포트원을 다시 조회한다.
 _MAYBE_ALREADY_CANCELLED = frozenset(
     {
@@ -167,7 +168,7 @@ async def quote_refund(
     감소까지 사용으로 잡힌다. 실행 경로는 사용자 행을 잠근 뒤 이 함수를 불러, 견적의 남은 유료와 회수량이 같은 잠금
     아래에서 정해지게 한다.
     """
-    if order.status not in _REFUNDABLE:
+    if order.status not in REFUNDABLE_STATUSES:
         raise RefundRefusedError(422, "PAYMENT_NOT_REFUNDABLE")
     assert order.paid_at is not None  # 지급한 주문은 결제 시각이 있다
     paid_on = order.paid_at.astimezone(KST).date()
@@ -257,7 +258,7 @@ async def _settle_totals(db: AsyncSession, order: Payment) -> None:
         or 0
     )
     order.cancelled_amount_krw = total
-    if order.status in _REFUNDABLE and total > 0:
+    if order.status in REFUNDABLE_STATUSES and total > 0:
         order.status = "cancelled" if total >= order.amount_krw else "partially_cancelled"
     order.updated_at = _utcnow()
 
