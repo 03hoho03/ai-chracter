@@ -659,15 +659,32 @@ class AdminPromptSetDetailResponse(CamelModel):
     removed_sections: list[str] = Field(default_factory=list)
 
 
+class AdminPromptPlaceholderHint(CamelModel):
+    """한 (채널, 슬롯)에 쓸 수 있는 자리표시자 이름. 게시 검사가 쓰는 서버 상수에서 그대로 끌어낸다."""
+
+    channel: str
+    slot: str
+    names: list[str]
+
+
 class AdminPromptDraftResponse(CamelModel):
     """`id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성
     세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는
-    조회)."""
+    조회).
+
+    두 칸은 기본값 없이 늘 채운다 — 응답을 만드는 자리가 하나라도 빠뜨리면 응답 검증에서 바로 터지게 하려는 것이다.
+    - `saved_draft_hash`: 저장된 초안 행(라벨 포함)의 내용 해시. 초안 행이 없으면 null. 저장·통째 복원 요청이 이 값을
+      `base_draft_hash` 로 돌려보내 그 사이 다른 탭의 저장을 덮지 않게 한다. 게시용 `draft_hash`(바뀐 섹션 조회)와 해시 함수는
+      같지만 입력이 다르다 — 게시용은 얼린 소설 행을 활성판 값으로 갈아 끼운 내용이라 둘을 섞으면 안 된다.
+    - `allowed_placeholders`: 이 체인이 편집할 수 있는 채널의 (채널, 슬롯)마다 쓸 수 있는 자리표시자. 화면이 따로 사본을 두면
+      서버와 어긋나므로 이 값만 본다."""
 
     id: uuid.UUID | None
     model: PromptSetModelId
     labels: AdminPromptLabels
     sections: list[AdminPromptSectionItem]
+    saved_draft_hash: str | None
+    allowed_placeholders: list[AdminPromptPlaceholderHint]
 
 
 class AdminPromptSectionInput(CamelModel):
@@ -681,10 +698,20 @@ class AdminPromptSectionInput(CamelModel):
 
 
 class AdminPromptDraftUpsertRequest(CamelModel):
-    """섹션 전체 교체 — 부분 패치가 아니다."""
+    """섹션 전체 교체 — 부분 패치가 아니다.
+
+    `base_draft_hash` 는 화면이 초안을 받을 때 함께 받은 `saved_draft_hash` 다. 칸을 보내지 않으면(해시를 모르는 옛 화면) 검사하지
+    않고 덮어쓴다. null 을 명시하면 "초안 행이 없어야 한다"는 뜻이다. 지금 초안 해시와 다르면 409 `draft-changed` 다."""
 
     labels: AdminPromptLabels
     sections: list[AdminPromptSectionInput]
+    base_draft_hash: str | None = None
+
+
+class AdminPromptSetRestoreRequest(CamelModel):
+    """통째 복원도 초안을 덮어쓰므로 초안 저장과 같은 `base_draft_hash` 검사를 한다. 본문이나 칸이 없으면 검사하지 않는다."""
+
+    base_draft_hash: str | None = None
 
 
 class AdminPromptPublishRequest(CamelModel):

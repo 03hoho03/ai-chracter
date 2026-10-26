@@ -2797,7 +2797,7 @@
           "admin"
         ],
         "summary": "Restore Prompt Set",
-        "description": "옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이\n없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.\n\n레인·모델은 요청에서 따로 받지 않는다 — `source.lane`·`source.model`에서만 나온다(그 체인의 초안으로 들어간다).\n`source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인\n분리 이전 버전은 복원 대상이 아니다.",
+        "description": "옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이\n없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.\n\n레인·모델은 요청에서 따로 받지 않는다 — `source.lane`·`source.model`에서만 나온다(그 체인의 초안으로 들어간다).\n`source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인\n분리 이전 버전은 복원 대상이 아니다.\n\n본문은 생략할 수 있다(옛 화면). `base_draft_hash` 를 보내면 초안 저장과 같이 그 사이 다른 탭이 저장한 초안을 덮지 않는다.",
         "operationId": "restore_prompt_set_admin_prompt_sets__id__restore_post",
         "parameters": [
           {
@@ -2811,6 +2811,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AdminPromptSetRestoreRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -22002,6 +22019,24 @@
             },
             "type": "array",
             "title": "Sections"
+          },
+          "savedDraftHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saveddrafthash"
+          },
+          "allowedPlaceholders": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptPlaceholderHint"
+            },
+            "type": "array",
+            "title": "Allowedplaceholders"
           }
         },
         "type": "object",
@@ -22009,10 +22044,12 @@
           "id",
           "model",
           "labels",
-          "sections"
+          "sections",
+          "savedDraftHash",
+          "allowedPlaceholders"
         ],
         "title": "AdminPromptDraftResponse",
-        "description": "`id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성\n세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는\n조회)."
+        "description": "`id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성\n세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는\n조회).\n\n두 칸은 기본값 없이 늘 채운다 — 응답을 만드는 자리가 하나라도 빠뜨리면 응답 검증에서 바로 터지게 하려는 것이다.\n- `saved_draft_hash`: 저장된 초안 행(라벨 포함)의 내용 해시. 초안 행이 없으면 null. 저장·통째 복원 요청이 이 값을\n  `base_draft_hash` 로 돌려보내 그 사이 다른 탭의 저장을 덮지 않게 한다. 게시용 `draft_hash`(바뀐 섹션 조회)와 해시 함수는\n  같지만 입력이 다르다 — 게시용은 얼린 소설 행을 활성판 값으로 갈아 끼운 내용이라 둘을 섞으면 안 된다.\n- `allowed_placeholders`: 이 체인이 편집할 수 있는 채널의 (채널, 슬롯)마다 쓸 수 있는 자리표시자. 화면이 따로 사본을 두면\n  서버와 어긋나므로 이 값만 본다."
       },
       "AdminPromptDraftUpsertRequest": {
         "properties": {
@@ -22025,6 +22062,17 @@
             },
             "type": "array",
             "title": "Sections"
+          },
+          "baseDraftHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basedrafthash"
           }
         },
         "type": "object",
@@ -22033,7 +22081,7 @@
           "sections"
         ],
         "title": "AdminPromptDraftUpsertRequest",
-        "description": "섹션 전체 교체 — 부분 패치가 아니다."
+        "description": "섹션 전체 교체 — 부분 패치가 아니다.\n\n`base_draft_hash` 는 화면이 초안을 받을 때 함께 받은 `saved_draft_hash` 다. 칸을 보내지 않으면(해시를 모르는 옛 화면) 검사하지\n않고 덮어쓴다. null 을 명시하면 \"초안 행이 없어야 한다\"는 뜻이다. 지금 초안 해시와 다르면 409 `draft-changed` 다."
       },
       "AdminPromptLabels": {
         "properties": {
@@ -22062,6 +22110,33 @@
           "characterAssistantLabel"
         ],
         "title": "AdminPromptLabels"
+      },
+      "AdminPromptPlaceholderHint": {
+        "properties": {
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "slot": {
+            "type": "string",
+            "title": "Slot"
+          },
+          "names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel",
+          "slot",
+          "names"
+        ],
+        "title": "AdminPromptPlaceholderHint",
+        "description": "한 (채널, 슬롯)에 쓸 수 있는 자리표시자 이름. 게시 검사가 쓰는 서버 상수에서 그대로 끌어낸다."
       },
       "AdminPromptPreviewItem": {
         "properties": {
@@ -23252,6 +23327,24 @@
           "items"
         ],
         "title": "AdminPromptSetListResponse"
+      },
+      "AdminPromptSetRestoreRequest": {
+        "properties": {
+          "baseDraftHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basedrafthash"
+          }
+        },
+        "type": "object",
+        "title": "AdminPromptSetRestoreRequest",
+        "description": "통째 복원도 초안을 덮어쓰므로 초안 저장과 같은 `base_draft_hash` 검사를 한다. 본문이나 칸이 없으면 검사하지 않는다."
       },
       "AdminPromptSetSummary": {
         "properties": {

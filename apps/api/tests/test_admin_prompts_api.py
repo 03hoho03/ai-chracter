@@ -68,6 +68,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from redis.exceptions import RedisError
 
 from api.admin import prompts as admin_prompts
+from api.admin.prompt_semver import draft_fingerprint, section_contents
 from api.chat.prompt_builder import ALLOWED_PLACEHOLDERS, PromptLane, load_active_prompt_set, system_instruction_for
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
 from api.core.redis import redis_client
@@ -329,12 +330,14 @@ async def test_draft_upsert_concurrent_insert_race_falls_back_to_update_not_500(
     real_get_draft = admin_prompts._get_draft
     call_count = 0
 
-    async def _get_draft_missing_once(db: AsyncSession, lane: PromptLane, model: ChatModelId) -> PromptSet | None:
+    async def _get_draft_missing_once(
+        db: AsyncSession, lane: PromptLane, model: ChatModelId, *, for_update: bool = False
+    ) -> PromptSet | None:
         nonlocal call_count
         call_count += 1
         if call_count == 1:
             return None
-        return await real_get_draft(db, lane, model)
+        return await real_get_draft(db, lane, model, for_update=for_update)
 
     monkeypatch.setattr(admin_prompts, "_get_draft", _get_draft_missing_once)
 
@@ -445,12 +448,14 @@ async def test_replace_draft_content_integrity_error_recovery_only_touches_own_l
     real_get_draft = admin_prompts._get_draft
     call_count = 0
 
-    async def _get_draft_missing_once(db: AsyncSession, lane: PromptLane, model: ChatModelId) -> PromptSet | None:
+    async def _get_draft_missing_once(
+        db: AsyncSession, lane: PromptLane, model: ChatModelId, *, for_update: bool = False
+    ) -> PromptSet | None:
         nonlocal call_count
         call_count += 1
         if call_count == 1:
             return None
-        return await real_get_draft(db, lane, model)
+        return await real_get_draft(db, lane, model, for_update=for_update)
 
     monkeypatch.setattr(admin_prompts, "_get_draft", _get_draft_missing_once)
 
@@ -1999,3 +2004,332 @@ async def test_novel_screen_lane_publishes_its_seed_and_previews_with_sample_tex
     assert "[판정 방법]" in item["text"] and "=== chapter_body: 본문 ===\n[샘플] 첫 문단이다." in item["text"]
     assert (published.status_code, published.json()["version"]) == (200, "112")
     assert (claude.status_code, claude.json()["detail"]["rule"]) == (422, "lane-model")
+
+
+# ---- 초안 저장 충돌 — 다른 탭이 먼저 저장한 초안을 덮지 않는다 ----------------------------------------------------------
+
+_DRAFT_HASH_EDIT = " [합성 다른 탭 편집]"
+
+
+def _with_edited_tail(draft: dict[str, object], suffix: str) -> list[dict[str, object]]:
+    """초안 응답 섹션에서 `system/priority_tail` 본문 끝에 합성 문구를 붙인 사본."""
+    sections = cast(list[dict[str, object]], draft["sections"])
+    return [
+        {**s, "body": f"{s['body']}{suffix}"} if (s["channel"], s["slot"]) == ("system", "priority_tail") else dict(s)
+        for s in sections
+    ]
+
+
+async def _stored_draft_state(
+    db_session: AsyncSession, lane: str, model: str = "gemini"
+) -> tuple[tuple[str, str, str, str], set[tuple[str, str, str, str, str, bool, int]]] | None:
+    """저장된 초안 행의 라벨 넷과 섹션 행 전부(없으면 None). 앱 세션이 커밋한 값을 읽으려고 식별 맵을 새로 채운다."""
+    draft = await db_session.scalar(
+        sa.select(PromptSet)
+        .where(PromptSet.status == "draft", PromptSet.lane == lane, PromptSet.model == model)
+        .execution_options(populate_existing=True)
+    )
+    if draft is None:
+        return None
+    labels = (draft.user_label, draft.story_assistant_label, draft.story_example_label, draft.character_assistant_label)
+    return labels, _rows(await _sections_of_set(db_session, draft.id))
+
+
+async def test_draft_response_carries_the_saved_draft_hash_and_saving_with_it_succeeds(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """초안 행이 없으면 저장된 초안 해시는 null 이다. 저장 응답의 해시는 저장된 행(라벨 포함)을 게시 경로와 같은 해시 함수로
+    계산한 값이고, 그 해시를 돌려보내 저장하면 200 과 새 해시가 온다. 깨지는 시나리오: 응답이 해시를 싣지 않거나 화면이 받은
+    값과 서버 비교 값이 달라 정상 저장이 늘 409 가 된다."""
+    await _login_new_admin(db_client, db_session)
+    shown = (await db_client.get("/admin/prompt-sets/story/draft")).json()
+    assert shown["savedDraftHash"] is None
+
+    first = await _make_valid_draft(db_client, "story")
+    first_hash = first["savedDraftHash"]
+    assert isinstance(first_hash, str)
+    stored = await db_session.scalar(
+        sa.select(PromptSet)
+        .where(PromptSet.id == uuid.UUID(str(first["id"])))
+        .execution_options(populate_existing=True)
+    )
+    assert stored is not None
+    assert first_hash == draft_fingerprint(section_contents(stored, await _sections_of_set(db_session, stored.id)))
+
+    second = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={
+            "labels": first["labels"],
+            "sections": _with_edited_tail(first, _DRAFT_HASH_EDIT),
+            "baseDraftHash": first_hash,
+        },
+    )
+
+    assert second.status_code == 200, second.text
+    second_hash = second.json()["savedDraftHash"]
+    assert second_hash != first_hash
+    assert (await db_client.get("/admin/prompt-sets/story/draft")).json()["savedDraftHash"] == second_hash
+
+
+async def test_saving_with_a_stale_draft_hash_after_another_save_is_409_and_keeps_the_draft(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """두 탭이 같은 초안을 열고 한쪽이 먼저 저장하면, 다른 쪽이 옛 해시로 저장할 때 409 `draft-changed` 이고 먼저 저장한
+    내용(섹션 행·라벨)이 그대로 남는다. 깨지는 시나리오: 나중 저장이 먼저 저장한 탭의 편집을 조용히 지운다."""
+    await _login_new_admin(db_client, db_session)
+    opened = await _make_valid_draft(db_client, "story")
+    opened_hash = opened["savedDraftHash"]
+
+    other_tab = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={
+            "labels": opened["labels"],
+            "sections": _with_edited_tail(opened, " [합성 먼저 저장]"),
+            "baseDraftHash": opened_hash,
+        },
+    )
+    assert other_tab.status_code == 200, other_tab.text
+    before = await _stored_draft_state(db_session, "story")
+
+    stale = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={
+            "labels": opened["labels"],
+            "sections": _with_edited_tail(opened, " [합성 늦은 저장]"),
+            "baseDraftHash": opened_hash,
+        },
+    )
+
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["detail"]["rule"] == "draft-changed"
+    assert await _stored_draft_state(db_session, "story") == before
+
+
+async def test_saving_without_the_draft_hash_field_overwrites_like_before(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """해시 칸을 모르는 옛 화면(칸 없음)은 검사하지 않고 지금처럼 덮어쓴다. 깨지는 시나리오: 배포 직후 열려 있던 옛 화면의
+    저장이 전부 409 로 막힌다."""
+    await _login_new_admin(db_client, db_session)
+    opened = await _make_valid_draft(db_client, "story")
+    other_tab = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={"labels": opened["labels"], "sections": _with_edited_tail(opened, " [합성 먼저 저장]")},
+    )
+    assert other_tab.status_code == 200, other_tab.text
+
+    legacy = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={"labels": opened["labels"], "sections": _with_edited_tail(opened, " [합성 옛 화면 저장]")},
+    )
+
+    assert legacy.status_code == 200, legacy.text
+    tail = next(s for s in legacy.json()["sections"] if (s["channel"], s["slot"]) == ("system", "priority_tail"))
+    assert tail["body"].endswith(" [합성 옛 화면 저장]")
+
+
+async def test_explicit_null_draft_hash_is_409_when_a_draft_exists_and_creates_one_when_none(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """해시를 null 로 명시하면 "초안 행이 없어야 한다"는 뜻이다 — 초안이 없으면 만들고, 그 사이 다른 탭이 초안을 만들었으면
+    409 다. 깨지는 시나리오: 명시 null 을 칸 없음과 같이 다뤄, 활성판에서 연 화면이 다른 탭의 첫 초안을 덮는다."""
+    await _login_new_admin(db_client, db_session)
+    shown = (await db_client.get("/admin/prompt-sets/story/draft")).json()
+
+    created = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={
+            "labels": shown["labels"],
+            "sections": shown["sections"],
+            "baseDraftHash": None,
+        },
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["id"] is not None
+    before = await _stored_draft_state(db_session, "story")
+
+    again = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={
+            "labels": shown["labels"],
+            "sections": _with_edited_tail(shown, _DRAFT_HASH_EDIT),
+            "baseDraftHash": None,
+        },
+    )
+
+    assert again.status_code == 409, again.text
+    assert again.json()["detail"]["rule"] == "draft-changed"
+    assert await _stored_draft_state(db_session, "story") == before
+
+
+async def test_losing_the_first_insert_race_with_an_explicit_null_hash_is_409_not_an_overwrite(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """초안이 없던 두 요청이 동시에 첫 초안을 만들 때, 명시 null 로 보낸 진 쪽은 이긴 행을 덮지 않고 409 다(칸이 없으면
+    지금처럼 덮는다 — 위 경쟁 테스트). 흉내는 위 경쟁 테스트와 같다 — `_get_draft` 첫 호출만 None 을 돌려준다."""
+    await _login_new_admin(db_client, db_session)
+    shown = (await db_client.get("/admin/prompt-sets/story/draft")).json()
+
+    real_get_draft = admin_prompts._get_draft
+    call_count = 0
+
+    async def _get_draft_missing_once(
+        db: AsyncSession, lane: PromptLane, model: ChatModelId, *, for_update: bool = False
+    ) -> PromptSet | None:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return None
+        return await real_get_draft(db, lane, model, for_update=for_update)
+
+    monkeypatch.setattr(admin_prompts, "_get_draft", _get_draft_missing_once)
+    raced_in = PromptSet(
+        id=uuid.uuid4(),
+        version=None,
+        status="draft",
+        lane="story",
+        note="",
+        user_label="경쟁-사용자",
+        story_assistant_label="경쟁-진행자",
+        story_example_label="경쟁-서술자",
+        character_assistant_label="경쟁-캐릭터",
+    )
+    db_session.add(raced_in)
+    await db_session.commit()
+
+    resp = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={
+            "labels": shown["labels"],
+            "sections": shown["sections"],
+            "baseDraftHash": None,
+        },
+    )
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["rule"] == "draft-changed"
+    state = await _stored_draft_state(db_session, "story")
+    assert state is not None
+    assert state[0][0] == "경쟁-사용자"
+    assert state[1] == set()
+
+
+async def test_chat_gemini_draft_hash_from_put_equals_get_and_ignores_echoed_novel_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """채팅 Gemini 체인은 저장 때 얼린 소설 행을 활성판 값으로 갈아 끼운다. 그래서 저장 직후 조회 해시가 저장 응답 해시와 같고,
+    옛 탭이 소설 행을 고쳐 메아리로 보내도 내용이 같으면 해시가 같다. 깨지는 시나리오: 응답 해시를 화면에 보이는 섹션만으로
+    계산해 저장 직후 다시 저장하면 늘 409 가 된다."""
+    await _login_new_admin(db_client, db_session)
+    saved = await _make_valid_draft(db_client, "story")
+    saved_hash = saved["savedDraftHash"]
+    assert (await db_client.get("/admin/prompt-sets/story/draft")).json()["savedDraftHash"] == saved_hash
+
+    _, active_sections = await load_active_prompt_set(db_session, lane="story")
+    echoed = [
+        {"channel": s.channel, "scope": s.scope, "slot": s.slot, "variant": s.variant, "body": f"[바꿈] {s.body}",
+         "conditional": s.conditional, "order": s.order}
+        for s in active_sections
+        if s.channel in _NOVELIZE_CHANNELS
+    ]
+    assert echoed
+    resaved = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={
+            "labels": saved["labels"],
+            "sections": [*cast(list[dict[str, object]], saved["sections"]), *echoed],
+            "baseDraftHash": saved_hash,
+        },
+    )
+
+    assert resaved.status_code == 200, resaved.text
+    assert resaved.json()["savedDraftHash"] == saved_hash
+    assert (await db_client.get("/admin/prompt-sets/story/draft")).json()["savedDraftHash"] == saved_hash
+
+
+async def test_whole_set_restore_checks_the_draft_hash_like_a_save(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """통째 복원도 초안을 덮어쓰므로 같은 검사를 한다 — 옛 해시는 409 `draft-changed` 이고 초안이 그대로, 명시 null 은 초안이
+    있으면 409, 지금 해시면 200, 본문 없는 옛 화면 요청은 지금처럼 복원한다. 깨지는 시나리오: 다른 탭의 저장 뒤 복원이 그
+    편집을 조용히 지운다."""
+    await _login_new_admin(db_client, db_session)
+    source_id = await db_session.scalar(_select_active_id("story"))
+    opened = await _make_valid_draft(db_client, "story")
+    other_tab = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={"labels": opened["labels"], "sections": _with_edited_tail(opened, " [합성 먼저 저장]")},
+    )
+    assert other_tab.status_code == 200, other_tab.text
+    before = await _stored_draft_state(db_session, "story")
+
+    stale = await db_client.post(
+        f"/admin/prompt-sets/{source_id}/restore", json={"baseDraftHash": opened["savedDraftHash"]}
+    )
+    null = await db_client.post(f"/admin/prompt-sets/{source_id}/restore", json={"baseDraftHash": None})
+
+    assert (stale.status_code, stale.json()["detail"]["rule"]) == (409, "draft-changed")
+    assert (null.status_code, null.json()["detail"]["rule"]) == (409, "draft-changed")
+    assert await _stored_draft_state(db_session, "story") == before
+
+    current = await db_client.post(
+        f"/admin/prompt-sets/{source_id}/restore", json={"baseDraftHash": other_tab.json()["savedDraftHash"]}
+    )
+    assert current.status_code == 200, current.text
+    tail = next(s for s in current.json()["sections"] if (s["channel"], s["slot"]) == ("system", "priority_tail"))
+    assert not tail["body"].endswith(" [합성 먼저 저장]")
+
+    legacy = await db_client.post(f"/admin/prompt-sets/{source_id}/restore")
+    assert legacy.status_code == 200, legacy.text
+    assert legacy.json()["savedDraftHash"] == current.json()["savedDraftHash"]
+
+
+# ---- 허용 자리표시자 — 서버 상수 하나에서 화면 힌트를 끌어낸다 ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("lane", "model"),
+    [
+        pytest.param("story", "gemini", id="story-gemini"),
+        pytest.param("character", "gemini", id="character-gemini"),
+        pytest.param("story", "sonnet", id="story-sonnet"),
+        pytest.param("character", "haiku", id="character-haiku"),
+        pytest.param("novel", "gemini", id="novel-gemini"),
+        pytest.param("publish_filter", "gemini", id="publish-filter"),
+    ],
+)
+async def test_draft_response_placeholder_hints_match_the_server_constant_for_that_chains_channels(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str, model: str
+) -> None:
+    """초안 응답의 허용 자리표시자 힌트는 그 체인이 화면에 싣는 섹션의 (채널, 슬롯) 전부이고, 이름 목록은 게시 검사가 쓰는
+    서버 상수와 같다(키와 값 모두). 깨지는 시나리오: 화면이 따로 든 사본이 서버와 어긋나, 게시 검사가 받는 자리표시자를
+    화면이 경고하거나 그 반대가 된다."""
+    await _login_new_admin(db_client, db_session)
+    body = (await db_client.get(f"/admin/prompt-sets/{lane}/draft", params={"model": model})).json()
+
+    hints = {(h["channel"], h["slot"]): h["names"] for h in body["allowedPlaceholders"]}
+    shown_keys = {(s["channel"], s["slot"]) for s in body["sections"]}
+    assert set(hints) == shown_keys
+    assert hints == {key: sorted(ALLOWED_PLACEHOLDERS[key]) for key in shown_keys}
+
+
+async def test_chat_lane_placeholder_hints_include_the_memory_channels_the_old_admin_copy_missed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """스토리 레인 Gemini 초안 응답에는 생성 채널의 사실 기억 줄, 요약 채널의 비밀 표기, 인상 채널 세 슬롯 힌트가 실린다 —
+    화면 사본이 빠뜨렸던 다섯 자리다. 저장 응답과 조회 응답이 같은 힌트를 싣는다."""
+    await _login_new_admin(db_client, db_session)
+    saved = await _make_valid_draft(db_client, "story")
+    shown = (await db_client.get("/admin/prompt-sets/story/draft")).json()
+
+    hints = {(h["channel"], h["slot"]): h["names"] for h in shown["allowedPlaceholders"]}
+    for key in (
+        ("generation", "memory_facts"),
+        ("memory_impression", "episodes"),
+        ("memory_impression", "facts"),
+        ("memory_impression", "instruction"),
+        ("memory_summary", "secret_marking"),
+    ):
+        assert hints[key] == sorted(ALLOWED_PLACEHOLDERS[key])
+    assert not {channel for channel, _slot in hints} & _NOVELIZE_CHANNELS
+    assert saved["allowedPlaceholders"] == shown["allowedPlaceholders"]
