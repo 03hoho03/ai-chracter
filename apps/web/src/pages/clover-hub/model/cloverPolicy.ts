@@ -27,6 +27,8 @@ export function formatValiditySentences(policy: CloverPolicyValues): string[] {
     `유료 클로버와 보너스 클로버는 구매일로부터 ${policy.purchaseValidityYears}년 동안 쓸 수 있어요.`,
     CLOVER_EXPIRY_NOTICE_MESSAGE,
     "클로버는 무료, 보너스, 유료 순서로 쓰여요. 무료 클로버는 환불되지 않아요.",
+    // 이 문장은 이용약관·환불정책 게시본의 같은 문장과 맞춰 둔 것이다. 화면에서만 현재형으로 고치면 게시본과 갈리므로
+    // 게시본을 개정할 때 함께 고친다.
     "본인인증 기능이 열리면, 미션 클로버는 휴대폰 본인인증을 마친 회원에게만 지급돼요.",
   ];
 }
