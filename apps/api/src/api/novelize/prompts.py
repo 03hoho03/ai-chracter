@@ -16,8 +16,9 @@
 빠진 세트, 옮길 원문·고칠 문단이 빈 입력이면 호출 전에 `PromptRenderError` 를 낸다. 호출부는 이
 실패를 차감 전 거절 또는 환불로 처리한다. 소설화는 활성 세트 캐시를 쓰지 않고 매번 DB 를 읽는다."""
 
+import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 from pydantic import BaseModel, Field
 
@@ -47,10 +48,19 @@ _REQUIRED_SLOTS: dict[str, frozenset[str]] = {
 
 @dataclass(frozen=True)
 class NovelizePrompt:
-    """`system_instruction` 은 `generate`/`generate_structured` 의 지시문 인자로, `prompt` 는 본문으로 보낸다."""
+    """`system_instruction` 은 `generate`/`generate_structured` 의 지시문 인자로, `prompt` 는 본문으로 보낸다.
+
+    나머지 칸은 렌더러(`_render`)가 받은 입력이다 — 측정 덤프(`novelize/prompt_dump.py`)가 이것만으로 같은 바이트를 다시 렌더할 수
+    있게 싣는다: 섹션을 읽은 세트 id, 채널, 원작 종류(scope), 등급 규칙을 붙였는가, 슬롯 값 사전. 비교와 repr 에서 뺀다 — 같은
+    글이면 같은 프롬프트이고, 슬롯 값에는 원문 대화가 들어 있어 repr 로 로그·오류 글에 새면 안 된다."""
 
     system_instruction: str
     prompt: str
+    prompt_set_id: uuid.UUID | None = field(default=None, compare=False)
+    channel: str = field(default="", compare=False)
+    scope: str = field(default="", compare=False)
+    with_rating: bool = field(default=False, compare=False)
+    values: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
 
 class NovelizeReviseResult(BaseModel):
@@ -198,12 +208,22 @@ def _render(
     if not instruction.strip() or not prompt.strip():
         raise PromptRenderError(f"channel={channel!r} scope={scope!r} 렌더 결과가 비었다")
 
+    # 섹션은 한 세트에서 읽는다(`load_active_prompt_set`). 필수 슬롯 검사를 지났으니 이 채널의 섹션이 하나 이상 있다.
+    rendered = NovelizePrompt(
+        system_instruction=instruction,
+        prompt=prompt,
+        prompt_set_id=channel_sections[0].prompt_set_id,
+        channel=channel,
+        scope=scope,
+        with_rating=with_rating,
+        values=dict(values),
+    )
     if not with_rating:
-        return NovelizePrompt(system_instruction=instruction, prompt=prompt)
+        return rendered
     rating_text = render_rating(sections, channel=RATING_CHANNEL, scope=scope)
     if not rating_text.strip():
         raise PromptRenderError(f"channel={RATING_CHANNEL!r} scope={scope!r} {_RATING_SLOT} 행이 없거나 비었다")
-    return NovelizePrompt(system_instruction=f"{instruction}\n\n{rating_text}", prompt=prompt)
+    return replace(rendered, system_instruction=f"{instruction}\n\n{rating_text}")
 
 
 def _labels(label_set: PromptSet, *, is_story_chat: bool) -> dict[str, str]:
