@@ -45,6 +45,9 @@ class GenerateImageRequest(CamelModel):
     # 참조로 쓸 본인 생성 이미지의 asset id. 없으면 참조 없는 생성이다. 바이트가 아니라 id 를 받아
     # 서버가 소유·종류를 확인하고 원본을 저장소에서 직접 읽는다.
     reference_asset_id: uuid.UUID | None = None
+    # 화면이 공개 가격 응답에서 받은 가격표 버전. 클로버로 낼 요청인데 서버 버전과 다르면 게이트가 깎기 전에 409 로 멈춘다
+    # (`core/rate_limit_gate.py`). 비우면 대조하지 않는다 — 버전을 모르는 배포 전 화면이 그렇다.
+    price_version: int | None = None
 
     @field_validator("prompt")
     @classmethod

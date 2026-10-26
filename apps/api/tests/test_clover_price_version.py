@@ -52,7 +52,7 @@ from factories import (
 )
 
 _START_BALANCE = 1000
-_PRICE_CHANGED = "CLOVER_PRICE_CHANGED"  # cite-ok: 응답에 나가는 오류 코드 이름이다
+_PRICE_CHANGED = "CLOVER_PRICE_CHANGED"
 
 
 def _stale() -> int:

@@ -3325,7 +3325,9 @@ base64로 싣는다(리사이즈 없음). 싣기 전에 서버가 형식(PNG·JP
 429를 낸다(분당 10은 `USER_LIMIT`·`window` `minute`, 일일 30 초과분은 클로버 차감으로 넘어가 부족·미동의면
 `CLOVER_REQUIRED`/`CLOVER_CONFIRM_REQUIRED`·`window` `clover`) — 서버 로그의 `user_limit_exceeded`는
 이미지·채팅 공용이라 `code`/`window`로 가른다. auth 발송 상한의 429(`core/rate_limit.py`, 가입·재발송·
-비밀번호 재설정)도 같은 모양이다(`window` `auth`, `auth/router.py`의 `_auth_too_many_requests`). 생성 전에는 `GET /capabilities`를 TTL 캐시
+비밀번호 재설정)도 같은 모양이다(`window` `auth`, `auth/router.py`의 `_auth_too_many_requests`). 429 가 아닌 것이 하나 있다 — 클로버로 낼 채팅 턴·이미지 요청이
+실어 보낸 가격표 버전(`priceVersion`)이 서버 가격표(`core/clover.py` 의 `PRICE_VERSION`)와 다르면 깎기 전에 409
+`CLOVER_PRICE_CHANGED`(+ 그 요청의 지금 금액 `currentCost`)다. 버전을 싣지 않은 요청과 무료·토큰으로 지나는 요청은 대조하지 않는다. 생성 전에는 `GET /capabilities`를 TTL 캐시
 (`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`, 기본 30초)로 프로브해 집 PC가 꺼져 있으면 **생성 시도 전에**
 503으로 차단한다.
 

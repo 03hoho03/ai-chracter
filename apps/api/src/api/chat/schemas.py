@@ -36,7 +36,16 @@ class ChatRoomCreateRequest(CamelModel):
     persona_id: uuid.UUID | None = None
 
 
-class ChatMessageCreateRequest(CamelModel):
+class ChatTurnRequest(CamelModel):
+    """채팅 턴(전송·재생성·편집·빌더 미리보기) 요청이 함께 싣는 칸. 재생성은 이 칸만 있는 본문을 받는다(본문 없이도 된다).
+
+    `price_version` 은 화면이 공개 가격 응답에서 받은 가격표 버전이다. 이 턴이 클로버로 낼 턴인데 서버 버전과 다르면 차감
+    게이트가 깎기 전에 409 로 멈춘다(`core/rate_limit_gate.py`). 비우면 대조하지 않는다 — 버전을 모르는 배포 전 화면이 그렇다."""
+
+    price_version: int | None = None
+
+
+class ChatMessageCreateRequest(ChatTurnRequest):
     content: Annotated[str, Field(min_length=1), NoNul]
     shortcut_id: uuid.UUID | None = None
 
@@ -45,7 +54,7 @@ class ChatMessageCreateRequest(CamelModel):
 StatRewind = Literal["rewound", "partial", "kept"]
 
 
-class ChatMessageEditRequest(CamelModel):
+class ChatMessageEditRequest(ChatTurnRequest):
     content: Annotated[str, Field(min_length=1), NoNul]
 
 

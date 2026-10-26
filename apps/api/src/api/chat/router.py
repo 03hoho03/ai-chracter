@@ -98,6 +98,7 @@ from api.chat.schemas import (
     ChatMessageEditRequest,
     ChatMessagePageResponse,
     ChatMessageResponse,
+    ChatTurnRequest,
     story_scene_of,
     ChatModelItem,
     ChatRoomContentSnapshot,
@@ -335,6 +336,10 @@ async def enforce_room_chat_charge(
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     # 판정 세트 의존성이 받은 것과 같은 값이다(요청 스코프 캐시).
     model: ChatRoomModelId = Depends(_effective_room_model_dependency),
+    # 요청 본문의 가격 버전. 이름이 라우트 본문 인자와 같은 `payload` 라 FastAPI 가 본문을 한 번 받아 라우트의 모델과 이 모델로 각각
+    # 검증한다(`_validate_shortcut` 와 같은 방식) — 이름이 다르면 본문이 `{"payload": …}` 꼴로 감싸여 세 경로의 계약이 바뀐다. 전송·
+    # 편집 본문은 이 모델을 상속해 같은 칸을 갖고, 본문이 없던 재생성은 이 모델이 그대로 본문이 된다(비워 보내도 된다).
+    payload: ChatTurnRequest | None = None,
 ) -> ChatCharge:
     """턴 세 경로(전송·재생성·편집)의 차감 게이트. 이 턴이 실제로 도는 방 모델(`_effective_room_model_dependency`)의 가격으로
     차감한다. 상한·차감 본문은 미리보기와 같은 `charge_chat_turn` 이다.
@@ -353,6 +358,7 @@ async def enforce_room_chat_charge(
         model=model,
         price=chat_turn_cost(model),
         usage=SpendUsage("chat", content_id=room.content_id, chat_room_id=room.id),
+        price_version=None if payload is None else payload.price_version,
     )
 
 
@@ -1207,7 +1213,7 @@ async def send_message(
     #
     # 🔴 **조회·검증 의존성 전부보다 뒤에 둔다**. `Depends`는
     # 시그니처 순서대로 순차 resolve되고 앞의 것이 raise하면 뒤는 호출조차 안 되므로
-    # (`apps/api/CLAUDE.md` §API 라우터), 게이트가 앞에 있으면 404(없는 방)·400(단축어·시작설정
+    # (`apps/api/CLAUDE.md` 의 "API 라우터" 절), 게이트가 앞에 있으면 404(없는 방)·400(단축어·시작설정
     # 불일치)·`get_llm_client`의 ValueError에서 **차감만 남고 환불되지 않는다**. 그 창은 정상
     # 운영 중에도 열린다(지워진 방, 남의 방).
     # `_consent`(403)만 게이트보다 앞이다 — "재동의가 429보다 먼저"라는 기존 계약을 지킨다
@@ -3049,6 +3055,8 @@ async def enforce_preview_chat_charge(
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     # 생성 세트·판정 세트 의존성이 받은 것과 같은 값이다(요청 스코프 캐시).
     model: ChatRoomModelId = Depends(_preview_effective_model_dependency),
+    # 요청 본문의 가격 버전 — 방 경로 게이트(`enforce_room_chat_charge`)의 같은 인자와 같은 방식이다.
+    payload: ChatTurnRequest | None = None,
 ) -> ChatCharge:
     """빌더 미리보기의 차감 게이트. 이 턴이 실제로 도는 모델의 턴 가격으로 깎는다 — 상한·차감 본문은 방과 같은
     `charge_chat_turn` 이다(상위 모델이면 그 안에서 상위 모델 차감으로 간다). 영수증의 `model` 이 이 턴의 생성 모델이다.
@@ -3062,6 +3070,7 @@ async def enforce_preview_chat_charge(
         model=model,
         price=chat_turn_cost(model),
         usage=SpendUsage("preview"),
+        price_version=None if payload is None else payload.price_version,
     )
 
 
