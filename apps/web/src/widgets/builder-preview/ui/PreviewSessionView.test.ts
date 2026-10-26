@@ -28,7 +28,10 @@ describe("PreviewSessionView turn cost", () => {
   it("confirms clover spend with the displayed model's price, not the default model's", () => {
     expect(viewSource).not.toContain("defaultChatTurnCost");
     expect(viewSource).toContain("const turnCost = previewTurnCost(models, displayModelId);");
-    expect(viewSource).toContain("confirmCloverSpend(error, turnCost, \"chat\")");
+    // 확인 금액은 요청 시점의 캐시에서 다시 읽지만, 그때도 지금 답을 쓰는 모델로 고른다.
+    expect(viewSource).toContain(
+      "confirmCloverSpend(error, await previewConfirmTurnCost(queryClient, error, displayModelId), \"chat\")",
+    );
   });
 
   it("starts the session with the displayed model's query", () => {
