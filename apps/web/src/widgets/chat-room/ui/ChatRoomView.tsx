@@ -131,7 +131,8 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       if (restored === null) return;
       clearRejectedChatMessage(roomId);
       setText(restored);
-      inputRef.current?.focus();
+      // 이 순간은 아직 보내는 중이라 입력창이 비활성이다 — 포커스는 보내기가 끝나 다시 그려진 뒤 옮긴다(아래 effect).
+      shouldFocusRestoredDraftRef.current = true;
     },
   );
   const isSending = status.kind === "sending";
@@ -249,14 +250,15 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     if (policyWarning) inputRef.current?.focus();
   }, [policyWarning]);
 
+  // 보내는 동안 입력창이 비활성이라, 거절 직후 되살린 글의 포커스도 보내기가 끝난 뒤에야 옮길 수 있다.
   const hasRoom = room !== undefined;
   useEffect(() => {
     const input = inputRef.current;
-    if (!shouldFocusRestoredDraftRef.current || !input) return;
+    if (!shouldFocusRestoredDraftRef.current || !input || isSending) return;
     shouldFocusRestoredDraftRef.current = false;
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
-  }, [hasRoom]);
+  }, [hasRoom, isSending]);
 
   function handleSend() {
     const trimmed = text.trim();
