@@ -32,11 +32,12 @@ import dataclasses
 import hashlib
 import json
 import math
+import random
 import re
 from collections import Counter
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from itertools import combinations
+from itertools import combinations, product
 from pathlib import Path
 from typing import Any, Literal, TypeVar, cast
 
@@ -480,9 +481,17 @@ async def run_calls(
     stage: str,
     rates: Mapping[str, float],
     output_tokens: int,
+    order_seed: int | None = None,
 ) -> int:
-    """아직 결과가 없는 (줄, 모델, 반복) 호출을 차례로 부른다. 전송 오류로 끝난 호출만 다시 부른다. 호출마다 원장 여유를 먼저
-    보고(넘을 것 같으면 `BudgetExceededError` 로 멈춘다), 끝나면 공급자가 보고한 토큰으로 원장에 한 줄, 결과 파일에 한 줄.
+    """아직 결과가 없는 (줄, 모델, 반복) 호출을 하나씩 차례로(동시에 부르지 않고) 부른다. 전송 오류로 끝난 호출만 다시 부른다.
+    호출마다 원장 여유를 먼저 보고(넘을 것 같으면 `BudgetExceededError` 로 멈춘다), 끝나면 공급자가 보고한 토큰으로 원장에 한 줄,
+    결과 파일에 한 줄.
+
+    순서는 `order_seed` 가 없으면 줄 → 모델 → 반복이다: 한 줄 안에서 한 모델(판)의 반복을 모두 부른 뒤 다음 모델로 넘어간다. 그래서
+    가까운 시각에 부른 호출끼리 더 닮는 공급자 쪽 시간 상관이 있으면, 같은 모델의 반복끼리는 그 상관을 나눠 갖고 모델 사이 쌍은
+    덜 나눠 가져 자기 반복 일치율과 모델 사이 일치율의 차이가 모델 차이로 읽힌다. `order_seed` 를 주면 (줄, 모델, 반복) 호출 키
+    전체를 그 씨앗으로 한 번 섞어 부른다 — 시간 상관이 모든 쌍에 고르게 퍼진다. 같은 씨앗은 같은 순서다(이어 돌릴 때 이미 결과가
+    있는 키는 섞은 순서에서 건너뛴다).
 
     첫 시도가 앱이 곧바로 다시 부르는 실패(`is_retryable_judgment_failure`)면 같은 호출 안에서 한 번 더 부르고, 결과 줄에는
     마지막 시도의 상태와 첫 시도의 상태(`firstStatus`)·시도 수를 남긴다. 그래서 구조화 실패는 다시 부른 뒤에도 실패한 것이다.
@@ -493,75 +502,74 @@ async def run_calls(
     done = {key for key, row in latest_calls(previous).items() if row["status"] != "call_error"}
     calls_path.parent.mkdir(parents=True, exist_ok=True)
     made = 0
-    for line in lines:
+    plan = [(line, model, rep) for line in lines for model in models for rep in range(reps)]
+    if order_seed is not None:
+        random.Random(order_seed).shuffle(plan)
+    for line, model, rep in plan:
         line_schema = SCHEMAS[line.schema]
-        for model in models:
-            schema = model.response_schema or line_schema
-            for rep in range(reps):
-                key = f"{line.line_id}|{model.label}|{rep}"
-                if key in done:
-                    continue
-                ledger.check_headroom(call_estimate_usd(line, model, rates=rates, output_tokens=output_tokens))
-                sink: list[CallUsage] = []
-                usage = LLMCallContext(
-                    call_site=cast(LLMCallSite, line.call_site), user_id=None, room_id=None, usage_sink=sink
-                )
-                status: Status = "ok"
-                first_status: Status | None = None
-                result: Any = None
-                extra: dict[str, Any] = {}
-                error: str | None = None
-                attempts = 0
-                with setting_overrides(model.overrides):
-                    while True:
-                        attempts += 1
-                        try:
-                            parsed = await model.client.generate_structured(line.prompt, schema, usage=usage)
-                            status, error = "ok", None
-                            result = normalize(line, parsed)
-                            # 바꿔 보낸 스키마가 더한 칸(판정 이유 등)은 일치를 따지지 않고 결과 옆에 남긴다.
-                            extra = parsed.model_dump(exclude=set(line_schema.model_fields))
-                        except LLMClientError as exc:
-                            status = _status(exc)
-                            error = type(exc).__name__
-                            # 앱의 판정 재시도와 같은 분류로 한 번만 다시 부른다(파싱 실패·5xx·시간 초과가 아닌 전송 오류).
-                            if attempts == 1 and is_retryable_judgment_failure(exc):
-                                first_status = status
-                                continue
-                        break
-                for call in sink:
-                    ledger.append(
-                        stage=stage,
-                        call_site=line.call_site,
-                        model=call.model,
-                        input_tokens=call.prompt_tokens or 0,
-                        cached_tokens=call.cached_tokens or 0,
-                        cache_write_tokens=call.cache_write_tokens or 0,
-                        output_tokens=call.output_tokens or 0,
-                        thoughts_tokens=call.thoughts_tokens or 0,
-                        note=f"judge-agreement {key}",
-                    )
-                row = {
-                    "key": key,
-                    "lineId": line.line_id,
-                    "model": model.label,
-                    "modelId": sink[0].model if sink else model.model_id,
-                    "rep": rep,
-                    "promptSha": line.prompt_sha,
-                    "status": status,
-                    "error": error,
-                    "attempts": attempts,
-                    "firstStatus": first_status or status,
-                    "result": result,
-                    **({"extra": extra} if extra else {}),
-                    "promptChars": len(line.prompt),
-                    "inputTokens": sum(c.prompt_tokens or 0 for c in sink),
-                    "outputTokens": sum(c.output_tokens or 0 for c in sink),
-                    "thoughtsTokens": sum(c.thoughts_tokens or 0 for c in sink),
-                }
-                with calls_path.open("a", encoding="utf-8") as handle:
-                    handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-                made += 1
+        schema = model.response_schema or line_schema
+        key = f"{line.line_id}|{model.label}|{rep}"
+        if key in done:
+            continue
+        ledger.check_headroom(call_estimate_usd(line, model, rates=rates, output_tokens=output_tokens))
+        sink: list[CallUsage] = []
+        usage = LLMCallContext(call_site=cast(LLMCallSite, line.call_site), user_id=None, room_id=None, usage_sink=sink)
+        status: Status = "ok"
+        first_status: Status | None = None
+        result: Any = None
+        extra: dict[str, Any] = {}
+        error: str | None = None
+        attempts = 0
+        with setting_overrides(model.overrides):
+            while True:
+                attempts += 1
+                try:
+                    parsed = await model.client.generate_structured(line.prompt, schema, usage=usage)
+                    status, error = "ok", None
+                    result = normalize(line, parsed)
+                    # 바꿔 보낸 스키마가 더한 칸(판정 이유 등)은 일치를 따지지 않고 결과 옆에 남긴다.
+                    extra = parsed.model_dump(exclude=set(line_schema.model_fields))
+                except LLMClientError as exc:
+                    status = _status(exc)
+                    error = type(exc).__name__
+                    # 앱의 판정 재시도와 같은 분류로 한 번만 다시 부른다(파싱 실패·5xx·시간 초과가 아닌 전송 오류).
+                    if attempts == 1 and is_retryable_judgment_failure(exc):
+                        first_status = status
+                        continue
+                break
+        for call in sink:
+            ledger.append(
+                stage=stage,
+                call_site=line.call_site,
+                model=call.model,
+                input_tokens=call.prompt_tokens or 0,
+                cached_tokens=call.cached_tokens or 0,
+                cache_write_tokens=call.cache_write_tokens or 0,
+                output_tokens=call.output_tokens or 0,
+                thoughts_tokens=call.thoughts_tokens or 0,
+                note=f"judge-agreement {key}",
+            )
+        row = {
+            "key": key,
+            "lineId": line.line_id,
+            "model": model.label,
+            "modelId": sink[0].model if sink else model.model_id,
+            "rep": rep,
+            "promptSha": line.prompt_sha,
+            "status": status,
+            "error": error,
+            "attempts": attempts,
+            "firstStatus": first_status or status,
+            "result": result,
+            **({"extra": extra} if extra else {}),
+            "promptChars": len(line.prompt),
+            "inputTokens": sum(c.prompt_tokens or 0 for c in sink),
+            "outputTokens": sum(c.output_tokens or 0 for c in sink),
+            "thoughtsTokens": sum(c.thoughts_tokens or 0 for c in sink),
+        }
+        with calls_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        made += 1
     return made
 
 
@@ -619,6 +627,145 @@ def modal_distribution(kind: JudgmentKind, per_line: Sequence[Sequence[Any]]) ->
     else:
         hits = sum(1 for m in modals if fired(kind, m))
     return {"lines": len(modals), _MODAL_RATE[kind]: hits / len(modals) if modals else None}
+
+
+# ---------------------------------------------------------------- 다수결 (기존 반복 기록으로, 호출 없음)
+
+MajorityVote = Literal["ruleSet", "appliedChange"]
+MAJORITY_METRICS = ("ruleSet", "appliedChange", "direction", "fired")
+DEFAULT_MAJORITY_VOTES = 3
+_SHORT_RULE_ID = re.compile(r"^([a-z]+)(\d+)$")
+
+
+def applied_change(rule_ids: Sequence[str], deltas: Mapping[str, float]) -> dict[str, float]:
+    """발동 규칙 id 들을 앱이 값에 반영하는 변화로 — 스탯(짧은 id 의 글자 부분)마다 |폭| 이 가장 큰 규칙 하나, 같으면 작가
+    순서(숫자 부분)가 앞선 것의 폭(`chat/stats.py` 의 `apply_rule_judgment_with_events` 와 같은 고르기). 시작 값이 판정 줄에
+    없어 최소·최대로 자르지는 않는다. 폭 표에 없는 id 는 멈춘다 — 빼면 변화량이 조용히 달라진다."""
+    best: dict[str, tuple[float, int]] = {}
+    for rule_id in rule_ids:
+        match = _SHORT_RULE_ID.match(rule_id)
+        if match is None or rule_id not in deltas:
+            raise SystemExit(f"규칙 id {rule_id!r} 의 폭이 폭 표에 없다")
+        stat, order = match.group(1), int(match.group(2))
+        delta = float(deltas[rule_id])
+        seen = best.get(stat)
+        if seen is None or (abs(delta), -order) > (abs(seen[0]), -seen[1]):
+            best[stat] = (delta, order)
+    return {stat: _plain(delta) for stat, (delta, _order) in sorted(best.items())}
+
+
+def _plain(number: float) -> float:
+    return int(number) if float(number).is_integer() else number
+
+
+def _sign(number: float) -> int:
+    return (number > 0) - (number < 0)
+
+
+def _majority_distribution(probabilities: Mapping[str, float], k: int) -> dict[str, float]:
+    """결과 분포 `probabilities` 에서 독립으로 `k` 표를 뽑았을 때 최빈 결과의 분포. 최빈이 여럿이면 그중 먼저 뽑힌 것(뽑는 순서가
+    무작위라 동률 결과 중 하나를 고르게 고르는 것과 같다)."""
+    outcomes = list(probabilities)
+    out: dict[str, float] = dict.fromkeys(outcomes, 0.0)
+    for draw in product(range(len(outcomes)), repeat=k):
+        weight = math.prod(probabilities[outcomes[i]] for i in draw)
+        counts = Counter(draw)
+        top = max(counts.values())
+        winner = next(i for i in draw if counts[i] == top)
+        out[outcomes[winner]] += weight
+    return out
+
+
+def _agreement(distribution: Mapping[str, float], project: Callable[[Any], Any]) -> float:
+    """두 독립 판정이 투영한 값에서 같을 확률 — 투영 값마다 확률을 모아 제곱해 더한다."""
+    classes: dict[str, float] = {}
+    for outcome, weight in distribution.items():
+        projected = _key(project(json.loads(outcome)))
+        classes[projected] = classes.get(projected, 0.0) + weight
+    return sum(weight * weight for weight in classes.values())
+
+
+def majority_agreement(
+    calls: Sequence[Mapping[str, Any]],
+    *,
+    model: str,
+    k: int = DEFAULT_MAJORITY_VOTES,
+    vote: MajorityVote = "ruleSet",
+    deltas: Mapping[str, float] | None = None,
+) -> dict[str, Any]:
+    """이미 남은 반복 기록으로 "k 번 불러 최빈 결과를 판정으로 쓰면" 판정끼리 얼마나 같아지는지를 plug-in 으로 어림한다(호출 없음).
+
+    줄마다 그 모델의 성공 결과(같은 키는 마지막 줄)로 결과 분포를 만들고, 그 분포에서 독립으로 뽑은 단일 판정 둘이 같을 확률과
+    k 표 다수결 판정 둘이 같을 확률을 낸 뒤 줄에 대해 평균한다. 둘 다 같은 plug-in 이라 서로 견줄 수 있다 — 다만 반복 몇 번의 경험
+    분포를 참 분포로 쓰므로 실제보다 일치가 높게 나오는 쪽으로 치우친다(반복이 적을수록 더). 기존 `self_agreement` 는 복원 없는
+    쌍이라 이 단일 판정 값과 같지 않다.
+
+    표는 `vote` 공간에서 던진다 — 규칙 집합(`ruleSet`) 또는 앱 반영 변화량(`appliedChange`, 스탯마다 반영되는 폭). 그 다수결 결과를
+    지표마다 투영해 견준다: 규칙 집합(표를 변화량으로 던졌으면 없음), 앱 반영 변화량, 방향(스탯마다 폭의 부호), 발동 여부. 변화량·
+    방향은 폭 표(`deltas`, 짧은 규칙 id → 폭)가 있어야 낸다 — 짧은 id 는 판정 줄마다 다시 매기는 글자라, 한 표는 스탯 줄 구성이 같은
+    줄들(한 작품의 덤프)에만 맞는다.
+
+    스탯 판정 결과(규칙 id 목록)만 센다 — 엔딩·그림 결과와 망친 입력 대조군 줄(`control:`)은 뺀다. 성공 결과가 둘 미만인 줄은
+    `skippedLines` 로만 센다."""
+    if k < 1:
+        raise SystemExit(f"표 수는 1 이상이다: {k}")
+    if vote == "appliedChange" and deltas is None:
+        raise SystemExit("앱 반영 변화량으로 표를 던지려면 폭 표가 있어야 한다")
+    per_line: dict[str, list[Any]] = {}
+    for row in latest_calls(calls).values():
+        line_id = str(row["lineId"])
+        if row["model"] != model or row["status"] != "ok" or line_id.startswith("control:"):
+            continue
+        if not isinstance(row["result"], list):
+            continue
+        per_line.setdefault(line_id, []).append(row["result"])
+
+    def to_vote(result: list[str]) -> Any:
+        return applied_change(result, deltas) if vote == "appliedChange" and deltas is not None else sorted(result)
+
+    projections: dict[str, Callable[[Any], Any] | None] = {
+        "ruleSet": (lambda value: value) if vote == "ruleSet" else None,
+        "appliedChange": None,
+        "direction": None,
+        "fired": bool,
+    }
+    if deltas is not None:
+        change = (lambda value: value) if vote == "appliedChange" else (lambda value: applied_change(value, deltas))
+        projections["appliedChange"] = change
+        projections["direction"] = lambda value: {stat: _sign(delta) for stat, delta in change(value).items()}
+
+    scores: dict[str, list[tuple[float, float]]] = {name: [] for name in MAJORITY_METRICS}
+    skipped = 0
+    for line_id in sorted(per_line):
+        results = per_line[line_id]
+        if len(results) < 2:
+            skipped += 1
+            continue
+        counts = Counter(_key(to_vote(result)) for result in results)
+        single = {outcome: count / len(results) for outcome, count in counts.items()}
+        majority = _majority_distribution(single, k)
+        for name, project in projections.items():
+            if project is not None:
+                scores[name].append((_agreement(single, project), _agreement(majority, project)))
+    metrics: dict[str, Any] = {}
+    for name in MAJORITY_METRICS:
+        pairs = scores[name]
+        if projections[name] is None:
+            metrics[name] = None
+            continue
+        metrics[name] = {
+            "single": sum(a for a, _ in pairs) / len(pairs) if pairs else None,
+            "majority": sum(b for _, b in pairs) / len(pairs) if pairs else None,
+            "lines": len(pairs),
+        }
+    return {
+        "model": model,
+        "k": k,
+        "vote": vote,
+        "lines": len(per_line) - skipped,
+        "skippedLines": skipped,
+        "metrics": metrics,
+    }
 
 
 def _control_target(kind: JudgmentKind, value: Any, countdown_ids: set[str]) -> bool:
