@@ -746,7 +746,10 @@ docstring 의 "되돌린 뒤 다시 전환할 때"). 그 PR 도 이 절의 순�
 ⚠️ **배포 성공 판정은 `/health` 200만으로 부족하다.** 옛 컨테이너도 200을 준다. 그래서 워크플로가
 `ops/active-color.sh`로 서빙 중인 색을 정한 뒤 `docker inspect`로 그 색(`ddona-api_<색>-1`)의 실행 이미지가 새 태그인지
 대조한다 — 손으로 배포할 때도 같이 확인할 것(`sudo docker inspect --format '{{.Config.Image}}' ddona-api_$(sudo bash
-ops/active-color.sh)-1`). 교체 스크립트가 0 으로 끝나고 마지막 줄이 `13) 완료`인지도 본다.
+ops/active-color.sh)-1`). 교체 스크립트가 0 으로 끝나고 마지막 줄이 평상시 교체면 `13) 완료: active=…`, 겹침 없는 교체
+(`skip_overlap`)면 `완료(skip_overlap): active=…`인지도 본다 — 겹침 없는 교체는 `13) 완료` 를 찍지 않는다(`ops/swap-api.sh`). Actions
+배포는 그 뒤 워크플로 출력에 `실행 이미지 확인: api_<색> = …:<태그>` 와 `DDONA_REMOTE_DEPLOY_DONE tag=<태그>` 가 있어야 원격 단계가 끝까지
+돈 것이다(`.github/workflows/deploy-api.yml`). 클로버 단위 전환 배포도 겹침 없는 교체라 이 세 줄로 판정한다.
 
 ⚠️ **`Caddyfile`만 바뀐 배포는 `caddy reload`가 성공해도 컨테이너 안 내용이 안 바뀔 수 있다**
 (2026-09-15 실측). `docker-compose.prod.yml`이 그대로면 배포의 `up -d --wait caddy`는 caddy
