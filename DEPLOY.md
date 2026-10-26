@@ -687,7 +687,7 @@ Q "SELECT count(*) FROM payments WHERE status = 'pending';"
 sudo /opt/ddona/backup.sh --manual
 $C exec -T api_$(sudo bash ops/active-color.sh) python scripts/ops/quote_refunds.py --received-on <YYYY-MM-DD> \
     | sudo tee /root/clover-quote-before.csv >/dev/null
-# 6) 같은 트랜잭션에 다른 리비전이 섞이지 않게 — DB 리비전이 전환 리비전의 앞(65205c06e037)이고 올릴 이미지의 head 가 725813c4f950
+# 6) 같은 트랜잭션에 다른 리비전이 섞이지 않게 — DB 리비전이 전환 리비전의 앞(35bbef005344)이고 올릴 이미지의 head 가 725813c4f950
 Q "SELECT version_num FROM alembic_version;"
 ```
 
@@ -722,7 +722,10 @@ Q "SELECT count(*) FROM users u JOIN (SELECT user_id, max(xmin::text::bigint) AS
 3. **다른 작업 없이 곧바로** 전환 전 단위 태그로 롤백 교체(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <태그>`). 되돌린 순간부터
    떠 있는 새 단위 프로세스는 새 가격으로 옛 단위 데이터를 다룬다 — 기동 가드는 기동 때만 본다. 옛 단위 이미지의 가드는 되돌림
    기록을 보고 뜬다. 그 사이 정지 스위치를 끄지 않는다.
-4. 견적을 다시 뽑아 전환 전 파일과 sha256 이 같은지 본 뒤 정지 스위치를 끈다.
+4. 견적을 다시 뽑아 전환 전 파일과 sha256 이 같은지 본 뒤 정지 스위치를 끈다 — `.env` 에서 정지 줄을 지우고(결제·소설화 워커
+   스위치를 함께 되돌린다) 형식 검사 뒤 **롤백 표시를 붙여** 태그 없는 교체를 한다(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh`). DB
+   리비전이 전환 전 단위 이미지보다 앞서 있어 표시 없이 부르면 교체 스크립트가 리비전 대조에서 멈추고(위 롤백 단락), 떠 있는
+   컨테이너는 여전히 정지 상태인데 `.env` 의 정지·결제·워커 줄만 해제된 채 남아 둘이 어긋난다.
 
 되돌린 뒤 다시 전환하려면 원인을 고친 PR 이 새 리비전을 더한다 — 전환 리비전은 이미 적용 기록이 있어 다시 돌지 않는다(그 리비전
 docstring 의 "되돌린 뒤 다시 전환할 때"). 그 PR 도 이 절의 순서 그대로 배포한다.
@@ -736,8 +739,8 @@ docstring 의 "되돌린 뒤 다시 전환할 때"). 그 PR 도 이 절의 순�
 전환 기록을 보고 뜬다). 3) 단위를 되돌려야 하면 `exec` 할 곳이 없으므로 일회성 컨테이너에서 위 런북 1·2 를 한다: `$C run --rm
 --no-deps -T api_<색> python scripts/ops/revert_clover_unit.py`(건조) → `--apply`(`run` 은 uvicorn 이 아니라 이 명령만 돌려 기동 가드를
 타지 않는다). 곧바로 그 색 이미지 줄을 전환 전 단위 태그(기동 가드가 들어온 태그 이상, 전환 리비전보다 앞)로 → `check_env.py
---format` → 1·4·5단계로 띄운다 — 겹침 없는 교체가 두 색 줄을 모두 전환 리비전 태그로 맞춰 두었으므로 줄을 바꾸지 않으면 같은 이미지가
-다시 뜨고, 3단계 마이그레이션을 돌리면 DB 리비전이 그 이미지보다 앞서 `Can't locate revision` 으로 멈춘다. 옛 단위 이미지의 가드는
+--format` → 1·4·5단계로 띄운다 — healthy 실패로 끝난 겹침 없는 교체는 쉬는 색 줄을 바꾸기 전에 멈추므로 실패한 색 줄만 전환 리비전 태그이지만, 1단계가 두
+줄을 모두 바꾸므로 결과는 같다. 줄을 바꾸지 않으면 같은 이미지가 다시 뜨고, 3단계 마이그레이션을 돌리면 DB 리비전이 그 이미지보다 앞서 `Can't locate revision` 으로 멈춘다. 옛 단위 이미지의 가드는
 되돌림 기록을 보고 뜬다. 4) 위 런북 4.
 
 ⚠️ **배포 성공 판정은 `/health` 200만으로 부족하다.** 옛 컨테이너도 200을 준다. 그래서 워크플로가
