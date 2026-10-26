@@ -17,9 +17,10 @@ Create Date: 2026-10-26 18:00:00.000000
 버전별 최신 발행 시각은 상관 하위 쿼리 대신 GROUP BY 조인으로 구한다 — `content_versions.content_id` 에 인덱스가 없어
 상관 하위 쿼리는 작품마다 버전 표를 순차 스캔한다.
 
-첫 문장은 `SET LOCAL lock_timeout = '5s'` 다(이 저장소 리비전 관례). 백필 UPDATE 는 모든 작품 행의 잠금을 커밋까지
-쥐고, 일반 `CREATE INDEX`(트랜잭션 안 — `CONCURRENTLY` 는 이 체인과 맞지 않는다)는 생성 동안 `contents` 쓰기(조회수
-증가 포함)를 막는다. 행 수가 작아 짧다.
+첫 문장은 `SET LOCAL lock_timeout = '5s'` 다(이 저장소 리비전 관례). 잠금 — `ADD COLUMN` 이 `contents` 에
+ACCESS EXCLUSIVE 를 잡고, 같은 트랜잭션이라 그 잠금을 커밋까지 쥔다. 그래서 백필 UPDATE 와 일반 `CREATE INDEX`
+(트랜잭션 안 — `CONCURRENTLY` 는 이 체인과 맞지 않는다)가 끝날 때까지 `contents` 의 쓰기(조회수 증가 포함)뿐 아니라
+읽기(SELECT)도 모두 기다린다. 행 수가 작아 그 구간이 짧다는 데 기댄다.
 
 **배포 겹침**(옛 색이 이 스키마에서 도는 구간) — 옛 코드의 INSERT 는 칸을 몰라 기본값이 채우고, 옛 코드는 칸을 밀지
 않을 뿐이다. 그 구간에 저장된 편집은 순서에 늦게 반영되고 다음 저장에서 바로잡힌다.
@@ -29,6 +30,7 @@ Create Date: 2026-10-26 18:00:00.000000
 
 이 파일은 `api.*` 를 import 하지 않는다(저장소 관례).
 """
+
 from collections.abc import Sequence
 
 from alembic import op
@@ -36,8 +38,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '35bbef005344'
-down_revision: str | Sequence[str] | None = '65205c06e037'
+revision: str = "35bbef005344"
+down_revision: str | Sequence[str] | None = "65205c06e037"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -59,19 +61,19 @@ def upgrade() -> None:
     """Upgrade schema."""
     op.execute("SET LOCAL lock_timeout = '5s'")
     op.add_column(
-        'contents',
-        sa.Column('edited_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+        "contents",
+        sa.Column("edited_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     )
     op.execute(BACKFILL_EDITED_AT_SQL)
     op.create_index(
-        'ix_contents_creator_user_id_edited_at',
-        'contents',
-        ['creator_user_id', sa.literal_column('edited_at DESC'), sa.literal_column('id DESC')],
+        "ix_contents_creator_user_id_edited_at",
+        "contents",
+        ["creator_user_id", sa.literal_column("edited_at DESC"), sa.literal_column("id DESC")],
         unique=False,
     )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index('ix_contents_creator_user_id_edited_at', table_name='contents')
-    op.drop_column('contents', 'edited_at')
+    op.drop_index("ix_contents_creator_user_id_edited_at", table_name="contents")
+    op.drop_column("contents", "edited_at")
