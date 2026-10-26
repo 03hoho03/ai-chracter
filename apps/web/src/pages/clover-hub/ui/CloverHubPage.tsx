@@ -3,20 +3,27 @@ import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import {
+  clearPaymentReturnTo,
+  readPaymentReturnTo,
   useCloverBalanceQuery,
   useCloverProductsQuery,
   type CloverProductOffer,
   type CloverProductsResponse,
 } from "@/entities/clover";
 import { useSessionQuery, type MeResponse } from "@/entities/session";
-import { PurchaseConfirmDialog, usePaymentRedirect, type SettledPurchase } from "@/features/purchase-clover";
+import {
+  PurchaseConfirmDialog,
+  resolvePaymentRedirect,
+  usePaymentRedirect,
+  type SettledPurchase,
+} from "@/features/purchase-clover";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
 import type { CloverHubSearch } from "../model/cloverHubSearch";
 import { toHubViewer } from "../model/hubViewer";
 import { getPurchaseSection } from "../model/purchaseSection";
 import { resolveRequestedProduct } from "../model/requestedProduct";
-import { getReturnPlacement, returnLinkLabel } from "../model/returnTo";
+import { getReturnPlacement, resolveHubReturnTo, returnLinkLabel } from "../model/returnTo";
 import { getWalletView, isCheckingResolved } from "../model/walletView";
 import { CloverFaq } from "./CloverFaq";
 import { ProductsSection } from "./ProductsSection";
@@ -50,8 +57,9 @@ import { WalletSection } from "./WalletSection";
  * 담겨 온 상품(`product`)은 살 수 있으면 그 상품의 구매 확인을 바로 열고 그 파라미터만 지운다.
  *
  * 충전하러 온 화면의 주소(`returnTo`)가 있으면 돌아가는 길을 하나 둔다 — 결제 전·미완료·확인 중에는 제목 아래 텍스트
- * 링크(충전하지 않고 돌아가는 길), 충전에 성공하면 결과 블록의 솔리드 버튼(`getReturnPlacement`). 이 주소는 구매 확인과
- * 로그인 링크에도 넘겨, 결제창·로그인 왕복 뒤에도 남는다. */
+ * 링크(충전하지 않고 돌아가는 길), 충전에 성공하면 결과 블록의 솔리드 버튼(`getReturnPlacement`). 이 주소는 로그인
+ * 링크에 실어 로그인 왕복 뒤에도 남고, 구매 확인에 넘겨 결제창을 띄우기 전에 탭 저장소에 둔다 — 결제창에서 돌아오면
+ * 거기서 되찾는다. */
 export function CloverHubPage({
   search,
   onSearchClear,
@@ -90,7 +98,17 @@ export function CloverHubPage({
 
   usePaymentRedirect(search, handleSettled, onSearchClear);
 
-  const returnPlacement = getReturnPlacement(settled?.result ?? null, search.returnTo);
+  // 결제창에서 돌아왔으면 결제창을 띄우기 전에 탭 저장소에 둔 복귀 주소를 처음 그릴 때 한 번 읽고(`resolveHubReturnTo`),
+  // 읽은 뒤 지운다. 결제 결과 쿼리를 지운 뒤에도 그 값을 들고 있어야 해 상태로 쥔다(주소의 `returnTo` 는 그때그때 읽는다).
+  // 지우기는 effect 다 — 개발 모드가 상태 초기값 함수를 두 번 부르므로 읽는 쪽에서 지우면 두 번째 읽기가 빈 값을 본다.
+  const [paymentReturnTo] = useState(() =>
+    resolveHubReturnTo({ paymentId: search.paymentId, code: search.code }, readPaymentReturnTo()),
+  );
+  const returnTo = search.returnTo ?? paymentReturnTo;
+  useEffect(() => {
+    if (resolvePaymentRedirect(search).kind !== "none") clearPaymentReturnTo();
+  }, []);
+  const returnPlacement = getReturnPlacement(settled?.result ?? null, returnTo);
 
   const products = productsQuery.data;
   const section = products ? getPurchaseSection(products.paymentsEnabled, viewer) : undefined;
@@ -102,7 +120,7 @@ export function CloverHubPage({
       product,
       payMethods: pricing.payMethods,
       email: me.email,
-      returnTo: search.returnTo,
+      returnTo,
     }).then((result) => {
       if (result) handleSettled(result);
     });
@@ -120,7 +138,7 @@ export function CloverHubPage({
           읽어, 그 고지는 내 클로버의 무료 몫 아래로 옮겼다. */}
       <div className="flex flex-col items-start gap-2">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">{SUPPORT_DESTINATIONS.clover.label}</h1>
-        {returnPlacement.head && search.returnTo !== undefined && <ReturnLink returnTo={search.returnTo} />}
+        {returnPlacement.head && returnTo !== undefined && <ReturnLink returnTo={returnTo} />}
       </div>
 
       <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-12">
@@ -134,7 +152,7 @@ export function CloverHubPage({
               balanceNow,
             )}
             onRetryBalance={() => void balanceQuery.refetch()}
-            solidReturnTo={returnPlacement.solid ? search.returnTo : undefined}
+            solidReturnTo={returnPlacement.solid ? returnTo : undefined}
           />
           <PurchaseConditions section={section} />
         </div>
@@ -156,7 +174,7 @@ export function CloverHubPage({
               if (search.product !== undefined) onProductClear();
               openPurchase(product, viewer.me, products);
             }}
-            returnTo={search.returnTo}
+            returnTo={returnTo}
           />
           <CloverFaq products={products} isError={productsQuery.isError} />
         </div>

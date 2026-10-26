@@ -14,8 +14,8 @@ import { parseReturnTo } from "./returnTo";
  * 않는다고 알린다.
  *
  * `returnTo` 는 충전하러 온 화면(채팅 방 등)의 주소다. 이 사이트 안의 경로만 받고(`parseReturnTo`), 어긋나면 부재로
- * 접는다 — 링크를 그리지 않을 뿐 화면은 그대로 열린다. 로그인 왕복은 지금 주소를 통째로 싣고, 결제창 왕복은 돌아올
- * 주소에 이 값을 다시 실어 살아남는다. */
+ * 접는다 — 링크를 그리지 않을 뿐 화면은 그대로 열린다. 로그인 왕복은 지금 주소를 통째로 싣는다. 결제창 왕복은 돌아올
+ * 주소에 쿼리를 싣지 않아 이 파라미터 없이 돌아오고, 그때의 복귀 주소는 탭 저장소가 나른다(`resolveHubReturnTo`). */
 export const cloverHubSearchSchema = z.object({
   paymentId: z.coerce.string().optional().catch(undefined),
   code: z.coerce.string().optional().catch(undefined),

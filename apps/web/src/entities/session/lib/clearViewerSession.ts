@@ -3,7 +3,7 @@ import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { characterImageArchiveKeys } from "@/entities/character-image-archive/@x/session";
 import { chatModelKeys } from "@/entities/chat-model/@x/session";
 import { chatRoomKeys, clearAllChatDrafts } from "@/entities/chat-room/@x/session";
-import { cloverKeys } from "@/entities/clover/@x/session";
+import { clearPaymentReturnTo, cloverKeys } from "@/entities/clover/@x/session";
 import { commentKeys } from "@/entities/comment/@x/session";
 import { contentKeys, favoriteKeys } from "@/entities/content/@x/session";
 import { creatorPayoutKeys } from "@/entities/creator-payout/@x/session";
@@ -69,11 +69,13 @@ export function clearViewerQueries(queryClient: QueryClient): void {
   }
 }
 
-/** 로그아웃·탈퇴 뒤 정리. 사용자별 캐시와 채팅 입력 초안(탭 저장소)을 비우고 세션을 비로그인으로 되돌린다. 초안을
- * 지우는 이유는 캐시와 같다 — 같은 탭에서 다음에 로그인한 계정에게 앞 계정이 쓰던 글이 보이면 안 된다. */
+/** 로그아웃·탈퇴 뒤 정리. 사용자별 캐시와 탭 저장소의 계정 흔적(채팅 입력 초안, 결제창 왕복의 복귀 주소)을 비우고
+ * 세션을 비로그인으로 되돌린다. 탭 저장소를 지우는 이유는 캐시와 같다 — 같은 탭에서 다음에 로그인한 계정에게 앞 계정이
+ * 쓰던 글이나 앞 계정의 방으로 가는 "돌아가기"가 보이면 안 된다. */
 export function clearViewerSession(queryClient: QueryClient): void {
   clearViewerQueries(queryClient);
   clearAllChatDrafts();
+  clearPaymentReturnTo();
   // 세션만은 `resetQueries` 다. invalidateQueries only marks the query stale and refetches in the background — until
   // that refetch resolves, `data` keeps the previous (logged-in) value, so the header wouldn't switch to the logged-out
   // UI immediately. setQueryData(key, undefined) is a documented no-op (TanStack Query skips the update whenever the new

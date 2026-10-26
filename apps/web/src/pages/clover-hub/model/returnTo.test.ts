@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { cloverHubSearchSchema } from "./cloverHubSearch";
-import { getReturnPlacement, parseReturnTo, returnLinkLabel } from "./returnTo";
+import { getReturnPlacement, parseReturnTo, resolveHubReturnTo, returnLinkLabel } from "./returnTo";
 
 describe("parseReturnTo", () => {
   it("이 사이트 안의 경로는 쿼리·해시까지 그대로 받는다", () => {
@@ -84,5 +84,28 @@ describe("cloverHubSearchSchema 의 복귀 주소", () => {
   it("어긋난 복귀 주소는 버리고 나머지는 그대로 읽는다", () => {
     expect(cloverHubSearchSchema.parse({ returnTo: "//evil.example", product: "lite" })).toEqual({ product: "lite" });
     expect(cloverHubSearchSchema.parse({ returnTo: "/clover" })).toEqual({});
+  });
+});
+
+describe("resolveHubReturnTo", () => {
+  it("주소의 복귀 주소가 있으면 그것이다", () => {
+    expect(resolveHubReturnTo({ returnTo: "/chat/a" }, "/chat/b")).toBe("/chat/a");
+  });
+
+  // 결제창의 돌아올 주소는 쿼리가 없어, 결제창을 띄우기 전에 탭 저장소에 둔 값으로 복귀 주소를 되찾는다.
+  it("결제창에서 돌아왔으면(성공·미완료) 탭 저장소에 둔 복귀 주소를 쓴다", () => {
+    expect(resolveHubReturnTo({ paymentId: "pay_1" }, "/chat/b")).toBe("/chat/b");
+    expect(resolveHubReturnTo({ code: "FAILURE_TYPE_PG" }, "/chat/b")).toBe("/chat/b");
+  });
+
+  // 결제창 복귀가 아닌 진입(헤더 링크 등)에 앞 결제의 값이 붙으면 엉뚱한 곳으로 "돌아가기"를 둔다.
+  it("결제창 복귀가 아니면 탭 저장소 값을 쓰지 않는다", () => {
+    expect(resolveHubReturnTo({}, "/chat/b")).toBeUndefined();
+  });
+
+  it("탭 저장소 값도 같은 검사를 거친다", () => {
+    expect(resolveHubReturnTo({ paymentId: "pay_1" }, "//evil.example")).toBeUndefined();
+    expect(resolveHubReturnTo({ paymentId: "pay_1" }, "/clover")).toBeUndefined();
+    expect(resolveHubReturnTo({ paymentId: "pay_1" }, undefined)).toBeUndefined();
   });
 });

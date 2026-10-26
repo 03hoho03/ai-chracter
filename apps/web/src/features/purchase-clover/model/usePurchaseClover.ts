@@ -1,4 +1,4 @@
-import type { CloverProductItem } from "@/entities/clover";
+import { rememberPaymentReturnTo, type CloverProductItem } from "@/entities/clover";
 import { requestPortOnePayment } from "@/shared/lib/portone/portoneSdk";
 
 import { useCompletePaymentMutation } from "../api/useCompletePaymentMutation";
@@ -19,7 +19,7 @@ type PurchaseInput = {
   /** 결제창을 띄우기 직전에 부른다. 모달 다이얼로그가 열려 있으면 바깥(결제창 iframe)의 포인터·포커스를 막으므로
    * 호출부가 여기서 다이얼로그를 내린다. */
   onCheckoutOpen: () => void;
-  /** 충전 화면이 받은 복귀 주소. 결제창이 페이지를 떠났다 돌아오는 주소에 함께 싣는다. */
+  /** 충전 화면이 받은 복귀 주소(검사를 거친 값). 결제창이 페이지를 떠났다 돌아와도 남게 탭 저장소에 둔다. */
   returnTo: string | undefined;
 };
 
@@ -46,6 +46,9 @@ export function usePurchaseClover() {
     }
 
     onCheckoutOpen();
+    // 결제창의 돌아올 주소에는 쿼리를 싣지 않으므로(`buildPaymentRedirectUrl`) 복귀 주소는 탭 저장소로 나른다. 복귀 주소
+    // 없이 연 결제면 앞 결제가 남긴 값을 지운다.
+    rememberPaymentReturnTo(returnTo);
     const outcome = await requestPortOnePayment({
       storeId: order.storeId,
       channelKey: order.channelKey,
@@ -55,7 +58,7 @@ export function usePurchaseClover() {
       payMethod: payMethod.payMethod,
       easyPayProvider: payMethod.easyPayProvider,
       customer: toPortOneCustomer(values),
-      redirectUrl: buildPaymentRedirectUrl(window.location.origin, returnTo),
+      redirectUrl: buildPaymentRedirectUrl(window.location.origin),
     });
     if (outcome !== "succeeded") return { result: outcome, grant: null };
 

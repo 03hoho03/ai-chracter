@@ -1,4 +1,6 @@
-import type { SettledPurchase } from "@/features/purchase-clover";
+import { resolvePaymentRedirect, type SettledPurchase } from "@/features/purchase-clover";
+
+import type { CloverHubSearch } from "./cloverHubSearch";
 
 /** 제어문자(0x00-0x1f, 0x7f). 브라우저는 URL 을 해석하기 전에 탭·개행을 지워 "/<탭>/evil" 을 "//evil" 로 읽는다. */
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
@@ -18,6 +20,18 @@ export function parseReturnTo(value: unknown): string | undefined {
   if (CONTROL_CHARACTER.test(value)) return undefined;
   if (CLOVER_HUB_PATH.test(value)) return undefined;
   return value;
+}
+
+/** 이 화면이 쓸 복귀 주소. 주소의 `?returnTo=`(충전 링크·로그인 왕복이 싣는다)가 먼저이고, 없으면 결제창에서 돌아온
+ * 진입(성공·미완료)에 한해 결제창을 띄우기 전에 탭 저장소에 둔 값을 쓴다 — 결제창의 돌아올 주소에는 쿼리를 싣지 않는다.
+ * 결제창 복귀가 아닌 진입에는 앞 결제가 남긴 값을 쓰지 않는다. 탭 저장소 값도 같은 검사를 거친다. */
+export function resolveHubReturnTo(
+  search: Pick<CloverHubSearch, "returnTo" | "paymentId" | "code">,
+  storedReturnTo: string | undefined,
+): string | undefined {
+  if (search.returnTo !== undefined) return search.returnTo;
+  if (resolvePaymentRedirect(search).kind === "none") return undefined;
+  return parseReturnTo(storedReturnTo);
 }
 
 /** 복귀 링크의 라벨. 채팅 방에서 왔으면 대화로, 그 밖(웹소설 화 구매 등)이면 이전 화면으로 돌아간다고 말한다. */
