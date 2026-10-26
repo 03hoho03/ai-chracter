@@ -35,6 +35,10 @@ from api.novelize import router as novelize_router
 from api.novelize.deletion import delete_novels
 from factories import PublicNovel, _assert_blocked, _make_public_novel, _make_user_with_clover_lot
 
+# 노벨 화 소장 흐름을 보는 파일이라 화 가격을 고정값으로 둔다(`conftest.py` 의 `novel_read_price_for_flow_tests`).
+pytestmark = pytest.mark.usefixtures("novel_read_price_for_flow_tests")
+
+
 _MARKER_DOMAIN = "novel-purchase-races.test"
 
 

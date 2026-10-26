@@ -78,8 +78,8 @@ async def test_spend_deducts_balance_and_writes_one_ledger_row(db_session: Async
 
     spent = await spend(db_session, user_id=user.id, amount=_CHAT_TURN_COST, kind="chat_spend")
 
-    assert spent is not None and spent.balance_after == 90
-    assert await _balance(db_session, user.id) == 90
+    assert spent is not None and spent.balance_after == 100 - _CHAT_TURN_COST
+    assert await _balance(db_session, user.id) == 100 - _CHAT_TURN_COST
 
     rows = await _ledger_rows(db_session, user.id)
     assert len(rows) == 1
@@ -89,7 +89,7 @@ async def test_spend_deducts_balance_and_writes_one_ledger_row(db_session: Async
     assert rows[0].amount == -_CHAT_TURN_COST
     assert rows[0].kind == "chat_spend"
     # `balance_after`가 잔액 컬럼과 어긋나면 원장만 보고는 잔액을 설명할 수 없게 된다.
-    assert rows[0].balance_after == 90
+    assert rows[0].balance_after == 100 - _CHAT_TURN_COST
 
 
 # ── 잔액 부족 ───────────────────────────────────────────────────────────────
