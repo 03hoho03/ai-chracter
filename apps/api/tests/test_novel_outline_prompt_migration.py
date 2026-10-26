@@ -25,6 +25,7 @@ from api.chat.prompt_builder import ALLOWED_PLACEHOLDERS, load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
 from api.novelize.prompts import build_novelize_chapter_prompt
+from factories import undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -46,7 +47,7 @@ _LATER = _load("174f78b92e5c")
 
 @pytest.fixture(autouse=True)
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
-    await (await db_session.connection()).run_sync(_LATER.delete_seeded_rows)
+    await (await db_session.connection()).run_sync(undo_seeded_rows_above, _M.revision)
 
 
 def _with_later_rows(sections: list[PromptSection], model: str) -> list[PromptSection]:

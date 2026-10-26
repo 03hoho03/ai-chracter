@@ -24,6 +24,7 @@ from api.admin.prompts import _validate_prompt_draft_for_publish
 from api.chat.prompt_builder import PromptNames, build_scene_judgment_prompt, load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
+from factories import undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -101,11 +102,7 @@ def _fingerprinted(rows: dict[Key, Value]) -> dict[Key, tuple[str, bool, int]]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
 
 
 async def _active_id(db_session: AsyncSession, model: PromptSetModelId) -> uuid.UUID:
@@ -285,12 +282,7 @@ async def test_the_seeded_channel_renders_and_drops_the_previous_scene_when_both
 async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
 
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
 
     for model in _MODELS:
@@ -317,11 +309,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 async def test_upgrade_stops_when_a_chain_already_has_the_channel(db_session: AsyncSession) -> None:
     """어느 체인의 활성 세트에 이 채널 행이 이미 있으면 네 체인 어디에도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
     db_session.add(
         PromptSection(
@@ -345,11 +333,7 @@ async def test_upgrade_stops_when_a_chain_already_has_the_channel(db_session: As
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])
     assert previous.published_at is not None

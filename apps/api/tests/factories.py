@@ -16,6 +16,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Gene
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, UTC
+from functools import cache
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ParamSpec, TypeVar
@@ -23,6 +24,8 @@ from typing import Any, ParamSpec, TypeVar
 import httpx
 import pytest
 import sqlalchemy as sa
+from alembic.config import Config
+from alembic.script import Script, ScriptDirectory
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
@@ -2700,3 +2703,30 @@ async def _wait_until_a_lock_is_awaited(engine: AsyncEngine) -> None:
             if waiting:
                 return
             await asyncio.sleep(0.01)
+
+
+@cache
+def _migration_scripts() -> ScriptDirectory:
+    return ScriptDirectory.from_config(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")))
+
+
+def _seed_scripts_above(revision: str) -> list[Script]:
+    return [
+        script
+        for script in _migration_scripts().walk_revisions(revision, "heads")
+        if script.revision != revision and hasattr(script.module, "delete_seeded_rows")
+    ]
+
+
+def seed_revisions_above(revision: str) -> list[str]:
+    """`revision` 위에 쌓인 리비전 중 시드 되돌리기 함수(`delete_seeded_rows`)가 있는 것 — head 쪽부터, 실제 downgrade
+    순서다. 레인을 가리지 않는다(채팅 레인 테스트도 소설 레인 시드를 되돌린다)."""
+    return [script.revision for script in _seed_scripts_above(revision)]
+
+
+def undo_seeded_rows_above(conn: Connection, revision: str) -> None:
+    """프롬프트 시드 리비전 테스트가 "이 리비전 직후 상태"를 보려고 위 시드 리비전들을 실제 downgrade 순서로 되돌린다.
+    `await connection.run_sync(undo_seeded_rows_above, _M.revision)` 으로 부른다. 위 리비전의 되돌리기가 멈추는 조건(시드 뒤
+    같은 체인에 게시한 세트가 있다 등)에 걸리면 그 예외가 그대로 난다."""
+    for script in _seed_scripts_above(revision):
+        script.module.delete_seeded_rows(conn)
