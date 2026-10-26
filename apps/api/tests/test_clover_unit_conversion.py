@@ -181,7 +181,6 @@ async def _in_savepoint(db: AsyncSession, step: Callable[[Connection], Any]) -> 
     connection = await db.connection()
     async with db.begin_nested():
         result = await connection.run_sync(step)
-    db.expire_all()
     return result
 
 
@@ -646,13 +645,11 @@ async def test_novel_jobs_keep_every_check_and_are_exactly_tripled(db_session: A
 
     before = {name: amounts(job) for name, job in jobs.items()}
     await _convert(db_session)
-    after = {
-        name: amounts(job)
-        for name, job in (
-            (name, await db_session.get(NovelJob, job.id, populate_existing=True)) for name, job in jobs.items()
-        )
-        if job is not None
-    }
+    after: dict[str, tuple[int | None, ...]] = {}
+    for name, job in jobs.items():
+        fresh = await db_session.get(NovelJob, job.id, populate_existing=True)
+        assert fresh is not None
+        after[name] = amounts(fresh)
 
     assert after == {name: tuple(None if v is None else v * 3 for v in values) for name, values in before.items()}
     assert after["failed-old-code"][1] is None and after["succeeded"][3] is None
@@ -705,6 +702,7 @@ async def test_an_active_novel_job_stops_the_conversion(db_session: AsyncSession
     db_session.add(
         NovelJob(novel_id=novel.id, user_id=owner.id, kind="chapter_generate", status=status, charged_amount=80)
     )
+    await db_session.flush()
     before = await _quantities(db_session)
 
     with pytest.raises(RuntimeError, match="진행 중인 소설"):
@@ -881,7 +879,6 @@ async def _converted_then(db: AsyncSession, write: Callable[[CloverUnitEvent], A
     async with db.begin_nested():
         await write(event)
         await db.flush()
-    db.expire_all()
     return await _quantities(db), await _ledger(db)
 
 
