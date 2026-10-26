@@ -1,3 +1,5 @@
+import { isApiError } from "@/shared/api/client";
+
 import type { CompletePaymentResponse } from "../api/useCompletePaymentMutation";
 import { toPurchaseResult, type CompletedPurchaseResult } from "./purchaseResult";
 
@@ -25,6 +27,16 @@ export function toSettledPurchase(response: DeployedCompletePaymentResponse): Se
       ? { paid: grantedPaid, bonus: grantedBonus }
       : null;
   return { result, grant };
+}
+
+/** 결제 완료 확인 요청이 실패했을 때 화면에 그릴 결과. 대개 확인 요청만 실패한 것이라(포트원 조회 실패 등) 결제는 됐을
+ * 수 있고 웹훅이 같은 결제를 맞춘다 — 그래서 "확인 중"이다. 예외는 서버가 이 계정의 결제가 아니라고 답한 404 다(결제창에서
+ * 돌아오는 사이 다른 계정으로 로그인한 경우). 그 결제는 이 계정에 지급되지 않으므로 "확인 중"이라고 하면 오지 않을 지급을
+ * 기다리게 한다 — 결과를 그리지 않는다(`null`). */
+export function settleFailedCompletion(error: unknown): SettledPurchase | null {
+  const code = isApiError(error) && error.detail && typeof error.detail === "object" ? error.detail.code : undefined;
+  if (code === "PAYMENT_NOT_FOUND") return null;
+  return { result: "checking", grant: null };
 }
 
 /** 받은 수량 문장. 보너스가 없는 상품이면 보너스를 말하지 않는다. */

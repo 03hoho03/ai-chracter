@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPurchaseGrant, toSettledPurchase } from "./settledPurchase";
+import { ApiErrorObject } from "@/shared/api/client";
+
+import { formatPurchaseGrant, settleFailedCompletion, toSettledPurchase } from "./settledPurchase";
 
 describe("toSettledPurchase", () => {
   it("지급까지 끝났으면 서버가 실은 받은 수량을 함께 낸다", () => {
@@ -49,5 +51,23 @@ describe("formatPurchaseGrant", () => {
 
   it("보너스가 없으면 보너스를 말하지 않는다", () => {
     expect(formatPurchaseGrant({ paid: 900, bonus: 0 })).toBe("유료 900개를 받았어요.");
+  });
+});
+
+describe("settleFailedCompletion", () => {
+  // 다른 계정으로 로그인해 돌아오면 그 결제는 이 계정의 것이 아니다 — "확인 중"이라고 하면 오지 않을 지급을 기다리게 한다.
+  it("내 결제가 아니라는 404 면 결과를 그리지 않는다", () => {
+    expect(
+      settleFailedCompletion(new ApiErrorObject({ status: 404, message: "x", detail: { code: "PAYMENT_NOT_FOUND" } })),
+    ).toBeNull();
+  });
+
+  // 확인 요청만 실패했을 수 있다(포트원 조회 실패 등) — 결제는 됐을 수 있고 웹훅이 같은 결제를 맞춘다.
+  it.each([
+    new ApiErrorObject({ status: 502, message: "x" }),
+    new ApiErrorObject({ status: 404, message: "x", detail: { code: "OTHER" } }),
+    new Error("network"),
+  ])("그 밖의 실패는 확인 중이다 (%o)", (error) => {
+    expect(settleFailedCompletion(error)).toEqual({ result: "checking", grant: null });
   });
 });

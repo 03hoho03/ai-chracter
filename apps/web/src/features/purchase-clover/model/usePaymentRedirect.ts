@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { useCompletePaymentMutation } from "../api/useCompletePaymentMutation";
 import { resolvePaymentRedirect, type PaymentRedirectSearch } from "./paymentRedirect";
-import { toSettledPurchase, type SettledPurchase } from "./settledPurchase";
+import { settleFailedCompletion, toSettledPurchase, type SettledPurchase } from "./settledPurchase";
 
 /** 결제창이 페이지를 떠났다가 충전 화면으로 돌아왔을 때(모바일) 쿼리를 읽어 확정을 이어받고, 끝난 결과를 화면에 넘긴 뒤
  * 쿼리를 지운다. 결과는 토스트가 아니라 화면의 결과 자리가 그린다 — 다이얼로그 결제(PC)와 같은 자리다.
@@ -33,9 +33,9 @@ export function usePaymentRedirect(
       } else {
         try {
           onSettled(toSettledPurchase(await mutateAsync(redirect.paymentId)));
-        } catch {
-          // 확인 요청만 실패했다. 결제는 됐을 수 있고 웹훅이 같은 결제를 맞춘다.
-          onSettled({ result: "checking", grant: null });
+        } catch (error) {
+          const settled = settleFailedCompletion(error);
+          if (settled) onSettled(settled);
         }
       }
       onHandled();
