@@ -785,6 +785,92 @@ async def test_a_written_impression_records_its_model_and_tokens(
     assert len(await _impressions(db_session, room)) == 1
 
 
+async def _supersede_claim(db_session: AsyncSession, snapshot_id: uuid.UUID) -> None:
+    """다른 작업이 낡은 선점을 다시 쥔 상태 — 선점 시각이 새것으로 바뀌고 시도가 하나 늘었다."""
+    attempt = ChatMemoryImpressionAttempt
+    await db_session.execute(
+        sa.update(attempt)
+        .where(attempt.snapshot_id == snapshot_id)
+        .values(claimed_at=sa.func.clock_timestamp(), attempts=attempt.attempts + 1)
+    )
+    await db_session.commit()
+
+
+async def _attempt_tokens(db_session: AsyncSession, room: Room) -> list[Any]:
+    """방의 시도 기록 — (상태, 시도 수, 모델, 입력·캐시·출력 토큰)."""
+    attempt = ChatMemoryImpressionAttempt
+    rows = (
+        await db_session.execute(
+            sa.select(
+                attempt.status,
+                attempt.attempts,
+                attempt.model,
+                attempt.prompt_tokens,
+                attempt.cached_tokens,
+                attempt.output_tokens,
+            ).where(attempt.chat_room_id == room.room_id)
+        )
+    ).all()
+    return [tuple(row) for row in rows]
+
+
+async def test_a_late_finisher_whose_claim_was_retaken_writes_nothing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """모델을 기다리는 사이(10분 넘게) 다른 작업이 낡은 선점을 다시 쥐었다. 늦게 끝난 쪽은 시도 기록을 `done` 으로 바꾸지도 인상
+    행을 넣지도 않는다 — 다시 쥔 작업의 기록과 결과를 덮지 않는다."""
+    room, (first, _, third) = await _three_part_room(db_client, db_session)
+    await _scene(db_session, room, first)
+
+    async def _another_job_retakes_the_claim() -> MemoryImpressionResult:
+        await _supersede_claim(db_session, third)
+        return MemoryImpressionResult(impression="늦게 끝난 인상")
+
+    await _generate(db_session, room, ImpressionLLMClient(_another_job_retakes_the_claim))
+
+    assert await _impressions(db_session, room) == []
+    assert await _attempts(db_session, room) == [(third, "running", 2, False)]
+
+
+async def test_a_failed_attempt_keeps_the_tokens_it_spent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """응답을 받고 나서 실패한 시도도 토큰을 썼다 — 실패 기록에 남기고, 다시 쥔 시도의 토큰은 더한다."""
+    _capture_failures(monkeypatch)
+    room, (first, _, _) = await _three_part_room(db_client, db_session)
+    await _scene(db_session, room, first)
+    metadata = SimpleNamespace(
+        prompt_token_count=1_000, cached_content_token_count=100, candidates_token_count=300, thoughts_token_count=0
+    )
+    fake = ImpressionLLMClient(LLMClientError("파싱 실패"), usage_metadata=metadata)
+
+    await _generate(db_session, room, fake)
+
+    assert await _attempt_tokens(db_session, room) == [("failed", 1, "claude-haiku-5-5", 1_000, 100, 300)]
+
+    await _generate(db_session, room, fake)
+
+    assert await _attempt_tokens(db_session, room) == [("done", 2, "claude-haiku-5-5", 2_000, 200, 600)]
+
+
+async def test_a_late_failure_does_not_mark_a_claim_another_job_retook(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """모델을 기다리는 사이 다른 작업이 선점을 다시 쥐었고, 그 뒤 원래 작업의 모델 호출이 실패했다. 늦은 실패는 다시 쥔 작업의
+    `running` 을 `failed` 로 덮지 않는다 — 덮으면 도는 작업이 있는데도 다음 작업이 또 쥐어 같은 묶음에 모델을 한 번 더 부른다."""
+    _capture_failures(monkeypatch)
+    room, (first, _, third) = await _three_part_room(db_client, db_session)
+    await _scene(db_session, room, first)
+
+    async def _retaken_then_failed() -> MemoryImpressionResult:
+        await _supersede_claim(db_session, third)
+        raise LLMClientError("늦은 실패")
+
+    await _generate(db_session, room, ImpressionLLMClient(_retaken_then_failed))
+
+    assert await _attempts(db_session, room) == [(third, "running", 2, False)]
+
+
 @pytest.mark.parametrize("path", ["rewind-into-the-group", "reset", "room-deletion"])
 async def test_rewind_reset_and_room_deletion_leave_no_attempt(
     db_client: httpx.AsyncClient, db_session: AsyncSession, path: str
@@ -878,6 +964,46 @@ async def test_forgetting_a_fact_key_removes_every_impression_of_the_room(
 
     assert await _impressions(db_session, room) == []
     assert await _generation(db_session, room) == generation + 1
+
+
+async def test_the_newest_group_is_written_again_after_a_forget(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """잊기는 그 방의 인상과 함께 `done` 시도 기록을 지운다. 그 묶음이 아직 가장 새 묶음이면 다음 생성이 남은 행으로 인상을 다시
+    만든다 — `done` 이 남으면 선점이 끝난 묶음으로 보고 다시 쥐지 않아 인상이 돌아오지 않는다."""
+    room, snapshots, scene_id, _ = await _room_with_an_impression(db_client, db_session)
+    assert await _attempts(db_session, room) == [(snapshots[2], "done", 1, True)]
+
+    await forget_episode(db_session, room.room_id, scene_id)
+    await db_session.commit()
+
+    assert await _attempts(db_session, room) == []
+
+    fake = ImpressionLLMClient()
+    await _generate(db_session, room, fake)
+
+    assert len(fake.prompts) == 1
+    assert len(await _impressions(db_session, room)) == 1
+    assert await _attempts(db_session, room) == [(snapshots[2], "done", 1, True)]
+
+
+async def test_a_group_that_failed_three_times_stays_stopped_after_a_forget(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """잊기는 `failed` 시도 기록을 남긴다 — 재시도 상한의 기록이라, 지우면 세 번 실패한 묶음을 잊을 때마다 세 번씩 다시 부른다."""
+    room, (first, second, third) = await _three_part_room(db_client, db_session)
+    scene_id = await _scene(db_session, room, first)
+    await _fact(db_session, room, second)
+    db_session.add(_plant_attempt(room, third, status="failed", attempts=3))
+    await db_session.commit()
+
+    await forget_episode(db_session, room.room_id, scene_id)
+    await db_session.commit()
+    fake = ImpressionLLMClient()
+    await _generate(db_session, room, fake)
+
+    assert fake.prompts == []
+    assert await _attempts(db_session, room) == [(third, "failed", 3, False)]
 
 
 @pytest.mark.parametrize("path", ["rewind-into-the-group", "reset", "room-deletion"])

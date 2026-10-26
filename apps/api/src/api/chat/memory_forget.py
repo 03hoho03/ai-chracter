@@ -14,6 +14,10 @@
   모두 지운다 — 인상은 생성에도 화면에도 쓰이지 않아 남겨서 얻는 것이 없다. 지운 인상 중 가장 새 묶음의 것은 그 묶음이 아직
   가장 새 묶음이면(잊은 뒤 다음 접기 전) 다음 사용 범위 안 턴 뒤에 남은 장면·사실 행으로 다시 만들어진다. 그보다 오래된 묶음은
   거슬러 채우지 않으므로 그 인상들은 돌아오지 않고, 이후 묶음부터 다시 쌓인다(`chat/memory_impressions.py`).
+- 인상을 지우면서 그 방의 인상 시도 기록(`chat_memory_impression_attempts`) 중 `done` 인 것도 지운다. 남겨 두면 인상 생성의 선점이
+  끝난 묶음으로 보고 다시 쥐지 않아, 위의 "가장 새 묶음은 다시 만들어진다"가 거짓이 된다. `failed` 는 남긴다 — 재시도 상한의
+  기록이라 지우면 세 번 실패한 묶음을 잊을 때마다 세 번씩 다시 부른다. `running` 도 남긴다 — 도는 작업의 선점이고, 그 작업은 넣기
+  직전에 오른 세대를 보고 결과를 버린다.
 
 잠금 순서 — 한 트랜잭션, 커밋은 호출부
 1. 방 행 `FOR NO KEY UPDATE`. 스냅샷을 지우는 경로(되감기·초기화·방 삭제)와 요약 접기 커밋·요약 편집이 모두 방 행을 먼저 잡으므로
@@ -24,7 +28,7 @@
    기다렸다가(대상은 기다린 뒤의 문장으로 고르므로) 방금 들어간 행까지 보고 지우고, 잊기가 먼저면 그들이 잊기 커밋을 기다린다.
    그들은 스냅샷 하나만 쥐고 잊기가 쥔 다른 잠금을 기다리지 않으므로 순환이 없다. 임베딩 채우기가 지운 행에 넣으려 하면 FK 위반을
    경합으로 보고 건너뛴다(`chat/memory_embeddings.py`).
-3. 대상을 고르고 DELETE, 그 방의 인상 DELETE. 그리고 같은 트랜잭션에서 방의 잊기 세대(`memory_forget_generation`)를 하나 올린다
+3. 대상을 고르고 DELETE, 그 방의 인상과 `done` 시도 기록 DELETE. 그리고 같은 트랜잭션에서 방의 잊기 세대(`memory_forget_generation`)를 하나 올린다
    — 장면을 잊어도 사실을 잊어도 오른다. 잊기 전에 입력(앞 사실 목록)을 읽은 사실 추출은 그 키를 다시 낼 수 있고, 잊기 전에 창을
    읽은 장면 추출은 잊은 비밀과 겹치는 장면을 가려 줄 사실 없이 넣게 되며(함께 지우는 장면은 잊는 순간 있던 것뿐이다), 잊기 전에
    장면·사실 행을 읽은 인상 생성은 잊은 내용을 품은 글을 넣게 된다. 그래서 셋 모두 넣기 직전에 세대가 바뀐 것을 보면 결과를
@@ -49,7 +53,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_knowledge import latest_by_key, overlaps
 from api.chat.memory_window import MessageKey
-from api.db.models.chat import ChatMemoryEpisode, ChatMemoryFact, ChatMemoryImpression, ChatRoom, ChatRoomMemorySnapshot
+from api.db.models.chat import (
+    ChatMemoryEpisode,
+    ChatMemoryFact,
+    ChatMemoryImpression,
+    ChatMemoryImpressionAttempt,
+    ChatRoom,
+    ChatRoomMemorySnapshot,
+)
 
 
 class RoomMissingError(LookupError):
@@ -114,8 +125,10 @@ async def fact_forget_plan(db: AsyncSession, room_id: uuid.UUID, key: str) -> Fa
 
 
 async def _forget_derived(db: AsyncSession, room_id: uuid.UUID) -> None:
-    """잠금 순서 3 의 뒷부분 — 그 방의 인상을 전부 지우고 잊기 세대를 올린다(모듈 설명)."""
+    """잠금 순서 3 의 뒷부분 — 그 방의 인상과 `done` 시도 기록을 지우고 잊기 세대를 올린다(모듈 설명)."""
     await db.execute(delete(ChatMemoryImpression).where(ChatMemoryImpression.chat_room_id == room_id))
+    attempt = ChatMemoryImpressionAttempt
+    await db.execute(delete(attempt).where(attempt.chat_room_id == room_id, attempt.status == "done"))
     await db.execute(
         update(ChatRoom)
         .where(ChatRoom.id == room_id)

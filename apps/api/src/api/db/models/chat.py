@@ -550,7 +550,8 @@ class ChatMemoryImpressionAttempt(Base):
 
     스냅샷과 함께 지워진다(`ChatMemoryImpression` 과 같은 이유 — 이 테이블을 모르는 옛 이미지의 스냅샷 DELETE 가 FK 위반으로
     실패하지 않고, 스냅샷을 잠근 생성 작업과 되감기가 교착하지 않는다). 되감기는 묶음의 어느 스냅샷을 지워도 가장 새 스냅샷까지
-    지우므로 이 행도 함께 사라진다.
+    지우므로 이 행도 함께 사라진다. 잊게 하기는 스냅샷을 지우지 않으므로 그 방의 인상을 지울 때 `done` 행만 함께 지운다 — 그래야
+    가장 새 묶음의 인상이 다시 만들어지고, `failed` 행은 재시도 상한의 기록이라 남긴다(`chat/memory_forget.py`).
     `status` 는 `running`(작업이 쥠)·`done`(인상 행을 넣음)·`failed`(실패 — 상한 아래면 재시도 대상)이고, native enum 이 아니라
     Text 다. `attempts` 는 선점할 때마다 센다. 캐시 쓰기 토큰 칸은 두 추출과 같은 이유로 두지 않는다 — 이 호출은 캐시 체크포인트를
     보내지 않는다."""
@@ -572,8 +573,8 @@ class ChatMemoryImpressionAttempt(Base):
     thoughts_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 아래 CHECK 의 검증은 행위 테스트가 유일하다.
-    # 방 인덱스는 방 DELETE 의 FK 확인과 잊게 하기의 방 단위 DELETE 가 이 테이블을 방으로 찾기 위한 것이다(Postgres 는 FK 열에
-    # 인덱스를 만들지 않는다).
+    # 방 인덱스는 방 DELETE 의 FK 확인과, 잊게 하기가 그 방의 `done` 행을 지우는 DELETE 가 이 테이블을 방으로 찾기 위한 것이다
+    # (Postgres 는 FK 열에 인덱스를 만들지 않는다).
     __table_args__ = (
         CheckConstraint(
             f"status IN ({_sql_in_list(ImpressionAttemptStatus)})", name="ck_chat_memory_impression_attempts_status"
