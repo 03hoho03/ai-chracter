@@ -23,8 +23,9 @@ import { isTheme, themeAtom } from "@/shared/model/theme";
 import { getIdentitySection } from "../model/identitySection";
 import type { MypageSearch } from "../model/mypageSearch";
 import { getPasswordSection } from "../model/passwordSection";
+import { MissionSection } from "./MissionSection";
 
-/** 설정 전용 페이지(테마 · 비밀번호 변경 또는 로그인 방법 · 계정).
+/** 설정 전용 페이지(테마 · 비밀번호 변경 또는 로그인 방법 · 본인인증 · 미션 · 계정).
  *
  * `작성 중인 초안` 섹션은 `/my`로 옮겼다. 초안이 두 화면에 중복으로 살면 초안 삭제·
  * 편집 취소가 한쪽에만 있어 두 목록이 서로 다른 진실을 말하게 된다.
@@ -112,6 +113,9 @@ export function MyPagePage({ search, onSearchClear }: { search: MypageSearch; on
       <PasswordSection me={me} />
 
       {!!me && <IdentitySection me={me} />}
+
+      {/* 본인인증 바로 뒤다 — 인증 전에는 미션 보상을 받을 수 없어, 그 이유를 말하는 섹션 다음에 둔다. */}
+      {!!me && <MissionSection me={me} />}
 
       <AccountSection />
     </main>

@@ -15,8 +15,8 @@ type IdentityRequiredNoticeProps = {
  * 채팅의 "클로버를 쓰지 않았어요"·"앞 턴이 진행 중" 배너와 같은 중립 표면(보더 한 줄)에 사실과 다음 행동만 둔다.
  *
  * 인증하는 곳은 마이페이지 하나라 링크도 하나다. 링크가 outline 인 것은 이 안내가 화면의 주 행동이 아니기
- * 때문이다 — 채팅·미리보기에는 그 화면의 솔리드 채움(전송)이 이미 있고, 클로버 허브에서는 구매·미션 두 섹션에
- * 이 안내가 함께 놓일 수 있어 솔리드면 핑크 채움이 겹친다. */
+ * 때문이다 — 채팅·미리보기에는 그 화면의 솔리드 채움(전송)이 이미 있고, 클로버 충전 화면에서는 구매 조건 자리의
+ * 보조 안내이고 그 화면의 행동은 상품 행이 맡는다. */
 export function IdentityRequiredNotice({ reason, dailyFreeChatTurns, className }: IdentityRequiredNoticeProps) {
   return (
     <div
