@@ -16,8 +16,27 @@ from factories import seed_revisions_above
 
 _API_DIR = Path(__file__).resolve().parents[1]
 _SCRIPTS = ScriptDirectory.from_config(Config(str(_API_DIR / "alembic.ini")))
-# head 에서 base 쪽으로 — 실제 downgrade 순서.
-_DOWNGRADE_ORDER = [script.revision for script in _SCRIPTS.walk_revisions()]
+# 리비전마다 바로 위 리비전들 — `down_revision` 을 뒤집어 만든다(병합 리비전은 부모가 여럿이다).
+_CHILDREN: dict[str, set[str]] = {}
+for _script in _SCRIPTS.walk_revisions():
+    _CHILDREN.setdefault(_script.revision, set())
+    _down = _script.down_revision
+    for _parent in (_down,) if isinstance(_down, str) else (_down or ()):
+        _CHILDREN.setdefault(_parent, set()).add(_script.revision)
+
+
+def _descendants(revision: str) -> set[str]:
+    """`revision` 위에 쌓인 리비전 전부 — 헬퍼의 `walk_revisions` 순서와 따로, 그래프를 직접 따라가 구한다."""
+    found: set[str] = set()
+    stack = list(_CHILDREN[revision])
+    while stack:
+        current = stack.pop()
+        if current not in found:
+            found.add(current)
+            stack.extend(_CHILDREN[current])
+    return found
+
+
 # 시드 되돌리기 함수가 있는 리비전 — 모듈을 들여다보지 않고 파일 글자로 찾아, 헬퍼와 다른 길로 구한다.
 _SEED_REVISIONS = {
     path.name.split("_", 1)[0]
@@ -82,10 +101,15 @@ def test_helper_list_keeps_every_hand_listed_revision_in_downgrade_order(revisio
     assert _is_subsequence(_HAND_LISTS[revision], seed_revisions_above(revision))
 
 
-@pytest.mark.parametrize("revision", _DOWNGRADE_ORDER)
+@pytest.mark.parametrize("revision", sorted(_CHILDREN))
 def test_helper_lists_exactly_the_seed_revisions_above_head_first(revision: str) -> None:
-    above = _DOWNGRADE_ORDER[: _DOWNGRADE_ORDER.index(revision)]
-    assert seed_revisions_above(revision) == [rev for rev in above if rev in _SEED_REVISIONS]
+    """집합은 위 리비전 중 시드 되돌리기가 있는 것 전부이고, 순서는 어느 리비전도 자기 위 리비전보다 먼저 오지 않는다(실제
+    downgrade 순서). 서로 위아래가 아닌 갈래끼리의 순서는 묻지 않는다 — 병합 리비전이 생겨도 헬퍼가 옳으면 초록이다."""
+    listed = seed_revisions_above(revision)
+    assert len(listed) == len(set(listed))
+    assert set(listed) == _descendants(revision) & _SEED_REVISIONS
+    for index, earlier in enumerate(listed):
+        assert not _descendants(earlier) & set(listed[index + 1 :])
 
 
 def test_the_seed_revision_scan_finds_the_known_revisions() -> None:
