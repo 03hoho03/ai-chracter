@@ -20,6 +20,7 @@ from api.admin.prompts import _build_preview_items, _expected_slots, _validate_p
 from api.chat.prompt_builder import PromptLane, load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
+from factories import undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -53,24 +54,11 @@ _GEMINI_SET_IDS: dict[str, uuid.UUID] = {
 _LATER = _load("fc6f0e134782")
 # 그 뒤 여덟 체인에 관계·사실 기억 문안을 더한 새 세트를 게시하는 리비전.
 _LATEST = _load("5cab2abe4e7b")
-# 그 뒤 글을 쓰는 여섯 체인에 회상 문안만 바꾼 새 세트를 게시하는 리비전.
-_RECALL_PRIORITY = _load("726aad108167")
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 새 세트를 게시하는 리비전.
-_FACT_INSTRUCTION = _load("e4e407a62d03")
 # 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 새 세트를 게시하는 리비전.
 _SECRET_MARKING = _load("0aeadefcf159")
 # 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로
 # story 초안은 이것도 거친다.
 _SCENE_JUDGMENT = _load("0346abdbcc92")
-# 그 뒤 여덟 체인에 장면 추출 지시문만 바꾼 세트를 게시하는 리비전.
-_EPISODE_KNOWN_BY = _load("eb8d3cc6d5c2")
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전.
-_FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
-# 그 뒤 여덟 체인의 요약 비밀 표기 슬롯 본문에 미확인 주장의 출처 규칙을 더한 세트를 게시하는 리비전 — character 레인의
-# head 활성이다.
-_SOURCE_MARKING = _load("0c1a85bc5c2f")
-# 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는 이것부터다.
-_SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
 # 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
 # 때는 이것부터다.
 _IMPRESSION = _load("6558ab4d3dbc")
@@ -95,17 +83,7 @@ def _ids(pairs: list[tuple[PromptLane, PromptSetModelId]]) -> list[str]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
-    await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_INSTRUCTION.delete_seeded_rows)
-    await connection.run_sync(_RECALL_PRIORITY.delete_seeded_rows)
-    await connection.run_sync(_LATEST.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
 
 
 async def _sections_of(db_session: AsyncSession, set_id: uuid.UUID) -> list[PromptSection]:
@@ -395,7 +373,6 @@ async def test_downgrade_then_upgrade_swaps_the_chains_back_and_forth(db_session
     gemini_before = {lane: await _active_id(db_session, lane, "gemini") for lane in _LANES}
     connection = await db_session.connection()
 
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
     for lane, model in _CLAUDE_PAIRS:
@@ -420,7 +397,6 @@ async def test_downgrade_removes_judgment_only_sets_the_admin_published(db_sessi
     await db_session.flush()
     connection = await db_session.connection()
 
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
     assert await db_session.scalar(sa.select(sa.func.count()).select_from(PromptSet).where(PromptSet.model == "haiku")) == 0
@@ -432,7 +408,7 @@ async def test_downgrade_stops_when_the_admin_published_a_claude_set_after_the_s
 ) -> None:
     """그 게시본에도 판정 행이 있어 되돌린 뒤 활성으로 남으면 이전 코드의 게시 검증이 그 체인을 막는다 — 풀 길이 옛 버전
     통째 복원뿐이라 사람이 판단하게 멈춘다. 아무것도 지우지 않는다."""
-    await (await db_session.connection()).run_sync(_IMPRESSION.delete_seeded_rows)
+    await (await db_session.connection()).run_sync(undo_seeded_rows_above, _M.revision)
     db_session.add(_set(lane=lane, model=model, status="published", published_at=await _after_gemini(db_session, lane)))
     await db_session.flush()
     connection = await db_session.connection()
@@ -455,7 +431,6 @@ async def test_upgrade_stops_when_the_lane_has_no_window(db_session: AsyncSessio
     만족하는 시각이 없다."""
     await _undo_later_revisions(db_session)
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     db_session.add(_set(lane="story", model="opus", status="published", published_at=await _after_gemini(db_session, "story")))
     await db_session.flush()

@@ -24,6 +24,7 @@ from api.admin.prompts import _validate_prompt_draft_for_publish
 from api.chat.prompt_builder import PromptLane, load_active_prompt_set, select_sections_for_render
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
+from factories import undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -109,12 +110,10 @@ def _summary_slots(sections: list[PromptSection]) -> list[str]:
 
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
+    """장면 헤더 판정 채널 리비전 위까지만 되돌린다 — 초안 게시 검사가 head 코드 표를 쓰므로, 이 함수를 부르는 테스트는 story
+    레인에 그 채널이 남은 상태를 본다. 이 리비전까지 되돌리는 테스트는 `undo_seeded_rows_above` 에 `_M.revision` 을 넘긴다."""
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _SCENE_JUDGMENT.revision)
 
 
 async def _active_id(db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId) -> uuid.UUID:
@@ -330,13 +329,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     올리면 같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
 
     await connection.run_sync(_M.delete_seeded_rows)
 
@@ -360,12 +353,7 @@ async def test_upgrade_copies_an_instruction_the_admin_edited(db_session: AsyncS
     """운영 story 요약 지시문처럼 어드민이 고쳐 게시한 지시문이 활성이면 멈추지 않고 그 본문을 그대로 옮긴다 — 가정 검사는
     본문이 아니라 슬롯 모양만 본다."""
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
     edited = "운영자가 어드민에서 고쳐 게시한 요약 지시문"
     for model in _MODELS:
@@ -402,12 +390,7 @@ async def test_upgrade_stops_when_the_summary_layout_is_not_the_expected_one(
     """요약 채널이 기대한 슬롯 집합·순서가 아니면(행이 빠짐, 어드민이 순서를 바꿈, 이 슬롯이 이미 있음) 그 레인에는 아무 세트도
     넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
     target = _PREVIOUS_SET_IDS[("character", "opus")]
     in_summary = (PromptSection.prompt_set_id == target, PromptSection.channel == "memory_summary")
@@ -448,12 +431,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])
     assert previous.published_at is not None
@@ -471,12 +449,7 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     db_session: AsyncSession, lane: PromptLane, model: str
 ) -> None:
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     seeded = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
     assert seeded.published_at is not None
     db_session.add(_set(lane=lane, model=model, published_at=seeded.published_at + timedelta(seconds=1)))

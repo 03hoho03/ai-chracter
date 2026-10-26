@@ -24,6 +24,7 @@ from api.admin.prompts import _expected_slots, _validate_prompt_draft_for_publis
 from api.chat.prompt_builder import PromptLane, load_active_prompt_set, select_sections_for_render
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
+from factories import undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -125,16 +126,7 @@ def _expected_after(before: dict[Key, Value], model: str) -> dict[Key, Value]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
-    await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_INSTRUCTION.delete_seeded_rows)
-    await connection.run_sync(_LATEST.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
 
 
 async def _active_id(db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId) -> uuid.UUID:
@@ -424,18 +416,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     세트가 활성이 된다."""
     connection = await db_session.connection()
 
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
-
-    await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_INSTRUCTION.delete_seeded_rows)
-    await connection.run_sync(_LATEST.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
 
     for lane, model in _ALL_PAIRS:
@@ -457,16 +438,7 @@ async def test_upgrade_copies_the_operators_edited_text_not_the_seed(db_session:
     """운영 요약 문안처럼 어드민이 고쳐 게시한 문안이 활성이면 새 세트에 그 문안이 그대로 실린다 — 시드 상수로 만들면 조용히
     되돌아간다."""
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
-    await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_INSTRUCTION.delete_seeded_rows)
-    await connection.run_sync(_LATEST.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])
     assert previous.published_at is not None
@@ -493,16 +465,7 @@ async def test_upgrade_copies_each_chains_own_labels(db_session: AsyncSession) -
     """라벨도 그 체인 활성 세트의 것이다 — 어드민은 체인마다 라벨을 따로 고칠 수 있다(테스트 DB 의 시드는 모든 체인 라벨이
     같아, 한 체인만 바꿔야 Gemini 라벨을 복사하는 실수와 갈린다)."""
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
-    await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_INSTRUCTION.delete_seeded_rows)
-    await connection.run_sync(_LATEST.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
         sa.update(PromptSet).where(PromptSet.id == _PREVIOUS_SET_IDS[("story", "sonnet")]).values(user_label="독자")
@@ -525,16 +488,7 @@ async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_s
     """어드민이 Gemini 가 아닌 체인을 Gemini 활성보다 나중에 게시했으면 레인만 보는 조회가 이미 그 세트를 집는다 — 아무것도
     넣지 않고 멈춘다."""
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
-    await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_INSTRUCTION.delete_seeded_rows)
-    await connection.run_sync(_LATEST.delete_seeded_rows)
-    await connection.run_sync(_LATER.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("character", "gemini")])
     assert previous.published_at is not None
