@@ -87,7 +87,9 @@ def _story_json(name: str, *, visibility: str = "public", media_book: dict[str, 
             {
                 "id": str(_ops_id(f"{name}-setup")),
                 "name": "첫 장면",
-                "prologue": f"{{{{img::{CELL_IDS[0]}}}}} 동아리방 문이 열린다." if media_book else "동아리방 문이 열린다.",
+                "prologue": f"{{{{img::{CELL_IDS[0]}}}}} 동아리방 문이 열린다."
+                if media_book
+                else "동아리방 문이 열린다.",
                 "openingMessage": None,
                 "playguide": None,
                 "suggestedReplies": [],
@@ -180,10 +182,10 @@ def _write_bundle(private_dir: Path) -> dict[str, bytes]:
     }
     for file, data in files.items():
         _write_image(private_dir, file, data)
+    _write_json(private_dir / "stories" / f"{FILMCLUB_SLUG}.json", _story_json("비공개 조감독", visibility="private"))
     _write_json(
-        private_dir / "stories" / f"{FILMCLUB_SLUG}.json", _story_json("비공개 조감독", visibility="private")
+        private_dir / "stories" / f"{MEDIA_BOOK_SLUG}.json", _story_json("칸 있는 작품", media_book=_media_book_json())
     )
-    _write_json(private_dir / "stories" / f"{MEDIA_BOOK_SLUG}.json", _story_json("칸 있는 작품", media_book=_media_book_json()))
     _write_json(
         private_dir / "characters" / f"{DRAFT_CHARACTER_SLUG}.json",
         {**_character_json("쓰다 만 캐릭터", intro=""), "genreId": None, "seedPublished": False},
@@ -355,7 +357,11 @@ async def test_seed_content_files_builds_thumbnail_variants_from_the_manifest_cr
         asset = await db_session.get(Asset, detail.thumbnail_asset_id)
         assert asset is not None
         assert download_object(asset.storage_key) == files[file], f"{slug}: 원본이 매니페스트 파일이 아니다"
-        sizes[slug] = (asset.crop, (asset.width, asset.height), _image_size(download_object(build_thumbnail_key(asset.storage_key))))
+        sizes[slug] = (
+            asset.crop,
+            (asset.width, asset.height),
+            _image_size(download_object(build_thumbnail_key(asset.storage_key))),
+        )
 
     assert sizes[FILMCLUB_SLUG] == (THUMBNAIL_CROP, (100, 50), (100, 50))
     assert sizes[MEDIA_BOOK_SLUG] == (None, THUMBNAIL_SIZE, THUMBNAIL_SIZE)
@@ -389,7 +395,9 @@ async def test_seed_content_files_seeds_the_media_book_on_local_assets_with_blur
             blurred = await db_session.get(Asset, cell.blurred_asset_id)
             assert blurred is not None
             assert (blurred.status, blurred.kind) == (AssetStatus.READY, AssetKind.BLURRED)
-            assert download_object(blurred.storage_key) == generate_blurred_image(files[file]), "블러본이 칸 원본의 블러가 아니다"
+            assert download_object(blurred.storage_key) == generate_blurred_image(files[file]), (
+                "블러본이 칸 원본의 블러가 아니다"
+            )
     setup = await db_session.scalar(
         select(StartingSetup).where(StartingSetup.content_version_id == story_version_id(MEDIA_BOOK_SLUG))
     )
@@ -521,7 +529,11 @@ async def test_seed_content_files_crops_the_animated_variants_of_a_moving_thumbn
     _write_json(
         private_dir / "manifest.json",
         {
-            "stories": {"private-moving": {"thumbnail": _image_entry("moving.gif", crop={"x": 10, "y": 5, "width": 20, "height": 10})}},
+            "stories": {
+                "private-moving": {
+                    "thumbnail": _image_entry("moving.gif", crop={"x": 10, "y": 5, "width": 20, "height": 10})
+                }
+            },
             "characters": {},
         },
     )
