@@ -3357,9 +3357,9 @@ $C exec -T postgres psql -U postgres -d ai_character_chat -c \
 $C exec -T $A python -c "import json; from api.core.s3 import get_object_size, generate_per_request_presigned_get_url as url; ks=[k for k in json.load(open('/tmp/purge-keys.json')) if get_object_size(k) is not None]; print(len(ks)); print(url(ks[0]) if ks else '')"
 
 # 6. 저장소 정리 — --apply 없이 먼저 돌려 지울 키 수만 본다. 그 수가 3 의 출력 "저장소 키 M개" 와 같으면 --apply.
-#    --apply 는 지우기 전에 키 파일의 키를 assets.storage_key 와 다시 대조해, 아직 DB 에 살아 있는 그림의 키가 하나라도
-#    있으면 아무것도 지우지 않고 종료 2 로 멈춘다(엉뚱한 키 파일·롤백된 적용으로 살아 있는 그림을 지우지 않게).
-#    키 하나가 실패해도 나머지는 지우고 실패한 키를 표준 오류에 남긴다 — 종료 1 이면 같은 명령을 다시 돌린다. 이미 없는
+#    delete-objects 는 --apply 여부와 상관없이 먼저 키 파일의 키를 assets.storage_key 와 다시 대조해, 아직 DB 에 살아
+#    있는 그림의 키가 하나라도 있으면 키 수도 내지 않고 종료 2 로 멈춘다(엉뚱한 키 파일·롤백된 적용으로 살아 있는 그림을
+#    지우지 않게). 첫 줄에서 2 가 나오면 --apply 로 가지 않는다. 키 하나가 실패해도 나머지는 지우고 실패한 키를 표준 오류에 남긴다 — 종료 1 이면 같은 명령을 다시 돌린다. 이미 없는
 #    키는 R2 가 성공으로 답하므로 재실행이 안전하다(변형 키 중 처음부터 없던 것도 성공으로 셈한다).
 $C exec -T $A python -u scripts/purge_contents.py delete-objects --keys-file /tmp/purge-keys.json
 $C exec -T $A python -u scripts/purge_contents.py delete-objects --keys-file /tmp/purge-keys.json --apply
