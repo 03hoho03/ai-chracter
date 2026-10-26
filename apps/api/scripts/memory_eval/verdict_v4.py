@@ -690,6 +690,38 @@ def _pair_tables(
     return out
 
 
+def require_unique_judge_rows(judge_rows: Sequence[Mapping[str, Any]]) -> None:
+    seen: set[tuple[str, str, int]] = set()
+    for row in judge_rows:
+        judge_key = (str(row["arm"]), str(row["item"]), int(row["checkpoint"]))
+        if judge_key in seen:
+            raise SystemExit(
+                f"판정 줄에 같은 (갈래, 문항, 체크포인트)가 둘 이상이다 — 뒤 줄이 앞 줄을 덮는다: {judge_key}"
+            )
+        seen.add(judge_key)
+
+
+def require_distinct_scripts(lane_sets: Mapping[Lane, Sequence[PlantSet]]) -> None:
+    """대본끼리 문항을 견준다 — 같은 대본을 두 번 넘기면 그 문항이 두 번 세어져 레인 표본이 부푼다."""
+    for lane, sets in lane_sets.items():
+        ids = [i for s in sets for i in {str(e["id"]) for e in s.all_items()}]
+        if len(ids) != len(set(ids)):
+            raise SystemExit(f"{lane} 레인의 두 대본에 같은 문항이 있다 — 같은 대본을 두 번 넘겼는지 본다")
+
+
+def controls_table(
+    control_rows: Sequence[dict[str, Any]] | None, controls_override: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """판정자 대조군 칸. 기록이 없으면 `halt`, 관문(`judge.controls_pass`) 미달이면 사용자가 받아들인 결정이 있을 때만 통과."""
+    if control_rows is None:
+        return {"status": "halt", "pass": False, "missingInput": True}
+    ok = controls_pass(control_rows)
+    accepted = not ok and controls_override is not None
+    return {"accuracy": control_accuracy(control_rows), "binaryAccuracy": control_binary_accuracy(control_rows),
+            "n": len(control_rows), "status": "pass" if ok or accepted else "fail", "pass": ok or accepted,
+            **({"override": dict(controls_override)} if accepted and controls_override else {})}  # fmt: skip
+
+
 def v4_verdict(
     story_sets: Sequence[PlantSet],
     character_sets: Sequence[PlantSet] | None,
@@ -715,24 +747,13 @@ def v4_verdict(
         raise SystemExit(f"절반은 dev·test 중 하나다: {split}")
     scope = frozenset(DEV_ARMS) if split == "dev" else None
     half = {"dev": "개발", "test": "시험"}[split]
-    seen: set[tuple[str, str, int]] = set()
-    for row in judge_rows:
-        judge_key = (str(row["arm"]), str(row["item"]), int(row["checkpoint"]))
-        if judge_key in seen:
-            raise SystemExit(
-                f"판정 줄에 같은 (갈래, 문항, 체크포인트)가 둘 이상이다 — 뒤 줄이 앞 줄을 덮는다: {judge_key}"
-            )
-        seen.add(judge_key)
+    require_unique_judge_rows(judge_rows)
     lanes: dict[Lane, list[list[dict[str, Any]]]] = {
         "story": [[e for e in s.all_items() if e.get("split") == split] for s in story_sets]
     }
     if character_sets:
         lanes["character"] = [[e for e in s.all_items() if e.get("split") == split] for s in character_sets]
-    for lane, sets in (("story", story_sets), ("character", character_sets or [])):
-        ids = [i for s in sets for i in {str(e["id"]) for e in s.all_items()}]
-        if len(ids) != len(set(ids)):
-            # 대본끼리 문항을 견준다 — 같은 대본을 두 번 넘기면 그 문항이 두 번 세어져 레인 표본이 부푼다.
-            raise SystemExit(f"{lane} 레인의 두 대본에 같은 문항이 있다 — 같은 대본을 두 번 넘겼는지 본다")
+    require_distinct_scripts({"story": story_sets, "character": character_sets or []})
     if not any(g for groups in lanes.values() for g in groups):
         raise SystemExit(f"{half} 절반 문항이 없다 — 시험은 봉인 확인 뒤 시험 보기로, 개발은 개발 보기로 부른다")
     rates = unable_rates(lanes, judge_rows)
@@ -754,14 +775,7 @@ def v4_verdict(
         )
     arms_seen = sorted({str(r["arm"]) for r in judge_rows})
     warnings = {lane: unaddressed_warning(groups, judge_rows, arms=arms_seen) for lane, groups in lanes.items()}
-    if control_rows is None:
-        controls: dict[str, Any] = {"status": "halt", "pass": False, "missingInput": True}
-    else:
-        ok = controls_pass(control_rows)
-        accepted = not ok and controls_override is not None
-        controls = {"accuracy": control_accuracy(control_rows), "binaryAccuracy": control_binary_accuracy(control_rows),
-                    "n": len(control_rows), "status": "pass" if ok or accepted else "fail", "pass": ok or accepted,
-                    **({"override": dict(controls_override)} if accepted and controls_override else {})}  # fmt: skip
+    controls = controls_table(control_rows, controls_override)
     advice = recommendations(safety, effects, non_inferiority, controls=controls)
     parts = [t for pair in safety.values() for t in pair.values() if t["status"] != OUT_OF_SCOPE]
     held = [k for k in EFFECTS if effects[k]["status"] == UNDERPOWERED]

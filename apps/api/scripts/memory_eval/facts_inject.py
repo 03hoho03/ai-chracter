@@ -10,6 +10,12 @@
 최소 차·표본 하한, `verdict_v4.effect_family`)와 통과 최소 불일치 표(`verdict_v4.power_table`)를 이 갈래 쌍의 표로 부른다. 효과가
 하나라 Holm 가족 크기는 1 이다.
 
+판정 유효성은 묶음 판정과 같은 장치를 쓴다(`verdict`). 판정 불능은 사실 주입 갈래면 실패, 기준 갈래면 성공으로 세므로, 불능이
+한쪽에 몰리면 실제 차이 없이 기준 갈래가 나아 보인다 — 그래서 스토리 레인 표에서 한 갈래의 불능 수가 상한(행의 3%, 최소 1)을
+넘으면 효과를 무효(`halt`)로 낸다. 판정자 대조군 기록이 없거나 관문 미달(사용자가 받아들인 결정 없이)이면 전체 상태가 `halt`·
+`fail` 이다. 판정 줄 중복과 같은 대본을 두 번 넘긴 입력은 거부한다. 프로브 행에 질의 임베딩 시간 상한이 기록돼 있으면 두
+갈래의 값이 하나여야 한다 — 다르면 사실 주입 말고 상한도 달랐던 비교라 거부한다.
+
 관찰 칸(판정 아님, 값만 낸다 — 판정·권고에 넣지 않는다). 입력은 `filter-recompute` 출력 행의 `recordedRows`(그 질문 턴 기록에
 실린 사실 행의 아는 사람·말한 쪽·글)다.
 - 비밀이 공개 사실로 실림: 사실 주입 갈래의 비밀 문항 프로브 가운데, 실린 행 중 아는 사람이 정해지지 않은(`known_by` NULL) 행이
@@ -24,6 +30,7 @@ from typing import Any
 from api.chat.memory_facts import normalize_part
 
 from memory_eval import verdict_v4 as v4
+from memory_eval.plants import PlantSet
 from memory_eval.wording_metrics import holds_secret_content
 
 CURRENT_ARM = "b1-B1E"  # cite-ok: 하네스 갈래 이름 문자열이다(결정 번호 아님)
@@ -82,3 +89,50 @@ def observations(
         if any(r.get("knownBy") is None and holds_secret_content(r.get("text"), item, users) for r in loaded):
             out["secretLoadedAsPublicFact"] += 1
     return out
+
+
+def require_same_embed_timeout(
+    probe_rows: Iterable[Mapping[str, Any]], arms: Sequence[str] = (CURRENT_ARM, FACTS_ARM)
+) -> dict[str, list[str]]:
+    """갈래별로 프로브 행에 기록된 질의 임베딩 시간 상한 값(기록 없는 행은 건너뛴다). 두 갈래를 통틀어 값이 둘 이상이면 거부한다."""
+    seen: dict[str, set[str]] = {arm: set() for arm in arms}
+    for row in probe_rows:
+        arm = str(row.get("arm"))
+        value = row.get("embedRecallTimeoutMs")
+        if arm in seen and value is not None:
+            seen[arm].add(str(value))
+    if len(set().union(*seen.values())) > 1:
+        raise SystemExit(f"두 갈래의 질의 임베딩 시간 상한이 다르다 — 사실 주입 말고도 다른 비교다: {seen}")
+    return {arm: sorted(values) for arm, values in seen.items()}
+
+
+def verdict(
+    story_sets: Sequence[PlantSet],
+    character_sets: Sequence[PlantSet],
+    score_rows: Sequence[Mapping[str, Any]],
+    judge_rows: Sequence[Mapping[str, Any]],
+    *,
+    control_rows: Sequence[dict[str, Any]] | None,
+    controls_override: Mapping[str, Any] | None = None,
+    floors: Mapping[str, int] | None = None,
+    split: str = "test",
+) -> dict[str, Any]:
+    """효과(판정 불능 상한으로 무효 처리)·대조군·전체 상태. 효과는 스토리 레인 문항으로 센다(묶음 판정과 같다)."""
+    v4.require_unique_judge_rows(judge_rows)
+    v4.require_distinct_scripts({"story": story_sets, "character": character_sets})
+    story = [[e for e in s.all_items() if e.get("split") == split] for s in story_sets]
+    if not any(story):
+        raise SystemExit(f"스토리 레인에 {split} 절반 문항이 없다")
+    rates = v4.unable_rates({"story": story}, judge_rows)
+    invalid = frozenset(arm for arm, r in rates["story"].items() if r["exceeded"])
+    out = effects(story, score_rows, judge_rows, floors=floors, invalid_arms=invalid)
+    controls = v4.controls_table(control_rows, controls_override)
+    # 검출력 부족으로 보류한 효과는 통과도 실패도 아니라 전체 상태에서 빠진다(묶음 판정과 같다).
+    parts = [controls] if out[EFFECT]["status"] == v4.UNDERPOWERED else [out[EFFECT], controls]
+    statuses = [str(part["status"]) for part in parts]
+    if invalid or "halt" in statuses:
+        status = "halt"
+    else:
+        status = "pass" if all(s == "pass" for s in statuses) else "fail"
+    return {"split": split, "arms": [CURRENT_ARM, FACTS_ARM], "effects": out, "unableCeiling": rates,
+            "invalid": sorted(invalid), "controls": controls, "status": status}  # fmt: skip

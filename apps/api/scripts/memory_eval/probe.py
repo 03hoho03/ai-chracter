@@ -480,6 +480,9 @@ async def _top_up(database_url: str, room_id: uuid.UUID, amount: int) -> None:
         await engine.dispose()
 
 
+EMBED_TIMEOUT_ENV = "MEMORY_EMBED_RECALL_TIMEOUT_MS"
+
+
 def _b_series(arm: str) -> bool:
     """갈래가 B 계열 템플릿(요약 글만 표기 판으로 바꾼 것)에서 도는가. 묶음 1 밖 갈래(2차 런 갈래 등)는 투입이 커밋한 A 계열이다."""
     from memory_eval.arm_env import BUNDLE1_ARMS, template_series
@@ -647,6 +650,8 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
                     "memoryRecall": memory_recall,
                     # 질의 임베딩 호출의 결과(ok·timeout·failed)와 지연 — 벡터 경로가 실제로 돌았는지 보는 입력.
                     "queryEmbeddings": [c for c in recorded_turns if c.get("callSite") == QUERY_EMBEDDING_CALL_SITE],
+                    # 측정 서버에 실은 질의 임베딩 시간 상한(없으면 None) — 견주는 갈래가 같은 상한으로 돌았는지 집계 때 본다.
+                    "embedRecallTimeoutMs": run.server_overrides.get(EMBED_TIMEOUT_ENV),
                     "attempts": records,
                 }
         if action.wait_seconds:

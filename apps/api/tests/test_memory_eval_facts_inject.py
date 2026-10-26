@@ -15,6 +15,7 @@ from memory_eval import knowledge_recompute as kr
 from memory_eval import verdict_v4 as v4
 from memory_eval.arm_env import BUNDLE1_SWITCHES, bundle1_env_pairs
 from memory_eval.embed_offline import HybridParams
+from memory_eval.plants import PlantSet
 
 CP = 300
 
@@ -132,14 +133,16 @@ def test_observations_count_a_secret_loaded_as_a_fact_row_nobody_was_said_to_kno
     public = _recorded(text="도윤 옥상열쇠 빨간우산 아래 숨김")
     known = _recorded(text="도윤 옥상열쇠 빨간우산 아래 숨김", knownBy=["도윤"])
     unrelated = _recorded(text="하늘 맑음")
+    # 아는 사람이 정해진 행으로 실린 프로브를 공개 행 프로브보다 많이 둔다 — 아는 사람 조건이 뒤집히면 개수가 달라진다.
     rows = [
         _recompute(fi.FACTS_ARM, "s01", [public, unrelated]),
         _recompute(fi.FACTS_ARM, "s01", [known]),
+        _recompute(fi.FACTS_ARM, "s01", [known, unrelated]),
         _recompute(fi.FACTS_ARM, "s01", [unrelated]),
         _recompute(fi.CURRENT_ARM, "s01", [public]),
     ]
     out = fi.observations([SECRET, *_items("relation", 1)], rows)
-    assert (out["probes"], out["secretProbes"], out["secretLoadedAsPublicFact"]) == (3, 3, 1)
+    assert (out["probes"], out["secretProbes"], out["secretLoadedAsPublicFact"]) == (4, 4, 1)
 
 
 def test_observations_count_user_claim_rows_loaded_and_rows_missing_from_the_template() -> None:
@@ -204,3 +207,66 @@ def test_the_summary_command_refuses_the_fact_arm_without_a_facts_threshold(
     assert main([*base, "--ran-facts-min", "2"]) == 2
     assert "factsLoadedTurns=1 (문턱 2)" in capsys.readouterr().err
     assert not (tmp_path / "out.json").exists()
+
+
+FAILED_CONTROLS = [{"kind": "secret", "expected": "kept", "judged": None}]
+ACCEPTED = {"path": "controls.json", "sha256": "ab" * 32, "reason": "사용자 결정", "gate": {}}
+
+
+def _all_right_with_facts_unable(unable: int, n: int = 56) -> tuple[list[dict[str, Any]], ...]:
+    """두 갈래 모두 다 맞힌 관계 문항 `n` 개에, 판정자가 사실 주입 갈래의 앞 `unable` 개를 불능으로 냈다."""
+    items, scores, judged = _effect_case(0, 0, n)
+    for row in judged:
+        if row["arm"] == fi.FACTS_ARM and int(row["item"].removeprefix("relation")) < unable:
+            row["judged"] = None
+    return items, scores, judged
+
+
+def test_unable_judgments_piled_on_the_fact_arm_void_the_effect_instead_of_reading_as_a_regression() -> None:
+    """불능은 사실 주입 갈래면 실패로 세므로, 상한 없이 세면 실제 차이 없이 기준 갈래만 맞힌 문항 8 이 나온다. 상한
+    max(1, ⌊0.03 × 56⌋) = 1 을 넘었으니 효과는 무효(halt)이고 전체 상태도 halt 다."""
+    items, scores, judged = _all_right_with_facts_unable(8)
+    unguarded = fi.effects([items], scores, judged)[fi.EFFECT]
+    assert (unguarded["aOnly"], unguarded["status"]) == (8, "fail")
+    out = fi.verdict([PlantSet(raw={}, plants=items, abstains=[])], [], scores, judged,
+                     control_rows=FAILED_CONTROLS, controls_override=ACCEPTED)  # fmt: skip
+    assert out["unableCeiling"]["story"][fi.FACTS_ARM] == {"rows": 56, "unable": 8, "ceiling": 1, "exceeded": True}
+    assert out["invalid"] == [fi.FACTS_ARM]
+    assert out["effects"][fi.EFFECT]["status"] == "halt" and out["effects"][fi.EFFECT]["invalid"] == [fi.FACTS_ARM]
+    assert out["status"] == "halt"
+    # 상한 안(불능 1)이면 무효가 아니다.
+    items, scores, judged = _all_right_with_facts_unable(1)
+    out = fi.verdict([PlantSet(raw={}, plants=items, abstains=[])], [], scores, judged,
+                     control_rows=FAILED_CONTROLS, controls_override=ACCEPTED)  # fmt: skip
+    assert out["invalid"] == [] and out["effects"][fi.EFFECT]["status"] == "fail"
+
+
+def test_the_judge_controls_gate_the_overall_status_like_the_bundle_verdict() -> None:
+    items, scores, judged = _effect_case(10, 0)
+    story = [PlantSet(raw={}, plants=items, abstains=[])]
+    missing = fi.verdict(story, [], scores, judged, control_rows=None)
+    assert missing["effects"][fi.EFFECT]["status"] == "pass"
+    assert missing["controls"]["status"] == "halt" and missing["status"] == "halt"
+    failed = fi.verdict(story, [], scores, judged, control_rows=FAILED_CONTROLS)
+    assert failed["controls"]["status"] == "fail" and failed["status"] == "fail"
+    accepted = fi.verdict(story, [], scores, judged, control_rows=FAILED_CONTROLS, controls_override=ACCEPTED)
+    assert accepted["controls"]["override"] == ACCEPTED and accepted["status"] == "pass"
+
+
+def test_duplicate_judge_rows_and_the_same_script_twice_are_refused() -> None:
+    items, scores, judged = _effect_case(10, 0)
+    story = PlantSet(raw={}, plants=items, abstains=[])
+    with pytest.raises(SystemExit, match="판정 줄에 같은"):
+        fi.verdict([story], [], scores, [*judged, judged[0]], control_rows=None)
+    with pytest.raises(SystemExit, match="같은 대본을 두 번"):
+        fi.verdict([story, story], [], scores, judged, control_rows=None)
+
+
+def test_the_two_arms_must_have_run_with_one_recorded_query_embedding_timeout() -> None:
+    def row(arm: str, value: str | None) -> dict[str, Any]:
+        return {"arm": arm, "item": "q1", "embedRecallTimeoutMs": value}
+
+    same = [row(fi.CURRENT_ARM, "3000"), row(fi.FACTS_ARM, "3000"), row(fi.FACTS_ARM, None), row("b1-A0", "1000")]
+    assert fi.require_same_embed_timeout(same) == {fi.CURRENT_ARM: ["3000"], fi.FACTS_ARM: ["3000"]}
+    with pytest.raises(SystemExit, match="시간 상한이 다르다"):
+        fi.require_same_embed_timeout([row(fi.CURRENT_ARM, "3000"), row(fi.FACTS_ARM, "1000")])

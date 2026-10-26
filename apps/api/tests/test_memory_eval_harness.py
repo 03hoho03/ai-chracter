@@ -943,6 +943,20 @@ def test_probe_restores_and_restarts_for_every_retry_and_records_usage(
     assert result["queryEmbeddings"] == [
         {"callSite": "chat_memory_query_embedding", "model": "voyage-4-large", "latencyMs": 420, "outcome": "ok"}
     ]
+    assert result["embedRecallTimeoutMs"] is None  # 이 측정 서버 env 에 상한 줄이 없다
+
+
+def test_probe_records_the_query_embedding_timeout_it_gave_the_server(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """견주는 두 갈래가 같은 상한으로 돌았는지 집계 때 보려면 프로브 행에 그 값이 남아야 한다."""
+    from memory_eval.plants import Probe
+    from memory_eval.probe import run_probe
+
+    calls = _fake_probe_world(monkeypatch, tmp_path, say_codes=[0])
+    calls["run"].server_overrides["MEMORY_EMBED_RECALL_TIMEOUT_MS"] = "3000"
+    result = run_probe(calls["run"], Probe(item_id="obj01", checkpoint=100, turns=["질문"], kind="plant", split="dev"))
+    assert result["embedRecallTimeoutMs"] == "3000"
     assert calls["restore"] == 2 and len(calls["start"]) == 2 and calls["stop"] == 2
     assert calls["consent"] == [calls["run"].room_id] * 2
     assert 60 in calls["sleep"]

@@ -802,15 +802,19 @@ def cmd_v4_power_table(args: argparse.Namespace) -> int:
 
 
 def cmd_facts_inject_summary(args: argparse.Namespace) -> int:
-    """사실 주입 재측정 집계 — 현 운영 갈래 → 사실 주입 갈래의 효과(판정), 사실 섹션 실림 턴 수, 관찰 칸 둘(값만). 시험 절반은
-    봉인 확인 뒤에만 연다. 집계 전에 "실제로 돌았나" 단언을 지난다(사실 섹션 실림 턴 수 문턱 포함). 결과는 `--out`."""
+    """사실 주입 재측정 집계 — 현 운영 갈래 → 사실 주입 갈래의 효과(판정 불능 상한·판정자 대조군까지 묶음 판정과 같은 유효성
+    장치), 사실 섹션 실림 턴 수, 관찰 칸 둘(값만). 시험 절반은 봉인 확인 뒤에만 열고 결과에 봉인 판·sha 를 남긴다. 집계 전에
+    "실제로 돌았나" 단언(사실 섹션 실림 턴 수 문턱 포함)과 두 갈래 질의 임베딩 상한이 같았는지를 본다. 결과는 `--out`."""
     from memory_eval import facts_inject, ran_gate
     from memory_eval.judge import ensure_unique_probe_rows
+    from memory_eval.seal import SEALED_EDITION
 
     split = args.split
     scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
     judge_rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
     _require_ran(args, scores + judge_rows)
+    probes = _probe_rows(args.ran_probes or [])
+    timeouts = facts_inject.require_same_embed_timeout(probes)
     if split == "test":
         require_seal({"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha, test_drop=args.test_drop)
 
@@ -820,21 +824,31 @@ def cmd_facts_inject_summary(args: argparse.Namespace) -> int:
             seal_sha=args.seal_sha, test_drop=args.test_drop,
         )  # fmt: skip
 
-    story = [[e for e in view(pair).all_items() if e.get("split") == split] for pair in args.story]
-    character = [[e for e in view(pair).all_items() if e.get("split") == split] for pair in args.character or []]
+    story = [view(pair) for pair in args.story]
+    character = [view(pair) for pair in args.character or []]
     ensure_unique_probe_rows(scores)
+    control_rows, override = v4_controls_input(
+        args.controls or args.run / "judge" / "controls.json",
+        accept_sha256=args.accept_failed_controls,
+        accept_reason=args.accept_reason,
+    )
     seeds = json.loads(args.split_seeds.read_text(encoding="utf-8")) if args.split_seeds else None
     floors = facts_inject.effect_floors(seeds) if seeds is not None else None
     recompute = [r for path in args.ran_recompute or [] for r in json.loads(path.read_text(encoding="utf-8"))]
-    result = {
-        "split": split,
-        "arms": [facts_inject.CURRENT_ARM, facts_inject.FACTS_ARM],
-        "effects": facts_inject.effects(story, scores, judge_rows, floors=floors),
-        "factsLoaded": ran_gate.facts_loaded_turns(_probe_rows(args.ran_probes or [])),
-        "observations": facts_inject.observations([e for g in story + character for e in g], recompute),
+    result = facts_inject.verdict(
+        story, character, scores, judge_rows, control_rows=control_rows, controls_override=override, floors=floors,
+        split=split,
+    )  # fmt: skip
+    items = [e for s in [*story, *character] for e in s.all_items() if e.get("split") == split]
+    result |= {
+        "seal": {"edition": SEALED_EDITION, "sha256": args.seal_sha} if split == "test" else None,
+        "embedRecallTimeoutMs": timeouts,
+        "factsLoaded": ran_gate.facts_loaded_turns(probes),
+        "observations": facts_inject.observations(items, recompute),
     }
     _write(args.out, result)
-    _print({facts_inject.EFFECT: result["effects"][facts_inject.EFFECT]["status"]}
+    _print({facts_inject.EFFECT: result["effects"][facts_inject.EFFECT]["status"], "status": result["status"]}
+           | {"invalid": result["invalid"], "controls": result["controls"]["status"]}
            | {"factsLoaded": result["factsLoaded"], "observations": result["observations"], "out": str(args.out)})  # fmt: skip
     return 0
 
@@ -1828,6 +1842,11 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--scores", type=Path, nargs="+", required=True, help="score 출력(두 갈래)")
     p.add_argument("--judged", type=Path, nargs="+", required=True, help="judge 출력(두 갈래)")
     p.add_argument("--split-seeds", type=Path, help="분할 시드 파일 — 효과의 합계 하한(없으면 표본이 모자란 효과는 halt)")
+    p.add_argument("--controls", type=Path, help="판정자 대조군 기록(기본 <원자료>/judge/controls.json, 없으면 halt)")
+    p.add_argument(
+        "--accept-failed-controls", metavar="SHA256", help="관문을 못 넘은 대조군 기록을 사용자가 받아들였을 때 그 파일의 sha256"
+    )
+    p.add_argument("--accept-reason", help="--accept-failed-controls 의 이유(누가 왜 — 결과에 남는다)")
     p.add_argument("--out", type=Path, required=True)
     _ran_args(p)
     p.set_defaults(fn=cmd_facts_inject_summary)
