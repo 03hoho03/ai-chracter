@@ -232,7 +232,7 @@ async def test_page_boundary_keeps_works_that_share_the_same_time_and_id(
     # 첫 페이지를 채우는 스토리(id 가 공유 id 보다 커서 앞에 선다) + 첫 페이지 끝의 스토리(공유 id) + 다음 페이지 첫
     # 소설(같은 id) + 캐릭터 하나.
     expected: list[tuple[str, uuid.UUID]] = []
-    for index in range(CREATOR_CONTENT_PAGE_SIZE - 1):
+    for index in reversed(range(CREATOR_CONTENT_PAGE_SIZE - 1)):
         story_id = uuid.UUID(f"f{index:07x}-0000-0000-0000-000000000000")
         await _content(db_session, user_id, ContentType.STORY, published=False, content_id=story_id)
         expected.append(("story", story_id))
@@ -342,7 +342,8 @@ async def _portfolio(
     await _allow_novelize(db_session, monkeypatch, user_id)
     character, story = ContentType.CHARACTER, ContentType.STORY
     works = {
-        "c_draft": await _content(db_session, user_id, character, published=False),
+        # 자동저장은 발행한 적 없는 초안에도 수정본 표시를 세운다 — 수정본 있음 필터가 발행 여부를 함께 봐야 빠진다.
+        "c_draft": await _content(db_session, user_id, character, published=False, changes=True),
         "s_draft": await _content(db_session, user_id, story, published=False),
         "c_public": await _content(db_session, user_id, character, published=True),
         "s_public_changed": await _content(db_session, user_id, story, published=True, changes=True),
