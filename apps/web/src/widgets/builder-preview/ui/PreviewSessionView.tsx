@@ -34,6 +34,7 @@ import {
   isCloverPriceChangedError,
   shouldShowCloverBalance,
   useCloverBalanceQuery,
+  useCloverPricingQuery,
 } from "@/entities/clover";
 import { IdentityRequiredNotice } from "@/entities/identity";
 import type { MediaTagImages } from "@/entities/media-book";
@@ -125,6 +126,9 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   // 숫자 없이 말한다.
   const confirmCloverSpend = useConfirmCloverSpend();
   const turnCost = previewTurnCost(models, displayModelId);
+  // 가격표를 지켜보게 둔다 — 보내는 요청이 이 캐시에서 가격 버전을 읽는데, 빌더는 전역 헤더(평소 가격표를 지켜보는 자리)를
+  // 그리지 않아 이것이 없으면 새로고침 직후엔 캐시가 비어 있고 한동안 지나면 지워져 버전 없이 나간다. 값은 여기서 쓰지 않는다.
+  useCloverPricingQuery();
   // 잔량은 대화방 입력 바와 같은 판정이다 — 상위 모델은 첫 턴부터 턴마다 깎이므로 언제나, 기본 모델은 무료분을 쓴 뒤나
   // 부족할 때만. 세션을 잃은 뒤에는 내린다(옛 잔액이 캐시에 남는다).
   const { data: clover } = useCloverBalanceQuery();
