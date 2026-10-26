@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   Dialog,
@@ -44,6 +44,8 @@ export const RegenerateSummaryModal = createCallable<RegenerateSummaryModalProps
   const memoryQuery = useChatRoomMemoryQuery(roomId);
   const pricingQuery = useCloverPricingQuery();
   const { data: clover } = useCloverBalanceQuery();
+  // 충전하고 돌아올 곳. 충전 화면이 이 주소로 "돌아가기"를 두고, 결제창·로그인 왕복 뒤에도 잃지 않게 넘겨 다닌다.
+  const returnTo = useRouterState({ select: (state) => state.location.href });
   const regenerate = useRegenerateMemorySummaryMutation(roomId);
   const [quotedCost, setQuotedCost] = useState<number | undefined>(undefined);
   const [isServerShort, setIsServerShort] = useState(false);
@@ -154,7 +156,7 @@ export const RegenerateSummaryModal = createCallable<RegenerateSummaryModalProps
           </Button>
           {isInsufficient ? (
             <Button asChild>
-              <Link to="/clover" onClick={() => call.end(false)}>
+              <Link to="/clover" search={{ returnTo }} onClick={() => call.end(false)}>
                 <CloverIcon className="size-4" />
                 클로버 채우기
               </Link>
