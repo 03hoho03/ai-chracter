@@ -114,6 +114,7 @@ from api.novelize.characters import (
 from api.novelize.episodes import chapter_max_turns, k_max, regenerate_ineligibility
 from api.novelize.illustrations import PlacementSpec, add_revision, delete_storage_objects, placement_views
 from api.novelize.inputs import current_revision, load_novel_prompt_source
+from api.novelize.job_variants import facts_of, kinds_where
 from api.novelize.runner import enqueue_chain_job, enqueue_job, expire_stale_jobs
 from api.novelize.scenes import revision_scene_groups
 from api.novelize.snapshots import SnapshotLimitError, restore_snapshot, save_snapshot
@@ -280,7 +281,7 @@ async def _last_chapter_model(db: AsyncSession, novel_id: uuid.UUID, *, allowed:
         select(NovelJob.model)
         .where(
             NovelJob.novel_id == novel_id,
-            NovelJob.kind.in_(("chapter_generate", "chapter_regenerate", "outline_chapter_generate")),
+            NovelJob.kind.in_(kinds_where(writes_chapter=True)),
             NovelJob.status == "succeeded",
         )
         .order_by(NovelJob.created_at.desc(), NovelJob.id.desc())
@@ -503,7 +504,7 @@ async def _source(db: AsyncSession, novel: Novel, thumbnail_url: str | None) -> 
 async def _chain_progress(db: AsyncSession, job: NovelJob) -> tuple[int | None, int | None]:
     """연쇄 생성 부모의 (끝낸 묶음 수, 계획한 묶음 수). 연쇄가 아니면 둘 다 None. 계획한 묶음 수는 차감할 때 부모 행에
     적어 둔 값이다 — 차감액에서 지금 설정으로 되읽으면 그 사이 화 수 상한이 바뀐 배포 뒤에 틀린 수가 나온다."""
-    if job.kind != "chain_generate":
+    if not facts_of(job).chain_only:
         return None, None
     completed = await db.scalar(
         select(func.count())
@@ -562,7 +563,7 @@ async def _pending_ai_edits(
         select(NovelJob)
         .where(
             NovelJob.novel_id == novel_id,
-            NovelJob.kind == "ai_edit",
+            NovelJob.kind.in_(kinds_where(call_site="novelize_revise")),
             NovelJob.status == "succeeded",
             NovelJob.result_revision_id.is_(None),
             NovelJob.dismissed_at.is_(None),
@@ -609,7 +610,7 @@ async def _pending_block_edits(
             select(NovelJob)
             .where(
                 NovelJob.novel_id == novel_id,
-                NovelJob.kind == "ai_edit",
+                NovelJob.kind.in_(kinds_where(call_site="novelize_revise")),
                 NovelJob.status == "succeeded",
                 NovelJob.dismissed_at.is_(None),
                 NovelJob.instruction.is_not(None),
@@ -718,6 +719,7 @@ def _refunded_amount(job: NovelJob) -> int:
 
 
 async def _job_response(db: AsyncSession, job: NovelJob) -> NovelJobResponse:
+    facts = facts_of(job)
     ai_edit = (
         NovelAiEditPreview(
             base_revision_id=job.base_revision_id,
@@ -726,7 +728,7 @@ async def _job_response(db: AsyncSession, job: NovelJob) -> NovelJobResponse:
             instruction=job.instruction,
             result_text=job.result_text,
         )
-        if job.kind == "ai_edit"
+        if facts.call_site == "novelize_revise"
         else None
     )
     completed, planned = await _chain_progress(db, job)
@@ -741,7 +743,7 @@ async def _job_response(db: AsyncSession, job: NovelJob) -> NovelJobResponse:
         revision_id=job.result_revision_id,
         ai_edit=ai_edit,
         created_at=job.created_at,
-        model=None if job.kind == "ai_edit" else job.model or DEFAULT_CHAT_MODEL,
+        model=(job.model or DEFAULT_CHAT_MODEL) if facts.model_in_context else None,
         refunded_amount=_refunded_amount(job),
         batch_id=job.batch_id,
         completed_batches=completed,
@@ -1155,7 +1157,7 @@ async def _start_job(
     (`novelize/worker.py`). 연쇄 부모는 스위치와 무관하게 이 프로세스에서 띄운다(워커가 집지 않는 종류다)."""
     job = await create_charged_job(db, job=job, expected_cost=expected_cost, now=datetime.now(UTC))
     response = await _job_response(db, await db.get_one(NovelJob, job.id, populate_existing=True))
-    if job.kind == "chain_generate":
+    if facts_of(job).chain_only:
         await enqueue_chain_job(session_factory, llm_client, job.id)
     elif not settings.novelize_worker_enabled:
         await enqueue_job(session_factory, llm_client, job.id)
@@ -1927,7 +1929,7 @@ async def apply_novel_ai_edit(
     if job is None:
         raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_JOB_NOT_FOUND")
     if (
-        job.kind != "ai_edit"
+        facts_of(job).call_site != "novelize_revise"
         or job.status != "succeeded"
         or job.result_revision_id is not None
         or job.dismissed_at is not None
@@ -1988,7 +1990,7 @@ async def dismiss_novel_ai_edit(
     if job is None:
         raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_JOB_NOT_FOUND")
     if (
-        job.kind != "ai_edit"
+        facts_of(job).call_site != "novelize_revise"
         or job.status != "succeeded"
         or job.result_revision_id is not None
         or job.dismissed_at is not None

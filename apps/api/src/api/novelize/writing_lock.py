@@ -16,6 +16,7 @@ from api.core.config import settings
 from api.db.models.auth import User
 from api.db.models.content import Content
 from api.db.models.novel import Novel, NovelJob
+from api.novelize.job_variants import kinds_where
 
 
 def refuses_novelize(content: Content, user_id: uuid.UUID) -> bool:
@@ -119,7 +120,7 @@ async def first_saved_chapter_ats(db: AsyncSession, novel_ids: Sequence[uuid.UUI
         select(NovelJob.novel_id, func.min(NovelJob.finished_at))
         .where(
             NovelJob.novel_id.in_(novel_ids),
-            NovelJob.kind.in_(("chapter_generate", "outline_chapter_generate")),
+            NovelJob.kind.in_(kinds_where(locks_writing=True)),
             NovelJob.status == "succeeded",
             NovelJob.finished_at.is_not(None),
         )

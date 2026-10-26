@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from api.novelize.block_edits import BlockEdit, has_pending, stale_marked
+from api.novelize.job_variants import kinds_where
 from api.novelize.text import split_paragraphs
 from api.db.models.novel import (
     HomeNovelCuration,
@@ -370,7 +371,7 @@ async def erase_stale_ai_edit_previews(db: AsyncSession, chapter_id: uuid.UUID) 
         update(NovelJob)
         .where(
             NovelJob.chapter_id == chapter_id,
-            NovelJob.kind == "ai_edit",
+            NovelJob.kind.in_(kinds_where(call_site="novelize_revise")),
             NovelJob.status == "succeeded",
             NovelJob.result_revision_id.is_(None),
             NovelJob.dismissed_at.is_(None),
@@ -398,7 +399,7 @@ async def _erase_stale_patches(db: AsyncSession, chapter_id: uuid.UUID) -> None:
             select(NovelJob)
             .where(
                 NovelJob.chapter_id == chapter_id,
-                NovelJob.kind == "ai_edit",
+                NovelJob.kind.in_(kinds_where(call_site="novelize_revise")),
                 NovelJob.status == "succeeded",
                 NovelJob.dismissed_at.is_(None),
                 NovelJob.block_edit.contains({"patches": [{"state": "pending"}]}),
