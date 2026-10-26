@@ -412,7 +412,7 @@ async def test_complete_grants_paid_and_bonus_with_separate_keys(
     resp = await db_client.post(f"/payments/{order.payment_id}/complete")
 
     assert resp.status_code == 200
-    assert resp.json() == {"status": "paid", "balance": 3_600}
+    assert resp.json() == {"status": "paid", "balance": 3_600, "grantedPaid": 3_300, "grantedBonus": 300}
     assert await _ledger(db_session, user.id) == [
         ("purchase_bonus", 300, f"purchase:{order.id}:bonus"),
         ("purchase_paid", 3_300, f"purchase:{order.id}:paid"),
@@ -440,7 +440,7 @@ async def test_starter_product_without_bonus_gets_no_bonus_row(
 
     resp = await db_client.post(f"/payments/{order.payment_id}/complete")
 
-    assert resp.json() == {"status": "paid", "balance": 1_100}
+    assert resp.json() == {"status": "paid", "balance": 1_100, "grantedPaid": 1_100, "grantedBonus": 0}
     assert await _ledger(db_session, user.id) == [("purchase_paid", 1_100, f"purchase:{order.id}:paid")]
     assert [lot[0] for lot in await _lots(db_session, user.id)] == ["purchase_paid"]
 
@@ -484,7 +484,7 @@ async def test_mismatch_records_the_field_and_grants_nothing(
 
     resp = await db_client.post(f"/payments/{order.payment_id}/complete")
 
-    assert resp.json() == {"status": "mismatch", "balance": 0}
+    assert resp.json() == {"status": "mismatch", "balance": 0, "grantedPaid": None, "grantedBonus": None}
     row = await _order(db_session, order.id)
     assert (row.status, row.status_reason) == ("mismatch", field)
     assert await _ledger(db_session, user.id) == []
@@ -505,7 +505,7 @@ async def test_already_paid_order_ignores_a_later_paid_payment(
 
     resp = await db_client.post(f"/payments/{order.payment_id}/complete")
 
-    assert resp.json() == {"status": "paid", "balance": 0}
+    assert resp.json() == {"status": "paid", "balance": 0, "grantedPaid": None, "grantedBonus": None}
     assert (await _order(db_session, order.id)).status == "paid"
     assert captured == []
 
@@ -615,7 +615,7 @@ async def test_complete_twice_grants_once(
     first = await db_client.post(f"/payments/{order.payment_id}/complete")
     second = await db_client.post(f"/payments/{order.payment_id}/complete")
 
-    assert [first.json(), second.json()] == [{"status": "paid", "balance": 3_600}] * 2
+    assert [first.json(), second.json()] == [{"status": "paid", "balance": 3_600, "grantedPaid": 3_300, "grantedBonus": 300}] * 2
     assert [kind for kind, _, _ in await _ledger(db_session, user.id)] == ["purchase_bonus", "purchase_paid"]
 
 
@@ -657,7 +657,7 @@ async def test_complete_works_even_when_payments_are_switched_off(
 
     resp = await db_client.post(f"/payments/{order.payment_id}/complete")
 
-    assert resp.json() == {"status": "paid", "balance": 3_600}
+    assert resp.json() == {"status": "paid", "balance": 3_600, "grantedPaid": 3_300, "grantedBonus": 300}
 
 
 async def test_failed_pending_and_cancelled_before_grant(db_session: AsyncSession, gateway: _FakeGateway) -> None:
