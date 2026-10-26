@@ -677,6 +677,13 @@ async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_ve
     await _record_edition(db, chapter.chapter_id, chapter.change_summary)
 
 
+async def _touch_novel(db: AsyncSession, novel_id: uuid.UUID) -> None:
+    """작가의 공개 행동이 실제로 무언가를 바꾸면(공개·승인 대기 신청·다시 공개·거두기·신청 취소·무료 전환) 소설 수정 시각을
+    민다 — 작가의 작품 목록이 최근 수정 순이다. 아무것도 안 바뀐 요청(바뀐 것 없는 공개 요청, 이미 거둔 공개 다시 거두기,
+    이미 무료인 화)과 운영자 조치(승인·반려·이용제한)는 밀지 않는다."""
+    await db.execute(update(Novel).where(Novel.id == novel_id).values(updated_at=func.now()))
+
+
 async def _record_edition(db: AsyncSession, chapter_id: uuid.UUID, change_summary: str | None) -> None:
     """방금 쓴 화 공개본의 지금 판을 판 행으로 남긴다(정책 스위치와 무관) — 화 공개본 행을 그대로 베껴 판 번호·개정·제목·
     작가의 말·공개 시각·삽화 심사 시각이 공개본과 어긋나지 않는다. 변경 요약은 화 공개본에 없어 요청 값을 그대로 싣는다.
@@ -899,6 +906,7 @@ async def publish_novel(
     if not plan.writes_nothing:
         terms_version = await current_legal_version(db, "terms", now=datetime.now(UTC))
         await _apply(db, novel, plan, terms_version=terms_version)
+        await _touch_novel(db, novel.id)
         if picture_verdict is not None:
             await remember_passes(
                 db, [shas[index] for index in to_screen], model=picture_verdict.model, version=version
@@ -947,6 +955,7 @@ async def make_chapter_free(
         .values(price=0, price_changed_at=func.now())
     )
     await _remember_free(db, novel_id, publication.ordinal)
+    await _touch_novel(db, novel_id)
 
 
 @router.post("/{novel_id}/publication/chapters/{chapter_id}/free", dependencies=[Depends(require_legal_consent)])
@@ -987,15 +996,22 @@ async def withdraw_novel_publication(
     if cancelled is not None:
         await db.execute(delete(NovelChapterPublication).where(NovelChapterPublication.novel_id == novel_id))
         await db.execute(delete(NovelChapterEdition).where(NovelChapterEdition.novel_id == novel_id))
+        await _touch_novel(db, novel_id)
         await db.commit()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+    # 이미 거둔 공개는 아무것도 바뀌지 않으므로 소설 수정 시각을 밀지 않는다 — 공개 중인 행만 바꾸고, 바뀐 행이 없으면 행이
+    # 있는지만 본다(없으면 404, 있으면 그대로 204).
     updated = await db.scalar(
         update(NovelPublication)
-        .where(NovelPublication.novel_id == novel_id)
+        .where(NovelPublication.novel_id == novel_id, NovelPublication.visibility != "withdrawn")
         .values(visibility="withdrawn")
         .returning(NovelPublication.novel_id)
     )
     if updated is None:
-        raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_PUBLICATION_NOT_FOUND")
+        if await db.get(NovelPublication, novel_id) is None:
+            raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_PUBLICATION_NOT_FOUND")
+        await db.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    await _touch_novel(db, novel_id)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
