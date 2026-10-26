@@ -11,9 +11,18 @@ src 를 `sys.path` 맨 앞에 둔 생성 스크립트가, 이미 있던 함수�
 스크립트와 이 테스트가 같은 리터럴(`_FIXED_SETTINGS`)로 고정한다. env 나 로컬 `.env` 를 읽지 않으므로 로컬과 CI 가 같은 값을
 계산한다. 기대값 파일 머리에 생성 때 쓴 고정값과 케이스 목록이 적혀 있어, 이 테스트가 먼저 그것이 자기 것과 같은지 본다. 기대값을
 다시 만들어야 한다면 해석 함수가 없는 코드에서 같은 방식으로 만들어야 한다 — 해석 함수로 만들면 대조가 항진명제가 된다.
+
+소설 단계의 빈 표 기대값(`fixtures/prompt_routes_novel_empty_table_characterization.json`)은 따로 둔다. 해석 함수가 소설 레인을
+풀기 전 커밋에서 `PROMPT_ROUTES_NOVEL_GOLDEN_WRITE=1` 로 이 파일의 기록 테스트를 돌려 만든다. 기록은 해석 함수를 부르지 않고, 소설
+호출이 지금 실제로 가는 길을 그 길을 정하는 함수들(공급자 구현을 고르는 라우터와 같은 인자의 `pick_backend`·
+`structured_call_model`·`configured_call_site_model`, 소설 문안 체인의 기본 인자)로 적는다. 화 생성·구성안 두 단계는 작업 모델마다,
+작업 모델과 무관한 문단 수정·여러 문단 수정·재검사·경계 제안은 작업 모델 셋이 모두 같은 값을 내는지 확인한 뒤 "*" 한 줄로 적는다.
+기대값이 다르면 파일을 고치지 말고 멈춘다 — 해석 함수가 소설 레인을 푸는 코드로 다시 만들면 대조가 항진명제가 된다.
 """
 
+import inspect
 import json
+import os
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,11 +46,22 @@ from api.chat.prompt_routing import (
 from api.chat.prompt_stages import LANE_STAGES, STAGES, RoutingLane, stage_call_sites
 from api.core.config import settings
 from api.db.models.prompt import PromptSection, PromptSet
+from api.llm.backends import pick_backend
 from api.llm.call_policy import CALL_POLICIES, BackendId, LLMCallSite
-from api.llm.chat_models import ChatRoomModelId, PromptSetModelId, backend_model_id
+from api.llm.chat_models import (
+    ChatModelId,
+    ChatRoomModelId,
+    PromptSetModelId,
+    backend_model_id,
+    configured_call_site_model,
+    structured_call_model,
+)
 from api.llm.client import structured_model
+from api.novelize.inputs import load_novel_prompt_source
 
 _EXPECTED_PATH = Path(__file__).parent / "fixtures" / "prompt_routes_empty_table_characterization.json"
+_NOVEL_EXPECTED_PATH = Path(__file__).parent / "fixtures" / "prompt_routes_novel_empty_table_characterization.json"
+_NOVEL_WRITE_SWITCH = "PROMPT_ROUTES_NOVEL_GOLDEN_WRITE"
 
 _FIXED_SETTINGS: dict[str, Any] = {
     "gemini_model_name": "fixture-gemini-base",
@@ -138,6 +158,93 @@ def _model_id(call_site: LLMCallSite, backend: BackendId, model: PromptSetModelI
     if backend == "gemini":
         return structured_model(call_site, settings.gemini_model_name)
     return backend_model_id(backend, model)
+
+
+# 소설 단계 → 그 단계를 부르는 호출 위치. 문단 수정과 여러 문단 수정은 같은 호출 위치를 쓰고 읽는 채널만 다르다. 기록 때 코드에는
+# 이 단계 이름이 없어 여기 적어 두고, 대조 테스트가 해석 쪽 단계 표와 같은지 본다.
+_NOVEL_STAGE_CALL_SITES: dict[str, LLMCallSite] = {
+    "novel_chapter": "novelize_chapter",
+    "novel_outline": "novelize_outline",
+    "novel_episode_outline": "novelize_episode_outline",
+    "novel_revise": "novelize_revise",
+    "novel_revise_blocks": "novelize_revise",
+    "novel_recheck": "novelize_revise_recheck",
+    "novel_boundary": "novelize_boundary",
+}
+# 작업 모델이 문안 체인과 부를 모델을 정하는 단계. 나머지 넷은 작업 모델과 무관하다.
+_NOVEL_JOB_MODEL_STAGES = frozenset({"novel_chapter", "novel_outline", "novel_episode_outline"})
+
+
+def _novel_cases() -> list[dict[str, Any]]:
+    """기본값 하나, 경로마다(직결·Bedrock) 화 생성만 배정(구성안 둘은 물려받음)·구성안 둘만 배정·소설 호출 위치 전부 배정, 그리고
+    소설 Gemini 모델명을 비운 케이스."""
+    cases: list[dict[str, Any]] = [{"name": "defaults", "settings": {}}]
+    novel_sites = sorted(set(_NOVEL_STAGE_CALL_SITES.values()))
+    for assign in ("anthropic", "bedrock"):
+        cases.append(
+            {"name": f"chapter-on-{assign}", "settings": {"llm_call_site_backends": {"novelize_chapter": assign}}}
+        )
+        cases.append(
+            {
+                "name": f"outlines-on-{assign}",
+                "settings": {
+                    "llm_call_site_backends": {"novelize_outline": assign, "novelize_episode_outline": assign}
+                },
+            }
+        )
+        cases.append(
+            {
+                "name": f"every-novel-call-site-on-{assign}",
+                "settings": {"llm_call_site_backends": dict.fromkeys(novel_sites, assign)},
+            }
+        )
+    cases.append({"name": "novelize-model-name-empty", "settings": {"gemini_novelize_model_name": ""}})
+    return cases
+
+
+def _novel_route_today(stage: str, job_model: ChatModelId) -> list[str]:
+    """그 소설 단계가 그 작업 모델로 지금 읽는 체인·부르는 모델·경로·실제 모델 id. 체인은 화 생성·구성안이면 작업 모델, 나머지는
+    소설 문안 체인 읽기의 기본 인자다. 모델·경로는 공급자 구현을 고르는 라우터와 같은 인자로 푼다 — 스트림 호출은 실린 모델,
+    구조화 호출은 `structured_call_model` 이 고른 모델을 `pick_backend` 에 넘긴다."""
+    call_site = _NOVEL_STAGE_CALL_SITES[stage]
+    default_chain: ChatModelId = inspect.signature(load_novel_prompt_source).parameters["model"].default
+    chain = job_model if stage in _NOVEL_JOB_MODEL_STAGES else default_chain
+    routed = (
+        job_model if CALL_POLICIES[call_site].call_kind == "stream" else structured_call_model(call_site, job_model)
+    )
+    model, backend = pick_backend(
+        call_site, routed, settings.llm_call_site_backends, call_model=configured_call_site_model(call_site)
+    )
+    return [chain, model, backend, _model_id(call_site, backend, model)]
+
+
+@pytest.mark.skipif(
+    not os.environ.get(_NOVEL_WRITE_SWITCH), reason=f"{_NOVEL_WRITE_SWITCH}=1 일 때만 기대값 파일을 쓴다"
+)
+def test_write_the_novel_empty_table_expected_routes(fixed_settings: pytest.MonkeyPatch) -> None:
+    rows: list[list[str]] = []
+    for case in _novel_cases():
+        with fixed_settings.context() as patch:
+            for name, value in case["settings"].items():
+                patch.setattr(settings, name, value)
+            for stage, call_site in _NOVEL_STAGE_CALL_SITES.items():
+                by_job_model = {model: _novel_route_today(stage, model) for model in get_args(ChatModelId)}
+                if stage in _NOVEL_JOB_MODEL_STAGES:
+                    rows.extend(
+                        [case["name"], model, stage, call_site, *route] for model, route in by_job_model.items()
+                    )
+                    continue
+                distinct = {tuple(route) for route in by_job_model.values()}
+                assert len(distinct) == 1, (case["name"], stage, by_job_model)
+                rows.append([case["name"], "*", stage, call_site, *by_job_model["gemini"]])
+    expected = {
+        "fixedSettings": _FIXED_SETTINGS,
+        "cases": _novel_cases(),
+        "stageCallSites": _NOVEL_STAGE_CALL_SITES,
+        "columns": ["case", "jobModel", "stage", "callSite", "chainModel", "callModel", "backend", "modelId"],
+        "rows": rows,
+    }
+    _NOVEL_EXPECTED_PATH.write_text(json.dumps(expected, ensure_ascii=False, sort_keys=True) + "\n")
 
 
 def _resolve(
