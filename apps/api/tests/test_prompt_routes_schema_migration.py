@@ -1,4 +1,5 @@
-"""방 모델별 단계 배정 표(`prompt_routes`)와 저장 이력 표(`prompt_route_revisions`)의 제약과 downgrade 가드·왕복.
+"""방 모델별 단계 배정 표(`prompt_routes`)와 저장 이력 표(`prompt_route_revisions`)의 제약과 downgrade 가드·왕복, 그리고 두 표를
+소설 레인까지 넓힌 리비전(생성 행 CHECK 둘을 소설 생성 세 단계까지, 이력의 저장 경로 칸)의 제약과 downgrade 가드·왕복.
 
 `alembic check` 는 CHECK 제약과 부분 인덱스 술어를 비교하지 않으므로, 아래 `IntegrityError` 테스트가 그 제약의 유일한 신호다.
 downgrade·upgrade 를 실제로 돌리는 테스트는 `ddl_engine` 의 롤백되는 트랜잭션 안에서 돌린다."""
@@ -22,9 +23,9 @@ from factories import _create_admin
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
 
-def _load_schema_migration() -> ModuleType:
-    (path,) = _VERSIONS_DIR.glob("*_prompt_routes.py")
-    spec = importlib.util.spec_from_file_location("_migration_prompt_routes", path)
+def _load_schema_migration(suffix: str = "prompt_routes") -> ModuleType:
+    (path,) = _VERSIONS_DIR.glob(f"*_{suffix}.py")
+    spec = importlib.util.spec_from_file_location(f"_migration_{suffix}", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -32,6 +33,7 @@ def _load_schema_migration() -> ModuleType:
 
 
 _M = _load_schema_migration()
+_NOVEL = _load_schema_migration("prompt_routes_novel_lane")
 
 
 async def _run(connection: AsyncConnection, step: Callable[[], None]) -> None:
@@ -242,3 +244,124 @@ async def test_saving_an_empty_table_still_counts_as_written(ddl_engine: AsyncEn
             await transaction.rollback()
 
     assert still == {"prompt_routes", "prompt_route_revisions"}
+
+
+# ── 소설 레인 ────────────────────────────────────────────────────────────────
+def _novel_route(stage: str, *, room_model: str, chain_model: str | None, call_model: str, backend: str) -> PromptRoute:
+    return _route(
+        stage, chain_model=chain_model, call_model=call_model, lane="novel", room_model=room_model, backend=backend
+    )
+
+
+async def test_a_novel_chapter_route_must_not_name_a_chain(db_session: AsyncSession) -> None:
+    """소설 화 생성 행도 체인을 두지 않는다 — 늘 작업 모델의 체인을 읽는다. 깨지는 시나리오: 화 생성 행에 다른 체인이 저장돼 그
+    행을 믿는 코드가 작업 모델과 다른 문안으로 소설을 쓴다."""
+    await _rejects(
+        db_session,
+        _novel_route(
+            "novel_chapter", room_model="sonnet", chain_model="sonnet", call_model="sonnet", backend="anthropic"
+        ),
+        "ck_prompt_routes_generation_has_no_chain",
+    )
+
+
+async def test_a_novel_outline_route_must_call_the_job_model(db_session: AsyncSession) -> None:
+    """소설 구성안 생성 행의 호출 모델은 작업 모델과 같다. 깨지는 시나리오: Opus 작업 단가로 차감하면서 다른 모델로 구성안을 써
+    값과 원가가 어긋난다."""
+    await _rejects(
+        db_session,
+        _novel_route("novel_outline", room_model="opus", chain_model=None, call_model="gemini", backend="gemini"),
+        "ck_prompt_routes_generation_calls_room_model",
+    )
+
+
+async def test_a_novel_generation_route_takes_no_chain_and_a_novel_structured_route_needs_one(
+    db_session: AsyncSession,
+) -> None:
+    """화 생성 행은 체인 없이 작업 모델을 부르면 들어가고, 문단 수정 행은 체인을 두면 다른 모델을 부를 수 있지만 체인이 없으면
+    거부된다. 깨지는 시나리오: CHECK 를 넓히다 구조화 행의 체인 강제까지 풀거나, 평범한 소설 생성 행 저장이 500 이 된다."""
+    db_session.add_all(
+        [
+            _novel_route(
+                "novel_chapter", room_model="sonnet", chain_model=None, call_model="sonnet", backend="anthropic"
+            ),
+            _novel_route(
+                "novel_revise", room_model="any", chain_model="gemini", call_model="haiku", backend="anthropic"
+            ),
+        ]
+    )
+    await db_session.flush()
+    await _rejects(
+        db_session,
+        _novel_route("novel_recheck", room_model="any", chain_model=None, call_model="haiku", backend="anthropic"),
+        "ck_prompt_routes_generation_has_no_chain",
+    )
+
+
+async def test_an_old_mapper_insert_without_the_path_column_still_writes_a_revision(db_session: AsyncSession) -> None:
+    """저장 경로 칸을 모르는 옛 이미지의 INSERT 에는 그 칸이 없다. 칸이 NULL 을 받아야 배포 겹침·이미지 롤백 동안 옛 이미지의 배정
+    저장이 500 이 되지 않는다. NULL 은 표 전체를 갈아 끼운 옛 저장이라는 뜻이다."""
+    admin = await _create_admin(db_session)
+    await db_session.execute(
+        sa.text(
+            "INSERT INTO prompt_route_revisions (id, number, rows, note, admin_id)"
+            " VALUES (gen_random_uuid(), 1, '[]'::jsonb, '', :admin_id)"
+        ),
+        {"admin_id": admin["id"]},
+    )
+
+    lanes = await db_session.scalar(sa.text("SELECT lanes FROM prompt_route_revisions WHERE number = 1"))
+
+    assert lanes is None
+
+
+async def _columns(connection: AsyncConnection) -> set[str]:
+    rows = await connection.execute(
+        sa.text("SELECT column_name FROM information_schema.columns WHERE table_name = 'prompt_route_revisions'")
+    )
+    return set(rows.scalars().all())
+
+
+async def _insert_novel_chapter(connection: AsyncConnection) -> None:
+    await connection.execute(
+        sa.text(
+            "INSERT INTO prompt_routes (id, lane, room_model, stage, chain_model, call_model, backend)"
+            " VALUES (gen_random_uuid(), 'novel', 'sonnet', 'novel_chapter', NULL, 'sonnet', 'anthropic')"
+        )
+    )
+
+
+async def test_the_novel_lane_downgrade_refuses_while_a_novel_generation_route_exists_and_round_trips_without_one(
+    ddl_engine: AsyncEngine,
+) -> None:
+    """좁히는 CHECK 는 체인 없는 소설 생성 행을 받지 않는다. 그런 행이 있으면 downgrade 가 아무것도 바꾸기 전에 멈추고(조용히
+    지우지 않는다), 없으면 내렸다 올려도 저장 경로 칸과 넓힌 CHECK 가 돌아온다. 깨지는 시나리오: downgrade 가 어드민이 저장한
+    소설 행을 지우거나, 내린 뒤 옛 CHECK 가 돌아오지 않는다."""
+    async with ddl_engine.connect() as connection:
+        transaction = await connection.begin()
+        try:
+            await _insert_novel_chapter(connection)
+            with pytest.raises(RuntimeError, match="소설 레인을 비워 저장"):
+                async with connection.begin_nested():
+                    await _run(connection, _NOVEL.downgrade)
+            kept = (
+                await connection.scalar(sa.text("SELECT count(*) FROM prompt_routes")),
+                "lanes" in await _columns(connection),
+            )
+
+            await connection.execute(sa.text("DELETE FROM prompt_routes"))
+            await _run(connection, _NOVEL.downgrade)
+            down_has_lanes = "lanes" in await _columns(connection)
+            with pytest.raises(IntegrityError, match="ck_prompt_routes_generation_has_no_chain"):
+                async with connection.begin_nested():
+                    await _insert_novel_chapter(connection)
+
+            await _run(connection, _NOVEL.upgrade)
+            up_has_lanes = "lanes" in await _columns(connection)
+            async with connection.begin_nested():
+                await _insert_novel_chapter(connection)
+        finally:
+            await transaction.rollback()
+
+    assert kept == (1, True)
+    assert (down_has_lanes, up_has_lanes) == (False, True)

@@ -144,6 +144,48 @@ async def test_a_row_the_code_does_not_know_is_dropped_and_the_rest_is_read(
     assert sum("모르는 배정 행" in record.getMessage() for record in caplog.records) == 4
 
 
+async def test_novel_rows_are_read_and_cached_with_their_own_cell_axes(db_session: AsyncSession, calls: _Calls) -> None:
+    """소설 생성 칸은 작업 모델, 소설 구조화 칸은 표지 `any` 로 키가 잡힌다. 캐시를 거쳐도 같은 칸으로 읽혀야 해석이 그 행을 찾는다."""
+    db_session.add(
+        PromptRoute(
+            lane="novel",
+            room_model="any",
+            stage="novel_revise",
+            chain_model="sonnet",
+            call_model="haiku",
+            backend="anthropic",
+        )
+    )
+    db_session.add(
+        PromptRoute(
+            lane="novel",
+            room_model="sonnet",
+            stage="novel_chapter",
+            chain_model=None,
+            call_model="sonnet",
+            backend="anthropic",
+        )
+    )
+    await db_session.flush()
+
+    from_db = await load_prompt_routes(db_session)
+    from_cache = await load_prompt_routes(db_session)
+
+    assert from_db == from_cache
+    assert from_db.get("novel", "any", "novel_revise") == RouteRow(
+        lane="novel",
+        room_model="any",
+        stage="novel_revise",
+        chain_model="sonnet",
+        call_model="haiku",
+        backend="anthropic",
+    )
+    chapter = from_db.get("novel", "sonnet", "novel_chapter")
+    assert chapter is not None
+    assert (chapter.chain_model, chapter.call_model) == (None, "sonnet")
+    assert (calls.get, calls.db, calls.set) == (2, 1, 1)
+
+
 def _failing() -> Callable[..., Awaitable[Any]]:
     async def fail(*_args: Any, **_kwargs: Any) -> Any:
         raise RedisError("down")
