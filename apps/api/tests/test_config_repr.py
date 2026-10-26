@@ -6,6 +6,8 @@
 고르는 대신 repr 전체에서 값을 뺀다.
 """
 
+import re
+
 import pytest
 
 from api.core.config import Settings
@@ -56,3 +58,21 @@ def test_failed_assertion_message_does_not_reveal_values() -> None:
     # 단언 재작성이 꺼져 있으면 메시지가 비어 표지 검사가 거짓으로 통과한다 — repr 이 실제로 실렸는지 먼저 본다.
     assert "redis_url" in message
     assert _MARKER not in message
+
+
+def test_every_shown_field_hides_its_value() -> None:
+    """값을 가릴 필드를 하나씩 고르지 않는다 — 새 필드를 더해도 판단 없이 가려지도록 표시되는 필드 전부가 가림 표시다."""
+    shown = list(_settings_with_marker().__repr_args__())
+
+    assert shown
+    assert [name for name, value in shown if repr(value) != "<hidden>"] == []
+
+
+def test_secret_fields_do_not_appear_even_by_name() -> None:
+    """비밀 필드는 값 가림이 빠져도 새지 않게 이름째 repr 에서 뺀다 — 가림과 겹치는 두 번째 방어다."""
+    settings = _settings_with_marker()
+    secret_names = [name for name, field in Settings.model_fields.items() if not field.repr]
+    rendered = repr(settings)
+
+    assert secret_names
+    assert [name for name in secret_names if re.search(rf"(?<!\w){name}=", rendered)] == []
