@@ -580,15 +580,16 @@ cd /opt/ddona/app && sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전SHA>
 건너뛰면 새 코드가 자기 마이그레이션 없는 스키마에서 뜨고 `/health` 는 DB 를 보지 않아 배포가 초록으로 끝난다. 롤백해 둔 동안
 태그를 생략한 env 반영 재교체도 같은 상황이라 표시를 붙인다(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh`). DB 가 이미지보다
 뒤거나 같으면 표시와 상관없이 upgrade 한다. 판정 자체가 실패하면(DB 에 못 닿음 등) 건너뛰지 않고 멈춘다.
-스키마까지 내려야(downgrade) 하면 그 전에 되돌릴 리비전 파일을 가진 그 이미지로 함께 내려갈 리비전을 본다:
+스키마까지 내려야(downgrade) 하면 그 전에 되돌릴 리비전 파일을 가진 그 이미지로 함께 내려갈 리비전을 본다(옛 태그로 돌리면
+목표 위 리비전이 보이지 않는다 — 그 이미지로는 이어지는 downgrade 도 멈추니 안전하지만 확인이 안 된다):
 
 ```sh
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<그 TAG> alembic history -r <목표 리비전>:head
 ```
 
 `alembic downgrade` 는 목표 위에 쌓인 리비전을 전부 내리고, 기능이 들어간 뒤에도 다른 작업의 리비전이 그
-사이와 위에 계속 쌓이므로 기능 절에 적힌 사이 리비전 목록은 믿지 않고 이 출력만 본다. 다른 작업의 리비전이 보이면 멈추고 그
-작업 주인과 정한다.
+사이와 위에 계속 쌓이므로 기능 절에 적힌 사이 리비전 목록은 믿지 않고 이 출력만 본다. 출력의 마지막 줄은 목표 리비전 자신이라
+내려가지 않는다 — 그 줄을 뺀 나머지, 곧 함께 내려갈 리비전 중 다른 작업의 리비전이 있으면 멈추고 그 작업 주인과 정한다.
 법무 문서에 시행 예정(예약) 판이 있으면 먼저 어드민에서 철회한 뒤 시행 시각(`effective_at`)이 생기기 전 이미지로 롤백한다(옛 코드는
 예약 판을 즉시 현행으로 본다).
 과거 태그는 `gcloud artifacts docker tags list asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api`.
