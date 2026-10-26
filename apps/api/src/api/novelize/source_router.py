@@ -39,7 +39,8 @@ def _decode_cursor(cursor: str) -> tuple[datetime, datetime, uuid.UUID]:
     try:
         activity_at, created_at, room_id = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
         key = datetime.fromisoformat(activity_at), datetime.fromisoformat(created_at), uuid.UUID(room_id)
-    except (ValueError, TypeError) as exc:
+    # 숫자·배열 같은 방 id 는 uuid.UUID 가 AttributeError 로 거절한다.
+    except (ValueError, TypeError, AttributeError) as exc:
         raise invalid from exc
     # 방의 정렬 키는 시간대 있는 시각이라, 오프셋 없는 시각과 비교하면 TypeError 로 500 이 난다.
     if key[0].tzinfo is None or key[1].tzinfo is None:
