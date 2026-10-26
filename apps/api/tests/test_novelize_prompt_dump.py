@@ -65,6 +65,7 @@ _RECORD_KEYS = {
     "callSite",
     "jobModel",
     "callModel",
+    "episodeNumber",
     "novelSetId",
     "channel",
     "scope",
@@ -307,6 +308,8 @@ async def test_with_a_dump_path_each_job_writes_one_line_with_a_fixed_set_of_fie
     ]
     assert {(r["jobModel"], r["scope"], r["withRating"]) for r in records} == {("gemini", "character", True)}
     assert all(isinstance(r["callModel"], str) and r["callModel"] for r in records)
+    # 화 번호는 구성 흐름 원고만 싣는다 — 원고 판정이 머리 줄의 화 번호 예외를 이 값으로 건다.
+    assert [r["episodeNumber"] for r in records] == [None, None, 1]
     # 덤프의 sha 는 가짜 모델이 실제로 받은 바이트의 sha 다.
     assert [(r["systemSha256"], r["promptSha256"]) for r in records] == [
         (_sha(system), _sha(prompt)) for _, _, system, prompt in llm.calls
