@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useId, useState } from "react";
 
 import { isPremiumChatModel, type ChatModel, type ChatModelId } from "@/entities/chat-model";
@@ -64,6 +64,8 @@ export function ChatModelOptions({
   onCommit,
 }: ChatModelOptionsProps) {
   const { data: clover } = useCloverBalanceQuery();
+  // 충전하고 돌아올 곳. 충전 화면이 이 주소로 "돌아가기"를 두고, 결제창·로그인 왕복 뒤에도 잃지 않게 넘겨 다닌다.
+  const returnTo = useRouterState({ select: (state) => state.location.href });
   const { data: me } = useSessionQuery();
   const [pendingModelId, setPendingModelId] = useState<ChatModelId | undefined>(undefined);
   const confirmId = useId();
@@ -163,7 +165,7 @@ export function ChatModelOptions({
           {pendingPremiumModel && isPendingModelShort && (
             <p id={shortageId} className="text-sm break-keep text-foreground">
               {formatPremiumModelShortage(pendingPremiumModel)}{" "}
-              <Link to="/clover" className={INLINE_LINK_CLASS}>
+              <Link to="/clover" search={{ returnTo }} className={INLINE_LINK_CLASS}>
                 클로버 충전하기
               </Link>
               {chargeLinkNote !== undefined && ` ${chargeLinkNote}`}

@@ -26,6 +26,8 @@ type ProductsSectionProps = {
   section: PurchaseSection | undefined;
   requested: RequestedProduct<CloverProductOffer>;
   onPick: (product: CloverProductOffer) => void;
+  /** 이 화면이 받은 복귀 주소. 로그인하러 갔다 돌아올 주소에도 실어 충전 뒤 돌아갈 곳을 잃지 않는다. */
+  returnTo: string | undefined;
 };
 
 /** 충전 상품. 행 모양은 누르면 일어나는 일에 따라 셋이다 — 살 수 있으면 구매 확인을 여는 버튼, 로그인하지 않았으면
@@ -46,13 +48,14 @@ export function ProductsSection({
   section,
   requested,
   onPick,
+  returnTo,
 }: ProductsSectionProps) {
   return (
     <HubSection title="충전 상품" headingRef={headingRef}>
       <RequestedProductNotice requested={requested} />
       {isPending && <ProductListSkeleton />}
       {isError && !products && <ProductsErrorState onRetry={onRetry} />}
-      {products && section && <ProductList products={products} section={section} onPick={onPick} />}
+      {products && section && <ProductList products={products} section={section} onPick={onPick} returnTo={returnTo} />}
     </HubSection>
   );
 }
@@ -61,10 +64,12 @@ function ProductList({
   products,
   section,
   onPick,
+  returnTo,
 }: {
   products: readonly CloverProductOffer[];
   section: PurchaseSection;
   onPick: (product: CloverProductOffer) => void;
+  returnTo: string | undefined;
 }) {
   if (section === "pending") return <ProductListSkeleton />;
   if (products.length === 0) {
@@ -94,7 +99,7 @@ function ProductList({
           <ul className="flex flex-col gap-3">
             {products.map((product) => (
               <li key={product.key}>
-                <LoginProductLink product={product} />
+                <LoginProductLink product={product} returnTo={returnTo} />
               </li>
             ))}
           </ul>
@@ -137,9 +142,9 @@ function ProductsFootnoteLine({ section }: { section: PurchaseSection }) {
  * 자신의 `?product=` 주소로 보내면 같은 화면이 다시 그려질 뿐이다. 로그인한 뒤에는 그 상품을 담은 이 화면으로 돌아와
  * 구매 확인이 열린다. 다른 화면으로 넘어가는 행이라 끝에 셰브런을 두고, 보이는 상품 정보 뒤에 목적지를 덧붙인다
  * (`aria-label` 로 덮으면 보이는 글자와 읽는 이름이 갈린다). */
-function LoginProductLink({ product }: { product: CloverProductOffer }) {
+function LoginProductLink({ product, returnTo }: { product: CloverProductOffer; returnTo: string | undefined }) {
   const router = useRouter();
-  const redirect = router.buildLocation({ to: "/clover", search: { product: product.key } }).href;
+  const redirect = router.buildLocation({ to: "/clover", search: { product: product.key, returnTo } }).href;
 
   return (
     <Link to="/login" search={{ redirect }} className={PRODUCT_CARD_CLASS}>

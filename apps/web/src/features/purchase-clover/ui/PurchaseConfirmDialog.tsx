@@ -38,6 +38,8 @@ type PurchaseConfirmDialogProps = {
   payMethods: CloverPayMethodItem[];
   /** 계정 이메일. 구매자 이메일 칸을 미리 채운다. */
   email: string;
+  /** 충전 화면이 받은 복귀 주소. 결제창이 페이지를 떠났다 돌아와도 갈 곳을 잃지 않게 넘긴다. */
+  returnTo: string | undefined;
 };
 
 /** 다이얼로그 안에 남는 결과 — 고쳐서 다시 누를 수 있거나(완료되지 않음), 다시 눌러도 같아 이유를 읽어야 하는 것. */
@@ -54,7 +56,7 @@ type DialogNotice = Extract<PurchaseResult, "notCompleted" | "ageRestricted" | "
  * 입력한 구매자 정보를 다시 치지 않게. 지급이 끝났거나 확인 중이면 닫고 결과를 호출부에 넘긴다 — 충전 화면이 리다이렉트
  * 복귀(모바일)와 같은 결과 자리에 그린다. */
 export const PurchaseConfirmDialog = createCallable<PurchaseConfirmDialogProps, SettledPurchase | null>(
-  ({ call, product, payMethods, email }) => {
+  ({ call, product, payMethods, email, returnTo }) => {
     const fieldId = useId();
     const [firstPayMethod] = payMethods;
     const form = useForm<PurchaseFormValues>({
@@ -81,6 +83,7 @@ export const PurchaseConfirmDialog = createCallable<PurchaseConfirmDialogProps, 
         payMethod,
         values,
         onCheckoutOpen: () => setIsCheckoutOpen(true),
+        returnTo,
       });
       // 리다이렉트는 페이지가 떠나는 중이라 다시 띄우지 않는다.
       if (attempt.result !== "redirecting") setIsCheckoutOpen(false);

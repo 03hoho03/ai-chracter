@@ -1,0 +1,160 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  clearAllChatDrafts,
+  clearRejectedChatMessage,
+  pickChatDraftToRestore,
+  restoreRejectedIntoInput,
+  readChatDraft,
+  removeChatDraft,
+  saveChatDraftInput,
+  saveRejectedChatMessage,
+  takeChatDraftToRestore,
+} from "./chatDraft";
+
+function memoryStorage(initial: Record<string, string> = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => void values.set(key, value),
+    removeItem: (key: string) => void values.delete(key),
+    key: (index: number) => [...values.keys()][index] ?? null,
+    get length() {
+      return values.size;
+    },
+    values,
+  };
+}
+
+const blocked = () => {
+  throw new DOMException("The operation is insecure.", "SecurityError");
+};
+
+describe("채팅 초안 저장", () => {
+  it("방마다 따로 저장하고 읽는다", () => {
+    const storage = memoryStorage();
+    saveChatDraftInput("room-a", "안녕", () => storage);
+    saveChatDraftInput("room-b", "반가워", () => storage);
+    expect(readChatDraft("room-a", () => storage)).toEqual({ input: "안녕", rejected: "" });
+    expect(readChatDraft("room-b", () => storage)).toEqual({ input: "반가워", rejected: "" });
+  });
+
+  it("입력 초안과 거절된 메시지를 함께 두고, 거절된 메시지만 따로 지운다", () => {
+    const storage = memoryStorage();
+    saveRejectedChatMessage("room-a", "보내려던 말", () => storage);
+    saveChatDraftInput("room-a", "새로 쓰는 말", () => storage);
+    expect(readChatDraft("room-a", () => storage)).toEqual({ input: "새로 쓰는 말", rejected: "보내려던 말" });
+    clearRejectedChatMessage("room-a", () => storage);
+    expect(readChatDraft("room-a", () => storage)).toEqual({ input: "새로 쓰는 말", rejected: "" });
+  });
+
+  it("둘 다 비면 키를 남기지 않는다", () => {
+    const storage = memoryStorage();
+    saveChatDraftInput("room-a", "안녕", () => storage);
+    saveChatDraftInput("room-a", "", () => storage);
+    expect(storage.values.size).toBe(0);
+  });
+
+  it("방을 지우면 그 방 초안만 지운다", () => {
+    const storage = memoryStorage();
+    saveChatDraftInput("room-a", "a", () => storage);
+    saveChatDraftInput("room-b", "b", () => storage);
+    removeChatDraft("room-a", () => storage);
+    expect(readChatDraft("room-a", () => storage)).toBeNull();
+    expect(readChatDraft("room-b", () => storage)).not.toBeNull();
+  });
+
+  // 같은 탭에서 다른 계정으로 로그인했을 때 앞 계정의 초안이 보이면 안 된다.
+  it("전부 지우기는 채팅 초안 키만 지우고 다른 값은 남긴다", () => {
+    const storage = memoryStorage({ other: "keep" });
+    saveChatDraftInput("room-a", "a", () => storage);
+    saveRejectedChatMessage("room-b", "b", () => storage);
+    clearAllChatDrafts(() => storage);
+    expect([...storage.values.keys()]).toEqual(["other"]);
+  });
+
+  it("깨진 저장값은 없는 것으로 읽는다", () => {
+    const storage = memoryStorage();
+    saveChatDraftInput("room-a", "a", () => storage);
+    const [key = ""] = storage.values.keys();
+    storage.values.set(key, "{not json");
+    expect(readChatDraft("room-a", () => storage)).toBeNull();
+    storage.values.set(key, JSON.stringify({ input: 1 }));
+    expect(readChatDraft("room-a", () => storage)).toBeNull();
+  });
+
+  it("저장소가 막혀도 던지지 않는다", () => {
+    expect(readChatDraft("room-a", blocked)).toBeNull();
+    expect(() => saveChatDraftInput("room-a", "a", blocked)).not.toThrow();
+    expect(() => saveRejectedChatMessage("room-a", "a", blocked)).not.toThrow();
+    expect(() => clearRejectedChatMessage("room-a", blocked)).not.toThrow();
+    expect(() => removeChatDraft("room-a", blocked)).not.toThrow();
+    expect(() => clearAllChatDrafts(blocked)).not.toThrow();
+  });
+});
+
+describe("pickChatDraftToRestore", () => {
+  it("저장값이 없으면 되살릴 글이 없다", () => {
+    expect(pickChatDraftToRestore(null)).toBe("");
+  });
+
+  it("입력 초안이 없으면 거절된 메시지를 되살린다", () => {
+    expect(pickChatDraftToRestore({ input: "", rejected: "보내려던 말" })).toBe("보내려던 말");
+  });
+
+  // 거절된 메시지는 보낼 때 입력창을 비운 뒤에 생기므로, 입력 초안이 있다면 그 뒤에 새로 쓴 글이다.
+  it("입력 초안이 있으면 거절된 메시지로 덮지 않는다", () => {
+    expect(pickChatDraftToRestore({ input: "새로 쓰는 말", rejected: "보내려던 말" })).toBe("새로 쓰는 말");
+  });
+
+  it("공백뿐인 입력 초안은 없는 것으로 본다", () => {
+    expect(pickChatDraftToRestore({ input: "  \n", rejected: "보내려던 말" })).toBe("보내려던 말");
+  });
+});
+
+describe("takeChatDraftToRestore", () => {
+  // 되살린 거절 메시지를 지운 뒤 방에 다시 들어와도 또 돌아오면 안 된다 — 되살린 순간 입력 초안이 된다.
+  it("거절된 메시지를 되살리면 입력 초안으로 옮기고 거절 칸은 비운다", () => {
+    const storage = memoryStorage();
+    saveRejectedChatMessage("room-a", "보내려던 말", () => storage);
+    expect(takeChatDraftToRestore("room-a", () => storage)).toBe("보내려던 말");
+    expect(readChatDraft("room-a", () => storage)).toEqual({ input: "보내려던 말", rejected: "" });
+    saveChatDraftInput("room-a", "", () => storage);
+    expect(takeChatDraftToRestore("room-a", () => storage)).toBe("");
+  });
+
+  it("입력 초안이 있으면 그것을 되살리고 거절 칸은 비운다", () => {
+    const storage = memoryStorage();
+    saveRejectedChatMessage("room-a", "보내려던 말", () => storage);
+    saveChatDraftInput("room-a", "새로 쓰는 말", () => storage);
+    expect(takeChatDraftToRestore("room-a", () => storage)).toBe("새로 쓰는 말");
+    expect(readChatDraft("room-a", () => storage)).toEqual({ input: "새로 쓰는 말", rejected: "" });
+  });
+
+  // 개발 모드는 상태 초기값 함수를 두 번 부른다 — 두 번째도 같은 글이어야 한다.
+  it("두 번 불러도 같은 글을 돌려준다", () => {
+    const storage = memoryStorage();
+    saveRejectedChatMessage("room-a", "보내려던 말", () => storage);
+    takeChatDraftToRestore("room-a", () => storage);
+    expect(takeChatDraftToRestore("room-a", () => storage)).toBe("보내려던 말");
+  });
+
+  it("초안이 없으면 빈 글이고 키를 만들지 않는다", () => {
+    const storage = memoryStorage();
+    expect(takeChatDraftToRestore("room-a", () => storage)).toBe("");
+    expect(storage.values.size).toBe(0);
+  });
+});
+
+describe("restoreRejectedIntoInput", () => {
+  // 클로버가 모자라 거절된 글은 말풍선을 거두는 그 자리에서 입력창으로 돌아온다 — 다시 보낼 글이 눈앞에 있어야 한다.
+  it("입력창이 비어 있으면 거절된 글을 넣는다", () => {
+    expect(restoreRejectedIntoInput("", "보내려던 말")).toBe("보내려던 말");
+    expect(restoreRejectedIntoInput("  \n", "보내려던 말")).toBe("보내려던 말");
+  });
+
+  // 기다리는 사이 새로 쓴 글이 있으면 그것이 더 나중의 뜻이다 — 방에 돌아올 때의 규칙과 같다.
+  it("입력창에 글이 있으면 덮지 않는다", () => {
+    expect(restoreRejectedIntoInput("새로 쓰는 말", "보내려던 말")).toBeNull();
+  });
+});
