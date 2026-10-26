@@ -8922,6 +8922,56 @@
         }
       }
     },
+    "/me/novel-sources": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "List Novel Sources",
+        "description": "내 채팅방을 내 채팅 목록과 같은 순서·같은 방 칸으로, 방마다 그 방의 소설 id 와 새 소설 만들기 막힘 여부를 붙여 한\n페이지씩. 원작이 이용제한된 방도 싣는다 — 소설은 만들 수 있고 생성 경로가 막는다. 커서는 정렬 키 전체(활동 시각·생성\n시각·방 id)라 동점 방이 페이지 경계에 걸려도 겹치거나 빠지지 않는다. \"대화 N\" 번호는 자르기 전 전체 방으로 센다.",
+        "operationId": "list_novel_sources_me_novel_sources_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelSourceListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/novels/{novel_id}/outline": {
       "get": {
         "tags": [
@@ -33274,6 +33324,62 @@
             "format": "date-time",
             "title": "Updatedat"
           },
+          "writingLockedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Writinglockedat"
+          },
+          "writingLockPermission": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "forbidden",
+                  "private",
+                  "public"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Writinglockpermission"
+          },
+          "serialLockedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seriallockedat"
+          },
+          "serialLockPermission": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "forbidden",
+                  "private",
+                  "public"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seriallockpermission"
+          },
           "chapterModels": {
             "items": {
               "$ref": "#/components/schemas/NovelChapterModel"
@@ -33317,7 +33423,11 @@
           "prices",
           "limits",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "writingLockedAt",
+          "writingLockPermission",
+          "serialLockedAt",
+          "serialLockPermission"
         ],
         "title": "NovelDetailResponse"
       },
@@ -36155,6 +36265,34 @@
         "title": "NovelSourceKeyedRange",
         "description": "응답의 구간 — 양 끝 id 와 그 메시지의 `created_at`(메시지 키 = (`created_at`, id)). 끝 메시지가 지워져 화면의 메시지 목록에\n없어도 이 키로 구간의 정확한 자리를 잡는다. 요청 입력(`basis`)에는 쓰지 않는다.\n\ndatetime 은 방 메시지 `createdAt` 과 같은 기본 직렬화라 마이크로초가 0 이면 소수부가 빠진다(`…:03Z` 와 `…:03.000005Z`). 글자\n비교는 순서를 뒤집고 JS `Date` 는 밀리초까지라, 순서를 비교하려면 소수부를 6자리로 맞춘 (초, 마이크로초, id) 로 본다. id 동률은\n소문자 hex 글자 순이 DB 의 uuid 순과 같다."
       },
+      "NovelSourceListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NovelSourceRoom"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "NovelSourceListResponse"
+      },
       "NovelSourceRange": {
         "properties": {
           "startMessageId": {
@@ -36175,6 +36313,95 @@
         ],
         "title": "NovelSourceRange",
         "description": "양 끝 메시지로 가리킨 구간(양 끝 포함)."
+      },
+      "NovelSourceRoom": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "contentName": {
+            "type": "string",
+            "title": "Contentname"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "lastMessagePreview": {
+            "type": "string",
+            "title": "Lastmessagepreview"
+          },
+          "lastMessageAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastmessageat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "novelId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Novelid"
+          },
+          "novelCreationBlocked": {
+            "type": "boolean",
+            "title": "Novelcreationblocked"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "contentId",
+          "contentType",
+          "contentName",
+          "thumbnailUrl",
+          "lastMessagePreview",
+          "lastMessageAt",
+          "createdAt",
+          "novelId",
+          "novelCreationBlocked"
+        ],
+        "title": "NovelSourceRoom",
+        "description": "소설로 만들 수 있는 내 채팅방 하나. 방 칸은 내 채팅 목록과 같은 직렬화다(`id` 가 방 id)."
       },
       "NovelSourceSectionInput": {
         "properties": {

@@ -1,8 +1,12 @@
 """소설화 원문 관문 — 소설화 코드가 대화방 메시지를 읽는 유일한 곳. 구간을 읽고, 해시하고, 프롬프트에 싣는 원문 줄로 만든다.
 
 사용자가 소설에서 빼기로 한 구간이 모델에 가지 않는다는 약속은 원문을 읽는 곳이 하나일 때만 지킬 수 있다. 그래서 메시지 SELECT 는
-이 모듈의 `_room_messages` 한 함수만 만들고, 원문 글을 읽는 공개 함수는 `read_source` 하나다 — 읽을 구간(양 끝 키)을 받아 그
+이 모듈의 `_room_messages` 한 함수만 만들고, 모델에 싣는 원문 글을 읽는 공개 함수는 `read_source` 하나다 — 읽을 구간(양 끝 키)을 받아 그
 구간들만 읽고 구간 사이는 읽지 않는다. 다른 소설화 모듈은 메시지·기억 표를 직접 건드리지 않는다(구조 테스트가 지킨다).
+
+모델에 가지 않는 읽기도 소설화 코드에서는 이 모듈을 지난다. 소설로 만들 수 있는 내 채팅 목록은 방마다 마지막 메시지 한
+줄(미리보기)을 내 채팅 목록과 같은 함수로 읽어 방 주인 화면에만 보인다 — 그 함수를 여기서 다시 내보내(`my_chat_room_rows`)
+소설화 코드가 원문에 닿는 자리를 이 파일 하나에서 다 볼 수 있게 한다.
 
 옛 흐름(마지막 화 끝 다음부터 이어 쓰기)은 구간 선택이 없으므로 "지금 그대로의 연속 구간 하나"로 이 관문을 부른다
 (`load_segment`·`load_candidates`). 구간 선택이 있으면 저장된 구간 행이 읽을 구간이다(`section_ranges`).
@@ -22,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import MessageKey
 from api.chat.prompt_builder import PromptNames, _turn_text
+from api.chat.router import my_chat_room_rows as my_chat_room_rows
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.novel import NovelChapter, NovelSourceSection, NovelSourceSectionMode
 

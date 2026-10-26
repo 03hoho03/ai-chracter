@@ -235,6 +235,17 @@ async def _lock(db_session: AsyncSession, novel_id: uuid.UUID) -> tuple[object, 
     )
 
 
+async def _listed_blocked(db_client: httpx.AsyncClient, room_id: uuid.UUID) -> bool:
+    """소설로 만들 수 있는 내 채팅 목록이 이 방에 붙인 막힘 여부. 방 응답과 같은 판정이어야 해서 방 응답 단언과 짝으로 본다."""
+    resp = await db_client.get("/me/novel-sources")
+    assert resp.status_code == 200, resp.text
+    matches = [item["novelCreationBlocked"] for item in resp.json()["items"] if item["id"] == str(room_id)]
+    assert len(matches) == 1
+    blocked = matches[0]
+    assert isinstance(blocked, bool)
+    return blocked
+
+
 async def _batch_of(db_session: AsyncSession, chapter_id: uuid.UUID) -> uuid.UUID:
     batch_id = await db_session.scalar(sa.select(NovelChapter.batch_id).where(NovelChapter.id == chapter_id))
     assert batch_id is not None
@@ -484,6 +495,7 @@ async def test_room_response_says_whether_a_new_novel_is_blocked(
 
     assert resp.status_code == 200
     assert resp.json()["novelCreationBlocked"] is blocked
+    assert await _listed_blocked(db_client, room.room_id) is blocked
     if novel in ("unlocked_succeeded_job", "unlocked_failed_job"):
         # 방 응답은 읽기만 한다 — 잠금은 생성 경로에서만 쓴다.
         assert await _lock(db_session, novel_id) == (None, None, None, None)
@@ -519,6 +531,7 @@ async def test_a_chat_without_a_novel_cannot_start_one_after_the_creator_withdra
     await _creator_withdraws(db_client, db_session, room)
 
     room_resp = await db_client.get(f"/chat-rooms/{room.room_id}")
+    listed_blocked = await _listed_blocked(db_client, room.room_id)
     resp = await db_client.post(f"/chat-rooms/{room.room_id}/novel")
 
     novels = await db_session.scalar(
@@ -526,6 +539,7 @@ async def test_a_chat_without_a_novel_cannot_start_one_after_the_creator_withdra
     )
     assert room_resp.status_code == 200, room_resp.text
     assert room_resp.json()["novelCreationBlocked"] is policy_on
+    assert listed_blocked is policy_on
     if policy_on:
         assert (resp.status_code, resp.json()["detail"]) == _FORBIDDEN
         assert novels == 0

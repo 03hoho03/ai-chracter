@@ -174,8 +174,7 @@ from api.db.models.chat import (
 )
 from api.db.models.content import Content, ContentType, ContentVersion, ModerationStatus
 from api.db.models.media import Asset
-from api.db.models.novel import Novel
-from api.novelize.writing_lock import first_saved_chapter_at, novelize_refused
+from api.novelize.writing_lock import novel_creation_blocked_rooms
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
@@ -783,20 +782,8 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
     image_urls, cell_images = await _sign_message_images(db, room, setup, messages)
     # 다음 턴이 실제로 쓸 모델. 기본 모델 방이거나 상위 모델 스위치가 꺼져 있으면 쿼리가 없다.
     effective_model = await effective_room_model(db, room.user_id, room.chat_model)
-    # 잠긴 소설 유무는 새 소설화가 막힌 작품(허용 안 함, 또는 정책 스위치가 켜졌을 때 작가 탈퇴)의 남의 방에서만 본다(방
-    # 하나에 소설 하나 — 방 유니크 인덱스로 찾는다). 잠기기
-    # 전의 빈 소설은 이어 쓸 수 없으니 소설이 없는 것과 같이 막힌 것으로 보인다. 잠긴 소설은 화를 다 지워도 잠겨 있다.
-    # 잠금이 없어도 성공한 화 생성 작업이 있으면 막지 않는다 — 생성 경로와 같은 판정이다. 배포가 겹치는 동안 옛 코드가
-    # 잠금 없이 첫 화를 저장한 소설은 생성 경로를 지나야 그 자리에서 잠기는데, 여기서 막힘으로 보이면 사용자가 그 경로에
-    # 닿지 못한다. 여기서는 읽기만 하고 잠그지 않는다.
-    novel_creation_blocked = False
-    if await novelize_refused(db, content, room.user_id):
-        novel_row = (
-            await db.execute(select(Novel.id, Novel.writing_locked_at).where(Novel.chat_room_id == room.id))
-        ).first()
-        novel_creation_blocked = novel_row is None or (
-            novel_row.writing_locked_at is None and await first_saved_chapter_at(db, novel_row.id) is None
-        )
+    # 새 소설 만들기 막힘 표시. 소설로 만들 수 있는 내 채팅 목록과 같은 함수로 판정한다(읽기만 하고 잠그지 않는다).
+    novel_creation_blocked = room.id in await novel_creation_blocked_rooms(db, room.user_id, [(room.id, content)])
 
     # 미디어 북 태그는 첫 메시지(작성자 글을 칸 id 형태로 복사한 것)에서만 해석하고, 그중에서도 방 버전의
     # 시작설정 첫 메시지가 실제로 가리키는 칸만 서명한다. 오프닝은 지울 수 있어 첫 자리에 사용자 메시지나
@@ -1859,6 +1846,23 @@ async def list_my_chat_rooms(
     `limit` 을 생략하면 전부, 주면 앞에서 그 개수만 준다 — 잘라도 "대화 N" 번호와 순서는 생략했을 때와 같다.
     콘텐츠의 공개범위·이용제한·삭제 상태는 보지 않는다(`list_chat_rooms`도 그렇다 —
     여기서만 감추면 방 안에서는 보이는 대화가 목록에서만 사라지는 것처럼 보인다)."""
+    rows, _contents = await my_chat_room_rows(db, user_id)
+    # 번호 매기기·건너뛰기·정렬이 모두 끝난 뒤에 자른다. 먼저 자르면 잘린 목록으로 "대화 N" 을 세거나,
+    # 목록에서 빠질 방이 자리를 먹어 개수가 모자란다. `None` 이면 슬라이스가 전체다.
+    return await sign_room_thumbnails(rows[:limit])
+
+
+def my_chat_room_sort_key(item: MyChatRoomListItem) -> tuple[datetime, datetime, uuid.UUID]:
+    """내 채팅 목록의 정렬 키(큰 것이 앞). (last_message_at ?? created_at) -> created_at -> id. 메시지 없는 방의 활동
+    시각은 생성 시각으로 폴백한다 — NULLS LAST 로 빈 방을 뒤로 몰지 않는다. id 까지 넣어 키가 방마다 다르다."""
+    return (item.last_message_at or item.created_at, item.created_at, item.id)
+
+
+async def my_chat_room_rows(
+    db: AsyncSession, user_id: uuid.UUID
+) -> tuple[list[tuple[MyChatRoomListItem, str | None]], dict[uuid.UUID, Content]]:
+    """내 방 전부를 내 채팅 목록 순서(`my_chat_room_sort_key` 내림차순)로 — 방마다 목록 항목과 서명 전 썸네일 키, 그리고
+    방들의 원작 행. 원작 행이나 방 버전의 상세가 없는 방은 빠진다. 썸네일은 자른 뒤 `sign_room_thumbnails` 로 서명한다."""
     rooms = list(
         (
             await db.scalars(
@@ -1869,7 +1873,7 @@ async def list_my_chat_rooms(
         ).all()
     )
     if not rooms:
-        return []
+        return [], {}
 
     # "대화 N"의 N은 콘텐츠별 생성순 순번(`_room_siblings`와 같은 정렬 기준) — 위 쿼리가
     # 이미 전체를 created_at asc, id asc로 가져왔으므로, 콘텐츠별 부분열도 같은 순서를
@@ -1986,15 +1990,12 @@ async def list_my_chat_rooms(
             )
         )
 
-    # (last_message_at ?? created_at) DESC -> created_at DESC -> id DESC. NULLS LAST로
-    # 빈 방을 몰지 않는다 — 메시지 없는 방의 활동 시각은 생성 시각으로 폴백한다.
-    rows.sort(
-        key=lambda row: (row[0].last_message_at or row[0].created_at, row[0].created_at, row[0].id),
-        reverse=True,
-    )
-    # 번호 매기기·건너뛰기·정렬이 모두 끝난 뒤에 자른다. 먼저 자르면 잘린 목록으로 "대화 N" 을 세거나,
-    # 목록에서 빠질 방이 자리를 먹어 개수가 모자란다. `None` 이면 슬라이스가 전체다.
-    rows = rows[:limit]
+    rows.sort(key=lambda row: my_chat_room_sort_key(row[0]), reverse=True)
+    return rows, contents
+
+
+async def sign_room_thumbnails(rows: list[tuple[MyChatRoomListItem, str | None]]) -> list[MyChatRoomListItem]:
+    """`my_chat_room_rows` 의 행(자른 것)에 썸네일 URL 을 서명해 채운다."""
     keys = [key for _, key in rows if key is not None]
     signed = dict(zip(keys, await run_in_threadpool(_sign_urls, keys), strict=True))
     return [

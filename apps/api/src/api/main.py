@@ -72,6 +72,7 @@ from api.novelize.block_edit_router import block_patch_router as novelize_block_
 from api.novelize.outline_router import outline_router as novelize_outline_router
 from api.novelize.scene_outline_router import scene_outline_router as novelize_scene_outline_router
 from api.novelize.selection_router import selection_router as novelize_selection_router
+from api.novelize.source_router import source_router as novelize_source_router
 from api.payments.router import router as payments_router
 from api.persona.router import me_router as persona_me_router
 from api.session.suspension import rebuild_suspended_user_markers
@@ -186,6 +187,7 @@ app.include_router(novelize_room_router)
 app.include_router(novelize_owner_router)
 app.include_router(novelize_illustration_router)
 app.include_router(novelize_selection_router)
+app.include_router(novelize_source_router)
 app.include_router(novelize_outline_router)
 app.include_router(novelize_scene_outline_router)
 app.include_router(novelize_block_edit_router)
