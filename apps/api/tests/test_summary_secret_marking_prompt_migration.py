@@ -44,6 +44,11 @@ _M = _load("0aeadefcf159")
 _NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values()) + list(
     _load("174f78b92e5c").NEW_SET_IDS.values()  # 그 뒤 여러 문단 수정 문안을 심은 소설 레인 Gemini 세트도 같은 이유로 뺀다.
 )
+# 그 뒤 Claude 소설 체인 채널과 세 체인 등급 규칙 채널을 심은 두 리비전의 소설 레인 세트도 같은 이유로 뺀다.
+_NOVEL_OUTLINE_SET_IDS += [
+    *_load("fe3df6f8e4d5").NEW_SET_IDS.values(),
+    *_load("e4df46a80bfa").NEW_SET_IDS.values(),
+]
 # 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로
 # story 초안은 이것도 거친다.
 _SCENE_JUDGMENT = _load("0346abdbcc92")

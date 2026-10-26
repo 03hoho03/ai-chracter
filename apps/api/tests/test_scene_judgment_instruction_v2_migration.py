@@ -46,6 +46,11 @@ _IMPRESSION = _load("6558ab4d3dbc")
 _NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values()) + list(
     _load("174f78b92e5c").NEW_SET_IDS.values()  # 그 뒤 여러 문단 수정 문안을 심은 소설 레인 Gemini 세트도 같은 이유로 뺀다.
 )
+# 그 뒤 Claude 소설 체인 채널과 세 체인 등급 규칙 채널을 심은 두 리비전의 소설 레인 세트도 같은 이유로 뺀다.
+_NOVEL_OUTLINE_SET_IDS += [
+    *_load("fe3df6f8e4d5").NEW_SET_IDS.values(),
+    *_load("e4df46a80bfa").NEW_SET_IDS.values(),
+]
 # 장면 판정 채널을 심은 리비전 — 옛 지시문의 출처다.
 _SCENE_JUDGMENT = _load("0346abdbcc92")
 # 바로 앞 프롬프트 리비전 — 여덟 체인에 요약 비밀 표기 슬롯 본문만 바꾼 세트를 게시했고, 그 story 네 세트가 이 리비전 직전

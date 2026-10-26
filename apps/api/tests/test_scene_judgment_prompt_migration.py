@@ -58,6 +58,11 @@ _IMPRESSION = _load("6558ab4d3dbc")
 _NOVEL_OUTLINE = _load("b389c2317149")
 # 그 뒤 소설 레인 Gemini 체인에 여러 문단 수정 문안을 심은 리비전 — 같은 이유로 버전 차례에서 뺀다.
 _BLOCK_EDIT_PROMPTS = _load("174f78b92e5c")
+# 그 뒤 Claude 소설 체인 채널과 세 체인 등급 규칙 채널을 심은 두 리비전 — 같은 이유로 버전 차례에서 뺀다.
+_NOVEL_LANE_SOURCE_SET_IDS: list[uuid.UUID] = [
+    *_load("fe3df6f8e4d5").NEW_SET_IDS.values(),
+    *_load("e4df46a80bfa").NEW_SET_IDS.values(),
+]
 
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
 
@@ -214,6 +219,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_NOVEL_OUTLINE.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_BLOCK_EDIT_PROMPTS.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(_NOVEL_LANE_SOURCE_SET_IDS),
                 PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
             )
         )

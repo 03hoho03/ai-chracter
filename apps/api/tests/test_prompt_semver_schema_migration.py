@@ -38,6 +38,26 @@ def _load_schema_migration() -> ModuleType:
 _M = _load_schema_migration()
 
 
+def _load(revision: str) -> ModuleType:
+    (path,) = _VERSIONS_DIR.glob(f"{revision}_*.py")
+    spec = importlib.util.spec_from_file_location(f"_migration_{revision}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# 이 리비전 뒤 게시 세트에 판을 매겨 넣은 문안 리비전 — 등급 규칙 채널을 소설 세 체인에 심은 것과 그 앞의 Claude 소설 체인 채널을
+# 심은 것. 둘의 판 행은 단계가 있어 이 리비전의 downgrade 를 멈추게 하므로, downgrade 를 실제로 돌리는 테스트는 실제 downgrade
+# 순서대로 그 둘부터 되돌린 상태를 기준으로 본다(롤백되는 트랜잭션 안).
+_LATER_SEEDS: tuple[ModuleType, ...] = (_load("e4df46a80bfa"), _load("fe3df6f8e4d5"))
+
+
+async def _undo_later_seeds(connection: AsyncConnection) -> None:
+    for later in _LATER_SEEDS:
+        await connection.run_sync(later.delete_seeded_rows)
+
+
 async def _run(connection: AsyncConnection, step: Callable[[], None]) -> None:
     def run(sync_connection: Connection) -> None:
         with Operations.context(MigrationContext.configure(sync_connection)):
@@ -271,6 +291,7 @@ async def test_backfill_marks_only_each_chains_active_set_and_leaves_existing_ro
     async with ddl_engine.connect() as connection:
         transaction = await connection.begin()
         try:
+            await _undo_later_seeds(connection)
             head_state = await _semver_state(connection)
             sets_before = (await connection.execute(_SNAPSHOT_SETS)).all()
             sections_before = await connection.scalar(_SNAPSHOT_SECTIONS)
@@ -308,6 +329,7 @@ async def test_backfill_picks_the_latest_published_set_even_when_an_older_one_ha
     async with ddl_engine.connect() as connection:
         transaction = await connection.begin()
         try:
+            await _undo_later_seeds(connection)
             await _run(connection, _M.downgrade)
             for set_id, version, published_at in (
                 (later_id, "99001", datetime(2026, 1, 2, tzinfo=UTC)),
@@ -348,6 +370,7 @@ async def test_downgrade_refuses_once_a_publish_assigned_a_semver_and_round_trip
     async with ddl_engine.connect() as connection:
         transaction = await connection.begin()
         try:
+            await _undo_later_seeds(connection)
             session = AsyncSession(bind=connection)
             head_state = await _semver_state(connection)
             base_id = await connection.scalar(

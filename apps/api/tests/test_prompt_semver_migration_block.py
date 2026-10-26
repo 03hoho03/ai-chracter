@@ -24,7 +24,7 @@ from api.admin.prompt_semver import SemverLevel, SemverLevelError, assign_semver
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 # 판 매기기 블록을 가장 최근에 복사한 리비전. 새 문안 마이그레이션이 블록을 복사하면 이 값을 그 리비전으로 옮긴다.
-_LATEST_BLOCK = "d0051f733bb7"
+_LATEST_BLOCK = "e4df46a80bfa"
 _CHAIN = ("story", "semver-block-test")
 
 Row = tuple[str, str, str, str, bool, int]  # (scope, slot, variant, body, conditional, order)

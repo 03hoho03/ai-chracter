@@ -7,22 +7,26 @@
 그때 코드에서 경계 제안·문단 수정·여러 문단 수정·묶음 재검사는 고른 모델과 무관하게 늘 소설 Gemini 체인 세트로 렌더했으므로,
 sonnet·opus 체인의 그 네 빌더 기대값은 Gemini 체인 렌더다.
 
-기대값 만들기: 라벨·등급 규칙을 옮기기 전 코드에서 `NOVEL_PROMPT_SOURCE_GOLDEN_WRITE=1` 을 켜고 이 파일을 돌리면 파일을 새로
-쓴다. 옮긴 뒤 코드로 만들면 대조가 항진명제가 되므로, 기대값이 다르면 파일을 고치지 말고 멈춘다.
+기대값은 라벨·등급 규칙을 소설 레인으로 옮기기 전 커밋에서 `NOVEL_PROMPT_SOURCE_GOLDEN_WRITE=1` 로 그 커밋의 이 파일을 돌려
+기록했다. 다시 만들려면 그 커밋으로 돌아가 같은 스위치로 돌린다 — 지금 코드로 만들면 대조가 항진명제가 되므로, 기대값이 다르면
+파일을 고치지 말고 멈춘다.
+
+이 파일은 같은 렌더를 지금 경로(라벨은 소설 Gemini 체인 세트, 등급 규칙은 그 체인 세트의 `novelize_rating` 채널)로 다시 해 같은
+sha 가 나오는지 보고, 채팅 세트 값이 렌더에 섞이지 않는지(대조군), 소설 세트 값이 실제 입력인지(역방향)도 본다.
 """
 
 import hashlib
 import json
-import os
-from collections.abc import Callable
+import uuid
 from pathlib import Path
 from typing import Any
 
-import pytest
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet
+from api.novelize.inputs import load_novel_prompt_source
 from api.novelize.prompts import (
     NovelizePrompt,
     build_novelize_boundary_prompt,
@@ -35,7 +39,6 @@ from api.novelize.prompts import (
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "novel_prompt_source_characterization.json"
-_WRITE_SWITCH = "NOVEL_PROMPT_SOURCE_GOLDEN_WRITE"
 
 SCOPES: tuple[str, ...] = ("story", "character")
 MODELS: tuple[str, ...] = ("gemini", "sonnet", "opus")
@@ -129,66 +132,157 @@ def digest(prompt: NovelizePrompt) -> dict[str, str]:
 
 
 def _render_with(
-    builder: str,
-    *,
-    is_story: bool,
-    sections: list[PromptSection],
-    label_kwargs: Callable[[], dict[str, Any]],
-    rating_kwargs: Callable[[], dict[str, Any]],
-    user_label: str,
-    assistant_label: str,
+    builder: str, *, is_story: bool, sections: list[PromptSection], label_set: PromptSet
 ) -> NovelizePrompt:
     values = dict(_INPUTS[builder])
+    user_label, assistant_label = labels_of(label_set, is_story=is_story)
     lines = _turn_lines(_TURN_LINES, user=user_label, assistant=assistant_label)
     if "context_lines" in values:
         values["context_lines"] = _turn_lines(values["context_lines"], user=user_label, assistant=assistant_label)
     common: dict[str, Any] = {"sections": sections, "is_story_chat": is_story}
     if builder == "boundary":
-        return build_novelize_boundary_prompt(**common, **label_kwargs(), turn_lines=lines, **values)
+        return build_novelize_boundary_prompt(**common, label_set=label_set, turn_lines=lines, **values)
     if builder == "chapter":
-        return build_novelize_chapter_prompt(**common, **label_kwargs(), **rating_kwargs(), turn_lines=lines, **values)
+        return build_novelize_chapter_prompt(**common, label_set=label_set, turn_lines=lines, **values)
     if builder == "outline":
-        return build_novelize_outline_prompt(**common, **label_kwargs(), **rating_kwargs(), turn_lines=lines, **values)
+        return build_novelize_outline_prompt(**common, label_set=label_set, turn_lines=lines, **values)
     if builder == "episode_outline":
-        return build_novelize_episode_outline_prompt(
-            **common, **label_kwargs(), **rating_kwargs(), turn_lines=lines, **values
-        )
+        return build_novelize_episode_outline_prompt(**common, label_set=label_set, turn_lines=lines, **values)
     if builder == "revise":
-        return build_novelize_revise_prompt(**common, **rating_kwargs(), **values)
+        return build_novelize_revise_prompt(**common, **values)
     if builder == "revise_blocks":
-        return build_novelize_revise_blocks_prompt(**common, **rating_kwargs(), **values)
+        return build_novelize_revise_blocks_prompt(**common, **values)
     return build_novelize_revise_recheck_prompt(**common, **values)
 
 
-async def render_old_path(db: AsyncSession, builder: str, scope: str, model: str) -> NovelizePrompt:
-    """라벨·등급 규칙을 원작 종류의 채팅 Gemini 활성 세트에서 빌리던 경로 — 기대값을 쓸 때만 쓴다."""
-    chain = model if builder in CHAIN_BUILDERS else "gemini"
-    _novel_set, sections = await load_active_prompt_set(db, lane="novel", model=chain)  # type: ignore[arg-type]
-    chat_set, chat_sections = await load_active_prompt_set(db, lane=scope)  # type: ignore[arg-type]
-    is_story = scope == "story"
-    assistant = chat_set.story_assistant_label if is_story else chat_set.character_assistant_label
-    return _render_with(
-        builder,
-        is_story=is_story,
-        sections=sections,
-        label_kwargs=lambda: {"chat_set": chat_set},
-        rating_kwargs=lambda: {"chat_sections": chat_sections},
-        user_label=chat_set.user_label,
-        assistant_label=assistant,
-    )
-
-
-def _labels_of(prompt_set: PromptSet, *, is_story: bool) -> tuple[str, str]:
+def labels_of(prompt_set: PromptSet, *, is_story: bool) -> tuple[str, str]:
     return prompt_set.user_label, (
         prompt_set.story_assistant_label if is_story else prompt_set.character_assistant_label
     )
 
 
-@pytest.mark.skipif(not os.environ.get(_WRITE_SWITCH), reason=f"{_WRITE_SWITCH}=1 일 때만 기대값 파일을 쓴다")
-async def test_write_expected_digests(db_session: AsyncSession) -> None:
-    expected = {
-        case_key(builder, scope, model): digest(await render_old_path(db_session, builder, scope, model))
+async def render_case(db: AsyncSession, builder: str, scope: str, model: str) -> NovelizePrompt:
+    """지금 경로 — 문안·등급 규칙은 그 소설 체인 세트, 라벨은 소설 Gemini 체인 세트에서 읽는다."""
+    db.expire_all()
+    source = await load_novel_prompt_source(db, model=model)  # type: ignore[arg-type]
+    return _render_with(builder, is_story=scope == "story", sections=source.sections, label_set=source.label_set)
+
+
+def _text(prompt: NovelizePrompt) -> str:
+    return f"{prompt.system_instruction}\n---\n{prompt.prompt}"
+
+
+_CHAT_LABEL_MARK = "채팅표지라벨"
+_CHAT_RATING_MARK = "채팅표지등급"
+_NOVEL_LABEL_MARK = "소설표지라벨"
+_NOVEL_RATING_MARK = "소설표지등급"
+_RATING_BUILDERS = frozenset({"chapter", "outline", "episode_outline", "revise", "revise_blocks"})
+_LABEL_BUILDERS = frozenset({"boundary", "chapter", "outline", "episode_outline"})
+
+
+async def _mark_set(db: AsyncSession, set_id: uuid.UUID, *, label_mark: str, rating_mark: str, channel: str) -> None:
+    """세트의 라벨 셋과 그 채널의 `rule_rating` 본문을 표지로 바꾼다(테스트 트랜잭션 안이라 롤백된다)."""
+    await db.execute(
+        sa.update(PromptSet)
+        .where(PromptSet.id == set_id)
+        .values(
+            user_label=f"{label_mark}사용자",
+            story_assistant_label=f"{label_mark}진행자",
+            character_assistant_label=f"{label_mark}캐릭터",
+        )
+    )
+    await db.execute(
+        sa.update(PromptSection)
+        .where(
+            PromptSection.prompt_set_id == set_id,
+            PromptSection.channel == channel,
+            PromptSection.slot == "rule_rating",
+        )
+        .values(body=f"[수위]\n{rating_mark} 문장.")
+    )
+    await db.flush()
+    db.expire_all()
+
+
+def _expected() -> dict[str, dict[str, str]]:
+    loaded: dict[str, dict[str, str]] = json.loads(FIXTURE.read_text())
+    return loaded
+
+
+async def test_every_case_renders_the_digest_recorded_with_the_old_source(db_session: AsyncSession) -> None:
+    """42 케이스가 라벨·등급 규칙을 채팅 세트에서 빌리던 코드가 낸 글과 바이트까지 같다. 깨지는 시나리오: 소설 세트로 옮긴
+    라벨·등급 규칙이 원본과 한 글자라도 달라(캐릭터 라벨을 스토리 세트에서 복사하는 등) 같은 입력이 다른 프롬프트를 낸다."""
+    expected = _expected()
+    assert len(expected) == 42
+    actual = {
+        case_key(builder, scope, model): digest(await render_case(db_session, builder, scope, model))
         for builder, scope, model in all_cases()
     }
-    assert len(expected) == 42
-    FIXTURE.write_text(json.dumps(expected, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    assert actual == expected
+
+
+async def test_chat_set_labels_and_rating_never_reach_a_novel_prompt(db_session: AsyncSession) -> None:
+    """채팅 두 Gemini 활성 세트의 라벨·등급 규칙을 표지로 바꿔도 42 케이스 렌더에 표지가 없고 sha 도 그대로다. 깨지는
+    시나리오: 소설 호출이 여전히 채팅 세트에서 읽어, 운영자가 채팅 등급 규칙을 고치면 소설 글이 조용히 따라 바뀐다."""
+    for lane in ("story", "character"):
+        chat_set, _ = await load_active_prompt_set(db_session, lane=lane)
+        await _mark_set(
+            db_session, chat_set.id, label_mark=_CHAT_LABEL_MARK, rating_mark=_CHAT_RATING_MARK, channel="system"
+        )
+    expected = _expected()
+    for builder, scope, model in all_cases():
+        prompt = await render_case(db_session, builder, scope, model)
+        text = _text(prompt)
+        assert _CHAT_LABEL_MARK not in text and _CHAT_RATING_MARK not in text, (builder, scope, model)
+        assert digest(prompt) == expected[case_key(builder, scope, model)], (builder, scope, model)
+
+
+async def test_novel_set_rating_is_the_input_of_each_chain(db_session: AsyncSession) -> None:
+    """역방향 — 각 소설 체인 세트의 `novelize_rating` 을 표지로 바꾸면 등급 규칙을 붙이는 다섯 빌더의 지시문에 표지가 나타나고
+    sha 가 바뀐다. 붙이지 않는 두 빌더(경계·재검사)는 그대로다. 깨지는 시나리오: 렌더가 등급 규칙을 다른 곳에서 읽어 위 대조군이
+    아무것도 증명하지 못한다."""
+    expected = _expected()
+    for model in MODELS:
+        source = await load_novel_prompt_source(db_session, model=model)  # type: ignore[arg-type]
+        await db_session.execute(
+            sa.update(PromptSection)
+            .where(
+                PromptSection.prompt_set_id == source.prompt_set.id,
+                PromptSection.channel == "novelize_rating",
+                PromptSection.slot == "rule_rating",
+            )
+            .values(body=f"[수위]\n{_NOVEL_RATING_MARK} 문장.")
+        )
+    await db_session.flush()
+    for builder, scope, model in all_cases():
+        prompt = await render_case(db_session, builder, scope, model)
+        changed = digest(prompt) != expected[case_key(builder, scope, model)]
+        if builder in _RATING_BUILDERS:
+            assert _NOVEL_RATING_MARK in prompt.system_instruction and changed, (builder, scope, model)
+        else:
+            assert _NOVEL_RATING_MARK not in _text(prompt) and not changed, (builder, scope, model)
+
+
+async def test_novel_gemini_set_labels_are_the_label_source_of_every_chain(db_session: AsyncSession) -> None:
+    """역방향 — (novel, gemini) 활성 세트의 라벨만 표지로 바꿔도 세 체인 모두의 라벨 쓰는 빌더 렌더에 표지가 나타나고 sha 가
+    바뀐다. 라벨은 체인과 무관하게 소설 Gemini 체인 한 곳에서 읽는다. 깨지는 시나리오: Claude 체인이 자기 세트의 라벨 칸을 읽어,
+    어드민이 숨겨 둔 그 칸 값이 원문 줄에 실린다."""
+    gemini_set, _ = await load_active_prompt_set(db_session, lane="novel")
+    await db_session.execute(
+        sa.update(PromptSet)
+        .where(PromptSet.id == gemini_set.id)
+        .values(
+            user_label=f"{_NOVEL_LABEL_MARK}사용자",
+            story_assistant_label=f"{_NOVEL_LABEL_MARK}진행자",
+            character_assistant_label=f"{_NOVEL_LABEL_MARK}캐릭터",
+        )
+    )
+    await db_session.flush()
+    expected = _expected()
+    for builder, scope, model in all_cases():
+        prompt = await render_case(db_session, builder, scope, model)
+        changed = digest(prompt) != expected[case_key(builder, scope, model)]
+        if builder in _LABEL_BUILDERS:
+            assert _NOVEL_LABEL_MARK in prompt.prompt and changed, (builder, scope, model)
+        else:
+            assert _NOVEL_LABEL_MARK not in _text(prompt) and not changed, (builder, scope, model)

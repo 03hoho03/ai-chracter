@@ -69,8 +69,15 @@ _IMPRESSION_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("6558ab4d3dbc").NE
 # 그 뒤 소설 레인 세 체인에 구성안 문안을 더한 세트를 게시하는 리비전 — head 의 소설 레인 활성이라, "이 리비전 직후 상태"를
 # 보는 테스트는 그 리비전부터 먼저 되돌린다(실제 downgrade 순서).
 _NOVEL_OUTLINE = _load("b389c2317149")
-# 그 뒤 소설 레인 Gemini 체인에 여러 문단 수정 문안을 더한 리비전 — 되돌릴 때는 이것이 먼저다.
+# 그 뒤 소설 레인 Gemini 체인에 여러 문단 수정 문안을 더한 리비전 — 되돌릴 때는 이것이 구성안 리비전보다 먼저다.
 _BLOCK_EDIT_PROMPTS = _load("174f78b92e5c")
+
+
+# 소설 레인을 통째로 지우는 테스트는 그 위 시드 리비전(Claude 소설 체인 채널·등급 규칙 채널 등)부터 실제 downgrade 순서로
+# 되돌린다 — 그 리비전들의 판 행이 앞 세트를 기준판으로 가리켜 먼저 지우지 않으면 소설 세트를 지울 수 없다.
+async def _undo_seeds_above_block_edit(db_session: AsyncSession) -> None:
+    await (await db_session.connection()).run_sync(undo_seeded_rows_above, _BLOCK_EDIT_PROMPTS.revision)
+
 
 Row = tuple[str, str, str, str, str, bool, int]
 
@@ -155,8 +162,21 @@ async def test_seeded_sets_pass_the_novel_lane_publish_check(
     )
     seed_rows = [(s.channel, s.scope, s.slot, s.variant, s.body, s.conditional, s.order) for s in sections]
     later = [*_NOVEL_OUTLINE.chapter_rows(seed_rows), *_NOVEL_OUTLINE.NEW_CHANNEL_ROWS]
-    if model == "gemini":
-        later += list(_BLOCK_EDIT_PROMPTS.NEW_CHANNEL_ROWS)
+    later += list(_BLOCK_EDIT_PROMPTS.NEW_CHANNEL_ROWS)
+    # 뒤 리비전들이 더한 행의 꼴 — 본문은 합성 문장이다. 세 체인 모두 등급 규칙 두 행, Claude 체인은 경계 제안·문단 수정 채널도.
+    later += [
+        ("novelize_rating", scope, "rule_rating", "", "[수위]\n합성 등급 규칙", False, 0) for scope in ("story", "character")
+    ]
+    if model != "gemini":
+        claude_slots = {
+            "novelize_boundary": ("instruction", "user_name", "max_turns", "turn_context"),
+            "novelize_revise": ("instruction", "work_setting", "setting_notes", "paragraphs", "target_range", "user_request"),
+        }
+        later += [
+            (channel, "both", slot, "", "합성 문안", False, order)
+            for channel, slots in claude_slots.items()
+            for order, slot in enumerate(slots)
+        ]
     sections += [
         PromptSection(channel=c, scope=sc, slot=sl, variant=v, body=b, conditional=cond, order=o)
         for c, sc, sl, v, b, cond, o in later
@@ -213,11 +233,9 @@ async def test_the_seeded_output_format_is_the_grammar_the_parser_reads(db_sessi
     """지시문이 요구하는 출력 형식과 파서가 읽는 머리 줄·필드·구분 줄이 같은 글자여야 한다 — 어긋나면 모델이 지시를
     그대로 따라도 모든 묶음이 형식 위반 실패·전액 환불이다. 시드한 소설 Gemini 세트를 실제 빌더로 렌더해, 「출력 형식」
     블록의 각 줄을 파서의 정규식·필드 이름에 맞대고, 그 블록을 그대로 채운 출력이 파싱되는지 본다."""
-    chat_set, chat_sections = await load_active_prompt_set(db_session, lane="story")
-    _, novel_sections = await load_active_prompt_set(db_session, lane="novel")
+    novel_set, novel_sections = await load_active_prompt_set(db_session, lane="novel")
     built = build_novelize_chapter_prompt(
-        chat_set=chat_set,
-        chat_sections=chat_sections,
+        label_set=novel_set,
         sections=novel_sections,
         is_story_chat=True,
         work_setting="설정",
@@ -302,6 +320,7 @@ def test_v2_chapter_rows_need_the_kept_source_slots() -> None:
 
 
 async def _seed(db_session: AsyncSession, now: datetime) -> None:
+    await _undo_seeds_above_block_edit(db_session)
     connection = await db_session.connection()
     await connection.run_sync(_M.delete_novel_sets)
     await connection.run_sync(lambda conn: _M.seed_novel_lane(conn, now))
@@ -350,6 +369,7 @@ async def test_delete_removes_admin_made_novel_rows_too(db_session: AsyncSession
     )
     await db_session.flush()
 
+    await _undo_seeds_above_block_edit(db_session)
     connection = await db_session.connection()
     await connection.run_sync(_M.delete_novel_sets)
 

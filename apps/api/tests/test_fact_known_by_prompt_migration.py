@@ -44,6 +44,11 @@ _M = _load("e4e407a62d03")
 _NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values()) + list(
     _load("174f78b92e5c").NEW_SET_IDS.values()  # 그 뒤 여러 문단 수정 문안을 심은 소설 레인 Gemini 세트도 같은 이유로 뺀다.
 )
+# 그 뒤 Claude 소설 체인 채널과 세 체인 등급 규칙 채널을 심은 두 리비전의 소설 레인 세트도 같은 이유로 뺀다.
+_NOVEL_OUTLINE_SET_IDS += [
+    *_load("fe3df6f8e4d5").NEW_SET_IDS.values(),
+    *_load("e4df46a80bfa").NEW_SET_IDS.values(),
+]
 # 사실 추출 채널을 심은 리비전 — 옛 지시문의 출처이고, 판정 전용 체인(haiku)의 이 리비전 직전 활성 세트다.
 _FACT_MIGRATION = _load("5cab2abe4e7b")
 # 글을 쓰는 세 체인의 이 리비전 직전 활성 세트(회상 문안만 바꾼 리비전 — 그 사이에 프롬프트를 게시한 리비전이 없다).

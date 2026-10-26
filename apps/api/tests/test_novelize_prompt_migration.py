@@ -191,7 +191,8 @@ async def test_builders_render_the_seeded_text_with_the_lanes_rating_rule(
     db_session: AsyncSession, lane: PromptLane
 ) -> None:
     """시드한 문안이 빌더로 실제로 렌더된다 — 지시문은 문안 그대로이고, 문단 수정은 그 뒤에 같은 세트의 등급 규칙 본문이
-    붙는다. 이 행은 지금 채팅 레인에 얼려 둔 옛 문안이다(옛 이미지로 되돌렸을 때 옛 코드가 읽는다). 지금 코드는 소설 레인
+    붙는다(지금 빌더는 등급 규칙을 소설 등급 규칙 채널에서 읽으므로, 이 세트의 `system/rule_rating` 행을 그 채널 이름으로 옮겨
+    넘긴다). 이 행은 지금 채팅 레인에 얼려 둔 옛 문안이다(옛 이미지로 되돌렸을 때 옛 코드가 읽는다). 지금 코드는 소설 레인
     세트를 읽고, 장 생성 행은 화 수 지시 슬롯이 없어 지금 빌더로는 렌더되지 않는다 — 그래서 장 생성 문안은 렌더하지 않고
     문안 상수로 본다."""
     sections = await _sections_of(db_session, _M.NEW_SET_IDS[lane])  # 식별자 맵을 만료시키므로 세트보다 먼저
@@ -201,7 +202,7 @@ async def test_builders_render_the_seeded_text_with_the_lanes_rating_rule(
     is_story = lane == "story"
 
     boundary = build_novelize_boundary_prompt(
-        chat_set=prompt_set,
+        label_set=prompt_set,
         sections=sections,
         is_story_chat=is_story,
         max_turns=7,
@@ -228,8 +229,7 @@ async def test_builders_render_the_seeded_text_with_the_lanes_rating_rule(
     assert "이야기 밖 말과 그에 대한 반응만 있는 줄은 예외다" in chapter_instruction
     with pytest.raises(PromptRenderError, match="episode_plan"):
         build_novelize_chapter_prompt(
-            chat_set=prompt_set,
-            chat_sections=sections,
+            label_set=prompt_set,
             sections=sections,
             is_story_chat=is_story,
             work_setting="<설정>",
@@ -239,9 +239,21 @@ async def test_builders_render_the_seeded_text_with_the_lanes_rating_rule(
             turn_lines="[턴 1] 캐릭터: 왔어?",
         )
 
+    rating_rows = [
+        PromptSection(
+            channel="novelize_rating",
+            scope=s.scope,
+            slot=s.slot,
+            variant=s.variant,
+            body=s.body,
+            conditional=s.conditional,
+            order=s.order,
+        )
+        for s in sections
+        if s.channel == "system" and s.slot == "rule_rating"
+    ]
     revise = build_novelize_revise_prompt(
-        chat_sections=sections,
-        sections=sections,
+        sections=[*sections, *rating_rows],
         is_story_chat=is_story,
         work_setting="<설정>",
         setting_notes="<노트>",
@@ -261,8 +273,7 @@ async def test_the_set_before_this_revision_refuses_to_render(db_session: AsyncS
     assert prompt_set is not None
     with pytest.raises(PromptRenderError):
         build_novelize_chapter_prompt(
-            chat_set=prompt_set,
-            chat_sections=sections,
+            label_set=prompt_set,
             sections=sections,
             is_story_chat=True,
             work_setting="<설정>",

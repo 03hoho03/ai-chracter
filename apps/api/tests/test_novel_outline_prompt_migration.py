@@ -40,8 +40,8 @@ def _load(revision: str) -> ModuleType:
 
 
 _M = _load("b389c2317149")
-# 그 뒤 소설 레인 Gemini 체인에 여러 문단 수정 문안을 더한 리비전 — head 의 Gemini 활성이다. 이 파일은 "이 리비전 직후 상태"를
-# 보므로 테스트마다 그 리비전부터 먼저 되돌린다(실제 downgrade 순서, 테스트 트랜잭션이 끝나면 롤백된다).
+# 그 뒤 소설 레인 Gemini 체인에 여러 문단 수정 문안을 더한 리비전(아래 기대 행이 그 행을 얹는다). 이 파일은 "이 리비전 직후
+# 상태"를 보므로 테스트마다 위 시드 리비전 전부를 실제 downgrade 순서로 먼저 되돌린다(테스트 트랜잭션이 끝나면 롤백된다).
 _LATER = _load("174f78b92e5c")
 
 
@@ -50,17 +50,48 @@ async def _undo_later_revisions(db_session: AsyncSession) -> None:
     await (await db_session.connection()).run_sync(undo_seeded_rows_above, _M.revision)
 
 
+def _synthetic_rows(channel: str, slots: tuple[str, ...]) -> list[PromptSection]:
+    return [
+        PromptSection(channel=channel, scope="both", slot=slot, variant="", body="합성 문안", conditional=False, order=order)
+        for order, slot in enumerate(slots)
+    ]
+
+
+# 뒤 리비전이 세 체인에 더한 등급 규칙 두 행의 꼴 — 본문은 합성 문장이다(같은 행을 이전·새 세트에 함께 얹어 견준다).
+_LATER_RATING_ROWS = [
+    PromptSection(
+        channel="novelize_rating",
+        scope=scope,
+        slot="rule_rating",
+        variant="",
+        body="[수위]\n합성 등급 규칙",
+        conditional=False,
+        order=0,
+    )
+    for scope in ("story", "character")
+]
+
+
 def _with_later_rows(sections: list[PromptSection], model: str) -> list[PromptSection]:
-    """지금 코드의 게시 검증은 뒤 리비전이 Gemini 체인에 더한 채널도 요구한다 — 이 리비전의 세트·초안에 그 행만 얹어 검증한다."""
-    if model != "gemini":
-        return sections
+    """지금 코드의 게시 검증·렌더는 뒤 리비전들이 더한 채널도 요구한다 — 이 리비전의 세트·초안에 그 행만 얹어 본다. 세 체인 모두
+    등급 규칙 두 행, Gemini 체인은 여러 문단 수정 두 채널, Claude 체인은 경계 제안·문단 수정·여러 문단 수정·묶음 재검사 네 채널."""
+    blocks = [
+        PromptSection(channel=c, scope=sc, slot=sl, variant=v, body=b, conditional=cond, order=o)
+        for c, sc, sl, v, b, cond, o in _LATER.NEW_CHANNEL_ROWS
+    ]
+    if model == "gemini":
+        return [*sections, *blocks, *_LATER_RATING_ROWS]
     return [
         *sections,
-        *(
-            PromptSection(channel=c, scope=sc, slot=sl, variant=v, body=b, conditional=cond, order=o)
-            for c, sc, sl, v, b, cond, o in _LATER.NEW_CHANNEL_ROWS
+        *blocks,
+        *_synthetic_rows("novelize_boundary", ("instruction", "user_name", "max_turns", "turn_context")),
+        *_synthetic_rows(
+            "novelize_revise", ("instruction", "work_setting", "setting_notes", "paragraphs", "target_range", "user_request")
         ),
+        *_LATER_RATING_ROWS,
     ]
+
+
 # 이 리비전 직전 소설 레인 세 체인의 활성 세트(소설 레인을 처음 심은 리비전 — 그 사이에 소설 레인을 게시한 리비전이 없다).
 _SEEDED_LANE = _load("a7a87e3ba631").NEW_SET_IDS
 _PREVIOUS_SET_IDS: dict[str, uuid.UUID] = {model: _SEEDED_LANE[model] for model in ("gemini", "sonnet", "opus")}
@@ -293,14 +324,13 @@ async def test_the_old_flow_chapter_prompt_renders_byte_for_byte_the_same_from_t
     실패) 값을 낸 화가 다른 글이 되거나 실패·환불된다."""
     previous_sections = await _sections_of(db_session, _PREVIOUS_SET_IDS[model])
     seeded_sections = await _sections_of(db_session, _M.NEW_SET_IDS[model])
-    # 섹션을 읽을 때 세션을 만료시키므로 채팅 세트는 그 뒤에 읽는다.
-    chat_set, chat_sections = await load_active_prompt_set(db_session, lane="story", model="gemini")
+    # 섹션을 읽을 때 세션을 만료시키므로 라벨을 읽을 세트는 그 뒤에 읽는다. 라벨은 소설 Gemini 체인 세트 한 곳에서 읽는다.
+    label_set = await _get_set(db_session, _PREVIOUS_SET_IDS["gemini"])
 
     def render(sections: list[PromptSection]) -> str:
         built = build_novelize_chapter_prompt(
-            chat_set=chat_set,
-            chat_sections=chat_sections,
-            sections=sections,
+            label_set=label_set,
+            sections=[*sections, *_LATER_RATING_ROWS],
             is_story_chat=True,
             work_setting="작품 설정",
             user_name="서진",
