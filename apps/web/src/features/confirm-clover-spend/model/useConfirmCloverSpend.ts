@@ -2,13 +2,16 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import {
   cloverBalanceQueryOptions,
+  isCloverPriceChangedError,
   isCloverSpendConfirmRequired,
   useConfirmCloverSpendMutation,
 } from "@/entities/clover";
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 import { sessionQueryOptions } from "@/entities/session";
 
+import { ConfirmCloverPriceChangeModal } from "../ui/ConfirmCloverPriceChangeModal";
 import { ConfirmCloverSpendModal } from "../ui/ConfirmCloverSpendModal";
+import { confirmCloverPriceChange } from "./confirmCloverPriceChange";
 import type { CloverSpendSurface } from "./confirmCloverSpendCopy";
 
 /** 오류 하나를 받아 **무엇을 할지**를 돌려준다.
@@ -27,7 +30,10 @@ import type { CloverSpendSurface } from "./confirmCloverSpendCopy";
  * 자체는 막지 않는다(잔액은 모달의 부가 정보이고, 정확한 판정은 이미 BE가 했다).
  *
  * ⚠️ 동의 POST가 실패하면 **재시도하지 않는다**(`unhandled`). 성공을 가정하고 다시 보내면 BE가
- * 또 `CLOVER_CONFIRM_REQUIRED`를 내고, 호출부의 차단기가 없었다면 그대로 루프가 된다. */
+ * 또 `CLOVER_CONFIRM_REQUIRED`를 내고, 호출부의 차단기가 없었다면 그대로 루프가 된다.
+ *
+ * 가격이 바뀌었다는 409 도 여기서 받는다 — 같은 세 호출부가 같은 자리에서 클로버가 빠지기 전의 확인으로 다루고, 결과의
+ * 세 갈래도 같다. 그때 모달의 금액은 `cost` 가 아니라 서버가 거절에 실은 지금 금액이다(`cost` 는 화면이 들고 있던 옛 값). */
 export function useConfirmCloverSpend(): (
   error: unknown,
   cost: number | undefined,
@@ -37,6 +43,16 @@ export function useConfirmCloverSpend(): (
   const { mutateAsync } = useConfirmCloverSpendMutation();
 
   return async function confirmCloverSpend(error, cost, surface) {
+    if (isCloverPriceChangedError(error)) {
+      return confirmCloverPriceChange(queryClient, error, async (currentCost) => {
+        // 잔액을 못 받았으면 모달이 그 줄을 뺀다 — 조회 실패를 0 으로 지어 보이면 새 가격을 못 낸다고 읽힌다.
+        const balance = await queryClient
+          .ensureQueryData(cloverBalanceQueryOptions)
+          .then((data) => data.balance)
+          .catch(() => undefined);
+        return ConfirmCloverPriceChangeModal.call({ balance, cost: currentCost, surface });
+      });
+    }
     if (!isCloverSpendConfirmRequired(error)) return "unhandled";
 
     const balance = await queryClient

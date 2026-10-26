@@ -25,6 +25,12 @@ import type {
   StatRewind,
   StatTurnFeedback,
 } from "@/entities/chat-room";
+import {
+  allowanceAfterCloverConfirm,
+  canAskCloverConfirm,
+  FIRST_CLOVER_CONFIRM_ALLOWANCE,
+  readCloverPricing,
+} from "@/entities/clover";
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 import { isIdentityVerificationRequiredError } from "@/entities/identity";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
@@ -111,9 +117,10 @@ export function useSendMessage(
   const [turnFeedback, setTurnFeedback] = useState<StatTurnFeedback>();
   const turnFeedbackSeqRef = useRef(0);
 
-  /** `allowCloverConfirm`은 **무한 루프 차단기**다. 동의 뒤 재시도는
-   * `false`로 들어가므로, 재시도가 또 `CLOVER_CONFIRM_REQUIRED`를 받아도 모달을 다시 띄우지 않고
-   * 평범한 오류로 끝난다.
+  /** `allowance`는 **무한 루프 차단기**다. 동의 뒤 재시도는
+   * 그 확인을 뺀 값으로 들어가므로, 재시도가 또 `CLOVER_CONFIRM_REQUIRED`를 받아도 모달을 다시 띄우지 않고
+   * 평범한 오류로 끝난다. 가격 바뀜 확인 뒤의 재시도는 하루 한 번 확인을 아직 물을 수 있다 — 서버가 가격 버전을 그 확인보다
+   * 먼저 대조해서다(`entities/clover` 의 `CloverConfirmAllowance`).
    *
    * ⚠️ 이 차단기가 막는 것은 **"서버가 동의를 인정하지 않는 경우"** 하나뿐이다. 흔히 드는 두 사유는
    * 여기서 성립하지 않는다:
@@ -127,7 +134,7 @@ export function useSendMessage(
    * "정상"을 FE가 증명할 수 없다는 사실에 대한 보험이다 — 게이트 조건이 나중에 바뀌는 등으로
    * 둘의 판단이 갈리면, 없을 때 그 불일치가 **무한 왕복**이 된다. 사용자 조작 한 번당 모달을
    * 한 번으로 묶는 것이 이 인자의 전부다. */
-  async function openStream(request: PendingRequest, allowCloverConfirm = true) {
+  async function openStream(request: PendingRequest, allowance = FIRST_CLOVER_CONFIRM_ALLOWANCE) {
     setStatus({ kind: "sending" });
     setPolicyWarning(undefined);
     setStreamingText("");
@@ -180,7 +187,10 @@ export function useSendMessage(
     let wasRejected = false;
 
     try {
-      for await (const event of openChatStream(pending.payload, chatStreamEventSchema)) {
+      // 가격 버전은 내용(`pending.payload`)에 굳히지 않고 여는 순간 캐시에서 읽는다 — 가격 바뀜 확인 뒤 재전송과 다시
+      // 보내기가 같은 내용에 다시 받은 가격표의 버전을 싣는다.
+      const priceVersion = readCloverPricing(queryClient)?.priceVersion;
+      for await (const event of openChatStream(pending.payload, chatStreamEventSchema, { priceVersion })) {
         if (event.type === "token") {
           setStreamingText((prev) => prev + event.delta);
         } else if (event.type === "policyWarning") {
@@ -246,9 +256,11 @@ export function useSendMessage(
       // 동의가 필요하면 배너가 아니라 모달이다. 동의하면 **같은
       // payload로** 재전송한다(`send()`를 다시 부르지 않으므로 낙관적 사용자 메시지가 중복되지
       // 않는다 — `retry()`와 같은 이유로 `openStream`을 직접 부른다).
-      const confirmOutcome = allowCloverConfirm ? await confirmCloverSpend?.(error) : undefined;
+      // 가격이 바뀌었다는 409 도 같은 길이다 — 저절로 다시 보내지 않고 새 가격으로 보낼지 묻는다. 그만두면 아래 `declined`
+      // 배너가 다시 보내기를 열어 두고, 낙관적 사용자 메시지와 재시도 대상은 그대로 남는다.
+      const confirmOutcome = canAskCloverConfirm(error, allowance) ? await confirmCloverSpend?.(error) : undefined;
       if (confirmOutcome === "retry") {
-        await openStream(pending, false);
+        await openStream(pending, allowanceAfterCloverConfirm(error, allowance));
         return;
       }
       setStatus({

@@ -14,7 +14,21 @@ export type ChatStreamRequestPayload =
   | { kind: "edit"; roomId: string; messageId: string; content: string }
   | { kind: "preview-send"; previewSessionId: string; content: string; shortcutId?: string | null };
 
-function buildRequestInit(payload: ChatStreamRequestPayload): { url: string; init: RequestInit } {
+/** 요청을 여는 순간에 정해지는 칸. 요청 내용(`ChatStreamRequestPayload`)과 따로 두는 이유는 재시도·확인 뒤 재전송이 같은
+ * 내용을 다시 보내면서 이 값만 그때의 것으로 바꿔 실어야 해서다 — 가격이 바뀌었다는 거절 뒤에는 새 가격표의 버전이다.
+ *
+ * `priceVersion` 은 화면이 공개 가격 응답에서 받은 가격표 버전이다. 모르면(가격표를 아직 못 받았거나 그 칸이 없는 옛 서버)
+ * 칸을 아예 싣지 않는다 — 서버는 칸이 없으면 대조하지 않는다. */
+export type ChatStreamRequestOptions = { priceVersion?: number };
+
+function withPriceVersion<TBody extends object>(body: TBody, priceVersion: number | undefined) {
+  return priceVersion === undefined ? body : { ...body, priceVersion };
+}
+
+function buildRequestInit(
+  payload: ChatStreamRequestPayload,
+  { priceVersion }: ChatStreamRequestOptions,
+): { url: string; init: RequestInit } {
   const headers = { "Content-Type": "application/json", Accept: "text/event-stream" };
 
   switch (payload.kind) {
@@ -24,15 +38,24 @@ function buildRequestInit(payload: ChatStreamRequestPayload): { url: string; ini
         init: {
           method: "POST",
           headers,
-          body: JSON.stringify({ content: payload.content, shortcutId: payload.shortcutId ?? null }),
+          body: JSON.stringify(
+            withPriceVersion({ content: payload.content, shortcutId: payload.shortcutId ?? null }, priceVersion),
+          ),
         },
       };
     case "regenerate":
-      return { url: `${API_BASE_URL}/chat-rooms/${payload.roomId}/regenerate`, init: { method: "POST", headers } };
+      // 재생성은 원래 본문이 없다. 가격 버전을 실을 때만 그 칸 하나짜리 본문을 보낸다(서버는 둘 다 받는다).
+      return {
+        url: `${API_BASE_URL}/chat-rooms/${payload.roomId}/regenerate`,
+        init:
+          priceVersion === undefined
+            ? { method: "POST", headers }
+            : { method: "POST", headers, body: JSON.stringify({ priceVersion }) },
+      };
     case "edit":
       return {
         url: `${API_BASE_URL}/chat-rooms/${payload.roomId}/messages/${payload.messageId}`,
-        init: { method: "PATCH", headers, body: JSON.stringify({ content: payload.content }) },
+        init: { method: "PATCH", headers, body: JSON.stringify(withPriceVersion({ content: payload.content }, priceVersion)) },
       };
     case "preview-send":
       return {
@@ -40,7 +63,9 @@ function buildRequestInit(payload: ChatStreamRequestPayload): { url: string; ini
         init: {
           method: "POST",
           headers,
-          body: JSON.stringify({ content: payload.content, shortcutId: payload.shortcutId ?? null }),
+          body: JSON.stringify(
+            withPriceVersion({ content: payload.content, shortcutId: payload.shortcutId ?? null }, priceVersion),
+          ),
         },
       };
     default:
@@ -84,8 +109,9 @@ async function toApiError(response: Response): Promise<ApiErrorObject> {
 export async function* openChatStream<TEvent>(
   payload: ChatStreamRequestPayload,
   eventSchema: ZodType<TEvent>,
+  options: ChatStreamRequestOptions = {},
 ): AsyncGenerator<TEvent, void, unknown> {
-  const { url, init } = buildRequestInit(payload);
+  const { url, init } = buildRequestInit(payload, options);
   const response = await fetch(url, { ...init, credentials: "include" });
 
   // 바디 파싱은 `!response.ok`에만 건다 — 200인데 body가 없는 경우엔 읽을 에러 봉투가 없다.

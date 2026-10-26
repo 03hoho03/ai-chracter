@@ -11,6 +11,8 @@ export type GenerateImageResponse = components["schemas"]["GenerateImageResponse
 export type GenerateImagesVariables = {
   values: GenerateImagesFormValues;
   isReferenceEnabled: boolean;
+  /** 화면이 본 가격표 버전(`formToServer` 참고). */
+  priceVersion?: number;
 };
 
 // 인자는 폼값 그대로 받는다(호출부가 `variables.values.count`로 요청 장수를 읽는다) — 바디 모양
@@ -18,9 +20,9 @@ export type GenerateImagesVariables = {
 // 제출 시점의 판정을 함께 받는다.
 export function useGenerateImagesMutation() {
   return useMutation({
-    mutationFn: ({ values, isReferenceEnabled }: GenerateImagesVariables) =>
+    mutationFn: ({ values, isReferenceEnabled, priceVersion }: GenerateImagesVariables) =>
       apiClient
-        .post<GenerateImageResponse>("/images/generate", formToServer(values, { isReferenceEnabled }))
+        .post<GenerateImageResponse>("/images/generate", formToServer(values, { isReferenceEnabled, priceVersion }))
         .then((res) => res.data),
   });
 }

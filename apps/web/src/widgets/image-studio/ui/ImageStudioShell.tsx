@@ -6,7 +6,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Images, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
-import { cloverKeys, IMAGE_CLOVER_COST } from "@/entities/clover";
+import {
+  allowanceAfterCloverConfirm,
+  canAskCloverConfirm,
+  cloverKeys,
+  FIRST_CLOVER_CONFIRM_ALLOWANCE,
+  readCloverPricing,
+} from "@/entities/clover";
 import { generatedImagesKeys } from "@/entities/generated-image";
 import { hasImageJobPollError, useImageJobStatusQuery, type ImageJobStatusResponse } from "@/entities/image-job";
 import { imageModelKeys } from "@/entities/image-model";
@@ -17,6 +23,7 @@ import {
   GenerateImagesReferenceField,
   GenerateImagesStyleSummaryButton,
   GenerateImagesUnavailableState,
+  imageRequestCloverCost,
   useGenerateImagesMutation,
   useGenerateImagesSubmit,
   type GenerateImagesFormValues,
@@ -147,9 +154,9 @@ export function ImageStudioShell({
     });
   }
 
-  /** `allowCloverConfirm`은 **무한 루프 차단기**다 — 동의 뒤 재시도는
-   * `false`로 들어가므로, 그 재시도가 또 확인 429를 받아도 모달을 다시 띄우지 않고 평범한 실패로
-   * 끝난다. 채팅 쪽(`useSendMessage`)과 같은 모양이다.
+  /** `allowance`는 **무한 루프 차단기**다 — 동의 뒤 재시도는
+   * 그 확인을 뺀 값으로 들어가므로, 그 재시도가 또 확인 429를 받아도 모달을 다시 띄우지 않고 평범한 실패로
+   * 끝난다. 채팅 쪽(`useSendMessage`)과 같은 모양이다(가격 바뀜 확인 뒤에는 하루 한 번 확인만 남는다).
    *
    * ⚠️ 동의 POST가 실패한 경우는 여기까지 오지 않는다 — `useConfirmCloverSpend`가 그때
    * `"unhandled"`를 돌려주므로 재시도 자체가 없다(그건 진짜 실패라 오류 토스트가 뜬다).
@@ -161,12 +168,14 @@ export function ImageStudioShell({
   async function generate(
     values: GenerateImagesFormValues,
     helpers: GenerateImagesSubmitHelpers,
-    allowCloverConfirm = true,
+    allowance = FIRST_CLOVER_CONFIRM_ALLOWANCE,
   ) {
     try {
       const response = await generateMutation.mutateAsync({
         values,
         isReferenceEnabled: helpers.isReferenceEnabled,
+        // 보내는 순간 캐시에서 읽는다 — 가격 바뀜 확인 뒤 재시도가 다시 받은 가격표의 버전을 싣는다.
+        priceVersion: readCloverPricing(queryClient)?.priceVersion,
       });
       // 위 두 무효화 효과의 "이 잡에서 이미 했다" 표시는 지켜보는 잡 하나에 묶인 값이라, 지켜보는 잡이
       // 바뀌는 이 자리(202)에서 함께 되돌린다. 요청이 실패하면 잡이 바뀌지 않으므로 표시도 그대로다.
@@ -191,13 +200,18 @@ export function ImageStudioShell({
       // 🔴 **`getImageRateLimit`보다 먼저** 판정해야 한다. 확인 429도
       // 같은 `window: "image"`로 오지만 토스트가 아니라 모달 → 동의 → 재시도로 끝나므로,
       // 순서가 뒤집히면 저 투영이 코드를 모른 채 `undefined`를 주고 일반 오류 토스트가 뜬다.
-      // 단가는 BE 게이트와 같은 계산(`payload.count * IMAGE_UNIT_COST`)이다 — 채팅과 달리 장수를
-      // 곱한다.
-      const confirmOutcome = allowCloverConfirm
-        ? await confirmCloverSpend(error, values.count * IMAGE_CLOVER_COST, "image")
+      // 단가는 BE 게이트와 같은 계산(장수 × 공개 가격 응답의 장당 가격)이다 — 채팅과 달리 장수를
+      // 곱한다. 가격표를 못 받았으면 모달이 숫자 없이 말한다. 가격이 바뀌었다는 409 도 이 자리에서 새 가격으로
+      // 만들지 묻는다(저절로 다시 보내지 않는다).
+      const confirmOutcome = canAskCloverConfirm(error, allowance)
+        ? await confirmCloverSpend(
+            error,
+            imageRequestCloverCost(values.count, readCloverPricing(queryClient)?.imageCost),
+            "image",
+          )
         : "unhandled";
       if (confirmOutcome === "retry") {
-        await generate(values, helpers, false);
+        await generate(values, helpers, allowanceAfterCloverConfirm(error, allowance));
         return;
       }
       // 그만두기는 실패가 아니므로 오류 토스트를 띄우지 않는다. 🔴 채팅 3표면과 달리

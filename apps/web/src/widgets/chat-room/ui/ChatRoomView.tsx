@@ -42,6 +42,7 @@ import { isPremiumChatModel } from "@/entities/chat-model";
 import {
   CloverBalance,
   isCloverInsufficient,
+  isCloverPriceChangedError,
   shouldShowCloverBalance,
   useCloverBalanceQuery,
 } from "@/entities/clover";
@@ -89,6 +90,8 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   // 오고(상위 모델은 모델을 고를 때 이미 확인했다) 그 가격도 방 응답에 있다.
   // 클로버 429 에서는 캐시의 가격을 믿지 않고 방을 다시 받아 쓴다 — 화면을 띄워 둔 사이 상위 모델이 꺼졌으면 서버는
   // 기본 모델 가격을 매기는데 캐시는 옛 모델 가격이다. 다시 받은 값이 캐시에도 들어가 부족 안내도 함께 맞춰진다.
+  // 가격이 바뀌었다는 409 에서도 방을 다시 받는다 — 확인 모달은 서버가 실은 새 금액을 말하지만, 입력 바의 부족 안내는 방의 가격을
+  // 읽으므로 그것도 새 가격으로 맞춘다.
   const queryClient = useQueryClient();
   const confirmCloverSpend = useConfirmCloverSpend();
   // 되돌리면 메뉴를 연 응답이 다른 id 의 응답으로 바뀌어 그 "⋯"가 사라진다. 포커스가 갈 곳을 잃었으면 바뀐 마지막 응답의
@@ -106,7 +109,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     room && { contentType: room.contentType, contentId: room.contentId },
     async (error) => {
       const turnCost =
-        getRateLimitDetail(error)?.window === "clover"
+        getRateLimitDetail(error)?.window === "clover" || isCloverPriceChangedError(error)
           ? await refreshChatRoomTurnPrice(queryClient, roomId)
           : room?.turnCost;
       return confirmCloverSpend(error, turnCost, "chat");
