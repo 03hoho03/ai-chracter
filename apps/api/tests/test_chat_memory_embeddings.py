@@ -958,6 +958,8 @@ async def test_lifespan_closes_the_shared_pool_on_shutdown(
     async def _nothing(_factory: object) -> None:
         return None
 
+    # 이 테스트는 종료 동작을 본다 — 기동 가드(`test_clover_unit_guard.py`)도 다른 기동 작업처럼 막는다.
+    monkeypatch.setattr(main, "assert_clover_unit_matches", _nothing)
     monkeypatch.setattr(main, "rebuild_suspended_user_markers", _nothing)
     monkeypatch.setattr(main, "expire_stale_jobs_after_startup", _nothing)
 

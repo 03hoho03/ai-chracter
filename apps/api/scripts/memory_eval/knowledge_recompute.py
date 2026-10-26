@@ -87,6 +87,25 @@ def compare_recorded(
     return {"recordedFactIds": ids, "recordedDropped": dropped, "consistent": not (filter_on and dropped)}
 
 
+def recorded_rows(rows: Sequence[ChatMemoryFact], recorded: Sequence[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+    """턴 기록에 실린 사실 행마다 아는 사람(`knownBy`, 정해지지 않았으면 None)·말한 쪽(`assertedBy`)·글(주어·대상·속성·값을 이은
+    것). 관찰 칸(비밀이 아는 사람 없는 행으로 실렸나, 사용자 주장 행이 실렸나)의 입력이다. 템플릿 행에 없는 id 는 그 칸을 비운다
+    — 기록과 템플릿이 어긋난 것이라 지어 채우지 않는다."""
+    by_id = {str(row.id): row for row in rows}
+    out: list[dict[str, Any]] = []
+    for entry in recorded or ():
+        row = by_id.get(str(entry["factId"]))
+        if row is None:
+            out.append({"factId": str(entry["factId"]), "found": False})
+            continue
+        text = " ".join(str(part) for part in (row.subject, row.object, row.attribute, row.value) if part)
+        out.append(
+            {"factId": str(row.id), "found": True, "knownBy": list(row.known_by) if row.known_by else None,
+             "assertedBy": str(row.asserted_by), "text": text}
+        )  # fmt: skip
+    return out
+
+
 async def recompute_probe(
     db: Any,
     room_id: uuid.UUID,
@@ -96,11 +115,13 @@ async def recompute_probe(
     names: PromptNames,
     user_label: str,
     ignore_quoted_reply_names: bool,
+    recorded: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """템플릿 DB(`db`, 프로브를 보낸 체크포인트 그대로)에서 그 프로브 질문 턴을 다시 계산한다."""
+    """템플릿 DB(`db`, 프로브를 보낸 체크포인트 그대로)에서 그 프로브 질문 턴을 다시 계산한다. `recorded` 는 그 턴 기록에 실린
+    사실 행(`chat_turns.memory_facts`) — 주면 실린 행의 아는 사람·말한 쪽·글을 `recordedRows` 로 함께 낸다."""
     rows = list((await db.scalars(fact_rows_statement(room_id, cursor))).all())
     history, question = probe_history(await room_history(db, room_id), turns)
-    return recompute_turn(
+    result = recompute_turn(
         rows,
         history=history,
         user_content=question,
@@ -108,6 +129,7 @@ async def recompute_probe(
         user_label=user_label,
         ignore_quoted_reply_names=ignore_quoted_reply_names,
     )
+    return result | {"recordedRows": recorded_rows(rows, recorded)}
 
 
 async def room_history(db: Any, room_id: uuid.UUID) -> list[ChatMessage]:

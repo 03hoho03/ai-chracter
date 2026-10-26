@@ -29,6 +29,7 @@ from api.db.models.clover import (
     CloverSpendAllocation,
     CloverSpendRefund,
     CloverSpendUsage,
+    CloverUnitEvent,
 )
 from api.db.models.comments import (
     Comment,
@@ -190,6 +191,7 @@ __all__ = [
     "CloverSpendAllocation",
     "CloverSpendRefund",
     "CloverSpendUsage",
+    "CloverUnitEvent",
     "Comment",
     "CommentLike",
     "CommentMention",

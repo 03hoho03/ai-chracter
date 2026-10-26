@@ -13,7 +13,7 @@ import {
 } from "@/entities/clover";
 
 import { getGenerateButtonState } from "../model/generateButtonState";
-import { isImageCloverShort } from "../model/imageCloverCost";
+import { formatImageCostHint, isImageCloverShort } from "../model/imageCloverCost";
 import { getPromptSyntaxHint, PROMPT_WEIGHT_SYNTAX_HINT } from "../model/promptSyntaxHint";
 import type { GenerateImagesFormValues } from "../model/schema";
 import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
@@ -24,6 +24,9 @@ import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
 // (`looking at viewer`, `upper body`)는 예시에 남겨 둔다.
 const PROMPT_PLACEHOLDER =
   "1girl, solo, long hair, white blouse, cardigan, cherry blossoms, looking at viewer, upper body";
+
+// 이 폼은 한 화면에 하나뿐이라(프롬프트 id 도 고정이다) 고정 id 로 충분하다.
+const COST_HINT_ID = "generate-images-cost-hint";
 
 type GenerateImagesPromptFieldProps = {
   /** 202 를 받은 잡이 아직 끝나지 않았는가 — 제출을 소유한 셸이 정한다. */
@@ -59,6 +62,9 @@ export function GenerateImagesPromptField({ isJobInProgress }: GenerateImagesPro
     });
   // useWatch로 렌더 시점에 계산한다(useEffect 금지, 파생 상태).
   const promptValue = useWatch({ control, name: "prompt" });
+  // 금액 안내는 잔량과 달리 늘 보인다 — 누르기 전에 얼마가 들 수 있는지를 알아야 하므로. 장수를 바꾸면 총액이 따라 바뀐다.
+  const count = useWatch({ control, name: "count" });
+  const costHint = formatImageCostHint(count, imageCost);
   const syntaxHint = getPromptSyntaxHint(promptValue ?? "");
   const isSyntaxWarning = syntaxHint !== PROMPT_WEIGHT_SYNTAX_HINT;
   const describedByIds = errors.prompt
@@ -96,14 +102,23 @@ export function GenerateImagesPromptField({ isJobInProgress }: GenerateImagesPro
             className="border-0 bg-transparent p-0 focus-visible:ring-0"
             {...register("prompt")}
           />
-          {/* 생성 버튼 줄의 **왼쪽**에 잔량을 둔다. 박스 아래에는 이미
+          {/* 생성 버튼 줄의 **왼쪽**에 금액 안내와 잔량을 위아래로 둔다. 박스 아래에는 이미
               힌트·에러 `<p>`가 있어 거기 넣으면 세 번째 줄이 되고, 버튼과 같은 줄이면 "이걸 누르면
-              얼마가 빠지나"가 한눈에 붙는다. 잔량이 없을 땐 `justify-between`이 빈 자리를 만들지
-              않도록 버튼만 남는다(아래 조건부 렌더). */}
+              얼마가 빠지나"가 한눈에 붙는다. 금액 안내는 버튼의 설명으로도 연결해 버튼에 포커스가 가면
+              함께 읽히고, 가격표를 못 받아 안내가 숨으면 연결도 뺀다. 둘 다 없을 땐 `justify-between`이
+              빈 자리를 만들지 않도록 버튼만 남는다(아래 조건부 렌더). */}
           <div className="flex items-center justify-between gap-2">
             {/* 빈 `<span>`을 항상 두어 `justify-between`이 버튼을 오른쪽에 붙여 둔다 — 조건부로
-                통째로 빼면 버튼이 홀로 남아 왼쪽으로 튄다. */}
-            <span>{shouldShowClover && <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />}</span>
+                통째로 빼면 버튼이 홀로 남아 왼쪽으로 튄다. 금액 안내가 잔량 위에 쌓이는 것도 같은 이유로
+                이 줄이다 — 좁은 화면에서 두 줄이 되어도 버튼 옆을 떠나지 않는다. */}
+            <span className="flex min-w-0 flex-col gap-0.5">
+              {costHint !== undefined && (
+                <span id={COST_HINT_ID} className="text-xs break-keep text-muted-foreground tabular-nums">
+                  {costHint}
+                </span>
+              )}
+              {shouldShowClover && <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />}
+            </span>
             {/* 모델 목록이 아직 로딩 중이면 model/style이 비어 있어 제출해도 zod가 조용히 막는다(그
                 필드엔 에러 텍스트 UI가 없다) — 누를 게 없는 상태를 숨기지 않고 버튼을 함께 잠근다.
                 `apps/web/CLAUDE.md` 의 포커스 절 — plain `disabled`는 브라우저가 즉시 blur해 포커스를
@@ -120,6 +135,7 @@ export function GenerateImagesPromptField({ isJobInProgress }: GenerateImagesPro
             <Button
               type="submit"
               aria-disabled={isSubmitBlocked}
+              aria-describedby={costHint !== undefined ? COST_HINT_ID : undefined}
               className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
             >
               <span className="grid">

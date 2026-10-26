@@ -8,8 +8,8 @@ from api.llm.chat_models import ChatModelId
 from api.payments.methods import PayMethod
 
 # 원장 조회 쿼리 파라미터와 응답 `category` 필드가
-# 같은 타입을 공유한다.
-CloverLedgerCategory = Literal["use", "earn", "expire"]
+# 같은 타입을 공유한다. `conversion`(단위 전환) 행은 다른 세 범주 어느 것을 물어도 경계 줄로 함께 실린다(`clover/router.py`).
+CloverLedgerCategory = Literal["use", "earn", "expire", "conversion"]
 
 
 class CloverExpiringSoon(CamelModel):
@@ -17,6 +17,14 @@ class CloverExpiringSoon(CamelModel):
 
     amount: int
     expires_at: datetime
+
+
+class CloverBalanceBreakdown(CamelModel):
+    """잔액을 나눈 세 몫. 유료·보너스는 구매 로트의 남은 양이고 무료는 잔액의 나머지라 셋의 합이 잔액이다."""
+
+    paid: int
+    bonus: int
+    free: int
 
 
 class CloverBalanceResponse(CamelModel):
@@ -27,6 +35,8 @@ class CloverBalanceResponse(CamelModel):
     spend_confirmed_today: bool
     # 구매로 받은 클로버(유료+보너스) 중 남은 양. 탈퇴하면 이 몫도 사라지므로 탈퇴 화면이 경고에 쓴다.
     paid_balance: int
+    # 잔액을 유료·보너스·무료로 나눈 값. `paid_balance` 는 이 중 유료와 보너스의 합이다.
+    breakdown: CloverBalanceBreakdown
     # `expires_at > now()`인 로트만 본다(이미 만료됐지만
     # 배치가 아직 못 지운 로트는 제외). 이건 표시 전용 필터라 "차감·잔액 판정 경로에는
     # 만료 필터를 걸지 않는다"는 원칙과 충돌하지 않는다 — 표시와 판정은 다른 경로다. **만료까지 3일
@@ -70,6 +80,8 @@ class CloverLedgerItem(CamelModel):
     kind: str
     category: CloverLedgerCategory
     created_at: datetime
+    # 이 행이 단위 전환 전의 클로버 단위로 적혔는가(`clover/unit.py` 의 `is_legacy_unit`). 단위를 전환한 적이 없으면 늘 거짓이다.
+    legacy_unit: bool
 
 
 class CloverLedgerListResponse(CamelModel):
@@ -168,3 +180,41 @@ class CloverPricingResponse(CamelModel):
     # 미인증 회원 게이트(무료 대화·미션을 본인인증한 회원에게만)가 켜져 있는가. 로그인하지 않은 방문자도 읽는 정책
     # 문장이 이 값으로 갈린다 — 꺼진 동안 "본인인증을 마친 회원은"이라고 쓰면 거짓이다. `GET /me` 와 같은 판정 함수다.
     identity_gate_enabled: bool
+
+
+class CloverProductOffer(CamelModel):
+    """충전 허브가 보이는 상품 하나. 공개 가격 응답의 상품 행에 받는 총량(`total_amount` = 유료 + 보너스)을 더한 것이다 — 화면이
+    합을 따로 계산하지 않게 한다."""
+
+    key: ProductKey
+    name: str
+    # 부가세를 포함한 판매가(원).
+    price_krw: int
+    paid_amount: int
+    bonus_amount: int
+    total_amount: int
+
+
+class CloverPolicyValues(CamelModel):
+    """허브의 안내 문장이 쓰는 정책 숫자. 같은 숫자가 이용약관·환불정책(DB 게시본)에도 있으므로 값을 바꾸면 그 문서도 함께
+    고친다."""
+
+    # 구매로 받은 유료·보너스 클로버를 쓸 수 있는 햇수(`core/clover.py` 의 `PURCHASE_LOT_YEARS`).
+    purchase_validity_years: int
+    # 결제일 다음 날부터 이 날수째 안이면 남은 유료 클로버를 전액 환불하고, 그 뒤는 이 비율로 환불한다
+    # (`payments/refund.py` 의 `FULL_REFUND_DAYS`·`REDUCED_REFUND_PERCENT`).
+    full_refund_days: int
+    reduced_refund_percent: int
+
+
+class CloverProductsResponse(CamelModel):
+    """공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능
+    스위치와 사용 단가는 공개 가격 응답(`GET /clover/pricing`)에 그대로 남는다."""
+
+    products: list[CloverProductOffer]
+    pay_methods: list[CloverPayMethodItem]
+    payments_enabled: bool
+    identity_gate_enabled: bool
+    daily_free_chat_turns: int
+    policy: CloverPolicyValues
+    price_version: int

@@ -1,4 +1,4 @@
-"""측정 하네스 CLI 의 관측 묶음 — 요약 `[관계]` 칸 비율과 판정 이벤트 로그 분포. 둘 다 DB 를 읽기 전용으로만 연다.
+"""측정 하네스 CLI 의 관측 묶음 — 요약 `[관계]` 칸 비율, 판정 이벤트 로그 분포와 같은 규칙의 연속 적용 분포. 모두 DB 를 읽기 전용으로만 연다.
 
 접속은 실행 명령의 `DATABASE_URL`(로컬 호스트만) 서버이고, DB 이름은 인자로 고른다 — 측정 DB 가 여러 개라서다. 설정 모듈을
 읽지 않으므로 `.env` 없이 돈다. 표준출력과 결과 파일에는 개수·비율만 있고 id·글은 없다."""
@@ -96,6 +96,27 @@ def cmd_stat_event_dist(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_stat_repeat_dist(args: argparse.Namespace) -> int:
+    """같은 적용 규칙이 인접 턴에 이어진 길이의 분포(살아 있는 턴만). `--print-sql` 은 DB 에 붙지 않고 같은 SQL 만 낸다."""
+    from memory_eval.stat_event_dist import read_only_connection, stat_repeat_distribution, stat_repeat_sql
+
+    if args.print_sql:
+        print(stat_repeat_sql(args.since, args.until))
+        return 0
+    if args.out is None:
+        raise SystemExit("--out 을 줘야 한다(--print-sql 이 아니면)")
+    url = _base_url()
+
+    async def run() -> dict[str, Any]:
+        async with read_only_connection(url, args.database) as connection:
+            return await stat_repeat_distribution(connection, since=args.since, until=args.until)
+
+    report = asyncio.run(run())
+    _write(args.out, report)
+    _print(report)
+    return 0
+
+
 def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
     p = sub.add_parser("relation-share", help="요약 [관계] 칸 비율 — 레인·모델별(DB 읽기 전용)")
     p.add_argument(
@@ -115,3 +136,11 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--print-sql", action="store_true", help="집계 SQL 만 낸다(DB 에 붙지 않는다)")
     p.add_argument("--out", type=Path)
     p.set_defaults(fn=cmd_stat_event_dist)
+
+    p = sub.add_parser("stat-repeat-dist", help="같은 적용 규칙의 인접 턴 연속 길이·잘림 분포(DB 읽기 전용)")
+    p.add_argument("--database", help="같은 서버의 DB 이름(없으면 DATABASE_URL 의 DB)")
+    p.add_argument("--since", type=_when, required=True, help="기준 시각(포함, 시간대 필수)")
+    p.add_argument("--until", type=_when, help="끝 시각(제외, 시간대 필수)")
+    p.add_argument("--print-sql", action="store_true", help="집계 SQL 만 낸다(DB 에 붙지 않는다)")
+    p.add_argument("--out", type=Path)
+    p.set_defaults(fn=cmd_stat_repeat_dist)

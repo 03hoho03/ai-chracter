@@ -22,6 +22,7 @@ from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import ChatModelId
 from api.novelize import output
 from api.novelize.prompts import build_novelize_chapter_prompt
+from factories import undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -108,8 +109,7 @@ async def test_the_copy_set_is_the_chat_novelize_rows_byte_for_byte(db_session: 
 
 async def test_each_novel_chain_has_its_new_set_active(db_session: AsyncSession) -> None:
     """(novel, 모델)마다 활성 세트가 하나다 — 없으면 그 모델 화 생성이 실패하고 어드민 소설 탭 초안 조회가 500 이다."""
-    await (await db_session.connection()).run_sync(_BLOCK_EDIT_PROMPTS.delete_seeded_rows)
-    await (await db_session.connection()).run_sync(_NOVEL_OUTLINE.delete_seeded_rows)
+    await (await db_session.connection()).run_sync(undo_seeded_rows_above, _M.revision)
     assert await _active_id(db_session, "novel") == _M.NEW_SET_IDS["gemini"]
     assert await _active_id(db_session, "novel", "sonnet") == _M.NEW_SET_IDS["sonnet"]
     assert await _active_id(db_session, "novel", "opus") == _M.NEW_SET_IDS["opus"]

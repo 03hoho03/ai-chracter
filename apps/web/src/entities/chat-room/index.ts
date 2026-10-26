@@ -77,6 +77,13 @@ export { buildRegeneratePayload } from "./model/buildRegeneratePayload";
 export { buildSendPayload } from "./model/buildSendPayload";
 export { getChatRateLimit, type ChatRateLimit } from "./model/chatRateLimit";
 export {
+  clearRejectedChatMessage,
+  restoreRejectedIntoInput,
+  saveChatDraftInput,
+  saveRejectedChatMessage,
+  takeChatDraftToRestore,
+} from "./model/chatDraft";
+export {
   CONTENT_PRIVATE_START_MESSAGE,
   CONTENT_RESTRICTED_NOTICE,
   CONTENT_RESTRICTED_START_MESSAGE,

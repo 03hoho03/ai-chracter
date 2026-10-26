@@ -338,3 +338,40 @@ class CloverSpendRefund(Base):
         Index("ix_clover_spend_refunds_allocation_id", "allocation_id"),
         Index("ix_clover_spend_refunds_created_at", "created_at"),
     )
+
+
+class CloverUnitEvent(Base):
+    """클로버 한 개의 원화 값(단위)을 바꾼 기록 — 전환(`convert`)과 되돌림(`revert`)마다 한 행. **append-only다.**
+
+    지금 단위는 `occurred_at` 이 가장 늦은 행의 `action` 이고, 행이 없으면 전환한 적이 없다. 단위를 마이그레이션 리비전으로
+    두지 않는 이유: 되돌림은 운영 스크립트가 데이터만 되돌리고 리비전은 그대로 두므로 리비전으로는 "전환됨"과 "되돌림"을 가를
+    수 없다. 한 행짜리 상태 대신 이벤트를 쌓는 이유: 되돌린 뒤 다시 전환하면 상태 행은 첫 전환 시각을 덮어써, 첫 전환과
+    되돌림 사이에 적힌 원장 행의 단위를 잃는다.
+
+    읽는 곳은 셋이다 — 기동 가드(`clover/unit.py`, 이 코드의 단위와 DB 의 마지막 기록이 다르면 기동하지 않는다), 내역 응답의
+    행별 옛 단위 표시, 운영 교체 스크립트(`ops/swap-api.sh`)의 옛 이미지 차단. 쓰는 곳은 전환 마이그레이션과 되돌림 스크립트뿐이고
+    번갈아 쓰기(전환 다음 되돌림 다음 전환)는 DB 제약이 아니라 쓰는 쪽이 표 잠금 아래에서 마지막 행을 보고 지킨다. 그래서 기본값은
+    `id` 말고 없다 — 쓰는 쪽이 잠금 아래에서 잰 값을 넣는다.
+
+    CHECK 는 alembic 1.18.5 의 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 유일한
+    검증이다.
+    """
+
+    __tablename__ = "clover_unit_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, server_default=text("gen_random_uuid()"))
+    action: Mapped[Literal["convert", "revert"]] = mapped_column(Text, nullable=False)
+    # 첫 표 잠금을 걸기 전 시각. 되돌림의 전제 확인과 운영 검산이 "전환 뒤에 생긴 쓰기"를 이 시각부터 센다 — 잠금에 막혔다가
+    # 전환 뒤에 들어간 쓰기도 그 범위에 든다.
+    lock_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # 모든 잠금을 잡은 뒤의 시각. 내역의 옛 단위 표시와 전환 원장 행의 `created_at` 이 이 시각으로 갈린다.
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # 이 행을 쓸 때의 돈 데이터 행 수(잔액이 0보다 큰 회원 수 + 결제 행 수). 전환 마이그레이션의 `downgrade()` 가 이 값으로 멈출지를
+    # 정한다 — 지금 데이터로 정하면 테스트 세션이 쌓은 행 때문에 세션 정리가 멈춘다.
+    money_rows: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 쓴 쪽: 마이그레이션 리비전 id 또는 되돌림 스크립트 이름. `downgrade()` 가 자기 행을 고르는 열쇠다.
+    written_by: Mapped[str] = mapped_column(Text, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("action IN ('convert', 'revert')", name="ck_clover_unit_events_action"),
+    )

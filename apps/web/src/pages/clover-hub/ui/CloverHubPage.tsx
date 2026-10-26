@@ -1,64 +1,65 @@
-import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
-import { toast } from "sonner";
+import { ChevronLeft } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import {
-  CLOVER_EXPIRY_NOTICE_MESSAGE,
-  CLOVER_MISSION_LABELS,
-  CloverBalance,
-  CloverProductLine,
-  formatCloverExpiringSoonMessage,
-  projectCloverMissionState,
-  useClaimCloverMissionMutation,
+  clearPaymentReturnTo,
+  readPaymentReturnTo,
   useCloverBalanceQuery,
-  useCloverMissionsQuery,
-  useCloverPricingQuery,
-  type CloverMissionItem,
+  useCloverProductsQuery,
+  type CloverProductOffer,
+  type CloverProductsResponse,
 } from "@/entities/clover";
-import { IdentityRequiredNotice, isIdentityVerificationRequiredError } from "@/entities/identity";
-import { useSessionQuery } from "@/entities/session";
-import { PurchaseConfirmDialog, usePaymentRedirect } from "@/features/purchase-clover";
+import { useSessionQuery, type MeResponse } from "@/entities/session";
+import {
+  PurchaseConfirmDialog,
+  resolvePaymentRedirect,
+  usePaymentRedirect,
+  type SettledPurchase,
+} from "@/features/purchase-clover";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
 import type { CloverHubSearch } from "../model/cloverHubSearch";
+import { toHubViewer } from "../model/hubViewer";
 import { getPurchaseSection } from "../model/purchaseSection";
-import { findRequestedProduct } from "../model/requestedProduct";
+import { resolveRequestedProduct } from "../model/requestedProduct";
+import { getReturnPlacement, resolveHubReturnTo, returnLinkLabel } from "../model/returnTo";
+import { getWalletView, isCheckingResolved } from "../model/walletView";
+import { CloverFaq } from "./CloverFaq";
+import { ProductsSection } from "./ProductsSection";
+import { PurchaseConditions } from "./PurchaseConditions";
+import { WalletSection } from "./WalletSection";
 
-const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
-const IDENTITY_REQUIRED_MESSAGE = "본인인증을 하면 받을 수 있어요.";
-
-/** 미션 수령 실패 토스트. 본인인증 403 은 실패가 아니라 "아직 받을 수 없다"라 오류 토스트가 아니고, 세션은 전역
- * 뮤테이션 처리가 다시 읽어 이 화면이 본인인증 안내로 바뀐다. */
-function toastClaimError(error: unknown) {
-  if (isIdentityVerificationRequiredError(error)) {
-    toast(IDENTITY_REQUIRED_MESSAGE);
-    return;
-  }
-  toast.error(GENERIC_ERROR_MESSAGE);
-}
-
-/** 이 회원이 본인인증 게이트에 걸려 있는가와 안내에 쓸 하루 무료 대화 수. 판정은 서버가 라우트 게이트와 같은 함수(면제
- * 회원 포함)로 계산한 세션 값이다. 세션이 아직 없으면 걸리지 않은 것으로 본다(라우트가 세션을 보장한다). */
-function useIdentityGate(): { isGated: boolean; dailyFreeChatTurns: number | undefined } {
-  const { data: me } = useSessionQuery();
-  return { isGated: me?.identityGated ?? false, dailyFreeChatTurns: me?.dailyFreeChatTurns };
-}
-
-const SECTION_LINK_CLASS =
-  "w-fit text-sm font-medium whitespace-nowrap text-primary hover:underline focus-visible:underline";
-
-/** 클로버 허브 페이지.
+/** 클로버 충전 화면(`/clover`). 로그인 없이 열린다.
  *
- * 컨테이너 폭은 `max-w-md`다. `DESIGN.md` Layout containers 절은 폭을 콘텐츠 밀도로 고르고 텍스트
- * 위주의 한 열인 설정 화면에 `max-w-md`를 준다 — 이 화면도 잔액·구매·미션 세 섹션이 텍스트 몇 줄과
- * 짧은 행뿐이라 그리드도 표도 없는 같은 밀도다. 미션 행은 라벨과 버튼·배지를 양 끝으로 벌리므로
- * (`justify-between`) 컬럼을 넓혀도 그 사이 빈자리만 늘어난다. 이 화면에서만 들어가는 내역 화면도
- * 같은 `max-w-md`라 둘 사이를 오갈 때 컬럼 폭이 바뀌지 않는다.
+ * 한 화면이 두 층이다. 공개 층(구매 조건·충전 상품·클로버 안내)은 누구에게나 같고 상품 응답(`GET /clover/products`)
+ * 하나로 그린다. 개인 층(내 클로버·결제 결과)은 로그인했을 때만 잔액(`GET /me/clover`)을 묻는다 — 로그인하지 않은
+ * 사람에게 물으면 401 이고, 받지 못한 잔액을 0으로 보이지 않는다. 가격·수량·정책 숫자는 전부 응답에서 온다.
  *
- * 결제창이 페이지를 떠났다가(모바일) 돌아오는 곳도 여기다 — 라우트가 넘긴 결과 쿼리로 확정을 이어받고 쿼리를 지운다.
- * 상품 안내 화면에서 상품을 고르고 오면(`product`) 그 상품의 구매 확인을 바로 열고 그 파라미터만 지운다.
- */
+ * 순서는 하나다: 내 클로버 → 구매 조건 → 충전 상품 → 클로버 안내. 좁은 화면은 이 순서의 한 열이고, `lg` 이상에서는
+ * 앞의 둘이 왼쪽 열, 뒤의 둘이 오른쪽 열로 나란히 선다. 시각 순서를 CSS `order` 로 바꾸지 않아 탭 순서 = DOM = 시각
+ * 순서다. 상태 열이 왼쪽인 이유가 이것이다 — 좁은 화면에서 잔액·결제 결과·구매 조건이 상품보다 먼저 읽혀야 하고(모바일
+ * 결제창에서 돌아온 직후 첫 화면에 결과가 보인다), 그 순서를 넓은 화면에서도 `order` 없이 지키려면 DOM 첫 덩어리가
+ * 왼쪽이어야 한다. 옆 열을 sticky 로 붙이지 않는다 — 문서 스크롤 화면에서 늘 자리를 차지하는 열은 그 화면만의 레일이고,
+ * `DESIGN.md` Navigation 절이 그런 세 번째 크롬 자리를 막는다.
+ *
+ * 폭은 좁은 화면에서 설정 화면과 같은 `max-w-md` 한 열이고 `lg` 이상에서 `max-w-4xl` 두 열이다. 열 폭의 근거는 이
+ * 화면에서 가장 넓은 고대비 잉크인 구매 조건의 자격 문장이다(`DESIGN.md` Layout containers 절 — 가장 넓은 컨트롤이
+ * 아니라 가장 넓은 잉크에 맞춘다. 상품 카드는 `w-full` 이라 어느 폭이든 채워 근거가 못 된다). 두 열은 같은 폭이고, 컨테이너
+ * 상한(896px)에서 좌우 패딩 48px 과 열 간격 48px 을 빼면 열마다 400px 다. 이 값은 `lg` 미만 한 열의 안쪽 폭(448 − 48 =
+ * 400px)과 같아, 본문 영역이 상한에 닿는 동안(좌측 패널이 레일이면 1024px 에서 본문 960px, 펼침이면 1280px 에서 1040px)은
+ * 경계를 넘어도 상품 카드 폭이 그대로다. 패널을 펼친 1024~1135px 은 본문이 상한보다 좁아(1024px 에서 784px) 열이 줄어든다
+ * — 784 − 48 − 48 을 둘로 나눈 344px 이다. 열을 더 넓혀도 가장 넓은 문장은 따라 늘지 않고 상품 행의 이름·가격 사이만 벌어진다. 두 열은 위에서부터
+ * 채우고(`items-start`) 높이를 맞추지 않는다 — 짧은 쪽 아래 빈 바닥은 그리는 상자가 없어 보이지 않는다. 이 화면에서만
+ * 들어가는 내역 화면은 목록 한 열이라 `max-w-md` 그대로다.
+ *
+ * 결제 결과는 토스트가 아니라 내 클로버 맨 위에 그린다 — 구매 확인 창(PC)과 결제창 복귀(모바일)가 같은 자리다. 주소에
+ * 담겨 온 상품(`product`)은 살 수 있으면 그 상품의 구매 확인을 바로 열고 그 파라미터만 지운다.
+ *
+ * 충전하러 온 화면의 주소(`returnTo`)가 있으면 돌아가는 길을 하나 둔다 — 결제 전·미완료·확인 중에는 제목 아래 텍스트
+ * 링크(충전하지 않고 돌아가는 길), 충전에 성공하면 결과 블록의 솔리드 버튼(`getReturnPlacement`). 이 주소는 로그인
+ * 링크에 실어 로그인 왕복 뒤에도 남고, 구매 확인에 넘겨 결제창을 띄우기 전에 탭 저장소에 둔다 — 결제창에서 돌아오면
+ * 거기서 되찾는다. */
 export function CloverHubPage({
   search,
   onSearchClear,
@@ -68,263 +69,148 @@ export function CloverHubPage({
   onSearchClear: () => void;
   onProductClear: () => void;
 }) {
-  usePaymentRedirect(search, onSearchClear);
+  const session = useSessionQuery();
+  const viewer = toHubViewer(session);
+  const productsQuery = useCloverProductsQuery();
+  // 잔액은 로그인한 사람에게만 묻는다. 묻지 않는 동안 쿼리는 대기 상태로 남고, 화면 갈래는 `getWalletView` 가 세션으로 먼저
+  // 가른다.
+  const balanceQuery = useCloverBalanceQuery({ enabled: viewer.kind === "member" });
+  const productsHeadingRef = useRef<HTMLHeadingElement>(null);
+  const [settled, setSettled] = useState<SettledPurchase | null>(null);
+  // 결과가 나온 때의 잔액. "확인 중"으로 끝난 뒤 다시 불러온 잔액이 이보다 늘었는지 본다. 결과 콜백은 비동기라 그때의
+  // 렌더 값을 쥐고 있으므로 최신 잔액을 ref 로 읽는다.
+  const latestBalance = useRef<number | undefined>(undefined);
+  latestBalance.current = balanceQuery.data?.balance;
+  const [balanceAtSettle, setBalanceAtSettle] = useState<number | undefined>(undefined);
+  // 결과가 나온 때 잔액이 아직 없었으면(새로 연 화면에서 결제창 복귀를 처리한 경우) 그 뒤 처음 도착한 잔액을 기준으로 잡는다.
+  const [firstBalanceAfterSettle, setFirstBalanceAfterSettle] = useState<number | undefined>(undefined);
+  const handleSettled = (next: SettledPurchase) => {
+    setBalanceAtSettle(latestBalance.current);
+    setFirstBalanceAfterSettle(undefined);
+    setSettled(next);
+  };
+  const balanceNow = balanceQuery.data?.balance;
+  useEffect(() => {
+    if (settled && balanceAtSettle === undefined && firstBalanceAfterSettle === undefined && balanceNow !== undefined) {
+      setFirstBalanceAfterSettle(balanceNow);
+    }
+  }, [settled, balanceNow]);
+
+  usePaymentRedirect(search, handleSettled, onSearchClear);
+
+  // 결제창에서 돌아왔으면 결제창을 띄우기 전에 탭 저장소에 둔 복귀 주소를 처음 그릴 때 한 번 읽고(`resolveHubReturnTo`),
+  // 읽은 뒤 지운다. 결제 결과 쿼리를 지운 뒤에도 그 값을 들고 있어야 해 상태로 쥔다(주소의 `returnTo` 는 그때그때 읽는다).
+  // 지우기는 effect 다 — 개발 모드가 상태 초기값 함수를 두 번 부르므로 읽는 쪽에서 지우면 두 번째 읽기가 빈 값을 본다.
+  const [paymentReturnTo] = useState(() =>
+    resolveHubReturnTo({ paymentId: search.paymentId, code: search.code }, readPaymentReturnTo()),
+  );
+  const returnTo = search.returnTo ?? paymentReturnTo;
+  useEffect(() => {
+    if (resolvePaymentRedirect(search).kind !== "none") clearPaymentReturnTo();
+  }, []);
+  const returnPlacement = getReturnPlacement(settled?.result ?? null, returnTo);
+
+  const products = productsQuery.data;
+  const section = products ? getPurchaseSection(products.paymentsEnabled, viewer) : undefined;
+  const requested =
+    products && section ? resolveRequestedProduct(products.products, search.product, section) : { kind: "none" as const };
+
+  const openPurchase = (product: CloverProductOffer, me: MeResponse, pricing: CloverProductsResponse) => {
+    void PurchaseConfirmDialog.call({
+      product,
+      payMethods: pricing.payMethods,
+      email: me.email,
+      returnTo,
+    }).then((result) => {
+      if (result) handleSettled(result);
+    });
+  };
+
+  useOpenRequestedProduct(requested.kind === "open" ? requested.product : undefined, (product) => {
+    // 연다는 판정(`open`)은 회원이 살 수 있는 상태에서만 나온다 — 이 검사는 그 사실을 타입에 알리는 것뿐이다.
+    if (viewer.kind === "member" && products) openPurchase(product, viewer.me, products);
+    onProductClear();
+  });
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-10 px-4 sm:px-6 py-10">
-      <div className="flex flex-col gap-1.5">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">클로버</h1>
-        {/* "클로버 페이지·내역 화면에도 상시 고지를 둔다."
-            문구는 entities/clover의 단일 소스(cloverExpiryNotice.ts)를 쓴다 — 내역 화면과
-            리터럴을 각자 복사해 갖고 있다가 "7일"과 게시된 공지("7~8일")가 어긋났던 전례가
-            있다. */}
-        <p className="text-sm break-keep text-muted-foreground">{CLOVER_EXPIRY_NOTICE_MESSAGE}</p>
+    <main className="mx-auto flex max-w-md flex-col gap-10 px-4 sm:px-6 py-10 lg:max-w-4xl">
+      {/* 부제를 두지 않는다. 미션 클로버 소멸 고지를 여기 두면 처음 사는 사람이 산 클로버도 일주일이면 사라진다고
+          읽어, 그 고지는 내 클로버의 무료 몫 아래로 옮겼다. */}
+      <div className="flex flex-col items-start gap-2">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{SUPPORT_DESTINATIONS.clover.label}</h1>
+        {returnPlacement.head && returnTo !== undefined && <ReturnLink returnTo={returnTo} />}
       </div>
 
-      <BalanceSection />
-      <PurchaseSection requestedProductKey={search.product} onRequestedProductHandled={onProductClear} />
-      <MissionSection />
+      <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-12">
+        <div className="flex flex-col gap-10">
+          <WalletSection
+            view={getWalletView(viewer, balanceQuery)}
+            settled={settled}
+            section={section}
+            isCheckingResolved={isCheckingResolved(
+              { atSettle: balanceAtSettle, firstArrived: firstBalanceAfterSettle },
+              balanceNow,
+            )}
+            onRetryBalance={() => void balanceQuery.refetch()}
+            solidReturnTo={returnPlacement.solid ? returnTo : undefined}
+          />
+          <PurchaseConditions section={section} />
+        </div>
+        <div className="flex flex-col gap-10">
+          <ProductsSection
+            headingRef={productsHeadingRef}
+            products={products?.products}
+            isPending={productsQuery.isPending}
+            isError={productsQuery.isError}
+            onRetry={() => {
+              productsHeadingRef.current?.focus();
+              void productsQuery.refetch();
+            }}
+            section={section}
+            requested={requested}
+            onPick={(product) => {
+              if (viewer.kind !== "member" || !products) return;
+              // 판매하지 않는 상품 안내는 다른 상품을 고르는 순간 할 일을 다 했다.
+              if (search.product !== undefined) onProductClear();
+              openPurchase(product, viewer.me, products);
+            }}
+            returnTo={returnTo}
+          />
+          <CloverFaq products={products} isError={productsQuery.isError} />
+        </div>
+      </div>
     </main>
   );
 }
 
-function SectionHeading({ children }: { children: string }) {
-  return <h2 className="text-xl font-semibold tracking-tight text-foreground">{children}</h2>;
-}
-
-function BalanceSection() {
-  const { data, isPending } = useCloverBalanceQuery();
-  // 3일 임박 게이트는 BE가 이미 걸었다. FE는 그 값을
-  // D-day 문구로만 바꾼다(재판정하지 않는다).
-  const expiringMessage = data ? formatCloverExpiringSoonMessage(data.expiringSoon, new Date()) : null;
-
-  return (
-    <section className="flex flex-col gap-4">
-      <SectionHeading>현재 잔액</SectionHeading>
-      <div className="flex flex-col gap-1.5">
-        {isPending ? (
-          <span className="text-sm text-muted-foreground">불러오는 중…</span>
-        ) : (
-          <CloverBalance balance={data?.balance ?? 0} className="text-sm" />
-        )}
-        {/* 평소 무채색, 만료 임박일 때만 primary 잉크(솔리드
-            채움이 아니다 — 밝기 예산은 화면당 솔리드 채움 하나만 관리한다, `CloverBalance`의
-            같은 처방). */}
-        {expiringMessage && <p className="text-sm text-primary">{expiringMessage}</p>}
-      </div>
-      {/* 내역 화면과 상품 안내 진입점. `pages/mypage/ui/MyPagePage.tsx`의 "내 작품" 링크와 같은
-          관용구(`font-medium ... text-primary hover:underline focus-visible:underline`). 상품 안내의
-          라벨·경로는 목적지 목록에서 가져온다 — 도착 페이지 h1·푸터·이 링크가 한 문자열을 써야 한쪽만 고쳐져
-          같은 페이지가 자리마다 다른 이름으로 불리는 일이 없다. */}
-      <div className="flex flex-wrap gap-x-4 gap-y-2">
-        <Link to="/clover/history" className={SECTION_LINK_CLASS}>
-          내역 보기
-        </Link>
-        <Link to={SUPPORT_DESTINATIONS["clover-pricing"].to} className={SECTION_LINK_CLASS}>
-          {SUPPORT_DESTINATIONS["clover-pricing"].label}
-        </Link>
-      </div>
-    </section>
-  );
-}
-
-/** 클로버 구매. 상품·가격·결제수단·결제 스위치는 전부 `GET /clover/pricing` 응답에서 온다(웹에 가격 사본이 없다).
- *
- * 상품 카드는 outline 이다 — 카드는 고르기만 하고 결제는 다이얼로그에서 하므로, 돈이 나가는 확정의 채움은 구매 확인
- * 다이얼로그 안의 "결제하기" 하나다. 카드 여러 장이 솔리드면 한 화면에 핑크 채움이 상품 수만큼 뜬다. */
-type PurchaseBodyProps = {
-  /** 상품 안내 화면에서 고르고 온 상품 키(`?product=`). */
-  requestedProductKey: string | undefined;
-  onRequestedProductHandled: () => void;
-};
-
-function PurchaseSection(props: PurchaseBodyProps) {
-  return (
-    <section className="flex flex-col gap-4">
-      <SectionHeading>클로버 구매</SectionHeading>
-      <PurchaseBody {...props} />
-    </section>
-  );
-}
-
-function PurchaseBody({ requestedProductKey, onRequestedProductHandled }: PurchaseBodyProps) {
-  const pricingQuery = useCloverPricingQuery();
-  const { data: me } = useSessionQuery();
-  useOpenRequestedProduct(requestedProductKey, onRequestedProductHandled);
-
-  if (pricingQuery.isPending) {
-    return <span className="text-sm text-muted-foreground">불러오는 중…</span>;
-  }
-  if (pricingQuery.isError) {
-    return (
-      <p className="text-sm break-keep text-destructive-text">
-        클로버 상품을 불러오지 못했어요. 잠시 후 다시 시도해주세요.
-      </p>
-    );
-  }
-
-  const { products, payMethods, paymentsEnabled } = pricingQuery.data;
-  const section = getPurchaseSection(paymentsEnabled, me);
-  if (section === "disabled") {
-    return <p className="text-sm break-keep text-muted-foreground">클로버 결제는 아직 준비 중이에요.</p>;
-  }
-  if (section === "identityRequired" || !me) {
-    // 상품 안내에서 상품을 고르고 왔는데 구매 확인이 열리지 않은 이유는 안내가 말하고, 덧붙이는 줄은 고른 상품을 어디서
-    // 사는지만 말한다. 구매 확인이 저절로 다시 열린다고는 하지 않는다 — 인증은 마이페이지에서 하고, 이 주소로 돌아오는
-    // 길에 따라 `?product=` 가 남지 않을 수 있다. 나이 조건(만 19세 이상)은 위 안내가 이미 말해 되풀이하지 않는다.
-    // 가격 응답에 없는 키(옛 링크, 손으로 고친 주소)면 상품 이름 없이 말한다.
-    if (requestedProductKey === undefined) return <IdentityRequiredNotice reason="purchase" />;
-    const requestedProduct = products.find((product) => product.key === requestedProductKey);
-    return (
-      <div className="flex flex-col gap-2">
-        <IdentityRequiredNotice reason="purchase" />
-        <p className="text-xs break-keep text-muted-foreground">
-          {requestedProduct
-            ? `본인인증을 마치면 상품 안내에서 고른 상품(${requestedProduct.name})을 여기서 살 수 있어요.`
-            : "본인인증을 마치면 여기서 상품을 살 수 있어요."}
-        </p>
-      </div>
-    );
-  }
-  // 잘못한 것이 없으므로 경고 틴트가 아니라 중립 문장이다. 상품 카드는 눌러도 살 수 없어 두지 않는다.
-  if (section === "ageRestricted") {
-    return (
-      <p className="text-sm break-keep text-muted-foreground">
-        클로버는 <span className="whitespace-nowrap">만 19세</span> 이상만 구매할 수 있어요.
-      </p>
-    );
-  }
-
-  return (
-    <ul className="flex flex-col gap-3">
-      {products.map((product) => (
-        <li key={product.key}>
-          {/* 카드 자체가 이 섹션의 인터랙션이라 button-outline 레시피를 카드 크기로 쓴다(`bg-background` +
-              `hover:bg-muted` + 하우스 포커스 링 + 눌림). */}
-          <button
-            type="button"
-            aria-haspopup="dialog"
-            onClick={() => void PurchaseConfirmDialog.call({ product, payMethods, email: me.email })}
-            className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3 text-left outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px motion-safe:transition-colors"
-          >
-            <CloverProductLine product={product} />
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** 상품 안내 화면에서 고르고 온 상품의 구매 확인을 연다. 가격 응답과 세션이 모두 와서 살 수 있는 상태로 판정된 뒤에만
- * 연다(`findRequestedProduct`). 연 뒤에는 그 파라미터만 지워 새로고침·뒤로가기로 다시 열리지 않게 한다. 같은 키를
- * 두 번 열지 않게 연 키를 ref 로 기억한다 — StrictMode 의 이중 실행에서 창이 두 개 뜬다.
+/** 주소에 담겨 온 상품의 구매 확인을 연다. 상품 응답과 세션이 모두 와서 살 수 있는 상태로 판정된 뒤에만 열 상품이
+ * 온다(`resolveRequestedProduct` 가 `open` 을 줄 때). 같은 키를 두 번 열지 않게 연 키를 ref 로 기억한다 — StrictMode 의
+ * 이중 실행에서 창이 두 개 뜬다.
  *
  * effect 는 열 상품이 바뀔 때만 돈다. 콜백과 응답 객체는 렌더마다 새로 만들어지고, 키가 같으면 같은 요청이다. */
-function useOpenRequestedProduct(requestedProductKey: string | undefined, onHandled: () => void) {
-  const { data: pricing } = useCloverPricingQuery();
-  const { data: me } = useSessionQuery();
+function useOpenRequestedProduct(
+  product: CloverProductOffer | undefined,
+  onOpen: (product: CloverProductOffer) => void,
+) {
   const openedKey = useRef<string | null>(null);
-  const product = pricing
-    ? findRequestedProduct(pricing.products, requestedProductKey, getPurchaseSection(pricing.paymentsEnabled, me))
-    : undefined;
 
   useEffect(() => {
-    if (!product || !pricing || !me || openedKey.current === product.key) return;
+    if (!product || openedKey.current === product.key) return;
     openedKey.current = product.key;
-    void PurchaseConfirmDialog.call({ product, payMethods: pricing.payMethods, email: me.email });
-    onHandled();
+    onOpen(product);
   }, [product?.key]);
 }
 
-function MissionSection() {
-  const { data, isPending } = useCloverMissionsQuery();
-  const claimMission = useClaimCloverMissionMutation();
-  const { isGated, dailyFreeChatTurns } = useIdentityGate();
-
-  const handleClaim = (key: string) => {
-    if (claimMission.isPending) return;
-    claimMission.mutate(key, {
-      onSuccess: (res) => {
-        toast.success(res.granted ? "미션 보상을 받았어요." : "이미 받은 미션이에요.");
-      },
-      onError: toastClaimError,
-    });
-  };
-
+/** 충전하지 않고 돌아가는 길. 제목에 딸린 보조 이동이라 무채색 텍스트 링크다(솔리드는 성공 뒤 결과 블록 몫). 보더가
+ * 없어 포커스는 50% 링에 불투명 1px 아웃라인을 더한다. */
+function ReturnLink({ returnTo }: { returnTo: string }) {
   return (
-    <section className="flex flex-col gap-4">
-      <SectionHeading>미션</SectionHeading>
-      {/* 안내는 섹션에 한 번만 둔다 — 행마다 두면 같은 문장이 세 번 읽힌다. 행의 "받기"는 아래에서 상태 표시로 바뀐다. */}
-      {isGated && <IdentityRequiredNotice reason="free-rewards" dailyFreeChatTurns={dailyFreeChatTurns} />}
-      {isPending ? (
-        <span className="text-sm text-muted-foreground">불러오는 중…</span>
-      ) : (
-        <ul className="flex flex-col gap-3">
-          {data?.missions.map((mission) => (
-            <MissionRow
-              key={mission.key}
-              mission={mission}
-              // 셋 중 지금 청구 중인 것만 로딩 문구를 보여준다 — `variables`는 마지막으로
-              // 호출된 인자를 들고 있다(tanstack-query 관례).
-              isClaiming={claimMission.isPending && claimMission.variables === mission.key}
-              isClaimLocked={isGated}
-              onClaim={() => handleClaim(mission.key)}
-            />
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-type MissionRowProps = {
-  mission: CloverMissionItem;
-  isClaiming: boolean;
-  /** 본인인증 전이라 달성한 미션도 받을 수 없다. 누르면 403 이 올 버튼 대신 상태 배지를 둔다. */
-  isClaimLocked: boolean;
-  onClaim: () => void;
-};
-
-function MissionRow({ mission, isClaiming, isClaimLocked, onClaim }: MissionRowProps) {
-  const state = projectCloverMissionState(mission);
-  const label = CLOVER_MISSION_LABELS[mission.key] ?? mission.key;
-
-  return (
-    <li className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
-      <div className="flex flex-col gap-0.5">
-        <span className="text-sm font-medium text-foreground">{label}</span>
-        <span className="text-xs text-muted-foreground">클로버 {mission.reward.toLocaleString()}개</span>
-      </div>
-      {/* DESIGN.md The Brightness Budget Rule — primary 솔리드 채움은 화면당 하나다. 미션은 여러 개가
-          동시에 달성될 수 있어 solid면 솔리드 핑크가 한꺼번에 여러 개 뜨므로, 여기는 outline이다. */}
-      {state === "claimable" && isClaimLocked && (
-        <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
-          본인인증 후 받기
-        </span>
-      )}
-      {state === "claimable" && !isClaimLocked && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onClaim}
-          aria-disabled={isClaiming}
-          className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
-        >
-          {isClaiming ? "받는 중..." : "받기"}
-        </Button>
-      )}
-      {/* DESIGN.md Status badges — 중립 상태는 채움이 아니라 외곽선·텍스트다(`bg-muted`는
-          카드·모달 위에서 사라진다). */}
-      {state === "claimed" && (
-        <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
-          청구완료
-        </span>
-      )}
-      {state === "unachieved" && (
-        <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
-          미달성
-        </span>
-      )}
-    </li>
+    <Link
+      to={returnTo}
+      className="-mx-1 inline-flex min-h-9 items-center gap-1 rounded-md px-1 text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring pointer-coarse:min-h-10 motion-safe:transition-colors"
+    >
+      <ChevronLeft aria-hidden className="size-4" />
+      {returnLinkLabel(returnTo)}
+    </Link>
   );
 }

@@ -15,11 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.payments.eligibility import purchase_block_reason
 from api.clover import products
+from api.core import clover
 from api.core.config import settings
 from api.core.identity_gate import identity_verification_required
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
-from api.db.models.payment import Payment
+from api.db.models.clover import CloverLot
+from api.db.models.payment import Payment, PaymentStatus
 from api.db.session import get_db_session
 from api.legal import documents as legal_documents
 from api.legal.dependencies import require_legal_consent
@@ -53,6 +55,9 @@ async def create_payment(
     body: CreatePaymentRequest,
     _consent: None = Depends(require_legal_consent),
     user_id: uuid.UUID = Depends(get_current_user_id),
+    # 정지 스위치(`clover.raise_if_clover_paused`) — 주문 행에 수량 사본을 쓰므로, 단위를 옮기는 동안 옛 단위 사본이 섞이지 않게
+    # 결제 스위치와 별개로 막는다.
+    _open: None = Depends(clover.raise_if_clover_paused),
     db: AsyncSession = Depends(get_db_session),
 ) -> CreatePaymentResponse:
     """주문을 만든다. 금액은 서버가 상품 키로 정하고 주문 행에 복사해 둔다 — 브라우저가 금액을 바꿔 결제해도 동기화의
@@ -121,6 +126,25 @@ def _report_webhook_config(problem: str) -> None:
         capture_dependency_failure(PaymentWebhookConfigError(problem), dependency="payment")
 
 
+# 이 결제로 받은 클로버가 지금도 지급된 채인 상태. 전액 취소는 지급한 뒤라도 받은 것이 없으므로 들지 않는다.
+_GRANTED_STATUSES: frozenset[PaymentStatus] = frozenset({"paid", "partially_cancelled"})
+
+
+async def _granted_amounts(db: AsyncSession, payment_id: str, status: PaymentStatus) -> tuple[int | None, int | None]:
+    """이 결제로 만든 구매 로트의 지급량(유료, 보너스). 지급한 상태가 아니거나 유료 로트가 없으면 (None, None) 이다."""
+    if status not in _GRANTED_STATUSES:
+        return None, None
+    rows = await db.execute(
+        select(CloverLot.kind, CloverLot.granted_amount)
+        .join(Payment, Payment.id == CloverLot.payment_id)
+        .where(Payment.payment_id == payment_id)
+    )
+    granted = dict(rows.tuples().all())
+    if "purchase_paid" not in granted:
+        return None, None
+    return granted["purchase_paid"], granted.get("purchase_bonus", 0)
+
+
 def _notify_after_response(outcome: SyncOutcome, background_tasks: BackgroundTasks, notifier: PaymentNotifier) -> None:
     if outcome.notification is not None:
         background_tasks.add_task(notifier, outcome.notification)
@@ -155,7 +179,10 @@ async def complete_payment(
     _notify_after_response(outcome, background_tasks, notifier)
     balance = await db.scalar(select(User.clover_balance).where(User.id == user_id))
     assert balance is not None
-    return CompletePaymentResponse(status=outcome.status, balance=balance)
+    granted_paid, granted_bonus = await _granted_amounts(db, payment_id, outcome.status)
+    return CompletePaymentResponse(
+        status=outcome.status, balance=balance, granted_paid=granted_paid, granted_bonus=granted_bonus
+    )
 
 
 @router.post("/portone/webhook", include_in_schema=False)

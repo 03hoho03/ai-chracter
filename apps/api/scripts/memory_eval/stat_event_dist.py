@@ -155,13 +155,17 @@ ORDER BY 2, 3, 4;
 """
 
 
-def stat_events_sql(since: datetime, until: datetime | None) -> str:
-    """기준 시각(포함)부터 끝 시각(제외, 없으면 끝없음)까지의 턴 기록을 집계하는 SELECT 하나. 시각은 시간대가 있어야 한다 —
-    운영 psql 에 그대로 붙여 넣을 수 있게 리터럴로 싣는다(값은 `datetime` 의 ISO 꼴뿐이라 다른 글이 끼어들지 않는다)."""
+def _until_clause(since: datetime, until: datetime | None, column: str) -> str:
     for value in (since, until):
         if value is not None and value.tzinfo is None:
             raise SystemExit(f"시각에 시간대가 없다: {value.isoformat()}")
-    until_clause = "" if until is None else f" AND created_at < timestamptz '{until.isoformat()}'"
+    return "" if until is None else f" AND {column} < timestamptz '{until.isoformat()}'"
+
+
+def stat_events_sql(since: datetime, until: datetime | None) -> str:
+    """기준 시각(포함)부터 끝 시각(제외, 없으면 끝없음)까지의 턴 기록을 집계하는 SELECT 하나. 시각은 시간대가 있어야 한다 —
+    운영 psql 에 그대로 붙여 넣을 수 있게 리터럴로 싣는다(값은 `datetime` 의 ISO 꼴뿐이라 다른 글이 끼어들지 않는다)."""
+    until_clause = _until_clause(since, until, "created_at")
     return (
         _SQL.replace("__SINCE__", since.isoformat()).replace("__UNTIL__", until_clause).replace("__EPS__", _EPSILON)
     ).strip()
@@ -222,6 +226,144 @@ async def stat_event_distribution(connection: Any, *, since: datetime, until: da
     (`read_only_connection`)."""
     rows = await connection.fetch(stat_events_sql(since, until))
     return summarize_rows([tuple(row) for row in rows])
+
+
+# ---------------------------------------------------------------- 같은 규칙의 연속 적용
+
+# 살아 있는 턴만 남기는 조건. 테스트가 이 조건을 빼 보고 기대값이 깨지는지(죽은 턴을 가려내는지) 확인하려고 이름을 둔다.
+LIVE_FILTER = "WHERE t.live"
+REPEAT_DIRECTIONS = ("pos", "neg", "zero", "mixed")
+
+_REPEAT_SQL = """
+WITH t AS (
+  SELECT ct.chat_room_id AS room, ct.turn_number AS tn, ct.created_at AS made_at,
+         CASE WHEN jsonb_typeof(ct.stat_events) = 'array' THEN ct.stat_events ELSE '[]'::jsonb END AS ev,
+         EXISTS (SELECT 1 FROM chat_messages m WHERE m.id = ct.assistant_message_id) AS live
+    FROM chat_turns ct
+   WHERE ct.created_at >= timestamptz '__SINCE__'__UNTIL__
+),
+live AS (
+  SELECT t.room, t.tn, t.made_at, t.ev FROM t __LIVE__
+),
+j AS (
+  SELECT l.room, l.tn, l.made_at, x.e->>'statEntityId' AS sid,
+         x.e->'appliedRuleId'->>'entityId' AS rule,
+         sign(CASE WHEN jsonb_typeof(x.e->'delta') = 'number' THEN (x.e->>'delta')::numeric END)::int AS sgn,
+         CASE WHEN jsonb_typeof(x.e->'clamped') = 'boolean' THEN (x.e->>'clamped')::boolean END AS clamped
+    FROM live l, jsonb_array_elements(l.ev) AS x(e)
+   WHERE jsonb_typeof(x.e) = 'object'
+     AND jsonb_typeof(x.e->'statEntityId') = 'string'
+     AND jsonb_typeof(x.e->'appliedRuleId'->'entityId') = 'string'
+     AND jsonb_typeof(x.e->'delta') = 'number'
+     AND jsonb_typeof(x.e->'clamped') = 'boolean'
+),
+s AS (
+  SELECT j.*, lag(j.rule) OVER w AS prev_rule, lag(j.tn) OVER w AS prev_tn
+    FROM j WINDOW w AS (PARTITION BY j.room, j.sid ORDER BY j.tn, j.made_at)
+),
+g AS (
+  SELECT s.*,
+         sum(CASE WHEN s.prev_rule = s.rule AND s.tn = s.prev_tn + 1 THEN 0 ELSE 1 END)
+           OVER (PARTITION BY s.room, s.sid ORDER BY s.tn, s.made_at ROWS UNBOUNDED PRECEDING) AS grp
+    FROM s
+),
+runs AS (
+  SELECT count(*) AS len, count(*) FILTER (WHERE clamped) AS clamped,
+         CASE WHEN min(sgn) <> max(sgn) THEN 'mixed'
+              WHEN min(sgn) = 1 THEN 'pos' WHEN min(sgn) = -1 THEN 'neg' ELSE 'zero' END AS dir
+    FROM g GROUP BY room, sid, grp
+)
+SELECT 'rep', 'scope', 'all', 'liveTurns', count(*) FILTER (WHERE live) FROM t
+UNION ALL
+SELECT 'rep', 'scope', 'all', 'deadTurns', count(*) FILTER (WHERE NOT live) FROM t
+UNION ALL
+SELECT 'rep', 'scope', 'all', 'liveTurnsWithJudged', count(*) FROM (SELECT DISTINCT room, tn, made_at FROM j) AS jt
+UNION ALL
+SELECT 'rep', 'scope', 'all', 'rooms', count(DISTINCT room) FROM j
+UNION ALL
+SELECT 'rep', 'scope', 'all', 'roomStats', count(*) FROM (SELECT DISTINCT room, sid FROM j) AS js
+UNION ALL
+SELECT 'rep', 'runs', coalesce(dir, 'all'), len::text, count(*) FROM runs GROUP BY GROUPING SETS ((dir, len), (len))
+UNION ALL
+SELECT 'rep', 'runClamped', coalesce(dir, 'all'), len::text, sum(clamped) FROM runs
+ GROUP BY GROUPING SETS ((dir, len), (len))
+ORDER BY 2, 3, 4;
+"""
+
+
+def stat_repeat_sql(since: datetime, until: datetime | None) -> str:
+    """같은 방·같은 스탯에서 같은 적용 규칙이 인접 턴에 이어진 길이의 분포를 집계하는 SELECT 하나. 시각 규칙과 리터럴 싣기는
+    `stat_events_sql` 과 같다. 운영에서는 `BEGIN READ ONLY; … ROLLBACK;` 안에 그대로 넣는다.
+
+    - 살아 있는 턴만 본다: 응답 메시지 행이 아직 있는 턴. 재생성·수정·메시지 삭제가 지운 응답의 기록은 그 자리를 대체한 턴과
+      같은 턴 번호로 남아 있어, 넣으면 같은 턴이 둘이 되고 연속이 끊기거나 부풀려진다. 메시지 행은 있는지만 보고 글은 읽지 않는다.
+    - 규칙은 `appliedRuleId.entityId` 로 가린다 — 작가가 규칙을 고쳐 판본(`id`)이 바뀌어도 같은 규칙이다.
+    - 구간은 (방, 스탯)마다 턴 번호 순으로 늘어놓은 판정 원소에서, 바로 앞 원소와 규칙이 같고 턴 번호가 하나 차이일 때 이어진다.
+      그 스탯이 판정되지 않은 턴(발동 규칙 없음)이 끼면 끊긴다. 카운터 원소와 꼴이 틀린 원소는 보지 않는다.
+    - 구간의 방향은 폭의 부호(`pos`·`neg`·`zero`, 한 구간 안에서 갈리면 `mixed`)다.
+
+    결과 행은 `('rep', 지표, 방향, 칸, 값)` 이고 방·스탯·규칙 id 는 집계 안에서만 쓴다."""
+    until_clause = _until_clause(since, until, "ct.created_at")
+    return (
+        _REPEAT_SQL.replace("__SINCE__", since.isoformat())
+        .replace("__UNTIL__", until_clause)
+        .replace("__LIVE__", LIVE_FILTER)
+    ).strip()
+
+
+def _empty_direction() -> dict[str, Any]:
+    return {"runs": {}, "runClamped": {}}
+
+
+def summarize_repeat_rows(rows: list[tuple[Any, ...]]) -> dict[str, Any]:
+    """반복 집계 행을 접는다. 방향마다(`all` 은 합계) 구간 길이 → 구간 수, 길이 → 잘린 원소 수에 더해 원소 수·잘림 비율과,
+    길이 2 이상 구간(같은 규칙이 이어진 것)만의 구간 수·원소 수·잘림 비율·전체 원소 중 몫, 가장 긴 구간 길이를 낸다."""
+    scope: dict[str, int | float] = {
+        "liveTurns": 0,
+        "deadTurns": 0,
+        "liveTurnsWithJudged": 0,
+        "rooms": 0,
+        "roomStats": 0,
+    }
+    by_direction: dict[str, dict[str, Any]] = {"all": _empty_direction()}
+    for _tag, metric, direction, bucket, value in rows:
+        number = _number(value) if value is not None else 0
+        if metric == "scope":
+            scope[bucket] = number
+        else:
+            by_direction.setdefault(direction, _empty_direction())[metric][str(bucket)] = number
+    for entry in by_direction.values():
+        entry["runs"] = dict(sorted(entry["runs"].items(), key=lambda item: int(item[0])))
+        entry["runClamped"] = dict(sorted(entry["runClamped"].items(), key=lambda item: int(item[0])))
+        lengths = {int(length): count for length, count in entry["runs"].items()}
+        clamped = {int(length): count for length, count in entry["runClamped"].items()}
+        elements = sum(length * count for length, count in lengths.items())
+        repeated_elements = sum(length * count for length, count in lengths.items() if length >= 2)
+        repeated_clamped = sum(count for length, count in clamped.items() if length >= 2)
+        entry["elements"] = elements
+        entry["clamped"] = sum(clamped.values())
+        entry["clampedRate"] = entry["clamped"] / elements if elements else None
+        entry["repeated"] = {
+            "runs": sum(count for length, count in lengths.items() if length >= 2),
+            "elements": repeated_elements,
+            "clamped": repeated_clamped,
+            "clampedRate": repeated_clamped / repeated_elements if repeated_elements else None,
+            "elementShare": repeated_elements / elements if elements else None,
+        }
+        entry["longestRun"] = max(lengths, default=0)
+    ordered = {"all": by_direction.pop("all")}
+    for direction in REPEAT_DIRECTIONS:
+        if direction in by_direction:
+            ordered[direction] = by_direction.pop(direction)
+    return {"scope": scope, "byDirection": ordered | by_direction}
+
+
+async def stat_repeat_distribution(
+    connection: Any, *, since: datetime, until: datetime | None = None
+) -> dict[str, Any]:
+    """연결(asyncpg) 하나에서 반복 집계 SQL 을 돌려 요약한다. 읽기 전용으로 여는 것은 부르는 쪽 몫이다."""
+    rows = await connection.fetch(stat_repeat_sql(since, until))
+    return summarize_repeat_rows([tuple(row) for row in rows])
 
 
 def connect_kwargs(database_url: str, database: str | None = None) -> dict[str, Any]:

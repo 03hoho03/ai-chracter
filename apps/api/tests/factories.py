@@ -16,6 +16,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Gene
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, UTC
+from functools import cache
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ParamSpec, TypeVar
@@ -23,6 +24,8 @@ from typing import Any, ParamSpec, TypeVar
 import httpx
 import pytest
 import sqlalchemy as sa
+from alembic.config import Config
+from alembic.script import Script, ScriptDirectory
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
@@ -1421,38 +1424,42 @@ def _read_golden_prompt(filename: str) -> str:
 CHARACTERIZATION_UPDATE_ENV = "UPDATE_CHAT_CHARACTERIZATION"
 
 
-def _assert_characterization(path: Path, case: str, actual: object) -> None:
+def _assert_characterization(
+    path: Path, case: str, actual: object, update_env: str = CHARACTERIZATION_UPDATE_ENV
+) -> None:
     """지금 동작을 기록한 기대값 파일(`{경우: 값}` JSON)과 `actual` 을 비교한다. 기대값은 손으로 쓰지 않는다 — 환경 변수
-    `UPDATE_CHAT_CHARACTERIZATION=1` 로 돌리면 이 경우의 값을 파일에 써 넣고 통과한다(다른 경우의 값은 그대로 둔다).
+    `update_env`(기본 `UPDATE_CHAT_CHARACTERIZATION`)를 "1" 로 두고 돌리면 이 경우의 값을 파일에 써 넣고 통과한다(다른 경우의
+    값은 그대로 둔다). 기대값 파일 묶음마다 변수를 따로 두면 한 묶음을 다시 뜰 때 다른 묶음이 함께 다시 써지지 않는다.
     새로 뜬 값은 사람이 미리 적어 둔 예측과 대조한 뒤에 고정한다 — 같은 코드로 다시 뜨면 같은 값이 나와 아무것도
     증명하지 못하므로, 고정한 뒤에는 동작을 일부러 바꾼 커밋에서만 다시 뜬다.
 
     `actual` 은 JSON 으로 한 번 왕복시켜 비교한다(튜플·리스트 차이를 없앤다)."""
     actual = json.loads(json.dumps(actual, ensure_ascii=False))
-    if os.environ.get(CHARACTERIZATION_UPDATE_ENV) == "1":
+    if os.environ.get(update_env) == "1":
         recorded: dict[str, object] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
         recorded[case] = actual
         path.write_text(json.dumps(recorded, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return
-    assert path.exists(), f"기대값 파일 {path.name} 이 없다 — {CHARACTERIZATION_UPDATE_ENV}=1 로 한 번 떠야 한다"
+    assert path.exists(), f"기대값 파일 {path.name} 이 없다 — {update_env}=1 로 한 번 떠야 한다"
     expected: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
-    assert case in expected, f"{path.name} 에 {case!r} 의 기대값이 없다 — {CHARACTERIZATION_UPDATE_ENV}=1 로 떠야 한다"
+    assert case in expected, f"{path.name} 에 {case!r} 의 기대값이 없다 — {update_env}=1 로 떠야 한다"
     assert actual == expected[case]
 
 
-def _assert_recorded_cases(path: Path, cases: Iterable[str]) -> None:
+def _assert_recorded_cases(path: Path, cases: Iterable[str], update_env: str = CHARACTERIZATION_UPDATE_ENV) -> None:
     """기대값 파일의 경우 집합이 지금 파라미터의 경우 집합(`cases`)과 같아야 한다. `_assert_characterization` 은 경우
     하나씩만 보므로, 지우거나 이름을 바꾼 경우의 옛 값이 파일에 남아도 아무 테스트도 실패하지 않는다 — 그 값은 아무것도
-    지키지 않으면서 지키는 것처럼 보인다. 갱신 모드에서는 남은 옛 값을 지운다(빠진 경우는 그 경우의 테스트가 써 넣는다)."""
+    지키지 않으면서 지키는 것처럼 보인다. 갱신 모드(`update_env` 가 "1")에서는 남은 옛 값을 지운다(빠진 경우는 그 경우의
+    테스트가 써 넣는다). `update_env` 는 같은 파일을 쓰는 `_assert_characterization` 호출과 같은 이름을 준다."""
     expected = set(cases)
-    if os.environ.get(CHARACTERIZATION_UPDATE_ENV) == "1":
+    if os.environ.get(update_env) == "1":
         if not path.exists():
             return
         recorded: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
         kept = {case: value for case, value in recorded.items() if case in expected}
         path.write_text(json.dumps(kept, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return
-    assert path.exists(), f"기대값 파일 {path.name} 이 없다 — {CHARACTERIZATION_UPDATE_ENV}=1 로 한 번 떠야 한다"
+    assert path.exists(), f"기대값 파일 {path.name} 이 없다 — {update_env}=1 로 한 번 떠야 한다"
     recorded_cases = set(json.loads(path.read_text(encoding="utf-8")))
     assert recorded_cases - expected == set(), f"{path.name} 에 지금 파라미터에 없는 경우가 남았다"
     assert expected - recorded_cases == set(), f"{path.name} 에 기대값이 없는 경우가 있다"
@@ -2696,3 +2703,30 @@ async def _wait_until_a_lock_is_awaited(engine: AsyncEngine) -> None:
             if waiting:
                 return
             await asyncio.sleep(0.01)
+
+
+@cache
+def _migration_scripts() -> ScriptDirectory:
+    return ScriptDirectory.from_config(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")))
+
+
+def _seed_scripts_above(revision: str) -> list[Script]:
+    return [
+        script
+        for script in _migration_scripts().walk_revisions(revision, "heads")
+        if script.revision != revision and hasattr(script.module, "delete_seeded_rows")
+    ]
+
+
+def seed_revisions_above(revision: str) -> list[str]:
+    """`revision` 위에 쌓인 리비전 중 시드 되돌리기 함수(`delete_seeded_rows`)가 있는 것 — head 쪽부터, 실제 downgrade
+    순서다. 레인을 가리지 않는다(채팅 레인 테스트도 소설 레인 시드를 되돌린다)."""
+    return [script.revision for script in _seed_scripts_above(revision)]
+
+
+def undo_seeded_rows_above(conn: Connection, revision: str) -> None:
+    """프롬프트 시드 리비전 테스트가 "이 리비전 직후 상태"를 보려고 위 시드 리비전들을 실제 downgrade 순서로 되돌린다.
+    `await connection.run_sync(undo_seeded_rows_above, _M.revision)` 으로 부른다. 위 리비전의 되돌리기가 멈추는 조건(시드 뒤
+    같은 체인에 게시한 세트가 있다 등)에 걸리면 그 예외가 그대로 난다."""
+    for script in _seed_scripts_above(revision):
+        script.module.delete_seeded_rows(conn)

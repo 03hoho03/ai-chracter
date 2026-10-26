@@ -4,8 +4,8 @@
   않는다(턴의 호출·트랜잭션이 스위치가 생기기 전과 같다). 작업은 방의 스냅샷 수가 `memory_impression_every_n_folds` 의 배수이고,
   가장 새 스냅샷에 인상이 아직 없고, 묶음(가장 새 것까지 N 개) 스냅샷의 장면·사실 추출이 모두 끝났을 때만 모델을 부른다. 그
   턴의 레인과 글쓰기 모델이 기억 사용 범위 밖이면 아무것도 하지 않는다.
-- 입력: 묶음 스냅샷의 장면·사실 행 중 아는 사람이 정해지지 않은 것뿐이다. 요약 글·원문 창은 싣지 않는다 — 그래서 비밀 행이
-  있든 없든 프롬프트가 바이트까지 같다.
+- 입력: 묶음 스냅샷의 장면·사실 행 전부다 — 아는 사람(`known_by`)이 정해진 행도 같은 줄 모양으로 들어간다. 인상 행의 근거 id
+  는 입력에 쓴 행 id 전부라, 인상을 어딘가에 싣는 쪽이 근거 행 단위로 비밀을 거를 수 있다. 요약 글·원문 창은 싣지 않는다.
 - 쓰기: 마지막 트랜잭션은 가장 새 스냅샷을 `FOR KEY SHARE` 로 잠근 뒤 방의 잊기 세대를 다시 읽고, 입력을 읽을 때와 다르면 결과를
   버린다. 잊게 하기(장면·사실 모두)는 그 방의 인상을 전부 지우고 잊기 세대를 올린다.
 
@@ -311,17 +311,21 @@ async def test_impression_is_scheduled_after_both_extractions_and_skips_a_room_o
 # --- 언제 만드나 --------------------------------------------------------------------------------
 
 
-async def test_a_due_group_becomes_one_impression_built_only_from_public_rows(
+async def test_a_due_group_becomes_one_impression_built_from_every_scene_and_fact_row_secret_or_not(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """묶음 세 스냅샷의 공개 장면·사실만 입력이 된다. 아는 사람이 정해진 장면·사실은 프롬프트에도 근거 id 에도 없다. 행은 가장 새
-    스냅샷에 걸리고 첫 커서는 가장 오래된 스냅샷의 것이다. 글은 앞뒤 공백을 걷는다. 모델을 기다리는 동안 커넥션을 쥐지 않는다."""
+    """묶음 세 스냅샷의 장면·사실 행이 아는 사람이 정해졌든 아니든 전부 입력이 된다 — 장면 추출이 그 장면에 있던 인물을 거의 늘
+    아는 사람으로 적어서, 비밀 행을 빼면 장면 대부분이 빠지고 인상이 사실 줄에만 기댄다. 비밀 행도 공개 행과 같은 줄 모양이고
+    (아는 사람 표기 없음), 근거 id 는 입력에 쓴 행 전부다. 행은 가장 새 스냅샷에 걸리고 첫 커서는 가장 오래된 스냅샷의 것이다.
+    글은 앞뒤 공백을 걷는다. 모델을 기다리는 동안 커넥션을 쥐지 않는다."""
     room, (first, second, third) = await _three_part_room(db_client, db_session)
     public_scene = await _scene(db_session, room, first, title="첫 장면", detail="정류장에서 우산을 나눠 썼다.")
-    await _scene(db_session, room, second, title="[비밀 장면]", detail="[비밀 장면 내용]", known_by=["지아"])
+    secret_scene = await _scene(
+        db_session, room, second, title="[비밀 장면]", detail="[비밀 장면 내용]", known_by=["지아"]
+    )
     later_scene = await _scene(db_session, room, third, title="둘째 장면", detail="빵집 앞에서 다시 만났다.")
     public_fact = await _fact(db_session, room, second)
-    await _fact(
+    secret_fact = await _fact(
         db_session,
         room,
         third,
@@ -362,10 +366,12 @@ async def test_a_due_group_becomes_one_impression_built_only_from_public_rows(
     )
     assert fake.prompts == [
         f"{IMPRESSION_SYNTHETIC_INSTRUCTION}\n\n"
-        "[장면]\n- 첫 장면: 정류장에서 우산을 나눠 썼다.\n- 둘째 장면: 빵집 앞에서 다시 만났다.\n\n"
-        "[사실]\n- 민수 → 지아: 소꿉친구 (confirmed)\n- 민수 / 직업: 제빵사 (claimed)"
+        "[장면]\n- 첫 장면: 정류장에서 우산을 나눠 썼다.\n- [비밀 장면]: [비밀 장면 내용]\n"
+        "- 둘째 장면: 빵집 앞에서 다시 만났다.\n\n"
+        "[사실]\n- 민수 → 지아: 소꿉친구 (confirmed)\n- 지아 / [비밀 속성]: [비밀 값] (confirmed)\n"
+        "- 민수 / 직업: 제빵사 (claimed)"
     ]
-    assert "비밀" not in fake.prompts[0] and "SUMMARY" not in fake.prompts[0] and "[U" not in fake.prompts[0]
+    assert "SUMMARY" not in fake.prompts[0] and "[U" not in fake.prompts[0]
     oldest = room.turns[10][1]
     assert await _impressions(db_session, room) == [
         (
@@ -374,32 +380,38 @@ async def test_a_due_group_becomes_one_impression_built_only_from_public_rows(
             oldest.created_at,
             oldest.id,
             "서로를 믿기 시작했다.",
-            [str(public_scene), str(later_scene)],
-            [str(public_fact), str(attribute_fact)],
+            [str(public_scene), str(secret_scene), str(later_scene)],
+            [str(public_fact), str(secret_fact), str(attribute_fact)],
         )
     ]
 
 
-async def test_the_prompt_is_byte_identical_with_or_without_secret_rows(
+async def test_secret_rows_take_their_place_in_the_snapshot_cursor_and_ordinal_order(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """같은 공개 행을 가진 두 방 — 한 방에만 비밀 장면·사실을 더 심는다. 두 방의 프롬프트가 바이트까지 같다(입력 제외가 행의 칸
-    하나로 정해지고, 순서가 스냅샷 커서·순번으로 정해진다)."""
-    prompts: list[str] = []
-    for with_secrets in (False, True):
-        room, (first, second, third) = await _three_part_room(db_client, db_session)
-        await _scene(db_session, room, first, title="첫 장면", detail="우산.")
-        await _fact(db_session, room, third, ordinal=1, value="이웃")
-        if with_secrets:
-            await _scene(db_session, room, first, ordinal=1, title="[비밀]", detail="[비밀]", known_by=["지아"])
-            await _fact(db_session, room, third, ordinal=0, value="[비밀 사이]", known_by=["민수"])
-        await _scene(db_session, room, second, title="둘째 장면", detail="빵집.")
-        fake = ImpressionLLMClient()
-        await _generate(db_session, room, fake)
-        prompts += fake.prompts
+    """입력 순서는 아는 사람과 무관하게 스냅샷 커서 순, 그 안은 순번 순이다 — 비밀 행이 공개 행 사이 제자리에 끼고 앞이나 뒤로
+    몰리지 않는다. 행 수·글자 수 상한은 없어서 비밀 행이 들어와도 공개 행이 밀려나지 않는다. 근거 id 도 같은 순서다. 심는 순서를
+    입력 순서와 다르게 둬 삽입 순서로 우연히 맞는 경우를 가른다."""
+    room, (first, second, third) = await _three_part_room(db_client, db_session)
+    later_scene = await _scene(db_session, room, second, title="둘째 장면", detail="빵집.")
+    secret_scene = await _scene(db_session, room, first, ordinal=1, title="[비밀]", detail="[비밀]", known_by=["지아"])
+    first_scene = await _scene(db_session, room, first, title="첫 장면", detail="우산.")
+    public_fact = await _fact(db_session, room, third, ordinal=1, value="이웃")
+    secret_fact = await _fact(db_session, room, third, ordinal=0, value="[비밀 사이]", known_by=["민수"])
+    fake = ImpressionLLMClient()
 
-    assert len(prompts) == 2
-    assert prompts[0] == prompts[1]
+    await _generate(db_session, room, fake)
+
+    assert fake.prompts == [
+        f"{IMPRESSION_SYNTHETIC_INSTRUCTION}\n\n"
+        "[장면]\n- 첫 장면: 우산.\n- [비밀]: [비밀]\n- 둘째 장면: 빵집.\n\n"
+        "[사실]\n- 민수 → 지아: [비밀 사이] (confirmed)\n- 민수 → 지아: 이웃 (confirmed)"
+    ]
+    [row] = await _impressions(db_session, room)
+    assert (row.episode_ids, row.fact_ids) == (
+        [str(first_scene), str(secret_scene), str(later_scene)],
+        [str(secret_fact), str(public_fact)],
+    )
 
 
 async def test_only_the_last_n_snapshots_are_read(
@@ -502,18 +514,34 @@ async def test_a_group_that_already_has_its_impression_is_not_redone(
     assert len(await _impressions(db_session, room)) == 1
 
 
-async def test_nothing_is_called_when_every_row_in_the_group_is_secret(
+async def test_a_group_whose_every_row_is_secret_still_becomes_an_impression(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
+    """묶음의 행이 전부 아는 사람이 정해진 행이어도 입력이 비지 않으므로 모델을 부르고, 근거 id 가 그 행들이다."""
     room, (first, second, _) = await _three_part_room(db_client, db_session)
-    await _scene(db_session, room, first, known_by=["지아"])
-    await _fact(db_session, room, second, known_by=["민수"])
+    scene = await _scene(db_session, room, first, known_by=["지아"])
+    fact = await _fact(db_session, room, second, known_by=["민수"])
+    fake = ImpressionLLMClient()
+
+    await _generate(db_session, room, fake)
+
+    assert len(fake.prompts) == 1
+    [row] = await _impressions(db_session, room)
+    assert (row.episode_ids, row.fact_ids) == ([str(scene)], [str(fact)])
+
+
+async def test_nothing_is_called_when_the_group_has_no_scene_or_fact_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """묶음 스냅샷에 장면·사실 행이 하나도 없으면 쥐지도 부르지도 않는다."""
+    room, _ = await _three_part_room(db_client, db_session)
     fake = ImpressionLLMClient()
 
     await _generate(db_session, room, fake)
 
     assert fake.prompts == []
     assert await _impressions(db_session, room) == []
+    assert await _attempts(db_session, room) == []
 
 
 # --- 결과 ---------------------------------------------------------------------------------------
@@ -618,7 +646,7 @@ def test_the_impression_module_never_reads_summaries_messages_or_notes() -> None
     못한다."""
     assert memory_impressions.__file__ is not None
     source = Path(memory_impressions.__file__).read_text(encoding="utf-8")
-    assert "ChatMemoryEpisode" in source and "ChatMemoryFact" in source and "known_by" in source
+    assert "ChatMemoryEpisode" in source and "ChatMemoryFact" in source
     for name in (
         "summary_text",
         "previous_text",

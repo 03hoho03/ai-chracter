@@ -1,11 +1,16 @@
-import type { CloverProductItem } from "@/entities/clover";
+import { rememberPaymentReturnTo, type CloverProductItem } from "@/entities/clover";
 import { requestPortOnePayment } from "@/shared/lib/portone/portoneSdk";
 
 import { useCompletePaymentMutation } from "../api/useCompletePaymentMutation";
 import { useCreatePaymentMutation, type CreatePaymentResponse } from "../api/useCreatePaymentMutation";
 import type { CloverPayMethodItem } from "./payMethod";
+import { buildPaymentRedirectUrl } from "./paymentRedirectUrl";
 import { toPortOneCustomer, type PurchaseFormValues } from "./purchaseForm";
-import { toCreatePaymentFailure, toPurchaseResult, type PurchaseResult } from "./purchaseResult";
+import { toCreatePaymentFailure, type PurchaseResult } from "./purchaseResult";
+import { toSettledPurchase, type PurchaseGrant } from "./settledPurchase";
+
+/** 구매 시도 하나의 끝. `grant` 는 지급까지 끝났고 서버가 받은 수량을 실었을 때만 있다. */
+export type PurchaseAttempt = { result: PurchaseResult; grant: PurchaseGrant | null };
 
 type PurchaseInput = {
   productKey: CloverProductItem["key"];
@@ -14,6 +19,8 @@ type PurchaseInput = {
   /** 결제창을 띄우기 직전에 부른다. 모달 다이얼로그가 열려 있으면 바깥(결제창 iframe)의 포인터·포커스를 막으므로
    * 호출부가 여기서 다이얼로그를 내린다. */
   onCheckoutOpen: () => void;
+  /** 충전 화면이 받은 복귀 주소(검사를 거친 값). 결제창이 페이지를 떠났다 돌아와도 남게 탭 저장소에 둔다. */
+  returnTo: string | undefined;
 };
 
 /** 클로버 구매: 주문 생성 → 포트원 결제창 → 서버 확정. 끝난 모양만 돌려주고 던지지 않는다.
@@ -24,15 +31,24 @@ export function usePurchaseClover() {
   const createPayment = useCreatePaymentMutation();
   const completePayment = useCompletePaymentMutation();
 
-  async function purchase({ productKey, payMethod, values, onCheckoutOpen }: PurchaseInput): Promise<PurchaseResult> {
+  async function purchase({
+    productKey,
+    payMethod,
+    values,
+    onCheckoutOpen,
+    returnTo,
+  }: PurchaseInput): Promise<PurchaseAttempt> {
     let order: CreatePaymentResponse;
     try {
       order = await createPayment.mutateAsync({ productKey, agreed: true });
     } catch (error) {
-      return toCreatePaymentFailure(error);
+      return { result: toCreatePaymentFailure(error), grant: null };
     }
 
     onCheckoutOpen();
+    // 결제창의 돌아올 주소에는 쿼리를 싣지 않으므로(`buildPaymentRedirectUrl`) 복귀 주소는 탭 저장소로 나른다. 복귀 주소
+    // 없이 연 결제면 앞 결제가 남긴 값을 지운다.
+    rememberPaymentReturnTo(returnTo);
     const outcome = await requestPortOnePayment({
       storeId: order.storeId,
       channelKey: order.channelKey,
@@ -42,16 +58,15 @@ export function usePurchaseClover() {
       payMethod: payMethod.payMethod,
       easyPayProvider: payMethod.easyPayProvider,
       customer: toPortOneCustomer(values),
-      redirectUrl: `${window.location.origin}/clover`,
+      redirectUrl: buildPaymentRedirectUrl(window.location.origin),
     });
-    if (outcome !== "succeeded") return outcome;
+    if (outcome !== "succeeded") return { result: outcome, grant: null };
 
     try {
-      const { status } = await completePayment.mutateAsync(order.paymentId);
-      return toPurchaseResult(status);
+      return toSettledPurchase(await completePayment.mutateAsync(order.paymentId));
     } catch {
       // 확인 요청만 실패했다(포트원 조회 실패 등). 결제는 됐을 수 있고 웹훅이 같은 결제를 맞춘다.
-      return "checking";
+      return { result: "checking", grant: null };
     }
   }
 

@@ -1184,6 +1184,8 @@ export interface paths {
          *     레인·모델은 요청에서 따로 받지 않는다 — `source.lane`·`source.model`에서만 나온다(그 체인의 초안으로 들어간다).
          *     `source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인
          *     분리 이전 버전은 복원 대상이 아니다.
+         *
+         *     본문은 생략할 수 있다(옛 화면). `base_draft_hash` 를 보내면 초안 저장과 같이 그 사이 다른 탭이 저장한 초안을 덮지 않는다.
          */
         post: operations["restore_prompt_set_admin_prompt_sets__id__restore_post"];
         delete?: never;
@@ -6026,6 +6028,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clover/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clover Products
+         * @description 공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책
+         *     숫자·가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로
+         *     다시 읽는다(공개 가격 응답의 같은 주석).
+         */
+        get: operations["get_clover_products_clover_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/payments": {
         parameters: {
             query?: never;
@@ -6812,6 +6836,8 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+            /** Legacyunit */
+            legacyUnit: boolean;
         };
         /** AdminCloverLedgerListResponse */
         AdminCloverLedgerListResponse: {
@@ -8886,6 +8912,13 @@ export interface components {
          * @description `id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성
          *     세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는
          *     조회).
+         *
+         *     두 칸은 기본값 없이 늘 채운다 — 응답을 만드는 자리가 하나라도 빠뜨리면 응답 검증에서 바로 터지게 하려는 것이다.
+         *     - `saved_draft_hash`: 저장된 초안 행(라벨 포함)의 내용 해시. 초안 행이 없으면 null. 저장·통째 복원 요청이 이 값을
+         *       `base_draft_hash` 로 돌려보내 그 사이 다른 탭의 저장을 덮지 않게 한다. 게시용 `draft_hash`(바뀐 섹션 조회)와 해시 함수는
+         *       같지만 입력이 다르다 — 게시용은 얼린 소설 행을 활성판 값으로 갈아 끼운 내용이라 둘을 섞으면 안 된다.
+         *     - `allowed_placeholders`: 이 체인이 편집할 수 있는 채널의 (채널, 슬롯)마다 쓸 수 있는 자리표시자. 화면이 따로 사본을 두면
+         *       서버와 어긋나므로 이 값만 본다.
          */
         AdminPromptDraftResponse: {
             /** Id */
@@ -8898,15 +8931,24 @@ export interface components {
             labels: components["schemas"]["AdminPromptLabels"];
             /** Sections */
             sections: components["schemas"]["AdminPromptSectionItem"][];
+            /** Saveddrafthash */
+            savedDraftHash: string | null;
+            /** Allowedplaceholders */
+            allowedPlaceholders: components["schemas"]["AdminPromptPlaceholderHint"][];
         };
         /**
          * AdminPromptDraftUpsertRequest
          * @description 섹션 전체 교체 — 부분 패치가 아니다.
+         *
+         *     `base_draft_hash` 는 화면이 초안을 받을 때 함께 받은 `saved_draft_hash` 다. 칸을 보내지 않으면(해시를 모르는 옛 화면) 검사하지
+         *     않고 덮어쓴다. null 을 명시하면 "초안 행이 없어야 한다"는 뜻이다. 지금 초안 해시와 다르면 409 `draft-changed` 다.
          */
         AdminPromptDraftUpsertRequest: {
             labels: components["schemas"]["AdminPromptLabels"];
             /** Sections */
             sections: components["schemas"]["AdminPromptSectionInput"][];
+            /** Basedrafthash */
+            baseDraftHash?: string | null;
         };
         /** AdminPromptLabels */
         AdminPromptLabels: {
@@ -8918,6 +8960,18 @@ export interface components {
             storyExampleLabel: string;
             /** Characterassistantlabel */
             characterAssistantLabel: string;
+        };
+        /**
+         * AdminPromptPlaceholderHint
+         * @description 한 (채널, 슬롯)에 쓸 수 있는 자리표시자 이름. 게시 검사가 쓰는 서버 상수에서 그대로 끌어낸다.
+         */
+        AdminPromptPlaceholderHint: {
+            /** Channel */
+            channel: string;
+            /** Slot */
+            slot: string;
+            /** Names */
+            names: string[];
         };
         /** AdminPromptPreviewItem */
         AdminPromptPreviewItem: {
@@ -9418,6 +9472,14 @@ export interface components {
         AdminPromptSetListResponse: {
             /** Items */
             items: components["schemas"]["AdminPromptSetSummary"][];
+        };
+        /**
+         * AdminPromptSetRestoreRequest
+         * @description 통째 복원도 초안을 덮어쓰므로 초안 저장과 같은 `base_draft_hash` 검사를 한다. 본문이나 칸이 없으면 검사하지 않는다.
+         */
+        AdminPromptSetRestoreRequest: {
+            /** Basedrafthash */
+            baseDraftHash?: string | null;
         };
         /**
          * AdminPromptSetSummary
@@ -10713,6 +10775,18 @@ export interface components {
          */
         ChatViewReasonCategory: "report-investigation" | "appeal-review" | "legal-request" | "other";
         /**
+         * CloverBalanceBreakdown
+         * @description 잔액을 나눈 세 몫. 유료·보너스는 구매 로트의 남은 양이고 무료는 잔액의 나머지라 셋의 합이 잔액이다.
+         */
+        CloverBalanceBreakdown: {
+            /** Paid */
+            paid: number;
+            /** Bonus */
+            bonus: number;
+            /** Free */
+            free: number;
+        };
+        /**
          * CloverBalanceResponse
          * @description Python은 snake_case, JSON은 camelCase다.
          */
@@ -10723,6 +10797,7 @@ export interface components {
             spendConfirmedToday: boolean;
             /** Paidbalance */
             paidBalance: number;
+            breakdown: components["schemas"]["CloverBalanceBreakdown"];
             expiringSoon: components["schemas"]["CloverExpiringSoon"] | null;
         };
         /**
@@ -10760,12 +10835,14 @@ export interface components {
              * Category
              * @enum {string}
              */
-            category: "use" | "earn" | "expire";
+            category: "use" | "earn" | "expire" | "conversion";
             /**
              * Createdat
              * Format: date-time
              */
             createdAt: string;
+            /** Legacyunit */
+            legacyUnit: boolean;
         };
         /**
          * CloverLedgerListResponse
@@ -10841,6 +10918,19 @@ export interface components {
             easyPayProvider: string | null;
         };
         /**
+         * CloverPolicyValues
+         * @description 허브의 안내 문장이 쓰는 정책 숫자. 같은 숫자가 이용약관·환불정책(DB 게시본)에도 있으므로 값을 바꾸면 그 문서도 함께
+         *     고친다.
+         */
+        CloverPolicyValues: {
+            /** Purchasevalidityyears */
+            purchaseValidityYears: number;
+            /** Fullrefunddays */
+            fullRefundDays: number;
+            /** Reducedrefundpercent */
+            reducedRefundPercent: number;
+        };
+        /**
          * CloverPricingResponse
          * @description 공개 가격 안내. 구매 전 안내에 없는 사용처 가격은 숨은 가격으로 읽히므로 일반 회원이 쓸 수 있는 모든 사용처(채팅에서
          *     고를 수 있는 상위 모델 포함)의 단가와, 허용된 계정만 쓰는 소설(기본 모델 화·AI 수정)의 단가를 싣고 소설은 그
@@ -10905,6 +10995,48 @@ export interface components {
             paidAmount: number;
             /** Bonusamount */
             bonusAmount: number;
+        };
+        /**
+         * CloverProductOffer
+         * @description 충전 허브가 보이는 상품 하나. 공개 가격 응답의 상품 행에 받는 총량(`total_amount` = 유료 + 보너스)을 더한 것이다 — 화면이
+         *     합을 따로 계산하지 않게 한다.
+         */
+        CloverProductOffer: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "mini" | "lite" | "basic_v2" | "plus_v2" | "max";
+            /** Name */
+            name: string;
+            /** Pricekrw */
+            priceKrw: number;
+            /** Paidamount */
+            paidAmount: number;
+            /** Bonusamount */
+            bonusAmount: number;
+            /** Totalamount */
+            totalAmount: number;
+        };
+        /**
+         * CloverProductsResponse
+         * @description 공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능
+         *     스위치와 사용 단가는 공개 가격 응답(`GET /clover/pricing`)에 그대로 남는다.
+         */
+        CloverProductsResponse: {
+            /** Products */
+            products: components["schemas"]["CloverProductOffer"][];
+            /** Paymethods */
+            payMethods: components["schemas"]["CloverPayMethodItem"][];
+            /** Paymentsenabled */
+            paymentsEnabled: boolean;
+            /** Identitygateenabled */
+            identityGateEnabled: boolean;
+            /** Dailyfreechatturns */
+            dailyFreeChatTurns: number;
+            policy: components["schemas"]["CloverPolicyValues"];
+            /** Priceversion */
+            priceVersion: number;
         };
         /** CommentAuthorResponse */
         CommentAuthorResponse: {
@@ -11283,6 +11415,10 @@ export interface components {
             status: "pending" | "paid" | "failed" | "mismatch" | "owner_withdrawn" | "cancelled" | "partially_cancelled";
             /** Balance */
             balance: number;
+            /** Grantedpaid */
+            grantedPaid: number | null;
+            /** Grantedbonus */
+            grantedBonus: number | null;
         };
         /**
          * ContentAccessStatus
@@ -17626,7 +17762,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AdminPromptSetRestoreRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -25513,7 +25653,7 @@ export interface operations {
     get_clover_ledger_me_clover_ledger_get: {
         parameters: {
             query: {
-                category: "use" | "earn" | "expire";
+                category: "use" | "earn" | "expire" | "conversion";
                 cursor?: string | null;
             };
             header?: never;
@@ -25558,6 +25698,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CloverPricingResponse"];
+                };
+            };
+        };
+    };
+    get_clover_products_clover_products_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloverProductsResponse"];
                 };
             };
         };

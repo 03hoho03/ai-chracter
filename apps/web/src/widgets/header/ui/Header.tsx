@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { CloverIcon } from "@/entities/clover";
 import { loginRedirectTarget, useSessionQuery } from "@/entities/session";
+import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
 import { BrandLogo } from "./BrandLogo";
 import { ContentTypeToggle } from "./ContentTypeToggle";
@@ -82,16 +83,17 @@ export function Header() {
             isSearchExpanded && "max-sm:col-span-3 max-sm:justify-self-stretch",
           )}
         >
-          {/* 클로버는 재화라 비로그인에게는 의미가 없고 누르면 로그인으로 튕기므로 알림·프로필처럼 로그인
-              시에만 둔다. 검색 앞에 따로 분기해 DOM 순서 = 시각 순서 = Tab 순서를 유지한다. `lg` 미만에서는
+          {/* 클로버는 재화라 알림·프로필처럼 로그인 시에만 헤더 아이콘으로 둔다 — 충전 화면은 로그인 없이도
+              열리지만, 비로그인 헤더 오른쪽은 로그인 버튼 하나가 주 행동이고 비로그인은 드로어·푸터의 "클로버 충전"으로
+              닿는다. 검색 앞에 따로 분기해 DOM 순서 = 시각 순서 = Tab 순서를 유지한다. `lg` 미만에서는
               숨기고 좌측 드로어의 목적지 목록이 대신한다 — 빠뜨리면 이 버튼은 우측 그룹의 직접 자식이라
               검색 펼침 여부와 무관하게 좁은 헤더 우측에 검색과 나란히 항상 나타난다. `CloverIcon`은 자기 기본 크기 클래스(`size-3.5`)를
               갖고 있어 버튼의 svg 크기 규칙(`size-` 클래스가 없는 svg만 키운다)에서 빠지므로, 이웃 아이콘과
               같은 `size-4`를 여기서 명시한다. 초록은 그림 자체에만 있고 버튼은 다른 아이콘 버튼과 같은
               무채색 `ghost`다 — 유채색 hover를 더하지 않는다. */}
           {me && (
-            <Button asChild variant="ghost" size="icon" aria-label="클로버" className="hidden lg:inline-flex">
-              <Link to="/clover">
+            <Button asChild variant="ghost" size="icon" aria-label={SUPPORT_DESTINATIONS.clover.label} className="hidden lg:inline-flex">
+              <Link to={SUPPORT_DESTINATIONS.clover.to}>
                 <CloverIcon className="size-4" />
               </Link>
             </Button>

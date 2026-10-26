@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/client";
 
+import { removeChatDraft } from "../model/chatDraft";
 import { chatRoomKeys } from "./keys";
 
 // 콘텐츠 스코프 목록 invalidate/현재 보고 있던 방이면 목록으로 navigate하는 책임은
@@ -14,6 +15,8 @@ export function useDeleteChatRoomMutation(roomId: string) {
       await apiClient.delete(`/chat-rooms/${roomId}`);
     },
     onSuccess: () => {
+      // 지운 방의 입력 초안은 돌아갈 곳이 없다.
+      removeChatDraft(roomId);
       void queryClient.invalidateQueries({ queryKey: chatRoomKeys.myLists() });
     },
   });

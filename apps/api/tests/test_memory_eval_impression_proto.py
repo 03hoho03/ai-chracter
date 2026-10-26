@@ -66,8 +66,8 @@ def _item(
         fact_lines=("- 민수 → 지아: 소꿉친구 (confirmed)",),
         episode_ids=("e1",),
         fact_ids=("f1",),
-        withheld_episodes=0,
-        withheld_facts=0,
+        secret_episodes=0,
+        secret_facts=0,
     )
 
 
@@ -132,7 +132,7 @@ async def _room_with_snapshots(
     return room.room_id, ids
 
 
-async def test_load_room_inputs_excludes_secret_rows_and_keeps_production_order(
+async def test_load_room_inputs_keeps_secret_rows_counts_them_and_keeps_production_order(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     room_id, snaps = await _room_with_snapshots(db_client, db_session, count=4)
@@ -170,14 +170,17 @@ async def test_load_room_inputs_excludes_secret_rows_and_keeps_production_order(
     assert item.group_index == 1
     assert item.snapshot_ids == tuple(str(s) for s in snaps[:3])
     # 스냅샷 커서 순, 그 안은 순번 순 — 운영 인상 생성이 프롬프트에 싣는 순서다.
+    # 비밀 행도 제자리(순번 2·1)에 든다.
     assert list(item.episode_lines) == [
-        f"- 공개A{i}: 첫째" if j == 0 else f"- 공개B{i}: 둘째" for i in range(3) for j in range(2)
+        line for i in range(3) for line in (f"- 공개A{i}: 첫째", f"- 공개B{i}: 둘째", f"- 비밀{i}: 숨김")
     ]
-    assert list(item.fact_lines) == [f"- 민수 → 지아: 공개값{i} (confirmed)" for i in range(3)]
-    joined = "\n".join(item.episode_lines + item.fact_lines)
-    assert "비밀" not in joined and "숨김" not in joined
-    assert item.withheld_episodes == 3 and item.withheld_facts == 3
-    assert len(item.episode_ids) == 6 and len(item.fact_ids) == 3
+    assert list(item.fact_lines) == [
+        line
+        for i in range(3)
+        for line in (f"- 민수 → 지아: 공개값{i} (confirmed)", f"- 민수 / 비밀: 비밀값{i} (confirmed)")
+    ]
+    assert item.secret_episodes == 3 and item.secret_facts == 3
+    assert len(item.episode_ids) == 9 and len(item.fact_ids) == 6
 
 
 async def test_load_room_inputs_skips_groups_whose_extractions_are_not_all_done(
@@ -354,6 +357,8 @@ def test_split_sentences() -> None:
     assert ip.split_sentences("  ") == []
 
 
+OPUS = "claude-opus-5-5"
+SONNET = "claude-sonnet-5-5"
 TEMPLATE = "설정:\n{author_setting}\n장면:\n{episode_lines}\n사실:\n{fact_lines}\n문장:\n{sentences}"
 
 
@@ -512,14 +517,87 @@ async def test_judge_items_writes_rows_and_resumes(tmp_path: Path) -> None:
     out = tmp_path / "judged.jsonl"
     items = [_judge_item(), ip.JudgeItem(**{**_judge_item().__dict__, "item_id": "x2"})]
     judge = ScriptedJudge(*([_verdict("supported", "unsupported", "conflict")] * 4))
-    made = await ip.judge_items(items[:1], judge, template=TEMPLATE, out_path=out)
+    made = await ip.judge_items(items[:1], judge, template=TEMPLATE, out_path=out, judge_model=OPUS)
     assert made == 1
-    made = await ip.judge_items(items, judge, template=TEMPLATE, out_path=out)
+    made = await ip.judge_items(items, judge, template=TEMPLATE, out_path=out, judge_model=OPUS)
     assert made == 1 and judge.calls == 4
     rows = ip.read_rows(out)
     assert [r["itemId"] for r in rows] == ["x1", "x2"]
     assert rows[0]["decided"] == ["supported", "unsupported", "conflict"]
     assert rows[0]["promptSha"] == ip.sha256_text(ip.render_judge_prompt(TEMPLATE, items[0]))
+    assert {r["judgeModel"] for r in rows} == {OPUS}
+
+
+async def test_judge_items_resume_does_not_ask_again_for_votes_received_before_a_mid_item_stop(tmp_path: Path) -> None:
+    # 첫 표를 받은 뒤 둘째 표에서 원장 상한으로 멈춘 문항. 첫 표는 이미 돈을 냈으므로 이어 돌릴 때 다시 부르지 않는다.
+    out = tmp_path / "judged.jsonl"
+    agree = _verdict("supported", "unsupported", "conflict")
+    stopped = ScriptedJudge(agree, BudgetExceededError("cap"))
+    with pytest.raises(BudgetExceededError):
+        await ip.judge_items([_judge_item()], stopped, template=TEMPLATE, out_path=out, judge_model=OPUS)
+    assert stopped.calls == 2 and ip.read_rows(out) == []
+
+    resumed = ScriptedJudge(agree)
+    made = await ip.judge_items([_judge_item()], resumed, template=TEMPLATE, out_path=out, judge_model=OPUS)
+    assert made == 1 and resumed.calls == 1
+    [row] = ip.read_rows(out)
+    assert row["decided"] == ["supported", "unsupported", "conflict"] and len(row["votes"]) == 2
+
+    again = ScriptedJudge()
+    made = await ip.judge_items([_judge_item()], again, template=TEMPLATE, out_path=out, judge_model=OPUS)
+    assert made == 0 and again.calls == 0
+
+
+async def test_judge_items_resume_keeps_an_inability_vote_received_before_a_stop(tmp_path: Path) -> None:
+    # 재시도를 다 쓴 불능 표도 이미 낸 호출이다. 이어 돌릴 때 그 표를 다시 묻지 않고, 불능 표가 있으니 셋째 표까지만 받는다.
+    out = tmp_path / "judged.jsonl"
+    bad = _verdict("supported")
+    stopped = ScriptedJudge(bad, bad, bad, BudgetExceededError("cap"))
+    with pytest.raises(BudgetExceededError):
+        await ip.judge_items([_judge_item()], stopped, template=TEMPLATE, out_path=out, judge_model=OPUS)
+
+    resumed = ScriptedJudge(
+        _verdict("supported", "supported", "supported"), _verdict("supported", "conflict", "supported")
+    )
+    await ip.judge_items([_judge_item()], resumed, template=TEMPLATE, out_path=out, judge_model=OPUS)
+    assert resumed.calls == 2
+    [row] = ip.read_rows(out)
+    assert row["votes"][0] is None and len(row["votes"]) == 3
+    assert row["decided"] == ["supported", None, "supported"]
+
+
+async def test_judge_items_refuses_to_mix_judge_models_in_one_output(tmp_path: Path) -> None:
+    out = tmp_path / "judged.jsonl"
+    agree = _verdict("supported", "unsupported", "conflict")
+    await ip.judge_items(
+        [_judge_item()], ScriptedJudge(agree, agree), template=TEMPLATE, out_path=out, judge_model=OPUS
+    )
+    other = ScriptedJudge(agree, agree)
+    with pytest.raises(SystemExit):
+        await ip.judge_items([_judge_item()], other, template=TEMPLATE, out_path=out, judge_model=SONNET)
+    assert other.calls == 0
+
+    # 문항 중간에 남은 표만 있어도 다른 모델로는 잇지 않는다.
+    partial = tmp_path / "partial.jsonl"
+    with pytest.raises(BudgetExceededError):
+        await ip.judge_items(
+            [_judge_item()],
+            ScriptedJudge(agree, BudgetExceededError("cap")),
+            template=TEMPLATE,
+            out_path=partial,
+            judge_model=OPUS,
+        )
+    with pytest.raises(SystemExit):
+        await ip.judge_items([_judge_item()], other, template=TEMPLATE, out_path=partial, judge_model=SONNET)
+    assert other.calls == 0
+
+
+def test_check_judge_model_refuses_rows_without_a_recorded_model(tmp_path: Path) -> None:
+    out = tmp_path / "judged.jsonl"
+    ip.check_judge_model(out, OPUS)  # 아직 파일이 없으면 통과
+    out.write_text(json.dumps({"itemId": "x1", "promptSha": "s", "decided": [], "votes": []}) + "\n", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        ip.check_judge_model(out, OPUS)
 
 
 def test_cli_registers_impression_commands(tmp_path: Path) -> None:

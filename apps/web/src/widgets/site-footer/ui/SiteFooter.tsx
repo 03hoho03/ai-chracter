@@ -13,7 +13,7 @@ const FOOTER_LINK_KEYS = [
   "operation-policy",
   "youth-policy",
   "refund-policy",
-  "clover-pricing",
+  "clover",
   "notices",
   "inquiry-new",
 ] as const satisfies readonly SupportDestinationKey[];

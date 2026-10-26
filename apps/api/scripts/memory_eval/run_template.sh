@@ -35,6 +35,15 @@ DATABASE_URL="$WORK_DB_URL" uv run --env-file .env python scripts/memory_eval_cl
 #     --expect-head "$MEASURE_COMMIT" sync-prompts --export "$PROMPT_EXPORT" --redis-url "<측정 서버 Redis>"
 # 프로브는 늘 같은 내보내기를 준다 — 계획한 체크포인트 템플릿마다 시작 전에 대조하고 다르면 거부한다:
 #   ... probe --prompt-export "$PROMPT_EXPORT" <프로브 인자...>
+# 묶음 1 갈래의 질의 임베딩 시간 상한은 봉인 문서의 값을 프로브 인자로 준다 — 빠뜨리면 앱 기본값으로 돈다. 견주는 두 갈래에 같은
+# 값을 준다:
+#   ... probe --arm <갈래> --memory-embed-recall-timeout-ms <봉인 문서의 값> <프로브 인자...>
+
+# 출력 JSON 을 읽어 멈출지 정하는 검사 줄은 2>&1 로 받은 파일을 읽지 않는다. 하네스는 JSON 을 표준출력에, 경고(캐시 조회 실패
+# 등)는 표준오류에 내는데 둘을 한 파일로 받으면 경고 줄이 JSON 앞에 섞여 읽지 못한다. 요약 파일을 쓰는 명령은 그 파일을 읽고
+# (trajectory-replay --summary-out), 아니면 표준출력만 받는다:
+#   ... trajectory-replay <인자...> --summary-out "$RUN_DIR/<요약>.json" > "$RUN_DIR/<실행>.out" 2>&1
+#   ... <하위 명령> <인자...> > "$RUN_DIR/<결과>.json" 2> "$RUN_DIR/<결과>.err"
 
 # 다른 셸에서 끝을 기다릴 때(출력 마지막 줄을 견주지 않는다):
 #   until ls "$STATUS_DIR"/done.* >/dev/null 2>&1; do sleep 30; done; ls "$STATUS_DIR"/done.*
@@ -57,6 +66,10 @@ DATABASE_URL="$WORK_DB_URL" uv run --env-file .env python scripts/memory_eval_cl
 # 묶음 판정 — 효과마다 분할 시드 파일의 합계 하한을 읽는다. 빠뜨리면 효과 하나만 표본이 모자라도 전체 판정이 멈춘다:
 #   ... v4-verdict --seal-sha <봉인 sha> --story <심기 표> <분할 폴더> --character <심기 표> <분할 폴더> \
 #     --scores <score 출력...> --judged <judge 출력...> --split-seeds <분할 시드 파일>
+# 사실 주입 재측정 집계 — 현 운영 갈래 → 사실 주입 갈래 효과, 사실 섹션 실림 턴 수 단언(문턱은 봉인 문서의 값), 관찰 칸:
+#   ... facts-inject-summary --seal-sha <봉인 sha> --story <심기 표> <분할 폴더> --character <심기 표> <분할 폴더> \
+#     --scores <score 출력...> --judged <judge 출력...> --split-seeds <분할 시드 파일> \
+#     --ran-probes <probe 결과...> --ran-recompute <filter-recompute 출력...> --ran-facts-min <봉인 문서의 값> --out <결과>
 # 개발 절반 미리보기 — 같은 판정 함수를 개발 문항에(봉인 없이). A0·A1·B1 밖 갈래가 든 쌍·효과는 개발 범위 밖으로 표시된다:
 #   ... v4-preview --story <심기 표> <분할 폴더> --character <심기 표> <분할 폴더> \
 #     --scores <score 출력...> --judged <judge 출력...> --split-seeds <분할 시드 파일>

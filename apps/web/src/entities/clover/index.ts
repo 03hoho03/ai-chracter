@@ -1,4 +1,5 @@
 export { cloverKeys } from "./api/keys";
+export { clearPaymentReturnTo, readPaymentReturnTo, rememberPaymentReturnTo } from "./model/paymentReturnTo";
 export { cloverBalanceQueryOptions } from "./api/cloverBalanceQueryOptions";
 export { useCloverBalanceQuery } from "./api/useCloverBalanceQuery";
 export type { CloverBalanceResponse } from "./api/useCloverBalanceQuery";
@@ -7,6 +8,8 @@ export { useCloverMissionsQuery } from "./api/useCloverMissionsQuery";
 export type { CloverMissionItem } from "./api/useCloverMissionsQuery";
 export { readCloverPricing, refetchCloverPricing, useCloverPricingQuery } from "./api/useCloverPricingQuery";
 export type { CloverPricingResponse, CloverProductItem } from "./api/useCloverPricingQuery";
+export { useCloverProductsQuery } from "./api/useCloverProductsQuery";
+export type { CloverPolicyValues, CloverProductOffer, CloverProductsResponse } from "./api/useCloverProductsQuery";
 export { useClaimCloverMissionMutation } from "./api/useClaimCloverMissionMutation";
 export { useCloverLedgerQuery } from "./api/useCloverLedgerQuery";
 export type {
@@ -30,9 +33,11 @@ export { CLOVER_EXPIRY_NOTICE_MESSAGE } from "./model/cloverExpiryNotice";
 export { projectCloverMissionState } from "./model/cloverMissionState";
 export type { CloverMissionState } from "./model/cloverMissionState";
 export { CLOVER_MISSION_LABELS } from "./model/cloverMissionLabel";
+export { CLOVER_MISSIONS_SECTION_ID } from "./model/cloverMissionsAnchor";
 export { CLOVER_KIND_LABELS } from "./model/cloverKindLabel";
 export { formatCloverLedgerAmount } from "./model/cloverLedgerAmountDisplay";
 export { CloverBalance } from "./ui/CloverBalance";
 export { CloverSpendSummary } from "./ui/CloverSpendSummary";
 export { CloverIcon } from "./ui/CloverIcon";
 export { CloverProductLine } from "./ui/CloverProductLine";
+export { CloverWallet } from "./ui/CloverWallet";

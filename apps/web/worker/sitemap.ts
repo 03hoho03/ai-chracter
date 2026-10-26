@@ -102,11 +102,13 @@ async function collectLocations(
   apiBaseUrl: string,
   origin: string,
 ): Promise<string[]> {
-  // 서비스 소개·클로버 상품 안내·법적 문서 여섯 종류는 조회 없이 정해지는 정적 경로다.
+  // 서비스 소개·클로버 충전·법적 문서 여섯 종류는 조회 없이 정해지는 정적 경로다. 클로버 충전은 로그인 없이 상품과
+  // 구매 조건을 보이는 화면이다. 옛 상품 안내 주소(`/clover/pricing`)는 이 화면으로 넘기기만 하므로 싣지 않는다 —
+  // 넘기는 주소를 실으면 검색엔진이 넘기기를 따라가야 한다.
   const locations = [
     `${origin}/`,
     `${origin}/about`,
-    `${origin}/clover/pricing`,
+    `${origin}/clover`,
     `${origin}/terms`,
     `${origin}/privacy`,
     `${origin}/operation-policy`,

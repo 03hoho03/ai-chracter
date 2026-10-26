@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { RotateCw } from "lucide-react";
 
 import {
@@ -30,6 +30,10 @@ type RateLimitNoticeProps = {
  */
 export function RateLimitNotice({ rateLimit, surface, onRetry }: RateLimitNoticeProps) {
   const [secondsLeft, setSecondsLeft] = useState(rateLimit.retryAfterSeconds);
+  // 충전하고 돌아올 곳. 충전 화면이 이 주소로 "돌아가기"를 두고, 결제창·로그인 왕복 뒤에도 잃지 않게 넘겨 다닌다. 거절된 메시지는
+  // 채팅 방이 입력 초안에 남겨 두어, 돌아오면 입력창에 있다 — 그래서 이 배너에 다시 보내기를 두지 않는다(지금 누르면 같은
+  // 거절이고, 충전 뒤에는 전송 버튼이 그 일을 한다).
+  const returnTo = useRouterState({ select: (state) => state.location.href });
 
   // rateLimit은 실패할 때마다 새로 만들어지는 객체라, 같은 초가 두 번 와도 이 effect가 다시 돈다
   // (값으로 비교하면 "30초 뒤 또 30초"에서 타이머가 이어져 0에 멈춘 채로 남는다).
@@ -68,7 +72,9 @@ export function RateLimitNotice({ rateLimit, surface, onRetry }: RateLimitNotice
           만들던 화면을 떠난다. */}
       {rateLimit.window === "clover" && !isPreviewSurface(surface) && (
         <Button asChild variant="destructive" size="sm" className="shrink-0">
-          <Link to="/clover">클로버 채우기</Link>
+          <Link to="/clover" search={{ returnTo }}>
+            클로버 채우기
+          </Link>
         </Button>
       )}
       {/* day 창에는 재시도를 두지 않는다 — 자정까지 눌러도 같은 429가 돌아온다. */}

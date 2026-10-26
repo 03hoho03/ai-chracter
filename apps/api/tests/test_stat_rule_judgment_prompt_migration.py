@@ -26,7 +26,7 @@ from api.chat.prompt_builder import (
 )
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import ChatModelId
-from factories import _create_admin, _login_as_admin
+from factories import _create_admin, _login_as_admin, undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -56,25 +56,12 @@ _MEMORY_EPISODE_MIGRATION = _load("fc6f0e134782")
 # 그 뒤 여덟 체인에 관계·사실 기억 문안을 더하고 장면 추출·회상 문안을 바꾼 세트를 게시하는 리비전 — 초안 게시 검사가
 # head 코드 표를 쓰므로 초안은 이것도 거친다.
 _MEMORY_FACT_MIGRATION = _load("5cab2abe4e7b")
-# 그 뒤 글을 쓰는 여섯 체인에 회상 문안만 바꾼 새 세트를 게시하는 리비전.
-_RECALL_PRIORITY_MIGRATION = _load("726aad108167")
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 새 세트를 게시하는 리비전.
-_FACT_INSTRUCTION_MIGRATION = _load("e4e407a62d03")
 # 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 초안은
 # 이것도 거친다.
 _SECRET_MARKING_MIGRATION = _load("0aeadefcf159")
 # 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로
 # story 초안은 이것도 거친다.
 _SCENE_JUDGMENT = _load("0346abdbcc92")
-# 그 뒤 여덟 체인에 장면 추출 지시문만 바꾼 세트를 게시하는 리비전.
-_EPISODE_KNOWN_BY_MIGRATION = _load("eb8d3cc6d5c2")
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전.
-_FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
-# 그 뒤 여덟 체인의 요약 비밀 표기 슬롯 본문에 미확인 주장의 출처 규칙을 더한 세트를 게시하는 리비전 — character 레인의
-# head 활성이다.
-_SOURCE_MARKING = _load("0c1a85bc5c2f")
-# 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는 이것부터다.
-_SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
 # 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
 # 때는 이것부터다.
 _IMPRESSION = _load("6558ab4d3dbc")
@@ -137,17 +124,7 @@ async def test_active_story_gemini_set_is_the_source_plus_four_rows(db_session: 
     나중 게시이며, 새 4행 말고는 원본과 바이트까지 같다. `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지
     못하므로 활성 id 를 직접 단언한다."""
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_EPISODE_KNOWN_BY_MIGRATION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
-    await connection.run_sync(_SECRET_MARKING_MIGRATION.delete_seeded_rows)
-    await connection.run_sync(_FACT_INSTRUCTION_MIGRATION.delete_seeded_rows)
-    await connection.run_sync(_RECALL_PRIORITY_MIGRATION.delete_seeded_rows)
-    await connection.run_sync(_MEMORY_FACT_MIGRATION.delete_seeded_rows)
-    await connection.run_sync(_MEMORY_EPISODE_MIGRATION.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     assert await _active_id(db_session) == _M.NEW_SET_ID
     active = await db_session.get(PromptSet, _M.NEW_SET_ID)
     source = await db_session.get(PromptSet, _SOURCE_SET_ID)
@@ -179,25 +156,15 @@ async def test_downgrade_then_upgrade_swaps_the_active_set_and_back(db_session: 
     """되돌리면 활성 story Gemini 세트가 원본으로 돌아가고 이 채널 행이 어디에도 남지 않는다. 다시 올리면 같은 리터럴
     세트가 활성이 된다. Claude 체인 활성 세트는 내내 그대로다."""
     connection = await db_session.connection()
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
-    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
-    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
-    await connection.run_sync(_EPISODE_KNOWN_BY_MIGRATION.delete_seeded_rows)
-    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
-    await connection.run_sync(_SECRET_MARKING_MIGRATION.delete_seeded_rows)
-    await connection.run_sync(_FACT_INSTRUCTION_MIGRATION.delete_seeded_rows)
-    await connection.run_sync(_RECALL_PRIORITY_MIGRATION.delete_seeded_rows)
-    await connection.run_sync(_MEMORY_FACT_MIGRATION.delete_seeded_rows)
-    await connection.run_sync(_MEMORY_EPISODE_MIGRATION.delete_seeded_rows)
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     claude_before = {model: await _active_id(db_session, model) for model in _CLAUDE_SET_IDS}
 
-    await connection.run_sync(_IMPRESSION.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
     assert await _active_id(db_session) == _SOURCE_SET_ID
     assert await db_session.get(PromptSet, _M.NEW_SET_ID) is None
-    # Gemini 체인 안에서만 센다 — 뒤의 판정 문안 체인 리비전이 이 채널을 Claude·판정 전용 체인에도 복사해 두었다.
+    # Gemini 체인 안에서만 센다 — 이 채널을 Claude·판정 전용 체인에 복사한 것은 뒤의 판정 문안 체인 리비전이고, 그 되돌리기는
+    # 그 리비전 테스트가 본다.
     remaining = await db_session.scalar(
         sa.select(sa.func.count())
         .select_from(PromptSection)

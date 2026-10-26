@@ -111,6 +111,13 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 - **동시 호출 가능성이 있는 Redis read-modify-write는 pipeline + `WATCH`/`MULTI`/`EXEC`(+`WatchError` 재시도)**를 쓴다. `asyncio.gather`로 같은 잡을 갱신하다 갱신 유실이 실측으로 재현됐다. `unwatch()`/`multi()`는 타입 스텁이 없어 `# type: ignore[no-untyped-call]`이 필요하다.
 - Redis에 저장하는 상태는 `model_dump_json()`/`model_validate_json()`으로 pydantic 모델을 그대로 왕복시킨다(UUID·datetime을 알아서 처리). 키 프리픽스나 TTL이 다르면 기존 모듈을 파라미터화하지 말고 새 모듈로 분리하는 것이 이 코드베이스의 관례다. (예외 — `core/rate_limit.py`의 `check_rate_limit`은 창 길이를 `window_seconds` 인자로 받는다. 프리픽스(`rate_limit:`)도 알고리즘도 같고 창 길이만 다르며, 분리하면 `conftest.py`의 autouse `_flush_rate_limit_keys`가 `rate_limit:*` 하나로 전부 지우는 격리가 깨진다.)
 
+## 클로버 단위 · 정지 스위치
+
+- **기동 가드.** `main.lifespan` 맨 앞과 소설화 워커 진입점이 `clover/unit.py` 의 `assert_clover_unit_matches` 를 부른다 — 이 코드의 클로버 단위(`core/clover.py` 의 `CLOVER_UNIT_KRW`)와 `clover_unit_events` 의 마지막 기록(`occurred_at` 이 가장 늦은 행)이 다르면 기동하지 않는다. `main.lifespan` 을 직접 부르는 테스트는 다른 기동 작업처럼 이 함수도 `monkeypatch` 로 막는다. `CLOVER_UNIT_KRW` 라는 이름은 운영 교체 스크립트가 "이 이미지에 가드가 있는가"를 판정하는 열쇠라(`DEPLOY.md` 의 "BE → GCE VM" 절 롤백 단락) 이름을 바꾸거나 옮기면 `ops/swap-api.sh` 의 판정 조각도 함께 고친다.
+- **이벤트 표에 쓰는 테스트는 롤백되는 연결(`db_session`, `ddl_engine` 트랜잭션)에서만 쓴다.** 커밋하면 같은 세션의 다른 테스트(가드·내역의 옛 단위 표시)가 그 상태를 보고, 세션 끝 `downgrade base` 도 "행이 있으면 멈춤"에 걸린다. 기대값은 표를 비운 뒤 스스로 넣은 이벤트 기준으로 쓴다(단위를 전환한 뒤의 세션 DB 에는 마이그레이션이 쓴 전환 행이 이미 있다).
+- **새 원장 `kind`** 는 `CloverKind`·`CLOVER_KIND_CATEGORY`(`clover/router.py`)·web·admin 라벨 맵 넷에 함께 더한다. 라벨 맵은 `Record<string, string>` 이라 타입 검사가 못 잡아 `tests/test_clover_kind_labels.py` 가 두 FE 소스를 읽어 대조한다.
+- **정지 스위치(`CLOVER_LEDGER_PAUSED`).** 새 차감 경로는 `spend` 를 지나므로 따로 할 일이 없다. 새로 클로버를 주거나 회수하는 사용자·어드민 조치 라우트(`grant`·`revoke`·`revoke_purchase_lots` 를 부르는 것)는 인증 의존성 뒤에 `Depends(clover.raise_if_clover_paused)` 를 붙이고 `tests/test_clover_ledger_pause.py` 의 `_BLOCKED` 목록에 경우를 더한다 — 지급 함수는 결제 완료·웹훅과 같이 써서 함수에서 막을 수 없다. 유료 갈래에서 하루 1회 확인이나 가격 버전 대조를 하는 게이트는 그 둘보다 앞에서 검사한다. 환급·결제 동기화·탈퇴에는 붙이지 않는다. 운영에서 켜고 끄는 법은 `DEPLOY.md` 의 "BE 런타임" 절 표.
+
 ## 테스트 정책 — 무엇을 얼마나 쓰는가
 
 2026-09-08 정리로 870개였던 테스트가 830개가 됐고(42개 삭제 + 2개 보강), `tests/`는 누적 -1,202줄, 라인 커버리지는 97%→98%(5,013문 중 121 미커버)였다. 그 뒤 기능 작업으로 다시 늘어 2026-09-15 기준 1,082개이고, 라인 커버리지는 98%(5,753문 중 108 미커버 = 98.12%)다. 스위트는 커버리지 포함 약 2분 42초(161.8초)에 끝난다.

@@ -32,6 +32,7 @@ from api.admin.schemas import (
 )
 from api.auth.age import is_under_beta_minimum_age
 from api.auth.oauth_common import signup_method
+from api.clover.unit import is_legacy_unit, load_unit_events
 from api.core import clover
 from api.core.config import settings
 from api.db.models.auth import User
@@ -764,6 +765,8 @@ async def adjust_user_clover(
     user_id: uuid.UUID,
     body: AdminUserCloverRequest,
     admin_id: uuid.UUID = Depends(get_current_admin_id),
+    # 정지 스위치(`clover.raise_if_clover_paused`) — 지급·회수 함수를 결제 경로와 같이 써서 라우트에서 막는다.
+    _open: None = Depends(clover.raise_if_clover_paused),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """클로버를 지급(양수)하거나 회수(음수)하는 유일한 경로다.
@@ -880,6 +883,7 @@ async def list_user_clover_ledger(
         )
     ).all()
 
+    events = await load_unit_events(db)
     return AdminCloverLedgerListResponse(
         items=[
             AdminCloverLedgerItem(
@@ -888,6 +892,7 @@ async def list_user_clover_ledger(
                 balance_after=row.balance_after,
                 kind=row.kind,
                 created_at=row.created_at,
+                legacy_unit=is_legacy_unit(kind=row.kind, created_at=row.created_at, events=events),
             )
             for row in rows
         ],

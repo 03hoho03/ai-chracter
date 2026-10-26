@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.clover import products
+from api.clover.unit import is_legacy_unit, load_unit_events
 from api.clover.missions import (
     MISSION_KEYS,
     MISSION_REWARDS,
@@ -33,6 +34,7 @@ from api.clover.missions import (
     mission_idempotency_key,
 )
 from api.clover.schemas import (
+    CloverBalanceBreakdown,
     CloverBalanceResponse,
     CloverExpiringSoon,
     CloverLedgerCategory,
@@ -43,8 +45,11 @@ from api.clover.schemas import (
     CloverMissionsResponse,
     CloverModelPricingItem,
     CloverPayMethodItem,
+    CloverPolicyValues,
     CloverPricingResponse,
     CloverProductItem,
+    CloverProductOffer,
+    CloverProductsResponse,
 )
 from api.core import clover, rate_limit_gate
 from api.core.clover import (
@@ -63,6 +68,7 @@ from api.legal.dependencies import require_legal_consent
 from api.novel_public.access import novel_public_open_to
 from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, chat_turn_cost, novel_episode_unit_price
 from api.payments.config import identity_gate_active, payments_active
+from api.payments import refund
 from api.payments.methods import PAY_METHODS
 from api.session.dependencies import get_current_user_id
 
@@ -105,12 +111,17 @@ CLOVER_KIND_CATEGORY: dict[str, CloverLedgerCategory] = {
     "withdrawal_burn": "expire",
     # 결제 취소에 따른 회수 — 유저가 쓴 것이 아니라 어드민 회수와 같은 범주다.
     "purchase_revoke": "expire",
+    # 클로버 단위 전환과 그 되돌림 — 쓰거나 받은 것이 아니라 같은 잔액을 다른 눈금으로 옮긴 것이라 따로 둔다. 내역은 다른 세
+    # 범주 어느 것을 물어도 이 행을 함께 실어 "여기부터 단위가 바뀌었다"는 경계 줄로 보인다(`get_clover_ledger`).
+    "unit_conversion": "conversion",
+    "unit_conversion_revert": "conversion",
 }
 
 _CATEGORY_KINDS: dict[CloverLedgerCategory, list[str]] = {
     "use": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "use"],
     "earn": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "earn"],
     "expire": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "expire"],
+    "conversion": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "conversion"],
 }
 
 # 임박 임계값은 3일이다 — 만료까지 3일 이내인 로트가
@@ -242,6 +253,38 @@ async def get_clover_pricing() -> CloverPricingResponse:
     )
 
 
+@router.get("/products")
+async def get_clover_products() -> CloverProductsResponse:
+    """공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책
+    숫자·가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로
+    다시 읽는다(공개 가격 응답의 같은 주석)."""
+    return CloverProductsResponse(
+        products=[
+            CloverProductOffer(
+                key=p.key,
+                name=p.name,
+                price_krw=p.price_krw,
+                paid_amount=p.paid_amount,
+                bonus_amount=p.bonus_amount,
+                total_amount=p.paid_amount + p.bonus_amount,
+            )
+            for p in products.CLOVER_PRODUCTS
+        ],
+        pay_methods=[
+            CloverPayMethodItem(pay_method=m.pay_method, easy_pay_provider=m.easy_pay_provider) for m in PAY_METHODS
+        ],
+        payments_enabled=payments_active(),
+        identity_gate_enabled=identity_gate_active(),
+        daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
+        policy=CloverPolicyValues(
+            purchase_validity_years=clover.PURCHASE_LOT_YEARS,
+            full_refund_days=refund.FULL_REFUND_DAYS,
+            reduced_refund_percent=refund.REDUCED_REFUND_PERCENT,
+        ),
+        price_version=clover.PRICE_VERSION,
+    )
+
+
 @me_router.get("/clover", dependencies=[Depends(require_legal_consent)])
 async def get_clover_balance(
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -254,10 +297,16 @@ async def get_clover_balance(
     """
     user = await _require_active_user(db, user_id)
     now = datetime.now(UTC)
+    # 잔액과 구매 로트 합을 한 문장(한 스냅샷)으로 읽어 세 몫의 합이 늘 응답의 잔액과 같게 한다(`clover.balance_breakdown`).
+    breakdown = await clover.balance_breakdown(db, user_id=user_id)
+    assert breakdown is not None  # 바로 위에서 회원 행을 읽었고 회원 행은 지우지 않는다(탈퇴는 표시만 남긴다)
+    balance, paid, bonus = breakdown
     return CloverBalanceResponse(
-        balance=user.clover_balance,
+        balance=balance,
         spend_confirmed_today=is_same_kst_day(user.clover_spend_confirmed_on, now),
-        paid_balance=await clover.paid_balance(db, user_id=user_id),
+        # `clover.paid_balance`(`GET /me` 가 읽는다)와 같은 값이다 — 같은 구매 로트 두 종류의 남은 양의 합.
+        paid_balance=paid + bonus,
+        breakdown=CloverBalanceBreakdown(paid=paid, bonus=bonus, free=balance - paid - bonus),
         expiring_soon=await _expiring_soon(db, user_id=user_id, now=now),
     )
 
@@ -312,6 +361,9 @@ async def get_clover_missions(
 async def claim_clover_mission(
     key: MissionKey,
     user_id: uuid.UUID = Depends(get_current_user_id),
+    # 정지 스위치(`clover.raise_if_clover_paused`) — 지급 함수는 결제 지급과 같아 함수에서 막지 못해 라우트에서 막는다. 인증 뒤라
+    # 비로그인은 그대로 401 이다.
+    _open: None = Depends(clover.raise_if_clover_paused),
     db: AsyncSession = Depends(get_db_session),
 ) -> CloverMissionClaimResponse:
     """미션 청구. 달성하지 못했으면 422. 이미 청구했으면(멱등키 중복) `granted=false`이고
@@ -384,11 +436,14 @@ async def get_clover_ledger(
     """
     await _require_active_user(db, user_id)
 
+    # 단위 전환 행은 사용·획득·소멸 어느 탭에서나 경계 줄로 함께 싣는다 — 한 회원에 전환 한 번당 한 행이라 탭을 어지럽히지 않고,
+    # 네 번째 탭에만 두면 사용자가 그 탭을 찾아야 잔액이 왜 바뀌었는지 안다.
+    kinds = {*_CATEGORY_KINDS[category], *_CATEGORY_KINDS["conversion"]}
     query = (
         select(CloverLedger)
         .where(
             CloverLedger.user_id == user_id,
-            CloverLedger.kind.in_(_CATEGORY_KINDS[category]),
+            CloverLedger.kind.in_(kinds),
         )
         .order_by(CloverLedger.created_at.desc(), CloverLedger.id.desc())
     )
@@ -409,6 +464,7 @@ async def get_clover_ledger(
         last = page[-1]
         next_cursor = _encode_cursor([last.created_at.isoformat(), str(last.id)])
 
+    events = await load_unit_events(db)
     return CloverLedgerListResponse(
         items=[
             CloverLedgerItem(
@@ -418,6 +474,7 @@ async def get_clover_ledger(
                 kind=row.kind,
                 category=CLOVER_KIND_CATEGORY[row.kind],
                 created_at=row.created_at,
+                legacy_unit=is_legacy_unit(kind=row.kind, created_at=row.created_at, events=events),
             )
             for row in page
         ],

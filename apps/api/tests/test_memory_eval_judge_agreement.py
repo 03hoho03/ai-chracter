@@ -650,3 +650,159 @@ async def test_control_reaction_counts_only_changes_in_the_expected_direction(tm
     # 엔딩 원래 줄은 이미 참이라 반응은 잴 수 없고, 거짓으로 뒤집힌 것은 반대 방향 변화로만 남는다.
     assert controls["e"]["reacted"]["haiku"] is None and controls["e"]["opposite"]["haiku"] is True
     assert summary["controlReaction"]["haiku"] == {"controls": 2, "reacted": 1, "opposite": 1, "rate": 0.5}
+
+
+# ---------------------------------------------------------------- 호출 순서
+
+
+def _two_stat_lines(tmp_path: Path) -> list[ja.JudgmentLine]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    return ja.load_lines(
+        [
+            _dump(
+                tmp_path / "order.jsonl",
+                [
+                    _judgment("chat_stat_judgment", "StatRuleJudgmentResult", f"{STAT_PROMPT}\n턴 {turn}", turn=turn)
+                    for turn in (1, 2)
+                ],
+            )
+        ]
+    )
+
+
+async def _call_order(tmp_path: Path, order_seed: int | None) -> list[str]:
+    lines = _two_stat_lines(tmp_path)
+    models = [
+        _model(label, lambda prompt, schema, call_site: ja._FAKE_DEFAULTS[schema]) for label in ("gemini", "haiku")
+    ]
+    calls = tmp_path / "out" / "calls.jsonl"
+    await ja.run_calls(
+        lines,
+        models,
+        2,
+        ledger=Ledger(tmp_path / "out" / "ledger.jsonl"),
+        calls_path=calls,
+        stage="test",
+        rates={},
+        output_tokens=60,
+        order_seed=order_seed,
+    )
+    return [str(row["key"]) for row in ja.read_calls(calls)]
+
+
+NESTED_ORDER = [
+    f"order.jsonl:{line}|{label}|{rep}" for line in (1, 2) for label in ("gemini", "haiku") for rep in (0, 1)
+]
+
+
+async def test_calls_go_line_then_model_then_rep_without_an_order_seed(tmp_path: Path) -> None:
+    assert await _call_order(tmp_path, None) == NESTED_ORDER
+
+
+async def test_an_order_seed_shuffles_every_call_key_reproducibly(tmp_path: Path) -> None:
+    first = await _call_order(tmp_path / "a", 7)
+    again = await _call_order(tmp_path / "b", 7)
+    other = await _call_order(tmp_path / "c", 8)
+    assert first == again
+    assert sorted(first) == sorted(NESTED_ORDER)
+    assert first != NESTED_ORDER
+    assert first != other
+    # 섞는 단위는 호출 하나다 — (줄, 판) 블록째 섞으면 같은 줄·같은 판의 두 반복이 늘 이웃한다.
+    blocks = {key.rsplit("|", 1)[0] for key in NESTED_ORDER}
+    apart = [block for block in blocks if abs(first.index(f"{block}|0") - first.index(f"{block}|1")) != 1]
+    assert apart
+
+
+# ---------------------------------------------------------------- 다수결 plug-in
+
+
+def _row(line: str, rep: int, result: Any, *, model: str = "haiku", status: str = "ok") -> dict[str, Any]:
+    return {
+        "key": f"{line}|{model}|{rep}",
+        "lineId": line,
+        "model": model,
+        "rep": rep,
+        "status": status,
+        "result": result,
+    }
+
+
+DELTAS = {"a1": 3, "a2": -2, "a3": 3, "b1": -1}
+# 줄 1: {a1}·{a1}·{a2}. 줄 2: {a1}·{a3}·{} — a1 과 a3 은 폭이 같아 앱 반영 변화량이 같다.
+MAJORITY_CALLS = [
+    _row("d:1", 0, ["a1"]),
+    _row("d:1", 1, ["a1"]),
+    _row("d:1", 2, ["a2"]),
+    _row("d:2", 0, ["a1"]),
+    _row("d:2", 1, ["a3"]),
+    _row("d:2", 2, []),
+    # 세지 않는 줄: 다른 판, 호출 오류, 대조군, 스탯이 아닌 판정, 성공 결과가 하나뿐인 줄.
+    _row("d:1", 3, ["b1"], model="gemini"),
+    _row("d:1", 4, None, status="call_error"),
+    _row("control:x", 0, ["a1"]),
+    _row("control:x", 1, []),
+    _row("d:3", 0, True),
+    _row("d:3", 1, False),
+    _row("d:4", 0, ["a1"]),
+]
+
+
+def test_majority_of_three_by_hand_when_voting_on_the_rule_set() -> None:
+    report = ja.majority_agreement(MAJORITY_CALLS, model="haiku", k=3, vote="ruleSet", deltas=DELTAS)
+    assert report["lines"] == 2
+    assert report["skippedLines"] == 1
+    metrics = report["metrics"]
+    # 줄 1: p = (2/3, 1/3) → 단일 5/9, 세 표 최빈 q = (20/27, 7/27) → 449/729.
+    # 줄 2: 셋이 다 달라 단일·다수결 모두 1/3. 변화량으로는 {a:3} 이 2/3 이라 5/9 가 둘 다.
+    assert metrics["ruleSet"] == {
+        "single": pytest.approx((5 / 9 + 1 / 3) / 2),
+        "majority": pytest.approx((449 / 729 + 1 / 3) / 2),
+        "lines": 2,
+    }
+    assert metrics["appliedChange"] == {
+        "single": pytest.approx((5 / 9 + 5 / 9) / 2),
+        "majority": pytest.approx((449 / 729 + 5 / 9) / 2),
+        "lines": 2,
+    }
+    assert metrics["direction"] == metrics["appliedChange"]
+    assert metrics["fired"] == {
+        "single": pytest.approx((1 + 5 / 9) / 2),
+        "majority": pytest.approx((1 + 5 / 9) / 2),
+        "lines": 2,
+    }
+
+
+def test_majority_of_three_by_hand_when_voting_on_the_applied_change() -> None:
+    report = ja.majority_agreement(MAJORITY_CALLS, model="haiku", k=3, vote="appliedChange", deltas=DELTAS)
+    metrics = report["metrics"]
+    # 줄 2 도 변화량 공간에서는 (2/3, 1/3) 이라 다수결이 449/729 로 오른다. 규칙 집합은 표를 던진 공간이 아니라 없다.
+    assert metrics["ruleSet"] is None
+    assert metrics["appliedChange"]["single"] == pytest.approx(5 / 9)
+    assert metrics["appliedChange"]["majority"] == pytest.approx(449 / 729)
+
+
+def test_a_single_vote_majority_is_the_single_judgment() -> None:
+    report = ja.majority_agreement(MAJORITY_CALLS, model="haiku", k=1, vote="ruleSet", deltas=DELTAS)
+    for entry in report["metrics"].values():
+        assert entry["majority"] == pytest.approx(entry["single"])
+
+
+def test_majority_without_deltas_keeps_only_the_rule_set_and_fired_metrics() -> None:
+    report = ja.majority_agreement(MAJORITY_CALLS, model="haiku", k=3, vote="ruleSet")
+    assert report["metrics"]["appliedChange"] is None
+    assert report["metrics"]["direction"] is None
+    assert report["metrics"]["ruleSet"]["majority"] == pytest.approx((449 / 729 + 1 / 3) / 2)
+    with pytest.raises(SystemExit, match="폭"):
+        ja.majority_agreement(MAJORITY_CALLS, model="haiku", k=3, vote="appliedChange")
+
+
+def test_majority_refuses_a_rule_id_missing_from_the_delta_table() -> None:
+    with pytest.raises(SystemExit, match="폭"):
+        ja.majority_agreement(MAJORITY_CALLS, model="haiku", k=3, vote="ruleSet", deltas={"a1": 3})
+
+
+def test_applied_change_takes_the_widest_rule_per_stat_and_the_earlier_one_on_a_tie() -> None:
+    deltas = {"a1": 1, "a2": -4, "a3": 4, "b1": -1, "b2": 2}
+    assert ja.applied_change(["a1", "a2", "a3", "b1"], deltas) == {"a": -4, "b": -1}
+    assert ja.applied_change(["a3", "b2"], deltas) == {"a": 4, "b": 2}
+    assert ja.applied_change([], deltas) == {}

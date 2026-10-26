@@ -33,6 +33,7 @@ from api.admin.schemas import (
     AdminPromptDraftResponse,
     AdminPromptDraftUpsertRequest,
     AdminPromptLabels,
+    AdminPromptPlaceholderHint,
     AdminPromptPreviewItem,
     AdminPromptPreviewResponse,
     AdminPromptPublishRequest,
@@ -42,6 +43,7 @@ from api.admin.schemas import (
     AdminPromptSectionSemver,
     AdminPromptSetDetailResponse,
     AdminPromptSetListResponse,
+    AdminPromptSetRestoreRequest,
     AdminPromptSetSummary,
 )
 from api.chat.prompt_builder import (
@@ -689,16 +691,20 @@ async def _next_published_version(db: AsyncSession) -> str:
     return str((latest_version or 0) + 1)
 
 
-async def _get_draft(db: AsyncSession, lane: PromptLane, model: PromptSetModelId) -> PromptSet | None:
+async def _get_draft(
+    db: AsyncSession, lane: PromptLane, model: PromptSetModelId, *, for_update: bool = False
+) -> PromptSet | None:
     """`lane`이 없는 `db.scalar()`는 레인 필터가
     빠져도 조용히 첫 행을 반환한다 — `.scalars(...).one_or_none()`으로 두면 레인·모델 필터가
     빠졌을 때(부분 유니크 인덱스가 (레인, 모델)별이라 초안이 여러 행일 수 있다) `MultipleResultsFound`로
-    시끄럽게 터진다."""
-    return (
-        await db.scalars(
-            select(PromptSet).where(PromptSet.status == "draft", PromptSet.lane == lane, PromptSet.model == model)
-        )
-    ).one_or_none()
+    시끄럽게 터진다.
+
+    `for_update` 는 초안을 덮어쓰는 경로가 해시 검사와 교체 사이에 다른 저장이 끼어들지 못하게 행을 잠글 때 켠다. 잠근 뒤 값을
+    다시 채워야(이미 세션에 올라온 객체라도) 기다리는 동안 커밋된 다른 저장을 본다."""
+    query = select(PromptSet).where(PromptSet.status == "draft", PromptSet.lane == lane, PromptSet.model == model)
+    if for_update:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    return (await db.scalars(query)).one_or_none()
 
 
 async def _sections_of(db: AsyncSession, prompt_set_id: uuid.UUID) -> list[PromptSection]:
@@ -717,6 +723,58 @@ def _to_section_item(section: PromptSection) -> AdminPromptSectionItem:
         body=section.body,
         conditional=section.conditional,
         order=section.order,
+    )
+
+
+async def _saved_draft_hash(db: AsyncSession, draft: PromptSet | None) -> str | None:
+    """저장된 초안 행의 내용 해시(라벨 포함). 게시 경로와 같은 해시 함수를 쓰되 얼린 소설 행을 갈아 끼우지 않은, 저장된 그대로의
+    내용이다 — 저장 요청이 돌려보낸 값과 견줄 때도 같은 내용을 봐야 하기 때문이다."""
+    if draft is None:
+        return None
+    return draft_fingerprint(section_contents(draft, await _sections_of(db, draft.id)))
+
+
+def _allowed_placeholder_hints(lane: PromptLane, model: PromptSetModelId) -> list[AdminPromptPlaceholderHint]:
+    """이 체인이 편집할 수 있는 채널의 (채널, 슬롯)마다 쓸 수 있는 자리표시자. 값은 게시 검사가 쓰는 `ALLOWED_PLACEHOLDERS` 를
+    그대로 쓴다(상수에 없는 슬롯은 게시 검사처럼 빈 목록). 채팅 Gemini 체인의 얼린 소설 채널은 화면에 싣지 않으므로 뺀다."""
+    hidden = _NOVELIZE_CHANNELS if _freezes_novel_rows(lane, model) else frozenset()
+    return [
+        AdminPromptPlaceholderHint(
+            channel=channel, slot=slot, names=sorted(ALLOWED_PLACEHOLDERS.get((channel, slot), frozenset()))
+        )
+        for channel, slots in sorted(_expected_slots(lane, model).items())
+        if channel not in hidden
+        for slot in sorted({slot for _scope, slot in slots})
+    ]
+
+
+async def _draft_response(
+    db: AsyncSession, *, lane: PromptLane, model: PromptSetModelId, draft: PromptSet | None
+) -> AdminPromptDraftResponse:
+    """초안 응답을 만드는 유일한 자리 — 조회·저장·통째 복원·섹션 복원이 모두 여기를 거쳐 저장된 초안 해시와 허용 자리표시자
+    힌트를 빠뜨리는 응답이 생기지 않게 한다. 초안 행이 없으면 그 체인의 활성 세트를 보여 준다(저장하지 않는다)."""
+    if draft is not None:
+        source: PromptSet = draft
+        sections = await _sections_of(db, draft.id)
+    else:
+        source, sections = await load_active_prompt_set(db, lane=lane, model=model)
+    return AdminPromptDraftResponse(
+        id=draft.id if draft is not None else None,
+        model=model,
+        labels=_to_labels(source),
+        sections=[_to_section_item(s) for s in _visible_sections(lane, model, sections)],
+        saved_draft_hash=await _saved_draft_hash(db, draft),
+        allowed_placeholders=_allowed_placeholder_hints(lane, model),
+    )
+
+
+def _draft_changed() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "rule": "draft-changed",
+            "message": "편집을 연 뒤 다른 곳에서 초안이 저장됐습니다. 새로 불러온 뒤 다시 고쳐 주세요.",
+        },
     )
 
 
@@ -796,9 +854,17 @@ async def _replace_draft_content(
     model: PromptSetModelId,
     labels: AdminPromptLabels,
     sections: list[_SectionFields],
+    check_base_hash: bool = False,
+    base_draft_hash: str | None = None,
 ) -> PromptSet:
     """초안 upsert — 섹션 전체 교체다. `PUT /{lane}/draft`와 `POST /{id}/restore`가
     공유한다.
+
+    `check_base_hash` 를 켜면 이 (레인, 모델)의 초안 행을 잠근 뒤 저장된 초안 해시가 `base_draft_hash` 와 같을 때만 덮어쓰고, 다르면
+    아무것도 쓰지 않고 409 `draft-changed` 다(`base_draft_hash` 가 None 이면 "초안 행이 없어야 한다"). 화면이 연 뒤 다른 탭이
+    저장한 초안을 조용히 덮지 않으려는 것이다. 끄면(해시를 모르는 옛 화면, 자체 409 확인이 있는 섹션 복원) 검사하지 않는다.
+    초안이 없던 두 요청이 동시에 첫 초안을 만들면 잠글 행이 없어 둘 다 검사를 통과하므로, 검사를 켠 진 쪽은 아래 경쟁 복구로
+    이긴 행을 덮지 않고 409 를 낸다.
 
     `admin/legal.py`의 SAVEPOINT 패턴을 그대로 따른다: 세션이 이미 이 요청(또는 테스트의
     롤백 트랜잭션)이라는 바깥 트랜잭션 안에 있으므로 `db.rollback()`은 그 바깥까지 되감아
@@ -834,7 +900,9 @@ async def _replace_draft_content(
             },
         )
 
-    draft = await _get_draft(db, lane, model)
+    draft = await _get_draft(db, lane, model, for_update=True)
+    if check_base_hash and await _saved_draft_hash(db, draft) != base_draft_hash:
+        raise _draft_changed()
     try:
         async with db.begin_nested():
             if draft is None:
@@ -877,7 +945,10 @@ async def _replace_draft_content(
                 )
             await db.flush()
     except IntegrityError:
-        draft = await _get_draft(db, lane, model)
+        if check_base_hash:
+            # 위 검사는 초안이 없을 때 통과했다 — 화면은 초안이 없다고 믿었는데 다른 요청이 먼저 만들었다.
+            raise _draft_changed() from None
+        draft = await _get_draft(db, lane, model, for_update=True)
         assert draft is not None  # 유니크 위반은 곧 이 (레인, 모델)의 초안이 이제 존재한다는 뜻이다
         draft.user_label = labels.user_label
         draft.story_assistant_label = labels.story_assistant_label
@@ -978,23 +1049,7 @@ async def get_prompt_draft(
     만들면 `GET /{id}`와 정규식이 글자 그대로 같아져 한쪽이 도달 불가가 되고, 정상 요청이
     404가 아니라 422를 받는다(`{id}`가 먼저 등록돼 있으면 레인 문자열의 UUID 파싱 실패)."""
     _require_lane_model(lane, model)
-    draft = await _get_draft(db, lane, model)
-    if draft is not None:
-        sections = await _sections_of(db, draft.id)
-        return AdminPromptDraftResponse(
-            id=draft.id,
-            model=model,
-            labels=_to_labels(draft),
-            sections=[_to_section_item(s) for s in _visible_sections(lane, model, sections)],
-        )
-
-    active_set, active_sections = await load_active_prompt_set(db, lane=lane, model=model)
-    return AdminPromptDraftResponse(
-        id=None,
-        model=model,
-        labels=_to_labels(active_set),
-        sections=[_to_section_item(s) for s in _visible_sections(lane, model, active_sections)],
-    )
+    return await _draft_response(db, lane=lane, model=model, draft=await _get_draft(db, lane, model))
 
 
 @router.put("/admin/prompt-sets/{lane}/draft")
@@ -1018,14 +1073,16 @@ async def upsert_prompt_draft(
         )
         for item in body.sections
     ]
-    draft = await _replace_draft_content(db, lane=lane, model=model, labels=body.labels, sections=fields)
-    sections = await _sections_of(db, draft.id)
-    return AdminPromptDraftResponse(
-        id=draft.id,
+    draft = await _replace_draft_content(
+        db,
+        lane=lane,
         model=model,
-        labels=_to_labels(draft),
-        sections=[_to_section_item(s) for s in _visible_sections(lane, model, sections)],
+        labels=body.labels,
+        sections=fields,
+        check_base_hash="base_draft_hash" in body.model_fields_set,
+        base_draft_hash=body.base_draft_hash,
     )
+    return await _draft_response(db, lane=lane, model=model, draft=draft)
 
 
 @router.post("/admin/prompt-sets/{lane}/draft/preview")
@@ -1208,6 +1265,7 @@ async def publish_prompt_set(
 @router.post("/admin/prompt-sets/{id}/restore")
 async def restore_prompt_set(
     id: uuid.UUID,
+    body: AdminPromptSetRestoreRequest | None = None,
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptDraftResponse:
@@ -1216,7 +1274,9 @@ async def restore_prompt_set(
 
     레인·모델은 요청에서 따로 받지 않는다 — `source.lane`·`source.model`에서만 나온다(그 체인의 초안으로 들어간다).
     `source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인
-    분리 이전 버전은 복원 대상이 아니다."""
+    분리 이전 버전은 복원 대상이 아니다.
+
+    본문은 생략할 수 있다(옛 화면). `base_draft_hash` 를 보내면 초안 저장과 같이 그 사이 다른 탭이 저장한 초안을 덮지 않는다."""
     source = await db.get(PromptSet, id)
     if source is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="해당 버전을 찾을 수 없습니다.")
@@ -1238,14 +1298,16 @@ async def restore_prompt_set(
     source_sections = await _sections_of(db, source.id)
 
     fields = [_section_fields(s) for s in source_sections]
-    draft = await _replace_draft_content(db, lane=lane, model=model, labels=_to_labels(source), sections=fields)
-    sections = await _sections_of(db, draft.id)
-    return AdminPromptDraftResponse(
-        id=draft.id,
+    draft = await _replace_draft_content(
+        db,
+        lane=lane,
         model=model,
-        labels=_to_labels(draft),
-        sections=[_to_section_item(s) for s in _visible_sections(lane, model, sections)],
+        labels=_to_labels(source),
+        sections=fields,
+        check_base_hash=body is not None and "base_draft_hash" in body.model_fields_set,
+        base_draft_hash=body.base_draft_hash if body is not None else None,
     )
+    return await _draft_response(db, lane=lane, model=model, draft=draft)
 
 
 @router.post("/admin/prompt-sets/{id}/sections/{channel}/restore")
@@ -1325,13 +1387,7 @@ async def restore_prompt_section(
             _section_fields(s) for s in source_rows
         ]
     saved = await _replace_draft_content(db, lane=lane, model=model, labels=labels, sections=fields)
-    sections = await _sections_of(db, saved.id)
-    return AdminPromptDraftResponse(
-        id=saved.id,
-        model=model,
-        labels=_to_labels(saved),
-        sections=[_to_section_item(s) for s in _visible_sections(lane, model, sections)],
-    )
+    return await _draft_response(db, lane=lane, model=model, draft=saved)
 
 
 @router.get("/admin/prompt-sets/{id}")

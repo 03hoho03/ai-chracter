@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -55,6 +55,8 @@ type PurchaseWebnovelChapterModalProps = {
 export const PurchaseWebnovelChapterModal = createCallable<PurchaseWebnovelChapterModalProps, boolean>(
   ({ call, novelId, chapterId, ordinal, novelTitle, episodeLabel, price: initialPrice, freeChapterCount }) => {
     const { data: clover } = useCloverBalanceQuery();
+    // 충전하고 돌아올 곳. 충전 화면이 이 주소로 "돌아가기"를 두고, 결제창·로그인 왕복 뒤에도 잃지 않게 넘겨 다닌다.
+    const returnTo = useRouterState({ select: (state) => state.location.href });
     const purchaseNotice = toPurchaseNotice(useCloverPricingQuery().data);
     const purchase = usePurchaseWebnovelChapterMutation();
     const [price, setPrice] = useState(initialPrice);
@@ -152,7 +154,7 @@ export const PurchaseWebnovelChapterModal = createCallable<PurchaseWebnovelChapt
             </Button>
             {isInsufficient ? (
               <Button asChild>
-                <Link to="/clover" onClick={() => call.end(false)}>
+                <Link to="/clover" search={{ returnTo }} onClick={() => call.end(false)}>
                   <CloverIcon className="size-4" />
                   클로버 채우기
                 </Link>

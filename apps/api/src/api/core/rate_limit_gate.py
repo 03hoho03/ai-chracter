@@ -175,6 +175,13 @@ def _check_price_version(price_version: int | None, cost: int) -> None:
         )
 
 
+def _refuse_if_paused() -> None:
+    """정지 스위치가 켜졌으면 503 `CLOVER_PAUSED`(`clover.raise_if_clover_paused`). 차감 자체는 `spend` 첫 줄이 막지만, 유료 갈래는
+    그 앞에서 하루 1회 확인 429 와 가격 버전 409 를 낼 수 있어 그 둘보다 먼저 여기서 막는다 — 정지 중에 확인을 받거나 가격표를
+    다시 받게 해도 어차피 깎을 수 없다. 무료분·면제·토큰 갈래는 부르지 않는다(깎지 않는 요청은 정지와 무관하다)."""
+    clover.raise_if_clover_paused()
+
+
 def _too_many_requests(
     user_id: uuid.UUID, window: str, retry_after: int, *, code: str = "USER_LIMIT"
 ) -> HTTPException:
@@ -369,7 +376,9 @@ async def charge_chat_turn(
             # 받는다 — "소진 시 하루 1회 확인"의 "소진 시"가 지켜지지 않는다. 그리고 면제 `return`(위)보다 뒤라
             # 예외 계정에게는 묻지 않는다.
             #
-            # 가격 버전 대조는 이 턴이 클로버로 낼 턴으로 정해진 이 자리, 확인보다 앞이다(`_check_price_version`).
+            # 가격 버전 대조는 이 턴이 클로버로 낼 턴으로 정해진 이 자리, 확인보다 앞이다(`_check_price_version`). 정지 검사는 그보다
+            # 앞이다(`_refuse_if_paused`).
+            _refuse_if_paused()
             _check_price_version(price_version, price)
             if await _needs_clover_spend_confirmation(user_id, db, now, price):
                 # `retryAfterSeconds`는 부족(`CLOVER_REQUIRED`)과 같은 자정까지 초다 — 동의를
@@ -448,7 +457,8 @@ async def _charge_unverified_turn(
     무료분이 돌아온다"는 이 회원에게 거짓이고, 풀 길은 인증이다.
 
     확인 429 는 지금 모양 그대로다(`retryAfterSeconds` 는 자정까지). 화면이 이 회원에게 "오늘 무료 한도를 다 썼어요"를
-    보이지 않게 하는 분기는 화면 몫이다. 늘 클로버로 내는 갈래라 가격 버전을 맨 앞에서 대조한다."""
+    보이지 않게 하는 분기는 화면 몫이다. 늘 클로버로 내는 갈래라 정지 검사와 가격 버전 대조를 맨 앞에서 한다."""
+    _refuse_if_paused()
     _check_price_version(price_version, price)
     if await _needs_clover_spend_confirmation(user_id, db, now, price):
         raise _too_many_requests(user_id, _CLOVER_WINDOW, seconds_until_kst_midnight(now), code=_CLOVER_CONFIRM_CODE)
@@ -476,7 +486,8 @@ async def _charge_premium_turn(
 
     부족이면 Gemini 와 같은 `CLOVER_REQUIRED` 429 다. 그 `retryAfterSeconds`(자정까지)는 이 갈래에서는 약속이 아니다 —
     자정에 돌아오는 무료분은 Gemini 턴에만 쓰인다. 값은 계약 모양을 지키려고 그대로 싣고, 상위 모델 방의 화면은 이 값으로
-    "자정에 다시"를 안내하지 않는다. 늘 클로버로 내는 갈래라 가격 버전을 맨 앞에서 대조한다."""
+    "자정에 다시"를 안내하지 않는다. 늘 클로버로 내는 갈래라 정지 검사와 가격 버전 대조를 맨 앞에서 한다."""
+    _refuse_if_paused()
     _check_price_version(price_version, price)
     spent = await clover.spend_in_new_transaction(
         session_factory, user_id=user_id, amount=price, kind="chat_spend", usage=usage
@@ -569,7 +580,8 @@ async def enforce_image_rate_limit(
         # 시간당 충전이라 최대 24시간짜리 거짓이 된다(아래 클로버 부족 429와 같은 이유).
         clover_amount = payload.count * clover.IMAGE_UNIT_COST
         # 클로버로 낼 요청으로 정해진 자리라 여기서 가격 버전을 대조한다(토큰으로 내는 요청은 대조하지 않는다). 확인보다 앞인
-        # 이유는 채팅과 같다(`_check_price_version`).
+        # 이유는 채팅과 같다(`_check_price_version`). 정지 검사가 그보다 앞인 것도 같다(`_refuse_if_paused`).
+        _refuse_if_paused()
         _check_price_version(payload.price_version, clover_amount)
         if await _needs_clover_spend_confirmation(
             user_id, db, datetime.now(UTC), clover_amount

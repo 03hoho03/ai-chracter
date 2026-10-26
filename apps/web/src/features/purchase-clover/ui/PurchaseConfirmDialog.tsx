@@ -17,7 +17,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Link } from "@tanstack/react-router";
 import { Controller, useForm } from "react-hook-form";
 
-import { CloverProductLine, type CloverProductItem } from "@/entities/clover";
+import { CloverProductLine, type CloverProductOffer } from "@/entities/clover";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
@@ -28,31 +28,35 @@ import {
   type PurchaseFormValues,
 } from "../model/purchaseForm";
 import { PURCHASE_MESSAGES, type PurchaseResult } from "../model/purchaseResult";
-import { announcePurchaseResult } from "../model/usePaymentRedirect";
+import type { SettledPurchase } from "../model/settledPurchase";
 import { usePurchaseClover } from "../model/usePurchaseClover";
 
 const INLINE_LINK_CLASS = "font-medium whitespace-nowrap text-primary underline-offset-4 hover:underline focus-visible:underline";
 
 type PurchaseConfirmDialogProps = {
-  product: CloverProductItem;
+  product: CloverProductOffer;
   payMethods: CloverPayMethodItem[];
   /** 계정 이메일. 구매자 이메일 칸을 미리 채운다. */
   email: string;
+  /** 충전 화면이 받은 복귀 주소. 결제창이 페이지를 떠났다 돌아와도 갈 곳을 잃지 않게 넘긴다. */
+  returnTo: string | undefined;
 };
 
 /** 다이얼로그 안에 남는 결과 — 고쳐서 다시 누를 수 있거나(완료되지 않음), 다시 눌러도 같아 이유를 읽어야 하는 것. */
 type DialogNotice = Extract<PurchaseResult, "notCompleted" | "ageRestricted" | "unavailable" | "failed" | "sdkUnavailable">;
 
-/** 클로버 구매 확인. 결제수단·구매자 정보·유료 조건 동의를 받아 주문 → 결제창 → 확정을 한 번에 돈다. 호출부(허브)가
- * 하나뿐이고 끝난 뒤 할 일(결과 안내 후 닫기)이 늘 같아 자체 호출형이다.
+/** 클로버 구매 확인. 결제수단·구매자 정보·유료 조건 동의를 받아 주문 → 결제창 → 확정을 한 번에 돈다. 호출부(충전
+ * 화면)가 하나뿐이고 끝난 뒤 할 일(닫고 결과 넘기기)이 늘 같아 자체 호출형이다. 창 밖에서 알릴 결과로 끝나면 그 결과를,
+ * 그냥 닫히면 `null` 을 돌려준다.
  *
  * 이 화면의 솔리드 채움은 "결제하기" 하나다 — 허브의 상품 카드는 고르기만 하는 outline 이라, 돈이 나가는
  * 확정만 이 다이얼로그 안에서 채움을 쓴다. 결제수단은 같은 이유로 틴트 목록(`list`)이다.
  *
  * 고칠 수 있는 결과(창을 닫음·나이 제한·결제 중단·SDK 실패)는 다이얼로그를 열어 둔 채 본문 끝에 문장으로 남긴다 —
- * 입력한 구매자 정보를 다시 치지 않게. 지급이 끝났거나 확인 중이면 닫고 토스트로 알린다. */
-export const PurchaseConfirmDialog = createCallable<PurchaseConfirmDialogProps, void>(
-  ({ call, product, payMethods, email }) => {
+ * 입력한 구매자 정보를 다시 치지 않게. 지급이 끝났거나 확인 중이면 닫고 결과를 호출부에 넘긴다 — 충전 화면이 리다이렉트
+ * 복귀(모바일)와 같은 결과 자리에 그린다. */
+export const PurchaseConfirmDialog = createCallable<PurchaseConfirmDialogProps, SettledPurchase | null>(
+  ({ call, product, payMethods, email, returnTo }) => {
     const fieldId = useId();
     const [firstPayMethod] = payMethods;
     const form = useForm<PurchaseFormValues>({
@@ -74,39 +78,39 @@ export const PurchaseConfirmDialog = createCallable<PurchaseConfirmDialogProps, 
         form.setError("payMethodKey", { message: "결제수단을 골라 주세요" });
         return;
       }
-      const result = await purchase({
+      const attempt = await purchase({
         productKey: product.key,
         payMethod,
         values,
         onCheckoutOpen: () => setIsCheckoutOpen(true),
+        returnTo,
       });
       // 리다이렉트는 페이지가 떠나는 중이라 다시 띄우지 않는다.
-      if (result !== "redirecting") setIsCheckoutOpen(false);
-      switch (result) {
+      if (attempt.result !== "redirecting") setIsCheckoutOpen(false);
+      switch (attempt.result) {
         case "paid":
         case "checking":
         case "problem":
-          announcePurchaseResult(result);
-          call.end();
+          call.end({ result: attempt.result, grant: attempt.grant });
           return;
         // 세션을 다시 읽어 허브가 본인인증 안내로, 앱이 재동의 모달로 바뀐다(전역 뮤테이션 처리). 다이얼로그에 남을
         // 이유가 없다.
         case "identityRequired":
         case "reconsentRequired":
-          call.end();
+          call.end(null);
           return;
         // 결제창이 페이지를 떠난다. 돌아오면 허브가 쿼리로 이어받는다.
         case "redirecting":
           return;
         default:
-          setNotice(result);
+          setNotice(attempt.result);
       }
     }
 
     const payMethodErrorId = `${fieldId}-pay-method-error`;
 
     return (
-      <Dialog open={!call.ended && !isCheckoutOpen} onOpenChange={(isOpen) => !isOpen && !isSubmitting && call.end()}>
+      <Dialog open={!call.ended && !isCheckoutOpen} onOpenChange={(isOpen) => !isOpen && !isSubmitting && call.end(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>클로버 구매</DialogTitle>
@@ -239,7 +243,7 @@ export const PurchaseConfirmDialog = createCallable<PurchaseConfirmDialogProps, 
                 </p>
               </div>
 
-              {notice && <PurchaseNotice notice={notice} onLeave={() => call.end()} />}
+              {notice && <PurchaseNotice notice={notice} onLeave={() => call.end(null)} />}
             </DialogBody>
 
             <DialogFooter>
@@ -248,7 +252,7 @@ export const PurchaseConfirmDialog = createCallable<PurchaseConfirmDialogProps, 
                 variant="outline"
                 aria-disabled={isSubmitting}
                 className="aria-disabled:opacity-65"
-                onClick={() => !isSubmitting && call.end()}
+                onClick={() => !isSubmitting && call.end(null)}
               >
                 취소
               </Button>

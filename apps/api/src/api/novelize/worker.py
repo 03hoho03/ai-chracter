@@ -42,6 +42,7 @@ from sqlalchemy import select
 from api.core.config import settings
 from api.core.sentry import build_sentry_options, capture_dependency_failure
 from api.db.models.novel import NovelJob, NovelJobKind
+from api.clover.unit import assert_clover_unit_matches
 from api.db.session import async_session_factory, engine
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
@@ -175,6 +176,8 @@ def _init_sentry() -> None:
 
 
 async def _main() -> None:
+    # 서버 lifespan 과 같은 클로버 단위 대조 — 교체 스크립트 밖에서 워커를 손으로 띄워도 단위가 다른 DB 에서는 일을 받지 않는다.
+    await assert_clover_unit_matches(async_session_factory)
     # 모델 클라이언트를 일을 받기 전에 만든다 — 키가 없으면 여기서 실패해 기동부터 안 된다.
     llm_client = get_llm_client()
     logger.info(

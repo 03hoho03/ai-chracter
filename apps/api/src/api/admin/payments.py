@@ -18,6 +18,7 @@ from api.admin.schemas import (
     AdminUserPaymentItem,
     AdminUserPaymentListResponse,
 )
+from api.core import clover
 from api.db.models.payment import Payment, PaymentCancellation
 from api.db.session import get_db_session
 from api.payments import refund
@@ -115,6 +116,9 @@ async def refund_payment(
     response: Response,
     background_tasks: BackgroundTasks,
     admin_id: uuid.UUID = Depends(get_current_admin_id),
+    # 정지 스위치(`clover.raise_if_clover_paused`) — 구매분 회수 함수를 콘솔 취소와 같이 써서 라우트에서 막는다. 진행 중 시도의
+    # 마무리도 같은 라우트라 함께 멈춘다(정지를 켜기 전에 진행 중 시도를 0 으로 만든다 — DEPLOY.md 의 "BE 런타임" 절 표).
+    _open: None = Depends(clover.raise_if_clover_paused),
     db: AsyncSession = Depends(get_db_session),
     gateway: PortOneGateway = Depends(get_portone_gateway),
     notifier: PaymentNotifier = Depends(get_payment_notifier),
