@@ -634,6 +634,10 @@ def modal_distribution(kind: JudgmentKind, per_line: Sequence[Sequence[Any]]) ->
 MajorityVote = Literal["ruleSet", "appliedChange"]
 MAJORITY_METRICS = ("ruleSet", "appliedChange", "direction", "fired")
 DEFAULT_MAJORITY_VOTES = 3
+MAJORITY_BIAS_NOTE = (
+    "plug-in 어림은 다수결 이득(majority - single)을 부풀린다: 참 분포가 반반이라 참 이득이 0 이어도 반복 3회 어림의 기대 이득은"
+    " 약 +0.045(11/243)다. 문턱과 견주기 전에 이 편향을 깎아 읽는다."
+)
 _SHORT_RULE_ID = re.compile(r"^([a-z]+)(\d+)$")
 
 
@@ -700,6 +704,10 @@ def majority_agreement(
     분포를 참 분포로 쓰므로 실제보다 일치가 높게 나오는 쪽으로 치우친다(반복이 적을수록 더). 기존 `self_agreement` 는 복원 없는
     쌍이라 이 단일 판정 값과 같지 않다.
 
+    다수결 이득(다수결 일치 − 단일 일치)도 부풀린다. 참 분포가 두 결과 반반이면 세 표 다수결의 참 이득은 0 인데, 반복 3회로 만든
+    경험 분포는 4분의 3 확률로 (2/3, 1/3) 이 되고 그때 어림 이득이 44/729 라 기대값이 11/243(약 +0.045)이다. 이득을 문턱과 견줄
+    때는 이만큼을 먼저 깎아 읽는다 — 결과의 `biasNote` 칸에 같은 말을 싣는다.
+
     표는 `vote` 공간에서 던진다 — 규칙 집합(`ruleSet`) 또는 앱 반영 변화량(`appliedChange`, 스탯마다 반영되는 폭). 그 다수결 결과를
     지표마다 투영해 견준다: 규칙 집합(표를 변화량으로 던졌으면 없음), 앱 반영 변화량, 방향(스탯마다 폭의 부호), 발동 여부. 변화량·
     방향은 폭 표(`deltas`, 짧은 규칙 id → 폭)가 있어야 낸다 — 짧은 id 는 판정 줄마다 다시 매기는 글자라, 한 표는 스탯 줄 구성이 같은
@@ -762,6 +770,7 @@ def majority_agreement(
         "model": model,
         "k": k,
         "vote": vote,
+        "biasNote": MAJORITY_BIAS_NOTE,
         "lines": len(per_line) - skipped,
         "skippedLines": skipped,
         "metrics": metrics,

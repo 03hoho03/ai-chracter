@@ -656,6 +656,7 @@ async def test_control_reaction_counts_only_changes_in_the_expected_direction(tm
 
 
 def _two_stat_lines(tmp_path: Path) -> list[ja.JudgmentLine]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     return ja.load_lines(
         [
             _dump(
@@ -706,6 +707,10 @@ async def test_an_order_seed_shuffles_every_call_key_reproducibly(tmp_path: Path
     assert sorted(first) == sorted(NESTED_ORDER)
     assert first != NESTED_ORDER
     assert first != other
+    # 섞는 단위는 호출 하나다 — (줄, 판) 블록째 섞으면 같은 줄·같은 판의 두 반복이 늘 이웃한다.
+    blocks = {key.rsplit("|", 1)[0] for key in NESTED_ORDER}
+    apart = [block for block in blocks if abs(first.index(f"{block}|0") - first.index(f"{block}|1")) != 1]
+    assert apart
 
 
 # ---------------------------------------------------------------- 다수결 plug-in
