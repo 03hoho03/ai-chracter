@@ -589,7 +589,7 @@ def test_the_episode_number_comes_from_the_dump_field_or_is_approximated_only_fo
     dump, ledger = tmp_path / "dump.jsonl", tmp_path / "ledger.jsonl"
     base = {"episode_count": "1", "episode_chars": "3000"}
     summaries = {**base, "previous_summaries": "1화: 앞 일이 있었다.\n2화: 다음 일이 있었다."}
-    cases = [
+    cases: list[tuple[str, dict[str, Any], int]] = [
         # (작업, 덤프 줄, 형식 성공으로 세는가)
         ("field", {"branch": "manuscript", "episodeNumber": 3, "values": {**base, "previous_summaries": ""}}, 1),
         ("approx-manuscript", {"branch": "manuscript", "values": summaries}, 1),

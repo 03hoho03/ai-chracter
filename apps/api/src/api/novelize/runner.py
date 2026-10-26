@@ -425,7 +425,13 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
             job_model = job.model
         # 여기서부터 모델 호출 — 세션을 닫은 뒤다. 측정 덤프는 갈래마다의 호출 직전 이 한 곳에서 남긴다(경로 설정이 없으면 바로 돌아온다).
         dump_novel_prompt(
-            job_id=job_id, job_model=job_model, variant=variant, usage=usage, prompt=inp.prompt, schema=handler.schema
+            job_id=job_id,
+            job_model=job_model,
+            variant=variant,
+            usage=usage,
+            prompt=inp.prompt,
+            schema=handler.schema,
+            episode_number=inp.episode_number if isinstance(inp, ChapterInput) else None,
         )
         result = await handler.call(llm_client, inp, usage)
         await handler.save(session_factory, job_id, inp, result)

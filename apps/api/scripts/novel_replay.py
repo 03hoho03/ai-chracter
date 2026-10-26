@@ -18,8 +18,9 @@
 입력은 측정 서버가 `NOVEL_PROMPT_DUMP_PATH` 로 남긴 덤프다(`novelize/prompt_dump.py`). 대상은 화 생성·전체 구성안·장면 구성안
 세 채널이고 그 밖의 줄은 거른다. 줄마다 그 줄의 소설 세트 섹션을 `--env-file` 로 준 DB 에서 읽어 운영 렌더러(`prompts._render`)로
 다시 렌더한다 — 그 DB 가 로컬(localhost 류)이 아니면 무엇이든 읽기 전에 거부한다. 실제 사용자 대화를 생성 모델에 다시 보내지
-않기 위해서다. 다시 렌더한 지시문·본문이 덤프의 sha 와 둘 다 같아야 그 줄을 부른다. 다른 줄은 실패로 남기고 나머지만 부르며,
-`--stop-on-mismatch` 면 한 줄이라도 다를 때 아무것도 부르지 않는다.
+않기 위해서다. 다시 렌더한 지시문·본문이 덤프의 sha 와 둘 다 같고, 현행 갈래가 보낼 모델 id 가 덤프의 모델 id(`callModel`)와
+같아야 그 줄을 부른다 — 모델이 다르면 대조군이 측정 때와 다른 모델로 불려 갈래 비교가 무너진다. 다른 줄은 실패로 남기고
+나머지만 부르며, `--stop-on-mismatch` 면 한 줄이라도 다를 때 아무것도 부르지 않는다.
 
 갈래:
 - 현행(window): 덤프의 세트·작업 모델 그대로.
@@ -32,12 +33,14 @@
 로컬 DB 에만 쌓인다.
 
 원장(`--ledger`, jsonl 하나)에 갈래마다 plan·call 기록과 상한 기록을 붙여 쓴다. 원장의 앞 호출 원가는 이번 `--limit-usd` 에 들어간다
-(채팅 리플레이의 장부 규칙 — 원가를 모르는 호출은 그 모델의 상한 추정). 같은 (작업, 갈래, 반복) 호출이 원장에 이미 있으면 부르지
-않는다. 원장의 모델 칸(`sentModel`)은 공급자가 사용량과 함께 돌려준 실제 모델 id 이고, 판 번호(`setSemver`)는 세트 id 로 판 표를
+(채팅 리플레이의 장부 규칙 — 원가를 모르는 호출은 그 모델의 상한 추정). 원가 상한은 호출마다 부르기 전에 건다: 누적 원가에 그
+호출의 최악 견적(입력 추정과 출력 상한)을 더해 상한을 넘으면 부르지 않고 멈춘 자리를 원장에 남긴다. 공용 장부는 원가를 호출이 끝난
+뒤에 더하므로 그것만으로는 마지막 한 호출만큼 상한을 넘을 수 있어서다. 시험 실행은 누적 원가에 전체 최악 견적을 더한 값이 상한을
+넘으면 경고 줄을 낸다. 같은 (작업, 갈래, 반복) 호출이 원장에 이미 있으면 부르지 않는다. 원장의 모델 칸(`sentModel`)은 공급자가 사용량과 함께 돌려준 실제 모델 id 이고, 판 번호(`setSemver`)는 세트 id 로 판 표를
 이어 읽은 값이다(서빙 경로는 판 표를 읽지 않아 덤프에 없다). 원장에는 출력 본문이 실리므로 저장소에 올리지 않는 측정 디렉터리
 (`apps/api/probe-runs/`) 아래에 둔다. 리포트에는 개수·비율·판 번호·모델 id 만 싣는다.
 
-종료 코드: 0 정상 · 1 입력 파일 없음 · 2 재렌더가 덤프와 다르거나 거부된 줄(세트가 없음 등)이 있음·이미 부른 호출, 인자 오류도
+종료 코드: 0 정상 · 1 입력 파일 없음 · 2 재렌더·모델이 덤프와 다르거나 거부된 줄(세트가 없음 등)이 있음·이미 부른 호출, 인자 오류도
 argparse 가 2 · 3 원장이 이미 원가 상한 이상.
 """
 
@@ -345,8 +348,8 @@ def _plan(call: NovelCall, record: dict[str, Any], set_facts: dict[str, Any]) ->
 async def assemble_line(
     sets: _SetReader, line: int, record: dict[str, Any], arm: ArmSpec | None
 ) -> tuple[list[dict[str, Any]], list[NovelCall], bool]:
-    """덤프 한 줄의 plan 기록들, 부를 호출들, 통과 여부. 현행 갈래가 덤프와 같을 때만 변형 갈래를 만든다 — 다르면 슬롯 값과 세트
-    id 가 그 호출을 정한다는 전제가 깨진 것이라 변형 갈래도 믿을 수 없다."""
+    """덤프 한 줄의 plan 기록들, 부를 호출들, 통과 여부. 현행 갈래가 덤프와 같을 때(렌더 바이트와 보낼 모델 id 둘 다)만 변형 갈래를
+    만든다 — 다르면 슬롯 값과 세트 id 가 그 호출을 정한다는 전제나 대조군의 모델이 깨진 것이라 변형 갈래와 비교할 수 없다."""
     head = {"kind": "plan", "line": line, "jobId": record.get("jobId"), "channel": record.get("channel")}
     try:
         set_id, job_model = _check_record(record)
@@ -359,7 +362,8 @@ async def assemble_line(
             False,
         )
     window_plan = _plan(window, record, await sets.facts(window_set))
-    if not window_plan["matchesDump"]:
+    window_plan["callModelMatchesDump"] = window_plan["callModel"] == window_plan["dumpCallModel"]
+    if not (window_plan["matchesDump"] and window_plan["callModelMatchesDump"]):
         return [window_plan], [], False
     if arm is None:
         return [window_plan], [window], True
@@ -474,14 +478,15 @@ async def run(
         plans, items, passed = await assemble_line(sets, number, record, arm)
         for plan in plans:
             _append(ledger, {**plan, "execute": args.execute, "reps": args.reps})
-            summary = {k: plan.get(k) for k in ("line", "channel", "arm", "matchesDump", "setSemver", "refused")}
+            shown = ("line", "channel", "arm", "matchesDump", "callModelMatchesDump", "setSemver", "refused")
+            summary = {k: plan.get(k) for k in shown}
             print(json.dumps(summary, ensure_ascii=False))
         if not passed:
             failed.append(number)
             continue
         calls.extend(item for item in items if item.arm in calling)
     if failed and args.stop_on_mismatch:
-        print(f"재렌더가 덤프와 다르거나 거부된 줄 {failed} — --stop-on-mismatch 라 아무것도 부르지 않는다")
+        print(f"재렌더·모델이 덤프와 다르거나 거부된 줄 {failed} — --stop-on-mismatch 라 아무것도 부르지 않는다")
         return 2
     spent = sum_ledger([ledger]).charged_usd if ledger.is_file() else 0.0  # noqa: ASYNC240 — 한 번 쓰는 CLI
     planned = min(len(calls) * args.reps, args.limit_calls)
@@ -498,6 +503,11 @@ async def run(
             ensure_ascii=False,
         )
     )
+    if spent + worst > args.limit_usd:
+        print(
+            f"경고: 원장 누적 ${spent:.4f} 에 최악 견적 ${worst:.4f} 를 더하면 원가 상한 ${args.limit_usd} 를 넘는다"
+            " — 실행하면 상한 앞에서 멈춘다"
+        )
     code = 2 if failed else 0
     if not args.execute:
         print("시험 실행 — LLM 을 부르지 않았다(--execute 로 실행)")
@@ -512,8 +522,15 @@ async def run(
             items = list(group)
             for rep in range(args.reps):
                 for item in items:
-                    if not budget.take():
-                        exhausted = {**budget.exhausted(), "line": item.line, "jobId": item.job_id, "arm": item.arm}
+                    ceiling = item.cost_ceiling_usd()
+                    if budget.spent_usd + ceiling > args.limit_usd or not budget.take():
+                        exhausted = {
+                            **budget.exhausted(),
+                            "line": item.line,
+                            "jobId": item.job_id,
+                            "arm": item.arm,
+                            "costCeilingUsd": round(ceiling, 6),
+                        }
                         _append(ledger, {**exhausted, "rep": rep})
                         print(json.dumps({"calls": budget.used, "cumulativeChargedUsd": round(budget.spent_usd, 6)}))
                         return code

@@ -8,7 +8,8 @@
 
 저장 쪽 검증은 원문 줄의 턴마다 메시지 구간을 받는다. 덤프에는 메시지가 없으므로 슬롯 값의 원문 줄(`turn_lines`)에서 턴 수만 읽어 그
 수만큼 자리 구간을 만든다 — 검증이 구간에서 읽는 것은 개수뿐이고 구간을 메시지 id 로 바꾼 결과는 지표에 쓰지 않는다. 원문 줄의
-턴 표시는 `novelize/source.py` 의 `format_turn_lines` 가 줄 머리에 붙이는 `[턴 n]` 이다.
+턴 표시는 `novelize/source.py` 의 `format_turn_lines` 가 줄 머리에 붙이는 `[턴 n]` 이고, 1부터 이어지는 번호까지만 턴으로 센다 —
+메시지 본문이 줄을 바꾼 뒤 `[턴 n]` 처럼 시작해도 턴 수를 부풀리지 않게 하려는 것이다.
 
 장면 구성안을 원고가 순서대로 따랐는지 재는 운영 함수는 없다 — 원고 저장은 장면 경계를 모델 출력에서 읽지 않고, 장면마다 근거 원문
 글자 수를 몫으로 삼아 문단을 차례대로 나눈다(`novelize/scenes.py` 의 `assign_scenes`). 그래서 이 리포트는 장면 수만 센다. 리포트에는
@@ -40,6 +41,9 @@ STRUCTURED_SCHEMAS: dict[str, type[BaseModel]] = {
     "novelize_episode_outline": NovelizeEpisodeOutlineResult,
 }
 _TURN_HEAD = re.compile(r"^\[턴 (\d+)\]", re.MULTILINE)
+_SUMMARY_HEAD = re.compile(r"^(\d+)화:", re.MULTILINE)
+# 화 하나만 쓰게 하는 구성 흐름 갈래(원고·그 다시 만들기) — 운영이 그 화의 화 번호를 파서에 넘기는 갈래는 이 둘뿐이다.
+OUTLINE_FLOW_BRANCHES = ("manuscript", "outline_regenerate")
 
 
 @dataclass(frozen=True)
@@ -66,13 +70,34 @@ class StructuredChecks:
     items: int
 
 
-def chapter_checks(output: str, values: Mapping[str, str]) -> ChapterChecks:
+def episode_number_of(line: Mapping[str, Any]) -> int | None:
+    """덤프 줄의 화 번호 — 운영 원고 판정이 파서에 넘기는 값(`ChapterInput.episode_number`). 덤프의 화 번호 칸이 있으면 그 값이다.
+
+    칸이 생기기 전 덤프는 구성 흐름 갈래(원고·그 다시 만들기)에서만 앞 화 요약(`previous_summaries`)의 마지막 `n화:` 줄 + 1 로
+    근사한다. 옛 흐름 갈래는 운영도 화 번호를 넘기지 않으므로 근사하지 않고 None 이다. 앞 화 요약은 요약이 있는 앞 화를 오래된
+    순으로 한 줄씩 담으므로(`novelize/inputs.py` 의 `_previous_summaries`) 근사가 어긋나는 경우는 셋이다:
+    - 요약이 빈 화: 바로 앞 화들의 요약이 비어 있으면 그 화들이 빠져 근사가 실제보다 작다.
+    - 앞 잘림: 요약이 글자 상한을 넘어 남은 한 줄의 앞이 잘리면 `n화:` 머리를 못 찾아 None 이다.
+    - 요약 칸 이전 화: 요약 칸이 생기기 전에 만든 화는 요약이 없어 빠진다 — 그 화가 바로 앞이면 작고, 요약 줄이 하나도 없으면 None.
+    앞 화 요약은 이 화보다 앞 화만 담으므로 근사는 실제 화 번호보다 크게 나오지 않는다. None 으로 어긋나면 운영보다 엄격하게만
+    틀린다(실제 화 번호 머리를 형식 실패로 센다). 작게 어긋나면 실제 화 번호 머리는 실패로, 근사 번호 머리는 성공으로 세어 운영
+    판정과 양쪽으로 갈린다 — 판정을 운영과 맞추려면 화 번호 칸이 있는 덤프를 쓴다."""
+    if "episodeNumber" in line:
+        number = line["episodeNumber"]
+        return int(number) if number is not None else None
+    if line.get("branch") not in OUTLINE_FLOW_BRANCHES:
+        return None
+    heads = _SUMMARY_HEAD.findall((line.get("values") or {}).get("previous_summaries", ""))
+    return int(heads[-1]) + 1 if heads else None
+
+
+def chapter_checks(output: str, values: Mapping[str, str], episode_number: int | None = None) -> ChapterChecks:
     """운영 묶음 받기와 같은 순서 — 형식 → 화마다 후처리 → 거절 → 최소 길이. 형식이 어긋난 출력은 전체를 후처리해 거절만 본다.
-    화 번호 예외(`episode_number`)는 주지 않는다 — 덤프에 그 화의 번호가 없어서다(구성 흐름 원고가 `1화` 대신 이어지는 번호를 쓰면
-    여기서는 형식 실패로 센다)."""
+    `episode_number` 는 운영이 파서에 넘기는 그 화의 화 번호다(`episode_number_of`) — 주면 첫 머리 줄이 `1화` 대신 그 번호여도
+    형식 성공이다."""
     legacy = False
     try:
-        episodes = parse_batch_output(output).episodes
+        episodes = parse_batch_output(output, episode_number=episode_number).episodes
         parsed = True
     except MalformedOutputError:
         parsed = False
@@ -94,8 +119,11 @@ def chapter_checks(output: str, values: Mapping[str, str]) -> ChapterChecks:
 
 
 def turn_count(values: Mapping[str, str]) -> int:
-    numbers = [int(n) for n in _TURN_HEAD.findall(values.get("turn_lines", ""))]
-    return max(numbers, default=0)
+    numbers = {int(n) for n in _TURN_HEAD.findall(values.get("turn_lines", ""))}
+    count = 0
+    while count + 1 in numbers:
+        count += 1
+    return count
 
 
 def structured_checks(channel: str, output: str, values: Mapping[str, str]) -> StructuredChecks:
@@ -151,7 +179,9 @@ def load_calls(paths: Iterable[Path], dump: Path) -> Ledger:
             line = lines[record["line"] - 1]
             if line.get("jobId") != record["jobId"]:
                 raise ValueError(f"원장 {path} 의 덤프 줄 {record['line']} 이 이 덤프의 작업과 다르다")
-            ledger.calls.append({**record, "values": line.get("values") or {}})
+            ledger.calls.append(
+                {**record, "values": line.get("values") or {}, "episodeNumber": episode_number_of(line)}
+            )
     return ledger
 
 
@@ -160,7 +190,9 @@ def _ratio(count: int, total: int) -> float | None:
 
 
 def summarize(ledger: Ledger, markers: Sequence[str]) -> list[dict[str, Any]]:
-    """갈래·채널별 한 줄. 오류로 끝난 호출은 `errors` 로만 세고 형식 지표의 분모에서 뺀다(출력이 없다)."""
+    """갈래·채널별 한 줄. 오류로 끝난 호출은 `errors` 로만 세고 형식 지표의 분모에서 뺀다(출력이 없다). 구성안 응답은 클라이언트가
+    응답 스키마로 검증해 돌려주고 스키마 위반은 예외로 올라 `errors` 에 들어가므로, 스키마 통과 수는 늘 응답 수와 같아 칸을 두지
+    않는다."""
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for call in ledger.calls:
         groups.setdefault((call["arm"], call["channel"]), []).append(call)
@@ -180,7 +212,9 @@ def summarize(ledger: Ledger, markers: Sequence[str]) -> list[dict[str, Any]]:
         row["leakCalls"] = len(leaks)
         row["leakRate"] = _ratio(len(leaks), len(answered))
         if channel == CHAPTER_CHANNEL:
-            checks = [chapter_checks(c.get("output") or "", c["values"]) for c in answered]
+            checks = [
+                chapter_checks(c.get("output") or "", c["values"], episode_number=c["episodeNumber"]) for c in answered
+            ]
             chars = [float(n) for check in checks for n in check.chars]
             row |= {
                 "formatOk": sum(c.parsed for c in checks),
@@ -196,7 +230,6 @@ def summarize(ledger: Ledger, markers: Sequence[str]) -> list[dict[str, Any]]:
             structured = [structured_checks(channel, c.get("output") or "", c["values"]) for c in answered]
             items = [float(s.items) for s in structured if s.schema_ok]
             row |= {
-                "schemaOk": sum(s.schema_ok for s in structured),
                 "formatOk": sum(s.valid for s in structured),
                 "formatRate": _ratio(sum(s.valid for s in structured), len(structured)),
                 "refused": sum(s.refused for s in structured),
@@ -214,7 +247,6 @@ _COLUMNS = (
     "errors",
     "formatOk",
     "formatRate",
-    "schemaOk",
     "legacy",
     "refused",
     "belowMinEpisodes",
