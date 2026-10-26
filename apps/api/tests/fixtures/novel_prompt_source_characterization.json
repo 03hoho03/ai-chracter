@@ -1,0 +1,170 @@
+{
+  "boundary/character/gemini": {
+    "prompt": "4336032c0aa8df276853acaecacc12d3ac7b3711782ce4e6299af926dbcc49cf",
+    "system": "7a0333391cc75314b84614a869a9330059b2ea96d439d528fcef88bf20c18152"
+  },
+  "boundary/character/opus": {
+    "prompt": "4336032c0aa8df276853acaecacc12d3ac7b3711782ce4e6299af926dbcc49cf",
+    "system": "7a0333391cc75314b84614a869a9330059b2ea96d439d528fcef88bf20c18152"
+  },
+  "boundary/character/sonnet": {
+    "prompt": "4336032c0aa8df276853acaecacc12d3ac7b3711782ce4e6299af926dbcc49cf",
+    "system": "7a0333391cc75314b84614a869a9330059b2ea96d439d528fcef88bf20c18152"
+  },
+  "boundary/story/gemini": {
+    "prompt": "6da156edad451cf1a3a105f0528bc15a5333b7fa19f2c32fbbebf3f341de937d",
+    "system": "7a0333391cc75314b84614a869a9330059b2ea96d439d528fcef88bf20c18152"
+  },
+  "boundary/story/opus": {
+    "prompt": "6da156edad451cf1a3a105f0528bc15a5333b7fa19f2c32fbbebf3f341de937d",
+    "system": "7a0333391cc75314b84614a869a9330059b2ea96d439d528fcef88bf20c18152"
+  },
+  "boundary/story/sonnet": {
+    "prompt": "6da156edad451cf1a3a105f0528bc15a5333b7fa19f2c32fbbebf3f341de937d",
+    "system": "7a0333391cc75314b84614a869a9330059b2ea96d439d528fcef88bf20c18152"
+  },
+  "chapter/character/gemini": {
+    "prompt": "744fed65cf0e4d46a26385d585785aa65488dc7ab8061429654ab4de03b74ebe",
+    "system": "e1d2894746e83816ec44ec40b61194d527a23a29d89b8c33e46a72a4dfb3c966"
+  },
+  "chapter/character/opus": {
+    "prompt": "744fed65cf0e4d46a26385d585785aa65488dc7ab8061429654ab4de03b74ebe",
+    "system": "e1d2894746e83816ec44ec40b61194d527a23a29d89b8c33e46a72a4dfb3c966"
+  },
+  "chapter/character/sonnet": {
+    "prompt": "744fed65cf0e4d46a26385d585785aa65488dc7ab8061429654ab4de03b74ebe",
+    "system": "e1d2894746e83816ec44ec40b61194d527a23a29d89b8c33e46a72a4dfb3c966"
+  },
+  "chapter/story/gemini": {
+    "prompt": "e84ff6e1c173014bdb3f03674f1e662ceaec7124704238d58942cdc9a51a6f7d",
+    "system": "e1d2894746e83816ec44ec40b61194d527a23a29d89b8c33e46a72a4dfb3c966"
+  },
+  "chapter/story/opus": {
+    "prompt": "e84ff6e1c173014bdb3f03674f1e662ceaec7124704238d58942cdc9a51a6f7d",
+    "system": "e1d2894746e83816ec44ec40b61194d527a23a29d89b8c33e46a72a4dfb3c966"
+  },
+  "chapter/story/sonnet": {
+    "prompt": "e84ff6e1c173014bdb3f03674f1e662ceaec7124704238d58942cdc9a51a6f7d",
+    "system": "e1d2894746e83816ec44ec40b61194d527a23a29d89b8c33e46a72a4dfb3c966"
+  },
+  "episode_outline/character/gemini": {
+    "prompt": "2d244a635fc8dd379c58d70374a13c42479d65bcdc336708bb7e56b685f5218c",
+    "system": "aad7d9c5997f268867eed966062ef4220e9c50cc97edcfef9976a2b94c7154b8"
+  },
+  "episode_outline/character/opus": {
+    "prompt": "2d244a635fc8dd379c58d70374a13c42479d65bcdc336708bb7e56b685f5218c",
+    "system": "aad7d9c5997f268867eed966062ef4220e9c50cc97edcfef9976a2b94c7154b8"
+  },
+  "episode_outline/character/sonnet": {
+    "prompt": "2d244a635fc8dd379c58d70374a13c42479d65bcdc336708bb7e56b685f5218c",
+    "system": "aad7d9c5997f268867eed966062ef4220e9c50cc97edcfef9976a2b94c7154b8"
+  },
+  "episode_outline/story/gemini": {
+    "prompt": "20400c5009ef4ff9d1eb18596243cbc2f5f5e593f1deccee647aa6c0a7208ffb",
+    "system": "aad7d9c5997f268867eed966062ef4220e9c50cc97edcfef9976a2b94c7154b8"
+  },
+  "episode_outline/story/opus": {
+    "prompt": "20400c5009ef4ff9d1eb18596243cbc2f5f5e593f1deccee647aa6c0a7208ffb",
+    "system": "aad7d9c5997f268867eed966062ef4220e9c50cc97edcfef9976a2b94c7154b8"
+  },
+  "episode_outline/story/sonnet": {
+    "prompt": "20400c5009ef4ff9d1eb18596243cbc2f5f5e593f1deccee647aa6c0a7208ffb",
+    "system": "aad7d9c5997f268867eed966062ef4220e9c50cc97edcfef9976a2b94c7154b8"
+  },
+  "outline/character/gemini": {
+    "prompt": "8b9a2d1a6daf7fdfa07a425fcc5ef862b248614d877c047cacb3b42e926de470",
+    "system": "b2e992ddda56bdf702f12375d57d6fbb63e0fc856173317010d16dde004ca4d4"
+  },
+  "outline/character/opus": {
+    "prompt": "8b9a2d1a6daf7fdfa07a425fcc5ef862b248614d877c047cacb3b42e926de470",
+    "system": "b2e992ddda56bdf702f12375d57d6fbb63e0fc856173317010d16dde004ca4d4"
+  },
+  "outline/character/sonnet": {
+    "prompt": "8b9a2d1a6daf7fdfa07a425fcc5ef862b248614d877c047cacb3b42e926de470",
+    "system": "b2e992ddda56bdf702f12375d57d6fbb63e0fc856173317010d16dde004ca4d4"
+  },
+  "outline/story/gemini": {
+    "prompt": "ac86361c38ee1b8efcb865b17d9ece1b4f189015fc9c6253de99811e82d47661",
+    "system": "b2e992ddda56bdf702f12375d57d6fbb63e0fc856173317010d16dde004ca4d4"
+  },
+  "outline/story/opus": {
+    "prompt": "ac86361c38ee1b8efcb865b17d9ece1b4f189015fc9c6253de99811e82d47661",
+    "system": "b2e992ddda56bdf702f12375d57d6fbb63e0fc856173317010d16dde004ca4d4"
+  },
+  "outline/story/sonnet": {
+    "prompt": "ac86361c38ee1b8efcb865b17d9ece1b4f189015fc9c6253de99811e82d47661",
+    "system": "b2e992ddda56bdf702f12375d57d6fbb63e0fc856173317010d16dde004ca4d4"
+  },
+  "revise/character/gemini": {
+    "prompt": "57670a94674dd1522dd9cf4bcfd23cb689b4e4cd9cea0c6152cc6be6cf1f4226",
+    "system": "8929eb22f70af44eae5af9da3b191d9abd5fc2011428bd12821b03fbae788960"
+  },
+  "revise/character/opus": {
+    "prompt": "57670a94674dd1522dd9cf4bcfd23cb689b4e4cd9cea0c6152cc6be6cf1f4226",
+    "system": "8929eb22f70af44eae5af9da3b191d9abd5fc2011428bd12821b03fbae788960"
+  },
+  "revise/character/sonnet": {
+    "prompt": "57670a94674dd1522dd9cf4bcfd23cb689b4e4cd9cea0c6152cc6be6cf1f4226",
+    "system": "8929eb22f70af44eae5af9da3b191d9abd5fc2011428bd12821b03fbae788960"
+  },
+  "revise/story/gemini": {
+    "prompt": "57670a94674dd1522dd9cf4bcfd23cb689b4e4cd9cea0c6152cc6be6cf1f4226",
+    "system": "8929eb22f70af44eae5af9da3b191d9abd5fc2011428bd12821b03fbae788960"
+  },
+  "revise/story/opus": {
+    "prompt": "57670a94674dd1522dd9cf4bcfd23cb689b4e4cd9cea0c6152cc6be6cf1f4226",
+    "system": "8929eb22f70af44eae5af9da3b191d9abd5fc2011428bd12821b03fbae788960"
+  },
+  "revise/story/sonnet": {
+    "prompt": "57670a94674dd1522dd9cf4bcfd23cb689b4e4cd9cea0c6152cc6be6cf1f4226",
+    "system": "8929eb22f70af44eae5af9da3b191d9abd5fc2011428bd12821b03fbae788960"
+  },
+  "revise_blocks/character/gemini": {
+    "prompt": "4173be3554645f7948651801bc5d60b7e708fb1297e4106da4737ab175657936",
+    "system": "1fbdc196e29544409245a02a5c6d81894012d2bb0bf3d54d7d993894faa3cbba"
+  },
+  "revise_blocks/character/opus": {
+    "prompt": "4173be3554645f7948651801bc5d60b7e708fb1297e4106da4737ab175657936",
+    "system": "1fbdc196e29544409245a02a5c6d81894012d2bb0bf3d54d7d993894faa3cbba"
+  },
+  "revise_blocks/character/sonnet": {
+    "prompt": "4173be3554645f7948651801bc5d60b7e708fb1297e4106da4737ab175657936",
+    "system": "1fbdc196e29544409245a02a5c6d81894012d2bb0bf3d54d7d993894faa3cbba"
+  },
+  "revise_blocks/story/gemini": {
+    "prompt": "4173be3554645f7948651801bc5d60b7e708fb1297e4106da4737ab175657936",
+    "system": "1fbdc196e29544409245a02a5c6d81894012d2bb0bf3d54d7d993894faa3cbba"
+  },
+  "revise_blocks/story/opus": {
+    "prompt": "4173be3554645f7948651801bc5d60b7e708fb1297e4106da4737ab175657936",
+    "system": "1fbdc196e29544409245a02a5c6d81894012d2bb0bf3d54d7d993894faa3cbba"
+  },
+  "revise_blocks/story/sonnet": {
+    "prompt": "4173be3554645f7948651801bc5d60b7e708fb1297e4106da4737ab175657936",
+    "system": "1fbdc196e29544409245a02a5c6d81894012d2bb0bf3d54d7d993894faa3cbba"
+  },
+  "revise_recheck/character/gemini": {
+    "prompt": "16151cf1121baa05c679227214e80412e71215e80ed5345fe6e715878194bd49",
+    "system": "88077718eec2cf95846def260478f8ada5bccd35e8687ac0b96cfa3803b75ea1"
+  },
+  "revise_recheck/character/opus": {
+    "prompt": "16151cf1121baa05c679227214e80412e71215e80ed5345fe6e715878194bd49",
+    "system": "88077718eec2cf95846def260478f8ada5bccd35e8687ac0b96cfa3803b75ea1"
+  },
+  "revise_recheck/character/sonnet": {
+    "prompt": "16151cf1121baa05c679227214e80412e71215e80ed5345fe6e715878194bd49",
+    "system": "88077718eec2cf95846def260478f8ada5bccd35e8687ac0b96cfa3803b75ea1"
+  },
+  "revise_recheck/story/gemini": {
+    "prompt": "16151cf1121baa05c679227214e80412e71215e80ed5345fe6e715878194bd49",
+    "system": "88077718eec2cf95846def260478f8ada5bccd35e8687ac0b96cfa3803b75ea1"
+  },
+  "revise_recheck/story/opus": {
+    "prompt": "16151cf1121baa05c679227214e80412e71215e80ed5345fe6e715878194bd49",
+    "system": "88077718eec2cf95846def260478f8ada5bccd35e8687ac0b96cfa3803b75ea1"
+  },
+  "revise_recheck/story/sonnet": {
+    "prompt": "16151cf1121baa05c679227214e80412e71215e80ed5345fe6e715878194bd49",
+    "system": "88077718eec2cf95846def260478f8ada5bccd35e8687ac0b96cfa3803b75ea1"
+  }
+}
