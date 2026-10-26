@@ -1,7 +1,7 @@
 """시드 행의 결정적 UUID 파생.
 
 `apps/api/CLAUDE.md` 의 "시드 행은 하드코딩 리터럴 UUID" 관례에서 의도적으로 이탈한다 —
-콘텐츠 30개에 필요한 UUID 가 400개를 넘어 손으로 못 쓴다. 대신 리터럴 네임스페이스
+콘텐츠 하나에도 시작설정·스탯·엔딩·키워드북마다 UUID 가 필요해 손으로 못 쓴다. 대신 리터럴 네임스페이스
 하나만 두고 그 아래에서 uuid5 로 파생한다: 같은 인자면 어느 머신에서 언제 돌려도 같은
 UUID 라, 재시드가 새 행을 만드는 대신 기존 행을 그대로 덮어쓴다.
 
@@ -16,18 +16,12 @@ import uuid
 SEED_NAMESPACE = uuid.UUID("5eed0000-0000-4000-8000-00000000f00d")
 
 # 시드 콘텐츠 전체의 작가이자 시드 자산의 소유자. seed_dev.py 가 이 계정을 만들고
-# (`USER_ID`), 기존 '미아' 캐릭터의 creator_user_id 도 이 값이라 절대 바꾸지 않는다.
+# (`USER_ID`), 이미 시드된 콘텐츠의 creator_user_id 가 전부 이 값이라 절대 바꾸지 않는다.
 SEED_AUTHOR_USER_ID = uuid.UUID("5eed0000-0000-4000-8000-000000000001")
-
-# 샘플 캐릭터 '미아'의 썸네일 자산. `seed_dev.py` 가 이 캐릭터를 소유하지만 UUID 는 여기 둔다
-# — 이미지 업로드 스크립트(`upload_seed_images.py`)도 같은 키를 계산해야 하고, 두 스크립트가
-# 리터럴을 각자 들고 있으면 어긋난다. 다른 시드 자산과 달리 slug 파생이 아니라 리터럴인 건
-# 이 행이 seed_content 보다 먼저 있었고 이미 프로덕션 DB 가 이 id 를 참조하기 때문이다.
-MIA_THUMBNAIL_ASSET_ID = uuid.UUID("5eed0000-0000-4000-8000-0000000000a5")
 
 
 def seed_uuid(*parts: str) -> uuid.UUID:
-    """`seed_uuid("story", "romance-3rdloop", "version")` 처럼 경로를 넘겨 UUID 를 얻는다.
+    """`seed_uuid("story", "tutorial-filmclub", "version")` 처럼 경로를 넘겨 UUID 를 얻는다.
 
     파트는 `:` 로 이어 붙이므로 `seed_uuid("story", slug)` 와 `seed_uuid(f"story:{slug}")`
     는 같은 값이다.

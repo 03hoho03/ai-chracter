@@ -4,7 +4,7 @@
 이 스크립트는 판단하지 않는다.
 
     cd apps/api && uv run --env-file .env python scripts/chat_probe.py \
-        --slugs romance-lockedwith --setups 0,1 --repeat 2 \
+        --slugs tutorial-filmclub --setups 0,1 --repeat 2 \
         --model gemini-3.5-flash-lite --out probe-runs/2026-08-11_flash-lite.json
 
 출력은 gitignore 된 `probe-runs/` 아래에 둘 것 — `/tmp` 에 뒀다가 정리되면서 베이스라인
@@ -46,9 +46,7 @@ EMAIL, PASSWORD = "test@example.com", "password1234"
 # 앵무새 패턴은 "사용자 말을 되받는" 자리에서 드러나므로, 짧은 반응·의견·질문·감정 표현을
 # 섞는다. 어느 스토리에나 말이 되도록 세계관 고유명사를 쓰지 않는다.
 #
-# `--script`(기본 default)로 고른다. 대본과 스토리는 짝이다 — guildkitchen-closing은 밥집
-# 방 a435d603의 실제 사용자 입력 4개라 요리 맥락이고,
-# fantasy-guildkitchen 재현 전용이다. 다른 스토리에 쓰지 않는다.
+# `--script`(기본 default)로 고른다. 특정 스토리의 실제 입력을 옮긴 대본을 더하면 그 스토리에만 쓴다.
 SCRIPTS: dict[str, list[str]] = {
     "default": [
         "일단 상황부터 좀 알려줘요",
@@ -57,12 +55,6 @@ SCRIPTS: dict[str, list[str]] = {
         "그냥 제 느낌을 말한 거예요",
         "좀 무섭네요 솔직히",
         "그럼 이제 어떻게 하면 되죠?",
-    ],
-    "guildkitchen-closing": [
-        "지친 몸과 마음을 달래줄 따뜻한 채소 스튜를 끓여 드리겠습니다.",
-        "하하. 간은 약해도 맛은 맛있죠? 그래도 정성을 다한거랍니다",
-        "밥을 맛있게 먹는걸 보니 저도 따뜻해지는군요. 열심히 해야겠습니다.",
-        "편히 쉬십시요.",
     ],
 }
 
@@ -206,7 +198,7 @@ async def main() -> None:
         "--script",
         default="default",
         choices=sorted(SCRIPTS),
-        help="사용자 턴 대본 (대본과 스토리는 짝이다 — 상단 SCRIPTS 주석 참고)",
+        help="사용자 턴 대본 (상단 SCRIPTS 주석 참고)",
     )
     ap.add_argument("--base", default=DEFAULT_BASE, help="API 서버 base URL")
     args = ap.parse_args()

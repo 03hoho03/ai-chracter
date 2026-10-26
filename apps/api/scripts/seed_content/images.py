@@ -7,7 +7,6 @@ moto 는 인메모리라 컨테이너를 재생성하면 업로드된 객체가 
 
 진짜 이미지(`images/{slug}.png`)는 gitignore 라 새 머신에는 없다. 그럴 땐 장르 색이 다른
 절차적 목업 PNG 로 대체하고 경고 한 줄만 남긴다 — 이미지가 없다고 시드가 실패하면 안 된다.
-진짜 이미지는 `scripts/generate_seed_images.py` 로 다시 뽑는다.
 """
 
 import colorsys
@@ -116,8 +115,8 @@ def situational_image_slug(character_slug: str, order: int) -> str:
     """캐릭터의 n 번째 상황별 이미지가 쓰는 이미지 slug.
 
     상황별 이미지는 JSON 에 자기 이름이 없고 리스트 안의 위치가 곧 정체성이라(entity_id 도
-    같은 규약으로 파생된다) 파일명도 위치에서 만든다. `image_prompts.json`이 이
-    함수와 같은 이름을 써야 생성한 PNG 가 시드에 실제로 붙는다.
+    같은 규약으로 파생된다) 파일명도 위치에서 만든다. `images/` 에 둘 PNG 도 이 함수와 같은
+    이름이어야 시드에 실제로 붙는다.
     """
     return f"{character_slug}-scene{order + 1}"
 
@@ -127,10 +126,7 @@ def read_image(slug: str, genre_name: str | None = None) -> bytes:
     path = IMAGES_DIR / f"{slug}.png"
     if path.is_file():
         return path.read_bytes()
-    print(
-        f"  ! 시드 이미지 없음({path.name}) — 목업 썸네일로 대체."
-        " 실제 이미지는 scripts/generate_seed_images.py 로 생성한다"
-    )
+    print(f"  ! 시드 이미지 없음({path.name}) — 목업 썸네일로 대체.")
     return mock_thumbnail(slug, genre_name)
 
 
