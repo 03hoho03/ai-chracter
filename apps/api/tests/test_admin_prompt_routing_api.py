@@ -19,7 +19,7 @@ from api.admin import prompt_routing as admin_prompt_routing
 from api.chat.prompt_builder import load_active_prompt_set
 from api.chat.prompt_routing import ALLOWED_ROUTE_PAIRS, route_chain_errors
 from api.chat.prompt_routing_cache import PROMPT_ROUTES_CACHE_KEY, invalidate_prompt_routes, load_prompt_routes
-from api.chat.prompt_stages import LANE_STAGES
+from api.chat.prompt_stages import LANE_STAGES, stage_room_models
 from api.chat.turn_prompt import judgment_prompt_sets
 from api.core.config import settings
 from api.core.redis import redis_client
@@ -55,7 +55,7 @@ _ROUTING_ENV: dict[str, Any] = {
     "llm_call_site_backends": _STAT_SITES_ON_ANTHROPIC,
 }
 
-_CELL_COUNT = sum(len(stages) for stages in LANE_STAGES.values()) * 2
+_CELL_COUNT = sum(len(stage_room_models(lane, stage)) for lane, stages in LANE_STAGES.items() for stage in stages)
 
 
 @pytest.fixture
@@ -157,6 +157,13 @@ _ROUTES = [
         {"baseRevisionId": None},
         id="restore-revision",
     ),
+    pytest.param("PUT", "/admin/prompt-routing/novel", {"baseRevisionId": None, "rows": []}, id="save-novel-lane"),
+    pytest.param(
+        "POST",
+        f"/admin/prompt-routing/novel/revisions/{_MISSING_REVISION}/restore",
+        {"baseRevisionId": None},
+        id="restore-novel-lane",
+    ),
 ]
 
 
@@ -186,7 +193,7 @@ async def test_an_empty_table_shows_every_cell_resolved_from_env_with_prices(
     assert body["revisionId"] is None
     assert body["revisionNumber"] is None
     assert body["pricesAsOf"] == PRICES_AS_OF.isoformat()
-    assert len(body["cells"]) == _CELL_COUNT
+    assert len(body["cells"]) == _CELL_COUNT == (8 + 5) * 2 + 3 * 3 + 4
     assert {(c["effective"]["source"], c["configured"], c["skipped"]) for c in body["cells"]} <= {
         ("env", None, None),
         ("room", None, None),
@@ -574,7 +581,7 @@ async def test_restoring_checks_the_snapshot_again_against_the_env_of_now(
 async def test_restoring_a_snapshot_with_a_cell_the_code_no_longer_knows_is_refused(
     routing_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
 ) -> None:
-    old = PromptRouteRevision(number=1, rows=[_row("memory_fact", lane="novel")], note="", admin_id=admin_id)
+    old = PromptRouteRevision(number=1, rows=[_row("retired_judgment")], note="", admin_id=admin_id)
     db_session.add(old)
     await db_session.commit()
 
@@ -583,7 +590,7 @@ async def test_restoring_a_snapshot_with_a_cell_the_code_no_longer_knows_is_refu
     )
 
     assert resp.status_code == 422
-    assert resp.json()["detail"]["row"] == {"lane": "novel", "roomModel": "opus", "stage": "memory_fact"}
+    assert resp.json()["detail"]["row"] == {"lane": "story", "roomModel": "opus", "stage": "retired_judgment"}
     assert resp.json()["detail"]["rule"] == "unknown-stage"
 
 
@@ -716,8 +723,9 @@ async def test_every_cell_lists_the_model_id_and_price_of_each_pair_it_could_pic
     ]
     # 화면이 셀렉트 목록을 단계 종류로 거르므로 칸마다 종류가 있다 — `gemini@gemini` 는 두 종류 모두의 쌍이라 후보만으로는
     # 가를 수 없다.
+    generation_stages = {"chat_generate", "novel_chapter", "novel_outline", "novel_episode_outline"}
     assert {(c["stage"], c["kind"]) for c in body["cells"]} == {
-        (stage, "generation" if stage == "chat_generate" else "structured")
+        (stage, "generation" if stage in generation_stages else "structured")
         for stages in LANE_STAGES.values()
         for stage in stages
     }
@@ -837,3 +845,341 @@ async def test_a_member_detail_does_not_read_audit_rows_without_a_target(
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["actionLogs"] == []
+
+
+# --- 소설 레인 --------------------------------------------------------------------------------------------------------
+# 저장·되돌리기는 경로로 레인을 가른다. 기존 경로는 채팅 두 레인만, 소설 경로는 소설 레인만 지우고 쓴다. 이력 스냅샷은 어느 경로든
+# 저장한 뒤의 표 전체이고, 이력의 `lanes` 칸이 어느 경로의 저장인지 남긴다(기존 경로는 비움, 소설 경로는 ["novel"]).
+
+_NOVEL_CHAPTER_ROW = _row("novel_chapter", lane="novel", room_model="sonnet", chain_model=None, call_model="sonnet")
+_NOVEL_OUTLINE_ROW = _row("novel_outline", lane="novel", room_model="opus", chain_model=None, call_model="opus")
+_NOVEL_BOUNDARY_ROW = _row(
+    "novel_boundary", lane="novel", room_model="any", chain_model="opus", call_model="gemini", backend="gemini"
+)
+
+
+@pytest.fixture
+def novel_env(routing_env: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
+    """운영처럼 화 생성 호출 위치만 직결로 배정한다(구성안 둘은 물려받는다). 소설 Gemini 모델명은 단가 표에 있는 값으로 고정한다."""
+    routing_env.setattr(
+        settings, "llm_call_site_backends", {**_STAT_SITES_ON_ANTHROPIC, "novelize_chapter": "anthropic"}
+    )
+    routing_env.setattr(settings, "gemini_novelize_model_name", "gemini-3.8-flash")
+    return routing_env
+
+
+async def _put_novel(
+    db_client: httpx.AsyncClient, rows: list[dict[str, Any]], base: str | None = None, note: str = ""
+) -> httpx.Response:
+    return await db_client.put("/admin/prompt-routing/novel", json={"baseRevisionId": base, "note": note, "rows": rows})
+
+
+async def _saved_novel(
+    db_client: httpx.AsyncClient, rows: list[dict[str, Any]], base: str | None = None
+) -> dict[str, Any]:
+    resp = await _put_novel(db_client, rows, base)
+    assert resp.status_code == 200, resp.text
+    body: dict[str, Any] = resp.json()
+    return body
+
+
+async def _seed_routes(db_session: AsyncSession, rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        db_session.add(
+            PromptRoute(
+                lane=row["lane"],
+                room_model=row["roomModel"],
+                stage=row["stage"],
+                chain_model=row["chainModel"],
+                call_model=row["callModel"],
+                backend=row["backend"],
+            )
+        )
+    await db_session.commit()
+
+
+async def test_the_table_shows_novel_cells_by_job_model_and_one_shared_cell_per_structured_stage(
+    novel_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, admin_id: uuid.UUID
+) -> None:
+    body = (await db_client.get("/admin/prompt-routing")).json()
+
+    novel = {(c["roomModel"], c["stage"]): c for c in body["cells"] if c["lane"] == "novel"}
+    assert set(novel) == {
+        (room, stage)
+        for room in ("gemini", "sonnet", "opus")
+        for stage in ("novel_chapter", "novel_outline", "novel_episode_outline")
+    } | {("any", stage) for stage in ("novel_revise", "novel_revise_blocks", "novel_recheck", "novel_boundary")}
+    chapter = novel[("sonnet", "novel_chapter")]
+    assert chapter["effective"] == {
+        "chainModel": "sonnet",
+        "callModel": "sonnet",
+        "backend": "anthropic",
+        "source": "room",
+        "sourceDetail": None,
+    }
+    # 생성 칸은 작업 모델로만 부르므로 후보가 작업 모델의 쌍 하나다.
+    assert [(c["model"], c["backend"]) for c in chapter["candidates"]] == [("sonnet", "anthropic")]
+    revise = novel[("any", "novel_revise")]
+    assert revise["kind"] == "structured"
+    assert revise["effective"] == {
+        "chainModel": "gemini",
+        "callModel": "gemini",
+        "backend": "gemini",
+        "source": "env",
+        "sourceDetail": None,
+    }
+    assert revise["calls"] == [
+        {
+            "callSite": "novelize_revise",
+            "backend": "gemini",
+            "modelId": "gemini-3.8-flash",
+            "price": _price_body("gemini-3.8-flash"),
+        }
+    ]
+
+
+async def test_a_structured_novel_candidate_says_whether_the_env_of_now_would_skip_it_and_its_cost_ratio(
+    novel_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, admin_id: uuid.UUID
+) -> None:
+    """소설 구조화 호출 위치는 운영 env 에 직결 배정이 없어 Claude 쌍은 저장해도 지금 운영에서는 건너뛴다 — 화면이 저장 전에 그것과
+    원가 배수(차감액은 그대로)를 보이도록 서버가 계산해 싣는다. 배수는 입력·출력 단가 따로, 그 칸이 지금 env 로 부르는 모델 대비다."""
+    body = (await db_client.get("/admin/prompt-routing")).json()
+
+    revise = _cell(body, "novel", "any", "novel_revise")
+    by_pair = {(c["model"], c["backend"]): c for c in revise["candidates"]}
+    assert by_pair[("gemini", "gemini")]["skippedNow"] is None
+    for model in ("haiku", "sonnet", "opus"):
+        skipped = by_pair[(model, "anthropic")]["skippedNow"]
+        assert skipped is not None
+        assert skipped["reason"] == "backend-mismatch"
+        assert "novelize_revise" in skipped["message"]
+
+    base = MODEL_PRICES["gemini-3.8-flash"]
+    for model, model_id in (
+        ("haiku", "claude-haiku-5-5"),
+        ("sonnet", "claude-sonnet-5-5"),
+        ("opus", "claude-opus-5-5"),
+    ):
+        price = MODEL_PRICES[model_id]
+        assert by_pair[(model, "anthropic")]["costRatio"] == {
+            "input": price.input_usd_per_million / base.input_usd_per_million,
+            "output": price.output_usd_per_million / base.output_usd_per_million,
+        }
+    assert by_pair[("gemini", "gemini")]["costRatio"] == {"input": 1.0, "output": 1.0}
+    # 1 보다 작으면 더 싸다는 뜻이다(직결 Haiku 5.5 는 소설 Gemini 모델보다 싸다).
+    assert by_pair[("haiku", "anthropic")]["costRatio"]["output"] < 1
+    # 지금 부르는 모델의 단가가 없으면(단가 표에 없는 기본 Gemini 모델명) 배수도 없다 — 0 이나 1 로 꾸미지 않는다.
+    boundary = _cell(body, "novel", "any", "novel_boundary")
+    assert {c["costRatio"] is None for c in boundary["candidates"]} == {True}
+    # 생성 칸은 작업 모델 단가로 차감하고 그 모델만 부르므로 배수가 없다.
+    assert _cell(body, "novel", "opus", "novel_chapter")["candidates"][0]["costRatio"] is None
+
+
+async def test_a_chat_save_leaves_the_novel_rows_and_records_the_whole_table(
+    novel_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    """기존 저장 경로는 채팅 두 레인만 갈아 끼운다. 표 전체를 지우면 채팅 화면의 저장이 소설 행을 지운다."""
+    await _seed_routes(db_session, [_NOVEL_CHAPTER_ROW])
+
+    await _saved(db_client, [_STAT_ROW])
+
+    assert await _table(db_session) == _sorted([_STAT_ROW, _NOVEL_CHAPTER_ROW])
+    (revision,) = await _revisions(db_session)
+    assert _sorted(revision.rows) == _sorted([_STAT_ROW, _NOVEL_CHAPTER_ROW])
+    assert revision.lanes is None
+
+
+async def test_novel_rows_a_stale_tab_echoes_into_a_chat_save_are_ignored(
+    novel_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    """소설 탭을 모르는 낡은 화면도 응답의 칸 전부를 폼에 담았다가 행이 있는 칸을 모두 되돌려 보낸다. 그 소설 행은 편집할 수 없었던
+    메아리라 버리고 DB 값을 남긴다 — 거부하면 낡은 화면의 채팅 저장이 막힌다."""
+    await _seed_routes(db_session, [_NOVEL_CHAPTER_ROW])
+    echoed = {**_NOVEL_CHAPTER_ROW, "backend": "bedrock"}
+
+    resp = await _put(db_client, [_STAT_ROW, echoed, _NOVEL_BOUNDARY_ROW])
+
+    assert resp.status_code == 200, resp.text
+    assert await _table(db_session) == _sorted([_STAT_ROW, _NOVEL_CHAPTER_ROW])
+
+
+async def test_a_novel_save_leaves_the_chat_rows_and_marks_its_revision_as_a_novel_save(
+    novel_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    await _seed_routes(db_session, [_STAT_ROW, _NOVEL_OUTLINE_ROW])
+
+    body = await _saved_novel(db_client, [_NOVEL_CHAPTER_ROW, _NOVEL_BOUNDARY_ROW])
+
+    assert await _table(db_session) == _sorted([_STAT_ROW, _NOVEL_CHAPTER_ROW, _NOVEL_BOUNDARY_ROW])
+    (revision,) = await _revisions(db_session)
+    assert _sorted(revision.rows) == _sorted([_STAT_ROW, _NOVEL_CHAPTER_ROW, _NOVEL_BOUNDARY_ROW])
+    assert revision.lanes == ["novel"]
+    assert _cell(body, "novel", "sonnet", "novel_chapter")["configured"] == _NOVEL_CHAPTER_ROW
+    assert _cell(body, "novel", "any", "novel_boundary")["effective"]["source"] == "row"
+    listed = (await db_client.get("/admin/prompt-routing/revisions")).json()["items"]
+    assert [item["lanes"] for item in listed] == [["novel"]]
+
+
+async def test_a_novel_save_refuses_a_row_of_another_lane(
+    novel_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    """소설 경로는 새 화면만 부른다. 그 요청에 채팅 행이 실리면 화면의 버그라 조용히 삼키지 않는다."""
+    resp = await _put_novel(db_client, [_NOVEL_CHAPTER_ROW, _STAT_ROW])
+
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert (detail["rule"], detail["row"]) == (
+        "lane-out-of-scope",
+        {"lane": "story", "roomModel": "opus", "stage": "stat_judgment"},
+    )
+    assert await _table(db_session) == []
+    assert await _revisions(db_session) == []
+
+
+@pytest.mark.parametrize(
+    ("row", "rule"),
+    [
+        pytest.param({**_NOVEL_CHAPTER_ROW, "chainModel": "opus"}, "generation-chain", id="generation-chain"),
+        pytest.param({**_NOVEL_OUTLINE_ROW, "callModel": "gemini"}, "generation-call-model", id="generation-model"),
+        pytest.param(
+            _row(
+                "novel_revise",
+                lane="novel",
+                room_model="any",
+                chain_model="haiku",
+                call_model="gemini",
+                backend="gemini",
+            ),
+            "chain-not-in-lane",
+            id="chain-the-novel-lane-does-not-have",
+        ),
+        pytest.param(
+            _row("novel_revise", lane="novel", room_model="any", chain_model="sonnet"),
+            "backend-mismatch",
+            id="structured-claude-row-the-env-skips",
+        ),
+    ],
+)
+async def test_a_novel_row_breaking_a_save_rule_is_refused(
+    novel_env: pytest.MonkeyPatch,
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_id: uuid.UUID,
+    row: dict[str, Any],
+    rule: str,
+) -> None:
+    resp = await _put_novel(db_client, [row])
+
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"]["rule"] == rule
+    assert await _table(db_session) == []
+
+
+async def test_a_novel_row_whose_chain_has_no_published_set_is_refused(
+    novel_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    await db_session.execute(
+        sa.update(PromptSet).where(PromptSet.lane == "novel", PromptSet.model == "opus").values(status="archived")
+    )
+    await db_session.commit()
+
+    resp = await _put_novel(db_client, [_NOVEL_BOUNDARY_ROW])
+
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"]["rule"] == "chain-not-published"
+
+
+async def test_a_novel_save_after_another_lane_was_saved_is_a_conflict(
+    novel_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    """낡음 검사는 레인과 무관하게 최신 이력 하나로 본다 — 스냅샷이 늘 저장한 뒤의 표 전체이려면 다른 레인의 저장도 기준을 바꾼다."""
+    first = await _saved_novel(db_client, [_NOVEL_CHAPTER_ROW])
+    await _saved(db_client, [_STAT_ROW], first["revisionId"])
+
+    resp = await _put_novel(db_client, [], first["revisionId"])
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["rule"] == "stale-revision"
+    assert await _table(db_session) == _sorted([_STAT_ROW, _NOVEL_CHAPTER_ROW])
+
+
+async def test_a_chat_restore_brings_back_only_the_chat_rows_of_the_snapshot(
+    novel_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    """기존 되돌리기 경로는 스냅샷의 채팅 행만 꺼낸다. 소설 행까지 되돌리면 그 사이 소설 경로로 저장한 행이 사라진다."""
+    first = await _saved_novel(db_client, [_NOVEL_CHAPTER_ROW])
+    second = await _saved(db_client, [_STAT_ROW], first["revisionId"])
+    third = await _saved_novel(db_client, [_NOVEL_OUTLINE_ROW], second["revisionId"])
+    fourth = await _saved(db_client, [], third["revisionId"])
+
+    resp = await db_client.post(
+        f"/admin/prompt-routing/revisions/{second['revisionId']}/restore",
+        json={"baseRevisionId": fourth["revisionId"]},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert await _table(db_session) == _sorted([_STAT_ROW, _NOVEL_OUTLINE_ROW])
+    revisions = await _revisions(db_session)
+    assert (str(revisions[-1].restored_from_id), revisions[-1].lanes) == (second["revisionId"], None)
+    assert _sorted(revisions[-1].rows) == _sorted([_STAT_ROW, _NOVEL_OUTLINE_ROW])
+
+
+async def test_a_novel_restore_brings_back_only_the_novel_rows_of_the_snapshot(
+    novel_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    first = await _saved(db_client, [_STAT_ROW])
+    second = await _saved_novel(db_client, [_NOVEL_CHAPTER_ROW], first["revisionId"])
+    third = await _saved(db_client, [], second["revisionId"])
+    fourth = await _saved_novel(db_client, [_NOVEL_OUTLINE_ROW], third["revisionId"])
+
+    resp = await db_client.post(
+        f"/admin/prompt-routing/novel/revisions/{first['revisionId']}/restore",
+        json={"baseRevisionId": fourth["revisionId"], "note": "소설 비우기"},
+    )
+
+    # 소설 레인이 비어 있던 이력을 소설 경로로 되돌리면 소설 레인만 비고 채팅 행(지금은 없음)은 건드리지 않는다.
+    assert resp.status_code == 200, resp.text
+    assert await _table(db_session) == []
+    back = await db_client.post(
+        f"/admin/prompt-routing/novel/revisions/{second['revisionId']}/restore",
+        json={"baseRevisionId": resp.json()["revisionId"]},
+    )
+    assert back.status_code == 200, back.text
+    assert await _table(db_session) == [_NOVEL_CHAPTER_ROW]
+    revisions = await _revisions(db_session)
+    assert (str(revisions[-1].restored_from_id), revisions[-1].lanes) == (second["revisionId"], ["novel"])
+    logs = await _action_logs(db_session)
+    assert sorted(log.action_type for log in logs).count("prompt-routing-restore") == 2
+
+
+async def test_the_cache_is_cleared_only_after_a_novel_save_and_a_novel_restore_commit(
+    novel_env: pytest.MonkeyPatch, db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID
+) -> None:
+    events: list[str] = []
+    real_commit = db_session.commit
+
+    async def recording_commit() -> None:
+        events.append("commit")
+        await real_commit()
+
+    async def recording_invalidate() -> None:
+        events.append("invalidate")
+        await invalidate_prompt_routes()
+
+    novel_env.setattr(db_session, "commit", recording_commit)
+    novel_env.setattr(admin_prompt_routing, "invalidate_prompt_routes", recording_invalidate)
+
+    saved = await _saved_novel(db_client, [_NOVEL_CHAPTER_ROW])
+    assert events[-2:] == ["commit", "invalidate"]
+    await load_prompt_routes(db_session)
+    events.clear()
+
+    resp = await db_client.post(
+        f"/admin/prompt-routing/novel/revisions/{saved['revisionId']}/restore",
+        json={"baseRevisionId": saved["revisionId"]},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert events[-2:] == ["commit", "invalidate"]
+    assert events.count("invalidate") == 1
+    assert await redis_client.get(PROMPT_ROUTES_CACHE_KEY) is None

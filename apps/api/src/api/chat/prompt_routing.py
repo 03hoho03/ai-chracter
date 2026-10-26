@@ -1,6 +1,7 @@
 """모델 배정 표(`prompt_routes`)의 해석.
 
-한 칸은 (레인, 실효 방 모델, 단계)다. 칸마다 어느 프롬프트 체인을 읽고(`chain_model`), 어느 모델을(`call_model`) 어느
+한 칸은 (레인, 실효 방 모델, 단계)다. 소설 레인은 방 모델 자리가 생성 단계에서 작업 모델, 작업 모델과 무관한 구조화 단계에서
+표지 `any` 다. 칸마다 어느 프롬프트 체인을 읽고(`chain_model`), 어느 모델을(`call_model`) 어느
 경로로(`backend`) 부를지 정한다. 표가 비었거나 그 칸의 행이 없으면 지금까지의 env 규칙과 같은 값을 낸다.
 
 해석은 DB·Redis 를 부르지 않는 동기 순수 함수다 — 표는 인자로 받고(읽기는 `chat/prompt_routing_cache.py`), env 배정·모델
@@ -13,15 +14,25 @@ from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_stages import LANE_STAGES, STAGES, PromptStage, RoutingLane, StageKind, stage_call_sites
+from api.chat.prompt_stages import (
+    LANE_STAGES,
+    STAGES,
+    PromptStage,
+    RouteRoomModel,
+    RoutingLane,
+    StageKind,
+    stage_call_sites,
+    stage_room_models,
+)
 from api.core.config import settings
 from api.chat.prompt_builder import PromptSetNotFoundError, load_active_prompt_set
 from api.llm.backends import BACKENDS, missing_credentials, pick_backend, structured_effort_error
 from api.llm.call_policy import CALL_POLICIES, BackendId, LLMCallSite
 from api.llm.chat_models import (
-    ChatRoomModelId,
+    ChatModelId,
     PromptSetModelId,
     configured_call_site_model,
+    parse_chat_model_id,
     parse_prompt_set_model_id,
 )
 
@@ -40,29 +51,29 @@ SkipReason = Literal["pair-not-allowed", "backend-mismatch", "structured-effort"
 
 # 단계 종류마다 행이 고를 수 있는 (부를 모델, 경로). 처리방침에 적은 수탁자 경로(Google·Anthropic 직결)만 둔다 — Bedrock 쌍이
 # 없는 이유다. 등록부에서 Claude 모델의 기본 구현이 Bedrock 이라, 배정 없이 Claude 모델을 고른 행은 경로 대조에서도 걸린다.
-# 생성은 방 모델로만 부르므로(대화 차감이 방 모델 단가다) 방에서 고를 수 있는 모델의 쌍뿐이다. 어드민 저장 검사와 해석이 이 목록
-# 하나를 함께 읽는다.
+# 생성은 방 모델(소설은 작업 모델)로만 부르므로(차감이 그 모델 단가다) 고를 수 있는 글쓰기 모델의 쌍뿐이다. Sonnet 쌍은 소설
+# 작업에만 있다 — 채팅 생성 칸은 방 모델 축(Gemini·Opus)이 막는다. 어드민 저장 검사와 해석이 이 목록 하나를 함께 읽는다.
 ALLOWED_ROUTE_PAIRS: dict[StageKind, frozenset[tuple[PromptSetModelId, BackendId]]] = {
     "structured": frozenset(
         {("gemini", "gemini"), ("haiku", "anthropic"), ("sonnet", "anthropic"), ("opus", "anthropic")}
     ),
-    "generation": frozenset({("gemini", "gemini"), ("opus", "anthropic")}),
+    "generation": frozenset({("gemini", "gemini"), ("sonnet", "anthropic"), ("opus", "anthropic")}),
 }
 
 
 @dataclass(frozen=True, kw_only=True)
 class RouteRow:
-    """표의 한 행. 생성 행은 체인이 없다(늘 방 모델의 체인을 읽는다)."""
+    """표의 한 행. 생성 행은 체인이 없다(늘 방 모델·작업 모델의 체인을 읽는다)."""
 
     lane: RoutingLane
-    room_model: ChatRoomModelId
+    room_model: RouteRoomModel
     stage: PromptStage
     chain_model: PromptSetModelId | None
     call_model: PromptSetModelId
     backend: BackendId
 
 
-RouteKey = tuple[RoutingLane, ChatRoomModelId, PromptStage]
+RouteKey = tuple[RoutingLane, RouteRoomModel, PromptStage]
 
 
 @dataclass(frozen=True)
@@ -86,7 +97,7 @@ class PromptRoutes:
             by_key[key] = row
         return cls(by_key)
 
-    def get(self, lane: RoutingLane, room_model: ChatRoomModelId, stage: PromptStage) -> RouteRow | None:
+    def get(self, lane: RoutingLane, room_model: RouteRoomModel, stage: PromptStage) -> RouteRow | None:
         return self.rows.get((lane, room_model, stage))
 
 
@@ -115,6 +126,15 @@ def _read_setting(name: str) -> str:
     return str(getattr(settings, name))
 
 
+def _writing_model(room_model: RouteRoomModel, stage: PromptStage) -> ChatModelId:
+    """생성 칸의 방 모델 자리(방 모델·작업 모델)를 글쓰기 모델로 읽는다. 생성 칸에 `any` 가 오면 부르는 쪽의 버그다 — 저장 검사와
+    행 읽기가 그런 행을 막고, 해석은 그런 칸을 받지 않는다."""
+    model = parse_chat_model_id(room_model)
+    if model is None:
+        raise ValueError(f"{stage} 생성 칸에는 작업 모델이 있어야 한다({room_model})")
+    return model
+
+
 def row_call_sites(routes: PromptRoutes, row: RouteRow) -> tuple[LLMCallSite, ...]:
     """그 행을 읽는 호출 위치 전부 — 그 단계의 채팅·미리보기 호출 위치, 그리고 그 행을 물려받는 단계가 같은 (레인, 방 모델)에
     자기 행이 없으면 그 단계의 호출 위치도. 물려받는 쪽 호출 위치는 자기 env 배정을 먼저 보므로 물려준 단계와 경로가 다를 수 있다."""
@@ -135,7 +155,7 @@ def _backend_problem(row: RouteRow, call_sites: Iterable[LLMCallSite]) -> str | 
     assignments = settings.llm_call_site_backends
     for call_site in call_sites:
         if STAGES[row.stage].kind == "generation":
-            _, backend = pick_backend(call_site, row.room_model, assignments)
+            _, backend = pick_backend(call_site, _writing_model(row.room_model, row.stage), assignments)
         else:
             # 판정 호출은 모델을 고를 수 없어, 부를 모델을 그 호출의 모델로 넘기지 않으면 env 모델의 경로를 보게 된다.
             _, backend = pick_backend(call_site, row.call_model, assignments, call_model=row.call_model)
@@ -167,15 +187,14 @@ def row_route_problem(
     return None
 
 
-def _env_route(stage: PromptStage, call_site: LLMCallSite, room_model: ChatRoomModelId) -> StageRoute:
-    """행이 없을 때 — 지금까지의 env 규칙과 같은 값. 판정·요약은 그 호출 위치의 모델 설정과 배정(`resolve_backend` 와 같은 인자),
-    생성은 방 모델과 배정이다."""
+def _env_route(stage: PromptStage, call_site: LLMCallSite, room_model: RouteRoomModel) -> StageRoute:
+    """행이 없을 때 — 지금까지의 env 규칙과 같은 값. 판정·요약·소설 구조화 호출은 그 호출 위치의 모델 설정(없으면 기본 모델)과
+    배정(`resolve_backend` 와 같은 인자), 생성은 방 모델(소설은 작업 모델)과 배정이다."""
     assignments = settings.llm_call_site_backends
     if STAGES[stage].kind == "generation":
-        _, backend = pick_backend(call_site, room_model, assignments)
-        return StageRoute(
-            chain_model=room_model, call_model=room_model, backend=backend, source="room", source_detail=None
-        )
+        writing = _writing_model(room_model, stage)
+        _, backend = pick_backend(call_site, writing, assignments)
+        return StageRoute(chain_model=writing, call_model=writing, backend=backend, source="room", source_detail=None)
     model = configured_call_site_model(call_site)
     _, backend = pick_backend(call_site, model, assignments, call_model=model)
     model_setting = CALL_POLICIES[call_site].model_setting
@@ -192,13 +211,14 @@ def resolve_stage_route(
     routes: PromptRoutes,
     *,
     lane: RoutingLane,
-    room_model: ChatRoomModelId,
+    room_model: RouteRoomModel,
     stage: PromptStage,
     call_site: LLMCallSite | None = None,
 ) -> StageRoute:
     """(레인, 방 모델, 단계) 칸 하나의 읽을 체인·부를 모델·경로와 그 출처.
 
-    1. 그 칸의 행이 있으면 그 행이다. 생성 행은 체인·부를 모델이 방 모델이고 경로만 행 값이다.
+    1. 그 칸의 행이 있으면 그 행이다. 생성 행은 체인·부를 모델이 방 모델(소설은 작업 모델)이고 경로만 행 값이다 — 경로도 아래
+       검사로 env 배정과 같을 때만 쓰이므로, 생성 칸의 값은 행이 있든 없든 env 규칙과 같다.
     2. 자기 행이 없고 물려받는 단계(장면 헤더 ← 스탯 판정)의 같은 (레인, 방 모델) 행이 있으면 그 행이다.
     3. 그 밖에는 env 규칙이다. 단계가 그 레인의 단계가 아니면 행이 있을 수 없어 늘 env 규칙이다.
 
@@ -206,13 +226,16 @@ def resolve_stage_route(
     행과 이유를 `skipped` 에 남긴다. 한 행을 읽는 호출 위치들(채팅·미리보기, 물려받는 단계)이 함께 쓰거나 함께 건너뛰어, 같은
     행을 읽는 호출들이 서로 다른 모델로 가지 않는다.
 
-    `call_site` 는 부르는 호출 위치이고 None 이면 그 단계의 채팅 호출 위치다. 그 단계의 호출 위치가 아니면 `ValueError`(부르는
-    쪽의 버그)다. `lane` 이 채팅 레인이 아니면 `KeyError` 다."""
+    `call_site` 는 부르는 호출 위치이고 None 이면 그 단계의 채팅 호출 위치(소설 단계는 소설 호출 위치)다. 그 단계의 호출 위치가
+    아니면 `ValueError`(부르는 쪽의 버그)다. 그 레인의 단계인데 `room_model` 이 그 칸의 축 밖이면(소설 구조화 칸에 작업 모델,
+    생성 칸에 `any`) 행을 못 찾고 조용히 env 로 가므로 역시 `ValueError` 다. `lane` 이 배정 표의 레인이 아니면 `KeyError` 다."""
     stages = LANE_STAGES[lane]
     sites = stage_call_sites(stage)
     resolved_call_site = sites[0] if call_site is None else call_site
     if resolved_call_site not in sites:
         raise ValueError(f"{resolved_call_site} 는 {stage} 단계의 호출 위치가 아니다")
+    if stage in stages and room_model not in stage_room_models(lane, stage):
+        raise ValueError(f"{room_model} 는 ({lane}, {stage}) 칸의 방 모델 축 밖이다")
 
     if stage in stages:
         row = routes.get(lane, room_model, stage)
@@ -225,9 +248,10 @@ def resolve_stage_route(
             problem = row_route_problem(row, row_call_sites(routes, row), _read_setting)
             if problem is None:
                 if row.chain_model is None:
+                    model = _writing_model(room_model, stage)
                     return StageRoute(
-                        chain_model=room_model,
-                        call_model=room_model,
+                        chain_model=model,
+                        call_model=model,
                         backend=row.backend,
                         source=source,
                         source_detail=None,
@@ -255,8 +279,10 @@ def resolve_stage_route(
 # 어드민 저장 검사의 규칙 이름. 저장 API 의 422 응답 `detail.rule` 로 나간다.
 RouteRule = Literal[
     "unknown-stage",
+    "lane-out-of-scope",
     "duplicate-row",
     "generation-chain",
+    "chain-not-in-lane",
     "generation-call-model",
     "pair-not-allowed",
     "backend-mismatch",
@@ -289,18 +315,18 @@ class RouteRowError:
 
 
 def _parse_lane(value: str) -> RoutingLane | None:
-    if value == "story":
-        return "story"
-    if value == "character":
-        return "character"
+    for lane in LANE_STAGES:
+        if lane == value:
+            return lane
     return None
 
 
-def _parse_room_model(value: str) -> ChatRoomModelId | None:
-    if value == "gemini":
-        return "gemini"
-    if value == "opus":
-        return "opus"
+def _parse_room_model(lane: RoutingLane, stage: PromptStage, value: str) -> RouteRoomModel | None:
+    """그 레인의 그 단계가 갖는 칸의 축 안 값만 받는다 — 채팅은 방에서 고를 수 있는 모델, 소설 생성은 작업 모델, 소설 구조화는
+    `any` 하나다. 축 밖 칸의 행은 아무도 읽지 않는다."""
+    for room_model in stage_room_models(lane, stage):
+        if room_model == value:
+            return room_model
     return None
 
 
@@ -318,9 +344,11 @@ def _parse_backend(value: str) -> BackendId | None:
     return None
 
 
-def _shape_problem(stage: PromptStage, chain_model: str | None) -> str | None:
+def _shape_problem(lane: RoutingLane, stage: PromptStage, chain_model: str | None) -> str | None:
     if STAGES[stage].kind == "generation":
         if chain_model is not None:
+            if lane == "novel":
+                return "소설 생성 행은 읽을 체인을 고르지 않는다(늘 작업 모델의 체인을 읽는다)"
             return "생성 행은 읽을 체인을 고르지 않는다(늘 방 모델의 체인을 읽는다)"
         return None
     if chain_model is None:
@@ -330,18 +358,39 @@ def _shape_problem(stage: PromptStage, chain_model: str | None) -> str | None:
     return None
 
 
+def _lane_chain_problem(lane: RoutingLane, chain_model: str | None) -> str | None:
+    """소설 레인에는 판정 전용 체인(haiku)이 없다 — 체인은 글쓰기 모델 셋뿐이다. 채팅 레인은 체인 모델 축 전부가 있다."""
+    if lane == "novel" and chain_model is not None and parse_chat_model_id(chain_model) is None:
+        return f"소설 레인에는 {chain_model} 체인이 없다(글쓰기 모델 체인만 있다)"
+    return None
+
+
+def _generation_call_model_message(lane: RoutingLane, room_model: RouteRoomModel) -> str:
+    if lane == "novel":
+        return f"소설 생성 행은 작업 모델({room_model})로만 부른다(소설 차감이 작업 모델 단가다)"
+    return f"생성 행은 방 모델({room_model})로만 부른다(대화 차감이 방 모델 단가다)"
+
+
 def parse_route_row(row: RouteRowInput) -> RouteRow | None:
-    """값 범위(채팅 레인, 방 모델, 그 레인의 단계, 모델 축, 경로)와 행 모양(생성은 체인 없음·방 모델로 부름, 나머지는 체인
-    있음)이 맞으면 타입이 붙은 행, 아니면 None. 허용 목록·경로·자격은 보지 않는다 — DB·캐시에서 읽은 행을 해석에 넘길 때와 저장
-    검사가 값 범위를 통과한 행을 바꿀 때 같은 함수를 쓴다."""
+    """값 범위(배정 표 레인, 그 레인의 단계, 그 칸의 방 모델 축, 모델 축, 경로)와 행 모양(생성은 체인 없음·방 모델(소설은 작업
+    모델)로 부름, 나머지는 체인 있음, 소설 레인 체인은 글쓰기 모델)이 맞으면 타입이 붙은 행, 아니면 None. 허용 목록·경로·자격은
+    보지 않는다 — DB·캐시에서 읽은 행을 해석에 넘길 때와 저장 검사가 값 범위를 통과한 행을 바꿀 때 같은 함수를 쓴다."""
     lane = _parse_lane(row.lane)
-    room_model = _parse_room_model(row.room_model)
-    if lane is None or room_model is None:
+    if lane is None:
         return None
     stage = _parse_stage(lane, row.stage)
+    if stage is None:
+        return None
+    room_model = _parse_room_model(lane, stage, row.room_model)
     call_model = parse_prompt_set_model_id(row.call_model)
     backend = _parse_backend(row.backend)
-    if stage is None or call_model is None or backend is None or _shape_problem(stage, row.chain_model) is not None:
+    if (
+        room_model is None
+        or call_model is None
+        or backend is None
+        or _shape_problem(lane, stage, row.chain_model) is not None
+        or _lane_chain_problem(lane, row.chain_model) is not None
+    ):
         return None
     if STAGES[stage].kind == "generation":
         if call_model != room_model:
@@ -357,24 +406,26 @@ def parse_route_row(row: RouteRowInput) -> RouteRow | None:
 def route_row_errors(rows: Sequence[RouteRowInput]) -> list[RouteRowError]:
     """저장 요청 전체의 동기 검사(DB 없이). 행마다 아래 순서로 보고 첫 위반에서 그 행을 멈춘다. 설정은 지금 `settings` 에서 읽는다.
 
-    1. `unknown-stage` — 레인이 채팅 레인, 방 모델이 방에서 고를 수 있는 모델, 단계가 그 레인의 단계.
+    1. `unknown-stage` — 레인이 배정 표의 레인, 단계가 그 레인의 단계, 방 모델이 그 칸의 축 안(채팅은 방에서 고를 수 있는 모델,
+       소설 생성은 작업 모델, 소설 구조화는 `any`).
     2. `duplicate-row` — 앞 행과 같은 칸.
     3. `generation-chain` — 생성 행에 체인이 옴 / 나머지 행에 체인이 없거나 체인이 모델 축 밖.
-    4. `generation-call-model` — 생성 행의 부를 모델이 방 모델이 아님.
-    5. `pair-not-allowed` — (부를 모델, 경로)가 허용 목록 밖.
-    6. `backend-mismatch` — 그 행을 읽는 호출 위치마다 지금 env 배정으로 푼 경로가 행의 경로와 다름. 읽는 호출 위치에는 채팅과
+    4. `chain-not-in-lane` — 그 레인에 없는 체인(소설 레인의 판정 전용 체인).
+    5. `generation-call-model` — 생성 행의 부를 모델이 방 모델(소설은 작업 모델)이 아님.
+    6. `pair-not-allowed` — (부를 모델, 경로)가 허용 목록 밖.
+    7. `backend-mismatch` — 그 행을 읽는 호출 위치마다 지금 env 배정으로 푼 경로가 행의 경로와 다름. 읽는 호출 위치에는 채팅과
        미리보기, 그리고 요청에 물려받는 단계(장면 헤더)의 행이 없으면 그 단계의 호출 위치도 든다.
-    7. `missing-credentials` — 그 경로의 자격이 빔.
-    8. `structured-effort` — 판정 행이 Anthropic 직결에서 사고를 끄는 모델로 가는데 구조화 깊이가 그 요청이 받는 범위 밖.
+    8. `missing-credentials` — 그 경로의 자격이 빔.
+    9. `structured-effort` — 판정 행이 Anthropic 직결에서 사고를 끄는 모델로 가는데 구조화 깊이가 그 요청이 받는 범위 밖.
 
     체인의 게시 여부와 채널은 `route_chain_errors` 가 본다(DB)."""
     errors: list[RouteRowError] = []
     seen: dict[RouteKey, int] = {}
-    staged: list[tuple[int, RouteRowInput, PromptStage, ChatRoomModelId]] = []
+    staged: list[tuple[int, RouteRowInput, RoutingLane, PromptStage, RouteRoomModel]] = []
     for index, row in enumerate(rows):
         lane = _parse_lane(row.lane)
-        room_model = _parse_room_model(row.room_model)
         stage = None if lane is None else _parse_stage(lane, row.stage)
+        room_model = None if lane is None or stage is None else _parse_room_model(lane, stage, row.room_model)
         if lane is None or room_model is None or stage is None:
             errors.append(
                 RouteRowError(
@@ -391,21 +442,25 @@ def route_row_errors(rows: Sequence[RouteRowInput]) -> list[RouteRowError]:
             )
             continue
         seen[key] = index
-        staged.append((index, row, stage, room_model))
+        staged.append((index, row, lane, stage, room_model))
 
     # 물려받기는 요청 안에 그 칸의 행이 있는지로 정한다 — 값이 틀린 행이 있으면 저장 전체가 거부되므로 칸만 보면 된다.
     present = PromptRoutes({key: _placeholder_row(key) for key in seen})
-    for index, row, stage, room_model in staged:
-        shape = _shape_problem(stage, row.chain_model)
+    for index, row, lane, stage, room_model in staged:
+        shape = _shape_problem(lane, stage, row.chain_model)
         if shape is not None:
             errors.append(RouteRowError(index=index, rule="generation-chain", message=shape))
+            continue
+        lane_chain = _lane_chain_problem(lane, row.chain_model)
+        if lane_chain is not None:
+            errors.append(RouteRowError(index=index, rule="chain-not-in-lane", message=lane_chain))
             continue
         if STAGES[stage].kind == "generation" and row.call_model != room_model:
             errors.append(
                 RouteRowError(
                     index=index,
                     rule="generation-call-model",
-                    message=f"생성 행은 방 모델({room_model})로만 부른다(대화 차감이 방 모델 단가다)",
+                    message=_generation_call_model_message(lane, room_model),
                 )
             )
             continue
@@ -438,20 +493,21 @@ def route_row_errors(rows: Sequence[RouteRowInput]) -> list[RouteRowError]:
 
 
 def _placeholder_row(key: RouteKey) -> RouteRow:
+    """칸이 있다는 표지만 하는 행 — 물려받기 판정(`row_call_sites`)은 칸의 유무만 보고 값은 읽지 않는다."""
     lane, room_model, stage = key
     return RouteRow(
-        lane=lane, room_model=room_model, stage=stage, chain_model=None, call_model=room_model, backend="gemini"
+        lane=lane, room_model=room_model, stage=stage, chain_model=None, call_model="gemini", backend="gemini"
     )
 
 
 async def route_chain_errors(db: AsyncSession, rows: Sequence[RouteRow]) -> list[RouteRowError]:
-    """저장 요청의 체인 검사(DB). 행마다 읽을 체인(생성은 방 모델)의 (레인, 모델) 활성 세트가 있는지(`chain-not-published`), 그
+    """저장 요청의 체인 검사(DB). 행마다 읽을 체인(생성은 방 모델·작업 모델)의 (레인, 모델) 활성 세트가 있는지(`chain-not-published`), 그
     세트가 그 단계가 읽는 채널을 다 갖는지(`chain-missing-channel`) 본다. 캐시를 쓰지 않는다 — 저장 직전에 게시된 체인을 캐시가
     아직 모를 수 있다. 같은 체인은 한 번만 읽는다. `rows` 의 위치가 오류의 `index` 다."""
     channels_by_chain: dict[tuple[RoutingLane, PromptSetModelId], frozenset[str] | None] = {}
     errors: list[RouteRowError] = []
     for index, row in enumerate(rows):
-        chain = row.room_model if row.chain_model is None else row.chain_model
+        chain = _writing_model(row.room_model, row.stage) if row.chain_model is None else row.chain_model
         key = (row.lane, chain)
         if key not in channels_by_chain:
             try:

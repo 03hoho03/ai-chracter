@@ -4,7 +4,7 @@
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, get_args
 
 import httpx
 import pytest
@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from api.chat import memory_episodes, memory_fold
 from api.chat.prompt_builder import load_active_prompt_set
 from api.chat.prompt_routing import ALLOWED_ROUTE_PAIRS, PromptRoutes, RouteRow, row_call_sites, row_route_problem
-from api.chat.prompt_stages import LANE_STAGES, STAGES
+from api.chat.prompt_stages import LANE_STAGES, STAGES, ChatRoutingLane
 from api.chat.turn_prompt import JudgmentPromptSets, judgment_prompt_sets
 from api.core.config import settings
 from api.db.models import ChatRoom
@@ -221,11 +221,13 @@ def test_every_pair_a_route_row_may_hold_keeps_its_path_under_the_measurement_se
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """운영에서 저장 검사를 지난 행을 측정 DB 로 옮겼을 때, 측정 서버 env 의 호출 위치 배정 때문에 해석이 그 행을 경로 불일치로
-    건너뛰면 측정은 운영과 다른 칸으로 돈다. 단계마다 허용된 (부를 모델, 경로) 쌍 전부가 측정 env 배정에서 행의 경로로 간다."""
+    건너뛰면 측정은 운영과 다른 칸으로 돈다. 채팅 레인 단계마다 허용된 (부를 모델, 경로) 쌍 전부가 측정 env 배정에서 행의 경로로
+    간다. 소설 레인 구조화 Claude 행은 지금 호출 위치에 Claude 경로가 없어 검사 대상이 아니다."""
     assignments = dict(arm_env.COMMON_ENV)["LLM_CALL_SITE_BACKENDS"]
     monkeypatch.setattr(settings, "llm_call_site_backends", dict(pair.split(":") for pair in assignments.split(",")))
     checked = 0
-    for lane, stages in LANE_STAGES.items():
+    for lane in get_args(ChatRoutingLane):
+        stages = LANE_STAGES[lane]
         for room_model in ("gemini", "opus"):
             for stage in stages:
                 kind = STAGES[stage].kind

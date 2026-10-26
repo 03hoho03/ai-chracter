@@ -1263,8 +1263,32 @@ export interface paths {
         };
         /** Get Prompt Routing */
         get: operations["get_prompt_routing_admin_prompt_routing_get"];
-        /** Save Prompt Routing */
+        /**
+         * Save Prompt Routing
+         * @description 채팅 두 레인을 갈아 끼운다. 요청에 실린 소설 행은 버린다 — 소설 탭을 모르는 낡은 화면도 응답의 칸 전부를 폼에 담았다가
+         *     행이 있는 칸을 모두 되돌려 보내므로, 그 행은 편집할 수 없었던 메아리다. 거부하면 낡은 화면의 채팅 저장이 막힌다.
+         */
         put: operations["save_prompt_routing_admin_prompt_routing_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompt-routing/novel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Novel Prompt Routing
+         * @description 소설 레인을 갈아 끼운다. 이 경로는 소설 탭이 있는 화면만 부르므로, 다른 레인 행이 실려 오면 화면의 버그라 422 로 거부한다.
+         */
+        put: operations["save_novel_prompt_routing_admin_prompt_routing_novel_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1315,8 +1339,31 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Restore Prompt Route Revision */
+        /**
+         * Restore Prompt Route Revision
+         * @description 스냅샷의 채팅 두 레인 행만 되살린다. 지금 소설 행은 그대로 둔다.
+         */
         post: operations["restore_prompt_route_revision_admin_prompt_routing_revisions__id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompt-routing/novel/revisions/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Novel Prompt Route Revision
+         * @description 스냅샷의 소설 행만 되살린다. 소설 레인이 생기기 전의 이력이면 소설 레인이 빈다(그때 소설 행이 없었다). 채팅 행은 그대로 둔다.
+         */
+        post: operations["restore_novel_prompt_route_revision_admin_prompt_routing_novel_revisions__id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9168,8 +9215,12 @@ export interface components {
         };
         /**
          * AdminPromptRouteCandidate
-         * @description 칸의 행이 고를 수 있는 (부를 모델, 경로) 하나와, 그 쌍을 고르면 그 단계의 호출 위치마다 보낼 모델 id·단가. 지금 표·env
-         *     배정과 무관한 값이다 — 저장 전에 새로 고른 쌍의 단가를 보이려는 것이고, 그 쌍이 지금 env 로 저장되는지는 저장 검사가 본다.
+         * @description 칸의 행이 고를 수 있는 (부를 모델, 경로) 하나와, 그 쌍을 고르면 그 단계의 호출 위치마다 보낼 모델 id·단가. `calls` 는 지금
+         *     표·env 배정과 무관한 값이다 — 저장 전에 새로 고른 쌍의 단가를 보이려는 것이다.
+         *
+         *     `skipped_now` 는 그 쌍의 행이 지금 env 배정으로 해석에서 건너뛰어지는지(이유와 문장), `cost_ratio` 는 구조화 칸에서 그 쌍의
+         *     원가가 지금 부르는 모델 대비 몇 배인지다(어느 쪽 단가라도 단가 표에 없으면 null). 구조화 호출의 차감액은 부르는 모델과 무관하므로
+         *     배수는 원가만 말한다. 생성 칸은 그 칸의 모델로만 부르므로 배수가 null 이다.
          */
         AdminPromptRouteCandidate: {
             /**
@@ -9184,27 +9235,43 @@ export interface components {
             backend: "gemini" | "bedrock" | "anthropic";
             /** Calls */
             calls: components["schemas"]["AdminPromptRouteCall"][];
+            skippedNow: components["schemas"]["AdminPromptRouteCandidateSkip"] | null;
+            costRatio: components["schemas"]["AdminPromptRouteCostRatio"] | null;
+        };
+        /**
+         * AdminPromptRouteCandidateSkip
+         * @description 그 쌍으로 행을 두면 지금 env 로는 해석이 건너뛴다(운영에서 쓰이지 않는다). 저장 검사도 같은 이유로 거부한다.
+         */
+        AdminPromptRouteCandidateSkip: {
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "pair-not-allowed" | "backend-mismatch" | "structured-effort";
+            /** Message */
+            message: string;
         };
         /**
          * AdminPromptRouteCell
-         * @description (레인, 방 모델, 단계) 한 칸. `configured` 는 그 칸 자신의 행이고, `effective` 는 채팅 호출 위치로 푼 값이다.
+         * @description (레인, 방 모델, 단계) 한 칸. `configured` 는 그 칸 자신의 행이고, `effective` 는 채팅 호출 위치(소설은 소설 호출 위치)로 푼
+         *     값이다. 소설 생성 칸은 체인·부를 모델이 늘 작업 모델이라 행은 경로를 확인·표시할 뿐이다.
          */
         AdminPromptRouteCell: {
             /**
              * Lane
              * @enum {string}
              */
-            lane: "story" | "character";
+            lane: "story" | "character" | "novel";
             /**
              * Roommodel
              * @enum {string}
              */
-            roomModel: "gemini" | "opus";
+            roomModel: "gemini" | "sonnet" | "opus" | "any";
             /**
              * Stage
              * @enum {string}
              */
-            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact";
+            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact" | "novel_chapter" | "novel_outline" | "novel_episode_outline" | "novel_revise" | "novel_revise_blocks" | "novel_recheck" | "novel_boundary";
             /**
              * Kind
              * @enum {string}
@@ -9227,7 +9294,7 @@ export interface components {
              * Lane
              * @enum {string}
              */
-            lane: "story" | "character";
+            lane: "story" | "character" | "novel";
             /**
              * Model
              * @enum {string}
@@ -9242,14 +9309,25 @@ export interface components {
              * Roommodel
              * @enum {string}
              */
-            roomModel: "gemini" | "opus";
+            roomModel: "gemini" | "sonnet" | "opus" | "any";
             /**
              * Stage
              * @enum {string}
              */
-            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact";
+            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact" | "novel_chapter" | "novel_outline" | "novel_episode_outline" | "novel_revise" | "novel_revise_blocks" | "novel_recheck" | "novel_boundary";
             /** Channels */
             channels: string[];
+        };
+        /**
+         * AdminPromptRouteCostRatio
+         * @description 후보 쌍의 단가 ÷ 그 칸이 행 없이(env 규칙으로) 부르는 모델의 단가. 입력·출력을 따로 낸다 — 단계마다 입출력 토큰 비율이
+         *     달라 섞은 한 수치는 맞지 않는다. 1 보다 작으면 더 싸다.
+         */
+        AdminPromptRouteCostRatio: {
+            /** Input */
+            input: number;
+            /** Output */
+            output: number;
         };
         /** AdminPromptRouteEffective */
         AdminPromptRouteEffective: {
@@ -9319,6 +9397,8 @@ export interface components {
             createdAt: string;
             /** Rowcount */
             rowCount: number;
+            /** Lanes */
+            lanes: ("story" | "character" | "novel")[] | null;
             /** Rows */
             rows: components["schemas"]["AdminPromptRouteRow"][];
             /** Droppedrowcount */
@@ -9354,27 +9434,30 @@ export interface components {
             createdAt: string;
             /** Rowcount */
             rowCount: number;
+            /** Lanes */
+            lanes: ("story" | "character" | "novel")[] | null;
         };
         /**
          * AdminPromptRouteRow
-         * @description 모델 배정 표의 한 행. 생성 행은 `chain_model` 이 없다(늘 방 모델의 체인을 읽는다).
+         * @description 모델 배정 표의 한 행. 생성 행은 `chain_model` 이 없다(늘 방 모델의 체인을 읽는다). 소설 레인은 `room_model` 이 생성 단계에서
+         *     작업 모델, 구조화 단계에서 `any` 다.
          */
         AdminPromptRouteRow: {
             /**
              * Lane
              * @enum {string}
              */
-            lane: "story" | "character";
+            lane: "story" | "character" | "novel";
             /**
              * Roommodel
              * @enum {string}
              */
-            roomModel: "gemini" | "opus";
+            roomModel: "gemini" | "sonnet" | "opus" | "any";
             /**
              * Stage
              * @enum {string}
              */
-            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact";
+            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact" | "novel_chapter" | "novel_outline" | "novel_episode_outline" | "novel_revise" | "novel_revise_blocks" | "novel_recheck" | "novel_boundary";
             /** Chainmodel */
             chainModel: ("gemini" | "sonnet" | "opus" | "haiku") | null;
             /**
@@ -9397,7 +9480,7 @@ export interface components {
              * Stage
              * @enum {string}
              */
-            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact";
+            stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact" | "novel_chapter" | "novel_outline" | "novel_episode_outline" | "novel_revise" | "novel_revise_blocks" | "novel_recheck" | "novel_boundary";
             /**
              * Reason
              * @enum {string}
@@ -9433,7 +9516,11 @@ export interface components {
             /** Chains */
             chains: components["schemas"]["AdminPromptRouteChain"][];
         };
-        /** AdminPromptRoutingRestoreRequest */
+        /**
+         * AdminPromptRoutingRestoreRequest
+         * @description 이력 스냅샷에서 그 경로가 맡은 레인의 행만 꺼내 그 레인들을 갈아 끼운다 — 기존 경로는 채팅 두 레인, 소설 경로는 소설
+         *     레인이다. 다른 레인의 지금 행은 건드리지 않는다.
+         */
         AdminPromptRoutingRestoreRequest: {
             /** Baserevisionid */
             baseRevisionId: string | null;
@@ -9445,8 +9532,11 @@ export interface components {
         };
         /**
          * AdminPromptRoutingSaveRequest
-         * @description 표 전체를 갈아 끼운다 — 부분 패치가 아니다. 빈 `rows` 는 표를 비워 전부 env 규칙으로 돌린다. `base_revision_id` 는 화면이
-         *     읽은 최신 이력이고(이력이 없으면 null), 그 사이 다른 저장이 있었으면 409 다.
+         * @description 그 경로가 맡은 레인의 행 전부를 갈아 끼운다 — 부분 패치가 아니다. 기존 경로(`PUT /admin/prompt-routing`)는 채팅 두 레인,
+         *     소설 경로(`PUT /admin/prompt-routing/novel`)는 소설 레인이다. 빈 `rows` 는 그 레인들을 비워 env 규칙으로 돌린다. 기존 경로에
+         *     실린 소설 행은 버리고(소설 탭을 모르는 낡은 화면이 응답의 칸을 그대로 되돌려 보낸 것이다), 소설 경로에 실린 다른 레인 행은
+         *     422 `lane-out-of-scope` 다. `base_revision_id` 는 화면이 읽은 최신 이력이고(이력이 없으면 null), 그 사이 어느 레인이든 다른
+         *     저장이 있었으면 409 다.
          */
         AdminPromptRoutingSaveRequest: {
             /** Baserevisionid */
@@ -18194,6 +18284,39 @@ export interface operations {
             };
         };
     };
+    save_novel_prompt_routing_admin_prompt_routing_novel_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPromptRoutingSaveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptRoutingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_prompt_route_revisions_admin_prompt_routing_revisions_get: {
         parameters: {
             query?: never;
@@ -18246,6 +18369,41 @@ export interface operations {
         };
     };
     restore_prompt_route_revision_admin_prompt_routing_revisions__id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPromptRoutingRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptRoutingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_novel_prompt_route_revision_admin_prompt_routing_novel_revisions__id__restore_post: {
         parameters: {
             query?: never;
             header?: never;

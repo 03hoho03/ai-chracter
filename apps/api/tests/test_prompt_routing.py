@@ -11,9 +11,18 @@ src 를 `sys.path` 맨 앞에 둔 생성 스크립트가, 이미 있던 함수�
 스크립트와 이 테스트가 같은 리터럴(`_FIXED_SETTINGS`)로 고정한다. env 나 로컬 `.env` 를 읽지 않으므로 로컬과 CI 가 같은 값을
 계산한다. 기대값 파일 머리에 생성 때 쓴 고정값과 케이스 목록이 적혀 있어, 이 테스트가 먼저 그것이 자기 것과 같은지 본다. 기대값을
 다시 만들어야 한다면 해석 함수가 없는 코드에서 같은 방식으로 만들어야 한다 — 해석 함수로 만들면 대조가 항진명제가 된다.
+
+소설 단계의 빈 표 기대값(`fixtures/prompt_routes_novel_empty_table_characterization.json`)은 따로 둔다. 해석 함수가 소설 레인을
+풀기 전 커밋에서 `PROMPT_ROUTES_NOVEL_GOLDEN_WRITE=1` 로 이 파일의 기록 테스트를 돌려 만든다. 기록은 해석 함수를 부르지 않고, 소설
+호출이 지금 실제로 가는 길을 그 길을 정하는 함수들(공급자 구현을 고르는 라우터와 같은 인자의 `pick_backend`·
+`structured_call_model`·`configured_call_site_model`, 소설 문안 체인의 기본 인자)로 적는다. 화 생성·구성안 두 단계는 작업 모델마다,
+작업 모델과 무관한 문단 수정·여러 문단 수정·재검사·경계 제안은 작업 모델 셋이 모두 같은 값을 내는지 확인한 뒤 "*" 한 줄로 적는다.
+기대값이 다르면 파일을 고치지 말고 멈춘다 — 해석 함수가 소설 레인을 푸는 코드로 다시 만들면 대조가 항진명제가 된다.
 """
 
+import inspect
 import json
+import os
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,14 +43,33 @@ from api.chat.prompt_routing import (
     route_chain_errors,
     route_row_errors,
 )
-from api.chat.prompt_stages import LANE_STAGES, STAGES, RoutingLane, stage_call_sites
+from api.chat.prompt_stages import (
+    LANE_STAGES,
+    STAGES,
+    ChatRoutingLane,
+    RouteRoomModel,
+    RoutingLane,
+    stage_call_sites,
+    stage_room_models,
+)
 from api.core.config import settings
 from api.db.models.prompt import PromptSection, PromptSet
+from api.llm.backends import pick_backend
 from api.llm.call_policy import CALL_POLICIES, BackendId, LLMCallSite
-from api.llm.chat_models import ChatRoomModelId, PromptSetModelId, backend_model_id
+from api.llm.chat_models import (
+    ChatModelId,
+    ChatRoomModelId,
+    PromptSetModelId,
+    backend_model_id,
+    configured_call_site_model,
+    structured_call_model,
+)
 from api.llm.client import structured_model
+from api.novelize.inputs import load_novel_prompt_source
 
 _EXPECTED_PATH = Path(__file__).parent / "fixtures" / "prompt_routes_empty_table_characterization.json"
+_NOVEL_EXPECTED_PATH = Path(__file__).parent / "fixtures" / "prompt_routes_novel_empty_table_characterization.json"
+_NOVEL_WRITE_SWITCH = "PROMPT_ROUTES_NOVEL_GOLDEN_WRITE"
 
 _FIXED_SETTINGS: dict[str, Any] = {
     "gemini_model_name": "fixture-gemini-base",
@@ -140,10 +168,97 @@ def _model_id(call_site: LLMCallSite, backend: BackendId, model: PromptSetModelI
     return backend_model_id(backend, model)
 
 
+# 소설 단계 → 그 단계를 부르는 호출 위치. 문단 수정과 여러 문단 수정은 같은 호출 위치를 쓰고 읽는 채널만 다르다. 기록 때 코드에는
+# 이 단계 이름이 없어 여기 적어 두고, 대조 테스트가 해석 쪽 단계 표와 같은지 본다.
+_NOVEL_STAGE_CALL_SITES: dict[str, LLMCallSite] = {
+    "novel_chapter": "novelize_chapter",
+    "novel_outline": "novelize_outline",
+    "novel_episode_outline": "novelize_episode_outline",
+    "novel_revise": "novelize_revise",
+    "novel_revise_blocks": "novelize_revise",
+    "novel_recheck": "novelize_revise_recheck",
+    "novel_boundary": "novelize_boundary",
+}
+# 작업 모델이 문안 체인과 부를 모델을 정하는 단계. 나머지 넷은 작업 모델과 무관하다.
+_NOVEL_JOB_MODEL_STAGES = frozenset({"novel_chapter", "novel_outline", "novel_episode_outline"})
+
+
+def _novel_cases() -> list[dict[str, Any]]:
+    """기본값 하나, 경로마다(직결·Bedrock) 화 생성만 배정(구성안 둘은 물려받음)·구성안 둘만 배정·소설 호출 위치 전부 배정, 그리고
+    소설 Gemini 모델명을 비운 케이스."""
+    cases: list[dict[str, Any]] = [{"name": "defaults", "settings": {}}]
+    novel_sites = sorted(set(_NOVEL_STAGE_CALL_SITES.values()))
+    for assign in ("anthropic", "bedrock"):
+        cases.append(
+            {"name": f"chapter-on-{assign}", "settings": {"llm_call_site_backends": {"novelize_chapter": assign}}}
+        )
+        cases.append(
+            {
+                "name": f"outlines-on-{assign}",
+                "settings": {
+                    "llm_call_site_backends": {"novelize_outline": assign, "novelize_episode_outline": assign}
+                },
+            }
+        )
+        cases.append(
+            {
+                "name": f"every-novel-call-site-on-{assign}",
+                "settings": {"llm_call_site_backends": dict.fromkeys(novel_sites, assign)},
+            }
+        )
+    cases.append({"name": "novelize-model-name-empty", "settings": {"gemini_novelize_model_name": ""}})
+    return cases
+
+
+def _novel_route_today(stage: str, job_model: ChatModelId) -> list[str]:
+    """그 소설 단계가 그 작업 모델로 지금 읽는 체인·부르는 모델·경로·실제 모델 id. 체인은 화 생성·구성안이면 작업 모델, 나머지는
+    소설 문안 체인 읽기의 기본 인자다. 모델·경로는 공급자 구현을 고르는 라우터와 같은 인자로 푼다 — 스트림 호출은 실린 모델,
+    구조화 호출은 `structured_call_model` 이 고른 모델을 `pick_backend` 에 넘긴다."""
+    call_site = _NOVEL_STAGE_CALL_SITES[stage]
+    default_chain: ChatModelId = inspect.signature(load_novel_prompt_source).parameters["model"].default
+    chain = job_model if stage in _NOVEL_JOB_MODEL_STAGES else default_chain
+    routed = (
+        job_model if CALL_POLICIES[call_site].call_kind == "stream" else structured_call_model(call_site, job_model)
+    )
+    model, backend = pick_backend(
+        call_site, routed, settings.llm_call_site_backends, call_model=configured_call_site_model(call_site)
+    )
+    return [chain, model, backend, _model_id(call_site, backend, model)]
+
+
+@pytest.mark.skipif(
+    not os.environ.get(_NOVEL_WRITE_SWITCH), reason=f"{_NOVEL_WRITE_SWITCH}=1 일 때만 기대값 파일을 쓴다"
+)
+def test_write_the_novel_empty_table_expected_routes(fixed_settings: pytest.MonkeyPatch) -> None:
+    rows: list[list[str]] = []
+    for case in _novel_cases():
+        with fixed_settings.context() as patch:
+            for name, value in case["settings"].items():
+                patch.setattr(settings, name, value)
+            for stage, call_site in _NOVEL_STAGE_CALL_SITES.items():
+                by_job_model = {model: _novel_route_today(stage, model) for model in get_args(ChatModelId)}
+                if stage in _NOVEL_JOB_MODEL_STAGES:
+                    rows.extend(
+                        [case["name"], model, stage, call_site, *route] for model, route in by_job_model.items()
+                    )
+                    continue
+                distinct = {tuple(route) for route in by_job_model.values()}
+                assert len(distinct) == 1, (case["name"], stage, by_job_model)
+                rows.append([case["name"], "*", stage, call_site, *by_job_model["gemini"]])
+    expected = {
+        "fixedSettings": _FIXED_SETTINGS,
+        "cases": _novel_cases(),
+        "stageCallSites": _NOVEL_STAGE_CALL_SITES,
+        "columns": ["case", "jobModel", "stage", "callSite", "chainModel", "callModel", "backend", "modelId"],
+        "rows": rows,
+    }
+    _NOVEL_EXPECTED_PATH.write_text(json.dumps(expected, ensure_ascii=False, sort_keys=True) + "\n")
+
+
 def _resolve(
     routes: PromptRoutes,
     lane: RoutingLane,
-    room_model: ChatRoomModelId,
+    room_model: RouteRoomModel,
     stage: str,
     call_site: LLMCallSite | None = None,
 ) -> StageRoute:
@@ -157,14 +272,18 @@ def test_an_empty_table_resolves_every_cell_the_way_the_env_rules_do_today(fixed
     assert expected["cases"] == _cases()
     by_key = {(row[0], row[1], row[2], row[3]): row[4:] for row in expected["rows"]}
 
+    # 이 기대값은 채팅 두 레인과 그 단계만 적는다(소설 레인은 아래 따로 둔 기대값이 본다).
+    chat_stages = {stage for lane in get_args(ChatRoutingLane) for stage in LANE_STAGES[lane]}
     compared = 0
     for case in expected["cases"]:
         with fixed_settings.context() as patch:
             for name, value in case["settings"].items():
                 patch.setattr(settings, name, value)
-            for lane in get_args(RoutingLane):
+            for lane in get_args(ChatRoutingLane):
                 for room_model in get_args(ChatRoomModelId):
                     for stage, spec in STAGES.items():
+                        if stage not in chat_stages:
+                            continue
                         room_key = room_model if spec.kind == "generation" else "*"
                         for call_site in stage_call_sites(stage):
                             route = _resolve(PromptRoutes.empty(), lane, room_model, stage, call_site)
@@ -185,6 +304,41 @@ def test_an_empty_table_resolves_every_cell_the_way_the_env_rules_do_today(fixed
     assert compared == len(expected["cases"]) * 2 * 2 * 13
 
 
+def test_an_empty_table_resolves_every_novel_cell_the_way_the_novel_calls_go_today(
+    fixed_settings: pytest.MonkeyPatch,
+) -> None:
+    """소설 레인이 표에 들어와도 행이 없으면 소설 호출이 지금 읽는 체인·부르는 모델·경로가 그대로여야 한다. 기대값은 해석 함수가
+    소설 레인을 풀기 전 코드에서 기록했다(모듈 docstring)."""
+    expected = json.loads(_NOVEL_EXPECTED_PATH.read_text())
+    assert expected["fixedSettings"] == _FIXED_SETTINGS
+    assert expected["cases"] == _novel_cases()
+    assert expected["stageCallSites"] == {stage: stage_call_sites(stage)[0] for stage in LANE_STAGES["novel"]}
+    assert [len(stage_call_sites(stage)) for stage in LANE_STAGES["novel"]] == [1] * 7
+    by_key = {(row[0], row[1], row[2]): row[4:] for row in expected["rows"]}
+
+    compared = 0
+    for case in expected["cases"]:
+        with fixed_settings.context() as patch:
+            for name, value in case["settings"].items():
+                patch.setattr(settings, name, value)
+            for stage in LANE_STAGES["novel"]:
+                for room_model in stage_room_models("novel", stage):
+                    route = _resolve(PromptRoutes.empty(), "novel", room_model, stage)
+                    call_site = stage_call_sites(stage)[0]
+                    actual = [
+                        route.chain_model,
+                        route.call_model,
+                        route.backend,
+                        _model_id(call_site, route.backend, route.call_model),
+                    ]
+                    room_key = "*" if room_model == "any" else room_model
+                    assert actual == by_key[(case["name"], room_key, stage)], (case["name"], room_model, stage)
+                    assert route.skipped is None
+                    compared += 1
+    assert compared == len(expected["cases"]) * (3 * 3 + 4)
+    assert compared == len(expected["rows"])
+
+
 def test_an_empty_table_names_where_each_cell_came_from(fixed_settings: pytest.MonkeyPatch) -> None:
     fixed_settings.setattr(settings, "memory_fact_model", "haiku")
 
@@ -201,7 +355,7 @@ def _row(
     stage: str,
     *,
     lane: RoutingLane = "story",
-    room_model: ChatRoomModelId = "opus",
+    room_model: RouteRoomModel = "opus",
     chain_model: PromptSetModelId | None = "haiku",
     call_model: PromptSetModelId = "haiku",
     backend: BackendId = "anthropic",
@@ -432,7 +586,116 @@ def test_a_generation_row_whose_backend_drifted_falls_back_to_the_room_rule(fixe
 def test_every_lane_stage_resolves_on_an_empty_table_without_error(fixed_settings: pytest.MonkeyPatch) -> None:
     for lane, stages in LANE_STAGES.items():
         for stage in stages:
-            assert _resolve(PromptRoutes.empty(), lane, "gemini", stage).skipped is None
+            for room_model in stage_room_models(lane, stage):
+                assert _resolve(PromptRoutes.empty(), lane, room_model, stage).skipped is None
+
+
+# --- 소설 레인 --------------------------------------------------------------------------------------------------------
+# 운영 env 는 소설 화 생성 호출 위치를 직결로 배정하고(구성안 둘은 물려받는다), 소설 구조화 호출 위치는 배정하지 않는다.
+_NOVEL_CHAPTER_ON_ANTHROPIC = {"novelize_chapter": "anthropic"}
+
+
+def test_a_novel_generation_row_resolves_to_the_job_model_and_its_path_must_match_the_env(
+    fixed_settings: pytest.MonkeyPatch,
+) -> None:
+    """소설 생성 행은 체인·부를 모델을 고르지 않는다 — 늘 작업 모델이고(차감이 작업 모델 단가다), 경로는 env 배정과 같을 때만
+    쓰인다. 그래서 행이 있든 없든 값이 env 규칙과 같다."""
+    fixed_settings.setattr(settings, "llm_call_site_backends", _NOVEL_CHAPTER_ON_ANTHROPIC)
+    routes = PromptRoutes.from_rows(
+        [
+            _row("novel_chapter", lane="novel", room_model="sonnet", chain_model=None, call_model="sonnet"),
+            _row("novel_outline", lane="novel", room_model="opus", chain_model=None, call_model="opus"),
+        ]
+    )
+
+    cells: tuple[tuple[RouteRoomModel, str], ...] = (("sonnet", "novel_chapter"), ("opus", "novel_outline"))
+    for room_model, stage in cells:
+        with_row = _resolve(routes, "novel", room_model, stage)
+        without = _resolve(PromptRoutes.empty(), "novel", room_model, stage)
+        assert (with_row.chain_model, with_row.call_model, with_row.backend, with_row.source) == (
+            room_model,
+            room_model,
+            "anthropic",
+            "row",
+        )
+        assert (with_row.chain_model, with_row.call_model, with_row.backend) == (
+            without.chain_model,
+            without.call_model,
+            without.backend,
+        )
+
+    fixed_settings.setattr(settings, "llm_call_site_backends", {})
+    drifted = _resolve(routes, "novel", "sonnet", "novel_chapter")
+    assert (drifted.chain_model, drifted.call_model, drifted.backend, drifted.source) == (
+        "sonnet",
+        "sonnet",
+        "bedrock",
+        "room",
+    )
+    assert drifted.skipped is not None
+    assert drifted.skipped.reason == "backend-mismatch"
+
+
+def test_a_novel_structured_claude_row_is_applied_when_its_call_site_is_assigned_to_the_direct_route(
+    fixed_settings: pytest.MonkeyPatch,
+) -> None:
+    """소설 구조화 호출 위치를 직결로 배정하는 env 는 기동 검증이 거부하는 조합이라(그 호출 위치의 모델은 기본 모델 Gemini 로만
+    본다) 설정 패치로만 만든다 — 운영에서 이 행이 쓰이려면 그 검증을 고치는 후속 작업이 먼저다. 여기서는 배정이 맞으면 행의 체인과
+    부를 모델이 그대로 쓰인다는 해석 규칙만 고정한다."""
+    fixed_settings.setattr(settings, "llm_call_site_backends", {"novelize_revise": "anthropic"})
+    routes = PromptRoutes.from_rows([_row("novel_revise", lane="novel", room_model="any", chain_model="sonnet")])
+
+    route = _resolve(routes, "novel", "any", "novel_revise")
+
+    assert (route.chain_model, route.call_model, route.backend, route.source) == ("sonnet", "haiku", "anthropic", "row")
+    assert route.skipped is None
+
+
+def test_a_novel_structured_claude_row_is_skipped_while_its_call_site_has_no_direct_assignment(
+    fixed_settings: pytest.MonkeyPatch,
+) -> None:
+    """운영 env 그대로다. 배정이 없으면 Claude 모델은 기본 구현 Bedrock 으로 가 행의 직결 경로와 맞지 않으므로, 그 칸은 지금처럼
+    Gemini 체인·Gemini 모델로 돈다."""
+    fixed_settings.setattr(settings, "llm_call_site_backends", _NOVEL_CHAPTER_ON_ANTHROPIC)
+    routes = PromptRoutes.from_rows([_row("novel_boundary", lane="novel", room_model="any", chain_model="opus")])
+
+    route = _resolve(routes, "novel", "any", "novel_boundary")
+
+    assert (route.chain_model, route.call_model, route.backend, route.source) == ("gemini", "gemini", "gemini", "env")
+    assert route.skipped is not None
+    assert (route.skipped.stage, route.skipped.reason) == ("novel_boundary", "backend-mismatch")
+
+
+def test_the_two_revise_stages_read_their_own_rows_though_they_share_a_call_site(
+    fixed_settings: pytest.MonkeyPatch,
+) -> None:
+    """문단 수정과 여러 문단 수정은 같은 호출 위치를 쓰지만 단계가 다르다. 한쪽 행이 다른 쪽 칸에 새면 여러 문단 수정이 문단
+    수정의 체인으로 렌더된다."""
+    fixed_settings.setattr(settings, "llm_call_site_backends", {"novelize_revise": "anthropic"})
+    revise_only = PromptRoutes.from_rows(
+        [_row("novel_revise", lane="novel", room_model="any", chain_model="opus", call_model="sonnet")]
+    )
+    blocks_only = PromptRoutes.from_rows(
+        [_row("novel_revise_blocks", lane="novel", room_model="any", chain_model="opus", call_model="sonnet")]
+    )
+
+    def picked(routes: PromptRoutes, stage: str) -> tuple[str, str, str]:
+        route = _resolve(routes, "novel", "any", stage)
+        return (route.chain_model, route.call_model, route.source)
+
+    assert picked(revise_only, "novel_revise") == ("opus", "sonnet", "row")
+    assert picked(revise_only, "novel_revise_blocks") == ("gemini", "gemini", "env")
+    assert picked(blocks_only, "novel_revise") == ("gemini", "gemini", "env")
+    assert picked(blocks_only, "novel_revise_blocks") == ("opus", "sonnet", "row")
+
+
+def test_a_novel_cell_outside_its_axis_is_a_caller_bug(fixed_settings: pytest.MonkeyPatch) -> None:
+    """구조화 소설 칸은 작업 모델과 무관한 `any` 칸 하나다. 작업 모델을 넘기면 행을 못 찾아 조용히 env 로 가므로 부르는 쪽의
+    버그로 드러낸다. 생성 칸에 `any` 를 넘기는 것도 같다."""
+    with pytest.raises(ValueError, match="novel_revise"):
+        _resolve(PromptRoutes.empty(), "novel", "opus", "novel_revise")
+    with pytest.raises(ValueError, match="novel_chapter"):
+        _resolve(PromptRoutes.empty(), "novel", "any", "novel_chapter")
 
 
 # --- 어드민 저장 검사 ---------------------------------------------------------------------------------------------------
@@ -615,6 +878,129 @@ def test_a_parsed_row_keeps_its_values_and_an_out_of_range_row_is_none() -> None
     assert parse_route_row(_input("memory_fact", backend="openai")) is None
     assert parse_route_row(_input("memory_fact", chain_model=None)) is None
     assert parse_route_row(_input("chat_generate", chain_model="opus", call_model="opus")) is None
+
+
+def test_a_parsed_novel_row_keeps_its_cell_and_a_row_off_the_novel_axes_is_none() -> None:
+    """캐시·DB 에서 읽은 소설 행도 같은 함수를 지난다. 축 밖 행이 읽히면 아무도 저장할 수 없었던 칸이 해석에 쓰인다."""
+    revise = _input("novel_revise", lane="novel", room_model="any", chain_model="sonnet")
+    chapter = _input("novel_chapter", lane="novel", room_model="sonnet", chain_model=None, call_model="sonnet")
+
+    assert parse_route_row(revise) == _row("novel_revise", lane="novel", room_model="any", chain_model="sonnet")
+    assert parse_route_row(chapter) == _row(
+        "novel_chapter", lane="novel", room_model="sonnet", chain_model=None, call_model="sonnet"
+    )
+    assert parse_route_row(_input("novel_revise", lane="novel", room_model="any", chain_model="haiku")) is None
+    assert parse_route_row(_input("novel_revise", lane="novel", room_model="gemini", chain_model="gemini")) is None
+    assert (
+        parse_route_row(_input("novel_chapter", lane="novel", room_model="any", chain_model=None, call_model="sonnet"))
+        is None
+    )
+    assert (
+        parse_route_row(_input("novel_outline", lane="novel", room_model="opus", chain_model=None, call_model="gemini"))
+        is None
+    )
+
+
+def _with_novel_assignments(save_env: pytest.MonkeyPatch, novel: dict[str, str]) -> None:
+    save_env.setattr(settings, "llm_call_site_backends", {**_JUDGMENTS_ON_ANTHROPIC["llm_call_site_backends"], **novel})
+
+
+def test_novel_generation_rows_on_the_env_path_of_their_job_model_save(save_env: pytest.MonkeyPatch) -> None:
+    """Sonnet 작업의 화 생성 직결 행은 소설 생성에서만 고를 수 있는 쌍이다. 구성안은 화 생성 호출 위치의 배정을 물려받는다."""
+    _with_novel_assignments(save_env, {"novelize_chapter": "anthropic"})
+    rows = [
+        _input("novel_chapter", lane="novel", room_model="sonnet", chain_model=None, call_model="sonnet"),
+        _input("novel_outline", lane="novel", room_model="opus", chain_model=None, call_model="opus"),
+        _input(
+            "novel_episode_outline",
+            lane="novel",
+            room_model="gemini",
+            chain_model=None,
+            call_model="gemini",
+            backend="gemini",
+        ),
+    ]
+
+    assert route_row_errors(rows) == []
+    assert ("sonnet", "anthropic") in ALLOWED_ROUTE_PAIRS["generation"]
+
+
+@pytest.mark.parametrize(
+    ("row", "rule"),
+    [
+        pytest.param(
+            _input("novel_chapter", lane="novel", room_model="sonnet", chain_model="opus", call_model="sonnet"),
+            "generation-chain",
+            id="novel-generation-row-with-a-chain",
+        ),
+        pytest.param(
+            _input("novel_outline", lane="novel", room_model="opus", chain_model=None, call_model="sonnet"),
+            "generation-call-model",
+            id="novel-generation-row-calling-another-model",
+        ),
+        pytest.param(
+            _input("novel_chapter", lane="novel", room_model="any", chain_model=None, call_model="sonnet"),
+            "unknown-stage",
+            id="novel-generation-cell-without-a-job-model",
+        ),
+        pytest.param(
+            _input("novel_revise", lane="novel", room_model="opus", chain_model="opus"),
+            "unknown-stage",
+            id="novel-structured-cell-keyed-by-a-job-model",
+        ),
+        pytest.param(
+            _input("novel_chapter", room_model="sonnet", chain_model=None, call_model="sonnet"),
+            "unknown-stage",
+            id="novel-stage-in-a-chat-lane",
+        ),
+        pytest.param(
+            _input("chat_generate", lane="novel", room_model="opus", chain_model=None, call_model="opus"),
+            "unknown-stage",
+            id="chat-stage-in-the-novel-lane",
+        ),
+        pytest.param(
+            _input("novel_recheck", lane="novel", room_model="any", chain_model="haiku", call_model="gemini"),
+            "chain-not-in-lane",
+            id="novel-chain-the-lane-does-not-have",
+        ),
+        pytest.param(
+            _input("novel_boundary", lane="novel", room_model="any", chain_model="opus", call_model="opus"),
+            "backend-mismatch",
+            id="novel-structured-claude-row-without-a-direct-assignment",
+        ),
+        pytest.param(
+            _input("novel_chapter", lane="novel", room_model="opus", chain_model=None, call_model="opus"),
+            "backend-mismatch",
+            id="novel-generation-row-off-its-env-path",
+        ),
+        pytest.param(
+            _input("chat_generate", room_model="opus", chain_model=None, call_model="sonnet"),
+            "generation-call-model",
+            id="chat-generation-still-calls-only-the-room-model",
+        ),
+    ],
+)
+def test_a_novel_row_breaking_a_save_rule_is_refused_by_that_rule(
+    save_env: pytest.MonkeyPatch, row: RouteRowInput, rule: str
+) -> None:
+    assert _rules([row]) == [(0, rule)]
+
+
+def test_a_novel_structured_claude_row_saves_once_its_call_site_is_assigned_to_the_direct_route(
+    save_env: pytest.MonkeyPatch,
+) -> None:
+    """기동 검증이 거부하는 env 라 설정 패치로만 만든다(해석 쪽 같은 테스트의 docstring). 저장 검사도 그 배정에서는 행을 받는다."""
+    _with_novel_assignments(save_env, {"novelize_revise": "anthropic", "novelize_revise_recheck": "anthropic"})
+    rows = [
+        _input("novel_revise", lane="novel", room_model="any", chain_model="sonnet", call_model="opus"),
+        _input("novel_revise_blocks", lane="novel", room_model="any", chain_model="gemini", call_model="sonnet"),
+        _input("novel_recheck", lane="novel", room_model="any", chain_model="gemini", call_model="haiku"),
+        _input(
+            "novel_boundary", lane="novel", room_model="any", chain_model="opus", call_model="gemini", backend="gemini"
+        ),
+    ]
+
+    assert route_row_errors(rows) == []
 
 
 async def _publish_haiku_story_set_with(db_session: AsyncSession, channels: list[str]) -> None:

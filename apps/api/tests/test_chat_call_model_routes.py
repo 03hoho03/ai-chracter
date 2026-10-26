@@ -23,7 +23,7 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, get_args
 
 import httpx
 import pytest
@@ -41,7 +41,7 @@ from api.chat.prompt_builder import (
     load_active_prompt_set,
 )
 from api.chat import memory_fold
-from api.chat.prompt_stages import LANE_STAGES, RoutingLane
+from api.chat.prompt_stages import LANE_STAGES, ChatRoutingLane, RoutingLane
 from api.core import clover
 from api.core.config import settings
 from api.db.models import AssetStatus, ChatMessage, ChatMessageRole, ChatRoom
@@ -501,7 +501,8 @@ CHARACTER_ROW_CALLS = {
     "chat_memory_episode": ("gemini", "fixture-gemini-base"),
     "chat_memory_fact": ("anthropic", "fixture-anthropic-opus"),
 }
-_LANE_STAGE_NAMES: dict[str, tuple[str, ...]] = {lane: tuple(stages) for lane, stages in LANE_STAGES.items()}
+# 이 파일은 채팅 호출 경로를 보므로 채팅 레인(스토리·캐릭터)의 단계만 돈다. 소설 레인 행은 채팅 턴이 읽지 않는다.
+_LANE_STAGE_NAMES: dict[str, tuple[str, ...]] = {lane: tuple(LANE_STAGES[lane]) for lane in get_args(ChatRoutingLane)}
 _OTHER_ROOM = {"gemini": "opus", "opus": "gemini"}
 _OTHER_LANE = {"story": "character", "character": "story"}
 _LANE_CASES = {

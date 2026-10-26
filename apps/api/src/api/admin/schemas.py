@@ -8,7 +8,7 @@ from pydantic import AwareDatetime, ConfigDict, EmailStr, Field
 from api.admin.prompt_semver import SectionChange, SemverLevel
 from api.chat.prompt_builder import PromptLane
 from api.chat.prompt_routing import RouteSource, SkipReason
-from api.chat.prompt_stages import PromptStage, RoutingLane, StageKind
+from api.chat.prompt_stages import PromptStage, RouteRoomModel, RoutingLane, StageKind
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType, ContentVisibility, DerivativeNovelsChoice, ModerationStatus
@@ -28,7 +28,7 @@ from api.db.models.novel import NovelPublicationModerationStatus, NovelPublicati
 from api.db.models.payment import PaymentStatus
 from api.legal.schemas import LegalConsentUnit, LegalDocumentKind
 from api.llm.call_policy import BackendId, LLMCallSite
-from api.llm.chat_models import ChatRoomModelId, PromptSetModelId
+from api.llm.chat_models import PromptSetModelId
 
 
 class AdminLoginRequest(CamelModel):
@@ -799,10 +799,11 @@ class AdminPromptPreviewResponse(CamelModel):
 
 
 class AdminPromptRouteRow(CamelModel):
-    """모델 배정 표의 한 행. 생성 행은 `chain_model` 이 없다(늘 방 모델의 체인을 읽는다)."""
+    """모델 배정 표의 한 행. 생성 행은 `chain_model` 이 없다(늘 방 모델의 체인을 읽는다). 소설 레인은 `room_model` 이 생성 단계에서
+    작업 모델, 구조화 단계에서 `any` 다."""
 
     lane: RoutingLane
-    room_model: ChatRoomModelId
+    room_model: RouteRoomModel
     stage: PromptStage
     chain_model: PromptSetModelId | None
     call_model: PromptSetModelId
@@ -810,8 +811,11 @@ class AdminPromptRouteRow(CamelModel):
 
 
 class AdminPromptRoutingSaveRequest(CamelModel):
-    """표 전체를 갈아 끼운다 — 부분 패치가 아니다. 빈 `rows` 는 표를 비워 전부 env 규칙으로 돌린다. `base_revision_id` 는 화면이
-    읽은 최신 이력이고(이력이 없으면 null), 그 사이 다른 저장이 있었으면 409 다."""
+    """그 경로가 맡은 레인의 행 전부를 갈아 끼운다 — 부분 패치가 아니다. 기존 경로(`PUT /admin/prompt-routing`)는 채팅 두 레인,
+    소설 경로(`PUT /admin/prompt-routing/novel`)는 소설 레인이다. 빈 `rows` 는 그 레인들을 비워 env 규칙으로 돌린다. 기존 경로에
+    실린 소설 행은 버리고(소설 탭을 모르는 낡은 화면이 응답의 칸을 그대로 되돌려 보낸 것이다), 소설 경로에 실린 다른 레인 행은
+    422 `lane-out-of-scope` 다. `base_revision_id` 는 화면이 읽은 최신 이력이고(이력이 없으면 null), 그 사이 어느 레인이든 다른
+    저장이 있었으면 409 다."""
 
     base_revision_id: uuid.UUID | None
     note: str = ""
@@ -819,6 +823,9 @@ class AdminPromptRoutingSaveRequest(CamelModel):
 
 
 class AdminPromptRoutingRestoreRequest(CamelModel):
+    """이력 스냅샷에서 그 경로가 맡은 레인의 행만 꺼내 그 레인들을 갈아 끼운다 — 기존 경로는 채팅 두 레인, 소설 경로는 소설
+    레인이다. 다른 레인의 지금 행은 건드리지 않는다."""
+
     base_revision_id: uuid.UUID | None
     note: str = ""
 
@@ -847,13 +854,34 @@ class AdminPromptRouteCall(CamelModel):
     price: AdminPromptRoutePrice | None
 
 
+class AdminPromptRouteCostRatio(CamelModel):
+    """후보 쌍의 단가 ÷ 그 칸이 행 없이(env 규칙으로) 부르는 모델의 단가. 입력·출력을 따로 낸다 — 단계마다 입출력 토큰 비율이
+    달라 섞은 한 수치는 맞지 않는다. 1 보다 작으면 더 싸다."""
+
+    input: float
+    output: float
+
+
+class AdminPromptRouteCandidateSkip(CamelModel):
+    """그 쌍으로 행을 두면 지금 env 로는 해석이 건너뛴다(운영에서 쓰이지 않는다). 저장 검사도 같은 이유로 거부한다."""
+
+    reason: SkipReason
+    message: str
+
+
 class AdminPromptRouteCandidate(CamelModel):
-    """칸의 행이 고를 수 있는 (부를 모델, 경로) 하나와, 그 쌍을 고르면 그 단계의 호출 위치마다 보낼 모델 id·단가. 지금 표·env
-    배정과 무관한 값이다 — 저장 전에 새로 고른 쌍의 단가를 보이려는 것이고, 그 쌍이 지금 env 로 저장되는지는 저장 검사가 본다."""
+    """칸의 행이 고를 수 있는 (부를 모델, 경로) 하나와, 그 쌍을 고르면 그 단계의 호출 위치마다 보낼 모델 id·단가. `calls` 는 지금
+    표·env 배정과 무관한 값이다 — 저장 전에 새로 고른 쌍의 단가를 보이려는 것이다.
+
+    `skipped_now` 는 그 쌍의 행이 지금 env 배정으로 해석에서 건너뛰어지는지(이유와 문장), `cost_ratio` 는 구조화 칸에서 그 쌍의
+    원가가 지금 부르는 모델 대비 몇 배인지다(어느 쪽 단가라도 단가 표에 없으면 null). 구조화 호출의 차감액은 부르는 모델과 무관하므로
+    배수는 원가만 말한다. 생성 칸은 그 칸의 모델로만 부르므로 배수가 null 이다."""
 
     model: PromptSetModelId
     backend: BackendId
     calls: list[AdminPromptRouteCall]
+    skipped_now: AdminPromptRouteCandidateSkip | None
+    cost_ratio: AdminPromptRouteCostRatio | None
 
 
 class AdminPromptRouteSkip(CamelModel):
@@ -873,10 +901,11 @@ class AdminPromptRouteEffective(CamelModel):
 
 
 class AdminPromptRouteCell(CamelModel):
-    """(레인, 방 모델, 단계) 한 칸. `configured` 는 그 칸 자신의 행이고, `effective` 는 채팅 호출 위치로 푼 값이다."""
+    """(레인, 방 모델, 단계) 한 칸. `configured` 는 그 칸 자신의 행이고, `effective` 는 채팅 호출 위치(소설은 소설 호출 위치)로 푼
+    값이다. 소설 생성 칸은 체인·부를 모델이 늘 작업 모델이라 행은 경로를 확인·표시할 뿐이다."""
 
     lane: RoutingLane
-    room_model: ChatRoomModelId
+    room_model: RouteRoomModel
     stage: PromptStage
     # 그 단계의 종류. 행이 고를 수 있는 쌍이 종류마다 다르다(`allowed_pairs` 의 `kind`).
     kind: StageKind
@@ -888,7 +917,7 @@ class AdminPromptRouteCell(CamelModel):
 
 
 class AdminPromptRouteChainReader(CamelModel):
-    room_model: ChatRoomModelId
+    room_model: RouteRoomModel
     stage: PromptStage
     channels: list[str]
 
@@ -925,6 +954,9 @@ class AdminPromptRouteRevisionSummary(CamelModel):
     restored_from_id: uuid.UUID | None
     created_at: datetime
     row_count: int
+    # 어느 경로의 저장인가. null 은 채팅 두 레인 경로(또는 표 전체를 갈아 끼운 옛 저장), ["novel"] 은 소설 경로다. 스냅샷은 어느
+    # 경로든 저장한 뒤의 표 전체다.
+    lanes: list[RoutingLane] | None
 
 
 class AdminPromptRouteRevisionListResponse(CamelModel):
