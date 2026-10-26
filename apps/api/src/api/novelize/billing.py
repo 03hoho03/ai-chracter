@@ -53,13 +53,11 @@ from api.llm.chat_models import (
     parse_chat_model_id,
 )
 from api.novelize.episodes import k_max, regenerate_ineligibility
+from api.novelize.job_variants import DailyLimitGroup, facts_of, kinds_where, variant_of
 
 ACTIVE_JOB_STATUSES: tuple[NovelJobStatus, ...] = ("queued", "running")
 # 하루 상한에 세는 상태. 환불된 실패를 세면 우리 쪽 실패가 사용자의 하루 기회를 깎는다.
 _COUNTED_JOB_STATUSES: tuple[NovelJobStatus, ...] = ("queued", "running", "succeeded")
-_CHAPTER_JOB_KINDS: tuple[NovelJobKind, ...] = ("chapter_generate", "chapter_regenerate")
-# 구성 흐름 화를 쓰는 종류 — 원고와, 장면 구성안 리비전이 적힌 다시 만들기(구성 흐름 화의 다시 만들기).
-_OUTLINE_CHAPTER_JOB_KINDS: tuple[NovelJobKind, ...] = ("outline_chapter_generate", "chapter_regenerate")
 
 _NOVELIZE_WINDOW = "novelize"
 
@@ -180,7 +178,9 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     차감(clover_lots 잠금)이다. 진행
     중 확인과 상한을 사용자 잠금 뒤에 읽으므로 같은 사용자의 동시 요청이 둘 다 통과하지 못한다(부분 유니크 인덱스는
     마지막 방어선으로 남는다)."""
-    if job.kind in ("chapter_generate", "outline_chapter_generate") and job.episode_count_target is None:
+    # 요청 행은 아직 INSERT 전이어도 갈래를 가르는 칸이 다 차 있어 판정할 수 있다. 연쇄 자식은 이 함수를 거치지 않는다.
+    variant = variant_of(job)
+    if variant in ("legacy_generate", "manuscript") and job.episode_count_target is None:
         job.episode_count_target = 1
     if job.kind != "chapter_regenerate":
         price = _checked_price(job, expected_cost)
@@ -213,10 +213,10 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
         except HTTPException:
             await db.rollback()
             raise
-    if job.kind == "chapter_generate" and not await _starts_after_last_chapter(db, job):
+    if variant == "legacy_generate" and not await _starts_after_last_chapter(db, job):
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_NOTHING_NEW"})
-    if job.kind == "outline_chapter_generate" and await _outline_episode_written(db, job):
+    if variant == "manuscript" and await _outline_episode_written(db, job):
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_OUTLINE_EPISODE_WRITTEN"})
 
@@ -227,23 +227,15 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_JOB_IN_PROGRESS"})
 
-    same_attempt: ColumnElement[bool] | None = None
-    if job.kind in _CHAPTER_JOB_KINDS and job.episode_outline_id is None:
-        same_attempt = and_(NovelJob.start_message_id == job.start_message_id, NovelJob.kind.in_(_CHAPTER_JOB_KINDS))
-    elif job.kind in _OUTLINE_CHAPTER_JOB_KINDS:
-        # 구성 흐름 원고와 그 화의 다시 만들기는 시작 메시지가 아니라 근거 장면 구성안 리비전으로 함께 센다 — 같은 장면 구성안으로
-        # 거듭 다시 사는 것을 막는다.
-        same_attempt = and_(
-            NovelJob.episode_outline_id == job.episode_outline_id, NovelJob.kind.in_(_OUTLINE_CHAPTER_JOB_KINDS)
-        )
-    if same_attempt is not None:
+    group = facts_of(job).daily_limit_group
+    if group is not None:
         today_start = datetime.combine(clover.kst_today(now), time.min, tzinfo=KST)
         attempts = await db.scalar(
             select(func.count())
             .select_from(NovelJob)
             .where(
                 NovelJob.novel_id == job.novel_id,
-                same_attempt,
+                _same_attempt(job, group),
                 NovelJob.status.in_(_COUNTED_JOB_STATUSES),
                 NovelJob.created_at >= today_start,
             )
@@ -277,6 +269,23 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
 
     await db.commit()
     return job
+
+
+def _same_attempt(job: NovelJob, group: DailyLimitGroup) -> ColumnElement[bool]:
+    """하루 상한에 함께 세는 작업 — 같은 묶음 값(시작 메시지 또는 근거 장면 구성안 리비전)을 가진, 그 묶음에 드는 종류의 작업.
+
+    세기는 갈래가 아니라 종류 단위다. 시작 메시지 묶음의 종류(장 생성·다시 만들기)에는 상한이 없는 연쇄 자식과 장면 구성안
+    묶음인 구성 흐름 화 다시 만들기도 들지만, 연쇄 자식은 시작 메시지를 가져 함께 세고(연쇄로 쓴 구간을 같은 날 거듭 다시 사는
+    것을 막는다), 구성 흐름 화 다시 만들기는 시작 메시지가 비어 걸리지 않는다. 장면 구성안 묶음은 원고와 그 화의 다시 만들기를
+    근거 리비전으로 함께 센다 — 같은 장면 구성안으로 거듭 다시 사는 것을 막는다."""
+    kinds = NovelJob.kind.in_(kinds_where(daily_limit_group=group))
+    match group:
+        case "start_message":
+            return and_(NovelJob.start_message_id == job.start_message_id, kinds)
+        case "episode_outline":
+            return and_(NovelJob.episode_outline_id == job.episode_outline_id, kinds)
+        case _:
+            assert_never(group)
 
 
 def _checked_price(job: NovelJob, expected_cost: int) -> int:

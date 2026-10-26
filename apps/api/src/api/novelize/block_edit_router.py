@@ -53,6 +53,7 @@ from api.novelize.block_edits import (
 )
 from api.novelize.blocks import BlockIdsInvalidError, build_revision
 from api.novelize.inputs import current_revision
+from api.novelize.job_variants import variant_of
 from api.novelize.prompts import NovelizeRecheckResult
 from api.novelize.router import (
     SessionFactory,
@@ -184,8 +185,7 @@ async def _patch_job(db: AsyncSession, novel: Novel, job_id: uuid.UUID, *, lock:
     if job is None:
         raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_JOB_NOT_FOUND")
     if (
-        job.block_edit is None
-        or job.kind != "ai_edit"
+        variant_of(job) != "block_edit"
         or job.status != "succeeded"
         or job.dismissed_at is not None
         or job.chapter_id is None

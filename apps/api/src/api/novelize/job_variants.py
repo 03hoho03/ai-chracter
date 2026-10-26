@@ -10,9 +10,12 @@
 `variant_of` 로 갈래를 읽고 실행 모듈(`runner.py`)이 입력 조립을 import 하므로, 판정을 실행 모듈에 두면 입력 조립 → 실행 모듈
 순환이 된다. 핸들러(행동)는 실행 모듈에 두고 핸들러가 `facts` 로 이 표의 객체를 그대로 내보인다 — 사실을 두 곳에 베끼지 않는다.
 
-지금 이 표의 사실 칸을 읽는 것은 실행 모듈(`call_site`·`model_in_context`·`chain_only`)과 워커 목록(`worker_runs`)뿐이다.
-`writes_chapter`·`locks_writing`·`daily_limit_group` 은 표에만 있고, 마지막 장 모델 읽기·집필권 잠금·하루 상한 같은 조회 자리가
-이 칸을 읽게 되는 것은 다음 변경이다. 그 자리들도 실행 모듈을 거치지 않고 이 잎 모듈을 읽으면 된다.
+사실 칸을 읽는 곳은 실행 모듈(`call_site`·`model_in_context`·`chain_only`)과, 실행 모듈을 거치지 않고 이 잎 모듈을 바로 읽는
+자리들이다 — 워커 목록(`worker_runs`), 마지막 장 모델 읽기(`writes_chapter`), 집필권 잠금 시각(`locks_writing`), 하루 상한
+묶음 고르기와 세기(`daily_limit_group`), 작업 응답·미결 수정 목록·수정 적용과 버리기·낡은 수정 비우기(`call_site`·
+`model_in_context`), 작업 시작과 연쇄 진행 응답(`chain_only`).
+소설화 모듈에서 작업 종류 문자열로 직접 가르는 곳은 이 표와 실행 모듈의 핸들러뿐이다(`tests/test_novelize_kind_literal_guard.py`
+가 지킨다 — 작업 행 만들기·가격 함수 같은 값 자리는 허용 문맥이다).
 
 `kinds_where` 는 사실 칸을 종류로 옮긴다(종류 단위 SQL 이 쓴다). 한 종류 안에서 갈래끼리 사실이 갈리면(`split_kinds`) 종류만으로는
 그 사실대로 거를 수 없다 — 그 SQL 은 다른 조건으로 따로 거르거나(워커 고르기의 연쇄 부모 칸 조건) 일부러 함께 센다."""
@@ -187,6 +190,11 @@ VARIANT_FACTS: dict[JobVariant, VariantFacts] = {
         chain_only=False,
     ),
 }
+
+
+def facts_of(job: NovelJob) -> VariantFacts:
+    """작업 행의 갈래 사실. 판정은 `variant_of` 그대로라 모르는 종류는 `AssertionError` 다."""
+    return VARIANT_FACTS[variant_of(job)]
 
 
 def _matches(facts: VariantFacts, wanted: dict[str, object]) -> bool:
