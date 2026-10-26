@@ -7,7 +7,8 @@
 - 입력: 묶음 스냅샷의 장면·사실 행 전부다 — 아는 사람(`known_by`)이 정해진 행도 같은 줄 모양으로 들어간다. 인상 행의 근거 id
   는 입력에 쓴 행 id 전부라, 인상을 어딘가에 싣는 쪽이 근거 행 단위로 비밀을 거를 수 있다. 요약 글·원문 창은 싣지 않는다.
 - 쓰기: 마지막 트랜잭션은 가장 새 스냅샷을 `FOR KEY SHARE` 로 잠근 뒤 방의 잊기 세대를 다시 읽고, 입력을 읽을 때와 다르면 결과를
-  버린다. 잊게 하기(장면·사실 모두)는 그 방의 인상을 전부 지우고 잊기 세대를 올린다.
+  버린다. 잊게 하기(장면·사실 모두)는 지우는 행(사실 키의 모든 행, 비밀 키와 함께 지우는 장면 포함)을 근거로 쓴 인상과 그
+  묶음의 `done` 시도 기록만 지우고 잊기 세대를 올린다.
 
 진짜 두 세션의 경합(잊기가 생성 커밋을 기다리는가)은 `test_chat_memory_rewind.py` 의 커밋되는 독립 커넥션 절에 있다. 운영 문안이
 바뀌어도 깨지지 않게 테스트는 세트의 인상 문안을 합성 섹션으로 바꿔 넘긴다.
@@ -961,44 +962,220 @@ async def _room_with_an_impression(
     return room, snapshots, scene_id, fact_id
 
 
-async def test_forgetting_a_scene_removes_every_impression_of_the_room_and_raises_the_generation(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """잊는 장면이 인상의 근거든 아니든, 인상이 매달린 스냅샷과 다른 스냅샷의 장면이든 그 방의 인상은 모두 지워진다.
-    다른 방의 인상은 남는다."""
-    room, snapshots, _, _ = await _room_with_an_impression(db_client, db_session)
-    other, *_ = await _room_with_an_impression(db_client, db_session)
-    # 인상은 묶음의 가장 새 스냅샷(snapshots[2])에 매달린다. 잊는 장면을 그보다 오래된 스냅샷에 두어야 잊는 장면의
-    # 스냅샷으로만 좁힌 DELETE 가 인상을 남겨 드러난다.
-    unrelated = await _scene(db_session, room, snapshots[1], ordinal=1, title="근거 아닌 장면", detail="나중 장면.")
-    generation = await _generation(db_session, room)
+async def _grouped_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Room, dict[int, uuid.UUID]]:
+    """30턴 방, 묶음 크기 2. 턴 5·10·…·30 스냅샷 여섯이 두 추출을 모두 끝냈다 — 묶음은 (5, 10)·(15, 20)·(25, 30) 셋이고 가장
+    새 묶음은 (25, 30)이다. (방, 턴 → 스냅샷 id)."""
+    monkeypatch.setattr(settings, "memory_impression_every_n_folds", 2)
+    room = await _open_room(db_client, db_session, turns=30)
+    return room, {turn: await _plant(db_session, room, turn) for turn in range(5, 31, 5)}
 
-    await forget_episode(db_session, room.room_id, unrelated)
+
+def _span(room: Room, first: int, last: int) -> dict[str, Any]:
+    """`first` 턴 사용자 메시지에서 `last` 턴 응답까지의 근거 범위 칸."""
+    start, end = room.turns[first][0], room.turns[last][1]
+    return {
+        "start_created_at": start.created_at,
+        "start_message_id": start.id,
+        "end_created_at": end.created_at,
+        "end_message_id": end.id,
+        "start_turn": first,
+        "end_turn": last,
+    }
+
+
+async def _impression_citing(
+    db_session: AsyncSession,
+    room: Room,
+    anchor: uuid.UUID,
+    text: str,
+    *,
+    episodes: Sequence[uuid.UUID] = (),
+    facts: Sequence[uuid.UUID] = (),
+) -> None:
+    """묶음의 가장 새 스냅샷 `anchor` 에 근거를 직접 정한 인상 한 행과, 생성이 그 행과 함께 남기는 `done` 시도 기록을 심는다.
+    근거를 손으로 정해야 "근거인 인상만 지운다"와 "방의 인상을 전부 지운다"가 다른 결과를 낸다."""
+    await _insert_impression(
+        db_session,
+        room,
+        anchor,
+        text=text,
+        episode_ids=[str(row_id) for row_id in episodes],
+        fact_ids=[str(row_id) for row_id in facts],
+    )
+    db_session.add(_plant_attempt(room, anchor, status="done", finished_at=datetime.now(UTC)))
     await db_session.commit()
 
-    assert await _impressions(db_session, room) == []
-    assert len(await _impressions(db_session, other)) == 1
+
+async def _impression_texts(db_session: AsyncSession, room: Room) -> dict[uuid.UUID, str]:
+    """방의 인상 — 매달린 스냅샷 → 글."""
+    return {row.snapshot_id: row.text for row in await _impressions(db_session, room)}
+
+
+async def test_forgetting_a_scene_removes_only_the_impressions_that_cite_it_and_raises_the_generation(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """잊는 장면을 근거로 쓴 인상만 지워진다. 근거가 아닌 인상은 같은 방에 있어도, 잊는 장면이 그 인상 묶음의 스냅샷에 있어도
+    남는다 — 인상은 묶음 안 모든 행을 근거로 남기므로 근거에 없으면 그 장면을 읽지 않고 쓴 글이다. 다른 방의 인상도 남는다. 지울
+    인상이 하나도 없어도(아래 다른 장면 잊기) 잊기 세대는 오른다 — 진행 중인 생성이 잊은 장면을 읽었을 수 있다."""
+    room, snapshots = await _grouped_room(db_client, db_session, monkeypatch)
+    cited = await _scene(db_session, room, snapshots[5], title="정류장", detail="우산을 나눠 썼다.")
+    uncited = await _scene(db_session, room, snapshots[25], title="빵집", detail="빵집 앞에서 다시 만났다.")
+    await _impression_citing(db_session, room, snapshots[10], "정류장 인상", episodes=[cited])
+    await _impression_citing(db_session, room, snapshots[30], "빵집 아닌 인상")
+    other, other_snapshots = await _grouped_room(db_client, db_session, monkeypatch)
+    other_scene = await _scene(db_session, other, other_snapshots[5])
+    await _impression_citing(db_session, other, other_snapshots[10], "다른 방 인상", episodes=[other_scene])
+    generation = await _generation(db_session, room)
+
+    await forget_episode(db_session, room.room_id, cited)
+    await db_session.commit()
+
+    assert await _impression_texts(db_session, room) == {snapshots[30]: "빵집 아닌 인상"}
+    assert await _impression_texts(db_session, other) == {other_snapshots[10]: "다른 방 인상"}
     assert await _generation(db_session, room) == generation + 1
 
+    await forget_episode(db_session, room.room_id, uncited)
+    await db_session.commit()
 
-async def test_forgetting_a_fact_key_removes_every_impression_of_the_room(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    assert await _impression_texts(db_session, room) == {snapshots[30]: "빵집 아닌 인상"}
+    assert await _generation(db_session, room) == generation + 2
+
+
+async def test_forgetting_a_fact_key_removes_the_impressions_that_cite_any_row_of_that_key(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, _, _, _ = await _room_with_an_impression(db_client, db_session)
+    """키 하나는 여러 스냅샷에 걸친 여러 행(옛 값 포함)이다. 그 키의 어느 행이든 근거로 쓴 인상이 지워진다 — 옛 값 행만 쓴 인상도
+    잊은 키의 옛 값을 품고 있다. 이긴(가장 새) 행만 보거나 한 스냅샷의 행만 보면 옛 값 행을 쓴 인상이 남는다. 같은 키가 아닌
+    사실을 쓴 인상과 장면만 쓴 인상은 남는다."""
+    room, snapshots = await _grouped_room(db_client, db_session, monkeypatch)
+    old_row = await _fact(db_session, room, snapshots[5], value="이웃")
+    new_row = await _fact(db_session, room, snapshots[25], value="소꿉친구")
+    other_key = await _fact(
+        db_session,
+        room,
+        snapshots[30],
+        kind="fact",
+        subject="민수",
+        object=None,
+        attribute="직업",
+        fact_key="fact|민수|직업",
+        value="제빵사",
+    )
+    scene = await _scene(db_session, room, snapshots[15])
+    await _impression_citing(db_session, room, snapshots[10], "옛 값 인상", facts=[old_row])
+    await _impression_citing(db_session, room, snapshots[20], "장면 인상", episodes=[scene])
+    await _impression_citing(db_session, room, snapshots[30], "새 값 인상", facts=[other_key, new_row])
     generation = await _generation(db_session, room)
 
     await forget_fact_key(db_session, room.room_id, "relation|민수|지아")
     await db_session.commit()
 
-    assert await _impressions(db_session, room) == []
+    assert await _impression_texts(db_session, room) == {snapshots[20]: "장면 인상"}
     assert await _generation(db_session, room) == generation + 1
+
+
+@pytest.mark.parametrize(
+    ("known_by", "left"),
+    [
+        pytest.param(["지아"], {"먼 장면 인상"}, id="secret-key-takes-the-impression-of-its-overlapping-scene"),
+        pytest.param(None, {"먼 장면 인상", "겹친 장면 인상"}, id="public-key-keeps-it"),
+    ],
+)
+async def test_forgetting_a_secret_key_removes_the_impressions_that_cite_a_scene_it_forgets_with_it(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    known_by: list[str] | None,
+    left: set[str],
+) -> None:
+    """비밀 키를 잊으면 그 키의 행과 근거 범위가 겹치는 장면도 함께 지워진다. 그 장면만 근거로 쓴 인상(키의 사실 행은 근거에
+    없다)도 지워진다 — 잊은 비밀을 장면 글로 품고 있다. 키의 사실 행 id 만 보면 이 인상이 남는다. 이긴 행이 공개면 장면이
+    지워지지 않으므로 그 인상도 남는다. 겹치지 않는 장면을 쓴 인상은 어느 쪽이든 남는다."""
+    room, snapshots = await _grouped_room(db_client, db_session, monkeypatch)
+    far = await _scene(db_session, room, snapshots[5], title="먼 장면", detail="멀다.", **_span(room, 3, 3))
+    overlapping = await _scene(
+        db_session, room, snapshots[20], title="겹친 장면", detail="몰래.", **_span(room, 17, 18)
+    )
+    await _fact(db_session, room, snapshots[20], value="몰래 사귐", known_by=known_by, **_span(room, 18, 19))
+    await _impression_citing(db_session, room, snapshots[10], "먼 장면 인상", episodes=[far])
+    await _impression_citing(db_session, room, snapshots[20], "겹친 장면 인상", episodes=[overlapping])
+
+    await forget_fact_key(db_session, room.room_id, "relation|민수|지아")
+    await db_session.commit()
+
+    assert set((await _impression_texts(db_session, room)).values()) == left
+
+
+async def test_a_forget_removes_only_the_done_attempts_of_the_groups_whose_impression_it_removed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """지운 인상의 묶음(같은 스냅샷)의 `done` 시도 기록만 지워 그 묶음을 다시 만들 수 있게 한다. 인상이 남은 묶음의 `done` 은
+    남는다 — 지우면 인상이 이미 있어 생성이 고르지 않는 묶음의 기록이 사라져 호출 원가 기록만 잃는다. `failed` 는 어느 묶음이든
+    남는다 — 재시도 상한의 기록이라, 지우면 세 번 실패한 묶음을 잊을 때마다 세 번씩 다시 부른다."""
+    room, snapshots = await _grouped_room(db_client, db_session, monkeypatch)
+    cited = await _scene(db_session, room, snapshots[5])
+    await _impression_citing(db_session, room, snapshots[10], "지울 인상", episodes=[cited])
+    await _impression_citing(db_session, room, snapshots[30], "남을 인상")
+    db_session.add(_plant_attempt(room, snapshots[20], status="failed", attempts=3))
+    await db_session.commit()
+
+    await forget_episode(db_session, room.room_id, cited)
+    await db_session.commit()
+
+    assert {tuple(row) for row in await _attempts(db_session, room)} == {
+        (snapshots[20], "failed", 3, False),
+        (snapshots[30], "done", 1, True),
+    }
+
+
+@pytest.mark.parametrize(
+    ("forget_turn", "calls"),
+    [
+        pytest.param(25, 1, id="newest-group-impression-removed-is-written-again"),
+        pytest.param(5, 0, id="older-group-impression-removed-is-not-backfilled"),
+    ],
+)
+async def test_after_a_forget_only_a_removed_newest_group_is_written_again(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    forget_turn: int,
+    calls: int,
+) -> None:
+    """잊기가 가장 새 묶음의 인상을 지웠으면 다음 생성이 그 묶음 하나만 남은 행으로 다시 만든다(모델 한 번). 지워지지 않은 인상은
+    그대로다. 오래된 묶음의 인상만 지웠으면 다음 생성은 모델을 부르지 않는다 — 생성은 늘 가장 새 묶음만 보고 그 묶음에는 인상이
+    남아 있다. 근거와 무관하게 방의 인상을 다 지우면 오래된 묶음 경우에도 가장 새 묶음이 다시 만들어져 모델을 한 번 더 부른다."""
+    room, snapshots = await _grouped_room(db_client, db_session, monkeypatch)
+    scenes = {
+        turn: await _scene(db_session, room, snapshots[turn], title=f"장면 {turn}", detail=f"턴 {turn} 이야기.")
+        for turn in (5, 25, 30)
+    }
+    await _impression_citing(db_session, room, snapshots[10], "옛 묶음 인상", episodes=[scenes[5]])
+    await _impression_citing(db_session, room, snapshots[30], "새 묶음 인상", episodes=[scenes[25], scenes[30]])
+
+    await forget_episode(db_session, room.room_id, scenes[forget_turn])
+    await db_session.commit()
+    fake = ImpressionLLMClient(MemoryImpressionResult(impression="다시 쓴 인상"))
+    await _generate(db_session, room, fake)
+
+    assert len(fake.prompts) == calls
+    if forget_turn == 25:
+        assert "장면 25" not in fake.prompts[0] and "장면 30" in fake.prompts[0]
+        assert await _impression_texts(db_session, room) == {
+            snapshots[10]: "옛 묶음 인상",
+            snapshots[30]: "다시 쓴 인상",
+        }
+    else:
+        assert await _impression_texts(db_session, room) == {snapshots[30]: "새 묶음 인상"}
 
 
 async def test_the_newest_group_is_written_again_after_a_forget(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """잊기는 그 방의 인상과 함께 `done` 시도 기록을 지운다. 그 묶음이 아직 가장 새 묶음이면 다음 생성이 남은 행으로 인상을 다시
-    만든다 — `done` 이 남으면 선점이 끝난 묶음으로 보고 다시 쥐지 않아 인상이 돌아오지 않는다."""
+    """인상의 근거 장면을 잊으면 그 인상과 함께 그 묶음의 `done` 시도 기록이 지워진다. 그 묶음이 아직 가장 새 묶음이면 다음
+    생성이 남은 행으로 인상을 다시 만든다 — `done` 이 남으면 선점이 끝난 묶음으로 보고 다시 쥐지 않아 인상이 돌아오지 않는다."""
     room, snapshots, scene_id, _ = await _room_with_an_impression(db_client, db_session)
     assert await _attempts(db_session, room) == [(snapshots[2], "done", 1, True)]
 

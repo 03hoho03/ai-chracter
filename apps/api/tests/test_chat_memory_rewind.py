@@ -2125,7 +2125,8 @@ async def test_a_scene_extraction_that_read_its_window_before_a_secret_fact_was_
 # --- 인상 생성과 잊게 하기의 경합 -----------------------------------------------------------------
 #
 # 인상 생성의 마지막 트랜잭션은 묶음의 가장 새 스냅샷을 `FOR KEY SHARE` 로 먼저 잡은 뒤 방의 잊기 세대를 다시 읽고 행을 넣는다.
-# 잊게 하기(장면·사실)는 그 방 스냅샷 전부를 `FOR UPDATE` 로 잡은 뒤 그 방의 인상을 전부 지우고 세대를 올린다.
+# 잊게 하기(장면·사실)는 그 방 스냅샷 전부를 `FOR UPDATE` 로 잡은 뒤 지우는 행을 근거로 쓴 인상과 그 묶음의 `done` 시도 기록을
+# 지우고 세대를 올린다. 근거는 잠금을 얻은 뒤 읽으므로 기다리는 동안 커밋된 인상의 근거까지 본다.
 
 
 class _ImpressionClient(LLMClient):
@@ -2216,6 +2217,70 @@ async def test_a_scene_forgotten_while_an_impression_holds_its_snapshot_takes_th
 
     assert (paused, outcome) == (True, "forgotten")
     assert await _committed_impressions(committed_engine, room) == 0
+
+
+async def _impression_attempt_states(engine: AsyncEngine, room: Room) -> list[str]:
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        return list(
+            (
+                await session.scalars(
+                    sa.select(ChatMemoryImpressionAttempt.status).where(
+                        ChatMemoryImpressionAttempt.chat_room_id == room.room_id
+                    )
+                )
+            ).all()
+        )
+
+
+async def test_a_key_forgotten_while_an_impression_holds_its_snapshot_takes_the_impression_and_its_done_attempt(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """인상 생성이 마지막 트랜잭션에서 스냅샷을 잡고 시도 기록을 `done` 으로 바꾸고 행까지 넣은 채(커밋 전) 멈췄다(입력에 잊을 키의
+    행이 있다). 그때 사용자가 그 키를 잊는다. 잊기는 스냅샷 `FOR UPDATE` 에서 생성 커밋을 기다렸다가, 방금 들어간 인상의 근거에서
+    잊는 키의 행을 보고 그 인상과 `done` 기록을 함께 지운다 — 어느 쪽도 교착으로 끊기지 않는다. 근거를 잠금 전에 읽으면 방금
+    들어간 인상을 못 보고 남긴다."""
+    room, _ = await _room_ready_for_an_impression(committed_engine, monkeypatch)
+    first = await _snapshot_id_at(committed_engine, room, turn=10)
+    async with async_sessionmaker(committed_engine, expire_on_commit=False)() as session:
+        session.add(_make_memory_fact(room.room_id, first, fact_key=_FORGOTTEN_KEY, value="이웃"))
+        await session.commit()
+    gate = _Gate()
+    _pause_after(monkeypatch, memory_impressions, "_insert_impression", gate)
+    generation = asyncio.create_task(_run_impression(committed_engine, room, _ImpressionClient()))
+
+    paused, outcome = await _forget_while_paused(
+        committed_engine, gate, generation, lambda: _forget_committed(committed_engine, room, key=_FORGOTTEN_KEY)
+    )
+
+    assert (paused, outcome) == (True, "forgotten")
+    assert await _committed_impressions(committed_engine, room) == 0
+    assert await _impression_attempt_states(committed_engine, room) == []
+
+
+async def test_a_scene_added_after_an_impression_read_its_input_is_forgotten_without_taking_that_impression(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """인상 생성이 행을 넣은 채(커밋 전) 멈춘 사이 그 묶음 스냅샷에 장면 하나가 더 커밋되고(인상의 입력에 없었다), 사용자가 그
+    장면을 잊는다. 잊기는 생성 커밋을 기다린 뒤 그 인상의 근거를 보고 잊는 장면이 없으니 인상과 `done` 기록을 남긴다 — 교착
+    없이 둘 다 끝난다. 근거와 무관하게 방의 인상을 다 지우면 잊은 내용을 품지 않은 인상까지 사라진다."""
+    room, _ = await _room_ready_for_an_impression(committed_engine, monkeypatch)
+    first = await _snapshot_id_at(committed_engine, room, turn=10)
+    gate = _Gate()
+    _pause_after(monkeypatch, memory_impressions, "_insert_impression", gate)
+    generation = asyncio.create_task(_run_impression(committed_engine, room, _ImpressionClient()))
+
+    async def _add_then_forget_a_late_scene() -> str:
+        late = _make_memory_episode(room.room_id, first, ordinal=1, title="늦은 장면", detail="나중에 들어온 장면.")
+        async with async_sessionmaker(committed_engine, expire_on_commit=False)() as session:
+            session.add(late)
+            await session.commit()
+        return await _forget_committed(committed_engine, room, episode_id=late.id)
+
+    paused, outcome = await _forget_while_paused(committed_engine, gate, generation, _add_then_forget_a_late_scene)
+
+    assert (paused, outcome) == (True, "forgotten")
+    assert await _committed_impressions(committed_engine, room) == 1
+    assert await _impression_attempt_states(committed_engine, room) == ["done"]
 
 
 async def test_an_impression_that_read_its_input_before_a_scene_was_forgotten_discards_its_result(
