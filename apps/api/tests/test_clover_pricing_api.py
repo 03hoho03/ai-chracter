@@ -86,6 +86,7 @@ async def test_response_follows_products_and_cost_constants(
             {"key": "max", "name": "가짜 상품 하나", "priceKrw": 1234, "paidAmount": 411, "bonusAmount": 7},
             {"key": "mini", "name": "가짜 상품 둘", "priceKrw": 5678, "paidAmount": 1892, "bonusAmount": 0},
         ],
+        "priceVersion": clover.PRICE_VERSION,
         "chatTurnCost": 997,
         "imageCost": 998,
         "novelReadCost": 996,
