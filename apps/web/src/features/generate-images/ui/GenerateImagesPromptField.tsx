@@ -13,7 +13,7 @@ import {
 } from "@/entities/clover";
 
 import { getGenerateButtonState } from "../model/generateButtonState";
-import { isImageCloverShort } from "../model/imageCloverCost";
+import { formatImageCostHint, isImageCloverShort } from "../model/imageCloverCost";
 import { getPromptSyntaxHint, PROMPT_WEIGHT_SYNTAX_HINT } from "../model/promptSyntaxHint";
 import type { GenerateImagesFormValues } from "../model/schema";
 import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
@@ -59,6 +59,9 @@ export function GenerateImagesPromptField({ isJobInProgress }: GenerateImagesPro
     });
   // useWatch로 렌더 시점에 계산한다(useEffect 금지, 파생 상태).
   const promptValue = useWatch({ control, name: "prompt" });
+  // 금액 안내는 잔량과 달리 늘 보인다 — 누르기 전에 얼마가 들 수 있는지를 알아야 하므로. 장수를 바꾸면 총액이 따라 바뀐다.
+  const count = useWatch({ control, name: "count" });
+  const costHint = formatImageCostHint(count, imageCost);
   const syntaxHint = getPromptSyntaxHint(promptValue ?? "");
   const isSyntaxWarning = syntaxHint !== PROMPT_WEIGHT_SYNTAX_HINT;
   const describedByIds = errors.prompt
@@ -102,8 +105,14 @@ export function GenerateImagesPromptField({ isJobInProgress }: GenerateImagesPro
               않도록 버튼만 남는다(아래 조건부 렌더). */}
           <div className="flex items-center justify-between gap-2">
             {/* 빈 `<span>`을 항상 두어 `justify-between`이 버튼을 오른쪽에 붙여 둔다 — 조건부로
-                통째로 빼면 버튼이 홀로 남아 왼쪽으로 튄다. */}
-            <span>{shouldShowClover && <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />}</span>
+                통째로 빼면 버튼이 홀로 남아 왼쪽으로 튄다. 금액 안내가 잔량 위에 쌓이는 것도 같은 이유로 이 줄이다 — 좁은
+              화면에서 두 줄이 되어도 버튼 옆을 떠나지 않는다. */}
+            <span className="flex min-w-0 flex-col gap-0.5">
+              {costHint !== undefined && (
+                <span className="text-xs break-keep text-muted-foreground tabular-nums">{costHint}</span>
+              )}
+              {shouldShowClover && <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />}
+            </span>
             {/* 모델 목록이 아직 로딩 중이면 model/style이 비어 있어 제출해도 zod가 조용히 막는다(그
                 필드엔 에러 텍스트 UI가 없다) — 누를 게 없는 상태를 숨기지 않고 버튼을 함께 잠근다.
                 `apps/web/CLAUDE.md` 의 포커스 절 — plain `disabled`는 브라우저가 즉시 blur해 포커스를
