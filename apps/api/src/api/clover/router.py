@@ -297,13 +297,16 @@ async def get_clover_balance(
     """
     user = await _require_active_user(db, user_id)
     now = datetime.now(UTC)
-    paid, bonus = await clover.purchase_balances(db, user_id=user_id)
+    # 잔액과 구매 로트 합을 한 문장(한 스냅샷)으로 읽어 세 몫의 합이 늘 응답의 잔액과 같게 한다(`clover.balance_breakdown`).
+    breakdown = await clover.balance_breakdown(db, user_id=user_id)
+    assert breakdown is not None  # 바로 위에서 회원 행을 읽었고 회원 행은 지우지 않는다(탈퇴는 표시만 남긴다)
+    balance, paid, bonus = breakdown
     return CloverBalanceResponse(
-        balance=user.clover_balance,
+        balance=balance,
         spend_confirmed_today=is_same_kst_day(user.clover_spend_confirmed_on, now),
         # `clover.paid_balance`(`GET /me` 가 읽는다)와 같은 값이다 — 같은 구매 로트 두 종류의 남은 양의 합.
         paid_balance=paid + bonus,
-        breakdown=CloverBalanceBreakdown(paid=paid, bonus=bonus, free=user.clover_balance - paid - bonus),
+        breakdown=CloverBalanceBreakdown(paid=paid, bonus=bonus, free=balance - paid - bonus),
         expiring_soon=await _expiring_soon(db, user_id=user_id, now=now),
     )
 

@@ -659,7 +659,7 @@ async def restore_purchase_lots(
 async def paid_balance(db: AsyncSession, *, user_id: uuid.UUID) -> int:
     """구매로 받은 클로버(유료·보너스)의 남은 양. 탈퇴하면 사라지고 환불은 탈퇴 전에만 신청할 수 있어 탈퇴 경고가 이 값을
     쓴다 — 무료 지급까지 센 전체 잔액으로 경고하면 결제한 적 없는 회원에게도 환불 안내가 뜬다. `GET /me` 가
-    부르고, `GET /me/clover` 는 같은 값을 `purchase_balances` 의 두 몫의 합으로 낸다."""
+    부르고, `GET /me/clover` 는 같은 값을 `balance_breakdown` 의 유료·보너스 합으로 낸다."""
     total = await db.scalar(
         select(func.coalesce(func.sum(CloverLot.remaining), 0)).where(
             CloverLot.user_id == user_id, CloverLot.kind.in_(PURCHASE_LOT_KINDS)
@@ -668,16 +668,31 @@ async def paid_balance(db: AsyncSession, *, user_id: uuid.UUID) -> int:
     return int(total or 0)
 
 
-async def purchase_balances(db: AsyncSession, *, user_id: uuid.UUID) -> tuple[int, int]:
-    """구매로 받은 유료 클로버와 보너스 클로버의 남은 양을 따로 센다(유료, 보너스). 잔액 조회가 잔액을 세 몫으로 나눠 보일 때
-    쓴다 — 무료 몫은 잔액에서 이 둘을 뺀 나머지라 합이 언제나 잔액이다(무료 로트는 종류가 여럿이라 하나씩 세면 빠뜨린다)."""
-    rows = await db.execute(
-        select(CloverLot.kind, func.sum(CloverLot.remaining))
-        .where(CloverLot.user_id == user_id, CloverLot.kind.in_(PURCHASE_LOT_KINDS))
-        .group_by(CloverLot.kind)
-    )
-    remaining = {kind: int(total or 0) for kind, total in rows.all()}
-    return remaining.get("purchase_paid", 0), remaining.get("purchase_bonus", 0)
+async def balance_breakdown(db: AsyncSession, *, user_id: uuid.UUID) -> tuple[int, int, int] | None:
+    """잔액과, 그중 구매로 받은 유료·보너스 클로버의 남은 양(잔액, 유료, 보너스). 회원이 없으면 `None`.
+
+    세 값을 **한 SELECT** 로 읽는다 — 문장 하나는 한 스냅샷을 보므로, 잔액과 로트 합을 따로 읽으면 그 사이 결제 지급이 커밋돼
+    로트 합만 늘고 "무료 = 잔액 − 유료 − 보너스" 가 음수가 될 수 있다. 무료 몫은 호출자가 그 나머지로 낸다(무료 로트는 종류가
+    여럿이라 하나씩 세면 빠뜨린다)."""
+
+    def _remaining(kind: str) -> ColumnElement[int]:
+        return (
+            select(func.coalesce(func.sum(CloverLot.remaining), 0))
+            .where(CloverLot.user_id == user_id, CloverLot.kind == kind)
+            .scalar_subquery()
+        )
+
+    row = (
+        await db.execute(
+            select(User.clover_balance, _remaining("purchase_paid"), _remaining("purchase_bonus")).where(
+                User.id == user_id
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    balance, paid, bonus = row
+    return int(balance), int(paid), int(bonus)
 
 
 async def burn_all(db: AsyncSession, *, user_id: uuid.UUID) -> int:

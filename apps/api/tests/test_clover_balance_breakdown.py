@@ -7,8 +7,10 @@
 from datetime import UTC, datetime
 
 import httpx
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.clover import router as clover_router
 from api.core.clover import grant, spend
 from api.db.models.auth import User
 from factories import _login_as, _make_payment, _make_user
@@ -57,3 +59,27 @@ async def test_breakdown_free_share_is_the_rest_of_the_balance(
     body = (await db_client.get("/me/clover")).json()
 
     assert body["breakdown"] == {"paid": 0, "bonus": 0, "free": 75}
+
+
+async def test_balance_and_shares_come_from_one_snapshot(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """잔액을 앞서 읽은 회원 객체에서 가져오면, 그 뒤 결제 지급이 커밋됐을 때 로트 합만 늘어 무료 몫이 음수가 된다. 앞서 읽은
+    잔액이 낡았다고(0) 꾸며도 응답의 잔액·세 몫은 한 SELECT 의 값이라 합이 맞다."""
+    user = await _logged_in(db_client, db_session)
+    order = await _make_payment(db_session, user_id=user.id, status="paid", paid_at=datetime.now(UTC))
+    await grant(db_session, user_id=user.id, amount=1_000, kind="purchase_paid", payment_id=order.id)
+    await db_session.commit()
+
+    stale = await clover_router._require_active_user(db_session, user.id)
+    stale_copy = User(id=stale.id, clover_balance=0)
+
+    async def stale_user(_db: AsyncSession, _user_id: object) -> User:
+        return stale_copy
+
+    monkeypatch.setattr(clover_router, "_require_active_user", stale_user)
+
+    body = (await db_client.get("/me/clover")).json()
+
+    assert body["balance"] == 1_000
+    assert body["breakdown"] == {"paid": 1_000, "bonus": 0, "free": 0}
