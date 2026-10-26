@@ -1,4 +1,4 @@
-"""`scripts/seed_dev.py` 가 `seed_content/data/` 전체를 발행 상태로 밀어 넣는 배선.
+"""`scripts/seed_dev.py` 가 `seed_content/data/` 의 튜토리얼 작품 전체를 발행 상태로 밀어 넣는 배선.
 
 개별 업서트 동작은 `test_seed_upsert.py` / `test_seed_character_upsert.py` 가 인위적인
 payload 로 이미 검사한다. 여기서는 **커밋된 데이터 파일 전부**가 실제 시드 경로(썸네일 자산
@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import seed_dev
 from api.core.config import settings
@@ -156,21 +156,6 @@ async def test_seed_content_files_is_idempotent(db_session: AsyncSession, s3_buc
     ] == before
 
 
-async def test_seed_dev_main_records_mia_thumbnail_dimensions(
-    db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """샘플 캐릭터 미아의 썸네일은 `ensure_asset` 을 거치지 않고 `main` 이 직접 만든다 — 여기도 크기를 남긴다."""
-    monkeypatch.setattr(
-        seed_dev, "async_session_factory", async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
-    )
-
-    await seed_dev.main()
-
-    asset = await db_session.get(Asset, seed_dev.ASSET_ID, populate_existing=True)
-    assert asset is not None
-    assert (asset.width, asset.height) == images.SIZE
-
-
 @pytest.mark.parametrize(
     "database_url",
     [
@@ -184,8 +169,8 @@ async def test_seed_dev_refuses_non_local_database_before_writing_anything(
     """운영 DB 를 가리키면 썸네일 업로드(저장소 쓰기)를 포함해 아무것도 쓰기 전에 멈춘다."""
     monkeypatch.setattr(settings, "database_url", database_url)
     touched: list[str] = []
-    monkeypatch.setattr(seed_dev, "upload_object", lambda *_args: touched.append("upload_object"))
-    monkeypatch.setattr(seed_dev, "read_image", lambda *_args: touched.append("read_image"))
+    monkeypatch.setattr(images, "upload_object", lambda *_args: touched.append("upload_object"))
+    monkeypatch.setattr(images, "read_image", lambda *_args: touched.append("read_image"))
 
     with pytest.raises(SystemExit):
         await seed_dev.main()

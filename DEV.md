@@ -1,6 +1,6 @@
 # 로컬 개발 환경
 
-늦은 밤 홈에서 Google 로그인 → 샘플 캐릭터 '미아'와 채팅까지, 로컬에서 굴리기 위한 최소 셋업.
+늦은 밤 홈에서 Google 로그인 → 튜토리얼 시드 작품과 채팅까지, 로컬에서 굴리기 위한 최소 셋업.
 
 ## 사전 준비
 
@@ -60,11 +60,10 @@ pnpm --filter @ai-character-chat/admin dev                  # http://localhost:5
 
 ## 3) 채팅
 
-`http://localhost:5173` → Google 로그인 → 홈의 **'미아'** 카드 → 대화 시작.
+`http://localhost:5173` → Google 로그인 → 홈의 튜토리얼 스토리 **「복학했더니 영화 동아리 조감독이 됐다」** 또는 캐릭터 **'민유나'** 카드 → 대화 시작.
 
 - 이메일 회원가입은 실제 메일 발송이 없어(인증코드가 API stdout / Redis에 찍힘) 불편하니 **Google 로그인**을 권장.
-- 시드된 계정으로 바로 로그인해도 된다(비밀번호는 아래 [시드 콘텐츠](#시드-콘텐츠-스토리-30개--캐릭터) 참고).
-- 홈에는 '미아' 외에 장르별 시드 스토리 30개도 함께 올라와 있다.
+- 시드된 계정으로 바로 로그인해도 된다(비밀번호는 아래 [시드 콘텐츠](#시드-콘텐츠-튜토리얼-스토리--캐릭터) 참고).
 
 ## 4) (선택) 원격 접속 — 태블릿/폰에서 실기기 확인
 
@@ -133,10 +132,11 @@ https://<호스트>.<테일넷>.ts.net/s3/   → localhost:5001  (moto, 썸네�
   브라우저가 mixed content로 막아 화면에선 여전히 안 보인다.
 - 이건 dev 전용 문제다. 운영은 R2가 자체 도메인으로 HTTPS 서명 URL을 주므로 해당 없음.
 
-## 시드 콘텐츠 (스토리 30개 + 캐릭터)
+## 시드 콘텐츠 (튜토리얼 스토리 + 캐릭터)
 
-`./dev-up.sh`(또는 `cd apps/api && uv run --env-file .env python scripts/seed_dev.py`)가 장르 10종 × 3개 = **스토리 30개**와
-메이저 캐릭터 1개, 그리고 기존 샘플 캐릭터 '미아'를 전부 **발행 상태**로 넣는다. 고정 UUID 업서트라 몇 번을 돌려도 행이 늘지 않고,
+`./dev-up.sh`(또는 `cd apps/api && uv run --env-file .env python scripts/seed_dev.py`)가 아래 두 계정과, 제작 가이드가 예시로
+인용하는 튜토리얼 작품 둘 — 스토리 「복학했더니 영화 동아리 조감독이 됐다」(`tutorial-filmclub`)와 캐릭터 '민유나'(`tutorial-filmclub-yuna`) —
+을 **발행 상태**로 넣는다. 고정 UUID 업서트라 몇 번을 돌려도 행이 늘지 않고,
 `docker compose -f docker-compose.dev.yml down -v`로 DB를 통째로 날려도 `./dev-up.sh` 한 번이면 같은 상태로 돌아온다.
 
 ### 계정
@@ -174,11 +174,9 @@ v1 로 되돌린다.
 콘텐츠의 진실은 DB가 아니라 리포에 커밋된 JSON이다.
 
 ```
-apps/api/scripts/seed_content/data/
-├── stories/{slug}.json        # 스토리 30개 (파일명 = slug)
-├── characters/{slug}.json     # 캐릭터
-├── diversity_matrix.json      # 30개 콘셉트 원본
-└── image_prompts.json         # 이미지 생성 프롬프트
+apps/api/scripts/seed_content/data/tutorial/
+├── stories/{slug}.json        # 튜토리얼 스토리 (파일명 = slug)
+└── characters/{slug}.json     # 튜토리얼 캐릭터
 ```
 
 **스토리 문구를 고칠 때는 빌더나 DB가 아니라 JSON을 고치고 시드를 다시 돌린다** — 시드는 자기 UUID 행을 파일 값으로 덮어쓰므로
@@ -188,24 +186,13 @@ apps/api/scripts/seed_content/data/
 
 ### 이미지
 
-`apps/api/scripts/seed_content/images/`는 **gitignore**다(생성물 바이너리를 리포에 넣지 않는다). 그래서 새 머신에서는 썸네일·상황 이미지가
+`apps/api/scripts/seed_content/images/`는 **gitignore**다(이미지 바이너리를 리포에 넣지 않는다). 그래서 새 머신에서는 썸네일·상황 이미지가
 장르별 색으로 그려진 **절차적 목업 PNG**로 뜬다 — 채팅·발행·이미지 매칭 동작에는 영향이 없다.
 
-진짜 이미지가 필요하면 집 PC 자가 호스팅 이미지 생성 서버(`DEPLOY.md`의 "이미지 생성" 절)가 떠 있어야 한다.
-`apps/api/.env`에 `LOCAL_IMAGE_BASE_URL`(Cloudflare Access를 앞단에 뒀다면
-`LOCAL_IMAGE_ACCESS_CLIENT_ID`/`LOCAL_IMAGE_ACCESS_CLIENT_SECRET`도)을 채우고:
+진짜 이미지를 쓰려면 그 폴더에 아래 규약의 이름으로 PNG를 넣는다.
 
-```sh
-cd apps/api
-uv run --env-file .env python scripts/generate_seed_images.py --dry-run    # 서버 없이 조립된 프롬프트만 출력
-uv run --env-file .env python scripts/generate_seed_images.py             # 아직 없는 것만 생성
-uv run --env-file .env python scripts/generate_seed_images.py --only romance-3rdloop-dj --force
-```
-
-- CLI의 선행조건 검사는 `LOCAL_IMAGE_BASE_URL`이 비어 있는지만 본다(`--dry-run`은 이 값 없이도 동작한다).
 - 파일명 규약: 콘텐츠 썸네일 `{콘텐츠slug}.png`, 상황 이미지 `{캐릭터slug}-scene{n}.png`(1-based). 이 이름이 아니면 시드가 목업으로 폴백한다.
-- 생성 후 시드를 다시 돌려야 S3(moto)에 올라간다. moto는 인메모리라 컨테이너를 재생성할 때마다 시드가 매번 재업로드한다.
-- **재생성한 이미지는 원본과 픽셀 단위로 같지 않다.** 로컬 서버는 시드값을 고정하지 않으므로 같은 프롬프트라도 매번 다른 그림이 나온다 — 커밋된 건 프롬프트뿐이고, 원본 픽셀은 어디에도 보존되지 않는다.
+- 파일을 넣은 뒤 시드를 다시 돌려야 S3(moto)에 올라간다. moto는 인메모리라 컨테이너를 재생성할 때마다 시드가 매번 재업로드한다.
 
 ## 구성 요소
 
@@ -264,9 +251,8 @@ export TEST_REDIS_URL=redis://localhost:6379/<인덱스>
 - **DB를 완전히 초기화하고 싶을 때**: `docker compose -f docker-compose.dev.yml down -v` 후 `./dev-up.sh`.
 - **캐릭터 목록이 비어 있음**: `cd apps/api && uv run alembic upgrade head && uv run --env-file .env python scripts/seed_dev.py`로 복구.
   (`pytest`는 dev DB를 건드리지 않는다 — 별도의 `ai_character_chat_test`를 쓴다. `apps/api/CLAUDE.md` 참고.)
-- **시드 캐릭터의 문구/프롬프트를 고치고 싶을 때**: `apps/api/scripts/seed_dev.py`를 고친 뒤 그대로 다시 실행하면 된다.
-  고정 UUID upsert라 재실행이 스크립트의 값으로 덮어쓴다. 직접 만든 대화방·자산은 건드리지 않는다.
-  (단 '미아' 얘기다 — 시드 스토리 30개와 메이저 캐릭터는 `seed_dev.py`가 아니라 `seed_content/data/`의 JSON이 원본이다. 위 [시드 콘텐츠](#시드-콘텐츠-스토리-30개--캐릭터) 참고.)
+- **시드 작품의 문구/프롬프트를 고치고 싶을 때**: `apps/api/scripts/seed_content/data/`의 JSON을 고친 뒤 `seed_dev.py`를 다시 실행하면 된다.
+  고정 UUID upsert라 재실행이 파일의 값으로 덮어쓴다. 직접 만든 대화방·자산은 건드리지 않는다. 위 [시드 콘텐츠](#시드-콘텐츠-튜토리얼-스토리--캐릭터) 참고.
 - **`.env`의 `CORS_ALLOW_ORIGINS`를 JSON 배열로 넣었더니 API가 기동 실패**: `uv run --env-file`이 값 안의 `"`를 셸 인용부호로
   보고 벗겨낸다(`["a","b"]` → `[a,b]` → JSON 파싱 실패). 쉼표 구분(`CORS_ALLOW_ORIGINS=http://a,http://b`)으로 쓰거나, 로컬 기본값이면
   줄을 지운다. 홑따옴표로 감싸는 예전 우회(`KEY='["a","b"]'`)는 위 "env 파일 형식" 의 따옴표 규칙에 막힌다.

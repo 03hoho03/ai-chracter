@@ -165,7 +165,7 @@
 
 테스트가 강제하는 것이다. 새 시드나 문안 수정은 이 테스트들을 통과해야 한다.
 
-`apps/api/tests/test_seed_content_data.py` — 매트릭스 시드와 튜토리얼 시드 모두(`load_all_stories`·`load_all_characters`·`STORY_DIRS`·`CHARACTER_DIRS`):
+`apps/api/tests/test_seed_content_data.py` — 시드 폴더 목록에 든 작품 모두(`load_all_stories`·`load_all_characters`·`STORY_DIRS`·`CHARACTER_DIRS`):
 
 - `test_every_seed_story_passes_publish_validation`, `test_every_seed_character_passes_publish_validation` — 발행 필수 필드.
 - `test_every_seed_story_setting_text_instructs_the_narrator` — 스토리 설정이 서술자 지시를 담는다.
@@ -175,24 +175,23 @@
 - `test_seed_story_setting_text_does_not_quote_stat_names`, `test_seed_story_setting_text_does_not_hand_the_narrator_a_named_stat` — 스토리 설정이 스탯 이름을 인용하거나 "이름 + 스탯/게이지/수치"로 지목하지 않는다. 지목하면 모델이 본문에 가짜 표시기를 그린 실측이 있다(docstring).
 - `test_seed_ending_judgment_prompts_do_not_restate_rule_thresholds` — 판단 프롬프트가 규칙의 임계값을 되묻지 않는다.
 - `test_seed_per_turn_counters_are_system_driven_not_llm_judged` — 설명이 "매 턴 반드시" 류로 읽히는 스탯은 `perTurnDelta`가 있어야 한다.
-- `test_every_seed_story_keeps_its_matrix_concept`, `test_major_story_matches_the_fixed_concept` — 매트릭스 폴더만 본다(아래 8).
 
 `apps/api/tests/test_seed_dev_content.py` — `seed_dev` 경로가 모든 시드 파일을 발행하고, 전개 예시를 JSON 그대로 쓰고, 두 번 돌려도 같은지.
 
 `apps/api/tests/test_seed_tutorial_content.py` — 튜토리얼 전용:
 
-- `test_tutorial_content_slugs_are_fixed`, `test_tutorial_content_stays_outside_the_diversity_matrix`, `test_every_seed_invariant_list_covers_the_tutorial_folders`, `test_seed_slugs_do_not_collide_across_folders`.
-- `test_tutorial_stat_icons_and_colors_are_builder_choices`, `test_tutorial_stat_initial_values_sit_inside_their_range`, `test_tutorial_ending_gates_meet_the_builder_minimum` — 매트릭스 시드는 생성기가 이것을 강제하지만 튜토리얼 JSON은 손으로 쓰므로 여기서 본다.
+- `test_tutorial_content_slugs_are_fixed`, `test_every_seed_invariant_list_covers_the_tutorial_folders`, `test_seed_slugs_do_not_collide_across_folders`.
+- `test_tutorial_stat_icons_and_colors_are_builder_choices`, `test_tutorial_stat_initial_values_sit_inside_their_range`, `test_tutorial_ending_gates_meet_the_builder_minimum` — 튜토리얼 JSON은 손으로 쓰고 파일을 쓰기 전에 이것을 강제하는 도구가 없어 여기서 본다.
 
 가이드 원고가 인용하는 시드 문안에는 두 가지 추가 제약이 있다.
 
 - 영문 대문자 뒤에 하이픈과 숫자가 붙는 꼴을 쓰지 않는다. 원고는 추적되는 `.md`라 CI `citations`가 줄 전체를 읽고, 인용 블록 안에서는 예외 표시를 달 자리가 없다.
 - 백틱 네 개 이상이 이어진 글을 쓰지 않는다. 원고의 예시 블록 펜스가 백틱 네 개라 일찍 닫힌다.
 
-## 8. 튜토리얼 시드가 다양성 매트릭스 밖인 이유
+## 8. 튜토리얼 시드의 자리
 
-- 매트릭스(`seed_content/matrix.py`, `diversity_matrix.json`, `test_seed_matrix.py`)는 장르당 세 칸과 축별 분포를 고정 slug 목록으로 강제한다. 튜토리얼 예시 작품은 그 칸을 채우려고 만든 작품이 아니라 제작 가이드의 단계마다 좋은 작성 예로 읽히도록 설계한 작품이라, 매트릭스 폴더에 넣으면 매트릭스 대조가 깨지고 매트릭스를 고치면 30편의 분포가 흔들린다.
-- 그래서 폴더를 나눴다: `seed_content/loader.py`의 `TUTORIAL_STORIES_DIR`·`TUTORIAL_CHARACTERS_DIR`. 매트릭스 검사는 `load_stories()`·`load_characters()`의 기본 폴더만 보고, 발행·서술 불변식은 `STORY_DIRS`·`CHARACTER_DIRS`·`load_all_*()`로 두 폴더를 다 본다. `seed_dev.py`도 `load_all_*()`로 두 폴더를 다 넣는다.
+- 저장소에 든 시드는 튜토리얼 예시 작품뿐이고 `apps/api/scripts/seed_content/data/tutorial/`에 있다. 제작 가이드의 단계마다 좋은 작성 예로 읽히도록 설계한 작품이다.
+- 폴더 목록은 `seed_content/loader.py`의 `STORY_DIRS`·`CHARACTER_DIRS` 하나다. 발행·서술 불변식은 이 목록과 `load_all_*()`로 돌고, `seed_dev.py`도 `load_all_*()`로 넣는다.
 - 새 튜토리얼 작품(예: 이미지 튜토리얼용)을 더할 때도 같은 폴더에 두고 `test_seed_tutorial_content.py`의 slug 목록을 늘린다.
 
 ## 9. 가이드 원고와 시드의 대조

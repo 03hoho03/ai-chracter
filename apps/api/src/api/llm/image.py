@@ -12,9 +12,8 @@ import abc
 
 # `as ImageStylePreset`는 mypy의 명시적 재export 요구(`--no-implicit-reexport`, strict
 # 기본값) 때문이다 — `from api.llm.image import ImageStylePreset`로 이 이름을 쓰는 테스트가
-# 아직 셋 있다(`test_images_capabilities_gate.py`/`test_images_generate_api.py`/
-# `test_seed_image_prompts.py`). 그 셋의 import 줄을 전부 고치는 대신, 이 한 줄로 기존
-# import 경로를 계속 유효하게 둔다.
+# 아직 둘 있다(`test_images_capabilities_gate.py`/`test_images_generate_api.py`). 그 둘의
+# import 줄을 전부 고치는 대신, 이 한 줄로 기존 import 경로를 계속 유효하게 둔다.
 from api.images.models import ImageStylePreset as ImageStylePreset
 
 

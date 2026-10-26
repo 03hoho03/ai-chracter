@@ -2,21 +2,20 @@
 
 파일 하나 = 콘텐츠 하나이고 파일명(확장자 제외)이 곧 slug 다:
 
-    data/stories/{slug}.json      -> StoryDraftPayload
-    data/characters/{slug}.json   -> CharacterDraftPayload
+    data/tutorial/stories/{slug}.json      -> StoryDraftPayload
+    data/tutorial/characters/{slug}.json   -> CharacterDraftPayload
 
-`data/stories/`·`data/characters/` 는 다양성 매트릭스 소속 시드만 담는다. 제작 가이드가 단계마다
-예시로 인용하는 튜토리얼 작품은 매트릭스 밖이라 `data/tutorial/{stories,characters}/` 에 따로
-둔다 — 기본 `load_stories()`/`load_characters()` 는 매트릭스 폴더만 보고, 발행 불변식처럼 모든
-시드에 걸리는 검사와 `seed_dev` 는 두 폴더를 다 보는 `load_all_*()`·`*_DIRS` 를 쓴다.
+저장소에 든 시드는 제작 가이드가 단계마다 예시로 인용하는 튜토리얼 작품뿐이다. 발행 불변식처럼
+모든 시드에 걸리는 검사와 `seed_dev` 는 `load_all_*()`·`*_DIRS` 를 돌아, 시드 폴더가 늘어도
+같은 목록 하나만 고치면 된다.
 
 JSON 은 API 요청 바디와 같은 camelCase 이며 기존 draft 스키마 그대로 검증한다 — 시드
 전용 스키마를 따로 두지 않는다. 그래야 빌더 API 가 받는 것과 같은 모양임이 보장되고,
 스키마가 바뀌면 시드가 조용히 어긋나는 대신 파일명을 담은 에러로 죽는다.
 
 **엔티티 id 는 JSON 에 적지 않는다.** 리스트 안의 객체마다 파일 안에서의 위치
-(`story:romance-3rdloop:startingSetups[0]:endings[1]`)로 `seed_uuid` 를 파생해 채우므로
-사람도 생성기도 UUID 를 쓸 필요가 없다. 대신 위치가 곧 id 라, 이미 시드된 콘텐츠의 리스트
+(`story:tutorial-filmclub:startingSetups[0]:endings[1]`)로 `seed_uuid` 를 파생해 채우므로
+사람이 UUID 를 쓸 필요가 없다. 대신 위치가 곧 id 라, 이미 시드된 콘텐츠의 리스트
 **중간에** 항목을 끼워 넣으면 그 뒤 항목들의 id 가 전부 밀린다 — 새 항목은 뒤에 붙일 것.
 JSON 이 `id` 를 직접 적어두면 그 값을 그대로 존중한다.
 
@@ -31,7 +30,6 @@ JSON 이 `id` 를 직접 적어두면 그 값을 그대로 존중한다.
 `startingSetups[].situationNotes[].conditionRules[]` 에 쓰고, 생략해도 된다.
 """
 
-import copy
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -45,14 +43,12 @@ from api.content.schemas import CharacterDraftPayload, StoryDraftPayload
 from .ids import seed_uuid
 
 DATA_DIR = Path(__file__).parent / "data"
-STORIES_DIR = DATA_DIR / "stories"
-CHARACTERS_DIR = DATA_DIR / "characters"
 TUTORIAL_STORIES_DIR = DATA_DIR / "tutorial" / "stories"
 TUTORIAL_CHARACTERS_DIR = DATA_DIR / "tutorial" / "characters"
 # 시드 폴더 목록의 단일 소스 — 로더를 거치는 검사와 원문 JSON 을 직접 읽는 검사가 같은 목록을
 # 돌아야 한쪽만 새 폴더를 보는 일이 없다.
-STORY_DIRS = (STORIES_DIR, TUTORIAL_STORIES_DIR)
-CHARACTER_DIRS = (CHARACTERS_DIR, TUTORIAL_CHARACTERS_DIR)
+STORY_DIRS = (TUTORIAL_STORIES_DIR,)
+CHARACTER_DIRS = (TUTORIAL_CHARACTERS_DIR,)
 
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
 
@@ -81,22 +77,11 @@ def load_character(path: Path) -> CharacterDraftPayload:
     return _load_payload(path, CharacterDraftPayload, "character")
 
 
-def parse_story(raw: dict[str, Any], slug: str) -> StoryDraftPayload:
-    """아직 파일이 아닌 JSON 객체를 `load_story` 와 똑같은 규칙으로 검증한다(배치 생성기용).
-
-    생성기가 만든 dict 를 **쓰기 전에** 통과시키려는 것이라 경로 대신 slug 를 받는다 — id
-    파생 경로와 에러 메시지가 실제로 저장될 파일과 같아야 한다. 인자는 건드리지 않는다
-    (검증 과정에서 채워지는 id 가 파일에 새어 나가면 "시드 JSON 에 UUID 를 쓰지 않는다"는
-    규약이 깨진다).
-    """
-    return _parse_payload(copy.deepcopy(raw), StoryDraftPayload, "story", slug, _resolve_stat_refs)
-
-
-def load_stories(directory: Path = STORIES_DIR) -> list[SeedStory]:
+def load_stories(directory: Path) -> list[SeedStory]:
     return [SeedStory(slug=path.stem, payload=load_story(path)) for path in _json_files(directory)]
 
 
-def load_characters(directory: Path = CHARACTERS_DIR) -> list[SeedCharacter]:
+def load_characters(directory: Path) -> list[SeedCharacter]:
     return [
         SeedCharacter(slug=path.stem, payload=load_character(path))
         for path in _json_files(directory)

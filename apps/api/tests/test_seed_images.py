@@ -16,7 +16,7 @@ from api.db.models.media import Asset, AssetKind, AssetStatus
 from seed_content import images
 from seed_content.ids import SEED_AUTHOR_USER_ID
 
-# 30개 시드 스토리의 slug — 목업은 이 조합에서 카드가 서로 구분돼야 한다.
+# 장르마다 slug 셋(예전에 시드하던 스토리 30편의 slug) — 목업은 같은 장르 안에서 카드가 서로 구분돼야 한다.
 GENRE_SLUGS: dict[str, list[str]] = {
     "로맨스": ["romance-3rdloop", "romance-lockedwith", "romance-threeoffering"],
     "판타지": ["fantasy-burnlife", "fantasy-guildkitchen", "fantasy-inkcity"],
@@ -92,10 +92,10 @@ def test_mock_thumbnail_hue_differs_by_genre() -> None:
 
 
 def test_mock_thumbnails_are_distinguishable_within_each_genre() -> None:
-    """30개 시드 slug 로 실제 카드가 겹치지 않는지 본다.
+    """장르마다 slug 셋으로 카드가 겹치지 않는지 본다.
 
     명도는 slug 해시라 슬롯끼리 우연히 붙을 수 있어서(사전 조정 불가) 띠 위치·기울기를 함께
-    본다 — 한 축이 붙으면 다른 축이 벌어져야 한다. slug 를 추가·변경하면 여기서 잡힌다.
+    본다 — 한 축이 붙으면 다른 축이 벌어져야 한다.
     """
     for genre, slugs in GENRE_SLUGS.items():
         cards = [

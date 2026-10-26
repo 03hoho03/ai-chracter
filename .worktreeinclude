@@ -17,7 +17,7 @@ tasks/archive/**
 docs/**
 
 # 필요할 때만 주석 해제
-# 워크트리에서 시드를 재실행할 때 (38M)
+# 워크트리에서 시드를 실제 이미지로 재실행할 때
 # apps/api/scripts/seed_content/images/**
 # 시각 회귀 비교할 때 (20M)
 # tasks/baseline/**
