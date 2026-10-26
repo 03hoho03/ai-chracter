@@ -11,13 +11,15 @@ api 프로세스 안에서 돌던 작업은 api 교체(blue/green) 때 프로세
 수만큼 고른 뒤 api 와 같은 `run_job` 으로 돌린다. 받기는 `run_job` 안의 조건부 전이(대기 → 실행)라, 교체 구간에 워커 둘이
 같은 행을 골라도 한쪽만 돈다. 연쇄 자식은 부모가 직접 돌리고, 연쇄 부모는 api 안에서 돈다 — 둘 다 집지 않는다.
 
-**종류는 아는 목록으로만 고른다**("연쇄 부모가 아닌 것"이 아니라). 교체 동안 새 api 가 만든 작업을 옛 워커가 집는데, 실행
-경로는 종류로 갈라지고 마지막 갈래가 장 생성이라, 옛 워커가 모르는 새 종류를 집으면 장 생성으로 돌려 과금된 엉뚱한 결과를
-저장한다. 아는 목록이면 모르는 종류는 새 워커가 뜰 때까지 대기로 남는다. 목록은 `NovelJobKind` 에서 끌어내지 않고 손으로
-적는다 — 끌어내면 종류만 더하고 실행 갈래를 빠뜨린 변경이 그대로 마지막 갈래로 흐른다. 이 목록이 "작업 종류 전체 − 연쇄
-부모"와 같은지는 테스트가 고정한다. 이 목록이 못 막는 것은 **이미 있는 종류에 실행 갈래를 가르는 칸을 더하는 변경**이다 —
-옛 워커가 그 칸을 모른 채 옛 갈래로 저장한다. 그 칸을 채우는 라우트는 워커 쪽 처리가 배포된 다음에 켜거나, 스위치를 끄는
-교체로 워커를 비운 뒤 켠다.
+**종류는 아는 목록으로만 고른다**("연쇄 부모가 아닌 것"이 아니라). 교체 동안 새 api 가 만든 작업을 옛 워커가 집는데, 옛
+워커가 모르는 새 종류를 집으면 실행 경로가 그 종류를 판정하지 못해 내부 오류로 환불한다. 아는 목록이면 모르는 종류는 새 워커가
+뜰 때까지 대기로 남아 새 워커에게 넘어간다. 갈래 판정(`job_variants.variant_of`)이 종류 전부를 덮는지 타입 검사가 보고 실행이
+갈래 표로만 가므로, 종류를 더하고 실행 갈래를 빠뜨린 변경은 타입 검사에서 막힌다 — 그래서 목록은 갈래 표의 워커 칸에서 끌어낸다.
+이 목록이 "작업 종류 전체 − 연쇄 부모"와 같은지는 테스트가 리터럴로 고정한다. 장 생성은 워커가 도는 갈래(혼자 도는 생성)와 안
+도는 갈래(연쇄 자식)로 갈려 종류 목록만으로는 거를 수 없어, 고르기 조회가 연쇄 부모 칸 조건을 따로 건다.
+
+이 목록이 못 막는 것은 **이미 있는 종류에 실행 갈래를 가르는 칸을 더하는 변경**이다 — 옛 워커가 그 칸을 모른 채 옛 갈래로
+저장한다. 그 칸을 채우는 라우트는 워커 쪽 처리가 배포된 다음에 켜거나, 스위치를 끄는 교체로 워커를 비운 뒤 켠다.
 
 **만료 정리**: 폴링 루프가 heartbeat 만료 + 10초 뒤 처음, 그 뒤 60초마다 모든 소설의 만료 작업을 실패·환불한다. api 의 기동
 뒤 정리는 기동마다 한 번이라, 옛 프로세스가 그 뒤에 죽인 작업(유예를 넘겨 잘린 옛 워커의 작업, api 교체로 죽은 연쇄)은
@@ -46,19 +48,14 @@ from api.clover.unit import assert_clover_unit_matches
 from api.db.session import async_session_factory, engine
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
+from api.novelize.job_variants import kinds_where
 from api.novelize.runner import _STARTUP_EXPIRY_MARGIN_SECONDS, SessionFactory, expire_all_stale_jobs, run_job
 
 logger = logging.getLogger(__name__)
 
-# 이 코드가 처리할 줄 아는 작업 종류. 종류를 더하면 실행 갈래(`runner._execute`)와 함께 여기에도 손으로 더한다.
-WORKER_JOB_KINDS: tuple[NovelJobKind, ...] = (
-    "chapter_generate",
-    "chapter_regenerate",
-    "outline_chapter_generate",
-    "ai_edit",
-    "outline_generate",
-    "episode_outline_generate",
-)
+# 이 코드가 처리할 줄 아는 작업 종류 — 갈래 표에서 워커가 도는 갈래의 종류. 옛 워커가 이 목록에 없는 종류를 집으면 실행 경로가
+# 판정하지 못해 내부 오류로 환불하므로, 목록이 그 행을 대기로 남겨 새 워커에게 넘긴다. 고르기가 부를 때 이 이름을 읽는다.
+WORKER_JOB_KINDS: tuple[NovelJobKind, ...] = kinds_where(worker_runs=True)
 
 # 컨테이너는 비루트 사용자로 돌아 /tmp 에만 쓸 수 있다. 헬스체크가 같은 경로를 본다.
 ALIVE_FILE = Path("/tmp/novelize-worker.alive")

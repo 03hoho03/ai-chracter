@@ -7,8 +7,9 @@
 묶음의 출력 길이는 턴 수가 정하고, 화 수 상한은 그 출력을 몇 덩어리로 나눌 수 있는지를 정한다."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Literal, assert_never
+from typing import Literal
 
 from api.chat.prompt_builder import PromptNames, _turn_text
 from api.core.config import settings
@@ -16,26 +17,33 @@ from api.llm.chat_models import ChatModelId
 from api.novelize.source import SourceTurn
 
 
+@dataclass(frozen=True)
+class NovelModelLimits:
+    """모델 하나의 묶음 상한 — 값이 아니라 설정 이름이다. 값은 부를 때마다 `settings` 에서 읽는다(테스트·운영이 바꾼 설정이 그대로
+    실린다). 모델마다 같은 값인 상한(구성안 입력 상한·연쇄 묶음 수 상한 등)은 넣지 않는다 — 모델별 칸에 두면 모델마다 다른 값처럼
+    보인다."""
+
+    k_max_setting: str
+    max_turns_setting: str
+
+
+NOVEL_MODEL_LIMITS: dict[ChatModelId, NovelModelLimits] = {
+    "gemini": NovelModelLimits(k_max_setting="novelize_k_max_gemini", max_turns_setting="novelize_chapter_max_turns"),
+    "sonnet": NovelModelLimits(
+        k_max_setting="novelize_k_max_sonnet", max_turns_setting="novelize_chapter_max_turns_sonnet"
+    ),
+    "opus": NovelModelLimits(k_max_setting="novelize_k_max_opus", max_turns_setting="novelize_chapter_max_turns_opus"),
+}
+
+
 def k_max(model: ChatModelId) -> int:
     """묶음 하나가 나뉠 수 있는 화 수의 상한."""
-    if model == "gemini":
-        return settings.novelize_k_max_gemini
-    if model == "sonnet":
-        return settings.novelize_k_max_sonnet
-    if model == "opus":
-        return settings.novelize_k_max_opus
-    assert_never(model)
+    return int(getattr(settings, NOVEL_MODEL_LIMITS[model].k_max_setting))
 
 
 def chapter_max_turns(model: ChatModelId) -> int:
     """묶음 하나가 담을 수 있는 원문 턴(AI 응답) 수의 상한."""
-    if model == "gemini":
-        return settings.novelize_chapter_max_turns
-    if model == "sonnet":
-        return settings.novelize_chapter_max_turns_sonnet
-    if model == "opus":
-        return settings.novelize_chapter_max_turns_opus
-    assert_never(model)
+    return int(getattr(settings, NOVEL_MODEL_LIMITS[model].max_turns_setting))
 
 
 def source_chars(turns: Sequence[SourceTurn], names: PromptNames) -> int:
