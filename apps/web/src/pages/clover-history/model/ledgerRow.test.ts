@@ -27,12 +27,23 @@ describe("toLedgerRowView", () => {
     expect(toLedgerRowView(item({ legacyUnit: true }))).toMatchObject({ kind: "entry", isLegacyUnit: true });
   });
 
-  // 단위 전환은 거래가 아니라 경계다 — 금액 행으로 그리면 잔액이 그만큼 늘거나 준 거래로 읽힌다.
-  it.each(["unit_conversion", "unit_conversion_revert"])("단위 전환 기록(%s)은 경계 줄이다", (kind) => {
+  // 단위 전환은 거래가 아니라 경계다 — 금액 행으로 그리면 잔액이 그만큼 늘거나 준 거래로 읽힌다. 문구는 원장 종류 이름이
+  // 아니라 무슨 일이 있었는지를 사용자 말로 한다.
+  it.each([
+    ["unit_conversion", "클로버 단위가 1원 단위로 바뀌었어요"],
+    ["unit_conversion_revert", "클로버 단위가 이전 단위로 돌아갔어요"],
+  ])("단위 전환 기록(%s)은 경계 줄이다", (kind, title) => {
     expect(toLedgerRowView(item({ kind, category: "conversion", amount: 2400, balanceAfter: 3600 }))).toEqual({
       kind: "boundary",
-      label: kind === "unit_conversion" ? "1원 단위 전환" : "단위 전환 되돌림",
-      balanceAfter: "3,600",
+      title,
+      balance: "이때 잔액 클로버 3,600개",
+    });
+  });
+
+  it("모르는 전환 종류도 경계 줄로 그리고 바뀌었다고만 말한다", () => {
+    expect(toLedgerRowView(item({ kind: "unit_future", category: "conversion" }))).toMatchObject({
+      kind: "boundary",
+      title: "클로버 단위가 바뀌었어요",
     });
   });
 });

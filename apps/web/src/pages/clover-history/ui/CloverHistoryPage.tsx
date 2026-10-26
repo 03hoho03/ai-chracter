@@ -144,10 +144,10 @@ function CloverLedgerRow({ item }: { item: CloverLedgerItem }) {
       <li className="flex items-center gap-3 py-2">
         <span aria-hidden className="h-px flex-1 bg-border" />
         <span className="flex flex-col items-center gap-0.5 text-center text-xs break-keep text-muted-foreground">
-          <span className="font-medium text-foreground">
-            {row.label} · {formatDate(item.createdAt)}
+          <span className="font-medium text-foreground">{row.title}</span>
+          <span className="tabular-nums">
+            {formatDate(item.createdAt)} · {row.balance}
           </span>
-          <span className="tabular-nums">이때 잔액 클로버 {row.balanceAfter}개</span>
         </span>
         <span aria-hidden className="h-px flex-1 bg-border" />
       </li>
