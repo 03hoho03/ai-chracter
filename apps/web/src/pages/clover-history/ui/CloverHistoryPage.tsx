@@ -7,7 +7,6 @@ import {
   CLOVER_KIND_LABELS,
   formatCloverLedgerAmount,
   useCloverLedgerQuery,
-  type CloverLedgerCategory,
   type CloverLedgerItem,
 } from "@/entities/clover";
 import { ContentListEmptyState, ContentListLoadMore } from "@/entities/content";
@@ -80,7 +79,7 @@ export function CloverHistoryPage({ search, onSearchChange }: CloverHistoryPageP
   );
 }
 
-function CloverLedgerTabPanel({ category }: { category: CloverLedgerCategory }) {
+function CloverLedgerTabPanel({ category }: { category: CloverHistoryTab }) {
   const query = useCloverLedgerQuery(category);
   const listRef = useRef<HTMLUListElement>(null);
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
