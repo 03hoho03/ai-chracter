@@ -5,7 +5,7 @@ export type { CloverBalanceResponse } from "./api/useCloverBalanceQuery";
 export { useConfirmCloverSpendMutation } from "./api/useConfirmCloverSpendMutation";
 export { useCloverMissionsQuery } from "./api/useCloverMissionsQuery";
 export type { CloverMissionItem } from "./api/useCloverMissionsQuery";
-export { useCloverPricingQuery } from "./api/useCloverPricingQuery";
+export { readCloverPricing, refetchCloverPricing, useCloverPricingQuery } from "./api/useCloverPricingQuery";
 export type { CloverPricingResponse, CloverProductItem } from "./api/useCloverPricingQuery";
 export { useClaimCloverMissionMutation } from "./api/useClaimCloverMissionMutation";
 export { useCloverLedgerQuery } from "./api/useCloverLedgerQuery";
@@ -18,6 +18,14 @@ export { IMAGE_CLOVER_COST } from "./model/cloverCost";
 export { isCloverInsufficient, shouldShowCloverBalance } from "./model/cloverBalanceDisplay";
 export { isCloverSpendConfirmRequired } from "./model/cloverSpendConfirm";
 export type { CloverSpendConfirmOutcome } from "./model/cloverSpendConfirm";
+export {
+  allowanceAfterCloverConfirm,
+  canAskCloverConfirm,
+  FIRST_CLOVER_CONFIRM_ALLOWANCE,
+  getCloverPriceChangedCost,
+  isCloverPriceChangedError,
+} from "./model/cloverPriceChanged";
+export type { CloverConfirmAllowance } from "./model/cloverPriceChanged";
 export { formatCloverExpiringSoonMessage } from "./model/cloverExpiringSoonDisplay";
 export { CLOVER_EXPIRY_NOTICE_MESSAGE } from "./model/cloverExpiryNotice";
 export { projectCloverMissionState } from "./model/cloverMissionState";

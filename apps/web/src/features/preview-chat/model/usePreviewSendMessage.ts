@@ -2,7 +2,13 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { getChatRateLimit, type ChatRateLimit } from "@/entities/chat-room";
-import { cloverKeys } from "@/entities/clover";
+import {
+  allowanceAfterCloverConfirm,
+  canAskCloverConfirm,
+  cloverKeys,
+  FIRST_CLOVER_CONFIRM_ALLOWANCE,
+  readCloverPricing,
+} from "@/entities/clover";
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 import { isIdentityVerificationRequiredError } from "@/entities/identity";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
@@ -56,8 +62,8 @@ export function usePreviewSendMessage(
   const [policyWarning, setPolicyWarning] = useState<string>();
   const [streamingText, setStreamingText] = useState("");
 
-  /** `allowCloverConfirm`은 **무한 루프 차단기**다 — 동의 뒤 재시도는 `false`로 들어가므로
-   * 재시도가 또 확인 429를 받아도 모달을 다시 띄우지 않는다.
+  /** `allowance`는 **무한 루프 차단기**다 — 동의 뒤 재시도는 그 확인을 뺀 값으로 들어가므로
+   * 재시도가 또 확인 429를 받아도 모달을 다시 띄우지 않는다(가격 바뀜 확인 뒤에는 하루 한 번 확인만 남는다).
    *
    * 미리보기도 채팅 일일 창을 공유하므로 막는 대상이 `useSendMessage`와 같다 — **서버가 커밋된
    * 동의를 인정하지 않는 경우** 하나뿐이고, 동의 POST 실패나 자정 넘김은 여기서 성립하지 않는다.
@@ -73,7 +79,7 @@ export function usePreviewSendMessage(
     previewSessionId: string,
     text: string,
     shortcutId?: string,
-    allowCloverConfirm = true,
+    allowance = FIRST_CLOVER_CONFIRM_ALLOWANCE,
   ): Promise<void> {
     const optimisticMessage: PreviewChatMessage = {
       id: crypto.randomUUID(),
@@ -106,9 +112,11 @@ export function usePreviewSendMessage(
     let sessionEnded: SessionEndReason | undefined;
 
     try {
+      // 가격 버전은 보내는 순간 캐시에서 읽는다 — 가격 바뀜 확인 뒤 재전송이 다시 받은 가격표의 버전을 싣는다.
       for await (const event of openChatStream(
         buildPreviewSendPayload({ previewSessionId, text, shortcutId }),
         previewStreamEventSchema,
+        { priceVersion: readCloverPricing(queryClient)?.priceVersion },
       )) {
         if (event.type === "token") {
           setStreamingText((prev) => prev + event.delta);
@@ -141,7 +149,8 @@ export function usePreviewSendMessage(
       // 텍스트로 한 번 더 보낸다. 🔴 재전송은 `send`를 다시 부르므로 **낙관적 사용자 메시지가
       // 한 번 더 추가된다** — 그래서 아래 `finally`가 끝난 뒤가 아니라 여기서 `return`하지 않고,
       // 재전송 전에 방금 넣은 낙관적 메시지를 되돌린다.
-      const confirmOutcome = allowCloverConfirm ? await confirmCloverSpend?.(error) : undefined;
+      // 가격이 바뀌었다는 409 도 같은 길이다(저절로 다시 보내지 않고 새 가격으로 보낼지 묻는다).
+      const confirmOutcome = canAskCloverConfirm(error, allowance) ? await confirmCloverSpend?.(error) : undefined;
       declined = confirmOutcome === "declined";
       if (confirmOutcome === "retry") {
         queryClient.setQueryData<PreviewSessionState>(
@@ -152,7 +161,7 @@ export function usePreviewSendMessage(
         setStreamingText("");
         handedOffToRetry = true;
         // 이미 바꾼 글이다 — 다시 바꾸지 않는다(이름 속 매크로 글자가 두 번째로 읽히지 않게).
-        await sendExpanded(previewSessionId, text, shortcutId, false);
+        await sendExpanded(previewSessionId, text, shortcutId, allowanceAfterCloverConfirm(error, allowance));
         return;
       }
       rateLimit = getChatRateLimit(error);

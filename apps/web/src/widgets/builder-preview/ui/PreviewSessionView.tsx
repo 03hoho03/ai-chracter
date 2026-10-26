@@ -5,7 +5,13 @@ import { ChevronDown, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { DEFAULT_CHAT_MODEL, isPremiumChatModel, useChatModelsQuery, type ChatModelId } from "@/entities/chat-model";
+import {
+  chatModelKeys,
+  DEFAULT_CHAT_MODEL,
+  isPremiumChatModel,
+  useChatModelsQuery,
+  type ChatModelId,
+} from "@/entities/chat-model";
 import type { PreviewShortcut, PreviewStartPayload } from "@/entities/preview-session";
 import {
   AuthorMacroNamesProvider,
@@ -22,7 +28,13 @@ import {
   TypingIndicator,
   shouldShowSuggestedReplies,
 } from "@/entities/chat-room";
-import { CloverBalance, isCloverInsufficient, shouldShowCloverBalance, useCloverBalanceQuery } from "@/entities/clover";
+import {
+  CloverBalance,
+  isCloverInsufficient,
+  isCloverPriceChangedError,
+  shouldShowCloverBalance,
+  useCloverBalanceQuery,
+} from "@/entities/clover";
 import { IdentityRequiredNotice } from "@/entities/identity";
 import type { MediaTagImages } from "@/entities/media-book";
 import { usePersonasQuery } from "@/entities/persona";
@@ -127,9 +139,12 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
       chargesEveryTurn: isPremiumChatModel(displayModelId),
     });
   const { send, status, policyWarning, streamingText } = usePreviewSendMessage(
-    (error) =>
+    (error) => {
+      // 가격이 바뀌었으면 부족 안내가 읽는 모델 목록의 턴 가격도 낡았다 — 다시 받게 한다(확인 모달의 금액은 서버가 실은 값이다).
+      if (isCloverPriceChangedError(error)) void queryClient.invalidateQueries({ queryKey: chatModelKeys.all });
       // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 일일 버킷을 쓰므로 자정 사유가 참이다.
-      confirmCloverSpend(error, turnCost, "chat"),
+      return confirmCloverSpend(error, turnCost, "chat");
+    },
     macroNames,
   );
   const isSending = status.kind === "sending";
