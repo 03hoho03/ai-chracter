@@ -11,11 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.router import my_chat_room_rows, my_chat_room_sort_key, sign_room_thumbnails
+from api.chat.router import my_chat_room_sort_key, sign_room_thumbnails
 from api.db.models.novel import Novel
 from api.db.session import get_db_session
 from api.novelize.access import require_novelize_access
 from api.novelize.schemas import NovelSourceListResponse, NovelSourceRoom
+from api.novelize.source import my_chat_room_rows
 from api.novelize.writing_lock import novel_creation_blocked_rooms
 from api.session.dependencies import get_current_user_id
 
@@ -74,14 +75,7 @@ async def list_novel_sources(
         db, user_id, [(item.id, contents[item.content_id]) for item, _key in page]
     )
     sources = [
-        (
-            NovelSourceRoom(
-                **dict(item),
-                novel_id=novel_ids.get(item.id),
-                novel_creation_blocked=item.id in blocked,
-            ),
-            key,
-        )
-        for item, key in page
+        NovelSourceRoom(**dict(item), novel_id=novel_ids.get(item.id), novel_creation_blocked=item.id in blocked)
+        for item in await sign_room_thumbnails(page)
     ]
-    return NovelSourceListResponse(items=await sign_room_thumbnails(sources), next_cursor=next_cursor)
+    return NovelSourceListResponse(items=sources, next_cursor=next_cursor)

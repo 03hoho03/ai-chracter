@@ -2,7 +2,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime
-from typing import Annotated, TypeVar
+from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
@@ -1852,9 +1852,6 @@ async def list_my_chat_rooms(
     return await sign_room_thumbnails(rows[:limit])
 
 
-_RoomItem = TypeVar("_RoomItem", bound=MyChatRoomListItem)
-
-
 def my_chat_room_sort_key(item: MyChatRoomListItem) -> tuple[datetime, datetime, uuid.UUID]:
     """내 채팅 목록의 정렬 키(큰 것이 앞). (last_message_at ?? created_at) -> created_at -> id. 메시지 없는 방의 활동
     시각은 생성 시각으로 폴백한다 — NULLS LAST 로 빈 방을 뒤로 몰지 않는다. id 까지 넣어 키가 방마다 다르다."""
@@ -1997,8 +1994,8 @@ async def my_chat_room_rows(
     return rows, contents
 
 
-async def sign_room_thumbnails(rows: list[tuple[_RoomItem, str | None]]) -> list[_RoomItem]:
-    """`my_chat_room_rows` 의 행(자른 것)에 썸네일 URL 을 서명해 채운다. 항목의 하위 모델 칸은 그대로 남는다."""
+async def sign_room_thumbnails(rows: list[tuple[MyChatRoomListItem, str | None]]) -> list[MyChatRoomListItem]:
+    """`my_chat_room_rows` 의 행(자른 것)에 썸네일 URL 을 서명해 채운다."""
     keys = [key for _, key in rows if key is not None]
     signed = dict(zip(keys, await run_in_threadpool(_sign_urls, keys), strict=True))
     return [
