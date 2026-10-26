@@ -20,7 +20,7 @@ Create Date: 2026-10-26 15:31:37.308999
 
 이 파일은 `api.*` 를 import 하지 않는다(저장소 관례).
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 import sqlalchemy as sa
@@ -28,9 +28,9 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '65205c06e037'
-down_revision: Union[str, Sequence[str], None] = '265a8f26c44a'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = '265a8f26c44a'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
