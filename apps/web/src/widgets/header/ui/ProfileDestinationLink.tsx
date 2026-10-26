@@ -30,10 +30,11 @@ import { assertNever } from "@/shared/lib/assertNever";
 
 import type { ProfileDestinationKey } from "../model/profileDestinations";
 
-/** 메뉴에 나오는 고객센터 목적지. `SUPPORT_DESTINATIONS`에는 푸터에만 걸리는 목적지(클로버 상품 안내)와
- * 크리에이터 정산 화면에서만 거는 목적지(크리에이터 정산 정책)도 있어
- * 그 전체가 아니라 그룹 배열에 든 키로 좁힌다 — 전체로 두면 메뉴에 없는 목적지에도 쓰이지 않을 아이콘을 요구한다. */
-type MenuSupportDestinationKey = Extract<ProfileDestinationKey, SupportDestinationKey>;
+/** 메뉴에 나오는 고객센터 목적지. `SUPPORT_DESTINATIONS`에는 크리에이터 정산 화면에서만 거는 목적지(크리에이터 정산
+ * 정책)도 있어 그 전체가 아니라 그룹 배열에 든 키로 좁힌다 — 전체로 두면 메뉴에 없는 목적지에도 쓰이지 않을 아이콘을
+ * 요구한다. 클로버 충전도 같은 목록에서 라벨·경로를 읽지만 아이콘이 lucide 글리프가 아니라 재화 그림(`CloverIcon`)이라
+ * 이 아이콘 표에서 뺀다. */
+type MenuSupportDestinationKey = Exclude<Extract<ProfileDestinationKey, SupportDestinationKey>, "clover">;
 
 /** 고객센터 목적지의 라벨·경로는 푸터와 함께 쓰는 `SUPPORT_DESTINATIONS`에서 오고, 아이콘만 헤더가 정한다. */
 const SUPPORT_DESTINATION_ICON: Record<MenuSupportDestinationKey, LucideIcon> = {
@@ -50,7 +51,8 @@ const SUPPORT_DESTINATION_ICON: Record<MenuSupportDestinationKey, LucideIcon> = 
 /** 목적지 이름. 링크 글자이자, 글자를 숨기는 좌측 패널 레일의 툴팁 글자다 — 둘이 같은 소스를 읽어야 툴팁과 접근 이름이
  * 갈리지 않는다. 고객센터 목적지는 푸터와 함께 쓰는 `SUPPORT_DESTINATIONS` 의 라벨이다.
  *
- * - 내 소설·크리에이터 정산·대화 프로필·클로버는 페이지 h1 과 같은 문자열이다(`설정` 선례). 내 소설·정산은 허용된 계정에만
+ * - 내 소설·크리에이터 정산·대화 프로필은 페이지 h1 과 같은 문자열이다(`설정` 선례). 클로버 충전은 고객센터 목적지와
+ *   같이 `SUPPORT_DESTINATIONS` 의 라벨이다(충전 화면 h1·푸터와 한 문자열). 내 소설·정산은 허용된 계정에만
  *   보인다(`isProfileDestinationVisible`). */
 export const PROFILE_DESTINATION_LABEL: Record<ProfileDestinationKey, string> = {
   home: "홈",
@@ -62,7 +64,7 @@ export const PROFILE_DESTINATION_LABEL: Record<ProfileDestinationKey, string> = 
   chats: "내 채팅목록",
   profile: "내 프로필",
   personas: "대화 프로필",
-  clover: "클로버",
+  clover: SUPPORT_DESTINATIONS.clover.label,
   "creator-payout": "크리에이터 정산",
   mypage: "설정",
   about: SUPPORT_DESTINATIONS.about.label,
@@ -181,7 +183,7 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
       // 크기 규칙은 `size-` 클래스가 이미 있는 svg 를 건너뛰므로, 기본 `size-3.5` 를 그대로 두면 이웃
       // 아이콘(16px)보다 작은 14px 로 그려진다.
       return (
-        <Link ref={ref} to="/clover" className={className} {...rest}>
+        <Link ref={ref} to={SUPPORT_DESTINATIONS.clover.to} className={className} {...rest}>
           <CloverIcon className="size-4" />
           <span>{label}</span>
         </Link>

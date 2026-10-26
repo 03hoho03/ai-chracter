@@ -112,7 +112,7 @@ describe("handleSitemap", () => {
     expect(response.headers.get("cache-control")).toBe(
       "public, max-age=3600",
     );
-    // 홈 1 + 정적 8(서비스 소개·클로버 상품 안내·약관·개인정보처리방침·운영정책·청소년 보호정책·환불정책·
+    // 홈 1 + 정적 8(서비스 소개·클로버 충전·약관·개인정보처리방침·운영정책·청소년 보호정책·환불정책·
     // 크리에이터 정산 정책) + 캐릭터 3 + 스토리 1.
     expect(xml.match(/<loc>/g)).toHaveLength(13);
     expect(xml).toContain("<loc>https://ddona.example/</loc>");
@@ -123,7 +123,8 @@ describe("handleSitemap", () => {
     expect(xml).toContain("<loc>https://ddona.example/youth-policy</loc>");
     expect(xml).toContain("<loc>https://ddona.example/refund-policy</loc>");
     expect(xml).toContain("<loc>https://ddona.example/creator-payout-policy</loc>");
-    expect(xml).toContain("<loc>https://ddona.example/clover/pricing</loc>");
+    expect(xml).toContain("<loc>https://ddona.example/clover</loc>");
+    expect(xml).not.toContain("<loc>https://ddona.example/clover/pricing</loc>");
     expect(xml).toContain(
       "<loc>https://ddona.example/content/character/c3</loc>",
     );

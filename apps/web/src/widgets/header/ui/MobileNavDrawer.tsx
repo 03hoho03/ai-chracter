@@ -35,7 +35,7 @@ import { isProfileDestinationVisible } from "../model/profileDestinationVisibili
 
 const DIVIDER_CLASS = "my-1 h-px shrink-0 border-0 bg-border";
 
-// 비로그인에게도 열리는 목적지(서비스 소개·공지사항·약관·처리방침)는 로그인 사용자의 메뉴 목록에서 공개 키만
+// 비로그인에게도 열리는 목적지(클로버 충전·서비스 소개·공지사항·약관·처리방침)는 로그인 사용자의 메뉴 목록에서 공개 키만
 // 고른다 — 순서도 그 목록을 따른다.
 const PUBLIC_MENU_DESTINATION_KEYS = PROFILE_MENU_DESTINATION_GROUPS.flatMap((group) => group.keys).filter(
   isPublicSupportDestinationKey,
