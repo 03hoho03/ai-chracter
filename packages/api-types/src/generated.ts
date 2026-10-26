@@ -3656,6 +3656,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/novel-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Novel Sources
+         * @description 내 채팅방을 내 채팅 목록과 같은 순서·같은 방 칸으로, 방마다 그 방의 소설 id 와 새 소설 만들기 막힘 여부를 붙여 한
+         *     페이지씩. 원작이 이용제한된 방도 싣는다 — 소설은 만들 수 있고 생성 경로가 막는다. 커서는 정렬 키 전체(활동 시각·생성
+         *     시각·방 id)라 동점 방이 페이지 경계에 걸려도 겹치거나 빠지지 않는다. "대화 N" 번호는 자르기 전 전체 방으로 센다.
+         */
+        get: operations["list_novel_sources_me_novel_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/novels/{novel_id}/outline": {
         parameters: {
             query?: never;
@@ -13523,6 +13545,14 @@ export interface components {
              * Format: date-time
              */
             updatedAt: string;
+            /** Writinglockedat */
+            writingLockedAt: string | null;
+            /** Writinglockpermission */
+            writingLockPermission: ("forbidden" | "private" | "public") | null;
+            /** Seriallockedat */
+            serialLockedAt: string | null;
+            /** Seriallockpermission */
+            serialLockPermission: ("forbidden" | "private" | "public") | null;
             /** Chaptermodels */
             chapterModels?: components["schemas"]["NovelChapterModel"][];
             /**
@@ -14766,6 +14796,13 @@ export interface components {
              */
             endMessageCreatedAt: string;
         };
+        /** NovelSourceListResponse */
+        NovelSourceListResponse: {
+            /** Items */
+            items: components["schemas"]["NovelSourceRoom"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
         /**
          * NovelSourceRange
          * @description 양 끝 메시지로 가리킨 구간(양 끝 포함).
@@ -14781,6 +14818,42 @@ export interface components {
              * Format: uuid
              */
             endMessageId: string;
+        };
+        /**
+         * NovelSourceRoom
+         * @description 소설로 만들 수 있는 내 채팅방 하나. 방 칸은 내 채팅 목록과 같은 직렬화다(`id` 가 방 id).
+         */
+        NovelSourceRoom: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            contentType: components["schemas"]["ContentType"];
+            /** Contentname */
+            contentName: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+            /** Lastmessagepreview */
+            lastMessagePreview: string;
+            /** Lastmessageat */
+            lastMessageAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Novelid */
+            novelId: string | null;
+            /** Novelcreationblocked */
+            novelCreationBlocked: boolean;
         };
         /**
          * NovelSourceSectionInput
@@ -21774,6 +21847,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NovelSourceSelectionState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_novel_sources_me_novel_sources_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelSourceListResponse"];
                 };
             };
             /** @description Validation Error */

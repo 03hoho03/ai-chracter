@@ -382,10 +382,10 @@ class NovelDetailResponse(CamelModel):
     updated_at: datetime
     # 권리 고정 시각과 그때의 원작 소설화 허락 사본(읽기 전용). 집필권은 첫 화 저장, 연재권은 첫 공개가 찍는다. 허락 사본이
     # null 인데 시각이 있으면 그 허락을 알 수 없는 잠금이다(뒤늦게 채운 잠금이거나 그 순간 원작 행이 없었다).
-    writing_locked_at: datetime | None = None
-    writing_lock_permission: NovelPermission | None = None
-    serial_locked_at: datetime | None = None
-    serial_lock_permission: NovelPermission | None = None
+    writing_locked_at: datetime | None
+    writing_lock_permission: NovelPermission | None
+    serial_locked_at: datetime | None
+    serial_lock_permission: NovelPermission | None
     # 장 생성·재생성 확인에서 고를 수 있는 모델과 그 가격. 기본 모델(맨 앞)은 늘 있고, 상위 모델은 소설 상위 모델 허용이
     # 있을 때만 실린다. `prices` 의 장 가격은 기본 모델 값 그대로다(옛 화면이 읽는 칸). 아래 둘의 기본값은 이 필드를 모르는
     # 생성 타입·픽스처와의 호환용이고, 응답에는 항상 실린다.
