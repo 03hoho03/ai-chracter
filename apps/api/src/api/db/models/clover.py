@@ -226,7 +226,9 @@ class CloverSpendUsage(Base):
     있다.
 
     `chat_room_id`·`novel_id` 에는 FK 가 없다 — 대화방 삭제와 소설 삭제·탈퇴가 그 행을 실제로 지우는데, 사용처는 정산
-    근거라 남아야 한다. 작품은 소프트 삭제라 FK 를 건다.
+    근거라 남아야 한다. 작품 칸에는 FK 를 건다 — 앱이 발행작을 지우는 운영 조치는 행을 남기는 소프트 삭제이고, 운영자의
+    작품 완전 삭제(`scripts/purge_contents.py`)는 작품·방·소설 세 칸 중 어느 칸으로든 대상을 가리키는 사용처가 있으면
+    거부한다.
 
     CHECK 여섯은 alembic 1.18.5 의 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 유일한
     검증이다(`CloverLot` 과 같은 함정).
