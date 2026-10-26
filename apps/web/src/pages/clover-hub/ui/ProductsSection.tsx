@@ -1,4 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link, useRouter } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode, Ref } from "react";
@@ -6,6 +7,7 @@ import type { ReactNode, Ref } from "react";
 import { CloverProductLine, type CloverProductOffer } from "@/entities/clover";
 import { CONTACT_EMAIL } from "@/shared/config/site";
 
+import { getProductsFootnote } from "../model/productsFootnote";
 import type { PurchaseSection } from "../model/purchaseSection";
 import type { RequestedProduct } from "../model/requestedProduct";
 import { HubSection, INLINE_LINK_CLASS } from "./HubSection";
@@ -96,9 +98,7 @@ function ProductList({
               </li>
             ))}
           </ul>
-          <p className="text-xs break-keep text-muted-foreground">
-            상품을 고르면 로그인한 뒤 그 상품의 결제로 이어져요.
-          </p>
+          <ProductsFootnoteLine section={section} />
         </>
       );
     case "disabled":
@@ -116,12 +116,21 @@ function ProductList({
               </li>
             ))}
           </ul>
-          {section === "disabled" && (
-            <p className="text-xs break-keep text-muted-foreground">클로버 결제는 아직 준비 중이에요.</p>
-          )}
+          <ProductsFootnoteLine section={section} />
         </>
       );
   }
+}
+
+/** 상품 목록 아래 한 줄. 무엇을 말할지와 넓은 화면에서만 보일지는 `getProductsFootnote` 가 정한다. */
+function ProductsFootnoteLine({ section }: { section: PurchaseSection }) {
+  const footnote = getProductsFootnote(section);
+  if (!footnote) return null;
+  return (
+    <p className={cn("text-xs break-keep text-muted-foreground", footnote.isWideOnly && "hidden lg:block")}>
+      {footnote.text}
+    </p>
+  );
 }
 
 /** 로그인하지 않은 사람의 상품 행. 이 화면 자신이 아니라 로그인으로 바로 보낸다 — 이 화면은 로그인 없이 열리므로

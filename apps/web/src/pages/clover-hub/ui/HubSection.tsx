@@ -25,7 +25,7 @@ export function HubSection({
       <h2
         ref={headingRef}
         tabIndex={headingRef ? -1 : undefined}
-        className="text-xl font-semibold tracking-tight text-foreground"
+        className="text-xl font-semibold tracking-tight text-foreground outline-none"
       >
         {title}
       </h2>

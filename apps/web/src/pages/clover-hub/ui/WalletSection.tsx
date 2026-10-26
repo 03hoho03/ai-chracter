@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import {
+  CLOVER_EXPIRY_NOTICE_MESSAGE,
   CLOVER_MISSIONS_SECTION_ID,
   CloverWallet,
   formatCloverExpiringSoonMessage,
@@ -13,7 +14,8 @@ import { loginRedirectTarget } from "@/entities/session";
 import { formatPurchaseGrant, PURCHASE_MESSAGES, type SettledPurchase } from "@/features/purchase-clover";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
-import type { WalletView } from "../model/walletView";
+import type { PurchaseSection } from "../model/purchaseSection";
+import { getGuestLoginLabel, type WalletView } from "../model/walletView";
 import { HubSection, SECTION_LINK_CLASS } from "./HubSection";
 
 /** 이 화면을 연 사람이 옛 API 응답(잔액을 나눈 몫이 아직 없다)을 받는 구간이 있다 — web 과 API 는 따로 배포된다. 타입은
@@ -24,6 +26,10 @@ type WalletSectionProps = {
   view: WalletView<DeployedBalanceResponse>;
   /** 구매 확인 창이나 결제창 복귀가 끝낸 결과. 새로고침하면 사라진다(복귀 쿼리는 이미 지웠다). */
   settled: SettledPurchase | null;
+  /** 상품 행 갈래. 비로그인 로그인 버튼이 충전을 약속해도 되는지 가른다(`getGuestLoginLabel`). */
+  section: PurchaseSection | undefined;
+  /** "확인 중"으로 끝난 뒤 잔액이 늘었는가(`isCheckingResolved`). 늘었으면 그 안내를 반영됐다는 문장으로 바꾼다. */
+  isCheckingResolved: boolean;
   onRetryBalance: () => void;
 };
 
@@ -31,16 +37,18 @@ type WalletSectionProps = {
  *
  * 결제 결과는 이 섹션 맨 위에 그린다 — 모바일 결제창에서 돌아온 직후 첫 화면에 보이는 자리이고, 다이얼로그 결제(PC)도
  * 같은 자리를 쓴다. 결과 아래의 총잔액이 새 값으로 바뀌는 것을 바로 이어 읽을 수 있다. */
-export function WalletSection({ view, settled, onRetryBalance }: WalletSectionProps) {
+export function WalletSection({ view, settled, section, isCheckingResolved, onRetryBalance }: WalletSectionProps) {
   return (
     <HubSection title="내 클로버">
-      {settled && <PurchaseOutcome settled={settled} onRetryBalance={onRetryBalance} />}
-      <WalletBody view={view} onRetryBalance={onRetryBalance} />
+      {settled && (
+        <PurchaseOutcome settled={settled} isCheckingResolved={isCheckingResolved} onRetryBalance={onRetryBalance} />
+      )}
+      <WalletBody view={view} section={section} onRetryBalance={onRetryBalance} />
     </HubSection>
   );
 }
 
-function WalletBody({ view, onRetryBalance }: Pick<WalletSectionProps, "view" | "onRetryBalance">) {
+function WalletBody({ view, section, onRetryBalance }: Pick<WalletSectionProps, "view" | "section" | "onRetryBalance">) {
   // 로그인한 뒤 지금 주소로 돌아온다 — 주소에 담긴 상품(`?product=`)도 함께 돌아와 그 상품의 결제로 이어진다.
   const loginRedirect = useRouterState({ select: (state) => loginRedirectTarget(state.location) });
 
@@ -66,7 +74,7 @@ function WalletBody({ view, onRetryBalance }: Pick<WalletSectionProps, "view" | 
           {/* 이 화면의 솔리드 채움은 결제 성공 뒤 "대화로 돌아가기" 몫이라 outline 이다. */}
           <Button asChild variant="outline">
             <Link to="/login" search={{ redirect: loginRedirect }}>
-              로그인하고 충전하기
+              {getGuestLoginLabel(section)}
             </Link>
           </Button>
         </div>
@@ -88,7 +96,13 @@ function WalletBody({ view, onRetryBalance }: Pick<WalletSectionProps, "view" | 
       const expiringMessage = formatCloverExpiringSoonMessage(view.balance.expiringSoon, new Date());
       return (
         <div className="flex flex-col gap-4">
-          <CloverWallet balance={view.balance.balance} breakdown={view.balance.breakdown} />
+          <div className="flex flex-col gap-1.5">
+            <CloverWallet balance={view.balance.balance} breakdown={view.balance.breakdown} />
+            {/* 미션 클로버 소멸 고지는 무료 몫 바로 아래에 둔다. 화면 첫 줄에 두면 처음 사는 사람이 산 클로버도 일주일이면
+                사라진다고 읽는다 — 구매분 유효기간은 클로버 안내가 말한다. 문구는 entities/clover 의 단일 소스
+                (cloverExpiryNotice.ts)라 내역 화면과 같다. */}
+            <p className="text-xs break-keep text-muted-foreground">{CLOVER_EXPIRY_NOTICE_MESSAGE}</p>
+          </div>
           {/* 평소 무채색, 만료 임박일 때만 primary 잉크(솔리드 채움이 아니다 — 밝기 예산은 화면당 솔리드 채움 하나만
               관리한다, `CloverBalance`의 같은 처방). */}
           {expiringMessage && <p className="text-sm text-primary">{expiringMessage}</p>}
@@ -113,12 +127,24 @@ function MemberLinks() {
   );
 }
 
+const CHECKING_RESOLVED_MESSAGE = "결제가 확인돼 잔액에 반영됐어요.";
+
 /** 끝난 결제의 결과. 나타날 때 결과 문장으로 포커스를 옮긴다 — 구매 확인 창이 닫히면 포커스가 누른 상품 행으로
  * 돌아가 결과를 놓친다. 창이 닫히며 포커스를 정리하는 일이 다음 프레임까지 이어지므로 두 프레임 뒤에 옮긴다.
  *
  * 축하 연출·초록 성공색은 없다(아이콘과 문장). 문제 갈래만 `destructive` 틴트이고, 확인 중은 진행 표시라 스피너를 가두지
- * 않는다. 확인 중에는 총잔액을 올려 보이지 않는다 — 결제사가 아직 확정하지 않았을 수 있다. */
-function PurchaseOutcome({ settled, onRetryBalance }: { settled: SettledPurchase; onRetryBalance: () => void }) {
+ * 않는다. 확인 중에는 총잔액을 올려 보이지 않는다 — 결제사가 아직 확정하지 않았을 수 있다. 그 뒤 다시 불러온 잔액이
+ * 늘었으면 확인 중 안내를 반영됐다는 문장으로 바꾸고 스피너·다시 불러오기를 거둔다. 블록을 닫지 않고 같은 제목 요소의
+ * 글자만 바꾼다 — 포커스가 그 제목에 있어, 요소가 사라지면 포커스가 `<body>` 로 떨어진다. */
+function PurchaseOutcome({
+  settled,
+  isCheckingResolved,
+  onRetryBalance,
+}: {
+  settled: SettledPurchase;
+  isCheckingResolved: boolean;
+  onRetryBalance: () => void;
+}) {
   const titleRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -129,8 +155,8 @@ function PurchaseOutcome({ settled, onRetryBalance }: { settled: SettledPurchase
   }, [settled]);
 
   const title = (
-    <h3 ref={titleRef} tabIndex={-1} className="text-sm font-semibold break-keep text-foreground">
-      {PURCHASE_MESSAGES[settled.result]}
+    <h3 ref={titleRef} tabIndex={-1} className="text-sm font-semibold break-keep text-foreground outline-none">
+      {settled.result === "checking" && isCheckingResolved ? CHECKING_RESOLVED_MESSAGE : PURCHASE_MESSAGES[settled.result]}
     </h3>
   );
 
@@ -148,13 +174,17 @@ function PurchaseOutcome({ settled, onRetryBalance }: { settled: SettledPurchase
       return (
         <div role="status" className="flex flex-col items-start gap-3 rounded-xl border border-border px-4 py-3">
           <div className="flex items-start gap-2">
-            <Loader2 aria-hidden className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" />
+            {!isCheckingResolved && (
+              <Loader2 aria-hidden className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" />
+            )}
             {title}
           </div>
           {/* 웹훅이 먼저 지급했으면 다시 불러온 잔액에 보인다. */}
-          <Button type="button" variant="outline" size="sm" onClick={onRetryBalance}>
-            잔액 다시 불러오기
-          </Button>
+          {!isCheckingResolved && (
+            <Button type="button" variant="outline" size="sm" onClick={onRetryBalance}>
+              잔액 다시 불러오기
+            </Button>
+          )}
         </div>
       );
     case "notCompleted":
@@ -168,7 +198,7 @@ function PurchaseOutcome({ settled, onRetryBalance }: { settled: SettledPurchase
     case "problem":
       return (
         <div role="alert" className="flex flex-col items-start gap-2 rounded-xl bg-destructive/10 px-4 py-3">
-          <h3 ref={titleRef} tabIndex={-1} className="text-sm break-keep text-destructive-text">
+          <h3 ref={titleRef} tabIndex={-1} className="text-sm break-keep text-destructive-text outline-none">
             {PURCHASE_MESSAGES.problem}
           </h3>
           <Link

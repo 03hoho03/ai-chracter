@@ -1,4 +1,5 @@
 import type { HubViewer } from "./hubViewer";
+import type { PurchaseSection } from "./purchaseSection";
 
 /** "내 클로버" 자리에 무엇을 그릴지.
  *
@@ -22,4 +23,16 @@ export function getWalletView<Balance>(
   if (viewer.kind === "guest") return { kind: "guest" };
   if (balance.data !== undefined) return { kind: "ready", balance: balance.data };
   return balance.isError ? { kind: "error" } : { kind: "pending" };
+}
+
+/** 비로그인 "내 클로버" 자리의 로그인 버튼 라벨. 상품 행이 로그인으로 이어지는 갈래(`guest`)일 때만 충전을 말한다 — 결제가
+ * 꺼져 있거나 아직 모르면 로그인해도 충전할 수 없을 수 있어, 로그인으로 확실히 할 수 있는 일(잔액 보기)만 말한다. */
+export function getGuestLoginLabel(section: PurchaseSection | undefined): string {
+  return section === "guest" ? "로그인하고 충전하기" : "로그인하고 잔액 보기";
+}
+
+/** "확인 중"으로 끝난 결제가 풀렸는가. 확인 중이 뜬 때의 잔액보다 지금 잔액이 늘었으면 결제사 확인(웹훅)이 지급한 것으로
+ * 보고 그 안내를 거둔다 — 계속 두면 이미 잔액에 반영된 결제를 기다리게 한다. 비교할 값이 없으면 그대로 둔다. */
+export function isCheckingResolved(balanceAtCheck: number | undefined, balanceNow: number | undefined): boolean {
+  return balanceAtCheck !== undefined && balanceNow !== undefined && balanceNow > balanceAtCheck;
 }

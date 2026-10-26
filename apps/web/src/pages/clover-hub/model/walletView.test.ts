@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { MeResponse } from "@/entities/session";
 
 import type { HubViewer } from "./hubViewer";
-import { getWalletView } from "./walletView";
+import { getGuestLoginLabel, getWalletView, isCheckingResolved } from "./walletView";
 
 const MEMBER: HubViewer = { kind: "member", me: { id: "u1" } as unknown as MeResponse };
 const BALANCE = { balance: 120 };
@@ -33,5 +33,36 @@ describe("getWalletView", () => {
 
   it("받은 잔액을 보인다", () => {
     expect(getWalletView(MEMBER, { data: BALANCE, isError: false })).toEqual({ kind: "ready", balance: BALANCE });
+  });
+});
+
+describe("getGuestLoginLabel", () => {
+  it("비로그인이 살 수 있는 갈래면 충전으로 이어진다고 말한다", () => {
+    expect(getGuestLoginLabel("guest")).toBe("로그인하고 충전하기");
+  });
+
+  // 결제가 꺼져 있으면 로그인해도 충전할 수 없다 — 할 수 없는 동작을 약속하지 않는다.
+  it("결제가 꺼져 있으면 충전을 약속하지 않는다", () => {
+    expect(getGuestLoginLabel("disabled")).toBe("로그인하고 잔액 보기");
+  });
+
+  it("상품 응답을 아직 모르면 충전을 약속하지 않는다", () => {
+    expect(getGuestLoginLabel(undefined)).toBe("로그인하고 잔액 보기");
+  });
+});
+
+describe("isCheckingResolved", () => {
+  // 확인 중으로 끝난 뒤 잔액이 늘었으면 웹훅이 지급한 것이다 — "확인 중"을 계속 보이면 이미 반영된 결제를 기다리게 한다.
+  it("확인 중이 뜬 때보다 잔액이 늘었으면 풀렸다", () => {
+    expect(isCheckingResolved(100, 200)).toBe(true);
+  });
+
+  it.each([
+    [100, 100],
+    [100, 50],
+    [undefined, 200],
+    [100, undefined],
+  ])("늘지 않았거나 비교할 값이 없으면 그대로다 (%s → %s)", (before, after) => {
+    expect(isCheckingResolved(before, after)).toBe(false);
   });
 });

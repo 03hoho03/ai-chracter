@@ -50,7 +50,7 @@ export function CloverHistoryPage({ search, onSearchChange }: CloverHistoryPageP
     <main className="mx-auto flex max-w-md flex-col gap-6 px-4 sm:px-6 py-10">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">클로버 내역</h1>
-        {/* 허브 페이지(clover-hub)와 같은 상시 고지, 같은
+        {/* 클로버 충전 화면(clover-hub)의 내 클로버와 같은 고지, 같은
             단일 소스(entities/clover의 cloverExpiryNotice.ts)를 쓴다. */}
         <p className="text-sm break-keep text-muted-foreground">{CLOVER_EXPIRY_NOTICE_MESSAGE}</p>
       </div>

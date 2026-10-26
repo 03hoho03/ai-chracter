@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
-  CLOVER_EXPIRY_NOTICE_MESSAGE,
   useCloverBalanceQuery,
   useCloverProductsQuery,
   type CloverProductOffer,
@@ -15,7 +14,7 @@ import type { CloverHubSearch } from "../model/cloverHubSearch";
 import { toHubViewer } from "../model/hubViewer";
 import { getPurchaseSection } from "../model/purchaseSection";
 import { resolveRequestedProduct } from "../model/requestedProduct";
-import { getWalletView } from "../model/walletView";
+import { getWalletView, isCheckingResolved } from "../model/walletView";
 import { CloverFaq } from "./CloverFaq";
 import { ProductsSection } from "./ProductsSection";
 import { PurchaseConditions } from "./PurchaseConditions";
@@ -63,8 +62,17 @@ export function CloverHubPage({
   const balanceQuery = useCloverBalanceQuery({ enabled: viewer.kind === "member" });
   const productsHeadingRef = useRef<HTMLHeadingElement>(null);
   const [settled, setSettled] = useState<SettledPurchase | null>(null);
+  // 결과가 나온 때의 잔액. "확인 중"으로 끝난 뒤 다시 불러온 잔액이 이보다 늘었는지 본다. 결과 콜백은 비동기라 그때의
+  // 렌더 값을 쥐고 있으므로 최신 잔액을 ref 로 읽는다.
+  const latestBalance = useRef<number | undefined>(undefined);
+  latestBalance.current = balanceQuery.data?.balance;
+  const [balanceAtSettle, setBalanceAtSettle] = useState<number | undefined>(undefined);
+  const handleSettled = (next: SettledPurchase) => {
+    setBalanceAtSettle(latestBalance.current);
+    setSettled(next);
+  };
 
-  usePaymentRedirect(search, setSettled, onSearchClear);
+  usePaymentRedirect(search, handleSettled, onSearchClear);
 
   const products = productsQuery.data;
   const section = products ? getPurchaseSection(products.paymentsEnabled, viewer) : undefined;
@@ -73,7 +81,7 @@ export function CloverHubPage({
 
   const openPurchase = (product: CloverProductOffer, me: MeResponse, pricing: CloverProductsResponse) => {
     void PurchaseConfirmDialog.call({ product, payMethods: pricing.payMethods, email: me.email }).then((result) => {
-      if (result) setSettled(result);
+      if (result) handleSettled(result);
     });
   };
 
@@ -85,18 +93,17 @@ export function CloverHubPage({
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-10 px-4 sm:px-6 py-10 lg:max-w-4xl">
-      <div className="flex flex-col gap-1.5">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">{SUPPORT_DESTINATIONS.clover.label}</h1>
-        {/* 문구는 entities/clover의 단일 소스(cloverExpiryNotice.ts)를 쓴다 — 내역 화면과 리터럴을 각자 복사해 갖고
-            있다가 "7일"과 게시된 공지("7~8일")가 어긋났던 전례가 있다. */}
-        <p className="text-sm break-keep text-muted-foreground">{CLOVER_EXPIRY_NOTICE_MESSAGE}</p>
-      </div>
+      {/* 부제를 두지 않는다. 미션 클로버 소멸 고지를 여기 두면 처음 사는 사람이 산 클로버도 일주일이면 사라진다고
+          읽어, 그 고지는 내 클로버의 무료 몫 아래로 옮겼다. */}
+      <h1 className="text-2xl font-bold tracking-tight text-foreground">{SUPPORT_DESTINATIONS.clover.label}</h1>
 
       <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-12">
         <div className="flex flex-col gap-10">
           <WalletSection
             view={getWalletView(viewer, balanceQuery)}
             settled={settled}
+            section={section}
+            isCheckingResolved={isCheckingResolved(balanceAtSettle, balanceQuery.data?.balance)}
             onRetryBalance={() => void balanceQuery.refetch()}
           />
           <PurchaseConditions section={section} />
