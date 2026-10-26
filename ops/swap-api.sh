@@ -88,13 +88,18 @@ drain_and_remove() {
   compose rm -f "api_$c"
 }
 
-# 올릴 이미지 안에서 돌리는 판정: 그 이미지의 리비전 파일 목록과 DB 의 `alembic_version` 을 대조해 마지막에
+# 올릴 이미지 안에서 돌리는 판정: 그 이미지의 리비전 파일 목록과 DB 의 `alembic_version` 을 대조해
 # `DDONA_DB_REVISION known|ahead <리비전들>` 한 줄을 낸다(`alembic_version` 이 없거나 비면 known). `alembic
 # current` 의 실패로 가리지 않는 이유: DB 에 못 닿은 실패와 문구 말고는 구분되지 않는다. 여기서는 DB 에 못
 # 닿으면 예외로 0 이 아닌 코드가 나 판정 실패가 된다. DB 주소는 마이그레이션과 같은 설정값(`settings.database_url`)이다.
+# 이어서 `DDONA_CLOVER_UNIT convert|revert|none guard|noguard` 한 줄을 낸다 — DB 의 마지막 클로버 단위 기록
+# (`clover_unit_events`, 표가 없거나 비면 none)과, 이 이미지에 기동 가드가 있는가. 가드 유무는 모듈 경로가 아니라 단위
+# 상수(`api.core.clover` 의 `CLOVER_UNIT_KRW`)가 있는지로 본다 — 파일을 옮겨도 판정이 그대로다. 이 조각은 가드보다 옛
+# 이미지에서도 돈다(`sqlalchemy`·`api.core` 만 쓴다).
 DB_REVISION_CHECK="$(
   cat <<'PY'
 import asyncio
+import importlib
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -106,19 +111,27 @@ from api.core.config import settings
 known = {s.revision for s in ScriptDirectory.from_config(Config("alembic.ini")).walk_revisions()}
 
 
-async def db_revisions():
+async def db_state():
     engine = create_async_engine(settings.database_url)
     try:
         async with engine.connect() as conn:
-            if (await conn.execute(text("SELECT to_regclass('alembic_version')"))).scalar() is None:
-                return []
-            return list((await conn.execute(text("SELECT version_num FROM alembic_version"))).scalars())
+            revs = []
+            if (await conn.execute(text("SELECT to_regclass('alembic_version')"))).scalar() is not None:
+                revs = list((await conn.execute(text("SELECT version_num FROM alembic_version"))).scalars())
+            unit = None
+            if (await conn.execute(text("SELECT to_regclass('clover_unit_events')"))).scalar() is not None:
+                unit = (
+                    await conn.execute(text("SELECT action FROM clover_unit_events ORDER BY occurred_at DESC LIMIT 1"))
+                ).scalar()
+            return revs, unit or "none"
     finally:
         await engine.dispose()
 
 
-revs = asyncio.run(db_revisions())
+revs, unit = asyncio.run(db_state())
+guard = "guard" if getattr(importlib.import_module("api.core.clover"), "CLOVER_UNIT_KRW", None) is not None else "noguard"
 print("DDONA_DB_REVISION", "ahead" if any(r not in known for r in revs) else "known", " ".join(revs) or "-")
+print("DDONA_CLOVER_UNIT", unit, guard)
 PY
 )"
 
@@ -134,10 +147,23 @@ PY
 # upgrade 한다. 판정 자체가 실패하면 건너뛰지 않고 멈춘다 — 확인 못 한 채 건너뛰면 새 코드가 옛 스키마
 # 위에서 뜰 수 있다. 인자: 올릴 이미지가 걸린 색.
 migrate() {
-  local c="$1" out verdict
+  local c="$1" out verdict unit
   out="$(compose run --rm -T "api_$c" python -c "$DB_REVISION_CHECK" </dev/null)" ||
     die "DB 리비전 판정이 실패했다(위 메시지) — 마이그레이션을 건너뛸지 정하지 못해 멈춘다"
   verdict="$(sed -n 's/^DDONA_DB_REVISION //p' <<<"$out" | tail -n 1)"
+  # 클로버 단위를 전환한 DB 에 기동 가드가 없는 옛 이미지를 올리면 그 이미지는 막히지 않고 떠 1클로버 = 3원으로 환불을
+  # 계산한다(환불 세 배). 그래서 마이그레이션 전에 멈춘다 — 실패 정리가 바꾼 이미지 줄을 되돌리고 옛 색이 계속 서빙한다.
+  # 판정 출력을 못 읽으면 리비전 판정과 같이 멈춘다(확인 못 한 채 통과시키지 않는다).
+  unit="$(sed -n 's/^DDONA_CLOVER_UNIT //p' <<<"$out" | tail -n 1)"
+  case "$unit" in
+    "convert noguard")
+      die "클로버 단위를 전환한 DB 에 단위 전환을 모르는 옛 이미지를 올리려 한다 — 기동 가드가 있는 태그만 된다"
+      ;;
+    "convert guard" | "revert guard" | "revert noguard" | "none guard" | "none noguard")
+      log "클로버 단위 기록: $unit"
+      ;;
+    *) die "클로버 단위 판정 출력을 읽지 못했다 — 올릴 이미지가 이 DB 의 단위와 맞는지 정하지 못해 멈춘다" ;;
+  esac
   case "$verdict" in
     known\ *)
       log "DB 리비전(${verdict#known })을 이 이미지가 안다 — alembic upgrade head"
