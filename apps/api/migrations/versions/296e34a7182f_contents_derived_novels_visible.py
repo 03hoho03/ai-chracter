@@ -1,7 +1,7 @@
 """contents derived_novels_visible, novels content_id index
 
 Revision ID: 296e34a7182f
-Revises: e4df46a80bfa
+Revises: 2ea446be8eb9
 Create Date: 2026-10-27 10:00:00.000000
 
 원작 상세가 그 작품으로 만든 공개 소설을 보이게 하는 두 가지를 더한다.
@@ -38,7 +38,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "296e34a7182f"
-down_revision: str | Sequence[str] | None = "e4df46a80bfa"
+down_revision: str | Sequence[str] | None = "2ea446be8eb9"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
