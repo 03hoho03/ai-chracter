@@ -64,7 +64,7 @@ describe("settleFailedCompletion", () => {
 
   // 확인 요청만 실패했을 수 있다(포트원 조회 실패 등) — 결제는 됐을 수 있고 웹훅이 같은 결제를 맞춘다.
   it.each([
-    new ApiErrorObject({ status: 502, message: "x" }),
+    new ApiErrorObject({ status: 502, message: "x", detail: undefined }),
     new ApiErrorObject({ status: 404, message: "x", detail: { code: "OTHER" } }),
     new Error("network"),
   ])("그 밖의 실패는 확인 중이다 (%o)", (error) => {
