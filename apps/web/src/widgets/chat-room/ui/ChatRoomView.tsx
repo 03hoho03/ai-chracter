@@ -440,7 +440,10 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             />
           )}
 
-          <div ref={scrollAreaRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+          {/* `relative` 는 안의 `sr-only`(절대 위치) 조각이 이 영역을 기준으로 놓이게 한다 — 없으면 기준이 문서로 올라가 문서 높이를
+              늘릴 수 있고, 그러면 뷰포트 고정인 채팅 화면이 문서 스크롤에 위로 밀린다(빌더 폼 열·이미지 스튜디오에서 실제로
+              그랬다. 이 영역에서는 재현되지 않았지만 같은 꼴이라 미리 막는다). */}
+          <div ref={scrollAreaRef} className="relative flex-1 overflow-y-auto px-4 sm:px-6 py-4">
             {/* 메시지 사이 gap-6(24px)은 한 메시지 안 문단 간격(12px)의 두 배다. 상자 없는 산문이 한 컬럼에 흐르므로
                 같은 값이면 메시지 경계와 문단 경계가 구분되지 않는다. */}
             <div className="flex flex-col gap-6">

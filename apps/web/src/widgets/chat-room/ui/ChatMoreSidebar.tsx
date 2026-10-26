@@ -64,7 +64,8 @@ export function ChatMoreSidebar(props: ChatMoreSidebarProps) {
           <X aria-hidden className="size-4" />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pb-3">
+      {/* `relative`: 안의 절대 위치 조각(`sr-only` 등)이 문서가 아니라 이 스크롤 영역을 기준으로 놓이게 — 채팅 열의 스크롤 영역과 같은 이유. */}
+      <div className="relative min-h-0 flex-1 overflow-y-auto pb-3">
         <ChatMoreNav {...props} />
       </div>
     </aside>
