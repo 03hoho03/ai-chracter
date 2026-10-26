@@ -1,4 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { useLocation } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import {
@@ -35,6 +37,7 @@ export function MissionSection({ me }: { me: MeResponse }) {
   const { data, isPending } = useCloverMissionsQuery();
   const claimMission = useClaimCloverMissionMutation();
   const isClaimLocked = me.identityGated;
+  const sectionRef = useScrollToMissionsOnArrival(data !== undefined);
 
   const handleClaim = (key: string) => {
     if (claimMission.isPending) return;
@@ -47,7 +50,7 @@ export function MissionSection({ me }: { me: MeResponse }) {
   };
 
   return (
-    <section id={CLOVER_MISSIONS_SECTION_ID} className="flex scroll-mt-20 flex-col gap-4">
+    <section ref={sectionRef} id={CLOVER_MISSIONS_SECTION_ID} className="flex scroll-mt-20 flex-col gap-4">
       <h2 className="text-xl font-semibold tracking-tight text-foreground">미션</h2>
       {isPending ? (
         <span className="text-sm text-muted-foreground">불러오는 중…</span>
@@ -68,6 +71,28 @@ export function MissionSection({ me }: { me: MeResponse }) {
       )}
     </section>
   );
+}
+
+/** 충전 화면의 "미션 보상 받기"(`#clover-missions`)로 들어오면, 미션 목록이 그려진 뒤 한 번 이 섹션으로 스크롤한다. 라우터의
+ * 해시 이동은 첫 렌더에 일어나는데, 그때는 위쪽 섹션(본인인증 등)과 이 목록이 아직 불러오는 중이라 높이가 늘면서 섹션이
+ * 아래로 밀린다. 한 번만 옮긴다 — 그 뒤 사용자가 스크롤한 자리를 빼앗지 않는다. */
+function useScrollToMissionsOnArrival(isReady: boolean) {
+  const hash = useLocation({ select: (location) => location.hash });
+  const sectionRef = useRef<HTMLElement>(null);
+  const hasScrolled = useRef(false);
+
+  useEffect(() => {
+    if (!isReady || hasScrolled.current || hash !== CLOVER_MISSIONS_SECTION_ID) return;
+    // 옮겼다는 표시는 실제로 옮길 때 남긴다 — StrictMode 가 effect 를 정리하고 다시 돌리면 정리에서 취소된 첫 프레임 대신
+    // 둘째 실행이 옮겨야 한다.
+    const frame = requestAnimationFrame(() => {
+      hasScrolled.current = true;
+      sectionRef.current?.scrollIntoView({ block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isReady, hash]);
+
+  return sectionRef;
 }
 
 type MissionRowProps = {
