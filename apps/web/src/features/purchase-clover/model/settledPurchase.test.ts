@@ -18,6 +18,14 @@ describe("toSettledPurchase", () => {
     });
   });
 
+  // web 과 API 는 따로 배포된다 — 받은 수량 칸이 아예 없는 옛 완료 응답을 숫자로 읽으면 결과 블록이 죽는다.
+  it("받은 수량 칸이 없는 옛 응답이면 수량 없이 성공만 낸다", () => {
+    expect(toSettledPurchase({ status: "paid" })).toEqual({
+      result: "paid",
+      grant: null,
+    });
+  });
+
   // 확인 중에는 아직 지급하지 않았을 수 있다 — 받았다고 말하면 거짓일 수 있다.
   it("확인 중이면 수량이 와도 싣지 않는다", () => {
     expect(toSettledPurchase({ status: "pending", grantedPaid: 9900, grantedBonus: 990 })).toEqual({

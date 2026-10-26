@@ -12,13 +12,17 @@ export type SettledPurchase = {
   grant: PurchaseGrant | null;
 };
 
-export function toSettledPurchase(
-  response: Pick<CompletePaymentResponse, "status" | "grantedPaid" | "grantedBonus">,
-): SettledPurchase {
+/** 화면이 읽는 완료 응답. web 과 API 는 따로 배포돼 받은 수량 칸이 아예 없는 옛 응답을 받는 구간이 있다 — 타입은 그
+ * 칸을 필수로 적지만 그 구간에는 런타임에 비어 있으므로 비어 있을 수 있는 모양으로 읽는다. */
+type DeployedCompletePaymentResponse = Pick<CompletePaymentResponse, "status"> &
+  Partial<Pick<CompletePaymentResponse, "grantedPaid" | "grantedBonus">>;
+
+export function toSettledPurchase(response: DeployedCompletePaymentResponse): SettledPurchase {
   const result = toPurchaseResult(response.status);
+  const { grantedPaid, grantedBonus } = response;
   const grant =
-    result === "paid" && response.grantedPaid !== null && response.grantedBonus !== null
-      ? { paid: response.grantedPaid, bonus: response.grantedBonus }
+    result === "paid" && typeof grantedPaid === "number" && typeof grantedBonus === "number"
+      ? { paid: grantedPaid, bonus: grantedBonus }
       : null;
   return { result, grant };
 }
