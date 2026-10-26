@@ -158,6 +158,7 @@ from api.db.models.story import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
+from api.db.models.work_bundle import WorkBundle, WorkBundleItem
 
 __all__ = [
     "AdminActionLog",
@@ -310,4 +311,6 @@ __all__ = [
     "UserPersona",
     "WithdrawnEmail",
     "WithdrawnIdentity",
+    "WorkBundle",
+    "WorkBundleItem",
 ]

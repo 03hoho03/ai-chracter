@@ -2843,12 +2843,88 @@ export interface paths {
          *
          *     `q` 는 제목 부분 일치다 — 작품은 목록에 보이는 제목 버전(`_title_version_id`), 소설은 소설 제목(없으면 원작 제목).
          *
+         *     `bundleId` 를 주면 그 묶음에 든 것만 낸다(같은 정렬·커서·응답). 내 묶음이 아니거나 없으면 404 `WORK_BUNDLE_NOT_FOUND`
+         *     다 — 묶음은 사적 정리라 남의 묶음이 있는지도 드러내지 않는다. 묶음에 들었어도 위 조건(운영 삭제·숨김·소설화 허용)에
+         *     걸리면 빠진다.
+         *
          *     이미지는 싣지 않는다(제목·편집 시각이 없다).
          */
         get: operations["list_my_works_me_works_get"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/work-bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Work Bundles
+         * @description 내 묶음 전부를 최근에 바뀐 것부터(한도 안이라 페이지 없음). `kind`·`workId` 를 함께 주면 각 묶음에 그 작품이 들었는지를
+         *     `containsWork` 로 싣는다(작품 메뉴의 체크 표시). 둘 중 하나만 주면 422.
+         */
+        get: operations["list_my_work_bundles_me_work_bundles_get"];
+        put?: never;
+        /** Create Work Bundle */
+        post: operations["create_work_bundle_me_work_bundles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/work-bundles/{bundle_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Work Bundle
+         * @description 묶음과 그 소속 행(DB CASCADE)만 지운다. 작품·소설·채팅은 그대로다. 자기 데이터 정리라 재동의 전에도 열려 있다.
+         */
+        delete: operations["delete_work_bundle_me_work_bundles__bundle_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename Work Bundle
+         * @description 같은 이름이면 아무것도 바꾸지 않는다(목록 순서도 그대로).
+         */
+        patch: operations["rename_work_bundle_me_work_bundles__bundle_id__patch"];
+        trace?: never;
+    };
+    "/me/work-bundles/{bundle_id}/items/{kind}/{work_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Work Bundle Item
+         * @description 작품 하나를 묶음에 넣는다. 이미 들었으면 그대로 204 다(멱등 — 한도에도 걸리지 않고 묶음 순서도 그대로). 묶음이 내 것이
+         *     아니면 404 `WORK_BUNDLE_NOT_FOUND`, 작품을 넣을 수 없으면 404 `WORK_NOT_FOUND`(`_require_own_work`).
+         */
+        put: operations["put_work_bundle_item_me_work_bundles__bundle_id__items__kind___work_id__put"];
+        post?: never;
+        /**
+         * Remove Work Bundle Item
+         * @description 작품 하나를 묶음에서 뺀다. 들어 있지 않아도 204 다. 작품 소유는 다시 보지 않는다 — 내 묶음에서 행을 지울 뿐이라 남의
+         *     작품에 닿지 않는다. 자기 데이터 정리라 재동의 전에도 열려 있다.
+         */
+        delete: operations["remove_work_bundle_item_me_work_bundles__bundle_id__items__kind___work_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -16507,6 +16583,47 @@ export interface components {
             /** Currentpassword */
             currentPassword?: string | null;
         };
+        /** WorkBundleCreatedResponse */
+        WorkBundleCreatedResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /** WorkBundleListResponse */
+        WorkBundleListResponse: {
+            /** Items */
+            items: components["schemas"]["WorkBundleSummary"][];
+        };
+        /** WorkBundleNameRequest */
+        WorkBundleNameRequest: {
+            /** Name */
+            name: string;
+        };
+        /**
+         * WorkBundleSummary
+         * @description 묶음 하나. `item_count` 는 `GET /me/works?bundleId=` 가 내는 항목 수와 같다(운영 삭제된 작품·숨긴 소설, 소설화 허용이
+         *     없는 계정의 소설은 빠진다). `contains_work` 는 목록 요청에 `kind`·`workId` 를 줬을 때만 참·거짓이고 아니면 null 이다.
+         */
+        WorkBundleSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Itemcount */
+            itemCount: number;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+            /** Containswork */
+            containsWork: boolean | null;
+        };
         /** WorkListResponse */
         WorkListResponse: {
             /** Items */
@@ -20741,6 +20858,7 @@ export interface operations {
                 status?: "all" | "draft" | "public" | "changed" | "review";
                 q?: string | null;
                 cursor?: string | null;
+                bundleId?: string | null;
             };
             header?: never;
             path?: never;
@@ -20756,6 +20874,195 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WorkListResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_work_bundles_me_work_bundles_get: {
+        parameters: {
+            query?: {
+                kind?: ("character" | "story" | "novel") | null;
+                workId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkBundleListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_work_bundle_me_work_bundles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkBundleNameRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkBundleCreatedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_work_bundle_me_work_bundles__bundle_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_work_bundle_me_work_bundles__bundle_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkBundleNameRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_work_bundle_item_me_work_bundles__bundle_id__items__kind___work_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+                kind: "character" | "story" | "novel";
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_work_bundle_item_me_work_bundles__bundle_id__items__kind___work_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+                kind: "character" | "story" | "novel";
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

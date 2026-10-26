@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import Select, String, case, exists, func, literal, or_, select, tuple_, union_all
+from sqlalchemy import Select, String, and_, case, exists, func, literal, or_, select, tuple_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
@@ -26,6 +26,7 @@ from api.db.models.content import Content, ContentType, ContentVersion, ContentV
 from api.db.models.media import Asset
 from api.db.models.novel import Novel, NovelChapter, NovelPublication
 from api.db.models.story import StoryVersionDetail
+from api.db.models.work_bundle import WorkBundle, WorkBundleItem
 from api.db.session import get_db_session
 from api.novel_public.access import select_readable_publications
 from api.novelize.access import has_novelize_access
@@ -83,15 +84,35 @@ def _title_version_id() -> Any:
     return func.coalesce(latest_draft, Content.current_published_version_id)
 
 
+def listed_content(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """이 목록에 나오는 작품 — 내 것이고 운영 삭제되지 않음. 묶음 항목 수(`works/bundles.py`)도 이 조건으로 센다 — 따로 세면
+    "3개" 묶음을 열었을 때 2개가 보인다."""
+    return (Content.creator_user_id == user_id) & (Content.moderation_status != ModerationStatus.DELETED)
+
+
+def listed_novel(novel: Any, user_id: uuid.UUID) -> ColumnElement[bool]:
+    """이 목록에 나오는 소설 — 내 것이고 숨기지 않음. 소설화 허용 판정은 호출자가 줄기째 한다(`has_novelize_access`).
+    `novel` 은 `Novel` 이나 그 별칭이다."""
+    return and_(novel.user_id == user_id, novel.hidden_at.is_(None))
+
+
 def _content_keys(
-    user_id: uuid.UUID, type_: WorkListType, status_: WorkListStatus, term: str | None
+    user_id: uuid.UUID,
+    type_: WorkListType,
+    status_: WorkListStatus,
+    term: str | None,
+    bundle_id: uuid.UUID | None,
 ) -> Select[Any] | None:
     if type_ == "novel" or status_ == "review":
         return None
     kind = case((Content.type == ContentType.CHARACTER, literal("character")), else_=literal("story"))
     query = select(kind.label("kind"), Content.id.label("id"), Content.edited_at.label("edited_at")).where(
-        Content.creator_user_id == user_id, Content.moderation_status != ModerationStatus.DELETED
+        listed_content(user_id)
     )
+    if bundle_id is not None:
+        query = query.where(
+            exists().where(WorkBundleItem.bundle_id == bundle_id, WorkBundleItem.content_id == Content.id)
+        )
     if type_ != "all":
         query = query.where(Content.type == ContentType(type_))
     published = Content.current_published_version_id.is_not(None)
@@ -123,7 +144,11 @@ def _content_keys(
 
 
 def _novel_keys(
-    user_id: uuid.UUID, type_: WorkListType, status_: WorkListStatus, term: str | None
+    user_id: uuid.UUID,
+    type_: WorkListType,
+    status_: WorkListStatus,
+    term: str | None,
+    bundle_id: uuid.UUID | None,
 ) -> Select[Any] | None:
     if type_ not in ("all", "novel") or status_ == "changed":
         return None
@@ -132,7 +157,9 @@ def _novel_keys(
     novel = aliased(Novel)
     query = select(
         literal("novel", String).label("kind"), novel.id.label("id"), novel.updated_at.label("edited_at")
-    ).where(novel.user_id == user_id, novel.hidden_at.is_(None))
+    ).where(listed_novel(novel, user_id))
+    if bundle_id is not None:
+        query = query.where(exists().where(WorkBundleItem.bundle_id == bundle_id, WorkBundleItem.novel_id == novel.id))
     has_publication = exists().where(NovelPublication.novel_id == novel.id)
     if status_ == "draft":
         # 첫 공개 반려는 독자에게 보인 적이 없다 — 심사는 연재권 잠금 전 첫 공개에만 걸린다.
@@ -261,6 +288,7 @@ async def list_my_works(
     status_: WorkListStatus = Query("all", alias="status"),
     q: str | None = Query(None, max_length=CREATOR_CONTENT_QUERY_MAX_LENGTH),
     cursor: str | None = None,
+    bundle_id: uuid.UUID | None = Query(None, alias="bundleId"),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> WorkListResponse:
@@ -280,12 +308,20 @@ async def list_my_works(
 
     `q` 는 제목 부분 일치다 — 작품은 목록에 보이는 제목 버전(`_title_version_id`), 소설은 소설 제목(없으면 원작 제목).
 
+    `bundleId` 를 주면 그 묶음에 든 것만 낸다(같은 정렬·커서·응답). 내 묶음이 아니거나 없으면 404 `WORK_BUNDLE_NOT_FOUND`
+    다 — 묶음은 사적 정리라 남의 묶음이 있는지도 드러내지 않는다. 묶음에 들었어도 위 조건(운영 삭제·숨김·소설화 허용)에
+    걸리면 빠진다.
+
     이미지는 싣지 않는다(제목·편집 시각이 없다)."""
     term = (q.strip() or None) if q is not None else None
     after = _decode_cursor(cursor) if cursor is not None else None
-    branches = [_content_keys(user_id, type, status_, term)]
+    if bundle_id is not None and (
+        await db.scalar(select(WorkBundle.id).where(WorkBundle.id == bundle_id, WorkBundle.owner_user_id == user_id))
+    ) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "WORK_BUNDLE_NOT_FOUND"})
+    branches = [_content_keys(user_id, type, status_, term, bundle_id)]
     if await has_novelize_access(db, user_id):
-        branches.append(_novel_keys(user_id, type, status_, term))
+        branches.append(_novel_keys(user_id, type, status_, term, bundle_id))
     selects = [branch for branch in branches if branch is not None]
     if not selects:
         return WorkListResponse(items=[], next_cursor=None)

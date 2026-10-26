@@ -2,9 +2,9 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, StringConstraints
 
-from api.core.schema import CamelModel
+from api.core.schema import CamelModel, NoNul
 from api.db.models.content import ContentVisibility, ModerationStatus
 from api.db.models.novel import (
     NovelPublicationModerationStatus,
@@ -67,3 +67,36 @@ WorkItem = Annotated[ContentWorkItem | NovelWorkItem, Field(discriminator="kind"
 class WorkListResponse(CamelModel):
     items: list[WorkItem]
     next_cursor: str | None
+
+
+# 묶음 이름 한도의 권위는 BE 다(화면의 40자는 사본). 앞뒤 공백을 먼저 떼고 재므로 공백만인 이름은 0자로 거부된다. 같은 이름은
+# 허용한다.
+WORK_BUNDLE_NAME_MAX_LENGTH = 40
+WorkBundleName = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=WORK_BUNDLE_NAME_MAX_LENGTH), NoNul
+]
+# 묶음에 넣는 작품의 종류. 캐릭터·스토리는 `contents`, 소설은 `novels` 행이다.
+WorkBundleKind = Literal["character", "story", "novel"]
+
+
+class WorkBundleNameRequest(CamelModel):
+    name: WorkBundleName
+
+
+class WorkBundleCreatedResponse(CamelModel):
+    id: uuid.UUID
+
+
+class WorkBundleSummary(CamelModel):
+    """묶음 하나. `item_count` 는 `GET /me/works?bundleId=` 가 내는 항목 수와 같다(운영 삭제된 작품·숨긴 소설, 소설화 허용이
+    없는 계정의 소설은 빠진다). `contains_work` 는 목록 요청에 `kind`·`workId` 를 줬을 때만 참·거짓이고 아니면 null 이다."""
+
+    id: uuid.UUID
+    name: str
+    item_count: int
+    updated_at: datetime
+    contains_work: bool | None
+
+
+class WorkBundleListResponse(CamelModel):
+    items: list[WorkBundleSummary]
