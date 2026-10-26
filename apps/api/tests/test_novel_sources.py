@@ -214,6 +214,10 @@ def _forged_cursor(payload: bytes) -> str:
             _forged_cursor(json.dumps(["2026-01-01T00:00:00", "2026-01-01T00:00:00", str(uuid.uuid4())]).encode()),
             id="time_without_offset",
         ),
+        pytest.param(
+            _forged_cursor(json.dumps(["2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00", 123]).encode()),
+            id="id_not_a_string",
+        ),
     ],
 )
 async def test_a_forged_cursor_is_rejected_with_422(
@@ -221,7 +225,7 @@ async def test_a_forged_cursor_is_rejected_with_422(
 ) -> None:
     """서버가 내준 적 없는 커서는 모양이 어떻게 틀렸든 같은 422 와 커서 오류 코드다. 방이 하나 있어야 커서를 방의 정렬 키와
     비교하는 데까지 간다. 깨지는 시나리오: 오프셋 없는 시각은 해석은 되지만 DB 의 시간대 있는 시각과 비교하다 터져 500 이
-    나간다."""
+    나가고, 문자열이 아닌 방 id 는 UUID 로 바꾸다 터져 500 이 나간다."""
     room = await _open_room(db_client, db_session, turns=1)
     await _allow_novelize(db_session, monkeypatch, room.user_id)
 
