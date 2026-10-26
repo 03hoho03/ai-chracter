@@ -24,8 +24,15 @@ import httpx
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import Session, SessionTransaction
+from sqlalchemy.pool import NullPool
 from starlette.types import Message
 
 from api.chat import voyage_backoff
@@ -2654,3 +2661,38 @@ async def _run_worker_one_pass(
     monkeypatch.setattr(worker, "claim_candidates", claim_once)
     await asyncio.wait_for(worker.run_worker(session_factory, llm_client, stop, alive_file=alive_file), 30)
     return claimed
+
+
+# --- 커밋되는 독립 커넥션의 경합 테스트 ------------------------------------------------------------
+#
+# 락 경합과 "요청이 실제로 커밋했는가"는 롤백되는 한 커넥션(`db_session`) 위에서는 드러나지 않는다 — 같은 트랜잭션끼리는
+# 락을 다투지 않는다. 그런 테스트는 아래 엔진으로 커밋되는 커넥션을 따로 열고, 쓴 행은 각 파일의 픽스처가 표지로 골라 지운다.
+
+
+def _committed_engine(db_engine: AsyncEngine) -> AsyncEngine:
+    """테스트 DB에 붙는 별도 엔진. 락을 기다리다 영영 멈추지 않게 모든 커넥션에 `lock_timeout`을 건다
+    (공용 엔진의 풀 커넥션에 세션 설정을 남기지 않으려고 풀 없는 엔진을 따로 만든다). 닫기(`dispose`)는 호출부가 한다."""
+    return create_async_engine(
+        db_engine.url.render_as_string(hide_password=False),
+        poolclass=NullPool,
+        connect_args={"server_settings": {"lock_timeout": "5s"}},
+    )
+
+
+async def _wait_until_a_lock_is_awaited(engine: AsyncEngine) -> None:
+    """어떤 트랜잭션이 락을 기다리기 시작할 때까지 기다린다(시간이 아니라 상태로 순서를 강제). 행 락
+    대기는 상대 트랜잭션 id를 기다리는 모양이라 `pg_locks`의 데이터베이스 열이 비어 있다 — 그래서
+    `pg_stat_activity`의 대기 종류로 본다."""
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with asyncio.timeout(5):
+        while True:
+            async with factory() as probe:
+                waiting = await probe.scalar(
+                    sa.text(
+                        "SELECT count(*) FROM pg_stat_activity "
+                        "WHERE wait_event_type = 'Lock' AND datname = current_database()"
+                    )
+                )
+            if waiting:
+                return
+            await asyncio.sleep(0.01)
