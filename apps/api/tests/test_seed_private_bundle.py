@@ -26,12 +26,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import seed_dev
 from factories import _make_user
-from api.core.s3 import build_thumbnail_key, download_object
+from api.assets.image_processing import generate_blurred_image
+from api.core.s3 import (
+    build_animated_display_key,
+    build_animated_thumbnail_key,
+    build_thumbnail_key,
+    download_object,
+)
+from api.db.models.chat import ChatRoom
 from api.db.models.content import Content, ContentVersion, ContentVisibility
 from api.db.models.media import Asset, AssetKind, AssetStatus
-from api.db.models.story import MediaBookCell, StartingSetup, StoryVersionDetail
+from api.db.models.story import MediaBookCell, MediaBookPerson, MediaBookScene, StartingSetup, StoryVersionDetail
 from seed_content import images, loader
-from seed_content.ids import SEED_AUTHOR_USER_ID
+from seed_content.ids import SEED_AUTHOR_USER_ID, seed_uuid
 from seed_content.upsert import (
     character_content_id,
     story_content_id,
@@ -224,6 +231,11 @@ async def _cells(db_session: AsyncSession, version_id: uuid.UUID) -> list[MediaB
     )
 
 
+def _local_cell_asset_id(cell_id: uuid.UUID) -> uuid.UUID:
+    """시드가 미디어 북 작품의 칸 그림으로 만드는 로컬 원본 자산 id(작품 slug·칸 id 파생)."""
+    return seed_uuid("asset", f"{MEDIA_BOOK_SLUG}-cell-{cell_id}", AssetKind.ORIGINAL.value)
+
+
 def _image_size(data: bytes) -> tuple[int, int]:
     with Image.open(io.BytesIO(data)) as image:
         return image.size
@@ -364,7 +376,7 @@ async def test_seed_content_files_seeds_the_media_book_on_local_assets_with_blur
         assert sorted(cell.entity_id for cell in cells) == sorted(CELL_IDS)
         for cell in cells:
             file = "cell-1.png" if cell.entity_id == CELL_IDS[0] else "cell-2.png"
-            assert cell.image_asset_id not in CELL_SOURCE_ASSET_IDS, "운영 자산 id 가 남았다"
+            assert cell.image_asset_id == _local_cell_asset_id(cell.entity_id), "칸이 로컬 자산을 가리키지 않는다"
             original = await db_session.get(Asset, cell.image_asset_id)
             assert original is not None
             assert (original.owner_user_id, original.status, original.kind) == (
@@ -377,6 +389,7 @@ async def test_seed_content_files_seeds_the_media_book_on_local_assets_with_blur
             blurred = await db_session.get(Asset, cell.blurred_asset_id)
             assert blurred is not None
             assert (blurred.status, blurred.kind) == (AssetStatus.READY, AssetKind.BLURRED)
+            assert download_object(blurred.storage_key) == generate_blurred_image(files[file]), "블러본이 칸 원본의 블러가 아니다"
     setup = await db_session.scalar(
         select(StartingSetup).where(StartingSetup.content_version_id == story_version_id(MEDIA_BOOK_SLUG))
     )
@@ -387,3 +400,138 @@ async def test_seed_content_files_seeds_the_media_book_on_local_assets_with_blur
     counts = [await _count(db_session, Asset), await _count(db_session, MediaBookCell)]
     await seed_dev.seed_content_files(db_session)
     assert [await _count(db_session, Asset), await _count(db_session, MediaBookCell)] == counts
+
+
+async def test_seed_content_files_points_cells_at_local_assets_even_when_the_source_ids_exist_locally(
+    db_session: AsyncSession, s3_bucket: None, private_dir: Path
+) -> None:
+    """JSON 의 자산 id 가 로컬에도 작가 소유의 쓸 수 있는 자산으로 있으면 자동저장의 자산 검사를 통과한다 — 그래도 칸은
+    매니페스트 파일로 만든 로컬 자산을 가리켜야 한다. 이 조건이 없으면 바꿔 넣기를 빼먹어도 자산 검사가 먼저 422 로
+    막아 칸 단언까지 가지 않는다."""
+    _write_bundle(private_dir)
+    await _seed_author(db_session)
+    for source_asset_id in CELL_SOURCE_ASSET_IDS:
+        db_session.add(
+            Asset(
+                id=source_asset_id,
+                owner_user_id=SEED_AUTHOR_USER_ID,
+                storage_key=f"assets/test/{source_asset_id}.png",
+                kind=AssetKind.ORIGINAL,
+                status=AssetStatus.READY,
+            )
+        )
+    await db_session.flush()
+
+    await seed_dev.seed_content_files(db_session)
+
+    for version_id in (story_version_id(MEDIA_BOOK_SLUG), story_draft_version_id(MEDIA_BOOK_SLUG)):
+        cells = await _cells(db_session, version_id)
+        assert sorted(cell.entity_id for cell in cells) == sorted(CELL_IDS)
+        assert {cell.entity_id: cell.image_asset_id for cell in cells} == {
+            cell_id: _local_cell_asset_id(cell_id) for cell_id in CELL_IDS
+        }
+
+
+async def _media_book_counts(db_session: AsyncSession, version_id: uuid.UUID) -> tuple[int, int, int]:
+    return (
+        await _count(db_session, MediaBookPerson, MediaBookPerson.content_version_id == version_id),
+        await _count(db_session, MediaBookScene, MediaBookScene.content_version_id == version_id),
+        await _count(db_session, MediaBookCell, MediaBookCell.content_version_id == version_id),
+    )
+
+
+async def test_reseeding_a_slug_without_a_media_book_clears_the_previous_media_book(
+    db_session: AsyncSession, s3_bucket: None, private_dir: Path
+) -> None:
+    """같은 로컬 DB 를 묶음 없는 작업트리가 다시 시드하면 같은 slug 가 미디어 북 없는 JSON 으로 덮인다. 자동저장은
+    미디어 북 키가 없으면 칸을 건드리지 않으므로, 시드가 비우지 않으면 앞 묶음의 인물·장면·칸이 새 본문에 붙어 남는다.
+    처음부터 미디어 북이 없던 작품은 그대로 0 이다."""
+    _write_bundle(private_dir)
+    await _seed_author(db_session)
+    await seed_dev.seed_content_files(db_session)
+    assert await _media_book_counts(db_session, story_version_id(MEDIA_BOOK_SLUG)) == (1, 2, 2)
+
+    _write_json(private_dir / "stories" / f"{MEDIA_BOOK_SLUG}.json", _story_json("칸 있는 작품"))
+    await seed_dev.seed_content_files(db_session)
+
+    for slug in (MEDIA_BOOK_SLUG, FILMCLUB_SLUG):
+        for version_id in (story_version_id(slug), story_draft_version_id(slug)):
+            assert await _media_book_counts(db_session, version_id) == (0, 0, 0), f"{slug}: 미디어 북이 남았다"
+
+
+async def _add_room(db_session: AsyncSession, slug: str) -> None:
+    db_session.add(
+        ChatRoom(
+            user_id=SEED_AUTHOR_USER_ID,
+            content_id=story_content_id(slug),
+            content_version_id=story_version_id(slug),
+            name="합성 대화방 이름",
+        )
+    )
+    await db_session.flush()
+
+
+def _room_warnings(output: str) -> list[str]:
+    return [line for line in output.splitlines() if "대화방" in line]
+
+
+async def test_seed_warns_when_the_starting_setups_of_a_work_with_rooms_change(
+    db_session: AsyncSession, s3_bucket: None, private_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """튜토리얼과 묶음을 바꿔 넣으면 같은 콘텐츠 id 의 시작설정 entity id 가 바뀌고, 그 작품의 로컬 대화방은 사라진
+    시작설정·엔딩·스탯을 가리킨다(FK 가 없어 DB 가 막지 않는다). 시드는 작품 slug 와 방 수만 한 줄로 알린다."""
+    _write_bundle(private_dir)
+    await _seed_author(db_session)
+    await seed_dev.seed_content_files(db_session)
+    await _add_room(db_session, FILMCLUB_SLUG)
+    capsys.readouterr()
+
+    _write_json(private_dir / "stories" / f"{FILMCLUB_SLUG}.json", _story_json("바뀐 조감독", visibility="private"))
+    await seed_dev.seed_content_files(db_session)
+
+    [warning] = _room_warnings(capsys.readouterr().out)
+    assert FILMCLUB_SLUG in warning and "대화방 1개" in warning
+    assert "바뀐 조감독" not in warning and "합성 대화방 이름" not in warning
+
+
+async def test_seed_stays_quiet_when_the_starting_setups_of_a_work_with_rooms_stay(
+    db_session: AsyncSession, s3_bucket: None, private_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_bundle(private_dir)
+    await _seed_author(db_session)
+    await seed_dev.seed_content_files(db_session)
+    await _add_room(db_session, FILMCLUB_SLUG)
+    capsys.readouterr()
+
+    await seed_dev.seed_content_files(db_session)
+
+    assert _room_warnings(capsys.readouterr().out) == []
+
+
+async def test_seed_content_files_crops_the_animated_variants_of_a_moving_thumbnail(
+    db_session: AsyncSession, s3_bucket: None, private_dir: Path
+) -> None:
+    """움직이는 대표 이미지는 화면이 자르지 못해 서버가 매니페스트의 크롭을 모든 프레임에 건다 — 움직이는 변형도 크롭
+    크기여야 한다(원본 40×30, 크롭 20×10)."""
+    frames = [Image.new("RGB", (40, 30), color) for color in ((40, 20, 20), (20, 20, 40))]
+    buffer = io.BytesIO()
+    frames[0].save(buffer, format="GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    _write_image(private_dir, "moving.gif", buffer.getvalue())
+    _write_json(private_dir / "stories" / "private-moving.json", _story_json("움직이는 작품"))
+    _write_json(
+        private_dir / "manifest.json",
+        {
+            "stories": {"private-moving": {"thumbnail": _image_entry("moving.gif", crop={"x": 10, "y": 5, "width": 20, "height": 10})}},
+            "characters": {},
+        },
+    )
+    await _seed_author(db_session)
+
+    await seed_dev.seed_content_files(db_session)
+
+    detail = await db_session.get(StoryVersionDetail, story_version_id("private-moving"))
+    assert detail is not None and detail.thumbnail_asset_id is not None
+    asset = await db_session.get(Asset, detail.thumbnail_asset_id)
+    assert asset is not None and asset.animated_variants_ready is True
+    assert _image_size(download_object(build_animated_thumbnail_key(asset.storage_key))) == (20, 10)
+    assert _image_size(download_object(build_animated_display_key(asset.storage_key))) == (20, 10)
