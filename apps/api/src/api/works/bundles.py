@@ -65,18 +65,29 @@ async def _lock_own_bundle(db: AsyncSession, bundle_id: uuid.UUID, user_id: uuid
 
 async def _require_own_work(db: AsyncSession, user_id: uuid.UUID, kind: WorkBundleKind, work_id: uuid.UUID) -> None:
     """넣을 수 있는 작품인지 — 통합 작품 목록에 나오는 것과 같은 조건이다(내 것, 운영 삭제·숨김 아님, 소설은 소설화 허용이
-    있는 계정만). 캐릭터 id 를 `story` 로 넣는 것처럼 종류가 다르면 없는 것과 같다."""
+    있는 계정만). 캐릭터 id 를 `story` 로 넣는 것처럼 종류가 다르면 없는 것과 같다.
+
+    확인한 행을 `FOR KEY SHARE` 로 이 트랜잭션 끝까지 잡는다. 초안 삭제·소설 삭제는 회원 행을 잡지 않고 작품 행을 지우므로, 잡지
+    않으면 확인과 소속 INSERT 사이에 그 삭제가 커밋돼 INSERT 가 FK 위반(500)이 된다. 잡으면 삭제가 이 넣기의 커밋을 기다리고
+    (지우면 소속 행은 CASCADE 로 함께 사라진다), 삭제가 먼저 커밋됐으면 이 조회가 행을 못 찾아 404 다."""
     if kind == "novel":
         found = (
             await has_novelize_access(db, user_id)
-            and (await db.scalar(select(Novel.id).where(Novel.id == work_id, listed_novel(Novel, user_id)))) is not None
+            and (
+                await db.scalar(
+                    select(Novel.id)
+                    .where(Novel.id == work_id, listed_novel(Novel, user_id))
+                    .with_for_update(read=True, key_share=True)
+                )
+            )
+            is not None
         )
     else:
         found = (
             await db.scalar(
-                select(Content.id).where(
-                    Content.id == work_id, Content.type == ContentType(kind), listed_content(user_id)
-                )
+                select(Content.id)
+                .where(Content.id == work_id, Content.type == ContentType(kind), listed_content(user_id))
+                .with_for_update(read=True, key_share=True)
             )
         ) is not None
     if not found:
@@ -224,10 +235,10 @@ async def put_work_bundle_item(
     )
     if present is not None:
         return
-    held = await db.scalar(
-        select(func.count()).select_from(WorkBundleItem).where(WorkBundleItem.bundle_id == bundle.id)
-    )
-    if (held or 0) >= MAX_ITEMS_PER_BUNDLE:
+    # 한도는 화면의 항목 수와 같은 것을 센다 — 운영 삭제된 작품·숨긴 소설처럼 소속 행만 남은 것은 자리를 차지하지 않는다.
+    # 묶음 행을 잡은 뒤라 같은 묶음의 넣기가 이 사이에 끼지 않는다.
+    held = (await _item_counts(db, user_id, [bundle.id]))[bundle.id]
+    if held >= MAX_ITEMS_PER_BUNDLE:
         raise _limit_reached()
     db.add(
         WorkBundleItem(
