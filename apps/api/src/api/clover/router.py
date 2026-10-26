@@ -33,6 +33,7 @@ from api.clover.missions import (
     mission_idempotency_key,
 )
 from api.clover.schemas import (
+    CloverBalanceBreakdown,
     CloverBalanceResponse,
     CloverExpiringSoon,
     CloverLedgerCategory,
@@ -290,10 +291,13 @@ async def get_clover_balance(
     """
     user = await _require_active_user(db, user_id)
     now = datetime.now(UTC)
+    paid, bonus = await clover.purchase_balances(db, user_id=user_id)
     return CloverBalanceResponse(
         balance=user.clover_balance,
         spend_confirmed_today=is_same_kst_day(user.clover_spend_confirmed_on, now),
-        paid_balance=await clover.paid_balance(db, user_id=user_id),
+        # `clover.paid_balance`(`GET /me` 가 읽는다)와 같은 값이다 — 같은 구매 로트 두 종류의 남은 양의 합.
+        paid_balance=paid + bonus,
+        breakdown=CloverBalanceBreakdown(paid=paid, bonus=bonus, free=user.clover_balance - paid - bonus),
         expiring_soon=await _expiring_soon(db, user_id=user_id, now=now),
     )
 

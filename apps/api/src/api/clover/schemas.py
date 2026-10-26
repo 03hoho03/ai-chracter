@@ -19,6 +19,14 @@ class CloverExpiringSoon(CamelModel):
     expires_at: datetime
 
 
+class CloverBalanceBreakdown(CamelModel):
+    """잔액을 나눈 세 몫. 유료·보너스는 구매 로트의 남은 양이고 무료는 잔액의 나머지라 셋의 합이 잔액이다."""
+
+    paid: int
+    bonus: int
+    free: int
+
+
 class CloverBalanceResponse(CamelModel):
     """Python은 snake_case, JSON은 camelCase다."""
 
@@ -27,6 +35,8 @@ class CloverBalanceResponse(CamelModel):
     spend_confirmed_today: bool
     # 구매로 받은 클로버(유료+보너스) 중 남은 양. 탈퇴하면 이 몫도 사라지므로 탈퇴 화면이 경고에 쓴다.
     paid_balance: int
+    # 잔액을 유료·보너스·무료로 나눈 값. `paid_balance` 는 이 중 유료와 보너스의 합이다.
+    breakdown: CloverBalanceBreakdown
     # `expires_at > now()`인 로트만 본다(이미 만료됐지만
     # 배치가 아직 못 지운 로트는 제외). 이건 표시 전용 필터라 "차감·잔액 판정 경로에는
     # 만료 필터를 걸지 않는다"는 원칙과 충돌하지 않는다 — 표시와 판정은 다른 경로다. **만료까지 3일
