@@ -95,6 +95,13 @@ _LEFT_AS_IS: dict[str, tuple[str, ...]] = {
         "thoughts_tokens",
         "episode_count",
     ),
+    "chat_memory_impression_attempts": (
+        "attempts",
+        "prompt_tokens",
+        "cached_tokens",
+        "output_tokens",
+        "thoughts_tokens",
+    ),
     "chat_memory_fact_extractions": (
         "attempts",
         "prompt_tokens",
