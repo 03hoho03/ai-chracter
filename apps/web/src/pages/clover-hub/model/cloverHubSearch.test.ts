@@ -13,7 +13,7 @@ describe("cloverHubSearchSchema", () => {
     ).toEqual({ paymentId: "pay_1", code: "FAILURE_TYPE_PG" });
   });
 
-  it("상품 안내에서 고른 상품 키를 읽는다", () => {
+  it("주소에 담겨 온 상품 키를 읽는다", () => {
     expect(cloverHubSearchSchema.parse({ product: "lite" })).toEqual({ product: "lite" });
   });
 

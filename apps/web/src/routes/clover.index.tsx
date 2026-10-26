@@ -1,15 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { requireSession } from "@/entities/session";
+import { resolvePaymentRedirect } from "@/features/purchase-clover";
 import { CloverHubPage, cloverHubSearchSchema } from "@/pages/clover-hub";
 
 // 플랫 명명, `.index`인 이유는 형제 라우트
 // `clover.history.tsx`(`/clover/history`)가 있어서다(`inquiries.index.tsx` 선례).
-// 결제창이 페이지를 떠났다가 돌아오는 곳이 이 허브라 그 결과 쿼리를 서치 파라미터로 받는다. 상품 안내 화면에서
-// 고른 상품 키(`product`)도 서치 파라미터로 받는다.
+// 결제창이 페이지를 떠났다가 돌아오는 곳이 이 화면이라 그 결과 쿼리를 서치 파라미터로 받는다. 주소에 담긴 상품
+// 키(`product`)도 서치 파라미터로 받는다.
+//
+// 로그인 없이 열린다(상품과 구매 조건은 누구나 본다). 단 결제창이 성공으로 닫혀 돌아왔는데 세션이 없으면(결제하는
+// 사이 만료) 확정을 요청하기 전에 로그인으로 보낸다 — 로그인 redirect 가 결과 쿼리를 포함한 주소를 싣고 있어 로그인한
+// 뒤 같은 결제를 이어서 확정한다. 그대로 두면 확정 요청이 401 로 끝나 결과를 잃는다.
 export const Route = createFileRoute("/clover/")({
   validateSearch: cloverHubSearchSchema,
-  beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
+  beforeLoad: async ({ context, location, search }) => {
+    if (resolvePaymentRedirect(search).kind === "complete") await requireSession(context.queryClient, location.href);
+  },
   component: RouteComponent,
 });
 
