@@ -9,6 +9,10 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from annotated_types import Ge, Le
+
+from api.admin.schemas import AdminUserCloverRequest
+from api.clover import missions, products
 from api.core import clover
 from api.core.clover import (
     IMAGE_UNIT_COST,
@@ -801,19 +805,31 @@ def test_earned_lot_expiry_rejects_naive_datetime() -> None:
 def test_policy_constants_match_decisions() -> None:
     # 값이 조용히 바뀌면 원장에 쌓인 과거 수치의 의미가
     # 달라지므로 정한 값을 여기서 고정한다. 가격이 하나라도 바뀌면 가격 버전도 함께 올라야 한다 — 이 테스트의 값을 고칠 때
-    # 버전 단언도 같이 고친다.
+    # 버전 단언도 같이 고친다. 1클로버 = 1원 단위의 값이다.
+    assert clover.CLOVER_UNIT_KRW == 1
     assert CLOVER_MODEL_PRICES == {
-        "gemini": ModelPrices(chat_turn=10, novel_episode=80, novel_outline=190, novel_episode_outline=80),
-        "sonnet": ModelPrices(chat_turn=60, novel_episode=180, novel_outline=330, novel_episode_outline=180),
-        "opus": ModelPrices(chat_turn=200, novel_episode=300, novel_outline=690, novel_episode_outline=300),
+        "gemini": ModelPrices(chat_turn=20, novel_episode=240, novel_outline=570, novel_episode_outline=240),
+        "sonnet": ModelPrices(chat_turn=110, novel_episode=540, novel_outline=990, novel_episode_outline=540),
+        "opus": ModelPrices(chat_turn=200, novel_episode=900, novel_outline=2_070, novel_episode_outline=900),
     }
-    assert IMAGE_UNIT_COST == 30
-    assert NOVELIZE_AI_EDIT_COST == 30
-    assert NOVEL_READ_COST == 30
+    assert IMAGE_UNIT_COST == 90
+    assert NOVELIZE_AI_EDIT_COST == 90
+    assert NOVEL_READ_COST == 90
     assert NOVEL_FREE_CHAPTER_COUNT == 5
-    assert MEMORY_SUMMARY_REGENERATE_COST == 10
+    assert MEMORY_SUMMARY_REGENERATE_COST == 30
     assert CHAT_DAILY_LIMIT == 15
-    assert PRICE_VERSION == 1
+    assert PRICE_VERSION == 2
+    assert [(p.key, p.price_krw, p.paid_amount, p.bonus_amount) for p in products.CLOVER_PRODUCTS] == [
+        ("mini", 900, 900, 0),
+        ("lite", 4_500, 4_500, 225),
+        ("basic_v2", 9_900, 9_900, 990),
+        ("plus_v2", 30_000, 30_000, 4_500),
+        ("max", 49_500, 49_500, 9_900),
+    ]
+    # 미션 보상과 어드민 1회 지급·회수 상한은 단위를 1원으로 바꿀 때 숫자를 그대로 두었다 — 1원 단위에서 미션 가치가 3분의 1이
+    # 되는 것을 알고 고른 정책값이다. 가격과 함께 세 배가 되면 안 된다.
+    assert missions.MISSION_REWARDS == {"first_publish": 300, "first_message": 100, "first_image": 200}
+    assert AdminUserCloverRequest.model_fields["amount"].metadata == [Ge(ge=-100_000), Le(le=100_000)]
 
 
 async def test_ledger_table_is_reachable(db_session: AsyncSession) -> None:

@@ -85,7 +85,7 @@ const IS_CLOVER_ACTION: Record<UserActionType, boolean> = {
 };
 
 /** BE의 `AdminUserCloverRequest.amount` 범위가 `±100,000`이라 양수 입력의 상한도 같다
- * (현재 BE 가격 등록부의 기본 모델 턴 단가 기준 100,000클로버 = 기본 모델 채팅 10,000턴).
+ * (현재 BE 가격 등록부의 기본 모델 턴 단가 20 기준 100,000클로버 = 기본 모델 채팅 5,000턴).
  * 상한의 목적은 큰 보상을 막는 게 아니라 **자릿수 오입력을 거르는 그물**이고, 더 필요하면
  * 나눠 주는 편이 감사 로그에도 낫다. */
 const CLOVER_AMOUNT_MAX = 100_000;
