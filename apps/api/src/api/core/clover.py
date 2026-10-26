@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ModelPrices:
-    """글쓰기 모델 하나의 클로버 단가 한 행. 이 행을 모델 id 로 모은 `MODEL_PRICES` 가 모델별 가격 등록부이고, 모델별 가격을
+    """글쓰기 모델 하나의 클로버 단가 한 행. 이 행을 모델 id 로 모은 `CLOVER_MODEL_PRICES` 가 모델별 가격 등록부이고, 모델별 가격을
     내는 함수(`llm/chat_models.py` 의 `chat_turn_cost`·`novel_episode_unit_price`·`novel_outline_unit_price`·
     `novel_episode_outline_unit_price`)는 호출 때마다 이 표에서 읽는다. 모델과 무관한 기능 단가(이미지·AI 문단 수정·노벨 화
     소장·요약 다시 만들기)는 표 밖의 모듈 상수다.
@@ -75,7 +75,7 @@ class ModelPrices:
 # $0.384·Opus 약 $0.815 다. 입력 상한을 올리면 이 값도 다시 계산한다.
 # 장면 구성안 80·180·300 은 같은 모델의 화 단가와 같게 둔 값이다. 잰 원가(p90)가 셋 다 쓸 수 있는 돈의 50% 안에 들어 그대로 둔다.
 # 전체 구성안과 달리 상한 길이 원가로 정한 값이 아니다 — 상한에 가까운 아주 긴 화의 원가는 아직 재지 않았다.
-MODEL_PRICES: dict[ChatModelId, ModelPrices] = {
+CLOVER_MODEL_PRICES: dict[ChatModelId, ModelPrices] = {
     # 채팅 턴 10: 조감독 작품 111턴 시뮬레이션에서 생성·칸 판정·스탯·요약·엔딩을 모두 합쳐 턴당 약 $0.0047(약 6.5원)이라
     # 원가는 쓸 수 있는 돈(약 25원)의 4분의 1 남짓이다. 방 하나·시뮬레이터 사용자의 값이라 실사용 분포는 아직 모른다.
     # 화 80: 운영에서 기본 모델 소설화 호출 다섯 번의 평균 토큰을 이 모델의 2027년 인상 후 단가로 계산하면 호출 하나에 약 78원이고
@@ -97,7 +97,7 @@ MODEL_PRICES: dict[ChatModelId, ModelPrices] = {
 def _check_model_prices() -> None:
     """등록부에 글쓰기 모델마다 꼭 한 행이 있는지. 행이 빠진 모델은 가격 함수가 그 모델을 받는 순간 `KeyError` 로 500 이 되므로,
     모델 타입과 표가 어긋나면 기동에서 멈춘다."""
-    if set(MODEL_PRICES) != set(get_args(ChatModelId)):
+    if set(CLOVER_MODEL_PRICES) != set(get_args(ChatModelId)):
         raise RuntimeError("가격 등록부의 행이 글쓰기 모델 목록과 다르다")
 
 

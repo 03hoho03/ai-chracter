@@ -1222,14 +1222,14 @@ class _NeverCalledLLMClient(LLMClient):
         raise AssertionError("먼저 실패해야 할 검증보다 앞서 LLM이 호출됐다")
 
 
+def _set_model_price(monkeypatch: pytest.MonkeyPatch, model: ChatModelId, **prices: int) -> None:
+    """가격 등록부(`clover.CLOVER_MODEL_PRICES`)에서 그 모델 행의 주어진 단가만 바꾼다. 테스트가 끝나면 `monkeypatch` 가 행을 되돌린다.
+    가격 함수가 호출 때마다 등록부를 읽으므로 이 교체가 그대로 통한다."""
+    monkeypatch.setitem(clover.CLOVER_MODEL_PRICES, model, replace(clover.CLOVER_MODEL_PRICES[model], **prices))
+
+
 # `LLMClient`로 받는다 — 이 저장소의 페이크는 파일마다 모양이 다르고(큐 기반·발행 심사용 등)
 # 전부 `LLMClient` 하위라, 구체 페이크로 좁히면 이 헬퍼를 공유할 수 없다.
-def _set_model_price(monkeypatch: pytest.MonkeyPatch, model: ChatModelId, **prices: int) -> None:
-    """가격 등록부(`clover.MODEL_PRICES`)에서 그 모델 행의 주어진 단가만 바꾼다. 테스트가 끝나면 `monkeypatch` 가 행을 되돌린다.
-    가격 함수가 호출 때마다 등록부를 읽으므로 이 교체가 그대로 통한다."""
-    monkeypatch.setitem(clover.MODEL_PRICES, model, replace(clover.MODEL_PRICES[model], **prices))
-
-
 def _override_llm_client(fake: LLMClient) -> None:
     app.dependency_overrides[get_llm_client] = lambda: fake
 

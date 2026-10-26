@@ -430,7 +430,7 @@ async def test_restoring_spends_nothing_and_writes_no_turn_record(
         return balance, ledger, records, counters
 
     spent = await spending()
-    assert spent[0] == 100 - 2 * clover.MODEL_PRICES["gemini"].chat_turn
+    assert spent[0] == 100 - 2 * clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
 
     response = await _restore(db_client, room, current[0])
 

@@ -293,20 +293,20 @@ async def test_an_opus_session_turn_generates_and_charges_with_opus(
 
     assert resp.status_code == 200
     assert _parse_sse_events(resp.text)[-1]["type"] == "done"
-    assert charges == [("opus", clover.MODEL_PRICES["opus"].chat_turn, "preview")]
+    assert charges == [("opus", clover.CLOVER_MODEL_PRICES["opus"].chat_turn, "preview")]
     assert turns == [("opus", "opus")]
     assert fake.call("preview_generate") == ("preview_generate", "opus", None, "anthropic", "fixture-anthropic-opus")
     assert {call[1:] for call in fake.calls if call[0] != "preview_generate"} <= {
         ("gemini", None, "anthropic", "fixture-anthropic-haiku")
     }
-    assert await ledger(db_session, user_id) == [["chat_spend", -clover.MODEL_PRICES["opus"].chat_turn]]
+    assert await ledger(db_session, user_id) == [["chat_spend", -clover.CLOVER_MODEL_PRICES["opus"].chat_turn]]
 
 
 @pytest.mark.parametrize(
     ("switch", "expected_model", "expected_price", "expected_stat_call"),
     [
-        pytest.param(True, "opus", clover.MODEL_PRICES["opus"].chat_turn, "opus", id="switch-on"),
-        pytest.param(False, "gemini", clover.MODEL_PRICES["gemini"].chat_turn, None, id="switch-off"),
+        pytest.param(True, "opus", clover.CLOVER_MODEL_PRICES["opus"].chat_turn, "opus", id="switch-on"),
+        pytest.param(False, "gemini", clover.CLOVER_MODEL_PRICES["gemini"].chat_turn, None, id="switch-off"),
     ],
 )
 async def test_an_opus_session_turns_to_gemini_for_judgments_and_charge_when_the_switch_is_off(
@@ -357,7 +357,7 @@ async def test_a_model_query_on_a_message_does_not_change_the_session_model(
     assert resp.status_code == 200
     state = await stored_state(session_id)
     assert (state.get("chatModel"), state["turnCount"]) == ("opus", 1)
-    assert charges == [("opus", clover.MODEL_PRICES["opus"].chat_turn, "preview")]
+    assert charges == [("opus", clover.CLOVER_MODEL_PRICES["opus"].chat_turn, "preview")]
     assert turns == [("opus", "opus")]
     assert fake.call("preview_generate")[1] == "opus"
 
@@ -385,7 +385,7 @@ async def test_one_preview_turn_reads_the_effective_model_once_for_sets_generati
 
     assert resp.status_code == 200
     assert asked == [True]
-    assert charges == [("opus", clover.MODEL_PRICES["opus"].chat_turn, "preview")]
+    assert charges == [("opus", clover.CLOVER_MODEL_PRICES["opus"].chat_turn, "preview")]
     assert turns == [("opus", "opus")]
     assert fake.call("preview_stat_judgment")[2] == "opus"
 

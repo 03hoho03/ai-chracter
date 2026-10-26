@@ -9,8 +9,8 @@
 3. 무료로 지나는 턴(하루 무료분 안, 면제 계정)과 토큰으로 내는 이미지는 버전이 달라도 그대로 지난다 — 깎지 않는 요청을 막으면
    가격이 바뀐 날 무료 사용자까지 이유 없이 멈춘다.
 4. 버전을 싣지 않은 요청(가격 버전을 모르는 배포 전 화면)은 지금처럼 처리한다.
-5. 가격표를 등록부로 옮겨도 화면에 나가는 금액은 그대로다(아래 "금액 고정" 절) — 옮기기 전 코드와 옮긴 뒤 코드에서 같은
-   값이 나와야 한다.
+5. 가격이 나가는 출구(가격 함수·작업 금액·노벨 화 가격·공개 가격 응답)가 모두 가격 등록부와 기능 단가 상수에서 읽는다(아래
+   "금액 고정" 절). 정한 값 자체는 정책 상수 테스트 한 곳이 고정한다.
 
 잔액은 `db_session.refresh(user)` 로 다시 읽는다. 차감은 별도 세션·별도 트랜잭션에서 일어나 테스트 세션의 인스턴스는 낡아 있다.
 """
@@ -324,44 +324,40 @@ async def test_clover_paid_image_with_the_current_or_no_version_spends(
 
 
 # ── 금액 고정 ─────────────────────────────────────────────────────────────────
-# 가격표를 등록부 하나로 옮기는 변경은 값을 바꾸지 않는다. 아래 두 테스트는 옮기기 전 코드에서도 초록이어야 한다 — 그래서 상수
-# 이름이 아니라 가격을 내는 함수와 응답만 본다. 방 응답·모델 목록의 턴 가격, 소설 상태·모델 선택지의 화 단가, 구성 흐름 모델
-# 목록의 구성안 단가, 노벨 상태의 화 가격은 모두 아래 함수가 낸 값을 그대로 싣는다.
-_MODEL_PRICES: dict[ChatModelId, tuple[int, int, int, int]] = {
-    # (채팅 턴, 소설 화, 전체 구성안, 장면 구성안)
-    "gemini": (10, 80, 190, 80),
-    "sonnet": (60, 180, 330, 180),
-    "opus": (200, 300, 690, 300),
-}
+# 정한 값 자체는 `test_core_clover.py` 의 정책 상수 테스트 한 곳이 고정한다. 아래 두 테스트는 가격이 나가는 출구가 전부 그 등록부와
+# 기능 단가 상수에서 읽는지를 본다 — 출구 어딘가에 숫자 사본이 남으면 값을 바꿀 때 그 출구만 옛 금액을 낸다. 방 응답·모델 목록의
+# 턴 가격, 소설 상태·모델 선택지의 화 단가, 구성 흐름 모델 목록의 구성안 단가, 노벨 상태의 화 가격은 모두 아래 함수가 낸 값을
+# 그대로 싣는다.
 
 
-def test_price_functions_return_the_policy_values() -> None:
+def test_price_functions_follow_the_registry() -> None:
     """모델 셋의 네 단가와, 그 단가로 계산하는 작업 금액(화 생성·다시 만들기·원고·구성안·장면 구성안·AI 수정·연쇄 묶음 하나),
-    노벨 화 가격(앞 다섯 화 무료, 그 뒤 30)이 정한 값 그대로다."""
-    assert {
-        m.id: (
+    노벨 화 가격(앞 무료 화까지 0, 그 뒤 화당 가격)이 등록부·상수 값 그대로다."""
+    for m in CHAT_MODELS:
+        row = clover.CLOVER_MODEL_PRICES[m.id]
+        assert (
             chat_turn_cost(m.id),
             novel_episode_unit_price(m.id),
             novel_outline_unit_price(m.id),
             novel_episode_outline_unit_price(m.id),
-        )
-        for m in CHAT_MODELS
-    } == _MODEL_PRICES
-    for model, (_, episode, outline, episode_outline) in _MODEL_PRICES.items():
-        assert job_price("chapter_generate", model, 3) == 3 * episode, model
-        assert job_price("chapter_regenerate", model) == episode, model
-        assert job_price("outline_chapter_generate", model) == episode, model
-        assert job_price("outline_generate", model) == outline, model
-        assert job_price("episode_outline_generate", model) == episode_outline, model
-        assert job_price("ai_edit", model) == 30, model
+        ) == (row.chat_turn, row.novel_episode, row.novel_outline, row.novel_episode_outline), m.id
+        assert job_price("chapter_generate", m.id, 3) == 3 * row.novel_episode, m.id
+        assert job_price("chapter_regenerate", m.id) == row.novel_episode, m.id
+        assert job_price("outline_chapter_generate", m.id) == row.novel_episode, m.id
+        assert job_price("outline_generate", m.id) == row.novel_outline, m.id
+        assert job_price("episode_outline_generate", m.id) == row.novel_episode_outline, m.id
+        assert job_price("ai_edit", m.id) == clover.NOVELIZE_AI_EDIT_COST, m.id
         # 묶음 하나의 화 수 상한은 가격이 아니라 설정이라 그 값을 곱한다.
-        assert chain_price(model, 1) == k_max(model) * episode, model
-    assert [chapter_price(ordinal, 30) for ordinal in (1, 5, 6)] == [0, 0, 30]
+        assert chain_price(m.id, 1) == k_max(m.id) * row.novel_episode, m.id
+    free = clover.NOVEL_FREE_CHAPTER_COUNT
+    assert [chapter_price(ordinal, 1) for ordinal in (1, free, free + 1)] == [0, 0, clover.NOVEL_READ_COST]
 
 
-async def test_pricing_response_amounts_are_the_policy_values(db_client: httpx.AsyncClient) -> None:
-    """공개 가격 응답의 금액 칸이 정한 값 그대로다. 기능 스위치·상품·결제수단처럼 금액이 아닌 칸은 다른 테스트가 본다."""
+async def test_pricing_response_amounts_follow_the_registry(db_client: httpx.AsyncClient) -> None:
+    """공개 가격 응답의 금액 칸이 등록부·상수 값 그대로다. 기능 스위치·상품·결제수단처럼 금액이 아닌 칸은 다른 테스트가 본다."""
     body = (await db_client.get("/clover/pricing")).json()
+    gemini = clover.CLOVER_MODEL_PRICES["gemini"]
+    opus = clover.CLOVER_MODEL_PRICES["opus"]
 
     amounts = {
         key: body[key]
@@ -377,16 +373,16 @@ async def test_pricing_response_amounts_are_the_policy_values(db_client: httpx.A
         )
     }
     assert amounts == {
-        "chatTurnCost": 10,
-        "imageCost": 30,
-        "novelEpisodeCost": 80,
-        "novelAiEditCost": 30,
-        "dailyFreeChatTurns": 15,
-        "novelReadCost": 30,
-        "novelFreeChapterCount": 5,
-        "memorySummaryRegenerateCost": 10,
+        "chatTurnCost": gemini.chat_turn,
+        "imageCost": clover.IMAGE_UNIT_COST,
+        "novelEpisodeCost": gemini.novel_episode,
+        "novelAiEditCost": clover.NOVELIZE_AI_EDIT_COST,
+        "dailyFreeChatTurns": rate_limit_gate.CHAT_DAILY_LIMIT,
+        "novelReadCost": clover.NOVEL_READ_COST,
+        "novelFreeChapterCount": clover.NOVEL_FREE_CHAPTER_COUNT,
+        "memorySummaryRegenerateCost": clover.MEMORY_SUMMARY_REGENERATE_COST,
     }
     assert [(m["id"], m["chatTurnCost"], m["novelEpisodeCost"]) for m in body["models"]] == [
-        ("gemini", 10, 80),
-        ("opus", 200, 300),
+        ("gemini", gemini.chat_turn, gemini.novel_episode),
+        ("opus", opus.chat_turn, opus.novel_episode),
     ]

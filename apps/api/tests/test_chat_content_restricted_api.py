@@ -156,7 +156,7 @@ async def test_send_on_normal_content_with_the_same_setup_spends_clover(
 
     assert resp.status_code == 200
     await db_session.refresh(user)
-    assert user.clover_balance == 100 - clover.MODEL_PRICES["gemini"].chat_turn
+    assert user.clover_balance == 100 - clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
 
 
 async def test_creator_cannot_continue_a_room_on_own_restricted_content(

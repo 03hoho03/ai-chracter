@@ -92,7 +92,7 @@ def test_episode_unit_prices_are_read_from_the_price_registry_at_call_time(monke
 def test_default_episode_unit_prices_are_the_registry_values() -> None:
     """모델마다 화 하나의 값이다(생성 한 번은 이 값 × 화 수). 값 자체는 정책 상수 테스트가 고정한다."""
     assert [novel_episode_unit_price(m.id) for m in CHAT_MODELS] == [
-        clover.MODEL_PRICES["gemini"].novel_episode,
-        clover.MODEL_PRICES["sonnet"].novel_episode,
-        clover.MODEL_PRICES["opus"].novel_episode,
+        clover.CLOVER_MODEL_PRICES["gemini"].novel_episode,
+        clover.CLOVER_MODEL_PRICES["sonnet"].novel_episode,
+        clover.CLOVER_MODEL_PRICES["opus"].novel_episode,
     ]

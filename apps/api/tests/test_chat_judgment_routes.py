@@ -547,7 +547,7 @@ async def put_rows(db_session: AsyncSession, *rows: RouteRow) -> None:
 @pytest.mark.parametrize(
     ("stored", "switch", "expected_stat", "expected_ledger"),
     [
-        pytest.param("opus", True, "haiku", [["chat_spend", -clover.MODEL_PRICES["opus"].chat_turn]], id="opus-on"),
+        pytest.param("opus", True, "haiku", [["chat_spend", -clover.CLOVER_MODEL_PRICES["opus"].chat_turn]], id="opus-on"),
         pytest.param("opus", False, "gemini", [], id="opus-off"),
         pytest.param("gemini", True, "gemini", [], id="gemini-room"),
     ],
@@ -606,7 +606,7 @@ async def test_one_request_reads_the_effective_room_model_once_for_the_sets_and_
     assert resp.status_code == 200
     assert asked == [True]
     assert [slots["stat"] for slots in sets] == ["haiku"]
-    assert await ledger(db_session, user_id) == [["chat_spend", -clover.MODEL_PRICES["opus"].chat_turn]]
+    assert await ledger(db_session, user_id) == [["chat_spend", -clover.CLOVER_MODEL_PRICES["opus"].chat_turn]]
     assert [model for site, model in fake.calls if site == "chat_generate"] == ["opus"]
 
 

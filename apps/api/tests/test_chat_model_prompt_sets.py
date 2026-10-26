@@ -166,7 +166,7 @@ async def test_missing_model_set_is_an_error_event_with_a_refund(
         (row.kind, row.amount)
         for row in (await db_session.scalars(select(CloverLedger).where(CloverLedger.user_id == user_id))).all()
     )
-    assert ledger == [("chat_refund", clover.MODEL_PRICES["opus"].chat_turn), ("chat_spend", -clover.MODEL_PRICES["opus"].chat_turn)]
+    assert ledger == [("chat_refund", clover.CLOVER_MODEL_PRICES["opus"].chat_turn), ("chat_spend", -clover.CLOVER_MODEL_PRICES["opus"].chat_turn)]
 
 
 async def test_memory_fold_gets_the_gemini_set_in_a_premium_room(

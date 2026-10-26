@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.clover.missions import MISSION_REWARDS, mission_idempotency_key
 from api.core.clover import (
-    MODEL_PRICES,
+    CLOVER_MODEL_PRICES,
     CloverLotShortfallError,
     burn_all,
     grant,
@@ -39,7 +39,7 @@ from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation,
 from factories import _assert_blocked, _make_user_with_clover_lot
 
 # 차감 금액으로 쓰는 값(기본 모델 채팅 턴 하나).
-_CHAT_TURN_COST = MODEL_PRICES["gemini"].chat_turn
+_CHAT_TURN_COST = CLOVER_MODEL_PRICES["gemini"].chat_turn
 
 # teardown이 지울 대상을 고르는 표지다. 이 파일이 만든 유저만 지우므로 다른 테스트의 행을
 # 건드리지 않는다 — 아래 픽스처 docstring의 "위험 1" 참조.

@@ -40,7 +40,7 @@ from factories import (
     _parse_sse_events,
 )
 
-_OPUS = clover.MODEL_PRICES["opus"].chat_turn
+_OPUS = clover.CLOVER_MODEL_PRICES["opus"].chat_turn
 _START = 1000
 
 
@@ -149,7 +149,7 @@ async def test_premium_turn_charges_an_exempt_account(
     resp = await _send(db_client, room_id)
 
     assert resp.status_code == 200
-    assert await _ledger(db_session, user.id) == [("chat_spend", -clover.MODEL_PRICES["opus"].chat_turn)]
+    assert await _ledger(db_session, user.id) == [("chat_spend", -clover.CLOVER_MODEL_PRICES["opus"].chat_turn)]
 
 
 async def test_premium_turn_does_not_use_up_the_free_daily_quota(
@@ -226,7 +226,7 @@ async def test_premium_turn_is_refused_when_redis_fails(
     ("daily_limit", "expected_ledger"),
     [
         pytest.param(30, [], id="free-quota-applies"),
-        pytest.param(0, [("chat_spend", -clover.MODEL_PRICES["gemini"].chat_turn)], id="gemini-price"),
+        pytest.param(0, [("chat_spend", -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)], id="gemini-price"),
     ],
 )
 async def test_revoked_premium_room_runs_as_gemini_at_gemini_price(
@@ -276,7 +276,7 @@ async def test_a_switched_off_premium_room_uses_up_the_free_daily_quota_like_gem
     assert (await _send(db_client, room_id)).status_code == 200
     assert (await _send(db_client, room_id)).status_code == 200
 
-    assert await _ledger(db_session, user.id) == [("chat_spend", -clover.MODEL_PRICES["gemini"].chat_turn)]
+    assert await _ledger(db_session, user.id) == [("chat_spend", -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)]
 
 
 # ---- 생성 모델의 출처 ----

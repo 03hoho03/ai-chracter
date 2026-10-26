@@ -119,10 +119,10 @@ async def _another_creator(db: AsyncSession) -> User:
 _SURFACES = ["send", "regenerate", "edit"]
 _MODES = {
     # 일일 무료분을 다 쓴 Gemini 턴.
-    "gemini": clover.MODEL_PRICES["gemini"].chat_turn,
+    "gemini": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
     # 본인인증 게이트에 걸린 회원의 Gemini 턴(무료분 0).
-    "unverified": clover.MODEL_PRICES["gemini"].chat_turn,
-    "opus": clover.MODEL_PRICES["opus"].chat_turn,
+    "unverified": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
+    "opus": clover.CLOVER_MODEL_PRICES["opus"].chat_turn,
 }
 
 
@@ -217,7 +217,7 @@ async def test_a_paid_turn_in_ones_own_room_records_the_player_as_the_owner(
 
     assert resp.status_code == 200, resp.text
     assert await _usages(db_session, player.id) == [
-        ("chat", content.id, player.id, room_id, None, -clover.MODEL_PRICES["gemini"].chat_turn)
+        ("chat", content.id, player.id, room_id, None, -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)
     ]
 
 
@@ -245,13 +245,13 @@ async def test_an_unverified_turn_charged_during_a_redis_outage_records_its_usag
         db_session,
         _factory(db_session),
         model=DEFAULT_CHAT_MODEL,
-        price=clover.MODEL_PRICES["gemini"].chat_turn,
+        price=clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
         usage=SpendUsage("chat", content_id=content.id, chat_room_id=room_id),
     )
 
     assert charge.source == "clover"
     assert await _usages(db_session, player.id) == [
-        ("chat", content.id, creator.id, room_id, None, -clover.MODEL_PRICES["gemini"].chat_turn)
+        ("chat", content.id, creator.id, room_id, None, -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)
     ]
 
 
@@ -294,7 +294,7 @@ async def test_a_paid_preview_turn_records_a_preview_usage_without_a_content(
         _clear_llm_override()
 
     assert resp.status_code == 200, resp.text
-    assert await _usages(db_session, player.id) == [("preview", None, None, None, None, -clover.MODEL_PRICES["gemini"].chat_turn)]
+    assert await _usages(db_session, player.id) == [("preview", None, None, None, None, -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)]
     assert await _spends_without_usage(db_session, player.id) == []
 
 
@@ -361,7 +361,7 @@ async def test_a_free_turn_records_no_usage_and_reads_no_content(
     assert len(paid.touching("clover_spend_usages")) == 1
     assert paid.touching("contents") == paid.touching("clover_spend_usages")
     assert await _usages(db_session, player.id) == [
-        ("chat", content.id, creator.id, room_id, None, -clover.MODEL_PRICES["gemini"].chat_turn)
+        ("chat", content.id, creator.id, room_id, None, -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)
     ]
 
 

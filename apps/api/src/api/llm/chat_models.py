@@ -102,12 +102,12 @@ def backend_model_id(backend: BackendId, model: PromptSetModelId) -> str:
 
 def novel_outline_unit_price(model_id: ChatModelId) -> int:
     """구성 흐름의 전체 구성안 한 번의 클로버(모델별 고정가, 화 수와 무관하다)."""
-    return clover.MODEL_PRICES[model_id].novel_outline
+    return clover.CLOVER_MODEL_PRICES[model_id].novel_outline
 
 
 def novel_episode_outline_unit_price(model_id: ChatModelId) -> int:
     """구성 흐름의 화 하나의 장면 구성안 한 번의 클로버(모델별 고정가)."""
-    return clover.MODEL_PRICES[model_id].novel_episode_outline
+    return clover.CLOVER_MODEL_PRICES[model_id].novel_episode_outline
 
 
 def structured_call_model(
@@ -130,9 +130,9 @@ def configured_call_site_model(call_site: LLMCallSite) -> PromptSetModelId:
 
 def chat_turn_cost(model_id: ChatModelId) -> int:
     """채팅 턴 하나(새 턴·재생성·수정)의 클로버."""
-    return clover.MODEL_PRICES[model_id].chat_turn
+    return clover.CLOVER_MODEL_PRICES[model_id].chat_turn
 
 
 def novel_episode_unit_price(model_id: ChatModelId) -> int:
     """소설 화 하나의 클로버. 생성 한 번은 이 값 × 화 수를 낸다. 다시 만들기도 같은 호출이라 같은 값이다."""
-    return clover.MODEL_PRICES[model_id].novel_episode
+    return clover.CLOVER_MODEL_PRICES[model_id].novel_episode

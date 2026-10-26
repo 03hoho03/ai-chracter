@@ -13,7 +13,7 @@ from api.core import clover
 from api.core.clover import (
     IMAGE_UNIT_COST,
     MEMORY_SUMMARY_REGENERATE_COST,
-    MODEL_PRICES,
+    CLOVER_MODEL_PRICES,
     NOVEL_FREE_CHAPTER_COUNT,
     NOVEL_READ_COST,
     NOVELIZE_AI_EDIT_COST,
@@ -38,7 +38,7 @@ from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation,
 from factories import _make_payment, _make_user, _make_user_with_clover_lot
 
 # 차감·환급 금액으로 쓰는 값. 정책 단가 자체는 아래 정책 상수 테스트가 고정한다.
-_CHAT_TURN_COST = MODEL_PRICES["gemini"].chat_turn
+_CHAT_TURN_COST = CLOVER_MODEL_PRICES["gemini"].chat_turn
 
 
 async def _ledger_rows(db: AsyncSession, user_id: uuid.UUID) -> list[CloverLedger]:
@@ -802,7 +802,7 @@ def test_policy_constants_match_decisions() -> None:
     # 값이 조용히 바뀌면 원장에 쌓인 과거 수치의 의미가
     # 달라지므로 정한 값을 여기서 고정한다. 가격이 하나라도 바뀌면 가격 버전도 함께 올라야 한다 — 이 테스트의 값을 고칠 때
     # 버전 단언도 같이 고친다.
-    assert MODEL_PRICES == {
+    assert CLOVER_MODEL_PRICES == {
         "gemini": ModelPrices(chat_turn=10, novel_episode=80, novel_outline=190, novel_episode_outline=80),
         "sonnet": ModelPrices(chat_turn=60, novel_episode=180, novel_outline=330, novel_episode_outline=180),
         "opus": ModelPrices(chat_turn=200, novel_episode=300, novel_outline=690, novel_episode_outline=300),

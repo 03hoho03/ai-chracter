@@ -59,7 +59,7 @@ async def test_any_account_selects_a_premium_model_while_the_switch_is_on(
         "chatModel": "opus",
         "effectiveChatModel": "opus",
         "effectiveChatModelName": CHAT_MODELS_BY_ID["opus"].name,
-        "turnCost": clover.MODEL_PRICES["opus"].chat_turn,
+        "turnCost": clover.CLOVER_MODEL_PRICES["opus"].chat_turn,
     }
     assert await _stored(db_session, room_id) == "opus"
 
@@ -81,7 +81,7 @@ async def test_anyone_can_go_back_to_gemini_even_with_the_switch_off(
         "chatModel": None,
         "effectiveChatModel": "gemini",
         "effectiveChatModelName": "Gemini",
-        "turnCost": clover.MODEL_PRICES["gemini"].chat_turn,
+        "turnCost": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
     }
     assert await _stored(db_session, room_id) is None
 
@@ -152,7 +152,7 @@ async def test_room_response_shows_the_stored_and_the_effective_model(
     assert (fresh["chatModel"], fresh["effectiveChatModel"], fresh["turnCost"]) == (
         None,
         "gemini",
-        clover.MODEL_PRICES["gemini"].chat_turn,
+        clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
     )
     assert (await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": "opus"})).status_code == 200
 
@@ -163,14 +163,14 @@ async def test_room_response_shows_the_stored_and_the_effective_model(
     assert (chosen["chatModel"], chosen["effectiveChatModel"], chosen["turnCost"]) == (
         "opus",
         "opus",
-        clover.MODEL_PRICES["opus"].chat_turn,
+        clover.CLOVER_MODEL_PRICES["opus"].chat_turn,
     )
     assert (
         revoked["chatModel"],
         revoked["effectiveChatModel"],
         revoked["effectiveChatModelName"],
         revoked["turnCost"],
-    ) == ("opus", "gemini", "Gemini", clover.MODEL_PRICES["gemini"].chat_turn)
+    ) == ("opus", "gemini", "Gemini", clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)
 
 
 async def test_a_room_storing_sonnet_runs_on_gemini_even_with_access(
@@ -188,7 +188,7 @@ async def test_a_room_storing_sonnet_runs_on_gemini_even_with_access(
         "sonnet",
         "gemini",
         "Gemini",
-        clover.MODEL_PRICES["gemini"].chat_turn,
+        clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
     )
 
 
@@ -223,7 +223,7 @@ async def test_model_list_for_an_account_without_access_is_gemini_only(
     resp = await db_client.get("/chat-models")
 
     assert resp.status_code == 200
-    assert resp.json() == [{"id": "gemini", "name": "Gemini", "beta": False, "turnCost": clover.MODEL_PRICES["gemini"].chat_turn}]
+    assert resp.json() == [{"id": "gemini", "name": "Gemini", "beta": False, "turnCost": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn}]
 
 
 async def test_model_list_with_the_switch_on_has_the_chat_models_with_price_and_beta_mark(
@@ -239,8 +239,8 @@ async def test_model_list_with_the_switch_on_has_the_chat_models_with_price_and_
     resp = await db_client.get("/chat-models")
 
     assert [(m["id"], m["turnCost"], m["beta"]) for m in resp.json()] == [
-        ("gemini", clover.MODEL_PRICES["gemini"].chat_turn, False),
-        ("opus", clover.MODEL_PRICES["opus"].chat_turn, True),
+        ("gemini", clover.CLOVER_MODEL_PRICES["gemini"].chat_turn, False),
+        ("opus", clover.CLOVER_MODEL_PRICES["opus"].chat_turn, True),
     ]
 
 
