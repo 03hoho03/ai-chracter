@@ -7,13 +7,14 @@
 import json
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import httpx
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models.novel import NovelCharacter, NovelReadingPosition
+from api.db.models.novel import Novel, NovelCharacter, NovelReadingPosition
 from api.novelize.schemas import BOARD_LAYOUT_MAX_BYTES
 from factories import (
     _NeverCalledLLMClient,
@@ -303,3 +304,21 @@ async def test_detail_reads_reading_positions_without_a_query_per_episode(
         counts.append(await _detail_query_count(db_client, novel_id))
 
     assert counts[0] == counts[1]
+
+
+async def test_saving_the_board_layout_leaves_the_novel_in_place(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """보드 배치는 끌기가 멈출 때마다 저장되는 화면 배열이라, 작품 목록의 순서(소설 수정 시각)를 흔들지 않는다."""
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    long_ago = datetime(2020, 1, 1, tzinfo=UTC)
+    await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(updated_at=long_ago))
+    await db_session.commit()
+
+    resp = await db_client.put(
+        f"/novels/{novel_id}/board-layout",
+        json={"version": 1, "positions": {"notes": {"x": 0, "y": 0}}, "viewport": {"x": 0, "y": 0, "zoom": 1}},
+    )
+
+    assert resp.status_code == 204, resp.text
+    assert await db_session.scalar(sa.select(Novel.updated_at).where(Novel.id == novel_id)) == long_ago

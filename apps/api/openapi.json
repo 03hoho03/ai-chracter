@@ -6425,6 +6425,106 @@
         }
       }
     },
+    "/me/works": {
+      "get": {
+        "tags": [
+          "works"
+        ],
+        "summary": "List My Works",
+        "description": "내 캐릭터·스토리(운영 삭제 제외, 초안 포함)와 소설(숨김 제외)을 마지막 편집 순으로. 정렬 키는 (편집 시각, 유형, id)\n내림차순이고 편집 시각은 작품의 `edited_at`, 소설의 `updated_at` 이다. 커서는 그 셋을 담으므로 `type`·`status`·`q` 는\n페이지마다 다시 넘긴다.\n\n소설은 소설화 허용(`has_novelize_access`)이 있는 계정에만 섞는다 — 허용이 없으면(회수당해 소설 행만 남았어도) 소설은\n빠지고, `type=novel` 도 403 이 아니라 빈 목록이다.\n\n`status`:\n- `draft` 초안: 작품은 발행된 적 없음, 소설은 공개 상태 행이 없거나 첫 공개가 반려됨.\n- `public` 공개 중: 작품은 발행됨 ∧ 공개 ∧ 이용제한 아님(링크 공개·비공개 발행작은 아니다), 소설은 독자가 지금 읽을\n  수 있음(`select_readable_publications`, 응답의 `publication.readable` 과 같은 판정).\n- `changed` 수정본 있음: 발행됨 ∧ 고친 초안이 있음 — 공개 범위·이용제한과 무관하다. 소설에는 없다.\n- `review` 심사 중: 소설의 첫 공개가 운영자 승인을 기다림. 작품에는 없다(작품 발행은 요청 안에서 끝난다).\n\n`q` 는 제목 부분 일치다 — 작품은 목록에 보이는 제목 버전(`_title_version_id`), 소설은 소설 제목(없으면 원작 제목).\n\n이미지는 싣지 않는다(제목·편집 시각이 없다).",
+        "operationId": "list_my_works_me_works_get",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "character",
+                "story",
+                "novel"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Type"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "draft",
+                "public",
+                "changed",
+                "review"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/novels": {
       "get": {
         "tags": [
@@ -28931,6 +29031,86 @@
         ],
         "title": "ContentVisibilityUpdateRequest"
       },
+      "ContentWorkItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "character",
+              "story"
+            ],
+            "title": "Kind"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "editedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Editedat"
+          },
+          "hasPublished": {
+            "type": "boolean",
+            "title": "Haspublished"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "moderationStatus": {
+            "$ref": "#/components/schemas/ModerationStatus"
+          },
+          "hasUnpublishedChanges": {
+            "type": "boolean",
+            "title": "Hasunpublishedchanges"
+          },
+          "viewCount": {
+            "type": "integer",
+            "title": "Viewcount"
+          },
+          "chatCount": {
+            "type": "integer",
+            "title": "Chatcount"
+          },
+          "likeCount": {
+            "type": "integer",
+            "title": "Likecount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "title",
+          "thumbnailUrl",
+          "editedAt",
+          "hasPublished",
+          "visibility",
+          "moderationStatus",
+          "hasUnpublishedChanges",
+          "viewCount",
+          "chatCount",
+          "likeCount"
+        ],
+        "title": "ContentWorkItem",
+        "description": "캐릭터·스토리 한 줄. `title`·`thumbnail_url` 은 작가가 고치고 있는 초안 버전의 것이라, 수정본이 있는 발행작은 발행본과\n다를 수 있다. 수정본 있음 표시는 `has_published` ∧ `has_unpublished_changes` 다."
+      },
       "CreatePaymentRequest": {
         "properties": {
           "productKey": {
@@ -36722,6 +36902,131 @@
         "title": "NovelUpdateRequest",
         "description": "보낸 칸만 바꾼다. 제목을 바꾸면 그 뒤로 AI 가 제목을 덮지 않는다. `coverAssetId` 는 null 을 보내면 원작 썸네일로\n되돌리고, 값을 보내면 내 생성 이미지 중 준비가 끝난 것이어야 한다(아니면 422 `NOVEL_COVER_INVALID`)."
       },
+      "NovelWorkItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "novel",
+            "title": "Kind"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "contentTitle": {
+            "type": "string",
+            "title": "Contenttitle"
+          },
+          "characterName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charactername"
+          },
+          "cover": {
+            "$ref": "#/components/schemas/NovelCover"
+          },
+          "chapterCount": {
+            "type": "integer",
+            "title": "Chaptercount"
+          },
+          "editedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Editedat"
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NovelWorkPublication"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "title",
+          "contentTitle",
+          "characterName",
+          "cover",
+          "chapterCount",
+          "editedAt",
+          "publication"
+        ],
+        "title": "NovelWorkItem",
+        "description": "소설 한 줄. `edited_at` 은 소설의 `updated_at` 이다. 공개한 적 없으면 `publication` 이 null 이다."
+      },
+      "NovelWorkPublication": {
+        "properties": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "withdrawn"
+            ],
+            "title": "Visibility"
+          },
+          "reviewStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "approved",
+                  "rejected"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewstatus"
+          },
+          "moderationStatus": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "restricted"
+            ],
+            "title": "Moderationstatus"
+          },
+          "readable": {
+            "type": "boolean",
+            "title": "Readable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "visibility",
+          "reviewStatus",
+          "moderationStatus",
+          "readable"
+        ],
+        "title": "NovelWorkPublication",
+        "description": "소설의 노벨 공개 상태. `readable` 은 독자가 지금 읽을 수 있는가이고, 화면의 \"공개 중\" 표시와 목록의 공개 중 필터가\n이 값 하나를 본다 — 승인된 공개라도 원작 이용제한·공개 화 없음·게시자 정지·판매 중단이면 거짓이다."
+      },
       "PasswordResetConfirmRequest": {
         "properties": {
           "token": {
@@ -39753,6 +40058,49 @@
         "type": "object",
         "title": "WithdrawRequest",
         "description": "탈퇴 재인증. 비밀번호가 있는 계정만 값을 요구하고, 그 판정은 서버가 계정을 보고 한다. 필드를\n선택으로 두는 이유: 소셜 계정의 프런트가 값 없이 보낸 `{}` 가 422 로 막히지 않게 한다."
+      },
+      "WorkListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ContentWorkItem"
+                },
+                {
+                  "$ref": "#/components/schemas/NovelWorkItem"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "character": "#/components/schemas/ContentWorkItem",
+                  "novel": "#/components/schemas/NovelWorkItem",
+                  "story": "#/components/schemas/ContentWorkItem"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "WorkListResponse"
       }
     }
   }

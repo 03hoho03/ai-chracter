@@ -2141,3 +2141,107 @@ async def test_republishing_over_a_left_behind_edition_row_replaces_its_summary_
 
     assert resp.status_code == 200, resp.text
     assert (await _summaries(db_session, chapters[0].id))[2] == "이번 요약"
+
+
+# ── 소설 수정 시각 ──────────────────────────────────────────────────────────
+# 작가의 공개 행동이 실제로 무언가를 바꾸면 소설 수정 시각(`novels.updated_at`)을 밀어 작품 목록에서 앞으로 오고, 아무것도 안
+# 바뀌거나 운영자 조치면 밀지 않는다. 한 테스트 안에서 DB `now()` 가 고정이라, 칸을 먼 과거로 써 둔 뒤 행동 뒤에 그보다
+# 늦어졌는지(또는 그대로인지) 본다.
+_LONG_AGO = datetime(2020, 1, 1, tzinfo=UTC)
+
+
+async def _set_long_ago(db_session: AsyncSession, novel_id: uuid.UUID) -> None:
+    await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(updated_at=_LONG_AGO))
+    await db_session.commit()
+
+
+async def _updated_at(db_session: AsyncSession, novel_id: uuid.UUID) -> datetime:
+    value: datetime | None = await db_session.scalar(sa.select(Novel.updated_at).where(Novel.id == novel_id))
+    assert value is not None
+    return value
+
+
+async def test_publishing_moves_the_novel_up_but_a_request_that_changes_nothing_does_not(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch)
+    await _set_long_ago(db_session, novel_id)
+    assert (await _publish(db_client, novel_id, chapters[0])).status_code == 200
+    assert await _updated_at(db_session, novel_id) > _LONG_AGO
+
+    await _set_long_ago(db_session, novel_id)
+    assert (await _publish(db_client, novel_id, chapters[0])).status_code == 200
+    assert await _updated_at(db_session, novel_id) == _LONG_AGO
+
+
+async def test_a_publish_request_that_waits_for_review_moves_the_novel_up(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """승인 대기로 가는 첫 신청도 작가가 공개 상태를 바꾼 것이다(독자에게는 아직 안 열려도)."""
+    _policy(monkeypatch, on=True)
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch)
+    await _set_long_ago(db_session, novel_id)
+
+    resp = await _publish(db_client, novel_id, chapters[0])
+
+    assert (resp.status_code, resp.json()["reviewStatus"]) == (200, "pending")
+    assert await _updated_at(db_session, novel_id) > _LONG_AGO
+
+
+async def test_operator_review_leaves_the_novel_in_place_and_reapplying_moves_it_up(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """운영자의 반려·승인은 작가의 편집이 아니라 밀지 않는다. 반려 뒤 다시 신청하는 것은 작가 행동이라 민다."""
+    novel_id, chapters = await _pending(db_client, db_session, monkeypatch)
+    await _as_admin(db_client, db_session)
+    await _set_long_ago(db_session, novel_id)
+    assert (await _review(db_client, novel_id, "reject", "다시 써 주세요.")).status_code == 200
+    assert await _updated_at(db_session, novel_id) == _LONG_AGO
+
+    assert (await _publish(db_client, novel_id, chapters[0])).status_code == 200
+    assert await _updated_at(db_session, novel_id) > _LONG_AGO
+
+    await _set_long_ago(db_session, novel_id)
+    assert (await _review(db_client, novel_id, "approve")).status_code == 200
+    assert await _updated_at(db_session, novel_id) == _LONG_AGO
+
+
+async def test_withdrawing_moves_the_novel_up_but_withdrawing_again_does_not(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch)
+    assert (await _publish(db_client, novel_id, chapters[0])).status_code == 200
+    await _set_long_ago(db_session, novel_id)
+
+    assert (await db_client.post(f"/novels/{novel_id}/publication/withdraw")).status_code == 204
+    assert await _updated_at(db_session, novel_id) > _LONG_AGO
+
+    await _set_long_ago(db_session, novel_id)
+    assert (await db_client.post(f"/novels/{novel_id}/publication/withdraw")).status_code == 204
+    assert await _updated_at(db_session, novel_id) == _LONG_AGO
+
+
+async def test_cancelling_a_pending_request_moves_the_novel_up(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    novel_id, _chapters = await _pending(db_client, db_session, monkeypatch)
+    await _set_long_ago(db_session, novel_id)
+
+    assert (await db_client.post(f"/novels/{novel_id}/publication/withdraw")).status_code == 204
+
+    assert await _publication_row(db_session, novel_id) is None
+    assert await _updated_at(db_session, novel_id) > _LONG_AGO
+
+
+async def test_making_a_chapter_free_moves_the_novel_up_but_an_already_free_chapter_does_not(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=6, chapters=6)
+    await _set_long_ago(db_session, novel_id)
+
+    assert (await _make_free(db_client, novel_id, chapters[5].id)).status_code == 200
+    assert await _updated_at(db_session, novel_id) > _LONG_AGO
+
+    await _set_long_ago(db_session, novel_id)
+    assert (await _make_free(db_client, novel_id, chapters[5].id)).status_code == 200
+    assert await _updated_at(db_session, novel_id) == _LONG_AGO

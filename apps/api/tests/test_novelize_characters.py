@@ -13,7 +13,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from api.db.models.novel import NovelChapter, NovelChapterCharacter, NovelCharacter, NovelJob
+from api.db.models.novel import Novel, NovelChapter, NovelChapterCharacter, NovelCharacter, NovelJob
 from api.novelize import runner
 from api.novelize.billing import create_charged_job
 from factories import (
@@ -237,3 +237,84 @@ async def test_after_a_merge_the_generated_name_of_the_absorbed_card_links_to_th
     )
     assert linked.all() == [doyun.id]
     assert [name for name, _aliases, _memo in await _cards(db_session, novel_id)] == ["도윤"]
+
+
+# ── 소설 수정 시각 ──────────────────────────────────────────────────────────
+# 인물 카드를 실제로 바꾸는 작가 행동은 소설 수정 시각(`novels.updated_at`)을 밀어 작품 목록에서 앞으로 오고, 아무것도 안
+# 바뀌는 요청은 밀지 않는다. 한 테스트 안에서 DB `now()` 가 고정이라 칸을 먼 과거로 써 둔 뒤 비교한다.
+_LONG_AGO = datetime(2020, 1, 1, tzinfo=UTC)
+
+
+async def _set_long_ago(db: AsyncSession, novel_id: uuid.UUID) -> None:
+    await db.execute(sa.update(Novel).where(Novel.id == novel_id).values(updated_at=_LONG_AGO))
+    await db.commit()
+
+
+async def _updated_at(db: AsyncSession, novel_id: uuid.UUID) -> datetime:
+    value: datetime | None = await db.scalar(sa.select(Novel.updated_at).where(Novel.id == novel_id))
+    assert value is not None
+    return value
+
+
+async def test_adding_a_card_moves_the_novel_up_but_adding_an_existing_name_does_not(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    await _set_long_ago(db_session, novel_id)
+
+    assert (await db_client.put(f"/novels/{novel_id}/characters", json={"name": "도윤"})).status_code == 200
+    assert await _updated_at(db_session, novel_id) > _LONG_AGO
+
+    await _set_long_ago(db_session, novel_id)
+    assert (await db_client.put(f"/novels/{novel_id}/characters", json={"name": "도윤"})).status_code == 200
+    assert await _updated_at(db_session, novel_id) == _LONG_AGO
+
+
+async def test_editing_a_card_moves_the_novel_up(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    card = await _card(db_session, novel_id, "도윤")
+    await _set_long_ago(db_session, novel_id)
+
+    resp = await db_client.patch(f"/novels/{novel_id}/characters/{card.id}", json={"memo": "소꿉친구"})
+
+    assert resp.status_code == 200
+    assert await _updated_at(db_session, novel_id) > _LONG_AGO
+
+
+async def test_merging_cards_moves_the_novel_up(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    absorbed = await _card(db_session, novel_id, "윤이")
+    into = await _card(db_session, novel_id, "도윤")
+    await _set_long_ago(db_session, novel_id)
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/characters/{absorbed.id}/merge", json={"intoCharacterId": str(into.id)}
+    )
+
+    assert resp.status_code == 200
+    assert await _updated_at(db_session, novel_id) > _LONG_AGO
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param({}, id="empty"),
+        pytest.param({"name": "도윤", "aliases": ["윤이"], "memo": "소꿉친구"}, id="same-values"),
+    ],
+)
+async def test_saving_a_card_without_changes_leaves_the_novel_in_place(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, body: dict[str, object]
+) -> None:
+    """편집기에서 고치지 않고 저장한 카드(빈 본문, 같은 값)는 아무것도 바꾸지 않으므로 작품 목록 순서를 흔들지 않는다."""
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    card = await _card(db_session, novel_id, "도윤", aliases=["윤이"], memo="소꿉친구")
+    await _set_long_ago(db_session, novel_id)
+
+    resp = await db_client.patch(f"/novels/{novel_id}/characters/{card.id}", json=body)
+
+    assert resp.status_code == 200
+    assert await _updated_at(db_session, novel_id) == _LONG_AGO

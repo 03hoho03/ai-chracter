@@ -62,14 +62,16 @@ def _assert_free(cards: Sequence[NovelCharacter], names: Iterable[str], *, excep
             raise CharacterNameTakenError(value)
 
 
-async def add_character(db: AsyncSession, novel_id: uuid.UUID, name: str) -> None:
-    """`name` 카드가 있게 한다. 같은 이름의 카드가 있으면 그대로 두고, 다른 카드의 별칭이면 겹침 오류다."""
+async def add_character(db: AsyncSession, novel_id: uuid.UUID, name: str) -> bool:
+    """`name` 카드가 있게 하고, 새로 만들었는지 돌려준다. 같은 이름의 카드가 있으면 그대로 두고(거짓), 다른 카드의
+    별칭이면 겹침 오류다."""
     cards = await load_cards(db, novel_id)
     if any(card.name == name for card in cards):
-        return
+        return False
     _assert_free(cards, [name], except_id=None)
     db.add(NovelCharacter(novel_id=novel_id, name=name))
     await db.flush()
+    return True
 
 
 async def update_character(
@@ -79,8 +81,9 @@ async def update_character(
     name: str | None,
     aliases: list[str] | None,
     memo: str | None,
-) -> None:
-    """보낸 칸만 바꾼다. 이름을 바꾸면서 별칭은 보내지 않았으면, 지금 별칭에서 새 이름과 같은 값을 뺀다."""
+) -> bool:
+    """보낸 칸만 바꾸고, 이름·별칭(정리한 뒤)·메모 중 하나라도 바뀌었는지 돌려준다. 이름을 바꾸면서 별칭은 보내지
+    않았으면, 지금 별칭에서 새 이름과 같은 값을 뺀다."""
     new_name = name if name is not None else card.name
     new_aliases = clean_aliases(new_name, aliases if aliases is not None else card.aliases)
     cards = await load_cards(db, card.novel_id)
@@ -88,7 +91,9 @@ async def update_character(
     values: dict[str, object] = {"name": new_name, "aliases": new_aliases, "updated_at": func.now()}
     if memo is not None:
         values["memo"] = memo
+    changed = new_name != card.name or new_aliases != list(card.aliases) or (memo is not None and memo != card.memo)
     await db.execute(update(NovelCharacter).where(NovelCharacter.id == card.id).values(**values))
+    return changed
 
 
 async def merge_characters(db: AsyncSession, absorbed: NovelCharacter, into: NovelCharacter) -> None:

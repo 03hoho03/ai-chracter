@@ -2742,6 +2742,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/works": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Works
+         * @description 내 캐릭터·스토리(운영 삭제 제외, 초안 포함)와 소설(숨김 제외)을 마지막 편집 순으로. 정렬 키는 (편집 시각, 유형, id)
+         *     내림차순이고 편집 시각은 작품의 `edited_at`, 소설의 `updated_at` 이다. 커서는 그 셋을 담으므로 `type`·`status`·`q` 는
+         *     페이지마다 다시 넘긴다.
+         *
+         *     소설은 소설화 허용(`has_novelize_access`)이 있는 계정에만 섞는다 — 허용이 없으면(회수당해 소설 행만 남았어도) 소설은
+         *     빠지고, `type=novel` 도 403 이 아니라 빈 목록이다.
+         *
+         *     `status`:
+         *     - `draft` 초안: 작품은 발행된 적 없음, 소설은 공개 상태 행이 없거나 첫 공개가 반려됨.
+         *     - `public` 공개 중: 작품은 발행됨 ∧ 공개 ∧ 이용제한 아님(링크 공개·비공개 발행작은 아니다), 소설은 독자가 지금 읽을
+         *       수 있음(`select_readable_publications`, 응답의 `publication.readable` 과 같은 판정).
+         *     - `changed` 수정본 있음: 발행됨 ∧ 고친 초안이 있음 — 공개 범위·이용제한과 무관하다. 소설에는 없다.
+         *     - `review` 심사 중: 소설의 첫 공개가 운영자 승인을 기다림. 작품에는 없다(작품 발행은 요청 안에서 끝난다).
+         *
+         *     `q` 는 제목 부분 일치다 — 작품은 목록에 보이는 제목 버전(`_title_version_id`), 소설은 소설 제목(없으면 원작 제목).
+         *
+         *     이미지는 싣지 않는다(제목·편집 시각이 없다).
+         */
+        get: operations["list_my_works_me_works_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/novels": {
         parameters: {
             query?: never;
@@ -11723,6 +11759,44 @@ export interface components {
         ContentVisibilityUpdateRequest: {
             visibility: components["schemas"]["ContentVisibility"];
         };
+        /**
+         * ContentWorkItem
+         * @description 캐릭터·스토리 한 줄. `title`·`thumbnail_url` 은 작가가 고치고 있는 초안 버전의 것이라, 수정본이 있는 발행작은 발행본과
+         *     다를 수 있다. 수정본 있음 표시는 `has_published` ∧ `has_unpublished_changes` 다.
+         */
+        ContentWorkItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "character" | "story";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+            /**
+             * Editedat
+             * Format: date-time
+             */
+            editedAt: string;
+            /** Haspublished */
+            hasPublished: boolean;
+            visibility: components["schemas"]["ContentVisibility"];
+            moderationStatus: components["schemas"]["ModerationStatus"];
+            /** Hasunpublishedchanges */
+            hasUnpublishedChanges: boolean;
+            /** Viewcount */
+            viewCount: number;
+            /** Chatcount */
+            chatCount: number;
+            /** Likecount */
+            likeCount: number;
+        };
         /** CreatePaymentRequest */
         CreatePaymentRequest: {
             /**
@@ -14998,6 +15072,58 @@ export interface components {
             /** Coverassetid */
             coverAssetId?: string | null;
         };
+        /**
+         * NovelWorkItem
+         * @description 소설 한 줄. `edited_at` 은 소설의 `updated_at` 이다. 공개한 적 없으면 `publication` 이 null 이다.
+         */
+        NovelWorkItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "novel";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string | null;
+            /** Contenttitle */
+            contentTitle: string;
+            /** Charactername */
+            characterName: string | null;
+            cover: components["schemas"]["NovelCover"];
+            /** Chaptercount */
+            chapterCount: number;
+            /**
+             * Editedat
+             * Format: date-time
+             */
+            editedAt: string;
+            publication: components["schemas"]["NovelWorkPublication"] | null;
+        };
+        /**
+         * NovelWorkPublication
+         * @description 소설의 노벨 공개 상태. `readable` 은 독자가 지금 읽을 수 있는가이고, 화면의 "공개 중" 표시와 목록의 공개 중 필터가
+         *     이 값 하나를 본다 — 승인된 공개라도 원작 이용제한·공개 화 없음·게시자 정지·판매 중단이면 거짓이다.
+         */
+        NovelWorkPublication: {
+            /**
+             * Visibility
+             * @enum {string}
+             */
+            visibility: "public" | "withdrawn";
+            /** Reviewstatus */
+            reviewStatus: ("pending" | "approved" | "rejected") | null;
+            /**
+             * Moderationstatus
+             * @enum {string}
+             */
+            moderationStatus: "normal" | "restricted";
+            /** Readable */
+            readable: boolean;
+        };
         /** PasswordResetConfirmRequest */
         PasswordResetConfirmRequest: {
             /** Token */
@@ -16207,6 +16333,13 @@ export interface components {
         WithdrawRequest: {
             /** Currentpassword */
             currentPassword?: string | null;
+        };
+        /** WorkListResponse */
+        WorkListResponse: {
+            /** Items */
+            items: (components["schemas"]["ContentWorkItem"] | components["schemas"]["NovelWorkItem"])[];
+            /** Nextcursor */
+            nextCursor: string | null;
         };
     };
     responses: never;
@@ -20311,6 +20444,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_works_me_works_get: {
+        parameters: {
+            query?: {
+                type?: "all" | "character" | "story" | "novel";
+                status?: "all" | "draft" | "public" | "changed" | "review";
+                q?: string | null;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkListResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
