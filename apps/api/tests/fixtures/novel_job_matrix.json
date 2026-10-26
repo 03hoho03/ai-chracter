@@ -40,14 +40,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -105,14 +114,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -170,14 +188,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -235,14 +262,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -302,14 +338,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -367,19 +412,29 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ],
         [
           1,
           2,
-          "manual_edit"
+          "manual_edit",
+          "a18e2768a9891093"
         ]
       ],
       "sceneBlocks": 0,
@@ -436,14 +491,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -501,14 +565,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -628,14 +701,26 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 0,
@@ -721,8 +806,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -844,19 +932,36 @@
     ],
     "output": {
       "batches": 2,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ],
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 2,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ],
         [
           2,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 0,
@@ -917,12 +1022,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -981,12 +1099,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -1045,12 +1176,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -1111,12 +1255,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -1177,12 +1334,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -1241,12 +1411,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -1301,12 +1484,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -1314,7 +1510,17 @@
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -1370,12 +1576,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -1434,8 +1653,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -1493,8 +1715,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -1552,8 +1777,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -1611,8 +1839,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -1672,8 +1903,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -1733,8 +1967,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -1792,8 +2029,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -1842,8 +2082,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -1897,14 +2140,26 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 0,
@@ -1962,14 +2217,26 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 0,
@@ -2027,8 +2294,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -2086,14 +2356,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -2151,14 +2430,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -2216,14 +2504,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -2281,14 +2578,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -2339,14 +2645,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -2400,19 +2715,32 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ],
         [
           1,
           2,
-          "regenerate"
+          "regenerate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 0,
@@ -2470,14 +2798,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -2535,12 +2872,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -2548,7 +2898,17 @@
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -2604,12 +2964,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -2617,7 +2990,17 @@
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -2673,12 +3056,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -2686,7 +3082,17 @@
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -2744,12 +3150,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -2757,7 +3176,17 @@
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -2813,16 +3242,39 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ],
         [
           2,
-          "edit"
+          "edit",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -2830,7 +3282,17 @@
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -2882,26 +3344,58 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 3,
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -2957,12 +3451,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -2970,7 +3477,17 @@
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -3026,8 +3543,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -3085,8 +3605,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -3144,8 +3667,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -3203,8 +3729,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -3264,8 +3793,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -3325,8 +3857,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -3384,8 +3919,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -3439,12 +3977,25 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [],
@@ -3503,8 +4054,11 @@
     ],
     "output": {
       "batches": 0,
+      "chapterTitles": [],
       "chapters": 0,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [],
       "sceneBlocks": 0,
@@ -3562,26 +4116,58 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 3,
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -3637,26 +4223,58 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 3,
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -3712,26 +4330,58 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 3,
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -3780,26 +4430,58 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 3,
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -3851,31 +4533,64 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ],
         [
           1,
           2,
-          "regenerate"
+          "regenerate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 6,
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -3931,26 +4646,58 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          "비 오는 저녁",
+          "서진이 도윤을 만났다."
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [
+        "도윤",
+        "서진"
+      ],
       "characters": 2,
+      "novelTitle": null,
       "outlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "첫 만남",
+              "둘이 처음 만났다."
+            ],
+            [
+              "다시 만남",
+              "둘이 다시 만났다."
+            ]
+          ]
         ]
       ],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "1295d6d71a605618"
         ]
       ],
       "sceneBlocks": 3,
       "sceneOutlines": [
         [
           1,
-          "generate"
+          "generate",
+          [
+            [
+              "시작",
+              "시작 장면에서 일이 일어났다."
+            ],
+            [
+              "이어짐",
+              "이어짐 장면에서 일이 일어났다."
+            ]
+          ]
         ]
       ],
       "titleChanged": false,
@@ -4006,14 +4753,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -4071,14 +4827,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -4136,14 +4901,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -4201,14 +4975,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -4266,14 +5049,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -4333,14 +5125,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -4398,19 +5199,29 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ],
         [
           1,
           2,
-          "manual_edit"
+          "manual_edit",
+          "d217bdfcbe6149c0"
         ]
       ],
       "sceneBlocks": 0,
@@ -4464,14 +5275,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,
@@ -4529,14 +5349,23 @@
     ],
     "output": {
       "batches": 1,
+      "chapterTitles": [
+        [
+          null,
+          null
+        ]
+      ],
       "chapters": 1,
+      "characterNames": [],
       "characters": 0,
+      "novelTitle": null,
       "outlines": [],
       "revisions": [
         [
           1,
           1,
-          "generate"
+          "generate",
+          "d9c346a690ffbdde"
         ]
       ],
       "sceneBlocks": 0,

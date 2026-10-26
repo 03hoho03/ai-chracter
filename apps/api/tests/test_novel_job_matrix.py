@@ -11,6 +11,9 @@
 - 이 작업이 만든 원장 행(종류, 금액)과 그 차감의 사용처(종류, 이 소설인가, 방이 있는가)
 - 산출 행 모양 — 묶음·화·인물 카드 수, 화마다 개정 출처, 장면 경계 행 수, 구성안·장면 구성안 리비전과 출처, 집필권 잠금 출처,
   소설 제목이 바뀌었는가
+- 산출 행 값 — 화마다 제목·요약, 바뀐 소설 제목, 인물 카드 이름, 개정마다 문단 배열 지문(sha256 앞 16자, 본문은 남기지
+  않는다), 구성안의 화·장면 구성안의 장면마다 제목·요약. 모두 합성 응답에서 온 값이라 저장 경로가 응답의 어느 칸을 어느 열에
+  쓰는지가 바뀌면 칸이 달라진다.
 - 가짜 모델이 받은 호출 — 메서드, 응답 스키마 이름, 호출 위치, 실린 모델 두 칸, 프롬프트 지문(본문 + 구분 문자 + 지시문의
   sha256 앞 16자). 문안 본문은 남기지 않는다.
 - 소설화 패키지 로거(`api.novelize`, 하위 모듈의 로거가 모두 전파해 온다)의 WARNING 이상 — 렌더된 글에서 첫 `": "` 앞까지(뒤는
@@ -34,6 +37,7 @@ heartbeat 를 과거로 옮겨 만든다(테스트 안 `now()` 는 트랜잭션 
 파일을 읽고 고쳐 쓰면 서로의 칸을 덮어쓴다."""
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -906,14 +910,22 @@ async def _output(ctx: _Ctx, title_before: str | None) -> dict[str, Any]:
     """소설에 남은 산출 행의 모양. 셋업이 만든 행도 함께 센다 — 칸끼리는 같은 셋업이라 차이가 이 작업의 몫이다."""
     db = ctx.db_session
     novel = await db.get_one(Novel, ctx.novel_id, populate_existing=True)
-    chapters = (
-        await db.scalars(
-            sa.select(NovelChapter.id).where(NovelChapter.novel_id == ctx.novel_id).order_by(NovelChapter.ordinal)
+    chapter_rows = (
+        await db.execute(
+            sa.select(NovelChapter.id, NovelChapter.title, NovelChapter.summary)
+            .where(NovelChapter.novel_id == ctx.novel_id)
+            .order_by(NovelChapter.ordinal)
         )
     ).all()
+    chapters = [row.id for row in chapter_rows]
     revisions = (
         await db.execute(
-            sa.select(NovelChapter.ordinal, NovelChapterRevision.revision_no, NovelChapterRevision.source)
+            sa.select(
+                NovelChapter.ordinal,
+                NovelChapterRevision.revision_no,
+                NovelChapterRevision.source,
+                NovelChapterRevision.body,
+            )
             .join(NovelChapter, NovelChapter.id == NovelChapterRevision.chapter_id)
             .where(NovelChapter.novel_id == ctx.novel_id)
             .order_by(NovelChapter.ordinal, NovelChapterRevision.revision_no)
@@ -925,28 +937,46 @@ async def _output(ctx: _Ctx, title_before: str | None) -> dict[str, Any]:
 
     outlines = (
         await db.execute(
-            sa.select(NovelOutline.revision, NovelOutline.source)
+            sa.select(NovelOutline.revision, NovelOutline.source, NovelOutline.episodes)
             .where(NovelOutline.novel_id == ctx.novel_id)
             .order_by(NovelOutline.revision)
         )
     ).all()
     scene_outlines = (
         await db.execute(
-            sa.select(NovelEpisodeOutline.revision, NovelEpisodeOutline.source)
+            sa.select(NovelEpisodeOutline.revision, NovelEpisodeOutline.source, NovelEpisodeOutline.scenes)
             .where(NovelEpisodeOutline.novel_id == ctx.novel_id)
             .order_by(NovelEpisodeOutline.created_at, NovelEpisodeOutline.revision)
         )
     ).all()
+    character_names = (
+        await db.scalars(
+            sa.select(NovelCharacter.name).where(NovelCharacter.novel_id == ctx.novel_id).order_by(NovelCharacter.name)
+        )
+    ).all()
+
+    def paragraphs_digest(body: str) -> str:
+        return hashlib.sha256(json.dumps(split_paragraphs(body), ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+
+    def titles(items: list[dict[str, Any]]) -> list[list[Any]]:
+        return [[item.get("title"), item.get("summary")] for item in items]
+
+    title_changed = novel.title != title_before
     return {
         "batches": await count(NovelBatch, NovelBatch.novel_id == ctx.novel_id),
         "chapters": len(chapters),
-        "revisions": [[ordinal, number, source] for ordinal, number, source in revisions],
-        "sceneBlocks": await count(NovelSceneBlock, NovelSceneBlock.chapter_id.in_(list(chapters))),
+        "chapterTitles": [[row.title, row.summary] for row in chapter_rows],
+        "revisions": [
+            [ordinal, number, source, paragraphs_digest(body)] for ordinal, number, source, body in revisions
+        ],
+        "sceneBlocks": await count(NovelSceneBlock, NovelSceneBlock.chapter_id.in_(chapters)),
         "characters": await count(NovelCharacter, NovelCharacter.novel_id == ctx.novel_id),
-        "outlines": [[revision, source] for revision, source in outlines],
-        "sceneOutlines": [[revision, source] for revision, source in scene_outlines],
+        "characterNames": list(character_names),
+        "outlines": [[revision, source, titles(episodes)] for revision, source, episodes in outlines],
+        "sceneOutlines": [[revision, source, titles(scenes)] for revision, source, scenes in scene_outlines],
         "writingLock": novel.writing_lock_source,
-        "titleChanged": novel.title != title_before,
+        "titleChanged": title_changed,
+        "novelTitle": novel.title if title_changed else None,
     }
 
 
