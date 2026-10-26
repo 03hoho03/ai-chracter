@@ -27,6 +27,7 @@ from api.admin.prompts import _validate_prompt_draft_for_publish
 from api.chat.prompt_builder import PromptLane, build_memory_impression_prompt, load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
+from factories import undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -246,6 +247,7 @@ async def test_the_seeded_channel_renders_and_drops_the_side_with_no_lines(
 
 async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
 
     for lane, model in _CHAINS:
@@ -277,6 +279,7 @@ async def test_upgrade_refuses_to_overwrite_a_channel_the_admin_already_added(
     """어느 체인의 활성 세트에 이 채널 행이 이미 있으면(어드민이 먼저 넣은 운영 문안) 그 레인 네 체인 어디에도 넣지 않은 채
     멈추고, 운영 문안은 그대로 남는다."""
     connection = await db_session.connection()
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
     db_session.add(
         PromptSection(
@@ -305,6 +308,7 @@ async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(
     db_session: AsyncSession, lane: PromptLane
 ) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(undo_seeded_rows_above, _M.revision)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _previous_set_id(lane, "gemini"))
     assert previous.published_at is not None
@@ -320,6 +324,7 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
     """시드 뒤에 어드민이 여덟 체인 중 하나라도 새 버전을 게시했으면 아무것도 지우지 않고 멈춘다."""
+    await (await db_session.connection()).run_sync(undo_seeded_rows_above, _M.revision)
     seeded = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
     assert seeded.published_at is not None
     db_session.add(_published(lane=lane, model=model, published_at=seeded.published_at + timedelta(seconds=1)))
