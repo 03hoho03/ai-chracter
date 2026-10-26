@@ -536,9 +536,7 @@ async def test_novel_with_a_publication_refuses_the_purge(db_session: AsyncSessi
     "axis",
     [pytest.param("content", id="content"), pytest.param("room", id="room"), pytest.param("novel", id="novel")],
 )
-async def test_spend_usage_on_any_axis_refuses_the_purge(
-    db_session: AsyncSession, tmp_path: Path, axis: str
-) -> None:
+async def test_spend_usage_on_any_axis_refuses_the_purge(db_session: AsyncSession, tmp_path: Path, axis: str) -> None:
     """클로버 사용처는 정산 근거라 작품·방·소설 중 어느 칸으로든 대상을 가리키면 거부한다. 세 칸을 따로 본다 — 작품 칸만
     보면 미리보기(작품 없음)나 다른 작품으로 기록된 소설 차감이 빠진다."""
     creator = await _user(db_session)
@@ -588,9 +586,7 @@ async def test_spend_usage_on_any_axis_refuses_the_purge(
         pytest.param("home_novel_curation", id="home-novel-curation"),
     ],
 )
-async def test_blocking_reference_refuses_the_purge(
-    db_session: AsyncSession, tmp_path: Path, blocker: str
-) -> None:
+async def test_blocking_reference_refuses_the_purge(db_session: AsyncSession, tmp_path: Path, blocker: str) -> None:
     """홈 지정·댓글·다른 소설의 삽화가 쓰는 그림·다른 작품과 겹치는 시작설정 entity id·정산 확정 내역·회원 프로필이나 문의
     첨부로 쓰이는 그림은 지우면 남의 화면이나 기록이 깨지므로 거부한다. 정산 내역은 지급·세무의 장부라 작품이 사라지면 근거를
     잃는다. 그 작품에서 나온 소설의 회차 구매는 공개 기록 없이 남아 있어도 금전 기록이라, 홈 노벨 지정은 홈 화면이 그 소설을
@@ -652,9 +648,7 @@ async def test_blocking_reference_refuses_the_purge(
     await _assert_refused(db_session, target, tmp_path)
 
 
-async def test_draft_only_story_and_published_story_are_both_deleted(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_draft_only_story_and_published_story_are_both_deleted(db_session: AsyncSession, tmp_path: Path) -> None:
     """발행된 적 없는 초안과 발행본 + 초안이 있는 작품이 한 목록에 섞여도 둘 다 지운다. 깨지는 시나리오: 발행본 포인터가
     NULL 인 작품에서 버전을 못 찾거나, 발행본 포인터를 비우지 않고 버전을 지워 FK 위반이 난다."""
     creator = await _user(db_session)
@@ -718,7 +712,9 @@ async def test_plan_counts_rows_without_writing_anything(db_session: AsyncSessio
     assert await _target_row_counts(db_session, target) == before
     assert await _count(db_session, Asset) == assets_before
     assert await _count(db_session, ChatMessage) == messages_before
-    assert await _count(db_session, ModerationAction, ModerationAction.content_id == target.content.id) == actions_before
+    assert (
+        await _count(db_session, ModerationAction, ModerationAction.content_id == target.content.id) == actions_before
+    )
     assert planned.refusals == []
     assert planned.missing_ids == []
     assert planned.content_ids == [target.content.id]
@@ -730,9 +726,7 @@ async def test_plan_counts_rows_without_writing_anything(db_session: AsyncSessio
     assert target.thumbnail_id is not None and planned.asset_ids == [target.thumbnail_id]
 
 
-async def test_apply_refuses_when_the_expected_content_count_differs(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_apply_refuses_when_the_expected_content_count_differs(db_session: AsyncSession, tmp_path: Path) -> None:
     """적용은 운영자가 적은 대상 수가 입력과 다르면 거부한다 — ids 파일을 잘못 넘겨 엉뚱한 목록을 지우는 것을 막는 확인이다."""
     creator = await _user(db_session)
     target = await _story(db_session, creator.id)
@@ -933,7 +927,9 @@ async def test_room_records_keep_their_rows_with_room_cleared(db_session: AsyncS
     await _apply(db_session, [target], tmp_path / "keys.json")
 
     assert await _count(db_session, ChatRoom, ChatRoom.id == room.id) == 0
-    assert await db_session.scalar(select(AdminActionLog.target_chat_room_id).where(AdminActionLog.id == log.id)) is None
+    assert (
+        await db_session.scalar(select(AdminActionLog.target_chat_room_id).where(AdminActionLog.id == log.id)) is None
+    )
     assert await _count(db_session, AdminActionLog, AdminActionLog.id == log.id) == 1
     assert (
         await db_session.scalar(select(DiscardedResponse.chat_room_id).where(DiscardedResponse.id == discarded.id))
