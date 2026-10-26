@@ -540,6 +540,9 @@ class Settings(BaseSettings):
     # 남길 파일 경로. None = 아무 일도 안 함(프로덕션 기본값이자 방어) — 프롬프트에는
     # 창작자의 비공개 설정이 들어 있어 기본으로 켜지면 안 된다.
     prompt_dump_path: str | None = None
+    # 소설 작업이 모델을 부르기 직전의 재렌더 입력(세트 id·채널·슬롯 값)을 JSONL로 남길 파일 경로. None = 아무 일도 안 함 —
+    # 슬롯 값에 원문 대화와 창작자의 비공개 설정이 들어 있어 운영에서는 켜지 않는다. 채팅 덤프와 파일을 나눈다.
+    novel_prompt_dump_path: str | None = None
     # 생성 잡 Redis 레코드 TTL(확정값 1시간).
     image_generation_job_ttl_seconds: int = 60 * 60
 

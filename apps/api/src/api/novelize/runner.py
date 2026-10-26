@@ -98,6 +98,7 @@ from api.novelize.output import (
     parse_batch_output,
 )
 from api.novelize.paragraphs import resplit_long_paragraphs
+from api.novelize.prompt_dump import dump_novel_prompt
 from api.novelize.prompts import (
     NovelizeBlockEditResult,
     NovelizeEpisodeOutlineResult,
@@ -207,9 +208,11 @@ _R = TypeVar("_R")
 
 class JobHandler(Protocol[_I, _R]):
     """갈래 하나의 실행 — 입력 조립(세션 안) → 호출 문맥(세션 안) → 모델 호출(세션 밖) → 저장(새 세션). 사실 칸은 `facts` 로
-    갈래 표(`job_variants.VARIANT_FACTS`)의 그 객체를 내보인다."""
+    갈래 표(`job_variants.VARIANT_FACTS`)의 그 객체를 내보인다. `schema` 는 구조화 호출의 응답 스키마 이름이고 자유 텍스트 생성은
+    None 이다(측정 덤프가 싣는다)."""
 
     facts: VariantFacts
+    schema: str | None
 
     async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> _I: ...
 
@@ -221,6 +224,8 @@ class JobHandler(Protocol[_I, _R]):
 
 
 class _Handler:
+    schema: str | None = None
+
     def __init__(self, facts: VariantFacts) -> None:
         self.facts = facts
 
@@ -282,6 +287,8 @@ class _Manuscript(_Chapter):
 
 
 class _ParagraphEdit(_Handler):
+    schema: str | None = NovelizeReviseResult.__name__
+
     async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> ReviseInput:
         return await build_revise_input(db, job, novel)
 
@@ -296,6 +303,8 @@ class _ParagraphEdit(_Handler):
 
 class _BlockEdit(_Handler):
     """여러 문단 수정 — 패치 칸이 있는 AI 수정이다. 호출 위치·모델은 문단 수정과 같다."""
+
+    schema: str | None = NovelizeBlockEditResult.__name__
 
     async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> BlockEditInput:
         return await build_block_edit_input(db, job, novel)
@@ -317,6 +326,8 @@ class _BlockEdit(_Handler):
 
 
 class _Outline(_Handler):
+    schema: str | None = NovelizeOutlineResult.__name__
+
     async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> OutlineInput:
         return await build_outline_input(db, novel, model=chapter_job_model(job))
 
@@ -330,6 +341,8 @@ class _Outline(_Handler):
 
 
 class _EpisodeOutline(_Handler):
+    schema: str | None = NovelizeEpisodeOutlineResult.__name__
+
     async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> EpisodeOutlineInput:
         assert job.outline_id is not None and job.outline_episode_key is not None  # 작업 대상 CHECK
         return await build_episode_outline_input(
@@ -400,7 +413,8 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
             novel = await db.get(Novel, job.novel_id) if job is not None else None
             if job is None or novel is None:
                 return
-            handler = HANDLERS[variant_of(job)]
+            variant = variant_of(job)
+            handler = HANDLERS[variant]
             if handler.facts.chain_only:
                 raise AssertionError(f"연쇄 실행 전용 작업 {job.id} 가 묶음 하나짜리 실행에 들어왔다")
             try:
@@ -408,7 +422,11 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
             except SourceChangedError as exc:
                 raise _JobFailedError("source_changed") from exc
             usage = handler.context(job, novel)
-        # 여기서부터 모델 호출 — 세션을 닫은 뒤다.
+            job_model = job.model
+        # 여기서부터 모델 호출 — 세션을 닫은 뒤다. 측정 덤프는 갈래마다의 호출 직전 이 한 곳에서 남긴다(경로 설정이 없으면 바로 돌아온다).
+        dump_novel_prompt(
+            job_id=job_id, job_model=job_model, variant=variant, usage=usage, prompt=inp.prompt, schema=handler.schema
+        )
         result = await handler.call(llm_client, inp, usage)
         await handler.save(session_factory, job_id, inp, result)
     finally:
