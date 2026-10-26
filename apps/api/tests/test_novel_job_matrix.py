@@ -13,8 +13,9 @@
   소설 제목이 바뀌었는가
 - 가짜 모델이 받은 호출 — 메서드, 응답 스키마 이름, 호출 위치, 실린 모델 두 칸, 프롬프트 지문(본문 + 구분 문자 + 지시문의
   sha256 앞 16자). 문안 본문은 남기지 않는다.
-- 작업 실행 모듈 로거의 경고 — 렌더된 글에서 첫 `": "` 앞까지(뒤는 원인 글이라 뺀다). 템플릿이 아니라 렌더된 글을 남기는 것은
-  같은 글을 내는 다른 템플릿으로 옮겨도 칸이 그대로여야 해서다.
+- 소설화 패키지 로거(`api.novelize`, 하위 모듈의 로거가 모두 전파해 온다)의 WARNING 이상 — 렌더된 글에서 첫 `": "` 앞까지(뒤는
+  원인 글이라 뺀다). 로거 이름은 남기지 않고 템플릿이 아니라 렌더된 글을 남기는 것은, 같은 글을 내는 경고를 다른 모듈로 옮기거나
+  다른 템플릿으로 바꿔도 칸이 그대로여야 해서다.
 
 id 는 처음 나온 순서의 번호로 바꾸고(작업 자신은 `<job>`), 시각은 유무만 남긴다.
 
@@ -28,10 +29,13 @@ id 는 처음 나온 순서의 번호로 바꾸고(작업 자신은 `<job>`), �
 세션 팩토리는 테스트 커넥션 하나에 SAVEPOINT 로 붙으므로 heartbeat 주기를 크게 늘려 작업 본문과 부딪히지 않게 하고, 만료는
 heartbeat 를 과거로 옮겨 만든다(테스트 안 `now()` 는 트랜잭션 시작 시각으로 고정이다).
 
-기대값은 `fixtures/novel_job_matrix.json` 이고 다시 뜨는 법은 `factories._assert_characterization`."""
+기대값은 `fixtures/novel_job_matrix.json` 이고 다시 뜨는 법은 `factories._assert_characterization` 이다. 이 파일만의 갱신 변수
+`UPDATE_NOVEL_JOB_MATRIX=1` 을 쓰고(채팅 쪽 기대값 파일과 따로 뜬다), 갱신은 xdist 없이(`-n 0`) 돌린다 — 워커 여럿이 같은 기대값
+파일을 읽고 고쳐 쓰면 서로의 칸을 덮어쓴다."""
 
 import hashlib
 import logging
+import os
 import re
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -89,6 +93,7 @@ from factories import (
 pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "novel_job_matrix.json"
+UPDATE_ENV = "UPDATE_NOVEL_JOB_MATRIX"
 
 # 합성 문안. 화 본문은 최소 길이(200자)를 넘는다.
 _BODY = "비가 내리는 저녁이었다. 서진은 가방을 내려놓고 창가에 섰다.\n\n" + "도윤이 잔을 밀어 주었다. " * 20
@@ -230,6 +235,13 @@ class _Ctx:
 def _factory(db_session: AsyncSession) -> async_sessionmaker[AsyncSession]:
     """작업 실행이 여는 세션. SAVEPOINT 로 붙여, 실행 경로의 롤백이 테스트 셋업까지 지우지 않게 한다."""
     return async_sessionmaker(bind=db_session.bind, expire_on_commit=False, join_transaction_mode="create_savepoint")
+
+
+@pytest.fixture(autouse=True)
+def _no_parallel_update() -> None:
+    """갱신 모드는 기대값 파일 하나를 읽고 고쳐 쓰므로 xdist 워커에서 돌면 워커끼리 서로의 칸을 덮어쓴다 — 바로 멈춘다."""
+    if os.environ.get(UPDATE_ENV) == "1" and os.environ.get("PYTEST_XDIST_WORKER"):
+        pytest.fail(f"{UPDATE_ENV}=1 갱신은 워커 여럿이 같은 파일을 덮어쓰므로 -n 0 으로 뜬다")
 
 
 @pytest.fixture(autouse=True)
@@ -819,8 +831,12 @@ def _norm(value: str, ids: dict[str, str]) -> str:
     return _UUID.sub(lambda m: ids.setdefault(m.group(0), f"<id{len(ids) + 1}>"), value)
 
 
-class _RunnerWarnings(logging.Handler):
-    """작업 실행 모듈 로거의 경고를 렌더된 글의 첫 `": "` 앞까지 모은다."""
+# 경고를 모으는 로거. 하위 모듈(작업 실행·경계 제안 등)의 로거가 전파해 오므로 모듈을 옮겨도 같은 경고가 잡힌다.
+_NOVELIZE_LOGGER = logging.getLogger("api.novelize")
+
+
+class _NovelizeWarnings(logging.Handler):
+    """소설화 패키지 로거에 올라온 WARNING 이상을 렌더된 글의 첫 `": "` 앞까지 모은다(로거 이름은 남기지 않는다)."""
 
     def __init__(self) -> None:
         super().__init__(logging.WARNING)
@@ -928,7 +944,7 @@ async def _output(ctx: _Ctx, title_before: str | None) -> dict[str, Any]:
 
 
 def test_recorded_cells_are_exactly_the_parametrized_cells() -> None:
-    _assert_recorded_cases(FIXTURE_PATH, _CELLS)
+    _assert_recorded_cases(FIXTURE_PATH, _CELLS, UPDATE_ENV)
 
 
 def test_every_branch_has_cells() -> None:
@@ -948,7 +964,7 @@ async def test_cell_matches_the_recorded_behavior(
     arm, expected_status, expected_code = _CELLS[cell]
     setup_llm = _setup_llm()
     _override_llm_client(setup_llm)
-    warnings = _RunnerWarnings()
+    warnings = _NovelizeWarnings()
     try:
         ctx = await _base_ctx(db_client, db_session, monkeypatch, enqueued, setup_llm, turns=branch.turns)
         await branch.prepare(ctx)
@@ -958,14 +974,14 @@ async def test_cell_matches_the_recorded_behavior(
         ctx.job_id = await branch.request(ctx)
         if ctx.before_run is not None:
             await ctx.before_run()
-        runner.logger.addHandler(warnings)
+        _NOVELIZE_LOGGER.addHandler(warnings)
         try:
             if branch.chain:
                 await runner.run_chain(ctx.factory, ctx.llm, ctx.job_id)
             else:
                 await runner.run_job(ctx.factory, ctx.llm, ctx.job_id)
         finally:
-            runner.logger.removeHandler(warnings)
+            _NOVELIZE_LOGGER.removeHandler(warnings)
     finally:
         _clear_llm_override()
 
@@ -991,4 +1007,4 @@ async def test_cell_matches_the_recorded_behavior(
             )
         ).all()
         state["children"] = [_job_state(child) for child in children]
-    _assert_characterization(FIXTURE_PATH, cell, state)
+    _assert_characterization(FIXTURE_PATH, cell, state, UPDATE_ENV)

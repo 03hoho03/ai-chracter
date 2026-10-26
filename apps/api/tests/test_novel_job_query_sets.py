@@ -61,8 +61,9 @@ def _variant_row(
     **extra: Any,
 ) -> NovelJob:
     """갈래 하나의 작업 행. 갈래를 가르는 칸(종류·연쇄 부모·장면 구성안 리비전·패치 칸·구성안 대상)은 여기서 정하고, 조회의 다른
-    조건을 맞추는 칸은 `extra` 로 받는다. 시작 메시지는 실제로 그 칸을 갖는 갈래(장 생성·연쇄 자식·옛 흐름 다시 만들기)에만 싣는다 —
-    구성 흐름 화의 다시 만들기는 원문 구간이 아니라 장면 구성안으로 쓰므로 시작 메시지가 비어 있다."""
+    조건을 맞추는 칸은 `extra` 로 받는다. 칸 조합은 실제 라우트가 만드는 행을 따른다. 시작·끝 메시지는 실제로 그 칸을 갖는
+    갈래(장 생성·연쇄 자식·옛 흐름 다시 만들기·구성 흐름 원고)에만 싣는다 — 원고 라우트는 장면 구성안이 쓰는 첫·끝 메시지를 싣고,
+    구성 흐름 화의 다시 만들기는 원문 구간이 아니라 장면 구성안으로 쓰므로 시작 메시지도 구성안 화 키도 비어 있다."""
     outline_id = episode_outline_id or uuid.uuid4()
     key = uuid.uuid4()
     columns: dict[str, Any] = {"novel_id": novel_id, "user_id": user_id, "status": status, "charged_amount": 0}
@@ -83,7 +84,7 @@ def _variant_row(
     elif variant == "legacy_regenerate":
         columns.update(kind="chapter_regenerate", **segment)
     elif variant == "outline_regenerate":
-        columns.update(kind="chapter_regenerate", episode_outline_id=outline_id, outline_episode_key=key)
+        columns.update(kind="chapter_regenerate", episode_outline_id=outline_id)
     elif variant == "paragraph_edit":
         columns.update(kind="ai_edit")
     elif variant == "block_edit":
@@ -93,7 +94,7 @@ def _variant_row(
     elif variant == "episode_outline":
         columns.update(kind="episode_outline_generate", outline_id=uuid.uuid4(), outline_episode_key=key)
     elif variant == "manuscript":
-        columns.update(kind="outline_chapter_generate", episode_outline_id=outline_id, outline_episode_key=key)
+        columns.update(kind="outline_chapter_generate", episode_outline_id=outline_id, outline_episode_key=key, **segment)
     else:
         raise AssertionError(f"모르는 갈래: {variant}")
     columns.update(extra)
@@ -282,9 +283,9 @@ async def test_the_daily_cap_on_one_start_message_counts_generates_children_and_
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """같은 시작 메시지의 하루 상한은 장 생성·다시 만들기 종류 중 그 시작 메시지를 가진 행을 센다 — 혼자 도는 장 생성, 연쇄 자식,
-    옛 흐름 다시 만들기. 구성 흐름 화의 다시 만들기는 시작 메시지가 비어 있어 걸리지 않는다. 상한을 1 로 두고 갈래 행 하나가 있는
-    소설에 같은 시작 메시지의 장 생성을 넣어 거절되는지로 본다. 깨지는 시나리오: 세기를 갈래 단위로 좁혀 연쇄 자식이 빠지고, 연쇄로
-    쓴 구간을 같은 날 몇 번이고 다시 산다."""
+    옛 흐름 다시 만들기. 구성 흐름 화의 다시 만들기는 시작 메시지가 비어 있어, 구성 흐름 원고는 같은 시작 메시지를 가져도 종류가
+    달라 걸리지 않는다. 상한을 1 로 두고 갈래 행 하나가 있는 소설에 같은 시작 메시지의 장 생성을 넣어 거절되는지로 본다. 깨지는
+    시나리오: 세기를 갈래 단위로 좁혀 연쇄 자식이 빠지고, 연쇄로 쓴 구간을 같은 날 몇 번이고 다시 산다."""
     monkeypatch.setattr(settings, "novelize_chapter_daily_limit", 1)
     owner = await _make_user_with_clover_lot(db_session, clover_balance=1000)
     refused: set[str] = set()
