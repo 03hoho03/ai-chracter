@@ -560,20 +560,30 @@ async def judge_item(
     concurrent: bool = True,
     retries: int = JUDGE_RETRIES,
     pause: float = RETRY_PAUSE_SECONDS,
+    prior: Sequence[Vote] = (),
+    on_vote: Callable[[Vote], None] | None = None,
 ) -> tuple[list[Label | None], list[Vote]]:
     """문장마다 다수결 판정과 받은 표 목록. 첫 두 표가 모든 문장에서 같으면 셋째를 부르지 않는다(셋째가 무엇이든 과반이 그대로다).
-    한 문장이라도 갈리거나 한 표가 불능이면 셋째를 받는다."""
+    한 문장이라도 갈리거나 한 표가 불능이면 셋째를 받는다. `prior` 는 앞선 실행이 이미 받은 표로, 그만큼 덜 부른다. 새 표는
+    받는 대로 `on_vote` 에 넘겨 문항 도중에 멈춰도 낸 호출이 남게 한다."""
+
+    async def vote() -> Vote:
+        got = await _one_vote(judge, prompt, n, retries=retries, pause=pause)
+        if on_vote is not None:
+            on_vote(got)
+        return got
 
     async def votes_of(count: int) -> list[Vote]:
+        if count <= 0:
+            return []
         if concurrent:
-            return await _gather_or_cancel(
-                [_one_vote(judge, prompt, n, retries=retries, pause=pause) for _ in range(count)]
-            )
-        return [await _one_vote(judge, prompt, n, retries=retries, pause=pause) for _ in range(count)]
+            return await _gather_or_cancel([vote() for _ in range(count)])
+        return [await vote() for _ in range(count)]
 
-    votes = await votes_of(JUDGE_FIRST_VOTES)
+    votes = list(prior)
+    votes += await votes_of(JUDGE_FIRST_VOTES - len(votes))
     if any(v is None for v in votes) or len({tuple(v["labels"]) for v in votes if v is not None}) > 1:
-        votes += await votes_of(JUDGE_MAX_VOTES - JUDGE_FIRST_VOTES)
+        votes += await votes_of(JUDGE_MAX_VOTES - len(votes))
     decided: list[Label | None] = []
     for index in range(n):
         value = _majority([None if v is None else v["labels"][index] for v in votes])
@@ -587,11 +597,19 @@ async def judge_items(
     *,
     template: str,
     out_path: Path,
+    judge_model: str,
     concurrency: int = 4,
 ) -> int:
-    """아직 결과가 없는 문항(같은 프롬프트의 줄이 없는 것)을 판정해 끝나는 대로 결과 파일에 한 줄씩. 동시에 `concurrency` 문항."""
+    """아직 결과가 없는 문항(같은 프롬프트의 줄이 없는 것)을 판정해 끝나는 대로 결과 파일에 한 줄씩. 동시에 `concurrency` 문항.
+    표는 받는 대로 곁 파일(`votes_path`)에도 남겨, 문항 도중에 끊긴 뒤 이어 돌리면 이미 받은 표는 다시 부르지 않는다. 한 출력
+    파일에는 한 판정 모델의 결과만 둔다."""
     check_template(template)
+    check_judge_model(out_path, judge_model)
     done = {(r["itemId"], r["promptSha"]) for r in read_rows(out_path)}
+    side = votes_path(out_path)
+    received: dict[tuple[str, str], list[Vote]] = {}
+    for r in read_rows(side):
+        received.setdefault((r["itemId"], r["promptSha"]), []).append(r["vote"])
     pending = [
         (item, prompt)
         for item in items
@@ -600,13 +618,21 @@ async def judge_items(
     limit = asyncio.Semaphore(concurrency)
 
     async def one(item: JudgeItem, prompt: str) -> None:
+        key = (item.item_id, sha256_text(prompt))
+
+        def record(vote: Vote) -> None:
+            _append(side, {"itemId": key[0], "promptSha": key[1], "judgeModel": judge_model, "vote": vote})
+
         async with limit:
-            decided, votes = await judge_item(judge, prompt, len(item.sentences))
+            decided, votes = await judge_item(
+                judge, prompt, len(item.sentences), prior=received.get(key, ()), on_vote=record
+            )
         _append(
             out_path,
             {
                 "itemId": item.item_id,
-                "promptSha": sha256_text(prompt),
+                "promptSha": key[1],
+                "judgeModel": judge_model,
                 "sentences": list(item.sentences),
                 "gold": None if item.gold is None else list(item.gold),
                 "decided": decided,
@@ -616,6 +642,21 @@ async def judge_items(
 
     await _gather_or_cancel([one(item, prompt) for item, prompt in pending])
     return len(pending)
+
+
+def votes_path(out_path: Path) -> Path:
+    """판정 결과 파일 곁에 받은 표를 한 줄씩 남기는 파일."""
+    return out_path.with_suffix(".votes.jsonl")
+
+
+def check_judge_model(out_path: Path, judge_model: str) -> None:
+    """결과 파일·곁 파일에 다른 판정 모델(또는 모델이 적히지 않은 옛 줄)의 결과가 있으면 멈춘다. 이어 돌리기는 이미 있는 줄을
+    끝난 것으로 보므로, 모델을 바꿔 같은 파일로 이으면 두 모델의 판정이 한 집계에 섞인다."""
+    found = {r.get("judgeModel") for path in (out_path, votes_path(out_path)) for r in read_rows(path)}
+    others = found - {judge_model}
+    if others:
+        names = sorted("(적히지 않음)" if m is None else str(m) for m in others)
+        raise SystemExit(f"{out_path} 에 다른 판정 모델의 결과가 있다: {names} — 판정 모델마다 다른 출력 파일을 쓴다")
 
 
 def _accuracy(pairs: Sequence[tuple[str, str | None]], project: Callable[[str], Any]) -> float:

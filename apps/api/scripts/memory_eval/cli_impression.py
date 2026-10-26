@@ -161,6 +161,7 @@ def cmd_impression_judge(args: argparse.Namespace) -> int:
         items = ip.items_from_results(
             rows, ip.load_inputs(args.inputs), json.loads(args.settings.read_text(encoding="utf-8"))
         )
+    ip.check_judge_model(args.out, args.judge_model)
     done = {(r["itemId"], r["promptSha"]) for r in ip.read_rows(args.out)}
     estimate = ip.judge_estimate(
         items,
@@ -183,7 +184,16 @@ def cmd_impression_judge(args: argparse.Namespace) -> int:
             call_estimate_usd=estimate["perCallMaxUsd"],
             model=args.judge_model,
         )
-        asyncio.run(ip.judge_items(items, judge, template=template, out_path=args.out, concurrency=args.concurrency))
+        asyncio.run(
+            ip.judge_items(
+                items,
+                judge,
+                template=template,
+                out_path=args.out,
+                judge_model=args.judge_model,
+                concurrency=args.concurrency,
+            )
+        )
     wanted = {(item.item_id, ip.sha256_text(ip.render_judge_prompt(template, item))) for item in items}
     judged = [r for r in ip.read_rows(args.out) if (r["itemId"], r["promptSha"]) in wanted]
     report = ip.judge_report(judged) | {"pendingItems": len(wanted) - len(judged), "judgeModel": args.judge_model}
