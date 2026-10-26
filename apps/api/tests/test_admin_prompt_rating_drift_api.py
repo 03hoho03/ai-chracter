@@ -227,6 +227,35 @@ async def test_draft_reads_and_saves_carry_an_empty_drift_list(
     assert saved["ratingDrift"] == got["ratingDrift"] == detail["ratingDrift"] == []
 
 
+async def test_a_draft_rating_rule_that_does_not_render_marks_only_its_item_instead_of_failing_the_changes_read(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """초안 저장은 자리표시자를 검사하지 않아 짝 없는 중괄호가 든 등급 규칙도 저장된다 — 게시 전 변경 조회는 200 이고, 그 scope
+    항목만 렌더 불가 표지(지문 없음, 다름)를 달고 다른 scope 항목은 그대로 견준다. 깨지는 시나리오: 렌더 예외가 그대로 올라가
+    조회 전체가 500 이 되어 운영자가 무엇이 잘못됐는지 화면에서 볼 수 없다."""
+    await _login_new_admin(db_client, db_session)
+    draft = (await db_client.get("/admin/prompt-sets/novel/draft")).json()
+    (row,) = [
+        s
+        for s in draft["sections"]
+        if (s["channel"], s["slot"], s["scope"]) == ("novelize_rating", "rule_rating", "story")
+    ]
+    row["body"] += " 합성 문장 {"
+    put = await db_client.put(
+        "/admin/prompt-sets/novel/draft", json={"labels": draft["labels"], "sections": draft["sections"]}
+    )
+    assert put.status_code == 200, put.text
+
+    drift = await _changes(db_client, "novel")
+
+    assert [(item["scope"], item["unrenderable"], item["differs"]) for item in drift] == [
+        ("story", True, True),
+        ("character", False, False),
+    ]
+    assert drift[0]["thisMd5"] is None
+    assert drift[0]["otherMd5"] is not None
+
+
 async def test_the_novel_lane_now_checks_the_three_labels_it_reads_r5(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

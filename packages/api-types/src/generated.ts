@@ -8925,7 +8925,8 @@ export interface components {
          *     복원 응답에서만 채우는 칸(조회·저장은 빈 목록):
          *     - `rating_drift`: 복원한 초안의 등급 규칙과 다른 레인 활성판의 비교(`AdminPromptRatingDrift`). 통째·섹션 복원.
          *     - `dropped_channels`·`filled_channels`: 통째 복원이 그 체인에 없는 채널이라 버린 채널과, 원본 판에 없어 그 체인 활성판에서
-         *       채운 채널. 채널 집합이 지금과 다른 옛 판을 복원해도 게시 검증의 슬롯 집합 검사에 막히지 않게 하려는 것이다.
+         *       채운 채널. 채널 집합이 지금과 다른 옛 판을 복원해도 게시 검증의 슬롯 집합 검사에 막히지 않게 하려는 것이다. 소설 레인
+         *       통째 복원만 채운다 — 다른 레인은 옛 판을 그대로 옮기므로 늘 빈 목록이다.
          */
         AdminPromptDraftResponse: {
             /** Id */
@@ -9032,6 +9033,9 @@ export interface components {
          * @description 채팅 레인과 소설 레인의 등급 규칙이 갈렸는지 알리는 한 항목(막지 않는다). 소설 호출의 등급 규칙은 채팅 레인 값에서 옮겨 온
          *     사본이라, 한쪽만 고치면 두 레인의 수위 규칙이 조용히 달라진다 — 게시·복원하는 쪽의 렌더(`this_md5`)와 같은 원작 종류의 다른
          *     레인 활성판 렌더(`other_md5`)를 견준다. md5 는 렌더한 글의 것이고, 행이 없거나 렌더가 비면 null 이다.
+         *
+         *     `unrenderable` 은 어느 한쪽 본문이 렌더되지 않을 때(짝 없는 중괄호 따위 — 초안 저장은 자리표시자를 검사하지 않는다) 참이다.
+         *     그쪽 md5 는 null 이고, 같은지 알 수 없으므로 `differs` 도 참이다. 조회 전체를 500 으로 막지 않고 그 항목에만 표지를 단다.
          */
         AdminPromptRatingDrift: {
             /**
@@ -9060,6 +9064,11 @@ export interface components {
             otherMd5: string | null;
             /** Differs */
             differs: boolean;
+            /**
+             * Unrenderable
+             * @default false
+             */
+            unrenderable: boolean;
         };
         /** AdminPromptRouteAllowedPair */
         AdminPromptRouteAllowedPair: {

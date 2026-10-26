@@ -797,9 +797,14 @@ _CHAT_RATING_CHANNEL = "system"
 _RATING_NOVEL_MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus")
 
 
-def _rating_md5(sections: list[PromptSection], *, channel: str, scope: str) -> str | None:
-    rendered = render_rating(sections, channel=channel, scope=scope)
-    return hashlib.md5(rendered.encode()).hexdigest() if rendered.strip() else None
+def _rating_md5(sections: list[PromptSection], *, channel: str, scope: str) -> tuple[str | None, bool]:
+    """(렌더한 등급 규칙의 md5, 렌더 불가 여부). 렌더가 비면 md5 는 null 이다. 초안 저장은 자리표시자를 검사하지 않아 짝 없는
+    중괄호 같은 본문이 들어올 수 있다 — 그때 조회 전체가 500 이 되지 않게 렌더 불가로 돌려준다."""
+    try:
+        rendered = render_rating(sections, channel=channel, scope=scope)
+    except (PromptRenderError, ValueError):
+        return None, True
+    return (hashlib.md5(rendered.encode()).hexdigest() if rendered.strip() else None), False
 
 
 async def rating_drift(
@@ -830,8 +835,9 @@ async def rating_drift(
             other_set, other_sections = await load_active_prompt_set(db, lane=other_lane, model=other_model)
         except PromptSetNotFoundError:
             continue
-        this_md5 = _rating_md5(sections, channel=this_channel, scope=scope)
-        other_md5 = _rating_md5(other_sections, channel=other_channel, scope=scope)
+        this_md5, this_broken = _rating_md5(sections, channel=this_channel, scope=scope)
+        other_md5, other_broken = _rating_md5(other_sections, channel=other_channel, scope=scope)
+        unrenderable = this_broken or other_broken
         items.append(
             AdminPromptRatingDrift(
                 scope=scope,
@@ -840,7 +846,9 @@ async def rating_drift(
                 other_set_id=other_set.id,
                 this_md5=this_md5,
                 other_md5=other_md5,
-                differs=this_md5 != other_md5,
+                # 한쪽이라도 렌더되지 않으면 같은지 알 수 없으므로 다르다고 알린다.
+                differs=unrenderable or this_md5 != other_md5,
+                unrenderable=unrenderable,
             )
         )
     return items
@@ -1377,19 +1385,21 @@ async def restore_prompt_set(
         )
     source_sections = await _sections_of(db, source.id)
 
-    # 그 체인이 지금 갖는 채널 집합으로 맞춘다 — 채널이 늘거나 준 뒤의 옛 판을 그대로 옮기면 초안 게시가 슬롯 집합 검사(R-1)에
-    # "누락"·"잉여"로 막히고, 화면에는 채널을 지우는 손이 없다. 남는 채널은 버리고 빠진 채널은 그 체인 활성판에서 채운다.
-    expected = _expected_slots(lane, model)
-    source_channels = {s.channel for s in source_sections}
-    dropped = sorted(source_channels - set(expected))
-    missing = sorted(set(expected) - source_channels)
-    fields = [_section_fields(s) for s in source_sections if s.channel in expected]
-    if missing:
-        _, active_sections = await load_active_prompt_set(db, lane=lane, model=model)
-        fields += [_section_fields(s) for s in active_sections if s.channel in missing]
-    # 채팅 Gemini 체인의 얼린 소설 채널은 어차피 저장 때 활성판 값으로 갈아 끼우므로 채운 채널로 알리지 않는다.
-    hidden = _NOVELIZE_CHANNELS if _freezes_novel_rows(lane, model) else frozenset()
-    filled = [channel for channel in missing if channel not in hidden]
+    # 소설 레인은 그 체인이 지금 갖는 채널 집합으로 맞춘다 — 소설 레인 체인마다 채널이 늘어 옛 판을 그대로 옮기면 초안 게시가
+    # 슬롯 집합 검사(R-1)에 "누락"·"잉여"로 막히고, 화면에는 채널을 지우는 손이 없다. 남는 채널은 버리고 빠진 채널은 그 체인
+    # 활성판에서 채운다. 다른 레인은 옛 판을 그대로 옮긴다(채널이 다르면 게시에서 막힌다).
+    fields = [_section_fields(s) for s in source_sections]
+    dropped: list[str] = []
+    filled: list[str] = []
+    if lane == "novel":
+        expected = _expected_slots(lane, model)
+        source_channels = {s.channel for s in source_sections}
+        dropped = sorted(source_channels - set(expected))
+        filled = sorted(set(expected) - source_channels)
+        fields = [_section_fields(s) for s in source_sections if s.channel in expected]
+        if filled:
+            _, active_sections = await load_active_prompt_set(db, lane=lane, model=model)
+            fields += [_section_fields(s) for s in active_sections if s.channel in filled]
     draft = await _replace_draft_content(
         db,
         lane=lane,

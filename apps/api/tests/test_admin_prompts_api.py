@@ -1642,8 +1642,8 @@ async def test_claude_preview_matches_the_gemini_preview_item_for_item(
 async def test_claude_preview_of_a_draft_restored_from_before_the_judgment_rows_shows_generation_only(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """판정·요약 행을 심기 전의 Claude 버전도 복원은 된다(빠진 채널은 활성판에서 채운다). 판정·요약 채널이 없는 초안의
-    미리보기는 없는 채널을 렌더하다 실패하지 않고 있는 생성 항목만 낸다."""
+    """판정·요약 행을 심기 전의 Claude 버전도 복원은 된다(게시는 누락으로 막힌다). 그 초안의 미리보기는 없는 채널을 렌더하다
+    실패하지 않고 있는 생성 항목만 낸다."""
     await _login_new_admin(db_client, db_session)
     old_set = await db_session.scalar(
         sa.select(PromptSet)
@@ -1653,16 +1653,7 @@ async def test_claude_preview_of_a_draft_restored_from_before_the_judgment_rows_
     )
     assert old_set is not None
     restored = await db_client.post(f"/admin/prompt-sets/{old_set.id}/restore")
-    # 통째 복원은 그 판에 없는 판정·요약 채널을 활성판 행으로 채운다. 미리보기가 없는 채널을 견디는지 보려고
-    # 채워진 행을 초안에서 걷어 낸다.
-    assert set(restored.json()["filledChannels"]) == _JUDGMENT_CHANNELS["story"]
-    await db_session.execute(
-        sa.delete(PromptSection).where(
-            PromptSection.prompt_set_id == uuid.UUID(restored.json()["id"]),
-            PromptSection.channel.in_(_JUDGMENT_CHANNELS["story"]),
-        )
-    )
-    await db_session.commit()
+    assert {s["channel"] for s in restored.json()["sections"]} == _GENERATION_CHANNELS
 
     resp = await db_client.post("/admin/prompt-sets/story/draft/preview", params={"model": "sonnet"})
 
@@ -1926,16 +1917,6 @@ async def test_restoring_a_set_from_before_the_novel_rows_publishes_with_the_fro
 
     restored = await db_client.post(f"/admin/prompt-sets/{old_id}/restore")
     assert restored.status_code == 200
-    # 통째 복원은 그 판에 없는 채널을 활성판 행으로 채운다(얼린 소설 채널은 이름 목록에 싣지 않는다). 채널 안의 슬롯 차이는
-    # 채우지 않으므로, 아래 초안 패치를 그 리비전 직후 꼴 그대로 태우려고 채워진 채널 행을 먼저 걷어 낸다.
-    filled = {"memory_episode", "memory_fact", "memory_impression"}
-    assert set(restored.json()["filledChannels"]) == filled
-    assert restored.json()["droppedChannels"] == []
-    await db_session.execute(
-        sa.delete(PromptSection).where(
-            PromptSection.prompt_set_id == uuid.UUID(restored.json()["id"]), PromptSection.channel.in_(filled)
-        )
-    )
     connection = await db_session.connection()
     patched = await connection.run_sync(_load_migration("fc6f0e134782")._patch_drafts)
     assert patched == [("character", "gemini")]
