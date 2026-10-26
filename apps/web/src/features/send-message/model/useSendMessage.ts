@@ -9,10 +9,12 @@ import {
   buildRegeneratePayload,
   buildSendPayload,
   chatRoomKeys,
+  clearRejectedChatMessage,
   countRepliesAfter,
   dropLastMessage,
   getChatRateLimit,
   isContentRestrictedError,
+  saveRejectedChatMessage,
   selectRoomScene,
 } from "@/entities/chat-room";
 import { chatStreamEventSchema } from "@/entities/chat-room";
@@ -47,10 +49,13 @@ import { settleTurnStreamEnd } from "./settleTurnStreamEnd";
 import { truncateForEditAttempt } from "./truncateForEditAttempt";
 
 // `messagesBeforeEdit`는 수정의 첫 시도 직전 목록이다. 재시도 요청에 실어 다녀야 앞 턴 거절 때 원래 목록으로 되돌린다.
+// `draftText`는 입력창에서 보낸 새 메시지의 원문이다(이름 매크로를 펼치기 전). 클로버가 모자라 거절되면 이 글을 방의
+// 입력 초안에 남겨, 충전하고 돌아왔을 때 입력창에 되살린다. 단축키·재생성·수정은 입력창에 되살릴 글이 아니라 없다.
 type PendingRequest = {
   payload: ChatStreamRequest;
   kind: "newTurn" | "regenerate";
   messagesBeforeEdit?: ChatMessage[];
+  draftText?: string;
 };
 
 // isSending(boolean) + error(SendMessageError | null)의 조합은 "전송 중이면서 동시에
@@ -263,10 +268,16 @@ export function useSendMessage(
         await openStream(pending, allowanceAfterCloverConfirm(error, allowance));
         return;
       }
+      const rateLimit = getChatRateLimit(error);
+      // 클로버가 모자라 시작 전에 거절됐다 — 서버에 남지 않은 메시지라 충전하러 다녀오면 사라진다(방을 다시 받으면 낙관적
+      // 메시지가 빠진다). 방의 입력 초안에 남겨 돌아왔을 때 입력창에 되살린다. 저절로 다시 보내지는 않는다.
+      if (rateLimit?.window === "clover" && pending.draftText !== undefined) {
+        saveRejectedChatMessage(roomId, pending.draftText);
+      }
       setStatus({
         kind: "error",
         retryPayload: pending,
-        rateLimit: getChatRateLimit(error),
+        rateLimit,
         // 그만두기는 실패가 아니다. 배너가 이 값으로 문구를 가른다.
         declined: confirmOutcome === "declined",
       });
@@ -313,8 +324,16 @@ export function useSendMessage(
       createdAt: new Date().toISOString(),
     };
     addOptimisticUserMessage(queryClient, roomId, optimisticMessage);
+    // 앞서 거절돼 남겨 둔 메시지는 새로 보내는 순간 할 일을 다했다 — 이번에도 클로버가 모자라면 이번 글로 다시 남는다.
+    // 다른 까닭으로 실패하면 남기지 않는다: 스트림이 열린 뒤의 실패는 서버가 메시지를 이미 저장했을 수 있어, 되살리면
+    // 같은 글을 두 번 보내게 된다(그 실패에는 배너의 다시 시도가 있다).
+    clearRejectedChatMessage(roomId);
 
-    void openStream({ payload: buildSendPayload({ roomId, text, shortcutId }), kind: "newTurn" });
+    void openStream({
+      payload: buildSendPayload({ roomId, text, shortcutId }),
+      kind: "newTurn",
+      draftText: shortcutId === undefined ? rawText : undefined,
+    });
   }
 
   // 마지막 AI 응답만 새 텍스트로 교체(같은 턴), 새 사용자

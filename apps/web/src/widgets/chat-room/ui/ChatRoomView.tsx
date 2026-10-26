@@ -18,6 +18,7 @@ import {
   isAuthorTextMessage,
   MediaTagImagesProvider,
   MessageBubble,
+  pickChatDraftToRestore,
   RateLimitNotice,
   StatGaugePanel,
   TypingIndicator,
@@ -28,7 +29,9 @@ import {
   expandRoomStats,
   expandStoryScene,
   refreshChatRoomTurnPrice,
+  readChatDraft,
   roomAuthorMacroNames,
+  saveChatDraftInput,
   selectRoomScene,
   selectVisibleTurnFeedback,
   shouldConfirmEditTruncation,
@@ -145,7 +148,16 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       chargesEveryTurn: isPremiumRoom,
     });
   const deleteMessageMutation = useDeleteMessageMutation(roomId);
-  const [text, setText] = useState("");
+  // 입력창은 이 방의 입력 초안에서 시작한다(`readChatDraft`) — 클로버를 충전하러 다녀오면(결제창이 페이지를 떠났다
+  // 돌아오는 경우 포함) 쓰던 글이나 클로버가 모자라 거절된 메시지가 돌아와 있다. 무엇을 되살릴지는
+  // `pickChatDraftToRestore` 가 정한다. 다시 보낼지는 전송 버튼이 정한다(저절로 보내지 않는다). 방이 바뀌면 화면이 새로
+  // 마운트되므로(`ChatRoomPage` 의 `key`) 이 초기값은 언제나 그 방의 것이다.
+  const [text, setText] = useState(() => pickChatDraftToRestore(readChatDraft(roomId)));
+  useEffect(() => {
+    saveChatDraftInput(roomId, text);
+  }, [roomId, text]);
+  // 되살린 글이 있으면 방이 그려진 뒤 입력창에 포커스를 두고 커서를 끝으로 옮긴다 — 돌아온 사람이 할 일은 보내기다.
+  const shouldFocusRestoredDraftRef = useRef(text !== "");
   const [editingMessageId, setEditingMessageId] = useState<string>();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -223,6 +235,15 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   useEffect(() => {
     if (policyWarning) inputRef.current?.focus();
   }, [policyWarning]);
+
+  const hasRoom = room !== undefined;
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!shouldFocusRestoredDraftRef.current || !input) return;
+    shouldFocusRestoredDraftRef.current = false;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, [hasRoom]);
 
   function handleSend() {
     const trimmed = text.trim();
