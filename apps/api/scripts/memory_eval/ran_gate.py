@@ -2,11 +2,15 @@
 
 스위치를 켠 갈래라도 그 장치가 측정 중에 한 번도 일하지 않았으면(질의 임베딩이 계속 실패해 명사 단독으로 회상했다, 아는 사람
 가림이 한 번도 걸리지 않았다, 따옴표 안 이름 재분류가 한 번도 일어나지 않았다) 그 갈래의 결과는 스위치의 효과가 아니다. 그래서
-집계 전에 갈래별로 세 수를 보고 문턱에 못 미치면 집계를 거부한다.
+집계 전에 갈래별로 아래 수를 보고 문턱에 못 미치면 집계를 거부한다.
 
 - 질의 임베딩 성공 비율: 프로브 행의 `queryEmbeddings`(턴 기록의 질의 임베딩 호출)에서 `outcome == "ok"` 수 / 받아들인 행의 턴
   수. 호출 기록이 없는 턴(멈춤 키로 건너뜀 등)도 분모에 든다.
 - 가림 합계·재분류 합계: `filter-recompute` 출력 행의 `hiddenEpisodes`·`reclassified` 합(서버 함수로 다시 센 값).
+- 사실 섹션 실림 턴 수: 사실 주입을 켠 갈래의 프로브 행 `memoryFacts`(턴 기록 `chat_turns.memory_facts`, 그 턴 프롬프트가 실은
+  사실 행)가 비지 않은 턴 수. 사실 주입 스위치를 켰어도 고를 행이 없거나 섹션이 늘 비었으면 그 갈래는 사실 주입을 잰 것이 아니다.
+  이 문턱만은 상수가 아니라 실행 인자로 받는다 — 실릴 수 있는 턴 수가 측정마다 대본·체크포인트에 달려 봉인 문서가 정하고, 기본값을
+  두면 문서가 정하지 않은 값으로 조용히 통과한다.
 
 문턱이 없는 갈래(꺼진 갈래, 이전 런의 갈래)는 보지 않는다."""
 
@@ -26,7 +30,11 @@ RECLASSIFIED_MIN_TOTAL = 1
 EMBED_ARMS = ("b1-B1E", "b1-B2")
 HIDDEN_ARMS = ("b1-B1", "b1-B1E", "b1-B2")
 RECLASSIFIED_ARMS = ("b1-B1", "b1-B1E", "b1-B2")
-GATED_ARMS = tuple(sorted({*EMBED_ARMS, *HIDDEN_ARMS, *RECLASSIFIED_ARMS}))
+# 사실 주입을 켠 갈래 — 사실 섹션 실림 턴 수 문턱을 건다.
+FACTS_ARMS = ("b1-B2",)  # cite-ok: 하네스 갈래 이름 문자열이다(결정 번호 아님)
+GATED_ARMS = tuple(sorted({*EMBED_ARMS, *HIDDEN_ARMS, *RECLASSIFIED_ARMS, *FACTS_ARMS}))
+# 문턱을 실행 인자로 주는 인자 이름 — 거부 문구가 이 이름을 가리킨다.
+FACTS_MIN_FLAG = "--ran-facts-min"
 
 ACCEPTED = ("accept", "count_wrong")
 # 덮지 못한 행을 알릴 때 보여 줄 키 수.
@@ -52,6 +60,18 @@ def query_embedding_ok(probe_rows: Iterable[Mapping[str, Any]]) -> dict[str, dic
     }
 
 
+def facts_loaded_turns(probe_rows: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, int]]:
+    """갈래별 사실 섹션이 실린 턴 수(`memoryFacts` 가운데 빈 목록이 아닌 것)와 턴 수. 받아들인 행만 센다."""
+    totals: dict[str, dict[str, int]] = {}
+    for row in probe_rows:
+        if row.get("status") not in ACCEPTED or not row.get("turns"):
+            continue
+        counts = totals.setdefault(str(row["arm"]), {"loaded": 0, "turns": 0})
+        counts["loaded"] += sum(1 for facts in row.get("memoryFacts") or () if facts)
+        counts["turns"] += len(row["turns"])
+    return dict(sorted(totals.items()))
+
+
 def recompute_totals(recompute_rows: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, int]]:
     """갈래별 가림·재분류 합계와 행 수."""
     totals: dict[str, dict[str, int]] = {}
@@ -68,13 +88,25 @@ def needs_inputs(arms: Collection[str]) -> bool:
 
 
 def ran_failures(
-    arms: Collection[str], *, probe_rows: Iterable[Mapping[str, Any]], recompute_rows: Iterable[Mapping[str, Any]]
+    arms: Collection[str],
+    *,
+    probe_rows: Iterable[Mapping[str, Any]],
+    recompute_rows: Iterable[Mapping[str, Any]],
+    facts_loaded_min: int | None,
 ) -> list[str]:
-    """문턱에 못 미친 (갈래, 지표, 값) 줄. 빈 목록이면 통과."""
+    """문턱에 못 미친 (갈래, 지표, 값) 줄. 빈 목록이면 통과. 사실 주입 갈래가 있는데 `facts_loaded_min` 이 없으면 거부한다."""
+    probe_rows = list(probe_rows)
     embedding = query_embedding_ok(probe_rows)
     recomputed = recompute_totals(recompute_rows)
+    loaded = facts_loaded_turns(probe_rows)
     failures: list[str] = []
     for arm in sorted(arms):
+        if arm in FACTS_ARMS:
+            if facts_loaded_min is None:
+                raise SystemExit(f"사실 주입 갈래 {arm} 를 집계하려면 사실 섹션 실림 턴 수 문턱({FACTS_MIN_FLAG})을 준다")
+            count = (loaded.get(arm) or {"loaded": 0})["loaded"]
+            if count < facts_loaded_min:
+                failures.append(f"{arm} factsLoadedTurns={count} (문턱 {facts_loaded_min})")
         if arm in EMBED_ARMS:
             stats = embedding.get(arm) or {"ok": 0, "turns": 0}
             ok, turns = int(stats["ok"]), int(stats["turns"])
@@ -92,9 +124,15 @@ def ran_failures(
 
 
 def require_ran(
-    arms: Collection[str], *, probe_rows: Iterable[Mapping[str, Any]], recompute_rows: Iterable[Mapping[str, Any]]
+    arms: Collection[str],
+    *,
+    probe_rows: Iterable[Mapping[str, Any]],
+    recompute_rows: Iterable[Mapping[str, Any]],
+    facts_loaded_min: int | None,
 ) -> None:
-    failures = ran_failures(arms, probe_rows=list(probe_rows), recompute_rows=list(recompute_rows))
+    failures = ran_failures(
+        arms, probe_rows=list(probe_rows), recompute_rows=list(recompute_rows), facts_loaded_min=facts_loaded_min
+    )
     if failures:
         raise SystemExit("집계 거부 — 켠 장치가 측정 중에 일하지 않은 갈래가 있다: " + "; ".join(failures))
 

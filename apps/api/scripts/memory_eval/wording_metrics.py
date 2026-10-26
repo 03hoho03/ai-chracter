@@ -193,6 +193,11 @@ def _holds_content(text_norm: str, item: Mapping[str, Any], users: frozenset[str
     return hits >= 2 or (hits >= 1 and any(_named(text_norm, p) for p in people if p))
 
 
+def holds_secret_content(text_value: Any, item: Mapping[str, Any], users: frozenset[str]) -> bool:
+    """정규화 전 글이 그 비밀 문항의 내용을 담았나 — 위 "내용을 담았다" 규칙 그대로(다른 집계가 같은 규칙을 쓰게 연다)."""
+    return _holds_content(_n(text_value), item, users)
+
+
 def _segments(summary: str) -> list[str]:
     """마디 목록. 줄 머리 `-` 목록 항목은 문장이 여럿이어도 한 마디다(표기 괄호가 항목 끝 문장에만 붙는다). 그 밖의 줄은
     문장마다 나눈다. 괄호로 시작하는 마디(마침표 뒤에 띄어 붙인 표기 괄호, 다음 줄로 넘어간 표기 괄호 등)는 앞 마디에 붙인다."""

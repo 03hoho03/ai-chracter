@@ -716,6 +716,29 @@ def test_a_preregistration_sealed_under_the_spent_v4_edition_cannot_open_the_tes
             require_seal({"test"}, prereg, seal_sha=digest)
 
 
+def test_a_preregistration_sealed_under_the_spent_v5_edition_cannot_open_the_test_half(tmp_path: Path) -> None:
+    """v5 판의 시험 절반도 앞 측정이 이미 열어 썼다 — 해시가 맞게 봉인돼 있어도 사실 주입 재측정의 시험 절반을 열 수 없다.
+    이번 판 머리로 봉인한 문서만 연다."""
+    import hashlib
+
+    from memory_eval.seal import PREREGISTRATION_FILE, SEALED_EDITION, require_seal
+
+    prereg = tmp_path / PREREGISTRATION_FILE
+
+    def seal(header: str) -> str:
+        prereg.write_text(f"{header}\n봉인\n", encoding="utf-8")
+        digest = hashlib.sha256(prereg.read_bytes()).hexdigest()
+        prereg.with_suffix(".sha256").write_text(f"{digest}  {PREREGISTRATION_FILE}\n", encoding="utf-8")
+        return digest
+
+    assert SEALED_EDITION == "v6"
+    for header in ("# 사전 등록 (v5)", "# 사전 등록 (v5.1)"):
+        digest = seal(header)
+        with pytest.raises(SystemExit, match="봉인 판"):
+            require_seal({"test"}, prereg, seal_sha=digest)
+    require_seal({"test"}, prereg, seal_sha=seal("# 사전 등록 (v6)"))
+
+
 def test_speaker_gold_episode_is_judged_by_keywords_not_attribution_keys() -> None:
     plant = _plant(category="화자", plantTurn=8, keywords=["취사병"], answerKeys=[["말한 적 없"], ["태민"]])
     episodes = [
@@ -920,6 +943,7 @@ def test_probe_restores_and_restarts_for_every_retry_and_records_usage(
     assert result["queryEmbeddings"] == [
         {"callSite": "chat_memory_query_embedding", "model": "voyage-4-large", "latencyMs": 420, "outcome": "ok"}
     ]
+    assert result["embedRecallTimeoutMs"] is None  # 이 측정 서버 env 에 상한 줄이 없다
     assert calls["restore"] == 2 and len(calls["start"]) == 2 and calls["stop"] == 2
     assert calls["consent"] == [calls["run"].room_id] * 2
     assert 60 in calls["sleep"]
@@ -929,6 +953,19 @@ def test_probe_restores_and_restarts_for_every_retry_and_records_usage(
     assert len(dumps) == 2
     assert all(o["MEMORY_EPISODES_RECALL"] == "true" for o in calls["start"])
     assert len(calls["run"].ledger.rows()) == 2
+
+
+def test_probe_records_the_query_embedding_timeout_it_gave_the_server(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """견주는 두 갈래가 같은 상한으로 돌았는지 집계 때 보려면 프로브 행에 그 값이 남아야 한다."""
+    from memory_eval.plants import Probe
+    from memory_eval.probe import run_probe
+
+    calls = _fake_probe_world(monkeypatch, tmp_path, say_codes=[0])
+    calls["run"].server_overrides["MEMORY_EMBED_RECALL_TIMEOUT_MS"] = "3000"
+    result = run_probe(calls["run"], Probe(item_id="obj01", checkpoint=100, turns=["질문"], kind="plant", split="dev"))
+    assert result["embedRecallTimeoutMs"] == "3000"
 
 
 def test_two_turn_probe_tops_up_clover_and_keeps_both_replies(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

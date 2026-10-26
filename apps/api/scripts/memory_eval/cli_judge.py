@@ -489,7 +489,7 @@ def _require_ran(args: argparse.Namespace, rows: list[dict[str, Any]]) -> None:
     recompute = [r for path in args.ran_recompute for r in json.loads(path.read_text(encoding="utf-8"))]
     probes = _probe_rows(args.ran_probes)
     ran_gate.require_covered(rows, probe_rows=probes, recompute_rows=recompute)
-    ran_gate.require_ran(arms, probe_rows=probes, recompute_rows=recompute)
+    ran_gate.require_ran(arms, probe_rows=probes, recompute_rows=recompute, facts_loaded_min=args.ran_facts_min)
 
 
 def _ran_args(p: argparse.ArgumentParser) -> None:
@@ -498,6 +498,11 @@ def _ran_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         "--ran-recompute", type=Path, nargs="+", help="실제로 돌았나 단언 — filter-recompute 출력(가림·재분류 합계)"
+    )
+    p.add_argument(
+        "--ran-facts-min",
+        type=int,
+        help="실제로 돌았나 단언 — 사실 주입 갈래의 사실 섹션 실림 턴 수 하한(봉인 문서의 값, 기본값 없음: 그 갈래를 집계하면 필수)",
     )
 
 
@@ -780,7 +785,9 @@ def cmd_v4_preview(args: argparse.Namespace) -> int:
 
 
 def cmd_v4_power_table(args: argparse.Namespace) -> int:
-    """봉인 전에 실제 시험 n 으로 "통과 최소 불일치" 표를 낸다 — 판정 규칙과 같은 상수(문턱)를 읽는다. 유료 호출·파일 읽기 없음."""
+    """봉인 전에 실제 시험 n 으로 "통과 최소 불일치" 표를 낸다 — 판정 규칙과 같은 상수(문턱)를 읽는다. 유료 호출·파일 읽기 없음.
+    `--facts-inject` 면 효과 문턱을 사실 주입 재측정의 효과 표(갈래 쌍 하나)로 낸다."""
+    from memory_eval import facts_inject
     from memory_eval.verdict_v4 import power_table
 
     sizes: dict[str, int] = {}
@@ -789,7 +796,60 @@ def cmd_v4_power_table(args: argparse.Namespace) -> int:
         if not value.isdigit():
             raise SystemExit(f"표본은 '키=정수' 꼴이다: {item!r}")
         sizes[key] = int(value)
-    _print(power_table(sizes, max_c=args.max_c))
+    table = facts_inject.power_table if args.facts_inject else power_table
+    _print(table(sizes, max_c=args.max_c))
+    return 0
+
+
+def cmd_facts_inject_summary(args: argparse.Namespace) -> int:
+    """사실 주입 재측정 집계 — 현 운영 갈래 → 사실 주입 갈래의 효과(판정 불능 상한·판정자 대조군까지 묶음 판정과 같은 유효성
+    장치), 사실 섹션 실림 턴 수, 관찰 칸 둘(값만). 시험 절반은 봉인 확인 뒤에만 열고 결과에 봉인 판·sha 를 남긴다. 집계 전에
+    "실제로 돌았나" 단언(사실 섹션 실림 턴 수 문턱 포함)과 두 갈래 질의 임베딩 상한이 같았는지를 본다. 결과는 `--out`."""
+    from memory_eval import facts_inject, ran_gate
+    from memory_eval.judge import ensure_unique_probe_rows
+    from memory_eval.seal import SEALED_EDITION
+
+    split = args.split
+    scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
+    judge_rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
+    _require_ran(args, scores + judge_rows)
+    probes = _probe_rows(args.ran_probes or [])
+    timeouts = facts_inject.require_same_embed_timeout(probes)
+    if split == "test":
+        require_seal({"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha, test_drop=args.test_drop)
+
+    def view(pair: list[str]) -> plants_mod.PlantSet:
+        return holdout.load_view(
+            Path(pair[0]), Path(pair[1]), {split}, preregistration=args.run / PREREGISTRATION_FILE,
+            seal_sha=args.seal_sha, test_drop=args.test_drop,
+        )  # fmt: skip
+
+    story = [view(pair) for pair in args.story]
+    character = [view(pair) for pair in args.character or []]
+    ensure_unique_probe_rows(scores)
+    control_rows, override = v4_controls_input(
+        args.controls or args.run / "judge" / "controls.json",
+        accept_sha256=args.accept_failed_controls,
+        accept_reason=args.accept_reason,
+    )
+    seeds = json.loads(args.split_seeds.read_text(encoding="utf-8")) if args.split_seeds else None
+    floors = facts_inject.effect_floors(seeds) if seeds is not None else None
+    recompute = [r for path in args.ran_recompute or [] for r in json.loads(path.read_text(encoding="utf-8"))]
+    result = facts_inject.verdict(
+        story, character, scores, judge_rows, control_rows=control_rows, controls_override=override, floors=floors,
+        split=split,
+    )  # fmt: skip
+    items = [e for s in [*story, *character] for e in s.all_items() if e.get("split") == split]
+    result |= {
+        "seal": {"edition": SEALED_EDITION, "sha256": args.seal_sha} if split == "test" else None,
+        "embedRecallTimeoutMs": timeouts,
+        "factsLoaded": ran_gate.facts_loaded_turns(probes),
+        "observations": facts_inject.observations(items, recompute),
+    }
+    _write(args.out, result)
+    _print({facts_inject.EFFECT: result["effects"][facts_inject.EFFECT]["status"], "status": result["status"]}
+           | {"invalid": result["invalid"], "controls": result["controls"]["status"]}
+           | {"factsLoaded": result["factsLoaded"], "observations": result["observations"], "out": str(args.out)})  # fmt: skip
     return 0
 
 
@@ -1763,7 +1823,33 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
         help="표본 — 'secret:story=84' 꼴(키 secret:<레인>·premise:<레인>·effect:<E1|E2>·nonInferiority)",
     )
     p.add_argument("--max-c", type=int, default=5, help="반대쪽 불일치 c 를 0 부터 이 값까지")
+    p.add_argument(
+        "--facts-inject", action="store_true", help="효과 문턱을 사실 주입 재측정의 효과 표로(키 effect:factsInject)"
+    )
     p.set_defaults(fn=cmd_v4_power_table)
+
+    p = sub.add_parser(
+        "facts-inject-summary",
+        help="사실 주입 재측정 집계 — 현 운영 갈래 → 사실 주입 갈래 효과, 사실 섹션 실림 턴 수, 관찰 칸(시험은 봉인 해시 필요)",
+    )
+    p.add_argument("--split", choices=("dev", "test"), default="test")
+    p.add_argument("--seal-sha", help="시험 절반(--split test)이면 필수 — 이번 판 봉인 문서의 sha256")
+    p.add_argument("--test-drop", type=Path, help="시험 쪽에서 뺄 id 목록 파일(sha256 이 봉인 문서 머리에 있어야 한다)")
+    p.add_argument("--story", nargs=2, action="append", required=True, metavar=("PLANTS", "SPLIT_DIR"),
+                   help="스토리 대본 하나의 심기 표와 분할 폴더(대본마다 한 번씩) — 효과와 관찰 칸")  # fmt: skip
+    p.add_argument("--character", nargs=2, action="append", metavar=("PLANTS", "SPLIT_DIR"),
+                   help="캐릭터 대본 하나의 심기 표와 분할 폴더 — 관찰 칸에만 든다")  # fmt: skip
+    p.add_argument("--scores", type=Path, nargs="+", required=True, help="score 출력(두 갈래)")
+    p.add_argument("--judged", type=Path, nargs="+", required=True, help="judge 출력(두 갈래)")
+    p.add_argument("--split-seeds", type=Path, help="분할 시드 파일 — 효과의 합계 하한(없으면 표본이 모자란 효과는 halt)")
+    p.add_argument("--controls", type=Path, help="판정자 대조군 기록(기본 <원자료>/judge/controls.json, 없으면 halt)")
+    p.add_argument(
+        "--accept-failed-controls", metavar="SHA256", help="관문을 못 넘은 대조군 기록을 사용자가 받아들였을 때 그 파일의 sha256"
+    )
+    p.add_argument("--accept-reason", help="--accept-failed-controls 의 이유(누가 왜 — 결과에 남는다)")
+    p.add_argument("--out", type=Path, required=True)
+    _ran_args(p)
+    p.set_defaults(fn=cmd_facts_inject_summary)
 
     from memory_eval import judge_agreement as ja
 
