@@ -4,7 +4,9 @@
 메운다. 기본은 계획이다 — 무엇을 몇 행 지우고 무엇을 남기는지, 왜 거부하는지를 보여 주기만 하고 쓰지 않는다. 적용은 대상 작품
 수를 따로 적어야 하고(`--expect-contents`), 지운 행이 가리키던 저장소 키는 커밋 전에 파일로 남겨 두었다가 커밋이 끝난 뒤 별도
 명령(`delete-objects`)으로 지운다. DB 와 저장소를 한 트랜잭션으로 묶을 수 없어서, 커밋이 실패해도 그림이 먼저 사라지지 않게
-순서를 나눈 것이다.
+순서를 나눈 것이다. `delete-objects` 는 지우기 전에 키를 DB 와 다시 대조해, 그림 행이 아직 가리키는 키가 하나라도 있으면
+아무것도 지우지 않는다 — 키 파일이 지금 DB 와 어긋나는 경우(커밋이 실제로는 실패했거나, 시드 업서트가 같은 결정적 키로
+작품을 되살린 뒤 늦게 정리를 돌린 경우)에 살아 있는 그림을 지우지 않게 하려는 것이다.
 
     # 계획만(쓰기 없음)
     python scripts/purge_contents.py plan --ids-file ids.txt
@@ -418,7 +420,9 @@ async def apply_purge(
     아무것도 쓰지 않으며 키 파일도 만들지 않는다(롤백은 세션을 닫는 호출부가 한다).
 
     키 파일은 삭제가 끝난 뒤, 커밋 전에 쓴다. 삭제 도중 실패하면 행은 롤백돼 그대로인데 키 파일이 남아 있으면 운영자가 그
-    파일로 살아 있는 그림을 지울 수 있어서다. 커밋이 실패하면 같은 이유로 키 파일을 지운다."""
+    파일로 살아 있는 그림을 지울 수 있어서다. 커밋이 예외로 끝나면 파일을 지우지 않고 `<keys_out>.unconfirmed` 로 이름을
+    바꿔 남긴다 — 서버는 커밋했는데 응답만 잃었다면 그 파일이 지운 그림 키의 유일한 기록이다. 운영자는 DB 를 확인한 뒤 그
+    파일을 `delete-objects` 에 넘길 수 있고, 커밋이 정말 실패했다면 그 명령의 재대조가 살아 있는 그림 키를 보고 거부한다."""
     if keys_out.exists():  # noqa: ASYNC240 — 운영자가 한 번 돌리는 CLI 라 이벤트 루프를 막아도 기다릴 다른 일이 없다
         raise FileExistsError(f"{keys_out} 가 이미 있다 — 앞선 적용의 키 목록을 덮지 않는다")
     ids = sorted(set(content_ids))
@@ -437,9 +441,15 @@ async def apply_purge(
     try:
         await db.commit()
     except BaseException:
-        keys_out.unlink(missing_ok=True)  # noqa: ASYNC240 — 위와 같다
+        keys_out.rename(keys_out.with_name(f"{keys_out.name}.unconfirmed"))  # noqa: ASYNC240 — 위와 같다
         raise
     return plan
+
+
+async def find_live_keys(db: AsyncSession, keys: Sequence[str]) -> list[str]:
+    """키 목록 중 아직 그림 행이 가리키는 키. 그림 행은 원본 키만 들고 있어 변형 키는 걸리지 않지만, 원본이 걸리면 정리 전체를
+    거부하므로 그 그림의 변형도 함께 지키게 된다."""
+    return sorted(set((await db.scalars(select(Asset.storage_key).where(Asset.storage_key.in_(keys)))).all()))
 
 
 def delete_objects(keys: Sequence[str], *, apply: bool, delete_fn: Callable[[str], None]) -> dict[str, int]:
@@ -483,6 +493,20 @@ def read_ids(path: Path) -> list[uuid.UUID]:
 async def _run(args: argparse.Namespace) -> int:
     from api.db.session import async_session_factory
 
+    if args.command == "delete-objects":
+        keys = json.loads(args.keys_file.read_text(encoding="utf-8"))
+        async with async_session_factory() as session:
+            live = await find_live_keys(session, keys)
+        if live:
+            print(f"그림 행이 아직 가리키는 키 {len(live)}개 — 키 파일이 지금 DB 와 어긋난다", file=sys.stderr)
+            for key in live:
+                print(f"  {key}", file=sys.stderr)
+            print("거부했다 — 저장소에서 아무것도 지우지 않았다", file=sys.stderr)
+            return 2
+        result = delete_objects(keys, apply=args.apply, delete_fn=delete_object)
+        print(json.dumps(result, ensure_ascii=False))
+        return 1 if result.get("failed") else 0
+
     ids = read_ids(args.ids_file)
     async with async_session_factory() as session:
         if args.command == "plan":
@@ -500,7 +524,7 @@ async def _run(args: argparse.Namespace) -> int:
         return 0
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0] if __doc__ else None)
     commands = parser.add_subparsers(dest="command", required=True)
     plan_parser = commands.add_parser("plan", help="지울 행 수와 거부 사유만 보여 준다(쓰기 없음)")
@@ -511,17 +535,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--expect-contents", type=int, required=True, help="ids 파일의 작품 수 — 다른 목록을 지우지 않게 따로 적는다"
     )
     apply_parser.add_argument("--keys-out", type=Path, required=True, help="지울 저장소 키를 남길 새 파일")
-    objects_parser = commands.add_parser("delete-objects", help="apply 가 남긴 키 파일로 저장소 파일을 지운다")
+    objects_parser = commands.add_parser(
+        "delete-objects", help="apply 가 남긴 키 파일로 저장소 파일을 지운다(그림 행이 아직 가리키는 키가 있으면 거부)"
+    )
     objects_parser.add_argument("--keys-file", type=Path, required=True)
     objects_parser.add_argument("--apply", action="store_true", help="붙여야 실제로 지운다(기본은 키 수만 보여 준다)")
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
 
-    if args.command == "delete-objects":
-        keys = json.loads(args.keys_file.read_text(encoding="utf-8"))
-        result = delete_objects(keys, apply=args.apply, delete_fn=delete_object)
-        print(json.dumps(result, ensure_ascii=False))
-        return 1 if result.get("failed") else 0
-    return asyncio.run(_run(args))
+
+def main(argv: Sequence[str] | None = None) -> int:
+    return asyncio.run(_run(parse_args(argv)))
 
 
 if __name__ == "__main__":
