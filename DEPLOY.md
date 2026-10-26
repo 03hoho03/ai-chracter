@@ -591,8 +591,8 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:
 `alembic downgrade` 는 목표 위에 쌓인 리비전을 전부 내리고, 기능이 들어간 뒤에도 다른 작업의 리비전이 그
 사이와 위에 계속 쌓이므로 기능 절에 적힌 사이 리비전 목록은 믿지 않고 이 출력만 본다. 출력의 마지막 줄은 목표 리비전 자신이라
 내려가지 않는다 — 그 줄을 뺀 나머지, 곧 함께 내려갈 리비전 중 다른 작업의 리비전이 있으면 멈추고 그 작업 주인과 정한다.
-같은 판정이 DB 의 마지막 클로버 단위 기록(`clover_unit_events`)과 올릴 이미지에 기동 가드가 있는지(단위 상수
-`api.core.clover.CLOVER_UNIT_KRW` 의 존재)도 본다(로그 `클로버 단위 기록: <convert|revert|none> <guard|noguard>`). 단위를 전환한
+교체 스크립트가 마이그레이션 전에 올릴 이미지 안에서 DB 리비전을 대조하는 판정(위 롤백 표시 문단의 그 판정)은 DB 의 마지막 클로버
+단위 기록(`clover_unit_events`)과 올릴 이미지에 기동 가드가 있는지(단위 상수 `api.core.clover.CLOVER_UNIT_KRW` 의 존재)도 함께 본다(로그 `클로버 단위 기록: <convert|revert|none> <guard|noguard>`). 단위를 전환한
 DB(`convert`)에 가드 없는 옛 이미지(`noguard`)를 올리려 하면 마이그레이션 전에 **실패**한다 — 그 이미지는 막히지 않고 떠 1클로버 = 3원으로
 환불을 계산하기 때문이다. 그래서 단위 전환 뒤의 롤백 대상은 기동 가드가 들어온 태그 이상이다. 가드가 있는 이미지는 단위가 다른 DB
 에서 스스로 기동하지 않는다(`apps/api/CLAUDE.md` 의 "클로버 단위 · 정지 스위치" 절) — 평상시 교체에서는 새 색만 healthy 가 안 돼
