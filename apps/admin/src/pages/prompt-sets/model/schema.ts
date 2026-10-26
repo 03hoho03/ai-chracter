@@ -41,6 +41,12 @@ export function serverToForm(data: AdminPromptDraftResponse): PromptSetFormValue
   return { labels: data.labels, sections: data.sections };
 }
 
-export function formToServer(values: PromptSetFormValues): AdminPromptDraftUpsertRequest {
-  return { labels: values.labels, sections: values.sections };
+/** 초안 저장이 그 사이 다른 곳의 저장을 덮지 않게 하는 방법. `check` 는 화면이 초안을 받을 때 함께 받은 저장 해시를 돌려보내
+ * 그 뒤 다른 저장이 있었으면 서버가 409 로 멈추게 한다(null 은 "저장된 초안이 없어야 한다"). `overwrite` 는 운영자가 그 충돌을
+ * 보고 덮어쓰기를 고른 뒤라 해시 칸을 빼 서버가 검사하지 않게 한다. */
+export type DraftSaveGuard = { kind: "check"; savedDraftHash: string | null } | { kind: "overwrite" };
+
+export function formToServer(values: PromptSetFormValues, guard: DraftSaveGuard): AdminPromptDraftUpsertRequest {
+  const body = { labels: values.labels, sections: values.sections };
+  return guard.kind === "check" ? { ...body, baseDraftHash: guard.savedDraftHash } : body;
 }

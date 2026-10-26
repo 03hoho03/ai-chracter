@@ -25,6 +25,7 @@ import { chainReaders } from "../model/chainReads";
 import { promptSectionLabel } from "../model/channels";
 import { PROMPT_LANE_LABELS, type PromptLane } from "../model/lane";
 import { PROMPT_MODEL_LABELS, type PromptModel } from "../model/model";
+import { ratingDriftLines } from "../model/ratingDrift";
 import {
   DEFAULT_SEMVER_LEVEL,
   isSemverLevel,
@@ -36,6 +37,7 @@ import {
   type AdminPromptDraftChangesResponse,
   type SemverLevel,
 } from "../model/semver";
+import { RatingDriftNotice } from "./RatingDriftNotice";
 
 /** `levels` 는 섹션 이름 → 고른 단계. 고르지 않은 섹션은 키가 없고 기본(patch)으로 읽는다 — 바뀐 섹션 목록을 다시 받으면
  * 사라진 섹션의 선택은 요청에서 빠지고 새로 생긴 섹션은 기본으로 시작한다(`levelsToSend`). */
@@ -50,31 +52,30 @@ type PublishPromptSetDialogProps = {
 };
 
 // 채팅 밖 레인은 읽히는 자리가 정해져 있다. `publish_filter`는 채팅 턴이 아니라 제작자가 발행 버튼을 누를 때(다음 발행 심사부터)
-// 읽힌다. 소설 레인 Gemini 세트는 경계 제안·문단 수정·여러 문단 수정·묶음 재검사와 Gemini 로 쓰는 화 생성·전체·장면 구성안에
-// 읽힌다. 채팅 두 레인은 모델과 무관하게 모델 배정 표가 고른 칸에서 읽히므로 아래 `chatPublishEffectCopy` 가 배정 표 조회로
+// 읽힌다. 소설 레인 Gemini 세트는 Gemini 로 쓰는 화 생성·전체·장면 구성안과, 배정 표가 이 체인을 고른(행이 없으면 Gemini)
+// 경계 제안·문단 수정·여러 문단 수정·묶음 재검사에 읽히고, 화자 라벨은 모든 소설 작업이 이 세트에서 읽는다. 채팅 두 레인은 모델과 무관하게 모델 배정 표가 고른 칸에서 읽히므로 아래 `chatPublishEffectCopy` 가 배정 표 조회로
 // 문장을 만든다.
 const NON_CHAT_PUBLISH_EFFECT_COPY: Record<Exclude<PromptLane, ChatRoutingLane>, string> = {
   publish_filter: "다음 발행 심사부터 즉시 반영되고",
-  novel: "다음 소설 경계 제안·문단 수정·여러 문단 수정·묶음 재검사와 Gemini 로 쓰는 다음 화 생성·구성안부터 즉시 반영되고",
+  novel:
+    "Gemini 로 쓰는 다음 화 생성·구성안과, 배정 표가 이 체인을 고른 경계 제안·문단 수정·재검사(행이 없으면 Gemini)부터 즉시 반영되고(화자 라벨은 모든 소설 작업에 쓰여요)",
   novel_screen: "다음 노벨 공개 심사부터 즉시 반영되고",
 };
 
-/** 소설 레인 Claude 세트는 그 모델로 쓰는 화 생성·전체·장면 구성안에만 읽힌다(경계 제안·문단 수정·여러 문단 수정·묶음 재검사는
- * Gemini 세트). 상위 모델이 꺼져 있거나 허용이 없으면 그 자리도 Gemini 로 돌아 게시해도 아무 데도 쓰이지 않는다. */
+/** 소설 레인 Claude 세트는 그 모델로 쓰는 화 생성·전체·장면 구성안과, 배정 표가 이 체인을 고른 경계 제안·문단 수정·여러 문단
+ * 수정·묶음 재검사에 읽힌다. 상위 모델이 꺼져 있거나 허용이 없으면 생성 자리도 Gemini 로 돈다. */
 const NOVEL_CLAUDE_PUBLISH_EFFECT_COPY =
-  "이 모델로 쓰는 다음 소설 화 생성·구성안부터 즉시 반영되고(상위 모델이 꺼져 있거나 허용이 없으면 쓰이지 않아요)";
+  "이 모델로 쓰는 다음 소설 화 생성·구성안과, 배정 표가 이 체인을 고른 경계 제안·문단 수정·재검사부터 즉시 반영되고(상위 모델이 꺼져 있거나 허용이 없으면 생성에는 쓰이지 않아요)";
 
 /** 채팅 레인 체인은 응답 생성이든 판정·요약이든 배정 표가 그 체인을 고른 칸에서만 읽힌다 — 읽는 칸 수는 배정 표 조회의 체인
- * 목록 하나에서 온다. 화자 라벨·등급 규칙은 소설이 원작의 채팅 Gemini 세트에서 읽으므로(배정 표와 무관하다) Gemini 체인에만
- * 그 괄호를 붙인다. */
+ * 목록 하나에서 온다. 소설은 화자 라벨·등급 규칙을 소설 레인 세트에서 읽어 채팅 세트 게시와 무관하다. */
 function chatPublishEffectCopy(routingQuery: ReturnType<typeof useRoutingQuery>, lane: ChatRoutingLane, model: PromptModel) {
-  const novelNote = model === "gemini" ? "(화자 라벨과 등급 규칙은 다음 소설 작업에도 쓰여요)" : "";
-  if (routingQuery.isPending) return `운영에서 이 체인을 읽는 칸을 확인하는 중이고${novelNote}`;
-  if (routingQuery.isError) return `운영에서 이 체인을 읽는 칸을 확인하지 못했고(모델 배정 화면에서 확인하세요)${novelNote}`;
+  if (routingQuery.isPending) return "운영에서 이 체인을 읽는 칸을 확인하는 중이고";
+  if (routingQuery.isError) return "운영에서 이 체인을 읽는 칸을 확인하지 못했고(모델 배정 화면에서 확인하세요)";
   const { live, switchedOff } = chainReaders(routingQuery.data, lane, model);
   const offNote = switchedOff.length > 0 ? `(Opus 방 ${switchedOff.length}칸은 ${PREMIUM_OFF_UNREAD_COPY})` : "";
-  if (live.length === 0) return `지금은 이 체인을 읽는 칸이 없어 게시해도 바로 쓰이지 않고${offNote}${novelNote}`;
-  return `이 체인을 읽는 칸(${live.length}칸)의 다음 턴부터 즉시 반영되고${offNote}${novelNote}`;
+  if (live.length === 0) return `지금은 이 체인을 읽는 칸이 없어 게시해도 바로 쓰이지 않고${offNote}`;
+  return `이 체인을 읽는 칸(${live.length}칸)의 다음 턴부터 즉시 반영되고${offNote}`;
 }
 
 /** 게시는 그 체인을 읽는 자리에 즉시 반영되는 되돌리기 어려운 행동이라 다이얼로그로 한 번
@@ -186,6 +187,13 @@ export const PublishPromptSetDialog = createCallable<PublishPromptSetDialogProps
                   다시 시도
                 </Button>
               </div>
+            )}
+
+            {changes && (
+              <RatingDriftNotice
+                lines={ratingDriftLines(changes.ratingDrift)}
+                footer="게시는 막지 않아요. 맞추려면 그 세트도 같이 고쳐 게시하세요."
+              />
             )}
 
             {changes && (

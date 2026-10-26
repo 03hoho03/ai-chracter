@@ -2,11 +2,13 @@ import { useMemo } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 
 import type { PromptChannel } from "../model/channels";
+import type { PlaceholderLookup } from "../model/placeholders";
 import type { PromptSetFormValues } from "../model/schema";
 import { SectionRow } from "./SectionRow";
 
 type ChannelSectionListProps = {
   channel: PromptChannel;
+  placeholders: PlaceholderLookup;
 };
 
 type SortedSection = {
@@ -43,7 +45,7 @@ function findDistinctOrderNeighbor<T extends SortedSection>(
  * 정렬에 쓰는 `order`는
  * `useWatch`로 그 필드들만 구독한다 — body를 고치는 키 입력마다 48행 전체가 다시 정렬되는
  * 것을 막기 위해서다(body는 `register`로 각자 구독하므로 여기 영향이 없다). */
-export function ChannelSectionList({ channel }: ChannelSectionListProps) {
+export function ChannelSectionList({ channel, placeholders }: ChannelSectionListProps) {
   const { control, getValues, setValue } = useFormContext<PromptSetFormValues>();
   const allSections = getValues("sections");
 
@@ -88,6 +90,7 @@ export function ChannelSectionList({ channel }: ChannelSectionListProps) {
             slot={section.slot}
             variant={section.variant}
             conditional={section.conditional}
+            placeholders={placeholders(section.channel, section.slot)}
             canMoveUp={previous !== undefined}
             canMoveDown={next !== undefined}
             onMoveUp={() => previous && swapOrder(section.fieldIndex, previous.fieldIndex)}
