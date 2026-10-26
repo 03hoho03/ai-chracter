@@ -20,10 +20,14 @@ import type { AdminPromptRouteRevisionSummary } from "../api/useRevisionListQuer
 import { useRestoreRoutingMutation } from "../api/useRestoreRoutingMutation";
 import type { RoutingOutcome } from "../model/outcome";
 import { classifyRouteSaveError } from "../model/routeErrors";
-import { cellKeyMap } from "../model/schema";
+import { cellKeyMap, ROUTING_SCOPE_LABELS, type RoutingScope } from "../model/schema";
 
 type RestoreRoutingDialogProps = {
   revision: AdminPromptRouteRevisionSummary;
+  /** 되돌릴 범위. 그 이력의 표에서 이 범위의 행만 꺼내고, 다른 범위의 지금 행은 그대로 둔다. */
+  scope: RoutingScope;
+  /** 그 이력의 표에서 이 범위에 든 행 수. */
+  scopeRowCount: number;
   /** 화면이 보던 표 — 기준 이력과 다음 번호, 거부된 칸을 표의 칸으로 좁히는 데 쓴다. */
   data: AdminPromptRoutingResponse;
   /** 저장하지 않은 편집 칸 수. 되돌리면 폼이 새 표로 바뀌어 사라진다. */
@@ -35,8 +39,9 @@ type RestoreFormValues = { note: string };
 /** 되돌리기도 새 이력으로 저장해 다음 턴부터 운영 경로를 바꾸므로 저장과 같은 무게로 확인받는다. 옛 표를 지금 env·게시 세트로 다시
  * 검사하므로 그 사이 바뀐 것이 있으면 거부될 수 있다는 사실을 함께 알린다. */
 export const RestoreRoutingDialog = createCallable<RestoreRoutingDialogProps, RoutingOutcome | undefined>(
-  ({ call, revision, data, dirtyCount }) => {
-    const restoreMutation = useRestoreRoutingMutation();
+  ({ call, revision, scope, scopeRowCount, data, dirtyCount }) => {
+    const restoreMutation = useRestoreRoutingMutation(scope);
+    const scopeName = ROUTING_SCOPE_LABELS[scope];
     const {
       register,
       handleSubmit,
@@ -66,11 +71,13 @@ export const RestoreRoutingDialog = createCallable<RestoreRoutingDialogProps, Ro
       <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end(undefined)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>r{revision.number} 로 되돌리기</DialogTitle>
+            <DialogTitle>
+              {scopeName} 칸을 r{revision.number} 로 되돌리기
+            </DialogTitle>
             <DialogDescription>
-              {formatDateTime(revision.createdAt)}의 표({revision.rowCount}칸)를 지금 env·게시 세트로 다시 검사해 새
-              이력(r{nextNumber})으로 저장해요. 그 사이 env 배정이나 게시 세트가 바뀌었으면 거부될 수 있어요. 다음 턴부터
-              바로 반영돼요.
+              {formatDateTime(revision.createdAt)} 표의 {scopeName} 칸({scopeRowCount}칸)을 지금 env·게시 세트로 다시 검사해
+              새 이력(r{nextNumber})으로 저장해요. {scope === "chat" ? "소설" : "채팅"} 칸은 지금 그대로예요. 그 사이 env
+              배정이나 게시 세트가 바뀌었으면 거부될 수 있어요. 바로 반영돼요.
               {dirtyCount > 0 && ` 저장하지 않은 편집 ${dirtyCount}칸은 버려져요.`}
             </DialogDescription>
           </DialogHeader>

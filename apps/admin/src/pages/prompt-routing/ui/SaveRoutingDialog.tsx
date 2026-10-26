@@ -15,9 +15,6 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import {
-  ROOM_MODEL_LABELS,
-  ROUTING_LANE_LABELS,
-  ROUTING_STAGE_LABELS,
   type AdminPromptRouteCall,
   type AdminPromptRouteCell,
   type AdminPromptRouteRow,
@@ -26,9 +23,9 @@ import {
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useSaveRoutingMutation } from "../api/useSaveRoutingMutation";
-import { candidateCalls, describeCellForm, formatCachePrice, formatPrice } from "../model/describe";
+import { candidateCalls, cellName, describeCellForm, formatCachePrice, formatPrice } from "../model/describe";
 import type { RoutingOutcome } from "../model/outcome";
-import { cellKeyMap, type RouteCellForm } from "../model/schema";
+import { cellKeyMap, ROUTING_SCOPE_LABELS, type RouteCellForm, type RoutingScope } from "../model/schema";
 import { classifyRouteSaveError } from "../model/routeErrors";
 
 export type RoutingChange = {
@@ -39,7 +36,11 @@ export type RoutingChange = {
 
 type SaveRoutingDialogProps = {
   data: AdminPromptRoutingResponse;
+  /** 이 저장이 갈아 끼우는 범위. `changes`·`rows` 는 이 범위의 칸만이다. */
+  scope: RoutingScope;
   changes: RoutingChange[];
+  /** 다른 범위의 저장하지 않은 편집 칸 수. 이 저장에 실리지 않고, 저장 뒤 폼이 새 표로 바뀌며 사라진다. */
+  otherChangeCount: number;
   rows: AdminPromptRouteRow[];
   /** 저장할 행 중 판정 칸에서 읽을 체인과 부를 모델이 다른 칸 수. */
   mismatchCount: number;
@@ -50,8 +51,10 @@ type SaveFormValues = { note: string };
 /** 저장은 커밋 직후 캐시를 지워 다음 턴부터 운영 경로를 바꾸는 되돌리기 어려운 행동이라(프롬프트 게시와 같은 무게) 바뀌는 칸과
  * 단가를 한 번에 보고 메모를 남기게 한다. 기준 이력은 모달을 연 시점에 화면이 보던 표의 이력이다. */
 export const SaveRoutingDialog = createCallable<SaveRoutingDialogProps, RoutingOutcome | undefined>(
-  ({ call, data, changes, rows, mismatchCount }) => {
-    const saveMutation = useSaveRoutingMutation();
+  ({ call, data, scope, changes, otherChangeCount, rows, mismatchCount }) => {
+    const saveMutation = useSaveRoutingMutation(scope);
+    const scopeName = ROUTING_SCOPE_LABELS[scope];
+    const otherScopeName = ROUTING_SCOPE_LABELS[scope === "chat" ? "novel" : "chat"];
     const {
       register,
       handleSubmit,
@@ -77,9 +80,10 @@ export const SaveRoutingDialog = createCallable<SaveRoutingDialogProps, RoutingO
       <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end(undefined)}>
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>모델 배정 저장</DialogTitle>
+            <DialogTitle>모델 배정 저장 · {scopeName}</DialogTitle>
             <DialogDescription>
-              r{nextNumber} 이력으로 저장해요. 다음 턴부터 바로 반영돼요. 바뀌는 칸 {changes.length}개:
+              {scopeName} 칸만 r{nextNumber} 이력으로 저장해요.{" "}
+              {scope === "chat" ? "다음 턴부터" : "다음 소설 작업부터"} 바로 반영돼요. 바뀌는 칸 {changes.length}개:
             </DialogDescription>
           </DialogHeader>
           <form
@@ -91,6 +95,11 @@ export const SaveRoutingDialog = createCallable<SaveRoutingDialogProps, RoutingO
             className="flex min-h-0 flex-1 flex-col gap-4"
           >
             <DialogBody scrollLabel="바뀐 칸" className="flex flex-col gap-4">
+              {otherChangeCount > 0 && (
+                <p className="break-keep text-sm text-foreground">
+                  {otherScopeName} 탭의 저장하지 않은 편집 {otherChangeCount}칸은 이 저장에 실리지 않고, 저장하면 사라져요.
+                </p>
+              )}
               {mismatchCount > 0 && (
                 <p className="break-keep text-sm text-foreground">
                   {mismatchCount}칸은 읽을 체인과 부를 모델이 달라요 — 그 체인 문안은 다른 모델에 맞춰 썼을 수 있어요.
@@ -110,10 +119,7 @@ export const SaveRoutingDialog = createCallable<SaveRoutingDialogProps, RoutingO
                   <TableBody>
                     {changes.map(({ cell, before, after }) => (
                       <TableRow key={`${cell.lane}|${cell.roomModel}|${cell.stage}`} className="align-top">
-                        <TableCell className="whitespace-normal">
-                          {ROUTING_LANE_LABELS[cell.lane]} · {ROOM_MODEL_LABELS[cell.roomModel]} ·{" "}
-                          {ROUTING_STAGE_LABELS[cell.stage]}
-                        </TableCell>
+                        <TableCell className="whitespace-normal">{cellName(cell)}</TableCell>
                         <TableCell className="whitespace-normal text-muted-foreground">
                           {describeCellForm(cell, before, data)}
                         </TableCell>
@@ -165,9 +171,7 @@ function ChangeList({ changes, data }: { changes: RoutingChange[]; data: AdminPr
     <ul className="flex min-w-0 shrink-0 flex-col divide-y divide-border rounded-lg border border-border text-sm sm:hidden">
       {changes.map(({ cell, before, after }) => (
         <li key={`${cell.lane}|${cell.roomModel}|${cell.stage}`} className="flex flex-col gap-2 px-3 py-2">
-          <p className="break-keep font-medium text-foreground">
-            {ROUTING_LANE_LABELS[cell.lane]} · {ROOM_MODEL_LABELS[cell.roomModel]} · {ROUTING_STAGE_LABELS[cell.stage]}
-          </p>
+          <p className="break-keep font-medium text-foreground">{cellName(cell)}</p>
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
             <dt className="text-muted-foreground">지금</dt>
             <dd className="break-keep wrap-anywhere text-muted-foreground">{describeCellForm(cell, before, data)}</dd>

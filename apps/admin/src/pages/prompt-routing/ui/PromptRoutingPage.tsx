@@ -33,6 +33,8 @@ import {
   cellKeyOf,
   formToServer,
   isSameCellForm,
+  ROUTING_SCOPE_LABELS,
+  scopeOfLane,
   serverToForm,
   type RouteCellKey,
   type RoutingFormValues,
@@ -44,7 +46,7 @@ import { pairSelectId } from "./RoutingRow";
 import { RoutingRevisionSection } from "./RoutingRevisionSection";
 import { SaveRoutingDialog, type RoutingChange } from "./SaveRoutingDialog";
 
-const LANES: readonly RoutingLane[] = ["story", "character"];
+const LANES: readonly RoutingLane[] = ["story", "character", "novel"];
 
 export function PromptRoutingPage() {
   useDocumentTitle("모델 배정");
@@ -55,7 +57,7 @@ export function PromptRoutingPage() {
       <PageHeader title="모델 배정" />
       <div className="flex max-w-prose flex-col gap-2 text-sm text-muted-foreground">
         <p className="break-keep">
-          채팅 두 레인의 단계마다 어느 프롬프트 체인을 읽고 어느 모델·경로로 부를지 정해요. 행이 없는 칸은 env 기본값을
+          채팅 두 레인과 소설 레인의 단계마다 어느 프롬프트 체인을 읽고 어느 모델·경로로 부를지 정해요. 행이 없는 칸은 env 기본값을
           따르고, 표를 비우면 전부 env 로 돌아가요.
         </p>
         <ul className="flex list-disc flex-col gap-1 pl-5">
@@ -69,8 +71,10 @@ export function PromptRoutingPage() {
           </li>
           <li className="break-keep">장면 헤더는 자기 행이 없으면 같은 방의 스탯 판정 행을 따라요.</li>
           <li className="break-keep">
-            기억 인상 호출은 이 표 밖이라 env 설정만 따르고, 소설·심사 레인도 이 표를 따르지 않아요.
+            소설 탭은 채팅과 따로 저장해요. 작업 모델과 무관한 단계(경계 제안·문단 수정·다시 검사)만 고를 수 있고, 소설
+            차감액은 그대로이고 원가만 바뀌어요. 화 생성·구성안은 작업 모델로 불러 보이기만 해요.
           </li>
+          <li className="break-keep">기억 인상 호출과 심사 레인은 이 표 밖이라 env 설정만 따라요.</li>
         </ul>
       </div>
       <QueryState query={routingQuery} errorMessage="모델 배정 표를 불러오지 못했어요.">
@@ -112,9 +116,14 @@ function RoutingEditor({ data }: RoutingEditorProps) {
     const after = current[key];
     return before === undefined || after === undefined || isSameCellForm(before, after) ? [] : [{ cell, before, after }];
   });
+  // 저장·"전부 env 로"는 보고 있는 탭의 범위(채팅 두 레인 또는 소설 레인)만 다룬다.
+  const scope = scopeOfLane(activeLane);
+  const scopeName = ROUTING_SCOPE_LABELS[scope];
+  const scopeChanges = changes.filter((change) => scopeOfLane(change.cell.lane) === scope);
+  const scopeCells = shown.cells.filter((cell) => scopeOfLane(cell.lane) === scope);
   const errorKeys = Object.keys(form.formState.errors.cells ?? {});
   const shownNotice = liveNotice(notice, errorKeys, cellByKey);
-  const isAllEnv = shown.cells.every((cell) => current[cellKeyOf(cell)]?.mode !== "row");
+  const isAllEnv = scopeCells.every((cell) => current[cellKeyOf(cell)]?.mode !== "row");
 
   const accept = (next: AdminPromptRoutingResponse) => {
     setShown(next);
@@ -150,21 +159,28 @@ function RoutingEditor({ data }: RoutingEditorProps) {
 
   const openSave = form.handleSubmit(
     async (values) => {
-      const rows = formToServer(values, shown);
-      const mismatchCount = shown.cells.filter(
+      const rows = formToServer(values, shown, scope);
+      const mismatchCount = scopeCells.filter(
         (cell) => chainCallMismatchText(cell, values.cells[cellKeyOf(cell)], shown) !== null,
       ).length;
-      const outcome = await SaveRoutingDialog.call({ data: shown, changes, rows, mismatchCount });
+      const outcome = await SaveRoutingDialog.call({
+        data: shown,
+        scope,
+        changes: scopeChanges,
+        otherChangeCount: changes.length - scopeChanges.length,
+        rows,
+        mismatchCount,
+      });
       if (outcome !== undefined) handleOutcome(outcome, null);
     },
     () => toast.error("입력값을 확인해주세요."),
   );
 
   const resetAllToEnv = () => {
-    for (const cell of shown.cells) {
+    for (const cell of scopeCells) {
       form.setValue(`cells.${cellKeyOf(cell)}`, { mode: "env" }, { shouldDirty: true });
+      form.clearErrors(`cells.${cellKeyOf(cell)}`);
     }
-    form.clearErrors();
   };
 
   const reloadLatest = async () => {
@@ -201,16 +217,16 @@ function RoutingEditor({ data }: RoutingEditorProps) {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" disabled={isAllEnv} onClick={resetAllToEnv}>
-              모든 칸 env 로
+              {scopeName} 칸 전부 env 로
             </Button>
             <Button
               type="button"
               size="sm"
               className={RESTING_DISABLED_PRIMARY_CLASS}
-              disabled={!isDirty}
+              disabled={scopeChanges.length === 0}
               onClick={() => void openSave()}
             >
-              저장…
+              {scopeName} 저장…
             </Button>
           </div>
         </div>
@@ -259,7 +275,7 @@ function RoutingEditor({ data }: RoutingEditorProps) {
             </TabsList>
           </div>
           {LANES.map((lane) => (
-            // 폼 하나가 두 레인을 다 들고 있어 탭을 바꿔도 편집이 남아야 한다 — 숨기기만 한다. 패널 안의 셀렉트가 진입점이라
+            // 폼 하나가 세 레인을 다 들고 있어 탭을 바꿔도 편집이 남아야 한다 — 숨기기만 한다. 패널 안의 셀렉트가 진입점이라
             // Tab 정지는 뺀다.
             <TabsContent
               key={lane}
