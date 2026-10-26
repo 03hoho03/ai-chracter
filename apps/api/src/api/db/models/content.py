@@ -156,7 +156,8 @@ class Content(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    # 작가가 자기 작품을 마지막으로 바꾼 시각(자동저장·상황이미지 등록·편집 취소·발행·공개범위·소설화 허락 변경).
+    # 작가가 자기 작품을 마지막으로 바꾼 시각(자동저장·상황이미지 등록·편집 취소·발행·공개범위·소설화 허락 변경·
+    # 원작 상세 공개 소설 목록 숨김).
     # `updated_at` 은 아무도 밀지 않아 사실상 생성 시각이고 `/me/drafts` 커서가 "행이 움직이지 않는다"에 기대므로
     # 그 칸을 밀지 않고 따로 둔다. 독자 행동(조회·채팅·좋아요)·운영 조치·댓글 설정은 밀지 않는다.
     # 미는 쪽은 `datetime.now(UTC)` 파이썬 값을 넣는다 — `func.now()` 를 속성에 넣으면 커밋 뒤 읽을 때 비동기

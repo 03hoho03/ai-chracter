@@ -2599,6 +2599,10 @@ export interface paths {
          *
          *     글만 바뀐 경우는 충돌로 치지 않는다 — 심사는 그림만 보고, 발행본에는 3 에서 다시 읽은 글이 실린다. 3 에서 검증을
          *     다시 돌리므로 그사이 필수 칸이 비면 400 이다. 충돌로 멈춘 발행이 이미 올린 블러본은 가리키는 행 없이 남는다.
+         *
+         *     본문의 `novelPermission` 은 3 에서 발행과 함께 작품의 소설화 허락으로 쓴다. 발행 이력이 없는 작품을 그 값 없이
+         *     발행하면 아직 막지 않고 1 에서 경고 로그 한 줄만 남긴다 — 첫 발행 때 허락을 고르게 하는 화면이 나간 뒤 그런 발행이
+         *     사라졌는지 세는 신호다. 막을 때도 이 자리(검증·그림 심사 전)라 거절에 심사 원가가 들지 않는다.
          */
         post: operations["publish_content_contents__id__publish_post"];
         delete?: never;
@@ -2649,6 +2653,31 @@ export interface paths {
          *     (공개 범위 변경과 같은 문자열).
          */
         put: operations["update_content_novel_permission_contents__id__novel_permission_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{id}/derived-novels-visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Content Derived Novels Visibility
+         * @description 원작 상세의 공개 소설 목록을 다른 사람에게 보일지 정한다. 표시만 바꾼다 — 소설화 허락·소설의 공개 상태·권리 고정
+         *     칸은 그대로다. 초안 자동저장과 섞지 않고 따로 받는 것은 허락과 같은 헤더 칸이라 편집 취소·발행이 되돌릴 값이 아니기
+         *     때문이다.
+         *
+         *     가드는 소설화 허락 바꾸기와 같다: 회원 행을 잠가 정지·탈퇴를 다시 보고, 작품 404 → 소유자 아님 403. 이용제한 작품도
+         *     막지 않는다(노출을 줄이는 쪽이라).
+         */
+        put: operations["update_content_derived_novels_visibility_contents__id__derived_novels_visibility_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -4327,6 +4356,27 @@ export interface paths {
          *     된다 — 내 표시를 거두는 일이라 노벨의 상태와 무관하다. 행을 지운 요청만 수를 내린다(좋아요와 같은 이유).
          */
         delete: operations["unlike_webnovel_webnovels__novel_id__like_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{content_id}/derived-novels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Derived Novels
+         * @description 이 작품을 원작으로 한 공개 소설, 공개 화면 글이 마지막으로 바뀐 시각 순으로 한 번에 20편. 다음 페이지는
+         *     `nextCursor` 를 그대로 `cursor` 로 넘긴다. 작품이 없으면 404 다(원작이 삭제됐으면 행은 남아 빈 목록).
+         */
+        get: operations["list_derived_novels_contents__content_id__derived_novels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -11660,6 +11710,11 @@ export interface components {
              */
             contentId: string;
         };
+        /** ContentDerivedNovelsVisibilityUpdateRequest */
+        ContentDerivedNovelsVisibilityUpdateRequest: {
+            /** Visible */
+            visible: boolean;
+        };
         /** ContentDetailResponse */
         ContentDetailResponse: {
             /**
@@ -11721,6 +11776,11 @@ export interface components {
              * @enum {string}
              */
             novelPermission?: "forbidden" | "private" | "public";
+            /**
+             * Derivednovelsvisible
+             * @default true
+             */
+            derivedNovelsVisible: boolean;
         };
         /** ContentListItem */
         ContentListItem: {
@@ -11758,6 +11818,15 @@ export interface components {
              * @enum {string}
              */
             novelPermission: "forbidden" | "private" | "public";
+        };
+        /**
+         * ContentPublishRequest
+         * @description `POST /contents/{id}/publish` 본문. 본문도 칸도 선택이다 — 본문을 보내지 않는 옛 화면과 재발행이 그대로 돈다.
+         *     `novel_permission` 을 실으면 발행과 같은 트랜잭션에서 작품의 소설화 허락으로 쓴다(재발행에도).
+         */
+        ContentPublishRequest: {
+            /** Novelpermission */
+            novelPermission?: ("forbidden" | "private" | "public") | null;
         };
         /** ContentPublishResponse */
         ContentPublishResponse: {
@@ -12094,6 +12163,20 @@ export interface components {
         CreatorPayoutStatementsResponse: {
             /** Items */
             items: components["schemas"]["CreatorPayoutStatementView"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /**
+         * DerivedNovelListResponse
+         * @description 원작 상세의 공개 소설 목록. `visible` 은 원작자가 이 목록을 다른 사람에게 보이게 두었는가다 — 거짓이면 원작자가
+         *     아닌 사람에게 `items` 가 비고, 원작자 본인에게는 무엇이 걸려 있는지 보이게 그대로 싣는다. 공식(원작자 본인이 낸
+         *     소설)과 파생은 항목의 `source.unofficial` 로 가른다.
+         */
+        DerivedNovelListResponse: {
+            /** Visible */
+            visible: boolean;
+            /** Items */
+            items: components["schemas"]["PublicNovelListItem"][];
             /** Nextcursor */
             nextCursor: string | null;
         };
@@ -20284,7 +20367,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ContentPublishRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -20351,6 +20438,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ContentNovelPermissionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_content_derived_novels_visibility_contents__id__derived_novels_visibility_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContentDerivedNovelsVisibilityUpdateRequest"];
             };
         };
         responses: {
@@ -23094,6 +23214,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_derived_novels_contents__content_id__derived_novels_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DerivedNovelListResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
