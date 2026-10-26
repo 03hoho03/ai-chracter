@@ -4,15 +4,24 @@
 import json
 import os
 import re
+import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import asyncpg
 import pytest
 from sqlalchemy.engine import make_url
 
-from memory_eval.stat_event_dist import read_only_connection, stat_event_distribution, stat_events_sql
+from memory_eval.stat_event_dist import (
+    LIVE_FILTER,
+    read_only_connection,
+    stat_event_distribution,
+    stat_events_sql,
+    stat_repeat_distribution,
+    stat_repeat_sql,
+    summarize_repeat_rows,
+)
 
 SINCE = datetime(2026, 1, 2, tzinfo=UTC)
 INSIDE = datetime(2026, 1, 3, tzinfo=UTC)
@@ -178,3 +187,123 @@ async def test_read_only_connection_refuses_writes() -> None:
     async with read_only_connection(os.environ["DATABASE_URL"]) as connection:
         with pytest.raises(asyncpg.exceptions.ReadOnlySQLTransactionError):
             await connection.execute("CREATE TEMP TABLE should_not_exist (x int)")
+
+
+# ---------------------------------------------------------------- 같은 규칙의 연속 적용
+
+
+def _applied(stat: str, rule: str, delta: float, clamped: bool, *, version: str = "v1") -> dict[str, Any]:
+    """판정 원소 — 적용 규칙은 `entityId` 로 같은 규칙, `id` 는 판본마다 다르다."""
+    ref = {"entityId": rule, "id": f"{rule}-{version}"}
+    return {"statEntityId": stat, "firedRuleIds": [ref], "appliedRuleId": ref, "delta": delta, "clamped": clamped}
+
+
+ROOM_1 = uuid.UUID("00000000-0000-4000-8000-000000000001")
+ROOM_2 = uuid.UUID("00000000-0000-4000-8000-000000000002")
+
+
+def _at(turn: int, seconds: int = 0) -> datetime:
+    return INSIDE + timedelta(minutes=turn, seconds=seconds)
+
+
+# (방, 턴 번호, 살아 있나, stat_events, created_at). 기대값은 아래 테스트가 손으로 센다.
+REPEAT_ROWS: list[tuple[uuid.UUID, int, bool, list[Any], datetime]] = [
+    # 방 1 스탯 a: 규칙 x 가 턴 1·2·3 에 연달아(턴 3 은 규칙의 다른 판본) → 길이 3, 그중 둘 잘림.
+    (ROOM_1, 1, True, [_applied("a", "x", 2, False), _applied("b", "z", 1, True)], _at(1)),
+    (ROOM_1, 2, True, [_applied("a", "x", 2, True), _applied("b", "z", 1, True)], _at(2)),
+    # 턴 2 를 재생성하기 전 응답 — 메시지가 지워져 죽은 턴. 넣으면 위 연속이 끊긴다.
+    (ROOM_1, 2, False, [_applied("a", "y", -1, False)], _at(2, -30)),
+    (ROOM_1, 3, True, [_applied("a", "x", 2, True, version="v2")], _at(3)),
+    # 규칙 y 가 턴 4 와 턴 6 — 턴 5 에 a 의 판정이 없어 인접하지 않으므로 길이 1 둘.
+    (ROOM_1, 4, True, [_applied("a", "y", -1, False)], _at(4)),
+    (ROOM_1, 5, True, [{"statEntityId": "c", "counter": True, "delta": -1, "clamped": False}], _at(5)),
+    (ROOM_1, 6, True, [_applied("a", "y", -1, False)], _at(6)),
+    # 방 2: 기준 시각 전 턴은 세지 않는다 — 넣으면 턴 2 와 이어져 길이 2 가 된다.
+    (ROOM_2, 1, True, [_applied("a", "x", -3, False)], BEFORE),
+    (ROOM_2, 2, True, [_applied("a", "x", -3, False)], _at(2)),
+]
+
+
+@pytest.fixture
+async def repeat_turns() -> AsyncIterator[asyncpg.Connection]:
+    url = make_url(os.environ["DATABASE_URL"])
+    connection = await asyncpg.connect(
+        host=url.host, port=url.port, user=url.username, password=url.password, database=url.database
+    )
+    try:
+        await connection.execute(
+            "CREATE TEMP TABLE chat_turns (chat_room_id uuid NOT NULL, assistant_message_id uuid NOT NULL,"
+            " turn_number integer NOT NULL, stat_events jsonb NOT NULL, created_at timestamptz NOT NULL);"
+            "CREATE TEMP TABLE chat_messages (id uuid PRIMARY KEY)"
+        )
+        for room, turn, live, events, at in REPEAT_ROWS:
+            message = uuid.uuid4()
+            if live:
+                await connection.execute("INSERT INTO chat_messages VALUES ($1)", message)
+            await connection.execute(
+                "INSERT INTO chat_turns VALUES ($1, $2, $3, $4::jsonb, $5)", room, message, turn, json.dumps(events), at
+            )
+        yield connection
+    finally:
+        await connection.close()
+
+
+EXPECTED_RUNS = {"all": {"1": 3, "2": 1, "3": 1}, "pos": {"2": 1, "3": 1}, "neg": {"1": 3}}
+
+
+async def test_repeat_runs_follow_the_same_rule_across_adjacent_live_turns(repeat_turns: asyncpg.Connection) -> None:
+    report = await stat_repeat_distribution(repeat_turns, since=SINCE)
+    assert {direction: entry["runs"] for direction, entry in report["byDirection"].items()} == EXPECTED_RUNS
+    assert report["scope"] == {
+        "liveTurns": 7,
+        "deadTurns": 1,
+        "liveTurnsWithJudged": 6,
+        "rooms": 2,
+        "roomStats": 3,
+    }
+
+
+async def test_repeat_runs_count_how_much_of_each_run_was_clamped(repeat_turns: asyncpg.Connection) -> None:
+    overall = (await stat_repeat_distribution(repeat_turns, since=SINCE))["byDirection"]["all"]
+    assert overall["elements"] == 8
+    assert overall["clamped"] == 4
+    assert overall["clampedRate"] == pytest.approx(4 / 8)
+    assert overall["runClamped"] == {"1": 0, "2": 2, "3": 2}
+    # 길이 2 이상(같은 규칙이 이어진 구간): 방 1 a 의 x 셋 + 방 1 b 의 z 둘.
+    assert overall["repeated"] == {
+        "runs": 2,
+        "elements": 5,
+        "clamped": 4,
+        "clampedRate": pytest.approx(4 / 5),
+        "elementShare": pytest.approx(5 / 8),
+    }
+    assert overall["longestRun"] == 3
+
+
+async def test_repeat_runs_change_when_dead_turns_are_let_in(repeat_turns: asyncpg.Connection) -> None:
+    """위 기대값이 죽은 턴을 가려낸다는 신호 — 살아 있는 턴 조건을 빼면 같은 데이터에서 기대값이 깨져야 한다."""
+    sql = stat_repeat_sql(SINCE, None)
+    assert sql.count(LIVE_FILTER) == 1
+    rows = await repeat_turns.fetch(sql.replace(LIVE_FILTER, "WHERE true"))
+    report = summarize_repeat_rows([tuple(row) for row in rows])
+    assert {direction: entry["runs"] for direction, entry in report["byDirection"].items()} != EXPECTED_RUNS
+
+
+async def test_repeat_until_bounds_the_window(repeat_turns: asyncpg.Connection) -> None:
+    report = await stat_repeat_distribution(repeat_turns, since=BEFORE, until=SINCE)
+    assert report["scope"]["liveTurns"] == 1
+    assert report["byDirection"]["all"]["runs"] == {"1": 1}
+
+
+def test_repeat_sql_selects_only_aggregates_and_never_writes() -> None:
+    sql = stat_repeat_sql(SINCE, datetime(2026, 1, 9, tzinfo=UTC))
+    for verb in ("INSERT", "UPDATE", "DELETE", "MERGE", "COPY", "CREATE", "ALTER", "DROP", "TRUNCATE", "GRANT"):
+        assert re.search(rf"\b{verb}\b", sql, re.IGNORECASE) is None, verb
+    # 메시지 글은 읽지 않는다 — 메시지 행은 있는지만 본다.
+    assert "content" not in sql
+    assert "2026-01-02T00:00:00+00:00" in sql and "2026-01-09T00:00:00+00:00" in sql
+
+
+def test_repeat_sql_refuses_a_naive_time() -> None:
+    with pytest.raises(SystemExit, match="시간대"):
+        stat_repeat_sql(datetime(2026, 1, 2), None)

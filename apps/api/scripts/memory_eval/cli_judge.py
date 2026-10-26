@@ -982,6 +982,7 @@ def cmd_judge_agreement(args: argparse.Namespace) -> int:
                 stage=args.label,
                 rates=rates,
                 output_tokens=args.output_tokens,
+                order_seed=args.order_seed,
             )
         )
     elif args.allow_paid:
@@ -997,6 +998,7 @@ def cmd_judge_agreement(args: argparse.Namespace) -> int:
                     stage=args.label,
                     rates=rates,
                     output_tokens=args.output_tokens,
+                    order_seed=args.order_seed,
                 )
 
         made = asyncio.run(paid_run())
@@ -1025,6 +1027,7 @@ def cmd_judge_agreement(args: argparse.Namespace) -> int:
         "dumpJudgedByCandidateModel": all(line.dump_model == candidate_id for line in lines if line.control is None),
         "anthropicStructuredEffort": settings.anthropic_structured_effort,
         "reps": args.reps,
+        "orderSeed": args.order_seed,
         "limit": args.limit,
         "callsThisRun": made,
         "fake": bool(args.fake_llm),
@@ -1038,6 +1041,18 @@ def cmd_judge_agreement(args: argparse.Namespace) -> int:
     _write(out_dir / ("fake-summary.json" if args.fake_llm else "summary.json"), report)
     _write(out_dir / ("fake-lines.json" if args.fake_llm else "lines.json"), ja.line_table(lines, calls))
     _print({"meta": meta, "measuredTokensPerChar": report["measuredTokensPerChar"], "summary": summary})
+    return 0
+
+
+def cmd_judge_majority(args: argparse.Namespace) -> int:
+    """이미 남은 판정 반복 기록으로 k 표 다수결 판정의 일치율을 단일 판정 일치율과 함께 어림한다(호출 없음)."""
+    from memory_eval import judge_agreement as ja
+
+    deltas = None if args.deltas is None else json.loads(args.deltas.read_text(encoding="utf-8"))
+    report = ja.majority_agreement(ja.read_calls(args.calls), model=args.model, k=args.k, vote=args.vote, deltas=deltas)
+    report["calls"] = {str(args.calls): hashlib.sha256(args.calls.read_bytes()).hexdigest()}
+    _write(args.out, report)
+    _print(report)
     return 0
 
 
@@ -1122,6 +1137,7 @@ def cmd_judge_reason(args: argparse.Namespace) -> int:
                     stage=args.label,
                     rates={"*": args.tokens_per_char},
                     output_tokens=per_call_output,
+                    order_seed=args.order_seed,
                 )
 
         made = asyncio.run(paid_run())
@@ -1142,6 +1158,7 @@ def cmd_judge_reason(args: argparse.Namespace) -> int:
                 stage=args.label,
                 rates={"*": args.tokens_per_char},
                 output_tokens=per_call_output,
+                order_seed=args.order_seed,
             )
         )
 
@@ -1157,6 +1174,7 @@ def cmd_judge_reason(args: argparse.Namespace) -> int:
         "dumpJudgedByJudgeModel": all(line.dump_model == model_id for line in lines if line.control is None),
         "lines": jr.group_counts(groups, lines),
         "sampleSeed": args.seed,
+        "orderSeed": args.order_seed,
         "baselineSample": args.baseline_sample,
         "devSample": args.dev_sample,
         "reps": args.reps,
@@ -1895,6 +1913,11 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     )
     p.add_argument("--tokens-per-char", help="견적 자리값: 1.0 또는 gemini=0.7,haiku=1.1")
     p.add_argument("--output-tokens", type=int, default=60, help="견적 자리값: 호출당 출력 토큰")
+    p.add_argument(
+        "--order-seed",
+        type=int,
+        help="호출 키(줄 × 판 × 반복) 전체를 이 씨앗으로 섞어 부른다(없으면 줄 → 판 → 반복 순서)",
+    )
     p.add_argument("--label", default="judge-agreement", help="원장 단계 이름")
     p.add_argument("--out-dir", type=Path, help="기본 <원자료>/judge-agreement")
     p.set_defaults(fn=cmd_judge_agreement)
@@ -1925,9 +1948,27 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument(
         "--reason-output-tokens", type=int, default=jr.DEFAULT_REASON_OUTPUT_TOKENS, help="견적 자리값: 이유 판의 호출당 출력 토큰"
     )
+    p.add_argument(
+        "--order-seed",
+        type=int,
+        help="호출 키(줄 × 판 × 반복) 전체를 이 씨앗으로 섞어 부른다(없으면 줄 → 판 → 반복 순서)",
+    )
     p.add_argument("--label", default="judge-reason", help="원장 단계 이름")
     p.add_argument("--out-dir", type=Path, help="기본 <원자료>/s5/judge-reason")
     p.set_defaults(fn=cmd_judge_reason)
+
+    p = sub.add_parser(
+        "judge-majority", help="판정 반복 기록으로 k 표 다수결과 단일 판정의 일치율 plug-in 어림(호출 없음)"
+    )
+    p.add_argument("--calls", type=Path, required=True, help="judge-agreement·judge-reason 의 결과 파일(calls.jsonl)")
+    p.add_argument("--model", default="haiku", help="볼 판정 모델·판 이름(결과 줄의 model 칸)")
+    p.add_argument("--k", type=int, default=3, help="다수결 표 수")
+    p.add_argument("--vote", choices=["ruleSet", "appliedChange"], default="ruleSet", help="표를 던지는 공간")
+    p.add_argument(
+        "--deltas", type=Path, help="짧은 규칙 id → 폭 JSON(한 작품의 스탯 줄 구성) — 변화량·방향 지표에 필요"
+    )
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(fn=cmd_judge_majority)
 
     p = sub.add_parser("judge-strata", help="드라이버 로그의 층 태그로 judge-agreement 층 표를 만든다")
     p.add_argument("--log", type=Path, required=True, help="드라이버 --log")
