@@ -150,3 +150,28 @@ async def test_restoring_a_novel_channel_into_a_chat_chain_is_refused_as_not_in_
         sa.select(sa.func.count()).select_from(PromptSet).where(PromptSet.status == "draft")
     )
     assert drafts == 0
+
+
+@pytest.mark.parametrize("lane", _LANES)
+async def test_restoring_a_whole_chat_set_from_before_the_drop_discards_novel_channels(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: PromptLane
+) -> None:
+    """소설 채널이 남아 있던 옛 채팅 게시본을 통째로 복원하면 그 세 채널을 버리고 응답에 이름을 싣는다 — 초안이 게시 검사를
+    통과한다. 깨지는 시나리오: 옛 판을 그대로 옮겨 소설 행이 초안에 따라 들어와 게시가 "잉여"로 막히는데, 화면에는 섹션을 지우는
+    손이 없다."""
+    await _login_new_admin(db_client, db_session)
+    old = await db_session.get(PromptSet, _OLD_SET_IDS[lane])
+    assert old is not None and old.status == "published"
+    old_channels = {s.channel for s in await _stored_sections(db_session, old.id)}
+    assert _NOVEL_CHANNELS <= old_channels
+
+    restored = await db_client.post(f"/admin/prompt-sets/{old.id}/restore")
+
+    assert restored.status_code == 200, restored.text
+    body = restored.json()
+    assert (body["droppedChannels"], body["filledChannels"]) == (sorted(_NOVEL_CHANNELS), [])
+    assert {s["channel"] for s in body["sections"]} == old_channels - _NOVEL_CHANNELS
+    stored = await _stored_sections(db_session, uuid.UUID(body["id"]))
+    assert not {s.channel for s in stored} & _NOVEL_CHANNELS
+    published = await db_client.post(f"/admin/prompt-sets/{lane}/publish", json={"note": "옛 판 되돌림"})
+    assert published.status_code == 200, published.text

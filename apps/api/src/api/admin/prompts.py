@@ -1320,16 +1320,18 @@ async def restore_prompt_set(
 
     # 소설 레인은 그 체인이 지금 갖는 채널 집합으로 맞춘다 — 소설 레인 체인마다 채널이 늘어 옛 판을 그대로 옮기면 초안 게시가
     # 슬롯 집합 검사(R-1)에 "누락"·"잉여"로 막히고, 화면에는 채널을 지우는 손이 없다. 남는 채널은 버리고 빠진 채널은 그 체인
-    # 활성판에서 채운다. 다른 레인은 옛 판을 그대로 옮긴다(채널이 다르면 게시에서 막힌다).
+    # 활성판에서 채운다. 채팅 두 레인은 남는 채널만 버린다 — 옛 채팅 Gemini 판에는 지금은 빠진 옛 소설화 세 채널이 있어 그대로
+    # 옮기면 게시가 "잉여"로 막힌다. 다른 레인은 옛 판을 그대로 옮긴다(채널이 다르면 게시에서 막힌다).
     fields = [_section_fields(s) for s in source_sections]
     dropped: list[str] = []
     filled: list[str] = []
-    if lane == "novel":
+    if lane in ("novel", "story", "character"):
         expected = _expected_slots(lane, model)
         source_channels = {s.channel for s in source_sections}
         dropped = sorted(source_channels - set(expected))
-        filled = sorted(set(expected) - source_channels)
         fields = [_section_fields(s) for s in source_sections if s.channel in expected]
+        if lane == "novel":
+            filled = sorted(set(expected) - source_channels)
         if filled:
             _, active_sections = await load_active_prompt_set(db, lane=lane, model=model)
             fields += [_section_fields(s) for s in active_sections if s.channel in filled]
