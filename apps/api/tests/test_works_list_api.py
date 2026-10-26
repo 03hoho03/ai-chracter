@@ -4,6 +4,8 @@
 겹치지 않는지, 소설화 허용이 없는 계정에 소설이 섞이지 않는지를 본다. 시각은 한 테스트 안에서 DB `now()` 가 고정이라
 순서가 필요한 곳은 칸을 직접 써 둔다."""
 
+import base64
+import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -258,6 +260,18 @@ async def test_broken_cursor_is_422(db_client: httpx.AsyncClient, db_session: As
     await _creator(db_client, db_session)
 
     resp = await db_client.get("/me/works", params={"cursor": "not-a-cursor"})
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == {"code": "INVALID_CURSOR"}
+
+
+async def test_cursor_with_an_unknown_kind_is_422(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    """모양은 맞아도 유형이 목록에 없는 값이면 깨진 커서다 — 그대로 비교하면 그 문자열의 사전 순 자리에서 잘려 엉뚱한
+    페이지가 나온다."""
+    await _creator(db_client, db_session)
+    cursor = base64.urlsafe_b64encode(json.dumps([_BASE.isoformat(), "image", str(uuid.uuid4())]).encode()).decode()
+
+    resp = await db_client.get("/me/works", params={"cursor": cursor})
 
     assert resp.status_code == 422
     assert resp.json()["detail"] == {"code": "INVALID_CURSOR"}
