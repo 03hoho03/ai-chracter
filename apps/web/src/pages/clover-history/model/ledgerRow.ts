@@ -19,3 +19,9 @@ export function toLedgerRowView(item: CloverLedgerItem): LedgerRowView {
   }
   return { kind: "entry", label, amount: formatCloverLedgerAmount(item.amount), isLegacyUnit: item.legacyUnit };
 }
+
+/** 목록에 거래 행이 있는가. 단위 전환 경계 줄은 거래가 아니라서, 경계 줄만 있는 탭은 거래가 없는 탭이다 — 그때도 빈
+ * 안내("아직 사용한 클로버가 없어요" 등)를 함께 보여야 그 탭에 거래가 있는 것처럼 읽히지 않는다. */
+export function hasLedgerEntries(items: readonly CloverLedgerItem[]): boolean {
+  return items.some((item) => item.category !== "conversion");
+}

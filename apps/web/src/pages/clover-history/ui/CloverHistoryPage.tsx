@@ -13,7 +13,7 @@ import {
   type CloverHistorySearch,
   type CloverHistoryTab,
 } from "../model/cloverHistorySearch";
-import { toLedgerRowView } from "../model/ledgerRow";
+import { hasLedgerEntries, toLedgerRowView } from "../model/ledgerRow";
 
 const TAB_LABELS: Record<CloverHistoryTab, string> = {
   use: "사용",
@@ -107,6 +107,10 @@ function CloverLedgerTabPanel({ category }: { category: CloverHistoryTab }) {
           </Button>
         </div>
       )}
+
+      {/* 단위 전환 경계 줄만 실린 탭은 거래가 없는 탭이다 — 경계 줄과 함께 빈 안내를 둔다. 더 받을 페이지가 남아 있으면
+          아직 모르므로 말하지 않는다. */}
+      {!hasLedgerEntries(items) && !query.hasNextPage && <ContentListEmptyState message={EMPTY_MESSAGES[category]} />}
 
       {/* `tabIndex={-1}`은 Tab 순서에 넣지 않으면서 프로그램 포커스만 받게 한다 — "더 보기"가
           마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다(`ContentListLoadMore`의 `onExhausted`). */}

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CloverLedgerItem } from "@/entities/clover";
 
-import { toLedgerRowView } from "./ledgerRow";
+import { hasLedgerEntries, toLedgerRowView } from "./ledgerRow";
 
 function item(patch: Partial<CloverLedgerItem>): CloverLedgerItem {
   return {
@@ -34,5 +34,16 @@ describe("toLedgerRowView", () => {
       label: kind === "unit_conversion" ? "1원 단위 전환" : "단위 전환 되돌림",
       balanceAfter: "3,600",
     });
+  });
+});
+
+describe("hasLedgerEntries", () => {
+  // 경계 줄은 거래가 아니다 — 경계 줄만 있는 탭에서 빈 안내를 빼면 그 탭에 거래가 있는 것처럼 읽힌다.
+  it("단위 전환 경계 줄만 있으면 거래가 없다", () => {
+    expect(hasLedgerEntries([item({ kind: "unit_conversion", category: "conversion" })])).toBe(false);
+  });
+
+  it("거래 행이 하나라도 있으면 거래가 있다", () => {
+    expect(hasLedgerEntries([item({ kind: "unit_conversion", category: "conversion" }), item({})])).toBe(true);
   });
 });
