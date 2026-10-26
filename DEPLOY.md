@@ -580,6 +580,15 @@ cd /opt/ddona/app && sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전SHA>
 건너뛰면 새 코드가 자기 마이그레이션 없는 스키마에서 뜨고 `/health` 는 DB 를 보지 않아 배포가 초록으로 끝난다. 롤백해 둔 동안
 태그를 생략한 env 반영 재교체도 같은 상황이라 표시를 붙인다(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh`). DB 가 이미지보다
 뒤거나 같으면 표시와 상관없이 upgrade 한다. 판정 자체가 실패하면(DB 에 못 닿음 등) 건너뛰지 않고 멈춘다.
+스키마까지 내려야(downgrade) 하면 그 전에 되돌릴 리비전 파일을 가진 그 이미지로 함께 내려갈 리비전을 본다:
+
+```sh
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<그 TAG> alembic history -r <목표 리비전>:head
+```
+
+`alembic downgrade` 는 목표 위에 쌓인 리비전을 전부 내리고, 기능이 들어간 뒤에도 다른 작업의 리비전이 그
+사이와 위에 계속 쌓이므로 기능 절에 적힌 사이 리비전 목록은 믿지 않고 이 출력만 본다. 다른 작업의 리비전이 보이면 멈추고 그
+작업 주인과 정한다.
 법무 문서에 시행 예정(예약) 판이 있으면 먼저 어드민에서 철회한 뒤 시행 시각(`effective_at`)이 생기기 전 이미지로 롤백한다(옛 코드는
 예약 판을 즉시 현행으로 본다).
 과거 태그는 `gcloud artifacts docker tags list asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api`.
@@ -3040,14 +3049,15 @@ sudo bash ops/swap-api.sh
       말로만 전한 확인되지 않은 주장(`claimed`)이 키의 지금 값이면 그 키는 싣지 않는다(사용자 주장은 싣는다).
 
    측정이 고른 값은 모델 `voyage-4-large` · 차원 `1024` · RRF k `20` · 보통 턴 상한 `1` · 회상 단서 턴 상한 `3` · 거리 상한 `2.0`(거르지
-   않음 — env 표 그 행) · 거리 순 앞 `10` · 흔한 명사 절대 상한 없음이고(질의 임베딩 상한 `1000` ms 는 운영 VM 의 왕복 측정으로 고른 값이다 — env 표 그 행), 사실 섹션의 이름 정확 조회 몫
+   않음 — env 표 그 행) · 거리 순 앞 `10` · 흔한 명사 절대 상한 없음이고, 사실 섹션의 이름 정확 조회 몫
    0.3 은 코드 상수(`apps/api/src/api/chat/memory_fact_section.py` 의 `EXACT_RATIO`)다. 모두 코드 기본값이라
-   스위치·키 줄 말고는 넣을 줄이 없다.
+   스위치·키 줄 말고는 넣을 줄이 없다 — 질의 임베딩 시간 상한 하나만 예외로, 코드 기본값 `1000` ms 는 운영 env 로 `3000` 을
+   준다(`MEMORY_EMBED_RECALL_TIMEOUT_MS=3000`, 회상 품질 측정은 `1000` 조건이었다 — env 표 그 행).
 
 **알려진 성질 — 켜기 전에 정할 것.** Voyage 가 연속 3회 실패하면(키 회수·쿼터 소진·장애) 질의 임베딩과 임베딩 채우기를 함께
 멈춘다 — 멈춤은 30초에서 시작해 실패가 하나 더 셀 때마다 배로 늘어 최대 900초이고, 연속 실패 수는 방과 무관한 Redis 키 하나
 (`voyage_backoff`)로 두 쪽이 공유하며, 호출이 한 번 성공하면 풀린다. 채우기는 한 번에 10초 상한·세 번까지 다시 보낸 뒤의 실패를
-세고, 질의 임베딩은 다시 보내지 않고 한 번만 부른다(1000 ms 상한 뒤 명사 단독). 질의 임베딩의 시간 초과는 실패로 세지 않는다.
+세고, 질의 임베딩은 다시 보내지 않고 한 번만 부른다(시간 상한 — 운영 `3000` ms — 을 넘기면 명사 단독). 질의 임베딩의 시간 초과는 실패로 세지 않는다.
 멈춘 동안의 질의 임베딩은 건너뛰어 임베딩 회상이 꺼진 턴과 같고(명사 단독), 채우기는 건너뛴 행을 풀린 뒤 따라잡는다. Redis 를
 못 읽으면 멈춤 없이 부른다. 실패한 호출은 매번 경고 로그와 Bugsink 이벤트(`dependency=voyage`, 쿼터 소진은 `voyage_rate_limit`)를
 남긴다. 같은 방에서 턴이 빠르게 겹치면 두 채우기가 같은 행을 임베딩할 수
@@ -3141,7 +3151,7 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
 
 - 위(head 쪽)부터 차례로만 내려간다. 일회성 컨테이너는 아래 문안 리비전 downgrade 와 같은 꼴(`sudo docker run --rm --network ddona_default
   --env-file /opt/ddona/.env <IMAGE>:<그 리비전 파일을 가진 태그> alembic downgrade <목표>`)이고 먼저 `sudo /opt/ddona/backup.sh --manual`.
-  목표 위에 다른 작업의 리비전이 더 쌓였으면 멈추고 판단한다.
+  그 전에 함께 내려갈 리비전을 "BE → GCE VM" 절의 「롤백」 대로 `alembic history` 로 확인한다.
 - 🔴 downgrade 뒤 그 리비전 파일을 가진 이미지로 교체되면(`main` push 자동 배포, `image_tag` 를 비운 실행, 그런 이미지가 서빙 중일
   때의 태그 없는 교체) `alembic upgrade head` 가 지운 것을 되살린다. downgrade 와 revert 병합 사이에 다른 API 병합을 하지 않고, 롤백해
   둔 동안의 env 반영 교체는 `DDONA_ROLLBACK=1` 을 붙인다.
@@ -3184,11 +3194,9 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
 | 7 | `b3b2636b9184` | 임베딩 표 `chat_memory_embeddings`·`vector` 확장 | `726aad108167` | 표를 지우고, 확장은 그것에 기대는 객체가 없을 때만 지운다(임베딩은 장면·사실에서 다시 만들 수 있다) |
 
 - **리비전 하나마다 [그 리비전 파일을 가진 이미지로 downgrade → 그 PR revert 병합] 짝**이고 위 순서(위가 head 쪽)로만 내려간다 —
-  `alembic downgrade` 는 목표 위에 쌓인 리비전을 전부 내리므로, 목표가 아래일수록 위의 것까지 함께 내려간다. 이 표의 리비전 사이에는
-  다른 작업의 리비전이 끼어 있다 — 1 과 2 사이 `6fbf1e9a65b8`(연재 잠금·공개 심사), 2 와 3 사이 `e05462d680f0`(소설 집필 잠금),
-  3 과 4 사이 `0346abdbcc92`·`677dd73e2ab9`(장면 헤더), 4 와 5 사이 `d6abfd9f92ce`·`fc3ca58a473b`·`1c4ff252c34a`(약관·동의)·
-  `49b68a8a681e`(스탯 공개 여부). 목표가 그 아래면 그 리비전도 함께 내려가므로, 그 위에 다른 리비전이 더 쌓였거나 사이 리비전을
-  내려야 하면 멈추고 판단한다.
+  `alembic downgrade` 는 목표 위에 쌓인 리비전을 전부 내리므로, 목표가 아래일수록 위의 것까지 함께 내려간다. 이 표의 리비전 사이와
+  위에는 다른 작업의 리비전이 끼어 있고 계속 늘어나므로, 매번 "BE → GCE VM" 절의 「롤백」 대로 `alembic history` 로 함께 내려갈
+  리비전을 확인한다.
 - 🔴 downgrade 는 **그 리비전 파일을 가진 이미지**로 돌린다 — ②를 하지 않았으면 서빙 중인 색의 이미지가 그것이다. 리비전 파일이
   없는 이미지는 그 리비전을 내리지 못한다. 먼저 백업(`sudo /opt/ddona/backup.sh --manual`), 이미지는 서빙 중인 색의 것(②를 이미 했다면
   첫 줄 대신 `IMG=<IMAGE>:<새 코드 TAG>`):
