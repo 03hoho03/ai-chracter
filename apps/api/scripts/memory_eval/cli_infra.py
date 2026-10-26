@@ -1210,6 +1210,7 @@ def cmd_filter_recompute(args: argparse.Namespace) -> int:
     from memory_eval.arm_env import series_label
     from memory_eval.ran_gate import recompute_totals
     from memory_eval.runtime import ARMS, generation_set, load_room, make_engine
+    from memory_eval.wording_proto import excluded_user_names
 
     rows = [
         json.loads(line)
@@ -1243,23 +1244,25 @@ def cmd_filter_recompute(args: argparse.Namespace) -> int:
                         raise SystemExit(f"cp{cp} 템플릿에 요약이 없다 — 사실 섹션이 없는 체크포인트다")
                     prompt_set, _ = await generation_set(db, args.model, lane=ctx.lane)
                     for row in members:
+                        recorded = (row.get("memoryFacts") or [None])[-1]
                         result = await kr.recompute_probe(
                             db, args.room, cursor=current.cursor, turns=row["turns"], names=ctx.names,
                             user_label=prompt_set.user_label,
                             ignore_quoted_reply_names=kr.ignores_quoted_reply_names(ARMS[str(row["arm"])]),
+                            recorded=recorded,
                         )  # fmt: skip
                         arm_settings_of = ARMS[str(row["arm"])]
                         filter_on = bool(arm_settings_of.get("memory_knowledge_filter")) and bool(
                             arm_settings_of.get("memory_facts_inject")
                         )
-                        recorded = (row.get("memoryFacts") or [None])[-1]
                         compared = kr.compare_recorded(result, recorded, filter_on=filter_on)
                         ran = await kr.recompute_ran(
                             db, args.room, cursor=current.cursor, turns=row["turns"], names=ctx.names,
                             user_label=prompt_set.user_label, arm_overrides=arm_settings_of,
                         )  # fmt: skip
                         out.append(
-                            {"arm": row["arm"], "item": row["item"], "checkpoint": cp, "filterOn": filter_on}
+                            {"arm": row["arm"], "item": row["item"], "checkpoint": cp, "filterOn": filter_on,
+                             "userNames": sorted(excluded_user_names(ctx.names))}
                             | result
                             | compared
                             | ran

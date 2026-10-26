@@ -151,10 +151,15 @@ async def test_without_any_known_by_the_server_skips_the_scene_and_nothing_is_co
 CP = 300
 
 
-def _probe(arm: str, outcomes: list[str], *, item: str = "q1", status: str = "accept") -> dict[str, Any]:
+def _probe(
+    arm: str, outcomes: list[str], *, item: str = "q1", status: str = "accept", facts: list[int] | None = None
+) -> dict[str, Any]:
+    """`facts` 는 턴마다 실린 사실 행 수(없으면 턴마다 하나)."""
     turns = [{"user": "u", "reply": "r"} for _ in outcomes]
     calls = [{"callSite": "chat_memory_query_embedding", "outcome": o} for o in outcomes if o != "none"]
-    return {"arm": arm, "item": item, "checkpoint": CP, "status": status, "turns": turns, "queryEmbeddings": calls}
+    loaded = [[{"factId": f"f{i}", "chars": 10} for i in range(n)] for n in (facts or [1] * len(outcomes))]
+    return {"arm": arm, "item": item, "checkpoint": CP, "status": status, "turns": turns, "queryEmbeddings": calls,
+            "memoryFacts": loaded}  # fmt: skip
 
 
 def _recomputed(arm: str, *, hidden: int, reclassified: int, item: str = "q1") -> dict[str, Any]:
@@ -183,12 +188,12 @@ def test_query_embedding_ratio_counts_missing_calls_as_not_ok_and_skips_unaccept
 
 
 def test_gate_passes_at_exactly_the_embedding_threshold() -> None:
-    rg.require_ran(set(rg.GATED_ARMS), probe_rows=_probes(19, 20), recompute_rows=GOOD_RECOMPUTE)
+    rg.require_ran(set(rg.GATED_ARMS), probe_rows=_probes(19, 20), recompute_rows=GOOD_RECOMPUTE, facts_loaded_min=20)
 
 
 def test_gate_refuses_below_the_embedding_threshold_naming_arm_metric_and_value() -> None:
     with pytest.raises(SystemExit) as stop:
-        rg.require_ran(set(rg.GATED_ARMS), probe_rows=_probes(18, 20), recompute_rows=GOOD_RECOMPUTE)
+        rg.require_ran(set(rg.GATED_ARMS), probe_rows=_probes(18, 20), recompute_rows=GOOD_RECOMPUTE, facts_loaded_min=1)
     message = str(stop.value.code)
     assert "b1-B1E" in message and "b1-B2" in message and "queryEmbeddingOk" in message and "0.9" in message
 
@@ -213,12 +218,59 @@ def _without(arm: str, *, hidden: int = 1, reclassified: int = 1) -> list[dict[s
 )
 def test_gate_refuses_when_a_recompute_total_is_zero(arm: str, metric: str, rows: list[dict[str, Any]]) -> None:
     with pytest.raises(SystemExit) as stop:
-        rg.require_ran(set(rg.GATED_ARMS), probe_rows=_probes(20, 20), recompute_rows=rows)
+        rg.require_ran(set(rg.GATED_ARMS), probe_rows=_probes(20, 20), recompute_rows=rows, facts_loaded_min=1)
     assert f"{arm} {metric}=0" in str(stop.value.code)
 
 
 def test_gate_ignores_arms_it_has_no_threshold_for() -> None:
-    rg.require_ran({"b1-A0", "b1-A0M", "b1-A1", "A2", "B2"}, probe_rows=[], recompute_rows=[])
+    rg.require_ran({"b1-A0", "b1-A0M", "b1-A1", "A2", "B2"}, probe_rows=[], recompute_rows=[], facts_loaded_min=None)
+
+
+def test_facts_loaded_turns_count_only_turns_whose_recorded_fact_list_is_not_empty() -> None:
+    rows = [
+        _probe("b1-B2", ["ok", "ok"], facts=[0, 3]),
+        _probe("b1-B2", ["ok"], item="q2", facts=[2]),
+        _probe("b1-B2", ["ok"], item="q3", status="unprobeable", facts=[5]),
+        _probe("b1-B1E", ["ok"], item="q4", facts=[0]),
+    ]
+    assert rg.facts_loaded_turns(rows) == {"b1-B1E": {"loaded": 0, "turns": 1}, "b1-B2": {"loaded": 2, "turns": 3}}
+
+
+def test_the_fact_arm_is_gated_and_the_current_production_arm_is_not() -> None:
+    """사실 주입을 켠 갈래만 사실 섹션 실림 턴 수 문턱을 받는다 — 사실 주입이 꺼진 갈래는 섹션이 비어야 맞다."""
+    assert rg.FACTS_ARMS == ("b1-B2",)
+    assert "b1-B2" in rg.GATED_ARMS
+    rg.require_ran({"b1-B1E"}, probe_rows=_probes(20, 20), recompute_rows=GOOD_RECOMPUTE, facts_loaded_min=None)
+
+
+def _fact_probes(loaded: int, total: int) -> list[dict[str, Any]]:
+    return [_probe(arm, ["ok"] * total, facts=[1] * loaded + [0] * (total - loaded)) for arm in rg.GATED_ARMS]
+
+
+def test_gate_passes_at_exactly_the_facts_loaded_threshold_and_refuses_one_below() -> None:
+    rg.require_ran(set(rg.GATED_ARMS), probe_rows=_fact_probes(7, 20), recompute_rows=GOOD_RECOMPUTE, facts_loaded_min=7)
+    with pytest.raises(SystemExit) as stop:
+        rg.require_ran(
+            set(rg.GATED_ARMS), probe_rows=_fact_probes(6, 20), recompute_rows=GOOD_RECOMPUTE, facts_loaded_min=7
+        )
+    assert "b1-B2 factsLoadedTurns=6 (문턱 7)" in str(stop.value.code)
+
+
+def test_gate_refuses_when_no_fact_section_was_ever_loaded() -> None:
+    with pytest.raises(SystemExit) as stop:
+        rg.require_ran(
+            set(rg.GATED_ARMS), probe_rows=_fact_probes(0, 20), recompute_rows=GOOD_RECOMPUTE, facts_loaded_min=1
+        )
+    assert "b1-B2 factsLoadedTurns=0" in str(stop.value.code)
+
+
+def test_gate_refuses_the_fact_arm_without_a_facts_threshold_naming_the_flag() -> None:
+    """문턱은 봉인 문서가 정하는 실행 인자다 — 기본값이 없어 주지 않으면 사실 주입 갈래를 집계하지 않는다."""
+    with pytest.raises(SystemExit) as stop:
+        rg.require_ran(
+            set(rg.GATED_ARMS), probe_rows=_fact_probes(20, 20), recompute_rows=GOOD_RECOMPUTE, facts_loaded_min=None
+        )
+    assert "--ran-facts-min" in str(stop.value.code)
 
 
 def _aggregated(arms: list[str], items: tuple[str, ...] = ("q1",)) -> list[dict[str, Any]]:
@@ -291,7 +343,12 @@ def test_judge_summary_refuses_before_aggregating_when_the_gate_fails(
     assert "b1-B2 queryEmbeddingOk" in captured.err and captured.out == ""
 
     good = _jsonl(tmp_path / "good.jsonl", _probes(20, 20))
-    assert main([*base, "--ran-probes", str(good), "--ran-recompute", str(recompute)]) == 0
+    ran = [*base, "--ran-probes", str(good), "--ran-recompute", str(recompute)]
+    assert main(ran) == 2
+    assert "--ran-facts-min" in capsys.readouterr().err
+    assert main([*ran, "--ran-facts-min", "21"]) == 2
+    assert "b1-B2 factsLoadedTurns=20 (문턱 21)" in capsys.readouterr().err
+    assert main([*ran, "--ran-facts-min", "20"]) == 0
     assert "recall" in capsys.readouterr().out
 
 
