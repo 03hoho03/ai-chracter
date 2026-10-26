@@ -5,13 +5,15 @@
 
 각 채널의 `instruction` 슬롯만 `system_instruction` 으로 보내고 나머지 슬롯은 본문으로 보낸다. 원문·작품 설정·
 설정 노트·수정 요청은 사용자나 작가가 쓴 글이라 지시처럼 읽힐 수 있어, 역할 규칙을 그 글과 다른 통로에 두려는 것이다
-(대화 생성의 `system` 채널과 같은 배치). 화 생성과 문단 수정은 지시문 뒤에 **채팅 레인** Gemini 활성 세트의
-`system/rule_rating` 본문을 붙이고, 원문 줄의 화자 라벨도 그 세트에서 읽는다 — 등급 규칙과 라벨을 소설 레인에 복사하면
-어드민에서 두 곳을 따로 고쳐야 하는 사본이 되고, Claude 채팅 세트에는 등급 규칙이 따로 손질돼 있을 수 있어 소스를
-하나로 둔다. 소설 문안은 그 행의 머리말 `[수위]` 를 이름으로 가리키므로, 머리말을 바꾸면 소설 지시문도 같이 본다.
+(대화 생성의 `system` 채널과 같은 배치). 화 생성·구성안 둘·문단 수정·여러 문단 수정은 지시문 뒤에 같은 소설 세트의
+`novelize_rating` 채널(원작 종류별 scope story·character 행)을 붙이고, 원문 줄의 화자 라벨은 소설 레인 **Gemini** 체인 세트의
+라벨 칸에서 읽는다(`inputs.load_novel_label_set`). 둘 다 소설 레인에 두는 것은 채팅 문안을 고쳐도 소설 글이 따라 바뀌지 않고
+소설 레인만 따로 손질할 수 있게 하려는 것이다. 라벨을 Gemini 체인 한 곳에서만 읽는 것은 모델 인자가 없는 원문 줄 조립 경로가
+있어 체인마다 다른 라벨을 둘 수 없기 때문이다. 소설 문안은 등급 규칙 행의 머리말 `[수위]` 를 이름으로 가리키므로, 머리말을
+바꾸면 소설 지시문도 같이 본다.
 
-**빈 프롬프트로 과금 호출을 내지 않는다.** 렌더러는 섹션이 하나도 없으면 빈 문자열을 낸다. 소설 채널 행이 빠진 세트나
-등급 규칙 행이 없는 채팅 세트, 옮길 원문·고칠 문단이 빈 입력이면 호출 전에 `PromptRenderError` 를 낸다. 호출부는 이
+**빈 프롬프트로 과금 호출을 내지 않는다.** 렌더러는 섹션이 하나도 없으면 빈 문자열을 낸다. 소설 채널 행이나 등급 규칙 행이
+빠진 세트, 옮길 원문·고칠 문단이 빈 입력이면 호출 전에 `PromptRenderError` 를 낸다. 호출부는 이
 실패를 차감 전 거절 또는 환불로 처리한다. 소설화는 활성 세트 캐시를 쓰지 않고 매번 DB 를 읽는다."""
 
 from collections.abc import Sequence
@@ -160,15 +162,26 @@ def _require(channel: str, **values: str) -> None:
         raise PromptRenderError(f"channel={channel!r} 필수 값이 비었다: {empty}")
 
 
+RATING_CHANNEL = "novelize_rating"
+_RATING_SLOT = "rule_rating"
+
+
+def render_rating(sections: Sequence[PromptSection], *, channel: str, scope: str) -> str:
+    """`channel` 의 등급 규칙 슬롯(`rule_rating`)을 `scope`(story·character)로 골라 렌더한 글. 행이 없으면 빈 문자열이다. 소설
+    빌더가 지시문 뒤에 붙이는 글과 어드민이 채팅·소설 레인의 등급 규칙을 견주는 글이 같은 함수에서 나오게 한 곳에 둔다."""
+    rating = [s for s in select_sections_for_render(sections, channel=channel, scope=scope) if s.slot == _RATING_SLOT]
+    return render_prompt_channel(rating, channel=channel, scope=scope, values={})
+
+
 def _render(
     sections: Sequence[PromptSection],
     *,
     channel: str,
     is_story_chat: bool,
     values: dict[str, str],
-    rating_sections: Sequence[PromptSection] | None,
+    with_rating: bool,
 ) -> NovelizePrompt:
-    """`rating_sections` 는 등급 규칙을 읽을 채팅 세트의 섹션이고, None 이면 등급 규칙을 붙이지 않는다."""
+    """`with_rating` 이면 같은 세트의 등급 규칙 채널(`novelize_rating`)을 지시문 뒤에 붙인다."""
     scope = _scope(is_story_chat)
     present = {s.slot for s in select_sections_for_render(sections, channel=channel, scope=scope)}
     missing = sorted(_REQUIRED_SLOTS[channel] - present)
@@ -185,27 +198,24 @@ def _render(
     if not instruction.strip() or not prompt.strip():
         raise PromptRenderError(f"channel={channel!r} scope={scope!r} 렌더 결과가 비었다")
 
-    if rating_sections is None:
+    if not with_rating:
         return NovelizePrompt(system_instruction=instruction, prompt=prompt)
-    rating = [
-        s for s in select_sections_for_render(rating_sections, channel="system", scope=scope) if s.slot == "rule_rating"
-    ]
-    rating_text = render_prompt_channel(rating, channel="system", scope=scope, values={})
+    rating_text = render_rating(sections, channel=RATING_CHANNEL, scope=scope)
     if not rating_text.strip():
-        raise PromptRenderError(f"channel='system' scope={scope!r} rule_rating 행이 없거나 비었다")
+        raise PromptRenderError(f"channel={RATING_CHANNEL!r} scope={scope!r} {_RATING_SLOT} 행이 없거나 비었다")
     return NovelizePrompt(system_instruction=f"{instruction}\n\n{rating_text}", prompt=prompt)
 
 
-def _labels(chat_set: PromptSet, *, is_story_chat: bool) -> dict[str, str]:
-    """원문 줄의 라벨과 같은 글자 — 요약 채널과 같은 고름(스토리 방은 진행자, 캐릭터 방은 캐릭터). 대화가 쓰던 라벨이라
-    채팅 세트에서 읽는다(소설 레인 세트의 라벨 칸은 쓰지 않는다)."""
-    assistant = chat_set.story_assistant_label if is_story_chat else chat_set.character_assistant_label
-    return {"user_label": chat_set.user_label, "assistant_label": assistant}
+def _labels(label_set: PromptSet, *, is_story_chat: bool) -> dict[str, str]:
+    """원문 줄의 라벨과 같은 글자 — 요약 채널과 같은 고름(스토리 방은 진행자, 캐릭터 방은 캐릭터). `label_set` 은 소설 레인
+    Gemini 체인 세트다(`inputs.load_novel_label_set`)."""
+    assistant = label_set.story_assistant_label if is_story_chat else label_set.character_assistant_label
+    return {"user_label": label_set.user_label, "assistant_label": assistant}
 
 
 def build_novelize_boundary_prompt(
     *,
-    chat_set: PromptSet,
+    label_set: PromptSet,
     sections: Sequence[PromptSection],
     is_story_chat: bool,
     max_turns: int,
@@ -213,7 +223,7 @@ def build_novelize_boundary_prompt(
     turn_lines: str,
 ) -> NovelizePrompt:
     """묶음 경계 제안(구조화, 무과금). 지시문만 system 으로 보내고 등급 규칙은 붙이지 않는다 — 글을 쓰지 않고 끝 턴
-    하나를 고르는 판정이다. `sections` 는 소설 레인 세트, `chat_set` 은 라벨을 읽을 채팅 세트다.
+    하나를 고르는 판정이다. `sections` 는 소설 레인 세트, `label_set` 은 라벨을 읽을 소설 레인 Gemini 체인 세트다.
 
     `max_turns` 는 이번 후보 구간의 턴 수(상한과 남은 턴 수 중 작은 값, 1 이상). `user_name` 은 소설의 주인공 이름
     칸 값이고, 첫 화 이름을 받기 전이면 비어 그 섹션째 빠진다.
@@ -224,20 +234,19 @@ def build_novelize_boundary_prompt(
         raise PromptRenderError(f"channel='novelize_boundary' max_turns={max_turns} — 고를 턴이 없다")
     _require("novelize_boundary", turn_lines=turn_lines)
     values = {
-        **_labels(chat_set, is_story_chat=is_story_chat),
+        **_labels(label_set, is_story_chat=is_story_chat),
         "max_turns": str(max_turns),
         "user_name": user_name,
         "turn_lines": turn_lines,
     }
     return _render(
-        sections, channel="novelize_boundary", is_story_chat=is_story_chat, values=values, rating_sections=None
+        sections, channel="novelize_boundary", is_story_chat=is_story_chat, values=values, with_rating=False
     )
 
 
 def build_novelize_chapter_prompt(
     *,
-    chat_set: PromptSet,
-    chat_sections: Sequence[PromptSection],
+    label_set: PromptSet,
     sections: Sequence[PromptSection],
     is_story_chat: bool,
     work_setting: str,
@@ -253,8 +262,8 @@ def build_novelize_chapter_prompt(
     scene_plan: str = "",
     context_lines: str = "",
 ) -> NovelizePrompt:
-    """묶음 생성·다시 만들기(자유 텍스트, 과금). `sections` 는 소설 레인 세트, `chat_set`·`chat_sections` 는 라벨과
-    등급 규칙을 읽을 채팅 세트다. 지시문 뒤에 그 등급 규칙을 붙인다.
+    """묶음 생성·다시 만들기(자유 텍스트, 과금). `sections` 는 소설 레인 세트이고 지시문 뒤에 그 세트의 등급 규칙을 붙인다.
+    `label_set` 은 라벨을 읽을 소설 레인 Gemini 체인 세트다.
 
     값은 호출부가 만든다.
     - `work_setting`: 작품 설정 원문. 캐릭터 방은 `이름: {캐릭터명}` 한 줄 + 캐릭터 프롬프트, 스토리 방은 세계관
@@ -281,7 +290,7 @@ def build_novelize_chapter_prompt(
     목표 길이다."""
     _require("novelize_chapter", user_name=user_name, turn_lines=turn_lines)
     values = {
-        **_labels(chat_set, is_story_chat=is_story_chat),
+        **_labels(label_set, is_story_chat=is_story_chat),
         "work_setting": work_setting,
         "user_name": user_name,
         "setting_notes": setting_notes,
@@ -296,14 +305,13 @@ def build_novelize_chapter_prompt(
         "context_lines": context_lines,
     }
     return _render(
-        sections, channel="novelize_chapter", is_story_chat=is_story_chat, values=values, rating_sections=chat_sections
+        sections, channel="novelize_chapter", is_story_chat=is_story_chat, values=values, with_rating=True
     )
 
 
 def build_novelize_outline_prompt(
     *,
-    chat_set: PromptSet,
-    chat_sections: Sequence[PromptSection],
+    label_set: PromptSet,
     sections: Sequence[PromptSection],
     is_story_chat: bool,
     work_setting: str,
@@ -316,7 +324,7 @@ def build_novelize_outline_prompt(
     previous_summaries: str = "",
     context_lines: str = "",
 ) -> NovelizePrompt:
-    """전체 구성안(구조화, 과금). 지시문 뒤에 채팅 세트의 등급 규칙을 붙인다 — 구성안은 화의 사건을 정하는 계획이라 화 생성과
+    """전체 구성안(구조화, 과금). 지시문 뒤에 소설 세트의 등급 규칙을 붙인다 — 구성안은 화의 사건을 정하는 계획이라 화 생성과
     같은 수위 규칙 아래에서 짠다.
 
     `turn_lines` 는 소설에 넣기로 고른 구간들의 원문 줄이고 화 생성과 같은 형식이다. `context_lines` 는 맥락으로만 보내는 구간의
@@ -328,7 +336,7 @@ def build_novelize_outline_prompt(
             f"channel='novelize_outline' 화 수 범위가 맞지 않다: 안내 {episode_hint}, 상한 {max_episodes}"
         )
     values = {
-        **_labels(chat_set, is_story_chat=is_story_chat),
+        **_labels(label_set, is_story_chat=is_story_chat),
         "work_setting": work_setting,
         "user_name": user_name,
         "setting_notes": setting_notes,
@@ -340,14 +348,13 @@ def build_novelize_outline_prompt(
         "turn_lines": turn_lines,
     }
     return _render(
-        sections, channel="novelize_outline", is_story_chat=is_story_chat, values=values, rating_sections=chat_sections
+        sections, channel="novelize_outline", is_story_chat=is_story_chat, values=values, with_rating=True
     )
 
 
 def build_novelize_episode_outline_prompt(
     *,
-    chat_set: PromptSet,
-    chat_sections: Sequence[PromptSection],
+    label_set: PromptSet,
     sections: Sequence[PromptSection],
     is_story_chat: bool,
     work_setting: str,
@@ -363,7 +370,7 @@ def build_novelize_episode_outline_prompt(
     글로 적은 것이고, `turn_lines` 는 그 화의 근거 구간 원문 줄이다. 나머지는 `build_novelize_outline_prompt` 와 같다."""
     _require("novelize_episode_outline", user_name=user_name, turn_lines=turn_lines, episode_outline=episode_outline)
     values = {
-        **_labels(chat_set, is_story_chat=is_story_chat),
+        **_labels(label_set, is_story_chat=is_story_chat),
         "work_setting": work_setting,
         "user_name": user_name,
         "setting_notes": setting_notes,
@@ -378,13 +385,12 @@ def build_novelize_episode_outline_prompt(
         channel="novelize_episode_outline",
         is_story_chat=is_story_chat,
         values=values,
-        rating_sections=chat_sections,
+        with_rating=True,
     )
 
 
 def build_novelize_revise_prompt(
     *,
-    chat_sections: Sequence[PromptSection],
     sections: Sequence[PromptSection],
     is_story_chat: bool,
     work_setting: str,
@@ -394,7 +400,7 @@ def build_novelize_revise_prompt(
     last_index: int,
     user_request: str,
 ) -> NovelizePrompt:
-    """문단 수정(구조화, 과금). `sections` 는 소설 레인 세트이고, 지시문 뒤에 채팅 세트(`chat_sections`)의 등급 규칙을
+    """문단 수정(구조화, 과금). `sections` 는 소설 레인 세트이고, 지시문 뒤에 그 세트의 등급 규칙을
     붙인다.
 
     `paragraphs` 는 화 현재 개정 본문을 빈 줄로 나눈 문단 목록이고 `first_index`·`last_index` 는 고칠 범위(0부터,
@@ -414,13 +420,12 @@ def build_novelize_revise_prompt(
         "user_request": user_request,
     }
     return _render(
-        sections, channel="novelize_revise", is_story_chat=is_story_chat, values=values, rating_sections=chat_sections
+        sections, channel="novelize_revise", is_story_chat=is_story_chat, values=values, with_rating=True
     )
 
 
 def build_novelize_revise_blocks_prompt(
     *,
-    chat_sections: Sequence[PromptSection],
     sections: Sequence[PromptSection],
     is_story_chat: bool,
     work_setting: str,
@@ -429,7 +434,7 @@ def build_novelize_revise_blocks_prompt(
     target_labels: Sequence[int],
     user_request: str,
 ) -> NovelizePrompt:
-    """여러 문단 수정(구조화, 과금). 문단 수정과 같이 지시문 뒤에 채팅 세트의 등급 규칙을 붙인다.
+    """여러 문단 수정(구조화, 과금). 문단 수정과 같이 지시문 뒤에 소설 세트의 등급 규칙을 붙인다.
 
     `paragraph_lines` 는 모델에 보낼 문맥 문단(장면 있는 화는 그 장면, 없으면 화 전체)을 화 전체에서 센 번호 `[n] ` 과 함께 빈 줄로
     이은 글이고, `target_labels` 는 그중 고칠 문단의 번호(1부터)다. 모델에는 블록 id 를 보내지 않는다 — 번호로 받아 서버가 되찾는다."""
@@ -448,7 +453,7 @@ def build_novelize_revise_blocks_prompt(
         channel="novelize_revise_blocks",
         is_story_chat=is_story_chat,
         values=values,
-        rating_sections=chat_sections,
+        with_rating=True,
     )
 
 
@@ -466,5 +471,5 @@ def build_novelize_revise_recheck_prompt(
     _require("novelize_revise_recheck", edited_lines=edited_lines, patch_lines=patch_lines)
     values = {"edited_lines": edited_lines, "patch_lines": patch_lines, "paragraph_lines": paragraph_lines}
     return _render(
-        sections, channel="novelize_revise_recheck", is_story_chat=is_story_chat, values=values, rating_sections=None
+        sections, channel="novelize_revise_recheck", is_story_chat=is_story_chat, values=values, with_rating=False
     )

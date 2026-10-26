@@ -45,6 +45,11 @@ _M = _load("0c1a85bc5c2f")
 _NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values()) + list(
     _load("174f78b92e5c").NEW_SET_IDS.values()  # 그 뒤 여러 문단 수정 문안을 심은 소설 레인 Gemini 세트도 같은 이유로 뺀다.
 )
+# 그 뒤 Claude 소설 체인 채널과 세 체인 등급 규칙 채널을 심은 두 리비전의 소설 레인 세트도 같은 이유로 뺀다.
+_NOVEL_OUTLINE_SET_IDS += [
+    *_load("fe3df6f8e4d5").NEW_SET_IDS.values(),
+    *_load("e4df46a80bfa").NEW_SET_IDS.values(),
+]
 # 비밀 표기 슬롯을 만든 리비전 — 옛 본문의 출처다(그 뒤 이 슬롯을 바꾼 리비전이 없다).
 _SECRET_MARKING = _load("0aeadefcf159")
 # 이 리비전 직전 여덟 체인의 활성 세트(사실 추출 지시문 차례를 바꾼 리비전 — 그 사이의 리비전은 프롬프트를 게시하지 않는다).

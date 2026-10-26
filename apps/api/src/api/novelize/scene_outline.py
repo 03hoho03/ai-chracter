@@ -28,7 +28,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import MessageKey
-from api.chat.prompt_builder import load_active_prompt_set
 from api.core.config import settings
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.novel import Novel, NovelChapter, NovelEpisodeOutline, NovelOutline
@@ -43,6 +42,7 @@ from api.novelize.inputs import (
     _previous_excerpt,
     _previous_summaries,
     _version_id,
+    load_novel_label_set,
     load_novel_prompt_source,
     load_work_setting,
     next_ordinal,
@@ -288,7 +288,7 @@ def _stored_basis(first: ChatMessage, last: ChatMessage) -> dict[str, str]:
     }
 
 
-async def _context_lines(db: AsyncSession, novel: Novel, room_id: uuid.UUID, chat_set: PromptSet) -> str:
+async def _context_lines(db: AsyncSession, novel: Novel, room_id: uuid.UUID, label_set: PromptSet) -> str:
     """지금 승인한 구간 선택의 맥락 구간 원문 줄. 구간마다 저장된 해시와 대조한다(다르면 `SourceChangedError`)."""
     selection = await latest_approved_selection(db, novel.id)
     if selection is None:
@@ -301,17 +301,17 @@ async def _context_lines(db: AsyncSession, novel: Novel, room_id: uuid.UUID, cha
         if segment_hash(messages) != row.source_hash:
             raise SourceChangedError(f"novel={novel.id} 맥락 구간 {row.id} 의 원문이 바뀌었다")
         blocks.append(messages)
-    return format_context_lines(blocks, **_line_labels(novel, chat_set))
+    return format_context_lines(blocks, **_line_labels(novel, label_set))
 
 
-def _line_labels(novel: Novel, chat_set: PromptSet) -> dict[str, Any]:
-    """원문 줄의 이름·라벨 — 대화가 쓰던 라벨이라 채팅 세트에서 읽는다(화 생성 입력과 같다)."""
+def _line_labels(novel: Novel, label_set: PromptSet) -> dict[str, Any]:
+    """원문 줄의 이름·라벨 — 라벨은 소설 레인 Gemini 체인 세트에서 읽는다(화 생성 입력과 같은 세트, `inputs.load_novel_label_set`)."""
     return {
         "names": novel_prompt_names(protagonist_name=novel.protagonist_name or "", character_name=novel.character_name),
-        "user_label": chat_set.user_label,
-        "assistant_label": chat_set.story_assistant_label
+        "user_label": label_set.user_label,
+        "assistant_label": label_set.story_assistant_label
         if novel.content_type == "story"
-        else chat_set.character_assistant_label,
+        else label_set.character_assistant_label,
     }
 
 
@@ -354,7 +354,7 @@ def _spans(ranges: Sequence[EpisodeRange]) -> tuple[list[SourceTurn], list[Scene
 
 
 async def load_episode_source(
-    db: AsyncSession, novel: Novel, outline: NovelOutline, episode: dict[str, Any], chat_set: PromptSet
+    db: AsyncSession, novel: Novel, outline: NovelOutline, episode: dict[str, Any], label_set: PromptSet
 ) -> EpisodeSource:
     """화 하나의 원문을 관문으로 읽어 검사하고 원문 줄을 만든다(모듈 docstring 의 쓸 수 있는가 중 원문 쪽)."""
     if novel.chat_room_id is None:
@@ -363,9 +363,9 @@ async def load_episode_source(
     turns, spans = _spans(ranges)
     if not turns:
         raise SourceChangedError(f"novel={novel.id} 화 근거에 모델 응답이 없다")
-    labels = _line_labels(novel, chat_set)
+    labels = _line_labels(novel, label_set)
     turn_lines = format_turn_lines(turns, **labels)
-    context_lines = await _context_lines(db, novel, novel.chat_room_id, chat_set)
+    context_lines = await _context_lines(db, novel, novel.chat_room_id, label_set)
     estimated = len(turn_lines) + len(context_lines)
     if estimated > settings.novelize_outline_max_input_tokens:
         raise InputTooLargeError(estimated, settings.novelize_outline_max_input_tokens)
@@ -383,8 +383,7 @@ async def load_scene_outline_source(
             raise OutlineStaleError(f"novel={novel.id} 화 {key} 의 근거가 바뀌었다")
         outline = await db.get_one(NovelOutline, outline_id)
         episode = find_episode(outline, key) or episode
-    chat_set, _ = await load_active_prompt_set(db, lane=novel.content_type)
-    return await load_episode_source(db, novel, outline, episode, chat_set)
+    return await load_episode_source(db, novel, outline, episode, await load_novel_label_set(db))
 
 
 def _episode_outline_text(episode: dict[str, Any]) -> str:
@@ -401,10 +400,9 @@ async def build_episode_outline_input(
     지난 화 요약·연속성 참고."""
     protagonist = require_protagonist_name(novel)
     source = await load_scene_outline_source(db, novel, key, outline_id=outline_id)
-    prompt_source = await load_novel_prompt_source(db, novel, model=model)
+    prompt_source = await load_novel_prompt_source(db, model=model)
     prompt = build_novelize_episode_outline_prompt(
-        chat_set=prompt_source.chat_set,
-        chat_sections=prompt_source.chat_sections,
+        label_set=prompt_source.label_set,
         sections=prompt_source.sections,
         is_story_chat=novel.content_type == "story",
         work_setting=await load_work_setting(db, novel, await _version_id(db, novel)),
@@ -647,15 +645,15 @@ async def check_regenerate_input(db: AsyncSession, novel: Novel, room_id: uuid.U
     """구성 흐름 화 다시 만들기 요청이 차감 전에 부른다 — 지금 승인한 구간 선택의 맥락 구간 원문이 고를 때와 같은지(다르면
     `SourceChangedError`), 입력 견적이 상한 안인지(넘으면 `InputTooLargeError`) 본다. 실행이 같은 검사로 실패·환불만 되풀이하지
     않게."""
-    chat_set, _ = await load_active_prompt_set(db, lane=novel.content_type)
-    context_lines = await _context_lines(db, novel, room_id, chat_set)
-    _require_regenerate_within_cap(novel, chat_set, scenes, context_lines)
+    label_set = await load_novel_label_set(db)
+    context_lines = await _context_lines(db, novel, room_id, label_set)
+    _require_regenerate_within_cap(novel, label_set, scenes, context_lines)
 
 
-def _require_regenerate_within_cap(novel: Novel, chat_set: PromptSet, scenes: SceneSource, context_lines: str) -> None:
+def _require_regenerate_within_cap(novel: Novel, label_set: PromptSet, scenes: SceneSource, context_lines: str) -> None:
     """다시 만들기의 입력 견적 — 프롬프트에 싣는 장면 턴 줄과 맥락 줄의 글자 수다. 원고 요청과 같은 상한으로 막는다(다시 만들기는 화
     근거가 아니라 그 화가 쓴 장면 원문을 다시 읽으므로 견적도 장면 턴으로 센다)."""
-    estimated = len(format_turn_lines(scenes.turns, **_line_labels(novel, chat_set))) + len(context_lines)
+    estimated = len(format_turn_lines(scenes.turns, **_line_labels(novel, label_set))) + len(context_lines)
     if estimated > settings.novelize_outline_max_input_tokens:
         raise InputTooLargeError(estimated, settings.novelize_outline_max_input_tokens)
 
@@ -697,8 +695,7 @@ async def load_outline_chapter_source(
         raise EpisodeOutlineMissingError(f"novel={novel.id} 화 {key} 에 승인한 장면 구성안이 없다")
     if not await episode_basis_holds(db, novel.id, episode_outline.outline_id, key):
         raise EpisodeOutlineStaleError(f"novel={novel.id} 화 {key} 의 장면 구성안이 낡았다")
-    chat_set, _ = await load_active_prompt_set(db, lane=novel.content_type)
-    source = await load_episode_source(db, novel, outline, episode, chat_set)
+    source = await load_episode_source(db, novel, outline, episode, await load_novel_label_set(db))
     assert novel.chat_room_id is not None  # 원문을 읽었으면 방이 있다
     return OutlineChapterSource(
         episode_outline, source, await load_scene_source(db, novel.chat_room_id, episode_outline.scenes)
@@ -724,15 +721,14 @@ async def _chapter_prompt(
     version_id = await _version_id(db, novel)
     writes_title = is_first and novel.title_edited_at is None
     prompt = build_novelize_chapter_prompt(
-        chat_set=prompt_source.chat_set,
-        chat_sections=prompt_source.chat_sections,
+        label_set=prompt_source.label_set,
         sections=prompt_source.sections,
         is_story_chat=novel.content_type == "story",
         work_setting=await load_work_setting(db, novel, version_id),
         user_name=protagonist,
         setting_notes=novel.setting_notes,
         previous_excerpt=await _previous_excerpt(db, novel.id, before_ordinal=before_ordinal),
-        turn_lines=format_turn_lines(scenes.turns, **_line_labels(novel, prompt_source.chat_set)),
+        turn_lines=format_turn_lines(scenes.turns, **_line_labels(novel, prompt_source.label_set)),
         character_notes=await _character_notes(db, novel.id),
         previous_summaries=await _previous_summaries(db, novel.id, before_ordinal=before_ordinal),
         episode_count=1,
@@ -772,7 +768,7 @@ async def build_outline_chapter_input(
     db: AsyncSession, novel: Novel, key: uuid.UUID, *, episode_outline_id: uuid.UUID, model: ChatModelId
 ) -> ChapterInput:
     """구성 흐름 원고 작업 실행의 입력 — 요청 때와 같은 검사를 다시 하고, 장면이 쓰는 턴과 장면 계획·연속성 참고로 화 하나를 쓰게 한다."""
-    prompt_source = await load_novel_prompt_source(db, novel, model=model)
+    prompt_source = await load_novel_prompt_source(db, model=model)
     source = await load_outline_chapter_source(db, novel, key, episode_outline_id=episode_outline_id)
     assert novel.chat_room_id is not None  # 원문을 읽었으면 방이 있다
     ordinal = await next_ordinal(db, novel.id)
@@ -804,9 +800,9 @@ async def build_outline_regenerate_input(
     scenes = await load_scene_source(db, novel.chat_room_id, episode_outline.scenes)
     if segment_hash(scenes.messages) != chapter.source_hash:
         raise SourceChangedError(f"chapter={chapter.id} 장면 원문이 바뀌었다")
-    prompt_source = await load_novel_prompt_source(db, novel, model=model)
-    context_lines = await _context_lines(db, novel, novel.chat_room_id, prompt_source.chat_set)
-    _require_regenerate_within_cap(novel, prompt_source.chat_set, scenes, context_lines)
+    prompt_source = await load_novel_prompt_source(db, model=model)
+    context_lines = await _context_lines(db, novel, novel.chat_room_id, prompt_source.label_set)
+    _require_regenerate_within_cap(novel, prompt_source.label_set, scenes, context_lines)
     is_first = chapter.ordinal == 1
     prompt, version_id = await _chapter_prompt(
         db, novel, prompt_source, scenes, context_lines, before_ordinal=chapter.ordinal, is_first=is_first

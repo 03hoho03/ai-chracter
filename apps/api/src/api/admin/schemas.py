@@ -638,11 +638,30 @@ class AdminPromptSectionSemver(CamelModel):
     level: SemverLevel | None
 
 
+class AdminPromptRatingDrift(CamelModel):
+    """채팅 레인과 소설 레인의 등급 규칙이 갈렸는지 알리는 한 항목(막지 않는다). 소설 호출의 등급 규칙은 채팅 레인 값에서 옮겨 온
+    사본이라, 한쪽만 고치면 두 레인의 수위 규칙이 조용히 달라진다 — 게시·복원하는 쪽의 렌더(`this_md5`)와 같은 원작 종류의 다른
+    레인 활성판 렌더(`other_md5`)를 견준다. md5 는 렌더한 글의 것이고, 행이 없거나 렌더가 비면 null 이다.
+
+    `unrenderable` 은 어느 한쪽 본문이 렌더되지 않을 때(짝 없는 중괄호 따위 — 초안 저장은 자리표시자를 검사하지 않는다) 참이다.
+    그쪽 md5 는 null 이고, 같은지 알 수 없으므로 `differs` 도 참이다. 조회 전체를 500 으로 막지 않고 그 항목에만 표지를 단다."""
+
+    scope: Literal["story", "character"]
+    other_lane: PromptLane
+    other_model: PromptSetModelId
+    other_set_id: uuid.UUID
+    this_md5: str | None
+    other_md5: str | None
+    differs: bool
+    unrenderable: bool = False
+
+
 class AdminPromptSetDetailResponse(CamelModel):
     """`GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문. 게시 응답도 이 꼴이다.
 
     `semver`·`section_semvers` 는 판이 없는 세트면 null·빈 목록이다. `removed_sections` 는 게시 응답에서만 채운다(기준판에
-    있었는데 이번 게시에 없는 섹션) — 상세 조회는 기준판과 다시 견주지 않아 늘 빈 목록이다."""
+    있었는데 이번 게시에 없는 섹션) — 상세 조회는 기준판과 다시 견주지 않아 늘 빈 목록이다. `rating_drift` 도 게시 응답에서만
+    채운다(게시한 등급 규칙과 다른 레인 활성판의 비교)."""
 
     id: uuid.UUID
     version: str | None
@@ -657,6 +676,7 @@ class AdminPromptSetDetailResponse(CamelModel):
     semver: str | None = None
     section_semvers: list[AdminPromptSectionSemver] = Field(default_factory=list)
     removed_sections: list[str] = Field(default_factory=list)
+    rating_drift: list[AdminPromptRatingDrift] = Field(default_factory=list)
 
 
 class AdminPromptPlaceholderHint(CamelModel):
@@ -677,7 +697,13 @@ class AdminPromptDraftResponse(CamelModel):
       `base_draft_hash` 로 돌려보내 그 사이 다른 탭의 저장을 덮지 않게 한다. 게시용 `draft_hash`(바뀐 섹션 조회)와 해시 함수는
       같지만 입력이 다르다 — 게시용은 얼린 소설 행을 활성판 값으로 갈아 끼운 내용이라 둘을 섞으면 안 된다.
     - `allowed_placeholders`: 이 체인이 편집할 수 있는 채널의 (채널, 슬롯)마다 쓸 수 있는 자리표시자. 화면이 따로 사본을 두면
-      서버와 어긋나므로 이 값만 본다."""
+      서버와 어긋나므로 이 값만 본다.
+
+    복원 응답에서만 채우는 칸(조회·저장은 빈 목록):
+    - `rating_drift`: 복원한 초안의 등급 규칙과 다른 레인 활성판의 비교(`AdminPromptRatingDrift`). 통째·섹션 복원.
+    - `dropped_channels`·`filled_channels`: 통째 복원이 그 체인에 없는 채널이라 버린 채널과, 원본 판에 없어 그 체인 활성판에서
+      채운 채널. 채널 집합이 지금과 다른 옛 판을 복원해도 게시 검증의 슬롯 집합 검사에 막히지 않게 하려는 것이다. 소설 레인
+      통째 복원만 채운다 — 다른 레인은 옛 판을 그대로 옮기므로 늘 빈 목록이다."""
 
     id: uuid.UUID | None
     model: PromptSetModelId
@@ -685,6 +711,9 @@ class AdminPromptDraftResponse(CamelModel):
     sections: list[AdminPromptSectionItem]
     saved_draft_hash: str | None
     allowed_placeholders: list[AdminPromptPlaceholderHint]
+    rating_drift: list[AdminPromptRatingDrift] = Field(default_factory=list)
+    dropped_channels: list[str] = Field(default_factory=list)
+    filled_channels: list[str] = Field(default_factory=list)
 
 
 class AdminPromptSectionInput(CamelModel):
@@ -749,12 +778,14 @@ class AdminPromptSectionChange(CamelModel):
 
 class AdminPromptDraftChangesResponse(CamelModel):
     """`GET /admin/prompt-sets/{lane}/draft/changes` — 게시하면 판이 어떻게 갈릴지 미리 본다. `base_set_id`·`draft_hash` 를
-    게시 요청에 그대로 돌려보내면, 그 사이 다른 게시나 초안 저장이 끼어들었을 때 게시가 409 로 멈춘다."""
+    게시 요청에 그대로 돌려보내면, 그 사이 다른 게시나 초안 저장이 끼어들었을 때 게시가 409 로 멈춘다. `rating_drift` 는 게시할
+    등급 규칙과 다른 레인 활성판의 비교다 — 게시 전에 갈림을 확인하는 자리다(게시 응답의 같은 칸은 이미 게시된 뒤다)."""
 
     base_set_id: uuid.UUID | None
     base_semver: str | None
     draft_hash: str
     sections: list[AdminPromptSectionChange]
+    rating_drift: list[AdminPromptRatingDrift] = Field(default_factory=list)
 
 
 class AdminPromptPreviewItem(CamelModel):

@@ -1226,14 +1226,14 @@ async def propose_novel_chapter(
     candidates = await _next_segment(db, novel, room_id, model)
     turns = group_turns(candidates)
     counts = episode_counts(turns, novel, model)
-    source = await load_novel_prompt_source(db, novel)
+    source = await load_novel_prompt_source(db)
     await _check_proposal_limit(novel.user_id)
     chapter_models, _ = await _chapter_models(db, novel.user_id)
     await db.commit()
 
     suggestion: NovelChapterSuggestion | None = None
     suggested = await suggest_end_turn(
-        llm_client, novel=novel, turns=turns, sections=source.sections, chat_set=source.chat_set, room_id=room_id
+        llm_client, novel=novel, turns=turns, sections=source.sections, label_set=source.label_set, room_id=room_id
     )
     if suggested is not None:
         end_turn, reason = suggested

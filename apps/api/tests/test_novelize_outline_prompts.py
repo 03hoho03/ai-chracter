@@ -1,6 +1,6 @@
 """소설 구성 흐름의 프롬프트 빌더 — 전체 구성안·화 하나의 장면 구성안, 그리고 화 생성의 새 두 슬롯(장면 계획·연속성 참고).
 
-지시문만 system_instruction 으로, 나머지는 본문으로 보낸다(지시문 뒤에 채팅 세트의 등급 규칙). conditional 슬롯은 값이 비면 섹션째
+지시문만 system_instruction 으로, 나머지는 본문으로 보낸다(지시문 뒤에 같은 소설 세트 `novelize_rating` 채널의 등급 규칙). conditional 슬롯은 값이 비면 섹션째
 빠진다 — 옛 흐름의 화 생성은 새 두 슬롯 값을 넘기지 않아 렌더가 그대로다. 섹션은 세션 없이 생성자로만 채운다(DB 를 타지 않는
 순수 함수)."""
 
@@ -17,7 +17,7 @@ from api.novelize.prompts import (
     build_novelize_outline_prompt,
 )
 
-_CHAT_SET = PromptSet(
+_LABEL_SET = PromptSet(
     user_label="사용자", story_assistant_label="진행자", story_example_label="서술자", character_assistant_label="캐릭터"
 )
 
@@ -28,7 +28,7 @@ def _section(channel: str, slot: str, body: str, order: int, *, conditional: boo
     )
 
 
-_RULE_ROWS = [_section("system", "rule_rating", "[수위]\n등급 규칙", 3)]
+_RULE_ROWS = [_section("novelize_rating", "rule_rating", "[수위]\n등급 규칙", 0)]
 
 
 def _plan_rows(channel: str, instruction: str, middle: list[PromptSection]) -> list[PromptSection]:
@@ -69,14 +69,13 @@ _CHAPTER_ROWS = [
     _section("novelize_chapter", "scene_plan", "계획:\n{scene_plan}", 5, conditional=True),
     _section("novelize_chapter", "continuity_context", "참고:\n{context_lines}", 6, conditional=True),
 ]
-_ALL_ROWS = [*_OUTLINE_ROWS, *_EPISODE_ROWS, *_CHAPTER_ROWS]
+_ALL_ROWS = [*_OUTLINE_ROWS, *_EPISODE_ROWS, *_CHAPTER_ROWS, *_RULE_ROWS]
 _TURN_LINES = "[턴 1] 캐릭터: 왔어?\n[턴 2] 사용자: 응.\n[턴 2] 캐릭터: 앉아."
 
 
 def _outline(sections: list[PromptSection] = _ALL_ROWS, **overrides: Any) -> NovelizePrompt:
     kwargs: dict[str, Any] = {
-        "chat_set": _CHAT_SET,
-        "chat_sections": _RULE_ROWS,
+        "label_set": _LABEL_SET,
         "sections": sections,
         "is_story_chat": True,
         "work_setting": "작품 설정 원문",
@@ -92,8 +91,7 @@ def _outline(sections: list[PromptSection] = _ALL_ROWS, **overrides: Any) -> Nov
 
 def _episode(sections: list[PromptSection] = _ALL_ROWS, **overrides: Any) -> NovelizePrompt:
     kwargs: dict[str, Any] = {
-        "chat_set": _CHAT_SET,
-        "chat_sections": _RULE_ROWS,
+        "label_set": _LABEL_SET,
         "sections": sections,
         "is_story_chat": False,
         "work_setting": "작품 설정 원문",
@@ -108,8 +106,7 @@ def _episode(sections: list[PromptSection] = _ALL_ROWS, **overrides: Any) -> Nov
 
 def _chapter(**overrides: Any) -> NovelizePrompt:
     kwargs: dict[str, Any] = {
-        "chat_set": _CHAT_SET,
-        "chat_sections": _RULE_ROWS,
+        "label_set": _LABEL_SET,
         "sections": _ALL_ROWS,
         "is_story_chat": True,
         "work_setting": "작품 설정 원문",

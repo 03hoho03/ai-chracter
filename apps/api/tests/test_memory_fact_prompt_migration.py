@@ -48,6 +48,11 @@ _M = _load("5cab2abe4e7b")
 _NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values()) + list(
     _load("174f78b92e5c").NEW_SET_IDS.values()  # 그 뒤 여러 문단 수정 문안을 심은 소설 레인 Gemini 세트도 같은 이유로 뺀다.
 )
+# 그 뒤 Claude 소설 체인 채널과 세 체인 등급 규칙 채널을 심은 두 리비전의 소설 레인 세트도 같은 이유로 뺀다.
+_NOVEL_OUTLINE_SET_IDS += [
+    *_load("fe3df6f8e4d5").NEW_SET_IDS.values(),
+    *_load("e4df46a80bfa").NEW_SET_IDS.values(),
+]
 # 이 리비전 직전의 활성 세트 — 여덟 체인 모두 장면 기억 문안 리비전의 세트다(그 사이에 프롬프트를 게시한 리비전이 없다).
 _EPISODE_MIGRATION = _load("fc6f0e134782")
 _PREVIOUS_SET_IDS: dict[tuple[str, str], uuid.UUID] = _EPISODE_MIGRATION.NEW_SET_IDS

@@ -27,7 +27,6 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import MessageKey
-from api.chat.prompt_builder import load_active_prompt_set
 from api.core.config import settings
 from api.db.models.chat import ChatMessageRole
 from api.db.models.novel import Novel, NovelSourceSection
@@ -38,6 +37,7 @@ from api.novelize.inputs import (
     _character_notes,
     _previous_summaries,
     _version_id,
+    load_novel_label_set,
     load_novel_prompt_source,
     load_work_setting,
     require_protagonist_name,
@@ -179,12 +179,12 @@ async def load_outline_source(db: AsyncSession, novel: Novel) -> OutlineSource:
         raise SourceChangedError(f"novel={novel.id} include 구간에 모델 응답이 없다")
 
     names = novel_prompt_names(protagonist_name=novel.protagonist_name or "", character_name=novel.character_name)
-    chat_set, _ = await load_active_prompt_set(db, lane=novel.content_type)
+    label_set = await load_novel_label_set(db)
     is_story = novel.content_type == "story"
-    assistant_label = chat_set.story_assistant_label if is_story else chat_set.character_assistant_label
-    turn_lines = format_turn_lines(include_turns, names=names, user_label=chat_set.user_label, assistant_label=assistant_label)
+    assistant_label = label_set.story_assistant_label if is_story else label_set.character_assistant_label
+    turn_lines = format_turn_lines(include_turns, names=names, user_label=label_set.user_label, assistant_label=assistant_label)
     context_lines = format_context_lines(
-        context_messages, names=names, user_label=chat_set.user_label, assistant_label=assistant_label
+        context_messages, names=names, user_label=label_set.user_label, assistant_label=assistant_label
     )
     estimated = len(turn_lines) + len(context_lines)
     if estimated > settings.novelize_outline_max_input_tokens:
@@ -206,10 +206,9 @@ async def build_outline_input(db: AsyncSession, novel: Novel, *, model: ChatMode
     렌더한다. 지난 화 요약은 이미 쓴 화에서 온 것이라 이어지는 구성의 재료로 싣는다(이미 쓴 구간은 고를 수 없다)."""
     protagonist = require_protagonist_name(novel)
     source = await load_outline_source(db, novel)
-    prompt_source = await load_novel_prompt_source(db, novel, model=model)
+    prompt_source = await load_novel_prompt_source(db, model=model)
     prompt = build_novelize_outline_prompt(
-        chat_set=prompt_source.chat_set,
-        chat_sections=prompt_source.chat_sections,
+        label_set=prompt_source.label_set,
         sections=prompt_source.sections,
         is_story_chat=novel.content_type == "story",
         work_setting=await load_work_setting(db, novel, await _version_id(db, novel)),

@@ -42,8 +42,10 @@ gemini v88·sonnet v89·opus v90·haiku v91, character gemini v92·sonnet v93·o
 구성안 문안 마이그레이션이 소설 레인 세 체인에 구성안 행을 더한 세트(novel gemini v100·sonnet v101·opus v102)를 심고,
 여러 문단 수정 문안 마이그레이션이 소설 레인 Gemini 체인에 새 채널 행을 더한 세트(novel gemini v103)를 심고, 인상 생성
 문안 마이그레이션이 채팅 두 레인 여덟 체인에 인상 채널 행을 더한 세트(story gemini v104·sonnet v105·opus v106·haiku v107,
-character gemini v108·sonnet v109·opus v110·haiku v111)를 심어 story·character 활성이 v104·v108이 되므로 다음 게시 버전은
-"112"부터다
+character gemini v108·sonnet v109·opus v110·haiku v111)를 심어 story·character 활성이 v104·v108이 되고, 소설 Claude 체인
+경계·문단 수정 채널 마이그레이션이 소설 sonnet·opus 체인에 그 네 채널을 더한 세트(novel sonnet v112·opus v113)를, 소설
+등급 규칙 채널 마이그레이션이 소설 세 체인에 등급 규칙 채널을 더한 세트(novel gemini v114·sonnet v115·opus v116)를 심어
+소설 활성이 v114~v116이 되므로 다음 게시 버전은 "117"부터다
 (전 레인·전 모델 대상 자동 증가).
 채팅 레인 Gemini 초안 응답은 얼린 소설화 행을 싣지 않는다(`_visible_section_count`).
 섹션 수는 `_expected_section_count`로 코드 표에서 도출한다 — DB 행은 마이그레이션이
@@ -123,8 +125,10 @@ def _expected_section_count(lane: PromptLane) -> int:
 _NOVELIZE_CHANNELS = {"novelize_boundary", "novelize_chapter", "novelize_revise"}
 # 소설 레인 세 체인 모두에 있는 구성 흐름의 구성안 두 채널(채팅 레인의 얼린 소설 행에는 없다).
 _OUTLINE_CHANNELS = {"novelize_outline", "novelize_episode_outline"}
-# 소설 레인 Gemini 체인에만 있는 여러 문단 수정·묶음 재검사 두 채널.
+# 소설 레인 세 체인 모두에 있는 여러 문단 수정·묶음 재검사 두 채널(채팅 레인의 얼린 소설 행에는 없다).
 _BLOCK_EDIT_CHANNELS = {"novelize_revise_blocks", "novelize_revise_recheck"}
+# 소설 레인 세 체인 모두에 있는 등급 규칙 채널 — 소설 호출이 지시문 뒤에 붙이는 등급 규칙을 소설 세트에서 읽는다.
+_RATING_CHANNELS = {"novelize_rating"}
 
 
 def _visible_section_count(lane: PromptLane) -> int:
@@ -510,7 +514,8 @@ async def test_list_returns_metadata_only_and_marks_active(
     # 요약 비밀 표기: v60~v67. 장면 헤더 판정 문안: v68~v71(story 네 체인). 장면 추출 지시문: v72~v79.
     # 사실 추출 지시문 차례: v80~v87. 요약 비밀 표기 출처: v88~v95. 장면 판정 지시문 교체: v96~v99(story 네 체인).
     # 소설 구성안 문안: v100~v102(소설 세 체인). 여러 문단 수정 문안: v103(소설 Gemini 체인). 인상 생성 문안: v104~v111.
-    assert len(published) == 113
+    # 소설 Claude 체인 경계·문단 수정 채널: v112·v113(sonnet·opus). 소설 등급 규칙 채널: v114~v116(gemini·sonnet·opus).
+    assert len(published) == 118
     assert len(draft) == 1
     active = [item for item in published if item["isActive"]]
     # (레인, 모델)마다 하나 — Claude 세트는 원본 Gemini 세트보다 published_at 이 과거지만 모델이 달라 각자 활성이다.
@@ -524,9 +529,9 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("character", "sonnet", "109"),
         ("character", "opus", "110"),
         ("character", "haiku", "111"),
-        ("novel", "gemini", "103"),
-        ("novel", "sonnet", "101"),
-        ("novel", "opus", "102"),
+        ("novel", "gemini", "114"),
+        ("novel", "sonnet", "115"),
+        ("novel", "opus", "116"),
         ("novel_screen", "gemini", "23"),
     }
     # 레인별 마지막 마이그레이션 이전 세트 열은 비활성이다(소설 레인은 옛 문안을 옮긴 첫 판).
@@ -623,6 +628,11 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("story", "90"),
         ("story", "91"),
         ("novel", "100"),
+        ("novel", "101"),
+        ("novel", "102"),
+        ("novel", "103"),
+        ("novel", "112"),
+        ("novel", "113"),
         ("character", "92"),
         ("character", "93"),
         ("character", "94"),
@@ -633,7 +643,7 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("story", "99"),
     }
     assert draft[0]["isActive"] is False
-    assert {item["version"] for item in published} == {str(n) for n in range(1, 112)}
+    assert {item["version"] for item in published} == {str(n) for n in range(1, 117)}
 
 
 async def test_get_by_id_returns_full_sections(
@@ -869,7 +879,7 @@ async def test_publish_valid_unmodified_draft_succeeds_with_next_version(
     resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "정기 점검 후 재게시"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["version"] == "112"
+    assert body["version"] == "117"
     assert body["status"] == "published"
     assert body["lane"] == "story"
     assert body["note"] == "정기 점검 후 재게시"
@@ -897,11 +907,11 @@ async def test_publish_assigns_sequential_integer_versions(
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client, "story")
     first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v30"})
-    assert first.json()["version"] == "112"
+    assert first.json()["version"] == "117"
 
     await _make_valid_draft(db_client, "story")
     second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v31"})
-    assert second.json()["version"] == "113"
+    assert second.json()["version"] == "118"
 
 
 async def test_next_version_is_global_monotonic_not_per_lane(
@@ -913,8 +923,8 @@ async def test_next_version_is_global_monotonic_not_per_lane(
     세트 v24~v29, 장면 기억 문안 세트 v30~v37, 관계·사실 기억 문안 세트 v38~v45, 회상 문안 우선순위 세트 v46~v51, 사실 추출
     지시문 세트 v52~v59, 요약 비밀 표기 세트 v60~v67, 장면 헤더 판정 문안 세트 v68~v71, 장면 추출 지시문 세트 v72~v79, 사실
     추출 지시문 차례 세트 v80~v87, 요약 비밀 표기 출처 세트 v88~v95, 장면 판정 지시문 교체 세트 v96~v99, 소설 구성안 문안
-    세트 v100~v102, 여러 문단 수정 문안 세트 v103, 인상 생성 문안 세트 v104~v111)에서, story가 v112·v113을 게시한 뒤
-    character 게시가 v114를 받아야
+    세트 v100~v102, 여러 문단 수정 문안 세트 v103, 인상 생성 문안 세트 v104~v111, 소설 Claude 체인 경계·문단 수정 채널 세트
+    v112·v113, 소설 등급 규칙 채널 세트 v114~v116)에서, story가 v117·v118을 게시한 뒤 character 게시가 v119를 받아야
     한다(레인별
     독립 증가라면 character의 다음 게시는 v18일 것이다) —
     이 테스트는 그 레인 필터의 **부재**를 고정한다."""
@@ -922,15 +932,15 @@ async def test_next_version_is_global_monotonic_not_per_lane(
 
     await _make_valid_draft(db_client, "story")
     first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v30"})
-    assert first.json()["version"] == "112"
+    assert first.json()["version"] == "117"
 
     await _make_valid_draft(db_client, "story")
     second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v31"})
-    assert second.json()["version"] == "113"
+    assert second.json()["version"] == "118"
 
     await _make_valid_draft(db_client, "character")
     third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v32"})
-    assert third.json()["version"] == "114"
+    assert third.json()["version"] == "119"
 
 
 async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
@@ -1014,7 +1024,7 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
         resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "캐시 실패해도 성공"})
 
     assert resp.status_code == 200
-    assert resp.json()["version"] == "112"
+    assert resp.json()["version"] == "117"
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
     assert captured == ["redis"]
 
@@ -1580,7 +1590,7 @@ async def test_claude_publish_becomes_that_models_active_set_and_invalidates_onl
     assert resp.status_code == 200
     body = resp.json()
     assert body["model"] == "sonnet"
-    assert body["version"] == "112"
+    assert body["version"] == "117"
     assert len(body["sections"]) == _section_count("story", _claude_channels("story"))
     # 얼린 소설화 행은 채팅 Gemini 체인에만 있다 — Claude 채팅 체인 게시에 끼워 넣지 않는다.
     assert {s["channel"] for s in body["sections"]} == _claude_channels("story")
@@ -1789,60 +1799,54 @@ def _frozen(sections: list[PromptSection]) -> set[tuple[str, str, str, str, str,
     return {row for row in _rows(sections) if row[0] in _NOVELIZE_CHANNELS}
 
 
-@pytest.mark.parametrize(
-    ("model", "channels"),
-    [
-        pytest.param("gemini", _NOVELIZE_CHANNELS | _OUTLINE_CHANNELS | _BLOCK_EDIT_CHANNELS, id="gemini"),
-        pytest.param("sonnet", {"novelize_chapter"} | _OUTLINE_CHANNELS, id="sonnet"),
-        pytest.param("opus", {"novelize_chapter"} | _OUTLINE_CHANNELS, id="opus"),
-    ],
-)
+@pytest.mark.parametrize("model", [pytest.param(m, id=m) for m in ("gemini", "sonnet", "opus")])
 async def test_novel_draft_opens_for_every_model_chain(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, model: ChatModelId, channels: set[str]
+    db_client: httpx.AsyncClient, db_session: AsyncSession, model: ChatModelId
 ) -> None:
-    """소설 탭은 세 모델 탭을 다 그린다 — 체인이 하나라도 비어 있으면 초안 조회가 500 이다. Claude 체인은 화 생성과
-    구성안 두 호출만 그 체인을 읽어 그 채널만 있다."""
+    """소설 탭은 세 모델 탭을 다 그린다 — 체인이 하나라도 비어 있으면 초안 조회가 500 이다. 세 체인 모두 같은 채널 집합이다:
+    경계 제안·문단 수정 문안이 Claude 체인에도 있고(그 호출을 Claude 로 돌릴 때 읽을 문안), 등급 규칙은 소설 레인 세트에서
+    읽으므로 체인마다 있다."""
     await _login_new_admin(db_client, db_session)
 
     resp = await db_client.get("/admin/prompt-sets/novel/draft", params={"model": model})
 
     assert resp.status_code == 200
-    assert {s["channel"] for s in resp.json()["sections"]} == channels
+    assert {s["channel"] for s in resp.json()["sections"]} == (
+        _NOVELIZE_CHANNELS | _OUTLINE_CHANNELS | _BLOCK_EDIT_CHANNELS | _RATING_CHANNELS
+    )
 
 
-async def test_novel_sonnet_publish_passes_with_only_its_own_channels_and_rejects_others_r1(
+async def test_novel_sonnet_publish_passes_with_the_full_channel_set_and_rejects_a_missing_channel_r1(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Claude 세트의 R-1 기대 집합은 레인마다 다르다 — 채팅 레인 집합(system·generation)을 소설 레인에 쓰면 화 생성·구성안
-    채널만 가진 소설 Claude 체인은 영원히 게시할 수 없다. 반대로 다른 채널(경계 제안)이 섞이면 아무 호출도 읽지 않는
-    잉여다."""
+    """소설 Claude 체인의 R-1 기대 집합은 소설 Gemini 표 전체다 — 채팅 레인 집합(system·generation)을 소설 레인에 쓰면 소설
+    Claude 체인은 영원히 게시할 수 없다. 반대로 한 채널(경계 제안)이 빠진 초안은 그 호출을 Claude 로 돌릴 때 읽을 문안이 없어
+    누락으로 막힌다."""
     await _login_new_admin(db_client, db_session)
     await _backdate_published_sets(db_session)
     await _make_valid_draft(db_client, "novel", "sonnet")
 
     ok = await db_client.post("/admin/prompt-sets/novel/publish", params={"model": "sonnet"}, json={"note": "n"})
     assert ok.status_code == 200, ok.text
-    assert {s["channel"] for s in ok.json()["sections"]} == {"novelize_chapter"} | _OUTLINE_CHANNELS
+    assert {s["channel"] for s in ok.json()["sections"]} == (
+        _NOVELIZE_CHANNELS | _OUTLINE_CHANNELS | _BLOCK_EDIT_CHANNELS | _RATING_CHANNELS
+    )
     db_session.expire_all()
     assert str((await load_active_prompt_set(db_session, lane="novel", model="sonnet"))[0].id) == ok.json()["id"]
 
-    _, gemini_sections = await load_active_prompt_set(db_session, lane="novel")
     sonnet = (await db_client.get("/admin/prompt-sets/novel/draft", params={"model": "sonnet"})).json()
-    boundary_rows = [
-        {"channel": s.channel, "scope": s.scope, "slot": s.slot, "variant": s.variant, "body": s.body,
-         "conditional": s.conditional, "order": s.order}
-        for s in gemini_sections
-        if s.channel == "novelize_boundary"
-    ]
     put = await db_client.put(
         "/admin/prompt-sets/novel/draft",
         params={"model": "sonnet"},
-        json={"labels": sonnet["labels"], "sections": [*sonnet["sections"], *boundary_rows]},
+        json={
+            "labels": sonnet["labels"],
+            "sections": [s for s in sonnet["sections"] if s["channel"] != "novelize_boundary"],
+        },
     )
     assert put.status_code == 200
-    mixed = await db_client.post("/admin/prompt-sets/novel/publish", params={"model": "sonnet"}, json={"note": ""})
-    assert mixed.status_code == 422
-    assert mixed.json()["detail"]["rule"] == "R-1"
+    missing = await db_client.post("/admin/prompt-sets/novel/publish", params={"model": "sonnet"}, json={"note": ""})
+    assert missing.status_code == 422
+    assert missing.json()["detail"]["rule"] == "R-1"
 
 
 async def test_novel_publish_leaves_the_chat_sets_alone(
@@ -1951,27 +1955,46 @@ async def test_a_draft_saved_before_the_freeze_publishes_the_frozen_rows(
     assert _frozen(await _sections_of_set(db_session, uuid.UUID(published.json()["id"]))) == frozen
 
 
-async def test_novel_preview_reads_labels_and_the_rating_rule_from_the_chat_gemini_set(
+async def test_novel_preview_reads_labels_and_the_rating_rule_from_the_novel_set(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """소설 미리보기는 실호출과 같은 세트로 렌더한다 — 원문 줄 라벨과 등급 규칙은 원작 종류의 채팅 Gemini 세트에서 온다.
-    Claude 체인은 화 생성과 구성안 두 항목만이다."""
+    """소설 미리보기는 실호출과 같은 세트로 렌더한다 — 원문 줄 라벨은 소설 Gemini 체인 세트, 등급 규칙은 그 체인 세트의
+    `novelize_rating` 에서 온다. 채팅 세트의 라벨·등급 규칙을 표지로 바꿔도 미리보기에 실리지 않는다(채팅 세트를 읽지 않는다).
+    Claude 체인도 일곱 채널 × 두 원작 종류를 같은 순서로 보여 준다."""
     await _login_new_admin(db_client, db_session)
-    story_set, story_sections = await load_active_prompt_set(db_session, lane="story")
-    rule = next(s.body for s in story_sections if s.channel == "system" and s.slot == "rule_rating")
+    novel_set, novel_sections = await load_active_prompt_set(db_session, lane="novel")
+    rule = next(
+        s.body for s in novel_sections if (s.channel, s.scope, s.slot) == ("novelize_rating", "story", "rule_rating")
+    )
+    for lane in ("story", "character"):
+        chat_set, _ = await load_active_prompt_set(db_session, lane=lane)
+        await db_session.execute(
+            sa.update(PromptSet)
+            .where(PromptSet.id == chat_set.id)
+            .values(user_label="채팅표지라벨", story_assistant_label="채팅표지라벨", character_assistant_label="채팅표지라벨")
+        )
+        await db_session.execute(
+            sa.update(PromptSection)
+            .where(
+                PromptSection.prompt_set_id == chat_set.id,
+                PromptSection.channel == "system",
+                PromptSection.slot == "rule_rating",
+            )
+            .values(body="채팅표지등급")
+        )
+    await db_session.commit()
 
     gemini = (await db_client.post("/admin/prompt-sets/novel/draft/preview")).json()["items"]
     opus = (await db_client.post("/admin/prompt-sets/novel/draft/preview", params={"model": "opus"})).json()["items"]
 
     story_chapter = next(i for i in gemini if i["label"] == "novelize_chapter · 스토리")
     assert rule in story_chapter["text"]
-    assert f"[턴 1] {story_set.story_assistant_label}: [샘플] 왔어?" in story_chapter["text"]
+    assert f"[턴 1] {novel_set.story_assistant_label}: [샘플] 왔어?" in story_chapter["text"]
     assert "[이번 묶음]" in story_chapter["text"] and "[인물 메모]" in story_chapter["text"]
-    assert [i["label"] for i in opus] == [
-        f"{channel} · {kind}"
-        for kind in ("스토리", "캐릭터")
-        for channel in ("novelize_chapter", "novelize_outline", "novelize_episode_outline")
-    ]
+    for item in [*gemini, *opus]:
+        assert "채팅표지" not in item["text"], item["label"]
+    assert len(opus) == 14
+    assert [i["label"] for i in opus] == [i["label"] for i in gemini]
 
 
 async def _sections_of_set(db_session: AsyncSession, set_id: uuid.UUID) -> list[PromptSection]:
@@ -2002,7 +2025,7 @@ async def test_novel_screen_lane_publishes_its_seed_and_previews_with_sample_tex
     (item,) = preview.json()["items"]
     assert item["channel"] == "novel_screen"
     assert "[판정 방법]" in item["text"] and "=== chapter_body: 본문 ===\n[샘플] 첫 문단이다." in item["text"]
-    assert (published.status_code, published.json()["version"]) == (200, "112")
+    assert (published.status_code, published.json()["version"]) == (200, "117")
     assert (claude.status_code, claude.json()["detail"]["rule"]) == (422, "lane-model")
 
 
@@ -2310,7 +2333,8 @@ async def test_draft_response_placeholder_hints_match_the_server_constant_for_th
     hints = {(h["channel"], h["slot"]): h["names"] for h in body["allowedPlaceholders"]}
     shown_keys = {(s["channel"], s["slot"]) for s in body["sections"]}
     assert set(hints) == shown_keys
-    assert hints == {key: sorted(ALLOWED_PLACEHOLDERS[key]) for key in shown_keys}
+    # 상수에 행이 없는 슬롯(소설 등급 규칙처럼 자리표시자를 쓰지 않는 슬롯)은 게시 검사처럼 빈 목록이다.
+    assert hints == {key: sorted(ALLOWED_PLACEHOLDERS.get(key, frozenset())) for key in shown_keys}
 
 
 async def test_chat_lane_placeholder_hints_include_the_memory_channels_the_old_admin_copy_missed(

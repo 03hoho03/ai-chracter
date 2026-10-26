@@ -534,11 +534,11 @@ async def _start_chain_child(
         turns = group_turns(candidates)
         if not turns:
             return None
-        source = await load_novel_prompt_source(db, novel)
+        source = await load_novel_prompt_source(db)
         await db.commit()
 
     suggested = await suggest_end_turn(
-        llm_client, novel=novel, turns=turns, sections=source.sections, chat_set=source.chat_set, room_id=room_id
+        llm_client, novel=novel, turns=turns, sections=source.sections, label_set=source.label_set, room_id=room_id
     )
     end_index = (suggested[0] if suggested is not None else len(turns)) - 1
     episodes = episode_counts(turns[: end_index + 1], novel, model)[-1]

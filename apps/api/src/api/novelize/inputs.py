@@ -41,27 +41,33 @@ def require_protagonist_name(novel: Novel) -> str:
 
 @dataclass(frozen=True)
 class NovelPromptSource:
-    """소설 호출 한 번이 읽는 두 세트. `sections` 는 `novel` 레인의 그 모델 체인 활성 세트(소설 문안), `chat_set`·
-    `chat_sections` 는 소설 원작 종류(스토리·캐릭터) 채팅 레인의 Gemini 활성 세트(화자 라벨·등급 규칙)다."""
+    """소설 호출 한 번이 읽는 소설 레인 세트. `prompt_set`·`sections` 는 그 모델 체인 활성 세트(소설 문안과 등급 규칙),
+    `label_set` 은 원문 줄 화자 라벨을 읽는 소설 레인 Gemini 체인 활성 세트다(`load_novel_label_set`)."""
 
+    prompt_set: PromptSet
     sections: list[PromptSection]
-    chat_set: PromptSet
-    chat_sections: list[PromptSection]
+    label_set: PromptSet
 
 
-async def load_novel_prompt_source(
-    db: AsyncSession, novel: Novel, *, model: ChatModelId = DEFAULT_CHAT_MODEL
-) -> NovelPromptSource:
-    """`model` 은 소설 레인 체인이다 — 화 생성만 작업의 모델을 넘기고 경계 제안·문단 수정은 기본(Gemini)이다. 그 체인에
+async def load_novel_label_set(db: AsyncSession) -> PromptSet:
+    """원문 줄 화자 라벨을 읽는 세트 — 소설 레인 **Gemini** 체인 활성 세트. 원문 줄을 조립하는 경로 중에는 모델을 모르는 것(구성안
+    원문 읽기·장면 구성안 원문 읽기)이 있어, 체인마다 라벨을 따로 두면 같은 소설의 원문 줄이 경로마다 달라진다. 그래서 라벨은 한
+    체인에서만 읽는다."""
+    label_set, _ = await load_active_prompt_set(db, lane="novel")
+    return label_set
+
+
+async def load_novel_prompt_source(db: AsyncSession, *, model: ChatModelId = DEFAULT_CHAT_MODEL) -> NovelPromptSource:
+    """`model` 은 소설 레인 체인이다 — 화 생성·구성안은 작업의 모델을 넘기고 경계 제안·문단 수정은 기본(Gemini)이다. 그 체인에
     활성 세트가 없으면 다른 체인으로 대신하지 않고 `PromptSetNotFoundError` 를 그대로 낸다: 다른 모델용 문안으로 값을 낸
     모델을 부르면 조용히 다른 글이 나오고, 마이그레이션이 세 체인을 모두 심고 어드민에는 세트를 지우는 길이 없어 이 실패는
     배포 결함일 때만 난다. 작업 실행은 이 실패를 실패·환불로 끝낸다.
 
-    등급 규칙·라벨은 채팅 레인의 **Gemini** 세트에서만 읽는다 — Claude 채팅 세트는 생성 채널만 갖고 모델별로 손질될 수
-    있어, 소설 모델이 무엇이든 같은 등급 규칙을 붙이려면 소스가 한 곳이어야 한다."""
-    _, sections = await load_active_prompt_set(db, lane="novel", model=model)
-    chat_set, chat_sections = await load_active_prompt_set(db, lane=novel.content_type)
-    return NovelPromptSource(sections=sections, chat_set=chat_set, chat_sections=chat_sections)
+    등급 규칙은 그 체인 세트의 `novelize_rating` 채널에서, 라벨은 Gemini 체인 세트에서 읽는다 — 둘 다 소설 레인이라 채팅 문안을
+    고쳐도 소설 글은 바뀌지 않는다."""
+    prompt_set, sections = await load_active_prompt_set(db, lane="novel", model=model)
+    label_set = prompt_set if model == "gemini" else await load_novel_label_set(db)
+    return NovelPromptSource(prompt_set=prompt_set, sections=sections, label_set=label_set)
 
 
 async def _version_id(db: AsyncSession, novel: Novel) -> uuid.UUID | None:
@@ -179,18 +185,17 @@ async def build_chapter_input(db: AsyncSession, job: NovelJob, novel: Novel) -> 
     writes_novel_title = is_first and novel.title_edited_at is None
 
     previous_excerpt = await _previous_excerpt(db, novel.id, before_ordinal=first_ordinal)
-    # 화 문안은 작업 모델의 소설 체인에서, 라벨·등급 규칙은 채팅 Gemini 세트에서 읽는다 — 어드민이 화 문안을 모델마다
-    # 따로 고칠 수 있게 체인을 나눴고, 등급 규칙은 모델과 무관하게 한 곳이다.
-    source = await load_novel_prompt_source(db, novel, model=chapter_job_model(job))
+    # 화 문안과 등급 규칙은 작업 모델의 소설 체인에서, 라벨은 소설 Gemini 체인에서 읽는다 — 어드민이 화 문안을 모델마다
+    # 따로 고칠 수 있게 체인을 나눴고, 라벨은 모델을 모르는 원문 줄 조립 경로와 같은 글자여야 한다.
+    source = await load_novel_prompt_source(db, model=chapter_job_model(job))
     is_story = novel.content_type == "story"
     version_id = await _version_id(db, novel)
     turns = group_turns(segment)
     names = novel_prompt_names(protagonist_name=protagonist, character_name=novel.character_name)
-    chat_set = source.chat_set
-    assistant_label = chat_set.story_assistant_label if is_story else chat_set.character_assistant_label
+    label_set = source.label_set
+    assistant_label = label_set.story_assistant_label if is_story else label_set.character_assistant_label
     prompt = build_novelize_chapter_prompt(
-        chat_set=chat_set,
-        chat_sections=source.chat_sections,
+        label_set=label_set,
         sections=source.sections,
         is_story_chat=is_story,
         work_setting=await load_work_setting(db, novel, version_id),
@@ -198,7 +203,7 @@ async def build_chapter_input(db: AsyncSession, job: NovelJob, novel: Novel) -> 
         setting_notes=novel.setting_notes,
         previous_excerpt=previous_excerpt,
         turn_lines=format_turn_lines(
-            turns, names=names, user_label=chat_set.user_label, assistant_label=assistant_label
+            turns, names=names, user_label=label_set.user_label, assistant_label=assistant_label
         ),
         character_notes=await _character_notes(db, novel.id),
         previous_summaries=await _previous_summaries(db, novel.id, before_ordinal=first_ordinal),
@@ -287,9 +292,8 @@ async def build_revise_input(db: AsyncSession, job: NovelJob, novel: Novel) -> R
     if base is None or job.paragraph_start is None or job.paragraph_end is None:
         raise ValueError(f"job={job.id} 문단 수정의 기준 개정이나 범위가 없다")
     paragraphs = split_paragraphs(base.body)
-    source = await load_novel_prompt_source(db, novel)
+    source = await load_novel_prompt_source(db)
     prompt = build_novelize_revise_prompt(
-        chat_sections=source.chat_sections,
         sections=source.sections,
         is_story_chat=novel.content_type == "story",
         work_setting=await load_work_setting(db, novel, await _version_id(db, novel)),

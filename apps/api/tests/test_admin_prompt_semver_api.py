@@ -339,9 +339,17 @@ async def test_frozen_novel_rows_of_a_chat_gemini_chain_never_count_as_changed(
     assert _sections_by_channel(body)["novelize_chapter"] == ("1.0.0", None)
 
 
-@pytest.mark.parametrize("lane", ["novel", "publish_filter", "novel_screen"])
+@pytest.mark.parametrize(
+    ("lane", "expected"),
+    [
+        # 소설 Gemini 체인은 등급 규칙 채널을 심은 마이그레이션이 그 채널을 minor 로 올려 1.1.0 에서 시작한다.
+        pytest.param("novel", "1.1.1", id="novel"),
+        pytest.param("publish_filter", "1.0.1", id="publish_filter"),
+        pytest.param("novel_screen", "1.0.1", id="novel_screen"),
+    ],
+)
 async def test_every_lane_is_numbered_without_changing_which_set_is_active(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: PromptLane
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: PromptLane, expected: str
 ) -> None:
     """소설·심사 레인 게시도 판이 매겨지고, 그 레인의 활성 세트는 판과 무관하게 가장 늦게 게시한 세트다."""
     await _login_new_admin(db_client, db_session)
@@ -354,7 +362,7 @@ async def test_every_lane_is_numbered_without_changing_which_set_is_active(
 
     body = (await _publish(db_client, lane)).json()
 
-    assert body["semver"] == "1.0.1"
+    assert body["semver"] == expected
     active, _ = await load_active_prompt_set(db_session, lane=lane)
     assert str(active.id) == body["id"]
 

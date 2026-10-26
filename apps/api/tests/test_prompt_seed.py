@@ -274,6 +274,8 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
         "novelize_revise_recheck": {
             ("both", slot, "") for slot in ("instruction", "context", "edited_paragraphs", "pending_patches")
         },
+        # 등급 규칙 채널 리비전이 소설 세 체인에 심은 등급 규칙 — 원작 종류마다 한 행.
+        "novelize_rating": {("story", "rule_rating", ""), ("character", "rule_rating", "")},
     },
     # 노벨 텍스트 심사 레인 시드 리비전이 심은 지시문·심사할 글 두 행.
     "novel_screen": {

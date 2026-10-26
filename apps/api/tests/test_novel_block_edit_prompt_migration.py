@@ -42,6 +42,17 @@ _M = _load("174f78b92e5c")
 # 이 리비전 직전 소설 레인 세 체인의 활성 세트 — 구성안 문안 리비전이 심은 세트다.
 _PREVIOUS_SET_IDS: dict[str, uuid.UUID] = dict(_load("b389c2317149").NEW_SET_IDS)
 _CLAUDE_MODELS: tuple[PromptSetModelId, ...] = ("sonnet", "opus")
+_RATING_CHANNEL = "novelize_rating"
+_CLAUDE_LATER_CHANNELS = ("novelize_boundary", "novelize_revise", "novelize_revise_blocks", "novelize_revise_recheck")
+
+
+# 그 뒤 Claude 소설 체인에 경계 제안·문단 수정 네 채널을 심은 리비전과 세 체인에 등급 규칙 채널을 심은 리비전이 head 의 소설 레인
+# 활성이다. 이 파일은 "이 리비전 직후 상태"를 보므로 테스트마다 위 시드 리비전 전부를 실제 downgrade 순서로 먼저 되돌린다(테스트
+# 트랜잭션이 끝나면 롤백된다).
+@pytest.fixture(autouse=True)
+async def _undo_later_revisions(db_session: AsyncSession) -> None:
+    await (await db_session.connection()).run_sync(undo_seeded_rows_above, _M.revision)
+
 
 Key = tuple[str, str, str, str]
 Value = tuple[str, bool, int]
@@ -154,6 +165,35 @@ async def _copy_set(
     return copy_id
 
 
+async def _later_rows(db_session: AsyncSession, model: str) -> list[PromptSection]:
+    """지금 코드의 게시 검증·렌더는 뒤 두 리비전이 더한 행(세 체인의 등급 규칙 두 행, Claude 체인의 네 채널)도 요구한다 — 이
+    리비전의 세트·초안에 그 행만 얹어 본다. 등급 규칙은 채팅 Gemini 활성의 등급 규칙 본문, Claude 네 채널은 이 리비전이 심은 Gemini
+    세트의 행이다 — 뒤 리비전은 그때의 Gemini 활성(곧 이 세트)에서 네 채널을 옮기고, 여러 문단 수정·묶음 재검사 두 채널은 이
+    리비전 직전 세트에는 아직 없다."""
+    rows: list[PromptSection] = []
+    for scope in ("story", "character"):
+        chat_set, _ = await load_active_prompt_set(db_session, lane=scope)
+        (rule,) = [
+            s for s in await _sections_of(db_session, chat_set.id) if (s.channel, s.slot) == ("system", "rule_rating")
+        ]
+        rows.append(
+            PromptSection(
+                channel=_RATING_CHANNEL,
+                scope=scope,
+                slot="rule_rating",
+                variant="",
+                body=rule.body,
+                conditional=rule.conditional,
+                order=0,
+            )
+        )
+    if model != "gemini":
+        rows += [
+            s for s in await _sections_of(db_session, _M.NEW_SET_IDS["gemini"]) if s.channel in _CLAUDE_LATER_CHANNELS
+        ]
+    return rows
+
+
 async def _undo(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
     await connection.run_sync(undo_seeded_rows_above, _M.revision)
@@ -211,29 +251,30 @@ async def test_the_gemini_chain_is_active_at_its_seed_which_is_the_previous_set_
 
 
 async def test_the_seeded_set_passes_publish_validation_and_the_previous_one_no_longer_does(db_session: AsyncSession) -> None:
+    # `_later_rows` 가 식별자 맵을 만료시키므로 세트를 읽기 전에 모은다.
+    later = {model: await _later_rows(db_session, model) for model in ("gemini", *_CLAUDE_MODELS)}
+    previous_sections = [*await _sections_of(db_session, _PREVIOUS_SET_IDS["gemini"]), *later["gemini"]]
     prompt_set, sections = await load_active_prompt_set(db_session, lane="novel", model="gemini")
-    _validate_prompt_draft_for_publish(prompt_set, sections, lane="novel", model="gemini")
+    _validate_prompt_draft_for_publish(prompt_set, [*sections, *later["gemini"]], lane="novel", model="gemini")
     for model in _CLAUDE_MODELS:
         claude_set, claude_sections = await load_active_prompt_set(db_session, lane="novel", model=model)
-        _validate_prompt_draft_for_publish(claude_set, claude_sections, lane="novel", model=model)
+        _validate_prompt_draft_for_publish(claude_set, [*claude_sections, *later[model]], lane="novel", model=model)
 
+    # 뒤 리비전 행을 얹어도 이전 세트는 여러 문단 수정 두 채널이 없어 막힌다.
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS["gemini"])
     with pytest.raises(HTTPException):
-        _validate_prompt_draft_for_publish(
-            previous, await _sections_of(db_session, _PREVIOUS_SET_IDS["gemini"]), lane="novel", model="gemini"
-        )
+        _validate_prompt_draft_for_publish(previous, previous_sections, lane="novel", model="gemini")
 
 
 async def test_the_old_range_edit_prompt_renders_byte_for_byte_the_same_from_the_seed(db_session: AsyncSession) -> None:
     """옛 문단 수정(`novelize_revise`)의 렌더가 이전 세트와 새 세트에서 바이트까지 같다 — 옛 채널은 한 글자도 바뀌지 않는다.
     깨지는 시나리오: 마이그레이션 직후 옛 연속 범위 수정의 프롬프트가 바뀌어 같은 요청이 다른 글을 낸다."""
-    previous_sections = await _sections_of(db_session, _PREVIOUS_SET_IDS["gemini"])
-    seeded_sections = await _sections_of(db_session, _M.NEW_SET_IDS["gemini"])
-    _chat_set, chat_sections = await load_active_prompt_set(db_session, lane="story", model="gemini")
+    rating_rows = await _later_rows(db_session, "gemini")
+    previous_sections = [*await _sections_of(db_session, _PREVIOUS_SET_IDS["gemini"]), *rating_rows]
+    seeded_sections = [*await _sections_of(db_session, _M.NEW_SET_IDS["gemini"]), *rating_rows]
 
     def render(sections: list[PromptSection]) -> str:
         built = build_novelize_revise_prompt(
-            chat_sections=chat_sections,
             sections=sections,
             is_story_chat=True,
             work_setting="작품 설정",
@@ -354,8 +395,9 @@ async def test_patch_drafts_adds_the_rows_in_place_the_draft_publishes_and_downg
         key: value for key, value in seeded.items() if key not in before
     }
     assert _keyed(await _sections_of(db_session, claude_draft_id)) == claude_before
+    draft_sections = [*await _sections_of(db_session, draft_id), *await _later_rows(db_session, "gemini")]
     draft = await _get_set(db_session, draft_id)
-    _validate_prompt_draft_for_publish(draft, await _sections_of(db_session, draft_id), lane="novel", model="gemini")
+    _validate_prompt_draft_for_publish(draft, draft_sections, lane="novel", model="gemini")
 
     assert await connection.run_sync(_M._patch_drafts) == []
 
