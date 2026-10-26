@@ -1,7 +1,7 @@
 """clover unit events
 
 Revision ID: 65205c06e037
-Revises: 265a8f26c44a
+Revises: cb61af899526
 Create Date: 2026-10-26 15:31:37.308999
 
 클로버 단위(한 개의 원화 값)를 바꾼 기록 `clover_unit_events` 를 빈 표로 만든다. 이 리비전은 행을 쓰지 않는다 — 전환과
@@ -28,7 +28,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '65205c06e037'
-down_revision: str | Sequence[str] | None = '265a8f26c44a'
+down_revision: str | Sequence[str] | None = 'cb61af899526'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
