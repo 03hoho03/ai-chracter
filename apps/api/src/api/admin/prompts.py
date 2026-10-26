@@ -107,37 +107,16 @@ router = APIRouter(tags=["admin"])
 
 logger = logging.getLogger(__name__)
 
-# 채팅 레인(story·character Gemini 체인)에 얼려 둔 옛 소설화 세 채널 — 두 레인에 같은 행이 `scope="both"` 로 있다.
-# 소설 문안은 `novel` 레인으로 옮겼지만 이 행은 지우지 않는다: 옛 이미지로 되돌리면 옛 코드가 소설 문안을 여기서 읽기
-# 때문이다. 그래서 채팅 레인 게시는 이 행을 계속 요구하되 어드민이 바꾸지 못하게 서버가 직전 게시본의 값을 복사한다
-# (`_active_frozen_novel_sections`).
-_FROZEN_NOVELIZE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
+# `novel` 레인(소설 문안). 경계 제안·문단 수정은 채팅 레인에서 옮겨 온 옛 슬롯 그대로이고, 화 생성은 한 번에 여러 화를 쓰게
+# 되며 인물 메모·지난 화 요약·화 수 지시 슬롯이 늘었고, 구성 흐름 원고의 장면 계획·연속성 참고 슬롯이 더해졌다. 구성 흐름의 전체
+# 구성안·장면 구성안 두 채널은 구성안 문안 리비전이 세 체인에 심었다. 여러 문단 수정과 그 묶음 재검사 두 채널도 있다. 소설
+# 채널은 스토리·캐릭터 원작이 같은 행을 `scope="both"` 로 함께 쓴다. 등급 규칙 채널 `novelize_rating` 만 원작 종류마다 scope
+# `story`·`character` 한 행씩이다 — 소설 호출이 붙이는 등급 규칙을 채팅 레인에서 빌리지 않고 소설 레인에서 따로 손질하게 하되,
+# 원작 종류마다 다른 채팅 등급 규칙에서 옮겨 온 값이라 두 행이다.
+_NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
     "novelize_boundary": frozenset(
         {("both", slot, "") for slot in ("instruction", "user_name", "max_turns", "turn_context")}
     ),
-    "novelize_chapter": frozenset(
-        {
-            ("both", slot, "")
-            for slot in ("instruction", "work_setting", "user_name", "setting_notes", "previous_excerpt", "turn_context")
-        }
-    ),
-    "novelize_revise": frozenset(
-        {
-            ("both", slot, "")
-            for slot in ("instruction", "work_setting", "setting_notes", "paragraphs", "target_range", "user_request")
-        }
-    ),
-}
-_NOVELIZE_CHANNELS: frozenset[str] = frozenset(_FROZEN_NOVELIZE_ROWS)
-
-# `novel` 레인(소설 문안). 경계 제안·문단 수정은 얼린 행과 같은 슬롯이고, 화 생성은 한 번에 여러 화를 쓰게 되며 인물
-# 메모·지난 화 요약·화 수 지시 슬롯이 늘었고, 구성 흐름 원고의 장면 계획·연속성 참고 슬롯이 더해졌다. 구성 흐름의 전체
-# 구성안·장면 구성안 두 채널은 구성안 문안 리비전이 세 체인에 심었다. 여러 문단 수정과 그 묶음 재검사 두 채널도 있다 — 얼린
-# 행 집합과 다른 새 집합이라 채팅 레인 게시 검증은 그대로다. 소설 채널은 스토리·캐릭터 원작이 같은 행을 `scope="both"` 로 함께
-# 쓴다. 등급 규칙 채널 `novelize_rating` 만 원작 종류마다 scope `story`·`character` 한 행씩이다 — 소설 호출이 붙이는 등급 규칙을
-# 채팅 레인에서 빌리지 않고 소설 레인에서 따로 손질하게 하되, 원작 종류마다 다른 채팅 등급 규칙에서 옮겨 온 값이라 두 행이다.
-_NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
-    "novelize_boundary": _FROZEN_NOVELIZE_ROWS["novelize_boundary"],
     "novelize_chapter": frozenset(
         {
             ("both", slot, "")
@@ -156,7 +135,12 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
             )
         }
     ),
-    "novelize_revise": _FROZEN_NOVELIZE_ROWS["novelize_revise"],
+    "novelize_revise": frozenset(
+        {
+            ("both", slot, "")
+            for slot in ("instruction", "work_setting", "setting_notes", "paragraphs", "target_range", "user_request")
+        }
+    ),
     "novelize_revise_blocks": frozenset(
         {
             ("both", slot, "")
@@ -216,8 +200,9 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
 # 67/43/4행, 관계·사실 기억 문안 리비전 `5cab2abe4e7b`가 두 레인에 사실 슬롯 `memory_facts` 1행과 추출 채널 `memory_fact` 4행을
 # 더한 72/48/4행, 요약 비밀 표기 리비전 `0aeadefcf159`가 두 레인 요약 채널에 `secret_marking` 1행을 더한 73/49/4행, 장면 헤더 판정
 # 문안 리비전이 story 에 판정 채널 `scene_judgment` 3행을 더한 76/49/4행, 인상 생성 문안 리비전 `6558ab4d3dbc` 가 두 레인에 채널
-# `memory_impression` 3행을 더한 79/52/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
-# 9·문단 수정 6 의 19행이었고(story·character 의 소설화 16행은 그대로 얼려 둔다), 구성안 문안 리비전 `b389c2317149` 가 화 생성에
+# `memory_impression` 3행을 더한 79/52/4행에서, 채팅 소설화 행 제거 리비전 `7caed2db87dc` 가 두 레인에서 소설화 세 채널 16행씩을
+# 뺀 63/36/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성 9·문단 수정 6 의 19행이었고
+# (그 뒤 채팅 레인의 옛 소설화 16행은 위 제거 리비전이 뺐다), 구성안 문안 리비전 `b389c2317149` 가 화 생성에
 # 2행·전체 구성안 9행·장면 구성안 9행을 더해 39행이고, 여러 문단 수정 문안 리비전 `174f78b92e5c` 가 Gemini 체인에만 여러 문단
 # 수정 6행·묶음 재검사 4행을 더해 Gemini 체인은 49행이고, Claude 체인 채널 리비전 `fe3df6f8e4d5` 가 Claude 두 체인에 같은 네 채널
 # 20행을 더해 세 체인이 같은 49행이 되었고, 등급 규칙 리비전 `e4df46a80bfa` 가 세 체인에 `novelize_rating` 2행을 더해 51행이다.
@@ -356,8 +341,6 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("story", "judgment_instruction", ""),
             }
         ),
-        # 소설화 채널 리비전이 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유). 두 레인이 같고, 지금은 얼린 행이다.
-        **_FROZEN_NOVELIZE_ROWS,
     },
     "character": {
         "system": frozenset(
@@ -424,7 +407,6 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("both", "facts", ""),
             }
         ),
-        **_FROZEN_NOVELIZE_ROWS,  # 위 story와 같다
     },
     "publish_filter": {
         "publish_filter": frozenset(
@@ -495,11 +477,6 @@ def _expected_slots(lane: PromptLane, model: PromptSetModelId) -> dict[str, froz
         return expected
     channels = _JUDGMENT_CHANNELS_BY_LANE[lane] if model == "haiku" else _CLAUDE_SET_CHANNELS_BY_LANE[lane]
     return {channel: slots for channel, slots in expected.items() if channel in channels}
-
-
-def _freezes_novel_rows(lane: PromptLane, model: PromptSetModelId) -> bool:
-    """얼린 소설 행이 있는 체인 — 채팅 레인의 Gemini 체인뿐이다(Claude 채팅 체인에는 처음부터 소설 행이 없다)."""
-    return lane in ("story", "character") and model == "gemini"
 
 
 def _require_lane_model(lane: PromptLane, model: PromptSetModelId) -> None:
@@ -742,8 +719,8 @@ def _to_section_item(section: PromptSection) -> AdminPromptSectionItem:
 
 
 async def _saved_draft_hash(db: AsyncSession, draft: PromptSet | None) -> str | None:
-    """저장된 초안 행의 내용 해시(라벨 포함). 게시 경로와 같은 해시 함수를 쓰되 얼린 소설 행을 갈아 끼우지 않은, 저장된 그대로의
-    내용이다 — 저장 요청이 돌려보낸 값과 견줄 때도 같은 내용을 봐야 하기 때문이다."""
+    """저장된 초안 행의 내용 해시(라벨 포함). 게시 경로와 같은 해시 함수로 저장된 그대로의 내용을 본다 — 저장 요청이 돌려보낸
+    값과 견줄 때도 같은 내용을 봐야 하기 때문이다."""
     if draft is None:
         return None
     return draft_fingerprint(section_contents(draft, await _sections_of(db, draft.id)))
@@ -751,14 +728,12 @@ async def _saved_draft_hash(db: AsyncSession, draft: PromptSet | None) -> str | 
 
 def _allowed_placeholder_hints(lane: PromptLane, model: PromptSetModelId) -> list[AdminPromptPlaceholderHint]:
     """이 체인이 편집할 수 있는 채널의 (채널, 슬롯)마다 쓸 수 있는 자리표시자. 값은 게시 검사가 쓰는 `ALLOWED_PLACEHOLDERS` 를
-    그대로 쓴다(상수에 없는 슬롯은 게시 검사처럼 빈 목록). 채팅 Gemini 체인의 얼린 소설 채널은 화면에 싣지 않으므로 뺀다."""
-    hidden = _NOVELIZE_CHANNELS if _freezes_novel_rows(lane, model) else frozenset()
+    그대로 쓴다(상수에 없는 슬롯은 게시 검사처럼 빈 목록)."""
     return [
         AdminPromptPlaceholderHint(
             channel=channel, slot=slot, names=sorted(ALLOWED_PLACEHOLDERS.get((channel, slot), frozenset()))
         )
         for channel, slots in sorted(_expected_slots(lane, model).items())
-        if channel not in hidden
         for slot in sorted({slot for _scope, slot in slots})
     ]
 
@@ -784,7 +759,7 @@ async def _draft_response(
         id=draft.id if draft is not None else None,
         model=model,
         labels=_to_labels(source),
-        sections=[_to_section_item(s) for s in _visible_sections(lane, model, sections)],
+        sections=[_to_section_item(s) for s in sections],
         saved_draft_hash=await _saved_draft_hash(db, draft),
         allowed_placeholders=_allowed_placeholder_hints(lane, model),
         rating_drift=rating_drift or [],
@@ -896,22 +871,6 @@ def _section_fields(section: PromptSection) -> _SectionFields:
     )
 
 
-async def _active_frozen_novel_sections(db: AsyncSession, lane: PromptLane) -> list[PromptSection]:
-    """채팅 레인 Gemini 활성 세트의 얼린 소설 행."""
-    _, active_sections = await load_active_prompt_set(db, lane=lane)
-    return [s for s in active_sections if s.channel in _NOVELIZE_CHANNELS]
-
-
-def _visible_sections(
-    lane: PromptLane, model: PromptSetModelId, sections: list[PromptSection]
-) -> list[PromptSection]:
-    """초안 응답에 싣는 섹션. 채팅 Gemini 체인에서는 얼린 소설 행을 뺀다 — 소설 문안은 소설 탭에서만 고치고, 화면이 받지
-    않은 행은 저장 때 서버가 다시 채운다(`_replace_draft_content`)."""
-    if not _freezes_novel_rows(lane, model):
-        return sections
-    return [s for s in sections if s.channel not in _NOVELIZE_CHANNELS]
-
-
 def _find_duplicate_section_keys(sections: list[_SectionFields]) -> list[tuple[str, str, str, str]]:
     """`(channel, scope, slot, variant)` 중복을 찾는다 — DB의 유니크 인덱스
     (`ix_prompt_sections_set_channel_scope_slot_variant`)와 같은 키다.
@@ -966,16 +925,7 @@ async def _replace_draft_content(
     `_get_draft(db, lane, model)`로 **이 (레인, 모델)의** 초안만 찾고, `delete(PromptSection)` 직전에
     레인·모델 assert 를 둔다. 한쪽만 고치면 정상 경로는 멀쩡한데 경쟁 상황에서만
     다른 체인 초안의 섹션이 통째로 삭제될 수 있다 — 재현 난이도가 가장 높은 부류의
-    데이터 소실이라 코드 리뷰로 두 블록을 각각 확인해야 한다.
-
-    채팅 Gemini 체인이면 들어온 소설 행(`novelize_*`)을 버리고 활성 세트의 소설 행으로 갈아 끼운다. 소설 문안은 `novel`
-    레인으로 옮겼고 채팅 레인의 소설 행은 옛 이미지로 되돌렸을 때 옛 코드가 읽는 값이라 바뀌면 안 된다 — 배포 전부터 열린
-    편집 탭이 그 행을 보내도, 소설 행이 다른 옛 버전을 복원해도 얼린 값이 그대로 남는다."""
-    if _freezes_novel_rows(lane, model):
-        frozen = await _active_frozen_novel_sections(db, lane)
-        sections = [item for item in sections if item.channel not in _NOVELIZE_CHANNELS] + [
-            _section_fields(section) for section in frozen
-        ]
+    데이터 소실이라 코드 리뷰로 두 블록을 각각 확인해야 한다."""
     duplicate_keys = _find_duplicate_section_keys(sections)
     if duplicate_keys:
         raise HTTPException(
@@ -1060,23 +1010,6 @@ async def _replace_draft_content(
 
     await db.commit()
     return draft
-
-
-async def _sections_to_publish(
-    db: AsyncSession, draft: PromptSet, *, lane: PromptLane, model: PromptSetModelId
-) -> list[PromptSection]:
-    """게시할 섹션 — 초안 섹션에서 채팅 Gemini 체인의 얼린 소설 행만 활성판 값으로 갈아 끼운 것. 게시와 바뀐 섹션 조회가 함께
-    쓴다."""
-    sections = await _sections_of(db, draft.id)
-    if _freezes_novel_rows(lane, model):
-        # 초안을 저장할 때 이미 얼린 값으로 갈아 끼우지만, 이 규칙 전에 저장된 초안도 있다 — 게시하는 값은 늘 직전
-        # 게시본의 소설 행이다(`_replace_draft_content` 와 같은 이유).
-        frozen = await _active_frozen_novel_sections(db, lane)
-        sections = sorted(
-            [s for s in sections if s.channel not in _NOVELIZE_CHANNELS] + frozen,
-            key=lambda s: (s.channel, s.order, s.slot, s.variant),
-        )
-    return sections
 
 
 def _semver_conflict(rule: str, message: str) -> HTTPException:
@@ -1205,13 +1138,13 @@ async def get_prompt_draft_changes(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptDraftChangesResponse:
-    """게시하면 판이 어떻게 갈릴지 미리 본다(읽기만 한다). 계산은 게시와 같은 함수다 — 얼린 소설 행 갈아 끼우기까지 같아야
-    화면이 단계를 고르게 한 섹션과 실제로 올라가는 섹션이 같다. 경로가 세그먼트 3개라 `GET /{id}` 와 겹치지 않는다."""
+    """게시하면 판이 어떻게 갈릴지 미리 본다(읽기만 한다). 계산은 게시와 같은 내용(초안 섹션)으로 한다 — 같아야 화면이 단계를
+    고르게 한 섹션과 실제로 올라가는 섹션이 같다. 경로가 세그먼트 3개라 `GET /{id}` 와 겹치지 않는다."""
     _require_lane_model(lane, model)
     draft = await _get_draft(db, lane, model)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
-    to_publish = await _sections_to_publish(db, draft, lane=lane, model=model)
+    to_publish = await _sections_of(db, draft.id)
     contents = section_contents(draft, to_publish)
     base = await load_base(db, lane, model)
     changes = (
@@ -1251,7 +1184,7 @@ async def publish_prompt_set(
     draft = await _get_draft(db, lane, model)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
-    sections = await _sections_to_publish(db, draft, lane=lane, model=model)
+    sections = await _sections_of(db, draft.id)
 
     _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
     plan = await _plan_publish_semver(db, body, lane=lane, model=model, contents=section_contents(draft, sections))
@@ -1456,11 +1389,6 @@ async def restore_prompt_section(
         expected = _expected_slots(lane, model)
         if channel not in expected:
             raise _validation_error("restore-channel-not-in-chain", f"이 체인에는 '{channel}' 섹션이 없습니다.")
-        if _freezes_novel_rows(lane, model) and channel in _NOVELIZE_CHANNELS:
-            raise _validation_error(
-                "restore-frozen-channel",
-                "채팅 레인의 소설 섹션은 게시 때 지금 값으로 고정되므로 복원할 수 없습니다. 소설 레인에서 고치세요.",
-            )
         source_slots = {(s.scope, s.slot) for s in source_rows}
         if source_slots != expected[channel]:
             raise _validation_error(
@@ -2073,7 +2001,6 @@ def _story_preview_items(
         )
     if "memory_impression" in channels:
         items.append(_memory_impression_preview_item(sections, is_story_chat=True))
-    # 얼린 소설 행은 미리보지 않는다 — 소설 문안은 `novel` 레인 미리보기에서 본다.
 
     return items
 

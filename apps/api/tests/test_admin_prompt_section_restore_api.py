@@ -466,21 +466,6 @@ async def test_a_channel_the_chain_cannot_have_is_refused(
     assert await _draft_count(db_session) == 0
 
 
-async def test_a_frozen_novel_channel_of_a_chat_chain_is_refused(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """채팅 Gemini 체인의 얼린 소설 채널은 서버가 늘 활성판 값으로 갈아 끼우므로, 복원이 아무 일도 하지 않는다는 것을 숨기지
-    않고 422 로 알린다."""
-    await _login_new_admin(db_client, db_session)
-    old = await _insert_old_set(db_session, "story", edit=("novelize_chapter",))
-
-    resp = await _restore(db_client, old.id, "novelize_chapter")
-
-    assert resp.status_code == 422
-    assert resp.json()["detail"]["rule"] == "restore-frozen-channel"
-    assert await _draft_count(db_session) == 0
-
-
 async def test_a_source_channel_whose_slots_differ_from_the_current_ones_is_refused(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

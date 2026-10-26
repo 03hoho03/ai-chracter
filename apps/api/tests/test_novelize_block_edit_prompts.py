@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.admin.prompts import (
     _CLAUDE_SET_CHANNELS_BY_LANE,
     _EXPECTED_ROWS_BY_LANE,
-    _FROZEN_NOVELIZE_ROWS,
     _novel_preview_items,
 )
 from api.chat.prompt_builder import PromptRenderError, load_active_prompt_set
@@ -119,15 +118,14 @@ async def test_the_recheck_prompt_carries_the_edited_text_and_the_pending_patche
 
 
 # ── 어드민 표 ────────────────────────────────────────────────────────────────
-def test_the_novel_lane_channels_are_the_same_set_for_every_chain_and_leave_the_chat_lanes_frozen_rows_alone() -> None:
-    """Claude 소설 체인도 Gemini 체인과 같은 소설 채널 전부(등급 규칙 채널 포함)를 갖고, 채팅 레인이 얼려 둔 옛 소설 행 집합은
-    그대로 세 채널이다. 깨지는 시나리오: 얼린 행 집합에 새 채널이 섞여 채팅 레인 게시가 "누락"으로 막히거나, Claude 체인 기대
-    집합이 마이그레이션이 심은 채널과 달라 그 체인 게시가 "누락"·"잉여"로 막힌다."""
+def test_the_novel_lane_channels_are_the_same_set_for_every_chain_and_stay_out_of_the_chat_lanes() -> None:
+    """Claude 소설 체인도 Gemini 체인과 같은 소설 채널 전부(등급 규칙 채널 포함)를 갖고, 채팅 레인 기대 집합에는 소설 채널이 하나도
+    없다. 깨지는 시나리오: 소설 채널이 채팅 레인 표에 섞여 채팅 레인 게시가 "누락"으로 막히거나, Claude 체인 기대 집합이
+    마이그레이션이 심은 채널과 달라 그 체인 게시가 "누락"·"잉여"로 막힌다."""
     assert _NEW_CHANNELS <= set(_EXPECTED_ROWS_BY_LANE["novel"])
     assert "novelize_rating" in _EXPECTED_ROWS_BY_LANE["novel"]
-    assert set(_FROZEN_NOVELIZE_ROWS) == {"novelize_boundary", "novelize_chapter", "novelize_revise"}
-    assert not _NEW_CHANNELS & set(_EXPECTED_ROWS_BY_LANE["story"])
-    assert not _NEW_CHANNELS & set(_EXPECTED_ROWS_BY_LANE["character"])
+    assert not set(_EXPECTED_ROWS_BY_LANE["novel"]) & set(_EXPECTED_ROWS_BY_LANE["story"])
+    assert not set(_EXPECTED_ROWS_BY_LANE["novel"]) & set(_EXPECTED_ROWS_BY_LANE["character"])
     assert _CLAUDE_SET_CHANNELS_BY_LANE["novel"] == frozenset(_EXPECTED_ROWS_BY_LANE["novel"])
 
 

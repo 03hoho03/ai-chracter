@@ -35,7 +35,6 @@ async def _save_draft(
     *,
     edit: tuple[str, ...] = (),
     labels: dict[str, str] | None = None,
-    extra_sections: list[dict[str, Any]] | None = None,
 ) -> None:
     """활성 세트(또는 지금 초안)를 받아 `edit` 채널마다 첫 행 본문 끝에 합성 문구를 붙여 초안으로 저장한다."""
     got = await db_client.get(f"/admin/prompt-sets/{lane}/draft", params={"model": model})
@@ -49,7 +48,7 @@ async def _save_draft(
         params={"model": model},
         json={
             "labels": {**draft["labels"], **(labels or {})},
-            "sections": draft["sections"] + (extra_sections or []),
+            "sections": draft["sections"],
         },
     )
     assert put.status_code == 200, put.text
@@ -312,31 +311,6 @@ async def test_two_publishes_from_the_same_base_conflict_instead_of_forking_the_
 
     assert resp.status_code == 409
     assert await _set_count(db_session) == before
-
-
-async def test_frozen_novel_rows_of_a_chat_gemini_chain_never_count_as_changed(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """채팅 Gemini 체인의 얼린 소설 행은 초안에 바꿔 보내도 서버가 활성판 값으로 갈아 끼우므로 바뀐 섹션이 아니다."""
-    await _login_new_admin(db_client, db_session)
-    _, active_sections = await load_active_prompt_set(db_session, lane="story")
-    frozen = next(s for s in active_sections if s.channel == "novelize_chapter")
-    smuggled = {
-        "channel": frozen.channel,
-        "scope": frozen.scope,
-        "slot": frozen.slot,
-        "variant": frozen.variant,
-        "body": frozen.body + _EDIT,
-        "conditional": frozen.conditional,
-        "order": frozen.order,
-    }
-    await _save_draft(db_client, "story", extra_sections=[smuggled])
-
-    changes = (await db_client.get("/admin/prompt-sets/story/draft/changes")).json()
-    body = (await _publish(db_client, "story")).json()
-
-    assert {item["channel"]: item["change"] for item in changes["sections"]}["novelize_chapter"] == "unchanged"
-    assert _sections_by_channel(body)["novelize_chapter"] == ("1.0.0", None)
 
 
 @pytest.mark.parametrize(
