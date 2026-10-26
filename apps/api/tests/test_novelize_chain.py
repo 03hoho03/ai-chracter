@@ -691,21 +691,26 @@ async def test_a_batch_saved_before_the_parent_expires_is_kept_and_not_refunded(
     await _assert_lots_match_balance(db_session, owner_id)
 
 
+@pytest.mark.parametrize("cap_seconds", [0.001, 0.05, 0.3])
 async def test_chain_over_its_overall_time_cap_fails_and_ends_the_running_batch(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     enqueued: list[uuid.UUID],
+    cap_seconds: float,
 ) -> None:
     """heartbeat 가 살아 있어도 전체 상한을 넘으면 부모는 실패하고 돌던 자식도 끝난다 — 걸린 연쇄가 소설을 영영 진행
-    중으로 잠그지 않는다. 상한은 차감 때 정한 묶음 수로 계산한다."""
+    중으로 잠그지 않는다. 상한은 차감 때 정한 묶음 수로 계산한다.
+
+    상한 길이를 여럿으로 돌리는 것은 상한이 모델 호출 대기가 아니라 그 앞의 DB 문장 도중에 터져도 결과가 같아야 하기
+    때문이다 — 짧은 상한일수록 대기에 닿기 전에 터질 확률이 커진다."""
     _, novel_id, owner_id = await _chain_novel(db_client, db_session, monkeypatch, turns=2)
     parent_id = await _start(db_client, novel_id)
     asked: list[int] = []
 
     def tiny_cap(planned: int) -> float:
         asked.append(planned)
-        return 0.3
+        return cap_seconds
 
     monkeypatch.setattr(runner, "chain_timeout_seconds", tiny_cap)
 
