@@ -3436,8 +3436,11 @@ curl -s -o /dev/null -w '%{http_code}\n' '<5 에서 받은 주소>'
 거부하고, 저장소에서는 내려받기만 한다. 표준 출력에는 작품 수·이미지 수·바이트·sha256 만 찍고 작품 이름·본문은 남기지
 않는다.
 
-**거부(종료 2, 묶음 파일 없음)** — 맵에 DB 에 없는 id 가 있음, 맵의 작품 작가가 한 명이 아님(묶음은 로컬 시드 작가 한
-명의 작품이 된다), slug 가 겹침, `--out` 이 이미 있음.
+**거부(종료 2, 묶음 파일 없음)** — 맵 줄 형식 오류·uuid 아님·slug 형식 오류(소문자·숫자·하이픈만, 첫 글자는 하이픈
+아님)·같은 작품 두 번, 맵에 DB 에 없는 id 가 있음, 맵의 작품 작가가 한 명이 아님(묶음은 로컬 시드 작가 한 명의 작품이
+된다), slug 가 겹침, 발행본도 초안도 없는 작품, `--out` 이나 그 옆 `.partial` 임시 파일이 이미 있음.
+
+종료 1 이면 원본 그림을 못 받았거나 맵 파일이 없는 것 — 묶음 파일은 남지 않는다.
 
 **실행 위치** — 서빙 중인 색의 api 컨테이너 안이다(작품 완전 삭제 절과 같다). 맵 파일은 한 줄에 `<콘텐츠 uuid> <시드
 slug>` 이고 빈 줄과 `#` 줄은 건너뛴다. 조감독·민유나는 측정 도구 기본값인 `tutorial-filmclub`·`tutorial-filmclub-yuna`
@@ -3462,7 +3465,8 @@ $C cp $A:/tmp/seed-bundle.tar.gz /tmp/seed-bundle.tar.gz && sudo chown "$USER" /
 #    (로컬에서) shasum -a 256 seed-bundle.tar.gz   # 1 의 sha256 과 같아야 한다
 
 # 3. 지우기 — 묶음에는 비공개 작품 본문이 들어 있다. 컨테이너·VM 의 임시 파일을 지운다.
-$C exec -T $A rm -f /tmp/seed-map.txt /tmp/seed-bundle.tar.gz
+#    컨테이너 쪽은 root 로 지운다 — `cp` 로 넣은 맵 파일은 root 소유라 앱 사용자로는 못 지운다.
+$C exec -T -u root $A rm -f /tmp/seed-map.txt /tmp/seed-bundle.tar.gz
 rm -f /tmp/seed-map.txt /tmp/seed-bundle.tar.gz
 ```
 
