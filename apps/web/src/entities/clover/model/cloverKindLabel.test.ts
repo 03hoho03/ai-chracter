@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CLOVER_KIND_LABELS } from "./cloverKindLabel";
 
 describe("CLOVER_KIND_LABELS", () => {
-  it("BE CLOVER_KIND_CATEGORY(clover/router.py)의 kind 20종을 전부 덮는다", () => {
+  it("BE CLOVER_KIND_CATEGORY(clover/router.py)의 kind 22종을 전부 덮는다", () => {
     const kinds = [
       "attendance_grant",
       "mission_grant",
@@ -25,6 +25,8 @@ describe("CLOVER_KIND_LABELS", () => {
       "novel_read_refund",
       "memory_summary_spend",
       "memory_summary_refund",
+      "unit_conversion",
+      "unit_conversion_revert",
     ];
     for (const kind of kinds) {
       expect(CLOVER_KIND_LABELS[kind]).toBeTypeOf("string");

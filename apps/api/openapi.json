@@ -15184,7 +15184,8 @@
               "enum": [
                 "use",
                 "earn",
-                "expire"
+                "expire",
+                "conversion"
               ],
               "type": "string",
               "title": "Category"
@@ -15246,6 +15247,28 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CloverPricingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clover/products": {
+      "get": {
+        "tags": [
+          "clover"
+        ],
+        "summary": "Get Clover Products",
+        "description": "공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책\n숫자·가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로\n다시 읽는다(공개 가격 응답의 같은 주석).",
+        "operationId": "get_clover_products_clover_products_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloverProductsResponse"
                 }
               }
             }
@@ -16779,6 +16802,10 @@
             "type": "string",
             "format": "date-time",
             "title": "Createdat"
+          },
+          "legacyUnit": {
+            "type": "boolean",
+            "title": "Legacyunit"
           }
         },
         "type": "object",
@@ -16787,7 +16814,8 @@
           "amount",
           "balanceAfter",
           "kind",
-          "createdAt"
+          "createdAt",
+          "legacyUnit"
         ],
         "title": "AdminCloverLedgerItem"
       },
@@ -26466,6 +26494,30 @@
         "title": "ChatViewReasonCategory",
         "description": "기존 `ReportReasonCategory`(작품·댓글 신고 사유)와\n다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다."
       },
+      "CloverBalanceBreakdown": {
+        "properties": {
+          "paid": {
+            "type": "integer",
+            "title": "Paid"
+          },
+          "bonus": {
+            "type": "integer",
+            "title": "Bonus"
+          },
+          "free": {
+            "type": "integer",
+            "title": "Free"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paid",
+          "bonus",
+          "free"
+        ],
+        "title": "CloverBalanceBreakdown",
+        "description": "잔액을 나눈 세 몫. 유료·보너스는 구매 로트의 남은 양이고 무료는 잔액의 나머지라 셋의 합이 잔액이다."
+      },
       "CloverBalanceResponse": {
         "properties": {
           "balance": {
@@ -26479,6 +26531,9 @@
           "paidBalance": {
             "type": "integer",
             "title": "Paidbalance"
+          },
+          "breakdown": {
+            "$ref": "#/components/schemas/CloverBalanceBreakdown"
           },
           "expiringSoon": {
             "anyOf": [
@@ -26496,6 +26551,7 @@
           "balance",
           "spendConfirmedToday",
           "paidBalance",
+          "breakdown",
           "expiringSoon"
         ],
         "title": "CloverBalanceResponse",
@@ -26545,7 +26601,8 @@
             "enum": [
               "use",
               "earn",
-              "expire"
+              "expire",
+              "conversion"
             ],
             "title": "Category"
           },
@@ -26553,6 +26610,10 @@
             "type": "string",
             "format": "date-time",
             "title": "Createdat"
+          },
+          "legacyUnit": {
+            "type": "boolean",
+            "title": "Legacyunit"
           }
         },
         "type": "object",
@@ -26562,7 +26623,8 @@
           "balanceAfter",
           "kind",
           "category",
-          "createdAt"
+          "createdAt",
+          "legacyUnit"
         ],
         "title": "CloverLedgerItem",
         "description": "`category`는 BE의 `kind`→범주 맵\n(`clover/router.py`의 `CLOVER_KIND_CATEGORY`)을 그대로 실어 보낸 것이다 — FE가 같은 맵을\n다시 두지 않는다."
@@ -26733,6 +26795,30 @@
         "title": "CloverPayMethodItem",
         "description": "포트원 브라우저 SDK 의 `payMethod` 와, 간편결제일 때 `easyPay.easyPayProvider` 값 그대로."
       },
+      "CloverPolicyValues": {
+        "properties": {
+          "purchaseValidityYears": {
+            "type": "integer",
+            "title": "Purchasevalidityyears"
+          },
+          "fullRefundDays": {
+            "type": "integer",
+            "title": "Fullrefunddays"
+          },
+          "reducedRefundPercent": {
+            "type": "integer",
+            "title": "Reducedrefundpercent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "purchaseValidityYears",
+          "fullRefundDays",
+          "reducedRefundPercent"
+        ],
+        "title": "CloverPolicyValues",
+        "description": "허브의 안내 문장이 쓰는 정책 숫자. 같은 숫자가 이용약관·환불정책(DB 게시본)에도 있으므로 값을 바꾸면 그 문서도 함께\n고친다."
+      },
       "CloverPricingResponse": {
         "properties": {
           "products": {
@@ -26890,6 +26976,101 @@
           "bonusAmount"
         ],
         "title": "CloverProductItem"
+      },
+      "CloverProductOffer": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "mini",
+              "lite",
+              "basic_v2",
+              "plus_v2",
+              "max"
+            ],
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "priceKrw": {
+            "type": "integer",
+            "title": "Pricekrw"
+          },
+          "paidAmount": {
+            "type": "integer",
+            "title": "Paidamount"
+          },
+          "bonusAmount": {
+            "type": "integer",
+            "title": "Bonusamount"
+          },
+          "totalAmount": {
+            "type": "integer",
+            "title": "Totalamount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "priceKrw",
+          "paidAmount",
+          "bonusAmount",
+          "totalAmount"
+        ],
+        "title": "CloverProductOffer",
+        "description": "충전 허브가 보이는 상품 하나. 공개 가격 응답의 상품 행에 받는 총량(`total_amount` = 유료 + 보너스)을 더한 것이다 — 화면이\n합을 따로 계산하지 않게 한다."
+      },
+      "CloverProductsResponse": {
+        "properties": {
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/CloverProductOffer"
+            },
+            "type": "array",
+            "title": "Products"
+          },
+          "payMethods": {
+            "items": {
+              "$ref": "#/components/schemas/CloverPayMethodItem"
+            },
+            "type": "array",
+            "title": "Paymethods"
+          },
+          "paymentsEnabled": {
+            "type": "boolean",
+            "title": "Paymentsenabled"
+          },
+          "identityGateEnabled": {
+            "type": "boolean",
+            "title": "Identitygateenabled"
+          },
+          "dailyFreeChatTurns": {
+            "type": "integer",
+            "title": "Dailyfreechatturns"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/CloverPolicyValues"
+          },
+          "priceVersion": {
+            "type": "integer",
+            "title": "Priceversion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "products",
+          "payMethods",
+          "paymentsEnabled",
+          "identityGateEnabled",
+          "dailyFreeChatTurns",
+          "policy",
+          "priceVersion"
+        ],
+        "title": "CloverProductsResponse",
+        "description": "공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능\n스위치와 사용 단가는 공개 가격 응답(`GET /clover/pricing`)에 그대로 남는다."
       },
       "CommentAuthorResponse": {
         "properties": {
@@ -27969,12 +28150,36 @@
           "balance": {
             "type": "integer",
             "title": "Balance"
+          },
+          "grantedPaid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grantedpaid"
+          },
+          "grantedBonus": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grantedbonus"
           }
         },
         "type": "object",
         "required": [
           "status",
-          "balance"
+          "balance",
+          "grantedPaid",
+          "grantedBonus"
         ],
         "title": "CompletePaymentResponse",
         "description": "`pending` 이면 포트원이 아직 결제를 확정하지 않았다 — 화면은 \"확인 중\"을 안내하고 잔액을 다시 읽는다."

@@ -6025,6 +6025,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clover/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clover Products
+         * @description 공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책
+         *     숫자·가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로
+         *     다시 읽는다(공개 가격 응답의 같은 주석).
+         */
+        get: operations["get_clover_products_clover_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/payments": {
         parameters: {
             query?: never;
@@ -6811,6 +6833,8 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+            /** Legacyunit */
+            legacyUnit: boolean;
         };
         /** AdminCloverLedgerListResponse */
         AdminCloverLedgerListResponse: {
@@ -10712,6 +10736,18 @@ export interface components {
          */
         ChatViewReasonCategory: "report-investigation" | "appeal-review" | "legal-request" | "other";
         /**
+         * CloverBalanceBreakdown
+         * @description 잔액을 나눈 세 몫. 유료·보너스는 구매 로트의 남은 양이고 무료는 잔액의 나머지라 셋의 합이 잔액이다.
+         */
+        CloverBalanceBreakdown: {
+            /** Paid */
+            paid: number;
+            /** Bonus */
+            bonus: number;
+            /** Free */
+            free: number;
+        };
+        /**
          * CloverBalanceResponse
          * @description Python은 snake_case, JSON은 camelCase다.
          */
@@ -10722,6 +10758,7 @@ export interface components {
             spendConfirmedToday: boolean;
             /** Paidbalance */
             paidBalance: number;
+            breakdown: components["schemas"]["CloverBalanceBreakdown"];
             expiringSoon: components["schemas"]["CloverExpiringSoon"] | null;
         };
         /**
@@ -10759,12 +10796,14 @@ export interface components {
              * Category
              * @enum {string}
              */
-            category: "use" | "earn" | "expire";
+            category: "use" | "earn" | "expire" | "conversion";
             /**
              * Createdat
              * Format: date-time
              */
             createdAt: string;
+            /** Legacyunit */
+            legacyUnit: boolean;
         };
         /**
          * CloverLedgerListResponse
@@ -10840,6 +10879,19 @@ export interface components {
             easyPayProvider: string | null;
         };
         /**
+         * CloverPolicyValues
+         * @description 허브의 안내 문장이 쓰는 정책 숫자. 같은 숫자가 이용약관·환불정책(DB 게시본)에도 있으므로 값을 바꾸면 그 문서도 함께
+         *     고친다.
+         */
+        CloverPolicyValues: {
+            /** Purchasevalidityyears */
+            purchaseValidityYears: number;
+            /** Fullrefunddays */
+            fullRefundDays: number;
+            /** Reducedrefundpercent */
+            reducedRefundPercent: number;
+        };
+        /**
          * CloverPricingResponse
          * @description 공개 가격 안내. 구매 전 안내에 없는 사용처 가격은 숨은 가격으로 읽히므로 일반 회원이 쓸 수 있는 모든 사용처(채팅에서
          *     고를 수 있는 상위 모델 포함)의 단가와, 허용된 계정만 쓰는 소설(기본 모델 화·AI 수정)의 단가를 싣고 소설은 그
@@ -10904,6 +10956,48 @@ export interface components {
             paidAmount: number;
             /** Bonusamount */
             bonusAmount: number;
+        };
+        /**
+         * CloverProductOffer
+         * @description 충전 허브가 보이는 상품 하나. 공개 가격 응답의 상품 행에 받는 총량(`total_amount` = 유료 + 보너스)을 더한 것이다 — 화면이
+         *     합을 따로 계산하지 않게 한다.
+         */
+        CloverProductOffer: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "mini" | "lite" | "basic_v2" | "plus_v2" | "max";
+            /** Name */
+            name: string;
+            /** Pricekrw */
+            priceKrw: number;
+            /** Paidamount */
+            paidAmount: number;
+            /** Bonusamount */
+            bonusAmount: number;
+            /** Totalamount */
+            totalAmount: number;
+        };
+        /**
+         * CloverProductsResponse
+         * @description 공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능
+         *     스위치와 사용 단가는 공개 가격 응답(`GET /clover/pricing`)에 그대로 남는다.
+         */
+        CloverProductsResponse: {
+            /** Products */
+            products: components["schemas"]["CloverProductOffer"][];
+            /** Paymethods */
+            payMethods: components["schemas"]["CloverPayMethodItem"][];
+            /** Paymentsenabled */
+            paymentsEnabled: boolean;
+            /** Identitygateenabled */
+            identityGateEnabled: boolean;
+            /** Dailyfreechatturns */
+            dailyFreeChatTurns: number;
+            policy: components["schemas"]["CloverPolicyValues"];
+            /** Priceversion */
+            priceVersion: number;
         };
         /** CommentAuthorResponse */
         CommentAuthorResponse: {
@@ -11282,6 +11376,10 @@ export interface components {
             status: "pending" | "paid" | "failed" | "mismatch" | "owner_withdrawn" | "cancelled" | "partially_cancelled";
             /** Balance */
             balance: number;
+            /** Grantedpaid */
+            grantedPaid: number | null;
+            /** Grantedbonus */
+            grantedBonus: number | null;
         };
         /**
          * ContentAccessStatus
@@ -25512,7 +25610,7 @@ export interface operations {
     get_clover_ledger_me_clover_ledger_get: {
         parameters: {
             query: {
-                category: "use" | "earn" | "expire";
+                category: "use" | "earn" | "expire" | "conversion";
                 cursor?: string | null;
             };
             header?: never;
@@ -25557,6 +25655,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CloverPricingResponse"];
+                };
+            };
+        };
+    };
+    get_clover_products_clover_products_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloverProductsResponse"];
                 };
             };
         };

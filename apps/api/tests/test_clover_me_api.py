@@ -54,6 +54,7 @@ async def test_balance_reports_flags_for_a_fresh_user(
         "balance": 30,
         "spendConfirmedToday": False,
         "paidBalance": 0,
+        "breakdown": {"paid": 0, "bonus": 0, "free": 30},
         "expiringSoon": None,
     }
 

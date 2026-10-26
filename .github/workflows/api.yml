@@ -25,6 +25,9 @@ on:
       - "apps/web/src/entities/chat-room/model/statIcons.ts"
       - "packages/ui/src/lib/color-palette.ts"
       - "apps/web/src/features/build-story/model/schema.ts"
+      # 원장 kind 라벨 대조 테스트가 web·admin 의 라벨 맵을 이 소스에서 직접 읽는다.
+      - "apps/web/src/entities/clover/model/cloverKindLabel.ts"
+      - "apps/admin/src/entities/admin-user/model/labels.ts"
   pull_request:
     paths:
       - "apps/api/**"
@@ -36,6 +39,9 @@ on:
       - "apps/web/src/entities/chat-room/model/statIcons.ts"
       - "packages/ui/src/lib/color-palette.ts"
       - "apps/web/src/features/build-story/model/schema.ts"
+      # 원장 kind 라벨 대조 테스트가 web·admin 의 라벨 맵을 이 소스에서 직접 읽는다.
+      - "apps/web/src/entities/clover/model/cloverKindLabel.ts"
+      - "apps/admin/src/entities/admin-user/model/labels.ts"
 
 # PR 은 같은 브랜치의 새 push 가 옛 실행을 취소한다. main push 는 실행마다 고유 그룹(run_id)이라
 # 취소도 대체도 없다 — main 끼리 한 그룹을 쓰면 `cancel-in-progress: false` 여도 그룹당 대기 실행이
