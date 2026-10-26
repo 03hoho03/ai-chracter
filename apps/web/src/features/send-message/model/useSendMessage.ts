@@ -114,6 +114,9 @@ export function useSendMessage(
   /** 수정이 새 답을 방 캐시에 반영하고 스트림이 끝났을 때, 서버가 지운 턴의 스탯을 어떻게 했는지 받는다(안내 토스트를 띄우는
    * 자리). 지운 턴이 없던 수정이거나 그 칸을 보내지 않는 서버면 undefined 다. */
   onEdited?: (statRewind: StatRewind | undefined) => void,
+  /** 입력창에서 보낸 새 메시지가 클로버가 모자라 시작 전에 거절됐을 때 그 글(원문)을 받는다. 말풍선은 이 훅이 거두므로,
+   * 화면이 그 글을 입력창에 되살리는 자리다. */
+  onCloverRejected?: (text: string) => void,
 ) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<SendMessageStatus>({ kind: "idle" });
@@ -280,6 +283,7 @@ export function useSendMessage(
         if (pending.optimisticMessageId !== undefined) {
           removeOptimisticUserMessage(queryClient, roomId, pending.optimisticMessageId);
         }
+        onCloverRejected?.(pending.draftText);
       }
       setStatus({
         kind: "error",

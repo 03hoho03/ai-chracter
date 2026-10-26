@@ -4,6 +4,7 @@ import {
   clearAllChatDrafts,
   clearRejectedChatMessage,
   pickChatDraftToRestore,
+  restoreRejectedIntoInput,
   readChatDraft,
   removeChatDraft,
   saveChatDraftInput,
@@ -142,5 +143,18 @@ describe("takeChatDraftToRestore", () => {
     const storage = memoryStorage();
     expect(takeChatDraftToRestore("room-a", () => storage)).toBe("");
     expect(storage.values.size).toBe(0);
+  });
+});
+
+describe("restoreRejectedIntoInput", () => {
+  // 클로버가 모자라 거절된 글은 말풍선을 거두는 그 자리에서 입력창으로 돌아온다 — 다시 보낼 글이 눈앞에 있어야 한다.
+  it("입력창이 비어 있으면 거절된 글을 넣는다", () => {
+    expect(restoreRejectedIntoInput("", "보내려던 말")).toBe("보내려던 말");
+    expect(restoreRejectedIntoInput("  \n", "보내려던 말")).toBe("보내려던 말");
+  });
+
+  // 기다리는 사이 새로 쓴 글이 있으면 그것이 더 나중의 뜻이다 — 방에 돌아올 때의 규칙과 같다.
+  it("입력창에 글이 있으면 덮지 않는다", () => {
+    expect(restoreRejectedIntoInput("새로 쓰는 말", "보내려던 말")).toBeNull();
   });
 });

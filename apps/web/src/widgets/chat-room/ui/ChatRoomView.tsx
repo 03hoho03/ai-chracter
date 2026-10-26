@@ -33,8 +33,10 @@ import {
   selectRoomScene,
   selectVisibleTurnFeedback,
   takeChatDraftToRestore,
+  clearRejectedChatMessage,
   shouldConfirmEditTruncation,
   shouldShowSuggestedReplies,
+  restoreRejectedIntoInput,
   useAcknowledgeVersionUpgradeMutation,
   useChatRoomQuery,
   useDeleteMessageMutation,
@@ -121,6 +123,16 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       const notice = statRewindNotice("edit", statRewind, roomStatContext(room));
       if (notice) toast(notice);
     },
+    // 클로버가 모자라 거절된 새 메시지는 말풍선이 거둬지고 그 자리에서 입력창으로 돌아온다(입력창이 비어 있을 때만 —
+    // 기다리는 사이 새로 쓴 글은 덮지 않는다). 되살렸으면 그 글은 이제 입력 초안이라 거절 칸을 비운다 — 방에 돌아올 때
+    // 되살리는 규칙과 같다. 거절 시점의 입력은 렌더 클로저가 아니라 ref 로 읽는다(요청이 도는 사이 쓴 글이 있다).
+    (rejectedText) => {
+      const restored = restoreRejectedIntoInput(latestTextRef.current, rejectedText);
+      if (restored === null) return;
+      clearRejectedChatMessage(roomId);
+      setText(restored);
+      inputRef.current?.focus();
+    },
   );
   const isSending = status.kind === "sending";
   // 턴이 시작되면(보내기·수정·다시 생성·재시도 모두 여기로 모인다) 재생성 직후의 되돌리기 안내를 거둔다.
@@ -157,6 +169,8 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   }, [roomId, text]);
   // 되살린 글이 있으면 방이 그려진 뒤 입력창에 포커스를 두고 커서를 끝으로 옮긴다 — 돌아온 사람이 할 일은 보내기다.
   const shouldFocusRestoredDraftRef = useRef(text !== "");
+  const latestTextRef = useRef(text);
+  latestTextRef.current = text;
   const [editingMessageId, setEditingMessageId] = useState<string>();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
