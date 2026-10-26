@@ -702,8 +702,9 @@ async def test_chain_over_its_overall_time_cap_fails_and_ends_the_running_batch(
     """heartbeat 가 살아 있어도 전체 상한을 넘으면 부모는 실패하고 돌던 자식도 끝난다 — 걸린 연쇄가 소설을 영영 진행
     중으로 잠그지 않는다. 상한은 차감 때 정한 묶음 수로 계산한다.
 
-    상한 길이를 여럿으로 돌리는 것은 상한이 모델 호출 대기가 아니라 그 앞의 DB 문장 도중에 터져도 결과가 같아야 하기
-    때문이다 — 짧은 상한일수록 대기에 닿기 전에 터질 확률이 커진다."""
+    상한 시계는 모델 호출이 멈춰 선 순간부터 잰다. 운영처럼 연쇄 시작부터 재면 짧은 상한이 그 앞의 DB 문장 도중에
+    터져, 이 테스트들이 함께 쓰는 연결 하나가 무효가 되고 뒤의 환불·조회가 연쇄 상한과 무관한 이유로 실패한다(CI 가
+    느릴 때만 간헐적으로). 그래서 상한 길이를 여럿으로 돌려도 상한은 늘 멈춘 호출 안에서 터진다."""
     _, novel_id, owner_id = await _chain_novel(db_client, db_session, monkeypatch, turns=2)
     parent_id = await _start(db_client, novel_id)
     asked: list[int] = []
@@ -714,7 +715,22 @@ async def test_chain_over_its_overall_time_cap_fails_and_ends_the_running_batch(
 
     monkeypatch.setattr(runner, "chain_timeout_seconds", tiny_cap)
 
+    # 연쇄 상한 컨텍스트는 끝없이 열어 두고 붙잡아 두었다가, 모델 호출이 멈춘 순간 그 시각 + 상한으로 다시 맞춘다.
+    real_timeout = asyncio.timeout
+    chain_caps: list[asyncio.Timeout] = []
+
+    def held_chain_cap(delay: float | None) -> asyncio.Timeout:
+        if delay != cap_seconds:
+            return real_timeout(delay)
+        cap = real_timeout(None)
+        chain_caps.append(cap)
+        return cap
+
+    monkeypatch.setattr(asyncio, "timeout", held_chain_cap)
+
     async def stall() -> None:
+        assert len(chain_caps) == 1
+        chain_caps[0].reschedule(asyncio.get_running_loop().time() + cap_seconds)
         await asyncio.sleep(30)
 
     await runner.run_chain(_factory(db_session), _ChainLLM(during={0: stall}), parent_id)
