@@ -41,11 +41,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat import memory_fact_section, memory_recall
 from api.chat.memory_fact_section import fact_line, select_fact_rows
 from api.chat.memory_facts import fact_key
+from api.chat.memory_knowledge import USER_INSTRUCTION_WORD
 from api.chat.memory_nouns import episode_nouns
 from api.chat.memory_window import CurrentSummary, load_current_summary
 from api.chat.prompt_builder import MemorySummaryResult, PromptLane, StatRuleJudgmentResult, load_active_prompt_set
 from api.chat.router import _resolve_starting_setup
 from api.chat.turn_prompt import GenerationPrompt, InjectedPersona, InjectedTurnState, build_room_prompt
+from api.content.author_macros import FALLBACK_USER_NAME
 from api.core.config import settings
 from api.db.models import (
     ChatMemoryEpisode,
@@ -76,7 +78,7 @@ from factories import (
     load_production_env,
 )
 from replay.logs import ReplayRefusedError
-from replay.state import turn_fact_lines
+from replay.state import RestoredTurn, turn_fact_lines
 
 # 머리글 줄(줄바꿈까지) — 사실 섹션 문안이 우선순위 문장에서 회상 섹션 이름을 부르므로 이름만으로는 섹션 위치를 가를 수 없다.
 HEADER = "[관계와 사실]\n"
@@ -823,6 +825,35 @@ async def test_replay_of_a_turn_without_facts_gets_no_lines(
     assert await turn_fact_lines(db_session, uuid.uuid4()) == ""
 
 
+@pytest.mark.parametrize(
+    ("user_label", "tail"),
+    [
+        pytest.param("나레이터 상대", " (사용자의 말)", id="speaker-is-the-set-label"),
+        pytest.param("다른 라벨", " (나레이터 상대의 말)", id="speaker-is-not-the-set-label"),
+    ],
+)
+def test_replay_turn_state_renders_fact_lines_with_the_set_line_label(user_label: str, tail: str) -> None:
+    """리플레이의 턴 상태는 조립할 세트의 대화 줄 라벨로 사실 줄을 렌더한다 — 운영 조립이 그 라벨로 말한 주장을 사용자 주장으로
+    읽으므로, 라벨을 넘기지 않으면 같은 턴이 다른 꼬리표로 다시 만들어진다. 라벨이 다른 세트에서는 그 표기가 인물 이름이다."""
+    restored = RestoredTurn(
+        turn=1,
+        history=[],
+        user_message=ChatMessage(),
+        shortcut_entity_id=None,
+        memory_note="",
+        summary=None,
+        recall_lines="",
+        fact_rows=_rows(_claim(speaker="나레이터 상대")),
+        stats_by_id={},
+        stats_by_name={},
+        sources={},
+    )
+
+    state = restored.turn_state({}, None, user_label=user_label)
+
+    assert state.fact_lines == f"- 유나 · 오디션: 겨울{tail}"
+
+
 # --- 지식 범위 필터 ---------------------------------------------------------------------------
 # 아는 사람이 이번 장면(이번 사용자 메시지·직전 응답에 이름이 나온 인물, 사용자 제외)에 없는 비밀 행은 고르기 전에 뺀다. 경계
 # 규칙 자체는 `test_chat_memory_knowledge.py` 가 보고, 여기서는 고르기와의 순서와 조립·SQL·실패 흡수를 본다.
@@ -1421,6 +1452,107 @@ async def test_replay_renders_a_recorded_character_claim_as_it_was(
     rows = await memory_fact_section.fact_rows_from_record(db_session, [{"factId": str(claim_id)}])
 
     assert memory_fact_section.fact_lines(rows, user_name=None) == "- 유나 · 오디션: 겨울 (민수의 말)"
+
+
+# --- 대화 프로필 이름이 없는 방의 사용자 말 -----------------------------------------------------------
+# 프로필 이름이 없는 방에서 사실 추출은 말한 사람 칸에 사용자를 대화 줄 라벨이나 `{{user}}` 대체어나 추출 지시문 낱말로 적는다 —
+# 요약·장면 인물이 사용자로 보는 표기와 같다. 그 표기로 적힌 주장도 사용자 주장이라 사용자 꼬리표를 달고 섹션에 남아야 한다.
+# 프로필 이름만 견주면 인물 주장으로 읽혀 섹션에서 빠진다.
+
+
+async def _unnamed_section(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, speaker: str
+) -> list[str]:
+    """프로필 이름이 없는 방에 `speaker` 가 말한 오디션 주장과 확인된 관계 한 줄을 심고 조립한 사실 섹션의 줄."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_claim(speaker=speaker), _FRIENDS])
+    _facts_on(monkeypatch)
+    summary = await load_current_summary(db_session, room.room_id)
+    state = InjectedTurnState(summary=summary, memory_note="", stats={}, persona=None)
+    built = await _build(db_session, room, "오디션 언제야?", turn_state=state)
+    return _section(built.prompt).splitlines()
+
+
+async def _user_label(db_session: AsyncSession) -> str:
+    """조립이 쓰는 세트(스토리 레인·gemini)의 대화 줄 라벨."""
+    prompt_set, _ = await load_active_prompt_set(db_session, lane="story", model="gemini")
+    return prompt_set.user_label
+
+
+@pytest.mark.parametrize("form", ["label", "fallback", "instruction"])
+async def test_unnamed_room_keeps_a_claim_spoken_under_a_user_form_with_the_user_tail(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, form: str
+) -> None:
+    """프로필 이름이 없는 방에서 추출이 사용자를 대화 줄 라벨·`{{user}}` 대체어·지시문 낱말로 적은 주장은 사용자가 한 말이다 —
+    섹션에 남고 사용자 꼬리표가 붙는다. 표기는 사실 키와 같은 정규화로 견주므로 앞뒤 공백이 붙어도 같다."""
+    speaker = {
+        "label": await _user_label(db_session),
+        "fallback": FALLBACK_USER_NAME,
+        "instruction": USER_INSTRUCTION_WORD,
+    }[form]
+
+    lines = await _unnamed_section(db_client, db_session, monkeypatch, f" {speaker} ")
+
+    assert "- 유나 · 오디션: 겨울 (사용자의 말)" in lines
+
+
+@pytest.mark.parametrize(
+    ("speaker", "line"),
+    [
+        pytest.param(_HANEUL, "- 유나 · 오디션: 겨울 (사용자의 말)", id="spoken-under-the-profile-name"),
+        pytest.param("민수", None, id="spoken-by-another-character"),
+    ],
+)
+async def test_named_room_still_reads_the_speaker_against_the_profile_name(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    speaker: str,
+    line: str | None,
+) -> None:
+    """프로필 이름이 있는 방은 그대로다 — 그 이름이 말한 주장은 사용자 꼬리표로 남고, 다른 인물이 말한 주장은 빠진다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_claim(speaker=speaker), _FRIENDS])
+    _facts_on(monkeypatch)
+    summary = await load_current_summary(db_session, room.room_id)
+    persona = InjectedPersona(name=_HANEUL, gender=None, description="")
+    state = InjectedTurnState(summary=summary, memory_note="", stats={}, persona=persona)
+
+    built = await _build(db_session, room, "오디션 언제야?", turn_state=state)
+
+    lines = _section(built.prompt).splitlines()
+    assert "- 민수 → 지아: 소꿉친구" in lines
+    assert [x for x in lines if "오디션" in x] == ([line] if line else [])
+
+
+async def test_named_room_also_reads_a_claim_spoken_under_the_line_label_as_the_user(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """프로필 이름이 있는 방에서도 추출은 사용자 줄을 대화 줄 라벨로 적을 수 있다 — 그 표기로 말한 주장도 사용자 꼬리표로
+    남는다. 요약 접기·장면 인물과 같은 사용자 표기로 판정한다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_claim(speaker=await _user_label(db_session)), _FRIENDS])
+    _facts_on(monkeypatch)
+    summary = await load_current_summary(db_session, room.room_id)
+    persona = InjectedPersona(name=_HANEUL, gender=None, description="")
+    state = InjectedTurnState(summary=summary, memory_note="", stats={}, persona=persona)
+
+    built = await _build(db_session, room, "오디션 언제야?", turn_state=state)
+
+    assert "- 유나 · 오디션: 겨울 (사용자의 말)" in _section(built.prompt).splitlines()
+
+
+async def test_unnamed_room_still_drops_a_character_whose_name_only_contains_the_user_label(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사용자 표기는 말한 사람 칸 전체와 견준다 — 이름에 라벨이 들어 있을 뿐인 인물(라벨 뒤에 낱말이 붙은 이름)은 사용자가
+    아니라 그 인물이고, 그 인물의 확인되지 않은 주장은 섹션에서 빠진다."""
+    label = await _user_label(db_session)
+
+    lines = await _unnamed_section(db_client, db_session, monkeypatch, f"{label}의 친구")
+
+    assert "- 민수 → 지아: 소꿉친구" in lines
+    assert not any("오디션" in x for x in lines)
 
 
 # --- 기억 사용 범위(글쓰기 모델) ----------------------------------------------------------------

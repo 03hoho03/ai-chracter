@@ -59,7 +59,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import memory_recall
 from api.chat.memory_facts import fact_rows_statement, normalize_part
-from api.chat.memory_knowledge import KnowledgeScope, known_in_scene, latest_by_key, scene_for_turn
+from api.chat.memory_knowledge import KnowledgeScope, known_in_scene, latest_by_key, scene_for_turn, user_names
 from api.chat.memory_nouns import rule_tokens
 from api.chat.memory_recall import RecallCandidate, query_tokens, score_episodes
 from api.chat.memory_vector import QueryVector, fact_distances, rrf_order
@@ -103,17 +103,17 @@ def fact_body(row: ChatMemoryFact) -> str:
     return f"{row.subject} · {row.attribute}: {row.value}"
 
 
-def fact_line(row: ChatMemoryFact, *, user_name: str | None = None) -> str:
+def fact_line(row: ChatMemoryFact, *, user_name: str | None = None, user_label: str = "") -> str:
     """사실 한 줄. 꼬리표는 이 순서로 붙는다 — 반증이면 줄 앞 표지, 주장이면 끝에 말한 쪽, 아는 사람이 있으면 그 뒤에
-    `(이름·이름만 앎)`. 말한 쪽은 사용자가 내놓은 주장이거나 말한 사람이 그 턴 사용자의 이야기 속 이름(`user_name`, 사실 키와
-    같은 정규화로 견준다)이면 사용자 꼬리표다 — 추출이 사용자 말을 그 이름의 인물 말로 적어도 사용자가 한 말로 읽히게. 그 밖은
-    말한 인물 이름, 이름이 없으면 인물 꼬리표다. 사용자·인물 꼬리표는 회상 줄과 같은 상수다(두 섹션 문안이 같은 꼬리표를
-    설명한다)."""
+    `(이름·이름만 앎)`. 말한 쪽은 사용자가 내놓은 주장이거나 말한 사람이 그 턴 사용자의 표기(이야기 속 이름 `user_name`,
+    대화 줄 라벨 `user_label`, `{{user}}` 대체어, 추출 지시문 낱말 — 사실 키와 같은 정규화로 견준다)면 사용자 꼬리표다 — 추출이
+    사용자 말을 그 표기의 인물 말로 적어도 사용자가 한 말로 읽히게. 그 밖은 말한 인물 이름, 이름이 없으면 인물 꼬리표다.
+    사용자·인물 꼬리표는 회상 줄과 같은 상수다(두 섹션 문안이 같은 꼬리표를 설명한다)."""
     line = fact_body(row)
     if row.truth_status == "disproved":
         line = DISPROVED_MARK + line
     elif row.truth_status == "claimed":
-        if _claimed_by_user(row, user_name):
+        if _claimed_by_user(row, user_name, user_label):
             line += memory_recall.USER_ASSERTION_TAIL
         elif row.speaker:
             line += f" ({row.speaker}의 말)"
@@ -124,16 +124,17 @@ def fact_line(row: ChatMemoryFact, *, user_name: str | None = None) -> str:
     return f"- {line}"
 
 
-def _claimed_by_user(row: ChatMemoryFact, user_name: str | None) -> bool:
-    """주장의 말한 쪽이 사용자인가 — 사용자가 내놓은 주장이거나 말한 사람이 사용자의 이야기 속 이름(정규형)이다."""
-    spoken_by_user = bool(user_name and row.speaker and normalize_part(row.speaker) == normalize_part(user_name))
+def _claimed_by_user(row: ChatMemoryFact, user_name: str | None, user_label: str) -> bool:
+    """주장의 말한 쪽이 사용자인가 — 사용자가 내놓은 주장이거나 말한 사람(정규형)이 사용자 표기 중 하나다."""
+    # 요약 접기·장면 인물과 같은 사용자 표기로 판정한다 — 프로필 이름이 없는 방에서는 추출이 사용자를 라벨·대체어로 적는다.
+    spoken_by_user = bool(row.speaker and normalize_part(row.speaker) in user_names(user_name, user_label))
     return row.asserted_by == "user" or spoken_by_user
 
 
-def unverified_claim(row: ChatMemoryFact, *, user_name: str | None) -> bool:
+def unverified_claim(row: ChatMemoryFact, *, user_name: str | None, user_label: str = "") -> bool:
     """섹션에 싣지 않는 행인가 — 확인되지 않은 주장이고 사용자 꼬리표가 붙지 않는다(인물·서술이 말로만 전한 것). 꼬리표를
     붙여도 생성 모델이 사실로 굳혀 싣지 않는다. 확인된 행·반증 행·사용자 주장은 싣는다."""
-    return row.truth_status == "claimed" and not _claimed_by_user(row, user_name)
+    return row.truth_status == "claimed" and not _claimed_by_user(row, user_name, user_label)
 
 
 def _group(row: ChatMemoryFact) -> int:
@@ -181,25 +182,26 @@ def select_fact_rows(
     names: Sequence[str],
     current_turn: int,
     user_name: str | None = None,
+    user_label: str = "",
     keep: Callable[[ChatMemoryFact], bool] | None = None,
     distances: Mapping[uuid.UUID, float] | None = None,
     rrf_k: int = 60,
     scene: frozenset[str] = frozenset(),
 ) -> list[ChatMemoryFact]:
     """쓴 순서의 행 전부에서 섹션에 실을 행을 렌더 순서로 고른다(규칙은 모듈 설명). `query` 는 이번 턴 사용자 메시지, `names`
-    는 질의에서 뺄 이름, `current_turn` 은 이번 턴 번호(관련 점수의 최근성)다. `keep` 을 주면 키별 최신 행 중 그 값이 거짓인
-    행을 고르기 전에 뺀다(지식 범위 필터). `scene` 은 이번 턴 장면 인물(정규형)이고 정확 조회는 그 이름이 주어·관계 대상인 행을
-    `keep` 을 지난 행 사이에서 고른다. `distances` 는 질의 임베딩과 사실 행의 거리(행 id → 거리, 거리 상한으로 거른 것)이고,
+    는 질의에서 뺄 이름, `current_turn` 은 이번 턴 번호(관련 점수의 최근성), `user_name`·`user_label` 은 사용자 표기
+    (`fact_line`)다. `keep` 을 주면 키별 최신 행 중 그 값이 거짓인 행을 고르기 전에 뺀다(지식 범위 필터). `scene` 은
+    이번 턴 장면 인물(정규형)이고 정확 조회는 그 이름이 주어·관계 대상인 행을 `keep` 을 지난 행 사이에서 고른다. `distances` 는 질의 임베딩과 사실 행의 거리(행 id → 거리, 거리 상한으로 거른 것)이고,
     필터를 지난 행 중 거리가 있는 행의 가까운 순 목록이 비지 않으면 관련 몫의 순서는 명사 순위와 그 목록의 RRF(`rrf_k`)다."""
     # 키별 최신 뒤에서 거른다 — 앞에서 빼면 그 키의 옛 값이 지금 값처럼 되살아난다. 확인되지 않은 주장 거름은 지식 범위 필터와
     # 별도 판정이라 `keep` 이 없어도(필터 꺼짐, 아는 사람이 정해진 행 없음) 걸린다.
     winners = [
         pair
         for pair in latest_by_key(rows)
-        if not unverified_claim(pair[1], user_name=user_name) and (keep is None or keep(pair[1]))
+        if not unverified_claim(pair[1], user_name=user_name, user_label=user_label) and (keep is None or keep(pair[1]))
     ]
     ordered = [row for _, row in sorted(winners, key=lambda pair: (_group(pair[1]), -pair[1].importance, -pair[0]))]
-    lengths = [len(fact_line(row, user_name=user_name)) for row in ordered]
+    lengths = [len(fact_line(row, user_name=user_name, user_label=user_label)) for row in ordered]
     chosen: set[int] = set()
     used = 0
 
@@ -290,6 +292,7 @@ async def _facts(
         names=[name for name in (names.persona_name, names.char_name) if name],
         current_turn=current_turn,
         user_name=names.persona_name,
+        user_label=scope.user_label,
         keep=keep,
         distances=distances,
         rrf_k=settings.memory_embed_recall_rrf_k,
@@ -297,7 +300,7 @@ async def _facts(
     )
     if not picked:
         return NO_FACTS
-    lines = [fact_line(row, user_name=names.persona_name) for row in picked]
+    lines = [fact_line(row, user_name=names.persona_name, user_label=scope.user_label) for row in picked]
     record = tuple({"factId": str(row.id), "chars": len(line)} for row, line in zip(picked, lines, strict=True))
     return FactSection("\n".join(lines), record)
 
@@ -354,6 +357,7 @@ async def fact_rows_from_record(db: AsyncSession, record: Sequence[dict[str, Any
     return [rows[fact_id] for fact_id in ids]
 
 
-def fact_lines(rows: Sequence[ChatMemoryFact], *, user_name: str | None) -> str:
-    """사실 행들의 섹션 줄. `user_name` 은 그 턴 사용자의 이야기 속 이름이다(`fact_line`)."""
-    return "\n".join(fact_line(row, user_name=user_name) for row in rows)
+def fact_lines(rows: Sequence[ChatMemoryFact], *, user_name: str | None, user_label: str = "") -> str:
+    """사실 행들의 섹션 줄. `user_name` 은 그 턴 사용자의 이야기 속 이름, `user_label` 은 그 턴 세트의 대화 줄 라벨이다
+    (`fact_line`)."""
+    return "\n".join(fact_line(row, user_name=user_name, user_label=user_label) for row in rows)

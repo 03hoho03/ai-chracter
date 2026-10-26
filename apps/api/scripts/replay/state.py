@@ -42,21 +42,26 @@ class RestoredTurn:
     summary: CurrentSummary | None
     # 그 턴 회상 섹션의 줄(턴 기록의 장면 id 로 다시 렌더한 것, 회상이 없던 턴은 `""`).
     recall_lines: str
-    # 그 턴 사실 섹션에 실린 행(턴 기록의 사실 id 로 다시 읽은 것, 사실이 없던 턴은 빈 목록). 줄은 대화 프로필이 정해지는
-    # `turn_state` 에서 렌더한다 — 사용자 이름이 말한 주장의 꼬리표가 그 이름에 달렸다.
+    # 그 턴 사실 섹션에 실린 행(턴 기록의 사실 id 로 다시 읽은 것, 사실이 없던 턴은 빈 목록). 줄은 대화 프로필과 조립할 세트가
+    # 정해지는 `turn_state` 에서 렌더한다 — 말한 주장의 사용자 꼬리표가 프로필 이름과 세트의 대화 줄 라벨에 달렸다.
     fact_rows: list[ChatMemoryFact]
     stats_by_id: dict[str, float]
     stats_by_name: dict[str, float]
     sources: dict[str, Any]
 
-    def turn_state(self, stats: dict[str, float], persona: InjectedPersona | None) -> InjectedTurnState:
+    def turn_state(
+        self, stats: dict[str, float], persona: InjectedPersona | None, *, user_label: str
+    ) -> InjectedTurnState:
+        """`user_label` 은 조립할 세트의 대화 줄 라벨이다 — 운영 조립처럼 그 라벨로 말한 주장도 사용자 주장으로 렌더한다."""
         return InjectedTurnState(
             summary=self.summary,
             memory_note=self.memory_note,
             stats=stats,
             persona=persona,
             recall_lines=self.recall_lines,
-            fact_lines=fact_lines(self.fact_rows, user_name=persona.name if persona is not None else None),
+            fact_lines=fact_lines(
+                self.fact_rows, user_name=persona.name if persona is not None else None, user_label=user_label
+            ),
         )
 
 
@@ -234,6 +239,9 @@ async def turn_fact_rows(db: AsyncSession, assistant_message_id: uuid.UUID) -> l
         raise ReplayRefusedError(str(exc)) from exc
 
 
-async def turn_fact_lines(db: AsyncSession, assistant_message_id: uuid.UUID, *, user_name: str | None = None) -> str:
-    """그 응답의 턴 기록이 실은 사실 기억 줄(사실 섹션 값). `user_name` 은 그 턴 대화 프로필의 이름이다."""
-    return fact_lines(await turn_fact_rows(db, assistant_message_id), user_name=user_name)
+async def turn_fact_lines(
+    db: AsyncSession, assistant_message_id: uuid.UUID, *, user_name: str | None = None, user_label: str = ""
+) -> str:
+    """그 응답의 턴 기록이 실은 사실 기억 줄(사실 섹션 값). `user_name` 은 그 턴 대화 프로필의 이름, `user_label` 은 그 턴
+    세트의 대화 줄 라벨이다."""
+    return fact_lines(await turn_fact_rows(db, assistant_message_id), user_name=user_name, user_label=user_label)

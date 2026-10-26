@@ -349,6 +349,13 @@ async def _assemble_swapped(db: AsyncSession, ctx: _Context, arm: ArmSpec) -> tu
             set_committed_value(obj, name, before)
 
 
+def _turn_state_for(ctx: _Context, chosen: ChosenSet) -> InjectedTurnState:
+    """현행 갈래와 같은 턴 상태를 `chosen` 세트의 대화 줄 라벨로 다시 만든다 — 사실 줄의 사용자 꼬리표가 그 라벨에 달렸다."""
+    return ctx.restored.turn_state(
+        ctx.turn_state.stats, ctx.turn_state.persona, user_label=chosen.prompt_set.user_label
+    )
+
+
 async def _assemble_arm(db: AsyncSession, ctx: _Context, arm: ArmSpec) -> tuple[GenerationInput, PromptNames]:
     if arm.variant == "set":
         if arm.set_draft:
@@ -364,11 +371,27 @@ async def _assemble_arm(db: AsyncSession, ctx: _Context, arm: ArmSpec) -> tuple[
             if arm.model is not None and arm.model != set_model:
                 raise ReplayRefusedError(f"세트 {arm.set_id} 는 모델 {set_model} 의 세트다(--model {arm.model})")
             model = set_model
-        return await _assemble(db, ctx, variant="set", arm=arm.arm, chat_model=model, chosen=chosen)
+        return await _assemble(
+            db,
+            ctx,
+            variant="set",
+            arm=arm.arm,
+            chat_model=model,
+            chosen=chosen,
+            turn_state=_turn_state_for(ctx, chosen),
+        )
     if arm.variant == "model":
         assert arm.model is not None
         chosen = await active_set(db, lane=LANE, model=arm.model)
-        return await _assemble(db, ctx, variant="model", arm=arm.arm, chat_model=arm.model, chosen=chosen)
+        return await _assemble(
+            db,
+            ctx,
+            variant="model",
+            arm=arm.arm,
+            chat_model=arm.model,
+            chosen=chosen,
+            turn_state=_turn_state_for(ctx, chosen),
+        )
     if arm.variant == "version":
         assert arm.version_id is not None
         version = await db.get(ContentVersion, arm.version_id)
@@ -383,7 +406,9 @@ async def _assemble_arm(db: AsyncSession, ctx: _Context, arm: ArmSpec) -> tuple[
             if ctx.restored.shortcut_entity_id is not None
             else None
         )
-        turn_state = ctx.restored.turn_state(stats, ctx.turn_state.persona)
+        turn_state = ctx.restored.turn_state(
+            stats, ctx.turn_state.persona, user_label=ctx.window_set.prompt_set.user_label
+        )
         return await _assemble(
             db,
             ctx,
@@ -471,7 +496,7 @@ async def _assemble_turn(
         room=room,
         setup=setup,
         restored=restored,
-        turn_state=restored.turn_state(stats, persona),
+        turn_state=restored.turn_state(stats, persona, user_label=chosen.prompt_set.user_label),
         shortcut=shortcut,
         window_model=window_model,
         window_set=chosen,
