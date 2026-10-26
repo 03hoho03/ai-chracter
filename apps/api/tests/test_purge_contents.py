@@ -40,6 +40,7 @@ from api.db.models import (
     DiscardedResponse,
     Favorite,
     HomeCuration,
+    HomeNovelCuration,
     Inquiry,
     InquiryCategory,
     InquiryStatus,
@@ -51,6 +52,7 @@ from api.db.models import (
     Novel,
     NovelChapterIllustration,
     NovelPublication,
+    NovelPurchase,
     Report,
     ReportReasonCategory,
     ReportStatus,
@@ -582,6 +584,8 @@ async def test_spend_usage_on_any_axis_refuses_the_purge(
         pytest.param("payout_line", id="payout-line"),
         pytest.param("profile_image", id="profile-image"),
         pytest.param("inquiry_attachment", id="inquiry-attachment"),
+        pytest.param("novel_purchase", id="novel-purchase"),
+        pytest.param("home_novel_curation", id="home-novel-curation"),
     ],
 )
 async def test_blocking_reference_refuses_the_purge(
@@ -589,7 +593,8 @@ async def test_blocking_reference_refuses_the_purge(
 ) -> None:
     """홈 지정·댓글·다른 소설의 삽화가 쓰는 그림·다른 작품과 겹치는 시작설정 entity id·정산 확정 내역·회원 프로필이나 문의
     첨부로 쓰이는 그림은 지우면 남의 화면이나 기록이 깨지므로 거부한다. 정산 내역은 지급·세무의 장부라 작품이 사라지면 근거를
-    잃는다. 대조군(이것들이 없을 때 지워진다)은 맨 위 테스트다."""
+    잃는다. 그 작품에서 나온 소설의 회차 구매는 공개 기록 없이 남아 있어도 금전 기록이라, 홈 노벨 지정은 홈 화면이 그 소설을
+    가리키므로 거부한다. 대조군(이것들이 없을 때 지워진다)은 맨 위 테스트다."""
     creator = await _user(db_session)
     reader = await _user(db_session)
     target = await _story(db_session, creator.id, thumbnail_id=(await _image(db_session, creator.id)).id)
@@ -611,6 +616,26 @@ async def test_blocking_reference_refuses_the_purge(
         await _payout_line(db_session, creator.id, reader.id, target.content.id)
     elif blocker == "profile_image":
         reader.profile_image_asset_id = target.thumbnail_id
+    elif blocker == "novel_purchase":
+        # 공개 기록 없이 구매만 남긴다 — 공개 기록이 있으면 그쪽 검사가 먼저 거부해 구매 검사를 시험하지 못한다.
+        room = await _room(db_session, target, reader.id)
+        novel = await _make_novel_tree(db_session, reader.id, chat_room_id=room.id)
+        db_session.add(
+            NovelPurchase(
+                buyer_user_id=reader.id,
+                publisher_user_id=reader.id,
+                novel_id=novel.novel.id,
+                chapter_id=novel.chapter.id,
+                chapter_ordinal=1,
+                edition=1,
+                spend_ledger_id=(await _spend_ledger(db_session, reader.id)).id,
+                price=10,
+            )
+        )
+    elif blocker == "home_novel_curation":
+        room = await _room(db_session, target, reader.id)
+        novel = await _make_novel_tree(db_session, reader.id, chat_room_id=room.id)
+        db_session.add(HomeNovelCuration(position=1, novel_id=novel.novel.id))
     else:
         db_session.add(
             Inquiry(
