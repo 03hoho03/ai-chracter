@@ -694,7 +694,17 @@ Q "SELECT version_num FROM alembic_version;"
 7) 병합 커밋 메시지에 `[skip actions]` → 곧바로 Actions 수동 실행(`skip_overlap` 켬). 8) 검산 — 같은 접수일로 견적을 다시 뽑아
 `/root/clover-quote-after.csv` 와 sha256 이 같다(대기 주문이 완료됐으면 그 결제 줄만 더해진다), `Q "SELECT action, money_rows FROM
 clover_unit_events;"` 가 `convert` 한 행, 전환 원장 행 수(`kind = 'unit_conversion'`) = 잔액이 0 보다 큰 회원 수, 전환 기록의
-`lock_started_at` 이후 채팅·이미지·요약 환급 원장 행(`chat_refund`·`image_refund`·`memory_summary_refund`) 0. 9) 정지 스위치 줄을
+`lock_started_at` 이후 채팅·이미지·요약 환급 원장 행(`chat_refund`·`image_refund`·`memory_summary_refund`) 0, 회원별 마지막 원장 행의
+잔액이 잔액과 다른 회원 0. 그 "마지막 행"은 행을 넣은 트랜잭션 번호(`xmin`)가 가장 큰 행 묶음이다 — `created_at` 은 트랜잭션 시작
+시각이라 전환 잠금에 막혔다가 전환 뒤에 쓴 행이 전환 행보다 앞에 놓여 거짓 위반이 된다. 원장은 append-only 라 행의 `xmin` 이 곧 그
+행을 넣은 트랜잭션이고, 한 트랜잭션이 여러 행(구매의 유료·보너스, 콘솔 회수)을 쓰므로 그 묶음 중 하나라도 잔액과 같으면 맞다로
+센다(전환 리비전의 사후 검사·되돌림 스크립트와 같은 식):
+
+```sh
+Q "SELECT count(*) FROM users u JOIN (SELECT user_id, max(xmin::text::bigint) AS last_xid FROM clover_ledger GROUP BY user_id) m ON m.user_id = u.id WHERE NOT EXISTS (SELECT 1 FROM clover_ledger g WHERE g.user_id = u.id AND g.xmin::text::bigint = m.last_xid AND g.balance_after = u.clover_balance);"
+```
+
+9) 정지 스위치 줄을
 지우고 태그 없는 교체, 소설화 워커 스위치를 되돌린다.
 
 🔴 **정지를 푼 뒤에는 전환 전 단위 이미지로 롤백하지 않는다 — 앞으로 고치기만 한다.** 정지를 풀면 새 가격(20·200 처럼 3의 배수가

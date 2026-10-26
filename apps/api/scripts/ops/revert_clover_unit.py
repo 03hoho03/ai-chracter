@@ -80,7 +80,11 @@ LOCK_ORDER: tuple[str, ...] = (
 # 메모리 영수증으로 돌려주는 환급 kind. 정지 중에는 새 차감이 없으므로 전환 뒤의 이 행은 전부 전환 전 차감의 환급이다.
 _RECEIPT_REFUND_KINDS = ("chat_refund", "image_refund", "memory_summary_refund")
 
-# 전환 마이그레이션의 사후 검사와 같은 불변식 넷. 원장의 "마지막 행"은 가장 늦은 시각의 행 중 하나라도 잔액과 같으면 맞다.
+# 전환 마이그레이션의 사후 검사와 같은 불변식 넷.
+# 원장의 "마지막 행"은 행을 넣은 트랜잭션 번호(`xmin`)가 가장 큰 행 묶음이다 — `created_at` 은 트랜잭션 시작
+# 시각이라 전환 잠금에 막혔다가 전환 뒤에 쓴 행이 전환 행보다 앞에 놓여 거짓 위반이 된다. 원장은 append-only 라 행의 `xmin` 이 곧
+# 그 행을 넣은 트랜잭션이고, 한 트랜잭션이 여러 행(구매의 유료·보너스, 콘솔 회수)을 쓰므로 그 묶음 중 하나라도 잔액과 같으면 맞다로
+# 센다. 트랜잭션 번호는 운영 진단값이라 이 검사에만 쓰고 앱 코드에는 쓰지 않는다.
 _INVARIANTS: dict[str, str] = {
     "balance_ne_lots": """
         SELECT count(*) FROM users u
@@ -88,9 +92,10 @@ _INVARIANTS: dict[str, str] = {
          WHERE u.clover_balance <> coalesce(l.remaining, 0)""",
     "last_ledger_ne_balance": """
         SELECT count(*) FROM users u
-          JOIN (SELECT user_id, max(created_at) AS last_at FROM clover_ledger GROUP BY user_id) m ON m.user_id = u.id
+          JOIN (SELECT user_id, max(xmin::text::bigint) AS last_xid FROM clover_ledger GROUP BY user_id) m ON m.user_id = u.id
          WHERE NOT EXISTS (SELECT 1 FROM clover_ledger g
-                            WHERE g.user_id = u.id AND g.created_at = m.last_at AND g.balance_after = u.clover_balance)""",
+                            WHERE g.user_id = u.id AND g.xmin::text::bigint = m.last_xid
+                              AND g.balance_after = u.clover_balance)""",
     "purchase_lot_ne_copy": """
         SELECT count(*) FROM clover_lots l JOIN payments p ON p.id = l.payment_id
          WHERE (l.kind = 'purchase_paid' AND l.granted_amount <> p.paid_amount)

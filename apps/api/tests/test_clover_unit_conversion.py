@@ -505,6 +505,44 @@ async def test_invariants_hold_and_every_holder_gets_one_conversion_row(db_sessi
     assert conversion_times == {event.occurred_at}
 
 
+@pytest.mark.parametrize(
+    "sql",
+    [
+        pytest.param(_M.INVARIANTS["last_ledger_ne_balance"], id="migration"),
+        pytest.param(revert_script._INVARIANTS["last_ledger_ne_balance"], id="revert-script"),
+    ],
+)
+async def test_the_last_ledger_rows_are_the_latest_transaction_not_the_latest_created_at(
+    db_session: AsyncSession, sql: str
+) -> None:
+    """원장의 "마지막 행 잔액 = 잔액" 판정은 마지막 행을 넣은 트랜잭션(`xmin`)으로 고른다. 구매 지급의 유료·보너스 두 행처럼 한
+    트랜잭션의 여러 행은 그중 하나라도 맞으면 맞고, 뒤 트랜잭션이 넣었지만 `created_at` 이 앞서는 행(전환 잠금에 막혔다가 전환 뒤에
+    쓴 행)이 마지막이다. 깨지는 시나리오: `created_at` 으로 고르면 막혔던 행이 있는 회원이 거짓 위반으로 찍혀 사후 검사가 멈추거나,
+    진짜 어긋난 잔액을 못 본다."""
+
+    async def breaks() -> int:
+        return int((await db_session.execute(sa.text(sql))).scalar_one())
+
+    baseline = await breaks()
+    buyer = await _user(db_session)
+    order = await _make_payment(db_session, user_id=buyer.id, amount_krw=9_900, paid_amount=3_300, bonus_amount=330)
+    await _grant_lots(db_session, order, datetime(2027, 10, 10, tzinfo=UTC))
+    assert await breaks() == baseline
+
+    async with db_session.begin_nested():
+        spent = await spend(db_session, user_id=buyer.id, amount=100, kind="chat_spend")
+        assert spent is not None
+        await db_session.execute(
+            sa.update(CloverLedger)
+            .where(CloverLedger.id == spent.ledger_id)
+            .values(created_at=datetime(2000, 1, 1, tzinfo=UTC))
+        )
+    assert await breaks() == baseline
+
+    await db_session.execute(sa.update(User).where(User.id == buyer.id).values(clover_balance=3_630))
+    assert await breaks() == baseline + 1
+
+
 async def test_money_rows_on_the_record_are_holders_plus_payment_rows(db_session: AsyncSession) -> None:
     """downgrade 가 멈출지를 이 값으로 정한다 — 전환할 때 센 잔액 있는 회원 수 + 결제 행 수."""
     expected = int(
