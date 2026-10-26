@@ -67,8 +67,7 @@ def _png_bytes(width: int = 64, height: int = 64) -> bytes:
 class _FakeImageClient(ImageClient):
     """`generate`가 매 호출마다 (bytes, mime)을 만들거나 지정된 예외를 던진다 — 파이프라인
     (라우터→잡→S3→썸네일) 테스트가 성공/부분실패/전체실패/예기치 못한 오류 네 시나리오를
-    이 콜백 하나로 표현한다. `tests/test_seed_image_prompts.py`의 `_FakeImageClient` 패턴을
-    따르되, 여기는 호출마다 다른 결과가 필요해 콜백을 받는다."""
+    이 콜백 하나로 표현한다. 호출마다 다른 결과가 필요해 고정 결과 대신 콜백을 받는다."""
 
     def __init__(self, model_id: str, *, generate: Callable[[], tuple[bytes, str]]) -> None:
         self._model_id = model_id

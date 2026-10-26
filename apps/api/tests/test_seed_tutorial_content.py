@@ -1,16 +1,12 @@
 """튜토리얼 예시 작품 시드(`data/tutorial/`)의 자리와 손으로 쓴 JSON 의 모양을 검사한다.
 
 제작 가이드는 스토리·캐릭터 빌더의 칸을 단계마다 한 작품으로 채워 가며 설명하고, 그 작품이
-여기 있는 스토리 하나와 그 메인 히로인 캐릭터 하나다. 이 작품은 다양성 매트릭스(장르당 세 칸,
-고정 slug 목록)의 칸이 아니므로 두 가지가 함께 성립해야 한다.
+여기 있는 스토리 하나와 그 메인 히로인 캐릭터 하나다. 모든 시드에 걸리는 발행·서술 불변식
+(`test_seed_content_data.py`·`test_seed_dev_content.py`)은 `STORY_DIRS`·`CHARACTER_DIRS`·
+`load_all_*()` 를 돌므로, 여기서는 그 목록이 튜토리얼 폴더를 담고 있는지를 본다.
 
-- 매트릭스 검사에는 끼지 않는다 — 매트릭스 폴더에 들어가면 매트릭스 대조가 깨진다.
-- 모든 시드에 걸리는 발행·서술 불변식(`test_seed_content_data.py`·`test_seed_dev_content.py`)에는
-  낀다 — 그 검사들은 `STORY_DIRS`·`CHARACTER_DIRS`·`load_all_*()` 를 돌므로, 여기서는 그 목록이
-  튜토리얼 폴더를 담고 있는지를 본다.
-
-매트릭스 시드는 생성기가 파일을 쓰기 전에 스탯 아이콘·색·범위를 강제하지만 튜토리얼 JSON 은
-손으로 쓰므로 그 검사를 아무도 하지 않는다. 그 몫을 아래 튜토리얼 전용 검사가 진다.
+튜토리얼 JSON 은 손으로 쓰므로 스탯 아이콘·색·범위를 파일을 쓰기 전에 강제하는 도구가 없다.
+그 몫을 아래 튜토리얼 전용 검사가 진다.
 """
 
 import re
@@ -24,8 +20,6 @@ from api.db.models.story import KeywordNote
 from seed_content.images import situational_image_slug
 from seed_content.loader import (
     CHARACTER_DIRS,
-    CHARACTERS_DIR,
-    STORIES_DIR,
     STORY_DIRS,
     TUTORIAL_CHARACTERS_DIR,
     TUTORIAL_STORIES_DIR,
@@ -34,12 +28,9 @@ from seed_content.loader import (
     load_characters,
     load_stories,
 )
-from seed_content.matrix import load_matrix
 
 TUTORIAL_STORY_SLUGS = ["tutorial-filmclub"]
 TUTORIAL_CHARACTER_SLUGS = ["tutorial-filmclub-yuna"]
-# `seed_dev.py` 가 샘플 캐릭터 '미아'의 썸네일을 `images/mia.png` 에서 읽는다.
-MIA_IMAGE_SLUG = "mia"
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 # 빌더가 고를 수 있는 값의 원본. 복제하지 않고 FE 소스를 그대로 읽어, FE 목록이 바뀌면 이 검사도
@@ -79,20 +70,11 @@ def test_tutorial_content_slugs_are_fixed() -> None:
     ] == TUTORIAL_CHARACTER_SLUGS
 
 
-def test_tutorial_content_stays_outside_the_diversity_matrix() -> None:
-    """튜토리얼 작품이 매트릭스 폴더에 들어가면 매트릭스 대조와 고정 slug 목록이 깨진다."""
-    tutorial = set(TUTORIAL_STORY_SLUGS) | set(TUTORIAL_CHARACTER_SLUGS)
-
-    assert tutorial.isdisjoint(story.slug for story in load_stories())
-    assert tutorial.isdisjoint(character.slug for character in load_characters())
-    assert tutorial.isdisjoint(slot.slug for slot in load_matrix())
-
-
 def test_every_seed_invariant_list_covers_the_tutorial_folders() -> None:
     """발행·서술 불변식은 폴더 목록과 합친 로더로 돈다 — 튜토리얼 폴더가 거기서 빠지면 그
     검사들이 튜토리얼 작품을 조용히 건너뛴다."""
-    assert STORY_DIRS == (STORIES_DIR, TUTORIAL_STORIES_DIR)
-    assert CHARACTER_DIRS == (CHARACTERS_DIR, TUTORIAL_CHARACTERS_DIR)
+    assert TUTORIAL_STORIES_DIR in STORY_DIRS
+    assert TUTORIAL_CHARACTERS_DIR in CHARACTER_DIRS
     assert set(TUTORIAL_STORY_SLUGS) <= {story.slug for story in load_all_stories()}
     assert set(TUTORIAL_CHARACTER_SLUGS) <= {
         character.slug for character in load_all_characters()
@@ -100,10 +82,10 @@ def test_every_seed_invariant_list_covers_the_tutorial_folders() -> None:
 
 
 def test_seed_slugs_do_not_collide_across_folders() -> None:
-    """시드 이미지는 `images/{slug}.png` 로 찾으므로 스토리·캐릭터·장면·미아의 slug 가 하나라도
+    """시드 이미지는 `images/{slug}.png` 로 찾으므로 스토리·캐릭터·장면의 slug 가 하나라도
     겹치면 두 콘텐츠가 같은 그림 파일을 쓴다. 같은 종류끼리 겹치면(두 폴더에 같은 이름의 스토리)
-    콘텐츠 id 까지 같아져 나중에 시드된 쪽이 앞의 것을 덮어쓴다. 폴더가 둘이 되면서 파일 시스템이
-    더는 이름 중복을 막아 주지 않아 여기서 막는다."""
+    콘텐츠 id 까지 같아져 나중에 시드된 쪽이 앞의 것을 덮어쓴다. 스토리와 캐릭터가 다른 폴더에
+    있고 시드 폴더 목록이 늘 수 있어, 파일 시스템이 이름 중복을 막아 주지 않는 자리를 여기서 막는다."""
     characters = load_all_characters()
     slugs = [story.slug for story in load_all_stories()]
     slugs += [character.slug for character in characters]
@@ -112,7 +94,6 @@ def test_seed_slugs_do_not_collide_across_folders() -> None:
         for character in characters
         for order in range(len(character.payload.situational_images))
     ]
-    slugs.append(MIA_IMAGE_SLUG)
 
     duplicates = sorted(slug for slug, count in Counter(slugs).items() if count > 1)
 

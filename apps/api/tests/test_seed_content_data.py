@@ -1,8 +1,7 @@
 """리포에 커밋된 시드 콘텐츠 데이터 파일 자체를 검사한다.
 
 `test_seed_content.py` 가 로더의 **동작**을 인위적인 payload 로 검사한다면, 이 파일은
-`data/characters/*.json` / `data/stories/*.json`(과 `data/tutorial/` 아래 튜토리얼 작품)
-**실물**이 발행 가능한 상태인지를 본다 — 시드를 돌리거나 DB 를 띄우지 않고도 "이 JSON 은
+시드 폴더 목록(`STORY_DIRS`·`CHARACTER_DIRS`)에 든 JSON **실물**이 발행 가능한 상태인지를 본다 — 시드를 돌리거나 DB 를 띄우지 않고도 "이 JSON 은
 홈 목록에 뜰 수 있다"가 보장된다.
 
 썸네일 자산만은 시드 실행 시점에 만들어져 호출부가 payload 에 주입하므로(`ensure_asset`),
@@ -23,21 +22,17 @@ from api.content.schemas import (
 )
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.content import Content, ContentVersion
-from generate_seed_stories import NARRATOR_WORDS, stat_display_name
 from seed_content.loader import (
     CHARACTER_DIRS,
     STORY_DIRS,
     load_all_characters,
     load_all_stories,
-    load_characters,
-    load_stories,
 )
-from seed_content.matrix import load_matrix
 from seed_content.upsert import _validate_payload
 
-MAJOR_CHARACTER_SLUG = "romance-3rdloop-dj"
-MAJOR_STORY_SLUG = "romance-3rdloop"
-ROMANCE_GENRE_ID = uuid.UUID("b8a1e6b0-1c1a-4b8a-9b0a-000000000001")
+# `settingText` 는 런타임에 서술자의 지시문으로 그대로 들어간다(`build_story_generation_prompt`, 응답자 라벨은
+# '진행자'). 지시문이면 서술자를 이 호칭으로 부른다.
+NARRATOR_WORDS = ("서술자", "진행자")
 
 
 def test_every_seed_character_passes_publish_validation() -> None:
@@ -74,39 +69,6 @@ def test_every_seed_story_passes_publish_validation() -> None:
         assert _validate_payload(payload) == [], f"{story.slug}: 발행 검증 실패"
 
 
-def test_every_seed_story_keeps_its_matrix_concept() -> None:
-    """생성기는 본문만 채운다 — 제목/한줄/타겟/장르/스탯 이름은 다양성 매트릭스 슬롯 그대로여야 한다.
-
-    매트릭스 폴더(`load_stories()` 기본값)만 본다 — 튜토리얼 작품은 제작 가이드의 예시로 손으로
-    쓴 것이라 매트릭스 슬롯이 없다.
-
-    LLM 이 콘셉트를 바꿔버리면 다양성 매트릭스가 보장하던 좌표 분산이 조용히 무너지므로,
-    배치가 늘어날 때마다 이 대조를 사람이 다시 하지 않도록 여기서 고정한다.
-    """
-    slots = {slot.slug: slot for slot in load_matrix()}
-
-    for story in load_stories():
-        slot = slots.get(story.slug)
-        assert slot is not None, f"{story.slug}: 다양성 매트릭스에 없는 slug 다"
-
-        payload = story.payload
-        assert payload.name == slot.title, f"{story.slug}: 제목이 매트릭스와 다르다"
-        assert payload.one_liner == slot.one_liner, f"{story.slug}: 한 줄 소개가 매트릭스와 다르다"
-        assert payload.genre_id == slot.genre_id, f"{story.slug}: 장르가 매트릭스와 다르다"
-        assert payload.target is not None and payload.target.value == slot.target, (
-            f"{story.slug}: target 이 매트릭스와 다르다"
-        )
-        assert len(payload.starting_setups) == len(slot.starting_setups), (
-            f"{story.slug}: 시작 상황 개수가 매트릭스와 다르다"
-        )
-
-        expected_stats = sorted(stat_display_name(stat) for stat in slot.stats)
-        for setup in payload.starting_setups:
-            assert sorted(stat.name for stat in setup.stat_defs) == expected_stats, (
-                f"{story.slug} / {setup.name}: 스탯 이름이 매트릭스와 다르다"
-            )
-
-
 def test_every_seed_story_setting_text_instructs_the_narrator() -> None:
     """`settingText` 는 런타임에 서술자의 지시문으로 들어간다 — 사용자용 소개문이면 화자가 뒤집힌다."""
     for story in load_all_stories():
@@ -130,37 +92,12 @@ def test_no_seed_content_file_contains_escaped_newlines() -> None:
         )
 
 
-def test_major_story_matches_the_fixed_concept() -> None:
-    """메이저 스토리의 확정 콘셉트(제목/타겟/시작상황 2개/스탯 3종)에서 벗어나면 안 된다."""
-    payload = next(
-        story.payload for story in load_stories() if story.slug == MAJOR_STORY_SLUG
-    )
-
-    assert payload.name == "3회차 청취자, 이번엔 그를 살린다"
-    assert payload.genre_id == ROMANCE_GENRE_ID
-    assert payload.target is not None and payload.target.value == "female"
-    assert len(payload.starting_setups) == 2
-    assert len(payload.keyword_notes) >= 4
-    assert len(payload.shortcuts) == 2
-
-    for setup in payload.starting_setups:
-        assert [stat.name for stat in setup.stat_defs] == ["신뢰", "집착도", "남은 방송 회차"]
-        assert len(setup.endings) >= 2
-        for stat in setup.stat_defs:
-            assert stat.min_value <= stat.initial_value <= stat.max_value
-            assert stat.icon and stat.color and stat.description
-        for ending in setup.endings:
-            assert ending.turn_count_gate >= 10
-            assert ending.judgment_prompt.strip()
-
-
 def test_seed_story_ending_thresholds_are_reachable_but_not_free() -> None:
     """엔딩 규칙이 스탯 범위 안이면서, 초기값 그대로는 만족되지 않아야 한다.
 
     범위 밖 임계값은 영영 안 열리고, 반대로 초기값에서 이미 참인 규칙은 스탯을 장식으로
     만든다(턴게이트만 넘으면 판정 프롬프트 하나로 엔딩이 난다). 둘 다 실제로 채팅을
-    해보기 전에는 드러나지 않으므로 여기서 막는다. 생성기도 파일로 쓰기 전에 같은
-    검사를 하지만, 그건 생성 시점 한 번뿐이라 커밋된 파일은 여기서 다시 본다.
+    해보기 전에는 드러나지 않으므로 여기서 막는다.
     """
     for story in load_all_stories():
         for setup in story.payload.starting_setups:
@@ -181,28 +118,6 @@ def test_seed_story_ending_thresholds_are_reachable_but_not_free() -> None:
                 )
 
 
-def test_major_character_is_written_for_the_generated_images() -> None:
-    """메이저 캐릭터는 상황 이미지 4장과 1:1 로 맞물려야 한다.
-
-    배열 위치가 곧 `situational_image_slug()` 의 scene 번호이자 매칭 우선순위(`order`)라,
-    개수가 바뀌면 PNG 가 엇갈리고 순서가 바뀌면 우선순위가 뒤집힌다.
-    """
-    payload = next(
-        character.payload
-        for character in load_characters()
-        if character.slug == MAJOR_CHARACTER_SLUG
-    )
-
-    assert len(payload.situational_images) == 4
-    assert len(payload.example_dialogues) >= 2
-    assert payload.genre_id == ROMANCE_GENRE_ID
-    assert payload.target is not None and payload.target.value == "female"
-
-    conditions = [image.trigger_condition for image in payload.situational_images]
-    assert len(set(conditions)) == 4
-    assert all(condition.strip() for condition in conditions)
-
-
 # 줄 머리든 문장 중간이든 화자 라벨 모양(`사용자:`·`서술자:`·`진행자:`)이 텍스트 안에 남은 것.
 _SPEAKER_LABEL = re.compile(r"(사용자|서술자|진행자)\s*:")
 # 빌더 폼(스토리 설정 탭)이 받아 주는 전개 예시 개수 상한. 이보다 많으면 시드 콘텐츠를 빌더에서
@@ -216,9 +131,7 @@ def test_seed_story_development_examples_are_label_free_pairs() -> None:
     그대로 학습되므로:
 
     - 텍스트 안에 라벨이 남아 있으면 조립 결과에 라벨이 겹쳐(`서술자: 서술자: …`) 들어가고,
-      문장 중간에 박힌 라벨은 모델이 자기 응답 안에 `사용자:` 를 그대로 찍게 만든다 — 30 개
-      `settingText` 가 하나같이 "응답 앞에 라벨을 붙이지 마라"고 지시하는 것과 정면으로
-      어긋나는 신호다.
+      문장 중간에 박힌 라벨은 모델이 자기 응답 안에 `사용자:` 를 그대로 찍게 만든다.
     - 서술 칸이 빈 쌍이 있으면 예시가 사용자 턴으로 끝나거나 끊겨, 모델이 사용자의 대사까지
       대신 써버린다(화자 뒤집힘).
     - 사용자 칸이 비는 것은 첫 쌍에서만 허용한다 — 서술자가 장면을 먼저 여는 예시다. 중간
@@ -281,10 +194,10 @@ def test_seed_story_setting_text_does_not_hand_the_narrator_a_named_stat() -> No
     스탯은 0~20 '시간' 단위이므로 퍼센트 자체가 허구다). `[사용자 이름]` 플레이스홀더와 같은
     계열 — `settingText` 가 시스템 기계장치를 가리키면 모델이 그 UI 를 산문에 렌더링한다.
 
-    반대로 "스탯 수치를 본문에 노출하지 마라" 같은 **금지문**은 막지 않는다(5개 스토리가
-    이렇게 쓰고 있고, 그것들은 표시기를 그리지 않았다) — 금지는 재료를 건네는 게 아니다.
-    세계관 고유명사를 인용하는 것도 막지 않는다(sf-norespawn 의 '권한 조각' 은 스탯 이름과
-    겹치지만 등장인물이 빼앗는 물건이다). 그래서 "인용된 이름 + 시스템 어휘" 조합만 본다.
+    반대로 "스탯 수치를 본문에 노출하지 마라" 같은 **금지문**은 막지 않는다(그렇게 쓴 스토리
+    5개는 표시기를 그리지 않았다) — 금지는 재료를 건네는 게 아니다. 세계관 고유명사를 인용하는
+    것도 막지 않는다(sf-norespawn 의 '권한 조각' 은 스탯 이름과 겹쳤지만 등장인물이 빼앗는
+    물건이었다). 그래서 "인용된 이름 + 시스템 어휘" 조합만 본다.
     """
     for story in load_all_stories():
         match = _STAT_LABELLED_IN_PROSE.search(story.payload.setting_text or "")
