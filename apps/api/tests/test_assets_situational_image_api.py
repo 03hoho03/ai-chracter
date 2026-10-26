@@ -484,6 +484,28 @@ async def test_register_situational_image_marks_content_as_having_unpublished_ch
     assert await db_session.scalar(flag) is True
 
 
+async def test_register_situational_image_moves_the_contents_last_edit_forward(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """이미지 등록은 초안 저장과 다른 라우터에 있지만 작가가 작품을 바꾼 순간이라 마지막 편집 시각을 민다. 한 테스트
+    안에서 DB `now()` 가 고정이라 칸을 먼 과거로 써 두고 그보다 늦어졌는지 본다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_draft_version(db_session, creator_user_id=user.id)
+    asset = await _make_ready_asset(db_session, user.id)
+    long_ago = datetime(2020, 1, 1, tzinfo=UTC)
+    await db_session.execute(sa.update(Content).where(Content.id == version.content_id).values(edited_at=long_ago))
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post(f"/assets/{asset.id}/register-situational-image", json=_register_body(version))
+
+    assert resp.status_code == 200
+    edited_at = await db_session.scalar(sa.select(Content.edited_at).where(Content.id == version.content_id))
+    assert edited_at is not None and edited_at > long_ago
+
+
 # ── 등록이 블러본을 만드는 동안 DB 트랜잭션을 쥐지 않는다 ──────────────────────────────────────
 #
 # 등록은 원본 내려받기·블러·블러본과 변형 올리기 셋을 거친다(디코드는 프로세스 전역 한도를 기다릴 수 있다). 그동안
