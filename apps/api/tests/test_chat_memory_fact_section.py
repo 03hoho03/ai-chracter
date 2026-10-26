@@ -78,7 +78,7 @@ from factories import (
     load_production_env,
 )
 from replay.logs import ReplayRefusedError
-from replay.state import turn_fact_lines
+from replay.state import RestoredTurn, turn_fact_lines
 
 # 머리글 줄(줄바꿈까지) — 사실 섹션 문안이 우선순위 문장에서 회상 섹션 이름을 부르므로 이름만으로는 섹션 위치를 가를 수 없다.
 HEADER = "[관계와 사실]\n"
@@ -823,6 +823,35 @@ async def test_replay_of_a_turn_without_facts_gets_no_lines(
     _facts_on(monkeypatch)
     assert await turn_fact_lines(db_session, record.assistant_message_id) == ""
     assert await turn_fact_lines(db_session, uuid.uuid4()) == ""
+
+
+@pytest.mark.parametrize(
+    ("user_label", "tail"),
+    [
+        pytest.param("나레이터 상대", " (사용자의 말)", id="speaker-is-the-set-label"),
+        pytest.param("다른 라벨", " (나레이터 상대의 말)", id="speaker-is-not-the-set-label"),
+    ],
+)
+def test_replay_turn_state_renders_fact_lines_with_the_set_line_label(user_label: str, tail: str) -> None:
+    """리플레이의 턴 상태는 조립할 세트의 대화 줄 라벨로 사실 줄을 렌더한다 — 운영 조립이 그 라벨로 말한 주장을 사용자 주장으로
+    읽으므로, 라벨을 넘기지 않으면 같은 턴이 다른 꼬리표로 다시 만들어진다. 라벨이 다른 세트에서는 그 표기가 인물 이름이다."""
+    restored = RestoredTurn(
+        turn=1,
+        history=[],
+        user_message=ChatMessage(),
+        shortcut_entity_id=None,
+        memory_note="",
+        summary=None,
+        recall_lines="",
+        fact_rows=_rows(_claim(speaker="나레이터 상대")),
+        stats_by_id={},
+        stats_by_name={},
+        sources={},
+    )
+
+    state = restored.turn_state({}, None, user_label=user_label)
+
+    assert state.fact_lines == f"- 유나 · 오디션: 겨울{tail}"
 
 
 # --- 지식 범위 필터 ---------------------------------------------------------------------------
