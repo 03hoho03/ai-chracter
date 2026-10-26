@@ -37,6 +37,7 @@ from api.chat.router import (
     stories_router,
 )
 from api.clover.router import me_router as clover_me_router, router as clover_router
+from api.clover.unit import assert_clover_unit_matches
 from api.comments.reports import router as comment_reports_router
 from api.comments.router import me_router as comments_me_router, router as comments_router
 from api.content.router import router as content_router
@@ -87,6 +88,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     않는다(httpx 0.28.1 소스로 확인) — 그래서 이 훅은 테스트 세션 동안 전혀 실행되지
     않고, 기존 테스트에 영향이 없다.
     """
+    # 맨 먼저 클로버 단위를 대조한다 — 다르면 요청을 받기 전에 기동을 멈춘다(`clover/unit.py`). 평상시 교체에서는 이 실패로 새
+    # 색이 healthy 가 되지 않아 교체 스크립트가 멈추고 옛 색이 계속 서빙한다.
+    await assert_clover_unit_matches(get_session_factory())
     await rebuild_suspended_user_markers(get_session_factory())
     # 재기동으로 죽은 소설화 작업의 환불. 만료를 기다렸다 도므로 기동을 막지 않게 백그라운드로 띄우고, 내려갈 때
     # 아직 기다리는 중이면 취소한다.
