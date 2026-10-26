@@ -297,3 +297,24 @@ async def test_merging_cards_moves_the_novel_up(
 
     assert resp.status_code == 200
     assert await _updated_at(db_session, novel_id) > _LONG_AGO
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param({}, id="empty"),
+        pytest.param({"name": "도윤", "aliases": ["윤이"], "memo": "소꿉친구"}, id="same-values"),
+    ],
+)
+async def test_saving_a_card_without_changes_leaves_the_novel_in_place(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, body: dict[str, object]
+) -> None:
+    """편집기에서 고치지 않고 저장한 카드(빈 본문, 같은 값)는 아무것도 바꾸지 않으므로 작품 목록 순서를 흔들지 않는다."""
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    card = await _card(db_session, novel_id, "도윤", aliases=["윤이"], memo="소꿉친구")
+    await _set_long_ago(db_session, novel_id)
+
+    resp = await db_client.patch(f"/novels/{novel_id}/characters/{card.id}", json=body)
+
+    assert resp.status_code == 200
+    assert await _updated_at(db_session, novel_id) == _LONG_AGO
