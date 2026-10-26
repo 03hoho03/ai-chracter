@@ -219,6 +219,35 @@ async def test_restoring_one_channel_keeps_the_other_channels_unpublished_edits_
     assert restored == await _get_draft(db_client, "story")
 
 
+async def test_saving_with_the_hash_from_a_section_restore_response_succeeds(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """섹션 복원 응답도 저장된 초안 해시를 싣고, 그 해시를 돌려보내 이어서 저장하면 200 이다. 저장 응답과 조회 응답과 같은
+    함수로 응답을 조립해야 성립한다. 깨지는 시나리오: 복원 응답만 해시를 빠뜨리거나 복원 전 값을 실어, 복원 뒤 첫 저장이 늘
+    409 가 된다."""
+    await _login_new_admin(db_client, db_session)
+    old = await _insert_old_set(db_session, "story", edit=("system",))
+    await _save_draft(db_client, "story", edit=("generation",))
+
+    restored_resp = await _restore(db_client, old.id, "system")
+    assert restored_resp.status_code == 200, restored_resp.text
+    restored = restored_resp.json()
+    assert isinstance(restored["savedDraftHash"], str)
+    assert restored["allowedPlaceholders"]
+
+    saved = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={
+            "labels": {**restored["labels"], "userLabel": "합성 사용자"},
+            "sections": restored["sections"],
+            "baseDraftHash": restored["savedDraftHash"],
+        },
+    )
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["savedDraftHash"] != restored["savedDraftHash"]
+
+
 @pytest.mark.parametrize(
     ("lane", "model", "channel"),
     [
