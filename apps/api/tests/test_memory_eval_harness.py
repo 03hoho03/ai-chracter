@@ -944,6 +944,15 @@ def test_probe_restores_and_restarts_for_every_retry_and_records_usage(
         {"callSite": "chat_memory_query_embedding", "model": "voyage-4-large", "latencyMs": 420, "outcome": "ok"}
     ]
     assert result["embedRecallTimeoutMs"] is None  # 이 측정 서버 env 에 상한 줄이 없다
+    assert calls["restore"] == 2 and len(calls["start"]) == 2 and calls["stop"] == 2
+    assert calls["consent"] == [calls["run"].room_id] * 2
+    assert 60 in calls["sleep"]
+    assert calls["driver"] == ["--rebase", "--say", "--rebase", "--say"]
+    # 프로브마다 덤프 파일이 따로이고 갈래 설정이 서버 env 에 실린다.
+    dumps = {o["PROMPT_DUMP_PATH"] for o in calls["start"]}
+    assert len(dumps) == 2
+    assert all(o["MEMORY_EPISODES_RECALL"] == "true" for o in calls["start"])
+    assert len(calls["run"].ledger.rows()) == 2
 
 
 def test_probe_records_the_query_embedding_timeout_it_gave_the_server(
@@ -957,15 +966,6 @@ def test_probe_records_the_query_embedding_timeout_it_gave_the_server(
     calls["run"].server_overrides["MEMORY_EMBED_RECALL_TIMEOUT_MS"] = "3000"
     result = run_probe(calls["run"], Probe(item_id="obj01", checkpoint=100, turns=["질문"], kind="plant", split="dev"))
     assert result["embedRecallTimeoutMs"] == "3000"
-    assert calls["restore"] == 2 and len(calls["start"]) == 2 and calls["stop"] == 2
-    assert calls["consent"] == [calls["run"].room_id] * 2
-    assert 60 in calls["sleep"]
-    assert calls["driver"] == ["--rebase", "--say", "--rebase", "--say"]
-    # 프로브마다 덤프 파일이 따로이고 갈래 설정이 서버 env 에 실린다.
-    dumps = {o["PROMPT_DUMP_PATH"] for o in calls["start"]}
-    assert len(dumps) == 2
-    assert all(o["MEMORY_EPISODES_RECALL"] == "true" for o in calls["start"])
-    assert len(calls["run"].ledger.rows()) == 2
 
 
 def test_two_turn_probe_tops_up_clover_and_keeps_both_replies(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
