@@ -31,8 +31,15 @@ export function getGuestLoginLabel(section: PurchaseSection | undefined): string
   return section === "guest" ? "로그인하고 충전하기" : "로그인하고 잔액 보기";
 }
 
-/** "확인 중"으로 끝난 결제가 풀렸는가. 확인 중이 뜬 때의 잔액보다 지금 잔액이 늘었으면 결제사 확인(웹훅)이 지급한 것으로
- * 보고 그 안내를 거둔다 — 계속 두면 이미 잔액에 반영된 결제를 기다리게 한다. 비교할 값이 없으면 그대로 둔다. */
-export function isCheckingResolved(balanceAtCheck: number | undefined, balanceNow: number | undefined): boolean {
-  return balanceAtCheck !== undefined && balanceNow !== undefined && balanceNow > balanceAtCheck;
+/** "확인 중"으로 끝난 결제가 풀렸는가 — 기준 잔액보다 지금 잔액이 늘었으면 결제사 확인(웹훅)이 지급한 것으로 보고 그
+ * 안내를 거둔다. 계속 두면 이미 잔액에 반영된 결제를 기다리게 한다.
+ *
+ * 기준은 결과가 나온 때의 잔액(`atSettle`)이다. 결제창에서 돌아와 화면을 새로 열면 결과가 잔액보다 먼저 나와 그 값이
+ * 없으므로, 그때는 그 뒤 처음 도착한 잔액(`firstArrived`)을 기준으로 삼는다 — 비워 두면 잔액이 늘어도 영원히 "확인 중"이다.
+ * 기준도 지금 잔액도 없으면 그대로 둔다. */
+export type CheckingBaseline = { atSettle: number | undefined; firstArrived: number | undefined };
+
+export function isCheckingResolved(baseline: CheckingBaseline, balanceNow: number | undefined): boolean {
+  const before = baseline.atSettle ?? baseline.firstArrived;
+  return before !== undefined && balanceNow !== undefined && balanceNow > before;
 }

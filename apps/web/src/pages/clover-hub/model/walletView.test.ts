@@ -54,15 +54,29 @@ describe("getGuestLoginLabel", () => {
 describe("isCheckingResolved", () => {
   // 확인 중으로 끝난 뒤 잔액이 늘었으면 웹훅이 지급한 것이다 — "확인 중"을 계속 보이면 이미 반영된 결제를 기다리게 한다.
   it("확인 중이 뜬 때보다 잔액이 늘었으면 풀렸다", () => {
-    expect(isCheckingResolved(100, 200)).toBe(true);
+    expect(isCheckingResolved({ atSettle: 100, firstArrived: undefined }, 200)).toBe(true);
+  });
+
+  // 결제창에서 돌아와 화면을 새로 열면 결과가 잔액보다 먼저 나와 그때의 잔액이 없다. 기준을 비워 두면 잔액이 늘어도
+  // 영원히 "확인 중"이다 — 그 뒤 처음 도착한 잔액을 기준으로 삼는다.
+  it("결과가 나온 때의 잔액이 없으면 그 뒤 처음 도착한 잔액보다 늘었는지 본다", () => {
+    expect(isCheckingResolved({ atSettle: undefined, firstArrived: 100 }, 200)).toBe(true);
+    expect(isCheckingResolved({ atSettle: undefined, firstArrived: 100 }, 100)).toBe(false);
+  });
+
+  it("결과가 나온 때의 잔액이 있으면 그것이 기준이다", () => {
+    expect(isCheckingResolved({ atSettle: 200, firstArrived: 100 }, 150)).toBe(false);
   });
 
   it.each([
     [100, 100],
     [100, 50],
-    [undefined, 200],
     [100, undefined],
-  ])("늘지 않았거나 비교할 값이 없으면 그대로다 (%s → %s)", (before, after) => {
-    expect(isCheckingResolved(before, after)).toBe(false);
+  ])("늘지 않았거나 지금 잔액이 없으면 그대로다 (%s → %s)", (before, after) => {
+    expect(isCheckingResolved({ atSettle: before, firstArrived: undefined }, after)).toBe(false);
+  });
+
+  it("기준이 될 잔액이 하나도 없으면 그대로다", () => {
+    expect(isCheckingResolved({ atSettle: undefined, firstArrived: undefined }, 200)).toBe(false);
   });
 });

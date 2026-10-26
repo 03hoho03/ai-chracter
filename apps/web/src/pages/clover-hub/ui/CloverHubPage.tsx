@@ -67,10 +67,19 @@ export function CloverHubPage({
   const latestBalance = useRef<number | undefined>(undefined);
   latestBalance.current = balanceQuery.data?.balance;
   const [balanceAtSettle, setBalanceAtSettle] = useState<number | undefined>(undefined);
+  // 결과가 나온 때 잔액이 아직 없었으면(새로 연 화면에서 결제창 복귀를 처리한 경우) 그 뒤 처음 도착한 잔액을 기준으로 잡는다.
+  const [firstBalanceAfterSettle, setFirstBalanceAfterSettle] = useState<number | undefined>(undefined);
   const handleSettled = (next: SettledPurchase) => {
     setBalanceAtSettle(latestBalance.current);
+    setFirstBalanceAfterSettle(undefined);
     setSettled(next);
   };
+  const balanceNow = balanceQuery.data?.balance;
+  useEffect(() => {
+    if (settled && balanceAtSettle === undefined && firstBalanceAfterSettle === undefined && balanceNow !== undefined) {
+      setFirstBalanceAfterSettle(balanceNow);
+    }
+  }, [settled, balanceNow]);
 
   usePaymentRedirect(search, handleSettled, onSearchClear);
 
@@ -103,7 +112,10 @@ export function CloverHubPage({
             view={getWalletView(viewer, balanceQuery)}
             settled={settled}
             section={section}
-            isCheckingResolved={isCheckingResolved(balanceAtSettle, balanceQuery.data?.balance)}
+            isCheckingResolved={isCheckingResolved(
+              { atSettle: balanceAtSettle, firstArrived: firstBalanceAfterSettle },
+              balanceNow,
+            )}
             onRetryBalance={() => void balanceQuery.refetch()}
           />
           <PurchaseConditions section={section} />
