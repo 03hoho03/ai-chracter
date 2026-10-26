@@ -338,7 +338,8 @@ def test_judge_summary_refuses_before_aggregating_when_the_gate_fails(
     assert "--ran-probes" in capsys.readouterr().err
 
     low = _jsonl(tmp_path / "low.jsonl", _probes(18, 20))
-    assert main([*base, "--ran-probes", str(low), "--ran-recompute", str(recompute)]) == 2
+    # 사실 실림 문턱은 채워 준다 — 문턱 인자 누락(사용 오류)이 게이트보다 먼저 거부되므로, 그 거부는 아래에서 따로 본다.
+    assert main([*base, "--ran-probes", str(low), "--ran-recompute", str(recompute), "--ran-facts-min", "20"]) == 2
     captured = capsys.readouterr()
     assert "b1-B2 queryEmbeddingOk" in captured.err and captured.out == ""
 
