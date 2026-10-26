@@ -8,6 +8,7 @@ import {
   removeChatDraft,
   saveChatDraftInput,
   saveRejectedChatMessage,
+  takeChatDraftToRestore,
 } from "./chatDraft";
 
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -107,5 +108,39 @@ describe("pickChatDraftToRestore", () => {
 
   it("공백뿐인 입력 초안은 없는 것으로 본다", () => {
     expect(pickChatDraftToRestore({ input: "  \n", rejected: "보내려던 말" })).toBe("보내려던 말");
+  });
+});
+
+describe("takeChatDraftToRestore", () => {
+  // 되살린 거절 메시지를 지운 뒤 방에 다시 들어와도 또 돌아오면 안 된다 — 되살린 순간 입력 초안이 된다.
+  it("거절된 메시지를 되살리면 입력 초안으로 옮기고 거절 칸은 비운다", () => {
+    const storage = memoryStorage();
+    saveRejectedChatMessage("room-a", "보내려던 말", () => storage);
+    expect(takeChatDraftToRestore("room-a", () => storage)).toBe("보내려던 말");
+    expect(readChatDraft("room-a", () => storage)).toEqual({ input: "보내려던 말", rejected: "" });
+    saveChatDraftInput("room-a", "", () => storage);
+    expect(takeChatDraftToRestore("room-a", () => storage)).toBe("");
+  });
+
+  it("입력 초안이 있으면 그것을 되살리고 거절 칸은 비운다", () => {
+    const storage = memoryStorage();
+    saveRejectedChatMessage("room-a", "보내려던 말", () => storage);
+    saveChatDraftInput("room-a", "새로 쓰는 말", () => storage);
+    expect(takeChatDraftToRestore("room-a", () => storage)).toBe("새로 쓰는 말");
+    expect(readChatDraft("room-a", () => storage)).toEqual({ input: "새로 쓰는 말", rejected: "" });
+  });
+
+  // 개발 모드는 상태 초기값 함수를 두 번 부른다 — 두 번째도 같은 글이어야 한다.
+  it("두 번 불러도 같은 글을 돌려준다", () => {
+    const storage = memoryStorage();
+    saveRejectedChatMessage("room-a", "보내려던 말", () => storage);
+    takeChatDraftToRestore("room-a", () => storage);
+    expect(takeChatDraftToRestore("room-a", () => storage)).toBe("보내려던 말");
+  });
+
+  it("초안이 없으면 빈 글이고 키를 만들지 않는다", () => {
+    const storage = memoryStorage();
+    expect(takeChatDraftToRestore("room-a", () => storage)).toBe("");
+    expect(storage.values.size).toBe(0);
   });
 });

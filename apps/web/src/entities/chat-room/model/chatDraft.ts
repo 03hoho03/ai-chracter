@@ -102,6 +102,16 @@ export function clearAllChatDrafts(getStorage: () => ChatDraftStorage = browserS
   }
 }
 
+/** 방에 들어올 때 입력창에 넣을 글을 고르고(`pickChatDraftToRestore`), 그 글을 입력 초안으로 옮기며 거절 칸을 비운다.
+ * 되살린 순간 그 글은 입력창의 글이다 — 거절 칸에 남겨 두면 사용자가 입력창에서 지운 뒤에도 다음에 방에 들어올 때 또
+ * 돌아온다. 두 번 불러도 같은 글을 돌려준다(개발 모드는 상태 초기값 함수를 두 번 부른다). */
+export function takeChatDraftToRestore(roomId: string, getStorage: () => ChatDraftStorage = browserStorage): string {
+  const draft = readChatDraft(roomId, getStorage);
+  const text = pickChatDraftToRestore(draft);
+  if (draft) writeChatDraft(roomId, { input: text, rejected: "" }, getStorage);
+  return text;
+}
+
 /** 방에 돌아왔을 때 입력창에 넣을 글. 입력 초안이 있으면 그것이고, 없으면 거절된 메시지다.
  *
  * 입력 초안을 거절된 메시지로 덮지 않는다 — 보낼 때 입력창을 비우므로 거절된 메시지는 언제나 입력창이 빈 뒤에 생기고,

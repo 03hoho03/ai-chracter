@@ -78,10 +78,9 @@ export { buildSendPayload } from "./model/buildSendPayload";
 export { getChatRateLimit, type ChatRateLimit } from "./model/chatRateLimit";
 export {
   clearRejectedChatMessage,
-  pickChatDraftToRestore,
-  readChatDraft,
   saveChatDraftInput,
   saveRejectedChatMessage,
+  takeChatDraftToRestore,
 } from "./model/chatDraft";
 export {
   CONTENT_PRIVATE_START_MESSAGE,
