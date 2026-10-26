@@ -185,6 +185,16 @@ class PublicNovelListResponse(CamelModel):
     next_cursor: str | None
 
 
+class DerivedNovelListResponse(CamelModel):
+    """원작 상세의 공개 소설 목록. `visible` 은 원작자가 이 목록을 다른 사람에게 보이게 두었는가다 — 거짓이면 원작자가
+    아닌 사람에게 `items` 가 비고, 원작자 본인에게는 무엇이 걸려 있는지 보이게 그대로 싣는다. 공식(원작자 본인이 낸
+    소설)과 파생은 항목의 `source.unofficial` 로 가른다."""
+
+    visible: bool
+    items: list[PublicNovelListItem]
+    next_cursor: str | None
+
+
 class PublicNovelOwnedItem(PublicNovelListItem):
     """소장 목록의 한 줄 — 노벨 목록의 한 줄에 판매 중지 표시를 더한 것. `sales_stopped` 는 노벨 목록에서 빠졌지만 소장자
     조건으로 열리는 노벨인가다(작품 정보의 같은 이름 값과 같다)."""

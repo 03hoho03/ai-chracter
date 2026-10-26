@@ -125,6 +125,9 @@ class Content(Base):
     # 때마다 기존 방의 판정이 바뀐다. 기본값이 "허용 안 함"인 것은 작가가 고르기 전에는 남의 소설화를 열지 않으려는 것이다.
     # 기본값을 "나만 보는 소설"에서 이 값으로 바꿀 때 이미 있던 작품의 값은 그대로 두었다.
     novel_permission: Mapped[NovelPermission] = mapped_column(Text, server_default="forbidden", nullable=False)
+    # 원작 상세에 이 작품으로 만든 공개 소설 목록을 보일지. 원작자가 끄면 다른 사람에게 그 목록이 비어 나간다 — 표시만
+    # 줄이는 칸이라 소설화 허락·소설의 공개 상태·권리 고정 칸은 그대로다. 허락 칸과 같은 이유로 버전이 아니라 헤더에 둔다.
+    derived_novels_visible: Mapped[bool] = mapped_column(Boolean, server_default=true(), nullable=False)
     current_published_version_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey(
@@ -153,7 +156,8 @@ class Content(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    # 작가가 자기 작품을 마지막으로 바꾼 시각(자동저장·상황이미지 등록·편집 취소·발행·공개범위·소설화 허락 변경).
+    # 작가가 자기 작품을 마지막으로 바꾼 시각(자동저장·상황이미지 등록·편집 취소·발행·공개범위·소설화 허락 변경·
+    # 원작 상세 공개 소설 목록 숨김).
     # `updated_at` 은 아무도 밀지 않아 사실상 생성 시각이고 `/me/drafts` 커서가 "행이 움직이지 않는다"에 기대므로
     # 그 칸을 밀지 않고 따로 둔다. 독자 행동(조회·채팅·좋아요)·운영 조치·댓글 설정은 밀지 않는다.
     # 미는 쪽은 `datetime.now(UTC)` 파이썬 값을 넣는다 — `func.now()` 를 속성에 넣으면 커밋 뒤 읽을 때 비동기

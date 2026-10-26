@@ -46,10 +46,12 @@ from api.content.schemas import (
     ContentAccessStatus,
     ContentCreateRequest,
     ContentCreateResponse,
+    ContentDerivedNovelsVisibilityUpdateRequest,
     ContentDetailResponse,
     ContentListItem,
     ContentListResponse,
     ContentNovelPermissionUpdateRequest,
+    ContentPublishRequest,
     ContentPublishResponse,
     ContentSummary,
     ContentSummaryListResponse,
@@ -112,6 +114,7 @@ from api.db.models.content import (
     HomeCuration,
     Like,
     ModerationStatus,
+    NovelPermission,
 )
 from api.db.models.media import Asset, AssetStatus
 from api.db.models.moderation import Report, ReportStatus
@@ -2157,6 +2160,7 @@ async def _screen_for_publish(
 )
 async def publish_content(
     id: uuid.UUID,
+    body: ContentPublishRequest | None = None,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
     llm_client: LLMClient = Depends(get_llm_client),
@@ -2175,13 +2179,21 @@ async def publish_content(
        그대로인지 본다. 다르면 409 `PUBLISH_CONFLICT` 이고 아무것도 쓰지 않는다. 같으면 발행한다.
 
     글만 바뀐 경우는 충돌로 치지 않는다 — 심사는 그림만 보고, 발행본에는 3 에서 다시 읽은 글이 실린다. 3 에서 검증을
-    다시 돌리므로 그사이 필수 칸이 비면 400 이다. 충돌로 멈춘 발행이 이미 올린 블러본은 가리키는 행 없이 남는다."""
+    다시 돌리므로 그사이 필수 칸이 비면 400 이다. 충돌로 멈춘 발행이 이미 올린 블러본은 가리키는 행 없이 남는다.
+
+    본문의 `novelPermission` 은 3 에서 발행과 함께 작품의 소설화 허락으로 쓴다. 발행 이력이 없는 작품을 그 값 없이
+    발행하면 아직 막지 않고 1 에서 경고 로그 한 줄만 남긴다 — 첫 발행 때 허락을 고르게 하는 화면이 나간 뒤 그런 발행이
+    사라졌는지 세는 신호다. 막을 때도 이 자리(검증·그림 심사 전)라 거절에 심사 원가가 들지 않는다."""
+    novel_permission = body.novel_permission if body is not None else None
     # 인증 의존성이 요청 세션에 연 읽기 트랜잭션을 닫는다(롤백은 세션의 객체를 만료시켜 쓰지 않는다).
     await db.commit()
     async with session_factory() as read_db:
         content, version = await _get_owned_draft_version(
             read_db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
         )
+        if content.current_published_version_id is None and novel_permission is None:
+            # 작품·회원 id 는 싣지 않는다 — 셀 수만 있으면 된다.
+            logger.warning("publish_first_without_novel_permission type=%s", content.type.value)
         prompt_set, prompt_sections = await load_active_prompt_set(read_db, lane="publish_filter")
         if content.type == ContentType.CHARACTER:
             plan = await _plan_character_publish(read_db, content, version, prompt_sections)
@@ -2208,8 +2220,8 @@ async def publish_content(
 
     locked_content, locked_version = await _lock_draft_for_publish(db, content.id, version.id)
     if content.type == ContentType.CHARACTER:
-        return await _write_character_publish(db, locked_content, locked_version, plan)
-    return await _write_story_publish(db, locked_content, locked_version, plan, blurs)
+        return await _write_character_publish(db, locked_content, locked_version, plan, novel_permission)
+    return await _write_story_publish(db, locked_content, locked_version, plan, blurs, novel_permission)
 
 
 async def _clone_character_children(
@@ -2303,13 +2315,19 @@ async def _plan_character_publish(
 
 
 async def _write_character_publish(
-    db: AsyncSession, content: Content, version: ContentVersion, plan: _PublishPlan
+    db: AsyncSession,
+    content: Content,
+    version: ContentVersion,
+    plan: _PublishPlan,
+    novel_permission: NovelPermission | None,
 ) -> ContentPublishResponse:
     """발행 쓰기 구간(작품 행을 잠근 뒤). 심사한 그림이 그대로일 때만 쓰고 커밋한다."""
     draft = await _load_character_publish_draft(db, content, version)
     if draft.screened_images() != plan.screened:
         raise _publish_conflict()
     detail = draft.detail
+    if novel_permission is not None:
+        content.novel_permission = novel_permission
 
     # 발행하면 이 초안이 곧 발행본이 되므로 미발행 편집분은 0이다.
     content.has_unpublished_changes = False
@@ -2849,12 +2867,15 @@ async def _write_story_publish(
     version: ContentVersion,
     plan: _PublishPlan,
     blurs: dict[uuid.UUID, BlurredUpload],
+    novel_permission: NovelPermission | None,
 ) -> ContentPublishResponse:
     """발행 쓰기 구간(작품 행을 잠근 뒤). 심사한 그림과 블러 대상 칸이 그대로일 때만 쓰고 커밋한다."""
     draft = await _load_story_publish_draft(db, content, version)
     if draft.screened_images() != plan.screened or draft.cells_to_blur() != plan.cells_to_blur:
         raise _publish_conflict()
     detail = draft.detail
+    if novel_permission is not None:
+        content.novel_permission = novel_permission
     await _attach_media_book_blurs(db, draft.ordered_cells, blurs, owner_user_id=content.creator_user_id)
 
     # 발행하면 이 초안이 곧 발행본이 되므로 미발행 편집분은 0이다.
@@ -2952,6 +2973,37 @@ async def update_content_novel_permission(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the content owner")
 
     content.novel_permission = body.novel_permission
+    content.edited_at = datetime.now(UTC)
+    await db.commit()
+
+
+@router.put(
+    "/contents/{id}/derived-novels-visibility",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_legal_consent)],
+)
+async def update_content_derived_novels_visibility(
+    id: uuid.UUID,
+    body: ContentDerivedNovelsVisibilityUpdateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """원작 상세의 공개 소설 목록을 다른 사람에게 보일지 정한다. 표시만 바꾼다 — 소설화 허락·소설의 공개 상태·권리 고정
+    칸은 그대로다. 초안 자동저장과 섞지 않고 따로 받는 것은 허락과 같은 헤더 칸이라 편집 취소·발행이 되돌릴 값이 아니기
+    때문이다.
+
+    가드는 소설화 허락 바꾸기와 같다: 회원 행을 잠가 정지·탈퇴를 다시 보고, 작품 404 → 소유자 아님 403. 이용제한 작품도
+    막지 않는다(노출을 줄이는 쪽이라)."""
+    await lock_active_user(db, user_id)
+    content = await db.scalar(
+        select(Content).where(Content.id == id).with_for_update().execution_options(populate_existing=True)
+    )
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+    if content.creator_user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the content owner")
+
+    content.derived_novels_visible = body.visible
     content.edited_at = datetime.now(UTC)
     await db.commit()
 
@@ -3263,6 +3315,7 @@ async def get_content_detail(
         access_status=access_status,
         is_owner=is_owner,
         novel_permission=content.novel_permission,
+        derived_novels_visible=content.derived_novels_visible,
     )
 
 

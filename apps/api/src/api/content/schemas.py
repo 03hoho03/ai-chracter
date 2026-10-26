@@ -194,6 +194,9 @@ class ContentDetailResponse(CamelModel):
     is_owner: bool
     # 소설화 허락. 작가의 "⋯" 메뉴가 지금 값을 보여 준다. 다른 사람에게 숨길 설정이 아니라 누구에게나 싣는다.
     novel_permission: NovelPermission = Field(default_factory=_default_novel_permission)
+    # 원작 상세에 이 작품으로 만든 공개 소설 목록을 다른 사람에게 보이는가(원작자가 끌 수 있다). 작가 메뉴가 지금 값을
+    # 보여 준다. 기본값은 이 칸을 모르는 생성 타입·화면과의 호환용이고 새 작품의 기본값(보임)과 같다.
+    derived_novels_visible: bool = True
 
 
 class ContentVersionSummary(CamelModel):
@@ -303,6 +306,13 @@ class CharacterDraftResponse(CamelModel):
     novel_permission: NovelPermission = Field(default_factory=_default_novel_permission)
 
 
+class ContentPublishRequest(CamelModel):
+    """`POST /contents/{id}/publish` 본문. 본문도 칸도 선택이다 — 본문을 보내지 않는 옛 화면과 재발행이 그대로 돈다.
+    `novel_permission` 을 실으면 발행과 같은 트랜잭션에서 작품의 소설화 허락으로 쓴다(재발행에도)."""
+
+    novel_permission: NovelPermission | None = None
+
+
 class ContentPublishResponse(CamelModel):
     content_id: uuid.UUID
     version_number: int
@@ -314,6 +324,10 @@ class ContentVisibilityUpdateRequest(CamelModel):
 
 class ContentNovelPermissionUpdateRequest(CamelModel):
     novel_permission: NovelPermission
+
+
+class ContentDerivedNovelsVisibilityUpdateRequest(CamelModel):
+    visible: bool
 
 
 class StatRuleDraftItem(CamelModel):

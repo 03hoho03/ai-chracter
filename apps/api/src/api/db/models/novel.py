@@ -204,6 +204,8 @@ class Novel(Base):
         # 소설을 찾으므로, 방 칸이 남으면 숨긴 소설이 그 길로 되살아난다.
         CheckConstraint("hidden_at IS NULL OR chat_room_id IS NULL", name="ck_novels_hidden_without_room"),
         Index("ix_novels_user_id_updated_at", "user_id", updated_at.desc()),
+        # 원작 상세의 공개 소설 목록이 원작 id 로 소설을 찾는다.
+        Index("ix_novels_content_id", "content_id"),
         Index("ux_novels_chat_room_id", "chat_room_id", unique=True),
         Index(
             "ix_novels_cover_asset_id",

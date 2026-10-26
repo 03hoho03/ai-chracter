@@ -6069,7 +6069,7 @@
           "content"
         ],
         "summary": "Publish Content",
-        "description": "Publish the draft of a character or story.\n\n세 구간으로 나눈다. 저장소에서 그림 수십 장을 받고 Gemini 심사를 기다리는 동안(수 초~십수 초) DB 트랜잭션을\n열어 두면 커넥션 하나를 통째로 쥐어 다른 요청이 풀을 기다리기 때문이다.\n\n1. 읽기: 따로 연 세션에서 소유·초안 확인, 발행 검증(400 은 여기서), 심사할 그림과 블러본을 만들 칸을 정하고 그\n   세션을 닫는다. 요청 세션에 읽은 객체를 남기지 않는 것은 3 이 그 세션에서 같은 행을 다시 읽기 때문이다 — 남아\n   있으면 커밋 뒤에도 옛 값을 들고 있어 다시 읽어도 옛 값이 나온다.\n2. 외부 호출: 그림 내려받기 → 심사 → (스토리) 칸 블러본 올리기. 트랜잭션 없음.\n3. 쓰기: 요청 세션의 짧은 트랜잭션에서 작품 행을 잠그고 초안을 다시 읽어, 아직 초안인지와 심사한 그림·블러 대상이\n   그대로인지 본다. 다르면 409 `PUBLISH_CONFLICT` 이고 아무것도 쓰지 않는다. 같으면 발행한다.\n\n글만 바뀐 경우는 충돌로 치지 않는다 — 심사는 그림만 보고, 발행본에는 3 에서 다시 읽은 글이 실린다. 3 에서 검증을\n다시 돌리므로 그사이 필수 칸이 비면 400 이다. 충돌로 멈춘 발행이 이미 올린 블러본은 가리키는 행 없이 남는다.",
+        "description": "Publish the draft of a character or story.\n\n세 구간으로 나눈다. 저장소에서 그림 수십 장을 받고 Gemini 심사를 기다리는 동안(수 초~십수 초) DB 트랜잭션을\n열어 두면 커넥션 하나를 통째로 쥐어 다른 요청이 풀을 기다리기 때문이다.\n\n1. 읽기: 따로 연 세션에서 소유·초안 확인, 발행 검증(400 은 여기서), 심사할 그림과 블러본을 만들 칸을 정하고 그\n   세션을 닫는다. 요청 세션에 읽은 객체를 남기지 않는 것은 3 이 그 세션에서 같은 행을 다시 읽기 때문이다 — 남아\n   있으면 커밋 뒤에도 옛 값을 들고 있어 다시 읽어도 옛 값이 나온다.\n2. 외부 호출: 그림 내려받기 → 심사 → (스토리) 칸 블러본 올리기. 트랜잭션 없음.\n3. 쓰기: 요청 세션의 짧은 트랜잭션에서 작품 행을 잠그고 초안을 다시 읽어, 아직 초안인지와 심사한 그림·블러 대상이\n   그대로인지 본다. 다르면 409 `PUBLISH_CONFLICT` 이고 아무것도 쓰지 않는다. 같으면 발행한다.\n\n글만 바뀐 경우는 충돌로 치지 않는다 — 심사는 그림만 보고, 발행본에는 3 에서 다시 읽은 글이 실린다. 3 에서 검증을\n다시 돌리므로 그사이 필수 칸이 비면 400 이다. 충돌로 멈춘 발행이 이미 올린 블러본은 가리키는 행 없이 남는다.\n\n본문의 `novelPermission` 은 3 에서 발행과 함께 작품의 소설화 허락으로 쓴다. 발행 이력이 없는 작품을 그 값 없이\n발행하면 아직 막지 않고 1 에서 경고 로그 한 줄만 남긴다 — 첫 발행 때 허락을 고르게 하는 화면이 나간 뒤 그런 발행이\n사라졌는지 세는 신호다. 막을 때도 이 자리(검증·그림 심사 전)라 거절에 심사 원가가 들지 않는다.",
         "operationId": "publish_content_contents__id__publish_post",
         "parameters": [
           {
@@ -6083,6 +6083,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ContentPublishRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -6180,6 +6197,53 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ContentNovelPermissionUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{id}/derived-novels-visibility": {
+      "put": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Update Content Derived Novels Visibility",
+        "description": "원작 상세의 공개 소설 목록을 다른 사람에게 보일지 정한다. 표시만 바꾼다 — 소설화 허락·소설의 공개 상태·권리 고정\n칸은 그대로다. 초안 자동저장과 섞지 않고 따로 받는 것은 허락과 같은 헤더 칸이라 편집 취소·발행이 되돌릴 값이 아니기\n때문이다.\n\n가드는 소설화 허락 바꾸기와 같다: 회원 행을 잠가 정지·탈퇴를 다시 보고, 작품 404 → 소유자 아님 403. 이용제한 작품도\n막지 않는다(노출을 줄이는 쪽이라).",
+        "operationId": "update_content_derived_novels_visibility_contents__id__derived_novels_visibility_put",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentDerivedNovelsVisibilityUpdateRequest"
               }
             }
           }
@@ -10611,6 +10675,66 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{content_id}/derived-novels": {
+      "get": {
+        "tags": [
+          "webnovels"
+        ],
+        "summary": "List Derived Novels",
+        "description": "이 작품을 원작으로 한 공개 소설, 공개 화면 글이 마지막으로 바뀐 시각 순으로 한 번에 20편. 다음 페이지는\n`nextCursor` 를 그대로 `cursor` 로 넘긴다. 작품이 없으면 404 다(원작이 삭제됐으면 행은 남아 빈 목록).",
+        "operationId": "list_derived_novels_contents__content_id__derived_novels_get",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DerivedNovelListResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -28845,6 +28969,19 @@
         ],
         "title": "ContentCreateResponse"
       },
+      "ContentDerivedNovelsVisibilityUpdateRequest": {
+        "properties": {
+          "visible": {
+            "type": "boolean",
+            "title": "Visible"
+          }
+        },
+        "type": "object",
+        "required": [
+          "visible"
+        ],
+        "title": "ContentDerivedNovelsVisibilityUpdateRequest"
+      },
       "ContentDetailResponse": {
         "properties": {
           "id": {
@@ -28967,6 +29104,11 @@
               "public"
             ],
             "title": "Novelpermission"
+          },
+          "derivedNovelsVisible": {
+            "type": "boolean",
+            "title": "Derivednovelsvisible",
+            "default": true
           }
         },
         "type": "object",
@@ -29090,6 +29232,29 @@
           "novelPermission"
         ],
         "title": "ContentNovelPermissionUpdateRequest"
+      },
+      "ContentPublishRequest": {
+        "properties": {
+          "novelPermission": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "forbidden",
+                  "private",
+                  "public"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Novelpermission"
+          }
+        },
+        "type": "object",
+        "title": "ContentPublishRequest",
+        "description": "`POST /contents/{id}/publish` 본문. 본문도 칸도 선택이다 — 본문을 보내지 않는 옛 화면과 재발행이 그대로 돈다.\n`novel_permission` 을 실으면 발행과 같은 트랜잭션에서 작품의 소설화 허락으로 쓴다(재발행에도)."
       },
       "ContentPublishResponse": {
         "properties": {
@@ -29864,6 +30029,40 @@
           "nextCursor"
         ],
         "title": "CreatorPayoutStatementsResponse"
+      },
+      "DerivedNovelListResponse": {
+        "properties": {
+          "visible": {
+            "type": "boolean",
+            "title": "Visible"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PublicNovelListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "visible",
+          "items",
+          "nextCursor"
+        ],
+        "title": "DerivedNovelListResponse",
+        "description": "원작 상세의 공개 소설 목록. `visible` 은 원작자가 이 목록을 다른 사람에게 보이게 두었는가다 — 거짓이면 원작자가\n아닌 사람에게 `items` 가 비고, 원작자 본인에게는 무엇이 걸려 있는지 보이게 그대로 싣는다. 공식(원작자 본인이 낸\n소설)과 파생은 항목의 `source.unofficial` 로 가른다."
       },
       "DevelopmentExampleItem": {
         "properties": {
