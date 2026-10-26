@@ -45,7 +45,7 @@ uv sync --quiet
 echo "▶ 3/4 DB 마이그레이션..."
 uv run alembic upgrade head
 
-echo "▶ 4/4 샘플 캐릭터 시드..."
+echo "▶ 4/4 테스트 계정·튜토리얼 작품 시드..."
 uv run --env-file .env python scripts/seed_dev.py
 
 cat <<'EOF'
@@ -58,7 +58,7 @@ cat <<'EOF'
   # web
   pnpm install && pnpm --filter @ai-character-chat/web dev
 
-그다음 http://localhost:5173 → Google 로그인 → 홈의 '미아' 캐릭터로 채팅.
+그다음 http://localhost:5173 → Google 로그인 → 홈의 튜토리얼 스토리·캐릭터('민유나')로 채팅.
 
 ⚠ 사전 확인:
   - apps/api/.env 의 GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GEMINI_API_KEY 주석을 풀고 채웠는지
