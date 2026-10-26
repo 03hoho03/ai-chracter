@@ -7,13 +7,13 @@ import { useFormContext, useWatch } from "react-hook-form";
 
 import {
   CloverBalance,
-  IMAGE_CLOVER_COST,
-  isCloverInsufficient,
   shouldShowCloverBalance,
   useCloverBalanceQuery,
+  useCloverPricingQuery,
 } from "@/entities/clover";
 
 import { getGenerateButtonState } from "../model/generateButtonState";
+import { isImageCloverShort } from "../model/imageCloverCost";
 import { getPromptSyntaxHint, PROMPT_WEIGHT_SYNTAX_HINT } from "../model/promptSyntaxHint";
 import type { GenerateImagesFormValues } from "../model/schema";
 import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
@@ -46,11 +46,11 @@ export function GenerateImagesPromptField({ isJobInProgress }: GenerateImagesPro
     isJobInProgress,
   });
   // 무료 토큰을 다 쓴 뒤에만 나타난다.
-  // 단가는 1장 기준 `IMAGE_UNIT_COST`(30)다 — 한 요청 최대 2장이지만 "한 장도 못 만드는가"가
-  // 부족의 기준이라 장수를 곱하지 않는다.
+  // 단가는 공개 가격 응답의 장당 가격이고, 그 응답이 로딩 중이거나 실패했으면 부족을 판정하지 않는다(`isImageCloverShort`).
   const { data: clover } = useCloverBalanceQuery();
+  const imageCost = useCloverPricingQuery().data?.imageCost;
   const cloverBalance = clover?.balance ?? 0;
-  const isCloverShort = isCloverInsufficient(cloverBalance, IMAGE_CLOVER_COST);
+  const isCloverShort = isImageCloverShort(cloverBalance, imageCost);
   const shouldShowClover =
     clover !== undefined &&
     shouldShowCloverBalance({

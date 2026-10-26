@@ -28,10 +28,13 @@ export type GenerateImageRequestBody = Omit<
  * 참조 이미지는 **참조를 쓸 수 있을 때만** 싣는다. 사용자가 참조를 고른 뒤 서버가 참조를 끄면
  * (모델 목록이 다시 받아지며 참조 행이 사라진다) 폼에는 고른 값이 남아 있는데, 그대로 보내면 서버가
  * 400으로 거절한다. 참조가 없으면 키 자체를 빼서 참조 없는 요청 바디를 예전과 같게 둔다. 이 필드는
- * 서버 스키마에서 선택 필드라 빼먹어도 컴파일이 못 잡으므로 `formToServer.test.ts`가 고정한다. */
+ * 서버 스키마에서 선택 필드라 빼먹어도 컴파일이 못 잡으므로 `formToServer.test.ts`가 고정한다.
+ *
+ * 가격 버전은 화면이 공개 가격 응답에서 받은 가격표 버전이다(장당 가격을 보여 준 그 응답). 모르면(가격표를 아직 못 받았거나
+ * 그 칸이 없는 옛 서버) 키를 빼 서버가 대조하지 않게 한다. 폼 값이 아니라 제출 시점의 맥락이라 참조 판정과 같은 자리로 받는다. */
 export function formToServer(
   values: GenerateImagesFormValues,
-  { isReferenceEnabled }: { isReferenceEnabled: boolean },
+  { isReferenceEnabled, priceVersion }: { isReferenceEnabled: boolean; priceVersion?: number },
 ): GenerateImageRequestBody {
   const body: GenerateImageRequestBody = {
     prompt: values.prompt,
@@ -43,5 +46,6 @@ export function formToServer(
   if (isReferenceEnabled && values.reference !== null) {
     body.referenceAssetId = values.reference.assetId;
   }
+  if (priceVersion !== undefined) body.priceVersion = priceVersion;
   return body;
 }

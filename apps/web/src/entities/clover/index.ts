@@ -14,7 +14,6 @@ export type {
   CloverLedgerItem,
   CloverLedgerListResponse,
 } from "./api/useCloverLedgerQuery";
-export { IMAGE_CLOVER_COST } from "./model/cloverCost";
 export { isCloverInsufficient, shouldShowCloverBalance } from "./model/cloverBalanceDisplay";
 export { isCloverSpendConfirmRequired } from "./model/cloverSpendConfirm";
 export type { CloverSpendConfirmOutcome } from "./model/cloverSpendConfirm";
