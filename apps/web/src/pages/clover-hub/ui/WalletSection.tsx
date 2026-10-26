@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type FocusEvent } from "react";
 
 import {
   CLOVER_EXPIRY_NOTICE_MESSAGE,
@@ -146,6 +146,7 @@ function PurchaseOutcome({
   onRetryBalance: () => void;
 }) {
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const isFocusInside = useRef(false);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -153,6 +154,26 @@ function PurchaseOutcome({
     });
     return () => cancelAnimationFrame(frame);
   }, [settled]);
+
+  // 반영됐다는 문장으로 바뀌면 "잔액 다시 불러오기"가 사라진다. 그 버튼(또는 블록 안 다른 곳)에 포커스가 있었으면 포커스가
+  // `<body>` 로 떨어지므로 결과 제목으로 옮긴다. 블록 밖에 있던 포커스는 건드리지 않는다.
+  useEffect(() => {
+    if (isCheckingResolved && isFocusInside.current) titleRef.current?.focus();
+  }, [isCheckingResolved]);
+
+  /** 포커스가 블록 안에 있는지 기억한다. 포커스를 가진 요소가 지워질 때 브라우저가 내는 blur 는 갈 곳(`relatedTarget`)이
+   * 없고 그 요소가 이미 문서에서 빠져 있어, 그 경우는 블록을 떠난 것으로 치지 않는다. */
+  const focusTracking = {
+    onFocus: () => {
+      isFocusInside.current = true;
+    },
+    onBlur: (event: FocusEvent<HTMLDivElement>) => {
+      const next = event.relatedTarget;
+      if (next instanceof Node ? !event.currentTarget.contains(next) : event.target.isConnected) {
+        isFocusInside.current = false;
+      }
+    },
+  };
 
   const title = (
     <h3 ref={titleRef} tabIndex={-1} className="text-sm font-semibold break-keep text-foreground outline-none">
@@ -172,7 +193,11 @@ function PurchaseOutcome({
       );
     case "checking":
       return (
-        <div role="status" className="flex flex-col items-start gap-3 rounded-xl border border-border px-4 py-3">
+        <div
+          role="status"
+          className="flex flex-col items-start gap-3 rounded-xl border border-border px-4 py-3"
+          {...focusTracking}
+        >
           <div className="flex items-start gap-2">
             {!isCheckingResolved && (
               <Loader2 aria-hidden className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" />
