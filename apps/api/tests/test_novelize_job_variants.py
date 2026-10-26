@@ -5,6 +5,7 @@
 잠금이 다른 작업 행을 고르게 되는데, 그 차이가 여기서 먼저 깨진다."""
 
 import uuid
+from types import SimpleNamespace
 from typing import Any, get_args
 
 import pytest
@@ -220,7 +221,10 @@ def test_each_handler_calls_at_its_call_site_with_the_job_model_only_when_the_fa
     novel = Novel(id=job.novel_id, user_id=job.user_id, chat_room_id=uuid.uuid4())
     assert facts.call_site is not None
 
-    usage = runner.HANDLERS[variant].context(job, novel)
+    # 배정 표 행이 쓰이지 않은 입력 — 수정 갈래가 입력에서 읽는 부를 모델이 없다.
+    inp = SimpleNamespace(call_model=None)
+
+    usage = runner.HANDLERS[variant].context(job, novel, inp)
 
     base = LLMCallContext(call_site=facts.call_site, user_id=job.user_id, room_id=novel.chat_room_id)
     expected = LLMCallContext(
