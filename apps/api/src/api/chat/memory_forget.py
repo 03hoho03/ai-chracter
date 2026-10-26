@@ -9,15 +9,19 @@
   범위가 겹치는(양 끝 포함) 장면도 함께 지운다. 회상은 그 키를 모르는 인물 앞에서 이 장면들을 가리는데(`chat/memory_knowledge.py`),
   사실만 지우면 가림이 풀려 잊은 비밀이 장면으로 다시 실린다. 이긴 행이 공개면 회상이 그 키로 아무것도 가리지 않으므로 장면을
   지우지 않는다. 확인 대화가 함께 지울 장면 수를 미리 보여 주므로 미리 보기와 지우기가 같은 함수(`fact_forget_plan`)로 고른다.
-- 장면이든 사실이든 잊으면 그 방의 인상(`chat_memory_impressions`)을 전부 지운다. 인상은 장면·사실을 읽고 쓴 글이라 잊은 내용을
-  품고 있을 수 있는데, 잊기는 스냅샷을 지우지 않아 인상의 스냅샷 CASCADE 가 걸리지 않는다. 잊은 행이 근거인 인상만 고르지 않고
-  모두 지운다 — 인상은 생성에도 화면에도 쓰이지 않아 남겨서 얻는 것이 없다. 지운 인상 중 가장 새 묶음의 것은 그 묶음이 아직
-  가장 새 묶음이면(잊은 뒤 다음 접기 전) 다음 사용 범위 안 턴 뒤에 남은 장면·사실 행으로 다시 만들어진다. 그보다 오래된 묶음은
-  거슬러 채우지 않으므로 그 인상들은 돌아오지 않고, 이후 묶음부터 다시 쌓인다(`chat/memory_impressions.py`).
-- 인상을 지우면서 그 방의 인상 시도 기록(`chat_memory_impression_attempts`) 중 `done` 인 것도 지운다. 남겨 두면 인상 생성의 선점이
-  끝난 묶음으로 보고 다시 쥐지 않아, 위의 "가장 새 묶음은 다시 만들어진다"가 거짓이 된다. `failed` 는 남긴다 — 재시도 상한의
-  기록이라 지우면 세 번 실패한 묶음을 잊을 때마다 세 번씩 다시 부른다. `running` 도 남긴다 — 도는 작업의 선점이고, 그 작업은 넣기
-  직전에 오른 세대를 보고 결과를 버린다.
+- 장면이든 사실이든 잊으면 지우는 행을 근거로 쓴 인상(`chat_memory_impressions`)만 지운다. 인상은 장면·사실을 읽고 쓴 글이라
+  잊은 내용을 품고 있을 수 있는데, 잊기는 스냅샷을 지우지 않아 인상의 스냅샷 CASCADE 가 걸리지 않는다. 인상 행은 입력에 쓴 행
+  id 를 전부 근거(`episode_ids`·`fact_ids`)로 남기므로, 근거에 없는 행은 그 인상이 읽지 않은 행이다. 지우는 행은 잊은 장면 하나,
+  또는 잊은 키의 모든 행(여러 스냅샷에 걸친 옛 값 포함 — 옛 값만 읽은 인상도 잊은 키를 품는다)과 비밀 키와 함께 지우는 장면이다
+  — 함께 지우는 장면을 빼면 그 장면만 읽은 인상이 잊은 비밀을 장면 글로 남긴다. 근거는 아래 잠금을 얻은 뒤 읽으므로 잠금을
+  기다리는 동안 커밋된 인상까지 본다. 지운 인상 중 가장 새 묶음의 것은 그 묶음이 아직 가장 새 묶음이면(잊은 뒤 다음 접기 전)
+  다음 사용 범위 안 턴 뒤에 남은 장면·사실 행으로 다시 만들어진다. 그보다 오래된 묶음은 거슬러 채우지 않으므로 그 인상은
+  돌아오지 않는다(`chat/memory_impressions.py`).
+- 인상을 지우면서 지운 인상과 같은 묶음(같은 스냅샷)의 인상 시도 기록(`chat_memory_impression_attempts`) 중 `done` 인 것도 지운다.
+  남겨 두면 인상 생성의 선점이 끝난 묶음으로 보고 다시 쥐지 않아, 위의 "가장 새 묶음은 다시 만들어진다"가 거짓이 된다. 인상이
+  남은 묶음의 `done` 은 남긴다 — 그 묶음은 인상이 있어 다시 만들 일이 없고, 지우면 그 호출의 모델·토큰 기록만 잃는다. `failed` 는
+  남긴다 — 재시도 상한의 기록이라 지우면 세 번 실패한 묶음을 잊을 때마다 세 번씩 다시 부른다. `running` 도 남긴다 — 도는 작업의
+  선점이고, 그 작업은 넣기 직전에 오른 세대를 보고 결과를 버린다.
 
 잠금 순서 — 한 트랜잭션, 커밋은 호출부
 1. 방 행 `FOR NO KEY UPDATE`. 스냅샷을 지우는 경로(되감기·초기화·방 삭제)와 요약 접기 커밋·요약 편집이 모두 방 행을 먼저 잡으므로
@@ -28,7 +32,7 @@
    기다렸다가(대상은 기다린 뒤의 문장으로 고르므로) 방금 들어간 행까지 보고 지우고, 잊기가 먼저면 그들이 잊기 커밋을 기다린다.
    그들은 스냅샷 하나만 쥐고 잊기가 쥔 다른 잠금을 기다리지 않으므로 순환이 없다. 임베딩 채우기가 지운 행에 넣으려 하면 FK 위반을
    경합으로 보고 건너뛴다(`chat/memory_embeddings.py`).
-3. 대상을 고르고 DELETE, 그 방의 인상과 `done` 시도 기록 DELETE. 그리고 같은 트랜잭션에서 방의 잊기 세대(`memory_forget_generation`)를 하나 올린다
+3. 대상을 고르고 DELETE, 지운 행을 근거로 쓴 인상과 그 묶음의 `done` 시도 기록 DELETE. 그리고 같은 트랜잭션에서 방의 잊기 세대(`memory_forget_generation`)를 하나 올린다
    — 장면을 잊어도 사실을 잊어도 오른다. 잊기 전에 입력(앞 사실 목록)을 읽은 사실 추출은 그 키를 다시 낼 수 있고, 잊기 전에 창을
    읽은 장면 추출은 잊은 비밀과 겹치는 장면을 가려 줄 사실 없이 넣게 되며(함께 지우는 장면은 잊는 순간 있던 것뿐이다), 잊기 전에
    장면·사실 행을 읽은 인상 생성은 잊은 내용을 품은 글을 넣게 된다. 그래서 셋 모두 넣기 직전에 세대가 바뀐 것을 보면 결과를
@@ -48,7 +52,8 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import Text, delete, or_, select, update
+from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_knowledge import latest_by_key, overlaps
@@ -124,11 +129,32 @@ async def fact_forget_plan(db: AsyncSession, room_id: uuid.UUID, key: str) -> Fa
     return FactForgetPlan(episode_ids=overlapping)
 
 
-async def _forget_derived(db: AsyncSession, room_id: uuid.UUID) -> None:
-    """잠금 순서 3 의 뒷부분 — 그 방의 인상과 `done` 시도 기록을 지우고 잊기 세대를 올린다(모듈 설명)."""
-    await db.execute(delete(ChatMemoryImpression).where(ChatMemoryImpression.chat_room_id == room_id))
-    attempt = ChatMemoryImpressionAttempt
-    await db.execute(delete(attempt).where(attempt.chat_room_id == room_id, attempt.status == "done"))
+async def _forget_derived(
+    db: AsyncSession, room_id: uuid.UUID, *, episode_ids: Sequence[uuid.UUID], fact_ids: Sequence[uuid.UUID]
+) -> None:
+    """잠금 순서 3 의 뒷부분 — 지운 장면·사실 행을 근거로 쓴 인상과 그 묶음의 `done` 시도 기록을 지우고 잊기 세대를 올린다(모듈
+    설명). 인상의 근거 칸은 문자열 UUID 배열이라 JSONB `?|`(배열 원소 중 하나라도 있으면)로 겹침을 본다."""
+    impression = ChatMemoryImpression
+    overlaps_any = [
+        column.has_any(array([str(row_id) for row_id in ids], type_=Text))
+        for column, ids in ((impression.episode_ids, episode_ids), (impression.fact_ids, fact_ids))
+        if ids
+    ]
+    if overlaps_any:
+        removed = (
+            await db.scalars(
+                delete(impression)
+                .where(impression.chat_room_id == room_id, or_(*overlaps_any))
+                .returning(impression.snapshot_id)
+            )
+        ).all()
+        if removed:
+            attempt = ChatMemoryImpressionAttempt
+            await db.execute(
+                delete(attempt).where(
+                    attempt.chat_room_id == room_id, attempt.snapshot_id.in_(removed), attempt.status == "done"
+                )
+            )
     await db.execute(
         update(ChatRoom)
         .where(ChatRoom.id == room_id)
@@ -137,8 +163,8 @@ async def _forget_derived(db: AsyncSession, room_id: uuid.UUID) -> None:
 
 
 async def forget_episode(db: AsyncSession, room_id: uuid.UUID, episode_id: uuid.UUID) -> None:
-    """방의 장면 하나를 지우고 그 방의 인상을 지운 뒤 잊기 세대를 올린다(커밋은 호출부). 방이 없으면 `RoomMissingError`, 그 방의
-    장면이 아니면 `MemoryItemMissingError`."""
+    """방의 장면 하나를 지우고 그 장면을 근거로 쓴 인상을 지운 뒤 잊기 세대를 올린다(커밋은 호출부). 방이 없으면
+    `RoomMissingError`, 그 방의 장면이 아니면 `MemoryItemMissingError`."""
     await _lock_room_memory(db, room_id)
     removed = await db.scalar(
         delete(ChatMemoryEpisode)
@@ -147,17 +173,21 @@ async def forget_episode(db: AsyncSession, room_id: uuid.UUID, episode_id: uuid.
     )
     if removed is None:
         raise MemoryItemMissingError
-    await _forget_derived(db, room_id)
+    await _forget_derived(db, room_id, episode_ids=[removed], fact_ids=[])
 
 
 async def forget_fact_key(db: AsyncSession, room_id: uuid.UUID, key: str) -> None:
-    """방의 사실 키 하나(비밀이면 겹치는 장면까지)를 지우고 그 방의 인상을 지운 뒤 잊기 세대를 올린다(커밋은 호출부). 방이 없으면
-    `RoomMissingError`, 그 키 행이 없으면 `MemoryItemMissingError`."""
+    """방의 사실 키 하나(비밀이면 겹치는 장면까지)를 지우고 지운 행을 근거로 쓴 인상을 지운 뒤 잊기 세대를 올린다(커밋은
+    호출부). 방이 없으면 `RoomMissingError`, 그 키 행이 없으면 `MemoryItemMissingError`."""
     await _lock_room_memory(db, room_id)
     plan = await fact_forget_plan(db, room_id, key)
-    await db.execute(
-        delete(ChatMemoryFact).where(ChatMemoryFact.chat_room_id == room_id, ChatMemoryFact.fact_key == key)
-    )
+    fact_ids = (
+        await db.scalars(
+            delete(ChatMemoryFact)
+            .where(ChatMemoryFact.chat_room_id == room_id, ChatMemoryFact.fact_key == key)
+            .returning(ChatMemoryFact.id)
+        )
+    ).all()
     if plan.episode_ids:
         await db.execute(delete(ChatMemoryEpisode).where(ChatMemoryEpisode.id.in_(plan.episode_ids)))
-    await _forget_derived(db, room_id)
+    await _forget_derived(db, room_id, episode_ids=plan.episode_ids, fact_ids=fact_ids)
