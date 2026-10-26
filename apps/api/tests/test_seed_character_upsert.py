@@ -29,6 +29,7 @@ from seed_content.loader import load_character
 from seed_content.upsert import (
     SeedPublishError,
     character_content_id,
+    character_draft_version_id,
     character_version_id,
     upsert_character,
 )
@@ -286,3 +287,77 @@ async def test_upsert_character_rejects_incomplete_payload_without_writing(
     assert await db_session.get(Content, character_content_id(SLUG)) is None
     assert await db_session.get(ContentVersion, character_version_id(SLUG)) is None
     assert await _count(db_session, Asset) == 0
+
+
+async def test_upsert_character_keeps_the_private_visibility_written_in_the_json(
+    db_session: AsyncSession, s3_bucket: None, tmp_path: Path
+) -> None:
+    """스토리와 같은 규칙 — 공개 JSON 의 짝은 `test_upsert_character_publishes_with_derived_ids` 가 본다."""
+    await _seed_author(db_session)
+
+    def _private(raw: dict[str, Any]) -> None:
+        raw["visibility"] = "private"
+
+    content_id = await upsert_character(db_session, SLUG, await _load_seed_payload(db_session, tmp_path, _private))
+
+    content = await db_session.get(Content, content_id)
+    assert content is not None
+    assert content.visibility == ContentVisibility.PRIVATE
+    assert content.current_published_version_id == character_version_id(SLUG)
+
+
+async def _version_rows(db_session: AsyncSession) -> list[ContentVersion]:
+    return list(
+        (
+            await db_session.scalars(
+                select(ContentVersion).where(ContentVersion.content_id == character_content_id(SLUG))
+            )
+        ).all()
+    )
+
+
+async def test_upsert_character_unpublished_writes_only_a_draft_version(
+    db_session: AsyncSession, s3_bucket: None, tmp_path: Path
+) -> None:
+    """운영에서 아직 발행하지 않은 작품은 로컬에서도 빌더가 여는 초안 하나뿐이어야 한다 — 발행본을 만들면 로컬 홈에
+    운영에 없는 작품이 뜬다. 다시 돌려도 버전이 늘지 않는다."""
+    await _seed_author(db_session)
+    payload = await _load_seed_payload(db_session, tmp_path)
+
+    for _ in range(2):
+        await upsert_character(db_session, SLUG, payload, published=False)
+
+        content = await db_session.get(Content, character_content_id(SLUG))
+        assert content is not None
+        assert content.current_published_version_id is None
+        versions = await _version_rows(db_session)
+        assert [version.id for version in versions] == [character_draft_version_id(SLUG)]
+        assert versions[0].published_at is None
+        detail = await db_session.get(CharacterVersionDetail, character_draft_version_id(SLUG))
+        assert detail is not None and detail.name == "서준"
+        assert len(await _situational_images(db_session, character_draft_version_id(SLUG))) == 2
+
+
+async def test_upsert_character_unpublished_accepts_a_payload_that_fails_publish_validation(
+    db_session: AsyncSession, s3_bucket: None, tmp_path: Path
+) -> None:
+    """미발행 작품은 쓰다 만 초안일 수 있다 — 발행 검증을 통과하지 못해도 초안으로는 들어가야 한다. 발행하는 짝은
+    `test_upsert_character_rejects_incomplete_payload_without_writing` 이 거절로 본다."""
+    await _seed_author(db_session)
+    raw = _character_json()
+    raw["genreId"] = None
+    raw["intro"] = ""
+    payload = load_character(_write_character(tmp_path, raw))  # thumbnailAssetId 도 None 인 채로
+
+    try:
+        await upsert_character(db_session, SLUG, payload, published=False)
+    except SeedPublishError as exc:
+        pytest.fail(f"미발행 초안이 발행 검증으로 거절됐다: {exc}")
+
+    content = await db_session.get(Content, character_content_id(SLUG))
+    assert content is not None
+    assert content.current_published_version_id is None
+    detail = await db_session.get(CharacterVersionDetail, character_draft_version_id(SLUG))
+    assert detail is not None
+    assert detail.intro == ""
+    assert detail.thumbnail_asset_id is None

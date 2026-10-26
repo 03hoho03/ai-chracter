@@ -109,8 +109,15 @@ def ensure_local_database(database_url: str) -> None:
     replay_local_db.ensure_local_database(database_url, tool="seed_dev.py")
 
 
+def ensure_local_object_store(endpoint_url: str | None) -> None:
+    """S3 엔드포인트가 로컬(DB 와 같은 허용 목록)이 아니면 `SystemExit`. 엔드포인트가 없으면 boto3 가 실제 AWS 로
+    나가므로 그것도 거부한다. DB 만 로컬이고 저장소가 운영 버킷이면 목업 이미지가 운영 객체 키를 덮어쓴다.
+    아직 아무것도 검사하지 않는다."""
+
+
 async def main() -> None:
     ensure_local_database(settings.database_url)
+    ensure_local_object_store(settings.s3_endpoint_url)
 
     # 이 코드베이스는 `relationship()` 을 선언하지 않으므로(순수 FK 컬럼만) 참조 순서를 직접
     # 지킨다 — 부모를 merge 한 뒤 `flush()` 로 실제 INSERT 를 내보내고 나서 자식으로 넘어간다.

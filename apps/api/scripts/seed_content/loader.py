@@ -49,6 +49,10 @@ TUTORIAL_CHARACTERS_DIR = DATA_DIR / "tutorial" / "characters"
 # 돌아야 한쪽만 새 폴더를 보는 일이 없다.
 STORY_DIRS = (TUTORIAL_STORIES_DIR,)
 CHARACTER_DIRS = (TUTORIAL_CHARACTERS_DIR,)
+# 운영에서 읽기 전용으로 내보낸 비공개 시드 묶음 자리(gitignore — 저장소는 공개라 커밋하지 않는다). 안에
+# `stories/*.json`·`characters/*.json`·`images/`·`manifest.json` 을 둔다. 작품 JSON 이 하나라도 있으면
+# 시드는 이 묶음만 넣고 튜토리얼은 넣지 않는다. 테스트가 바꿔 끼울 수 있게 호출할 때 이 이름을 읽는다.
+PRIVATE_DIR = Path(__file__).parent / "private"
 
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
 
@@ -61,12 +65,17 @@ class SeedContentError(Exception):
 class SeedStory:
     slug: str
     payload: StoryDraftPayload
+    # JSON 최상위 `seedPublished` (없으면 발행). 모델이 모르는 키라 검증은 무시하고 로더가 따로 읽는다 — 거짓이면
+    # 시드가 초안만 만들고 발행 검증·발행을 건너뛴다.
+    published: bool = True
 
 
 @dataclass(frozen=True)
 class SeedCharacter:
     slug: str
     payload: CharacterDraftPayload
+    # `SeedStory.published` 와 같다.
+    published: bool = True
 
 
 def load_story(path: Path) -> StoryDraftPayload:
@@ -96,6 +105,20 @@ def load_all_characters() -> list[SeedCharacter]:
     return [
         character for directory in CHARACTER_DIRS for character in load_characters(directory)
     ]
+
+
+def load_seed_stories(private_dir: Path | None = None) -> list[SeedStory]:
+    """시드할 스토리 목록. 비공개 묶음(`private_dir`, 생략하면 `PRIVATE_DIR`)에 작품 JSON 이 하나라도 있으면 그
+    묶음의 `stories/` 만, 없거나 비었으면 튜토리얼 목록이다. 판정은 스토리·캐릭터를 합쳐 하므로 묶음에 캐릭터만
+    있으면 스토리는 빈 목록이다."""
+    # 아직 비공개 묶음을 읽지 않는다 — 늘 튜토리얼 목록.
+    return load_all_stories()
+
+
+def load_seed_characters(private_dir: Path | None = None) -> list[SeedCharacter]:
+    """시드할 캐릭터 목록. 고르는 규칙은 `load_seed_stories` 와 같다."""
+    # 아직 비공개 묶음을 읽지 않는다 — 늘 튜토리얼 목록.
+    return load_all_characters()
 
 
 def _json_files(directory: Path) -> list[Path]:

@@ -10,7 +10,15 @@ from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.s3 import download_object
+from botocore.exceptions import ClientError
+
+from api.core.s3 import (
+    build_animated_display_key,
+    build_animated_thumbnail_key,
+    build_display_key,
+    build_thumbnail_key,
+    download_object,
+)
 from api.db.models.auth import User
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from seed_content import images
@@ -235,3 +243,75 @@ async def test_ensure_asset_survives_a_dead_object_store(
     assert isinstance(asset_id, uuid.UUID)
     assert await db_session.get(Asset, asset_id) is not None
     assert "업로드 건너뜀" in capsys.readouterr().out
+
+
+def _object_exists(key: str) -> bool:
+    try:
+        download_object(key)
+    except ClientError:
+        return False
+    return True
+
+
+def _two_frame_gif(width: int = 40, height: int = 30) -> bytes:
+    """움직이는 대표 이미지의 가장 작은 꼴 — 색이 다른 두 프레임."""
+    frames = [Image.new("RGB", (width, height), color) for color in ((40, 20, 20), (20, 20, 40))]
+    buffer = io.BytesIO()
+    frames[0].save(buffer, format="GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    return buffer.getvalue()
+
+
+async def test_ensure_asset_uploads_thumbnail_and_display_variants_beside_the_original(
+    db_session: AsyncSession, s3_bucket: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화면은 썸네일·표시용 변형 키를 존재 확인 없이 만들어 서명한다. 시드가 원본만 올리면 로컬 카드·상세가 전부
+    404 로 깨진다 — 업로드 경로가 만드는 변형을 시드도 같이 올려야 한다(튜토리얼 목업 PNG 포함)."""
+    monkeypatch.setattr(images, "IMAGES_DIR", tmp_path)
+    await _seed_author(db_session)
+
+    asset_id = await images.ensure_asset(db_session, "sf-backup", AssetKind.THUMBNAIL, "SF")
+    await db_session.flush()
+
+    asset = await db_session.get(Asset, asset_id)
+    assert asset is not None
+    assert _object_exists(asset.storage_key)
+    assert _object_exists(build_thumbnail_key(asset.storage_key)), "썸네일 변형이 없다"
+    assert _object_exists(build_display_key(asset.storage_key)), "표시용 변형이 없다"
+
+
+async def test_ensure_asset_keeps_a_still_image_without_animated_variants(
+    db_session: AsyncSession, s3_bucket: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """움직이는 그림과 짝인 경계 — 정지 그림은 프레임 1 이고 움직이는 변형 표시가 꺼져 있다."""
+    monkeypatch.setattr(images, "IMAGES_DIR", tmp_path)
+    await _seed_author(db_session)
+
+    asset_id = await images.ensure_asset(db_session, "still", AssetKind.THUMBNAIL, data=_png(40, 30))
+    await db_session.flush()
+
+    asset = await db_session.get(Asset, asset_id)
+    assert asset is not None
+    assert asset.frame_count == 1
+    assert asset.animated_variants_ready is False
+    assert asset.storage_key.endswith(".png")
+
+
+async def test_ensure_asset_marks_an_animated_thumbnail_ready_with_its_animated_variants(
+    db_session: AsyncSession, s3_bucket: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """움직이는 대표 이미지는 카드·상세가 움직이는 변형을 받으려면 그 변형이 올라가 있고 표시가 켜져 있어야 한다.
+    저장 키 확장자와 Content-Type 도 바이트가 정한다 — GIF 를 `.png` 로 올리면 브라우저가 형식을 오인한다."""
+    monkeypatch.setattr(images, "IMAGES_DIR", tmp_path)
+    await _seed_author(db_session)
+    gif = _two_frame_gif()
+
+    asset_id = await images.ensure_asset(db_session, "moving", AssetKind.THUMBNAIL, data=gif)
+    await db_session.flush()
+
+    asset = await db_session.get(Asset, asset_id)
+    assert asset is not None
+    assert asset.storage_key.endswith(".gif"), asset.storage_key
+    assert asset.frame_count == 2
+    assert asset.animated_variants_ready is True
+    assert _object_exists(build_animated_thumbnail_key(asset.storage_key)), "움직이는 썸네일 변형이 없다"
+    assert _object_exists(build_animated_display_key(asset.storage_key)), "움직이는 표시용 변형이 없다"

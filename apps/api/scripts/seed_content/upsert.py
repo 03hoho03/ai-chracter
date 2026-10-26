@@ -88,8 +88,13 @@ def character_draft_version_id(slug: str) -> uuid.UUID:
     return seed_uuid("character", slug, "draft")
 
 
-async def upsert_story(session: AsyncSession, slug: str, payload: StoryDraftPayload) -> uuid.UUID:
+async def upsert_story(
+    session: AsyncSession, slug: str, payload: StoryDraftPayload, *, published: bool = True
+) -> uuid.UUID:
     """스토리 하나를 발행 상태로 업서트하고 콘텐츠 id 를 돌려준다.
+
+    `published` 가 거짓이면(JSON 의 `seedPublished: false`) 초안 버전만 만들고 발행 검증·발행을 건너뛰어
+    `current_published_version_id` 가 비어 있다. 아직 이 값을 보지 않는다.
 
     `payload.thumbnail_asset_id` 는 이미 채워져 있어야 한다(발행 검증 필수 항목) — 시드
     이미지 자산을 만드는 건 `images.ensure_asset` 의 몫이고, 호출부가 그 결과를 payload 에
@@ -129,9 +134,11 @@ async def upsert_story(session: AsyncSession, slug: str, payload: StoryDraftPayl
 
 
 async def upsert_character(
-    session: AsyncSession, slug: str, payload: CharacterDraftPayload
+    session: AsyncSession, slug: str, payload: CharacterDraftPayload, *, published: bool = True
 ) -> uuid.UUID:
     """캐릭터 하나를 발행 상태로 업서트하고 콘텐츠 id 를 돌려준다.
+
+    `published` 는 `upsert_story` 와 같다. 아직 이 값을 보지 않는다.
 
     스토리와 달리 **상황별 이미지 자산까지 이 함수가 만든다** — `situationalImages` 항목에는
     자산을 담을 필드가 아예 없어서(`CharacterSituationalImageDraftInput` 은 빌더 자동저장이
