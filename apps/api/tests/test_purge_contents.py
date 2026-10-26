@@ -8,7 +8,8 @@
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import purge_contents as script
 from api.core.s3 import build_variant_keys
 from api.db.models import (
+    AdminActionLog,
     CharacterImageExposure,
     ChatMessage,
+    ChatMessageReport,
     ChatMessageRole,
     ChatRoom,
     CloverLedger,
@@ -30,8 +33,14 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
+    CreatorPayoutConfirmation,
+    CreatorPayoutConfirmationLine,
+    DiscardedResponse,
     Favorite,
     HomeCuration,
+    Inquiry,
+    InquiryCategory,
+    InquiryStatus,
     Like,
     ModerationAction,
     ModerationActionType,
@@ -53,7 +62,14 @@ from api.db.models import (
 from api.db.models.auth import User
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from comment_factories import _make_comment
-from factories import _add_media_book_cell, _create_admin, _make_draft_content, _make_novel_tree, _make_user
+from factories import (
+    _add_media_book_cell,
+    _create_admin,
+    _make_draft_content,
+    _make_novel_tree,
+    _make_payment,
+    _make_user,
+)
 
 
 @dataclass
@@ -268,6 +284,35 @@ async def _spend_ledger(db: AsyncSession, user_id: uuid.UUID) -> CloverLedger:
     return ledger
 
 
+async def _payout_line(db: AsyncSession, creator_id: uuid.UUID, payer_id: uuid.UUID, content_id: uuid.UUID) -> None:
+    """정산 확정 하나와 그 확정의 작품 내역 한 줄."""
+    window_end = datetime.now(UTC)
+    confirmation = CreatorPayoutConfirmation(
+        user_id=creator_id,
+        kind="retro",
+        window_start=window_end - timedelta(days=1),
+        window_end=window_end,
+        gross_units=10,
+        refunded_units=0,
+        rate_bps=500,
+        exact_krw=Decimal(1),
+        amount_krw=1,
+    )
+    db.add(confirmation)
+    payment = await _make_payment(db, user_id=payer_id)
+    await db.flush()
+    db.add(
+        CreatorPayoutConfirmationLine(
+            confirmation_id=confirmation.id,
+            content_id=content_id,
+            payment_id=payment.id,
+            net_units=10,
+            cancel_adjust_krw=Decimal(0),
+            exact_krw=Decimal(1),
+        )
+    )
+
+
 def _generation_request(owner_id: uuid.UUID) -> ImageGenerationRequest:
     return ImageGenerationRequest(
         owner_user_id=owner_id,
@@ -425,13 +470,17 @@ async def test_spend_usage_on_any_axis_refuses_the_purge(
         pytest.param("comment", id="comment"),
         pytest.param("illustration", id="illustration"),
         pytest.param("shared_setup", id="shared-setup"),
+        pytest.param("payout_line", id="payout-line"),
+        pytest.param("profile_image", id="profile-image"),
+        pytest.param("inquiry_attachment", id="inquiry-attachment"),
     ],
 )
 async def test_blocking_reference_refuses_the_purge(
     db_session: AsyncSession, tmp_path: Path, blocker: str
 ) -> None:
-    """홈 지정·댓글·다른 소설의 삽화가 쓰는 그림·다른 작품과 겹치는 시작설정 entity id 는 지우면 남의 화면이나 기록이 깨지므로
-    거부한다. 대조군(이것들이 없을 때 지워진다)은 맨 위 테스트다."""
+    """홈 지정·댓글·다른 소설의 삽화가 쓰는 그림·다른 작품과 겹치는 시작설정 entity id·정산 확정 내역·회원 프로필이나 문의
+    첨부로 쓰이는 그림은 지우면 남의 화면이나 기록이 깨지므로 거부한다. 정산 내역은 지급·세무의 장부라 작품이 사라지면 근거를
+    잃는다. 대조군(이것들이 없을 때 지워진다)은 맨 위 테스트다."""
     creator = await _user(db_session)
     reader = await _user(db_session)
     target = await _story(db_session, creator.id, thumbnail_id=(await _image(db_session, creator.id)).id)
@@ -447,8 +496,23 @@ async def test_blocking_reference_refuses_the_purge(
                 revision_id=unrelated.first_revision.id, sort_order=0, asset_id=target.thumbnail_id, source="upload"
             )
         )
-    else:
+    elif blocker == "shared_setup":
         await _story(db_session, creator.id, setup_entity_id=target.setup_entity_id)
+    elif blocker == "payout_line":
+        await _payout_line(db_session, creator.id, reader.id, target.content.id)
+    elif blocker == "profile_image":
+        reader.profile_image_asset_id = target.thumbnail_id
+    else:
+        db_session.add(
+            Inquiry(
+                user_id=reader.id,
+                category=InquiryCategory.BUG,
+                title="합성 문의",
+                body="합성 문의 본문",
+                attachment_asset_id=target.thumbnail_id,
+                status=InquiryStatus.PENDING,
+            )
+        )
     await db_session.flush()
 
     await _assert_refused(db_session, target, tmp_path)
@@ -642,3 +706,43 @@ async def test_moderation_action_and_notification_keep_their_rows_with_content_c
     assert await _count(db_session, ModerationAction, ModerationAction.id == action.id) == 1
     assert await db_session.scalar(select(Notification.content_id).where(Notification.id == notification.id)) is None
     assert await _count(db_session, Notification, Notification.id == notification.id) == 1
+
+
+async def test_room_records_keep_their_rows_with_room_cleared(db_session: AsyncSession, tmp_path: Path) -> None:
+    """방을 가리키는 운영자 조치 기록·버린 응답 기록·응답 신고는 기록이라 남고 방 칸만 빈다. 깨지는 시나리오: 기록까지 지워
+    조치 이력·신고 증거가 사라지거나, 방 DELETE 가 이 행들 때문에 FK 위반이 난다."""
+    creator = await _user(db_session)
+    reader = await _user(db_session)
+    admin = await _create_admin(db_session)
+    target = await _story(db_session, creator.id)
+    room = await _room(db_session, target, reader.id)
+    message_id = await db_session.scalar(select(ChatMessage.id).where(ChatMessage.chat_room_id == room.id))
+    log = AdminActionLog(admin_id=admin["id"], action_type="chat-view", target_chat_room_id=room.id)
+    discarded = DiscardedResponse(user_id=reader.id, chat_room_id=room.id, kind="regenerate", discarded_count=1)
+    report = ChatMessageReport(
+        reporter_user_id=reader.id,
+        chat_room_id=room.id,
+        chat_message_id=message_id,
+        reason="inappropriate",
+        status=ReportStatus.PENDING,
+    )
+    db_session.add_all([log, discarded, report])
+    await db_session.flush()
+
+    await _apply(db_session, [target], tmp_path / "keys.json")
+
+    assert await _count(db_session, ChatRoom, ChatRoom.id == room.id) == 0
+    assert await db_session.scalar(select(AdminActionLog.target_chat_room_id).where(AdminActionLog.id == log.id)) is None
+    assert await _count(db_session, AdminActionLog, AdminActionLog.id == log.id) == 1
+    assert (
+        await db_session.scalar(select(DiscardedResponse.chat_room_id).where(DiscardedResponse.id == discarded.id))
+        is None
+    )
+    assert await _count(db_session, DiscardedResponse, DiscardedResponse.id == discarded.id) == 1
+    assert (
+        await db_session.execute(
+            select(ChatMessageReport.chat_room_id, ChatMessageReport.chat_message_id).where(
+                ChatMessageReport.id == report.id
+            )
+        )
+    ).one() == (None, None)
