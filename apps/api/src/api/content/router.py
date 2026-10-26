@@ -439,23 +439,29 @@ async def _resolve_display_url(db: AsyncSession, asset_id: uuid.UUID | None) -> 
     return await run_in_threadpool(generate_presigned_get_url, key)
 
 
-async def _resolve_thumbnail_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
+def sign_thumbnail_url(asset: Asset) -> str:
     """Signs the `_thumb.webp` variant instead of the original — list/card slots never
     need full resolution, and every READY image asset is guaranteed to have this
     variant (generated at creation, backfilled for older assets by
     `scripts/backfill_thumbnails.py`), so the key is derived without an existence check.
-    The detail view draws the image larger and signs `_display.webp` instead (`_resolve_display_url`)."""
-    if asset_id is None:
-        return None
-    asset = await db.get(Asset, asset_id)
-    if asset is None:
-        return None
+    The detail view draws the image larger and signs `_display.webp` instead (`_resolve_display_url`).
+
+    자산을 이미 손에 쥔 곳(한 페이지의 자산을 한 번에 읽는 목록)은 이것을 바로 부른다. 서명은 네트워크 없이 로컬에서 한다."""
     key = (
         build_animated_thumbnail_key(asset.storage_key)
         if asset.animated_variants_ready
         else build_thumbnail_key(asset.storage_key)
     )
-    return await run_in_threadpool(generate_presigned_get_url, key)
+    return generate_presigned_get_url(key)
+
+
+async def _resolve_thumbnail_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
+    if asset_id is None:
+        return None
+    asset = await db.get(Asset, asset_id)
+    if asset is None:
+        return None
+    return await run_in_threadpool(sign_thumbnail_url, asset)
 
 
 @router.get("/users/{id}/profile")
