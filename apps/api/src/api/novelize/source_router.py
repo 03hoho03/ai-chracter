@@ -33,13 +33,18 @@ def _encode_cursor(key: tuple[datetime, datetime, uuid.UUID]) -> str:
 
 
 def _decode_cursor(cursor: str) -> tuple[datetime, datetime, uuid.UUID]:
+    invalid = HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"code": "NOVEL_SOURCE_CURSOR_INVALID"}
+    )
     try:
         activity_at, created_at, room_id = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
-        return datetime.fromisoformat(activity_at), datetime.fromisoformat(created_at), uuid.UUID(room_id)
+        key = datetime.fromisoformat(activity_at), datetime.fromisoformat(created_at), uuid.UUID(room_id)
     except (ValueError, TypeError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"code": "NOVEL_SOURCE_CURSOR_INVALID"}
-        ) from exc
+        raise invalid from exc
+    # 방의 정렬 키는 시간대 있는 시각이라, 오프셋 없는 시각과 비교하면 TypeError 로 500 이 난다.
+    if key[0].tzinfo is None or key[1].tzinfo is None:
+        raise invalid
+    return key
 
 
 @source_router.get("/novel-sources")
