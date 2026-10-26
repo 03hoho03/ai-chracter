@@ -19,7 +19,8 @@ _NOVEL_DIRS = (_SRC / "novelize", _SRC / "novel_public")
 
 # 소설화 코드가 메시지·기억 표에 닿는 모듈(`api.chat` 아래 전부와, 그 밖에서 그 표를 import 하거나 원시 SQL 로 부르는 모듈)에서
 # 가져와도 되는 이름. 모두 원문을 읽지 않는다 — 프롬프트 문안 렌더·이미 읽은 메시지의 서식·메시지 키 타입·원작 상태와 방 소유
-# 판정, 그리고 내 채팅 목록 항목의 타입·정렬 키·썸네일 서명이다(목록 행을 읽는 함수는 미리보기 원문을 읽어 관문을 지난다).
+# 판정, 모델 배정 표 읽기와 그 칸의 해석(배정 표 행만 읽는다), 그리고 내 채팅 목록 항목의 타입·정렬 키·썸네일 서명이다(목록
+# 행을 읽는 함수는 미리보기 원문을 읽어 관문을 지난다).
 _ALLOWED_READER_IMPORTS = {
     "api.chat.prompt_builder": {
         "PromptLane",
@@ -32,6 +33,8 @@ _ALLOWED_READER_IMPORTS = {
         "select_sections_for_render",
     },
     "api.chat.memory_window": {"MessageKey"},
+    "api.chat.prompt_routing": {"resolve_stage_route"},
+    "api.chat.prompt_routing_cache": {"load_prompt_routes"},
     "api.chat.router": {"_ensure_content_playable", "_get_owned_room", "my_chat_room_sort_key", "sign_room_thumbnails"},
     "api.chat.schemas": {"MyChatRoomListItem"},
 }

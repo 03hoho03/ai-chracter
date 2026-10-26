@@ -5,12 +5,15 @@
 
 import uuid
 from dataclasses import dataclass
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import MessageKey
 from api.chat.prompt_builder import load_active_prompt_set
+from api.chat.prompt_routing import resolve_stage_route
+from api.chat.prompt_routing_cache import load_prompt_routes
 from api.content.media_tags import strip_media_tags
 from api.core.config import settings
 from api.db.models.character import CharacterVersionDetail
@@ -19,7 +22,7 @@ from api.db.models.content import Content
 from api.db.models.novel import Novel, NovelBatch, NovelChapter, NovelChapterRevision, NovelCharacter, NovelJob
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StoryVersionDetail
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, PromptSetModelId, parse_chat_model_id
 from api.novelize.billing import chapter_job_model
 from api.novelize.job_variants import variant_of
 from api.novelize.prompts import NovelizePrompt, build_novelize_chapter_prompt, build_novelize_revise_prompt
@@ -58,7 +61,8 @@ async def load_novel_label_set(db: AsyncSession) -> PromptSet:
 
 
 async def load_novel_prompt_source(db: AsyncSession, *, model: ChatModelId = DEFAULT_CHAT_MODEL) -> NovelPromptSource:
-    """`model` 은 소설 레인 체인이다 — 화 생성·구성안은 작업의 모델을 넘기고 경계 제안·문단 수정은 기본(Gemini)이다. 그 체인에
+    """`model` 은 소설 레인 체인이다 — 화 생성·구성안은 작업의 모델을 넘기고, 경계 제안·문단 수정·여러 문단 수정·재검사는 모델
+    배정 표가 고른 체인을 넘긴다(`resolve_novel_call_route`, 행이 없으면 기본인 Gemini). 그 체인에
     활성 세트가 없으면 다른 체인으로 대신하지 않고 `PromptSetNotFoundError` 를 그대로 낸다: 다른 모델용 문안으로 값을 낸
     모델을 부르면 조용히 다른 글이 나오고, 마이그레이션이 세 체인을 모두 심고 어드민에는 세트를 지우는 길이 없어 이 실패는
     배포 결함일 때만 난다. 작업 실행은 이 실패를 실패·환불로 끝낸다.
@@ -68,6 +72,38 @@ async def load_novel_prompt_source(db: AsyncSession, *, model: ChatModelId = DEF
     prompt_set, sections = await load_active_prompt_set(db, lane="novel", model=model)
     label_set = prompt_set if model == "gemini" else await load_novel_label_set(db)
     return NovelPromptSource(prompt_set=prompt_set, sections=sections, label_set=label_set)
+
+
+# 모델 배정 표를 읽는 소설 단계 — 작업 모델과 무관한 구조화 호출 넷. 생성 세 단계(화·전체 구성안·장면 구성안)는 표를 읽지
+# 않는다: 행이 있어도 체인·부를 모델이 작업 모델이고 경로도 env 배정과 같을 때만 쓰여, 행이 동작을 바꾸지 않는다.
+NovelStructuredStage = Literal["novel_revise", "novel_revise_blocks", "novel_recheck", "novel_boundary"]
+
+
+@dataclass(frozen=True)
+class NovelCallRoute:
+    """소설 구조화 호출 하나가 읽을 체인과 호출 문맥에 실을 부를 모델. `call_model` 은 배정 표의 행이 쓰였을 때만 있다 — None
+    이면 싣지 않고, 호출은 지금처럼 그 호출 위치의 기본 모델로 간다."""
+
+    chain_model: ChatModelId
+    call_model: PromptSetModelId | None
+
+
+async def resolve_novel_call_route(db: AsyncSession, stage: NovelStructuredStage) -> NovelCallRoute:
+    """배정 표의 (소설, `any`, 단계) 칸을 푼다. 표 읽기는 한 번이다(캐시 히트면 Redis 한 번, 미스면 DB 한 번 더).
+
+    행이 없거나, 있어도 지금 env 로 쓸 수 없어 해석이 건너뛰면 env 규칙이다 — 소설 구조화 호출 위치에는 모델 설정이 없어 체인은
+    기본 모델(Gemini)이고 부를 모델은 싣지 않는다. 그래서 빈 표의 호출은 표를 읽기 전과 같은 세트를 읽고 같은 호출 문맥을
+    만든다. 부를 모델은 행이 쓰였을 때만 싣는다(채팅 판정의 `JudgmentPromptSets.call_model` 과 같은 규칙) — 구조화 호출의 구현과
+    보낼 모델 id 는 호출 문맥의 그 값으로 정해진다(`llm/routing.py`)."""
+    route = resolve_stage_route(await load_prompt_routes(db), lane="novel", room_model="any", stage=stage)
+    chain_model = parse_chat_model_id(route.chain_model)
+    if chain_model is None:
+        # 소설 레인 행은 읽을 때 글쓰기 모델 체인만 받고(판정 전용 체인은 소설 레인에 없다) env 규칙의 체인은 기본 모델이라,
+        # 여기 오면 부르는 쪽의 버그다.
+        raise ValueError(f"{stage} 칸의 체인 {route.chain_model} 은 소설 레인 체인이 아니다")
+    return NovelCallRoute(
+        chain_model=chain_model, call_model=route.call_model if route.source in ("row", "inherited") else None
+    )
 
 
 async def _version_id(db: AsyncSession, novel: Novel) -> uuid.UUID | None:
@@ -283,16 +319,19 @@ class ReviseInput:
     paragraphs: list[str]
     first_index: int
     last_index: int
+    # 배정 표가 고른 부를 모델(`NovelCallRoute.call_model`). 행이 쓰이지 않았으면 None 이라 호출 문맥에 싣지 않는다.
+    call_model: PromptSetModelId | None = None
 
 
 async def build_revise_input(db: AsyncSession, job: NovelJob, novel: Novel) -> ReviseInput:
     """문단 수정 작업의 입력. 기준 개정 본문을 문단으로 나눠 범위와 함께 싣는다. 방이 지워졌어도 작품 설정은 원작
-    발행본에서 읽어 수정할 수 있다."""
+    발행본에서 읽어 수정할 수 있다. 문안 체인과 부를 모델은 배정 표의 문단 수정 칸(`novel_revise`)대로다."""
     base = await db.get(NovelChapterRevision, job.base_revision_id) if job.base_revision_id is not None else None
     if base is None or job.paragraph_start is None or job.paragraph_end is None:
         raise ValueError(f"job={job.id} 문단 수정의 기준 개정이나 범위가 없다")
     paragraphs = split_paragraphs(base.body)
-    source = await load_novel_prompt_source(db)
+    route = await resolve_novel_call_route(db, "novel_revise")
+    source = await load_novel_prompt_source(db, model=route.chain_model)
     prompt = build_novelize_revise_prompt(
         sections=source.sections,
         is_story_chat=novel.content_type == "story",
@@ -304,7 +343,11 @@ async def build_revise_input(db: AsyncSession, job: NovelJob, novel: Novel) -> R
         user_request=job.instruction or "",
     )
     return ReviseInput(
-        prompt=prompt, paragraphs=paragraphs, first_index=job.paragraph_start, last_index=job.paragraph_end
+        prompt=prompt,
+        paragraphs=paragraphs,
+        first_index=job.paragraph_start,
+        last_index=job.paragraph_end,
+        call_model=route.call_model,
     )
 
 
