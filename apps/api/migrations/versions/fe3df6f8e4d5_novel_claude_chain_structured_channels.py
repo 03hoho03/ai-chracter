@@ -1,7 +1,7 @@
 """novel claude chain structured channels
 
 Revision ID: fe3df6f8e4d5
-Revises: 65205c06e037
+Revises: 35bbef005344
 Create Date: 2026-10-26 12:00:00.000000
 
 `novel` 레인의 Claude 두 체인(sonnet·opus)에 경계 제안·문단 수정·여러 문단 수정·묶음 재검사 네 채널을 심는다. 지금 코드는 이 넷을
@@ -64,7 +64,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fe3df6f8e4d5"
-down_revision: str | Sequence[str] | None = "65205c06e037"
+down_revision: str | Sequence[str] | None = "35bbef005344"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
