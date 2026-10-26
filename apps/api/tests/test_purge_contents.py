@@ -15,13 +15,15 @@ from typing import Any
 
 import pytest
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+import api.db.session
 import purge_contents as script
 from api.core.s3 import build_variant_keys
 from api.db.models import (
     AdminActionLog,
     CharacterImageExposure,
+    CharacterVersionDetail,
     ChatMessage,
     ChatMessageReport,
     ChatMessageRole,
@@ -52,6 +54,7 @@ from api.db.models import (
     Report,
     ReportReasonCategory,
     ReportStatus,
+    SituationalImage,
     StartingSetup,
     StatDef,
     StoryEndingUnlock,
@@ -313,6 +316,75 @@ async def _payout_line(db: AsyncSession, creator_id: uuid.UUID, payer_id: uuid.U
     )
 
 
+async def _character(
+    db: AsyncSession, creator_id: uuid.UUID, image: Asset, blurred: Asset
+) -> tuple[Content, list[uuid.UUID]]:
+    """발행본 v1 과 초안이 있는 캐릭터. 두 버전 모두 같은 상황 이미지(원본 + 블러)를 쓴다(발행 복제가 지키는 관계)."""
+    content = Content(
+        creator_user_id=creator_id,
+        type=ContentType.CHARACTER,
+        hashtags=[],
+        visibility=ContentVisibility.PUBLIC,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db.add(content)
+    await db.flush()
+    entity_id = uuid.uuid4()
+    version_ids: list[uuid.UUID] = []
+    for published in (True, False):
+        version = ContentVersion(
+            content_id=content.id,
+            version_number=1 if published else None,
+            published_at=datetime.now(UTC) if published else None,
+            detail_description="합성 소개",
+        )
+        db.add(version)
+        await db.flush()
+        db.add_all(
+            [
+                CharacterVersionDetail(
+                    content_version_id=version.id,
+                    name="합성 캐릭터",
+                    one_liner="한 줄 소개",
+                    intro="합성 인트로",
+                    example_dialogues=[],
+                    character_prompt="합성 프롬프트",
+                ),
+                SituationalImage(
+                    entity_id=entity_id,
+                    content_version_id=version.id,
+                    image_asset_id=image.id,
+                    blurred_asset_id=blurred.id,
+                    trigger_condition="합성 조건",
+                    order=0,
+                ),
+            ]
+        )
+        await db.flush()
+        version_ids.append(version.id)
+    content.current_published_version_id = version_ids[0]
+    await db.flush()
+    return content, version_ids
+
+
+async def _character_row_counts(db: AsyncSession, content: Content, version_ids: list[uuid.UUID]) -> dict[str, int]:
+    return {
+        "contents": await _count(db, Content, Content.id == content.id),
+        "content_versions": await _count(db, ContentVersion, ContentVersion.content_id == content.id),
+        "character_version_details": await _count(
+            db, CharacterVersionDetail, CharacterVersionDetail.content_version_id.in_(version_ids)
+        ),
+        "situational_images": await _count(db, SituationalImage, SituationalImage.content_version_id.in_(version_ids)),
+    }
+
+
+def _use_test_session_for_main(monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession) -> None:
+    """명령 실행이 여는 세션을 이 테스트의 커넥션에 묶는다 — 테스트가 넣고 커밋하지 않은 행을 그 세션도 보게 한다."""
+    monkeypatch.setattr(
+        api.db.session, "async_session_factory", async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
+    )
+
+
 def _generation_request(owner_id: uuid.UUID) -> ImageGenerationRequest:
     return ImageGenerationRequest(
         owner_user_id=owner_id,
@@ -338,11 +410,13 @@ async def test_apply_removes_the_target_story_and_leaves_a_sibling_story_untouch
     keep.content.chat_count = 2
     keep.content.view_count = 7
     keep_room = await _room(db_session, keep, reader.id)
-    db_session.add(Like(user_id=reader.id, content_id=keep.content.id))
+    # 같은 독자가 두 작품에 같은 종류의 행을 남긴다 — 회원 id 로 지울 행을 고르면 남길 쪽 수가 줄어든다.
+    await _populate_reader_rows(db_session, keep, reader.id)
     target = await _story(db_session, creator.id, thumbnail_id=(await _image(db_session, creator.id)).id)
     await _room(db_session, target, reader.id, messages=2)
     await _populate_reader_rows(db_session, target, reader.id)
     keep_before = await _target_row_counts(db_session, keep)
+    assert all(keep_before.values()), keep_before
 
     await _apply(db_session, [target], tmp_path / "keys.json")
 
@@ -371,6 +445,12 @@ async def test_shared_asset_is_kept_and_unshared_assets_are_deleted_with_every_v
     await _story(db_session, creator.id, thumbnail_id=shared.id)
     target = await _story(db_session, creator.id, thumbnail_id=shared.id)
     await _add_media_book_cell(db_session, target.version_ids[-1], own.id, blurred.id)
+    shared_keys = {shared.storage_key, *build_variant_keys(shared.storage_key)}
+
+    # 계획을 따로 본다 — 계획이 공유 그림을 지울 목록에 넣으면 적용은 FK 위반으로 먼저 멈춰 아래 단언까지 오지 않는다.
+    preview = await script.build_plan(db_session, [target.content.id])
+    assert shared.id not in preview.asset_ids
+    assert shared_keys.isdisjoint(preview.storage_keys)
 
     planned = await _apply(db_session, [target], tmp_path / "keys.json")
 
@@ -382,6 +462,35 @@ async def test_shared_asset_is_kept_and_unshared_assets_are_deleted_with_every_v
     assert set(planned.storage_keys) == expected
     assert planned.storage_keys == sorted(set(planned.storage_keys))
     assert shared.storage_key not in planned.storage_keys
+
+
+async def test_character_with_situational_images_is_deleted_and_a_sibling_character_is_kept(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """발행본과 초안이 같은 상황 이미지(원본 + 블러)를 쓰는 캐릭터를 지우면 상황 이미지·캐릭터 상세·버전·작품·그림 행이 모두
+    지워지고 두 그림의 원본과 변형 키가 지울 목록에 실린다. 같은 작가의 남길 캐릭터는 그대로다. 깨지는 시나리오: 스토리 쪽
+    자식만 지워 상황 이미지가 남은 버전 DELETE 가 FK 위반이 나거나, 두 버전이 같은 그림을 쓰는 것을 공유로 오판해 그림을
+    남기거나, 작가 id 로 골라 남길 캐릭터까지 지운다."""
+    creator = await _user(db_session)
+    image = await _image(db_session, creator.id)
+    blurred = await _image(db_session, creator.id, kind=AssetKind.BLURRED)
+    target, target_versions = await _character(db_session, creator.id, image, blurred)
+    keep_image = await _image(db_session, creator.id)
+    keep_blurred = await _image(db_session, creator.id, kind=AssetKind.BLURRED)
+    keep, keep_versions = await _character(db_session, creator.id, keep_image, keep_blurred)
+    keep_before = await _character_row_counts(db_session, keep, keep_versions)
+
+    planned = await script.apply_purge(db_session, [target.id], expect_contents=1, keys_out=tmp_path / "keys.json")
+
+    assert await _character_row_counts(db_session, target, target_versions) == dict.fromkeys(keep_before, 0)
+    assert await _count(db_session, Asset, Asset.id.in_([image.id, blurred.id])) == 0
+    expected = {
+        key for asset in (image, blurred) for key in (asset.storage_key, *build_variant_keys(asset.storage_key))
+    }
+    assert len(expected) == 12
+    assert set(planned.storage_keys) == expected
+    assert await _character_row_counts(db_session, keep, keep_versions) == keep_before
+    assert await _count(db_session, Asset, Asset.id.in_([keep_image.id, keep_blurred.id])) == 2
 
 
 async def test_other_members_room_and_novels_from_the_story_are_deleted(
@@ -658,6 +767,73 @@ async def test_apply_writes_the_storage_keys_it_returns(db_session: AsyncSession
     assert keys_out.exists()
     assert planned.storage_keys
     assert json.loads(keys_out.read_text(encoding="utf-8")) == planned.storage_keys
+
+
+async def test_commit_failure_keeps_the_keys_file_as_unconfirmed(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """커밋이 예외로 끝나면 키 파일을 지우지 않고 `.unconfirmed` 를 붙여 남긴다. 서버는 커밋했는데 응답만 잃은 경우 그 파일이
+    지운 그림 키의 유일한 기록이라서다 — 커밋이 정말 실패했다면 저장소 정리 명령이 아직 살아 있는 그림 키를 보고 거부한다.
+    깨지는 시나리오: 파일을 지워 커밋된 삭제의 그림이 저장소에 영영 남거나, 원래 이름 그대로 남겨 확인된 키 목록처럼 보인다."""
+    creator = await _user(db_session)
+    target = await _story(db_session, creator.id, thumbnail_id=(await _image(db_session, creator.id)).id)
+    expected_keys = (await script.build_plan(db_session, [target.content.id])).storage_keys
+    keys_out = tmp_path / "keys.json"
+
+    async def failing_commit() -> None:
+        raise ConnectionResetError("합성 커밋 응답 유실")
+
+    monkeypatch.setattr(db_session, "commit", failing_commit)
+
+    with pytest.raises(ConnectionResetError):
+        await _apply(db_session, [target], keys_out)
+
+    unconfirmed = tmp_path / "keys.json.unconfirmed"
+    assert not keys_out.exists()
+    assert unconfirmed.exists()
+    assert expected_keys
+    assert json.loads(unconfirmed.read_text(encoding="utf-8")) == expected_keys
+
+
+async def test_delete_objects_refuses_when_a_key_still_belongs_to_an_asset(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """키 파일에 아직 그림 행이 가리키는 키가 하나라도 있으면 저장소를 하나도 지우지 않고 2 로 끝난다 — 지울 키 수만 보는
+    실행에서도 같다. 깨지는 시나리오: 커밋이 실패했거나 시드 업서트가 같은 결정적 키로 작품을 되살린 뒤 늦게 정리를 돌려
+    살아 있는 그림을 지운다."""
+    creator = await _user(db_session)
+    live = await _image(db_session, creator.id)
+    keys_file = tmp_path / "keys.json"
+    keys_file.write_text(json.dumps([f"assets/test/{uuid.uuid4()}.png", live.storage_key]), encoding="utf-8")
+    calls: list[str] = []
+    monkeypatch.setattr(script, "delete_object", calls.append)
+    _use_test_session_for_main(monkeypatch, db_session)
+
+    applied = await script._run(script.parse_args(["delete-objects", "--keys-file", str(keys_file), "--apply"]))
+    counted = await script._run(script.parse_args(["delete-objects", "--keys-file", str(keys_file)]))
+
+    assert (applied, counted) == (2, 2)
+    assert calls == []
+    assert await script.find_live_keys(db_session, json.loads(keys_file.read_text(encoding="utf-8"))) == [
+        live.storage_key
+    ]
+
+
+async def test_delete_objects_deletes_every_key_when_no_asset_row_remains(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """재대조의 대조군 — 그림 행이 하나도 키를 가리키지 않으면 키를 전부 지우고 0 으로 끝난다."""
+    keys = sorted(f"assets/test/{uuid.uuid4()}.png" for _ in range(2))
+    keys_file = tmp_path / "keys.json"
+    keys_file.write_text(json.dumps(keys), encoding="utf-8")
+    calls: list[str] = []
+    monkeypatch.setattr(script, "delete_object", calls.append)
+    _use_test_session_for_main(monkeypatch, db_session)
+
+    code = await script._run(script.parse_args(["delete-objects", "--keys-file", str(keys_file), "--apply"]))
+
+    assert code == 0
+    assert calls == keys
 
 
 def test_delete_objects_without_apply_only_counts() -> None:
