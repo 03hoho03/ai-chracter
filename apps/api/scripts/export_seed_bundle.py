@@ -22,6 +22,7 @@ import gzip
 import hashlib
 import io
 import json
+import re
 import sys
 import tarfile
 import uuid
@@ -48,6 +49,10 @@ EXIT_REFUSED = 2
 # 무시하므로 남겨도 읽히지만, 서명 주소를 로컬 파일에 퍼뜨릴 이유가 없다.
 _DROPPED_TOP_KEYS = ("id", "contentVersionId", "thumbnailUrl")
 _DROPPED_IMAGE_KEYS = ("imageUrl",)
+
+# slug 는 묶음 안 파일 이름(`stories/{slug}.json`·`images/{slug}-…`)이 된다. 슬래시·`..` 가 들어가면 풀 때 정해진 폴더
+# 밖이나 엉뚱한 폴더에 파일이 생기고, 대문자는 대소문자를 가리지 않는 파일 시스템에서 다른 slug 와 부딪힌다.
+_SLUG = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 
 class ExportRefusedError(Exception):
@@ -82,6 +87,8 @@ def read_map(path: Path) -> list[MapEntry]:
             content_id = uuid.UUID(parts[0])
         except ValueError as exc:
             raise ExportRefusedError(f"맵 {number}번째 줄의 콘텐츠 id 가 uuid 가 아니다") from exc
+        if _SLUG.fullmatch(parts[1]) is None:
+            raise ExportRefusedError(f"맵 {number}번째 줄의 slug 가 소문자·숫자·하이픈 꼴이 아니다")
         entries.append(MapEntry(content_id=content_id, slug=parts[1]))
     return entries
 
@@ -90,16 +97,23 @@ async def export_seed_bundle(session: AsyncSession, entries: Sequence[MapEntry],
     """`entries` 의 작품을 묶음으로 만들어 `out` 에 tar.gz 로 쓴다.
 
     첫 문장으로 트랜잭션을 읽기 전용으로 바꾸고, 세션의 트랜잭션을 끝내지 않는다(커밋·닫기는 호출부 몫). 맵의 id 가
-    DB 에 없거나, 작가가 맵 전체에서 한 명이 아니거나, slug 가 겹치거나, `out` 이 이미 있으면 아무것도 쓰지 않고
-    `ExportRefusedError` 를 던진다."""
+    DB 에 없거나, 작가가 맵 전체에서 한 명이 아니거나, slug 나 작품이 겹치거나, 담을 버전이 없거나, `out` 이 이미
+    있으면 아무것도 쓰지 않고 `ExportRefusedError` 를 던진다. 묶음은 `out` 옆 임시 파일에 쓰고 다 쓴 뒤에 `out` 으로
+    옮기므로, 그림을 받다가 실패하면 쓰다 만 파일이 남지 않는다."""
     await session.execute(text("SET TRANSACTION READ ONLY"))
+    partial = out.with_name(f"{out.name}.partial")
     if out.exists():  # noqa: ASYNC240 — 운영자가 한 번 돌리는 CLI 라 이벤트 루프를 막아도 기다릴 다른 일이 없다
         raise ExportRefusedError(f"{out} 이 이미 있다 — 앞선 묶음을 덮지 않는다")
+    if partial.exists():
+        raise ExportRefusedError(f"{partial} 이 이미 있다 — 앞선 실행이 남긴 파일인지 확인하고 지운다")
     slugs = [entry.slug for entry in entries]
     duplicated = sorted({slug for slug in slugs if slugs.count(slug) > 1})
     if duplicated:
         raise ExportRefusedError(f"slug 가 겹친다: {', '.join(duplicated)}")
     ids = [entry.content_id for entry in entries]
+    repeated = sorted({str(content_id) for content_id in ids if ids.count(content_id) > 1})
+    if repeated:
+        raise ExportRefusedError(f"같은 콘텐츠 id 가 맵에 두 번 이상 있다: {', '.join(repeated)}")
     contents = {
         content.id: content for content in (await session.scalars(select(Content).where(Content.id.in_(ids)))).all()
     }
@@ -111,48 +125,62 @@ async def export_seed_bundle(session: AsyncSession, entries: Sequence[MapEntry],
         raise ExportRefusedError(
             f"맵의 작품 작가가 한 명이 아니다({len(authors)}명) — 묶음은 시드 작가 한 명의 작품이 된다"
         )
+    ordered = sorted(entries, key=lambda entry: entry.slug)
+    # 담을 버전이 없는 작품은 파일을 열기 전에 거부한다.
+    versions = {entry.slug: await _export_version(session, contents[entry.content_id]) for entry in ordered}
 
-    files: dict[str, bytes] = {}
-    manifest: dict[str, dict[str, Any]] = {"stories": {}, "characters": {}}
-    for entry in entries:
-        content = contents[entry.content_id]
-        version, published = await _export_version(session, content)
-        if content.type == ContentType.STORY:
-            work = _bundle_json(await _story_draft_response(session, content, version), published)
-            cells = (work.get("mediaBook") or {}).get("cells", [])
-            manifest["stories"][entry.slug] = {
-                "thumbnail": await _image(session, files, work.get("thumbnailAssetId"), f"{entry.slug}-thumb"),
-                "mediaBookCells": {
-                    cell["id"]: await _image(session, files, cell["imageAssetId"], f"{entry.slug}-cell-{cell['id']}")
-                    for cell in cells
-                },
-            }
-            folder = "stories"
-        else:
-            work = _bundle_json(await _character_draft_response(session, content, version), published)
-            manifest["characters"][entry.slug] = {
-                "thumbnail": await _image(session, files, work.get("thumbnailAssetId"), f"{entry.slug}-thumb"),
-                "situationalImages": {
-                    image["id"]: await _image(
-                        session, files, image["imageAssetId"], f"{entry.slug}-scene-{image['id']}"
+    # 서빙 중인 api 컨테이너 안에서 돌기 때문에 메모리를 아낀다 — 그림은 받는 대로 압축 스트림에 흘려 보내고, 한 번에
+    # 그림 한 장만 메모리에 둔다. 같은 내용이면 같은 바이트가 나오도록 작품은 slug 순, 작품 안 그림은 이름순으로 넣는다.
+    images = 0
+    try:
+        with (
+            partial.open("xb") as raw,
+            # 파일 이름을 비워 둔다 — 비우지 않으면 gzip 머리에 임시 파일 이름이 실려 출력 자리마다 바이트가 달라진다.
+            gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0) as compressed,
+            tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as archive,
+        ):
+            manifest: dict[str, dict[str, Any]] = {"stories": {}, "characters": {}}
+            for entry in ordered:
+                content = contents[entry.content_id]
+                version, published = versions[entry.slug]
+                if content.type == ContentType.STORY:
+                    work = _bundle_json(await _story_draft_response(session, content, version), published)
+                    cells = sorted((work.get("mediaBook") or {}).get("cells", []), key=lambda cell: cell["id"])
+                    cell_images = {
+                        cell["id"]: await _image(
+                            session, archive, cell["imageAssetId"], f"{entry.slug}-cell-{cell['id']}"
+                        )
+                        for cell in cells
+                    }
+                    thumbnail = await _image(session, archive, work.get("thumbnailAssetId"), f"{entry.slug}-thumb")
+                    manifest["stories"][entry.slug] = {"thumbnail": thumbnail, "mediaBookCells": cell_images}
+                    placed = [thumbnail, *cell_images.values()]
+                    folder = "stories"
+                else:
+                    work = _bundle_json(await _character_draft_response(session, content, version), published)
+                    scenes = sorted(
+                        (image for image in work.get("situationalImages", []) if image.get("imageAssetId") is not None),
+                        key=lambda image: image["id"],
                     )
-                    for image in work.get("situationalImages", [])
-                    if image.get("imageAssetId") is not None
-                },
-            }
-            folder = "characters"
-        files[f"{folder}/{entry.slug}.json"] = _json_bytes(work)
-    files["manifest.json"] = _json_bytes(manifest)
-
-    archive = _tar_gz(files)
-    with out.open("xb") as handle:
-        handle.write(archive)
-    return ExportSummary(
-        works=len(entries),
-        images=sum(1 for name in files if name.startswith("images/")),
-        size_bytes=len(archive),
-        sha256=hashlib.sha256(archive).hexdigest(),
-    )
+                    scene_images = {
+                        image["id"]: await _image(
+                            session, archive, image["imageAssetId"], f"{entry.slug}-scene-{image['id']}"
+                        )
+                        for image in scenes
+                    }
+                    thumbnail = await _image(session, archive, work.get("thumbnailAssetId"), f"{entry.slug}-thumb")
+                    manifest["characters"][entry.slug] = {"thumbnail": thumbnail, "situationalImages": scene_images}
+                    placed = [thumbnail, *scene_images.values()]
+                    folder = "characters"
+                images += sum(image is not None for image in placed)
+                _add_file(archive, f"{folder}/{entry.slug}.json", _json_bytes(work))
+            _add_file(archive, "manifest.json", _json_bytes(manifest))
+        partial.rename(out)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    size_bytes, sha256 = _measure(out)
+    return ExportSummary(works=len(entries), images=images, size_bytes=size_bytes, sha256=sha256)
 
 
 async def _export_version(session: AsyncSession, content: Content) -> tuple[ContentVersion, bool]:
@@ -187,9 +215,9 @@ def _bundle_json(response: Any, published: bool) -> dict[str, Any]:
 
 
 async def _image(
-    session: AsyncSession, files: dict[str, bytes], asset_id: str | None, stem: str
+    session: AsyncSession, archive: tarfile.TarFile, asset_id: str | None, stem: str
 ) -> dict[str, Any] | None:
-    """자산 원본 바이트를 `images/` 에 담고 매니페스트 항목을 돌려준다. 그림이 없는 자리는 None."""
+    """자산 원본 바이트를 받아 곧바로 묶음의 `images/` 에 넣고 매니페스트 항목을 돌려준다. 그림이 없는 자리는 None."""
     if asset_id is None:
         return None
     asset = await session.get(Asset, uuid.UUID(asset_id))
@@ -198,7 +226,7 @@ async def _image(
     content_type = read_image_content_type(data)
     extension = content_type.removeprefix("image/") if content_type else "bin"
     name = f"{stem}.{extension}"
-    files[f"images/{name}"] = data
+    _add_file(archive, f"images/{name}", data)
     return {
         "file": name,
         "kind": asset.kind.value,
@@ -212,21 +240,24 @@ def _json_bytes(value: Any) -> bytes:
     return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
-def _tar_gz(files: dict[str, bytes]) -> bytes:
-    """이름순·고정 시각·고정 소유자로 묶는다 — 같은 내용이면 같은 바이트(같은 sha256)가 나온다."""
-    tar_buffer = io.BytesIO()
-    with tarfile.open(fileobj=tar_buffer, mode="w", format=tarfile.PAX_FORMAT) as archive:
-        for name in sorted(files):
-            data = files[name]
-            info = tarfile.TarInfo(name)
-            info.size = len(data)
-            info.mode = 0o644
-            info.mtime = 0
-            archive.addfile(info, io.BytesIO(data))
-    gz_buffer = io.BytesIO()
-    with gzip.GzipFile(fileobj=gz_buffer, mode="wb", mtime=0) as compressed:
-        compressed.write(tar_buffer.getvalue())
-    return gz_buffer.getvalue()
+def _add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
+    """고정 시각·고정 권한으로 넣는다(소유자는 TarInfo 기본값 0·빈 이름) — 같은 내용이면 같은 바이트가 나온다."""
+    info = tarfile.TarInfo(name)
+    info.size = len(data)
+    info.mode = 0o644
+    info.mtime = 0
+    archive.addfile(info, io.BytesIO(data))
+
+
+def _measure(path: Path) -> tuple[int, str]:
+    """다 쓴 파일의 바이트 수와 sha256 — 조금씩 다시 읽어 세서 묶음 전체를 메모리에 올리지 않는다."""
+    size = 0
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            size += len(chunk)
+            digest.update(chunk)
+    return size, digest.hexdigest()
 
 
 async def run(session: AsyncSession, map_path: Path, out: Path) -> int:
