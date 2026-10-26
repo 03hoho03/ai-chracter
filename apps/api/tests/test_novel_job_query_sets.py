@@ -246,8 +246,6 @@ async def test_the_first_saved_chapter_time_counts_only_jobs_that_create_chapter
 # ── 과금: 하루 상한 세기 ─────────────────────────────────────────────────────
 async def _room_novel(db_client: httpx.AsyncClient, db_session: AsyncSession, owner: User) -> tuple[Novel, ChatMessage]:
     """과금할 수 있는 소설(방·원작이 실제로 있다)과 그 방의 첫 메시지."""
-    # 앞 회차의 상한 거절이 세션을 롤백해 `owner` 의 속성이 만료돼 있다. 비동기 세션은 지연 로드를 못 하므로 넘기기 전에 다시 읽는다.
-    await db_session.refresh(owner)
     room = await _open_room(db_client, db_session, turns=1, lane="character", user=owner)
     chat_room = await db_session.get_one(ChatRoom, room.room_id)
     novel = Novel(
@@ -272,12 +270,14 @@ async def _room_novel(db_client: httpx.AsyncClient, db_session: AsyncSession, ow
 
 
 async def _refused_by_daily_cap(db: AsyncSession, probe: NovelJob, cost: int) -> bool:
-    try:
-        await billing.create_charged_job(db, job=probe, expected_cost=cost, now=datetime.now(UTC))
-    except HTTPException as exc:
-        assert exc.status_code == 429, exc.detail
-        return True
-    await db.commit()
+    """과금은 세이브포인트로 묶인 별도 세션에서 부른다. 거절 경로의 롤백이 테스트 세션에서 일어나면 테스트 전체를 감싼 바깥
+    트랜잭션까지 되감겨, 앞 회차까지 만든 소유자·방·소설이 다음 회차에서 사라진다."""
+    async with _factory(db)() as service:
+        try:
+            await billing.create_charged_job(service, job=probe, expected_cost=cost, now=datetime.now(UTC))
+        except HTTPException as exc:
+            assert exc.status_code == 429, exc.detail
+            return True
     return False
 
 

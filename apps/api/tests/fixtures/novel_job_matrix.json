@@ -1,0 +1,4556 @@
+{
+  "block_edit/blocked": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "714ece51b6bf6c06",
+        "schema": "NovelizeBlockEditResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "blocked",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": [],
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "block_edit/empty": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "714ece51b6bf6c06",
+        "schema": "NovelizeBlockEditResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "empty",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": [],
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "block_edit/empty_no_patches": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "714ece51b6bf6c06",
+        "schema": "NovelizeBlockEditResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "empty",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": [],
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "block_edit/llm_error": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "714ece51b6bf6c06",
+        "schema": "NovelizeBlockEditResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "llm_error",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": [],
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설화 여러 문단 수정 호출이 실패했다"
+    ]
+  },
+  "block_edit/refused": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "714ece51b6bf6c06",
+        "schema": "NovelizeBlockEditResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "refused",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": [],
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "block_edit/source_changed": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "714ece51b6bf6c06",
+        "schema": "NovelizeBlockEditResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "source_changed",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": [],
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ],
+        [
+          1,
+          2,
+          "manual_edit"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "block_edit/succeeded": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "714ece51b6bf6c06",
+        "schema": "NovelizeBlockEditResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": null,
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": true,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": [
+        "pending",
+        "pending"
+      ],
+      "refunded": null,
+      "refundedAt": false,
+      "status": "succeeded"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "block_edit/truncated": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "714ece51b6bf6c06",
+        "schema": "NovelizeBlockEditResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "truncated",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": [],
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "chain_parent/child_failed": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_boundary",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "41aceebac8591cff",
+        "schema": "NovelizeBoundaryResult"
+      },
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      },
+      {
+        "callModel": null,
+        "callSite": "novelize_boundary",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "524fbb407b3b3590",
+        "schema": "NovelizeBoundaryResult"
+      },
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "f80e28fa915a9ef8",
+        "schema": null
+      }
+    ],
+    "children": [
+      {
+        "charged": 0,
+        "consumed": 0,
+        "episodeTarget": 1,
+        "failureCode": null,
+        "finished": true,
+        "hasBatch": true,
+        "hasChapter": true,
+        "hasInstruction": false,
+        "hasResultRevision": true,
+        "hasResultText": false,
+        "kind": "chapter_generate",
+        "model": "gemini",
+        "patchStates": null,
+        "refunded": null,
+        "refundedAt": false,
+        "status": "succeeded"
+      },
+      {
+        "charged": 0,
+        "consumed": 0,
+        "episodeTarget": 1,
+        "failureCode": "llm_error",
+        "finished": true,
+        "hasBatch": false,
+        "hasChapter": false,
+        "hasInstruction": false,
+        "hasResultRevision": false,
+        "hasResultText": false,
+        "kind": "chapter_generate",
+        "model": "gemini",
+        "patchStates": null,
+        "refunded": null,
+        "refundedAt": false,
+        "status": "failed"
+      }
+    ],
+    "job": {
+      "charged": 240,
+      "consumed": 40,
+      "episodeTarget": null,
+      "failureCode": "llm_error",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chain_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 200,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -240
+      ],
+      [
+        "novelize_refund",
+        200
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 2,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": "first_chapter"
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설 묶음 경계 제안이 실패했다",
+      "소설 묶음 경계 제안이 실패했다",
+      "소설화 장 생성 호출이 실패했다"
+    ]
+  },
+  "chain_parent/parent_ended_before_child_saved": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_boundary",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "41aceebac8591cff",
+        "schema": "NovelizeBoundaryResult"
+      },
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "children": [
+      {
+        "charged": 0,
+        "consumed": 0,
+        "episodeTarget": 1,
+        "failureCode": "expired",
+        "finished": true,
+        "hasBatch": false,
+        "hasChapter": false,
+        "hasInstruction": false,
+        "hasResultRevision": false,
+        "hasResultText": false,
+        "kind": "chapter_generate",
+        "model": "gemini",
+        "patchStates": null,
+        "refunded": null,
+        "refundedAt": false,
+        "status": "failed"
+      }
+    ],
+    "job": {
+      "charged": 240,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "expired",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chain_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": null,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -240
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설 묶음 경계 제안이 실패했다"
+    ]
+  },
+  "chain_parent/succeeded": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_boundary",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "41aceebac8591cff",
+        "schema": "NovelizeBoundaryResult"
+      },
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      },
+      {
+        "callModel": null,
+        "callSite": "novelize_boundary",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "524fbb407b3b3590",
+        "schema": "NovelizeBoundaryResult"
+      },
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "f80e28fa915a9ef8",
+        "schema": null
+      }
+    ],
+    "children": [
+      {
+        "charged": 0,
+        "consumed": 0,
+        "episodeTarget": 1,
+        "failureCode": null,
+        "finished": true,
+        "hasBatch": true,
+        "hasChapter": true,
+        "hasInstruction": false,
+        "hasResultRevision": true,
+        "hasResultText": false,
+        "kind": "chapter_generate",
+        "model": "gemini",
+        "patchStates": null,
+        "refunded": null,
+        "refundedAt": false,
+        "status": "succeeded"
+      },
+      {
+        "charged": 0,
+        "consumed": 0,
+        "episodeTarget": 1,
+        "failureCode": null,
+        "finished": true,
+        "hasBatch": true,
+        "hasChapter": true,
+        "hasInstruction": false,
+        "hasResultRevision": true,
+        "hasResultText": false,
+        "kind": "chapter_generate",
+        "model": "gemini",
+        "patchStates": null,
+        "refunded": null,
+        "refundedAt": false,
+        "status": "succeeded"
+      }
+    ],
+    "job": {
+      "charged": 240,
+      "consumed": 80,
+      "episodeTarget": null,
+      "failureCode": null,
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chain_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 160,
+      "refundedAt": true,
+      "status": "succeeded"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -240
+      ],
+      [
+        "novelize_refund",
+        160
+      ]
+    ],
+    "output": {
+      "batches": 2,
+      "chapters": 2,
+      "characters": 2,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ],
+        [
+          2,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": "first_chapter"
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설 묶음 경계 제안이 실패했다",
+      "소설 묶음 경계 제안이 실패했다"
+    ]
+  },
+  "episode_outline/blocked": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_episode_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "0eec76c8bdfd13c2",
+        "schema": "NovelizeEpisodeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 7,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "blocked",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "episode_outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 7,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -7
+      ],
+      [
+        "novelize_refund",
+        7
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "episode_outline/empty": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_episode_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "0eec76c8bdfd13c2",
+        "schema": "NovelizeEpisodeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 7,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "empty",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "episode_outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 7,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -7
+      ],
+      [
+        "novelize_refund",
+        7
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "episode_outline/llm_error": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_episode_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "0eec76c8bdfd13c2",
+        "schema": "NovelizeEpisodeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 7,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "llm_error",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "episode_outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 7,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -7
+      ],
+      [
+        "novelize_refund",
+        7
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설화 장면 구성안 호출이 실패했다"
+    ]
+  },
+  "episode_outline/malformed": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_episode_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "0eec76c8bdfd13c2",
+        "schema": "NovelizeEpisodeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 7,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "malformed",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "episode_outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 7,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -7
+      ],
+      [
+        "novelize_refund",
+        7
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설화 장면 구성안을 쓸 수 없다"
+    ]
+  },
+  "episode_outline/refused": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_episode_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "0eec76c8bdfd13c2",
+        "schema": "NovelizeEpisodeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 7,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "refused",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "episode_outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 7,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -7
+      ],
+      [
+        "novelize_refund",
+        7
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "episode_outline/source_changed": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_episode_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "0eec76c8bdfd13c2",
+        "schema": "NovelizeEpisodeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 7,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "source_changed",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "episode_outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 7,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -7
+      ],
+      [
+        "novelize_refund",
+        7
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "episode_outline/succeeded": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_episode_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "0eec76c8bdfd13c2",
+        "schema": "NovelizeEpisodeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 7,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": null,
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "episode_outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": null,
+      "refundedAt": false,
+      "status": "succeeded"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -7
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "episode_outline/truncated": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_episode_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "0eec76c8bdfd13c2",
+        "schema": "NovelizeEpisodeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 7,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "truncated",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "episode_outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 7,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -7
+      ],
+      [
+        "novelize_refund",
+        7
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_generate/blocked": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "blocked",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_generate/empty": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "empty",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_generate/expired_during_call": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "expired",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_generate/llm_error": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "llm_error",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설화 장 생성 호출이 실패했다"
+    ]
+  },
+  "legacy_generate/malformed_format": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "malformed",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설화 묶음 출력이 형식에 맞지 않는다"
+    ]
+  },
+  "legacy_generate/malformed_over_episode_cap": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "malformed",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_generate/refused": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "refused",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_generate/source_changed": {
+    "calls": [],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "source_changed",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_generate/succeeded": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": null,
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": true,
+      "hasResultText": false,
+      "kind": "chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": null,
+      "refundedAt": false,
+      "status": "succeeded"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 2,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": "first_chapter"
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_generate/succeeded_short_of_target": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "a0fb3e65be5b78ce",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 120,
+      "consumed": 0,
+      "episodeTarget": 3,
+      "failureCode": null,
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": true,
+      "hasResultText": false,
+      "kind": "chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 80,
+      "refundedAt": true,
+      "status": "succeeded"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -120
+      ],
+      [
+        "novelize_refund",
+        80
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 2,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": "first_chapter"
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_generate/truncated": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "truncated",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_regenerate/blocked": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "blocked",
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_regenerate/empty": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "empty",
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_regenerate/episode_count_mismatch": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "episode_count_mismatch",
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_regenerate/llm_error": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "llm_error",
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설화 장 생성 호출이 실패했다"
+    ]
+  },
+  "legacy_regenerate/source_changed": {
+    "calls": [],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "source_changed",
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_regenerate/succeeded": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": null,
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": true,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": null,
+      "refundedAt": false,
+      "status": "succeeded"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 2,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ],
+        [
+          1,
+          2,
+          "regenerate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "legacy_regenerate/truncated": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "c670fe0a73e1d389",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "truncated",
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "manuscript/blocked": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "blocked",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "manuscript/empty": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "empty",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "manuscript/llm_error": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "llm_error",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설화 장 생성 호출이 실패했다"
+    ]
+  },
+  "manuscript/malformed_more_than_one_episode": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "malformed",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "manuscript/source_changed": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "source_changed",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ],
+        [
+          2,
+          "edit"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "manuscript/succeeded": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": null,
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": true,
+      "hasResultText": false,
+      "kind": "outline_chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": null,
+      "refundedAt": false,
+      "status": "succeeded"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 2,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 3,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": "first_chapter"
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "manuscript/truncated": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "truncated",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_chapter_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline/blocked": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "bb257d178c7c7d8b",
+        "schema": "NovelizeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 11,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "blocked",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 11,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -11
+      ],
+      [
+        "novelize_refund",
+        11
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline/empty": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "bb257d178c7c7d8b",
+        "schema": "NovelizeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 11,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "empty",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 11,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -11
+      ],
+      [
+        "novelize_refund",
+        11
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline/expired_during_call": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "bb257d178c7c7d8b",
+        "schema": "NovelizeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 11,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "expired",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 11,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -11
+      ],
+      [
+        "novelize_refund",
+        11
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline/llm_error": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "bb257d178c7c7d8b",
+        "schema": "NovelizeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 11,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "llm_error",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 11,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -11
+      ],
+      [
+        "novelize_refund",
+        11
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설화 전체 구성안 호출이 실패했다"
+    ]
+  },
+  "outline/malformed": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "bb257d178c7c7d8b",
+        "schema": "NovelizeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 11,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "malformed",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 11,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -11
+      ],
+      [
+        "novelize_refund",
+        11
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설화 전체 구성안을 쓸 수 없다"
+    ]
+  },
+  "outline/refused": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "bb257d178c7c7d8b",
+        "schema": "NovelizeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 11,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "refused",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 11,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -11
+      ],
+      [
+        "novelize_refund",
+        11
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline/source_changed": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "bb257d178c7c7d8b",
+        "schema": "NovelizeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 11,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "source_changed",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 11,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -11
+      ],
+      [
+        "novelize_refund",
+        11
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline/succeeded": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "bb257d178c7c7d8b",
+        "schema": "NovelizeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 11,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": null,
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": null,
+      "refundedAt": false,
+      "status": "succeeded"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -11
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline/truncated": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_outline",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "bb257d178c7c7d8b",
+        "schema": "NovelizeOutlineResult"
+      }
+    ],
+    "job": {
+      "charged": 11,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "truncated",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": false,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "outline_generate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 11,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -11
+      ],
+      [
+        "novelize_refund",
+        11
+      ]
+    ],
+    "output": {
+      "batches": 0,
+      "chapters": 0,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline_regenerate/blocked": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "blocked",
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 2,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 3,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": "first_chapter"
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline_regenerate/empty": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "empty",
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 2,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 3,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": "first_chapter"
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline_regenerate/llm_error": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "llm_error",
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 2,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 3,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": "first_chapter"
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설화 장 생성 호출이 실패했다"
+    ]
+  },
+  "outline_regenerate/source_changed": {
+    "calls": [],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "source_changed",
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 2,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 3,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": "first_chapter"
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline_regenerate/succeeded": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": null,
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": true,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": null,
+      "refundedAt": false,
+      "status": "succeeded"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 2,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ],
+        [
+          1,
+          2,
+          "regenerate"
+        ]
+      ],
+      "sceneBlocks": 6,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": "first_chapter"
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "outline_regenerate/truncated": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_chapter",
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "3bf9c79c782e02fa",
+        "schema": null
+      }
+    ],
+    "job": {
+      "charged": 40,
+      "consumed": 0,
+      "episodeTarget": 1,
+      "failureCode": "truncated",
+      "finished": true,
+      "hasBatch": true,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "chapter_regenerate",
+      "model": "gemini",
+      "patchStates": null,
+      "refunded": 40,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -40
+      ],
+      [
+        "novelize_refund",
+        40
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 2,
+      "outlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 3,
+      "sceneOutlines": [
+        [
+          1,
+          "generate"
+        ]
+      ],
+      "titleChanged": false,
+      "writingLock": "first_chapter"
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "paragraph_edit/blocked": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "308e9ff6158d485b",
+        "schema": "NovelizeReviseResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "blocked",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": null,
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "paragraph_edit/empty": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "308e9ff6158d485b",
+        "schema": "NovelizeReviseResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "empty",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": null,
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "paragraph_edit/empty_after_parsing": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "308e9ff6158d485b",
+        "schema": "NovelizeReviseResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "empty",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": null,
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "paragraph_edit/expired_during_call": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "308e9ff6158d485b",
+        "schema": "NovelizeReviseResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "expired",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": null,
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "paragraph_edit/llm_error": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "308e9ff6158d485b",
+        "schema": "NovelizeReviseResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "llm_error",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": null,
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": [
+      "소설화 문단 수정 호출이 실패했다"
+    ]
+  },
+  "paragraph_edit/refused": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "308e9ff6158d485b",
+        "schema": "NovelizeReviseResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "refused",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": null,
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "paragraph_edit/source_changed": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "308e9ff6158d485b",
+        "schema": "NovelizeReviseResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "source_changed",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": null,
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ],
+        [
+          1,
+          2,
+          "manual_edit"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "paragraph_edit/succeeded": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "308e9ff6158d485b",
+        "schema": "NovelizeReviseResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": null,
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": true,
+      "hasResultRevision": false,
+      "hasResultText": true,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": null,
+      "refunded": null,
+      "refundedAt": false,
+      "status": "succeeded"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  },
+  "paragraph_edit/truncated": {
+    "calls": [
+      {
+        "callModel": null,
+        "callSite": "novelize_revise",
+        "method": "generate_structured_with_instruction",
+        "model": "gemini",
+        "promptSha": "308e9ff6158d485b",
+        "schema": "NovelizeReviseResult"
+      }
+    ],
+    "job": {
+      "charged": 20,
+      "consumed": 0,
+      "episodeTarget": null,
+      "failureCode": "truncated",
+      "finished": true,
+      "hasBatch": false,
+      "hasChapter": true,
+      "hasInstruction": false,
+      "hasResultRevision": false,
+      "hasResultText": false,
+      "kind": "ai_edit",
+      "model": null,
+      "patchStates": null,
+      "refunded": 20,
+      "refundedAt": true,
+      "status": "failed"
+    },
+    "ledger": [
+      [
+        "novelize_spend",
+        -20
+      ],
+      [
+        "novelize_refund",
+        20
+      ]
+    ],
+    "output": {
+      "batches": 1,
+      "chapters": 1,
+      "characters": 0,
+      "outlines": [],
+      "revisions": [
+        [
+          1,
+          1,
+          "generate"
+        ]
+      ],
+      "sceneBlocks": 0,
+      "sceneOutlines": [],
+      "titleChanged": false,
+      "writingLock": null
+    },
+    "usages": [
+      [
+        "novel",
+        true,
+        true
+      ]
+    ],
+    "warnings": []
+  }
+}
