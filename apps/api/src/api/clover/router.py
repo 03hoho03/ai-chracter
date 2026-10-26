@@ -43,8 +43,11 @@ from api.clover.schemas import (
     CloverMissionsResponse,
     CloverModelPricingItem,
     CloverPayMethodItem,
+    CloverPolicyValues,
     CloverPricingResponse,
     CloverProductItem,
+    CloverProductOffer,
+    CloverProductsResponse,
 )
 from api.core import clover, rate_limit_gate
 from api.core.clover import (
@@ -63,6 +66,7 @@ from api.legal.dependencies import require_legal_consent
 from api.novel_public.access import novel_public_open_to
 from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, chat_turn_cost, novel_episode_unit_price
 from api.payments.config import identity_gate_active, payments_active
+from api.payments import refund
 from api.payments.methods import PAY_METHODS
 from api.session.dependencies import get_current_user_id
 
@@ -239,6 +243,38 @@ async def get_clover_pricing() -> CloverPricingResponse:
         pay_methods=[
             CloverPayMethodItem(pay_method=m.pay_method, easy_pay_provider=m.easy_pay_provider) for m in PAY_METHODS
         ],
+    )
+
+
+@router.get("/products")
+async def get_clover_products() -> CloverProductsResponse:
+    """공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책
+    숫자·가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로
+    다시 읽는다(공개 가격 응답의 같은 주석)."""
+    return CloverProductsResponse(
+        products=[
+            CloverProductOffer(
+                key=p.key,
+                name=p.name,
+                price_krw=p.price_krw,
+                paid_amount=p.paid_amount,
+                bonus_amount=p.bonus_amount,
+                total_amount=p.paid_amount + p.bonus_amount,
+            )
+            for p in products.CLOVER_PRODUCTS
+        ],
+        pay_methods=[
+            CloverPayMethodItem(pay_method=m.pay_method, easy_pay_provider=m.easy_pay_provider) for m in PAY_METHODS
+        ],
+        payments_enabled=payments_active(),
+        identity_gate_enabled=identity_gate_active(),
+        daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
+        policy=CloverPolicyValues(
+            purchase_validity_years=clover.PURCHASE_LOT_YEARS,
+            full_refund_days=refund.FULL_REFUND_DAYS,
+            reduced_refund_percent=refund.REDUCED_REFUND_PERCENT,
+        ),
+        price_version=clover.PRICE_VERSION,
     )
 
 

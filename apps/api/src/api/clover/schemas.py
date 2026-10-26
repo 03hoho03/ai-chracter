@@ -168,3 +168,41 @@ class CloverPricingResponse(CamelModel):
     # 미인증 회원 게이트(무료 대화·미션을 본인인증한 회원에게만)가 켜져 있는가. 로그인하지 않은 방문자도 읽는 정책
     # 문장이 이 값으로 갈린다 — 꺼진 동안 "본인인증을 마친 회원은"이라고 쓰면 거짓이다. `GET /me` 와 같은 판정 함수다.
     identity_gate_enabled: bool
+
+
+class CloverProductOffer(CamelModel):
+    """충전 허브가 보이는 상품 하나. 공개 가격 응답의 상품 행에 받는 총량(`total_amount` = 유료 + 보너스)을 더한 것이다 — 화면이
+    합을 따로 계산하지 않게 한다."""
+
+    key: ProductKey
+    name: str
+    # 부가세를 포함한 판매가(원).
+    price_krw: int
+    paid_amount: int
+    bonus_amount: int
+    total_amount: int
+
+
+class CloverPolicyValues(CamelModel):
+    """허브의 안내 문장이 쓰는 정책 숫자. 같은 숫자가 이용약관·환불정책(DB 게시본)에도 있으므로 값을 바꾸면 그 문서도 함께
+    고친다."""
+
+    # 구매로 받은 유료·보너스 클로버를 쓸 수 있는 햇수(`core/clover.py` 의 `PURCHASE_LOT_YEARS`).
+    purchase_validity_years: int
+    # 결제일 다음 날부터 이 날수째 안이면 남은 유료 클로버를 전액 환불하고, 그 뒤는 이 비율로 환불한다
+    # (`payments/refund.py` 의 `FULL_REFUND_DAYS`·`REDUCED_REFUND_PERCENT`).
+    full_refund_days: int
+    reduced_refund_percent: int
+
+
+class CloverProductsResponse(CamelModel):
+    """공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능
+    스위치와 사용 단가는 공개 가격 응답(`GET /clover/pricing`)에 그대로 남는다."""
+
+    products: list[CloverProductOffer]
+    pay_methods: list[CloverPayMethodItem]
+    payments_enabled: bool
+    identity_gate_enabled: bool
+    daily_free_chat_turns: int
+    policy: CloverPolicyValues
+    price_version: int
