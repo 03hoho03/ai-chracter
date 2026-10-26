@@ -15,10 +15,12 @@ from datetime import date, datetime, time, timedelta
 from typing import Literal, get_args
 
 import anyio
+from fastapi import HTTPException, status
 from sqlalchemy import Integer, Uuid, case, false, func, insert, literal, literal_column, select, update
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from api.core.config import settings
 from api.core.rate_limit import KST
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
@@ -180,6 +182,28 @@ _SPEND_GRADE = case(
     (CloverLot.kind == "purchase_paid", 2),
     else_=0,
 )
+
+
+# 정지 스위치(`settings.clover_ledger_paused`)가 켜졌을 때의 거절. 결제 꺼짐(`PAYMENTS_UNAVAILABLE`)과 같은 503 모양에 짧은 안내를
+# 싣는다 — 기다리면 풀리는 일시 정지라 429 의 재시도 계약(`retryAfterSeconds`)이 아니다.
+CLOVER_PAUSED_CODE = "CLOVER_PAUSED"
+_CLOVER_PAUSED_MESSAGE = "클로버 사용을 잠시 멈췄어요. 몇 분 뒤 다시 시도해 주세요."
+
+
+def raise_if_clover_paused() -> None:
+    """정지 스위치가 켜져 있으면 503 `CLOVER_PAUSED`. 단위 전환처럼 잔액을 한꺼번에 옮기는 동안 새 차감·지급이 끼지 않게 한다.
+
+    부르는 곳: 모든 차감이 지나는 `spend` 첫 줄, 채팅·이미지 게이트의 유료 갈래(`core/rate_limit_gate.py` — 하루 1회 확인 429 와
+    가격 버전 409 보다 먼저), 그리고 공용 함수에서 막을 수 없는 지급·회수 라우트의 의존성(미션 수령·어드민 지급과 회수·어드민 결제
+    환불 실행·주문 생성). 지급(`grant`)·구매분 회수는 결제 완료·웹훅·콘솔 취소와 함수를 같이 써서 함수에서 막으면 그것까지 멈춘다.
+
+    막지 않는 것: 무료 대화 턴·무료 토큰 이미지(`spend` 를 부르지 않는다), 모든 환급, 결제 완료·웹훅, 만료 배치, 탈퇴 소멸 —
+    이미 시작한 일의 마무리와 돈이 이미 나간 결제의 동기화는 멈추면 안 된다. 라우트 의존성으로도 쓴다(인자가 없다)."""
+    if settings.clover_ledger_paused:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": CLOVER_PAUSED_CODE, "message": _CLOVER_PAUSED_MESSAGE},
+        )
 
 
 @dataclass(frozen=True)
@@ -365,7 +389,11 @@ async def spend(
     합계가 모자라면 `CloverLotShortfallError`가 나 총액 CAS까지 롤백된다.
 
     `usage` 를 주면 같은 트랜잭션에 사용처 행을 더한다(`_record_usage`). 이미지 차감처럼 작품 맥락이 없는 차감은 주지 않는다.
+
+    정지 스위치가 켜져 있으면 잔액을 건드리기 전에 503 이다(`raise_if_clover_paused`) — 모든 차감이 이 함수를 지나므로 새 차감
+    경로가 생겨도 여기서 막힌다. 부족(`None`)과 달리 예외라 호출부의 부족 번역(429·403)을 타지 않는다.
     """
+    raise_if_clover_paused()
     ledger = await _apply(
         db,
         user_id=user_id,

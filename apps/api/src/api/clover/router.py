@@ -358,6 +358,9 @@ async def get_clover_missions(
 async def claim_clover_mission(
     key: MissionKey,
     user_id: uuid.UUID = Depends(get_current_user_id),
+    # 정지 스위치(`clover.raise_if_clover_paused`) — 지급 함수는 결제 지급과 같아 함수에서 막지 못해 라우트에서 막는다. 인증 뒤라
+    # 비로그인은 그대로 401 이다.
+    _open: None = Depends(clover.raise_if_clover_paused),
     db: AsyncSession = Depends(get_db_session),
 ) -> CloverMissionClaimResponse:
     """미션 청구. 달성하지 못했으면 422. 이미 청구했으면(멱등키 중복) `granted=false`이고

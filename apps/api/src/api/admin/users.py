@@ -765,6 +765,8 @@ async def adjust_user_clover(
     user_id: uuid.UUID,
     body: AdminUserCloverRequest,
     admin_id: uuid.UUID = Depends(get_current_admin_id),
+    # 정지 스위치(`clover.raise_if_clover_paused`) — 지급·회수 함수를 결제 경로와 같이 써서 라우트에서 막는다.
+    _open: None = Depends(clover.raise_if_clover_paused),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """클로버를 지급(양수)하거나 회수(음수)하는 유일한 경로다.

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.payments.eligibility import purchase_block_reason
 from api.clover import products
+from api.core import clover
 from api.core.config import settings
 from api.core.identity_gate import identity_verification_required
 from api.core.sentry import capture_dependency_failure
@@ -54,6 +55,9 @@ async def create_payment(
     body: CreatePaymentRequest,
     _consent: None = Depends(require_legal_consent),
     user_id: uuid.UUID = Depends(get_current_user_id),
+    # 정지 스위치(`clover.raise_if_clover_paused`) — 주문 행에 수량 사본을 쓰므로, 단위를 옮기는 동안 옛 단위 사본이 섞이지 않게
+    # 결제 스위치와 별개로 막는다.
+    _open: None = Depends(clover.raise_if_clover_paused),
     db: AsyncSession = Depends(get_db_session),
 ) -> CreatePaymentResponse:
     """주문을 만든다. 금액은 서버가 상품 키로 정하고 주문 행에 복사해 둔다 — 브라우저가 금액을 바꿔 결제해도 동기화의
