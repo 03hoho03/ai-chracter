@@ -125,6 +125,9 @@ class Content(Base):
     # 때마다 기존 방의 판정이 바뀐다. 기본값이 "허용 안 함"인 것은 작가가 고르기 전에는 남의 소설화를 열지 않으려는 것이다.
     # 기본값을 "나만 보는 소설"에서 이 값으로 바꿀 때 이미 있던 작품의 값은 그대로 두었다.
     novel_permission: Mapped[NovelPermission] = mapped_column(Text, server_default="forbidden", nullable=False)
+    # 원작 상세에 이 작품으로 만든 공개 소설 목록을 보일지. 원작자가 끄면 다른 사람에게 그 목록이 비어 나간다 — 표시만
+    # 줄이는 칸이라 소설화 허락·소설의 공개 상태·권리 고정 칸은 그대로다. 허락 칸과 같은 이유로 버전이 아니라 헤더에 둔다.
+    derived_novels_visible: Mapped[bool] = mapped_column(Boolean, server_default=true(), nullable=False)
     current_published_version_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey(
