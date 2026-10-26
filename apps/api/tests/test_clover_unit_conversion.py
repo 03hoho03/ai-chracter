@@ -890,7 +890,7 @@ async def _converted_then(db: AsyncSession, write: Callable[[CloverUnitEvent], A
 
 
 async def test_revert_refuses_quantities_that_are_not_multiples_of_three(db_session: AsyncSession) -> None:
-    """정지가 새 새 가격(20)으로 깎은 차감이 끼면 나눗셈이 정확하지 않다 — 아무것도 쓰지 않고 멈춘다."""
+    """정지를 푼 뒤 새 가격(20)으로 깎은 차감이 끼면 나눗셈이 정확하지 않다 — 아무것도 쓰지 않고 멈춘다."""
     player = await _paid_player(db_session, amount_krw=900, paid=300)
 
     async def leak(event: CloverUnitEvent) -> None:
