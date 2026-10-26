@@ -14,7 +14,7 @@
 자리들이다 — 워커 목록(`worker_runs`), 마지막 장 모델 읽기(`writes_chapter`), 집필권 잠금 시각(`locks_writing`), 하루 상한
 묶음 고르기와 세기(`daily_limit_group`), 작업 응답·미결 수정 목록·수정 적용과 버리기·낡은 수정 비우기(`call_site`·
 `model_in_context`), 작업 시작과 연쇄 진행 응답(`chain_only`).
-소설화 모듈에서 작업 종류 문자열로 직접 가르는 곳은 이 표와 실행 모듈의 핸들러뿐이다(`tests/test_novelize_kind_literal_guard.py`
+소설화 모듈에서 kind 로 직접 가르는 곳은 갈래 표뿐이다 — 실행 모듈도 갈래로 고른다(`tests/test_novelize_kind_literal_guard.py`
 가 지킨다 — 작업 행 만들기·가격 함수 같은 값 자리는 허용 문맥이다).
 
 `kinds_where` 는 사실 칸을 종류로 옮긴다(종류 단위 SQL 이 쓴다). 한 종류 안에서 갈래끼리 사실이 갈리면(`split_kinds`) 종류만으로는

@@ -1,4 +1,4 @@
-"""소설화 모듈에서 작업 종류 문자열로 갈라 읽는 곳은 갈래 표(`job_variants.py`)와 실행 모듈(`runner.py`, 갈래별 핸들러)뿐이다.
+"""소설화 모듈에서 작업 종류(`kind`) 문자열로 직접 가르는 곳은 갈래 표(`job_variants.py`)뿐이다. 실행 모듈(`runner.py`)도 갈래로 고르므로 같은 허용 문맥으로 검사한다.
 
 작업 종류(`kind`)만으로는 실행 경로가 갈리지 않는다 — 장 생성은 혼자 도는 생성과 연쇄 자식으로, 다시 만들기는 옛 흐름 묶음과
 구성 흐름 화로, AI 수정은 문단 수정과 여러 문단 수정으로 다시 나뉜다. 다른 모듈이 `job.kind == "..."` 처럼 종류 문자열을 직접
@@ -20,7 +20,7 @@ from typing import get_args
 from api.db.models.novel import NovelJobKind
 
 _NOVELIZE = Path(__file__).resolve().parents[1] / "src" / "api" / "novelize"
-_EXEMPT_MODULES = {"job_variants.py", "runner.py"}
+_EXEMPT_MODULES = {"job_variants.py"}
 _KINDS = frozenset(get_args(NovelJobKind))
 _PRICE_FUNCTIONS = {("billing.py", "job_price"), ("billing.py", "_checked_price")}
 
