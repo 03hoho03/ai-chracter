@@ -21,14 +21,15 @@ import novel_replay_metrics as metrics
 from api.core.config import settings
 from api.db.models.prompt import PromptSection, PromptSet, PromptSetSemver
 from api.llm import gemini
-from api.llm.client import LLMCallContext, LLMClient, T
+from api.llm.client import LLMCallContext, LLMClient, T, structured_model
+from api.llm.routing import resolve_backend
 from api.novelize.prompts import (
     NovelizePrompt,
     build_novelize_chapter_prompt,
     build_novelize_episode_outline_prompt,
     build_novelize_outline_prompt,
 )
-from factories import _batch_output
+from factories import _batch_output, _episode_text
 
 # 원문 대화와 작품 설정에 심는 표지 — 출력에 나오면 누출로 센다.
 _MARKER = "리플레이표지은하수종이배"
@@ -95,14 +96,23 @@ async def _set_sections(db: AsyncSession, prompt_set: PromptSet) -> list[PromptS
     return list(rows.all())
 
 
-def _dump_line(prompt: NovelizePrompt, *, branch: str, schema: str | None) -> dict[str, Any]:
-    """측정 덤프 한 줄 — `novelize/prompt_dump.py` 가 쓰는 13칸."""
+def _sent_model(channel: str) -> str:
+    """작업 모델이 gemini 인 소설 호출이 실제로 보내는 모델 id — 덤프가 적는 것과 같은 해석."""
+    backend, sent = resolve_backend(novel_replay._CALL_SITES[channel], "gemini")
+    return structured_model(novel_replay._CALL_SITES[channel], sent) if backend == "gemini" else sent
+
+
+def _dump_line(
+    prompt: NovelizePrompt, *, branch: str, schema: str | None, episode_number: int | None = None
+) -> dict[str, Any]:
+    """측정 덤프 한 줄 — `novelize/prompt_dump.py` 가 쓰는 14칸."""
     return {
         "jobId": str(uuid.uuid4()),
         "branch": branch,
         "callSite": prompt.channel,
         "jobModel": "gemini",
-        "callModel": "덤프에 적힌 모델",
+        "callModel": _sent_model(prompt.channel),
+        "episodeNumber": episode_number,
         "novelSetId": str(prompt.prompt_set_id),
         "channel": prompt.channel,
         "scope": prompt.scope,
@@ -133,7 +143,7 @@ async def _dump(db: AsyncSession, prompt_set: PromptSet, path: Path) -> list[dic
         _dump_line(outline, branch="outline", schema="NovelizeOutlineResult"),
         {"jobId": str(uuid.uuid4()), "channel": "novelize_revise", "callSite": "novelize_revise", "values": {}},
         _dump_line(scenes, branch="episode_outline", schema="NovelizeEpisodeOutlineResult"),
-        _dump_line(chapter, branch="manuscript", schema=None),
+        _dump_line(chapter, branch="manuscript", schema=None, episode_number=1),
     ]
     _write(path, lines)
     return lines
@@ -291,6 +301,27 @@ async def test_a_line_whose_rerender_differs_from_its_dump_fails_and_is_not_call
     assert [c[0] for c in fake.calls] == ["novelize_outline", "novelize_episode_outline"]
 
 
+async def test_the_window_arm_must_send_the_model_the_dump_recorded(db_session: AsyncSession, tmp_path: Path) -> None:
+    measured = await _add_set(db_session, "A")
+    dump = tmp_path / "dump.jsonl"
+    lines = await _dump(db_session, measured, dump)
+    lines[3]["callModel"] = "측정 때 다른 모델"
+    _write(dump, lines)
+
+    stopped = tmp_path / "stopped.jsonl"
+    factory = _Factory(_FakeNovelLLM())
+    assert await _run(db_session, _argv(dump, stopped, "--stop-on-mismatch", "--execute"), factory) == 2
+    assert factory.built == 0
+    failed = [r for r in _records(stopped) if r["kind"] == "plan" and r["callModelMatchesDump"] is False]
+    assert [(r["line"], r["matchesDump"]) for r in failed] == [(4, True)]
+
+    # 기본: 그 줄만 빼고 나머지는 부른다.
+    ledger = tmp_path / "ledger.jsonl"
+    fake = _FakeNovelLLM()
+    assert await _run(db_session, _argv(dump, ledger, "--execute"), _Factory(fake)) == 2
+    assert [r["line"] for r in _records(ledger) if r["kind"] == "call"] == [1, 3]
+
+
 async def test_a_line_whose_set_is_missing_is_refused(db_session: AsyncSession, tmp_path: Path) -> None:
     measured = await _add_set(db_session, "A")
     dump, ledger = tmp_path / "dump.jsonl", tmp_path / "ledger.jsonl"
@@ -323,11 +354,12 @@ async def test_call_and_cost_limits_stop_the_calls_and_stay_in_the_ledger(
     assert all(c["costUsd"] is not None and c["costUsd"] > 0 for c in calls)
     assert all(c["callSite"] in novel_replay.TARGET_CHANNELS for c in calls)
 
+    # 원가 상한은 호출 전에 그 호출의 최악 견적으로 건다 — 한 호출의 실제 원가 절반이면 첫 호출부터 부르지 않는다.
     by_usd = tmp_path / "usd.jsonl"
     first_cost = calls[0]["costUsd"]
     argv = _argv(dump, by_usd, "--execute", usd=str(first_cost / 2))
     assert await _run(db_session, argv, _Factory(_FakeNovelLLM())) == 0
-    assert [r["kind"] for r in _records(by_usd) if r["kind"] != "plan"] == ["call", "budgetExhausted"]
+    assert [r["kind"] for r in _records(by_usd) if r["kind"] != "plan"] == ["budgetExhausted"]
 
     # 원장에 앞 묶음 원가가 이미 상한 이상이면 클라이언트를 만들지도 않는다.
     spent = tmp_path / "spent.jsonl"
@@ -335,6 +367,42 @@ async def test_call_and_cost_limits_stop_the_calls_and_stay_in_the_ledger(
     factory = _Factory(_FakeNovelLLM())
     assert await _run(db_session, _argv(dump, spent, "--execute", usd="0.5"), factory) == 3
     assert factory.built == 0
+
+
+async def test_a_call_whose_worst_case_estimate_would_cross_the_cost_limit_is_not_made(
+    db_session: AsyncSession, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    measured = await _add_set(db_session, "A")
+    dump = tmp_path / "dump.jsonl"
+    await _dump(db_session, measured, dump)
+    dry = tmp_path / "dry.jsonl"
+    assert await _run(db_session, _argv(dump, dry), _Factory(_FakeNovelLLM())) == 0
+    ceiling = next(r["costCeilingUsd"] for r in _records(dry) if r["kind"] == "plan" and r["line"] == 1)
+    capsys.readouterr()
+
+    # 상한이 첫 호출의 견적보다 조금 작다: 원장 누적이 0 이어도 부르지 않고 멈춘 자리를 원장에 남긴다.
+    below = tmp_path / "below.jsonl"
+    fake = _FakeNovelLLM()
+    argv = _argv(dump, below, "--execute", usd=str(ceiling * 0.99))
+    assert await _run(db_session, argv, _Factory(fake)) == 0
+    assert fake.calls == []
+    stops = [r for r in _records(below) if r["kind"] != "plan"]
+    assert [(r["kind"], r["line"], r["used"]) for r in stops] == [("budgetExhausted", 1, 0)]
+    # 시험 실행에서도 전체 최악 견적이 상한을 넘으면 경고 줄을 낸다.
+    assert "경고" in capsys.readouterr().out
+
+    # 상한이 첫 호출의 견적 이상이면 그 호출은 부른다.
+    at = tmp_path / "at.jsonl"
+    fake = _FakeNovelLLM()
+    argv = _argv(dump, at, "--execute", usd=str(ceiling + 1e-6))
+    assert await _run(db_session, argv, _Factory(fake)) == 0
+    first = next(r for r in _records(at) if r["kind"] != "plan")
+    assert (first["kind"], first["line"]) == ("call", 1)
+
+    # 상한이 넉넉하면 경고하지 않는다.
+    capsys.readouterr()
+    assert await _run(db_session, _argv(dump, tmp_path / "roomy.jsonl", usd="1000"), _Factory(_FakeNovelLLM())) == 0
+    assert "경고" not in capsys.readouterr().out
 
 
 async def test_running_the_same_jobs_and_arm_into_the_same_ledger_again_is_refused(
@@ -494,6 +562,63 @@ def test_structured_checks_use_the_schema_and_the_saving_validators() -> None:
     }
     refused = metrics.structured_checks("novelize_episode_outline", json.dumps({"scenes": [scene]}), values)
     assert (refused.schema_ok, refused.valid, refused.refused) == (True, False, True)
+
+
+def test_turn_count_reads_only_the_turn_heads_that_run_on_from_one() -> None:
+    assert metrics.turn_count({"turn_lines": _TURN_LINES}) == 2
+    # 메시지 안에서 줄을 바꾼 본문이 `[턴 n]` 으로 시작해도 이어지는 번호가 아니면 세지 않는다.
+    assert metrics.turn_count({"turn_lines": _TURN_LINES + "\n[턴 99] 본문 속 줄"}) == 2
+    assert metrics.turn_count({"turn_lines": "[턴 2] 사용자: 앞이 빠졌다."}) == 0
+    episode = {"title": "첫 만남", "summary": "둘이 만났다.", "goal": "알게 된다.", "start_turn": 1, "end_turn": 99}
+    values = {"turn_lines": _TURN_LINES + "\n[턴 99] 본문 속 줄"}
+    beyond = metrics.structured_checks("novelize_outline", json.dumps({"episodes": [episode]}), values)
+    assert beyond.valid is False
+
+
+def test_a_manuscript_head_with_its_own_episode_number_counts_as_formatted() -> None:
+    values = {"episode_count": "1", "episode_chars": "3000"}
+    third = _episode_text(_BODY, number=3)
+    assert metrics.chapter_checks(third, values).parsed is False
+    assert metrics.chapter_checks(third, values, episode_number=3).parsed is True
+    assert metrics.chapter_checks(_episode_text(_BODY, number=4), values, episode_number=3).parsed is False
+
+
+def test_the_episode_number_comes_from_the_dump_field_or_is_approximated_only_for_the_outline_flow(
+    tmp_path: Path,
+) -> None:
+    dump, ledger = tmp_path / "dump.jsonl", tmp_path / "ledger.jsonl"
+    base = {"episode_count": "1", "episode_chars": "3000"}
+    summaries = {**base, "previous_summaries": "1화: 앞 일이 있었다.\n2화: 다음 일이 있었다."}
+    cases = [
+        # (작업, 덤프 줄, 형식 성공으로 세는가)
+        ("field", {"branch": "manuscript", "episodeNumber": 3, "values": {**base, "previous_summaries": ""}}, 1),
+        ("approx-manuscript", {"branch": "manuscript", "values": summaries}, 1),
+        ("approx-regenerate", {"branch": "outline_regenerate", "values": summaries}, 1),
+        ("legacy-flow", {"branch": "legacy_regenerate", "values": summaries}, 0),
+        ("no-head", {"branch": "manuscript", "values": {**base, "previous_summaries": "있었다.\n다음 일."}}, 0),
+    ]
+    _write(dump, [{"jobId": job, "channel": "novelize_chapter", **line} for job, line, _ in cases])
+    output = _episode_text(_BODY, number=3)
+    _write(
+        ledger,
+        [
+            {
+                "kind": "call",
+                "line": number,
+                "jobId": job,
+                "channel": "novelize_chapter",
+                "arm": job,
+                "rep": 0,
+                "output": output,
+                "error": None,
+                "costUsd": 0.01,
+                "sentModel": "m",
+            }
+            for number, (job, _, _) in enumerate(cases, start=1)
+        ],
+    )
+    rows = {row["arm"]: row for row in metrics.summarize(metrics.load_calls([ledger], dump), [])}
+    assert {job: rows[job]["formatOk"] for job, _, _ in cases} == {job: ok for job, _, ok in cases}
 
 
 def test_leaked_markers_are_those_planted_in_the_inputs_and_found_in_the_output() -> None:
