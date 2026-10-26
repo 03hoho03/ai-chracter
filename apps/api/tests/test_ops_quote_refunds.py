@@ -151,3 +151,14 @@ def test_received_on_is_required() -> None:
     """기본값이 없다 — 두 번 뽑을 때 같은 날짜를 늘 적게 한다(실행한 날로 정하면 전후 비율이 갈릴 수 있다)."""
     with pytest.raises(SystemExit):
         quote_refunds.main([])
+
+
+async def test_quote_today_is_the_fixed_received_on(db_session: AsyncSession) -> None:
+    """견적의 "오늘"은 실행한 날이 아니라 고정 접수일이다. 깨지는 시나리오: 실행일을 오늘로 쓰면 실행일보다 늦은 접수일이 전부
+    거절돼(접수일이 오늘 뒤) 미리 정한 날짜로 뽑을 수 없고, 두 추출의 실행일이 다르면 결과가 갈린다."""
+    order = await _order(db_session, paid_on=date(2026, 10, 10), status="paid", paid_left=3_300)
+    await db_session.commit()
+
+    rows = await quote_refunds.quote_rows(db_session, received_on=date(2099, 1, 1))
+
+    assert [(r.ratio_percent, r.error) for r in rows if r.payment_id == order.payment_id] == [(90, None), (100, None)]
