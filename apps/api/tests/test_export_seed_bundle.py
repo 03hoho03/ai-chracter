@@ -660,6 +660,39 @@ async def test_export_refuses_a_slug_used_twice(db_session: AsyncSession, tmp_pa
     assert not out.exists()
 
 
+@pytest.mark.parametrize("slug", ["a/b", "../x", "Private-A", "-private", ""])
+async def test_export_refuses_a_slug_outside_the_file_name_form(
+    db_session: AsyncSession, tmp_path: Path, slug: str
+) -> None:
+    """slug 는 묶음 안 파일 이름이 된다 — 슬래시나 `..` 가 들어가면 풀 때 정해진 폴더 밖이나 엉뚱한 폴더에 파일이
+    생기고, 대문자는 대소문자를 가리지 않는 파일 시스템에서 다른 slug 와 부딪힌다."""
+    story_id = await _draft_story(db_session, await _author(db_session))
+    map_path = _write_map(tmp_path / "map.txt", [f"{story_id} {slug}"])
+    out = tmp_path / "seed-bundle.tar.gz"
+
+    assert await _run_export(db_session, map_path, out) == export_seed_bundle.EXIT_REFUSED
+    assert not out.exists()
+
+
+def test_read_map_accepts_a_lowercase_hyphenated_slug(tmp_path: Path) -> None:
+    content_id = uuid.uuid4()
+    map_path = _write_map(tmp_path / "map.txt", [f"{content_id} tutorial-filmclub"])
+
+    assert export_seed_bundle.read_map(map_path) == [
+        export_seed_bundle.MapEntry(content_id=content_id, slug="tutorial-filmclub")
+    ]
+
+
+async def test_export_refuses_the_same_work_under_two_slugs(db_session: AsyncSession, tmp_path: Path) -> None:
+    """같은 작품을 두 slug 로 담으면 로컬에 같은 작품이 둘 생긴다 — 맵을 쓴 사람이 의도한 결과가 아니다."""
+    story_id = await _draft_story(db_session, await _author(db_session))
+    map_path = _write_map(tmp_path / "map.txt", [f"{story_id} private-a", f"{story_id} private-b"])
+    out = tmp_path / "seed-bundle.tar.gz"
+
+    assert await _run_export(db_session, map_path, out) == export_seed_bundle.EXIT_REFUSED
+    assert not out.exists()
+
+
 async def test_export_refuses_to_overwrite_an_existing_out_file(db_session: AsyncSession, tmp_path: Path) -> None:
     story_id = await _draft_story(db_session, await _author(db_session))
     map_path = _write_map(tmp_path / "map.txt", [f"{story_id} private-a"])
