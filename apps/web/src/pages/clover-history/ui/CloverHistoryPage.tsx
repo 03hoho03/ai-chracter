@@ -2,13 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { useRef } from "react";
 
-import {
-  CLOVER_EXPIRY_NOTICE_MESSAGE,
-  CLOVER_KIND_LABELS,
-  formatCloverLedgerAmount,
-  useCloverLedgerQuery,
-  type CloverLedgerItem,
-} from "@/entities/clover";
+import { CLOVER_EXPIRY_NOTICE_MESSAGE, useCloverLedgerQuery, type CloverLedgerItem } from "@/entities/clover";
 import { ContentListEmptyState, ContentListLoadMore } from "@/entities/content";
 import { formatDate } from "@/shared/lib/time/formatDate";
 
@@ -19,6 +13,7 @@ import {
   type CloverHistorySearch,
   type CloverHistoryTab,
 } from "../model/cloverHistorySearch";
+import { hasLedgerEntries, toLedgerRowView } from "../model/ledgerRow";
 
 const TAB_LABELS: Record<CloverHistoryTab, string> = {
   use: "사용",
@@ -39,8 +34,9 @@ type CloverHistoryPageProps = {
 
 /** 클로버 내역 화면. 탭(사용/획득/소멸) 상태는
  * URL 검색 파라미터(`?tab=`)로 두고, 각 탭은 별도 `useCloverLedgerQuery` 인스턴스를 갖는다
- * (`queryKey`에 `category`가 들어가 탭 전환이 그 자체로 새 쿼리다). 컨테이너 폭은 허브·마이페이지와
- * 같은 `max-w-md`. */
+ * (`queryKey`에 `category`가 들어가 탭 전환이 그 자체로 새 쿼리다). 컨테이너 폭은 마이페이지와 같은 `max-w-md` 다 —
+ * 목록 한 열이고 가장 넓은 잉크가 행의 라벨·날짜·수량이라, 클로버 충전 화면이 `lg` 이상에서 두 열로 넓어지는 것을 따르지
+ * 않는다. */
 export function CloverHistoryPage({ search, onSearchChange }: CloverHistoryPageProps) {
   const activeTab = resolveCloverHistoryTab(search);
 
@@ -54,7 +50,7 @@ export function CloverHistoryPage({ search, onSearchChange }: CloverHistoryPageP
     <main className="mx-auto flex max-w-md flex-col gap-6 px-4 sm:px-6 py-10">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">클로버 내역</h1>
-        {/* 허브 페이지(clover-hub)와 같은 상시 고지, 같은
+        {/* 클로버 충전 화면(clover-hub)의 내 클로버와 같은 고지, 같은
             단일 소스(entities/clover의 cloverExpiryNotice.ts)를 쓴다. */}
         <p className="text-sm break-keep text-muted-foreground">{CLOVER_EXPIRY_NOTICE_MESSAGE}</p>
       </div>
@@ -112,6 +108,10 @@ function CloverLedgerTabPanel({ category }: { category: CloverHistoryTab }) {
         </div>
       )}
 
+      {/* 단위 전환 경계 줄만 실린 탭은 거래가 없는 탭이다 — 경계 줄과 함께 빈 안내를 둔다. 더 받을 페이지가 남아 있으면
+          아직 모르므로 말하지 않는다. */}
+      {!hasLedgerEntries(items) && !query.hasNextPage && <ContentListEmptyState message={EMPTY_MESSAGES[category]} />}
+
       {/* `tabIndex={-1}`은 Tab 순서에 넣지 않으면서 프로그램 포커스만 받게 한다 — "더 보기"가
           마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다(`ContentListLoadMore`의 `onExhausted`). */}
       <ul ref={listRef} tabIndex={-1} className="flex flex-col gap-2 outline-none">
@@ -135,19 +135,42 @@ function CloverLedgerTabPanel({ category }: { category: CloverHistoryTab }) {
 }
 
 function CloverLedgerRow({ item }: { item: CloverLedgerItem }) {
+  const row = toLedgerRowView(item);
+
+  // 단위 전환 경계. 거래가 아니라 목록을 가르는 선이라 상자 없이 가운데 문장을 두 선 사이에 둔다 — 행 카드와 같은 상자면
+  // 잔액이 그만큼 바뀐 거래로 읽힌다. 누를 것이 없어 탭 정지도 없다.
+  if (row.kind === "boundary") {
+    return (
+      <li className="flex items-center gap-3 py-2">
+        <span aria-hidden className="h-px flex-1 bg-border" />
+        <span className="flex flex-col items-center gap-0.5 text-center text-xs break-keep text-muted-foreground">
+          <span className="font-medium text-foreground">{row.title}</span>
+          <span className="tabular-nums">
+            {formatDate(item.createdAt)} · {row.balance}
+          </span>
+        </span>
+        <span aria-hidden className="h-px flex-1 bg-border" />
+      </li>
+    );
+  }
+
   return (
     <li className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
-      <div className="flex flex-col gap-0.5">
-        <span className="text-sm font-medium text-foreground">
-          {CLOVER_KIND_LABELS[item.kind] ?? item.kind}
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+          {row.label}
+          {/* 중립 상태 배지(채움 없는 윤곽, `DESIGN.md` Status badges 절). */}
+          {row.isLegacyUnit && (
+            <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
+              이전 단위
+            </span>
+          )}
         </span>
         <span className="text-xs text-muted-foreground">{formatDate(item.createdAt)}</span>
       </div>
       {/* 평소 무채색, 부호(+/-)만으로 방향을 말한다(색으로
           갈라 새 유채색을 만들지 않는다). */}
-      <span className="text-sm font-medium tabular-nums text-foreground">
-        {formatCloverLedgerAmount(item.amount)}
-      </span>
+      <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">{row.amount}</span>
     </li>
   );
 }

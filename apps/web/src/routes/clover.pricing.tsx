@@ -1,9 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { CloverPricingPage } from "@/pages/clover-pricing";
+import { cloverPricingRedirectSearchSchema, toCloverHubSearch } from "@/pages/clover-hub";
 
-/** 공개 라우트 — 형제 `clover.index.tsx`(허브)와 달리 `beforeLoad: requireSession`이 없다. 결제하기 전에 상품과
- * 환불 조건을 로그인 없이 볼 수 있어야 한다. 부모 `clover.tsx` 레이아웃이 없어 허브의 가드가 여기 걸리지 않는다. */
+/** 옛 상품 안내 주소. 그 화면은 클로버 충전 화면(`/clover`)으로 합쳐졌고, 이 주소는 링크·검색 결과·북마크로 남아 있어
+ * 충전 화면으로 넘긴다(고른 상품 `?product=` 는 그대로 가져간다). `replace` 라 뒤로가기가 이 주소로 돌아와 다시 넘기는
+ * 고리를 만들지 않는다. 파일을 지우면 이 주소가 404 가 되므로 넘기기 위해 남긴다(워커의 알려진 경로 목록도 같다). */
 export const Route = createFileRoute("/clover/pricing")({
-  component: CloverPricingPage,
+  validateSearch: cloverPricingRedirectSearchSchema,
+  // `throw: true` 는 라우터가 넘기기 객체를 대신 던지게 한다(라우터가 잡아 이동시키는 정상 흐름이다).
+  beforeLoad: ({ search }) => {
+    redirect({ to: "/clover", search: toCloverHubSearch(search), replace: true, throw: true });
+  },
 });

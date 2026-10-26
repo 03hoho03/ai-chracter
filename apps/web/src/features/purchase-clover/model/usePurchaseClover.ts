@@ -5,7 +5,11 @@ import { useCompletePaymentMutation } from "../api/useCompletePaymentMutation";
 import { useCreatePaymentMutation, type CreatePaymentResponse } from "../api/useCreatePaymentMutation";
 import type { CloverPayMethodItem } from "./payMethod";
 import { toPortOneCustomer, type PurchaseFormValues } from "./purchaseForm";
-import { toCreatePaymentFailure, toPurchaseResult, type PurchaseResult } from "./purchaseResult";
+import { toCreatePaymentFailure, type PurchaseResult } from "./purchaseResult";
+import { toSettledPurchase, type PurchaseGrant } from "./settledPurchase";
+
+/** 구매 시도 하나의 끝. `grant` 는 지급까지 끝났고 서버가 받은 수량을 실었을 때만 있다. */
+export type PurchaseAttempt = { result: PurchaseResult; grant: PurchaseGrant | null };
 
 type PurchaseInput = {
   productKey: CloverProductItem["key"];
@@ -24,12 +28,12 @@ export function usePurchaseClover() {
   const createPayment = useCreatePaymentMutation();
   const completePayment = useCompletePaymentMutation();
 
-  async function purchase({ productKey, payMethod, values, onCheckoutOpen }: PurchaseInput): Promise<PurchaseResult> {
+  async function purchase({ productKey, payMethod, values, onCheckoutOpen }: PurchaseInput): Promise<PurchaseAttempt> {
     let order: CreatePaymentResponse;
     try {
       order = await createPayment.mutateAsync({ productKey, agreed: true });
     } catch (error) {
-      return toCreatePaymentFailure(error);
+      return { result: toCreatePaymentFailure(error), grant: null };
     }
 
     onCheckoutOpen();
@@ -44,14 +48,13 @@ export function usePurchaseClover() {
       customer: toPortOneCustomer(values),
       redirectUrl: `${window.location.origin}/clover`,
     });
-    if (outcome !== "succeeded") return outcome;
+    if (outcome !== "succeeded") return { result: outcome, grant: null };
 
     try {
-      const { status } = await completePayment.mutateAsync(order.paymentId);
-      return toPurchaseResult(status);
+      return toSettledPurchase(await completePayment.mutateAsync(order.paymentId));
     } catch {
       // 확인 요청만 실패했다(포트원 조회 실패 등). 결제는 됐을 수 있고 웹훅이 같은 결제를 맞춘다.
-      return "checking";
+      return { result: "checking", grant: null };
     }
   }
 

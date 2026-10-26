@@ -27,7 +27,10 @@ export type PurchaseResult =
   | "failed"
   | "sdkUnavailable";
 
-export function toPurchaseResult(status: CompletePaymentStatus): PurchaseResult {
+/** 결제 완료 응답의 상태가 접히는 네 갈래. 주문 전 거절·창 오류는 완료 응답에서 나오지 않는다. */
+export type CompletedPurchaseResult = Extract<PurchaseResult, "paid" | "checking" | "problem" | "notCompleted">;
+
+export function toPurchaseResult(status: CompletePaymentStatus): CompletedPurchaseResult {
   switch (status) {
     case "paid":
       return "paid";
