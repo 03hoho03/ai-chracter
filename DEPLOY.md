@@ -3272,7 +3272,7 @@ tail -f /var/log/ddona-hidden-novel-purge.log
 ### 3-17. 채팅 단계별 문안 체인·호출 모델 설정 — 켜기 · 끄기 · 되돌리기
 
 모델 배정 표(`prompt_routes`, 어드민 "모델 배정" 화면 `/prompt-routing` 또는 API `PUT /admin/prompt-routing` 으로 저장)는 (레인, 실효 방 모델, 단계) 칸마다 판정·요약·추출이 읽을 문안 체인과 부를
-모델을 담는다. 실효 방 모델은 방에 저장된 모델이 아니라 그 턴이 실제로 도는 모델이다 — 상위 모델 스위치가 꺼져 있으면 Opus 를
+모델을 담는다(소설 레인 칸은 아래 "소설 레인" 단락). 실효 방 모델은 방에 저장된 모델이 아니라 그 턴이 실제로 도는 모델이다 — 상위 모델 스위치가 꺼져 있으면 Opus 를
 저장한 방도 Gemini 방 칸이고, 그 턴의 차감도 같은 값으로 Gemini 가격이다(한 요청에서 한 번 정해 판정 문안과 차감이 함께 쓴다).
 
 - **표가 비어 있으면** 모든 칸이 env 규칙(위 `STAT_JUDGMENT_MODEL` 행의 키와 `LLM_CALL_SITE_BACKENDS`)과 같다. 빈 표가 기본 상태다.
@@ -3299,6 +3299,40 @@ tail -f /var/log/ddona-hidden-novel-purge.log
   호출에 싣지 않던 이미지로 돌리면 행이 쓰인 칸의 문안은 행의 체인, 호출은 판정·요약 모델 키의 모델로 갈라진다 — 그 태그로
   돌리기 **전에** 부를 모델이 그 키와 다른 행을 표에서 뺀다. 스키마를 내리는 순서는 "상위 모델(채팅
   Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절의 모델 배정 설정·이력 표 문단이다.
+- **소설 레인.** 표에는 소설 레인 칸도 있다 — 생성 세 단계(화·구성안·장면 구성안)는 작업 모델(Gemini·Sonnet·Opus)마다 한 칸,
+  구조화 네 단계(문단 수정·여러 문단 수정·재검사·경계 제안)는 작업 모델과 무관한 `any` 한 칸이다. 소설 레인은 **따로 저장한다** —
+  `PUT /admin/prompt-routing/novel`, 되돌리기 `POST /admin/prompt-routing/novel/revisions/{id}/restore` 가 소설 레인만 바꾼다. 위 기존
+  저장·되돌리기 경로는 채팅 두 레인만 바꾸고, 요청에 실린 소설 행(소설 탭을 모르는 낡은 화면이 되돌려 보낸 것)은 버린다. 이력
+  스냅샷은 어느 경로든 저장한 뒤의 표 전체이고, 이력의 `lanes` 칸이 경로를 남긴다(NULL = 채팅 경로 또는 이 칸이 생기기 전의 저장,
+  `["novel"]` = 소설 경로). 낡은 기준 확인은 레인과 무관하다 — 다른 레인이 먼저 저장했어도 409 다.
+  - 이 배포에서는 소설 호출이 표를 읽지 않는다 — 소설 행을 저장해도 소설 작업의 문안·모델·경로는 env 규칙 그대로다. 생성 칸은
+    그 뒤에도 체인·부를 모델이 작업 모델로 고정이고(소설 차감이 작업 모델 단가다), 경로는 env 배정과 같을 때만 저장된다 — 경로를
+    확인·표시하는 칸이다.
+  - 🔴 소설 구조화 칸의 Claude 행은 지금 운영 env 로는 쓰일 수 없다. 소설 구조화 호출 위치에 직결 배정이 없어 Claude 모델이
+    Bedrock 으로 풀리므로 저장 검사가 `backend-mismatch` 로 거부하고, 그 배정을 `LLM_CALL_SITE_BACKENDS` 에 넣으면 기동 검증이 api
+    를 띄우지 않는다(그 호출 위치의 모델을 기본 모델 Gemini 로만 본다). 조회 응답의 구조화 후보마다 `skippedNow`(지금 env 로
+    건너뛸지와 이유)와 `costRatio`(지금 부르는 모델 대비 원가 배수, 입력·출력 따로, 1 미만이면 더 쌈 — 차감액은 그대로)가 실린다.
+  - 🔴 운영에 소설 행을 처음 넣기 **전에** 측정 하네스의 프롬프트 동기화(`scripts/memory_eval/prompt_sync.py`)가 내보낸 파일의 배정
+    행을 레인으로 거르게 먼저 고친다 — 지금은 소설 행이 하나라도 든 내보내기 파일을 통째로 거부한다.
+  - **되돌리기**(스키마 리비전 `2ea446be8eb9` — 생성 행 CHECK 둘을 소설 생성 세 단계까지 넓히고 이력에 `lanes` 칸을 더한다. 옛
+    이미지가 쓰는 행은 넓힌 CHECK 를 만족하고 옛 매퍼의 INSERT 는 `lanes` 를 빼 NULL 이 되므로 이미지만 되돌려도 안전하다). 순서:
+    ① 소설 행이 있으면 새 이미지·새 화면에서 소설 탭을 비워 저장한다(소설 경로) → ② 어드민 화면을 소설 탭 이전 배포로 → ③ 이미지
+    롤백 → ④ 스키마까지 내리려면 새 이미지로 `alembic downgrade 2ea446be8eb9-1`(소설 생성 행이 남아 있으면 지우지 않고 멈추며
+    "새 이미지에서 소설 레인을 비워 저장한 뒤 내린다"고 알린다) → revert 병합. 🔴 옛 이미지로 되돌린 동안 옛 배정 화면에서
+    **저장하지 않는다** — 옛 저장은 표 전체 교체라 소설 행이 사라진다. 옛 이미지의 되돌리기는 소설 행이 든 스냅샷을 `unknown-stage`
+    422 로 거부하므로, 스냅샷 복원은 새 이미지로 돌아온 뒤에만 하고 소설 행은 소설 되돌리기 경로로 되살린다. 새 화면의 소설 저장·
+    비우기·되돌리기는 소설 경로가 없는 옛 이미지에서 404 로 막힌다.
+
+```sh
+# 읽기 전용 — 소설 행 수, 최근 이력의 저장 경로, 소설 행이 든 이력
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c "SELECT lane, stage, count(*) FROM prompt_routes GROUP BY 1,2 ORDER BY 1,2;"
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c "SELECT number, lanes, jsonb_array_length(rows) FROM prompt_route_revisions ORDER BY number DESC LIMIT 5;"
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -At -c "SELECT number FROM prompt_route_revisions WHERE rows @> '[{\"lane\":\"novel\"}]' ORDER BY number DESC;"
+```
+
 - 저장·되돌리기는 감사 로그(`admin_action_logs`)에 `prompt-routing-save`·`prompt-routing-restore` 로 한 행씩 남는다. 대상 회원·작품이
   없는 행이라 회원 상세(감사 로그를 읽는 유일한 곳)에 실리지 않아, 이 두 종류를 모르는 옛 이미지로 되돌리기 전에 행을 확인할
   필요가 없다.

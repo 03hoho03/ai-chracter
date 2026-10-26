@@ -1,8 +1,15 @@
-"""어드민 모델 배정 표 API — 실효 표 조회, 표 전체 저장, 이력 목록·상세, 이력으로 되돌리기.
+"""어드민 모델 배정 표 API — 실효 표 조회, 레인별 저장, 이력 목록·상세, 이력으로 되돌리기.
 
-저장은 표 전체를 갈아 끼우고 이력에 한 행을 쌓는다. 되돌리기는 옛 이력의 스냅샷을 지금의 env·게시 세트로 다시 검사해 저장과
-같은 경로로 새 이력 행을 만든다 — 그 사이 env 배정이나 게시 세트가 바뀌었으면 옛 스냅샷이 지금은 다른 경로로 가거나 체인이 없는
-행을 담을 수 있기 때문이다. "전부 env 로"는 빈 표 저장이라 따로 라우트를 두지 않는다.
+저장·되돌리기는 경로로 레인을 가른다. 기존 경로(`PUT /admin/prompt-routing`, `POST …/revisions/{id}/restore`)는 채팅 두 레인,
+소설 경로(`PUT /admin/prompt-routing/novel`, `POST …/novel/revisions/{id}/restore`)는 소설 레인만 갈아 끼운다. 소설 경로를 따로
+두는 이유는 롤백이다 — 소설 경로가 없는 옛 BE 로 이미지를 되돌린 동안 새 화면의 소설 저장·비우기·되돌리기가 404 로 막혀, 옛 BE 가
+요청의 뜻을 모른 채 표 전체를 지우거나 되돌리는 일이 구조로 생기지 않는다. 기존 경로의 요청 꼴은 그대로다.
+
+저장은 그 경로의 레인 행을 갈아 끼우고 이력에 한 행을 쌓는다. 스냅샷은 어느 경로든 저장한 뒤의 표 전체이고, 이력의 `lanes` 칸이
+어느 경로의 저장인지 남긴다. 낡은 기준 확인은 레인과 무관하게 최신 이력 하나로 한다 — 레인별로 풀면 스냅샷이 다른 레인의 동시
+저장을 모른 채 남을 수 있다. 되돌리기는 옛 이력의 스냅샷에서 그 경로의 레인 행만 꺼내 지금의 env·게시 세트로 다시 검사해 저장과
+같은 순서로 새 이력 행을 만든다 — 그 사이 env 배정이나 게시 세트가 바뀌었으면 옛 스냅샷이 지금은 다른 경로로 가거나 체인이 없는
+행을 담을 수 있기 때문이다. "전부 env 로"는 빈 저장이라 따로 라우트를 두지 않는다.
 
 조회는 캐시가 아니라 DB 를 읽는다 — 운영자가 보는 값은 방금 저장한 값이어야 하고, 저장 직후 조회가 캐시를 다시 채우지 않게 한다.
 
@@ -12,13 +19,14 @@
 조치 종류를 모르는 옛 이미지로 되돌려도 그 응답 검증은 깨지지 않는다.
 
 칸마다의 후보(`candidates`)는 그 칸이 고를 수 있는 쌍마다 호출 위치가 실제로 보낼 모델 id 와 단가다. 저장 전에 새로 고른 쌍의
-단가를 화면이 보이려는 읽기 전용 계산이라, 운영 값(`effective`·`calls`)과 달리 지금 표·env 배정과 무관하다.
+단가를 화면이 보이려는 읽기 전용 계산이라, 운영 값(`effective`·`calls`)과 달리 지금 표·env 배정과 무관하다. 후보에 함께 싣는
+"지금 env 로 건너뛸지"와 원가 배수는 지금 env 로 계산한다 — 저장하기 전에 운영에서 쓰일지와 원가가 몇 배가 될지를 보이려는 것이다.
 """
 
 import logging
 import uuid
 from collections.abc import Sequence
-from typing import Any, get_args
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from redis.exceptions import RedisError
@@ -32,9 +40,11 @@ from api.admin.schemas import (
     AdminPromptRouteAllowedPair,
     AdminPromptRouteCall,
     AdminPromptRouteCandidate,
+    AdminPromptRouteCandidateSkip,
     AdminPromptRouteCell,
     AdminPromptRouteChain,
     AdminPromptRouteChainReader,
+    AdminPromptRouteCostRatio,
     AdminPromptRouteEffective,
     AdminPromptRoutePrice,
     AdminPromptRouteRevisionDetailResponse,
@@ -56,16 +66,26 @@ from api.chat.prompt_routing import (
     resolve_stage_route,
     route_chain_errors,
     route_row_errors,
+    row_call_sites,
+    row_route_problem,
 )
 from api.chat.prompt_routing_cache import invalidate_prompt_routes, load_prompt_routes_from_db
-from api.chat.prompt_stages import LANE_STAGES, STAGES, PromptStage, RoutingLane, stage_call_sites
+from api.chat.prompt_stages import (
+    LANE_STAGES,
+    STAGES,
+    PromptStage,
+    RouteRoomModel,
+    RoutingLane,
+    stage_call_sites,
+    stage_room_models,
+)
 from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
 from api.db.models.moderation import AdminActionType
 from api.db.models.prompt import PromptRoute, PromptRouteRevision
 from api.db.session import get_db_session
 from api.llm.call_policy import BackendId, LLMCallSite
-from api.llm.chat_models import ChatRoomModelId, PromptSetModelId, backend_model_id
+from api.llm.chat_models import PromptSetModelId, backend_model_id
 from api.llm.client import structured_model
 from api.llm.pricing import MODEL_PRICES, PRICES_AS_OF
 
@@ -73,7 +93,9 @@ router = APIRouter(tags=["admin"])
 
 logger = logging.getLogger(__name__)
 
-_ROOM_MODELS: tuple[ChatRoomModelId, ...] = get_args(ChatRoomModelId)
+# 경로마다 맡은 레인. 기존 경로는 채팅 두 레인, 소설 경로는 소설 레인이다.
+_CHAT_LANES: tuple[RoutingLane, ...] = ("story", "character")
+_NOVEL_LANES: tuple[RoutingLane, ...] = ("novel",)
 
 
 def _row_out(row: RouteRow) -> AdminPromptRouteRow:
@@ -90,6 +112,18 @@ def _row_out(row: RouteRow) -> AdminPromptRouteRow:
 def _snapshot(row: RouteRow) -> dict[str, Any]:
     """이력 `rows` 의 한 원소 — 응답 스키마의 camelCase 꼴 그대로다."""
     return _row_out(row).model_dump(mode="json", by_alias=True)
+
+
+def _raw_snapshot(row: RouteRowInput) -> dict[str, Any]:
+    """저장 범위 밖 레인의 DB 행을 값 그대로 이력 원소 꼴로 옮긴다 — 지금 코드가 모르는 값이 있어도 스냅샷은 표 그대로여야 한다."""
+    return {
+        "lane": row.lane,
+        "roomModel": row.room_model,
+        "stage": row.stage,
+        "chainModel": row.chain_model,
+        "callModel": row.call_model,
+        "backend": row.backend,
+    }
 
 
 def _snapshot_inputs(raw: Sequence[Any]) -> list[RouteRowInput]:
@@ -142,19 +176,59 @@ def _call(call_site: LLMCallSite, backend: BackendId, model: PromptSetModelId) -
     return AdminPromptRouteCall(call_site=call_site, backend=backend, model_id=model_id, price=_price(model_id))
 
 
-def _candidates(room_model: ChatRoomModelId, stage: PromptStage) -> list[AdminPromptRouteCandidate]:
-    """그 칸의 행이 고를 수 있는 쌍마다 그 단계의 호출 위치가 보낼 모델 id·단가. 생성 단계는 방 모델로만 부르므로 방 모델의
-    쌍뿐이다(저장 검사가 다른 모델을 거부한다)."""
+def _read_setting(name: str) -> str:
+    return str(getattr(settings, name))
+
+
+def _cost_ratio(base_model_id: str, model_id: str) -> AdminPromptRouteCostRatio | None:
+    """두 모델 id 의 단가 비(후보 ÷ 기준). 단가는 원가 표를 호출마다 읽는다 — 값의 사본을 두지 않는다."""
+    base = _price(base_model_id)
+    price = _price(model_id)
+    if base is None or price is None or base.input_usd_per_million == 0 or base.output_usd_per_million == 0:
+        return None
+    return AdminPromptRouteCostRatio(
+        input=price.input_usd_per_million / base.input_usd_per_million,
+        output=price.output_usd_per_million / base.output_usd_per_million,
+    )
+
+
+def _candidates(lane: RoutingLane, room_model: RouteRoomModel, stage: PromptStage) -> list[AdminPromptRouteCandidate]:
+    """그 칸의 행이 고를 수 있는 쌍마다 그 단계의 호출 위치가 보낼 모델 id·단가, 그 쌍의 행이 지금 env 로 건너뛰어질지, 구조화
+    칸이면 원가 배수. 생성 단계는 방 모델(소설은 작업 모델)로만 부르므로 그 모델의 쌍뿐이다(저장 검사가 다른 모델을 거부한다).
+
+    건너뜀 판정은 그 칸에 그 쌍의 행 하나만 있는 표로 한다 — 해석이 그 행을 읽는 호출 위치 전부(물려받는 단계 포함)에서 보는 것과
+    같은 검사다. 원가 배수의 기준은 그 칸의 채팅 호출 위치(소설은 소설 호출 위치)가 행 없이 부르는 모델이다."""
     kind = STAGES[stage].kind
-    return [
-        AdminPromptRouteCandidate(
-            model=model,
+    chat_call_site = stage_call_sites(stage)[0]
+    base = resolve_stage_route(PromptRoutes.empty(), lane=lane, room_model=room_model, stage=stage)
+    base_model_id = _model_id(chat_call_site, base.backend, base.call_model)
+    candidates: list[AdminPromptRouteCandidate] = []
+    for model, backend in sorted(ALLOWED_ROUTE_PAIRS[kind]):
+        if kind == "generation" and model != room_model:
+            continue
+        row = RouteRow(
+            lane=lane,
+            room_model=room_model,
+            stage=stage,
+            chain_model=None if kind == "generation" else model,
+            call_model=model,
             backend=backend,
-            calls=[_call(call_site, backend, model) for call_site in stage_call_sites(stage)],
         )
-        for model, backend in sorted(ALLOWED_ROUTE_PAIRS[kind])
-        if kind != "generation" or model == room_model
-    ]
+        problem = row_route_problem(row, row_call_sites(PromptRoutes.from_rows([row]), row), _read_setting)
+        candidates.append(
+            AdminPromptRouteCandidate(
+                model=model,
+                backend=backend,
+                calls=[_call(call_site, backend, model) for call_site in stage_call_sites(stage)],
+                skipped_now=None
+                if problem is None
+                else AdminPromptRouteCandidateSkip(reason=problem[0], message=problem[1]),
+                cost_ratio=None
+                if kind == "generation"
+                else _cost_ratio(base_model_id, _model_id(chat_call_site, backend, model)),
+            )
+        )
+    return candidates
 
 
 async def _latest_revision(db: AsyncSession) -> PromptRouteRevision | None:
@@ -172,8 +246,13 @@ async def _routing_response(db: AsyncSession) -> AdminPromptRoutingResponse:
     cells: list[AdminPromptRouteCell] = []
     readers: dict[tuple[RoutingLane, PromptSetModelId], list[AdminPromptRouteChainReader]] = {}
     for lane, stages in LANE_STAGES.items():
-        for room_model in _ROOM_MODELS:
+        # 칸 순서는 레인 → 방 모델 → 단계다. 소설 레인은 단계마다 축이 달라(생성은 작업 모델, 구조화는 `any`) 그 칸의 축에 있는
+        # 단계만 그린다.
+        room_models = dict.fromkeys(room for stage in stages for room in stage_room_models(lane, stage))
+        for room_model in room_models:
             for stage in stages:
+                if room_model not in stage_room_models(lane, stage):
+                    continue
                 calls: list[AdminPromptRouteCall] = []
                 for call_site in stage_call_sites(stage):
                     route = resolve_stage_route(
@@ -203,7 +282,7 @@ async def _routing_response(db: AsyncSession) -> AdminPromptRoutingResponse:
                             stage=route.skipped.stage, reason=route.skipped.reason, message=route.skipped.message
                         ),
                         calls=calls,
-                        candidates=_candidates(room_model, stage),
+                        candidates=_candidates(lane, room_model, stage),
                     )
                 )
                 readers.setdefault((lane, route.chain_model), []).append(
@@ -252,11 +331,14 @@ async def _save_routes(
     base_revision_id: uuid.UUID | None,
     note: str,
     rows: Sequence[RouteRowInput],
+    scope: tuple[RoutingLane, ...],
     restored_from_id: uuid.UUID | None,
     action_type: AdminActionType,
 ) -> None:
-    """저장과 되돌리기가 함께 쓰는 순서: 최신 이력 확인 → 행 검사 → 체인 검사 → 한 트랜잭션에서 이력 행 + 표 교체 + 감사 로그 →
-    커밋 → 캐시 무효화."""
+    """저장과 되돌리기가 함께 쓰는 순서: 최신 이력 확인 → 행 검사 → 체인 검사 → 한 트랜잭션에서 범위 레인의 행 교체 + 이력 행 +
+    감사 로그 → 커밋 → 캐시 무효화. `rows` 는 부르는 쪽이 이미 `scope` 레인의 행으로 거른 것이다. 범위 밖 레인의 행은 지우지 않고,
+    지운 뒤 같은 트랜잭션에서 다시 읽어 스냅샷에 그대로 담는다 — 스냅샷이 늘 저장한 뒤의 표 전체가 되게 한다. 그 사이 다른 저장이
+    커밋됐으면 아래 번호 유니크가 이 저장을 409 로 돌려보내므로 다시 읽은 행이 실제 표와 어긋난 채 남지 않는다."""
     latest = await _latest_revision(db)
     if (None if latest is None else latest.id) != base_revision_id:
         raise HTTPException(
@@ -287,16 +369,18 @@ async def _save_routes(
     number = 1 if latest is None else latest.number + 1
     try:
         async with db.begin_nested():
+            await db.execute(delete(PromptRoute).where(PromptRoute.lane.in_(scope)))
+            kept = await load_prompt_routes_from_db(db)
             db.add(
                 PromptRouteRevision(
                     number=number,
-                    rows=[_snapshot(row) for row in parsed],
+                    rows=[_raw_snapshot(row) for row in kept] + [_snapshot(row) for row in parsed],
                     note=note,
                     admin_id=admin_id,
                     restored_from_id=restored_from_id,
+                    lanes=None if scope == _CHAT_LANES else list(scope),
                 )
             )
-            await db.execute(delete(PromptRoute))
             for row in parsed:
                 db.add(
                     PromptRoute(
@@ -317,7 +401,7 @@ async def _save_routes(
         ) from None
     await db.commit()
 
-    # 반드시 커밋 뒤에 지운다 — 커밋 전에 지우면 그 사이의 캐시 미스가 옛 표를 다시 채워 이 저장이 TTL 만큼 씹힌다. Redis 실패는
+    # 두 경로 모두 반드시 커밋 뒤에 지운다 — 커밋 전에 지우면 그 사이의 캐시 미스가 옛 표를 다시 채워 이 저장이 TTL 만큼 씹힌다. Redis 실패는
     # 프롬프트 세트 게시 뒤 무효화와 같이 삼키고 경고만 남긴다: 저장은 이미 커밋됐고 옛 표가 나가는 시간은 캐시 TTL 이 상한이다.
     try:
         await invalidate_prompt_routes()
@@ -342,6 +426,7 @@ def _summary_fields(revision: PromptRouteRevision) -> dict[str, Any]:
         "restored_from_id": revision.restored_from_id,
         "created_at": revision.created_at,
         "row_count": len(revision.rows),
+        "lanes": revision.lanes,
     }
 
 
@@ -353,13 +438,8 @@ async def get_prompt_routing(
     return await _routing_response(db)
 
 
-@router.put("/admin/prompt-routing")
-async def save_prompt_routing(
-    body: AdminPromptRoutingSaveRequest,
-    admin_id: uuid.UUID = Depends(get_current_admin_id),
-    db: AsyncSession = Depends(get_db_session),
-) -> AdminPromptRoutingResponse:
-    rows = [
+def _row_inputs(body: AdminPromptRoutingSaveRequest) -> list[RouteRowInput]:
+    return [
         RouteRowInput(
             lane=row.lane,
             room_model=row.room_model,
@@ -370,12 +450,57 @@ async def save_prompt_routing(
         )
         for row in body.rows
     ]
+
+
+def _in_scope(rows: Sequence[RouteRowInput], scope: tuple[RoutingLane, ...]) -> list[RouteRowInput]:
+    return [row for row in rows if row.lane in scope]
+
+
+@router.put("/admin/prompt-routing")
+async def save_prompt_routing(
+    body: AdminPromptRoutingSaveRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminPromptRoutingResponse:
+    """채팅 두 레인을 갈아 끼운다. 요청에 실린 소설 행은 버린다 — 소설 탭을 모르는 낡은 화면도 응답의 칸 전부를 폼에 담았다가
+    행이 있는 칸을 모두 되돌려 보내므로, 그 행은 편집할 수 없었던 메아리다. 거부하면 낡은 화면의 채팅 저장이 막힌다."""
+    await _save_routes(
+        db,
+        admin_id=admin_id,
+        base_revision_id=body.base_revision_id,
+        note=body.note,
+        rows=_in_scope(_row_inputs(body), _CHAT_LANES),
+        scope=_CHAT_LANES,
+        restored_from_id=None,
+        action_type="prompt-routing-save",
+    )
+    return await _routing_response(db)
+
+
+@router.put("/admin/prompt-routing/novel")
+async def save_novel_prompt_routing(
+    body: AdminPromptRoutingSaveRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminPromptRoutingResponse:
+    """소설 레인을 갈아 끼운다. 이 경로는 소설 탭이 있는 화면만 부르므로, 다른 레인 행이 실려 오면 화면의 버그라 422 로 거부한다."""
+    rows = _row_inputs(body)
+    outside = [
+        RouteRowError(
+            index=index, rule="lane-out-of-scope", message=f"{row.lane} 레인 행은 소설 레인 저장에 실을 수 없다"
+        )
+        for index, row in enumerate(rows)
+        if row.lane not in _NOVEL_LANES
+    ]
+    if outside:
+        raise _rule_error(rows, outside)
     await _save_routes(
         db,
         admin_id=admin_id,
         base_revision_id=body.base_revision_id,
         note=body.note,
         rows=rows,
+        scope=_NOVEL_LANES,
         restored_from_id=None,
         action_type="prompt-routing-save",
     )
@@ -407,12 +532,13 @@ async def get_prompt_route_revision(
     )
 
 
-@router.post("/admin/prompt-routing/revisions/{id}/restore")
-async def restore_prompt_route_revision(
+async def _restore(
+    db: AsyncSession,
+    *,
     id: uuid.UUID,
     body: AdminPromptRoutingRestoreRequest,
-    admin_id: uuid.UUID = Depends(get_current_admin_id),
-    db: AsyncSession = Depends(get_db_session),
+    admin_id: uuid.UUID,
+    scope: tuple[RoutingLane, ...],
 ) -> AdminPromptRoutingResponse:
     revision = await _get_revision(db, id)
     await _save_routes(
@@ -420,8 +546,31 @@ async def restore_prompt_route_revision(
         admin_id=admin_id,
         base_revision_id=body.base_revision_id,
         note=body.note,
-        rows=_snapshot_inputs(revision.rows),
+        rows=_in_scope(_snapshot_inputs(revision.rows), scope),
+        scope=scope,
         restored_from_id=revision.id,
         action_type="prompt-routing-restore",
     )
     return await _routing_response(db)
+
+
+@router.post("/admin/prompt-routing/revisions/{id}/restore")
+async def restore_prompt_route_revision(
+    id: uuid.UUID,
+    body: AdminPromptRoutingRestoreRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminPromptRoutingResponse:
+    """스냅샷의 채팅 두 레인 행만 되살린다. 지금 소설 행은 그대로 둔다."""
+    return await _restore(db, id=id, body=body, admin_id=admin_id, scope=_CHAT_LANES)
+
+
+@router.post("/admin/prompt-routing/novel/revisions/{id}/restore")
+async def restore_novel_prompt_route_revision(
+    id: uuid.UUID,
+    body: AdminPromptRoutingRestoreRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminPromptRoutingResponse:
+    """스냅샷의 소설 행만 되살린다. 소설 레인이 생기기 전의 이력이면 소설 레인이 빈다(그때 소설 행이 없었다). 채팅 행은 그대로 둔다."""
+    return await _restore(db, id=id, body=body, admin_id=admin_id, scope=_NOVEL_LANES)

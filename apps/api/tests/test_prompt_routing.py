@@ -608,7 +608,8 @@ def test_a_novel_generation_row_resolves_to_the_job_model_and_its_path_must_matc
         ]
     )
 
-    for room_model, stage in (("sonnet", "novel_chapter"), ("opus", "novel_outline")):
+    cells: tuple[tuple[RouteRoomModel, str], ...] = (("sonnet", "novel_chapter"), ("opus", "novel_outline"))
+    for room_model, stage in cells:
         with_row = _resolve(routes, "novel", room_model, stage)
         without = _resolve(PromptRoutes.empty(), "novel", room_model, stage)
         assert (with_row.chain_model, with_row.call_model, with_row.backend, with_row.source) == (
