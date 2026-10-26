@@ -31,7 +31,8 @@ from starlette.types import Message
 from api.chat import voyage_backoff
 from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
-from api.core.clover import CloverKind, SpendUsage, refund_spend, revoke_purchase_lots, spend
+from api.core import rate_limit_gate
+from api.core.clover import CloverKind, SpendUsage, kst_today, refund_spend, revoke_purchase_lots, spend
 from api.core.config import Settings, settings
 from api.core.rate_limit import KST
 from api.core.security import hash_password
@@ -1766,6 +1767,86 @@ def _preview_character_payload() -> dict[str, object]:
         "hashtags": [],
         "visibility": "private",
     }
+
+
+async def _setup_chat_room(db_client: httpx.AsyncClient, db_session: AsyncSession, user: User) -> uuid.UUID:
+    """그 사용자로 로그인하고 그 사용자가 만든 공개 캐릭터의 채팅방을 실제로 연다. 방 생성은 채팅 턴이 아니라 상한도 클로버도
+    쓰지 않는다."""
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    resp = await db_client.post("/chat-rooms", json={"contentId": str(content.id), "contentType": "character"})
+    assert resp.status_code == 201
+    return uuid.UUID(resp.json()["id"])
+
+
+async def _user_message_id(db_session: AsyncSession, room_id: uuid.UUID) -> uuid.UUID:
+    """편집 대상(그 방의 사용자 메시지) id. 셋업 전송이 남긴 한 건을 쓴다."""
+    rows = (
+        await db_session.scalars(
+            sa.select(ChatMessage).where(ChatMessage.chat_room_id == room_id, ChatMessage.role == ChatMessageRole.USER)
+        )
+    ).all()
+    assert len(rows) == 1
+    return rows[0].id
+
+
+async def _prepare_paid_turn(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    surface: str,
+    balance: int,
+) -> tuple[User, str, str, dict[str, object] | None]:
+    """`surface`(전송/편집/재생성/미리보기)의 턴 하나를 클로버로 낼 수밖에 없는 상태를 만들고 `(유저, 메서드, 경로, 본문)`을
+    돌려준다. 재생성은 본문이 없는 요청이라 본문 자리가 None 이다.
+
+    사용자는 오늘치 클로버 사용 확인을 마친 상태다 — 미확인이면 게이트가 차감하지 않고 `CLOVER_CONFIRM_REQUIRED` 로 끊는다.
+    `_make_user` 기본값(한 번도 확인 안 함)은 그대로 둔다. 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는
+    테스트가 셋업만으로 통과한다. 실제로 차감하므로 잔액에 맞는 로트도 함께 만든다.
+
+    하루 무료 상한을 0 으로 낮추는 것은 **셋업이 끝난 뒤**다 — 방 생성과 재생성·편집을 위한 첫 전송은 무료분으로 통과해야
+    원장에 셋업 잡음이 남지 않는다.
+    """
+    user = await _make_user_with_clover_lot(
+        db_session, clover_balance=balance, clover_spend_confirmed_on=kst_today(datetime.now(UTC))
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    room_id: uuid.UUID | None = None
+    session_id: str | None = None
+    message_id: uuid.UUID | None = None
+
+    if surface == "preview":
+        resp = await db_client.post("/preview-sessions", json=_preview_character_payload())
+        assert resp.status_code == 201
+        session_id = resp.json()["previewSessionId"]
+    else:
+        room_id = await _setup_chat_room(db_client, db_session, user)
+        if surface in ("regenerate", "edit"):
+            # 재생성은 "마지막 메시지가 AI 응답"인 상태를, 편집은 "고칠 사용자 메시지"를 요구한다 — 성공하는 전송을 한 번 먼저
+            # 태운다.
+            _override_llm_client(_FakeLLMClient(tokens=["첫", "응답"]))
+            try:
+                sent = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+            finally:
+                _clear_llm_override()
+            assert sent.status_code == 200
+        if surface == "edit":
+            message_id = await _user_message_id(db_session, room_id)
+
+    # 여기서부터 클로버로 낸다.
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+    if surface == "preview":
+        return user, "POST", f"/preview-sessions/{session_id}/messages", {"content": "안녕"}
+    if surface == "regenerate":
+        return user, "POST", f"/chat-rooms/{room_id}/regenerate", None
+    if surface == "edit":
+        return user, "PATCH", f"/chat-rooms/{room_id}/messages/{message_id}", {"content": "고친 내용"}
+    return user, "POST", f"/chat-rooms/{room_id}/messages", {"content": "안녕"}
 
 
 async def _plant_snapshot(db_session: AsyncSession, room: Room, *, turn: int, text: str) -> None:
