@@ -490,6 +490,54 @@ async def test_work_rows_carry_publish_state_and_draft_title(
     assert by_id[draft]["hasPublished"] is False
 
 
+async def test_work_rows_carry_a_signed_thumbnail_of_the_draft_or_the_published_version(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """화면이 그대로 그리는 칸이라 서명한 썸네일 변형 주소가 실제로 나와야 한다. 초안 버전의 썸네일이 있으면 그것이고, 초안
+    없이 발행본만 있는 작품(발행본만 넣은 시드 행)은 발행본의 제목·썸네일로 대신한다."""
+    user_id = await _creator(db_client, db_session)
+    draft_thumbnail = await _make_asset(db_session, owner_user_id=user_id)
+    drafted = Content(
+        creator_user_id=user_id,
+        type=ContentType.CHARACTER,
+        hashtags=[],
+        visibility=ContentVisibility.PRIVATE,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(drafted)
+    await db_session.flush()
+    draft = ContentVersion(content_id=drafted.id, detail_description="")
+    db_session.add(draft)
+    await db_session.flush()
+    db_session.add(_detail(ContentType.CHARACTER, draft.id, "초안 썸네일", draft_thumbnail.id))
+
+    published_thumbnail = await _make_asset(db_session, owner_user_id=user_id)
+    published_only = Content(
+        creator_user_id=user_id,
+        type=ContentType.STORY,
+        hashtags=[],
+        visibility=ContentVisibility.PRIVATE,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(published_only)
+    await db_session.flush()
+    version = ContentVersion(
+        content_id=published_only.id, version_number=1, published_at=datetime.now(UTC), detail_description=""
+    )
+    db_session.add(version)
+    await db_session.flush()
+    db_session.add(_detail(ContentType.STORY, version.id, "발행본만", published_thumbnail.id))
+    published_only.current_published_version_id = version.id
+    await db_session.commit()
+
+    by_id = {uuid.UUID(item["id"]): item for item in await _all_pages(db_client)}
+
+    assert by_id[drafted.id]["title"] == "초안 썸네일"
+    assert f"{draft_thumbnail.storage_key}_thumb.webp" in by_id[drafted.id]["thumbnailUrl"]
+    assert by_id[published_only.id]["title"] == "발행본만"
+    assert f"{published_thumbnail.storage_key}_thumb.webp" in by_id[published_only.id]["thumbnailUrl"]
+
+
 async def test_title_search_matches_draft_titles_and_novel_titles(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
