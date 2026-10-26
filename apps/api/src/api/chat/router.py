@@ -2135,7 +2135,10 @@ async def set_room_persona(
     room = await _get_owned_room(db, room_id, user_id)
     await lock_user_default_persona(db, user_id)
     persona = await get_owned_persona(db, payload.persona_id, user_id) if payload.persona_id is not None else None
-    await _lock_room_for_write(db, room.id)
+    # 같은 값이면 ORM 이 방 UPDATE 를 내지 않으므로 잠그지도 않는다 — 유저 행을 쥔 채 방 행을 기다리는 범위를 넓히면, 방 행을
+    # 쥔 채 FK 확인으로 유저 행을 기다리는 턴 쓰기와 서로를 기다릴 수 있다. 방이 없으면 404 는 주인 확인이 이미 냈다.
+    if room.persona_id != payload.persona_id:
+        await _lock_room_for_write(db, room.id)
     room.persona_id = payload.persona_id
     await db.commit()
     return RoomPersonaResponse(persona_id=room.persona_id, persona_name=persona.name if persona is not None else None)
@@ -2159,8 +2162,12 @@ async def set_room_model(
     model = payload.model or DEFAULT_CHAT_ROOM_MODEL
     if model != DEFAULT_CHAT_MODEL and not await has_chat_premium_access(db, user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "CHAT_MODEL_NOT_ALLOWED"})
-    await _lock_room_for_write(db, room.id)
-    room.chat_model = None if model == DEFAULT_CHAT_MODEL else model
+    chat_model = None if model == DEFAULT_CHAT_MODEL else model
+    # 같은 값이면 ORM 이 방 UPDATE 를 내지 않으므로 잠그지도 않는다 — 쓰기가 없는 요청까지 방 행을 잠가 턴 쓰기를 기다리게
+    # 하지 않으려는 것이다. 방이 없으면 404 는 주인 확인이 이미 냈다.
+    if room.chat_model != chat_model:
+        await _lock_room_for_write(db, room.id)
+    room.chat_model = chat_model
     await db.commit()
     return ChatRoomModelResponse(
         chat_model=room.chat_model,
