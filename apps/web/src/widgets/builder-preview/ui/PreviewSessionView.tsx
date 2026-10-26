@@ -5,13 +5,7 @@ import { ChevronDown, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import {
-  chatModelKeys,
-  DEFAULT_CHAT_MODEL,
-  isPremiumChatModel,
-  useChatModelsQuery,
-  type ChatModelId,
-} from "@/entities/chat-model";
+import { DEFAULT_CHAT_MODEL, isPremiumChatModel, useChatModelsQuery, type ChatModelId } from "@/entities/chat-model";
 import type { PreviewShortcut, PreviewStartPayload } from "@/entities/preview-session";
 import {
   AuthorMacroNamesProvider,
@@ -31,7 +25,6 @@ import {
 import {
   CloverBalance,
   isCloverInsufficient,
-  isCloverPriceChangedError,
   shouldShowCloverBalance,
   useCloverBalanceQuery,
   useCloverPricingQuery,
@@ -60,6 +53,7 @@ import {
   previewStartQuery,
   previewTurnCost,
 } from "../model/previewChatModel";
+import { previewConfirmTurnCost } from "../model/previewConfirmTurnCost";
 import { previewEmptyHint } from "../model/previewEmptyHint";
 import { previewPersonaLabel } from "../model/previewPersonaLabel";
 import { PreviewChatModelModal } from "./PreviewChatModelModal";
@@ -143,12 +137,11 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
       chargesEveryTurn: isPremiumChatModel(displayModelId),
     });
   const { send, status, policyWarning, streamingText } = usePreviewSendMessage(
-    (error) => {
-      // 가격이 바뀌었으면 부족 안내가 읽는 모델 목록의 턴 가격도 낡았다 — 다시 받게 한다(확인 모달의 금액은 서버가 실은 값이다).
-      if (isCloverPriceChangedError(error)) void queryClient.invalidateQueries({ queryKey: chatModelKeys.all });
+    async (error) =>
+      // 금액은 렌더 때의 `turnCost` 가 아니라 요청 시점의 캐시에서 읽는다(가격 바뀜이면 모델 목록을 다시 받은 뒤) — 가격 확인
+      // 뒤 재전송이 받는 하루 한 번 확인이 옛 가격을 말하지 않게(`previewConfirmTurnCost`).
       // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 일일 버킷을 쓰므로 자정 사유가 참이다.
-      return confirmCloverSpend(error, turnCost, "chat");
-    },
+      confirmCloverSpend(error, await previewConfirmTurnCost(queryClient, error, displayModelId), "chat"),
     macroNames,
   );
   const isSending = status.kind === "sending";
