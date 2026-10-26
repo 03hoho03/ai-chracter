@@ -4,6 +4,7 @@ import { requestPortOnePayment } from "@/shared/lib/portone/portoneSdk";
 import { useCompletePaymentMutation } from "../api/useCompletePaymentMutation";
 import { useCreatePaymentMutation, type CreatePaymentResponse } from "../api/useCreatePaymentMutation";
 import type { CloverPayMethodItem } from "./payMethod";
+import { buildPaymentRedirectUrl } from "./paymentRedirectUrl";
 import { toPortOneCustomer, type PurchaseFormValues } from "./purchaseForm";
 import { toCreatePaymentFailure, type PurchaseResult } from "./purchaseResult";
 import { toSettledPurchase, type PurchaseGrant } from "./settledPurchase";
@@ -18,6 +19,8 @@ type PurchaseInput = {
   /** 결제창을 띄우기 직전에 부른다. 모달 다이얼로그가 열려 있으면 바깥(결제창 iframe)의 포인터·포커스를 막으므로
    * 호출부가 여기서 다이얼로그를 내린다. */
   onCheckoutOpen: () => void;
+  /** 충전 화면이 받은 복귀 주소. 결제창이 페이지를 떠났다 돌아오는 주소에 함께 싣는다. */
+  returnTo: string | undefined;
 };
 
 /** 클로버 구매: 주문 생성 → 포트원 결제창 → 서버 확정. 끝난 모양만 돌려주고 던지지 않는다.
@@ -28,7 +31,13 @@ export function usePurchaseClover() {
   const createPayment = useCreatePaymentMutation();
   const completePayment = useCompletePaymentMutation();
 
-  async function purchase({ productKey, payMethod, values, onCheckoutOpen }: PurchaseInput): Promise<PurchaseAttempt> {
+  async function purchase({
+    productKey,
+    payMethod,
+    values,
+    onCheckoutOpen,
+    returnTo,
+  }: PurchaseInput): Promise<PurchaseAttempt> {
     let order: CreatePaymentResponse;
     try {
       order = await createPayment.mutateAsync({ productKey, agreed: true });
@@ -46,7 +55,7 @@ export function usePurchaseClover() {
       payMethod: payMethod.payMethod,
       easyPayProvider: payMethod.easyPayProvider,
       customer: toPortOneCustomer(values),
-      redirectUrl: `${window.location.origin}/clover`,
+      redirectUrl: buildPaymentRedirectUrl(window.location.origin, returnTo),
     });
     if (outcome !== "succeeded") return { result: outcome, grant: null };
 

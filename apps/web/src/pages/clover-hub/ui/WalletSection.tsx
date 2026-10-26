@@ -15,6 +15,7 @@ import { formatPurchaseGrant, PURCHASE_MESSAGES, type SettledPurchase } from "@/
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
 import type { PurchaseSection } from "../model/purchaseSection";
+import { returnLinkLabel } from "../model/returnTo";
 import { getGuestLoginLabel, type WalletView } from "../model/walletView";
 import { HubSection, SECTION_LINK_CLASS } from "./HubSection";
 
@@ -31,17 +32,31 @@ type WalletSectionProps = {
   /** "확인 중"으로 끝난 뒤 잔액이 늘었는가(`isCheckingResolved`). 늘었으면 그 안내를 반영됐다는 문장으로 바꾼다. */
   isCheckingResolved: boolean;
   onRetryBalance: () => void;
+  /** 충전에 성공하면 결과 블록이 솔리드 버튼으로 보낼 복귀 주소(`getReturnPlacement`). 없으면 버튼을 그리지 않는다. */
+  solidReturnTo: string | undefined;
 };
 
 /** "내 클로버". 로그인한 사람에게만 잔액을 묻고, 그 밖의 상태에서는 0을 그리지 않는다(`getWalletView`).
  *
  * 결제 결과는 이 섹션 맨 위에 그린다 — 모바일 결제창에서 돌아온 직후 첫 화면에 보이는 자리이고, 다이얼로그 결제(PC)도
  * 같은 자리를 쓴다. 결과 아래의 총잔액이 새 값으로 바뀌는 것을 바로 이어 읽을 수 있다. */
-export function WalletSection({ view, settled, section, isCheckingResolved, onRetryBalance }: WalletSectionProps) {
+export function WalletSection({
+  view,
+  settled,
+  section,
+  isCheckingResolved,
+  onRetryBalance,
+  solidReturnTo,
+}: WalletSectionProps) {
   return (
     <HubSection title="내 클로버">
       {settled && (
-        <PurchaseOutcome settled={settled} isCheckingResolved={isCheckingResolved} onRetryBalance={onRetryBalance} />
+        <PurchaseOutcome
+          settled={settled}
+          isCheckingResolved={isCheckingResolved}
+          onRetryBalance={onRetryBalance}
+          solidReturnTo={solidReturnTo}
+        />
       )}
       <WalletBody view={view} section={section} onRetryBalance={onRetryBalance} />
     </HubSection>
@@ -135,15 +150,20 @@ const CHECKING_RESOLVED_MESSAGE = "결제가 확인돼 잔액에 반영됐어요
  * 축하 연출·초록 성공색은 없다(아이콘과 문장). 문제 갈래만 `destructive` 틴트이고, 확인 중은 진행 표시라 스피너를 가두지
  * 않는다. 확인 중에는 총잔액을 올려 보이지 않는다 — 결제사가 아직 확정하지 않았을 수 있다. 그 뒤 다시 불러온 잔액이
  * 늘었으면 확인 중 안내를 반영됐다는 문장으로 바꾸고 스피너·다시 불러오기를 거둔다. 블록을 닫지 않고 같은 제목 요소의
- * 글자만 바꾼다 — 포커스가 그 제목에 있어, 요소가 사라지면 포커스가 `<body>` 로 떨어진다. */
+ * 글자만 바꾼다 — 포커스가 그 제목에 있어, 요소가 사라지면 포커스가 `<body>` 로 떨어진다.
+ *
+ * 충전하러 온 화면이 있으면(복귀 주소) 성공 블록에 그리로 돌아가는 솔리드 버튼을 둔다 — 이 화면의 유일한 솔리드 채움이다.
+ * 누르면 이동만 한다. 거절됐던 메시지는 채팅 방이 입력창에 되살려 두고, 다시 보낼지는 그 방의 전송 버튼이 정한다. */
 function PurchaseOutcome({
   settled,
   isCheckingResolved,
   onRetryBalance,
+  solidReturnTo,
 }: {
   settled: SettledPurchase;
   isCheckingResolved: boolean;
   onRetryBalance: () => void;
+  solidReturnTo: string | undefined;
 }) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const isFocusInside = useRef(false);
@@ -184,10 +204,17 @@ function PurchaseOutcome({
   switch (settled.result) {
     case "paid":
       return (
-        <div role="status" className="flex flex-col gap-1 rounded-xl border border-border px-4 py-3">
-          {title}
-          {settled.grant && (
-            <p className="text-sm break-keep text-muted-foreground">{formatPurchaseGrant(settled.grant)}</p>
+        <div role="status" className="flex flex-col items-start gap-3 rounded-xl border border-border px-4 py-3">
+          <div className="flex flex-col gap-1">
+            {title}
+            {settled.grant && (
+              <p className="text-sm break-keep text-muted-foreground">{formatPurchaseGrant(settled.grant)}</p>
+            )}
+          </div>
+          {solidReturnTo !== undefined && (
+            <Button asChild>
+              <Link to={solidReturnTo}>{returnLinkLabel(solidReturnTo)}</Link>
+            </Button>
           )}
         </div>
       );
