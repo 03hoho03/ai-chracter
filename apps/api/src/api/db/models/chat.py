@@ -505,8 +505,9 @@ class ChatMemoryImpression(Base):
     - `first_cursor_*` 는 묶음에서 커서가 가장 작은 스냅샷의 커서다. 묶음은 그 방에서 커서가 이 값 이상이고 `snapshot_id` 의
       커서 이하인 스냅샷이다.
     - `text` 는 인상 글이다.
-    - `episode_ids`·`fact_ids` 는 입력에 실은 장면·사실 행 id 의 JSON 배열(문자열 UUID)이다 — 묶음의 행 중 아는 사람이 정해지지
-      않은 것뿐이다. FK 가 아니다. 그 행이 지워지는 길(스냅샷 CASCADE·잊게 하기)은 둘 다 이 행도 지운다."""
+    - `episode_ids`·`fact_ids` 는 입력에 실은 장면·사실 행 id 의 JSON 배열(문자열 UUID)이다 — 묶음의 행 전부로, 아는 사람이
+      정해진(비밀) 행도 든다. 인상은 저장만 되고 응답에 쓰이지 않아 여기서 거르지 않으며, 인상을 어딘가에 싣게 되면 싣는 쪽이 이
+      칸으로 비밀 근거가 있는 인상을 거른다. FK 가 아니다. 그 행이 지워지는 길(스냅샷 CASCADE·잊게 하기)은 둘 다 이 행도 지운다."""
 
     __tablename__ = "chat_memory_impressions"
 
