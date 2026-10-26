@@ -169,8 +169,15 @@ _Rows = dict[str, dict[tuple[Any, ...], tuple[Any, ...]]]
 
 @pytest_asyncio.fixture(autouse=True)
 async def _no_unit_events(db_session: AsyncSession) -> None:
-    """세션 DB 의 전환 기록(마이그레이션이 쓴 것)을 이 테스트의 롤백되는 트랜잭션 안에서만 비운다."""
+    """세션 DB 의 전환 기록(마이그레이션이 쓴 것)을 이 테스트의 롤백되는 트랜잭션 안에서만 비운다. 같은 세션의 다른 테스트가
+    커밋해 남긴 진행 중 소설 작업도 이 트랜잭션 안에서만 옛 코드 실패 꼴로 닫는다 — 남아 있으면 전환이 시작 전 거절로 멈춰 이
+    파일의 결과가 실행 순서에 따라 갈린다."""
     await db_session.execute(sa.delete(CloverUnitEvent))
+    await db_session.execute(
+        sa.update(NovelJob)
+        .where(NovelJob.status.in_(("queued", "running")))
+        .values(status="failed", refunded_at=sa.func.now())
+    )
     await db_session.flush()
 
 
