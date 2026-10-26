@@ -42,6 +42,7 @@ from api.db.models.legal import UserLegalConsent
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
 from api.db.models.novel import Novel, NovelComment, NovelPublication, NovelPurchase, NovelReaderPosition
 from api.db.models.persona import UserPersona
+from api.db.models.work_bundle import WorkBundle
 from api.novel_public.purchases import sold_novel_ids
 from api.novelize.deletion import delete_novels, strip_author_only_data
 from api.novelize.illustrations import UPLOAD_KEY_PREFIX as ILLUSTRATION_UPLOAD_KEY_PREFIX
@@ -256,6 +257,10 @@ async def erase_account(db: AsyncSession, user: User, *, delete_storage_object: 
     )
     # 기능 허용은 계정에 딸린 설정이라 계정과 함께 지운다. 누가 언제 허용했는지는 감사 로그에 남는다.
     await db.execute(delete(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id))
+    # 작품 묶음은 회원이 직접 이름을 붙인 사적 정리라 계정과 함께 지운다(소속 행은 DB CASCADE). 회원 행을 지우지 않으므로
+    # 묶음의 회원 FK CASCADE 는 여기서 돌지 않는다 — 이 줄이 묶음을 지우는 유일한 탈퇴 경로다. 작품·소설은 위 규칙대로 남거나
+    # 지워지고, 위에서 지운 소설의 소속 행은 그 삭제의 CASCADE 가 이미 지웠다.
+    await db.execute(delete(WorkBundle).where(WorkBundle.owner_user_id == user_id))
     # 동의 이력(어느 판에 어떤 동의 단위로 언제 동의했는지)은 계정에 딸린 기록이라 탈퇴하면 지체 없이 파기한다. `users` 의
     # 동의 버전·시각 칸은 회원 행과 함께 남는다 — 그 칸을 비울지는 이 파기와 따로 정할 일이다. 재동의 기록도 이 회원 행을
     # 잠그고 탈퇴 여부를 다시 본 뒤 쓰므로, 잠금을 쥔 지금 지우면 탈퇴 뒤에 이력 행이 새로 남지 않는다.

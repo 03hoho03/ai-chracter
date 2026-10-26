@@ -18,6 +18,8 @@ const ROUTE_RULE_LABELS: Record<string, string> = {
   "structured-effort": "구조화 깊이 범위 밖",
   "chain-not-published": "그 체인에 게시본 없음",
   "chain-missing-channel": "그 체인 활성본에 필요한 채널 없음",
+  "chain-not-in-lane": "그 레인에 없는 체인",
+  "lane-out-of-scope": "이 저장에 실을 수 없는 레인",
 };
 
 export function routeRuleLabel(rule: string): string {

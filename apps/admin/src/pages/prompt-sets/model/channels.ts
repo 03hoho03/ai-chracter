@@ -16,6 +16,7 @@ export const PROMPT_CHANNEL_LABELS = {
   memory_summary: "기억 요약",
   memory_episode: "장면 기억 추출",
   memory_fact: "사실 기억 추출",
+  memory_impression: "기억 인상",
   publish_filter: "발행 검열",
   novelize_boundary: "소설 경계 제안",
   novelize_chapter: "소설 화 생성",
@@ -24,6 +25,7 @@ export const PROMPT_CHANNEL_LABELS = {
   novelize_revise: "소설 문단 수정",
   novelize_revise_blocks: "소설 여러 문단 수정",
   novelize_revise_recheck: "소설 묶음 재검사",
+  novelize_rating: "소설 등급 규칙",
   novel_screen: "노벨 심사",
 } as const;
 

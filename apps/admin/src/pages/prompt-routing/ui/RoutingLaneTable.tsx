@@ -12,7 +12,7 @@ type RoutingLaneTableProps = {
   saved: RoutingFormValues;
 };
 
-/** 행 = (단계 × 방), 열 = 속성. 같은 단계의 두 방을 연달아 두어 "이 단계를 방마다 다르게"를 눈으로 비교하게 한다. 단계 순서는
+/** 행 = (단계 × 방), 열 = 속성. 소설 레인은 방 대신 작업 모델이 축이고, 구조화 단계는 작업 모델과 무관한 한 줄이다. 같은 단계의 두 방을 연달아 두어 "이 단계를 방마다 다르게"를 눈으로 비교하게 한다. 단계 순서는
  * 서버 칸 순서(그 레인의 단계 순서)를 따른다. */
 export function RoutingLaneTable({ lane, data, saved }: RoutingLaneTableProps) {
   const rows = laneRows(data.cells, lane);
@@ -24,7 +24,7 @@ export function RoutingLaneTable({ lane, data, saved }: RoutingLaneTableProps) {
           <TableHeader>
             <TableRow>
               <TableHead>단계</TableHead>
-              <TableHead>방</TableHead>
+              <TableHead>{lane === "novel" ? "작업 모델" : "방"}</TableHead>
               <TableHead>부를 모델·경로</TableHead>
               <TableHead>읽을 체인</TableHead>
               <TableHead>지금 운영 값</TableHead>

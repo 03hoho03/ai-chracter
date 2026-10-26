@@ -34,14 +34,17 @@ def dump_novel_prompt(
     usage: LLMCallContext,
     prompt: NovelizePrompt,
     schema: str | None,
+    episode_number: int | None,
 ) -> None:
     """덤프 경로가 없으면(운영) 아무것도 하지 않는다 — 파일을 열지 않고 모델 해석도 하지 않는다. 부르는 쪽은 모델 호출 **앞**에서
     부른다 — 실패한 호출의 입력도 남아야 다시 보내 볼 수 있다.
 
     칸: 작업 id, 갈래, 호출 위치, 작업에 적힌 모델(`jobModel`, 모델 칸이 생기기 전 작업은 null), 실제로 보낸 모델 id(`callModel`,
-    라우터와 같은 해석 — Gemini 는 클라이언트가 소설화 모델 설정으로 고르는 id), 소설 세트 id, 채널, 원작 종류, 등급 규칙 여부,
-    슬롯 값 사전, 지시문·본문 sha256, 응답 스키마 이름(자유 텍스트 생성은 null). 세트의 판 번호는 싣지 않는다 — 서빙 경로는 판 표를
-    읽지 않으므로(`tests/test_prompt_semver_boundary.py`), 판은 세트 id 로 판 표와 이어 읽는다(턴 기록의 단계별 배정 칸과 같다).
+    라우터와 같은 해석 — Gemini 는 클라이언트가 소설화 모델 설정으로 고르는 id), 그 화의 화 번호(`episodeNumber`, 구성 흐름
+    원고·그 다시 만들기만 채운다 — 운영 원고 판정이 머리 줄의 화 번호 예외를 이 값으로 건다, 그 밖은 null), 소설 세트 id, 채널,
+    원작 종류, 등급 규칙 여부, 슬롯 값 사전, 지시문·본문 sha256, 응답 스키마 이름(자유 텍스트 생성은 null). 세트의 판 번호는 싣지
+    않는다 — 서빙 경로는 판 표를 읽지 않으므로(`tests/test_prompt_semver_boundary.py`), 판은 세트 id 로 판 표와 이어
+    읽는다(턴 기록의 단계별 배정 칸과 같다).
 
     쓰기 실패는 경고만 남기고 삼킨다 — 덤프는 측정용 부가 기록이라 작업 결과를 바꾸면 안 된다. 경고에는 작업 id 와 호출 위치만
     싣는다(슬롯 값에 원문이 들어 있다). 작업 실행 프로세스가 둘(api·소설화 워커)이어도 줄이 섞이지 않게 한 줄을 한 번의 `write`
@@ -57,6 +60,7 @@ def dump_novel_prompt(
             "callSite": usage.call_site,
             "jobModel": job_model,
             "callModel": structured_model(usage.call_site, sent) if backend == "gemini" else sent,
+            "episodeNumber": episode_number,
             "novelSetId": str(prompt.prompt_set_id) if prompt.prompt_set_id is not None else None,
             "channel": prompt.channel,
             "scope": prompt.scope,

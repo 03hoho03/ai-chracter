@@ -17,7 +17,9 @@ import { useRestoreSectionMutation } from "../api/useRestoreSectionMutation";
 import { promptSectionLabel } from "../model/channels";
 import { PROMPT_LANE_LABELS, type PromptLane } from "../model/lane";
 import { PROMPT_MODEL_LABELS, type PromptModel } from "../model/model";
+import { ratingDriftLines } from "../model/ratingDrift";
 import { ruleDetail } from "../model/semver";
+import { RatingDriftNotice } from "./RatingDriftNotice";
 
 type RestoreSectionDialogProps = {
   id: string;
@@ -29,7 +31,7 @@ type RestoreSectionDialogProps = {
 
 /** 확인 → (저장된 초안의 그 섹션에 게시 안 한 편집이 있으면) 덮어쓰기 확인. 덮어쓰기 안내는 서버 원문(채널 원문 이름과 API
  * 요청 방법을 담는다)이 아니라 화면이 채널 이름표로 만든다. */
-type Step = { kind: "confirm" } | { kind: "overwrite" };
+type Step = { kind: "confirm" } | { kind: "overwrite" } | { kind: "drift"; lines: string[] };
 
 const UNPUBLISHED_EDITS_RULE = "draft-channel-has-unpublished-edits";
 
@@ -41,18 +43,30 @@ export const RestoreSectionDialog = createCallable<RestoreSectionDialogProps, vo
     const restoreMutation = useRestoreSectionMutation(lane);
     const [step, setStep] = useState<Step>({ kind: "confirm" });
     const cancelRef = useRef<HTMLButtonElement>(null);
+    const confirmRef = useRef<HTMLButtonElement>(null);
     const chainName = `${PROMPT_LANE_LABELS[lane]} · ${PROMPT_MODEL_LABELS[model]}`;
     const sectionName = promptSectionLabel(section);
 
     // 같은 모달 안 단계 전환이라 `autoFocus` 가 다시 걸리지 않는다 — 덮어쓰기 확인으로 바뀌면 첫 포커스를 `취소` 로 다시 둔다.
     useEffect(() => {
       if (step.kind === "overwrite") cancelRef.current?.focus();
+      if (step.kind === "drift") confirmRef.current?.focus();
     }, [step.kind]);
 
     const handleRestore = async () => {
       try {
-        await restoreMutation.mutateAsync({ id, section, overwriteDraftChanges: step.kind === "overwrite" });
+        const restored = await restoreMutation.mutateAsync({
+          id,
+          section,
+          overwriteDraftChanges: step.kind === "overwrite",
+        });
         toast.success(`${sectionName} 섹션을 ${chainName} 초안에 가져왔어요. 반영하려면 게시하세요.`);
+        // 가져온 초안의 등급 규칙이 다른 레인과 갈렸으면 닫기 전에 한 번 보인다(가져오기는 이미 끝났다).
+        const lines = ratingDriftLines(restored.ratingDrift);
+        if (lines.length > 0) {
+          setStep({ kind: "drift", lines });
+          return;
+        }
         call.end();
       } catch (error) {
         const detail = ruleDetail(error);
@@ -94,14 +108,25 @@ export const RestoreSectionDialog = createCallable<RestoreSectionDialogProps, vo
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter>
-            <Button ref={cancelRef} type="button" variant="outline" autoFocus onClick={() => call.end()}>
-              취소
-            </Button>
-            <Button type="button" disabled={restoreMutation.isPending} onClick={() => void handleRestore()}>
-              {restoreMutation.isPending ? "가져오는 중..." : submitLabel}
-            </Button>
-          </DialogFooter>
+          {step.kind === "drift" ? (
+            <>
+              <RatingDriftNotice lines={step.lines} footer="가져오기는 끝났어요. 맞추려면 그 세트도 같이 고쳐 게시하세요." />
+              <DialogFooter>
+                <Button ref={confirmRef} type="button" onClick={() => call.end()}>
+                  확인
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <DialogFooter>
+              <Button ref={cancelRef} type="button" variant="outline" autoFocus onClick={() => call.end()}>
+                취소
+              </Button>
+              <Button type="button" disabled={restoreMutation.isPending} onClick={() => void handleRestore()}>
+                {restoreMutation.isPending ? "가져오는 중..." : submitLabel}
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
     );

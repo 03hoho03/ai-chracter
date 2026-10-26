@@ -6,10 +6,7 @@ import { useState } from "react";
 
 import {
   PROMPT_MODEL_LABELS,
-  ROOM_MODEL_LABELS,
   ROUTE_BACKEND_LABELS,
-  ROUTING_LANE_LABELS,
-  ROUTING_STAGE_LABELS,
   type AdminPromptRouteRow,
   type AdminPromptRoutingResponse,
 } from "@/entities/prompt-routing";
@@ -20,7 +17,9 @@ import { QueryState } from "@/shared/ui/QueryState";
 
 import { useRevisionDetailQuery } from "../api/useRevisionDetailQuery";
 import { useRevisionListQuery, type AdminPromptRouteRevisionSummary } from "../api/useRevisionListQuery";
+import { cellName, generationChainText } from "../model/describe";
 import type { RoutingOutcome } from "../model/outcome";
+import { ROUTING_SCOPE_LABELS, scopeOfLane, type RoutingScope } from "../model/schema";
 import { NEUTRAL_BADGE_CLASS, PROBLEM_BADGE_CLASS } from "./badgeClasses";
 import { RestoreRoutingDialog } from "./RestoreRoutingDialog";
 
@@ -67,8 +66,8 @@ function RevisionTable({ items, data, dirtyCount, onRestoreOutcome }: RevisionTa
   const numberById = new Map(items.map((item) => [item.id, item.number]));
   const selected = items.find((item) => item.id === selectedId);
 
-  const restore = async (revision: AdminPromptRouteRevisionSummary) => {
-    const outcome = await RestoreRoutingDialog.call({ revision, data, dirtyCount });
+  const restore = async (revision: AdminPromptRouteRevisionSummary, scope: RoutingScope, scopeRowCount: number) => {
+    const outcome = await RestoreRoutingDialog.call({ revision, scope, scopeRowCount, data, dirtyCount });
     if (outcome === undefined) return;
     if (outcome.status === "saved" && outcome.data.revisionId !== null) setSelectedId(outcome.data.revisionId);
     onRestoreOutcome(outcome, revision);
@@ -89,6 +88,7 @@ function RevisionTable({ items, data, dirtyCount, onRestoreOutcome }: RevisionTa
                   </span>
                 </TableHead>
                 <TableHead>저장 시각</TableHead>
+                <TableHead>저장 범위</TableHead>
                 <TableHead>칸 수</TableHead>
                 <TableHead>메모</TableHead>
                 <TableHead>되돌림 출처</TableHead>
@@ -123,6 +123,7 @@ function RevisionTable({ items, data, dirtyCount, onRestoreOutcome }: RevisionTa
                       </span>
                     </TableCell>
                     <TableCell>{formatDateTime(item.createdAt)}</TableCell>
+                    <TableCell>{revisionScopeText(item.lanes)}</TableCell>
                     <TableCell className="tabular-nums">
                       {item.rowCount === 0 ? "0 (전부 env)" : item.rowCount}
                     </TableCell>
@@ -141,7 +142,7 @@ function RevisionTable({ items, data, dirtyCount, onRestoreOutcome }: RevisionTa
         <RevisionDetailPanel
           revision={selected}
           isLatest={selected.id === items[0]?.id}
-          onRestore={() => void restore(selected)}
+          onRestore={(scope, scopeRowCount) => void restore(selected, scope, scopeRowCount)}
         />
       )}
     </>
@@ -151,8 +152,10 @@ function RevisionTable({ items, data, dirtyCount, onRestoreOutcome }: RevisionTa
 type RevisionDetailPanelProps = {
   revision: AdminPromptRouteRevisionSummary;
   isLatest: boolean;
-  onRestore: () => void;
+  onRestore: (scope: RoutingScope, scopeRowCount: number) => void;
 };
+
+const RESTORE_SCOPES: readonly RoutingScope[] = ["chat", "novel"];
 
 function RevisionDetailPanel({ revision, isLatest, onRestore }: RevisionDetailPanelProps) {
   const detailQuery = useRevisionDetailQuery(revision.id);
@@ -162,55 +165,70 @@ function RevisionDetailPanel({ revision, isLatest, onRestore }: RevisionDetailPa
       <h3 className="text-sm font-semibold text-foreground">r{revision.number} 의 표</h3>
       <QueryState query={detailQuery} surface="card" errorMessage="이력 상세를 불러오지 못했어요.">
         {(detail) => (
-          <div className="flex flex-col gap-2">
-            {detail.rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">행이 없어요 — 모든 칸이 env 기본값을 따르는 표예요.</p>
-            ) : (
-              <ul className="flex flex-col gap-1 text-sm text-foreground">
-                {detail.rows.map((row) => (
-                  <li key={`${row.lane}|${row.roomModel}|${row.stage}`} className="break-keep">
-                    {describeRow(row)}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {detail.droppedRowCount > 0 && (
-              <p className="flex flex-wrap items-center gap-1.5 text-sm text-destructive-text">
-                <span className={PROBLEM_BADGE_CLASS}>보이지 않는 행 {detail.droppedRowCount}개</span>
-                지금 코드가 모르는 값이 든 행이라 보이지 않아요. 이 이력으로 되돌리면 저장 검사가 거부해요.
-              </p>
-            )}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
+              {detail.rows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">행이 없어요 — 모든 칸이 env 기본값을 따르는 표예요.</p>
+              ) : (
+                <ul className="flex flex-col gap-1 text-sm text-foreground">
+                  {detail.rows.map((row) => (
+                    <li key={`${row.lane}|${row.roomModel}|${row.stage}`} className="break-keep">
+                      {describeRow(row)}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {detail.droppedRowCount > 0 && (
+                <p className="flex flex-wrap items-center gap-1.5 text-sm text-destructive-text">
+                  <span className={PROBLEM_BADGE_CLASS}>보이지 않는 행 {detail.droppedRowCount}개</span>
+                  지금 코드가 모르는 값이 든 행이라 보이지 않아요. 이 이력으로 되돌리면 저장 검사가 거부해요.
+                </p>
+              )}
+            </div>
+            {/* 되돌리기는 범위마다 따로다 — 서버가 채팅·소설을 다른 경로로 갈아 끼운다. 지금 표인 이력은 되돌릴 것이 없다 — 사유가
+             * 읽히도록 `disabled` 대신 `aria-disabled` 로 포커스 순회에 남긴다. */}
+            <div className="flex flex-wrap items-center gap-2">
+              {RESTORE_SCOPES.map((scope) => {
+                const scopeRowCount = detail.rows.filter((row) => scopeOfLane(row.lane) === scope).length;
+                return (
+                  <Button
+                    key={scope}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-disabled={isLatest}
+                    aria-describedby={isLatest ? `routing-revision-${revision.id}-latest` : undefined}
+                    className="aria-disabled:opacity-65"
+                    onClick={() => {
+                      if (!isLatest) onRestore(scope, scopeRowCount);
+                    }}
+                  >
+                    {ROUTING_SCOPE_LABELS[scope]} 칸 되돌리기
+                  </Button>
+                );
+              })}
+              {isLatest && (
+                <span id={`routing-revision-${revision.id}-latest`} className="text-xs text-muted-foreground">
+                  지금 표예요
+                </span>
+              )}
+            </div>
           </div>
         )}
       </QueryState>
-      <div className="flex flex-wrap items-center gap-2">
-        {/* 지금 표인 이력은 되돌릴 것이 없다 — 사유가 읽히도록 `disabled` 대신 `aria-disabled` 로 포커스 순회에 남긴다. */}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-disabled={isLatest}
-          aria-describedby={isLatest ? `routing-revision-${revision.id}-latest` : undefined}
-          className="aria-disabled:opacity-65"
-          onClick={() => {
-            if (!isLatest) onRestore();
-          }}
-        >
-          이 이력으로 되돌리기
-        </Button>
-        {isLatest && (
-          <span id={`routing-revision-${revision.id}-latest`} className="text-xs text-muted-foreground">
-            지금 표예요
-          </span>
-        )}
-      </div>
     </div>
   );
 }
 
+/** 이력이 어느 경로의 저장인지. 칸이 없으면 채팅 경로의 저장이거나 소설 레인이 생기기 전의 저장이다(둘 다 채팅 칸만 바꿨다). */
+function revisionScopeText(lanes: AdminPromptRouteRevisionSummary["lanes"]): string {
+  if (lanes === null) return ROUTING_SCOPE_LABELS.chat;
+  return [...new Set(lanes.map((lane) => ROUTING_SCOPE_LABELS[scopeOfLane(lane)]))].join(" · ");
+}
+
 function describeRow(row: AdminPromptRouteRow): string {
-  const cell = `${ROUTING_LANE_LABELS[row.lane]} · ${ROOM_MODEL_LABELS[row.roomModel]} · ${ROUTING_STAGE_LABELS[row.stage]}`;
+  const cell = cellName(row);
   const route = `${PROMPT_MODEL_LABELS[row.callModel]}·${ROUTE_BACKEND_LABELS[row.backend]}`;
-  if (row.chainModel === null) return `${cell} → 방 모델 체인, 경로만 ${ROUTE_BACKEND_LABELS[row.backend]}`;
+  if (row.chainModel === null) return `${cell} → ${generationChainText(row.lane)}, 경로만 ${ROUTE_BACKEND_LABELS[row.backend]}`;
   return `${cell} → ${PROMPT_MODEL_LABELS[row.chainModel]} 체인, ${route}`;
 }

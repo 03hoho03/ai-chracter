@@ -16,7 +16,12 @@ import {
 } from "../pages/novel-detail";
 import { PublishNoticeDialog } from "../pages/notice-detail";
 import { DiscardEditsDialog, RestoreRoutingDialog, SaveRoutingDialog } from "../pages/prompt-routing";
-import { PublishPromptSetDialog, RestorePromptSetDialog, RestoreSectionDialog } from "../pages/prompt-sets";
+import {
+  DraftChangedDialog,
+  PublishPromptSetDialog,
+  RestorePromptSetDialog,
+  RestoreSectionDialog,
+} from "../pages/prompt-sets";
 import { RefundPaymentModal, UserActionConfirmModal } from "../pages/user-detail";
 import { AdminShell } from "../widgets/admin-shell";
 
@@ -62,6 +67,7 @@ function RootComponent() {
       <PublishPromptSetDialog />
       <RestorePromptSetDialog />
       <RestoreSectionDialog />
+      <DraftChangedDialog />
       <SaveRoutingDialog />
       <RestoreRoutingDialog />
       <DiscardEditsDialog />

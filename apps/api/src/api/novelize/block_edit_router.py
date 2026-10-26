@@ -52,7 +52,7 @@ from api.novelize.block_edits import (
     with_split,
 )
 from api.novelize.blocks import BlockIdsInvalidError, build_revision
-from api.novelize.inputs import current_revision
+from api.novelize.inputs import current_revision, resolve_novel_call_route
 from api.novelize.job_variants import variant_of
 from api.novelize.prompts import NovelizeRecheckResult
 from api.novelize.router import (
@@ -354,10 +354,16 @@ async def recheck_novel_block_edit_bundle(
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_RECHECK_NOT_NEEDED") from None
     except UnitNotApplicableError:
         raise _not_applicable() from None
-    prompt = await build_recheck_prompt(db, novel, current, edit, plan)
+    route = await resolve_novel_call_route(db, "novel_recheck")
+    prompt = await build_recheck_prompt(db, novel, current, edit, plan, chain_model=route.chain_model)
     await _check_recheck_limit(novel.user_id)
     basis_revision_id = current.id
-    usage = LLMCallContext(call_site="novelize_revise_recheck", user_id=novel.user_id, room_id=novel.chat_room_id)
+    usage = LLMCallContext(
+        call_site="novelize_revise_recheck",
+        user_id=novel.user_id,
+        room_id=novel.chat_room_id,
+        call_model=route.call_model,
+    )
     await db.commit()
 
     try:

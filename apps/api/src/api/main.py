@@ -55,6 +55,7 @@ from api.moderation.router import router as moderation_router
 from api.notice.router import router as notice_router
 from api.novel_public.admin import router as novel_public_admin_router
 from api.novel_public.comments import comments_router as novel_public_comments_router
+from api.novel_public.derived import derived_router as novel_public_derived_router
 from api.novel_public.router import owner_router as novel_public_owner_router
 from api.novel_public.purchases import reader_router as novel_public_reader_router
 from api.novel_public.reading import reading_router as novel_public_reading_router
@@ -76,6 +77,7 @@ from api.novelize.source_router import source_router as novelize_source_router
 from api.payments.router import router as payments_router
 from api.persona.router import me_router as persona_me_router
 from api.session.suspension import rebuild_suspended_user_markers
+from api.works.bundles import router as work_bundles_router
 from api.works.router import router as works_router
 
 
@@ -184,6 +186,7 @@ app.include_router(inquiry_router)
 app.include_router(inquiry_me_router)
 app.include_router(content_router)
 app.include_router(works_router)
+app.include_router(work_bundles_router)
 app.include_router(novelize_router)
 app.include_router(novelize_room_router)
 app.include_router(novelize_owner_router)
@@ -198,6 +201,7 @@ app.include_router(novel_public_router)
 app.include_router(novel_public_owner_router)
 app.include_router(novel_public_reader_router)
 app.include_router(novel_public_reading_router)
+app.include_router(novel_public_derived_router)
 app.include_router(novel_public_comments_router)
 app.include_router(novel_public_reports_router)
 app.include_router(novel_public_admin_router)

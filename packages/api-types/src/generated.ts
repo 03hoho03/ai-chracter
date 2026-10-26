@@ -2599,6 +2599,10 @@ export interface paths {
          *
          *     글만 바뀐 경우는 충돌로 치지 않는다 — 심사는 그림만 보고, 발행본에는 3 에서 다시 읽은 글이 실린다. 3 에서 검증을
          *     다시 돌리므로 그사이 필수 칸이 비면 400 이다. 충돌로 멈춘 발행이 이미 올린 블러본은 가리키는 행 없이 남는다.
+         *
+         *     본문의 `novelPermission` 은 3 에서 발행과 함께 작품의 소설화 허락으로 쓴다. 발행 이력이 없는 작품을 그 값 없이
+         *     발행하면 아직 막지 않고 1 에서 경고 로그 한 줄만 남긴다 — 첫 발행 때 허락을 고르게 하는 화면이 나간 뒤 그런 발행이
+         *     사라졌는지 세는 신호다. 막을 때도 이 자리(검증·그림 심사 전)라 거절에 심사 원가가 들지 않는다.
          */
         post: operations["publish_content_contents__id__publish_post"];
         delete?: never;
@@ -2649,6 +2653,31 @@ export interface paths {
          *     (공개 범위 변경과 같은 문자열).
          */
         put: operations["update_content_novel_permission_contents__id__novel_permission_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{id}/derived-novels-visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Content Derived Novels Visibility
+         * @description 원작 상세의 공개 소설 목록을 다른 사람에게 보일지 정한다. 표시만 바꾼다 — 소설화 허락·소설의 공개 상태·권리 고정
+         *     칸은 그대로다. 초안 자동저장과 섞지 않고 따로 받는 것은 허락과 같은 헤더 칸이라 편집 취소·발행이 되돌릴 값이 아니기
+         *     때문이다.
+         *
+         *     가드는 소설화 허락 바꾸기와 같다: 회원 행을 잠가 정지·탈퇴를 다시 보고, 작품 404 → 소유자 아님 403. 이용제한 작품도
+         *     막지 않는다(노출을 줄이는 쪽이라).
+         */
+        put: operations["update_content_derived_novels_visibility_contents__id__derived_novels_visibility_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2814,12 +2843,88 @@ export interface paths {
          *
          *     `q` 는 제목 부분 일치다 — 작품은 목록에 보이는 제목 버전(`_title_version_id`), 소설은 소설 제목(없으면 원작 제목).
          *
+         *     `bundleId` 를 주면 그 묶음에 든 것만 낸다(같은 정렬·커서·응답). 내 묶음이 아니거나 없으면 404 `WORK_BUNDLE_NOT_FOUND`
+         *     다 — 묶음은 사적 정리라 남의 묶음이 있는지도 드러내지 않는다. 묶음에 들었어도 위 조건(운영 삭제·숨김·소설화 허용)에
+         *     걸리면 빠진다.
+         *
          *     이미지는 싣지 않는다(제목·편집 시각이 없다).
          */
         get: operations["list_my_works_me_works_get"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/work-bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Work Bundles
+         * @description 내 묶음 전부를 최근에 바뀐 것부터(한도 안이라 페이지 없음). `kind`·`workId` 를 함께 주면 각 묶음에 그 작품이 들었는지를
+         *     `containsWork` 로 싣는다(작품 메뉴의 체크 표시). 둘 중 하나만 주면 422.
+         */
+        get: operations["list_my_work_bundles_me_work_bundles_get"];
+        put?: never;
+        /** Create Work Bundle */
+        post: operations["create_work_bundle_me_work_bundles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/work-bundles/{bundle_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Work Bundle
+         * @description 묶음과 그 소속 행(DB CASCADE)만 지운다. 작품·소설·채팅은 그대로다. 자기 데이터 정리라 재동의 전에도 열려 있다.
+         */
+        delete: operations["delete_work_bundle_me_work_bundles__bundle_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename Work Bundle
+         * @description 같은 이름이면 아무것도 바꾸지 않는다(목록 순서도 그대로).
+         */
+        patch: operations["rename_work_bundle_me_work_bundles__bundle_id__patch"];
+        trace?: never;
+    };
+    "/me/work-bundles/{bundle_id}/items/{kind}/{work_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Work Bundle Item
+         * @description 작품 하나를 묶음에 넣는다. 이미 들었으면 그대로 204 다(멱등 — 한도에도 걸리지 않고 묶음 순서도 그대로). 묶음이 내 것이
+         *     아니면 404 `WORK_BUNDLE_NOT_FOUND`, 작품을 넣을 수 없으면 404 `WORK_NOT_FOUND`(`_require_own_work`).
+         */
+        put: operations["put_work_bundle_item_me_work_bundles__bundle_id__items__kind___work_id__put"];
+        post?: never;
+        /**
+         * Remove Work Bundle Item
+         * @description 작품 하나를 묶음에서 뺀다. 들어 있지 않아도 204 다. 작품 소유는 다시 보지 않는다 — 내 묶음에서 행을 지울 뿐이라 남의
+         *     작품에 닿지 않는다. 자기 데이터 정리라 재동의 전에도 열려 있다.
+         */
+        delete: operations["remove_work_bundle_item_me_work_bundles__bundle_id__items__kind___work_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4327,6 +4432,27 @@ export interface paths {
          *     된다 — 내 표시를 거두는 일이라 노벨의 상태와 무관하다. 행을 지운 요청만 수를 내린다(좋아요와 같은 이유).
          */
         delete: operations["unlike_webnovel_webnovels__novel_id__like_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{content_id}/derived-novels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Derived Novels
+         * @description 이 작품을 원작으로 한 공개 소설, 공개 화면 글이 마지막으로 바뀐 시각 순으로 한 번에 20편. 다음 페이지는
+         *     `nextCursor` 를 그대로 `cursor` 로 넘긴다. 작품이 없으면 404 다(원작이 삭제됐으면 행은 남아 빈 목록).
+         */
+        get: operations["list_derived_novels_contents__content_id__derived_novels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -11660,6 +11786,11 @@ export interface components {
              */
             contentId: string;
         };
+        /** ContentDerivedNovelsVisibilityUpdateRequest */
+        ContentDerivedNovelsVisibilityUpdateRequest: {
+            /** Visible */
+            visible: boolean;
+        };
         /** ContentDetailResponse */
         ContentDetailResponse: {
             /**
@@ -11721,6 +11852,11 @@ export interface components {
              * @enum {string}
              */
             novelPermission?: "forbidden" | "private" | "public";
+            /**
+             * Derivednovelsvisible
+             * @default true
+             */
+            derivedNovelsVisible: boolean;
         };
         /** ContentListItem */
         ContentListItem: {
@@ -11758,6 +11894,15 @@ export interface components {
              * @enum {string}
              */
             novelPermission: "forbidden" | "private" | "public";
+        };
+        /**
+         * ContentPublishRequest
+         * @description `POST /contents/{id}/publish` 본문. 본문도 칸도 선택이다 — 본문을 보내지 않는 옛 화면과 재발행이 그대로 돈다.
+         *     `novel_permission` 을 실으면 발행과 같은 트랜잭션에서 작품의 소설화 허락으로 쓴다(재발행에도).
+         */
+        ContentPublishRequest: {
+            /** Novelpermission */
+            novelPermission?: ("forbidden" | "private" | "public") | null;
         };
         /** ContentPublishResponse */
         ContentPublishResponse: {
@@ -12094,6 +12239,20 @@ export interface components {
         CreatorPayoutStatementsResponse: {
             /** Items */
             items: components["schemas"]["CreatorPayoutStatementView"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /**
+         * DerivedNovelListResponse
+         * @description 원작 상세의 공개 소설 목록. `visible` 은 원작자가 이 목록을 다른 사람에게 보이게 두었는가다 — 거짓이면 원작자가
+         *     아닌 사람에게 `items` 가 비고, 원작자 본인에게는 무엇이 걸려 있는지 보이게 그대로 싣는다. 공식(원작자 본인이 낸
+         *     소설)과 파생은 항목의 `source.unofficial` 로 가른다.
+         */
+        DerivedNovelListResponse: {
+            /** Visible */
+            visible: boolean;
+            /** Items */
+            items: components["schemas"]["PublicNovelListItem"][];
             /** Nextcursor */
             nextCursor: string | null;
         };
@@ -16424,6 +16583,47 @@ export interface components {
             /** Currentpassword */
             currentPassword?: string | null;
         };
+        /** WorkBundleCreatedResponse */
+        WorkBundleCreatedResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /** WorkBundleListResponse */
+        WorkBundleListResponse: {
+            /** Items */
+            items: components["schemas"]["WorkBundleSummary"][];
+        };
+        /** WorkBundleNameRequest */
+        WorkBundleNameRequest: {
+            /** Name */
+            name: string;
+        };
+        /**
+         * WorkBundleSummary
+         * @description 묶음 하나. `item_count` 는 `GET /me/works?bundleId=` 가 내는 항목 수와 같다(운영 삭제된 작품·숨긴 소설, 소설화 허용이
+         *     없는 계정의 소설은 빠진다). `contains_work` 는 목록 요청에 `kind`·`workId` 를 줬을 때만 참·거짓이고 아니면 null 이다.
+         */
+        WorkBundleSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Itemcount */
+            itemCount: number;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+            /** Containswork */
+            containsWork: boolean | null;
+        };
         /** WorkListResponse */
         WorkListResponse: {
             /** Items */
@@ -20284,7 +20484,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ContentPublishRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -20351,6 +20555,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ContentNovelPermissionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_content_derived_novels_visibility_contents__id__derived_novels_visibility_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContentDerivedNovelsVisibilityUpdateRequest"];
             };
         };
         responses: {
@@ -20621,6 +20858,7 @@ export interface operations {
                 status?: "all" | "draft" | "public" | "changed" | "review";
                 q?: string | null;
                 cursor?: string | null;
+                bundleId?: string | null;
             };
             header?: never;
             path?: never;
@@ -20636,6 +20874,195 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WorkListResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_work_bundles_me_work_bundles_get: {
+        parameters: {
+            query?: {
+                kind?: ("character" | "story" | "novel") | null;
+                workId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkBundleListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_work_bundle_me_work_bundles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkBundleNameRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkBundleCreatedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_work_bundle_me_work_bundles__bundle_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_work_bundle_me_work_bundles__bundle_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkBundleNameRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_work_bundle_item_me_work_bundles__bundle_id__items__kind___work_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+                kind: "character" | "story" | "novel";
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_work_bundle_item_me_work_bundles__bundle_id__items__kind___work_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+                kind: "character" | "story" | "novel";
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -23094,6 +23521,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_derived_novels_contents__content_id__derived_novels_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DerivedNovelListResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

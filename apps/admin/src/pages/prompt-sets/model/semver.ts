@@ -56,6 +56,11 @@ export function semverConflictMessage(error: unknown): string | null {
 
 const ruleDetailSchema = z.object({ rule: z.string(), message: z.string() });
 
+/** 초안 저장이 "편집을 연 뒤 다른 곳에서 초안이 저장됨"으로 거부됐는가. */
+export function isDraftChangedError(error: unknown): boolean {
+  return isApiError(error) && error.status === 409 && ruleDetail(error)?.rule === "draft-changed";
+}
+
 /** `{rule, message}` 꼴 거부의 서버 문장. 그 꼴이 아니면 null. */
 export function ruleDetail(error: unknown): { rule: string; message: string } | null {
   if (!isApiError(error)) return null;

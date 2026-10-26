@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  isChatRoutingLane,
   isPromptSetModelId,
   type AdminPromptRouteAllowedPair,
   type AdminPromptRouteCell,
@@ -10,6 +11,19 @@ import {
   type RoutingLane,
   type RoutingStage,
 } from "@/entities/prompt-routing";
+
+/** 저장·되돌리기의 범위. 채팅 두 레인은 기존 경로로 함께, 소설 레인은 소설 경로로 따로 저장한다 — 한 저장이 다른 범위의
+ * 행을 싣지 않는다(서버는 기존 경로에 실려 온 소설 행을 버리고, 소설 경로에 실려 온 채팅 행은 거부한다). */
+export type RoutingScope = "chat" | "novel";
+
+export function scopeOfLane(lane: RoutingLane): RoutingScope {
+  return isChatRoutingLane(lane) ? "chat" : "novel";
+}
+
+export const ROUTING_SCOPE_LABELS = {
+  chat: "채팅",
+  novel: "소설",
+} satisfies Record<RoutingScope, string>;
 
 /** 폼 레코드의 키. 이 함수 하나로만 만든다. */
 export type RouteCellKey = `${RoutingLane}|${RoomModel}|${RoutingStage}`;
@@ -74,9 +88,14 @@ export function serverToForm(data: AdminPromptRoutingResponse): RoutingFormValue
   return { cells };
 }
 
-/** 행이 있는 칸만 펼친다. 쌍은 서버 목록에서 다시 찾아 좁힌다(스키마가 이미 목록 밖 쌍을 막았다). */
-export function formToServer(values: RoutingFormValues, data: AdminPromptRoutingResponse): AdminPromptRouteRow[] {
+/** 그 범위의 칸 중 행이 있는 칸만 펼친다. 쌍은 서버 목록에서 다시 찾아 좁힌다(스키마가 이미 목록 밖 쌍을 막았다). */
+export function formToServer(
+  values: RoutingFormValues,
+  data: AdminPromptRoutingResponse,
+  scope: RoutingScope,
+): AdminPromptRouteRow[] {
   return data.cells.flatMap((cell) => {
+    if (scopeOfLane(cell.lane) !== scope) return [];
     const form = values.cells[cellKeyOf(cell)];
     if (form?.mode !== "row") return [];
     const pair = data.allowedPairs.find((p) => pairValue(p) === form.pair);

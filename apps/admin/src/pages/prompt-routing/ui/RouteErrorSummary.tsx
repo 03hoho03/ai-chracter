@@ -1,7 +1,8 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 
-import { ROOM_MODEL_LABELS, ROUTING_LANE_LABELS, ROUTING_STAGE_LABELS, type AdminPromptRouteCell } from "@/entities/prompt-routing";
+import type { AdminPromptRouteCell } from "@/entities/prompt-routing";
 
+import { cellName } from "../model/describe";
 import { routeRuleLabel, type RouteRuleItem } from "../model/routeErrors";
 import type { RouteCellKey } from "../model/schema";
 
@@ -54,8 +55,7 @@ export function RouteErrorSummary({ notice, cellByKey, onFocusCell, onReload, is
                   onClick={() => onFocusCell(cell)}
                 >
                   {prefix}
-                  {ROUTING_LANE_LABELS[cell.lane]} · {ROOM_MODEL_LABELS[cell.roomModel]} ·{" "}
-                  {ROUTING_STAGE_LABELS[cell.stage]} — {text}
+                  {cellName(cell)} — {text}
                 </button>
               )}
             </li>

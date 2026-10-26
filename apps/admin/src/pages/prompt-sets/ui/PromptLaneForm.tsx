@@ -16,8 +16,9 @@ import {
   isPromptChannel,
   type PromptChannel,
 } from "../model/channels";
-import type { PromptLane } from "../model/lane";
-import { promptChainKey, type PromptChainKey, type PromptModel } from "../model/model";
+import { PROMPT_LANE_LABELS, type PromptLane } from "../model/lane";
+import { PROMPT_MODEL_LABELS, promptChainKey, type PromptChainKey, type PromptModel } from "../model/model";
+import { placeholderLookup } from "../model/placeholders";
 import {
   formToServer,
   promptSetFormSchema,
@@ -25,7 +26,9 @@ import {
   type AdminPromptDraftResponse,
   type PromptSetFormValues,
 } from "../model/schema";
+import { isDraftChangedError } from "../model/semver";
 import { ChannelSectionList } from "./ChannelSectionList";
+import { DraftChangedDialog } from "./DraftChangedDialog";
 import { LabelsCard } from "./LabelsCard";
 import { PreviewPanel } from "./PreviewPanel";
 import { PublishPromptSetDialog } from "./PublishPromptSetDialog";
@@ -79,13 +82,31 @@ export function PromptLaneForm({ lane, model, draft, onDirtyChange }: PromptLane
   }, [chain, isDirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange(chain, false), [chain, onDirtyChange]);
 
+  // 자리표시자 힌트는 서버가 이 체인의 편집 가능한 채널마다 준 값이다 — 화면에 사본을 두지 않는다.
+  const placeholders = useMemo(() => placeholderLookup(draft.allowedPlaceholders), [draft]);
+
+  // 저장은 받은 초안 해시를 함께 보내 그 사이 다른 곳의 저장을 덮지 않는다. 서버가 그 충돌로 멈추면 덮어쓸지 묻고, 취소하면
+  // 아무것도 바꾸지 않는다 — 폼은 리셋되지 않아 편집이 그대로 남는다.
   const handleSave = form.handleSubmit(
     async (values) => {
       try {
-        await saveDraftMutation.mutateAsync(formToServer(values));
+        await saveDraftMutation.mutateAsync(
+          formToServer(values, { kind: "check", savedDraftHash: draft.savedDraftHash }),
+        );
         toast.success("초안을 저장했어요.");
-      } catch {
-        toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+      } catch (error) {
+        if (!isDraftChangedError(error)) {
+          toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+          return;
+        }
+        const chainName = `${PROMPT_LANE_LABELS[lane]} · ${PROMPT_MODEL_LABELS[model]}`;
+        if (!(await DraftChangedDialog.call({ chainName }))) return;
+        try {
+          await saveDraftMutation.mutateAsync(formToServer(values, { kind: "overwrite" }));
+          toast.success("초안을 덮어써 저장했어요.");
+        } catch {
+          toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+        }
       }
     },
     () => toast.error("입력값을 확인해주세요."),
@@ -109,7 +130,7 @@ export function PromptLaneForm({ lane, model, draft, onDirtyChange }: PromptLane
   return (
     <FormProvider {...form}>
       <div className="flex flex-col gap-6">
-        <LabelsCard lane={lane} />
+        <LabelsCard lane={lane} model={model} />
 
         <section className="flex flex-col gap-3">
           <Tabs
@@ -135,7 +156,7 @@ export function PromptLaneForm({ lane, model, draft, onDirtyChange }: PromptLane
               // Radix 탭 패널은 Tab 정지(`tabIndex=0`)인데 이 패널은 안의 버튼·입력칸이 진입점이다 — 정지를 빼야 채널 탭
               // 다음 Tab 이 보이지 않는 패널에 앉지 않는다.
               <TabsContent key={channel} value={channel} tabIndex={-1} className="pt-4">
-                <ChannelSectionList channel={channel} />
+                <ChannelSectionList channel={channel} placeholders={placeholders} />
               </TabsContent>
             ))}
           </Tabs>

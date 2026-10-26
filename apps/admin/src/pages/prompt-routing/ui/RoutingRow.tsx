@@ -3,36 +3,48 @@ import { TableCell, TableRow } from "@ai-character-chat/ui/components/table";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import {
+  isChatRoutingLane,
   isPromptSetModelId,
   isRoomLive,
   PROMPT_MODEL_LABELS,
-  ROOM_MODEL_LABELS,
   ROUTING_LANE_LABELS,
   ROUTING_STAGE_LABELS,
   type AdminPromptRouteCell,
   type AdminPromptRoutingResponse,
   type PromptSetModelId,
+  type RoutingLane,
 } from "@/entities/prompt-routing";
 
 import {
   candidateCalls,
+  costRatioText,
   findPair,
   formatPrice,
   chainCallMismatchText,
+  generationChainText,
   pairLabel,
+  roomModelLabel,
   selectablePairs,
 } from "../model/describe";
 import {
   cellKeyOf,
   isSameCellForm,
+  pairValue,
   routeCellKey,
   type RouteCellForm,
   type RoutingFormValues,
 } from "../model/schema";
+import { PROBLEM_BADGE_CLASS } from "./badgeClasses";
 import { LivePriceCell, LiveRouteCell } from "./LiveRouteCell";
 
 const ENV_VALUE = "env";
 const CHAIN_MODELS = Object.keys(PROMPT_MODEL_LABELS).filter(isPromptSetModelId);
+/** 소설 레인에는 판정 전용 체인이 없다 — 서버가 그 체인을 고른 행을 거부한다. */
+const NOVEL_CHAIN_MODELS = CHAIN_MODELS.filter((model) => model !== "haiku");
+
+function chainModelsFor(lane: RoutingLane): readonly PromptSetModelId[] {
+  return lane === "novel" ? NOVEL_CHAIN_MODELS : CHAIN_MODELS;
+}
 
 /** 오류 요약의 항목이 그 칸으로 포커스를 옮길 때 찾는 id. */
 export function pairSelectId(cell: Pick<AdminPromptRouteCell, "lane" | "roomModel" | "stage">) {
@@ -62,10 +74,19 @@ export function RoutingRow({ cell, data, showsStage, saved }: RoutingRowProps) {
   const error = errors.cells?.[key]?.message;
   const errorId = `route-${key}-error`;
   const isChanged = !isSameCellForm(value, saved);
-  const rowName = `${ROUTING_LANE_LABELS[cell.lane]} ${ROOM_MODEL_LABELS[cell.roomModel]} ${ROUTING_STAGE_LABELS[cell.stage]}`;
+  const roomLabel = roomModelLabel(cell.lane, cell.roomModel);
+  const rowName = `${ROUTING_LANE_LABELS[cell.lane]} ${roomLabel} ${ROUTING_STAGE_LABELS[cell.stage]}`;
   const isGeneration = cell.kind === "generation";
+  const isNovel = cell.lane === "novel";
+  // 소설 생성 단계는 이 표를 읽지 않는다 — 체인·부를 모델이 늘 작업 모델이고 경로는 env 배정을 따른다. 고를 것이 없어 보이기만
+  // 한다(지금 운영 값 칸이 env 로 푼 경로를 보인다).
+  const isDisplayOnly = isNovel && isGeneration;
   const pickedCalls = value?.mode === "row" && isChanged ? candidateCalls(cell, value.pair) : undefined;
   const mismatch = chainCallMismatchText(cell, value, data);
+  // 소설 구조화 칸은 고른 쌍의 원가 배수와 지금 env 로 운영에서 건너뛸지를 저장 전에 보인다(서버가 후보마다 계산한 값).
+  const pickedCandidate =
+    isNovel && value?.mode === "row" ? cell.candidates.find((candidate) => pairValue(candidate) === value.pair) : undefined;
+  const pickedCost = pickedCandidate === undefined ? null : costRatioText(pickedCandidate);
 
   return (
     <>
@@ -79,16 +100,26 @@ export function RoutingRow({ cell, data, showsStage, saved }: RoutingRowProps) {
             <span className={showsStage ? undefined : "sr-only"}>{ROUTING_STAGE_LABELS[cell.stage]}</span>
             <span className="sr-only">
               {" "}
-              · {ROOM_MODEL_LABELS[cell.roomModel]}
+              · {roomLabel}
               {isChanged && ", 저장 안 함"}
             </span>
           </span>
         </th>
         <TableCell className="align-top text-muted-foreground">
-          {ROOM_MODEL_LABELS[cell.roomModel]}
-          {!isRoomLive(data, cell.roomModel) && <span className="block text-xs">지금 안 읽힘</span>}
+          {roomLabel}
+          {isChatRoutingLane(cell.lane) && !isRoomLive(data, cell.roomModel) && (
+            <span className="block text-xs">지금 안 읽힘</span>
+          )}
         </TableCell>
         <TableCell className="align-top">
+          {isDisplayOnly ? (
+            <div className="flex w-60 flex-col gap-1 whitespace-normal">
+              <span className="text-foreground">작업 모델로 불러요</span>
+              <span className="break-keep text-xs text-muted-foreground">
+                이 표로 바꾸지 않아요 — 경로는 env 배정을 따라요
+              </span>
+            </div>
+          ) : (
           <div className="flex w-60 flex-col gap-1 whitespace-normal">
             <Controller
               control={control}
@@ -114,7 +145,7 @@ export function RoutingRow({ cell, data, showsStage, saved }: RoutingRowProps) {
                   <SelectContent>
                     <SelectItem value={ENV_VALUE}>env 기본값 따름</SelectItem>
                     {selectablePairs(cell).map((pair) => (
-                      <SelectItem key={`${pair.model}@${pair.backend}`} value={`${pair.model}@${pair.backend}`}>
+                      <SelectItem key={pairValue(pair)} value={pairValue(pair)}>
                         {pairLabel(pair)}
                       </SelectItem>
                     ))}
@@ -135,7 +166,15 @@ export function RoutingRow({ cell, data, showsStage, saved }: RoutingRowProps) {
               <span className="text-xs text-muted-foreground">스탯 판정 행을 따라요</span>
             )}
             {mismatch !== null && <span className="break-keep text-xs text-muted-foreground">{mismatch}</span>}
+            {pickedCost !== null && <span className="break-keep text-xs text-muted-foreground">{pickedCost}</span>}
+            {pickedCandidate?.skippedNow != null && (
+              <span className="flex flex-col items-start gap-1 text-xs text-muted-foreground">
+                <span className={PROBLEM_BADGE_CLASS}>지금 운영에서는 건너뜀</span>
+                <span className="break-keep">{pickedCandidate.skippedNow.message}</span>
+              </span>
+            )}
           </div>
+          )}
         </TableCell>
         <TableCell className="align-top">
           <ChainField cell={cell} value={value} rowName={rowName} errorId={error === undefined ? undefined : errorId} />
@@ -170,9 +209,11 @@ function nextCellForm(
 ): RouteCellForm {
   if (next === ENV_VALUE) return { mode: "env" };
   if (cell.kind === "generation") return { mode: "row", pair: next, chainModel: null };
-  const chainModel: PromptSetModelId | null =
-    current?.mode === "row" && current.chainModel !== null ? current.chainModel : (findPair(data, next)?.model ?? null);
-  return { mode: "row", pair: next, chainModel };
+  if (current?.mode === "row" && current.chainModel !== null) return { mode: "row", pair: next, chainModel: current.chainModel };
+  // 부를 모델의 체인이 그 레인에 없으면(소설 레인의 판정 전용 모델) 기본 체인인 Gemini 로 시작한다.
+  const callModel = findPair(data, next)?.model;
+  if (callModel === undefined) return { mode: "row", pair: next, chainModel: null };
+  return { mode: "row", pair: next, chainModel: chainModelsFor(cell.lane).includes(callModel) ? callModel : "gemini" };
 }
 
 type ChainFieldProps = {
@@ -189,7 +230,7 @@ function ChainField({ cell, value, rowName, errorId }: ChainFieldProps) {
   const key = cellKeyOf(cell);
 
   if (cell.kind === "generation") {
-    return <span className="text-muted-foreground">방 모델 체인</span>;
+    return <span className="text-muted-foreground">{generationChainText(cell.lane)}</span>;
   }
   if (value?.mode !== "row") {
     return (
@@ -218,7 +259,7 @@ function ChainField({ cell, value, rowName, errorId }: ChainFieldProps) {
         <SelectValue placeholder="체인을 고르세요" />
       </SelectTrigger>
       <SelectContent>
-        {CHAIN_MODELS.map((model) => (
+        {chainModelsFor(cell.lane).map((model) => (
           <SelectItem key={model} value={model}>
             {PROMPT_MODEL_LABELS[model]}
           </SelectItem>

@@ -4,6 +4,7 @@ import { useId } from "react";
 import { useFormContext } from "react-hook-form";
 
 import type { PromptLane } from "../model/lane";
+import type { PromptModel } from "../model/model";
 import type { PromptSetFormValues } from "../model/schema";
 
 type LabelFieldKey = keyof PromptSetFormValues["labels"];
@@ -35,6 +36,8 @@ const LABEL_FIELDS: { key: LabelFieldKey; id: string; title: string; hint: strin
   },
 ];
 
+const ALL_LABELS: readonly LabelFieldKey[] = LABEL_FIELDS.map((field) => field.key);
+
 /** 이 레인에서 실제로 읽히지 않는 라벨 표시용 힌트.
  * `admin/prompts.py`의 `_LABEL_FIELDS_BY_LANE`의 여집합이라 엄밀히는 같은 사실의 두 번째
  * 사본이지만, 이쪽은 힌트 문구를 고르는 표시 데이터일 뿐 검증에 쓰이지 않는다 — 어긋나도
@@ -45,25 +48,43 @@ const UNUSED_LABELS_BY_LANE: Record<PromptLane, readonly LabelFieldKey[]> = {
   character: ["storyAssistantLabel", "storyExampleLabel"],
   // 발행 심사는 이미지 목록만 싣고 대화 줄을 조립하지 않아 라벨을 하나도 읽지 않는다.
   publish_filter: ["userLabel", "storyAssistantLabel", "storyExampleLabel", "characterAssistantLabel"],
-  // 소설 호출은 원문 줄의 화자 라벨을 원작 종류(스토리·캐릭터)의 채팅 Gemini 세트에서 읽는다 — 이 레인의 라벨은 어디에도
-  // 쓰이지 않는다.
-  novel: ["userLabel", "storyAssistantLabel", "storyExampleLabel", "characterAssistantLabel"],
+  // 소설 호출은 원문 줄의 화자 라벨을 이 레인의 Gemini 세트에서 읽는다(사용자·진행자·캐릭터). 전개 예시는 소설에 없다. Claude
+  // 세트의 라벨은 읽히지 않는다(아래 `unusedLabelsFor`).
+  novel: ["storyExampleLabel"],
   // 노벨 텍스트 심사는 공개할 글만 싣고 대화 줄을 조립하지 않아 라벨을 하나도 읽지 않는다.
   novel_screen: ["userLabel", "storyAssistantLabel", "storyExampleLabel", "characterAssistantLabel"],
 };
 
+/** 소설 라벨은 원문 줄을 조립하는 모든 경로가 같은 글자를 쓰도록 Gemini 세트 한 곳에서만 읽는다. */
+function unusedLabelsFor(lane: PromptLane, model: PromptModel): readonly LabelFieldKey[] {
+  if (lane === "novel" && model !== "gemini") return ALL_LABELS;
+  return UNUSED_LABELS_BY_LANE[lane];
+}
+
+/** 소설 레인에서는 라벨이 대화 턴이 아니라 소설 원문 줄의 화자 이름이다. */
+const NOVEL_LABEL_HINTS: Partial<Record<LabelFieldKey, string>> = {
+  userLabel: "소설 원문 줄에서 사용자 턴 앞에 붙는 이름.",
+  storyAssistantLabel: "스토리 원작 원문 줄에서 진행자 턴 앞에 붙는 이름.",
+  characterAssistantLabel: "캐릭터 원작 원문 줄에서 캐릭터 턴 앞에 붙는 이름.",
+};
+
 type LabelsCardProps = {
   lane: PromptLane;
+  model: PromptModel;
 };
 
 /** 화자 라벨 4개 — 전부 stop_sequence 파생이나 전개 예시 조립에 쓰이므로 개행·':'을
  * 포함할 수 없다(서버가 게시 시점에 검증하고, zod가 `model/schema.ts`에서 먼저 막는다). */
-export function LabelsCard({ lane }: LabelsCardProps) {
+export function LabelsCard({ lane, model }: LabelsCardProps) {
   const {
     register,
     formState: { errors },
   } = useFormContext<PromptSetFormValues>();
-  const unusedInLane = UNUSED_LABELS_BY_LANE[lane];
+  const unusedInLane = unusedLabelsFor(lane, model);
+  const unusedText =
+    lane === "novel" && model !== "gemini"
+      ? "소설은 Gemini 세트의 라벨만 읽어 이 세트에서는 쓰이지 않아요. "
+      : "이 레인에서는 쓰이지 않아요. ";
   // 체인 여럿이 `forceMount`로 동시에 마운트된다(PromptSetsPage) — `field.id`가 정적이면
   // 같은 id가 DOM에 여러 벌 생겨 `htmlFor`가 항상 첫 체인만 가리킨다. `useId()`로 레인(=컴포넌트
   // 인스턴스)별 접두어를 섞는다(선례: `apps/web/.../ContentCard.tsx`의 `useId()`).
@@ -92,8 +113,8 @@ export function LabelsCard({ lane }: LabelsCardProps) {
                 </p>
               ) : (
                 <p id={`${fieldId}-hint`} className="break-keep text-xs text-muted-foreground">
-                  {isUnused ? "이 레인에서는 쓰이지 않아요. " : ""}
-                  {field.hint}
+                  {isUnused ? unusedText : ""}
+                  {(lane === "novel" ? NOVEL_LABEL_HINTS[field.key] : undefined) ?? field.hint}
                 </p>
               )}
             </div>
