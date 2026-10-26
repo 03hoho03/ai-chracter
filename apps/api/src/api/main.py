@@ -77,6 +77,7 @@ from api.novelize.source_router import source_router as novelize_source_router
 from api.payments.router import router as payments_router
 from api.persona.router import me_router as persona_me_router
 from api.session.suspension import rebuild_suspended_user_markers
+from api.works.bundles import router as work_bundles_router
 from api.works.router import router as works_router
 
 
@@ -185,6 +186,7 @@ app.include_router(inquiry_router)
 app.include_router(inquiry_me_router)
 app.include_router(content_router)
 app.include_router(works_router)
+app.include_router(work_bundles_router)
 app.include_router(novelize_router)
 app.include_router(novelize_room_router)
 app.include_router(novelize_owner_router)
