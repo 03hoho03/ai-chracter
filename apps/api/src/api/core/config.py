@@ -1,5 +1,6 @@
 import json
 import uuid
+from collections.abc import Iterator
 from typing import Annotated, Literal, get_args
 
 from pydantic import Field, ValidationInfo, field_validator, model_validator
@@ -19,16 +20,35 @@ ClaudeEffort = Literal["low", "medium", "high", "xhigh", "max"]
 MemoryScopeLane = Literal["story", "character"]
 
 
+class _Hidden:
+    """설정 repr 에서 값 자리에 놓는 표시. 문자열을 두면 repr 이 따옴표를 붙여 실제 값처럼 읽힌다."""
+
+    def __repr__(self) -> str:
+        return "<hidden>"
+
+
+_HIDDEN = _Hidden()
+
+
 class Settings(BaseSettings):
     # 설정 검증 오류 메시지에 입력값을 싣지 않는다 — 비밀 설정(키·토큰)이 형식 오류로 기동 로그에 찍히지 않게.
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
-    # 비밀 필드는 `Field(repr=False)`로 repr에서 뺀다. 어떤 필드가 비밀인지는 이 파일에서
-    # `repr=False` 를 찾으면 나온다 — 개수·목록을 여기 적어 두면 필드를 더할 때 이 주석만 낡는다.
-    # repr에서 빼는 이유는 `monkeypatch.setattr(settings, "오타", ...)`가 내는
-    # `AttributeError(f"{target!r} has no attribute ...")` 메시지에 전 필드 repr이 실려 비밀이
-    # 평문으로 찍히기 때문이다. 값이 traceback이 아니라 **예외 메시지 자체**에 있어 pytest
-    # `--tb` 옵션으로는 못 막는다. 타입은 `str` 그대로다(`SecretStr` 전환은 별건).
+    # repr·str 은 필드 이름만 내고 값은 내지 않는다(아래 `__repr_args__`). 테스트 실패 출력이 이 객체의
+    # repr 을 통째로 싣는 경로가 있다 — `monkeypatch.setattr(settings, "오타", ...)`가 내는
+    # `AttributeError(f"{target!r} has no attribute ...")` 메시지, 단언 실패 표시. 값이 traceback 이 아니라
+    # **메시지 자체**에 있어 pytest `--tb` 옵션으로는 못 막고, 비밀로 표시하지 않은 공개 식별자·인프라 주소가
+    # 그 출력에 실려 로그·산출물에 남았다. 필드마다 비밀 여부를 고르면 새 필드를 더할 때마다 판단이 새므로
+    # 값을 한꺼번에 가린다. pydantic 의 `__repr__`·`__str__`·`__pretty__`·`__rich_repr__` 가 모두
+    # `__repr_args__` 를 거친다.
+    # 비밀 필드는 그와 별개로 `Field(repr=False)`로 이름까지 repr 에서 뺀다 — 위 재정의가 빠져도 비밀 값은
+    # 새지 않게 하는 이중 방어다. 어떤 필드가 비밀인지는 이 파일에서 `repr=False` 를 찾으면 나온다 —
+    # 개수·목록을 여기 적어 두면 필드를 더할 때 이 주석만 낡는다. 타입은 `str` 그대로다(`SecretStr` 전환은 별건).
+    def __repr_args__(self) -> Iterator[tuple[str, object]]:
+        for name, field in type(self).model_fields.items():
+            if field.repr:
+                yield name, _HIDDEN
+
     database_url: str = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/ai_character_chat",
         repr=False,
