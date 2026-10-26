@@ -6,8 +6,10 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, FiniteFloat, StringConstraints, field_validator, model_validator
 
+from api.chat.schemas import MyChatRoomListItem
 from api.content.author_macros import user_name_error
 from api.core.schema import CamelModel
+from api.db.models.content import NovelPermission
 from api.db.models.novel import (
     NovelContentType,
     NovelIllustrationPlacement,
@@ -378,6 +380,12 @@ class NovelDetailResponse(CamelModel):
     limits: NovelLimits
     created_at: datetime
     updated_at: datetime
+    # 권리 고정 시각과 그때의 원작 소설화 허락 사본(읽기 전용). 집필권은 첫 화 저장, 연재권은 첫 공개가 찍는다. 허락 사본이
+    # null 인데 시각이 있으면 그 허락을 알 수 없는 잠금이다(뒤늦게 채운 잠금이거나 그 순간 원작 행이 없었다).
+    writing_locked_at: datetime | None = None
+    writing_lock_permission: NovelPermission | None = None
+    serial_locked_at: datetime | None = None
+    serial_lock_permission: NovelPermission | None = None
     # 장 생성·재생성 확인에서 고를 수 있는 모델과 그 가격. 기본 모델(맨 앞)은 늘 있고, 상위 모델은 소설 상위 모델 허용이
     # 있을 때만 실린다. `prices` 의 장 가격은 기본 모델 값 그대로다(옛 화면이 읽는 칸). 아래 둘의 기본값은 이 필드를 모르는
     # 생성 타입·픽스처와의 호환용이고, 응답에는 항상 실린다.
@@ -1185,3 +1193,17 @@ class NovelOutlineChapterRequest(CamelModel):
 
     expected_cost: int
     model: ChatModelId = DEFAULT_CHAT_MODEL
+
+
+class NovelSourceRoom(MyChatRoomListItem):
+    """소설로 만들 수 있는 내 채팅방 하나. 방 칸은 내 채팅 목록과 같은 직렬화다(`id` 가 방 id)."""
+
+    # 이 방의 소설(방 하나에 소설 하나). 숨긴 소설은 방 칸을 비우므로 null 이다 — 그 방에서 새 소설을 만들 수 있다.
+    novel_id: uuid.UUID | None
+    # 채팅방 단건 응답의 같은 이름 칸과 같은 판정이다.
+    novel_creation_blocked: bool
+
+
+class NovelSourceListResponse(CamelModel):
+    items: list[NovelSourceRoom]
+    next_cursor: str | None
