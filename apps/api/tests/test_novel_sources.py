@@ -4,6 +4,8 @@
 여기서는 한 계정의 방 여럿을 한 번에 불러도 방마다 단건 응답과 같은 값인지를 본다(방 하나짜리 경우의 갈래는
 `test_novelize_permission.py` 가 단건과 목록을 짝으로 본다)."""
 
+import base64
+import json
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -194,6 +196,38 @@ async def test_pages_walk_every_room_once_in_the_chat_list_order(
 
     assert len(expected) == len(rooms)
     assert seen == expected
+
+
+def _forged_cursor(payload: bytes) -> str:
+    return base64.urlsafe_b64encode(payload).decode()
+
+
+@pytest.mark.parametrize(
+    "cursor",
+    [
+        pytest.param("@@@not-base64@@@", id="broken_base64"),
+        pytest.param(
+            _forged_cursor(json.dumps(["2026-01-01T00:00:00+00:00", str(uuid.uuid4())]).encode()),
+            id="wrong_element_count",
+        ),
+        pytest.param(
+            _forged_cursor(json.dumps(["2026-01-01T00:00:00", "2026-01-01T00:00:00", str(uuid.uuid4())]).encode()),
+            id="time_without_offset",
+        ),
+    ],
+)
+async def test_a_forged_cursor_is_rejected_with_422(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, cursor: str
+) -> None:
+    """서버가 내준 적 없는 커서는 모양이 어떻게 틀렸든 같은 422 와 커서 오류 코드다. 방이 하나 있어야 커서를 방의 정렬 키와
+    비교하는 데까지 간다. 깨지는 시나리오: 오프셋 없는 시각은 해석은 되지만 DB 의 시간대 있는 시각과 비교하다 터져 500 이
+    나간다."""
+    room = await _open_room(db_client, db_session, turns=1)
+    await _allow_novelize(db_session, monkeypatch, room.user_id)
+
+    resp = await db_client.get("/me/novel-sources", params={"cursor": cursor})
+
+    assert (resp.status_code, resp.json()["detail"]["code"]) == (422, "NOVEL_SOURCE_CURSOR_INVALID")
 
 
 async def test_owner_novel_response_carries_the_rights_lock_columns(
