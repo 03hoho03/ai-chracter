@@ -2011,9 +2011,11 @@ async def rename_chat_room(
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatRoomResponse:
     room = await _get_owned_room(db, room_id, user_id)
+    await _lock_room_for_write(db, room.id)
     room.name = payload.name
+    response = await _to_response(db, room)
     await db.commit()
-    return await _to_response(db, room)
+    return response
 
 
 @router.post("/{room_id}/reset", dependencies=[Depends(require_legal_consent)])
@@ -2026,6 +2028,7 @@ async def reset_chat_room(
 
     # 진행 중 턴이 있는 방이면 409 — 그 턴이 초기화된 방에 응답과 낡은 판정 결과를 쓴다(`chat/turn_lock.py`).
     async with hold_room_turn_lock(room.id):
+        await _lock_room_for_write(db, room.id)
         # 요약은 지운 대화에서 나왔으므로 함께 지운다. 기억 노트는 사용자가 적은 것이라 남긴다.
         await rewind_memory(db, room.id, None)
         await clear_previous_response(db, room.id)
@@ -2043,9 +2046,10 @@ async def reset_chat_room(
             await _seed_initial_stats(db, room, setup)
 
         await _insert_opening_message(db, room, setup)
+        response = await _to_response(db, room)
         await db.commit()
 
-    return await _to_response(db, room)
+    return response
 
 
 @router.post(
@@ -2065,13 +2069,15 @@ async def pin_latest_version(
     화면은 이 응답으로 방 캐시를 통째로 바꾸므로, 위로 불러 둔 깊이만큼 `messageLimit` 을 넘겨 불러 둔 메시지가
     잘리지 않게 한다."""
     room = await _get_owned_room(db, room_id, user_id)
+    await _lock_room_for_write(db, room.id)
     content = await db.get(Content, room.content_id)
     assert content is not None
     if content.current_published_version_id is not None:
         room.content_version_id = content.current_published_version_id
         await seed_missing_room_stats(db, ChatRoom.id == room.id)
+    response = await _to_response(db, room, message_limit=message_limit)
     await db.commit()
-    return await _to_response(db, room, message_limit=message_limit)
+    return response
 
 
 @router.post(
@@ -2129,6 +2135,7 @@ async def set_room_persona(
     room = await _get_owned_room(db, room_id, user_id)
     await lock_user_default_persona(db, user_id)
     persona = await get_owned_persona(db, payload.persona_id, user_id) if payload.persona_id is not None else None
+    await _lock_room_for_write(db, room.id)
     room.persona_id = payload.persona_id
     await db.commit()
     return RoomPersonaResponse(persona_id=room.persona_id, persona_name=persona.name if persona is not None else None)
@@ -2152,6 +2159,7 @@ async def set_room_model(
     model = payload.model or DEFAULT_CHAT_ROOM_MODEL
     if model != DEFAULT_CHAT_MODEL and not await has_chat_premium_access(db, user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "CHAT_MODEL_NOT_ALLOWED"})
+    await _lock_room_for_write(db, room.id)
     room.chat_model = None if model == DEFAULT_CHAT_MODEL else model
     await db.commit()
     return ChatRoomModelResponse(
@@ -2174,9 +2182,11 @@ async def acknowledge_version_upgrade(
     플래그를 끄지 않는다 — 배너를 노출한 뒤 FE가 이 엔드포인트를 호출해야 서버가
     `version_auto_upgraded`를 false로 되돌린다(이 확인 호출이 "봤는지"의 유일한 기준점)."""
     room = await _get_owned_room(db, room_id, user_id)
+    await _lock_room_for_write(db, room.id)
     room.version_auto_upgraded = False
+    response = await _to_response(db, room)
     await db.commit()
-    return await _to_response(db, room)
+    return response
 
 
 async def _memory_response(db: AsyncSession, room_id: uuid.UUID) -> ChatRoomMemoryResponse:
@@ -2363,11 +2373,15 @@ async def preview_chat_room_memory_fact_forget(
     return ChatRoomMemoryFactForgetPreview(episode_count=len(plan.episode_ids))
 
 
-async def _lock_room_for_note_write(db: AsyncSession, room_id: uuid.UUID) -> None:
-    """노트 저장·비우기의 쓰기 앞부분. 주인 확인과 쓰기 사이에 다른 요청이 방을 지우고 커밋하면 UPDATE 는 0행을
-    고치고 응답을 만들 방 행이 없어 500 이 난다. 쓰기 전에 방 행을 잠가(방 삭제의 첫 UPDATE 와 맞물리는 강도) 삭제가
-    먼저 커밋됐으면 404 로 끝낸다. 잠근 뒤에는 삭제가 이 요청의 커밋을 기다리므로, 호출부는 응답을 커밋 전에 만든다 —
-    커밋 뒤에 읽으면 기다리던 삭제가 그 사이 커밋돼 같은 500 이 난다."""
+async def _lock_room_for_write(db: AsyncSession, room_id: uuid.UUID) -> None:
+    """방을 고치는 라우트의 쓰기 앞부분. 주인 확인과 쓰기 사이에 다른 요청이 방을 지우고 커밋하면 UPDATE 는 0행을
+    고치고(ORM 은 그 불일치로 실패한다) 지워진 방에 넣는 행은 FK 위반이 되며, 응답을 만들 방 행도 없어 500 이 난다.
+    쓰기 전에 방 행을 잠가(방 삭제의 첫 UPDATE 와 맞물리는 강도) 삭제가 먼저 커밋됐으면 404 로 끝낸다. 잠근 뒤에는
+    삭제가 이 요청의 커밋을 기다리므로, 호출부는 응답을 커밋 전에 만든다 — 커밋 뒤에 읽으면 기다리던 삭제가 그 사이
+    커밋돼 같은 500 이 난다.
+
+    잠금은 각 라우트가 처음 방 행을 고치던 자리(그 UPDATE 가 잡던 것과 같은 행·같은 강도)에 둔다. 그래서 다른 행을
+    잠그는 순서는 바뀌지 않는다 — 대화 프로필 바꾸기는 프로필 규칙대로 유저 행을 먼저 잠근 뒤에 부른다."""
     locked = await db.scalar(select(ChatRoom.id).where(ChatRoom.id == room_id).with_for_update(key_share=True))
     if locked is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat room not found")
@@ -2383,7 +2397,7 @@ async def update_chat_room_memory_note(
     """노트는 사용자 한 사람만 쓰는 칸이라 버전 검사 없이 덮어쓴다. 요약 버전도 올리지 않는다 —
     올리면 노트를 저장할 때마다 열려 있던 요약 편집이 409가 된다."""
     await _get_owned_room(db, room_id, user_id)
-    await _lock_room_for_note_write(db, room_id)
+    await _lock_room_for_write(db, room_id)
     await db.execute(update(ChatRoom).where(ChatRoom.id == room_id).values(memory_note=payload.note))
     response = await _memory_response(db, room_id)
     await db.commit()
@@ -2399,7 +2413,7 @@ async def clear_chat_room_memory_note(
     """노트 비우기. 자기 데이터 삭제라 약관·처리방침 재동의 전에도 열려 있다(방·메시지·대화 프로필
     삭제와 같다). 저장과 같은 전체 응답을 돌려준다."""
     await _get_owned_room(db, room_id, user_id)
-    await _lock_room_for_note_write(db, room_id)
+    await _lock_room_for_write(db, room_id)
     await db.execute(update(ChatRoom).where(ChatRoom.id == room_id).values(memory_note=""))
     response = await _memory_response(db, room_id)
     await db.commit()
