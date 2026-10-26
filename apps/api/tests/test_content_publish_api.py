@@ -4241,3 +4241,137 @@ async def test_publish_and_reset_copy_the_scene_header_toggle_and_initial_scene(
     reset_resp = await db_client.post(f"/contents/{content_id}/draft/reset")
     assert reset_resp.status_code == 204
     assert await _draft_scene_header() == (True, "버려진 등대", "새벽")
+
+
+# --- 발행 요청 본문의 소설화 허락 ---
+#
+# 발행 요청은 본문 없이도 되고(옛 화면·재발행), 본문에 `novelPermission` 을 실으면 발행과 같은 트랜잭션에서 작품의 소설화
+# 허락으로 쓴다. 아직 거절하지는 않는다 — 발행 이력이 없는 작품을 본문 없이 발행하면 경고 로그 한 줄만 남겨, 화면이 그
+# 값을 싣기 시작한 뒤 그런 발행이 사라졌는지 셀 수 있게 한다.
+
+
+def _first_publish_without_permission_logs(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if "publish_first_without_novel_permission" in record.getMessage()
+    ]
+
+
+async def _stored_novel_permission(db_session: AsyncSession, content_id: uuid.UUID) -> str | None:
+    permission: str | None = await db_session.scalar(
+        sa.select(Content.novel_permission).where(Content.id == content_id)
+    )
+    return permission
+
+
+async def test_first_character_publish_saves_the_permission_from_the_body(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    """빨개지는 조건: 본문을 받지 않거나 받은 값을 쓰지 않으면 저장값이 기본값(허용 안 함)으로 남는다. 본문이 있는데도
+    경고를 남기면 로그 목록이 비지 않는다."""
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    assert content.novel_permission == "forbidden"
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        with caplog.at_level(logging.WARNING, logger="api.content.router"):
+            resp = await db_client.post(f"/contents/{content.id}/publish", json={"novelPermission": "public"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert await _stored_novel_permission(db_session, content.id) == "public"
+    assert _first_publish_without_permission_logs(caplog) == []
+
+
+async def test_first_story_publish_saves_the_permission_from_the_body(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """스토리 발행은 캐릭터와 다른 쓰기 함수를 탄다 — 한쪽에만 쓰면 이 테스트가 빨갛다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _, _, _, _, _ = await _make_publishable_story_draft(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish", json={"novelPermission": "private"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert await _stored_novel_permission(db_session, content.id) == "private"
+
+
+async def test_republish_keeps_the_permission_without_a_body_and_saves_one_that_comes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    """발행 이력이 있는 작품은 본문 없이 다시 발행해도 허락이 그대로이고 경고도 없다. 본문이 실려 오면 재발행에서도 쓴다.
+
+    빨개지는 조건: 본문이 없을 때 기본값으로 덮으면 둘째 단언이, 발행 이력을 보지 않고 경고하면 로그 단언이, 재발행에서
+    본문을 버리면 마지막 단언이 깨진다."""
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        first = await db_client.post(f"/contents/{content.id}/publish", json={"novelPermission": "private"})
+        assert first.status_code == 200
+        with caplog.at_level(logging.WARNING, logger="api.content.router"):
+            bare = await db_client.post(f"/contents/{content.id}/publish")
+        assert bare.status_code == 200
+        assert await _stored_novel_permission(db_session, content.id) == "private"
+        assert _first_publish_without_permission_logs(caplog) == []
+
+        changed = await db_client.post(f"/contents/{content.id}/publish", json={"novelPermission": "public"})
+    finally:
+        _clear_llm_override()
+
+    assert changed.status_code == 200
+    assert await _stored_novel_permission(db_session, content.id) == "public"
+
+
+async def test_first_publish_without_a_body_still_publishes_and_leaves_one_warning(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    """본문 없는 첫 발행(옛 화면)은 지금은 거절하지 않고 경고 한 줄을 남긴다. 로그에는 작품·회원 id 를 싣지 않는다."""
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        with caplog.at_level(logging.WARNING, logger="api.content.router"):
+            resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert await _stored_novel_permission(db_session, content.id) == "forbidden"
+    (warning,) = _first_publish_without_permission_logs(caplog)
+    assert str(content.id) not in warning and str(content.creator_user_id) not in warning
+
+
+async def test_the_first_publish_warning_comes_before_validation_and_screening(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """경고는 발행 검증·그림 심사보다 앞에서 남는다 — 나중에 이 자리에서 거절할 때 심사 원가가 나가지 않는 위치다.
+    필수 칸이 빈 초안은 검증에서 400 이 나므로, 경고가 검증 뒤에 있으면 목록이 비고 심사 호출 수도 0 이다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    _override_llm_client(fake)
+    try:
+        with caplog.at_level(logging.WARNING, logger="api.content.router"):
+            resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400 and "missingFields" in resp.json()["detail"]
+    assert fake.calls == 0
+    assert len(_first_publish_without_permission_logs(caplog)) == 1

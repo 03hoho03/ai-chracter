@@ -20,8 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
-from api.content.router import CREATOR_CONTENT_PAGE_SIZE, CREATOR_CONTENT_QUERY_MAX_LENGTH
-from api.core.s3 import build_animated_thumbnail_key, build_thumbnail_key, generate_presigned_get_url
+from api.content.router import CREATOR_CONTENT_PAGE_SIZE, CREATOR_CONTENT_QUERY_MAX_LENGTH, sign_thumbnail_url
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.content import Content, ContentType, ContentVersion, ContentVisibility, ModerationStatus
 from api.db.models.media import Asset
@@ -191,16 +190,7 @@ async def _content_items(db: AsyncSession, content_ids: list[uuid.UUID]) -> dict
         if detail is None:
             continue
         asset = assets.get(detail.thumbnail_asset_id) if detail.thumbnail_asset_id is not None else None
-        thumbnail_url = None
-        if asset is not None:
-            # 목록 칸은 썸네일 변형으로 서명한다(`content/router.py` 의 `_resolve_thumbnail_url` 과 같은 규칙). 서명은 네트워크
-            # 없이 로컬에서 한다.
-            key = (
-                build_animated_thumbnail_key(asset.storage_key)
-                if asset.animated_variants_ready
-                else build_thumbnail_key(asset.storage_key)
-            )
-            thumbnail_url = generate_presigned_get_url(key)
+        thumbnail_url = sign_thumbnail_url(asset) if asset is not None else None
         items[content.id] = ContentWorkItem(
             kind="character" if content.type == ContentType.CHARACTER else "story",
             id=content.id,
