@@ -8894,7 +8894,8 @@ export interface components {
         /**
          * AdminPromptDraftChangesResponse
          * @description `GET /admin/prompt-sets/{lane}/draft/changes` — 게시하면 판이 어떻게 갈릴지 미리 본다. `base_set_id`·`draft_hash` 를
-         *     게시 요청에 그대로 돌려보내면, 그 사이 다른 게시나 초안 저장이 끼어들었을 때 게시가 409 로 멈춘다.
+         *     게시 요청에 그대로 돌려보내면, 그 사이 다른 게시나 초안 저장이 끼어들었을 때 게시가 409 로 멈춘다. `rating_drift` 는 게시할
+         *     등급 규칙과 다른 레인 활성판의 비교다 — 게시 전에 갈림을 확인하는 자리다(게시 응답의 같은 칸은 이미 게시된 뒤다).
          */
         AdminPromptDraftChangesResponse: {
             /** Basesetid */
@@ -8905,6 +8906,8 @@ export interface components {
             draftHash: string;
             /** Sections */
             sections: components["schemas"]["AdminPromptSectionChange"][];
+            /** Ratingdrift */
+            ratingDrift?: components["schemas"]["AdminPromptRatingDrift"][];
         };
         /**
          * AdminPromptDraftResponse
@@ -8918,6 +8921,11 @@ export interface components {
          *       같지만 입력이 다르다 — 게시용은 얼린 소설 행을 활성판 값으로 갈아 끼운 내용이라 둘을 섞으면 안 된다.
          *     - `allowed_placeholders`: 이 체인이 편집할 수 있는 채널의 (채널, 슬롯)마다 쓸 수 있는 자리표시자. 화면이 따로 사본을 두면
          *       서버와 어긋나므로 이 값만 본다.
+         *
+         *     복원 응답에서만 채우는 칸(조회·저장은 빈 목록):
+         *     - `rating_drift`: 복원한 초안의 등급 규칙과 다른 레인 활성판의 비교(`AdminPromptRatingDrift`). 통째·섹션 복원.
+         *     - `dropped_channels`·`filled_channels`: 통째 복원이 그 체인에 없는 채널이라 버린 채널과, 원본 판에 없어 그 체인 활성판에서
+         *       채운 채널. 채널 집합이 지금과 다른 옛 판을 복원해도 게시 검증의 슬롯 집합 검사에 막히지 않게 하려는 것이다.
          */
         AdminPromptDraftResponse: {
             /** Id */
@@ -8934,6 +8942,12 @@ export interface components {
             savedDraftHash: string | null;
             /** Allowedplaceholders */
             allowedPlaceholders: components["schemas"]["AdminPromptPlaceholderHint"][];
+            /** Ratingdrift */
+            ratingDrift?: components["schemas"]["AdminPromptRatingDrift"][];
+            /** Droppedchannels */
+            droppedChannels?: string[];
+            /** Filledchannels */
+            filledChannels?: string[];
         };
         /**
          * AdminPromptDraftUpsertRequest
@@ -9012,6 +9026,40 @@ export interface components {
             baseSetId?: string | null;
             /** Drafthash */
             draftHash?: string | null;
+        };
+        /**
+         * AdminPromptRatingDrift
+         * @description 채팅 레인과 소설 레인의 등급 규칙이 갈렸는지 알리는 한 항목(막지 않는다). 소설 호출의 등급 규칙은 채팅 레인 값에서 옮겨 온
+         *     사본이라, 한쪽만 고치면 두 레인의 수위 규칙이 조용히 달라진다 — 게시·복원하는 쪽의 렌더(`this_md5`)와 같은 원작 종류의 다른
+         *     레인 활성판 렌더(`other_md5`)를 견준다. md5 는 렌더한 글의 것이고, 행이 없거나 렌더가 비면 null 이다.
+         */
+        AdminPromptRatingDrift: {
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "story" | "character";
+            /**
+             * Otherlane
+             * @enum {string}
+             */
+            otherLane: "story" | "character" | "publish_filter" | "novel" | "novel_screen";
+            /**
+             * Othermodel
+             * @enum {string}
+             */
+            otherModel: "gemini" | "sonnet" | "opus" | "haiku";
+            /**
+             * Othersetid
+             * Format: uuid
+             */
+            otherSetId: string;
+            /** Thismd5 */
+            thisMd5: string | null;
+            /** Othermd5 */
+            otherMd5: string | null;
+            /** Differs */
+            differs: boolean;
         };
         /** AdminPromptRouteAllowedPair */
         AdminPromptRouteAllowedPair: {
@@ -9426,7 +9474,8 @@ export interface components {
          * @description `GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문. 게시 응답도 이 꼴이다.
          *
          *     `semver`·`section_semvers` 는 판이 없는 세트면 null·빈 목록이다. `removed_sections` 는 게시 응답에서만 채운다(기준판에
-         *     있었는데 이번 게시에 없는 섹션) — 상세 조회는 기준판과 다시 견주지 않아 늘 빈 목록이다.
+         *     있었는데 이번 게시에 없는 섹션) — 상세 조회는 기준판과 다시 견주지 않아 늘 빈 목록이다. `rating_drift` 도 게시 응답에서만
+         *     채운다(게시한 등급 규칙과 다른 레인 활성판의 비교).
          */
         AdminPromptSetDetailResponse: {
             /**
@@ -9466,6 +9515,8 @@ export interface components {
             sectionSemvers?: components["schemas"]["AdminPromptSectionSemver"][];
             /** Removedsections */
             removedSections?: string[];
+            /** Ratingdrift */
+            ratingDrift?: components["schemas"]["AdminPromptRatingDrift"][];
         };
         /** AdminPromptSetListResponse */
         AdminPromptSetListResponse: {

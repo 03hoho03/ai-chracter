@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import uuid
 from collections.abc import Callable, Mapping
@@ -37,6 +38,7 @@ from api.admin.schemas import (
     AdminPromptPreviewItem,
     AdminPromptPreviewResponse,
     AdminPromptPublishRequest,
+    AdminPromptRatingDrift,
     AdminPromptSectionChange,
     AdminPromptSectionItem,
     AdminPromptSectionRestoreRequest,
@@ -47,6 +49,7 @@ from api.admin.schemas import (
     AdminPromptSetSummary,
 )
 from api.chat.prompt_builder import (
+    PromptSetNotFoundError,
     ALLOWED_PLACEHOLDERS,
     MediaCellCandidate,
     PromptLane,
@@ -86,7 +89,9 @@ from api.db.models.story import StatDef, StatRule, StoryPromptTemplate
 from api.db.session import get_db_session
 from api.llm.chat_models import PromptSetModelId, parse_prompt_set_model_id
 from api.novel_public.screening import NovelScreenItem, build_novel_screen_prompt
+from api.novelize.inputs import load_novel_label_set
 from api.novelize.prompts import (
+    RATING_CHANNEL,
     NovelizePrompt,
     build_novelize_boundary_prompt,
     build_novelize_chapter_prompt,
@@ -95,6 +100,7 @@ from api.novelize.prompts import (
     build_novelize_revise_blocks_prompt,
     build_novelize_revise_prompt,
     build_novelize_revise_recheck_prompt,
+    render_rating,
 )
 
 router = APIRouter(tags=["admin"])
@@ -126,9 +132,10 @@ _NOVELIZE_CHANNELS: frozenset[str] = frozenset(_FROZEN_NOVELIZE_ROWS)
 
 # `novel` 레인(소설 문안). 경계 제안·문단 수정은 얼린 행과 같은 슬롯이고, 화 생성은 한 번에 여러 화를 쓰게 되며 인물
 # 메모·지난 화 요약·화 수 지시 슬롯이 늘었고, 구성 흐름 원고의 장면 계획·연속성 참고 슬롯이 더해졌다. 구성 흐름의 전체
-# 구성안·장면 구성안 두 채널은 구성안 문안 리비전이 세 체인에 심었다. 여러 문단 수정과 그 묶음 재검사 두 채널은 Gemini
-# 체인에만 있다(옛 문단 수정처럼 늘 Gemini 로 부른다) — 얼린 행 집합과 다른 새 집합이라 채팅 레인 게시 검증은 그대로다.
-# 스토리·캐릭터 원작이 같은 행을 `scope="both"` 로 함께 쓴다.
+# 구성안·장면 구성안 두 채널은 구성안 문안 리비전이 세 체인에 심었다. 여러 문단 수정과 그 묶음 재검사 두 채널도 있다 — 얼린
+# 행 집합과 다른 새 집합이라 채팅 레인 게시 검증은 그대로다. 소설 채널은 스토리·캐릭터 원작이 같은 행을 `scope="both"` 로 함께
+# 쓴다. 등급 규칙 채널 `novelize_rating` 만 원작 종류마다 scope `story`·`character` 한 행씩이다 — 소설 호출이 붙이는 등급 규칙을
+# 채팅 레인에서 빌리지 않고 소설 레인에서 따로 손질하게 하되, 원작 종류마다 다른 채팅 등급 규칙에서 옮겨 온 값이라 두 행이다.
 _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
     "novelize_boundary": _FROZEN_NOVELIZE_ROWS["novelize_boundary"],
     "novelize_chapter": frozenset(
@@ -191,6 +198,7 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
             )
         }
     ),
+    "novelize_rating": frozenset({("story", "rule_rating", ""), ("character", "rule_rating", "")}),
 }
 
 # 코드가 레인별로 아는 (channel, scope, slot, variant)
@@ -211,7 +219,8 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
 # `memory_impression` 3행을 더한 79/52/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
 # 9·문단 수정 6 의 19행이었고(story·character 의 소설화 16행은 그대로 얼려 둔다), 구성안 문안 리비전 `b389c2317149` 가 화 생성에
 # 2행·전체 구성안 9행·장면 구성안 9행을 더해 39행이고, 여러 문단 수정 문안 리비전 `174f78b92e5c` 가 Gemini 체인에만 여러 문단
-# 수정 6행·묶음 재검사 4행을 더해 Gemini 체인은 49행이다(Claude 두 체인은 그대로).
+# 수정 6행·묶음 재검사 4행을 더해 Gemini 체인은 49행이고, Claude 체인 채널 리비전 `fe3df6f8e4d5` 가 Claude 두 체인에 같은 네 채널
+# 20행을 더해 세 체인이 같은 49행이 되었고, 등급 규칙 리비전 `e4df46a80bfa` 가 세 체인에 `novelize_rating` 2행을 더해 51행이다.
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
 # 달라 두 파일에 따로 둔다(시드 하나는 상수 데이터, 이건 임의 입력을 거부하는 게이트).
@@ -460,10 +469,11 @@ _JUDGMENT_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
 }
 
 # Gemini 가 아닌 체인은 그 모델이 쓸 수 있는 채널만 갖는다.
-# - Claude 세트(sonnet·opus 체인): 채팅 레인은 생성의 `system`·`generation` 과 그 레인의 판정·요약 채널, `novel` 레인은 화
-#   생성 `novelize_chapter` 와 구성 흐름의 구성안 두 채널이다(모두 사용자가 고른 모델로 낸다 — 경계 제안·문단 수정은 늘
-#   Gemini 체인). 판정·요약 채널은 판정 모델을 그 모델로 바꿨을 때
-#   읽는 문안이다(모델 배정 표의 행이 고른 체인, 행이 없으면 판정·요약 모델 설정 — 기본은 Gemini).
+# - Claude 세트(sonnet·opus 체인): 채팅 레인은 생성의 `system`·`generation` 과 그 레인의 판정·요약 채널이다. 판정·요약 채널은
+#   판정 모델을 그 모델로 바꿨을 때 읽는 문안이다(모델 배정 표의 행이 고른 체인, 행이 없으면 판정·요약 모델 설정 — 기본은
+#   Gemini). `novel` 레인은 Gemini 표의 채널 전부다 — 화 생성·구성안 둘은 사용자가 고른 모델의 체인을 읽고, 지금 늘 Gemini 체인으로
+#   부르는 경계 제안·문단 수정·여러 문단 수정·묶음 재검사도 고른 모델로 부를 수 있게 그 체인에 문안을 둔다. 화 생성·구성안이
+#   붙이는 등급 규칙(`novelize_rating`)도 그 체인 세트에서 읽는다.
 # - 판정 전용 세트(haiku 체인): 그 레인의 판정·요약 채널만. 그 id 로는 글을 쓰지 않는다.
 # R-1 기대 집합은 같은 레인 Gemini 표에서 이 채널만 남긴 것이다(표를 따로 적지 않는다 — 슬롯이 늘면 체인이 함께 따라온다).
 # 그래서 **판정·요약 슬롯을 더하거나 바꾸는 마이그레이션은 Gemini 체인뿐 아니라 Claude 체인(story·character × sonnet·opus)과
@@ -474,7 +484,7 @@ _CLAUDE_SET_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
     "story": frozenset({"system", "generation"}) | _JUDGMENT_CHANNELS_BY_LANE["story"],
     "character": frozenset({"system", "generation"}) | _JUDGMENT_CHANNELS_BY_LANE["character"],
     "publish_filter": frozenset(),
-    "novel": frozenset({"novelize_chapter", "novelize_outline", "novelize_episode_outline"}),
+    "novel": frozenset(_NOVEL_LANE_ROWS),
     "novel_screen": frozenset(),
 }
 
@@ -543,7 +553,8 @@ _REQUIRED_VARIANT_SLOTS_BY_LANE: dict[PromptLane, dict[tuple[str, str, str], fro
 # 레인마다 실제로 읽는 라벨만 검사한다. `ast`로 함수별
 # 라벨 사용을 전수 추출해 도출했다: story={user,story_assistant,story_example} /
 # character={user,character_assistant} / publish_filter=없음(발행 심사는 이미지 목록만 싣고 대화 줄을
-# 조립하지 않는다) / novel=없음(소설 호출은 원문 줄 라벨을 원작 종류의 채팅 Gemini 세트에서 읽는다) / novel_screen=없음
+# 조립하지 않는다) / novel={user,story_assistant,character_assistant}(소설 호출은 원문 줄 라벨을 소설 레인 세트에서 읽는다 —
+# 스토리 원작은 진행자, 캐릭터 원작은 캐릭터 라벨. 읽는 것은 Gemini 체인 세트뿐이지만 세 체인이 같은 값을 갖게 함께 검사한다) / novel_screen=없음
 # (텍스트 심사는 공개할 글만 싣고 대화 줄을 조립하지 않는다). 헤더 컬럼 4개는
 # 레인과 무관하게 그대로 남는다.
 _LABEL_FIELDS_BY_LANE: dict[PromptLane, tuple[tuple[str, str], ...]] = {
@@ -557,7 +568,11 @@ _LABEL_FIELDS_BY_LANE: dict[PromptLane, tuple[tuple[str, str], ...]] = {
         ("characterAssistantLabel", "character_assistant_label"),
     ),
     "publish_filter": (),
-    "novel": (),
+    "novel": (
+        ("userLabel", "user_label"),
+        ("storyAssistantLabel", "story_assistant_label"),
+        ("characterAssistantLabel", "character_assistant_label"),
+    ),
     "novel_screen": (),
 }
 
@@ -749,7 +764,14 @@ def _allowed_placeholder_hints(lane: PromptLane, model: PromptSetModelId) -> lis
 
 
 async def _draft_response(
-    db: AsyncSession, *, lane: PromptLane, model: PromptSetModelId, draft: PromptSet | None
+    db: AsyncSession,
+    *,
+    lane: PromptLane,
+    model: PromptSetModelId,
+    draft: PromptSet | None,
+    rating_drift: list[AdminPromptRatingDrift] | None = None,
+    dropped_channels: list[str] | None = None,
+    filled_channels: list[str] | None = None,
 ) -> AdminPromptDraftResponse:
     """초안 응답을 만드는 유일한 자리 — 조회·저장·통째 복원·섹션 복원이 모두 여기를 거쳐 저장된 초안 해시와 허용 자리표시자
     힌트를 빠뜨리는 응답이 생기지 않게 한다. 초안 행이 없으면 그 체인의 활성 세트를 보여 준다(저장하지 않는다)."""
@@ -765,7 +787,63 @@ async def _draft_response(
         sections=[_to_section_item(s) for s in _visible_sections(lane, model, sections)],
         saved_draft_hash=await _saved_draft_hash(db, draft),
         allowed_placeholders=_allowed_placeholder_hints(lane, model),
+        rating_drift=rating_drift or [],
+        dropped_channels=dropped_channels or [],
+        filled_channels=filled_channels or [],
     )
+
+
+_CHAT_RATING_CHANNEL = "system"
+_RATING_NOVEL_MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus")
+
+
+def _rating_md5(sections: list[PromptSection], *, channel: str, scope: str) -> str | None:
+    rendered = render_rating(sections, channel=channel, scope=scope)
+    return hashlib.md5(rendered.encode()).hexdigest() if rendered.strip() else None
+
+
+async def rating_drift(
+    db: AsyncSession, *, lane: PromptLane, model: PromptSetModelId, sections: list[PromptSection]
+) -> list[AdminPromptRatingDrift]:
+    """`sections`(게시하려는·복원한 그 체인의 섹션)의 등급 규칙을 같은 원작 종류의 다른 레인 활성판과 견준다. 막지 않고 알리기만
+    한다 — 소설 등급 규칙은 채팅 값에서 옮겨 온 사본이라 한쪽만 고치면 두 레인의 수위 규칙이 조용히 갈린다.
+
+    - 채팅 (story·character, gemini): 그 레인 scope 의 `system/rule_rating` 렌더 대 소설 세 체인 활성의 `novelize_rating` 같은
+      scope 렌더.
+    - 소설 (novel, 아무 체인): scope story 렌더 대 (story, gemini) 활성, scope character 렌더 대 (character, gemini) 활성.
+    - 그 밖은 빈 목록이다. Claude 채팅 체인은 견주지 않는다 — 소설 등급 규칙의 원본은 채팅 Gemini 체인이다. 스토리와 캐릭터의
+      등급 규칙끼리도 견주지 않는다(원작 종류마다 다른 규칙일 수 있다).
+    렌더는 소설 빌더가 지시문 뒤에 붙이는 글과 같은 함수(`render_rating`)다."""
+    pairs: list[tuple[Literal["story", "character"], PromptLane, PromptSetModelId, str, str]] = []
+    if lane == "story" and model == "gemini":
+        pairs = [("story", "novel", other, _CHAT_RATING_CHANNEL, RATING_CHANNEL) for other in _RATING_NOVEL_MODELS]
+    elif lane == "character" and model == "gemini":
+        pairs = [("character", "novel", other, _CHAT_RATING_CHANNEL, RATING_CHANNEL) for other in _RATING_NOVEL_MODELS]
+    elif lane == "novel":
+        pairs = [
+            ("story", "story", "gemini", RATING_CHANNEL, _CHAT_RATING_CHANNEL),
+            ("character", "character", "gemini", RATING_CHANNEL, _CHAT_RATING_CHANNEL),
+        ]
+    items: list[AdminPromptRatingDrift] = []
+    for scope, other_lane, other_model, this_channel, other_channel in pairs:
+        try:
+            other_set, other_sections = await load_active_prompt_set(db, lane=other_lane, model=other_model)
+        except PromptSetNotFoundError:
+            continue
+        this_md5 = _rating_md5(sections, channel=this_channel, scope=scope)
+        other_md5 = _rating_md5(other_sections, channel=other_channel, scope=scope)
+        items.append(
+            AdminPromptRatingDrift(
+                scope=scope,
+                other_lane=other_lane,
+                other_model=other_model,
+                other_set_id=other_set.id,
+                this_md5=this_md5,
+                other_md5=other_md5,
+                differs=this_md5 != other_md5,
+            )
+        )
+    return items
 
 
 def _draft_changed() -> HTTPException:
@@ -1103,13 +1181,12 @@ async def preview_prompt_draft(
     else:
         prompt_set, sections = await load_active_prompt_set(db, lane=lane, model=model)
 
-    # 소설 호출은 원문 줄 라벨과 등급 규칙을 원작 종류의 채팅 Gemini 세트에서 읽는다 — 미리보기도 실호출과 같은 세트로.
-    chat_sets = (
-        {content: await load_active_prompt_set(db, lane=content) for content in _NOVEL_CONTENT_LANES}
-        if lane == "novel"
-        else None
-    )
-    items = _build_preview_items(prompt_set, sections, lane=lane, model=model, chat_sets=chat_sets)
+    # 소설 호출은 원문 줄 라벨을 소설 레인 Gemini 체인 세트에서 읽는다 — 미리보기도 실호출과 같은 세트로(Gemini 초안이면 그 초안의
+    # 라벨을 보여 준다).
+    label_set = None
+    if lane == "novel":
+        label_set = prompt_set if model == "gemini" else await load_novel_label_set(db)
+    items = _build_preview_items(prompt_set, sections, lane=lane, model=model, label_set=label_set)
     return AdminPromptPreviewResponse(items=items)
 
 
@@ -1126,7 +1203,8 @@ async def get_prompt_draft_changes(
     draft = await _get_draft(db, lane, model)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
-    contents = section_contents(draft, await _sections_to_publish(db, draft, lane=lane, model=model))
+    to_publish = await _sections_to_publish(db, draft, lane=lane, model=model)
+    contents = section_contents(draft, to_publish)
     base = await load_base(db, lane, model)
     changes = (
         diff_sections(contents, None)
@@ -1149,6 +1227,7 @@ async def get_prompt_draft_changes(
             )
             for channel, change in sorted(changes.items())
         ],
+        rating_drift=await rating_drift(db, lane=lane, model=model, sections=to_publish),
     )
 
 
@@ -1259,6 +1338,7 @@ async def publish_prompt_set(
             for channel, (number, level) in sorted(plan.sections.items())
         ],
         removed_sections=plan.removed,
+        rating_drift=await rating_drift(db, lane=lane, model=model, sections=sections),
     )
 
 
@@ -1297,7 +1377,19 @@ async def restore_prompt_set(
         )
     source_sections = await _sections_of(db, source.id)
 
-    fields = [_section_fields(s) for s in source_sections]
+    # 그 체인이 지금 갖는 채널 집합으로 맞춘다 — 채널이 늘거나 준 뒤의 옛 판을 그대로 옮기면 초안 게시가 슬롯 집합 검사(R-1)에
+    # "누락"·"잉여"로 막히고, 화면에는 채널을 지우는 손이 없다. 남는 채널은 버리고 빠진 채널은 그 체인 활성판에서 채운다.
+    expected = _expected_slots(lane, model)
+    source_channels = {s.channel for s in source_sections}
+    dropped = sorted(source_channels - set(expected))
+    missing = sorted(set(expected) - source_channels)
+    fields = [_section_fields(s) for s in source_sections if s.channel in expected]
+    if missing:
+        _, active_sections = await load_active_prompt_set(db, lane=lane, model=model)
+        fields += [_section_fields(s) for s in active_sections if s.channel in missing]
+    # 채팅 Gemini 체인의 얼린 소설 채널은 어차피 저장 때 활성판 값으로 갈아 끼우므로 채운 채널로 알리지 않는다.
+    hidden = _NOVELIZE_CHANNELS if _freezes_novel_rows(lane, model) else frozenset()
+    filled = [channel for channel in missing if channel not in hidden]
     draft = await _replace_draft_content(
         db,
         lane=lane,
@@ -1307,7 +1399,15 @@ async def restore_prompt_set(
         check_base_hash=body is not None and "base_draft_hash" in body.model_fields_set,
         base_draft_hash=body.base_draft_hash if body is not None else None,
     )
-    return await _draft_response(db, lane=lane, model=model, draft=draft)
+    return await _draft_response(
+        db,
+        lane=lane,
+        model=model,
+        draft=draft,
+        rating_drift=await rating_drift(db, lane=lane, model=model, sections=await _sections_of(db, draft.id)),
+        dropped_channels=dropped,
+        filled_channels=filled,
+    )
 
 
 @router.post("/admin/prompt-sets/{id}/sections/{channel}/restore")
@@ -1387,7 +1487,13 @@ async def restore_prompt_section(
             _section_fields(s) for s in source_rows
         ]
     saved = await _replace_draft_content(db, lane=lane, model=model, labels=labels, sections=fields)
-    return await _draft_response(db, lane=lane, model=model, draft=saved)
+    return await _draft_response(
+        db,
+        lane=lane,
+        model=model,
+        draft=saved,
+        rating_drift=await rating_drift(db, lane=lane, model=model, sections=await _sections_of(db, saved.id)),
+    )
 
 
 @router.get("/admin/prompt-sets/{id}")
@@ -1668,11 +1774,10 @@ _SAMPLE_NOVELIZE_SCENE_PLAN = "[샘플] 1. 비 오는 정류장에서 다시 만
 _SAMPLE_BLOCK_EDIT_LINES = "[1] [샘플] 첫 문단.\n\n[2] [샘플] 둘째 문단.\n\n[3] [샘플] 셋째 문단."
 _SAMPLE_NOVELIZE_CONTEXT_LINES = "[턴 1] {assistant}: [샘플] 지난번 일은 잊어."
 
-# 소설 원작의 종류 = 라벨·등급 규칙을 읽을 채팅 레인.
+# 소설 원작의 종류 = 등급 규칙 행의 scope·원문 줄 라벨을 고르는 축.
 _NovelContentLane = Literal["story", "character"]
 _NOVEL_CONTENT_LANES: tuple[_NovelContentLane, ...] = ("story", "character")
 _NOVEL_CONTENT_LABELS: dict[_NovelContentLane, str] = {"story": "스토리", "character": "캐릭터"}
-_ChatSets = Mapping[_NovelContentLane, tuple[PromptSet, list[PromptSection]]]
 
 
 def _novelize_preview_item(channel: str, label: str, build: Callable[[], NovelizePrompt]) -> AdminPromptPreviewItem:
@@ -1687,61 +1792,47 @@ def _novelize_preview_item(channel: str, label: str, build: Callable[[], Noveliz
     return AdminPromptPreviewItem(channel=channel, label=label, text=text)
 
 
-def _novel_preview_items(
-    sections: list[PromptSection],
-    *,
-    model: PromptSetModelId,
-    chat_sets: _ChatSets,
-) -> list[AdminPromptPreviewItem]:
-    """`novel` 레인. 원작 종류(스토리·캐릭터)마다 그 채팅 Gemini 세트의 라벨·등급 규칙으로 렌더한다. Claude 체인은 화
-    생성과 구성안 두 호출만 그 세트를 읽어 그 항목만이다. 실호출은 지시문(뒤에 등급 규칙)과 본문을 따로 보내지만 미리보기는 그 순서대로 이어
-    보여 준다."""
+def _novel_preview_items(sections: list[PromptSection], *, label_set: PromptSet) -> list[AdminPromptPreviewItem]:
+    """`novel` 레인. 원작 종류(스토리·캐릭터)마다 이 세트의 등급 규칙 행(scope story·character)과 `label_set`(소설 레인 Gemini 체인
+    세트 — Gemini 초안이면 그 초안 자신)의 라벨로 일곱 채널을 렌더한다. 세 체인 모두 일곱 채널을 갖는다. 실호출은 지시문(뒤에 등급
+    규칙)과 본문을 따로 보내지만 미리보기는 그 순서대로 이어 보여 준다."""
     items: list[AdminPromptPreviewItem] = []
     for content in _NOVEL_CONTENT_LANES:
-        chat_set, chat_sections = chat_sets[content]
-        items.extend(
-            _novel_content_preview_items(
-                sections, model=model, content=content, chat_set=chat_set, chat_sections=chat_sections
-            )
-        )
+        items.extend(_novel_content_preview_items(sections, content=content, label_set=label_set))
     return items
 
 
 def _novel_content_preview_items(
     sections: list[PromptSection],
     *,
-    model: PromptSetModelId,
     content: _NovelContentLane,
-    chat_set: PromptSet,
-    chat_sections: list[PromptSection],
+    label_set: PromptSet,
 ) -> list[AdminPromptPreviewItem]:
     items: list[AdminPromptPreviewItem] = []
     is_story_chat = content == "story"
     suffix = _NOVEL_CONTENT_LABELS[content]
-    assistant = chat_set.story_assistant_label if is_story_chat else chat_set.character_assistant_label
-    turn_lines = _SAMPLE_NOVELIZE_TURN_LINES.format(user=chat_set.user_label, assistant=assistant)
-    if model == "gemini":
-        items.append(
-            _novelize_preview_item(
-                "novelize_boundary",
-                f"novelize_boundary · {suffix}",
-                lambda: build_novelize_boundary_prompt(
-                    chat_set=chat_set,
-                    sections=sections,
-                    is_story_chat=is_story_chat,
-                    max_turns=2,
-                    user_name="[샘플] 하늘",
-                    turn_lines=turn_lines,
-                ),
-            )
+    assistant = label_set.story_assistant_label if is_story_chat else label_set.character_assistant_label
+    turn_lines = _SAMPLE_NOVELIZE_TURN_LINES.format(user=label_set.user_label, assistant=assistant)
+    items.append(
+        _novelize_preview_item(
+            "novelize_boundary",
+            f"novelize_boundary · {suffix}",
+            lambda: build_novelize_boundary_prompt(
+                label_set=label_set,
+                sections=sections,
+                is_story_chat=is_story_chat,
+                max_turns=2,
+                user_name="[샘플] 하늘",
+                turn_lines=turn_lines,
+            ),
         )
+    )
     items.append(
         _novelize_preview_item(
             "novelize_chapter",
             f"novelize_chapter · {suffix}",
             lambda: build_novelize_chapter_prompt(
-                chat_set=chat_set,
-                chat_sections=chat_sections,
+                label_set=label_set,
                 sections=sections,
                 is_story_chat=is_story_chat,
                 work_setting="[샘플] 작품 설정",
@@ -1763,8 +1854,7 @@ def _novel_content_preview_items(
             "novelize_outline",
             f"novelize_outline · {suffix}",
             lambda: build_novelize_outline_prompt(
-                chat_set=chat_set,
-                chat_sections=chat_sections,
+                label_set=label_set,
                 sections=sections,
                 is_story_chat=is_story_chat,
                 work_setting="[샘플] 작품 설정",
@@ -1784,8 +1874,7 @@ def _novel_content_preview_items(
             "novelize_episode_outline",
             f"novelize_episode_outline · {suffix}",
             lambda: build_novelize_episode_outline_prompt(
-                chat_set=chat_set,
-                chat_sections=chat_sections,
+                label_set=label_set,
                 sections=sections,
                 is_story_chat=is_story_chat,
                 work_setting="[샘플] 작품 설정",
@@ -1799,53 +1888,50 @@ def _novel_content_preview_items(
             ),
         )
     )
-    if model == "gemini":
-        items.append(
-            _novelize_preview_item(
-                "novelize_revise",
-                f"novelize_revise · {suffix}",
-                lambda: build_novelize_revise_prompt(
-                    chat_sections=chat_sections,
-                    sections=sections,
-                    is_story_chat=is_story_chat,
-                    work_setting="[샘플] 작품 설정",
-                    setting_notes="[샘플] 설정 노트",
-                    paragraphs=_SAMPLE_NOVELIZE_PARAGRAPHS,
-                    first_index=1,
-                    last_index=1,
-                    user_request="[샘플] 더 긴장감 있게",
-                ),
-            )
+    items.append(
+        _novelize_preview_item(
+            "novelize_revise",
+            f"novelize_revise · {suffix}",
+            lambda: build_novelize_revise_prompt(
+                sections=sections,
+                is_story_chat=is_story_chat,
+                work_setting="[샘플] 작품 설정",
+                setting_notes="[샘플] 설정 노트",
+                paragraphs=_SAMPLE_NOVELIZE_PARAGRAPHS,
+                first_index=1,
+                last_index=1,
+                user_request="[샘플] 더 긴장감 있게",
+            ),
         )
-        items.append(
-            _novelize_preview_item(
-                "novelize_revise_blocks",
-                f"novelize_revise_blocks · {suffix}",
-                lambda: build_novelize_revise_blocks_prompt(
-                    chat_sections=chat_sections,
-                    sections=sections,
-                    is_story_chat=is_story_chat,
-                    work_setting="[샘플] 작품 설정",
-                    setting_notes="[샘플] 설정 노트",
-                    paragraph_lines=_SAMPLE_BLOCK_EDIT_LINES,
-                    target_labels=[1, 3],
-                    user_request="[샘플] 더 긴장감 있게",
-                ),
-            )
+    )
+    items.append(
+        _novelize_preview_item(
+            "novelize_revise_blocks",
+            f"novelize_revise_blocks · {suffix}",
+            lambda: build_novelize_revise_blocks_prompt(
+                sections=sections,
+                is_story_chat=is_story_chat,
+                work_setting="[샘플] 작품 설정",
+                setting_notes="[샘플] 설정 노트",
+                paragraph_lines=_SAMPLE_BLOCK_EDIT_LINES,
+                target_labels=[1, 3],
+                user_request="[샘플] 더 긴장감 있게",
+            ),
         )
-        items.append(
-            _novelize_preview_item(
-                "novelize_revise_recheck",
-                f"novelize_revise_recheck · {suffix}",
-                lambda: build_novelize_revise_recheck_prompt(
-                    sections=sections,
-                    is_story_chat=is_story_chat,
-                    edited_lines="[1] [샘플] 사용자가 직접 고친 첫 문단.",
-                    patch_lines="[3] [샘플] 수정안이 고친 셋째 문단.",
-                    paragraph_lines=_SAMPLE_BLOCK_EDIT_LINES,
-                ),
-            )
+    )
+    items.append(
+        _novelize_preview_item(
+            "novelize_revise_recheck",
+            f"novelize_revise_recheck · {suffix}",
+            lambda: build_novelize_revise_recheck_prompt(
+                sections=sections,
+                is_story_chat=is_story_chat,
+                edited_lines="[1] [샘플] 사용자가 직접 고친 첫 문단.",
+                patch_lines="[3] [샘플] 수정안이 고친 셋째 문단.",
+                paragraph_lines=_SAMPLE_BLOCK_EDIT_LINES,
+            ),
         )
+    )
     return items
 
 
@@ -2116,16 +2202,16 @@ def _build_preview_items(
     *,
     lane: PromptLane,
     model: PromptSetModelId,
-    chat_sets: _ChatSets | None = None,
+    label_set: PromptSet | None = None,
 ) -> list[AdminPromptPreviewItem]:
-    """`chat_sets` 는 `novel` 레인에서만 쓴다 — 원작 종류(story·character)마다 채팅 Gemini 활성 세트와 섹션."""
+    """`label_set` 은 `novel` 레인에서만 쓴다 — 원문 줄 라벨을 읽을 소설 레인 Gemini 체인 세트."""
     if lane == "story":
         return _story_preview_items(prompt_set, sections, channels=_preview_channels(lane, model, sections))
     if lane == "character":
         return _character_preview_items(prompt_set, sections, channels=_preview_channels(lane, model, sections))
     if lane == "novel":
-        assert chat_sets is not None  # 호출부(`preview_prompt_draft`)가 novel 레인이면 읽어 넘긴다
-        return _novel_preview_items(sections, model=model, chat_sets=chat_sets)
+        assert label_set is not None  # 호출부(`preview_prompt_draft`)가 novel 레인이면 읽어 넘긴다
+        return _novel_preview_items(sections, label_set=label_set)
     if lane == "novel_screen":
         return _novel_screen_preview_items(sections)
     return _publish_filter_preview_items(sections)

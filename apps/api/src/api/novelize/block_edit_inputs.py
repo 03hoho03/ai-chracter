@@ -66,9 +66,8 @@ async def build_block_edit_input(db: AsyncSession, job: NovelJob, novel: Novel) 
     paragraphs = split_paragraphs(base.body)
     scenes = await revision_scenes(db, base.chapter_id, base.block_ids)
     positions = sorted(set(context_positions(scenes, edit.scene_id)) | {target.label - 1 for target in edit.targets})
-    source = await load_novel_prompt_source(db, novel)
+    source = await load_novel_prompt_source(db)
     prompt = build_novelize_revise_blocks_prompt(
-        chat_sections=source.chat_sections,
         sections=source.sections,
         is_story_chat=novel.content_type == "story",
         work_setting=await load_work_setting(db, novel, await _version_id(db, novel)),
@@ -92,7 +91,7 @@ async def build_recheck_prompt(
     번호로 싣는다. 문안은 소설 레인 Gemini 체인에서 읽는다(여러 문단 수정과 같다)."""
     paragraphs = split_paragraphs(revision.body)
     scenes = await revision_scenes(db, revision.chapter_id, revision.block_ids)
-    source = await load_novel_prompt_source(db, novel)
+    source = await load_novel_prompt_source(db)
     return build_novelize_revise_recheck_prompt(
         sections=source.sections,
         is_story_chat=novel.content_type == "story",

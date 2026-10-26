@@ -21974,6 +21974,13 @@
             },
             "type": "array",
             "title": "Sections"
+          },
+          "ratingDrift": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRatingDrift"
+            },
+            "type": "array",
+            "title": "Ratingdrift"
           }
         },
         "type": "object",
@@ -21984,7 +21991,7 @@
           "sections"
         ],
         "title": "AdminPromptDraftChangesResponse",
-        "description": "`GET /admin/prompt-sets/{lane}/draft/changes` — 게시하면 판이 어떻게 갈릴지 미리 본다. `base_set_id`·`draft_hash` 를\n게시 요청에 그대로 돌려보내면, 그 사이 다른 게시나 초안 저장이 끼어들었을 때 게시가 409 로 멈춘다."
+        "description": "`GET /admin/prompt-sets/{lane}/draft/changes` — 게시하면 판이 어떻게 갈릴지 미리 본다. `base_set_id`·`draft_hash` 를\n게시 요청에 그대로 돌려보내면, 그 사이 다른 게시나 초안 저장이 끼어들었을 때 게시가 409 로 멈춘다. `rating_drift` 는 게시할\n등급 규칙과 다른 레인 활성판의 비교다 — 게시 전에 갈림을 확인하는 자리다(게시 응답의 같은 칸은 이미 게시된 뒤다)."
       },
       "AdminPromptDraftResponse": {
         "properties": {
@@ -22037,6 +22044,27 @@
             },
             "type": "array",
             "title": "Allowedplaceholders"
+          },
+          "ratingDrift": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRatingDrift"
+            },
+            "type": "array",
+            "title": "Ratingdrift"
+          },
+          "droppedChannels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Droppedchannels"
+          },
+          "filledChannels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Filledchannels"
           }
         },
         "type": "object",
@@ -22049,7 +22077,7 @@
           "allowedPlaceholders"
         ],
         "title": "AdminPromptDraftResponse",
-        "description": "`id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성\n세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는\n조회).\n\n두 칸은 기본값 없이 늘 채운다 — 응답을 만드는 자리가 하나라도 빠뜨리면 응답 검증에서 바로 터지게 하려는 것이다.\n- `saved_draft_hash`: 저장된 초안 행(라벨 포함)의 내용 해시. 초안 행이 없으면 null. 저장·통째 복원 요청이 이 값을\n  `base_draft_hash` 로 돌려보내 그 사이 다른 탭의 저장을 덮지 않게 한다. 게시용 `draft_hash`(바뀐 섹션 조회)와 해시 함수는\n  같지만 입력이 다르다 — 게시용은 얼린 소설 행을 활성판 값으로 갈아 끼운 내용이라 둘을 섞으면 안 된다.\n- `allowed_placeholders`: 이 체인이 편집할 수 있는 채널의 (채널, 슬롯)마다 쓸 수 있는 자리표시자. 화면이 따로 사본을 두면\n  서버와 어긋나므로 이 값만 본다."
+        "description": "`id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성\n세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는\n조회).\n\n두 칸은 기본값 없이 늘 채운다 — 응답을 만드는 자리가 하나라도 빠뜨리면 응답 검증에서 바로 터지게 하려는 것이다.\n- `saved_draft_hash`: 저장된 초안 행(라벨 포함)의 내용 해시. 초안 행이 없으면 null. 저장·통째 복원 요청이 이 값을\n  `base_draft_hash` 로 돌려보내 그 사이 다른 탭의 저장을 덮지 않게 한다. 게시용 `draft_hash`(바뀐 섹션 조회)와 해시 함수는\n  같지만 입력이 다르다 — 게시용은 얼린 소설 행을 활성판 값으로 갈아 끼운 내용이라 둘을 섞으면 안 된다.\n- `allowed_placeholders`: 이 체인이 편집할 수 있는 채널의 (채널, 슬롯)마다 쓸 수 있는 자리표시자. 화면이 따로 사본을 두면\n  서버와 어긋나므로 이 값만 본다.\n\n복원 응답에서만 채우는 칸(조회·저장은 빈 목록):\n- `rating_drift`: 복원한 초안의 등급 규칙과 다른 레인 활성판의 비교(`AdminPromptRatingDrift`). 통째·섹션 복원.\n- `dropped_channels`·`filled_channels`: 통째 복원이 그 체인에 없는 채널이라 버린 채널과, 원본 판에 없어 그 체인 활성판에서\n  채운 채널. 채널 집합이 지금과 다른 옛 판을 복원해도 게시 검증의 슬롯 집합 검사에 막히지 않게 하려는 것이다."
       },
       "AdminPromptDraftUpsertRequest": {
         "properties": {
@@ -22223,6 +22251,82 @@
         "type": "object",
         "title": "AdminPromptPublishRequest",
         "description": "`version`을 받지 않는다 — 서버가 자동 증가 정수를 부여한다. `note`가 \"왜\n바꿨나\"를 대신 받는다.\n\n판 칸 셋은 모두 생략할 수 있다 — 생략하면 바뀐 섹션 전부가 patch 이고 기준값을 견주지 않는다(단계를 고르지 않는 화면).\n- `levels`: 바뀐 섹션마다 고른 단계. 바뀌지 않은 섹션이나 없는 섹션 이름이 있으면 422 다. 체인의 첫 판(기준판 없음)에서는\n  이 세트에 있는 섹션의 단계를 무시한다(전부 1.0.0).\n- `base_set_id`: 바뀐 섹션 조회 때 받은 기준판 id(기준판이 없었으면 null 을 그대로). 보냈는데 지금 기준판과 다르면 409 다.\n- `draft_hash`: 바뀐 섹션 조회 때 받은 초안 내용 해시. 보냈는데 지금 초안과 다르면 409 다 — 그 사이 다른 관리자가 초안을\n  고쳐, 화면이 보지도 고르지도 않은 변경이 patch 로 나가는 것을 막는다."
+      },
+      "AdminPromptRatingDrift": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "story",
+              "character"
+            ],
+            "title": "Scope"
+          },
+          "otherLane": {
+            "type": "string",
+            "enum": [
+              "story",
+              "character",
+              "publish_filter",
+              "novel",
+              "novel_screen"
+            ],
+            "title": "Otherlane"
+          },
+          "otherModel": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus",
+              "haiku"
+            ],
+            "title": "Othermodel"
+          },
+          "otherSetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Othersetid"
+          },
+          "thisMd5": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thismd5"
+          },
+          "otherMd5": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Othermd5"
+          },
+          "differs": {
+            "type": "boolean",
+            "title": "Differs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope",
+          "otherLane",
+          "otherModel",
+          "otherSetId",
+          "thisMd5",
+          "otherMd5",
+          "differs"
+        ],
+        "title": "AdminPromptRatingDrift",
+        "description": "채팅 레인과 소설 레인의 등급 규칙이 갈렸는지 알리는 한 항목(막지 않는다). 소설 호출의 등급 규칙은 채팅 레인 값에서 옮겨 온\n사본이라, 한쪽만 고치면 두 레인의 수위 규칙이 조용히 달라진다 — 게시·복원하는 쪽의 렌더(`this_md5`)와 같은 원작 종류의 다른\n레인 활성판 렌더(`other_md5`)를 견준다. md5 는 렌더한 글의 것이고, 행이 없거나 렌더가 비면 null 이다."
       },
       "AdminPromptRouteAllowedPair": {
         "properties": {
@@ -23294,6 +23398,13 @@
             },
             "type": "array",
             "title": "Removedsections"
+          },
+          "ratingDrift": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptRatingDrift"
+            },
+            "type": "array",
+            "title": "Ratingdrift"
           }
         },
         "type": "object",
@@ -23310,7 +23421,7 @@
           "sections"
         ],
         "title": "AdminPromptSetDetailResponse",
-        "description": "`GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문. 게시 응답도 이 꼴이다.\n\n`semver`·`section_semvers` 는 판이 없는 세트면 null·빈 목록이다. `removed_sections` 는 게시 응답에서만 채운다(기준판에\n있었는데 이번 게시에 없는 섹션) — 상세 조회는 기준판과 다시 견주지 않아 늘 빈 목록이다."
+        "description": "`GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문. 게시 응답도 이 꼴이다.\n\n`semver`·`section_semvers` 는 판이 없는 세트면 null·빈 목록이다. `removed_sections` 는 게시 응답에서만 채운다(기준판에\n있었는데 이번 게시에 없는 섹션) — 상세 조회는 기준판과 다시 견주지 않아 늘 빈 목록이다. `rating_drift` 도 게시 응답에서만\n채운다(게시한 등급 규칙과 다른 레인 활성판의 비교)."
       },
       "AdminPromptSetListResponse": {
         "properties": {
