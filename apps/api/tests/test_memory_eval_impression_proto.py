@@ -66,8 +66,8 @@ def _item(
         fact_lines=("- 민수 → 지아: 소꿉친구 (confirmed)",),
         episode_ids=("e1",),
         fact_ids=("f1",),
-        withheld_episodes=0,
-        withheld_facts=0,
+        secret_episodes=0,
+        secret_facts=0,
     )
 
 
@@ -132,7 +132,7 @@ async def _room_with_snapshots(
     return room.room_id, ids
 
 
-async def test_load_room_inputs_excludes_secret_rows_and_keeps_production_order(
+async def test_load_room_inputs_keeps_secret_rows_counts_them_and_keeps_production_order(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     room_id, snaps = await _room_with_snapshots(db_client, db_session, count=4)
@@ -170,14 +170,17 @@ async def test_load_room_inputs_excludes_secret_rows_and_keeps_production_order(
     assert item.group_index == 1
     assert item.snapshot_ids == tuple(str(s) for s in snaps[:3])
     # 스냅샷 커서 순, 그 안은 순번 순 — 운영 인상 생성이 프롬프트에 싣는 순서다.
+    # 비밀 행도 제자리(순번 2·1)에 든다.
     assert list(item.episode_lines) == [
-        f"- 공개A{i}: 첫째" if j == 0 else f"- 공개B{i}: 둘째" for i in range(3) for j in range(2)
+        line for i in range(3) for line in (f"- 공개A{i}: 첫째", f"- 공개B{i}: 둘째", f"- 비밀{i}: 숨김")
     ]
-    assert list(item.fact_lines) == [f"- 민수 → 지아: 공개값{i} (confirmed)" for i in range(3)]
-    joined = "\n".join(item.episode_lines + item.fact_lines)
-    assert "비밀" not in joined and "숨김" not in joined
-    assert item.withheld_episodes == 3 and item.withheld_facts == 3
-    assert len(item.episode_ids) == 6 and len(item.fact_ids) == 3
+    assert list(item.fact_lines) == [
+        line
+        for i in range(3)
+        for line in (f"- 민수 → 지아: 공개값{i} (confirmed)", f"- 민수 / 비밀: 비밀값{i} (confirmed)")
+    ]
+    assert item.secret_episodes == 3 and item.secret_facts == 3
+    assert len(item.episode_ids) == 9 and len(item.fact_ids) == 6
 
 
 async def test_load_room_inputs_skips_groups_whose_extractions_are_not_all_done(

@@ -65,8 +65,8 @@ def cmd_impression_inputs(args: argparse.Namespace) -> int:
             "skipped": skipped,
             "episodeLines": sum(len(i.episode_lines) for i in inputs),
             "factLines": sum(len(i.fact_lines) for i in inputs),
-            "withheldEpisodes": sum(i.withheld_episodes for i in inputs),
-            "withheldFacts": sum(i.withheld_facts for i in inputs),
+            "secretEpisodes": sum(i.secret_episodes for i in inputs),
+            "secretFacts": sum(i.secret_facts for i in inputs),
             "emptyGroups": sum(1 for i in inputs if not i.episode_lines and not i.fact_lines),
         }
     )

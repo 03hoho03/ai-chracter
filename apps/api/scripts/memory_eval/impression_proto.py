@@ -4,8 +4,9 @@
 
 입력(`load_room_inputs`): 방의 스냅샷을 커서 순으로 N 개씩 꽉 찬 묶음으로 자른다 — 운영은 스냅샷 수가 N 의 배수가 될 때마다
 가장 새 N 개를 묶으므로, 대화가 끝까지 흘렀을 때 운영이 만들었을 묶음과 같다. 묶음 스냅샷의 장면·사실 추출이 모두 `done` 이
-아니면 운영처럼 건너뛴다. 행은 운영 함수(`_load_inputs`)로 읽는다 — 아는 사람이 정해진 행을 빼는 조건과 순서를 따로 쓰면 운영과
-어긋날 수 있어서다. 줄 모양도 운영 함수(`episode_line`·`fact_line`)다. 빠진 비밀 행은 개수만 남긴다. DB 는 읽기만 한다.
+아니면 운영처럼 건너뛴다. 행은 운영 함수(`_load_inputs`)로 읽는다 — 어떤 행을 넣을지와 순서를 따로 쓰면 운영과 어긋날 수
+있어서다. 줄 모양도 운영 함수(`episode_line`·`fact_line`)다. 입력에 든 행 중 아는 사람이 정해진 비밀 행의 수를 따로 남긴다.
+DB 는 읽기만 한다.
 
 생성(`run_generation`): 후보 문안 파일의 섹션을 운영 인상 채널 섹션처럼 만들어 운영 조립 함수로 렌더하고, 운영과 같은 호출
 위치(`chat_memory_impression`)·같은 모델 고르기(설정 `memory_impression_model` 을 Haiku 로)로 부른다. 글은 운영처럼 앞뒤 공백을
@@ -109,9 +110,9 @@ class ImpressionInput:
     fact_lines: tuple[str, ...]
     episode_ids: tuple[str, ...]
     fact_ids: tuple[str, ...]
-    # 아는 사람이 정해져 입력에서 빠진 행 수.
-    withheld_episodes: int
-    withheld_facts: int
+    # 입력에 든 행 중 아는 사람이 정해진 비밀 행 수.
+    secret_episodes: int
+    secret_facts: int
 
     @property
     def key(self) -> str:
@@ -128,8 +129,8 @@ class ImpressionInput:
             "factLines": list(self.fact_lines),
             "episodeIds": list(self.episode_ids),
             "factIds": list(self.fact_ids),
-            "withheldEpisodes": self.withheld_episodes,
-            "withheldFacts": self.withheld_facts,
+            "secretEpisodes": self.secret_episodes,
+            "secretFacts": self.secret_facts,
         }
 
     @classmethod
@@ -146,8 +147,8 @@ class ImpressionInput:
             fact_lines=tuple(row["factLines"]),
             episode_ids=tuple(row["episodeIds"]),
             fact_ids=tuple(row["factIds"]),
-            withheld_episodes=int(row["withheldEpisodes"]),
-            withheld_facts=int(row["withheldFacts"]),
+            secret_episodes=int(row["secretEpisodes"]),
+            secret_facts=int(row["secretFacts"]),
         )
 
 
@@ -210,8 +211,8 @@ async def load_room_inputs(
                 fact_lines=tuple(fact_line(row) for row in facts),
                 episode_ids=tuple(str(row.id) for row in episodes),
                 fact_ids=tuple(str(row.id) for row in facts),
-                withheld_episodes=await _withheld(session, ChatMemoryEpisode, ids),
-                withheld_facts=await _withheld(session, ChatMemoryFact, ids),
+                secret_episodes=sum(1 for row in episodes if row.known_by is not None),
+                secret_facts=sum(1 for row in facts if row.known_by is not None),
             )
         )
     return inputs, skipped
@@ -227,15 +228,6 @@ async def _extractions_done(session: AsyncSession, ids: Sequence[uuid.UUID]) -> 
         if done != len(ids):
             return False
     return True
-
-
-async def _withheld(
-    session: AsyncSession, model: type[ChatMemoryEpisode] | type[ChatMemoryFact], ids: Sequence[uuid.UUID]
-) -> int:
-    count = await session.scalar(
-        select(func.count()).select_from(model).where(model.snapshot_id.in_(ids), model.known_by.is_not(None))
-    )
-    return int(count or 0)
 
 
 # ---------------------------------------------------------------- 후보 문안

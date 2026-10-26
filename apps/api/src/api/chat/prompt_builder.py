@@ -1146,8 +1146,8 @@ def build_memory_impression_prompt(
     """인상 생성 호출 프롬프트를 조립한다 — 요약 접기 몇 번 동안 뽑힌 장면·사실 기억을 읽고 인물 사이 감정·태도의 흐름을 적게 한다.
 
     지시문 전체가 `memory_impression` channel(DB)에 있고, 코드는 부르는 쪽이 만든 장면 줄·사실 줄을 줄바꿈으로 이어 넘길 뿐이다.
-    이름 한 줄·요약 글·원문 대화는 받지 않는다 — 입력을 행으로만 못 박아야 비밀 행을 빼는 것이 행의 칸 하나로 정해진다. 줄이 없으면
-    빈 값이고, 그 섹션을 뺄지는 문안의 conditional 이 정한다."""
+    이름 한 줄·요약 글·원문 대화는 받지 않는다 — 입력을 행으로만 못 박아야 인상마다 근거 행 id 를 남길 수 있고, 인상을 쓰는 쪽이
+    그 근거 행 단위로 비밀을 거를 수 있다. 줄이 없으면 빈 값이고, 그 섹션을 뺄지는 문안의 conditional 이 정한다."""
     values = {"episode_lines": "\n".join(episode_lines), "fact_lines": "\n".join(fact_lines)}
     return render_prompt_channel(
         sections, channel="memory_impression", scope="story" if is_story_chat else "character", values=values

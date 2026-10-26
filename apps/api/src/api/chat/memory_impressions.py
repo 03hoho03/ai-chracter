@@ -11,8 +11,11 @@
 보지 않으므로, 스위치를 켜기 전의 대화나 추출이 끝내 실패한 묶음을 거슬러 채우지 않는다. 그 턴의 레인과 글쓰기 모델이 기억 사용
 범위(`memory_model_scope`) 밖이면 아무것도 읽지 않는다 — 판정은 접기와 같이 받은 세트의 레인과 그 턴에 응답을 쓴 모델로 한다.
 
-입력 — 묶음 스냅샷의 장면·사실 행 중 아는 사람(`known_by`)이 정해지지 않은 것뿐이다. 요약 글·원문 대화·노트는 읽지 않는다. 비밀은
-행의 칸 하나로 빠지므로 비밀 행이 있든 없든 프롬프트가 바이트까지 같다. 남는 위험: 추출이 비밀을 공개로 잘못 적은 행은 들어온다.
+입력 — 묶음 스냅샷의 장면·사실 행 전부다. 아는 사람(`known_by`)이 정해진 행도 넣는다: 장면 추출이 그 장면에 있던 인물을 거의
+늘 아는 사람으로 적어서, 그런 행을 빼면 장면 대부분이 빠지고 인상이 사실 줄에만 기댄다. 요약 글·원문 대화·노트는 읽지 않는다.
+인상 행은 입력에 쓴 장면·사실 행 id 를 전부 근거(`episode_ids`·`fact_ids`)로 남긴다. 인상은 방 주인만 보는 기억 보기에 보이고
+(방 주인은 비밀 행도 이미 다 본다) 생성 프롬프트에 싣지 않으므로 여기서 거르지 않는다 — 인상을 프롬프트에 싣게 되면 그 쪽이
+근거 행 단위로(근거 중 그 자리에서 보이면 안 되는 행이 있는 인상을 빼는 식으로) 거른다.
 
 쓰기 — 잠금 순서는 두 추출과 같다. 입력을 읽기 전에 방의 잊기 세대를 읽어 두고, 마지막 트랜잭션에서 **먼저** 가장 새 스냅샷을
 `FOR KEY SHARE` 로 잠근 뒤(없으면 되감겼다 — 끝) 세대를 다시 읽어 다르면 결과를 버린다(그사이 방 주인이 장면이나 사실을 잊게
@@ -238,14 +241,14 @@ async def _due_group(session: AsyncSession, room_id: uuid.UUID, every: int) -> _
 
 
 async def _load_inputs(session: AsyncSession, group: _Group) -> tuple[list[ChatMemoryEpisode], list[ChatMemoryFact]]:
-    """묶음 스냅샷의 장면·사실 행 중 아는 사람이 정해지지 않은 것, 스냅샷 커서 순·그 안은 순번 순."""
+    """묶음 스냅샷의 장면·사실 행 전부(아는 사람이 정해진 행 포함), 스냅샷 커서 순·그 안은 순번 순."""
     snapshot = ChatRoomMemorySnapshot
     order = (snapshot.cursor_created_at, snapshot.cursor_message_id)
     episodes = (
         await session.scalars(
             select(ChatMemoryEpisode)
             .join(snapshot, snapshot.id == ChatMemoryEpisode.snapshot_id)
-            .where(ChatMemoryEpisode.snapshot_id.in_(group.snapshot_ids), ChatMemoryEpisode.known_by.is_(None))
+            .where(ChatMemoryEpisode.snapshot_id.in_(group.snapshot_ids))
             .order_by(*order, ChatMemoryEpisode.ordinal)
         )
     ).all()
@@ -253,7 +256,7 @@ async def _load_inputs(session: AsyncSession, group: _Group) -> tuple[list[ChatM
         await session.scalars(
             select(ChatMemoryFact)
             .join(snapshot, snapshot.id == ChatMemoryFact.snapshot_id)
-            .where(ChatMemoryFact.snapshot_id.in_(group.snapshot_ids), ChatMemoryFact.known_by.is_(None))
+            .where(ChatMemoryFact.snapshot_id.in_(group.snapshot_ids))
             .order_by(*order, ChatMemoryFact.ordinal)
         )
     ).all()
