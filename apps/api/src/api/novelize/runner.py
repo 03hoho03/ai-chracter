@@ -30,12 +30,11 @@ import asyncio
 import logging
 import re
 import uuid
-from collections.abc import Coroutine, Sequence
+from collections.abc import Coroutine, Iterator, Sequence
+from contextlib import contextmanager
 from datetime import timedelta
-from typing import Any
+from typing import Any, Protocol, TypeVar
 
-import anthropic
-from google.genai import errors as genai_errors
 from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -54,14 +53,8 @@ from api.db.models.novel import (
     NovelJobFailureCode,
     NovelOutline,
 )
-from api.llm.client import (
-    LLMCallContext,
-    LLMClient,
-    LLMClientError,
-    LLMEmptyResponseError,
-    LLMPolicyViolationError,
-    LLMTruncatedError,
-)
+from api.llm.call_failures import classify_llm_failure, describe_llm_failure
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError
 from api.novelize.billing import (
     ACTIVE_JOB_STATUSES,
     _lock_user,
@@ -79,6 +72,7 @@ from api.novelize.episodes import chapter_max_turns, k_max
 from api.novelize.illustrations import add_revision
 from api.novelize.inputs import (
     ChapterInput,
+    ReviseInput,
     SourceChangedError,
     build_chapter_input,
     build_revise_input,
@@ -87,6 +81,7 @@ from api.novelize.inputs import (
     next_ordinal,
     regenerate_batch,
 )
+from api.novelize.job_variants import VARIANT_FACTS, JobVariant, VariantFacts, variant_of
 from api.novelize.outline import (
     MalformedOutlineError,
     OutlineInput,
@@ -141,33 +136,18 @@ class _JobFailedError(Exception):
         self.code = code
 
 
-def _call_failure(exc: LLMClientError) -> str:
-    """실패한 모델 호출 경고에 붙일 원인 — 실패 예외 종류, 원인 예외 종류, HTTP 상태, 공급자 요청 id(알 수 있을 때, 없으면 "없음").
-    과부하(529)·서버 오류·연결 실패·시간 초과를 로그로 가르고 공급자에 문의할 요청 id 를 남기려는 것이다. 예외 글은 넣지 않는다 —
-    공급자 오류 글에는 오류 응답 본문이 통째로 실리고, 그 안에 요청 내용 일부가 섞일 수 있다.
-
-    Claude 는 SDK 상태 오류가 상태 코드와 헤더를 들고 온다(직접 API 는 `request-id`, Bedrock 은 `x-amzn-requestid`). 스트림을 흘리던
-    도중의 오류(장 생성의 과부하·스로틀)는 응답 상태가 이미 200 이라 상태 코드로는 가를 수 없어, 오류 본문의 오류 종류(직접 API 의
-    `overloaded_error`, Bedrock 의 `ThrottlingException` 같은 고정 이름)도 남긴다 — 같은 본문의 메시지 글은 넣지 않는다. 여기서는 Gemini
-    SDK 오류의 상태 코드만 읽고 요청 id 는 남기지 않는다."""
-    cause = exc.__cause__
-    status: int | None = None
-    request_id: str | None = None
-    kind: str | None = None
-    if isinstance(cause, anthropic.APIStatusError):
-        status = cause.status_code
-        request_id = cause.request_id or cause.response.headers.get("x-amzn-requestid")
-        body = cause.body
-        error = body.get("error") if isinstance(body, dict) else None
-        if isinstance(error, dict) and isinstance(error.get("type"), str):
-            kind = error["type"][:64]
-    elif isinstance(cause, genai_errors.APIError):
-        status = cause.code
-    cause_name = "없음" if cause is None else type(cause).__name__
-    return (
-        f"{type(exc).__name__} 원인={cause_name} 상태={'없음' if status is None else status} "
-        f"종류={kind or '없음'} 요청={request_id or '없음'}"
-    )
+@contextmanager
+def _llm_call(label: str) -> Iterator[None]:
+    """모델 호출 하나를 감싸 실패를 사유 코드로 가른다(`llm/call_failures.py`). 잘림·빈 본문·안전 차단은 제 사유로, 나머지는 호출
+    실패로 환불하고 호출 실패만 원인을 경고로 남긴다 — 로그는 이 모듈 로거로 남겨 운영 로그의 레코드 이름이 바뀌지 않게 한다.
+    호출만 감싼다(스트림은 다 받을 때까지). 호출 뒤 응답 판정의 실패는 각자 따로 가른다."""
+    try:
+        yield
+    except LLMClientError as exc:
+        code = classify_llm_failure(exc)
+        if code == "llm_error":
+            logger.warning("소설화 %s 호출이 실패했다: %s", label, describe_llm_failure(exc))
+        raise _JobFailedError(code) from exc
 
 
 def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -217,7 +197,191 @@ async def _refund(session_factory: SessionFactory, job_id: uuid.UUID, code: Nove
         capture_dependency_failure(exc, dependency="novelize")
 
 
+# ── 갈래별 핸들러 ─────────────────────────────────────────────────────────
+# 핸들러 메서드는 입력 조립·호출·저장 함수를 이 모듈의 이름으로 **부를 때** 찾는다. 함수 참조를 클래스 속성이나 딕셔너리에 담으면
+# import 때의 함수 객체를 붙잡아, 테스트가 이 모듈의 이름을 바꿔 끼워도(원작 문안 없이 입력을 조립하는 등) 핸들러가 원래 함수를
+# 부른다.
+_I = TypeVar("_I")
+_R = TypeVar("_R")
+
+
+class JobHandler(Protocol[_I, _R]):
+    """갈래 하나의 실행 — 입력 조립(세션 안) → 호출 문맥(세션 안) → 모델 호출(세션 밖) → 저장(새 세션). 사실 칸은 `facts` 로
+    갈래 표(`job_variants.VARIANT_FACTS`)의 그 객체를 내보인다."""
+
+    facts: VariantFacts
+
+    async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> _I: ...
+
+    def context(self, job: NovelJob, novel: Novel) -> LLMCallContext: ...
+
+    async def call(self, llm_client: LLMClient, inp: _I, usage: LLMCallContext) -> _R: ...
+
+    async def save(self, session_factory: SessionFactory, job_id: uuid.UUID, inp: _I, result: _R) -> None: ...
+
+
+class _Handler:
+    def __init__(self, facts: VariantFacts) -> None:
+        self.facts = facts
+
+    def context(self, job: NovelJob, novel: Novel) -> LLMCallContext:
+        """갈래의 호출 위치로 부른다. 작업 모델을 싣는 갈래는 작업에 적힌 모델 그대로다 — 허용은 과금할 때 판정했고 여기서 다시
+        보지 않는다. 그 사이 허용이 회수됐다고 기본 모델로 바꾸면 상위 모델 값을 내고 다른 모델의 글을 받는다. 화 문안도 그 모델의
+        소설 체인 세트다(`build_chapter_input`). 장 생성의 call site 를 바꾸지 않는다 — 상위 모델을 Bedrock 으로 보내는 라우팅이 이
+        call site 로 고른다. 구성안 호출 위치는 구조화 호출이어도 실린 모델의 구현으로 간다. AI 수정은 모델을 싣지 않는다(기본
+        모델)."""
+        assert self.facts.call_site is not None  # 연쇄 부모만 호출 위치가 없고, 연쇄 부모는 여기까지 오지 않는다
+        if self.facts.model_in_context:
+            return LLMCallContext(
+                call_site=self.facts.call_site,
+                user_id=job.user_id,
+                room_id=novel.chat_room_id,
+                model=chapter_job_model(job),
+            )
+        return LLMCallContext(call_site=self.facts.call_site, user_id=job.user_id, room_id=novel.chat_room_id)
+
+
+class _Chapter(_Handler):
+    """장 생성·다시 만들기·구성 흐름 원고가 함께 쓰는 호출·저장. 갈래마다 입력 조립만 다르다."""
+
+    async def call(self, llm_client: LLMClient, inp: ChapterInput, usage: LLMCallContext) -> ParsedBatch:
+        return await _generate_batch(llm_client, inp, usage)
+
+    async def save(
+        self, session_factory: SessionFactory, job_id: uuid.UUID, inp: ChapterInput, result: ParsedBatch
+    ) -> None:
+        await _save_batch(session_factory, job_id, inp, result)
+
+
+class _SegmentChapter(_Chapter):
+    """옛 흐름 — 혼자 도는 장 생성, 연쇄 자식, 옛 흐름 묶음 다시 만들기. 작업 행의 원문 구간을 다시 읽는다."""
+
+    async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> ChapterInput:
+        return await build_chapter_input(db, job, novel)
+
+
+class _OutlineRegenerate(_Chapter):
+    async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> ChapterInput:
+        # 구성 흐름 화의 다시 만들기 — 같은 장면 구성안으로 관문을 거쳐 다시 쓴다(옛 연속 구간 읽기를 타지 않는다).
+        chapter = await db.get(NovelChapter, job.chapter_id) if job.chapter_id is not None else None
+        if chapter is None:
+            raise SourceChangedError(f"job={job.id} 다시 만들 화가 지워졌다")
+        return await build_outline_regenerate_input(db, novel, chapter, model=chapter_job_model(job))
+
+
+class _Manuscript(_Chapter):
+    async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> ChapterInput:
+        assert job.episode_outline_id is not None and job.outline_episode_key is not None  # 작업 대상 CHECK
+        return await build_outline_chapter_input(
+            db,
+            novel,
+            job.outline_episode_key,
+            episode_outline_id=job.episode_outline_id,
+            model=chapter_job_model(job),
+        )
+
+
+class _ParagraphEdit(_Handler):
+    async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> ReviseInput:
+        return await build_revise_input(db, job, novel)
+
+    async def call(self, llm_client: LLMClient, inp: ReviseInput, usage: LLMCallContext) -> str:
+        """고친 범위를 원본 문단 사이에 끼운 장 본문까지 만들어 돌려준다."""
+        result_text = await _revise(llm_client, inp.prompt.prompt, inp.prompt.system_instruction, usage)
+        return _assemble_revision(inp.paragraphs, inp.first_index, inp.last_index, result_text)
+
+    async def save(self, session_factory: SessionFactory, job_id: uuid.UUID, inp: ReviseInput, result: str) -> None:
+        await _save_ai_edit(session_factory, job_id, result)
+
+
+class _BlockEdit(_Handler):
+    """여러 문단 수정 — 패치 칸이 있는 AI 수정이다. 호출 위치·모델은 문단 수정과 같다."""
+
+    async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> BlockEditInput:
+        return await build_block_edit_input(db, job, novel)
+
+    async def call(
+        self, llm_client: LLMClient, inp: BlockEditInput, usage: LLMCallContext
+    ) -> tuple[list[BlockEditPatch], list[BlockEditBundle]]:
+        return await _revise_blocks(llm_client, inp, usage)
+
+    async def save(
+        self,
+        session_factory: SessionFactory,
+        job_id: uuid.UUID,
+        inp: BlockEditInput,
+        result: tuple[list[BlockEditPatch], list[BlockEditBundle]],
+    ) -> None:
+        patches, bundles = result
+        await _save_block_edit(session_factory, job_id, patches, bundles)
+
+
+class _Outline(_Handler):
+    async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> OutlineInput:
+        return await build_outline_input(db, novel, model=chapter_job_model(job))
+
+    async def call(self, llm_client: LLMClient, inp: OutlineInput, usage: LLMCallContext) -> list[dict[str, Any]]:
+        return await _outline(llm_client, inp, usage)
+
+    async def save(
+        self, session_factory: SessionFactory, job_id: uuid.UUID, inp: OutlineInput, result: list[dict[str, Any]]
+    ) -> None:
+        await _save_outline(session_factory, job_id, inp, result)
+
+
+class _EpisodeOutline(_Handler):
+    async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> EpisodeOutlineInput:
+        assert job.outline_id is not None and job.outline_episode_key is not None  # 작업 대상 CHECK
+        return await build_episode_outline_input(
+            db, novel, job.outline_episode_key, outline_id=job.outline_id, model=chapter_job_model(job)
+        )
+
+    async def call(
+        self, llm_client: LLMClient, inp: EpisodeOutlineInput, usage: LLMCallContext
+    ) -> list[dict[str, Any]]:
+        return await _episode_outline(llm_client, inp, usage)
+
+    async def save(
+        self,
+        session_factory: SessionFactory,
+        job_id: uuid.UUID,
+        inp: EpisodeOutlineInput,
+        result: list[dict[str, Any]],
+    ) -> None:
+        await _save_episode_outline(session_factory, job_id, result)
+
+
+class _ChainParent(_Handler):
+    """연쇄 부모 표지 — 연쇄 실행(`run_chain`)으로만 돈다. `_execute` 가 사실 칸(`chain_only`)을 보고 이 핸들러에 닿기 전에
+    멈추므로 아래 메서드는 불리지 않는다."""
+
+    async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> None:
+        raise AssertionError(f"연쇄 부모 {job.id} 는 연쇄 실행으로만 돈다")
+
+    async def call(self, llm_client: LLMClient, inp: None, usage: LLMCallContext) -> None:
+        raise AssertionError("연쇄 부모는 모델을 직접 부르지 않는다")
+
+    async def save(self, session_factory: SessionFactory, job_id: uuid.UUID, inp: None, result: None) -> None:
+        raise AssertionError("연쇄 부모는 묶음 결과를 직접 저장하지 않는다")
+
+
+HANDLERS: dict[JobVariant, JobHandler[Any, Any]] = {
+    "legacy_generate": _SegmentChapter(VARIANT_FACTS["legacy_generate"]),
+    "chain_child": _SegmentChapter(VARIANT_FACTS["chain_child"]),
+    "chain_parent": _ChainParent(VARIANT_FACTS["chain_parent"]),
+    "legacy_regenerate": _SegmentChapter(VARIANT_FACTS["legacy_regenerate"]),
+    "outline_regenerate": _OutlineRegenerate(VARIANT_FACTS["outline_regenerate"]),
+    "paragraph_edit": _ParagraphEdit(VARIANT_FACTS["paragraph_edit"]),
+    "block_edit": _BlockEdit(VARIANT_FACTS["block_edit"]),
+    "outline": _Outline(VARIANT_FACTS["outline"]),
+    "episode_outline": _EpisodeOutline(VARIANT_FACTS["episode_outline"]),
+    "manuscript": _Manuscript(VARIANT_FACTS["manuscript"]),
+}
+
+
 async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_id: uuid.UUID) -> None:
+    """작업 하나를 받아(대기 → 실행) 갈래의 핸들러로 돌린다. 갈래는 작업 행으로 판정하고(`variant_of`), 판정하지 못하는 종류나
+    연쇄 실행 전용 갈래는 `AssertionError` 로 끝나 `run_job` 이 내부 오류로 환불한다 — 어느 갈래로도 흘려보내지 않는다."""
     async with session_factory() as db:
         started = await transition_job(
             db,
@@ -231,85 +395,22 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
 
     heartbeat = asyncio.create_task(keep_job_alive(session_factory, job_id))
     try:
-        block_input: BlockEditInput | None = None
         async with session_factory() as db:
             job = await db.get(NovelJob, job_id)
             novel = await db.get(Novel, job.novel_id) if job is not None else None
             if job is None or novel is None:
                 return
+            handler = HANDLERS[variant_of(job)]
+            if handler.facts.chain_only:
+                raise AssertionError(f"연쇄 실행 전용 작업 {job.id} 가 묶음 하나짜리 실행에 들어왔다")
             try:
-                if job.kind == "ai_edit" and job.block_edit is not None:
-                    # 여러 문단 수정 — 패치 칸이 있는 AI 수정이다. 호출 위치·모델은 문단 수정과 같다(아래 `usage`).
-                    block_input = await build_block_edit_input(db, job, novel)
-                elif job.kind == "ai_edit":
-                    revise = await build_revise_input(db, job, novel)
-                elif job.kind == "outline_generate":
-                    outline_input = await build_outline_input(db, novel, model=chapter_job_model(job))
-                elif job.kind == "episode_outline_generate":
-                    assert job.outline_id is not None and job.outline_episode_key is not None  # 작업 대상 CHECK
-                    episode_input = await build_episode_outline_input(
-                        db, novel, job.outline_episode_key, outline_id=job.outline_id, model=chapter_job_model(job)
-                    )
-                elif job.kind == "outline_chapter_generate":
-                    assert job.episode_outline_id is not None and job.outline_episode_key is not None  # 작업 대상 CHECK
-                    chapter_input = await build_outline_chapter_input(
-                        db,
-                        novel,
-                        job.outline_episode_key,
-                        episode_outline_id=job.episode_outline_id,
-                        model=chapter_job_model(job),
-                    )
-                elif job.kind == "chapter_regenerate" and job.episode_outline_id is not None:
-                    # 구성 흐름 화의 다시 만들기 — 같은 장면 구성안으로 관문을 거쳐 다시 쓴다(옛 연속 구간 읽기를 타지 않는다).
-                    chapter = await db.get(NovelChapter, job.chapter_id) if job.chapter_id is not None else None
-                    if chapter is None:
-                        raise SourceChangedError(f"job={job.id} 다시 만들 화가 지워졌다")
-                    chapter_input = await build_outline_regenerate_input(
-                        db, novel, chapter, model=chapter_job_model(job)
-                    )
-                else:
-                    chapter_input = await build_chapter_input(db, job, novel)
+                inp = await handler.build_input(db, job, novel)
             except SourceChangedError as exc:
                 raise _JobFailedError("source_changed") from exc
-            if job.kind == "ai_edit":
-                usage = LLMCallContext(call_site="novelize_revise", user_id=job.user_id, room_id=novel.chat_room_id)
-            elif job.kind in ("outline_generate", "episode_outline_generate"):
-                # 고른 모델을 실어 부른다 — 구성안 호출 위치는 구조화 호출이어도 실린 모델의 구현으로 간다.
-                usage = LLMCallContext(
-                    call_site="novelize_outline" if job.kind == "outline_generate" else "novelize_episode_outline",
-                    user_id=job.user_id,
-                    room_id=novel.chat_room_id,
-                    model=chapter_job_model(job),
-                )
-            else:
-                # 작업에 적힌 모델 그대로다. 허용은 과금할 때 판정했고 여기서 다시 보지 않는다 — 그 사이 허용이 회수됐다고
-                # 기본 모델로 바꾸면 상위 모델 값을 내고 다른 모델의 글을 받는다. 화 문안도 그 모델의 소설 체인
-                # 세트다(`build_chapter_input`). call site 를 바꾸지 않는다 — 상위 모델을 Bedrock 으로 보내는
-                # 라우팅이 이 call site 로 고른다.
-                usage = LLMCallContext(
-                    call_site="novelize_chapter",
-                    user_id=job.user_id,
-                    room_id=novel.chat_room_id,
-                    model=chapter_job_model(job),
-                )
-            kind = job.kind
+            usage = handler.context(job, novel)
         # 여기서부터 모델 호출 — 세션을 닫은 뒤다.
-        if block_input is not None:
-            patches, bundles = await _revise_blocks(llm_client, block_input, usage)
-            await _save_block_edit(session_factory, job_id, patches, bundles)
-        elif kind == "ai_edit":
-            result_text = await _revise(llm_client, revise.prompt.prompt, revise.prompt.system_instruction, usage)
-            body = _assemble_revision(revise.paragraphs, revise.first_index, revise.last_index, result_text)
-            await _save_ai_edit(session_factory, job_id, body)
-        elif kind == "outline_generate":
-            episodes = await _outline(llm_client, outline_input, usage)
-            await _save_outline(session_factory, job_id, outline_input, episodes)
-        elif kind == "episode_outline_generate":
-            scenes = await _episode_outline(llm_client, episode_input, usage)
-            await _save_episode_outline(session_factory, job_id, scenes)
-        else:
-            batch = await _generate_batch(llm_client, chapter_input, usage)
-            await _save_batch(session_factory, job_id, chapter_input, batch)
+        result = await handler.call(llm_client, inp, usage)
+        await handler.save(session_factory, job_id, inp, result)
     finally:
         heartbeat.cancel()
 
@@ -538,20 +639,11 @@ async def _generate_batch(llm_client: LLMClient, chapter_input: ChapterInput, us
     화 수는 여기서 판정하지 않는다. 생성의 화 수 상한(연쇄 자식은 부모 행의 값)과 다시 만들기의 화 수 불일치는 저장이
     작업 행을 잡은 뒤 판정한다."""
     chunks: list[str] = []
-    try:
+    with _llm_call("장 생성"):
         async for chunk in llm_client.generate(
             chapter_input.prompt.prompt, chapter_input.prompt.system_instruction, usage=usage
         ):
             chunks.append(chunk)
-    except LLMTruncatedError as exc:
-        raise _JobFailedError("truncated") from exc
-    except LLMEmptyResponseError as exc:
-        raise _JobFailedError("empty") from exc
-    except LLMPolicyViolationError as exc:
-        raise _JobFailedError("blocked") from exc
-    except LLMClientError as exc:
-        logger.warning("소설화 장 생성 호출이 실패했다: %s", _call_failure(exc))
-        raise _JobFailedError("llm_error") from exc
     raw = "".join(chunks)
     try:
         parsed = parse_batch_output(raw, episode_number=chapter_input.episode_number)
@@ -594,19 +686,10 @@ _LEADING_NUMBER = re.compile(r"^\[\d+\]\s*")
 
 
 async def _revise(llm_client: LLMClient, prompt: str, system_instruction: str, usage: LLMCallContext) -> list[str]:
-    try:
+    with _llm_call("문단 수정"):
         result = await llm_client.generate_structured_with_instruction(
             prompt, NovelizeReviseResult, system_instruction=system_instruction, usage=usage
         )
-    except LLMTruncatedError as exc:
-        raise _JobFailedError("truncated") from exc
-    except LLMEmptyResponseError as exc:
-        raise _JobFailedError("empty") from exc
-    except LLMPolicyViolationError as exc:
-        raise _JobFailedError("blocked") from exc
-    except LLMClientError as exc:
-        logger.warning("소설화 문단 수정 호출이 실패했다: %s", _call_failure(exc))
-        raise _JobFailedError("llm_error") from exc
     # 항목 안의 빈 줄은 문단을 나눈 것으로 보고, 앞에 붙어 온 `[n]` 번호는 걷는다.
     paragraphs = [
         part for item in result.paragraphs for part in split_paragraphs(_LEADING_NUMBER.sub("", item.strip()))
@@ -623,22 +706,13 @@ async def _revise_blocks(
     """여러 문단 수정 호출. 응답을 대상 블록의 대기 패치와 묶음으로 정리한다(`block_edits.normalized_result` — 대상이 아닌 문단
     번호의 패치는 버린다). 남은 패치가 없으면 `empty`, 어느 패치든 거절·안내문이면 `refused` 로 실패(환불)다. 문단 정리는 문단
     수정과 같다(항목 안의 빈 줄은 문단 나눔, 앞의 `[n]` 은 걷는다)."""
-    try:
+    with _llm_call("여러 문단 수정"):
         result = await llm_client.generate_structured_with_instruction(
             block_input.prompt.prompt,
             NovelizeBlockEditResult,
             system_instruction=block_input.prompt.system_instruction,
             usage=usage,
         )
-    except LLMTruncatedError as exc:
-        raise _JobFailedError("truncated") from exc
-    except LLMEmptyResponseError as exc:
-        raise _JobFailedError("empty") from exc
-    except LLMPolicyViolationError as exc:
-        raise _JobFailedError("blocked") from exc
-    except LLMClientError as exc:
-        logger.warning("소설화 여러 문단 수정 호출이 실패했다: %s", _call_failure(exc))
-        raise _JobFailedError("llm_error") from exc
     raw = [
         (
             item.paragraph,
@@ -663,19 +737,10 @@ async def _outline(llm_client: LLMClient, outline_input: OutlineInput, usage: LL
     """전체 구성안 호출. 호출 실패는 문단 수정과 같은 사유로 가르고, 쓸 수 없는 구성안(화 수·턴 번호 범위 밖, 빈 제목)은
     `malformed`, 거절문은 `refused` 로 실패·환불한다."""
     prompt = outline_input.prompt
-    try:
+    with _llm_call("전체 구성안"):
         result = await llm_client.generate_structured_with_instruction(
             prompt.prompt, NovelizeOutlineResult, system_instruction=prompt.system_instruction, usage=usage
         )
-    except LLMTruncatedError as exc:
-        raise _JobFailedError("truncated") from exc
-    except LLMEmptyResponseError as exc:
-        raise _JobFailedError("empty") from exc
-    except LLMPolicyViolationError as exc:
-        raise _JobFailedError("blocked") from exc
-    except LLMClientError as exc:
-        logger.warning("소설화 전체 구성안 호출이 실패했다: %s", _call_failure(exc))
-        raise _JobFailedError("llm_error") from exc
     try:
         return outline_episodes(result, outline_input.source.spans)
     except MalformedOutlineError as exc:
@@ -731,19 +796,10 @@ async def _episode_outline(
     """화 하나의 장면 구성안 호출. 호출 실패는 전체 구성안과 같은 사유로 가르고, 쓸 수 없는 장면 구성안은 `malformed`, 거절문은
     `refused` 로 실패·환불한다."""
     prompt = episode_input.prompt
-    try:
+    with _llm_call("장면 구성안"):
         result = await llm_client.generate_structured_with_instruction(
             prompt.prompt, NovelizeEpisodeOutlineResult, system_instruction=prompt.system_instruction, usage=usage
         )
-    except LLMTruncatedError as exc:
-        raise _JobFailedError("truncated") from exc
-    except LLMEmptyResponseError as exc:
-        raise _JobFailedError("empty") from exc
-    except LLMPolicyViolationError as exc:
-        raise _JobFailedError("blocked") from exc
-    except LLMClientError as exc:
-        logger.warning("소설화 장면 구성안 호출이 실패했다: %s", _call_failure(exc))
-        raise _JobFailedError("llm_error") from exc
     try:
         return model_scenes(result, episode_input.source.spans)
     except MalformedScenesError as exc:
@@ -930,20 +986,22 @@ async def _save_batch(
             return
         job = await db.get(NovelJob, job_id)
         assert job is not None  # 방금 전이가 행을 받았고 같은 트랜잭션이 그 행을 잠그고 있다
-        if job.parent_job_id is not None and not await _consume_parent_share(db, job, delivered=len(batch.episodes)):
+        variant = variant_of(job)
+        regenerates = variant in ("legacy_regenerate", "outline_regenerate")
+        if variant == "chain_child" and not await _consume_parent_share(db, job, delivered=len(batch.episodes)):
             # 부모가 이미 끝났다(만료·실패·환불). 돈을 낸 부모 없이 저장하면 공짜 묶음이 된다. 부모를 끝내는 경로가
             # 진행 중 자식도 함께 끝내므로 보통은 위 전이에서 걸러지고, 여기는 자식을 모르는 경로가 부모만 끝낸 경우다.
             await db.rollback()
             raise _JobFailedError("expired")
-        if job.kind != "chapter_regenerate" and len(batch.episodes) > await _episode_cap(db, job):
+        if not regenerates and len(batch.episodes) > await _episode_cap(db, job):
             await db.rollback()
             raise _JobFailedError("malformed")
-        if job.kind == "outline_chapter_generate" and not await _outline_chapter_basis_holds(db, job):
+        if variant == "manuscript" and not await _outline_chapter_basis_holds(db, job):
             # 모델을 부르는 동안 그 화의 근거를 고친 구성안이 승인됐다 — 옛 근거로 쓴 원고로 그 화를 "원고 됨"으로 굳히면 새 근거에만
             # 있는 대화가 다시 쓸 수도 잠기지도 않고 빠진다. 장면 구성안 저장과 같이 저장하지 않고 환불한다.
             await db.rollback()
             raise _JobFailedError("source_changed")
-        if job.kind == "chapter_regenerate":
+        if regenerates:
             saved = await _save_regenerated(db, job, batch)
             if saved is None:
                 await db.rollback()
@@ -987,7 +1045,7 @@ async def _save_batch(
             )
         await db.execute(update(Novel).where(Novel.id == job.novel_id).values(updated_at=func.now()))
         await db.commit()
-        if job.kind == "chapter_regenerate":
+        if regenerates:
             # 다시 만든 결과가 화마다 새 현재 개정이 되면 옛 개정을 기준으로 한 미리보기는 적용할 수 없다. 화를 잠근
             # 트랜잭션을 끝낸 뒤에 비운다(화를 쥔 채 작업 행을 고치면 적용과 교착한다).
             for chapter in chapters:
@@ -1027,13 +1085,18 @@ async def _episode_cap(db: AsyncSession, job: NovelJob) -> int:
     """생성 작업이 낼 수 있는 화 수의 상한. 연쇄 자식은 부모 행에 고정한 값이다 — 그 사이 설정이 바뀌어도 값을 낸
     시점의 상한을 따른다. 부모 행이 아직 실행 중인 것은 호출 전에 소비액을 올리며 확인했다. 구성 흐름 원고는 장면 구성안 하나로
     화 하나를 쓴다."""
-    if job.kind == "outline_chapter_generate":
-        return 1
-    if job.parent_job_id is not None:
-        cap = await db.scalar(select(NovelJob.batch_k_max).where(NovelJob.id == job.parent_job_id))
-        assert cap is not None  # 연쇄 부모는 CHECK 로 화 수 상한을 갖는다
-        return cap
-    return k_max(chapter_job_model(job))
+    variant = variant_of(job)
+    match variant:
+        case "manuscript":
+            return 1
+        case "chain_child":
+            cap = await db.scalar(select(NovelJob.batch_k_max).where(NovelJob.id == job.parent_job_id))
+            assert cap is not None  # 연쇄 부모는 CHECK 로 화 수 상한을 갖는다
+            return cap
+        case "legacy_generate":
+            return k_max(chapter_job_model(job))
+        case _:
+            raise AssertionError(f"화 수 상한은 새 화를 만드는 갈래에만 있다: {variant}")
 
 
 async def _consume_parent_share(db: AsyncSession, job: NovelJob, *, delivered: int) -> bool:

@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     Text,
     Uuid,
@@ -152,6 +153,14 @@ class Content(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # 작가가 자기 작품을 마지막으로 바꾼 시각(자동저장·상황이미지 등록·편집 취소·발행·공개범위·소설화 허락 변경).
+    # `updated_at` 은 아무도 밀지 않아 사실상 생성 시각이고 `/me/drafts` 커서가 "행이 움직이지 않는다"에 기대므로
+    # 그 칸을 밀지 않고 따로 둔다. 독자 행동(조회·채팅·좋아요)·운영 조치·댓글 설정은 밀지 않는다.
+    # 미는 쪽은 `datetime.now(UTC)` 파이썬 값을 넣는다 — `func.now()` 를 속성에 넣으면 커밋 뒤 읽을 때 비동기
+    # 세션에서 지연 로드가 걸린다.
+    edited_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     # 표식은 제한 상태에서만 설 수 있다. 삭제·해제·이의 수용에서 표식 내리기를 빠뜨리면 여기서 IntegrityError 로 터진다
     # (이미 제한인 작품을 다시 제한하는 경우의 누락은 상태가 그대로라 못 잡는다 — 그건 행위 테스트가 본다).
@@ -166,6 +175,8 @@ class Content(Base):
         CheckConstraint(
             "novel_permission IN ('forbidden', 'private', 'public')", name="ck_contents_novel_permission"
         ),
+        # 작가의 작품 목록을 최근 편집 순으로 넘긴다. `id` 는 같은 시각끼리의 순서를 정하는 커서 꼬리다.
+        Index("ix_contents_creator_user_id_edited_at", "creator_user_id", edited_at.desc(), id.desc()),
     )
 
 

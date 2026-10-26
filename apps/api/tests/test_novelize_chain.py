@@ -528,6 +528,28 @@ async def test_a_chain_that_finds_nothing_left_to_write_fails_with_a_full_refund
     assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -120), ("novelize_refund", 120)]
 
 
+async def test_a_chain_parent_handed_to_the_single_job_runner_fails_as_internal_with_a_full_refund(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+) -> None:
+    """연쇄 부모는 연쇄 실행으로만 돈다 — 묶음 하나짜리 실행에 들어오면 모델을 부르지 않고 내부 오류로 실패해 전액 돌려준다. 깨지는
+    시나리오: 부모가 장 생성 경로로 흘러 부모 행의 빈 구간으로 입력을 만들다 원문 변경으로 오판하거나, 구간이 맞아떨어지면 묶음 하나를
+    부모 값으로 써 버린다."""
+    _, novel_id, owner_id = await _chain_novel(db_client, db_session, monkeypatch, turns=2)
+    parent_id = await _start(db_client, novel_id)
+    fake = _ChainLLM()
+
+    await runner.run_job(_factory(db_session), fake, parent_id)
+
+    parent = await _job(db_session, parent_id)
+    assert (parent.status, parent.failure_code, parent.refunded_amount) == ("failed", "internal", 120)
+    assert (fake.generate_calls, fake.boundary_calls) == ([], [])
+    assert await _children(db_session, parent_id) == []
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -120), ("novelize_refund", 120)]
+
+
 async def test_auto_boundaries_do_not_count_toward_the_hourly_proposal_limit(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,

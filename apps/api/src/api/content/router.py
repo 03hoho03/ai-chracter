@@ -1762,7 +1762,9 @@ async def update_content_draft(
     )
     # 자동저장이 곧 "발행본과 달라진 편집분이 생겼다"이다. 아래 두 분기가 각자 끝에서 commit 하고
     # 페이로드/타입 불일치(422)는 commit 전에 raise 하므로, 여기 한 곳이 캐릭터·스토리 양쪽을 덮는다.
+    # 공개 범위·소설화 허락 자동저장도 이 경로 안이라 마지막 편집 시각은 여기서 한 번 민다.
     content.has_unpublished_changes = True
+    content.edited_at = datetime.now(UTC)
 
     if isinstance(payload, CharacterDraftPayload):
         if content.type != ContentType.CHARACTER:
@@ -1946,8 +1948,9 @@ async def reset_content_draft(
     published_version = await db.get(ContentVersion, content.current_published_version_id)
     assert published_version is not None
 
-    # 초안을 발행본으로 되돌리므로 미발행 편집분은 사라진다.
+    # 초안을 발행본으로 되돌리므로 미발행 편집분은 사라진다. 편집 취소도 작가가 작품을 바꾼 순간이라 편집 시각을 민다.
     content.has_unpublished_changes = False
+    content.edited_at = datetime.now(UTC)
 
     await _delete_draft_children(db, content.type, draft_version.id)
 
@@ -2314,7 +2317,10 @@ async def _write_character_publish(
         select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)
     )
     version.version_number = (latest_version_number or 0) + 1
-    version.published_at = datetime.now(UTC)
+    published_at = datetime.now(UTC)
+    version.published_at = published_at
+    # 마지막 편집 시각은 발행 시각과 같은 값이다(옛 작품의 백필도 마지막 발행 시각을 쓴다).
+    content.edited_at = published_at
 
     new_version = ContentVersion(content_id=content.id, detail_description=version.detail_description)
     db.add(new_version)
@@ -2857,7 +2863,10 @@ async def _write_story_publish(
         select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)
     )
     version.version_number = (latest_version_number or 0) + 1
-    version.published_at = datetime.now(UTC)
+    published_at = datetime.now(UTC)
+    version.published_at = published_at
+    # 마지막 편집 시각은 발행 시각과 같은 값이다(옛 작품의 백필도 마지막 발행 시각을 쓴다).
+    content.edited_at = published_at
 
     new_version = ContentVersion(content_id=content.id, detail_description=version.detail_description)
     db.add(new_version)
@@ -2912,6 +2921,7 @@ async def update_content_visibility(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the content owner")
 
     content.visibility = body.visibility
+    content.edited_at = datetime.now(UTC)
     await db.commit()
 
 
@@ -2942,6 +2952,7 @@ async def update_content_novel_permission(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the content owner")
 
     content.novel_permission = body.novel_permission
+    content.edited_at = datetime.now(UTC)
     await db.commit()
 
 

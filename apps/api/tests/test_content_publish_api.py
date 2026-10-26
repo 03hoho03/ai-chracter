@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from collections.abc import AsyncIterator
-from datetime import timezone
+from datetime import UTC, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -1691,6 +1691,53 @@ async def test_publish_story_clears_has_unpublished_changes(
     assert resp.status_code == 200
     await db_session.refresh(content)
     assert content.has_unpublished_changes is False
+
+
+async def _publish_moves_last_edit_forward(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, content: Content, creator_user_id: uuid.UUID
+) -> None:
+    """편집 시각을 먼 과거로 써 둔 뒤 발행하고, 칸이 그 값보다 늦어졌는지 DB 에서 컬럼 단위로 읽어 본다(한 테스트 안에서
+    DB `now()` 가 고정이라 전후 비교 대신 과거 값을 심는다)."""
+    long_ago = datetime(2020, 1, 1, tzinfo=UTC)
+    content.edited_at = long_ago
+    await db_session.commit()
+    await _login_as(db_client, creator_user_id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    edited_at = await db_session.scalar(sa.select(Content.edited_at).where(Content.id == content.id))
+    assert edited_at is not None and edited_at > long_ago
+
+
+async def test_publishing_a_character_moves_its_last_edit_forward(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version, _thumbnail, _image = await _make_publishable_character_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    await _publish_moves_last_edit_forward(db_client, db_session, content, user.id)
+
+
+async def test_publishing_a_story_moves_its_last_edit_forward(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version, _thumbnail, _setup, _ending, _stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    await _publish_moves_last_edit_forward(db_client, db_session, content, user.id)
 
 
 async def test_publish_clones_media_book_with_stable_entity_ids(

@@ -1,6 +1,7 @@
 import logging
 import uuid
 from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -422,8 +423,10 @@ async def register_situational_image(
         .values(entity_id=payload.entity_id, content_version_id=payload.content_version_id, **image_values)
         .on_conflict_do_update(constraint="ux_situational_images_version_entity", set_=image_values)
     )
-    # 초안 이미지가 바뀌었으니 발행본과 달라졌다 — 초안 저장(PATCH)과 같이 작가 화면의 '발행 안 한 변경'을 세운다.
+    # 초안 이미지가 바뀌었으니 발행본과 달라졌다 — 초안 저장(PATCH)과 같이 작가 화면의 '발행 안 한 변경'을 세우고
+    # 마지막 편집 시각을 민다.
     content.has_unpublished_changes = True
+    content.edited_at = datetime.now(UTC)
 
     await db.commit()
 
