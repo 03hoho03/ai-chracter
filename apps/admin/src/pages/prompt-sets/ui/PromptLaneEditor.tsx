@@ -1,4 +1,4 @@
-import { isRoutingLane } from "@/entities/prompt-routing";
+import { isChatRoutingLane } from "@/entities/prompt-routing";
 
 import { useDraftQuery } from "../api/useDraftQuery";
 import { useVersionListQuery } from "../api/useVersionListQuery";
@@ -33,7 +33,7 @@ export function PromptLaneEditor({ lane, model, onDirtyChange }: PromptLaneEdito
           {model !== "gemini" && (
             <p className="max-w-prose break-keep text-xs text-muted-foreground">{nonGeminiGuide(lane, model)}</p>
           )}
-          {isRoutingLane(lane) && <ChainReadBy lane={lane} model={model} />}
+          {isChatRoutingLane(lane) && <ChainReadBy lane={lane} model={model} />}
         </div>
         <ActiveVersionBadge lane={lane} model={model} />
       </div>

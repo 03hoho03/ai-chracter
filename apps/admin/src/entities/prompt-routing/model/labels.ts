@@ -77,3 +77,13 @@ export function isPromptSetModelId(value: string): value is PromptSetModelId {
 export function isRoutingLane(value: string): value is RoutingLane {
   return value in ROUTING_LANE_LABELS;
 }
+
+/** 배정 표가 채팅 턴의 칸을 고르는 레인. 소설 레인도 배정 표에 행이 있지만 프롬프트 세트 화면은 그 레인의 체인을 배정 표
+ * 조회로 설명하지 않고 고정 문구로 다루므로, 프롬프트 세트 화면은 이 목록으로 채팅 레인을 가른다. */
+export const CHAT_ROUTING_LANES = ["story", "character"] as const satisfies readonly RoutingLane[];
+
+export type ChatRoutingLane = (typeof CHAT_ROUTING_LANES)[number];
+
+export function isChatRoutingLane(value: string): value is ChatRoutingLane {
+  return CHAT_ROUTING_LANES.some((lane) => lane === value);
+}

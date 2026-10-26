@@ -15,7 +15,7 @@ import { useState } from "react";
 import { type Control, Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { isRoutingLane, PREMIUM_OFF_UNREAD_COPY, useRoutingQuery, type RoutingLane } from "@/entities/prompt-routing";
+import { isChatRoutingLane, PREMIUM_OFF_UNREAD_COPY, useRoutingQuery, type ChatRoutingLane } from "@/entities/prompt-routing";
 import { isApiError } from "@/shared/lib/api/client";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
@@ -53,7 +53,7 @@ type PublishPromptSetDialogProps = {
 // 읽힌다. 소설 레인 Gemini 세트는 경계 제안·문단 수정·여러 문단 수정·묶음 재검사와 Gemini 로 쓰는 화 생성·전체·장면 구성안에
 // 읽힌다. 채팅 두 레인은 모델과 무관하게 모델 배정 표가 고른 칸에서 읽히므로 아래 `chatPublishEffectCopy` 가 배정 표 조회로
 // 문장을 만든다.
-const NON_CHAT_PUBLISH_EFFECT_COPY: Record<Exclude<PromptLane, RoutingLane>, string> = {
+const NON_CHAT_PUBLISH_EFFECT_COPY: Record<Exclude<PromptLane, ChatRoutingLane>, string> = {
   publish_filter: "다음 발행 심사부터 즉시 반영되고",
   novel: "다음 소설 경계 제안·문단 수정·여러 문단 수정·묶음 재검사와 Gemini 로 쓰는 다음 화 생성·구성안부터 즉시 반영되고",
   novel_screen: "다음 노벨 공개 심사부터 즉시 반영되고",
@@ -67,7 +67,7 @@ const NOVEL_CLAUDE_PUBLISH_EFFECT_COPY =
 /** 채팅 레인 체인은 응답 생성이든 판정·요약이든 배정 표가 그 체인을 고른 칸에서만 읽힌다 — 읽는 칸 수는 배정 표 조회의 체인
  * 목록 하나에서 온다. 화자 라벨·등급 규칙은 소설이 원작의 채팅 Gemini 세트에서 읽으므로(배정 표와 무관하다) Gemini 체인에만
  * 그 괄호를 붙인다. */
-function chatPublishEffectCopy(routingQuery: ReturnType<typeof useRoutingQuery>, lane: RoutingLane, model: PromptModel) {
+function chatPublishEffectCopy(routingQuery: ReturnType<typeof useRoutingQuery>, lane: ChatRoutingLane, model: PromptModel) {
   const novelNote = model === "gemini" ? "(화자 라벨과 등급 규칙은 다음 소설 작업에도 쓰여요)" : "";
   if (routingQuery.isPending) return `운영에서 이 체인을 읽는 칸을 확인하는 중이고${novelNote}`;
   if (routingQuery.isError) return `운영에서 이 체인을 읽는 칸을 확인하지 못했고(모델 배정 화면에서 확인하세요)${novelNote}`;
@@ -102,7 +102,7 @@ export const PublishPromptSetDialog = createCallable<PublishPromptSetDialogProps
   } = useForm<PublishFormValues>({ defaultValues: { note: "", levels: {} } });
 
   const publishEffectCopy = (): string => {
-    if (isRoutingLane(lane)) return chatPublishEffectCopy(routingQuery, lane, model);
+    if (isChatRoutingLane(lane)) return chatPublishEffectCopy(routingQuery, lane, model);
     return model === "gemini" ? NON_CHAT_PUBLISH_EFFECT_COPY[lane] : NOVEL_CLAUDE_PUBLISH_EFFECT_COPY;
   };
 

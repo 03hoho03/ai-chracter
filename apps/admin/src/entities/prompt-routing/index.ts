@@ -2,6 +2,8 @@ export { promptRoutingKeys } from "./api/keys";
 export { routingQueryOptions } from "./api/routingQueryOptions";
 export { useRoutingQuery } from "./api/useRoutingQuery";
 export {
+  CHAT_ROUTING_LANES,
+  isChatRoutingLane,
   isPromptSetModelId,
   isRoutingLane,
   PROMPT_MODEL_LABELS,
@@ -12,6 +14,7 @@ export {
   ROUTING_LANE_LABELS,
   ROUTING_STAGE_LABELS,
 } from "./model/labels";
+export type { ChatRoutingLane } from "./model/labels";
 export { isRoomLive, PREMIUM_OFF_UNREAD_COPY } from "./model/roomReads";
 export type {
   AdminPromptRouteAllowedPair,
