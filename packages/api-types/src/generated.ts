@@ -10206,6 +10206,8 @@ export interface components {
         };
         /** ChatMessageCreateRequest */
         ChatMessageCreateRequest: {
+            /** Priceversion */
+            priceVersion?: number | null;
             /** Content */
             content: string;
             /** Shortcutid */
@@ -10221,6 +10223,8 @@ export interface components {
         };
         /** ChatMessageEditRequest */
         ChatMessageEditRequest: {
+            /** Priceversion */
+            priceVersion?: number | null;
             /** Content */
             content: string;
         };
@@ -10690,6 +10694,17 @@ export interface components {
             updatedAt: string;
         };
         /**
+         * ChatTurnRequest
+         * @description 채팅 턴(전송·재생성·편집·빌더 미리보기) 요청이 함께 싣는 칸. 재생성은 이 칸만 있는 본문을 받는다(본문 없이도 된다).
+         *
+         *     `price_version` 은 화면이 공개 가격 응답에서 받은 가격표 버전이다. 이 턴이 클로버로 낼 턴인데 서버 버전과 다르면 차감
+         *     게이트가 깎기 전에 409 로 멈춘다(`core/rate_limit_gate.py`). 비우면 대조하지 않는다 — 버전을 모르는 배포 전 화면이 그렇다.
+         */
+        ChatTurnRequest: {
+            /** Priceversion */
+            priceVersion?: number | null;
+        };
+        /**
          * ChatViewReasonCategory
          * @description 기존 `ReportReasonCategory`(작품·댓글 신고 사유)와
          *     다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다.
@@ -10835,6 +10850,8 @@ export interface components {
         CloverPricingResponse: {
             /** Products */
             products: components["schemas"]["CloverProductItem"][];
+            /** Priceversion */
+            priceVersion: number;
             /** Chatturncost */
             chatTurnCost: number;
             /** Imagecost */
@@ -11927,6 +11944,8 @@ export interface components {
             count: number;
             /** Referenceassetid */
             referenceAssetId?: string | null;
+            /** Priceversion */
+            priceVersion?: number | null;
         };
         /** GenerateImageResponse */
         GenerateImageResponse: {
@@ -24559,7 +24578,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ChatTurnRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
