@@ -5897,7 +5897,7 @@
           "content"
         ],
         "summary": "Delete Content Draft",
-        "description": "Deletes a never-published content outright (draft version + content row).\n\nDeletable == exactly what `GET /me/drafts` returns: `current_published_version_id\nIS NULL`. Anything with publish history is refused with 409 — publishing auto-clones a\nfresh draft version, so a published work always has a draft row too, and throwing that\naway would delete the published work with it. Discarding *edits* to a published work is\n`POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 정책상 없다.",
+        "description": "Deletes a never-published content outright (draft version + content row).\n\nDeletable == exactly what `GET /me/drafts` returns: `current_published_version_id\nIS NULL`. Anything with publish history is refused with 409 — publishing auto-clones a\nfresh draft version, so a published work always has a draft row too, and throwing that\naway would delete the published work with it. Discarding *edits* to a published work is\n`POST /contents/{id}/draft/reset` instead. 발행작을 완전히 지우는 사용자 API 는 없다 — 다른 회원의 방·소설·기록이\n얽혀 있어 운영자만 `scripts/purge_contents.py` 로 지운다.",
         "operationId": "delete_content_draft_contents__id__draft_delete",
         "parameters": [
           {

@@ -2477,7 +2477,8 @@ export interface paths {
          *     IS NULL`. Anything with publish history is refused with 409 — publishing auto-clones a
          *     fresh draft version, so a published work always has a draft row too, and throwing that
          *     away would delete the published work with it. Discarding *edits* to a published work is
-         *     `POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 정책상 없다.
+         *     `POST /contents/{id}/draft/reset` instead. 발행작을 완전히 지우는 사용자 API 는 없다 — 다른 회원의 방·소설·기록이
+         *     얽혀 있어 운영자만 `scripts/purge_contents.py` 로 지운다.
          */
         delete: operations["delete_content_draft_contents__id__draft_delete"];
         options?: never;

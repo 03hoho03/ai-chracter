@@ -3298,6 +3298,96 @@ tail -f /var/log/ddona-hidden-novel-purge.log
   필요가 없다.
 - 요약 다시 만들기의 가격(10 클로버)은 표와 무관하게 고정이다. 요약 칸 행이 방 모델마다 다르면 원가(문안 길이와 부를 모델)는 방 모델을 따를 수 있다.
 
+### 3-18. 작품 완전 삭제 — 운영자 스크립트
+
+앱에는 발행된 적 있는 작품을 지우는 경로가 없다 — 작가는 비공개로 돌릴 수 있을 뿐이고, 운영 조치는 상태만 `DELETED` 로
+바꾸는 소프트 삭제다(행·그림·대화방이 그대로 남는다). 시드·시험 작품처럼 **기록 자체를 없애야 할 때만**
+`apps/api/scripts/purge_contents.py` 를 쓴다. 기본은 계획(읽기만)이고, 적용은 한 트랜잭션, 저장소 정리는 그 뒤의 별도
+명령이다 — DB 와 R2 를 한 트랜잭션으로 묶을 수 없어서, 커밋이 실패해도 그림이 먼저 사라지지 않게 순서를 나눈 것이다.
+
+**지우는 것** — 대상 작품의 모든 버전과 그 하위 행(시작설정·상황 이미지·미디어 북 칸 등), 그 작품의 모든 대화방(다른
+회원의 방 포함)과 메시지, 그 작품이 원작이거나 그 방에서 나온 소설, 회원이 그 작품에 남긴 좋아요·즐겨찾기·대화 참여·
+이미지 노출·신고·엔딩 수집, 대상만 쓰던 그림(작가 이미지 보관함의 생성 이미지도 포함 — 보관함에서도 사라진다)과 소설
+삭제로 쓰는 곳이 없어진 삽화 그림, 그림이 모두 없어진 이미지 생성 요청 행. **남는 것** — 운영 조치·통지·조치 기록·응답
+신고·버린 응답 기록은 기록이라 행을 남기고, 작품·방·소설을 가리키던 칸만 FK(`SET NULL`)가 비운다. 계획 출력의 행 수
+목록에서 이름 끝이 `:set_null` 인 줄이 그것이다.
+
+**거부(종료 2, 쓰기 0)** — 아래 중 하나라도 있으면 계획은 거부 사유를 출력하고 적용은 아무것도 쓰지 않는다.
+- 대상 작품의 댓글
+- 클로버 사용처 — 작품·방·소설 세 칸 모두 본다(방·소설 칸에는 FK 가 없어 DB 가 막아 주지 않는다)
+- 정산 확정 내역
+- 대상 소설의 노벨 공개 상태·노벨 구매
+- 홈 지정(작품 큐레이션·노벨 큐레이션)
+- 대상 밖 작품의 시작설정이 대상과 같은 entity id 를 씀(엔딩 수집이 그 id 로만 이어져 있어 남의 수집까지 지워진다)
+- 지울 그림을 남길 소설의 삽화·회원 프로필 이미지·문의 첨부가 씀
+- ids 파일에 DB 에 없는 id 가 있음, 적용의 `--expect-contents` 가 ids 파일의 작품 수와 다름
+
+돈·공개·남의 글이 얽힌 경우라 무엇을 남길지는 정책 결정이다. **거부되면 스크립트를 고치거나 우회하지 말고 멈춘다.**
+
+**실행 위치** — 서빙 중인 색의 api 컨테이너 안(`exec -T api_<색>`)이다. 스크립트는 이미지에 들어 있고 컨테이너 env 가
+운영 DB·R2 를 이미 가리킨다. ids 파일은 이미지에 없으니 `cp` 로 넣고, apply 가 컨테이너 안에 남기는 키 파일은 **apply
+직후** VM 호스트로 꺼낸 뒤 로컬로 `gcloud compute scp` 해 둔다. 다음 배포로 색이 바뀌면 옛 컨테이너가 지워지며 그 안의
+파일도 사라지는데, 행이 이미 지워진 뒤라 지울 저장소 키를 다시 만들 근거가 그 파일 하나뿐이다. **그래서 apply 부터
+delete-objects 까지 main 병합(= API 자동 배포)을 미룬다.** 아래 명령은 한 SSH 세션 안에서 색이 바뀌지 않는다는 전제다.
+
+```sh
+# 0. 로컬 — ids 파일을 만든다. 한 줄에 작품 id(uuid) 하나, 빈 줄과 `#` 로 시작하는 줄은 무시한다. VM 으로 올린다.
+gcloud compute scp purge-ids.txt ddona-api:/tmp/purge-ids.txt --zone=asia-northeast3-a --tunnel-through-iap --project=ddona-ai-character-chat
+
+gcloud compute ssh ddona-api --zone=asia-northeast3-a --tunnel-through-iap --project=ddona-ai-character-chat
+cd /opt/ddona/app
+C="sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
+A=api_$(sudo bash ops/active-color.sh)
+$C cp /tmp/purge-ids.txt $A:/tmp/purge-ids.txt
+
+# 1. 계획 — 읽기만 한다. 대상 작품 목록, 표별 행 수, 지울 그림·저장소 키 수, 거부 사유를 출력한다.
+#    종료 0 = 진행 가능 · 2 = 거부 사유 있음(위 "거부" — 여기서 멈춘다).
+$C exec -T $A python -u scripts/purge_contents.py plan --ids-file /tmp/purge-ids.txt
+
+# 2. 수동 백업 — DB 를 되돌릴 유일한 길이다. `--manual` 을 빠뜨리면 일단위 보관 칸이 하나 밀려 지워진다("백업 · 복원" 절).
+sudo /opt/ddona/backup.sh --manual
+
+# 3. 적용 — 대상 작품 행을 잠그고 계획을 다시 세운 뒤, 거부 사유가 없으면 한 트랜잭션으로 지운다. N 은 ids 파일의 작품
+#    수를 손으로 적는다(다른 목록을 지우지 않게). 지울 저장소 키는 커밋 직전에 --keys-out 에 남는다. 이미 있는 파일
+#    이름은 거부한다 — 다시 돌릴 때는 새 이름을 쓴다. 종료 0 = 커밋함 · 2 = 거부(쓰기 0, 키 파일 없음).
+$C exec -T $A python -u scripts/purge_contents.py apply --ids-file /tmp/purge-ids.txt --expect-contents N --keys-out /tmp/purge-keys.json
+
+# 4. 키 파일 회수 — 바로 한다. 컨테이너 → VM 호스트 → 로컬.
+$C cp $A:/tmp/purge-keys.json /tmp/purge-keys.json && sudo chown "$USER" /tmp/purge-keys.json
+#    (로컬에서) gcloud compute scp ddona-api:/tmp/purge-keys.json . --zone=asia-northeast3-a --tunnel-through-iap --project=ddona-ai-character-chat
+
+# 5. 확인 — 대상 작품·방이 0 이어야 한다(id 는 ids 파일의 것을 쉼표로 이어 넣는다). 화면에서도 그 작품 상세·작가
+#    보관함·홈에 흔적이 없는지 본다. 여기서 이상하면 6 으로 가지 말고 아래 "되돌리기" 의 DB 복원을 한다.
+$C exec -T postgres psql -U postgres -d ai_character_chat -c \
+  "SELECT (SELECT count(*) FROM contents WHERE id IN ('<id>','<id>')) AS contents,
+          (SELECT count(*) FROM chat_rooms WHERE content_id IN ('<id>','<id>')) AS chat_rooms;"
+#    7 의 표본 — 키 파일 중 아직 R2 에 있는 객체 수와, 그 하나의 서명 주소를 받아 둔다(GET 이 200 이어야 한다).
+$C exec -T $A python -c "import json; from api.core.s3 import get_object_size, generate_per_request_presigned_get_url as url; ks=[k for k in json.load(open('/tmp/purge-keys.json')) if get_object_size(k) is not None]; print(len(ks)); print(url(ks[0]) if ks else '')"
+
+# 6. 저장소 정리 — --apply 없이 먼저 돌려 지울 키 수만 본다. 그 수가 3 의 출력 "저장소 키 M개" 와 같으면 --apply.
+#    delete-objects 는 --apply 여부와 상관없이 먼저 키 파일의 키를 assets.storage_key 와 다시 대조해, 아직 DB 에 살아
+#    있는 그림의 키가 하나라도 있으면 키 수도 내지 않고 종료 2 로 멈춘다(엉뚱한 키 파일·롤백된 적용으로 살아 있는 그림을
+#    지우지 않게). 첫 줄에서 2 가 나오면 --apply 로 가지 않는다. 키 하나가 실패해도 나머지는 지우고 실패한 키를 표준 오류에 남긴다 — 종료 1 이면 같은 명령을 다시 돌린다. 이미 없는
+#    키는 R2 가 성공으로 답하므로 재실행이 안전하다(변형 키 중 처음부터 없던 것도 성공으로 셈한다).
+$C exec -T $A python -u scripts/purge_contents.py delete-objects --keys-file /tmp/purge-keys.json
+$C exec -T $A python -u scripts/purge_contents.py delete-objects --keys-file /tmp/purge-keys.json --apply
+
+# 7. 확인 — 5 의 python 줄을 다시 돌려 남은 객체 수가 0 인지 보고, 5 에서 받아 둔 서명 주소를 GET 해 404 를 본다
+#    (서명 유효시간 안에 확인한다 — 지나면 403 이라 판정이 안 된다). HEAD(`curl -I`)는 쓰지 않는다 — GET 으로 서명된 주소다.
+curl -s -o /dev/null -w '%{http_code}\n' '<5 에서 받은 주소>'
+```
+
+**apply 가 실패하면** — FK 위반 등 삭제 도중의 예외는 트랜잭션 전체가 롤백되고 키 파일은 생기지 않는다(쓰기 0). 출력의
+원인을 확인한 뒤 1 의 계획부터 다시 돈다. **커밋 자체가 예외로 끝났으면** 커밋이 실제로 반영됐는지 스크립트가 알 수 없어,
+키 파일을 지우지 않고 `<--keys-out>.unconfirmed`(위 예시면 `/tmp/purge-keys.json.unconfirmed`)로 남긴다. 이때는 그 파일을
+4 처럼 회수하고, 5 의 SELECT 로 대상이 정말 지워졌는지 본다. 지워졌으면 그 파일을 `--keys-file` 로 6 을 돌린다. 지워지지
+않았으면 그 파일은 버리고 1 부터 다시 한다 — 잘못 넘겨도 6 의 살아 있는 키 대조가 종료 2 로 막는다.
+
+**되돌리기** — DB 는 2 의 수동 백업을 "백업 · 복원" 절의 복원 절차로 되살린다. 백업 시각 이후의 운영 데이터(가입·대화·
+결제 전부)를 잃으므로 마지막 수단이다. **R2 객체는 DB 백업에 들어 있지 않아 6 의 `--apply` 뒤에는 되돌릴 수 없다** —
+그래서 5 에서 DB 와 화면을 먼저 확인하고 나서 6 을 돌린다. 6 전에 DB 를 복원했다면 그 키 파일은 버린다(그대로 돌려도
+살아 있는 키 대조가 종료 2 로 막는다).
+
 ## 4. 배포 후 스모크 검증
 
 1. `curl https://api.ddona.site/health` → `{"status":"ok"}` · `/ready`로 DB·Redis까지 확인. 배포 로그에서 교체 스크립트의
