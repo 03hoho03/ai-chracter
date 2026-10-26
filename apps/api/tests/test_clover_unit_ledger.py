@@ -142,11 +142,12 @@ async def test_rows_written_before_the_conversion_are_legacy(
     )
     await db_session.commit()
 
-    assert await _ledger(db_client, "use") == [
+    # 같은 시각의 두 행은 2차 키(uuid)로 갈려 순서가 실행마다 다르다 — 내용으로 비교한다.
+    assert sorted(await _ledger(db_client, "use")) == [
         ("chat_spend", False),
-        ("unit_conversion", False),
-        ("image_spend", False),
         ("chat_spend", True),
+        ("image_spend", False),
+        ("unit_conversion", False),
     ]
 
 

@@ -8,8 +8,8 @@ from api.llm.chat_models import ChatModelId
 from api.payments.methods import PayMethod
 
 # 원장 조회 쿼리 파라미터와 응답 `category` 필드가
-# 같은 타입을 공유한다.
-CloverLedgerCategory = Literal["use", "earn", "expire"]
+# 같은 타입을 공유한다. `conversion`(단위 전환) 행은 다른 세 범주 어느 것을 물어도 경계 줄로 함께 실린다(`clover/router.py`).
+CloverLedgerCategory = Literal["use", "earn", "expire", "conversion"]
 
 
 class CloverExpiringSoon(CamelModel):
@@ -80,6 +80,8 @@ class CloverLedgerItem(CamelModel):
     kind: str
     category: CloverLedgerCategory
     created_at: datetime
+    # 이 행이 단위 전환 전의 클로버 단위로 적혔는가(`clover/unit.py` 의 `is_legacy_unit`). 단위를 전환한 적이 없으면 늘 거짓이다.
+    legacy_unit: bool
 
 
 class CloverLedgerListResponse(CamelModel):

@@ -151,7 +151,19 @@ CloverKind = Literal[
     # 원작자 몫이 붙는 사용이 아니라서 정산 대상이 아니다.
     "memory_summary_spend",
     "memory_summary_refund",
+    # 클로버 단위(한 개의 원화 값)를 바꿀 때 잔액을 새 단위로 옮긴 행과, 그 전환을 되돌린 행. 회원마다 이벤트 한 번에 한 행이고
+    # 쓰는 쪽은 전환 마이그레이션과 되돌림 스크립트뿐이다(`db/models/clover.py` 의 `CloverUnitEvent`).
+    "unit_conversion",
+    "unit_conversion_revert",
 ]
+
+# 위 두 단위 전환 kind. 내역 응답이 이 행을 어느 탭에나 경계 줄로 싣고, 옛 단위 표시에서 늘 빼는 열쇠다.
+UNIT_CONVERSION_KINDS = ("unit_conversion", "unit_conversion_revert")
+
+# 이 코드가 쓰는 클로버 단위 — 클로버 한 개가 몇 원인가(부가세 포함). 가격 상수·상품 수량·환불 견적이 모두 이 단위로 적혀 있다.
+# 기동 가드(`clover/unit.py`)가 이 값과 DB 의 마지막 단위 전환 기록을 대조하고, 운영 교체 스크립트(`ops/swap-api.sh`)는 이
+# 이름이 있는지로 올릴 이미지에 가드가 있는지를 판정한다 — 이름을 바꾸거나 옮기면 그 스크립트의 판정도 함께 고친다.
+CLOVER_UNIT_KRW = 3
 
 # 구매로 생기는 로트 kind. 차감 정렬은 이 둘만 이름으로 집고 나머지 kind 는 전부 무료로 본다 — 무료 kind 를 나열하면
 # kind 가 늘 때(Text 라 마이그레이션 없이 는다) 빠뜨린 무료 로트가 유료 뒤로 밀린다. 둘만 집으면 누락이 생길 자리가 없다.

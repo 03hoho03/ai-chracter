@@ -456,6 +456,8 @@ class AdminCloverLedgerItem(CamelModel):
     # `Literal`로 좁히지 않는다(좁히면 BE가 값을 늘릴 때마다 FE 코드젠이 깨진다).
     kind: str
     created_at: datetime
+    # 회원 내역과 같은 판정(`clover/unit.py` 의 `is_legacy_unit`) — 환불 조사 때 옛 단위 행을 같은 눈금으로 읽게 한다.
+    legacy_unit: bool
 
 
 class AdminCloverLedgerListResponse(CamelModel):

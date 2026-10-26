@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.clover import products
+from api.clover.unit import is_legacy_unit, load_unit_events
 from api.clover.missions import (
     MISSION_KEYS,
     MISSION_REWARDS,
@@ -110,12 +111,17 @@ CLOVER_KIND_CATEGORY: dict[str, CloverLedgerCategory] = {
     "withdrawal_burn": "expire",
     # 결제 취소에 따른 회수 — 유저가 쓴 것이 아니라 어드민 회수와 같은 범주다.
     "purchase_revoke": "expire",
+    # 클로버 단위 전환과 그 되돌림 — 쓰거나 받은 것이 아니라 같은 잔액을 다른 눈금으로 옮긴 것이라 따로 둔다. 내역은 다른 세
+    # 범주 어느 것을 물어도 이 행을 함께 실어 "여기부터 단위가 바뀌었다"는 경계 줄로 보인다(`get_clover_ledger`).
+    "unit_conversion": "conversion",
+    "unit_conversion_revert": "conversion",
 }
 
 _CATEGORY_KINDS: dict[CloverLedgerCategory, list[str]] = {
     "use": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "use"],
     "earn": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "earn"],
     "expire": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "expire"],
+    "conversion": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "conversion"],
 }
 
 # 임박 임계값은 3일이다 — 만료까지 3일 이내인 로트가
@@ -424,11 +430,14 @@ async def get_clover_ledger(
     """
     await _require_active_user(db, user_id)
 
+    # 단위 전환 행은 사용·획득·소멸 어느 탭에서나 경계 줄로 함께 싣는다 — 한 회원에 전환 한 번당 한 행이라 탭을 어지럽히지 않고,
+    # 네 번째 탭에만 두면 사용자가 그 탭을 찾아야 잔액이 왜 바뀌었는지 안다.
+    kinds = {*_CATEGORY_KINDS[category], *_CATEGORY_KINDS["conversion"]}
     query = (
         select(CloverLedger)
         .where(
             CloverLedger.user_id == user_id,
-            CloverLedger.kind.in_(_CATEGORY_KINDS[category]),
+            CloverLedger.kind.in_(kinds),
         )
         .order_by(CloverLedger.created_at.desc(), CloverLedger.id.desc())
     )
@@ -449,6 +458,7 @@ async def get_clover_ledger(
         last = page[-1]
         next_cursor = _encode_cursor([last.created_at.isoformat(), str(last.id)])
 
+    events = await load_unit_events(db)
     return CloverLedgerListResponse(
         items=[
             CloverLedgerItem(
@@ -458,6 +468,7 @@ async def get_clover_ledger(
                 kind=row.kind,
                 category=CLOVER_KIND_CATEGORY[row.kind],
                 created_at=row.created_at,
+                legacy_unit=is_legacy_unit(kind=row.kind, created_at=row.created_at, events=events),
             )
             for row in page
         ],

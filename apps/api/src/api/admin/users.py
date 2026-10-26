@@ -32,6 +32,7 @@ from api.admin.schemas import (
 )
 from api.auth.age import is_under_beta_minimum_age
 from api.auth.oauth_common import signup_method
+from api.clover.unit import is_legacy_unit, load_unit_events
 from api.core import clover
 from api.core.config import settings
 from api.db.models.auth import User
@@ -880,6 +881,7 @@ async def list_user_clover_ledger(
         )
     ).all()
 
+    events = await load_unit_events(db)
     return AdminCloverLedgerListResponse(
         items=[
             AdminCloverLedgerItem(
@@ -888,6 +890,7 @@ async def list_user_clover_ledger(
                 balance_after=row.balance_after,
                 kind=row.kind,
                 created_at=row.created_at,
+                legacy_unit=is_legacy_unit(kind=row.kind, created_at=row.created_at, events=events),
             )
             for row in rows
         ],
