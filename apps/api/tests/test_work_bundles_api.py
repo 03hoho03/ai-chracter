@@ -19,6 +19,7 @@ from api.db.models.content import Content, ModerationStatus
 from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.novel import Novel
 from api.db.models.work_bundle import WorkBundle, WorkBundleItem
+from api.db.session import engine
 from factories import (
     _allow_novelize,
     _get_genre,
@@ -259,6 +260,65 @@ async def test_a_bundle_holds_at_most_the_item_limit(
     assert resp.status_code == 409
     assert resp.json()["detail"] == {"code": "WORK_BUNDLE_LIMIT"}
     assert len(await _item_rows(db_session, bundle_id)) == 2
+
+
+async def test_hidden_rows_do_not_take_up_the_item_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """한도는 화면의 항목 수와 같은 것을 센다 — 넣은 뒤 운영 삭제된 작품·숨긴 소설은 소속 행이 남아도 자리를 차지하지 않는다.
+    보이는 항목으로 찬 묶음은 그대로 막힌다."""
+    from api.works import bundles
+
+    monkeypatch.setattr(bundles, "MAX_ITEMS_PER_BUNDLE", 2)
+    user_id = await _member(db_client, db_session)
+    await _allow_novelize(db_session, monkeypatch, user_id)
+    bundle_id = await _bundle(db_client)
+    removed = await _draft(db_client)
+    hidden = await _novel(db_session, user_id)
+    await db_session.commit()
+    assert (await _put(db_client, bundle_id, "character", removed)).status_code == 204
+    assert (await _put(db_client, bundle_id, "novel", hidden)).status_code == 204
+    assert (await _put(db_client, bundle_id, "character", await _draft(db_client))).status_code == 409
+
+    await db_session.execute(
+        sa.update(Content).where(Content.id == removed).values(moderation_status=ModerationStatus.DELETED)
+    )
+    await db_session.execute(sa.update(Novel).where(Novel.id == hidden).values(hidden_at=datetime.now(UTC)))
+    await db_session.commit()
+    assert (await _put(db_client, bundle_id, "character", await _draft(db_client))).status_code == 204
+    assert (await _put(db_client, bundle_id, "story", await _draft(db_client, "story"))).status_code == 204
+    resp = await _put(db_client, bundle_id, "character", await _draft(db_client))
+    assert resp.status_code == 409
+    assert [b["itemCount"] for b in await _bundles(db_client)] == [2]
+    assert len(await _item_rows(db_session, bundle_id)) == 4
+
+
+@pytest.mark.parametrize("kind", [pytest.param("character", id="content"), pytest.param("novel", id="novel")])
+async def test_putting_a_work_holds_the_work_row_until_it_commits(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """작품 확인 조회가 그 행을 `FOR KEY SHARE` 로 잡는다 — 잡지 않으면 확인과 INSERT 사이에 초안·소설 삭제가 커밋돼 소속
+    INSERT 가 FK 위반(500)이 된다. 잡으면 삭제가 이 넣기의 커밋을 기다리고, 먼저 지워졌으면 확인이 404 를 낸다. 두 연결의
+    경합은 이 픽스처(한 연결에 묶인 트랜잭션)로 만들 수 없어 잠금 절이 실제 SQL 에 실리는지를 본다."""
+    user_id = await _member(db_client, db_session)
+    await _allow_novelize(db_session, monkeypatch, user_id)
+    bundle_id = await _bundle(db_client)
+    work_id = await _novel(db_session, user_id) if kind == "novel" else await _draft(db_client)
+    await db_session.commit()
+    table = "novels" if kind == "novel" else "contents"
+
+    statements: list[str] = []
+
+    def _record(_conn: object, _cursor: object, statement: str, *_args: object) -> None:
+        statements.append(statement)
+
+    sa.event.listen(engine.sync_engine, "before_cursor_execute", _record)
+    try:
+        assert (await _put(db_client, bundle_id, kind, work_id)).status_code == 204
+    finally:
+        sa.event.remove(engine.sync_engine, "before_cursor_execute", _record)
+    checks = [s for s in statements if s.lstrip().startswith("SELECT") and f"FROM {table}" in s]
+    assert checks and all("FOR KEY SHARE" in s for s in checks), checks
 
 
 async def test_bundle_writes_need_current_consent_but_deleting_does_not(
