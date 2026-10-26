@@ -20,15 +20,22 @@
 이 잠금을 쥔 동안에는 끝나지 않고 커밋을 기다렸다가 방금 넣은 행까지 지운다(`chat/memory_forget.py`). 세대를 잠금 전에 다시 읽으면
 그 사이에 커밋된 잊기를 놓친다. 인상 행은 여기서 지우지 않는다 — 되감기는 스냅샷 DELETE 의 CASCADE 가 지운다.
 
-같은 묶음을 두 작업이 함께 만들면 스냅샷 유니크가 뒤의 것을 막는다(경합이라 실패로 세지 않는다). 실패한 묶음은 선점 기록 없이
-다음 턴 뒤에 다시 본다 — 그 묶음이 가장 새 묶음인 동안(다음 접기 전까지)만."""
+시도 기록 — 묶음마다(가장 새 스냅샷마다) 시도 기록(`chat_memory_impression_attempts`) 한 행을 두 추출 기록과 같은 꼴로 쓴다.
+모델을 부르기 전에 그 행을 `running` 으로 쥐고 곧바로 커밋한다 — 같은 묶음을 고른 다른 작업은 선점에서 지고 모델을 부르지 않는다.
+모델 실패·빈 글·렌더 실패·잊기 세대 불일치·그 밖의 예외는 `failed` 로 적고(내 선점 그대로일 때만), 다음 턴 뒤에 다시 쥐되 시도는
+세 번까지다. 10분이 지나도 `running` 이면 작업이 죽었다고 보고 다시 쥔다. 성공하면 인상 행과 같은 트랜잭션에서 `done` 으로 바꾸고
+모델 id 와 토큰을 남긴다(실패한 시도의 토큰도 더한다). 다시 보는 것도 그 묶음이 가장 새 묶음인 동안(다음 접기 전까지)만이다.
+같은 묶음의 인상 행이 그래도 두 번 들어가려 하면 스냅샷 유니크가 뒤의 것을 막는다(경합이라 실패로 세지 않는다)."""
 
 import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, and_, func, literal_column, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -43,6 +50,7 @@ from api.db.models import (
     ChatMemoryFact,
     ChatMemoryFactExtraction,
     ChatMemoryImpression,
+    ChatMemoryImpressionAttempt,
     ChatRoom,
     ChatRoomMemorySnapshot,
     PromptSection,
@@ -50,11 +58,17 @@ from api.db.models import (
 )
 from api.db.models.chat import IMPRESSION_TEXT_MAX
 from api.llm.chat_models import ChatModelId
-from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, LLMClientError, dependency_tag
+from api.llm.client import CallUsage, LLMCallContext, LLMCallSite, LLMClient, LLMClientError, dependency_tag
 
 logger = logging.getLogger(__name__)
 
 _IMPRESSION_CALL_SITE: LLMCallSite = "chat_memory_impression"
+
+# 한 묶음을 쥐는 횟수의 상한(실패 뒤 다시 쥐기와 낡은 선점 다시 쥐기를 함께 센다) — 두 추출과 같은 값이다. 같은 입력이 계속
+# 실패하면 그 묶음은 인상 없이 남는다 — 인상은 생성에 쓰이지 않아 대화는 막히지 않는다.
+MAX_ATTEMPTS = 3
+# 이만큼 지나도 `running` 이면 그 작업이 죽었다(배포 교체로 프로세스가 내려감)고 보고 다음 작업이 다시 쥔다.
+_STALE_CLAIM: ColumnElement[timedelta] = literal_column("interval '10 minutes'")
 
 # 외래 키 위반(스냅샷이 그사이 지워졌다)과 유니크 위반(다른 작업이 같은 묶음을 먼저 넣었다). 둘 다 경합이지 실패가 아니다.
 _FOREIGN_KEY_VIOLATION = "23503"
@@ -99,15 +113,21 @@ async def generate_pending_impression(
 
     `prompt_set`·`sections` 는 인상 모델의 세트, `writing_model` 은 이 작업을 예약한 턴에 응답을 쓴 모델이다(범위 판정용).
 
-    1. 범위 밖이면 끝.
+    1. 범위 밖이면 끝 — 아무것도 읽지도 쓰지도 않는다.
     2. 새 세션에서 묶음을 고른다(모듈 설명 「언제 만드나」). 없으면 끝. 방의 잊기 세대를 읽은 **뒤에** 입력 행을 읽는다 — 그 뒤에
-       커밋된 잊기를 4 에서 알아챈다. 입력 행이 하나도 없으면 부르지 않는다.
-    3. 세션 없이 모델을 부른다. 글은 앞뒤 공백을 걷고 상한에서 자르며, 비면 쓰지 않는다.
-    4. 새 세션 한 트랜잭션: 가장 새 스냅샷 `FOR KEY SHARE` → 세대 재확인(다르면 버림) → 행을 넣고 커밋. 외래 키·유니크 위반은
-       경합이라 경고만 남긴다.
-    5. 그 밖의 실패(렌더·모델·DB·예외)는 경고와 Bugsink 로 남긴다."""
+       커밋된 잊기를 5 에서 알아챈다. 입력 행이 하나도 없으면 쥐지도 부르지도 않는다.
+    3. 같은 세션에서 선점: 시도 기록을 `running` 으로 넣거나(다시 쥘 수 있는 행이면) 시도를 하나 올리고 선점 시각을 받아 곧바로
+       커밋한다. 0행이면 다른 작업이 쥐었거나 상한이다 — 부르지 않고 끝. 스냅샷이 그사이 지워져 외래 키에 걸리면 경합이라 끝.
+    4. 세션 없이 렌더하고 모델을 부른다. 글은 앞뒤 공백을 걷고 상한에서 자르며, 비면 `failed` 로 적는다.
+    5. 새 세션 한 트랜잭션: 가장 새 스냅샷 `FOR KEY SHARE`(없으면 되감겼다 — 끝) → 세대 재확인(다르면 버리고 `failed`) → 시도
+       기록을 내 선점 그대로일 때만 `done` 으로(0행이면 다른 작업이 다시 쥐었다 — 버림) → 인상 행을 넣고 커밋. 외래 키·유니크
+       위반은 경합이라 경고만 남긴다.
+    6. 그 밖의 실패(렌더·모델·DB·예외)는 경고와 Bugsink 로 남기고, 쥐었으면 `failed` 로 적는다."""
     if not memory_model_in_scope(prompt_set.lane, writing_model, settings.memory_model_scope):
         return
+    group: _Group | None = None
+    claimed_at: datetime | None = None
+    usage_sink: list[CallUsage] = []
     try:
         async with session_factory() as session:
             group = await _due_group(session, room_id, settings.memory_impression_every_n_folds)
@@ -115,8 +135,11 @@ async def generate_pending_impression(
                 return
             generation = await _forget_generation(session, room_id)
             episodes, facts = await _load_inputs(session, group)
-        if not episodes and not facts:
-            return
+            if not episodes and not facts:
+                return
+            claimed_at = await _claim(session, group)
+            if claimed_at is None:
+                return
 
         prompt = build_memory_impression_prompt(
             sections=sections,
@@ -137,11 +160,14 @@ async def generate_pending_impression(
         result = await llm_client.generate_structured(
             prompt,
             MemoryImpressionResult,
-            usage=LLMCallContext(call_site=_IMPRESSION_CALL_SITE, user_id=user_id, room_id=room_id),
+            usage=LLMCallContext(
+                call_site=_IMPRESSION_CALL_SITE, user_id=user_id, room_id=room_id, usage_sink=usage_sink
+            ),
         )
         text = result.impression.strip()[:IMPRESSION_TEXT_MAX].strip()
         if not text:
             logger.warning("스냅샷 %s 인상을 쓰지 않는다 — 모델이 빈 글을 냈다", group.anchor_id)
+            await _mark_failed(session_factory, group.anchor_id, claimed_at, usage_sink)
             return
 
         async with session_factory() as session:
@@ -152,6 +178,10 @@ async def generate_pending_impression(
                 logger.warning(
                     "스냅샷 %s 인상을 버린다 — 입력을 읽은 뒤 방 주인이 장면이나 사실을 잊게 했다", group.anchor_id
                 )
+                await _mark_failed(session_factory, group.anchor_id, claimed_at, usage_sink)
+                return
+            if not await _finish_claim(session, group.anchor_id, claimed_at, usage_sink):
+                logger.warning("스냅샷 %s 인상을 버린다 — 그사이 다른 작업이 다시 쥐었다", group.anchor_id)
                 return
             await _insert_impression(
                 session,
@@ -173,6 +203,8 @@ async def generate_pending_impression(
             return
         logger.warning("대화방 %s 인상 생성 실패 — 다음 턴 뒤에 다시 본다: %s", room_id, exc)
         capture_dependency_failure(exc, dependency=_dependency_tag(exc))
+        if group is not None and claimed_at is not None:
+            await _mark_failed(session_factory, group.anchor_id, claimed_at, usage_sink)
 
 
 async def _due_group(session: AsyncSession, room_id: uuid.UUID, every: int) -> _Group | None:
@@ -244,6 +276,103 @@ async def _lock_snapshot(session: AsyncSession, snapshot_id: uuid.UUID) -> bool:
         .with_for_update(read=True, key_share=True)
     )
     return locked is not None
+
+
+def _retryable() -> ColumnElement[bool]:
+    """이미 있는 시도 기록을 다시 쥘 수 있는가 — 실패했거나 낡은 선점이고, 시도가 상한 아래."""
+    attempt = ChatMemoryImpressionAttempt
+    return and_(
+        attempt.attempts < MAX_ATTEMPTS,
+        or_(
+            attempt.status == "failed",
+            and_(attempt.status == "running", attempt.claimed_at < func.clock_timestamp() - _STALE_CLAIM),
+        ),
+    )
+
+
+async def _claim(session: AsyncSession, group: _Group) -> datetime | None:
+    """묶음의 시도 기록을 `running` 으로 쥐고 커밋한다. 선점 시각은 문장 실행 시각(`clock_timestamp()`)이라 이 작업만의 표지가
+    된다. 다른 작업이 쥐었거나 상한이면 None, 스냅샷이 그사이 지워졌어도 None(경합 — 실패로 세지 않는다)."""
+    attempt = ChatMemoryImpressionAttempt
+    statement = (
+        insert(attempt)
+        .values(
+            snapshot_id=group.anchor_id,
+            chat_room_id=group.room_id,
+            status="running",
+            attempts=1,
+            claimed_at=func.clock_timestamp(),
+        )
+        .on_conflict_do_update(
+            index_elements=[attempt.snapshot_id],
+            set_={"status": "running", "attempts": attempt.attempts + 1, "claimed_at": func.clock_timestamp()},
+            where=_retryable(),
+        )
+        .returning(attempt.claimed_at)
+    )
+    try:
+        claimed_at: datetime | None = await session.scalar(statement)
+        await session.commit()
+    except IntegrityError as exc:
+        if _sqlstate(exc) != _FOREIGN_KEY_VIOLATION:
+            raise
+        await session.rollback()
+        logger.warning("스냅샷 %s 인상을 건너뛴다 — 고른 뒤 되감겼다", group.anchor_id)
+        return None
+    return claimed_at
+
+
+async def _finish_claim(
+    session: AsyncSession, snapshot_id: uuid.UUID, claimed_at: datetime, usage: list[CallUsage]
+) -> bool:
+    """시도 기록을 `done` 으로 바꾼다 — 내 선점 시각 그대로일 때만. 모델 id 와 토큰은 사용량 기록과 같은 뜻이다."""
+    attempt = ChatMemoryImpressionAttempt
+    finished = await session.scalar(
+        update(attempt)
+        .where(attempt.snapshot_id == snapshot_id, attempt.status == "running", attempt.claimed_at == claimed_at)
+        .values(status="done", finished_at=func.clock_timestamp(), **_usage_values(usage))
+        .returning(attempt.snapshot_id)
+    )
+    return finished is not None
+
+
+def _usage_values(usage: list[CallUsage]) -> dict[str, Any]:
+    """이 시도의 사용량을 시도 기록에 **더하는** 값. 한 묶음 = 한 행이라 실패한 시도·다시 쥔 시도의 토큰이 같은 칸에 쌓인다
+    (모델은 마지막 시도의 것). 보고되지 않은 칸은 건드리지 않는다."""
+    if not usage:
+        return {}
+    attempt = ChatMemoryImpressionAttempt
+    values: dict[str, Any] = {"model": usage[-1].model}
+    for name in ("prompt_tokens", "cached_tokens", "output_tokens", "thoughts_tokens"):
+        counts = [getattr(call, name) for call in usage]
+        if all(count is None for count in counts):
+            continue
+        column = getattr(attempt, name)
+        values[name] = func.coalesce(column, 0) + sum(count or 0 for count in counts)
+    return values
+
+
+async def _mark_failed(
+    session_factory: async_sessionmaker[AsyncSession],
+    snapshot_id: uuid.UUID,
+    claimed_at: datetime,
+    usage: list[CallUsage],
+) -> None:
+    """내 선점 그대로일 때만 `failed` 로 적는다 — 그사이 다른 작업이 다시 쥐었으면 그 작업의 기록을 건드리지 않는다. 응답을
+    받고 나서 실패했으면 그 시도가 쓴 토큰도 더한다. 이 기록 자체가 실패하면 경고만 남긴다(10분 뒤 낡은 선점으로 다시 쥔다)."""
+    attempt = ChatMemoryImpressionAttempt
+    try:
+        async with session_factory() as session:
+            await session.execute(
+                update(attempt)
+                .where(
+                    attempt.snapshot_id == snapshot_id, attempt.status == "running", attempt.claimed_at == claimed_at
+                )
+                .values(status="failed", **_usage_values(usage))
+            )
+            await session.commit()
+    except Exception as exc:
+        logger.warning("스냅샷 %s 인상 실패를 적지 못했다: %s", snapshot_id, exc)
 
 
 async def _insert_impression(session: AsyncSession, row: ChatMemoryImpression) -> None:
