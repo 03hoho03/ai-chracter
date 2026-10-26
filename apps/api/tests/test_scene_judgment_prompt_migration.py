@@ -54,6 +54,9 @@ _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
 # 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
 # 때는 이것부터다.
 _IMPRESSION = _load("6558ab4d3dbc")
+# 그 뒤 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀 세트를 게시하고 초안의 그 행도 지우는 리비전 — 두 Gemini
+# 체인의 head 활성이다. 초안 정리는 되돌리지 않는다.
+_DROP = _load("7caed2db87dc")
 # 그 뒤 소설 레인 세 체인에 구성안 문안을 심은 리비전 — story 레인과 무관하지만 전역 버전 번호를 이어 쓴다.
 _NOVEL_OUTLINE = _load("b389c2317149")
 # 그 뒤 소설 레인 Gemini 체인에 여러 문단 수정 문안을 심은 리비전 — 같은 이유로 버전 차례에서 뺀다.
@@ -90,6 +93,11 @@ async def _sections_of(db_session: AsyncSession, set_id: uuid.UUID) -> list[Prom
 
 def _keyed(sections: list[PromptSection]) -> dict[Key, Value]:
     return {(s.channel, s.scope, s.slot, s.variant): (s.body, s.conditional, s.order) for s in sections}
+
+
+def _without_novel_rows(rows: dict[Key, Value]) -> dict[Key, Value]:
+    """뒤 리비전이 Gemini 초안에서 지우고 되돌리지 않는 옛 소설화 행을 뺀 것."""
+    return {key: value for key, value in rows.items() if key[0] not in _DROP.DROPPED_CHANNELS}
 
 
 def _expected_new_rows() -> dict[Key, tuple[str, bool, int]]:
@@ -221,6 +229,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(list(_BLOCK_EDIT_PROMPTS.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(_NOVEL_LANE_SOURCE_SET_IDS),
                 PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_DROP.NEW_SET_IDS.values())),
             )
         )
     ).all()
@@ -233,13 +242,13 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
 async def test_seeded_sets_pass_publish_validation_and_the_previous_sets_no_longer_do(
     db_session: AsyncSession, model: PromptSetModelId
 ) -> None:
-    """새 세트에 뒤 리비전(인상 생성 채널)의 행만 더하면 지금 코드의 게시 검증(슬롯 집합·자리표시자 허용 목록)을 통과하고,
-    이전 세트는 이 채널이 없어 "누락"으로 막힌다 — 코드 표와 시드가 같이 움직였다는 증거다."""
+    """새 세트에 뒤 리비전들의 바뀜(인상 생성 채널 행 더하기, Gemini 체인의 옛 소설화 채널 빼기)만 얹으면 지금 코드의 게시
+    검증(슬롯 집합·자리표시자 허용 목록)을 통과하고, 이전 세트는 이 채널이 없어 "누락"으로 막힌다 — 코드 표와 시드가 같이 움직였다는 증거다."""
     await _undo_later_revisions(db_session)
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story", model=model)
     assert prompt_set.id == _M.NEW_SET_IDS[("story", model)]
     with_later = [
-        *sections,
+        *(s for s in sections if s.channel not in _DROP.DROPPED_CHANNELS),
         *(
             PromptSection(
                 prompt_set_id=prompt_set.id, channel=c, scope=s, slot=sl, variant=v, body=b, conditional=cond, order=o
@@ -422,6 +431,7 @@ async def test_patch_drafts_adds_the_rows_in_place_the_draft_publishes_and_downg
         _expected_new_rows()
     )
     await connection.run_sync(_IMPRESSION._patch_drafts)
+    await connection.run_sync(_DROP._delete_draft_rows)
     sections = await _sections_of(db_session, draft_id)
     draft = await _get_set(db_session, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     _validate_prompt_draft_for_publish(draft, sections, lane="story", model=model)
@@ -430,4 +440,4 @@ async def test_patch_drafts_adds_the_rows_in_place_the_draft_publishes_and_downg
 
     await connection.run_sync(_IMPRESSION._delete_draft_rows)
     assert await connection.run_sync(_M._delete_draft_rows) == [("story", model)]
-    assert _keyed(await _sections_of(db_session, draft_id)) == before
+    assert _keyed(await _sections_of(db_session, draft_id)) == _without_novel_rows(before)

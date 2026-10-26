@@ -52,6 +52,9 @@ _LATER_NOVEL_SET_IDS: list[uuid.UUID] = [
     *_load("fe3df6f8e4d5").NEW_SET_IDS.values(),
     *_load("e4df46a80bfa").NEW_SET_IDS.values(),
 ]
+# 그 뒤 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀 세트를 게시하고 초안의 그 행도 지우는 리비전 — 두 Gemini 체인의
+# head 활성이고 이 리비전보다 뒤에 버전을 받는다. 초안 정리는 되돌리지 않는다.
+_DROP = _load("7caed2db87dc")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
@@ -153,7 +156,8 @@ async def test_each_chain_is_active_at_its_seed_which_is_the_previous_set_plus_t
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
     """여덟 체인 모두 새 세트가 활성이고, 새 세트는 이전 활성 세트의 행을 바이트 그대로 옮긴 데에 새 세 행만 더한 것이다(기존
-    채널의 렌더는 그대로). 라벨도 이전 활성 세트 것이다."""
+    채널의 렌더는 그대로). 라벨도 이전 활성 세트 것이다. 이 리비전 직후 상태를 보려고 위 시드 리비전부터 되돌린다."""
+    await (await db_session.connection()).run_sync(undo_seeded_rows_above, _M.revision)
     assert await _active_id(db_session, lane, model) == _M.NEW_SET_IDS[(lane, model)]
     new_sections = await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)])
     new = _keyed(new_sections)
@@ -175,6 +179,7 @@ async def test_each_chain_is_active_at_its_seed_which_is_the_previous_set_plus_t
 
 @pytest.mark.parametrize("lane", _LANES)
 async def test_the_lane_only_select_picks_the_new_gemini_set(db_session: AsyncSession, lane: PromptLane) -> None:
+    await (await db_session.connection()).run_sync(undo_seeded_rows_above, _M.revision)
     assert await _lane_only_active_id(db_session, lane) == _M.NEW_SET_IDS[(lane, "gemini")]
 
 
@@ -195,13 +200,14 @@ async def test_new_sets_are_published_in_the_window_of_both_active_rules(db_sess
 async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: AsyncSession) -> None:
     order = [_M.NEW_SET_IDS[chain] for chain in _CHAINS]
     versions = [int((await _get_set(db_session, set_id)).version or "0") for set_id in order]
-    # 이 리비전 위에서 게시된 소설 레인 세트를 빼면 다른 게시본은 모두 이 리비전보다 앞 버전이다.
+    # 이 리비전 위에서 게시된 소설 레인 세트와 채팅 Gemini 소설화 행 제거 세트를 빼면 다른 게시본은 모두 이 리비전보다 앞 버전이다.
     others = (
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
                 PromptSet.status == "published",
                 PromptSet.id.not_in(order),
                 PromptSet.id.not_in(_LATER_NOVEL_SET_IDS),
+                PromptSet.id.not_in(list(_DROP.NEW_SET_IDS.values())),
             )
         )
     ).all()
@@ -214,9 +220,9 @@ async def test_seeded_sets_pass_publish_validation_and_the_previous_sets_no_long
 ) -> None:
     """새 세트는 지금 코드의 게시 검증(슬롯 집합·자리표시자 허용 목록)을 통과하고, 이전 세트는 이 채널이 없어 "누락"으로
     막힌다 — 코드 표와 시드가 같이 움직였다는 증거다. 다른 모델 체인으로 게시하려 하면 여전히 막힌다(체인마다 채널 집합이
-    다르다)."""
+    다르다). Gemini 두 체인의 head 활성은 그 뒤 리비전이 이 세트에서 옛 소설화 세 채널만 뺀 사본이라 그 세트로 본다."""
     prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert prompt_set.id == _M.NEW_SET_IDS[(lane, model)]
+    assert prompt_set.id == (_DROP.NEW_SET_IDS[lane] if model == "gemini" else _M.NEW_SET_IDS[(lane, model)])
     _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
 
     previous = await _get_set(db_session, _previous_set_id(lane, model))
@@ -398,6 +404,8 @@ async def test_patch_drafts_adds_the_rows_in_place_the_draft_publishes_and_downg
     assert _fingerprinted({key: value for key, value in patched.items() if key[0] == "memory_impression"}) == (
         _expected_new_rows()
     )
+    # 코드 표는 head 기준이라, 체인이 실제로 하듯 뒤 리비전(Gemini 초안의 옛 소설화 행 정리)도 거친 뒤 게시 게이트를 태운다.
+    await connection.run_sync(_DROP._delete_draft_rows)
     sections = await _sections_of(db_session, draft_id)
     draft = await _get_set(db_session, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
@@ -405,7 +413,10 @@ async def test_patch_drafts_adds_the_rows_in_place_the_draft_publishes_and_downg
     assert await connection.run_sync(_M._patch_drafts) == []
 
     assert await connection.run_sync(_M._delete_draft_rows) == [(lane, model)]
-    assert _keyed(await _sections_of(db_session, draft_id)) == before
+    # 뒤 리비전이 지운 소설화 행은 되살리지 않는다.
+    assert _keyed(await _sections_of(db_session, draft_id)) == {
+        key: value for key, value in before.items() if key[0] not in _DROP.DROPPED_CHANNELS
+    }
 
 
 async def test_patch_drafts_leaves_a_draft_that_already_has_the_channel(db_session: AsyncSession) -> None:

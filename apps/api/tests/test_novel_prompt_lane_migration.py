@@ -63,8 +63,8 @@ _FACT_KNOWN_BY_ORDER_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("c1f3945c
 _SOURCE_MARKING_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0c1a85bc5c2f").NEW_SET_IDS
 # 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전의 세트.
 _SCENE_INSTRUCTION_V2_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0f82ea9f9fa5").NEW_SET_IDS
-# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전의 세트 — 두 레인의 활성 Gemini 세트이기도
-# 하다.
+# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전의 세트 — 아래 소설화 행 제거 리비전을
+# 되돌리면 두 레인의 활성 Gemini 세트다.
 _IMPRESSION_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("6558ab4d3dbc").NEW_SET_IDS
 # 그 뒤 소설 레인 세 체인에 구성안 문안을 더한 세트를 게시하는 리비전 — head 의 소설 레인 활성이라, "이 리비전 직후 상태"를
 # 보는 테스트는 그 리비전부터 먼저 되돌린다(실제 downgrade 순서).
@@ -77,12 +77,19 @@ _BLOCK_EDIT_PROMPTS = _load("174f78b92e5c")
 # 고쳐 둔 채팅 활성 세트를 바꾼다.
 _RATING_PROMPTS = _load("e4df46a80bfa")
 _CLAUDE_CHANNEL_PROMPTS = _load("fe3df6f8e4d5")
+# 그 뒤 채팅 두 레인 Gemini 체인에서 이 리비전이 옮겨 간 옛 소설화 세 채널을 뺀 세트를 게시하는 리비전 — 두 레인의 head 활성
+# Gemini 세트다. 채팅 레인의 그 행을 읽는 테스트는 이것만 먼저 되돌린다(위와 같은 이유로 헬퍼는 쓰지 않는다).
+_CHAT_NOVEL_ROWS_DROP = _load("7caed2db87dc")
 
 
 async def _undo_rating_and_claude_channels(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
     await connection.run_sync(_RATING_PROMPTS.delete_seeded_rows)
     await connection.run_sync(_CLAUDE_CHANNEL_PROMPTS.delete_seeded_rows)
+
+
+async def _undo_chat_novel_rows_drop(db_session: AsyncSession) -> None:
+    await (await db_session.connection()).run_sync(_CHAT_NOVEL_ROWS_DROP.delete_seeded_rows)
 
 
 Row = tuple[str, str, str, str, str, bool, int]
@@ -113,6 +120,7 @@ async def _novelize_rows_of_chat(db_session: AsyncSession, lane: PromptLane) -> 
 
 async def test_the_copy_set_is_the_chat_novelize_rows_byte_for_byte(db_session: AsyncSession) -> None:
     """첫 소설 판(A)은 옛 문안을 소설 탭에서 복원할 수 있게 남긴 사본이다 — 바이트·order·conditional 이 원본 그대로다."""
+    await _undo_chat_novel_rows_drop(db_session)
     copy_rows = await _rows(db_session, _M.NEW_SET_IDS["gemini-copy"])
 
     assert copy_rows == await _novelize_rows_of_chat(db_session, "story")
@@ -210,6 +218,7 @@ async def test_versions_follow_the_global_sequence_and_the_copy_is_older(db_sess
             PromptSet.id.not_in(list(_SOURCE_MARKING_SET_IDS.values())),
             PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2_SET_IDS.values())),
             PromptSet.id.not_in(list(_IMPRESSION_SET_IDS.values())),
+            PromptSet.id.not_in(list(_CHAT_NOVEL_ROWS_DROP.NEW_SET_IDS.values())),
         )
     )
     assert others is not None
@@ -220,7 +229,8 @@ async def test_versions_follow_the_global_sequence_and_the_copy_is_older(db_sess
 
 async def test_chat_lanes_keep_their_active_sets_and_frozen_novelize_rows(db_session: AsyncSession) -> None:
     """옛 이미지로 되돌리면 옛 코드는 채팅 레인 Gemini 세트에서 소설 문안을 읽는다 — 그 세트와 행이 그대로여야 이미지만
-    되돌리는 롤백이 된다."""
+    되돌리는 롤백이 된다. 그 뒤 리비전이 그 행을 뺐으므로 그것부터 되돌려 이 리비전 직후 상태를 본다."""
+    await _undo_chat_novel_rows_drop(db_session)
     chat_sets = {
         "story": _IMPRESSION_SET_IDS[("story", "gemini")],
         "character": _IMPRESSION_SET_IDS[("character", "gemini")],
@@ -327,6 +337,7 @@ def test_v2_chapter_rows_need_the_kept_source_slots() -> None:
 
 async def _seed(db_session: AsyncSession, now: datetime) -> None:
     await _undo_rating_and_claude_channels(db_session)
+    await _undo_chat_novel_rows_drop(db_session)
     connection = await db_session.connection()
     await connection.run_sync(_M.delete_novel_sets)
     await connection.run_sync(lambda conn: _M.seed_novel_lane(conn, now))
@@ -343,6 +354,7 @@ async def test_seeding_again_after_deleting_makes_each_chain_active(db_session: 
 
 
 async def test_seeding_stops_when_the_chat_lanes_disagree(db_session: AsyncSession) -> None:
+    await _undo_chat_novel_rows_drop(db_session)
     _, sections = await load_active_prompt_set(db_session, lane="character")
     next(s for s in sections if s.channel == "novelize_boundary" and s.slot == "instruction").body = "운영이 고친 지시"
     await db_session.flush()

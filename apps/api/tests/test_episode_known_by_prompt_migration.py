@@ -67,6 +67,9 @@ _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
 # 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
 # 때는 이것부터다.
 _IMPRESSION = _load("6558ab4d3dbc")
+# 그 뒤 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀 세트를 게시하고 초안의 그 행도 지우는 리비전 — 두 Gemini
+# 체인의 head 활성이다. 초안 정리는 되돌리지 않는다.
+_DROP = _load("7caed2db87dc")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
@@ -101,6 +104,11 @@ async def _sections_of(db_session: AsyncSession, set_id: uuid.UUID) -> list[Prom
 
 def _keyed(sections: list[PromptSection]) -> dict[Key, Value]:
     return {(s.channel, s.scope, s.slot, s.variant): (s.body, s.conditional, s.order) for s in sections}
+
+
+def _without_novel_rows(rows: dict[Key, Value]) -> dict[Key, Value]:
+    """뒤 리비전이 Gemini 초안에서 지우고 되돌리지 않는 옛 소설화 행을 뺀 것."""
+    return {key: value for key, value in rows.items() if key[0] not in _DROP.DROPPED_CHANNELS}
 
 
 def _expected_after(before: dict[Key, Value]) -> dict[Key, Value]:
@@ -261,6 +269,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(list(_SOURCE_MARKING.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_DROP.NEW_SET_IDS.values())),
             )
         )
     ).all()
@@ -274,14 +283,14 @@ async def test_seeded_sets_pass_publish_validation(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
     """이 리비전은 행 집합·자리표시자를 바꾸지 않는다. 지금 코드 표는 뒤 리비전(인상 생성 채널)까지 기준이라 이 세트는 그 채널
-    "누락"으로만 막히고, 그 채널을 더한 head 활성 세트는 통과한다."""
+    "누락"(Gemini 체인은 옛 소설화 채널 "잉여"도)으로 막히고, head 활성 세트는 통과한다."""
     # 행을 먼저 읽는다: `_sections_of` 가 세션을 만료시키므로, 세트를 먼저 읽으면 검증이 동기 문맥에서 만료된 속성을 다시 읽으려다 실패한다.
     sections = await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)])
     prompt_set = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
     later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert later_set.id == _IMPRESSION.NEW_SET_IDS[(lane, model)]
+    assert later_set.id == (_DROP.NEW_SET_IDS[lane] if model == "gemini" else _IMPRESSION.NEW_SET_IDS[(lane, model)])
     _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
 
 
@@ -488,12 +497,13 @@ async def test_patch_drafts_swaps_the_instruction_in_place_and_the_draft_publish
 
     assert _keyed(await _sections_of(db_session, draft_id)) == _expected_after(before)
     await connection.run_sync(_IMPRESSION._patch_drafts)
+    await connection.run_sync(_DROP._delete_draft_rows)
     sections = await _sections_of(db_session, draft_id)
     _validate_prompt_draft_for_publish(await _get_set(db_session, draft_id), sections, lane=lane, model=model)
 
     await connection.run_sync(_IMPRESSION._delete_draft_rows)
     assert await connection.run_sync(_M._delete_draft_rows) == [(lane, model)]
-    assert _keyed(await _sections_of(db_session, draft_id)) == before
+    assert _keyed(await _sections_of(db_session, draft_id)) == _without_novel_rows(before)
 
 
 async def test_patch_drafts_keeps_an_instruction_edited_in_the_draft(db_session: AsyncSession) -> None:

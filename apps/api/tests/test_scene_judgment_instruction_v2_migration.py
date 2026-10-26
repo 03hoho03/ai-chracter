@@ -41,6 +41,9 @@ _M = _load("0f82ea9f9fa5")
 # 이 리비전 뒤에 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — head 활성이라 "이 리비전 직후
 # 상태"를 보는 테스트는 이것부터 되돌린다(실제 downgrade 순서).
 _IMPRESSION = _load("6558ab4d3dbc")
+# 그 뒤 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀 세트를 게시하고 초안의 그 행도 지우는 리비전 — 두 Gemini
+# 체인의 head 활성이다. 초안 정리는 되돌리지 않는다.
+_DROP = _load("7caed2db87dc")
 # 소설 레인 세 체인에 구성안 문안을 심은 리비전의 세트 — 다른 레인과 무관하지만 전역 버전 번호를 이 리비전 뒤에서 이어
 # 쓰므로 버전 차례를 보는 시험에서 뺀다.
 _NOVEL_OUTLINE_SET_IDS: list[uuid.UUID] = list(_load("b389c2317149").NEW_SET_IDS.values()) + list(
@@ -82,6 +85,11 @@ async def _sections_of(db_session: AsyncSession, set_id: uuid.UUID) -> list[Prom
 
 def _keyed(sections: list[PromptSection]) -> dict[Key, Value]:
     return {(s.channel, s.scope, s.slot, s.variant): (s.body, s.conditional, s.order) for s in sections}
+
+
+def _without_novel_rows(rows: dict[Key, Value]) -> dict[Key, Value]:
+    """뒤 리비전이 Gemini 초안에서 지우고 되돌리지 않는 옛 소설화 행을 뺀 것."""
+    return {key: value for key, value in rows.items() if key[0] not in _DROP.DROPPED_CHANNELS}
 
 
 def _expected_after(before: dict[Key, Value]) -> dict[Key, Value]:
@@ -213,6 +221,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(order),
                 PromptSet.id.not_in(_NOVEL_OUTLINE_SET_IDS),
                 PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_DROP.NEW_SET_IDS.values())),
             )
         )
     ).all()
@@ -228,7 +237,7 @@ async def test_seeded_sets_pass_publish_validation(db_session: AsyncSession, mod
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(prompt_set, sections, lane="story", model=model)
     later_set, later_sections = await load_active_prompt_set(db_session, lane="story", model=model)
-    assert later_set.id == _IMPRESSION.NEW_SET_IDS[("story", model)]
+    assert later_set.id == (_DROP.NEW_SET_IDS["story"] if model == "gemini" else _IMPRESSION.NEW_SET_IDS[("story", model)])
     _validate_prompt_draft_for_publish(later_set, later_sections, lane="story", model=model)
 
 
@@ -431,12 +440,13 @@ async def test_patch_drafts_swaps_the_instruction_in_place_and_the_draft_publish
     sections = await _sections_of(db_session, draft_id)
     assert _keyed(sections) == _expected_after(before)
     await connection.run_sync(_IMPRESSION._patch_drafts)
+    await connection.run_sync(_DROP._delete_draft_rows)
     sections = await _sections_of(db_session, draft_id)
     _validate_prompt_draft_for_publish(await _get_set(db_session, draft_id), sections, lane="story", model=model)
 
     await connection.run_sync(_IMPRESSION._delete_draft_rows)
     assert await connection.run_sync(_M._delete_draft_rows) == [("story", model)]
-    assert _keyed(await _sections_of(db_session, draft_id)) == before
+    assert _keyed(await _sections_of(db_session, draft_id)) == _without_novel_rows(before)
 
 
 async def test_patch_drafts_keeps_an_instruction_edited_in_the_draft(db_session: AsyncSession) -> None:

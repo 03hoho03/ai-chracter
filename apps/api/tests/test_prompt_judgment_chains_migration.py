@@ -67,6 +67,9 @@ _SCENE_JUDGMENT = _load("0346abdbcc92")
 # 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
 # 때는 이것부터다.
 _IMPRESSION = _load("6558ab4d3dbc")
+# 그 뒤 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀 세트를 게시하고 초안의 그 행도 지우는 리비전 — 두 Gemini
+# 체인의 head 활성이다. 초안 정리는 되돌리지 않는다.
+_DROP = _load("7caed2db87dc")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _CLAUDE_MODELS: tuple[PromptSetModelId, ...] = ("sonnet", "opus")
@@ -98,6 +101,11 @@ async def _sections_of(db_session: AsyncSession, set_id: uuid.UUID) -> list[Prom
 
 def _keyed(sections: list[PromptSection]) -> dict[Key, tuple[str, bool, int]]:
     return {(s.channel, s.scope, s.slot, s.variant): (s.body, s.conditional, s.order) for s in sections}
+
+
+def _without_novel_rows(rows: dict[Key, tuple[str, bool, int]]) -> dict[Key, tuple[str, bool, int]]:
+    """뒤 리비전이 Gemini 초안에서 지우고 되돌리지 않는 옛 소설화 행을 뺀 것."""
+    return {key: value for key, value in rows.items() if key[0] not in _DROP.DROPPED_CHANNELS}
 
 
 async def _active_id(db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId) -> uuid.UUID:
@@ -299,10 +307,13 @@ async def test_seeded_sets_match_publish_validation_but_for_the_later_revisions_
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
     later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert later_set.id == _IMPRESSION.NEW_SET_IDS[(lane, model)]
+    assert later_set.id == (_DROP.NEW_SET_IDS[lane] if model == "gemini" else _IMPRESSION.NEW_SET_IDS[(lane, model)])
     _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
-    with pytest.raises(HTTPException):
-        _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model="gemini")
+    # story Gemini 체인에는 옛 스탯 판정 채널이 있어 Claude·판정 전용 세트를 Gemini 로 게시하면 막힌다. character 레인은 판정 전용
+    # 체인만 다르다 — 옛 소설화 채널을 뺀 뒤로 Gemini 와 Claude 체인의 채널 집합이 같다.
+    if lane == "story" or model == "haiku":
+        with pytest.raises(HTTPException):
+            _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model="gemini")
 
 
 @pytest.mark.parametrize(("lane", "model"), _CLAUDE_PAIRS, ids=_ids(_CLAUDE_PAIRS))
@@ -508,6 +519,7 @@ async def test_patch_drafts_adds_the_judgment_rows_in_place_and_the_draft_publis
     assert await connection.run_sync(_SECRET_MARKING._patch_drafts) == [(lane, model)]
     await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
     await connection.run_sync(_IMPRESSION._patch_drafts)
+    await connection.run_sync(_DROP._delete_draft_rows)
     sections = await _sections_of(db_session, draft_id)
     draft = await _get_set(db_session, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
@@ -518,9 +530,9 @@ async def test_patch_drafts_adds_the_judgment_rows_in_place_and_the_draft_publis
     await connection.run_sync(_SECRET_MARKING._delete_draft_rows)
     await connection.run_sync(_LATEST._delete_draft_rows)
     await connection.run_sync(_LATER._delete_draft_rows)
-    assert _keyed(await _sections_of(db_session, draft_id)) == patched
+    assert _keyed(await _sections_of(db_session, draft_id)) == _without_novel_rows(patched)
     await connection.run_sync(_M._delete_draft_rows)
-    assert _keyed(await _sections_of(db_session, draft_id)) == before
+    assert _keyed(await _sections_of(db_session, draft_id)) == _without_novel_rows(before)
 
 
 async def test_patch_drafts_leaves_gemini_drafts_alone(db_session: AsyncSession) -> None:

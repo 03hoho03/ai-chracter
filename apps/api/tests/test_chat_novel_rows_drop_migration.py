@@ -338,7 +338,9 @@ async def test_delete_draft_rows_removes_only_the_novel_rows_of_the_chat_gemini_
 
     assert _keyed(await _sections_of(db_session, story_draft)) == _without_dropped(story_before)
     assert _keyed(await _sections_of(db_session, novel_draft)) == novel_before
+    # 행을 먼저 읽는다: `_sections_of` 가 세션을 만료시키므로, 세트를 먼저 읽으면 검증이 동기 문맥에서 만료된 속성을 다시 읽으려다 실패한다.
+    sections = await _sections_of(db_session, story_draft)
     draft = await _get_set(db_session, story_draft)
-    _validate_prompt_draft_for_publish(draft, await _sections_of(db_session, story_draft), lane="story", model="gemini")
+    _validate_prompt_draft_for_publish(draft, sections, lane="story", model="gemini")
 
     assert await _run(db_session, _M._delete_draft_rows) == []
