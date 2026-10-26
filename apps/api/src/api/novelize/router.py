@@ -113,7 +113,7 @@ from api.novelize.characters import (
 )
 from api.novelize.episodes import chapter_max_turns, k_max, regenerate_ineligibility
 from api.novelize.illustrations import PlacementSpec, add_revision, delete_storage_objects, placement_views
-from api.novelize.inputs import current_revision, load_novel_prompt_source
+from api.novelize.inputs import current_revision, load_novel_prompt_source, resolve_novel_call_route
 from api.novelize.job_variants import facts_of, kinds_where
 from api.novelize.runner import enqueue_chain_job, enqueue_job, expire_stale_jobs
 from api.novelize.scenes import revision_scene_groups
@@ -1232,14 +1232,21 @@ async def propose_novel_chapter(
     candidates = await _next_segment(db, novel, room_id, model)
     turns = group_turns(candidates)
     counts = episode_counts(turns, novel, model)
-    source = await load_novel_prompt_source(db)
+    route = await resolve_novel_call_route(db, "novel_boundary")
+    source = await load_novel_prompt_source(db, model=route.chain_model)
     await _check_proposal_limit(novel.user_id)
     chapter_models, _ = await _chapter_models(db, novel.user_id)
     await db.commit()
 
     suggestion: NovelChapterSuggestion | None = None
     suggested = await suggest_end_turn(
-        llm_client, novel=novel, turns=turns, sections=source.sections, label_set=source.label_set, room_id=room_id
+        llm_client,
+        novel=novel,
+        turns=turns,
+        sections=source.sections,
+        label_set=source.label_set,
+        room_id=room_id,
+        call_model=route.call_model,
     )
     if suggested is not None:
         end_turn, reason = suggested

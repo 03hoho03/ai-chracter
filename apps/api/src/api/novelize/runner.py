@@ -54,6 +54,7 @@ from api.db.models.novel import (
     NovelOutline,
 )
 from api.llm.call_failures import classify_llm_failure, describe_llm_failure
+from api.llm.chat_models import PromptSetModelId
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError
 from api.novelize.billing import (
     ACTIVE_JOB_STATUSES,
@@ -80,6 +81,7 @@ from api.novelize.inputs import (
     load_novel_prompt_source,
     next_ordinal,
     regenerate_batch,
+    resolve_novel_call_route,
 )
 from api.novelize.job_variants import VARIANT_FACTS, JobVariant, VariantFacts, variant_of
 from api.novelize.outline import (
@@ -209,14 +211,14 @@ _R = TypeVar("_R")
 class JobHandler(Protocol[_I, _R]):
     """갈래 하나의 실행 — 입력 조립(세션 안) → 호출 문맥(세션 안) → 모델 호출(세션 밖) → 저장(새 세션). 사실 칸은 `facts` 로
     갈래 표(`job_variants.VARIANT_FACTS`)의 그 객체를 내보인다. `schema` 는 구조화 호출의 응답 스키마 이름이고 자유 텍스트 생성은
-    None 이다(측정 덤프가 싣는다)."""
+    None 이다(측정 덤프가 싣는다). 호출 문맥은 입력을 받는다 — 배정 표를 읽는 갈래는 입력 조립이 푼 부를 모델을 거기서 싣는다."""
 
     facts: VariantFacts
     schema: str | None
 
     async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> _I: ...
 
-    def context(self, job: NovelJob, novel: Novel) -> LLMCallContext: ...
+    def context(self, job: NovelJob, novel: Novel, inp: _I) -> LLMCallContext: ...
 
     async def call(self, llm_client: LLMClient, inp: _I, usage: LLMCallContext) -> _R: ...
 
@@ -229,12 +231,14 @@ class _Handler:
     def __init__(self, facts: VariantFacts) -> None:
         self.facts = facts
 
-    def context(self, job: NovelJob, novel: Novel) -> LLMCallContext:
+    def context(self, job: NovelJob, novel: Novel, inp: Any) -> LLMCallContext:
         """갈래의 호출 위치로 부른다. 작업 모델을 싣는 갈래는 작업에 적힌 모델 그대로다 — 허용은 과금할 때 판정했고 여기서 다시
         보지 않는다. 그 사이 허용이 회수됐다고 기본 모델로 바꾸면 상위 모델 값을 내고 다른 모델의 글을 받는다. 화 문안도 그 모델의
         소설 체인 세트다(`build_chapter_input`). 장 생성의 call site 를 바꾸지 않는다 — 상위 모델을 Bedrock 으로 보내는 라우팅이 이
-        call site 로 고른다. 구성안 호출 위치는 구조화 호출이어도 실린 모델의 구현으로 간다. AI 수정은 모델을 싣지 않는다(기본
-        모델)."""
+        call site 로 고른다. 구성안 호출 위치는 구조화 호출이어도 실린 모델의 구현으로 간다. 이 갈래들은 입력을 보지 않는다."""
+        return self._context(job, novel, call_model=None)
+
+    def _context(self, job: NovelJob, novel: Novel, *, call_model: PromptSetModelId | None) -> LLMCallContext:
         assert self.facts.call_site is not None  # 연쇄 부모만 호출 위치가 없고, 연쇄 부모는 여기까지 오지 않는다
         if self.facts.model_in_context:
             return LLMCallContext(
@@ -243,7 +247,9 @@ class _Handler:
                 room_id=novel.chat_room_id,
                 model=chapter_job_model(job),
             )
-        return LLMCallContext(call_site=self.facts.call_site, user_id=job.user_id, room_id=novel.chat_room_id)
+        return LLMCallContext(
+            call_site=self.facts.call_site, user_id=job.user_id, room_id=novel.chat_room_id, call_model=call_model
+        )
 
 
 class _Chapter(_Handler):
@@ -292,6 +298,11 @@ class _ParagraphEdit(_Handler):
     async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> ReviseInput:
         return await build_revise_input(db, job, novel)
 
+    def context(self, job: NovelJob, novel: Novel, inp: ReviseInput) -> LLMCallContext:
+        """AI 수정은 작업 모델을 싣지 않는다. 부를 모델은 입력 조립이 배정 표의 문단 수정 칸에서 푼 값이다(행이 없으면 싣지 않아
+        기본 모델로 간다)."""
+        return self._context(job, novel, call_model=inp.call_model)
+
     async def call(self, llm_client: LLMClient, inp: ReviseInput, usage: LLMCallContext) -> str:
         """고친 범위를 원본 문단 사이에 끼운 장 본문까지 만들어 돌려준다."""
         result_text = await _revise(llm_client, inp.prompt.prompt, inp.prompt.system_instruction, usage)
@@ -302,12 +313,16 @@ class _ParagraphEdit(_Handler):
 
 
 class _BlockEdit(_Handler):
-    """여러 문단 수정 — 패치 칸이 있는 AI 수정이다. 호출 위치·모델은 문단 수정과 같다."""
+    """여러 문단 수정 — 패치 칸이 있는 AI 수정이다. 호출 위치는 문단 수정과 같고, 부를 모델은 배정 표의 여러 문단 수정 칸에서
+    따로 푼다."""
 
     schema: str | None = NovelizeBlockEditResult.__name__
 
     async def build_input(self, db: AsyncSession, job: NovelJob, novel: Novel) -> BlockEditInput:
         return await build_block_edit_input(db, job, novel)
+
+    def context(self, job: NovelJob, novel: Novel, inp: BlockEditInput) -> LLMCallContext:
+        return self._context(job, novel, call_model=inp.call_model)
 
     async def call(
         self, llm_client: LLMClient, inp: BlockEditInput, usage: LLMCallContext
@@ -421,7 +436,7 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
                 inp = await handler.build_input(db, job, novel)
             except SourceChangedError as exc:
                 raise _JobFailedError("source_changed") from exc
-            usage = handler.context(job, novel)
+            usage = handler.context(job, novel, inp)
             job_model = job.model
         # 여기서부터 모델 호출 — 세션을 닫은 뒤다. 측정 덤프는 갈래마다의 호출 직전 이 한 곳에서 남긴다(경로 설정이 없으면 바로 돌아온다).
         dump_novel_prompt(
@@ -558,11 +573,18 @@ async def _start_chain_child(
         turns = group_turns(candidates)
         if not turns:
             return None
-        source = await load_novel_prompt_source(db)
+        route = await resolve_novel_call_route(db, "novel_boundary")
+        source = await load_novel_prompt_source(db, model=route.chain_model)
         await db.commit()
 
     suggested = await suggest_end_turn(
-        llm_client, novel=novel, turns=turns, sections=source.sections, label_set=source.label_set, room_id=room_id
+        llm_client,
+        novel=novel,
+        turns=turns,
+        sections=source.sections,
+        label_set=source.label_set,
+        room_id=room_id,
+        call_model=route.call_model,
     )
     end_index = (suggested[0] if suggested is not None else len(turns)) - 1
     episodes = episode_counts(turns[: end_index + 1], novel, model)[-1]
