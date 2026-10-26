@@ -5,6 +5,7 @@
 
 import uuid
 from datetime import UTC, datetime
+from typing import get_args
 
 import pytest
 
@@ -12,7 +13,14 @@ from api.chat.prompt_builder import PromptNames
 from api.core.config import Settings, settings
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.llm.chat_models import ChatModelId
-from api.novelize.episodes import chapter_max_turns, episode_count, k_max, regenerate_ineligibility, source_chars
+from api.novelize.episodes import (
+    NOVEL_MODEL_LIMITS,
+    chapter_max_turns,
+    episode_count,
+    k_max,
+    regenerate_ineligibility,
+    source_chars,
+)
 from api.novelize.source import SourceTurn
 
 
@@ -51,6 +59,20 @@ def test_each_model_reads_its_own_limits(monkeypatch: pytest.MonkeyPatch) -> Non
     models: list[ChatModelId] = ["gemini", "sonnet", "opus"]
     assert [k_max(m) for m in models] == [3, 2, 4]
     assert [chapter_max_turns(m) for m in models] == [45, 25, 15]
+
+
+def test_the_model_limits_table_names_each_models_own_settings() -> None:
+    """모델 표가 모델 전부를 덮고, 행마다 그 모델의 두 상한 설정 이름을 담는다(값이 아니라 이름 — 부를 때마다 설정에서 읽는다).
+    깨지는 시나리오: 모델을 더하고 표 행을 빠뜨려 그 모델의 견적·작업이 키 오류로 끊기거나, 설정 이름을 잘못 적어 다른 모델의
+    상한을 읽어 연쇄 선차감액이 바뀐다."""
+    assert set(NOVEL_MODEL_LIMITS) == set(get_args(ChatModelId))
+    assert {model: (row.k_max_setting, row.max_turns_setting) for model, row in NOVEL_MODEL_LIMITS.items()} == {
+        "gemini": ("novelize_k_max_gemini", "novelize_chapter_max_turns"),
+        "sonnet": ("novelize_k_max_sonnet", "novelize_chapter_max_turns_sonnet"),
+        "opus": ("novelize_k_max_opus", "novelize_chapter_max_turns_opus"),
+    }
+    for row in NOVEL_MODEL_LIMITS.values():
+        assert {row.k_max_setting, row.max_turns_setting} <= set(Settings.model_fields)
 
 
 @pytest.mark.parametrize(

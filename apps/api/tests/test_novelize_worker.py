@@ -34,6 +34,7 @@ from api.novelize import billing, runner, worker
 from api.novelize import router as novelize_router
 from api.novelize.deletion import delete_novels
 from api.novelize.inputs import ReviseInput
+from api.novelize.job_variants import VARIANT_FACTS, split_kinds
 from api.novelize.prompts import NovelizePrompt
 from factories import _assert_blocked, _make_draft_content, _make_novel_tree, _make_user_with_clover_lot
 
@@ -271,8 +272,8 @@ async def test_claim_leaves_a_kind_this_worker_does_not_know_queued(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """아는 종류 목록에 없는 종류의 대기 작업은 집지 않는다 — 아는 목록을 한 종류 줄여, 새 종류를 모르는 옛 워커를 흉내
-    낸다. 깨지는 시나리오: 배포 겹침 동안 새 api 가 만든 새 종류 작업을 옛 워커가 집어, 종류를 가리지 않는 실행 경로의
-    마지막 분기(장 생성)로 돌려 과금된 엉뚱한 결과를 저장한다."""
+    낸다. 깨지는 시나리오: 배포 겹침 동안 새 api 가 만든 새 종류 작업을 옛 워커가 집으면, 실행 경로가 그 종류를 판정하지 못해
+    내부 오류로 환불한다 — 목록이 그 행을 대기로 남겨 새 워커에게 넘겨야 사용자가 헛되이 실패를 겪지 않는다."""
     owner = await _make_user_with_clover_lot(db_session, clover_balance=0)
     base = datetime(2026, 1, 1, tzinfo=UTC)
     known = await _job_row(db_session, owner.id, "ai_edit", created_at=base)
@@ -285,11 +286,23 @@ async def test_claim_leaves_a_kind_this_worker_does_not_know_queued(
 
 
 def test_known_kinds_are_every_job_kind_but_the_chain_parent() -> None:
-    """워커가 아는 종류 = 작업 종류 전체 − 연쇄 부모. 깨지는 시나리오: 작업 종류를 하나 더하면서 워커 쪽 처리를 정하지 않아,
-    그 종류가 영영 집히지 않거나(목록에 안 넣음) 연쇄 부모가 워커로 새어 나간다(목록에 넣음). 종류를 더하면 이 테스트가
-    깨져 목록을 의식적으로 고치게 한다."""
+    """워커가 아는 종류 = 작업 종류 전체 − 연쇄 부모, 워커가 도는 갈래 = 연쇄 둘을 뺀 여덟. 종류 목록은 갈래 표의 워커 칸에서
+    끌어내지만 이 단언은 리터럴로 남긴다. 깨지는 시나리오: 갈래를 더하며 워커 칸을 잘못 골라, 그 종류가 영영 집히지 않거나
+    연쇄 부모가 워커로 새어 나간다. 장 생성은 워커가 도는 갈래(혼자 도는 생성)와 안 도는 갈래(연쇄 자식)로 갈려, 종류 목록만으로는
+    거를 수 없다 — 고르기 조회의 연쇄 부모 칸 조건이 연쇄 자식을 거른다."""
     assert len(worker.WORKER_JOB_KINDS) == len(set(worker.WORKER_JOB_KINDS))
     assert set(worker.WORKER_JOB_KINDS) == set(get_args(NovelJobKind)) - {"chain_generate"}
+    assert {variant for variant, facts in VARIANT_FACTS.items() if facts.worker_runs} == {
+        "legacy_generate",
+        "legacy_regenerate",
+        "outline_regenerate",
+        "paragraph_edit",
+        "block_edit",
+        "outline",
+        "episode_outline",
+        "manuscript",
+    }
+    assert split_kinds(worker_runs=True) == {"chapter_generate"}
 
 
 # ── 폴링 루프 ──────────────────────────────────────────────────────────────

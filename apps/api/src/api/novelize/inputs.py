@@ -21,6 +21,7 @@ from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StoryVersionDetail
 from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId
 from api.novelize.billing import chapter_job_model
+from api.novelize.job_variants import variant_of
 from api.novelize.prompts import NovelizePrompt, build_novelize_chapter_prompt, build_novelize_revise_prompt
 from api.novelize.source import format_turn_lines, group_turns, load_segment, novel_prompt_names, segment_hash
 from api.novelize.text import ending_excerpt, split_paragraphs
@@ -160,7 +161,7 @@ async def build_chapter_input(db: AsyncSession, job: NovelJob, novel: Novel) -> 
     source_hash = segment_hash(segment)
 
     first_ordinal: int | None = None
-    if job.kind == "chapter_regenerate":
+    if variant_of(job) == "legacy_regenerate":
         batch = await regenerate_batch(db, job)
         if batch is None or batch.source_hash != source_hash:
             raise SourceChangedError(f"job={job.id} 다시 만들 묶음의 원문이 바뀌었다")
