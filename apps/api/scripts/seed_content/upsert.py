@@ -22,7 +22,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.assets.image_processing import generate_blurred_image
@@ -35,9 +35,11 @@ from api.content.publish import (
 from api.content.router import _update_character_draft, _update_story_draft
 from api.content.schemas import (
     CharacterDraftPayload,
+    MediaBookPayload,
     StoryDraftPayload,
 )
 from api.db.models.character import CharacterVersionDetail, SituationalImage
+from api.db.models.chat import ChatRoom
 from api.db.models.content import (
     Content,
     ContentType,
@@ -125,19 +127,22 @@ async def upsert_story(
     content_id = story_content_id(slug)
     content = await _ensure_content(session, content_id, ContentType.STORY, payload.hashtags)
 
+    if published:
+        await _warn_if_rooms_lose_their_setups(session, slug, content_id, payload)
+
+    # 자동저장은 미디어 북 키가 없으면 칸을 건드리지 않는다. 같은 slug 를 미디어 북 없는 JSON 으로 다시 시드하면(묶음
+    # 없는 작업트리가 같은 로컬 DB 에 튜토리얼을 넣을 때) 앞선 인물·장면·칸이 새 본문에 붙어 남으므로 빈 미디어 북으로 비운다.
+    media_book = payload.media_book or MediaBookPayload(people=[], scenes=[], cells=[])
     cell_blurs: dict[uuid.UUID, uuid.UUID] = {}
-    if payload.media_book is not None:
-        cells = []
-        for cell in payload.media_book.cells:
-            image = (media_book_images or {}).get(cell.id)
-            original_asset_id, blurred_asset_id = await _ensure_original_and_blur(
-                session, f"{slug}-cell-{cell.id}", image
-            )
-            cell_blurs[cell.id] = blurred_asset_id
-            cells.append(cell.model_copy(update={"image_asset_id": original_asset_id}))
-        payload = payload.model_copy(update={"media_book": payload.media_book.model_copy(update={"cells": cells})})
-        # `_update_media_book` 이 칸 그림을 작가 소유·READY 자산인지 DB 에서 확인한다.
-        await session.flush()
+    cells = []
+    for cell in media_book.cells:
+        image = (media_book_images or {}).get(cell.id)
+        original_asset_id, blurred_asset_id = await _ensure_original_and_blur(session, f"{slug}-cell-{cell.id}", image)
+        cell_blurs[cell.id] = blurred_asset_id
+        cells.append(cell.model_copy(update={"image_asset_id": original_asset_id}))
+    payload = payload.model_copy(update={"media_book": media_book.model_copy(update={"cells": cells})})
+    # `_update_media_book` 이 칸 그림을 작가 소유·READY 자산인지 DB 에서 확인한다.
+    await session.flush()
 
     # 발행 버전을 마지막에 채운다 — 루프가 끝난 `version` 을 `_publish` 가 발행한다.
     version_ids = (story_draft_version_id(slug), story_version_id(slug)) if published else (story_draft_version_id(slug),)
@@ -259,6 +264,32 @@ async def upsert_character(
 
     await _finish(session, content, version, published=published)
     return content_id
+
+
+async def _warn_if_rooms_lose_their_setups(
+    session: AsyncSession, slug: str, content_id: uuid.UUID, payload: StoryDraftPayload
+) -> None:
+    """발행본의 시작설정 entity id 가 이번 payload 와 다르고 그 작품에 대화방이 있으면 경고 한 줄을 남긴다.
+
+    튜토리얼과 비공개 묶음을 바꿔 넣으면 같은 콘텐츠 id 의 시작설정·엔딩·스탯 id 가 통째로 바뀐다. 대화방은 이 id 들을
+    FK 없이 들고 있어 DB 가 막지 않고, 방이 사라진 항목을 가리킨 채 남는다. 시드는 사용자의 대화방을 지우지 않으므로
+    알리기만 한다 — 대화방 이름이나 본문은 적지 않는다.
+    """
+    existing = set(
+        await session.scalars(
+            select(StartingSetup.entity_id).where(StartingSetup.content_version_id == story_version_id(slug))
+        )
+    )
+    if not existing or existing == {setup.id for setup in payload.starting_setups}:
+        return
+    room_count = await session.scalar(
+        select(func.count()).select_from(ChatRoom).where(ChatRoom.content_id == content_id)
+    )
+    if room_count:
+        print(
+            f"  ! {slug}: 시작설정이 바뀌어 이 작품의 로컬 대화방 {room_count}개가 없는 시작설정·엔딩·스탯을 가리킨다"
+            " — 그 대화방을 지운다(DEV.md 의 비공개 시드 묶음 안내)."
+        )
 
 
 async def _ensure_original_and_blur(
