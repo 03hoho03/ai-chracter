@@ -71,12 +71,18 @@ _IMPRESSION_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("6558ab4d3dbc").NE
 _NOVEL_OUTLINE = _load("b389c2317149")
 # 그 뒤 소설 레인 Gemini 체인에 여러 문단 수정 문안을 더한 리비전 — 되돌릴 때는 이것이 구성안 리비전보다 먼저다.
 _BLOCK_EDIT_PROMPTS = _load("174f78b92e5c")
+# 그 뒤 Claude 소설 체인에 경계 제안·문단 수정 네 채널을 심은 리비전과 세 체인에 등급 규칙 채널을 심은 리비전 — head 의 소설 레인
+# 활성이다. 둘의 판 행이 앞 세트를 기준판으로 가리키므로 소설 레인을 통째로 지우는 테스트는 이 둘부터 실제 downgrade 순서(등급
+# 규칙 먼저)로 되돌린다. 위 시드 리비전 전부를 되돌리는 헬퍼는 쓰지 않는다 — 그 사이의 채팅 레인 리비전까지 되돌려 이 테스트들이
+# 고쳐 둔 채팅 활성 세트를 바꾼다.
+_RATING_PROMPTS = _load("e4df46a80bfa")
+_CLAUDE_CHANNEL_PROMPTS = _load("fe3df6f8e4d5")
 
 
-# 소설 레인을 통째로 지우는 테스트는 그 위 시드 리비전(Claude 소설 체인 채널·등급 규칙 채널 등)부터 실제 downgrade 순서로
-# 되돌린다 — 그 리비전들의 판 행이 앞 세트를 기준판으로 가리켜 먼저 지우지 않으면 소설 세트를 지울 수 없다.
-async def _undo_seeds_above_block_edit(db_session: AsyncSession) -> None:
-    await (await db_session.connection()).run_sync(undo_seeded_rows_above, _BLOCK_EDIT_PROMPTS.revision)
+async def _undo_rating_and_claude_channels(db_session: AsyncSession) -> None:
+    connection = await db_session.connection()
+    await connection.run_sync(_RATING_PROMPTS.delete_seeded_rows)
+    await connection.run_sync(_CLAUDE_CHANNEL_PROMPTS.delete_seeded_rows)
 
 
 Row = tuple[str, str, str, str, str, bool, int]
@@ -320,7 +326,7 @@ def test_v2_chapter_rows_need_the_kept_source_slots() -> None:
 
 
 async def _seed(db_session: AsyncSession, now: datetime) -> None:
-    await _undo_seeds_above_block_edit(db_session)
+    await _undo_rating_and_claude_channels(db_session)
     connection = await db_session.connection()
     await connection.run_sync(_M.delete_novel_sets)
     await connection.run_sync(lambda conn: _M.seed_novel_lane(conn, now))
@@ -369,7 +375,7 @@ async def test_delete_removes_admin_made_novel_rows_too(db_session: AsyncSession
     )
     await db_session.flush()
 
-    await _undo_seeds_above_block_edit(db_session)
+    await _undo_rating_and_claude_channels(db_session)
     connection = await db_session.connection()
     await connection.run_sync(_M.delete_novel_sets)
 
