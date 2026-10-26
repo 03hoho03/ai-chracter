@@ -28,3 +28,5 @@ cloudbuild.yaml
 openapi.json
 # 사람이 보는 env 견본, 앱은 .env 만 읽는다
 .env.example
+# 운영 작품을 내보낸 로컬 비공개 시드 묶음, 이미지에 실리면 안 된다
+scripts/seed_content/private/
