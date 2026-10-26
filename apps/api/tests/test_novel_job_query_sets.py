@@ -246,6 +246,8 @@ async def test_the_first_saved_chapter_time_counts_only_jobs_that_create_chapter
 # ── 과금: 하루 상한 세기 ─────────────────────────────────────────────────────
 async def _room_novel(db_client: httpx.AsyncClient, db_session: AsyncSession, owner: User) -> tuple[Novel, ChatMessage]:
     """과금할 수 있는 소설(방·원작이 실제로 있다)과 그 방의 첫 메시지."""
+    # 앞 회차의 상한 거절이 세션을 롤백해 `owner` 의 속성이 만료돼 있다. 비동기 세션은 지연 로드를 못 하므로 넘기기 전에 다시 읽는다.
+    await db_session.refresh(owner)
     room = await _open_room(db_client, db_session, turns=1, lane="character", user=owner)
     chat_room = await db_session.get_one(ChatRoom, room.room_id)
     novel = Novel(

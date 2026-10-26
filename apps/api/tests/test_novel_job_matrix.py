@@ -245,12 +245,16 @@ def _no_parallel_update() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _matrix_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """heartbeat 는 실행 중에 돌지 않게 늘리고, 만료는 60초로 둔다. 구성 흐름과 여러 문단 수정 스위치를 켠다. 구성안 두 종의 단가를
-    정한다(화 단가와 AI 수정 단가는 흐름 시험 공용 고정값)."""
+def _matrix_settings(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """heartbeat 는 실행 중에 돌지 않게 늘리고, 만료는 60초로 둔다. 구성 흐름 스위치는 칸의 갈래가 실제로 생기는 값으로 두고(옛 묶음
+    생성·연쇄 라우트는 스위치가 켜져 있으면 409 로 거절한다), 여러 문단 수정 스위치는 켠다. 구성안 두 종의 단가를 정한다(화 단가와
+    AI 수정 단가는 흐름 시험 공용 고정값)."""
+    callspec = getattr(request.node, "callspec", None)
+    cell = callspec.params.get("cell") if callspec is not None else None
+    outline_flow = cell is None or _BRANCHES[cell.split("/", 1)[0]].outline_flow
     monkeypatch.setattr(settings, "novelize_heartbeat_interval_seconds", 3600)
     monkeypatch.setattr(settings, "novelize_heartbeat_expiry_seconds", 60)
-    monkeypatch.setattr(settings, "novelize_outline_flow_enabled", True)
+    monkeypatch.setattr(settings, "novelize_outline_flow_enabled", outline_flow)
     monkeypatch.setattr(settings, "novelize_multi_block_edit_enabled", True)
     _set_model_price(monkeypatch, "gemini", novel_outline=_OUTLINE_COST, novel_episode_outline=_SCENES_COST)
 
@@ -519,11 +523,14 @@ class _Branch:
     prepare: Prepare
     request: Request
     chain: bool = False
+    # 구성 흐름 스위치. 옛 묶음 생성·연쇄 라우트는 스위치가 꺼져 있을 때만 받으므로 그 갈래는 끈다. 옛 다시 만들기와 AI 수정
+    # 라우트는 스위치를 보지 않고, 구성 흐름 라우트는 켜져 있어야 받는다.
+    outline_flow: bool = True
 
 
 _BRANCHES: dict[str, _Branch] = {
-    "legacy_generate": _Branch(3, _prepare_nothing, _request_generate),
-    "chain_parent": _Branch(3, _prepare_chain, _request_chain, chain=True),
+    "legacy_generate": _Branch(3, _prepare_nothing, _request_generate, outline_flow=False),
+    "chain_parent": _Branch(3, _prepare_chain, _request_chain, chain=True, outline_flow=False),
     "legacy_regenerate": _Branch(3, _prepare_chapter, _request_regenerate),
     "outline_regenerate": _Branch(6, _prepare_outline_regenerate, _request_outline_regenerate),
     "paragraph_edit": _Branch(3, _prepare_chapter, _request_paragraph_edit),
