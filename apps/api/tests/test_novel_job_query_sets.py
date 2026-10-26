@@ -28,6 +28,7 @@ from api.novelize import router as novelize_router
 from api.novelize.block_edits import BlockEdit, BlockEditPatch, block_hash
 from api.novelize.blocks import build_revision
 from api.novelize.deletion import erase_stale_ai_edit_previews
+from api.novelize.job_variants import variant_of
 from api.novelize.schemas import NovelChapterSummary
 from api.novelize.writing_lock import first_saved_chapter_at
 from factories import _make_user, _make_user_with_clover_lot, _open_room, revision_row
@@ -170,7 +171,9 @@ async def _chapter_with_two_revisions(
 
 
 def _picked(rows: dict[str, NovelJob], ids: set[uuid.UUID]) -> set[str]:
-    return {variant for variant, row in rows.items() if row.id in ids}
+    """걸린 행들의 갈래. 갈래 이름은 행을 만든 이름표가 아니라 서버의 갈래 판정으로 읽는다 — 행 칸 조합이 판정과 어긋나면
+    기대 집합과 다른 이름이 나와 여기서 드러난다."""
+    return {variant_of(row) for row in rows.values() if row.id in ids}
 
 
 # ── 실행 · 워커 ──────────────────────────────────────────────────────────────
@@ -218,7 +221,7 @@ async def test_the_last_chapter_model_reads_only_jobs_that_wrote_chapters(db_ses
     await db_session.commit()
 
     read = {
-        variant
+        variant_of(rows[variant])
         for variant in VARIANTS
         if await novelize_router._last_chapter_model(db_session, novels[variant], allowed=True) == "opus"
     }
@@ -231,14 +234,20 @@ async def test_the_first_saved_chapter_time_counts_only_jobs_that_create_chapter
     원고. 다시 만들기는 이미 있는 화를 고치므로 세지 않는다. 깨지는 시나리오: 연쇄 자식이 빠져 연쇄로만 첫 화를 쓴 소설이 잠기지
     않거나, 다시 만들기가 세어 잠금 시각이 앞당겨진다."""
     owner = await _owner(db_session)
+    rows: dict[str, NovelJob] = {}
     novels: dict[str, uuid.UUID] = {}
     for variant in VARIANTS:
         novel = await _bare_novel(db_session, owner.id)
         novels[variant] = novel.id
-        db_session.add(_variant_row(variant, novel_id=novel.id, user_id=owner.id, status="succeeded"))
+        rows[variant] = _variant_row(variant, novel_id=novel.id, user_id=owner.id, status="succeeded")
+        db_session.add(rows[variant])
     await db_session.commit()
 
-    counted = {variant for variant in VARIANTS if await first_saved_chapter_at(db_session, novels[variant]) is not None}
+    counted = {
+        variant_of(rows[variant])
+        for variant in VARIANTS
+        if await first_saved_chapter_at(db_session, novels[variant]) is not None
+    }
 
     assert counted == {"legacy_generate", "chain_child", "manuscript"}
 
@@ -293,16 +302,15 @@ async def test_the_daily_cap_on_one_start_message_counts_generates_children_and_
     refused: set[str] = set()
     for variant in VARIANTS:
         novel, first = await _room_novel(db_client, db_session, owner)
-        db_session.add(
-            _variant_row(
-                variant,
-                novel_id=novel.id,
-                user_id=owner.id,
-                status="succeeded",
-                start=first,
-                episode_outline_id=uuid.uuid4(),
-            )
+        row = _variant_row(
+            variant,
+            novel_id=novel.id,
+            user_id=owner.id,
+            status="succeeded",
+            start=first,
+            episode_outline_id=uuid.uuid4(),
         )
+        db_session.add(row)
         await db_session.commit()
         probe = NovelJob(
             novel_id=novel.id,
@@ -314,7 +322,7 @@ async def test_the_daily_cap_on_one_start_message_counts_generates_children_and_
             end_message_created_at=first.created_at,
         )
         if await _refused_by_daily_cap(db_session, probe, 40):
-            refused.add(variant)
+            refused.add(variant_of(row))
 
     assert refused == {"legacy_generate", "chain_child", "legacy_regenerate"}
 
@@ -331,16 +339,15 @@ async def test_the_daily_cap_on_one_scene_outline_counts_manuscripts_and_outline
     for variant in VARIANTS:
         novel, first = await _room_novel(db_client, db_session, owner)
         scene_outline = uuid.uuid4()
-        db_session.add(
-            _variant_row(
-                variant,
-                novel_id=novel.id,
-                user_id=owner.id,
-                status="succeeded",
-                start=first,
-                episode_outline_id=scene_outline,
-            )
+        row = _variant_row(
+            variant,
+            novel_id=novel.id,
+            user_id=owner.id,
+            status="succeeded",
+            start=first,
+            episode_outline_id=scene_outline,
         )
+        db_session.add(row)
         await db_session.commit()
         probe = NovelJob(
             novel_id=novel.id,
@@ -351,7 +358,7 @@ async def test_the_daily_cap_on_one_scene_outline_counts_manuscripts_and_outline
             outline_episode_key=uuid.uuid4(),
         )
         if await _refused_by_daily_cap(db_session, probe, 40):
-            refused.add(variant)
+            refused.add(variant_of(row))
 
     assert refused == {"outline_regenerate", "manuscript"}
 
@@ -435,10 +442,14 @@ async def test_erasing_stale_edits_clears_only_ai_edit_previews_and_patches(db_s
             )
         ).all()
     }
-    cleared = {variant for variant, row in rows.items() if stored[row.id].result_text is None and variant != "block_edit"}
+    cleared = {
+        variant_of(row)
+        for row in rows.values()
+        if stored[row.id].result_text is None and variant_of(row) != "block_edit"
+    }
     staled = {
-        variant
-        for variant, row in rows.items()
+        variant_of(row)
+        for row in rows.values()
         if (edit := stored[row.id].block_edit) is not None and [p["state"] for p in edit["patches"]] == ["stale"]
     }
     assert cleared == {"paragraph_edit"}
