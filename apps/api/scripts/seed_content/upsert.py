@@ -1,4 +1,4 @@
-"""시드 JSON 하나를 발행 상태의 콘텐츠로 DB 에 밀어 넣는다.
+"""시드 JSON 하나를 발행 상태의 콘텐츠로(미발행 표시면 초안으로) DB 에 밀어 넣는다.
 
 빌더 API 의 자동저장 로직(`api.content.router._update_story_draft` /
 `_update_character_draft`)을 그대로 재사용하고, 그 앞뒤로 시드에만 필요한 것 — 결정적
@@ -19,7 +19,7 @@ UUID, 발행 검증, 발행 포인터 — 만 붙인다. 자식 행 조정(entit
 """
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -49,6 +49,9 @@ from api.db.models.media import AssetKind
 from api.db.models.story import (
     Ending,
     KeywordNote,
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
     SituationNote,
     StartingSetup,
     StatDef,
@@ -58,6 +61,7 @@ from api.db.models.story import (
 
 from .ids import SEED_AUTHOR_USER_ID, seed_uuid
 from .images import ensure_asset, read_image, situational_image_slug
+from .loader import SeedImage
 
 
 class SeedPublishError(Exception):
@@ -89,31 +93,55 @@ def character_draft_version_id(slug: str) -> uuid.UUID:
 
 
 async def upsert_story(
-    session: AsyncSession, slug: str, payload: StoryDraftPayload, *, published: bool = True
+    session: AsyncSession,
+    slug: str,
+    payload: StoryDraftPayload,
+    *,
+    published: bool = True,
+    media_book_images: Mapping[uuid.UUID, SeedImage] | None = None,
 ) -> uuid.UUID:
     """스토리 하나를 발행 상태로 업서트하고 콘텐츠 id 를 돌려준다.
 
     `published` 가 거짓이면(JSON 의 `seedPublished: false`) 초안 버전만 만들고 발행 검증·발행을 건너뛰어
-    `current_published_version_id` 가 비어 있다. 아직 이 값을 보지 않는다.
+    `current_published_version_id` 가 비어 있다 — 운영에서 아직 발행하지 않은 작품은 쓰다 만 초안일 수 있다.
+    공개 범위는 어느 쪽이든 payload 의 `visibility` 를 따른다.
 
     `payload.thumbnail_asset_id` 는 이미 채워져 있어야 한다(발행 검증 필수 항목) — 시드
     이미지 자산을 만드는 건 `images.ensure_asset` 의 몫이고, 호출부가 그 결과를 payload 에
     넣어 넘긴다.
 
+    미디어 북 칸 그림은 이 함수가 만든다 — JSON 의 `imageAssetId` 는 운영 자산이라 로컬에 없다. 칸마다
+    `media_book_images` 의 그림(칸 entity id 키)으로 원본·블러 자산을 만들어 그 id 로 바꿔 넣는다.
+
     발행 검증에 실패하면 DB 를 **전혀 건드리지 않고** `SeedPublishError` 를 던진다.
     """
-    bad_fields = _validate_payload(payload)
-    if bad_fields:
-        raise SeedPublishError(
-            f"{slug}: 발행 검증 실패 — 비었거나 참조가 깨진 필드: {', '.join(bad_fields)}"
-        )
+    if published:
+        bad_fields = _validate_payload(payload)
+        if bad_fields:
+            raise SeedPublishError(
+                f"{slug}: 발행 검증 실패 — 비었거나 참조가 깨진 필드: {', '.join(bad_fields)}"
+            )
 
     content_id = story_content_id(slug)
     content = await _ensure_content(session, content_id, ContentType.STORY, payload.hashtags)
 
-    # 초안을 발행 버전보다 **먼저** 채운다 — `_update_story_draft` 가 `content.visibility` 를
-    # payload 값으로 되돌리므로, 마지막에 도는 `_publish` 가 PUBLIC 으로 확정해야 한다.
-    for version_id in (story_draft_version_id(slug), story_version_id(slug)):
+    cell_blurs: dict[uuid.UUID, uuid.UUID] = {}
+    if payload.media_book is not None:
+        cells = []
+        for cell in payload.media_book.cells:
+            image = (media_book_images or {}).get(cell.id)
+            original_asset_id, blurred_asset_id = await _ensure_original_and_blur(
+                session, f"{slug}-cell-{cell.id}", image
+            )
+            cell_blurs[cell.id] = blurred_asset_id
+            cells.append(cell.model_copy(update={"image_asset_id": original_asset_id}))
+        payload = payload.model_copy(update={"media_book": payload.media_book.model_copy(update={"cells": cells})})
+        # `_update_media_book` 이 칸 그림을 작가 소유·READY 자산인지 DB 에서 확인한다.
+        await session.flush()
+
+    # 발행 버전을 마지막에 채운다 — 루프가 끝난 `version` 을 `_publish` 가 발행한다.
+    version_ids = (story_draft_version_id(slug), story_version_id(slug)) if published else (story_draft_version_id(slug),)
+    for version_id in version_ids:
         version = await _ensure_version(session, content_id, version_id, payload.description)
         if await session.get(StoryVersionDetail, version_id) is None:
             # `_update_story_draft` 는 이 행이 이미 있다고 보고 `db.get` 으로 집어 든다
@@ -128,17 +156,30 @@ async def upsert_story(
             )
             await session.flush()
         await _update_story_draft(session, content, version, payload)
+        if cell_blurs:
+            await session.flush()
+            # 자동저장은 새 칸의 블러본을 비워 두고 앱은 발행 때 건다 — 시드는 발행 경로를 타지 않아 여기서 건다.
+            for cell_row in await session.scalars(
+                select(MediaBookCell).where(MediaBookCell.content_version_id == version_id)
+            ):
+                cell_row.blurred_asset_id = cell_blurs[cell_row.entity_id]
 
-    await _publish(session, content, version)
+    await _finish(session, content, version, published=published)
     return content_id
 
 
 async def upsert_character(
-    session: AsyncSession, slug: str, payload: CharacterDraftPayload, *, published: bool = True
+    session: AsyncSession,
+    slug: str,
+    payload: CharacterDraftPayload,
+    *,
+    published: bool = True,
+    situational_images: Mapping[uuid.UUID, SeedImage] | None = None,
 ) -> uuid.UUID:
     """캐릭터 하나를 발행 상태로 업서트하고 콘텐츠 id 를 돌려준다.
 
-    `published` 는 `upsert_story` 와 같다. 아직 이 값을 보지 않는다.
+    `published`·공개 범위는 `upsert_story` 와 같다. `situational_images` 는 상황별 이미지 entity id 키의 그림이고,
+    없는 항목은 `images/{캐릭터slug}-scene{n}.png` 파일이나 목업을 쓴다.
 
     스토리와 달리 **상황별 이미지 자산까지 이 함수가 만든다** — `situationalImages` 항목에는
     자산을 담을 필드가 아예 없어서(`CharacterSituationalImageDraftInput` 은 빌더 자동저장이
@@ -151,7 +192,7 @@ async def upsert_character(
 
     발행 검증에 실패하면 DB 를 **전혀 건드리지 않고** `SeedPublishError` 를 던진다.
     """
-    missing = validate_character_publish(
+    missing = [] if not published else validate_character_publish(
         Content(genre_id=payload.genre_id, target=payload.target),
         ContentVersion(detail_description=payload.description),
         CharacterVersionDetail(
@@ -173,12 +214,17 @@ async def upsert_character(
     # 자산은 버전과 무관하게 slug 파생이라 한 번만 만들면 두 버전이 같은 것을 가리킨다.
     image_assets: list[tuple[uuid.UUID, uuid.UUID, uuid.UUID]] = []
     for order, item in enumerate(payload.situational_images):
-        original_asset_id, blurred_asset_id = await _ensure_situational_assets(session, slug, order)
+        original_asset_id, blurred_asset_id = await _ensure_original_and_blur(
+            session, situational_image_slug(slug, order), (situational_images or {}).get(item.id)
+        )
         image_assets.append((item.id, original_asset_id, blurred_asset_id))
     await session.flush()  # `situational_images.image_asset_id` 가 참조한다
 
-    # 초안을 발행 버전보다 **먼저** 채운다 — 이유는 `upsert_story` 와 같다.
-    for version_id in (character_draft_version_id(slug), character_version_id(slug)):
+    # 발행 버전을 마지막에 채운다 — 이유는 `upsert_story` 와 같다.
+    version_ids = (
+        (character_draft_version_id(slug), character_version_id(slug)) if published else (character_draft_version_id(slug),)
+    )
+    for version_id in version_ids:
         version = await _ensure_version(session, content_id, version_id, payload.description)
         if await session.get(CharacterVersionDetail, version_id) is None:
             # `_update_character_draft` 는 이 행이 이미 있다고 보고 `db.get` 으로 집어 든다
@@ -211,23 +257,25 @@ async def upsert_character(
             rows[entity_id].image_asset_id = original_asset_id
             rows[entity_id].blurred_asset_id = blurred_asset_id
 
-    await _publish(session, content, version)
+    await _finish(session, content, version, published=published)
     return content_id
 
 
-async def _ensure_situational_assets(
-    session: AsyncSession, slug: str, order: int
+async def _ensure_original_and_blur(
+    session: AsyncSession, image_slug: str, image: SeedImage | None
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    """상황별 이미지 한 장의 (원본, 블러) 자산 id — 블러는 원본에서 그때그때 만든다.
+    """그림 한 장의 (원본, 블러) 자산 id — 블러는 원본에서 그때그때 만든다. 상황별 이미지와 미디어 북 칸이 쓴다.
+    둘 다 이미지 보관함이 아직 노출되지 않은 그림을 블러본으로 보여 준다.
 
-    원본 바이트를 한 번만 읽어 둘 다에 쓴다: 이미지 파일이 없을 때 목업 폴백 경고가 장당 한
-    번만 나오고, 블러본이 항상 실제로 올라간 원본의 흐린 버전임이 보장된다. Pillow 호출이
+    `image` 가 없으면 `images/{image_slug}.png` 나 목업을 쓴다. 원본 바이트를 한 번만 읽어 둘 다에 쓴다: 이미지
+    파일이 없을 때 목업 폴백 경고가 장당 한 번만 나오고, 블러본이 항상 실제로 올라간 원본의 흐린 버전임이 보장된다.
+    블러 id 도 slug 파생 고정값이라 재시드가 자산을 늘리지 않고, moto 를 재기동해도 같은 키로 다시 올라간다. Pillow 호출이
     CPU 를 잡지만 여기는 요청 핸들러가 아니라 시드 스크립트라 스레드풀로 뺄 이유가 없다.
     """
-    image_slug = situational_image_slug(slug, order)
-    original = read_image(image_slug)
+    original = image.data if image is not None else read_image(image_slug)
+    crop = image.crop if image is not None else None
     return (
-        await ensure_asset(session, image_slug, AssetKind.ORIGINAL, data=original),
+        await ensure_asset(session, image_slug, AssetKind.ORIGINAL, data=original, crop=crop),
         await ensure_asset(
             session, image_slug, AssetKind.BLURRED, data=generate_blurred_image(original)
         ),
@@ -284,13 +332,21 @@ async def _ensure_version(
     return version
 
 
+async def _finish(session: AsyncSession, content: Content, version: ContentVersion, *, published: bool) -> None:
+    if published:
+        await _publish(session, content, version)
+        return
+    # 앞선 시드가 발행했던 작품이면 그 발행본 행은 남긴다 — 그 버전에 핀이 걸린 대화방이 고아가 되지 않게.
+    content.current_published_version_id = None
+    await session.flush()
+
+
 async def _publish(session: AsyncSession, content: Content, version: ContentVersion) -> None:
     version.version_number = 1
     # 최초 시드 시각을 유지한다 — 재시드가 발행 시각을 매번 앞당길 이유가 없다.
     version.published_at = version.published_at or datetime.now(UTC)
-    # 시드 콘텐츠는 정의상 홈 목록에 떠야 한다 — payload 의 visibility 나 dev 에서 걸어둔
-    # 이용제한 상태가 아니라 이 값이 진실 공급원이다.
-    content.visibility = ContentVisibility.PUBLIC
+    # 공개 범위는 자동저장이 넣은 payload 값 그대로다 — 운영에서 내보낸 비공개 작품이 로컬 홈에 뜨면 안 된다.
+    # 이용제한 상태는 dev 에서 걸어둔 값이 아니라 이 값이 진실 공급원이다.
     content.moderation_status = ModerationStatus.NORMAL
     # 정지 표식은 제한 상태에서만 설 수 있다 — 정상으로 되돌리면서 같이 내린다.
     content.restricted_by_suspension = False
@@ -316,6 +372,7 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
     }
     dangling_stat_rule_paths = draft_dangling_stat_rule_paths(payload.starting_setups)
     dangling_situation_note_paths = draft_dangling_situation_note_paths(payload.starting_setups)
+    media_book = payload.media_book
     return dangling_stat_rule_paths + dangling_situation_note_paths + validate_story_publish(
         Content(genre_id=payload.genre_id, target=payload.target),
         ContentVersion(detail_description=payload.description),
@@ -332,10 +389,13 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
             for setup_item in payload.starting_setups
         ],
         endings_by_setup_id,
-        # 시드 스크립트는 미디어 북을 쓰지 않는다(축·칸 행을 만들지 않는다).
-        media_book_people=[],
-        media_book_scenes=[],
-        media_book_cells=[],
+        media_book_people=[MediaBookPerson(entity_id=item.id) for item in media_book.people] if media_book else [],
+        media_book_scenes=[MediaBookScene(entity_id=item.id) for item in media_book.scenes] if media_book else [],
+        media_book_cells=[
+            MediaBookCell(person_entity_id=cell.person_id, scene_entity_id=cell.scene_id) for cell in media_book.cells
+        ]
+        if media_book
+        else [],
         keyword_notes=[
             KeywordNote(
                 info_text=note_item.info_text,
