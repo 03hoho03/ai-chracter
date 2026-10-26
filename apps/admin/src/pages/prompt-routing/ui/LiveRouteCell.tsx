@@ -18,10 +18,7 @@ type LiveRouteCellProps = {
 export function LiveRouteCell({ cell }: LiveRouteCellProps) {
   const { effective, skipped } = cell;
   const call = cell.calls[0];
-  const source =
-    effective.source === "env" && effective.sourceDetail !== null
-      ? `${ROUTE_SOURCE_LABELS.env} · ${effective.sourceDetail}`
-      : ROUTE_SOURCE_LABELS[effective.source];
+  const source = sourceText(cell);
 
   return (
     <div className="flex min-w-56 flex-col gap-1 whitespace-normal">
@@ -43,6 +40,15 @@ export function LiveRouteCell({ cell }: LiveRouteCellProps) {
       )}
     </div>
   );
+}
+
+function sourceText({ lane, effective }: AdminPromptRouteCell): string {
+  if (effective.source === "env" && effective.sourceDetail !== null) {
+    return `${ROUTE_SOURCE_LABELS.env} · ${effective.sourceDetail}`;
+  }
+  // 소설 생성 단계는 방이 아니라 작업 모델로 부른다.
+  if (effective.source === "room" && lane === "novel") return "작업 모델";
+  return ROUTE_SOURCE_LABELS[effective.source];
 }
 
 type LivePriceCellProps = {

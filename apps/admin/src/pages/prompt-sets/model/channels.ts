@@ -25,6 +25,7 @@ export const PROMPT_CHANNEL_LABELS = {
   novelize_revise: "소설 문단 수정",
   novelize_revise_blocks: "소설 여러 문단 수정",
   novelize_revise_recheck: "소설 묶음 재검사",
+  novelize_rating: "소설 등급 규칙",
   novel_screen: "노벨 심사",
 } as const;
 

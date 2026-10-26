@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { createCallable } from "@/shared/lib/callable/createCallable";
@@ -15,6 +16,8 @@ import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { useRestoreMutation } from "../api/useRestoreMutation";
 import { PROMPT_LANE_LABELS, type PromptLane } from "../model/lane";
 import { PROMPT_MODEL_LABELS, type PromptModel } from "../model/model";
+import { ratingDriftLines } from "../model/ratingDrift";
+import { RatingDriftNotice } from "./RatingDriftNotice";
 
 type RestorePromptSetDialogProps = {
   id: string;
@@ -32,11 +35,18 @@ export const RestorePromptSetDialog = createCallable<RestorePromptSetDialogProps
   ({ call, id, version, publishedAt, lane, model }) => {
     const restoreMutation = useRestoreMutation(lane);
     const chainName = `${PROMPT_LANE_LABELS[lane]} · ${PROMPT_MODEL_LABELS[model]}`;
+    // 복원한 초안의 등급 규칙이 다른 레인과 갈렸으면 닫기 전에 한 번 보인다(복원은 이미 끝났다).
+    const [driftLines, setDriftLines] = useState<string[]>([]);
 
     const handleRestore = async () => {
       try {
-        await restoreMutation.mutateAsync(id);
+        const restored = await restoreMutation.mutateAsync(id);
         toast.success(`${chainName} 초안에 복원했어요. 서비스에 반영하려면 다시 게시하세요.`);
+        const lines = ratingDriftLines(restored.ratingDrift);
+        if (lines.length > 0) {
+          setDriftLines(lines);
+          return;
+        }
         call.end();
       } catch {
         toast.error("복원에 실패했어요. 잠시 후 다시 시도해주세요.");
@@ -55,14 +65,25 @@ export const RestorePromptSetDialog = createCallable<RestorePromptSetDialogProps
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
-              취소
-            </Button>
-            <Button type="button" disabled={restoreMutation.isPending} onClick={() => void handleRestore()}>
-              {restoreMutation.isPending ? "복원 중..." : "이 버전으로 복원"}
-            </Button>
-          </DialogFooter>
+          {driftLines.length > 0 ? (
+            <>
+              <RatingDriftNotice lines={driftLines} footer="복원은 끝났어요. 맞추려면 그 세트도 같이 고쳐 게시하세요." />
+              <DialogFooter>
+                <Button type="button" autoFocus onClick={() => call.end()}>
+                  확인
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <DialogFooter>
+              <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
+                취소
+              </Button>
+              <Button type="button" disabled={restoreMutation.isPending} onClick={() => void handleRestore()}>
+                {restoreMutation.isPending ? "복원 중..." : "이 버전으로 복원"}
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
     );
