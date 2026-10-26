@@ -168,9 +168,9 @@ async def _run_policy_turn(
 
 async def _assert_not_refunded(db_session: AsyncSession, user: User) -> None:
     """정책 위반은 소모로 둔다. 원장에 차감 한 행만 있고 환불 행이 없다."""
-    assert user.clover_balance == _START_BALANCE - clover.CHAT_TURN_COST
+    assert user.clover_balance == _START_BALANCE - clover.MODEL_PRICES["gemini"].chat_turn
     rows = (await db_session.scalars(select(CloverLedger).where(CloverLedger.user_id == user.id))).all()
-    assert [(row.kind, row.amount) for row in rows] == [("chat_spend", -clover.CHAT_TURN_COST)]
+    assert [(row.kind, row.amount) for row in rows] == [("chat_spend", -clover.MODEL_PRICES["gemini"].chat_turn)]
 
 
 @pytest.mark.parametrize("surface", _SURFACES)

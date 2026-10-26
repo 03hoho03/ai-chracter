@@ -596,14 +596,14 @@ async def test_a_folding_turn_costs_one_turn_of_clover_and_counts_once_against_r
 
     assert len(await _snapshots(db_session, room)) == 1
     assert await db_session.scalar(sa.select(User.clover_balance).where(User.id == user.id)) == (
-        start_balance - clover.CHAT_TURN_COST
+        start_balance - clover.MODEL_PRICES["gemini"].chat_turn
     )
     ledger = (
         await db_session.execute(
             sa.select(CloverLedger.kind, CloverLedger.amount).where(CloverLedger.user_id == user.id)
         )
     ).all()
-    assert [tuple(row) for row in ledger] == [("chat_spend", -clover.CHAT_TURN_COST)]
+    assert [tuple(row) for row in ledger] == [("chat_spend", -clover.MODEL_PRICES["gemini"].chat_turn)]
     counters = [await redis_client.get(key) for key in await redis_client.keys(f"rate_limit:*{user.id}*")]
     assert counters and all(value == "1" for value in counters)
 

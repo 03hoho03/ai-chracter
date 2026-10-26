@@ -19,7 +19,6 @@ from fastapi import HTTPException
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from api.core import clover
 from api.core.config import settings
 from api.core.rate_limit import KST, seconds_until_kst_midnight
 from api.db.models import Content, Novel, NovelChapter, NovelChapterRevision, NovelJob, User
@@ -40,7 +39,7 @@ from api.novelize.prompts import NovelizePrompt
 from api.novelize.batches import ensure_batches
 from api.novelize.deletion import delete_batch, delete_novels
 from api.novelize.router import delete_last_novel_chapter, delete_novel
-from factories import _assert_blocked, _clover_lots, _make_draft_content, _make_user_with_clover_lot, revision_row
+from factories import _assert_blocked, _clover_lots, _make_draft_content, _make_user_with_clover_lot, revision_row, _set_model_price
 
 pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
 
@@ -151,7 +150,7 @@ def test_job_price_reads_the_constant_at_call_time(monkeypatch: pytest.MonkeyPat
     assert billing.job_price("chapter_generate") == 40
     assert billing.job_price("chapter_regenerate") == 40
     assert billing.job_price("ai_edit") == 20
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 33)
+    _set_model_price(monkeypatch, "gemini", novel_episode=33)
     assert billing.job_price("chapter_regenerate") == 33
 
 
@@ -227,7 +226,7 @@ async def test_create_rejects_a_stale_expected_cost_before_charging(
 ) -> None:
     owner = await _owner(db_session)
     novel = await _make_novel(db_session, owner.id)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 25)
+    _set_model_price(monkeypatch, "gemini", novel_episode=25)
 
     async with _service_session(db_session) as s:
         with pytest.raises(HTTPException) as caught:

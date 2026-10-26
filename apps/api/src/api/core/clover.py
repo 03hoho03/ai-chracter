@@ -12,7 +12,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from typing import Literal
+from typing import Literal, get_args
 
 import anyio
 from sqlalchemy import Integer, Uuid, case, false, func, insert, literal, literal_column, select, update
@@ -32,48 +32,41 @@ from api.db.models.clover import (
 )
 from api.db.models.content import Content
 from api.db.models.payment import Payment
+from api.llm.backends import ChatModelId
 
 logger = logging.getLogger(__name__)
 
 # 아래 단가 주석의 원가 환산 기준: 1달러 1,400원, 1클로버 3원. 판매 1원에서 부가세 10%와 PG 수수료 3.2%(수수료
 # 부가세 포함 3.52%)를 빼면 0.874원, 남의 작품 유료 사용분에 붙는 원작자 몫 5%(공급가액 기준)까지 빼면 0.828원이라
 # 1클로버로 원가에 쓸 수 있는 돈은 약 2.48원이다(보너스 없는 상품 기준 — 보너스가 붙은 상품에서는 더 작다).
-# 채팅 턴 10: 조감독 작품 111턴 시뮬레이션에서 생성·칸 판정·스탯·요약·엔딩을 모두 합쳐 턴당 약 $0.0047(약 6.5원)이라
-# 원가는 쓸 수 있는 돈(약 25원)의 4분의 1 남짓이다. 방 하나·시뮬레이터 사용자의 값이라 실사용 분포는 아직 모른다.
-# 게이트 함수는 이 이름들을 **호출 시점에 모듈 전역으로** 읽는다 — 기본 인자로 캡처하면
-# `monkeypatch.setattr`가 통하지 않는다(`core/rate_limit.py`의 상한 상수와 같은 규칙).
-CHAT_TURN_COST = 10
-IMAGE_UNIT_COST = 30
-# 소설화 단가 — 화 하나의 클로버와 AI 문단 수정 한 번의 클로버. 생성 한 번은 묶음 하나를 여러 화로 쓰고 화 수 × 화
-# 단가를 낸다. 다시 만들기도 같은 호출이라 같은 화 단가다. 화 80: 운영에서 기본 모델 소설화 호출 다섯 번의 평균 토큰을
-# 이 모델의 2027년 인상 후 단가로 계산하면 호출 하나에 약 78원이고 장 경계 제안 약 4.6원을 더해 약 83원이다 — 쓸 수 있는
-# 돈(약 199원)의 약 42%. 집계가 호출 하나가 낸 화 수를 모르는 호출당 값이라 묶음이 여러 화를 내면 화당 원가는 더 낮고,
-# 표본이 다섯 번뿐이며 사고 토큰이 보고되지 않았을 수 있다. 수정 30: 시험 세 번에서 잰 문단 수정 원가 약 $0.026(약 36원)
-# 이 쓸 수 있는 돈(약 75원)의 약 절반이다. 웹은 이 값의 사본을 갖지 않고 서버 응답으로만 받는다(배포 사이에 열어 둔
-# 화면의 금액이 어긋나지 않게).
-NOVELIZE_EPISODE_COST = 80
-NOVELIZE_AI_EDIT_COST = 30
-# 노벨(회원이 공개한 소설) 화 하나의 소장 가격과, 소설마다 앞에서부터 무료로 읽는 화 수. 1클로버 3원 기준 화당 90원으로,
-# 공개 소설 열람 가격 검토에서 고른 값이다(원가가 아니라 정책값). 가격 안내 응답과 구매 라우트가 호출 때마다 여기서 읽는다.
-NOVEL_READ_COST = 30
-NOVEL_FREE_CHAPTER_COUNT = 5
-# 상위 모델(Claude)로 쓰는 채팅 턴 하나와 소설 화 하나의 클로버. 위 Gemini 값과 짝이고 모델 레지스트리
-# (`llm/chat_models.py`)가 호출 때마다 여기서 읽는다. Sonnet 턴 60: 조감독 작품 긴 방에서 잰 Sonnet 턴 원가는 캐시
-# 적중 $0.018(약 25원)·미적중 $0.0796(약 111원)이라 미적중 턴도 쓸 수 있는 돈(약 149원) 안에 든다. Sonnet 은 지금 채팅에서
-# 고를 수 없어 이 값으로 차감하는 경로가 없다 — 채팅에 다시 열 때의 값이다(소설 Sonnet 화는 아래 화 단가를 쓴다). Opus 턴
-# 200: 운영에서 잰 Opus 5.5 채팅 턴 원가(생성과 판정 몫 포함, 백그라운드 요약·추출 제외)는 캐시가 맞을 때 평균 약 45원,
-# 캐시를 놓친 턴 평균 약 175원, 관측 최대 약 343원이다. 200클로버로 쓸 수 있는 돈은 위 기준으로 약 496원이고 보너스 20%
-# 상품(1클로버로 쓸 수 있는 돈 약 2.07원)에서는 약 414원이라 관측 최대 턴도 그 안에 든다. 표본은 운영자 시험 계정 한 명의
-# 턴이라 실사용자의 캐시 미적중 비율은 아직 모른다. 클로버 단위를 다시 짤 때까지 쓰는 임시값이고, 그때 원가와 함께 다시 정한다.
-# 화 Sonnet 180·Opus 300 은 실측이 없는 추정이다 — 짧은 연결 시험에서 잰 Opus 출력 토큰/글자 비로 출력 길이를 어림하고
+# 가격을 쓰는 함수는 아래 등록부와 상수를 **호출 시점에 이 모듈에서** 읽는다 — 기본 인자로 캡처하거나 다른 모듈에 사본을 두면
+# 값을 바꿔도(테스트의 `monkeypatch` 포함) 따라오지 않는다(`core/rate_limit.py`의 상한 상수와 같은 규칙).
+
+
+@dataclass(frozen=True)
+class ModelPrices:
+    """글쓰기 모델 하나의 클로버 단가 한 행. 이 행을 모델 id 로 모은 `MODEL_PRICES` 가 모델별 가격 등록부이고, 모델별 가격을
+    내는 함수(`llm/chat_models.py` 의 `chat_turn_cost`·`novel_episode_unit_price`·`novel_outline_unit_price`·
+    `novel_episode_outline_unit_price`)는 호출 때마다 이 표에서 읽는다. 모델과 무관한 기능 단가(이미지·AI 문단 수정·노벨 화
+    소장·요약 다시 만들기)는 표 밖의 모듈 상수다.
+
+    새 글쓰기 모델의 행을 더하는 법: 글쓰기 모델 타입(`llm/backends.py` 의 `ChatModelId`)에 id 를 더하면 이 표에 그 행이 없어
+    import 가 멈춘다. 그 id 로 한 행을 더하고, 가격이 하나라도 바뀐 것이므로 `PRICE_VERSION` 을 1 올리고, 정한 값을
+    `tests/test_core_clover.py` 의 정책 상수 테스트 한 곳에 적는다."""
+
+    # 채팅 턴 하나(새 턴·재생성·수정).
+    chat_turn: int
+    # 소설 화 하나. 생성 한 번은 묶음 하나를 여러 화로 쓰고 화 수 × 화 단가를 낸다. 다시 만들기도 같은 호출이라 같은 화 단가이고,
+    # 구성 흐름의 원고(승인한 장면 구성안으로 쓰는 화 하나)도 이 값이다.
+    novel_episode: int
+    # 구성 흐름의 전체 구성안 한 번과 화 하나의 장면 구성안 한 번 — 화 수와 무관한 모델별 고정가. 구성 흐름 스위치
+    # (`NOVELIZE_OUTLINE_FLOW_ENABLED`)가 꺼져 있는 동안은 이 두 값으로 차감하는 경로가 없다.
+    novel_outline: int
+    novel_episode_outline: int
+
+
+# 소설 화 Sonnet 180·Opus 300 은 실측이 없는 추정이다 — 짧은 연결 시험에서 잰 Opus 출력 토큰/글자 비로 출력 길이를 어림하고
 # 입력 길이는 가정해 원가를 Sonnet 약 218~301원·Opus 약 363~501원으로 보면, 둘 다 쓸 수 있는 돈의 약 49~67%다.
-CHAT_TURN_COST_SONNET = 60
-CHAT_TURN_COST_OPUS = 200
-NOVELIZE_EPISODE_COST_SONNET = 180
-NOVELIZE_EPISODE_COST_OPUS = 300
-# 구성 흐름의 전체 구성안 한 번과 화 하나의 장면 구성안 한 번의 클로버 — 모델별 고정가. 구성 흐름 스위치
-# (`NOVELIZE_OUTLINE_FLOW_ENABLED`)가 꺼져 있는 동안은 이 값으로 차감하는 경로가 없다. 원고(승인한 장면 구성안으로 쓰는 화 하나)는
-# 위 화 단가를 쓴다.
 # 전체 구성안 190·330·690 은 입력 상한 길이의 원가로 정했다. 고른 대화 길이와 무관한 고정가라 가장 긴 입력이 값을 정한다 — 입력
 # 상한(`novelize_outline_max_input_tokens`, 14만 자) 길이의 원가가 쓸 수 있는 돈의 67% 안에 드는 가장 작은 10 단위 값이다. 상한
 # 길이의 방은 화가 많아(상한에 가까운 견적 139,740자 방에서 22화) 짧은 방보다 출력이 훨씬 크다 — 그 방에서 잰 Gemini 구성안 원가
@@ -82,16 +75,51 @@ NOVELIZE_EPISODE_COST_OPUS = 300
 # $0.384·Opus 약 $0.815 다. 입력 상한을 올리면 이 값도 다시 계산한다.
 # 장면 구성안 80·180·300 은 같은 모델의 화 단가와 같게 둔 값이다. 잰 원가(p90)가 셋 다 쓸 수 있는 돈의 50% 안에 들어 그대로 둔다.
 # 전체 구성안과 달리 상한 길이 원가로 정한 값이 아니다 — 상한에 가까운 아주 긴 화의 원가는 아직 재지 않았다.
-NOVELIZE_OUTLINE_COST = 190
-NOVELIZE_OUTLINE_COST_SONNET = 330
-NOVELIZE_OUTLINE_COST_OPUS = 690
-NOVELIZE_EPISODE_OUTLINE_COST = 80
-NOVELIZE_EPISODE_OUTLINE_COST_SONNET = 180
-NOVELIZE_EPISODE_OUTLINE_COST_OPUS = 300
+MODEL_PRICES: dict[ChatModelId, ModelPrices] = {
+    # 채팅 턴 10: 조감독 작품 111턴 시뮬레이션에서 생성·칸 판정·스탯·요약·엔딩을 모두 합쳐 턴당 약 $0.0047(약 6.5원)이라
+    # 원가는 쓸 수 있는 돈(약 25원)의 4분의 1 남짓이다. 방 하나·시뮬레이터 사용자의 값이라 실사용 분포는 아직 모른다.
+    # 화 80: 운영에서 기본 모델 소설화 호출 다섯 번의 평균 토큰을 이 모델의 2027년 인상 후 단가로 계산하면 호출 하나에 약 78원이고
+    # 장 경계 제안 약 4.6원을 더해 약 83원이다 — 쓸 수 있는 돈(약 199원)의 약 42%. 집계가 호출 하나가 낸 화 수를 모르는 호출당
+    # 값이라 묶음이 여러 화를 내면 화당 원가는 더 낮고, 표본이 다섯 번뿐이며 사고 토큰이 보고되지 않았을 수 있다.
+    "gemini": ModelPrices(chat_turn=10, novel_episode=80, novel_outline=190, novel_episode_outline=80),
+    # Sonnet 턴 60: 조감독 작품 긴 방에서 잰 Sonnet 턴 원가는 캐시 적중 $0.018(약 25원)·미적중 $0.0796(약 111원)이라 미적중 턴도
+    # 쓸 수 있는 돈(약 149원) 안에 든다. Sonnet 은 지금 채팅에서 고를 수 없어 이 값으로 차감하는 경로가 없다 — 채팅에 다시 열 때의
+    # 값이다(소설 Sonnet 화는 이 행의 화 단가를 쓴다).
+    "sonnet": ModelPrices(chat_turn=60, novel_episode=180, novel_outline=330, novel_episode_outline=180),
+    # Opus 턴 200: 운영에서 잰 Opus 5.5 채팅 턴 원가(생성과 판정 몫 포함, 백그라운드 요약·추출 제외)는 캐시가 맞을 때 평균 약
+    # 45원, 캐시를 놓친 턴 평균 약 175원, 관측 최대 약 343원이다. 200클로버로 쓸 수 있는 돈은 위 기준으로 약 496원이고 보너스 20%
+    # 상품(1클로버로 쓸 수 있는 돈 약 2.07원)에서는 약 414원이라 관측 최대 턴도 그 안에 든다. 표본은 운영자 시험 계정 한 명의
+    # 턴이라 실사용자의 캐시 미적중 비율은 아직 모른다. 클로버 단위를 다시 짤 때까지 쓰는 임시값이고, 그때 원가와 함께 다시 정한다.
+    "opus": ModelPrices(chat_turn=200, novel_episode=300, novel_outline=690, novel_episode_outline=300),
+}
+
+
+def _check_model_prices() -> None:
+    """등록부에 글쓰기 모델마다 꼭 한 행이 있는지. 행이 빠진 모델은 가격 함수가 그 모델을 받는 순간 `KeyError` 로 500 이 되므로,
+    모델 타입과 표가 어긋나면 기동에서 멈춘다."""
+    if set(MODEL_PRICES) != set(get_args(ChatModelId)):
+        raise RuntimeError("가격 등록부의 행이 글쓰기 모델 목록과 다르다")
+
+
+_check_model_prices()
+
+IMAGE_UNIT_COST = 30
+# AI 문단 수정 한 번의 클로버 — 모델과 무관하다(언제나 기본 모델로 고친다). 수정 30: 시험 세 번에서 잰 문단 수정 원가 약
+# $0.026(약 36원)이 쓸 수 있는 돈(약 75원)의 약 절반이다. 웹은 소설 단가의 사본을 갖지 않고 서버 응답으로만 받는다(배포 사이에
+# 열어 둔 화면의 금액이 어긋나지 않게).
+NOVELIZE_AI_EDIT_COST = 30
+# 노벨(회원이 공개한 소설) 화 하나의 소장 가격과, 소설마다 앞에서부터 무료로 읽는 화 수. 1클로버 3원 기준 화당 90원으로,
+# 공개 소설 열람 가격 검토에서 고른 값이다(원가가 아니라 정책값). 가격 안내 응답과 구매 라우트가 호출 때마다 여기서 읽는다.
+NOVEL_READ_COST = 30
+NOVEL_FREE_CHAPTER_COUNT = 5
 # 대화방 요약을 AI 로 다시 만드는 한 번의 클로버 — 방 모델과 무관한 고정가. 다시 만들기는 방의 글쓰기 모델이 아니라 요약 모델로
 # 한 번 부른다. 모델 배정 표의 요약 칸 행이 방 모델마다 다르면 원가는 방 모델을 따를 수 있지만 가격은 그대로다. 값은 기본 모델 채팅 턴 하나와 같게 정했지만 그 상수에서 끌어오지 않는다 —
 # 턴 가격을 바꿔도 이 값은 그대로다. 가격 안내 응답과 다시 만들기 라우트가 호출 때마다 여기서 읽는다.
 MEMORY_SUMMARY_REGENERATE_COST = 10
+# 가격표의 버전. 위 등록부의 값이나 기능 단가·무료 화 수가 하나라도 바뀌면 1 올린다. 공개 가격 응답이 이 값을 싣고, 화면은
+# 클로버를 쓰는 채팅·이미지 요청에 받은 값을 실어 보낸다 — 실제로 깎을 요청의 값이 이 값과 다르면 게이트가 깎기 전에 409
+# (`CLOVER_PRICE_CHANGED`)로 멈춰, 사용자가 본 적 없는 가격으로 깎이지 않게 한다(`core/rate_limit_gate.py`).
+PRICE_VERSION = 1
 
 # `db/models/clover.py`의 `kind` 컬럼 주석과 같은 목록이다. 컬럼은 Text라 DB가 값을 막지
 # 않으므로(마이그레이션 없이 넓히기 위해서다) 이 `Literal`이 유일한 강제 지점이다.

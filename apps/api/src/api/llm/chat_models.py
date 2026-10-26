@@ -6,14 +6,14 @@ id 는 공급사 모델명이 아닌 불투명 값(`gemini`·`sonnet`·`opus`)�
 모델 설정으로, 나머지는 기본 모델로(`llm/routing.py`). 모델을 어느 구현이 어느 설정의 id 로 서비스하는지는
 `llm/backends.py` 의 등록부가 정한다.
 
-정적 데이터만 둔다 — 누가 어느 모델을 쓸 수 있는지는 기능별 허용 판정이 정한다. 가격의 소스는 `core/clover.py` 이고,
-여기서는 호출할 때마다 그 모듈의 값을 읽는다(기본 인자나 사본으로 잡아 두면 `monkeypatch` 도 가격 변경도 따라오지
+정적 데이터만 둔다 — 누가 어느 모델을 쓸 수 있는지는 기능별 허용 판정이 정한다. 가격의 소스는 `core/clover.py` 의 가격
+등록부이고, 여기서는 호출할 때마다 그 모듈의 표를 읽는다(기본 인자나 사본으로 잡아 두면 `monkeypatch` 도 가격 변경도 따라오지
 않는다). 채팅 코드(`api.chat`)를 import 하지 않는다 — `llm/client.py` 가 이 모듈을 import 하고 채팅 코드가 그 client 를
 import 하므로, 여기서 `api.chat` 을 부르면 순환이다.
 """
 
 from dataclasses import dataclass
-from typing import Literal, TypeGuard, assert_never, get_args
+from typing import Literal, TypeGuard, get_args
 
 from api.core import clover
 from api.core.config import settings
@@ -102,24 +102,12 @@ def backend_model_id(backend: BackendId, model: PromptSetModelId) -> str:
 
 def novel_outline_unit_price(model_id: ChatModelId) -> int:
     """구성 흐름의 전체 구성안 한 번의 클로버(모델별 고정가, 화 수와 무관하다)."""
-    if model_id == "gemini":
-        return clover.NOVELIZE_OUTLINE_COST
-    if model_id == "sonnet":
-        return clover.NOVELIZE_OUTLINE_COST_SONNET
-    if model_id == "opus":
-        return clover.NOVELIZE_OUTLINE_COST_OPUS
-    assert_never(model_id)
+    return clover.MODEL_PRICES[model_id].novel_outline
 
 
 def novel_episode_outline_unit_price(model_id: ChatModelId) -> int:
     """구성 흐름의 화 하나의 장면 구성안 한 번의 클로버(모델별 고정가)."""
-    if model_id == "gemini":
-        return clover.NOVELIZE_EPISODE_OUTLINE_COST
-    if model_id == "sonnet":
-        return clover.NOVELIZE_EPISODE_OUTLINE_COST_SONNET
-    if model_id == "opus":
-        return clover.NOVELIZE_EPISODE_OUTLINE_COST_OPUS
-    assert_never(model_id)
+    return clover.MODEL_PRICES[model_id].novel_episode_outline
 
 
 def structured_call_model(
@@ -142,21 +130,9 @@ def configured_call_site_model(call_site: LLMCallSite) -> PromptSetModelId:
 
 def chat_turn_cost(model_id: ChatModelId) -> int:
     """채팅 턴 하나(새 턴·재생성·수정)의 클로버."""
-    if model_id == "gemini":
-        return clover.CHAT_TURN_COST
-    if model_id == "sonnet":
-        return clover.CHAT_TURN_COST_SONNET
-    if model_id == "opus":
-        return clover.CHAT_TURN_COST_OPUS
-    assert_never(model_id)
+    return clover.MODEL_PRICES[model_id].chat_turn
 
 
 def novel_episode_unit_price(model_id: ChatModelId) -> int:
     """소설 화 하나의 클로버. 생성 한 번은 이 값 × 화 수를 낸다. 다시 만들기도 같은 호출이라 같은 값이다."""
-    if model_id == "gemini":
-        return clover.NOVELIZE_EPISODE_COST
-    if model_id == "sonnet":
-        return clover.NOVELIZE_EPISODE_COST_SONNET
-    if model_id == "opus":
-        return clover.NOVELIZE_EPISODE_COST_OPUS
-    assert_never(model_id)
+    return clover.MODEL_PRICES[model_id].novel_episode

@@ -54,6 +54,7 @@ from api.db.models.content import ModerationStatus
 from api.db.models.persona import UserPersona
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, request_timeout_ms
 from factories import (
+    _set_model_price,
     Room,
     _clear_llm_override,
     _login_as,
@@ -375,7 +376,7 @@ async def test_price_is_read_from_its_own_constant_at_request_time(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """가격은 방 모델의 턴 가격에서 끌어오지 않는 별도 상수다 — 턴 가격을 바꿔도 따라가지 않고, 이 상수를 바꾸면 따라간다."""
-    monkeypatch.setattr(clover, "CHAT_TURN_COST", 999)
+    _set_model_price(monkeypatch, "gemini", chat_turn=999)
     monkeypatch.setattr(clover, "MEMORY_SUMMARY_REGENERATE_COST", 7)
     room, _current = await _room(db_client, db_session)
 

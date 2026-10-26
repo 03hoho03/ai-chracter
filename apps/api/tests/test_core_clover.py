@@ -11,21 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from api.core import clover
 from api.core.clover import (
-    CHAT_TURN_COST,
-    CHAT_TURN_COST_OPUS,
-    CHAT_TURN_COST_SONNET,
     IMAGE_UNIT_COST,
+    MEMORY_SUMMARY_REGENERATE_COST,
+    MODEL_PRICES,
+    NOVEL_FREE_CHAPTER_COUNT,
+    NOVEL_READ_COST,
     NOVELIZE_AI_EDIT_COST,
-    NOVELIZE_EPISODE_COST,
-    NOVELIZE_EPISODE_COST_OPUS,
-    NOVELIZE_EPISODE_COST_SONNET,
-    NOVELIZE_EPISODE_OUTLINE_COST,
-    NOVELIZE_EPISODE_OUTLINE_COST_OPUS,
-    NOVELIZE_EPISODE_OUTLINE_COST_SONNET,
-    NOVELIZE_OUTLINE_COST,
-    NOVELIZE_OUTLINE_COST_OPUS,
-    NOVELIZE_OUTLINE_COST_SONNET,
+    PRICE_VERSION,
     PURCHASE_LOT_KINDS,
+    ModelPrices,
     CloverRefundExceedsSpendError,
     earned_lot_expiry,
     grant,
@@ -42,6 +36,9 @@ from api.core.rate_limit_gate import CHAT_DAILY_LIMIT
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund
 from factories import _make_payment, _make_user, _make_user_with_clover_lot
+
+# 차감·환급 금액으로 쓰는 값. 정책 단가 자체는 아래 정책 상수 테스트가 고정한다.
+_CHAT_TURN_COST = MODEL_PRICES["gemini"].chat_turn
 
 
 async def _ledger_rows(db: AsyncSession, user_id: uuid.UUID) -> list[CloverLedger]:
@@ -75,7 +72,7 @@ async def test_spend_deducts_balance_and_writes_one_ledger_row(db_session: Async
     # 부족 예외(`CloverLotShortfallError`)가 난다.
     user = await _make_user_with_clover_lot(db_session, clover_balance=100)
 
-    spent = await spend(db_session, user_id=user.id, amount=CHAT_TURN_COST, kind="chat_spend")
+    spent = await spend(db_session, user_id=user.id, amount=_CHAT_TURN_COST, kind="chat_spend")
 
     assert spent is not None and spent.balance_after == 90
     assert await _balance(db_session, user.id) == 90
@@ -85,7 +82,7 @@ async def test_spend_deducts_balance_and_writes_one_ledger_row(db_session: Async
     # 환급이 이 id 로 배분을 찾는다 — 다른 행을 가리키면 엉뚱한 차감을 되돌린다.
     assert spent.ledger_id == rows[0].id
     # 부호 있는 증감이라 소모는 음수다(`db/models/clover.py`의 `amount` 주석).
-    assert rows[0].amount == -CHAT_TURN_COST
+    assert rows[0].amount == -_CHAT_TURN_COST
     assert rows[0].kind == "chat_spend"
     # `balance_after`가 잔액 컬럼과 어긋나면 원장만 보고는 잔액을 설명할 수 없게 된다.
     assert rows[0].balance_after == 90
@@ -99,7 +96,7 @@ async def test_spend_returns_none_and_changes_nothing_when_insufficient(
     db_session.add(user)
     await db_session.flush()
 
-    assert await spend(db_session, user_id=user.id, amount=CHAT_TURN_COST, kind="chat_spend") is None
+    assert await spend(db_session, user_id=user.id, amount=_CHAT_TURN_COST, kind="chat_spend") is None
 
     # 조건부 UPDATE가 막았으므로 잔액도 원장도 그대로여야 한다 — 원장에 실패 기록을 남기지 않는다.
     assert await _balance(db_session, user.id) == 9
@@ -108,9 +105,9 @@ async def test_spend_returns_none_and_changes_nothing_when_insufficient(
 
 async def test_spend_exact_balance_succeeds_and_leaves_zero(db_session: AsyncSession) -> None:
     # 경계값: `>=`가 아니라 `>`로 쓰면 여기서 깨진다.
-    user = await _make_user_with_clover_lot(db_session, clover_balance=CHAT_TURN_COST)
+    user = await _make_user_with_clover_lot(db_session, clover_balance=_CHAT_TURN_COST)
 
-    spent = await spend(db_session, user_id=user.id, amount=CHAT_TURN_COST, kind="chat_spend")
+    spent = await spend(db_session, user_id=user.id, amount=_CHAT_TURN_COST, kind="chat_spend")
     assert spent is not None and spent.balance_after == 0
     assert await _balance(db_session, user.id) == 0
 
@@ -699,7 +696,7 @@ async def test_refund_spend_in_new_transaction_swallows_failures() -> None:
     dead_factory = async_sessionmaker(dead_engine, expire_on_commit=False)
     try:
         await refund_spend_in_new_transaction(
-            dead_factory, user_id=uuid.uuid4(), spend_ledger_id=uuid.uuid4(), amount=CHAT_TURN_COST, kind="chat_refund"
+            dead_factory, user_id=uuid.uuid4(), spend_ledger_id=uuid.uuid4(), amount=_CHAT_TURN_COST, kind="chat_refund"
         )
     finally:
         await dead_engine.dispose()
@@ -726,7 +723,7 @@ async def test_refund_spend_in_new_transaction_finishes_inside_a_cancelled_scope
 
     async def _caller() -> None:
         await refund_spend_in_new_transaction(
-            factory, user_id=uuid.uuid4(), spend_ledger_id=uuid.uuid4(), amount=CHAT_TURN_COST, kind="chat_refund"
+            factory, user_id=uuid.uuid4(), spend_ledger_id=uuid.uuid4(), amount=_CHAT_TURN_COST, kind="chat_refund"
         )
         await asyncio.sleep(1)
         reached_after.append(True)
@@ -737,7 +734,7 @@ async def test_refund_spend_in_new_transaction_finishes_inside_a_cancelled_scope
             await started.wait()
             group.cancel_scope.cancel()
 
-    assert refunded == [CHAT_TURN_COST]
+    assert refunded == [_CHAT_TURN_COST]
     assert reached_after == []
 
 
@@ -803,22 +800,20 @@ def test_earned_lot_expiry_rejects_naive_datetime() -> None:
 # ── 정책 상수 ────────────────────────────────────────────────────────────────
 def test_policy_constants_match_decisions() -> None:
     # 값이 조용히 바뀌면 원장에 쌓인 과거 수치의 의미가
-    # 달라지므로 정한 값을 여기서 고정한다.
-    assert CHAT_TURN_COST == 10
+    # 달라지므로 정한 값을 여기서 고정한다. 가격이 하나라도 바뀌면 가격 버전도 함께 올라야 한다 — 이 테스트의 값을 고칠 때
+    # 버전 단언도 같이 고친다.
+    assert MODEL_PRICES == {
+        "gemini": ModelPrices(chat_turn=10, novel_episode=80, novel_outline=190, novel_episode_outline=80),
+        "sonnet": ModelPrices(chat_turn=60, novel_episode=180, novel_outline=330, novel_episode_outline=180),
+        "opus": ModelPrices(chat_turn=200, novel_episode=300, novel_outline=690, novel_episode_outline=300),
+    }
     assert IMAGE_UNIT_COST == 30
-    assert NOVELIZE_EPISODE_COST == 80
     assert NOVELIZE_AI_EDIT_COST == 30
-    assert CHAT_TURN_COST_SONNET == 60
-    assert CHAT_TURN_COST_OPUS == 200
-    assert NOVELIZE_EPISODE_COST_SONNET == 180
-    assert NOVELIZE_EPISODE_COST_OPUS == 300
-    assert (NOVELIZE_OUTLINE_COST, NOVELIZE_OUTLINE_COST_SONNET, NOVELIZE_OUTLINE_COST_OPUS) == (190, 330, 690)
-    assert (
-        NOVELIZE_EPISODE_OUTLINE_COST,
-        NOVELIZE_EPISODE_OUTLINE_COST_SONNET,
-        NOVELIZE_EPISODE_OUTLINE_COST_OPUS,
-    ) == (80, 180, 300)
+    assert NOVEL_READ_COST == 30
+    assert NOVEL_FREE_CHAPTER_COUNT == 5
+    assert MEMORY_SUMMARY_REGENERATE_COST == 10
     assert CHAT_DAILY_LIMIT == 15
+    assert PRICE_VERSION == 1
 
 
 async def test_ledger_table_is_reachable(db_session: AsyncSession) -> None:

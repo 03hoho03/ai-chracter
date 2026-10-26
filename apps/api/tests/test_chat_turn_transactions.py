@@ -728,7 +728,7 @@ async def test_room_deleted_during_generation_ends_with_an_error_and_no_refund(
         if record.levelno >= logging.WARNING
     )
     await db_session.refresh(user)
-    assert user.clover_balance == 100 - clover.CHAT_TURN_COST
+    assert user.clover_balance == 100 - clover.MODEL_PRICES["gemini"].chat_turn
     kinds = (await db_session.scalars(sa.select(CloverLedger.kind).where(CloverLedger.user_id == user.id))).all()
     assert list(kinds) == ["chat_spend"]
 
@@ -906,7 +906,7 @@ async def test_settlement_of_a_failed_write_releases_the_requests_room_lock_befo
     monkeypatch.setattr(clover, "refund_spend_in_new_transaction", _fake_refund)
     monkeypatch.setattr(turn_settlement, "SETTLE_TIMEOUT_SECONDS", 2.0)
     settlement = TurnSettlement(
-        charge=ChatCharge(source="clover", clover_amount=clover.CHAT_TURN_COST, spend_ledger_id=uuid.uuid4()),
+        charge=ChatCharge(source="clover", clover_amount=clover.MODEL_PRICES["gemini"].chat_turn, spend_ledger_id=uuid.uuid4()),
         user_id=user_id,
         session_factory=independent_session_factory,
     )
@@ -925,6 +925,6 @@ async def test_settlement_of_a_failed_write_releases_the_requests_room_lock_befo
 
         await settlement.refund_if_unsettled()
 
-    assert refunds == [clover.CHAT_TURN_COST]
+    assert refunds == [clover.MODEL_PRICES["gemini"].chat_turn]
     async with independent_session_factory() as check:
         assert await check.get(ChatMessage, reply_id) is None

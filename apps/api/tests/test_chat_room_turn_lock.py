@@ -150,7 +150,7 @@ async def test_the_same_setup_without_a_held_lock_spends_clover(
 
     assert resp.status_code == 200
     await db_session.refresh(user)
-    assert user.clover_balance == 100 - clover.CHAT_TURN_COST
+    assert user.clover_balance == 100 - clover.MODEL_PRICES["gemini"].chat_turn
 
 
 class _LockObservingLLMClient(LLMClient):

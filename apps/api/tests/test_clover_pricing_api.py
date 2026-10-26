@@ -3,7 +3,7 @@
 이 파일이 검증하는 성질:
 
 1. 로그인하지 않은 요청도 200이다 — 세션·재동의 게이트가 붙으면 비로그인 방문자가 상품 안내를 못 본다.
-2. 응답은 요청 시점의 상품 목록과 `core/clover.py` 단가 상수를 따른다 — 상수를 바꾼 뒤 응답이 따라오는지로 확인한다.
+2. 응답은 요청 시점의 상품 목록과 `core/clover.py` 의 가격 등록부·단가 상수를 따른다 — 상수를 바꾼 뒤 응답이 따라오는지로 확인한다.
    응답을 오늘의 상수 값과 비교만 하면 라우트가 숫자 사본을 들고 있어도 통과하므로 그렇게 쓰지 않는다.
 3. 상위 모델 단가와 소설 단가(화·AI 수정)도 응답에 실린다 — 구매 전 안내에 없는 사용처 가격은 숨은 가격으로 읽힌다.
    모델 목록은 채팅에서 고를 수 있는 모델만 싣고, 베타 표시는 스위치와 무관한 고정 값이다. 허용된 계정만 쓰는 소설은
@@ -25,6 +25,7 @@ from api.core.config import settings
 from api.clover.products import CloverProduct
 from api.core import clover, rate_limit_gate
 from api.llm.chat_models import CHAT_MODELS
+from factories import _set_model_price
 
 # 지금 상품표 이전에 팔던 상품의 키. 결제 행(`payments.product_key`)이 이 키를 그대로 갖고 있고 어드민이 그 값을
 # 보여 주므로, 같은 키를 다른 가격의 상품에 다시 쓰면 과거 결제와 새 결제가 한 상품으로 섞여 보인다.
@@ -52,7 +53,7 @@ async def test_response_follows_products_and_cost_constants(
             CloverProduct(key="mini", name="가짜 상품 둘", price_krw=5678, paid_amount=1892, bonus_amount=0),
         ),
     )
-    monkeypatch.setattr(clover, "CHAT_TURN_COST", 997)
+    _set_model_price(monkeypatch, "gemini", chat_turn=997)
     monkeypatch.setattr(clover, "IMAGE_UNIT_COST", 998)
     monkeypatch.setattr(clover, "NOVEL_READ_COST", 996)
     monkeypatch.setattr(clover, "NOVEL_FREE_CHAPTER_COUNT", 995)
@@ -102,17 +103,10 @@ async def test_chat_selectable_models_and_novel_cost_are_exposed(
     Sonnet 은 소설 상위 모델로 쓰이지만 별도 허용 명단에 든 계정만 써서 일반 회원은 살 수 없으므로 그 화 단가도 따로 싣지
     않는다. 행에 허용 전용 표시는 없고 베타 표시가 있다. 모델별 소설 화 단가 칸은 그 칸을 가드 없이 읽는 옛 화면을 위해
     남아 있어 Opus 행의 소설 화 단가는 계속 보이고, 기본 모델의 소설 화 단가는 최상위 칸에도 실린다."""
-    sentinels = {
-        "CHAT_TURN_COST": 910_001,
-        "CHAT_TURN_COST_SONNET": 910_002,
-        "CHAT_TURN_COST_OPUS": 910_003,
-        "NOVELIZE_EPISODE_COST": 910_004,
-        "NOVELIZE_EPISODE_COST_SONNET": 910_005,
-        "NOVELIZE_EPISODE_COST_OPUS": 910_006,
-        "NOVELIZE_AI_EDIT_COST": 910_007,
-    }
-    for name, value in sentinels.items():
-        monkeypatch.setattr(clover, name, value)
+    _set_model_price(monkeypatch, "gemini", chat_turn=910_001, novel_episode=910_004)
+    _set_model_price(monkeypatch, "sonnet", chat_turn=910_002, novel_episode=910_005)
+    _set_model_price(monkeypatch, "opus", chat_turn=910_003, novel_episode=910_006)
+    monkeypatch.setattr(clover, "NOVELIZE_AI_EDIT_COST", 910_007)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 910_008)
 
     resp = await db_client.get("/clover/pricing")
@@ -138,8 +132,8 @@ async def test_chat_selectable_models_and_novel_cost_are_exposed(
             "novelEpisodeCost": 910_006,
         },
     ]
-    assert body["chatTurnCost"] == sentinels["CHAT_TURN_COST"]
-    assert body["novelEpisodeCost"] == sentinels["NOVELIZE_EPISODE_COST"]
+    assert body["chatTurnCost"] == 910_001
+    assert body["novelEpisodeCost"] == 910_004
     assert body["novelAiEditCost"] == 910_007
     assert body["novelRestricted"] is True
     assert body["dailyFreeChatTurns"] == 910_008

@@ -94,6 +94,7 @@ from api.db.session import engine
 from api.llm.usage_store import USAGE_KEY_PREFIX
 from api.db.session import get_db_session, get_session_factory
 from api.main import app
+from factories import _set_model_price
 
 APPS_API_DIR = Path(__file__).resolve().parents[1]
 
@@ -239,11 +240,12 @@ def novel_prices_for_flow_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     """소설 과금 흐름(선차감·환불·연쇄·확인 금액 대조) 테스트가 쓰는 고정 단가다. 이 테스트들은 정책 단가가 아니라
     흐름을 보고 금액·잔액을 이 값으로 계산해 적어 두었으므로, 정책 단가를 바꿀 때마다 수백 곳을 다시 계산하지 않게
     여기서 고정한다. 정책 단가 자체는 `test_core_clover.py` 의 `test_policy_constants_match_decisions` 가 고정한다.
-    과금 코드는 단가를 호출 때마다 `api.core.clover` 모듈 전역에서 읽으므로 이 교체가 그대로 통한다."""
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 40)
+    과금 코드는 모델별 화 단가를 호출 때마다 `api.core.clover` 의 가격 등록부에서, AI 수정 단가를 모듈 전역에서 읽으므로 두
+    교체가 그대로 통한다(모델 행은 화 단가만 바꾸고 구성안 단가는 정책값 그대로 둔다)."""
+    _set_model_price(monkeypatch, "gemini", novel_episode=40)
     monkeypatch.setattr(clover, "NOVELIZE_AI_EDIT_COST", 20)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST_SONNET", 105)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST_OPUS", 170)
+    _set_model_price(monkeypatch, "sonnet", novel_episode=105)
+    _set_model_price(monkeypatch, "opus", novel_episode=170)
 
 
 @pytest_asyncio.fixture(scope="session")

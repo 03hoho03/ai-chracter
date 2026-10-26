@@ -47,7 +47,7 @@ from factories import (
     _user_message_id,
 )
 
-_CHAT_COST = clover.CHAT_TURN_COST
+_CHAT_COST = clover.MODEL_PRICES["gemini"].chat_turn
 _START_BALANCE = 100
 
 

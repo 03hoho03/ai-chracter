@@ -16,6 +16,7 @@ from api.llm.chat_models import (
     parse_chat_model_id,
     parse_prompt_set_model_id,
 )
+from factories import _set_model_price
 
 
 def test_ids_outside_the_registry_are_not_models() -> None:
@@ -71,27 +72,27 @@ def test_default_actual_model_ids_are_the_seoul_global_profiles() -> None:
     assert backend_model_id("bedrock", "opus") == "global.anthropic.claude-opus-4-6-v1"
 
 
-def test_turn_costs_are_read_from_the_clover_constants_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_turn_costs_are_read_from_the_price_registry_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
     """가격의 소스는 `core/clover.py` 하나다 — 레지스트리가 값을 복사해 두면 한쪽만 고쳐진다."""
-    monkeypatch.setattr(clover, "CHAT_TURN_COST", 11)
-    monkeypatch.setattr(clover, "CHAT_TURN_COST_SONNET", 41)
-    monkeypatch.setattr(clover, "CHAT_TURN_COST_OPUS", 66)
+    _set_model_price(monkeypatch, "gemini", chat_turn=11)
+    _set_model_price(monkeypatch, "sonnet", chat_turn=41)
+    _set_model_price(monkeypatch, "opus", chat_turn=66)
 
     assert [chat_turn_cost(m.id) for m in CHAT_MODELS] == [11, 41, 66]
 
 
-def test_episode_unit_prices_are_read_from_the_clover_constants_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 41)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST_SONNET", 106)
-    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST_OPUS", 171)
+def test_episode_unit_prices_are_read_from_the_price_registry_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_model_price(monkeypatch, "gemini", novel_episode=41)
+    _set_model_price(monkeypatch, "sonnet", novel_episode=106)
+    _set_model_price(monkeypatch, "opus", novel_episode=171)
 
     assert [novel_episode_unit_price(m.id) for m in CHAT_MODELS] == [41, 106, 171]
 
 
-def test_default_episode_unit_prices_are_the_policy_constants() -> None:
+def test_default_episode_unit_prices_are_the_registry_values() -> None:
     """모델마다 화 하나의 값이다(생성 한 번은 이 값 × 화 수). 값 자체는 정책 상수 테스트가 고정한다."""
     assert [novel_episode_unit_price(m.id) for m in CHAT_MODELS] == [
-        clover.NOVELIZE_EPISODE_COST,
-        clover.NOVELIZE_EPISODE_COST_SONNET,
-        clover.NOVELIZE_EPISODE_COST_OPUS,
+        clover.MODEL_PRICES["gemini"].novel_episode,
+        clover.MODEL_PRICES["sonnet"].novel_episode,
+        clover.MODEL_PRICES["opus"].novel_episode,
     ]

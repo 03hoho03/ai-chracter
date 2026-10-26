@@ -14,7 +14,7 @@ import os
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Generator, Iterable, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, UTC
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,7 +31,7 @@ from starlette.types import Message
 from api.chat import voyage_backoff
 from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
-from api.core import rate_limit_gate
+from api.core import clover, rate_limit_gate
 from api.core.clover import CloverKind, SpendUsage, kst_today, refund_spend, revoke_purchase_lots, spend
 from api.core.config import Settings, settings
 from api.core.rate_limit import KST
@@ -111,6 +111,7 @@ from api.legal.consents import kind_consent_units
 from api.llm import bedrock as bedrock_module
 from api.llm import gemini as gemini_module
 from api.llm.bedrock import BedrockLLMClient
+from api.llm.chat_models import ChatModelId
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.llm.gemini import GeminiLLMClient
@@ -1223,6 +1224,12 @@ class _NeverCalledLLMClient(LLMClient):
 
 # `LLMClient`로 받는다 — 이 저장소의 페이크는 파일마다 모양이 다르고(큐 기반·발행 심사용 등)
 # 전부 `LLMClient` 하위라, 구체 페이크로 좁히면 이 헬퍼를 공유할 수 없다.
+def _set_model_price(monkeypatch: pytest.MonkeyPatch, model: ChatModelId, **prices: int) -> None:
+    """가격 등록부(`clover.MODEL_PRICES`)에서 그 모델 행의 주어진 단가만 바꾼다. 테스트가 끝나면 `monkeypatch` 가 행을 되돌린다.
+    가격 함수가 호출 때마다 등록부를 읽으므로 이 교체가 그대로 통한다."""
+    monkeypatch.setitem(clover.MODEL_PRICES, model, replace(clover.MODEL_PRICES[model], **prices))
+
+
 def _override_llm_client(fake: LLMClient) -> None:
     app.dependency_overrides[get_llm_client] = lambda: fake
 

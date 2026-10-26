@@ -395,7 +395,7 @@ async def test_clover_charged_send_records_the_charge_and_its_ledger_row(
     assert (record.kind, record.charge_source, record.clover_amount, record.spend_ledger_id) == (
         "send",
         "clover",
-        clover.CHAT_TURN_COST,
+        clover.MODEL_PRICES["gemini"].chat_turn,
         ledger_id,
     )
     # 캐릭터 방은 스탯·엔딩이 없고 판정은 상황 이미지 하나다.

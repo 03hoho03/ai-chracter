@@ -88,7 +88,7 @@ async def _charge(db: AsyncSession, user: User) -> ChatCharge:
         db,
         _factory(db),
         model=DEFAULT_CHAT_MODEL,
-        price=clover.CHAT_TURN_COST,
+        price=clover.MODEL_PRICES["gemini"].chat_turn,
         usage=clover.SpendUsage("preview"),
     )
 
@@ -135,9 +135,9 @@ async def test_unverified_free_turn_becomes_a_clover_turn(
     charge = await _charge(db_session, user)
 
     if gate:
-        assert (charge.source, charge.clover_amount) == ("clover", clover.CHAT_TURN_COST)
+        assert (charge.source, charge.clover_amount) == ("clover", clover.MODEL_PRICES["gemini"].chat_turn)
         assert scopes == ["chat_burst"]
-        assert await _balance(db_session, user) == 100 - clover.CHAT_TURN_COST
+        assert await _balance(db_session, user) == 100 - clover.MODEL_PRICES["gemini"].chat_turn
     else:
         assert charge.source == "free"
         assert scopes == ["chat_burst", "chat_day"]
@@ -225,7 +225,7 @@ async def test_redis_failure_does_not_give_unverified_members_free_turns(
 
     if gate:
         assert charge.source == "clover"
-        assert await _balance(db_session, user) == 100 - clover.CHAT_TURN_COST
+        assert await _balance(db_session, user) == 100 - clover.MODEL_PRICES["gemini"].chat_turn
     else:
         assert charge.source == "skipped"
         assert await _balance(db_session, user) == 100
