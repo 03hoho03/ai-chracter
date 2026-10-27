@@ -14,7 +14,8 @@
 - 이름 정확 조회: 상시 몫 뒤·관련 몫 앞에, 장면 인물(이번 사용자 메시지·직전 응답에 이름이 나온 방 인물, 사용자 제외)이 주어거나
   관계 대상인 행을 렌더 순서로 420자(상시 몫 끝 210자 + 같은 크기)까지 싣는다. 값·속성에 이름이 나오는 것만으로는 걸리지 않고,
   지식 범위 필터가 뺀 행은 이름이 나와도 돌아오지 않는다. 섹션 최대는 여전히 머리글 + 700자다.
-- 줄: 관계 `- 주어 → 대상: 값`, 사실 `- 주어 · 속성: 값`. 반증은 줄 앞에 표지, 주장은 끝에 말한 사람(사용자가 내놓은 주장은
+- 줄: 관계 `- 주어 → 대상: 값`, 사실 `- 주어 · 속성: 값`. 아는 사람이 빈 관계 행은 값의 `상태 낱말 — 근거` 중 상태 낱말만
+  싣고(근거에 털어놓은 비밀이 들어 있으면 공개 행으로 매 턴 실린다), 글자 상한은 그 줄로 센다. 반증은 줄 앞에 표지, 주장은 끝에 말한 사람(사용자가 내놓은 주장은
   회상 섹션과 같은 사용자 꼬리표, 말한 인물이 없으면 회상 섹션과 같은 인물 꼬리표), 아는 사람이 있으면 그 뒤에 `(이름·이름만 앎)`.
 - 키별 최신 행이 확인되지 않은 주장이고 사용자 꼬리표가 붙지 않으면(인물·서술이 말로만 전한 것) 그 키는 싣지 않는다 — 옛 값이
   되살아나지 않고, 지식 범위 필터와 무관하게 걸린다. 확인된 행·반증 행·사용자 주장은 싣는다.
@@ -209,6 +210,66 @@ def test_claim_spoken_under_the_user_name_gets_the_user_tail() -> None:
     assert fact_line(ChatMemoryFact(**spoken), user_name="haneul") == "- 유나 · 오디션: 겨울 (사용자의 말)"
     assert fact_line(ChatMemoryFact(**spoken), user_name="민수") == "- 유나 · 오디션: 겨울 ( Haneul 의 말)"
     assert fact_line(ChatMemoryFact(**spoken)) == "- 유나 · 오디션: 겨울 ( Haneul 의 말)"
+
+
+_CONFIDED = "신뢰 — 화분 비법을 털어놓고 이웃에게 말하지 말아 달라고 부탁함"
+
+
+@pytest.mark.parametrize(
+    ("fields", "line"),
+    [
+        pytest.param(
+            _fields("려원", "사용자", _CONFIDED, kind="relation"), "- 려원 → 사용자: 신뢰", id="public-relation"
+        ),
+        pytest.param(
+            _fields("려원", "사용자", _CONFIDED, kind="relation", truth_status="disproved"),
+            "- (사실 아님으로 밝혀짐) 려원 → 사용자: 신뢰",
+            id="public-disproved-relation",
+        ),
+        pytest.param(
+            _fields(
+                "려원",
+                "사용자",
+                _CONFIDED,
+                kind="relation",
+                truth_status="claimed",
+                asserted_by="character",
+                speaker="민수",
+            ),
+            "- 려원 → 사용자: 신뢰 (민수의 말)",
+            id="public-claimed-relation",
+        ),
+        pytest.param(
+            _fields("려원", "사용자", _CONFIDED, kind="relation", known_by=["려원", "사용자"]),
+            f"- 려원 → 사용자: {_CONFIDED} (려원·사용자만 앎)",
+            id="relation-with-knowers",
+        ),
+        pytest.param(_fields("려원", "화분 비법", _CONFIDED), f"- 려원 · 화분 비법: {_CONFIDED}", id="public-fact"),
+        pytest.param(_fields("민수", "지아", "소꿉친구", kind="relation"), "- 민수 → 지아: 소꿉친구", id="no-basis"),
+    ],
+)
+def test_public_relation_line_drops_the_basis(fields: dict[str, Any], line: str) -> None:
+    """아는 사람이 빈 관계 행은 값의 `상태 낱말 — 근거` 중 상태 낱말만 싣는다 — 추출이 털어놓은 비밀을 관계 근거에 적고 아는
+    사람을 비워 공개 행이 되면, 관계는 상시 몫 맨 앞이라 장면과 무관하게 매 턴 비밀이 실린다. 아는 사람이 있는 관계 행은 지식
+    범위 필터가 거르므로 근거째 싣고, 관계가 아닌 공개 사실과 근거 없는 관계 값은 그대로다."""
+    assert fact_line(ChatMemoryFact(**fields)) == line
+
+
+def test_public_relation_budget_counts_the_line_without_its_basis() -> None:
+    """글자 상한은 실제로 싣는 줄로 센다 — 근거가 긴 공개 관계 일곱 줄이 근거를 빼면 상한 안이라 전부 실린다(근거째 세면 넷에서
+    멈춘다)."""
+    rows = _rows(
+        *[
+            _fields("유나", f"인물{i}", "신뢰 — " + "비밀".ljust(150, "가"), kind="relation", importance=5)
+            for i in range(7)
+        ]
+    )
+    picked = _select(rows)
+
+    assert len(picked) == 7
+    assert "\n".join(fact_line(row) for row in picked) == "\n".join(
+        f"- 유나 → 인물{i}: 신뢰" for i in reversed(range(7))
+    )
 
 
 # --- 키별 최신 · 렌더 순서 ---------------------------------------------------------------------
@@ -465,6 +526,25 @@ async def test_facts_section_follows_history_and_precedes_recall(
         < on.prompt.index(RECALL_HEADER)
         < on.prompt.rindex("밀알당 기억나?")
     )
+
+
+async def test_public_relation_basis_never_reaches_the_prompt_or_the_record_length(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """방에 쌓인 행에도 걸린다 — 아는 사람이 빈 관계 행의 근거는 프롬프트 어디에도 없고, 턴 기록의 글자 수는 실린 줄(근거 뺀
+    것)의 길이다. 아는 사람이 있는 관계 행은 필터가 꺼진 턴에 근거째 실린다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    public = _fields("려원", "사용자", _CONFIDED, kind="relation", importance=4)
+    known = _fields("봄결", "사용자", "신뢰 — 뜨개질 도안을 빌려 줌", kind="relation", known_by=["봄결", "사용자"])
+    await _plant(db_session, room, snapshots[2], [public, known])
+    _facts_on(monkeypatch)
+
+    built = await _build(db_session, room, "오늘 뭐 해?")
+
+    lines = ["- 려원 → 사용자: 신뢰", "- 봄결 → 사용자: 신뢰 — 뜨개질 도안을 빌려 줌 (봄결·사용자만 앎)"]
+    assert _section(built.prompt).endswith("\n" + "\n".join(lines))
+    assert "화분 비법" not in built.prompt
+    assert [entry["chars"] for entry in built.memory_facts] == [len(line) for line in lines]
 
 
 @pytest.mark.parametrize("lane", ["story", "character"])
