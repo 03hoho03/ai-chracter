@@ -2199,6 +2199,10 @@ async def publish_content(
             read_db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
         )
         if content.current_published_version_id is None and novel_permission is None:
+            # 접근 로그의 발행 400 에는 필수 칸 누락·심사 거부가 섞여 있어 이 거절만 세려면 따로 남긴다. 회원 id 는 싣지 않는다.
+            logger.warning(
+                "publish_first_novel_permission_required content_id=%s type=%s", content.id, content.type.value
+            )
             # `reason` 칸을 두지 않는다 — 화면은 400 의 `reason` 을 심사 거부로 읽어 이의제기로 안내한다.
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail={"code": "NOVEL_PERMISSION_REQUIRED"}

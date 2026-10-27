@@ -4338,15 +4338,17 @@ async def test_first_publish_without_a_permission_is_rejected_before_screening(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     s3_bucket: None,
+    caplog: pytest.LogCaptureFixture,
     kind: str,
     body: dict[str, Any] | None,
 ) -> None:
     """발행 이력이 없는 작품을 허락 없이 발행하면 400 `NOVEL_PERMISSION_REQUIRED` 이고 아무것도 쓰지 않는다. `detail` 에
     `reason` 을 두지 않는 것은 화면이 `reason` 을 심사 거부로 읽어 이의제기로 안내하기 때문이다. 심사 호출 0 은 거절이
-    그림 심사보다 앞이라는 뜻이다.
+    그림 심사보다 앞이라는 뜻이다. 거절마다 작품 id 를 실은 경고 한 줄을 남긴다 — 접근 로그의 발행 400 에는 필수 칸 누락·
+    심사 거부가 섞여 있어, 배포 뒤 이 거절만 세려면 따로 남겨야 한다. 회원 id 는 싣지 않는다.
 
     빨개지는 조건: 검사가 없으면 200 으로 발행되고, 캐릭터·스토리 한쪽에만 걸면 다른 쪽 줄이, 본문이 있는데 값이 비어 있는
-    경우를 놓치면 그 두 줄이, 심사 뒤에서 거절하면 호출 수 단언이 깨진다."""
+    경우를 놓치면 그 두 줄이, 심사 뒤에서 거절하면 호출 수 단언이, 로그를 안 남기거나 id 를 바꿔 실으면 로그 단언이 깨진다."""
     if kind == "character":
         content, _, _, _ = await _publishable_character(db_session, db_client)
     else:
@@ -4355,10 +4357,11 @@ async def test_first_publish_without_a_permission_is_rejected_before_screening(
 
     _override_llm_client(fake)
     try:
-        if body is None:
-            resp = await db_client.post(f"/contents/{content.id}/publish")
-        else:
-            resp = await db_client.post(f"/contents/{content.id}/publish", json=body)
+        with caplog.at_level(logging.WARNING, logger="api.content.router"):
+            if body is None:
+                resp = await db_client.post(f"/contents/{content.id}/publish")
+            else:
+                resp = await db_client.post(f"/contents/{content.id}/publish", json=body)
     finally:
         _clear_llm_override()
 
@@ -4370,6 +4373,12 @@ async def test_first_publish_without_a_permission_is_rejected_before_screening(
         sa.select(Content.current_published_version_id).where(Content.id == content.id)
     )
     assert published_version_id is None
+    (rejection_log,) = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("publish_first_novel_permission_required")
+    ]
+    assert rejection_log == f"publish_first_novel_permission_required content_id={content.id} type={kind}"
 
 
 async def test_the_first_publish_permission_check_comes_before_validation(
