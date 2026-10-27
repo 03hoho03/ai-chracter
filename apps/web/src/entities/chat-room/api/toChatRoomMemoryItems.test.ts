@@ -51,6 +51,7 @@ describe("toChatRoomMemoryItemsPage", () => {
       facts: [RELATION, FACT],
       episodesUsedInReplies: true,
       factsUsedInReplies: false,
+      impressions: null,
     });
     expect(page).toEqual({
       episodes: [EPISODE],
@@ -61,6 +62,7 @@ describe("toChatRoomMemoryItemsPage", () => {
       ],
       episodesUsedInReplies: true,
       factsUsedInReplies: false,
+      impressions: undefined,
     });
   });
 
@@ -71,7 +73,64 @@ describe("toChatRoomMemoryItemsPage", () => {
       facts: [],
       episodesUsedInReplies: false,
       factsUsedInReplies: false,
+      impressions: null,
     });
     expect(page.nextCursor).toBe("cursor-2");
+  });
+
+  it("keeps the impressions in the server's order and drops a missing turn range", () => {
+    const page = toChatRoomMemoryItemsPage({
+      episodes: [],
+      nextCursor: null,
+      facts: [],
+      episodesUsedInReplies: false,
+      factsUsedInReplies: false,
+      impressions: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          text: "처음엔 경계하던 서아가 이제는 먼저 안부를 묻는다.",
+          createdAt: "2026-10-27T01:00:00Z",
+          turnStart: 31,
+          turnEnd: 60,
+          sceneCount: 7,
+          factCount: 3,
+        },
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          text: "서로 이름도 모르던 사이.",
+          createdAt: "2026-10-26T01:00:00Z",
+          turnStart: null,
+          turnEnd: null,
+          sceneCount: 0,
+          factCount: 0,
+        },
+      ],
+    });
+    expect(page.impressions).toEqual([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        text: "처음엔 경계하던 서아가 이제는 먼저 안부를 묻는다.",
+        createdAt: "2026-10-27T01:00:00Z",
+        turnStart: 31,
+        turnEnd: 60,
+        sceneCount: 7,
+        factCount: 3,
+      },
+      {
+        id: "55555555-5555-4555-8555-555555555555",
+        text: "서로 이름도 모르던 사이.",
+        createdAt: "2026-10-26T01:00:00Z",
+        turnStart: undefined,
+        turnEnd: undefined,
+        sceneCount: 0,
+        factCount: 0,
+      },
+    ]);
+  });
+
+  it("keeps an empty impression list apart from a hidden one", () => {
+    const base = { episodes: [], nextCursor: null, facts: [], episodesUsedInReplies: false, factsUsedInReplies: false };
+    expect(toChatRoomMemoryItemsPage({ ...base, impressions: [] }).impressions).toEqual([]);
+    expect(toChatRoomMemoryItemsPage({ ...base, impressions: null }).impressions).toBeUndefined();
   });
 });

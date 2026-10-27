@@ -63,6 +63,24 @@ describe("mergeMemoryItemPages", () => {
       hasMoreEpisodes: false,
       episodesUsedInReplies: false,
       factsUsedInReplies: false,
+      impressions: undefined,
     });
+  });
+
+  it("takes the impressions from the newest page, so a list that turned hidden stays hidden", () => {
+    const impression = {
+      id: "i1",
+      text: "인상",
+      createdAt: "2026-10-27T01:00:00Z",
+      turnStart: 1,
+      turnEnd: 30,
+      sceneCount: 3,
+      factCount: 1,
+    };
+    expect(mergeMemoryItemPages([page({ nextCursor: "c1" }), page({ impressions: [impression] })]).impressions).toEqual([
+      impression,
+    ]);
+    expect(mergeMemoryItemPages([page({ impressions: [impression], nextCursor: "c1" }), page({})]).impressions).toBeUndefined();
+    expect(mergeMemoryItemPages([page({ impressions: [] })]).impressions).toEqual([]);
   });
 });

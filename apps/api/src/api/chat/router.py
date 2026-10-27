@@ -25,7 +25,14 @@ from api.chat.memory_forget import (
     forget_episode,
     forget_fact_key,
 )
-from api.chat.memory_items import InvalidItemsCursorError, memory_items, truth_label, used_in_replies
+from api.chat.memory_items import (
+    InvalidItemsCursorError,
+    memory_impressions,
+    memory_items,
+    room_in_memory_scope,
+    truth_label,
+    used_in_replies,
+)
 from api.chat.memory_regenerate import (
     RegenerateInProgressError,
     RegenerateNothingToFoldError,
@@ -108,6 +115,7 @@ from api.chat.schemas import (
     ChatRoomMemoryEpisodeItem,
     ChatRoomMemoryFactForgetPreview,
     ChatRoomMemoryFactItem,
+    ChatRoomMemoryImpressionItem,
     ChatRoomMemoryFeatures,
     ChatRoomMemoryItemsResponse,
     ChatRoomMemoryLimits,
@@ -2273,7 +2281,27 @@ async def list_chat_room_memory_items(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"code": "MEMORY_ITEMS_CURSOR_INVALID"}
         ) from None
-    episodes_used, facts_used = await used_in_replies(db, room)
+    in_scope = await room_in_memory_scope(db, room)
+    episodes_used, facts_used = used_in_replies(in_scope)
+    impressions = (
+        [
+            ChatRoomMemoryImpressionItem(
+                id=view.row.id,
+                text=view.row.text,
+                created_at=view.row.created_at,
+                turn_start=view.turn_start,
+                turn_end=view.turn_end,
+                scene_count=view.scene_count,
+                fact_count=view.fact_count,
+            )
+            for view in await memory_impressions(db, room.id)
+        ]
+        if settings.memory_impressions_visible and in_scope
+        else None
+    )
+    # 쓰기가 꺼져 있으면 인상이 새로 생기지 않아 화면의 "대화가 쌓이면 정리돼요" 빈 상태가 거짓이 된다. 이미 만든 인상은 그대로 보인다.
+    if impressions == [] and not settings.memory_impressions_write:
+        impressions = None
     return ChatRoomMemoryItemsResponse(
         episodes=[
             ChatRoomMemoryEpisodeItem(
@@ -2307,6 +2335,7 @@ async def list_chat_room_memory_items(
         ],
         episodes_used_in_replies=episodes_used,
         facts_used_in_replies=facts_used,
+        impressions=impressions,
     )
 
 

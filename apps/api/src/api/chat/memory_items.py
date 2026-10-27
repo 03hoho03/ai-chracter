@@ -6,6 +6,8 @@
   순서(끝 메시지 키, 같으면 id)로 페이지씩.
 - 사실: 같은 커서까지의 사실 행(사실 섹션과 같은 읽기 `fact_rows_statement`)을 키마다 이긴 행 하나로 줄인 것(사실 섹션과 같은
   규칙 `latest_by_key` — 반박된 값은 뒤의 같은 값 주장으로 되살아나지 않는다).
+- 인상: 그 방의 인상 행 전부를 덮는 스냅샷 커서가 큰 것부터. 인상은 커서 이하의 스냅샷에서만 생기고 되감기가 스냅샷과 함께
+  지우므로 커서로 거르지 않는다. 근거는 행 id 대신 지금 남은 근거 행에서 센 개수와 턴 범위만 낸다.
 
 읽기만 하므로 생성·요약·추출 경로와 잠금을 나누지 않는다."""
 
@@ -13,6 +15,7 @@ import base64
 import binascii
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
 from pydantic import BaseModel, ValidationError
@@ -23,7 +26,14 @@ from api.chat.memory_facts import fact_rows_statement
 from api.chat.memory_knowledge import latest_by_key
 from api.chat.memory_window import load_current_summary, memory_model_in_scope
 from api.core.config import settings
-from api.db.models.chat import ChatMemoryEpisode, ChatMemoryFact, ChatRoom, ChatRoomMemorySnapshot, FactTruthStatus
+from api.db.models.chat import (
+    ChatMemoryEpisode,
+    ChatMemoryFact,
+    ChatMemoryImpression,
+    ChatRoom,
+    ChatRoomMemorySnapshot,
+    FactTruthStatus,
+)
 from api.llm.model_access import effective_room_model
 
 EPISODE_PAGE_SIZE = 30
@@ -102,11 +112,78 @@ async def memory_items(
     return page, next_cursor, facts
 
 
-async def used_in_replies(db: AsyncSession, room: ChatRoom) -> tuple[bool, bool]:
-    """(장면, 사실)이 이 방의 다음 턴 응답 프롬프트에 실릴 수 있는가. 턴 조립과 같은 판정이다 — 생성 윈도우가 켜져 있고, 그
-    기억의 스위치(회상·사실 주입)가 켜져 있고, 방의 레인과 다음 턴 글쓰기 모델(방이 고른 모델을 주인이 지금 쓸 수 있는
-    모델로 읽은 것 — 턴 차감과 같은 읽기)이 기억 사용 범위에 들어야 한다. 레인은 시작 설정이 있으면 스토리다."""
+async def room_in_memory_scope(db: AsyncSession, room: ChatRoom) -> bool:
+    """이 방의 레인과 다음 턴 글쓰기 모델(방이 고른 모델을 주인이 지금 쓸 수 있는 모델로 읽은 것 — 턴 차감과 같은 읽기)이 기억
+    사용 범위에 드는가. 레인은 시작 설정이 있으면 스토리다."""
     lane = "story" if room.starting_setup_entity_id is not None else "character"
     model = await effective_room_model(db, room.user_id, room.chat_model)
-    usable = settings.memory_window_generation and memory_model_in_scope(lane, model, settings.memory_model_scope)
+    return memory_model_in_scope(lane, model, settings.memory_model_scope)
+
+
+def used_in_replies(in_scope: bool) -> tuple[bool, bool]:
+    """(장면, 사실)이 이 방의 다음 턴 응답 프롬프트에 실릴 수 있는가. 턴 조립과 같은 판정이다 — 생성 윈도우가 켜져 있고, 그
+    기억의 스위치(회상·사실 주입)가 켜져 있고, 방이 기억 사용 범위에 들어야 한다(`in_scope`, `room_in_memory_scope`)."""
+    usable = settings.memory_window_generation and in_scope
     return usable and settings.memory_episodes_recall, usable and settings.memory_facts_inject
+
+
+@dataclass(frozen=True)
+class ImpressionView:
+    """인상 행 하나와 지금 남은 근거 행에서 센 것. 턴 범위는 근거 행이 하나도 없으면 None."""
+
+    row: ChatMemoryImpression
+    turn_start: int | None
+    turn_end: int | None
+    scene_count: int
+    fact_count: int
+
+
+async def memory_impressions(db: AsyncSession, room_id: uuid.UUID) -> list[ImpressionView]:
+    """방의 인상을 덮는 스냅샷 커서가 큰 것부터. 질의는 인상 하나, 근거 장면 하나, 근거 사실 하나로 인상 수와 무관하다. 근거
+    칸의 id 는 FK 가 아니므로 지금 남은 행만 센다 — 사실은 행이 아니라 서로 다른 키를 센다."""
+    impression, snapshot = ChatMemoryImpression, ChatRoomMemorySnapshot
+    rows = (
+        await db.scalars(
+            select(impression)
+            .join(snapshot, snapshot.id == impression.snapshot_id)
+            .where(impression.chat_room_id == room_id)
+            .order_by(snapshot.cursor_created_at.desc(), snapshot.cursor_message_id.desc(), impression.id.desc())
+        )
+    ).all()
+    sources = [({uuid.UUID(raw) for raw in row.episode_ids}, {uuid.UUID(raw) for raw in row.fact_ids}) for row in rows]
+    all_episode_ids = set().union(*(episode_ids for episode_ids, _ in sources))
+    all_fact_ids = set().union(*(fact_ids for _, fact_ids in sources))
+    episodes: dict[uuid.UUID, tuple[int, int]] = {}
+    if all_episode_ids:
+        episode = ChatMemoryEpisode
+        result = await db.execute(
+            select(episode.id, episode.start_turn, episode.end_turn).where(
+                episode.chat_room_id == room_id, episode.id.in_(all_episode_ids)
+            )
+        )
+        episodes = {row_id: (start, end) for row_id, start, end in result.tuples()}
+    facts: dict[uuid.UUID, tuple[str, int, int]] = {}
+    if all_fact_ids:
+        fact = ChatMemoryFact
+        result_facts = await db.execute(
+            select(fact.id, fact.fact_key, fact.start_turn, fact.end_turn).where(
+                fact.chat_room_id == room_id, fact.id.in_(all_fact_ids)
+            )
+        )
+        facts = {row_id: (key, start, end) for row_id, key, start, end in result_facts.tuples()}
+
+    views: list[ImpressionView] = []
+    for row, (episode_ids, fact_ids) in zip(rows, sources, strict=True):
+        scene_spans = [episodes[row_id] for row_id in episode_ids if row_id in episodes]
+        fact_rows = [facts[row_id] for row_id in fact_ids if row_id in facts]
+        spans = scene_spans + [(start, end) for _, start, end in fact_rows]
+        views.append(
+            ImpressionView(
+                row=row,
+                turn_start=min(start for start, _ in spans) if spans else None,
+                turn_end=max(end for _, end in spans) if spans else None,
+                scene_count=len(scene_spans),
+                fact_count=len({key for key, _, _ in fact_rows}),
+            )
+        )
+    return views

@@ -174,19 +174,39 @@ class ChatRoomMemoryFactItem(CamelModel):
     end_turn: int
 
 
+class ChatRoomMemoryImpressionItem(CamelModel):
+    """관계 인상 하나 — 요약 접기 몇 번을 한 묶음으로 읽고 인물 사이 감정·태도의 흐름을 적은 읽기 전용 글. 근거 행 id 는 싣지
+    않고 개수만 싣는다. `scene_count` 는 지금 남아 있는 근거 장면 수, `fact_count` 는 지금 남아 있는 근거 사실 행의 서로 다른 키
+    수다(근거에는 한 키의 옛 값 행도 들어 있다). `turn_start`·`turn_end` 는 남은 근거 행들의 턴 범위라 근사값이고, 근거 행이
+    하나도 남지 않았으면 null 이다."""
+
+    id: uuid.UUID
+    text: str
+    created_at: datetime
+    turn_start: int | None
+    turn_end: int | None
+    scene_count: int
+    fact_count: int
+
+
 class ChatRoomMemoryItemsResponse(CamelModel):
     """방의 장면·사실 기억. 둘 다 지금 요약 커서까지 접힌 것이고, 요약이 아직 없으면 둘 다 비어 있다.
 
     - `episodes` 는 일어난 순서로 한 페이지다. `next_cursor` 를 `cursor` 로 다시 보내면 다음 페이지이고, 마지막 페이지면 null.
     - `facts` 는 키마다 이긴 행 전부다(페이지 없음, 이긴 행을 쓴 순서). 페이지마다 같은 목록이 온다.
     - `episodes_used_in_replies`·`facts_used_in_replies` 는 이 방의 다음 턴에 그 기억이 응답 프롬프트에 실릴 수 있는가 — 기억
-      스위치가 켜져 있고 이 방의 레인과 다음 턴 모델이 기억 사용 범위에 들 때만 참이다. 거짓이어도 기억은 계속 쌓인다."""
+      스위치가 켜져 있고 이 방의 레인과 다음 턴 모델이 기억 사용 범위에 들 때만 참이다. 거짓이어도 기억은 계속 쌓인다.
+    - `impressions` 는 이 방의 관계 인상을 최근 묶음 먼저 전부 싣는다(페이지 없음, 페이지마다 같은 목록). 인상 보기 스위치가
+      꺼져 있거나 이 방의 레인과 다음 턴 모델이 기억 사용 범위 밖이면 — 인상 행이 있어도 — null 이라 화면이 인상 구획을 그리지
+      않는다. 인상이 하나도 없는데 인상 쓰기 스위치가 꺼져 있을 때도 null 이다 — 새로 생길 수 없어 빈 상태 안내가 거짓이 된다.
+      그 밖에는 목록이고(쓰기가 꺼져 있어도 이미 만든 인상은 나간다) 인상이 없으면 빈 목록이다."""
 
     episodes: list[ChatRoomMemoryEpisodeItem]
     next_cursor: str | None
     facts: list[ChatRoomMemoryFactItem]
     episodes_used_in_replies: bool
     facts_used_in_replies: bool
+    impressions: list[ChatRoomMemoryImpressionItem] | None
 
 
 class ChatRoomMemoryFactForgetPreview(CamelModel):

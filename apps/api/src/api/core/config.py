@@ -714,13 +714,19 @@ class Settings(BaseSettings):
     # 재기동) 다음 턴부터 다시 `[]` 이고 이미 쌓인 칸은 남는다.
     stat_event_log: bool = False
     # 요약 접기 몇 번마다 방 하나에 인상(그 접기들에서 뽑힌 장면·사실 기억을 읽고 인물 사이 감정·태도의 흐름을 적은 짧은 글) 한
-    # 행을 `chat_memory_impressions` 에 쌓는 백그라운드 작업을 켠다(`chat/memory_impressions.py`). 저장만 한다 — 생성 프롬프트에
-    # 싣지 않고 화면에도 보이지 않는다. 기본은 꺼짐 — 꺼져 있으면 예약하지 않아 호출도 인상 표 SELECT·INSERT 도 없고 턴의
-    # 호출·트랜잭션이 이 스위치가 생기기 전과 같다. 켜져 있어도 기억 사용 범위(`memory_model_scope`) 밖 방에서는 돌지 않고, 덮는
+    # 행을 `chat_memory_impressions` 에 쌓는 백그라운드 작업을 켠다(`chat/memory_impressions.py`). 생성 프롬프트에 싣지 않고,
+    # 화면에는 `memory_impressions_visible` 이 켜졌을 때만 보인다. 기본은 꺼짐 — 꺼져 있으면 예약하지 않아 호출도 인상 표
+    # SELECT·INSERT 도 없고 턴의 호출·트랜잭션이 이 스위치가 생기기 전과 같다. 켜져 있어도 기억 사용 범위(`memory_model_scope`) 밖 방에서는 돌지 않고, 덮는
     # 스냅샷들의 장면·사실 추출이 모두 끝나야 돈다 — 그래서 두 추출 스위치가 꺼져 있으면 아무것도 쌓이지 않는다. 생성 윈도우
     # 스위치가 꺼져 있으면 접기가 없어 이 값과 무관하게 돌지 않는다. 처리방침에 인상 항목을 게시한 뒤 켠다. 끄면(줄 삭제 +
     # 재기동) 이미 쌓인 행은 남고 새로 쌓지 않는다.
     memory_impressions_write: bool = False
+    # 기억 보기 응답(`GET /chat-rooms/{id}/memory/items`)의 `impressions` 칸에 그 방의 인상 목록을 싣는다. 기본은 꺼짐 — 꺼져
+    # 있으면 칸이 null 이라 화면이 인상 구획을 그리지 않고 인상 표를 읽지 않는다. 켜져 있어도 방의 레인·다음 턴 모델이 기억 사용
+    # 범위(`memory_model_scope`) 밖이면 null 이고, 인상이 하나도 없는데 쓰기 스위치가 꺼져 있어도 새로 생길 수 없어 null 이다. 기억 보기 스위치(`memory_items_visible`)가 꺼져 있으면 라우트가 404 라 이 값과
+    # 무관하게 안 보인다. 쓰기 스위치와 따로 두는 이유는 쓰기를 켠 뒤 보기만 미루는 기간을 두려는 것이다. 처리방침에 인상 열람을
+    # 게시한 뒤 켠다. 끄면(줄 삭제 + 재기동) 다음 요청부터 다시 null 이고 쌓인 행은 남는다.
+    memory_impressions_visible: bool = False
     # 인상 하나가 덮는 요약 스냅샷 수(접기 횟수). 방의 스냅샷 수가 이 값의 배수가 된 접기 뒤에 가장 새 스냅샷까지의 이만큼을 묶어
     # 인상 하나를 만든다. 접기는 대략 10턴마다라 기본값 3 이면 약 30턴마다 한 번이다 — 개발 측정에서 다시 정한다.
     memory_impression_every_n_folds: int = Field(default=3, ge=1)
