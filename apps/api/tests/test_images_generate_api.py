@@ -1032,7 +1032,7 @@ async def test_request_whose_surviving_image_was_deleted_after_the_other_failed_
     """두 장 중 한 장이 실패하고 나온 한 장을 지우면 그림이 하나도 남지 않으므로 요청 행이 사라진다. 환불은 못 만든
     한 장분 그대로다 — 지운 그림은 사용자가 받은 그림이다."""
     _stub_capabilities_ready(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
     statuses: list[int] = []
     _delete_from_gallery_before_finish(monkeypatch, db_client, keep=0, statuses=statuses)
 
@@ -1204,6 +1204,11 @@ def _spent_and_refunded(rows: list[CloverLedger]) -> tuple[int, int]:
     )
 
 
+# 클로버로 내는 이미지 테스트의 시작 잔액 — 지금 단가로 두 장을 내고도 남는 시나리오 값이다(단가는 늘 `clover.IMAGE_UNIT_COST`
+# 에서 읽는다).
+_PAID_BALANCE = 1_000
+
+
 async def _clover_paid_user(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -1240,7 +1245,7 @@ async def test_partial_success_refunds_only_the_images_that_were_not_made(
     2장을 요청해 1장이 나왔으면 사용자는 그 1장을 실제로 받았으므로 전량 환불은 공짜로
     주는 것이고, 전량 소모는 못 받은 1장까지 받는 것이다."""
     _stub_capabilities_ready(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
 
     call_count = {"n": 0}
 
@@ -1265,9 +1270,9 @@ async def test_partial_success_refunds_only_the_images_that_were_not_made(
     assert spent == -2 * clover.IMAGE_UNIT_COST
     assert refunded == clover.IMAGE_UNIT_COST  # 못 만든 1장분만
     await db_session.refresh(user)
-    assert user.clover_balance == 100 - clover.IMAGE_UNIT_COST
+    assert user.clover_balance == _PAID_BALANCE - clover.IMAGE_UNIT_COST
     # 금액만 줄인 영수증으로 환급해도 같은 차감의 배분을 따라 깎은 로트로 돌아간다.
-    assert await _clover_lots(db_session, user.id) == [("legacy_balance", 100 - clover.IMAGE_UNIT_COST)]
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", _PAID_BALANCE - clover.IMAGE_UNIT_COST)]
 
 
 async def test_cancel_right_after_the_partial_refund_commits_does_not_refund_again(
@@ -1276,7 +1281,7 @@ async def test_cancel_right_after_the_partial_refund_commits_does_not_refund_aga
     """판정 기준: 정상 경로의 부분 환급(못 만든 1장)이 커밋된 뒤 그 `await` 가 돌아오기 전에 잡이 취소되면, 예외 경로가 같은
     몫을 다시 돌려주면 안 된다 — 환급 합이 1장분이어야 한다. 정산 표시를 환급 뒤에 세우면 2장분이 된다."""
     _stub_capabilities_ready(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
     refund_committed = asyncio.Event()
     real_refund = rate_limit_gate.refund_image_charge
 
@@ -1312,7 +1317,7 @@ async def test_cancel_right_after_the_partial_refund_commits_does_not_refund_aga
     spent, refunded = _spent_and_refunded(await _clover_ledger(db_session, user.id))
     assert spent == -2 * clover.IMAGE_UNIT_COST
     assert refunded == clover.IMAGE_UNIT_COST
-    assert await _clover_lots(db_session, user.id) == [("legacy_balance", 100 - clover.IMAGE_UNIT_COST)]
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", _PAID_BALANCE - clover.IMAGE_UNIT_COST)]
 
 
 async def test_partial_refund_uses_the_receipt_even_if_the_unit_cost_changes_mid_job(
@@ -1321,7 +1326,7 @@ async def test_partial_refund_uses_the_receipt_even_if_the_unit_cost_changes_mid
     """판정 기준: 차감 뒤 잡이 도는 사이 단가가 바뀌어도 못 만든 1장의 환급은 차감 당시 단가(영수증)다. 지금 단가로 다시
     곱하면 바뀐 단가만큼 돌려준다."""
     _stub_capabilities_ready(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
     charged_unit = clover.IMAGE_UNIT_COST
     call_count = {"n": 0}
 
@@ -1346,7 +1351,7 @@ async def test_partial_refund_uses_the_receipt_even_if_the_unit_cost_changes_mid
     spent, refunded = _spent_and_refunded(await _clover_ledger(db_session, user.id))
     assert spent == -2 * charged_unit
     assert refunded == charged_unit
-    assert await _clover_lots(db_session, user.id) == [("legacy_balance", 100 - charged_unit)]
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", _PAID_BALANCE - charged_unit)]
 
 
 @pytest.mark.parametrize(
@@ -1369,7 +1374,7 @@ async def test_zero_images_refunds_the_whole_charge(
     이미지가 0장 나왔는데 사용자는 프롬프트를 고쳐 다시 내야 하고, 환불이 없으면 고칠
     때마다 사라진다. 가드는 우리 모델의 판정이라 오판도 있다."""
     _stub_capabilities_ready(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
 
     def generate() -> tuple[bytes, str]:
         raise raiser()
@@ -1389,7 +1394,7 @@ async def test_zero_images_refunds_the_whole_charge(
     assert spent == -clover.IMAGE_UNIT_COST
     assert refunded == clover.IMAGE_UNIT_COST
     await db_session.refresh(user)
-    assert user.clover_balance == 100
+    assert user.clover_balance == _PAID_BALANCE
 
 
 async def test_full_success_does_not_refund_anything(
@@ -1398,7 +1403,7 @@ async def test_full_success_does_not_refund_anything(
     """환불 대상은 **못 만든 장수**다 — 전부 나왔으면 0장이라 환불 행 자체가 없어야 한다.
     이 가드가 없으면 `count - succeeded_count`를 `count`로 잘못 써도 아무도 못 잡는다."""
     _stub_capabilities_ready(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
 
     _override_image_client(lambda: (_png_bytes(), "image/png"))
     try:
@@ -1413,7 +1418,7 @@ async def test_full_success_does_not_refund_anything(
     rows = await _clover_ledger(db_session, user.id)
     assert [row.kind for row in rows] == ["image_spend"]
     await db_session.refresh(user)
-    assert user.clover_balance == 100 - 2 * clover.IMAGE_UNIT_COST
+    assert user.clover_balance == _PAID_BALANCE - 2 * clover.IMAGE_UNIT_COST
 
 
 async def test_token_paid_failure_does_not_touch_clover(
@@ -1546,7 +1551,7 @@ async def test_failure_before_aggregation_refunds_the_whole_charge(
     성공이므로 전량이 돌아온다. 이 구간이 열려 있으면 사용자는 이미지를 한 장도 못 받고
     클로버만 잃는다."""
     _stub_capabilities_ready(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
 
     async def failing_update_job(job_id: str, **kwargs: Any) -> None:
         if kwargs.get("status") is ImageGenerationJobStatus.RUNNING:
@@ -1569,7 +1574,7 @@ async def test_failure_before_aggregation_refunds_the_whole_charge(
     assert spent == -2 * clover.IMAGE_UNIT_COST
     assert refunded == 2 * clover.IMAGE_UNIT_COST  # 0장 성공 → 전량
     await db_session.refresh(user)
-    assert user.clover_balance == 100
+    assert user.clover_balance == _PAID_BALANCE
 
 
 async def test_failure_after_aggregation_does_not_refund_twice(
@@ -1582,7 +1587,7 @@ async def test_failure_after_aggregation_does_not_refund_twice(
     `charge.count - succeeded_count`로 한 번만 계산돼야 하므로, 이 테스트는 "진행된 만큼"
     식이 두 자리에서 중복 적용되지 않는다는 것까지 함께 고정한다."""
     _stub_capabilities_ready(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
 
     # 🔴 이 테스트의 태스크는 **환불 이후에도 계속 돈다** — 정산(`refund_settled`) 뒤에 요청 행
     # UPDATE(`images/router.py`의 `async with session_factory()` 블록)가 남아 있고, 그건 conftest가
@@ -1625,7 +1630,7 @@ async def test_failure_after_aggregation_does_not_refund_twice(
     assert spent == -2 * clover.IMAGE_UNIT_COST
     assert refunded == clover.IMAGE_UNIT_COST  # 못 만든 1장분만, 두 번이 아니라 한 번
     await db_session.refresh(user)
-    assert user.clover_balance == 100 - clover.IMAGE_UNIT_COST
+    assert user.clover_balance == _PAID_BALANCE - clover.IMAGE_UNIT_COST
 
 
 async def test_cancelled_job_refunds_the_whole_charge_and_stays_cancelled(
@@ -1634,7 +1639,7 @@ async def test_cancelled_job_refunds_the_whole_charge_and_stays_cancelled(
     """판정 기준: 재배포·종료로 잡 태스크가 집계 전에 취소되면 0장 성공이므로 전량이 깎은 로트로 돌아오고, 태스크는
     취소된 채로 끝난다(취소를 삼키지 않는다). `Exception` 만 잡으면 환급 0이다."""
     _stub_capabilities_ready(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
     running = asyncio.Event()
 
     async def hanging_update_job(job_id: str, **kwargs: Any) -> None:
@@ -1661,7 +1666,7 @@ async def test_cancelled_job_refunds_the_whole_charge_and_stays_cancelled(
     spent, refunded = _spent_and_refunded(await _clover_ledger(db_session, user.id))
     assert spent == -2 * clover.IMAGE_UNIT_COST
     assert refunded == 2 * clover.IMAGE_UNIT_COST
-    assert await _clover_lots(db_session, user.id) == [("legacy_balance", 100)]
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", _PAID_BALANCE)]
 
 
 # ---- 참조 이미지 ------------------------------------------------------------
@@ -1728,7 +1733,7 @@ async def _assert_charge_fully_refunded(db_session: AsyncSession, user: User, co
     assert spent == -count * clover.IMAGE_UNIT_COST
     assert refunded == count * clover.IMAGE_UNIT_COST
     await db_session.refresh(user)
-    assert user.clover_balance == 100
+    assert user.clover_balance == _PAID_BALANCE
 
 
 async def test_generate_with_own_generated_image_sends_its_stored_bytes_as_reference(
@@ -1805,7 +1810,7 @@ async def test_generate_with_unusable_reference_is_404_and_refunds_the_charge(
     차감한 뒤라 환불 경로 안에 있어야 한다 — 밖에 있으면 차감만 남는다."""
     _stub_capabilities_ready(monkeypatch)
     _enable_reference_images(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
     reference_id = await make_reference_id(db_session, user.id)
 
     received: list[bytes | None] = []
@@ -1829,7 +1834,7 @@ async def test_generate_with_reference_while_feature_is_off_is_400_and_refunds_t
     과금돼 나간다. 필드가 null 이면 참조 없는 요청이라 꺼져 있어도 평소대로 받는다."""
     _stub_capabilities_ready(monkeypatch)
     _enable_reference_images(monkeypatch, enabled=False)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
     reference = await _generated_reference(db_session, user.id, _png_bytes())
 
     received: list[bytes | None] = []
@@ -1861,7 +1866,7 @@ async def test_reference_blocked_by_the_local_guard_fails_the_job_and_refunds_ev
     돌려준다. 사유가 일반 실패로 접히면 사용자는 무엇을 바꿔야 하는지 모른다."""
     _stub_capabilities_ready(monkeypatch)
     _enable_reference_images(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
     original = _png_bytes(80, 80)
     reference = await _generated_reference(db_session, user.id, original)
 
@@ -1903,7 +1908,7 @@ async def test_reference_missing_from_storage_after_acceptance_fails_the_job_and
     시작하기 전)으로 옮기면 그 실패가 잡을 RUNNING 에, 요청 행을 pending 에 남긴다."""
     _stub_capabilities_ready(monkeypatch)
     _enable_reference_images(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
     reference = await _generated_reference(db_session, user.id, stored_bytes=None)
 
     captured: list[str] = []
@@ -1941,7 +1946,7 @@ async def test_reference_outside_the_contract_fails_without_calling_the_generato
     종류만 남고 저장 키·사용자 id 는 남지 않는다."""
     _stub_capabilities_ready(monkeypatch)
     _enable_reference_images(monkeypatch)
-    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=_PAID_BALANCE)
     gif = io.BytesIO()
     Image.new("RGB", (128, 128), color=(1, 2, 3)).save(gif, format="GIF")
     reference = await _generated_reference(db_session, user.id, gif.getvalue())

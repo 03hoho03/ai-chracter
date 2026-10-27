@@ -13,7 +13,9 @@ from typing import Literal
 
 # 결제 행(`payments.product_key`)이 이 키를 자유 텍스트로 저장하고 어드민이 그대로 보여 주므로, 상품을 바꿀 때는 새
 # 키를 쓰고 예전 키(`starter`·`basic`·`plus`·`pro`)를 다른 가격의 상품에 다시 쓰지 않는다 — 같은 키가 두 가격을
-# 가리키면 과거 결제와 새 결제의 표시·분석이 섞인다. 환불·정산은 결제 행의 금액·수량을 쓰므로 키를 다시 찾지 않는다.
+# 가리키면 과거 결제와 새 결제의 표시·분석이 섞인다. 환불·정산은 결제 행의 금액·수량을 쓰므로 키를 다시 찾지 않는다. 클로버
+# 단위를 3원에서 1원으로 바꿀 때 키를 그대로 둔 것은 이 규칙에 어긋나지 않는다 — 전환이 과거 결제 행의 수량 사본도 세 배 해,
+# 같은 키의 과거 결제와 새 결제가 같은 가격·같은 수량을 가리킨다.
 ProductKey = Literal["mini", "lite", "basic_v2", "plus_v2", "max"]
 
 
@@ -32,15 +34,16 @@ class CloverProduct:
 # 순서가 곧 표시 순서다 — 싼 상품이 맨 앞. 키 목록과 값 딕셔너리를 따로 두지 않고 상품 하나에 필드를 모은 튜플
 # 하나로 둔다(둘로 나누면 한쪽에만 상품을 더하는 실수가 생긴다).
 #
-# 확정가다. 유료 수량 = 판매가 ÷ 3 — 1클로버를 3원(부가세 포함)으로 환산했고, 이 환산은 단가 상수(`core/clover.py`)처럼
-# 실측 원가가 아니라 정책값이다. 유료 수량은 0보다 커야 한다 — 환불 견적(`payments/refund.py`)이 결제액을 유료 수량으로
+# 확정가다. 유료 수량 = 판매가 — 1클로버를 1원(부가세 포함, `core/clover.py` 의 `CLOVER_UNIT_KRW`)으로 환산했고, 이 환산은
+# 단가 상수처럼 실측 원가가 아니라 정책값이다. 유료 수량은 0보다 커야 한다 — 환불 견적(`payments/refund.py`)이 결제액을 유료 수량으로
 # 나눠 클로버 하나의 값을 구하고, 결제 행의 CHECK 제약도 0을 거부한다. 모든 상품을 5만 원 미만으로 둔 것은 결제대행사가 충전형 상품에 거는 결제 한도를 넘지 않으려는 보수적
-# 상한이다. 보너스는 비싼 상품일수록 5%p씩 늘려 최대 20%이고, 그 상품에서도 상위 모델 사용 원가가 판매가 안에
-# 든다(추정 원가 기준 — 상위 모델을 켜기 전에 실측으로 다시 본다). 가장 싼 상품은 첫 결제 한정이 아니라 상시 판매다.
+# 상한이다. 보너스는 비싼 상품일수록 5%p씩 늘려 최대 20%다. 보너스가 붙을수록 1클로버로 원가에 쓸 수 있는 돈이 줄어,
+# 보너스 20% 상품의 상위 모델(Opus) 턴은 캐시를 놓치면 원가를 넘는다(`core/clover.py` 의 가격 등록부 Opus 행 주석). 가장 싼 상품은
+# 첫 결제 한정이 아니라 상시 판매다.
 CLOVER_PRODUCTS: tuple[CloverProduct, ...] = (
-    CloverProduct(key="mini", name="미니", price_krw=900, paid_amount=300, bonus_amount=0),
-    CloverProduct(key="lite", name="라이트", price_krw=4_500, paid_amount=1_500, bonus_amount=75),
-    CloverProduct(key="basic_v2", name="베이직", price_krw=9_900, paid_amount=3_300, bonus_amount=330),
-    CloverProduct(key="plus_v2", name="플러스", price_krw=30_000, paid_amount=10_000, bonus_amount=1_500),
-    CloverProduct(key="max", name="맥스", price_krw=49_500, paid_amount=16_500, bonus_amount=3_300),
+    CloverProduct(key="mini", name="미니", price_krw=900, paid_amount=900, bonus_amount=0),
+    CloverProduct(key="lite", name="라이트", price_krw=4_500, paid_amount=4_500, bonus_amount=225),
+    CloverProduct(key="basic_v2", name="베이직", price_krw=9_900, paid_amount=9_900, bonus_amount=990),
+    CloverProduct(key="plus_v2", name="플러스", price_krw=30_000, paid_amount=30_000, bonus_amount=4_500),
+    CloverProduct(key="max", name="맥스", price_krw=49_500, paid_amount=49_500, bonus_amount=9_900),
 )

@@ -411,7 +411,10 @@ async def _fail(
 
 async def apply_remote_cancellations(db: AsyncSession, order: Payment, remote: PortOnePayment) -> list[str]:
     """포트원 결제 조회 결과의 취소 내역 전부를 반영하고 취소액·상태를 맞춘다. 잠근 주문 행에서만 부르고 커밋은 호출자가
-    한다. 결제 동기화(웹훅·결제 완료 알림)와 어드민 재시도가 공유하는 유일한 대사 경로다."""
+    한다. 부르는 곳은 둘이고 범위가 다르다. 결제 동기화(`payments/service.py` 의 `sync_payment` — 웹훅·결제 완료 알림)는 포트원이
+    취소됨·부분 취소됨으로 답하고 우리 주문이 지급된 상태일 때만 부른다 — 포트원이 아직 결제 완료로 답하면 부르지 않아, 그 결제에
+    달린 대기·실패 취소는 동기화로는 맞춰지지 않는다. 어드민 환불 실행의 대사(`reconcile_refund` — 진행 중 시도의 재시도와, 포트원이
+    취소를 거절했을 때 이미 취소됐는지 확인)는 결제 완료 응답도 넘겨, 그 취소 내역의 대기·실패 취소까지 맞춘다(아래 주석)."""
     if isinstance(remote, dict):
         logger.warning("payment %s: PortOne returned a payment of unknown shape", order.id)
         return []

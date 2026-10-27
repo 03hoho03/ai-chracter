@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from api.core import clover
 from api.db.models import Content, User
 from api.db.models.clover import (
     CloverLedger,
@@ -121,7 +122,7 @@ async def test_two_concurrent_block_edit_requests_for_one_novel_charge_once(
             async with independent_factory() as s:
                 try:
                     return await billing.create_charged_job(
-                        s, job=_patch_job(novel_id, user_id, revision), expected_cost=30, now=datetime.now(UTC)
+                        s, job=_patch_job(novel_id, user_id, revision), expected_cost=clover.NOVELIZE_AI_EDIT_COST, now=datetime.now(UTC)
                     )
                 except HTTPException as exc:
                     return exc
@@ -148,7 +149,7 @@ async def test_a_save_racing_an_expiry_refund_loses_and_the_refund_happens_once(
     user_id, novel_id, revision = await _seed(independent_factory)
     async with independent_factory() as s:
         job = await billing.create_charged_job(
-            s, job=_patch_job(novel_id, user_id, revision), expected_cost=30, now=datetime.now(UTC)
+            s, job=_patch_job(novel_id, user_id, revision), expected_cost=clover.NOVELIZE_AI_EDIT_COST, now=datetime.now(UTC)
         )
         await billing.transition_job(s, job_id=job.id, expected=("queued",), values={"status": "running"})
         await s.commit()
@@ -159,7 +160,7 @@ async def test_a_save_racing_an_expiry_refund_loses_and_the_refund_happens_once(
 
     refund = independent_factory()
     try:
-        assert await billing.refund_job(refund, job_id=job.id, failure_code="expired") == 30
+        assert await billing.refund_job(refund, job_id=job.id, failure_code="expired") == clover.NOVELIZE_AI_EDIT_COST
         task = asyncio.ensure_future(runner._save_block_edit(independent_factory, job.id, [patch], []))
         await _assert_blocked(task)
         await refund.commit()
@@ -172,7 +173,7 @@ async def test_a_save_racing_an_expiry_refund_loses_and_the_refund_happens_once(
         assert (stored.status, stored.failure_code) == ("failed", "expired")
         assert stored.block_edit is not None and stored.block_edit["patches"] == []
         assert [target["baseHash"] for target in stored.block_edit["targets"]] == [""]
-    assert await _ledger(independent_factory, user_id) == [("novelize_spend", -30), ("novelize_refund", 30)]
+    assert await _ledger(independent_factory, user_id) == [("novelize_spend", -clover.NOVELIZE_AI_EDIT_COST), ("novelize_refund", clover.NOVELIZE_AI_EDIT_COST)]
 
 
 async def test_two_jobs_applying_patches_to_the_same_block_at_once_never_overwrite(

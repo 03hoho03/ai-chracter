@@ -48,6 +48,10 @@ from factories import (
 )
 
 
+# 노벨 화 소장 흐름을 보는 파일이라 화 가격을 고정값으로 둔다(`conftest.py` 의 `novel_read_price_for_flow_tests`).
+pytestmark = pytest.mark.usefixtures("novel_read_price_for_flow_tests")
+
+
 class _ScreenLLM(LLMClient):
     """텍스트 심사 가짜. `results` 를 앞에서부터 하나씩 돌려주고(예외면 낸다), 비면 통과다. `during_call` 이 있으면 판정을
     돌려주기 전에 부른다 — 심사를 기다리는 동안 다른 요청이 소설을 바꾼 상황을 만든다."""

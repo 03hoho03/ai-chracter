@@ -118,16 +118,23 @@ def items_visible(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "memory_items_visible", True)
 
 
+def _cost() -> int:
+    """지금 가격 — 호출 때 상수에서 읽어 가격을 바꿔도(테스트의 `monkeypatch` 포함) 따라간다."""
+    return clover.MEMORY_SUMMARY_REGENERATE_COST
+
+
 def _path(room: Room) -> str:
     return f"/chat-rooms/{room.room_id}/memory/summary/regenerate"
 
 
 async def _regenerate(
-    db_client: httpx.AsyncClient, room: Room, fake: LLMClient, *, version: int = 0, expected_cost: int = 10
+    db_client: httpx.AsyncClient, room: Room, fake: LLMClient, *, version: int = 0, expected_cost: int | None = None
 ) -> httpx.Response:
+    """`expected_cost` 를 주지 않으면 화면이 본 값이 지금 가격과 같은 경우다."""
     _override_llm_client(fake)
+    cost = _cost() if expected_cost is None else expected_cost
     try:
-        return await db_client.post(_path(room), json={"version": version, "expectedCost": expected_cost})
+        return await db_client.post(_path(room), json={"version": version, "expectedCost": cost})
     finally:
         _clear_llm_override()
 
@@ -271,8 +278,8 @@ async def test_regenerate_refolds_the_previous_summary_and_the_folded_turns_in_p
     assert await db_session.scalar(sa.select(ChatMemoryEpisode.snapshot_id).where(ChatMemoryEpisode.id == episode.id)) == current
     assert await db_session.scalar(sa.select(ChatMemoryFact.snapshot_id).where(ChatMemoryFact.id == fact.id)) == current
     assert await _memory_version(db_session, room) == 1
-    assert await _ledger(db_session, room.user_id) == [(_SPEND, -10)]
-    assert await _balance(db_session, room.user_id) == 90
+    assert await _ledger(db_session, room.user_id) == [(_SPEND, -_cost())]
+    assert await _balance(db_session, room.user_id) == 100 - _cost()
     assert await _usage_count(db_session, room.user_id) == 0
 
 
@@ -364,10 +371,10 @@ async def test_price_other_than_the_one_on_the_confirm_dialog_is_rejected_before
 ) -> None:
     room, _current = await _room(db_client, db_session)
 
-    resp = await _regenerate(db_client, room, _NeverCalledLLMClient(), expected_cost=9)
+    resp = await _regenerate(db_client, room, _NeverCalledLLMClient(), expected_cost=_cost() - 1)
 
     assert resp.status_code == 409
-    assert resp.json()["detail"] == {"code": "MEMORY_SUMMARY_REGENERATE_PRICE_CHANGED", "currentCost": 10}
+    assert resp.json()["detail"] == {"code": "MEMORY_SUMMARY_REGENERATE_PRICE_CHANGED", "currentCost": _cost()}
     assert await _ledger(db_session, room.user_id) == []
 
 
@@ -427,7 +434,7 @@ async def test_restricted_work_does_not_call_the_model_or_charge(
 async def test_short_balance_gets_the_clover_required_contract_without_calling_the_model(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, current = await _room(db_client, db_session, balance=9)
+    room, current = await _room(db_client, db_session, balance=_cost() - 1)
 
     resp = await _regenerate(db_client, room, _NeverCalledLLMClient())
 
@@ -452,7 +459,7 @@ async def test_rate_limit_exempt_account_pays_too(
     resp = await _regenerate(db_client, room, RegenerateLLMClient())
 
     assert resp.status_code == status, resp.text
-    assert await _ledger(db_session, room.user_id) == ([(_SPEND, -10)] if status == 200 else [])
+    assert await _ledger(db_session, room.user_id) == ([(_SPEND, -_cost())] if status == 200 else [])
 
 
 @pytest.mark.usefixtures("items_visible")
@@ -473,7 +480,7 @@ async def test_failed_call_refunds_and_leaves_the_summary_alone(
 
     assert resp.status_code == 503
     assert resp.json()["detail"] == {"code": "MEMORY_SUMMARY_REGENERATE_UNAVAILABLE"}
-    assert await _ledger(db_session, room.user_id) == [(_SPEND, -10), (_REFUND, 10)]
+    assert await _ledger(db_session, room.user_id) == [(_SPEND, -_cost()), (_REFUND, _cost())]
     assert await _balance(db_session, room.user_id) == 100
     assert await _usage_count(db_session, room.user_id) == 0
     row = await _row(db_session, current)
@@ -492,8 +499,8 @@ async def test_ledger_history_lists_the_spend_as_use_and_the_refund_as_earn(
     earn = await db_client.get("/me/clover/ledger", params={"category": "earn"})
 
     assert use.status_code == 200 and earn.status_code == 200
-    assert [(item["kind"], item["amount"], item["category"]) for item in use.json()["items"]] == [(_SPEND, -10, "use")]
-    assert (_REFUND, 10, "earn") in [(item["kind"], item["amount"], item["category"]) for item in earn.json()["items"]]
+    assert [(item["kind"], item["amount"], item["category"]) for item in use.json()["items"]] == [(_SPEND, -_cost(), "use")]
+    assert (_REFUND, _cost(), "earn") in [(item["kind"], item["amount"], item["category"]) for item in earn.json()["items"]]
 
 
 # --- 겹침 ------------------------------------------------------------------------------
@@ -507,7 +514,7 @@ async def test_second_request_while_one_is_in_flight_is_rejected_without_chargin
     nested: list[httpx.Response] = []
 
     async def _press_again_while_waiting() -> str:
-        nested.append(await db_client.post(_path(room), json={"version": 0, "expectedCost": 10}))
+        nested.append(await db_client.post(_path(room), json={"version": 0, "expectedCost": _cost()}))
         return REGENERATED
 
     first = await _regenerate(db_client, room, RegenerateLLMClient(_press_again_while_waiting))
@@ -519,7 +526,7 @@ async def test_second_request_while_one_is_in_flight_is_rejected_without_chargin
     assert second.json()["detail"] == {"code": "MEMORY_SUMMARY_REGENERATE_IN_PROGRESS"}
     # 끝난 뒤에는 다시 받는다(진행 표시가 풀렸다).
     assert after.status_code == 200, after.text
-    assert await _ledger(db_session, room.user_id) == [(_SPEND, -10), (_SPEND, -10)]
+    assert await _ledger(db_session, room.user_id) == [(_SPEND, -_cost()), (_SPEND, -_cost())]
     row = await _row(db_session, current)
     assert row is not None and row.previous_text == REGENERATED
 
@@ -569,7 +576,7 @@ async def test_fold_that_commits_during_the_call_wins_and_the_charge_is_refunded
 
     assert resp.status_code == 409
     assert resp.json()["detail"] == {"code": "MEMORY_VERSION_CONFLICT"}
-    assert await _ledger(db_session, room.user_id) == [(_SPEND, -10), (_REFUND, 10)]
+    assert await _ledger(db_session, room.user_id) == [(_SPEND, -_cost()), (_REFUND, _cost())]
     row = await _row(db_session, current)
     assert row is not None and (row.summary_text, row.previous_text) == ("AI가 접은 요약", None)
     assert len(await _snapshot_ids(db_session, room)) == 3
@@ -684,7 +691,7 @@ async def test_regenerate_reads_the_summary_chain_of_the_room_model_it_runs_on(
     assert resp.status_code == 200, resp.text
     (prompt,) = fake.summary_prompts
     assert (_HAIKU_SUMMARY_MARK in prompt) is switch
-    assert await _ledger(db_session, room.user_id) == [(_SPEND, -10)]
+    assert await _ledger(db_session, room.user_id) == [(_SPEND, -_cost())]
 
 
 # --- 일반 접기와 같은 프롬프트 ------------------------------------------------------------------

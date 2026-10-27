@@ -37,6 +37,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.auth.withdrawal import erase_account
+from api.clover import products
 from api.core.clover import purchase_lot_expiry
 from api.core.config import settings
 from api.db.models.auth import User
@@ -238,6 +239,7 @@ async def test_create_payment_fixes_the_amount_on_the_server(
     body = resp.json()
     order = await db_session.scalar(select(Payment).where(Payment.payment_id == body["paymentId"]))
     assert order is not None
+    (plus,) = [product for product in products.CLOVER_PRODUCTS if product.key == "plus_v2"]
     assert body == {
         "paymentId": order.payment_id,
         "storeId": _STORE,
@@ -260,9 +262,9 @@ async def test_create_payment_fixes_the_amount_on_the_server(
     ) == (
         user.id,
         "plus_v2",
-        30_000,
-        10_000,
-        1_500,
+        plus.price_krw,
+        plus.paid_amount,
+        plus.bonus_amount,
         _CHANNEL,
         "pending",
         await current_legal_version(db_session, "terms", now=utcnow()),
