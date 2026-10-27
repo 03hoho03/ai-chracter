@@ -474,9 +474,35 @@ async def test_an_in_scope_room_without_impressions_has_an_empty_list(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _memory_scope_covers_gemini(monkeypatch)
+    monkeypatch.setattr(settings, "memory_impressions_write", True)
     room = await _open_room(db_client, db_session, turns=3)
 
     assert await _impressions(db_client, room) == []
+
+
+@pytest.mark.usefixtures("impressions_visible")
+async def test_an_empty_room_hides_impressions_while_writing_is_off(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """쓰기가 꺼져 있으면 인상이 새로 생기지 않으니 "대화가 쌓이면 정리돼요" 빈 상태가 거짓이 된다 — 빈 목록 대신 구획을 숨긴다."""
+    _memory_scope_covers_gemini(monkeypatch)
+    room = await _open_room(db_client, db_session, turns=3)
+
+    assert settings.memory_impressions_write is False
+    assert await _impressions(db_client, room) is None
+
+
+@pytest.mark.usefixtures("impressions_visible")
+async def test_impressions_already_made_stay_visible_while_writing_is_off(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _memory_scope_covers_gemini(monkeypatch)
+    room = await _open_room(db_client, db_session, turns=10)
+    snapshot = await _snapshot_at(db_session, room, turn=10)
+    impression = await _impression(db_session, room, snapshot)
+
+    assert settings.memory_impressions_write is False
+    assert [item["id"] for item in await _impressions(db_client, room)] == [str(impression.id)]
 
 
 @pytest.mark.usefixtures("impressions_visible")
