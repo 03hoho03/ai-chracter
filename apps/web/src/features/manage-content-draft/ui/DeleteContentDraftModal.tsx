@@ -12,6 +12,7 @@ import { toast } from "sonner";
 
 import { contentKeys, useDeleteContentDraftMutation } from "@/entities/content";
 import { draftKeys } from "@/entities/draft";
+import { workKeys } from "@/entities/work";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type DeleteContentDraftModalProps = {
@@ -36,6 +37,7 @@ export const DeleteContentDraftModal = createCallable<DeleteContentDraftModalPro
       onSuccess: () => {
         toast.success("초안을 삭제했어요.");
         void queryClient.invalidateQueries({ queryKey: draftKeys.list() });
+        void queryClient.invalidateQueries({ queryKey: workKeys.lists() });
         // 방금 지운 콘텐츠의 초안 캐시는 서버에 더 이상 대응하는 행이 없다. 빌더가 자동저장마다
         // `setQueryData`로 이 키를 채워 두므로(`useDraftPersistence`) 남겨 두면 지운 작품의 폼이
         // 그대로 다시 그려진다 — `ResetContentDraftModal`이 같은 이유로 `removeQueries`를 쓴다.

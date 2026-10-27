@@ -11,6 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { contentKeys, useResetContentDraftMutation } from "@/entities/content";
+import { workKeys } from "@/entities/work";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type ResetContentDraftModalProps = {
@@ -72,6 +73,7 @@ export const ResetContentDraftModal = createCallable<ResetContentDraftModalProps
         toast.success("발행된 내용만 남았어요.");
         queryClient.removeQueries({ queryKey: contentKeys.draft(contentId) });
         void queryClient.invalidateQueries({ queryKey: contentKeys.listByUser(creatorUserId) });
+        void queryClient.invalidateQueries({ queryKey: workKeys.lists() });
         call.end();
       },
       onError: () => toast.error("편집한 내용을 버리지 못했어요. 잠시 후 다시 시도해주세요."),
