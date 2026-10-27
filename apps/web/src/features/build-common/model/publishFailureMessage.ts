@@ -41,7 +41,8 @@ export function getPublishFailureMessage(error: unknown): string | undefined {
 
 const NOVEL_PERMISSION_REQUIRED_CODE = "NOVEL_PERMISSION_REQUIRED";
 
-/** 서버 400 `NOVEL_PERMISSION_REQUIRED` 의 문구. 서버 바디에는 code 만 있다. */
+/** 서버 400 `NOVEL_PERMISSION_REQUIRED` 의 문구. 서버가 강제를 켜면 바디에 code 만 실을 것으로 보고 문구는 여기 한 곳에 둔다
+ * (지금 서버는 이 응답을 내지 않는다). */
 export const NOVEL_PERMISSION_REQUIRED_MESSAGE = "처음 발행하기 전에 다른 회원의 소설 만들기를 골라 주세요.";
 
 /** 첫 발행 요청에 소설 만들기 허락이 없어 서버가 거절했는가. 바디에 `reason`·`missingFields` 가 없어 심사 거부·필수 칸 판별은

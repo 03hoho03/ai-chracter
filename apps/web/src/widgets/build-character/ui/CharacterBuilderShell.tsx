@@ -263,7 +263,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
       });
       void navigate({ to: "/content/$type/$id", params: { type: "character", id: result.contentId } });
     } catch (error) {
-      // 이 화면이 이력을 잘못 알아(다른 창의 발행 등) 허락 없이 첫 발행을 보냈다 — 고를 때까지 묻고 그 칸으로 간다.
+      // 서버가 이 발행을 첫 발행으로 보는데 이 화면은 그렇게 보지 않아 허락 없이 보냈다 — 고를 때까지 묻고 그 칸으로 간다.
       if (isNovelPermissionRequiredError(error)) {
         novelPermissionChoice.markRequiredByServer();
         revealAndFocus(errorsAtPaths([NOVEL_PERMISSION_PATH]));

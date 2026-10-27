@@ -22,7 +22,8 @@ export type NovelPermissionChoiceView = {
  * 서버에 덮어쓰고, 그림만 비우면 저장 경로는 그대로다. 그래서 새로고침하면 고른 기록은 사라지고, 저장값이 "허용 안 함"이면 다시 묻는다.
  *
  * 발행 이력은 그림에는 화면에 붙은 조회를, 발행을 누를 때는 서버에서 다시 읽은 값을 쓴다(다른 탭에서 방금 발행했을 수 있다). 조회가
- * 끝나기 전에는 "아직 고르지 않음"을 그리지 않는다 — 발행작에 그 그림이 깜빡이지 않게. 이 화면에서 새로 만든 초안은 이력이 0 이다.
+ * 진행 중인 동안은 "아직 고르지 않음"을 그리지도, 클라 검사에서 막힌 발행의 확인 목록에 올리지도 않는다 — 발행작에 그 그림이 깜빡이지
+ * 않게. 조회가 실패했으면 이력을 모르는 것이라 발행을 누른 뒤부터 묻는다. 이 화면에서 새로 만든 초안은 이력이 0 이다.
  */
 export function useNovelPermissionChoice({
   draftId,
@@ -47,9 +48,10 @@ export function useNovelPermissionChoice({
   });
   const publishedCount = isNewDraft ? 0 : versionsQuery.data?.length;
   const state = { publishedCount, savedPermission, chosen, alreadyAsked };
-  const needsChoice = needsNovelPermissionChoice(state);
-  // 이력을 모르는 동안은 발행을 눌러 본 뒤에만 그린다. 막은 뒤로는 막힘과 그림이 같은 판정이다 — 그림이 고른 줄을 켜 둔 채 막으면
-  // 그 줄을 다시 눌러도 Radix 가 "" 를 보내 고를 길이 없다.
+  // 조회 중에는 묻지 않는다(발행을 누르면 그때 다시 읽어 판정한다). 이미 막은 뒤로는 조회와 상관없이 묻는다.
+  const needsChoice = needsNovelPermissionChoice(state) && (alreadyAsked || !versionsQuery.isLoading);
+  // 이력을 모르는 동안(조회 실패)은 발행을 눌러 본 뒤에만 그린다. 막은 뒤로는 막힘과 그림이 같은 판정이다 — 그림이 고른 줄을 켜 둔 채
+  // 막으면 그 줄을 다시 눌러도 Radix 가 "" 를 보내 고를 길이 없다.
   const isUnchosen = needsChoice && (publishedCount === 0 || hasAttemptedPublish || alreadyAsked);
   const isBlocked = isUnchosen && (hasAttemptedPublish || alreadyAsked);
 

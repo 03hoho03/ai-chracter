@@ -13,7 +13,7 @@ export type ContentPublishResponse = components["schemas"]["ContentPublishRespon
  * 대상 id를 뮤테이션 변수로 받는 이유도 같다 — 지연 생성된 초안은 그 저장이 끝나야 id가 있다.
  *
  * 본문은 소설 만들기 허락 하나뿐이고 선택이다. 작가가 고른 값이 있을 때만 `{ novelPermission }` 을 싣고, 없으면 본문 없이 보낸다
- * (서버는 첫 발행에 이 값을 요구하고, 재발행은 본문이 없으면 지금 값을 그대로 둔다).
+ * (서버는 이 값을 선택으로 받아 오면 저장하고, 없으면 지금 값을 그대로 둔다 — 지금은 본문 없는 첫 발행을 막지 않고 로그만 남긴다).
  */
 export function usePublishContentMutation() {
   return useMutation({

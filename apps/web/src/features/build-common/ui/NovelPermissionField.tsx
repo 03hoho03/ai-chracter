@@ -26,7 +26,7 @@ type NovelPermissionFieldProps = {
  *
  * 첫 발행 전 아직 고르지 않았으면 세 줄을 모두 끄고 칸에 별표와 "아직 고르지 않았어요"를 단다. 그림만 비우고 폼 값은 그대로다 —
  * 자동저장이 그 칸을 바꾸지 않는다. 발행이 이 칸 때문에 막히면 아래 안내 문장이 오류 색으로 바뀐다. 발행작이면 이 칸과 아래 파생 소설
- * 스위치가 발행을 기다리지 않고 저장 즉시 적용된다는 한 줄을 먼저 둔다.
+ * 스위치가 발행을 기다리지 않고 저장 즉시 적용된다는 한 줄을 먼저 둔다(스위치는 값을 읽기 전에는 없으므로 개수를 말하지 않는다).
  */
 export function NovelPermissionField({ idPrefix, value, onChange, fieldRef, choice, earningRate }: NovelPermissionFieldProps) {
   const labelId = `${idPrefix}-novel-permission-label`;
@@ -35,7 +35,7 @@ export function NovelPermissionField({ idPrefix, value, onChange, fieldRef, choi
     <div className="flex flex-col gap-1.5">
       {choice.publishedContentId !== undefined && (
         <p className="mb-1.5 text-sm break-keep text-muted-foreground">
-          아래 두 칸은 발행하지 않아도 저장되는 즉시 적용돼요.
+          이 아래 설정은 발행하지 않아도 저장되는 즉시 적용돼요.
         </p>
       )}
       <span id={labelId} className="text-sm leading-none font-medium">
