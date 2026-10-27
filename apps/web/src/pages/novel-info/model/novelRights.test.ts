@@ -115,6 +115,23 @@ describe("toNovelRightsView — 집필권", () => {
   });
 });
 
+// 방이 지워진 소설은 이미 만든 화를 읽고 고칠 수만 있고 새 화를 못 만든다 — "이어 쓸 수 있어요"·"첫 화를 저장하면"은 거짓이다.
+describe("toNovelRightsView — 방이 지워진 소설", () => {
+  it("잠겼어도 이어 쓰기 효력 문장을 붙이지 않는다", () => {
+    const view = toNovelRightsView(
+      input({ novel: novel({ chatRoomId: null, writingLockedAt: LOCKED_AT, writingLockPermission: "public" }) }),
+    );
+    expect(view.writing).toMatchObject({ kind: "locked", effect: undefined });
+  });
+
+  it("잠기기 전이면 새 화를 만들 수 없다고 말한다", () => {
+    expect(toNovelRightsView(input({ novel: novel({ chatRoomId: null }) })).writing).toEqual({
+      kind: "none",
+      when: "원래 대화가 지워져 새 화를 만들 수 없어요.",
+    });
+  });
+});
+
 describe("toNovelRightsView — 연재권", () => {
   it("잠기기 전이면 노벨에 처음 공개될 때 생긴다고 말한다", () => {
     expect(toNovelRightsView(input({})).serial).toEqual({ kind: "none", when: "노벨에 처음 공개되면 생겨요." });
@@ -150,6 +167,17 @@ describe("toNovelRightsView — 연재권", () => {
       input({
         source: { kind: "loaded", novelPermission: "forbidden", isOwner: true, sourceAvailable: true },
         novel: novel({ serialLockedAt: LOCKED_AT, serialLockPermission: "forbidden" }),
+      }),
+    );
+    expect(view.serial).toMatchObject({ kind: "locked", effect: undefined });
+  });
+
+  // 내려간 원작에는 잠금이 있어도 새로 공개할 수 없다 — 바로 위 "운영 조치로 내려가 있어요" 옆에 이어 공개 문장을 두면 거짓으로 읽힌다.
+  it("원작이 내려갔으면 효력 문장을 붙이지 않는다", () => {
+    const view = toNovelRightsView(
+      input({
+        source: { kind: "loaded", novelPermission: "public", isOwner: false, sourceAvailable: false },
+        novel: novel({ serialLockedAt: LOCKED_AT, serialLockPermission: "public" }),
       }),
     );
     expect(view.serial).toMatchObject({ kind: "locked", effect: undefined });

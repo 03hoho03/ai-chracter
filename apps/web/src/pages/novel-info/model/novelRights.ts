@@ -58,15 +58,19 @@ function toRightLine(
  *
  * 효력 문장은 남의 작품이 원작일 때만 붙는다 — 허락은 남에게 거는 조건이라 원작자 본인의 소설에는 거둘 허락이 없다.
  * 집필권은 첫 화 저장으로 잠기고 그 뒤로는 원작자가 허락을 거둬도 이어 쓴다(스위치 무관). 연재권은 노벨에 처음 공개될 때
- * 잠기지만, 허락을 거둬도 이어 공개하는 효력은 노벨 정책 스위치가 켜졌을 때뿐이다 — 꺼지면 잠금 사실만 남긴다. */
+ * 잠기지만, 허락을 거둬도 이어 공개하는 효력은 노벨 정책 스위치가 켜졌을 때뿐이다 — 꺼지면 잠금 사실만 남긴다. 효력이
+ * 있어도 지금 그 일을 할 수 없으면(방이 지워져 새 화를 못 만듦, 원작이 운영 조치로 내려가 공개를 못 함) 문장을 뺀다. */
 export function toNovelRightsView({ novel, source, policyV2Enabled }: NovelRightsInput): NovelRightsView {
   let origin: NovelRightsView["origin"];
   if (source.kind === "loaded") origin = source.isOwner ? "own" : "derived";
   const isDerived = origin === "derived";
+  // 방이 지워진 소설은 이미 만든 화를 읽고 고칠 수만 있고 새 화를 만들 수 없다.
+  const hasRoom = novel.chatRoomId !== null;
+  const sourceUp = source.kind !== "loaded" || source.sourceAvailable;
 
   let allowance: NovelRightsView["allowance"];
   if (source.kind !== "loaded") allowance = { kind: source.kind };
-  // 내려간 원작으로는 새로 만들 수도 공개할 수도 없어, 원작자가 고른 단계를 "지금 허용"으로 보이면 거짓이 된다.
+  // 내려간 원작으로는 노벨에 새로 공개할 수 없어(연재권이 있어도), 원작자가 고른 단계를 "지금 허용"으로 보이면 거짓이 된다.
   else if (!source.sourceAvailable) allowance = { kind: "sourceDown" };
   else if (source.isOwner) allowance = { kind: "own" };
   else
@@ -83,14 +87,14 @@ export function toNovelRightsView({ novel, source, policyV2Enabled }: NovelRight
     writing: toRightLine(
       novel.writingLockedAt,
       novel.writingLockPermission,
-      "첫 화를 저장하면 생겨요.",
-      isDerived ? "원작자가 허락을 거둬도 이 소설은 이어 쓸 수 있어요." : undefined,
+      hasRoom ? "첫 화를 저장하면 생겨요." : "원래 대화가 지워져 새 화를 만들 수 없어요.",
+      isDerived && hasRoom ? "원작자가 허락을 거둬도 이 소설은 이어 쓸 수 있어요." : undefined,
     ),
     serial: toRightLine(
       novel.serialLockedAt,
       novel.serialLockPermission,
       "노벨에 처음 공개되면 생겨요.",
-      isDerived && policyV2Enabled === true ? "원작자가 허락을 거둬도 다음 화를 이어 공개할 수 있어요." : undefined,
+      isDerived && sourceUp && policyV2Enabled === true ? "원작자가 허락을 거둬도 다음 화를 이어 공개할 수 있어요." : undefined,
     ),
   };
 }

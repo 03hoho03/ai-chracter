@@ -84,7 +84,7 @@ export function NovelRightsSection({ novel }: { novel: NovelDetailResponse }) {
           {view.allowance.kind === "permission" && (
             <>
               <p className="text-foreground">{view.allowance.label}</p>
-              <p className="text-muted-foreground">원작자가 지금 고른 범위예요. 언제든 바뀔 수 있어요.</p>
+              <p className="text-muted-foreground">원작자가 지금 고른 범위예요.</p>
             </>
           )}
         </Row>
