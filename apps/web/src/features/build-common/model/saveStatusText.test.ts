@@ -30,6 +30,12 @@ describe("saveStatusView", () => {
     expect(saveStatusView("saved", true, AT_09_05).text).toBe("저장됨 · 오전 9:05");
   });
 
+  // 시각을 손으로 조립하므로 0시·12시가 "0:00"이 되거나 오전·오후가 뒤바뀌지 않는지 본다.
+  it("자정은 오전 12시, 정오는 오후 12시다", () => {
+    expect(saveStatusView("saved", true, new Date(2026, 9, 27, 0, 0).getTime()).text).toBe("저장됨 · 오전 12:00");
+    expect(saveStatusView("saved", true, new Date(2026, 9, 27, 12, 0).getTime()).text).toBe("저장됨 · 오후 12:00");
+  });
+
   it("실패에서만 실패 표시와 내용 복사를 낸다", () => {
     expect(saveStatusView("failed", true, AT_23_42)).toEqual({ text: "저장 실패", offersCopy: true, isFailure: true });
     for (const status of ["idle", "pending", "saving", "saved"] as const) {

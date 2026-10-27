@@ -9,7 +9,19 @@ export type SaveStatusView = {
   isFailure: boolean;
 };
 
-const TIME_FORMAT = new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" });
+/**
+ * 저장 시각(`오후 11:42`)을 보는 사람의 로컬 시각으로 적는다.
+ *
+ * `Intl.DateTimeFormat("ko-KR")` 이 아니라 손으로 조립하는 이유: 로캘을 `ko-KR` 로 줘도 오전·오후 표기가 런타임의 ICU
+ * 데이터에 따라 갈린다 — 이 저장소 CI 의 Node 20(ICU 78.2)에서는 `PM 11:42` 로 나왔다. 실행 환경과 무관하게 같은 글자를 쓴다.
+ */
+function formatSavedTime(epochMs: number): string {
+  const date = new Date(epochMs);
+  const hours = date.getHours();
+  const period = hours < 12 ? "오전" : "오후";
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${period} ${hour12}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
 
 /**
  * 저장 상태와 연결 상태를 글자 한 줄로 바꾼다. 순수 함수.
@@ -31,7 +43,7 @@ export function saveStatusView(status: AutosaveStatus, isOnline: boolean, lastSa
       return { text: "저장 중", offersCopy: false, isFailure: false };
     case "saved":
       return {
-        text: lastSavedAt === undefined ? "저장됨" : `저장됨 · ${TIME_FORMAT.format(lastSavedAt)}`,
+        text: lastSavedAt === undefined ? "저장됨" : `저장됨 · ${formatSavedTime(lastSavedAt)}`,
         offersCopy: false,
         isFailure: false,
       };
