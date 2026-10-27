@@ -72,6 +72,8 @@ export function BuilderTopBarActions({
         size="sm"
         aria-label={isPreviewOpen ? `${previewLabel} 닫기` : previewLabel}
         aria-expanded={isPreviewOpen}
+        // 테스트가 폼 열을 가려 포커스를 잃을 때 돌아올 자리(`focusPreviewToggleIfLost`). JSX 는 속성 이름을 변수로 못 써 리터럴로 심는다.
+        data-builder-preview-toggle=""
         className={cn("lg:hidden", TOUCH_TARGET_CLASSNAME)}
         onClick={onPreview}
       >

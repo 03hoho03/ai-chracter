@@ -34,6 +34,7 @@ export { getPublishFailureMessage } from "./model/publishFailureMessage";
 export { resolveProfileImageUrl, type ProfileImageLocalEntry } from "./model/resolveProfileImageUrl";
 export { useProfileImageLocalUrl } from "./model/useProfileImageLocalUrl";
 export { useFocusFirstError } from "./lib/useFocusFirstError";
+export { focusPreviewToggleIfLost } from "./lib/focusPreviewToggleIfLost";
 export { usePublishChecklist, type ServerIssueInput } from "./lib/usePublishChecklist";
 export { useConfirmFirstPublish } from "./lib/useConfirmFirstPublish";
 export { clampFieldAtCaret, isComposingChange } from "./lib/clampFieldAtCaret";

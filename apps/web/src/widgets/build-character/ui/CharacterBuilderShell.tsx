@@ -3,6 +3,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent } from "@ai-character-chat/ui/components/tabs";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
+import { flushSync } from "react-dom";
 import { FormProvider, useForm, useWatch, type FieldErrors, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -34,6 +35,7 @@ import {
   FirstPublishConfirmModal,
   firstErrorLocation,
   flattenFieldErrorPaths,
+  focusPreviewToggleIfLost,
   getFilterRejectionReason,
   getMissingFields,
   getPublishFailureMessage,
@@ -109,6 +111,11 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   function closePreview() {
     setIsPreviewOpen(false);
     setIsTesting(false);
+  }
+  // 테스트를 고른다. lg 미만에서는 대화가 폼 열을 가려 누른 묶음 칸이 숨으므로 포커스를 상단바의 미리보기 닫기로 옮긴다.
+  function startTesting() {
+    flushSync(() => setIsTesting(true));
+    focusPreviewToggleIfLost();
   }
   // 묶음 목록에서 탭을 고른다. 이미 열린 탭이면 테스트만 끝낸다(주소는 그대로).
   function selectTab(nextTab: CharacterBuilderTab) {
@@ -264,6 +271,9 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   // 입력 중이던 칸의 포커스를 잃기 때문이다. 값 id 는 지금 폼 값에서 읽는다 — 오류는 방금 이 값으로 검증해 만든 것이라 오류 경로의
   // 인덱스가 지금 배열의 같은 자리를 가리킨다.
   function revealAndFocus(errors: FieldErrors<CharacterBuilderFormValues>) {
+    // 오류 탭이 지금 탭이면 탭이 바뀌지 않아(`setActiveTab` 을 지나지 않아) 여기서 테스트를 끝낸다 — lg 미만에서는 전체화면 대화가
+    // 폼을 가린 채 숨은 칸으로 포커스가 가고, lg 이상에서는 미리보기가 대화로 남는다.
+    setIsTesting(false);
     uiState.open(errorItemKeys(errors, form.getValues(), CHARACTER_COLLAPSIBLE_LISTS, TABS));
     // 첫 오류는 탭 배열이 아니라 묶음 순서로 고른다 — 작가는 묶음 목록을 위에서부터 읽는다.
     focusFirstError(firstErrorLocation(errors, CHARACTER_TABS_IN_STEP_ORDER));
@@ -317,7 +327,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
     requiredTabIds: CHARACTER_REQUIRED_TAB_IDS,
     completedTabIds: checklist.completedTabIds,
     onSelectTab: selectTab,
-    onSelectTesting: () => setIsTesting(true),
+    onSelectTesting: startTesting,
   };
 
   return (

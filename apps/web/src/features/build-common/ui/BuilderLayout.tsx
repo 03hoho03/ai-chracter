@@ -10,8 +10,8 @@ type BuilderLayoutProps = {
    * 여기서 import하지 않는다("Shell은 renderPreview만 알고 프리뷰 위젯을
    * 직접 import하지 않는다"). */
   preview: ReactNode;
-  /** lg 미만에서 폼 대신 프리뷰를 전체화면으로 보여줄지. lg 이상에서는 두 열이 항상 함께 보이므로
-   * 무시된다 — [미리보기] 버튼이 `lg:hidden`이라 그 폭에서는 이 값이 true가 될 경로가 없다. */
+  /** lg 미만에서 폼 대신 프리뷰를 전체화면으로 보여줄지([미리보기]를 열었거나 테스트를 골랐을 때). lg 이상에서는 테스트를
+   * 고르면 true 가 되지만 `lg:` 클래스(`lg:flex`·`lg:block`·`lg:max-w-none`)가 덮어 열들이 그대로 함께 보인다. */
   isPreviewOpen: boolean;
 };
 
