@@ -20,6 +20,7 @@ import { NovelPublicSection } from "@/features/publish-novel";
 import { GeneratedImagePickerModal } from "@/features/select-generated-image";
 
 import { NovelDeleteSection } from "./NovelDeleteSection";
+import { NovelRightsSection } from "./NovelRightsSection";
 import { NovelSourceCredit } from "./NovelSourceCredit";
 
 const PAGE_CLASS = "mx-auto flex max-w-2xl flex-col gap-8 px-4 sm:px-6 py-10";
@@ -173,6 +174,8 @@ function NovelInfoContent({ novel }: { novel: NovelDetailResponse }) {
         )}
         {novel.activeJob !== null && <ActiveJobNotice novelId={novel.id} />}
       </div>
+
+      <NovelRightsSection novel={novel} />
 
       <NovelPublicSection novel={novel} />
 
