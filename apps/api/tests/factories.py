@@ -2534,9 +2534,9 @@ class _FakeProviderSdks:
 
 # 운영 API 컨테이너가 받는 env 키 이름(값 없이). 컨테이너는 `.env` 를 통째로 받으므로 compose·다른 서비스 키도 섞여 있다.
 # 운영 키 이름이 바뀌면 이 목록 하나만 고친다 — 운영 env 그대로 새 이미지가 뜨는지 보는 테스트들이 모두 이 목록을 읽는다.
-# 운영은 상위 모델 글쓰기 호출과 판정·요약·기억 추출 호출을 모두 Anthropic 직결로 배정하고(판정·요약 모델은 모두 `haiku`),
-# 장면·사실 기억 추출을 켠다. 기억 사용 쪽은 장면 회상, 사실 주입, 요약의 비밀 표기와 지식 범위 필터, 임베딩 쓰기·임베딩 회상을
-# 켜고(Voyage 키와 함께), 질의 임베딩 상한을 3초로 늘려 둔다. Bedrock 자격(`BEDROCK_*`), Haiku 실제 id(`ANTHROPIC_HAIKU_MODEL_ID`),
+# 운영은 상위 모델 글쓰기 호출과 판정·요약·기억 추출·인상 호출을 모두 Anthropic 직결로 배정하고(판정·요약·인상 모델은 모두
+# `haiku`), 장면·사실 기억 추출과 인상 쓰기를 켠다(인상 보기 스위치는 운영에 없다). 기억 사용 쪽은 장면 회상, 사실 주입,
+# 요약의 비밀 표기와 지식 범위 필터, 임베딩 쓰기·임베딩 회상을 켜고(Voyage 키와 함께), 질의 임베딩 상한을 3초로 늘려 둔다. Bedrock 자격(`BEDROCK_*`), Haiku 실제 id(`ANTHROPIC_HAIKU_MODEL_ID`),
 # 기억 사용 범위·임베딩 모델·차원, 기억 창 키(`MEMORY_WINDOW_*`)는 운영에 없어 코드 기본값으로 뜬다.
 PRODUCTION_ENV_NAMES = (
     "ANTHROPIC_DIRECT_API_KEY",
@@ -2593,6 +2593,8 @@ PRODUCTION_ENV_NAMES = (
     "MEMORY_FACTS_EXTRACT",
     "MEMORY_FACTS_INJECT",
     "MEMORY_FACT_MODEL",
+    "MEMORY_IMPRESSIONS_WRITE",
+    "MEMORY_IMPRESSION_MODEL",
     "MEMORY_KNOWLEDGE_FILTER",
     "MEMORY_SUMMARY_MODEL",
     "MEMORY_SUMMARY_SECRET_MARKING",
@@ -2624,8 +2626,8 @@ PRODUCTION_ENV_NAMES = (
     "WITHDRAWN_EMAIL_HMAC_KEY",
 )
 
-# 운영의 호출 위치 배정 — 상위 모델 스위치가 쓰는 글쓰기 호출 셋과, 판정·요약·기억 추출 호출(모델이 `haiku` 라 배정이 없으면
-# Bedrock 으로 간다) 열을 모두 Anthropic 직결로 옮긴다.
+# 운영의 호출 위치 배정 — 상위 모델 스위치가 쓰는 글쓰기 호출 셋과, 판정·요약·기억 추출·인상 호출(모델이 `haiku` 라 배정이
+# 없으면 Bedrock 으로 간다) 열하나를 모두 Anthropic 직결로 옮긴다.
 PRODUCTION_CALL_SITE_BACKENDS = ",".join(
     f"{call_site}:anthropic"
     for call_site in (
@@ -2642,14 +2644,15 @@ PRODUCTION_CALL_SITE_BACKENDS = ",".join(
         "preview_media_book_image",
         "chat_memory_episode",
         "chat_memory_fact",
+        "chat_memory_impression",
     )
 )
 
 # 문자열이 아닌 설정만 형식에 맞는 가짜 값을 둔다. 나머지(문자열 설정과 `Settings` 가 모르는 키)는 아무 글자다. 배정은
-# 운영 값 그대로다 — 형식만 맞는 다른 배정이면 Bedrock 으로 남는 호출이 생겨 이 집합으로는 기동하지 못한다. 판정·요약 모델과
-# 기억 스위치(추출 둘과 켜 둔 기억 사용 여섯)와 질의 임베딩 상한도 운영 값 그대로다 — 모델과 배정은 서로 맞아야 기동하고, 임베딩
-# 스위치는 Voyage 키(아무 글자)가 있어야 기동한다. 두 상위 모델
-# 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 켠 상태로 둔다.
+# 운영 값 그대로다 — 형식만 맞는 다른 배정이면 Bedrock 으로 남는 호출이 생겨 이 집합으로는 기동하지 못한다. 판정·요약·인상
+# 모델과 기억 스위치(추출 둘, 켜 둔 기억 사용 여섯, 인상 쓰기)와 질의 임베딩 상한도 운영 값 그대로다 — 모델과 배정은 서로
+# 맞아야 기동하고, 임베딩 스위치는 Voyage 키(아무 글자)가 있어야 기동한다. 두 상위 모델 스위치는 켠 상태가 기동 검증이 더
+# 엄격한 경우라 켠 상태로 둔다.
 PRODUCTION_ENV_TYPED_VALUES = {
     "CHAT_PREMIUM_MODELS_ENABLED": "true",
     "CORS_ALLOW_ORIGINS": "https://a.example,https://b.example",
@@ -2671,6 +2674,8 @@ PRODUCTION_ENV_TYPED_VALUES = {
     "MEMORY_FACTS_EXTRACT": "true",
     "MEMORY_FACTS_INJECT": "true",
     "MEMORY_FACT_MODEL": "haiku",
+    "MEMORY_IMPRESSIONS_WRITE": "true",
+    "MEMORY_IMPRESSION_MODEL": "haiku",
     "MEMORY_KNOWLEDGE_FILTER": "true",
     "MEMORY_SUMMARY_MODEL": "haiku",
     "MEMORY_SUMMARY_SECRET_MARKING": "true",
