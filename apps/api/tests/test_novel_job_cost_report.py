@@ -110,6 +110,7 @@ def test_jobs_are_grouped_by_kind_and_model_with_per_job_cost_and_failure_counts
     assert "call failures blocked=1 truncated=1" in report
 
 
+@pytest.mark.usefixtures("novel_prices_for_flow_tests")
 async def test_read_jobs_returns_the_rows_made_in_the_kst_range_and_the_filters(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

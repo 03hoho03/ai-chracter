@@ -425,18 +425,20 @@ async def test_the_record_is_written_by_the_refund_transaction_and_rolls_back_wi
     """환불 함수가 받은 기록은 실패 전이와 같은 문장으로 쓰인다 — 그 트랜잭션이 롤백되면 기록도 없고 작업은 진행 중으로 남으며,
     커밋되면 둘 다 남는다. 빨강 조건: 기록을 따로 커밋해 환불이 없던 일이 됐는데 기록만 남는다(다시 환불하면 두 번 쌓인다)."""
     _novel, job = await _ready_chapter_job(db_client, db_session)
+    # 롤백이 세션의 객체를 만료시키므로 id 를 먼저 꺼내 둔다 — 만료된 속성을 읽으면 비동기 세션 밖 지연 적재가 된다.
+    job_id = job.id
     element = {"callSite": "novelize_chapter", "model": "fixture-model", "failure": "llm_error"}
 
     nested = await db_session.begin_nested()
-    await billing.refund_job(db_session, job_id=job.id, failure_code="llm_error", llm_calls=[element])
+    await billing.refund_job(db_session, job_id=job_id, failure_code="llm_error", llm_calls=[element])
     await nested.rollback()
-    rolled_back = (await _status(db_session, job.id), await _calls(db_session, job.id))
+    rolled_back = (await _status(db_session, job_id), await _calls(db_session, job_id))
 
-    await billing.refund_job(db_session, job_id=job.id, failure_code="llm_error", llm_calls=[element])
+    await billing.refund_job(db_session, job_id=job_id, failure_code="llm_error", llm_calls=[element])
     await db_session.commit()
 
     assert rolled_back == (("queued", None), [])
-    assert (await _status(db_session, job.id), await _calls(db_session, job.id)) == (("failed", "llm_error"), [element])
+    assert (await _status(db_session, job_id), await _calls(db_session, job_id)) == (("failed", "llm_error"), [element])
 
 
 async def test_expiry_and_novel_deletion_refunds_leave_the_record_empty(
