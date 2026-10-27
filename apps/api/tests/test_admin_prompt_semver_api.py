@@ -1,7 +1,8 @@
 """어드민 게시가 체인·섹션 판을 매기는 규칙과 게시 전 바뀐 섹션 조회 API.
 
 체인은 (레인, 모델) 세트 줄기, 섹션은 채널 하나 또는 화자 라벨 넷 묶음(`speaker_labels`)이다. 테스트 DB 는 마이그레이션이
-체인마다 활성 세트 하나를 1.0.0 으로 매긴 상태에서 시작한다. 고친 본문은 모두 합성 문장이다."""
+체인마다 활성 세트 하나를 1.0.0 으로 매긴 상태에서 시작한다 — 채팅 두 레인 Gemini 체인만 그 뒤 옛 소설화 채널을 뺀 판이
+1.0.1 로 활성이고, 그 판의 남은 섹션은 1.0.0 을 그대로 물려받았다. 고친 본문은 모두 합성 문장이다."""
 
 import uuid
 from datetime import timedelta
@@ -35,7 +36,6 @@ async def _save_draft(
     *,
     edit: tuple[str, ...] = (),
     labels: dict[str, str] | None = None,
-    extra_sections: list[dict[str, Any]] | None = None,
 ) -> None:
     """활성 세트(또는 지금 초안)를 받아 `edit` 채널마다 첫 행 본문 끝에 합성 문구를 붙여 초안으로 저장한다."""
     got = await db_client.get(f"/admin/prompt-sets/{lane}/draft", params={"model": model})
@@ -49,7 +49,7 @@ async def _save_draft(
         params={"model": model},
         json={
             "labels": {**draft["labels"], **(labels or {})},
-            "sections": draft["sections"] + (extra_sections or []),
+            "sections": draft["sections"],
         },
     )
     assert put.status_code == 200, put.text
@@ -98,14 +98,14 @@ async def test_publishing_one_edited_channel_raises_only_that_channel_and_the_ch
     await _login_new_admin(db_client, db_session)
     await _save_draft(db_client, "story", "opus", edit=("system",))
     assert (await _publish(db_client, "story", "opus")).json()["semver"] == "1.0.1"
-    base_id = await _backfilled_set_id(db_session, "story", "gemini")
+    base_id = (await load_active_prompt_set(db_session, lane="story"))[0].id
 
     await _save_draft(db_client, "story", edit=("system",))
     resp = await _publish(db_client, "story")
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["semver"] == "1.0.1"
+    assert body["semver"] == "1.0.2"
     sections = _sections_by_channel(body)
     assert sections.pop("system") == ("1.0.1", "patch")
     assert set(sections.values()) == {("1.0.0", None)}
@@ -177,7 +177,7 @@ async def test_publishing_an_unchanged_draft_still_succeeds_and_raises_only_the_
 
     body = (await _publish(db_client, "story")).json()
 
-    assert body["semver"] == "1.0.1"
+    assert body["semver"] == "1.0.2"
     assert set(_sections_by_channel(body).values()) == {("1.0.0", None)}
 
 
@@ -314,31 +314,6 @@ async def test_two_publishes_from_the_same_base_conflict_instead_of_forking_the_
     assert await _set_count(db_session) == before
 
 
-async def test_frozen_novel_rows_of_a_chat_gemini_chain_never_count_as_changed(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """채팅 Gemini 체인의 얼린 소설 행은 초안에 바꿔 보내도 서버가 활성판 값으로 갈아 끼우므로 바뀐 섹션이 아니다."""
-    await _login_new_admin(db_client, db_session)
-    _, active_sections = await load_active_prompt_set(db_session, lane="story")
-    frozen = next(s for s in active_sections if s.channel == "novelize_chapter")
-    smuggled = {
-        "channel": frozen.channel,
-        "scope": frozen.scope,
-        "slot": frozen.slot,
-        "variant": frozen.variant,
-        "body": frozen.body + _EDIT,
-        "conditional": frozen.conditional,
-        "order": frozen.order,
-    }
-    await _save_draft(db_client, "story", extra_sections=[smuggled])
-
-    changes = (await db_client.get("/admin/prompt-sets/story/draft/changes")).json()
-    body = (await _publish(db_client, "story")).json()
-
-    assert {item["channel"]: item["change"] for item in changes["sections"]}["novelize_chapter"] == "unchanged"
-    assert _sections_by_channel(body)["novelize_chapter"] == ("1.0.0", None)
-
-
 @pytest.mark.parametrize(
     ("lane", "expected"),
     [
@@ -381,7 +356,7 @@ async def test_the_changes_view_matches_what_the_publish_records(
     seen = {item["channel"] for item in changes["sections"] if item["change"] != "unchanged"}
     recorded = {channel for channel, (_, level) in _sections_by_channel(body).items() if level is not None}
     assert seen == recorded == {"generation", "memory_fact", "speaker_labels"}
-    assert changes["baseSemver"] == "1.0.0"
+    assert changes["baseSemver"] == "1.0.1"
     assert (await _chain_row(db_session, uuid.UUID(body["id"]))).base_set_id == uuid.UUID(changes["baseSetId"])
     assert {item["currentSemver"] for item in changes["sections"]} == {"1.0.0"}
 
@@ -459,18 +434,21 @@ async def test_changes_view_without_a_draft_is_400(db_client: httpx.AsyncClient,
 async def test_list_and_detail_show_the_semver_only_for_numbered_sets(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """활성판은 "1.0.0", 판을 매기기 전의 게시본은 null 이고 정수 번호는 그대로다. 상세는 섹션 판을 싣는다."""
+    """판을 매길 때 활성이던 판은 "1.0.0", 그 뒤 옛 소설화 채널을 뺀 활성판은 "1.0.1", 판을 매기기 전의 게시본은 null 이고
+    정수 번호는 그대로다. 상세는 섹션 판을 싣는다."""
     await _login_new_admin(db_client, db_session)
-    active_id = await _backfilled_set_id(db_session, "story", "gemini")
+    backfilled_id = await _backfilled_set_id(db_session, "story", "gemini")
+    active_id = (await load_active_prompt_set(db_session, lane="story"))[0].id
 
     items = {item["id"]: item for item in (await db_client.get("/admin/prompt-sets")).json()["items"]}
     story_gemini = [item for item in items.values() if (item["lane"], item["model"]) == ("story", "gemini")]
-    assert {item["semver"] for item in story_gemini if item["id"] != str(active_id)} == {None}
-    assert items[str(active_id)]["semver"] == "1.0.0"
+    numbered = {str(backfilled_id), str(active_id)}
+    assert {item["semver"] for item in story_gemini if item["id"] not in numbered} == {None}
+    assert (items[str(backfilled_id)]["semver"], items[str(active_id)]["semver"]) == ("1.0.0", "1.0.1")
     assert all(item["version"] is not None and item["version"].isdigit() for item in story_gemini)
 
     detail = (await db_client.get(f"/admin/prompt-sets/{active_id}")).json()
-    assert detail["semver"] == "1.0.0"
+    assert detail["semver"] == "1.0.1"
     assert set(_sections_by_channel(detail).values()) == {("1.0.0", None)}
     assert {item["channel"] for item in detail["sections"]} | {"speaker_labels"} == set(_sections_by_channel(detail))
     old = next(item for item in story_gemini if item["semver"] is None)

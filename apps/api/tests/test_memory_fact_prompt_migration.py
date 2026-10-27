@@ -79,6 +79,9 @@ _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
 # 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
 # 때는 이것부터다.
 _IMPRESSION = _load("6558ab4d3dbc")
+# 그 뒤 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀 세트를 게시하고 초안의 그 행도 지우는 리비전 — 두 Gemini
+# 체인의 head 활성이다. 초안 정리는 되돌리지 않는다.
+_DROP = _load("7caed2db87dc")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _WRITING_MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus")
@@ -123,6 +126,11 @@ async def _sections_of(db_session: AsyncSession, set_id: uuid.UUID) -> list[Prom
 
 def _keyed(sections: list[PromptSection]) -> dict[Key, Value]:
     return {(s.channel, s.scope, s.slot, s.variant): (s.body, s.conditional, s.order) for s in sections}
+
+
+def _without_novel_rows(rows: dict[Key, Value]) -> dict[Key, Value]:
+    """뒤 리비전이 Gemini 초안에서 지우고 되돌리지 않는 옛 소설화 행을 뺀 것."""
+    return {key: value for key, value in rows.items() if key[0] not in _DROP.DROPPED_CHANNELS}
 
 
 def _expected_after(before: dict[Key, Value], model: str) -> dict[Key, Value]:
@@ -321,6 +329,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(list(_SOURCE_MARKING.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_DROP.NEW_SET_IDS.values())),
             )
         )
     ).all()
@@ -556,6 +565,7 @@ async def test_patch_drafts_rewrites_the_draft_in_place_and_the_draft_publishes(
     assert await connection.run_sync(_SECRET_MARKING._patch_drafts) == [(lane, model)]
     await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
     await connection.run_sync(_IMPRESSION._patch_drafts)
+    await connection.run_sync(_DROP._delete_draft_rows)
     sections = await _sections_of(db_session, draft_id)
     draft = await _get_set(db_session, draft_id)
     _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
@@ -565,7 +575,7 @@ async def test_patch_drafts_rewrites_the_draft_in_place_and_the_draft_publishes(
     await connection.run_sync(_SCENE_JUDGMENT._delete_draft_rows)
     assert await connection.run_sync(_SECRET_MARKING._delete_draft_rows) == [(lane, model)]
     await connection.run_sync(_M._delete_draft_rows)
-    assert _keyed(await _sections_of(db_session, draft_id)) == before
+    assert _keyed(await _sections_of(db_session, draft_id)) == _without_novel_rows(before)
 
 
 async def test_patch_drafts_raises_when_the_draft_already_has_the_rows(db_session: AsyncSession) -> None:

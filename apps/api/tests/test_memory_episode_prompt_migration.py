@@ -90,6 +90,9 @@ _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
 # 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
 # 때는 이것부터다.
 _IMPRESSION = _load("6558ab4d3dbc")
+# 그 뒤 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀 세트를 게시하고 초안의 그 행도 지우는 리비전 — 두 Gemini
+# 체인의 head 활성이다. 초안 정리는 되돌리지 않는다.
+_DROP = _load("7caed2db87dc")
 
 Key = tuple[str, str, str, str]
 Value = tuple[str, bool, int]
@@ -115,6 +118,11 @@ async def _sections_of(db_session: AsyncSession, set_id: uuid.UUID) -> list[Prom
 
 def _keyed(sections: list[PromptSection]) -> dict[Key, Value]:
     return {(s.channel, s.scope, s.slot, s.variant): (s.body, s.conditional, s.order) for s in sections}
+
+
+def _without_novel_rows(rows: dict[Key, Value]) -> dict[Key, Value]:
+    """뒤 리비전이 Gemini 초안에서 지우고 되돌리지 않는 옛 소설화 행을 뺀 것."""
+    return {key: value for key, value in rows.items() if key[0] not in _DROP.DROPPED_CHANNELS}
 
 
 def _expected_after(before: dict[Key, Value], model: str) -> dict[Key, Value]:
@@ -312,6 +320,7 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(list(_SOURCE_MARKING.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_DROP.NEW_SET_IDS.values())),
             )
         )
     ).all()
@@ -341,11 +350,12 @@ async def test_seeded_sets_pass_publish_validation_and_the_previous_sets_no_long
     if lane == "story":
         later |= {(row[0], row[1], row[2]) for row in _SCENE_JUDGMENT.NEW_ROWS}
     later |= {(row[0], row[1], row[2]) for row in _IMPRESSION.NEW_ROWS}
-    seeded = {(s.channel, s.scope, s.slot) for s in sections}
+    # 뒤 리비전이 Gemini 체인에서 뺀 옛 소설화 행은 견주지 않는다.
+    seeded = {(s.channel, s.scope, s.slot) for s in sections if s.channel not in _DROP.DROPPED_CHANNELS}
     expected = {(channel, scope, slot) for channel, slots in _expected_slots(lane, model).items() for scope, slot in slots}
     assert seeded | later == expected and not seeded & later
     later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert later_set.id == _IMPRESSION.NEW_SET_IDS[(lane, model)]
+    assert later_set.id == (_DROP.NEW_SET_IDS[lane] if model == "gemini" else _IMPRESSION.NEW_SET_IDS[(lane, model)])
     _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
 
     previous_sections = await _sections_of(db_session, _PREVIOUS_SET_IDS[(lane, model)])
@@ -551,6 +561,7 @@ async def test_patch_drafts_adds_the_rows_in_place_and_the_draft_publishes(
     assert await connection.run_sync(_SECRET_MARKING._patch_drafts) == [(lane, model)]
     await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
     await connection.run_sync(_IMPRESSION._patch_drafts)
+    await connection.run_sync(_DROP._delete_draft_rows)
     sections = await _sections_of(db_session, draft_id)
     draft = await _get_set(db_session, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
@@ -560,9 +571,9 @@ async def test_patch_drafts_adds_the_rows_in_place_and_the_draft_publishes(
     await connection.run_sync(_SCENE_JUDGMENT._delete_draft_rows)
     await connection.run_sync(_SECRET_MARKING._delete_draft_rows)
     await connection.run_sync(_LATER._delete_draft_rows)
-    assert _keyed(await _sections_of(db_session, draft_id)) == patched
+    assert _keyed(await _sections_of(db_session, draft_id)) == _without_novel_rows(patched)
     await connection.run_sync(_M._delete_draft_rows)
-    assert _keyed(await _sections_of(db_session, draft_id)) == before
+    assert _keyed(await _sections_of(db_session, draft_id)) == _without_novel_rows(before)
 
 
 async def test_patch_drafts_raises_when_the_draft_already_has_the_rows(db_session: AsyncSession) -> None:

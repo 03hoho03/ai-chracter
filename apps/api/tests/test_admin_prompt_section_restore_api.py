@@ -359,7 +359,8 @@ async def test_publishing_after_a_restore_gives_the_restored_channel_a_new_numbe
 ) -> None:
     """한 채널을 1.0.1 → 1.0.2 로 올린 뒤 1.0.1 의 그 채널을 복원해 게시하면, 그 채널은 옛 번호가 아니라 1.0.3 으로 오르고 체인도
     오르며 다른 섹션은 번호를 물려받는다. 게시된 그 채널 내용은 1.0.1 의 것이다. 깨지는 시나리오: 복원이 옛 번호를 되살려 같은
-    번호가 두 내용을 가리키거나, 복원한 섹션이 바뀐 섹션으로 잡히지 않는다.
+    번호가 두 내용을 가리키거나, 복원한 섹션이 바뀐 섹션으로 잡히지 않는다. 채널 번호는 1.0.0 에서 시작하지만 체인 번호는 한 칸
+    앞선다 — 채팅 Gemini 체인의 활성판은 옛 소설화 채널을 뺀 판(1.0.1)이다.
 
     게시 전에 게시된 세트를 전부 사흘 앞당긴다 — 테스트 세션 시작 때 한꺼번에 돈 시드 마이그레이션이 마지막 시드 세트를 벽시계보다
     몇 초 미래에 두므로, 그대로면 방금 게시한 세트가 활성판이 되지 못해 복원이 활성판과 견주는 편집 검사가 엉뚱한 세트를 본다."""
@@ -374,13 +375,13 @@ async def test_publishing_after_a_restore_gives_the_restored_channel_a_new_numbe
     await _save_draft(db_client, "character", edit=("system",))
     second = await _publish(db_client, "character")
     first_semvers = {item["channel"]: item["semver"] for item in first["sectionSemvers"]}
-    assert (first_semvers["system"], second["semver"]) == ("1.0.1", "1.0.2")
+    assert (first_semvers["system"], second["semver"]) == ("1.0.1", "1.0.3")
 
     restored = await _restore(db_client, first["id"], "system")
     assert restored.status_code == 200, restored.text
     third = await _publish(db_client, "character")
 
-    assert third["semver"] == "1.0.3"
+    assert third["semver"] == "1.0.4"
     sections = {item["channel"]: (item["semver"], item["level"]) for item in third["sectionSemvers"]}
     assert sections.pop("system") == ("1.0.3", "patch")
     assert set(sections.values()) == {("1.0.0", None)}
@@ -463,21 +464,6 @@ async def test_a_channel_the_chain_cannot_have_is_refused(
 
     assert resp.status_code == 422
     assert resp.json()["detail"]["rule"] == "restore-channel-not-in-chain"
-    assert await _draft_count(db_session) == 0
-
-
-async def test_a_frozen_novel_channel_of_a_chat_chain_is_refused(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """채팅 Gemini 체인의 얼린 소설 채널은 서버가 늘 활성판 값으로 갈아 끼우므로, 복원이 아무 일도 하지 않는다는 것을 숨기지
-    않고 422 로 알린다."""
-    await _login_new_admin(db_client, db_session)
-    old = await _insert_old_set(db_session, "story", edit=("novelize_chapter",))
-
-    resp = await _restore(db_client, old.id, "novelize_chapter")
-
-    assert resp.status_code == 422
-    assert resp.json()["detail"]["rule"] == "restore-frozen-channel"
     assert await _draft_count(db_session) == 0
 
 

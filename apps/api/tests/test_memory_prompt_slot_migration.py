@@ -75,6 +75,9 @@ _SECRET_MARKING_MIGRATION = _load("0aeadefcf159")
 _SCENE_JUDGMENT = _load("0346abdbcc92")
 # 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 리비전 — 게시 검사가 head 코드 표를 쓰므로 초안은 이것도 거친다.
 _IMPRESSION = _load("6558ab4d3dbc")
+# 그 뒤 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀 세트를 게시하고 초안의 그 행도 지우는 리비전 — 두 Gemini
+# 체인의 head 활성이다. 초안 정리는 되돌리지 않는다.
+_DROP = _load("7caed2db87dc")
 
 _NOTE_KEY = ("generation", "both", "memory_note", "")
 _GEN_SUMMARY_KEY = ("generation", "both", "memory_summary", "")
@@ -513,6 +516,7 @@ async def test_patch_draft_adds_memory_rows_in_place_and_draft_then_publishes(
     assert await connection.run_sync(_SECRET_MARKING_MIGRATION._patch_drafts) == [(lane, "gemini")]
     await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
     await connection.run_sync(_IMPRESSION._patch_drafts)
+    await connection.run_sync(_DROP._delete_draft_rows)
     db_session.expire_all()  # 원시 SQL이 민 order를 식별자 맵의 옛 값이 가리지 않게
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None

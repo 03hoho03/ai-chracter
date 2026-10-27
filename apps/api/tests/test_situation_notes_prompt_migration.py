@@ -70,6 +70,9 @@ _SOURCE_MARKING = _load("0c1a85bc5c2f")
 # 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
 # 때는 이것부터다.
 _IMPRESSION = _load("6558ab4d3dbc")
+# 그 뒤 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀 세트를 게시하고 초안의 그 행도 지우는 리비전 — 두 Gemini
+# 체인의 head 활성이다. 초안 정리는 되돌리지 않는다.
+_DROP = _load("7caed2db87dc")
 
 _NEW_KEY = ("generation", "story", "situation_notes", "")
 
@@ -245,6 +248,7 @@ async def test_character_lane_is_untouched(db_session: AsyncSession) -> None:
         _FACT_KNOWN_BY_ORDER.NEW_SET_IDS[("character", "gemini")],
         _SOURCE_MARKING.NEW_SET_IDS[("character", "gemini")],
         _IMPRESSION.NEW_SET_IDS[("character", "gemini")],
+        _DROP.NEW_SET_IDS["character"],
     )
     assert all(s.slot != "situation_notes" for s in sections)
 
@@ -343,6 +347,7 @@ async def test_patch_draft_adds_the_row_in_place_and_draft_then_publishes(
     assert await connection.run_sync(_SECRET_MARKING_MIGRATION._patch_drafts) == [("story", "gemini")]
     await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
     await connection.run_sync(_IMPRESSION._patch_drafts)
+    await connection.run_sync(_DROP._delete_draft_rows)
     sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None
