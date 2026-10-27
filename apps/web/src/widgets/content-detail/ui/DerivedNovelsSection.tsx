@@ -65,7 +65,12 @@ export function DerivedNovelsSection({ contentId, isOwner, derivedNovelsVisible 
                 to="/webnovels/$novelId"
                 params={{ novelId: item.id }}
                 replace={modalState !== undefined}
-                onClick={() => setModalState(undefined)}
+                onClick={(event) => {
+                  // 수정키 클릭은 새 탭·새 창으로 열고 이 탭은 그대로 둔다 — 모달까지 닫으면 주소는 상세에 남은 채
+                  // 화면만 목록으로 돌아간다.
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+                  setModalState(undefined);
+                }}
                 className="group flex flex-col gap-0.5 px-3 py-2.5 motion-safe:transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:inset-ring-2 focus-visible:inset-ring-ring"
               >
                 <span className="flex items-start gap-2">
