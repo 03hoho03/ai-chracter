@@ -51,6 +51,7 @@ describe("toChatRoomMemoryItemsPage", () => {
       facts: [RELATION, FACT],
       episodesUsedInReplies: true,
       factsUsedInReplies: false,
+      impressions: null,
     });
     expect(page).toEqual({
       episodes: [EPISODE],
@@ -71,6 +72,7 @@ describe("toChatRoomMemoryItemsPage", () => {
       facts: [],
       episodesUsedInReplies: false,
       factsUsedInReplies: false,
+      impressions: null,
     });
     expect(page.nextCursor).toBe("cursor-2");
   });
