@@ -4,6 +4,7 @@ import {
   factHeading,
   forgetFactConfirmLabel,
   forgetSceneTitle,
+  impressionSourceLabel,
   itemCountLabel,
   MEMORY_COMEBACK_NOTICE,
   turnRangeLabel,
@@ -78,5 +79,20 @@ describe("MEMORY_COMEBACK_NOTICE", () => {
     expect(MEMORY_COMEBACK_NOTICE).toBe(
       "최근 대화나 앞으로의 대화에 같은 내용이 나오거나, 앞의 대화를 고치거나 지우거나 다시 생성하면 같은 기억이 다시 생길 수 있어요.",
     );
+  });
+});
+
+describe("impressionSourceLabel", () => {
+  it("counts the scenes and facts the impression was written from", () => {
+    expect(impressionSourceLabel(9, 4)).toBe("장면 9개 · 사실 4개에서");
+  });
+
+  it("leaves out a kind with nothing in it", () => {
+    expect(impressionSourceLabel(5, 0)).toBe("장면 5개에서");
+    expect(impressionSourceLabel(0, 2)).toBe("사실 2개에서");
+  });
+
+  it("says nothing when no source is left", () => {
+    expect(impressionSourceLabel(0, 0)).toBeUndefined();
   });
 });
