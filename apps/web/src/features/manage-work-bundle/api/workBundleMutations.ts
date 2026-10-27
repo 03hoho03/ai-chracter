@@ -5,6 +5,7 @@ import { workBundleKeys, workKeys, type WorkBundleKind } from "@/entities/work";
 import { apiClient } from "@/shared/api/client";
 
 import { addWorksInOrder, type AddWorksResult } from "../model/addWorks";
+import { toWorkBundleActionError } from "../model/bundleActionError";
 
 // 쓰기는 전부 `useMutation` 을 거친다 — 만들기·이름 바꾸기·넣기는 재동의 전 계정에 403 이고, 그 403 을 전역 처리
 // (세션을 다시 읽어 재동의 모달)가 뮤테이션 캐시에서만 잡는다.
@@ -21,12 +22,15 @@ function itemPath(bundleId: string, work: WorkBundleItemRef) {
   return `/me/work-bundles/${bundleId}/items/${work.kind}/${work.id}`;
 }
 
-/** `POST /me/work-bundles` — 새 묶음의 id 를 돌려준다. */
+/** `POST /me/work-bundles` — 새 묶음의 id 를 돌려준다.
+ *
+ * 묶음 목록을 다시 받을 때까지 끝나지 않는다 — 만든 뒤 곧바로 그 묶음 화면으로 옮기는 호출부가 옛 목록에서 새 id 를 못 찾아
+ * 이름 자리를 비운 채 그리지 않게. */
 export function useCreateWorkBundleMutation() {
   const queryClient = useQueryClient();
   return useMutation<string, ApiError, string>({
     mutationFn: async (name) => (await apiClient.post<{ id: string }>("/me/work-bundles", { name })).data.id,
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: workBundleKeys.all }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: workBundleKeys.all }),
   });
 }
 
@@ -81,18 +85,29 @@ export function useRemoveWorkBundleItemMutation() {
   });
 }
 
+export type AddWorksToBundleResult = AddWorksResult & {
+  /** 넣을 수 없어 건너뛴 작품 — 호출부가 고른 목록에서 빼야 같은 실패를 되풀이하지 않는다. */
+  goneWorks: WorkBundleItemRef[];
+};
+
 /** 고른 작품 여럿을 순서대로 넣는다. 다시 받기는 다 보낸 뒤 한 번이다.
  *
  * 재동의로 멈췄으면 그 오류를 다시 던진다 — 뮤테이션 실패로 끝나야 전역 처리가 재동의 모달을 띄운다. */
 export function useAddWorksToBundleMutation() {
   const queryClient = useQueryClient();
-  return useMutation<AddWorksResult, ApiError, { bundleId: string; works: readonly WorkBundleItemRef[] }>({
+  return useMutation<AddWorksToBundleResult, ApiError, { bundleId: string; works: readonly WorkBundleItemRef[] }>({
     mutationFn: async ({ bundleId, works }) => {
+      const goneWorks: WorkBundleItemRef[] = [];
       const result = await addWorksInOrder(works, async (work) => {
-        await apiClient.put(itemPath(bundleId, work));
+        try {
+          await apiClient.put(itemPath(bundleId, work));
+        } catch (error) {
+          if (toWorkBundleActionError(error, "addItem")?.kind === "workGone") goneWorks.push(work);
+          throw error;
+        }
       });
       if (result.stoppedBy === "reconsent") throw result.stopError;
-      return result;
+      return { ...result, goneWorks };
     },
     onSettled: () => invalidateAfterItemChange(queryClient),
   });

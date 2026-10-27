@@ -79,6 +79,14 @@ export const StudioAddWorksModal = createCallable<StudioAddWorksModalProps>(({ c
       { bundleId, works: toAdd.map((item) => ({ kind: item.kind, id: item.id })) },
       {
         onSuccess: (result) => {
+          // 넣을 수 없던 작품은 목록에서도 곧 사라진다 — 고른 채 남기면 보이지 않는 선택이 "n개 넣기"에 남는다.
+          if (result.goneWorks.length > 0) {
+            setSelected((previous) => {
+              const next = new Map(previous);
+              for (const work of result.goneWorks) next.delete(toWorkMemberKey(work.kind, work.id));
+              return next;
+            });
+          }
           const description = describeAddWorksResult(result);
           if (description === null) return;
           if (description.tone === "success") {

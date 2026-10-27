@@ -26,7 +26,7 @@ import { isStudioNovelAreaVisible } from "../model/studioNovelArea";
 import { resolveStudioScope, resolveStudioSearch, type StudioScope, type StudioSearch } from "../model/studioSearch";
 import { toStudioWorkTitle } from "../model/studioWorkRow";
 import { StudioAddWorksModal } from "./StudioAddWorksModal";
-import { StudioBackLink, StudioBundleHeader, StudioBundleHeaderSkeleton } from "./StudioBundleHeader";
+import { StudioBackLink, StudioBundleHeader } from "./StudioBundleHeader";
 import { StudioBundleMenu } from "./StudioBundleMenu";
 import { StudioContinueCard, StudioContinueCardSkeleton } from "./StudioContinueCard";
 import { StudioCreateTiles } from "./StudioCreateTiles";
@@ -65,14 +65,18 @@ export function StudioPage({ userId, search, onSearchChange }: StudioPageProps) 
   const createBundle = async () => {
     const bundleId = await WorkBundleNameModal.call({ mode: "create" });
     // 새 묶음은 비어 있으니 홈의 필터를 들고 들어가지 않는다.
-    if (bundleId !== null) await navigate({ to: "/studio", search: { bundle: bundleId } });
+    if (bundleId === null) return;
+    await navigate({ to: "/studio", search: { bundle: bundleId } });
+    focusStudioHeading();
   };
 
   return (
     <main className="mx-auto flex max-w-list flex-col gap-8 px-4 sm:px-6 py-10 lg:pt-6">
       {scope.kind === "home" && (
         <>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">스튜디오</h1>
+          <h1 id={STUDIO_HEADING_ID} tabIndex={-1} className="text-2xl font-bold tracking-tight text-foreground outline-none">
+            스튜디오
+          </h1>
           <StudioStartSection isNovelAreaVisible={isNovelAreaVisible} />
           <StudioWorksSection
             userId={userId}
@@ -122,7 +126,10 @@ function StudioBundleScreen({ userId, scope, params, isNovelAreaVisible, onSearc
   const bundle = bundlesQuery.data?.items.find((candidate) => candidate.id === scope.bundleId);
   const isWorksBundleGone = toWorkBundleActionError(worksQuery.error, "addItem")?.kind === "bundleGone";
 
-  if ((bundlesQuery.isSuccess && bundle === undefined) || isWorksBundleGone) return <StudioBundleNotFound />;
+  // 목록을 다시 받는 중이면 아직 판정하지 않는다 — 방금 만든 묶음이나 다른 탭에서 만든 묶음은 옛 목록에 없어, 기다리지
+  // 않으면 새 목록이 올 때까지 "찾을 수 없어요"가 비친다.
+  const isBundleMissing = bundlesQuery.isSuccess && !bundlesQuery.isFetching && bundle === undefined;
+  if (isBundleMissing || isWorksBundleGone) return <StudioBundleNotFound />;
 
   const deleteBundle = async (name: string) => {
     const isDeleted = await DeleteWorkBundleModal.call({ bundleId: scope.bundleId, name });
@@ -130,6 +137,7 @@ function StudioBundleScreen({ userId, scope, params, isNovelAreaVisible, onSearc
     // 화면을 먼저 옮긴다 — 캐시를 먼저 비우면 이 화면이 다시 받아 "찾을 수 없어요"를 한 번 그린다.
     await navigate({ from: "/studio/", to: "/studio", search: (previous) => ({ ...previous, bundle: undefined }), replace: true });
     clearDeletedWorkBundle(queryClient, scope.bundleId);
+    focusStudioHeading();
   };
 
   return (
@@ -138,6 +146,7 @@ function StudioBundleScreen({ userId, scope, params, isNovelAreaVisible, onSearc
         <StudioBackLink />
         {bundle !== undefined && (
           <StudioBundleHeader
+            headingId={STUDIO_HEADING_ID}
             bundle={bundle}
             onAddWorks={() => void StudioAddWorksModal.call({ bundleId: bundle.id, bundleName: bundle.name })}
             onRename={() =>
@@ -148,12 +157,14 @@ function StudioBundleScreen({ userId, scope, params, isNovelAreaVisible, onSearc
         )}
         {bundlesQuery.isError && bundle === undefined && (
           <div role="alert" className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">묶음</h1>
+            <h1 id={STUDIO_HEADING_ID} tabIndex={-1} className="text-2xl font-bold tracking-tight text-foreground outline-none">
+              묶음
+            </h1>
             <p className="text-sm text-destructive-text">묶음 이름을 불러오지 못했어요.</p>
             <RetryButton isBusy={bundlesQuery.isFetching} onRetry={() => void bundlesQuery.refetch()} />
           </div>
         )}
-        {bundlesQuery.isPending && <StudioBundleHeaderSkeleton />}
+        {bundle === undefined && !bundlesQuery.isError && <StudioBundleHeaderSkeleton />}
       </div>
       <StudioWorksSection
         userId={userId}
@@ -171,11 +182,27 @@ function StudioBundleScreen({ userId, scope, params, isNovelAreaVisible, onSearc
   );
 }
 
+/** 화면 제목(h1)의 id. 묶음을 만들거나 지워 화면이 바뀌면 누른 메뉴·버튼이 함께 사라져 포커스가 `<body>` 로 떨어지므로,
+ * 새 화면의 제목으로 옮겨 다음 Tab 이 본문에서 이어지게 한다. 제목은 `tabIndex={-1}` 이라 Tab 순서에는 들지 않는다. */
+const STUDIO_HEADING_ID = "studio-heading";
+
+function focusStudioHeading() {
+  // 방금 닫은 대화상자가 다 내려간 뒤에 옮긴다 — 내려가는 중에 옮기면 대화상자의 포커스 범위가 닫히며 `<body>` 로 되돌린다.
+  // 기다리는 순서는 `createCallable` 의 포커스 돌려주기와 같다.
+  setTimeout(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => document.getElementById(STUDIO_HEADING_ID)?.focus());
+    });
+  }, 0);
+}
+
 /** 읽을 수 없는·지운·남의 묶음 주소. 다른 곳으로 저절로 옮기지 않는다 — 무엇이 일어났는지 읽히고 돌아갈 길 하나를 준다. */
 function StudioBundleNotFound() {
   return (
     <>
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">스튜디오</h1>
+      <h1 id={STUDIO_HEADING_ID} tabIndex={-1} className="text-2xl font-bold tracking-tight text-foreground outline-none">
+            스튜디오
+          </h1>
       <ContentListEmptyState
         title="이 묶음을 찾을 수 없어요"
         message="지워졌거나 주소가 바뀐 묶음이에요."
@@ -194,20 +221,20 @@ function StudioBundleNotFound() {
 /** 묶음에서 확인 없이 빼고 되돌리기를 내민다. 빼기는 소속만 지우는 가벼운 일이고 되돌리기로 그대로 되살린다.
  *
  * 되돌리기는 다시 넣기라 재동의 전 계정에서는 막힌다 — 그때는 전역 재동의 모달이 뜬다. */
-function useRemoveFromBundleWithUndo(bundleId: string | undefined, onRemoved: () => void) {
+function useRemoveFromBundleWithUndo(bundleId: string | undefined, onRemoved: (remainingCount: number) => void) {
   const removeMutation = useRemoveWorkBundleItemMutation();
   const putMutation = usePutWorkBundleItemMutation();
 
   if (bundleId === undefined) return undefined;
 
-  return (item: WorkItem) => {
+  return (item: WorkItem, remainingCount: number) => {
     const work = { kind: item.kind, id: item.id };
     const title = toStudioWorkTitle(item);
     removeMutation.mutate(
       { bundleId, work },
       {
         onSuccess: () => {
-          onRemoved();
+          onRemoved(remainingCount);
           toast(`‘${title}’${koreanParticle(title, "을/를")} 이 묶음에서 뺐어요`, {
             duration: UNDO_TOAST_DURATION_MS,
             action: (
@@ -293,9 +320,11 @@ function StudioWorksSection({
   const query = useMyWorksQuery(params);
   const listRef = useRef<HTMLUListElement>(null);
   const isBundle = scope.kind === "bundle";
-  const removeFromBundle = useRemoveFromBundleWithUndo(isBundle ? scope.bundleId : undefined, () =>
-    listRef.current?.focus(),
-  );
+  // 마지막 행을 빼면 목록 자체가 빈 상태로 바뀌어 사라지므로 화면 제목으로 보낸다.
+  const removeFromBundle = useRemoveFromBundleWithUndo(isBundle ? scope.bundleId : undefined, (remainingCount) => {
+    if (remainingCount === 0) focusStudioHeading();
+    else listRef.current?.focus();
+  });
   const typeFilterRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -441,7 +470,7 @@ function StudioWorksSection({
                   item={item}
                   userId={userId}
                   onRemoved={() => listRef.current?.focus()}
-                  onRemoveFromBundle={removeFromBundle && (() => removeFromBundle(item))}
+                  onRemoveFromBundle={removeFromBundle && (() => removeFromBundle(item, items.length - 1))}
                 />
               </li>
             ))}
@@ -530,6 +559,17 @@ function StudioListSkeleton() {
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** 묶음 이름을 받기 전 머리 자리표시. 진행 표시라 `motion-safe:` 를 붙이지 않는다. 페이지 배경 위라 채움이 `bg-muted` 다
+ * (머리 파일은 메뉴 면을 그려 거기 두지 않는다). */
+function StudioBundleHeaderSkeleton() {
+  return (
+    <div role="status" aria-busy aria-label="묶음 불러오는 중" className="flex flex-col gap-3">
+      <span className="h-8 w-48 animate-pulse rounded bg-muted" />
+      <span className="h-4 w-72 max-w-full animate-pulse rounded bg-muted" />
     </div>
   );
 }
