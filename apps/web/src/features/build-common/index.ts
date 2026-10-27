@@ -3,6 +3,18 @@ export { useDraftPersistence } from "./model/useDraftPersistence";
 export { errorTabs } from "./model/errorTabs";
 export { tabFromSearch, tabToSearch } from "./model/builderTabSearch";
 export { requiredTabIds } from "./model/requiredTabIds";
+export {
+  BUILDER_STEP_IDS,
+  BUILDER_STEP_LABELS,
+  previewKindFor,
+  stepsWithErrors,
+  tabForStep,
+  tabsInStepOrder,
+  tabsOfStep,
+  type BuilderStepId,
+  type TabStepId,
+  type TabStepTable,
+} from "./model/builderSteps";
 export { errorItemKeys } from "./model/errorItemKeys";
 export { errorParentItemId } from "./model/errorParentItemId";
 export {
@@ -34,6 +46,7 @@ export { restoreUnderLimit, type RestoreDecision } from "./model/restoreDecision
 export { useUndoableRemoval } from "./model/useUndoableRemoval";
 export { AuthorMacroNotice } from "./ui/AuthorMacroNotice";
 export { BuilderLayout } from "./ui/BuilderLayout";
+export { BuilderStepNav } from "./ui/BuilderStepNav";
 export { BuilderTabStrip } from "./ui/BuilderTabStrip";
 export { BuilderTopBar } from "./ui/BuilderTopBar";
 export { BuilderTopBarActions } from "./ui/BuilderTopBarActions";

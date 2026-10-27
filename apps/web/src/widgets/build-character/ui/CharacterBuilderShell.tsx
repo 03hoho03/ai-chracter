@@ -22,6 +22,7 @@ import {
 } from "@/features/build-character";
 import {
   BuilderLayout,
+  BuilderStepNav,
   BuilderTabStrip,
   BuilderUiStateContext,
   BuilderTopBar,
@@ -37,11 +38,13 @@ import {
   getMissingFields,
   getPublishFailureMessage,
   missingFieldsMessage,
+  previewKindFor,
   PUBLISH_ISSUES_TOAST,
   PublishIssueList,
   publishIssueRows,
   resolveProfileImageUrl,
   tabFromSearch,
+  tabsOfStep,
   tabToSearch,
   useAutosave,
   useConfirmFirstPublish,
@@ -55,6 +58,7 @@ import { AppealModal } from "@/features/submit-appeal";
 import { creationGuidePath } from "@/shared/config/creationGuide";
 
 import { CHARACTER_REQUIRED_TAB_IDS } from "../model/requiredTabs";
+import { CHARACTER_TAB_STEPS, CHARACTER_TABS_IN_STEP_ORDER } from "../model/steps";
 import { VISIBILITY_LABELS } from "../model/visibilityLabels";
 import { AdvancedTab } from "./AdvancedTab";
 import { DetailTab } from "./DetailTab";
@@ -89,13 +93,28 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   const navigate = useNavigate();
   const confirmFirstPublish = useConfirmFirstPublish();
   const [activeTab, setActiveTabState] = useState<CharacterBuilderTab>(() => tabFromSearch(tab, TABS));
+  // 테스트(미리보기 대화로 시험하기)를 고른 동안인지. 탭이 아니라 화면 상태라 주소에 싣지 않는다 — lg 미만의 [미리보기] 열림과 같다.
+  // lg 이상은 미리보기 칸이 카드 탭에서도 대화로 고정되고, lg 미만은 미리보기를 연 것과 같은 전체화면 대화다.
+  const [isTesting, setIsTesting] = useState(false);
   // 탭을 바꾸는 모든 길(탭 줄·첫 오류로 이동·빈 상태 안내)이 여기를 지나 주소의 `?tab=` 도 함께 바꾼다 — 새로고침하면 보던
   // 탭으로 돌아온다. 화면은 로컬 상태로 바로 바꾸고 주소는 뒤따른다(주소 이동을 기다리면 탭 전환이 한 박자 늦다).
+  // 탭을 옮기면 테스트는 끝난다 — 묶음 목록에서 다른 탭을 고르든, 발행 실패가 첫 오류 탭을 열든 미리보기 칸은 그 탭이 정한 것으로 돌아간다.
   function setActiveTab(nextTab: CharacterBuilderTab) {
+    setIsTesting(false);
     setActiveTabState(nextTab);
     onTabChange(tabToSearch(nextTab, TABS));
   }
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const isPreviewShown = isPreviewOpen || isTesting;
+  function closePreview() {
+    setIsPreviewOpen(false);
+    setIsTesting(false);
+  }
+  // 묶음 목록에서 탭을 고른다. 이미 열린 탭이면 테스트만 끝낸다(주소는 그대로).
+  function selectTab(nextTab: CharacterBuilderTab) {
+    if (nextTab === activeTab) setIsTesting(false);
+    else setActiveTab(nextTab);
+  }
   // 폼 컨벤션(중복 제출 방지는 `isSubmitting`)에서 의도적으로 벗어난다 — `form.formState.isSubmitting`은
   // 검증 구간까지 포함해 true가 되는데 발행 버튼은 네이티브 `disabled`라 유효성 실패 때마다 포커스가
   // body로 떨어진다. onValid 경로(handlePublish)에서만 켜지는 로컬 state로 대신한다.
@@ -246,7 +265,8 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   // 인덱스가 지금 배열의 같은 자리를 가리킨다.
   function revealAndFocus(errors: FieldErrors<CharacterBuilderFormValues>) {
     uiState.open(errorItemKeys(errors, form.getValues(), CHARACTER_COLLAPSIBLE_LISTS, TABS));
-    focusFirstError(firstErrorLocation(errors, TABS));
+    // 첫 오류는 탭 배열이 아니라 묶음 순서로 고른다 — 작가는 묶음 목록을 위에서부터 읽는다.
+    focusFirstError(firstErrorLocation(errors, CHARACTER_TABS_IN_STEP_ORDER));
   }
 
   // zodResolver 검증 실패(폼 스키마 위반) 경로. 서버 400 과 같은 토스트로 폼 열 맨 위 목록을 가리킨다. 검사가 오류 객체를
@@ -262,16 +282,16 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   // preview 슬롯)에 같은 노드를 그려 넣어 React가 리마운트하지 않게 하고, lg 미만에서 그 노드를
   // 화면에 보일지는 BuilderLayout이 CSS로만 정한다(전체화면 토글).
   //
-  // `kind`는 활성 탭에서 파생한다(TABS[].preview). `TABS.find`가
+  // `kind`는 활성 탭에서 파생하고(TABS[].preview), 테스트를 고른 동안은 대화다(`previewKindFor`). `TABS.find`가
   // undefined를 돌려줄 수 있는 건 타입상 뿐이다 — activeTab의 타입(CharacterBuilderTab)이 TABS에서
   // 도출되므로 항상 매치가 있다. 그래도 타입 체커를 만족시킬 기본값이 필요해 "card"를 쓴다 — 초기
   // 활성 탭("profile")의 preview 값과 같고, 프리뷰 세션을 지연 시작하는 것과 같은 이유로 도달할 리 없는 분기에서
   // 프리뷰 세션을 만드는 "chat"보다 안전하다.
   const activeTabConfig = TABS.find((tab) => tab.id === activeTab);
   const previewNode = renderPreview({
-    kind: activeTabConfig?.preview ?? "card",
+    kind: previewKindFor(activeTabConfig?.preview ?? "card", isTesting),
     getPayload: () => formToServer(form.getValues()),
-    onClose: () => setIsPreviewOpen(false),
+    onClose: closePreview,
     thumbnailUrl,
   });
 
@@ -279,11 +299,26 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   // 목록은 발행을 누른 뒤에만 그린다 — 칸 하나를 떠날 때 거는 검사(스탯 범위)도 오류 객체에 들어가지만, 그건 그 칸의 안내이지
   // 발행이 막혔다는 말이 아니다.
   const errorTabIds = errorTabs(form.formState.errors, TABS);
+  // 확인 목록 줄도 첫 오류 이동과 같은 묶음 순서다.
   const issueRows = publishIssueRows(
     flattenFieldErrorPaths(form.formState.errors),
-    TABS,
+    CHARACTER_TABS_IN_STEP_ORDER,
     (path) => checklist.serverLabel(path) ?? fieldLabelForPath(path, CHARACTER_FIELD_LABELS),
   );
+
+  // 묶음 목록 두 꼴(1280px 이상 왼쪽 열, 그 미만 폼 흐름 안 줄)이 같은 값을 받는다. 탭 줄은 지금 묶음의 탭만 그린다.
+  const stepTabs = tabsOfStep(TABS, CHARACTER_TAB_STEPS, CHARACTER_TAB_STEPS[activeTab]);
+  const stepNavProps = {
+    tabs: TABS,
+    table: CHARACTER_TAB_STEPS,
+    activeTab,
+    isTesting,
+    errorTabIds,
+    requiredTabIds: CHARACTER_REQUIRED_TAB_IDS,
+    completedTabIds: checklist.completedTabIds,
+    onSelectTab: selectTab,
+    onSelectTesting: () => setIsTesting(true),
+  };
 
   return (
     <FormProvider {...form}>
@@ -299,9 +334,9 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
             <BuilderTopBarActions
               guidePath={creationGuidePath("character", activeTab)}
               isPublishing={isPublishing}
-              isPreviewOpen={isPreviewOpen}
+              isPreviewOpen={isPreviewShown}
               saveStatus={saveStatus}
-              onPreview={() => setIsPreviewOpen((prev) => !prev)}
+              onPreview={() => (isPreviewShown ? closePreview() : setIsPreviewOpen(true))}
               onSaveNow={() => void handleSaveNow()}
               onPublish={() => {
                 checklist.markAttempted();
@@ -310,7 +345,11 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
             />
           }
         />
-        <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
+        <BuilderLayout
+          isPreviewOpen={isPreviewShown}
+          steps={<BuilderStepNav variant="column" {...stepNavProps} />}
+          preview={previewNode}
+        >
           {checklist.hasAttempted && issueRows.length > 0 && (
             <PublishIssueList rows={issueRows} onSelect={(path) => revealAndFocus(errorsAtPaths([path]))} />
           )}
@@ -341,13 +380,19 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
             onValueChange={(value) => isCharacterBuilderTab(value) && setActiveTab(value)}
             className="lg:gap-0"
           >
-            <BuilderTabStrip
-              tabs={TABS}
-              activeTab={activeTab}
-              errorTabIds={errorTabIds}
-              requiredTabIds={CHARACTER_REQUIRED_TAB_IDS}
-              completedTabIds={checklist.completedTabIds}
-            />
+            {/* 1280px 미만의 묶음 줄과 지금 묶음의 탭 줄. 1280px 이상은 `BuilderLayout` 왼쪽 묶음 열이 둘을 대신한다. 둘 다 숨겨도
+                트리에 남는다(폭이 바뀌어도 형제 자리가 그대로라 탭 본문이 다시 마운트되지 않는다). */}
+            <div className="flex flex-col gap-3 xl:hidden">
+              <BuilderStepNav variant="bar" {...stepNavProps} />
+              <BuilderTabStrip
+                tabs={stepTabs}
+                className={stepTabs.length < 2 ? "hidden" : undefined}
+                activeTab={activeTab}
+                errorTabIds={errorTabIds}
+                requiredTabIds={CHARACTER_REQUIRED_TAB_IDS}
+                completedTabIds={checklist.completedTabIds}
+              />
+            </div>
 
             <TabsContent value="profile">
               <ProfileTab

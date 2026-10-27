@@ -7,8 +7,11 @@ import type { BuilderTab } from "@/entities/content";
 import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScrollClip";
 
 type BuilderTabStripProps = {
-  /** 그릴 탭 목록. 셸의 `TABS`(`CHARACTER_TABS`·`STORY_TABS`)가 단일 소스다. */
+  /** 그릴 탭 목록. 셸이 지금 묶음의 탭만 걸러 넘긴다(`tabsOfStep` — 셸의 `TABS` 배열 순서 그대로). */
   tabs: readonly BuilderTab[];
+  /** 줄을 숨길 폭·조건(셸이 정한다 — 1280px 이상은 묶음 열이 대신하고, 탭이 하나뿐인 묶음은 줄을 그리지 않는다). 숨겨도 트리에 남아
+   * 탭 본문의 `aria-labelledby` 가 가리킬 탭이 있다. */
+  className?: string;
   /** 지금 열린 탭 id. 탭 줄이 넘칠 때 이 탭이 보이도록 줄을 민다. */
   activeTab: string;
   /** 에러를 품은 탭 id 집합(`errorTabs`의 반환값) — 라벨에 경고 아이콘과 destructive 색을 붙인다. */
@@ -23,7 +26,7 @@ type BuilderTabStripProps = {
 const SCROLL_EDGE_PX = 32;
 
 /**
- * 빌더 스텝 탭 스트립. 두 셸이 글자 단위로 같은 JSX를 들고 있던 것을 모았다 — 활성 탭 값과 전환은
+ * 빌더 탭 줄 — 지금 묶음(기본 설정·시작 장면·공개 준비)의 탭만 그린다. 두 셸이 글자 단위로 같은 JSX를 들고 있던 것을 모았다 — 활성 탭 값과 전환은
  * `TabsList`/`TabsTrigger`가 부모 `Tabs`의 컨텍스트에서 읽는다. `activeTab` 은 탭 줄을 밀 때만 쓴다.
  *
  * `TabsList`는 `inline-flex w-fit`이고 `overflow-x-auto`가 없어(packages/ui/tabs.tsx는
@@ -50,7 +53,7 @@ const SCROLL_EDGE_PX = 32;
  * 가운데보다 1px 낮아 1px 올린다). 빨강도 `primary` 도 쓰지 않는다 — 완료는
  * 강조할 일이 아니라 남은 별표를 줄여 주는 표시이고, 이 화면에서 색은 남은 일(별표·오류)에만 둔다. 발행을 누르기 전에도 보인다.
  */
-export function BuilderTabStrip({ tabs, activeTab, errorTabIds, requiredTabIds, completedTabIds }: BuilderTabStripProps) {
+export function BuilderTabStrip({ tabs, className, activeTab, errorTabIds, requiredTabIds, completedTabIds }: BuilderTabStripProps) {
   const tabsScroll = useHorizontalScrollClip();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const setContainerRef = useCallback(
@@ -78,7 +81,7 @@ export function BuilderTabStrip({ tabs, activeTab, errorTabIds, requiredTabIds, 
   }, [activeTab, errorKey]);
 
   return (
-    <div className="relative">
+    <div className={cn("relative", className)}>
       <div ref={setContainerRef} className="-m-1 overflow-x-auto p-1">
         {/* 손가락 포인터에서는 탭을 40px 로 올린다. 프리미티브가 목록 높이(`h-9`)에서 탭 높이를 빼므로 목록 높이를 풀고 탭에
             높이를 직접 준다 — 목록 높이 쪽 클래스는 그룹 속성 셀렉터라 같은 변형 사슬로 덮어야 이긴다. */}
@@ -92,8 +95,9 @@ export function BuilderTabStrip({ tabs, activeTab, errorTabIds, requiredTabIds, 
                 key={tab.id}
                 value={tab.id}
                 data-tab-id={tab.id}
-                // 좌우 패딩을 프리미티브(`px-1.5`)보다 한 단계 줄인다 — 필수 별표가 붙으며 스토리 열 탭이 1440px 의 폼 열(632px)을
-                // 28px 넘어 마지막 '등록'이 처음부터 페이드 밑에 숨었다. 탭 사이 간격이 16px 에서 12px 가 된다.
+                // 좌우 패딩을 프리미티브(`px-1.5`)보다 한 단계 줄인다(탭 사이 16px → 12px). 줄인 이유는 탭 열 개를 한 줄에 그리던 때
+                // 필수 별표가 붙으며 1440px 폼 열(632px)을 28px 넘친 것이었다. 지금은 묶음별로 걸러 가장 긴 줄이 스토리 기본 설정 다섯
+                // 탭(390px 실측 321px, 안쪽 폭 358px)이라 그 이유는 없어졌지만, 탭 간격이 바뀌지 않게 그대로 둔다.
                 className={cn(
                   "px-1 pointer-coarse:h-10",
                   hasError &&
