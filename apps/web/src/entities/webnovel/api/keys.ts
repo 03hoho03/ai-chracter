@@ -8,7 +8,9 @@
  * - `chapter`: 화 소장(잠긴 화가 본문을 싣는다)과 소장 거절(위와 같다). 판별 키(`chapterEdition`)의 접두사다.
  * - `comments`: 그 화의 댓글 쓰기·지우기(다른 사람의 댓글은 시트를 열 때마다 새로 받는다).
  * - `home`: 그 밖에는 없다(운영자가 고른다).
- * - `owned`: 그 밖에는 없다(화 소장 뒤에는 소장 목록을 열 때 새로 받는다). */
+ * - `owned`: 그 밖에는 없다(화 소장 뒤에는 소장 목록을 열 때 새로 받는다).
+ * - `derived`: 그 밖에는 없다(다른 사람의 공개·원작자의 숨김 토글은 들어올 때마다 새로 받는다 — 숨김 여부 표시는 이 응답이
+ *   아니라 작품 상세 값으로 읽는다). */
 export const webnovelKeys = {
   all: ["webnovel"] as const,
   lists: () => [...webnovelKeys.all, "list"] as const,
@@ -21,6 +23,7 @@ export const webnovelKeys = {
   comments: (novelId: string, chapterId: string) => [...webnovelKeys.all, "comments", novelId, chapterId] as const,
   home: () => [...webnovelKeys.all, "home"] as const,
   owned: () => [...webnovelKeys.all, "owned"] as const,
+  derived: (contentId: string) => [...webnovelKeys.all, "derived", contentId] as const,
 };
 
 /** 목록 정렬 — 최신(공개 글이 마지막으로 바뀐 시각)과 인기(좋아요 수). */

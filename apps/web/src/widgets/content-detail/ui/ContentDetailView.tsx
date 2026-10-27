@@ -47,6 +47,7 @@ import { CollapsibleDescription } from "./CollapsibleDescription";
 import { ContentActionsMenu } from "./ContentActionsMenu";
 import { ContentDetailModalShell } from "./ContentDetailModalShell";
 import { ContentUnavailableState } from "./ContentUnavailableState";
+import { DerivedNovelsSection } from "./DerivedNovelsSection";
 import { MediaTagText } from "./MediaTagText";
 import { StartPersonaRow } from "./StartPersonaRow";
 import { StoryDetailBody } from "./StoryDetailBody";
@@ -491,6 +492,13 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
       {personaList !== undefined && startPersona !== null && (
         <StartPersonaRow personaList={personaList} startPersona={startPersona} onSelect={setChosenPersonaId} />
       )}
+
+      {/* 이 작품으로 만든 공개 소설 — 시작 준비 다음, 참고 정보(업데이트) 앞. 그릴 것이 없으면 자리도 없다. */}
+      <DerivedNovelsSection
+        contentId={content.id}
+        isOwner={content.isOwner}
+        derivedNovelsVisible={content.derivedNovelsVisible}
+      />
 
       {/* 업데이트 이력은 대화수·좋아요 같은 **지표가 아니다** — 통계 줄에 섞여 있어서 2열로 좁아진
           우측 열에서 자리를 다퉜다(2026-09-15 실사용 제보). 참고 정보라 플레이로 가는 길(시작설정

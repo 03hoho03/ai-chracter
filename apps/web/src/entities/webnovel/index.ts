@@ -4,6 +4,7 @@ export {
   sendWebnovelReadingPositionKeepalive,
   type WebnovelReadingPositionRequest,
 } from "./api/saveWebnovelReadingPosition";
+export { useDerivedWebnovelsQuery, type DerivedWebnovelListResponse } from "./api/useDerivedWebnovelsQuery";
 export { useHomeWebnovelsQuery, type HomeWebnovelItem } from "./api/useHomeWebnovelsQuery";
 export {
   useOwnedWebnovelListQuery,
