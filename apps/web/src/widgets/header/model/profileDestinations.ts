@@ -10,7 +10,7 @@
  * 빠뜨려도 컴파일이 통과해, 그 목적지가 어디에도 나타나지 않는다. */
 
 /** 패널 내비(펼침·레일 공통) 순서. 라벨은 링크(`ProfileDestinationLink`)가 정한다. */
-export const SIDE_PANEL_DESTINATION_KEYS = ["home", "builder", "my-works", "novels", "studio-images", "favorites"] as const;
+export const SIDE_PANEL_DESTINATION_KEYS = ["home", "studio", "builder", "favorites"] as const;
 
 /** 접힌 레일에만 내비 아래 따로 두는 내 채팅목록. 펼친 패널에서는 최근 대화 섹션의 "전체 보기"가 같은 화면으로
  * 가게 한다. 레일은 최근 대화 섹션을 숨기고 내 채팅목록은 아래 프로필 메뉴 그룹에도 넣지 않았으므로, 이 칸이 없으면

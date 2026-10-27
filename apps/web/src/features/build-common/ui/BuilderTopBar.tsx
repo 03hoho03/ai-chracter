@@ -25,7 +25,7 @@ type BuilderTopBarProps = {
  * 묶음 목록 left가 어느 폭에서나 같다 — 이 패딩을 바꾸면 그쪽도 함께 바꿔야 한다. lg 미만은 본문이 `max-w-2xl`로
  * 가운데 정렬돼 두 left가 `(폭 − 672) / 2` 만큼 갈린다(받아들인 어긋남, DESIGN.md Layout containers 절).
  *
- * 뒤로가기 목적지는 인터뷰로 확정된 `/my`(내 작품) 하나뿐이라 prop으로 받지 않는다. 본문이 1열인 `lg` 미만에서는
+ * 뒤로가기 목적지는 스튜디오 홈(`/studio`) 하나뿐이라 prop으로 받지 않는다 — 만든 작품 목록이 거기 있다. 본문이 1열인 `lg` 미만에서는
  * 액션 버튼의 라벨을 숨기고 아이콘만 남기며(`hidden lg:inline`) 저장 상태 글자도 숨긴다(`hidden lg:block`, 글자는 폼 흐름 맨 위 줄이 대신 보인다) — 상단바가 데스크톱 구성으로
  * 바뀌는 경계를 본문이 2단으로 바뀌는 경계와 맞춘다(DESIGN.md Navigation 절). 좌우 여백(`px-4 sm:px-6`)은 전역 헤더와
  * 같은 `sm` 경계 그대로다. 저장 상태는 라벨이 숨은 폭에서도 임시저장 버튼의 아이콘이 보인다.
@@ -35,7 +35,7 @@ export function BuilderTopBar({ title, actions, saveStatus }: BuilderTopBarProps
     <header className="sticky top-0 z-30 shrink-0 border-b border-border bg-background">
       <div className="flex h-14 items-center gap-2 px-4 sm:gap-3 sm:px-6">
         <Button asChild variant="ghost" size="icon" aria-label="뒤로가기" className="shrink-0 pointer-coarse:size-10">
-          <Link to="/my">
+          <Link to="/studio">
             <ArrowLeft aria-hidden className="size-4" />
           </Link>
         </Button>

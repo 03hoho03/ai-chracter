@@ -19,6 +19,8 @@ const DISALLOWED_PATHS = [
   "/chat/",
   "/builder/",
   "/studio/",
+  // 스튜디오 홈. 로그인한 사람의 작업 목록이라 비로그인 크롤러에게는 로그인 화면뿐이다. `/studio/` 는 이 경로를 덮지 않는다.
+  "/studio",
   "/ui-demo",
 ];
 

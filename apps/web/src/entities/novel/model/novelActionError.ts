@@ -114,7 +114,7 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     message: "고른 모델을 지금 이 계정에서 쓸 수 없어요. 다른 모델을 골라주세요.",
     shouldRefetchNovel: true,
   },
-  NOVEL_NOT_FOUND: { message: "소설이 지워졌어요. 내 소설에서 다시 확인해주세요.", shouldRefetchNovel: true },
+  NOVEL_NOT_FOUND: { message: "소설이 지워졌어요. 스튜디오에서 다시 확인해주세요.", shouldRefetchNovel: true },
   NOVEL_FORBIDDEN: { message: "이 계정의 소설이 아니에요.", shouldRefetchNovel: true },
   NOVEL_CURSOR_INVALID: { message: "목록을 처음부터 다시 불러와주세요.", shouldRefetchNovel: false },
   NOVEL_JOB_NOT_FOUND: { message: "작업을 찾을 수 없어요. 소설을 다시 불러왔어요.", shouldRefetchNovel: true },

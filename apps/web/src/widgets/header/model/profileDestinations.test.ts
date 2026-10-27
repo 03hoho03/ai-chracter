@@ -13,8 +13,8 @@ describe("목적지 자리", () => {
     expect(new Set(placed).size).toBe(placed.length);
   });
 
-  it("패널 내비는 홈·작품 만들기·내 작품·내 소설·이미지 생성·즐겨찾기 순서다", () => {
-    expect(SIDE_PANEL_DESTINATION_KEYS).toEqual(["home", "builder", "my-works", "novels", "studio-images", "favorites"]);
+  it("패널 내비는 홈·스튜디오·작품 만들기·즐겨찾기 순서다", () => {
+    expect(SIDE_PANEL_DESTINATION_KEYS).toEqual(["home", "studio", "builder", "favorites"]);
   });
 
   it("프로필 메뉴에는 계정과 고객센터만 남고, 크리에이터 정산은 클로버 바로 뒤에 있다", () => {
@@ -24,12 +24,11 @@ describe("목적지 자리", () => {
 });
 
 describe("비로그인일 때 패널 목적지", () => {
-  it("로그인이 필요한 항목은 보이고 기능에 딸린 항목(내 소설)만 숨는다", () => {
+  it("비로그인에게도 패널 항목은 모두 보인다(누르면 로그인으로 갔다 돌아온다)", () => {
     expect(SIDE_PANEL_DESTINATION_KEYS.filter((key) => isProfileDestinationVisible(key, undefined))).toEqual([
       "home",
+      "studio",
       "builder",
-      "my-works",
-      "studio-images",
       "favorites",
     ]);
     expect(isProfileDestinationVisible(SIDE_PANEL_RAIL_CHATS_KEY, undefined)).toBe(true);

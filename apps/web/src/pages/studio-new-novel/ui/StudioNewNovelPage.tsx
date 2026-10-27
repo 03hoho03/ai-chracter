@@ -43,7 +43,7 @@ export function StudioNewNovelPage() {
           className="-ml-1 mb-2 inline-flex w-fit items-center gap-0.5 rounded-md px-1 text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 pointer-coarse:min-h-10"
         >
           <ChevronLeft aria-hidden className="size-4" />
-          스튜디오
+          스튜디오 홈
         </Link>
         <h1 id={headingId} className="text-2xl font-bold tracking-tight text-foreground">
           내 채팅으로 소설

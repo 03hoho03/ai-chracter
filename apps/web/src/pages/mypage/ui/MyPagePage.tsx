@@ -27,10 +27,11 @@ import { MissionSection } from "./MissionSection";
 
 /** 설정 전용 페이지(테마 · 비밀번호 변경 또는 로그인 방법 · 본인인증 · 미션 · 계정).
  *
- * `작성 중인 초안` 섹션은 `/my`로 옮겼다. 초안이 두 화면에 중복으로 살면 초안 삭제·
+ * `작성 중인 초안` 섹션은 스튜디오 홈(`/studio`)으로 옮겼다. 초안이 두 화면에 중복으로 살면 초안 삭제·
  * 편집 취소가 한쪽에만 있어 두 목록이 서로 다른 진실을 말하게 된다.
  *
- * **여기는 어제까지 초안이 있던 주소라 `/my` 링크를 본문에 둔다**.
+ * **여기는 한때 초안이 있던 주소라 스튜디오 홈(`/studio`) 링크를 본문에 둔다**. 라벨("만든 작품과 초안 보기")이
+ * 패널의 `스튜디오` 와 달라 접근성 트리에서 같은 이름의 링크가 둘이 되지 않는다.
  * 한때 이 자리에 "링크가 아니라 문장을 두는 이유는 크롬을 늘리지 않기 위해서"라고 적어 뒀는데 **그건 범주
  * 오류였다** — 루트 CLAUDE.md가 금지한 건 헤더와 좌측 패널 밖에 상시 내비게이션 크롬을 더하는 것(하단 탭바·오른쪽 레일·고정
  * 푸터)이지 `<main>` 안 본문 링크가 아니다.
@@ -98,7 +99,7 @@ export function MyPagePage({ search, onSearchClear }: { search: MypageSearch; on
                 `text-primary`라 밑줄 대비가 배경 대비 **7.1768 / 6.7011**이고, 아웃라인은 그대로 남긴다
                 (`StoryDetailBody` 선례. 단 거기처럼 `outline-none`으로 지우지는 않는다). */}
           <Link
-            to="/my"
+            to="/studio"
             className="font-medium whitespace-nowrap text-primary hover:underline focus-visible:underline"
           >
             만든 작품과 초안 보기

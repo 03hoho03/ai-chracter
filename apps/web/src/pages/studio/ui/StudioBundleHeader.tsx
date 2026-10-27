@@ -19,7 +19,9 @@ type StudioBundleHeaderProps = {
   onDelete: () => void;
 };
 
-/** 스튜디오 홈으로 돌아가는 글자 링크. 묶음만 빼고 나머지 조건은 그대로 둔다. */
+/** 스튜디오 홈의 모든 작품 목록으로 돌아가는 글자 링크. 묶음만 빼고 나머지 조건은 그대로 둔다. 라벨을 "스튜디오"로
+ * 두지 않는 이유: 같은 화면의 좌측 패널(드로어)에 같은 이름·같은 경로의 `스튜디오` 링크가 있어, 스크린리더에 같은 항목이
+ * 두 번 읽힌다 — 돌아가는 곳(조건을 지킨 모든 작품 목록)을 이름으로 삼아 가른다. */
 export function StudioBackLink() {
   return (
     <Link
@@ -29,7 +31,7 @@ export function StudioBackLink() {
       className="-ml-1 inline-flex w-fit items-center gap-0.5 rounded-md px-1 text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 pointer-coarse:min-h-10"
     >
       <ChevronLeft aria-hidden className="size-4" />
-      스튜디오
+      모든 작품
     </Link>
   );
 }

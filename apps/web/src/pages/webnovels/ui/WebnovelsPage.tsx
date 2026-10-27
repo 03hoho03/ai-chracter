@@ -142,7 +142,7 @@ function WebnovelListBody({ query, isOwned }: { query: WebnovelListQuery; isOwne
     return (
       <ContentListEmptyState
         title="아직 공개된 노벨이 없어요"
-        message="대화를 소설로 만든 뒤 내 소설에서 공개할 수 있어요."
+        message="대화를 소설로 만든 뒤 스튜디오에서 공개할 수 있어요."
       />
     );
   }
