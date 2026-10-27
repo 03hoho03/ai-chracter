@@ -61,7 +61,10 @@ import {
   getFilterRejectionReason,
   getMissingFields,
   getPublishFailureMessage,
+  isNovelPermissionRequiredError,
   missingFieldsMessage,
+  NOVEL_PERMISSION_PATH,
+  NOVEL_PERMISSION_REQUIRED_MESSAGE,
   previewKindFor,
   PUBLISH_ISSUES_TOAST,
   PublishIssueList,
@@ -75,6 +78,7 @@ import {
   useCreateBuilderUiState,
   useDraftPersistence,
   useFocusFirstError,
+  useNovelPermissionChoice,
   useProfileImageLocalUrl,
   usePublishChecklist,
   type ServerIssueInput,
@@ -214,6 +218,13 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
     requiredTabIds: STORY_REQUIRED_TAB_IDS,
   });
 
+  // 첫 발행 전 소설 만들기 허락을 골랐는가와 발행 이력. 고른 기록은 폼 값이 아니라 이 화면의 상태다(자동저장이 덮지 않는다).
+  const novelPermissionChoice = useNovelPermissionChoice({
+    draftId,
+    savedPermission: draft.novelPermission,
+    hasAttemptedPublish: checklist.hasAttempted,
+  });
+
   // 반복 항목의 열림과 스탯·상황 노트·엔딩 탭이 함께 보는 고른 시작설정. 탭 본문은 탭을 바꿀 때 언마운트되므로 셸이 쥐고, 폼 값이
   // 아니라서 자동저장·검증과 무관하다.
   const uiState = useCreateBuilderUiState();
@@ -284,6 +295,13 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
     setRejectionReason(undefined);
     // 검사가 오류 객체를 통째로 바꿔 지난 서버 거절도 지워졌다. 확인 모달에서 취소하면 그대로 돌아와야 하므로 다시 건다.
     checklist.reapplyServerIssues();
+    // 첫 발행인데 소설 만들기 허락을 아직 고르지 않았으면 확인창 전에 막고 그 칸으로 간다(확인 목록에 한 줄이 선다).
+    const permissionCheck = await novelPermissionChoice.checkBeforePublish();
+    if (permissionCheck.blocked) {
+      revealAndFocusFirstError(errorsAtPaths([NOVEL_PERMISSION_PATH]));
+      toast.error(PUBLISH_ISSUES_TOAST);
+      return;
+    }
     const { visibility } = values.registration;
     const shouldPublish = await confirmFirstPublish({
       contentId: draftId,
@@ -298,9 +316,19 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
     setIsPublishing(true);
     try {
       const savedDraft = await saveDraft(payload);
-      const result = await publishMutation.mutateAsync({ id: savedDraft.id });
+      const result = await publishMutation.mutateAsync({
+        id: savedDraft.id,
+        novelPermission: novelPermissionChoice.publishValue(permissionCheck.publishedCount, values.registration.novelPermission),
+      });
       void navigate({ to: "/content/$type/$id", params: { type: "story", id: result.contentId } });
     } catch (error) {
+      // 이 화면이 이력을 잘못 알아(다른 창의 발행 등) 허락 없이 첫 발행을 보냈다 — 고를 때까지 묻고 그 칸으로 간다.
+      if (isNovelPermissionRequiredError(error)) {
+        novelPermissionChoice.markRequiredByServer();
+        revealAndFocusFirstError(errorsAtPaths([NOVEL_PERMISSION_PATH]));
+        toast.error(NOVEL_PERMISSION_REQUIRED_MESSAGE);
+        return;
+      }
       const reason = getFilterRejectionReason(error);
       if (reason) {
         setRejectionReason(reason);
@@ -385,7 +413,8 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
   // 쪽은 아직 이전 객체다.
   function handlePublishInvalid(errors: FieldErrors<StoryBuilderFormValues>) {
     const serverPaths = checklist.reapplyServerIssues();
-    revealAndFocusFirstError(errorsAtPaths([...flattenFieldErrorPaths(errors), ...serverPaths]));
+    const permissionPaths = novelPermissionChoice.needsChoice ? [NOVEL_PERMISSION_PATH] : [];
+    revealAndFocusFirstError(errorsAtPaths([...flattenFieldErrorPaths(errors), ...serverPaths, ...permissionPaths]));
     toast.error(PUBLISH_ISSUES_TOAST);
   }
 
@@ -423,10 +452,12 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
   // 발행 시도가 실패하면 누락 필드를 담은 탭 라벨을 에러 상태로 표시하고, 폼 열 맨 위에 남은 항목을 나열한다.
   // 목록은 발행을 누른 뒤에만 그린다 — 칸 하나를 떠날 때 거는 검사(스탯 범위)도 오류 객체에 들어가지만, 그건 그 칸의 안내이지
   // 발행이 막혔다는 말이 아니다.
-  const errorTabIds = errorTabs(form.formState.errors, TABS);
+  // 허락을 고르지 않아 막힌 것은 폼 오류가 아니라(값은 늘 있다) 따로 더한다.
+  const issuePaths = [...flattenFieldErrorPaths(form.formState.errors), ...novelPermissionChoice.issuePaths];
+  const errorTabIds = errorTabs(errorsAtPaths(issuePaths), TABS);
   // 확인 목록 줄도 첫 오류 이동과 같은 묶음 순서다.
   const issueRows = publishIssueRows(
-    flattenFieldErrorPaths(form.formState.errors),
+    issuePaths,
     STORY_TABS_IN_STEP_ORDER,
     (path) => checklist.serverLabel(path) ?? fieldLabelForPath(path, STORY_FIELD_LABELS),
   );
@@ -570,7 +601,7 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
                   <EndingTab onGoToStartingSetup={goToStartingSetup} />
                 </TabsContent>
                 <TabsContent value="registration">
-                  <RegistrationTab />
+                  <RegistrationTab novelPermissionChoice={novelPermissionChoice.view} />
                 </TabsContent>
               </Tabs>
             </BuilderLayout>

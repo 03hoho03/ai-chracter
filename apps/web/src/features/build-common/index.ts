@@ -31,13 +31,19 @@ export { firstErrorLocation, type FirstErrorLocation } from "./model/firstErrorL
 export { missingFieldsMessage } from "./model/missingFieldsMessage";
 export { errorsAtPaths, fieldLabelForPath, publishIssueRows, PUBLISH_ISSUES_TOAST } from "./model/publishIssues";
 export { getFilterRejectionReason, getMissingFields } from "./model/publishRejection";
-export { getPublishFailureMessage } from "./model/publishFailureMessage";
+export {
+  getPublishFailureMessage,
+  isNovelPermissionRequiredError,
+  NOVEL_PERMISSION_REQUIRED_MESSAGE,
+} from "./model/publishFailureMessage";
+export { NOVEL_PERMISSION_PATH } from "./model/novelPermissionChoice";
 export { resolveProfileImageUrl, type ProfileImageLocalEntry } from "./model/resolveProfileImageUrl";
 export { useProfileImageLocalUrl } from "./model/useProfileImageLocalUrl";
 export { useFocusFirstError } from "./lib/useFocusFirstError";
 export { focusPreviewToggleIfLost } from "./lib/focusPreviewToggleIfLost";
 export { usePublishChecklist, type ServerIssueInput } from "./lib/usePublishChecklist";
 export { useConfirmFirstPublish } from "./lib/useConfirmFirstPublish";
+export { useNovelPermissionChoice, type NovelPermissionChoiceView } from "./lib/useNovelPermissionChoice";
 export { copyDraftText } from "./lib/copyDraftText";
 export { clampFieldAtCaret, isComposingChange } from "./lib/clampFieldAtCaret";
 export { useLimitedTextField } from "./lib/useLimitedTextField";
@@ -58,12 +64,14 @@ export { FieldCharacterCount } from "./ui/FieldCharacterCount";
 export { FieldGuideLink } from "./ui/FieldGuideLink";
 export { FirstPublishConfirmModal } from "./ui/FirstPublishConfirmModal";
 export { CollapsibleItemCard } from "./ui/CollapsibleItemCard";
+export { DerivedNovelsVisibilityField } from "./ui/DerivedNovelsVisibilityField";
 export { DraftTextModal } from "./ui/DraftTextModal";
 export { CollapsibleSection } from "./ui/CollapsibleSection";
 export { HashtagField } from "./ui/HashtagField";
 export { ItemDragHandle } from "./ui/ItemDragHandle";
 export { ItemRemoveButton } from "./ui/ItemRemoveButton";
 export { KeywordChipField } from "./ui/KeywordChipField";
+export { NovelPermissionField } from "./ui/NovelPermissionField";
 export { PreviewCloseHeader } from "./ui/PreviewCloseHeader";
 export { PublishIssueList } from "./ui/PublishIssueList";
 export { UNDO_TOAST_DURATION_MS, UndoToastButton } from "./ui/UndoToastButton";

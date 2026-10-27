@@ -10,12 +10,7 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Controller, useFormContext } from "react-hook-form";
 
-import {
-  MAX_DESCRIPTION_LENGTH,
-  NOVEL_PERMISSION_FIELD_LABEL,
-  NovelPermissionPicker,
-  useGenreListQuery,
-} from "@/entities/content";
+import { MAX_DESCRIPTION_LENGTH, useGenreListQuery } from "@/entities/content";
 import { useCreatorPayoutRate } from "@/entities/creator-payout";
 import { hasEnabledFeature, useSessionQuery } from "@/entities/session";
 import {
@@ -25,7 +20,14 @@ import {
   type CharacterBuilderFormValues,
   type Target,
 } from "@/features/build-character";
-import { FieldCharacterCount, HashtagField, useLimitedTextField } from "@/features/build-common";
+import {
+  DerivedNovelsVisibilityField,
+  FieldCharacterCount,
+  HashtagField,
+  NovelPermissionField,
+  useLimitedTextField,
+  type NovelPermissionChoiceView,
+} from "@/features/build-common";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
@@ -40,9 +42,9 @@ const TARGET_LABELS: Record<Target, string> = {
   all: "공용",
 };
 
-/** 등록 설명/장르/타겟/해시태그/공개범위/소설 만들기 허락 메타데이터. 장르 목록은
- * 하드코딩 enum이 아니라 GET /genres 서버 조회 결과로 select 옵션을 구성한다. */
-export function DetailTab() {
+/** 등록 설명/장르/타겟/해시태그/공개범위/소설 만들기 허락 메타데이터, 발행작이면 맨 아래 파생 소설 보이기 스위치. 장르 목록은
+ * 하드코딩 enum이 아니라 GET /genres 서버 조회 결과로 select 옵션을 구성한다. 허락을 골랐는지·발행작인지는 셸이 쥔다(`novelPermissionChoice`). */
+export function DetailTab({ novelPermissionChoice }: { novelPermissionChoice: NovelPermissionChoiceView }) {
   const form = useFormContext<CharacterBuilderFormValues>();
 
   const {
@@ -191,24 +193,26 @@ export function DetailTab() {
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <span id="character-detail-novel-permission-label" className="text-sm leading-none font-medium">
-          {NOVEL_PERMISSION_FIELD_LABEL}
-        </span>
-        <Controller
-          control={control}
-          name="registration.novelPermission"
-          render={({ field }) => (
-            <NovelPermissionPicker
-              ref={field.ref}
-              value={field.value}
-              onValueChange={field.onChange}
-              labelledBy="character-detail-novel-permission-label"
-              earningRate={payoutRate}
-            />
-          )}
+      <Controller
+        control={control}
+        name="registration.novelPermission"
+        render={({ field }) => (
+          <NovelPermissionField
+            idPrefix="character-detail"
+            value={field.value}
+            onChange={field.onChange}
+            fieldRef={field.ref}
+            choice={novelPermissionChoice}
+            earningRate={payoutRate}
+          />
+        )}
+      />
+      {novelPermissionChoice.publishedContentId !== undefined && (
+        <DerivedNovelsVisibilityField
+          contentId={novelPermissionChoice.publishedContentId}
+          idPrefix="character-detail-derived-novels"
         />
-      </div>
+      )}
     </div>
   );
 }
