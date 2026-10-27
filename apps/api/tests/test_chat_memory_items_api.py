@@ -8,12 +8,17 @@
   기억이라도 범위 밖 방에서는 쌓이기만 하고 응답에는 안 쓰인다.
 - 스위치가 꺼져 있으면 라우트는 등록된 채 404 `MEMORY_ITEMS_DISABLED` 다. 기존 기억 응답의 기능 칸이 화면에 "꺼짐"과 "없음"을
   가르게 해 준다.
+- 관계 인상은 따로 둔 화면 스위치가 켜져 있고 방의 레인·다음 턴 모델이 기억 사용 범위에 들 때만 목록(최근 묶음 먼저)이고, 아니면
+  null 이라 화면이 구획을 그리지 않는다. 근거는 개수와 근거 행의 턴 범위만 싣고 근거 행 id 는 싣지 않는다 — 개수·범위는 저장된
+  id 배열 길이가 아니라 지금 남아 있는 근거 행에서 센다.
 
 깨지는 시나리오: 같은 키의 옛 값이 보여 지운 뒤에도 남은 것처럼 읽힌다, 커서 뒤 행이 보여 모델이 아직 안 보는 기억을 보인다,
-남의 방 기억이 보인다, 꺼진 스위치에서 목록이 열린다.
+남의 방 기억이 보인다, 꺼진 스위치에서 목록이 열린다, 모델을 바꿔 범위 밖이 된 방에 인상이 보인다, 지운 근거가 개수에 남는다.
 """
 
 import uuid
+from collections.abc import Sequence
+from typing import Any
 
 import httpx
 import pytest
@@ -21,7 +26,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
-from api.db.models import ChatRoom, ChatRoomMemorySnapshot
+from api.db.models import ChatMemoryEpisode, ChatMemoryFact, ChatMemoryImpression, ChatRoom, ChatRoomMemorySnapshot
 from factories import (
     Room,
     _enable_chat_premium,
@@ -368,3 +373,226 @@ async def test_usage_follows_the_model_the_next_turn_will_use(
     assert premium_off == (False, False)
     assert premium_on == (True, False)
     assert other_lane == (False, False)
+
+
+# ---- 관계 인상 ----
+
+
+@pytest.fixture
+def impressions_visible(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "memory_items_visible", True)
+    monkeypatch.setattr(settings, "memory_impressions_visible", True)
+
+
+async def _impression(
+    db_session: AsyncSession,
+    room: Room,
+    snapshot_id: uuid.UUID,
+    *,
+    episodes: Sequence[ChatMemoryEpisode] = (),
+    facts: Sequence[ChatMemoryFact] = (),
+    text: str = "서로를 경계하던 두 사람이 조금씩 마음을 연다.",
+) -> ChatMemoryImpression:
+    """스냅샷 하나를 덮는 인상 한 행을 커밋한다. 근거 칸은 넘긴 장면·사실 행의 id 다."""
+    snapshot = await db_session.get(ChatRoomMemorySnapshot, snapshot_id)
+    assert snapshot is not None
+    row = ChatMemoryImpression(
+        chat_room_id=room.room_id,
+        snapshot_id=snapshot_id,
+        first_cursor_created_at=snapshot.cursor_created_at,
+        first_cursor_message_id=snapshot.cursor_message_id,
+        text=text,
+        episode_ids=[str(episode.id) for episode in episodes],
+        fact_ids=[str(fact.id) for fact in facts],
+    )
+    db_session.add(row)
+    await db_session.commit()
+    return row
+
+
+async def _impressions(db_client: httpx.AsyncClient, room: Room) -> Any:
+    resp = await db_client.get(_items_path(room))
+    assert resp.status_code == 200
+    return resp.json()["impressions"]
+
+
+@pytest.mark.usefixtures("items_visible")
+async def test_impressions_are_null_while_their_own_switch_is_off(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _memory_scope_covers_gemini(monkeypatch)
+    room = await _open_room(db_client, db_session, turns=10)
+    snapshot = await _snapshot_at(db_session, room, turn=10)
+    episode = _make_memory_episode(room.room_id, snapshot, **_ends_at(room, 5))
+    db_session.add(episode)
+    await db_session.commit()
+    await _impression(db_session, room, snapshot, episodes=[episode])
+
+    assert settings.memory_impressions_visible is False
+    assert await _impressions(db_client, room) is None
+
+
+@pytest.mark.usefixtures("impressions_visible")
+async def test_impressions_are_null_once_the_room_model_leaves_the_memory_scope(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """기억 범위에 든 모델로 인상을 쌓은 뒤 방 모델을 범위 밖 모델로 바꾸면, 인상 행이 있어도 구획을 숨긴다."""
+    room = await _open_room(db_client, db_session, turns=10)
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model="opus"))
+    await db_session.commit()
+    _enable_chat_premium(monkeypatch)
+    monkeypatch.setattr(settings, "memory_model_scope", [("character", "opus")])
+    snapshot = await _snapshot_at(db_session, room, turn=10)
+    episode = _make_memory_episode(room.room_id, snapshot, **_ends_at(room, 5))
+    db_session.add(episode)
+    await db_session.commit()
+    impression = await _impression(db_session, room, snapshot, episodes=[episode])
+
+    in_scope = await _impressions(db_client, room)
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model=None))
+    await db_session.commit()
+    model_changed = await _impressions(db_client, room)
+
+    assert [item["id"] for item in in_scope] == [str(impression.id)]
+    assert model_changed is None
+
+
+@pytest.mark.usefixtures("impressions_visible")
+async def test_impressions_are_null_in_a_room_outside_the_memory_scope(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room = await _open_room(db_client, db_session, turns=10)
+    snapshot = await _snapshot_at(db_session, room, turn=10)
+    await _impression(db_session, room, snapshot)
+
+    # 기본 범위는 Opus 방뿐이라 기본 모델 방은 범위 밖이다.
+    assert await _impressions(db_client, room) is None
+
+
+@pytest.mark.usefixtures("impressions_visible")
+async def test_an_in_scope_room_without_impressions_has_an_empty_list(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _memory_scope_covers_gemini(monkeypatch)
+    room = await _open_room(db_client, db_session, turns=3)
+
+    assert await _impressions(db_client, room) == []
+
+
+@pytest.mark.usefixtures("impressions_visible")
+async def test_impressions_come_newest_first_with_counts_and_turn_range_but_no_source_ids(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _memory_scope_covers_gemini(monkeypatch)
+    room = await _open_room(db_client, db_session, turns=30)
+    first = await _snapshot_at(db_session, room, turn=10)
+    second = await _snapshot_at(db_session, room, turn=20)
+    third = await _snapshot_at(db_session, room, turn=30)
+    scene_a = _make_memory_episode(room.room_id, first, ordinal=0, **_ends_at(room, 3))
+    scene_b = _make_memory_episode(room.room_id, first, ordinal=1, **_ends_at(room, 8))
+    scene_c = _make_memory_episode(room.room_id, second, ordinal=0, **_ends_at(room, 14))
+    # 같은 키의 옛 값과 새 값 두 행 + 다른 키 한 행 — 근거 사실 수는 키 수라 2 다.
+    old_value = _make_memory_fact(room.room_id, first, ordinal=0, value="소꿉친구", **_ends_at(room, 2))
+    new_value = _make_memory_fact(room.room_id, second, ordinal=0, value="연인", **_ends_at(room, 17))
+    hair = _make_memory_fact(
+        room.room_id, second, ordinal=1, kind="fact", subject="지아", object=None, attribute="머리색",
+        fact_key="fact|지아|머리색", value="흑발", **_ends_at(room, 12),
+    )
+    db_session.add_all([scene_a, scene_b, scene_c, old_value, new_value, hair])
+    await db_session.commit()
+    oldest = await _impression(db_session, room, first, episodes=[scene_a, scene_b], facts=[old_value])
+    middle = await _impression(db_session, room, second, episodes=[scene_c], facts=[old_value, new_value, hair])
+    newest = await _impression(db_session, room, third)
+
+    items = await _impressions(db_client, room)
+
+    assert [item["id"] for item in items] == [str(newest.id), str(middle.id), str(oldest.id)]
+    by_id = {item["id"]: item for item in items}
+    assert set(by_id[str(middle.id)]) == {"id", "text", "createdAt", "turnStart", "turnEnd", "sceneCount", "factCount"}
+    assert by_id[str(middle.id)]["text"] == middle.text
+    assert {key: by_id[str(middle.id)][key] for key in ("turnStart", "turnEnd", "sceneCount", "factCount")} == {
+        "turnStart": 2, "turnEnd": 17, "sceneCount": 1, "factCount": 2,
+    }
+    assert {key: by_id[str(oldest.id)][key] for key in ("turnStart", "turnEnd", "sceneCount", "factCount")} == {
+        "turnStart": 2, "turnEnd": 8, "sceneCount": 2, "factCount": 1,
+    }
+    assert {key: by_id[str(newest.id)][key] for key in ("turnStart", "turnEnd", "sceneCount", "factCount")} == {
+        "turnStart": None, "turnEnd": None, "sceneCount": 0, "factCount": 0,
+    }
+
+
+@pytest.mark.usefixtures("impressions_visible")
+async def test_impression_counts_and_turns_come_from_the_source_rows_still_present(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """근거 행이 사라지면 개수와 턴 범위가 남은 행으로 줄고, 다 사라지면 턴 범위가 null 이다 — 저장된 id 배열의 길이가 아니다."""
+    _memory_scope_covers_gemini(monkeypatch)
+    room = await _open_room(db_client, db_session, turns=10)
+    snapshot = await _snapshot_at(db_session, room, turn=10)
+    early = _make_memory_episode(room.room_id, snapshot, ordinal=0, **_ends_at(room, 2))
+    late = _make_memory_episode(room.room_id, snapshot, ordinal=1, **_ends_at(room, 9))
+    db_session.add_all([early, late])
+    await db_session.commit()
+    await _impression(db_session, room, snapshot, episodes=[early, late])
+
+    await db_session.execute(sa.delete(ChatMemoryEpisode).where(ChatMemoryEpisode.id == late.id))
+    await db_session.commit()
+    one_left = (await _impressions(db_client, room))[0]
+    await db_session.execute(sa.delete(ChatMemoryEpisode).where(ChatMemoryEpisode.id == early.id))
+    await db_session.commit()
+    none_left = (await _impressions(db_client, room))[0]
+
+    assert (one_left["sceneCount"], one_left["turnStart"], one_left["turnEnd"]) == (1, 2, 2)
+    assert (none_left["sceneCount"], none_left["turnStart"], none_left["turnEnd"]) == (0, None, None)
+
+
+@pytest.mark.usefixtures("impressions_visible")
+async def test_forgetting_a_scene_drops_the_impression_built_on_it_and_keeps_the_others(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _memory_scope_covers_gemini(monkeypatch)
+    room = await _open_room(db_client, db_session, turns=20)
+    first = await _snapshot_at(db_session, room, turn=10)
+    second = await _snapshot_at(db_session, room, turn=20)
+    forgotten = _make_memory_episode(room.room_id, first, ordinal=0, **_ends_at(room, 4))
+    kept = _make_memory_episode(room.room_id, second, ordinal=0, **_ends_at(room, 15))
+    db_session.add_all([forgotten, kept])
+    await db_session.commit()
+    await _impression(db_session, room, first, episodes=[forgotten])
+    survivor = await _impression(db_session, room, second, episodes=[kept])
+
+    before = await _impressions(db_client, room)
+    resp = await db_client.delete(f"/chat-rooms/{room.room_id}/memory/episodes/{forgotten.id}")
+    after = await _impressions(db_client, room)
+
+    assert resp.status_code == 204
+    assert len(before) == 2
+    assert len(after) == 1
+    after[0].pop("createdAt")
+    assert after[0] == {
+        "id": str(survivor.id),
+        "text": survivor.text,
+        "turnStart": 15,
+        "turnEnd": 15,
+        "sceneCount": 1,
+        "factCount": 0,
+    }
+
+
+@pytest.mark.usefixtures("impressions_visible")
+async def test_someone_elses_room_is_still_refused_with_impressions_on(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _memory_scope_covers_gemini(monkeypatch)
+    room = await _open_room(db_client, db_session, turns=10)
+    snapshot = await _snapshot_at(db_session, room, turn=10)
+    await _impression(db_session, room, snapshot)
+    stranger = _make_user()
+    db_session.add(stranger)
+    await db_session.commit()
+    await _login_as(db_client, stranger.id)
+
+    resp = await db_client.get(_items_path(room))
+
+    assert resp.status_code == 403
+    assert "impressions" not in resp.json()
