@@ -342,10 +342,7 @@ async def recheck_novel_block_edit_bundle(
     적용하면 된다), 남은 원소가 없거나 고친 블록이 모두 지워짐·패치 작업이 아님 409 `NOVEL_JOB_NOT_APPLICABLE` — 여기까지는 모델을
     부르지 않고 상한도 깎지 않는다. 그다음 상한 초과 429, 모델 호출 실패 503 `NOVEL_RECHECK_UNAVAILABLE`(묶음 그대로). 모델을 부르는
     동안 그 화에 새 개정이 쌓였으면 409 `NOVEL_REVISION_CONFLICT`, 그 묶음이 바뀌었으면 409 `NOVEL_JOB_NOT_APPLICABLE` — 판정은
-    옛 상태에 대한 것이라 쓰지 않는다. 모델을 부르기 전에 커밋해 커넥션을 돌려준다.
-
-    호출 기록은 판정을 쓰는 트랜잭션에서만 작업 행의 목록 끝에 덧붙인다(따로 적용할 수 없다는 판정도 쓴 판정이다). 503·409 갈래는
-    작업 행을 쓰지 않으므로 그 호출은 남지 않는다(`novelize/call_records.py` 의 받아들인 손실)."""
+    옛 상태에 대한 것이라 쓰지 않는다. 모델을 부르기 전에 커밋해 커넥션을 돌려준다."""
     job, edit = await _patch_job(db, novel, job_id, lock=False)
     assert job.chapter_id is not None  # `_patch_job` 이 걸렀다
     chapter_id = job.chapter_id
@@ -372,6 +369,9 @@ async def recheck_novel_block_edit_bundle(
     )
     await db.commit()
 
+    # 호출 기록은 판정을 쓰는 트랜잭션에서만 작업 행의 목록 끝에 덧붙인다(따로 적용할 수 없다는 판정도 쓴 판정이다). 503·409 갈래는
+    # 작업 행을 쓰지 않으므로 그 호출은 남지 않는다(`novelize/call_records.py` 의 받아들인 손실). 이 설명을 라우트 docstring 에 두면
+    # 공개 API 설명(openapi.json)에 실리므로 여기 둔다.
     records: list[dict[str, Any]] = []
     try:
         with recorded_call(
