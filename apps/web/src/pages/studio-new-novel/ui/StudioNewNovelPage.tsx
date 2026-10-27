@@ -202,8 +202,9 @@ function useCreateRoomNovel() {
   async function create(roomId: string) {
     try {
       const novel = await ensureRoomNovel.mutateAsync(roomId);
-      // 새 소설이 생겼으니 이 목록(그 방이 "소설 열기"가 된다)과 스튜디오 작품 목록(소설 행이 는다)을 다시 받는다. 소설
-      // 상세와 내 소설 목록은 뮤테이션 자신이 맡는다.
+      // 이 쓰기가 낡게 만드는 캐시 — 이 목록(그 방이 "소설 열기"가 된다)과 스튜디오 작품 목록(소설 행이 는다). 두 쿼리는
+      // 앱 기본 신선도라 다음에 화면을 열 때 어차피 다시 받지만, 신선도를 늘리는 쿼리가 생겨도 낡지 않게 여기서 표시해
+      // 둔다. 소설 상세와 내 소설 목록은 뮤테이션 자신이 맡는다.
       void queryClient.invalidateQueries({ queryKey: novelKeys.sources() });
       void queryClient.invalidateQueries({ queryKey: workKeys.lists() });
       // 응답을 기다리는 사이 다른 화면으로 옮겼다면 소설 화면으로 끌고 가지 않는다(소설 상세는 이미 캐시에 있다).

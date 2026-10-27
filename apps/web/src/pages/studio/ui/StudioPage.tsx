@@ -284,7 +284,7 @@ function StudioStartSection({ isNovelAreaVisible }: { isNovelAreaVisible: boolea
             {continueItem ? <StudioContinueCard item={continueItem} /> : <StudioContinueCardSkeleton />}
           </section>
         )}
-        <section aria-labelledby={createHeadingId} className="flex min-w-0 flex-col gap-3">
+        <section aria-labelledby={createHeadingId} className="@container flex min-w-0 flex-col gap-3">
           <h2 id={createHeadingId} className="text-lg font-semibold text-foreground">
             새로 만들기
           </h2>

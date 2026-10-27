@@ -41,13 +41,16 @@ const CREATE_TILES: Record<CreateTileKey, CreateTile> = {
 };
 
 /** 칸은 페이지 배경 위의 윤곽 상자라 hover 는 `bg-muted` 다(유형 선택 화면의 카드와 같은 레시피). 좁은 폭에선 칸이 좁아
- * 설명을 빼고 아이콘을 이름 위에 둔다 — 셋이면 한 줄, 넷이면 두 줄 두 칸(한 줄에 넷이면 칸이 좁아 "내 채팅으로
- * 소설"이 여러 줄로 접힌다). */
+ * 설명을 빼고 아이콘을 이름 위에 둔다.
+ *
+ * 셋이면 언제나 한 줄이다. 넷이면 이 절의 폭이 넓을 때만 한 줄이고 좁으면 두 줄 두 칸이다 — 한 줄 넷을 좁은 폭에 두면
+ * "내 채팅으로 소설"이 석 줄로 접힌다(1440px 에서 이어 만들기 옆 열이 되면 칸 폭 121px). 이 절의 폭은 좌측 패널과 이어
+ * 만들기 카드 유무에 따라 바뀌어 뷰포트가 아니라 컨테이너 폭으로 가른다. */
 export function StudioCreateTiles({ isNovelAreaVisible }: { isNovelAreaVisible: boolean }) {
   const keys = toCreateTileKeys(isNovelAreaVisible);
 
   return (
-    <ul className={cn("grid gap-2 sm:gap-3", keys.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3")}>
+    <ul className={cn("grid gap-2 sm:gap-3", keys.length === 4 ? "grid-cols-2 @2xl:grid-cols-4" : "grid-cols-3")}>
       {keys.map((key) => {
         const { label, summary, Icon, link } = CREATE_TILES[key];
         return (
