@@ -55,7 +55,7 @@ export function NovelInfoPage({ novelId }: { novelId: string }) {
           <NovelStatusState icon={<BookX aria-hidden className="size-8 text-muted-foreground" />} title="소설을 찾을 수 없어요">
             <p className="text-sm text-muted-foreground">지워졌거나 이 계정의 소설이 아니에요.</p>
             <Button asChild variant="outline">
-              <Link to="/novels">내 소설 보기</Link>
+              <Link to="/studio" search={{ type: "novel" }}>내 소설 보기</Link>
             </Button>
           </NovelStatusState>
         </main>

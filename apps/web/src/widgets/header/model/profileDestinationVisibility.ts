@@ -4,7 +4,6 @@ import type { ProfileDestinationKey } from "./profileDestinations";
 
 /** 계정별로 열리는 기능에 딸린 목적지. 여기 없는 목적지는 로그인한 누구에게나 보인다. */
 const REQUIRED_FEATURE: Partial<Record<ProfileDestinationKey, EnabledFeature>> = {
-  novels: "novelize",
   "creator-payout": "creator_payout",
 };
 

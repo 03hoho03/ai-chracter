@@ -32,6 +32,7 @@ describe("buildRobotsTxt", () => {
     "/chat/",
     "/builder/",
     "/studio/",
+    "/studio",
     "/ui-demo",
   ])("%s를 Disallow 한다", (path) => {
     expect(buildRobotsTxt("https://ddona.example").split("\n")).toContain(

@@ -1,10 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import {
-  BookText,
   FileText,
   House,
   IdCard,
-  ImagePlus,
   Info,
   LayoutGrid,
   LifeBuoy,
@@ -51,15 +49,13 @@ const SUPPORT_DESTINATION_ICON: Record<MenuSupportDestinationKey, LucideIcon> = 
 /** 목적지 이름. 링크 글자이자, 글자를 숨기는 좌측 패널 레일의 툴팁 글자다 — 둘이 같은 소스를 읽어야 툴팁과 접근 이름이
  * 갈리지 않는다. 고객센터 목적지는 푸터와 함께 쓰는 `SUPPORT_DESTINATIONS` 의 라벨이다.
  *
- * - 내 소설·크리에이터 정산·대화 프로필은 페이지 h1 과 같은 문자열이다(`설정` 선례). 클로버 충전은 고객센터 목적지와
- *   같이 `SUPPORT_DESTINATIONS` 의 라벨이다(충전 화면 h1·푸터와 한 문자열). 내 소설·정산은 허용된 계정에만
+ * - 크리에이터 정산·대화 프로필은 페이지 h1 과 같은 문자열이다(`설정` 선례). 클로버 충전은 고객센터 목적지와
+ *   같이 `SUPPORT_DESTINATIONS` 의 라벨이다(충전 화면 h1·푸터와 한 문자열). 정산은 허용된 계정에만
  *   보인다(`isProfileDestinationVisible`). */
 export const PROFILE_DESTINATION_LABEL: Record<ProfileDestinationKey, string> = {
   home: "홈",
+  studio: "스튜디오",
   builder: "작품 만들기",
-  "my-works": "내 작품",
-  novels: "내 소설",
-  "studio-images": "이미지 생성",
   favorites: "즐겨찾기",
   chats: "내 채팅목록",
   profile: "내 프로필",
@@ -112,26 +108,19 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
           <span>{label}</span>
         </Link>
       );
-    case "builder":
+    case "studio":
+      // 만든 작품·소설·이미지 생성은 스튜디오 홈 안에서 닿는다. 글리프 `LayoutGrid` 는 그 본문인 만든 작품 목록을 가리키고,
+      // 레일에서 작품 만들기(`Plus`)와 모양으로 갈린다.
       return (
-        <Link ref={ref} to="/builder" className={className} {...rest}>
-          <Plus aria-hidden />
-          <span>{label}</span>
-        </Link>
-      );
-    case "my-works":
-      return (
-        <Link ref={ref} to="/my" className={className} {...rest}>
+        <Link ref={ref} to="/studio" className={className} {...rest}>
           <LayoutGrid aria-hidden />
           <span>{label}</span>
         </Link>
       );
-    case "studio-images":
-      // 글리프는 `ImagePlus`("이미지를 새로 만든다")다 — 라벨이 `이미지 생성`이고, `/studio/images`는 탭 지정 없이 도착하면
-      // `생성` 탭을 연다.
+    case "builder":
       return (
-        <Link ref={ref} to="/studio/images" className={className} {...rest}>
-          <ImagePlus aria-hidden />
+        <Link ref={ref} to="/builder" className={className} {...rest}>
+          <Plus aria-hidden />
           <span>{label}</span>
         </Link>
       );
@@ -146,14 +135,6 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
       return (
         <Link ref={ref} to="/chats" className={className} {...rest}>
           <MessagesSquare aria-hidden />
-          <span>{label}</span>
-        </Link>
-      );
-    case "novels":
-      // 글리프는 채팅 더보기의 `소설로 보기`와 같다.
-      return (
-        <Link ref={ref} to="/novels" className={className} {...rest}>
-          <BookText aria-hidden />
           <span>{label}</span>
         </Link>
       );
