@@ -23,11 +23,14 @@ import {
 } from "@/features/build-character";
 import {
   BuilderLayout,
+  BuilderSaveStatus,
   BuilderStepNav,
   BuilderTabStrip,
   BuilderUiStateContext,
   BuilderTopBar,
   BuilderTopBarActions,
+  copyDraftText,
+  CopyDraftButton,
   errorItemKeys,
   errorsAtPaths,
   errorTabs,
@@ -59,6 +62,7 @@ import {
 import { AppealModal } from "@/features/submit-appeal";
 import { creationGuidePath } from "@/shared/config/creationGuide";
 
+import { characterDraftText } from "../model/draftText";
 import { CHARACTER_REQUIRED_TAB_IDS } from "../model/requiredTabs";
 import { CHARACTER_TAB_STEPS, CHARACTER_TABS_IN_STEP_ORDER } from "../model/steps";
 import { VISIBILITY_LABELS } from "../model/visibilityLabels";
@@ -179,6 +183,9 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
     requiredTabIds: CHARACTER_REQUIRED_TAB_IDS,
   });
 
+  // 저장이 실패하거나 연결이 끊긴 동안 쓴 글을 가져가는 길. 누를 때의 폼 값을 옮긴다.
+  const copyDraft = () => void copyDraftText(characterDraftText(form.getValues()));
+
   const { saveNow } = useAutosave({
     subscribe: (cb) => {
       // `watch` 콜백이 주는 값은 `DeepPartial`이다(미등록 필드가 있을 수 있어서). 구독은 **변경
@@ -191,6 +198,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
     onSchedule: saveStatus.markPending,
     flushOnUnmount: () => draftId !== undefined,
     errorMessage: characterSaveErrorMessage,
+    errorAction: <CopyDraftButton className="ml-auto hover:bg-secondary" onClick={copyDraft} />,
   });
 
   /** 상황별 이미지 등록(`POST /assets/{id}/register-situational-image`)은 content_version_id를
@@ -334,12 +342,11 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
     <FormProvider {...form}>
       <BuilderUiStateContext.Provider value={uiState}>
         {/* 빌더는 전역 Header 대신 이 전용 상단바를 쓴다(같은
-            57px 자리, `routes/__root.tsx`가 `/builder` 경로에서 Header를 뺀다). 저장 계약("자동저장")을
-            여기서 한 번 말해 둔다 — 안 그러면 사용자가 그 단어를 처음 만나는 자리가 빨간 실패
-            토스트다. */}
+            57px 자리, `routes/__root.tsx`가 `/builder` 경로에서 Header를 뺀다). 저장 상태 글자는 아직 저장한 적이 없을 때
+            저장 계약("자동저장")을 말한다 — 안 그러면 사용자가 그 단어를 처음 만나는 자리가 빨간 실패 토스트다. */}
         <BuilderTopBar
           title="캐릭터 만들기"
-          autosaveNotice="변경사항은 자동으로 저장돼요."
+          saveStatus={<BuilderSaveStatus saveStatus={saveStatus} onCopy={copyDraft} />}
           actions={
             <BuilderTopBarActions
               guidePath={creationGuidePath("character", activeTab)}
@@ -360,6 +367,8 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
           steps={<BuilderStepNav variant="column" {...stepNavProps} />}
           preview={previewNode}
         >
+          {/* lg 미만에는 상단바에 저장 상태 글자 자리가 없어 폼 흐름 맨 위에 둔다(스크롤하면 함께 올라간다). */}
+          <BuilderSaveStatus saveStatus={saveStatus} onCopy={copyDraft} className="min-h-8 justify-between lg:hidden" />
           {checklist.hasAttempted && issueRows.length > 0 && (
             <PublishIssueList rows={issueRows} onSelect={(path) => revealAndFocus(errorsAtPaths([path]))} />
           )}

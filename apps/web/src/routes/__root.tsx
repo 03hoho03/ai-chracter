@@ -6,6 +6,7 @@ import { ChangeNovelPermissionModal } from "@/features/change-novel-permission";
 import { ChangeStartingSetupModal, ConfirmStartingSetupChangeModal } from "@/features/change-starting-setup";
 import { FirstPersonaNameModal } from "@/features/choose-start-persona";
 import { ImageCropModal } from "@/features/crop-image";
+import { DraftTextModal } from "@/features/build-common";
 import { MediaBookConfirmModal, MediaBookOverwriteModal, MediaTagPickerModal } from "@/features/edit-media-book";
 import { EndingCollectionModal } from "@/features/ending-collection";
 import { ImageArchiveModal, StoryImageArchiveModal } from "@/features/image-archive";
@@ -119,6 +120,7 @@ function RootComponent() {
       <MediaBookConfirmModal />
       <MediaBookOverwriteModal />
       <MediaTagPickerModal />
+      <DraftTextModal />
       <AppealModal />
       <ChangeContentVisibilityModal />
       <ChangeNovelPermissionModal />

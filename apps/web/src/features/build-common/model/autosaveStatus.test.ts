@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createAutosaveStatusStore, hasUnsavedChanges, type AutosaveStatus } from "./autosaveStatus";
 
@@ -93,6 +93,28 @@ describe("createAutosaveStatusStore onSaved", () => {
     await store.track(() => Promise.resolve());
     await store.track(() => Promise.resolve());
     expect(saved).toBe(2);
+  });
+});
+
+describe("createAutosaveStatusStore getLastSavedAt", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // "저장됨 · 시각" 의 시각이다. 스냅샷은 원시값 그대로 두고(시각을 담은 객체를 읽을 때마다 새로 만들면 구독하는 쪽이 끝없이 다시
+  // 그린다) 시각은 따로 읽는다. 실패한 저장은 시각을 바꾸지 않는다 — 마지막으로 서버에 닿은 때가 그대로다.
+  it("records the time of the last successful save only", async () => {
+    vi.useFakeTimers();
+    const store = createAutosaveStatusStore();
+    expect(store.getLastSavedAt()).toBeUndefined();
+    vi.setSystemTime(new Date(2026, 9, 27, 23, 42));
+    await store.track(() => Promise.resolve());
+    const firstSavedAt = new Date(2026, 9, 27, 23, 42).getTime();
+    expect(store.getLastSavedAt()).toBe(firstSavedAt);
+    vi.setSystemTime(new Date(2026, 9, 27, 23, 50));
+    await store.track(() => Promise.reject(new Error("boom"))).catch(() => undefined);
+    expect(store.getLastSavedAt()).toBe(firstSavedAt);
+    expect(typeof store.getSnapshot()).toBe("string");
   });
 });
 

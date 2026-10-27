@@ -1,5 +1,5 @@
 /**
- * 빌더 저장 상태. 화면에는 임시저장 버튼의 아이콘과 접근 이름으로만 보인다.
+ * 빌더 저장 상태. 화면에는 저장 상태 글자 줄(`BuilderSaveStatus`)과 임시저장 버튼의 아이콘·접근 이름으로 보인다.
  *
  * - `idle`: 이 화면에서 아직 저장한 적이 없다.
  * - `pending`: 편집이 있어 자동저장을 기다리는 중이다(입력을 멈추면 곧 저장된다).
@@ -21,6 +21,10 @@ export function hasUnsavedChanges(status: AutosaveStatus): boolean {
 
 export type AutosaveStatusStore = {
   getSnapshot: () => AutosaveStatus;
+  /** 마지막으로 성공한 저장의 시각(`Date.now()`). 스냅샷과 따로 읽어 스냅샷을 원시값으로 둔다 — `useSyncExternalStore` 는
+   * 스냅샷을 `Object.is` 로 비교하므로, 시각을 함께 담은 객체를 읽을 때마다 새로 만들면 끝없이 다시 그린다. 그리는 쪽은 스냅샷이
+   * 바뀌어 다시 그려질 때 이 값을 함께 읽는다. */
+  getLastSavedAt: () => number | undefined;
   subscribe: (listener: () => void) => () => void;
   /** 자동저장이 예약됐다(디바운스 대기). 저장이 이미 나가 있으면 그 상태를 덮지 않는다. */
   markPending: () => void;
@@ -30,7 +34,7 @@ export type AutosaveStatusStore = {
 
 /**
  * 저장 상태를 담는 외부 저장소. React 상태가 아닌 이유는 셸을 다시 그리지 않기 위해서다 — 저장은 입력을 멈출 때마다 돌고, 셸이
- * 그 상태를 쥐면 셸과 미리보기가 그때마다 다시 그려진다. 상태를 보이는 버튼 하나만 `useSyncExternalStore` 로 구독한다.
+ * 그 상태를 쥐면 셸과 미리보기가 그때마다 다시 그려진다. 상태를 보이는 글자 줄과 임시저장 버튼만 `useSyncExternalStore` 로 구독한다.
  *
  * 저장 요청은 초안 하나에 한 줄로 서서 차례로 끝나지만, 앞 요청이 끝나기 전에 다음 요청이 시작될 수는 있다. 그래서 나가 있는 요청
  * 수를 세고 그 수가 0이 될 때 마지막 결과를 보인다 — 앞 요청의 성공이 뒤 요청이 도는 중에 "저장됨"을 띄우지 않는다.
@@ -46,6 +50,7 @@ export function createAutosaveStatusStore({
   let isPending = false;
   let lastResult: AutosaveStatus = "idle";
   let snapshot: AutosaveStatus = "idle";
+  let lastSavedAt: number | undefined;
   const listeners = new Set<() => void>();
 
   function publish() {
@@ -59,6 +64,7 @@ export function createAutosaveStatusStore({
 
   return {
     getSnapshot: () => snapshot,
+    getLastSavedAt: () => lastSavedAt,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -75,6 +81,7 @@ export function createAutosaveStatusStore({
       try {
         const result = await save();
         lastResult = "saved";
+        lastSavedAt = Date.now();
         onSaved?.();
         return result;
       } catch (error) {

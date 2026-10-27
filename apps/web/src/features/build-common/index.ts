@@ -15,6 +15,7 @@ export {
   type TabStepId,
   type TabStepTable,
 } from "./model/builderSteps";
+export { draftPlainText } from "./model/draftPlainText";
 export { errorItemKeys } from "./model/errorItemKeys";
 export { errorParentItemId } from "./model/errorParentItemId";
 export {
@@ -37,6 +38,7 @@ export { useFocusFirstError } from "./lib/useFocusFirstError";
 export { focusPreviewToggleIfLost } from "./lib/focusPreviewToggleIfLost";
 export { usePublishChecklist, type ServerIssueInput } from "./lib/usePublishChecklist";
 export { useConfirmFirstPublish } from "./lib/useConfirmFirstPublish";
+export { copyDraftText } from "./lib/copyDraftText";
 export { clampFieldAtCaret, isComposingChange } from "./lib/clampFieldAtCaret";
 export { useLimitedTextField } from "./lib/useLimitedTextField";
 export { focusNeighborToggle } from "./lib/focusNeighborToggle";
@@ -47,6 +49,7 @@ export { restoreUnderLimit, type RestoreDecision } from "./model/restoreDecision
 export { useUndoableRemoval } from "./model/useUndoableRemoval";
 export { AuthorMacroNotice } from "./ui/AuthorMacroNotice";
 export { BuilderLayout } from "./ui/BuilderLayout";
+export { BuilderSaveStatus, CopyDraftButton } from "./ui/BuilderSaveStatus";
 export { BuilderStepNav } from "./ui/BuilderStepNav";
 export { BuilderTabStrip } from "./ui/BuilderTabStrip";
 export { BuilderTopBar } from "./ui/BuilderTopBar";
@@ -55,6 +58,7 @@ export { FieldCharacterCount } from "./ui/FieldCharacterCount";
 export { FieldGuideLink } from "./ui/FieldGuideLink";
 export { FirstPublishConfirmModal } from "./ui/FirstPublishConfirmModal";
 export { CollapsibleItemCard } from "./ui/CollapsibleItemCard";
+export { DraftTextModal } from "./ui/DraftTextModal";
 export { CollapsibleSection } from "./ui/CollapsibleSection";
 export { HashtagField } from "./ui/HashtagField";
 export { ItemDragHandle } from "./ui/ItemDragHandle";
