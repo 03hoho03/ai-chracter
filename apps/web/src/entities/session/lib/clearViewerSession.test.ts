@@ -18,7 +18,7 @@ import { personaKeys } from "@/entities/persona/@x/session";
 import { previewSessionKeys } from "@/entities/preview-session/@x/session";
 import { storyImageArchiveKeys } from "@/entities/story-image-archive/@x/session";
 import { webnovelKeys } from "@/entities/webnovel/@x/session";
-import { workKeys } from "@/entities/work/@x/session";
+import { workBundleKeys, workKeys } from "@/entities/work/@x/session";
 
 import { sessionKeys } from "../api/keys";
 import { clearViewerQueries, clearViewerSession } from "./clearViewerSession";
@@ -65,6 +65,8 @@ const VIEWER_KEYS: QueryKey[] = [
   webnovelKeys.list("latest"),
   webnovelKeys.home(),
   workKeys.list({ type: "all", status: "all", q: undefined }),
+  workBundleKeys.list(),
+  workBundleKeys.forWork("story", "c1"),
 ];
 
 // 누구에게나 같은 응답이라 계정이 바뀌어도 그대로 써도 되는 캐시.

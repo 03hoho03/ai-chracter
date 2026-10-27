@@ -13,6 +13,13 @@ type MyWorksQueryParams = NonNullable<operations["list_my_works_me_works_get"]["
 export type MyWorksParams = {
   type: NonNullable<MyWorksQueryParams["type"]>;
   status: NonNullable<MyWorksQueryParams["status"]>;
+  /** 이 묶음에 든 작품만. 없으면 묶음과 무관한 전체 목록이다. */
+  bundleId?: string;
   /** 정규화된 검색어(`normalizeMyWorksQuery`). 없으면 검색하지 않는다. */
   q: string | undefined;
 };
+
+export type WorkBundleSummary = components["schemas"]["WorkBundleSummary"];
+export type WorkBundleListResponse = components["schemas"]["WorkBundleListResponse"];
+/** 묶음에 넣고 빼는 단위의 종류 — 목록 행의 `kind` 와 같은 값이다. */
+export type WorkBundleKind = WorkItem["kind"];
