@@ -945,13 +945,12 @@ async def test_late_finisher_with_superseded_claim_writes_nothing(
 
 def test_production_env_extracts_facts_on_haiku_through_anthropic(monkeypatch: pytest.MonkeyPatch) -> None:
     """운영은 관계·사실 기억 추출을 켜고 그 모델을 `haiku` 로, 그 호출을 Anthropic 직결로 배정해 돈다. 뽑은 사실을 대화에
-    싣는 스위치는 운영에 없어 추출만 돈다."""
-    assert {"MEMORY_FACTS_EXTRACT", "MEMORY_FACT_MODEL"} <= set(PRODUCTION_ENV_NAMES)
-    assert "MEMORY_FACTS_INJECT" not in PRODUCTION_ENV_NAMES
+    싣는 스위치도 운영에 넣어 켜 두었다."""
+    assert {"MEMORY_FACTS_EXTRACT", "MEMORY_FACT_MODEL", "MEMORY_FACTS_INJECT"} <= set(PRODUCTION_ENV_NAMES)
     loaded = load_production_env(monkeypatch)
     assert (loaded.memory_facts_extract, loaded.memory_fact_model) == (True, "haiku")
     assert loaded.llm_call_site_backends.get("chat_memory_fact") == "anthropic"
-    assert not loaded.memory_facts_inject
+    assert loaded.memory_facts_inject
 
 
 # --- 측정 서버의 프롬프트 덤프 -------------------------------------------------------------
