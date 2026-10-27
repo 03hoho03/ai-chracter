@@ -165,10 +165,10 @@ async def test_spend_in_new_transaction_commits_without_the_caller(
         independent_session_factory, user_id=user_id, amount=_CHAT_TURN_COST, kind="chat_spend"
     )
 
-    assert charged is not None and charged.balance_after == 90
+    assert charged is not None and charged.balance_after == 100 - _CHAT_TURN_COST
     balance, rows = await _read(independent_session_factory, user_id)
-    assert balance == 90
-    assert [(row.kind, row.amount, row.balance_after) for row in rows] == [("chat_spend", -10, 90)]
+    assert balance == 100 - _CHAT_TURN_COST
+    assert [(row.kind, row.amount, row.balance_after) for row in rows] == [("chat_spend", -_CHAT_TURN_COST, 100 - _CHAT_TURN_COST)]
 
 
 async def test_spend_in_new_transaction_writes_nothing_when_short(
@@ -222,13 +222,13 @@ async def test_charge_survives_the_callers_rollback(
         charged = await spend_in_new_transaction(
             independent_session_factory, user_id=user_id, amount=_CHAT_TURN_COST, kind="chat_spend"
         )
-        assert charged is not None and charged.balance_after == 90
+        assert charged is not None and charged.balance_after == 100 - _CHAT_TURN_COST
         await outer.rollback()
     finally:
         await outer.close()
 
     balance, rows = await _read(independent_session_factory, user_id)
-    assert balance == 90
+    assert balance == 100 - _CHAT_TURN_COST
     assert len(rows) == 1
 
     async with independent_session_factory() as session:
@@ -307,7 +307,7 @@ async def test_concurrent_spend_cannot_overdraw(
 
     balance, rows = await _read(independent_session_factory, user_id)
     assert balance == 0
-    assert [(row.kind, row.amount) for row in rows] == [("chat_spend", -10)]
+    assert [(row.kind, row.amount) for row in rows] == [("chat_spend", -_CHAT_TURN_COST)]
 
     # Σ 불변식 — 매칭 로트가 실제로 깎였다. 총액만 움직인 게 아니다.
     async with independent_session_factory() as session:
@@ -411,11 +411,11 @@ async def test_burn_all_burns_the_balance_the_row_actually_holds(
 
     탈퇴 라우트는 `user`를 초입에서 로드하고 그 뒤 채팅방·메시지·asset 삭제를 거치므로,
     소멸 시점의 실제 잔액이 그 로드값보다 적을 수 있다(다른 탭이 그 사이 채팅을 했다).
-    여기서는 그 창을 **최대로 벌려** 재현한다 — 호출자가 100을 본 뒤 90으로 커밋된다.
+    여기서는 그 창을 **최대로 벌려** 재현한다 — 호출자가 100을 본 뒤 한 턴만큼 줄어든 값으로 커밋된다.
 
     `burn_all`이 절대 대입(`SET clover_balance = 0`)이고 소멸액을 `RETURNING OLD`로 받으므로
     읽기와 쓰기가 **한 문장**이다. 그래서 ① 잔액이 정확히 0이고 ② 원장 금액이 **실제로
-    소멸된 90**이다(호출자가 본 100이 아니다).
+    소멸된 남은 잔액**이다(호출자가 본 100이 아니다).
 
     🔴 이 테스트는 `burn_all`을 직접 부른다. 내부를 재현하면 구현이 바뀔 때 테스트만 초록으로
     남는다 — 이 테스트의 첫 판본이 `_apply` 두 문장을 손으로 재현했다가 정확히 그 함정에 걸렸다.
@@ -447,18 +447,18 @@ async def test_burn_all_burns_the_balance_the_row_actually_holds(
         loaded = await burner.scalar(select(User.clover_balance).where(User.id == user_id))
         assert loaded == 100
 
-        # ② 그 사이 다른 트랜잭션이 차감하고 **커밋한다** — 실제 잔액은 이제 90이다.
+        # ② 그 사이 다른 트랜잭션이 차감하고 **커밋한다** — 실제 잔액은 이제 100 − 한 턴이다.
         spent = await spend(spender, user_id=user_id, amount=_CHAT_TURN_COST, kind="chat_spend")
-        assert spent is not None and spent.balance_after == 90
+        assert spent is not None and spent.balance_after == 100 - _CHAT_TURN_COST
         await spender.commit()
 
-        # ③ 소멸. 낡은 `loaded`(100)가 아니라 행이 실제로 가진 90이 소멸돼야 한다.
+        # ③ 소멸. 낡은 `loaded`(100)가 아니라 행이 실제로 가진 잔액이 소멸돼야 한다.
         event.listen(db_engine.sync_engine, "before_cursor_execute", _record)
         try:
             burned = await burn_all(burner, user_id=user_id)
         finally:
             event.remove(db_engine.sync_engine, "before_cursor_execute", _record)
-        assert burned == 90
+        assert burned == 100 - _CHAT_TURN_COST
         await burner.commit()
     finally:
         await burner.close()
@@ -470,8 +470,8 @@ async def test_burn_all_burns_the_balance_the_row_actually_holds(
     balance, rows = await _read(independent_session_factory, user_id)
     assert balance == 0
     assert sorted((row.kind, row.amount) for row in rows) == [
-        ("chat_spend", -10),
-        ("withdrawal_burn", -90),
+        ("chat_spend", -_CHAT_TURN_COST),
+        ("withdrawal_burn", -(100 - _CHAT_TURN_COST)),
     ]
 
     # 로트도 함께 0이 됐다. 유령 로트 금지.

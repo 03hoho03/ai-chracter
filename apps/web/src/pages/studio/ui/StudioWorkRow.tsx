@@ -18,6 +18,8 @@ type StudioWorkRowProps = {
   item: WorkItem;
   userId: string;
   onRemoved: () => void;
+  /** 묶음 화면에서만 — 행 메뉴의 "이 묶음에서 빼기". */
+  onRemoveFromBundle?: () => void;
 };
 
 /**
@@ -31,7 +33,7 @@ type StudioWorkRowProps = {
  * 좁은 폭은 [썸네일 · 제목 / 배지 줄 / "n 전 수정 · 다음 행동"] 한 열, 넓은 폭은 열 머리와 맞춘 네 열이다. 두 꼴을 같은
  * 요소로 그리려고 묶음 상자는 넓은 폭에서 `contents` 로 풀려 안의 조각이 바로 격자 칸이 된다.
  */
-export function StudioWorkRow({ item, userId, onRemoved }: StudioWorkRowProps) {
+export function StudioWorkRow({ item, userId, onRemoved, onRemoveFromBundle }: StudioWorkRowProps) {
   const descriptionId = useId();
   const title = toStudioWorkTitle(item);
   const action = toStudioNextAction(item);
@@ -93,7 +95,13 @@ export function StudioWorkRow({ item, userId, onRemoved }: StudioWorkRowProps) {
       </Link>
 
       <div className="relative">
-        <StudioWorkRowMenu item={item} title={title} userId={userId} onRemoved={onRemoved} />
+        <StudioWorkRowMenu
+          item={item}
+          title={title}
+          userId={userId}
+          onRemoved={onRemoved}
+          onRemoveFromBundle={onRemoveFromBundle}
+        />
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 {
   "cancel-after-done-before-the-preview-save/preview-story": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -72,7 +72,7 @@
   },
   "cancel-after-the-write-commit/edit": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -137,7 +137,7 @@
   },
   "cancel-after-the-write-commit/regenerate": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -194,7 +194,7 @@
   },
   "cancel-after-the-write-commit/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -687,7 +687,7 @@
   },
   "empty-generation/edit": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -768,7 +768,7 @@
   },
   "empty-generation/preview-story": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -841,7 +841,7 @@
   },
   "empty-generation/regenerate": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -903,7 +903,7 @@
   },
   "empty-generation/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -992,7 +992,7 @@
   },
   "ending-judgment-error/edit": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -1080,7 +1080,7 @@
   },
   "ending-judgment-error/preview-story": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -1160,7 +1160,7 @@
   },
   "ending-judgment-error/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -1256,7 +1256,7 @@
   },
   "ending-judgment-prompt-render-failure/preview-story": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -1332,7 +1332,7 @@
   },
   "ending-judgment-prompt-render-failure/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -1424,7 +1424,7 @@
   },
   "ending-read-aborts-the-transaction/edit": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -1508,7 +1508,7 @@
   },
   "ending-read-aborts-the-transaction/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -1600,7 +1600,7 @@
   },
   "epilogue-display-failure/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -2235,7 +2235,7 @@
   },
   "generation-policy-violation-after-tokens/edit": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -2292,7 +2292,7 @@
   },
   "generation-policy-violation-after-tokens/preview-character": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -2341,7 +2341,7 @@
   },
   "generation-policy-violation-after-tokens/preview-story": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -2392,7 +2392,7 @@
   },
   "generation-policy-violation-after-tokens/regenerate": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -2452,7 +2452,7 @@
   },
   "generation-policy-violation-after-tokens/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3052,7 +3052,7 @@
   },
   "media-judgment-error/edit": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3146,7 +3146,7 @@
   },
   "media-judgment-error/preview-story": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3232,7 +3232,7 @@
   },
   "media-judgment-error/regenerate": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3307,7 +3307,7 @@
   },
   "media-judgment-error/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3409,7 +3409,7 @@
   },
   "media-judgment-prompt-render-failure/preview-story": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3491,7 +3491,7 @@
   },
   "media-judgment-prompt-render-failure/regenerate": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3562,7 +3562,7 @@
   },
   "media-judgment-prompt-render-failure/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3660,7 +3660,7 @@
   },
   "post-commit-signing-failure/regenerate": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3735,7 +3735,7 @@
   },
   "post-commit-signing-failure/regenerate-character": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3808,7 +3808,7 @@
   },
   "post-commit-signing-failure/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3910,7 +3910,7 @@
   },
   "preview-save-fails/preview-story": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -3986,7 +3986,7 @@
   },
   "room-deleted-before-the-write/regenerate": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4029,7 +4029,7 @@
   },
   "room-deleted-before-the-write/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4080,7 +4080,7 @@
   },
   "situational-image-judgment-error/edit-character": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4153,7 +4153,7 @@
   },
   "situational-image-judgment-error/regenerate-character": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4226,7 +4226,7 @@
   },
   "situational-image-judgment-error/send-character": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4307,7 +4307,7 @@
   },
   "stat-judgment-error/edit": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4386,7 +4386,7 @@
   },
   "stat-judgment-error/preview-story": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4457,7 +4457,7 @@
   },
   "stat-judgment-error/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4544,7 +4544,7 @@
   },
   "stat-judgment-prompt-render-failure/edit": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4619,7 +4619,7 @@
   },
   "stat-judgment-prompt-render-failure/preview-story": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4686,7 +4686,7 @@
   },
   "stat-judgment-prompt-render-failure/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4769,7 +4769,7 @@
   },
   "stat-rule-read-aborts-the-transaction/edit": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
@@ -4844,7 +4844,7 @@
   },
   "stat-rule-read-aborts-the-transaction/send": {
     "clover": {
-      "balanceDelta": -10,
+      "balanceDelta": -20,
       "ledger": [
         "chat_spend"
       ]
