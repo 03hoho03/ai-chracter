@@ -27,6 +27,7 @@ import {
   type VisibilityFilter,
 } from "@/entities/content";
 import { useDraftListQuery } from "@/entities/draft";
+import { MyWorksSearchField } from "@/entities/work";
 
 import { resolveMyWorksBodyView } from "../model/myWorksBodyView";
 import { resolveMyWorksEmptyResult, toMyWorksScopeLabel } from "../model/myWorksEmptyResult";
@@ -49,7 +50,6 @@ import {
   type MyWorkTypeFilter,
 } from "../model/myWorksSearch";
 import { MyWorkCardMenu } from "./MyWorkCardMenu";
-import { MyWorksSearchField } from "./MyWorksSearchField";
 
 type MyWorksPageProps = {
   userId: string;
