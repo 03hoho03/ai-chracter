@@ -248,6 +248,15 @@ def novel_prices_for_flow_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_model_price(monkeypatch, "opus", novel_episode=170)
 
 
+@pytest.fixture
+def novel_read_price_for_flow_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """노벨 화 소장 흐름(구매·환급·판본·공개 상태) 테스트가 쓰는 고정 화 가격 30 이다. 이 테스트들은 정책 가격이 아니라
+    흐름을 보고, 시작 잔액·환급액·알림 금액을 이 값으로 계산해 적어 두었으므로 정책 가격을 바꿀 때마다 다시 계산하지 않게
+    여기서 고정한다. 정책 가격은 `test_core_clover.py` 의 `test_policy_constants_match_decisions` 가 고정한다. 가격 안내
+    응답·구매 라우트·화 공개 정보는 호출 때마다 `api.core.clover` 의 모듈 상수를 읽으므로 이 교체가 그대로 통한다."""
+    monkeypatch.setattr(clover, "NOVEL_READ_COST", 30)
+
+
 @pytest_asyncio.fixture(scope="session")
 async def api_client() -> AsyncGenerator[httpx.AsyncClient, None]:
     """Session-scoped, `ASGITransport`-based (not `TestClient`): `TestClient`

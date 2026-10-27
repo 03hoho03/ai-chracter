@@ -45,6 +45,10 @@ from api.novelize import router as novelize_router
 from api.novelize.deletion import delete_novels
 from api.novelize.hidden_purge import purge_hidden_novels, strip_hidden_novels
 
+# 노벨 화 소장 흐름을 보는 파일이라 화 가격을 고정값으로 둔다(`conftest.py` 의 `novel_read_price_for_flow_tests`).
+pytestmark = pytest.mark.usefixtures("novel_read_price_for_flow_tests")
+
+
 _SETTLE_SECONDS = 10
 
 

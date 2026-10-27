@@ -168,13 +168,12 @@ async def test_pricing_does_not_reveal_switches(
 
 def test_products_follow_the_pricing_rule() -> None:
     """상품마다 가격이 5만 원 미만이고, 유료 수량이 0보다 크고, 보너스가 0 이상 유료 수량의 20% 이하이며, 가격이 유료
-    수량 × 3원이다. 키는 서로 다르고 예전 상품의 키를 다시 쓰지 않는다.
+    수량 × 클로버 단위(`CLOVER_UNIT_KRW`, 원)다. 키는 서로 다르고 예전 상품의 키를 다시 쓰지 않는다.
 
     5만 원 미만은 결제대행사의 충전형 상품 한도를 넘지 않으려는 보수적 상한이다. 유료 수량이 0이면 환불 견적이 결제액을
     유료 수량으로 나눌 때 0으로 나누고, 주문 행은 CHECK 제약에 걸려 500이 된다. 보너스 20%
-    상한은 보너스가 가장 많은 상품에서도 상위 모델 사용 원가가 판매가 안에 드는 선이다. "가격 = 유료 수량 × 3" 은
-    1클로버를 3원(부가세 포함)으로 잡은 환산이라, 그 환산을 바꾸면 이 단언이 깨지는 게 맞다 — 그때는 새 규칙에 맞게
-    이 테스트를 고친다.
+    상한은 정책값이다 — 보너스가 붙을수록 1클로버로 원가에 쓸 수 있는 돈이 줄어든다. 가격과 유료 수량은 이 코드의 클로버
+    단위로 환산한 값이라 단위를 바꾸면 상품표도 함께 바뀌어야 한다 — 한쪽만 바뀌면 결제액과 지급량이 어긋난다.
     """
     assert products.CLOVER_PRODUCTS
     keys = [product.key for product in products.CLOVER_PRODUCTS]
@@ -185,7 +184,7 @@ def test_products_follow_the_pricing_rule() -> None:
         assert product.paid_amount > 0, product.key
         assert product.bonus_amount >= 0, product.key
         assert product.bonus_amount * 100 <= product.paid_amount * 20, product.key
-        assert product.price_krw == product.paid_amount * 3, product.key
+        assert product.price_krw == product.paid_amount * clover.CLOVER_UNIT_KRW, product.key
 
 
 @pytest.mark.parametrize("gate", [pytest.param(False, id="gate-off"), pytest.param(True, id="gate-on")])

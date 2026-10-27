@@ -43,9 +43,10 @@ def test_unit_check_table(unit_krw: int, action: unit.UnitAction | None, refused
         unit.check_unit_matches(action, unit_krw=unit_krw)
 
 
-def test_this_code_is_the_old_unit() -> None:
-    """이 배포의 코드는 전환 전 단위다 — 교체 스크립트는 이 이름이 있는 이미지를 "가드 있음"으로 본다."""
-    assert clover.CLOVER_UNIT_KRW == 3
+def test_this_code_is_the_new_unit() -> None:
+    """이 코드는 전환 뒤 단위(1클로버 = 1원)다 — 전환 기록이 있는 DB 에서만 뜬다. 교체 스크립트는 이 이름이 있는 이미지를
+    "가드 있음"으로 본다."""
+    assert clover.CLOVER_UNIT_KRW == 1
 
 
 def _factory(db: AsyncSession) -> async_sessionmaker[AsyncSession]:
@@ -64,14 +65,14 @@ async def _events(db: AsyncSession, *events: tuple[str, datetime]) -> None:
 @pytest.mark.parametrize(
     ("events", "refused"),
     [
-        pytest.param((), False, id="no-record"),
-        pytest.param((("convert", _T),), True, id="converted"),
-        pytest.param((("convert", _T), ("revert", _T + timedelta(days=1))), False, id="reverted"),
+        pytest.param((), True, id="no-record"),
+        pytest.param((("convert", _T),), False, id="converted"),
+        pytest.param((("convert", _T), ("revert", _T + timedelta(days=1))), True, id="reverted"),
         # 행을 넣은 순서가 아니라 `occurred_at` 으로 마지막을 고른다.
-        pytest.param((("revert", _T + timedelta(days=1)), ("convert", _T)), False, id="reverted-inserted-first"),
+        pytest.param((("revert", _T + timedelta(days=1)), ("convert", _T)), True, id="reverted-inserted-first"),
         pytest.param(
             (("convert", _T), ("revert", _T + timedelta(days=1)), ("convert", _T + timedelta(days=2))),
-            True,
+            False,
             id="converted-again",
         ),
     ],
@@ -89,7 +90,7 @@ async def test_guard_reads_the_latest_record_from_the_table(
 
 
 async def test_a_database_without_the_table_has_no_record(ddl_engine: AsyncEngine) -> None:
-    """표가 생기기 전 백업으로 복원한 DB 에서도 기동한다 — 그 DB 는 전환한 적이 없다."""
+    """표가 생기기 전 백업으로 복원한 DB 는 기록 없음이다 — 전환한 적이 없으므로 옛 단위 코드만 그 위에서 뜬다."""
     async with ddl_engine.connect() as connection:
         transaction = await connection.begin()
         try:

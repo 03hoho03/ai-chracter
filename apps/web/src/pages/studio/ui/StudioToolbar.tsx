@@ -56,6 +56,8 @@ type StudioToolbarProps = {
   status: StudioStatusFilter;
   q: string | undefined;
   isNovelAreaVisible: boolean;
+  /** 묶음 화면에는 상태 셀렉트가 없다 — 묶음은 내가 고른 작품 몇 개라 상태로 다시 거를 일이 적고, 줄이 짧아진다. */
+  isStatusFilterVisible: boolean;
   onSearchChange: (patch: Partial<StudioSearch>) => void;
 };
 
@@ -74,6 +76,7 @@ export function StudioToolbar({
   status,
   q,
   isNovelAreaVisible,
+  isStatusFilterVisible,
   onSearchChange,
 }: StudioToolbarProps) {
   return (
@@ -98,30 +101,32 @@ export function StudioToolbar({
         ))}
       </ToggleGroup>
 
-      <Select
-        value={status}
-        onValueChange={(value) => {
-          if (!isStudioStatusFilter(value)) return;
-          onSearchChange({ status: value === "all" ? undefined : value });
-        }}
-      >
-        {/* 트리거 안에는 `SelectValue` 가 있어야 Radix 가 열린 목록으로 포커스를 옮긴다. 축 이름은 `aria-label` 로 함께
-            넘긴다(`aria-label` 이 내용을 덮으므로 값도 같이 담는다). */}
-        <SelectTrigger
-          size="sm"
-          className={cn("shrink-0 pointer-coarse:h-10", status === "all" ? "text-muted-foreground" : "border-ring")}
-          aria-label={status === "all" ? STATUS_AXIS_LABEL : `${STATUS_AXIS_LABEL}: ${STUDIO_STATUS_FILTER_LABEL[status]}`}
+      {isStatusFilterVisible && (
+        <Select
+          value={status}
+          onValueChange={(value) => {
+            if (!isStudioStatusFilter(value)) return;
+            onSearchChange({ status: value === "all" ? undefined : value });
+          }}
         >
-          <SelectValue>{status === "all" ? STATUS_AXIS_LABEL : STUDIO_STATUS_FILTER_LABEL[status]}</SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {toStudioStatusOptions(isNovelAreaVisible).map((value) => (
-            <SelectItem key={value} value={value}>
-              {STUDIO_STATUS_FILTER_LABEL[value]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+          {/* 트리거 안에는 `SelectValue` 가 있어야 Radix 가 열린 목록으로 포커스를 옮긴다. 축 이름은 `aria-label` 로 함께
+              넘긴다(`aria-label` 이 내용을 덮으므로 값도 같이 담는다). */}
+          <SelectTrigger
+            size="sm"
+            className={cn("shrink-0 pointer-coarse:h-10", status === "all" ? "text-muted-foreground" : "border-ring")}
+            aria-label={status === "all" ? STATUS_AXIS_LABEL : `${STATUS_AXIS_LABEL}: ${STUDIO_STATUS_FILTER_LABEL[status]}`}
+          >
+            <SelectValue>{status === "all" ? STATUS_AXIS_LABEL : STUDIO_STATUS_FILTER_LABEL[status]}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {toStudioStatusOptions(isNovelAreaVisible).map((value) => (
+              <SelectItem key={value} value={value}>
+                {STUDIO_STATUS_FILTER_LABEL[value]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       <MyWorksSearchField
         inputRef={searchInputRef}

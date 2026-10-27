@@ -68,6 +68,10 @@ from factories import (
 )
 
 
+# 노벨 화 소장 흐름을 보는 파일이라 화 가격을 고정값으로 둔다(`conftest.py` 의 `novel_read_price_for_flow_tests`).
+pytestmark = pytest.mark.usefixtures("novel_read_price_for_flow_tests")
+
+
 @pytest.fixture(autouse=True)
 def _switches_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "novel_public_enabled", True)

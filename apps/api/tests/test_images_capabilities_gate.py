@@ -910,7 +910,7 @@ async def test_token_exhaustion_spends_clover_and_creates_the_job(
     user = await _authed_user(
         db_client,
         db_session,
-        clover_balance=100,
+        clover_balance=1_000,
         clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC)),
     )
 
@@ -920,7 +920,7 @@ async def test_token_exhaustion_spends_clover_and_creates_the_job(
     assert len(created_job_ids) == 1
 
     await db_session.refresh(user)
-    assert user.clover_balance == 100 - 2 * clover.IMAGE_UNIT_COST
+    assert user.clover_balance == 1_000 - 2 * clover.IMAGE_UNIT_COST
 
     rows = list(
         (
