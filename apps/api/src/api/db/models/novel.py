@@ -441,6 +441,12 @@ class NovelJob(Base):
     # 파이썬 None 은 JSON `null` 이 아니라 SQL NULL 로 쓴다 — 칸을 비우는 쓰기(`block_edit=None`)가 JSON null 을 남기면 "칸 없음"
     # 판정(`IS NULL`)과 CHECK 가 그 행을 패치 작업으로 본다.
     block_edit: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    # 이 작업이 부른 모델 호출마다 원소 하나(`novelize/call_records.py` 의 꼴). 원가 분석용이라 응답에 싣지 않고, 작업 행을 읽는
+    # 모든 조회가 이 목록까지 끌어오지 않게 지연 로드한다 — 읽을 때는 칸을 골라 SELECT 한다(비동기 세션에서 속성으로 읽으면 지연
+    # 로드가 실패한다). 칸을 모르는 옛 코드의 INSERT 는 서버 기본값 `[]` 이 채운다.
+    llm_calls: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), deferred=True
+    )
     failure_code: Mapped[NovelJobFailureCode | None] = mapped_column(Text, nullable=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

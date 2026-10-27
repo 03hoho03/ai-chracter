@@ -34,12 +34,13 @@ from api.llm.chat_models import PromptSetModelId
 from api.llm.client import LLMCallContext, LLMClient, T
 from api.novelize import billing, inputs, runner
 from api.novelize import router as novelize_router
-from api.novelize.block_edits import BlockEdit, normalized_result, request_targets
+from api.novelize.block_edits import BlockEdit, request_targets
 from api.novelize.text import split_paragraphs
 from factories import (
     _add_chapter,
     _batch_output,
     _clear_llm_override,
+    _edited_recheck_bundle,
     _make_user_with_clover_lot,
     _novel_setup,
     _open_room,
@@ -436,47 +437,6 @@ async def test_a_row_chain_without_the_channel_fails_the_edit_with_a_refund_befo
 
 
 # ── 묶음 재검사(동기 요청) ───────────────────────────────────────────────────────
-async def _edited_bundle(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> tuple[uuid.UUID, str, Novel]:
-    """둘째·넷째 문단 수정안이 묶인 끝난 작업에서 사용자가 둘째 블록을 직접 고친 상태 — 재검사할 거리가 있다."""
-    monkeypatch.setattr(settings, "novelize_multi_block_edit_enabled", True)
-    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
-    messages = await _room_messages(db_session, room.room_id)
-    chapter = await _add_chapter(
-        db_session, novel_id, room, messages[0], room.turns[1][1], body="\n\n".join(_PARAGRAPHS)
-    )
-    base = await _current(db_session, chapter.id)
-    members = [1, 3]
-    targets = request_targets([base.block_ids[i] for i in members], base.block_ids, split_paragraphs(base.body))
-    patches, bundles, _ = normalized_result(
-        targets,
-        [(i + 1, [f"고친 {i + 1}."]) for i in members],
-        [([i + 1 for i in members], "앞이 정한 사실을 뒤가 쓴다")],
-    )
-    novel = await db_session.get_one(Novel, novel_id)
-    job = NovelJob(
-        novel_id=novel_id,
-        user_id=novel.user_id,
-        kind="ai_edit",
-        status="succeeded",
-        chapter_id=chapter.id,
-        base_revision_id=base.id,
-        instruction="더 쓸쓸하게",
-        charged_amount=_EDIT_COST,
-        block_edit=BlockEdit(targets=targets, scene_id=None, patches=patches, bundles=bundles).to_json(),
-    )
-    db_session.add(job)
-    await db_session.commit()
-    edited = await db_client.post(
-        f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
-        json={"baseRevisionId": str(base.id), "body": base.body.replace("둘째 문단이다.", "사용자가 고친 둘째.")},
-    )
-    assert edited.status_code == 201, edited.text
-    (bundle,) = bundles
-    return job.id, f"/novels/{novel_id}/jobs/{job.id}/bundles/{bundle.id}/recheck", novel
-
-
 async def test_an_empty_table_leaves_the_recheck_call_as_it_was(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -485,7 +445,7 @@ async def test_an_empty_table_leaves_the_recheck_call_as_it_was(
     reads: _Reads,
 ) -> None:
     """빈 표의 재검사는 소설 Gemini 체인 세트 한 번, 부를 모델 없는 호출 문맥이다. 늘어난 것은 배정 표 읽기 한 번이다."""
-    _job_id, url, novel = await _edited_bundle(db_client, db_session, monkeypatch)
+    _job_id, url, novel = await _edited_recheck_bundle(db_client, db_session, monkeypatch)
 
     reads.clear()
     resp = await db_client.post(url)
@@ -522,7 +482,7 @@ async def test_the_recheck_reads_its_row_when_the_route_matches_and_skips_it_oth
         ("novel_recheck", "opus", "sonnet", "anthropic"),
         ("novel_revise", "sonnet", "haiku", "anthropic"),
     )
-    _job_id, url, _novel = await _edited_bundle(db_client, db_session, monkeypatch)
+    _job_id, url, _novel = await _edited_recheck_bundle(db_client, db_session, monkeypatch)
 
     reads.clear()
     resp = await db_client.post(url)
@@ -543,7 +503,7 @@ async def test_a_row_chain_without_the_recheck_channel_fails_as_a_render_error_b
     _direct(monkeypatch, "novelize_revise_recheck")
     await _put_rows(db_session, ("novel_recheck", "opus", "sonnet", "anthropic"))
     await _drop_channel(db_session, "opus", "novelize_revise_recheck")
-    _job_id, url, _novel = await _edited_bundle(db_client, db_session, monkeypatch)
+    _job_id, url, _novel = await _edited_recheck_bundle(db_client, db_session, monkeypatch)
 
     with pytest.raises(PromptRenderError):
         await db_client.post(url)

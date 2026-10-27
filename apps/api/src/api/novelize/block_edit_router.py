@@ -14,10 +14,12 @@
 
 import logging
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from redis.exceptions import RedisError
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, type_coerce, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
@@ -52,6 +54,7 @@ from api.novelize.block_edits import (
     with_split,
 )
 from api.novelize.blocks import BlockIdsInvalidError, build_revision
+from api.novelize.call_records import recorded_call
 from api.novelize.inputs import current_revision, resolve_novel_call_route
 from api.novelize.job_variants import variant_of
 from api.novelize.prompts import NovelizeRecheckResult
@@ -366,10 +369,17 @@ async def recheck_novel_block_edit_bundle(
     )
     await db.commit()
 
+    # 호출 기록은 판정을 쓰는 트랜잭션에서만 작업 행의 목록 끝에 덧붙인다(따로 적용할 수 없다는 판정도 쓴 판정이다). 503·409 갈래는
+    # 작업 행을 쓰지 않으므로 그 호출은 남지 않는다(`novelize/call_records.py` 의 받아들인 손실). 이 설명을 라우트 docstring 에 두면
+    # 공개 API 설명(openapi.json)에 실리므로 여기 둔다.
+    records: list[dict[str, Any]] = []
     try:
-        verdict = await llm_client.generate_structured_with_instruction(
-            prompt.prompt, NovelizeRecheckResult, system_instruction=prompt.system_instruction, usage=usage
-        )
+        with recorded_call(
+            records, usage, stage="recheck", prompt_set_id=prompt.prompt_set_id, route_source=route.source
+        ) as recording:
+            verdict = await llm_client.generate_structured_with_instruction(
+                prompt.prompt, NovelizeRecheckResult, system_instruction=prompt.system_instruction, usage=recording
+            )
     except LLMClientError as exc:
         logger.warning("소설 묶음 재검사 호출이 실패했다: %s", type(exc).__name__)
         raise _novel_error(status.HTTP_503_SERVICE_UNAVAILABLE, "NOVEL_RECHECK_UNAVAILABLE") from exc
@@ -381,10 +391,10 @@ async def recheck_novel_block_edit_bundle(
     latest = await _lock_current_revision(db, chapter_id)
     if latest is None or latest.id != basis_revision_id:
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_REVISION_CONFLICT")
+    values: dict[str, Any] = {"llm_calls": NovelJob.llm_calls.op("||")(type_coerce(records, JSONB))}
     if verdict.separable:
-        await db.execute(
-            update(NovelJob).where(NovelJob.id == locked.id).values(block_edit=with_split(edit, bundle_id, plan).to_json())
-        )
+        values["block_edit"] = with_split(edit, bundle_id, plan).to_json()
+    await db.execute(update(NovelJob).where(NovelJob.id == locked.id).values(**values))
     await db.commit()
     return NovelBundleRecheckResponse(
         separable=verdict.separable, reason=verdict.reason.strip()[:_RECHECK_REASON_MAX_CHARS]

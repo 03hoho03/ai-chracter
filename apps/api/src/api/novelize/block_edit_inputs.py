@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat.prompt_routing import RouteSource
 from api.db.models.novel import Novel, NovelChapterRevision, NovelJob
 from api.novelize.block_edits import BlockEdit, RecheckPlan, context_positions, recheck_context_positions
 from api.llm.chat_models import ChatModelId, PromptSetModelId
@@ -55,6 +56,8 @@ class BlockEditInput:
     edit: BlockEdit
     # 배정 표가 고른 부를 모델(`inputs.NovelCallRoute.call_model`). 행이 쓰이지 않았으면 None 이라 호출 문맥에 싣지 않는다.
     call_model: PromptSetModelId | None = None
+    # 그 배정 해석의 출처(`inputs.NovelCallRoute.source`) — 호출 기록에만 싣는다.
+    route_source: RouteSource | None = None
 
 
 async def build_block_edit_input(db: AsyncSession, job: NovelJob, novel: Novel) -> BlockEditInput:
@@ -81,7 +84,7 @@ async def build_block_edit_input(db: AsyncSession, job: NovelJob, novel: Novel) 
         target_labels=[target.label for target in edit.targets],
         user_request=job.instruction or "",
     )
-    return BlockEditInput(prompt=prompt, edit=edit, call_model=route.call_model)
+    return BlockEditInput(prompt=prompt, edit=edit, call_model=route.call_model, route_source=route.source)
 
 
 def _numbered(position: int, paragraphs: list[str]) -> str:
