@@ -687,7 +687,7 @@ Q "SELECT count(*) FROM payments WHERE status = 'pending';"
 sudo /opt/ddona/backup.sh --manual
 $C exec -T api_$(sudo bash ops/active-color.sh) python scripts/ops/quote_refunds.py --received-on <YYYY-MM-DD> \
     | sudo tee /root/clover-quote-before.csv >/dev/null
-# 6) 같은 트랜잭션에 다른 리비전이 섞이지 않게 — DB 리비전이 전환 리비전의 앞(35bbef005344)이고 올릴 이미지의 head 가 725813c4f950
+# 6) 같은 트랜잭션에 다른 리비전이 섞이지 않게 — DB 리비전이 전환 리비전의 앞(a95c99a208ea)이고 올릴 이미지의 head 가 725813c4f950
 Q "SELECT version_num FROM alembic_version;"
 ```
 

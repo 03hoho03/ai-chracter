@@ -1,7 +1,7 @@
 """clover unit conversion
 
 Revision ID: 725813c4f950
-Revises: 35bbef005344
+Revises: a95c99a208ea
 Create Date: 2026-10-26 18:10:00.000000
 
 클로버 단위를 1클로버 = 3원에서 1원으로 바꾼다. 데이터만 바꾸고 스키마는 그대로다.
@@ -66,7 +66,7 @@ from sqlalchemy.engine import Connection
 
 # revision identifiers, used by Alembic.
 revision: str = '725813c4f950'
-down_revision: str | Sequence[str] | None = '35bbef005344'
+down_revision: str | Sequence[str] | None = 'a95c99a208ea'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
