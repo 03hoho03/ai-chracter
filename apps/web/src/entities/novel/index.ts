@@ -74,6 +74,7 @@ export { useUpdateNovelChapterMutation, type NovelChapterUpdateRequest } from ".
 export { useEnsureRoomNovelMutation } from "./api/useEnsureRoomNovelMutation";
 export { useNovelJobQuery, type NovelJobResponse } from "./api/useNovelJobQuery";
 export { useNovelListQuery, type NovelListItem, type NovelListResponse } from "./api/useNovelListQuery";
+export { useNovelSourcesQuery, type NovelSourceListResponse, type NovelSourceRoom } from "./api/useNovelSourcesQuery";
 export {
   useNovelChapterQuery,
   type NovelChapterResponse,

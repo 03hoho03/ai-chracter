@@ -288,7 +288,7 @@ function StudioStartSection({ isNovelAreaVisible }: { isNovelAreaVisible: boolea
           <h2 id={createHeadingId} className="text-lg font-semibold text-foreground">
             새로 만들기
           </h2>
-          <StudioCreateTiles />
+          <StudioCreateTiles isNovelAreaVisible={isNovelAreaVisible} />
         </section>
       </div>
     </div>

@@ -44,6 +44,7 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/onboarding/kakao")).toBe(true);
     expect(isKnownRoute("/studio/images")).toBe(true);
     expect(isKnownRoute("/studio")).toBe(true);
+    expect(isKnownRoute("/studio/new-novel")).toBe(true);
     expect(isKnownRoute("/builder")).toBe(true);
     expect(isKnownRoute("/terms")).toBe(true);
     expect(isKnownRoute("/privacy")).toBe(true);
