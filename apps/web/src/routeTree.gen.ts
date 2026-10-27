@@ -35,6 +35,7 @@ import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as InquiriesIndexRouteImport } from './routes/inquiries.index'
 import { Route as CloverIndexRouteImport } from './routes/clover.index'
 import { Route as BuilderIndexRouteImport } from './routes/builder.index'
+import { Route as StudioNewNovelRouteImport } from './routes/studio.new-novel'
 import { Route as StudioImagesRouteImport } from './routes/studio.images'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
 import { Route as OnboardingKakaoRouteImport } from './routes/onboarding.kakao'
@@ -187,6 +188,11 @@ const BuilderIndexRoute = BuilderIndexRouteImport.update({
   path: '/builder/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StudioNewNovelRoute = StudioNewNovelRouteImport.update({
+  id: '/studio/new-novel',
+  path: '/studio/new-novel',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StudioImagesRoute = StudioImagesRouteImport.update({
   id: '/studio/images',
   path: '/studio/images',
@@ -325,6 +331,7 @@ export interface FileRoutesByFullPath {
   '/onboarding/kakao': typeof OnboardingKakaoRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
+  '/studio/new-novel': typeof StudioNewNovelRoute
   '/builder/': typeof BuilderIndexRoute
   '/clover/': typeof CloverIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
@@ -374,6 +381,7 @@ export interface FileRoutesByTo {
   '/onboarding/kakao': typeof OnboardingKakaoRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
+  '/studio/new-novel': typeof StudioNewNovelRoute
   '/builder': typeof BuilderIndexRoute
   '/clover': typeof CloverIndexRoute
   '/inquiries': typeof InquiriesIndexRoute
@@ -424,6 +432,7 @@ export interface FileRoutesById {
   '/onboarding/kakao': typeof OnboardingKakaoRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
+  '/studio/new-novel': typeof StudioNewNovelRoute
   '/builder/': typeof BuilderIndexRoute
   '/clover/': typeof CloverIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
@@ -475,6 +484,7 @@ export interface FileRouteTypes {
     | '/onboarding/kakao'
     | '/profile/$userId'
     | '/studio/images'
+    | '/studio/new-novel'
     | '/builder/'
     | '/clover/'
     | '/inquiries/'
@@ -524,6 +534,7 @@ export interface FileRouteTypes {
     | '/onboarding/kakao'
     | '/profile/$userId'
     | '/studio/images'
+    | '/studio/new-novel'
     | '/builder'
     | '/clover'
     | '/inquiries'
@@ -573,6 +584,7 @@ export interface FileRouteTypes {
     | '/onboarding/kakao'
     | '/profile/$userId'
     | '/studio/images'
+    | '/studio/new-novel'
     | '/builder/'
     | '/clover/'
     | '/inquiries/'
@@ -623,6 +635,7 @@ export interface RootRouteChildren {
   OnboardingKakaoRoute: typeof OnboardingKakaoRoute
   ProfileUserIdRoute: typeof ProfileUserIdRoute
   StudioImagesRoute: typeof StudioImagesRoute
+  StudioNewNovelRoute: typeof StudioNewNovelRoute
   BuilderIndexRoute: typeof BuilderIndexRoute
   CloverIndexRoute: typeof CloverIndexRoute
   InquiriesIndexRoute: typeof InquiriesIndexRoute
@@ -827,6 +840,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BuilderIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/studio/new-novel': {
+      id: '/studio/new-novel'
+      path: '/studio/new-novel'
+      fullPath: '/studio/new-novel'
+      preLoaderRoute: typeof StudioNewNovelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/studio/images': {
       id: '/studio/images'
       path: '/studio/images'
@@ -1007,6 +1027,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingKakaoRoute: OnboardingKakaoRoute,
   ProfileUserIdRoute: ProfileUserIdRoute,
   StudioImagesRoute: StudioImagesRoute,
+  StudioNewNovelRoute: StudioNewNovelRoute,
   BuilderIndexRoute: BuilderIndexRoute,
   CloverIndexRoute: CloverIndexRoute,
   InquiriesIndexRoute: InquiriesIndexRoute,

@@ -47,6 +47,7 @@ export const KNOWN_ROUTES = [
   "/signup",
   "/studio",
   "/studio/images",
+  "/studio/new-novel",
   "/terms",
   "/ui-demo",
   "/webnovels",

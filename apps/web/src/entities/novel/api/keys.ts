@@ -23,11 +23,15 @@
  * - `outline`: 구성안 초안 저장·승인(응답이 상태면 `setQueryData`), 구성안 작업이 끝났을 때(작업이 끝나면 소설 캐시를 모두 다시
  *   받는다), 그리고 담을 대화 승인 — 승인 선택이 바뀌면 구성안의 낡음 표시가 바뀐다. 구성 화면을 열 때마다 새로 받는다. 화별 장면
  *   구성안 저장·승인도 화마다의 상태(`sceneOutline`)를 바꿔 함께 다시 받는다.
+ * - `sources`: 방에서 소설 만들기(`POST /chat-rooms/{id}/novel`), 그리고 이 앱 밖의 일 — 새 대화방·이어진 대화, 원작자가 소설
+ *   만들기 허락을 바꾸는 것. 앱 기본값대로 화면을 열 때마다 새로 받는다.
  * - `episodeOutline`: 그 화 장면 구성안의 저장·승인(응답이 상태면 `setQueryData`), 장면 구성안·원고 작업이 끝났을 때(소설 캐시를 모두
  *   다시 받는다), 그리고 전체 구성안 저장·승인 — 그 화의 근거가 바뀌면 낡음 표시가 바뀐다. 화 화면을 열 때마다 새로 받는다. */
 export const novelKeys = {
   all: ["novel"] as const,
   list: () => [...novelKeys.all, "list"] as const,
+  /** 소설로 엮을 수 있는 내 채팅방 목록(`GET /me/novel-sources`). */
+  sources: () => [...novelKeys.all, "sources"] as const,
   detail: (novelId: string) => [...novelKeys.all, "detail", novelId] as const,
   job: (novelId: string, jobId: string) => [...novelKeys.all, "job", novelId, jobId] as const,
   /** 장 하나의 현재 본문. 소설 상세가 알려 준 현재 개정 id 를 키에 넣는다 — 상세가 새 개정을 알려 오면(다른 탭의
