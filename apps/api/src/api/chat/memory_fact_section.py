@@ -9,6 +9,9 @@ DB 가 그 행을 함께 지우므로 다음 읽기에 앞 값이 돌아온다.
 키별 최신(`chat/memory_knowledge.py` 의 `latest_by_key`): 같은 키의 마지막 행이 이기되, 같은 키에 같은 값의 반증 행이 앞에
 있으면 그 반증 행이 이긴다(규칙은 그 모듈 설명).
 
+줄 본문: 관계 `주어 → 대상: 값`, 사실 `주어 · 속성: 값`. 아는 사람이 빈 관계 행은 값의 `상태 낱말 — 근거` 중 상태 낱말만
+싣는다(이유는 `_shown_body`). 글자 상한·몫은 실제로 싣는 줄로 센다.
+
 렌더 순서: 관계 → 아는 사람이 정해진 사실 → 반증 → 그 밖. 묶음 안은 중요도가 높은 쪽, 같으면 나중에 쓴 쪽이 먼저다.
 
 고르기(줄 비용 = 줄 글자 수 + 첫 줄 뒤마다 줄바꿈 1): 렌더 순서 전부가 상한 안이면 전부. 아니면 ① 렌더 순서로 상한의
@@ -97,10 +100,21 @@ class FactRecordMissingError(Exception):
 
 
 def fact_body(row: ChatMemoryFact) -> str:
-    """사실 한 줄의 꼬리표 없는 본문 — 관계면 `주어 → 대상: 값`, 속성이면 `주어 · 속성: 값`. 임베딩 채우기도 이 글을 임베딩한다."""
+    """사실 행의 꼬리표 없는 본문 — 관계면 `주어 → 대상: 값`, 속성이면 `주어 · 속성: 값`. 임베딩 채우기가 이 글을 임베딩한다
+    (섹션 줄은 공개 관계의 근거를 뺀 `_shown_body`)."""
     if row.kind == "relation":
         return f"{row.subject} → {row.object}: {row.value}"
     return f"{row.subject} · {row.attribute}: {row.value}"
+
+
+def _shown_body(row: ChatMemoryFact) -> str:
+    """섹션에 싣는 본문. 아는 사람이 빈 관계 행은 값의 `상태 낱말 — 근거` 중 상태 낱말만 싣는다 — 추출이 털어놓은 비밀을 관계
+    근거에 적고 아는 사람을 비우면 지식 범위 필터를 지나는 공개 행이 되고, 관계는 렌더 순서 맨 앞이라 상시 몫으로 장면과 무관하게
+    거의 매 턴 실린다. 이미 쌓인 행에도 걸리도록 추출이 아니라 여기서 막는다. 아는 사람이 있는 관계 행은 필터가 거르므로 근거째
+    싣는다."""
+    if row.kind == "relation" and not row.known_by:
+        return f"{row.subject} → {row.object}: {row.value.split('—', 1)[0].rstrip()}"
+    return fact_body(row)
 
 
 def fact_line(row: ChatMemoryFact, *, user_name: str | None = None, user_label: str = "") -> str:
@@ -109,7 +123,7 @@ def fact_line(row: ChatMemoryFact, *, user_name: str | None = None, user_label: 
     대화 줄 라벨 `user_label`, `{{user}}` 대체어, 추출 지시문 낱말 — 사실 키와 같은 정규화로 견준다)면 사용자 꼬리표다 — 추출이
     사용자 말을 그 표기의 인물 말로 적어도 사용자가 한 말로 읽히게. 그 밖은 말한 인물 이름, 이름이 없으면 인물 꼬리표다.
     사용자·인물 꼬리표는 회상 줄과 같은 상수다(두 섹션 문안이 같은 꼬리표를 설명한다)."""
-    line = fact_body(row)
+    line = _shown_body(row)
     if row.truth_status == "disproved":
         line = DISPROVED_MARK + line
     elif row.truth_status == "claimed":
