@@ -24,7 +24,7 @@ import { AUTOSAVE_ERROR_TOAST_ID } from "./useAutosave";
  * 주소로 바꾼다. 자동저장·임시저장·발행 직전 저장이 전부 이 함수를 지난다.
  *
  * 만들기와 이어쓰기가 한 라우트라 이 URL 교체는 파라미터만 바꾼다 — 리마운트가 없으므로 입력 중이던
- * 폼 상태와 포커스가 그대로 남는다(이유는 `pages/builder`의 `NEW_DRAFT_SEGMENT` 주석).
+ * 폼 상태와 포커스가 그대로 남는다(이유는 `shared/config/newDraftSegment.ts`의 `NEW_DRAFT_SEGMENT` 주석).
  */
 export function useDraftPersistence({
   type,

@@ -17,6 +17,7 @@ import { personaKeys } from "@/entities/persona/@x/session";
 import { previewSessionKeys } from "@/entities/preview-session/@x/session";
 import { storyImageArchiveKeys } from "@/entities/story-image-archive/@x/session";
 import { webnovelKeys } from "@/entities/webnovel/@x/session";
+import { workKeys } from "@/entities/work/@x/session";
 
 import { sessionKeys } from "../api/keys";
 
@@ -50,6 +51,7 @@ const VIEWER_QUERY_KEYS: readonly QueryKey[] = [
   personaKeys.all,
   previewSessionKeys.all,
   webnovelKeys.all,
+  workKeys.all,
 ];
 
 /** 앞 계정의 사용자별 캐시를 비운다. 지킬 것은 둘이다 — 다음 계정에게 앞 계정의 값이 한 프레임도 보이지 않을 것, 이미

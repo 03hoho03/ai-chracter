@@ -15,6 +15,7 @@ import {
   useUpdateContentVisibilityMutation,
   type ContentVisibility,
 } from "@/entities/content";
+import { workKeys } from "@/entities/work";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { VISIBILITY_TRANSITION_COPY } from "../model/visibilityTransition";
@@ -42,6 +43,7 @@ export const ChangeContentVisibilityModal = createCallable<ChangeContentVisibili
         onSuccess: () => {
           toast.success(`${label}로 전환했어요.`);
           void queryClient.invalidateQueries({ queryKey: contentKeys.listByUser(creatorUserId) });
+          void queryClient.invalidateQueries({ queryKey: workKeys.lists() });
           void queryClient.invalidateQueries({ queryKey: contentKeys.detail(contentId) });
           call.end();
         },

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { VISIBILITY_FILTERS, type VisibilityFilter } from "@/entities/content";
+import { MY_WORKS_QUERY_MAX_LENGTH, normalizeMyWorksQuery } from "@/entities/work";
 
 /** `/my`의 필터 칩 한 줄이 곧 하나의 축이다 — 초안은 `미등록`에서만 노출되므로
  * 캐릭터/스토리(발행작 유형)와 미등록(초안)이 서로 배타적이기 때문에 단일선택 하나로 묶인다.
@@ -16,22 +17,9 @@ export const MY_WORKS_SORTS = ["latest"] as const;
 
 export type MyWorksSort = (typeof MY_WORKS_SORTS)[number];
 
-/** 서버(`GET /users/{id}/contents`·`GET /me/drafts`의 `q`)가 받는 검색어 길이 상한. 넘기면 422가 오므로
- * 보내기 전에 여기서 자른다. */
-export const MY_WORKS_QUERY_MAX_LENGTH = 100;
-
-/**
- * 검색어를 서버에 보낼 꼴로 편다: 앞뒤 공백을 걷고, 상한을 넘으면 자르고, 남는 게 없으면 `undefined`(= 검색 안 함,
- * URL에서도 파라미터가 빠진다).
- *
- * 길이는 UTF-16 단위가 아니라 **코드 포인트**로 센다. 서버의 상한은 파이썬 `len`(코드 포인트)이라 단위가 같아야
- * 하고, `String.prototype.slice`로 자르면 이모지 한가운데가 갈려 짝 잃은 서로게이트가 남는데 그 문자열은
- * `encodeURIComponent`가 `URIError`로 던져 요청 자체가 나가지 않는다.
- */
-export function normalizeMyWorksQuery(raw: string): string | undefined {
-  const cut = Array.from(raw.trim()).slice(0, MY_WORKS_QUERY_MAX_LENGTH).join("").trimEnd();
-  return cut === "" ? undefined : cut;
-}
+// 검색어 상한·정규화는 스튜디오와 함께 쓰므로 `entities/work` 에 있다. 이 모듈에서 다시 내보내 내 작품 화면의 기존
+// import 자리가 그대로 남게 한다.
+export { MY_WORKS_QUERY_MAX_LENGTH, normalizeMyWorksQuery };
 
 /** 필터·정렬은 전부 URL 서치 파라미터에 남아 새로고침·뒤로가기에서 보존된다.
  * 기본값(`all` / `latest`)은 파라미터를 **비워서** 표현한다 — `?type=all&sort=latest`가 늘 붙어 있으면

@@ -5,9 +5,9 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Search, X } from "lucide-react";
 import { useDebounce } from "react-use";
 
-import { normalizeMyWorksQuery } from "../model/myWorksSearch";
+import { normalizeMyWorksQuery } from "../model/workQuery";
 
-/** 헤더의 홈 검색과 같은 값 — 타이핑을 멈춘 뒤 이만큼 지나야 URL(과 그에 묶인 세 목록 요청)이 바뀐다. */
+/** 헤더의 홈 검색과 같은 값 — 타이핑을 멈춘 뒤 이만큼 지나야 URL(과 그에 묶인 목록 요청)이 바뀐다. */
 const DEBOUNCE_MS = 300;
 
 type MyWorksSearchFieldProps = {
@@ -19,7 +19,7 @@ type MyWorksSearchFieldProps = {
 };
 
 /**
- * 내 작품 제목 검색 칸. 제출 버튼 없이 입력을 멈추면 걸리는 방식이 헤더의 홈 검색(`SearchInlineExpand`)과 같다 —
+ * 내 작품 제목 검색 칸 — 내 작품 화면과 스튜디오가 함께 쓴다. 제출 버튼 없이 입력을 멈추면 걸리는 방식이 헤더의 홈 검색(`SearchInlineExpand`)과 같다 —
  * 한 앱에서 검색 칸 둘이 서로 다르게 동작하면 사용자가 어느 쪽이 Enter를 기다리는지 따져야 한다.
  *
  * 입력칸 값은 로컬 state이고 URL에는 디바운스 뒤에 정규화된 값만 쓴다. 칸이 101자를 들고 있어도 URL과 요청은

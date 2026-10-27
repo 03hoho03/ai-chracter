@@ -12,6 +12,7 @@ import { toast } from "sonner";
 
 import { contentKeys, useDeleteContentDraftMutation } from "@/entities/content";
 import { draftKeys } from "@/entities/draft";
+import { workKeys } from "@/entities/work";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type DeleteContentDraftModalProps = {
@@ -26,8 +27,9 @@ type DeleteContentDraftModalProps = {
  *
  * 호출부와 무관하게 성공 후 동작(토스트 + `draftKeys.list()` 무효화 + 닫기)이 항상 같아
  * `ChangeContentVisibilityModal`과 같은 "자체 mutation 직접 호출" 계열이다
- * (`ConfirmChatRoomActionModal`처럼 호출부가 mutationFn을 주입하는 계열이 아님). */
-export const DeleteContentDraftModal = createCallable<DeleteContentDraftModalProps, void>(({ call, contentId }) => {
+ * (`ConfirmChatRoomActionModal`처럼 호출부가 mutationFn을 주입하는 계열이 아님). 지웠으면 `true`로 끝나 행과 함께
+ * 사라질 메뉴 버튼의 포커스를 호출부가 옮겨 둘 수 있다. */
+export const DeleteContentDraftModal = createCallable<DeleteContentDraftModalProps, boolean>(({ call, contentId }) => {
   const queryClient = useQueryClient();
   const mutation = useDeleteContentDraftMutation(contentId);
 
@@ -36,18 +38,19 @@ export const DeleteContentDraftModal = createCallable<DeleteContentDraftModalPro
       onSuccess: () => {
         toast.success("초안을 삭제했어요.");
         void queryClient.invalidateQueries({ queryKey: draftKeys.list() });
+        void queryClient.invalidateQueries({ queryKey: workKeys.lists() });
         // 방금 지운 콘텐츠의 초안 캐시는 서버에 더 이상 대응하는 행이 없다. 빌더가 자동저장마다
         // `setQueryData`로 이 키를 채워 두므로(`useDraftPersistence`) 남겨 두면 지운 작품의 폼이
         // 그대로 다시 그려진다 — `ResetContentDraftModal`이 같은 이유로 `removeQueries`를 쓴다.
         queryClient.removeQueries({ queryKey: contentKeys.draft(contentId) });
-        call.end();
+        call.end(true);
       },
       onError: () => toast.error("삭제에 실패했어요. 잠시 후 다시 시도해주세요."),
     });
   }
 
   return (
-    <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end()}>
+    <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(false)}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>이 초안을 삭제할까요?</DialogTitle>
@@ -75,7 +78,7 @@ export const DeleteContentDraftModal = createCallable<DeleteContentDraftModalPro
         </DialogHeader>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => call.end()}>
+          <Button type="button" variant="outline" onClick={() => call.end(false)}>
             취소
           </Button>
           <Button

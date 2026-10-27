@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { cloverKeys } from "@/entities/clover";
 import { novelKeys } from "@/entities/novel";
+import { workKeys } from "@/entities/work";
 import { apiClient } from "@/shared/api/client";
 
 /** `DELETE /novels/{novelId}` — 소설과 그 장·판·작업을 모두 지운다(204). 진행 중이던 작업은 서버가 같은
@@ -20,6 +21,7 @@ export function useDeleteNovelMutation() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: novelKeys.list() });
+      void queryClient.invalidateQueries({ queryKey: workKeys.lists() });
       void queryClient.invalidateQueries({ queryKey: cloverKeys.all });
     },
   });
