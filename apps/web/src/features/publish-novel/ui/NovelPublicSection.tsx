@@ -144,8 +144,9 @@ function announcePublishResult(result: PublishRunResult) {
   if (result === "inReview") toast.success(REVIEW_REQUESTED_MESSAGE);
 }
 
-/** 승인 대기는 게시자가 할 일 없는 기다림이라 거둠과 같은 흐린 잉크, 반려는 읽을 사유가 생긴 상태라 잉크만 올린다 —
- * 반려는 제재가 아니라 고쳐서 다시 낼 수 있는 상태여서 이용제한의 `destructive` 틴트를 쓰지 않는다. */
+/** 심사 대기(첫 공개가 운영자 승인을 기다림)는 게시자가 할 일 없는 기다림이라 거둠과 같은 흐린 잉크, 반려는 읽을
+ * 사유가 생긴 상태라 잉크만 올린다 — 반려는 제재가 아니라 고쳐서 다시 낼 수 있는 상태여서 이용제한의 `destructive`
+ * 틴트를 쓰지 않는다. 라벨은 스튜디오 목록의 소설 배지와 같은 낱말이다. */
 function ViewBadge({ view }: { view: PublicationView }) {
   switch (view.kind) {
     case "public":
@@ -155,7 +156,7 @@ function ViewBadge({ view }: { view: PublicationView }) {
     case "restricted":
       return <span className={cn(BADGE_CLASS, "border-transparent bg-destructive/10 text-destructive-text")}>이용제한</span>;
     case "inReview":
-      return <span className={cn(BADGE_CLASS, "border-border text-muted-foreground")}>승인 대기</span>;
+      return <span className={cn(BADGE_CLASS, "border-border text-muted-foreground")}>심사 대기</span>;
     case "reviewRejected":
       return <span className={cn(BADGE_CLASS, "border-border text-foreground")}>반려</span>;
     default:
