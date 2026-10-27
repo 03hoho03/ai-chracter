@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import MessageKey
 from api.chat.prompt_builder import load_active_prompt_set
-from api.chat.prompt_routing import resolve_stage_route
+from api.chat.prompt_routing import RouteSource, resolve_stage_route
 from api.chat.prompt_routing_cache import load_prompt_routes
 from api.content.media_tags import strip_media_tags
 from api.core.config import settings
@@ -82,10 +82,12 @@ NovelStructuredStage = Literal["novel_revise", "novel_revise_blocks", "novel_rec
 @dataclass(frozen=True)
 class NovelCallRoute:
     """소설 구조화 호출 하나가 읽을 체인과 호출 문맥에 실을 부를 모델. `call_model` 은 배정 표의 행이 쓰였을 때만 있다 — None
-    이면 싣지 않고, 호출은 지금처럼 그 호출 위치의 기본 모델로 간다."""
+    이면 싣지 않고, 호출은 지금처럼 그 호출 위치의 기본 모델로 간다. `source` 는 그 해석의 출처(행·상속·env 규칙)이고 호출 기록에만
+    싣는다."""
 
     chain_model: ChatModelId
     call_model: PromptSetModelId | None
+    source: RouteSource
 
 
 async def resolve_novel_call_route(db: AsyncSession, stage: NovelStructuredStage) -> NovelCallRoute:
@@ -102,7 +104,9 @@ async def resolve_novel_call_route(db: AsyncSession, stage: NovelStructuredStage
         # 여기 오면 부르는 쪽의 버그다.
         raise ValueError(f"{stage} 칸의 체인 {route.chain_model} 은 소설 레인 체인이 아니다")
     return NovelCallRoute(
-        chain_model=chain_model, call_model=route.call_model if route.source in ("row", "inherited") else None
+        chain_model=chain_model,
+        call_model=route.call_model if route.source in ("row", "inherited") else None,
+        source=route.source,
     )
 
 
@@ -321,6 +325,8 @@ class ReviseInput:
     last_index: int
     # 배정 표가 고른 부를 모델(`NovelCallRoute.call_model`). 행이 쓰이지 않았으면 None 이라 호출 문맥에 싣지 않는다.
     call_model: PromptSetModelId | None = None
+    # 그 배정 해석의 출처(`NovelCallRoute.source`) — 호출 기록에만 싣는다.
+    route_source: RouteSource | None = None
 
 
 async def build_revise_input(db: AsyncSession, job: NovelJob, novel: Novel) -> ReviseInput:
@@ -348,6 +354,7 @@ async def build_revise_input(db: AsyncSession, job: NovelJob, novel: Novel) -> R
         first_index=job.paragraph_start,
         last_index=job.paragraph_end,
         call_model=route.call_model,
+        route_source=route.source,
     )
 
 

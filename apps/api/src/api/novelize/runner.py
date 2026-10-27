@@ -18,7 +18,11 @@
 부모도 실패로 끝내 쓰지 않은 몫을 돌려준다.
 
 **작업 전체 상한**은 `asyncio.timeout` 이다. 상한에 걸리면 진행 중인 모델 호출이 취소되고, 취소된 호출의 토큰 사용량은
-기록되지 않는다(사용량 기록은 정상 종료한 호출에만 있다).
+기록되지 않는다(사용량 기록은 정상 종료한 호출에만 있다). 작업 행의 호출 기록에는 그 호출이 사용량 없이 취소로 남는다.
+
+**호출 기록**: 작업이 부른 모델 호출마다 원소 하나를 메모리 목록에 모으고(`call_records.recorded_call`), 성공은 저장 함수의 성공
+전이가, 실패는 환불 함수의 실패 전이가 같은 트랜잭션에서 작업 행에 쓴다. 모으는 자리는 갈래 핸들러의 호출 한 곳(`_execute`)과 연쇄
+부모의 경계 제안이다. 원소 꼴과 받아들인 손실은 `novelize/call_records.py` 머리 주석.
 
 **api 프로세스가 끝나면** 그 안에서 돌던 작업은 취소되지 않고 프로세스째 사라진다 — 로컬에서 uvicorn(0.50.2) 멀티
 워커를 SIGTERM 으로 내려 재현해 보면, 서버 종료가 끝난 직후 uvicorn 이 같은 신호를 다시 일으켜 프로세스가 끝나고 이
@@ -38,6 +42,7 @@ from typing import Any, Protocol, TypeVar
 from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from api.chat.prompt_routing import RouteSource
 from api.core import clover
 from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
@@ -68,6 +73,7 @@ from api.novelize.block_edit_inputs import BlockEditInput, build_block_edit_inpu
 from api.novelize.block_edits import BlockEdit, BlockEditBundle, BlockEditPatch, normalized_result, with_save_states
 from api.novelize.blocks import build_revision, fresh_ids
 from api.novelize.boundary import episode_counts, suggest_end_turn
+from api.novelize.call_records import recorded_call
 from api.novelize.deletion import ai_edit_preview_is_fresh, erase_stale_ai_edit_previews
 from api.novelize.episodes import chapter_max_turns, k_max
 from api.novelize.illustrations import add_revision
@@ -171,11 +177,13 @@ async def enqueue_job(session_factory: SessionFactory, llm_client: LLMClient, jo
 
 
 async def run_job(session_factory: SessionFactory, llm_client: LLMClient, job_id: uuid.UUID) -> None:
-    """작업 하나를 끝까지 돌린다. 예외를 밖으로 내지 않는다(취소만 예외) — 실패는 전부 환불로 끝낸다."""
+    """작업 하나를 끝까지 돌린다. 예외를 밖으로 내지 않는다(취소만 예외) — 실패는 전부 환불로 끝낸다. 호출 기록은 여기서 만든
+    목록에 모아, 성공이면 저장이, 실패면 환불이 쓴다(취소되면 버려진다)."""
     code: NovelJobFailureCode
+    records: list[dict[str, Any]] = []
     try:
         async with asyncio.timeout(settings.novelize_job_timeout_seconds):
-            await _execute(session_factory, llm_client, job_id)
+            await _execute(session_factory, llm_client, job_id, records)
         return
     except _JobFailedError as failed:
         code = failed.code
@@ -185,15 +193,20 @@ async def run_job(session_factory: SessionFactory, llm_client: LLMClient, job_id
         logger.warning("소설화 작업 %s 가 예상하지 못한 오류로 실패했다: %s", job_id, type(exc).__name__)
         capture_dependency_failure(exc, dependency="novelize")
         code = "internal"
-    await _refund(session_factory, job_id, code)
+    await _refund(session_factory, job_id, code, records)
 
 
-async def _refund(session_factory: SessionFactory, job_id: uuid.UUID, code: NovelJobFailureCode) -> None:
-    """실패 확정 + 환불. 여기서 실패하면(DB 장애) 삼키고 남긴다 — 작업은 진행 중으로 남고 heartbeat 가 멈췄으므로
-    만료 정리가 같은 환불 함수로 다시 환불한다."""
+async def _refund(
+    session_factory: SessionFactory,
+    job_id: uuid.UUID,
+    code: NovelJobFailureCode,
+    llm_calls: list[dict[str, Any]] | None = None,
+) -> None:
+    """실패 확정 + 환불(호출 기록이 있으면 같은 전이에 싣는다). 여기서 실패하면(DB 장애) 삼키고 남긴다 — 작업은 진행 중으로
+    남고 heartbeat 가 멈췄으므로 만료 정리가 같은 환불 함수로 다시 환불한다(그때 기록은 `[]` 그대로다)."""
     try:
         async with session_factory() as db:
-            await refund_job(db, job_id=job_id, failure_code=code)
+            await refund_job(db, job_id=job_id, failure_code=code, llm_calls=llm_calls)
             await db.commit()
     except Exception as exc:
         logger.warning("소설화 작업 %s 환불에 실패했다(만료 정리가 다시 한다): %s", job_id, type(exc).__name__)
@@ -211,7 +224,9 @@ _R = TypeVar("_R")
 class JobHandler(Protocol[_I, _R]):
     """갈래 하나의 실행 — 입력 조립(세션 안) → 호출 문맥(세션 안) → 모델 호출(세션 밖) → 저장(새 세션). 사실 칸은 `facts` 로
     갈래 표(`job_variants.VARIANT_FACTS`)의 그 객체를 내보인다. `schema` 는 구조화 호출의 응답 스키마 이름이고 자유 텍스트 생성은
-    None 이다(측정 덤프가 싣는다). 호출 문맥은 입력을 받는다 — 배정 표를 읽는 갈래는 입력 조립이 푼 부를 모델을 거기서 싣는다."""
+    None 이다(측정 덤프가 싣는다). 호출 문맥은 입력을 받는다 — 배정 표를 읽는 갈래는 입력 조립이 푼 부를 모델을 거기서 싣는다.
+    배정 출처(`route_source`)도 그 갈래만 입력에서 꺼내고(호출 기록에 싣는다), 나머지는 None 이다. 저장은 호출 기록을 받아 성공
+    전이에 싣는다."""
 
     facts: VariantFacts
     schema: str | None
@@ -220,9 +235,18 @@ class JobHandler(Protocol[_I, _R]):
 
     def context(self, job: NovelJob, novel: Novel, inp: _I) -> LLMCallContext: ...
 
+    def route_source(self, inp: _I) -> RouteSource | None: ...
+
     async def call(self, llm_client: LLMClient, inp: _I, usage: LLMCallContext) -> _R: ...
 
-    async def save(self, session_factory: SessionFactory, job_id: uuid.UUID, inp: _I, result: _R) -> None: ...
+    async def save(
+        self,
+        session_factory: SessionFactory,
+        job_id: uuid.UUID,
+        inp: _I,
+        result: _R,
+        llm_calls: list[dict[str, Any]],
+    ) -> None: ...
 
 
 class _Handler:
@@ -237,6 +261,10 @@ class _Handler:
         소설 체인 세트다(`build_chapter_input`). 장 생성의 call site 를 바꾸지 않는다 — 상위 모델을 Bedrock 으로 보내는 라우팅이 이
         call site 로 고른다. 구성안 호출 위치는 구조화 호출이어도 실린 모델의 구현으로 간다. 이 갈래들은 입력을 보지 않는다."""
         return self._context(job, novel, call_model=None)
+
+    def route_source(self, inp: Any) -> RouteSource | None:
+        """화 생성·구성안 갈래는 배정 표를 읽지 않는다."""
+        return None
 
     def _context(self, job: NovelJob, novel: Novel, *, call_model: PromptSetModelId | None) -> LLMCallContext:
         assert self.facts.call_site is not None  # 연쇄 부모만 호출 위치가 없고, 연쇄 부모는 여기까지 오지 않는다
@@ -259,9 +287,14 @@ class _Chapter(_Handler):
         return await _generate_batch(llm_client, inp, usage)
 
     async def save(
-        self, session_factory: SessionFactory, job_id: uuid.UUID, inp: ChapterInput, result: ParsedBatch
+        self,
+        session_factory: SessionFactory,
+        job_id: uuid.UUID,
+        inp: ChapterInput,
+        result: ParsedBatch,
+        llm_calls: list[dict[str, Any]],
     ) -> None:
-        await _save_batch(session_factory, job_id, inp, result)
+        await _save_batch(session_factory, job_id, inp, result, llm_calls=llm_calls)
 
 
 class _SegmentChapter(_Chapter):
@@ -303,13 +336,23 @@ class _ParagraphEdit(_Handler):
         기본 모델로 간다)."""
         return self._context(job, novel, call_model=inp.call_model)
 
+    def route_source(self, inp: ReviseInput) -> RouteSource | None:
+        return inp.route_source
+
     async def call(self, llm_client: LLMClient, inp: ReviseInput, usage: LLMCallContext) -> str:
         """고친 범위를 원본 문단 사이에 끼운 장 본문까지 만들어 돌려준다."""
         result_text = await _revise(llm_client, inp.prompt.prompt, inp.prompt.system_instruction, usage)
         return _assemble_revision(inp.paragraphs, inp.first_index, inp.last_index, result_text)
 
-    async def save(self, session_factory: SessionFactory, job_id: uuid.UUID, inp: ReviseInput, result: str) -> None:
-        await _save_ai_edit(session_factory, job_id, result)
+    async def save(
+        self,
+        session_factory: SessionFactory,
+        job_id: uuid.UUID,
+        inp: ReviseInput,
+        result: str,
+        llm_calls: list[dict[str, Any]],
+    ) -> None:
+        await _save_ai_edit(session_factory, job_id, result, llm_calls=llm_calls)
 
 
 class _BlockEdit(_Handler):
@@ -324,6 +367,9 @@ class _BlockEdit(_Handler):
     def context(self, job: NovelJob, novel: Novel, inp: BlockEditInput) -> LLMCallContext:
         return self._context(job, novel, call_model=inp.call_model)
 
+    def route_source(self, inp: BlockEditInput) -> RouteSource | None:
+        return inp.route_source
+
     async def call(
         self, llm_client: LLMClient, inp: BlockEditInput, usage: LLMCallContext
     ) -> tuple[list[BlockEditPatch], list[BlockEditBundle]]:
@@ -335,9 +381,10 @@ class _BlockEdit(_Handler):
         job_id: uuid.UUID,
         inp: BlockEditInput,
         result: tuple[list[BlockEditPatch], list[BlockEditBundle]],
+        llm_calls: list[dict[str, Any]],
     ) -> None:
         patches, bundles = result
-        await _save_block_edit(session_factory, job_id, patches, bundles)
+        await _save_block_edit(session_factory, job_id, patches, bundles, llm_calls=llm_calls)
 
 
 class _Outline(_Handler):
@@ -350,9 +397,14 @@ class _Outline(_Handler):
         return await _outline(llm_client, inp, usage)
 
     async def save(
-        self, session_factory: SessionFactory, job_id: uuid.UUID, inp: OutlineInput, result: list[dict[str, Any]]
+        self,
+        session_factory: SessionFactory,
+        job_id: uuid.UUID,
+        inp: OutlineInput,
+        result: list[dict[str, Any]],
+        llm_calls: list[dict[str, Any]],
     ) -> None:
-        await _save_outline(session_factory, job_id, inp, result)
+        await _save_outline(session_factory, job_id, inp, result, llm_calls=llm_calls)
 
 
 class _EpisodeOutline(_Handler):
@@ -375,8 +427,9 @@ class _EpisodeOutline(_Handler):
         job_id: uuid.UUID,
         inp: EpisodeOutlineInput,
         result: list[dict[str, Any]],
+        llm_calls: list[dict[str, Any]],
     ) -> None:
-        await _save_episode_outline(session_factory, job_id, result)
+        await _save_episode_outline(session_factory, job_id, result, llm_calls=llm_calls)
 
 
 class _ChainParent(_Handler):
@@ -389,7 +442,14 @@ class _ChainParent(_Handler):
     async def call(self, llm_client: LLMClient, inp: None, usage: LLMCallContext) -> None:
         raise AssertionError("연쇄 부모는 모델을 직접 부르지 않는다")
 
-    async def save(self, session_factory: SessionFactory, job_id: uuid.UUID, inp: None, result: None) -> None:
+    async def save(
+        self,
+        session_factory: SessionFactory,
+        job_id: uuid.UUID,
+        inp: None,
+        result: None,
+        llm_calls: list[dict[str, Any]],
+    ) -> None:
         raise AssertionError("연쇄 부모는 묶음 결과를 직접 저장하지 않는다")
 
 
@@ -407,9 +467,14 @@ HANDLERS: dict[JobVariant, JobHandler[Any, Any]] = {
 }
 
 
-async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_id: uuid.UUID) -> None:
+async def _execute(
+    session_factory: SessionFactory, llm_client: LLMClient, job_id: uuid.UUID, records: list[dict[str, Any]]
+) -> None:
     """작업 하나를 받아(대기 → 실행) 갈래의 핸들러로 돌린다. 갈래는 작업 행으로 판정하고(`variant_of`), 판정하지 못하는 종류나
-    연쇄 실행 전용 갈래는 `AssertionError` 로 끝나 `run_job` 이 내부 오류로 환불한다 — 어느 갈래로도 흘려보내지 않는다."""
+    연쇄 실행 전용 갈래는 `AssertionError` 로 끝나 `run_job` 이 내부 오류로 환불한다 — 어느 갈래로도 흘려보내지 않는다.
+
+    핸들러의 호출을 이 한 곳에서 감싸 `records` 에 원소를 더한다(갈래마다 호출 하나다). 호출 뒤 판정까지 감싸지만, 판정 실패는
+    원인이 공급자 예외가 아니라서 원소의 실패 사유로 적히지 않는다(`call_records.call_failure`)."""
     async with session_factory() as db:
         started = await transition_job(
             db,
@@ -448,8 +513,15 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
             schema=handler.schema,
             episode_number=inp.episode_number if isinstance(inp, ChapterInput) else None,
         )
-        result = await handler.call(llm_client, inp, usage)
-        await handler.save(session_factory, job_id, inp, result)
+        with recorded_call(
+            records,
+            usage,
+            stage=variant,
+            prompt_set_id=inp.prompt.prompt_set_id,
+            route_source=handler.route_source(inp),
+        ) as recording:
+            result = await handler.call(llm_client, inp, recording)
+        await handler.save(session_factory, job_id, inp, result, records)
     finally:
         heartbeat.cancel()
 
@@ -480,8 +552,11 @@ async def run_chain(session_factory: SessionFactory, llm_client: LLMClient, job_
     부모는 `run_job` 으로 돌리지 않는다 — 작업 하나의 상한(360초)과 장 생성 분기를 타면 안 된다. 부모는 자기 heartbeat
     와 전체 상한(`chain_timeout_seconds`)을 갖고, 묶음마다 자식 장 생성 작업을 하나 만들어 `run_job` 으로 끝까지 기다린다
     (자식은 자기 heartbeat·작업 상한을 그대로 갖는다). heartbeat 가 살아 있어도 전체 상한을 넘으면 실패다 — 걸린 부모가
-    소설을 진행 중으로 영영 잠그지 않게. 그때 돌던 자식은 취소되고, 부모 환불이 그 자식도 실패로 끝낸다."""
+    소설을 진행 중으로 영영 잠그지 않게. 그때 돌던 자식은 취소되고, 부모 환불이 그 자식도 실패로 끝낸다.
+
+    부모의 호출 기록은 부모가 직접 부른 경계 제안만 모은다 — 자식은 각자의 `run_job` 이 제 행에 쓴다."""
     code: NovelJobFailureCode
+    records: list[dict[str, Any]] = []
     try:
         async with session_factory() as db:
             planned = await db.scalar(select(NovelJob.planned_batches).where(NovelJob.id == job_id))
@@ -489,7 +564,7 @@ async def run_chain(session_factory: SessionFactory, llm_client: LLMClient, job_
             # 작업 행이 없다(띄우기 전에 소설이 지워졌다). 연쇄 부모는 CHECK 로 묶음 수를 늘 갖는다.
             return
         async with asyncio.timeout(chain_timeout_seconds(planned)):
-            await _execute_chain(session_factory, llm_client, job_id)
+            await _execute_chain(session_factory, llm_client, job_id, records)
         return
     except _JobFailedError as failed:
         code = failed.code
@@ -499,10 +574,12 @@ async def run_chain(session_factory: SessionFactory, llm_client: LLMClient, job_
         logger.warning("소설화 연쇄 작업 %s 가 예상하지 못한 오류로 실패했다: %s", job_id, type(exc).__name__)
         capture_dependency_failure(exc, dependency="novelize")
         code = "internal"
-    await _refund(session_factory, job_id, code)
+    await _refund(session_factory, job_id, code, records)
 
 
-async def _execute_chain(session_factory: SessionFactory, llm_client: LLMClient, job_id: uuid.UUID) -> None:
+async def _execute_chain(
+    session_factory: SessionFactory, llm_client: LLMClient, job_id: uuid.UUID, records: list[dict[str, Any]]
+) -> None:
     """묶음을 하나씩 만든다. 자식 하나가 실패하면 그 사유로 부모도 실패시키고(쓰지 않은 몫 환불) 남은 묶음은 만들지
     않는다. 만들 원문이 떨어지면 계획보다 일찍 끝낸다."""
     async with session_factory() as db:
@@ -521,7 +598,7 @@ async def _execute_chain(session_factory: SessionFactory, llm_client: LLMClient,
         async with session_factory() as db:
             planned = int(await db.scalar(select(NovelJob.planned_batches).where(NovelJob.id == job_id)) or 0)
         for _ in range(planned):
-            child_id = await _start_chain_child(session_factory, llm_client, job_id)
+            child_id = await _start_chain_child(session_factory, llm_client, job_id, records)
             if child_id is None:
                 break
             await run_job(session_factory, llm_client, child_id)
@@ -534,13 +611,13 @@ async def _execute_chain(session_factory: SessionFactory, llm_client: LLMClient,
                 return
             if child.status != "succeeded":
                 raise _JobFailedError(child.failure_code or "internal")
-        await _finish_chain(session_factory, job_id)
+        await _finish_chain(session_factory, job_id, records)
     finally:
         heartbeat.cancel()
 
 
 async def _start_chain_child(
-    session_factory: SessionFactory, llm_client: LLMClient, parent_id: uuid.UUID
+    session_factory: SessionFactory, llm_client: LLMClient, parent_id: uuid.UUID, records: list[dict[str, Any]]
 ) -> uuid.UUID | None:
     """다음 묶음을 맡을 자식 작업을 넣고 그 id 를 돌려준다. 만들 원문이 없거나 부모가 더는 실행 중이 아니면 None.
 
@@ -585,6 +662,8 @@ async def _start_chain_child(
         label_set=source.label_set,
         room_id=room_id,
         call_model=route.call_model,
+        records=records,
+        route_source=route.source,
     )
     end_index = (suggested[0] if suggested is not None else len(turns)) - 1
     episodes = episode_counts(turns[: end_index + 1], novel, model)[-1]
@@ -618,7 +697,7 @@ async def _start_chain_child(
         return child.id
 
 
-async def _finish_chain(session_factory: SessionFactory, job_id: uuid.UUID) -> None:
+async def _finish_chain(session_factory: SessionFactory, job_id: uuid.UUID, records: list[dict[str, Any]]) -> None:
     """연쇄를 성공으로 끝내고 쓰지 않은 몫(`charged_amount - consumed_amount`)을 돌려준다. 한 묶음도 만들지 못했으면
     (시작할 때 원문이 이미 사라졌다) 성공이 아니라 실패·전액 환불이다 — 전액 환불은 성공 행에 둘 수 없다(성공의 환불은
     부분 환불뿐이다).
@@ -660,6 +739,7 @@ async def _finish_chain(session_factory: SessionFactory, job_id: uuid.UUID) -> N
                 "refunded_amount": func.nullif(unused, 0),
                 "batch_id": first[0] if first is not None else None,
                 "chapter_id": first[1] if first is not None else None,
+                "llm_calls": records,
             },
         )
         if moved is None:
@@ -797,7 +877,12 @@ async def _outline(llm_client: LLMClient, outline_input: OutlineInput, usage: LL
 
 
 async def _save_outline(
-    session_factory: SessionFactory, job_id: uuid.UUID, outline_input: OutlineInput, episodes: list[dict[str, Any]]
+    session_factory: SessionFactory,
+    job_id: uuid.UUID,
+    outline_input: OutlineInput,
+    episodes: list[dict[str, Any]],
+    *,
+    llm_calls: Sequence[dict[str, Any]] = (),
 ) -> None:
     """구성안을 그 소설의 다음 리비전(미승인, 출처 generate)으로 저장한다. 사용자 행 잠금 → 성공 전이 → 낡음 확인 → INSERT 순서다.
     사용자 행을 먼저 잡는 것은 구성안 편집·승인도 같은 잠금 아래에서 다음 리비전 번호를 정하기 때문이다(같은 번호를 동시에 쓰지
@@ -810,7 +895,10 @@ async def _save_outline(
             await db.rollback()
             return
         moved = await transition_job(
-            db, job_id=job_id, expected=("running",), values={"status": "succeeded", "finished_at": func.now()}
+            db,
+            job_id=job_id,
+            expected=("running",),
+            values={"status": "succeeded", "finished_at": func.now(), "llm_calls": list(llm_calls)},
         )
         if moved is None:
             await db.rollback()
@@ -856,7 +944,11 @@ async def _episode_outline(
 
 
 async def _save_episode_outline(
-    session_factory: SessionFactory, job_id: uuid.UUID, scenes: list[dict[str, Any]]
+    session_factory: SessionFactory,
+    job_id: uuid.UUID,
+    scenes: list[dict[str, Any]],
+    *,
+    llm_calls: Sequence[dict[str, Any]] = (),
 ) -> None:
     """장면 구성안을 그 화의 다음 리비전(미승인, 출처 generate)으로 저장한다. 사용자 행 잠금 → 성공 전이 → 낡음 확인 → INSERT 순서다
     (전체 구성안 저장과 같은 이유). 모델을 부르는 동안 그 화의 근거가 바뀌었거나(구성안 편집·근거 구간을 뺀 선택) 그 화가 원고가
@@ -867,7 +959,10 @@ async def _save_episode_outline(
             await db.rollback()
             return
         moved = await transition_job(
-            db, job_id=job_id, expected=("running",), values={"status": "succeeded", "finished_at": func.now()}
+            db,
+            job_id=job_id,
+            expected=("running",),
+            values={"status": "succeeded", "finished_at": func.now(), "llm_calls": list(llm_calls)},
         )
         if moved is None:
             await db.rollback()
@@ -905,7 +1000,9 @@ def _assemble_revision(paragraphs: list[str], first: int, last: int, replacement
     return "\n\n".join([*paragraphs[:first], *replacement, *paragraphs[last + 1 :]])
 
 
-async def _save_ai_edit(session_factory: SessionFactory, job_id: uuid.UUID, body: str) -> None:
+async def _save_ai_edit(
+    session_factory: SessionFactory, job_id: uuid.UUID, body: str, *, llm_calls: Sequence[dict[str, Any]] = ()
+) -> None:
     """문단 수정 결과는 개정이 아니라 미리보기 후보다. 사용자가 적용할 때 새 개정이 된다. 전이와 결과 본문을 한
     문장으로 써서 전이가 행을 받지 못하면 결과도 남지 않는다.
 
@@ -926,7 +1023,12 @@ async def _save_ai_edit(session_factory: SessionFactory, job_id: uuid.UUID, body
             db,
             job_id=job_id,
             expected=("running",),
-            values={"status": "succeeded", "result_text": body, "finished_at": func.now()},
+            values={
+                "status": "succeeded",
+                "result_text": body,
+                "finished_at": func.now(),
+                "llm_calls": list(llm_calls),
+            },
         )
         if saved is None:
             await db.rollback()
@@ -958,6 +1060,8 @@ async def _save_block_edit(
     job_id: uuid.UUID,
     patches: list[BlockEditPatch],
     bundles: list[BlockEditBundle],
+    *,
+    llm_calls: Sequence[dict[str, Any]] = (),
 ) -> None:
     """여러 문단 수정 결과는 개정이 아니라 블록마다의 수정안(패치)이다. 장 전체 결과 본문과 범위 칸은 비워 둔다 — 옛 미리보기
     목록·적용·낡은 미리보기 비우기가 이 작업을 건드리지 않게(작업 표의 CHECK 가 막는다).
@@ -970,7 +1074,10 @@ async def _save_block_edit(
     전이와 한 문장에 넣으면 작업 행을 쥔 채 장을 잠그는 소설 삭제와 서로를 기다린다."""
     async with session_factory() as db:
         saved = await transition_job(
-            db, job_id=job_id, expected=("running",), values={"status": "succeeded", "finished_at": func.now()}
+            db,
+            job_id=job_id,
+            expected=("running",),
+            values={"status": "succeeded", "finished_at": func.now(), "llm_calls": list(llm_calls)},
         )
         if saved is None:
             await db.rollback()
@@ -999,7 +1106,12 @@ async def _save_block_edit(
 
 
 async def _save_batch(
-    session_factory: SessionFactory, job_id: uuid.UUID, chapter_input: ChapterInput, batch: ParsedBatch
+    session_factory: SessionFactory,
+    job_id: uuid.UUID,
+    chapter_input: ChapterInput,
+    batch: ParsedBatch,
+    *,
+    llm_calls: Sequence[dict[str, Any]] = (),
 ) -> None:
     """묶음 결과 저장. 한 트랜잭션에서 사용자 행 잠금 → 성공 전이 → 묶음·화·개정 → (생성이면) 집필권 잠금 → 인물·등장
     연결 → 소설 제목 → 모자란 화 환불이다. 잠금은 이미 잠긴 소설을 덮지 않으므로 첫 화를 저장한 생성(연쇄 자식 포함)만
@@ -1025,7 +1137,10 @@ async def _save_batch(
             await db.rollback()
             return
         moved = await transition_job(
-            db, job_id=job_id, expected=("running",), values={"status": "succeeded", "finished_at": func.now()}
+            db,
+            job_id=job_id,
+            expected=("running",),
+            values={"status": "succeeded", "finished_at": func.now(), "llm_calls": list(llm_calls)},
         )
         if moved is None:
             await db.rollback()

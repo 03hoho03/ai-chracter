@@ -380,7 +380,13 @@ async def transition_job(
     )
 
 
-async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: NovelJobFailureCode) -> int | None:
+async def refund_job(
+    db: AsyncSession,
+    *,
+    job_id: uuid.UUID,
+    failure_code: NovelJobFailureCode,
+    llm_calls: list[dict[str, Any]] | None = None,
+) -> int | None:
     """진행 중(대기·실행) 작업을 실패로 확정하고 쓰지 않은 몫(`charged_amount - consumed_amount`)을 돌려준다. 연쇄
     생성의 부모가 아니면 쓴 몫이 0 이라 전액이다. 돌려준 금액(0 일 수 있다)을, 이미 끝났거나 없는 작업이면 `None` 을
     돌려준다. 커밋은 호출자가 하고, 소설 삭제처럼 같은 트랜잭션에서 더 할 일이 없으면 곧바로 커밋한다.
@@ -398,7 +404,11 @@ async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: Novel
     이유가 없다. 행은 남긴다(차감 기록의 짝). 장 생성·재생성 작업은 두 칸을 쓰지 않아 늘 NULL 이라 종류를 가리지 않는다.
 
     탈퇴나 소설 삭제로 작업 행이 먼저 지워졌으면 아무것도 하지 않는다 — 탈퇴는 잔액을 통째로 소멸시키므로 뒤늦은
-    환불이 그 뒤에 잔액을 되살리면 안 된다."""
+    환불이 그 뒤에 잔액을 되살리면 안 된다.
+
+    `llm_calls` 는 실행 경로가 모은 이 작업의 모델 호출 기록이다(`novelize/call_records.py`). 넘기면 같은 전이 문장에 실어 실패
+    확정·환불과 함께 커밋되거나 함께 사라진다. 만료 정리·소설 삭제는 호출 목록을 몰라 넘기지 않고, 칸은 그대로(`[]`) 남는다.
+    금액 계산과는 무관하다."""
     user_id = await db.scalar(select(NovelJob.user_id).where(NovelJob.id == job_id))
     # 단일 환불만 보면 아래 조건부 전이로 충분해 보이지만, 사용자 행을 먼저 잡는 것은 탈퇴와의 교착을 막기 위해서다.
     # 탈퇴는 사용자 행을 잡은 뒤 작업 행을 지운다. 여기서 작업 행부터 바꾸고 지급 때 사용자 행을 잡으면 두 경로가
@@ -418,6 +428,7 @@ async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: Novel
             "finished_at": func.now(),
             "instruction": None,
             "result_text": None,
+            **({"llm_calls": llm_calls} if llm_calls is not None else {}),
         },
     )
     if moved is None:

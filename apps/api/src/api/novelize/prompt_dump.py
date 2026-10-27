@@ -14,8 +14,8 @@ import logging
 import uuid
 
 from api.core.config import settings
-from api.llm.client import LLMCallContext, structured_model
-from api.llm.routing import resolve_backend
+from api.llm.client import LLMCallContext
+from api.novelize.call_records import sent_model
 from api.novelize.job_variants import JobVariant
 from api.novelize.prompts import NovelizePrompt
 
@@ -53,13 +53,12 @@ def dump_novel_prompt(
     if path is None:
         return
     try:
-        backend, sent = resolve_backend(usage.call_site, usage.model, usage.call_model)
         record = {
             "jobId": str(job_id),
             "branch": variant,
             "callSite": usage.call_site,
             "jobModel": job_model,
-            "callModel": structured_model(usage.call_site, sent) if backend == "gemini" else sent,
+            "callModel": sent_model(usage)[1],
             "episodeNumber": episode_number,
             "novelSetId": str(prompt.prompt_set_id) if prompt.prompt_set_id is not None else None,
             "channel": prompt.channel,
