@@ -10,8 +10,14 @@ import {
 } from "../model/novelPermission";
 
 type NovelPermissionPickerProps = {
-  value: NovelPermission;
+  /** `undefined` 는 아직 고르지 않은 그림이다 — 세 줄이 모두 꺼진다. 빌더가 첫 발행 전에만 쓰고, 발행 후 설정 모달은 늘 값을 넘긴다.
+   * 그림만 비울 뿐 폼 값은 그대로라 이때 어느 줄을 눌러도(저장값과 같은 "허용 안 함"이라도) 값으로 온다. */
+  value: NovelPermission | undefined;
   onValueChange: (value: NovelPermission) => void;
+  /** 목록 아래 안내 문장의 id(빌더의 "처음 발행하기 전에…"). 적립 안내와 함께 그룹 설명으로 읽힌다. */
+  describedBy?: string;
+  /** 발행이 이 칸 때문에 막혔는가. */
+  invalid?: boolean;
   /** 크리에이터 정산 적립 비율 표기(`"5%"`). 있으면 목록 아래에 적립 안내를 붙이고, `null` 이면(정산이 닫혔거나 비율을
    * 아직 못 받았거나 조회가 실패했다) 숨긴다 — 숫자를 지어내지 않는다. 빠뜨리면 한 자리에서만 안내가 사라지므로 선택값으로
    * 두지 않는다. */
@@ -48,9 +54,12 @@ export function NovelPermissionPicker({
   earningRate,
   labelledBy,
   label,
+  describedBy,
+  invalid,
   ref,
 }: NovelPermissionPickerProps) {
   const earningNoteId = useId();
+  const descriptionIds = [describedBy, earningRate ? earningNoteId : undefined].filter(Boolean).join(" ");
   return (
     <>
       <ToggleGroup
@@ -58,12 +67,13 @@ export function NovelPermissionPicker({
         type="single"
         variant="list"
         orientation="vertical"
-        value={value}
+        value={value ?? ""}
         // 고른 줄을 다시 누르면 Radix 가 "" 를 보낸다 — 선택은 언제나 하나라 무시한다.
         onValueChange={(next) => isNovelPermission(next) && onValueChange(next)}
         aria-labelledby={labelledBy}
         aria-label={label}
-        aria-describedby={earningRate ? earningNoteId : undefined}
+        aria-describedby={descriptionIds || undefined}
+        aria-invalid={invalid || undefined}
         className="w-full flex-col gap-1.5"
       >
         {NOVEL_PERMISSION_VALUES.map((permission) => (

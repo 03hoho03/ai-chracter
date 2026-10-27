@@ -4,6 +4,8 @@ import { ApiErrorObject } from "@/shared/api/client";
 
 import {
   getPublishFailureMessage,
+  isNovelPermissionRequiredError,
+  NOVEL_PERMISSION_REQUIRED_MESSAGE,
   PUBLISH_CONFLICT_MESSAGE,
   PUBLISH_SCREENING_UNAVAILABLE_MESSAGE,
 } from "./publishFailureMessage";
@@ -73,5 +75,31 @@ describe("getPublishFailureMessage", () => {
     const error = apiError(503, { code: "PUBLISH_SCREENING_UNAVAILABLE", message: "x" });
 
     expect(getFilterRejectionReason(error)).toBeUndefined();
+  });
+});
+
+describe("isNovelPermissionRequiredError", () => {
+  it("400 NOVEL_PERMISSION_REQUIRED 만 고른다", () => {
+    expect(isNovelPermissionRequiredError(apiError(400, { code: "NOVEL_PERMISSION_REQUIRED" }))).toBe(true);
+  });
+
+  it("같은 400 이라도 다른 모양(심사 거부·필수 칸 누락·다른 code)이나 다른 상태 코드는 고르지 않는다", () => {
+    expect(isNovelPermissionRequiredError(apiError(400, { reason: "부적절" }))).toBe(false);
+    expect(isNovelPermissionRequiredError(apiError(400, { missingFields: ["genreId"] }))).toBe(false);
+    expect(isNovelPermissionRequiredError(apiError(400, { code: "OTHER" }))).toBe(false);
+    expect(isNovelPermissionRequiredError(apiError(409, { code: "NOVEL_PERMISSION_REQUIRED" }))).toBe(false);
+    expect(isNovelPermissionRequiredError(apiError(400, "NOVEL_PERMISSION_REQUIRED"))).toBe(false);
+    expect(isNovelPermissionRequiredError(new Error("x"))).toBe(false);
+  });
+
+  it("문장은 어느 칸을 골라야 하는지 말한다", () => {
+    expect(NOVEL_PERMISSION_REQUIRED_MESSAGE).toContain("다른 회원의 소설 만들기");
+  });
+
+  // 옛 판별 셋은 이 응답을 고르지 않는다 — 셸이 이 판별을 따로 두지 않으면 일반 실패 문구로 떨어진다.
+  it("기존 판별(심사 거부 사유·발행 실패 문구)은 이 응답을 고르지 않는다", () => {
+    const error = apiError(400, { code: "NOVEL_PERMISSION_REQUIRED" });
+    expect(getFilterRejectionReason(error)).toBeUndefined();
+    expect(getPublishFailureMessage(error)).toBeUndefined();
   });
 });
