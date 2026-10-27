@@ -1,12 +1,13 @@
 import { DropdownMenuItem, DropdownMenuSeparator } from "@ai-character-chat/ui/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
-import { ExternalLink, RotateCcw, Trash2 } from "lucide-react";
+import { ExternalLink, FolderMinus, FolderPlus, RotateCcw, Trash2 } from "lucide-react";
 
 import { ContentCardActionMenu } from "@/entities/content";
 import type { WorkItem } from "@/entities/work";
 import { VisibilityTransitionMenuItems } from "@/features/change-content-visibility";
 import { DeleteNovelModal } from "@/features/delete-novel";
 import { DeleteContentDraftModal, ResetContentDraftModal } from "@/features/manage-content-draft";
+import { WorkBundlesForWorkModal } from "@/features/manage-work-bundle";
 
 type StudioWorkRowMenuProps = {
   item: WorkItem;
@@ -16,6 +17,8 @@ type StudioWorkRowMenuProps = {
   userId: string;
   /** 지운 행의 메뉴 버튼은 행과 함께 사라진다 — 포커스를 받아 둘 자리로 옮긴다. */
   onRemoved: () => void;
+  /** 묶음 화면에서만 — "이 묶음에서 빼기". 확인 없이 빼고 되돌리기를 내민다(페이지가 한다). */
+  onRemoveFromBundle?: () => void;
 };
 
 /**
@@ -25,13 +28,31 @@ type StudioWorkRowMenuProps = {
  * - 초안: 삭제하기
  * - 소설: 소설 지우기
  *
+ * 셋 모두 맨 위에 "묶음에 넣기…"가 있고, 묶음 화면이면 그 아래 "이 묶음에서 빼기"가 있다.
+ *
  * 할 수 없는 항목은 비활성이 아니라 부재로 둔다 — 내 작품 화면의 카드 메뉴와 같은 규칙이고, 항목은 그 메뉴와 같은
  * 기능 조각을 쓴다(확인 모달·문구·캐시 무효화가 한 곳).
  */
-export function StudioWorkRowMenu({ item, title, userId, onRemoved }: StudioWorkRowMenuProps) {
+export function StudioWorkRowMenu({ item, title, userId, onRemoved, onRemoveFromBundle }: StudioWorkRowMenuProps) {
+  const bundleItems = (
+    <>
+      <DropdownMenuItem onSelect={() => void WorkBundlesForWorkModal.call({ work: { kind: item.kind, id: item.id }, title })}>
+        <FolderPlus aria-hidden />
+        묶음에 넣기…
+      </DropdownMenuItem>
+      {onRemoveFromBundle && (
+        <DropdownMenuItem onSelect={onRemoveFromBundle}>
+          <FolderMinus aria-hidden />이 묶음에서 빼기
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuSeparator />
+    </>
+  );
+
   if (item.kind === "novel") {
     return (
       <ContentCardActionMenu title={title}>
+        {bundleItems}
         <DropdownMenuItem
           variant="destructive"
           onSelect={() =>
@@ -50,6 +71,7 @@ export function StudioWorkRowMenu({ item, title, userId, onRemoved }: StudioWork
   if (!item.hasPublished) {
     return (
       <ContentCardActionMenu title={title}>
+        {bundleItems}
         <DropdownMenuItem
           variant="destructive"
           onSelect={() =>
@@ -67,6 +89,7 @@ export function StudioWorkRowMenu({ item, title, userId, onRemoved }: StudioWork
 
   return (
     <ContentCardActionMenu title={title}>
+      {bundleItems}
       <DropdownMenuItem asChild>
         <Link to="/content/$type/$id" params={{ type: item.kind, id: item.id }}>
           <ExternalLink aria-hidden />

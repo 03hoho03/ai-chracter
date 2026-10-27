@@ -28,7 +28,7 @@ export function useMyWorksQuery(params: MyWorksParams) {
     queryFn: async ({ pageParam }) =>
       (
         await apiClient.get<WorkListResponse>("/me/works", {
-          params: { type: params.type, status: params.status, q: params.q, cursor: pageParam },
+          params: { type: params.type, status: params.status, bundleId: params.bundleId, q: params.q, cursor: pageParam },
         })
       ).data,
     placeholderData: (previous, previousQuery) =>
