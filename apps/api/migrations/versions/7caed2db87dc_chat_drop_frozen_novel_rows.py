@@ -1,7 +1,7 @@
 """chat drop frozen novel rows
 
 Revision ID: 7caed2db87dc
-Revises: a95c99a208ea
+Revises: d59bf28caea5
 Create Date: 2026-10-27 12:00:00.000000
 
 채팅 두 레인(story·character)의 Gemini 체인 세트에 남겨 둔 옛 소설화 세 채널(`novelize_boundary`·`novelize_chapter`·
@@ -64,7 +64,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "7caed2db87dc"
-down_revision: str | Sequence[str] | None = "a95c99a208ea"
+down_revision: str | Sequence[str] | None = "d59bf28caea5"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
