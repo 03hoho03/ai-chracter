@@ -7,9 +7,13 @@ moto 는 인메모리라 컨테이너를 재생성하면 업로드된 객체가 
 
 진짜 이미지(`images/{slug}.png`)는 gitignore 라 새 머신에는 없다. 그럴 땐 장르 색이 다른
 절차적 목업 PNG 로 대체하고 경고 한 줄만 남긴다 — 이미지가 없다고 시드가 실패하면 안 된다.
+
+원본 곁에 업로드 경로와 같은 변형(썸네일·표시용, 움직이는 그림이면 프레임 모음·움직이는 변형)도 함께 올린다. 화면은
+변형 키를 존재 확인 없이 서명하므로 원본만 있으면 로컬 카드·상세가 전부 404 로 깨진다.
 """
 
 import colorsys
+import dataclasses
 import hashlib
 import io
 import uuid
@@ -18,13 +22,22 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.assets.image_processing import read_image_size
+from api.assets.image_processing import (
+    THUMBNAIL_CONTENT_TYPE,
+    ImageCrop,
+    generate_animated_variants,
+    generate_variants,
+    read_frame_count,
+    read_image_content_type,
+    read_image_size,
+)
 from api.core.s3 import build_object_key, upload_object
 from api.db.models.media import Asset, AssetKind, AssetStatus
 
 from .ids import SEED_AUTHOR_USER_ID, seed_uuid
 
 IMAGES_DIR = Path(__file__).parent / "images"
+# 목업 PNG 의 형식. 바이트에서 형식을 읽지 못했을 때(Pillow 가 MIME 을 모르는 형식)도 이 값으로 둔다.
 CONTENT_TYPE = "image/png"
 SIZE = (480, 720)  # seed_dev.py 의 기존 placeholder 와 같은 규격
 
@@ -142,24 +155,39 @@ async def ensure_asset(
     genre_name: str | None = None,
     *,
     data: bytes | None = None,
+    crop: ImageCrop | None = None,
 ) -> uuid.UUID:
-    """이미지를 S3 에 올리고 `Asset` 행을 upsert 한 뒤 asset id 를 돌려준다.
+    """이미지와 그 변형을 S3 에 올리고 `Asset` 행을 upsert 한 뒤 asset id 를 돌려준다.
 
-    `data` 를 주면 파일/목업 대신 그 바이트를 올린다 — 원본에서 파생한 블러본처럼 디스크에
-    없는 이미지를 위한 통로다.
+    `data` 를 주면 파일/목업 대신 그 바이트를 올린다 — 원본에서 파생한 블러본이나 비공개 묶음의 그림처럼
+    `images/{slug}.png` 이름이 아닌 이미지를 위한 통로다. `crop` 은 운영 대표 이미지와 같은 규칙으로 원본은 그대로
+    두고 변형에만 건다.
 
     호출 전에 작가 `User` 행이 flush 돼 있어야 한다(`assets.owner_user_id` FK). 업로드가
     실패해도(moto 미기동 등) 경고만 남기고 행은 그대로 넣는다 — 썸네일만 깨지고 나머지 시드는
     계속돼야 한다.
     """
     asset_id = seed_uuid("asset", slug, kind.value)
-    storage_key = build_object_key("seed", asset_id, CONTENT_TYPE)
     body = data if data is not None else read_image(slug, genre_name)
+    # 확장자와 Content-Type 은 바이트가 정한다 — GIF 를 `.png` 로 올리면 브라우저가 형식을 오인한다.
+    content_type = read_image_content_type(body) or CONTENT_TYPE
+    storage_key = build_object_key("seed", asset_id, content_type)
     # 화면이 원본 비율로 그리려면 크기가 있어야 한다. 넣지 않으면 로컬 화면이 늘 고정 비율 칸으로 떨어진다.
+    # 크롭이 있으면 화면에 그려지는 변형의 크기다(`Asset.width` 주석).
     width, height = read_image_size(body)
+    if crop is not None:
+        left, top, right, bottom = crop.box((width, height))
+        width, height = right - left, bottom - top
+    frame_count = read_frame_count(body)
+    variants = generate_variants(storage_key, body, crop)
+    # 업로드 경로는 움직이는 변형을 응답 뒤 백그라운드로 만들지만(`build_animated_variants` 는 커밋된 행을 따로 연
+    # 세션으로 고친다), 시드는 기다릴 사람이 없어 같은 생성 함수를 그 자리에서 부른다.
+    animated_variants = generate_animated_variants(storage_key, body, crop)
 
     try:
-        upload_object(storage_key, body, CONTENT_TYPE)
+        upload_object(storage_key, body, content_type)
+        for variant_key, variant_bytes in [*variants, *animated_variants]:
+            upload_object(variant_key, variant_bytes, THUMBNAIL_CONTENT_TYPE)
     except Exception as exc:
         print(f"  ! 이미지 업로드 건너뜀({slug}, {exc!r}) — moto 기동 후 재시드하면 채워짐")
 
@@ -172,6 +200,9 @@ async def ensure_asset(
             status=AssetStatus.READY,
             width=width,
             height=height,
+            frame_count=frame_count,
+            crop=dataclasses.asdict(crop) if crop is not None else None,
+            animated_variants_ready=bool(animated_variants),
         )
     )
     return asset_id

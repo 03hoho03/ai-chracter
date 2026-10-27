@@ -766,3 +766,22 @@ async def test_upsert_story_rejects_ending_priority_stat_of_another_setup(
 
     assert "startingSetups[0].endings[0].priorityStatId" in str(exc_info.value)
     assert await db_session.get(Content, story_content_id(SLUG)) is None
+
+
+async def test_upsert_story_keeps_the_private_visibility_written_in_the_json(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """운영에서 내보낸 비공개 작품은 로컬에서도 비공개여야 한다 — 시드가 공개로 덮으면 로컬 홈에 남의 비공개 작품이
+    뜬다. 공개 JSON 이 공개로 들어가는 짝은 `test_upsert_story_publishes_with_derived_ids` 가 본다."""
+    await _seed_author(db_session)
+
+    def _private(raw: dict[str, Any]) -> None:
+        raw["visibility"] = "private"
+
+    content_id = await upsert_story(db_session, SLUG, await _load_seed_payload(db_session, tmp_path, _private))
+
+    content = await db_session.get(Content, content_id)
+    assert content is not None
+    assert content.visibility == ContentVisibility.PRIVATE
+    # 공개 범위만 JSON 을 따르고, 발행은 그대로 된다.
+    assert content.current_published_version_id == story_version_id(SLUG)

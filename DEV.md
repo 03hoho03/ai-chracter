@@ -184,6 +184,19 @@ apps/api/scripts/seed_content/data/tutorial/
 그래서 이미 시드된 콘텐츠의 리스트(엔딩·스탯·키워드북 등) 중간에 항목을 끼워 넣으면 그 뒤 항목의 id가 전부 밀린다 — **새 항목은 항상 뒤에 붙일 것.**
 고친 JSON은 `cd apps/api && uv run pytest tests/test_seed_content_data.py`가 DB 없이 검증한다(발행 검증 + 엔딩 규칙 도달 가능성).
 
+**비공개 시드 묶음.** `apps/api/scripts/seed_content/private/`에 작품 JSON이 하나라도 있으면 시드는 튜토리얼 대신 그 묶음만 넣는다.
+폴더가 없거나 작품 JSON이 없으면 지금처럼 튜토리얼을 넣는다. 운영 작품을 담는 자리라 **gitignore이고 api 이미지에도 실리지 않는다 —
+커밋하지 말 것**(저장소는 공개다). 형식은 `stories/{slug}.json`·`characters/{slug}.json`(튜토리얼과 같은 draft 스키마 + 최상위
+`seedPublished`, 생략하면 발행이고 `false`면 발행 검증 없이 초안만 넣는다. 공개 범위는 JSON의 `visibility`를 따른다),
+`images/`(원본 그림 파일), `manifest.json`(작품 slug마다 대표 이미지·미디어 북 칸·상황별 이미지가 어느 파일인지와 크롭)이다.
+하위 항목 id는 JSON에 적힌 값을 그대로 쓰고, JSON의 자산 id는 로컬에 없어 시드가 매니페스트 파일로 만든 로컬 자산 id로 바꾼다.
+같은 slug(`tutorial-filmclub` 등)면 같은 콘텐츠 id를 이어받는다.
+묶음은 `DEPLOY.md` 의 「로컬 시드 묶음 내보내기 — 운영자 스크립트」 절로 만든다.
+**같은 로컬 DB를 쓰는 작업트리는 모두 같은 묶음을 갖거나 시드를 돌리지 않는다** — 묶음 없는 작업트리가 시드하면 같은 id가 튜토리얼로 덮인다.
+튜토리얼과 묶음을 처음 바꿔 넣을 때는 시작설정·엔딩·스탯 id가 통째로 바뀌어 그 작품의 로컬 대화방이 깨지므로(시드가 slug와 방 수를
+경고로 알린다) 그 대화방을 지운다. 작품을 통째로 지우는 `purge_contents.py`가 아니라 대화방만 지우는 것이고, 채팅 목록에서 방을 삭제하면
+된다(`DELETE /chat-rooms/{id}`와 같은 경로라 방의 자식 행까지 함께 지워진다).
+
 ### 이미지
 
 `apps/api/scripts/seed_content/images/`는 **gitignore**다(이미지 바이너리를 리포에 넣지 않는다). 그래서 새 머신에서는 썸네일·상황 이미지가
@@ -231,9 +244,10 @@ export TEST_REDIS_URL=redis://localhost:6379/<인덱스>
 ## 트러블슈팅
 
 - **썸네일이 깨져 보임(이미지 404)**: moto는 인메모리라 `docker compose down`/재생성 시 업로드된 이미지가 사라집니다.
-  **시드 재실행만으로는 안 고쳐집니다** — 응답은 원본이 아니라 변형을 서명해 내려주는데(목록은 `_thumb.webp`, 상세는
-  `_display.webp` — `apps/api/src/api/content/router.py`의 `_resolve_thumbnail_url`·`_resolve_display_url`), `seed_dev.py`/`seed_content/images.py`의
-  시드 업로드 경로는 원본만 올리고 변형은 만들지 않습니다. 원본은 있는데 변형이 0건인지 두 변형을 각각 셉니다(`grep -c` 는
+  시드 작품은 시드를 다시 돌리면 원본과 변형이 함께 다시 올라갑니다. 손으로 올린 자산은 **시드 재실행만으로는 안 고쳐집니다** —
+  응답은 원본이 아니라 변형을 서명해 내려주는데(목록은 `_thumb.webp`, 상세는
+  `_display.webp` — `apps/api/src/api/content/router.py`의 `_resolve_thumbnail_url`·`_resolve_display_url`), 시드는 자기 자산만 다시 올립니다.
+  원본은 있는데 변형이 0건인지 두 변형을 각각 셉니다(`grep -c` 는
   줄 수를 세므로 키마다 한 줄로 나눈 뒤 센다):
   ```sh
   curl -s "http://localhost:5001/ai-character-chat-assets-dev?list-type=2&max-keys=1000" | tr '<' '\n' | grep -c '_thumb\.webp$'

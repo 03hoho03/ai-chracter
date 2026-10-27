@@ -22,7 +22,7 @@ from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import Content, ContentType, ContentVersion, ContentVisibility
 from api.db.models.media import Asset
 from api.db.models.story import StoryVersionDetail
-from seed_content import images
+from seed_content import images, loader
 from seed_content.ids import SEED_AUTHOR_USER_ID
 from seed_content.loader import STORY_DIRS, load_all_characters, load_all_stories
 from seed_content.upsert import (
@@ -38,6 +38,13 @@ from seed_content.upsert import (
 def _no_image_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """이미지 디렉터리는 gitignore 라 CI 에는 없다 — 목업 폴백 경로로 고정해 테스트한다."""
     monkeypatch.setattr(images, "IMAGES_DIR", tmp_path / "images")
+
+
+@pytest.fixture(autouse=True)
+def _no_private_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """비공개 시드 묶음은 gitignore 라 개발 기기에만 있다 — 있으면 시드가 튜토리얼 대신 그것을 넣으므로, 튜토리얼
+    배선을 보는 이 파일은 묶음이 없는 기기(CI)와 같은 조건으로 고정한다."""
+    monkeypatch.setattr(loader, "PRIVATE_DIR", tmp_path / "no-private-bundle")
 
 
 async def _seed_author(db_session: AsyncSession) -> None:
@@ -181,3 +188,45 @@ async def test_seed_dev_refuses_non_local_database_before_writing_anything(
 @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
 def test_seed_dev_allows_local_database_hosts(host: str) -> None:
     seed_dev.ensure_local_database(f"postgresql+asyncpg://postgres:postgres@{host}:5447/ai_character_chat")
+
+
+REMOTE_OBJECT_STORES = [
+    pytest.param("https://0123456789abcdef.r2.cloudflarestorage.com", id="r2"),
+    pytest.param("http://minio:9000", id="compose-service-host"),
+    pytest.param(None, id="no-endpoint-means-real-aws"),
+]
+
+
+@pytest.mark.parametrize("endpoint_url", REMOTE_OBJECT_STORES)
+async def test_seed_dev_refuses_non_local_object_store_before_writing_anything(
+    endpoint_url: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DB 가 로컬이어도 저장소가 운영 버킷이면 목업 이미지가 운영 객체를 덮는다 — 업로드도 DB 세션도 열기 전에 멈춘다."""
+    monkeypatch.setattr(settings, "database_url", "postgresql+asyncpg://postgres:postgres@localhost:5447/ai_character_chat")
+    monkeypatch.setattr(settings, "s3_endpoint_url", endpoint_url)
+    touched: list[str] = []
+    monkeypatch.setattr(images, "upload_object", lambda *_args: touched.append("upload_object"))
+    monkeypatch.setattr(images, "read_image", lambda *_args: touched.append("read_image"))
+
+    def _open_session() -> None:
+        # 가드가 없으면 여기까지 온다. 실제 DB 에 쓰지 않도록 이 자리에서 멈추고 기록만 남긴다.
+        touched.append("async_session_factory")
+        raise SystemExit("DB 세션을 열려고 했다")
+
+    monkeypatch.setattr(seed_dev, "async_session_factory", _open_session)
+
+    with pytest.raises(SystemExit):
+        await seed_dev.main()
+
+    assert touched == []
+
+
+@pytest.mark.parametrize("endpoint_url", REMOTE_OBJECT_STORES)
+def test_seed_dev_object_store_guard_rejects_remote_endpoints(endpoint_url: str | None) -> None:
+    with pytest.raises(SystemExit):
+        seed_dev.ensure_local_object_store(endpoint_url)
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+def test_seed_dev_allows_local_object_store_hosts(host: str) -> None:
+    seed_dev.ensure_local_object_store(f"http://{host}:5001")

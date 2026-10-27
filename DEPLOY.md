@@ -3428,6 +3428,57 @@ curl -s -o /dev/null -w '%{http_code}\n' '<5 에서 받은 주소>'
 그래서 5 에서 DB 와 화면을 먼저 확인하고 나서 6 을 돌린다. 6 전에 DB 를 복원했다면 그 키 파일은 버린다(그대로 돌려도
 살아 있는 키 대조가 종료 2 로 막는다).
 
+### 3-19. 로컬 시드 묶음 내보내기 — 운영자 스크립트
+
+운영 작품 몇 편을 로컬 개발용 **비공개 시드 묶음**으로 꺼낼 때 `apps/api/scripts/export_seed_bundle.py` 를 쓴다. 묶음은
+로컬 시드(`seed_dev.py`)가 튜토리얼 대신 넣는 꼴 그대로다 — 작품 JSON(발행본이 있으면 발행본, 없으면 초안), 대표
+이미지·미디어 북 칸·상황별 이미지 원본, 매니페스트. **읽기 전용이다** — 트랜잭션을 읽기 전용으로 열어 쓰기가 섞여도 DB 가
+거부하고, 저장소에서는 내려받기만 한다. 표준 출력에는 작품 수·이미지 수·바이트·sha256 만 찍고 작품 이름·본문은 남기지
+않는다.
+
+**거부(종료 2, 묶음 파일 없음)** — 맵 줄 형식 오류·uuid 아님·slug 형식 오류(소문자·숫자·하이픈만, 첫 글자는 하이픈
+아님)·같은 작품 두 번, 맵에 DB 에 없는 id 가 있음, 맵의 작품 작가가 한 명이 아님(묶음은 로컬 시드 작가 한 명의 작품이
+된다), slug 가 겹침, 발행본도 초안도 없는 작품, `--out` 이나 그 옆 `.partial` 임시 파일이 이미 있음.
+
+종료 1 이면 원본 그림을 못 받았거나 맵 파일이 없는 것 — 묶음 파일은 남지 않는다.
+
+**실행 위치** — 서빙 중인 색의 api 컨테이너 안이다(작품 완전 삭제 절과 같다). 맵 파일은 한 줄에 `<콘텐츠 uuid> <시드
+slug>` 이고 빈 줄과 `#` 줄은 건너뛴다. 조감독·민유나는 측정 도구 기본값인 `tutorial-filmclub`·`tutorial-filmclub-yuna`
+를 slug 로 준다.
+
+```sh
+# 0. 로컬 — 맵을 VM 으로 올린다.
+gcloud compute scp seed-map.txt ddona-api:/tmp/seed-map.txt --zone=asia-northeast3-a --tunnel-through-iap --project=ddona-ai-character-chat
+
+gcloud compute ssh ddona-api --zone=asia-northeast3-a --tunnel-through-iap --project=ddona-ai-character-chat
+cd /opt/ddona/app
+C="sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
+A=api_$(sudo bash ops/active-color.sh)
+$C cp /tmp/seed-map.txt $A:/tmp/seed-map.txt
+
+# 1. 내보내기 — 종료 0 이면 마지막 줄에 바이트 수와 sha256 이 나온다. 2 면 거부(위 "거부").
+$C exec -T $A python -u scripts/export_seed_bundle.py --map /tmp/seed-map.txt --out /tmp/seed-bundle.tar.gz
+
+# 2. 꺼내기 — 컨테이너 → VM 호스트 → 로컬.
+$C cp $A:/tmp/seed-bundle.tar.gz /tmp/seed-bundle.tar.gz && sudo chown "$USER" /tmp/seed-bundle.tar.gz
+#    (로컬에서) gcloud compute scp ddona-api:/tmp/seed-bundle.tar.gz . --zone=asia-northeast3-a --tunnel-through-iap --project=ddona-ai-character-chat
+#    (로컬에서) shasum -a 256 seed-bundle.tar.gz   # 1 의 sha256 과 같아야 한다
+
+# 3. 지우기 — 묶음에는 비공개 작품 본문이 들어 있다. 컨테이너·VM 의 임시 파일을 지운다.
+#    컨테이너 쪽은 root 로 지운다 — `cp` 로 넣은 맵 파일은 root 소유라 앱 사용자로는 못 지운다.
+$C exec -T -u root $A rm -f /tmp/seed-map.txt /tmp/seed-bundle.tar.gz
+rm -f /tmp/seed-map.txt /tmp/seed-bundle.tar.gz
+```
+
+**로컬에서 풀기** — 묶음 안에는 최상위 폴더가 없다. `apps/api/scripts/seed_content/private/` 에 풀고 내려받은 tar.gz 는
+지운다. 그 폴더는 gitignore 이고 **커밋하지 않는다**(저장소는 공개다). 시드가 묶음을 어떻게 넣는지는 `DEV.md` 의 비공개
+시드 묶음 단락에 있다.
+
+```sh
+mkdir -p apps/api/scripts/seed_content/private
+tar -xzf seed-bundle.tar.gz -C apps/api/scripts/seed_content/private/ && rm seed-bundle.tar.gz
+```
+
 ## 4. 배포 후 스모크 검증
 
 1. `curl https://api.ddona.site/health` → `{"status":"ok"}` · `/ready`로 DB·Redis까지 확인. 배포 로그에서 교체 스크립트의
