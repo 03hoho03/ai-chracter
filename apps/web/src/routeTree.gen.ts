@@ -29,6 +29,7 @@ import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WebnovelsIndexRouteImport } from './routes/webnovels.index'
+import { Route as StudioIndexRouteImport } from './routes/studio.index'
 import { Route as NovelsIndexRouteImport } from './routes/novels.index'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as InquiriesIndexRouteImport } from './routes/inquiries.index'
@@ -154,6 +155,11 @@ const IndexRoute = IndexRouteImport.update({
 const WebnovelsIndexRoute = WebnovelsIndexRouteImport.update({
   id: '/webnovels/',
   path: '/webnovels/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StudioIndexRoute = StudioIndexRouteImport.update({
+  id: '/studio/',
+  path: '/studio/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NovelsIndexRoute = NovelsIndexRouteImport.update({
@@ -324,6 +330,7 @@ export interface FileRoutesByFullPath {
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/novels/': typeof NovelsIndexRoute
+  '/studio/': typeof StudioIndexRoute
   '/webnovels/': typeof WebnovelsIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
@@ -372,6 +379,7 @@ export interface FileRoutesByTo {
   '/inquiries': typeof InquiriesIndexRoute
   '/notices': typeof NoticesIndexRoute
   '/novels': typeof NovelsIndexRoute
+  '/studio': typeof StudioIndexRoute
   '/webnovels': typeof WebnovelsIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
@@ -421,6 +429,7 @@ export interface FileRoutesById {
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/novels/': typeof NovelsIndexRoute
+  '/studio/': typeof StudioIndexRoute
   '/webnovels/': typeof WebnovelsIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
@@ -471,6 +480,7 @@ export interface FileRouteTypes {
     | '/inquiries/'
     | '/notices/'
     | '/novels/'
+    | '/studio/'
     | '/webnovels/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
@@ -519,6 +529,7 @@ export interface FileRouteTypes {
     | '/inquiries'
     | '/notices'
     | '/novels'
+    | '/studio'
     | '/webnovels'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
@@ -567,6 +578,7 @@ export interface FileRouteTypes {
     | '/inquiries/'
     | '/notices/'
     | '/novels/'
+    | '/studio/'
     | '/webnovels/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
@@ -616,6 +628,7 @@ export interface RootRouteChildren {
   InquiriesIndexRoute: typeof InquiriesIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
   NovelsIndexRoute: typeof NovelsIndexRoute
+  StudioIndexRoute: typeof StudioIndexRoute
   WebnovelsIndexRoute: typeof WebnovelsIndexRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
   ContentTypeIdRoute: typeof ContentTypeIdRoute
@@ -770,6 +783,13 @@ declare module '@tanstack/react-router' {
       path: '/webnovels'
       fullPath: '/webnovels/'
       preLoaderRoute: typeof WebnovelsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/studio/': {
+      id: '/studio/'
+      path: '/studio'
+      fullPath: '/studio/'
+      preLoaderRoute: typeof StudioIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/novels/': {
@@ -992,6 +1012,7 @@ const rootRouteChildren: RootRouteChildren = {
   InquiriesIndexRoute: InquiriesIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,
   NovelsIndexRoute: NovelsIndexRoute,
+  StudioIndexRoute: StudioIndexRoute,
   WebnovelsIndexRoute: WebnovelsIndexRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,
   ContentTypeIdRoute: ContentTypeIdRoute,

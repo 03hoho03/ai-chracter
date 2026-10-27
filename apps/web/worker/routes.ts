@@ -45,6 +45,7 @@ export const KNOWN_ROUTES = [
   "/refund-policy",
   "/reset-password",
   "/signup",
+  "/studio",
   "/studio/images",
   "/terms",
   "/ui-demo",
