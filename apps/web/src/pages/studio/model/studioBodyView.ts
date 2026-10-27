@@ -4,21 +4,25 @@ import { koreanParticle } from "@/shared/lib/text/koreanParticle";
  *
  * 검색어를 바꾼 뒤 새 응답을 기다리는 동안은 이전 결과가 자리표시로 남는데, 그 자리표시가 0건이면 결론(빈 결과·아직
  * 없음)을 내지 않는다 — 새 응답이 오면 뒤집힐 수 있는 문장을 먼저 읽히지 않으려고. */
-export type StudioBodyView = "nothingMade" | "awaiting" | "emptyResult" | "list";
+export type StudioBodyView = "nothingMade" | "nothingAdded" | "awaiting" | "emptyResult" | "list";
 
 export function resolveStudioBodyView({
   itemCount,
   hasCondition,
   isShowingPlaceholder,
+  isBundle = false,
 }: {
   itemCount: number;
   /** 유형·상태·검색어 중 하나라도 걸렸는지. */
   hasCondition: boolean;
   isShowingPlaceholder: boolean;
+  /** 묶음 화면인지. 조건 없는 0건이 홈에서는 "아직 만든 작품이 없다"이고 묶음에서는 "아직 넣은 작품이 없다"다. */
+  isBundle?: boolean;
 }): StudioBodyView {
   if (itemCount > 0) return "list";
   if (isShowingPlaceholder) return "awaiting";
-  return hasCondition ? "emptyResult" : "nothingMade";
+  if (hasCondition) return "emptyResult";
+  return isBundle ? "nothingAdded" : "nothingMade";
 }
 
 export type StudioEmptyResult = { message: string; action: "clearQuery" | "resetAll" };

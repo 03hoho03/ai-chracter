@@ -49,3 +49,17 @@ describe("resolveStudioEmptyResult", () => {
     });
   });
 });
+
+describe("resolveStudioBodyView 의 묶음 화면", () => {
+  it("조건 없는 0건이 홈에서는 아직 만든 것이 없음, 묶음에서는 아직 넣은 것이 없음이다", () => {
+    const input = { itemCount: 0, hasCondition: false, isShowingPlaceholder: false };
+    expect(resolveStudioBodyView({ ...input, isBundle: false })).toBe("nothingMade");
+    expect(resolveStudioBodyView({ ...input, isBundle: true })).toBe("nothingAdded");
+  });
+
+  it("묶음에서도 조건이 걸린 0건은 빈 결과다", () => {
+    expect(resolveStudioBodyView({ itemCount: 0, hasCondition: true, isShowingPlaceholder: false, isBundle: true })).toBe(
+      "emptyResult",
+    );
+  });
+});
