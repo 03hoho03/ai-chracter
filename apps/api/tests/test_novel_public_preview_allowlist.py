@@ -12,6 +12,10 @@ from api.core.config import Settings, settings
 from factories import PublicNovel, _login_as, _make_public_novel, _make_user, _make_user_with_clover_lot
 
 
+# 노벨 화 소장 흐름을 보는 파일이라 화 가격을 고정값으로 둔다(`conftest.py` 의 `novel_read_price_for_flow_tests`).
+pytestmark = pytest.mark.usefixtures("novel_read_price_for_flow_tests")
+
+
 @pytest.fixture(autouse=True)
 def _novel_public_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "novel_public_enabled", True)

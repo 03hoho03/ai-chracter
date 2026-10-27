@@ -28,6 +28,10 @@ if config.config_file_name is not None:
 # so there's a single source of truth shared with the app's own async engine.
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
+# 리비전 파일은 `api.*` 를 import 하지 않으므로 리비전이 읽어야 하는 앱 설정은 여기서 넘긴다. 클로버 단위 전환 리비전은 돈
+# 데이터가 있는 DB 에서 정지 스위치가 꺼져 있으면 시작하지 않는다(그 리비전의 docstring).
+config.attributes["clover_ledger_paused"] = settings.clover_ledger_paused
+
 # add your model's MetaData object here
 # for 'autogenerate' support
 target_metadata = Base.metadata

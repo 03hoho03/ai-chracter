@@ -662,10 +662,94 @@ idle 색을 띄우지 않고 active 색을 그 자리에서 재생성한다(마�
 뒤** `skip_overlap` 배포를 한다. 진행 중 작업 0 만 확인하는 것으로는 부족하다 — 떠 있는 옛 워커가 그 뒤 새 api 가 만든 작업을
 계속 집는다. 배포가 끝나면 스위치 줄을 다시 넣고 태그 없는 교체로 워커를 띄운다.
 
+**클로버 단위 전환(1클로버 = 3원 → 1원) — 전환 배포와 되돌림.** 전환 리비전 `725813c4f950` 은 클로버 수량 칼럼을 모두 세 배
+하고 잔액이 있는 회원마다 전환 원장 행과 단위 기록(`clover_unit_events` 의 `convert`)을 남긴다(무엇을 바꾸고 무엇을 안 바꾸는지는
+그 리비전의 docstring). 옛 코드가 새 단위 수량을 옛 가격으로 깎으면 안 되므로 정지 스위치를 켠 채 겹침 없이 배포한다. 리비전은
+돈 데이터가 있는 DB 에서 정지 스위치가 꺼져 있거나, 진행 중 소설 작업이 있거나, 단위 기록이 이미 있으면 아무것도 바꾸지 않고
+실패한다(트랜잭션 전체 롤백, 옛 색이 계속 서빙). 잠금을 500ms 넘게 기다리거나 회원 표를 잡은 뒤 5초를 넘겨도 같은 실패다 — 막고
+있던 트랜잭션을 본 뒤 같은 실행을 다시 한다. 순서:
+
+```sh
+cd /opt/ddona/app
+C="sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
+Q() { $C exec -T postgres psql -U postgres -d ai_character_chat -Atc "$1"; }
+# 1) 진행 중 환불 시도 0 — 정지 중에는 그 마무리 라우트도 막힌다. 0 이 아니면 어드민에서 대사로 끝낸 뒤 간다
+Q "SELECT count(*) FROM payment_cancellations WHERE status = 'requested';"
+# 2) 정지 스위치 켜기 — 태그 없는 교체 뒤 서빙 색이 실제로 켜졌는지(True)
+echo 'CLOVER_LEDGER_PAUSED=true' | sudo tee -a /opt/ddona/.env >/dev/null
+sudo python3 ops/check_env.py --format /opt/ddona/.env && sudo bash ops/swap-api.sh
+$C exec -T api_$(sudo bash ops/active-color.sh) python -c "from api.core.config import settings; print(settings.clover_ledger_paused)"
+# 3) 소설화 워커 비우기(위 "롤백"의 1)·2)) — 진행 중 작업 0
+Q "SELECT count(*) FROM novel_jobs WHERE status IN ('queued', 'running');"
+# 4) 대기 주문 수를 적어 둔다 — 전환 뒤 완료되면 세 배 사본으로 새 상품과 같은 수량을 받는다(문제 아님, 견적 비교에서 줄이 늘어난다)
+Q "SELECT count(*) FROM payments WHERE status = 'pending';"
+# 5) 백업과 전환 전 견적(같은 접수일을 전환 뒤에도 쓴다)
+sudo /opt/ddona/backup.sh --manual
+$C exec -T api_$(sudo bash ops/active-color.sh) python scripts/ops/quote_refunds.py --received-on <YYYY-MM-DD> \
+    | sudo tee /root/clover-quote-before.csv >/dev/null
+# 6) 같은 트랜잭션에 다른 리비전이 섞이지 않게 — DB 리비전이 전환 리비전의 앞(a95c99a208ea)이고 올릴 이미지의 head 가 725813c4f950
+Q "SELECT version_num FROM alembic_version;"
+```
+
+7) 병합 커밋 메시지에 `[skip actions]` → 곧바로 Actions 수동 실행(`skip_overlap` 켬). 8) 검산 — 같은 접수일로 견적을 다시 뽑아
+`/root/clover-quote-after.csv` 와 sha256 이 같다(대기 주문이 완료됐으면 그 결제 줄만 더해진다), `Q "SELECT action, money_rows FROM
+clover_unit_events;"` 가 `convert` 한 행, 전환 원장 행 수(`kind = 'unit_conversion'`) = 잔액이 0 보다 큰 회원 수, 전환 기록의
+`lock_started_at` 이후 채팅·이미지·요약 환급 원장 행(`chat_refund`·`image_refund`·`memory_summary_refund`) 0, 회원별 마지막 원장 행의
+잔액이 잔액과 다른 회원 0. 그 "마지막 행"은 행을 넣은 트랜잭션 번호(`xmin`)가 가장 큰 행 묶음이다 — `created_at` 은 트랜잭션 시작
+시각이라 전환 잠금에 막혔다가 전환 뒤에 쓴 행이 전환 행보다 앞에 놓여 거짓 위반이 된다. 원장은 append-only 라 행의 `xmin` 이 곧 그
+행을 넣은 트랜잭션이고, 한 트랜잭션이 여러 행(구매의 유료·보너스, 콘솔 회수)을 쓰므로 그 묶음 중 하나라도 잔액과 같으면 맞다로
+센다(전환 리비전의 사후 검사·되돌림 스크립트와 같은 식):
+
+```sh
+Q "SELECT count(*) FROM users u JOIN (SELECT user_id, max(xmin::text::bigint) AS last_xid FROM clover_ledger GROUP BY user_id) m ON m.user_id = u.id WHERE NOT EXISTS (SELECT 1 FROM clover_ledger g WHERE g.user_id = u.id AND g.xmin::text::bigint = m.last_xid AND g.balance_after = u.clover_balance);"
+```
+
+9) 정지 스위치 줄을
+지우고 태그 없는 교체, 소설화 워커 스위치를 되돌린다.
+
+🔴 **정지를 푼 뒤에는 전환 전 단위 이미지로 롤백하지 않는다 — 앞으로 고치기만 한다.** 정지를 풀면 새 가격(20·200 처럼 3의 배수가
+아닌 값)으로 깎인 차감이 쌓여 수량을 3으로 정확히 나눌 수 없다. 전환 전 단위 이미지의 기동 가드는 전환 기록을 보고 뜨지 않고, 가드가
+없는 더 옛 태그는 교체 스크립트가 막는다(위 롤백 단락).
+
+**정지를 풀기 전에 되돌려야 할 때(되돌림 런북).** 정지 스위치를 켠 채로 한다.
+
+1. `sudo /opt/ddona/backup.sh --manual` 뒤 건조 실행 — `$C exec -T api_$(sudo bash ops/active-color.sh) python
+   scripts/ops/revert_clover_unit.py`. 화면의 항목별 수가 모두 0 이고 `reverted=true` 인지 본다(건조 실행은 끝까지 해 보고 롤백한다).
+   전제 위반(3의 배수가 아닌 수량, 전환 뒤 콘솔 취소, 전환 뒤 옛 영수증 환급, 두 경계 기준의 수가 다름)이면 아무것도 쓰지 않고 종료
+   코드 1 이다 — 손으로 맞출지 백업 전체 복원("백업 · 복원" 절)으로 갈지 멈추고 정한다. 전체 복원이면 다시 열 때 이미지 키를 전환 전
+   단위 태그로 둔다.
+2. 같은 줄에 `--apply` 를 붙여 커밋한다.
+3. **다른 작업 없이 곧바로** 전환 전 단위 태그로 롤백 교체(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <태그>`). 되돌린 순간부터
+   떠 있는 새 단위 프로세스는 새 가격으로 옛 단위 데이터를 다룬다 — 기동 가드는 기동 때만 본다. 옛 단위 이미지의 가드는 되돌림
+   기록을 보고 뜬다. 그 사이 정지 스위치를 끄지 않는다.
+4. 견적을 다시 뽑아 전환 전 파일과 sha256 이 같은지 본 뒤 정지 스위치를 끈다 — `.env` 에서 정지 줄을 지우고(결제·소설화 워커
+   스위치를 함께 되돌린다) 형식 검사 뒤 **롤백 표시를 붙여** 태그 없는 교체를 한다(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh`). DB
+   리비전이 전환 전 단위 이미지보다 앞서 있어 표시 없이 부르면 교체 스크립트가 리비전 대조에서 멈추고(위 롤백 단락), 떠 있는
+   컨테이너는 여전히 정지 상태인데 `.env` 의 정지·결제·워커 줄만 해제된 채 남아 둘이 어긋난다.
+
+되돌린 뒤 다시 전환하려면 원인을 고친 PR 이 새 리비전을 더한다 — 전환 리비전은 이미 적용 기록이 있어 다시 돌지 않는다(그 리비전
+docstring 의 "되돌린 뒤 다시 전환할 때"). 그 PR 도 이 절의 순서 그대로 배포한다.
+
+**겹침 없는 전환 배포 뒤 새 컨테이너가 healthy 가 되지 않으면**(서빙하는 색이 없다 — 마이그레이션은 커밋됐다). 떠 있는 색이
+없어 교체 스크립트는 "떠 있는 api 색이 없다"로 멈추므로 두 갈래 모두 "빈 상태에서 첫 기동" 절의 단계로 손으로 띄운다. 그 절의
+1단계 이미지 줄 바꾸기는 사용자가 `!` 로 하고, 3단계 마이그레이션은 건너뛰며, 4·5단계의 `blue` 는 그 색으로 바꿔 읽는다.
+0) 죽은 색이 재시작을 되풀이하지 않게 `$C stop api_<색>`. 1) `$C logs api_<색>` 로 원인을 본다 — 이미지·설정만의 문제인지 단위를
+되돌려야 하는지 멈추고 정한다. 2) 이미지·설정만의 문제면 그 색 이미지 줄을 고친 태그(전환 리비전을 담은 태그)로 →
+`sudo python3 ops/check_env.py --format /opt/ddona/.env` → 1·4·5단계로 띄운다(마이그레이션은 이미 적용돼 다시 돌 것이 없고, 가드는
+전환 기록을 보고 뜬다). 3) 단위를 되돌려야 하면 `exec` 할 곳이 없으므로 일회성 컨테이너에서 위 런북 1·2 를 한다: `$C run --rm
+--no-deps -T api_<색> python scripts/ops/revert_clover_unit.py`(건조) → `--apply`(`run` 은 uvicorn 이 아니라 이 명령만 돌려 기동 가드를
+타지 않는다). 곧바로 그 색 이미지 줄을 전환 전 단위 태그(기동 가드가 들어온 태그 이상, 전환 리비전보다 앞)로 → `check_env.py
+--format` → 1·4·5단계로 띄운다 — healthy 실패로 끝난 겹침 없는 교체는 쉬는 색 줄을 바꾸기 전에 멈추므로 실패한 색 줄만 전환 리비전 태그이지만, 1단계가 두
+줄을 모두 바꾸므로 결과는 같다. 줄을 바꾸지 않으면 같은 이미지가 다시 뜨고, 3단계 마이그레이션을 돌리면 DB 리비전이 그 이미지보다 앞서 `Can't locate revision` 으로 멈춘다. 옛 단위 이미지의 가드는
+되돌림 기록을 보고 뜬다. 4) 위 런북 4.
+
 ⚠️ **배포 성공 판정은 `/health` 200만으로 부족하다.** 옛 컨테이너도 200을 준다. 그래서 워크플로가
 `ops/active-color.sh`로 서빙 중인 색을 정한 뒤 `docker inspect`로 그 색(`ddona-api_<색>-1`)의 실행 이미지가 새 태그인지
 대조한다 — 손으로 배포할 때도 같이 확인할 것(`sudo docker inspect --format '{{.Config.Image}}' ddona-api_$(sudo bash
-ops/active-color.sh)-1`). 교체 스크립트가 0 으로 끝나고 마지막 줄이 `13) 완료`인지도 본다.
+ops/active-color.sh)-1`). 교체 스크립트가 0 으로 끝나고 마지막 줄이 평상시 교체면 `13) 완료: active=…`, 겹침 없는 교체
+(`skip_overlap`)면 `완료(skip_overlap): active=…`인지도 본다 — 겹침 없는 교체는 `13) 완료` 를 찍지 않는다(`ops/swap-api.sh`). Actions
+배포는 그 뒤 워크플로 출력에 `실행 이미지 확인: api_<색> = …:<태그>` 와 `DDONA_REMOTE_DEPLOY_DONE tag=<태그>` 가 있어야 원격 단계가 끝까지
+돈 것이다(`.github/workflows/deploy-api.yml`). 클로버 단위 전환 배포도 겹침 없는 교체라 이 세 줄로 판정한다.
 
 ⚠️ **`Caddyfile`만 바뀐 배포는 `caddy reload`가 성공해도 컨테이너 안 내용이 안 바뀔 수 있다**
 (2026-09-15 실측). `docker-compose.prod.yml`이 그대로면 배포의 `up -d --wait caddy`는 caddy
