@@ -60,7 +60,7 @@ export function StudioNewNovelPage() {
 function NovelSourceList() {
   const query = useNovelSourcesQuery();
   const listRef = useRef<HTMLUListElement>(null);
-  const createRoomNovel = useCreateRoomNovel();
+  const createRoomNovel = useCreateRoomNovel(() => listRef.current?.focus());
   const blockedReason = toNovelizeForbiddenCopy(useCloverPricingQuery().data).room;
 
   if (query.isPending) return <NovelSourceListSkeleton />;
@@ -176,7 +176,8 @@ function NovelSourceRow({ room, blockedReason, isCreating, isAnyCreating, onCrea
           variant="outline"
           size="sm"
           // 누른 뒤 응답까지 다른 행도 막는다 — 두 방의 소설을 연달아 만들면 마지막 응답의 소설로만 옮겨 가 앞의 것은 말없이
-          // 만들어진다. `disabled` 가 아닌 이유는 실패해 돌아왔을 때 포커스가 이 버튼에 남아 있어야 해서다.
+          // 만들어진다. `disabled` 가 아닌 이유는 실패해 돌아왔을 때 포커스가 이 버튼에 남아 있어야 해서다(그 사이 막혀 버튼이
+          // 사라지는 실패는 목록으로 옮긴다).
           aria-disabled={isAnyCreating || undefined}
           aria-busy={isCreating || undefined}
           onClick={() => {
@@ -191,8 +192,10 @@ function NovelSourceRow({ room, blockedReason, isCreating, isAnyCreating, onCrea
   );
 }
 
-/** 방의 소설을 만들고 그 소설 화면으로 옮긴다. 실패는 채팅 방 더보기의 「소설로 보기」와 같은 네 갈래로 알린다. */
-function useCreateRoomNovel() {
+/** 방의 소설을 만들고 그 소설 화면으로 옮긴다. 실패는 채팅 방 더보기의 「소설로 보기」와 같은 네 갈래로 알린다.
+ * `onRowBlocked` 는 그 사이 막혀 누른 버튼이 이유 문장으로 바뀐 뒤 부른다 — 버튼과 함께 포커스가 사라지지 않게 목록으로
+ * 옮기는 자리다. */
+function useCreateRoomNovel(onRowBlocked: () => void) {
   const ensureRoomNovel = useEnsureRoomNovelMutation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -215,8 +218,9 @@ function useCreateRoomNovel() {
       if (isLegalReconsentRequiredError(error)) return;
       // 목록을 받은 뒤 막힌 경우다(원작자가 허락을 거뒀다). 목록을 다시 받아 이 행도 막힌 이유를 보이게 한다.
       if (isContentNovelizeForbiddenError(error)) {
-        void queryClient.invalidateQueries({ queryKey: novelKeys.sources() });
         toast.error(blockedReason);
+        await queryClient.invalidateQueries({ queryKey: novelKeys.sources() });
+        onRowBlocked();
         return;
       }
       // 허용을 회수한 직후라면 전역 처리가 세션을 다시 읽어 이 화면이 스튜디오로 돌아간다.
