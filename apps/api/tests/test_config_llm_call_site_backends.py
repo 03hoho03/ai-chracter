@@ -209,8 +209,8 @@ def test_premium_switches_without_an_assignment_still_need_bedrock_credentials_e
         _load_env(monkeypatch, **{_ANTHROPIC_KEY: "sk-ant-test", switch: "true"})
 
 
-# 운영이 Anthropic 직결로 배정한 호출 위치 — 상위 모델 글쓰기 셋(채팅 턴·측정용 다시 생성·소설 장)과 판정·요약·기억 추출
-# 열(채팅과 미리보기의 판정, 기억 요약, 장면·사실 추출)이다.
+# 운영이 Anthropic 직결로 배정한 호출 위치 — 상위 모델 글쓰기 셋(채팅 턴·측정용 다시 생성·소설 장)과 판정·요약·기억 추출·인상
+# 열하나(채팅과 미리보기의 판정, 기억 요약, 장면·사실 추출, 인상 생성)다.
 _PRODUCTION_ANTHROPIC_CALL_SITES = (
     "chat_generate",
     "replay_generate",
@@ -225,6 +225,7 @@ _PRODUCTION_ANTHROPIC_CALL_SITES = (
     "preview_media_book_image",
     "chat_memory_episode",
     "chat_memory_fact",
+    "chat_memory_impression",
 )
 
 
@@ -232,7 +233,7 @@ def test_the_production_env_key_set_starts_with_every_assigned_call_on_anthropic
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """운영 env 그대로 새 이미지가 떠야 한다 — 운영은 상위 모델 글쓰기 호출과 판정·요약·기억 추출 호출을 모두 Anthropic
-    직결로 배정하므로 Bedrock 자격 없이도 기동 검증을 통과해야 하고, 배정은 그 열셋 그대로여야 한다. 두 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 그 상태로 본다. 컨테이너가 받는 `.env` 에는 `Settings` 가 모르는 compose·다른 서비스 키도 있어,
+    직결로 배정하므로 Bedrock 자격 없이도 기동 검증을 통과해야 하고, 배정은 그 열넷 그대로여야 한다. 두 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 그 상태로 본다. 컨테이너가 받는 `.env` 에는 `Settings` 가 모르는 compose·다른 서비스 키도 있어,
     모르는 키를 무시하는 설정이 이 기동의 전제다."""
     assert Settings.model_config.get("extra") == "ignore"
     unknown = [name for name in PRODUCTION_ENV_NAMES if name.lower() not in Settings.model_fields]
