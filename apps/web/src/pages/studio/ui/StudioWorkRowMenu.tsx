@@ -52,7 +52,11 @@ export function StudioWorkRowMenu({ item, title, userId, onRemoved }: StudioWork
       <ContentCardActionMenu title={title}>
         <DropdownMenuItem
           variant="destructive"
-          onSelect={() => void DeleteContentDraftModal.call({ contentId: item.id })}
+          onSelect={() =>
+            void DeleteContentDraftModal.call({ contentId: item.id }).then((isDeleted) => {
+              if (isDeleted) onRemoved();
+            })
+          }
         >
           <Trash2 aria-hidden />
           삭제하기

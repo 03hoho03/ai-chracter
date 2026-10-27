@@ -100,28 +100,59 @@ function StudioWorksSection({ userId, params, isNovelAreaVisible, onSearchChange
   const filterLabel = describeStudioFilter(params.type, params.status);
   const hasCondition = filterLabel !== undefined || params.q !== undefined;
 
-  const heading = (
-    <h2 id={headingId} className="text-lg font-semibold text-foreground">
-      모든 작품
-    </h2>
-  );
+  // 첫 시도 중에만 스켈레톤이다. 첫 시도가 실패하면 재시도 백오프 동안에도 `isPending` 이고 받은 행이 없어, 걸러내지
+  // 않으면 아래 판정이 "아직 만든 작품이 없어요"로 떨어진다 — 실패 중엔 거짓일 수 있는 문장이다. 그래서 받은 첫 페이지가
+  // 없는 실패는 재시도 중이든 끝났든 같은 실패 패널이다.
+  const isFirstAttempt = query.isPending && query.failureCount === 0;
+  const isFirstPageFailed = !isFirstAttempt && (query.isPending || (query.isError && items.length === 0));
+  const view =
+    isFirstAttempt || isFirstPageFailed
+      ? undefined
+      : resolveStudioBodyView({ itemCount: items.length, hasCondition, isShowingPlaceholder: query.isPlaceholderData });
 
-  // 첫 시도 중에만 스켈레톤이다. 첫 시도가 실패하면 재시도 백오프 동안에도 `isPending` 이고 받은 행이 없어, 여기서
-  // 걸러내지 않으면 아래 판정이 "아직 만든 작품이 없어요"로 떨어진다 — 실패 중엔 거짓일 수 있는 문장이다. 그래서 받은 첫
-  // 페이지가 없는 실패는 재시도 중이든 끝났든 같은 실패 패널이다.
-  if (query.isPending && query.failureCount === 0) {
-    return (
-      <section aria-labelledby={headingId} className="flex flex-col gap-4">
-        {heading}
-        <StudioListSkeleton />
-      </section>
-    );
-  }
+  // 툴바는 조건이 걸려 있으면 늘 그린다 — 칩을 처음 눌러 새 조건의 첫 응답을 기다리는 동안에도 칩·셀렉트·검색 칸이 자리를
+  // 지켜야 누른 컨트롤의 포커스가 남는다. 조건 없이 처음 들어와 기다리는 동안·실패했을 때·만든 것이 하나도 없을 때는
+  // 걸러낼 대상이 없어 그리지 않는다.
+  const showToolbar = hasCondition || view === "list" || view === "awaiting" || view === "emptyResult";
+  // 건수는 지금 조건의 응답이 왔을 때만 말한다. 자리표시(이전 검색어의 결과)를 보이는 동안 수를 적으면 응답이 오며
+  // 뒤집힐 문장이 먼저 읽힌다.
+  const isCountSettled = (view === "list" || view === "emptyResult") && !query.isPlaceholderData;
 
-  if (query.isPending || (query.isError && items.length === 0)) {
-    return (
-      <section aria-labelledby={headingId} className="flex flex-col gap-4">
-        {heading}
+  const focusTypeFilter = (value: string) => {
+    typeFilterRef.current?.querySelector<HTMLElement>(`[data-filter="${value}"]`)?.focus();
+  };
+
+  return (
+    <section aria-labelledby={headingId} className="@container flex flex-col gap-4">
+      <h2 id={headingId} className="text-lg font-semibold text-foreground">
+        모든 작품
+      </h2>
+
+      {showToolbar && (
+        <>
+          <StudioToolbar
+            typeFilterRef={typeFilterRef}
+            searchInputRef={searchInputRef}
+            type={params.type}
+            status={params.status}
+            q={params.q}
+            isNovelAreaVisible={isNovelAreaVisible}
+            onSearchChange={onSearchChange}
+          />
+
+          {/* 필터는 화면의 다른 곳을 바꾸는 컨트롤이라 결과 수를 읽어 준다. 커서 페이징이라 총계가 아니라 지금까지 불러온
+              수이고, 남은 페이지가 있는 동안만 "표시 중"을 단다. */}
+          <p aria-live="polite" aria-atomic aria-busy={!isCountSettled} className="text-sm text-muted-foreground">
+            {isCountSettled
+              ? `${toScopeLabel(params.q, filterLabel)} ${items.length}건${query.hasNextPage ? " 표시 중" : ""}`
+              : `${toScopeLabel(params.q, filterLabel)} 불러오는 중`}
+          </p>
+        </>
+      )}
+
+      {(isFirstAttempt || view === "awaiting") && <StudioListSkeleton />}
+
+      {isFirstPageFailed && (
         <div
           role="alert"
           className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border px-6 py-16 text-center break-keep"
@@ -129,22 +160,10 @@ function StudioWorksSection({ userId, params, isNovelAreaVisible, onSearchChange
           <p className="text-sm text-destructive-text">목록을 불러오지 못했어요.</p>
           <RetryButton isBusy={query.isFetching && !query.isPending} onRetry={() => void query.refetch()} />
         </div>
-      </section>
-    );
-  }
+      )}
 
-  const view = resolveStudioBodyView({
-    itemCount: items.length,
-    hasCondition,
-    isShowingPlaceholder: query.isPlaceholderData,
-  });
-
-  // 만든 것이 하나도 없으면 걸러낼 대상이 없어 툴바를 그리지 않는다. 바로 위 새로 만들기 칸과 같은 목적지 버튼을 다시
-  // 두지 않는다 — 같은 행동이 연달아 두 번 읽힌다.
-  if (view === "nothingMade") {
-    return (
-      <section aria-labelledby={headingId} className="flex flex-col gap-4">
-        {heading}
+      {/* 바로 위 새로 만들기 칸과 같은 목적지 버튼을 다시 두지 않는다 — 같은 행동이 연달아 두 번 읽힌다. */}
+      {view === "nothingMade" && (
         <ContentListEmptyState
           title="아직 만든 작품이 없어요"
           message={
@@ -153,38 +172,7 @@ function StudioWorksSection({ userId, params, isNovelAreaVisible, onSearchChange
               : "위에서 캐릭터나 스토리를 시작하면 여기에 모여요."
           }
         />
-      </section>
-    );
-  }
-
-  const focusTypeFilter = (value: string) => {
-    typeFilterRef.current?.querySelector<HTMLElement>(`[data-filter="${value}"]`)?.focus();
-  };
-
-  return (
-    <section aria-labelledby={headingId} className="@container flex flex-col gap-4">
-      {heading}
-
-      <StudioToolbar
-        typeFilterRef={typeFilterRef}
-        searchInputRef={searchInputRef}
-        type={params.type}
-        status={params.status}
-        q={params.q}
-        isNovelAreaVisible={isNovelAreaVisible}
-        onSearchChange={onSearchChange}
-      />
-
-      {/* 필터는 화면의 다른 곳을 바꾸는 컨트롤이라 결과 수를 읽어 준다. 커서 페이징이라 총계가 아니라 지금까지 불러온
-          수이고, 남은 페이지가 있는 동안만 "표시 중"을 단다. */}
-      <p aria-live="polite" aria-atomic aria-busy={query.isPlaceholderData} className="text-sm text-muted-foreground">
-        {[params.q === undefined ? undefined : `‘${params.q}’`, filterLabel ?? (params.q === undefined ? "전체" : undefined)]
-          .filter((part) => part !== undefined)
-          .join(" · ")}{" "}
-        {items.length}건{query.hasNextPage ? " 표시 중" : ""}
-      </p>
-
-      {view === "awaiting" && <StudioListSkeleton />}
+      )}
 
       {view === "emptyResult" && (
         <StudioEmptyResult
@@ -225,23 +213,30 @@ function StudioWorksSection({ userId, params, isNovelAreaVisible, onSearchChange
       )}
 
       {/* 더 보기 실패는 그 자리에서 다시 시도한다 — 이미 보인 행은 그대로 둔다. */}
-      {query.isFetchNextPageError ? (
-        <div role="alert" className="flex flex-wrap items-center justify-center gap-3">
-          <p className="text-sm text-destructive-text">더 불러오지 못했어요.</p>
-          <RetryButton isBusy={query.isFetchingNextPage} onRetry={() => void query.fetchNextPage()} />
-        </div>
-      ) : (
-        <ContentListLoadMore
-          hasMore={query.hasNextPage}
-          isLoading={query.isFetchingNextPage}
-          onLoadMore={() => {
-            if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
-          }}
-          onExhausted={() => listRef.current?.focus()}
-        />
-      )}
+      {view === "list" &&
+        (query.isFetchNextPageError ? (
+          <div role="alert" className="flex flex-wrap items-center justify-center gap-3">
+            <p className="text-sm text-destructive-text">더 불러오지 못했어요.</p>
+            <RetryButton isBusy={query.isFetchingNextPage} onRetry={() => void query.fetchNextPage()} />
+          </div>
+        ) : (
+          <ContentListLoadMore
+            hasMore={query.hasNextPage}
+            isLoading={query.isFetchingNextPage}
+            onLoadMore={() => {
+              if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+            }}
+            onExhausted={() => listRef.current?.focus()}
+          />
+        ))}
     </section>
   );
+}
+
+/** 건수 줄의 범위 이름 — 걸린 검색어와 필터를 함께 적고, 아무것도 안 걸렸으면 "전체"다. */
+function toScopeLabel(q: string | undefined, filterLabel: string | undefined): string {
+  const parts = [q === undefined ? undefined : `‘${q}’`, filterLabel].filter((part) => part !== undefined);
+  return parts.length === 0 ? "전체" : parts.join(" · ");
 }
 
 type StudioEmptyResultProps = {
