@@ -30,6 +30,7 @@ export { useChatRoomMemoryItemsQuery } from "./api/useChatRoomMemoryItemsQuery";
 export type {
   ChatRoomMemoryEpisode,
   ChatRoomMemoryFact,
+  ChatRoomMemoryImpression,
   ChatRoomMemoryItems,
 } from "./model/chatRoomMemoryItems";
 export { useChatRoomPlayGuideQuery } from "./api/useChatRoomPlayGuideQuery";

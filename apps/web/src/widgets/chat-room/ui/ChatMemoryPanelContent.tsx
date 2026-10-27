@@ -6,7 +6,12 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 
 import { useChatRoomMemoryItemsQuery, useChatRoomMemoryQuery } from "@/entities/chat-room";
 import { RoomMemoryEditor } from "@/features/edit-room-memory";
-import { itemCountLabel, RoomMemoryFacts, RoomMemoryScenes } from "@/features/forget-room-memory";
+import {
+  itemCountLabel,
+  RoomMemoryFacts,
+  RoomMemoryImpressions,
+  RoomMemoryScenes,
+} from "@/features/forget-room-memory";
 
 import { MEMORY_PANEL_DESCRIPTION } from "../config/memoryPanel";
 import { confirmClearMemoryNote } from "../lib/confirmClearMemoryNote";
@@ -97,6 +102,7 @@ function ChatMemoryTabs({ roomId, layout }: { roomId: string; layout: ChatMemory
           roomId={roomId}
           onClearNoteRequest={confirmClearMemoryNote}
           editSummaryRequest={editSummaryRequest}
+          afterSummary={<RoomMemoryImpressions roomId={roomId} />}
         />
       </TabsContent>
       <TabsContent value="scenes" className={TAB_PANEL_CLASS}>

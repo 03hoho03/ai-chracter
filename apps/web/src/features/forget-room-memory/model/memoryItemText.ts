@@ -14,6 +14,14 @@ export function turnRangeLabel(startTurn: number, endTurn: number): string {
   return startTurn === endTurn ? `${startTurn}번째 턴` : `${startTurn}~${endTurn}번째 턴`;
 }
 
+/** 관계 인상이 무엇을 읽고 쓰였는가. 잊게 하기로 근거가 줄면 0 인 쪽은 빼고, 둘 다 0 이면 말하지 않는다. */
+export function impressionSourceLabel(sceneCount: number, factCount: number): string | undefined {
+  const parts = [sceneCount > 0 && `장면 ${sceneCount}개`, factCount > 0 && `사실 ${factCount}개`].filter(
+    (part): part is string => typeof part === "string",
+  );
+  return parts.length > 0 ? `${parts.join(" · ")}에서` : undefined;
+}
+
 /** 탭 이름 옆 개수. 총계 API 가 없으니 다음 페이지가 남은 동안은 "+"를 붙여 불러온 만큼만 말한다. */
 export function itemCountLabel(count: number, hasMore: boolean): string {
   return hasMore ? `${count}+` : `${count}`;

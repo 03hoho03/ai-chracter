@@ -27,25 +27,40 @@ export type ChatRoomMemoryFact = {
   endTurn: number;
 };
 
-/** 목록 API 한 페이지. 장면만 페이지로 나뉘고, 사실과 두 쓰임 표시는 페이지마다 같은 것이 다시 온다. */
+/** 관계 인상 하나 — 요약 접기 몇 번을 한 묶음으로 읽어 쓴 읽기 전용 글이고, 캐릭터의 응답에는 쓰이지 않는다. 턴은 근거
+ * 장면·사실의 범위라 근사값이고 근거가 다 지워졌으면 없다. `factCount`는 사실 탭과 같은 키 수다. */
+export type ChatRoomMemoryImpression = {
+  id: string;
+  text: string;
+  createdAt: string;
+  turnStart?: number;
+  turnEnd?: number;
+  sceneCount: number;
+  factCount: number;
+};
+
+/** 목록 API 한 페이지. 장면만 페이지로 나뉘고, 사실·두 쓰임 표시·인상은 페이지마다 같은 것이 다시 온다. */
 export type ChatRoomMemoryItemsPage = {
   episodes: ChatRoomMemoryEpisode[];
   nextCursor?: string;
   facts: ChatRoomMemoryFact[];
   episodesUsedInReplies: boolean;
   factsUsedInReplies: boolean;
+  /** 최근 묶음 먼저. 없는 값이면 이 방에는 인상 구획을 그리지 않는다 — 빈 목록(아직 없음)과 다르다. */
+  impressions?: ChatRoomMemoryImpression[];
 };
 
-/** 화면이 그리는 모양 — 불러온 장면 전부와 가장 최근에 받은 사실·쓰임 표시. */
+/** 화면이 그리는 모양 — 불러온 장면 전부와 가장 최근에 받은 사실·쓰임 표시·인상. */
 export type ChatRoomMemoryItems = {
   episodes: ChatRoomMemoryEpisode[];
   facts: ChatRoomMemoryFact[];
   hasMoreEpisodes: boolean;
   episodesUsedInReplies: boolean;
   factsUsedInReplies: boolean;
+  impressions?: ChatRoomMemoryImpression[];
 };
 
-/** 불러온 페이지들을 한 목록으로 합친다. 사실과 쓰임 표시는 마지막 페이지의 것을 쓴다 — 모든 페이지가 같은 것을 다시 싣고,
+/** 불러온 페이지들을 한 목록으로 합친다. 사실·쓰임 표시·인상은 마지막 페이지의 것을 쓴다 — 모든 페이지가 같은 것을 다시 싣고,
  * 마지막 페이지가 가장 늦게 받은 값이다. */
 export function mergeMemoryItemPages(pages: readonly ChatRoomMemoryItemsPage[]): ChatRoomMemoryItems {
   const last = pages.at(-1);
@@ -55,5 +70,6 @@ export function mergeMemoryItemPages(pages: readonly ChatRoomMemoryItemsPage[]):
     hasMoreEpisodes: last?.nextCursor !== undefined,
     episodesUsedInReplies: last?.episodesUsedInReplies ?? false,
     factsUsedInReplies: last?.factsUsedInReplies ?? false,
+    impressions: last?.impressions,
   };
 }

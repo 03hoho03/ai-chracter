@@ -35,6 +35,9 @@ type RoomMemoryEditorProps = {
   /** 바뀔 때마다 요약 편집을 연다(요약이 있고 아직 편집 중이 아니면). 패널의 다른 탭이 "요약 고치기"로 이 칸에 넘겨줄 때 쓴다 —
    * 값 자체는 뜻이 없고 바뀌었다는 것만 본다. 주지 않으면 아무 일도 없다. */
   editSummaryRequest?: number;
+  /** 요약 구획과 노트 구획 사이에 끼우는 읽기 전용 내용(구분선은 그쪽이 든다). 이 편집기가 다른 기억 목록을 알지 않게 위젯이
+   * 넣는다. */
+  afterSummary?: ReactNode;
 };
 
 type WriteErrorState = { section: "summary" | "note"; error: MemoryWriteError };
@@ -45,7 +48,7 @@ const SOURCE_LABEL: Record<NonNullable<ChatRoomMemory["summary"]>["source"], str
 };
 
 /** 기억 노트 패널의 본문. lg 인라인 패널과 lg 미만 Dialog가 같은 본문을 쓴다(제목은 각 컨테이너가 든다). */
-export function RoomMemoryEditor({ roomId, onClearNoteRequest, editSummaryRequest }: RoomMemoryEditorProps) {
+export function RoomMemoryEditor({ roomId, onClearNoteRequest, editSummaryRequest, afterSummary }: RoomMemoryEditorProps) {
   const memoryQuery = useChatRoomMemoryQuery(roomId);
 
   if (memoryQuery.isPending) {
@@ -73,6 +76,7 @@ export function RoomMemoryEditor({ roomId, onClearNoteRequest, editSummaryReques
       }}
       onClearNoteRequest={onClearNoteRequest}
       editSummaryRequest={editSummaryRequest}
+      afterSummary={afterSummary}
     />
   );
 }
@@ -83,9 +87,17 @@ type RoomMemoryFormProps = {
   onReload: () => Promise<void>;
   onClearNoteRequest: RoomMemoryEditorProps["onClearNoteRequest"];
   editSummaryRequest: RoomMemoryEditorProps["editSummaryRequest"];
+  afterSummary: RoomMemoryEditorProps["afterSummary"];
 };
 
-function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest, editSummaryRequest }: RoomMemoryFormProps) {
+function RoomMemoryForm({
+  roomId,
+  memory,
+  onReload,
+  onClearNoteRequest,
+  editSummaryRequest,
+  afterSummary,
+}: RoomMemoryFormProps) {
   const fieldId = useId();
   const schema = useMemo(() => createMemoryFormSchema(memory.limits), [memory.limits]);
   // 기준값은 처음 한 번만 굳힌다 — 편집 중에 새 요약이 도착해도(턴 뒤 리페치) 입력을 덮지 않는다.
@@ -388,6 +400,8 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest, editSumm
           )}
         </ul>
       </section>
+
+      {afterSummary}
 
       <section aria-labelledby={`${noteId}-heading`} className="flex flex-col gap-1.5 border-t border-border pt-5">
         <label id={`${noteId}-heading`} htmlFor={noteId} className="text-sm font-semibold text-foreground">
