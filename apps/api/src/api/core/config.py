@@ -723,7 +723,7 @@ class Settings(BaseSettings):
     memory_impressions_write: bool = False
     # 기억 보기 응답(`GET /chat-rooms/{id}/memory/items`)의 `impressions` 칸에 그 방의 인상 목록을 싣는다. 기본은 꺼짐 — 꺼져
     # 있으면 칸이 null 이라 화면이 인상 구획을 그리지 않고 인상 표를 읽지 않는다. 켜져 있어도 방의 레인·다음 턴 모델이 기억 사용
-    # 범위(`memory_model_scope`) 밖이면 null 이다. 기억 보기 스위치(`memory_items_visible`)가 꺼져 있으면 라우트가 404 라 이 값과
+    # 범위(`memory_model_scope`) 밖이면 null 이고, 인상이 하나도 없는데 쓰기 스위치가 꺼져 있어도 새로 생길 수 없어 null 이다. 기억 보기 스위치(`memory_items_visible`)가 꺼져 있으면 라우트가 404 라 이 값과
     # 무관하게 안 보인다. 쓰기 스위치와 따로 두는 이유는 쓰기를 켠 뒤 보기만 미루는 기간을 두려는 것이다. 처리방침에 인상 열람을
     # 게시한 뒤 켠다. 끄면(줄 삭제 + 재기동) 다음 요청부터 다시 null 이고 쌓인 행은 남는다.
     memory_impressions_visible: bool = False

@@ -2299,6 +2299,9 @@ async def list_chat_room_memory_items(
         if settings.memory_impressions_visible and in_scope
         else None
     )
+    # 쓰기가 꺼져 있으면 인상이 새로 생기지 않아 화면의 "대화가 쌓이면 정리돼요" 빈 상태가 거짓이 된다. 이미 만든 인상은 그대로 보인다.
+    if impressions == [] and not settings.memory_impressions_write:
+        impressions = None
     return ChatRoomMemoryItemsResponse(
         episodes=[
             ChatRoomMemoryEpisodeItem(

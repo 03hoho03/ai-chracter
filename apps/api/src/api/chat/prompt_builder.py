@@ -1147,7 +1147,7 @@ def build_memory_impression_prompt(
 
     지시문 전체가 `memory_impression` channel(DB)에 있고, 코드는 부르는 쪽이 만든 장면 줄·사실 줄을 줄바꿈으로 이어 넘길 뿐이다.
     이름 한 줄·요약 글·원문 대화는 받지 않는다 — 입력을 행으로만 못 박아야 인상마다 근거 행 id 를 남길 수 있고, 인상을
-    프롬프트에 싣게 되면 싣는 쪽이 그 근거 행 단위로 비밀을 거를 수 있다(지금 인상은 저장만 된다). 줄이 없으면 빈 값이고, 그 섹션을 뺄지는 문안의 conditional 이 정한다."""
+    프롬프트에 싣게 되면 싣는 쪽이 그 근거 행 단위로 비밀을 거를 수 있다(지금 인상은 응답 프롬프트에 싣지 않는다). 줄이 없으면 빈 값이고, 그 섹션을 뺄지는 문안의 conditional 이 정한다."""
     values = {"episode_lines": "\n".join(episode_lines), "fact_lines": "\n".join(fact_lines)}
     return render_prompt_channel(
         sections, channel="memory_impression", scope="story" if is_story_chat else "character", values=values
