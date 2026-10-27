@@ -2194,6 +2194,62 @@ async def _finished_ai_edit(
     return job
 
 
+async def _edited_recheck_bundle(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> tuple[uuid.UUID, str, Novel]:
+    """네 문단 화에서 둘째·넷째 문단 수정안이 묶인 끝난 여러 문단 수정 작업을 넣고, 사용자가 둘째 블록을 직접 고친 상태 — 재검사할
+    거리가 있다. 여러 문단 수정 스위치를 켠다. (작업 id, 그 묶음의 재검사 URL, 소설)."""
+    from api.novelize.block_edits import BlockEdit, normalized_result, request_targets
+    from api.novelize.text import split_paragraphs
+
+    monkeypatch.setattr(settings, "novelize_multi_block_edit_enabled", True)
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    chapter = await _add_chapter(
+        db_session,
+        novel_id,
+        room,
+        messages[0],
+        room.turns[1][1],
+        body="첫 문단이다.\n\n둘째 문단이다.\n\n셋째 문단이다.\n\n넷째 문단이다.",
+    )
+    base = await db_session.scalar(
+        sa.select(NovelChapterRevision)
+        .where(NovelChapterRevision.chapter_id == chapter.id)
+        .order_by(NovelChapterRevision.revision_no.desc())
+        .limit(1)
+    )
+    assert base is not None
+    members = [1, 3]
+    targets = request_targets([base.block_ids[i] for i in members], base.block_ids, split_paragraphs(base.body))
+    patches, bundles, _ = normalized_result(
+        targets,
+        [(i + 1, [f"고친 {i + 1}."]) for i in members],
+        [([i + 1 for i in members], "앞이 정한 사실을 뒤가 쓴다")],
+    )
+    novel = await db_session.get_one(Novel, novel_id)
+    job = NovelJob(
+        novel_id=novel_id,
+        user_id=novel.user_id,
+        kind="ai_edit",
+        status="succeeded",
+        chapter_id=chapter.id,
+        base_revision_id=base.id,
+        instruction="더 쓸쓸하게",
+        charged_amount=20,
+        block_edit=BlockEdit(targets=targets, scene_id=None, patches=patches, bundles=bundles).to_json(),
+    )
+    db_session.add(job)
+    await db_session.commit()
+    edited = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
+        json={"baseRevisionId": str(base.id), "body": base.body.replace("둘째 문단이다.", "사용자가 고친 둘째.")},
+    )
+    assert edited.status_code == 201, edited.text
+    (bundle,) = bundles
+    return job.id, f"/novels/{novel_id}/jobs/{job.id}/bundles/{bundle.id}/recheck", novel
+
+
 async def _lock_novel(
     db_session: AsyncSession,
     novel_id: uuid.UUID,
