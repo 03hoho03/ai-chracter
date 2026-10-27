@@ -28,6 +28,7 @@ export { useToggleLikeMutation } from "./api/useToggleLikeMutation";
 export { useToggleFavoriteMutation } from "./api/useToggleFavoriteMutation";
 export { useUpdateContentVisibilityMutation } from "./api/useUpdateContentVisibilityMutation";
 export { useUpdateNovelPermissionMutation } from "./api/useUpdateNovelPermissionMutation";
+export { useUpdateDerivedNovelsVisibilityMutation } from "./api/useUpdateDerivedNovelsVisibilityMutation";
 export { useReportContentMutation } from "./api/useReportContentMutation";
 export type { ReportReasonCategory } from "./api/useReportContentMutation";
 export { registerSituationalImage } from "./api/registerSituationalImage";

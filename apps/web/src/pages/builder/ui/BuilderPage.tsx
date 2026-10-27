@@ -41,8 +41,9 @@ export function BuilderPage({
     return (
       <>
         <BuilderTopBar title="작품 만들기" />
-        {/* lg 이상은 셸(`BuilderLayout`)처럼 왼쪽에 붙인다 — 가운데 두면 불러오기가 끝나며 내용이 옆으로 튄다. */}
-        <main className="mx-auto flex min-h-placeholder max-w-2xl flex-col items-center justify-center gap-2 px-4 sm:px-6 text-center lg:mx-0">
+        {/* lg 이상은 셸(`BuilderLayout`)의 폼 열 자리에 붙인다 — 가운데 두면 불러오기가 끝나며 내용이 옆으로 튄다. xl 이상은 셸 왼쪽의
+            묶음 열(176px)만큼 비켜 선다. */}
+        <main className="mx-auto flex min-h-placeholder max-w-2xl flex-col items-center justify-center gap-2 px-4 sm:px-6 text-center lg:mx-0 xl:ml-44">
           <p className="text-sm text-destructive-text">초안을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
         </main>
       </>
@@ -90,8 +91,9 @@ function BuilderSkeleton() {
   return (
     <>
       <BuilderTopBar title="작품 만들기" />
-      {/* lg 이상은 셸(`BuilderLayout`)의 폼 열과 같은 자리·윗여백에 둔다 — 다르면 불러오기가 끝나며 내용이 튄다. */}
-      <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10 lg:mx-0 lg:pt-6">
+      {/* lg 이상은 셸(`BuilderLayout`)의 폼 열과 같은 자리·윗여백에 둔다 — 다르면 불러오기가 끝나며 내용이 튄다. xl 이상은 셸 왼쪽의
+          묶음 열(176px)만큼 비켜 서고, 폼 열에 탭 줄이 없어 첫 칸이 서는 48px 아래에서 시작한다. */}
+      <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10 lg:mx-0 lg:pt-6 xl:ml-44 xl:pt-12">
         {/* Input 기본 높이(h-9=36px)에 맞춘다. */}
         <div className="h-9 w-full animate-pulse rounded-lg bg-muted" />
         <div className="h-64 w-full animate-pulse rounded-xl bg-muted" />

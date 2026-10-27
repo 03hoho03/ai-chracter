@@ -11,10 +11,17 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useRef } from "react";
 import { Controller, useFormContext } from "react-hook-form";
 
-import { MAX_DESCRIPTION_LENGTH, NovelPermissionPicker, useGenreListQuery } from "@/entities/content";
+import { MAX_DESCRIPTION_LENGTH, useGenreListQuery } from "@/entities/content";
 import { useCreatorPayoutRate } from "@/entities/creator-payout";
 import { hasEnabledFeature, useSessionQuery } from "@/entities/session";
-import { FieldCharacterCount, HashtagField, useLimitedTextField } from "@/features/build-common";
+import {
+  DerivedNovelsVisibilityField,
+  FieldCharacterCount,
+  HashtagField,
+  NovelPermissionField,
+  useLimitedTextField,
+  type NovelPermissionChoiceView,
+} from "@/features/build-common";
 import {
   FieldLabelText,
   TARGET_LABELS,
@@ -31,8 +38,9 @@ import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 
 /** 등록 설명/장르/타겟/해시태그/공개범위/소설 만들기 허락 메타데이터. 캐릭터 빌더
  * `DetailTab`과 동일한 필드/UI 구성(`registration` 스키마가 이미 공유 모양으로
- * 구현돼 있다) — 장르 목록은 하드코딩 enum이 아니라 GET /genres 서버 조회 결과로 select 옵션을 구성한다. */
-export function RegistrationTab() {
+ * 구현돼 있다) — 장르 목록은 하드코딩 enum이 아니라 GET /genres 서버 조회 결과로 select 옵션을 구성한다. 발행작이면 맨 아래에
+ * 파생 소설 보이기 스위치를 둔다. 허락을 골랐는지·발행작인지는 셸이 쥔다(`novelPermissionChoice`). */
+export function RegistrationTab({ novelPermissionChoice }: { novelPermissionChoice: NovelPermissionChoiceView }) {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const {
@@ -197,24 +205,26 @@ export function RegistrationTab() {
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <span id="story-registration-novel-permission-label" className="text-sm leading-none font-medium">
-          <FieldLabelText field="registration.novelPermission" />
-        </span>
-        <Controller
-          control={control}
-          name="registration.novelPermission"
-          render={({ field }) => (
-            <NovelPermissionPicker
-              ref={field.ref}
-              value={field.value}
-              onValueChange={field.onChange}
-              labelledBy="story-registration-novel-permission-label"
-              earningRate={payoutRate}
-            />
-          )}
+      <Controller
+        control={control}
+        name="registration.novelPermission"
+        render={({ field }) => (
+          <NovelPermissionField
+            idPrefix="story-registration"
+            value={field.value}
+            onChange={field.onChange}
+            fieldRef={field.ref}
+            choice={novelPermissionChoice}
+            earningRate={payoutRate}
+          />
+        )}
+      />
+      {novelPermissionChoice.publishedContentId !== undefined && (
+        <DerivedNovelsVisibilityField
+          contentId={novelPermissionChoice.publishedContentId}
+          idPrefix="story-registration-derived-novels"
         />
-      </div>
+      )}
     </div>
   );
 }

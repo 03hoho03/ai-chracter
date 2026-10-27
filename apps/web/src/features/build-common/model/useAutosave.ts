@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 
 function debounce<TArgs extends unknown[]>(fn: (...args: TArgs) => void, ms: number) {
@@ -35,7 +35,8 @@ function debounce<TArgs extends unknown[]>(fn: (...args: TArgs) => void, ms: num
  * 횟수만큼 쌓이고(sonner 기본 `visibleToasts` 3), 600px 이하에서는 토스트가 전체 폭으로 바닥에 깔려
  * 입력 중인 필드를 가린다. `duration: Infinity`인 이유는 이게 "방금 일어난 일"이 아니라 **"마지막 편집이
  * 서버에 없다"는 지속 상태**이기 때문이다 — 기본 4초로 두면 사용자가 잠깐 눈을 뗀 사이 사라져, 저장되지
- * 않은 걸 모른 채 탭을 닫는다. 해제는 다음 저장 성공과 빌더 이탈 두 가지다 — 저장 성공은 어느 경로의 저장이든 `useDraftPersistence` 의 저장 상태가 걷는다. 성공 토스트는
+ * 않은 걸 모른 채 탭을 닫는다. 토스트에는 [내용 복사]를 단다 — 저장이 계속 실패하면 편집이 이 탭 메모리에만 있으므로, 토스트를 본
+ * 그 자리에서 글을 가져갈 수 있게 한다(같은 버튼이 저장 상태 글자 옆에도 있어 토스트를 닫아도 남는다). 해제는 다음 저장 성공과 빌더 이탈 두 가지다 — 저장 성공은 어느 경로의 저장이든 `useDraftPersistence` 의 저장 상태가 걷는다. 성공 토스트는
  * 띄우지 않는다 — 1.5초마다 초록 토스트가 뜨면 재앙이다.
  *
  * 참고: 진짜 오프라인에서는 이 토스트가 뜨지 않는다. `app/AppProviders.tsx`의 `QueryClient`가 기본
@@ -80,8 +81,13 @@ export function useAutosave<TForm, TPayload>(opts: {
    * 렌더마다 달라도 디바운스를 다시 만들지 않는다.
    */
   onSchedule?: () => void;
+  /** 실패 토스트의 동작 버튼([내용 복사]). 실패할 때 최신 것을 읽으므로 렌더마다 새 요소여도 디바운스를 다시 만들지 않는다. */
+  errorAction?: ReactNode;
   debounceMs?: number;
 }) {
+  const errorActionRef = useRef(opts.errorAction);
+  errorActionRef.current = opts.errorAction;
+
   const debouncedSave = useMemo(
     () =>
       debounce((values: TForm) => {
@@ -95,6 +101,7 @@ export function useAutosave<TForm, TPayload>(opts: {
               id: AUTOSAVE_ERROR_TOAST_ID,
               duration: Infinity,
               closeButton: true,
+              action: errorActionRef.current,
             });
           });
       }, opts.debounceMs ?? 1500),

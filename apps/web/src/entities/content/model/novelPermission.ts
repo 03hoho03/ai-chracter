@@ -14,7 +14,7 @@ export const DEFAULT_NOVEL_PERMISSION: NovelPermission = "forbidden";
 export const NOVEL_PERMISSION_FIELD_LABEL = "다른 회원의 소설 만들기";
 
 /** 단계마다 이름과 한 줄 설명. 설명은 "다른 회원이 무엇을 할 수 있는가"로 끝나는 같은 골격이라 나란히 읽으면 차이가 보인다.
- * 공개 소설 기능은 아직 없어서 마지막 단계는 값만 저장된다 — 그 사실을 설명에 적어 지금 바로 공개되는 것으로 읽히지 않게 한다. */
+ * 마지막 단계는 공개 소설 "노벨"에 올리는 것까지 허락한다 — 공개 범위를 서비스 이름으로 짚어 "공개"가 어디까지인지 읽히게 한다. */
 export const NOVEL_PERMISSION_COPY: Record<NovelPermission, { label: string; description: string }> = {
   forbidden: {
     label: "허용 안 함",
@@ -26,7 +26,7 @@ export const NOVEL_PERMISSION_COPY: Record<NovelPermission, { label: string; des
   },
   public: {
     label: "공개 소설까지",
-    description: "소설을 다른 사람에게 공개하는 것까지 허락해요. 공개 소설 기능이 열리면 적용돼요.",
+    description: "다른 회원이 이 작품으로 만든 소설을 노벨에 공개하는 것까지 허락해요.",
   },
 };
 

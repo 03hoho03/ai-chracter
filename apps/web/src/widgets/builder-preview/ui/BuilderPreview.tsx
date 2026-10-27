@@ -40,7 +40,7 @@ export type BuilderPreviewProps<TFieldValues extends FieldValues> = {
 const BACKGROUND_CARD_LIMIT = 7;
 
 /**
- * 빌더 2단 레이아웃의 우측 프리뷰 패널. `BuilderPage`가 `renderPreview`
+ * 빌더 레이아웃(lg 2단, xl 3단)의 오른쪽 프리뷰 패널. `BuilderPage`가 `renderPreview`
  * 콜백에 이 컴포넌트를 주입한다 — Shell은 이 위젯을 직접 import하지 않는다(주입 방식은
  * 그대로 유지).
  *
@@ -130,8 +130,8 @@ function CardPreview<TFieldValues extends FieldValues>({
             `backgroundItems`가 빈 배열로 조용히 접히게 둔다. */}
         {/* `entities/content`의 `ContentCardGrid`를 여기서는 쓰지 않는다. 그 그리드는 이제 뷰포트가 아니라 그리드
             폭으로 열을 고르지만(컨테이너 쿼리), 가장 좁은 단계의 열 수가 고정이다(스토리 3열·캐릭터 2열) — 폭이
-            그 아래로 내려가도 열이 줄지 않는다. 이 그리드는 `BuilderLayout`의 2단 그리드가 남긴 프리뷰 열(`1fr`)
-            안에 있어 넓은 화면에서도 좁다(1024px 실측: 그리드 폭 280px). 거기서 스토리 3열이면 카드가 85px 로,
+            그 아래로 내려가도 열이 줄지 않는다. 이 그리드는 `BuilderLayout`의 그리드가 남긴 프리뷰 열(`1fr`) 안에
+            있어 넓은 화면에서도 좁다(1024px 실측: 그리드 폭 280px. 1280px 부터는 묶음 열이 더해져 칸이 408px 에서 다시 시작한다). 거기서 스토리 3열이면 카드가 85px 로,
             "스토리" 배지 한 개가 두 줄로 깨지는 88~90px 경계(그 아래 82~88px 전부 재현, 90px부터 한 줄) 밑으로
             눌린다. 공용 그리드를 이 칸에 맞추는 일은 홈·즐겨찾기·프로필·내 작품의 열 사다리를 함께 바꾸는 일이라 여기서
             하지 않고, 이 열 전용으로 `grid-template-columns: repeat(auto-fit, minmax(...))`를 쓴다. 열의 **실제 렌더 폭**만 보고

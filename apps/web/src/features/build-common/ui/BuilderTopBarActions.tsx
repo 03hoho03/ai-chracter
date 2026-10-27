@@ -1,11 +1,11 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { onlineManager } from "@tanstack/react-query";
 import { BookOpen, Check, CloudOff, Eye, Loader2, Save, TriangleAlert, X } from "lucide-react";
 import { useSyncExternalStore, type ReactNode } from "react";
 
 import type { CreationGuidePath } from "@/shared/config/creationGuide";
 
+import { useIsOnline } from "../lib/useIsOnline";
 import type { AutosaveStatus, AutosaveStatusStore } from "../model/autosaveStatus";
 
 type BuilderTopBarActionsProps = {
@@ -72,6 +72,8 @@ export function BuilderTopBarActions({
         size="sm"
         aria-label={isPreviewOpen ? `${previewLabel} 닫기` : previewLabel}
         aria-expanded={isPreviewOpen}
+        // 테스트가 폼 열을 가려 포커스를 잃을 때 돌아올 자리(`focusPreviewToggleIfLost`). JSX 는 속성 이름을 변수로 못 써 리터럴로 심는다.
+        data-builder-preview-toggle=""
         className={cn("lg:hidden", TOUCH_TARGET_CLASSNAME)}
         onClick={onPreview}
       >
@@ -105,28 +107,24 @@ const SAVE_STATUS_VIEW: Record<AutosaveStatus, { icon: ReactNode; text?: string 
   },
 };
 
-function subscribeOnline(listener: () => void) {
-  return onlineManager.subscribe(listener);
-}
-
 const OFFLINE_VIEW = {
   icon: <CloudOff aria-hidden className="size-3.5" />,
   text: "연결 끊김, 연결되면 저장돼요",
 };
 
 /**
- * 임시저장 버튼이 자동저장 상태도 보인다 — 아이콘과 접근 이름("임시저장 · 저장됨")만 바뀌고 폭은 그대로다. 390px 상단바에는 상태
- * 글자를 더 놓을 폭이 없다. 실패면 이 버튼이 곧 다시 시도다(누르면 임시저장이 지금 값을 보낸다).
+ * 임시저장 버튼이 자동저장 상태도 보인다 — 아이콘과 접근 이름("임시저장 · 저장됨")만 바뀌고 폭은 그대로다. lg 미만 상단바에는 상태
+ * 글자를 더 놓을 폭이 없어 글자는 폼 흐름 맨 위 줄(`BuilderSaveStatus`)이 대신 보이고, 상단바에는 이 아이콘이 남는다. 실패면 이
+ * 버튼이 곧 다시 시도다(누르면 임시저장이 지금 값을 보낸다).
  *
- * 저장 상태는 이 버튼만 구독한다(셸은 다시 그리지 않는다). 오프라인은 TanStack 의 `onlineManager` 를 따른다 — 그 판단으로
- * 저장 요청이 멈추고 연결이 돌아오면 다시 나가므로, 같은 판단을 보여야 버튼이 실제 저장과 어긋나지 않는다.
+ * 저장 상태는 이 버튼과 상태 글자 줄만 구독한다(셸은 다시 그리지 않는다). 오프라인은 `useIsOnline` 을 따른다.
  *
  * 보조기기에는 연결이 끊겼을 때만 상태 영역으로 알린다. 입력을 멈출 때마다 "저장됨"을 읽으면 소음이고, 저장 실패는 실패 토스트가
  * 이미 알린다(자동저장 실패 토스트는 닫을 때까지 남는다).
  */
 function SaveNowButton({ saveStatus, onSaveNow }: { saveStatus: AutosaveStatusStore; onSaveNow: () => void }) {
   const status = useSyncExternalStore(saveStatus.subscribe, saveStatus.getSnapshot, saveStatus.getSnapshot);
-  const isOnline = useSyncExternalStore(subscribeOnline, () => onlineManager.isOnline(), () => true);
+  const isOnline = useIsOnline();
   const view = isOnline ? SAVE_STATUS_VIEW[status] : OFFLINE_VIEW;
   const label = view.text ? `임시저장 · ${view.text}` : "임시저장";
 

@@ -1,3 +1,5 @@
+import { NOVEL_PERMISSION_FIELD_LABEL } from "@/entities/content";
+
 /**
  * 캐릭터 빌더 칸 라벨의 단일 소스. 빌더 탭이 이 값으로 칸 라벨을 그리고, 발행 전 확인 목록도 오류 경로의 칸 이름을 여기서 찾는다
  * (`fieldLabelForPath`) — 두 자리의 칸 이름이 어긋날 수 없게 한다.
@@ -25,4 +27,5 @@ export const CHARACTER_FIELD_LABELS = {
   "registration.genre": { label: "장르" },
   "registration.target": { label: "타겟" },
   "registration.hashtags": { label: "해시태그" },
+  "registration.novelPermission": { label: NOVEL_PERMISSION_FIELD_LABEL },
 } as const satisfies Record<string, { label: string }>;
