@@ -4,6 +4,7 @@ import { Tabs, TabsContent } from "@ai-character-chat/ui/components/tabs";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
 import { Grid3x3 } from "lucide-react";
+import { flushSync } from "react-dom";
 import { FormProvider, useForm, useWatch, type FieldErrors, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -40,6 +41,7 @@ import {
 } from "@/features/build-story";
 import {
   BuilderLayout,
+  BuilderStepNav,
   BuilderTabStrip,
   BuilderTopBar,
   BuilderTopBarActions,
@@ -52,15 +54,18 @@ import {
   FirstPublishConfirmModal,
   firstErrorLocation,
   flattenFieldErrorPaths,
+  focusPreviewToggleIfLost,
   getFilterRejectionReason,
   getMissingFields,
   getPublishFailureMessage,
   missingFieldsMessage,
+  previewKindFor,
   PUBLISH_ISSUES_TOAST,
   PublishIssueList,
   publishIssueRows,
   resolveProfileImageUrl,
   tabFromSearch,
+  tabsOfStep,
   tabToSearch,
   useAutosave,
   useConfirmFirstPublish,
@@ -75,6 +80,7 @@ import { AppealModal } from "@/features/submit-appeal";
 import { creationGuidePath } from "@/shared/config/creationGuide";
 
 import { STORY_REQUIRED_TAB_IDS } from "../model/requiredTabs";
+import { STORY_TAB_STEPS, STORY_TABS_IN_STEP_ORDER } from "../model/steps";
 import { useMediaBookThumbnailsStore } from "../model/useMediaBookThumbnailsStore";
 import { EndingTab } from "./EndingTab";
 import { KeywordNoteTab } from "./KeywordNoteTab";
@@ -118,13 +124,35 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
   const navigate = useNavigate();
   const confirmFirstPublish = useConfirmFirstPublish();
   const [activeTab, setActiveTabState] = useState<StoryBuilderTab>(() => tabFromSearch(tab, TABS));
+  // 테스트(미리보기 대화로 시험하기)를 고른 동안인지. 탭이 아니라 화면 상태라 주소에 싣지 않는다 — lg 미만의 [미리보기] 열림과 같다.
+  // lg 이상은 미리보기 칸이 카드 탭·미디어 북 탭에서도 대화로 고정되고, lg 미만은 미리보기를 연 것과 같은 전체화면 대화다.
+  const [isTesting, setIsTesting] = useState(false);
   // 탭을 바꾸는 모든 길(탭 줄·첫 오류로 이동·빈 상태 안내)이 여기를 지나 주소의 `?tab=` 도 함께 바꾼다 — 새로고침하면 보던
   // 탭으로 돌아온다. 화면은 로컬 상태로 바로 바꾸고 주소는 뒤따른다(주소 이동을 기다리면 탭 전환이 한 박자 늦다).
+  // 탭을 옮기면 테스트는 끝난다 — 묶음 목록에서 다른 탭을 고르든, 발행 실패가 첫 오류 탭을 열든 미리보기 칸은 그 탭이 정한 것으로 돌아간다.
   function setActiveTab(nextTab: StoryBuilderTab) {
+    setIsTesting(false);
     setActiveTabState(nextTab);
     onTabChange(tabToSearch(nextTab, TABS));
   }
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const isPreviewShown = isPreviewOpen || isTesting;
+  function closePreview() {
+    setIsPreviewOpen(false);
+    setIsTesting(false);
+  }
+  // 테스트를 고른다. lg 미만에서는 대화가 폼 열을 가려 누른 묶음 칸이 숨으므로 포커스를 상단바의 미리보기 닫기로 옮긴다.
+  function startTesting() {
+    flushSync(() => setIsTesting(true));
+    focusPreviewToggleIfLost();
+  }
+  // 묶음 목록에서 탭을 고른다. 이미 열린 탭이면 테스트만 끝낸다(주소는 그대로).
+  function selectTab(nextTab: StoryBuilderTab) {
+    if (nextTab === activeTab) setIsTesting(false);
+    else setActiveTab(nextTab);
+  }
+  // 미리보기 칸에 대화 대신 미디어 북 배치표를 세울지. 테스트 중에는 미디어 북 탭에서도 대화다.
+  const isMediaBookGridShown = activeTab === "mediaBook" && !isTesting;
   // 폼 컨벤션(중복 제출 방지는 `isSubmitting`)에서 의도적으로 벗어난다 — `form.formState.isSubmitting`은
   // 검증 구간까지 포함해 true가 되는데 발행 버튼은 네이티브 `disabled`라 유효성 실패 때마다 포커스가
   // body로 떨어진다. onValid 경로(handlePublish)에서만 켜지는 로컬 state로 대신한다.
@@ -191,7 +219,11 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
   // 숨거나 그려지지 않은 채로 포커스를 받지 않는다. 서버 거절은 목록·섹션 경로만 가리켜 펼칠 항목이 없을 수 있다 — 그때는
   // 목록 머리의 오류 문장이 맡는다.
   function revealAndFocusFirstError(errors: FieldErrors<StoryBuilderFormValues>) {
-    const location = firstErrorLocation(errors, TABS);
+    // 오류 탭이 지금 탭이면 탭이 바뀌지 않아(`setActiveTab` 을 지나지 않아) 여기서 테스트를 끝낸다 — lg 미만에서는 전체화면 대화가
+    // 폼을 가린 채 숨은 칸으로 포커스가 가고, lg 이상에서는 미리보기가 대화로 남는다.
+    setIsTesting(false);
+    // 첫 오류는 탭 배열이 아니라 묶음 순서로 고른다 — 작가는 묶음 목록을 위에서부터 읽는다.
+    const location = firstErrorLocation(errors, STORY_TABS_IN_STEP_ORDER);
     const values = form.getValues();
     uiState.open(errorItemKeys(errors, values, STORY_COLLAPSIBLE_LISTS, TABS));
     const setupId = errorParentItemId(errors, values, STARTING_SETUP_SCOPE, TABS, location?.fieldPath);
@@ -355,14 +387,14 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
   // 화면에 보일지는 BuilderLayout이 CSS로만 정한다(전체화면 토글). 미디어 북 탭에서는 그 열에 배치표가
   // 서는데, 대화 노드는 그때도 같은 자리(아래 슬롯의 첫 자식)에 숨겨 둔 채 남겨 대화·입력·스트림이 이어진다.
   //
-  // `kind`는 활성 탭에서 파생한다(TABS[].preview). `TABS.find`가
+  // `kind`는 활성 탭에서 파생하고(TABS[].preview), 테스트를 고른 동안은 대화다(`previewKindFor`). `TABS.find`가
   // undefined를 돌려줄 수 있는 건 타입상 뿐이다 — activeTab의 타입(StoryBuilderTab)이 TABS에서
   // 도출되므로 항상 매치가 있다. 그래도 타입 체커를 만족시킬 기본값이 필요해 "card"를 쓴다 — 초기
   // 활성 탭("profile")의 preview 값과 같고, 프리뷰 세션을 지연 시작하는 것과 같은 이유로 도달할 리 없는 분기에서
   // 프리뷰 세션을 만드는 "chat"보다 안전하다.
   const activeTabConfig = TABS.find((tab) => tab.id === activeTab);
   const previewNode = renderPreview({
-    kind: activeTabConfig?.preview ?? "card",
+    kind: previewKindFor(activeTabConfig?.preview ?? "card", isTesting),
     getPayload: () => formToServer(form.getValues()),
     // 대화 미리보기 첫 메시지 그림. 크기는 폼 값에 없으면(이 기기에서 방금 올린 그림) 최근 저장 응답에서 찾는다.
     getMediaBookImages: () =>
@@ -376,7 +408,7 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
           ]),
         ),
       ),
-    onClose: () => setIsPreviewOpen(false),
+    onClose: closePreview,
     thumbnailUrl,
   });
 
@@ -384,11 +416,26 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
   // 목록은 발행을 누른 뒤에만 그린다 — 칸 하나를 떠날 때 거는 검사(스탯 범위)도 오류 객체에 들어가지만, 그건 그 칸의 안내이지
   // 발행이 막혔다는 말이 아니다.
   const errorTabIds = errorTabs(form.formState.errors, TABS);
+  // 확인 목록 줄도 첫 오류 이동과 같은 묶음 순서다.
   const issueRows = publishIssueRows(
     flattenFieldErrorPaths(form.formState.errors),
-    TABS,
+    STORY_TABS_IN_STEP_ORDER,
     (path) => checklist.serverLabel(path) ?? fieldLabelForPath(path, STORY_FIELD_LABELS),
   );
+
+  // 묶음 목록 두 꼴(1280px 이상 왼쪽 열, 그 미만 폼 흐름 안 줄)이 같은 값을 받는다. 탭 줄은 지금 묶음의 탭만 그린다.
+  const stepTabs = tabsOfStep(TABS, STORY_TAB_STEPS, STORY_TAB_STEPS[activeTab]);
+  const stepNavProps = {
+    tabs: TABS,
+    table: STORY_TAB_STEPS,
+    activeTab,
+    isTesting,
+    errorTabIds,
+    requiredTabIds: STORY_REQUIRED_TAB_IDS,
+    completedTabIds: checklist.completedTabIds,
+    onSelectTab: selectTab,
+    onSelectTesting: startTesting,
+  };
 
   return (
     <FormProvider {...form}>
@@ -403,12 +450,12 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
           <BuilderTopBarActions
             guidePath={creationGuidePath("story", activeTab)}
             isPublishing={isPublishing}
-            isPreviewOpen={isPreviewOpen}
+            isPreviewOpen={isPreviewShown}
             // 미디어 북 탭에서는 이 버튼이 여는 화면이 배치표라 그 화면의 머리와 같은 이름을 단다.
-            previewLabel={activeTab === "mediaBook" ? "배치표" : undefined}
-            previewIcon={activeTab === "mediaBook" ? <Grid3x3 aria-hidden className="size-3.5" /> : undefined}
+            previewLabel={isMediaBookGridShown ? "배치표" : undefined}
+            previewIcon={isMediaBookGridShown ? <Grid3x3 aria-hidden className="size-3.5" /> : undefined}
             saveStatus={saveStatus}
-            onPreview={() => setIsPreviewOpen((prev) => !prev)}
+            onPreview={() => (isPreviewShown ? closePreview() : setIsPreviewOpen(true))}
             onSaveNow={() => void handleSaveNow()}
             onPublish={() => {
               checklist.markAttempted();
@@ -424,13 +471,14 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
           {/* 미디어 북의 고른 칸도 탭을 옮겨도 남아야 해 탭 바깥에 둔다. 셸 상태가 아닌 것은 칸을 고를 때마다 셸과 미리보기가 다시 그려지지 않게 하려는 것이다. */}
           <MediaBookSelectionProvider setPreviewOpen={setIsPreviewOpen}>
             <BuilderLayout
-              isPreviewOpen={isPreviewOpen}
+              isPreviewOpen={isPreviewShown}
+              steps={<BuilderStepNav variant="column" {...stepNavProps} />}
               preview={
                 // 대화 노드는 언제나 첫 자식 자리에 있어 탭을 바꿔도 리마운트되지 않는다(래퍼를 조건부로 그리면 대화가
                 // 사라진다). 배치표는 둘째 자리에 미디어 북 탭일 때만 그려, 숨은 칸 버튼이 다른 탭에 남지 않는다.
                 <>
-                  <div className={activeTab === "mediaBook" ? "hidden" : undefined}>{previewNode}</div>
-                  {activeTab === "mediaBook" && <MediaBookGridPane onClose={() => setIsPreviewOpen(false)} />}
+                  <div className={isMediaBookGridShown ? "hidden" : undefined}>{previewNode}</div>
+                  {isMediaBookGridShown && <MediaBookGridPane onClose={closePreview} />}
                 </>
               }
             >
@@ -467,13 +515,19 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
                 onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}
                 className="lg:gap-0"
               >
-                <BuilderTabStrip
-                  tabs={TABS}
-                  activeTab={activeTab}
-                  errorTabIds={errorTabIds}
-                  requiredTabIds={STORY_REQUIRED_TAB_IDS}
-                  completedTabIds={checklist.completedTabIds}
-                />
+                {/* 1280px 미만의 묶음 줄과 지금 묶음의 탭 줄. 1280px 이상은 `BuilderLayout` 왼쪽 묶음 열이 둘을 대신한다. 둘 다 숨겨도
+                    트리에 남는다(폭이 바뀌어도 형제 자리가 그대로라 탭 본문이 다시 마운트되지 않는다). */}
+                <div className="flex flex-col gap-3 xl:hidden">
+                  <BuilderStepNav variant="bar" {...stepNavProps} />
+                  <BuilderTabStrip
+                    tabs={stepTabs}
+                    className={stepTabs.length < 2 ? "hidden" : undefined}
+                    activeTab={activeTab}
+                    errorTabIds={errorTabIds}
+                    requiredTabIds={STORY_REQUIRED_TAB_IDS}
+                    completedTabIds={checklist.completedTabIds}
+                  />
+                </div>
 
                 <TabsContent value="profile">
                   <ProfileTab
