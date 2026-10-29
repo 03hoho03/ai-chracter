@@ -16,7 +16,7 @@ const DISALLOWED_PATHS = [
   "/chats",
   "/novels",
   "/webnovels",
-  // 출석판. 로그인 회원의 개인 진도 화면이고, 출석 스위치가 꺼진 동안은 찾을 수 없는 화면이다.
+  // 출석판. 로그인 회원의 개인 진도 화면이다.
   "/attendance",
   "/chat/",
   "/builder/",

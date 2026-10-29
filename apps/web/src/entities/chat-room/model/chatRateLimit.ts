@@ -30,14 +30,11 @@ export function getChatRateLimit(error: unknown): ChatRateLimit | undefined {
   return { window: detail.window, retryAfterSeconds: detail.retryAfterSeconds };
 }
 
-/** 배너가 놓인 자리. 같은 창이어도 자리마다 참인 문장이 다르다.
- * - `chat`: 기본 모델 방. 무료 일일분이 있어 클로버가 없어도 자정에 다시 보낼 수 있다. 출석판이 켜지면 서버가 무료
- *   일일분을 없애므로 자정 약속이 거짓이 된다 — 그때는 자정 대신 출석판을 안내한다.
- * - `premiumChat`: 상위 모델 방. 무료분이 없어 턴마다 클로버를 쓴다 — 자정이 와도 풀리지 않으므로 부족 사실만 말한다.
- *   서버가 같은 `CLOVER_REQUIRED` 에 자정까지의 초를 싣지만 이 방에서는 그 값이 다시 보낼 수 있는 시점이 아니다.
- * - `preview`: 기본 모델 빌더 미리보기. 실제 채팅과 같은 한도를 쓰고, 무료 일일분도 같아 자정 약속이 참이다. 출석판이
- *   켜지면 미리보기 턴도 첫 턴부터 클로버를 쓰므로 `chat` 과 같은 이유로 자정 약속이 거짓이 된다.
- * - `premiumPreview`: 상위 모델 빌더 미리보기. 같은 한도를 쓰지만 상위 모델 방처럼 무료분이 없어 자정 약속을 하지 않는다. */
+/** 배너가 놓인 자리. 하루 무료분이 없어 기본·상위 모델 모두 첫 턴부터 클로버를 쓰고, 두 모델의 차이는 단가뿐이다.
+ * 그래서 클로버 문구는 모델로 갈리지 않고 미리보기 자리인지로만 갈린다. 상위 모델 자리를 따로 두는 것은 호출부가
+ * 방의 모델을 그대로 넘기게 하려는 것이다.
+ * - `chat`·`premiumChat`: 채팅방.
+ * - `preview`·`premiumPreview`: 빌더 미리보기. 실제 채팅과 같은 한도를 쓴다. */
 export type ChatRateLimitSurface = "chat" | "premiumChat" | "preview" | "premiumPreview";
 
 /** 미리보기는 실제 채팅과 같은 상한을 공유한다(BE는 채팅 4경로에 같은 게이트를 건다) — 빌더에서
@@ -53,45 +50,22 @@ function minuteLead(surface: ChatRateLimitSurface): string {
   return isPreviewSurface(surface) ? PREVIEW_LEAD : "너무 빠르게 보냈어요";
 }
 
-/** 기본 모델 방의 문구는 **두 사실을 함께** 말한다: 지금 막힌 이유(클로버가 없다)와
- * 다시 되는 시점(자정에 무료 한도가 돌아온다). 하나만 말하면 사용자가 할 수 있는 일이 안 보인다.
+/** 클로버 부족 문구는 막힌 이유(클로버가 부족하다)와 클로버를 다시 얻는 무료 길(출석판)을 함께 말한다. 하나만 말하면
+ * 사용자가 할 수 있는 일이 안 보인다.
  *
- * `retryAfterSeconds`는 KST 자정까지 남은 초라 **참값이다** — 그때 무료 일일분이 돌아오므로 실제로
- * 다시 보낼 수 있다(BE `_too_many_requests(..., seconds_until_kst_midnight(now), ...)`). 다만 최대
- * 86400이라 초 타이머를 걸지 않고 "자정"이라는 고정 시점으로 말한다. 카운트다운이 없어
- * `formatChatRateLimitMessage`와 `formatChatRateLimitAnnouncement`가 이 문구를 그대로 공유한다
- * (사본을 두지 않는다).
- *
- * 출석판이 켜지면(`attendanceEnabled`) 네 자리 모두 같은 문장이다 — 무료 일일분이 없어 자정에 풀리는 것이 없고,
- * 기본·상위 모델의 차이는 단가뿐이며 출석 클로버는 상위 모델에도 쓰여 자리마다 가를 사실이 없다. 부족 사실과 함께
- * 클로버를 다시 얻는 무료 길(출석판)을 말한다. */
-function cloverMessage(surface: ChatRateLimitSurface, attendanceEnabled: boolean): string {
-  if (attendanceEnabled) {
-    const message = "클로버가 부족해요 · 출석판에서 매일 받을 수 있어요";
-    return isPreviewSurface(surface) ? `${PREVIEW_LEAD} · ${message}` : message;
-  }
-  switch (surface) {
-    case "chat":
-      return "클로버가 없어요 · 자정에 무료 한도가 돌아와요";
-    case "premiumChat":
-      // 상위 모델 방에는 돌아올 무료 한도가 없다. 모델을 바꾸라는 말도 넣지 않는다 — 고른 모델은 이용자의 결정이다.
-      return "클로버가 부족해요";
-    case "preview":
-      return `${PREVIEW_LEAD} · 자정에 무료 한도가 돌아와요`;
-    case "premiumPreview":
-      // 상위 모델 방과 같은 이유로 자정을 약속하지 않는다 — 상위 모델 턴에는 돌아올 무료 한도가 없다.
-      return `${PREVIEW_LEAD} · 클로버가 부족해요`;
-    default:
-      return assertNever(surface);
-  }
+ * 하루 무료분이 없어 자정에 풀리는 것이 없다 — 서버가 `CLOVER_REQUIRED` 에 자정까지의 초를 실어 보내도 다시 보낼 수
+ * 있는 시점이 아니므로 자정도 초도 말하지 않는다. 카운트다운이 없어 `formatChatRateLimitMessage` 와
+ * `formatChatRateLimitAnnouncement` 가 이 문구를 그대로 공유한다(사본을 두지 않는다). */
+function cloverMessage(surface: ChatRateLimitSurface): string {
+  const message = "클로버가 부족해요 · 출석판에서 매일 받을 수 있어요";
+  return isPreviewSurface(surface) ? `${PREVIEW_LEAD} · ${message}` : message;
 }
 
 /** 채팅·미리보기 429 배너 문구. 창마다 다음 행동이 다르므로
- * (몇 초 기다리기 / 자정까지 기다리거나 클로버를 채우기) 하나로 뭉뚱그리지 않는다.
+ * (몇 초 기다리기 / 클로버를 채우거나 출석판에서 받기) 하나로 뭉뚱그리지 않는다.
  *
  * `secondsLeft`를 인자로 받는 이유: minute 창은 배너가 매초 다시 그리는 카운트다운이라 값이 detail의
- * `retryAfterSeconds`가 아니라 **지금 남은 초**다. clover 창은 `retryAfterSeconds`가 최대 86400이라
- * 초 타이머를 걸지 않고 "자정"이라는 고정 시점으로 말한다.
+ * `retryAfterSeconds`가 아니라 **지금 남은 초**다. clover 창은 기다려도 풀리지 않아 초를 쓰지 않는다.
  *
  * `secondsLeft === 0`에서 `${secondsLeft}초 뒤 다시`를 그대로 쓰면 "0초 뒤 다시"가 남는다(실서버
  * 관측). 그 시점엔 버튼이 이미 `aria-disabled=false`로 풀려 클릭이 통하므로 문구도
@@ -100,7 +74,6 @@ export function formatChatRateLimitMessage(
   rateLimit: ChatRateLimit,
   surface: ChatRateLimitSurface,
   secondsLeft: number,
-  attendanceEnabled = false,
 ): string {
   switch (rateLimit.window) {
     case "minute":
@@ -108,7 +81,7 @@ export function formatChatRateLimitMessage(
         ? `${minuteLead(surface)} · 이제 다시 보낼 수 있어요`
         : `${minuteLead(surface)} · ${secondsLeft}초 뒤 다시`;
     case "clover":
-      return cloverMessage(surface, attendanceEnabled);
+      return cloverMessage(surface);
     default:
       return assertNever(rateLimit.window);
   }
@@ -117,16 +90,12 @@ export function formatChatRateLimitMessage(
 /** `RateLimitNotice`의 `role="alert"` `sr-only` 쌍둥이가 읽을 문장. `secondsLeft`를 인자로
  * 받지 않는 것이 설계의 핵심이다 — 숫자가 없으면 마운트 1회 말고는 반환값이 바뀔 길이 없어(뮤테이션이
  * 원리적으로 불가능해) alert가 매초 재발화하지 않는다. clover 문구는 `cloverMessage`를 공유한다. */
-export function formatChatRateLimitAnnouncement(
-  rateLimit: ChatRateLimit,
-  surface: ChatRateLimitSurface,
-  attendanceEnabled = false,
-): string {
+export function formatChatRateLimitAnnouncement(rateLimit: ChatRateLimit, surface: ChatRateLimitSurface): string {
   switch (rateLimit.window) {
     case "minute":
       return `${minuteLead(surface)} · 잠시 뒤 다시 보낼 수 있어요`;
     case "clover":
-      return cloverMessage(surface, attendanceEnabled);
+      return cloverMessage(surface);
     default:
       return assertNever(rateLimit.window);
   }
@@ -136,13 +105,9 @@ export function formatChatRateLimitAnnouncement(
 export type RateLimitLink = "clover" | "attendance";
 
 /** 배너 옆에 그릴 이동 버튼과 그 순서. 클로버가 모자란 창에서만 둔다 — 분당 상한은 기다리면 풀려 갈 곳이 없다.
- * 미리보기 자리에는 두지 않는다 — 누르면 만들던 화면을 떠난다. 출석판이 켜져 있으면 "클로버 채우기" 뒤에 출석판을
- * 더한다(문구가 출석판을 말하므로 바로 갈 길을 함께 둔다). */
-export function getRateLimitLinks(
-  rateLimit: ChatRateLimit,
-  surface: ChatRateLimitSurface,
-  attendanceEnabled: boolean,
-): RateLimitLink[] {
+ * 미리보기 자리에는 두지 않는다 — 누르면 만들던 화면을 떠난다. "클로버 채우기" 뒤에 출석판을 둔다(문구가 출석판을
+ * 말하므로 바로 갈 길을 함께 둔다). */
+export function getRateLimitLinks(rateLimit: ChatRateLimit, surface: ChatRateLimitSurface): RateLimitLink[] {
   if (rateLimit.window !== "clover" || isPreviewSurface(surface)) return [];
-  return attendanceEnabled ? ["clover", "attendance"] : ["clover"];
+  return ["clover", "attendance"];
 }

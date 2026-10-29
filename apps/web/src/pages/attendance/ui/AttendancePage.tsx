@@ -23,16 +23,15 @@ const PAGE_CLASS = "mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10 sm:p
 
 /** `/attendance` — 출석판 "또 만나, 28일". 하루 한 번 받는 칸 28개짜리 누적 진도판이다(하루 쉬어도 끊기지 않는다).
  *
- * 비로그인도 들어와 공개 보상표로 판을 보고 거기서 로그인을 권한다. 무엇을 그릴지는 `toAttendanceView` 가 정하고, 출석
- * 스위치가 꺼져 있으면 노벨 목록처럼 이 자리에 찾을 수 없는 화면을 그린다(페이지끼리 가져다 쓸 수 없어 같은 모양을
+ * 비로그인도 들어와 공개 보상표로 판을 보고 거기서 로그인을 권한다. 무엇을 그릴지는 `toAttendanceView` 가 정하고, 서버가
+ * 판이나 수령에 404 를 주면 노벨 목록처럼 이 자리에 찾을 수 없는 화면을 그린다(페이지끼리 가져다 쓸 수 없어 같은 모양을
  * 여기 둔다). */
 export function AttendancePage() {
   const pricing = useCloverPricingQuery();
   const session = useSessionQuery();
   const isLoggedIn = session.data !== undefined;
-  // 가격을 못 받았으면 꺼짐으로 보지 않고 서버 판 응답에 맡긴다 — 판정 규칙은 `toAttendanceView` 머리 주석.
-  const shouldLoadBoard = pricing.data?.attendance?.enabled ?? pricing.isError;
-  const boardQuery = useAttendanceBoardQuery({ enabled: isLoggedIn && shouldLoadBoard });
+  // 출석판은 늘 열려 있어 로그인 회원은 가격 응답과 무관하게 판을 묻는다 — 판정 규칙은 `toAttendanceView` 머리 주석.
+  const boardQuery = useAttendanceBoardQuery({ enabled: isLoggedIn });
 
   const [justClaimedSeq, setJustClaimedSeq] = useState<number | null>(null);
   // 수령 결과로 포커스가 있던 자리가 사라졌을 때 옮겨 갈 곳. 그 자리가 그려지는 첫 렌더에서 한 번만 쓰고 비운다 — 그 사이 다른
@@ -55,7 +54,6 @@ export function AttendancePage() {
     pricing: {
       isPending: pricing.isPending,
       isError: pricing.isError,
-      attendanceEnabled: pricing.data?.attendance?.enabled,
       rewards: pricing.data?.attendance?.rewards,
     },
     session: {
@@ -80,8 +78,8 @@ export function AttendancePage() {
 
   return (
     <main className={PAGE_CLASS}>
-      {/* 스켈레톤은 출석 스위치를 아직 모르는 때다 — 꺼진 서버에서 가격 요청이 늦거나 재시도하는 동안 출석판 문구가 보이지
-          않게, 기능 유무를 말하지 않는 막대만 그린다. */}
+      {/* 스켈레톤은 가격·세션 응답과, 로그인 회원이면 판 응답을 기다리는 때다 — 그 응답들이 와야 찾을 수 없는 화면인지가
+          정해지므로, 그 사이 출석판 제목이 먼저 떴다가 찾을 수 없음으로 바뀌지 않게 아무것도 말하지 않는 막대만 그린다. */}
       {view.kind === "skeleton" ? (
         <div className="flex flex-col gap-2" aria-hidden>
           <div className="h-8 w-44 animate-pulse rounded bg-secondary" />
@@ -181,7 +179,8 @@ function AttendanceBody({
   }
 }
 
-/** 출석 스위치가 꺼졌을 때. 진입점(메뉴·홈 카드)도 숨어 있어 주소로 들어온 사람에게도 출석판이 없는 것과 같다. */
+/** 서버가 판이나 수령에 404 를 줄 때와, 비로그인이 공개 보상표를 실은 가격 응답을 못 받았을 때. 진입점(메뉴·홈 카드)은
+ * 이와 무관하게 늘 보인다. */
 function AttendanceNotFound() {
   return (
     <main className={PAGE_CLASS}>

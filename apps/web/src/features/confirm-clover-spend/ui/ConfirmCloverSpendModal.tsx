@@ -27,18 +27,18 @@ import type { CloverSpendSurface } from "../model/confirmCloverSpendCopy";
  * 🔴 `bg-muted`를 쓰지 않는다 — 모달 표면이 `popover`라 값이 같아 1.0000:1로 사라진다
  * (DESIGN.md Status badges 절). 잔량은 `CloverBalance`의 무채색 잉크 그대로 둔다. */
 export const ConfirmCloverSpendModal = createCallable<
-  { balance: number; cost: number | undefined; surface: CloverSpendSurface; identityGated: boolean },
+  { balance: number; cost: number | undefined; surface: CloverSpendSurface },
   boolean
 >(
-  ({ call, balance, cost, surface, identityGated }) => {
+  ({ call, balance, cost, surface }) => {
     return (
       <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(false)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>지금부터 클로버를 써요</DialogTitle>
-            {/* 🔴 문구를 여기 적지 않는다 — 채팅은 자정에 열리지만 이미지는 시간당 충전이라
-                한 문장을 공유하면 이미지에서 거짓이 된다(`model/confirmCloverSpendCopy.ts`). */}
-            <DialogDescription>{formatCloverSpendConfirmDescription(surface, cost, identityGated)}</DialogDescription>
+            {/* 🔴 문구를 여기 적지 않는다 — 채팅에는 무료분이 없고 이미지는 시간당 충전이라
+                한 문장을 공유하면 어느 한쪽에서 거짓이 된다(`model/confirmCloverSpendCopy.ts`). */}
+            <DialogDescription>{formatCloverSpendConfirmDescription(surface, cost)}</DialogDescription>
           </DialogHeader>
 
           {/* 남은 잔액을 확정 전에 한 번 보여준다 — 동의의 대상이 "얼마가 빠지는가"만이 아니라

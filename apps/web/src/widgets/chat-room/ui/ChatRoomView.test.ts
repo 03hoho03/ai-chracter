@@ -36,8 +36,9 @@ describe("ChatRoomView session-ended notice", () => {
     expect(branch).toBeLessThan(viewSource.indexOf("응답 생성에 실패했습니다"));
   });
 
-  it("hides the clover balance line once the session is gone", () => {
-    expect(viewSource).toMatch(/shouldShowClover =\s*clover !== undefined &&\s*me !== undefined &&/);
+  // 잔액 줄은 이제 기본 모델 방에서도 늘 보이므로 세션 조건 뒤에 다른 표시 조건이 이어지지 않는다 — 세션 조건만 본다.
+  it("hides the clover balance line once the session is gone (session is the only condition after loading)", () => {
+    expect(viewSource).toMatch(/shouldShowClover =\s*clover !== undefined &&\s*me !== undefined/);
   });
 });
 

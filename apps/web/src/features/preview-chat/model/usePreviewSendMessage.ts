@@ -137,7 +137,7 @@ export function usePreviewSendMessage(
     } catch (error) {
       hasErrored = true;
       // useSendMessage와 같은 이유로 여기서도 재동의 403을 잡는다(SSE는 MutationCache가 못 본다).
-      // 본인인증 403 도 같은 이유로 여기서 세션을 다시 읽는다(빌더 미리보기도 미인증 회원의 무료 대화가 없다).
+      // 본인인증 403 도 같은 이유로 여기서 세션을 다시 읽는다(빌더 미리보기도 채팅과 같은 본인인증 게이트를 지난다).
       identityRequired = isIdentityVerificationRequiredError(error);
       if (isLegalReconsentRequiredError(error) || identityRequired) {
         void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
@@ -170,8 +170,8 @@ export function usePreviewSendMessage(
         setStreamingText("");
         setStatus(hasErrored ? { kind: "error", rateLimit, declined, identityRequired, sessionEnded } : { kind: "idle" });
       }
-      // 미리보기도 채팅 4경로의 같은 게이트를 지나므로 무료 일일분을
-      // 넘기면 클로버가 깎인다(미리보기 문구가 "같은 한도를 쓴다"고 먼저 말하는 이유).
+      // 미리보기도 채팅 4경로의 같은 게이트를 지나므로 첫 턴부터
+      // 클로버가 깎인다(미리보기 문구가 "같은 한도를 쓴다"고 먼저 말하는 이유).
       //
       // `useSendMessage`와 달리 `onDone`을 쓰지 않는다 — `applyPreviewStreamEvent`에는 그 확장 훅이
       // 없고(`entities/preview-session`은 별도 쿼리 키만 건드린다), 여기에 훅을 새로 뚫는 것보다

@@ -56,7 +56,7 @@ function makeInput({
   claim?: ClaimFlow;
 } = {}): AttendanceViewInput {
   return {
-    pricing: { isPending: false, isError: false, attendanceEnabled: true, rewards: REWARDS, ...pricing },
+    pricing: { isPending: false, isError: false, rewards: REWARDS, ...pricing },
     session: { isPending: false, isLoggedIn: true, identityVerified: true, ...session },
     board: {
       isPending: false,
@@ -85,13 +85,13 @@ function isReturningOf(input: AttendanceViewInput) {
   return view.isReturning;
 }
 
+/** 출석판은 늘 열려 있어 가격 응답의 출석 스위치를 읽지 않는다. 로그인 회원은 늘 판을 묻고, 찾을 수 없음은 판 응답의 404
+ * 로만 정한다. */
 describe("toAttendanceView — 기다림", () => {
-  it("가격을 기다리는 동안은 꺼짐으로 보지 않고 스켈레톤이다", () => {
-    expect(
-      toAttendanceView(
-        makeInput({ pricing: { isPending: true, attendanceEnabled: undefined, rewards: undefined }, board: NO_BOARD }),
-      ),
-    ).toEqual({ kind: "skeleton" });
+  it("가격을 기다리는 동안은 스켈레톤이다", () => {
+    expect(toAttendanceView(makeInput({ pricing: { isPending: true, rewards: undefined }, board: NO_BOARD }))).toEqual({
+      kind: "skeleton",
+    });
   });
 
   // 로그인 여부를 모르면 비로그인 판과 회원 판 중 무엇을 그릴지 모른다.
@@ -101,15 +101,8 @@ describe("toAttendanceView — 기다림", () => {
     });
   });
 
-  it("로그인했고 켜져 있으면 첫 판 응답을 스켈레톤으로 기다린다", () => {
+  it("로그인했으면 가격 응답의 출석 스위치 없이도 첫 판 응답을 스켈레톤으로 기다린다", () => {
     expect(toAttendanceView(makeInput({ board: NO_BOARD }))).toEqual({ kind: "skeleton" });
-  });
-
-  // 꺼진 쿼리는 데이터가 없으면 `isPending` 이 늘 참이다 — 그대로 쓰면 꺼진 화면이 영영 스켈레톤에 머문다.
-  it("꺼져 있으면 판 쿼리가 기다리는 중으로 보여도 스켈레톤이 아니라 찾을 수 없음이다", () => {
-    expect(toAttendanceView(makeInput({ pricing: { attendanceEnabled: false }, board: NO_BOARD }))).toEqual({
-      kind: "notFound",
-    });
   });
 
   // 재시도 백오프 중에도 `isPending` 이 참이다 — 첫 실패 뒤에는 기다리지 않고 실패를 보인다.
@@ -119,7 +112,7 @@ describe("toAttendanceView — 기다림", () => {
 });
 
 describe("toAttendanceView — 가격 실패", () => {
-  const PRICING_FAILED = { isError: true, attendanceEnabled: undefined, rewards: undefined };
+  const PRICING_FAILED = { isError: true, rewards: undefined };
 
   // 비로그인은 판을 물을 수 없고 그릴 공개 보상표도 가격 응답에 있다.
   it("비로그인이 가격을 못 받으면 찾을 수 없음이다", () => {
@@ -147,13 +140,7 @@ describe("toAttendanceView — 가격 실패", () => {
 });
 
 describe("toAttendanceView — 줄 순서", () => {
-  it("꺼짐이 비로그인보다 먼저다", () => {
-    expect(
-      toAttendanceView(makeInput({ pricing: { attendanceEnabled: false }, session: { isLoggedIn: false }, board: NO_BOARD })),
-    ).toEqual({ kind: "notFound" });
-  });
-
-  it("켜져 있고 비로그인이면 공개 보상표로 판을 그린다", () => {
+  it("비로그인이면 공개 보상표로 판을 그린다", () => {
     expect(toAttendanceView(makeInput({ session: { isLoggedIn: false, identityVerified: false }, board: NO_BOARD }))).toEqual({
       kind: "guest",
       rewards: REWARDS,
