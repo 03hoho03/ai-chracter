@@ -344,12 +344,18 @@ async def enforce_room_chat_charge(
     # 판정 세트 의존성이 받은 것과 같은 값이다(요청 스코프 캐시).
     model: ChatRoomModelId = Depends(_effective_room_model_dependency),
     # 요청 본문의 가격 버전. 이름이 라우트 본문 인자와 같은 `payload` 라 FastAPI 가 본문을 한 번 받아 라우트의 모델과 이 모델로 각각
-    # 검증한다(`_validate_shortcut` 와 같은 방식) — 이름이 다르면 본문이 `{"payload": …}` 꼴로 감싸여 세 경로의 계약이 바뀐다. 전송·
-    # 편집 본문은 이 모델을 상속해 같은 칸을 갖고, 본문이 없던 재생성은 이 모델이 그대로 본문이 된다(비워 보내도 된다).
+    # 검증한다(`_validate_shortcut` 와 같은 방식) — 이름이 다르면 본문이 `{"payload": …}` 꼴로 감싸여 세 경로의 계약이 바뀐다. 이
+    # 모델이 그대로 본문인 재생성이 이 게이트를 의존성으로 쓴다(비워 보내도 된다). 전송·편집은 자기 본문 모델을 받는 게이트
+    # (`enforce_room_send_charge`·`enforce_room_edit_charge`)를 쓰고 이 함수를 그냥 부른다.
     payload: ChatTurnRequest | None = None,
 ) -> ChatCharge:
-    """턴 세 경로(전송·재생성·편집)의 차감 게이트. 이 턴이 실제로 도는 방 모델(`_effective_room_model_dependency`)의 가격으로
+    """턴 세 경로(전송·재생성·편집)의 차감 본문. 이 턴이 실제로 도는 방 모델(`_effective_room_model_dependency`)의 가격으로
     차감한다. 상한·차감 본문은 미리보기와 같은 `charge_chat_turn` 이다.
+
+    게이트가 받는 본문 모델은 그 라우트의 본문 모델과 같아야 한다. FastAPI 는 의존성을 풀 때 하위 의존성을 먼저 부르고 자기
+    본문 인자는 그 뒤에 검증하며, 앞 의존성의 검증 오류가 뒤 의존성 호출을 막지 않는다 — 게이트가 라우트보다 느슨한 모델로
+    검증하면 라우트 본문 검증에 걸릴 요청(NUL 문자·빈 내용·본문 없음)이 게이트를 지나 차감을 커밋한 뒤 422 가 나고, 환불 가드는
+    라우트 본문 안이라 돌지 않는다. 게이트 자신의 인자가 검증에 걸리면 FastAPI 는 게이트를 부르지 않는다.
 
     영수증의 `model` 이 이 턴의 생성 모델이다 — 생성 쪽은 방을 다시 읽지 않는다. 이 게이트와 생성 사이에 방의 모델이
     바뀌어도(모델 지정 라우트는 턴 락을 잡지 않는다) 값을 낸 모델로 생성한다.
@@ -366,6 +372,28 @@ async def enforce_room_chat_charge(
         price=chat_turn_cost(model),
         usage=SpendUsage("chat", content_id=room.content_id, chat_room_id=room.id),
         price_version=None if payload is None else payload.price_version,
+    )
+
+
+async def enforce_room_send_charge(
+    payload: ChatMessageCreateRequest,
+    _turn_lock: RoomTurnLock = Depends(_room_turn_lock_dependency),
+    room: ChatRoom = Depends(_playable_room_dependency),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    model: ChatRoomModelId = Depends(_effective_room_model_dependency),
+) -> ChatCharge:
+    """전송의 차감 게이트. 본문을 전송 라우트와 같은 모델로 받아, 그 본문이 검증에 걸리면 게이트가 불리지 않고 차감도 없다
+    (`enforce_room_chat_charge` docstring). 나머지 인자와 차감은 방 게이트와 같다."""
+    return await enforce_room_chat_charge(
+        _turn_lock=_turn_lock,
+        room=room,
+        user_id=user_id,
+        db=db,
+        session_factory=session_factory,
+        model=model,
+        payload=payload,
     )
 
 
@@ -1217,9 +1245,10 @@ async def send_message(
     # 폭주 방어)에는 오히려 맞다 — 실패한 요청은 둘 다 안 태운다. "상한이 DB를 보호한다"는
     # 근거로는 쓸 수 없는데, 재동의 검사가 이미 게이트보다 앞에서 DB를 치고 있어 그 명제는
     # 이 변경 전에도 부분적으로만 참이었다.
-    # 방의 세 경로는 방이 고른 모델로 가격을 정하는 게이트(`enforce_room_chat_charge`), 미리보기는 세션이 고른 모델로 정하는
-    # 게이트(`enforce_preview_chat_charge`)다.
-    charge: ChatCharge = Depends(enforce_room_chat_charge),
+    # 방의 세 경로는 방이 고른 모델로 가격을 정하는 게이트(`enforce_room_chat_charge` 와 그것을 부르는 전송·편집 게이트), 미리보기는
+    # 세션이 고른 모델로 정하는 게이트(`enforce_preview_chat_charge`)다. 게이트는 라우트와 같은 본문 모델을 받는다 — 본문 검증에 걸린
+    # 요청이 차감 뒤 422 로 끝나지 않게 하려는 것이다(`enforce_room_chat_charge` docstring).
+    charge: ChatCharge = Depends(enforce_room_send_charge),
 ) -> AsyncIterator[ChatStreamEvent]:
     """text/event-stream SSE 응답. 이 방의 새 사용자 메시지를 커밋하고 생성 프롬프트를 조립한 뒤, 실제 생성+판단
     파이프라인은 턴 골격(`chat/turn_engine.py` 의 `run_turn`)이 담당한다.
@@ -1507,6 +1536,30 @@ async def _editable_user_message_dependency(
     return message
 
 
+async def enforce_room_edit_charge(
+    payload: ChatMessageEditRequest,
+    # 경로의 메시지 id 도 편집 라우트가 검증하는 입력이다 — 이 의존성을 거치지 않으면 id 꼴이 아닌 경로가 게이트를 지나 차감한
+    # 뒤 422 가 난다. 이미 앞에서 풀린 값이라(요청 스코프 캐시) 다시 읽지 않는다.
+    _message: ChatMessage = Depends(_editable_user_message_dependency),
+    _turn_lock: RoomTurnLock = Depends(_room_turn_lock_dependency),
+    room: ChatRoom = Depends(_playable_room_dependency),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    model: ChatRoomModelId = Depends(_effective_room_model_dependency),
+) -> ChatCharge:
+    """편집의 차감 게이트. 본문을 편집 라우트와 같은 모델로 받는다 — 이유는 `enforce_room_send_charge` 와 같다."""
+    return await enforce_room_chat_charge(
+        _turn_lock=_turn_lock,
+        room=room,
+        user_id=user_id,
+        db=db,
+        session_factory=session_factory,
+        model=model,
+        payload=payload,
+    )
+
+
 @router.patch("/{room_id}/messages/{message_id}", response_class=EventSourceResponse)
 async def edit_message(
     payload: ChatMessageEditRequest,
@@ -1533,7 +1586,7 @@ async def edit_message(
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조)
-    charge: ChatCharge = Depends(enforce_room_chat_charge),
+    charge: ChatCharge = Depends(enforce_room_edit_charge),
 ) -> AsyncIterator[ChatStreamEvent]:
     """수정된 메시지 이후의 모든 메시지를 삭제하고 수정된 내용부터 새 AI 응답을 이어서
     생성한다. `send_message`와 마찬가지로 완전히 새로운 턴이라 같은 턴 골격 `run_turn`
@@ -3101,13 +3154,14 @@ async def _preview_judgment_prompt_sets_dependency(
 
 
 async def enforce_preview_chat_charge(
+    # 요청 본문. 미리보기 전송 라우트와 같은 모델이라 본문 검증에 걸린 요청은 이 게이트가 불리지 않아 깎지 않는다
+    # (`enforce_room_chat_charge` docstring). 가격 버전도 여기서 읽는다.
+    payload: ChatMessageCreateRequest,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     # 생성 세트·판정 세트 의존성이 받은 것과 같은 값이다(요청 스코프 캐시).
     model: ChatRoomModelId = Depends(_preview_effective_model_dependency),
-    # 요청 본문의 가격 버전 — 방 경로 게이트(`enforce_room_chat_charge`)의 같은 인자와 같은 방식이다.
-    payload: ChatTurnRequest | None = None,
 ) -> ChatCharge:
     """빌더 미리보기의 차감 게이트. 이 턴이 실제로 도는 모델의 턴 가격으로 깎는다 — 상한·차감 본문은 방과 같은
     `charge_chat_turn` 이다(상위 모델이면 그 안에서 상위 모델 차감으로 간다). 영수증의 `model` 이 이 턴의 생성 모델이다.
@@ -3121,7 +3175,7 @@ async def enforce_preview_chat_charge(
         model=model,
         price=chat_turn_cost(model),
         usage=SpendUsage("preview"),
-        price_version=None if payload is None else payload.price_version,
+        price_version=payload.price_version,
     )
 
 
