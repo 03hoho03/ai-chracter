@@ -26018,6 +26018,18 @@
                 "type": "null"
               }
             ]
+          },
+          "lastClaimedOn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastclaimedon"
           }
         },
         "type": "object",
@@ -26027,7 +26039,8 @@
           "cells",
           "canClaimToday",
           "completedToday",
-          "nextSpecial"
+          "nextSpecial",
+          "lastClaimedOn"
         ],
         "title": "AttendanceBoardResponse",
         "description": "오늘 기준 출석판. `can_claim_today` 는 판과 날짜로 보아 오늘 받을 칸이 있는가만 뜻하고 본인인증 여부를 섞지 않는다 —\n화면은 `GET /me` 의 인증 상태로 버튼 대신 인증 안내를 그린다. 같은 사람이 오늘 탈퇴 전 계정에서 받은 날도 거짓인데, 그\n이유는 싣지 않는다(이유를 내보내면 이 CI 가 오늘 탈퇴했다는 사실이 응답에 실린다).\n\n`reward_version`·칸 금액은 이 판 1칸이 받은 보상표 버전을 따른다(새 판이면 현재 버전) — 수령이 행에 넣는 값과 같은 규칙이라\n보여 준 금액과 실제로 주는 금액이 갈리지 않는다."
