@@ -17,20 +17,34 @@ describe("목적지 자리", () => {
     expect(SIDE_PANEL_DESTINATION_KEYS).toEqual(["home", "studio", "builder", "favorites"]);
   });
 
-  it("프로필 메뉴에는 계정과 고객센터만 남고, 크리에이터 정산은 클로버 바로 뒤에 있다", () => {
+  it("프로필 메뉴에는 계정과 고객센터만 남고, 출석판은 클로버 바로 앞, 크리에이터 정산은 클로버 바로 뒤에 있다", () => {
     expect(PROFILE_MENU_DESTINATION_GROUPS.map((group) => group.label)).toEqual(["계정", "고객센터"]);
-    expect(PROFILE_MENU_DESTINATION_GROUPS[0].keys).toEqual(["profile", "personas", "clover", "creator-payout", "mypage"]);
+    expect(PROFILE_MENU_DESTINATION_GROUPS[0].keys).toEqual([
+      "profile",
+      "personas",
+      "attendance",
+      "clover",
+      "creator-payout",
+      "mypage",
+    ]);
+  });
+
+  it("출석판은 프로필 메뉴의 계정 그룹에 한 번만 있다", () => {
+    const keys: readonly string[] = MENU_KEYS;
+    const accountKeys: readonly string[] = PROFILE_MENU_DESTINATION_GROUPS[0].keys;
+    expect(keys.filter((key) => key === "attendance")).toHaveLength(1);
+    expect(accountKeys).toContain("attendance");
   });
 });
 
 describe("비로그인일 때 패널 목적지", () => {
   it("비로그인에게도 패널 항목은 모두 보인다(누르면 로그인으로 갔다 돌아온다)", () => {
-    expect(SIDE_PANEL_DESTINATION_KEYS.filter((key) => isProfileDestinationVisible(key, undefined))).toEqual([
+    expect(SIDE_PANEL_DESTINATION_KEYS.filter((key) => isProfileDestinationVisible(key, undefined, undefined))).toEqual([
       "home",
       "studio",
       "builder",
       "favorites",
     ]);
-    expect(isProfileDestinationVisible(SIDE_PANEL_RAIL_CHATS_KEY, undefined)).toBe(true);
+    expect(isProfileDestinationVisible(SIDE_PANEL_RAIL_CHATS_KEY, undefined, undefined)).toBe(true);
   });
 });

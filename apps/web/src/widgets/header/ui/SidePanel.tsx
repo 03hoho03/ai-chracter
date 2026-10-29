@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useRef, type ComponentProps, type MouseEvent, type ReactElement } from "react";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import { useSessionQuery } from "@/entities/session";
 
 import { BrandLogo } from "./BrandLogo";
@@ -12,7 +13,7 @@ import { PROFILE_DESTINATION_LABEL, ProfileDestinationLink } from "./ProfileDest
 import { RecentChatsSection } from "./RecentChatsSection";
 import { SIDE_PANEL_NAV_ROW_CLASS, SIDE_PANEL_ROW_CLASS } from "./sidePanelRowClass";
 import { SIDE_PANEL_DESTINATION_KEYS, SIDE_PANEL_RAIL_CHATS_KEY } from "../model/profileDestinations";
-import { isProfileDestinationVisible } from "../model/profileDestinationVisibility";
+import { isProfileDestinationVisible, toPublicSwitches } from "../model/profileDestinationVisibility";
 
 /** 패널의 DOM id. 드로어가 열린 채 창이 `lg` 이상으로 넓어지면 드로어가 닫히며 포커스를 이 패널의 현재 항목으로 보낸다. */
 export const SIDE_PANEL_ID = "side-panel";
@@ -45,7 +46,10 @@ type SidePanelProps = {
  */
 export function SidePanel({ isCollapsed, isToggled, onToggle }: SidePanelProps) {
   const { data: me, isPending: isSessionPending } = useSessionQuery();
-  const panelKeys = SIDE_PANEL_DESTINATION_KEYS.filter((key) => isProfileDestinationVisible(key, me?.enabledFeatures));
+  const publicSwitches = toPublicSwitches(useCloverPricingQuery().data);
+  const panelKeys = SIDE_PANEL_DESTINATION_KEYS.filter((key) =>
+    isProfileDestinationVisible(key, me?.enabledFeatures, publicSwitches),
+  );
   // 토글을 누르면 그 버튼이 사라지고 다른 자리에 반대 버튼이 생긴다(머리 ↔ 레일 첫 칸). 키보드로 눌렀다면 포커스가
   // `<body>` 로 떨어지지 않게 새 버튼으로 옮긴다. 마우스로 눌렀을 때는 옮기지 않는다 — 옮기면 포인터와 무관한 자리에
   // 툴팁이 열린다.

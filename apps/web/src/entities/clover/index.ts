@@ -10,6 +10,11 @@ export { readCloverPricing, refetchCloverPricing, useCloverPricingQuery } from "
 export type { CloverPricingResponse, CloverProductItem } from "./api/useCloverPricingQuery";
 export { useCloverProductsQuery } from "./api/useCloverProductsQuery";
 export type { CloverPolicyValues, CloverProductOffer, CloverProductsResponse } from "./api/useCloverProductsQuery";
+export { attendanceBoardQueryOptions } from "./api/attendanceBoardQueryOptions";
+export type { AttendanceBoard, AttendanceCell, AttendanceClaimResponse } from "./api/attendanceBoardQueryOptions";
+export { useAttendanceBoardQuery } from "./api/useAttendanceBoardQuery";
+export { useClaimAttendanceMutation } from "./api/useClaimAttendanceMutation";
+export type { ClaimAttendanceVariables } from "./api/useClaimAttendanceMutation";
 export { useClaimCloverMissionMutation } from "./api/useClaimCloverMissionMutation";
 export { useCloverLedgerQuery } from "./api/useCloverLedgerQuery";
 export type {

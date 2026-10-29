@@ -7,6 +7,7 @@ import { Fragment, useId, useRef, useState, type ComponentProps } from "react";
 import { toast } from "sonner";
 import { useAtom } from "jotai";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import { contentDetailModalAtom } from "@/entities/content";
 import {
   NotificationItemContent,
@@ -31,7 +32,7 @@ import { SIDE_PANEL_NAV_ROW_CLASS } from "./sidePanelRowClass";
 import { useIsSidePanelLayout } from "../lib/useIsSidePanelLayout";
 import { PROFILE_MENU_DESTINATION_GROUPS, SIDE_PANEL_DESTINATION_KEYS } from "../model/profileDestinations";
 import { getSidePanelScreen } from "../model/sidePanelCollapse";
-import { isProfileDestinationVisible } from "../model/profileDestinationVisibility";
+import { isProfileDestinationVisible, toPublicSwitches } from "../model/profileDestinationVisibility";
 
 const DIVIDER_CLASS = "my-1 h-px shrink-0 border-0 bg-border";
 
@@ -79,7 +80,10 @@ export function MobileNavDrawer({ className }: { className?: string }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const isClosingForNavigationRef = useRef(false);
-  const panelKeys = SIDE_PANEL_DESTINATION_KEYS.filter((key) => isProfileDestinationVisible(key, me?.enabledFeatures));
+  const publicSwitches = toPublicSwitches(useCloverPricingQuery().data);
+  const panelKeys = SIDE_PANEL_DESTINATION_KEYS.filter((key) =>
+    isProfileDestinationVisible(key, me?.enabledFeatures, publicSwitches),
+  );
 
   // 드로어를 연 채 창을 `lg` 이상으로 넓히면 버거가 숨어 닫을 길이 스크림뿐이고, 그 폭에는 같은 내용의 패널이 생긴다 —
   // 넓어지는 순간 닫는다. 렌더 중 자기 상태를 고치는 것이라 효과 없이 한 번 더 렌더될 뿐이다.
@@ -213,7 +217,7 @@ export function MobileNavDrawer({ className }: { className?: string }) {
                 <Fragment key={group.label}>
                   <ul className="flex flex-col gap-0.5">
                     {group.keys
-                      .filter((key) => isProfileDestinationVisible(key, me.enabledFeatures))
+                      .filter((key) => isProfileDestinationVisible(key, me.enabledFeatures, publicSwitches))
                       .map((key) => (
                         <li key={key}>
                           <ProfileDestinationLink

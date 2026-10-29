@@ -26,6 +26,7 @@ import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as CreatorPayoutPolicyRouteImport } from './routes/creator-payout-policy'
 import { Route as CreatorPayoutRouteImport } from './routes/creator-payout'
 import { Route as ChatsRouteImport } from './routes/chats'
+import { Route as AttendanceRouteImport } from './routes/attendance'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WebnovelsIndexRouteImport } from './routes/webnovels.index'
@@ -141,6 +142,11 @@ const CreatorPayoutRoute = CreatorPayoutRouteImport.update({
 const ChatsRoute = ChatsRouteImport.update({
   id: '/chats',
   path: '/chats',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AttendanceRoute = AttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -304,6 +310,7 @@ const NovelsNovelIdEpisodesChapterIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/attendance': typeof AttendanceRoute
   '/chats': typeof ChatsRoute
   '/creator-payout': typeof CreatorPayoutRoute
   '/creator-payout-policy': typeof CreatorPayoutPolicyRoute
@@ -354,6 +361,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/attendance': typeof AttendanceRoute
   '/chats': typeof ChatsRoute
   '/creator-payout': typeof CreatorPayoutRoute
   '/creator-payout-policy': typeof CreatorPayoutPolicyRoute
@@ -405,6 +413,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/attendance': typeof AttendanceRoute
   '/chats': typeof ChatsRoute
   '/creator-payout': typeof CreatorPayoutRoute
   '/creator-payout-policy': typeof CreatorPayoutPolicyRoute
@@ -457,6 +466,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/attendance'
     | '/chats'
     | '/creator-payout'
     | '/creator-payout-policy'
@@ -507,6 +517,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/attendance'
     | '/chats'
     | '/creator-payout'
     | '/creator-payout-policy'
@@ -557,6 +568,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
+    | '/attendance'
     | '/chats'
     | '/creator-payout'
     | '/creator-payout-policy'
@@ -608,6 +620,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  AttendanceRoute: typeof AttendanceRoute
   ChatsRoute: typeof ChatsRoute
   CreatorPayoutRoute: typeof CreatorPayoutRoute
   CreatorPayoutPolicyRoute: typeof CreatorPayoutPolicyRoute
@@ -775,6 +788,13 @@ declare module '@tanstack/react-router' {
       path: '/chats'
       fullPath: '/chats'
       preLoaderRoute: typeof ChatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/attendance': {
+      id: '/attendance'
+      path: '/attendance'
+      fullPath: '/attendance'
+      preLoaderRoute: typeof AttendanceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -1000,6 +1020,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  AttendanceRoute: AttendanceRoute,
   ChatsRoute: ChatsRoute,
   CreatorPayoutRoute: CreatorPayoutRoute,
   CreatorPayoutPolicyRoute: CreatorPayoutPolicyRoute,

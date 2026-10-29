@@ -25,7 +25,7 @@ import {
   type ContentType,
   type ThumbnailAspect,
 } from "@/entities/content";
-import { useCloverPricingQuery } from "@/entities/clover";
+import { useAttendanceBoardQuery, useCloverPricingQuery } from "@/entities/clover";
 import { useViewerPersonaName } from "@/entities/persona";
 import { isWebnovelOpen, useSessionQuery } from "@/entities/session";
 import { useHomeWebnovelsQuery } from "@/entities/webnovel";
@@ -34,6 +34,7 @@ import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfin
 import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScrollClip";
 
 import { useCurationWaitCap } from "../model/curationWaitCap";
+import { isHomeAttendancePending, toHomeAttendanceCard, type HomeAttendanceCard as HomeAttendanceCardView } from "../model/homeAttendanceCard";
 import {
   isHomeWebnovelPending,
   shouldRestoreResultsFocus,
@@ -42,6 +43,7 @@ import {
 } from "../model/homeCuration";
 import { HOME_EMPTY_MESSAGE, toHomeListEndMessage, toHomeListStatus } from "../model/homeListStatus";
 import { HOME_FILTER_RESET, hasHomeFilter, type HomeSearch } from "../model/homeSearch";
+import { HomeAttendanceCard } from "./HomeAttendanceCard";
 import { HomeCurationSection } from "./HomeCurationSection";
 import { HomeWebnovelSection } from "./HomeWebnovelSection";
 
@@ -119,7 +121,18 @@ export function HomePage({
     isOpen: isWebnovelSectionOpen,
     isPending: homeWebnovelsQuery.isPending,
   });
-  const isCurationPending = homeCurationQuery.isPending || isWebnovelPending;
+  // 출석 카드도 로그인 회원에게, 출석 스위치가 켜졌을 때만 있다. 노벨 섹션과 같은 이유로 같은 대기 묶음에 넣는다.
+  const isAttendanceOpen = isLoggedIn && pricingQuery.data?.attendance?.enabled === true;
+  const attendanceBoardQuery = useAttendanceBoardQuery({ enabled: isAttendanceOpen });
+  const isAttendancePending = isHomeAttendancePending({
+    isSessionPending: sessionQuery.isPending,
+    isLoggedIn,
+    isPricingPending: pricingQuery.isPending,
+    isOpen: isAttendanceOpen,
+    // 재시도 백오프 중에도 `isPending` 이라 첫 실패 뒤에는 기다리지 않는다 — 카드는 판 없이도 링크로 산다.
+    isPending: attendanceBoardQuery.isPending && attendanceBoardQuery.failureCount === 0,
+  });
+  const isCurationPending = homeCurationQuery.isPending || isWebnovelPending || isAttendancePending;
   const isHoldingGrid = !isFiltered && isCurationPending && !contentListQuery.isPending;
   const hasGivenUpCuration = useCurationWaitCap(isHoldingGrid);
   const curationView = toHomeCurationView({
@@ -132,6 +145,16 @@ export function HomePage({
     isWebnovelSectionOpen && curationView.kind !== "waiting" && !isFiltered && !hasGivenUpCuration
       ? (homeWebnovelsQuery.data ?? [])
       : [];
+  const attendanceCard: HomeAttendanceCardView =
+    curationView.kind !== "waiting" && !hasGivenUpCuration
+      ? toHomeAttendanceCard({
+          isLoggedIn,
+          isFiltered,
+          attendanceEnabled: pricingQuery.data?.attendance?.enabled,
+          board: attendanceBoardQuery.data,
+          identityVerified: sessionQuery.data?.identityVerified ?? false,
+        })
+      : { kind: "hidden" };
   const isListPending = contentListQuery.isPending || curationView.kind === "waiting";
   const curationLayoutKey = toHomeCurationLayoutKey(curationView);
 
@@ -333,6 +356,7 @@ export function HomePage({
           if (!event.currentTarget.contains(event.relatedTarget)) isFocusInChunkRef.current = false;
         }}
       >
+        {attendanceCard.kind === "shown" && <HomeAttendanceCard detail={attendanceCard.detail} showDot={attendanceCard.showDot} />}
         {curationView.kind === "shown" && <HomeCurationSection item={curationView.item} viewerPersonaName={viewerPersonaName} onOpen={openDetail} />}
         {homeWebnovels.length > 0 && <HomeWebnovelSection items={homeWebnovels} />}
 
