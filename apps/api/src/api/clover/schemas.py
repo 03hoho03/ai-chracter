@@ -67,6 +67,63 @@ class CloverMissionClaimResponse(CamelModel):
     balance: int
 
 
+AttendanceCellStatus = Literal["claimed", "today", "upcoming"]
+
+
+class AttendanceCell(CamelModel):
+    """출석판의 한 칸. `today` 는 오늘 받을 수 있을 때만 한 칸 있다 — 오늘 이미 받았으면 그 칸은 `claimed` 다."""
+
+    seq: int
+    amount: int
+    status: AttendanceCellStatus
+
+
+class AttendanceNextSpecial(CamelModel):
+    """금액이 큰 다음 칸(7·14·21·28칸 중 아직 받지 않은 첫 칸). `days_until` 은 그 칸을 받는 날까지 남은 날 수로, 오늘 받을
+    칸이면 0 이다."""
+
+    seq: int
+    amount: int
+    days_until: int
+
+
+class AttendanceBoardResponse(CamelModel):
+    """오늘 기준 출석판. `can_claim_today` 는 판과 날짜로 보아 오늘 받을 칸이 있는가만 뜻하고 본인인증 여부를 섞지 않는다 —
+    화면은 `GET /me` 의 인증 상태로 버튼 대신 인증 안내를 그린다. 같은 사람이 오늘 탈퇴 전 계정에서 받은 날도 거짓인데, 그
+    이유는 싣지 않는다(이유를 내보내면 이 CI 가 오늘 탈퇴했다는 사실이 응답에 실린다).
+
+    `reward_version`·칸 금액은 이 판 1칸이 받은 보상표 버전을 따른다(새 판이면 현재 버전) — 수령이 행에 넣는 값과 같은 규칙이라
+    보여 준 금액과 실제로 주는 금액이 갈리지 않는다."""
+
+    board_no: int
+    reward_version: int
+    cells: list[AttendanceCell]
+    can_claim_today: bool
+    # 오늘 28칸째를 받아 판을 끝냈는가. 다음 날 새 판이 열린다.
+    completed_today: bool
+    # 남은 특별 칸이 없으면(오늘 판을 끝냈으면) null.
+    next_special: AttendanceNextSpecial | None
+
+
+class AttendanceClaimResponse(CamelModel):
+    # 오늘 이미 받았거나 받을 칸이 없으면 false 다. **에러가 아니다** — 미션 수령과 같다.
+    granted: bool
+    balance: int
+    board: AttendanceBoardResponse
+
+
+class CloverAttendancePolicy(CamelModel):
+    """공개 가격 응답에 싣는 출석 안내. 로그인하지 않은 방문자도 정책 문장을 읽는다."""
+
+    # 출석판 스위치(`attendance_board_enabled`)가 켜져 있는가.
+    enabled: bool
+    # 현재 보상표의 1~28칸 금액.
+    rewards: list[int]
+    # 받은 클로버가 적어도 며칠 유효한가. 실제 만료는 지급일 KST 자정 + 8일이라 받은 시각에 따라 7~8일이 남는다 — 그래서
+    # "만료까지 정확히 N일"로 읽히는 이름 대신 최소 보장 일수로 싣는다.
+    min_valid_days: int
+
+
 class CloverLedgerItem(CamelModel):
     """`category`는 BE의 `kind`→범주 맵
     (`clover/router.py`의 `CLOVER_KIND_CATEGORY`)을 그대로 실어 보낸 것이다 — FE가 같은 맵을
@@ -180,6 +237,8 @@ class CloverPricingResponse(CamelModel):
     # 미인증 회원 게이트(무료 대화·미션을 본인인증한 회원에게만)가 켜져 있는가. 로그인하지 않은 방문자도 읽는 정책
     # 문장이 이 값으로 갈린다 — 꺼진 동안 "본인인증을 마친 회원은"이라고 쓰면 거짓이다. `GET /me` 와 같은 판정 함수다.
     identity_gate_enabled: bool
+    # 누적 출석판 안내(켜짐 여부·보상표·최소 유효 일수).
+    attendance: CloverAttendancePolicy
 
 
 class CloverProductOffer(CamelModel):

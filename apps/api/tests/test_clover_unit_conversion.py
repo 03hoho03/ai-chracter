@@ -85,6 +85,8 @@ _M = _load_migration()
 # 무료·유료 표지로만 읽는 화 공개 가격. 새 정수 칼럼이 생기면 아래 전수 테스트가 어느 쪽인지 정하라고 멈춘다.
 _LEFT_AS_IS: dict[str, tuple[str, ...]] = {
     "assets": ("width", "height", "frame_count"),
+    # 출석 기록은 1원 단위가 된 뒤에 생긴 표이고, 과거 행의 금액을 읽어 돈을 움직이는 코드가 없다.
+    "attendance_claims": ("board_no", "reward_version", "seq", "amount"),
     "chat_memory_embeddings": ("dims",),
     "chat_memory_episodes": ("ordinal", "start_turn", "end_turn", "importance"),
     "chat_memory_extractions": (

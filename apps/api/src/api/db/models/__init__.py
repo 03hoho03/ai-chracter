@@ -24,6 +24,7 @@ from api.db.models.chat import (
     StoryMediaExposure,
 )
 from api.db.models.clover import (
+    AttendanceClaim,
     CloverLedger,
     CloverLot,
     CloverSpendAllocation,
@@ -170,6 +171,7 @@ __all__ = [
     "Asset",
     "AssetKind",
     "AssetStatus",
+    "AttendanceClaim",
     "CharacterImageExposure",
     "CharacterVersionDetail",
     "ChatMemoryEmbedding",

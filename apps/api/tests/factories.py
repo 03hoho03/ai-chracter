@@ -39,6 +39,7 @@ from sqlalchemy.pool import NullPool
 from starlette.types import Message
 
 from api.chat import voyage_backoff
+from api.clover import attendance
 from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
 from api.core import clover, rate_limit_gate
@@ -55,6 +56,7 @@ from api.db.models import (
     Asset,
     AssetKind,
     AssetStatus,
+    AttendanceClaim,
     CharacterVersionDetail,
     ChatMemoryEmbedding,
     ChatMemoryEpisode,
@@ -189,6 +191,36 @@ async def _make_user_with_clover_lot(
         await db_session.flush()
     return user
 
+
+async def _make_attendance_claim(
+    db_session: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    board_no: int,
+    seq: int,
+    claimed_on: date,
+    reward_version: int = 1,
+) -> AttendanceClaim:
+    """그날 받은 출석 한 칸 — 실제 수령처럼 `grant` 로 원장·로트를 만들고(멱등키도 수령과 같은 식) 그 원장 행을 가리키는
+    출석 행을 넣는다. 상태 계산은 마지막 행만 보므로 진도를 만들 때 앞 칸들을 다 넣을 필요는 없다. 로트 만료는 이 헬퍼를 쓰는
+    테스트가 보지 않아 무기한으로 둔다."""
+    amount = attendance.ATTENDANCE_REWARDS[reward_version][seq - 1]
+    key = attendance.attendance_idempotency_key(user_id, claimed_on)
+    await clover.grant(db_session, user_id=user_id, amount=amount, kind="attendance_grant", idempotency_key=key)
+    ledger_id = await db_session.scalar(sa.select(CloverLedger.id).where(CloverLedger.idempotency_key == key))
+    assert ledger_id is not None
+    row = AttendanceClaim(
+        user_id=user_id,
+        board_no=board_no,
+        reward_version=reward_version,
+        seq=seq,
+        claimed_on=claimed_on,
+        amount=amount,
+        ledger_id=ledger_id,
+    )
+    db_session.add(row)
+    await db_session.flush()
+    return row
 
 async def _make_payment(db_session: AsyncSession, *, user_id: uuid.UUID, **overrides: object) -> Payment:
     """주문 행 하나(기본: 지금은 팔지 않는 예전 베이직 상품(`basic`)의 값, `pending`). 환불·정산은 상품 키를 다시
