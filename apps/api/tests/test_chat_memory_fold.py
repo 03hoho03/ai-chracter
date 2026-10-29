@@ -71,7 +71,7 @@ from factories import (
     SnapshotRow,
     _clear_llm_override,
     _make_memory_fact,
-    _make_user,
+    _make_paying_user,
     _make_user_with_clover_lot,
     _memory_scope_covers_gemini,
     _memory_version,
@@ -229,7 +229,7 @@ def test_backoff_allows(failures: int, last_failed_turn: int, turn: int, allowed
 async def test_send_that_reaches_thirty_turns_folds_the_oldest_ten(
     db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str
 ) -> None:
-    room = await _open_room(db_client, db_session, turns=29, lane=lane)
+    room = await _open_room(db_client, db_session, turns=29, lane=lane, paid_turns=1)
     fake = SummaryLLMClient()
 
     events = await _request(db_client, room, "send", fake)
@@ -252,7 +252,7 @@ async def test_send_that_reaches_thirty_turns_folds_the_oldest_ten(
 
 async def test_send_at_twenty_nine_turns_does_not_fold(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     """오프닝은 턴으로 세지 않는다 — 셌다면 여기서 30이 된다."""
-    room = await _open_room(db_client, db_session, turns=28)
+    room = await _open_room(db_client, db_session, turns=28, paid_turns=1)
     fake = SummaryLLMClient()
 
     await _request(db_client, room, "send", fake)
@@ -265,7 +265,7 @@ async def test_send_at_twenty_nine_turns_does_not_fold(db_client: httpx.AsyncCli
 async def test_edit_folds_when_the_rewritten_turn_leaves_thirty_turns(
     db_client: httpx.AsyncClient, db_session: AsyncSession, turns: int, folds: bool
 ) -> None:
-    room = await _open_room(db_client, db_session, turns=turns)
+    room = await _open_room(db_client, db_session, turns=turns, paid_turns=1)
     fake = SummaryLLMClient()
 
     await _request(db_client, room, "edit", fake)
@@ -278,7 +278,7 @@ async def test_regenerate_in_a_room_due_for_a_fold_folds_the_oldest_ten(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """재생성은 턴 수를 바꾸지 않지만 커밋 뒤 접기를 예약한다 — 접을 때가 된 방이면 다음 보내기까지 미루지 않고 접는다."""
-    room = await _open_room(db_client, db_session, turns=30)
+    room = await _open_room(db_client, db_session, turns=30, paid_turns=1)
     fake = SummaryLLMClient()
 
     events = await _request(db_client, room, "regenerate", fake)
@@ -292,7 +292,7 @@ async def test_regenerate_in_a_room_due_for_a_fold_folds_the_oldest_ten(
 
 async def test_long_text_folds_before_thirty_turns(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     # 19턴 × 2메시지 × 650자 ≈ 24,700자 + 이번 턴 → 20턴, 24,000자 이상
-    room = await _open_room(db_client, db_session, turns=19, message_length=650)
+    room = await _open_room(db_client, db_session, turns=19, message_length=650, paid_turns=1)
     fake = SummaryLLMClient()
 
     await _request(db_client, room, "send", fake)
@@ -304,7 +304,7 @@ async def test_long_text_folds_before_thirty_turns(db_client: httpx.AsyncClient,
 async def test_next_fold_summarizes_the_previous_summary_with_the_next_ten_turns(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _open_room(db_client, db_session, turns=39)
+    room = await _open_room(db_client, db_session, turns=39, paid_turns=1)
     await _plant_snapshot(db_session, room, turn=10, text="[PREV] 앞선 요약")
     fake = SummaryLLMClient()
 
@@ -369,7 +369,7 @@ async def test_fold_is_scheduled_before_the_first_event_after_the_turn_commits(
     monkeypatch.setattr(BackgroundTasks, "add_task", _recording_add_task)
     monkeypatch.setattr(chat_router, "run_turn", _recording_turn)
 
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=1)
     events = await _request(db_client, room, action, _StatChangingLLMClient())
 
     assert events == ["token", *after_commit_events]
@@ -380,7 +380,7 @@ async def test_generation_window_switched_off_does_not_fold(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "memory_window_generation", False)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = SummaryLLMClient()
 
     await _request(db_client, room, "send", fake)
@@ -396,7 +396,7 @@ async def test_fold_discards_its_summary_when_the_memory_changed_meanwhile(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """요약을 기다리는 사이 다른 쓰기(사용자 편집·되감기·다른 접기)가 버전을 올린 상황."""
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
 
     async def _someone_else_changes_the_memory() -> str:
         await db_session.execute(
@@ -435,7 +435,7 @@ async def test_failed_fold_is_absorbed_and_retried_after_the_next_turn(
 ) -> None:
     captured: list[str] = []
     monkeypatch.setattr(memory_fold, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency))
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=2)
     fake = SummaryLLMClient(outcome)
 
     events = await _request(db_client, room, "send", fake)
@@ -473,7 +473,7 @@ async def test_fold_absorbs_a_real_database_failure(
             await self.execute(sa.text("SELECT 1/0"))
         return await original_scalar(self, statement, *args, **kwargs)
 
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=2)
     fake = SummaryLLMClient()
     monkeypatch.setattr(AsyncSession, "scalar", _failing_claim)
 
@@ -505,7 +505,7 @@ async def test_fold_still_runs_when_its_failure_counter_is_unreachable(
 ) -> None:
     """백오프 상태를 못 읽으면 막지 않고 시도한다 — 막으면 요약을, 시도하면 호출 원가만 잃는다."""
     monkeypatch.setattr(memory_fold, "redis_client", _BrokenRedis())
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
 
     await _request(db_client, room, "send", SummaryLLMClient())
 
@@ -515,7 +515,7 @@ async def test_fold_still_runs_when_its_failure_counter_is_unreachable(
 async def test_repeated_failures_pause_the_fold_for_a_few_turns(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=4)
     fake = SummaryLLMClient(*(LLMPolicyViolationError("blocked") for _ in range(10)))
 
     for _ in range(4):
@@ -527,7 +527,7 @@ async def test_repeated_failures_pause_the_fold_for_a_few_turns(
 async def test_summary_is_cut_to_fifteen_hundred_characters(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = SummaryLLMClient("가" * 1_501)
 
     await _request(db_client, room, "send", fake)
@@ -541,9 +541,7 @@ async def test_summary_is_cut_to_fifteen_hundred_characters(
 async def test_summary_input_leaves_out_the_note_stats_and_account(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user(nickname="[NICK]별")
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1, nickname="[NICK]별")
     room = await _open_room(db_client, db_session, turns=29, lane="story", user=user)
     await db_session.execute(
         sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(memory_note="[NOTE] 우산은 파란색")
@@ -561,7 +559,7 @@ async def test_summary_input_leaves_out_the_note_stats_and_account(
 
 async def test_fold_leaves_the_note_untouched(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     note = "[NOTE] 우산은 파란색\n  앞뒤 공백도 그대로 "
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(memory_note=note))
     await db_session.commit()
 
@@ -622,7 +620,7 @@ async def test_fold_writes_its_summary_prompt_to_the_measurement_dump(
     파일에 한 줄로 남는다. 커서는 이 접기가 접는 마지막 메시지(새 스냅샷의 커서)다."""
     dump = tmp_path / "prompts.jsonl"
     monkeypatch.setattr(settings, "prompt_dump_path", str(dump))
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = SummaryLLMClient()
 
     events = await _request(db_client, room, "send", fake)
@@ -649,7 +647,7 @@ async def test_fold_dump_is_written_even_when_the_summary_call_fails(
     끝나고 스냅샷은 생기지 않는다."""
     dump = tmp_path / "prompts.jsonl"
     monkeypatch.setattr(settings, "prompt_dump_path", str(dump))
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = SummaryLLMClient(LLMClientError("boom"))
 
     events = await _request(db_client, room, "send", fake)
@@ -666,7 +664,7 @@ async def test_failed_dump_write_does_not_change_the_fold(
     """덤프는 측정용 부가 기록이다 — 쓰다 실패해도 접기는 덤프가 없을 때와 같은 스냅샷을 남긴다."""
     # 디렉터리를 덤프 파일 자리로 주면 추가 모드로 열지 못해 쓰기가 실패한다.
     monkeypatch.setattr(settings, "prompt_dump_path", str(tmp_path))
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = SummaryLLMClient()
 
     events = await _request(db_client, room, "send", fake)
@@ -692,7 +690,7 @@ async def test_fold_opens_no_file_without_a_dump_path(
         return real_open(file, mode, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "open", spy_open)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = SummaryLLMClient()
 
     events = await _request(db_client, room, "send", fake)
@@ -710,7 +708,7 @@ async def test_replay_reader_still_picks_the_generation_line_when_a_fold_line_sh
     하나다 — 접기 줄을 세면 유실 턴의 재시도로 읽고, 고르면 지시문 없는 줄과 대조한다."""
     dump = tmp_path / "prompts.jsonl"
     monkeypatch.setattr(settings, "prompt_dump_path", str(dump))
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
 
     await _request(db_client, room, "send", SummaryLLMClient())
 
@@ -751,7 +749,7 @@ async def _add_media_book_people(db_session: AsyncSession, room: Room, names: li
 
 async def _story_room_with_names(db_client: httpx.AsyncClient, db_session: AsyncSession) -> Room:
     """미디어 북 인물 둘과, 앞 접기(10턴)의 사실 행이 있는 스토리 방. 커서 뒤가 29턴이라 다음 보내기가 접는다."""
-    room = await _open_room(db_client, db_session, turns=39, lane="story")
+    room = await _open_room(db_client, db_session, turns=39, lane="story", paid_turns=1)
     await _add_media_book_people(db_session, room, ["한서윤", "Mina"])
     await _plant_fact_snapshot(
         db_session,
@@ -811,7 +809,7 @@ async def test_secret_marking_names_the_character_in_a_character_room(
     """캐릭터 방의 첫 접기: 사실 행이 아직 없어도 작품(캐릭터) 이름이 실린다."""
     monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
     _memory_scope_covers_gemini(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = SummaryLLMClient()
 
     await _request(db_client, room, "send", fake)
@@ -826,7 +824,7 @@ async def test_secret_marking_without_any_name_still_carries_the_slot_on_the_fir
     """미디어 북 인물이 없는 스토리 방의 첫 접기는 이름이 0개다 — 고정 문구로 슬롯이 실린다."""
     monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
     _memory_scope_covers_gemini(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29, lane="story")
+    room = await _open_room(db_client, db_session, turns=29, lane="story", paid_turns=1)
     fake = SummaryLLMClient()
 
     await _request(db_client, room, "send", fake)
@@ -848,7 +846,7 @@ async def test_secret_marking_name_read_failure_falls_back_and_the_fold_still_co
         raise SQLAlchemyError("이름 출처 읽기 실패")
 
     monkeypatch.setattr(memory_fold, "_load_name_sources", _broken)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = SummaryLLMClient()
 
     events = await _request(db_client, room, "send", fake)

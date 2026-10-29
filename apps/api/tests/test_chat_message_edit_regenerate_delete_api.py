@@ -1006,7 +1006,8 @@ async def test_edit_message_reruns_image_matching_with_new_value(
 async def test_edit_message_on_story_room_reruns_stat_judgment_and_keeps_turn_count_consistent(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = await _make_paying_user(db_session, turns=2)
+    # 보내기 두 번과 수정 한 번 — 수정도 새 응답을 만드는 유료 요청이다.
+    user = await _make_paying_user(db_session, turns=3)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)

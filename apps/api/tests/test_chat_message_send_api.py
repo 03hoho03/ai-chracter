@@ -23,6 +23,7 @@ from api.db.models import (
     ChatRoom,
     Content,
     SituationalImage,
+    User,
     UserPersona,
 )
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
@@ -125,8 +126,9 @@ async def test_message_text_with_a_nul_character_is_rejected_before_anything_is_
     db_client: httpx.AsyncClient, db_session: AsyncSession, action: str
 ) -> None:
     """Postgres text 는 NUL 을 담지 못한다 — 검증 없이 받으면 응답 스트림이 열린 뒤 사용자 메시지 저장에서 DB 가
-    거절한다. 스트림을 열기 전에 검증 오류(422)로 돌려준다."""
-    room = await _open_room(db_client, db_session, turns=1)
+    거절한다. 스트림을 열기 전에 검증 오류(422)로 돌려준다. 거절된 요청은 클로버도 깎지 않는다 — 잔액은 요청 앞과 같다."""
+    room = await _open_room(db_client, db_session, turns=1, paid_turns=1)
+    balance_before = await db_session.scalar(sa.select(User.clover_balance).where(User.id == room.user_id))
     before = await db_session.scalar(
         sa.select(sa.func.count()).select_from(ChatMessage).where(ChatMessage.chat_room_id == room.room_id)
     )
@@ -150,6 +152,10 @@ async def test_message_text_with_a_nul_character_is_rejected_before_anything_is_
         )
         == before
     )
+    db_session.expire_all()
+    assert (
+        await db_session.scalar(sa.select(User.clover_balance).where(User.id == room.user_id))
+    ) == balance_before
 
 
 async def test_send_message_streams_tokens_and_saves_final_message(
@@ -480,7 +486,8 @@ async def test_send_message_hallucinated_image_entity_id_is_ignored(
 async def test_send_message_repeated_match_does_not_duplicate_exposure_row(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = await _make_paying_user(db_session, turns=1)
+    # 같은 그림에 두 번 매칭시키려고 두 번 보낸다.
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -834,6 +841,9 @@ async def test_send_message_image_exposure_lookup_failure_still_completes_the_tu
     original_scalar = AsyncSession.scalar
 
     async def _failing_scalar(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        # 클로버 차감도 이 메서드로 UPDATE 를 보낸다 — 노린 SELECT 가 아닌 문장은 그대로 원래 메서드로 넘긴다.
+        if not isinstance(statement, sa.Select):
+            return await original_scalar(self, statement, *args, **kwargs)
         if statement.column_descriptions[0]["entity"] is CharacterImageExposure:
             raise sa.exc.SQLAlchemyError("exposure lookup boom")
         return await original_scalar(self, statement, *args, **kwargs)
@@ -971,6 +981,9 @@ async def test_send_message_image_exposure_lookup_real_sql_failure_is_isolated_b
     original_scalar = AsyncSession.scalar
 
     async def _really_failing_scalar(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        # 클로버 차감도 이 메서드로 UPDATE 를 보낸다 — 노린 SELECT 가 아닌 문장은 그대로 원래 메서드로 넘긴다.
+        if not isinstance(statement, sa.Select):
+            return await original_scalar(self, statement, *args, **kwargs)
         if statement.column_descriptions[0]["entity"] is CharacterImageExposure:
             await self.execute(sa.text("SELECT 1/0"))
         return await original_scalar(self, statement, *args, **kwargs)
