@@ -14,13 +14,10 @@ import {
 
 type RateLimitNoticeProps = {
   rateLimit: ChatRateLimit;
-  /** 문구만 갈린다 — 미리보기는 "채팅과 같은 한도"라는 사실을 먼저 말하고, 상위 모델 방은 자정 약속을 하지 않는다. */
+  /** 문구와 버튼만 갈린다 — 미리보기는 "채팅과 같은 한도"라는 사실을 먼저 말하고 이동 버튼을 두지 않는다. */
   surface: ChatRateLimitSurface;
   /** 미리보기 배너에는 재시도가 없다 — 넘기지 않으면 버튼이 그려지지 않는다. */
   onRetry?: () => void;
-  /** 공개 가격 응답의 출석판 스위치(`attendance.enabled`). 못 받았으면 꺼진 것으로 넘긴다. 켜져 있으면 클로버 부족 문구가
-   * 자정 대신 출석판을 말하고, 채팅 방에서는 "클로버 채우기" 옆에 출석판 버튼이 붙는다. */
-  attendanceEnabled: boolean;
 };
 
 /**
@@ -32,7 +29,7 @@ type RateLimitNoticeProps = {
  * **day 창에는 걸지 않는다** — `retryAfterSeconds`가 최대 86400이라 초 타이머는 "자정에 열린다"는
  * 사실을 숫자로 바꿔 놓기만 하고, 그 사이 탭을 떠나면 값이 어긋난다.
  */
-export function RateLimitNotice({ rateLimit, surface, onRetry, attendanceEnabled }: RateLimitNoticeProps) {
+export function RateLimitNotice({ rateLimit, surface, onRetry }: RateLimitNoticeProps) {
   const [secondsLeft, setSecondsLeft] = useState(rateLimit.retryAfterSeconds);
   // 충전하고 돌아올 곳. 충전 화면이 이 주소로 "돌아가기"를 두고, 결제창·로그인 왕복 뒤에도 잃지 않게 넘겨 다닌다. 거절된 메시지는
   // 채팅 방이 입력 초안에 남겨 두어, 돌아오면 입력창에 있다 — 그래서 이 배너에 다시 보내기를 두지 않는다(지금 누르면 같은
@@ -51,7 +48,7 @@ export function RateLimitNotice({ rateLimit, surface, onRetry, attendanceEnabled
   }, [rateLimit]);
 
   const isWaiting = rateLimit.window === "minute" && secondsLeft > 0;
-  const links = getRateLimitLinks(rateLimit, surface, attendanceEnabled);
+  const links = getRateLimitLinks(rateLimit, surface);
   // 버튼이 둘이면 좁은 폭에서 문구가 몇 글자씩 쪼개지므로 버튼 묶음을 다음 줄로 내린다. 하나일 때는 지금 배치 그대로다.
   const hasManyLinks = links.length > 1;
 
@@ -74,16 +71,16 @@ export function RateLimitNotice({ rateLimit, surface, onRetry, attendanceEnabled
         aria-hidden
         className={cn("min-w-0 break-keep text-xs text-destructive-text", hasManyLinks && "flex-1 basis-48")}
       >
-        {formatChatRateLimitMessage(rateLimit, surface, secondsLeft, attendanceEnabled)}
+        {formatChatRateLimitMessage(rateLimit, surface, secondsLeft)}
       </span>
       {/* role="alert" sr-only 쌍둥이. 보이는 문구는 매초 바뀌어 aria-hidden으로 숨기고,
           이 문구는 formatChatRateLimitAnnouncement가 담당한다 — secondsLeft를 받지 않아 마운트
           1회 말고는 값이 바뀔 길이 없다(뮤테이션이 원리적으로 불가능해 alert가 초마다 재발화하지
           않는다). */}
       <span role="alert" className="sr-only">
-        {formatChatRateLimitAnnouncement(rateLimit, surface, attendanceEnabled)}
+        {formatChatRateLimitAnnouncement(rateLimit, surface)}
       </span>
-      {/* 클로버가 모자라면 채울 곳(구매·미션이 있는 허브)으로, 출석판이 켜져 있으면 출석판으로도 잇는다. 빌더
+      {/* 클로버가 모자라면 채울 곳(구매·미션이 있는 허브)과 출석판으로 잇는다. 빌더
           미리보기에는 두지 않는다 — 누르면 만들던 화면을 떠난다(`getRateLimitLinks`). 버튼은 위 aria-hidden 문구 밖에
           둔다 — 그 안에 두면 접근성 트리에서 버튼이 사라진다. 출석판에는 돌아올 곳을 넘기지 않는다(출석판은 서치
           파라미터를 받지 않고, 받은 뒤 "대화 이어가기"가 최근 방으로 돌려보낸다). */}

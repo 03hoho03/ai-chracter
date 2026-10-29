@@ -39,12 +39,12 @@ describe("목적지 자리", () => {
 
 describe("비로그인일 때 패널 목적지", () => {
   it("비로그인에게도 패널 항목은 모두 보인다(누르면 로그인으로 갔다 돌아온다)", () => {
-    expect(SIDE_PANEL_DESTINATION_KEYS.filter((key) => isProfileDestinationVisible(key, undefined, undefined))).toEqual([
+    expect(SIDE_PANEL_DESTINATION_KEYS.filter((key) => isProfileDestinationVisible(key, undefined))).toEqual([
       "home",
       "studio",
       "builder",
       "favorites",
     ]);
-    expect(isProfileDestinationVisible(SIDE_PANEL_RAIL_CHATS_KEY, undefined, undefined)).toBe(true);
+    expect(isProfileDestinationVisible(SIDE_PANEL_RAIL_CHATS_KEY, undefined)).toBe(true);
   });
 });

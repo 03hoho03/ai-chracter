@@ -36,39 +36,32 @@ function makeBoard({
   };
 }
 
+/** 출석판은 늘 열려 있어 홈은 가격 응답의 출석 스위치를 기다리지 않는다 — 세션을 기다리고, 비로그인이면 카드가 없으니
+ * 기다리지 않고, 로그인이면 판만 기다린다. */
 describe("isHomeAttendancePending", () => {
-  const base = { isSessionPending: false, isLoggedIn: true, isPricingPending: false, isOpen: true, isPending: true };
+  const base = { isSessionPending: false, isLoggedIn: true, isPending: true };
 
-  it("로그인했고 켜져 있으면 판 응답을 기다린다", () => {
+  it("로그인했으면 판 응답을 기다린다", () => {
     expect(isHomeAttendancePending(base)).toBe(true);
     expect(isHomeAttendancePending({ ...base, isPending: false })).toBe(false);
   });
 
-  // 비로그인 홈은 지금과 같아야 한다 — 카드가 없으니 기다릴 것도 없다.
-  it("비로그인이면 기다리지 않는다", () => {
+  // 비로그인 홈은 카드가 없으니 기다릴 것도 없다. 판 쿼리는 꺼져 있으면 데이터 없이 `isPending` 이 늘 참이라 그대로 쓰면
+  // 비로그인 홈이 영영 기다린다.
+  it("비로그인이면 판 쿼리가 기다리는 중으로 보여도 기다리지 않는다", () => {
     expect(isHomeAttendancePending({ ...base, isLoggedIn: false })).toBe(false);
-    expect(isHomeAttendancePending({ ...base, isLoggedIn: false, isPricingPending: true })).toBe(false);
   });
 
   it("세션을 기다리는 동안은 기다린다", () => {
     expect(isHomeAttendancePending({ ...base, isSessionPending: true, isLoggedIn: false })).toBe(true);
   });
-
-  it("로그인 회원은 가격을 기다린다", () => {
-    expect(isHomeAttendancePending({ ...base, isPricingPending: true, isOpen: false })).toBe(true);
-  });
-
-  // 꺼진 쿼리는 데이터가 없으면 `isPending` 이 늘 참이다 — 그대로 쓰면 홈이 영영 기다린다.
-  it("꺼져 있으면 판 쿼리가 기다리는 중으로 보여도 기다리지 않는다", () => {
-    expect(isHomeAttendancePending({ ...base, isOpen: false, isPending: true })).toBe(false);
-  });
 });
 
+/** 출석판은 늘 열려 있어 로그인 회원에게는 가격 응답의 출석 스위치를 읽지 않고도 카드가 보인다. */
 describe("toHomeAttendanceCard", () => {
   const base = {
     isLoggedIn: true,
     isFiltered: false,
-    attendanceEnabled: true,
     board: makeBoard({ claimed: 6 }),
     identityVerified: true,
   };
@@ -77,12 +70,8 @@ describe("toHomeAttendanceCard", () => {
     expect(toHomeAttendanceCard({ ...base, isLoggedIn: false })).toEqual({ kind: "hidden" });
   });
 
-  it.each([
-    ["꺼짐", { attendanceEnabled: false }],
-    ["가격 미수신·실패", { attendanceEnabled: undefined }],
-    ["필터를 건 홈", { isFiltered: true }],
-  ])("%s 이면 카드가 없다", (_, override) => {
-    expect(toHomeAttendanceCard({ ...base, ...override })).toEqual({ kind: "hidden" });
+  it("필터를 건 홈이면 카드가 없다", () => {
+    expect(toHomeAttendanceCard({ ...base, isFiltered: true })).toEqual({ kind: "hidden" });
   });
 
   it("인증 회원이 오늘 받을 수 있으면 오늘 칸을 말하고 점을 단다", () => {

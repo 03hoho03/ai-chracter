@@ -5,63 +5,25 @@ import { chatModelBadges, formatChatModelPrice, formatPremiumModelConfirm, forma
 const GEMINI = { id: "gemini", name: "Gemini", beta: false, turnCost: 10 } as const;
 const OPUS = { id: "opus", name: "Claude Opus 5.5", beta: true, turnCost: 120 } as const;
 
+/** 하루 무료 대화는 없다 — 기본·상위 모두 첫 턴부터 깎이므로 "무료 대화" 는 둘을 가르는 정보가 아니라 가격만 말한다.
+ * 출석판 스위치나 본인인증 게이트 여부를 읽지 않고도 그 문장이어야 한다. */
 describe("formatChatModelPrice", () => {
-  it("상위 모델은 턴 가격과 무료 대화가 없다는 사실을 함께 말한다", () => {
-    const text = formatChatModelPrice(OPUS, false);
-    expect(text).toContain("120개");
-    expect(text).toContain("무료 대화 없음");
+  it("두 모델 모두 턴 가격만 말한다", () => {
+    expect(formatChatModelPrice(GEMINI)).toBe("턴마다 클로버 10개");
+    expect(formatChatModelPrice(OPUS)).toBe("턴마다 클로버 120개");
   });
 
-  // 짝: 기본 모델에 "무료 대화 없음"이 붙으면 거짓이다 — 하루 무료 대화를 다 쓴 뒤에만 깎인다.
-  it("기본 모델은 무료 대화 뒤부터 깎인다고 말한다", () => {
-    const text = formatChatModelPrice(GEMINI, false);
-    expect(text).toContain("10개");
-    expect(text).toContain("무료 대화를 다 쓴 뒤");
-    expect(text).not.toContain("무료 대화 없음");
-  });
-
-  // 본인인증 게이트에 걸린 회원은 기본 모델도 무료 대화가 없다 — "다 쓴 뒤"는 그 회원에게 거짓이다.
-  it("게이트에 걸린 회원에게 기본 모델은 무료 대화 없이 깎인다고 말한다", () => {
-    const text = formatChatModelPrice(GEMINI, true);
-    expect(text).toContain("10개");
-    expect(text).not.toContain("다 쓴 뒤");
-    expect(text).toContain("본인인증");
+  it("무료 대화를 말하지 않는다", () => {
+    expect(formatChatModelPrice(GEMINI)).not.toContain("무료");
+    expect(formatChatModelPrice(OPUS)).not.toContain("무료");
   });
 });
 
 describe("formatPremiumModelConfirm", () => {
-  it("턴 가격, 무료 대화 없음, 따로 묻지 않는다는 것을 모두 말한다", () => {
+  it("턴 가격과 따로 묻지 않는다는 것을 말하고 무료 대화는 말하지 않는다", () => {
     const text = formatPremiumModelConfirm(OPUS);
-    expect(text).toContain("120개");
-    expect(text).toContain("무료 대화 없이");
-    expect(text).toContain("따로 묻지 않고");
-  });
-});
-
-/** 출석판이 켜지면 기본 모델에도 무료 대화가 없다 — 기본·상위 모두 첫 턴부터 깎이므로 "무료 대화" 는 둘을 가르는 정보가
- * 아니다. 꺼진 동안의 문장은 그대로다. */
-describe("모델 문구 — 출석판", () => {
-  it.each([false, true])("켜져 있으면 두 모델 모두 턴 가격만 말한다(게이트에 걸림 %s)", (identityGated) => {
-    expect(formatChatModelPrice(GEMINI, identityGated, true)).toBe("턴마다 클로버 10개");
-    expect(formatChatModelPrice(OPUS, identityGated, true)).toBe("턴마다 클로버 120개");
-  });
-
-  it("켜져 있으면 상위 모델 확인 문장에 무료 대화를 말하지 않는다", () => {
-    const text = formatPremiumModelConfirm(OPUS, true);
     expect(text).toBe("첫 턴부터 턴마다 클로버 120개를 써요. 바꾸면 다음 턴부터 따로 묻지 않고 바로 차감돼요.");
     expect(text).not.toContain("무료");
-  });
-
-  it("꺼져 있으면 가격 줄은 지금 문장 그대로다", () => {
-    expect(formatChatModelPrice(GEMINI, false, false)).toBe("무료 대화를 다 쓴 뒤 턴마다 클로버 10개");
-    expect(formatChatModelPrice(GEMINI, true, false)).toBe("턴마다 클로버 10개 · 본인인증 전에는 무료 대화 없음");
-    expect(formatChatModelPrice(OPUS, false, false)).toBe("턴마다 클로버 120개 · 무료 대화 없음");
-  });
-
-  it("꺼져 있으면 상위 모델 확인 문장은 지금 그대로다", () => {
-    expect(formatPremiumModelConfirm(OPUS, false)).toBe(
-      "무료 대화 없이 첫 턴부터 턴마다 클로버 120개를 써요. 바꾸면 다음 턴부터 따로 묻지 않고 바로 차감돼요.",
-    );
   });
 });
 

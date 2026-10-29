@@ -7,7 +7,7 @@ import { isReturningAfterBreak } from "./returningVisitor";
 export type ClaimFlow = "idle" | "claiming" | ClaimErrorKind;
 
 export type AttendanceViewInput = {
-  pricing: { isPending: boolean; isError: boolean; attendanceEnabled: boolean | undefined; rewards: readonly number[] | undefined };
+  pricing: { isPending: boolean; isError: boolean; rewards: readonly number[] | undefined };
   session: { isPending: boolean; isLoggedIn: boolean; identityVerified: boolean };
   board: { isPending: boolean; failureCount: number; isNotFound: boolean; data: AttendanceBoard | undefined };
   claim: ClaimFlow;
@@ -34,29 +34,22 @@ export type AttendanceView =
 
 /** 화면 상태 판정. 위에서 처음 맞는 줄이 이긴다.
  *
- * 판 조회 대상은 "가격 응답의 출석 스위치, 가격을 못 받았으면 서버 판 응답에 맡긴다" 다 — 노벨 목록이 가격 실패를 꺼짐으로
- * 보지 않고 목록 응답에 맡기는 것과 같은 쪽이다. 비로그인은 판을 물을 수 없고 그릴 공개 보상표도 가격 응답에 있어, 가격을
- * 못 받으면 찾을 수 없는 화면이다.
+ * 출석판은 늘 열려 있어 로그인 회원은 늘 판을 묻고, 찾을 수 없음은 서버가 판이나 수령에 404 를 줄 때만 정한다. 비로그인은
+ * 판을 물을 수 없고 그릴 공개 보상표도 가격 응답에 있어, 가격을 못 받으면 찾을 수 없는 화면이다.
  *
- * 기다림은 판 조회 대상일 때만, 첫 실패 전까지만 센다. 꺼진 쿼리는 데이터가 없으면 `isPending` 이 늘 참이고 재시도
- * 백오프 중에도 참이라, 그대로 쓰면 꺼진 화면·실패한 화면이 영영 스켈레톤에 머문다. */
+ * 판 기다림은 로그인 회원만, 첫 실패 전까지만 센다. 비로그인이라 꺼진 쿼리는 데이터가 없으면 `isPending` 이 늘 참이고 재시도
+ * 백오프 중에도 참이라, 그대로 쓰면 비로그인 화면·실패한 화면이 영영 스켈레톤에 머문다. */
 export function toAttendanceView(input: AttendanceViewInput): AttendanceView {
   const { pricing, session, board, claim, todayKst } = input;
-  const shouldLoadBoard = pricing.attendanceEnabled ?? pricing.isError;
 
   if (
     pricing.isPending ||
     session.isPending ||
-    (session.isLoggedIn && shouldLoadBoard && board.isPending && board.failureCount === 0)
+    (session.isLoggedIn && board.isPending && board.failureCount === 0)
   ) {
     return { kind: "skeleton" };
   }
-  if (
-    pricing.attendanceEnabled === false ||
-    board.isNotFound ||
-    claim === "off" ||
-    (!session.isLoggedIn && pricing.isError)
-  ) {
+  if (board.isNotFound || claim === "off" || (!session.isLoggedIn && pricing.isError)) {
     return { kind: "notFound" };
   }
   if (!session.isLoggedIn) return { kind: "guest", rewards: pricing.rewards ?? [] };

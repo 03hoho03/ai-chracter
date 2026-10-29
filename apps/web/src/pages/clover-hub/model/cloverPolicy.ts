@@ -21,34 +21,25 @@ export const PURCHASE_CONDITION_SENTENCES = {
   bonusRefund: "환불할 때는 이미 쓴 보너스 클로버만큼 빼고 돌려드려요.",
 } as const;
 
-/** "유효기간과 사용 순서" 안내. `attendanceEnabled` 는 공개 가격 응답의 출석판 스위치다(못 받았으면 꺼짐). 출석판과 같은
- * 순간 이용약관·환불정책 새 게시본이 시행되므로, 출석 클로버를 말하는 두 문장은 스위치로 갈린다. */
-export function formatValiditySentences(policy: CloverPolicyValues, attendanceEnabled = false): string[] {
+/** "유효기간과 사용 순서" 안내. */
+export function formatValiditySentences(policy: CloverPolicyValues): string[] {
   return [
     `유료 클로버와 보너스 클로버는 구매일로부터 ${policy.purchaseValidityYears}년 동안 쓸 수 있어요.`,
-    formatCloverExpiryNotice(attendanceEnabled),
+    formatCloverExpiryNotice(),
     "클로버는 무료, 보너스, 유료 순서로 쓰여요. 무료 클로버는 환불되지 않아요.",
-    // 이 문장은 이용약관·환불정책 게시본의 같은 문장과 맞춰 둔 것이다. 꺼짐 문장은 지금 게시본, 켜짐 문장은 출석판과
-    // 같은 순간 시행되는 새 게시본의 짝이다 — 화면에서만 고치면 게시본과 갈리므로 게시본을 개정할 때 함께 고친다.
-    attendanceEnabled
-      ? "미션 클로버와 출석 클로버는 휴대폰 본인인증을 마친 회원에게만 지급돼요."
-      : "본인인증 기능이 열리면, 미션 클로버는 휴대폰 본인인증을 마친 회원에게만 지급돼요.",
+    // 이 문장은 이용약관·환불정책 게시본의 같은 문장과 맞춰 둔 것이다 — 화면에서만 고치면 게시본과 갈리므로 게시본을
+    // 개정할 때 함께 고친다.
+    "미션 클로버와 출석 클로버는 휴대폰 본인인증을 마친 회원에게만 지급돼요.",
   ];
 }
 
-/** "청약철회와 환불" 안내. 결제 전에 먼저 써 볼 수 있다는 문장은 출석판 스위치·게이트 스위치·무료 대화 수로 갈린다
- * (`formatTrialSentence`). */
-export function formatRefundSentences(
-  policy: CloverPolicyValues,
-  identityGateEnabled: boolean,
-  dailyFreeChatTurns: number,
-  attendanceEnabled = false,
-): string[] {
+/** "청약철회와 환불" 안내. */
+export function formatRefundSentences(policy: CloverPolicyValues): string[] {
   return [
     `결제일로부터 ${policy.fullRefundDays}일 안에는 쓰지 않은 유료 클로버를 전액 돌려받을 수 있어요. 이미 쓴 보너스 클로버만큼은 빼고 돌려드려요.`,
     `${policy.fullRefundDays}일이 지나도 남은 유료 클로버를 환불받을 수 있어요. 이때도 이미 쓴 보너스 클로버만큼은 빼고, 그 금액의 ${policy.reducedRefundPercent}%를 돌려드려요.`,
     "이미 쓴 클로버는 청약철회할 수 없어요. 클로버는 쓰는 즉시 기능 이용에 제공되기 때문이에요.",
-    formatTrialSentence(identityGateEnabled, dailyFreeChatTurns, attendanceEnabled),
+    formatTrialSentence(),
     "보너스 클로버는 따로 환불되지 않아요. 유료 클로버를 환불하면 그 구매로 받은 보너스 클로버 중 남은 것은 회수돼요.",
     "탈퇴하면 남은 클로버가 모두 사라져요. 남은 유료 클로버는 탈퇴하기 전에 환불을 신청해주세요.",
     `이용이 정지된 동안에도 ${CONTACT_EMAIL}로 환불을 신청할 수 있어요.`,

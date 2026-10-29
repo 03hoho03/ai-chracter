@@ -11,8 +11,8 @@ type CloverFaqProps = {
   /** 상품 응답. 정책 숫자(유효기간·환불 날수·비율)가 여기서 오므로, 없으면 항목을 그리지 않는다. */
   products: CloverProductsResponse | undefined;
   isError: boolean;
-  /** 공개 가격 응답의 출석판 정책. 못 받았으면 비워 둔다(꺼진 것으로 본다). 켜져 있으면 정책 문장이 새 게시본의 짝으로
-   * 바뀌고 출석 클로버 항목이 하나 더 붙는다. */
+  /** 공개 가격 응답의 출석판 정책. 못 받았으면 비워 둔다 — 출석 클로버 항목의 숫자가 여기서 오므로 그때는 그 항목만
+   * 그리지 않는다. */
   attendance: CloverPricingResponse["attendance"] | undefined;
 };
 
@@ -23,8 +23,6 @@ type CloverFaqProps = {
  * 못했으면 다시 시도를 따로 두지 않고 충전 상품 섹션의 버튼을 가리킨다 — 같은 요청 하나다(그 섹션은 좁은 화면에서는
  * 위, 넓은 화면에서는 같은 열 위라 문구에 방향을 적지 않는다). */
 export function CloverFaq({ products, isError, attendance }: CloverFaqProps) {
-  const attendanceEnabled = attendance?.enabled ?? false;
-
   return (
     <HubSection title="클로버 안내">
       {isError && !products && (
@@ -35,9 +33,9 @@ export function CloverFaq({ products, isError, attendance }: CloverFaqProps) {
       {products && (
         <div className="flex flex-col gap-1">
           <FaqItem title="유효기간과 사용 순서">
-            <PolicyList items={formatValiditySentences(products.policy, attendanceEnabled)} />
+            <PolicyList items={formatValiditySentences(products.policy)} />
           </FaqItem>
-          {attendance?.enabled && (
+          {attendance && (
             <FaqItem title="출석 클로버">
               <p className="text-sm break-keep text-foreground">
                 출석 클로버는 받은 날부터 {attendance.minValidDays}일 동안 쓸 수 있어요. 하루 한 번, 한국 시간 자정에 새로
@@ -48,14 +46,7 @@ export function CloverFaq({ products, isError, attendance }: CloverFaqProps) {
           <FaqItem title="청약철회와 환불">
             {/* 환불정책 링크는 구매 조건에 하나만 둔다 — 같은 이름·같은 목적지 링크가 한 화면에 둘이면 화면 읽기
                 프로그램의 링크 목록에 같은 항목이 두 번 나온다. */}
-            <PolicyList
-              items={formatRefundSentences(
-                products.policy,
-                products.identityGateEnabled,
-                products.dailyFreeChatTurns,
-                attendanceEnabled,
-              )}
-            />
+            <PolicyList items={formatRefundSentences(products.policy)} />
           </FaqItem>
           <FaqItem title="미성년자 결제">
             <p className="text-sm break-keep text-foreground">{MINOR_PAYMENT_SENTENCE}</p>

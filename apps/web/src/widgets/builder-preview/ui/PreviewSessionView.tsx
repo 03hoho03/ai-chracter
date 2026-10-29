@@ -25,7 +25,6 @@ import {
 import {
   CloverBalance,
   isCloverInsufficient,
-  shouldShowCloverBalance,
   useCloverBalanceQuery,
   useCloverPricingQuery,
 } from "@/entities/clover";
@@ -121,28 +120,20 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   const confirmCloverSpend = useConfirmCloverSpend();
   const turnCost = previewTurnCost(models, displayModelId);
   // 가격표를 지켜보게 둔다 — 보내는 요청이 이 캐시에서 가격 버전을 읽는데, 빌더는 전역 헤더(평소 가격표를 지켜보는 자리)를
-  // 그리지 않아 이것이 없으면 새로고침 직후엔 캐시가 비어 있고 한동안 지나면 지워져 버전 없이 나간다. 여기서 읽는 값은
-  // 출석판 스위치 하나다 — 켜지면 미리보기 턴도 첫 턴부터 깎이므로 잔량이 늘 보이고, 클로버 부족·본인인증 안내가 무료
-  // 대화·자정 대신 출석판을 말한다. 못 받았으면 꺼진 것으로 본다.
-  const attendanceEnabled = useCloverPricingQuery().data?.attendance?.enabled ?? false;
-  // 잔량은 대화방 입력 바와 같은 판정이다 — 상위 모델은 첫 턴부터 턴마다 깎이므로 언제나, 기본 모델은 무료분을 쓴 뒤나
-  // 부족할 때만. 세션을 잃은 뒤에는 내린다(옛 잔액이 캐시에 남는다).
+  // 그리지 않아 이것이 없으면 새로고침 직후엔 캐시가 비어 있고 한동안 지나면 지워져 버전 없이 나간다. 값은 여기서 읽지
+  // 않는다.
+  useCloverPricingQuery();
+  // 잔량은 대화방 입력 바와 같은 판정이다 — 하루 무료분이 없어 어느 모델이든 첫 턴부터 턴마다 깎이므로 언제나 보인다.
+  // 세션을 잃은 뒤에는 내린다(옛 잔액이 캐시에 남는다).
   const { data: clover } = useCloverBalanceQuery();
   const cloverBalance = clover?.balance ?? 0;
   const isCloverShort = turnCost !== undefined && isCloverInsufficient(cloverBalance, turnCost);
-  const shouldShowClover =
-    clover !== undefined &&
-    me !== undefined &&
-    shouldShowCloverBalance({
-      spendConfirmedToday: clover.spendConfirmedToday,
-      hasCloverShortage: isCloverShort,
-      chargesEveryTurn: isPremiumChatModel(displayModelId) || attendanceEnabled,
-    });
+  const shouldShowClover = clover !== undefined && me !== undefined;
   const { send, status, policyWarning, streamingText } = usePreviewSendMessage(
     async (error) =>
       // 금액은 렌더 때의 `turnCost` 가 아니라 요청 시점의 캐시에서 읽는다(가격 바뀜이면 모델 목록을 다시 받은 뒤) — 가격 확인
       // 뒤 재전송이 받는 하루 한 번 확인이 옛 가격을 말하지 않게(`previewConfirmTurnCost`).
-      // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 일일 버킷을 쓰므로 자정 사유가 참이다.
+      // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 확인을 건다.
       confirmCloverSpend(error, await previewConfirmTurnCost(queryClient, error, displayModelId), "chat"),
     macroNames,
   );
@@ -258,22 +249,14 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
     errorNotice = <SessionEndedNotice reason={sessionEnded} />;
   } else if (sendError) {
     if (sendError.rateLimit) {
-      // 상위 모델 미리보기에는 돌아올 무료 한도가 없어 자정 약속을 하지 않는 문구로 간다.
       errorNotice = (
         <RateLimitNotice
           rateLimit={sendError.rateLimit}
           surface={isPremiumChatModel(displayModelId) ? "premiumPreview" : "preview"}
-          attendanceEnabled={attendanceEnabled}
         />
       );
     } else if (sendError.identityRequired) {
-      errorNotice = (
-        <IdentityRequiredNotice
-          reason="free-rewards"
-          dailyFreeChatTurns={me?.dailyFreeChatTurns}
-          attendanceEnabled={attendanceEnabled}
-        />
-      );
+      errorNotice = <IdentityRequiredNotice reason="free-rewards" />;
     } else if (sendError.declined) {
       // 확인 모달에서 그만둔 것은 실패가 아니라 사용자의 선택이라
       // `destructive`도 `role="alert"`도 쓰지 않는다(경고할 일이 없다).
