@@ -16,6 +16,7 @@ from api.clover import products
 from api.clover import router as clover_router
 from api.clover.products import CloverProduct
 from api.core import clover, rate_limit_gate
+from api.core.config import settings
 from api.payments import refund
 from api.payments.methods import PAY_METHODS
 from factories import _count_queries
@@ -101,6 +102,17 @@ async def test_products_switches_follow_the_shared_judges(
     monkeypatch.setattr(clover_router, judge, lambda: True)
 
     assert (await db_client.get("/clover/products")).json()[key] is True
+
+
+async def test_daily_free_chat_turns_is_zero_when_the_attendance_board_is_on(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """출석판 스위치가 켜지면 하루 무료 대화가 없어져 허브 안내 값도 0 이다. 상수를 표지 값으로 둔 채 0 이 나오는 것으로, 응답이
+    상수를 그대로 싣지 않고 스위치를 읽는다는 것을 본다."""
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 920_005)
+    monkeypatch.setattr(settings, "attendance_board_enabled", True)
+
+    assert (await db_client.get("/clover/products")).json()["dailyFreeChatTurns"] == 0
 
 
 async def test_products_does_not_touch_the_database(db_client: httpx.AsyncClient) -> None:

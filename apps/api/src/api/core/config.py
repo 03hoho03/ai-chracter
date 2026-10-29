@@ -199,7 +199,8 @@ class Settings(BaseSettings):
         return value
 
     # 누적 출석판 스위치. 꺼져 있으면(기본값) 출석판 조회·수령 라우트가 정지·로그인 여부와 무관하게 404 이고, 공개 가격 응답의
-    # 출석 안내가 꺼짐으로 실린다.
+    # 출석 안내가 꺼짐으로 실린다. 켜면 Gemini 하루 무료 대화도 없어진다(채팅 게이트가 일일 창과 하루 1회 확인을 건너뛰고
+    # 레이트리밋 면제 계정 밖의 턴은 클로버로 낸다).
     attendance_board_enabled: bool = False
 
     @field_validator(

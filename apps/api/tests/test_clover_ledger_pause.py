@@ -6,8 +6,8 @@
    셋업한다 — 채팅·이미지 유료 갈래는 오늘치 확인을 안 했고 가격 버전도 옛 값이라, 게이트의 정지 검사가 빠지면 확인 429 나 가격
    409 가 먼저 나간다(정지가 그 둘보다 앞이다). 라우트 의존성으로 막는 경로는 검사가 빠지면 그 라우트의 다음 거절(422·404·503
    결제 꺼짐)이나 지급이 나간다. 그래서 목록에서 경로 하나의 검사를 빼면 그 경우가 빨개진다.
-2. 막지 않는 것: 무료 대화 턴, 무료 토큰 이미지, 환급, 지급(결제 완료·웹훅이 쓰는 함수), 결제 완료 확인 라우트, 웹훅 라우트,
-   탈퇴 소멸. 이미 시작한 일의 마무리와 돈이 이미 나간 결제의 동기화는 멈추면 안 된다.
+2. 막지 않는 것: 무료 대화 턴(출석판 스위치가 꺼져 있을 때만 있다), 무료 토큰 이미지, 환급, 지급(결제 완료·웹훅이 쓰는
+   함수), 결제 완료 확인 라우트, 웹훅 라우트, 탈퇴 소멸. 이미 시작한 일의 마무리와 돈이 이미 나간 결제의 동기화는 멈추면 안 된다.
 
 만료 배치(`scripts/ops/expire_clover.py`)는 앱 밖의 psql 원시 SQL 이라 이 스위치를 읽을 길이 없다 — 이 파일의 대상이 아니다.
 """
@@ -102,6 +102,15 @@ async def _chat_after_daily_free(
     _client: httpx.AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[int, object, uuid.UUID]:
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+    user = await _member(db)
+    return (*await _chat(db, user, "gemini"), user.id)
+
+
+async def _chat_with_attendance_board_on(
+    _client: httpx.AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> tuple[int, object, uuid.UUID]:
+    """출석판 스위치가 켜지면 하루 무료분이 없어 첫 Gemini 턴부터 클로버로 내는 턴이다(일일 상한을 줄이지 않은 채로)."""
+    monkeypatch.setattr(settings, "attendance_board_enabled", True)
     user = await _member(db)
     return (*await _chat(db, user, "gemini"), user.id)
 
@@ -216,6 +225,7 @@ async def _create_order(
 
 _BLOCKED = [
     pytest.param(_chat_after_daily_free, id="chat-after-daily-free"),
+    pytest.param(_chat_with_attendance_board_on, id="chat-attendance-board-on"),
     pytest.param(_chat_unverified, id="chat-unverified"),
     pytest.param(_chat_premium, id="chat-premium"),
     pytest.param(_image_after_free_tokens, id="image-after-free-tokens"),

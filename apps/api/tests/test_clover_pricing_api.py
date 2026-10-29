@@ -141,6 +141,17 @@ async def test_chat_selectable_models_and_novel_cost_are_exposed(
     assert body["dailyFreeChatTurns"] == 910_008
 
 
+async def test_daily_free_chat_turns_is_zero_when_the_attendance_board_is_on(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """출석판 스위치가 켜지면 하루 무료 대화가 없어져 안내 값도 0 이다. 상수를 표지 값으로 둔 채 0 이 나오는 것으로, 응답이 상수를
+    그대로 싣지 않고 스위치를 읽는다는 것을 본다."""
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 910_008)
+    monkeypatch.setattr(settings, "attendance_board_enabled", True)
+
+    assert (await db_client.get("/clover/pricing")).json()["dailyFreeChatTurns"] == 0
+
+
 @pytest.mark.parametrize(
     ("switch", "allowlist"),
     [

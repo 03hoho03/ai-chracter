@@ -10542,6 +10542,8 @@ export interface components {
             /** Completedtoday */
             completedToday: boolean;
             nextSpecial: components["schemas"]["AttendanceNextSpecial"] | null;
+            /** Lastclaimedon */
+            lastClaimedOn: string | null;
         };
         /**
          * AttendanceCell

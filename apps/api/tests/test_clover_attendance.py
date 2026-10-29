@@ -451,7 +451,73 @@ async def test_fresh_board_response_shape(db_client: httpx.AsyncClient, db_sessi
         "canClaimToday": True,
         "completedToday": False,
         "nextSpecial": {"seq": 7, "amount": 1_600, "daysUntil": 6},
+        "lastClaimedOn": None,
     }
+
+
+# ── 마지막 수령일 ───────────────────────────────────────────────────────────
+async def test_last_claimed_on_moves_to_today_in_the_claim_response_and_the_board(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """4일 전에 받은 회원이 오늘 받으면 수령 응답의 판과 그 뒤 조회 둘 다 오늘이다. 깨지는 시나리오: 수령 응답의 판을 새 행을
+    넣기 전에 계산하면 방금 받은 사람에게 4일 전 날짜가 실려 웹이 복귀 문구를 띄운다."""
+    user = await _member(db_session, db_client, **_verified())
+    await _make_attendance_claim(db_session, user.id, board_no=1, seq=3, claimed_on=date(2026, 10, 25))
+
+    claimed = (await db_client.post("/me/attendance/claim")).json()
+    board = (await db_client.get("/me/attendance")).json()
+
+    assert claimed["granted"] is True
+    assert claimed["board"]["lastClaimedOn"] == "2026-10-29"
+    assert board["lastClaimedOn"] == "2026-10-29"
+
+
+async def test_last_claimed_on_after_a_gap_is_the_latest_claim_not_today(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """며칠 받지 않았으면 마지막으로 받은 날이다. 앞선 행을 하나 더 두어 첫 행이 아니라 마지막 행을 읽는지가 값으로 갈린다.
+    깨지는 시나리오: 오늘 날짜나 첫 수령일을 실으면 웹이 복귀 여부를 거꾸로 판정한다."""
+    user = await _member(db_session, db_client, **_verified())
+    await _make_attendance_claim(db_session, user.id, board_no=1, seq=2, claimed_on=date(2026, 10, 19))
+    await _make_attendance_claim(db_session, user.id, board_no=1, seq=3, claimed_on=date(2026, 10, 24))
+
+    board = (await db_client.get("/me/attendance")).json()
+
+    assert board["canClaimToday"] is True
+    assert board["lastClaimedOn"] == "2026-10-24"
+
+
+async def test_last_claimed_on_on_a_new_board_is_the_completion_day(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """28칸을 어제 끝내 오늘 새 판이 열려도 마지막 수령일은 어제다 — 새 판에는 아직 행이 없다. 깨지는 시나리오: 지금 판의
+    행에서만 찾으면 null 이 되어 어제 받은 사람이 처음 온 사람처럼 보인다."""
+    user = await _member(db_session, db_client, **_verified())
+    await _make_attendance_claim(db_session, user.id, board_no=1, seq=27, claimed_on=date(2026, 10, 27))
+    await _make_attendance_claim(db_session, user.id, board_no=1, seq=28, claimed_on=_YESTERDAY)
+
+    board = (await db_client.get("/me/attendance")).json()
+
+    assert board["boardNo"] == 2
+    assert board["lastClaimedOn"] == "2026-10-28"
+
+
+async def test_last_claimed_on_ignores_the_withdrawn_account_of_the_same_person(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """오늘 탈퇴 전 계정에서 받은 같은 사람의 새 계정은 오늘 받지 못하지만 마지막 수령일은 null 이다. 깨지는 시나리오: 탈퇴
+    보관 기록의 수령일을 실으면 다른 계정의 활동 날짜가 새 계정 응답으로 드러난다."""
+    ci_hmac = f"ci-{uuid.uuid4().hex}"
+    db_session.add(WithdrawnIdentity(ci_hmac=ci_hmac, withdrawn_at=_NOW, attendance_claimed_on=_TODAY))
+    await _member(db_session, db_client, **_verified(ci_hmac))
+
+    claimed = (await db_client.post("/me/attendance/claim")).json()
+    board = (await db_client.get("/me/attendance")).json()
+
+    assert claimed["granted"] is False
+    assert claimed["board"]["lastClaimedOn"] is None
+    assert board["canClaimToday"] is False
+    assert board["lastClaimedOn"] is None
 
 
 async def test_next_special_counts_days_from_the_board_in_progress(
