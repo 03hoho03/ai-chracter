@@ -26,8 +26,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import clover, rate_limit_gate
+from api.core.config import settings
 from api.core.rate_limit import seconds_until_kst_midnight
 from api.db.models import User
+from api.db.models.chat import ChatTurn
 from api.db.models.clover import CloverLedger
 from factories import (
     _clear_llm_override,
@@ -497,3 +499,33 @@ async def test_exempt_user_is_not_asked_to_confirm(
     await db_session.refresh(user)
     assert user.clover_balance == 0
     assert await _ledger_for(db_session, user.id) == []
+
+
+# ---- 출석판 스위치가 켜지면 첫 턴부터 클로버 턴으로 기록된다 ----
+
+
+@pytest.mark.parametrize(
+    ("board", "expected"),
+    [
+        pytest.param(False, ("free", 0), id="board-off"),
+        pytest.param(True, ("clover", clover.CLOVER_MODEL_PRICES["gemini"].chat_turn), id="board-on"),
+    ],
+)
+async def test_attendance_board_switch_decides_how_the_turn_is_recorded(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    board: bool,
+    expected: tuple[str, int],
+) -> None:
+    """출석판 스위치가 켜지면 하루 무료분이 없어 실제 방 전송의 첫 턴부터 클로버로 내고 턴 기록에도 그렇게 남는다(오늘 확인을
+    묻지 않는다). 같은 셋업에서 스위치를 끄면 지금처럼 무료 턴이다 — 켬 쪽 기록이 셋업만으로 나오지 않는다는 대조군이다."""
+    monkeypatch.setattr(settings, "attendance_board_enabled", board)
+    user = await _consented_user(db_client, db_session, clover_balance=100)
+    room_id = await _setup_room(db_client, db_session, user)
+
+    resp = await _send(db_client, room_id)
+
+    assert resp.status_code == 200
+    turns = (await db_session.scalars(select(ChatTurn).where(ChatTurn.chat_room_id == room_id))).all()
+    assert [(t.charge_source, t.clover_amount) for t in turns] == [expected]

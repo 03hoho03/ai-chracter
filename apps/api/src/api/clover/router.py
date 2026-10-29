@@ -242,7 +242,7 @@ async def get_clover_pricing() -> CloverPricingResponse:
         novel_episode_cost=novel_episode_unit_price(DEFAULT_CHAT_MODEL),
         novel_ai_edit_cost=clover.NOVELIZE_AI_EDIT_COST,
         novel_restricted=True,
-        daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
+        daily_free_chat_turns=rate_limit_gate.daily_free_chat_turns(),
         novel_read_cost=clover.NOVEL_READ_COST,
         novel_free_chapter_count=clover.NOVEL_FREE_CHAPTER_COUNT,
         memory_summary_regenerate_cost=clover.MEMORY_SUMMARY_REGENERATE_COST,
@@ -286,7 +286,7 @@ async def get_clover_products() -> CloverProductsResponse:
         ],
         payments_enabled=payments_active(),
         identity_gate_enabled=identity_gate_active(),
-        daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
+        daily_free_chat_turns=rate_limit_gate.daily_free_chat_turns(),
         policy=CloverPolicyValues(
             purchase_validity_years=clover.PURCHASE_LOT_YEARS,
             full_refund_days=refund.FULL_REFUND_DAYS,
