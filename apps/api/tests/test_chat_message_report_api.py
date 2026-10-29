@@ -36,6 +36,7 @@ from factories import (
     _get_genre,
     _login_as,
     _login_as_admin,
+    _make_paying_user,
     _make_published_character,
     _make_user,
     _override_llm_client,
@@ -249,7 +250,7 @@ async def test_reporting_is_rate_limited_before_ownership_is_checked(
 async def test_report_and_snapshot_survive_regeneration_of_the_reported_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, messages = await _room_with_turns(db_session)
+    room, messages = await _room_with_turns(db_session, await _make_paying_user(db_session, turns=1))
     await _login_as(db_client, room.user_id)
     resp = await db_client.post(_url(room.id, messages[4].id), json={"reason": "inappropriate"})
     assert resp.status_code == 200

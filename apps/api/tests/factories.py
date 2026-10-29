@@ -42,7 +42,7 @@ from api.chat import voyage_backoff
 from api.clover import attendance
 from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.core.clover import CloverKind, SpendUsage, kst_today, refund_spend, revoke_purchase_lots, spend
 from api.core.config import Settings, settings
 from api.core.rate_limit import KST
@@ -135,7 +135,7 @@ from api.legal.consents import kind_consent_units
 from api.llm import bedrock as bedrock_module
 from api.llm import gemini as gemini_module
 from api.llm.bedrock import BedrockLLMClient
-from api.llm.chat_models import ChatModelId
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, chat_turn_cost
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.llm.gemini import GeminiLLMClient
@@ -202,6 +202,15 @@ async def _make_user_with_clover_lot(
         )
         await db_session.flush()
     return user
+
+
+async def _make_paying_user(db_session: AsyncSession, *, turns: int, **overrides: object) -> User:
+    """기본 모델 턴 `turns` 번을 낼 만큼의 잔액(과 같은 크기의 무기한 로트)을 가진 사용자. 기본 모델 턴에도 하루 무료분이
+    없어 채팅을 보내는 테스트는 그 턴 값을 명시적으로 받아야 한다. 면제 계정으로 만들지 않는 이유는 면제가 차감 갈래를
+    통째로 건너뛰어 그 경로의 회귀를 숨기기 때문이다."""
+    return await _make_user_with_clover_lot(
+        db_session, clover_balance=turns * chat_turn_cost(DEFAULT_CHAT_MODEL), **overrides
+    )
 
 
 async def _make_attendance_claim(
@@ -1314,11 +1323,10 @@ async def _make_published_story(
 
 
 async def _story_with_setup(
-    db_session: AsyncSession, *, opening_message: str | None, prologue: str = "프롤로그"
+    db_session: AsyncSession, *, opening_message: str | None, prologue: str = "프롤로그", paid_turns: int = 0
 ) -> tuple[uuid.UUID, Content, StartingSetup]:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    """`paid_turns` 는 만드는 사용자에게 줄 기본 모델 턴 수다(`_open_room` 과 같은 규칙 — 채팅을 보내는 호출부만 적는다)."""
+    user = await _make_paying_user(db_session, turns=paid_turns)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     assert content.current_published_version_id is not None
@@ -1714,13 +1722,15 @@ async def _open_room(
     lane: str = "character",
     message_length: int = 20,
     user: User | None = None,
+    paid_turns: int = 0,
 ) -> Room:
     """방을 API로 만들고(오프닝은 앱이 넣는다) `turns`턴을 `created_at`을 명시해 심는다. 오프닝을
-    하루 전으로 옮기고 그 뒤 1초 간격이라, 요청이 새로 넣는 메시지가 항상 가장 뒤에 온다."""
+    하루 전으로 옮기고 그 뒤 1초 간격이라, 요청이 새로 넣는 메시지가 항상 가장 뒤에 온다.
+
+    `paid_turns` 는 새로 만드는 사용자에게 줄 기본 모델 턴 수다. 기본 0 이라 채팅을 보내는 테스트는 보낼 만큼을 적어야 한다 —
+    빠뜨리면 그 전송이 잔액 부족 429 로 크게 실패한다. `user` 를 넘기면 쓰지 않는다(그 사용자의 잔액은 호출부가 정한다)."""
     if user is None:
-        user = _make_user()
-        db_session.add(user)
-        await db_session.flush()
+        user = await _make_paying_user(db_session, turns=paid_turns)
     genre = await _get_genre(db_session)
     if lane == "character":
         content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1795,6 +1805,24 @@ async def _open_room(
     return Room(room_id=room_id, user_id=user.id, base=base, turns=seeded)
 
 
+async def _seed_first_turn(db_session: AsyncSession, room_id: uuid.UUID) -> tuple[ChatMessage, ChatMessage]:
+    """API 로 연 방에 첫 턴(사용자 메시지와 AI 응답)을 DB 로 심고 `(사용자, 응답)` 을 돌려준다. 재생성·편집이 요구하는 앞
+    턴을 만드는 셋업이다 — API 로 보내면 그 턴도 클로버로 나가 호출부의 잔액·원장·사용처 단언에 셋업 몫이 섞인다. 오프닝을
+    하루 전으로 옮기고 그 뒤에 심어, 요청이 새로 넣는 메시지가 늘 가장 뒤에 온다(`_open_room` 과 같은 배치)."""
+    base = datetime.now(UTC) - timedelta(days=1)
+    await db_session.execute(sa.update(ChatMessage).where(ChatMessage.chat_room_id == room_id).values(created_at=base))
+    user_message = ChatMessage(
+        chat_room_id=room_id, role=ChatMessageRole.USER, content="안녕", created_at=base + timedelta(seconds=1)
+    )
+    reply = ChatMessage(
+        chat_room_id=room_id, role=ChatMessageRole.ASSISTANT, content="응답", created_at=base + timedelta(seconds=2)
+    )
+    db_session.add_all([user_message, reply])
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room_id).values(turn_count=1))
+    await db_session.commit()
+    return user_message, reply
+
+
 # 스토리 방의 스탯 두 개 — 판정 스탯 "신뢰"(73, 규칙 a1 +5·a2 -2)와 카운터 "남은 날"(30, 턴마다 -1). 재생성 재판정과
 # 직전 응답 되돌리기가 같은 방으로 스탯 효과를 본다.
 
@@ -1807,8 +1835,10 @@ class _Stats:
         self.days = days
 
 
-async def _story_room(db_session: AsyncSession, db_client: httpx.AsyncClient, *, turns: int = 0) -> tuple[Room, _Stats]:
-    room = await _open_room(db_client, db_session, turns=turns, lane="story")
+async def _story_room(
+    db_session: AsyncSession, db_client: httpx.AsyncClient, *, turns: int = 0, paid_turns: int = 0
+) -> tuple[Room, _Stats]:
+    room = await _open_room(db_client, db_session, turns=turns, lane="story", paid_turns=paid_turns)
     setup = await _setup_of(db_session, room.room_id)
     trust = await db_session.scalar(sa.select(StatDef).where(StatDef.starting_setup_id == setup.id))
     assert trust is not None
@@ -2023,34 +2053,22 @@ async def _setup_chat_room(db_client: httpx.AsyncClient, db_session: AsyncSessio
     return uuid.UUID(resp.json()["id"])
 
 
-async def _user_message_id(db_session: AsyncSession, room_id: uuid.UUID) -> uuid.UUID:
-    """편집 대상(그 방의 사용자 메시지) id. 셋업 전송이 남긴 한 건을 쓴다."""
-    rows = (
-        await db_session.scalars(
-            sa.select(ChatMessage).where(ChatMessage.chat_room_id == room_id, ChatMessage.role == ChatMessageRole.USER)
-        )
-    ).all()
-    assert len(rows) == 1
-    return rows[0].id
-
-
 async def _prepare_paid_turn(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
     *,
     surface: str,
     balance: int,
 ) -> tuple[User, str, str, dict[str, object] | None]:
-    """`surface`(전송/편집/재생성/미리보기)의 턴 하나를 클로버로 낼 수밖에 없는 상태를 만들고 `(유저, 메서드, 경로, 본문)`을
-    돌려준다. 재생성은 본문이 없는 요청이라 본문 자리가 None 이다.
+    """`surface`(전송/편집/재생성/미리보기)의 턴 하나를 낼 상태를 만들고 `(유저, 메서드, 경로, 본문)`을 돌려준다. 기본 모델
+    턴에도 하루 무료분이 없어 그 턴은 클로버로 낸다. 재생성은 본문이 없는 요청이라 본문 자리가 None 이다.
 
-    사용자는 오늘치 클로버 사용 확인을 마친 상태다 — 미확인이면 게이트가 차감하지 않고 `CLOVER_CONFIRM_REQUIRED` 로 끊는다.
-    `_make_user` 기본값(한 번도 확인 안 함)은 그대로 둔다. 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는
-    테스트가 셋업만으로 통과한다. 실제로 차감하므로 잔액에 맞는 로트도 함께 만든다.
+    사용자는 오늘치 클로버 사용 확인을 마친 상태다 — 채팅 게이트는 확인을 묻지 않지만, 호출부가 보는 것은 차감이라 확인 여부에
+    기대지 않게 한다. `_make_user` 기본값(한 번도 확인 안 함)은 그대로 둔다 — 기본을 "오늘 확인됨"으로 바꾸면 이미지의 확인
+    게이트를 검증하는 테스트가 셋업만으로 통과한다. 실제로 차감하므로 잔액에 맞는 로트도 함께 만든다.
 
-    하루 무료 상한을 0 으로 낮추는 것은 **셋업이 끝난 뒤**다 — 방 생성과 재생성·편집을 위한 첫 전송은 무료분으로 통과해야
-    원장에 셋업 잡음이 남지 않는다.
+    재생성·편집이 요구하는 앞 턴(마지막 AI 응답, 고칠 사용자 메시지)은 API 로 보내지 않고 DB 에 심는다 — 보내면 그 셋업 턴이
+    잔액을 깎고 원장에 행을 남겨, 호출부의 잔액·원장 단언이 셋업 몫만큼 어긋난다.
     """
     user = await _make_user_with_clover_lot(
         db_session, clover_balance=balance, clover_spend_confirmed_on=kst_today(datetime.now(UTC))
@@ -2058,36 +2076,18 @@ async def _prepare_paid_turn(
     await db_session.commit()
     await _login_as(db_client, user.id)
 
-    room_id: uuid.UUID | None = None
-    session_id: str | None = None
-    message_id: uuid.UUID | None = None
-
     if surface == "preview":
         resp = await db_client.post("/preview-sessions", json=_preview_character_payload())
         assert resp.status_code == 201
         session_id = resp.json()["previewSessionId"]
-    else:
-        room_id = await _setup_chat_room(db_client, db_session, user)
-        if surface in ("regenerate", "edit"):
-            # 재생성은 "마지막 메시지가 AI 응답"인 상태를, 편집은 "고칠 사용자 메시지"를 요구한다 — 성공하는 전송을 한 번 먼저
-            # 태운다.
-            _override_llm_client(_FakeLLMClient(tokens=["첫", "응답"]))
-            try:
-                sent = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
-            finally:
-                _clear_llm_override()
-            assert sent.status_code == 200
-        if surface == "edit":
-            message_id = await _user_message_id(db_session, room_id)
-
-    # 여기서부터 클로버로 낸다.
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
-    if surface == "preview":
         return user, "POST", f"/preview-sessions/{session_id}/messages", {"content": "안녕"}
-    if surface == "regenerate":
-        return user, "POST", f"/chat-rooms/{room_id}/regenerate", None
-    if surface == "edit":
-        return user, "PATCH", f"/chat-rooms/{room_id}/messages/{message_id}", {"content": "고친 내용"}
+    if surface in ("regenerate", "edit"):
+        room = await _open_room(db_client, db_session, turns=1, user=user)
+        if surface == "regenerate":
+            return user, "POST", f"/chat-rooms/{room.room_id}/regenerate", None
+        user_message = room.turns[1][0]
+        return user, "PATCH", f"/chat-rooms/{room.room_id}/messages/{user_message.id}", {"content": "고친 내용"}
+    room_id = await _setup_chat_room(db_client, db_session, user)
     return user, "POST", f"/chat-rooms/{room_id}/messages", {"content": "안녕"}
 
 

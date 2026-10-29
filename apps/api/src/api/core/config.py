@@ -184,7 +184,7 @@ class Settings(BaseSettings):
     creator_payout_encryption_keys: str = Field(default="", repr=False)
 
     # 클로버 정지 스위치. 켜면 클로버를 새로 깎거나 주는 경로(모든 차감, 채팅·이미지의 유료 갈래, 미션 수령, 출석 수령, 어드민 지급·회수,
-    # 어드민 결제 환불 실행, 주문 생성)가 503 `CLOVER_PAUSED` 로 멈춘다. 무료 대화·무료 토큰 이미지·환급·결제 완료와 웹훅·만료·
+    # 어드민 결제 환불 실행, 주문 생성)가 503 `CLOVER_PAUSED` 로 멈춘다. 면제 계정의 채팅 턴·무료 토큰 이미지·환급·결제 완료와 웹훅·만료·
     # 탈퇴는 그대로다(`core/clover.py` 의 `raise_if_clover_paused`). 단위 전환처럼 잔액을 한꺼번에 옮기는 동안 켠다 — 사용법은
     # DEPLOY.md 의 "BE 런타임" 절 표.
     clover_ledger_paused: bool = False
@@ -197,11 +197,6 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return False
         return value
-
-    # 누적 출석판 스위치. 꺼져 있으면(기본값) 출석판 조회·수령 라우트가 정지·로그인 여부와 무관하게 404 이고, 공개 가격 응답의
-    # 출석 안내가 꺼짐으로 실린다. 켜면 Gemini 하루 무료 대화도 없어진다(채팅 게이트가 일일 창과 하루 1회 확인을 건너뛰고
-    # 레이트리밋 면제 계정 밖의 턴은 클로버로 낸다).
-    attendance_board_enabled: bool = False
 
     @field_validator(
         "creator_payout_enabled",

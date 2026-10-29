@@ -35,6 +35,7 @@ from factories import (
     _get_genre,
     _login_as,
     _make_asset,
+    _make_paying_user,
     _make_published_character,
     _make_user,
     _open_room,
@@ -154,8 +155,7 @@ async def test_message_text_with_a_nul_character_is_rejected_before_anything_is_
 async def test_send_message_streams_tokens_and_saves_final_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(
@@ -218,8 +218,7 @@ async def test_send_message_character_room_injects_room_persona_into_generation_
     """`build_room_prompt`의 **캐릭터** 분기도 방의 대화
     프로필을 생성 프롬프트에 싣는다(스토리 분기는 `test_chat_story_message_send_api.py`).
     방의 `persona_id`는 DB에 직접 넣는다 — 이 테스트의 관심은 읽기 경로다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -247,8 +246,7 @@ async def test_send_message_character_room_injects_room_persona_into_generation_
 async def test_send_message_policy_violation_emits_policy_warning_and_skips_save(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -292,8 +290,7 @@ async def test_send_message_llm_error_emits_error_event_and_keeps_user_message(
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -332,8 +329,7 @@ async def test_send_message_llm_error_emits_error_event_and_keeps_user_message(
 async def test_send_message_no_situational_images_skips_judgment_call(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -358,8 +354,7 @@ async def test_send_message_no_situational_images_skips_judgment_call(
 async def test_send_message_matched_situational_image_included_in_done_event_and_records_exposure(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -411,8 +406,7 @@ async def test_send_message_matched_situational_image_included_in_done_event_and
 async def test_send_message_no_matched_image_returns_null_imageid_and_no_exposure(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -449,8 +443,7 @@ async def test_send_message_no_matched_image_returns_null_imageid_and_no_exposur
 async def test_send_message_hallucinated_image_entity_id_is_ignored(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -487,8 +480,7 @@ async def test_send_message_hallucinated_image_entity_id_is_ignored(
 async def test_send_message_repeated_match_does_not_duplicate_exposure_row(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -536,8 +528,7 @@ async def test_send_message_image_judgment_llm_failure_still_completes_the_turn(
     """상황별 이미지 매칭 판단이 실패해도(429 등) 예외가 SSE 제너레이터 밖으로 새면 안 된다 —
     새면 ASGI 태스크 취소로 DB 커넥션이 망가진 채 풀로 돌아가 무관한 다음 요청이 500이 된다.
     이미 스트리밍된 응답은 정상 커밋하고 이미지 매칭만 포기한다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -591,8 +582,7 @@ async def test_send_message_null_image_asset_id_candidate_excluded_from_judgment
     간다). `image_asset_id`가 NULL인 후보만 있으면 `_prepare_situational_image_judgment`가 판단 호출
     자체를 생략해(`if not situational_images: return None`) 이 필터의 효과를 관측할 수
     없으므로, 정상 후보를 하나 더 둬 판단 호출이 실제로 일어나게 한다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -654,8 +644,7 @@ async def test_send_message_presigned_url_failure_still_completes_the_turn_witho
 
     monkeypatch.setattr(turn_store, "generate_presigned_get_url", _raise_presign)
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -719,8 +708,7 @@ async def test_send_message_asset_lookup_failure_still_completes_the_turn_withou
 
     monkeypatch.setattr(AsyncSession, "get", _failing_get)
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -789,8 +777,7 @@ async def test_send_message_situational_image_candidate_query_failure_still_comp
 
     monkeypatch.setattr(AsyncSession, "scalars", _failing_scalars)
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -853,8 +840,7 @@ async def test_send_message_image_exposure_lookup_failure_still_completes_the_tu
 
     monkeypatch.setattr(AsyncSession, "scalar", _failing_scalar)
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -923,8 +909,7 @@ async def test_send_message_situational_image_candidate_query_real_sql_failure_i
 
     monkeypatch.setattr(AsyncSession, "scalars", _really_failing_scalars)
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -992,8 +977,7 @@ async def test_send_message_image_exposure_lookup_real_sql_failure_is_isolated_b
 
     monkeypatch.setattr(AsyncSession, "scalar", _really_failing_scalar)
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1045,8 +1029,7 @@ async def test_get_chat_room_reflects_matched_situational_image_in_message(
 ) -> None:
     """GET 재조회 응답의 assistant 메시지에도 매칭된 상황이미지의 imageId/imageUrl이 실려야
     한다 — chat_messages.image_id에 저장되지 않으면 done 이벤트 이후 다시 조회할 때 사라진다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1095,8 +1078,7 @@ async def test_get_chat_room_unmatched_turn_has_null_image_id_and_url(
 ) -> None:
     """매칭 실패한 턴은 GET 재조회에서도 imageId/imageUrl 둘 다 None이어야 하고
     chat_messages.image_id도 NULL로 남아야 한다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1140,8 +1122,7 @@ async def test_get_chat_room_unresolvable_image_id_returns_null_image_url(
     """image_id가 가리키는 SituationalImage가 더 이상 없으면 GET이 500이 아니라 imageId는
     그대로 두고 imageUrl만 None으로 내려야 한다(다형 참조라 FK로 무결성을 보장하지 않는다,
     apps/api/CLAUDE.md 다형 참조 규약)."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1178,8 +1159,7 @@ async def test_get_chat_room_query_count_independent_of_matched_image_count(
 ) -> None:
     """GET의 SQL 문 수는 메시지에 실린 이미지 개수와 무관해야 한다 — 메시지마다 db.get으로
     SituationalImage/Asset을 조회하면 이미지 수만큼 쿼리가 늘어난다(N+1)."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=3)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1252,8 +1232,7 @@ async def test_send_message_does_not_dump_prompt_by_default(
     설정 안 하면 지금과 동일하게 아무것도 남기지 않아야 한다."""
     monkeypatch.setattr(settings, "prompt_dump_path", None)
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1283,8 +1262,7 @@ async def test_send_message_dumps_prompt_when_configured(
     monkeypatch.setattr(settings, "prompt_dump_path", str(dump_path))
     monkeypatch.setattr(settings, "gemini_seed", 42)
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1326,8 +1304,7 @@ async def test_send_message_prompt_dump_failure_still_finishes_the_turn(
     # 디렉터리를 덤프 파일 자리로 주면 추가 모드로 열지 못해 쓰기가 실패한다.
     monkeypatch.setattr(settings, "prompt_dump_path", str(tmp_path))
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1363,7 +1340,7 @@ async def test_send_message_dumps_judgment_prompts_after_the_generation_line(
     dump_path = tmp_path / "prompts.jsonl"
     monkeypatch.setattr(settings, "prompt_dump_path", str(dump_path))
     monkeypatch.setattr(settings, "gemini_image_judgment_model_name", "image-judge-x")
-    room = await _open_room(db_client, db_session, turns=2)
+    room = await _open_room(db_client, db_session, turns=2, paid_turns=1)
     image_id = await _add_room_situational_image(db_session, room.room_id)
 
     fake = _FakeLLMClient(
@@ -1400,7 +1377,7 @@ async def test_a_failed_judgment_still_leaves_its_prompt_in_the_dump(
     """판정 프롬프트는 호출 앞에서 남긴다 — 판정 호출이 실패해도 그 입력은 덤프에 있다."""
     dump_path = tmp_path / "prompts.jsonl"
     monkeypatch.setattr(settings, "prompt_dump_path", str(dump_path))
-    room = await _open_room(db_client, db_session, turns=2)
+    room = await _open_room(db_client, db_session, turns=2, paid_turns=1)
     await _add_room_situational_image(db_session, room.room_id)
 
     fake = _FakeLLMClient(tokens=["안녕"], structured_error=LLMClientError("가짜 판정 실패"))
@@ -1429,7 +1406,7 @@ async def test_judgment_prompt_dump_failure_still_runs_the_judgment(
 ) -> None:
     """판정 프롬프트 덤프도 부가 기록이다. 쓰다 실패해도 경고만 남기고 판정은 그대로 불려 그림이 붙는다."""
     monkeypatch.setattr(settings, "prompt_dump_path", str(tmp_path))
-    room = await _open_room(db_client, db_session, turns=2)
+    room = await _open_room(db_client, db_session, turns=2, paid_turns=1)
     image_id = await _add_room_situational_image(db_session, room.room_id)
 
     fake = _FakeLLMClient(
@@ -1554,7 +1531,7 @@ async def test_send_message_with_a_judgment_dumps_nothing_by_default(
     monkeypatch.setattr(settings, "prompt_dump_path", None)
     dumped: list[str] = []
     monkeypatch.setattr(turn_engine, "_dump_judgment_prompt", lambda **kwargs: dumped.append(kwargs["prompt"]))
-    room = await _open_room(db_client, db_session, turns=2)
+    room = await _open_room(db_client, db_session, turns=2, paid_turns=1)
     image_id = await _add_room_situational_image(db_session, room.room_id)
 
     fake = _FakeLLMClient(

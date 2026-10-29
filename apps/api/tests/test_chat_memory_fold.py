@@ -42,7 +42,7 @@ from api.chat.prompt_builder import (
     load_active_prompt_set,
 )
 from api.chat.schemas import ChatStreamEvent
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.db.models import (
@@ -589,8 +589,6 @@ async def test_a_folding_turn_costs_one_turn_of_clover_and_counts_once_against_r
         clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC)),
     )
     room = await _open_room(db_client, db_session, turns=29, user=user)
-    # 셋업(방 생성)이 끝난 뒤 무료 창을 닫아 이번 턴을 클로버로 내게 한다.
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     await _request(db_client, room, "send", SummaryLLMClient())
 

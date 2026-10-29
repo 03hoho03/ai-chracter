@@ -117,8 +117,6 @@ class AttendanceClaimResponse(CamelModel):
 class CloverAttendancePolicy(CamelModel):
     """공개 가격 응답에 싣는 출석 안내. 로그인하지 않은 방문자도 정책 문장을 읽는다."""
 
-    # 출석판 스위치(`attendance_board_enabled`)가 켜져 있는가.
-    enabled: bool
     # 현재 보상표의 1~28칸 금액.
     rewards: list[int]
     # 받은 클로버가 적어도 며칠 유효한가. 실제 만료는 지급일 KST 자정 + 8일이라 받은 시각에 따라 7~8일이 남는다 — 그래서
@@ -209,9 +207,6 @@ class CloverPricingResponse(CamelModel):
     novel_ai_edit_cost: int
     # 소설(화 생성·AI 수정)이 허용된 계정 전용인가.
     novel_restricted: bool
-    # 하루에 클로버 없이 쓸 수 있는 대화 턴 수. 로그인한 화면은 `GET /me` 의 같은 값을 읽지만 공개 안내는 그 응답을
-    # 못 읽는다.
-    daily_free_chat_turns: int
     # 노벨 화 하나의 소장 가격과, 소설마다 앞에서부터 무료로 읽는 화 수. 노벨이 꺼져 있어도 싣는다(가격표는 정책 안내다).
     novel_read_cost: int
     novel_free_chapter_count: int
@@ -236,10 +231,10 @@ class CloverPricingResponse(CamelModel):
     payments_enabled: bool
     # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).
     pay_methods: list[CloverPayMethodItem]
-    # 미인증 회원 게이트(무료 대화·미션을 본인인증한 회원에게만)가 켜져 있는가. 로그인하지 않은 방문자도 읽는 정책
+    # 미인증 회원 게이트(미션 보상을 본인인증한 회원에게만)가 켜져 있는가. 로그인하지 않은 방문자도 읽는 정책
     # 문장이 이 값으로 갈린다 — 꺼진 동안 "본인인증을 마친 회원은"이라고 쓰면 거짓이다. `GET /me` 와 같은 판정 함수다.
     identity_gate_enabled: bool
-    # 누적 출석판 안내(켜짐 여부·보상표·최소 유효 일수).
+    # 누적 출석판 안내(보상표·최소 유효 일수).
     attendance: CloverAttendancePolicy
 
 
@@ -269,13 +264,12 @@ class CloverPolicyValues(CamelModel):
 
 
 class CloverProductsResponse(CamelModel):
-    """공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능
+    """공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능
     스위치와 사용 단가는 공개 가격 응답(`GET /clover/pricing`)에 그대로 남는다."""
 
     products: list[CloverProductOffer]
     pay_methods: list[CloverPayMethodItem]
     payments_enabled: bool
     identity_gate_enabled: bool
-    daily_free_chat_turns: int
     policy: CloverPolicyValues
     price_version: int

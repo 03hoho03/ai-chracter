@@ -57,7 +57,7 @@ from api.clover.schemas import (
     CloverProductOffer,
     CloverProductsResponse,
 )
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.core.clover import (
     PURCHASE_LOT_KINDS,
     earned_lot_expiry,
@@ -206,7 +206,7 @@ async def _expiring_soon(db: AsyncSession, *, user_id: uuid.UUID, now: datetime)
 @router.get("/pricing")
 async def get_clover_pricing() -> CloverPricingResponse:
     """공개 조회 — 인증 없음. 충전 상품과 일반 회원이 쓸 수 있는 모든 사용처·허용 계정 전용 소설의 사용 단가, 채팅에서
-    고를 수 있는 모델별 단가, 하루 무료 대화 수를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지
+    고를 수 있는 모델별 단가를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지
     않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
 
     모델 행은 지금 채팅에서 고를 수 있게 보이는 모델만 싣는다(`is_chat_model_visible` — 화면의 모델 목록과 같은 판정이라
@@ -249,7 +249,6 @@ async def get_clover_pricing() -> CloverPricingResponse:
         novel_episode_cost=novel_episode_unit_price(DEFAULT_CHAT_MODEL),
         novel_ai_edit_cost=clover.NOVELIZE_AI_EDIT_COST,
         novel_restricted=True,
-        daily_free_chat_turns=rate_limit_gate.daily_free_chat_turns(),
         novel_read_cost=clover.NOVEL_READ_COST,
         novel_free_chapter_count=clover.NOVEL_FREE_CHAPTER_COUNT,
         memory_summary_regenerate_cost=clover.MEMORY_SUMMARY_REGENERATE_COST,
@@ -264,7 +263,6 @@ async def get_clover_pricing() -> CloverPricingResponse:
             CloverPayMethodItem(pay_method=m.pay_method, easy_pay_provider=m.easy_pay_provider) for m in PAY_METHODS
         ],
         attendance=CloverAttendancePolicy(
-            enabled=settings.attendance_board_enabled,
             rewards=list(attendance.ATTENDANCE_REWARDS[attendance.CURRENT_REWARD_VERSION]),
             min_valid_days=attendance.ATTENDANCE_MIN_VALID_DAYS,
         ),
@@ -273,8 +271,8 @@ async def get_clover_pricing() -> CloverPricingResponse:
 
 @router.get("/products")
 async def get_clover_products() -> CloverProductsResponse:
-    """공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책
-    숫자·가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로
+    """공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·정책 숫자·
+    가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로
     다시 읽는다(공개 가격 응답의 같은 주석)."""
     return CloverProductsResponse(
         products=[
@@ -293,7 +291,6 @@ async def get_clover_products() -> CloverProductsResponse:
         ],
         payments_enabled=payments_active(),
         identity_gate_enabled=identity_gate_active(),
-        daily_free_chat_turns=rate_limit_gate.daily_free_chat_turns(),
         policy=CloverPolicyValues(
             purchase_validity_years=clover.PURCHASE_LOT_YEARS,
             full_refund_days=refund.FULL_REFUND_DAYS,
@@ -535,16 +532,7 @@ def _attendance_board(state: attendance.AttendanceState) -> AttendanceBoardRespo
     )
 
 
-async def require_attendance_board() -> None:
-    """출석판 스위치가 꺼져 있으면 404 — 라우트가 없는 것과 같은 응답이다. 데코레이터 의존성 맨 앞에 두어 꺼진 동안은 로그인·
-    정지·재동의와 무관하게 404 가 먼저 나간다(데코레이터 의존성은 시그니처 의존성보다 먼저 풀린다)."""
-    if not settings.attendance_board_enabled:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
-
-
-@me_router.get(
-    "/attendance", dependencies=[Depends(require_attendance_board), Depends(require_legal_consent)]
-)
+@me_router.get("/attendance", dependencies=[Depends(require_legal_consent)])
 async def get_attendance_board(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
@@ -558,9 +546,7 @@ async def get_attendance_board(
     return _attendance_board(state)
 
 
-@me_router.post(
-    "/attendance/claim", dependencies=[Depends(require_attendance_board), Depends(require_legal_consent)]
-)
+@me_router.post("/attendance/claim", dependencies=[Depends(require_legal_consent)])
 async def claim_attendance(
     user_id: uuid.UUID = Depends(get_current_user_id),
     # 정지 스위치 — 지급 함수는 결제 지급과 같아 함수에서 막지 못해 라우트에서 막는다(미션 수령과 같다).

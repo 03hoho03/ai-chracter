@@ -24,7 +24,7 @@ import pytest
 from api.clover import products
 from api.core.config import settings
 from api.clover.products import CloverProduct
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from factories import _set_model_price
 
 # 지금 상품표 이전에 팔던 상품의 키. 결제 행(`payments.product_key`)이 이 키를 그대로 갖고 있고 어드민이 그 값을
@@ -63,7 +63,9 @@ async def test_response_follows_products_and_cost_constants(
 
     assert resp.status_code == 200
     body = resp.json()
-    # 결제 여부·결제수단은 결제 테스트(`test_payments_api.py`)가, 모델별·소설 단가와 무료 대화 수는 아래 테스트가, 노벨 켜짐
+    # 하루 무료 대화가 없어 그 수를 싣던 칸도 없다.
+    assert "dailyFreeChatTurns" not in body
+    # 결제 여부·결제수단은 결제 테스트(`test_payments_api.py`)가, 모델별·소설 단가는 아래 테스트가, 노벨 켜짐
     # 여부는 노벨 독자 테스트(`test_webnovel_reading.py`)가, 출석 안내는 출석 테스트(`test_clover_attendance.py`)가 본다.
     for key in (
         "paymentsEnabled",
@@ -78,7 +80,6 @@ async def test_response_follows_products_and_cost_constants(
         "novelAiEditCost",
         "novelRestricted",
         "novelEpisodeCost",
-        "dailyFreeChatTurns",
         "attendance",
     ):
         del body[key]
@@ -99,7 +100,7 @@ async def test_response_follows_products_and_cost_constants(
 async def test_chat_selectable_models_and_novel_cost_are_exposed(
     db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """모든 단가 상수와 무료 대화 수를 서로 겹치지 않는 표지 값으로 바꿔 두면 응답이 그 값을 모델별로 그대로 싣는다.
+    """모든 단가 상수를 서로 겹치지 않는 표지 값으로 바꿔 두면 응답이 그 값을 모델별로 그대로 싣는다.
     모델 목록은 채팅에서 고를 수 있게 보이는 모델만 레지스트리 순서대로 담는다 — 이 목록은 채팅 모델 안내라 공개 목록에서
     뺀 Sonnet 을 실으면 채팅에서 살 수 없는 선택지가 보이고, 고를 수 있는 모델을 빠뜨리면 숨은 가격이 된다. 여기서는 스위치를
     켜고 공개 목록을 Opus 하나로 둔다. Sonnet 은 소설 상위 모델로도 쓰이지만 별도 허용 명단에 든 계정만 써서 일반 회원은 살 수
@@ -109,7 +110,6 @@ async def test_chat_selectable_models_and_novel_cost_are_exposed(
     _set_model_price(monkeypatch, "sonnet", chat_turn=910_002, novel_episode=910_005)
     _set_model_price(monkeypatch, "opus", chat_turn=910_003, novel_episode=910_006)
     monkeypatch.setattr(clover, "NOVELIZE_AI_EDIT_COST", 910_007)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 910_008)
     monkeypatch.setattr(settings, "chat_premium_models_enabled", True)
     monkeypatch.setattr(settings, "chat_models_visible", ["opus"])
 
@@ -139,18 +139,6 @@ async def test_chat_selectable_models_and_novel_cost_are_exposed(
     assert body["novelEpisodeCost"] == 910_004
     assert body["novelAiEditCost"] == 910_007
     assert body["novelRestricted"] is True
-    assert body["dailyFreeChatTurns"] == 910_008
-
-
-async def test_daily_free_chat_turns_is_zero_when_the_attendance_board_is_on(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """출석판 스위치가 켜지면 하루 무료 대화가 없어져 안내 값도 0 이다. 상수를 표지 값으로 둔 채 0 이 나오는 것으로, 응답이 상수를
-    그대로 싣지 않고 스위치를 읽는다는 것을 본다."""
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 910_008)
-    monkeypatch.setattr(settings, "attendance_board_enabled", True)
-
-    assert (await db_client.get("/clover/pricing")).json()["dailyFreeChatTurns"] == 0
 
 
 @pytest.mark.parametrize(

@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**92개 키다**(2026-10-28 VM 실측 — 인상 쓰기 세 줄 편집(모델 줄·스위치 줄 둘이 새 키, 배정은 기존 줄에 항목 추가)이 넣은 뒤 다시 셈, 키 이름만 셈): 아래 표 155개 중 79개(생략 가능한 조정 키 58개 — `CHAT_MODELS_VISIBLE`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·소설화 밖 `GEMINI_*_TIMEOUT_MS` 5개(`GENERATE`·`JUDGMENT`·`MEMORY_SUMMARY`·`PUBLISH_FILTER`·`CLIENT`)·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 25개·장기 기억 조정용 9개(`MEMORY_MODEL_SCOPE`·`MEMORY_EMBED_MODEL`·`MEMORY_EMBED_DIMS`·`MEMORY_EMBED_RECALL_` 뒤에 `RRF_K`·`MAX_PLAIN`·`MAX_CUE`·`MAX_DISTANCE`·`VECTOR_LIMIT`·`DF_MAX` 가 붙는 6개), 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 스위치 3개(소설 삽화 `NOVEL_ILLUSTRATIONS_ENABLED`·소설 구성 흐름 `NOVELIZE_OUTLINE_FLOW_ENABLED`·누적 출석판 `ATTENDANCE_BOARD_ENABLED`), 줄을 두지 않는 인상 키 2개(묶음 크기 `MEMORY_IMPRESSION_EVERY_N_FOLDS`·아직 켜지 않은 보기 스위치 `MEMORY_IMPRESSIONS_VISIBLE`), 전체 공개 뒤 줄을 지운 노벨 미리보기 명단 1개(`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`), 잔액을 한꺼번에 옮기는 동안에만 켜고 평소에는 줄을 두지 않는 클로버 정지 스위치 1개(`CLOVER_LEDGER_PAUSED`), 모두 79개 제외 —
+**92개 키다**(2026-10-28 VM 실측 — 인상 쓰기 세 줄 편집(모델 줄·스위치 줄 둘이 새 키, 배정은 기존 줄에 항목 추가)이 넣은 뒤 다시 셈, 키 이름만 셈): 아래 표 154개 중 78개(생략 가능한 조정 키 58개 — `CHAT_MODELS_VISIBLE`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·소설화 밖 `GEMINI_*_TIMEOUT_MS` 5개(`GENERATE`·`JUDGMENT`·`MEMORY_SUMMARY`·`PUBLISH_FILTER`·`CLIENT`)·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 25개·장기 기억 조정용 9개(`MEMORY_MODEL_SCOPE`·`MEMORY_EMBED_MODEL`·`MEMORY_EMBED_DIMS`·`MEMORY_EMBED_RECALL_` 뒤에 `RRF_K`·`MAX_PLAIN`·`MAX_CUE`·`MAX_DISTANCE`·`VECTOR_LIMIT`·`DF_MAX` 가 붙는 6개), 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 스위치 2개(소설 삽화 `NOVEL_ILLUSTRATIONS_ENABLED`·소설 구성 흐름 `NOVELIZE_OUTLINE_FLOW_ENABLED`), 줄을 두지 않는 인상 키 2개(묶음 크기 `MEMORY_IMPRESSION_EVERY_N_FOLDS`·아직 켜지 않은 보기 스위치 `MEMORY_IMPRESSIONS_VISIBLE`), 전체 공개 뒤 줄을 지운 노벨 미리보기 명단 1개(`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`), 잔액을 한꺼번에 옮기는 동안에만 켜고 평소에는 줄을 두지 않는 클로버 정지 스위치 1개(`CLOVER_LEDGER_PAUSED`), 모두 78개 제외 —
 파일에 줄이 있는 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`·`NOVELIZE_WORKER_ENABLED`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 9개(`PORTONE_*` 5개·
 `IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 노벨 스위치 2개(`NOVEL_PUBLIC_ENABLED`·공개 정책 `NOVEL_PUBLIC_POLICY_V2_ENABLED`), 여러 문단 수정 스위치 1개(`NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`), 장기 기억 키 16개(`MEMORY_*` 15개 — 장면·사실 추출과 모델, 장면 회상, 사실 주입, 요약 모델·비밀 표기, 지식 범위 필터, 임베딩 쓰기·회상과 그 시간 상한, 기억 보기 `MEMORY_ITEMS_VISIBLE`, 인상 쓰기와 그 모델 — 와 `VOYAGE_API_KEY`), 스탯 판정 이벤트 스위치 1개(`STAT_EVENT_LOG`)를 포함한 나머지 76개는 셈에 들어간다) + 앱이 읽지 않지만
 옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
@@ -240,10 +240,9 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `PORTONE_API_SECRET` | 포트원 V2 API 시크릿 | 결제·본인인증 조회와 환불(취소) 호출. 비면 결제·본인인증이 꺼진다(기동은 막지 않는다) |
 | `PORTONE_WEBHOOK_SECRET` | 포트원 콘솔의 웹훅 시크릿(`whsec_…`) | 결제 웹훅 서명 검증. 비거나 형식이 틀리면 모든 웹훅이 503 으로 돌아가 포트원이 재시도한다(Bugsink 에 남는다). 서명 시각 허용 오차가 5분이라 VM 시계(NTP)가 맞아야 한다 |
 | `IDENTITY_CI_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 본인인증 CI 를 저장하기 전에 HMAC 으로 바꾸는 키. **한번 정하면 바꾸지 말 것** — 바뀌면 이미 인증한 사람과 대조가 어긋나 같은 사람이 다른 계정으로 다시 인증할 수 있게 된다. `WITHDRAWN_EMAIL_HMAC_KEY` 와 다른 값을 쓴다. 비면 본인인증이 꺼진다 |
-| `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 무료 대화·미션을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다). 출석판 스위치(`ATTENDANCE_BOARD_ENABLED`)가 켜져 있으면 하루 무료 대화가 누구에게도 없어, 이 게이트가 채팅에서 바꾸는 것은 잔액 부족 응답(인증 회원 429 대신 403 `IDENTITY_VERIFICATION_REQUIRED`) 하나다 |
+| `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 미션 보상을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다). 하루 무료 대화는 누구에게도 없어, 이 게이트가 채팅에서 바꾸는 것은 잔액 부족 응답(인증 회원 429 대신 403 `IDENTITY_VERIFICATION_REQUIRED`) 하나다 |
 | `PAYMENT_DISCORD_WEBHOOK_URL` | 결제 알림용 디스코드 채널 웹훅 주소 | 결제·환불 완료 알림(상품·금액·상태만, 회원·주문을 알아볼 단서는 싣지 않는다). 비면 건너뛴다. 크론 알림의 `DISCORD_WEBHOOK_URL` 과 다른 키다 |
-| `CLOVER_LEDGER_PAUSED` | 설정 안 함(기본 `false`). 클로버 단위 전환처럼 잔액을 한꺼번에 옮기는 동안에만 `true` | 클로버 정지 스위치. 켜면 클로버를 새로 깎거나 주는 경로가 503 `CLOVER_PAUSED`(짧은 안내 `message` 포함)로 멈춘다 — 모든 차감(채팅·이미지의 유료 갈래, 요약 다시 만들기, 소설화 작업 시작, 노벨 소장), 미션 수령, 출석 수령, 어드민 지급·회수, 어드민 결제 환불 실행(진행 중 시도의 마무리 포함), 주문 생성. 채팅·이미지에서는 하루 1회 확인 429 와 가격 버전 409 보다 먼저 나간다(정지 중에는 어떤 가격으로도 깎지 않아 가격표를 다시 받게 해도 소용이 없다). 막지 않는 것: 무료 대화 턴(출석판 스위치가 꺼져 있을 때만 있다 — 켜져 있으면 면제 계정 밖의 모든 채팅 턴이 정지 중 503 이고, Redis 장애 중에도 같다)·무료 토큰 이미지, 모든 환급, 결제 완료 확인·웹훅(포트원 콘솔 취소도 이 길로 들어와 막지 못한다), 만료 크론, 탈퇴. 🔴 켜기 전에 진행 중 환불 시도(`payment_cancellations.status = 'requested'`)를 0 으로 만든다 — 그 마무리 라우트도 정지로 막힌다. 켜기·끄기는 `.env` 에 줄을 더하거나 지운 뒤 형식 검사 → 태그 없는 교체다(`restart` 는 env 를 다시 읽지 않는다 — "env 반영 재기동" 절). 옛 색은 교체가 끝날 때까지 옛 값으로 돈다. 빈 값(`CLOVER_LEDGER_PAUSED=`)은 꺼짐으로 읽는다. 넣고 지울 때 위 VM 키 수를 다시 센다 |
-| `ATTENDANCE_BOARD_ENABLED` | 설정 안 함(기본 `false`). 켤 때 `true` | 누적 출석판 스위치. 켜면 누적 출석판 조회(`GET /me/attendance`)·수령(`POST /me/attendance/claim`) 라우트가 열린다. 꺼진 동안 두 라우트는 로그인·정지 여부와 무관하게 404 이고, 공개 가격 응답(`GET /clover/pricing`)의 출석 안내 `attendance.enabled` 가 거짓이다. 같은 스위치가 기본 모델(Gemini) 하루 무료 대화도 없앤다 — 켜는 순간부터 면제 계정 밖의 모든 채팅 턴(빌더 미리보기 포함)이 하루 1회 확인 없이 클로버로 나가고(이미지의 하루 1회 확인은 그대로), `/me`·`/clover/pricing`·`/clover/products` 의 `dailyFreeChatTurns` 가 0 이다. 끄면 그다음 요청부터 하루 무료분(`CHAT_DAILY_LIMIT`)과 확인이 돌아온다. 수령은 본인인증한 회원만 받는다(미인증 회원 게이트 스위치·면제와 무관). 켜기·끄기는 `.env` 에 줄을 더하거나 지운 뒤 형식 검사 → 태그 없는 교체다("env 반영 재기동" 절). 넣고 지울 때 위 VM 키 수를 다시 센다 |
+| `CLOVER_LEDGER_PAUSED` | 설정 안 함(기본 `false`). 클로버 단위 전환처럼 잔액을 한꺼번에 옮기는 동안에만 `true` | 클로버 정지 스위치. 켜면 클로버를 새로 깎거나 주는 경로가 503 `CLOVER_PAUSED`(짧은 안내 `message` 포함)로 멈춘다 — 모든 차감(채팅·이미지의 유료 갈래, 요약 다시 만들기, 소설화 작업 시작, 노벨 소장), 미션 수령, 출석 수령, 어드민 지급·회수, 어드민 결제 환불 실행(진행 중 시도의 마무리 포함), 주문 생성. 채팅·이미지에서는 가격 버전 409 보다(이미지는 하루 1회 확인 429 보다도) 먼저 나간다(정지 중에는 어떤 가격으로도 깎지 않아 가격표를 다시 받게 해도 소용이 없다). 막지 않는 것: 면제 계정의 채팅 턴(면제 계정 밖의 모든 채팅 턴은 정지 중 503 이고, Redis 장애 중에도 같다)·무료 토큰 이미지, 모든 환급, 결제 완료 확인·웹훅(포트원 콘솔 취소도 이 길로 들어와 막지 못한다), 만료 크론, 탈퇴. 🔴 켜기 전에 진행 중 환불 시도(`payment_cancellations.status = 'requested'`)를 0 으로 만든다 — 그 마무리 라우트도 정지로 막힌다. 켜기·끄기는 `.env` 에 줄을 더하거나 지운 뒤 형식 검사 → 태그 없는 교체다(`restart` 는 env 를 다시 읽지 않는다 — "env 반영 재기동" 절). 옛 색은 교체가 끝날 때까지 옛 값으로 돈다. 빈 값(`CLOVER_LEDGER_PAUSED=`)은 꺼짐으로 읽는다. 넣고 지울 때 위 VM 키 수를 다시 센다 |
 | `CREATOR_PAYOUT_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 크리에이터 정산 스위치. 스위치와 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다(지급 정보 입력·지급 신청은 `CREATOR_PAYOUT_ENCRYPTION_KEYS` 도 있어야 열리고, 정산 신청·적립·확정·조회는 키와 무관하다) — 신청 자격이 본인인증한 만 19세 이상(나이는 코드 상수라 env 가 없다)이라서다. 켜면 결제·게이트가 꺼져 있어도 본인인증 시작이 열린다. 꺼져 있으면 회원의 정산 조회·신청·지급 정보 입력·지급 신청이 503 이고, 어드민의 신청·지급 처리(승인·거절·승인 취소, 이체 기록·반려)는 스위치와 무관하게 열려 있다. 정산 신청·지급 신청 접수 알림은 `PAYMENT_DISCORD_WEBHOOK_URL` 채널을 같이 쓴다(건수·금액만, 회원을 알아볼 단서는 싣지 않는다). 🔴 켤 때 "크리에이터 정산 월 확정 — settle cron" 절의 크론 설치를 함께 한다 — 켠 뒤 크론이 없으면 월 확정이 돌지 않는다(2026-10-24 확인 기준 VM 에는 설치돼 있지 않다) |
 | `CREATOR_PAYOUT_RATE_BPS` / `CREATOR_PAYOUT_RETRO_DAYS` | 설정 안 함(기본 `500` / `90`) | 정산 비율(bps, 500 = 공급가의 5%, 1~10000) / 첫 승인 때 거슬러 확정하는 소급 일수(1 이상). 범위 밖이면 api 가 뜨지 않는다. 비율은 확정할 때마다 확정 행에 남아, 바꿔도 이미 확정한 금액은 그대로다 |
 | `CREATOR_PAYOUT_MINIMUM_KRW` | 설정 안 함(기본 `10000`) | 지급을 신청할 수 있는 최소 확정 잔액(원, 1 이상). 탈퇴하려는 회원은 이보다 적어도 탈퇴 화면에서 신청할 수 있다. 범위 밖이면 api 가 뜨지 않는다 |
@@ -2351,8 +2350,7 @@ sudo bash ops/swap-api.sh
 `restart` 는 env 를 다시 읽지 않으므로 교체 스크립트를 태그 없이 부른다("env 반영 재기동" 절). 위 확인 명령의 마지막 값이
 `True` 인지 보고, 줄을 넣었으니 키 개수 문장을 다시 센다. 로그인 회원이 web 을 새로고침하면(세션 정보를 다시 받는다) 채팅
 화면의 모델 선택 입구(헤더 칩 또는 더보기 「AI 모델」)가 보인다. 고른 모델은 방마다 저장되고 다음 턴부터 그 모델·그 가격으로 돈다. 상위 모델 턴은 레이트리밋
-면제 계정도 값을 내고(턴 단가는 `api/core/clover.py` 의 가격 등록부 `CLOVER_MODEL_PRICES` Opus 행에서 확인한다), 하루 무료분은 Gemini 턴에만
-쓰인다(출석판 스위치가 꺼져 있을 때). 소설 장의 상위 모델도 열 때는 `NOVELIZE_PREMIUM_*` 두 줄(스위치·명단)을 같은 방식으로 더한다.
+면제 계정도 값을 낸다(턴 단가는 `api/core/clover.py` 의 가격 등록부 `CLOVER_MODEL_PRICES` Opus 행에서 확인한다). 소설 장의 상위 모델도 열 때는 `NOVELIZE_PREMIUM_*` 두 줄(스위치·명단)을 같은 방식으로 더한다.
 
 **모델마다 보이기·숨기기.** 채팅 스위치가 켜져 있어도 채팅에서 고를 수 있게 보이는 상위 모델은 `CHAT_MODELS_VISIBLE` 의
 모델뿐이다. 줄이 없으면 코드 기본값 `opus` 라 Opus 만 보이고 Sonnet 은 숨는다. Sonnet 을 열 때는 그 줄을 `opus,sonnet` 으로
@@ -2407,11 +2405,10 @@ sudo bash ops/swap-api.sh
 ```
 
 끄거나 소설 허용을 거둬도 **상위 모델을 고른 방은 막히지 않는다.** 방에 저장된 모델(`chat_rooms.chat_model`)은 그대로 남고,
-그 방의 다음 턴은 Gemini 로 Gemini 가격(출석판 스위치가 꺼져 있을 때는 하루 무료분 포함)에 돈다. 방 응답과 모델 목록은 실제로 쓰일 모델(Gemini)을 보인다.
+그 방의 다음 턴은 Gemini 로 Gemini 가격에 돈다. 방 응답과 모델 목록은 실제로 쓰일 모델(Gemini)을 보인다.
 다시 켜면 저장된 모델로 돌아간다. 진행 중이던 턴과 소설 장 작업은 이미 값을 낸 모델로 끝난다(스위치를 껐다고 Gemini 로
 바꾸지 않는다 — 상위 모델 값을 내고 Gemini 글을 받게 된다). 끄는 동안 Redis 일부 장애가 나면 Gemini 턴은
-출석판 스위치가 꺼져 있을 때 지금처럼 통과하고, 켜져 있을 때 면제 계정만 통과하고 나머지는 클로버로 낸다. 본인인증
-게이트에 걸린 회원은 장애 중에도 클로버로 낸다(상위 모델 턴만 503 `CHAT_MODEL_UNAVAILABLE` 로 거절된다 — 켜져 있을 때의 동작이다).
+분당 상한 없이 진행해 면제 계정만 내지 않고 나머지는 평소처럼 클로버로 낸다(상위 모델 턴만 503 `CHAT_MODEL_UNAVAILABLE` 로 거절된다 — 켜져 있을 때의 동작이다).
 
 **키 교체·회수.** 새 키를 만든 뒤 `.env` 의 `ANTHROPIC_DIRECT_API_KEY` 줄을 `sudo sed -i` 로 바꾸고 형식 검사 →
 `sudo bash ops/swap-api.sh` → 위 확인 명령, 그다음 Anthropic 콘솔에서 옛 키를 비활성화한다. 키가 새어 나갔으면 먼저 콘솔에서
@@ -3698,12 +3695,12 @@ base64로 싣는다(리사이즈 없음). 싣기 전에 서버가 형식(PNG·JP
 클로버로 차감하고 잔액 부족이면 `CLOVER_REQUIRED`, 그날 차감 동의 전이면 `CLOVER_CONFIRM_REQUIRED`)이고, 거절은
 모두 `{"detail": {"code", "retryAfterSeconds", "window"}}` 한 모양이라 `code`로만 갈린다. 예외 계정
 (`users.rate_limit_exempt`)은 **토큰 버킷만** 면제되고 큐 두 개는 그대로 받는다. 같은 모듈이 채팅 4경로에도
-429를 낸다(분당 10은 `USER_LIMIT`·`window` `minute`, 하루 무료 15턴(`CHAT_DAILY_LIMIT`) 초과분은 클로버 차감으로 넘어가 부족·미동의면
-`CLOVER_REQUIRED`/`CLOVER_CONFIRM_REQUIRED`·`window` `clover`, 출석판 스위치가 켜져 있으면 무료분 없이 처음부터 차감이라 확인 없이 부족이면 `CLOVER_REQUIRED`) — 서버 로그의 `user_limit_exceeded`는
+429를 낸다(분당 10은 `USER_LIMIT`·`window` `minute`, 하루 무료분 없이 처음부터 클로버 차감이라
+확인 없이 부족이면 `CLOVER_REQUIRED`·`window` `clover`) — 서버 로그의 `user_limit_exceeded`는
 이미지·채팅 공용이라 `code`/`window`로 가른다. auth 발송 상한의 429(`core/rate_limit.py`, 가입·재발송·
 비밀번호 재설정)도 같은 모양이다(`window` `auth`, `auth/router.py`의 `_auth_too_many_requests`). 429 가 아닌 것이 하나 있다 — 클로버로 낼 채팅 턴·이미지 요청이
 실어 보낸 가격표 버전(`priceVersion`)이 서버 가격표(`core/clover.py` 의 `PRICE_VERSION`)와 다르면 깎기 전에 409
-`CLOVER_PRICE_CHANGED`(+ 그 요청의 지금 금액 `currentCost`)다. 버전을 싣지 않은 요청과 무료·토큰으로 지나는 요청은 대조하지 않는다. 생성 전에는 `GET /capabilities`를 TTL 캐시
+`CLOVER_PRICE_CHANGED`(+ 그 요청의 지금 금액 `currentCost`)다. 버전을 싣지 않은 요청과 면제·토큰으로 지나는 요청은 대조하지 않는다. 생성 전에는 `GET /capabilities`를 TTL 캐시
 (`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`, 기본 30초)로 프로브해 집 PC가 꺼져 있으면 **생성 시도 전에**
 503으로 차단한다.
 

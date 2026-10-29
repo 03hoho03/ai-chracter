@@ -3,7 +3,7 @@
 턴은 LLM 을 기다리는 동안 DB 트랜잭션을 쥐지 않는다. 그래서 같은 방에 두 턴이 겹치면(두 탭, 떠났다 돌아온 탭) 서로의
 스탯 변화를 못 본 채 판정하고, 초기화된 방에 앞 턴의 응답이 붙는다. 이를 Redis 의 방 단위 락으로 막는다.
 
-🔴 거절 단언의 셋업: 잔액 100 + 오늘치 클로버 동의 + `CHAT_DAILY_LIMIT` 0. 이 조합에서 차감 게이트가 한 번이라도
+🔴 거절 단언의 셋업: 잔액 100 + 오늘치 클로버 동의. 기본 모델 턴에도 하루 무료분이 없어 이 셋업에서 차감 게이트가 한 번이라도
 돌면 클로버가 깎이므로 "잔액·원장 그대로"는 락이 게이트보다 앞이라는 뜻이다. 같은 셋업에서 락이 비어 있으면 깎인다는
 짝 테스트(`test_the_same_setup_without_a_held_lock_spends_clover`)가 그 단언을 셋업 탓이 아니게 만든다.
 """
@@ -115,7 +115,6 @@ async def test_route_is_refused_while_another_turn_holds_the_room(
 ) -> None:
     user, room = await _clover_room(db_client, db_session)
     await redis_client.set(_lock_key(room.room_id), "다른 턴", px=60_000)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     _override_llm_client(_NeverCalledLLMClient())
     try:
@@ -140,7 +139,6 @@ async def test_the_same_setup_without_a_held_lock_spends_clover(
 ) -> None:
     """위 테스트의 짝 — 셋업이 같고 락만 비어 있으면 게이트가 돌아 클로버가 깎인다."""
     user, room = await _clover_room(db_client, db_session)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     _override_llm_client(_FakeLLMClient(tokens=["응답"]))
     try:

@@ -483,11 +483,16 @@ _BAKERY = Scene("밀알당에 간 날", "태민이랑 밀알당에서 소금빵�
 
 
 async def _story_room(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, scenes: list[Scene], *, turns: int = 8
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    scenes: list[Scene],
+    *,
+    turns: int = 8,
+    paid_turns: int = 0,
 ) -> Room:
     """`turns` 턴짜리 스토리 방에 스냅샷 셋(턴 2·4·6 응답까지 접힘)과 장면을 심는다. 장면은 끝 턴을 덮는 가장 이른 스냅샷에
     붙인다(턴 1~2 → 첫째, 3~4 → 둘째, 5~6 → 셋째)."""
-    room = await _open_room(db_client, db_session, turns=turns, lane="story")
+    room = await _open_room(db_client, db_session, turns=turns, lane="story", paid_turns=paid_turns)
     snapshots: dict[int, uuid.UUID] = {}
     for turn in (2, 4, 6):
         assistant = room.turns[turn][1]
@@ -819,7 +824,7 @@ async def test_recall_read_failure_is_absorbed_and_the_turn_finishes(
 ) -> None:
     """장면 읽기가 DB 오류(실제로 실패한 문장)로 끝나면 회상 없이 턴을 마치고 경고·승격을 남긴다. 요청 세션은 다음 문장을
     계속 쓸 수 있어야 한다(턴 기록까지 커밋된다)."""
-    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY], paid_turns=1)
     _recall_on(monkeypatch)
     monkeypatch.setattr(memory_recall, "_candidate_statement", lambda room_id, cursor: sa.text("SELECT 1/0"))
     captured: list[str] = []
@@ -845,7 +850,7 @@ async def test_recall_scoring_failure_is_absorbed_and_the_turn_finishes(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """DB 가 아닌 곳(토큰화·점수)에서 난 예외도 SSE 로 새지 않는다 — 회상 없이 턴을 마치고, 스택이 실린 경고와 승격을 남긴다."""
-    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY], paid_turns=1)
     _recall_on(monkeypatch)
 
     def broken(*_args: object, **_kwargs: object) -> list[memory_recall.ScoredEpisode]:
@@ -930,7 +935,7 @@ async def test_send_regenerate_and_edit_record_their_own_recall(
     """세 경로 모두 그 턴에 다시 검색해 실은 장면을 자기 기록 행에 남긴다 — 재생성은 앞 기록을 물려받지 않고, 수정은 고친
     글로 찾는다."""
     tower = Scene("등대 밤", "등대 불빛 아래에서 약속했다.", ["등대"], turn=1)
-    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, tower])
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, tower], paid_turns=3)
     _recall_on(monkeypatch)
     ids = {
         title: await db_session.scalar(sa.select(ChatMemoryEpisode.id).where(ChatMemoryEpisode.title == title))
@@ -967,7 +972,7 @@ async def test_replay_rebuilds_recall_lines_from_turn_record(
 ) -> None:
     """리플레이는 지금 장면으로 다시 찾지 않고 그 턴 기록의 id 로 줄을 다시 렌더한다 — 턴 뒤에 더 맞는 장면이 생겨도 그 턴의
     프롬프트를 바이트까지 다시 만든다. 기록한 장면이 사라졌으면 그 턴은 다시 만들 수 없다고 거부한다."""
-    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY], paid_turns=1)
     _recall_on(monkeypatch)
     before = await _history(db_session, room.room_id)
     fake = _PromptCapture()
@@ -1012,7 +1017,7 @@ async def test_replay_rebuilds_recall_lines_from_turn_record(
 async def test_replay_of_a_turn_without_recall_gets_no_lines(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _story_room(db_client, db_session, _FILLER_SCENES)
+    room = await _story_room(db_client, db_session, _FILLER_SCENES, paid_turns=1)
     await _send(db_client, room, "POST", f"/chat-rooms/{room.room_id}/messages", {"content": "안녕"}, _PromptCapture())
     record = (await _records(db_session, room.room_id))["send"]
     assert await turn_recall_lines(db_session, record.assistant_message_id) == ""
@@ -1310,7 +1315,7 @@ async def test_send_records_the_query_embedding_and_holds_no_transaction_while_w
 ) -> None:
     """보내기 턴은 질의 임베딩을 기다리는 동안 요청 세션의 트랜잭션을 쥐지 않는다(생성 LLM 을 기다릴 때와 같은 규칙). 턴 기록의
     호출 목록 맨 앞에 그 호출이 남고, 회상 기록에 벡터로 실은 장면이 남는다."""
-    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN], paid_turns=1)
     garden_id = await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
     _hybrid_on(monkeypatch)
     open_at_call: list[int] = []
@@ -1347,7 +1352,7 @@ async def test_send_records_the_query_embedding_and_holds_no_transaction_while_w
 async def test_turn_record_has_no_query_embedding_call_when_the_switch_is_off(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN], paid_turns=1)
     await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
     _recall_on(monkeypatch)
     stub = VoyageStub()
@@ -1364,7 +1369,7 @@ async def test_replay_rebuilds_hybrid_recall_without_calling_voyage(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """리플레이는 턴 기록의 장면 id 로 줄을 다시 렌더한다 — 벡터로 실은 장면도 같고, 질의 임베딩을 다시 부르지 않는다."""
-    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN], paid_turns=1)
     await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
     _hybrid_on(monkeypatch)
     before = await _history(db_session, room.room_id)

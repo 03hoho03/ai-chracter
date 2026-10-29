@@ -36,6 +36,7 @@ from factories import (
     _get_genre,
     _login_as,
     _make_asset,
+    _make_paying_user,
     _make_published_story,
     _make_user,
     _override_llm_client,
@@ -306,8 +307,7 @@ async def test_regenerate_opening_only_room_returns_400(
 async def test_regenerate_last_message_not_assistant_returns_400(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -346,8 +346,7 @@ async def test_regenerate_last_message_not_assistant_returns_400(
 async def test_regenerate_replaces_last_assistant_message_without_new_turn(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id, intro="안녕!")
@@ -397,8 +396,7 @@ async def test_regenerate_story_room_selects_template_instruction(
 ) -> None:
     """`regenerate_message`(`build_room_prompt` 경유) 호출부도 새 턴(보내기·수정)과
     같은 `story_detail.prompt_template`을 골라야 한다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(
@@ -438,8 +436,7 @@ async def test_regenerate_story_room_logs_only_chat_generate_call_site(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """재생성은 판정을 다시 돌리지 않는다 — 로그에 생성 1회만, 그 방·유저로 찍혀야 한다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -473,8 +470,7 @@ async def test_regenerate_story_room_logs_only_chat_generate_call_site(
 async def test_regenerate_policy_violation_keeps_original_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -511,8 +507,7 @@ async def test_regenerate_policy_violation_refetch_restores_image(
     검증해 중복이라 신호가 없다. 여기서는 좁혀서 "재조회가 이미지까지 온전히 돌려주는가"만
     본다 — `_to_response`의 presign 루프(:525-534)가 깨지거나 재생성 실패가 image_id를
     날리면 이 단언만 깨진다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -566,8 +561,7 @@ async def test_regenerate_llm_error_keeps_original_message(
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -600,8 +594,7 @@ async def test_regenerate_reruns_image_matching_and_stores_new_image_id(
     """`regenerate_message` docstring의 "이미지 매칭도
     재실행하지 않는다" 문장이 깨진다: 재생성은 새 응답 텍스트에 맞춰 이미지 매칭을 다시 돌아
     다른 이미지가 매칭될 수 있다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -684,8 +677,7 @@ async def test_regenerate_image_matching_failure_replaces_message_without_image(
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -762,8 +754,7 @@ async def test_regenerate_presigned_url_failure_still_completes_the_turn_without
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
 
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -895,8 +886,7 @@ async def test_edit_message_on_assistant_message_returns_400(
 async def test_edit_message_truncates_and_regenerates_from_edit_point(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=3)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id, intro="안녕!")
@@ -951,8 +941,7 @@ async def test_edit_message_reruns_image_matching_with_new_value(
 ) -> None:
     """`edit_message`는 코드 변경 없이(보내기와 같은 턴 골격
     `run_turn` 을 그대로 재사용해) 편집된 사용자 메시지에 맞춰 이미지 매칭을 다시 돈다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id, intro="안녕!")
@@ -1017,8 +1006,7 @@ async def test_edit_message_reruns_image_matching_with_new_value(
 async def test_edit_message_on_story_room_reruns_stat_judgment_and_keeps_turn_count_consistent(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1123,8 +1111,7 @@ async def test_delete_message_unknown_message_returns_404(
 async def test_delete_message_removes_user_and_assistant_messages(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id, intro="안녕!")
@@ -1162,10 +1149,9 @@ async def _discarded_rows(db_session: AsyncSession, user_id: uuid.UUID) -> list[
 
 
 async def _logged_in_character_room(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, *, paid_turns: int = 0
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=paid_turns)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1179,7 +1165,7 @@ async def _logged_in_character_room(
 async def test_regenerate_success_records_one_discarded_response(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    user_id, room_id = await _logged_in_character_room(db_client, db_session, paid_turns=2)
     await _send_message(db_client, room_id, "반가워", ["원래응답"])
 
     _override_llm_client(_FakeLLMClient(tokens=["새응답"]))
@@ -1199,7 +1185,7 @@ async def test_regenerate_success_records_one_discarded_response(
 async def test_regenerate_failure_keeps_old_response_and_records_nothing(
     db_client: httpx.AsyncClient, db_session: AsyncSession, error: Exception
 ) -> None:
-    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    user_id, room_id = await _logged_in_character_room(db_client, db_session, paid_turns=2)
     await _send_message(db_client, room_id, "반가워", ["원래응답"])
 
     _override_llm_client(_FakeLLMClient(error=error))
@@ -1215,7 +1201,7 @@ async def test_regenerate_failure_keeps_old_response_and_records_nothing(
 async def test_edit_records_count_of_assistant_responses_it_removed(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    user_id, room_id = await _logged_in_character_room(db_client, db_session, paid_turns=3)
     await _send_message(db_client, room_id, "안녕", ["봇1"])
     await _send_message(db_client, room_id, "안녕2", ["봇2"])
     first_user_message_id = next(m.id for m in await _room_messages(db_session, room_id) if m.content == "안녕")
@@ -1241,7 +1227,7 @@ async def test_edit_with_failed_generation_still_records_removed_responses(
 
     테스트는 요청과 세션을 공유해 커밋 안 된 행도 조회에 보인다. 실패 경로에는 그 뒤 커밋이 없어
     운영에서는 삭제 커밋보다 늦게 넣은 행이 버려지므로, 마지막 커밋 시점에 행이 있었는지를 따로 본다."""
-    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    user_id, room_id = await _logged_in_character_room(db_client, db_session, paid_turns=2)
     await _send_message(db_client, room_id, "안녕", ["봇1"])
     user_message_id = next(m.id for m in await _room_messages(db_session, room_id) if m.content == "안녕")
 
@@ -1272,7 +1258,7 @@ async def test_edit_with_failed_generation_still_records_removed_responses(
 async def test_edit_that_removes_only_user_messages_records_nothing(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    user_id, room_id = await _logged_in_character_room(db_client, db_session, paid_turns=3)
     await _send_message(db_client, room_id, "안녕", ["봇1"])
     await _send_message(db_client, room_id, "안녕2", ["봇2"])
     messages = await _room_messages(db_session, room_id)
@@ -1295,7 +1281,7 @@ async def test_edit_that_removes_only_user_messages_records_nothing(
 async def test_message_delete_and_room_reset_record_nothing(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    user_id, room_id = await _logged_in_character_room(db_client, db_session, paid_turns=2)
     await _send_message(db_client, room_id, "안녕", ["봇1"])
     await _send_message(db_client, room_id, "안녕2", ["봇2"])
     bot_message_id = next(m.id for m in await _room_messages(db_session, room_id) if m.content == "봇2")
@@ -1309,7 +1295,7 @@ async def test_message_delete_and_room_reset_record_nothing(
 async def test_discarded_response_survives_room_deletion_with_room_reference_cleared(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    user_id, room_id = await _logged_in_character_room(db_client, db_session, paid_turns=2)
     await _send_message(db_client, room_id, "반가워", ["원래응답"])
     _override_llm_client(_FakeLLMClient(tokens=["새응답"]))
     try:

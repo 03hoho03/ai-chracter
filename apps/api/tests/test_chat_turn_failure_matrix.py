@@ -65,7 +65,7 @@ from api.chat.prompt_builder import (
     StatRuleJudgmentResult,
 )
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.core import s3 as s3_module
 from api.core.redis import redis_client
 from api.db.models import (
@@ -227,7 +227,7 @@ class _Target:
 
 
 async def _paid_user(db_session: AsyncSession) -> User:
-    """클로버로 낼 수밖에 없는 사용자 — 오늘 확인을 마친 잔액 100. 상한은 셋업 뒤에 0 으로 낮춘다(테스트 본문)."""
+    """클로버로 낼 수밖에 없는 사용자 — 오늘 확인을 마친 잔액 100. 기본 모델 턴에도 하루 무료분이 없어 상한을 낮출 필요가 없다."""
     user = await _make_user_with_clover_lot(
         db_session, clover_balance=_START_BALANCE, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
     )
@@ -832,8 +832,6 @@ async def test_failure_cell_matches_the_recorded_behavior(
     surface: str,
 ) -> None:
     target = await _SURFACES[surface](db_client, db_session)
-    # 셋업이 끝난 뒤 상한을 낮춘다 — 이 턴은 클로버로 낸다.
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     _refunds_outlive_the_request_session(monkeypatch, db_session)
     sentry: list[list[str | None]] = []
     ctx = _Ctx(db_client, db_session, monkeypatch, target, _Script(), asyncio.Event(), sentry)
@@ -905,7 +903,6 @@ async def test_judgment_prepare_failure_warns_with_the_route_logger(
     subject: str,
 ) -> None:
     target = await _SURFACES[surface](db_client, db_session)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     _refunds_outlive_the_request_session(monkeypatch, db_session)
     ctx = _Ctx(db_client, db_session, monkeypatch, target, _Script(), asyncio.Event(), [])
     await _CELLS[cell][1](ctx)
@@ -937,7 +934,7 @@ async def test_judgment_prepare_failure_warns_with_the_route_logger(
 
 async def _fold_target(db_client: httpx.AsyncClient, db_session: AsyncSession, case: str) -> _Target:
     action, lane = case.split("-")
-    room = await _open_room(db_client, db_session, turns=30, lane=lane)
+    room = await _open_room(db_client, db_session, turns=30, lane=lane, paid_turns=1)
     if lane == "story":
         # 보내기 31턴째·수정 30턴째에 각각 하나씩 엔딩 판정 차례가 오게 한다. 재생성은 엔딩을 다시 판정하지 않으므로
         # 이 문턱은 재생성 턴에 쓰이지 않는다.

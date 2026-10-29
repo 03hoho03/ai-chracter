@@ -6,7 +6,7 @@
 - 되돌리기(`POST …/messages/{지금 응답 id}/restore-previous`)는 보관한 응답을 원래 id·시각으로 다시 넣고 지금 응답을 보관으로
   옮긴다(맞바꾸기). 같은 요청이 두 번 오면 두 번째는 409 다. 보관 행이 지금 응답을 가리키고 그 응답이 방의 마지막 메시지일
   때만 되돌리고, 아니면 409 `PREVIOUS_RESPONSE_UNAVAILABLE` 이며 마지막 메시지를 가리키지 않는 낡은 보관 행은 그때 지운다.
-- 되돌리기는 차감·무료분·분당 상한·LLM 을 지나지 않고 턴 기록을 쓰지 않는다. 진행 중 턴이 있으면 409, 이용제한 작품의 방에서도
+- 되돌리기는 차감·분당 상한·LLM 을 지나지 않고 턴 기록을 쓰지 않는다. 진행 중 턴이 있으면 409, 이용제한 작품의 방에서도
   된다. 폐기 기록에는 `undo` 로 남는다.
 - 스탯은 지금 응답의 턴 효과를 되돌린 값 위에 되살린 응답의 턴 효과를 다시 얹는다. 지금 응답과 되살릴 응답의 턴 기록이 둘 다
   있고, 둘 다 엔딩이 없고, 방이 엔딩 전이고, 그 턴이 방의 마지막 턴일 때만이다. 지금 정의에 없는 스탯은 쓰지 않는다. 재판정
@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.withdrawal import erase_account
 from api.chat.prompt_builder import EndingJudgmentResult, ImageMatchJudgmentResult, StatRuleJudgmentResult
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.core.redis import redis_client
 from api.db.models import (
     ChatMessage,
@@ -405,14 +405,13 @@ async def test_restoring_someone_elses_room_is_forbidden(
 async def test_restoring_spends_nothing_and_writes_no_turn_record(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """클로버를 낼 수밖에 없는 사용자(무료분 0, 잔액 100, 오늘치 동의)로 보내기·재생성은 깎이고, 되돌리기는 잔액·원장·상한
+    """클로버를 낼 수밖에 없는 사용자(잔액 100, 오늘치 동의)로 보내기·재생성은 깎이고, 되돌리기는 잔액·원장·상한
     카운터·턴 기록이 그대로다. 폐기 기록에는 `undo` 하나가 더해진다."""
     user = await _make_user_with_clover_lot(
         db_session, clover_balance=100, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
     )
     user_id = user.id
     room = await _open_room(db_client, db_session, turns=0, user=user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     await _send(db_client, room, _LLM("첫 응답"))
     await _regenerate(db_client, room, _LLM("새 응답"))
     current = (await _messages(db_session, room))[-1]

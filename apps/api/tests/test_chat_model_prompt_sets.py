@@ -27,6 +27,7 @@ from api.llm.client import LLMCallContext, LLMClient
 from factories import (
     _clear_llm_override,
     _enable_chat_premium,
+    _make_paying_user,
     _make_user_with_clover_lot,
     _open_room,
     _override_llm_client,
@@ -236,7 +237,7 @@ async def test_memory_fold_gets_the_writing_model_of_the_turn_beside_the_summary
 async def test_memory_fold_gets_gemini_as_the_writing_model_in_a_gemini_room(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room_id = await _gemini_story_room(db_client, db_session)
+    room_id = await _gemini_story_room(db_client, db_session, paid_turns=1)
     writing_models: list[str] = []
 
     async def _recording_fold(*_args: Any, **kwargs: Any) -> None:
@@ -272,7 +273,7 @@ async def test_gemini_room_does_not_read_any_model_set(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Gemini 방은 받은 Gemini 세트를 그대로 쓴다 — 모델별 세트 조회가 없다(세트 조회는 판정용 Gemini 세트 한 번뿐)."""
-    user = await _make_user_with_clover_lot(db_session, clover_balance=0)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.commit()
     room = await _open_room(db_client, db_session, turns=1, lane="story", user=user)
     looked_up: list[str] = []
@@ -316,8 +317,10 @@ async def _mark_haiku_set(db_session: AsyncSession) -> None:
     await db_session.commit()
 
 
-async def _gemini_story_room(db_client: httpx.AsyncClient, db_session: AsyncSession) -> uuid.UUID:
-    user = await _make_user_with_clover_lot(db_session, clover_balance=0)
+async def _gemini_story_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, *, paid_turns: int = 0
+) -> uuid.UUID:
+    user = await _make_paying_user(db_session, turns=paid_turns)
     await db_session.commit()
     return (await _open_room(db_client, db_session, turns=1, lane="story", user=user)).room_id
 
@@ -329,7 +332,7 @@ async def test_a_stat_judgment_model_reads_the_set_of_that_model(
     """스탯 판정 모델을 바꾸면 스탯 판정이 그 모델의 세트로 렌더된다 — 다른 모델용 문안으로 판정하지 않는다. 생성은 방의
     모델 세트 그대로다."""
     monkeypatch.setattr(settings, "stat_judgment_model", "haiku")
-    room_id = await _gemini_story_room(db_client, db_session)
+    room_id = await _gemini_story_room(db_client, db_session, paid_turns=1)
     await _mark_haiku_set(db_session)
     fake = _RecordingLLM()
 
@@ -351,7 +354,7 @@ async def test_memory_fold_gets_the_set_of_the_summary_model(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "memory_summary_model", "haiku")
-    room_id = await _gemini_story_room(db_client, db_session)
+    room_id = await _gemini_story_room(db_client, db_session, paid_turns=1)
     folded_with: list[str] = []
 
     async def _recording_fold(*_args: Any, **kwargs: Any) -> None:
@@ -371,7 +374,7 @@ async def test_gemini_judgment_models_add_no_set_lookup(
     """판정·요약 모델이 모두 기본(Gemini)이면 받은 Gemini 세트를 그대로 넘긴다 — 캐시·DB 조회가 하나도 늘지 않는다."""
     for name in ("stat_judgment_model", "ending_judgment_model", "image_judgment_model", "memory_summary_model"):
         monkeypatch.setattr(settings, name, "gemini")
-    room_id = await _gemini_story_room(db_client, db_session)
+    room_id = await _gemini_story_room(db_client, db_session, paid_turns=1)
     looked_up: list[str] = []
 
     async def _cached(lane: Any, *, model: str) -> Any:

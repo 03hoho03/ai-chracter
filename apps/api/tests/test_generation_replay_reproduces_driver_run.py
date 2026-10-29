@@ -181,7 +181,10 @@ def _private(path: Path, text: str) -> None:
 async def _story(db_session: AsyncSession) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID]:
     """스탯 하나(문턱 조건 상황 노트), 상시·키워드 노트, 단축어, 기본 대화 프로필을 갖춘 스토리 작품. (사용자 id, 작품
     id, 스탯 entity_id, 시작 설정 행 id)를 돌려준다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="{{user}}, 문이 열린다.")
+    # 대본 한 줄이 게이트를 지나는 턴 하나다(`driven.generations == len(SCRIPT)`).
+    user_id, content, setup = await _story_with_setup(
+        db_session, opening_message="{{user}}, 문이 열린다.", paid_turns=len(SCRIPT)
+    )
     trust, trust_row = uuid.uuid4(), uuid.uuid4()
     db_session.add(
         StatDef(

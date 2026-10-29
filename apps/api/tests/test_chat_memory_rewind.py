@@ -88,8 +88,8 @@ from factories import (
     _make_memory_extraction,
     _make_memory_fact,
     _make_memory_fact_extraction,
+    _make_paying_user,
     _make_published_character,
-    _make_user,
     _memory_version,
     _open_room,
     _override_llm_client,
@@ -182,8 +182,10 @@ async def _assert_cursors_exist(db_session: AsyncSession, room: Room) -> None:
         assert row.cursor_message_id in message_ids
 
 
-async def _room_with_two_snapshots(db_client: httpx.AsyncClient, db_session: AsyncSession, turns: int) -> Room:
-    room = await _open_room(db_client, db_session, turns=turns)
+async def _room_with_two_snapshots(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, turns: int, *, paid_turns: int = 0
+) -> Room:
+    room = await _open_room(db_client, db_session, turns=turns, paid_turns=paid_turns)
     await _plant_snapshot(db_session, room, turn=10, text="[S10]")
     await _plant_snapshot(db_session, room, turn=20, text="[S20]")
     return room
@@ -196,7 +198,7 @@ async def _room_with_two_snapshots(db_client: httpx.AsyncClient, db_session: Asy
 async def test_rewinding_inside_the_summarized_part_returns_to_the_previous_snapshot(
     db_client: httpx.AsyncClient, db_session: AsyncSession, action: str
 ) -> None:
-    room = await _room_with_two_snapshots(db_client, db_session, turns=24)
+    room = await _room_with_two_snapshots(db_client, db_session, turns=24, paid_turns=1 if action == "edit" else 0)
 
     await _rewind_via(action, db_client, room, room.turns[15][0])
 
@@ -210,7 +212,7 @@ async def test_rewinding_inside_the_summarized_part_returns_to_the_previous_snap
 async def test_rewinding_after_the_cursor_keeps_the_snapshots_but_bumps_the_version(
     db_client: httpx.AsyncClient, db_session: AsyncSession, action: str
 ) -> None:
-    room = await _room_with_two_snapshots(db_client, db_session, turns=24)
+    room = await _room_with_two_snapshots(db_client, db_session, turns=24, paid_turns=1 if action == "edit" else 0)
 
     await _rewind_via(action, db_client, room, room.turns[22][0])
 
@@ -289,7 +291,7 @@ async def test_edit_inside_the_summarized_part_builds_the_prompt_from_the_restor
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """롤백이 윈도우 계산보다 먼저다 — 그래야 편집 지점 앞 메시지가 복귀한 커서 기준으로 실린다."""
-    room = await _room_with_two_snapshots(db_client, db_session, turns=24)
+    room = await _room_with_two_snapshots(db_client, db_session, turns=24, paid_turns=1)
     fake = RecordingLLMClient()
 
     await _edit(db_client, room, room.turns[15][0], fake)
@@ -309,7 +311,7 @@ async def test_regenerating_the_cursor_message_drops_its_snapshot_and_sends_the_
 ) -> None:
     """커서 뒤를 전부 지운 방에서는 마지막 응답이 곧 커서 메시지다. 재생성이 그 응답을 바꾸므로 그
     스냅샷은 지워지고, 요약이 덮던 대화는 원문으로 돌아온다."""
-    room = await _open_room(db_client, db_session, turns=20)
+    room = await _open_room(db_client, db_session, turns=20, paid_turns=1)
     await _plant_snapshot(db_session, room, turn=20, text="[S20]")
     fake = RecordingLLMClient()
 
@@ -326,7 +328,7 @@ async def test_regenerating_the_cursor_message_drops_its_snapshot_and_sends_the_
 async def test_ordinary_regenerate_keeps_the_snapshot_but_bumps_the_version(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _open_room(db_client, db_session, turns=20)
+    room = await _open_room(db_client, db_session, turns=20, paid_turns=1)
     await _plant_snapshot(db_session, room, turn=10, text="[S10]")
 
     await _regenerate(db_client, room, RecordingLLMClient())
@@ -635,14 +637,13 @@ async def committed_engine(db_engine: AsyncEngine) -> AsyncGenerator[AsyncEngine
     await committed.dispose()
 
 
-async def _seed_committed_room(engine: AsyncEngine, *, turns: int) -> Room:
-    """발행 캐릭터 방 하나에 오프닝 + `turns`턴을 `created_at`을 명시해 넣고 커밋한다."""
+async def _seed_committed_room(engine: AsyncEngine, *, turns: int, paid_turns: int = 0) -> Room:
+    """발행 캐릭터 방 하나에 오프닝 + `turns`턴을 `created_at`을 명시해 넣고 커밋한다. `paid_turns` 는 방 주인에게 줄 기본
+    모델 턴 수다."""
     factory = async_sessionmaker(engine, expire_on_commit=False)
     base = datetime.now(UTC) - timedelta(days=1)
     async with factory() as session:
-        user = _make_user(email=f"owner-{uuid.uuid4()}@{_MARKER_DOMAIN}")
-        session.add(user)
-        await session.flush()
+        user = await _make_paying_user(session, turns=paid_turns, email=f"owner-{uuid.uuid4()}@{_MARKER_DOMAIN}")
         genre = await _get_genre(session)
         content = await _make_published_character(session, creator_user_id=user.id, genre_id=genre.id)
         assert content.current_published_version_id is not None
@@ -717,7 +718,7 @@ async def test_regenerate_commits_its_rewind_before_streaming(
     """롤백은 생성보다 먼저 커밋된다 — 생성이 실패해도 롤백은 남고, 생성을 기다리는 동안 방 행 락을
     쥐고 있지 않는다(락을 쥐면 그동안 같은 방의 접기·편집이 전부 멈춘다)."""
     factory = async_sessionmaker(committed_engine, expire_on_commit=False)
-    room = await _seed_committed_room(committed_engine, turns=20)
+    room = await _seed_committed_room(committed_engine, turns=20, paid_turns=1)
     last = room.turns[20][1]
     async with factory() as session:
         session.add(

@@ -3,8 +3,8 @@
 막는 자리는 모델을 부르거나 새 방을 만드는 다섯 경로(전송·재생성·편집·새 방·시작설정 변경)이고, 지난 대화를 읽고
 지우고 초기화하는 것은 그대로 된다. 작가 본인의 실제 방도 막힌다.
 
-🔴 차감 단언의 셋업: 잔액 100 + 오늘치 클로버 동의 + `CHAT_DAILY_LIMIT` 0 이다. 이 조합에서 게이트가 한 번이라도
-돌면 클로버가 깎이므로(`test_clover_gate.py` 의 `test_daily_exhausted_with_balance_spends_clover_and_passes`),
+🔴 차감 단언의 셋업: 잔액 100 + 오늘치 클로버 동의다. 기본 모델 턴에도 하루 무료분이 없어 이 셋업에서 게이트가 한 번이라도
+돌면 클로버가 깎이므로(`test_clover_gate.py` 의 `test_gemini_turn_with_balance_spends_clover_and_passes`),
 "잔액·원장 그대로"는 검사가 게이트보다 앞이라는 뜻이다. 같은 셋업에서 정상 작품은 깎인다는 짝 테스트가 아래에 있다 —
 그 짝이 없으면 "안 깎였다"가 셋업 탓일 수 있다.
 """
@@ -18,7 +18,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.db.models import ChatMessage, ChatRoom, Content, StartingSetup, User
 from api.db.models.chat import ChatMessageRole
 from api.db.models.clover import CloverLedger
@@ -123,7 +123,6 @@ async def test_stream_route_on_unavailable_content_is_refused_before_any_charge(
     other = await _make_user_with_clover_lot(db_session, clover_balance=0)
     content, room_id, message_id = await _character_room_with_turn(db_client, db_session, other.id)
     await _set_status(db_session, content, moderation_status)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     _override_llm_client(_NeverCalledLLMClient())
     try:
@@ -146,7 +145,6 @@ async def test_send_on_normal_content_with_the_same_setup_spends_clover(
     user = await _player(db_client, db_session)
     other = await _make_user_with_clover_lot(db_session, clover_balance=0)
     _, room_id, message_id = await _character_room_with_turn(db_client, db_session, other.id)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     _override_llm_client(_FakeLLMClient(tokens=["응"]))
     try:

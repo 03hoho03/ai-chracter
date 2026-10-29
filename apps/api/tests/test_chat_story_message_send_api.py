@@ -36,6 +36,7 @@ from factories import (
     _get_genre,
     _login_as,
     _make_asset,
+    _make_paying_user,
     _make_user,
     _override_llm_client,
     _parse_sse_events,
@@ -178,9 +179,7 @@ class _FakeLLMClient(LLMClient):
 async def test_send_message_story_room_emits_stat_change_and_persists_it(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
@@ -223,9 +222,7 @@ async def test_send_message_story_room_emits_stat_change_and_persists_it(
 async def test_send_message_story_room_clamps_stat_value_to_range(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
@@ -254,9 +251,7 @@ async def test_send_message_story_room_clamps_stat_value_to_range(
 async def test_send_message_story_room_unchanged_stat_emits_no_stat_change_event(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
@@ -283,9 +278,7 @@ async def test_send_message_story_room_unchanged_stat_emits_no_stat_change_event
 async def test_send_message_story_room_ignores_unknown_rule_id(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
@@ -312,9 +305,7 @@ async def test_send_message_story_room_ignores_unknown_rule_id(
 async def test_send_message_story_room_builds_generation_prompt_from_story_setting(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(
         db_session, creator_user_id=user.id, genre_id=genre.id, setting_text="용과 기사단의 세계"
@@ -346,9 +337,7 @@ async def test_send_message_story_room_injects_room_persona_into_generation_prom
     """방이 고른 대화 프로필은 생성 프롬프트에만
     들어가고, 같은 턴의 스탯 판정 프롬프트에는 프로필 전체가 아니라 이름 한 줄만 간다(성별·설명은 없다). 방의
     `persona_id`는 방 생성 API를 거치지 않고 여기서 직접 넣는다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
@@ -384,9 +373,7 @@ async def test_send_message_story_room_selects_template_instruction(
 ) -> None:
     """새 턴(`build_room_prompt` 경유) 호출부는
     `story_detail.prompt_template`을 골라 시스템 지시문(L0.5)에 잇는다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(
         db_session, creator_user_id=user.id, genre_id=genre.id, prompt_template=StoryPromptTemplate.SIMULATION
@@ -414,9 +401,7 @@ async def test_send_message_story_room_selects_template_instruction(
 async def test_send_message_story_room_injects_matched_keyword_note_hidden_from_client(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
@@ -453,9 +438,7 @@ async def test_send_message_story_room_injects_matched_keyword_note_hidden_from_
 async def test_send_message_story_room_ignores_keyword_note_scoped_to_other_starting_setup(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
@@ -489,9 +472,7 @@ async def test_send_message_story_room_ignores_keyword_note_scoped_to_other_star
 async def test_send_message_story_room_with_valid_shortcut_id_injects_shortcut_prompt(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
@@ -590,9 +571,7 @@ async def test_send_message_story_room_with_shortcut_id_from_other_content_versi
 async def test_send_message_character_room_does_not_call_generate_structured(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = Content(
         creator_user_id=user.id,
@@ -656,9 +635,7 @@ async def test_send_message_story_room_ignores_situational_images(
 ) -> None:
     """스토리 챗은 상황별 이미지 매칭 판단 단계 자체가 호출되지 않는다 — 같은
     content_version_id에 SituationalImage(캐릭터 전용 개념)가 등록돼 있어도 무관하다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
@@ -703,9 +680,7 @@ async def test_get_story_room_messages_never_carry_image_id_or_url(
     한다 — 같은 content_version_id에 SituationalImage(캐릭터 전용)가 등록돼 있어도 스토리
     메시지의 image_id는 애초에 채워지지 않으므로(`RoomTurnStore.write`) `_to_response`도
     imageUrl을 서명해 내려보내면 안 된다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)

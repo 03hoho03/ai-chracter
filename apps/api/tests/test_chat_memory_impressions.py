@@ -275,7 +275,7 @@ async def test_impression_is_not_scheduled_when_switch_is_off(
     monkeypatch.setattr(settings, "memory_episodes_extract", True)
     monkeypatch.setattr(settings, "memory_facts_extract", True)
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = ImpressionLLMClient()
 
     assert (await _send(db_client, room, fake))[-1] == "done"
@@ -296,7 +296,7 @@ async def test_impression_is_scheduled_after_both_extractions_and_skips_a_room_o
     monkeypatch.setattr(settings, "memory_impressions_write", True)
     monkeypatch.setattr(settings, "memory_impression_every_n_folds", 1)
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = ImpressionLLMClient()
 
     assert (await _send(db_client, room, fake))[-1] == "done"

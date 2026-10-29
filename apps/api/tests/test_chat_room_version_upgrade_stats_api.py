@@ -37,8 +37,8 @@ from factories import (
     _get_genre,
     _login_as,
     _make_asset,
+    _make_paying_user,
     _make_published_story,
-    _make_user,
     _override_llm_client,
     _parse_sse_events,
 )
@@ -140,12 +140,12 @@ async def _upgraded_room(
     via: str,
     added_delta: int | None = None,
     rule_on_added: bool = False,
+    paid_turns: int = 0,
 ) -> tuple[_Upgraded, httpx.Response | None]:
     """v1(유지 스탯·빠질 스탯)으로 방을 만들고 유지 스탯을 30 으로 플레이해 둔 뒤, v2(유지 스탯·새 스탯)로 옮긴다.
-    `via` 는 "pin"(사용자의 최신 버전 고정) 또는 "auto"(제한 해제·이의 수용이 부르는 일괄 승격)."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    `via` 는 "pin"(사용자의 최신 버전 고정) 또는 "auto"(제한 해제·이의 수용이 부르는 일괄 승격). `paid_turns` 는 방 주인에게
+    줄 기본 모델 턴 수다."""
+    user = await _make_paying_user(db_session, turns=paid_turns)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     assert content.current_published_version_id is not None
@@ -256,7 +256,7 @@ async def test_turn_after_upgrade_updates_stat_added_in_new_version(
     judged: bool,
     expected: float,
 ) -> None:
-    upgraded, _ = await _upgraded_room(db_client, db_session, via=via, added_delta=added_delta)
+    upgraded, _ = await _upgraded_room(db_client, db_session, via=via, added_delta=added_delta, paid_turns=1)
     # 판정 스탯이면 새 스탯의 규칙(b1, +20)을 발동시킨다. 카운터면 판정할 것은 유지 스탯의 규칙뿐이고 발동시키지 않는다.
     fired = ["b1"] if judged else []
 
@@ -284,7 +284,7 @@ async def _drop_added_row(db_session: AsyncSession, upgraded: _Upgraded) -> None
 async def test_turn_creates_missing_row_for_counter_stat_of_room_upgraded_without_it(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    upgraded, _ = await _upgraded_room(db_client, db_session, via="pin", added_delta=-1)
+    upgraded, _ = await _upgraded_room(db_client, db_session, via="pin", added_delta=-1, paid_turns=1)
     await _drop_added_row(db_session, upgraded)
 
     events = await _send(db_client, upgraded.room_id, _QueueLLM([StatRuleJudgmentResult(fired_rule_ids=[])]))
@@ -297,7 +297,7 @@ async def test_ending_rule_reads_missing_stat_row_as_its_initial_value(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """행이 없는 새 스탯은 시작값(50)으로 본다 — 승격이 채웠을 값과 같다. 그래서 `>= 40` 규칙이 참이 되어 판정한다."""
-    upgraded, _ = await _upgraded_room(db_client, db_session, via="pin", rule_on_added=True)
+    upgraded, _ = await _upgraded_room(db_client, db_session, via="pin", rule_on_added=True, paid_turns=1)
     await _drop_added_row(db_session, upgraded)
     fake = _QueueLLM([StatRuleJudgmentResult(fired_rule_ids=[]), EndingJudgmentResult(triggered=True)])
 

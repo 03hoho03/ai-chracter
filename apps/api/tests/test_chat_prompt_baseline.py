@@ -62,9 +62,9 @@ from factories import (
     _get_genre,
     _login_as,
     _make_asset,
+    _make_paying_user,
     _make_published_character,
     _make_published_story,
-    _make_user,
     _override_llm_client,
     _parse_sse_events,
 )
@@ -219,14 +219,13 @@ async def seed_room(
     lane: str,
     turns: int,
     summary_cursor_turn: int | None,
+    paid_turns: int = 0,
 ) -> SeededRoom:
     """방을 API로 만들고(오프닝은 앱이 넣는다) 턴을 `created_at`을 명시해 심는다. 오프닝을 하루
     전으로 옮기고 그 뒤 1초 간격으로 심어, 요청이 새로 넣는 메시지(현재 시각)가 항상 가장 뒤에
     온다. `summary_cursor_turn`이 있으면 그 턴의 어시스턴트 메시지를 커서로 하는 요약 스냅샷을
-    심는다(요약 경로가 만든 것과 같은 모양)."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    심는다(요약 경로가 만든 것과 같은 모양). `paid_turns` 는 방 주인에게 줄 기본 모델 턴 수다."""
+    user = await _make_paying_user(db_session, turns=paid_turns)
     if lane == "character":
         content_id = await _make_character_content(db_session, user.id)
         body: dict[str, str] = {"contentId": str(content_id), "contentType": "character"}
@@ -338,7 +337,7 @@ async def run_case(db_client: httpx.AsyncClient, db_session: AsyncSession, case:
     lane, rest = case.split("-", 1)
     shape, action = rest.rsplit("-", 1)
     turns, cursor_turn = SHAPES[shape]
-    room = await seed_room(db_client, db_session, lane=lane, turns=turns, summary_cursor_turn=cursor_turn)
+    room = await seed_room(db_client, db_session, lane=lane, turns=turns, summary_cursor_turn=cursor_turn, paid_turns=1)
     return await run_action(db_client, room, action, turns)
 
 
@@ -418,7 +417,9 @@ _LAST_TURN_SHOWN = {"send": (36, 36), "regenerate": (36, 35), "edit": (35, 35)}
 async def test_summarized_room_drops_messages_up_to_the_cursor_and_keeps_every_later_one(
     db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str, action: str
 ) -> None:
-    room = await seed_room(db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+    room = await seed_room(
+        db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN, paid_turns=1
+    )
 
     prompt = _generation_prompt(await run_action(db_client, room, action, 36))
 
@@ -436,7 +437,9 @@ async def test_summarized_room_drops_messages_up_to_the_cursor_and_keeps_every_l
 async def test_summarized_room_keeps_the_opening_ahead_of_the_window(
     db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str
 ) -> None:
-    room = await seed_room(db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+    room = await seed_room(
+        db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN, paid_turns=1
+    )
 
     prompt = _generation_prompt(await run_action(db_client, room, "send", 36))
 
@@ -449,7 +452,9 @@ async def test_room_whose_later_turns_were_never_summarized_keeps_all_of_them_in
 ) -> None:
     """커서 뒤로 30턴이 쌓였는데 다음 요약이 커밋되지 않은 방(요약 실패·지연)이다. 윈도우는 턴
     수를 세지 않는다 — 요약이 덮지 않은 메시지는 전부 실려야 한다."""
-    room = await seed_room(db_client, db_session, lane="character", turns=40, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+    room = await seed_room(
+        db_client, db_session, lane="character", turns=40, summary_cursor_turn=SUMMARY_CURSOR_TURN, paid_turns=1
+    )
 
     prompt = _generation_prompt(await run_action(db_client, room, "send", 40))
 
@@ -535,7 +540,9 @@ async def _write_memory(db_session: AsyncSession, room: SeededRoom, *, note: str
 async def test_generation_prompt_carries_the_room_note_then_the_current_summary_before_the_window(
     db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str, action: str
 ) -> None:
-    room = await seed_room(db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+    room = await seed_room(
+        db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN, paid_turns=1
+    )
     await _write_memory(db_session, room, note=NOTE_MARK, summary=SUMMARY_MARK)
 
     prompt = _generation_prompt(await run_action(db_client, room, action, 36))
@@ -552,7 +559,9 @@ async def test_generation_window_switched_off_drops_the_summary_but_keeps_the_no
     """윈도우를 끄면 전체 히스토리가 실리므로 요약까지 실으면 같은 대화가 두 번 들어간다. 노트는
     대화와 겹치지 않는 사용자 메모라 그대로 싣는다."""
     monkeypatch.setattr(settings, "memory_window_generation", False)
-    room = await seed_room(db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+    room = await seed_room(
+        db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN, paid_turns=1
+    )
     await _write_memory(db_session, room, note=NOTE_MARK, summary=SUMMARY_MARK)
 
     prompt = _generation_prompt(await run_action(db_client, room, "send", 36))
@@ -588,7 +597,9 @@ async def test_ending_judgment_window_carries_the_current_summary_and_only_messa
 ) -> None:
     """엔딩은 지금까지의 대화 전체를 보고 판단하므로, 원문이 빠진 자리를 요약이 대신한다."""
     monkeypatch.setattr(settings, "memory_window_ending_judgment", True)
-    room = await seed_room(db_client, db_session, lane="story", turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+    room = await seed_room(
+        db_client, db_session, lane="story", turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN, paid_turns=1
+    )
     await _write_memory(db_session, room, note="", summary=SUMMARY_MARK)
 
     calls = await run_action(db_client, room, action, 36)
@@ -607,7 +618,7 @@ async def test_image_judgment_window_carries_only_messages_after_the_cursor_with
     같은 판정 함수를 지난다."""
     monkeypatch.setattr(settings, "memory_window_image_judgment", True)
     room = await seed_room(
-        db_client, db_session, lane="character", turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN
+        db_client, db_session, lane="character", turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN, paid_turns=1
     )
     await _write_memory(db_session, room, note="", summary=SUMMARY_MARK)
 
@@ -627,7 +638,9 @@ async def test_image_judgment_window_carries_only_messages_after_the_cursor_with
 async def test_ending_judgment_uses_the_window_by_default(
     db_client: httpx.AsyncClient, db_session: AsyncSession, action: str
 ) -> None:
-    room = await seed_room(db_client, db_session, lane="story", turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+    room = await seed_room(
+        db_client, db_session, lane="story", turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN, paid_turns=1
+    )
     await _write_memory(db_session, room, note="", summary=SUMMARY_MARK)
 
     calls = await run_action(db_client, room, action, 36)
@@ -643,7 +656,9 @@ async def test_media_book_cell_judgment_uses_the_window_by_default(
 ) -> None:
     """스토리 미디어 북 칸 판정은 엔딩 뒤·재생성까지 매 턴 돌아 긴 방에서 가장 큰 판정 입력이다. 상황이미지와 같은
     스위치를 따른다."""
-    room = await seed_room(db_client, db_session, lane="story", turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+    room = await seed_room(
+        db_client, db_session, lane="story", turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN, paid_turns=1
+    )
     room_row = await db_session.get(ChatRoom, room.room_id)
     assert room_row is not None
     creator_id = await db_session.scalar(
