@@ -119,6 +119,20 @@ def test_nine_paid_turns_over_100_percent_do_not_alert_but_ten_do() -> None:
     assert [model for model, _ in _alerts(_over(_DAY, turns=10)).over] == ["opus"]
 
 
+# ── 100% 경계 ─────────────────────────────────────────────────────────────────
+def test_a_day_at_exactly_100_percent_does_not_alert() -> None:
+    """경보는 100% 를 넘을 때만이다. 턴당 출력 34,500토큰(0.0345달러) · 70클로버 × 10턴 → 원가 0.345 × 1400 = 483원,
+    분모 700 × 0.690 = 483원으로 정확히 100%."""
+    rows = _paid_day(_DAY, 10, clovers=70, output_tokens=34_500)
+    opus = report.summarize(rows)[_DAY]["opus"]
+
+    assert opus.paid_krw == pytest.approx(0.345 * 1400)
+    assert opus.clovers * 0.690 == pytest.approx(483)
+    assert opus.ratio == 1.0
+    assert report.verdict(opus) == "ok"
+    assert _alerts(rows).over == []
+
+
 # ── 재경보 억제 ───────────────────────────────────────────────────────────────
 def test_a_second_day_over_in_a_row_does_not_alert_again() -> None:
     rows = _over(_DAY - timedelta(days=1)) + _over(_DAY)
