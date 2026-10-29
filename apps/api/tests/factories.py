@@ -463,6 +463,29 @@ def _make_chat_turn(chat_room_id: uuid.UUID, **overrides: object) -> ChatTurn:
     return ChatTurn(**defaults)
 
 
+async def _make_bare_chat_room(db_session: AsyncSession) -> ChatRoom:
+    """턴 기록을 붙일 방 하나 — 회원 한 명이 작가이자 방 주인인 최소 작품·버전 위에 만든다. 메시지·스탯은 없다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = Content(
+        creator_user_id=user.id,
+        type=ContentType.CHARACTER,
+        hashtags=[],
+        visibility=ContentVisibility.PUBLIC,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(content)
+    await db_session.flush()
+    version = ContentVersion(content_id=content.id, detail_description="설명")
+    db_session.add(version)
+    await db_session.flush()
+    room = ChatRoom(user_id=user.id, content_id=content.id, content_version_id=version.id)
+    db_session.add(room)
+    await db_session.flush()
+    return room
+
+
 def _make_memory_episode(chat_room_id: uuid.UUID, snapshot_id: uuid.UUID, **overrides: object) -> ChatMemoryEpisode:
     """장면 기억 한 행. 기본값은 모든 CHECK 를 통과하는 평범한 장면이다 — 처음·끝 메시지 키가 같은 한 메시지짜리 구간.
     메시지 id 칸은 FK 가 없어 실제 메시지 없이 새 id 를 쓴다."""

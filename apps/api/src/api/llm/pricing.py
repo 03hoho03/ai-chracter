@@ -31,6 +31,7 @@ Voyage 임베딩 세 줄은 Voyage 가격표(docs.voyageai.com/docs/pricing)의 
 
 from dataclasses import dataclass
 from datetime import date
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,14 @@ class ModelPrice:
 
 
 PRICES_AS_OF = date(2026, 10, 6)
+
+# 원가 리포트(채팅 원가 비율 크론)가 달러 원가를 원으로 바꿀 때 쓰는 환율과 그 확인일. 2026-10 클로버 가격 주석들이 쓴
+# 1달러 1,400원과 같은 값이고, 확인일은 그 값을 이 상수로 옮긴 날이다(그날 시장 환율을 다시 본 것은 아니다). 그 주석들은
+# "그 가격·그 턴 수를 정할 때 쓴 환율"이라는 과거 계산의 기록이라 이 상수를 가리키지 않는다 — 환율을 고쳐도 클로버 가격이
+# 새 환율로 산정된 것처럼 읽히지 않게. 환율이 크게 움직이면 값과 확인일을 함께 고친다(고치면 지난 날의 판정도 새 값으로
+# 다시 나온다).
+KRW_PER_USD = 1400
+KRW_PER_USD_AS_OF = date(2026, 10, 29)
 
 MODEL_PRICES: dict[str, ModelPrice] = {
     "gemini-3.5-flash-lite": ModelPrice(0.30, 0.03, 2.50),
@@ -86,3 +95,33 @@ def estimate_cost_usd(
         + cache_write_tokens * price.cache_write_usd_per_million
         + (output_tokens + thoughts_tokens) * price.output_usd_per_million
     ) / 1_000_000
+
+
+@dataclass(frozen=True)
+class CallCost:
+    call_site: str
+    model: str
+    # 단가표에 없는 모델이면 None.
+    usd: float | None
+    missing_tokens: bool
+
+
+def _tokens(call: dict[str, Any], key: str) -> int:
+    value = call.get(key)
+    return value if isinstance(value, int) else 0
+
+
+def call_cost(call: dict[str, Any]) -> CallCost:
+    """호출 기록 칸 하나(`chat_turns.llm_calls`·`novel_jobs.llm_calls` 의 원소)의 원가. 질의 임베딩 칸처럼 없는 칸은 0 으로
+    친다. 단가 키는 칸의 `model`(실제로 보낸 모델 id)이다. 원가 리포트들이 모두 이 함수를 쓴다 — 사본을 두면 새 토큰 칸을
+    한쪽에만 더했을 때 리포트끼리 원가가 말없이 갈린다."""
+    model = str(call.get("model"))
+    usd = estimate_cost_usd(
+        model,
+        input_tokens=_tokens(call, "promptTokens"),
+        cached_tokens=_tokens(call, "cachedTokens"),
+        cache_write_tokens=_tokens(call, "cacheWriteTokens"),
+        output_tokens=_tokens(call, "outputTokens"),
+        thoughts_tokens=_tokens(call, "thoughtsTokens"),
+    )
+    return CallCost(str(call.get("callSite")), model, usd, missing_tokens=not isinstance(call.get("promptTokens"), int))
