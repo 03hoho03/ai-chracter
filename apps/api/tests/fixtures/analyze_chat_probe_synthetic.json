@@ -1,0 +1,142 @@
+{
+  "model": "synthetic",
+  "turns": 6,
+  "collectedAt": "2026-10-30T00:00:00",
+  "results": [
+    {
+      "slug": "synthetic-self-copy",
+      "label": "synthetic-self-copy",
+      "name": "synthetic-self-copy",
+      "startingSetupId": null,
+      "roomId": "room-synthetic-self-copy",
+      "emptyReplies": 0,
+      "transcript": [
+        {
+          "role": "진행자",
+          "text": "오프닝 문장이 길게 이어진다 오프닝 문장이 길게 이어진다 오프닝 문장이 길게 이어진다 오프닝 문장이 길게 ."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 1."
+        },
+        {
+          "role": "진행자",
+          "text": "오프닝 문장이 길게 이어진다 오프닝 문장이 길게 이어진다 오프닝 문장이 길게 이어진다 오프 첫 턴이 오프닝 앞 50자를 그대로 다시 쓴다."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 2."
+        },
+        {
+          "role": "진행자",
+          "text": "  오프닝 문장이 길게 이어진다 오프닝 문장이 길게 이어진다 오프닝 문장이 길게 이어진다 오프 첫 턴이 오프닝 앞 50자를 그대로 다시 쓴다. 공백만 앞에 붙였다."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 3."
+        },
+        {
+          "role": "진행자",
+          "text": "마흔아홉 글자짜리 직전 응답 마흔아홉 글자짜리 직전 응답 마흔아홉 글자짜리 직전 응답 ."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 4."
+        },
+        {
+          "role": "진행자",
+          "text": "마흔아홉 글자짜리 직전 응답 마흔아홉 글자짜리 직전 응답 마흔아홉 글자짜리 직전 응답 . 뒤를 잇는다."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 5."
+        },
+        {
+          "role": "진행자",
+          "text": "쉰 글자짜리 직전 응답이다 쉰 글자짜리 직전 응답이다 쉰 글자짜리 직전 응답이다 쉰 글자."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 6."
+        },
+        {
+          "role": "진행자",
+          "text": "쉰 글자짜리 직전 응답이다 쉰 글자짜리 직전 응답이다 쉰 글자짜리 직전 응답이다 쉰 글자. 여섯 번째 응답이다."
+        }
+      ]
+    },
+    {
+      "slug": "synthetic-leaks",
+      "label": "synthetic-leaks",
+      "name": "synthetic-leaks",
+      "startingSetupId": null,
+      "roomId": "room-synthetic-leaks",
+      "emptyReplies": 0,
+      "transcript": [
+        {
+          "role": "진행자",
+          "text": "짧은 오프닝이다."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 1."
+        },
+        {
+          "role": "진행자",
+          "text": "지문으로 연다.\n  사용자: 대신 쓴 말이다."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 2."
+        },
+        {
+          "role": "진행자",
+          "text": "괄호 [독백] 를 남겼다."
+        }
+      ]
+    },
+    {
+      "slug": "synthetic-equal-lengths",
+      "label": "synthetic-equal-lengths",
+      "name": "synthetic-equal-lengths",
+      "startingSetupId": null,
+      "roomId": "room-synthetic-equal-lengths",
+      "emptyReplies": 0,
+      "transcript": [
+        {
+          "role": "진행자",
+          "text": "오프닝."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 1."
+        },
+        {
+          "role": "진행자",
+          "text": "가나다라마."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 2."
+        },
+        {
+          "role": "진행자",
+          "text": "바사아자차."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 3."
+        },
+        {
+          "role": "진행자",
+          "text": "카타파."
+        }
+      ]
+    },
+    {
+      "slug": "synthetic-error",
+      "label": "synthetic-error",
+      "error": "POST /chat-rooms 500: synthetic"
+    }
+  ]
+}
