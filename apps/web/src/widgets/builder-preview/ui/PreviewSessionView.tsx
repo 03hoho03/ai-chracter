@@ -121,8 +121,10 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   const confirmCloverSpend = useConfirmCloverSpend();
   const turnCost = previewTurnCost(models, displayModelId);
   // 가격표를 지켜보게 둔다 — 보내는 요청이 이 캐시에서 가격 버전을 읽는데, 빌더는 전역 헤더(평소 가격표를 지켜보는 자리)를
-  // 그리지 않아 이것이 없으면 새로고침 직후엔 캐시가 비어 있고 한동안 지나면 지워져 버전 없이 나간다. 값은 여기서 쓰지 않는다.
-  useCloverPricingQuery();
+  // 그리지 않아 이것이 없으면 새로고침 직후엔 캐시가 비어 있고 한동안 지나면 지워져 버전 없이 나간다. 여기서 읽는 값은
+  // 출석판 스위치 하나다 — 켜지면 미리보기 턴도 첫 턴부터 깎이므로 잔량이 늘 보이고, 클로버 부족·본인인증 안내가 무료
+  // 대화·자정 대신 출석판을 말한다. 못 받았으면 꺼진 것으로 본다.
+  const attendanceEnabled = useCloverPricingQuery().data?.attendance?.enabled ?? false;
   // 잔량은 대화방 입력 바와 같은 판정이다 — 상위 모델은 첫 턴부터 턴마다 깎이므로 언제나, 기본 모델은 무료분을 쓴 뒤나
   // 부족할 때만. 세션을 잃은 뒤에는 내린다(옛 잔액이 캐시에 남는다).
   const { data: clover } = useCloverBalanceQuery();
@@ -134,7 +136,7 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
     shouldShowCloverBalance({
       spendConfirmedToday: clover.spendConfirmedToday,
       hasCloverShortage: isCloverShort,
-      chargesEveryTurn: isPremiumChatModel(displayModelId),
+      chargesEveryTurn: isPremiumChatModel(displayModelId) || attendanceEnabled,
     });
   const { send, status, policyWarning, streamingText } = usePreviewSendMessage(
     async (error) =>
@@ -261,10 +263,17 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
         <RateLimitNotice
           rateLimit={sendError.rateLimit}
           surface={isPremiumChatModel(displayModelId) ? "premiumPreview" : "preview"}
+          attendanceEnabled={attendanceEnabled}
         />
       );
     } else if (sendError.identityRequired) {
-      errorNotice = <IdentityRequiredNotice reason="free-rewards" dailyFreeChatTurns={me?.dailyFreeChatTurns} />;
+      errorNotice = (
+        <IdentityRequiredNotice
+          reason="free-rewards"
+          dailyFreeChatTurns={me?.dailyFreeChatTurns}
+          attendanceEnabled={attendanceEnabled}
+        />
+      );
     } else if (sendError.declined) {
       // 확인 모달에서 그만둔 것은 실패가 아니라 사용자의 선택이라
       // `destructive`도 `role="alert"`도 쓰지 않는다(경고할 일이 없다).

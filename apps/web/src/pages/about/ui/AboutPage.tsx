@@ -2,6 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import { CONTACT_EMAIL, SITE_INTRO, SITE_NAME } from "@/shared/config/site";
 
 import { ABOUT_SCREENSHOTS, type AboutScreenshot } from "../model/aboutScreenshots";
@@ -10,7 +11,9 @@ import { ABOUT_SCREENSHOTS, type AboutScreenshot } from "../model/aboutScreensho
 const INLINE_LINK_CLASSNAME =
   "whitespace-nowrap font-medium text-primary underline-offset-4 hover:underline focus-visible:underline";
 
-const FEATURE_SECTIONS: { title: string; body: string; screenshot: AboutScreenshot }[] = [
+/** `attendanceBody` 는 출석판이 켜졌을 때 `body` 대신 쓰는 문장이다. 켜지면 서버가 하루 무료 대화를 없애고 출석
+ * 보상이 생기므로 "무료 사용량 밖의"가 거짓이 되고 받는 길에 출석이 더해진다. */
+const FEATURE_SECTIONS: { title: string; body: string; attendanceBody?: string; screenshot: AboutScreenshot }[] = [
   {
     title: "캐릭터와 대화해요",
     body: "행동과 대사를 적으면 캐릭터가 장면을 이어가고, 이야기에 맞는 그림이 함께 나오기도 해요.",
@@ -39,12 +42,16 @@ const FEATURE_SECTIONS: { title: string; body: string; screenshot: AboutScreensh
   {
     title: "클로버",
     body: "무료 사용량 밖의 대화와 이미지 생성에는 클로버가 쓰여요. 클로버는 충전해서 쓰고, 미션 보상으로도 받을 수 있어요.",
+    attendanceBody: "대화와 이미지 생성에는 클로버가 쓰여요. 클로버는 충전해서 쓰고, 매일 출석과 미션 보상으로도 받을 수 있어요.",
     screenshot: ABOUT_SCREENSHOTS.cloverMissions,
   },
 ];
 
-/** `/about` — 서비스 소개. 조회 없이 정해지는 정적 본문이라 로그인 여부와 무관하게 바로 그린다. */
+/** `/about` — 서비스 소개. 로그인 여부와 무관하게 바로 그린다. 공개 가격 응답은 출석판 스위치를 읽으려고만 보고
+ * 기다리지 않는다 — 아직 못 받았으면 꺼진 것으로 보고 꺼짐 문장을 그린다. */
 export function AboutPage() {
+  const attendanceEnabled = useCloverPricingQuery().data?.attendance?.enabled ?? false;
+
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-16 px-4 sm:px-6 py-10">
       <div className="flex flex-col gap-6">
@@ -62,8 +69,13 @@ export function AboutPage() {
         </Button>
       </div>
 
-      {FEATURE_SECTIONS.map((section, index) => (
-        <FeatureSection key={section.title} {...section} isFirst={index === 0} />
+      {FEATURE_SECTIONS.map(({ attendanceBody, ...section }, index) => (
+        <FeatureSection
+          key={section.title}
+          {...section}
+          body={attendanceEnabled && attendanceBody !== undefined ? attendanceBody : section.body}
+          isFirst={index === 0}
+        />
       ))}
 
       <div className="flex flex-col gap-10">

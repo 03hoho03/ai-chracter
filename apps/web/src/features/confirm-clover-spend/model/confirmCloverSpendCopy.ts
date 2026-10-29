@@ -28,6 +28,7 @@ export function formatCloverSpendConfirmDescription(
   const spend =
     cost === undefined ? "계속하면 클로버가 차감돼요." : `계속하면 한 번에 ${cost.toLocaleString()}개씩 차감돼요.`;
   switch (surface) {
+    // 출석판이 켜지면 서버가 채팅 확인을 묻지 않아 이 갈래의 두 문장은 꺼진 동안에만 나온다.
     case "chat":
       if (identityGated) {
         return `본인인증 전에는 무료 대화가 없어요. ${spend} 본인인증을 하면 매일 무료 대화를 쓸 수 있어요.`;

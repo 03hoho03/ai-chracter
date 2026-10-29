@@ -34,7 +34,7 @@ export {
 } from "./model/cloverPriceChanged";
 export type { CloverConfirmAllowance } from "./model/cloverPriceChanged";
 export { formatCloverExpiringSoonMessage } from "./model/cloverExpiringSoonDisplay";
-export { CLOVER_EXPIRY_NOTICE_MESSAGE } from "./model/cloverExpiryNotice";
+export { formatCloverExpiryNotice } from "./model/cloverExpiryNotice";
 export { projectCloverMissionState } from "./model/cloverMissionState";
 export type { CloverMissionState } from "./model/cloverMissionState";
 export { CLOVER_MISSION_LABELS } from "./model/cloverMissionLabel";

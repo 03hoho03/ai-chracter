@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { formatChatRateLimitAnnouncement, formatChatRateLimitMessage, getChatRateLimit } from "./chatRateLimit";
+import {
+  formatChatRateLimitAnnouncement,
+  formatChatRateLimitMessage,
+  getChatRateLimit,
+  getRateLimitLinks,
+  type ChatRateLimitSurface,
+} from "./chatRateLimit";
 
 describe("getChatRateLimit", () => {
   it.each(["minute", "clover"] as const)("채팅 창(%s)은 좁혀진 값으로 돌려준다", (window) => {
@@ -220,5 +226,80 @@ describe("상위 모델 미리보기의 클로버 부족 문구", () => {
     expect(formatChatRateLimitMessage(minute, "premiumPreview", 12)).toBe(formatChatRateLimitMessage(minute, "preview", 12));
     expect(formatChatRateLimitMessage(minute, "premiumPreview", 0)).toBe(formatChatRateLimitMessage(minute, "preview", 0));
     expect(formatChatRateLimitAnnouncement(minute, "premiumPreview")).toBe(formatChatRateLimitAnnouncement(minute, "preview"));
+  });
+});
+
+/** 출석판이 켜지면 무료 일일분이 없어 자정에 풀리는 것이 없다 — 네 자리 모두 자정 대신 출석판을 안내한다. 켜짐에서 기본·상위
+ * 모델의 차이는 단가뿐이고 출석 클로버는 상위 모델에도 쓰여 문장을 가를 사실이 없다. */
+describe("클로버 부족 문구 — 출석판", () => {
+  const clover = { window: "clover", retryAfterSeconds: 43200 } as const;
+  const SURFACES: ChatRateLimitSurface[] = ["chat", "premiumChat", "preview", "premiumPreview"];
+
+  it.each(SURFACES)("켜져 있으면 %s 자리는 자정을 말하지 않고 출석판을 안내한다", (surface) => {
+    const message = formatChatRateLimitMessage(clover, surface, 43200, true);
+    expect(message).not.toContain("자정");
+    expect(message).toContain("출석판");
+  });
+
+  it("켜져 있으면 채팅 두 자리는 같은 문장이다", () => {
+    expect(formatChatRateLimitMessage(clover, "chat", 43200, true)).toBe("클로버가 부족해요 · 출석판에서 매일 받을 수 있어요");
+    expect(formatChatRateLimitMessage(clover, "premiumChat", 43200, true)).toBe(
+      "클로버가 부족해요 · 출석판에서 매일 받을 수 있어요",
+    );
+  });
+
+  it("켜져 있으면 미리보기 두 자리는 미리보기 머리말 뒤에 같은 문장이다", () => {
+    for (const surface of ["preview", "premiumPreview"] as const) {
+      expect(formatChatRateLimitMessage(clover, surface, 43200, true)).toBe(
+        "미리보기도 채팅과 같은 한도를 써요 · 클로버가 부족해요 · 출석판에서 매일 받을 수 있어요",
+      );
+    }
+  });
+
+  it("꺼져 있으면 네 자리 모두 지금 문장 그대로다", () => {
+    expect(formatChatRateLimitMessage(clover, "chat", 43200, false)).toBe("클로버가 없어요 · 자정에 무료 한도가 돌아와요");
+    expect(formatChatRateLimitMessage(clover, "premiumChat", 43200, false)).toBe("클로버가 부족해요");
+    expect(formatChatRateLimitMessage(clover, "preview", 43200, false)).toBe(
+      "미리보기도 채팅과 같은 한도를 써요 · 자정에 무료 한도가 돌아와요",
+    );
+    expect(formatChatRateLimitMessage(clover, "premiumPreview", 43200, false)).toBe(
+      "미리보기도 채팅과 같은 한도를 써요 · 클로버가 부족해요",
+    );
+  });
+
+  it.each(SURFACES)("읽어 주는 문장도 같은 문구다(%s, 켜짐)", (surface) => {
+    expect(formatChatRateLimitAnnouncement(clover, surface, true)).toBe(formatChatRateLimitMessage(clover, surface, 43200, true));
+  });
+
+  it("분당 상한 문구는 출석판과 무관하다", () => {
+    const minute = { window: "minute", retryAfterSeconds: 30 } as const;
+    expect(formatChatRateLimitMessage(minute, "chat", 12, true)).toBe(formatChatRateLimitMessage(minute, "chat", 12, false));
+    expect(formatChatRateLimitAnnouncement(minute, "preview", true)).toBe(formatChatRateLimitAnnouncement(minute, "preview", false));
+  });
+});
+
+/** 배너 옆 이동 버튼. 미리보기 자리에는 두지 않는다 — 누르면 만들던 화면을 떠난다. */
+describe("getRateLimitLinks", () => {
+  const clover = { window: "clover", retryAfterSeconds: 43200 } as const;
+  const minute = { window: "minute", retryAfterSeconds: 30 } as const;
+
+  it("꺼져 있으면 채팅 방의 클로버 창에 클로버 채우기만 둔다", () => {
+    expect(getRateLimitLinks(clover, "chat", false)).toEqual(["clover"]);
+    expect(getRateLimitLinks(clover, "premiumChat", false)).toEqual(["clover"]);
+  });
+
+  it("켜져 있으면 채팅 방의 클로버 창에 클로버 채우기 뒤로 출석판을 둔다", () => {
+    expect(getRateLimitLinks(clover, "chat", true)).toEqual(["clover", "attendance"]);
+    expect(getRateLimitLinks(clover, "premiumChat", true)).toEqual(["clover", "attendance"]);
+  });
+
+  it.each([true, false])("미리보기 자리에는 버튼을 두지 않는다(켜짐 %s)", (attendanceEnabled) => {
+    expect(getRateLimitLinks(clover, "preview", attendanceEnabled)).toEqual([]);
+    expect(getRateLimitLinks(clover, "premiumPreview", attendanceEnabled)).toEqual([]);
+  });
+
+  it("분당 상한에는 버튼을 두지 않는다 — 기다리면 풀린다", () => {
+    expect(getRateLimitLinks(minute, "chat", true)).toEqual([]);
+    expect(getRateLimitLinks(minute, "premiumChat", true)).toEqual([]);
   });
 });

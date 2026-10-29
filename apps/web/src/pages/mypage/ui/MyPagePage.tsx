@@ -166,6 +166,7 @@ function IdentitySection({ me }: { me: MeResponse }) {
   const section = getIdentitySection(me, {
     payments: pricingQuery.data?.paymentsEnabled ?? false,
     creatorPayout: hasEnabledFeature(me.enabledFeatures, "creator_payout"),
+    attendance: pricingQuery.data?.attendance?.enabled ?? false,
   });
 
   if (section.kind === "hidden") return null;
