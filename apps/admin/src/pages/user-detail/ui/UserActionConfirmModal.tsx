@@ -349,7 +349,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
               {action === "novelize-premium-models-off" &&
                 "이 유저의 소설화 상위 모델 허용을 회수합니다. 이후 상위 모델로 장을 요청하면 거부됩니다(Gemini 로 바꿔 만들지 않습니다). 회수 전에 값을 낸 장 작업은 그 모델로 끝납니다."}
               {action === "clover-grant" &&
-                "이 유저에게 클로버를 지급합니다. 대화·이미지 등 클로버를 쓰는 곳에 쓰입니다. 상위 모델 채팅은 첫 턴부터 쓰고, 인증을 마친 유저의 기본 모델 채팅은 하루 무료 대화가 있는 동안 그 한도를 넘긴 뒤부터 씁니다."}
+                "이 유저에게 클로버를 지급합니다. 대화·이미지 등 클로버를 쓰는 곳에 쓰입니다. 상위 모델 채팅은 첫 턴부터 쓰고, 인증을 마친 유저의 기본 모델 채팅은 하루 무료 대화가 있는 동안 그 한도를 넘긴 뒤부터 씁니다. 레이트리밋 면제 유저는 기본 모델 채팅에 쓰지 않습니다."}
               {action === "clover-revoke" &&
                 "이 유저의 클로버를 회수합니다. 현재 잔액보다 많이 회수할 수는 없습니다."}
             </DialogDescription>
