@@ -85,7 +85,13 @@ from api.db.models.moderation import AdminActionType
 from api.db.models.prompt import PromptRoute, PromptRouteRevision
 from api.db.session import get_db_session
 from api.llm.call_policy import BackendId, LLMCallSite
-from api.llm.chat_models import PromptSetModelId, backend_model_id
+from api.llm.chat_models import (
+    CHAT_MODELS,
+    DEFAULT_CHAT_MODEL,
+    PromptSetModelId,
+    backend_model_id,
+    is_chat_model_visible,
+)
 from api.llm.client import structured_model
 from api.llm.pricing import MODEL_PRICES, PRICES_AS_OF
 
@@ -296,6 +302,9 @@ async def _routing_response(db: AsyncSession) -> AdminPromptRoutingResponse:
         revision_number=None if latest is None else latest.number,
         prices_as_of=PRICES_AS_OF,
         chat_premium_models_enabled=settings.chat_premium_models_enabled,
+        chat_visible_models=[
+            spec.id for spec in CHAT_MODELS if spec.id != DEFAULT_CHAT_MODEL and is_chat_model_visible(spec.id)
+        ],
         allowed_pairs=[
             AdminPromptRouteAllowedPair(kind=kind, model=model, backend=backend)
             for kind, pairs in ALLOWED_ROUTE_PAIRS.items()

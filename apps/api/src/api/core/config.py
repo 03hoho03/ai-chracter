@@ -364,6 +364,11 @@ class Settings(BaseSettings):
     # 허용 가능 계정 명단도 두며 뜻은 소설화 스위치·명단과 같다(명단에서 빼고 재기동하면 허용 행이 있어도 막힘). 소설 장의
     # 상위 모델은 소설화 자체 허용도 함께 있어야 쓸 수 있다.
     chat_premium_models_enabled: bool = False
+    # 채팅에서 고를 수 있게 보일 상위 모델(쉼표 목록, 따옴표·공백 없이). 위 채팅 스위치가 켜져 있을 때만 뜻이 있다 — 스위치를
+    # 끄면 이 목록과 무관하게 모두 숨는다. 목록에서 뺀 모델은 모델 목록·공개 가격에서 빠지고 지정·미리보기 시작이 거절되며, 그
+    # 모델이 저장된 방은 기본 모델로 돈다. 기본 모델(Gemini)은 늘 보여 쓸 수 없다. 빈 값은 상위 모델을 하나도 보이지 않는다는
+    # 뜻이지만 운영 env 형식 검사가 값이 빈 줄을 거부하므로, 운영에서 모두 숨기려면 줄을 비우지 말고 채팅 스위치를 끈다.
+    chat_models_visible: Annotated[list[backends.ChatModelId], NoDecode] = ["opus"]
     novelize_premium_models_enabled: bool = False
     novelize_premium_model_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
     # 호출 위치마다 공급자 구현을 배정한다(`call_site:backend` 를 쉼표로 이은 목록, 따옴표 없이). 비면 배정 없음 — 모델의
@@ -475,6 +480,26 @@ class Settings(BaseSettings):
         if missing:
             raise ValueError(f"상위 모델 스위치가 켜져 있는데 {', '.join(missing)} 가 비어 있다")
         return self
+
+    @field_validator("chat_models_visible", mode="before")
+    @classmethod
+    def _split_chat_models_visible(cls, value: object) -> object:
+        """env 문자열을 모델 id 목록으로 나눈다. 항목은 쉼표로 나누고 앞뒤 공백은 지우며 빈 항목은 버린다 — 남는 항목이 없으면
+        빈 목록(상위 모델 모두 숨김)이다. 같은 모델이 두 번 나오면 거부하고, 기본 모델은 늘 보이므로 목록에 쓰면 거부한다. 모르는
+        id(판정 전용 `haiku` 포함)는 pydantic 이 거부한다 — 오타가 조용히 무시되면 켠 모델이 화면에 없는데 기동은 성공한다."""
+        if not isinstance(value, str):
+            return value
+        models: list[str] = []
+        for item in value.split(","):
+            model = item.strip()
+            if not model:
+                continue
+            if model in models:
+                raise ValueError(f"CHAT_MODELS_VISIBLE 에 {model} 이 두 번 있다")
+            if model == backends.DEFAULT_CHAT_MODEL:
+                raise ValueError(f"CHAT_MODELS_VISIBLE 에 기본 모델 {model} 은 쓸 수 없다(늘 보인다)")
+            models.append(model)
+        return models
 
     @field_validator("memory_model_scope", mode="before")
     @classmethod
