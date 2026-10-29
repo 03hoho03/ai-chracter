@@ -418,19 +418,20 @@ def _dependencies(route: Any) -> list[Any]:
 
 
 @pytest.mark.parametrize(
-    "route",
+    ("route", "gate"),
     [
-        pytest.param(chat_router.send_message, id="send"),
-        pytest.param(chat_router.regenerate_message, id="regenerate"),
-        pytest.param(chat_router.edit_message, id="edit"),
+        pytest.param(chat_router.send_message, chat_router.enforce_room_send_charge, id="send"),
+        pytest.param(chat_router.regenerate_message, chat_router.enforce_room_chat_charge, id="regenerate"),
+        pytest.param(chat_router.edit_message, chat_router.enforce_room_edit_charge, id="edit"),
     ],
 )
-def test_room_turns_charge_last_with_the_room_gate(route: Any) -> None:
+def test_room_turns_charge_last_with_the_room_gate(route: Any, gate: Any) -> None:
     """차감은 조회·검증 의존성 전부보다 뒤다 — 앞이면 404·400 에서 차감만 남는다. 세 턴 경로는 방의 모델을 읽는 게이트를
-    쓴다(미리보기 게이트를 쓰면 상위 모델 방이 Gemini 값으로 상위 모델을 쓴다)."""
+    쓴다(미리보기 게이트를 쓰면 상위 모델 방이 Gemini 값으로 상위 모델을 쓴다). 전송·편집 게이트는 자기 본문 모델을 받고 방
+    게이트를 부른다."""
     dependencies = _dependencies(route)
 
-    assert dependencies[-1] is chat_router.enforce_room_chat_charge
+    assert dependencies[-1] is gate
     assert chat_router.enforce_preview_chat_charge not in dependencies
 
 

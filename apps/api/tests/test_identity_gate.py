@@ -25,6 +25,7 @@ from api.core import clover, rate_limit_gate
 from api.core.config import settings
 from api.core.rate_limit import check_rate_limit
 from api.chat.router import enforce_preview_chat_charge
+from api.chat.schemas import ChatMessageCreateRequest
 from api.core.rate_limit_gate import ChatCharge, charge_chat_turn
 from api.core.security import hash_identity_ci
 from api.db.models.auth import User, WithdrawnIdentity
@@ -254,11 +255,19 @@ async def test_builder_preview_is_gated_too(db_session: AsyncSession, monkeypatc
 
     detail = await _forbidden(
         lambda: enforce_preview_chat_charge(
-            user_id=broke.id, db=db_session, session_factory=_factory(db_session), model="gemini"
+            user_id=broke.id,
+            db=db_session,
+            session_factory=_factory(db_session),
+            model="gemini",
+            payload=ChatMessageCreateRequest(content="안녕"),
         )
     )
     charge = await enforce_preview_chat_charge(
-        user_id=funded.id, db=db_session, session_factory=_factory(db_session), model="gemini"
+        user_id=funded.id,
+        db=db_session,
+        session_factory=_factory(db_session),
+        model="gemini",
+        payload=ChatMessageCreateRequest(content="안녕"),
     )
 
     assert detail == {"code": "IDENTITY_VERIFICATION_REQUIRED"}

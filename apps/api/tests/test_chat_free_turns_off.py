@@ -30,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.router import enforce_preview_chat_charge
+from api.chat.schemas import ChatMessageCreateRequest
 from api.core import clover, rate_limit_gate
 from api.core.config import settings
 from api.core.rate_limit import check_rate_limit, seconds_until_kst_midnight
@@ -139,7 +140,11 @@ async def test_builder_preview_spends_clover_without_confirmation(db_session: As
     user = await _member(db_session, balance=100)
 
     charge = await enforce_preview_chat_charge(
-        user_id=user.id, db=db_session, session_factory=_factory(db_session), model="gemini"
+        user_id=user.id,
+        db=db_session,
+        session_factory=_factory(db_session),
+        model="gemini",
+        payload=ChatMessageCreateRequest(content="안녕"),
     )
 
     assert (charge.source, charge.clover_amount) == ("clover", _PRICE)
