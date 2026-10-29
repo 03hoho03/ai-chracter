@@ -102,7 +102,6 @@ from factories import (
     _clear_llm_override,
     _login_as,
     _make_asset,
-    _make_user,
     _make_user_with_clover_lot,
     _open_room,
     _open_transaction_probe,
@@ -1001,9 +1000,7 @@ async def test_preview_runs_stat_and_media_judgments_concurrently(
 ) -> None:
     """두 판정이 서로를 기다리는 가짜 — 차례로 부르면 먼저 불린 스탯 판정이 시간 초과로 실패해 스탯 변화와 그 뒤의 엔딩
     판정이 빠진다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _paid_user(db_session)
     asset = await _make_asset(db_session, owner_user_id=user.id, status=AssetStatus.READY)
     await db_session.commit()
     await _login_as(db_client, user.id)
