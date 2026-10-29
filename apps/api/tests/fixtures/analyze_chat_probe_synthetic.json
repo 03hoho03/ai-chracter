@@ -137,6 +137,96 @@
       "slug": "synthetic-error",
       "label": "synthetic-error",
       "error": "POST /chat-rooms 500: synthetic"
+    },
+    {
+      "slug": "synthetic-multi-defects",
+      "label": "synthetic-multi-defects",
+      "name": "synthetic-multi-defects",
+      "startingSetupId": null,
+      "roomId": "room-synthetic-multi-defects",
+      "emptyReplies": 0,
+      "transcript": [
+        {
+          "role": "진행자",
+          "text": "짧은 오프닝이다."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 1."
+        },
+        {
+          "role": "진행자",
+          "text": "괄호 [독백] 와 [독백] 와 [속마음] 을 남겼다."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 2."
+        },
+        {
+          "role": "진행자",
+          "text": "글자가 길as 깨지고 자C리 도 깨졌다."
+        }
+      ]
+    },
+    {
+      "slug": "synthetic-ignore-boundary",
+      "label": "synthetic-ignore-boundary",
+      "name": "synthetic-ignore-boundary",
+      "startingSetupId": null,
+      "roomId": "room-synthetic-ignore-boundary",
+      "emptyReplies": 0,
+      "transcript": [
+        {
+          "role": "진행자",
+          "text": "짧은 오프닝이다."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 1."
+        },
+        {
+          "role": "진행자",
+          "text": "지문이 길게 이어진다 지문이 길게 이어진다 지문이 길게 이어진다 지문이 길게 이어진다 지문이 길게 이어진다 지문이 길게 이어진다 지문이 길게 이어진다 지문이 길게 이어진다 지문이 길게 이어진다 지문이 길게 대꾸 없이 돌아선다."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 2."
+        },
+        {
+          "role": "진행자",
+          "text": "다른 지문이 천천히 흐른다 다른 지문이 천천히 흐른다 다른 지문이 천천히 흐른다 다른 지문이 천천히 흐른다 다른 지문이 천천히 흐른다 다른 지문이 천천히 흐른다 다른 지문이 천천히 흐른다 다른 지문이 천천히 대꾸 없이 돌아선다."
+        }
+      ]
+    },
+    {
+      "slug": "synthetic-sentence-edges",
+      "label": "synthetic-sentence-edges",
+      "name": "synthetic-sentence-edges",
+      "startingSetupId": null,
+      "roomId": "room-synthetic-sentence-edges",
+      "emptyReplies": 0,
+      "transcript": [
+        {
+          "role": "진행자",
+          "text": "짧은 오프닝이다."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 1."
+        },
+        {
+          "role": "진행자",
+          "text": "\n빈 줄로 시작한다."
+        },
+        {
+          "role": "사용자",
+          "text": "사용자 턴 2."
+        },
+        {
+          "role": "진행자",
+          "text": "지문으로 끝난다.\n*"
+        }
+      ]
     }
   ]
 }
