@@ -592,12 +592,12 @@ async def test_one_request_reads_the_effective_room_model_once_for_the_sets_and_
     answers = [True, False]
     asked: list[bool] = []
 
-    async def _flipping(db: Any, user: Any) -> bool:
+    async def _flipping(db: Any, user: Any, model: Any) -> bool:
         answer = answers[len(asked)] if len(asked) < len(answers) else False
         asked.append(answer)
         return answer
 
-    monkeypatch.setattr(model_access, "has_chat_premium_access", _flipping)
+    monkeypatch.setattr(model_access, "has_chat_model_access", _flipping)
     sets = record_judgment_sets(monkeypatch)
     fake = RecordingLLM()
 
