@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**92개 키다**(2026-10-28 VM 실측 — 인상 쓰기 세 줄 편집(모델 줄·스위치 줄 둘이 새 키, 배정은 기존 줄에 항목 추가)이 넣은 뒤 다시 셈, 키 이름만 셈): 아래 표 154개 중 78개(생략 가능한 조정 키 57개 — `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·소설화 밖 `GEMINI_*_TIMEOUT_MS` 5개(`GENERATE`·`JUDGMENT`·`MEMORY_SUMMARY`·`PUBLISH_FILTER`·`CLIENT`)·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 25개·장기 기억 조정용 9개(`MEMORY_MODEL_SCOPE`·`MEMORY_EMBED_MODEL`·`MEMORY_EMBED_DIMS`·`MEMORY_EMBED_RECALL_` 뒤에 `RRF_K`·`MAX_PLAIN`·`MAX_CUE`·`MAX_DISTANCE`·`VECTOR_LIMIT`·`DF_MAX` 가 붙는 6개), 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 스위치 3개(소설 삽화 `NOVEL_ILLUSTRATIONS_ENABLED`·소설 구성 흐름 `NOVELIZE_OUTLINE_FLOW_ENABLED`·누적 출석판 `ATTENDANCE_BOARD_ENABLED`), 줄을 두지 않는 인상 키 2개(묶음 크기 `MEMORY_IMPRESSION_EVERY_N_FOLDS`·아직 켜지 않은 보기 스위치 `MEMORY_IMPRESSIONS_VISIBLE`), 전체 공개 뒤 줄을 지운 노벨 미리보기 명단 1개(`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`), 잔액을 한꺼번에 옮기는 동안에만 켜고 평소에는 줄을 두지 않는 클로버 정지 스위치 1개(`CLOVER_LEDGER_PAUSED`), 모두 78개 제외 —
+**92개 키다**(2026-10-28 VM 실측 — 인상 쓰기 세 줄 편집(모델 줄·스위치 줄 둘이 새 키, 배정은 기존 줄에 항목 추가)이 넣은 뒤 다시 셈, 키 이름만 셈): 아래 표 155개 중 79개(생략 가능한 조정 키 58개 — `CHAT_MODELS_VISIBLE`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·소설화 밖 `GEMINI_*_TIMEOUT_MS` 5개(`GENERATE`·`JUDGMENT`·`MEMORY_SUMMARY`·`PUBLISH_FILTER`·`CLIENT`)·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 25개·장기 기억 조정용 9개(`MEMORY_MODEL_SCOPE`·`MEMORY_EMBED_MODEL`·`MEMORY_EMBED_DIMS`·`MEMORY_EMBED_RECALL_` 뒤에 `RRF_K`·`MAX_PLAIN`·`MAX_CUE`·`MAX_DISTANCE`·`VECTOR_LIMIT`·`DF_MAX` 가 붙는 6개), 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 스위치 3개(소설 삽화 `NOVEL_ILLUSTRATIONS_ENABLED`·소설 구성 흐름 `NOVELIZE_OUTLINE_FLOW_ENABLED`·누적 출석판 `ATTENDANCE_BOARD_ENABLED`), 줄을 두지 않는 인상 키 2개(묶음 크기 `MEMORY_IMPRESSION_EVERY_N_FOLDS`·아직 켜지 않은 보기 스위치 `MEMORY_IMPRESSIONS_VISIBLE`), 전체 공개 뒤 줄을 지운 노벨 미리보기 명단 1개(`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`), 잔액을 한꺼번에 옮기는 동안에만 켜고 평소에는 줄을 두지 않는 클로버 정지 스위치 1개(`CLOVER_LEDGER_PAUSED`), 모두 79개 제외 —
 파일에 줄이 있는 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`·`NOVELIZE_WORKER_ENABLED`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 9개(`PORTONE_*` 5개·
 `IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 노벨 스위치 2개(`NOVEL_PUBLIC_ENABLED`·공개 정책 `NOVEL_PUBLIC_POLICY_V2_ENABLED`), 여러 문단 수정 스위치 1개(`NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`), 장기 기억 키 16개(`MEMORY_*` 15개 — 장면·사실 추출과 모델, 장면 회상, 사실 주입, 요약 모델·비밀 표기, 지식 범위 필터, 임베딩 쓰기·회상과 그 시간 상한, 기억 보기 `MEMORY_ITEMS_VISIBLE`, 인상 쓰기와 그 모델 — 와 `VOYAGE_API_KEY`), 스탯 판정 이벤트 스위치 1개(`STAT_EVENT_LOG`)를 포함한 나머지 76개는 셈에 들어간다) + 앱이 읽지 않지만
 옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
@@ -319,7 +319,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `BEDROCK_CHAT_MAX_TOKENS` / `BEDROCK_CHAPTER_MAX_TOKENS` | 설정 안 함(기본 `4096` / `32768`) | 출력 상한. Bedrock 은 요청의 출력 상한만큼 분당 토큰 쿼터를 먼저 잡으므로 올리면 동시 요청이 스로틀되기 쉽다. 장이 잘리면 실패·환불이다 |
 | `ANTHROPIC_DIRECT_API_KEY` | Anthropic 콘솔에서 만든 이 서비스 전용 API 키 | 상위 모델을 Anthropic API 로 직접 보낼 때의 자격. SDK 가 스스로 읽는 `ANTHROPIC_API_KEY` 와 이름을 나눴다. 아래 배정이 호출을 직결로 옮기는데 비어 있으면 스위치와 무관하게 api 가 기동하지 못한다. 직결의 모델 id·타임아웃·출력 상한·사고 깊이(나머지 `ANTHROPIC_*`)는 설정 안 함이 기본이다(기본값은 `.env.example`) |
 | `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)·인상 생성 `chat_memory_impression`(2026-10-28)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음) | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 장면 헤더 판정 호출 위치(`chat_scene_judgment`·`preview_scene_judgment`)는 줄을 두지 않고 배정을 물려받는다 — 채팅 장면은 채팅 스탯 판정을, 미리보기 장면은 채팅 장면을 거쳐 같은 배정을 따른다. **스탯 판정 배정을 바꾸면 장면 판정도 함께 움직인다**(줄을 따로 넣으면 그 이름을 모르는 옛 이미지가 뜨지 못한다). 미리보기 생성(`preview_generate`)과 미리보기 판정 넷은 채팅 짝(`chat_generate`·`chat_stat_judgment`·`chat_ending_judgment`·`chat_media_book_image`·`chat_scene_judgment`)의 배정을 물려받는다. 미리보기 줄이 없으면 짝의 배정으로 가고, 줄이 있으면 그 줄로 가는 경로가 짝을 물려받아 가는 경로와 같아야 기동한다(다르면 api 가 뜨지 않는다). 그래서 **채팅 판정 배정을 바꿀 때는 짝인 미리보기 판정 줄도 같은 편집에서 바꾼다** — 채팅 줄만 바꾸고 미리보기 줄을 남기면 기동이 거부된다. `preview_generate` 줄은 넣지 않는다(채팅 생성 배정을 물려받는다 — 그 이름을 그 호출의 모델로 읽는 옛 이미지는 `preview_generate:anthropic` 줄로 뜨지 못한다). 모델 배정 표(`prompt_routes`)의 행은 이 배정 위에 얹힌다 — 판정·요약·추출 칸의 행은 그 행을 읽는 호출 위치 전부(채팅과 미리보기 판정, 물려받는 장면 판정)에서 이 배정으로 푼 경로가 행의 경로와 같을 때만 쓰인다. 배정을 바꾼 뒤에는 "채팅 단계별 문안 체인·호출 모델 설정 — 켜기 · 끄기 · 되돌리기" 절대로 건너뛴 행을 확인한다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
-| `CHAT_PREMIUM_MODELS_ENABLED` | 켤 때 `true`(코드 기본값은 꺼짐) | 채팅 상위 모델 스위치. 켜면 로그인 회원 모두가 채팅방에 상위 모델(Opus)을 고를 수 있다 — 명단·계정별 허용은 없다. 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 지금 이미지가 읽지 않지만 지우지 않는다(채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단을 다시 읽는다). 켜고 끄는 법은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
+| `CHAT_PREMIUM_MODELS_ENABLED` | 켤 때 `true`(코드 기본값은 꺼짐) | 채팅 상위 모델 스위치. 켜면 로그인 회원 모두가 채팅방에 상위 모델(아래 `CHAT_MODELS_VISIBLE` 의 모델)을 고를 수 있다 — 명단·계정별 허용은 없다. 끄면 그 목록과 무관하게 모두 숨는다. 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 지금 이미지가 읽지 않지만 지우지 않는다(채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단을 다시 읽는다). 켜고 끄는 법은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
+| `CHAT_MODELS_VISIBLE` | 설정 안 함(코드 기본값 `opus`). Sonnet 을 채팅에 열 때 `opus,sonnet` | 위 채팅 스위치가 켜져 있을 때 채팅에서 고를 수 있게 보일 상위 모델(쉼표 구분, 공백·따옴표 없이). 목록에서 뺀 모델은 모델 목록·공개 가격에서 빠지고 방 지정·미리보기 시작이 403 이며, 그 모델이 저장된 방은 Gemini 로 Gemini 가격에 돈다. 켜기 = 이 줄을 `opus,sonnet` 으로, 롤백 = `opus` 로 고치거나 줄을 지우고 `sudo bash ops/swap-api.sh`. 🔴 모두 숨기려면 이 줄을 비우지 말고 채팅 스위치를 끈다 — 값이 빈 줄은 형식 검사(`empty-value`)가 거부해 이후 push 배포가 모두 멈춘다. 모르는 id·`gemini`·중복이면 api 가 기동하지 않는다 — 교체가 실패해도 `.env` 의 이 줄은 그대로 남아 다음 재기동(VM 재부팅 포함)에서 두 색이 모두 못 뜨므로, 교체가 실패하면 이 줄부터 되돌린다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
 | `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같고, 어드민이 준 계정별 허용 행도 있어야 한다. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
 | `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
 | `NOVEL_PUBLIC_PREVIEW_ALLOWLIST` | 미리보기 동안 계정 id, **쉼표 구분**(공백·따옴표 없이). 전체 공개 뒤에는 줄을 지운다(코드 기본값은 빈 명단) | 노벨 미리보기 명단. 비어 있으면 스위치가 켜졌을 때 모두에게 열리고, 비어 있지 않으면 스위치가 켜져 있어도 명단의 로그인 회원에게만 열린다 — 그 밖의 회원·비로그인은 스위치를 끈 것과 같은 응답이고, 인증 없는 가격 응답의 `novelPublicEnabled` 도 거짓이다. UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 절차는 "노벨(공개 소설) 켜기 · 끄기" 절 |
@@ -2352,6 +2353,28 @@ sudo bash ops/swap-api.sh
 화면의 모델 선택 입구(헤더 칩 또는 더보기 「AI 모델」)가 보인다. 고른 모델은 방마다 저장되고 다음 턴부터 그 모델·그 가격으로 돈다. 상위 모델 턴은 레이트리밋
 면제 계정도 값을 내고(턴 단가는 `api/core/clover.py` 의 가격 등록부 `CLOVER_MODEL_PRICES` Opus 행에서 확인한다), 하루 무료분은 Gemini 턴에만
 쓰인다(출석판 스위치가 꺼져 있을 때). 소설 장의 상위 모델도 열 때는 `NOVELIZE_PREMIUM_*` 두 줄(스위치·명단)을 같은 방식으로 더한다.
+
+**모델마다 보이기·숨기기.** 채팅 스위치가 켜져 있어도 채팅에서 고를 수 있게 보이는 상위 모델은 `CHAT_MODELS_VISIBLE` 의
+모델뿐이다. 줄이 없으면 코드 기본값 `opus` 라 Opus 만 보이고 Sonnet 은 숨는다. Sonnet 을 열 때는 그 줄을 `opus,sonnet` 으로
+넣고(이미 있으면 고치고) 다시 올린다. 채팅 턴·측정용 리플레이 배정(`chat_generate`·`replay_generate`)이 Sonnet 에도 걸리고
+미리보기는 채팅 생성 배정을 물려받으므로 배정 줄은 고치지 않는다. 열기 전에 두 채팅 레인(스토리·캐릭터)의 Sonnet 문안 세트가
+게시돼 있는지 어드민 프롬프트 화면에서 본다 — 없으면 Sonnet 턴이 차감 뒤 실패하고 환불된다.
+
+```sh
+cd /opt/ddona/app
+sudo sh -c 'printf "\nCHAT_MODELS_VISIBLE=opus,sonnet\n" >> /opt/ddona/.env'
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo bash ops/swap-api.sh
+```
+
+🔴 교체가 실패하면(새 색이 healthy 가 안 됨 — 값 오타면 기동 검증이 거부한다) 옛 색은 그대로 서빙하지만 `.env` 의 이 줄은
+되돌려지지 않는다. 그대로 두면 다음 재기동(VM 재부팅 포함)에서 두 색이 모두 뜨지 못하므로 이 줄부터 지우거나 고친다.
+숨기기(모델 하나의 롤백)는 줄을 `opus` 로 고치거나 지우고(기본값이 `opus`) 같은 순서로 다시 올린다. 숨긴 모델이 저장된 방은
+막히지 않고 Gemini 로 Gemini 가격에 돌고, 다시 열면 저장된 모델로 돌아간다. 상위 모델을 모두 숨길 때는 이 줄을 비우지 말고
+위 「끄기」로 채팅 스위치를 끈다 — 값이 빈 줄은 형식 검사(`empty-value`)가 거부해 이후 push 배포가 모두 멈춘다. 이미지 태그를
+Sonnet 채팅 이전으로 되돌려야 하면 먼저 이 줄로 Sonnet 을 숨기고 나서 되돌린다. Sonnet 으로 시작한 빌더 미리보기 세션(마지막 활동
+뒤 24시간 Redis 에 남는다)은 옛 이미지가 읽지 못해 그 세션의 요청이 모두 실패하므로 작가가 미리보기를 새로 시작해야 한다(방은
+문자열 칸이라 Gemini 로 내려 문제없다). 줄을 넣거나 지우면 "BE 런타임" 절의 키 개수 문장을 다시 센다.
 
 **소설 계정 허용.** 소설 상위 모델은 스위치와 명단만으로는 아직 아무도 못 쓴다 — 계정마다 허용 행이 있어야 한다.
 
