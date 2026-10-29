@@ -593,21 +593,33 @@ async def test_bible_check_constraints_admit_the_edge_and_reject_just_past_it(
         await _insert(db_session, model, {**_base_values(model, ctx), **_resolved(ctx, rejected)})
 
 
-async def test_a_chapter_has_at_most_one_in_flight_commit_per_branch(db_session: AsyncSession) -> None:
+@pytest.mark.parametrize(
+    ("first_status", "second_status"),
+    [
+        pytest.param("pending", "extracting", id="pending-then-extracting"),
+        pytest.param("extracting", "linking", id="extracting-then-linking"),
+        pytest.param("linking", "checking", id="linking-then-checking"),
+        pytest.param("checking", "pending", id="checking-then-pending"),
+    ],
+)
+async def test_a_chapter_has_at_most_one_in_flight_commit_per_branch(
+    db_session: AsyncSession, first_status: str, second_status: str
+) -> None:
     """새 확정이 들어오면 앞 것을 낡음으로 돌린 뒤 넣는다 — 부분 유니크가 그 순서를 강제한다. 다른 가지와 끝난 확정은 막지
-    않는다."""
+    않는다. 진행 중 상태 넷이 저마다 앞 행이 되어 보는 것은, 조건식에서 상태 하나가 빠지면 그 상태의 확정 옆에 두 번째 진행 중
+    확정이 들어가 버리기 때문이다."""
     ctx = await _ctx(db_session)
-    first = _commit_values(ctx.tree, id=uuid.uuid4(), status="pending")
+    first = _commit_values(ctx.tree, id=uuid.uuid4(), status=first_status)
     await _insert(db_session, NovelBibleCommit, first)
-    await _insert(db_session, NovelBibleCommit, _commit_values(ctx.tree, status="checking", branch="other"))
+    await _insert(db_session, NovelBibleCommit, _commit_values(ctx.tree, status=second_status, branch="other"))
 
     with pytest.raises(IntegrityError, match="ux_novel_bible_commits_in_flight"):
-        await _insert(db_session, NovelBibleCommit, _commit_values(ctx.tree, status="extracting"))
+        await _insert(db_session, NovelBibleCommit, _commit_values(ctx.tree, status=second_status))
 
     await db_session.execute(
         sa.update(NovelBibleCommit).where(NovelBibleCommit.id == first["id"]).values(status="stale")
     )
-    await _insert(db_session, NovelBibleCommit, _commit_values(ctx.tree, status="extracting"))
+    await _insert(db_session, NovelBibleCommit, _commit_values(ctx.tree, status=second_status))
 
 
 async def test_a_commit_runs_each_slot_once(db_session: AsyncSession) -> None:
@@ -654,7 +666,8 @@ async def test_entity_names_are_unique_per_novel_and_kind(db_session: AsyncSessi
 
 
 async def test_an_item_expires_at_most_once_per_revision(db_session: AsyncSession) -> None:
-    """만료 행의 복합 PK — 같은 리비전이 같은 항목을 두 번 만료하지 않는다. 표가 다르면 같은 id 라도 다른 항목이다."""
+    """만료 행의 복합 PK — 같은 리비전이 같은 항목을 두 번 만료하지 않는다. 표가 다르면 같은 id 라도 다른 항목이고, 다른
+    리비전(다른 가지의 커밋 따위)은 같은 항목을 따로 만료할 수 있다."""
     ctx = await _ctx(db_session)
     expiration = {
         "revision_id": ctx.rows.revision_id,
@@ -667,3 +680,18 @@ async def test_an_item_expires_at_most_once_per_revision(db_session: AsyncSessio
         await _insert(db_session, NovelBibleExpiration, {**expiration, "item_table": "event"})
 
     await _insert(db_session, NovelBibleExpiration, {**expiration, "item_table": "fact"})
+    other_revision_id = uuid.uuid4()
+    await _insert(
+        db_session,
+        NovelBibleRevision,
+        {
+            "id": other_revision_id,
+            "novel_id": ctx.tree.novel.id,
+            "branch": "other",
+            "revision_no": 1,
+            "commit_id": ctx.spare_commit_id,
+        },
+    )
+    await _insert(
+        db_session, NovelBibleExpiration, {**expiration, "revision_id": other_revision_id, "item_table": "event"}
+    )

@@ -111,6 +111,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index('ix_novel_bible_findings_commit', 'novel_bible_findings', ['commit_id'], unique=False)
+    op.create_index('ix_novel_bible_findings_novel_id', 'novel_bible_findings', ['novel_id'], unique=False)
     op.create_table('novel_bible_jobs',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('novel_id', sa.Uuid(), nullable=False),
@@ -140,6 +141,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index('ix_novel_bible_jobs_cache', 'novel_bible_jobs', ['novel_id', 'slot', 'cache_key'], unique=False, postgresql_where=sa.text("status = 'succeeded'"))
+    op.create_index('ix_novel_bible_jobs_novel_id', 'novel_bible_jobs', ['novel_id'], unique=False)
     op.create_index('ix_novel_bible_jobs_queued', 'novel_bible_jobs', ['available_at', 'created_at'], unique=False, postgresql_where=sa.text("status = 'queued'"))
     op.create_index('ix_novel_bible_jobs_running', 'novel_bible_jobs', ['claimed_at'], unique=False, postgresql_where=sa.text("status = 'running'"))
     op.create_index('ux_novel_bible_jobs_commit_slot', 'novel_bible_jobs', ['commit_id', 'slot'], unique=True)
@@ -205,6 +207,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['supersedes_id'], ['novel_bible_events.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index('ix_novel_bible_events_chapter_id', 'novel_bible_events', ['chapter_id'], unique=False)
     op.create_index('ix_novel_bible_events_created_revision', 'novel_bible_events', ['created_revision_id'], unique=False)
     op.create_index('ix_novel_bible_events_novel_chapter', 'novel_bible_events', ['novel_id', 'chapter_id'], unique=False)
     op.create_index('ix_novel_bible_events_supersedes', 'novel_bible_events', ['supersedes_id'], unique=False)
@@ -243,6 +246,7 @@ def upgrade() -> None:
     )
     op.create_index('ix_novel_bible_evidence_created_revision', 'novel_bible_evidence', ['created_revision_id'], unique=False)
     op.create_index('ix_novel_bible_evidence_item', 'novel_bible_evidence', ['item_table', 'item_id'], unique=False)
+    op.create_index('ix_novel_bible_evidence_novel_id', 'novel_bible_evidence', ['novel_id'], unique=False)
     op.create_index('ix_novel_bible_evidence_novel_chapter', 'novel_bible_evidence', ['novel_id', 'chapter_id'], unique=False, postgresql_where=sa.text("origin = 'manuscript_block'"))
     op.create_table('novel_bible_expirations',
     sa.Column('revision_id', sa.Uuid(), nullable=False),
@@ -257,6 +261,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('revision_id', 'item_table', 'item_id')
     )
     op.create_index('ix_novel_bible_expirations_item', 'novel_bible_expirations', ['item_table', 'item_id'], unique=False)
+    op.create_index('ix_novel_bible_expirations_novel_id', 'novel_bible_expirations', ['novel_id'], unique=False)
     op.create_table('novel_bible_event_relations',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('novel_id', sa.Uuid(), nullable=False),
@@ -277,7 +282,9 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['supersedes_id'], ['novel_bible_event_relations.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index('ix_novel_bible_event_relations_chapter_id', 'novel_bible_event_relations', ['chapter_id'], unique=False)
     op.create_index('ix_novel_bible_event_relations_created_revision', 'novel_bible_event_relations', ['created_revision_id'], unique=False)
+    op.create_index('ix_novel_bible_event_relations_from_event_id', 'novel_bible_event_relations', ['from_event_id'], unique=False)
     op.create_index('ix_novel_bible_event_relations_novel_chapter', 'novel_bible_event_relations', ['novel_id', 'chapter_id'], unique=False)
     op.create_index('ix_novel_bible_event_relations_supersedes', 'novel_bible_event_relations', ['supersedes_id'], unique=False)
     op.create_table('novel_bible_facts',
@@ -317,6 +324,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['value_entity_id'], ['novel_bible_entities.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index('ix_novel_bible_facts_chapter_id', 'novel_bible_facts', ['chapter_id'], unique=False)
     op.create_index('ix_novel_bible_facts_created_revision', 'novel_bible_facts', ['created_revision_id'], unique=False)
     op.create_index('ix_novel_bible_facts_novel_chapter', 'novel_bible_facts', ['novel_id', 'chapter_id'], unique=False)
     op.create_index('ix_novel_bible_facts_novel_key', 'novel_bible_facts', ['novel_id', 'fact_key'], unique=False)
@@ -346,6 +354,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['supersedes_id'], ['novel_bible_knowledge.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index('ix_novel_bible_knowledge_chapter_id', 'novel_bible_knowledge', ['chapter_id'], unique=False)
     op.create_index('ix_novel_bible_knowledge_created_revision', 'novel_bible_knowledge', ['created_revision_id'], unique=False)
     op.create_index('ix_novel_bible_knowledge_knower', 'novel_bible_knowledge', ['knower_entity_id'], unique=False)
     op.create_index('ix_novel_bible_knowledge_known_since', 'novel_bible_knowledge', ['known_since_event_id'], unique=False, postgresql_where=sa.text('known_since_event_id IS NOT NULL'))
@@ -363,6 +372,7 @@ def downgrade() -> None:
     op.drop_index('ix_novel_bible_knowledge_known_since', table_name='novel_bible_knowledge', postgresql_where=sa.text('known_since_event_id IS NOT NULL'))
     op.drop_index('ix_novel_bible_knowledge_knower', table_name='novel_bible_knowledge')
     op.drop_index('ix_novel_bible_knowledge_created_revision', table_name='novel_bible_knowledge')
+    op.drop_index('ix_novel_bible_knowledge_chapter_id', table_name='novel_bible_knowledge')
     op.drop_table('novel_bible_knowledge')
     op.drop_index('ix_novel_bible_facts_value_entity', table_name='novel_bible_facts', postgresql_where=sa.text('value_entity_id IS NOT NULL'))
     op.drop_index('ix_novel_bible_facts_valid_from', table_name='novel_bible_facts', postgresql_where=sa.text('valid_from_event_id IS NOT NULL'))
@@ -371,20 +381,26 @@ def downgrade() -> None:
     op.drop_index('ix_novel_bible_facts_novel_key', table_name='novel_bible_facts')
     op.drop_index('ix_novel_bible_facts_novel_chapter', table_name='novel_bible_facts')
     op.drop_index('ix_novel_bible_facts_created_revision', table_name='novel_bible_facts')
+    op.drop_index('ix_novel_bible_facts_chapter_id', table_name='novel_bible_facts')
     op.drop_table('novel_bible_facts')
     op.drop_index('ix_novel_bible_event_relations_supersedes', table_name='novel_bible_event_relations')
     op.drop_index('ix_novel_bible_event_relations_novel_chapter', table_name='novel_bible_event_relations')
+    op.drop_index('ix_novel_bible_event_relations_from_event_id', table_name='novel_bible_event_relations')
     op.drop_index('ix_novel_bible_event_relations_created_revision', table_name='novel_bible_event_relations')
+    op.drop_index('ix_novel_bible_event_relations_chapter_id', table_name='novel_bible_event_relations')
     op.drop_table('novel_bible_event_relations')
+    op.drop_index('ix_novel_bible_expirations_novel_id', table_name='novel_bible_expirations')
     op.drop_index('ix_novel_bible_expirations_item', table_name='novel_bible_expirations')
     op.drop_table('novel_bible_expirations')
     op.drop_index('ix_novel_bible_evidence_novel_chapter', table_name='novel_bible_evidence', postgresql_where=sa.text("origin = 'manuscript_block'"))
+    op.drop_index('ix_novel_bible_evidence_novel_id', table_name='novel_bible_evidence')
     op.drop_index('ix_novel_bible_evidence_item', table_name='novel_bible_evidence')
     op.drop_index('ix_novel_bible_evidence_created_revision', table_name='novel_bible_evidence')
     op.drop_table('novel_bible_evidence')
     op.drop_index('ix_novel_bible_events_supersedes', table_name='novel_bible_events')
     op.drop_index('ix_novel_bible_events_novel_chapter', table_name='novel_bible_events')
     op.drop_index('ix_novel_bible_events_created_revision', table_name='novel_bible_events')
+    op.drop_index('ix_novel_bible_events_chapter_id', table_name='novel_bible_events')
     op.drop_table('novel_bible_events')
     op.drop_index('ix_novel_bible_adaptation_candidates_novel_key', table_name='novel_bible_adaptation_candidates')
     op.drop_index('ix_novel_bible_adaptation_candidates_created_revision', table_name='novel_bible_adaptation_candidates')
@@ -397,8 +413,10 @@ def downgrade() -> None:
     op.drop_index('ux_novel_bible_jobs_commit_slot', table_name='novel_bible_jobs')
     op.drop_index('ix_novel_bible_jobs_running', table_name='novel_bible_jobs', postgresql_where=sa.text("status = 'running'"))
     op.drop_index('ix_novel_bible_jobs_queued', table_name='novel_bible_jobs', postgresql_where=sa.text("status = 'queued'"))
+    op.drop_index('ix_novel_bible_jobs_novel_id', table_name='novel_bible_jobs')
     op.drop_index('ix_novel_bible_jobs_cache', table_name='novel_bible_jobs', postgresql_where=sa.text("status = 'succeeded'"))
     op.drop_table('novel_bible_jobs')
+    op.drop_index('ix_novel_bible_findings_novel_id', table_name='novel_bible_findings')
     op.drop_index('ix_novel_bible_findings_commit', table_name='novel_bible_findings')
     op.drop_table('novel_bible_findings')
     op.drop_index('ux_novel_bible_commits_in_flight', table_name='novel_bible_commits', postgresql_where=sa.text("status IN ('pending', 'extracting', 'linking', 'checking')"))

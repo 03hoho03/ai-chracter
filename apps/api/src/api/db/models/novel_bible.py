@@ -15,6 +15,10 @@ FK 가 없다.
 항목 표(사건·회상 관계·사실·지식·각색 후보)에는 INSERT 만 한다. 바뀐 것은 새 리비전의 새 행과 만료 행으로 나타내고, 행을 고치는
 것은 삭제 경로가 일으키는 `SET NULL`·CASCADE 뿐이다. 모든 표가 `novel_id` 를 갖는다 — 소설 삭제와 조회의 기준이다.
 
+Postgres 는 FK 칸에 인덱스를 만들어 주지 않으므로 FK 칸마다 그 칸으로 시작하는 인덱스를 둔다 — 없으면 부모 DELETE 의 FK
+검사·cascade 와 삭제 경로의 직접 DELETE 가 이 표를 순차 탐색한다. 부분 인덱스는 조건이 FK 비교에서 따라 나올 때(`칸 IS NOT
+NULL`)만 이 일을 하고, 다른 조건(`status = …` 따위)의 부분 인덱스는 못 한다.
+
 종류·상태처럼 값이 정해진 칸은 Text + Literal 이고 DB 범위는 CHECK 가 막는다. 값 목록은 `novel_bible/ids.py` 의 Literal 에서
 만든다. 🔴 `alembic check` 는 CHECK 제약·복합 PK·부분 인덱스 조건식을 비교하지 않는다 — 검증은
 `tests/test_novel_bible_models.py` 의 `IntegrityError` 행위 테스트가 유일하다."""
@@ -198,6 +202,8 @@ class NovelBibleJob(Base):
         Index(
             "ix_novel_bible_jobs_cache", "novel_id", "slot", "cache_key", postgresql_where=text("status = 'succeeded'")
         ),
+        # 소설 DELETE 때 FK 검사용 — 캐시 인덱스는 성공한 작업만 담는 부분 인덱스라 이 일을 못 한다.
+        Index("ix_novel_bible_jobs_novel_id", "novel_id"),
     )
 
 
@@ -332,6 +338,8 @@ class NovelBibleEvidence(Base):
             "chapter_id",
             postgresql_where=text("origin = 'manuscript_block'"),
         ),
+        # 소설 DELETE 때 FK 검사용 — 위 소설·화 인덱스는 원고 근거만 담는 부분 인덱스라 이 일을 못 한다.
+        Index("ix_novel_bible_evidence_novel_id", "novel_id"),
     )
 
 
@@ -356,6 +364,8 @@ class NovelBibleExpiration(Base):
         CheckConstraint(f"item_table IN ({_sql_in_list(ItemTable)})", name="ck_novel_bible_expirations_item_table"),
         CheckConstraint(f"reason IN ({_sql_in_list(ExpirationReason)})", name="ck_novel_bible_expirations_reason"),
         Index("ix_novel_bible_expirations_item", "item_table", "item_id"),
+        # 소설 DELETE 때 FK 검사용.
+        Index("ix_novel_bible_expirations_novel_id", "novel_id"),
     )
 
 
@@ -379,6 +389,8 @@ class NovelBibleFinding(Base):
         CheckConstraint(f"severity IN ({_sql_in_list(FindingSeverity)})", name="ck_novel_bible_findings_severity"),
         CheckConstraint(f"rule IN ({_sql_in_list(FindingRule)})", name="ck_novel_bible_findings_rule"),
         Index("ix_novel_bible_findings_commit", "commit_id"),
+        # 소설 DELETE 때 FK 검사용.
+        Index("ix_novel_bible_findings_novel_id", "novel_id"),
     )
 
 
@@ -437,10 +449,13 @@ class NovelBibleItem:
 
 
 def item_table_args(table: str) -> tuple[CheckConstraint | Index, ...]:
-    """항목 표 `table` 의 상태 CHECK 와 공통 인덱스 — 소설·화 조회, 리비전 DELETE 때 FK 검사, 대체 사슬 DELETE 때 FK 검사."""
+    """항목 표 `table` 의 상태 CHECK 와 공통 인덱스 — 소설·화 조회(소설 DELETE 때 FK 검사도 겸한다), 화 DELETE 때 FK 검사,
+    리비전 DELETE 때 FK 검사, 대체 사슬 DELETE 때 FK 검사. 화 인덱스를 따로 두는 것은 소설·화 인덱스가 소설을 첫 칸으로 두어
+    화만으로 찾으면 그 인덱스를 소설마다 뒤져야 하기 때문이다."""
     return (
         CheckConstraint(f"status IN ({_sql_in_list(ItemStatus)})", name=f"ck_{table}_status"),
         Index(f"ix_{table}_novel_chapter", "novel_id", "chapter_id"),
+        Index(f"ix_{table}_chapter_id", "chapter_id"),
         Index(f"ix_{table}_created_revision", "created_revision_id"),
         Index(f"ix_{table}_supersedes", "supersedes_id"),
     )

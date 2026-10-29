@@ -4,7 +4,7 @@ docstring 과 `NovelBibleItem`."""
 import uuid
 from typing import Any
 
-from sqlalchemy import ARRAY, CheckConstraint, ForeignKey, Integer, Text, Uuid, text
+from sqlalchemy import ARRAY, CheckConstraint, ForeignKey, Index, Integer, Text, Uuid, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -69,4 +69,6 @@ class NovelBibleEventRelation(NovelBibleItem, Base):
         CheckConstraint(
             f"relation IN ({_sql_in_list(EventRelationKind)})", name="ck_novel_bible_event_relations_relation"
         ),
+        # 사건 DELETE 때 FK 검사(cascade)용.
+        Index("ix_novel_bible_event_relations_from_event_id", "from_event_id"),
     )
