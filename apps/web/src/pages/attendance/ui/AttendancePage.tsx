@@ -80,10 +80,19 @@ export function AttendancePage() {
 
   return (
     <main className={PAGE_CLASS}>
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold tracking-tight text-balance text-foreground">또 만나, 28일</h1>
-        <p className="text-sm break-keep text-muted-foreground">하루 쉬어도 괜찮아요. 출석한 만큼 선물이 쌓여요.</p>
-      </div>
+      {/* 스켈레톤은 출석 스위치를 아직 모르는 때다 — 꺼진 서버에서 가격 요청이 늦거나 재시도하는 동안 출석판 문구가 보이지
+          않게, 기능 유무를 말하지 않는 막대만 그린다. */}
+      {view.kind === "skeleton" ? (
+        <div className="flex flex-col gap-2" aria-hidden>
+          <div className="h-8 w-44 animate-pulse rounded bg-secondary" />
+          <div className="h-5 w-64 max-w-full animate-pulse rounded bg-secondary" />
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <h1 className="text-2xl font-bold tracking-tight text-balance text-foreground">또 만나, 28일</h1>
+          <p className="text-sm break-keep text-muted-foreground">하루 쉬어도 괜찮아요. 출석한 만큼 선물이 쌓여요.</p>
+        </div>
+      )}
       <AttendanceBody
         view={view}
         justClaimedSeq={justClaimedSeq}
