@@ -4,6 +4,9 @@
 그 코드의 src 를 `sys.path` 맨 앞에 두고 이 모듈의 `observe_turn` 을 시나리오마다 돌려 그대로 적었다. 그래서 이 모듈은 그때
 코드에도 있던 이름만 쓴다. 기대값을 다시 만들어야 한다면 같은 방식으로 그 전 코드에서 만들어야 한다 — 지금 코드로 만들면 대조가
 항진명제가 된다.
+예외 두 칸: 기본 모델 턴의 하루 무료 대화를 걷어낸 뒤, 옛 코드가 무료로 통과시킨 Gemini 실효 시나리오의 원장 행과 DB 문장 수만
+지금 코드의 값(Gemini 단가 차감 한 행, 차감이 더한 문장 여섯)으로 고쳤다. 옛 코드에서 다시 뜨면 하루 무료가 그대로라 바뀐 동작을
+담을 수 없어서다. 나머지 칸은 여전히 옛 코드에서 뜬 값이다.
 
 시나리오: 레인 둘(스토리·캐릭터) × 방(저장 Gemini 스위치 켜짐, 저장 Opus 스위치 켜짐, 저장 Opus 스위치 꺼짐) × 경로 셋(보내기·
 재생성·수정) × 판정·요약 모델 설정 두 벌(전부 Gemini, 전부 Haiku). 시나리오마다 적는 것:
@@ -548,8 +551,16 @@ async def put_rows(db_session: AsyncSession, *rows: RouteRow) -> None:
     ("stored", "switch", "expected_stat", "expected_ledger"),
     [
         pytest.param("opus", True, "haiku", [["chat_spend", -clover.CLOVER_MODEL_PRICES["opus"].chat_turn]], id="opus-on"),
-        pytest.param("opus", False, "gemini", [], id="opus-off"),
-        pytest.param("gemini", True, "gemini", [], id="gemini-room"),
+        pytest.param(
+            "opus", False, "gemini", [["chat_spend", -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn]], id="opus-off"
+        ),
+        pytest.param(
+            "gemini",
+            True,
+            "gemini",
+            [["chat_spend", -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn]],
+            id="gemini-room",
+        ),
     ],
 )
 @pytest.mark.parametrize("surface", SURFACES)
@@ -578,7 +589,7 @@ async def test_judgment_sets_and_the_charge_follow_the_effective_room_model(
     assert [slots["stat"] for slots in sets] == [expected_stat]
     assert await ledger(db_session, user_id) == expected_ledger
     generation = [model for site, model in fake.calls if site == "chat_generate"]
-    assert generation == ["opus" if expected_ledger else "gemini"]
+    assert generation == [stored if switch else "gemini"]
 
 
 @pytest.mark.parametrize("surface", SURFACES)
