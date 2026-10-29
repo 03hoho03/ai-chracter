@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import {
+  CalendarCheck,
   FileText,
   House,
   IdCard,
@@ -60,6 +61,9 @@ export const PROFILE_DESTINATION_LABEL: Record<ProfileDestinationKey, string> = 
   chats: "내 채팅목록",
   profile: "내 프로필",
   personas: "대화 프로필",
+  // 출석판 h1 "또 만나, 28일" 과 다르다 — 그 제목은 메뉴에서 무엇이 있는 화면인지 말하지 못한다. 다른 화면 문구가 이
+  // 화면을 가리킬 때도 사용자가 찾아 누를 이 이름으로 부른다.
+  attendance: "출석판",
   clover: SUPPORT_DESTINATIONS.clover.label,
   "creator-payout": "크리에이터 정산",
   mypage: "설정",
@@ -156,6 +160,13 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
       return (
         <Link ref={ref} to="/personas" className={className} {...rest}>
           <IdCard aria-hidden />
+          <span>{label}</span>
+        </Link>
+      );
+    case "attendance":
+      return (
+        <Link ref={ref} to="/attendance" className={className} {...rest}>
+          <CalendarCheck aria-hidden />
           <span>{label}</span>
         </Link>
       );

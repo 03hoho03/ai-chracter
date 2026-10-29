@@ -68,3 +68,73 @@ describe("getIdentitySection", () => {
     ).toEqual({ kind: "verified" });
   });
 });
+
+/** 출석 보상은 게이트 스위치와 무관하게 늘 본인인증이 필요하다. 미션은 게이트를 따른다 — 게이트가 꺼져 있으면 미인증도
+ * 미션을 받으므로 그때는 미션을 인증 사유로 말하지 않는다. */
+describe("getIdentitySection — 출석판", () => {
+  function messageWith(gate: boolean, features: { payments: boolean; creatorPayout: boolean; attendance: boolean }): string {
+    const section = getIdentitySection({ identityVerified: false, identityGateEnabled: gate }, features);
+    if (section.kind !== "unverified") throw new Error(`expected unverified, got ${section.kind}`);
+    return section.message;
+  }
+
+  it("출석만 켜져 있어도 보인다", () => {
+    expect(
+      getIdentitySection(
+        { identityVerified: false, identityGateEnabled: false },
+        { payments: false, creatorPayout: false, attendance: true },
+      ).kind,
+    ).toBe("unverified");
+  });
+
+  it("출석까지 전부 꺼져 있으면 보이지 않는다", () => {
+    expect(
+      getIdentitySection(
+        { identityVerified: false, identityGateEnabled: false },
+        { payments: false, creatorPayout: false, attendance: false },
+      ),
+    ).toEqual({ kind: "hidden" });
+  });
+
+  it("출석만 켜져 있고 인증을 마쳤으면 인증됨이다", () => {
+    expect(
+      getIdentitySection(
+        { identityVerified: true, identityGateEnabled: false },
+        { payments: false, creatorPayout: false, attendance: true },
+      ),
+    ).toEqual({ kind: "verified" });
+  });
+
+  it("출석과 게이트가 켜져 있으면 출석 클로버와 미션 클로버를 말한다", () => {
+    expect(messageWith(true, { payments: false, creatorPayout: false, attendance: true })).toBe(
+      "매일 출석 클로버와 미션 클로버를 받으려면 휴대폰 본인인증이 필요해요.",
+    );
+  });
+
+  it("출석만 켜지고 게이트가 꺼져 있으면 미션을 말하지 않는다", () => {
+    const message = messageWith(false, { payments: false, creatorPayout: false, attendance: true });
+    expect(message).toBe("매일 출석 클로버를 받으려면 휴대폰 본인인증이 필요해요.");
+    expect(message).not.toContain("미션");
+  });
+
+  it("출석이 꺼져 있고 게이트가 켜져 있으면 지금 문장 그대로다", () => {
+    expect(messageWith(true, { payments: false, creatorPayout: false, attendance: false })).toBe(
+      "매일 무료 대화와 미션 클로버를 받으려면 휴대폰 본인인증이 필요해요.",
+    );
+  });
+
+  it("출석과 결제가 켜져 있으면 구매에 이어 출석을 말하고 나이 문장을 남긴다", () => {
+    expect(messageWith(false, { payments: true, creatorPayout: false, attendance: true })).toBe(
+      "클로버를 구매하거나 매일 출석 클로버를 받으려면 휴대폰 본인인증이 필요해요. 만 19세 이상만 구매할 수 있어요.",
+    );
+    expect(messageWith(true, { payments: true, creatorPayout: false, attendance: true })).toBe(
+      "클로버를 구매하거나 매일 출석 클로버와 미션 클로버를 받으려면 휴대폰 본인인증이 필요해요. 만 19세 이상만 구매할 수 있어요.",
+    );
+  });
+
+  it("출석이 켜져 있으면 무료 대화를 말하지 않는다", () => {
+    for (const gate of [false, true]) {
+      expect(messageWith(gate, { payments: true, creatorPayout: true, attendance: true })).not.toContain("무료 대화");
+    }
+  });
+});

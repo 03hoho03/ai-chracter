@@ -5,7 +5,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { useId, useState } from "react";
 
 import { isPremiumChatModel, type ChatModel, type ChatModelId } from "@/entities/chat-model";
-import { CloverBalance, isCloverInsufficient, useCloverBalanceQuery } from "@/entities/clover";
+import { CloverBalance, isCloverInsufficient, useCloverBalanceQuery, useCloverPricingQuery } from "@/entities/clover";
 import { useSessionQuery } from "@/entities/session";
 
 import {
@@ -67,6 +67,8 @@ export function ChatModelOptions({
   // 충전하고 돌아올 곳. 충전 화면이 이 주소로 "돌아가기"를 두고, 결제창·로그인 왕복 뒤에도 잃지 않게 넘겨 다닌다.
   const returnTo = useRouterState({ select: (state) => state.location.href });
   const { data: me } = useSessionQuery();
+  // 출석판이 켜지면 두 모델 모두 무료 대화가 없어 가격 문구가 갈린다. 가격 응답을 못 받았으면 꺼진 것으로 본다.
+  const attendanceEnabled = useCloverPricingQuery().data?.attendance?.enabled ?? false;
   const [pendingModelId, setPendingModelId] = useState<ChatModelId | undefined>(undefined);
   const confirmId = useId();
   const shortageId = useId();
@@ -79,7 +81,7 @@ export function ChatModelOptions({
     isCloverInsufficient(clover.balance, pendingPremiumModel.turnCost);
   const pendingDescriptionIds = isPendingModelShort ? `${confirmId} ${shortageId}` : confirmId;
   // 상위 모델이면 확인 문장이 먼저, 덧붙일 문장이 그 뒤다. 한 문단의 한 글자열로 이어 읽힌다.
-  const confirmText = [pendingPremiumModel && formatPremiumModelConfirm(pendingPremiumModel), confirmNote]
+  const confirmText = [pendingPremiumModel && formatPremiumModelConfirm(pendingPremiumModel, attendanceEnabled), confirmNote]
     .filter((sentence) => sentence !== undefined)
     .join(" ");
 
@@ -143,7 +145,7 @@ export function ChatModelOptions({
                   </span>
                 ))}
               </span>
-              <span className={cn("text-xs break-keep", SECONDARY_TEXT_CLASS)}>{formatChatModelPrice(model, me?.identityGated ?? false)}</span>
+              <span className={cn("text-xs break-keep", SECONDARY_TEXT_CLASS)}>{formatChatModelPrice(model, me?.identityGated ?? false, attendanceEnabled)}</span>
             </span>
           </ToggleGroupItem>
         ))}

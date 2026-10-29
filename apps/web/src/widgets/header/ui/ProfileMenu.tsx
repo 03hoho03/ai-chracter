@@ -13,11 +13,12 @@ import { LogOut, User } from "lucide-react";
 import { Fragment, useId, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import type { MeResponse } from "@/entities/session";
 import { useLogoutMutation } from "@/features/logout";
 
 import { PROFILE_MENU_DESTINATION_GROUPS } from "../model/profileDestinations";
-import { isProfileDestinationVisible } from "../model/profileDestinationVisibility";
+import { isProfileDestinationVisible, toPublicSwitches } from "../model/profileDestinationVisibility";
 import { ProfileDestinationLink } from "./ProfileDestinationLink";
 
 /** 계정 / 고객센터 그룹 + 로그아웃.
@@ -34,6 +35,8 @@ import { ProfileDestinationLink } from "./ProfileDestinationLink";
 export function ProfileMenu({ me }: { me: MeResponse }) {
   const navigate = useNavigate();
   const logout = useLogoutMutation();
+  // 출석판처럼 운영 전체 스위치로 열리는 목적지의 판정 재료. 헤더가 이미 같은 가격 쿼리를 읽어 새 요청은 없다.
+  const publicSwitches = toPublicSwitches(useCloverPricingQuery().data);
 
   const handleLogout = () => {
     logout.mutate(undefined, {
@@ -100,7 +103,7 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
           <Fragment key={group.label}>
             <ProfileMenuGroup label={group.label}>
               {group.keys
-                .filter((key) => isProfileDestinationVisible(key, me.enabledFeatures))
+                .filter((key) => isProfileDestinationVisible(key, me.enabledFeatures, publicSwitches))
                 .map((key) => (
                   <DropdownMenuItem key={key} asChild>
                     <ProfileDestinationLink destinationKey={key} me={me} />

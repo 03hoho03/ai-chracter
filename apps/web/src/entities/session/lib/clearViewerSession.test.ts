@@ -39,6 +39,7 @@ const VIEWER_KEYS: QueryKey[] = [
   cloverKeys.balance(),
   cloverKeys.missions(),
   cloverKeys.ledger("use"),
+  cloverKeys.attendance(),
   commentKeys.preferences("u1"),
   commentKeys.mutes("u1"),
   commentKeys.roots("u1", "c1", "latest"),
@@ -149,6 +150,18 @@ describe("clearViewerQueries", () => {
     clearViewerQueries(qc);
 
     for (const key of [...SHARED_KEYS, sessionKeys.current()]) expect(qc.getQueryData(key), String(key)).toBe("kept");
+  });
+});
+
+// 클로버 키는 잔액으로 이미 목록에 있어 팩토리 단위 대조로는 출석 키가 빠져도 드러나지 않는다 — 키를 직접 본다.
+describe("clearViewerQueries — 출석판", () => {
+  it("출석판 캐시도 로그아웃에 비운다 — 다음 계정에게 앞 계정의 진도가 보이면 안 된다", () => {
+    const qc = makeClient();
+    qc.setQueryData(cloverKeys.attendance(), "A");
+
+    clearViewerQueries(qc);
+
+    expect(qc.getQueryCache().find({ queryKey: cloverKeys.attendance(), exact: true })).toBeUndefined();
   });
 });
 

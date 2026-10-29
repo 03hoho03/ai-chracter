@@ -38,6 +38,33 @@ describe("formatPremiumModelConfirm", () => {
   });
 });
 
+/** 출석판이 켜지면 기본 모델에도 무료 대화가 없다 — 기본·상위 모두 첫 턴부터 깎이므로 "무료 대화" 는 둘을 가르는 정보가
+ * 아니다. 꺼진 동안의 문장은 그대로다. */
+describe("모델 문구 — 출석판", () => {
+  it.each([false, true])("켜져 있으면 두 모델 모두 턴 가격만 말한다(게이트에 걸림 %s)", (identityGated) => {
+    expect(formatChatModelPrice(GEMINI, identityGated, true)).toBe("턴마다 클로버 10개");
+    expect(formatChatModelPrice(OPUS, identityGated, true)).toBe("턴마다 클로버 120개");
+  });
+
+  it("켜져 있으면 상위 모델 확인 문장에 무료 대화를 말하지 않는다", () => {
+    const text = formatPremiumModelConfirm(OPUS, true);
+    expect(text).toBe("첫 턴부터 턴마다 클로버 120개를 써요. 바꾸면 다음 턴부터 따로 묻지 않고 바로 차감돼요.");
+    expect(text).not.toContain("무료");
+  });
+
+  it("꺼져 있으면 가격 줄은 지금 문장 그대로다", () => {
+    expect(formatChatModelPrice(GEMINI, false, false)).toBe("무료 대화를 다 쓴 뒤 턴마다 클로버 10개");
+    expect(formatChatModelPrice(GEMINI, true, false)).toBe("턴마다 클로버 10개 · 본인인증 전에는 무료 대화 없음");
+    expect(formatChatModelPrice(OPUS, false, false)).toBe("턴마다 클로버 120개 · 무료 대화 없음");
+  });
+
+  it("꺼져 있으면 상위 모델 확인 문장은 지금 그대로다", () => {
+    expect(formatPremiumModelConfirm(OPUS, false)).toBe(
+      "무료 대화 없이 첫 턴부터 턴마다 클로버 120개를 써요. 바꾸면 다음 턴부터 따로 묻지 않고 바로 차감돼요.",
+    );
+  });
+});
+
 describe("formatPremiumModelShortage", () => {
   // 가격은 서버 값이다 — 숫자를 문구에 고정하면 다음 가격 변경에서 화면과 서버가 갈린다.
   it.each([120, 77])("턴 가격 %d 를 그대로 담는다", (turnCost) => {
