@@ -366,6 +366,34 @@ async def test_detail_and_proposal_list_episode_prices_per_model_only_with_novel
     assert (detail.json()["prices"]["chapterGenerate"], proposal.json()["cost"]) == (31, 31)
 
 
+@pytest.mark.parametrize(
+    "visible",
+    [
+        pytest.param(["opus"], id="default-list"),
+        pytest.param(["opus", "sonnet"], id="both"),
+        pytest.param([], id="blank-list"),
+    ],
+)
+async def test_the_chat_visible_list_does_not_change_the_novel_chapter_models(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ModelLLM,
+    visible: list[str],
+) -> None:
+    """채팅 공개 목록은 채팅 방 모델만 고른다 — 소설 상위 모델 허용이 있는 계정의 장 모델은 그 목록과 무관하게 세 모델이다.
+    채팅 상위 모델 스위치도 켜 둬서, 공개 목록이 채팅에서 실제로 쓰이는 상태에서도 소설에 번지지 않는 것을 본다."""
+    _, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
+    _distinct_prices(monkeypatch)
+    _enable_chat_premium(monkeypatch)
+    monkeypatch.setattr(settings, "chat_models_visible", visible)
+
+    detail = await db_client.get(f"/novels/{novel_id}")
+
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["chapterModels"] == _expected_models(premium=True)
+
+
 async def _finished_job(
     db: AsyncSession, novel_id: uuid.UUID, user_id: uuid.UUID, *, model: str | None, status: str, kind: str, at: int
 ) -> None:
