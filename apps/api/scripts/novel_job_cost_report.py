@@ -20,7 +20,7 @@
   세므로(`llm/client.py` 의 `collect_usage`) 더하면 그 몫이 두 번 들어간다. `turn_cost_report.py`(채팅 턴 기록)와는 겹치지 않는다.
 - 합계는 실제보다 낮게 나온다: 소설 삭제·탈퇴로 지운 작업 행은 기록째 없고, 이 칸이 생기기 전 작업과 기록하지 못한 호출(프로세스
   사망 만료, 연쇄 부모의 시간 상한에 취소된 자식, 재검사의 503·409 갈래 — `novelize/call_records.py` 머리 주석)은 `[]` 이다.
-- 단가는 `llm/pricing.py` 의 단가표다(턴 보고의 `call_cost` 그대로). 표에 없는 모델의 원소는 `unpriced` 로 세고 합계에서 빼며, 그런
+- 단가는 `llm/pricing.py` 의 단가표다(그 모듈의 `call_cost` — 턴 보고와 같은 함수). 표에 없는 모델의 원소는 `unpriced` 로 세고 합계에서 빼며, 그런
   원소가 하나라도 있는 작업은 작업별 분포에서 빼고 따로 센다(`unpriced_jobs`). 사용량 없이 끝난 원소(안전 차단·전송 오류·쿼터
   소진·시간 상한 취소 — 공급자 쪽에서는 과금됐을 수 있다)는 `missing` 으로 세고 0 으로 친다.
 - `call failures` 줄은 원소의 호출 단위 실패 사유 분포다. 호출 뒤 소설 쪽 판정 실패(거절·형식·낡음)는 원소가 아니라 작업 행의 실패
@@ -41,8 +41,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core.rate_limit import KST
 from api.db.models.novel import NovelJob
 from api.db.session import async_session_factory
-# 기간 해석·원소 원가·백분위수는 턴 보고와 같은 규칙이라 그 함수를 그대로 쓴다.
-from turn_cost_report import _date_range, call_cost, percentile
+from api.llm.pricing import call_cost
+
+# 기간 해석·백분위수는 턴 보고와 같은 규칙이라 그 함수를 그대로 쓴다.
+from turn_cost_report import _date_range, percentile
 
 
 @dataclass(frozen=True)
