@@ -3571,6 +3571,66 @@ mkdir -p apps/api/scripts/seed_content/private
 tar -xzf seed-bundle.tar.gz -C apps/api/scripts/seed_content/private/ && rm seed-bundle.tar.gz
 ```
 
+### 3-20. 채팅 원가 비율 일일 리포트 — report cron
+
+채팅 모델(그 턴에 실제로 쓴 `gemini`·`sonnet`·`opus` 등)마다 KST 하루의 **원가 비율 = LLM 원가(원) ÷ (차감 클로버 × 0.690원)** 을
+낸다. 0.690원은 판매 1원에서 부가세·PG 수수료·원작자 몫을 뺀 0.828원을 보너스 20% 상품의 1.2 로 나눈 값 — 클로버 하나로 원가에
+쓸 수 있는 돈의 최악 기준이다. 출처는 턴 기록(`chat_turns`) 하나이고, 원가는 그 턴의 호출 전부(생성 + 판정 + 회상 질의 임베딩,
+`api/llm/pricing.py` 단가표·환율 1달러 1,400원), 차감은 그 행의 클로버 차감 합이다. 비율에는 클로버로 낸 턴만 넣고, 무료·예외
+턴(차감 0 — 예외 계정의 시험 턴 등)은 건수와 "무료 포함 총원가"로만 찍는다. 클로버 단위 전환 시각 이전 턴은 세지 않는다.
+**빠지는 것**: 미리보기 턴, 백그라운드 호출(요약 접기·기억 추출·임베딩 채우기 — 방의 모델로 나눌 수 없다), 실패 턴의 부분
+생성 원가. 사용량 일 집계(`scripts/llm_usage_report.py`)와 더하지 않는다 — 턴 기록의 호출을 그쪽도 세므로 두 번 들어간다.
+
+**경보**(Discord, `ops/notify.py` 채널): 그날 비율이 100% 를 넘고 그 모델의 클로버 턴이 10턴 이상이면 한 통(모델이 여럿이면
+한 줄로 묶는다). **연속 초과는 다시 알리지 않는다** — 그 모델의 이전 판정 가능일(거슬러 최대 14일)이 이미 초과였으면 건너뛴다.
+10턴 미만인 날은 판정하지 않고 상태도 바꾸지 않는다. 상태를 저장하지 않고 실행 때마다 이전 날을 다시 계산하므로 같은 날짜를
+다시 돌리면 같은 결론이다. 단가표에 없는 모델 id 의 호출은 0 원으로 치지 않는다 — 그 모델-날은 "판정 불가"로 찍고(단가 있는
+호출만 친 비율이 이미 100% 를 넘으면 초과로 본다), 그런 id 가 처음 나온 날에는 비율 경보와 따로 "단가 없는 호출 새로 나옴"을
+싣는다. **자동 조치는 없다** — 가격·모델 공개를 바꾸는 것은 사람이 정한다. 회원을 알아볼 단서는 싣지 않는다. 실패(색을 못
+고름·리포트 실패·단위 전환 기록이 전환이 아님)는 고정 문구로 알리고 예외 문장은 로그에만 남긴다.
+
+"크리에이터 정산 월 확정 — settle cron" 절처럼 **서빙 중인 api 컨테이너 안에서** `python -m api.clover.chat_cost_ratio` 를 돈다(단가표·환율·호출 원가
+계산이 앱 코드 한 곳에만 있다). 읽기 전용 트랜잭션에서 SELECT 만 한다. 래퍼 `ops/chat-cost-ratio.sh` 는 그 절의 래퍼와 같은 꼴이다 — `ops/active-color.sh` 로 색을 고르고, `.env` 에서는 `DISCORD_WEBHOOK_URL` 하나만
+읽고, 리포트의 마지막 줄이 `채팅 원가 경보:` 로 시작할 때만 그 줄을 보낸다. 인자는 리포트로 그대로 넘긴다 — `--date YYYY-MM-DD`
+(KST, 기본 어제), `--dry-run`(경보 줄 앞에 `[dry-run]` 을 붙여 보내지 않는다), `--ignore-previous`(이전 날을 보지 않고 그날만으로
+판정 — 아래 설치 직후 1회용, 크론 줄에는 없다). 출력은 `/var/log/ddona-chat-cost-ratio.log` 에 쌓이고 `ops/logrotate.d/ddona-cron`
+글롭이 회전한다.
+
+**최초 1회 — 심볼릭 링크 설치**(운영 쓰기라 사용자 승인 뒤에 한다. "클로버 만료 — expire cron" 절과 같은 이유 —
+`/opt/ddona/app` 은 배포마다 `git reset --hard` 되므로 링크해 두면 재설치 없이 다음 배포부터 반영된다). 병합·배포만으로는
+크론이 돌지 않는다 — 이 링크를 놓기 전까지 운영 동작은 바뀌지 않는다.
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/chat-cost-ratio.sh /opt/ddona/chat-cost-ratio.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-chat-cost-ratio /etc/cron.d/ddona-chat-cost-ratio
+```
+
+알림 모듈은 다른 크론과 같은 `/opt/ddona/scripts`(저장소 `apps/api/scripts` 링크)의 `ops.chat_cost_ratio_notify` 다.
+
+**검증**:
+
+```sh
+# 1. 수동 dry-run 1회 — 정상 종료, 모델별 줄과 마지막 줄 확인(수동 실행은 로그 파일이 아니라 화면에 찍힌다). 마지막 줄은 "경보 없음" 이거나
+#    "[dry-run] 채팅 원가 경보: …" 이고, 어느 쪽이든 알림은 가지 않는다.
+#    "클로버 단위 전환 기록이 전환이 아니다" 로 실패하면 단위가 전환 상태가 아닌 것이다(비율을 내지 않는다).
+sudo -u root /opt/ddona/chat-cost-ratio.sh --dry-run
+
+# 2. 링크 설치 직후 1회 — 이전 날을 보지 않고 어제만으로 판정한다. 크론을 켜기 전부터 초과가 이어지던 모델은 크론의 첫
+#    실행에서 "연속"으로 억제돼 끝내 알려지지 않는다 — 어제가 초과면 이 실행의 한 통이 그 첫 경보다. 그 뒤 크론의 첫
+#    실행은 이 어제를 직전 날로 보고 연속으로 억제한다.
+sudo -u root /opt/ddona/chat-cost-ratio.sh --ignore-previous
+
+# 3. 다음 15:50 UTC(KST 00:50)에 크론이 실제로 도는지
+tail -f /var/log/ddona-chat-cost-ratio.log
+```
+
+실패 알림을 받은 날은 그날 경보가 가지 않았는데 다음 날 실행은 그날을 "연속"으로 볼 수 있다. 실패 알림을 보면 그날을 다시
+돌린다(`sudo -u root /opt/ddona/chat-cost-ratio.sh --date YYYY-MM-DD`). 단가표·환율을 고치면 지난 날의 판정도 새 값으로 다시
+나온다.
+
+⚠️ 15:50 UTC — 다른 크론(05:00·06:00·15:05·16:35·17:35·18:00 UTC, 매시 17분, 5분마다)과 겹치지 않는다. 배포 교체와 겹치면
+그날은 실패 알림이 오고, 위처럼 `--date` 로 다시 돌린다.
+
 ## 4. 배포 후 스모크 검증
 
 1. `curl https://api.ddona.site/health` → `{"status":"ok"}` · `/ready`로 DB·Redis까지 확인. 배포 로그에서 교체 스크립트의
