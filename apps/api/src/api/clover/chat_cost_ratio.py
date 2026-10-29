@@ -31,7 +31,8 @@
   가지 않음)의 비율이 100% 이하이거나 그런 날이 없음. 판정 가능일 = 유료 턴 ≥ 10 이고 단가 없는 호출이 없는 날(있어도 하한이
   100% 초과면 판정 가능). 판정 불가일은 상태를 바꾸지 않는다. 상태를 저장하지 않고 실행 때 이전 날을 다시 계산하므로 같은
   `--date` 는 같은 결론이다.
-- 단가 없는 모델 id 알림은 비율 경보와 따로, 그 id 가 D−1 의 유료 행에 없었고 D 의 유료 행에 처음 나온 날에만 싣는다.
+- 단가 없는 모델 id 알림은 비율 경보와 따로, 그 id 가 D 의 유료 행에 있고 읽어 온 이전 날(D−14 부터, 전환 시각 이전으로는 가지
+  않음) 어느 날의 유료 행에도 없었던 날에만 싣는다.
 - `--ignore-previous` 는 이전 날을 보지 않고 D 만으로 판정한다. 크론을 처음 켤 때 이미 이어지던 초과가 "연속"으로 억제돼
   한 번도 알려지지 않는 것을 막으려고, 설치 직후 한 번만 쓴다(크론 줄에는 넣지 않는다).
 - `--dry-run` 은 같은 내용을 `[dry-run] ` 을 붙여 찍어 래퍼의 접두 매칭에 걸리지 않게 한다.
@@ -202,10 +203,13 @@ def decide_alerts(days: Days, day: date, *, ignore_previous: bool) -> Alerts:
     unpriced: Counter[str] = Counter()
     for summary in today.values():
         unpriced.update(summary.paid_unpriced)
+    # 읽어 온 이전 날 전부(최대 14일, 전환 시각 이후)와 비교한다 — 전날만 보면 이틀에 한 번 쓰는 모델이 이틀마다 다시 알린다.
     seen_before: set[str] = set()
     if not ignore_previous:
-        for summary in days.get(day - timedelta(days=1), {}).values():
-            seen_before.update(summary.paid_unpriced)
+        for earlier, models in days.items():
+            if earlier < day:
+                for summary in models.values():
+                    seen_before.update(summary.paid_unpriced)
     new_unpriced = {model: count for model, count in sorted(unpriced.items()) if model not in seen_before}
     return Alerts(over=over, new_unpriced=new_unpriced)
 
