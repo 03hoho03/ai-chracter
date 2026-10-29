@@ -125,3 +125,24 @@ async def test_premium_room_send_with_a_nul_content_is_422_and_spends_nothing(
 
     assert resp.status_code == 422
     assert await _money(db_session, user) == before
+
+
+@pytest.mark.parametrize("surface", ["send", "edit", "preview"])
+async def test_valid_turn_request_spends_once(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, surface: str
+) -> None:
+    """대조군: 같은 셋업에서 올바른 본문은 실제로 깎인다. 위 테스트들은 "잔액·원장·사용처가 그대로"만 보므로, 셋업이 유료
+    상태를 만들지 못하게 바뀌면(셋업 사용자가 차감 면제 계정이 되는 등) 결함이 되살아나도 그대로 통과한다. 이 테스트가 그때
+    빨개져 그런 헛통과를 막는다."""
+    user, method, path, body = await _prepare_paid_turn(
+        db_client, db_session, monkeypatch, surface=surface, balance=_BALANCE
+    )
+    monkeypatch.setattr(settings, "attendance_board_enabled", True)
+    balance, ledger, usages = await _money(db_session, user)
+
+    resp = await _call(db_client, method, path, body)
+
+    assert resp.status_code == 200
+    after_balance, after_ledger, after_usages = await _money(db_session, user)
+    assert after_balance < balance
+    assert (after_ledger, after_usages) == (ledger + 1, usages + 1)
