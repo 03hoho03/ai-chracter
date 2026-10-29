@@ -6228,6 +6228,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/attendance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Attendance Board
+         * @description 오늘 기준 출석판. 읽기라 잠그지 않고 정지 스위치도 붙이지 않는다(잔액 조회와 같다). 본인인증하지 않은 회원도 200 이다 —
+         *     `canClaimToday` 는 판과 날짜만 본다.
+         */
+        get: operations["get_attendance_board_me_attendance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/attendance/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Attendance
+         * @description 오늘 칸 수령. 잠금·자격(본인인증)·상태 계산·지급은 전부 `attendance.claim` 안에 있어 라우트 없이 불러도 같은 보호를
+         *     받는다. 오늘 받을 칸이 없으면 에러가 아니라 `granted=false` 와 지금의 판이다.
+         */
+        post: operations["claim_attendance_me_attendance_claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/clover/pricing": {
         parameters: {
             query?: never;
@@ -10479,6 +10521,64 @@ export interface components {
          * @enum {string}
          */
         AssetStatus: "pending" | "ready";
+        /**
+         * AttendanceBoardResponse
+         * @description 오늘 기준 출석판. `can_claim_today` 는 판과 날짜로 보아 오늘 받을 칸이 있는가만 뜻하고 본인인증 여부를 섞지 않는다 —
+         *     화면은 `GET /me` 의 인증 상태로 버튼 대신 인증 안내를 그린다. 같은 사람이 오늘 탈퇴 전 계정에서 받은 날도 거짓인데, 그
+         *     이유는 싣지 않는다(이유를 내보내면 이 CI 가 오늘 탈퇴했다는 사실이 응답에 실린다).
+         *
+         *     `reward_version`·칸 금액은 이 판 1칸이 받은 보상표 버전을 따른다(새 판이면 현재 버전) — 수령이 행에 넣는 값과 같은 규칙이라
+         *     보여 준 금액과 실제로 주는 금액이 갈리지 않는다.
+         */
+        AttendanceBoardResponse: {
+            /** Boardno */
+            boardNo: number;
+            /** Rewardversion */
+            rewardVersion: number;
+            /** Cells */
+            cells: components["schemas"]["AttendanceCell"][];
+            /** Canclaimtoday */
+            canClaimToday: boolean;
+            /** Completedtoday */
+            completedToday: boolean;
+            nextSpecial: components["schemas"]["AttendanceNextSpecial"] | null;
+        };
+        /**
+         * AttendanceCell
+         * @description 출석판의 한 칸. `today` 는 오늘 받을 수 있을 때만 한 칸 있다 — 오늘 이미 받았으면 그 칸은 `claimed` 다.
+         */
+        AttendanceCell: {
+            /** Seq */
+            seq: number;
+            /** Amount */
+            amount: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "claimed" | "today" | "upcoming";
+        };
+        /** AttendanceClaimResponse */
+        AttendanceClaimResponse: {
+            /** Granted */
+            granted: boolean;
+            /** Balance */
+            balance: number;
+            board: components["schemas"]["AttendanceBoardResponse"];
+        };
+        /**
+         * AttendanceNextSpecial
+         * @description 금액이 큰 다음 칸(7·14·21·28칸 중 아직 받지 않은 첫 칸). `days_until` 은 그 칸을 받는 날까지 남은 날 수로, 오늘 받을
+         *     칸이면 0 이다.
+         */
+        AttendanceNextSpecial: {
+            /** Seq */
+            seq: number;
+            /** Amount */
+            amount: number;
+            /** Daysuntil */
+            daysUntil: number;
+        };
         /** ChangePasswordRequest */
         ChangePasswordRequest: {
             /** Currentpassword */
@@ -11145,6 +11245,18 @@ export interface components {
          */
         ChatViewReasonCategory: "report-investigation" | "appeal-review" | "legal-request" | "other";
         /**
+         * CloverAttendancePolicy
+         * @description 공개 가격 응답에 싣는 출석 안내. 로그인하지 않은 방문자도 정책 문장을 읽는다.
+         */
+        CloverAttendancePolicy: {
+            /** Enabled */
+            enabled: boolean;
+            /** Rewards */
+            rewards: number[];
+            /** Minvaliddays */
+            minValidDays: number;
+        };
+        /**
          * CloverBalanceBreakdown
          * @description 잔액을 나눈 세 몫. 유료·보너스는 구매 로트의 남은 양이고 무료는 잔액의 나머지라 셋의 합이 잔액이다.
          */
@@ -11349,6 +11461,7 @@ export interface components {
             payMethods: components["schemas"]["CloverPayMethodItem"][];
             /** Identitygateenabled */
             identityGateEnabled: boolean;
+            attendance: components["schemas"]["CloverAttendancePolicy"];
         };
         /** CloverProductItem */
         CloverProductItem: {
@@ -26663,6 +26776,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_attendance_board_me_attendance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceBoardResponse"];
+                };
+            };
+        };
+    };
+    claim_attendance_me_attendance_claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceClaimResponse"];
                 };
             };
         };

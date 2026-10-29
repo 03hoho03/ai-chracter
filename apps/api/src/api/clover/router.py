@@ -22,7 +22,7 @@ from sqlalchemy import func, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.clover import products
+from api.clover import attendance, products
 from api.clover.unit import is_legacy_unit, load_unit_events
 from api.clover.missions import (
     MISSION_KEYS,
@@ -34,6 +34,12 @@ from api.clover.missions import (
     mission_idempotency_key,
 )
 from api.clover.schemas import (
+    AttendanceBoardResponse,
+    AttendanceCell,
+    AttendanceCellStatus,
+    AttendanceClaimResponse,
+    AttendanceNextSpecial,
+    CloverAttendancePolicy,
     CloverBalanceBreakdown,
     CloverBalanceResponse,
     CloverExpiringSoon,
@@ -250,6 +256,11 @@ async def get_clover_pricing() -> CloverPricingResponse:
         pay_methods=[
             CloverPayMethodItem(pay_method=m.pay_method, easy_pay_provider=m.easy_pay_provider) for m in PAY_METHODS
         ],
+        attendance=CloverAttendancePolicy(
+            enabled=settings.attendance_board_enabled,
+            rewards=list(attendance.ATTENDANCE_REWARDS[attendance.CURRENT_REWARD_VERSION]),
+            min_valid_days=attendance.ATTENDANCE_MIN_VALID_DAYS,
+        ),
     )
 
 
@@ -479,4 +490,79 @@ async def get_clover_ledger(
             for row in page
         ],
         next_cursor=next_cursor,
+    )
+
+
+def _attendance_board(state: attendance.AttendanceState) -> AttendanceBoardResponse:
+    """계산한 판을 응답 모양으로 편다. 다음 특별일은 오늘 받을 칸이 있으면 그 칸부터, 없으면 내일 받을 칸(받은 칸 + 1)부터
+    센다 — 어느 쪽이든 그 칸을 받는 날이 기준점이라 남은 날 수가 같은 규칙으로 나온다."""
+    amounts = attendance.ATTENDANCE_REWARDS[state.reward_version]
+    cells = []
+    for seq in range(1, attendance.BOARD_SIZE + 1):
+        cell_status: AttendanceCellStatus
+        if seq <= state.claimed_count:
+            cell_status = "claimed"
+        elif seq == state.claimable_seq:
+            cell_status = "today"
+        else:
+            cell_status = "upcoming"
+        cells.append(AttendanceCell(seq=seq, amount=amounts[seq - 1], status=cell_status))
+    if state.claimable_seq is not None:
+        start, days_offset = state.claimable_seq, 0
+    else:
+        start, days_offset = state.claimed_count + 1, 1
+    next_seq = next((seq for seq in attendance.SPECIAL_SEQS if seq >= start), None)
+    next_special = (
+        None
+        if next_seq is None
+        else AttendanceNextSpecial(seq=next_seq, amount=amounts[next_seq - 1], days_until=next_seq - start + days_offset)
+    )
+    return AttendanceBoardResponse(
+        board_no=state.board_no,
+        reward_version=state.reward_version,
+        cells=cells,
+        can_claim_today=state.claimable_seq is not None,
+        completed_today=state.completed_today,
+        next_special=next_special,
+    )
+
+
+async def require_attendance_board() -> None:
+    """출석판 스위치가 꺼져 있으면 404 — 라우트가 없는 것과 같은 응답이다. 데코레이터 의존성 맨 앞에 두어 꺼진 동안은 로그인·
+    정지·재동의와 무관하게 404 가 먼저 나간다(데코레이터 의존성은 시그니처 의존성보다 먼저 풀린다)."""
+    if not settings.attendance_board_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
+
+@me_router.get(
+    "/attendance", dependencies=[Depends(require_attendance_board), Depends(require_legal_consent)]
+)
+async def get_attendance_board(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AttendanceBoardResponse:
+    """오늘 기준 출석판. 읽기라 잠그지 않고 정지 스위치도 붙이지 않는다(잔액 조회와 같다). 본인인증하지 않은 회원도 200 이다 —
+    `canClaimToday` 는 판과 날짜만 본다."""
+    user = await _require_active_user(db, user_id)
+    state = await attendance.load_state(
+        db, user_id=user_id, ci_hmac=user.identity_ci_hmac, now=attendance.utcnow()
+    )
+    return _attendance_board(state)
+
+
+@me_router.post(
+    "/attendance/claim", dependencies=[Depends(require_attendance_board), Depends(require_legal_consent)]
+)
+async def claim_attendance(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    # 정지 스위치 — 지급 함수는 결제 지급과 같아 함수에서 막지 못해 라우트에서 막는다(미션 수령과 같다).
+    _open: None = Depends(clover.raise_if_clover_paused),
+    db: AsyncSession = Depends(get_db_session),
+) -> AttendanceClaimResponse:
+    """오늘 칸 수령. 잠금·자격(본인인증)·상태 계산·지급은 전부 `attendance.claim` 안에 있어 라우트 없이 불러도 같은 보호를
+    받는다. 오늘 받을 칸이 없으면 에러가 아니라 `granted=false` 와 지금의 판이다."""
+    result = await attendance.claim(db, user_id=user_id, clock=attendance.utcnow)
+    await db.commit()
+    return AttendanceClaimResponse(
+        granted=result.granted, balance=result.balance, board=_attendance_board(result.state)
     )

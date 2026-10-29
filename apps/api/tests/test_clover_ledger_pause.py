@@ -163,6 +163,17 @@ async def _mission_claim(
     return resp.status_code, resp.json()["detail"], user.id
 
 
+async def _attendance_claim(
+    client: httpx.AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> tuple[int, object, uuid.UUID]:
+    """검사가 빠지면 1칸 800 이 지급된다(본인인증한 회원이고 출석판이 켜져 있다)."""
+    monkeypatch.setattr(settings, "attendance_board_enabled", True)
+    user = await _member(db, identity_ci_hmac=f"ci-{uuid.uuid4().hex}", identity_verified_at=datetime.now(UTC))
+    await _login_as(client, user.id)
+    resp = await client.post("/me/attendance/claim")
+    return resp.status_code, resp.json()["detail"], user.id
+
+
 async def _admin_adjust(
     client: httpx.AsyncClient, db: AsyncSession, _monkeypatch: pytest.MonkeyPatch
 ) -> tuple[int, object, uuid.UUID]:
@@ -210,6 +221,7 @@ _BLOCKED = [
     pytest.param(_image_after_free_tokens, id="image-after-free-tokens"),
     pytest.param(_direct_spend, id="spend"),
     pytest.param(_mission_claim, id="mission-claim"),
+    pytest.param(_attendance_claim, id="attendance-claim"),
     pytest.param(_admin_adjust, id="admin-adjust"),
     pytest.param(_admin_refund, id="admin-refund"),
     pytest.param(_create_order, id="create-order"),

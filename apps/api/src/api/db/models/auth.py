@@ -138,8 +138,9 @@ class WithdrawnIdentity(Base):
     """탈퇴한 인증 회원의 CI 해시(`users.identity_ci_hmac` 와 같은 키의 HMAC). 탈퇴로 `users` 의 두 칸을 비울 때 같은
     트랜잭션에서 여기로 옮긴다.
 
-    다시 가입해 인증하는 것은 막지 않는다. 막는 것은 1회성 미션 보상의 재수령 하나다 — `claimed_mission_keys` 에 그 사람이
-    받은 미션 키가 남아, 같은 사람이 새 계정으로 같은 보상을 다시 받지 못한다. `withdrawn_at` 에서 1년이 지난 행은 조회
+    다시 가입해 인증하는 것은 막지 않는다. 막는 것은 1회성 미션 보상의 재수령과 탈퇴한 날의 출석 재수령이다 —
+    `claimed_mission_keys` 에 그 사람이 받은 미션 키가, `attendance_claimed_on` 에 탈퇴한 날 받은 출석 날짜가 남아, 같은 사람이
+    새 계정으로 같은 보상을 다시 받지 못한다. `withdrawn_at` 에서 1년이 지난 행은 조회
     시점에 무시하고, 행 자체는 매일 도는 백업 크론이 지운다(`scripts/ops/backup_db.py`) — `WithdrawnEmail` 과 같은 규칙이다.
     """
 
@@ -150,6 +151,9 @@ class WithdrawnIdentity(Base):
     claimed_mission_keys: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default=text("'{}'"), nullable=False
     )
+    # 탈퇴한 날(KST) 그 계정으로 누적 출석을 받았으면 그 날짜, 아니면 NULL. 같은 사람이 같은 날 새 계정으로 출석을 한 번 더
+    # 받지 못하게 한다. 같은 사람이 여러 번 탈퇴하면 더 늦은 날짜를 남긴다 — 지난 날짜는 오늘 판정에 쓰이지 않는다.
+    attendance_claimed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class GuardianConsent(Base):

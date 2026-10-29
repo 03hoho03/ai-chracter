@@ -18,25 +18,32 @@ import asyncio
 import re
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, date, datetime
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, event, select, update
+from fastapi import HTTPException
+from sqlalchemy import delete, event, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from api.auth.withdrawal import erase_account
+from api.clover import attendance
 from api.clover.missions import MISSION_REWARDS, mission_idempotency_key
+from api.comments.access import lock_active_user
 from api.core.clover import (
     CLOVER_MODEL_PRICES,
     CloverLotShortfallError,
     burn_all,
     grant,
+    kst_today,
     spend,
     spend_in_new_transaction,
 )
-from api.db.models.auth import User
-from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund
-from factories import _assert_blocked, _make_user_with_clover_lot
+from api.core.security import hash_withdrawn_email
+from api.db.models.auth import User, WithdrawnEmail, WithdrawnIdentity
+from api.db.models.clover import AttendanceClaim, CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund
+from factories import _assert_blocked, _make_attendance_claim, _make_user_with_clover_lot
 
 # 차감 금액으로 쓰는 값(기본 모델 채팅 턴 하나).
 _CHAT_TURN_COST = CLOVER_MODEL_PRICES["gemini"].chat_turn
@@ -44,6 +51,10 @@ _CHAT_TURN_COST = CLOVER_MODEL_PRICES["gemini"].chat_turn
 # teardown이 지울 대상을 고르는 표지다. 이 파일이 만든 유저만 지우므로 다른 테스트의 행을
 # 건드리지 않는다 — 아래 픽스처 docstring의 "위험 1" 참조.
 _MARKER_DOMAIN = "s11-independent.test"
+
+# 탈퇴 경합 테스트가 탈퇴시킨 회원(id, 원래 이메일, CI 해시). 탈퇴는 이메일을 자리표시자로 바꾸고 CI 해시를 회원 행에서
+# 보관 표로 옮기므로 표지 도메인으로는 그 회원과 보관 행을 찾지 못한다 — teardown 이 이 목록으로 지운다.
+_ERASED: list[tuple[uuid.UUID, str, str]] = []
 
 
 @pytest_asyncio.fixture
@@ -71,9 +82,11 @@ async def independent_session_factory(
        치우지도 못한다.
     2. **유저를 지우는 것이 컬럼 3개를 되돌리는 것보다 완전하다.** `clover_balance` ·
        `clover_attendance_granted_on` · `clover_spend_confirmed_on` 중 하나라도 빠뜨리면
-       커밋된 채 새는데, 행을 지우면 그 실수가 불가능하다. `clover_ledger`·`clover_lots`가
-       `users.id`를 FK로 잡으므로 **원장·로트를 먼저** 지운다(ON DELETE CASCADE가 없다,
-       `clover_lots` 테이블이 생긴 뒤로 로트도 이 순서에 들어왔다).
+       커밋된 채 새는데, 행을 지우면 그 실수가 불가능하다. `clover_ledger`·`clover_lots`·
+       `attendance_claims`가 `users.id`를 FK로 잡으므로 **출석 기록·원장·로트를 먼저** 지운다(ON DELETE
+       CASCADE가 없다, `clover_lots` 테이블이 생긴 뒤로 로트도, 출석 기록이 생긴 뒤로 출석 기록도 이 순서에
+       들어왔다 — 출석 기록은 원장도 FK로 잡아 원장보다 먼저다). 탈퇴시킨 회원은 표지로 찾을 수 없어 `_ERASED`
+       목록으로 찾고, 탈퇴가 남긴 보관 행(CI 해시·이메일 해시)도 그 목록으로 지운다.
     3. **teardown이 실패하면 다음 테스트가 오염된 상태를 본다.** finalizer는 테스트 실패
        시에도 돌지만 teardown 자체가 예외를 내면 막을 방법이 없다.
     4. **`pytest-xdist`(`-n`) 아래서도 표지가 워커끼리 섞이지 않는다** — `conftest.py`가 워커마다
@@ -83,10 +96,25 @@ async def independent_session_factory(
     factory = async_sessionmaker(db_engine, expire_on_commit=False)
     yield factory
     async with factory() as cleanup:
+        erased_ids = [user_id for user_id, _, _ in _ERASED]
         user_ids = (
-            await cleanup.scalars(select(User.id).where(User.email.like(f"%@{_MARKER_DOMAIN}")))
+            await cleanup.scalars(
+                select(User.id).where(or_(User.email.like(f"%@{_MARKER_DOMAIN}"), User.id.in_(erased_ids)))
+            )
         ).all()
+        if _ERASED:
+            await cleanup.execute(
+                delete(WithdrawnIdentity).where(WithdrawnIdentity.ci_hmac.in_([ci for _, _, ci in _ERASED]))
+            )
+            await cleanup.execute(
+                delete(WithdrawnEmail).where(
+                    WithdrawnEmail.email_hmac.in_([hash_withdrawn_email(email) for _, email, _ in _ERASED])
+                )
+            )
+            _ERASED.clear()
         if user_ids:
+            # 출석 기록이 원장과 회원을 FK 로 잡으므로 원장보다 먼저 지운다.
+            await cleanup.execute(delete(AttendanceClaim).where(AttendanceClaim.user_id.in_(user_ids)))
             # 환급 행이 배분을, 배분이 원장·로트를 FK 로 잡으므로 이 순서로 가장 먼저 지운다.
             await cleanup.execute(
                 delete(CloverSpendRefund).where(
@@ -113,7 +141,7 @@ async def independent_session_factory(
 
 
 async def _seed_user(
-    factory: async_sessionmaker[AsyncSession], *, clover_balance: int
+    factory: async_sessionmaker[AsyncSession], *, clover_balance: int, **overrides: object
 ) -> uuid.UUID:
     """독립 커넥션으로 유저와 매칭되는 로트 1행을 **커밋해서** 만든다.
 
@@ -123,11 +151,11 @@ async def _seed_user(
     유저를 차감하면 `CloverLotShortfallError`가 난다. `_make_user_with_clover_lot`이
     `db_session`(공유 트랜잭션) 전제라 여기서는 이 파일의 독립 커넥션 세션에 직접 물려
     쓴다(factories.py의 헬퍼 자체 docstring — 커넥션 격리 요구사항이 다른 변종은 각 파일에
-    남긴다).
+    남긴다). `overrides` 는 회원 칸(본인인증 등)이다 — 이메일은 teardown 표지라 덮어쓰지 않는다.
     """
     async with factory() as session:
         user = await _make_user_with_clover_lot(
-            session, email=f"s11-{uuid.uuid4()}@{_MARKER_DOMAIN}", clover_balance=clover_balance
+            session, clover_balance=clover_balance, **overrides, email=f"s11-{uuid.uuid4()}@{_MARKER_DOMAIN}"
         )
         await session.commit()
     return user.id
@@ -479,3 +507,177 @@ async def test_burn_all_burns_the_balance_the_row_actually_holds(
         lot = await session.scalar(select(CloverLot).where(CloverLot.user_id == user_id))
     assert lot is not None
     assert lot.remaining == 0
+
+
+
+# ── 누적 출석 수령 ──────────────────────────────────────────────────────────
+# 수령은 상태를 계산하기 전에 회원 행을 잠근다(`lock_active_user`). 같은 회원의 수령이 줄을 서고, 뒤에 오는 쪽이 앞쪽이 커밋한
+# 행을 보고 다음 칸을 계산한다. 탈퇴도 같은 잠금으로 회원 행을 잡아 둘의 순서가 정해진다.
+_ATTENDANCE_NOW = datetime(2026, 10, 29, 3, 0, tzinfo=UTC)
+
+
+def _verified_overrides(ci_hmac: str | None = None) -> dict[str, object]:
+    return {"identity_ci_hmac": ci_hmac or f"ci-{uuid.uuid4().hex}", "identity_verified_at": _ATTENDANCE_NOW}
+
+
+async def _claims(factory: async_sessionmaker[AsyncSession], user_id: uuid.UUID) -> list[tuple[int, int, date]]:
+    """새 커넥션으로 (판, 칸, 받은 날)을 판·칸 순서로 읽는다."""
+    async with factory() as session:
+        rows = (
+            await session.scalars(
+                select(AttendanceClaim)
+                .where(AttendanceClaim.user_id == user_id)
+                .order_by(AttendanceClaim.board_no, AttendanceClaim.seq)
+            )
+        ).all()
+    return [(row.board_no, row.seq, row.claimed_on) for row in rows]
+
+
+async def _register_erasure(factory: async_sessionmaker[AsyncSession], user_id: uuid.UUID, ci_hmac: str) -> None:
+    async with factory() as session:
+        email = await session.scalar(select(User.email).where(User.id == user_id))
+    assert email is not None
+    _ERASED.append((user_id, email, ci_hmac))
+
+
+async def _keep_storage_key(storage_key: str) -> None:
+    """탈퇴의 저장소 삭제를 모으기만 한다 — 두 탈퇴 호출자와 같은 방식이고, 이 테스트의 회원에게는 지울 오브젝트가 없다."""
+    return None
+
+
+async def test_concurrent_same_day_attendance_claims_grant_once(
+    independent_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """같은 날 두 세션의 수령 중 하나만 지급된다. 뒤의 수령은 앞의 수령이 커밋할 때까지 회원 행 잠금에서 기다렸다가, 오늘 행을
+    보고 `granted=false` 로 끝난다. 깨지는 시나리오: 잠금도 오늘 행 확인도 없고 멱등키·유니크가 빠지면 하루에 두 번 지급된다.
+    세션이 같은 커넥션이면 `_assert_blocked` 가 타임아웃하지 않아 빨개진다."""
+    user_id = await _seed_user(independent_session_factory, clover_balance=0, **_verified_overrides())
+
+    first = independent_session_factory()
+    second = independent_session_factory()
+    try:
+        first_result = await attendance.claim(first, user_id=user_id, clock=lambda: _ATTENDANCE_NOW)
+        assert first_result.granted is True
+
+        task = asyncio.create_task(attendance.claim(second, user_id=user_id, clock=lambda: _ATTENDANCE_NOW))
+        await _assert_blocked(task)
+        await first.commit()
+
+        second_result = await task
+        assert second_result.granted is False
+        await second.commit()
+    finally:
+        await first.close()
+        await second.close()
+
+    balance, rows = await _read(independent_session_factory, user_id)
+    assert balance == 800
+    assert [(row.kind, row.amount) for row in rows] == [("attendance_grant", 800)]
+    assert await _claims(independent_session_factory, user_id) == [(1, 1, date(2026, 10, 29))]
+
+
+async def test_claims_racing_across_kst_midnight_take_consecutive_cells(
+    independent_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """4칸까지 받은 회원에게 KST 23:59:59 와 1초 뒤 00:00:00 의 수령이 겹치면 둘 다 지급되고 5칸·6칸이 된다. 뒤의 수령이 잠금이
+    풀린 뒤 앞의 수령이 커밋한 5칸을 보고 6칸을 계산해서다. 깨지는 시나리오: 잠그기 전에 상태를 읽으면 둘 다 5칸을 계산해
+    `(user_id, board_no, seq)` 유니크에 뒤쪽이 걸려 `granted=false` 가 된다(다른 날이라 받을 수 있었는데 잃는다)."""
+    user_id = await _seed_user(independent_session_factory, clover_balance=0, **_verified_overrides())
+    async with independent_session_factory() as session:
+        await _make_attendance_claim(session, user_id, board_no=1, seq=4, claimed_on=date(2026, 10, 28))
+        await session.commit()
+
+    before_midnight = independent_session_factory()
+    after_midnight = independent_session_factory()
+    try:
+        first_result = await attendance.claim(
+            before_midnight, user_id=user_id, clock=lambda: datetime(2026, 10, 29, 14, 59, 59, tzinfo=UTC)
+        )
+        assert first_result.granted is True
+
+        task = asyncio.create_task(
+            attendance.claim(after_midnight, user_id=user_id, clock=lambda: datetime(2026, 10, 29, 15, 0, 0, tzinfo=UTC))
+        )
+        await _assert_blocked(task)
+        await before_midnight.commit()
+
+        second_result = await task
+        assert second_result.granted is True
+        await after_midnight.commit()
+    finally:
+        await before_midnight.close()
+        await after_midnight.close()
+
+    assert await _claims(independent_session_factory, user_id) == [
+        (1, 4, date(2026, 10, 28)),
+        (1, 5, date(2026, 10, 29)),
+        (1, 6, date(2026, 10, 30)),
+    ]
+
+
+async def test_withdrawal_waits_for_a_claim_that_locked_first_and_records_the_day(
+    independent_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """수령이 먼저 회원 행을 잠갔으면 탈퇴는 그 커밋을 기다렸다가 커밋된 오늘 출석을 보고 보관 행에 오늘 날짜를 남긴다. 깨지는
+    시나리오: 탈퇴가 수령 커밋 전에 출석 여부를 읽으면 날짜가 비어, 같은 사람이 새 계정으로 오늘 또 받는다. KST 자정 직전에
+    돌면 탈퇴 쪽 시각이 다음 날로 넘어가 흔들릴 수 있다(탈퇴 정리에 시계를 주입할 수단이 없어 감수한다)."""
+    ci_hmac = f"ci-{uuid.uuid4().hex}"
+    user_id = await _seed_user(independent_session_factory, clover_balance=0, **_verified_overrides(ci_hmac))
+    await _register_erasure(independent_session_factory, user_id, ci_hmac)
+    # 탈퇴 정리는 실제 지금으로 날짜를 정하므로 수령도 실제 지금으로 한다.
+    now = datetime.now(UTC)
+
+    claimer = independent_session_factory()
+    withdrawer = independent_session_factory()
+
+    async def _withdraw() -> None:
+        user = await lock_active_user(withdrawer, user_id)
+        await erase_account(withdrawer, user, delete_storage_object=_keep_storage_key)
+
+    try:
+        result = await attendance.claim(claimer, user_id=user_id, clock=lambda: now)
+        assert result.granted is True
+
+        task = asyncio.create_task(_withdraw())
+        await _assert_blocked(task)
+        await claimer.commit()
+        await task
+    finally:
+        await claimer.close()
+        await withdrawer.close()
+
+    async with independent_session_factory() as session:
+        row = await session.get(WithdrawnIdentity, ci_hmac)
+    assert row is not None
+    assert row.attendance_claimed_on == kst_today(now)
+
+
+async def test_claim_after_a_withdrawal_that_locked_first_is_refused(
+    independent_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """탈퇴가 먼저 회원 행을 잠갔으면 수령은 그 커밋을 기다렸다가 다시 읽은 회원 행의 탈퇴 표시를 보고 401 로 멈춘다. 깨지는
+    시나리오: 잠근 뒤 회원 행을 다시 읽지 않으면 잠그기 전에 본 "살아 있음"으로 탈퇴한 계정에 800 이 나간다."""
+    ci_hmac = f"ci-{uuid.uuid4().hex}"
+    user_id = await _seed_user(independent_session_factory, clover_balance=0, **_verified_overrides(ci_hmac))
+    await _register_erasure(independent_session_factory, user_id, ci_hmac)
+
+    claimer = independent_session_factory()
+    withdrawer = independent_session_factory()
+    try:
+        user = await lock_active_user(withdrawer, user_id)
+
+        task = asyncio.create_task(attendance.claim(claimer, user_id=user_id, clock=lambda: _ATTENDANCE_NOW))
+        await _assert_blocked(task)
+        await erase_account(withdrawer, user, delete_storage_object=_keep_storage_key)
+
+        with pytest.raises(HTTPException) as refused:
+            await task
+        assert refused.value.status_code == 401
+        await claimer.rollback()
+    finally:
+        await claimer.close()
+        await withdrawer.close()
+
+    _, rows = await _read(independent_session_factory, user_id)
+    assert rows == []
+    assert await _claims(independent_session_factory, user_id) == []
