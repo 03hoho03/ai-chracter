@@ -15,7 +15,7 @@ docstring). 이 저장소에는 시계를 얼리는 도구가 없어 라우트�
 
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 
 from sqlalchemy import exists, select
@@ -86,13 +86,16 @@ class AttendanceState:
     """오늘 기준 출석판.
 
     `claimed_count` 는 이 판에서 받은 칸 수, `claimable_seq` 는 오늘 받을 칸(없으면 None), `completed_today` 는 오늘 28칸째를
-    받아 판을 끝냈는가다. `reward_version` 은 이 판의 금액을 정하는 보상표 버전이다."""
+    받아 판을 끝냈는가다. `reward_version` 은 이 판의 금액을 정하는 보상표 버전이다. `last_claimed_on` 은 이 계정의 마지막
+    수령 행(판·칸 역순 첫 행)의 KST 날짜이고 행이 없으면 None 이다 — 판 계산과 무관해 `compute_state` 는 채우지 않고 행을 읽은
+    쪽(`load_state`·`claim`)이 붙인다."""
 
     board_no: int
     reward_version: int
     claimed_count: int
     claimable_seq: int | None
     completed_today: bool
+    last_claimed_on: date | None = None
 
 
 @dataclass(frozen=True)
@@ -154,7 +157,9 @@ async def load_state(db: AsyncSession, *, user_id: uuid.UUID, ci_hmac: str | Non
         await db.scalar(select(exists().where(AttendanceClaim.user_id == user_id, AttendanceClaim.claimed_on == today)))
     )
     withdrawn_today = await claimed_today_before_withdrawal(db, ci_hmac=ci_hmac, today=today)
-    return compute_state(last, today, today_claimed=today_claimed, withdrawn_today=withdrawn_today)
+    state = compute_state(last, today, today_claimed=today_claimed, withdrawn_today=withdrawn_today)
+    # 탈퇴 보관 기록의 수령일은 싣지 않는다 — 다른 계정의 활동 날짜가 이 계정 응답으로 드러난다.
+    return replace(state, last_claimed_on=None if last is None else last.claimed_on)
 
 
 async def claim(db: AsyncSession, *, user_id: uuid.UUID, clock: Callable[[], datetime]) -> AttendanceClaimResult:
@@ -218,5 +223,5 @@ async def claim(db: AsyncSession, *, user_id: uuid.UUID, clock: Callable[[], dat
         return AttendanceClaimResult(granted=False, balance=refreshed_balance, state=current)
 
     claimed = LastClaim(board_no=state.board_no, seq=seq, reward_version=state.reward_version, claimed_on=today)
-    after = compute_state(claimed, today, today_claimed=True, withdrawn_today=False)
+    after = replace(compute_state(claimed, today, today_claimed=True, withdrawn_today=False), last_claimed_on=today)
     return AttendanceClaimResult(granted=True, balance=balance, state=after)

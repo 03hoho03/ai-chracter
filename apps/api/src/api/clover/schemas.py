@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from api.clover.products import ProductKey
@@ -103,6 +103,8 @@ class AttendanceBoardResponse(CamelModel):
     completed_today: bool
     # 남은 특별 칸이 없으면(오늘 판을 끝냈으면) null.
     next_special: AttendanceNextSpecial | None
+    # 이 계정이 마지막으로 받은 날(KST). 받은 적이 없으면 null. 웹이 오래 쉬었다 돌아온 회원을 가르는 데 쓴다.
+    last_claimed_on: date | None
 
 
 class AttendanceClaimResponse(CamelModel):

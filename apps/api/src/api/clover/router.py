@@ -524,6 +524,7 @@ def _attendance_board(state: attendance.AttendanceState) -> AttendanceBoardRespo
         can_claim_today=state.claimable_seq is not None,
         completed_today=state.completed_today,
         next_special=next_special,
+        last_claimed_on=state.last_claimed_on,
     )
 
 
