@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import turn_cost_report as script
 from api.db.models import ChatRoom, Content, ContentType, ContentVersion, ContentVisibility, ModerationStatus
-from api.llm.pricing import MODEL_PRICES, estimate_cost_usd
+from api.llm.pricing import MODEL_PRICES, CallCost, call_cost, estimate_cost_usd
 from factories import _make_chat_turn, _make_user
 
 
@@ -50,7 +50,7 @@ def test_generation_call_costs_what_the_price_table_says() -> None:
         outputTokens=500,
     )
 
-    cost = script.call_cost(call)
+    cost = call_cost(call)
 
     expected = estimate_cost_usd(
         "claude-opus-5-5",
@@ -60,11 +60,11 @@ def test_generation_call_costs_what_the_price_table_says() -> None:
         output_tokens=500,
         thoughts_tokens=0,
     )
-    assert cost == script.CallCost("chat_generate", "claude-opus-5-5", expected, missing_tokens=False)
+    assert cost == CallCost("chat_generate", "claude-opus-5-5", expected, missing_tokens=False)
 
 
 def test_query_embedding_call_without_cache_or_output_fields_costs_its_input_tokens() -> None:
-    cost = script.call_cost(_query_embedding(tokens=300, latency_ms=120, outcome="ok"))
+    cost = call_cost(_query_embedding(tokens=300, latency_ms=120, outcome="ok"))
 
     assert cost.usd == pytest.approx(300 * MODEL_PRICES["voyage-4-large"].input_usd_per_million / 1_000_000)
     assert cost.missing_tokens is False
@@ -73,18 +73,16 @@ def test_query_embedding_call_without_cache_or_output_fields_costs_its_input_tok
 
 def test_call_without_reported_input_tokens_is_flagged_and_priced_on_what_was_reported() -> None:
     """시간 초과로 끊은 질의 임베딩·이미지가 실린 판정은 입력 토큰이 없다 — 0 원으로 숨기지 않고 표시한다."""
-    timeout = script.call_cost(_query_embedding(tokens=None, latency_ms=250, outcome="timeout"))
-    image = script.call_cost(
-        _generation("chat_situational_image", "claude-haiku-5-5", promptTokens=None, outputTokens=40)
-    )
+    timeout = call_cost(_query_embedding(tokens=None, latency_ms=250, outcome="timeout"))
+    image = call_cost(_generation("chat_situational_image", "claude-haiku-5-5", promptTokens=None, outputTokens=40))
 
-    assert timeout == script.CallCost("chat_memory_query_embedding", "voyage-4-large", 0.0, missing_tokens=True)
+    assert timeout == CallCost("chat_memory_query_embedding", "voyage-4-large", 0.0, missing_tokens=True)
     assert image.missing_tokens is True
     assert image.usd == pytest.approx(40 * MODEL_PRICES["claude-haiku-5-5"].output_usd_per_million / 1_000_000)
 
 
 def test_model_missing_from_price_table_has_no_cost() -> None:
-    cost = script.call_cost(_generation("chat_generate", "unknown-model", promptTokens=1_000, outputTokens=100))
+    cost = call_cost(_generation("chat_generate", "unknown-model", promptTokens=1_000, outputTokens=100))
 
     assert cost.usd is None
 
