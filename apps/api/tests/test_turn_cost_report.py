@@ -8,9 +8,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import turn_cost_report as script
-from api.db.models import ChatRoom, Content, ContentType, ContentVersion, ContentVisibility, ModerationStatus
 from api.llm.pricing import MODEL_PRICES, CallCost, call_cost, estimate_cost_usd
-from factories import _make_chat_turn, _make_user
+from factories import _make_bare_chat_room, _make_chat_turn
 
 
 def _generation(call_site: str, model: str, **tokens: int | None) -> dict[str, Any]:
@@ -191,30 +190,8 @@ def test_percentile_is_nearest_rank() -> None:
     assert script.percentile([], 0.5) is None
 
 
-async def _room(db_session: AsyncSession) -> ChatRoom:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-    content = Content(
-        creator_user_id=user.id,
-        type=ContentType.CHARACTER,
-        hashtags=[],
-        visibility=ContentVisibility.PUBLIC,
-        moderation_status=ModerationStatus.NORMAL,
-    )
-    db_session.add(content)
-    await db_session.flush()
-    version = ContentVersion(content_id=content.id, detail_description="설명")
-    db_session.add(version)
-    await db_session.flush()
-    room = ChatRoom(user_id=user.id, content_id=content.id, content_version_id=version.id)
-    db_session.add(room)
-    await db_session.flush()
-    return room
-
-
 async def test_read_llm_calls_keeps_turns_inside_the_kst_window_and_chat_model(db_session: AsyncSession) -> None:
-    room = await _room(db_session)
+    room = await _make_bare_chat_room(db_session)
     marker = _generation("chat_generate", "claude-opus-5-5", promptTokens=1)
     # KST 10-15 은 UTC 10-14 15:00 ~ 10-15 15:00 이다.
     inside = datetime(2026, 10, 14, 15, 0, tzinfo=UTC)

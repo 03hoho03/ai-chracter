@@ -15,11 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.clover import chat_cost_ratio as report
 from api.core.rate_limit import KST
-from api.db.models import ChatRoom, Content, ContentType, ContentVersion, ContentVisibility, ModerationStatus
 from api.db.models.clover import CloverUnitEvent
 from api.llm import pricing
 from api.llm.pricing import ModelPrice
-from factories import _make_chat_turn, _make_user
+from factories import _make_bare_chat_room, _make_chat_turn
 
 _PRICED = "test-priced-model"
 _DAY = date(2026, 10, 28)
@@ -282,28 +281,6 @@ def test_main_exits_1_when_the_unit_state_is_not_converted(monkeypatch: pytest.M
 
 
 # ── DB ────────────────────────────────────────────────────────────────────────
-async def _room(db_session: AsyncSession) -> ChatRoom:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-    content = Content(
-        creator_user_id=user.id,
-        type=ContentType.CHARACTER,
-        hashtags=[],
-        visibility=ContentVisibility.PUBLIC,
-        moderation_status=ModerationStatus.NORMAL,
-    )
-    db_session.add(content)
-    await db_session.flush()
-    version = ContentVersion(content_id=content.id, detail_description="설명")
-    db_session.add(version)
-    await db_session.flush()
-    room = ChatRoom(user_id=user.id, content_id=content.id, content_version_id=version.id)
-    db_session.add(room)
-    await db_session.flush()
-    return room
-
-
 async def _unit_events(db_session: AsyncSession, *events: tuple[str, datetime]) -> None:
     """표를 비우고 주어진 기록만 남긴다. 롤백되는 연결이라 테스트가 끝나면 원래대로 돌아간다."""
     await db_session.execute(delete(CloverUnitEvent))
@@ -319,7 +296,7 @@ async def _unit_events(db_session: AsyncSession, *events: tuple[str, datetime]) 
 async def test_turns_before_the_unit_conversion_are_left_out_and_the_boundary_is_kept(
     db_session: AsyncSession,
 ) -> None:
-    room = await _room(db_session)
+    room = await _make_bare_chat_room(db_session)
     converted_at = _at(_DAY, hour=9)
     await _unit_events(db_session, ("convert", converted_at))
     db_session.add_all(
@@ -356,7 +333,7 @@ async def test_turns_before_the_unit_conversion_are_left_out_and_the_boundary_is
 async def test_rows_are_read_from_fourteen_days_before_through_the_end_of_the_kst_day(
     db_session: AsyncSession,
 ) -> None:
-    room = await _room(db_session)
+    room = await _make_bare_chat_room(db_session)
     await _unit_events(db_session, ("convert", datetime(2026, 9, 1, tzinfo=UTC)))
     first_kept = datetime.combine(_DAY - timedelta(days=14), datetime.min.time(), tzinfo=KST)
     next_day = datetime.combine(_DAY + timedelta(days=1), datetime.min.time(), tzinfo=KST)
