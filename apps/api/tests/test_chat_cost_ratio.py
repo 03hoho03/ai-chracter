@@ -209,6 +209,19 @@ def test_unpriced_model_id_is_reported_only_on_the_first_day_it_appears() -> Non
     assert not _last_line(second_day).startswith("채팅 원가 경보:")
 
 
+def test_unpriced_model_id_seen_on_any_earlier_loaded_day_is_not_new_even_if_absent_the_day_before() -> None:
+    """이틀에 한 번 쓰는 모델이 이틀마다 다시 알리지 않게, 전날만이 아니라 읽어 온 이전 날 전부와 비교한다."""
+    unpriced_turn = [_call(outputTokens=1), _call("chat_stat_judgment", "no-price-model")]
+    rows = [
+        _row(_DAY - timedelta(days=2), clovers=300, calls=unpriced_turn),
+        _row(_DAY - timedelta(days=1), clovers=300),
+        _row(clovers=300, calls=unpriced_turn),
+    ]
+
+    assert _alerts(rows).new_unpriced == {}
+    assert not _last_line(rows).startswith("채팅 원가 경보:")
+
+
 def test_unpriced_calls_in_free_turns_do_not_drive_the_alerts() -> None:
     rows = [_row(charge_source="free", clovers=0, calls=[_call("chat_generate", "no-price-model")])]
 
