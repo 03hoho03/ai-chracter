@@ -7,7 +7,14 @@ export const PREMIUM_OFF_UNREAD_COPY = "운영에서 고를 수 없는 모델이
 /** 이 방의 칸이 지금 운영에서 실행되는가. 상위 모델(Sonnet·Opus) 방은 그 모델이 지금 채팅에서 보일 때만 그 모델로 돌고, 아니면
  * 기본 모델(Gemini)로 돌아 그 방의 칸은 하나도 실행되지 않는다. 보이는 상위 모델은 서버가 `chatVisibleModels` 로 내려 준다(상위 모델
  * 스위치가 꺼져 있으면 비었다). 배정 표 조회의 칸·체인 목록은 그와 무관하게 그 칸을 담으므로 화면이 이 값으로 가른다. */
-export function isRoomLive(routing: Pick<AdminPromptRoutingResponse, "chatVisibleModels">, roomModel: RoomModel) {
+export function isRoomLive(
+  routing: Pick<AdminPromptRoutingResponse, "chatPremiumModelsEnabled"> &
+    Partial<Pick<AdminPromptRoutingResponse, "chatVisibleModels">>,
+  roomModel: RoomModel,
+) {
   if (roomModel !== "sonnet" && roomModel !== "opus") return true;
-  return routing.chatVisibleModels.includes(roomModel);
+  // 생성 타입은 `chatVisibleModels` 를 필수로 적지만, 어드민이 API 보다 먼저 배포되면 그 칸이 없는 예전 응답이 온다. 예전 서버는
+  // 상위 모델 스위치 하나로 Opus 만 열었으므로 그 뜻대로 읽는다(예전 서버는 Sonnet 을 채팅에서 고를 수 없게 막았다).
+  const visibleModels = routing.chatVisibleModels ?? (routing.chatPremiumModelsEnabled ? ["opus"] : []);
+  return visibleModels.includes(roomModel);
 }
