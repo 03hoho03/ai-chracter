@@ -2,7 +2,7 @@
 
 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면 탈퇴와 작가의 삭제는 팔린 소설을 지우지 않고 숨겨 남긴다(산 사람이 계속 읽는다).
 남기는 것은 공개 상태 행, 화 공개본과 판 행, 그 둘이 가리키는 개정과 화 행뿐이다. 스냅숏·등장인물·작가 읽은 자리·설정 노트·
-주인공 이름·작업본 제목과 소개·편집 보드·표지 연결·공개되지 않은 화와 개정, 화의 작업본 제목·요약·작가의 말은 지운다. 이미
+주인공 이름·작업본 제목과 소개·편집 보드·표지 연결·공개되지 않은 화와 개정, 화의 작업본 제목·요약·작가의 말, 정본 기억은 지운다. 이미
 숨겨 남은 소설(배포 겹침 동안 옛 이미지가 숨긴 것, 숨긴 직후 늦게 도착한 작가 쓰기)은 하루 한 번 파기 크론이 같은 정리를 한다.
 
 공개 소설은 `_make_public_novel`(6화 + 2화 묶음, 전부 공개, 앞 5화 무료)로 만든다."""
@@ -39,6 +39,7 @@ from api.novelize import illustrations
 from factories import (
     revision_row,
     PublicNovel,
+    _bible_row_counts,
     _create_admin,
     _login_as,
     _login_as_admin,
@@ -46,6 +47,7 @@ from factories import (
     _make_public_novel,
     _make_user,
     _make_user_with_clover_lot,
+    _plant_bible_rows,
 )
 
 
@@ -234,6 +236,8 @@ async def _plant_author_data(db_client: httpx.AsyncClient, db_session: AsyncSess
         .where(NovelChapter.novel_id == novel.novel_id, NovelChapter.ordinal <= 8)
         .values(title="작업 제목", title_edited_at=sa.func.now(), summary="작업 요약", author_note="작업 작가의 말")
     )
+    # 정본 기억 — 남는 화의 남는 개정(6화 지금 판)을 확정한 것이라 화·개정 cascade 로는 지워지지 않는다.
+    await _plant_bible_rows(db_session, novel_id=novel.novel_id, chapter_id=sixth, chapter_revision_id=current.id)
     await db_session.commit()
     return Planted(
         novel=novel,
@@ -289,6 +293,7 @@ async def _assert_only_reader_rows_remain(db_session: AsyncSession, planted: Pla
     assert set(
         (await db_session.scalars(sa.select(NovelScreening.id).where(NovelScreening.novel_id == novel_id))).all()
     ) == {planted.kept_screening_id}
+    assert set((await _bible_row_counts(db_session, novel_id)).values()) == {0}
 
     novel = await db_session.get_one(Novel, novel_id, populate_existing=True)
     assert (

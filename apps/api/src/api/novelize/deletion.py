@@ -4,7 +4,7 @@
 소설 단독 삭제와 회원 탈퇴가 `delete_novels` 를 같이 쓴다. 두 경로가 자식 목록을 따로 가지면 테이블이 늘 때 한쪽에만
 더해지기 쉽고, 빠진 쪽은 소설 DELETE 가 FK 위반으로 500 이 된다. 뼈대 테이블(작업·개정·화·소설)에는 `ON DELETE
 CASCADE` 가 없어 자식부터 지운다. 묶음·인물·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록·
-독자 읽은 자리·좋아요·홈 노벨 지정·화 댓글은 부모를 지우면 함께 지워지는 cascade 지만(옛 판 코드로 되돌렸을 때 그 코드가 이 테이블들을 몰라도 지워지게 한 것이다), 여기서는
+독자 읽은 자리·좋아요·홈 노벨 지정·화 댓글, 정본 기억 표들은 부모를 지우면 함께 지워지는 cascade 지만(옛 판 코드로 되돌렸을 때 그 코드가 이 테이블들을 몰라도 지워지게 한 것이다), 여기서는
 cascade 에 기대지 않고 순서를 직접 적어 잠금·삭제 순서를 고정한다. 예외는 화 공개본의 판 행과 소설의 무료 번호 기억이다 —
 다른 표가 가리키지 않는 말단 표라 여기서 따로 지우지 않고 화·소설을 지울 때 cascade 로 함께 지워진다. 노벨·노벨 댓글 신고는 지우지 않는다 — 소설·화·댓글
 칸이 `SET NULL` 이라 대상이 지워지면 칸만 비고, 신고와 증거 사본은 보유 기간 동안 남는다.
@@ -65,11 +65,24 @@ from api.db.models.novel import (
     NovelSourceSection,
     NovelSourceSelection,
 )
+from api.db.models.novel_bible import (
+    NovelBibleAdaptationCandidate,
+    NovelBibleCommit,
+    NovelBibleEntity,
+    NovelBibleEvidence,
+    NovelBibleExpiration,
+    NovelBibleFinding,
+    NovelBibleJob,
+    NovelBibleRevision,
+)
+from api.db.models.novel_bible_events import NovelBibleEvent, NovelBibleEventRelation
+from api.db.models.novel_bible_facts import NovelBibleFact
+from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
 from api.novelize.illustrations import delete_unused_illustration_assets, drop_placements, assets_used_by
 
 
 async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID], *, freed_storage_keys: list[str]) -> None:
-    """`novel_ids` 소설들을 작업 → 화 잠금 → 읽은 위치(소유자·노벨 독자)·화 댓글 → 스냅샷 → 등장 인물 → 인물 → 텍스트 심사 기록 → 화
+    """`novel_ids` 소설들을 작업 → 화 잠금 → 정본 기억 → 읽은 위치(소유자·노벨 독자)·화 댓글 → 스냅샷 → 등장 인물 → 인물 → 텍스트 심사 기록 → 화
     공개본 → 개정의 삽화 배치 → 개정 → 장면 블록 → 화 → 묶음 → 좋아요·홈 노벨 지정 → 공개 상태 → 장면 구성안 → 전체 구성안 → 구간
     선택 → 소설 순으로 지우고, 끝에 이제 아무도 쓰지 않는
     업로드 삽화를 지운다. 커밋은 호출부가 한다. 화 공개본은 개정을 가리키므로 개정보다 먼저다.
@@ -83,8 +96,8 @@ async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID], *, fre
     화를 지우기 전에 먼저 잠근다. 직접 수정·되돌리기·AI 수정 적용은 화 행을 잠근 채 새 개정을 넣는데, 잠그지 않으면
     아래 개정 DELETE 가 아직 커밋되지 않은 새 개정을 못 보고 지나가고 화 DELETE 가 그 개정의 FK 에 걸린다. 기다린 뒤의
     개정 DELETE 는 새 문장이라 커밋된 새 개정까지 본다. 읽은 위치를 화 잠금 뒤에 지우는 것도 같은 이유다 — 위치 저장은
-    화가 있는지 확인하며 화 행에 키 공유 잠금을 거므로, 화를 먼저 쥐면 그 저장이 끝나기를 기다렸다가 함께 지운다. 화 댓글도
-    같다(쓰기가 화 행에 키 공유 잠금을 건다).
+    화가 있는지 확인하며 화 행에 키 공유 잠금을 거므로, 화를 먼저 쥐면 그 저장이 끝나기를 기다렸다가 함께 지운다. 화 댓글과
+    정본 기억 쓰기도 같다(둘 다 화 FK 검사로 화 행에 키 공유 잠금을 건다 — `_bible_row_deletes`).
 
     각 DELETE 는 `db.execute` 로 그 자리에서 실행되는 SQL 문이라 적은 순서대로 나간다. ORM 객체를 `db.delete()` 로
     모아 한 번에 flush 할 때처럼 SQLAlchemy 가 순서를 바꾸지 않으므로 단계 사이 `flush()` 는 필요 없다. 되돌리기
@@ -94,6 +107,8 @@ async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID], *, fre
     chapter_ids = select(NovelChapter.id).where(NovelChapter.novel_id.in_(novel_ids))
     await db.execute(delete(NovelJob).where(NovelJob.novel_id.in_(novel_ids)))
     await db.execute(select(NovelChapter.id).where(NovelChapter.novel_id.in_(novel_ids)).with_for_update())
+    for statement in _bible_row_deletes(novel_ids):
+        await db.execute(statement)
     await db.execute(delete(NovelReadingPosition).where(NovelReadingPosition.novel_id.in_(novel_ids)))
     await db.execute(delete(NovelReaderPosition).where(NovelReaderPosition.novel_id.in_(novel_ids)))
     await db.execute(delete(NovelComment).where(NovelComment.novel_id.in_(novel_ids)))
@@ -116,6 +131,54 @@ async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID], *, fre
     await _delete_source_selections(db, novel_ids)
     await db.execute(delete(Novel).where(Novel.id.in_(novel_ids)))
     freed_storage_keys += await delete_unused_illustration_assets(db, uploads)
+
+
+def _bible_row_deletes(novel_ids: Sequence[uuid.UUID]) -> list[Delete]:
+    """소설들의 정본 기억 행을 지우는 문장들, 낼 차례대로 — 만료·근거·검사 결과·각색 후보 → 지식 → 사실 → 회상 관계 → 사건 →
+    리비전 → 작업 → 확정 → 개체. 모든 FK 가 cascade 지만 기대지 않고 자식부터 지운다. 작업은 확정보다 먼저 지운다 — 정본 기억
+    작업을 받거나 끝내는 쪽도 작업 행 → 확정 행 순으로 잡아야 둘이 서로를 기다리지 않는다. 개정 DELETE 의 cascade 에 맡기면 확정
+    행이 먼저 잠긴다.
+
+    부르는 쪽은 화 행을 잠근 뒤에 낸다. 화를 가리키는 정본 기억 행을 넣는 쓰기는 화 FK 검사로 화 행에 키 공유 잠금을 잡으므로,
+    진행 중인 쓰기가 끝나기를 기다렸다가 그 쓰기가 넣은 행까지 지운다. 정본 기억 커밋은 화 행 잠금을 다른 행보다 먼저 잡아야
+    한다 — 확정 행을 쥔 채 화 행을 기다리면, 화 행을 쥔 채 확정 행 DELETE 를 기다리는 이쪽과 교착한다."""
+    return [
+        delete(NovelBibleExpiration).where(NovelBibleExpiration.novel_id.in_(novel_ids)),
+        delete(NovelBibleEvidence).where(NovelBibleEvidence.novel_id.in_(novel_ids)),
+        delete(NovelBibleFinding).where(NovelBibleFinding.novel_id.in_(novel_ids)),
+        delete(NovelBibleAdaptationCandidate).where(NovelBibleAdaptationCandidate.novel_id.in_(novel_ids)),
+        delete(NovelBibleKnowledge).where(NovelBibleKnowledge.novel_id.in_(novel_ids)),
+        delete(NovelBibleFact).where(NovelBibleFact.novel_id.in_(novel_ids)),
+        delete(NovelBibleEventRelation).where(NovelBibleEventRelation.novel_id.in_(novel_ids)),
+        delete(NovelBibleEvent).where(NovelBibleEvent.novel_id.in_(novel_ids)),
+        delete(NovelBibleRevision).where(NovelBibleRevision.novel_id.in_(novel_ids)),
+        delete(NovelBibleJob).where(NovelBibleJob.novel_id.in_(novel_ids)),
+        delete(NovelBibleCommit).where(NovelBibleCommit.novel_id.in_(novel_ids)),
+        delete(NovelBibleEntity).where(NovelBibleEntity.novel_id.in_(novel_ids)),
+    ]
+
+
+def _bible_row_deletes_of_chapters(chapter_ids: Sequence[uuid.UUID]) -> list[Delete]:
+    """지우는 화들에서 나온 정본 기억 — 그 화들의 확정과, 그 확정의 리비전에 매달린 항목·근거·만료·각색 후보와 확정의 검사
+    결과·작업 — 을 지우는 문장들. 차례와 잠금은 `_bible_row_deletes` 와 같다. 개체는 남긴다(인물 카드를 묶음 삭제가 남기는 것과
+    같은 이유 — 다른 화에도 나온다). 지운 리비전을 앞 리비전으로 가리키던 다른 화의 리비전은 FK 가 그 칸을 비운다."""
+    commit_ids = select(NovelBibleCommit.id).where(NovelBibleCommit.chapter_id.in_(chapter_ids))
+    revision_ids = select(NovelBibleRevision.id).where(NovelBibleRevision.commit_id.in_(commit_ids))
+    return [
+        delete(NovelBibleExpiration).where(NovelBibleExpiration.revision_id.in_(revision_ids)),
+        delete(NovelBibleEvidence).where(NovelBibleEvidence.created_revision_id.in_(revision_ids)),
+        delete(NovelBibleFinding).where(NovelBibleFinding.commit_id.in_(commit_ids)),
+        delete(NovelBibleAdaptationCandidate).where(
+            NovelBibleAdaptationCandidate.created_revision_id.in_(revision_ids)
+        ),
+        delete(NovelBibleKnowledge).where(NovelBibleKnowledge.created_revision_id.in_(revision_ids)),
+        delete(NovelBibleFact).where(NovelBibleFact.created_revision_id.in_(revision_ids)),
+        delete(NovelBibleEventRelation).where(NovelBibleEventRelation.created_revision_id.in_(revision_ids)),
+        delete(NovelBibleEvent).where(NovelBibleEvent.created_revision_id.in_(revision_ids)),
+        delete(NovelBibleRevision).where(NovelBibleRevision.commit_id.in_(commit_ids)),
+        delete(NovelBibleJob).where(NovelBibleJob.commit_id.in_(commit_ids)),
+        delete(NovelBibleCommit).where(NovelBibleCommit.chapter_id.in_(chapter_ids)),
+    ]
 
 
 def _selection_ids(novel_ids: Sequence[uuid.UUID]) -> Select[tuple[uuid.UUID]]:
@@ -147,14 +210,16 @@ async def strip_author_only_data(
     그 화 행, 소설의 원작 사본·권리 잠금 칸, 그리고 독자가 남긴 읽은 자리·댓글·좋아요와 구매·심사·신고 기록. 독자에게 나가는 제목·
     소개·화 제목·작가의 말은 모두 공개 때 얼린 사본이라 작업본 칸을 비워도 화면이 그대로다.
 
-    지우거나 비우는 것: 작업 행, 작가 읽은 자리, 스냅숏, 등장 인물·인물 카드, 공개본·판 행이 없는 화(공개되지 않은 화 — 그
+    지우거나 비우는 것: 작업 행, 작가 읽은 자리, 스냅숏, 등장 인물·인물 카드, 정본 기억(원고에서 뽑은 사실 값·사건 요지·믿음 —
+    작가만 쓰는 파생 내용이다), 공개본·판 행이 없는 화(공개되지 않은 화 — 그
     화의 심사 기록·읽은 자리·댓글과 함께)와 화가 남지 않은 묶음, 공개본·판 행이 가리키지 않는 개정(초고·수정 이력), 남는 개정의
     되돌리기 원본 칸, 남는 화의 작업본 제목·요약·작가의 말, 소설의 설정 노트·주인공 이름·작업본 제목과 소개·편집 보드·표지, 지운
     개정의 삽화 배치와 그 배치만 쓰던 업로드 삽화, 작가가 고른 대화 구간 기록(구간 선택)과 구성안(전체 구성안·장면 구성안·남는
     화의 장면 블록) — 이 둘은 소설 행이 남아 cascade 로는 지워지지 않는다. 남는 화의 장면 구성안 칸은 FK 가 없어 그대로 둔다.
 
     잠금과 순서는 `delete_novels` 와 같다 — 작업 행을 먼저 지우고(진행 중 작업의 조건부 전이가 0행이 된다) 화 행을 잠근 뒤
-    읽은 자리·댓글·개정을 지운다. 비우는 UPDATE 는 이미 빈 행을 고르지 않아 바꾼 행 수가 "정리할 것이 있었는가"를 뜻한다."""
+    정본 기억·읽은 자리·댓글·개정을 지운다. 남는 화·개정을 가리키는 정본 기억은 cascade 로도 지워지지 않으므로 화 잠금 뒤의 이
+    DELETE 가 유일한 길이다. 비우는 UPDATE 는 이미 빈 행을 고르지 않아 바꾼 행 수가 "정리할 것이 있었는가"를 뜻한다."""
     if not novel_ids:
         return 0
     chapter_ids = select(NovelChapter.id).where(NovelChapter.novel_id.in_(novel_ids))
@@ -176,6 +241,8 @@ async def strip_author_only_data(
 
     await run(delete(NovelJob).where(NovelJob.novel_id.in_(novel_ids)))
     await db.execute(chapter_ids.with_for_update())
+    for statement in _bible_row_deletes(novel_ids):
+        await run(statement)
     await run(delete(NovelReadingPosition).where(NovelReadingPosition.novel_id.in_(novel_ids)))
     await run(delete(NovelSnapshot).where(NovelSnapshot.novel_id.in_(novel_ids)))
     await run(delete(NovelChapterCharacter).where(NovelChapterCharacter.chapter_id.in_(chapter_ids)))
@@ -265,14 +332,17 @@ async def delete_batch(
     시작 메시지의 하루 재시도 상한이 작업 행 수로 세므로, 지우면 묶음을 지웠다 다시 만드는 것으로 상한이 풀린다. 차감
     기록의 작업 쪽 짝도 남는다. 작업의 개정 참조는 모두 그 작업이 가리키는 화의 개정이라, 화로 골라 셋을 함께 비운다.
 
-    그다음 화를 잠그고(`delete_novels` 와 같은 이유) 읽은 위치(소유자·노벨 독자)·화 댓글·등장 인물·텍스트 심사 기록·화 공개본·개정의
-    삽화 배치·개정·장면 블록·화·묶음 순으로 지우고, 끝에 이제 아무도 쓰지 않는 업로드 삽화를 지운다. 인물 카드는 남긴다 — 사용자가 메모를 적은 카드일 수 있고, 다른 화에도 나온다. 소설의 공개 상태 행도 남긴다 —
+    그다음 화를 잠그고(`delete_novels` 와 같은 이유) 그 화들에서 나온 정본 기억·읽은 위치(소유자·노벨 독자)·화 댓글·등장 인물·텍스트
+    심사 기록·화 공개본·개정의 삽화 배치·개정·장면 블록·화·묶음 순으로 지우고, 끝에 이제 아무도 쓰지 않는 업로드 삽화를 지운다. 인물 카드는 남긴다 — 사용자가 메모를 적은 카드일 수 있고, 다른 화에도 나온다. 소설의 공개 상태 행도 남긴다 —
     지우는 것은 마지막 묶음뿐이라 남은 공개 화는 여전히 1화부터 이어지고, 공개한 화가 모두 지워져도 소설 제목·소개 사본과
     운영자 조치는 소설에 남아야 한다(다시 화를 공개하면 같은 행을 쓴다).
 
     잠금 순서는 작업 행 → 화 행이다(`delete_novels` 와 같다). 화 id 는 잠금 없이 고른다 — 호출자가 사용자 행을 쥐고 있어
     같은 묶음에 화를 더하거나 빼는 경로(묶음 저장·삭제)가 끼어들 수 없다. 화를 먼저 잠그고 작업 행을 고치면, 작업 행을 쥔
     채 화를 기다리는 AI 수정 적용과 서로를 기다려 한쪽이 교착 오류로 끊긴다.
+
+    정본 기억은 지운 화에서 나온 것을 이력째 지운다(`_bible_row_deletes_of_chapters`) — 지운 화의 내용은 함께 사라져야 한다(아래
+    "즉시 삭제"와 같은 이유). 그 화의 리비전이 사라져 리비전 번호에 구멍이 나지만, 머리는 최대 번호라 구멍과 무관하다.
 
     스냅샷은 남기되 지운 화의 항목을 `{chapterId, deleted: true}` 로 줄인다. 화 제목·요약·작가의 말은 지운 화의
     내용이라 지울 때 함께 사라져야 하고(처리방침의 "즉시 삭제"), 항목 자리를 남기는 것은 그 스냅샷을 복원할 때 화가
@@ -291,6 +361,8 @@ async def delete_batch(
         )
     )
     await db.execute(select(NovelChapter.id).where(NovelChapter.id.in_(chapter_ids)).with_for_update())
+    for statement in _bible_row_deletes_of_chapters(chapter_ids):
+        await db.execute(statement)
     await db.execute(delete(NovelReadingPosition).where(NovelReadingPosition.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelReaderPosition).where(NovelReaderPosition.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelComment).where(NovelComment.chapter_id.in_(chapter_ids)))

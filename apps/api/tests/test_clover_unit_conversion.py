@@ -141,6 +141,11 @@ _LEFT_AS_IS: dict[str, tuple[str, ...]] = {
     "media_book_people": ("order",),
     "media_book_scenes": ("order",),
     "novel_batches": ("ordinal", "assistant_message_count", "target_episode_count"),
+    "novel_bible_commits": ("cas_losses", "restarts"),
+    "novel_bible_events": ("ordinal",),
+    "novel_bible_evidence": ("char_start", "char_end"),
+    "novel_bible_jobs": ("attempts",),
+    "novel_bible_revisions": ("revision_no",),
     "novel_chapter_editions": ("edition",),
     "novel_chapter_illustrations": ("sort_order",),
     # 화 공개 가격은 0(무료)인지만 읽는다 — 유료 화는 언제나 지금 단가로 판다.

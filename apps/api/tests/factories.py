@@ -97,6 +97,18 @@ from api.db.models import (
     NovelComment,
     NovelCommentReport,
     NovelJob,
+    NovelBibleAdaptationCandidate,
+    NovelBibleCommit,
+    NovelBibleEntity,
+    NovelBibleEvent,
+    NovelBibleEventRelation,
+    NovelBibleEvidence,
+    NovelBibleExpiration,
+    NovelBibleFact,
+    NovelBibleFinding,
+    NovelBibleJob,
+    NovelBibleKnowledge,
+    NovelBibleRevision,
     NovelLike,
     NovelPublication,
     NovelReaderPosition,
@@ -750,8 +762,11 @@ async def _make_novel_tree(
 
 async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None:
     """`tree` 의 소설·화에 인물 카드·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록·독자 읽은 자리·
-    좋아요·홈 노벨 자리·화 댓글을 하나씩 붙이고, 그 화와 댓글에 신고를 하나씩 단다(flush). 소설을 지우는 경로가 이 테이블들까지
-    지우는지, 신고는 남기는지 볼 때 쓴다."""
+    좋아요·홈 노벨 자리·화 댓글을 하나씩 붙이고, 그 화와 댓글에 신고를 하나씩 단다(flush). 첫 개정을 확정한 정본 기억 행도
+    표마다 하나씩 심는다(`_plant_bible_rows`). 소설을 지우는 경로가 이 테이블들까지 지우는지, 신고는 남기는지 볼 때 쓴다."""
+    await _plant_bible_rows(
+        db_session, novel_id=tree.novel.id, chapter_id=tree.chapter.id, chapter_revision_id=tree.first_revision.id
+    )
     card = NovelCharacter(novel_id=tree.novel.id, name="인물")
     db_session.add(card)
     await db_session.flush()
@@ -822,6 +837,157 @@ async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None
         ]
     )
     await db_session.flush()
+
+
+@dataclass(frozen=True)
+class BibleRows:
+    """`_plant_bible_rows` 가 심은 행 중 다른 행이 가리키는 것의 id."""
+
+    commit_id: uuid.UUID
+    revision_id: uuid.UUID
+    entity_id: uuid.UUID
+    event_id: uuid.UUID
+    fact_id: uuid.UUID
+
+
+async def _plant_bible_rows(
+    db_session: AsyncSession, *, novel_id: uuid.UUID, chapter_id: uuid.UUID, chapter_revision_id: uuid.UUID
+) -> BibleRows:
+    """화 하나의 개정 확정이 커밋까지 간 꼴로 정본 기억 표 열둘에 행을 하나씩 심는다(flush) — 확정과 그 작업·리비전·검사 결과,
+    리비전에 매달린 사건·회상 관계·사실·지식·근거·만료·각색 후보, 소설에 매달린 개체. 리비전 번호는 그 소설의 다음 번호이고 개체
+    이름은 부를 때마다 새로 지어, 한 소설의 여러 화에 심어도 유니크에 걸리지 않는다. 글은 모두 합성 문장이다."""
+    entity = NovelBibleEntity(
+        novel_id=novel_id, kind="character", name="인물", name_norm=f"인물-{uuid.uuid4().hex[:8]}"
+    )
+    commit = NovelBibleCommit(
+        novel_id=novel_id,
+        kind="chapter_confirm",
+        chapter_id=chapter_id,
+        chapter_revision_id=chapter_revision_id,
+        content_hash="0" * 64,
+        block_ids_hash="0" * 64,
+        status="committed",
+        actor_kind="system",
+    )
+    db_session.add_all([entity, commit])
+    await db_session.flush()
+    last_no = await db_session.scalar(
+        sa.select(sa.func.max(NovelBibleRevision.revision_no)).where(NovelBibleRevision.novel_id == novel_id)
+    )
+    revision = NovelBibleRevision(novel_id=novel_id, revision_no=(last_no or 0) + 1, commit_id=commit.id)
+    db_session.add_all(
+        [
+            revision,
+            NovelBibleJob(novel_id=novel_id, commit_id=commit.id, slot="events", status="succeeded", proposal={}),
+            NovelBibleFinding(
+                novel_id=novel_id, commit_id=commit.id, severity="warning", rule="order_undetermined", payload={}
+            ),
+        ]
+    )
+    await db_session.flush()
+    item: dict[str, Any] = {"novel_id": novel_id, "created_revision_id": revision.id, "chapter_id": chapter_id}
+    event = NovelBibleEvent(
+        **item,
+        ordinal=1,
+        actuality="present",
+        summary="합성 사건",
+        anchor_block_ids=[uuid.uuid4()],
+        present_entity_ids=[entity.id],
+    )
+    db_session.add(event)
+    await db_session.flush()
+    fact = NovelBibleFact(
+        **item,
+        fact_key=uuid.uuid4(),
+        subject_entity_id=entity.id,
+        kind="life",
+        predicate_norm="life",
+        value="살아 있음",
+        value_norm="alive",
+        holds=True,
+        immutable=False,
+        onset=False,
+        scope="from_here",
+        valid_from_event_id=event.id,
+    )
+    db_session.add_all(
+        [
+            fact,
+            NovelBibleEventRelation(
+                **item,
+                from_event_id=event.id,
+                relation="before",
+                to_anchor_block_id=uuid.uuid4(),
+                to_chapter_id=chapter_id,
+            ),
+        ]
+    )
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NovelBibleKnowledge(
+                **item,
+                knower_entity_id=entity.id,
+                kind="knows",
+                fact_key=fact.fact_key,
+                proposition={},
+                known_since_event_id=event.id,
+            ),
+            NovelBibleEvidence(
+                novel_id=novel_id,
+                created_revision_id=revision.id,
+                item_table="fact",
+                item_id=fact.id,
+                origin="manuscript_block",
+                chapter_id=chapter_id,
+                chapter_revision_id=chapter_revision_id,
+                block_id=uuid.uuid4(),
+                char_start=0,
+                char_end=1,
+                quote_sha256="0" * 64,
+            ),
+            NovelBibleExpiration(
+                revision_id=revision.id,
+                novel_id=novel_id,
+                item_table="event",
+                item_id=event.id,
+                reason="chapter_replaced",
+            ),
+            NovelBibleAdaptationCandidate(
+                novel_id=novel_id,
+                created_revision_id=revision.id,
+                chapter_id=chapter_id,
+                fact_key=fact.fact_key,
+                fact_id=fact.id,
+                origin="play",
+            ),
+        ]
+    )
+    await db_session.flush()
+    return BibleRows(commit.id, revision.id, entity.id, event.id, fact.id)
+
+
+async def _bible_row_counts(db_session: AsyncSession, novel_id: uuid.UUID) -> dict[str, int]:
+    """소설 하나에 남은 정본 기억 행 수를 표 이름마다. 모든 표가 `novel_id` 를 갖는다."""
+    columns = (
+        NovelBibleCommit.novel_id,
+        NovelBibleJob.novel_id,
+        NovelBibleRevision.novel_id,
+        NovelBibleEntity.novel_id,
+        NovelBibleEvidence.novel_id,
+        NovelBibleExpiration.novel_id,
+        NovelBibleFinding.novel_id,
+        NovelBibleAdaptationCandidate.novel_id,
+        NovelBibleEvent.novel_id,
+        NovelBibleEventRelation.novel_id,
+        NovelBibleFact.novel_id,
+        NovelBibleKnowledge.novel_id,
+    )
+    return {
+        column.class_.__tablename__: (await db_session.scalar(sa.select(sa.func.count()).where(column == novel_id)))
+        or 0
+        for column in columns
+    }
 
 
 @dataclass(frozen=True)
