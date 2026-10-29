@@ -75,6 +75,54 @@ def test_dump_record_picks_the_generation_line_even_when_judgment_lines_follow_i
         replay_logs.dump_record(dump, ROOM, 6)
 
 
+def test_generation_records_keeps_every_generation_line_of_a_retried_turn_in_file_order() -> None:
+    # 재생성한 턴 — 같은 턴 번호의 생성 줄이 둘이고, 그 사이에 같은 번호의 판정 줄과 접기(백그라운드) 줄이 있다.
+    records: list[dict[str, Any]] = [
+        {"roomId": str(ROOM), "turn": 4, "kind": "generation", "prompt": "앞 턴"},
+        {"roomId": str(ROOM), "turn": 5, "kind": "generation", "prompt": "첫 시도"},
+        {"roomId": str(ROOM), "turn": 5, "kind": "judgment", "callSite": "chat_stat_judgment", "prompt": "판정"},
+        {"roomId": str(ROOM), "turn": 5, "kind": "background", "callSite": "chat_memory_summary", "prompt": "접기"},
+        {"roomId": str(ROOM), "turn": 5, "kind": "generation", "prompt": "재생성"},
+        {"roomId": str(ROOM), "turn": 6, "kind": "generation", "prompt": "다음 턴"},
+    ]
+    found = replay_logs.generation_records(records, ROOM, 5)
+    assert [record["prompt"] for record in found] == ["첫 시도", "재생성"]
+
+
+def test_generation_records_reads_a_line_without_kind_as_a_generation_line() -> None:
+    records: list[dict[str, Any]] = [{"roomId": str(ROOM), "turn": 3, "systemInstruction": "s", "prompt": "옛 덤프"}]
+    assert replay_logs.generation_records(records, ROOM, 3) == records
+
+
+def test_generation_records_leaves_out_lines_of_another_room_with_the_same_turn() -> None:
+    other = {"roomId": str(uuid.uuid4()), "turn": 3, "kind": "generation", "prompt": "다른 방"}
+    mine = {"roomId": str(ROOM), "turn": 3, "kind": "generation", "prompt": "이 방"}
+    assert replay_logs.generation_records([other, mine, other], ROOM, 3) == [mine]
+
+
+def test_dump_record_is_the_last_of_generation_records_over_the_dump_read_once(tmp_path: Path) -> None:
+    dump = _write(
+        tmp_path / "dump.jsonl",
+        [
+            {"roomId": str(ROOM), "turn": 2, "prompt": "옛 줄"},
+            {"roomId": str(uuid.uuid4()), "turn": 2, "prompt": "다른 방"},
+            {"roomId": str(ROOM), "turn": 2, "kind": "judgment", "prompt": "판정"},
+            {"roomId": str(ROOM), "turn": 2, "kind": "generation", "prompt": "재시도"},
+            {"roomId": str(ROOM), "turn": 3, "kind": "generation", "prompt": "다음 턴"},
+            {"roomId": str(ROOM), "turn": 4, "kind": "judgment", "prompt": "판정만"},
+        ],
+    )
+    records = replay_logs.load_dump(dump)
+    for turn in (2, 3):
+        found = replay_logs.generation_records(records, ROOM, turn)
+        assert replay_logs.dump_record(dump, ROOM, turn) == (found[-1], len(found))
+    assert replay_logs.dump_record(dump, ROOM, 2)[0]["prompt"] == "재시도"
+    # 생성 줄이 없는 턴은 고르면 빈 목록이고, dump_record 는 그 턴을 거부한다.
+    assert replay_logs.generation_records(records, ROOM, 4) == []
+    with pytest.raises(ReplayRefusedError, match="덤프에 턴 4"):
+        replay_logs.dump_record(dump, ROOM, 4)
+
+
 # ---- 스탯 기준 줄 ------------------------------------------------------------------------------
 
 
