@@ -9,7 +9,6 @@ import { toast } from "sonner";
 
 import {
   isRoutingLane,
-  PREMIUM_OFF_UNREAD_COPY,
   promptRoutingKeys,
   ROUTING_LANE_LABELS,
   routingQueryOptions,
@@ -247,9 +246,10 @@ function RoutingEditor({ data }: RoutingEditorProps) {
             : `지금 운영 값은 마지막 저장(r${shown.revisionNumber}) 기준이에요 — 저장하기 전에는 바뀌지 않아요.`}
         </p>
         {!shown.chatPremiumModelsEnabled && (
-          // Opus 방 행의 운영 값은 스위치를 켰을 때의 값이다 — 꺼져 있는 동안 Opus 방은 Gemini 방 칸으로 돈다.
+          // 상위 모델 방 행의 운영 값은 스위치를 켰을 때의 값이다 — 꺼져 있는 동안 상위 모델 방은 Gemini 방 칸으로 돈다.
           <p className="text-xs text-foreground">
-            {PREMIUM_OFF_UNREAD_COPY} — Opus 방 칸은 지금 운영에서 실행되지 않고, Opus 를 고른 방도 Gemini 방 칸으로 돌아요.
+            상위 모델이 꺼져 있어 지금은 안 읽혀요 — 상위 모델 방 칸은 지금 운영에서 실행되지 않고, 상위 모델을 고른 방도 Gemini 방
+            칸으로 돌아요.
           </p>
         )}
 
