@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.db.models.novel import NovelChapter
 from api.db.models.novel_bible_events import NovelBibleEvent, NovelBibleEventRelation
 from api.novel_bible.core.contracts import CoreReadView
+from api.novel_bible.core.jobs import LISTED_NAME_TOO_LONG, name_too_long
 from api.novel_bible.core.keys import normalize_name
 from api.novel_bible.core.queries import current_items, revision_at
 from api.novel_bible.core.quotes import verify_quote
@@ -230,7 +231,16 @@ class EventsSlot:
             actuality: EventActuality = event.actuality
             if actuality == "present" and scene is not None and scene.flashback:
                 actuality = "flashback"
-            uses = [use for use in event.uses if normalize_name(use.actor) and normalize_name(use.thing)]
+            # 행위자·대상은 두 이름 칸에 같은 차례로 들어가 저장 때 짝지어진다. 코어는 이름 목록에서 긴 이름만 빼므로 한쪽
+            # 칸에서만 빠지면 짝이 어긋난다 — 긴 이름이 낀 짝은 여기서 통째로 빼고 코어와 같은 사유로 긴 이름 수를 센다.
+            uses = []
+            for use in event.uses:
+                if not (normalize_name(use.actor) and normalize_name(use.thing)):
+                    continue
+                if long_names := sum(name_too_long(name) for name in (use.actor, use.thing)):
+                    dropped[LISTED_NAME_TOO_LONG] += long_names
+                else:
+                    uses.append(use)
             draft = ItemDraft(
                 local_key=f"event{ordinal}",
                 table="event",

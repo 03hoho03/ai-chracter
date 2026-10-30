@@ -750,11 +750,12 @@ async def test_a_knowledge_item_whose_knower_name_is_empty_is_dropped_before_sav
     assert await _count(db_session, NovelBibleKnowledge, novel.id) == 1
 
 
-async def test_an_item_with_a_name_over_the_entity_name_limit_is_dropped_and_the_commit_goes_on(
+async def test_an_item_whose_single_entity_name_is_over_the_limit_is_dropped_and_the_commit_goes_on(
     db_session: AsyncSession,
 ) -> None:
-    # 상한을 넘는 이름이 개체 표 CHECK 에 걸리면 연결이 통째로 실패한다 — 그 이름을 가진 항목만 버려야 한다. 상한과 같은
-    # 길이는 남는다. 사실의 주어·대상, 지식의 명제 주어 어느 칸에 있든 같다.
+    # 상한을 넘는 이름이 개체 표 CHECK 에 걸리면 연결이 통째로 실패한다 — 코어가 개체 하나로 풀어야 하는 칸이면 그 이름만
+    # 빼서는 행의 주어나 키를 만들 수 없으니 그 항목을 버려야 한다. 상한과 같은 길이는 남는다. 사실의 주어·대상, 지식의
+    # 앎 주체·명제 주어 어느 칸에 있든 같다.
     novel = await make_novel(db_session)
     too_long, at_limit = "가" * (ENTITY_NAME_MAX + 1), "나" * ENTITY_NAME_MAX
     body = "\n\n".join(
@@ -764,6 +765,7 @@ async def test_an_item_with_a_name_over_the_entity_name_limit_is_dropped_and_the
             f"사실: {at_limit}|life|-|alive|참",
             f"사실: 하나|possession|-|{too_long}|참",
             f"앎: 둘|knows|{too_long}|life|-|alive",
+            f"앎: {too_long}|knows|하나|life|-|alive",
             "앎: 둘|knows|하나|life|-|alive",
         ]
     )
@@ -781,7 +783,7 @@ async def test_an_item_with_a_name_over_the_entity_name_limit_is_dropped_and_the
     kept_and_dropped = {
         slot: (len(proposals[slot]["items"]), proposals[slot]["dropped"]) for slot in ("facts", "knowledge")
     }
-    assert kept_and_dropped == {"facts": (1, {NAME_TOO_LONG: 2}), "knowledge": (1, {NAME_TOO_LONG: 1})}
+    assert kept_and_dropped == {"facts": (1, {NAME_TOO_LONG: 2}), "knowledge": (1, {NAME_TOO_LONG: 2})}
     assert await _count(db_session, NovelBibleFact, novel.id) == 1
     assert await _count(db_session, NovelBibleKnowledge, novel.id) == 1
     names = set(

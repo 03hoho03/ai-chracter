@@ -5,9 +5,12 @@
 밀려나도(`stale`) 작업 행이 그대로라 제안을 저장한다 — 같은 개정을 다시 확정하면 그 제안을 추출 캐시로 쓴다.
 
 슬롯의 검증을 지난 제안에서 코어가 개체로 풀어야 하는 이름(지식의 앎 주체, 명제의 주어, 대상이 개체인 종류의 대상)이 정규화 뒤
-비는 항목은 저장 전에 버리고 `dropped` 에 센다 — 그런 항목은 행의 주어도 안정 키도 만들 수 없다. 어느 칸이든 정규화한 이름이
-개체 이름 길이 상한을 넘는 항목도 같이 버린다 — 연결이 그 이름으로 개체를 만들다 CHECK 에 걸려 확정 전체가 실패한다. 출력
-전체가 아니라 그 항목만 버린다.
+비는 항목은 저장 전에 버리고 `dropped` 에 센다 — 그런 항목은 행의 주어도 안정 키도 만들 수 없다. 정규화한 이름이 개체 이름
+길이 상한을 넘으면 연결이 그 이름으로 개체를 만들다 CHECK 에 걸려 확정 전체가 실패하므로 저장 전에 걸러 낸다. 그 이름이 위의
+개체 하나로 푸는 칸에 있으면 항목을 버리고, 그 밖의 이름 칸(사건의 등장·언급 인물 같은 이름 목록)에 있으면 그 이름만 빼고
+항목은 남긴다 — 이름 하나 때문에 사건이 통째로 빠지면 사건이 덜 잡힌 것처럼 보인다. 뺀 이름도 이름 수로 `dropped` 에 센다.
+이름 목록 둘을 같은 차례로 짝지어 저장하는 슬롯(사건의 행동)은 코어가 한쪽 칸에서만 빼면 짝이 어긋나므로, 그런 짝은 슬롯이
+검증에서 먼저 뺀다. 출력 전체가 아니라 그 항목이나 그 이름만 버린다.
 
 추출 캐시: 같은 소설에서 슬롯·어댑터·문안 세트·출력 스키마가 같고 본문 해시·블록 id 해시·슬롯의 힌트가 아닌 렌더 값이 같은 앞
 작업이 성공해 있으면 그 제안을 복사하고 호출하지 않는다. 힌트(아는 개체 따위 정본 상태에서 오는 값)는 다른 화가 커밋될 때마다
@@ -49,8 +52,10 @@ _RETRYABLE: frozenset[JobFailure] = frozenset(
 )
 # 코어가 풀어야 하는 이름이 비어 버린 항목의 `dropped` 사유.
 EMPTY_NAME = "empty_name"
-# 정규화한 이름이 개체 이름 길이 상한을 넘는 항목의 `dropped` 사유.
+# 코어가 개체 하나로 풀어야 하는 칸의 이름이 정규화 뒤 개체 이름 길이 상한을 넘는 항목의 `dropped` 사유.
 NAME_TOO_LONG = "name_too_long"
+# 이름 목록 칸에서 상한을 넘어 뺀 이름의 `dropped` 사유 — 항목이 아니라 뺀 이름 수를 센다.
+LISTED_NAME_TOO_LONG = "listed_name_too_long"
 
 
 async def commit_ref(session: AsyncSession, commit: NovelBibleCommit) -> CommitRef:
@@ -72,6 +77,10 @@ async def commit_ref(session: AsyncSession, commit: NovelBibleCommit) -> CommitR
     )
 
 
+def name_too_long(name: str) -> bool:
+    return len(normalize_name(name)) > ENTITY_NAME_MAX
+
+
 def drop_unlinkable(proposal: Proposal) -> Proposal:
     kept = []
     dropped = dict(proposal.dropped)
@@ -83,9 +92,17 @@ def drop_unlinkable(proposal: Proposal) -> Proposal:
                 needed.append("value")
         if not all(any(normalize_name(name.name) for name in draft.names.get(field, ())) for field in needed):
             reason = EMPTY_NAME
-        elif any(len(normalize_name(name.name)) > ENTITY_NAME_MAX for names in draft.names.values() for name in names):
+        elif any(name_too_long(name.name) for field in needed for name in draft.names.get(field, ())):
             reason = NAME_TOO_LONG
         else:
+            listed = {
+                field: names if field in needed else tuple(name for name in names if not name_too_long(name.name))
+                for field, names in draft.names.items()
+            }
+            removed = sum(len(names) - len(listed[field]) for field, names in draft.names.items())
+            if removed:
+                dropped[LISTED_NAME_TOO_LONG] = dropped.get(LISTED_NAME_TOO_LONG, 0) + removed
+                draft = draft.model_copy(update={"names": listed})
             kept.append(draft)
             continue
         dropped[reason] = dropped.get(reason, 0) + 1
