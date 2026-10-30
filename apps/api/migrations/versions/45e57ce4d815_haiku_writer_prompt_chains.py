@@ -1,7 +1,7 @@
 """haiku writer prompt chains
 
 Revision ID: 45e57ce4d815
-Revises: 02a8ea9563a1
+Revises: ed453fb4ed04
 Create Date: 2026-10-30 12:00:00.000000
 
 채팅 글쓰기 모델 `haiku_writer`(Claude Haiku 5.5)의 프롬프트 체인 둘(story·character)을 심는다. 어드민으로는 만들 수 없다 — 복제는
@@ -62,7 +62,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "45e57ce4d815"
-down_revision: str | Sequence[str] | None = "02a8ea9563a1"
+down_revision: str | Sequence[str] | None = "ed453fb4ed04"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
