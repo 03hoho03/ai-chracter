@@ -286,8 +286,11 @@ def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting
         if not follows_carried_model(call_site):
             continue
         # 실린 모델을 따르는 구조화 호출(구성안)은 배정이 없어도 글쓰기 모델마다 갈 구현이 그 방식을 받아야 한다 — 아니면 첫
-        # 상위 모델 구성안에서야 실패한다. 자격은 상위 모델 스위치의 기동 검증(`core/config.py`)이 본다.
+        # 상위 모델 구성안에서야 실패한다. 자격은 상위 모델 스위치의 기동 검증(`core/config.py`)이 본다. 소설 호출이면 소설에서
+        # 고를 수 있는 모델만 본다 — 채팅 전용 모델은 소설 요청 게이트가 막아 그 경로로 오지 않는다.
         for model in get_args(ChatModelId):
+            if policy.novelize is not None and model not in NOVEL_MODELS:
+                continue
             _, backend = pick_backend(call_site, model, assignments)
             if not _takes(BACKENDS[backend].capabilities, policy.call_kind):
                 errors.append(
