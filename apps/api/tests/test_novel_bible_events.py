@@ -30,7 +30,7 @@ from api.novel_bible.core.contracts import (
     Registry,
 )
 from api.novel_bible.core.pipeline import run_until_idle
-from api.novel_bible.core.positions import precedes, story_positions
+from api.novel_bible.core.positions import Bound, Interval, precedes, story_positions
 from api.novel_bible.core.queries import bible_at, revision_at
 from api.novel_bible.core.types import (
     CommitRef,
@@ -96,17 +96,18 @@ def _view(db: AsyncSession, chapter: NovelChapter, revision: NovelChapterRevisio
 
 
 async def _outline(
-    db: AsyncSession, chapter: NovelChapter, scenes: list[dict[str, Any]], assignment: dict[uuid.UUID, str]
-) -> None:
+    db: AsyncSession, chapter: NovelChapter, scenes: list[dict[str, Any]], assignment: dict[uuid.UUID, str],
+    *, revision: int = 1,
+) -> NovelEpisodeOutline:
     """장면 구성안 한 판과 블록마다 장면 행. `assignment` 에 없는 블록은 수정으로 생긴 새 블록처럼 행이 없다."""
     outline = NovelOutline(
-        novel_id=chapter.novel_id, revision=1, source="generate", selection_id=uuid.uuid4(), episodes=[]
+        novel_id=chapter.novel_id, revision=revision, source="generate", selection_id=uuid.uuid4(), episodes=[]
     )
     db.add(outline)
     await db.flush()
     episode = NovelEpisodeOutline(
-        novel_id=chapter.novel_id, outline_id=outline.id, episode_key=uuid.uuid4(), revision=1, source="generate",
-        scenes=scenes,
+        novel_id=chapter.novel_id, outline_id=outline.id, episode_key=uuid.uuid4(), revision=revision,
+        source="generate", scenes=scenes,
     )
     db.add(episode)
     await db.flush()
@@ -115,6 +116,7 @@ async def _outline(
         for block_id, scene_id in assignment.items()
     )
     await db.flush()
+    return episode
 
 
 # ── 입력 ────────────────────────────────────────────────────────────
@@ -147,6 +149,41 @@ async def test_the_input_marks_scene_boundaries_and_gives_only_titles_and_flashb
     )
     assert values["scene_hints"] == "장면 1. 정원의 오후\n장면 2. 어린 날 (회상)"
     assert all("구성안 내용 문장" not in value for value in values.values())
+
+
+async def test_flashback_marks_come_from_the_latest_outline_and_an_old_outline_without_marks_is_not_flashback(
+    db_session: AsyncSession,
+) -> None:
+    """같은 장면 id 가 여러 판에 있으면 판 번호가 가장 큰 판의 회상 표시를 쓰고, 회상 표시 칸이 없는 옛 판의 장면은 회상이
+    아니다. 깨지는 시나리오: 옛 판이 이기면 고친 판에서 회상으로 바꾼 장면이 현재 사건으로 남고, 칸이 없는 판을 회상으로 읽으면
+    옛 화의 사건이 전부 회상으로 올라간다."""
+    novel = await make_novel(db_session)
+    chapter, revision = await add_chapter(db_session, novel.id, 1, "첫째 문단이다.\n\n둘째 문단이다.\n\n셋째 문단이다.")
+    b1, b2, b3 = revision.block_ids
+    # 새 판을 먼저 넣는다 — 넣은 차례가 아니라 판 번호가 이겨야 한다.
+    await _outline(db_session, chapter, [{"id": "s1", "title": "정원", "flashback": True}], {b2: "s1"}, revision=2)
+    await _outline(
+        db_session, chapter, [{"id": "s1", "title": "정원", "flashback": False}, {"id": "s2", "title": "옛 판 장면"}],
+        {b1: "s1", b3: "s2"}, revision=1,
+    )
+
+    hints = await _view(db_session, chapter, revision).scene_hints()
+
+    assert hints == [
+        SceneHint(scene_key="s1", title="정원", flashback=True, block_ids=(b1, b2)),
+        SceneHint(scene_key="s2", title="옛 판 장면", flashback=False, block_ids=(b3,)),
+    ]
+
+
+def test_the_known_entities_hint_is_one_sorted_line_per_entity_with_its_kind_and_aliases() -> None:
+    """아는 개체는 개체마다 한 줄 `- 이름 (종류)` 에 별칭 꼬리이고, 같은 줄은 한 번만 글자 순으로 싣는다. 깨지는 시나리오: 줄
+    꼴이 바뀌면 그 꼴을 설명하는 문안 지시문과 어긋나, 모델이 종류·별칭 꼬리를 이름으로 옮겨 다른 개체가 생긴다."""
+    one = EntityName(kind="character", name="하나", aliases=("큰언니", "하나야"))
+    known = [EntityName(kind="object", name="열쇠"), one, EntityName(kind="ability", name="비행"), one]
+
+    values = EventsSlot().prompt_values(_input(_manuscript("합성 문단."), known=known))
+
+    assert values["known_entities"] == "- 비행 (능력)\n- 열쇠 (사물)\n- 하나 (인물) — 별칭: 큰언니, 하나야"
 
 
 async def test_a_chapter_without_a_scene_outline_reads_as_one_scene_without_hints(db_session: AsyncSession) -> None:
@@ -190,13 +227,53 @@ async def test_prior_events_are_the_current_main_line_events_of_earlier_chapters
 
     assert isinstance(slot_input, EventsInput)
     assert slot_input.prior == [
-        PriorEvent(label="P1", chapter_id=first.id, chapter_ordinal=1, summary="앞 화 주선 사건", first_block_id=a),
+        PriorEvent(label="P1", chapter_id=first.id, chapter_ordinal=1, summary="앞 화 주선 사건", target_block_id=a),
         PriorEvent(label="P2", chapter_id=first.id, chapter_ordinal=1, summary="앞 화 두번째 주선 사건",
-                   first_block_id=c),
+                   target_block_id=c),
     ]
     assert EventsSlot().prompt_values(slot_input)["prior_events"] == (
         "P1. 1화 — 앞 화 주선 사건\nP2. 1화 — 앞 화 두번째 주선 사건"
     )
+
+
+async def test_a_relation_target_block_is_one_that_only_the_target_event_covers(db_session: AsyncSession) -> None:
+    """앞 화 사건끼리 문단을 함께 덮으면 관계 대상 블록은 대상 사건만 덮는 첫 블록이고, 그런 블록이 없는 사건은 대상 블록이
+    없다. 깨지는 시나리오: 대상 사건의 첫 블록을 저장하면 읽는 쪽이 그 블록을 덮는 앞 차례 사건으로 풀어, 회상의 끝이 더 이른
+    점으로 조여진다."""
+    novel = await make_novel(db_session)
+    first, first_revision = await add_chapter(db_session, novel.id, 1, "가 문단.\n\n나 문단.\n\n다 문단.\n\n라 문단.")
+    second, second_revision = await add_chapter(db_session, novel.id, 2, "마 문단.")
+    bible = await plant_revision(db_session, novel.id, first.id, first_revision.id)
+    common = {"novel_id": novel.id, "chapter_id": first.id, "created_revision_id": bible.id, "actuality": "present"}
+    a, b, c, d = first_revision.block_ids
+    db_session.add_all(
+        [
+            NovelBibleEvent(ordinal=1, summary="앞 사건", anchor_block_ids=[a, b], **common),
+            NovelBibleEvent(ordinal=2, summary="겹친 사건", anchor_block_ids=[b, c], **common),
+            NovelBibleEvent(ordinal=3, summary="가려진 사건", anchor_block_ids=[c], **common),
+            NovelBibleEvent(ordinal=4, summary="뒤 사건", anchor_block_ids=[d], **common),
+        ]
+    )
+    await db_session.flush()
+
+    slot_input = await EventsSlot().build_input(db_session, _view(db_session, second, second_revision))
+
+    assert isinstance(slot_input, EventsInput)
+    assert [prior.target_block_id for prior in slot_input.prior] == [a, c, None, d]
+    target = slot_input.prior[1].target_block_id
+    assert target is not None
+    head = await revision_at(db_session, novel.id, None)
+    events = [row for row in await EventsSlot().read(db_session, novel.id, head) if isinstance(row, EventRow)]
+    recalled = EventRow(
+        id=uuid.uuid4(), chapter_id=second.id, chapter_ordinal=2, ordinal=1, actuality="flashback",
+        anchor_block_ids=tuple(second_revision.block_ids),
+    )
+    relation = RelationRow(
+        id=uuid.uuid4(), chapter_id=second.id, from_event_id=recalled.id, relation="before", to_anchor_block_id=target,
+        to_chapter_id=first.id,
+    )
+    # 겹친 사건(1화 2번째)의 점에서 위 끝이 닫힌다 — 앞 사건(1화 1번째)으로 풀리지 않는다.
+    assert story_positions([*events, recalled], [relation])[recalled.id] == Interval(None, Bound((1, 2), exclusive=True))
 
 
 # ── 검증 ────────────────────────────────────────────────────────────
@@ -273,8 +350,11 @@ def test_without_a_scene_outline_the_model_alone_decides_flashback_and_dreams() 
 def test_validation_resolves_relation_targets_to_blocks_and_drops_bad_relations() -> None:
     manuscript = _manuscript("지금 문단.", "옛날 문단.")
     target_chapter, target_block = uuid.uuid4(), uuid.uuid4()
-    prior = [PriorEvent(label="P1", chapter_id=target_chapter, chapter_ordinal=1, summary="앞 사건",
-                        first_block_id=target_block)]
+    prior = [
+        PriorEvent(label="P1", chapter_id=target_chapter, chapter_ordinal=1, summary="앞 사건",
+                   target_block_id=target_block),
+        PriorEvent(label="P2", chapter_id=target_chapter, chapter_ordinal=1, summary="가려진 사건", target_block_id=None),
+    ]
     output = _output(
         [_event("now", [1], (1, "지금")), _event("past", [2], (2, "옛날"), actuality="flashback")],
         [
@@ -282,12 +362,16 @@ def test_validation_resolves_relation_targets_to_blocks_and_drops_bad_relations(
             {"event": "now", "relation": "after", "target": "P1"},
             {"event": "nowhere", "relation": "before", "target": "P1"},
             {"event": "past", "relation": "overlap", "target": "P9"},
+            {"event": "past", "relation": "after", "target": "P2"},
         ],
     )
 
     proposal = EventsSlot().validate(_input(manuscript, prior=prior), output)
 
-    assert proposal.dropped == {"relation_not_flashback": 1, "relation_event_unknown": 1, "relation_target_unknown": 1}
+    assert proposal.dropped == {
+        "relation_not_flashback": 1, "relation_event_unknown": 1, "relation_target_unknown": 1,
+        "relation_target_ambiguous": 1,
+    }
     relations = [draft for draft in proposal.items if draft.table == "event_relation"]
     events = {draft.local_key: draft for draft in proposal.items if draft.table == "event"}
     assert len(relations) == 1
@@ -498,6 +582,41 @@ async def test_reconfirming_a_chapter_expires_its_events_and_relations(db_sessio
         select(func.count()).select_from(NovelBibleRevision).where(NovelBibleRevision.novel_id == novel.id)
     )
     assert revisions == 3
+
+
+async def test_a_same_text_reconfirm_reuses_the_extraction_unless_a_scene_flashback_mark_changed(
+    db_session: AsyncSession,
+) -> None:
+    """아는 개체가 바뀌어도 본문·블록이 같은 재확정은 추출을 다시 쓰고, 장면 구성안의 회상 표시만 바뀐 같은 본문은 다시 뽑는다.
+    깨지는 시나리오: 장면 힌트를 캐시 열쇠에서 빼면 회상으로 올리기 전의 옛 현실성을 재사용하고, 아는 개체를 열쇠에 넣으면 다른
+    화가 커밋될 때마다 같은 본문도 다시 뽑는다."""
+    novel = await make_novel(db_session)
+    body = "하나가 정원에 선다.\n\n하나가 웃는다."
+    chapter, revision = await add_chapter(db_session, novel.id, 1, body)
+    episode = await _outline(
+        db_session, chapter, [{"id": "s1", "title": "정원", "flashback": False}], dict.fromkeys(revision.block_ids, "s1")
+    )
+    output = {"events": [_event("e1", [1, 2], (1, "하나가 정원에"), present=["하나"])], "relations": []}
+    adapter = ScriptedAdapter([output, output])
+    # 첫 확정이 개체를 만들어 다음 확정의 아는 개체 힌트가 바뀐다.
+    await _confirm_and_run(db_session, chapter, revision, adapter)
+    same = await add_revision(db_session, chapter.id, body, block_ids=revision.block_ids)
+
+    reused = await _confirm_and_run(db_session, chapter, same, adapter)
+
+    assert await _status(db_session, reused) == "committed"
+    assert len(adapter.prompts) == 1
+
+    episode.scenes = [{"id": "s1", "title": "정원", "flashback": True}]
+    await db_session.flush()
+    marked = await add_revision(db_session, chapter.id, body, block_ids=revision.block_ids)
+
+    fresh = await _confirm_and_run(db_session, chapter, marked, adapter)
+
+    assert await _status(db_session, fresh) == "committed"
+    assert len(adapter.prompts) == 2 and "장면 1. 정원 (회상)" in adapter.prompts[1].prompt
+    rows = await EventsSlot().read(db_session, novel.id, await revision_at(db_session, novel.id, None))
+    assert [row.actuality for row in rows if isinstance(row, EventRow)] == ["flashback"]
 
 
 def test_the_registry_holds_the_events_slot() -> None:

@@ -5,8 +5,11 @@
 확정된 원고가 아니다. 원문 채팅 구간도 읽지 않는다.
 
 이야기 순서의 기본은 화 번호와 화 안 차례이고, 회상 사건만 앞 화 사건과의 관계(앞·뒤·겹침)를 받는다. 관계 대상은 사건 id 가
-아니라 대상 사건의 첫 블록 id 로 저장한다 — 대상 화를 다시 확정해도 같은 블록을 덮는 새 사건으로 읽을 때 이어지고, 추출 캐시로
-다시 쓰는 제안이 그때의 목록 번호에 기대지 않는다.
+아니라 대상 사건의 블록 id 하나로 저장한다 — 대상 화를 다시 확정해도 같은 블록을 덮는 새 사건으로 읽을 때 이어지고, 추출 캐시로
+다시 쓰는 제안이 그때의 목록 번호에 기대지 않는다. 읽는 쪽(`core/positions.py`)은 그 블록을 덮는 주선 사건 중 차례가 가장 앞선
+것으로 풀기 때문에, 저장하는 블록은 대상 사건의 앵커 가운데 같은 화의 앞 차례 주선 사건이 덮지 않는 첫 블록이다. 그런 블록이 없는
+사건(앵커 전부를 앞 사건이 함께 덮는다)을 가리킨 관계는 다른 사건으로 풀리므로 버린다 — 회상의 그 끝은 열린 채(미정)로 남는다.
+대상 화를 다시 확정한 뒤 새 사건들이 그 블록을 어떻게 나눠 덮는지까지는 막지 못한다.
 
 현실성은 장면 구성안이 회상이라고 한 장면의 `present` 사건만 `flashback` 으로 올린다. 모델이 회상·꿈이라고 한 것은 그대로 둔다 —
 구성안은 꿈을 표시하지 않는다. 구성안이 없는 화(옛 흐름 화)는 화 전체가 장면 하나이고 현실성은 모델 출력으로만 정한다. 꿈·상상
@@ -57,13 +60,14 @@ _TABLES: tuple[tuple[ItemTable, Any], ...] = (("event", NovelBibleEvent), ("even
 
 @dataclass(frozen=True)
 class PriorEvent:
-    """앞 화의 주선 사건 하나. 표지(P1 …)로 프롬프트에 보이고, 회상 관계가 그 표지를 내면 검증이 첫 블록 id 로 푼다."""
+    """앞 화의 주선 사건 하나. 표지(P1 …)로 프롬프트에 보이고, 회상 관계가 그 표지를 내면 검증이 `target_block_id` 로 푼다.
+    `target_block_id` 는 이 사건만 덮는(같은 화의 앞 차례 주선 사건이 덮지 않는) 첫 앵커 블록이고, 없으면 None 이다."""
 
     label: str
     chapter_id: uuid.UUID
     chapter_ordinal: int
     summary: str
-    first_block_id: uuid.UUID
+    target_block_id: uuid.UUID | None
 
 
 class EventsInput(BaseModel):
@@ -88,10 +92,22 @@ async def _prior_events(session: AsyncSession, commit: CommitRef) -> list[PriorE
             .limit(_PRIOR_LIMIT)
         )
     ).all()
+    # 블록마다 그 블록을 덮는 주선 사건 중 가장 앞 차례. 목록이 상한에서 잘려도 같은 화의 앞 사건을 빠뜨리지 않게, 목록에 든 화의
+    # 주선 사건을 상한 없이 다시 읽는다(블록 id 는 화마다 달라 다른 화의 사건은 이 블록을 덮지 않는다).
+    first_cover: dict[uuid.UUID, int] = {}
+    chapters = list({event.chapter_id for event, _ in rows})
+    same_chapter = current_items(NovelBibleEvent, "event", commit.novel_id, head).where(
+        NovelBibleEvent.actuality == "present", NovelBibleEvent.chapter_id.in_(chapters)
+    )
+    for covering in (await session.scalars(same_chapter)).all():
+        for block_id in covering.anchor_block_ids:
+            first_cover[block_id] = min(first_cover.get(block_id, covering.ordinal), covering.ordinal)
     return [
         PriorEvent(
             label=f"P{number}", chapter_id=event.chapter_id, chapter_ordinal=ordinal, summary=event.summary,
-            first_block_id=event.anchor_block_ids[0],
+            target_block_id=next(
+                (block_id for block_id in event.anchor_block_ids if first_cover[block_id] == event.ordinal), None
+            ),
         )
         for number, (event, ordinal) in enumerate(reversed(rows), start=1)
     ]
@@ -160,6 +176,19 @@ class EventsSlot:
         )
 
     def prompt_values(self, slot_input: BaseModel) -> dict[str, str]:
+        """렌더 값 넷(지시문 섹션 `instruction` 은 값이 없다). 값의 꼴은 이 함수가 정하고, 문안 채널 `novel_bible_events` 의
+        지시문이 이 꼴을 모델에게 설명해야 한다 — 꼴을 모르는 지시문은 오류 없이 관계·문단 번호·이름을 틀리게 만든다.
+
+        - `manuscript`: 문단마다 한 줄 `[번호] 글`. 장면 구성안이 있으면 장면이 바뀌는 자리에 `[장면 n]` 줄이 끼는데, 문단
+          번호는 이 줄을 세지 않는다. 모델이 내는 `paragraphs`·`quote.paragraph` 는 `[번호]` 의 번호이고, `quote.text` 는
+          `[번호] ` 머리 없이 그 문단 글에서 그대로 옮긴 구절이어야 한다 — 인용 검증이 문단 글에서 찾는다.
+        - `scene_hints`: 장면마다 한 줄 `장면 n. 제목`, 회상 장면이면 끝에 ` (회상)`. n 은 원고의 `[장면 n]` 과 같다. 구성안이
+          없는 화는 빈 값이다(문안이 이 섹션을 조건부로 두면 섹션째 빠진다).
+        - `known_entities`: 개체마다 한 줄 `- 이름 (인물)`(종류 자리는 `인물`·`사물`·`능력`), 별칭이 있으면 끝에
+          ` — 별칭: a, b`. 같은 줄은 한 번만 싣고 줄은 글자 순으로 정렬한다. 모델이 인물·사물 이름을 낼 때는 이름만 써야 한다 —
+          괄호의 종류나 별칭 꼬리를 함께 옮기면 그 글 그대로 다른 개체가 생긴다.
+        - `prior_events`: 앞 화 사건마다 한 줄 `P1. 3화 — 요지`. 회상 관계의 `target` 은 표지(`P1`)만 받는다 — 앞뒤 공백 말고
+          다른 글자(마침표·괄호·소문자 따위)가 붙으면 그 관계를 버린다."""
         assert isinstance(slot_input, EventsInput)
         return {
             "manuscript": _manuscript_text(slot_input.manuscript, slot_input.scenes),
@@ -175,7 +204,8 @@ class EventsSlot:
 
     def validate(self, slot_input: BaseModel, output: BaseModel) -> Proposal:
         """사건: 문단이 비었거나 범위 밖이면, 인용 문단이 사건 문단 밖이면, 인용 구절이 그 문단에 없으면 버린다. 차례는 첫 문단
-        순, 장면 키는 첫 문단의 장면이다. 회상 관계: 가리킨 사건이 없거나 회상이 아니면, 표지가 앞 화 목록에 없으면 버린다."""
+        순, 장면 키는 첫 문단의 장면이다. 회상 관계: 가리킨 사건이 없거나 회상이 아니면, 표지가 앞 화 목록에 없으면, 표지의 사건만
+        덮는 블록이 없으면(다른 사건으로 풀린다) 버린다."""
         assert isinstance(slot_input, EventsInput) and isinstance(output, EventsOutput)
         blocks = slot_input.manuscript.blocks
         scene_of = {block_id: scene for scene in slot_input.scenes for block_id in scene.block_ids}
@@ -229,6 +259,8 @@ class EventsSlot:
                 dropped["relation_not_flashback"] += 1
             elif target is None:
                 dropped["relation_target_unknown"] += 1
+            elif target.target_block_id is None:
+                dropped["relation_target_ambiguous"] += 1
             else:
                 drafts.append(
                     ItemDraft(
@@ -236,7 +268,7 @@ class EventsSlot:
                         table="event_relation",
                         fields={
                             "event": source.local_key, "relation": relation.relation,
-                            "to_anchor_block_id": str(target.first_block_id), "to_chapter_id": str(target.chapter_id),
+                            "to_anchor_block_id": str(target.target_block_id), "to_chapter_id": str(target.chapter_id),
                         },
                         # 관계의 근거는 그 회상 사건의 인용이다 — 관계 자체를 따로 인용하게 하지 않는다.
                         quotes=source.quotes,
