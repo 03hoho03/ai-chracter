@@ -255,6 +255,21 @@ def test_the_switch_on_without_a_gemini_key_is_refused(monkeypatch: pytest.Monke
         _load(monkeypatch, NOVEL_BIBLE_ENABLED="true")
 
 
+def test_the_switch_on_needs_the_gemini_key_even_when_every_operation_goes_to_claude(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 어댑터가 쓰는 앱의 모델 클라이언트는 어느 구현으로 보내든 Gemini 클라이언트를 먼저 만든다.
+    monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec())
+    claude_only = {"ANTHROPIC_DIRECT_API_KEY": "sk-test"}
+
+    assert not _load(monkeypatch, **claude_only).novel_bible_enabled
+    assert _load(
+        monkeypatch, NOVEL_BIBLE_ENABLED="true", GEMINI_API_KEY="gemini-test", **claude_only
+    ).novel_bible_enabled
+    with pytest.raises(ValidationError, match="GEMINI_API_KEY"):
+        _load(monkeypatch, NOVEL_BIBLE_ENABLED="true", **claude_only)
+
+
 @pytest.mark.parametrize("extra", [{}, {"NOVEL_BIBLE_ENABLED": "true"}])
 def test_the_production_env_starts_with_the_switch_off_or_on(
     monkeypatch: pytest.MonkeyPatch, extra: dict[str, str]
@@ -271,8 +286,10 @@ def test_the_production_env_starts_with_the_switch_off_or_on(
 def test_a_claude_spec_goes_to_anthropic_direct_and_needs_its_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec())
 
-    without_key = table.adapter_errors({}, {}, _reader(_load(monkeypatch)))
-    with_key = table.adapter_errors({}, {}, _reader(_load(monkeypatch, ANTHROPIC_DIRECT_API_KEY="sk-test")))
+    without_key = table.adapter_errors({}, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test")))
+    with_key = table.adapter_errors(
+        {}, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test"))
+    )
 
     assert len(without_key) == len(table.OPERATION_CALL_SITES)
     assert all("anthropic" in error and "ANTHROPIC_DIRECT_API_KEY" in error for error in without_key)
@@ -286,6 +303,7 @@ def test_a_claude_spec_whose_model_turns_thinking_off_refuses_a_deep_structured_
     monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec())
     loaded = _load(
         monkeypatch,
+        GEMINI_API_KEY="gemini-test",
         ANTHROPIC_DIRECT_API_KEY="sk-test",
         ANTHROPIC_HAIKU_MODEL_ID="claude-haiku-5-5",
         ANTHROPIC_STRUCTURED_EFFORT="max",
@@ -302,7 +320,9 @@ def test_a_spec_without_instruction_structured_output_is_refused(
 ) -> None:
     monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec(**changes))
 
-    errors = table.adapter_errors({}, {}, _reader(_load(monkeypatch, ANTHROPIC_DIRECT_API_KEY="sk-test")))
+    errors = table.adapter_errors(
+        {}, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test"))
+    )
 
     assert errors and all("구조화 출력을 하지 못한다" in error for error in errors)
 
@@ -310,7 +330,9 @@ def test_a_spec_without_instruction_structured_output_is_refused(
 def test_a_spec_reading_a_chain_outside_the_novel_lane_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec(prompt_chain="haiku"))
 
-    errors = table.adapter_errors({}, {}, _reader(_load(monkeypatch, ANTHROPIC_DIRECT_API_KEY="sk-test")))
+    errors = table.adapter_errors(
+        {}, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test"))
+    )
 
     assert errors and all("소설 레인에 없다" in error for error in errors)
 
@@ -327,7 +349,9 @@ def test_an_implementation_without_instruction_structured_calls_is_refused(monke
                              credential_env=anthropic.credential_env),
     )
 
-    errors = table.adapter_errors({}, {}, _reader(_load(monkeypatch, ANTHROPIC_DIRECT_API_KEY="sk-test")))
+    errors = table.adapter_errors(
+        {}, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test"))
+    )
 
     assert errors and all("구조화 호출을 받지 못한다" in error for error in errors)
 

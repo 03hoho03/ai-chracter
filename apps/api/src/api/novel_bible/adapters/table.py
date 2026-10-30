@@ -25,8 +25,9 @@ AdapterId = Literal["gemini"]
 # 체인(haiku)은 소설 레인에 없다. 두 곳이 같은 사실을 말하는지는 테스트가 본다.
 NOVEL_LANE_CHAINS: frozenset[PromptSetModelId] = frozenset(get_args(ChatModelId))
 
-# 등록부의 Gemini 행은 자격을 적지 않는다 — 배정이 경로를 Gemini 로 옮겨 오는 일이 없어서다. 정본 기억은 키가 비면 매 작업이
-# 실패하므로 Gemini 로 가는 연산은 이 키를 따로 본다.
+# 정본 기억 호출은 어느 구현으로 가든 이 키를 전제로 한다 — 어댑터는 주입받은 클라이언트가 없으면 앱의 모델 클라이언트
+# (`get_llm_client`)를 쓰는데, 그 클라이언트는 어느 구현으로 보내든 Gemini 클라이언트를 먼저 만들고 키가 비면 거기서 실패한다.
+# 등록부의 Gemini 행은 자격을 적지 않으므로(배정이 경로를 Gemini 로 옮겨 오는 일이 없어서다) 배정과 무관하게 따로 한 번 본다.
 _GEMINI_KEY = ("GEMINI_API_KEY", "gemini_api_key")
 
 
@@ -71,10 +72,14 @@ def adapter_errors(
     read_setting: Callable[[str], str],
 ) -> list[str]:
     """켜진 스위치로 뜰 때 연산의 배정마다: 어댑터의 구조화 능력과 지시문 분리 능력, 문안 체인이 novel 레인에 있는지, 그 호출이
-    실제로 갈 구현(`pick_backend`)이 지시문을 따로 싣는 구조화를 받는지, 그 구현의 자격(`missing_credentials`, Gemini 는 그 키)과
-    구조화 깊이(`structured_effort_error`). 문제마다 한 줄을 돌려주고, 비어 있으면 통과다. `read_setting` 은 `Settings` 속성
-    이름으로 값을 읽는다."""
+    실제로 갈 구현(`pick_backend`)이 지시문을 따로 싣는 구조화를 받는지, 그 구현의 자격(`missing_credentials`)과 구조화
+    깊이(`structured_effort_error`). Gemini 키는 배정과 무관하게 그 앞에서 한 번 본다. 문제마다 한 줄을 돌려주고, 비어 있으면
+    통과다. `read_setting` 은 `Settings` 속성 이름으로 값을 읽는다."""
     errors: list[str] = []
+    if not read_setting(_GEMINI_KEY[1]).strip():
+        errors.append(
+            f"정본 기억 호출은 어느 구현으로 가든 Gemini 클라이언트를 먼저 만드는데 {_GEMINI_KEY[0]} 가 비어 있다"
+        )
     for operation, adapter_id in effective_adapters(overrides).items():
         spec = ADAPTERS[adapter_id]
         call_site = OPERATION_CALL_SITES[operation]
@@ -87,8 +92,6 @@ def adapter_errors(
         if capabilities.structured == "none" or not capabilities.structured_with_instruction:
             errors.append(f"{operation} 이 가는 구현 {backend} 는 지시문을 따로 싣는 구조화 호출을 받지 못한다")
         missing = missing_credentials(backend, read_setting)
-        if backend == "gemini" and not read_setting(_GEMINI_KEY[1]).strip():
-            missing.append(_GEMINI_KEY[0])
         if missing:
             errors.append(f"{operation} 이 가는 구현 {backend} 의 {', '.join(missing)} 가 비어 있다")
         effort = structured_effort_error(backend, model, read_setting)

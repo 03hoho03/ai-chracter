@@ -1,6 +1,6 @@
 """정본 기억의 import 경계 — 소설 생성 경로가 정본 기억을 모르고, 정본 기억 표는 정해진 곳만 만지며, 코어는 모델·슬롯·규칙을
-import 하지 않고 주입받는다. 모델 호출 계층은 어댑터 패키지만 import 하고, 코어·슬롯·규칙에는 어댑터·모델·호출 위치 이름이
-글자로도 없다.
+import 하지 않고 주입받는다. 모델 호출 계층은 어댑터 패키지만 import 하고, 코어·슬롯·규칙·등록부에는 어댑터·모델·호출 위치
+이름이 글자로도 없다.
 
 경계마다 신호 테스트(위반하는 합성 소스를 검사기에 넣으면 위반으로 잡힌다)와 실제 트리 테스트(위반 0)를 짝으로 둔다 — 실제
 트리만 보면 검사기가 아무것도 못 잡아도 통과한다. import 는 `ast` 로 본다(함수 안 import 포함, 상대 import 는 절대 이름으로
@@ -124,9 +124,11 @@ _TABLE_ALLOWED = (
 
 
 def check_g4(path: str, source: str) -> list[str]:
-    """코어·슬롯·규칙의 문자열 상수(f-string 조각 포함) 중에 어댑터 id·문안 체인 모델 id·정본 기억 호출 위치 이름과 같은 것이
-    없다 — 어댑터나 모델에 따라 갈리는 분기는 그 이름을 글자로 적지 않고는 쓸 수 없다."""
-    if not path.startswith(("api/novel_bible/core/", "api/novel_bible/slots/", "api/novel_bible/rules/")):
+    """코어·슬롯·규칙·등록부의 문자열 상수(f-string 조각 포함) 중에 어댑터 id·문안 체인 모델 id·정본 기억 호출 위치 이름과 같은
+    것이 없다 — 어댑터나 모델에 따라 갈리는 분기는 그 이름을 글자로 적지 않고는 쓸 수 없다. 등록부는 슬롯을 모으기만 하고,
+    연산마다 어댑터를 고르는 것은 어댑터 표다."""
+    in_core_slots_rules = path.startswith(("api/novel_bible/core/", "api/novel_bible/slots/", "api/novel_bible/rules/"))
+    if not (in_core_slots_rules or path == "api/novel_bible/registry.py"):
         return []
     banned = {*get_args(AdapterId), *get_args(PromptSetModelId), *OPERATION_CALL_SITES.values()}
     return sorted(
@@ -185,6 +187,7 @@ def test_the_tree_check_sees_the_package_files_it_guards() -> None:
     files = {_relative(path) for path in _tree_files()}
     assert {"api/novel_bible/__init__.py", "api/novel_bible/core/__init__.py", "api/novel_bible/ids.py"} <= files
     assert {"api/novel_bible/adapters/__init__.py", "api/novel_bible/adapters/table.py"} <= files
+    assert "api/novel_bible/registry.py" in files
     assert "api/novelize/worker.py" in files
     assert any(path.startswith("api/novel_bible/core/") and path.endswith("pipeline.py") for path in files)
 
@@ -220,6 +223,7 @@ def test_the_tree_check_sees_the_package_files_it_guards() -> None:
         (check_g4, "api/novel_bible/core/jobs.py", 'MODEL = "haiku"'),
         (check_g4, "api/novel_bible/rules/judge.py", 'site = f"novel_bible_judge{suffix}"'),
         (check_g4, "api/novel_bible/core/pipeline.py", 'def f(x):\n    return x == "novel_bible_extract_events"'),
+        (check_g4, "api/novel_bible/registry.py", 'REGISTRY = Registry(extracting={"facts": pick("gemini")})'),
     ],
 )
 def test_each_guard_catches_a_synthetic_violation(check: Check, path: str, source: str) -> None:
@@ -253,7 +257,7 @@ def test_each_guard_lets_its_allowed_imports_through(check: Check, path: str, so
     assert check(path, source) == []
 
 
-def test_core_slots_and_rules_hold_no_adapter_or_model_literal() -> None:
+def test_core_slots_rules_and_the_registry_hold_no_adapter_or_model_literal() -> None:
     violations = {
         _relative(path): found
         for path in _tree_files()
