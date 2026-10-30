@@ -91,6 +91,15 @@ _BROKEN = re.compile(r"[가-힣][A-Za-z]|[A-Za-z][가-힣]")
 # 회차의 서버 로그(max_output_tokens 절단 경고 8건)와 정확히 같은 턴을 잡는 것으로 확정했다.
 _TERMINAL_CHARS = set(".!?…\"”'’")
 
+# 코드 펜스 줄. 작품 규칙이 응답 끝에 상태창(장소·시간·함께·지금 네 줄)을 ``` 코드 블록으로 붙이게 하는 작품이 있어(튜토리얼
+# 시드 `tutorial-filmclub.json` 의 규칙과 오프닝), 그 응답은 마지막 줄이 늘 닫는 펜스라 펜스째 보면 마지막 문장이 ``` 가 된다.
+# 엔진의 장면 헤더(작가가 켜는 장소·시간 표시)는 응답 글에 들지 않고 따로 판정해 따로 보낸다 — 응답 글의 펜스는 모델이 쓴
+# 것이다. 여닫는 모양은 웹 채팅 표기 처리가 코드 줄을 가리는 규칙(`apps/web` 의 `chatNotationSyntax.ts` `openFence`·
+# `isFenceClose`)과 같다 — 줄 앞 공백 셋까지, 백틱이나 물결 셋 이상. 닫는 줄은 여는 줄과 같은 글자로 그 길이 이상이고 뒤에
+# 공백만 온다.
+_FENCE_OPEN = re.compile(r" {0,3}(`{3,}|~{3,}).*")
+_FENCE_CLOSE = re.compile(r" {0,3}(`{3,}|~{3,})\s*")
+
 # 직전 진행자 발화(오프닝 포함)의 앞 N자를 그대로 앞머리에 다시 쓰면 자기 복제로 본다.
 # 실측 사례(2026-08-11 gemini-2.5-flash)는 직전 응답 전문 600자를 통째로 앞에 붙이고 이어
 # 썼다 — 전문 복사는 접두 비교만으로 확실히 잡히고, 50자가 우연히 일치할 일은 사실상 없어
@@ -100,8 +109,35 @@ _TERMINAL_CHARS = set(".!?…\"”'’")
 _SELF_COPY_PREFIX = 50
 
 
-def _is_truncated(reply: str) -> bool:
-    tail = reply.rstrip().rstrip("*").rstrip()
+def _narrative(reply: str) -> tuple[str, bool]:
+    """응답에서 끝에 붙은 닫힌 펜스 블록을 뗀 본문과, 닫히지 않은 펜스가 있는가. 끝에 블록이 여럿 이어 붙었으면 모두 뗀다(블록
+    사이·앞뒤의 빈 줄과 공백도 함께 떨어진다). 본문 중간의 닫힌 블록은 그대로 둔다 — 그 뒤에 본문이 이어지면 마지막 문장은 그
+    본문에 있다. 닫히지 않은 펜스가 있으면 본문은 그 여는 줄 앞까지다. 뗀 것이 없으면 본문은 응답 그대로다(꼬리 공백도 남는다)."""
+    lines = reply.split("\n")
+    fence: tuple[str, int] | None = None
+    opened_at = 0
+    blocks: list[tuple[int, int]] = []
+    for index, line in enumerate(lines):
+        if fence is None:
+            opening = _FENCE_OPEN.fullmatch(line)
+            if opening:
+                fence = (opening.group(1)[0], len(opening.group(1)))
+                opened_at = index
+            continue
+        closing = _FENCE_CLOSE.fullmatch(line)
+        if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= fence[1]:
+            blocks.append((opened_at, index))
+            fence = None
+    if fence is not None:
+        return "\n".join(lines[:opened_at]).rstrip(), True
+    end = len(lines)
+    while blocks and not "".join(lines[blocks[-1][1] + 1 : end]).strip():
+        end = blocks.pop()[0]
+    return ("\n".join(lines[:end]).rstrip() if end < len(lines) else reply), False
+
+
+def _is_truncated(body: str) -> bool:
+    tail = body.rstrip().rstrip("*").rstrip()
     return not tail or tail[-1] not in _TERMINAL_CHARS
 
 
@@ -110,14 +146,17 @@ def _sentences(text: str) -> list[str]:
 
 
 def _parroted(reply: str, turn_index: int, window: str) -> bool:
+    """세 창은 응답 끝의 상태창 블록을 뗀 본문 위에 둔다(떼는 규칙은 길이·문장 수와 같은 `_narrative`). 본문이 짧으면 앞 250자·앞
+    30% 창이 상태창까지 덮어, 상태창 줄의 낱말을 되받기로 셀 수 있다."""
     if turn_index >= len(TURN_KEYWORDS):
         return False
+    body = _narrative(reply)[0]
     if window == "chars250":
-        scope = reply[:250]
+        scope = body[:250]
     elif window == "sent2":
-        scope = " ".join(_sentences(reply)[:2])
+        scope = " ".join(_sentences(body)[:2])
     else:  # pct30 — 길이 변화에 중립적
-        scope = reply[: max(1, int(len(reply) * 0.3))]
+        scope = body[: max(1, int(len(body) * 0.3))]
     return any(keyword in scope for keyword in TURN_KEYWORDS[turn_index])
 
 
@@ -125,8 +164,10 @@ def _parroted(reply: str, turn_index: int, window: str) -> bool:
 class ReplyFlags:
     """응답 하나에 대한 판정 전부 — 되받기만 뺐다(되받기는 고정 대본의 턴 순번에 묶여 `_parroted` 에 남는다)."""
 
+    # 길이·문장 수는 끝의 상태창 블록을 뗀 본문으로 센다. 뗀 꼬리의 글자 수가 `status_block_length` 다(규칙은 `reply_flags`).
     length: int
     sentence_count: int
+    status_block_length: int
     truncated: bool
     self_copy: bool
     solicit: bool
@@ -145,15 +186,31 @@ def reply_flags(reply: str, previous: str) -> ReplyFlags:
     `summarize()` 는 유실 턴(빈 응답)을 건너뛰므로 바로 앞 턴이 유실됐으면 그보다 앞의 응답을 넘기고, 앞선 응답이 하나도 없으면
     (첫 턴, 또는 첫 턴부터 유실이 이어진 경우) 대화록 첫 항목인 오프닝 메시지를 넘긴다. 대화록 형식을 모르게 둔 것은 chat_probe
     대화록이 아닌 기록(드라이버 로그 등)에서도 같은 판정을 쓰게 하려는 것이다. 빈 응답(유실 턴)은 판정 대상이 아니라 부르는
-    쪽이 먼저 거른다 — 빈 응답은 절단으로 판정된다."""
-    sentences = _sentences(reply)
-    last_sentence = sentences[-1] if sentences else reply
+    쪽이 먼저 거른다 — 빈 응답은 절단으로 판정된다.
+
+    길이·문장 수와 마지막 문장을 보는 두 판정(절단·장면 이동형 열기)은 응답 끝의 코드 펜스 블록(`_FENCE_OPEN`)을 뗀 본문으로
+    본다. 상태창은 문장이 아니라 형식 블록이라, 그것을 본문으로 읽으면 마지막 문장이 늘 닫는 펜스가 되어 완결 응답이 전부
+    절단·열림으로 잡히고, 문장 수는 블록 줄 수만큼, 길이는 블록 글자만큼 는다.
+
+    - 끝에 붙은 닫힌 블록(뒤에 빈 줄만 오는 것, 여럿이면 모두)을 떼고 남은 본문의 마지막 문장을 판정한다. 블록 앞 문장이 잘렸으면
+      절단이다. 떼고 남은 본문이 비면 빈 응답과 같이 절단이다.
+    - 본문 중간의 닫힌 블록은 떼지 않는다 — 블록 뒤에 본문이 이어지면 마지막 문장은 그 본문에 있다.
+    - 닫히지 않은 펜스가 있으면 절단이다. 상태창 규칙은 블록을 닫고 끝내라는 것이라, 닫는 줄 없이 끝난 응답은 블록을 쓰다 멈춘
+      것으로 본다(채팅 화면도 그 뒤를 끝까지 코드로 그린다). 장면 이동형 열기와 길이·문장 수는 그 여는 줄 앞의 본문으로 본다.
+
+    뗀 꼬리(블록과 그 앞뒤 빈 줄·공백, 닫히지 않은 블록이면 여는 줄부터 끝까지)의 글자 수는 `status_block_length` 로 따로 내고,
+    뗀 것이 없으면 0 이다. 길이와 그 수를 더하면 응답 전체 글자 수다. 나머지 판정(자기복제·의문·청유 어미·무시 표현·라벨
+    누출·사용자 턴 대필·한글 깨짐·대괄호)은 펜스를 포함한 응답 전체로 본다."""
+    body, unclosed_fence = _narrative(reply)
+    sentences = _sentences(body)
+    last_sentence = sentences[-1] if sentences else body
     prev_head = previous.strip()[:_SELF_COPY_PREFIX]
     broken = _BROKEN.search(reply)
     return ReplyFlags(
-        length=len(reply),
+        length=len(body),
         sentence_count=len(sentences),
-        truncated=_is_truncated(reply),
+        status_block_length=len(reply) - len(body),
+        truncated=unclosed_fence or _is_truncated(body),
         self_copy=len(prev_head) == _SELF_COPY_PREFIX and reply.strip().startswith(prev_head),
         solicit=bool(_SOLICIT.search(reply)),
         ignored=bool(_IGNORE.search(reply[:120])),
