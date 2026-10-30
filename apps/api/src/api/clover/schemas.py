@@ -167,8 +167,8 @@ class CloverPayMethodItem(CamelModel):
 
 
 class CloverModelPricingItem(CamelModel):
-    """글쓰기 모델 하나의 사용 단가. 모델 레지스트리(`llm/chat_models.py`)에서 채팅에서 고를 수 있는 모델만 레지스트리
-    순서대로 실린다 — 이 목록은 채팅 모델 안내다. 채팅에서 고를 수 없는 모델(Sonnet)은 소설 상위 모델로 쓰이는데, 소설
+    """글쓰기 모델 하나의 사용 단가. 모델 레지스트리(`llm/chat_models.py`)에서 지금 채팅에서 고를 수 있게 보이는 모델만
+    레지스트리 순서대로 실린다 — 이 목록은 채팅 모델 안내다. 채팅에서 숨긴 상위 모델도 소설 상위 모델로는 쓰이는데, 소설
     상위 모델은 별도 허용 명단에 든 계정만 써서 일반 회원은 살 수 없으므로 그 화 단가를 이 안내에 따로 싣지 않는다."""
 
     id: ChatModelId

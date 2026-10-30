@@ -180,8 +180,8 @@ LANE_STAGES: dict[RoutingLane, tuple[PromptStage, ...]] = {
 
 # 레인마다 칸의 방 모델 축. 채팅은 실효 방 모델, 소설은 작업 모델이다(`any_room_model` 단계는 `any` 하나).
 LANE_ROOM_MODELS: dict[RoutingLane, tuple[RouteRoomModel, ...]] = {
-    "story": ("gemini", "opus"),
-    "character": ("gemini", "opus"),
+    "story": ("gemini", "sonnet", "opus"),
+    "character": ("gemini", "sonnet", "opus"),
     "novel": ("gemini", "sonnet", "opus"),
 }
 

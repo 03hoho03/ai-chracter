@@ -5731,8 +5731,8 @@ export interface paths {
          *     (턴 게이트의 영수증) — 그래서 턴 락을 잡지 않는다.
          *
          *     기본 모델(`"gemini"`·null)은 누구나 고를 수 있다 — 허용을 거둔 뒤에도 방을 되돌릴 수 있어야 한다. 기본 모델은 빈 값으로
-         *     저장한다(새 방과 같은 상태). 상위 모델은 채팅 상위 모델 허용(`has_chat_premium_access` — 스위치 하나)이 있어야 하고,
-         *     없으면 403 `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 다.
+         *     저장한다(새 방과 같은 상태). 상위 모델은 지금 채팅에서 보이는 모델이어야 하고(`has_chat_model_access` — 채팅 상위 모델
+         *     스위치와 공개 목록), 아니면 403 `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 다.
          *     고를 때 확인하는 가격은 응답의 턴 가격이고, 그 뒤 턴은 하루 1회 확인 없이 그 가격으로 차감된다.
          */
         put: operations["set_room_model_chat_rooms__room_id__model_put"];
@@ -6083,8 +6083,8 @@ export interface paths {
         /**
          * List Chat Models
          * @description 이 계정이 채팅방에 고를 수 있는 모델과 턴 가격. 기본 모델(Gemini)은 언제나 있고 맨 앞이다 — 빌더 미리보기도 이 항목에서
-         *     턴 가격을 읽는다. 상위 모델은 채팅 상위 모델 허용이 있을 때만 싣는다(모델 지정 라우트·턴 게이트와 같은 판정). 채팅에서
-         *     고를 수 없는 모델(소설에만 남은 Sonnet)은 허용이 있어도 싣지 않는다.
+         *     턴 가격을 읽는다. 상위 모델은 지금 채팅에서 보이는 모델(채팅 상위 모델 스위치가 켜져 있고 공개 목록에 있는 모델)만 싣는다 —
+         *     모델 지정 라우트·미리보기 시작·턴 게이트·공개 가격과 같은 판정이다.
          */
         get: operations["list_chat_models_chat_models_get"];
         put?: never;
@@ -6283,12 +6283,13 @@ export interface paths {
          *     고를 수 있는 모델별 단가, 하루 무료 대화 수를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지
          *     않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
          *
-         *     모델 행은 채팅에서 고를 수 있는 모델만 싣는다. 소설 상위 모델은 소설 허용에 더해 별도 명단에 든 계정만 써서 일반 회원은
+         *     모델 행은 지금 채팅에서 고를 수 있게 보이는 모델만 싣는다(`is_chat_model_visible` — 화면의 모델 목록과 같은 판정이라
+         *     채팅 상위 모델 스위치를 끄거나 공개 목록에서 빼면 그 모델 행이 빠진다). 소설 상위 모델은 소설 허용에 더해 별도 명단에 든 계정만 써서 일반 회원은
          *     살 수 없으므로 그 화 단가를 따로 싣지 않는다 — 모델 행의 소설 화 단가 칸은 옛 화면 호환용으로 남아 있어 Opus 행의
          *     값은 계속 보인다.
          *
-         *     채팅 상위 모델은 스위치 하나로 로그인 회원 모두에게 열리므로(`llm/model_access.py`) 모델 행에 허용 전용 표시가 없고,
-         *     행과 베타 표시는 스위치와 무관한 레지스트리 값이다. 소설 허용 전용 표시는 허용 판정의 구조에서 온다 — 소설
+         *     채팅 상위 모델은 계정을 보지 않고 로그인 회원 모두에게 열리므로(`llm/model_access.py`) 모델 행에 허용 전용 표시가 없고,
+         *     베타 표시는 레지스트리 값이다. 소설 허용 전용 표시는 허용 판정의 구조에서 온다 — 소설
          *     (`novelize/access.py`)은 스위치가 켜져 있어도 env 명단과 어드민 허용 행이 있는 계정만 쓴다. 그 판정이 명단 없이
          *     모두에게 열리도록 바뀌면 그 값도 함께 바꾼다.
          */
@@ -6716,7 +6717,7 @@ export interface paths {
          *     `formToServer(getValues())` produced (same shape as `PATCH /contents/{id}/draft`'s body)
          *     and is stored in Redis with no validation, mirroring autosave's unvalidated path.
          *
-         *     `model` 은 이 세션이 쓸 글쓰기 모델이다. 상위 모델은 채팅방에서 모델을 고를 때와 같은 허용(`has_chat_premium_access`)이 있어야
+         *     `model` 은 이 세션이 쓸 글쓰기 모델이다. 상위 모델은 채팅방에서 모델을 고를 때와 같은 허용(`has_chat_model_access`)이 있어야
          *     하고, 없으면 같은 403 `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 다. 모델을 바꾸려면 새 세션을 시작한다.
          */
         post: operations["start_preview_session_preview_sessions_post"];
@@ -9662,9 +9663,11 @@ export interface components {
          * AdminPromptRoutingResponse
          * @description `revision_id`·`revision_number` 는 최신 이력이고, 한 번도 저장한 적 없으면 null 이다.
          *
-         *     `chat_premium_models_enabled` 는 채팅 상위 모델 스위치의 지금 값이다. 꺼져 있으면 Opus 방이 기본 모델로 돌아 Opus 방의
-         *     칸은 운영에서 읽히지 않는다. `chains` 의 읽는 칸 목록은 그래도 그 칸을 그대로 담는다 — 배정 표의 칸 설정과 같은 뜻을
-         *     지키고, 지금 읽히는지는 화면이 이 값으로 가른다.
+         *     `chat_premium_models_enabled` 는 채팅 상위 모델 스위치의 지금 값이다. `chat_visible_models` 는 지금 채팅에서 고를 수 있게
+         *     보여 그 방의 칸이 운영에서 읽히는 상위 모델이다(레지스트리 순서, 기본 모델은 늘 읽혀 넣지 않는다) — 스위치가 꺼져 있으면
+         *     비고, 켜져 있어도 공개 목록에서 뺀 모델은 없다. 빠진 모델의 방은 기본 모델로 돌아 그 방의 칸은 읽히지 않는다. `chains` 의
+         *     읽는 칸 목록은 그래도 그 칸을 그대로 담는다 — 배정 표의 칸 설정과 같은 뜻을 지키고, 지금 읽히는지는 화면이 이 값으로
+         *     가른다.
          */
         AdminPromptRoutingResponse: {
             /** Revisionid */
@@ -9678,6 +9681,8 @@ export interface components {
             pricesAsOf: string;
             /** Chatpremiummodelsenabled */
             chatPremiumModelsEnabled: boolean;
+            /** Chatvisiblemodels */
+            chatVisibleModels: ("gemini" | "sonnet" | "opus")[];
             /** Allowedpairs */
             allowedPairs: components["schemas"]["AdminPromptRouteAllowedPair"][];
             /** Cells */
@@ -10818,7 +10823,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "gemini" | "opus";
+            id: "gemini" | "sonnet" | "opus";
             /** Name */
             name: string;
             /** Beta */
@@ -11135,7 +11140,7 @@ export interface components {
              * Effectivechatmodel
              * @enum {string}
              */
-            effectiveChatModel: "gemini" | "opus";
+            effectiveChatModel: "gemini" | "sonnet" | "opus";
             /** Effectivechatmodelname */
             effectiveChatModelName: string;
             /** Turncost */
@@ -11143,12 +11148,13 @@ export interface components {
         };
         /**
          * ChatRoomModelSelectRequest
-         * @description `PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `"gemini"` 나 null 을 명시한다. 채팅에서 고를
-         *     수 없는 값(레지스트리 밖, 소설에만 남은 Sonnet)은 422 다.
+         * @description `PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `"gemini"` 나 null 을 명시한다. 채팅방 모델이 될
+         *     수 없는 값(레지스트리 밖, 판정 전용 모델)은 422 다. 채팅방 모델이어도 지금 채팅에서 보이지 않는 모델은 라우트가 403 으로
+         *     거절한다.
          */
         ChatRoomModelSelectRequest: {
             /** Model */
-            model: ("gemini" | "opus") | null;
+            model: ("gemini" | "sonnet" | "opus") | null;
         };
         /** ChatRoomRenameRequest */
         ChatRoomRenameRequest: {
@@ -11212,7 +11218,7 @@ export interface components {
              * Effectivechatmodel
              * @enum {string}
              */
-            effectiveChatModel?: "gemini" | "opus";
+            effectiveChatModel?: "gemini" | "sonnet" | "opus";
             /** Effectivechatmodelname */
             effectiveChatModelName?: string;
             /** Turncost */
@@ -11367,8 +11373,8 @@ export interface components {
         };
         /**
          * CloverModelPricingItem
-         * @description 글쓰기 모델 하나의 사용 단가. 모델 레지스트리(`llm/chat_models.py`)에서 채팅에서 고를 수 있는 모델만 레지스트리
-         *     순서대로 실린다 — 이 목록은 채팅 모델 안내다. 채팅에서 고를 수 없는 모델(Sonnet)은 소설 상위 모델로 쓰이는데, 소설
+         * @description 글쓰기 모델 하나의 사용 단가. 모델 레지스트리(`llm/chat_models.py`)에서 지금 채팅에서 고를 수 있게 보이는 모델만
+         *     레지스트리 순서대로 실린다 — 이 목록은 채팅 모델 안내다. 채팅에서 숨긴 상위 모델도 소설 상위 모델로는 쓰이는데, 소설
          *     상위 모델은 별도 허용 명단에 든 계정만 써서 일반 회원은 살 수 없으므로 그 화 단가를 이 안내에 따로 싣지 않는다.
          */
         CloverModelPricingItem: {
@@ -27389,7 +27395,7 @@ export interface operations {
     start_preview_session_preview_sessions_post: {
         parameters: {
             query?: {
-                model?: "gemini" | "opus";
+                model?: "gemini" | "sonnet" | "opus";
             };
             header?: never;
             path?: never;

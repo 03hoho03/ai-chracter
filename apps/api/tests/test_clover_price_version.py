@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core import clover, rate_limit_gate
+from api.core.config import settings
 from api.core.rate_limit_gate import ChatCharge, charge_chat_turn, enforce_image_rate_limit
 from api.db.models import User
 from api.db.models.clover import CloverLedger
@@ -353,8 +354,13 @@ def test_price_functions_follow_the_registry() -> None:
     assert [chapter_price(ordinal, 1) for ordinal in (1, free, free + 1)] == [0, 0, clover.NOVEL_READ_COST]
 
 
-async def test_pricing_response_amounts_follow_the_registry(db_client: httpx.AsyncClient) -> None:
-    """공개 가격 응답의 금액 칸이 등록부·상수 값 그대로다. 기능 스위치·상품·결제수단처럼 금액이 아닌 칸은 다른 테스트가 본다."""
+async def test_pricing_response_amounts_follow_the_registry(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공개 가격 응답의 금액 칸이 등록부·상수 값 그대로다. 기능 스위치·상품·결제수단처럼 금액이 아닌 칸은 다른 테스트가 본다.
+    모델 행은 채팅에서 고를 수 있게 보이는 모델만 실리므로 채팅 상위 모델 스위치를 켜고 공개 목록을 Opus 하나로 고정한다."""
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", True)
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus"])
     body = (await db_client.get("/clover/pricing")).json()
     gemini = clover.CLOVER_MODEL_PRICES["gemini"]
     opus = clover.CLOVER_MODEL_PRICES["opus"]
