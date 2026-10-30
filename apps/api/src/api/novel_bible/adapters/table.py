@@ -6,11 +6,11 @@
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Literal, get_args
+from typing import Literal
 
 from api.llm.backends import (
     BACKENDS,
-    ChatModelId,
+    NOVEL_MODELS,
     PromptSetModelId,
     missing_credentials,
     pick_backend,
@@ -22,8 +22,9 @@ from api.novel_bible.ids import OperationKey
 AdapterId = Literal["gemini"]
 
 # novel 레인에 있는 체인 — 어드민 문안 화면의 레인 규칙(`admin/prompts.py` 의 `_require_lane_model`)과 같은 집합이다. 판정 전용
-# 체인(haiku)은 소설 레인에 없다. 두 곳이 같은 사실을 말하는지는 테스트가 본다.
-NOVEL_LANE_CHAINS: frozenset[PromptSetModelId] = frozenset(get_args(ChatModelId))
+# 체인(haiku)과 채팅 전용 글쓰기 체인(haiku_writer)은 소설 레인에 없어, 글쓰기 모델 전부가 아니라 소설에서 고를 수 있는 모델이다.
+# 두 곳이 같은 사실을 말하는지는 테스트가 본다.
+NOVEL_LANE_CHAINS: frozenset[PromptSetModelId] = frozenset(NOVEL_MODELS)
 
 # 정본 기억 호출은 어느 구현으로 가든 이 키를 전제로 한다 — 어댑터는 주입받은 클라이언트가 없으면 앱의 모델 클라이언트
 # (`get_llm_client`)를 쓰는데, 그 클라이언트는 어느 구현으로 보내든 Gemini 클라이언트를 먼저 만들고 키가 비면 거기서 실패한다.
