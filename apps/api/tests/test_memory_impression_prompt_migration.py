@@ -27,7 +27,7 @@ from api.admin.prompts import _validate_prompt_draft_for_publish
 from api.chat.prompt_builder import PromptLane, build_memory_impression_prompt, load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
-from factories import undo_seeded_rows_above
+from factories import set_ids_seeded_above, undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -46,12 +46,6 @@ _M = _load("6558ab4d3dbc")
 # 세트다(그 뒤 채팅 레인에 프롬프트를 게시한 리비전이 없다).
 _SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
 _SOURCE_MARKING = _load("0c1a85bc5c2f")
-# 이 리비전 위에서 소설 레인 세트를 게시한 두 리비전(Claude 소설 체인 채널, 소설 세 체인 등급 규칙 채널) — 이 리비전보다 뒤에
-# 버전을 받으므로 버전 차례 비교에서 뺀다.
-_LATER_NOVEL_SET_IDS: list[uuid.UUID] = [
-    *_load("fe3df6f8e4d5").NEW_SET_IDS.values(),
-    *_load("e4df46a80bfa").NEW_SET_IDS.values(),
-]
 # 그 뒤 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀 세트를 게시하고 초안의 그 행도 지우는 리비전 — 두 Gemini 체인의
 # head 활성이고 이 리비전보다 뒤에 버전을 받는다. 초안 정리는 되돌리지 않는다.
 _DROP = _load("7caed2db87dc")
@@ -200,14 +194,13 @@ async def test_new_sets_are_published_in_the_window_of_both_active_rules(db_sess
 async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: AsyncSession) -> None:
     order = [_M.NEW_SET_IDS[chain] for chain in _CHAINS]
     versions = [int((await _get_set(db_session, set_id)).version or "0") for set_id in order]
-    # 이 리비전 위에서 게시된 소설 레인 세트와 채팅 Gemini 소설화 행 제거 세트를 빼면 다른 게시본은 모두 이 리비전보다 앞 버전이다.
     others = (
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
                 PromptSet.status == "published",
                 PromptSet.id.not_in(order),
-                PromptSet.id.not_in(_LATER_NOVEL_SET_IDS),
-                PromptSet.id.not_in(list(_DROP.NEW_SET_IDS.values())),
+                # 이 리비전 위에서 심은 세트는 버전이 이 리비전보다 뒤라 뺀다(레인 무관 — 버전 번호는 전 레인이 이어 쓴다).
+                PromptSet.id.not_in(set_ids_seeded_above(_M.revision)),
             )
         )
     ).all()
