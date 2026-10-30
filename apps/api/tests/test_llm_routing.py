@@ -79,7 +79,8 @@ _MODEL_SELECTABLE: frozenset[LLMCallSite] = frozenset(
 )
 
 
-@pytest.mark.parametrize("model", get_args(ChatModelId))
+# 직결로만 가는 Haiku 글쓰기는 이 가짜 라우터(Gemini·Bedrock 만 있다) 밖이라 `test_llm_backends.py` 의 Haiku 글쓰기 테스트가 본다.
+@pytest.mark.parametrize("model", [model for model in get_args(ChatModelId) if model != "haiku_writer"])
 @pytest.mark.parametrize("call_site", get_args(LLMCallSite))
 async def test_generate_goes_to_bedrock_only_for_a_premium_model_at_a_model_selectable_call_site(
     call_site: LLMCallSite, model: ChatModelId

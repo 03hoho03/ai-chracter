@@ -1,7 +1,7 @@
 """어드민 모델 배정 표 API — 실효 표 조회, 표 전체 저장, 이력 목록·상세, 이력으로 되돌리기.
 
 판정·요약 모델 설정과 호출 위치 배정, 모델 id 는 `routing_env` 가 리터럴로 고정한다 — 로컬 `.env` 의 값에 따라 해석 결과가
-달라지지 않게 한다. 체인 검사는 마이그레이션이 심은 활성 세트(두 레인 × gemini·sonnet·opus·haiku)를 그대로 쓴다.
+달라지지 않게 한다. 체인 검사는 마이그레이션이 심은 활성 세트(두 레인 × gemini·haiku_writer·sonnet·opus·haiku)를 그대로 쓴다.
 """
 
 import logging
@@ -193,7 +193,7 @@ async def test_an_empty_table_shows_every_cell_resolved_from_env_with_prices(
     assert body["revisionId"] is None
     assert body["revisionNumber"] is None
     assert body["pricesAsOf"] == PRICES_AS_OF.isoformat()
-    assert len(body["cells"]) == _CELL_COUNT == (8 + 5) * 3 + 3 * 3 + 4
+    assert len(body["cells"]) == _CELL_COUNT == (8 + 5) * 4 + 3 * 3 + 4
     assert {(c["effective"]["source"], c["configured"], c["skipped"]) for c in body["cells"]} <= {
         ("env", None, None),
         ("room", None, None),
@@ -243,7 +243,7 @@ async def test_the_chain_list_follows_the_env_judgment_model(
     chains = {(c["lane"], c["model"]): c["readBy"] for c in body["chains"]}
     assert chains[("story", "haiku")] == [
         {"roomModel": room, "stage": stage, "channels": [channel]}
-        for room in ("gemini", "sonnet", "opus")
+        for room in ("gemini", "haiku_writer", "sonnet", "opus")
         for stage, channel in (("stat_judgment", "stat_rule_judgment"), ("scene_judgment", "scene_judgment"))
     ]
     assert ("character", "haiku") not in chains
@@ -274,6 +274,9 @@ async def test_the_response_carries_the_premium_model_switch_and_keeps_opus_room
     [
         pytest.param(True, ["opus"], ["opus"], id="default-list"),
         pytest.param(True, ["opus", "sonnet"], ["sonnet", "opus"], id="both-in-registry-order"),
+        pytest.param(
+            True, ["opus", "sonnet", "haiku_writer"], ["haiku_writer", "sonnet", "opus"], id="haiku-writer-in-price-order"
+        ),
         pytest.param(True, [], [], id="blank-list"),
         pytest.param(False, ["opus", "sonnet"], [], id="switch-off"),
     ],

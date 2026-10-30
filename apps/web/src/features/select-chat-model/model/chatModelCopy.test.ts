@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { chatModelBadges, formatChatModelPrice, formatPremiumModelConfirm, formatPremiumModelShortage } from "./chatModelCopy";
 
-const GEMINI = { id: "gemini", name: "Gemini", beta: false, turnCost: 10 } as const;
-const OPUS = { id: "opus", name: "Claude Opus 5.5", beta: true, turnCost: 120 } as const;
+const GEMINI = { id: "gemini", name: "Gemini", isDefault: true, beta: false, turnCost: 10 } as const;
+const OPUS = { id: "opus", name: "Claude Opus 5.5", isDefault: false, beta: true, turnCost: 120 } as const;
 
 /** 하루 무료 대화는 없다 — 기본·상위 모두 첫 턴부터 깎이므로 "무료 대화" 는 둘을 가르는 정보가 아니라 가격만 말한다.
  * 출석판 스위치나 본인인증 게이트 여부를 읽지 않고도 그 문장이어야 한다. */

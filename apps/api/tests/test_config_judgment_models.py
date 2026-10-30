@@ -360,7 +360,20 @@ def test_production_env_missing_one_judgment_model_line_refuses_to_start(
 
 
 def test_judgment_model_values_are_the_prompt_chain_ids() -> None:
-    assert set(get_args(PromptSetModelId)) == {"gemini", "sonnet", "opus", "haiku"}
+    assert set(get_args(PromptSetModelId)) == {"gemini", "haiku_writer", "sonnet", "opus", "haiku"}
+
+
+@pytest.mark.parametrize("model_key", _MODEL_KEYS)
+def test_the_writer_only_haiku_chain_is_refused_as_a_judgment_model(
+    monkeypatch: pytest.MonkeyPatch, model_key: str
+) -> None:
+    """`haiku_writer` 는 체인 모델 축에 있지만 글쓰기 전용이다 — 판정은 판정 전용 `haiku` 가 맡는다. 자격이 다 있어도 거부한다."""
+    with pytest.raises(ValidationError, match="haiku_writer"):
+        _load(
+            monkeypatch,
+            **{model_key: "haiku_writer", _ANTHROPIC_KEY: "sk-ant-test"},
+            **_BEDROCK_CREDENTIALS,
+        )
 
 
 # ── 장면 헤더 판정의 배정 물려받기 ──────────────────────────────────────────────────────────────

@@ -9211,7 +9211,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus" | "haiku";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             labels: components["schemas"]["AdminPromptLabels"];
             /** Sections */
             sections: components["schemas"]["AdminPromptSectionItem"][];
@@ -9328,7 +9328,7 @@ export interface components {
              * Othermodel
              * @enum {string}
              */
-            otherModel: "gemini" | "sonnet" | "opus" | "haiku";
+            otherModel: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             /**
              * Othersetid
              * Format: uuid
@@ -9357,7 +9357,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus" | "haiku";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             /**
              * Backend
              * @enum {string}
@@ -9397,7 +9397,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus" | "haiku";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             /**
              * Backend
              * @enum {string}
@@ -9436,7 +9436,7 @@ export interface components {
              * Roommodel
              * @enum {string}
              */
-            roomModel: "gemini" | "sonnet" | "opus" | "any";
+            roomModel: "gemini" | "haiku_writer" | "sonnet" | "opus" | "any";
             /**
              * Stage
              * @enum {string}
@@ -9469,7 +9469,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus" | "haiku";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             /** Readby */
             readBy: components["schemas"]["AdminPromptRouteChainReader"][];
         };
@@ -9479,7 +9479,7 @@ export interface components {
              * Roommodel
              * @enum {string}
              */
-            roomModel: "gemini" | "sonnet" | "opus" | "any";
+            roomModel: "gemini" | "haiku_writer" | "sonnet" | "opus" | "any";
             /**
              * Stage
              * @enum {string}
@@ -9505,12 +9505,12 @@ export interface components {
              * Chainmodel
              * @enum {string}
              */
-            chainModel: "gemini" | "sonnet" | "opus" | "haiku";
+            chainModel: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             /**
              * Callmodel
              * @enum {string}
              */
-            callModel: "gemini" | "sonnet" | "opus" | "haiku";
+            callModel: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             /**
              * Backend
              * @enum {string}
@@ -9622,19 +9622,19 @@ export interface components {
              * Roommodel
              * @enum {string}
              */
-            roomModel: "gemini" | "sonnet" | "opus" | "any";
+            roomModel: "gemini" | "haiku_writer" | "sonnet" | "opus" | "any";
             /**
              * Stage
              * @enum {string}
              */
             stage: "chat_generate" | "stat_judgment" | "scene_judgment" | "ending_judgment" | "situational_image" | "media_book_image" | "memory_summary" | "memory_episode" | "memory_fact" | "novel_chapter" | "novel_outline" | "novel_episode_outline" | "novel_revise" | "novel_revise_blocks" | "novel_recheck" | "novel_boundary";
             /** Chainmodel */
-            chainModel: ("gemini" | "sonnet" | "opus" | "haiku") | null;
+            chainModel: ("gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku") | null;
             /**
              * Callmodel
              * @enum {string}
              */
-            callModel: "gemini" | "sonnet" | "opus" | "haiku";
+            callModel: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             /**
              * Backend
              * @enum {string}
@@ -9682,7 +9682,7 @@ export interface components {
             /** Chatpremiummodelsenabled */
             chatPremiumModelsEnabled: boolean;
             /** Chatvisiblemodels */
-            chatVisibleModels: ("gemini" | "sonnet" | "opus")[];
+            chatVisibleModels: ("gemini" | "haiku_writer" | "sonnet" | "opus")[];
             /** Allowedpairs */
             allowedPairs: components["schemas"]["AdminPromptRouteAllowedPair"][];
             /** Cells */
@@ -9828,7 +9828,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus" | "haiku";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             /** Note */
             note: string;
             /**
@@ -9896,7 +9896,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus" | "haiku";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             /** Isactive */
             isActive: boolean;
             /** Semver */
@@ -10823,9 +10823,11 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "gemini" | "sonnet" | "opus";
+            id: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Name */
             name: string;
+            /** Isdefault */
+            isDefault: boolean;
             /** Beta */
             beta: boolean;
             /** Turncost */
@@ -11140,7 +11142,7 @@ export interface components {
              * Effectivechatmodel
              * @enum {string}
              */
-            effectiveChatModel: "gemini" | "sonnet" | "opus";
+            effectiveChatModel: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Effectivechatmodelname */
             effectiveChatModelName: string;
             /** Turncost */
@@ -11154,7 +11156,7 @@ export interface components {
          */
         ChatRoomModelSelectRequest: {
             /** Model */
-            model: ("gemini" | "sonnet" | "opus") | null;
+            model: ("gemini" | "haiku_writer" | "sonnet" | "opus") | null;
         };
         /** ChatRoomRenameRequest */
         ChatRoomRenameRequest: {
@@ -11218,7 +11220,7 @@ export interface components {
              * Effectivechatmodel
              * @enum {string}
              */
-            effectiveChatModel?: "gemini" | "sonnet" | "opus";
+            effectiveChatModel?: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Effectivechatmodelname */
             effectiveChatModelName?: string;
             /** Turncost */
@@ -11380,7 +11382,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "gemini" | "sonnet" | "opus";
+            id: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Name */
             name: string;
             /** Isdefault */
@@ -11390,7 +11392,7 @@ export interface components {
             /** Chatturncost */
             chatTurnCost: number;
             /** Novelepisodecost */
-            novelEpisodeCost: number;
+            novelEpisodeCost: number | null;
         };
         /**
          * CloverPayMethodItem
@@ -13448,7 +13450,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Expectedcost */
             expectedCost: number;
         };
@@ -13589,7 +13591,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Expectedcost */
             expectedCost: number;
             /** Maxbatches */
@@ -13606,7 +13608,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Name */
             name: string;
             /** Batchcount */
@@ -13661,7 +13663,7 @@ export interface components {
              * @default gemini
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus";
         };
         /**
          * NovelChapterModel
@@ -13673,7 +13675,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "gemini" | "sonnet" | "opus";
+            id: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Name */
             name: string;
             /** Chaptergenerate */
@@ -13688,7 +13690,7 @@ export interface components {
              * @default gemini
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus";
         };
         /** NovelChapterProposalResponse */
         NovelChapterProposalResponse: {
@@ -13759,7 +13761,7 @@ export interface components {
              * @default gemini
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus";
         };
         /** NovelChapterResponse */
         NovelChapterResponse: {
@@ -13858,7 +13860,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "gemini" | "sonnet" | "opus";
+            id: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Name */
             name: string;
             /** Maxturns */
@@ -14031,7 +14033,7 @@ export interface components {
              * Lastchaptermodel
              * @enum {string}
              */
-            lastChapterModel?: "gemini" | "sonnet" | "opus";
+            lastChapterModel?: "gemini" | "haiku_writer" | "sonnet" | "opus";
             purchaseRefunds?: components["schemas"]["NovelPurchaseRefundPreview"];
         };
         /**
@@ -14054,7 +14056,7 @@ export interface components {
              * @default gemini
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus";
         };
         /**
          * NovelEpisodeOutlineSaveRequest
@@ -14454,7 +14456,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "gemini" | "sonnet" | "opus";
+            id: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Name */
             name: string;
             /** Cost */
@@ -14478,7 +14480,7 @@ export interface components {
              * @default gemini
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus";
         };
         /**
          * NovelOutlineCreateRequest
@@ -14493,7 +14495,7 @@ export interface components {
              * @default gemini
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus";
         };
         /**
          * NovelOutlineEpisodeInput
@@ -14559,7 +14561,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "gemini" | "sonnet" | "opus";
+            id: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Name */
             name: string;
             /** Cost */
@@ -14942,7 +14944,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "haiku_writer" | "sonnet" | "opus";
             /** Name */
             name: string;
             /** Cost */
@@ -18284,7 +18286,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description 세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다. */
-                model?: "gemini" | "sonnet" | "opus" | "haiku";
+                model?: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             };
             header?: never;
             path: {
@@ -18318,7 +18320,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description 세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다. */
-                model?: "gemini" | "sonnet" | "opus" | "haiku";
+                model?: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             };
             header?: never;
             path: {
@@ -18356,7 +18358,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description 세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다. */
-                model?: "gemini" | "sonnet" | "opus" | "haiku";
+                model?: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             };
             header?: never;
             path: {
@@ -18390,7 +18392,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description 세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다. */
-                model?: "gemini" | "sonnet" | "opus" | "haiku";
+                model?: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             };
             header?: never;
             path: {
@@ -18424,7 +18426,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description 세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다. */
-                model?: "gemini" | "sonnet" | "opus" | "haiku";
+                model?: "gemini" | "haiku_writer" | "sonnet" | "opus" | "haiku";
             };
             header?: never;
             path: {
@@ -27387,7 +27389,7 @@ export interface operations {
     start_preview_session_preview_sessions_post: {
         parameters: {
             query?: {
-                model?: "gemini" | "sonnet" | "opus";
+                model?: "gemini" | "haiku_writer" | "sonnet" | "opus";
             };
             header?: never;
             path?: never;

@@ -3008,6 +3008,21 @@ def seed_revisions_above(revision: str) -> list[str]:
     return [script.revision for script in _seed_scripts_above(revision)]
 
 
+def set_ids_seeded_above(revision: str) -> list[uuid.UUID]:
+    """`revision` 위에 쌓인 리비전이 심은 프롬프트 세트 id 전부(세트 여럿을 심은 리비전의 `NEW_SET_IDS`, 하나를 심은
+    리비전의 `NEW_SET_ID`). 시드 리비전 테스트가 "이 리비전의 버전은 그때까지의 전역 최대 + 1 부터"를 볼 때 뒤에 게시된
+    세트를 빼는 데 쓴다 — 새 시드 리비전이 생겨도 테스트 파일의 목록을 고칠 일이 없다. 레인을 가리지 않는다(버전 번호는 전
+    레인이 함께 이어 쓴다)."""
+    set_ids: list[uuid.UUID] = []
+    for script in _migration_scripts().walk_revisions(revision, "heads"):
+        if script.revision == revision:
+            continue
+        set_ids.extend(getattr(script.module, "NEW_SET_IDS", {}).values())
+        if hasattr(script.module, "NEW_SET_ID"):
+            set_ids.append(script.module.NEW_SET_ID)
+    return set_ids
+
+
 def undo_seeded_rows_above(conn: Connection, revision: str) -> None:
     """프롬프트 시드 리비전 테스트가 "이 리비전 직후 상태"를 보려고 위 시드 리비전들을 실제 downgrade 순서로 되돌린다.
     `await connection.run_sync(undo_seeded_rows_above, _M.revision)` 으로 부른다. 위 리비전의 되돌리기가 멈추는 조건(시드 뒤

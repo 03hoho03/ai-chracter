@@ -308,7 +308,9 @@ async def test_backfill_marks_only_each_chains_active_set_and_leaves_existing_ro
         finally:
             await transaction.rollback()
 
-    assert len(expected[0]) == 13  # 테스트 DB 의 legacy 아닌 체인 수(레인·모델 쌍)
+    # 테스트 DB 의 legacy 아닌 체인 수(레인·모델 쌍). Haiku 글쓰기 체인 둘은 판 행이 단계 없는 첫 판이라 이 리비전의 downgrade 를
+    # 멈추지 않아 되돌리지 않고 남는다 — 백필이 그 둘도 매긴다.
+    assert len(expected[0]) == 15
     assert {row[1:] for row in state[0]} == {row[1:] for row in expected[0]}
     assert state[0] == expected[0]
     assert state[1] == expected[1]

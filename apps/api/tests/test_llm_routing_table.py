@@ -27,7 +27,9 @@ from factories import _assert_characterization, _assert_recorded_cases
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "llm_routing_table.json"
 
 _CALL_SITES: tuple[LLMCallSite, ...] = get_args(LLMCallSite)
-_MODELS: tuple[ChatModelId, ...] = get_args(ChatModelId)
+# 기록된 표를 만들 때의 글쓰기 모델 셋이다. 그 뒤 더한 Haiku 글쓰기는 직결로만 가 이 표의 가짜 라우터(Gemini·Bedrock 만 있다)에
+# 맞지 않고, 해석 함수로 새 줄을 만들면 대조가 항진명제가 되므로 그 경로는 `test_llm_backends.py` 의 Haiku 글쓰기 테스트가 본다.
+_MODELS: tuple[ChatModelId, ...] = ("gemini", "sonnet", "opus")
 _METHODS = ("generate", "generate_structured", "generate_structured_with_instruction")
 
 

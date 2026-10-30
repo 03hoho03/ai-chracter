@@ -179,9 +179,9 @@ class CloverModelPricingItem(CamelModel):
     beta: bool
     # 이 모델로 쓰는 채팅 턴 하나와 소설 화 하나의 클로버. 소설 화 단가는 모델별 목록이 채팅 모델 안내가 된 뒤에도 이 칸을
     # 가드 없이 읽는 옛 화면을 위해 남긴다 — 그래서 Opus 행의 소설 화 단가는 응답에 계속 보인다. 기본 모델 값은 응답
-    # 최상위 `novel_episode_cost` 에도 있다.
+    # 최상위 `novel_episode_cost` 에도 있다. 소설에서 고를 수 없는 채팅 전용 모델(Haiku 글쓰기)은 소설 단가가 없어 null 이다.
     chat_turn_cost: int
-    novel_episode_cost: int
+    novel_episode_cost: int | None
 
 
 class CloverPricingResponse(CamelModel):
