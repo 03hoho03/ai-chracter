@@ -19,7 +19,7 @@ describe("preview chat model modal", () => {
   });
 
   it("세션이 있을 때의 확인 판정을 미리보기 판정 함수로 넘긴다", () => {
-    expect(modalSource).toContain("needsConfirm={(modelId) => previewModelNeedsConfirm(modelId, hasSession)}");
+    expect(modalSource).toContain("needsConfirm={(modelId) => previewModelNeedsConfirm(models, modelId, hasSession)}");
   });
 });
 

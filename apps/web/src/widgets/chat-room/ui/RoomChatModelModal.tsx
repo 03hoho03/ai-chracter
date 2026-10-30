@@ -29,17 +29,24 @@ export const RoomChatModelModal = createCallable<RoomChatModelModalProps, void>(
   const models = modelsQuery.data;
 
   // 세 상태(불러오는 중·실패·목록)는 배타적이다 — 렌더 전에 한 갈래로 정한다(`RoomPersonaModal` 선례).
+  // 목록 갈래는 본문과 확인 푸터를 `ChatModelOptions` 가 함께 그리고, 나머지 두 갈래는 본문만 있다.
   let body: ReactNode;
   if (modelsQuery.isPending || !room) {
-    body = <p className="py-6 text-center text-sm text-muted-foreground">불러오는 중…</p>;
+    body = (
+      <DialogBody>
+        <p className="py-6 text-center text-sm text-muted-foreground">불러오는 중…</p>
+      </DialogBody>
+    );
   } else if (!models) {
     body = (
-      <div className="flex flex-col items-center gap-3 py-6">
-        <p className="text-sm break-keep text-muted-foreground">모델 목록을 불러오지 못했어요.</p>
-        <Button type="button" variant="outline" onClick={() => void modelsQuery.refetch()}>
-          다시 시도
-        </Button>
-      </div>
+      <DialogBody>
+        <div className="flex flex-col items-center gap-3 py-6">
+          <p className="text-sm break-keep text-muted-foreground">모델 목록을 불러오지 못했어요.</p>
+          <Button type="button" variant="outline" onClick={() => void modelsQuery.refetch()}>
+            다시 시도
+          </Button>
+        </div>
+      </DialogBody>
     );
   } else {
     body = (
@@ -63,7 +70,7 @@ export const RoomChatModelModal = createCallable<RoomChatModelModalProps, void>(
           </DialogDescription>
         </DialogHeader>
 
-        <DialogBody>{body}</DialogBody>
+        {body}
       </DialogContent>
     </Dialog>
   );
