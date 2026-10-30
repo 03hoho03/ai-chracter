@@ -130,7 +130,7 @@ _AI = ChatMessageRole.ASSISTANT
 async def test_send_loads_note_whose_keyword_is_in_previous_ai_response_but_not_in_judgment_prompts(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=2)
     # 규칙 있는 스탯이 있어야 이 턴에 스탯 판정 호출이 난다.
     stat_def_id = uuid.uuid4()
     db_session.add(
@@ -167,7 +167,7 @@ async def test_send_loads_note_whose_keyword_is_in_previous_ai_response_but_not_
 async def test_first_turn_loads_note_whose_keyword_is_in_opening(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="마법사가 문 앞에 서 있다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="마법사가 문 앞에 서 있다.", paid_turns=1)
     _add_note(db_session, content, "표지-마법사 노트", ["마법사"])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
     fake = _RecordingLLMClient()
@@ -180,7 +180,7 @@ async def test_first_turn_loads_note_whose_keyword_is_in_opening(
 async def test_send_after_failed_turn_scans_last_read_ai_response_and_keeps_sticky_range(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     _add_note(db_session, content, "표지-응답 키워드 노트", ["은빛열쇠"])
     _add_note(db_session, content, "표지-유지 노트", ["마법사"], sticky_turns=1)
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
@@ -202,7 +202,7 @@ async def test_send_after_failed_turn_scans_last_read_ai_response_and_keeps_stic
 async def test_sticky_note_stays_for_sticky_turns_then_drops(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=4)
     _add_note(db_session, content, "표지-유지 노트", ["마법사"], sticky_turns=2)
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
     fake = _RecordingLLMClient()
@@ -216,7 +216,7 @@ async def test_sticky_note_stays_for_sticky_turns_then_drops(
 async def test_exclude_keyword_blocks_always_on_note_only_in_that_turn(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=3)
     _add_note(db_session, content, "표지-상시 노트", [], always_on=True, exclude_keywords=["가짜"])
     _add_note(db_session, content, "표지-유지 노트", ["마법사"], sticky_turns=2, exclude_keywords=["가짜"])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
@@ -234,7 +234,7 @@ async def test_exclude_keyword_blocks_always_on_note_only_in_that_turn(
 async def test_only_first_five_triggered_notes_by_order_are_loaded(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     # 순서의 역순으로 넣는다 — 넣은 순서가 곧 순서면 정렬이 빠져도 같은 결과가 나온다.
     for order in reversed(range(6)):
         _add_note(db_session, content, f"표지-열쇠 노트 {order}", ["열쇠"], order=order)
@@ -254,7 +254,7 @@ async def test_only_first_five_triggered_notes_by_order_are_loaded(
 async def test_keyword_matching_ignores_case_and_unicode_composition(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     _add_note(db_session, content, "표지-USB 노트", ["USB"])
     _add_note(db_session, content, "표지-마법사 노트", ["마법사"])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
@@ -267,7 +267,7 @@ async def test_keyword_matching_ignores_case_and_unicode_composition(
 
 
 async def test_note_with_blank_info_is_not_loaded(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     _add_note(db_session, content, "   ", [], always_on=True)
     _add_note(db_session, content, "\n", ["마법사"])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
@@ -281,7 +281,7 @@ async def test_note_with_blank_info_is_not_loaded(db_client: httpx.AsyncClient, 
 async def test_note_scoped_to_other_starting_setup_stays_out_even_when_always_on(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     assert content.current_published_version_id is not None
     other = StartingSetup(
         entity_id=uuid.uuid4(),
@@ -307,7 +307,7 @@ async def test_note_scoped_to_other_starting_setup_stays_out_even_when_always_on
 async def test_cell_id_in_opening_media_tag_does_not_trigger_short_hex_keyword(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.\n\n{{img::민아/교실}}")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.\n\n{{img::민아/교실}}", paid_turns=1)
     assert content.current_published_version_id is not None
     # 칸 id 를 골라 키워드 조각이 반드시 들어 있게 한다. 방에 복사된 첫 메시지는 이 id 로 태그를 저장한다.
     cell_id = uuid.UUID("adadadad-b1b1-4b1b-8b1b-adadadadadad")
@@ -328,7 +328,7 @@ async def test_cell_id_in_opening_media_tag_does_not_trigger_short_hex_keyword(
 async def test_edit_scans_ai_response_before_edited_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     _add_note(db_session, content, "표지-마법사 노트", ["마법사"])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
     rows = await _append_messages(
@@ -349,7 +349,7 @@ async def test_edit_scans_ai_response_before_edited_message(
 async def test_regenerate_rebuilds_the_same_prompt_as_the_original_turn(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=2)
     _add_note(db_session, content, "표지-마법사 노트", ["마법사"])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
     await _append_messages(db_session, room_id, [(_USER, "안녕"), (_AI, "마법사가 왔다.")])
@@ -369,7 +369,7 @@ async def test_regenerate_rebuilds_the_same_prompt_as_the_original_turn(
 
 
 async def test_shortcut_turn_scans_shortcut_message(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     assert content.current_published_version_id is not None
     shortcut = Shortcut(
         entity_id=uuid.uuid4(),

@@ -341,7 +341,7 @@ async def test_embedding_fill_is_not_scheduled_when_switch_is_off(
     assert settings.memory_embed_write is False
     monkeypatch.setattr(settings, "memory_facts_extract", True)
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     stub = VoyageStub()
 
     assert (await _send(db_client, room, stub))[-1] == "done"
@@ -360,7 +360,7 @@ async def test_embedding_fill_runs_after_the_extractions_and_embeds_the_new_rows
     monkeypatch.setattr(settings, "memory_facts_extract", True)
     monkeypatch.setattr(settings, "memory_embed_write", True)
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     await db_session.commit()
     open_at_call: list[int] = []
 
@@ -390,7 +390,7 @@ async def test_extractions_and_embedding_fill_ignore_the_memory_scope(
     monkeypatch.setattr(settings, "memory_facts_extract", True)
     monkeypatch.setattr(settings, "memory_embed_write", True)
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     await db_session.commit()
     stub = VoyageStub()
 
@@ -409,7 +409,7 @@ async def test_embedding_fill_follows_the_generation_window_switch(
     monkeypatch.setattr(settings, "memory_embed_write", True)
     monkeypatch.setattr(settings, "memory_window_generation", False)
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     stub = VoyageStub()
 
     await _send(db_client, room, stub)
@@ -978,7 +978,7 @@ async def test_turn_with_embedding_switches_off_opens_no_connection(
 ) -> None:
     """운영 의존성 그대로(흉내 클라이언트 없이) 두 임베딩 스위치가 꺼진 턴은 Voyage 쪽으로 연결조차 열지 않는다."""
     assert (settings.memory_embed_write, settings.memory_embed_recall) == (False, False)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     _override_llm_client(_TurnLLMClient())
     try:
         response = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "새 메시지"})

@@ -2636,7 +2636,7 @@ async def regenerate_chat_room_memory_summary(
     writing_model: ChatRoomModelId = Depends(_unlocked_room_model_dependency),
 ) -> ChatRoomMemoryResponse:
     """방의 지금 요약을 AI 로 다시 만든다(`chat/memory_regenerate.py`). 고정 클로버(`MEMORY_SUMMARY_REGENERATE_COST`, 방 모델과
-    무관)를 먼저 자기 트랜잭션에서 깎고, 어떤 실패로 끝나든 돌려준다. 채팅 상한 예외 계정도 내고 하루 무료 대화는 쓰지 않는다.
+    무관)를 먼저 자기 트랜잭션에서 깎고, 어떤 실패로 끝나든 돌려준다. 채팅 상한 예외 계정도 낸다.
     사용처 행을 남기지 않는다(원작자 몫이 붙는 사용이 아니다). 사용자가 고친 요약도 다시 만들 수 있다 — 확인은 화면이 받는다.
 
     깎기 전에 거절하는 것: 스위치 꺼짐 404 `MEMORY_ITEMS_DISABLED`, 재동의 403, 남의 방 403, 제한 작품 403 `CONTENT_RESTRICTED`,

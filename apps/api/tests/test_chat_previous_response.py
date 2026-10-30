@@ -6,7 +6,7 @@
 - 되돌리기(`POST …/messages/{지금 응답 id}/restore-previous`)는 보관한 응답을 원래 id·시각으로 다시 넣고 지금 응답을 보관으로
   옮긴다(맞바꾸기). 같은 요청이 두 번 오면 두 번째는 409 다. 보관 행이 지금 응답을 가리키고 그 응답이 방의 마지막 메시지일
   때만 되돌리고, 아니면 409 `PREVIOUS_RESPONSE_UNAVAILABLE` 이며 마지막 메시지를 가리키지 않는 낡은 보관 행은 그때 지운다.
-- 되돌리기는 차감·무료분·분당 상한·LLM 을 지나지 않고 턴 기록을 쓰지 않는다. 진행 중 턴이 있으면 409, 이용제한 작품의 방에서도
+- 되돌리기는 차감·분당 상한·LLM 을 지나지 않고 턴 기록을 쓰지 않는다. 진행 중 턴이 있으면 409, 이용제한 작품의 방에서도
   된다. 폐기 기록에는 `undo` 로 남는다.
 - 스탯은 지금 응답의 턴 효과를 되돌린 값 위에 되살린 응답의 턴 효과를 다시 얹는다. 지금 응답과 되살릴 응답의 턴 기록이 둘 다
   있고, 둘 다 엔딩이 없고, 방이 엔딩 전이고, 그 턴이 방의 마지막 턴일 때만이다. 지금 정의에 없는 스탯은 쓰지 않는다. 재판정
@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.withdrawal import erase_account
 from api.chat.prompt_builder import EndingJudgmentResult, ImageMatchJudgmentResult, StatRuleJudgmentResult
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.core.redis import redis_client
 from api.db.models import (
     ChatMessage,
@@ -187,10 +187,13 @@ async def _record(db_session: AsyncSession, message_id: uuid.UUID) -> ChatTurn |
 
 
 async def _regenerated_room(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, *, paid_turns: int = 2
 ) -> tuple[Room, _Stats, _Message, _Message]:
-    """한 턴(신뢰 +5)을 보내고 재생성(신뢰 -2)한 방. (방, 스탯, 밀려난 응답, 지금 응답)."""
-    room, stats = await _story_room(db_session, db_client)
+    """한 턴(신뢰 +5)을 보내고 재생성(신뢰 -2)한 방. (방, 스탯, 밀려난 응답, 지금 응답).
+
+    `paid_turns` 는 방 주인에게 줄 기본 모델 턴 수다. 기본 2 는 여기서 쓰는 보내기·재생성 두 번분이고, 그 뒤에 유료 요청을 더
+    보내는 테스트는 그만큼 더해서 적는다."""
+    room, stats = await _story_room(db_session, db_client, paid_turns=paid_turns)
     await _send(db_client, room, _LLM("지킨 응답", ["a1"]))
     original = (await _messages(db_session, room))[-1]
     await _regenerate(db_client, room, _LLM("어긴 응답", ["a2"]))
@@ -204,7 +207,7 @@ async def _regenerated_room(
 async def test_regeneration_keeps_the_replaced_reply_with_its_original_id_time_and_picture(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, room, _LLM("지킨 응답", ["a1"]))
     assert await _kept(db_session, room) is None
     assert await _previous_response_for(db_client, room) is None
@@ -226,7 +229,7 @@ async def test_regeneration_keeps_the_replaced_reply_with_its_original_id_time_a
 async def test_regenerating_again_keeps_only_the_reply_it_just_replaced(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, _, _, first_replacement = await _regenerated_room(db_client, db_session)
+    room, _, _, first_replacement = await _regenerated_room(db_client, db_session, paid_turns=3)
 
     await _regenerate(db_client, room, _LLM("셋째 응답", []))
 
@@ -246,7 +249,7 @@ _FAILED_GENERATIONS = [
 async def test_a_failed_regeneration_leaves_the_kept_reply_as_it_was(
     db_client: httpx.AsyncClient, db_session: AsyncSession, error: Exception
 ) -> None:
-    room, _, _, current = await _regenerated_room(db_client, db_session)
+    room, _, _, current = await _regenerated_room(db_client, db_session, paid_turns=3)
     kept = await _kept(db_session, room)
 
     events = await _regenerate(db_client, room, _LLM("안 쓰일 응답", generation_error=error))
@@ -305,7 +308,7 @@ async def test_the_same_restore_sent_twice_is_refused_the_second_time_and_keeps_
 async def test_restoring_without_a_kept_reply_is_refused(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=1)
     await _send(db_client, room, _LLM("지킨 응답", ["a1"]))
     last = (await _messages(db_session, room))[-1]
 
@@ -405,14 +408,13 @@ async def test_restoring_someone_elses_room_is_forbidden(
 async def test_restoring_spends_nothing_and_writes_no_turn_record(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """클로버를 낼 수밖에 없는 사용자(무료분 0, 잔액 100, 오늘치 동의)로 보내기·재생성은 깎이고, 되돌리기는 잔액·원장·상한
+    """클로버를 낼 수밖에 없는 사용자(잔액 100, 오늘치 동의)로 보내기·재생성은 깎이고, 되돌리기는 잔액·원장·상한
     카운터·턴 기록이 그대로다. 폐기 기록에는 `undo` 하나가 더해진다."""
     user = await _make_user_with_clover_lot(
         db_session, clover_balance=100, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
     )
     user_id = user.id
     room = await _open_room(db_client, db_session, turns=0, user=user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     await _send(db_client, room, _LLM("첫 응답"))
     await _regenerate(db_client, room, _LLM("새 응답"))
     current = (await _messages(db_session, room))[-1]
@@ -469,7 +471,7 @@ async def test_restoring_brings_back_the_counter_the_restored_turn_left(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """원 턴의 판정이 실패해 카운터가 구르지 않았고(30), 재생성의 재판정이 굴렸다(29). 되돌리면 카운터도 30 으로 돌아온다."""
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, room, _LLM("판정 실패한 응답", stat_error=True))
     await _regenerate(db_client, room, _LLM("지킨 응답", ["a1"]))
     assert await _stat_values(db_session, room, stats) == (78, 29)
@@ -484,7 +486,7 @@ async def test_restoring_leaves_a_stat_dropped_from_the_definitions_as_it_is(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """앞 테스트와 같은 방에서 카운터 정의가 사라졌으면(그 스탯이 없는 버전으로 옮겼다) 카운터 행은 쓰지 않는다."""
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, room, _LLM("판정 실패한 응답", stat_error=True))
     await _regenerate(db_client, room, _LLM("지킨 응답", ["a1"]))
     current = (await _messages(db_session, room))[-1]
@@ -499,7 +501,7 @@ async def test_restoring_leaves_a_stat_dropped_from_the_definitions_as_it_is(
 async def test_restoring_a_regeneration_that_kept_the_old_effect_leaves_the_stats_as_they_are(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, room, _LLM("지킨 응답", ["a1"]))
     original = (await _messages(db_session, room))[-1]
     # 재판정이 실패해 옛 효과를 이어받은 재생성.
@@ -604,7 +606,7 @@ async def test_restoring_rewinds_the_summary_that_covered_either_reply(
 ) -> None:
     """재생성 뒤 접기가 새 응답까지 덮었으면 되돌릴 때 그 요약과 장면 기억이 사라지고, 앞 턴만 덮은 요약은 남는다. 되살린
     응답(더 앞선 키)까지 덮는 요약도 다시 맞바꿀 때 사라진다 — 두 응답 중 앞선 키부터 되감는다."""
-    room, _ = await _story_room(db_session, db_client, turns=1)
+    room, _ = await _story_room(db_session, db_client, turns=1, paid_turns=2)
     await _send(db_client, room, _LLM("지킨 응답", ["a1"]))
     await _regenerate(db_client, room, _LLM("어긴 응답", ["a2"]))
     messages = await _messages(db_session, room)
@@ -631,7 +633,7 @@ async def test_restoring_rewinds_the_summary_that_covered_either_reply(
 async def test_regenerating_after_a_restore_rejudges_from_the_restored_replys_record(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, stats, original, current = await _regenerated_room(db_client, db_session)
+    room, stats, original, current = await _regenerated_room(db_client, db_session, paid_turns=3)
     assert (await _restore(db_client, room, current[0])).status_code == 200
     record = await _record(db_session, original[0])
     assert record is not None and record.kind == "send"
@@ -676,23 +678,25 @@ async def _reset(client: httpx.AsyncClient, room: Room, _messages_now: list[_Mes
     assert response.status_code == 200, response.text
 
 
+# 둘째 값은 그 변경이 보내는 유료 요청 수다 — 보내기·수정은 생성 요청이라 턴 하나를 내고, 삭제·초기화는 내지 않는다.
 _CLEARING = [
-    pytest.param(_send_that_fails, id="send"),
-    pytest.param(_edit_that_fails, id="edit"),
-    pytest.param(_delete_the_opening, id="delete-message"),
-    pytest.param(_reset, id="reset"),
+    pytest.param(_send_that_fails, 1, id="send"),
+    pytest.param(_edit_that_fails, 1, id="edit"),
+    pytest.param(_delete_the_opening, 0, id="delete-message"),
+    pytest.param(_reset, 0, id="reset"),
 ]
 
 
-@pytest.mark.parametrize("change", _CLEARING)
+@pytest.mark.parametrize(("change", "change_paid_turns"), _CLEARING)
 async def test_changing_the_conversation_removes_the_kept_reply(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     change: Callable[[httpx.AsyncClient, Room, list[_Message]], Awaitable[None]],
+    change_paid_turns: int,
 ) -> None:
     """보내기·수정은 생성이 실패해도 지운다 — 사용자 메시지·절단과 같은 커밋(생성 전)이다. 메시지 삭제는 마지막이 아닌
     메시지를 지워도 지운다."""
-    room, _, _, _ = await _regenerated_room(db_client, db_session)
+    room, _, _, _ = await _regenerated_room(db_client, db_session, paid_turns=2 + change_paid_turns)
     assert await _kept(db_session, room) is not None
 
     await change(db_client, room, await _messages(db_session, room))

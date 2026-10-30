@@ -38,8 +38,8 @@ from factories import (
     _get_genre,
     _login_as,
     _make_default_persona,
+    _make_paying_user,
     _make_published_character,
-    _make_user,
     _open_room,
     _override_llm_client,
     _story_with_setup,
@@ -139,7 +139,7 @@ async def test_story_turn_names_the_user_in_author_text_and_judgment_but_leaves_
 ) -> None:
     """작가 글(설정·첫 메시지·단축어 프롬프트·스탯 설명)은 방 프로필 이름으로 바뀌고, 키워드는 바뀐 첫 메시지에서
     찾는다. 프로필이 있으니 생성 채널의 이름 한 줄은 없고 판정 채널에는 있다. 사용자 메시지는 그대로다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message=_OPENING)
+    user_id, content, setup = await _story_with_setup(db_session, opening_message=_OPENING, paid_turns=1)
     (await _story_detail(db_session, content)).setting_text = "{{user}}의 옥상 이야기"
     _add_stat(db_session, setup, "{{user}}가 웃으면 오른다")
     shortcut = Shortcut(
@@ -188,7 +188,7 @@ async def test_story_room_without_persona_uses_the_fallback_name(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """프로필이 없으면 "당신" 으로 바꾸되 이름 한 줄은 어디에도 없다("대화 속 사용자의 이름: 당신" 은 거짓 줄이다)."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message=_OPENING)
+    user_id, content, setup = await _story_with_setup(db_session, opening_message=_OPENING, paid_turns=1)
     _add_stat(db_session, setup, "설명")
     await db_session.commit()
     await _login_as(db_client, user_id)
@@ -207,7 +207,7 @@ async def test_regenerate_rebuilds_the_same_named_prompt_as_the_original_turn(
 ) -> None:
     """재생성은 같은 방·같은 프로필로 이름을 고르므로 원 턴과 같은 프롬프트를 만든다. 칸 판정이 없는 방이라 재생성은
     판정을 부르지 않는다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message=_OPENING)
+    user_id, content, setup = await _story_with_setup(db_session, opening_message=_OPENING, paid_turns=2)
     _add_stat(db_session, setup, "{{user}}가 웃으면 오른다")
     await _make_default_persona(db_session, user_id, "지훈")
     await db_session.commit()
@@ -225,8 +225,7 @@ async def test_character_turn_names_the_user_and_the_character(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """캐릭터 작품은 `{{char}}` 가 그 캐릭터의 이름이다 — 캐릭터 프롬프트와 첫 메시지(인트로 복사본) 모두."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(
@@ -254,7 +253,7 @@ async def test_memory_fold_names_the_user_with_the_turns_names(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """요약 접기는 백그라운드라 그 턴의 이름을 받아 쓴다 — 접을 대화의 모델 응답 줄을 바꾸고 이름 한 줄을 싣는다."""
-    room = await _open_room(db_client, db_session, turns=29, lane="character")
+    room = await _open_room(db_client, db_session, turns=29, lane="character", paid_turns=1)
     first_reply = room.turns[1][1]
     await db_session.execute(
         sa.update(ChatMessage).where(ChatMessage.id == first_reply.id).values(content="{{user}}가 웃었다")

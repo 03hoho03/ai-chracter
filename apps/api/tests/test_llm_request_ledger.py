@@ -62,7 +62,7 @@ from factories import (
     _login_as,
     _make_asset,
     _make_chat_turn,
-    _make_user,
+    _make_paying_user,
     _make_user_with_clover_lot,
     _open_room,
     _override_llm_client,
@@ -216,13 +216,13 @@ _Builder = Callable[[httpx.AsyncClient, AsyncSession, pytest.MonkeyPatch], Await
 
 
 async def _story_room(db_client: httpx.AsyncClient, db_session: AsyncSession) -> tuple[uuid.UUID, str, uuid.UUID]:
-    room = await _open_room(db_client, db_session, turns=_ROOM_TURNS, lane="story")
+    room = await _open_room(db_client, db_session, turns=_ROOM_TURNS, lane="story", paid_turns=1)
     cell_id = await _add_room_cell_and_endings(db_session, room.room_id, _ENDING_GATES)
     return room.room_id, str(cell_id), room.turns[_ROOM_TURNS][0].id
 
 
 async def _character_room(db_client: httpx.AsyncClient, db_session: AsyncSession) -> tuple[uuid.UUID, str, uuid.UUID]:
-    room = await _open_room(db_client, db_session, turns=_ROOM_TURNS)
+    room = await _open_room(db_client, db_session, turns=_ROOM_TURNS, paid_turns=1)
     image_id = await _add_room_situational_image(db_session, room.room_id)
     return room.room_id, str(image_id), room.turns[_ROOM_TURNS][0].id
 
@@ -292,9 +292,7 @@ async def _regenerate_character(db_client: httpx.AsyncClient, db_session: AsyncS
 async def _start_preview(
     db_client: httpx.AsyncClient, db_session: AsyncSession, *, story: bool, scene_header: bool = False
 ) -> tuple[str, str | None]:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     asset = await _make_asset(db_session, owner_user_id=user.id, status=AssetStatus.READY)
     await db_session.commit()
     await _login_as(db_client, user.id)

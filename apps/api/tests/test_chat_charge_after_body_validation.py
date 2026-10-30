@@ -6,7 +6,7 @@ FastAPI 는 한 의존성을 풀 때 그 의존성의 하위 의존성을 먼저
 안이라 돌지 않으므로 422 와 함께 클로버만 사라진다.
 
 이 파일은 턴 네 경로(전송·편집·재생성·빌더 미리보기) 각각에서 검증에 걸린 요청이 422 이고 잔액·원장·사용처 행이 그대로임을
-본다. 무료 대화가 없는 운영 상태(출석판 켬)의 Gemini 턴과, 스위치와 무관하게 늘 유료인 상위 모델 방 턴을 둘 다 본다.
+본다. 하루 무료분 없이 클로버로 내는 Gemini 턴과 상위 모델 방 턴을 둘 다 본다.
 """
 
 import uuid
@@ -16,7 +16,6 @@ import pytest
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.config import settings
 from api.db.models import User
 from api.db.models.chat import ChatRoom
 from api.db.models.clover import CloverLedger, CloverSpendUsage
@@ -72,16 +71,12 @@ async def _call(client: httpx.AsyncClient, method: str, path: str, body: object)
 async def test_invalid_turn_request_is_422_and_spends_nothing(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
     surface: str,
     body: object,
 ) -> None:
     """깨지는 시나리오: 게이트가 라우트보다 느슨한 본문 모델로 검증해 이 요청을 통과시키고 차감을 커밋한 뒤 라우트가 422 를
     내 환불 없이 클로버가 깎인다."""
-    user, method, path, _ = await _prepare_paid_turn(
-        db_client, db_session, monkeypatch, surface=surface, balance=_BALANCE
-    )
-    monkeypatch.setattr(settings, "attendance_board_enabled", True)
+    user, method, path, _ = await _prepare_paid_turn(db_client, db_session, surface=surface, balance=_BALANCE)
     before = await _money(db_session, user)
 
     resp = await _call(db_client, method, path, body)
@@ -91,14 +86,11 @@ async def test_invalid_turn_request_is_422_and_spends_nothing(
 
 
 async def test_edit_with_a_malformed_message_id_is_422_and_spends_nothing(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """편집 대상 메시지 id 는 경로 칸이다. 깨지는 시나리오: 게이트가 그 칸을 검증하는 의존성을 거치지 않아, id 꼴이 아닌 경로도
     차감한 뒤 422 가 난다."""
-    user, method, path, body = await _prepare_paid_turn(
-        db_client, db_session, monkeypatch, surface="edit", balance=_BALANCE
-    )
-    monkeypatch.setattr(settings, "attendance_board_enabled", True)
+    user, method, path, body = await _prepare_paid_turn(db_client, db_session, surface="edit", balance=_BALANCE)
     malformed = path.rsplit("/", 1)[0] + "/not-a-uuid"
     before = await _money(db_session, user)
 
@@ -111,10 +103,8 @@ async def test_edit_with_a_malformed_message_id_is_422_and_spends_nothing(
 async def test_premium_room_send_with_a_nul_content_is_422_and_spends_nothing(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """상위 모델 방은 출석판 스위치와 무관하게 늘 클로버로 낸다 — 스위치를 끈 채로도 같은 결함이 열려 있었다."""
-    user, method, path, _ = await _prepare_paid_turn(
-        db_client, db_session, monkeypatch, surface="send", balance=_BALANCE
-    )
+    """상위 모델 방 턴도 클로버로 내므로 같은 결함이 열려 있었다 — 기본 모델과 다른 차감 경로라 따로 본다."""
+    user, method, path, _ = await _prepare_paid_turn(db_client, db_session, surface="send", balance=_BALANCE)
     _enable_chat_premium(monkeypatch)
     room_id = uuid.UUID(path.split("/")[2])
     await db_session.execute(update(ChatRoom).where(ChatRoom.id == room_id).values(chat_model="opus"))
@@ -129,15 +119,12 @@ async def test_premium_room_send_with_a_nul_content_is_422_and_spends_nothing(
 
 @pytest.mark.parametrize("surface", ["send", "edit", "preview"])
 async def test_valid_turn_request_spends_once(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, surface: str
+    db_client: httpx.AsyncClient, db_session: AsyncSession, surface: str
 ) -> None:
     """대조군: 같은 셋업에서 올바른 본문은 실제로 깎인다. 위 테스트들은 "잔액·원장·사용처가 그대로"만 보므로, 셋업이 유료
     상태를 만들지 못하게 바뀌면(셋업 사용자가 차감 면제 계정이 되는 등) 결함이 되살아나도 그대로 통과한다. 이 테스트가 그때
     빨개져 그런 헛통과를 막는다."""
-    user, method, path, body = await _prepare_paid_turn(
-        db_client, db_session, monkeypatch, surface=surface, balance=_BALANCE
-    )
-    monkeypatch.setattr(settings, "attendance_board_enabled", True)
+    user, method, path, body = await _prepare_paid_turn(db_client, db_session, surface=surface, balance=_BALANCE)
     balance, ledger, usages = await _money(db_session, user)
 
     resp = await _call(db_client, method, path, body)

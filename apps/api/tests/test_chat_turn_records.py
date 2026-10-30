@@ -45,7 +45,7 @@ from api.chat.prompt_builder import (
     MemorySummaryResult,
     StatRuleJudgmentResult,
 )
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.core.config import settings
 from api.db.models import ChatMessage, ChatMessageRole, ChatRoom, Ending, StartingSetup, StatDef
 from api.db.models.chat import ChatTurn
@@ -62,7 +62,7 @@ from factories import (
     _clear_llm_override,
     _login_as,
     _make_chat_turn,
-    _make_user,
+    _make_paying_user,
     _make_user_with_clover_lot,
     _open_room,
     _override_llm_client,
@@ -280,6 +280,16 @@ async def _add_shortcut(db_session: AsyncSession, room_id: uuid.UUID) -> uuid.UU
     return shortcut.entity_id
 
 
+async def _spend_ledger_id(db_session: AsyncSession, user_id: uuid.UUID) -> uuid.UUID:
+    """그 사용자의 채팅 차감 원장 행 하나. 기본 모델 턴에도 하루 무료분이 없어 턴 기록이 이 행을 가리킨다."""
+    [ledger_id] = (
+        await db_session.scalars(
+            sa.select(CloverLedger.id).where(CloverLedger.user_id == user_id, CloverLedger.kind == "chat_spend")
+        )
+    ).all()
+    return ledger_id
+
+
 def _row(record: ChatTurn) -> dict[str, Any]:
     return {
         "assistant_message_id": record.assistant_message_id,
@@ -336,7 +346,7 @@ async def _empty_table_stage_routes(db_session: AsyncSession, lane: RoutingLane)
 async def test_story_send_writes_one_record_with_the_turns_model_charge_calls_stats_ending_and_shortcut(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _open_room(db_client, db_session, turns=0, lane="story")
+    room = await _open_room(db_client, db_session, turns=0, lane="story", paid_turns=1)
     stat_id = await _stat_entity_id(db_session, room.room_id)
     ending_id = await _add_ending(db_session, room.room_id)
     shortcut_id = await _add_shortcut(db_session, room.room_id)
@@ -361,9 +371,9 @@ async def test_story_send_writes_one_record_with_the_turns_model_charge_calls_st
         "kind": "send",
         "turn_number": 1,
         "chat_model": "gemini",
-        "charge_source": "free",
-        "clover_amount": 0,
-        "spend_ledger_id": None,
+        "charge_source": "clover",
+        "clover_amount": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
+        "spend_ledger_id": await _spend_ledger_id(db_session, room.user_id),
         "shortcut_entity_id": shortcut_id,
         "llm_calls": _calls(
             "send", "chat_ending_judgment", "chat_generate", "chat_media_book_image", "chat_stat_judgment"
@@ -375,14 +385,13 @@ async def test_story_send_writes_one_record_with_the_turns_model_charge_calls_st
 
 
 async def test_clover_charged_send_records_the_charge_and_its_ledger_row(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     user = await _make_user_with_clover_lot(
         db_session, clover_balance=100, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
     )
     room = await _open_room(db_client, db_session, turns=0, user=user)
     await _add_room_situational_image(db_session, room.room_id)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     await _post(
         db_client, "POST", f"/chat-rooms/{room.room_id}/messages", {"content": "안녕"}, _SinkLLMClient(tag="send")
@@ -405,7 +414,7 @@ async def test_clover_charged_send_records_the_charge_and_its_ledger_row(
 
 
 async def test_each_send_and_edit_writes_one_record(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=3)
     stat_id = await _stat_entity_id(db_session, room.room_id)
 
     await _post(
@@ -445,7 +454,7 @@ async def test_first_token_latency_counts_from_turn_start_and_from_stream_start_
     띄우지 않으므로 첫 글자가 아니다. 턴 시작부터는 750, 스트림 시작부터는 250 이다 — 마지막 델타 시각을 쓰면 2750·2250,
     빈 델타를 세면 625·125, 턴 시작을 스트림 시작으로 잡으면 둘 다 250 이 나와 값으로 갈린다. 판정 칸에는 생성 지연이
     붙지 않는다."""
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=1)
 
     await _post(
         db_client,
@@ -471,7 +480,7 @@ async def test_generation_that_ends_without_text_records_no_first_token_latency(
 ) -> None:
     """글 없이 정상 종료한 생성은 잴 첫 글자가 없다. 0 이나 종료 시각으로 채우면 분포에 가짜 빠른 값이 섞이므로 두 키를 다 뺀다.
     생성 칸 자체는 남는다(호출은 과금됐다)."""
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=1)
 
     await _post(
         db_client,
@@ -517,7 +526,7 @@ async def _seed_record_for_last_reply(db_session: AsyncSession, room_id: uuid.UU
 async def test_regenerate_inherits_turn_stats_ending_and_shortcut_from_the_replaced_record(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=1)
     old = await _seed_record_for_last_reply(db_session, room.room_id)
 
     await _post(db_client, "POST", f"/chat-rooms/{room.room_id}/regenerate", None, _SinkLLMClient(tag="regen"))
@@ -528,9 +537,9 @@ async def test_regenerate_inherits_turn_stats_ending_and_shortcut_from_the_repla
         "kind": "regenerate",
         "turn_number": 7,
         "chat_model": "gemini",
-        "charge_source": "free",
-        "clover_amount": 0,
-        "spend_ledger_id": None,
+        "charge_source": "clover",
+        "clover_amount": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
+        "spend_ledger_id": await _spend_ledger_id(db_session, room.user_id),
         "shortcut_entity_id": old.shortcut_entity_id,
         "llm_calls": _calls("regen", "chat_generate"),
         "stat_changes": old.stat_changes,
@@ -542,7 +551,7 @@ async def test_regenerate_inherits_turn_stats_ending_and_shortcut_from_the_repla
 async def test_regenerate_without_a_replaced_record_writes_nothing(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=1)
 
     await _post(db_client, "POST", f"/chat-rooms/{room.room_id}/regenerate", None, _SinkLLMClient(tag="regen"))
 
@@ -552,7 +561,7 @@ async def test_regenerate_without_a_replaced_record_writes_nothing(
 async def test_regenerating_a_regeneration_keeps_the_first_records_values(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=2)
     first = await _seed_record_for_last_reply(db_session, room.room_id)
 
     await _post(db_client, "POST", f"/chat-rooms/{room.room_id}/regenerate", None, _SinkLLMClient(tag="r1"))
@@ -576,7 +585,7 @@ async def test_regenerating_an_earlier_reply_after_deleting_later_turns_keeps_th
     """마지막 응답을 지워도 턴 수를 줄이지 않던 옛 이미지의 삭제가 뒤 턴을 지운 방에서는 앞 응답이 마지막 메시지가 돼도 방
     `turn_count` 가 지운 턴까지 센 값 그대로다. 재생성 기록은 그 값이 아니라 대체되는 응답이 속한 턴 번호여야 한다 — 다음
     재생성이 이 기록을 보고 "방의 마지막 턴"인지 가른다."""
-    room = await _open_room(db_client, db_session, turns=2, lane="story")
+    room = await _open_room(db_client, db_session, turns=2, lane="story", paid_turns=1)
     _, first_reply = room.turns[1]
     second_user, second_reply = room.turns[2]
     dropped = [second_reply.id, second_user.id]
@@ -599,8 +608,7 @@ async def test_regenerating_an_earlier_reply_after_deleting_later_turns_keeps_th
 
 
 async def test_preview_turn_writes_no_record(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.commit()
     await _login_as(db_client, user.id)
     started = await db_client.post("/preview-sessions", json=_preview_character_payload())

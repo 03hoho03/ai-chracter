@@ -5952,7 +5952,7 @@ export interface paths {
         /**
          * Regenerate Chat Room Memory Summary
          * @description 방의 지금 요약을 AI 로 다시 만든다(`chat/memory_regenerate.py`). 고정 클로버(`MEMORY_SUMMARY_REGENERATE_COST`, 방 모델과
-         *     무관)를 먼저 자기 트랜잭션에서 깎고, 어떤 실패로 끝나든 돌려준다. 채팅 상한 예외 계정도 내고 하루 무료 대화는 쓰지 않는다.
+         *     무관)를 먼저 자기 트랜잭션에서 깎고, 어떤 실패로 끝나든 돌려준다. 채팅 상한 예외 계정도 낸다.
          *     사용처 행을 남기지 않는다(원작자 몫이 붙는 사용이 아니다). 사용자가 고친 요약도 다시 만들 수 있다 — 확인은 화면이 받는다.
          *
          *     깎기 전에 거절하는 것: 스위치 꺼짐 404 `MEMORY_ITEMS_DISABLED`, 재동의 403, 남의 방 403, 제한 작품 403 `CONTENT_RESTRICTED`,
@@ -6280,7 +6280,7 @@ export interface paths {
         /**
          * Get Clover Pricing
          * @description 공개 조회 — 인증 없음. 충전 상품과 일반 회원이 쓸 수 있는 모든 사용처·허용 계정 전용 소설의 사용 단가, 채팅에서
-         *     고를 수 있는 모델별 단가, 하루 무료 대화 수를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지
+         *     고를 수 있는 모델별 단가를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지
          *     않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
          *
          *     모델 행은 지금 채팅에서 고를 수 있게 보이는 모델만 싣는다(`is_chat_model_visible` — 화면의 모델 목록과 같은 판정이라
@@ -6311,8 +6311,8 @@ export interface paths {
         };
         /**
          * Get Clover Products
-         * @description 공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책
-         *     숫자·가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로
+         * @description 공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·정책 숫자·
+         *     가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로
          *     다시 읽는다(공개 가격 응답의 같은 주석).
          */
         get: operations["get_clover_products_clover_products_get"];
@@ -11257,8 +11257,6 @@ export interface components {
          * @description 공개 가격 응답에 싣는 출석 안내. 로그인하지 않은 방문자도 정책 문장을 읽는다.
          */
         CloverAttendancePolicy: {
-            /** Enabled */
-            enabled: boolean;
             /** Rewards */
             rewards: number[];
             /** Minvaliddays */
@@ -11445,8 +11443,6 @@ export interface components {
             novelAiEditCost: number;
             /** Novelrestricted */
             novelRestricted: boolean;
-            /** Dailyfreechatturns */
-            dailyFreeChatTurns: number;
             /** Novelreadcost */
             novelReadCost: number;
             /** Novelfreechaptercount */
@@ -11511,7 +11507,7 @@ export interface components {
         };
         /**
          * CloverProductsResponse
-         * @description 공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능
+         * @description 공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능
          *     스위치와 사용 단가는 공개 가격 응답(`GET /clover/pricing`)에 그대로 남는다.
          */
         CloverProductsResponse: {
@@ -11523,8 +11519,6 @@ export interface components {
             paymentsEnabled: boolean;
             /** Identitygateenabled */
             identityGateEnabled: boolean;
-            /** Dailyfreechatturns */
-            dailyFreeChatTurns: number;
             policy: components["schemas"]["CloverPolicyValues"];
             /** Priceversion */
             priceVersion: number;
@@ -13066,8 +13060,6 @@ export interface components {
             identityGateEnabled: boolean;
             /** Identitygated */
             identityGated: boolean;
-            /** Dailyfreechatturns */
-            dailyFreeChatTurns: number;
             /** Paidcloverbalance */
             paidCloverBalance: number;
             /** Purchaseblockreason */

@@ -187,7 +187,7 @@ async def test_epilogue_media_tags_unlock_cells_on_ending_reached(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """도달한 엔딩의 에필로그에 나온 칸만 해금한다 — 다른 엔딩의 에필로그 칸은 그대로 잠겨 있다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작", paid_turns=1)
     assert content.current_published_version_id is not None
     rooftop, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
     await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")

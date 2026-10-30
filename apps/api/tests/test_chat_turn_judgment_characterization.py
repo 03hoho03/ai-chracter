@@ -65,7 +65,7 @@ from factories import (
     _clear_llm_override,
     _login_as,
     _make_asset,
-    _make_user,
+    _make_paying_user,
     _open_room,
     _override_llm_client,
     _parse_sse_events,
@@ -170,7 +170,7 @@ class _Case:
 async def _story_room_with_two_due_endings(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Case:
     """스토리 방의 2턴째 — 규칙 없는 엔딩 둘이 모두 판정 차례다(게이트 2). 스탯 판정·칸 판정은 성공하고, 첫 엔딩 판정은
     LLM 실패, 두 번째는 발동이다 — 두 번째를 판정하면 엔딩에 도달하고, 판정하지 않으면 엔딩 없이 끝난다."""
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=1)
     cell_id = await _add_room_cell_and_endings(db_session, room.room_id, (2, 2))
     endings = (
         await db_session.execute(
@@ -200,7 +200,7 @@ async def _story_room_with_two_due_endings(db_client: httpx.AsyncClient, db_sess
 
 async def _character_room_with_failing_image_judgment(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Case:
     """캐릭터 방의 2턴째 — 상황 이미지 후보가 하나 있고 그 판정 LLM 이 실패한다."""
-    room = await _open_room(db_client, db_session, turns=1)
+    room = await _open_room(db_client, db_session, turns=1, paid_turns=1)
     image_id = await _add_room_situational_image(db_session, room.room_id)
     fake = _JudgmentLLM(fired_rule_ids=[], match_id=str(image_id), image_error=LLMClientError("판정 실패"))
     return _Case(room.room_id, fake, {str(image_id): "<image>"})
@@ -209,7 +209,7 @@ async def _character_room_with_failing_image_judgment(db_client: httpx.AsyncClie
 async def _story_room_with_three_changing_stats(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Case:
     """작가 순서 가·나·다 세 스탯이 이번 턴에 모두 바뀐다. 방의 스탯 행은 다(작가 순서 마지막)에만 남기고, 판정 모델은
     규칙을 나·가·다 순서로 낸다 — 작가 순서·행 순서·응답 순서가 서로 달라 어느 것을 따르는지 기록에서 갈린다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="어서 와")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="어서 와", paid_turns=1)
     stats = [
         StatDef(
             entity_id=uuid.uuid4(),
@@ -289,7 +289,7 @@ async def _regenerate_story(
     image_error: Exception | None = None,
     arm: Callable[[pytest.MonkeyPatch], None] | None = None,
 ) -> _Case:
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=1)
     cell_id = await _add_room_cell_and_endings(db_session, room.room_id, ())
     if break_channel is not None:
         await _break_channel(db_session, break_channel)
@@ -307,7 +307,7 @@ async def _regenerate_character(
     image_error: Exception | None = None,
     arm: Callable[[pytest.MonkeyPatch], None] | None = None,
 ) -> _Case:
-    room = await _open_room(db_client, db_session, turns=1)
+    room = await _open_room(db_client, db_session, turns=1, paid_turns=1)
     image_id = await _add_room_situational_image(db_session, room.room_id)
     if break_channel is not None:
         await _break_channel(db_session, break_channel)
@@ -362,9 +362,7 @@ async def _preview_story(
     ending_verdicts: list[bool | Exception] | None = None,
     arm: Callable[[pytest.MonkeyPatch], None] | None = None,
 ) -> _Case:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     asset = await _make_asset(db_session, owner_user_id=user.id, status=AssetStatus.READY)
     await db_session.commit()
     await _login_as(db_client, user.id)

@@ -5,10 +5,8 @@
 LLM 을 실제로 태웠다. **이 비대칭이 의도라는 것을 테스트가 말해야 한다** — 안 그러면
 다음 사람이 "3곳을 빠뜨렸다"고 읽고 마저 채운다.
 
-셋업 관례는 `test_clover_gate.py`를 따른다 — 상한을 진짜로 소진시키지 않고
-`monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)`으로 클로버를 태운다.
-⚠️ 재생성은 **방을 먼저 만들어야** 하므로 상한 패치를 셋업 뒤로 미룬다 — 셋업 전송까지
-클로버로 내면 원장 단언이 셋업 잡음까지 세게 된다.
+기본 모델 턴에도 하루 무료분이 없어 모든 턴이 클로버로 나간다. 재생성·편집이 요구하는 앞 턴은 API 로 보내지 않고
+DB 에 심는다 — 셋업 전송까지 클로버로 내면 원장 단언이 셋업 잡음까지 세게 된다.
 
 ⚠️ 잔액은 `db_session.refresh(user)`로 다시 읽는다. 차감·환불이 **별도 세션·별도 트랜잭션**에서
 일어나 테스트 세션의 인스턴스는 낡아 있다.
@@ -26,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import router as chat_router
 from api.chat.prompt_builder import PromptRenderError
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.db.models import User
 from api.db.models.chat import ChatMessage
 from api.db.models.clover import CloverLedger, CloverSpendAllocation
@@ -43,8 +41,8 @@ from factories import (
     _override_llm_client,
     _parse_sse_events,
     _prepare_paid_turn,
+    _open_room,
     _setup_chat_room,
-    _user_message_id,
 )
 
 _CHAT_COST = clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
@@ -98,9 +96,7 @@ async def _run_failing_turn(
     failure: str,
 ) -> tuple[User, httpx.Response]:
     """`surface`(전송/재생성/미리보기)에서 `failure` 종류의 실패를 일으키고 응답을 돌려준다."""
-    user, method, path, body = await _prepare_paid_turn(
-        db_client, db_session, monkeypatch, surface=surface, balance=_START_BALANCE
-    )
+    user, method, path, body = await _prepare_paid_turn(db_client, db_session, surface=surface, balance=_START_BALANCE)
     if failure == "render":
         _patch_render_failure(monkeypatch, surface)
 
@@ -221,14 +217,11 @@ async def _allocations(db_session: AsyncSession, user_id: uuid.UUID) -> list[tup
 async def test_disconnect_mid_generation_refunds_to_the_original_lot(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
     surface: str,
 ) -> None:
     """판정 기준: 첫 토큰 뒤 LLM 을 기다리는 중 끊기면 원장에 `chat_spend`·`chat_refund` 한 쌍이 남고, 깎은 로트가 원래
     잔여로 돌아오며, 그 차감의 배분이 전부 환급된 것으로 표시된다. 가드가 없으면 원장에 `chat_spend` 만 남는다."""
-    user, method, path, body = await _prepare_paid_turn(
-        db_client, db_session, monkeypatch, surface=surface, balance=_START_BALANCE
-    )
+    user, method, path, body = await _prepare_paid_turn(db_client, db_session, surface=surface, balance=_START_BALANCE)
     started = asyncio.Event()
 
     _override_llm_client(_HangingLLMClient(started))
@@ -314,10 +307,9 @@ async def _run_body_failure(
     정상**이고, `ASGITransport`는 기본값(`raise_app_exceptions=True`)이라 그 예외가 테스트까지
     전파된다. 즉 **고친 뒤에도 예외는 그대로 올라온다** — 달라지는 건 돈뿐이다.
     """
-    # 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
-    # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
-    # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
-    # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
+    # 오늘치 확인을 마친 상태로 둔다. 채팅 게이트는 확인을 묻지 않지만, 이 테스트가 보는 것은 차감과 환불이라 확인 여부에
+    # 기대지 않게 한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
+    # 기본을 "오늘 확인됨"으로 바꾸면 이미지의 확인 게이트를 검증하는 테스트가 무력해진다.
     # 이 유저들은 실제로 chat_spend를 태우므로 매칭 로트가
     # 없으면 `CloverLotShortfallError`가 난다.
     user = await _make_user_with_clover_lot(
@@ -327,19 +319,15 @@ async def _run_body_failure(
     )
     await db_session.commit()
     await _login_as(db_client, user.id)
-    room_id = await _setup_chat_room(db_client, db_session, user)
-
     message_id: uuid.UUID | None = None
     if surface == "edit":
-        _override_llm_client(_FakeLLMClient(tokens=["첫", "응답"]))
-        try:
-            sent = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
-        finally:
-            _clear_llm_override()
-        assert sent.status_code == 200
-        message_id = await _user_message_id(db_session, room_id)
+        # 고칠 사용자 메시지와 그 뒤 응답을 DB 에 심는다(셋업 전송이 원장에 남지 않게).
+        room = await _open_room(db_client, db_session, turns=1, user=user)
+        room_id = room.room_id
+        message_id = room.turns[1][0].id
+    else:
+        room_id = await _setup_chat_room(db_client, db_session, user)
 
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     _override_llm_client(_FakeLLMClient(tokens=["안", "녕"]))
     raised: BaseException | None = None
     try:
@@ -437,18 +425,16 @@ async def test_route_body_failure_refunds_clover(
 async def test_dependency_failure_does_not_spend_clover(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
     surface: str,
 ) -> None:
     """존재하지 않는 방·세션이면 404 로 끝나고 클로버는 손대지 않는다.
 
-    상한을 0 으로 낮춰 **클로버를 낼 수밖에 없는 상태**로 만든 뒤 요청한다 — 안 그러면
-    무료분으로 통과해 단언이 항진명제가 된다.
+    잔액이 있고 오늘치 확인을 마친, **클로버를 낼 수밖에 없는 사용자**로 요청한다 — 면제 계정처럼 깎지 않는 사용자면 단언이
+    항진명제가 된다.
     """
-    # 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
-    # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
-    # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
-    # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
+    # 오늘치 확인을 마친 상태로 둔다. 채팅 게이트는 확인을 묻지 않지만, 이 테스트가 보는 것은 차감과 환불이라 확인 여부에
+    # 기대지 않게 한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
+    # 기본을 "오늘 확인됨"으로 바꾸면 이미지의 확인 게이트를 검증하는 테스트가 무력해진다.
     # 이 유저들은 실제로 chat_spend를 태우므로 매칭 로트가
     # 없으면 `CloverLotShortfallError`가 난다.
     user = await _make_user_with_clover_lot(
@@ -459,7 +445,6 @@ async def test_dependency_failure_does_not_spend_clover(
     await db_session.commit()
     await _login_as(db_client, user.id)
 
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     missing = uuid.uuid4()
 
     if surface == "send":

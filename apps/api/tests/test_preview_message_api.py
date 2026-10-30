@@ -26,6 +26,7 @@ from factories import (
     EndingPriorityScenario,
     _clear_llm_override,
     _login_as,
+    _make_paying_user,
     _make_user,
     _override_llm_client,
     _parse_sse_events,
@@ -201,9 +202,7 @@ async def test_send_preview_message_unknown_session_404(db_client: httpx.AsyncCl
 
 
 async def test_send_preview_message_character_streams_and_appends(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     session_id = await _start_session(db_client, _character_payload())
 
@@ -232,9 +231,7 @@ async def test_send_preview_message_character_streams_and_appends(db_client: htt
 async def test_send_preview_message_story_selects_template_instruction(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     """미리보기 생성 프롬프트 조립(`build_preview_prompt`)은 `payload.prompt_template`을
     골라 시스템 지시문(L0.5)에 잇는다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     session_id = await _start_session(db_client, _story_payload(promptTemplate="emotional"))
 
@@ -258,9 +255,7 @@ async def test_send_preview_message_policy_violation_emits_policy_warning(
 ) -> None:
     """미리보기도 본 채팅·재생성과 같은 턴 골격(`run_turn`)의 `except LLMPolicyViolationError` 핸들러를 지나지만
     여태 이 경로만 테스트가 없었다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     session_id = await _start_session(db_client, _character_payload())
 
@@ -288,9 +283,7 @@ async def test_send_preview_message_policy_violation_emits_policy_warning(
 async def test_send_preview_message_llm_error_emits_error_event(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     session_id = await _start_session(db_client, _character_payload())
 
@@ -313,9 +306,7 @@ async def test_send_preview_message_llm_error_emits_error_event(
 
 
 async def test_send_preview_message_story_stat_change(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     stat_id = str(uuid.uuid4())
     stat = _stat_def_item(id=stat_id)
@@ -351,9 +342,7 @@ async def test_send_preview_message_ignores_old_direction_and_step_keys_on_stats
 ) -> None:
     """옛 빌더 번들은 없어진 변화 방향·한 턴 최대 폭 키를 보낼 수 있다. 미리보기 시작은 그 키를 무시하고 받아 주고, 판정은
     그 두 옵션 없이 규칙 폭만큼 움직인다(감소만·최대 3 이었어도 +30)."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     stat_id = str(uuid.uuid4())
     stat = _stat_def_item(id=stat_id, changeDirection="decrease", maxChangePerTurn=3)
@@ -386,9 +375,7 @@ async def test_send_preview_message_judgment_llm_failure_still_completes_the_tur
 ) -> None:
     """실제 채팅과 동일하게, 판정 LLM 실패는 SSE 제너레이터 밖으로 새지 않고 흡수된다 —
     이미 스트리밍된 응답은 세션에 정상 반영되고 그 턴의 판정만 포기한다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     stat_id = str(uuid.uuid4())
     stat = _stat_def_item(id=stat_id)
@@ -436,9 +423,7 @@ async def test_send_preview_message_redis_save_failure_still_completes_the_turn(
 
     monkeypatch.setattr(chat_router, "update_preview_session", _raise_redis_error)
 
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     session_id = await _start_session(db_client, _character_payload())
 
@@ -486,9 +471,7 @@ async def test_send_preview_message_serialization_failure_at_save_still_complete
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
 
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     session_id = await _start_session(db_client, _character_payload())
 
@@ -517,9 +500,7 @@ async def test_send_preview_message_serialization_failure_at_save_still_complete
 
 
 async def test_send_preview_message_keyword_note_injected_into_prompt(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     setup = _starting_setup_item()
     session_id = await _start_session(
@@ -557,9 +538,7 @@ async def _preview_prompts(
     client: httpx.AsyncClient, db_session: AsyncSession, payload: dict[str, object], turns: list[tuple[str, str]]
 ) -> list[str]:
     """`turns` 는 (사용자 메시지, 그 턴의 모델 응답) 쌍. 턴마다 생성 프롬프트를 모은다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=len(turns))
     await _login_as(client, user.id)
     session_id = await _start_session(client, payload)
     fake = _FakeLLMClient(tokens=[])
@@ -635,9 +614,7 @@ async def test_send_preview_message_ignores_person_name_inside_opening_media_tag
 
 
 async def test_send_preview_message_shortcut_prompt_injected(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     shortcut_id = str(uuid.uuid4())
     session_id = await _start_session(
@@ -681,9 +658,7 @@ async def test_send_preview_message_invalid_shortcut_id_400(db_client: httpx.Asy
 
 
 async def test_send_preview_message_reaches_ending(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     ending = _ending_item(turnCountGate=1)
     # 규칙 있는 스탯을 둬 스탯 판정 호출도 일어나게 한다 — 호출부 귀속(아래)을 두 판정 모두에서 본다.
@@ -736,9 +711,7 @@ async def test_send_preview_message_does_not_call_ending_judgment_when_stat_rule
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """실채팅과 같이 규칙을 먼저 본다 — 초기값 50 에서 `>= 80` 은 거짓이라 엔딩 판정을 부르지 않는다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     stat = _stat_def_item(initialValue=50)
     session_id = await _start_session(
@@ -761,9 +734,7 @@ async def test_send_preview_message_judges_endings_in_order_and_stops_at_first_r
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """규칙 거짓인 첫 엔딩은 판정 없이 넘어가고, 규칙 참·판정 거짓인 둘째 다음 셋째에서 발동하면 넷째는 판정하지 않는다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     stat = _stat_def_item(initialValue=50)
     endings = [
@@ -796,9 +767,7 @@ async def test_send_preview_message_treats_rule_on_missing_stat_as_false_and_com
 ) -> None:
     """빌더는 스탯을 지워도 그 스탯을 가리키는 규칙을 남길 수 있고 미리보기 시작은 이를 막지 않는다. 그 항목은
     거짓이고 턴은 세션에 저장되며, 어느 엔딩·스탯인지 경고로 남긴다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     missing_stat_id = uuid.uuid4()
     ending = _ending_item(statRules=[_gte_rule(missing_stat_id, 0)])
@@ -826,9 +795,7 @@ async def test_send_preview_message_judges_priority_stat_group_by_highest_value(
 ) -> None:
     """실채팅(`test_send_message_judges_priority_stat_group_by_highest_value`)과 같은 시나리오 — 미리보기도 같은 순서
     함수를 써서 판정한 엔딩과 발동한 엔딩이 같아야 한다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     rule_deltas, fired_rule_ids = ending_priority_stat_rules(scenario)
     stats = {
@@ -873,9 +840,7 @@ async def test_send_preview_message_judges_ending_with_valueless_priority_stat_a
 ) -> None:
     """빌더는 스탯을 지운 초안으로도 미리보기를 시작할 수 있다. 우선 스탯 값이 없는 엔딩은 무리에서 빠져 제자리에서
     판정되고, 어느 엔딩·스탯인지 경고로 남긴다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     missing_stat_id = uuid.uuid4()
     ending = _ending_item(priorityStatId=str(missing_stat_id))
@@ -898,9 +863,7 @@ async def test_send_preview_message_judges_ending_with_valueless_priority_stat_a
 
 
 async def test_send_preview_message_skips_judgment_after_ending_reached(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=2)
     await _login_as(db_client, user.id)
     ending = _ending_item(turnCountGate=1)
     session_id = await _start_session(
@@ -928,9 +891,7 @@ async def test_send_preview_message_skips_judgment_after_ending_reached(db_clien
 async def test_preview_messages_do_not_touch_chat_rooms(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     session_id = await _start_session(db_client, _character_payload())
 
@@ -954,9 +915,7 @@ async def test_send_preview_message_injects_the_authors_default_persona(
 ) -> None:
     """미리보기는 작가 본인의 **기본** 프로필을 쓴다. 기본이 아닌 프로필을 하나 더 둬서
     "유저의 아무 프로필"이 아니라 기본을 고른다는 것을 가른다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     not_default = UserPersona(user_id=user.id, name="바다", gender="male", description="기본 아님")
     default = UserPersona(user_id=user.id, name="하늘", gender="female", description="밤하늘을 좋아한다")
     db_session.add_all([not_default, default])
@@ -984,9 +943,7 @@ async def test_send_preview_message_story_injects_the_authors_default_persona(
 ) -> None:
     """`build_preview_prompt`의 **스토리** 분기도 기본 프로필을 싣는다(위 테스트는 캐릭터
     payload라 캐릭터 분기만 탄다)."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     persona = UserPersona(user_id=user.id, name="하늘", gender="male", description="바다를 좋아한다")
     db_session.add(persona)
     await db_session.flush()
@@ -1012,9 +969,7 @@ async def test_send_preview_message_without_default_persona_has_no_persona_secti
 ) -> None:
     """기본이 없으면 빈 상태다 — 프로필을 갖고 있어도 기본이 아니면 들어가지
     않는다. 섹션 머리글(확정 문안의 첫 줄)이 없는 것으로 섹션째 드롭됐음을 본다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     db_session.add(UserPersona(user_id=user.id, name="바다", gender=None, description=""))
     await db_session.flush()
     await _login_as(db_client, user.id)
@@ -1050,9 +1005,7 @@ async def test_send_preview_message_names_the_user_like_a_real_room(
     """미리보기는 실제 방과 같은 규칙으로 이름을 고른다 — 작가의 기본 프로필, 없으면 "당신". 생성 채널에는 이름 한 줄이
     실리지 않는다. 사용자 메시지는 그대로다. 배포 전에 받은 화면은 지워진 작품 기본 이름 키를 미리보기 시작 요청에도
     실어 보내는데, 받아 주되 이름 고르기에 쓰지 않는다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     if persona_name is not None:
         persona = UserPersona(user_id=user.id, name=persona_name, gender=None, description="")
         db_session.add(persona)

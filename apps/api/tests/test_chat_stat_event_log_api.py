@@ -182,7 +182,7 @@ def _assert_agrees(record: ChatTurn, start: dict[str, float], defs: list[StatDef
 async def test_a_send_records_what_fired_what_applied_and_the_counter_tick(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=1)
     a1, a2 = await _trust_rules(db_session, stats)
 
     await _send(db_client, room, ["a2", "zz9", "a1"])
@@ -201,7 +201,7 @@ async def test_a_rule_that_cannot_move_a_maxed_stat_is_recorded_as_clamped_witho
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """이미 최대인 신뢰에 +5 — `stat_changes` 에는 키가 없지만 이벤트는 적용됐고 잘렸다고 남긴다."""
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=1)
     await db_session.execute(
         sa.update(ChatRoomStat)
         .where(ChatRoomStat.chat_room_id == room.room_id, ChatRoomStat.stat_entity_id == uuid.UUID(stats.trust))
@@ -221,7 +221,7 @@ async def test_with_the_switch_off_no_path_fills_the_column_and_stats_move_the_s
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """꺼짐: 보내기·재판정 재생성·재판정 실패 재생성 모두 칸이 `[]` 이고, 값과 `stat_changes` 는 켠 때와 같은 결과다."""
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=3)
 
     await _send(db_client, room, ["a1"])
     sent = await _last_columns(db_session, room)
@@ -243,7 +243,7 @@ async def test_the_switch_changes_neither_the_prompts_nor_the_stats(
     runs: list[tuple[list[tuple[str, str]], tuple[float, float]]] = []
     for enabled in (False, True):
         monkeypatch.setattr(settings, "stat_event_log", enabled)
-        room, stats = await _story_room(db_session, db_client)
+        room, stats = await _story_room(db_session, db_client, paid_turns=3)
         prompts = [
             *(await _send(db_client, room, ["a1"])).prompts,
             *(await _regenerate(db_client, room, ["a2"])).prompts,
@@ -262,7 +262,7 @@ async def test_the_switch_changes_neither_the_prompts_nor_the_stats(
 async def test_a_rejudged_regeneration_records_the_rejudgment_against_the_turns_starting_values(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     _, a2 = await _trust_rules(db_session, stats)
     await _send(db_client, room, ["a1"])
 
@@ -282,7 +282,7 @@ async def test_a_regeneration_whose_rejudgment_failed_carries_the_replaced_recor
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """재판정이 끝내 실패하면 스탯도 `stat_changes` 도 옛 기록 그대로이므로 이벤트도 옛 기록의 것을 옮겨야 두 칸이 맞는다."""
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, room, ["a1"])
     original = await _last_columns(db_session, room)
 
@@ -300,7 +300,7 @@ async def test_a_regeneration_that_does_not_rejudge_carries_the_replaced_records
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """마지막 턴이 아닌 응답(옛 삭제가 뒤 턴을 지운 방)은 재판정 조건 밖이라 판정을 부르지 않고 옛 기록을 옮긴다."""
-    room, _stats = await _story_room(db_session, db_client)
+    room, _stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, room, ["a1"])
     original = await _last_columns(db_session, room)
     await db_session.execute(sa.text("UPDATE chat_rooms SET turn_count = 2 WHERE id = :id"), {"id": room.room_id})
@@ -323,7 +323,7 @@ async def test_a_regeneration_that_does_not_rejudge_carries_the_replaced_records
 async def test_restoring_the_previous_reply_writes_no_record_and_leaves_both_records_alone(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, _stats = await _story_room(db_session, db_client)
+    room, _stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, room, ["a1"])
     await _regenerate(db_client, room, ["a2"])
     before = await _records(db_session, room)
@@ -343,7 +343,7 @@ async def test_restoring_the_previous_reply_writes_no_record_and_leaves_both_rec
 async def test_deleting_the_last_reply_rewinds_stats_without_touching_its_record(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=1)
     await _send(db_client, room, ["a1"])
     before = await _records(db_session, room)
     last = (await _replies(db_session, room))[-1]
@@ -359,7 +359,7 @@ async def test_deleting_the_last_reply_rewinds_stats_without_touching_its_record
 async def test_an_edit_records_its_new_turn_and_leaves_the_removed_turns_record_alone(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     _, a2 = await _trust_rules(db_session, stats)
     await _send(db_client, room, ["a1"])
     before = await _records(db_session, room)

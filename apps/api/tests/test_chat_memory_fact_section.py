@@ -378,10 +378,10 @@ def test_rooms_with_fewer_than_five_rows_get_no_relevant_rows(fillers: int, pull
 
 
 async def _fact_room(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, *, lane: str = "story"
+    db_client: httpx.AsyncClient, db_session: AsyncSession, *, lane: str = "story", paid_turns: int = 0
 ) -> tuple[Room, dict[int, uuid.UUID]]:
     """8턴짜리 방에 스냅샷 셋(턴 2·4·6 응답까지 접힘)을 심고 (방, 턴 → 스냅샷 id) 를 돌려준다."""
-    room = await _open_room(db_client, db_session, turns=8, lane=lane)
+    room = await _open_room(db_client, db_session, turns=8, lane=lane, paid_turns=paid_turns)
     snapshots: dict[int, uuid.UUID] = {}
     for turn in (2, 4, 6):
         assistant = room.turns[turn][1]
@@ -741,10 +741,10 @@ async def _records(db_session: AsyncSession, room_id: uuid.UUID) -> dict[str, Ch
 
 
 async def _relevance_room(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, *, paid_turns: int = 0
 ) -> tuple[Room, dict[str, uuid.UUID], list[uuid.UUID]]:
     """150자 사실 여섯(렌더 순서로 앞 넷만 실린다)과 중요도 1 의 등대·자물쇠 줄. (방, 이름 → id, 앞 넷의 id 렌더 순서)."""
-    room, snapshots = await _fact_room(db_client, db_session)
+    room, snapshots = await _fact_room(db_client, db_session, paid_turns=paid_turns)
     ids = await _plant(db_session, room, snapshots[2], [_LIGHTHOUSE, _LOCKER, *_fillers(6)])
     fillers_in_render_order = list(reversed(ids[2:]))[:4]
     return room, {"lighthouse": ids[0], "locker": ids[1]}, fillers_in_render_order
@@ -755,7 +755,7 @@ async def test_send_regenerate_and_edit_record_their_own_facts(
 ) -> None:
     """세 경로 모두 그 턴에 다시 고른 사실을 줄 순서로 자기 기록 행에 남긴다 — 재생성은 앞 기록을 물려받지 않고, 수정은 고친
     글로 관련 행을 고른다. 글자 수는 줄 길이다."""
-    room, ids, fillers = await _relevance_room(db_client, db_session)
+    room, ids, fillers = await _relevance_room(db_client, db_session, paid_turns=3)
     _facts_on(monkeypatch)
     fake = _PromptCapture()
 
@@ -799,7 +799,7 @@ async def test_fact_read_failure_is_absorbed_and_the_turn_finishes(
 ) -> None:
     """사실 읽기가 DB 오류(실제로 실패한 문장)로 끝나면 섹션 없이 턴을 마치고 경고·승격을 남긴다. 요청 세션은 다음 문장을 계속
     쓸 수 있어야 한다(턴 기록까지 커밋된다)."""
-    room, snapshots = await _fact_room(db_client, db_session)
+    room, snapshots = await _fact_room(db_client, db_session, paid_turns=1)
     await _plant(db_session, room, snapshots[2], [_AUDITION])
     _facts_on(monkeypatch)
     monkeypatch.setattr(memory_fact_section, "fact_rows_statement", lambda room_id, cursor: sa.text("SELECT 1/0"))
@@ -824,7 +824,7 @@ async def test_fact_selection_failure_is_absorbed_and_the_turn_finishes(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """DB 가 아닌 곳(고르기·렌더)에서 난 예외도 SSE 로 새지 않는다 — 섹션 없이 턴을 마치고 스택이 실린 경고와 승격 하나를 남긴다."""
-    room, snapshots = await _fact_room(db_client, db_session)
+    room, snapshots = await _fact_room(db_client, db_session, paid_turns=1)
     await _plant(db_session, room, snapshots[2], [_AUDITION])
     _facts_on(monkeypatch)
 
@@ -852,7 +852,7 @@ async def test_replay_rebuilds_fact_lines_from_turn_record(
 ) -> None:
     """리플레이는 지금 행으로 다시 고르지 않고 그 턴 기록의 id 로 줄을 다시 렌더한다 — 턴 뒤에 같은 키의 새 값이 쓰여도 그 턴의
     프롬프트를 바이트까지 다시 만든다. 기록한 사실이 사라졌으면 그 턴은 다시 만들 수 없다고 거부한다."""
-    room, ids, _ = await _relevance_room(db_client, db_session)
+    room, ids, _ = await _relevance_room(db_client, db_session, paid_turns=1)
     _facts_on(monkeypatch)
     before = await _room_messages(db_session, room.room_id)
     fake = _PromptCapture()
@@ -897,7 +897,7 @@ async def test_replay_rebuilds_fact_lines_from_turn_record(
 async def test_replay_of_a_turn_without_facts_gets_no_lines(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, _ = await _fact_room(db_client, db_session)
+    room, _ = await _fact_room(db_client, db_session, paid_turns=1)
     await _send(db_client, "POST", f"/chat-rooms/{room.room_id}/messages", {"content": "안녕"}, _PromptCapture())
     record = (await _records(db_session, room.room_id))["send"]
     _facts_on(monkeypatch)

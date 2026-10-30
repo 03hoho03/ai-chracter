@@ -195,7 +195,7 @@ async def _set_stat(db_session: AsyncSession, room: Room, stat_id: str, value: f
 async def test_editing_an_earlier_message_leaves_the_room_as_if_the_removed_turns_never_happened(
     db_client: httpx.AsyncClient, db_session: AsyncSession, with_regenerate_chain: bool
 ) -> None:
-    edited, _ = await _story_room(db_session, db_client)
+    edited, _ = await _story_room(db_session, db_client, paid_turns=5)
     await _send(db_client, edited, "첫 턴", "a1")
     await _send(db_client, edited, "둘째 턴", "a2")
     if with_regenerate_chain:
@@ -205,7 +205,7 @@ async def test_editing_an_earlier_message_leaves_the_room_as_if_the_removed_turn
     done = await _edit(db_client, edited, await _user_message(db_session, edited, "둘째 턴"), "고친 둘째 턴")
 
     # 쌍둥이 방은 지운 턴 없이 같은 대화를 한다. 방마다 주인으로 로그인하므로 앞 방의 요청이 끝난 뒤 만든다.
-    twin, _ = await _story_room(db_session, db_client)
+    twin, _ = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, twin, "첫 턴", "a1")
     await _send(db_client, twin, "고친 둘째 턴")
     assert await _state(db_session, edited) == await _state(db_session, twin) == (78, 28, 2)
@@ -215,7 +215,7 @@ async def test_editing_an_earlier_message_leaves_the_room_as_if_the_removed_turn
 async def test_editing_the_first_message_returns_the_stats_to_their_starting_values(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=4)
     await _send(db_client, room, "첫 턴", "a1")
     await _regenerate(db_client, room, "a2")
     await _send(db_client, room, "둘째 턴", "a1")
@@ -230,7 +230,7 @@ async def test_editing_with_no_reply_after_the_edit_point_has_nothing_to_rewind(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """마지막 사용자 메시지 뒤에 응답이 없으면(생성이 실패한 턴) 지울 턴이 없다."""
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, room, "첫 턴", "a1")
     last_reply = (await _replies(db_session, room))[-1]
     await db_session.execute(sa.delete(ChatMessage).where(ChatMessage.id == last_reply))
@@ -246,7 +246,7 @@ async def test_editing_with_no_reply_after_the_edit_point_has_nothing_to_rewind(
 async def test_editing_over_old_turns_without_records_rewinds_only_the_recorded_turns_and_says_so(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, stats = await _story_room(db_session, db_client, turns=2)
+    room, stats = await _story_room(db_session, db_client, turns=2, paid_turns=2)
     second_user_id = room.turns[2][0].id
     # 기록을 쓰기 전에 보낸 두 턴이 남긴 값.
     await _set_stat(db_session, room, stats.trust, 60)
@@ -264,7 +264,7 @@ async def test_editing_over_old_turns_without_records_rewinds_only_the_recorded_
 async def test_editing_a_room_whose_removed_replies_all_lack_records_changes_no_stat(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, stats = await _story_room(db_session, db_client, turns=2)
+    room, stats = await _story_room(db_session, db_client, turns=2, paid_turns=1)
     second_user_id = room.turns[2][0].id
     await _set_stat(db_session, room, stats.trust, 60)
     await _set_stat(db_session, room, stats.days, 20)
@@ -279,7 +279,7 @@ async def test_rewinding_on_edit_brings_back_the_exact_value_before_a_turn_that_
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """98 에서 +5 는 100 에서 잘린다. 되돌린 값은 기록의 반영 전 값(98)이다 — 변화량을 빼면 95 가 된다."""
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _set_stat(db_session, room, stats.trust, 98)
     await _send(db_client, room, "첫 턴", "a1")
     assert await _state(db_session, room) == (100, 29, 1)
@@ -294,7 +294,7 @@ async def test_edit_generation_prompt_matches_the_original_turns_prompt_when_the
 ) -> None:
     """신뢰 75 이상에서만 실리는 상황 노트가 있는 방. 첫 턴은 73 에서 생성하고 78 로 올린다. 같은 글로 고치면 73 으로 되돌린 뒤
     생성하므로 노트가 빠진 같은 프롬프트다 — 되돌리지 않으면 78 이라 노트가 실려 달라진다."""
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     setup = await _setup_of(db_session, room.room_id)
     _add_situation_note(
         db_session,
@@ -329,7 +329,7 @@ async def test_edit_generation_prompt_matches_the_original_turns_prompt_when_the
 async def test_deleting_the_last_reply_leaves_the_room_as_if_that_turn_never_happened(
     db_client: httpx.AsyncClient, db_session: AsyncSession, with_regenerate_chain: bool
 ) -> None:
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=4)
     await _send(db_client, room, "첫 턴", "a1")
     await _send(db_client, room, "둘째 턴", "a2")
     if with_regenerate_chain:
@@ -338,7 +338,7 @@ async def test_deleting_the_last_reply_leaves_the_room_as_if_that_turn_never_hap
 
     body = await _delete(db_client, room, (await _replies(db_session, room))[-1])
 
-    twin, _ = await _story_room(db_session, db_client)
+    twin, _ = await _story_room(db_session, db_client, paid_turns=1)
     await _send(db_client, twin, "첫 턴", "a1")
     assert await _state(db_session, room) == await _state(db_session, twin) == (78, 29, 1)
     assert body == {"statRewind": "rewound"}
@@ -347,7 +347,7 @@ async def test_deleting_the_last_reply_leaves_the_room_as_if_that_turn_never_hap
 async def test_deleting_turns_from_the_end_one_by_one_returns_to_the_opening_state(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=4)
     await _send(db_client, room, "첫 턴", "a1")
     await _regenerate(db_client, room, "a2")
     await _send(db_client, room, "둘째 턴", "a1")
@@ -369,7 +369,7 @@ async def test_deleting_turns_from_the_end_one_by_one_returns_to_the_opening_sta
 async def test_deleting_a_middle_reply_keeps_stats_and_turn_count_and_says_so(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=3)
     await _send(db_client, room, "첫 턴", "a1")
     await _send(db_client, room, "둘째 턴", "a2")
     await _send(db_client, room, "셋째 턴", "a1")
@@ -386,7 +386,7 @@ async def test_after_a_middle_reply_is_deleted_the_last_reply_is_still_rejudged_
 ) -> None:
     """중간 삭제가 턴 수를 줄이면 남은 마지막 응답의 기록 번호(3)가 방 턴 수와 어긋나 재생성이 그 턴을 되돌려 다시 판정하지
     못한다."""
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=4)
     await _send(db_client, room, "첫 턴", "a1")
     await _send(db_client, room, "둘째 턴", "a2")
     await _send(db_client, room, "셋째 턴", "a1")
@@ -402,7 +402,7 @@ async def test_after_a_middle_reply_is_deleted_the_last_reply_is_still_rejudged_
 async def test_after_the_last_reply_is_deleted_the_previous_reply_can_be_rejudged_and_the_next_turn_takes_its_number(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=4)
     await _send(db_client, room, "첫 턴", "a1")
     await _send(db_client, room, "둘째 턴", "a1")
     await _delete(db_client, room, (await _replies(db_session, room))[-1])
@@ -450,7 +450,7 @@ async def test_deleting_the_last_reply_whose_turn_is_not_the_rooms_last_turn_kee
 ) -> None:
     """옛 이미지의 메시지 삭제는 턴 수를 줄이지 않았다 — 그 방에서 마지막 응답의 기록 번호(2)는 방 턴 수(3)보다 작고, 그 기록의
     반영 전 값은 옛 삭제가 남긴 효과까지 지운다. 재생성·되돌리기와 같은 조건이라 되돌리지 않는다."""
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, room, "첫 턴", "a1")
     await _send(db_client, room, "둘째 턴", "a2")
     await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(turn_count=3))
@@ -466,7 +466,7 @@ async def test_rewinding_on_delete_respects_both_ends_of_the_range(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """신뢰 98 → 100(위에서 잘림), 남은 날 1 → 0 → 0(아래에서 잘림). 지울 때마다 그 턴 전 값으로 정확히 돌아간다."""
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _set_stat(db_session, room, stats.trust, 98)
     await _set_stat(db_session, room, stats.days, 1)
     await _send(db_client, room, "첫 턴", "a1")
@@ -481,7 +481,7 @@ async def test_rewinding_on_delete_respects_both_ends_of_the_range(
 
 
 async def test_deleting_a_user_message_changes_nothing(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=1)
     await _send(db_client, room, "첫 턴", "a1")
 
     body = await _delete(db_client, room, await _user_message(db_session, room, "첫 턴"))
@@ -493,9 +493,11 @@ async def test_deleting_a_user_message_changes_nothing(db_client: httpx.AsyncCli
 # ── 엔딩 ──────────────────────────────────────────────────────────────────────────────────
 
 
-async def _ended_room(db_client: httpx.AsyncClient, db_session: AsyncSession) -> tuple[Room, uuid.UUID]:
+async def _ended_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, *, paid_turns: int = 0
+) -> tuple[Room, uuid.UUID]:
     """첫 턴에 엔딩이 난 방(신뢰 78, 남은 날 29)과 그 엔딩 entity_id."""
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=paid_turns)
     setup = await _setup_of(db_session, room.room_id)
     ending_id = uuid.uuid4()
     ending = Ending(
@@ -540,7 +542,7 @@ async def _unlocks(db_session: AsyncSession, room: Room) -> list[uuid.UUID]:
 async def test_editing_away_the_ending_turn_rewinds_the_stats_but_keeps_the_ending(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, ending_id = await _ended_room(db_client, db_session)
+    room, ending_id = await _ended_room(db_client, db_session, paid_turns=2)
 
     done = await _edit(db_client, room, await _user_message(db_session, room, "약속을 지킨다"), "다시")
 
@@ -554,7 +556,7 @@ async def test_editing_away_the_ending_turn_rewinds_the_stats_but_keeps_the_endi
 async def test_deleting_the_ending_reply_rewinds_the_stats_but_keeps_the_ending(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room, ending_id = await _ended_room(db_client, db_session)
+    room, ending_id = await _ended_room(db_client, db_session, paid_turns=1)
 
     body = await _delete(db_client, room, (await _replies(db_session, room))[-1])
 

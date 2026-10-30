@@ -43,7 +43,7 @@ from api.llm.client import LLMCallContext, LLMClient
 from factories import (
     _clear_llm_override,
     _login_as,
-    _make_user,
+    _make_paying_user,
     _override_llm_client,
     _parse_sse_events,
     _story_with_setup,
@@ -139,10 +139,11 @@ async def _hidden_story(db_session: AsyncSession, *, signal: bool = True) -> _St
     return _Story(author_id, content, setup, str(shown.entity_id), str(hidden.entity_id), str(doubt.entity_id))
 
 
-async def _player_room(db_client: httpx.AsyncClient, db_session: AsyncSession, story: _Story) -> uuid.UUID:
+async def _player_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, story: _Story, *, paid_turns: int = 0
+) -> uuid.UUID:
     """작가가 아닌 플레이어의 방."""
-    player = _make_user()
-    db_session.add(player)
+    player = await _make_paying_user(db_session, turns=paid_turns)
     await db_session.commit()
     await _login_as(db_client, player.id)
     return await _create_room(db_client, story)
@@ -218,8 +219,7 @@ async def test_every_room_response_leaves_out_the_hidden_stats_and_the_judgment_
     """방 응답을 돌려주는 여덟 경로가 모두 숨긴 두 스탯의 정의·값만 빼고 보이는 스탯은 남긴다. 정의가 없는 고아 값도 빠진다.
     스냅숏의 스탯·엔딩에는 판정 재료 칸이 없고 엔딩 규칙은 빈 목록이다. 숨긴 스탯 값은 DB 에 그대로 남아 판정이 읽는다."""
     story = await _hidden_story(db_session)
-    player = _make_user()
-    db_session.add(player)
+    player = await _make_paying_user(db_session, turns=2)
     await db_session.commit()
     await _login_as(db_client, player.id)
     created = await _post_room(db_client, story)
@@ -308,7 +308,7 @@ async def test_a_turn_streams_only_visible_stat_changes_and_one_anonymous_signal
 ) -> None:
     """엔딩 문턱(속마음 ≥ 40)을 넘겨도 판정이 거절하는 턴. 숨긴 스탯 값은 DB 에서 바뀐다."""
     story = await _hidden_story(db_session, signal=signal)
-    room_id = await _player_room(db_client, db_session, story)
+    room_id = await _player_room(db_client, db_session, story, paid_turns=1)
 
     events = await _send(db_client, room_id, _JudgeLLM(fired))
 
@@ -327,7 +327,7 @@ async def test_an_ending_on_a_hidden_stat_is_still_reached(
 ) -> None:
     """엔딩 판정의 입력은 숨김과 무관하다 — 숨긴 스탯이 문턱을 넘긴 턴에 엔딩에 닿는다. 신호는 엔딩 앞에 나간다."""
     story = await _hidden_story(db_session)
-    room_id = await _player_room(db_client, db_session, story)
+    room_id = await _player_room(db_client, db_session, story, paid_turns=1)
 
     events = await _send(db_client, room_id, _JudgeLLM(["b1"], ending=True))
 
@@ -343,7 +343,7 @@ async def test_editing_a_message_streams_the_signal_instead_of_hidden_stat_chang
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     story = await _hidden_story(db_session)
-    room_id = await _player_room(db_client, db_session, story)
+    room_id = await _player_room(db_client, db_session, story, paid_turns=2)
     await _send(db_client, room_id, _JudgeLLM([]))
     user_message = await _last_message(db_session, room_id, ChatMessageRole.USER)
 
@@ -366,7 +366,7 @@ async def test_regenerating_signals_hidden_stats_changed_from_the_turn_start(
     신호가 서고, 시작값으로 돌아가면(42 → 37) 지금 값과는 달라도 이번 턴에 바뀐 것이 없으니 서지 않는다. 보이는 스탯의
     `statChange` 는 그대로 지금 값 대비다(화면이 지금 값을 들고 있다)."""
     story = await _hidden_story(db_session)
-    room_id = await _player_room(db_client, db_session, story)
+    room_id = await _player_room(db_client, db_session, story, paid_turns=4)
     await _send(db_client, room_id, _JudgeLLM([]))
     path = f"/chat-rooms/{room_id}/regenerate"
 

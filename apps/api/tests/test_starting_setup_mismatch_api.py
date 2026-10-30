@@ -60,6 +60,7 @@ from factories import (
     _get_genre,
     _login_as,
     _make_asset,
+    _make_paying_user,
     _make_user,
     _NeverCalledLLMClient,
     _override_llm_client,
@@ -487,9 +488,7 @@ async def test_character_room_send_message_and_play_guide_are_unaffected(
     호출한다**(SSE 3경로 중 `_starting_setup_dependency`를 거치는 경로) — 적대적 리뷰가
     이름은 `send_message`를 약속하면서 본문은 play-guide/reset/get만 부른다는 것을 지적해
     채웠다(2026-09-18, 이전엔 play-guide/reset 라우트만 덮고 send_message는 무커버였다)."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
     await _login_as(db_client, user.id)

@@ -1,8 +1,8 @@
 """상위 모델 방의 턴 과금 — 게이트 갈래, 생성 모델의 출처, 상위 모델 가격의 환불.
 
-Gemini 방의 갈래(면제 통과·일일 무료분·하루 1회 확인·Redis 장애 통과)는 `test_clover_gate.py` 와
-`test_user_rate_limit_gate.py` 가 그대로 지킨다. 여기서는 상위 모델 방이 그 갈래를 **타지 않는** 것을 본다 — 면제
-계정도 내고, 무료분을 쓰지도 깎지도 않고, 하루 1회 확인을 묻지 않고, Redis 가 고장 나면 공짜로 통과시키지 않고 거절한다.
+Gemini 방의 갈래(면제 통과·본인인증 게이트·Redis 장애에도 차감)는 `test_clover_gate.py` 와 `test_user_rate_limit_gate.py`
+가 지킨다. 여기서는 상위 모델 방이 그 갈래를 **타지 않는** 것을 본다 — 면제 계정도 내고, 하루 1회 확인을 묻지 않고, Redis 가
+고장 나면 분당 상한 없이 열지 않고 거절한다.
 
 셋업 관례는 `test_clover_gate.py` 와 같다(진짜 방, 상한은 `monkeypatch` 로 조인다, 잔액은 `refresh` 로 다시 읽는다).
 """
@@ -36,6 +36,7 @@ from factories import (
     _login_as,
     _make_published_character,
     _make_user_with_clover_lot,
+    _open_room,
     _override_llm_client,
     _parse_sse_events,
 )
@@ -124,8 +125,8 @@ async def test_a_plain_account_picks_opus_and_its_turn_charges_the_opus_price(
 async def test_premium_turn_charges_its_price_and_generates_with_that_model(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """무료분이 남아 있어도(기본 상한, 소진 패치 없음) 상위 모델 턴은 그 모델 가격을 낸다. 하루 1회 확인을 한 적이 없어도
-    묻지 않는다 — 모델을 고를 때 본 턴당 가격이 확인이다."""
+    """상위 모델 턴은 그 모델 가격을 낸다. 하루 1회 확인을 한 적이 없어도 묻지 않는다 — 모델을 고를 때 본 턴당 가격이
+    확인이다."""
     user = await _user(db_client, db_session, monkeypatch)
     room_id = await _room(db_client, db_session, user, "opus")
     fake = _FakeLLMClient(tokens=["응", "답"])
@@ -152,26 +153,10 @@ async def test_premium_turn_charges_an_exempt_account(
     assert await _ledger(db_session, user.id) == [("chat_spend", -clover.CLOVER_MODEL_PRICES["opus"].chat_turn)]
 
 
-async def test_premium_turn_does_not_use_up_the_free_daily_quota(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """무료분 1턴짜리 날에 상위 모델 턴을 먼저 돌려도, 같은 방을 Gemini 로 돌린 다음 턴은 무료다. 상위 모델 턴이 일일
-    카운터를 올리면 둘째 턴이 무료분을 넘겨 Gemini 값을 낸다(오늘 확인을 해 둬서 확인 429 가 아니라 차감으로 드러난다)."""
-    user = await _user(db_client, db_session, monkeypatch, confirmed_today=True)
-    room_id = await _room(db_client, db_session, user, "opus")
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 1)
-
-    assert (await _send(db_client, room_id)).status_code == 200
-    await _set_model(db_session, room_id, None)
-    assert (await _send(db_client, room_id)).status_code == 200
-
-    assert await _ledger(db_session, user.id) == [("chat_spend", -_OPUS)]
-
-
 async def test_premium_turn_without_enough_clover_is_the_clover_shortage_429(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Gemini 가격으로는 낼 수 있는 잔액이어도 상위 모델 가격에 모자라면 부족이다. 무료분은 남아 있다."""
+    """Gemini 가격으로는 낼 수 있는 잔액이어도 상위 모델 가격에 모자라면 부족이다."""
     user = await _user(db_client, db_session, monkeypatch, balance=_OPUS - 1)
     room_id = await _room(db_client, db_session, user, "opus")
     fake = _FakeLLMClient(tokens=["응"])
@@ -202,7 +187,7 @@ async def test_premium_turn_still_gets_the_burst_limit(
 async def test_premium_turn_is_refused_when_redis_fails(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Gemini 방은 Redis 부분 장애에서 상한 없이 통과하지만, 상위 모델 방은 분당 상한을 못 센 채 비싼 호출을 열지 않고
+    """Gemini 방은 Redis 부분 장애에서도 분당 상한 없이 클로버로 내지만, 상위 모델 방은 분당 상한을 못 센 채 비싼 호출을 열지 않고
     503 으로 거절한다. 차감 전이라 원장도 그대로다."""
     user = await _user(db_client, db_session, monkeypatch)
     room_id = await _room(db_client, db_session, user, "opus")
@@ -222,31 +207,19 @@ async def test_premium_turn_is_refused_when_redis_fails(
     assert fake.usages == []
 
 
-@pytest.mark.parametrize(
-    ("daily_limit", "expected_ledger"),
-    [
-        pytest.param(30, [], id="free-quota-applies"),
-        pytest.param(0, [("chat_spend", -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)], id="gemini-price"),
-    ],
-)
 async def test_revoked_premium_room_runs_as_gemini_at_gemini_price(
-    db_client: httpx.AsyncClient,
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-    daily_limit: int,
-    expected_ledger: list[tuple[str, int]],
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """스위치를 끄면(1차 롤백) 상위 모델을 고른 방은 막히지 않고 Gemini 로, Gemini 가격과 무료분으로 돈다."""
+    """스위치를 끄면(1차 롤백) 상위 모델을 고른 방은 막히지 않고 Gemini 로, Gemini 가격으로 돈다."""
     user = await _user(db_client, db_session, monkeypatch, confirmed_today=True)
     room_id = await _room(db_client, db_session, user, "opus")
     monkeypatch.setattr(settings, "chat_premium_models_enabled", False)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", daily_limit)
     fake = _FakeLLMClient(tokens=["응"])
 
     resp = await _send(db_client, room_id, fake)
 
     assert resp.status_code == 200
-    assert await _ledger(db_session, user.id) == expected_ledger
+    assert await _ledger(db_session, user.id) == [("chat_spend", -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)]
     assert [u.model for u in fake.usages if u.call_site == "chat_generate"] == ["gemini"]
 
 
@@ -261,22 +234,6 @@ async def test_chat_premium_works_for_an_account_without_novel_premium_access(
 
     assert (await _send(db_client, room_id)).status_code == 200
     assert await _ledger(db_session, user.id) == [("chat_spend", -_OPUS)]
-
-
-async def test_a_switched_off_premium_room_uses_up_the_free_daily_quota_like_gemini(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """스위치를 끈 Opus 방의 턴은 Gemini 턴이라 일일 카운터를 올린다 — 무료분 1턴짜리 날에 둘째 턴은 Gemini 값을 낸다.
-    카운터를 올리지 않으면 꺼진 상위 모델 방이 무료분을 무한히 쓴다."""
-    user = await _user(db_client, db_session, monkeypatch, confirmed_today=True)
-    room_id = await _room(db_client, db_session, user, "opus")
-    monkeypatch.setattr(settings, "chat_premium_models_enabled", False)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 1)
-
-    assert (await _send(db_client, room_id)).status_code == 200
-    assert (await _send(db_client, room_id)).status_code == 200
-
-    assert await _ledger(db_session, user.id) == [("chat_spend", -clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)]
 
 
 # ---- 생성 모델의 출처 ----
@@ -317,12 +274,13 @@ async def _failing_premium_turn(
     surface: str,
     failure: str,
 ) -> tuple[User, httpx.Response]:
-    """Gemini 로 첫 턴을 무료로 돌려 둔 뒤(재생성·편집 대상) 방을 Opus 로 바꾸고 실패하는 턴을 보낸다. 원장에는
-    실패한 턴의 행만 남는다."""
+    """재생성·편집 대상인 첫 턴을 DB 에 심어 둔 뒤 방을 Opus 로 바꾸고 실패하는 턴을 보낸다. 원장에는 실패한 턴의 행만
+    남는다 — 첫 턴을 API 로 보내면 그 Gemini 턴도 클로버로 나가 원장에 셋업 행이 남는다."""
     user = await _user(db_client, db_session, monkeypatch)
-    room_id = await _room(db_client, db_session, user, None)
     if surface in ("regenerate", "edit"):
-        assert (await _send(db_client, room_id)).status_code == 200
+        room_id = (await _open_room(db_client, db_session, turns=1, user=user)).room_id
+    else:
+        room_id = await _room(db_client, db_session, user, None)
     await _set_model(db_session, room_id, "opus")
 
     if failure == "render":

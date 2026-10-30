@@ -1,28 +1,26 @@
-"""출석판 스위치(`ATTENDANCE_BOARD_ENABLED`)가 켜지면 Gemini 하루 무료 대화가 없어진다 — 출석 보상이 무료분을 대신한다.
+"""Gemini 턴은 면제 계정 밖에서 첫 턴부터 클로버로 낸다 — 하루 무료 대화가 없고, 출석 보상이 그 자리를 맡는다.
 
-이 파일이 검증하는 성질(스위치 켬):
+이 파일이 검증하는 성질:
 
-1. 면제 계정 밖의 Gemini 턴(빌더 미리보기 포함)은 첫 턴부터 클로버로 낸다. 일일 창을 세지 않고, 하루 1회 확인도 묻지 않는다 —
+1. 면제 계정 밖의 Gemini 턴(빌더 미리보기 포함)은 첫 턴부터 클로버로 낸다. 하루 창을 세지 않고, 하루 1회 확인도 묻지 않는다 —
    무료분이 없으니 "무료분을 다 쓴 순간"이 없고, 확인은 그 순간에 묻던 것이다.
 2. 잔액이 모자라면 인증 회원은 429 `CLOVER_REQUIRED`, 본인인증 게이트에 걸린 회원은 403 `IDENTITY_VERIFICATION_REQUIRED` 다.
 3. 버스트 검사가 Redis 장애로 깨져도 무료로 통과시키지 않는다(차감은 Redis 를 쓰지 않는다). 면제 계정은 장애 중에도 내지 않고,
-   상위 모델 턴은 스위치와 무관하게 503 이다.
+   상위 모델 턴은 503 이다.
 4. 정지 스위치와 가격 버전 대조는 클로버로 내는 다른 갈래와 같은 자리에서 막는다.
-5. 이미지의 하루 1회 확인은 스위치와 무관하게 그대로다.
-6. `/me` 의 하루 무료 대화 수는 0 이다.
+5. 이미지의 하루 1회 확인은 그대로다.
 
-스위치를 끈 대조군 하나를 같은 파일에 둔다 — 켬 쪽 단언이 셋업만으로 통과하지 않음을 보인다. 꺼짐 동작 전체는 기존 게이트
-테스트(`test_clover_gate.py`·`test_user_rate_limit_gate.py`·`test_identity_gate.py`)가 기본값 꺼짐으로 지킨다.
+차감 단언이 셋업만으로 통과하지 않음은 같은 셋업의 면제 계정이 `skipped`·잔액 그대로인 것(`test_exempt_member_is_not_charged`)이
+보인다.
 
 채팅 차감 판정은 `charge_chat_turn` 을 직접 부른다(LLM·방 없이 판정만). 실제 방 전송의 턴 기록은 `test_clover_gate.py` 가 본다.
-스위치는 로컬 `.env` 가 아니라 아래 autouse 픽스처가 정한다. 본인인증 설정도 채운다 — 게이트는 그 설정이 있어야 켜진다.
+본인인증 설정은 로컬 `.env` 가 아니라 아래 autouse 픽스처가 채운다 — 게이트는 그 설정이 있어야 켜진다.
 """
 
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
-import httpx
 import pytest
 from fastapi import HTTPException
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -39,15 +37,14 @@ from api.db.models.auth import User
 from api.db.models.clover import CloverLedger
 from api.images.schemas import GenerateImageRequest
 from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, chat_turn_cost
-from factories import _login_as, _make_user_with_clover_lot
+from factories import _make_user_with_clover_lot
 
 _PRICE = chat_turn_cost(DEFAULT_CHAT_MODEL)
 
 
 @pytest.fixture(autouse=True)
-def _board_on_and_identity_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """출석판은 켜고 미인증 회원 게이트는 끈 채로 시작한다(게이트를 켜는 경우는 그 테스트가 켠다)."""
-    monkeypatch.setattr(settings, "attendance_board_enabled", True)
+def _identity_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """미인증 회원 게이트는 끈 채로 시작한다(게이트를 켜는 경우는 그 테스트가 켠다)."""
     monkeypatch.setattr(settings, "portone_store_id", "store-test-0001")
     monkeypatch.setattr(settings, "portone_identity_channel_key", "identity-channel-test")
     monkeypatch.setattr(settings, "portone_api_secret", "api-secret-test")
@@ -87,7 +84,7 @@ async def _charge(
 
 @pytest.fixture
 def scopes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """채팅 게이트가 센 Redis 창의 이름. 일일 창(`chat_day`)이 없으면 그 회원의 무료 카운터는 올라가지 않았다."""
+    """채팅 게이트가 센 Redis 창의 이름. 버스트 창 하나뿐이면 하루 무료 카운터 같은 다른 창은 세지 않았다."""
     seen: list[str] = []
 
     async def spy(scope: str, key: str, limit: int, *, window_seconds: int) -> int:
@@ -125,7 +122,7 @@ async def _refused(call: Callable[[], Awaitable[object]]) -> tuple[int, object]:
 
 # ── 클로버로 낸다 ────────────────────────────────────────────────────────────
 async def test_gemini_turn_spends_clover_without_confirmation(db_session: AsyncSession, scopes: list[str]) -> None:
-    """오늘 확인하지 않은 인증 회원의 첫 Gemini 턴이 무료가 아니라 클로버로 나가고, 일일 창은 세지 않는다."""
+    """오늘 확인하지 않은 인증 회원의 첫 Gemini 턴이 무료가 아니라 클로버로 나가고, 버스트 밖의 창은 세지 않는다."""
     user = await _member(db_session, balance=100)
 
     charge = await _charge(db_session, user)
@@ -164,25 +161,11 @@ async def test_unverified_member_spends_without_confirmation(
     assert await _balance(db_session, user) == 100 - _PRICE
 
 
-async def test_switch_off_keeps_the_free_quota(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, scopes: list[str]
-) -> None:
-    """대조군: 같은 회원·같은 잔액으로 스위치만 끄면 지금처럼 무료로 지나고 일일 창을 센다."""
-    monkeypatch.setattr(settings, "attendance_board_enabled", False)
-    user = await _member(db_session, balance=100)
-
-    charge = await _charge(db_session, user)
-
-    assert charge.source == "free"
-    assert scopes == ["chat_burst", "chat_day"]
-    assert await _balance(db_session, user) == 100
-
-
 # ── 잔액 부족 ────────────────────────────────────────────────────────────────
 async def test_unverified_member_without_clover_gets_identity_403(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """미인증 회원이 풀 길은 인증이라 잔액 부족은 403 이다(스위치와 무관하게 지금과 같은 응답)."""
+    """미인증 회원이 풀 길은 인증이라 잔액 부족은 403 이다."""
     monkeypatch.setattr(settings, "identity_gate_enabled", True)
     user = await _member(db_session, balance=0)
 
@@ -247,7 +230,7 @@ async def test_redis_failure_lets_exempt_members_through(
 
 
 async def test_redis_failure_refuses_premium_turns(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
-    """상위 모델 턴은 분당 상한 없이 열 수 없어 장애 중 503 이다 — 출석판 스위치가 그 판정을 바꾸지 않는다."""
+    """상위 모델 턴은 분당 상한 없이 열 수 없어 장애 중 503 이다 — Gemini 턴의 장애 갈래가 차감으로 바뀐 것과 무관하다."""
     user = await _member(db_session, balance=1_000)
     _redis_down(monkeypatch)
 
@@ -310,7 +293,7 @@ async def test_stale_price_version_is_refused_before_charging(db_session: AsyncS
 async def test_image_overflow_still_asks_for_confirmation(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """이미지 무료분은 시간당 토큰이라 출석판 스위치가 없애지 않는다 — 토큰을 다 쓴 순간의 하루 1회 확인도 그대로다."""
+    """이미지 무료분은 시간당 토큰이라 채팅 하루 무료분과 함께 없어지지 않는다 — 토큰을 다 쓴 순간의 하루 1회 확인도 그대로다."""
     monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
     user = await _member(db_session, balance=clover.IMAGE_UNIT_COST)
     request = GenerateImageRequest.model_validate(
@@ -325,16 +308,3 @@ async def test_image_overflow_still_asks_for_confirmation(
     assert isinstance(detail, dict)
     assert (detail["code"], detail["window"]) == ("CLOVER_CONFIRM_REQUIRED", "image")
     assert await _balance(db_session, user) == clover.IMAGE_UNIT_COST
-
-
-# ── GET /me ──────────────────────────────────────────────────────────────────
-async def test_me_daily_free_chat_turns_is_zero_when_the_board_is_on(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """화면 문구의 무료 대화 수가 실제로 받는 수와 같아야 한다. 상수를 7 로 바꿔 둔 채 0 이 나오는 것으로, 응답이 상수를 그대로
-    싣지 않고 스위치를 읽는다는 것을 본다."""
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 7)
-    user = await _member(db_session)
-    await _login_as(db_client, user.id)
-
-    assert (await db_client.get("/me")).json()["dailyFreeChatTurns"] == 0
