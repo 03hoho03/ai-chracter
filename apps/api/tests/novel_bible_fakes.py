@@ -307,7 +307,7 @@ class FakeSource:
             return None
         return SourceCanonRef(content_version_id=self.version_id, input_hash=f"hash:{self.note}")
 
-    async def load(self, session: AsyncSession, ref: SourceCanonRef) -> SourceCanon:
+    async def load(self, session: AsyncSession, novel_id: uuid.UUID, ref: SourceCanonRef) -> SourceCanon:
         return SourceCanon(ref=ref, work_setting=self.note, keyword_notes={})
 
 
