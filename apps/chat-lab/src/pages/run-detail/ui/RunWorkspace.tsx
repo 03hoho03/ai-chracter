@@ -22,6 +22,7 @@ import {
   type RawTab,
   type RunDetailSearch,
 } from "../model/runDetailSearch";
+import { pickSlot, resolveSlots } from "../model/statLines";
 import { attemptDeltas, buildTurnRows, seriesTones } from "../model/turnRows";
 import { ConversationPane } from "./ConversationPane";
 import { Inspector, type MetricsState } from "./Inspector";
@@ -51,8 +52,11 @@ export function RunWorkspace({ runId, detail, notice, isIssuesOpen, onCloseIssue
   const turn = resolveTurn(detail.turns, search.turn);
   const turnQuery = useTurnDetail(runId, turn);
   const turnDetail = turnQuery.data;
-  const rows = useMemo(() => buildTurnRows(detail.turns, detail.series), [detail.turns, detail.series]);
-  const tones = useMemo(() => seriesTones(detail.series), [detail.series]);
+  // 타임라인에서 고른 선 자리(스탯 id). 고르지 않았거나 이 런에 없는 스탯이면 기본 자리다 — 턴 목록의 Δ 점 색이 같은 자리를 따른다.
+  const [pickedSlots, setPickedSlots] = useState<string[] | undefined>(undefined);
+  const slots = useMemo(() => resolveSlots(detail.series, pickedSlots), [detail.series, pickedSlots]);
+  const rows = useMemo(() => buildTurnRows(detail.turns, detail.series, slots), [detail.turns, detail.series, slots]);
+  const tones = useMemo(() => seriesTones(detail.series, slots), [detail.series, slots]);
   const turnNumbers = useMemo(() => detail.turns.map((summary) => summary.turn), [detail.turns]);
   const knownTurns = useMemo(() => new Set(turnNumbers), [turnNumbers]);
   const turnIndex = turn === undefined ? -1 : turnNumbers.indexOf(turn);
@@ -95,6 +99,8 @@ export function RunWorkspace({ runId, detail, notice, isIssuesOpen, onCloseIssue
     },
     [navigate],
   );
+
+  const handlePickSlot = useCallback((slot: number, id: string) => setPickedSlots(pickSlot(slots, slot, id)), [slots]);
 
   // 턴 목록 행에 넘기는 콜백은 렌더마다 새로 만들지 않는다 — 행이 메모되어 있다.
   const selectTurn = useCallback(
@@ -176,11 +182,15 @@ export function RunWorkspace({ runId, detail, notice, isIssuesOpen, onCloseIssue
     <div className="relative flex h-full flex-col">
       {notice}
       <StateTimeline
-        turns={turnNumbers}
+        turns={detail.turns}
+        turnNumbers={turnNumbers}
+        series={detail.series}
         markers={detail.markers}
+        slots={slots}
         selectedTurn={turn}
         timelineRef={timelineRef}
         onSelectTurn={selectTurn}
+        onPickSlot={handlePickSlot}
       />
       <PaneBar
         pane={pane}

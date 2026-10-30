@@ -71,6 +71,7 @@ describe("MARKER_STYLES", () => {
       noteUpdate: "muted",
       pause: "muted",
       failure: "danger",
+      supplemented: "muted",
     });
   });
 

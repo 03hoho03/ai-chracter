@@ -25,9 +25,13 @@ export const CAUTION_LABELS = {
   chatTurnsNotJoined: "턴 기록 잇지 않음",
 } as const satisfies Record<Caution["kind"], string>;
 
+/** 타임라인 표지 종류 — 측정 서버의 표지와, 턴 요약의 보충 줄 칸에서 오는 "보충 줄". */
+export type TimelineMarkKind = TimelineMarker["kind"] | "supplemented";
+
 /**
  * 타임라인 표지의 모양과 낱말. 모양만으로 뜻을 싣지 않도록 낱말을 함께 둔다. 실패만 적색, rebase·재생성·수정은 호박, 나머지는
- * 흐린 글자색이다. `isAfterTurn` 은 드라이버 줄에서 온 표지라 그 턴 뒤(턴 사이)에 놓이는 것.
+ * 흐린 글자색이다. `isAfterTurn` 은 드라이버 줄에서 온 표지라 그 턴 뒤(턴 사이)에 놓이는 것. 보충 줄은 사람이 친 턴을 나중에
+ * 보충한 줄이라 드라이버가 보낸 턴과 갈라 보이게 한다.
  */
 export const MARKER_STYLES = {
   ending: { glyph: "◆", label: "엔딩", tone: "muted", isAfterTurn: false },
@@ -40,8 +44,9 @@ export const MARKER_STYLES = {
   noteUpdate: { glyph: "✐", label: "노트 저장", tone: "muted", isAfterTurn: true },
   pause: { glyph: "‖", label: "멈춤", tone: "muted", isAfterTurn: true },
   failure: { glyph: "✕", label: "실패", tone: "danger", isAfterTurn: false },
+  supplemented: { glyph: "+", label: "보충 줄", tone: "muted", isAfterTurn: false },
 } as const satisfies Record<
-  TimelineMarker["kind"],
+  TimelineMarkKind,
   { glyph: string; label: string; tone: "muted" | "warn" | "danger"; isAfterTurn: boolean }
 >;
 

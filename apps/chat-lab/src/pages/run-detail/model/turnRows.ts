@@ -1,9 +1,11 @@
 import type { AttemptDetail, DriverStatChange, ReplyFlagsView, StatSeries, TurnSummary } from "@/shared/api/client";
 import { formatCount } from "@/shared/lib/formatNumber";
 
+import { defaultSlots, lineCandidates } from "./statLines";
+
 /**
- * 스탯 Δ 점의 색. 보이는 스탯은 상태 타임라인의 선 색 셋을 계열 순서대로 받고(한 차트에 선은 셋까지), 넷째부터는 선이 없어
- * `other`, 숨김 스탯은 네 번째 색을 얻지 않고 `hidden` 이다.
+ * 스탯 Δ 점의 색. 보이는 스탯은 상태 타임라인에서 선을 받은 자리의 색(한 차트에 선은 셋까지 — 고르지 않으면 계열 순서대로 앞의
+ * 셋)이고, 선 자리에 없는 보이는 스탯은 선이 없어 `other`, 숨김 스탯은 네 번째 색을 얻지 않고 `hidden` 이다.
  */
 export type StatTone = "series-1" | "series-2" | "series-3" | "other" | "hidden";
 
@@ -49,7 +51,8 @@ const ROW_FLAGS = [
 
 type FlagKey = (typeof ROW_FLAGS)[number]["key"];
 
-const SERIES_TONES = ["series-1", "series-2", "series-3"] as const;
+/** 선 자리 순서의 선 색 — 자리 k 가 이 목록의 k 번째 색이다. */
+export const SERIES_TONES = ["series-1", "series-2", "series-3"] as const;
 
 /**
  * 런 상세 응답의 턴 요약을 턴 목록 행으로. 플래그는 턴 요약에 실린 그 턴의 응답 지표에서 온다 — 런 지표 응답을 기다리지 않고,
@@ -58,8 +61,12 @@ const SERIES_TONES = ["series-1", "series-2", "series-3"] as const;
  * 보이는 스탯 Δ 는 드라이버 줄(`driverStatChanges`, 이름 키)에서 측정 서버가 낸 변화량을, 숨김 스탯 Δ 는 턴 기록
  * (`recordedStatChanges`)의 전후 차를 쓴다. 턴 기록의 보이는 스탯은 드라이버 줄과 같은 변화라 다시 싣지 않는다.
  */
-export function buildTurnRows(turns: ReadonlyArray<TurnSummary>, series: ReadonlyArray<StatSeries>): TurnRow[] {
-  const tones = seriesTones(series);
+export function buildTurnRows(
+  turns: ReadonlyArray<TurnSummary>,
+  series: ReadonlyArray<StatSeries>,
+  slots: ReadonlyArray<string> = defaultSlots(series),
+): TurnRow[] {
+  const tones = seriesTones(series, slots);
 
   return turns.map((summary) => ({
     turn: summary.turn,
@@ -91,16 +98,28 @@ export function attemptDeltas(
  * 바뀐 뒤 값을 변화량 자리에 적지 않는다.
  */
 export function formatStatDelta(delta: StatDelta): string {
-  if (delta.delta === undefined) return "Δ 모름";
-  if (delta.delta > 0) return `+${formatCount(delta.delta)}`;
-  if (delta.delta < 0) return `−${formatCount(-delta.delta)}`;
+  return formatDeltaValue(delta.delta);
+}
+
+/** 변화량 하나를 부호 숫자로 — 모르면 "Δ 모름". 타임라인 툴팁도 같은 모양으로 적는다. */
+export function formatDeltaValue(delta: number | undefined): string {
+  if (delta === undefined) return "Δ 모름";
+  if (delta > 0) return `+${formatCount(delta)}`;
+  if (delta < 0) return `−${formatCount(-delta)}`;
   return "0";
 }
 
-/** 보이는 스탯 이름 → 선 색. 타임라인이 선을 긋는 계열(드라이버에서 온 보이는 스탯)의 순서를 따른다. */
-export function seriesTones(series: ReadonlyArray<StatSeries>): ReadonlyMap<string, StatTone> {
-  const visible = series.filter((entry) => entry.source === "driver" && entry.hidden !== true);
-  return new Map(visible.map((entry, index) => [entry.name, SERIES_TONES[index] ?? "other"]));
+/** 보이는 스탯 이름 → 선 색. 타임라인의 선 자리(`slots`, 스탯 id) k 에 선 스탯이 선 색 k 를 받는다. */
+export function seriesTones(
+  series: ReadonlyArray<StatSeries>,
+  slots: ReadonlyArray<string> = defaultSlots(series),
+): ReadonlyMap<string, StatTone> {
+  return new Map(
+    lineCandidates(series).map((entry) => {
+      const slot = slots.indexOf(entry.id);
+      return [entry.name, SERIES_TONES[slot] ?? "other"];
+    }),
+  );
 }
 
 function utteranceOf(summary: TurnSummary): Utterance {
