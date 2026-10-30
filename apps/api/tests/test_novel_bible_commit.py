@@ -14,7 +14,7 @@ import pytest_asyncio
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from api.db.models import Novel, NovelChapterPublication
+from api.db.models import Novel, NovelChapter, NovelChapterPublication
 from api.db.models.novel_bible import (
     NovelBibleCommit,
     NovelBibleEntity,
@@ -27,9 +27,9 @@ from api.db.models.novel_bible_events import NovelBibleEvent
 from api.db.models.novel_bible_facts import NovelBibleFact
 from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
 from api.novel_bible.core.confirm import Actor, confirm
-from api.novel_bible.core.jobs import run_next_job
+from api.novel_bible.core.jobs import EMPTY_NAME, run_next_job
 from api.novel_bible.core import pipeline
-from api.novel_bible.core.pipeline import link_check_commit, start_linking
+from api.novel_bible.core.pipeline import CAS_LIMIT, link_check_commit, start_linking
 from api.novel_bible.core.types import BibleSnapshot
 from api.novelize.deletion import delete_batch, strip_author_only_data
 from factories import _committed_engine, _wait_until_a_lock_is_awaited
@@ -188,7 +188,8 @@ async def _entity_names(db: AsyncSession, novel_id: uuid.UUID) -> dict[uuid.UUID
 
 
 async def _comparable_items(db: AsyncSession, novel_id: uuid.UUID) -> dict[str, list[tuple[Any, ...]]]:
-    """슬롯별 항목을 소설과 무관한 꼴로 — 개체 id 는 (종류, 정규 이름), 블록은 개수만. 연결 칸은 따로 본다."""
+    """슬롯별 항목을 소설과 무관한 꼴로 — 개체 id 는 (종류, 정규 이름), 블록은 개수만. 안정 키는 주어·대상 개체 id 에서 나와
+    소설마다 다르므로 견주지 않는다(키를 만드는 명제 칸을 견준다). 연결 칸은 따로 본다."""
     names = await _entity_names(db, novel_id)
     events = (await db.scalars(select(NovelBibleEvent).where(NovelBibleEvent.novel_id == novel_id))).all()
     facts = (await db.scalars(select(NovelBibleFact).where(NovelBibleFact.novel_id == novel_id))).all()
@@ -196,12 +197,12 @@ async def _comparable_items(db: AsyncSession, novel_id: uuid.UUID) -> dict[str, 
     return {
         "events": sorted((e.ordinal, e.summary, e.actuality, len(e.anchor_block_ids)) for e in events),
         "facts": sorted(
-            (f.fact_key, names[f.subject_entity_id], f.kind, f.predicate_norm, f.value_norm,
+            (names[f.subject_entity_id], f.kind, f.predicate_norm, f.value_norm,
              names[f.value_entity_id] if f.value_entity_id else None, f.holds, f.scope)
             for f in facts
         ),
         "knowledge": sorted(
-            (k.fact_key, names[k.knower_entity_id], k.kind, sorted(k.proposition.items())) for k in knowledge
+            (names[k.knower_entity_id], k.kind, sorted(k.proposition.items())) for k in knowledge
         ),
     }
 
@@ -622,7 +623,8 @@ async def test_deleting_a_batch_while_committing_waits_and_removes_the_new_rows(
     commit_task = asyncio.create_task(link_check_commit(factory, registry, [], commit_id))
     await gate.entered.wait()
     delete_task = asyncio.create_task(delete_the_batch())
-    # 삭제는 커밋이 쥔 화 행 잠금을 기다린다(커밋이 확정 행보다 화 행을 먼저 잡아 두 쪽 순서가 같다 — 교착이 없다).
+    # 커밋이 먼저 잡았으면 삭제는 커밋이 쥔 화 행 잠금을 기다렸다가 새로 커밋된 행까지 지운다. 두 쪽이 화 행을 어느 차례로
+    # 잡는지는 아래 두 테스트가 본다 — 여기서는 커밋이 두 잠금을 이미 쥔 뒤라 차례와 무관하게 같은 결과가 나온다.
     await _wait_until_a_lock_is_awaited(committed_engine)
     gate.release.set()
     await commit_task
@@ -631,3 +633,296 @@ async def test_deleting_a_batch_while_committing_waits_and_removes_the_new_rows(
     async with factory() as check:
         for model in (NovelBibleCommit, NovelBibleRevision, NovelBibleEvent, NovelBibleFact, NovelBibleEvidence):
             assert await _count(check, model, novel_id) == 0
+
+
+# 한 화에 삶·죽음, 얻음·잃음, 같은 인물에 대한 앎(죽음)과 믿음(삶)을 함께 둔 합성 원고.
+KEY_BODY = "\n\n".join(
+    [
+        "사건: 둘이 정원에서 만난다",
+        "사실: 하나|life|-|alive|참",
+        "사실: 하나|life|-|dead|참",
+        "사실: 셋|possession|-|검|참",
+        "사실: 셋|possession|-|검|거짓",
+        "앎: 둘|knows|하나|life|-|dead",
+        "앎: 둘|believes|하나|life|-|alive",
+    ]
+)
+
+
+async def _facts_by_proposition(
+    db: AsyncSession, novel_id: uuid.UUID, chapter_id: uuid.UUID, revision_id: uuid.UUID | None = None
+) -> dict[tuple[Any, ...], NovelBibleFact]:
+    """화 하나의 사실 행을 (주어 이름, 종류, 술어, 값, 유지)로. `revision_id` 를 주면 그 리비전이 넣은 행만."""
+    names = await _entity_names(db, novel_id)
+    statement = select(NovelBibleFact).where(NovelBibleFact.chapter_id == chapter_id)
+    if revision_id is not None:
+        statement = statement.where(NovelBibleFact.created_revision_id == revision_id)
+    return {
+        (names[f.subject_entity_id][1], f.kind, f.predicate_norm, f.value_norm, f.holds): f
+        for f in (await db.scalars(statement)).all()
+    }
+
+
+async def test_life_and_death_gain_and_loss_and_knows_and_believes_get_different_proposition_keys(
+    db_session: AsyncSession,
+) -> None:
+    novel = await make_novel(db_session)
+    chapter, revision = await add_chapter(db_session, novel.id, 1, KEY_BODY)
+    registry = full_registry()
+
+    commit_id = await _confirm(db_session, registry, novel.id, chapter.id, revision.id)
+    await drain(savepoint_factory(db_session), registry, FakeAdapter())
+
+    assert (await _commit_row(db_session, commit_id)).status == "committed"
+    facts = await _facts_by_proposition(db_session, novel.id, chapter.id)
+    alive, dead = facts["하나", "life", "life", "alive", True], facts["하나", "life", "life", "dead", True]
+    gained, lost = facts["셋", "possession", "possession", "검", True], facts["셋", "possession", "possession", "검", False]
+    assert len({alive.fact_key, dead.fact_key, gained.fact_key, lost.fact_key}) == 4
+    knowledge = {
+        k.kind: k.fact_key
+        for k in await db_session.scalars(select(NovelBibleKnowledge).where(NovelBibleKnowledge.novel_id == novel.id))
+    }
+    # 앎과 믿음은 명제가 다르고, 각자 명제가 같은 사실 행과 같은 키다.
+    assert (knowledge["knows"], knowledge["believes"]) == (dead.fact_key, alive.fact_key)
+
+
+async def test_the_same_proposition_keeps_its_key_in_another_chapter_and_revision(db_session: AsyncSession) -> None:
+    novel = await make_novel(db_session)
+    body = "\n\n".join(
+        ["사건: 하나가 떠난다", "사실: 하나|attribute|스승|두리|참", "사실: 하나|life|-|alive|참", "사실: 하나|life|-|dead|참",
+         "사실: 셋|possession|-|검|참"]
+    )
+    first, first_revision = await add_chapter(db_session, novel.id, 1, body)
+    # 2화가 "두리"를 인물 개체로 만든다 — 1화가 속성 값으로 쓴 이름이 그 뒤에야 개체가 된다.
+    second, second_revision = await add_chapter(db_session, novel.id, 2, "사건: 두리가 온다\n\n사실: 두리|life|-|alive|참")
+    third, third_revision = await add_chapter(db_session, novel.id, 3, body)
+    registry, adapter = full_registry(), FakeAdapter()
+    factory = savepoint_factory(db_session)
+    for chapter, revision in [(first, first_revision), (second, second_revision), (third, third_revision)]:
+        await _confirm(db_session, registry, novel.id, chapter.id, revision.id)
+        await drain(factory, registry, adapter)
+
+    original = await _facts_by_proposition(db_session, novel.id, first.id)
+    keys = {proposition: fact.fact_key for proposition, fact in original.items()}
+    assert {p: f.fact_key for p, f in (await _facts_by_proposition(db_session, novel.id, third.id)).items()} == keys
+
+    # 1화를 삶·죽음 차례를 바꾼 새 개정으로 다시 확정한다 — 새 행은 같은 키를 받고, 같은 명제의 앞 행을 대체한다.
+    swapped = body.replace("사실: 하나|life|-|alive|참\n\n사실: 하나|life|-|dead|참",
+                           "사실: 하나|life|-|dead|참\n\n사실: 하나|life|-|alive|참")
+    assert swapped != body
+    again = await add_revision(db_session, first.id, swapped)
+    commit_id = await _confirm(db_session, registry, novel.id, first.id, again.id)
+    await drain(factory, registry, adapter)
+
+    assert (await _commit_row(db_session, commit_id)).status == "committed"
+    head = await _head(db_session, novel.id)
+    replaced = await _facts_by_proposition(db_session, novel.id, first.id, head.id)
+    assert {p: f.fact_key for p, f in replaced.items()} == keys
+    assert {p: f.supersedes_id for p, f in replaced.items()} == {p: f.id for p, f in original.items()}
+
+
+async def test_a_knowledge_item_whose_knower_name_is_empty_is_dropped_before_saving(db_session: AsyncSession) -> None:
+    novel = await make_novel(db_session)
+    body = "사건: 둘이 정원에서 만난다\n\n앎:  |knows|하나|life|-|alive\n\n앎: 둘|knows|하나|life|-|alive"
+    chapter, revision = await add_chapter(db_session, novel.id, 1, body)
+    registry = full_registry()
+
+    commit_id = await _confirm(db_session, registry, novel.id, chapter.id, revision.id)
+    await drain(savepoint_factory(db_session), registry, FakeAdapter())
+
+    assert (await _commit_row(db_session, commit_id)).status == "committed"
+    proposal = await db_session.scalar(
+        select(NovelBibleJob.proposal).where(NovelBibleJob.commit_id == commit_id, NovelBibleJob.slot == "knowledge")
+    )
+    assert proposal is not None
+    assert (len(proposal["items"]), proposal["dropped"]) == (1, {EMPTY_NAME: 1})
+    assert await _count(db_session, NovelBibleKnowledge, novel.id) == 1
+
+
+@pytest.mark.parametrize(
+    ("losses_before", "outcome"),
+    [
+        pytest.param(CAS_LIMIT - 2, ("committed", None, CAS_LIMIT - 1), id="fourth-loss-relinks"),
+        pytest.param(CAS_LIMIT - 1, ("failed", "cas_exhausted", CAS_LIMIT), id="fifth-loss-fails"),
+    ],
+)
+async def test_the_fifth_lost_head_comparison_fails_the_commit(
+    db_session: AsyncSession, losses_before: int, outcome: tuple[str, str | None, int]
+) -> None:
+    novel = await make_novel(db_session)
+    first, first_revision = await add_chapter(db_session, novel.id, 1, BODY)
+    second, second_revision = await add_chapter(db_session, novel.id, 2, SECOND_BODY)
+    registry, adapter = full_registry(), FakeAdapter()
+    factory = savepoint_factory(db_session)
+    await _confirm(db_session, registry, novel.id, first.id, first_revision.id)
+    await drain(factory, registry, adapter)
+    commit_id = await _confirm(db_session, registry, novel.id, second.id, second_revision.id)
+    await _run_jobs(factory, registry, adapter)
+    async with factory() as session:
+        assert await start_linking(session, commit_id) == "linking"
+        await session.commit()
+    # 기준을 머리(1번)가 아닌 "리비전 없음"으로 돌려 이번 커밋이 머리 비교에서 지게 하고, 이미 진 횟수를 심는다.
+    await db_session.execute(
+        update(NovelBibleCommit)
+        .where(NovelBibleCommit.id == commit_id)
+        .values(base_revision_id=None, cas_losses=losses_before)
+    )
+
+    await link_check_commit(factory, registry, [], commit_id)
+
+    assert tuple(await _commit_row(db_session, commit_id)) == outcome
+
+
+async def _linking_commit(
+    factory: SessionFactory, bodies: list[str], registry: Any
+) -> tuple[uuid.UUID, list[Any], uuid.UUID]:
+    """커밋되는 소설 하나와 화들, 마지막 화의 확정을 연결 직전(`linking`)까지. 앞 화들은 끝까지 커밋한다."""
+    novel_id, chapters = await _committed_novel(factory, bodies)
+    adapter = FakeAdapter()
+    for _, chapter_id, revision_id in chapters[:-1]:
+        async with factory() as session:
+            await _confirm(session, registry, novel_id, chapter_id, revision_id)
+            await session.commit()
+        await drain(factory, registry, adapter)
+    async with factory() as session:
+        commit_id = await _confirm(session, registry, novel_id, chapters[-1][1], chapters[-1][2])
+        await session.commit()
+    await _run_jobs(factory, registry, adapter)
+    async with factory() as session:
+        assert await start_linking(session, commit_id) == "linking"
+        await session.commit()
+    return novel_id, chapters, commit_id
+
+
+def _record_failures(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    failures: list[str] = []
+    fail = pipeline._fail
+
+    async def record(factory: SessionFactory, commit_id: uuid.UUID, code: Any) -> None:
+        failures.append(code)
+        await fail(factory, commit_id, code)
+
+    monkeypatch.setattr(pipeline, "_fail", record)
+    return failures
+
+
+async def _lock_chapter(session: AsyncSession, chapter_id: uuid.UUID) -> None:
+    await session.execute(select(NovelChapter.id).where(NovelChapter.id == chapter_id).with_for_update())
+
+
+async def _commit_row_is_free(session: AsyncSession, commit_id: uuid.UUID) -> bool:
+    """다른 트랜잭션이 확정 행을 쥐고 있지 않으면 참 — 기다리지 않고 바로 잡아 본다(쥐고 있으면 잠금 오류)."""
+    locked = await session.scalar(
+        select(NovelBibleCommit.id).where(NovelBibleCommit.id == commit_id).with_for_update(nowait=True)
+    )
+    return locked == commit_id
+
+
+async def test_a_commit_waits_on_the_chapter_row_before_taking_its_commit_row(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    factory = async_sessionmaker(committed_engine, expire_on_commit=False)
+    registry = full_registry()
+    novel_id, chapters, commit_id = await _linking_commit(factory, [BODY], registry)
+    batch_id, chapter_id, _ = chapters[0]
+    checked, go = asyncio.Event(), asyncio.Event()
+    check = pipeline._check
+
+    async def check_then_wait(*args: Any) -> Any:
+        # 개체를 만든 뒤(그 단계도 화 행을 잡는다) 커밋 트랜잭션 직전에 세운다.
+        findings = await check(*args)
+        checked.set()
+        await go.wait()
+        return findings
+
+    monkeypatch.setattr(pipeline, "_check", check_then_wait)
+    failures = _record_failures(monkeypatch)
+    commit_task = asyncio.create_task(link_check_commit(factory, registry, [], commit_id))
+    await checked.wait()
+    async with factory() as deleting:
+        # 삭제 경로처럼 화 행을 먼저 쥔 채 커밋을 출발시킨다. 커밋은 화 행에서 기다리고, 확정 행은 아직 쥐지 않았어야 한다 —
+        # 확정 행을 먼저 쥐면, 그 행을 지우려는 삭제와 서로를 기다린다.
+        await _lock_chapter(deleting, chapter_id)
+        go.set()
+        await _wait_until_a_lock_is_awaited(committed_engine)
+        assert await _commit_row_is_free(deleting, commit_id)
+        await delete_batch(deleting, novel_id=novel_id, batch_id=batch_id, freed_storage_keys=[])
+        await deleting.commit()
+    await commit_task
+
+    # 커밋은 화가 없음을 보고 물러난다(확정 행은 삭제가 지웠다).
+    assert failures == ["chapter_gone"]
+    async with factory() as check_session:
+        for model in (NovelBibleCommit, NovelBibleRevision, NovelBibleEvent, NovelBibleFact):
+            assert await _count(check_session, model, novel_id) == 0
+
+
+async def test_entity_upsert_waits_on_the_chapter_row_before_taking_its_commit_row(
+    committed_engine: AsyncEngine,
+) -> None:
+    factory = async_sessionmaker(committed_engine, expire_on_commit=False)
+    registry = full_registry()
+    novel_id, chapters, commit_id = await _linking_commit(factory, [BODY], registry)
+    batch_id, chapter_id, _ = chapters[0]
+
+    async with factory() as deleting:
+        await _lock_chapter(deleting, chapter_id)
+        link_task = asyncio.create_task(link_check_commit(factory, registry, [], commit_id))
+        await _wait_until_a_lock_is_awaited(committed_engine)
+        assert await _commit_row_is_free(deleting, commit_id)
+        await delete_batch(deleting, novel_id=novel_id, batch_id=batch_id, freed_storage_keys=[])
+        await deleting.commit()
+    await link_task
+
+    async with factory() as check_session:
+        for model in (NovelBibleCommit, NovelBibleEntity, NovelBibleRevision):
+            assert await _count(check_session, model, novel_id) == 0
+
+
+async def test_a_commit_whose_head_revision_is_being_batch_deleted_relinks(committed_engine: AsyncEngine) -> None:
+    factory = async_sessionmaker(committed_engine, expire_on_commit=False)
+    registry = full_registry()
+    novel_id, chapters, commit_id = await _linking_commit(factory, [BODY, SECOND_BODY], registry)
+    first_head = await _head_of(factory, novel_id)
+    assert first_head.revision_no == 1
+
+    async with factory() as deleting:
+        # 1화 묶음 삭제가 머리 리비전을 지우고 아직 커밋하지 않았다. 커밋은 옛 머리를 보고 머리 비교를 통과한 뒤, 그 리비전을
+        # 앞 리비전으로 넣는 FK 검사에서 삭제를 기다린다.
+        assert chapters[0][0] is not None
+        await delete_batch(deleting, novel_id=novel_id, batch_id=chapters[0][0], freed_storage_keys=[])
+        commit_task = asyncio.create_task(link_check_commit(factory, registry, [], commit_id))
+        await _wait_until_a_lock_is_awaited(committed_engine)
+        await deleting.commit()
+    await commit_task
+
+    async with factory() as check_session:
+        row = await _commit_row(check_session, commit_id)
+        head = await _head(check_session, novel_id)
+    assert (row.status, row.cas_losses) == ("committed", 1)
+    assert (head.revision_no, head.parent_revision_id) == (1, None)
+
+
+async def _head_of(factory: SessionFactory, novel_id: uuid.UUID) -> Any:
+    async with factory() as session:
+        return await _head(session, novel_id)
+
+
+async def test_commit_and_entity_upsert_do_not_wait_for_a_paragraph_edit_lock(committed_engine: AsyncEngine) -> None:
+    factory = async_sessionmaker(committed_engine, expire_on_commit=False)
+    registry = full_registry()
+    _, chapters, commit_id = await _linking_commit(factory, [BODY], registry)
+
+    async with factory() as editing:
+        # 문단 수정·소설 생성 쓰기처럼 화 행을 FOR NO KEY UPDATE 로 쥔다. 연결의 개체 만들기와 커밋은 화 행을 키 공유로만
+        # 잡아야 이 쓰기를 기다리지 않는다 — 더 세게 잡으면 기다리다 이 엔진의 잠금 대기 상한(5초)에 걸려 실패한다.
+        await editing.execute(
+            select(NovelChapter.id).where(NovelChapter.id == chapters[0][1]).with_for_update(key_share=True)
+        )
+        async with asyncio.timeout(10):
+            await link_check_commit(factory, registry, [], commit_id)
+        await editing.rollback()
+
+    async with factory() as check_session:
+        assert (await _commit_row(check_session, commit_id)).status == "committed"
+

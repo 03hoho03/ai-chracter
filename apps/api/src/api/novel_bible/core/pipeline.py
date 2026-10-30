@@ -38,7 +38,7 @@ from api.db.models.novel_bible import (
 from api.novel_bible.core.confirm import CANON, IN_FLIGHT
 from api.novel_bible.core.contracts import AdapterResolver, Registry, Rule
 from api.novel_bible.core.jobs import SessionFactory, commit_ref, run_next_job
-from api.novel_bible.core.keys import fact_key, normalize_name
+from api.novel_bible.core.keys import normalize_name, proposition_key
 from api.novel_bible.core.queries import assemble
 from api.novel_bible.core.quotes import manuscript_evidence_verified
 from api.novel_bible.core.types import (
@@ -62,6 +62,9 @@ logger = logging.getLogger(__name__)
 # 커밋 머리 비교에서 이만큼 지면 확정을 실패로 끝낸다.
 CAS_LIMIT = 5
 _REVISION_NUMBER_INDEX = "ux_novel_bible_revisions_novel_branch_no"
+# 새 리비전의 앞 리비전 FK. 다른 화 묶음 삭제가 머리 리비전을 지우는 중이면 머리 비교는 아직 옛 머리를 보고 통과하고, 이 FK
+# 검사가 삭제를 기다렸다가 위반이 된다 — 그 사이 머리가 바뀐 것이므로 머리 비교에서 진 것과 같이 다룬다.
+_PARENT_REVISION_FK = "novel_bible_revisions_parent_revision_id_fkey"
 
 Row = EventRow | RelationRow | FactRow | KnowledgeRow
 
@@ -198,12 +201,14 @@ async def _entity_ids(
         if chapter is None or status != "linking":
             return None
         if wanted:
+            # 유니크 열쇠 (종류, 정규 이름) 차례로 넣는다. 같은 소설의 연결 둘이 겹치는 이름을 서로 다른 차례로 넣으면 각자 앞
+            # 이름의 아직 커밋되지 않은 행을 기다려 교착한다 — 차례가 같으면 뒤 쪽이 앞 쪽을 기다리기만 한다.
             await session.execute(
                 insert(NovelBibleEntity)
                 .values(
                     [
                         {"novel_id": loaded.ref.novel_id, "kind": kind, "name": name, "name_norm": norm}
-                        for (kind, norm), name in wanted.items()
+                        for (kind, norm), name in sorted(wanted.items())
                     ]
                 )
                 .on_conflict_do_nothing(index_elements=["novel_id", "kind", "name_norm"])
@@ -226,8 +231,9 @@ def _identity(table: ItemTable, key: uuid.UUID | None, knower: uuid.UUID | None,
 def _link(
     loaded: _Loaded, entities: dict[tuple[EntityKind, str], uuid.UUID], base_rows: Sequence[Row]
 ) -> dict[SlotId, list[LinkedItem]]:
-    """제안을 연결한다 — 이름 → 개체 id, 사실·지식의 앵커 블록 → 이번 확정의 사건, 명제 → 안정 키, 같은 화 이전 확정의 같은
-    상태 행 → 대체 대상."""
+    """제안을 연결한다 — 이름 → 개체 id, 사실·지식의 앵커 블록 → 이번 확정의 사건, 명제 → 안정 키(주어·대상 개체 id 를 푼
+    뒤에), 같은 화 이전 확정의 같은 명제 행 → 대체 대상. 코어가 푸는 이름(앎 주체·명제의 주어·대상)이 비는 항목은 작업을 저장하기
+    전에 버렸으므로 여기서는 늘 개체가 있다."""
     block_order = {block.block_id: block.index for block in loaded.manuscript.blocks}
     ids = {(slot, draft.local_key): uuid.uuid4() for slot, p in loaded.proposals.items() for draft in p.items}
     events = sorted(
@@ -270,10 +276,13 @@ def _link(
                              if (name.kind, normalize_name(name.name)) in entities)
                 for field, names in draft.names.items()
             }
-            key = fact_key(draft.proposition) if draft.proposition is not None else None
+            key = None
+            if draft.proposition is not None:
+                value = entity_ids.get("value", ())
+                key = proposition_key(draft.proposition, entity_ids["subject"][0], value[0] if value else None)
             supersedes = None
             if draft.table in ("fact", "knowledge"):
-                knower = entity_ids.get("knower", (None,))[0] if draft.table == "knowledge" else None
+                knower = entity_ids["knower"][0] if draft.table == "knowledge" else None
                 candidates = previous.get(_identity(draft.table, key, knower, draft.fields.get("kind")), [])
                 # 같은 키가 여럿이면 화 안 차례대로 짝짓는다.
                 supersedes = candidates.pop(0) if candidates else None
@@ -423,7 +432,8 @@ async def _commit(
     factory: SessionFactory, registry: Registry, loaded: _Loaded, linked: dict[SlotId, list[LinkedItem]],
     warnings: Sequence[FindingDraft],
 ) -> str:
-    """돌려주는 값은 `committed`·`lost`(머리 비교에서 짐)·`chapter_gone`·`gone`(확정이 더는 검사 중이 아니다) 중 하나."""
+    """돌려주는 값은 `committed`·`lost`(머리 비교에서 짐 — 같은 머리 위 동시 커밋의 번호 유니크 위반, 지워지는 머리를 앞
+    리비전으로 가리킨 FK 위반도)·`chapter_gone`·`gone`(확정이 더는 검사 중이 아니다) 중 하나."""
     ref = loaded.ref
     async with factory() as session:
         try:
@@ -497,7 +507,7 @@ async def _commit(
         except _LostRaceError:
             return "lost"
         except IntegrityError as error:
-            if _REVISION_NUMBER_INDEX in str(error.orig):
+            if _REVISION_NUMBER_INDEX in str(error.orig) or _PARENT_REVISION_FK in str(error.orig):
                 return "lost"
             raise
 

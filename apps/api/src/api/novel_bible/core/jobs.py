@@ -1,7 +1,12 @@
 """슬롯 작업 하나 실행 — 받기 → 입력 → 렌더 → 캐시 → 호출 → 검증 → 저장, 실패면 재시도 또는 실패.
 
 모델을 기다리는 동안 DB 커넥션을 쥐지 않는다 — 받기·입력 읽기·저장이 각자 짧은 세션이다. 저장은 받은 행(`running`)에만
-되므로, 그 사이 확정이 밀려나거나(`stale`) 화가 지워져 작업 행이 사라지면 결과는 0행 UPDATE 로 버려진다.
+되므로, 그 사이 화가 지워져 작업 행이 사라지면 결과는 0행 UPDATE 로 버려진다. 이미 받은 작업은 그 사이 확정이
+밀려나도(`stale`) 작업 행이 그대로라 제안을 저장한다 — 같은 개정을 다시 확정하면 그 제안을 추출 캐시로 쓴다.
+
+슬롯의 검증을 지난 제안에서 코어가 개체로 풀어야 하는 이름(지식의 앎 주체, 명제의 주어, 대상이 개체인 종류의 대상)이 정규화 뒤
+비는 항목은 저장 전에 버리고 `dropped` 에 센다 — 그런 항목은 행의 주어도 안정 키도 만들 수 없다. 출력 전체가 아니라 그 항목만
+버린다.
 
 추출 캐시: 같은 소설에서 슬롯·어댑터·문안 세트·출력 스키마가 같고 본문 해시·블록 id 해시·슬롯의 힌트가 아닌 렌더 값이 같은 앞
 작업이 성공해 있으면 그 제안을 복사하고 호출하지 않는다. 힌트(아는 개체 따위 정본 상태에서 오는 값)는 다른 화가 커밋될 때마다
@@ -25,8 +30,9 @@ from api.chat.prompt_builder import PromptRenderError
 from api.db.models.novel import Novel, NovelChapter
 from api.db.models.novel_bible import NovelBibleCommit, NovelBibleJob
 from api.novel_bible.core.contracts import AdapterCallError, AdapterResolver, Registry, Slot
+from api.novel_bible.core.keys import TARGETED_KINDS, normalize_name
 from api.novel_bible.core.render import render
-from api.novel_bible.core.types import CommitRef, RenderedPrompt
+from api.novel_bible.core.types import CommitRef, Proposal, RenderedPrompt
 from api.novel_bible.core.views import CommitView, source_ref_of
 from api.novel_bible.ids import JobFailure, SlotId
 
@@ -40,6 +46,8 @@ _RETRY_DELAY = timedelta(seconds=30)
 _RETRYABLE: frozenset[JobFailure] = frozenset(
     {"schema_invalid", "truncated", "empty", "llm_error", "rate_limited", "cancelled", "internal", "expired"}
 )
+# 코어가 풀어야 하는 이름이 비어 버린 항목의 `dropped` 사유.
+EMPTY_NAME = "empty_name"
 
 
 async def commit_ref(session: AsyncSession, commit: NovelBibleCommit) -> CommitRef:
@@ -59,6 +67,22 @@ async def commit_ref(session: AsyncSession, commit: NovelBibleCommit) -> CommitR
         chapter_ordinal=ordinal,
         scope="story" if content_type == "story" else "character",
     )
+
+
+def drop_unnamed(proposal: Proposal) -> Proposal:
+    kept = []
+    dropped = dict(proposal.dropped)
+    for draft in proposal.items:
+        needed = ["knower"] if draft.table == "knowledge" else []
+        if draft.proposition is not None:
+            needed.append("subject")
+            if draft.proposition.kind in TARGETED_KINDS:
+                needed.append("value")
+        if all(any(normalize_name(name.name) for name in draft.names.get(field, ())) for field in needed):
+            kept.append(draft)
+        else:
+            dropped[EMPTY_NAME] = dropped.get(EMPTY_NAME, 0) + 1
+    return Proposal(items=tuple(kept), dropped=dropped)
 
 
 def _digest(parts: list[Any]) -> str:
@@ -244,7 +268,7 @@ async def run_next_job(
         output = await resolver(slot.operation).structured(
             prepared.prompt, slot.output_schema, records=records, stage=slot.operation
         )
-        validated = slot.validate(prepared.slot_input, output)
+        validated = drop_unnamed(slot.validate(prepared.slot_input, output))
         await _succeed(factory, job_id, prepared, validated.model_dump(mode="json"), records, None)
     except AdapterCallError as error:
         await _fail(factory, job_id, attempts, error.code, retry=error.retryable and error.code in _RETRYABLE,

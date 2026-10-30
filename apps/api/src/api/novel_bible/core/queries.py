@@ -19,6 +19,7 @@ from sqlalchemy.types import Integer, Uuid
 
 from api.db.models.novel_bible import NovelBibleExpiration, NovelBibleRevision
 from api.novel_bible.core.contracts import Registry
+from api.novel_bible.core.keys import StateKey, state_key
 from api.novel_bible.core.positions import Interval, precedes, story_positions
 from api.novel_bible.core.types import BibleSnapshot, EventRow, FactRow, KnowledgeRow, RelationRow, RevisionRef
 from api.novel_bible.ids import ItemTable
@@ -102,16 +103,18 @@ async def bible_at(
 
 @dataclass(frozen=True)
 class FactsAtEvent:
-    """상태 키마다 그 사건 시점의 행(`holds` 가 거짓이면 "아님"). 순서가 미정인 행은 참으로 세지 않고 `undetermined` 로
-    따로 낸다 — 그런 행이 가장 늦은 행일 수 있는 키는 `states` 에 없다."""
+    """상태 키(`keys.state_key`)마다 그 사건 시점의 행(`holds` 가 거짓이면 "아님"). 순서가 미정인 행은 참으로 세지 않고
+    `undetermined` 로 따로 낸다 — 그런 행이 가장 늦은 행일 수 있는 키는 `states` 에 없다."""
 
-    states: Mapping[uuid.UUID, FactRow]
+    states: Mapping[StateKey, FactRow]
     undetermined: tuple[FactRow, ...]
 
 
 @dataclass(frozen=True)
 class KnowledgeAtEvent:
-    """`knows` 는 그 사건 시점에 참인 같은 키의 사실과 짝지어(없으면 None — 사실 미정), `believes` 는 명제 그대로 따로 낸다."""
+    """`knows` 는 같은 리비전 정본에서 명제 키가 같은 사실 행마다 한 짝으로 낸다(왼쪽 조인 — 그런 행이 없으면 None, 사실
+    미정). 사실이 그 사건 뒤에 시작해도 짝이 된다 — 그 순서를 보는 것은 지식을 쓰는 쪽이다. `believes` 는 명제 그대로 따로
+    낸다."""
 
     knows: tuple[tuple[KnowledgeRow, FactRow | None], ...]
     believes: tuple[KnowledgeRow, ...]
@@ -138,14 +141,14 @@ def _facts_at(snapshot: BibleSnapshot, event_id: uuid.UUID) -> FactsAtEvent:
     positions = story_positions(events, snapshot.relations or ())
     actual = {event.id for event in events if event.actuality in ("present", "flashback")}
     here = positions.get(event_id)
-    candidates: dict[uuid.UUID, list[tuple[FactRow, Interval | str | None]]] = {}
-    unknown: dict[uuid.UUID, list[tuple[FactRow, Interval | None]]] = {}
+    candidates: dict[StateKey, list[tuple[FactRow, Interval | str | None]]] = {}
+    unknown: dict[StateKey, list[tuple[FactRow, Interval | None]]] = {}
     for fact in snapshot.facts:
         start = _start(fact, positions, actual)
         if start == "dream":
             continue
         if start == "work":
-            candidates.setdefault(fact.fact_key, []).append((fact, "work"))
+            candidates.setdefault(state_key(fact), []).append((fact, "work"))
             continue
         assert not isinstance(start, str)
         if fact.valid_from_event_id == event_id:
@@ -155,9 +158,9 @@ def _facts_at(snapshot: BibleSnapshot, event_id: uuid.UUID) -> FactsAtEvent:
         else:
             relation = precedes(start, here)
         if relation is True:
-            candidates.setdefault(fact.fact_key, []).append((fact, start))
+            candidates.setdefault(state_key(fact), []).append((fact, start))
         elif relation is None:
-            unknown.setdefault(fact.fact_key, []).append((fact, start))
+            unknown.setdefault(state_key(fact), []).append((fact, start))
 
     def follows(first: Interval | str | None, second: Interval | str | None) -> bool:
         if first == "work":
@@ -166,7 +169,7 @@ def _facts_at(snapshot: BibleSnapshot, event_id: uuid.UUID) -> FactsAtEvent:
             return False
         return precedes(first, second) is True
 
-    states: dict[uuid.UUID, FactRow] = {}
+    states: dict[StateKey, FactRow] = {}
     undetermined = [fact for rows in unknown.values() for fact, _ in rows]
     for key, rows in candidates.items():
         latest = [(f, s) for f, s in rows if not any(follows(s, other) for g, other in rows if g is not f)]
@@ -201,7 +204,9 @@ async def knowledge_at(
         return KnowledgeAtEvent(knows=(), believes=())
     positions = story_positions(snapshot.events or (), snapshot.relations or ())
     here = positions.get(event_id)
-    facts = _facts_at(snapshot, event_id).states
+    facts: dict[uuid.UUID, list[FactRow]] = {}
+    for fact in snapshot.facts or ():
+        facts.setdefault(fact.fact_key, []).append(fact)
     knows: list[tuple[KnowledgeRow, FactRow | None]] = []
     believes: list[KnowledgeRow] = []
     undetermined: list[KnowledgeRow] = []
@@ -218,7 +223,7 @@ async def knowledge_at(
             undetermined.append(row)
         elif relation:
             if row.kind == "knows":
-                knows.append((row, facts.get(row.fact_key)))
+                knows += [(row, fact) for fact in facts.get(row.fact_key, [])] or [(row, None)]
             else:
                 believes.append(row)
     return KnowledgeAtEvent(knows=tuple(knows), believes=tuple(believes), undetermined=tuple(undetermined))

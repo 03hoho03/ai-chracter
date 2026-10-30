@@ -37,7 +37,7 @@ from api.novel_bible.core.contracts import (
     Registry,
     Slot,
 )
-from api.novel_bible.core.keys import normalize_name
+from api.novel_bible.core.keys import normalize_name, predicate_norm
 from api.novel_bible.core.pipeline import run_until_idle
 from api.novel_bible.core.queries import current_items
 from api.novel_bible.core.quotes import verify_quote
@@ -192,7 +192,7 @@ class FakeSlot:
                     NovelBibleFact(
                         id=item.id, supersedes_id=item.supersedes_id, fact_key=item.fact_key,
                         subject_entity_id=item.entity_ids["subject"][0], kind=proposition.kind,
-                        predicate_norm=normalize_name(proposition.attribute or proposition.kind),
+                        predicate_norm=predicate_norm(proposition.kind, proposition.attribute),
                         value=proposition.value, value_norm=normalize_name(proposition.value),
                         value_entity_id=value_ids[0] if value_ids else None, holds=proposition.holds,
                         immutable=False, onset=False, scope=item.draft.fields["scope"],

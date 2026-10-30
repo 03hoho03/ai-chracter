@@ -7,6 +7,7 @@
 import hashlib
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,7 @@ from api.db.models.novel_bible import NovelBibleEntity, NovelBibleEvidence, Nove
 from api.db.models.novel_bible_events import NovelBibleEvent, NovelBibleEventRelation
 from api.db.models.novel_bible_facts import NovelBibleFact
 from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
+from api.novel_bible.core.keys import StateKey, fact_key, state_key
 from api.novel_bible.core.queries import bible_at, facts_true_at, knowledge_at, revealed_facts
 from api.novel_bible.core.types import FactRow
 from api.novel_bible.ids import EventActuality, FactKind, FactScope, ItemStatus
@@ -61,14 +63,20 @@ async def _event(
     return event
 
 
+def _key(subject: uuid.UUID, kind: FactKind, value: str, holds: bool, value_entity: uuid.UUID | None = None) -> uuid.UUID:
+    """종류 이름이 술어인 종류(생사·출입·소지·능력)의 명제 키."""
+    return fact_key(subject, kind, kind, str(value_entity) if value_entity is not None else value, holds)
+
+
 async def _fact(
-    db: AsyncSession, revision: NovelBibleRevision, chapter_id: uuid.UUID, *, key: uuid.UUID, subject: uuid.UUID,
+    db: AsyncSession, revision: NovelBibleRevision, chapter_id: uuid.UUID, *, subject: uuid.UUID,
     kind: FactKind = "life", value: str = "alive", holds: bool = True, scope: FactScope = "from_here",
     valid_from: uuid.UUID | None = None, value_entity: uuid.UUID | None = None, status: ItemStatus = "confirmed",
 ) -> NovelBibleFact:
     fact = NovelBibleFact(
         novel_id=revision.novel_id, created_revision_id=revision.id, chapter_id=chapter_id, status=status,
-        fact_key=key, subject_entity_id=subject, kind=kind, predicate_norm=kind, value=value, value_norm=value,
+        fact_key=_key(subject, kind, value, holds, value_entity), subject_entity_id=subject, kind=kind,
+        predicate_norm=kind, value=value, value_norm=value,
         value_entity_id=value_entity, holds=holds, immutable=False, onset=False, scope=scope,
         valid_from_event_id=valid_from,
     )
@@ -93,13 +101,13 @@ async def test_bible_at_reads_each_revision_as_it_was(db_session: AsyncSession) 
     second, second_revision = await add_chapter(db_session, novel.id, 2, "2화")
     subject, registry = await _entity(db_session, novel.id, "하나"), fake_registry(facts_slot())
     r1 = await plant_revision(db_session, novel.id, first.id, first_revision.id)
-    old = await _fact(db_session, r1, first.id, key=uuid.uuid4(), subject=subject)
+    old = await _fact(db_session, r1, first.id, subject=subject)
     r2 = await plant_revision(db_session, novel.id, second.id, second_revision.id)
-    other = await _fact(db_session, r2, second.id, key=uuid.uuid4(), subject=subject)
-    await _fact(db_session, r2, second.id, key=uuid.uuid4(), subject=subject, status="proposed")
+    other = await _fact(db_session, r2, second.id, subject=subject)
+    await _fact(db_session, r2, second.id, subject=subject, status="proposed")
     r3 = await plant_revision(db_session, novel.id, first.id, first_revision.id)
     await _expire(db_session, r3, "fact", old.id)
-    new = await _fact(db_session, r3, first.id, key=old.fact_key, subject=subject)
+    new = await _fact(db_session, r3, first.id, subject=subject)
 
     async def fact_ids(revision_no: int | None) -> set[uuid.UUID]:
         snapshot = await bible_at(db_session, novel.id, registry, revision_no=revision_no)
@@ -125,9 +133,10 @@ class _Story:
     main: list[NovelBibleEvent]
     flashback_before_second: NovelBibleEvent
     loose_flashback: NovelBibleEvent
-    life: uuid.UUID
-    sword: uuid.UUID
-    shield: uuid.UUID
+    life: StateKey
+    sword: StateKey
+    shield: StateKey
+    scene_presence: StateKey
     death: NovelBibleFact
     hana: uuid.UUID
     dul: uuid.UUID
@@ -135,7 +144,8 @@ class _Story:
 
 async def _story(db: AsyncSession) -> _Story:
     """1~5화. 화마다 주선 사건 하나. 하나는 처음부터 살아 있고(작품 범위) 3화에서 죽는다. 셋은 2화에 검을 얻고 4화에 잃는다.
-    4화의 꿈 속에서 셋이 방패를 얻는다. 5화에는 2화 사건 앞의 회상 하나와 관계 없는 회상 하나가 있다."""
+    4화의 꿈 속에서 셋이 방패를 얻는다. 둘은 2화 사건 한 장면에만 그 자리에 있다(장면 범위). 5화에는 2화 사건 앞의 회상 하나와
+    관계 없는 회상 하나가 있다. 삶과 죽음, 얻음과 잃음은 명제 키가 다르고 상태 키가 같다."""
     novel = await make_novel(db)
     chapters, chapter_revisions, revisions, main = [], [], [], []
     for ordinal in range(1, 6):
@@ -158,17 +168,20 @@ async def _story(db: AsyncSession) -> _Story:
     dream = await _event(db, revisions[3], chapters[3], uuid.uuid4(), ordinal=2, actuality="dream_or_imagined")
     hana, set_, dul = [await _entity(db, novel.id, name) for name in ("하나", "셋", "둘")]
     sword_item, shield_item = await _entity(db, novel.id, "검", "object"), await _entity(db, novel.id, "방패", "object")
-    life, sword, shield = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    await _fact(db, revisions[0], chapters[0].id, key=life, subject=hana, scope="work")
-    death = await _fact(db, revisions[2], chapters[2].id, key=life, subject=hana, value="dead", valid_from=main[2].id)
+    await _fact(db, revisions[0], chapters[0].id, subject=hana, scope="work")
+    death = await _fact(db, revisions[2], chapters[2].id, subject=hana, value="dead", valid_from=main[2].id)
     for index, holds in [(1, True), (3, False)]:
-        await _fact(db, revisions[index], chapters[index].id, key=sword, subject=set_, kind="possession", value="검",
+        await _fact(db, revisions[index], chapters[index].id, subject=set_, kind="possession", value="검",
                     holds=holds, valid_from=main[index].id, value_entity=sword_item)
-    await _fact(db, revisions[3], chapters[3].id, key=shield, subject=set_, kind="possession", value="방패",
+    await _fact(db, revisions[3], chapters[3].id, subject=set_, kind="possession", value="방패",
                 valid_from=dream.id, value_entity=shield_item)
+    await _fact(db, revisions[1], chapters[1].id, subject=dul, kind="presence", value="present", scope="scene",
+                valid_from=main[1].id)
     return _Story(
-        novel.id, chapters, chapter_revisions, revisions, main, before_second, loose, life, sword, shield, death, hana,
-        dul,
+        novel.id, chapters, chapter_revisions, revisions, main, before_second, loose,
+        life=(hana, "life", "life", None), sword=(set_, "possession", "possession", sword_item),
+        shield=(set_, "possession", "possession", shield_item), scene_presence=(dul, "presence", "presence", None),
+        death=death, hana=hana, dul=dul,
     )
 
 
@@ -176,36 +189,43 @@ async def test_facts_true_at_follow_story_order(db_session: AsyncSession) -> Non
     story = await _story(db_session)
     registry = full_registry()
 
-    async def at(event: NovelBibleEvent) -> tuple[dict[uuid.UUID, FactRow], set[uuid.UUID]]:
+    async def at(event: NovelBibleEvent) -> tuple[dict[StateKey, FactRow], set[StateKey]]:
         result = await facts_true_at(db_session, story.novel_id, registry, event_id=event.id)
-        return dict(result.states), {row.fact_key for row in result.undetermined}
+        return dict(result.states), {state_key(row) for row in result.undetermined}
 
     states, _ = await at(story.main[4])
     assert states[story.life].value_norm == "dead"
     assert states[story.sword].holds is False
     # 꿈 속에서 얻은 방패는 상태가 아니다 — 참도 미정도 아니다.
     assert story.shield not in states
-    states, _ = await at(story.main[2])
+    # 장면 범위 사실은 그 사건에서만 참이고, 뒤 사건으로 이어지지 않는다(미정도 아니다).
+    assert story.scene_presence not in states
+    states, undetermined = await at(story.main[2])
     assert states[story.sword].holds is True
+    assert story.scene_presence not in states and story.scene_presence not in undetermined
+    states, _ = await at(story.main[1])
+    assert states[story.scene_presence].value_norm == "present"
     states, _ = await at(story.flashback_before_second)
     assert states[story.life].value_norm == "alive"
     states, undetermined = await at(story.loose_flashback)
     assert story.life not in states and story.life in undetermined
 
 
-async def test_knowledge_at_resolves_through_the_current_fact_of_its_key(db_session: AsyncSession) -> None:
+async def test_knowledge_at_joins_the_facts_of_the_same_proposition_key(db_session: AsyncSession) -> None:
     story = await _story(db_session)
-    knows = NovelBibleKnowledge(
-        novel_id=story.novel_id, created_revision_id=story.revisions[4].id, chapter_id=story.chapters[4].id,
-        knower_entity_id=story.dul, kind="knows", fact_key=story.life, proposition={"value": "dead"},
-        known_since_event_id=story.main[4].id,
-    )
-    believes = NovelBibleKnowledge(
-        novel_id=story.novel_id, created_revision_id=story.revisions[4].id, chapter_id=story.chapters[4].id,
-        knower_entity_id=story.dul, kind="believes", fact_key=story.life, proposition={"value": "alive"},
-        known_since_event_id=story.main[4].id,
-    )
-    db_session.add_all([knows, believes])
+
+    def knowledge(index: int, kind: str, value: str) -> NovelBibleKnowledge:
+        return NovelBibleKnowledge(
+            novel_id=story.novel_id, created_revision_id=story.revisions[index].id, chapter_id=story.chapters[index].id,
+            knower_entity_id=story.dul, kind=kind, fact_key=_key(story.hana, "life", value, True),
+            proposition={"value": value}, known_since_event_id=story.main[index].id,
+        )
+
+    knows, believes = knowledge(4, "knows", "dead"), knowledge(4, "believes", "alive")
+    # 2화에서 이미 죽음을 "안다" — 사망 사실은 3화에 시작하지만 명제가 같은 그 사실 행과 짝이 된다(그 시점에 참인 삶 행이
+    # 아니다). 이 순서를 보는 것은 지식을 쓰는 쪽이다.
+    early = knowledge(1, "knows", "dead")
+    db_session.add_all([knows, believes, early])
     await db_session.flush()
     # 3화를 다시 확정해 사건과 사망 사실이 새 행이 된다 — 5화 지식은 행을 고치지 않아도 같은 키의 새 사실로 풀린다.
     revision = await plant_revision(db_session, story.novel_id, story.chapters[2].id, story.chapter_revisions[2].id)
@@ -213,21 +233,22 @@ async def test_knowledge_at_resolves_through_the_current_fact_of_its_key(db_sess
     await _expire(db_session, revision, "fact", story.death.id)
     third_event = await _event(db_session, revision, story.chapters[2], story.main[2].anchor_block_ids[0])
     new_death = await _fact(
-        db_session, revision, story.chapters[2].id, key=story.life, subject=story.hana, value="dead",
-        valid_from=third_event.id,
+        db_session, revision, story.chapters[2].id, subject=story.hana, value="dead", valid_from=third_event.id,
     )
 
-    result = await knowledge_at(
-        db_session, story.novel_id, full_registry(), knower_entity_id=story.dul, event_id=story.main[4].id
-    )
-    assert [(row.id, fact.id if fact else None) for row, fact in result.knows] == [(knows.id, new_death.id)]
+    async def known(event: NovelBibleEvent, registry: Any) -> Any:
+        return await knowledge_at(db_session, story.novel_id, registry, knower_entity_id=story.dul, event_id=event.id)
+
+    result = await known(story.main[4], full_registry())
+    assert {(row.id, fact.id if fact else None) for row, fact in result.knows} == {
+        (knows.id, new_death.id), (early.id, new_death.id)
+    }
     assert [row.id for row in result.believes] == [believes.id]
+    result = await known(story.main[1], full_registry())
+    assert [(row.id, fact.id if fact else None) for row, fact in result.knows] == [(early.id, new_death.id)]
 
-    without_facts = await knowledge_at(
-        db_session, story.novel_id, fake_registry(events_slot(), knowledge_slot()), knower_entity_id=story.dul,
-        event_id=story.main[4].id,
-    )
-    assert [(row.id, fact) for row, fact in without_facts.knows] == [(knows.id, None)]
+    without_facts = await known(story.main[4], fake_registry(events_slot(), knowledge_slot()))
+    assert {(row.id, fact) for row, fact in without_facts.knows} == {(knows.id, None), (early.id, None)}
 
 
 def _quote(revision: NovelChapterRevision, block: int) -> tuple[uuid.UUID, int, int, str]:
@@ -243,7 +264,7 @@ async def test_revealed_facts_follow_what_readers_were_shown(db_session: AsyncSe
     facts = {}
     for chapter, revision in [(shown, confirmed), (hidden, hidden_revision)]:
         bible_revision = await plant_revision(db_session, novel.id, chapter.id, revision.id)
-        fact = await _fact(db_session, bible_revision, chapter.id, key=uuid.uuid4(), subject=subject)
+        fact = await _fact(db_session, bible_revision, chapter.id, subject=subject)
         block_id, start, end, digest = _quote(revision, 1)
         db_session.add(
             NovelBibleEvidence(

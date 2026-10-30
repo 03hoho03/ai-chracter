@@ -209,10 +209,17 @@ async def test_concurrent_confirms_of_one_chapter_leave_one_in_flight_commit(com
             )
         )
         await passed_stale_update.wait()
-        earlier = await confirm(
-            first, registry, novel_id=novel.id, chapter_id=chapter.id, revision_id=first_revision.id, actor=SYSTEM
-        )
-        go.set()
+        # 뒤 입구가 화 행을 쥔 채 서 있다 — 입구가 화 행을 키 공유보다 세게 잡으면 앞 입구가 그 잠금을 기다린다. 행 잠금
+        # 대기는 이 엔진의 잠금 대기 상한(5초)이 끊지만, 그 밖의 대기로 멈추지 않게 시간 상한을 두고, 어느 쪽으로 끝나든 뒤
+        # 입구를 풀어 준다.
+        try:
+            async with asyncio.timeout(10):
+                earlier = await confirm(
+                    first, registry, novel_id=novel.id, chapter_id=chapter.id, revision_id=first_revision.id,
+                    actor=SYSTEM,
+                )
+        finally:
+            go.set()
         # 뒤 입구의 INSERT 는 앞 입구의 아직 커밋되지 않은 진행 중 확정을 부분 유니크에서 기다리다가, 앞 입구가 커밋하면
         # 위반을 맞고 세이브포인트로 되돌아가 한 번 더 한다 — 이번에는 앞 확정이 보여 stale 로 돌린다.
         await _wait_until_a_lock_is_awaited(committed_engine)
