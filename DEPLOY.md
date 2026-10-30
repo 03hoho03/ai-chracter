@@ -410,7 +410,8 @@ Artifact Registry push → IAP SSH로 VM에서 `ops/swap-api.sh <태그>`(아래
 단계가 중앙값 약 1분 10초, 이미지 빌드·푸시가 약 40초다. 교체는 옛 색에 남은 요청이 끝나기를 기다리므로 그만큼 길어질 수 있다).
 트리거 경로는 `apps/api/**` · `docker-compose.prod.yml` · `Caddyfile` · 저장소 루트 `ops/**` ·
 워크플로 자신이다. 단 `apps/api/**` 중 런타임 코드가 읽지 않는 파일(`tests/`, 앱 최상위 md, `probe-runs/`,
-평가 도구 `scripts/memory_eval/`·`scripts/memory_eval_cli.py`, 쓰지 않는 `cloudbuild.yaml`)만 바뀐 병합은
+평가 도구 `scripts/memory_eval/`·`scripts/memory_eval_cli.py`, 로컬 측정 서버와 그 턴 기록 내보내기
+`scripts/chat_lab/`·`scripts/chat_lab_*.py`, 쓰지 않는 `cloudbuild.yaml`)만 바뀐 병합은
 배포하지 않는다 — 교체해도 운영 동작이 같다. `apps/api/README.md` 는 빌드가 읽으므로 지우거나 이름을 바꾸면
 다음 api 배포의 빌드에서야 드러난다.
 **GitHub Secrets에 넣는 값은 없다** — WIF라 키를 저장하지 않는다.

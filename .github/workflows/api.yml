@@ -7,7 +7,8 @@ on:
       - "apps/api/**"
       # 아래 둘은 런타임 코드도, 이 워크플로의 검사·테스트도 읽지 않는 파일이라 그것만 바뀐 커밋에는
       # CI 를 돌리지 않는다. 대상은 앱 최상위 md(`CLAUDE.md`·`README.md`)와 `probe-runs/` 아래 기록
-      # 전부(html·json·md, 기록을 읽기용 HTML 로 굳히는 일회성 도구 .py 포함)다. 거기 .py 가 섞여 있어도 ruff·mypy 는
+      # (html·json·md, 기록을 읽기용 HTML 로 굳히는 일회성 도구 .py 포함)이다 — 단 `probe-runs/archive/transcripts/`
+      # 의 추적 대화록은 테스트가 읽으므로 바로 뒤에서 다시 넣는다. 거기 .py 가 섞여 있어도 ruff·mypy 는
       # `src migrations scripts tests`, pytest 는 `tests`, 커버리지는 `api` 패키지만 보므로 검사 경로 밖이다.
       # `README.md` 는 `pyproject.toml` 의 `readme` 라 `uv sync` 가 설치 때 읽기는 하지만, 내용만 바뀐
       # README 는 패키지 설명 메타데이터 말고는 검사 결과를 바꾸지 않는다. README 를 지우거나 이름을
@@ -15,12 +16,18 @@ on:
       # 돌릴 수 없다), 같은 PR 에 `apps/api` 의 다른 변경(예: `src` 한 줄)을 섞어 검사가 돌게 한다.
       # `*` 는 `/` 를 넘지 않아 `apps/api` 바로 아래 md 만 빠진다 — 하위 디렉터리 md 는 앞으로 코드가
       # 읽을 수 있어 일부러 거르지 않는다. 부정 패턴은 뒤에 오는 패턴이 이기므로, 아래 양성 패턴들이
-      # 이 파일들을 다시 포함하지 않는지 순서를 지킨다.
+      # 다시 포함하는 것은 테스트가 읽는 대화록 폴더뿐인지 순서를 지킨다.
       - "!apps/api/*.md"
       - "!apps/api/probe-runs/**"
+      # 대화록 분석 스크립트(`scripts/analyze_chat_probe.py`)의 특성화 테스트가 이 폴더의 추적 대화록을 읽어
+      # 기대값과 맞춰 보므로, 대화록만 바뀐 커밋에도 테스트가 돌게 한다. 위 부정 패턴 뒤에 있어야 이긴다.
+      - "apps/api/probe-runs/archive/transcripts/**"
       # 자기 자신이 필터에 있는 이유: 이 워크플로의 검사 단계를 고친 커밋은 그 검사를
       # 한 번도 안 거친 채 병합된다(`deploy-api.yml` 이 같은 이유로 자기 파일을 넣어 뒀다).
       - ".github/workflows/api.yml"
+      # 측정 서버 스키마 드리프트 검사가 이 생성물을 다시 떨궈 커밋본과 맞춰 보므로, 이 파일만 손으로 고친
+      # 커밋에도 검사가 돌게 한다.
+      - "apps/chat-lab/openapi.json"
       # 튜토리얼 시드 테스트가 빌더가 고를 수 있는 값(스탯 아이콘·색·턴 하한)을 이 FE 소스에서 직접 읽는다.
       - "apps/web/src/entities/chat-room/model/statIcons.ts"
       - "packages/ui/src/lib/color-palette.ts"
@@ -31,10 +38,14 @@ on:
   pull_request:
     paths:
       - "apps/api/**"
-      # 제외 이유는 push 쪽 주석과 같다.
+      # 제외 이유와 대화록 폴더를 다시 넣는 이유는 push 쪽 주석과 같다.
       - "!apps/api/*.md"
       - "!apps/api/probe-runs/**"
+      - "apps/api/probe-runs/archive/transcripts/**"
       - ".github/workflows/api.yml"
+      # 측정 서버 스키마 드리프트 검사가 이 생성물을 다시 떨궈 커밋본과 맞춰 보므로, 이 파일만 손으로 고친
+      # 커밋에도 검사가 돌게 한다.
+      - "apps/chat-lab/openapi.json"
       # 튜토리얼 시드 테스트가 빌더가 고를 수 있는 값(스탯 아이콘·색·턴 하한)을 이 FE 소스에서 직접 읽는다.
       - "apps/web/src/entities/chat-room/model/statIcons.ts"
       - "packages/ui/src/lib/color-palette.ts"
@@ -133,6 +144,24 @@ jobs:
           uv run python scripts/export_openapi.py
           git diff --exit-code -- openapi.json || {
             echo "::error::openapi.json 이 소스와 어긋났다 — apps/api 에서 'uv run python scripts/export_openapi.py' 를 돌리고 커밋해라"
+            exit 1
+          }
+
+      # 로컬 측정 서버(`scripts/chat_lab/`)의 스키마 `apps/chat-lab/openapi.json` 도 커밋되는 생성물이라
+      # 같은 이유로 다시 떨궈 커밋본과 맞춰 본다. 잡의 작업 폴더가 `apps/api` 라 경로를 `../chat-lab/` 로
+      # 적는다 — 저장소 루트 기준으로 적으면 `apps/api` 아래에서 찾다가 맞는 파일이 없어 늘 통과한다.
+      # `git diff` 대신 `git status --porcelain` 출력이 비었는지 보는 것은, 생성물을 커밋에서 빠뜨려
+      # 아직 추적되지 않는 새 파일도 `git diff` 는 보지 못해서다.
+      #
+      # `--dump-openapi` 는 DB·설정의 DB 주소·측정 런 폴더를 보지 않고 스키마만 쓰고, 스키마에 설정값이
+      # 들어가지 않는다. 그래서 `.env` 도 기본 DB 도 없는 이 잡에서도 로컬과 같은 바이트가 나온다.
+      - name: chat-lab openapi.json 드리프트 검사
+        run: |
+          uv run python scripts/chat_lab_server.py --dump-openapi
+          test -z "$(git status --porcelain -- ../chat-lab/openapi.json)" || {
+            git status --porcelain -- ../chat-lab/openapi.json
+            git diff -- ../chat-lab/openapi.json
+            echo "::error::apps/chat-lab/openapi.json 이 측정 서버 스키마와 어긋났다 — apps/api 에서 'uv run python scripts/chat_lab_server.py --dump-openapi' 를 돌리고 커밋해라"
             exit 1
           }
 

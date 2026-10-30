@@ -132,6 +132,34 @@ https://<호스트>.<테일넷>.ts.net/s3/   → localhost:5001  (moto, 썸네�
   브라우저가 mixed content로 막아 화면에선 여전히 안 보인다.
 - 이건 dev 전용 문제다. 운영은 R2가 자체 도메인으로 HTTPS 서명 URL을 주므로 해당 없음.
 
+## 5) 채팅 측정 도구(chat-lab)
+
+채팅엔 불필요하다. 측정 런 폴더(기본 `apps/api/probe-runs/`)를 읽어 HTTP 로 내주는 로컬 측정 서버와, 그 런의 턴 기록을
+로컬 DB 에서 꺼내 런 폴더에 쓰는 내보내기 명령이다. 둘 다 운영 이미지에 싣지 않고 배포도 일으키지 않는다(`DEPLOY.md` 의
+「BE → GCE VM」 절).
+
+```sh
+# 측정 서버 — http://127.0.0.1:8791
+cd apps/api && uv run python scripts/chat_lab_server.py --port 8791 [--root <런 루트>] [--database-url <로컬 DB>]
+
+# 턴 기록 내보내기 — <묶음 폴더>/chat-turns.jsonl 을 쓴다
+cd apps/api && uv run python scripts/chat_lab_export_turns.py --run-dir <묶음 폴더> [--database-url <로컬 DB>] [--force]
+
+# 측정 서버 스키마 다시 떨구기 — apps/chat-lab/openapi.json 을 쓴다
+cd apps/api && uv run python scripts/chat_lab_server.py --dump-openapi
+```
+
+- **측정 서버는 `127.0.0.1` 에만 뜬다**(호스트를 바꾸는 인자가 없다). 덤프에 시험 대화 원문이 있어 같은 망의 다른 기기가
+  읽지 못하게 한 것이다.
+- **DB 는 로컬만 읽는다.** `--database-url` 이 없으면 설정의 `DATABASE_URL` 을 쓰고, 어느 쪽이든 호스트가 `localhost`·
+  `127.0.0.1`·`::1` 이 아니면 서버는 뜨지 않고 내보내기는 아무것도 읽지 않고 끝난다. 측정 서버는 턴 기록 내보내기 요청 때만
+  DB 를 읽는다. 런을 돈 DB 가 따로 있으면(측정 컨테이너 DB 등) 그 주소를 준다.
+- **내보내기 종료 코드**: `0` 썼다, `1` 입력이 없거나 거부했다(이미 있음·보관 폴더 `archive/` 아래·방 없음·행 0 등), `3` 로컬
+  DB 가 아니다(`2` 는 인자 오류). `--run-dir` 은 런 루트(`--root`, 기본 `apps/api/probe-runs`) 안이어야 하고, 이미 있는
+  `chat-turns.jsonl` 은 `--force` 를 줄 때만 바꾼다.
+- **측정 서버의 라우트·응답 모델을 고쳤으면 스키마를 다시 떨궈 같이 커밋한다.** api CI 가 같은 명령으로 다시 떨궈 보고 커밋본과
+  다르거나 커밋되지 않은 새 파일이면 실패한다. DB·`.env` 없이 돈다.
+
 ## 시드 콘텐츠 (튜토리얼 스토리 + 캐릭터)
 
 `./dev-up.sh`(또는 `cd apps/api && uv run --env-file .env python scripts/seed_dev.py`)가 아래 두 계정과, 제작 가이드가 예시로
