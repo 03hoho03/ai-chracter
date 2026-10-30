@@ -38,6 +38,7 @@ export const ROUTING_LANE_LABELS = {
 
 export const ROOM_MODEL_LABELS = {
   gemini: "Gemini 방",
+  haiku_writer: "Haiku 방",
   sonnet: "Sonnet 방",
   opus: "Opus 방",
   any: "모든 작업 모델",
@@ -46,6 +47,7 @@ export const ROOM_MODEL_LABELS = {
 /** 체인의 모델 이름. 프롬프트 화면의 모델 탭과 배정 표의 읽을 체인·부를 모델이 이 한 곳을 읽는다. */
 export const PROMPT_MODEL_LABELS = {
   gemini: "Gemini",
+  haiku_writer: "Claude Haiku 5.5",
   sonnet: "Claude Sonnet 5.5",
   opus: "Claude Opus 5.5",
   haiku: "Claude Haiku · 판정 전용",
@@ -72,6 +74,14 @@ export const ROUTE_SKIP_REASON_LABELS = {
 
 export function isPromptSetModelId(value: string): value is PromptSetModelId {
   return value in PROMPT_MODEL_LABELS;
+}
+
+/** 소설 레인에 체인이 있는 모델 — 소설에서 고를 수 있는 글쓰기 모델이다. 판정 전용 `haiku` 와 채팅 전용 글쓰기 `haiku_writer` 는
+ * 소설 레인에 없다(서버가 그 체인을 고른 행·세트를 거부한다). 프롬프트 화면의 모델 탭과 배정 표의 읽을 체인이 이 한 곳을 읽는다. */
+const NOVEL_PROMPT_MODELS = ["gemini", "sonnet", "opus"] as const satisfies readonly PromptSetModelId[];
+
+export function isNovelPromptModel(value: PromptSetModelId): boolean {
+  return NOVEL_PROMPT_MODELS.some((model) => model === value);
 }
 
 export function isRoutingLane(value: string): value is RoutingLane {

@@ -305,10 +305,16 @@ async def test_clover_paid_image_with_the_current_or_no_version_spends(
 
 
 def test_price_functions_follow_the_registry() -> None:
-    """모델 셋의 네 단가와, 그 단가로 계산하는 작업 금액(화 생성·다시 만들기·원고·구성안·장면 구성안·AI 수정·연쇄 묶음 하나),
-    노벨 화 가격(앞 무료 화까지 0, 그 뒤 화당 가격)이 등록부·상수 값 그대로다."""
+    """모델마다 채팅 턴 단가와, 소설 모델의 소설 세 단가와 그 단가로 계산하는 작업 금액(화 생성·다시 만들기·원고·구성안·장면
+    구성안·AI 수정·연쇄 묶음 하나), 노벨 화 가격(앞 무료 화까지 0, 그 뒤 화당 가격)이 등록부·상수 값 그대로다. 채팅 전용 모델은
+    소설 단가가 없다(소설 요청 게이트가 막는다)."""
     for m in CHAT_MODELS:
+        assert chat_turn_cost(m.id) == clover.CLOVER_MODEL_PRICES[m.id].chat_turn, m.id
+    for m in CHAT_MODELS:
+        if not m.novel_selectable:
+            continue
         row = clover.CLOVER_MODEL_PRICES[m.id]
+        assert row.novel_episode is not None, m.id
         assert (
             chat_turn_cost(m.id),
             novel_episode_unit_price(m.id),
@@ -362,4 +368,21 @@ async def test_pricing_response_amounts_follow_the_registry(
     assert [(m["id"], m["chatTurnCost"], m["novelEpisodeCost"]) for m in body["models"]] == [
         ("gemini", gemini.chat_turn, gemini.novel_episode),
         ("opus", opus.chat_turn, opus.novel_episode),
+    ]
+
+
+async def test_a_visible_haiku_writer_row_has_its_chat_price_and_no_novel_price(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공개 가격은 구매 전 안내라 쓰이지 않을 소설 값을 싣지 않는다 — 채팅 전용 Haiku 글쓰기 행의 소설 화 단가는 null 이다. 행 순서는
+    레지스트리(가격순) 순서다."""
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", True)
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus", "haiku_writer"])
+
+    body = (await db_client.get("/clover/pricing")).json()
+
+    assert [(m["id"], m["isDefault"], m["chatTurnCost"], m["novelEpisodeCost"]) for m in body["models"]] == [
+        ("gemini", True, clover.CLOVER_MODEL_PRICES["gemini"].chat_turn, clover.CLOVER_MODEL_PRICES["gemini"].novel_episode),
+        ("haiku_writer", False, clover.CLOVER_MODEL_PRICES["haiku_writer"].chat_turn, None),
+        ("opus", False, clover.CLOVER_MODEL_PRICES["opus"].chat_turn, clover.CLOVER_MODEL_PRICES["opus"].novel_episode),
     ]

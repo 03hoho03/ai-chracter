@@ -240,7 +240,15 @@ async def test_model_list_for_an_account_without_access_is_gemini_only(
     resp = await db_client.get("/chat-models")
 
     assert resp.status_code == 200
-    assert resp.json() == [{"id": "gemini", "name": "Gemini", "beta": False, "turnCost": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn}]
+    assert resp.json() == [
+        {
+            "id": "gemini",
+            "name": "Gemini",
+            "isDefault": True,
+            "beta": False,
+            "turnCost": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
+        }
+    ]
 
 
 async def test_model_list_with_the_switch_on_has_the_chat_models_with_price_and_beta_mark(

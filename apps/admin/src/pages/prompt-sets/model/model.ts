@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import { PROMPT_MODEL_LABELS } from "@/entities/prompt-routing";
+import { isNovelPromptModel, PROMPT_MODEL_LABELS } from "@/entities/prompt-routing";
 
 import type { PromptLane } from "./lane";
 
@@ -17,15 +17,15 @@ export function isPromptModel(value: string): value is PromptModel {
 
 const PROMPT_MODELS = Object.keys(PROMPT_MODEL_LABELS).filter(isPromptModel);
 
-/** 심사 레인(발행 심사·노벨 심사)은 모델을 고르지 않아 Gemini 세트 하나뿐이다. 판정 전용 모델은 채팅 판정·요약 문안이라
- * 스토리·캐릭터 레인에만 있다(서버가 그 밖의 조합을 422로 거부한다). */
+/** 심사 레인(발행 심사·노벨 심사)은 모델을 고르지 않아 Gemini 세트 하나뿐이다. 판정 전용 모델은 채팅 판정·요약 문안이고 Haiku
+ * 글쓰기는 채팅 전용이라 둘 다 스토리·캐릭터 레인에만 있다(서버가 그 밖의 조합을 422로 거부한다). */
 export function promptModelsFor(lane: PromptLane): readonly PromptModel[] {
   if (lane === "publish_filter" || lane === "novel_screen") return ["gemini"];
-  if (lane === "novel") return PROMPT_MODELS.filter((model) => model !== "haiku");
+  if (lane === "novel") return PROMPT_MODELS.filter(isNovelPromptModel);
   return PROMPT_MODELS;
 }
 
-/** 한 화면에 체인 13개(스토리·캐릭터 × 4 + 소설 × 3 + 발행 심사·노벨 심사)가 함께 있을 때 체인별 상태를 담는 키. */
+/** 한 화면에 체인 15개(스토리·캐릭터 × 5 + 소설 × 3 + 발행 심사·노벨 심사)가 함께 있을 때 체인별 상태를 담는 키. */
 export type PromptChainKey = `${PromptLane}:${PromptModel}`;
 
 export function promptChainKey(lane: PromptLane, model: PromptModel): PromptChainKey {

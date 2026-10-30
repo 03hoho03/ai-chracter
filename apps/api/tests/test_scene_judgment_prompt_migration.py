@@ -24,7 +24,7 @@ from api.admin.prompts import _validate_prompt_draft_for_publish
 from api.chat.prompt_builder import PromptNames, build_scene_judgment_prompt, load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
-from factories import undo_seeded_rows_above
+from factories import set_ids_seeded_above, undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -41,31 +41,12 @@ def _load(revision: str) -> ModuleType:
 _M = _load("0346abdbcc92")
 # 이 리비전 직전 story 네 체인의 활성 세트(요약 비밀 표기 슬롯 리비전 — 그 사이에 프롬프트를 게시한 리비전이 없다).
 _PREVIOUS_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0aeadefcf159").NEW_SET_IDS
-# 이 리비전 뒤에 두 레인 여덟 체인에 장면 추출 지시문만 바꾼 새 세트를 게시하는 리비전. head 상태에서는 그 뒤 리비전의 세트들이
-# 활성이라, "이 리비전 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 뒤 리비전부터 먼저 되돌린다(실제 downgrade 순서).
-_LATER = _load("eb8d3cc6d5c2")
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전.
-_FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
-# 그 뒤 여덟 체인의 요약 비밀 표기 슬롯 본문에 미확인 주장의 출처 규칙을 더한 세트를 게시하는 리비전 — character 레인의
-# head 활성이다.
-_SOURCE_MARKING = _load("0c1a85bc5c2f")
-# 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는 이것부터다.
-_SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
-# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
+# 이 리비전 뒤에 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴
 # 때는 이것부터다.
 _IMPRESSION = _load("6558ab4d3dbc")
 # 그 뒤 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀 세트를 게시하고 초안의 그 행도 지우는 리비전 — 두 Gemini
 # 체인의 head 활성이다. 초안 정리는 되돌리지 않는다.
 _DROP = _load("7caed2db87dc")
-# 그 뒤 소설 레인 세 체인에 구성안 문안을 심은 리비전 — story 레인과 무관하지만 전역 버전 번호를 이어 쓴다.
-_NOVEL_OUTLINE = _load("b389c2317149")
-# 그 뒤 소설 레인 Gemini 체인에 여러 문단 수정 문안을 심은 리비전 — 같은 이유로 버전 차례에서 뺀다.
-_BLOCK_EDIT_PROMPTS = _load("174f78b92e5c")
-# 그 뒤 Claude 소설 체인 채널과 세 체인 등급 규칙 채널을 심은 두 리비전 — 같은 이유로 버전 차례에서 뺀다.
-_NOVEL_LANE_SOURCE_SET_IDS: list[uuid.UUID] = [
-    *_load("fe3df6f8e4d5").NEW_SET_IDS.values(),
-    *_load("e4df46a80bfa").NEW_SET_IDS.values(),
-]
 
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
 
@@ -221,20 +202,11 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
                 PromptSet.status == "published",
                 PromptSet.id.not_in(order),
-                PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
-                PromptSet.id.not_in(list(_FACT_KNOWN_BY_ORDER.NEW_SET_IDS.values())),
-                PromptSet.id.not_in(list(_SOURCE_MARKING.NEW_SET_IDS.values())),
-                PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2.NEW_SET_IDS.values())),
-                PromptSet.id.not_in(list(_NOVEL_OUTLINE.NEW_SET_IDS.values())),
-                PromptSet.id.not_in(list(_BLOCK_EDIT_PROMPTS.NEW_SET_IDS.values())),
-                PromptSet.id.not_in(_NOVEL_LANE_SOURCE_SET_IDS),
-                PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
-                PromptSet.id.not_in(list(_DROP.NEW_SET_IDS.values())),
+                # 이 리비전 위에서 심은 세트는 버전이 이 리비전보다 뒤라 뺀다(레인 무관 — 버전 번호는 전 레인이 이어 쓴다).
+                PromptSet.id.not_in(set_ids_seeded_above(_M.revision)),
             )
         )
     ).all()
-    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 장면 추출 지시문·사실 추출 지시문 차례·요약 비밀 표기 출처·장면 판정
-    # 지시문 교체·소설 구성안 문안 리비전의 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 

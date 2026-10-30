@@ -1,6 +1,6 @@
 """사용자가 고르는 글쓰기 모델의 레지스트리 — 채팅 턴 생성과 소설 장 생성에 쓰인다.
 
-id 는 공급사 모델명이 아닌 불투명 값(`gemini`·`sonnet`·`opus`)이다. 방·작업 행과 FE 가 이 값을 저장하고 주고받으므로,
+id 는 공급사 모델명이 아닌 불투명 값(`gemini`·`haiku_writer`·`sonnet`·`opus`)이다. 방·작업 행과 FE 가 이 값을 저장하고 주고받으므로,
 모델 버전을 바꿀 때는 실제 모델 id 설정만 바꾸고 이 값은 그대로 둔다. 판정·요약·심사처럼 구조화 출력이 필요한 호출은
 고른 모델과 무관하게 구현을 고른다 — 판정·요약은 모델 배정 표의 행이 정한 모델(호출에 실린 `call_model`), 행이 없으면 판정·요약
 모델 설정으로, 나머지는 기본 모델로(`llm/routing.py`). 모델을 어느 구현이 어느 설정의 id 로 서비스하는지는
@@ -17,7 +17,7 @@ from typing import Literal, TypeGuard, get_args
 
 from api.core import clover
 from api.core.config import settings
-from api.llm.backends import BACKENDS, MODEL_BACKENDS, call_site_model, follows_carried_model
+from api.llm.backends import BACKENDS, MODEL_BACKENDS, NOVEL_MODELS, call_site_model, follows_carried_model
 
 # `as` 는 mypy strict 의 명시적 재export 요구 때문이다 — 기동 검증이 읽도록 정의를 잎 모듈(`llm/backends.py`)로 옮겼고,
 # 이 이름을 여기서 가져오는 모듈이 많아 기존 import 경로를 그대로 쓰게 둔다.
@@ -29,7 +29,7 @@ from api.llm.call_policy import BackendId, LLMCallSite
 
 # 채팅방에 지정할 수 있는 모델. 아래 레지스트리의 `chat_selectable` 이 원천이고, 이 타입은 요청 검증용 사본이다 — 둘이
 # 같은 집합인지는 테스트가 본다.
-ChatRoomModelId = Literal["gemini", "sonnet", "opus"]
+ChatRoomModelId = Literal["gemini", "haiku_writer", "sonnet", "opus"]
 
 # 프롬프트 세트 체인의 모델 축(`prompt_sets.model`)이자 판정·요약 모델 설정의 값(정의는 `llm/backends.py`). 판정 전용 id 의
 # 체인은 판정·요약 문안만 갖고, 그 id 로는 글을 쓰지 않으므로 글쓰기 모델 타입·레지스트리·파서·가격에는 넣지 않는다 — 넣으면
@@ -50,14 +50,22 @@ class ChatModelSpec:
     beta: bool
 
     @property
+    def novel_selectable(self) -> bool:
+        """소설(화 생성·전체 구성안·장면 구성안)에서 고를 수 있는가. 거짓인 모델은 소설 모델 목록에 없고 소설 요청이 422 로
+        거절한다. 등록부의 소설 모델 표(`NOVEL_MODELS`)를 읽는다 — 기동 검증도 그 표를 읽어야 하는데 설정 모듈은 이 모듈을
+        import 할 수 없어서다."""
+        return self.id in NOVEL_MODELS
+
+    @property
     def provider(self) -> BackendId:
         """이 모델의 기본 구현. 등록부의 기본 순서 표를 읽는다 — 사본을 두면 한쪽만 고쳐진다."""
         return MODEL_BACKENDS[self.id][0]
 
 
-# 순서가 곧 선택지의 순서다 — 기본 모델이 맨 앞.
+# 순서가 곧 선택지의 순서다 — 기본 모델이 맨 앞이고, 상위 모델은 채팅 턴 가격이 낮은 것부터다.
 CHAT_MODELS: tuple[ChatModelSpec, ...] = (
     ChatModelSpec(id="gemini", name="Gemini", chat_selectable=True, beta=False),
+    ChatModelSpec(id="haiku_writer", name="Claude Haiku 5.5", chat_selectable=True, beta=True),
     ChatModelSpec(id="sonnet", name="Claude Sonnet 5.5", chat_selectable=True, beta=True),
     ChatModelSpec(id="opus", name="Claude Opus 5.5", chat_selectable=True, beta=True),
 )
@@ -108,14 +116,22 @@ def backend_model_id(backend: BackendId, model: PromptSetModelId) -> str:
     return value
 
 
+def _novel_price(model_id: ChatModelId, value: int | None) -> int:
+    """소설 단가 칸의 값. 소설에서 고를 수 없는 모델은 칸이 비어 있고, 소설 요청 게이트가 그 모델을 차감 전에 막으므로 여기 닿으면
+    호출부의 버그다 — 가짜 값으로 깎지 않고 멈춘다."""
+    if value is None:
+        raise RuntimeError(f"{model_id} 는 소설 단가가 없다(소설에서 고를 수 없는 모델)")
+    return value
+
+
 def novel_outline_unit_price(model_id: ChatModelId) -> int:
     """구성 흐름의 전체 구성안 한 번의 클로버(모델별 고정가, 화 수와 무관하다)."""
-    return clover.CLOVER_MODEL_PRICES[model_id].novel_outline
+    return _novel_price(model_id, clover.CLOVER_MODEL_PRICES[model_id].novel_outline)
 
 
 def novel_episode_outline_unit_price(model_id: ChatModelId) -> int:
     """구성 흐름의 화 하나의 장면 구성안 한 번의 클로버(모델별 고정가)."""
-    return clover.CLOVER_MODEL_PRICES[model_id].novel_episode_outline
+    return _novel_price(model_id, clover.CLOVER_MODEL_PRICES[model_id].novel_episode_outline)
 
 
 def structured_call_model(
@@ -143,4 +159,4 @@ def chat_turn_cost(model_id: ChatModelId) -> int:
 
 def novel_episode_unit_price(model_id: ChatModelId) -> int:
     """소설 화 하나의 클로버. 생성 한 번은 이 값 × 화 수를 낸다. 다시 만들기도 같은 호출이라 같은 값이다."""
-    return clover.CLOVER_MODEL_PRICES[model_id].novel_episode
+    return _novel_price(model_id, clover.CLOVER_MODEL_PRICES[model_id].novel_episode)

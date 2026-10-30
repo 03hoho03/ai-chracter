@@ -4,6 +4,7 @@ import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import {
   isChatRoutingLane,
+  isNovelPromptModel,
   isPromptSetModelId,
   isRoomLive,
   PROMPT_MODEL_LABELS,
@@ -38,9 +39,13 @@ import { PROBLEM_BADGE_CLASS } from "./badgeClasses";
 import { LivePriceCell, LiveRouteCell } from "./LiveRouteCell";
 
 const ENV_VALUE = "env";
-const CHAIN_MODELS = Object.keys(PROMPT_MODEL_LABELS).filter(isPromptSetModelId);
-/** 소설 레인에는 판정 전용 체인이 없다 — 서버가 그 체인을 고른 행을 거부한다. */
-const NOVEL_CHAIN_MODELS = CHAIN_MODELS.filter((model) => model !== "haiku");
+/** 읽을 체인은 판정·요약 행만 고른다. Haiku 글쓰기 체인은 빠진다 — 그 체인의 판정·요약 문안은 게시 검증을 맞추려고 둔 사본이라
+ * 서버가 그 체인을 고른 행을 거부한다. */
+const CHAIN_MODELS = Object.keys(PROMPT_MODEL_LABELS)
+  .filter(isPromptSetModelId)
+  .filter((model) => model !== "haiku_writer");
+/** 소설 레인에는 소설에서 고를 수 있는 모델의 체인만 있다 — 서버가 다른 체인을 고른 행을 거부한다. */
+const NOVEL_CHAIN_MODELS = CHAIN_MODELS.filter(isNovelPromptModel);
 
 function chainModelsFor(lane: RoutingLane): readonly PromptSetModelId[] {
   return lane === "novel" ? NOVEL_CHAIN_MODELS : CHAIN_MODELS;

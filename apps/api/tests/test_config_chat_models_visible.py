@@ -29,6 +29,7 @@ def test_without_the_env_line_only_opus_is_visible(monkeypatch: pytest.MonkeyPat
     [
         pytest.param("opus", ["opus"], id="opus"),
         pytest.param("opus,sonnet", ["opus", "sonnet"], id="both"),
+        pytest.param("opus,haiku_writer", ["opus", "haiku_writer"], id="haiku-writer"),
         pytest.param("sonnet", ["sonnet"], id="sonnet-only"),
         pytest.param(" opus , sonnet ,", ["opus", "sonnet"], id="spaces-and-empty-items"),
         pytest.param("", [], id="blank-hides-every-premium-model"),

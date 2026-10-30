@@ -140,7 +140,7 @@ async def test_a_visible_sonnet_is_listed_with_its_price_and_beta_mark(
 
     [sonnet] = [m for m in (await db_client.get("/chat-models")).json() if m["id"] == "sonnet"]
 
-    assert sonnet == {"id": "sonnet", "name": "Claude Sonnet 5.5", "beta": True, "turnCost": _SONNET}
+    assert sonnet == {"id": "sonnet", "name": "Claude Sonnet 5.5", "isDefault": False, "beta": True, "turnCost": _SONNET}
 
 
 # ---- 방 모델 지정 ----

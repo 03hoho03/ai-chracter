@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import uuid
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Any
@@ -37,6 +38,7 @@ from api.core.clover import (
     spend,
 )
 from api.db.models.auth import User
+from api.llm.chat_models import ChatModelId
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund
 from factories import _make_payment, _make_user, _make_user_with_clover_lot
 
@@ -808,6 +810,7 @@ def test_policy_constants_match_decisions() -> None:
     assert clover.CLOVER_UNIT_KRW == 1
     assert CLOVER_MODEL_PRICES == {
         "gemini": ModelPrices(chat_turn=20, novel_episode=240, novel_outline=570, novel_episode_outline=240),
+        "haiku_writer": ModelPrices(chat_turn=12, novel_episode=None, novel_outline=None, novel_episode_outline=None),
         "sonnet": ModelPrices(chat_turn=110, novel_episode=540, novel_outline=990, novel_episode_outline=540),
         "opus": ModelPrices(chat_turn=200, novel_episode=900, novel_outline=2_070, novel_episode_outline=900),
     }
@@ -816,7 +819,7 @@ def test_policy_constants_match_decisions() -> None:
     assert NOVEL_READ_COST == 90
     assert NOVEL_FREE_CHAPTER_COUNT == 5
     assert MEMORY_SUMMARY_REGENERATE_COST == 30
-    assert PRICE_VERSION == 2
+    assert PRICE_VERSION == 3
     assert [(p.key, p.price_krw, p.paid_amount, p.bonus_amount) for p in products.CLOVER_PRODUCTS] == [
         ("mini", 900, 900, 0),
         ("lite", 4_500, 4_500, 225),
@@ -833,3 +836,30 @@ def test_policy_constants_match_decisions() -> None:
 async def test_ledger_table_is_reachable(db_session: AsyncSession) -> None:
     # 마이그레이션이 실제로 적용됐는지(= `alembic upgrade head`가 돌았는지) 한 줄로 확인한다.
     assert await db_session.scalar(text("SELECT COUNT(*) FROM clover_ledger")) == 0
+
+
+# ── 가격 등록부의 소설 칸 규칙 ──────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("model", "cells"),
+    [
+        pytest.param("sonnet", {"novel_outline": None}, id="novel-model-with-an-empty-novel-cell"),
+        pytest.param("haiku_writer", {"novel_episode": 120}, id="chat-only-model-with-a-novel-price"),
+    ],
+)
+def test_novel_cells_must_be_filled_exactly_for_the_novel_models(
+    monkeypatch: pytest.MonkeyPatch, model: ChatModelId, cells: dict[str, Any]
+) -> None:
+    """소설 모델의 칸이 비면 소설 차감이 500 이고, 채팅 전용 모델에 소설 값이 있으면 공개 가격이 쓰이지 않을 값을 안내한다 —
+    둘 다 기동에서 멈춘다."""
+    monkeypatch.setitem(
+        clover.CLOVER_MODEL_PRICES, model, dataclasses.replace(clover.CLOVER_MODEL_PRICES[model], **cells)
+    )
+
+    with pytest.raises(RuntimeError, match=model):
+        clover._check_model_prices()
+
+
+def test_the_current_price_registry_passes_its_startup_check() -> None:
+    clover._check_model_prices()
