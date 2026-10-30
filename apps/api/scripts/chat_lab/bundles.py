@@ -201,11 +201,43 @@ def _driver_log(path: Path) -> tuple[str, BundleFormat] | None:
     return rooms.pop(), bundle_format(records)
 
 
-def discover_bundles(root: Path) -> list[Bundle]:
-    """루트 아래 묶음 전부(경로 순). 링크는 따라가지 않는다."""
+def _paired(base: Path, path: Path, room_id: str, form: BundleFormat) -> Bundle:
+    relative = PurePosixPath(path.relative_to(base).as_posix())
+    pairs, cautions = _pair_files(base, path)
+    return Bundle(
+        root=base,
+        log=path,
+        run_id=encode_run_id(base, path),
+        path=relative.as_posix(),
+        room_id=room_id,
+        format=form,
+        group=_group(relative),
+        snapshots=pairs["snapshots"],
+        dump=pairs["dump"],
+        chat_turns=pairs["turns"],
+        cautions=cautions,
+        uses_outside_folder=any(p is not None and p.parent != path.parent for p in pairs.values()),
+    )
+
+
+def _count_room(bundle: Bundle, count: int) -> None:
+    bundle.room_bundle_count = count
+    if count > 1 and bundle.uses_outside_folder:
+        bundle.cautions.append(
+            Caution(
+                kind="roomShared",
+                detail=f"이 방을 묶음 {count}개가 쓴다 — 같은 폴더 밖 짝 파일에 다른 시도의 줄이 섞였을 수 있다",
+            )
+        )
+
+
+def discover_bundles(root: Path, *, folder: Path | None = None) -> list[Bundle]:
+    """루트 아래 묶음 전부(경로 순). 링크는 따라가지 않는다. `folder`(루트 안)를 주면 그 폴더 바로 아래 파일만 본다 — 묶음
+    하나를 다루는 명령이 루트 전체(실측 수십 초)를 훑지 않게. 그때 같은 방 묶음 수도 그 폴더 안에서만 센다."""
     base = root.resolve()
+    candidates = base.rglob("*.jsonl") if folder is None else folder.resolve().glob("*.jsonl")
     bundles: list[Bundle] = []
-    for path in sorted(base.rglob("*.jsonl")):
+    for path in sorted(candidates):
         relative = PurePosixPath(path.relative_to(base).as_posix())
         if any((base / part).is_symlink() for part in (relative, *relative.parents[:-1])) or not path.is_file():
             continue
@@ -213,34 +245,19 @@ def discover_bundles(root: Path) -> list[Bundle]:
         if found is None:
             continue
         room_id, form = found
-        pairs, cautions = _pair_files(base, path)
-        bundles.append(
-            Bundle(
-                root=base,
-                log=path,
-                run_id=encode_run_id(base, path),
-                path=relative.as_posix(),
-                room_id=room_id,
-                format=form,
-                group=_group(relative),
-                snapshots=pairs["snapshots"],
-                dump=pairs["dump"],
-                chat_turns=pairs["turns"],
-                cautions=cautions,
-                uses_outside_folder=any(p is not None and p.parent != path.parent for p in pairs.values()),
-            )
-        )
+        bundles.append(_paired(base, path, room_id, form))
     counts = Counter(bundle.room_id for bundle in bundles)
     for bundle in bundles:
-        bundle.room_bundle_count = counts[bundle.room_id]
-        if bundle.room_bundle_count > 1 and bundle.uses_outside_folder:
-            bundle.cautions.append(
-                Caution(
-                    kind="roomShared",
-                    detail=f"이 방을 묶음 {bundle.room_bundle_count}개가 쓴다 — 같은 폴더 밖 짝 파일에 다른 시도의 줄이 섞였을 수 있다",
-                )
-            )
+        _count_room(bundle, counts[bundle.room_id])
     return bundles
+
+
+def repaired(bundle: Bundle) -> Bundle:
+    """같은 드라이버 로그로 짝 파일을 다시 고른 묶음. 묶음을 찾은 뒤 턴 기록 파일이 새로 생기거나 매니페스트가 바뀌었을 때
+    루트 전체를 다시 훑지 않고 그 묶음만 고친다. 같은 방 묶음 수는 찾을 때 센 값을 그대로 쓴다."""
+    fresh = _paired(bundle.root, bundle.log, bundle.room_id, bundle.format)
+    _count_room(fresh, bundle.room_bundle_count)
+    return fresh
 
 
 def find_bundle(bundles: list[Bundle], root: Path, run_id: str) -> Bundle | None:

@@ -310,3 +310,61 @@ class TurnDetail(CamelModel):
     cautions: list[Caution]
     # 이 화면이 보여 줄 수 없는 것을 사실대로 적은 문장들.
     record_limits: list[str]
+
+
+class Health(CamelModel):
+    status: Literal["ok"]
+
+
+class RunList(CamelModel):
+    """런 목록. 서버는 루트를 한 번 훑은 결과를 들고 있다가 `refresh` 로 다시 훑는다 — `discovered_at` 은 그 탐색 시각이고, 그 뒤
+    새로 생긴 묶음은 다시 훑어야 보인다. 이미 찾은 묶음의 파일이 바뀐 것은 다시 훑지 않아도 반영된다."""
+
+    items: list[RunListItem]
+    discovered_at: str
+
+
+class RunBundle(CamelModel):
+    """런 하나를 통째로 — 정적 HTML 내보내기가 이 응답만 주입한다. `raw` 가 거짓이면 덤프 줄의 프롬프트(`prompt`)·지시문
+    (`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을 키째 뺀다. 대화(사용자 발화·응답)는 남는다."""
+
+    raw: bool
+    detail: RunDetail
+    metrics: RunMetrics
+    turns: list[TurnDetail]
+
+
+class ExportTurnsRequest(CamelModel):
+    # 참이면 이미 있는 턴 기록 파일을 새로 내보낸 것으로 바꾼다.
+    force: bool
+
+
+class ExportTurnsResult(CamelModel):
+    # 쓴 턴 기록 파일의 런 루트 기준 경로, 그리고 그 파일을 짝으로 다시 읽은 목록 항목.
+    path: str
+    run: RunListItem
+
+
+# 이 서버가 내는 오류의 종류. FastAPI 의 요청 검증 오류(422, `detail` 이 목록)에는 이 칸이 없어 웹은 `reason` 으로 둘을 가른다.
+# notFound: 그런 묶음·턴이 없다(id 모양이 틀린 것 포함). unsupported: 열지 않는 형식. openFailed: 열다 실패했다.
+# archived: 보관 폴더라 쓰지 않는다. exists: 턴 기록 파일이 이미 있다 — 강제로 다시 내보낼 수 있는 것은 이것뿐이다.
+# notFile: 그 자리에 링크·폴더가 있다. noRoom·noRows: 그 DB 에 방이 없거나 턴 기록이 0 이다. multipleRooms: 묶음 폴더에 서로
+# 다른 방의 드라이버 로그가 있다. dbUnavailable: DB 가 설정되지 않았거나 닿지 않는다. notJson: 쓰기 요청 본문이 JSON 이 아니다.
+LabErrorReason = Literal[
+    "notFound",
+    "unsupported",
+    "openFailed",
+    "archived",
+    "exists",
+    "notFile",
+    "noRoom",
+    "noRows",
+    "multipleRooms",
+    "dbUnavailable",
+    "notJson",
+]
+
+
+class LabError(CamelModel):
+    detail: str
+    reason: LabErrorReason

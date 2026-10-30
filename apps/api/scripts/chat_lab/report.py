@@ -23,6 +23,7 @@ from chat_lab.schemas import (
     DriverStatChange,
     RecordedStatChange,
     ReplyFlagsView,
+    RunBundle,
     RunCost,
     RunDetail,
     RunListItem,
@@ -414,8 +415,8 @@ def run_metrics(joined: JoinedRun) -> RunMetrics:
     )
 
 
-def turn_detail(joined: JoinedRun, number: int) -> TurnDetail:
-    """없는 턴이면 `KeyError`."""
+def turn_detail(joined: JoinedRun, number: int, *, metrics: RunMetrics | None = None) -> TurnDetail:
+    """없는 턴이면 `KeyError`. `metrics` 는 이미 낸 런 지표 — 턴마다 런 지표를 다시 내지 않게 묶음 전체를 낼 때 넘긴다."""
     turn = joined.turn(number)
     try:
         snapshot: dict[str, Any] | None = memory_snapshot(joined.logs, number)
@@ -452,8 +453,55 @@ def turn_detail(joined: JoinedRun, number: int) -> TurnDetail:
         replacements=turn.replacements,
         memory_snapshot=snapshot,
         memory_snapshot_changed_here=snapshot is not None and snapshot.get("turn") == number,
-        metrics=next((m for m in run_metrics(joined).turns if m.turn == number), None),
+        metrics=next(
+            (m for m in (metrics if metrics is not None else run_metrics(joined)).turns if m.turn == number), None
+        ),
         mismatches=[m for m in joined.mismatches if m.turn == number],
         cautions=[c for c in joined.cautions if c.turn == number],
         record_limits=limits,
+    )
+
+
+# 원문 없는 묶음에서 키째 빼는 칸 — 덤프 줄의 프롬프트·지시문, 기억 스냅숏의 노트·요약 본문.
+RAW_DUMP_KEYS = frozenset({"prompt", "systemInstruction"})
+RAW_SNAPSHOT_KEYS = frozenset({"note", "summary"})
+
+
+def _without(record: dict[str, Any], keys: frozenset[str]) -> dict[str, Any]:
+    return {key: value for key, value in record.items() if key not in keys}
+
+
+def _without_raw(detail: TurnDetail) -> TurnDetail:
+    snapshot = detail.memory_snapshot
+    return detail.model_copy(
+        update={
+            "attempts": [
+                attempt.model_copy(
+                    update={
+                        "generation_dump": None
+                        if attempt.generation_dump is None
+                        else _without(attempt.generation_dump, RAW_DUMP_KEYS)
+                    }
+                )
+                for attempt in detail.attempts
+            ],
+            "earlier_generation_dumps": [_without(r, RAW_DUMP_KEYS) for r in detail.earlier_generation_dumps],
+            "judgment_dumps": [_without(r, RAW_DUMP_KEYS) for r in detail.judgment_dumps],
+            "background_dumps": [
+                b.model_copy(update={"record": _without(b.record, RAW_DUMP_KEYS)}) for b in detail.background_dumps
+            ],
+            "memory_snapshot": None if snapshot is None else _without(snapshot, RAW_SNAPSHOT_KEYS),
+        }
+    )
+
+
+def run_bundle(joined: JoinedRun, *, raw: bool) -> RunBundle:
+    """런 상세·지표·모든 턴 상세. 정적 HTML 이 결합·지표를 따로 다시 계산하지 않게 서버가 낸 값을 그대로 싣는다."""
+    metrics = run_metrics(joined)
+    turns = [turn_detail(joined, turn.number, metrics=metrics) for turn in joined.turns]
+    return RunBundle(
+        raw=raw,
+        detail=run_detail(joined),
+        metrics=metrics,
+        turns=turns if raw else [_without_raw(turn) for turn in turns],
     )
