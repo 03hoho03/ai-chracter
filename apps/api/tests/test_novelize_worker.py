@@ -41,9 +41,12 @@ from api.novelize.prompts import NovelizePrompt
 from factories import (
     _assert_blocked,
     _assert_characterization,
+    _Clock,
+    _eventually,
     _make_draft_content,
     _make_novel_tree,
     _make_user_with_clover_lot,
+    _true,
 )
 
 pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
@@ -142,15 +145,6 @@ class _GateLLM(LLMClient):
         finally:
             self.in_flight -= 1
         return response_schema.model_validate({"paragraphs": ["고친 문단."]})
-
-
-async def _eventually(check: Callable[[], Awaitable[bool]], *, within: float = 10.0) -> None:
-    """`check` 가 참이 될 때까지 0.01초 간격으로 본다. `within` 초 안에 참이 안 되면 실패다."""
-    for _ in range(int(within / 0.01)):
-        if await check():
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError(f"{within}초 안에 조건이 서지 않았다")
 
 
 async def _seed_jobs(factory: async_sessionmaker[AsyncSession], count: int) -> tuple[uuid.UUID, list[uuid.UUID]]:
@@ -394,10 +388,6 @@ async def test_stop_finishes_running_jobs_and_claims_nothing_new(
     assert len(llm.gates) == 1
 
 
-async def _true(value: bool) -> bool:
-    return value
-
-
 @pytest.mark.usefixtures("plain_revise_input")
 async def test_a_job_cut_off_past_the_grace_period_is_refunded_once_by_the_expiry_sweep(
     independent_factory: async_sessionmaker[AsyncSession], tmp_path: Path
@@ -458,14 +448,6 @@ async def test_the_loop_never_runs_more_jobs_than_the_cap_at_once(
 
     assert llm.peak == 2
     assert [await _status(independent_factory, job_id) for job_id in job_ids] == [("succeeded", None)] * 3
-
-
-class _Clock:
-    def __init__(self, now: float) -> None:
-        self.now = now
-
-    def __call__(self) -> float:
-        return self.now
 
 
 async def test_periodic_sweep_starts_after_expiry_plus_margin_repeats_every_minute_and_stops_while_draining(
@@ -659,7 +641,7 @@ async def test_worker_statements_are_unchanged_while_the_bible_switch_is_off(
     clock = _Clock(1000.0)
     claims = 0
     original_claim = worker.claim_candidates
-    original_run = worker.run_job
+    original_run = runner.run_job
 
     async def claim(factory: async_sessionmaker[AsyncSession], limit: int) -> list[uuid.UUID]:
         nonlocal claims
