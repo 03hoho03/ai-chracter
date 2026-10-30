@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 
 import type { RunDetail } from "@/shared/api/client";
 import { COST_GAP_TEXT, OLD_FORMAT_EXPORT_REASON, runRecordGap } from "@/shared/api/recordGap";
+import { staticBundleState, type StaticBundleState } from "@/shared/api/staticBundle";
 import { cn } from "@/shared/lib/cn";
 import { formatCount, formatUsd } from "@/shared/lib/formatNumber";
 import { useElapsedSeconds } from "@/shared/lib/useElapsedSeconds";
@@ -20,7 +21,8 @@ import { RunWorkspace } from "./RunWorkspace";
 
 /**
  * 런 상세(턴 층). 위 상태 타임라인 띠 아래에 턴 목록 │ 대화·원문 │ 호출 검사기 3열. 고른 턴·시도·탭은 주소에 실린다.
- * 헤더의 주 행동은 "턴 기록 내보내기" 하나다 — 턴 기록 파일이 있어야 원가·토큰·숨김 스탯이 채워진다.
+ * 헤더의 주 행동은 "턴 기록 내보내기" 하나다 — 턴 기록 파일이 있어야 원가·토큰·숨김 스탯이 채워진다. 정적 HTML 로 연 화면은
+ * 측정 서버가 없어 내보낼 수 없으므로, 그 자리에 이 파일이 무엇인지(원문을 담았는지)를 적는다.
  */
 export function RunDetailPage() {
   const { runId } = useParams({ from: "/runs/$runId" });
@@ -37,6 +39,7 @@ function RunDetailScreen({ runId }: { runId: string }) {
   const loadingSeconds = useElapsedSeconds(detailQuery.isFetching && detailQuery.data === undefined);
   const exportSeconds = useElapsedSeconds(exportTurns.isPending);
   const detail = detailQuery.data;
+  const staticState = staticBundleState();
 
   function handleExport(force: boolean) {
     setExportFeedback(undefined);
@@ -52,7 +55,7 @@ function RunDetailScreen({ runId }: { runId: string }) {
 
   return (
     <AppShell
-      crumbs={detailCrumbs(runId, detail)}
+      crumbs={detailCrumbs(runId, detail, staticState.kind !== "absent")}
       meta={detail ? runMeta(detail) : undefined}
       badges={
         detail && (
@@ -65,32 +68,15 @@ function RunDetailScreen({ runId }: { runId: string }) {
         )
       }
       actions={
-        detail &&
-        (runRecordGap(detail.run) === "oldFormat" ? (
-          // 측정 서버가 이 형식의 내보내기를 거부한다 — 누르면 실패할 버튼 대신 못 하는 까닭을 그 자리에 둔다.
-          <span className="text-data text-ink-muted" title={OLD_FORMAT_EXPORT_REASON}>
-            내보내기 없음 · 이전 형식
-          </span>
-        ) : (
-          <Button
-            variant="primary"
-            onClick={() => handleExport(false)}
-            disabled={exportTurns.isPending}
-            title="로컬 DB 에서 이 런 방의 턴 기록을 런 폴더의 chat-turns.jsonl 로 쓴다"
-            className="tabular-nums"
-          >
-            {exportTurns.isPending ? (
-              `내보내는 중 ${exportSeconds}초`
-            ) : (
-              <>
-                <span className="sm:hidden">{detail.run.hasChatTurns ? "다시 내보내기" : "내보내기"}</span>
-                <span className="hidden sm:inline">
-                  {detail.run.hasChatTurns ? "턴 기록 다시 내보내기" : "턴 기록 내보내기"}
-                </span>
-              </>
-            )}
-          </Button>
-        ))
+        detail && (
+          <RunAction
+            detail={detail}
+            staticState={staticState}
+            isExporting={exportTurns.isPending}
+            exportSeconds={exportSeconds}
+            onExport={() => handleExport(false)}
+          />
+        )
       }
       hints={
         <>
@@ -162,12 +148,77 @@ function RunDetailBody({ query, runId, loadingSeconds, notice, isIssuesOpen, onC
   );
 }
 
-/** 빵부스러기 — `런`(목록으로, 이 런이 보이는 폴더·행을 골라 둔 채) / 이야기 이름 / 경로. */
-function detailCrumbs(runId: string, detail: RunDetail | undefined): Crumb[] {
+type RunActionProps = {
+  detail: RunDetail;
+  staticState: StaticBundleState;
+  isExporting: boolean;
+  exportSeconds: number;
+  onExport: () => void;
+};
+
+/** 헤더 오른쪽의 주 행동 자리 — 턴 기록 내보내기, 또는 그것을 할 수 없는 까닭. */
+function RunAction({ detail, staticState, isExporting, exportSeconds, onExport }: RunActionProps) {
+  if (staticState.kind !== "absent") return <StaticFileLabel state={staticState} />;
+  if (runRecordGap(detail.run) === "oldFormat") {
+    // 측정 서버가 이 형식의 내보내기를 거부한다 — 누르면 실패할 버튼 대신 못 하는 까닭을 그 자리에 둔다.
+    return (
+      <span className="text-data text-ink-muted" title={OLD_FORMAT_EXPORT_REASON}>
+        내보내기 없음 · 이전 형식
+      </span>
+    );
+  }
+  return (
+    <Button
+      variant="primary"
+      onClick={onExport}
+      disabled={isExporting}
+      title="로컬 DB 에서 이 런 방의 턴 기록을 런 폴더의 chat-turns.jsonl 로 쓴다"
+      className="tabular-nums"
+    >
+      {isExporting ? (
+        `내보내는 중 ${exportSeconds}초`
+      ) : (
+        <>
+          <span className="sm:hidden">{detail.run.hasChatTurns ? "다시 내보내기" : "내보내기"}</span>
+          <span className="hidden sm:inline">
+            {detail.run.hasChatTurns ? "턴 기록 다시 내보내기" : "턴 기록 내보내기"}
+          </span>
+        </>
+      )}
+    </Button>
+  );
+}
+
+const STATIC_FILE_NOTE = {
+  withoutRaw: "측정 서버 없이 여는 정적 HTML 이다. 프롬프트·지시문 원문과 기억 노트·요약 본문은 빼고 내보냈다.",
+  withRaw: "측정 서버 없이 여는 정적 HTML 이다. 원문까지 담아 내보냈다 — 공개 저장소에 커밋하지 않는다.",
+} as const;
+
+/**
+ * 정적 HTML 로 연 화면의 표시 — 내보내기 버튼 자리에, 이전 형식 런의 "내보내기 없음"과 같은 조용한 한 줄로. 원문을 담았는지가
+ * 이 파일을 남에게 건네도 되는지를 가르므로 함께 적는다. 읽지 못한 파일이면 본문이 까닭을 보인다.
+ */
+function StaticFileLabel({ state }: { state: Exclude<StaticBundleState, { kind: "absent" }> }) {
+  if (state.kind === "broken") return <span className="text-data text-ink-muted">정적 파일</span>;
+  const hasRaw = state.bundle.raw;
+  return (
+    <span className="text-data text-ink-muted" title={hasRaw ? STATIC_FILE_NOTE.withRaw : STATIC_FILE_NOTE.withoutRaw}>
+      정적 파일 · {hasRaw ? "원문 포함" : "원문 제외"}
+    </span>
+  );
+}
+
+/**
+ * 빵부스러기 — `런`(목록으로, 이 런이 보이는 폴더·행을 골라 둔 채) / 이야기 이름 / 경로. 정적 HTML 에는 목록이 없어 `런` 은 링크가
+ * 아닌 글이다.
+ */
+function detailCrumbs(runId: string, detail: RunDetail | undefined, isStatic: boolean): Crumb[] {
   const crumbs: Crumb[] = [
     {
       key: "runs",
-      content: (
+      content: isStatic ? (
+        <span className="text-body text-ink-secondary">런</span>
+      ) : (
         <Link
           to="/"
           // 대량 시도 폴더 안 런이면 그 폴더를 골라야 표에 런 행이 있다. 밖이면 전체에서 행으로 고른다.

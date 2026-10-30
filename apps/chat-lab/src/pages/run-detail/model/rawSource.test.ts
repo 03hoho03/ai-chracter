@@ -104,11 +104,17 @@ describe("describeRaw", () => {
     });
   });
 
-  it("프롬프트 칸째 없는 줄은 원문을 빼고 만든 기록이다(지시문을 물어도)", () => {
+  it("프롬프트 칸째 없는 줄은 원문을 빼고 만든 기록이고 물은 칸을 함께 낸다 — 지시문은 원래 있었는지 가를 수 없어 문장이 다르다", () => {
     const excluded = attempt({ generationDump: { model: "m" } });
 
-    expect(describeRaw(turnDetail(), excluded, { kind: "generation" }, "prompt")).toEqual({ kind: "excluded" });
-    expect(describeRaw(turnDetail(), excluded, { kind: "generation" }, "systemInstruction")).toEqual({ kind: "excluded" });
+    expect(describeRaw(turnDetail(), excluded, { kind: "generation" }, "prompt")).toEqual({
+      kind: "excluded",
+      field: "prompt",
+    });
+    expect(describeRaw(turnDetail(), excluded, { kind: "generation" }, "systemInstruction")).toEqual({
+      kind: "excluded",
+      field: "systemInstruction",
+    });
   });
 
   it("프롬프트 칸이 글이 아닌 값(null)이면 프롬프트 탭은 그 칸이 비었다고, 지시문 탭은 지시문을 보내지 않았다고", () => {

@@ -13,7 +13,9 @@ type LooseRecord = Readonly<Record<string, unknown>>;
  * - `noDumpFile`: 이 묶음에 짝인 프롬프트 덤프가 없다 — 측정 서버의 기록 한계 문장(`text`)을 그대로 보인다.
  * - `notSelectedAttempt`: 생성 덤프는 DB 응답으로 고른 시도에만 붙는다.
  * - `noDumpForAttempt`: 고른 시도인데 붙은 생성 덤프가 없다(불일치 목록에 덤프 없는 턴으로 있다).
- * - `excluded`: 덤프 줄은 있지만 원문 칸을 빼고 만든 기록이다.
+ * - `excluded`: 원문 없이 내보낸 정적 HTML 의 덤프 줄이다. 측정 서버는 프롬프트 칸이 있는 줄만 덤프로 읽어, 칸째 없는 줄은 그런
+ *   파일에서만 나온다 — 그래서 측정 서버의 기록 한계 문장 없이 화면이 까닭을 안다. `field` 는 물은 칸이다. 프롬프트는 그 줄에 늘
+ *   있었지만, 지시문은 원래 없던 호출도 있어(따로 보내지 않은 호출) 그런 파일에서는 있었는지조차 가를 수 없다.
  * - `emptyPrompt`: 프롬프트 칸은 있는데 글이 아니다(null 등) — 원문을 뺀 기록과 달리 칸째 빠지지 않았다.
  * - `noField`: 이 덤프 줄에는 지시문이 없다 — 그 호출이 지시문을 따로 보내지 않았다.
  */
@@ -22,7 +24,7 @@ export type RawView =
   | { kind: "noDumpFile"; text: string }
   | { kind: "notSelectedAttempt"; earlierCount: number }
   | { kind: "noDumpForAttempt" }
-  | { kind: "excluded" }
+  | { kind: "excluded"; field: RawField }
   | { kind: "emptyPrompt" }
   | { kind: "noField" };
 
@@ -68,7 +70,7 @@ export function describeRaw(
   if (text !== undefined) return { kind: "text", text };
   // 원문을 빼고 만든 기록은 프롬프트 칸째 없다. 프롬프트 칸이 있는데 글이 아니면, 프롬프트를 물었을 때는 그 칸이 빈 것이고
   // 지시문을 물었을 때는 그 호출이 지시문을 따로 보내지 않은 것이다.
-  if (!hasField(record, "prompt")) return { kind: "excluded" };
+  if (!hasField(record, "prompt")) return { kind: "excluded", field };
   return field === "prompt" ? { kind: "emptyPrompt" } : { kind: "noField" };
 }
 
