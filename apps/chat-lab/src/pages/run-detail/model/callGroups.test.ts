@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CallCostView } from "@/shared/api/client";
 
-import { generationCardCount, groupCalls, MISSING_CALL_SITE } from "./callGroups";
+import { attemptCalls, generationCardCount, groupCalls, MISSING_CALL_SITE } from "./callGroups";
 
 function call(kind: CallCostView["kind"], callSite: string): CallCostView {
   return {
@@ -88,5 +88,42 @@ describe("generationCardCount", () => {
     expect(generationCardCount(groupCalls([first, second], []))).toBe(2);
     expect(generationCardCount(groupCalls([call("judgment", "chat_stat_judgment")], []))).toBe(1);
     expect(generationCardCount(groupCalls([], []))).toBe(1);
+  });
+});
+
+describe("attemptCalls", () => {
+  const generation = call("generation", "chat_generate");
+  const statCall = call("judgment", "chat_stat_judgment");
+  const embedding = call("embedding", "query_embedding");
+  const turnDumps = {
+    judgment: [{ callSite: "chat_stat_judgment" }, { callSite: "ending_judgment" }],
+    backgroundCount: 2,
+  };
+
+  it("고른 시도는 턴의 판정·백그라운드 덤프를 함께 그리고, 탭 숫자는 그린 카드 수다", () => {
+    const view = attemptCalls([generation, statCall, embedding], turnDumps, true);
+
+    expect(view.groups.judgment.map((site) => site.callSite)).toEqual(["chat_stat_judgment", "ending_judgment"]);
+    expect(view.backgroundDumpCount).toBe(2);
+    expect([view.heldJudgmentDumps, view.heldBackgroundDumps]).toEqual([0, 0]);
+    // 생성 1 + 판정(호출 있는 call_site 1 + 덤프만 있는 call_site 1) + 백그라운드 덤프 2 + 그 밖 1.
+    expect(view.cardCount).toBe(6);
+  });
+
+  it("고른 시도가 아닌 시도는 턴 단위 덤프를 그리지도 세지도 않고, 그 시도의 턴 기록 호출만 남긴다", () => {
+    const view = attemptCalls([generation, statCall, embedding], turnDumps, false);
+
+    expect(view.groups.judgment).toEqual([{ callSite: "chat_stat_judgment", calls: [statCall], dumpIndexes: [] }]);
+    expect(view.backgroundDumpCount).toBe(0);
+    expect([view.heldJudgmentDumps, view.heldBackgroundDumps]).toEqual([2, 2]);
+    expect(view.cardCount).toBe(3);
+  });
+
+  it("호출이 둘인 call_site 는 카드가 둘이고, 호출이 없는 시도에도 생성 덤프 카드 하나가 선다", () => {
+    const second = call("judgment", "chat_stat_judgment");
+    const background = call("background", "chat_memory_summary");
+
+    expect(attemptCalls([statCall, second, background], { judgment: [], backgroundCount: 0 }, true).cardCount).toBe(4);
+    expect(attemptCalls([], { judgment: [], backgroundCount: 0 }, false).cardCount).toBe(1);
   });
 });
