@@ -79,7 +79,7 @@ def call_site_kind(call_site: str) -> CallSiteKind:
     """호출 종류. 임베딩은 표 밖 이름으로, 나머지는 호출 정책 표(`api.llm.call_policy`)의 행으로 가른다 — 스트리밍으로 부르는
     호출이 생성, 판정 종류가 있는 호출이 판정(어드민 판정 비율이 세는 집합과 같다), 판정 종류 없이 모델 설정이 있는 호출이
     백그라운드다. 표가 모델 설정을 판정 종류마다와 기억 요약·추출·인상에만 두므로 마지막 갈래는 그 넷이고, 넷 모두 응답을 보낸
-    뒤 요약 접기에서 돈다. 표에 없는 이름과 그 밖의 행(심사·시드·소설 구조화)은 `other` 다."""
+    뒤 요약 접기에서 돈다. 표에 없는 이름과 그 밖의 행(심사·시드·소설 구조화, 판정 종류가 없는 정본 기억 추출·판정)은 `other` 다."""
     if call_site in _EMBEDDING_CALL_SITES:
         return "embedding"
     policy = _CALL_POLICIES.get(call_site)

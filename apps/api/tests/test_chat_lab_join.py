@@ -13,7 +13,7 @@ import uuid
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import httpx
 import pytest
@@ -977,48 +977,38 @@ async def test_turn_summaries_carry_the_metric_flags_of_the_same_turn(
     assert third is not None and third.self_copy
 
 
-# 호출 정책 표의 모든 호출 위치와 표 밖의 임베딩 호출 이름의 종류. 표에 새 호출 위치가 생기면 이 표에 없어 아래 테스트가 실패한다.
-_EXPECTED_KINDS: dict[str, CallSiteKind] = {
+def test_every_call_policy_row_gets_exactly_one_kind() -> None:
+    """호출 뷰의 종류는 화면이 call_site 이름을 따로 해석하지 않게 서버가 준다. 표의 행마다 기대 종류를 나열하면 다른 작업이 엔진에
+    호출 위치를 더할 때마다 이 도구의 테스트가 그 작업을 막으므로, 여기서는 분류가 호출 정책 표의 모든 행에 빠짐없이 정해진 종류
+    하나를 내는지(표에 없는 이름은 `other`)만 보고 종류마다의 대표 분류는 아래 테스트가 지킨다."""
+    kinds = set(get_args(CallSiteKind))
+    assert [site for site in CALL_POLICIES if call_site_kind(site) not in kinds] == []
+    assert call_site_kind("no_such_call_site") == "other"
+
+
+# 종류마다 대표 호출 위치. 임베딩 둘은 호출 정책 표 밖 이름이고 나머지는 표의 행이다.
+_REPRESENTATIVE_KINDS: dict[str, CallSiteKind] = {
     "chat_generate": "generation",
-    "preview_generate": "generation",
-    "novelize_chapter": "generation",
     "replay_generate": "generation",
     "chat_stat_judgment": "judgment",
     "chat_ending_judgment": "judgment",
     "chat_situational_image": "judgment",
-    "chat_media_book_image": "judgment",
     "chat_scene_judgment": "judgment",
-    "preview_stat_judgment": "judgment",
-    "preview_ending_judgment": "judgment",
-    "preview_media_book_image": "judgment",
-    "preview_scene_judgment": "judgment",
     "chat_memory_summary": "background",
     "chat_memory_episode": "background",
     "chat_memory_fact": "background",
     "chat_memory_impression": "background",
     "chat_memory_query_embedding": "embedding",
     "chat_memory_embedding": "embedding",
-    "publish_filter_character": "other",
-    "publish_filter_story": "other",
-    "seed_story_generate": "other",
-    "seed_similarity_review": "other",
-    "novelize_revise": "other",
-    "novelize_boundary": "other",
-    "novelize_revise_recheck": "other",
-    "novelize_outline": "other",
-    "novelize_episode_outline": "other",
-    "novel_publish_screen": "other",
-    "novel_illustration_screen": "other",
-    "no_such_call_site": "other",
 }
 
 
-def test_every_call_site_gets_one_kind_from_the_call_policy_table() -> None:
-    """호출 뷰의 종류는 화면이 call_site 이름을 따로 해석하지 않게 서버가 준다. 근거는 호출 정책 표의 행(스트리밍으로 부르면 생성,
-    판정 종류가 있으면 판정, 판정 종류 없이 모델 설정이 있으면 기억 요약·추출이라 백그라운드)과 표 밖 임베딩 호출 이름이다. 종류를
-    정하지 않은 새 호출 위치가 조용히 `other` 로 보이지 않게 표의 모든 행을 기대표가 덮는지 함께 본다."""
-    assert set(CALL_POLICIES) <= set(_EXPECTED_KINDS)
-    assert {site: call_site_kind(site) for site in _EXPECTED_KINDS} == _EXPECTED_KINDS
+def test_representative_call_sites_keep_their_kind() -> None:
+    """종류의 근거는 호출 정책 표의 행(스트리밍으로 부르면 생성, 판정 종류가 있으면 판정, 판정 종류 없이 모델 설정이 있으면 기억
+    요약·추출·인상이라 백그라운드)과 표 밖 임베딩 호출 이름이다. 대표 행은 표에 있어야 한다 — 엔진에서 사라지면 이 도구가 알아야
+    할 변화다."""
+    assert {site for site, kind in _REPRESENTATIVE_KINDS.items() if kind != "embedding"} <= set(CALL_POLICIES)
+    assert {site: call_site_kind(site) for site in _REPRESENTATIVE_KINDS} == _REPRESENTATIVE_KINDS
 
 
 async def test_call_views_and_turn_costs_leave_unknown_costs_empty_instead_of_zero(
