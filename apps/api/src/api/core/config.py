@@ -893,7 +893,9 @@ class Settings(BaseSettings):
     # 환경에서는 확정 행이 대기로 남는다. 슬롯이 들어오기 전이라 켜도 확정은 작업 없이 만들어진다.
     novel_bible_enabled: bool = False
     # 소설화 워커 하나가 동시에 돌리는 정본 기억 작업(작업 하나 또는 준비된 확정 처리 하나가 한 칸) 수 상한. 소설 작업 상한과 따로
-    # 세 사용자 소설 작업 자리를 먹지 않는다. 올리면 워커의 DB 풀(`db_pool_size`)도 함께 본다. api 는 읽지 않는다.
+    # 세 사용자 소설 작업 자리를 먹지 않는다. 올리면 워커의 DB 풀도 키운다 — 운영 워커 풀은 `.env` 가 아니라
+    # `docker-compose.prod.yml` 워커 `environment` 의 `DB_POOL_SIZE`·`DB_MAX_OVERFLOW` 가 정한다(`.env` 값은 api 풀만 바꾼다).
+    # 워커만 쓰고 스위치가 꺼져 있으면 쓰지 않지만, `ge=1` 검사는 스위치와 무관하게 api·워커 기동(아래 `settings` 생성) 때 한다.
     novel_bible_worker_max_concurrent: int = Field(default=1, ge=1)
     # 정본 기억 연산마다 쓸 어댑터를 코드 표(`novel_bible/adapters/table.py`)에서 바꾼다(`연산:어댑터` 를 쉼표로 이은 목록, 따옴표
     # 없이). 비면 코드 표 그대로다. 모르는 연산·어댑터 이름은 스위치가 꺼져 있어도 거부한다 — 오타가 켤 때에야 드러나지 않게.
