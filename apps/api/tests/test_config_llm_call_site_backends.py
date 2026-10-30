@@ -244,3 +244,39 @@ def test_the_production_env_key_set_starts_with_every_assigned_call_on_anthropic
     assert loaded.chat_premium_models_enabled and loaded.novelize_premium_models_enabled
     assert loaded.llm_call_site_backends == dict.fromkeys(_PRODUCTION_ANTHROPIC_CALL_SITES, "anthropic")
     assert loaded.bedrock_access_key_id == ""
+
+
+# ── 직결로만 가는 Haiku 글쓰기와 상위 모델 스위치 ─────────────────────────────────────────────────────
+
+_BEDROCK_ONLY = {"BEDROCK_ACCESS_KEY_ID": "AKIATEST", "BEDROCK_SECRET_ACCESS_KEY": "secret", "BEDROCK_REGION": "ap-northeast-2"}
+
+
+def test_the_novel_switch_alone_without_a_direct_key_starts_since_haiku_never_writes_novels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """소설 스위치는 소설에서 고를 수 있는 모델의 경로만 연다 — 직결로만 가는 Haiku 글쓰기는 소설 요청이 막아 그 경로의 직결
+    키를 요구하지 않는다. Bedrock 자격만 있는 환경이 쓰지도 않을 경로 때문에 기동을 거부당하지 않는다."""
+    loaded = _load_env(monkeypatch, **_BEDROCK_ONLY, NOVELIZE_PREMIUM_MODELS_ENABLED="true")
+
+    assert loaded.novelize_premium_models_enabled
+    assert loaded.anthropic_direct_api_key == ""
+
+
+def test_the_chat_switch_with_haiku_hidden_needs_no_direct_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """채팅 스위치는 공개 목록의 모델만 연다 — 숨긴 Haiku 글쓰기의 직결 키까지 요구하지 않는다."""
+    monkeypatch.delenv("CHAT_MODELS_VISIBLE", raising=False)
+    loaded = _load_env(monkeypatch, **_BEDROCK_ONLY, CHAT_PREMIUM_MODELS_ENABLED="true")
+
+    assert loaded.chat_models_visible == ["opus"]
+
+
+def test_the_chat_switch_with_haiku_visible_needs_the_direct_key_even_without_an_assignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Haiku 글쓰기는 배정이 없어도 직결로 간다(Bedrock 이 서비스하지 않는다) — 공개 목록에 넣으면 그 키가 있어야 뜬다."""
+    monkeypatch.setenv("CHAT_MODELS_VISIBLE", "opus,haiku_writer")
+
+    with pytest.raises(ValidationError, match=_ANTHROPIC_KEY):
+        _load_env(monkeypatch, **_BEDROCK_ONLY, CHAT_PREMIUM_MODELS_ENABLED="true")
+    loaded = _load_env(monkeypatch, **_BEDROCK_ONLY, **{_ANTHROPIC_KEY: "sk-ant-test"}, CHAT_PREMIUM_MODELS_ENABLED="true")
+    assert loaded.chat_models_visible == ["opus", "haiku_writer"]

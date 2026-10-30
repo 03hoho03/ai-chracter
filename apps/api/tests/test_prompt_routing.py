@@ -965,6 +965,16 @@ def test_novel_generation_rows_on_the_env_path_of_their_job_model_save(save_env:
             id="novel-chain-the-lane-does-not-have",
         ),
         pytest.param(
+            _input("novel_recheck", lane="novel", room_model="any", chain_model="haiku_writer", call_model="gemini"),
+            "chain-not-in-lane",
+            id="novel-chain-of-the-chat-only-haiku-writer",
+        ),
+        pytest.param(
+            _input("novel_chapter", lane="novel", room_model="haiku_writer", chain_model=None, call_model="haiku_writer"),
+            "unknown-stage",
+            id="novel-generation-cell-of-the-chat-only-haiku-writer",
+        ),
+        pytest.param(
             _input("novel_boundary", lane="novel", room_model="any", chain_model="opus", call_model="opus"),
             "backend-mismatch",
             id="novel-structured-claude-row-without-a-direct-assignment",
@@ -1155,3 +1165,94 @@ def test_the_judgment_only_model_stays_off_the_chat_room_axis() -> None:
     for lane in get_args(ChatRoutingLane):
         for stage in LANE_STAGES[lane]:
             assert "haiku" not in stage_room_models(lane, stage), (lane, stage)
+
+
+# --- 채팅에 연 Haiku 글쓰기 방 ------------------------------------------------------------------------------------------
+
+
+def test_a_haiku_writer_room_generation_row_on_bedrock_is_refused_and_never_applied(save_env: pytest.MonkeyPatch) -> None:
+    """Haiku 글쓰기 생성 경로는 직결뿐이다 — Bedrock 행은 저장 검사가 거부하고, 표에 들어와 있어도 해석이 방 규칙(직결)으로 돈다."""
+    save_env.setattr(settings, "llm_call_site_backends", {"chat_generate": "bedrock"})
+    save_env.setattr(settings, "bedrock_access_key_id", "AKIATEST")
+    save_env.setattr(settings, "bedrock_secret_access_key", "secret")
+    save_env.setattr(settings, "bedrock_region", "ap-northeast-2")
+
+    refused = _rules(
+        [_input("chat_generate", room_model="haiku_writer", chain_model=None, call_model="haiku_writer", backend="bedrock")]
+    )
+    route = _resolve(
+        PromptRoutes.from_rows(
+            [
+                _row(
+                    "chat_generate",
+                    room_model="haiku_writer",
+                    chain_model=None,
+                    call_model="haiku_writer",
+                    backend="bedrock",
+                )
+            ]
+        ),
+        "story",
+        "haiku_writer",
+        "chat_generate",
+    )
+
+    assert refused == [(0, "pair-not-allowed")]
+    assert (route.source, route.call_model, route.backend) == ("room", "haiku_writer", "anthropic")
+    assert route.skipped is not None
+    assert route.skipped.reason == "pair-not-allowed"
+
+
+def test_the_writer_only_haiku_is_not_a_judgment_pair() -> None:
+    """판정은 판정 전용 `haiku` 가 맡는다 — 글쓰기 id 를 부를 모델로 고른 판정 행은 허용 목록 밖이다."""
+    assert ("haiku_writer", "anthropic") in ALLOWED_ROUTE_PAIRS["generation"]
+    assert all(model != "haiku_writer" for model, _ in ALLOWED_ROUTE_PAIRS["structured"])
+
+
+def test_production_env_writes_a_haiku_writer_room_direct_and_judges_it_with_the_judgment_only_haiku(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """운영 env 와 운영 행 하나(스토리 Opus 방의 스탯 판정)에서, 표가 빈 Haiku 글쓰기 방의 생성은 방 모델로 직결에 가고, 판정·요약·
+    추출 단계는 모델 설정(판정 전용 `haiku`)과 env 배정(직결)으로 풀린다 — 읽는 체인도 판정 전용 `haiku` 다. Bedrock 기본(Haiku
+    4.5)으로 가지 않는 근거는 운영 배정이라 운영 env 로 고정한다. Opus 칸의 행은 번지지 않는다."""
+    _use_production_env(monkeypatch)
+    routes = PromptRoutes.from_rows([_row("stat_judgment", room_model="opus", chain_model="haiku", call_model="haiku")])
+
+    compared = 0
+    for lane in get_args(ChatRoutingLane):
+        generation = _resolve(routes, lane, "haiku_writer", "chat_generate")
+        assert (generation.source, generation.call_model, generation.backend) == (
+            "room",
+            "haiku_writer",
+            "anthropic",
+        ), lane
+        for stage in LANE_STAGES[lane]:
+            if STAGES[stage].kind != "structured":
+                continue
+            for call_site in stage_call_sites(stage):
+                route = _resolve(routes, lane, "haiku_writer", stage, call_site)
+                assert (route.source, route.chain_model, route.call_model, route.backend, route.skipped) == (
+                    "env",
+                    "haiku",
+                    "haiku",
+                    "anthropic",
+                    None,
+                ), (lane, stage, call_site)
+                compared += 1
+    opus_stat = _resolve(routes, "story", "opus", "stat_judgment")
+
+    assert compared > 0
+    assert (opus_stat.source, opus_stat.chain_model, opus_stat.call_model, opus_stat.backend) == (
+        "row",
+        "haiku",
+        "haiku",
+        "anthropic",
+    )
+
+
+def test_the_haiku_writer_room_is_on_the_chat_axes_but_not_on_the_novel_axis() -> None:
+    for lane in get_args(ChatRoutingLane):
+        for stage in LANE_STAGES[lane]:
+            assert "haiku_writer" in stage_room_models(lane, stage), (lane, stage)
+    for stage in LANE_STAGES["novel"]:
+        assert "haiku_writer" not in stage_room_models("novel", stage), stage

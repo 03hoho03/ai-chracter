@@ -1129,7 +1129,7 @@ async def test_list_excludes_legacy_and_marks_exactly_one_active_per_lane_and_mo
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """`GET /admin/prompt-sets` 응답에 legacy 행이 없고 `isActive`가
-    정확히 13개((레인, 모델)마다 하나씩 — 채팅·심사 Gemini 4 + 채팅 Claude 4 + 판정 전용 2 + 소설 3)다."""
+    정확히 15개((레인, 모델)마다 하나씩 — 채팅·심사 Gemini 4 + 채팅 Claude 6 + 판정 전용 2 + 소설 3)다."""
     await _login_new_admin(db_client, db_session)
 
     resp = await db_client.get("/admin/prompt-sets")
@@ -1141,10 +1141,11 @@ async def test_list_excludes_legacy_and_marks_exactly_one_active_per_lane_and_mo
     assert lanes == {"story", "character", "publish_filter", "novel", "novel_screen"}
 
     active_items = [item for item in items if item["isActive"]]
-    assert len(active_items) == 13
+    assert len(active_items) == 15
     assert sorted((item["lane"], item["model"]) for item in active_items) == [
         ("character", "gemini"),
         ("character", "haiku"),
+        ("character", "haiku_writer"),
         ("character", "opus"),
         ("character", "sonnet"),
         ("novel", "gemini"),
@@ -1154,6 +1155,7 @@ async def test_list_excludes_legacy_and_marks_exactly_one_active_per_lane_and_mo
         ("publish_filter", "gemini"),
         ("story", "gemini"),
         ("story", "haiku"),
+        ("story", "haiku_writer"),
         ("story", "opus"),
         ("story", "sonnet"),
     ]
