@@ -2,5 +2,6 @@
 슬롯을 읽는 규칙은 건너뛴다. 슬롯 코드가 들어올 때마다 여기에 한 줄씩 더한다 — 그 전까지 확정은 작업 없이 만들어진다."""
 
 from api.novel_bible.core.contracts import Registry
+from api.novel_bible.slots.source.slot import SourceCanonSlot
 
-REGISTRY = Registry(extracting={}, source=None)
+REGISTRY = Registry(extracting={}, source=SourceCanonSlot())

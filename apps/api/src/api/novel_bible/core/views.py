@@ -63,7 +63,7 @@ class CommitView:
     async def source_canon(self) -> SourceCanon | None:
         if self.registry.source is None or self.source_ref is None:
             return None
-        return await self.registry.source.load(self.session, self.source_ref)
+        return await self.registry.source.load(self.session, self.commit.novel_id, self.source_ref)
 
 
 def source_ref_of(commit: NovelBibleCommit) -> SourceCanonRef | None:
