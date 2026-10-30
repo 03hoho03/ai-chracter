@@ -1,0 +1,75 @@
+name: chat-lab
+
+# web·admin 워크플로는 자기 앱 경로만 보므로, 이 파일이 없으면 chat-lab 의 typecheck·테스트·빌드를 아무도 돌리지
+# 않는다(lint 는 `lint.yml` 이 저장소 전체를 돈다). 워크스페이스 패키지를 하나도 쓰지 않으므로 `packages/**` 는 넣지
+# 않는다 — 넣으면 무관한 PR 에서 돈다. 배포 대상이 아니라 배포 단계도 없다.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/chat-lab/**"
+      # 앱 최상위 문서는 빌드·테스트가 읽지 않는다.
+      - "!apps/chat-lab/*.md"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/chat-lab.yml"
+      # 루트 package.json 의 `packageManager` 가 아래 `pnpm/action-setup` 이 설치할 pnpm 버전을 정한다. turbo.json 은 이
+      # 워크플로가 읽지 않지만(단계가 turbo 를 거치지 않는다) web·admin 워크플로와 루트 파일 범위를 맞춘다.
+      - "package.json"
+      - "turbo.json"
+  pull_request:
+    paths:
+      - "apps/chat-lab/**"
+      # 앱 최상위 문서는 빌드·테스트가 읽지 않는다.
+      - "!apps/chat-lab/*.md"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/chat-lab.yml"
+      # 루트 package.json 의 `packageManager` 가 아래 `pnpm/action-setup` 이 설치할 pnpm 버전을 정한다. turbo.json 은 이
+      # 워크플로가 읽지 않지만(단계가 turbo 를 거치지 않는다) web·admin 워크플로와 루트 파일 범위를 맞춘다.
+      - "package.json"
+      - "turbo.json"
+
+# PR 은 새 커밋이 오면 옛 검사를 취소한다. main push 는 run 마다 고유 그룹이라 서로 취소·대기하지 않는다 —
+# 같은 그룹이면 그룹당 대기 1개 규칙 때문에 연속 병합 시 중간 커밋의 검사가 대기 중에 버려진다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `generated.ts` 는 커밋되는 생성물이다(`openapi.json` → 이 파일). 체인의 앞 절반(측정 서버 스키마 → `openapi.json`)은
+      # `api.yml` 이 검사하고 뒤 절반을 여기서 검사한다 — 한쪽만 보면 스키마를 고치고 다음 파일을 다시 떨구지 않아도
+      # 초록이 된다. typecheck 가 대신하지 못하는 이유: 필드가 추가될 때는 쓰는 순간 타입 에러로 잡히지만, 삭제·변경될
+      # 때는 옛 타입이 그대로 남아 typecheck 가 초록인 채로 서버와 어긋난다.
+      #
+      # `git diff` 대신 `git status --porcelain` 출력이 비었는지 보는 것은, 생성물을 커밋에서 빠뜨려 아직 추적되지 않는
+      # 새 파일도 `git diff` 는 보지 못해서다.
+      - name: generated.ts 드리프트 검사
+        run: |
+          pnpm --filter chat-lab run codegen
+          test -z "$(git status --porcelain -- apps/chat-lab/src/shared/api/generated.ts)" || {
+            git status --porcelain -- apps/chat-lab/src/shared/api/generated.ts
+            git diff -- apps/chat-lab/src/shared/api/generated.ts
+            echo "::error::generated.ts 가 openapi.json 과 어긋났다 — 'pnpm --filter chat-lab run codegen' 을 돌리고 커밋해라"
+            exit 1
+          }
+
+      - run: pnpm --filter chat-lab run typecheck
+
+      - run: pnpm --filter chat-lab run test
+
+      - run: pnpm --filter chat-lab run build

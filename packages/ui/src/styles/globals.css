@@ -4,6 +4,8 @@
 @import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 
 @source "../../../../apps/**/*.{ts,tsx}";
+/* chat-lab 은 이 디자인 시스템을 쓰지 않는 독립 도구다 — 그 클래스가 web·admin CSS 에 섞이지 않게 위 글롭에서 뺀다. */
+@source not "../../../../apps/chat-lab/**";
 @source "../**/*.{ts,tsx}";
 
 @custom-variant dark (&:is(.dark *));

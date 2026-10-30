@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+/* 이 앱만의 색 토큰. chat-lab 은 또나 디자인 시스템(packages/ui)을 쓰지 않는 독립 도구라 토큰도 따로 둔다.
+   화면 방향을 정하기 전이라 무채색 최소 집합만 둔다. 테마는 운영체제 설정(prefers-color-scheme)을 따른다. */
+:root {
+  color-scheme: light dark;
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.21 0 0);
+  --muted-foreground: oklch(0.5 0 0);
+  --border: oklch(0.9 0 0);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.17 0 0);
+    --foreground: oklch(0.93 0 0);
+    --muted-foreground: oklch(0.7 0 0);
+    --border: oklch(0.3 0 0);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+}
+
+@layer base {
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}
