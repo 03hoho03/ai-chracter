@@ -45,7 +45,7 @@ from api.chat.prompt_builder import (
     SceneJudgmentResult,
     StatRuleJudgmentResult,
 )
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.core.rate_limit_gate import ChatCharge
 from api.core.config import settings
 from api.db.models import (
@@ -78,6 +78,7 @@ from factories import (
     _login_as,
     _make_chat_turn,
     _make_published_character,
+    _make_paying_user,
     _make_user,
     _make_user_with_clover_lot,
     _open_room,
@@ -254,7 +255,7 @@ def _story_judgments(cell_id: str, *, with_stats: bool) -> dict[str, list[Any]]:
 
 async def _send_character(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Turn:
     # 30턴 = 요약 접기가 도는 방. 접기 호출도 외부 호출이라 같이 잰다.
-    room = await _open_room(db_client, db_session, turns=30)
+    room = await _open_room(db_client, db_session, turns=30, paid_turns=1)
     image_id = await _add_situational_image(db_session, room.room_id, room.user_id)
     return _Turn(
         "POST",
@@ -266,7 +267,7 @@ async def _send_character(db_client: httpx.AsyncClient, db_session: AsyncSession
 
 
 async def _send_story(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Turn:
-    room = await _open_room(db_client, db_session, turns=0, lane="story")
+    room = await _open_room(db_client, db_session, turns=0, lane="story", paid_turns=1)
     cell_id = await _story_extras(db_session, room.room_id, room.user_id)
     return _Turn(
         "POST",
@@ -278,7 +279,7 @@ async def _send_story(db_client: httpx.AsyncClient, db_session: AsyncSession) ->
 
 
 async def _edit_story(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Turn:
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=1)
     cell_id = await _story_extras(db_session, room.room_id, room.user_id)
     return _Turn(
         "PATCH",
@@ -290,7 +291,7 @@ async def _edit_story(db_client: httpx.AsyncClient, db_session: AsyncSession) ->
 
 
 async def _regenerate_character(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Turn:
-    room = await _open_room(db_client, db_session, turns=1)
+    room = await _open_room(db_client, db_session, turns=1, paid_turns=1)
     image_id = await _add_situational_image(db_session, room.room_id, room.user_id)
     return _Turn(
         "POST",
@@ -302,7 +303,7 @@ async def _regenerate_character(db_client: httpx.AsyncClient, db_session: AsyncS
 
 
 async def _regenerate_story(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Turn:
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=1)
     cell_id = await _story_extras(db_session, room.room_id, room.user_id)
     return _Turn(
         "POST",
@@ -314,8 +315,7 @@ async def _regenerate_story(db_client: httpx.AsyncClient, db_session: AsyncSessi
 
 
 async def _preview_story(db_client: httpx.AsyncClient, db_session: AsyncSession, *, scene_header: bool = False) -> _Turn:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.commit()
     await _login_as(db_client, user.id)
     stat_id = str(uuid.uuid4())
@@ -704,7 +704,6 @@ async def test_room_deleted_during_generation_ends_with_an_error_and_no_refund(
         db_session, clover_balance=100, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
     )
     room = await _open_room(db_client, db_session, turns=1, user=user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     fake = _RoomDeletingLLMClient(db_client, room.room_id)
     _override_llm_client(fake)
@@ -796,7 +795,6 @@ async def test_send_write_failure_after_the_stat_write_saves_nothing_of_the_turn
         db_session, clover_balance=100, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
     )
     room = await _open_room(db_client, db_session, turns=1, lane="story", user=user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     before = await _room_state(db_session, room.room_id)
 
     write_room_stat = turn_store._write_room_stat
@@ -847,7 +845,6 @@ async def test_regenerate_write_failure_keeps_the_old_response(
     old_record = _make_chat_turn(room.room_id, assistant_message_id=room.turns[1][1].id)
     db_session.add(old_record)
     await db_session.commit()
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     before = await _room_state(db_session, room.room_id)
 
     def _breaking_discarded_response(**fields: Any) -> DiscardedResponse:

@@ -6,13 +6,12 @@
 모델을 지금 쓸 모델로 읽어 가격을 정한다. 그 모델을 읽는 의존성이 채팅 라우터에 있어, 게이트를 여기 두면 이 모듈이 채팅
 라우터를 import 해야 해 순환이 된다.
 
-**모델에 따라 갈래가 둘이다.** Gemini 턴은 면제 통과·하루 무료분·하루 1회 확인·Redis 장애 통과를 그대로 따른다.
-상위 모델(Gemini 밖의 글쓰기 모델) 턴은 그 넷을 타지 않는다 — 면제 계정도 그 모델 가격을 내고, 무료분을 쓰지도
-깎지도 않고, 확인을 묻지 않고(모델을 고를 때 본 턴당 가격이 확인이다), Redis 장애면 거절한다(분당 상한을 못 센 채
-비싼 호출을 열지 않는다). 분당 버스트는 두 갈래 모두 받는다. 본인인증 게이트(`core/identity_gate.py`)에 걸린
-미인증 회원의 Gemini 턴은 무료분이 0 이고, Redis 장애에도 통과하지 않고 클로버를 쓴다(원래 무료 턴이 없는 사람에게
-장애가 무료 턴을 주지 않게). 출석판 스위치(`settings.attendance_board_enabled`)가 켜지면 Gemini 턴도 무료분·하루 1회 확인·
-Redis 장애 통과 없이 클로버로 낸다(면제는 그대로) — 출석 보상이 하루 무료분을 대신한다.
+**하루 무료 대화는 없다** — 출석 보상이 그 자리를 대신한다. 그래서 채팅 턴은 늘 클로버로 내고, 차감 전에 하루 1회
+확인을 묻지 않는다("무료분을 다 쓴 순간"이 없다). **모델에 따라 갈래가 둘이다.** Gemini 턴은 레이트리밋 면제 계정이면
+내지 않고, Redis 장애로 분당 상한을 셀 수 없어도 상한 없이 평소처럼 낸다(면제 계정은 그대로 내지 않는다). 상위 모델(Gemini
+밖의 글쓰기 모델) 턴은 면제 계정도 그 모델 가격을 내고(모델을 고를 때 본 턴당 가격이 확인이다), Redis 장애면 거절한다(분당
+상한을 못 센 채 비싼 호출을 열지 않는다). 분당 버스트는 두 갈래 모두 받는다. 본인인증 게이트(`core/identity_gate.py`)에 걸린
+미인증 회원의 Gemini 턴은 클로버가 모자라면 429 가 아니라 403 이다.
 
 **단일 버킷이다.** 세는 단위는 "LLM을 태우는 요청 1건"이라 재생성도 편집도 1로 센다 —
 방의 `turn_count`는 재생성에서 늘지 않고 편집에서는 되감겼다가 다시 늘지만, 그 회계는 대화의
@@ -50,7 +49,6 @@ from api.core import clover
 from api.core.config import settings  # 순환 없음: 위 `core/clover.py` 가 같은 `settings` 를 import 한다
 from api.core.identity_gate import identity_verification_required, is_identity_gated
 from api.core.rate_limit import (
-    KST,
     check_rate_limit,
     refund_tokens,
     seconds_until_kst_midnight,
@@ -71,27 +69,10 @@ logger = logging.getLogger(__name__)
 # 함수 정의 시점의 값이 박혀 `monkeypatch.setattr`가 통하지 않는다.
 CHAT_BURST_LIMIT = 10
 CHAT_BURST_WINDOW_SECONDS = 60
-# 15는 **정책값이지 실측값이 아니다** — "하루 15턴이면 충분하다"는 관측이 아니라 무료 사용자 한 명의 원가 상한을
-# 정한 수다. 조감독 작품 111턴 시뮬레이션의 턴당 원가 약 $0.0047(약 6.5원, 1달러 1,400원)로 보면 하루 15턴을 다
-# 써도 약 98원이다. 실제 사용 분포가 나오면 그 숫자로 다시 정해야 한다.
-CHAT_DAILY_LIMIT = 15
-
-
-def daily_free_chat_turns() -> int:
-    """지금 회원에게 주는 Gemini 하루 무료 대화 수. 출석판 스위치가 켜지면 하루 무료 대화가 없어져 0 이다 — 출석 보상이
-    무료분을 대신한다. 꺼져 있으면 일일 창의 상한(`CHAT_DAILY_LIMIT`)이다. 둘 다 호출 시점에 읽는다(테스트의
-    `monkeypatch.setattr` 가 통하게).
-
-    게이트 본문은 이 함수를 쓰지 않는다 — 게이트는 "일일 창을 건너뛰는가"를 스위치로 묻고, 응답은 "몇 턴인가"를 묻는다.
-    게이트가 이 값이 0 인지로 판정하면 `CHAT_DAILY_LIMIT` 를 0 으로 바꿔 무료분 소진을 흉내 내는 경우가 스위치 켜짐과
-    구분되지 않는다."""
-    return 0 if settings.attendance_board_enabled else CHAT_DAILY_LIMIT
-
-
 # 이미지는 고정 창이 아니라 토큰 버킷이다 — 10장을 모아 뒀다가 한 번에 쓰고
 # 시간당 1장씩 연속 충전된다. **토큰 1개 = 이미지 1장**이라 `count=2` 요청은 2를 깎는다
 # (비용은 요청 수가 아니라 장수에 붙는다 — 집 PC가 장당 한 번씩 돈다).
-# 채팅 하루 상한과 마찬가지로 실측값이 아니라 정책값이다.
+# 실측값이 아니라 정책값이다.
 IMAGE_TOKEN_CAPACITY = 10
 IMAGE_TOKEN_REFILL_SECONDS = 3600
 
@@ -111,11 +92,10 @@ QUEUE_FULL_RETRY_AFTER_SECONDS = 60
 REDIS_FAILURE_REPORT_WINDOW_SECONDS = 60
 
 _BURST_SCOPE = "chat_burst"
-_DAY_SCOPE = "chat_day"
 _IMAGE_SCOPE = "image_tokens"
 # 이미지 429 두 종류(`USER_LIMIT`·`QUEUE_FULL`)는 같은 `window`를 쓴다 — 둘을
 # 가르는 것은 `code`고, `window`는 "어느 상한이냐"가 아니라 "어느 기능이냐"다(채팅은 창 길이가
-# 곧 재시도 안내라 minute/day를 싣지만, 이미지는 그 역할을 `retryAfterSeconds`가 한다). auth도
+# 곧 재시도 안내라 minute을 싣지만, 이미지는 그 역할을 `retryAfterSeconds`가 한다). auth도
 # 같은 형태다 — `window:"auth"` 아래 시간당 상한은
 # `code:"AUTH_LIMIT"`, 60초 쿨다운은 `code:"AUTH_COOLDOWN"`이다. 바디는 이 파일의
 # `_too_many_requests`가 아니라 `auth/router.py`의 지역 헬퍼가 만든다(그 함수는
@@ -140,13 +120,13 @@ _UPLOAD_WINDOW = "upload"
 _CLOVER_CODE = "CLOVER_REQUIRED"
 _CLOVER_WINDOW = "clover"
 
-# "소진 시 하루 1회 확인 **후** 자동
+# 이미지 토큰을 다 쓴 뒤 "하루 1회 확인 **후** 자동
 # 차감"의 *후*를 강제하는 코드다. `_CLOVER_CODE`와 같은 `window`를 쓰고 `code`로만 갈린다 —
 # 둘은 같은 기능("클로버로 계속하기")의 서로 다른 단계이지 다른 기능이 아니다.
 #
-# 🔴 **판정이 BE에 있어야 하는 이유**: FE는 "이번 요청이 무료분을 넘는가"를 보내기 전에 알 수
+# 🔴 **판정이 BE에 있어야 하는 이유**: FE는 "이번 요청이 남은 토큰을 넘는가"를 보내기 전에 알 수
 # 없다(`GET /me/clover`는 잔액·확인여부·유료 잔액·만료 임박만 준다). 미확인인 모든 첫 요청에 모달을
-# 띄우면 **무료분을 안 쓴 사용자까지 매일 붙잡는다.** 게이트만이 그 시점을 알고, 그래서 게이트가
+# 띄우면 **토큰이 남은 사용자까지 매일 붙잡는다.** 게이트만이 그 시점을 알고, 그래서 게이트가
 # 단일 판정자다 — 경쟁 조건도 여기서 사라진다.
 _CLOVER_CONFIRM_CODE = "CLOVER_CONFIRM_REQUIRED"
 
@@ -178,10 +158,10 @@ def _report_redis_failure() -> None:
 
 def _check_price_version(price_version: int | None, cost: int) -> None:
     """클로버를 실제로 깎기 직전에 요청의 가격 버전을 대조한다. 버전이 없는 요청(가격 버전을 모르는 배포 전 화면)은 지금처럼
-    지나간다. 무료분·면제·토큰으로 내는 요청에서는 부르지 않는다 — 깎지 않는 요청을 막으면 가격이 바뀐 날 옛 화면을 연 무료
-    사용자까지 이유 없이 멈춘다. 그래서 대조를 게이트 맨 앞이 아니라 각 차감 갈래 안, 그 갈래가 유료로 정해진 뒤에 둔다.
+    지나간다. 면제·토큰으로 내는 요청에서는 부르지 않는다 — 깎지 않는 요청을 막으면 가격이 바뀐 날 옛 화면을 연 면제 계정이나
+    토큰이 남은 사용자까지 이유 없이 멈춘다. 그래서 대조를 게이트 맨 앞이 아니라 각 차감 갈래 안, 그 갈래가 유료로 정해진 뒤에 둔다.
 
-    하루 1회 확인보다 앞이다 — 확인 대화는 화면이 가진 가격으로 "클로버 N 개를 써요"를 묻는데, 그 가격이 옛 값이면 옛 가격에
+    이미지의 하루 1회 확인보다 앞이다 — 확인 대화는 화면이 가진 가격으로 "클로버 N 개를 써요"를 묻는데, 그 가격이 옛 값이면 옛 가격에
     동의를 받는 것이다. `cost` 는 이 요청의 지금 금액이다(채팅은 턴 가격, 이미지는 장수 × 장당 가격)."""
     if price_version is not None and price_version != clover.PRICE_VERSION:
         raise HTTPException(
@@ -191,8 +171,8 @@ def _check_price_version(price_version: int | None, cost: int) -> None:
 
 def _refuse_if_paused() -> None:
     """정지 스위치가 켜졌으면 503 `CLOVER_PAUSED`(`clover.raise_if_clover_paused`). 차감 자체는 `spend` 첫 줄이 막지만, 유료 갈래는
-    그 앞에서 하루 1회 확인 429 와 가격 버전 409 를 낼 수 있어 그 둘보다 먼저 여기서 막는다 — 정지 중에 확인을 받거나 가격표를
-    다시 받게 해도 어차피 깎을 수 없다. 무료분·면제·토큰 갈래는 부르지 않는다(깎지 않는 요청은 정지와 무관하다)."""
+    그 앞에서 가격 버전 409 를(이미지는 하루 1회 확인 429 도) 낼 수 있어 그보다 먼저 여기서 막는다 — 정지 중에 확인을 받거나
+    가격표를 다시 받게 해도 어차피 깎을 수 없다. 면제·토큰 갈래는 부르지 않는다(깎지 않는 요청은 정지와 무관하다)."""
     clover.raise_if_clover_paused()
 
 
@@ -230,7 +210,7 @@ async def is_rate_limit_exempt(user_id: uuid.UUID, db: AsyncSession) -> bool:
     세션에 굳는 사본도 없어서 무효화할 캐시가 없다(어드민이 뒤집으면 다음 요청부터 곧바로
     적용된다).
 
-    **면제 범위는 일일 상한·이미지 토큰버킷·발행 심사 시간당 상한·업로드 발급 시간당 상한이다.**
+    **면제 범위는 Gemini 채팅 턴의 클로버 차감·이미지 토큰버킷·발행 심사 시간당 상한·업로드 발급 시간당 상한이다.**
     분당 버스트는 예외 계정도 그대로 받고(폭주 방어는 쿼터가 아니다), 이미지 유저별 동시 큐 1칸도
     예외 계정에 그대로 적용된다. 이미지·발행·업로드 쪽이 이 함수를 그대로 다시 부른다 — 그래서
     게이트 본문이 아니라 별도 함수다.
@@ -251,9 +231,9 @@ async def _needs_clover_spend_confirmation(
 ) -> bool:
     """오늘(KST) 동의가 없고, **동의하면 실제로 쓸 수 있을 때만** True.
 
-    면제 판정과 같은 행을 다시 `db.get`한다. 이미지 게이트에서는 SELECT가 한 번 더 나가고(identity map은
-    약참조라 `is_rate_limit_exempt`가 읽은 `User`는 이미 수거됐다), 채팅 게이트에서는 면제·본인인증 판정이 읽은
-    행을 함수가 끝날 때까지 쥐고 있어 identity map에서 그대로 꺼낸다.
+    면제 판정과 같은 행을 다시 `db.get`한다. 이미지 게이트에서는 SELECT가 한 번 더 나간다(identity map은
+    약참조라 `is_rate_limit_exempt`가 읽은 `User`는 이미 수거됐다). 채팅 게이트는 이 확인을 묻지 않는다 — 하루
+    무료 대화가 없어 "무료분을 다 쓴 순간"이 없다.
 
     🔴 **잔액이 모자라면 묻지 않는다.** 0원인 사용자에게 *"지금부터 클로버를 써요"*를 물어 놓고
     동의 직후 *"부족해요"*를 내는 것은 두 단계를 헛되이 쓰는 것이다. 그 경우는 그대로 아래
@@ -280,14 +260,14 @@ class ChatCharge:
     """채팅 게이트가 라우트에 넘기는 **차감 영수증**.
 
     `source`가 환불 대상을 가른다:
-    - `"free"` — 일일 창 안에서 통과. 환불할 것이 없다(`check_rate_limit`에 역연산이 없어
-      무료분은 애초에 되돌릴 수 없다). 출석판 스위치가 꺼져 있을 때만 나온다 — 켜진 뒤에도 과거 `chat_turns` 행에
-      남아 있어 값은 지우지 않는다.
     - `"clover"` — 클로버를 깎았다. 실패 시 `clover_amount`만큼 되돌린다.
-    - `"skipped"` — 예외 계정 또는 Redis fail-open. 아무것도 깎지 않았다. 출석판 스위치가 켜져 있으면 예외 계정만이다.
+    - `"skipped"` — 예외 계정의 Gemini 턴. 아무것도 깎지 않았다.
+
+    턴 기록의 값 목록(`db/models/chat.py` 의 `ChatTurnChargeSource`)에는 `"free"` 가 남아 있다 — 하루 무료 대화가 있던
+    때의 `chat_turns` 행이 그 값을 들고 있어서다. 지금 게이트는 그 값을 내지 않는다.
     """
 
-    source: Literal["free", "clover", "skipped"]
+    source: Literal["clover", "skipped"]
     # `source != "clover"`이면 0이다. 되돌릴 양을 라우트가 상수에서 다시 계산하지 않고
     # 영수증에서 읽게 한다 — 상수가 바뀌어도 진행 중이던 요청의 환불액이 어긋나지 않는다. 상위 모델 턴이면 그 모델 가격이다.
     clover_amount: int = 0
@@ -311,12 +291,12 @@ async def charge_chat_turn(
     """채팅 턴 하나의 상한 검사와 차감. 키는 `user_id`다 — IP가 아니라 계정이 비용의 단위다. `model` 은 이 턴을 생성할
     모델이고 `price` 는 그 모델의 턴 가격이다(호출부가 레지스트리에서 정한다).
 
-    `price_version` 은 화면이 실어 보낸 가격표 버전이다. 클로버를 깎는 네 갈래가 깎기 전에 대조하고(`_check_price_version`), 무료·면제
+    `price_version` 은 화면이 실어 보낸 가격표 버전이다. 클로버를 깎는 갈래가 깎기 전에 대조하고(`_check_price_version`), 면제
     턴은 대조하지 않는다.
 
-    `usage` 는 클로버를 깎는 네 갈래(무료분 소진 뒤·미인증·상위 모델·출석판 스위치를 켠 Gemini)가 차감과 같은 커밋에 남길 사용처다. 크리에이터
-    정산이 사용처에서 출발하므로 빠뜨리면 그 차감이 정산에서 조용히 빠진다 — 그래서 기본값 없이 받는다. 무료·면제
-    턴은 원장 행이 없어 쓰지 않고, 작품 소유자도 차감할 때만 사용처 INSERT 안에서 읽으므로 무료 턴에 조회가 늘지 않는다.
+    `usage` 는 클로버를 깎는 갈래(미인증·상위 모델·그 밖의 Gemini)가 차감과 같은 커밋에 남길 사용처다. 크리에이터
+    정산이 사용처에서 출발하므로 빠뜨리면 그 차감이 정산에서 조용히 빠진다 — 그래서 기본값 없이 받는다. 면제
+    턴은 원장 행이 없어 쓰지 않고, 작품 소유자도 차감할 때만 사용처 INSERT 안에서 읽으므로 면제 턴에 조회가 늘지 않는다.
 
     두 게이트는 `user_id` 를 `get_current_user_id` 로 받는다. 재동의 게이트(`require_legal_consent`)도 이미 그 `Depends` 를
     쓰고 있어 FastAPI의 요청 스코프 캐시가 한 번만 해석한다 — Redis 왕복이 더 늘지 않는다.
@@ -327,197 +307,68 @@ async def charge_chat_turn(
     identity map 히트가 **아니다** — 앞 의존성들이 읽은 `User`는 아무도 붙잡지 않아 이미
     수거됐으므로(약참조) SELECT가 따로 나간다.
 
-    Gemini 턴의 순서는 **버스트 → 면제 → 본인인증 게이트 → 일일 → 클로버**다. 게이트에 걸린 미인증 회원은
-    무료분이 0 이라 일일 창을 건너뛰고 클로버로 간다(`_charge_unverified_turn`). 짧은
-    창이 먼저 걸리는 게 사용자에게 유용한 `retryAfterSeconds`(몇 초 뒤 재시도)를 주기 때문이고,
-    일일 창이 먼저면 몇 시간짜리 값이 앞서 나간다. 면제가 그 사이에 있는 이유는 면제 대상도
-    버스트는 받기 때문이다. 클로버가 맨 뒤인 이유는 두 가지다 — 분당 버스트는 **폭주 방어라
-    돈으로 끌 수 없고**, 예외 계정은 애초에 차감 대상이 아니다.
-
-    출석판 스위치가 켜져 있으면 Gemini 턴의 순서는 **버스트 → 면제 → 본인인증 게이트 → 클로버**다. 하루 무료분이 없으니
-    일일 창을 세지 않고, "무료분을 다 쓴 순간"이 없으니 하루 1회 확인도 묻지 않는다.
+    Gemini 턴의 순서는 **버스트 → 면제 → 본인인증 게이트 → 클로버**다. 버스트가 먼저인 이유는 분당 버스트가 **폭주
+    방어라 돈으로 끌 수 없어서**고, 면제가 그 뒤인 이유는 면제 대상도 버스트는 받기 때문이다. 게이트에 걸린 미인증 회원은
+    잔액 부족 응답만 다르다(`_charge_unverified_turn`).
 
     상위 모델 턴은 **버스트 → 클로버**다(모듈 docstring 의 갈래).
     """
     now = datetime.now(UTC)
     key = str(user_id)
-    # 한 요청 안에서 스위치를 한 번만 읽어 `try` 갈래와 Redis 장애 갈래가 같은 값을 보게 한다.
-    free_turns_off = settings.attendance_board_enabled
     try:
         burst_retry_after = await check_rate_limit(
             _BURST_SCOPE, key, CHAT_BURST_LIMIT, window_seconds=CHAT_BURST_WINDOW_SECONDS
         )
         if burst_retry_after > 0:
             raise _too_many_requests(user_id, "minute", burst_retry_after)
-
-        if model != DEFAULT_CHAT_MODEL:
-            return await _charge_clover_turn(
-                user_id, session_factory, now, model=model, price=price, usage=usage, price_version=price_version
-            )
-
-        # 면제 대상은 버스트를 그대로 받고 일일만 건너뛴다. 건너뛰는 것이라 일일
-        # 카운터도 올라가지 않는다 — 어드민이 도중에 면제를 거두면 그날 그때까지의 요청은
-        # 일일 창에 세어져 있지 않다.
-        # 사용자 행 한 번 읽기로 면제와 본인인증 게이트를 같이 본다(`is_rate_limit_exempt` 와 같은 판정).
-        user = await db.get(User, user_id)
-        if user is not None and user.rate_limit_exempt is True:
-            return ChatCharge(source="skipped")
-        # 미인증 회원은 무료분이 0 이다. 일일 창보다 **앞**이라 그 카운터를 올리지 않고(인증한 날도 하루 무료분 0 에서 시작한다),
-        # Redis 를 쓰지 않는 차감으로 바로 간다.
-        if user is not None and is_identity_gated(user):
-            return await _charge_unverified_turn(
-                user_id,
-                db,
-                session_factory,
-                now,
-                price=price,
-                usage=usage,
-                price_version=price_version,
-                ask_confirmation=not free_turns_off,
-            )
-        # 출석판 스위치가 켜져 있으면 하루 무료분이 없다 — 일일 창을 세지 않고 확인 없이 바로 클로버로 낸다.
-        if free_turns_off:
-            return await _charge_clover_turn(
-                user_id, session_factory, now, model=model, price=price, usage=usage, price_version=price_version
-            )
-
-        # 일일 창은 KST 자정에 끊긴다. 기구에는 "자정"이라는 개념이 없으므로 호출자가
-        # 키에 KST 날짜를 섞고(날짜가 바뀌면 키 자체가 바뀐다) TTL로 남은 초를 넘긴다 —
-        # 둘 중 하나만 하면 어긋난다(날짜만 섞으면 어제 키가 TTL 없이 남고, TTL만 주면
-        # 자정 직전 요청이 만든 창이 자정 직후 요청과 같은 키를 공유한다).
-        day_retry_after = await check_rate_limit(
-            _DAY_SCOPE,
-            f"{key}:{now.astimezone(KST).date().isoformat()}",
-            CHAT_DAILY_LIMIT,
-            window_seconds=seconds_until_kst_midnight(now),
-        )
-        if day_retry_after > 0:
-            # 무료 일일분을 다 쓴
-            # 뒤에만 클로버가 대신 낸다.
-            #
-            # 🔴 **이 분기는 반드시 `try` 블록 안에 있어야 한다.** Redis 장애에서는
-            # `check_rate_limit`이 `RedisError`를 던져 아래 `except`로 빠지므로 여기 도달하지
-            # 않는다 — 의도한 동작이다(출석판 스위치가 꺼져 있으면 장애 중에는 무료로 통과시킨다). `try`
-            # 바깥(함수 끝)으로 옮기면 fail-open으로 빠져나온 뒤에도 실행돼 **장애 동안
-            # 전원이 차감된다.** 코드만 보면 어느 쪽도 자연스러워 보여서 이 주석을 남긴다.
-            #
-            # **차감보다 먼저** 오늘치 동의를 확인한다. 이 순서가
-            # 뒤집히면 "확인 후 자동 차감"이 "차감 후 확인"이 되어 결정 자체가 무의미해진다.
-            #
-            # 🔴 이 검사는 **일일 분기 안**이다. 밖으로 옮기면 무료분이 남은 사용자까지 429를
-            # 받는다 — "소진 시 하루 1회 확인"의 "소진 시"가 지켜지지 않는다. 그리고 면제 `return`(위)보다 뒤라
-            # 예외 계정에게는 묻지 않는다.
-            #
-            # 가격 버전 대조는 이 턴이 클로버로 낼 턴으로 정해진 이 자리, 확인보다 앞이다(`_check_price_version`). 정지 검사는 그보다
-            # 앞이다(`_refuse_if_paused`).
-            _refuse_if_paused()
-            _check_price_version(price_version, price)
-            if await _needs_clover_spend_confirmation(user_id, db, now, price):
-                # `retryAfterSeconds`는 부족(`CLOVER_REQUIRED`)과 같은 자정까지 초다 — 동의를
-                # 안 하고 기다리기만 해도 그때 무료 일일분이 돌아오므로 여전히 참값이다.
-                raise _too_many_requests(
-                    user_id,
-                    _CLOVER_WINDOW,
-                    seconds_until_kst_midnight(now),
-                    code=_CLOVER_CONFIRM_CODE,
-                )
-
-            # 차감은 **자기 트랜잭션**이다 — 채팅 4경로의 커밋 시점이 제각각이라
-            # 요청 세션에 얹으면 미리보기는 영원히 공짜가 된다.
-            spent = await clover.spend_in_new_transaction(
-                session_factory,
-                user_id=user_id,
-                amount=price,
-                kind="chat_spend",
-                usage=usage,
-            )
-            if spent is None:
-                # 클로버 부족 429(채팅): 자정까지 남은 초는 거짓이 아니다 — 그때 무료 일일분이
-                # 돌아오므로 실제로 다시 보낼 수 있다.
-                raise _too_many_requests(
-                    user_id,
-                    _CLOVER_WINDOW,
-                    seconds_until_kst_midnight(now),
-                    code=_CLOVER_CODE,
-                )
-            return ChatCharge(source="clover", clover_amount=price, spend_ledger_id=spent.ledger_id)
-        return ChatCharge(source="free")
     except RedisError:
         if model != DEFAULT_CHAT_MODEL:
-            # 상위 모델 턴은 fail-closed 다. 아래 Gemini 의 통과 근거("최악은 상한이 느슨해지는 것")가 여기서는 성립하지
-            # 않는다 — 분당 상한 없이 비싼 호출이 열리는 것이 최악이고, 그 턴들은 무료분도 아니다. 차감 전이라 되돌릴 것이
+            # 상위 모델 턴은 fail-closed 다. 분당 상한 없이 비싼 호출이 열리는 것이 최악이라서다. 차감 전이라 되돌릴 것이
             # 없다(차감은 Redis 를 쓰지 않으므로 이 예외는 버스트 검사에서만 난다).
             logger.warning("채팅 레이트리밋 검사 실패 — 상위 모델 턴(%s)은 거절한다", model, exc_info=True)
             _report_redis_failure()
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": _CHAT_MODEL_UNAVAILABLE_CODE}
             ) from None
-        # fail-open. 상한을 세는 장치가 죽었다고 채팅까지 죽일 이유가 없다 —
-        # 최악의 결과는 그 창 동안 상한이 느슨해지는 것이고, fail-closed의 최악은 전면 장애다.
-        # ⚠️ 이 fail-open이 지키는 것은 **부분 장애**다(Redis는 살았는데 이 키에만 문제가 있는
-        # 경우). Redis 전면 장애에서는 이 게이트에 닿기도 전에 `session/store.py`의
-        # `get_session`이 `RedisError`를 그대로 올려 500이 난다 — `get_current_user_id`가
-        # 세션 쿠키를 받으면 조건 없이 먼저 부르는 `redis_client.get`이다(같은 의존성의
-        # `is_user_suspended`는 그보다 뒤라 전면 장애에서는 호출조차 되지 않는다).
-        # "Redis가 죽어도 채팅은 산다"는 뜻이 아니다.
-        # 출석판 스위치가 켜져 있으면 통과는 면제 계정만이고 나머지는 평소처럼 클로버로 낸다 — 하루 무료분이 없는 사람에게
-        # 장애가 무료 턴을 주지 않게. 그래서 켜짐의 로그 문구는 통과를 말하지 않는다(꺼짐 문구는 그대로 둔다).
-        if free_turns_off:
-            logger.warning("채팅 레이트리밋 검사 실패 — 분당 상한 없이 진행한다", exc_info=True)
-        else:
-            logger.warning("채팅 레이트리밋 검사 실패 — fail-open으로 통과시킨다", exc_info=True)
+        # Gemini 턴은 분당 상한 없이 아래 평소 갈래로 진행한다. 상한을 세는 장치가 죽었다고 채팅까지 죽일 이유가 없고, 장애가
+        # 무료 턴을 주지도 않는다(차감은 Redis 를 쓰지 않아 장애 중에도 그대로 할 수 있다).
+        # ⚠️ 이 진행이 지키는 것은 **부분 장애**다(Redis는 살았는데 이 키에만 문제가 있는 경우). Redis 전면 장애에서는 이
+        # 게이트에 닿기도 전에 `session/store.py`의 `get_session`이 `RedisError`를 그대로 올려 500이 난다 —
+        # `get_current_user_id`가 세션 쿠키를 받으면 조건 없이 먼저 부르는 `redis_client.get`이다. "Redis가 죽어도 채팅은
+        # 산다"는 뜻이 아니다.
+        logger.warning("채팅 레이트리밋 검사 실패 — 분당 상한 없이 진행한다", exc_info=True)
         _report_redis_failure()
-        user = await db.get(User, user_id)
-        # 면제 판정을 미인증보다 앞에 둔다. 켜짐에서는 맨 끝이 통과가 아니라 차감이라, 이 분기가 없으면 면제 계정이 장애 때만
-        # 돈을 낸다. 꺼짐에서는 맨 끝이 통과라 이 분기를 타지 않게 스위치로 감싼다(꺼짐 동작을 그대로 둔다).
-        if free_turns_off and user is not None and user.rate_limit_exempt is True:
-            return ChatCharge(source="skipped")
-        # 🔴 미인증 회원은 통과시키지 않는다. 그들에게 원래 무료 턴이 없으므로, 여기서 통과시키면 버스트 검사가 깨진 동안만
-        # 무료 턴이 샌다. 차감은 Redis 를 쓰지 않아 장애 중에도 그대로 할 수 있다(이 예외는 버스트 검사에서만 난다 —
-        # 게이트에 걸린 회원은 일일 창에 닿지 않는다).
-        if user is not None and is_identity_gated(user):
-            return await _charge_unverified_turn(
-                user_id,
-                db,
-                session_factory,
-                now,
-                price=price,
-                usage=usage,
-                price_version=price_version,
-                ask_confirmation=not free_turns_off,
-            )
-        if free_turns_off:
-            return await _charge_clover_turn(
-                user_id, session_factory, now, model=model, price=price, usage=usage, price_version=price_version
-            )
-        # 차감이 없었으므로 환불 대상도 아니다 — 이미지 쪽 `:279`와 같은 결론이다.
+
+    if model != DEFAULT_CHAT_MODEL:
+        return await _charge_clover_turn(
+            user_id, session_factory, now, model=model, price=price, usage=usage, price_version=price_version
+        )
+    # 사용자 행 한 번 읽기로 면제와 본인인증 게이트를 같이 본다(`is_rate_limit_exempt` 와 같은 판정).
+    user = await db.get(User, user_id)
+    if user is not None and user.rate_limit_exempt is True:
         return ChatCharge(source="skipped")
+    if user is not None and is_identity_gated(user):
+        return await _charge_unverified_turn(
+            user_id, session_factory, price=price, usage=usage, price_version=price_version
+        )
+    return await _charge_clover_turn(
+        user_id, session_factory, now, model=model, price=price, usage=usage, price_version=price_version
+    )
 
 
 async def _charge_unverified_turn(
     user_id: uuid.UUID,
-    db: AsyncSession,
     session_factory: async_sessionmaker[AsyncSession],
-    now: datetime,
     *,
     price: int,
     usage: clover.SpendUsage,
     price_version: int | None,
-    ask_confirmation: bool,
 ) -> ChatCharge:
-    """본인인증 게이트에 걸린 회원의 Gemini 턴. 무료분이 0 이라 처음부터 무료분을 다 쓴 사람과 같은 길(하루 1회 확인 →
-    차감)을 가되, 클로버가 모자라면 `CLOVER_REQUIRED` 가 아니라 403 `IDENTITY_VERIFICATION_REQUIRED` 다 — 그 429 의 "자정에
-    무료분이 돌아온다"는 이 회원에게 거짓이고, 풀 길은 인증이다.
-
-    확인 429 는 지금 모양 그대로다(`retryAfterSeconds` 는 자정까지). 화면이 이 회원에게 "오늘 무료 한도를 다 썼어요"를
-    보이지 않게 하는 분기는 화면 몫이다. 늘 클로버로 내는 갈래라 정지 검사와 가격 버전 대조를 맨 앞에서 한다.
-
-    `ask_confirmation` 은 출석판 스위치가 꺼져 있을 때만 참이다 — 켜져 있으면 누구에게도 하루 무료분이 없어 "무료분을 다 쓴
-    순간"의 확인도 없다. 기본값을 두지 않는다 — 새 호출부가 빠뜨려도 조용히 확인을 묻는 일이 없게."""
+    """본인인증 게이트에 걸린 회원의 Gemini 턴. 다른 회원처럼 확인 없이 클로버로 내되, 클로버가 모자라면 `CLOVER_REQUIRED`
+    가 아니라 403 `IDENTITY_VERIFICATION_REQUIRED` 다 — 이 회원이 더 쓸 길을 여는 것은 인증이라서다. 늘 클로버로 내는
+    갈래라 정지 검사와 가격 버전 대조를 맨 앞에서 한다."""
     _refuse_if_paused()
     _check_price_version(price_version, price)
-    if ask_confirmation and await _needs_clover_spend_confirmation(user_id, db, now, price):
-        raise _too_many_requests(user_id, _CLOVER_WINDOW, seconds_until_kst_midnight(now), code=_CLOVER_CONFIRM_CODE)
     spent = await clover.spend_in_new_transaction(
         session_factory, user_id=user_id, amount=price, kind="chat_spend", usage=usage
     )
@@ -536,14 +387,12 @@ async def _charge_clover_turn(
     usage: clover.SpendUsage,
     price_version: int | None,
 ) -> ChatCharge:
-    """확인을 묻지 않고 늘 클로버로 내는 턴 — 상위 모델 턴, 그리고 출석판 스위치가 켜진 Gemini 턴. 면제 판정은 호출부
+    """확인을 묻지 않고 클로버로 내는 턴 — 상위 모델 턴과, 면제·미인증이 아닌 회원의 Gemini 턴. 면제 판정은 호출부
     몫이다: Gemini 턴은 이 함수에 오기 전에 면제 계정을 돌려보내고, 상위 모델 턴은 면제 계정도 낸다(면제는 횟수 상한만
-    비켜 가고, 소설화의 상위 모델 장도 면제 계정이 낸다). 상위 모델 턴은 무료분을 쓰지도 깎지도 않고 확인은 모델을 고를 때
-    본 턴당 가격이다. 스위치가 켜진 Gemini 턴은 하루 무료분이 없어 "무료분을 다 쓴 순간"의 확인도 없다.
+    비켜 가고, 소설화의 상위 모델 장도 면제 계정이 낸다). 상위 모델 턴의 확인은 모델을 고를 때 본 턴당 가격이다.
 
-    부족이면 `CLOVER_REQUIRED` 429 다. 그 `retryAfterSeconds`(자정까지)는 이 함수의 두 경우 모두 약속이 아니다 — 상위 모델
-    턴에는 자정에 돌아오는 무료분이 쓰이지 않고, 스위치가 켜져 있으면 자정에 돌아오는 무료분 자체가 없다. 값은 계약 모양을
-    지키려고 그대로 싣는다. 늘 클로버로 내는 갈래라 정지 검사와 가격 버전 대조를 맨 앞에서 한다. `model` 은 영수증에 싣는다
+    부족이면 `CLOVER_REQUIRED` 429 다. 그 `retryAfterSeconds`(자정까지)는 약속이 아니다 — 자정에 돌아오는 무료분이 없다.
+    값은 계약 모양을 지키려고 그대로 싣는다. 늘 클로버로 내는 갈래라 정지 검사와 가격 버전 대조를 맨 앞에서 한다. `model` 은 영수증에 싣는다
     (Gemini 턴이면 `DEFAULT_CHAT_MODEL` 이라 `ChatCharge` 기본값과 같다)."""
     _refuse_if_paused()
     _check_price_version(price_version, price)
@@ -620,25 +469,22 @@ async def enforce_image_rate_limit(
             now=time.time(),
         )
     except RedisError:
-        # 채팅과 같은 fail-open이고 같은 이유다 — 상한을 세는 장치가 죽었다고 기능까지
+        # fail-open이다 — 상한을 세는 장치가 죽었다고 기능까지
         # 죽일 이유가 없다. 여기서 통과시킨 요청은 차감이 없었으므로 환불 대상도 아니다.
         logger.warning("이미지 레이트리밋 검사 실패 — fail-open으로 통과시킨다", exc_info=True)
         _report_redis_failure()
         return ImageCharge(count=payload.count, source="skipped")
 
     if retry_after > 0:
-        # 🔴 여기는 채팅과 달리 `try` **바깥**인데도 "Redis 장애 중에는 클로버를 깎지 않는다"가 지켜진다 —
+        # 🔴 여기는 `try` **바깥**인데도 "Redis 장애 중에는 클로버를 깎지 않는다"가 지켜진다 —
         # Redis 장애는 위 `except`가 `return`으로 함수를 끝내므로 이 줄에 **도달하지 못한다.**
-        # 채팅의 "반드시 `try` 안" 규칙을 기계적으로 옮기면 안 된다. 판정 기준은 "`try` 안이냐"가
-        # 아니라 **"fail-open 경로가 이 줄에 도달할 수 있느냐"**다.
-        # 채팅과 같은 이유로 차감보다 먼저 오늘치 동의를 본다.
-        # 확인 상태는 `users` 컬럼 하나라 **채팅과 이미지가 같은 동의를 공유한다**(하루 한 번
-        # 묻는다는 결정이 기능마다 따로 물으면 하루 두 번이 된다).
+        # 판정 기준은 "`try` 안이냐"가 아니라 **"fail-open 경로가 이 줄에 도달할 수 있느냐"**다.
+        # **차감보다 먼저** 오늘치 동의를 본다 — 순서가 뒤집히면 "확인 후 자동 차감"이 "차감 후 확인"이 된다.
         # `retryAfterSeconds`는 `take_tokens`가 준 값 그대로다 — 🔴 자정까지 초를 쓰면 이미지는
         # 시간당 충전이라 최대 24시간짜리 거짓이 된다(아래 클로버 부족 429와 같은 이유).
         clover_amount = payload.count * clover.IMAGE_UNIT_COST
         # 클로버로 낼 요청으로 정해진 자리라 여기서 가격 버전을 대조한다(토큰으로 내는 요청은 대조하지 않는다). 확인보다 앞인
-        # 이유는 채팅과 같다(`_check_price_version`). 정지 검사가 그보다 앞인 것도 같다(`_refuse_if_paused`).
+        # 이유는 `_check_price_version` 에, 정지 검사가 그보다 앞인 이유는 `_refuse_if_paused` 에 있다.
         _refuse_if_paused()
         _check_price_version(payload.price_version, clover_amount)
         if await _needs_clover_spend_confirmation(
@@ -667,8 +513,8 @@ async def enforce_image_rate_limit(
 async def _enforce_hourly_limit(
     user_id: uuid.UUID, db: AsyncSession, *, scope: str, limit: int, window: str
 ) -> None:
-    """면제 → 시간당 고정 창. 면제 계정은 카운터를 올리지 않는다(채팅 일일 창과 같은 규칙). Redis 가 실패하면
-    채팅·이미지와 같은 fail-open 이다."""
+    """면제 → 시간당 고정 창. 면제 계정은 카운터를 올리지 않는다. Redis 가 실패하면
+    이미지와 같은 fail-open 이다."""
     if await is_rate_limit_exempt(user_id, db):
         return
     try:

@@ -52,6 +52,7 @@ from factories import (
     _novel_setup,
     _override_llm_client,
     _room_messages,
+    _seed_first_turn,
 )
 
 _SRC = Path(__file__).resolve().parent.parent / "src"
@@ -118,9 +119,9 @@ async def _another_creator(db: AsyncSession) -> User:
 # ── 채팅: 방 세 경로 × 차감 갈래 ─────────────────────────────────────────────
 _SURFACES = ["send", "regenerate", "edit"]
 _MODES = {
-    # 일일 무료분을 다 쓴 Gemini 턴.
+    # 인증 회원의 Gemini 턴.
     "gemini": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
-    # 본인인증 게이트에 걸린 회원의 Gemini 턴(무료분 0).
+    # 본인인증 게이트에 걸린 회원의 Gemini 턴.
     "unverified": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
     "opus": clover.CLOVER_MODEL_PRICES["opus"].chat_turn,
 }
@@ -136,18 +137,17 @@ async def _paid_room_turn(
     surface: str,
     mode: str,
 ) -> tuple[uuid.UUID, httpx.Response]:
-    """`player` 가 `content` 로 방을 열고 무료 턴 하나를 보낸 뒤(재생성·편집 대상), `mode` 로만 낼 수 있게 바꾸고 `surface`
-    턴을 보낸다. 방 id 와 그 응답을 돌려준다."""
+    """`player` 가 `content` 로 방을 열고 첫 턴(재생성·편집 대상)을 DB 에 심은 뒤, `mode` 로만 낼 수 있게 바꾸고 `surface`
+    턴을 보낸다. 방 id 와 그 응답을 돌려준다. 첫 턴을 API 로 보내지 않는 이유는 기본 모델 턴에도 하루 무료분이 없어 그
+    셋업 턴도 클로버로 나가 사용처가 하나 더 남기 때문이다."""
     await _login_as(db_client, player.id)
     created = await db_client.post("/chat-rooms", json={"contentId": str(content.id), "contentType": "character"})
     assert created.status_code == 201, created.text
     room_id = uuid.UUID(created.json()["id"])
+    await _seed_first_turn(db_session, room_id)
     _override_llm_client(_FakeLLMClient(tokens=["응", "답"]))
     try:
-        assert (await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})).status_code == 200
-        if mode == "gemini":
-            monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
-        elif mode == "unverified":
+        if mode == "unverified":
             monkeypatch.setattr(settings, "identity_gate_enabled", True)
         else:
             await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room_id).values(chat_model=mode))
@@ -177,7 +177,7 @@ async def test_a_paid_turn_in_another_creators_room_records_the_room_and_its_own
     surface: str,
     mode: str,
 ) -> None:
-    """방 세 경로 모두, 차감 갈래(무료분 소진 뒤·미인증·Opus) 모두 한 차감에 사용처 하나가 남고, 소유자는 플레이어가
+    """방 세 경로 모두, 차감 갈래(인증 회원 Gemini·미인증·Opus) 모두 한 차감에 사용처 하나가 남고, 소유자는 플레이어가
     아니라 작품 작가다."""
     creator = await _another_creator(db_session)
     content = await _make_published_character(
@@ -284,7 +284,6 @@ async def test_a_paid_preview_turn_records_a_preview_usage_without_a_content(
         },
     )
     assert created.status_code == 201, created.text
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     _override_llm_client(_FakeLLMClient(tokens=["응", "답"]))
     try:
         resp = await db_client.post(
@@ -298,7 +297,7 @@ async def test_a_paid_preview_turn_records_a_preview_usage_without_a_content(
     assert await _spends_without_usage(db_session, player.id) == []
 
 
-# ── 무료 턴: 사용처도, 그것을 위한 조회도 없다 ─────────────────────────────────
+# ── 클로버를 낸 턴: 소유자는 사용처 INSERT 안에서만 읽는다 ─────────────────────────────
 class _Statements:
     """테스트 커넥션에서 실행된 SQL 문. 게이트의 차감은 같은 커넥션에 묶인 자기 세션에서 돌아 함께 잡힌다."""
 
@@ -336,11 +335,10 @@ async def _gate_statements(db_session: AsyncSession, room_id: uuid.UUID, user_id
     return statements
 
 
-async def test_a_free_turn_records_no_usage_and_reads_no_content(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+async def test_a_paid_turn_reads_the_owner_only_inside_the_usage_insert(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """무료 턴은 원장 행이 없어 사용처도 없고, 작품 소유자를 미리 읽지도 않는다. 클로버를 낸 턴은 소유자를 사용처 INSERT
-    한 문장 안에서 읽는다 — 따로 나가는 작품 조회가 없다."""
+    """클로버를 낸 턴은 작품 소유자를 사용처 INSERT 한 문장 안에서 읽는다 — 따로 나가는 작품 조회가 없다."""
     creator = await _another_creator(db_session)
     content = await _make_published_character(
         db_session, creator_user_id=creator.id, genre_id=(await _get_genre(db_session)).id
@@ -353,11 +351,8 @@ async def test_a_free_turn_records_no_usage_and_reads_no_content(
     created = await db_client.post("/chat-rooms", json={"contentId": str(content.id), "contentType": "character"})
     room_id = uuid.UUID(created.json()["id"])
 
-    free = await _gate_statements(db_session, room_id, player.id)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     paid = await _gate_statements(db_session, room_id, player.id)
 
-    assert (free.touching("contents"), free.touching("clover_spend_usages")) == ([], [])
     assert len(paid.touching("clover_spend_usages")) == 1
     assert paid.touching("contents") == paid.touching("clover_spend_usages")
     assert await _usages(db_session, player.id) == [

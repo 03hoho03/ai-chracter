@@ -317,7 +317,7 @@ async def test_fact_extraction_is_not_scheduled_when_switch_is_off(
 ) -> None:
     assert settings.memory_facts_extract is False
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = FactLLMClient()
 
     assert await _send(db_client, room, fake) == ["token", "done"]
@@ -337,7 +337,7 @@ async def test_fact_extraction_runs_after_the_fold_and_the_scene_extraction(
     monkeypatch.setattr(settings, "memory_episodes_extract", True)
     monkeypatch.setattr(settings, "memory_facts_extract", True)
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29, lane=lane)
+    room = await _open_room(db_client, db_session, turns=29, lane=lane, paid_turns=1)
     await db_session.commit()
 
     with _open_transaction_probe() as open_sessions:
@@ -373,7 +373,7 @@ async def test_fact_extraction_alone_is_scheduled_right_after_the_fold(
     assert settings.memory_episodes_extract is False
     monkeypatch.setattr(settings, "memory_facts_extract", True)
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = FactLLMClient()
 
     await _send(db_client, room, fake)
@@ -390,7 +390,7 @@ async def test_fact_extraction_follows_the_generation_window_switch(
     monkeypatch.setattr(settings, "memory_facts_extract", True)
     monkeypatch.setattr(settings, "memory_window_generation", False)
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
 
     await _send(db_client, room, FactLLMClient())
 

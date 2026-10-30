@@ -36,7 +36,6 @@ from api.core.clover import (
     revoke_purchase_lots,
     spend,
 )
-from api.core.rate_limit_gate import CHAT_DAILY_LIMIT
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund
 from factories import _make_payment, _make_user, _make_user_with_clover_lot
@@ -817,7 +816,6 @@ def test_policy_constants_match_decisions() -> None:
     assert NOVEL_READ_COST == 90
     assert NOVEL_FREE_CHAPTER_COUNT == 5
     assert MEMORY_SUMMARY_REGENERATE_COST == 30
-    assert CHAT_DAILY_LIMIT == 15
     assert PRICE_VERSION == 2
     assert [(p.key, p.price_krw, p.paid_amount, p.bonus_amount) for p in products.CLOVER_PRODUCTS] == [
         ("mini", 900, 900, 0),

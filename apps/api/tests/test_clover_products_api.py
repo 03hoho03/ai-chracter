@@ -15,8 +15,7 @@ import pytest
 from api.clover import products
 from api.clover import router as clover_router
 from api.clover.products import CloverProduct
-from api.core import clover, rate_limit_gate
-from api.core.config import settings
+from api.core import clover
 from api.payments import refund
 from api.payments.methods import PAY_METHODS
 from factories import _count_queries
@@ -48,7 +47,6 @@ async def test_products_response_follows_the_source_values(
     monkeypatch.setattr(clover, "PURCHASE_LOT_YEARS", 920_002)
     monkeypatch.setattr(refund, "FULL_REFUND_DAYS", 920_003)
     monkeypatch.setattr(refund, "REDUCED_REFUND_PERCENT", 920_004)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 920_005)
     # 두 스위치는 로컬 env 의 포트원 설정에 따라 갈리므로 판정 함수를 거짓으로 고정한다(참 갈래는 아래 테스트).
     monkeypatch.setattr(clover_router, "payments_active", lambda: False)
     monkeypatch.setattr(clover_router, "identity_gate_active", lambda: False)
@@ -78,7 +76,6 @@ async def test_products_response_follows_the_source_values(
         "payMethods": [{"payMethod": m.pay_method, "easyPayProvider": m.easy_pay_provider} for m in PAY_METHODS],
         "paymentsEnabled": False,
         "identityGateEnabled": False,
-        "dailyFreeChatTurns": 920_005,
         "policy": {
             "purchaseValidityYears": 920_002,
             "fullRefundDays": 920_003,
@@ -102,17 +99,6 @@ async def test_products_switches_follow_the_shared_judges(
     monkeypatch.setattr(clover_router, judge, lambda: True)
 
     assert (await db_client.get("/clover/products")).json()[key] is True
-
-
-async def test_daily_free_chat_turns_is_zero_when_the_attendance_board_is_on(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """출석판 스위치가 켜지면 하루 무료 대화가 없어져 허브 안내 값도 0 이다. 상수를 표지 값으로 둔 채 0 이 나오는 것으로, 응답이
-    상수를 그대로 싣지 않고 스위치를 읽는다는 것을 본다."""
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 920_005)
-    monkeypatch.setattr(settings, "attendance_board_enabled", True)
-
-    assert (await db_client.get("/clover/products")).json()["dailyFreeChatTurns"] == 0
 
 
 async def test_products_does_not_touch_the_database(db_client: httpx.AsyncClient) -> None:

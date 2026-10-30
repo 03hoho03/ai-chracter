@@ -34,7 +34,7 @@ from factories import (
     Room,
     _clear_llm_override,
     _login_as,
-    _make_user,
+    _make_paying_user,
     _open_room,
     _override_llm_client,
     _parse_sse_events,
@@ -104,8 +104,9 @@ async def _story_room(
     turns: int,
     enabled: bool = True,
     initial: dict[str, str] | None = _INITIAL,
+    paid_turns: int = 0,
 ) -> Room:
-    room = await _open_room(db_client, db_session, turns=turns, lane="story")
+    room = await _open_room(db_client, db_session, turns=turns, lane="story", paid_turns=paid_turns)
     setup = await _setup_of(db_session, room)
     await db_session.execute(
         sa.update(StoryVersionDetail)
@@ -170,7 +171,7 @@ async def test_first_turn_judges_from_the_initial_scene_and_saves_streams_and_re
     """오프닝뿐인 방의 첫 턴은 시작설정의 첫 장면을 직전 장면으로 판정 프롬프트에 싣는다. 판정이 장소만 적고 시간을 비우면 시간은
     첫 장면을 잇는다. 그 장면이 AI 메시지에 저장되고 `sceneChange`(그 메시지 id)와 `done` 의 메시지, 방 재조회에 같이 실린다.
     생성 프롬프트에는 장면이 없다."""
-    room = await _story_room(db_client, db_session, turns=0)
+    room = await _story_room(db_client, db_session, turns=0, paid_turns=1)
     fake = _SceneLLM(scene=[SceneJudgmentResult(place="  학교 옥상 ", time=None)])
 
     events = await _send(db_client, fake, room)
@@ -198,7 +199,7 @@ async def test_a_turn_judges_from_the_last_assistant_scene_and_sends_the_event_e
 ) -> None:
     """AI 턴이 있는 방은 마지막 AI 메시지의 장면을 잇는다(첫 장면이 아니다). 판정이 둘 다 비워 장면이 그대로여도 `sceneChange` 를
     보낸다."""
-    room = await _story_room(db_client, db_session, turns=2)
+    room = await _story_room(db_client, db_session, turns=2, paid_turns=1)
     await _set_scene(db_session, room.turns[1][1], {"place": "교실", "time": "아침"})
     await _set_scene(db_session, room.turns[2][1], {"place": "운동장", "time": "점심"})
     fake = _SceneLLM(scene=[SceneJudgmentResult(place=None, time=None)])
@@ -216,7 +217,7 @@ async def test_a_room_whose_last_assistant_scene_is_empty_does_not_fall_back_to_
 ) -> None:
     """토글을 켜기 전 메시지나 버전을 옮긴 방처럼 마지막 AI 메시지의 장면이 비어 있으면 직전 장면이 없다 — 첫 장면을 싣지 않고
     직전 장면 섹션째 빠진다. 판정이 비우면 장면도 빈 채로 남는다(헤더가 빈다)."""
-    room = await _story_room(db_client, db_session, turns=3)
+    room = await _story_room(db_client, db_session, turns=3, paid_turns=1)
     fake = _SceneLLM(scene=[SceneJudgmentResult(place=None, time="밤")])
 
     await _send(db_client, fake, room)
@@ -229,7 +230,7 @@ async def test_a_room_whose_last_assistant_scene_is_empty_does_not_fall_back_to_
 async def test_a_room_without_an_initial_scene_judges_with_no_previous_scene(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _story_room(db_client, db_session, turns=0, initial=None)
+    room = await _story_room(db_client, db_session, turns=0, initial=None, paid_turns=1)
     fake = _SceneLLM(scene=[SceneJudgmentResult(place="편의점", time=None)])
 
     events = await _send(db_client, fake, room)
@@ -251,7 +252,7 @@ async def test_a_field_over_the_limit_or_blank_inherits_the_previous_scene(
     db_client: httpx.AsyncClient, db_session: AsyncSession, judged: SceneJudgmentResult, expected: dict[str, str]
 ) -> None:
     """앞뒤 공백을 뗀 뒤 24자를 넘는 칸·빈 칸은 그 칸만 직전 장면을 잇는다(24자는 받는다)."""
-    room = await _story_room(db_client, db_session, turns=0)
+    room = await _story_room(db_client, db_session, turns=0, paid_turns=1)
 
     await _send(db_client, _SceneLLM(scene=[judged]), room)
 
@@ -262,7 +263,7 @@ async def test_a_failed_scene_judgment_keeps_the_previous_scene_and_the_rest_of_
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """판정이 실패하면 그 메시지 장면은 직전 장면 그대로다. 다른 판정·커밋·`done` 은 영향받지 않는다."""
-    room = await _story_room(db_client, db_session, turns=1)
+    room = await _story_room(db_client, db_session, turns=1, paid_turns=1)
     await _set_scene(db_session, room.turns[1][1], {"place": "교실", "time": "아침"})
     fake = _SceneLLM(scene=[LLMClientError("장면 판정 실패")])
 
@@ -277,7 +278,7 @@ async def test_a_failed_scene_judgment_keeps_the_previous_scene_and_the_rest_of_
 
 async def test_scene_judgment_keeps_running_after_the_ending(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     """엔딩에 도달한 방도 스탯·엔딩 판정은 멈추지만 장면 판정은 계속한다(미디어 북 칸 판정과 같다)."""
-    room = await _story_room(db_client, db_session, turns=1)
+    room = await _story_room(db_client, db_session, turns=1, paid_turns=1)
     await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(ending_reached=True))
     await db_session.commit()
     fake = _SceneLLM(scene=[SceneJudgmentResult(place="바닷가", time="해질녘")])
@@ -292,7 +293,7 @@ async def test_a_set_without_the_channel_skips_the_judgment_and_keeps_the_previo
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """배포 직후 캐시에 남은 옛 세트처럼 판정 세트에 이 채널 행이 없으면 렌더가 비어 판정을 부르지 않고 직전 장면을 잇는다."""
-    room = await _story_room(db_client, db_session, turns=0)
+    room = await _story_room(db_client, db_session, turns=0, paid_turns=1)
     await db_session.execute(sa.delete(PromptSection).where(PromptSection.channel == "scene_judgment"))
     await db_session.commit()
     fake = _SceneLLM(scene=[])
@@ -307,7 +308,7 @@ async def test_a_set_without_the_channel_skips_the_judgment_and_keeps_the_previo
 async def test_a_room_with_the_toggle_off_makes_no_scene_call_event_or_scene(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _story_room(db_client, db_session, turns=1, enabled=False)
+    room = await _story_room(db_client, db_session, turns=1, enabled=False, paid_turns=1)
     fake = _SceneLLM(scene=[])
 
     events = await _send(db_client, fake, room)
@@ -329,7 +330,7 @@ async def test_scene_judgment_reads_the_chain_of_its_route_row(
 ) -> None:
     """장면 헤더 칸의 배정 행은 장면 판정이 읽을 체인을 바꾸고 스탯 판정은 그대로 둔다. 자기 행이 없으면 스탯 판정 행을
     물려받아 둘이 같은 체인을 읽는다. 판정 전용 체인의 모든 행에 표지를 붙여 어느 체인으로 렌더됐는지 본다."""
-    room = await _story_room(db_client, db_session, turns=0)
+    room = await _story_room(db_client, db_session, turns=0, paid_turns=1)
     haiku_set = sa.select(PromptSet.id).where(
         PromptSet.lane == "story", PromptSet.model == "haiku", PromptSet.status == "published"
     )
@@ -366,7 +367,7 @@ async def test_edit_judges_from_the_scene_before_the_edited_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """수정은 고친 사용자 메시지 앞까지로 되감은 새 턴이라, 그 앞 마지막 AI 메시지의 장면을 잇는다."""
-    room = await _story_room(db_client, db_session, turns=2)
+    room = await _story_room(db_client, db_session, turns=2, paid_turns=1)
     await _set_scene(db_session, room.turns[1][1], {"place": "교실", "time": "아침"})
     await _set_scene(db_session, room.turns[2][1], {"place": "운동장", "time": "점심"})
     fake = _SceneLLM(scene=[SceneJudgmentResult(place=None, time="저녁")])
@@ -386,7 +387,7 @@ async def test_regenerate_judges_from_the_scene_before_the_replaced_response_and
 ) -> None:
     """재생성은 바꾸는 응답 이전 메시지의 장면을 잇는다(바꾸는 응답 자신의 장면이 아니다). 직전 응답 되돌리기는 장면을 본문과
     함께 맞바꾼다 — 되살린 응답은 원래 장면으로, 보관 행은 밀려난 응답의 장면으로. 그 뒤 새 턴은 되살린 응답의 장면을 잇는다."""
-    room = await _story_room(db_client, db_session, turns=2)
+    room = await _story_room(db_client, db_session, turns=2, paid_turns=2)
     await _set_scene(db_session, room.turns[1][1], {"place": "교실", "time": "아침"})
     await _set_scene(db_session, room.turns[2][1], {"place": "운동장", "time": "점심"})
     fake = _SceneLLM(scene=[SceneJudgmentResult(place="도서관", time=None)])
@@ -419,7 +420,7 @@ async def test_a_second_regenerate_keeps_the_first_regenerated_scene(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """보관 행은 방당 하나라 두 번째 재생성은 행을 덮는다 — 그때 장면도 함께 덮어야 되돌리기가 밀려난 응답의 장면을 되살린다."""
-    room = await _story_room(db_client, db_session, turns=1)
+    room = await _story_room(db_client, db_session, turns=1, paid_turns=2)
     await _request(db_client, _SceneLLM(scene=[SceneJudgmentResult(place="도서관", time="오후")]), "POST", f"/chat-rooms/{room.room_id}/regenerate")
     await _request(db_client, _SceneLLM(scene=[SceneJudgmentResult(place="매점", time="오후")]), "POST", f"/chat-rooms/{room.room_id}/regenerate")
 
@@ -437,7 +438,7 @@ async def _delete_turn(db_client: httpx.AsyncClient, room: Room, turn: int) -> N
 async def test_after_deleting_the_last_turn_the_next_turn_judges_from_the_remaining_last_scene(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _story_room(db_client, db_session, turns=2)
+    room = await _story_room(db_client, db_session, turns=2, paid_turns=1)
     await _set_scene(db_session, room.turns[1][1], {"place": "교실", "time": "아침"})
     await _set_scene(db_session, room.turns[2][1], {"place": "운동장", "time": "점심"})
     await _delete_turn(db_client, room, 2)
@@ -454,7 +455,7 @@ async def test_deleting_back_to_the_opening_returns_to_the_initial_scene(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """AI 턴을 모두 지워 오프닝만 남으면 다시 첫 장면을 잇는다."""
-    room = await _story_room(db_client, db_session, turns=1)
+    room = await _story_room(db_client, db_session, turns=1, paid_turns=1)
     await _set_scene(db_session, room.turns[1][1], {"place": "교실", "time": "아침"})
     await _delete_turn(db_client, room, 1)
     fake = _SceneLLM(scene=[SceneJudgmentResult(place=None, time=None)])
@@ -469,7 +470,7 @@ async def test_deleting_only_the_user_message_keeps_the_scene_saved_on_the_answe
 ) -> None:
     """사용자 메시지만 지워 그 답 앞에 사용자 메시지가 없어져도, 답에 저장된 장면이 있으면 그것을 잇는다 — 오프닝처럼 보인다고
     첫 장면으로 되돌아가지 않는다."""
-    room = await _story_room(db_client, db_session, turns=1)
+    room = await _story_room(db_client, db_session, turns=1, paid_turns=1)
     user_message, answer = room.turns[1]
     await _set_scene(db_session, answer, {"place": "교실", "time": "아침"})
     deleted = await db_client.delete(f"/chat-rooms/{room.room_id}/messages/{user_message.id}")
@@ -525,8 +526,7 @@ async def test_preview_judges_from_the_session_scene_and_moves_it_turn_by_turn(
 ) -> None:
     """장면 헤더를 켠 초안의 미리보기는 첫 시작설정의 첫 장면에서 시작해, 턴마다 세션의 지금 장면을 이어 판정하고 그 장면을
     세션·스트림에 남긴다. 끈 초안은 호출·이벤트가 없다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=3)
     await db_session.commit()
     await _login_as(db_client, user.id)
     started = await db_client.post("/preview-sessions", json=_preview_payload(scene_header=True))

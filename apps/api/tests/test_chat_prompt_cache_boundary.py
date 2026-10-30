@@ -223,7 +223,7 @@ async def test_the_chat_route_hands_the_llm_the_three_blocks(
 ) -> None:
     """빌더와 Bedrock 사이(라우트의 프롬프트 조립·생성 호출)에서 경계가 사라지지 않는다 — 문자열 연산 하나만 끼어도 보통의
     `str` 이 되어 Claude 턴이 캐시를 못 맞춘다. 기록이 있는 방의 실제 전송으로 본다."""
-    room = await _open_room(db_client, db_session, turns=2)
+    room = await _open_room(db_client, db_session, turns=2, paid_turns=1)
     fake = _FakeLLMClient(tokens=["응답"])
     _override_llm_client(fake)
     try:

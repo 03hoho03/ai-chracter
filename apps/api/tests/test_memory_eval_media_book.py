@@ -66,7 +66,7 @@ def test_the_spec_is_read_from_the_data_dir_by_its_file_name(tmp_path: Path) -> 
 async def test_inserted_cells_reach_the_story_media_judgment_prompt(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="어서 와")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="어서 와", paid_turns=1)
     version_id = content.current_published_version_id
     assert version_id is not None
     spec = {

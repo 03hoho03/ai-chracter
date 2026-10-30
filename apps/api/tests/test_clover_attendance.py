@@ -2,7 +2,7 @@
 
 이 파일이 검증하는 성질:
 
-1. 스위치가 꺼져 있으면 두 라우트는 로그인·정지와 무관하게 404 이고 돈이 움직이지 않는다.
+1. 두 라우트는 늘 열려 있고 로그인이 필요하다.
 2. 하루(KST)에 한 칸, 연속이 아니어도 다음 칸(누적), 28칸 다음 날 새 판. 7·14·21·28칸은 큰 금액이다.
 3. 진행 중 판은 그 판 1칸의 보상표 버전을 끝까지 쓴다 — 보상표가 바뀌어도 그 판의 금액은 그대로이고, 새 판부터 새 표다.
 4. 수령 자격은 본인인증(`identity_verified_at`) 하나다. 미인증 회원 게이트 스위치·면제와 무관하다 — 탈퇴 재수령 차단이 CI 해시에
@@ -44,10 +44,9 @@ _V1 = attendance.ATTENDANCE_REWARDS[1]
 
 
 @pytest.fixture(autouse=True)
-def _board_on_and_identity_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """출석판은 켜고 미인증 회원 게이트는 끈 채로 시작한다. 게이트를 켜는 경우를 위해 본인인증 설정도 채운다(게이트는 그 설정이
-    있어야 켜진다). 시계는 `_NOW` 다."""
-    monkeypatch.setattr(settings, "attendance_board_enabled", True)
+def _identity_settings_and_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """미인증 회원 게이트는 끈 채로 시작한다. 게이트를 켜는 경우를 위해 본인인증 설정도 채운다(게이트는 그 설정이 있어야
+    켜진다). 시계는 `_NOW` 다."""
     monkeypatch.setattr(settings, "portone_store_id", "store-test-0001")
     monkeypatch.setattr(settings, "portone_identity_channel_key", "identity-channel-test")
     monkeypatch.setattr(settings, "portone_api_secret", "api-secret-test")
@@ -99,30 +98,9 @@ def _statuses(board: dict[str, Any]) -> list[str]:
     return [cell["status"] for cell in board["cells"]]
 
 
-# ── 스위치 ────────────────────────────────────────────────────────────────
-async def test_board_routes_are_404_while_the_switch_is_off(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """꺼진 동안 화면이 라우트를 찾지 못한 것과 같다. 깨지는 시나리오: 스위치 검사가 빠지면 인증 회원에게 800 이 지급된다."""
-    monkeypatch.setattr(settings, "attendance_board_enabled", False)
-    user = await _member(db_session, db_client, **_verified())
-
-    assert (await db_client.get("/me/attendance")).status_code == 404
-    assert (await db_client.post("/me/attendance/claim")).status_code == 404
-    assert await _ledger(db_session, user.id) == []
-
-
-async def test_switch_off_answers_404_even_without_a_session(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """스위치 검사가 인증보다 먼저다 — 꺼진 동안은 비로그인에게도 401 이 아니라 404 라 기능이 있다는 것이 드러나지 않는다."""
-    monkeypatch.setattr(settings, "attendance_board_enabled", False)
-
-    assert (await db_client.get("/me/attendance")).status_code == 404
-    assert (await db_client.post("/me/attendance/claim")).status_code == 404
-
-
-async def test_switch_on_requires_a_session(db_client: httpx.AsyncClient) -> None:
+# ── 접근 ──────────────────────────────────────────────────────────────────
+async def test_board_routes_require_a_session(db_client: httpx.AsyncClient) -> None:
+    """출석판을 여닫는 스위치가 없다 — 비로그인 요청은 404 가 아니라 401 이다."""
     assert (await db_client.get("/me/attendance")).status_code == 401
     assert (await db_client.post("/me/attendance/claim")).status_code == 401
 
@@ -567,17 +545,13 @@ def test_compute_state(
 
 
 # ── 공개 안내 ──────────────────────────────────────────────────────────────
-@pytest.mark.parametrize("switch", [pytest.param(False, id="off"), pytest.param(True, id="on")])
-async def test_public_pricing_carries_the_attendance_policy(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, switch: bool
-) -> None:
-    """로그인하지 않은 방문자도 출석 안내를 읽는다 — 켜짐 여부는 스위치를, 보상표는 현재 버전 표를 따르고 최소 유효 일수는 7이다."""
-    monkeypatch.setattr(settings, "attendance_board_enabled", switch)
-
+async def test_public_pricing_carries_the_attendance_policy(db_client: httpx.AsyncClient) -> None:
+    """로그인하지 않은 방문자도 출석 안내를 읽는다 — 보상표는 현재 버전 표를 따르고 최소 유효 일수는 7이다. 출석판은 늘 열려
+    있어 켜짐 여부 칸은 싣지 않는다."""
     resp = await db_client.get("/clover/pricing")
 
     policy = resp.json()["attendance"]
-    assert policy["enabled"] is switch
+    assert set(policy) == {"rewards", "minValidDays"}
     assert policy["rewards"] == list(_V1)
     assert (len(policy["rewards"]), sum(policy["rewards"])) == (28, 31_200)
     assert policy["minValidDays"] == 7

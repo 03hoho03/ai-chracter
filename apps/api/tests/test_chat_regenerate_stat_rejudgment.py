@@ -199,7 +199,7 @@ def _inherited(record: ChatTurn) -> tuple[Any, ...]:
 async def test_regenerating_the_last_turn_reverts_its_stat_changes_and_rejudges_against_the_new_reply(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
     assert await _values(db_session, room, stats) == (78, 29)
 
@@ -220,7 +220,7 @@ async def test_regenerating_the_last_turn_reverts_its_stat_changes_and_rejudges_
 async def test_rejudging_rolls_the_counter_once_from_the_turns_starting_value(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=3)
     await _send(db_client, monkeypatch, room, "첫 턴", "a1")
     await _send(db_client, monkeypatch, room, "둘째 턴")
     assert await _values(db_session, room, stats) == (78, 28)
@@ -236,7 +236,7 @@ async def test_rejudging_rolls_the_counter_once_from_the_turns_starting_value(
 async def test_regenerating_a_regeneration_reverts_only_the_previous_regenerations_changes(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=3)
     await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
     await _regenerate(db_client, room, _TurnLLM(monkeypatch, "어긴다", [_fired("a2")]))
     assert await _values(db_session, room, stats) == (71, 29)
@@ -256,7 +256,7 @@ async def test_a_regeneration_that_kept_the_old_effect_is_reverted_to_the_origin
 ) -> None:
     """재판정 없이 옛 효과를 이어받은 재생성 기록(재판정이 생기기 전에 쓰인 재생성 기록과 같은 모양)을 다시 재생성하면 원 보내기의
     반영 전 값으로 되돌린 뒤 판정한다 — 원 효과와 새 효과가 겹치지 않는다."""
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=3)
     await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
     # 다시 부르지 않는 실패라 이 재생성은 옛 효과를 그대로 이어받는다.
     await _regenerate(db_client, room, _TurnLLM(monkeypatch, "첫 재생성", [_server_error(400)]))
@@ -273,7 +273,7 @@ async def test_a_record_whose_before_value_is_empty_reverts_that_stat_to_its_ini
 ) -> None:
     """기록의 반영 전 값이 비어 있으면 그 스탯의 시작값에서 다시 판정한다 — 방 스탯을 읽을 때 행이 없는 스탯을 시작값으로 보는
     것과 같은 뜻이다. 규칙이 발동하지 않아도 원 턴의 값이 남지 않고 시작값으로 돌아온다."""
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
     assert await _values(db_session, room, stats) == (78, 29)
     record = await _record_of_last_reply(db_session, room)
@@ -294,7 +294,7 @@ async def test_a_record_whose_before_value_is_empty_reverts_that_stat_to_its_ini
 async def test_regenerating_a_turn_whose_record_reached_an_ending_does_not_rejudge(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
     record = await _record_of_last_reply(db_session, room)
     record.ending_entity_id = uuid.uuid4()
@@ -313,7 +313,7 @@ async def test_regenerating_a_turn_whose_record_reached_an_ending_does_not_rejud
 async def test_regenerating_a_reply_without_a_record_does_not_rejudge(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, stats = await _story_room(db_session, db_client, turns=1)
+    room, stats = await _story_room(db_session, db_client, turns=1, paid_turns=2)
     # 기록을 쓰기 전에 보낸 턴들이 남긴 값.
     await db_session.execute(
         sa.update(ChatRoomStat)
@@ -337,7 +337,7 @@ async def test_regenerating_a_reply_without_a_record_does_not_rejudge(
 async def test_regenerating_after_the_room_reached_an_ending_does_not_rejudge(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
     await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(ending_reached=True))
     await db_session.commit()
@@ -353,7 +353,7 @@ async def test_regenerating_after_the_room_reached_an_ending_does_not_rejudge(
 async def test_regenerating_does_not_judge_endings(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, _ = await _story_room(db_session, db_client)
+    room, _ = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
     setup = await _setup_of(db_session, room.room_id)
     db_session.add(
@@ -400,7 +400,7 @@ async def test_regenerating_an_earlier_reply_after_deleting_later_turns_does_not
 ) -> None:
     """옛 삭제가 뒤 턴을 지워 앞 응답이 마지막이 된 방에서는 그 기록의 반영 전 값이 지운 턴의 효과까지 지운다 — 되돌리지
     않는다. 옛 삭제는 지운 턴의 효과를 남겼으므로 값은 둘째 턴 뒤 그대로다."""
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=3)
     await _send_two_and_drop_the_second_like_an_older_image(db_client, db_session, monkeypatch, room)
     first_record = _inherited(await _record_of_last_reply(db_session, room))
     assert await _values(db_session, room, stats) == (83, 28)
@@ -417,7 +417,7 @@ async def test_regenerating_an_earlier_reply_after_deleting_later_turns_does_not
 async def test_regenerating_that_regeneration_again_still_does_not_revert(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=4)
     await _send_two_and_drop_the_second_like_an_older_image(db_client, db_session, monkeypatch, room)
     first_record = _inherited(await _record_of_last_reply(db_session, room))
     await _regenerate(db_client, room, _TurnLLM(monkeypatch, "다시", []))
@@ -434,7 +434,7 @@ async def test_regenerating_that_regeneration_again_still_does_not_revert(
 async def test_regenerating_a_turn_sent_after_deleting_later_turns_reverts_only_to_that_turns_start(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=4)
     await _send_two_and_drop_the_second_like_an_older_image(db_client, db_session, monkeypatch, room)
     await _send(db_client, monkeypatch, room, "셋째 턴", "a1")
     assert await _values(db_session, room, stats) == (88, 27)
@@ -460,7 +460,7 @@ _RETRIED: dict[str, Any] = {
 async def test_a_transient_server_connection_or_parse_failure_is_rejudged_once_more_and_the_second_result_applies(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
 
     fake = _TurnLLM(monkeypatch, "어긴다", [_RETRIED[failure], _fired("a2")])
@@ -490,7 +490,7 @@ _NOT_RETRIED: dict[str, Any] = {
 async def test_a_timeout_quota_block_or_client_error_is_not_retried_and_keeps_the_old_effect(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
     old = _inherited(await _record_of_last_reply(db_session, room))
 
@@ -506,7 +506,7 @@ async def test_a_timeout_quota_block_or_client_error_is_not_retried_and_keeps_th
 async def test_when_rejudging_finally_fails_nothing_is_reverted_and_the_new_record_inherits(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
     old = _inherited(await _record_of_last_reply(db_session, room))
 
@@ -527,7 +527,7 @@ async def test_when_rejudging_finally_fails_nothing_is_reverted_and_the_new_reco
 async def test_a_new_turns_stat_judgment_is_not_retried_on_a_transient_failure(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> None:
-    room, stats = await _story_room(db_session, db_client)
+    room, stats = await _story_room(db_session, db_client, paid_turns=2)
     await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
     fake = _TurnLLM(monkeypatch, "응답", [_server_error(503), _fired("a1")])
 

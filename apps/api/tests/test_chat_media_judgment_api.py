@@ -51,6 +51,7 @@ from factories import (
     _clear_llm_override,
     _get_genre,
     _login_as,
+    _make_paying_user,
     _make_published_character,
     _make_published_story,
     _make_user,
@@ -125,12 +126,10 @@ class _JudgingLLMClient(LLMClient):
 
 
 async def _story(
-    db_session: AsyncSession, *, opening_message: str = "다시 만났네요!", user: User | None = None
+    db_session: AsyncSession, *, opening_message: str = "다시 만났네요!", user: User | None = None, paid_turns: int = 0
 ) -> tuple[User, Content, StartingSetup, StatDef]:
     if user is None:
-        user = _make_user()
-        db_session.add(user)
-        await db_session.flush()
+        user = await _make_paying_user(db_session, turns=paid_turns)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     assert content.current_published_version_id is not None
@@ -222,7 +221,7 @@ async def _mark_ending_reached(db_session: AsyncSession, room_id: uuid.UUID) -> 
 async def test_story_turn_attaches_media_cell_image_and_records_exposure(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(
         db_session, content.current_published_version_id, user.id, "민아", "창가", situation_description="창가에서 웃는다"
@@ -253,7 +252,7 @@ async def test_story_turn_attaches_media_cell_image_and_records_exposure(
 async def test_story_media_judgment_lists_cells_with_names_and_situation(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     version_id = content.current_published_version_id
     assert version_id is not None
     with_situation, _ = await _add_named_media_cell(
@@ -273,7 +272,7 @@ async def test_story_media_judgment_lists_cells_with_names_and_situation(
 async def test_story_turn_skips_media_judgment_when_all_cells_excluded(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가", exclude_from_chat=True)
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -289,7 +288,7 @@ async def test_story_turn_ignores_judged_cell_id_not_in_candidates(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """판정이 노출 제외 칸을 골라도(후보 목록에 없던 id) 붙이지도 기록하지도 않는다."""
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     version_id = content.current_published_version_id
     assert version_id is not None
     await _add_named_media_cell(db_session, version_id, user.id, "민아", "창가")
@@ -314,7 +313,7 @@ async def test_story_turn_ignores_judged_cell_id_not_in_candidates(
 async def test_story_turn_keeps_stat_changes_when_media_judgment_fails(
     db_client: httpx.AsyncClient, db_session: AsyncSession, judgment_error: LLMClientError
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -343,7 +342,7 @@ async def test_story_turn_keeps_stat_changes_when_media_judgment_fails(
 async def test_story_turn_keeps_media_image_when_stat_judgment_fails(
     db_client: httpx.AsyncClient, db_session: AsyncSession, judgment_error: LLMClientError
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -375,7 +374,7 @@ def _fail_once_with_real_sql(monkeypatch: pytest.MonkeyPatch, matches: Callable[
 async def test_story_turn_media_candidate_query_failure_keeps_stat_changes(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -402,7 +401,7 @@ async def test_story_turn_media_candidate_query_failure_keeps_stat_changes(
 async def test_story_turn_exposure_record_failure_drops_the_image_but_keeps_the_turn(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -428,7 +427,7 @@ async def test_story_turn_exposure_record_failure_drops_the_image_but_keeps_the_
 async def test_story_turn_cell_signing_failure_finishes_without_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -450,7 +449,7 @@ async def test_story_turn_runs_stat_and_media_judgments_concurrently(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """두 판정이 서로를 기다리는 페이크 — 차례로 부르면 먼저 불린 쪽이 시간 초과로 실패해 그 결과가 빠진다."""
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -471,7 +470,7 @@ async def test_story_turn_judging_an_already_exposed_cell_still_attaches_it(
 ) -> None:
     """같은 장면은 다시 온다 — 이미 보관함에 해금된 칸을 또 고른 턴도 그림이 붙고 노출 기록은 한 줄 그대로다
     (기록이 멱등이 아니면 두 번째 기록이 실패해 그 턴의 그림이 빠진다)."""
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     db_session.add(StoryMediaExposure(user_id=user.id, content_id=content.id, cell_entity_id=cell.entity_id))
@@ -486,7 +485,7 @@ async def test_story_turn_judging_an_already_exposed_cell_still_attaches_it(
 async def test_story_turn_after_ending_still_attaches_media_cell_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     db_session.add(
@@ -516,7 +515,7 @@ async def test_story_judgment_turn_lines_exclude_media_tags(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """첫 메시지는 칸 id 형태 태그를 담아 저장된다 — 판정의 대화 기록에는 실리지 않는다."""
-    user, content, setup, _ = await _story(db_session, opening_message="문이 열린다.\n\n{{img::민아/창가}}\n\n민아가 웃는다.")
+    user, content, setup, _ = await _story(db_session, opening_message="문이 열린다.\n\n{{img::민아/창가}}\n\n민아가 웃는다.", paid_turns=1)
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -532,7 +531,7 @@ async def test_story_judgment_turn_lines_exclude_media_tags(
 async def test_story_media_judgment_uses_story_assistant_label(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -552,7 +551,7 @@ async def test_story_turn_skips_media_judgment_when_prompt_renders_empty(
 ) -> None:
     """배포 직후 활성 세트 캐시(최대 300초)에는 칸 판정 채널이 없는 옛 세트가 남는다 — 그동안은 빈
     프롬프트로 판정을 부르지 않고 그림 없이 턴을 마친다(스탯 판정은 그대로)."""
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=1)
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -573,8 +572,7 @@ async def test_character_turn_done_message_carries_no_image_dimensions(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """캐릭터 상황별 이미지는 지금처럼 고정 비율 칸으로 그린다 — 크기를 알아도 싣지 않는다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -619,7 +617,7 @@ async def test_character_turn_done_message_carries_no_image_dimensions(
 async def test_regenerate_story_message_rejudges_media_cell(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=2)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -642,7 +640,7 @@ async def test_regenerate_rejudging_the_same_cell_still_attaches_it(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """원 턴이 이미 그 칸을 노출로 기록했고 재생성도 같은 칸을 고른다 — 그림이 붙고 노출 기록은 한 줄이다."""
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=2)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -658,7 +656,7 @@ async def test_regenerate_rejudging_the_same_cell_still_attaches_it(
 async def test_regenerate_after_ending_rejudges_media_cell(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=2)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -675,7 +673,7 @@ async def test_regenerate_after_ending_rejudges_media_cell(
 async def test_regenerate_story_message_without_candidates_makes_no_judgment_call(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user, content, setup, _ = await _story(db_session)
+    user, content, setup, _ = await _story(db_session, paid_turns=2)
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
     await _send(db_client, room_id, _JudgingLLMClient())
     fake = _JudgingLLMClient()
@@ -780,8 +778,7 @@ async def _send_preview(db_client: httpx.AsyncClient, session_id: str, fake: LLM
 async def test_preview_turn_judges_media_cell_without_exposure(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     asset = await _ready_asset(db_session, user.id)
     await db_session.commit()
@@ -805,8 +802,7 @@ async def test_preview_turn_judges_media_cell_without_exposure(
 async def test_preview_turn_skips_media_judgment_when_all_cells_excluded(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     asset = await _ready_asset(db_session, user.id)
     await db_session.commit()
@@ -825,8 +821,7 @@ async def test_preview_turn_skips_media_judgment_when_all_cells_excluded(
 async def test_preview_turn_after_ending_judges_media_cell(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=2)
     await db_session.flush()
     asset = await _ready_asset(db_session, user.id)
     await db_session.commit()
@@ -857,8 +852,7 @@ async def test_preview_ending_epilogue_carries_cell_id_tags_and_url_map(
 ) -> None:
     """미리보기 에필로그는 페이로드 그대로라 이름 형태다 — 실채팅처럼 칸 id 형태로 바꾸고 그림 맵을 싣는다.
     없는 이름의 태그는 지운다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     asset = await _ready_asset(db_session, user.id)
     await db_session.commit()
@@ -949,8 +943,7 @@ async def test_preview_drops_cell_whose_asset_is_owned_by_another_user(
     db_session.add(other)
     await db_session.flush()
     foreign_asset = await _ready_asset(db_session, other.id)
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     own_asset = await _ready_asset(db_session, user.id)
     await db_session.commit()
@@ -961,8 +954,7 @@ async def test_preview_drops_cell_whose_asset_is_owned_by_another_user(
 async def test_preview_drops_cell_whose_asset_is_not_ready(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     own_asset = await _ready_asset(db_session, user.id)
     pending_asset = await _ready_asset(db_session, user.id)
