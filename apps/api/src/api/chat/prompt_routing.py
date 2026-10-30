@@ -51,8 +51,8 @@ SkipReason = Literal["pair-not-allowed", "backend-mismatch", "structured-effort"
 
 # 단계 종류마다 행이 고를 수 있는 (부를 모델, 경로). 처리방침에 적은 수탁자 경로(Google·Anthropic 직결)만 둔다 — Bedrock 쌍이
 # 없는 이유다. 등록부에서 Claude 모델의 기본 구현이 Bedrock 이라, 배정 없이 Claude 모델을 고른 행은 경로 대조에서도 걸린다.
-# 생성은 방 모델(소설은 작업 모델)로만 부르므로(차감이 그 모델 단가다) 고를 수 있는 글쓰기 모델의 쌍뿐이다. Sonnet 쌍은 소설
-# 작업에만 있다 — 채팅 생성 칸은 방 모델 축(Gemini·Opus)이 막는다. 어드민 저장 검사와 해석이 이 목록 하나를 함께 읽는다.
+# 생성은 방 모델(소설은 작업 모델)로만 부르므로(차감이 그 모델 단가다) 고를 수 있는 글쓰기 모델의 쌍뿐이다. Sonnet·Opus 쌍은
+# 채팅 방과 소설 작업이 함께 쓴다. 어드민 저장 검사와 해석이 이 목록 하나를 함께 읽는다.
 ALLOWED_ROUTE_PAIRS: dict[StageKind, frozenset[tuple[PromptSetModelId, BackendId]]] = {
     "structured": frozenset(
         {("gemini", "gemini"), ("haiku", "anthropic"), ("sonnet", "anthropic"), ("opus", "anthropic")}

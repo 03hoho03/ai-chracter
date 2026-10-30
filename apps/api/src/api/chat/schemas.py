@@ -406,8 +406,9 @@ class ChatRoomResponse(CamelModel):
 
 
 class ChatRoomModelSelectRequest(CamelModel):
-    """`PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `"gemini"` 나 null 을 명시한다. 채팅에서 고를
-    수 없는 값(레지스트리 밖, 소설에만 남은 Sonnet)은 422 다."""
+    """`PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `"gemini"` 나 null 을 명시한다. 채팅방 모델이 될
+    수 없는 값(레지스트리 밖, 판정 전용 모델)은 422 다. 채팅방 모델이어도 지금 채팅에서 보이지 않는 모델은 라우트가 403 으로
+    거절한다."""
 
     model: ChatRoomModelId | None
 

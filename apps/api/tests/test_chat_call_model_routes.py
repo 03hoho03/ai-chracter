@@ -858,3 +858,45 @@ async def test_a_room_turn_records_each_stages_route_and_dumps_set_keys_only_for
         ("judgment", "chat_ending_judgment"): {},
         ("judgment", "chat_media_book_image"): {},
     }
+
+
+async def test_a_visible_sonnet_room_turn_goes_direct_to_anthropic_and_records_the_sonnet_charge(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """운영과 같은 배정(글쓰기와 판정·요약 호출 위치를 Anthropic 직결로, 판정·요약 모델 Haiku)에서 공개 목록에 Sonnet 을 넣으면,
+    표가 빈 Sonnet 스토리 방의 한 턴은 생성을 Sonnet 으로 Anthropic 직결에 보내고 Sonnet 값을 낸다. 판정·요약은 Sonnet 칸에 행이
+    없어 모델 설정(Haiku)으로 같은 직결 경로에 가고, 어느 호출도 Bedrock 으로 가지 않는다. 턴 기록에는 Sonnet 과 그 값, 단계마다의
+    경로가 남는다."""
+    fix_settings(monkeypatch, "haiku-direct", tmp_path / "dump.jsonl")
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus", "sonnet"])
+    method, path, body = await prepare(db_client, db_session, "story-send", "sonnet")
+    room_id = uuid.UUID(path.split("/")[2])
+    sdks = ProviderSdks(monkeypatch)
+    _override_llm_client(sdks.client())
+    try:
+        resp = await db_client.request(method, path, json=body)
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200, resp.text
+    assert _parse_sse_events(resp.text)[-1]["type"] == "done"
+    assert ("anthropic", "fixture-anthropic-sonnet") in sdks.sent
+    assert {backend for backend, _ in sdks.sent} == {"anthropic"}
+    db_session.expire_all()
+    [turn] = (await db_session.scalars(select(ChatTurn).where(ChatTurn.chat_room_id == room_id))).all()
+    sonnet_turn = clover.CLOVER_MODEL_PRICES["sonnet"].chat_turn
+    assert (turn.chat_model, turn.clover_amount) == ("sonnet", sonnet_turn)
+    generation, *structured = turn.stage_routes
+    assert generation == {
+        "lane": "story",
+        "stage": "chat_generate",
+        "chainModel": "sonnet",
+        "promptSetId": await _set_id(db_session, "story", "sonnet"),
+        "callModel": "sonnet",
+        "backend": "anthropic",
+        "source": "room",
+    }
+    assert {(r["source"], r["callModel"], r["backend"]) for r in structured} <= {
+        ("env", "haiku", "anthropic"),
+        ("inherited", "haiku", "anthropic"),
+    }

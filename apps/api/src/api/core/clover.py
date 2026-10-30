@@ -92,8 +92,8 @@ CLOVER_MODEL_PRICES: dict[ChatModelId, ModelPrices] = {
     # 모르는 호출당 값이라 묶음이 여러 화를 내면 화당 원가는 더 낮고, 표본이 다섯 번뿐이며 사고 토큰이 보고되지 않았을 수 있다.
     "gemini": ModelPrices(chat_turn=20, novel_episode=240, novel_outline=570, novel_episode_outline=240),
     # Sonnet 턴 110: 조감독 작품 긴 방에서 잰 Sonnet 턴 원가는 캐시 적중 $0.018(약 25원)·미적중 $0.0796(약 111원)이다. 쓸 수 있는
-    # 돈(110 × 0.828 = 약 91원)에 적중 턴은 들고 미적중 턴은 넘는다. Sonnet 은 지금 채팅에서 고를 수 없어 이 값으로 차감하는 경로가
-    # 없다 — 채팅에 다시 열 때 미적중 비율과 함께 다시 본다(소설 Sonnet 화는 이 행의 화 단가를 쓴다).
+    # 돈(110 × 0.828 = 약 91원)에 적중 턴은 들고 미적중 턴은 넘는다. Sonnet 이 채팅 공개 목록에 있으면 Sonnet 채팅 턴은 이 값(110)을
+    # 차감한다 — 실사용 미적중 비율이 쌓이면 다시 본다(소설 Sonnet 화는 이 행의 화 단가를 쓴다).
     "sonnet": ModelPrices(chat_turn=110, novel_episode=540, novel_outline=990, novel_episode_outline=540),
     # Opus 턴 200(200원 — 3원 단위의 200클로버 600원에서 내린 값): 운영에서 잰 Opus 5.5 채팅 턴 원가(생성과 판정 몫 포함,
     # 백그라운드 요약·추출 제외)는 캐시가 맞을 때 평균 약 45원, 캐시를 놓친 턴 평균 약 175원, 관측 최대 약 343원이다. 쓸 수 있는

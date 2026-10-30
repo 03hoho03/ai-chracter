@@ -29,7 +29,7 @@ from api.llm.call_policy import BackendId, LLMCallSite
 
 # 채팅방에 지정할 수 있는 모델. 아래 레지스트리의 `chat_selectable` 이 원천이고, 이 타입은 요청 검증용 사본이다 — 둘이
 # 같은 집합인지는 테스트가 본다.
-ChatRoomModelId = Literal["gemini", "opus"]
+ChatRoomModelId = Literal["gemini", "sonnet", "opus"]
 
 # 프롬프트 세트 체인의 모델 축(`prompt_sets.model`)이자 판정·요약 모델 설정의 값(정의는 `llm/backends.py`). 판정 전용 id 의
 # 체인은 판정·요약 문안만 갖고, 그 id 로는 글을 쓰지 않으므로 글쓰기 모델 타입·레지스트리·파서·가격에는 넣지 않는다 — 넣으면
@@ -43,7 +43,8 @@ class ChatModelSpec:
     id: ChatModelId
     # 화면에 보이는 이름. 운영이 그 id 로 실제로 부르는 모델을 따른다 — 운영 경로나 모델 버전을 바꾸면 같이 고친다.
     name: str
-    # 채팅방에서 고를 수 있는가. 거짓인 모델도 소설 장 생성·어드민·측정 리플레이에서는 그대로 쓴다.
+    # 채팅방 모델이 될 수 있는가. 거짓인 모델도 소설 장 생성·어드민·측정 리플레이에서는 그대로 쓴다. 참이어도 지금 화면에
+    # 보이는지는 운영 설정(`is_chat_model_visible`)이 정한다.
     chat_selectable: bool
     # 화면이 베타 표시를 붙이는가.
     beta: bool
@@ -57,9 +58,7 @@ class ChatModelSpec:
 # 순서가 곧 선택지의 순서다 — 기본 모델이 맨 앞.
 CHAT_MODELS: tuple[ChatModelSpec, ...] = (
     ChatModelSpec(id="gemini", name="Gemini", chat_selectable=True, beta=False),
-    # 지금은 베타 표시가 보이는 곳이 채팅 모델 목록뿐이라 Sonnet 에서는 쓰이지 않는다. 나중에 채팅에 다시 열 때 표시 없이
-    # 나가지 않게 미리 켜 둔다.
-    ChatModelSpec(id="sonnet", name="Claude Sonnet 5.5", chat_selectable=False, beta=True),
+    ChatModelSpec(id="sonnet", name="Claude Sonnet 5.5", chat_selectable=True, beta=True),
     ChatModelSpec(id="opus", name="Claude Opus 5.5", chat_selectable=True, beta=True),
 )
 CHAT_MODELS_BY_ID: dict[ChatModelId, ChatModelSpec] = {m.id: m for m in CHAT_MODELS}
@@ -68,6 +67,15 @@ CHAT_MODELS_BY_ID: dict[ChatModelId, ChatModelSpec] = {m.id: m for m in CHAT_MOD
 def is_chat_room_model(model: ChatModelId) -> TypeGuard[ChatRoomModelId]:
     """그 모델을 채팅방에서 고를 수 있는가."""
     return CHAT_MODELS_BY_ID[model].chat_selectable
+
+
+def is_chat_model_visible(model: ChatModelId) -> bool:
+    """그 모델이 지금 채팅에서 고를 수 있게 보이는가. 기본 모델은 늘 보인다. 상위 모델은 채팅방 모델이고, 채팅 상위 모델
+    스위치가 켜져 있고, 공개 목록(`chat_models_visible`)에 있어야 한다 — 스위치는 목록과 무관하게 모두 숨기는 총 스위치다.
+    모델 목록·공개 가격·지정·미리보기 시작·저장된 방의 실효 모델이 이 판정 하나를 쓴다. 설정은 호출마다 읽는다."""
+    if model == DEFAULT_CHAT_MODEL:
+        return True
+    return is_chat_room_model(model) and settings.chat_premium_models_enabled and model in settings.chat_models_visible
 
 
 def _default_chat_room_model() -> ChatRoomModelId:

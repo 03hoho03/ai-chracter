@@ -72,7 +72,13 @@ from api.db.models.clover import CloverLedger, CloverLot
 from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
 from api.novel_public.access import novel_public_open_to
-from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, chat_turn_cost, novel_episode_unit_price
+from api.llm.chat_models import (
+    CHAT_MODELS,
+    DEFAULT_CHAT_MODEL,
+    chat_turn_cost,
+    is_chat_model_visible,
+    novel_episode_unit_price,
+)
 from api.payments.config import identity_gate_active, payments_active
 from api.payments import refund
 from api.payments.methods import PAY_METHODS
@@ -203,12 +209,13 @@ async def get_clover_pricing() -> CloverPricingResponse:
     고를 수 있는 모델별 단가, 하루 무료 대화 수를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지
     않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
 
-    모델 행은 채팅에서 고를 수 있는 모델만 싣는다. 소설 상위 모델은 소설 허용에 더해 별도 명단에 든 계정만 써서 일반 회원은
+    모델 행은 지금 채팅에서 고를 수 있게 보이는 모델만 싣는다(`is_chat_model_visible` — 화면의 모델 목록과 같은 판정이라
+    채팅 상위 모델 스위치를 끄거나 공개 목록에서 빼면 그 모델 행이 빠진다). 소설 상위 모델은 소설 허용에 더해 별도 명단에 든 계정만 써서 일반 회원은
     살 수 없으므로 그 화 단가를 따로 싣지 않는다 — 모델 행의 소설 화 단가 칸은 옛 화면 호환용으로 남아 있어 Opus 행의
     값은 계속 보인다.
 
-    채팅 상위 모델은 스위치 하나로 로그인 회원 모두에게 열리므로(`llm/model_access.py`) 모델 행에 허용 전용 표시가 없고,
-    행과 베타 표시는 스위치와 무관한 레지스트리 값이다. 소설 허용 전용 표시는 허용 판정의 구조에서 온다 — 소설
+    채팅 상위 모델은 계정을 보지 않고 로그인 회원 모두에게 열리므로(`llm/model_access.py`) 모델 행에 허용 전용 표시가 없고,
+    베타 표시는 레지스트리 값이다. 소설 허용 전용 표시는 허용 판정의 구조에서 온다 — 소설
     (`novelize/access.py`)은 스위치가 켜져 있어도 env 명단과 어드민 허용 행이 있는 계정만 쓴다. 그 판정이 명단 없이
     모두에게 열리도록 바뀌면 그 값도 함께 바꾼다."""
     # 상품과 단가는 요청마다 모듈 속성으로 다시 읽는다 — import 로 값을 묶어 두면 상수를 바꿔도(테스트의 monkeypatch 포함)
@@ -237,7 +244,7 @@ async def get_clover_pricing() -> CloverPricingResponse:
                 novel_episode_cost=novel_episode_unit_price(m.id),
             )
             for m in CHAT_MODELS
-            if m.chat_selectable
+            if is_chat_model_visible(m.id)
         ],
         novel_episode_cost=novel_episode_unit_price(DEFAULT_CHAT_MODEL),
         novel_ai_edit_cost=clover.NOVELIZE_AI_EDIT_COST,

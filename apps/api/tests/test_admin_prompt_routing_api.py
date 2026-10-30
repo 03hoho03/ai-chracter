@@ -193,7 +193,7 @@ async def test_an_empty_table_shows_every_cell_resolved_from_env_with_prices(
     assert body["revisionId"] is None
     assert body["revisionNumber"] is None
     assert body["pricesAsOf"] == PRICES_AS_OF.isoformat()
-    assert len(body["cells"]) == _CELL_COUNT == (8 + 5) * 2 + 3 * 3 + 4
+    assert len(body["cells"]) == _CELL_COUNT == (8 + 5) * 3 + 3 * 3 + 4
     assert {(c["effective"]["source"], c["configured"], c["skipped"]) for c in body["cells"]} <= {
         ("env", None, None),
         ("room", None, None),
@@ -243,7 +243,7 @@ async def test_the_chain_list_follows_the_env_judgment_model(
     chains = {(c["lane"], c["model"]): c["readBy"] for c in body["chains"]}
     assert chains[("story", "haiku")] == [
         {"roomModel": room, "stage": stage, "channels": [channel]}
-        for room in ("gemini", "opus")
+        for room in ("gemini", "sonnet", "opus")
         for stage, channel in (("stat_judgment", "stat_rule_judgment"), ("scene_judgment", "scene_judgment"))
     ]
     assert ("character", "haiku") not in chains
@@ -267,6 +267,35 @@ async def test_the_response_carries_the_premium_model_switch_and_keeps_opus_room
     assert {"roomModel": "opus", "stage": "chat_generate", "channels": ["system", "generation"]} in chains[
         ("story", "opus")
     ]
+
+
+@pytest.mark.parametrize(
+    ("enabled", "visible", "expected"),
+    [
+        pytest.param(True, ["opus"], ["opus"], id="default-list"),
+        pytest.param(True, ["opus", "sonnet"], ["sonnet", "opus"], id="both-in-registry-order"),
+        pytest.param(True, [], [], id="blank-list"),
+        pytest.param(False, ["opus", "sonnet"], [], id="switch-off"),
+    ],
+)
+async def test_the_response_carries_the_premium_room_models_chat_reads_now(
+    enabled: bool,
+    visible: list[str],
+    expected: list[str],
+    routing_env: pytest.MonkeyPatch,
+    db_client: httpx.AsyncClient,
+    admin_id: uuid.UUID,
+) -> None:
+    """화면은 상위 모델 방 칸이 지금 운영에서 읽히는지를 이 목록으로 가른다 — 총 스위치가 켜져 있어도 공개 목록에서 뺀 모델의
+    방은 기본 모델로 돌아 그 칸이 읽히지 않는다. 스위치 값만 내려 주면 숨긴 Sonnet 방 칸이 읽히는 것처럼 보인다. 기본 모델은
+    늘 읽혀 목록에 넣지 않는다. 칸·체인 목록은 그대로 Sonnet 방 칸을 담는다."""
+    routing_env.setattr(settings, "chat_premium_models_enabled", enabled)
+    routing_env.setattr(settings, "chat_models_visible", visible)
+
+    body = (await db_client.get("/admin/prompt-routing")).json()
+
+    assert body["chatVisibleModels"] == expected
+    assert _cell(body, "story", "sonnet", "chat_generate")["effective"]["callModel"] == "sonnet"
 
 
 async def test_saving_replaces_the_table_records_one_revision_and_shows_the_rows(

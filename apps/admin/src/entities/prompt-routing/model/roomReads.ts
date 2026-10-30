@@ -1,10 +1,20 @@
 import type { AdminPromptRoutingResponse, RoomModel } from "./types";
 
-/** 상위 모델 스위치가 꺼져 지금 운영에서 안 읽히는 칸에 붙이는 말. 배정 표와 프롬프트 화면이 같은 문장을 쓴다. */
-export const PREMIUM_OFF_UNREAD_COPY = "상위 모델이 꺼져 있어 지금은 안 읽혀요";
+/** 지금 운영에서 고를 수 없는 상위 모델의 방이라 안 읽히는 칸에 붙이는 말. 배정 표와 프롬프트 화면이 같은 문장을 쓴다. 상위 모델
+ * 스위치가 꺼진 경우와, 켜져 있어도 그 모델을 채팅 공개 목록에서 뺀 경우에 함께 붙으므로 이유를 하나로 말하지 않는다. */
+export const PREMIUM_OFF_UNREAD_COPY = "운영에서 고를 수 없는 모델이라 지금은 안 읽혀요";
 
-/** 이 방의 칸이 지금 운영에서 실행되는가. 채팅 상위 모델 스위치가 꺼지면 Opus 방은 기본 모델(Gemini)로 돌아 Opus 방의 칸은
- * 하나도 실행되지 않는다. 배정 표 조회의 칸·체인 목록은 스위치와 무관하게 그 칸을 담으므로 화면이 이 값으로 가른다. */
-export function isRoomLive(routing: Pick<AdminPromptRoutingResponse, "chatPremiumModelsEnabled">, roomModel: RoomModel) {
-  return routing.chatPremiumModelsEnabled || roomModel !== "opus";
+/** 이 방의 칸이 지금 운영에서 실행되는가. 상위 모델(Sonnet·Opus) 방은 그 모델이 지금 채팅에서 보일 때만 그 모델로 돌고, 아니면
+ * 기본 모델(Gemini)로 돌아 그 방의 칸은 하나도 실행되지 않는다. 보이는 상위 모델은 서버가 `chatVisibleModels` 로 내려 준다(상위 모델
+ * 스위치가 꺼져 있으면 비었다). 배정 표 조회의 칸·체인 목록은 그와 무관하게 그 칸을 담으므로 화면이 이 값으로 가른다. */
+export function isRoomLive(
+  routing: Pick<AdminPromptRoutingResponse, "chatPremiumModelsEnabled"> &
+    Partial<Pick<AdminPromptRoutingResponse, "chatVisibleModels">>,
+  roomModel: RoomModel,
+) {
+  if (roomModel !== "sonnet" && roomModel !== "opus") return true;
+  // 생성 타입은 `chatVisibleModels` 를 필수로 적지만, 어드민이 API 보다 먼저 배포되면 그 칸이 없는 예전 응답이 온다. 예전 서버는
+  // 상위 모델 스위치 하나로 Opus 만 열었으므로 그 뜻대로 읽는다(예전 서버는 Sonnet 을 채팅에서 고를 수 없게 막았다).
+  const visibleModels = routing.chatVisibleModels ?? (routing.chatPremiumModelsEnabled ? ["opus"] : []);
+  return visibleModels.includes(roomModel);
 }

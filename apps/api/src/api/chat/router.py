@@ -210,7 +210,7 @@ from api.llm.chat_models import (
 )
 from api.llm.client import LLMClient, LLMClientError
 from api.llm.dependencies import get_embedding_client, get_llm_client
-from api.llm.model_access import effective_room_model, has_chat_premium_access
+from api.llm.model_access import effective_room_model, has_chat_model_access
 from api.llm.voyage import VoyageEmbeddingClient
 from api.persona.router import get_owned_persona, lock_user_default_persona, promote_oldest_persona
 from api.persona.schemas import PersonaSelectRequest, RoomPersonaResponse
@@ -1887,13 +1887,12 @@ async def list_chat_models(
     db: AsyncSession = Depends(get_db_session),
 ) -> list[ChatModelItem]:
     """이 계정이 채팅방에 고를 수 있는 모델과 턴 가격. 기본 모델(Gemini)은 언제나 있고 맨 앞이다 — 빌더 미리보기도 이 항목에서
-    턴 가격을 읽는다. 상위 모델은 채팅 상위 모델 허용이 있을 때만 싣는다(모델 지정 라우트·턴 게이트와 같은 판정). 채팅에서
-    고를 수 없는 모델(소설에만 남은 Sonnet)은 허용이 있어도 싣지 않는다."""
-    allowed = await has_chat_premium_access(db, user_id)
+    턴 가격을 읽는다. 상위 모델은 지금 채팅에서 보이는 모델(채팅 상위 모델 스위치가 켜져 있고 공개 목록에 있는 모델)만 싣는다 —
+    모델 지정 라우트·미리보기 시작·턴 게이트·공개 가격과 같은 판정이다."""
     return [
         ChatModelItem(id=spec.id, name=spec.name, beta=spec.beta, turn_cost=chat_turn_cost(spec.id))
         for spec in CHAT_MODELS
-        if is_chat_room_model(spec.id) and (spec.id == DEFAULT_CHAT_MODEL or allowed)
+        if is_chat_room_model(spec.id) and await has_chat_model_access(db, user_id, spec.id)
     ]
 
 
@@ -2217,12 +2216,12 @@ async def set_room_model(
     (턴 게이트의 영수증) — 그래서 턴 락을 잡지 않는다.
 
     기본 모델(`"gemini"`·null)은 누구나 고를 수 있다 — 허용을 거둔 뒤에도 방을 되돌릴 수 있어야 한다. 기본 모델은 빈 값으로
-    저장한다(새 방과 같은 상태). 상위 모델은 채팅 상위 모델 허용(`has_chat_premium_access` — 스위치 하나)이 있어야 하고,
-    없으면 403 `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 다.
+    저장한다(새 방과 같은 상태). 상위 모델은 지금 채팅에서 보이는 모델이어야 하고(`has_chat_model_access` — 채팅 상위 모델
+    스위치와 공개 목록), 아니면 403 `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 다.
     고를 때 확인하는 가격은 응답의 턴 가격이고, 그 뒤 턴은 하루 1회 확인 없이 그 가격으로 차감된다."""
     room = await _get_owned_room(db, room_id, user_id)
     model = payload.model or DEFAULT_CHAT_ROOM_MODEL
-    if model != DEFAULT_CHAT_MODEL and not await has_chat_premium_access(db, user_id):
+    if model != DEFAULT_CHAT_MODEL and not await has_chat_model_access(db, user_id, model):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "CHAT_MODEL_NOT_ALLOWED"})
     chat_model = None if model == DEFAULT_CHAT_MODEL else model
     # 같은 값이면 ORM 이 방 UPDATE 를 내지 않으므로 잠그지도 않는다 — 쓰기가 없는 요청까지 방 행을 잠가 턴 쓰기를 기다리게
@@ -3042,9 +3041,9 @@ async def start_preview_session(
     `formToServer(getValues())` produced (same shape as `PATCH /contents/{id}/draft`'s body)
     and is stored in Redis with no validation, mirroring autosave's unvalidated path.
 
-    `model` 은 이 세션이 쓸 글쓰기 모델이다. 상위 모델은 채팅방에서 모델을 고를 때와 같은 허용(`has_chat_premium_access`)이 있어야
+    `model` 은 이 세션이 쓸 글쓰기 모델이다. 상위 모델은 채팅방에서 모델을 고를 때와 같은 허용(`has_chat_model_access`)이 있어야
     하고, 없으면 같은 403 `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 다. 모델을 바꾸려면 새 세션을 시작한다."""
-    if model != DEFAULT_CHAT_ROOM_MODEL and not await has_chat_premium_access(db, user_id):
+    if model != DEFAULT_CHAT_ROOM_MODEL and not await has_chat_model_access(db, user_id, model):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "CHAT_MODEL_NOT_ALLOWED"})
     state = _build_preview_start_state(payload)
     state.chat_model = model
@@ -3098,7 +3097,7 @@ async def _preview_effective_model_dependency(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatRoomModelId:
-    """이 미리보기 턴이 실제로 도는 모델. 세션이 고른 모델을 채팅방과 같은 함수로 읽는다 — 상위 모델 스위치가 꺼졌으면 Gemini 다.
+    """이 미리보기 턴이 실제로 도는 모델. 세션이 고른 모델을 채팅방과 같은 함수로 읽는다 — 상위 모델 스위치가 꺼졌거나 그 모델을 공개 목록에서 뺐으면 Gemini 다.
     생성 세트·판정 세트·차감 게이트가 이 의존성 하나를 받아 요청 스코프 캐시로 같은 값을 쓴다(방의 `_effective_room_model_dependency`
     와 같은 이유)."""
     return await effective_room_model(db, user_id, state.chat_model)
