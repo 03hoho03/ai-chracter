@@ -60,14 +60,15 @@ def _is_bible_model(name: str) -> bool:
 
 
 def check_g1b(path: str, source: str) -> list[str]:
-    """정본 기억 표 모듈은 정본 기억 패키지, 모델 패키지의 `__init__`, 삭제 경로, 그리고 표 모듈끼리만 import 한다."""
-    if (
-        path.startswith("api/novel_bible/")
-        or path in ("api/db/models/__init__.py", "api/novelize/deletion.py")
-        or path.startswith("api/db/models/novel_bible")
-    ):
+    """정본 기억 표 모듈은 정본 기억 패키지, 모델 패키지의 `__init__`, 삭제 경로만 import 한다. 슬롯 표 모듈
+    (`novel_bible_*.py`)은 항목 공통 칸을 가진 공통 표 모듈(`novel_bible.py`)만 더 import 할 수 있다 — 슬롯 표 모듈끼리
+    import 하면 한 슬롯이 자기 표 모듈만 import 해도 다른 슬롯의 표가 따라 들어온다."""
+    if path.startswith("api/novel_bible/") or path in ("api/db/models/__init__.py", "api/novelize/deletion.py"):
         return []
-    return sorted(name for name in imported_modules(path, source) if _is_bible_model(name))
+    found = [name for name in imported_modules(path, source) if _is_bible_model(name)]
+    if path.startswith("api/db/models/novel_bible_"):
+        found = [name for name in found if not _is_or_under(name, "api.db.models.novel_bible")]
+    return sorted(found)
 
 
 def check_g2(path: str, source: str) -> list[str]:
@@ -152,6 +153,9 @@ def test_the_tree_check_sees_the_package_files_it_guards() -> None:
         (check_g1, "api/novelize/outline.py", "from api import novel_bible"),
         (check_g1b, "api/novelize/router.py", "from api.db.models.novel_bible_facts import NovelBibleFact"),
         (check_g1b, "api/admin/novel_bible.py", "from api.db.models.novel_bible import NovelBibleCommit"),
+        (check_g1b, "api/db/models/novel_bible_facts.py", "from api.db.models.novel_bible_events import NovelBibleEvent"),
+        (check_g1b, "api/db/models/novel_bible_facts.py", "from .novel_bible_events import NovelBibleEvent"),
+        (check_g1b, "api/db/models/novel_bible.py", "from api.db.models.novel_bible_facts import NovelBibleFact"),
         (check_g2, "api/novel_bible/slots/facts/slot.py", "from api.novel_bible.slots.events.schema import X"),
         (check_g2, "api/novel_bible/slots/facts/slot.py", "from ..events import schema"),
         (check_g2, "api/novel_bible/slots/knowledge/slot.py", "from api.db.models.novel_bible_facts import F"),
@@ -175,6 +179,7 @@ def test_each_guard_catches_a_synthetic_violation(check: Check, path: str, sourc
         (check_g1, "api/novelize/worker.py", "from api.novel_bible.entry import BibleWorker"),
         (check_g1b, "api/novelize/deletion.py", "from api.db.models.novel_bible import NovelBibleCommit"),
         (check_g1b, "api/db/models/novel_bible_facts.py", "from api.db.models.novel_bible import NovelBibleItem"),
+        (check_g1b, "api/db/models/novel_bible_events.py", "from .novel_bible import item_table_args"),
         (check_g2, "api/novel_bible/slots/facts/slot.py", "from api.novel_bible.slots.facts.schema import X"),
         (check_g2, "api/novel_bible/slots/facts/slot.py", "from api.db.models.novel_bible_facts import F"),
         (check_g3, "api/novel_bible/slots/facts/slot.py", "from api.novel_bible.core.types import ItemDraft"),
