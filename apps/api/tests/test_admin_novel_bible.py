@@ -66,8 +66,9 @@ async def test_confirm_requires_an_admin_session(db_client: httpx.AsyncClient, d
 
 @pytest.mark.usefixtures("bible_on")
 async def test_confirm_accepts_a_revision_and_reconfirming_the_current_one_does_nothing(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(entry, "REGISTRY", fake_registry())
     await _admin(db_client, db_session)
     body = await _target(db_session)
 
@@ -87,8 +88,9 @@ async def test_confirm_accepts_a_revision_and_reconfirming_the_current_one_does_
 
 @pytest.mark.usefixtures("bible_on")
 async def test_confirm_is_not_found_for_mismatched_or_hidden_targets(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(entry, "REGISTRY", fake_registry())
     await _admin(db_client, db_session)
     body, other = await _target(db_session), await _target(db_session)
 

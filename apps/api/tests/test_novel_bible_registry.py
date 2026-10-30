@@ -1,5 +1,5 @@
-"""정본 기억 등록부와 규칙 목록. 슬롯 코드가 들어오기 전이라 둘 다 비어 있고, 운영 이미지는 "슬롯이 빠진 엔진"을 그대로
-싣는다 — 확정은 작업 없이 만들어진다."""
+"""정본 기억 등록부와 규칙 목록. 등록부에는 코드가 들어온 슬롯만 있고 규칙 목록은 비어 있다 — 운영 이미지는 "슬롯이 빠진
+엔진"을 그대로 싣고, 빠진 슬롯은 작업이 만들어지지 않는다."""
 
 from typing import get_args
 
@@ -14,7 +14,7 @@ def test_registered_slots_are_ids_the_job_table_accepts() -> None:
 
 
 def test_no_slot_or_rule_is_registered_before_their_code_arrives() -> None:
-    assert dict(REGISTRY.extracting) == {}
+    assert set(REGISTRY.extracting) == {"events"}
     assert REGISTRY.source is None
     assert list(RULES) == []
 
