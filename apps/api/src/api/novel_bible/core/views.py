@@ -1,11 +1,22 @@
-"""슬롯이 자기 표 밖에서 읽는 것(`CoreReadView`)의 구현 — 확정 하나에 묶인 원고·장면 구성안 힌트·아는 개체·원작 정본."""
+"""슬롯이 자기 표 밖에서 읽는 것(`CoreReadView`)의 구현 — 확정 하나에 묶인 원고·장면 구성안 힌트·아는 개체·원작 정본·플레이
+사실."""
 
+import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models.novel import NovelChapterRevision, NovelCharacter, NovelEpisodeOutline, NovelSceneBlock
+from api.chat.memory_facts import fact_rows_statement
+from api.chat.memory_knowledge import latest_by_key
+from api.db.models.chat import ChatMemoryFact
+from api.db.models.novel import (
+    NovelChapter,
+    NovelChapterRevision,
+    NovelCharacter,
+    NovelEpisodeOutline,
+    NovelSceneBlock,
+)
 from api.db.models.novel_bible import NovelBibleCommit, NovelBibleEntity
 from api.novel_bible.core.contracts import Registry
 from api.novel_bible.core.types import (
@@ -13,6 +24,7 @@ from api.novel_bible.core.types import (
     EntityName,
     Manuscript,
     ManuscriptBlock,
+    PlayFact,
     SceneHint,
     SourceCanon,
     SourceCanonRef,
@@ -36,6 +48,8 @@ class CommitView:
     registry: Registry
     commit: CommitRef
     source_ref: SourceCanonRef | None
+    # 확정 때 소설의 방(확정 행에 남은 것). 그 뒤 방이 지워져도 확정이 읽을 방은 바뀌지 않는다 — 행이 사라졌으면 비어 읽힌다.
+    chat_room_id: uuid.UUID | None = None
 
     async def manuscript(self) -> Manuscript:
         revision = await self.session.get(NovelChapterRevision, self.commit.chapter_revision_id)
@@ -89,6 +103,32 @@ class CommitView:
         if self.registry.source is None or self.source_ref is None:
             return None
         return await self.registry.source.load(self.session, self.commit.novel_id, self.source_ref)
+
+    async def play_facts(self) -> list[PlayFact] | None:
+        """그 방에서 이 화의 끝 메시지까지 접힌 채팅 기억 사실을 키마다 이긴 행 하나로 줄인 것(채팅의 사실 섹션과 같은 읽기·같은
+        규칙), 반증된 값은 뺀다 — 반증된 값은 플레이에서 그렇지 않았던 것이라 소설과 견줄 사실이 아니다. 아는 사람 거름은 하지
+        않는다 — 그것은 채팅 턴이 장면 인물에게 무엇을 보여 줄지의 거름이고, 여기서 묻는 것은 플레이에서 무엇이 그랬나다.
+
+        채팅 기억 스위치(추출·주입·거름 따위)를 보지 않는다. 그 스위치는 채팅 턴이 기억을 쓰고 읽는지를 정할 뿐이고, 이미 쌓인
+        행은 스위치와 무관하게 플레이에서 있었던 일이다. 읽는 두 함수도 방·커서·행만 받는다. 방이 없거나 행이 없으면 None 이다."""
+        if self.chat_room_id is None:
+            return None
+        chapter = await self.session.get(NovelChapter, self.commit.chapter_id)
+        assert chapter is not None  # 화가 지워지면 확정 행도 CASCADE 로 사라져 작업을 받지 못한다
+        cursor = (chapter.end_message_created_at, chapter.end_message_id)
+        rows: list[ChatMemoryFact] = list(
+            (await self.session.scalars(fact_rows_statement(self.chat_room_id, cursor))).all()
+        )
+        facts = [
+            PlayFact(
+                chat_room_id=row.chat_room_id, chat_memory_fact_id=row.id, chat_fact_key=row.fact_key,
+                subject=row.subject, object=row.object, attribute=row.attribute, value=row.value,
+                claimed=row.truth_status == "claimed",
+            )
+            for _, row in latest_by_key(rows)
+            if row.truth_status != "disproved"
+        ]
+        return facts or None
 
 
 def source_ref_of(commit: NovelBibleCommit) -> SourceCanonRef | None:

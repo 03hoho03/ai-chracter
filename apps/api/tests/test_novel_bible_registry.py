@@ -14,7 +14,7 @@ def test_registered_slots_are_ids_the_job_table_accepts() -> None:
 
 
 def test_no_slot_or_rule_is_registered_before_their_code_arrives() -> None:
-    assert set(REGISTRY.extracting) == {"events"}
+    assert set(REGISTRY.extracting) == {"events", "facts"}
     assert list(RULES) == []
 
 

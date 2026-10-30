@@ -17,6 +17,7 @@ from api.novel_bible.core.types import (
     FindingDraft,
     LinkedItem,
     Manuscript,
+    PlayFact,
     Proposal,
     RenderedPrompt,
     RevisionRef,
@@ -42,6 +43,8 @@ class CoreReadView(Protocol):
     async def scene_hints(self) -> list[SceneHint]: ...
     async def known_entities(self) -> list[EntityName]: ...
     async def source_canon(self) -> SourceCanon | None: ...
+    # 확정 때 방이 있었고 그 화 끝까지 접힌 채팅 기억 사실이 있을 때만. 채팅 기억 스위치와 무관하다.
+    async def play_facts(self) -> list[PlayFact] | None: ...
 
 
 class Slot(Protocol):

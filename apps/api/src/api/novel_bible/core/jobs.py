@@ -151,7 +151,9 @@ async def _prepare(
         commit = await session.get(NovelBibleCommit, commit_id)
         if commit is None:
             return None
-        view = CommitView(session, registry, await commit_ref(session, commit), source_ref_of(commit))
+        view = CommitView(
+            session, registry, await commit_ref(session, commit), source_ref_of(commit), commit.chat_room_id
+        )
         slot_input = await slot.build_input(session, view)
         values = slot.prompt_values(slot_input)
         adapter = resolver(slot.operation)

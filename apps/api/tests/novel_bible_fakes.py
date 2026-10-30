@@ -272,7 +272,8 @@ def _to_row(row: Any, chapter_ordinal: int) -> EventRow | RelationRow | FactRow 
         return FactRow(
             id=row.id, chapter_id=row.chapter_id, fact_key=row.fact_key, subject_entity_id=row.subject_entity_id,
             kind=row.kind, predicate_norm=row.predicate_norm, value=row.value, value_norm=row.value_norm,
-            value_entity_id=row.value_entity_id, holds=row.holds, immutable=row.immutable, scope=row.scope,
+            value_entity_id=row.value_entity_id, holds=row.holds, immutable=row.immutable, onset=row.onset,
+            scope=row.scope,
             valid_from_event_id=row.valid_from_event_id,
         )
     assert isinstance(row, NovelBibleKnowledge)

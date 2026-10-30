@@ -181,6 +181,22 @@ class SourceCanon:
 
 
 @dataclass(frozen=True)
+class PlayFact:
+    """채팅 기억 사실 하나 — 그 소설이 나온 방의 플레이에서 그랬던 것. 사실 슬롯이 소설 사실과 다른지 견줄 근거로만 읽는다.
+    관계면 `object` 가 대상이고 `attribute` 가 비며, 속성이면 그 반대다. `claimed` 는 말한 사람만 그렇다고 한 주장이다. 채팅
+    기억 행은 되감기·잊기로 사라질 수 있어 근거는 이 행 id 와 키를 FK 없이 남긴다."""
+
+    chat_room_id: uuid.UUID
+    chat_memory_fact_id: uuid.UUID
+    chat_fact_key: str
+    subject: str
+    object: str | None
+    attribute: str | None
+    value: str
+    claimed: bool
+
+
+@dataclass(frozen=True)
 class RenderedPrompt:
     system_instruction: str
     prompt: str
@@ -220,6 +236,8 @@ class FactRow:
     value_entity_id: uuid.UUID | None
     holds: bool
     immutable: bool
+    # 이 장면에서 상태가 시작됐다고 서술됨(얻음·배움·일어남·돌아옴). 거짓이면 이미 참이던 상태를 여기서 처음 서술한 것이다.
+    onset: bool
     scope: FactScope
     valid_from_event_id: uuid.UUID | None
 
