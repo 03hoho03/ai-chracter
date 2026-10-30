@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.core.config import settings
 from api.db.models import User
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatTurn
@@ -223,9 +223,8 @@ async def test_a_visible_sonnet_preview_charges_the_sonnet_price_and_generates_w
 async def test_a_room_that_stored_a_hidden_sonnet_runs_on_gemini_at_the_gemini_price(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """숨긴 뒤에도 Sonnet 이 저장된 방은 막히지 않는다 — 방 응답도 턴도 Gemini 다. 무료분을 없애 Gemini 값으로 드러나게 한다."""
+    """숨긴 뒤에도 Sonnet 이 저장된 방은 막히지 않는다 — 방 응답도 턴도 Gemini 다. Gemini 턴도 첫 턴부터 깎이므로 차감액이 Gemini 값으로 드러난다."""
     _configure(monkeypatch, switch=True, visible=["opus"])
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     user = await _user(db_client, db_session)
     room_id = await _room(db_client, db_session, user)
     await _store_model(db_session, room_id, "sonnet")
