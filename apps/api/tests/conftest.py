@@ -163,6 +163,13 @@ def _migrated_schema() -> Generator[None, None, None]:
         if isinstance(existing_logger, logging.Logger):
             existing_logger.disabled = False
     yield
+    # 내리기는 리비전마다 커밋한다. 한 트랜잭션으로 base 까지 내리면 지금까지 만든 모든 표·인덱스·제약·트리거·타입의
+    # 잠금을 커밋까지 쥐는데(2026-10-30 실측 4,503개, 리비전 하나는 많아야 514개), 잠금 표는 서버 전체가 나눠 쓰는
+    # 고정 크기라(같은 이미지 기본 설정에서 1만 5천~1만 8천 개) xdist 워커 넷이 동시에 내리면 넘쳐 `out of shared memory` 로
+    # 세션이 실패한다. 리비전마다 커밋하면 한 워커가 쥐는 잠금이 가장 큰 리비전 하나 몫으로 줄고 표가 늘어도 커지지
+    # 않는다. 모든 리비전의 내리기를 실제 Postgres 에서 차례로 돌린다는 증명은 그대로다. 올리기는 운영 배포처럼 한
+    # 트랜잭션으로 둔다 — 여러 리비전이 한 트랜잭션에 묶일 때만 나는 실패도 거기서 잡히게.
+    config.attributes["transaction_per_migration"] = True
     command.downgrade(config, "base")
 
 
