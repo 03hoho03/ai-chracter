@@ -20,6 +20,7 @@ from api.novel_bible.core.types import (
     Proposal,
     RenderedPrompt,
     RevisionRef,
+    SceneHint,
     SlotRows,
     SourceCanon,
     SourceCanonRef,
@@ -35,6 +36,10 @@ class CoreReadView(Protocol):
     commit: CommitRef
 
     async def manuscript(self) -> Manuscript: ...
+    # 장면 구성안이 없는 화는 빈 목록이다(화 전체가 장면 하나). 장면 구성안은 사건의 앵커 힌트(장면 키)와 회상 힌트(현재 사건을
+    # 회상으로 올리기)에만 쓰고, 사실·지식 추출의 입력에는 넣지 않는다 — 구성안은 계획이지 확정된 원고가 아니라, 거기서 뽑으면
+    # 원고에 없는 내용이 정본이 된다.
+    async def scene_hints(self) -> list[SceneHint]: ...
     async def known_entities(self) -> list[EntityName]: ...
     async def source_canon(self) -> SourceCanon | None: ...
 

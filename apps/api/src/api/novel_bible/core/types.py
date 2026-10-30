@@ -155,6 +155,17 @@ class Manuscript:
 
 
 @dataclass(frozen=True)
+class SceneHint:
+    """장면 구성안의 장면 하나 — 장면 id·제목·회상 표시와 그 장면에 드는 확정 개정의 블록(본문 차례). 구성안의 다른 내용은
+    싣지 않는다 — 계획은 확정된 원고가 아니다."""
+
+    scene_key: str
+    title: str
+    flashback: bool
+    block_ids: tuple[uuid.UUID, ...]
+
+
+@dataclass(frozen=True)
 class SourceCanonRef:
     """원작 정본의 버전과 그 글의 해시 — 확정 행에 남겨 작업 때 같은 글을 다시 만든다."""
 

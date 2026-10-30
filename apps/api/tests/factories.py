@@ -2192,6 +2192,30 @@ async def _assert_blocked(task: "asyncio.Task[object]", *, block_seconds: float 
         await asyncio.wait_for(asyncio.shield(task), block_seconds)
 
 
+async def _eventually(check: Callable[[], Awaitable[bool]], *, within: float = 10.0) -> None:
+    """`check` 가 참이 될 때까지 0.01초 간격으로 본다. `within` 초 안에 참이 안 되면 실패다."""
+    for _ in range(int(within / 0.01)):
+        if await check():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"{within}초 안에 조건이 서지 않았다")
+
+
+async def _true(value: bool) -> bool:
+    """이미 계산한 참거짓을 `_eventually` 가 받는 비동기 검사로 감싼다."""
+    return value
+
+
+class _Clock:
+    """테스트가 손으로 미는 단조 시계 — 워커 루프의 `clock` 인자로 넘긴다."""
+
+    def __init__(self, now: float) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+
 @contextmanager
 def _open_transaction_probe() -> Generator[set[int], None, None]:
     """지금 루트 트랜잭션이 열려 있는(= 커넥션을 쥔) ORM 세션들의 집합을 실시간으로 유지한다.

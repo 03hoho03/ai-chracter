@@ -28,7 +28,14 @@ api 프로세스 안에서 돌던 작업은 api 교체(blue/green) 때 프로세
 함수라 겹쳐도 한 번만 환불한다. 정지 신호 뒤에는 돌리지 않는다(새 워커가 돈다).
 
 **살아 있음 파일**: 고르기 조회가 성공한 바퀴마다(정지 뒤 비우는 동안은 기다릴 때마다) `ALIVE_FILE` 을 만진다. 컨테이너
-헬스체크가 이 파일의 수정 시각을 본다 — DB 가 계속 안 되면 만지지 않아 unhealthy 가 된다."""
+헬스체크가 이 파일의 수정 시각을 본다 — DB 가 계속 안 되면 만지지 않아 unhealthy 가 된다.
+
+**정본 기억**: 스위치(`novel_bible_enabled`)가 켜진 프로세스에서만 루프 시작 때 정본 기억 처리기를 만든다(`BibleWorker`). 꺼져
+있으면 아래 어느 갈래도 정본 기억 표를 읽지 않는다. 켜져 있으면 바퀴마다 소설 작업을 고른 뒤 정본 기억의 빈 칸을 채우고, 소설
+만료 정리와 같은 주기에 정본 기억 만료 정리도 돈다. 정본 기억 칸은 소설 작업 칸과 따로 센다 — 소설 작업의 빈 칸 계산은 정본
+기억 태스크를 보지 않아, 내부 기능이 사용자 소설 작업 자리를 먹지 않는다. 정본 기억 조회 실패는 살아 있음 파일과 무관하다 —
+꺼진 채 배포된 내부 기능의 실패가 소설 워커를 unhealthy 로 만들어 교체를 되돌리면 안 된다(DB 가 통째로 안 되면 소설 조회도
+실패해 지금처럼 드러난다). 정지 뒤에는 두 쪽 태스크를 함께 기다리고, 취소되면 함께 취소한다."""
 
 import asyncio
 import logging
@@ -49,6 +56,7 @@ from api.clover.unit import assert_clover_unit_matches
 from api.db.session import async_session_factory, engine
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
+from api.novel_bible.entry import BibleWorker
 from api.novelize.job_variants import kinds_where
 from api.novelize.runner import _STARTUP_EXPIRY_MARGIN_SECONDS, SessionFactory, expire_all_stale_jobs, run_job
 
@@ -93,30 +101,38 @@ async def run_worker(
 ) -> None:
     """`stop` 이 설 때까지 대기 작업을 집어 돌리고, 선 뒤에는 돌던 작업이 모두 끝나기를 기다렸다가 돌아온다(취소하지
     않는다). 이 코루틴 자체가 취소되면(정지 유예를 넘긴 강제 종료와 같은 결과) 돌던 작업도 취소한다 — 실행 중으로 남은
-    행은 heartbeat 가 멈춰 만료 정리가 환불한다."""
+    행은 heartbeat 가 멈춰 만료 정리가 환불한다(정본 기억 행은 정본 기억 만료 정리가 되돌린다)."""
     cap = settings.novelize_worker_max_concurrent_jobs
     poll_interval = settings.novelize_worker_poll_interval_seconds
     active: set[asyncio.Task[None]] = set()
+    bible = await BibleWorker.start(session_factory) if settings.novel_bible_enabled else None
+    bible_active: set[asyncio.Task[None]] = set()
     next_sweep = clock() + settings.novelize_heartbeat_expiry_seconds + _STARTUP_EXPIRY_MARGIN_SECONDS
     try:
         while not stop.is_set():
             if clock() >= next_sweep:
                 await _sweep(session_factory)
+                if bible is not None:
+                    await bible.sweep()
                 next_sweep = clock() + SWEEP_INTERVAL_SECONDS
             active = {task for task in active if not task.done()}
             if await _poll(session_factory, llm_client, active, cap - len(active)):
                 _mark_alive(alive_file)
+            if bible is not None:
+                bible_active = {task for task in bible_active if not task.done()}
+                bible.poll(bible_active, settings.novel_bible_worker_max_concurrent - len(bible_active))
             try:
                 await asyncio.wait_for(stop.wait(), timeout=poll_interval)
             except TimeoutError:
                 pass
-        while active:
-            _, active = await asyncio.wait(active, timeout=poll_interval)
+        while active or bible_active:
+            _, pending = await asyncio.wait(active | bible_active, timeout=poll_interval)
+            active, bible_active = active & pending, bible_active & pending
             _mark_alive(alive_file)
     except asyncio.CancelledError:
-        for task in active:
+        for task in active | bible_active:
             task.cancel()
-        await asyncio.gather(*active, return_exceptions=True)
+        await asyncio.gather(*active, *bible_active, return_exceptions=True)
         raise
 
 
