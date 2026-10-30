@@ -2467,6 +2467,7 @@
             "schema": {
               "enum": [
                 "gemini",
+                "haiku_writer",
                 "sonnet",
                 "opus",
                 "haiku"
@@ -2532,6 +2533,7 @@
             "schema": {
               "enum": [
                 "gemini",
+                "haiku_writer",
                 "sonnet",
                 "opus",
                 "haiku"
@@ -2610,6 +2612,7 @@
             "schema": {
               "enum": [
                 "gemini",
+                "haiku_writer",
                 "sonnet",
                 "opus",
                 "haiku"
@@ -2678,6 +2681,7 @@
             "schema": {
               "enum": [
                 "gemini",
+                "haiku_writer",
                 "sonnet",
                 "opus",
                 "haiku"
@@ -2745,6 +2749,7 @@
             "schema": {
               "enum": [
                 "gemini",
+                "haiku_writer",
                 "sonnet",
                 "opus",
                 "haiku"
@@ -16741,6 +16746,7 @@
             "schema": {
               "enum": [
                 "gemini",
+                "haiku_writer",
                 "sonnet",
                 "opus"
               ],
@@ -22758,6 +22764,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "haiku"
@@ -23024,6 +23031,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "haiku"
@@ -23094,6 +23102,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "haiku"
@@ -23198,6 +23207,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "haiku"
@@ -23291,6 +23301,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "any"
@@ -23395,6 +23406,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "haiku"
@@ -23424,6 +23436,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "any"
@@ -23493,6 +23506,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "haiku"
@@ -23503,6 +23517,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "haiku"
@@ -23772,6 +23787,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "any"
@@ -23806,6 +23822,7 @@
                 "type": "string",
                 "enum": [
                   "gemini",
+                  "haiku_writer",
                   "sonnet",
                   "opus",
                   "haiku"
@@ -23821,6 +23838,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "haiku"
@@ -23935,6 +23953,7 @@
               "type": "string",
               "enum": [
                 "gemini",
+                "haiku_writer",
                 "sonnet",
                 "opus"
               ]
@@ -24249,6 +24268,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "haiku"
@@ -24427,6 +24447,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus",
               "haiku"
@@ -26826,6 +26847,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -26834,6 +26856,10 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "isDefault": {
+            "type": "boolean",
+            "title": "Isdefault"
           },
           "beta": {
             "type": "boolean",
@@ -26848,6 +26874,7 @@
         "required": [
           "id",
           "name",
+          "isDefault",
           "beta",
           "turnCost"
         ],
@@ -27526,6 +27553,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -27558,6 +27586,7 @@
                 "type": "string",
                 "enum": [
                   "gemini",
+                  "haiku_writer",
                   "sonnet",
                   "opus"
                 ]
@@ -27754,6 +27783,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -28080,6 +28110,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -28102,7 +28133,14 @@
             "title": "Chatturncost"
           },
           "novelEpisodeCost": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Novelepisodecost"
           }
         },
@@ -33307,6 +33345,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -33628,6 +33667,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -33657,6 +33697,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -33762,6 +33803,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -33782,6 +33824,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -33816,6 +33859,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -33950,6 +33994,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -34163,6 +34208,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -34629,6 +34675,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -34694,6 +34741,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -35696,6 +35744,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -35757,6 +35806,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -35781,6 +35831,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -35925,6 +35976,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
@@ -36744,6 +36796,7 @@
             "type": "string",
             "enum": [
               "gemini",
+              "haiku_writer",
               "sonnet",
               "opus"
             ],
