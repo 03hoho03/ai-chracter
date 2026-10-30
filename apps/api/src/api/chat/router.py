@@ -1890,7 +1890,13 @@ async def list_chat_models(
     턴 가격을 읽는다. 상위 모델은 지금 채팅에서 보이는 모델(채팅 상위 모델 스위치가 켜져 있고 공개 목록에 있는 모델)만 싣는다 —
     모델 지정 라우트·미리보기 시작·턴 게이트·공개 가격과 같은 판정이다."""
     return [
-        ChatModelItem(id=spec.id, name=spec.name, beta=spec.beta, turn_cost=chat_turn_cost(spec.id))
+        ChatModelItem(
+            id=spec.id,
+            name=spec.name,
+            is_default=spec.id == DEFAULT_CHAT_MODEL,
+            beta=spec.beta,
+            turn_cost=chat_turn_cost(spec.id),
+        )
         for spec in CHAT_MODELS
         if is_chat_room_model(spec.id) and await has_chat_model_access(db, user_id, spec.id)
     ]

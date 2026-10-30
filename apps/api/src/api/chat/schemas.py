@@ -427,6 +427,8 @@ class ChatModelItem(CamelModel):
 
     id: ChatRoomModelId
     name: str
+    # 새 대화방이 고르는 기본 모델인가 — 공개 가격의 모델 항목과 같은 뜻이다. 기본 모델만 하루 무료 대화가 적용된다.
+    is_default: bool
     beta: bool
     turn_cost: int
 

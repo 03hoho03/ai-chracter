@@ -47,7 +47,7 @@ ChatRoutingLane = Literal["story", "character"]
 # 칸의 방 모델 축 값. 채팅 레인은 방에서 고를 수 있는 모델, 소설 생성 단계는 작업 모델, 소설 구조화 단계는 작업 모델과 무관하다는
 # 표지 `any` 하나다. 모델 값은 `llm/chat_models.py` 의 방 모델·글쓰기 모델 타입과 같은 집합이어야 하고 테스트가 그것을 본다(잎
 # 모듈이라 그 타입을 가져오지 않는다).
-RouteRoomModel = Literal["gemini", "sonnet", "opus", "any"]
+RouteRoomModel = Literal["gemini", "haiku_writer", "sonnet", "opus", "any"]
 
 # 생성은 방 모델로 스트리밍하고, 나머지는 모델 설정으로 고른 모델의 구조화 호출이다. 허용하는 (모델, 경로) 쌍이 종류마다 다르다.
 StageKind = Literal["generation", "structured"]
@@ -180,8 +180,9 @@ LANE_STAGES: dict[RoutingLane, tuple[PromptStage, ...]] = {
 
 # 레인마다 칸의 방 모델 축. 채팅은 실효 방 모델, 소설은 작업 모델이다(`any_room_model` 단계는 `any` 하나).
 LANE_ROOM_MODELS: dict[RoutingLane, tuple[RouteRoomModel, ...]] = {
-    "story": ("gemini", "sonnet", "opus"),
-    "character": ("gemini", "sonnet", "opus"),
+    "story": ("gemini", "haiku_writer", "sonnet", "opus"),
+    "character": ("gemini", "haiku_writer", "sonnet", "opus"),
+    # 소설은 소설에서 고를 수 있는 모델만이다 — 채팅 전용 Haiku 글쓰기로는 소설 작업이 생기지 않는다.
     "novel": ("gemini", "sonnet", "opus"),
 }
 

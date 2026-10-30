@@ -241,7 +241,7 @@ async def get_clover_pricing() -> CloverPricingResponse:
                 is_default=m.id == DEFAULT_CHAT_MODEL,
                 beta=m.beta,
                 chat_turn_cost=chat_turn_cost(m.id),
-                novel_episode_cost=novel_episode_unit_price(m.id),
+                novel_episode_cost=novel_episode_unit_price(m.id) if m.novel_selectable else None,
             )
             for m in CHAT_MODELS
             if is_chat_model_visible(m.id)

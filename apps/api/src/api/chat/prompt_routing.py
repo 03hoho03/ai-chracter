@@ -29,6 +29,7 @@ from api.chat.prompt_builder import PromptSetNotFoundError, load_active_prompt_s
 from api.llm.backends import BACKENDS, missing_credentials, pick_backend, structured_effort_error
 from api.llm.call_policy import CALL_POLICIES, BackendId, LLMCallSite
 from api.llm.chat_models import (
+    CHAT_MODELS_BY_ID,
     ChatModelId,
     PromptSetModelId,
     configured_call_site_model,
@@ -52,12 +53,15 @@ SkipReason = Literal["pair-not-allowed", "backend-mismatch", "structured-effort"
 # 단계 종류마다 행이 고를 수 있는 (부를 모델, 경로). 처리방침에 적은 수탁자 경로(Google·Anthropic 직결)만 둔다 — Bedrock 쌍이
 # 없는 이유다. 등록부에서 Claude 모델의 기본 구현이 Bedrock 이라, 배정 없이 Claude 모델을 고른 행은 경로 대조에서도 걸린다.
 # 생성은 방 모델(소설은 작업 모델)로만 부르므로(차감이 그 모델 단가다) 고를 수 있는 글쓰기 모델의 쌍뿐이다. Sonnet·Opus 쌍은
-# 채팅 방과 소설 작업이 함께 쓴다. 어드민 저장 검사와 해석이 이 목록 하나를 함께 읽는다.
+# 채팅 방과 소설 작업이 함께 쓰고, Haiku 글쓰기 쌍은 채팅 방만 쓴다(소설 칸의 작업 모델 축에 없다). 글쓰기 전용 id 는 판정을 하지
+# 않아 구조화 쌍에 없다. 어드민 저장 검사와 해석이 이 목록 하나를 함께 읽는다.
 ALLOWED_ROUTE_PAIRS: dict[StageKind, frozenset[tuple[PromptSetModelId, BackendId]]] = {
     "structured": frozenset(
         {("gemini", "gemini"), ("haiku", "anthropic"), ("sonnet", "anthropic"), ("opus", "anthropic")}
     ),
-    "generation": frozenset({("gemini", "gemini"), ("sonnet", "anthropic"), ("opus", "anthropic")}),
+    "generation": frozenset(
+        {("gemini", "gemini"), ("haiku_writer", "anthropic"), ("sonnet", "anthropic"), ("opus", "anthropic")}
+    ),
 }
 
 
@@ -359,9 +363,13 @@ def _shape_problem(lane: RoutingLane, stage: PromptStage, chain_model: str | Non
 
 
 def _lane_chain_problem(lane: RoutingLane, chain_model: str | None) -> str | None:
-    """소설 레인에는 판정 전용 체인(haiku)이 없다 — 체인은 글쓰기 모델 셋뿐이다. 채팅 레인은 체인 모델 축 전부가 있다."""
-    if lane == "novel" and chain_model is not None and parse_chat_model_id(chain_model) is None:
-        return f"소설 레인에는 {chain_model} 체인이 없다(글쓰기 모델 체인만 있다)"
+    """소설 레인에는 판정 전용 체인(haiku)과 채팅 전용 글쓰기 체인(haiku_writer)이 없다 — 체인은 소설에서 고를 수 있는 모델뿐이다.
+    채팅 레인은 체인 모델 축 전부가 있다."""
+    if lane != "novel" or chain_model is None:
+        return None
+    model = parse_chat_model_id(chain_model)
+    if model is None or not CHAT_MODELS_BY_ID[model].novel_selectable:
+        return f"소설 레인에는 {chain_model} 체인이 없다(소설에서 고를 수 있는 모델의 체인만 있다)"
     return None
 
 

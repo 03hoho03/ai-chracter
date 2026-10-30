@@ -63,6 +63,7 @@ from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
 from api.llm.chat_models import (
     CHAT_MODELS,
+    CHAT_MODELS_BY_ID,
     DEFAULT_CHAT_MODEL,
     ChatModelId,
 )
@@ -268,9 +269,14 @@ async def _owned_room_dependency(
 async def _chapter_models(db: AsyncSession, user_id: uuid.UUID) -> tuple[list[NovelChapterModel], bool]:
     """장 확인 화면에서 고를 수 있는 모델과 그 가격, 그리고 상위 모델 허용 여부. 기본 모델은 늘 맨 앞에 있고, 상위 모델은
     장 요청 게이트(`_require_chapter_model`)와 같은 판정이 참일 때만 싣는다 — 화면이 고를 수 있게 보여 준 모델을 요청이
-    막는 어긋남이 없게."""
+    막는 어긋남이 없게. 소설에서 고를 수 없는 채팅 전용 모델은 싣지 않는다 — 이 목록을 읽는 구성안·장면 구성안 상태·연쇄 견적·
+    다시 만들기 선택지가 그 모델의 소설 상한·단가를 찾다 500 이 나지 않게."""
     allowed = await has_novel_premium_access(db, user_id)
-    models = [chapter_model_option(spec.id) for spec in CHAT_MODELS if spec.id == DEFAULT_CHAT_MODEL or allowed]
+    models = [
+        chapter_model_option(spec.id)
+        for spec in CHAT_MODELS
+        if spec.novel_selectable and (spec.id == DEFAULT_CHAT_MODEL or allowed)
+    ]
     return models, allowed
 
 
@@ -1118,7 +1124,10 @@ def _source_room_id(novel: Novel) -> uuid.UUID:
 async def _require_chapter_model(db: AsyncSession, novel: Novel, model: ChatModelId) -> None:
     """장 요청이 고른 모델을 이 계정이 쓸 수 있는지 차감 전에 본다. 기본 모델은 누구나 된다. 상위 모델은 소설 상위 모델
     허용이 있어야 하고, 없으면 403 `NOVEL_MODEL_NOT_ALLOWED` 하나다(꺼짐·명단 밖·허용 행 없음을 가르지 않는다). 방에
-    저장된 모델처럼 기본 모델로 바꿔 받지 않는다 — 장 요청의 모델은 사용자가 그 가격과 함께 지금 고른 값이다."""
+    저장된 모델처럼 기본 모델로 바꿔 받지 않는다 — 장 요청의 모델은 사용자가 그 가격과 함께 지금 고른 값이다. 소설에서 고를 수
+    없는 채팅 전용 모델은 계정과 무관하게 422 `NOVEL_MODEL_UNSUPPORTED` 다(계정 판정보다 먼저) — 그 모델은 소설 상한·단가가 없다."""
+    if not CHAT_MODELS_BY_ID[model].novel_selectable:
+        raise _novel_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_MODEL_UNSUPPORTED")
     if model != DEFAULT_CHAT_MODEL and not await has_novel_premium_access(db, novel.user_id):
         raise _novel_error(status.HTTP_403_FORBIDDEN, "NOVEL_MODEL_NOT_ALLOWED")
 
