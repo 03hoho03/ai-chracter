@@ -29,6 +29,7 @@ from novel_bible_fakes import (
     add_revision,
     delete_committed_novels,
     drain,
+    fake_registry,
     full_registry,
     make_novel,
     savepoint_factory,
@@ -159,6 +160,7 @@ async def test_the_entry_refuses_while_the_switch_is_off(
     ) == 0
 
     monkeypatch.setattr(settings, "novel_bible_enabled", True)
+    monkeypatch.setattr(entry, "REGISTRY", fake_registry())
     result = await entry.confirm_chapter(
         db_session, novel_id=novel.id, chapter_id=chapter.id, revision_id=revision.id, actor=admin
     )

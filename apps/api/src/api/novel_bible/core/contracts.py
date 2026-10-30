@@ -20,6 +20,7 @@ from api.novel_bible.core.types import (
     Proposal,
     RenderedPrompt,
     RevisionRef,
+    SceneHint,
     SlotRows,
     SourceCanon,
     SourceCanonRef,
@@ -35,6 +36,10 @@ class CoreReadView(Protocol):
     commit: CommitRef
 
     async def manuscript(self) -> Manuscript: ...
+    # 장면 구성안이 없는 화는 빈 목록이다(화 전체가 장면 하나). 장면 구성안은 사건의 앵커 힌트(장면 키)와 회상 힌트(현재 사건을
+    # 회상으로 올리기)에만 쓰고, 사실·지식 추출의 입력에는 넣지 않는다 — 구성안은 계획이지 확정된 원고가 아니라, 거기서 뽑으면
+    # 원고에 없는 내용이 정본이 된다.
+    async def scene_hints(self) -> list[SceneHint]: ...
     async def known_entities(self) -> list[EntityName]: ...
     async def source_canon(self) -> SourceCanon | None: ...
 
@@ -68,12 +73,13 @@ class Slot(Protocol):
 
 class SourceSlot(Protocol):
     """원작 정본 — 읽기만 한다. 확정 때 버전을 풀어 확정 행에 버전 id·글 해시를 남기고, 작업 때 같은 버전의 글을 다시 읽어
-    준다."""
+    준다. 다시 읽을 때도 소설을 받는다 — 원작 글의 이름 자리를 그 소설의 주인공 이름으로 바꾸므로 버전만으로는 글이 정해지지
+    않는다."""
 
     id: SlotId
 
     async def resolve(self, session: AsyncSession, novel_id: uuid.UUID) -> SourceCanonRef | None: ...
-    async def load(self, session: AsyncSession, ref: SourceCanonRef) -> SourceCanon: ...
+    async def load(self, session: AsyncSession, novel_id: uuid.UUID, ref: SourceCanonRef) -> SourceCanon: ...
 
 
 @dataclass(frozen=True)

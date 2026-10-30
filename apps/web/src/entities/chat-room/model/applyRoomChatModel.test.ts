@@ -42,6 +42,28 @@ describe("applyRoomChatModel", () => {
     expect(next?.turnCost).toBe(120);
   });
 
+  // 모델 모달의 안내는 저장한 모델과 실제 모델을 견준다 — 저장한 모델을 빠뜨리면 이미 고친 방에 안내가 남는다.
+  it("저장한 모델도 고치고, 기본 모델의 null 은 undefined 로 접는다", () => {
+    const fallenBack = room({ chatModel: "opus", effectiveChatModel: "gemini" });
+
+    expect(
+      applyRoomChatModel(fallenBack, {
+        chatModel: "opus",
+        effectiveChatModel: "opus",
+        effectiveChatModelName: "Claude Opus 5.5",
+        turnCost: 120,
+      })?.chatModel,
+    ).toBe("opus");
+    expect(
+      applyRoomChatModel(fallenBack, {
+        chatModel: null,
+        effectiveChatModel: "gemini",
+        effectiveChatModelName: "Gemini",
+        turnCost: 10,
+      })?.chatModel,
+    ).toBeUndefined();
+  });
+
   it("메시지 등 나머지 칸은 그대로 둔다", () => {
     const next = applyRoomChatModel(room(), { effectiveChatModel: "opus", effectiveChatModelName: "Claude Opus 5.5", turnCost: 120 });
 

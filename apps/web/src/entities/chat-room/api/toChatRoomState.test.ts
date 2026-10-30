@@ -118,6 +118,10 @@ describe("toChatRoomState", () => {
     const fallenBack = toChatRoomState({ ...base, chatModel: "opus", effectiveChatModel: "gemini", turnCost: 10 });
     expect(fallenBack.effectiveChatModel).toBe("gemini");
     expect(fallenBack.turnCost).toBe(10);
+    // 저장값은 버리지 않는다 — 모델 모달이 이 값과 유효 모델을 견줘 기본 모델로 돌고 있다고 알린다.
+    expect(fallenBack.chatModel).toBe("opus");
+    // 저장한 적 없는 방(null)은 undefined 다.
+    expect(toChatRoomState({ ...base, chatModel: null }).chatModel).toBeUndefined();
   });
 
   // 이 칸들이 생기기 전의 서버는 값을 보내지 않는다. 모델은 서버 기본값과 같은 기본 모델로 채우고, 가격은 비워 둔다 —
