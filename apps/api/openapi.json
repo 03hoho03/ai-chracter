@@ -23150,7 +23150,11 @@
               "novelize_episode_outline",
               "novel_publish_screen",
               "novel_illustration_screen",
-              "replay_generate"
+              "replay_generate",
+              "novel_bible_extract_events",
+              "novel_bible_extract_facts",
+              "novel_bible_extract_knowledge",
+              "novel_bible_judge"
             ],
             "title": "Callsite"
           },
