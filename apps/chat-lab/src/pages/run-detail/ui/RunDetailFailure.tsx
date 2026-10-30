@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 
 import { isServerUnreachable } from "@/shared/api/isServerUnreachable";
 import { readLabError } from "@/shared/api/readLabError";
+import { StaticBundleError } from "@/shared/api/staticBundle";
 import { Button } from "@/shared/ui/Button";
 import { Notice } from "@/shared/ui/Notice";
 import { ServerUnreachableNotice } from "@/shared/ui/ServerUnreachableNotice";
@@ -16,9 +17,10 @@ const BACK_TO_LIST_CLASS =
 
 /**
  * 런 상세를 받지 못했을 때. 서버에 닿지 못했으면 띄우는 방법을(목록과 같은 안내), 없는 런·열지 않는 런이면 서버 문장을 그대로
- * 보이고 목록으로 돌아갈 길을 둔다.
+ * 보이고 목록으로 돌아갈 길을 둔다. 정적 HTML 로 연 화면이면 따로 — 다시 읽어도 같고 목록도 없다.
  */
 export function RunDetailFailure({ error, onRetry }: RunDetailFailureProps) {
+  if (error instanceof StaticBundleError) return <StaticFailure error={error} />;
   if (isServerUnreachable(error)) return <ServerUnreachableNotice onRetry={onRetry} />;
 
   const labError = readLabError(error);
@@ -62,6 +64,34 @@ export function RunDetailFailure({ error, onRetry }: RunDetailFailureProps) {
     >
       <p className="text-ink">{labError ? labError.detail : failureMessage(error)}</p>
       {labError !== undefined && <p className="font-mono text-data text-ink-muted">{labError.reason}</p>}
+    </Notice>
+  );
+}
+
+const STATIC_FAILURE_TITLE = {
+  broken: "이 파일의 런 데이터를 읽지 못했다",
+  notFound: "이 파일에 없는 런이다",
+  serverless: "측정 서버가 있어야 하는 화면이다",
+} as const satisfies Record<StaticBundleError["reason"], string>;
+
+/**
+ * 정적 HTML 로 연 화면의 실패. 파일은 다시 읽어도 같아 "다시 시도"를 두지 않는다. 주소가 이 파일의 런을 가리키지 않으면 그 런으로
+ * 가는 길만 둔다(첫 화면이 이 파일의 런이다). 읽지 못한 파일은 다시 내보내는 것밖에 없다.
+ */
+function StaticFailure({ error }: { error: StaticBundleError }) {
+  return (
+    <Notice
+      title={STATIC_FAILURE_TITLE[error.reason]}
+      action={
+        error.reason === "broken" ? undefined : (
+          <Link to="/" className={BACK_TO_LIST_CLASS}>
+            이 파일의 런 열기
+          </Link>
+        )
+      }
+    >
+      <p className="text-ink">{error.message}</p>
+      {error.reason === "broken" && <p>내보내기 스크립트로 이 런을 다시 내보낸다.</p>}
     </Notice>
   );
 }

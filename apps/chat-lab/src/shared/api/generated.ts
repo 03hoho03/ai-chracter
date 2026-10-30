@@ -361,7 +361,8 @@ export interface components {
         /**
          * RunBundle
          * @description 런 하나를 통째로 — 정적 HTML 내보내기가 이 응답만 주입한다. `raw` 가 거짓이면 덤프 줄의 프롬프트(`prompt`)·지시문
-         *     (`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을 키째 뺀다. 대화(사용자 발화·응답)는 남는다.
+         *     (`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을 키째 빼고, 상세의 방 스냅숏(`room_static`,
+         *     단축어 프롬프트 전문·대화 프로필 설명이 든다)을 비운다. 대화(사용자 발화·응답)는 남는다.
          */
         RunBundle: {
             /** Raw */

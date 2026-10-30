@@ -645,12 +645,16 @@ def _without_raw(detail: TurnDetail) -> TurnDetail:
 
 
 def run_bundle(joined: JoinedRun, *, raw: bool) -> RunBundle:
-    """런 상세·지표·모든 턴 상세. 정적 HTML 이 결합·지표를 따로 다시 계산하지 않게 서버가 낸 값을 그대로 싣는다."""
+    """런 상세·지표·모든 턴 상세. 정적 HTML 이 결합·지표를 따로 다시 계산하지 않게 서버가 낸 값을 그대로 싣는다.
+
+    원문 없는 묶음은 상세의 방 스냅숏(`room_static`)을 통째로 뺀다 — 단축어 프롬프트 전문과 대화 프로필 설명이 들어 있어서다
+    (드라이버도 같은 까닭으로 그것들을 드라이버 로그에 두지 않는다). 화면은 방 스냅숏을 읽지 않는다."""
     metrics = run_metrics(joined)
     turns = [turn_detail(joined, turn.number, metrics=metrics) for turn in joined.turns]
+    detail = run_detail(joined, metrics=metrics)
     return RunBundle(
         raw=raw,
-        detail=run_detail(joined, metrics=metrics),
+        detail=detail if raw else detail.model_copy(update={"room_static": None}),
         metrics=metrics,
         turns=turns if raw else [_without_raw(turn) for turn in turns],
     )

@@ -248,7 +248,9 @@ function absentSentence(view: Exclude<RawView, { kind: "text" }>): string {
     case "noDumpForAttempt":
       return "덤프 없음 — 이 출처에 붙은 덤프 줄이 없다.";
     case "excluded":
-      return "원문 제외 — 이 기록은 프롬프트·지시문 원문을 빼고 만들었다.";
+      return view.field === "prompt"
+        ? "원문 제외 — 이 파일은 프롬프트·지시문 원문을 빼고 내보냈다. 원문까지 보려면 원문 포함(--raw)으로 다시 내보낸다."
+        : "원문 제외 — 이 파일은 원문 없이 내보내, 이 호출이 지시문을 따로 보냈는지도 이 파일로는 알 수 없다. 원문까지 보려면 원문 포함(--raw)으로 다시 내보낸다.";
     case "emptyPrompt":
       return "이 덤프 줄의 프롬프트 칸이 비어 있다 — 칸은 있지만 글이 아닌 값이 적혀 있다.";
     case "noField":
@@ -294,7 +296,7 @@ function CompareBody({ view, earlierPrompts }: { view: RawView; earlierPrompts: 
         )}
       </div>
       {folded === undefined ? (
-        <RawAbsent view={view.kind === "text" ? { kind: "excluded" } : view} />
+        <RawAbsent view={view.kind === "text" ? { kind: "excluded", field: "prompt" } : view} />
       ) : (
         <pre className="rounded-md bg-surface-sunken py-2 font-mono text-mono whitespace-pre-wrap text-ink wrap-anywhere">
           {folded.map((line, index) => {
