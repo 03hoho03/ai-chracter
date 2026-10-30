@@ -534,6 +534,8 @@ export interface components {
             turn: number;
             /** Value */
             value: number;
+            /** Before */
+            before?: number | null;
         };
         /**
          * StatSeries

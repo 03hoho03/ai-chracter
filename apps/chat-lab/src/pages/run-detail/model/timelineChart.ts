@@ -40,8 +40,8 @@ export type StatStrip = {
   tag: StripTag;
   /** 값이 바뀐 턴의 점. `t` 는 이 줄만의 세로 자리(0 아래 ~ 1 위)다. */
   dots: Array<{ index: number; value: number; t: number }>;
-  /** 바뀐 값이 다음 변화(없으면 마지막 칸)까지 유지되는 구간. */
-  holds: Array<{ from: number; to: number; t: number }>;
+  /** 바뀐 값이 유지됐다고 기록으로 말할 수 있는 구간 — `buildStrips` 의 끊기 규칙을 거친 것. */
+  holds: Array<{ from: number; to: number; t: number; value: number }>;
 };
 
 /** 끝 이름표 둘이 이만큼(차트 높이 비율)보다 가까우면 겹친다 — 12px 글자가 88px 차트에서 차지하는 몫쯤이다. */
@@ -158,8 +158,10 @@ export function placeEndLabels(lines: ReadonlyArray<ChartLine>, domain: readonly
 
 /**
  * 본 차트 아래 따로 그리는 줄 — 선 후보가 아닌 계열(숨김 스탯, 숨김 여부를 모르는 스탯, 턴 기록에서만 온 보이는 스탯). 턴 기록에는
- * 바뀐 턴의 값만 있어 바뀐 턴에 점을 두고, 그 값이 다음 변화(없으면 마지막 칸)까지 유지되는 구간을 낸다. 세로 자리는 줄마다 따로
- * 잡는다(작은 다중) — 단위가 다를 수 있는 스탯을 본 차트의 축에 얹지 않는다.
+ * 바뀐 턴의 값만 있어 바뀐 턴에 점을 두고, 그 값이 유지됐다고 말할 수 있는 구간만 낸다. 유지 구간은 본 차트의 선과 같은 판정으로
+ * 끊는다 — 다음 칸이 바로 다음 번호 턴이 아니면(사람이 친 구간) 거기서 멈추고, 다음 변화의 앞 값(그 턴 기록 행의 `[전, 후]` 앞)이
+ * 유지 값과 다르면 기록에 없는 변화가 사이에 있었으니 그 구간 전체를 내지 않는다. 앞 값이 없으면 막을 근거가 없어 잇는다. 세로
+ * 자리는 줄마다 따로 잡는다(작은 다중) — 단위가 다를 수 있는 스탯을 본 차트의 축에 얹지 않는다.
  */
 export function buildStrips(turns: ReadonlyArray<TurnStart>, series: ReadonlyArray<StatSeries>): StatStrip[] {
   const indexOf = new Map(turns.map((summary, index) => [summary.turn, index]));
@@ -170,27 +172,31 @@ export function buildStrips(turns: ReadonlyArray<TurnStart>, series: ReadonlyArr
       const placed = entry.points
         .flatMap((point) => {
           const index = indexOf.get(point.turn);
-          return index === undefined ? [] : [{ index, value: point.value }];
+          return index === undefined ? [] : [{ index, value: point.value, before: point.before ?? undefined }];
         })
         .sort((a, b) => a.index - b.index);
       const scale = stripScale(placed.map((point) => point.value));
-      const dots = placed.map((point) => ({ ...point, t: normalize(point.value, scale) }));
+      const dots = placed.map((point) => ({ index: point.index, value: point.value, t: normalize(point.value, scale) }));
       const holds = dots.flatMap((dot, order) => {
-        const to = dots[order + 1]?.index ?? turns.length - 1;
-        return to > dot.index ? [{ from: dot.index, to, t: dot.t }] : [];
+        const next = placed[order + 1];
+        if (next?.before !== undefined && next.before !== dot.value) return [];
+        const limit = next?.index ?? turns.length - 1;
+        let to = dot.index;
+        while (to < limit && turns[to + 1]?.turn === (turns[to]?.turn ?? Number.NaN) + 1) to += 1;
+        return to > dot.index ? [{ from: dot.index, to, t: dot.t, value: dot.value }] : [];
       });
       return { id: entry.id, name: entry.name, tag: stripTag(entry), dots, holds };
     });
 }
 
-/** 줄의 그 칸에서 유지되는 값 — 그 칸 이하에서 마지막으로 바뀐 값. 첫 변화 앞은 기록으로 모른다. */
+/**
+ * 줄의 그 칸 값 — 바뀐 턴이면 그 값, 유지 구간 안이면 유지 값. 첫 변화 앞과 끊긴 칸은 기록으로 모른다(undefined — 화면은 "기록
+ * 없음").
+ */
 export function heldValueAt(strip: StatStrip, index: number): number | undefined {
-  let held: number | undefined;
-  for (const dot of strip.dots) {
-    if (dot.index > index) break;
-    held = dot.value;
-  }
-  return held;
+  const dot = strip.dots.find((candidate) => candidate.index === index);
+  if (dot !== undefined) return dot.value;
+  return strip.holds.find((hold) => hold.from < index && index <= hold.to)?.value;
 }
 
 /** 따로 그리는 줄 묶음의 이름 — 모두 숨김 스탯이면 "숨김 스탯", 턴 기록에서만 온 보이는 스탯·숨김 여부 모름이 섞이면 넓은 이름. */

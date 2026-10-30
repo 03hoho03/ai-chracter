@@ -30,6 +30,11 @@ function series(id: string, points: ReadonlyArray<[number, number]>, overrides: 
   };
 }
 
+/** 턴 기록에서만 온 숨김 계열 — 점마다 그 행의 앞 값을 실을 수 있다. */
+function hidden(id: string, points: ReadonlyArray<{ turn: number; value: number; before?: number }>): StatSeries {
+  return { id, name: `이름-${id}`, hidden: true, source: "chatTurns", points: points.map((point) => ({ ...point })) };
+}
+
 /** 한 선의 두 데이터 키 값을 칸 순서대로. */
 function column(rows: ReadonlyArray<Readonly<Record<string, number | null>>>, key: string): Array<number | null> {
   return rows.map((row) => row[key] ?? null);
@@ -173,7 +178,28 @@ describe("buildStrips", () => {
       { index: 3, value: 30, t: 1 },
     ]);
     // 마지막 변화가 마지막 칸이면 유지 구간이 없다.
-    expect(strip?.holds).toEqual([{ from: 1, to: 3, t: 0 }]);
+    expect(strip?.holds).toEqual([{ from: 1, to: 3, t: 0, value: 10 }]);
+  });
+
+  it("유지 구간은 번호 공백에서 끊긴다 — 사람이 친 구간 동안 값이 이어졌다고 말하지 않는다", () => {
+    const [strip] = buildStrips(turns([1, 2, 3, 6, 7]), [hidden("h", [{ turn: 1, value: 20 }])]);
+
+    expect(strip?.holds).toEqual([{ from: 0, to: 2, t: 0.5, value: 20 }]);
+    expect(strip && [2, 3, 4].map((index) => heldValueAt(strip, index))).toEqual([20, undefined, undefined]);
+  });
+
+  it("다음 변화의 앞 값이 유지 값과 다르면 그 유지 구간 전체를 끊고, 같으면 잇는다", () => {
+    const [broken] = buildStrips(turns([1, 2, 3, 4]), [
+      hidden("h", [{ turn: 1, value: 20 }, { turn: 4, value: 40, before: 35 }]),
+    ]);
+    const [kept] = buildStrips(turns([1, 2, 3, 4]), [
+      hidden("h", [{ turn: 1, value: 20 }, { turn: 4, value: 40, before: 20 }]),
+    ]);
+
+    expect(broken?.holds).toEqual([]);
+    expect(broken && [0, 1, 2, 3].map((index) => heldValueAt(broken, index))).toEqual([20, undefined, undefined, 40]);
+    expect(kept?.holds).toEqual([{ from: 0, to: 3, t: 0, value: 20 }]);
+    expect(kept && heldValueAt(kept, 2)).toBe(20);
   });
 
   it("숨김 여부를 모르는 계열과 보이는 스탯인데 턴 기록에서만 온 계열은 그 사실을 표지로 갖는다", () => {

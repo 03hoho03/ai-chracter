@@ -1572,6 +1572,17 @@
           "value": {
             "type": "number",
             "title": "Value"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
           }
         },
         "type": "object",

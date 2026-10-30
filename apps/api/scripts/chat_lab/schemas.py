@@ -188,6 +188,10 @@ class TurnSummary(CamelModel):
 class SeriesPoint(CamelModel):
     turn: int
     value: float
+    # 턴 기록에서 온 점(숨김 스탯 등)만 그 행의 앞 값(`stat_changes` 의 `[전, 후]` 앞)을 싣는다. 턴 기록에는 바뀐 턴의 값만 있어,
+    # 화면이 다음 변화의 앞 값으로 유지 구간이 실제로 이어졌는지 본다. 드라이버 계열은 None — 그 턴의 시작 값은 턴 요약의
+    # `driverStatChanges`·`statsContinueFromPrevious` 가 말한다.
+    before: float | None = None
 
 
 class StatSeries(CamelModel):

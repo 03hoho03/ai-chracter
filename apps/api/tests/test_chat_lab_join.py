@@ -190,7 +190,9 @@ async def test_hidden_stats_come_from_the_records_with_names_and_never_raise_a_f
     """보이는 스탯은 드라이버 로그(이름 키)에, 숨김 스탯은 턴 기록(id 키)에만 남는다. 양쪽에 다 있는 스탯만 견줘야 숨김 스탯이
     "드라이버에 없음"으로 거짓 불일치가 되지 않고, 숨김 스탯은 내보낸 스탯 정의로 이름과 숨김 표시를 얻는다. 대조가 실제로
     일어났는지(비교 수)와, 턴 기록의 보이는 스탯 값을 하나 바꾸면 그 턴이 어긋남으로 잡히는지도 본다 — 늘 0 을 내는 대조는
-    깨끗한 런과 구별되지 않는다. 숨김 스탯 값은 바꿔도 견줄 상대가 없어 어긋남이 되지 않아야 한다."""
+    깨끗한 런과 구별되지 않는다. 숨김 스탯 값은 바꿔도 견줄 상대가 없어 어긋남이 되지 않아야 한다. 턴 기록에서 온 점은 그 행의
+    앞 값도 싣는다 — 바뀐 턴에만 점이 있어, 화면이 다음 변화의 앞 값으로 유지 구간이 실제로 이어졌는지 본다(드라이버 계열은 싣지
+    않는다)."""
     driven = await drive_room(
         db_session,
         monkeypatch,
@@ -211,10 +213,14 @@ async def test_hidden_stats_come_from_the_records_with_names_and_never_raise_a_f
     series = {s.id: s for s in detail.series}
     hidden = series[str(driven.hidden_stat_id)]
     assert (hidden.name, hidden.hidden, hidden.source) == (DRIVE_HIDDEN_STAT_NAME, True, "chatTurns")
-    assert [(point.turn, point.value) for point in hidden.points] == [(2, 70.0)]
+    assert [(point.turn, point.before, point.value) for point in hidden.points] == [(2, 50.0, 70.0)]
     trust = series[str(driven.trust_id)]
     assert (trust.name, trust.hidden, trust.source) == (DRIVE_STAT_NAME, False, "driver")
-    assert [(point.turn, point.value) for point in trust.points] == [(1, 50.0), (2, 50.0), (3, 80.0)]
+    assert [(point.turn, point.before, point.value) for point in trust.points] == [
+        (1, None, 50.0),
+        (2, None, 50.0),
+        (3, None, 80.0),
+    ]
 
     tampered = copy.deepcopy(rows)
     for row in tampered:

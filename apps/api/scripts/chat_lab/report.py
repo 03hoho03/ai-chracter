@@ -418,7 +418,8 @@ def stat_series(joined: JoinedRun) -> list[StatSeries]:
                     stat_id,
                     StatSeries(id=stat_id, name=label or stat_id, hidden=hidden, source="chatTurns", points=[]),
                 )
-                entry.points.append(SeriesPoint(turn=turn.number, value=after_value))
+                before = as_number(change[0]) if isinstance(change, list) and len(change) == 2 else None
+                entry.points.append(SeriesPoint(turn=turn.number, value=after_value, before=before))
     return [entry for entry in series.values() if entry.points]
 
 
