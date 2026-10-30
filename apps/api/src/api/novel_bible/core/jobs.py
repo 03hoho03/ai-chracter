@@ -5,8 +5,9 @@
 밀려나도(`stale`) 작업 행이 그대로라 제안을 저장한다 — 같은 개정을 다시 확정하면 그 제안을 추출 캐시로 쓴다.
 
 슬롯의 검증을 지난 제안에서 코어가 개체로 풀어야 하는 이름(지식의 앎 주체, 명제의 주어, 대상이 개체인 종류의 대상)이 정규화 뒤
-비는 항목은 저장 전에 버리고 `dropped` 에 센다 — 그런 항목은 행의 주어도 안정 키도 만들 수 없다. 출력 전체가 아니라 그 항목만
-버린다.
+비는 항목은 저장 전에 버리고 `dropped` 에 센다 — 그런 항목은 행의 주어도 안정 키도 만들 수 없다. 어느 칸이든 정규화한 이름이
+개체 이름 길이 상한을 넘는 항목도 같이 버린다 — 연결이 그 이름으로 개체를 만들다 CHECK 에 걸려 확정 전체가 실패한다. 출력
+전체가 아니라 그 항목만 버린다.
 
 추출 캐시: 같은 소설에서 슬롯·어댑터·문안 세트·출력 스키마가 같고 본문 해시·블록 id 해시·슬롯의 힌트가 아닌 렌더 값이 같은 앞
 작업이 성공해 있으면 그 제안을 복사하고 호출하지 않는다. 힌트(아는 개체 따위 정본 상태에서 오는 값)는 다른 화가 커밋될 때마다
@@ -28,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.prompt_builder import PromptRenderError
 from api.db.models.novel import Novel, NovelChapter
-from api.db.models.novel_bible import NovelBibleCommit, NovelBibleJob
+from api.db.models.novel_bible import ENTITY_NAME_MAX, NovelBibleCommit, NovelBibleJob
 from api.novel_bible.core.contracts import AdapterCallError, AdapterResolver, Registry, Slot
 from api.novel_bible.core.keys import TARGETED_KINDS, normalize_name
 from api.novel_bible.core.render import render
@@ -48,6 +49,8 @@ _RETRYABLE: frozenset[JobFailure] = frozenset(
 )
 # 코어가 풀어야 하는 이름이 비어 버린 항목의 `dropped` 사유.
 EMPTY_NAME = "empty_name"
+# 정규화한 이름이 개체 이름 길이 상한을 넘는 항목의 `dropped` 사유.
+NAME_TOO_LONG = "name_too_long"
 
 
 async def commit_ref(session: AsyncSession, commit: NovelBibleCommit) -> CommitRef:
@@ -69,7 +72,7 @@ async def commit_ref(session: AsyncSession, commit: NovelBibleCommit) -> CommitR
     )
 
 
-def drop_unnamed(proposal: Proposal) -> Proposal:
+def drop_unlinkable(proposal: Proposal) -> Proposal:
     kept = []
     dropped = dict(proposal.dropped)
     for draft in proposal.items:
@@ -78,10 +81,14 @@ def drop_unnamed(proposal: Proposal) -> Proposal:
             needed.append("subject")
             if draft.proposition.kind in TARGETED_KINDS:
                 needed.append("value")
-        if all(any(normalize_name(name.name) for name in draft.names.get(field, ())) for field in needed):
-            kept.append(draft)
+        if not all(any(normalize_name(name.name) for name in draft.names.get(field, ())) for field in needed):
+            reason = EMPTY_NAME
+        elif any(len(normalize_name(name.name)) > ENTITY_NAME_MAX for names in draft.names.values() for name in names):
+            reason = NAME_TOO_LONG
         else:
-            dropped[EMPTY_NAME] = dropped.get(EMPTY_NAME, 0) + 1
+            kept.append(draft)
+            continue
+        dropped[reason] = dropped.get(reason, 0) + 1
     return Proposal(items=tuple(kept), dropped=dropped)
 
 
@@ -268,7 +275,7 @@ async def run_next_job(
         output = await resolver(slot.operation).structured(
             prepared.prompt, slot.output_schema, records=records, stage=slot.operation
         )
-        validated = drop_unnamed(slot.validate(prepared.slot_input, output))
+        validated = drop_unlinkable(slot.validate(prepared.slot_input, output))
         await _succeed(factory, job_id, prepared, validated.model_dump(mode="json"), records, None)
     except AdapterCallError as error:
         await _fail(factory, job_id, attempts, error.code, retry=error.retryable and error.code in _RETRYABLE,

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.db.models import Novel, NovelChapter, NovelChapterPublication
 from api.db.models.novel_bible import (
+    ENTITY_NAME_MAX,
     NovelBibleCommit,
     NovelBibleEntity,
     NovelBibleEvidence,
@@ -27,7 +28,7 @@ from api.db.models.novel_bible_events import NovelBibleEvent
 from api.db.models.novel_bible_facts import NovelBibleFact
 from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
 from api.novel_bible.core.confirm import Actor, confirm
-from api.novel_bible.core.jobs import EMPTY_NAME, run_next_job
+from api.novel_bible.core.jobs import EMPTY_NAME, NAME_TOO_LONG, run_next_job
 from api.novel_bible.core.keys import proposition_key
 from api.novel_bible.core import pipeline
 from api.novel_bible.core.pipeline import CAS_LIMIT, link_check_commit, start_linking
@@ -747,6 +748,46 @@ async def test_a_knowledge_item_whose_knower_name_is_empty_is_dropped_before_sav
     assert proposal is not None
     assert (len(proposal["items"]), proposal["dropped"]) == (1, {EMPTY_NAME: 1})
     assert await _count(db_session, NovelBibleKnowledge, novel.id) == 1
+
+
+async def test_an_item_with_a_name_over_the_entity_name_limit_is_dropped_and_the_commit_goes_on(
+    db_session: AsyncSession,
+) -> None:
+    # 상한을 넘는 이름이 개체 표 CHECK 에 걸리면 연결이 통째로 실패한다 — 그 이름을 가진 항목만 버려야 한다. 상한과 같은
+    # 길이는 남는다. 사실의 주어·대상, 지식의 명제 주어 어느 칸에 있든 같다.
+    novel = await make_novel(db_session)
+    too_long, at_limit = "가" * (ENTITY_NAME_MAX + 1), "나" * ENTITY_NAME_MAX
+    body = "\n\n".join(
+        [
+            "사건: 둘이 정원에서 만난다",
+            f"사실: {too_long}|life|-|alive|참",
+            f"사실: {at_limit}|life|-|alive|참",
+            f"사실: 하나|possession|-|{too_long}|참",
+            f"앎: 둘|knows|{too_long}|life|-|alive",
+            "앎: 둘|knows|하나|life|-|alive",
+        ]
+    )
+    chapter, revision = await add_chapter(db_session, novel.id, 1, body)
+    registry = full_registry()
+
+    commit_id = await _confirm(db_session, registry, novel.id, chapter.id, revision.id)
+    await drain(savepoint_factory(db_session), registry, FakeAdapter())
+
+    assert (await _commit_row(db_session, commit_id)).status == "committed"
+    rows = await db_session.execute(
+        select(NovelBibleJob.slot, NovelBibleJob.proposal).where(NovelBibleJob.commit_id == commit_id)
+    )
+    proposals = dict(rows.tuples().all())
+    kept_and_dropped = {
+        slot: (len(proposals[slot]["items"]), proposals[slot]["dropped"]) for slot in ("facts", "knowledge")
+    }
+    assert kept_and_dropped == {"facts": (1, {NAME_TOO_LONG: 2}), "knowledge": (1, {NAME_TOO_LONG: 1})}
+    assert await _count(db_session, NovelBibleFact, novel.id) == 1
+    assert await _count(db_session, NovelBibleKnowledge, novel.id) == 1
+    names = set(
+        await db_session.scalars(select(NovelBibleEntity.name_norm).where(NovelBibleEntity.novel_id == novel.id))
+    )
+    assert at_limit in names and too_long not in names
 
 
 @pytest.mark.parametrize(
