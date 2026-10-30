@@ -145,9 +145,10 @@ def _turn_rows(turn: Turn) -> list[dict[str, Any]]:
 
 
 def run_cost(joined: JoinedRun) -> RunCost | None:
-    """런 원가. 시도에 붙은 행만 합하고 「짝 없는 기록」의 원가는 따로 낸다."""
+    """런 원가. 시도에 붙은 행만 합하고 「짝 없는 기록」의 원가는 따로 낸다. 턴 기록이 없으면 없다. `assistantMessageId` 이전
+    형식도 없다 — 행을 잇지 않아(`join_bundle`) 붙은 행이 없으니, 합 0 은 0 원이 아니라 모르는 원가다."""
     export = joined.chat_turns
-    if export is None:
+    if export is None or joined.bundle.format == "preMessageId":
         return None
     total = 0.0
     unpriced = missing = 0
@@ -192,6 +193,17 @@ def _times(joined: JoinedRun) -> tuple[str | None, str | None]:
     return stamps[0][1], stamps[-1][1]
 
 
+def _effective_chat_models(joined: JoinedRun) -> list[str]:
+    """실제 생성 모델 — 방 스냅숏의 `effectiveChatModel` 이고, 스냅숏에 그 값이 없으면 턴 기록 파일의 행 전부의 `chat_model`(그
+    응답을 실제로 쓴 모델)이다. 다른 방의 파일은 결합에서 이미 버려(`chat_turns` 가 None) 여기 오는 행은 모두 이 방의 것이다.
+    시도에 붙지 않은 행(재생성·편집, 같은 방을 이어 친 다른 측정)과 행을 잇지 않는 `assistantMessageId` 이전 형식의 행도 센다 —
+    원가와 달리 이 칸은 그 방을 쓴 모델을 보이는 것이라 붙었는지를 따지지 않는다."""
+    snapshot = {m for m in (_str(r.get("effectiveChatModel")) for r in joined.room_statics) if m is not None}
+    if snapshot or joined.chat_turns is None:
+        return sorted(snapshot)
+    return sorted({m for m in (_str(row.get("chat_model")) for row in joined.chat_turns.rows) if m is not None})
+
+
 def run_list_item(bundle: Bundle, joined: JoinedRun | None) -> RunListItem:
     """`joined` 가 없으면(열지 않는 형식, 아직 열지 않은 묶음) 묶음을 찾을 때 안 것만 싣는다."""
     base = RunListItem(
@@ -215,9 +227,7 @@ def run_list_item(bundle: Bundle, joined: JoinedRun | None) -> RunListItem:
             "turn_count": len(joined.turns),
             "started_at": started,
             "ended_at": ended,
-            "effective_chat_models": sorted(
-                {m for m in (_str(r.get("effectiveChatModel")) for r in joined.room_statics) if m is not None}
-            ),
+            "effective_chat_models": _effective_chat_models(joined),
             "generation_models": sorted(
                 {
                     model
@@ -440,6 +450,7 @@ def flags_view(flags: ReplyFlags) -> ReplyFlagsView:
     return ReplyFlagsView(
         length=flags.length,
         sentence_count=flags.sentence_count,
+        status_block_length=flags.status_block_length,
         truncated=flags.truncated,
         self_copy=flags.self_copy,
         solicit=flags.solicit,
@@ -516,7 +527,8 @@ def turn_detail(joined: JoinedRun, number: int, *, metrics: RunMetrics | None = 
     ]
     if turn.background_dumps:
         limits.append(RecordLimit(slot="backgroundTokens", text=BACKGROUND_LIMIT))
-    if joined.chat_turns is None:
+    # `assistantMessageId` 이전 형식은 내보내기를 거부하므로(`export_chat_turns`) 내보내라고 하지 않는다.
+    if joined.chat_turns is None and joined.bundle.format != "preMessageId":
         limits.append(RecordLimit(slot="exportNeeded", text=EXPORT_NEEDED_LIMIT))
     if not joined.has_dump:
         limits.append(RecordLimit(slot="promptDump", text=NO_DUMP_LIMIT))

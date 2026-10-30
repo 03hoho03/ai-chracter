@@ -1,4 +1,5 @@
 import type { RunListItem } from "@/shared/api/client";
+import { runRecordGap } from "@/shared/api/recordGap";
 import { formatCount } from "@/shared/lib/formatNumber";
 
 import { isOpened, type GroupSummary } from "./runRows";
@@ -15,14 +16,17 @@ const DATE_PATTERN = /^\d{4}-(\d{2})-(\d{2})/;
 /**
  * 원가 칸에 무엇을 적을지. `$0.0000` 과 "원가를 모름"이 같은 모양이 되지 않게 갈래를 나눈다.
  * - `none`: 열지 않은 런 — 원가를 말할 자리가 아니다.
+ * - `oldFormat`: `assistantMessageId` 이전 형식이라 턴 기록을 응답과 이을 수 없어 원가가 없다 — 내보내도 채워지지 않는다.
  * - `needsExport`: 턴 기록 파일이 없어 원가를 낼 수 없다.
- * - `lowerBound`: 합에서 빠진 것(단가표에 없는 호출, 입력 토큰이 기록되지 않은 호출, 턴 기록이 없는 런, 열지 못한 런)이 있어
+ * - `lowerBound`: 합에서 빠진 것(단가표에 없는 호출, 입력 토큰이 기록되지 않은 호출, 턴 기록이 없는 런, 이전 형식 런, 열지 못한
+ *   런)이 있어
  *   실제 원가는 이보다 크거나 같다. 런 하나가 하한인지는 측정 서버가 판정한 `costIsLowerBound` 를 따르고, 나머지 칸은 까닭 문구용이다.
  *   `hasTokenGap` 은 하한인데 단가 없는 호출로는 설명되지 않는 런이 있다는 것 — 측정 서버가 하한으로 보는 다른 까닭은 입력 토큰이
  *   기록되지 않은 호출뿐이다(목록 한 줄에는 그 호출 수가 없다).
  */
 export type CostView =
   | { kind: "none" }
+  | { kind: "oldFormat" }
   | { kind: "needsExport" }
   | { kind: "exact"; usd: number }
   | {
@@ -31,6 +35,7 @@ export type CostView =
       unpricedCalls: number;
       hasTokenGap: boolean;
       needsExportCount: number;
+      oldFormatCount: number;
       unopenedCount: number;
     };
 
@@ -40,6 +45,7 @@ export function formatLabel(format: RunListItem["format"]): string {
 
 export function describeRunCost(item: RunListItem): CostView {
   if (!isOpened(item)) return { kind: "none" };
+  if (runRecordGap(item) === "oldFormat") return { kind: "oldFormat" };
   if (item.costUsd == null) return { kind: "needsExport" };
   if (item.costIsLowerBound !== true) return { kind: "exact", usd: item.costUsd };
   const unpricedCalls = item.unpricedCalls ?? 0;
@@ -49,20 +55,29 @@ export function describeRunCost(item: RunListItem): CostView {
     unpricedCalls,
     hasTokenGap: unpricedCalls === 0,
     needsExportCount: 0,
+    oldFormatCount: 0,
     unopenedCount: 0,
   };
 }
 
 export function describeGroupCost(summary: GroupSummary): CostView {
   if (summary.unopenedCount === summary.runCount) return { kind: "none" };
-  if (summary.runCount - summary.unopenedCount - summary.needsExportCount === 0) return { kind: "needsExport" };
-  if (summary.lowerBoundRunCount > 0 || summary.needsExportCount > 0 || summary.unopenedCount > 0) {
+  const pricedRunCount = summary.runCount - summary.unopenedCount - summary.needsExportCount - summary.oldFormatCount;
+  // 원가가 있는 런이 없으면 합을 적지 않는다 — 내보내면 채워지는 런이 하나라도 있으면 그것을, 없으면 이전 형식이라 없다고 적는다.
+  if (pricedRunCount === 0) return summary.needsExportCount > 0 ? { kind: "needsExport" } : { kind: "oldFormat" };
+  if (
+    summary.lowerBoundRunCount > 0 ||
+    summary.needsExportCount > 0 ||
+    summary.oldFormatCount > 0 ||
+    summary.unopenedCount > 0
+  ) {
     return {
       kind: "lowerBound",
       usd: summary.pricedUsd,
       unpricedCalls: summary.unpricedCalls,
       hasTokenGap: summary.tokenGapRunCount > 0,
       needsExportCount: summary.needsExportCount,
+      oldFormatCount: summary.oldFormatCount,
       unopenedCount: summary.unopenedCount,
     };
   }
@@ -90,7 +105,8 @@ export function formatDateRange(earliest: string | undefined, latest: string | u
 }
 
 /**
- * 모델 칸에 적을 첫 모델과 나머지 개수. 방 스냅숏의 실제 생성 모델이 먼저고, 스냅숏이 없으면 덤프에 적힌 보낸 모델을 쓴다.
+ * 모델 칸에 적을 첫 모델과 나머지 개수. 실제 생성 모델(측정 서버가 방 스냅숏에서, 없으면 턴 기록 파일의 그 방 행 전부에서
+ * 채운다)이 먼저고, 그것이 비면 덤프에 적힌 보낸 모델을 쓴다.
  * 둘 다 없으면 undefined.
  */
 export function summarizeModels(item: RunListItem): { first: string; extraCount: number } | undefined {
@@ -107,9 +123,10 @@ export function lowerBoundNote(cost: Extract<CostView, { kind: "lowerBound" }>):
     cost.unpricedCalls > 0 ? `단가표에 없는 호출 ${formatCount(cost.unpricedCalls)}건` : undefined,
     cost.hasTokenGap ? "입력 토큰이 기록되지 않은 호출의 입력 몫" : undefined,
     cost.needsExportCount > 0 ? `턴 기록 파일이 없는 런 ${formatCount(cost.needsExportCount)}개` : undefined,
+    cost.oldFormatCount > 0 ? `이전 형식이라 원가가 없는 런 ${formatCount(cost.oldFormatCount)}개` : undefined,
     cost.unopenedCount > 0 ? `열지 못한 런 ${formatCount(cost.unopenedCount)}개` : undefined,
   ].filter((part) => part !== undefined);
-  const particle = cost.needsExportCount > 0 || cost.unopenedCount > 0 ? "가" : "이";
+  const particle = cost.needsExportCount > 0 || cost.oldFormatCount > 0 || cost.unopenedCount > 0 ? "가" : "이";
   return `${missing.join(", ")}${particle} 빠진 합이다`;
 }
 

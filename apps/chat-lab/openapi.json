@@ -653,7 +653,8 @@
               "manifest",
               "notDumpLine",
               "pricesChanged",
-              "statDefsChanged"
+              "statDefsChanged",
+              "chatTurnsNotJoined"
             ],
             "title": "Kind"
           },
@@ -826,6 +827,7 @@
             "enum": [
               "notFound",
               "unsupported",
+              "unsupportedFormat",
               "openFailed",
               "archived",
               "exists",
@@ -982,6 +984,10 @@
             "type": "integer",
             "title": "Sentencecount"
           },
+          "statusBlockLength": {
+            "type": "integer",
+            "title": "Statusblocklength"
+          },
           "truncated": {
             "type": "boolean",
             "title": "Truncated"
@@ -1033,6 +1039,7 @@
         "required": [
           "length",
           "sentenceCount",
+          "statusBlockLength",
           "truncated",
           "selfCopy",
           "solicit",

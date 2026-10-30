@@ -60,7 +60,7 @@ export function RunListPage() {
         <>
           <KeyHint keys={["j", "k"]}>다음·이전 행</KeyHint>
           <KeyHint keys={["Enter"]}>열기</KeyHint>
-          <span className="ml-auto truncate">원가 ≥ 는 빠진 호출이 있는 하한 · 내보내기 필요는 턴 기록 파일 없음</span>
+          <span className="ml-auto truncate">원가 ≥ 는 빠진 호출이 있는 하한 · 내보내기 필요는 턴 기록 파일 없음 · 이전 형식은 턴 기록을 잇지 않음</span>
         </>
       }
     >

@@ -23,6 +23,7 @@ export type ExportFailure =
 const EXPORT_HINTS = {
   notFound: "목록에서 새로 훑은 뒤 런을 다시 연다 — 서버가 훑은 뒤 묶음이 옮겨졌거나 지워졌다.",
   unsupported: "옛 형식 묶음이라 턴 기록을 잇지 않는다 — 내보낼 수 없다.",
+  unsupportedFormat: "assistantMessageId 이전 형식이라 턴 기록을 응답과 이을 수 없다 — 이 런은 내보내지 않는다.",
   openFailed: "묶음 파일을 열지 못했다 — 드라이버 로그가 깨지지 않았는지 본다.",
   archived: "archive/ 는 저장소가 추적하는 보관 폴더라 쓰지 않는다 — 묶음을 보관 폴더 밖에 복사해 거기서 내보낸다.",
   notFile: "그 자리의 링크·폴더를 치운 뒤 다시 내보낸다 — 강제로도 그 위에는 쓰지 않는다.",

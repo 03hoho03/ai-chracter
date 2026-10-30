@@ -6,6 +6,7 @@
 그 성질로 "다른 DB 를 가리키면 빈 파일을 남기지 않는다"를 본다."""
 
 import hashlib
+import json
 import os
 import shutil
 import uuid
@@ -254,6 +255,39 @@ async def test_a_folder_holding_driver_logs_of_different_rooms_is_refused_everyw
     assert (answer.status_code, answer.json()["reason"]) == (422, "multipleRooms")
     assert command == 1
     assert parse_chat_turns(written.read_text(encoding="utf-8")).room_id == str(driven.room_id)
+
+
+async def test_a_log_without_message_ids_is_refused_everywhere_before_reading_the_database(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`assistantMessageId` 이전 형식의 턴 줄에는 턴 기록 행을 응답과 이을 열쇠가 없어, 내보내도 결합이 행을 잇지 않는다. 파일만
+    남으면 묶음이 "턴 기록 있음"으로 보이는데 원가는 끝내 비므로, 내보내기 함수가 쓰기 전에 거부하고 측정 서버(422)와 명령줄(1)이
+    같은 규칙을 쓴다 — 강제를 줘도."""
+    root, _, folder = await _hidden_root(db_session, monkeypatch, tmp_path)
+    log = folder / "chat.jsonl"
+    lines = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    for record in lines:
+        if record["kind"] == "turn":
+            record.pop("shortcutId", None)
+            record.pop("assistantMessageId", None)
+    log.write_text("".join(json.dumps(record, ensure_ascii=False) + "\n" for record in lines), encoding="utf-8")
+    bundle = _bundle(root)
+    app = create_app(root=root, database_url=None, session_factory=lambda: _borrowed(db_session))
+    monkeypatch.setattr(chat_lab_export_turns, "open_session", lambda url: _borrowed(db_session))
+
+    with pytest.raises(ExportRefusedError) as refused:
+        await export_chat_turns(db_session, bundle, force=True)
+    async with _client(app) as client:
+        answer = await client.post(f"/runs/{bundle.run_id}/export-turns", json={"force": True})
+    command = await chat_lab_export_turns.run(
+        ["--run-dir", str(folder), "--database-url", UNREACHABLE_DB, "--root", str(root), "--force"]
+    )
+
+    assert bundle.format == "preMessageId"
+    assert refused.value.reason == "unsupportedFormat"
+    assert (answer.status_code, answer.json()["reason"]) == (422, "unsupportedFormat")
+    assert command == 1
+    assert not (folder / CHAT_TURNS_NAME).exists()
 
 
 async def test_a_server_export_feeds_cost_and_hidden_stats_into_the_next_detail(

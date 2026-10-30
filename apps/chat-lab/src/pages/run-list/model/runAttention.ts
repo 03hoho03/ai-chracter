@@ -1,4 +1,5 @@
 import type { RunListItem } from "@/shared/api/client";
+import { OLD_FORMAT_EXPORT_REASON, runRecordGap } from "@/shared/api/recordGap";
 
 /** `warn` 은 호박(불일치·주의), `danger` 는 적색(열 수 없음), `quiet` 는 보조 글자색이다. */
 export type AttentionTone = "danger" | "warn" | "quiet";
@@ -28,7 +29,9 @@ export function describeAttention(item: RunListItem): Attention[] {
   if (mismatchCount > 0) {
     lines.push({ tone: "warn", text: `불일치 ${mismatchCount}건 — 기록끼리 어긋난 자리가 있다. 상세에서 먼저 본다.` });
   }
-  if (item.costUsd == null) {
+  if (runRecordGap(item) === "oldFormat") {
+    lines.push({ tone: "quiet", text: `이전 형식이라 토큰·원가가 없다 — ${OLD_FORMAT_EXPORT_REASON}.` });
+  } else if (item.costUsd == null) {
     lines.push({ tone: "quiet", text: "턴 기록 파일이 없어 토큰·원가가 비어 있다 — 상세에서 턴 기록을 내보내면 채워진다." });
   }
   if (unpricedCalls > 0) {

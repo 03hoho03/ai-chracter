@@ -22,6 +22,7 @@ export const CAUTION_LABELS = {
   notDumpLine: "덤프가 아닌 줄",
   pricesChanged: "가격표 바뀜",
   statDefsChanged: "스탯 정의 바뀜",
+  chatTurnsNotJoined: "턴 기록 잇지 않음",
 } as const satisfies Record<Caution["kind"], string>;
 
 /**
@@ -44,7 +45,7 @@ export const MARKER_STYLES = {
   { glyph: string; label: string; tone: "muted" | "warn" | "danger"; isAfterTurn: boolean }
 >;
 
-type BooleanFlagKey = Exclude<keyof ReplyFlagsView, "length" | "sentenceCount" | "broken" | "brackets">;
+type BooleanFlagKey = Exclude<keyof ReplyFlagsView, "length" | "sentenceCount" | "statusBlockLength" | "broken" | "brackets">;
 
 /** 참/거짓 응답 지표의 화면 이름 — 검사기 지표 탭이 이 순서로 적는다. */
 export const BOOLEAN_FLAG_LABELS = {

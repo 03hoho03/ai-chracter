@@ -10,6 +10,7 @@ function turnMetrics(previousFrom: TurnMetrics["previousFrom"], previousTurn: nu
     flags: {
       length: 1,
       sentenceCount: 1,
+      statusBlockLength: 0,
       truncated: false,
       selfCopy: false,
       solicit: false,

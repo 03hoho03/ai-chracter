@@ -8,11 +8,12 @@ import type {
   TurnDetail,
   TurnSummary,
 } from "@/shared/api/client";
+import { COST_GAP_TEXT, RECORD_GAP_TEXT, runRecordGap, type RecordGap } from "@/shared/api/recordGap";
 import { assertNever } from "@/shared/lib/assertNever";
 import { cn } from "@/shared/lib/cn";
 import { formatCount, formatMs, formatUsd } from "@/shared/lib/formatNumber";
 
-import { groupCalls, type JudgmentSite } from "../model/callGroups";
+import { generationCardCount, groupCalls, type JudgmentSite } from "../model/callGroups";
 import {
   BOOLEAN_FLAG_KEYS,
   BOOLEAN_FLAG_LABELS,
@@ -76,11 +77,13 @@ export function Inspector(props: InspectorProps) {
   const recallCount = rows.reduce((count, row) => count + readRecords(row.row, "memory_recall").length, 0);
   const factCount = rows.reduce((count, row) => count + readRecords(row.row, "memory_facts").length, 0);
   const routeCount = rows.reduce((count, row) => count + readRecords(row.row, "stage_routes").length, 0);
-  // 턴 기록 파일이 없으면 호출 칸이 비어 있어 덤프 줄만 센 수가 되므로 개수를 적지 않는다(기억·라우팅과 같다).
+  // 런 전체에 턴 기록이 비면(파일이 없거나 이전 형식이라 잇지 않음) 호출 칸이 비어 있어 덤프 줄만 센 수가 되므로 개수를 적지
+  // 않는다(기억·라우팅과 같다).
+  const hasRecords = runRecordGap(detail.run) === undefined;
   const counts = {
-    calls: detail.run.hasChatTurns ? calls.length + props.turnDetail.backgroundDumps.length : undefined,
-    memory: detail.run.hasChatTurns ? recallCount + factCount : undefined,
-    routing: detail.run.hasChatTurns ? routeCount : undefined,
+    calls: hasRecords ? calls.length + props.turnDetail.backgroundDumps.length : undefined,
+    memory: hasRecords ? recallCount + factCount : undefined,
+    routing: hasRecords ? routeCount : undefined,
     metrics: undefined,
   } satisfies Record<InspectorTab, number | undefined>;
 
@@ -133,9 +136,9 @@ function InspectorBody(props: InspectorProps & { calls: CallCostView[] }) {
 
 function CallsTab({ detail, summary, turnDetail, attempt, calls, onOpenDump }: InspectorProps & { calls: CallCostView[] }) {
   const groups = groupCalls(calls, turnDetail.judgmentDumps);
-  const hasChatTurns = detail.run.hasChatTurns;
+  const gap = runRecordGap(detail.run);
   const generationDump = attempt?.generationDump ?? undefined;
-  const tokenAbsence = hasChatTurns ? "이 시도에 붙은 턴 기록 행 없음" : "내보내기 필요";
+  const tokenAbsence = gap === undefined ? "이 시도에 붙은 턴 기록 행 없음" : RECORD_GAP_TEXT[gap];
   const limits = turnDetail.recordLimits;
   const exportLimit = recordLimitText(limits, "exportNeeded");
   const responseLimit = recordLimitText(limits, "judgmentResponse");
@@ -150,14 +153,14 @@ function CallsTab({ detail, summary, turnDetail, attempt, calls, onOpenDump }: I
           <p className="flex items-center gap-2 text-data text-ink-secondary">
             이 턴 원가
             <span className="ml-auto tabular-nums">
-              <TurnCost summary={summary} isExported={detail.cost !== null} />
+              <TurnCost summary={summary} gap={gap} />
             </span>
           </p>
           {exportLimit !== undefined && <RecordLimitNote className="mt-1.5">{exportLimit}</RecordLimitNote>}
         </div>
       )}
 
-      <GroupTitle count={groups.generation.length}>생성</GroupTitle>
+      <GroupTitle count={generationCardCount(groups)}>생성</GroupTitle>
       {groups.generation.map((call, index) => (
         // 턴 기록 행의 호출 칸 순서 그대로이고 바뀌지 않는다.
         <CallCard key={index} call={call} onOpenRaw={generationDump ? () => onOpenDump({ kind: "generation" }) : undefined} />
@@ -237,10 +240,13 @@ function CallsTab({ detail, summary, turnDetail, attempt, calls, onOpenDump }: I
   );
 }
 
-/** 턴 원가 칸. 턴 기록 파일이 없는 런과, 파일은 있지만 이 턴에 붙은 행이 없는 턴을 갈라 적는다 — 둘 다 `$0.0000` 이 아니다. */
-function TurnCost({ summary, isExported }: { summary: TurnSummary; isExported: boolean }) {
+/**
+ * 턴 원가 칸. 런 전체가 비는 까닭(이전 형식, 턴 기록 파일 없음)과, 파일은 있지만 이 턴에 붙은 행이 없는 턴을 갈라 적는다 — 어느
+ * 것도 `$0.0000` 이 아니다.
+ */
+function TurnCost({ summary, gap }: { summary: TurnSummary; gap: RecordGap | undefined }) {
   if (summary.costUsd === null) {
-    return <span className="text-ink-muted">{isExported ? "턴 기록 행 없음" : "내보내기 필요"}</span>;
+    return <span className="text-ink-muted">{gap === undefined ? "턴 기록 행 없음" : COST_GAP_TEXT[gap]}</span>;
   }
   return (
     <data value={summary.costUsd} title={summary.costIsLowerBound ? LOWER_BOUND_NOTE : undefined} className="text-ink">
@@ -394,7 +400,7 @@ function MemoryTab({ detail, turnDetail, attempt }: InspectorProps) {
   const recall = rows.flatMap((row) => readRecords(row.row, "memory_recall"));
   const facts = rows.flatMap((row) => readRecords(row.row, "memory_facts"));
   const snapshot = turnDetail.memorySnapshot;
-  const absence = rowAbsence(detail.run.hasChatTurns, rows.length);
+  const absence = rowAbsence(runRecordGap(detail.run), rows.length);
 
   return (
     <div className="space-y-4 px-3 py-3">
@@ -491,7 +497,8 @@ function SnapshotText({ label, text, length }: { label: string; text: string | u
 function RoutingTab({ detail, attempt }: InspectorProps) {
   const rows = attempt?.chatTurns ?? [];
   const routes = rows.flatMap((row) => readRecords(row.row, "stage_routes"));
-  if (!detail.run.hasChatTurns) return <div className="px-3 py-3"><Absent>내보내기 필요</Absent></div>;
+  const gap = runRecordGap(detail.run);
+  if (gap !== undefined) return <div className="px-3 py-3"><Absent>{RECORD_GAP_TEXT[gap]}</Absent></div>;
   if (rows.length === 0) return <div className="px-3 py-3"><Absent>이 시도에 붙은 턴 기록 행 없음</Absent></div>;
   if (routes.length === 0) {
     return (
@@ -572,7 +579,12 @@ function MetricsTab({ detail, turnDetail, metrics: metricsState, onRetryMetrics,
           <Absent>응답이 없는 턴이라 지표 표본에서 빠졌다</Absent>
         ) : (
           <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-data">
-            <Field label="길이">{formatCount(turnMetrics.flags.length)}자 · {formatCount(turnMetrics.flags.sentenceCount)}문장</Field>
+            <Field label="길이">
+              {formatCount(turnMetrics.flags.length)}자 · {formatCount(turnMetrics.flags.sentenceCount)}문장
+              {turnMetrics.flags.statusBlockLength > 0 && (
+                <span className="text-ink-muted"> · 상태창 {formatCount(turnMetrics.flags.statusBlockLength)}자 따로</span>
+              )}
+            </Field>
             {BOOLEAN_FLAG_KEYS.map((key) => (
               <Field key={key} label={BOOLEAN_FLAG_LABELS[key]}>
                 {turnMetrics.flags[key] ? <span className="text-ink">예</span> : <span className="text-ink-muted">아니오</span>}
@@ -756,9 +768,12 @@ function Missing() {
   return <span className="text-ink-muted">기록 없음</span>;
 }
 
-/** 턴 기록 행에서 읽는 칸(회상·사실·라우팅)이 왜 비었는가 — 파일이 없거나, 이 시도에 붙은 행이 없다. 행이 있으면 undefined. */
-function rowAbsence(hasChatTurns: boolean, rowCount: number): string | undefined {
-  if (!hasChatTurns) return "내보내기 필요";
+/**
+ * 턴 기록 행에서 읽는 칸(회상·사실)이 왜 비었는가 — 런 전체가 비거나(이전 형식, 파일 없음), 이 시도에 붙은 행이 없다. 행이
+ * 있으면 undefined.
+ */
+function rowAbsence(gap: RecordGap | undefined, rowCount: number): string | undefined {
+  if (gap !== undefined) return RECORD_GAP_TEXT[gap];
   return rowCount === 0 ? "이 시도에 붙은 턴 기록 행 없음" : undefined;
 }
 

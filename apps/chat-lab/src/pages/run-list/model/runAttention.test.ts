@@ -50,6 +50,14 @@ describe("describeAttention", () => {
     expect(lines[2]?.text).toContain("주의 2건");
   });
 
+  it("이전 형식이면 원가가 없는 까닭을 말하고 내보내라고 하지 않는다", () => {
+    const lines = describeAttention(item({ format: "preMessageId", costUsd: null, unpricedCalls: null, hasChatTurns: false }));
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.text).toContain("이전 형식이라");
+    expect(lines[0]?.text).not.toContain("내보내면");
+  });
+
   it("턴 기록 파일이 없으면 원가가 빈 까닭을 말한다", () => {
     const lines = describeAttention(item({ costUsd: null, unpricedCalls: null, hasChatTurns: false }));
 

@@ -1227,3 +1227,87 @@ async def test_the_list_item_marks_a_lower_bound_cost_like_the_turn_summaries(
     assert (item.cost_is_lower_bound, item.unpriced_calls) == (True, 0)
     assert detail.run.cost_is_lower_bound is item.cost_is_lower_bound
     assert item.cost_is_lower_bound == any(turn.cost_is_lower_bound for turn in detail.turns)
+
+
+async def test_a_status_block_fenced_at_the_end_of_a_complete_reply_is_not_a_truncated_turn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """작품 규칙이 응답 끝에 상태창을 코드 블록으로 붙이게 하면 응답의 마지막 줄은 닫는 펜스다. 그 펜스를 문장으로 읽으면 완결
+    응답이 전부 절단이 된다 — 실제 드라이버 런의 응답에 상태창을 실어, 드라이버 로그의 응답이 펜스로 끝나는데도 턴 요약 플래그가
+    절단이 아니고, 길이는 상태창을 뺀 본문이며 상태창 몫은 따로 실림을 본다."""
+    tail = "\n\n```\n장소 | 학생회관 동아리방\n시간 | 9월 30일 화요일 밤\n```"
+    driven = await drive_room(
+        db_session, monkeypatch, tmp_path, script=says(2), failing_generations=(), stat_verdicts={}, reply_tail=tail
+    )
+
+    detail = run_detail(_join(tmp_path))
+
+    replies = [r["reply"] for r in _jsonl(driven.log) if r["kind"] == "turn"]
+    assert len(replies) == 2 and all(reply.endswith(tail) for reply in replies)
+    flags = [turn.flags for turn in detail.turns]
+    assert all(flag is not None for flag in flags)
+    assert [(f.truncated, f.length, f.status_block_length) for f in flags if f is not None] == [
+        (False, len(reply) - len(tail), len(tail)) for reply in replies
+    ]
+
+
+async def test_the_actual_model_falls_back_to_every_record_row_of_the_room_when_no_snapshot_names_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """실제 생성 모델은 방 스냅숏의 값이 먼저다. 스냅숏 로그가 없는 묶음에서도 턴 기록 행에는 그 응답을 쓴 모델이 남아 있어,
+    턴 기록 파일의 행 전부의 모델로 채운다(여럿이면 모두). 이 칸은 그 방을 쓴 모델을 보이는 것이라 시도에 붙지 않은 행도 센다."""
+    driven = await _plain_run(db_session, monkeypatch, tmp_path, 2)
+    stat_defs, rows = await _db_export(db_session, driven)
+    rows[0]["chat_model"], rows[1]["chat_model"] = "lab-model-b", "lab-model-a"
+    stray = {
+        **copy.deepcopy(rows[-1]),
+        "id": uuid.uuid4(),
+        "assistant_message_id": uuid.uuid4(),
+        "chat_model": "lab-model-stray",
+    }
+    _write_export(driven, stat_defs, [*rows, stray])
+    snapshot_model = next(r for r in _jsonl(driven.snapshot_log) if r["kind"] == "roomStatic")["effectiveChatModel"]
+
+    with_snapshot = run_detail(_join(tmp_path)).run
+    driven.snapshot_log.unlink()
+    [bundle] = discover_bundles(tmp_path)
+    without_snapshot = list_entry(bundle)
+
+    assert isinstance(snapshot_model, str) and snapshot_model not in {"lab-model-a", "lab-model-b"}
+    assert with_snapshot.effective_chat_models == [snapshot_model]
+    assert without_snapshot.effective_chat_models == ["lab-model-a", "lab-model-b", "lab-model-stray"]
+
+
+async def test_a_chat_turns_file_beside_a_log_without_message_ids_is_a_caution_not_unmatched_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`assistantMessageId` 이전 형식의 턴 줄에는 행을 붙일 응답 id 가 없어, 턴 기록 파일을 짝으로 두면 이을 수 없다. 이어 보면 모든
+    행이 짝 없는 기록이 되어 불일치가 행 수만큼 쌓이는데, 결합이 어긋난 것이 아니라 처음부터 이을 수 없는 형식이다 — 행을 잇지 않고
+    주의 하나만 달며, 붙은 행이 없으니 원가를 0 원으로 내지 않는다. 모델 칸은 행을 잇지 않아도 파일의 행으로 채운다. 이 형식은
+    내보내기를 거부하므로, 턴 기록 파일이 없을 때도 내보내라는 기록 한계를 싣지 않는다."""
+    driven = await _plain_run(db_session, monkeypatch, tmp_path, 2)
+    stat_defs, rows = await _db_export(db_session, driven)
+    rows[0]["chat_model"], rows[1]["chat_model"] = "lab-model-b", "lab-model-a"
+    _write_export(driven, stat_defs, rows)
+    driven.snapshot_log.unlink()
+    lines = _jsonl(driven.log)
+    for record in lines:
+        if record["kind"] == "turn":
+            record.pop("shortcutId", None)
+            record.pop("assistantMessageId", None)
+    _write_jsonl(driven.log, lines)
+
+    joined = _join(tmp_path)
+    detail = run_detail(joined)
+
+    assert joined.bundle.format == "preMessageId" and len(rows) == 2
+    assert detail.mismatches == []
+    assert [c.kind for c in joined.cautions if c.kind != "placementEstimated"] == ["chatTurnsNotJoined"]
+    assert joined.unmatched_rows == [] and detail.unmatched_rows == []
+    assert [attempt.chat_turn_rows for turn in joined.turns for attempt in turn.attempts] == [[], []]
+    assert (detail.cost, detail.run.cost_usd, detail.run.has_chat_turns) == (None, None, True)
+    assert detail.run.effective_chat_models == ["lab-model-a", "lab-model-b"]
+    (driven.log.parent / CHAT_TURNS_NAME).unlink()
+    without_file = _join(tmp_path)
+    assert without_file.chat_turns is None
+    assert "exportNeeded" not in [limit.slot for limit in turn_detail(without_file, 1).record_limits]

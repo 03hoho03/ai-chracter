@@ -13,6 +13,7 @@ type LabErrorReason = LabError["reason"];
 const LAB_ERROR_REASONS = {
   notFound: true,
   unsupported: true,
+  unsupportedFormat: true,
   openFailed: true,
   archived: true,
   exists: true,

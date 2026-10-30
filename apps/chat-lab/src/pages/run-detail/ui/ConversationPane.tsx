@@ -127,6 +127,7 @@ function AttemptBody({ record, attempt, flags }: AttemptBodyProps) {
         <p className="flex flex-wrap gap-x-2 text-label text-ink-muted tabular-nums">
           <span>응답</span>
           {reply !== "" && <span>{formatCount(reply.length)}자</span>}
+          {flags !== undefined && flags.statusBlockLength > 0 && <span>상태창 {formatCount(flags.statusBlockLength)}자</span>}
           {flags !== undefined && <span>{formatCount(flags.sentenceCount)}문장</span>}
           {http !== undefined && http !== 200 && <span className="text-danger">HTTP {http}</span>}
           {http === undefined && attempt !== undefined && !isDone && <span className="text-danger">HTTP 기록 없음</span>}

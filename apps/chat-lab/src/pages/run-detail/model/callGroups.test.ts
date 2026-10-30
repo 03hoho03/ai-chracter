@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CallCostView } from "@/shared/api/client";
 
-import { groupCalls, MISSING_CALL_SITE } from "./callGroups";
+import { generationCardCount, groupCalls, MISSING_CALL_SITE } from "./callGroups";
 
 function call(kind: CallCostView["kind"], callSite: string): CallCostView {
   return {
@@ -77,5 +77,16 @@ describe("groupCalls", () => {
 
   it("호출도 덤프 줄도 없으면 모든 묶음이 빈다", () => {
     expect(groupCalls([], [])).toEqual({ generation: [], judgment: [], background: [], other: [] });
+  });
+});
+
+describe("generationCardCount", () => {
+  it("턴 기록의 생성 호출이 있으면 그 호출 수, 없으면 덤프로 그리는 카드 하나 — 머리 숫자가 보이는 카드 수와 같다", () => {
+    const first = call("generation", "chat_generate");
+    const second = call("generation", "chat_generate");
+
+    expect(generationCardCount(groupCalls([first, second], []))).toBe(2);
+    expect(generationCardCount(groupCalls([call("judgment", "chat_stat_judgment")], []))).toBe(1);
+    expect(generationCardCount(groupCalls([], []))).toBe(1);
   });
 });

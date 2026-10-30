@@ -38,6 +38,7 @@ function group(overrides: Partial<GroupSummary> = {}): GroupSummary {
     lowerBoundRunCount: 0,
     tokenGapRunCount: 0,
     needsExportCount: 0,
+    oldFormatCount: 0,
     unopenedCount: 0,
     ...overrides,
   };
@@ -70,6 +71,7 @@ describe("describeRunCost", () => {
       unpricedCalls: 2,
       hasTokenGap: false,
       needsExportCount: 0,
+      oldFormatCount: 0,
       unopenedCount: 0,
     });
   });
@@ -81,6 +83,7 @@ describe("describeRunCost", () => {
       unpricedCalls: 0,
       hasTokenGap: true,
       needsExportCount: 0,
+      oldFormatCount: 0,
       unopenedCount: 0,
     });
   });
@@ -90,6 +93,11 @@ describe("describeRunCost", () => {
       kind: "exact",
       usd: 0.25,
     });
+  });
+
+  it("이전 형식은 턴 기록 파일이 있어도 없어도 원가 없음 — 내보내기 필요라고 하지 않는다", () => {
+    expect(describeRunCost(item({ format: "preMessageId", costUsd: null, hasChatTurns: true }))).toEqual({ kind: "oldFormat" });
+    expect(describeRunCost(item({ format: "preMessageId", costUsd: null, hasChatTurns: false }))).toEqual({ kind: "oldFormat" });
   });
 
   it("열지 않은 런(지원 안 함·열 수 없음)은 원가를 말하지 않는다", () => {
@@ -110,6 +118,7 @@ describe("describeGroupCost", () => {
       unpricedCalls: 0,
       hasTokenGap: false,
       needsExportCount: 1,
+      oldFormatCount: 0,
       unopenedCount: 0,
     });
   });
@@ -121,6 +130,7 @@ describe("describeGroupCost", () => {
       unpricedCalls: 0,
       hasTokenGap: false,
       needsExportCount: 0,
+      oldFormatCount: 0,
       unopenedCount: 1,
     });
   });
@@ -134,6 +144,7 @@ describe("describeGroupCost", () => {
       unpricedCalls: 2,
       hasTokenGap: true,
       needsExportCount: 0,
+      oldFormatCount: 0,
       unopenedCount: 0,
     });
   });
@@ -153,6 +164,20 @@ describe("describeGroupCost", () => {
 
   it("빠진 것이 없으면 합 그대로", () => {
     expect(describeGroupCost(group({ pricedUsd: 1.5 }))).toEqual({ kind: "exact", usd: 1.5 });
+  });
+
+  it("이전 형식 런이 섞이면 하한이고 그 수를 싣는다 — 원가가 있는 런이 없으면 내보낼 런이 있을 때만 내보내기 필요", () => {
+    expect(describeGroupCost(group({ pricedUsd: 1.5, oldFormatCount: 1 }))).toEqual({
+      kind: "lowerBound",
+      usd: 1.5,
+      unpricedCalls: 0,
+      hasTokenGap: false,
+      needsExportCount: 0,
+      oldFormatCount: 1,
+      unopenedCount: 0,
+    });
+    expect(describeGroupCost(group({ oldFormatCount: 2 }))).toEqual({ kind: "oldFormat" });
+    expect(describeGroupCost(group({ oldFormatCount: 1, needsExportCount: 1 }))).toEqual({ kind: "needsExport" });
   });
 
   it("모든 런이 열리지 않았으면 말하지 않는다", () => {
@@ -205,7 +230,15 @@ describe("summarizeModels", () => {
 });
 
 describe("lowerBoundNote", () => {
-  const base = { kind: "lowerBound", usd: 1, unpricedCalls: 0, hasTokenGap: false, needsExportCount: 0, unopenedCount: 0 } as const;
+  const base = {
+    kind: "lowerBound",
+    usd: 1,
+    unpricedCalls: 0,
+    hasTokenGap: false,
+    needsExportCount: 0,
+    oldFormatCount: 0,
+    unopenedCount: 0,
+  } as const;
 
   it("합에서 빠진 것을 문장으로", () => {
     expect(lowerBoundNote({ ...base, unpricedCalls: 2 })).toBe("단가표에 없는 호출 2건이 빠진 합이다");
@@ -213,6 +246,7 @@ describe("lowerBoundNote", () => {
       "단가표에 없는 호출 2건, 턴 기록 파일이 없는 런 3개가 빠진 합이다",
     );
     expect(lowerBoundNote({ ...base, unopenedCount: 4 })).toBe("열지 못한 런 4개가 빠진 합이다");
+    expect(lowerBoundNote({ ...base, oldFormatCount: 2 })).toBe("이전 형식이라 원가가 없는 런 2개가 빠진 합이다");
   });
 
   it("입력 토큰이 기록되지 않은 호출은 수 없이 그 입력 몫이 빠졌다고 — 목록 한 줄에는 그 호출 수가 없다", () => {

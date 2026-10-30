@@ -100,12 +100,13 @@ describe("summarizeGroup", () => {
       item({ path: "b", mismatchCount: 1, cautionCount: 0, costUsd: 0.25, unpricedCalls: 3, costIsLowerBound: true, startedAt: "2026-10-03T10:00:00" }),
       item({ path: "f", costUsd: 0.1, unpricedCalls: 0, costIsLowerBound: true }),
       item({ path: "c", mismatchCount: 0, cautionCount: 0, costUsd: null, startedAt: "2026-10-02T10:00:00" }),
+      item({ path: "g", format: "preMessageId", costUsd: null }),
       item({ path: "d", supported: false, format: "legacy" }),
       item({ path: "e", openError: "ValueError: 깨진 줄" }),
     ]);
 
     expect(summary).toEqual({
-      runCount: 6,
+      runCount: 7,
       mismatchTotal: 3,
       cautionTotal: 1,
       pricedUsd: 0.85,
@@ -113,6 +114,7 @@ describe("summarizeGroup", () => {
       lowerBoundRunCount: 2,
       tokenGapRunCount: 1,
       needsExportCount: 1,
+      oldFormatCount: 1,
       unopenedCount: 2,
       earliestStartedAt: "2026-10-01T10:00:00",
       latestStartedAt: "2026-10-03T10:00:00",

@@ -38,6 +38,7 @@ function flags(overrides: Partial<ReplyFlagsView> = {}): ReplyFlagsView {
   return {
     length: 10,
     sentenceCount: 1,
+    statusBlockLength: 0,
     truncated: false,
     selfCopy: false,
     solicit: false,

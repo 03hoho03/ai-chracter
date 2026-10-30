@@ -153,6 +153,7 @@ function GroupDetails({ folder, fullPath, summary }: { folder: string; fullPath:
           <span className={summary.cautionTotal > 0 ? "text-warn" : undefined}>{formatCount(summary.cautionTotal)}</span>
         </Field>
         {summary.needsExportCount > 0 && <Field label="내보내기 필요">{formatCount(summary.needsExportCount)}개</Field>}
+        {summary.oldFormatCount > 0 && <Field label="이전 형식(원가 없음)">{formatCount(summary.oldFormatCount)}개</Field>}
         {summary.unopenedCount > 0 && (
           <Field label="열 수 없음">
             <span className="text-danger">{formatCount(summary.unopenedCount)}개</span>

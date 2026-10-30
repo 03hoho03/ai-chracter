@@ -69,6 +69,7 @@ EXPORT_STATUS: dict[ExportRefusal, int] = {
     "exists": 409,
     "notFile": 422,
     "unsupported": 422,
+    "unsupportedFormat": 422,
     "multipleRooms": 422,
     "noRoom": 422,
     "noRows": 422,

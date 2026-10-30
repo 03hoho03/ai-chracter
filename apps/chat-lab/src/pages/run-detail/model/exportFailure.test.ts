@@ -14,6 +14,7 @@ type LabErrorReason = components["schemas"]["LabError"]["reason"];
 const REFUSAL_STATUSES = {
   notFound: 404,
   unsupported: 422,
+  unsupportedFormat: 422,
   openFailed: 422,
   archived: 403,
   notFile: 422,
@@ -56,7 +57,7 @@ describe("describeExportFailure", () => {
   });
 
   it("거부 종류마다 서로 다른 안내가 붙는다", () => {
-    const reasons = ["notFile", "noRows", "multipleRooms", "archived", "dbUnavailable", "unsupported"] as const;
+    const reasons = ["notFile", "noRows", "multipleRooms", "archived", "dbUnavailable", "unsupported", "unsupportedFormat"] as const;
     const hints = reasons.map((reason) => {
       const outcome = describeExportFailure(rejectedWith(422, { detail: "거부", reason }));
       return outcome.kind === "refused" ? outcome.hint : undefined;

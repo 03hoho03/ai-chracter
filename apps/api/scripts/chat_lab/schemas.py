@@ -38,6 +38,8 @@ MismatchKind = Literal[
 # pricesChanged: 턴 기록을 내보낸 때의 단가표와 지금 단가표가 다르다(원가는 지금 표로 낸다).
 # statDefsChanged: 방 스냅숏마다 스탯 목록이 다르거나 이름이 같은 스탯이 있어 이름 키 스탯을 id 로 되돌릴 수 없다 — 그 묶음의
 # 스탯 대조를 건너뛴다(대조하면 거짓 불일치가 된다).
+# chatTurnsNotJoined: `assistantMessageId` 이전 형식이라 턴 기록 행을 붙일 응답 id 가 없어 행을 턴에 잇지 않았다 — 원가도 내지
+# 않는다(붙은 행이 없다).
 CautionKind = Literal[
     "placementEstimated",
     "roomShared",
@@ -47,6 +49,7 @@ CautionKind = Literal[
     "notDumpLine",
     "pricesChanged",
     "statDefsChanged",
+    "chatTurnsNotJoined",
 ]
 
 
@@ -76,7 +79,8 @@ class RunListItem(CamelModel):
     turn_count: int | None = None
     started_at: str | None = None
     ended_at: str | None = None
-    # 방 스냅숏의 실제 생성 모델(`effectiveChatModel`)과 덤프 생성 줄의 보낸 모델 id.
+    # 실제 생성 모델(방 스냅숏의 `effectiveChatModel`, 스냅숏에 없으면 턴 기록 파일의 행 전부의 `chat_model`)과 덤프 생성 줄의
+    # 보낸 모델 id.
     effective_chat_models: list[str] = Field(default_factory=list)
     generation_models: list[str] = Field(default_factory=list)
     # 시도에 붙은 턴 기록 행의 원가 합. 턴 기록이 없으면 None("내보내기 필요").
@@ -122,10 +126,12 @@ class RecordedStatChange(CamelModel):
 
 
 # 대화록 분석 판정(`analyze_chat_probe.ReplyFlags`)과 같은 칸. 고정 대본 키워드에 묶인 판정은 싣지 않는다 — 클래스 설명은
-# openapi 스키마에 그대로 실리므로 여기 주석으로 둔다.
+# openapi 스키마에 그대로 실리므로 여기 주석으로 둔다. 길이·문장 수는 응답 끝의 상태창 코드 블록을 뗀 본문이고, 뗀 꼬리의 글자
+# 수가 `status_block_length`(없으면 0)다 — 떼는 규칙은 `analyze_chat_probe.reply_flags`.
 class ReplyFlagsView(CamelModel):
     length: int
     sentence_count: int
+    status_block_length: int
     truncated: bool
     self_copy: bool
     solicit: bool
@@ -324,7 +330,8 @@ class RunMetrics(CamelModel):
 
 
 # 기록 한계 문장이 대신 서는 자리. judgmentResponse: 판정 응답 원문. judgmentLatency: 판정·임베딩 호출의 지연. backgroundTokens:
-# 백그라운드 호출의 토큰·원가. exportNeeded: 턴 기록 파일이 없어 비는 토큰·원가. promptDump: 덤프가 없어 비는 프롬프트·지시문 원문.
+# 백그라운드 호출의 토큰·원가. exportNeeded: 턴 기록 파일이 없어 비는 토큰·원가(`assistantMessageId` 이전 형식에는 없다 — 내보내기를
+# 거부한다). promptDump: 덤프가 없어 비는 프롬프트·지시문 원문.
 RecordLimitSlot = Literal["judgmentResponse", "judgmentLatency", "backgroundTokens", "exportNeeded", "promptDump"]
 
 
@@ -388,12 +395,14 @@ class ExportTurnsResult(CamelModel):
 
 # 이 서버가 내는 오류의 종류. FastAPI 의 요청 검증 오류(422, `detail` 이 목록)에는 이 칸이 없어 웹은 `reason` 으로 둘을 가른다.
 # notFound: 그런 묶음·턴이 없다(id 모양이 틀린 것 포함). unsupported: 열지 않는 형식. openFailed: 열다 실패했다.
+# unsupportedFormat: `assistantMessageId` 이전 형식이라 턴 기록을 응답과 이을 열쇠가 없어 내보내도 이을 수 없다(내보내기만).
 # archived: 보관 폴더라 쓰지 않는다. exists: 턴 기록 파일이 이미 있다 — 강제로 다시 내보낼 수 있는 것은 이것뿐이다.
 # notFile: 그 자리에 링크·폴더가 있다. noRoom·noRows: 그 DB 에 방이 없거나 턴 기록이 0 이다. multipleRooms: 묶음 폴더에 서로
 # 다른 방의 드라이버 로그가 있다. dbUnavailable: DB 가 설정되지 않았거나 닿지 않는다. notJson: 쓰기 요청 본문이 JSON 이 아니다.
 LabErrorReason = Literal[
     "notFound",
     "unsupported",
+    "unsupportedFormat",
     "openFailed",
     "archived",
     "exists",

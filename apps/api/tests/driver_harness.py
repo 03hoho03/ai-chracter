@@ -113,7 +113,8 @@ class ReplayScriptedLLM(LLMClient):
     """드라이버 실행 장치의 가짜 LLM. 생성은 호출 순번이 붙은 짧은 응답(`failing_generations` 의 순번은 실패), 스탯 판정은
     순번별 표(`stat_verdicts`), 요약은 접을 때마다 본문이 다른 글을 낸다 — 요약 본문이 같으면 리플레이가 해시로 스냅숏 행을
     하나로 가려낼 수 없다. 엔딩 판정은 `ending_triggered` 를 줄 때만 받아 그 값으로 답한다. 그 밖의 구조화 호출은
-    `AssertionError` 다 — 작품에 없을 판정이 불리면 조용히 넘어가지 않게."""
+    `AssertionError` 다 — 작품에 없을 판정이 불리면 조용히 넘어가지 않게. `reply_tail` 은 생성 응답마다 끝에 덧붙이는 조각이다
+    (비면 붙이지 않는다)."""
 
     def __init__(
         self,
@@ -121,12 +122,14 @@ class ReplayScriptedLLM(LLMClient):
         failing_generations: Collection[int],
         stat_verdicts: Mapping[int, Sequence[str]],
         ending_triggered: bool | None,
+        reply_tail: str = "",
     ) -> None:
         self.generations = 0
         self.summaries = 0
         self._failing_generations = frozenset(failing_generations)
         self._stat_verdicts = stat_verdicts
         self._ending_triggered = ending_triggered
+        self._reply_tail = reply_tail
 
     async def generate(
         self,
@@ -141,6 +144,8 @@ class ReplayScriptedLLM(LLMClient):
             raise LLMClientError("가짜 생성 실패")
         yield f"응답 {self.generations}. "
         yield "바람이 분다."
+        if self._reply_tail:
+            yield self._reply_tail
 
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
@@ -359,6 +364,7 @@ async def drive_room(
     rate_limit_exempt: bool = False,
     final_exit: int = 0,
     export_dir: Path | None = None,
+    reply_tail: str = "",
 ) -> DrivenRoom:
     """작품을 만들고 드라이버로 방을 만든 뒤 `script` 를 차례로 보낸다. 부르는 테스트는 `db_client` 픽스처도 받아야 한다 —
     그 픽스처가 앱의 DB 세션을 이 테스트 트랜잭션에 묶어, 드라이버가 만든 방을 `db_session` 이 본다.
@@ -375,6 +381,8 @@ async def drive_room(
     - `export_dir`: 주면 다 돈 뒤 세 파일을 그 폴더로 복사한다(드라이버는 로그에 덧붙여 쓰므로 그 폴더에 바로 쓰지 않는다).
       런마다 다른 폴더를 준다 — 같은 이름 파일이 이미 있으면 덮지 않고 `FileExistsError` 로 거절한다(작품을 만들기 전에 한
       번, 복사 직전에 한 번 본다).
+    - `reply_tail`: 생성 응답마다 끝에 덧붙일 조각(작품 규칙이 응답 끝에 붙이게 하는 상태창 코드 블록 등). 비면 붙이지 않아
+      기본 응답이 그대로다.
     """
     if export_dir is not None:
         # 긴 대본을 다 돈 뒤에야 거절되지 않게 시작 전에 먼저 본다.
@@ -416,6 +424,7 @@ async def drive_room(
         failing_generations=failing_generations,
         stat_verdicts=stat_verdicts,
         ending_triggered=True if ending_turn is not None else None,
+        reply_tail=reply_tail,
     )
     _override_llm_client(llm)
     loop = asyncio.get_running_loop()

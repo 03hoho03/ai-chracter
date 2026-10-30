@@ -2,6 +2,7 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 
 import type { RunDetail } from "@/shared/api/client";
+import { COST_GAP_TEXT, OLD_FORMAT_EXPORT_REASON, runRecordGap } from "@/shared/api/recordGap";
 import { cn } from "@/shared/lib/cn";
 import { formatCount, formatUsd } from "@/shared/lib/formatNumber";
 import { useElapsedSeconds } from "@/shared/lib/useElapsedSeconds";
@@ -64,7 +65,13 @@ function RunDetailScreen({ runId }: { runId: string }) {
         )
       }
       actions={
-        detail && (
+        detail &&
+        (runRecordGap(detail.run) === "oldFormat" ? (
+          // 측정 서버가 이 형식의 내보내기를 거부한다 — 누르면 실패할 버튼 대신 못 하는 까닭을 그 자리에 둔다.
+          <span className="text-data text-ink-muted" title={OLD_FORMAT_EXPORT_REASON}>
+            내보내기 없음 · 이전 형식
+          </span>
+        ) : (
           <Button
             variant="primary"
             onClick={() => handleExport(false)}
@@ -83,7 +90,7 @@ function RunDetailScreen({ runId }: { runId: string }) {
               </>
             )}
           </Button>
-        )
+        ))
       }
       hints={
         <>
@@ -199,7 +206,7 @@ function detailCrumbs(runId: string, detail: RunDetail | undefined): Crumb[] {
 function runMeta(detail: RunDetail): string {
   const turns = `턴 ${formatCount(detail.turns.length)}`;
   const { cost } = detail;
-  if (cost === null) return `${turns} · 원가 내보내기 필요`;
+  if (cost === null) return `${turns} · 원가 ${COST_GAP_TEXT[runRecordGap(detail.run) ?? "needsExport"]}`;
   const lowerBound = detail.run.costIsLowerBound === true ? "≥ " : "";
   return `${turns} · 원가 ${lowerBound}${formatUsd(cost.totalUsd)}`;
 }

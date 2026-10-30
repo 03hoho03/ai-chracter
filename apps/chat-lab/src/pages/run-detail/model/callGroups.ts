@@ -22,6 +22,16 @@ export type CallGroups = {
   other: CallCostView[];
 };
 
+/**
+ * 생성 묶음 머리의 수 — 그 묶음에 그리는 카드 수다. 턴 기록의 생성 호출마다 카드가 하나이고, 그런 호출이 없으면(턴 기록 파일이
+ * 없거나 이 시도에 붙은 행이 없다) 생성 덤프로 그리는 카드 하나가 선다. 턴 기록의 호출만 세면 카드가 보이는데 머리가 0 이 된다.
+ * 백그라운드 묶음 머리도 같은 뜻이다(턴 기록 호출 + 덤프 줄 카드). 판정 묶음 머리는 카드가 아니라 call_site 수이고 머리에 그렇게
+ * 적는다.
+ */
+export function generationCardCount(groups: Pick<CallGroups, "generation">): number {
+  return Math.max(groups.generation.length, 1);
+}
+
 /** 판정 덤프 줄에 call_site 칸이 없을 때 그 줄을 모아 두는 묶음 이름. */
 export const MISSING_CALL_SITE = "call_site 없음";
 

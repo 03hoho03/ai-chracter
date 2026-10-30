@@ -1,4 +1,5 @@
 import type { RunListItem } from "@/shared/api/client";
+import { runRecordGap } from "@/shared/api/recordGap";
 import { compareText } from "@/shared/lib/compareText";
 
 import { isWithinFolder } from "./folderTree";
@@ -15,8 +16,10 @@ export type GroupSummary = {
   lowerBoundRunCount: number;
   /** 그 가운데 단가 없는 호출이 없는 런 수 — 하한의 까닭이 입력 토큰이 기록되지 않은 호출뿐인 런이다. */
   tokenGapRunCount: number;
-  /** 열었지만 턴 기록 파일이 없어 원가가 빈 런 수. */
+  /** 열었지만 턴 기록 파일이 없어 원가가 빈 런 수(이전 형식 런은 뺀다). */
   needsExportCount: number;
+  /** `assistantMessageId` 이전 형식이라 원가가 없는 런 수 — 턴 기록을 응답과 이을 수 없어 내보내도 채워지지 않는다. */
+  oldFormatCount: number;
   /** 지원하지 않는 형식이거나 열다 실패한 런 수. */
   unopenedCount: number;
   earliestStartedAt?: string;
@@ -69,6 +72,7 @@ export function summarizeGroup(items: ReadonlyArray<RunListItem>): GroupSummary 
     lowerBoundRunCount: 0,
     tokenGapRunCount: 0,
     needsExportCount: 0,
+    oldFormatCount: 0,
     unopenedCount: 0,
   };
   let earliest: number | undefined;
@@ -81,7 +85,9 @@ export function summarizeGroup(items: ReadonlyArray<RunListItem>): GroupSummary 
     }
     summary.mismatchTotal += item.mismatchCount ?? 0;
     summary.cautionTotal += item.cautionCount ?? 0;
-    if (item.costUsd == null) {
+    if (runRecordGap(item) === "oldFormat") {
+      summary.oldFormatCount += 1;
+    } else if (item.costUsd == null) {
       summary.needsExportCount += 1;
     } else {
       summary.pricedUsd += item.costUsd;

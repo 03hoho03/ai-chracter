@@ -207,7 +207,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "placementEstimated" | "roomShared" | "incompleteLine" | "unreadableLine" | "manifest" | "notDumpLine" | "pricesChanged" | "statDefsChanged";
+            kind: "placementEstimated" | "roomShared" | "incompleteLine" | "unreadableLine" | "manifest" | "notDumpLine" | "pricesChanged" | "statDefsChanged" | "chatTurnsNotJoined";
             /** Turn */
             turn?: number | null;
             /** Detail */
@@ -288,7 +288,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "notFound" | "unsupported" | "openFailed" | "archived" | "exists" | "notFile" | "noRoom" | "noRows" | "multipleRooms" | "dbUnavailable" | "notJson";
+            reason: "notFound" | "unsupported" | "unsupportedFormat" | "openFailed" | "archived" | "exists" | "notFile" | "noRoom" | "noRows" | "multipleRooms" | "dbUnavailable" | "notJson";
         };
         /** Mismatch */
         Mismatch: {
@@ -337,6 +337,8 @@ export interface components {
             length: number;
             /** Sentencecount */
             sentenceCount: number;
+            /** Statusblocklength */
+            statusBlockLength: number;
             /** Truncated */
             truncated: boolean;
             /** Selfcopy */
