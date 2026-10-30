@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 SessionFactory = async_sessionmaker[AsyncSession]
 
 MAX_ATTEMPTS = 3
-_RETRY_DELAY = timedelta(seconds=30)
+RETRY_DELAY = timedelta(seconds=30)
 # 같은 입력으로 다시 부르면 나을 수 있는 실패. 문안 없음·입력 과다·안전 차단은 다시 불러도 같다.
 _RETRYABLE: frozenset[JobFailure] = frozenset(
     {"schema_invalid", "truncated", "empty", "llm_error", "rate_limited", "cancelled", "internal", "expired"}
@@ -229,7 +229,7 @@ async def _fail(
                 .where(*running)
                 .values(
                     status="queued", failure_code=code, llm_calls=calls,
-                    available_at=func.now() + _RETRY_DELAY * attempts,
+                    available_at=func.now() + RETRY_DELAY * attempts,
                 )
             )
         else:

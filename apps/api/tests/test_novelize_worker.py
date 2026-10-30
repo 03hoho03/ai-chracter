@@ -6,9 +6,11 @@
 원작 문안을 읽지 않게 한다 — 받기(조건부 전이)·모델 호출·성공 저장·환불은 실제 경로 그대로다."""
 
 import asyncio
+import contextvars
 import os
 import signal
 import uuid
+from collections import defaultdict
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -16,7 +18,7 @@ from typing import Any, get_args
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, event, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.core.config import settings
@@ -36,7 +38,16 @@ from api.novelize.deletion import delete_novels
 from api.novelize.inputs import ReviseInput
 from api.novelize.job_variants import VARIANT_FACTS, split_kinds
 from api.novelize.prompts import NovelizePrompt
-from factories import _assert_blocked, _make_draft_content, _make_novel_tree, _make_user_with_clover_lot
+from factories import (
+    _assert_blocked,
+    _assert_characterization,
+    _Clock,
+    _eventually,
+    _make_draft_content,
+    _make_novel_tree,
+    _make_user_with_clover_lot,
+    _true,
+)
 
 pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
 
@@ -134,15 +145,6 @@ class _GateLLM(LLMClient):
         finally:
             self.in_flight -= 1
         return response_schema.model_validate({"paragraphs": ["고친 문단."]})
-
-
-async def _eventually(check: Callable[[], Awaitable[bool]], *, within: float = 10.0) -> None:
-    """`check` 가 참이 될 때까지 0.01초 간격으로 본다. `within` 초 안에 참이 안 되면 실패다."""
-    for _ in range(int(within / 0.01)):
-        if await check():
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError(f"{within}초 안에 조건이 서지 않았다")
 
 
 async def _seed_jobs(factory: async_sessionmaker[AsyncSession], count: int) -> tuple[uuid.UUID, list[uuid.UUID]]:
@@ -386,10 +388,6 @@ async def test_stop_finishes_running_jobs_and_claims_nothing_new(
     assert len(llm.gates) == 1
 
 
-async def _true(value: bool) -> bool:
-    return value
-
-
 @pytest.mark.usefixtures("plain_revise_input")
 async def test_a_job_cut_off_past_the_grace_period_is_refunded_once_by_the_expiry_sweep(
     independent_factory: async_sessionmaker[AsyncSession], tmp_path: Path
@@ -450,14 +448,6 @@ async def test_the_loop_never_runs_more_jobs_than_the_cap_at_once(
 
     assert llm.peak == 2
     assert [await _status(independent_factory, job_id) for job_id in job_ids] == [("succeeded", None)] * 3
-
-
-class _Clock:
-    def __init__(self, now: float) -> None:
-        self.now = now
-
-    def __call__(self) -> float:
-        return self.now
 
 
 async def test_periodic_sweep_starts_after_expiry_plus_margin_repeats_every_minute_and_stops_while_draining(
@@ -620,6 +610,92 @@ async def test_sweep_and_on_demand_expiry_seeing_the_same_dead_job_refund_it_onc
         ("novelize_spend", -_AI_EDIT_COST),
         ("novelize_refund", _AI_EDIT_COST),
     ]
+
+
+# ── 문장 열 특성화 ─────────────────────────────────────────────────────────
+
+STATEMENTS_PATH = Path(__file__).parent / "fixtures" / "novelize_worker_statements.json"
+STATEMENTS_UPDATE_ENV = "UPDATE_NOVELIZE_WORKER_STATEMENTS"
+# 문장을 낸 쪽 — 루프 태스크면 "loop", 작업 태스크면 그 작업의 차례("job1"·"job2"), 이 테스트가 띄우지 않은 태스크(세션 범위
+# 이벤트 루프에 앞 테스트가 남긴 백그라운드 태스크 등)면 기본값 "other". 띄운 태스크는 띄운 쪽의 값을 물려받는다.
+_STATEMENT_SOURCE: contextvars.ContextVar[str] = contextvars.ContextVar("statement_source", default="other")
+
+
+@pytest.mark.usefixtures("plain_revise_input")
+async def test_worker_statements_are_unchanged_while_the_bible_switch_is_off(
+    independent_factory: async_sessionmaker[AsyncSession],
+    db_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """정본 기억 스위치가 꺼진 워커가 대기 소설 작업 둘과 만료 정리 한 번이 든 루프 세 바퀴에서 내는 SQL 문장(매개변수 뺀 글)의
+    열이, 정본 기억 처리를 워커에 붙이기 전 코드로 기록한 기대값과 같다. 작업 둘은 루프와 동시에 돌아 서로 섞이므로, 문장을
+    낸 쪽(루프·작업마다)으로 나눠 각 열의 차례를 비교한다. 바퀴는 고르기 호출로 센다 — 둘째 바퀴부터는 두 작업이 모두 모델을
+    기다릴 때까지 고르기를 늦춰, 같은 작업을 다시 고르는 바퀴가 실행마다 달라지지 않게 한다. 이 테스트가 띄우지 않은 태스크의
+    문장은 비교에서 빼고, 다른 테스트가 남긴 대기·실행 중 작업이 없다는 전제를 수집 전에 따로 확인해 흔들림이 워커 회귀와
+    다른 메시지로 실패하게 한다. 깨지는 시나리오: 정본 기억을 붙이는 변경이 스위치가 꺼진 운영 워커의 고르기·정리·작업 실행
+    문장을 하나라도 더하거나 바꿔, 교체 뒤 소설 작업이 다르게 돈다."""
+    monkeypatch.setattr(settings, "novel_bible_enabled", False)
+    monkeypatch.setattr(settings, "novelize_heartbeat_expiry_seconds", 60)
+    _, job_ids = await _seed_jobs(independent_factory, 2)
+    async with independent_factory() as s:
+        leftover = await s.scalar(
+            select(func.count())
+            .select_from(NovelJob)
+            .where(NovelJob.status.in_(("queued", "running")), NovelJob.id.not_in(job_ids))
+        )
+    assert leftover == 0, (
+        f"시드한 두 작업 말고 대기·실행 중 소설 작업이 {leftover}개 있다 — 다른 테스트가 남긴 행이다. 루프가 그 행을 고르거나"
+        " 만료 정리로 되돌려 문장 열 비교의 전제가 깨지므로 워커 회귀로 읽지 않는다"
+    )
+    llm = _GateLLM()
+    stop = asyncio.Event()
+    clock = _Clock(1000.0)
+    claims = 0
+    original_claim = worker.claim_candidates
+    original_run = runner.run_job
+
+    async def claim(factory: async_sessionmaker[AsyncSession], limit: int) -> list[uuid.UUID]:
+        nonlocal claims
+        claims += 1
+        if claims >= 2:
+            await _eventually(lambda: _true(len(llm.gates) == 2))
+        ids = await original_claim(factory, limit)
+        if claims == 1:
+            clock.now = 1070.0  # 기동 + 만료 60초 + 여유 10초 — 둘째 바퀴가 정리한다
+        if claims == 3:
+            stop.set()
+            for gate in llm.gates:
+                gate.set()
+        return ids
+
+    async def run(factory: async_sessionmaker[AsyncSession], llm_client: LLMClient, job_id: uuid.UUID) -> None:
+        _STATEMENT_SOURCE.set(f"job{job_ids.index(job_id) + 1}")
+        await original_run(factory, llm_client, job_id)
+
+    async def run_loop() -> None:
+        _STATEMENT_SOURCE.set("loop")
+        await worker.run_worker(independent_factory, llm, stop, alive_file=tmp_path / "alive", clock=clock)
+
+    statements: dict[str, list[str]] = defaultdict(list)
+
+    def record(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        statements[_STATEMENT_SOURCE.get()].append(statement)
+
+    monkeypatch.setattr(worker, "claim_candidates", claim)
+    monkeypatch.setattr(worker, "run_job", run)
+    event.listen(db_engine.sync_engine, "before_cursor_execute", record)
+    try:
+        await asyncio.wait_for(asyncio.create_task(run_loop()), 30)
+    finally:
+        event.remove(db_engine.sync_engine, "before_cursor_execute", record)
+
+    assert claims == 3
+    assert [await _status(independent_factory, job_id) for job_id in job_ids] == [("succeeded", None)] * 2
+    worker_statements = {source: lines for source, lines in statements.items() if source != "other"}
+    _assert_characterization(
+        STATEMENTS_PATH, "three_loops_two_jobs_one_sweep", worker_statements, STATEMENTS_UPDATE_ENV
+    )
 
 
 # ── 작업 띄우기 분기 ───────────────────────────────────────────────────────
