@@ -427,7 +427,7 @@ class ChatModelItem(CamelModel):
 
     id: ChatRoomModelId
     name: str
-    # 새 대화방이 고르는 기본 모델인가 — 공개 가격의 모델 항목과 같은 뜻이다. 기본 모델만 하루 무료 대화가 적용된다.
+    # 새 대화방이 고르는 기본 모델인가 — 공개 가격의 모델 항목과 같은 뜻이다. 레이트리밋 면제 계정이 내지 않는 것은 기본 모델 턴뿐이다.
     is_default: bool
     beta: bool
     turn_cost: int

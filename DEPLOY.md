@@ -2370,7 +2370,7 @@ Haiku 글쓰기(`haiku_writer`, Claude Haiku 5.5, 채팅 턴 12클로버)도 같
 `ANTHROPIC_HAIKU_WRITER_MODEL_ID`(설정 안 함, 기본값은 `.env.example`)로 판정 쪽 `ANTHROPIC_HAIKU_MODEL_ID` 와 따로다. 두 채팅 레인의
 Haiku 글쓰기 문안 세트는 배포 마이그레이션이 그 레인 Sonnet 활성 세트를 복사해 심으므로 여는 날 따로 게시할 것은 없다 — 연 뒤 Sonnet
 문안을 고치면 Haiku 체인에는 따로 게시해야 반영된다. 소설에는 열리지 않는다(소설 모델 목록에 없고, 소설 요청에 이 id 가 오면 422).
-하루 무료분은 Gemini 턴에만 있어 Haiku 턴은 Gemini 보다 싸도 매 턴 클로버를 낸다. 숨기기·이미지 되돌리기는 아래 Sonnet 과 같은
+Haiku 턴은 Gemini 보다 싸도 상위 모델 갈래라 레이트리밋 면제 계정도 매 턴 클로버를 내고, Redis 장애면 열지 않는다. 숨기기·이미지 되돌리기는 아래 Sonnet 과 같은
 순서다(먼저 이 줄에서 빼고 나서 이미지를 되돌린다 — Haiku 로 시작한 빌더 미리보기 세션도 옛 이미지가 읽지 못한다).
 Haiku 글쓰기가 없던 이미지로 되돌리면 가격표 버전(`PRICE_VERSION`)이 3 에서 2 로 돌아가, 열려 있던 탭은 다음 유료 턴·이미지에서
 가격 변경 확인(409 `CLOVER_PRICE_CHANGED`)을 한 번 더 받는다 — 가격표를 다시 받으면 끝나는 확인이라 따로 할 일은 없다.

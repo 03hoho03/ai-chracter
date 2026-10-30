@@ -1,6 +1,7 @@
 """채팅 글쓰기 모델 Haiku(`haiku_writer`) — 공개 목록에 넣으면 채팅·빌더 미리보기에서 고를 수 있고, 턴마다 그 모델 값을 낸다.
 
-판정 전용 `haiku` 와 다른 id 다. 기본 모델이 아니라 하루 무료분이 적용되지 않고 매 턴 클로버를 낸다(Gemini 보다 싸도 그렇다).
+판정 전용 `haiku` 와 다른 id 다. 기본 모델이 아니라 상위 모델 갈래를 타서 레이트리밋 면제 계정도 매 턴 그 값을 내고, Redis 장애면
+열지 않는다(Gemini 보다 싸도 그렇다).
 공개 목록에서 빼면 지정·미리보기 시작이 403 이고, 이미 Haiku 가 저장된 방은 Gemini 로, Gemini 값으로 돈다. 모델 목록과 공개
 가격은 레지스트리 순서(기본 모델, 그 뒤 채팅 턴 가격이 낮은 것부터)로 싣고, 항목마다 기본 모델인지를 싣는다.
 
@@ -9,8 +10,6 @@
 """
 
 import uuid
-from datetime import UTC, datetime
-
 import httpx
 import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -45,13 +44,9 @@ def _configure(monkeypatch: pytest.MonkeyPatch, *, switch: bool = True, visible:
     monkeypatch.setattr(settings, "chat_models_visible", ["opus", "haiku_writer"] if visible is None else visible)
 
 
-async def _user(db_client: httpx.AsyncClient, db_session: AsyncSession, *, confirmed_today: bool = True) -> User:
-    """일반 계정(명단·허용 행 없음). 오늘 확인을 기본으로 해 두어 Gemini 턴이 하루 1회 확인 429 가 아니라 차감·무료로 드러난다."""
-    user = await _make_user_with_clover_lot(
-        db_session,
-        clover_balance=_START,
-        clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC)) if confirmed_today else None,
-    )
+async def _user(db_client: httpx.AsyncClient, db_session: AsyncSession, *, exempt: bool = False) -> User:
+    """일반 계정(명단·허용 행 없음). `exempt` 면 레이트리밋 면제 계정이다."""
+    user = await _make_user_with_clover_lot(db_session, clover_balance=_START, rate_limit_exempt=exempt)
     await db_session.commit()
     await _login_as(db_client, user.id)
     return user
@@ -198,18 +193,16 @@ async def test_a_failed_haiku_generation_refunds_the_haiku_price(
     assert _generated_with(fake) == ["haiku_writer"]
 
 
-# ---- 무료분과 Redis 장애 ----
+# ---- 면제 계정과 Redis 장애 ----
 
 
-async def test_a_haiku_turn_is_charged_even_with_free_daily_turns_left_and_does_not_use_them_up(
+async def test_a_haiku_turn_is_charged_even_for_a_rate_limit_exempt_account(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """하루 무료분은 기본 모델에만 있다 — Gemini 보다 싼 Haiku 도 무료분이 남은 계정에서 12 를 낸다. 무료분 1턴짜리 날에 Haiku 턴을
-    먼저 돌려도 같은 방을 Gemini 로 돌린 다음 턴은 무료다(Haiku 턴이 일일 카운터를 올리지 않는다)."""
+    """레이트리밋 면제는 기본 모델 턴의 차감만 건너뛴다 — Gemini 보다 싼 Haiku 도 면제 계정에서 12 를 낸다. 같은 방을 Gemini 로
+    돌린 다음 턴은 내지 않는다."""
     _configure(monkeypatch)
-    monkeypatch.setattr(settings, "attendance_board_enabled", False)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 1)
-    user = await _user(db_client, db_session)
+    user = await _user(db_client, db_session, exempt=True)
     room_id = await _room(db_client, db_session, user)
     await _store_model(db_session, room_id, "haiku_writer")
     fake = _FakeLLMClient(tokens=["응"])
@@ -226,7 +219,7 @@ async def test_a_haiku_turn_is_charged_even_with_free_daily_turns_left_and_does_
 async def test_a_haiku_turn_is_refused_when_redis_fails(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """기본 모델이 아닌 턴은 분당 상한을 못 센 채 열지 않는다 — 싸도 무료분이 아니라 같은 규칙이다."""
+    """기본 모델이 아닌 턴은 분당 상한을 못 센 채 열지 않는다 — Gemini 턴은 Redis 장애에도 내고 열지만 Haiku 는 싸도 상위 모델 규칙이다."""
     _configure(monkeypatch)
     user = await _user(db_client, db_session)
     room_id = await _room(db_client, db_session, user)
@@ -276,10 +269,8 @@ async def test_a_hidden_haiku_is_refused_everywhere_and_a_stored_haiku_room_runs
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """공개 목록이 기본값(Opus 하나)이면 Haiku 는 목록·공개 가격에 없고 지정·미리보기 시작이 403 이다. 숨기기 전에 Haiku 를 고른
-    방은 막히지 않고 Gemini 로, Gemini 값으로 돈다 — 숨기는 것이 롤백이라 그때 턴이 막히면 롤백이 장애가 된다. 무료분을 없애
-    Gemini 값으로 드러나게 한다."""
+    방은 막히지 않고 Gemini 로, Gemini 값으로 돈다 — 숨기는 것이 롤백이라 그때 턴이 막히면 롤백이 장애가 된다."""
     _configure(monkeypatch, visible=["opus"])
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     user = await _user(db_client, db_session)
     room_id = await _room(db_client, db_session, user)
 
