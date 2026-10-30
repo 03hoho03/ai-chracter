@@ -15429,7 +15429,7 @@
           "chat"
         ],
         "summary": "Regenerate Chat Room Memory Summary",
-        "description": "방의 지금 요약을 AI 로 다시 만든다(`chat/memory_regenerate.py`). 고정 클로버(`MEMORY_SUMMARY_REGENERATE_COST`, 방 모델과\n무관)를 먼저 자기 트랜잭션에서 깎고, 어떤 실패로 끝나든 돌려준다. 채팅 상한 예외 계정도 내고 하루 무료 대화는 쓰지 않는다.\n사용처 행을 남기지 않는다(원작자 몫이 붙는 사용이 아니다). 사용자가 고친 요약도 다시 만들 수 있다 — 확인은 화면이 받는다.\n\n깎기 전에 거절하는 것: 스위치 꺼짐 404 `MEMORY_ITEMS_DISABLED`, 재동의 403, 남의 방 403, 제한 작품 403 `CONTENT_RESTRICTED`,\n확인한 가격과 지금 가격이 다름 409 `MEMORY_SUMMARY_REGENERATE_PRICE_CHANGED` + `currentCost`, 같은 방에 진행 중 409\n`MEMORY_SUMMARY_REGENERATE_IN_PROGRESS`, 버전 불일치 409 `MEMORY_VERSION_CONFLICT`, 요약 없음 409 `MEMORY_SUMMARY_NOT_READY`.\n클로버 부족은 429 `CLOVER_REQUIRED`(`window: \"memory_summary\"`).\n\n깎은 뒤의 실패는 전부 환불한다: 요약 호출·렌더 실패와 빈 요약은 503 `MEMORY_SUMMARY_REGENERATE_UNAVAILABLE`, 요약을 기다리는\n사이 기억이 바뀌었으면 409 `MEMORY_VERSION_CONFLICT`.\n\n이름은 방 프로필로 다시 만들고(턴이 없다), 비밀 표기 범위는 방이 지금 쓰는 글쓰기 모델로 가른다 — 둘 다 접기가 그 턴에서 받는\n값과 같은 규칙이라 입력이 같으면 요약 프롬프트가 일반 접기와 바이트까지 같다.",
+        "description": "방의 지금 요약을 AI 로 다시 만든다(`chat/memory_regenerate.py`). 고정 클로버(`MEMORY_SUMMARY_REGENERATE_COST`, 방 모델과\n무관)를 먼저 자기 트랜잭션에서 깎고, 어떤 실패로 끝나든 돌려준다. 채팅 상한 예외 계정도 낸다.\n사용처 행을 남기지 않는다(원작자 몫이 붙는 사용이 아니다). 사용자가 고친 요약도 다시 만들 수 있다 — 확인은 화면이 받는다.\n\n깎기 전에 거절하는 것: 스위치 꺼짐 404 `MEMORY_ITEMS_DISABLED`, 재동의 403, 남의 방 403, 제한 작품 403 `CONTENT_RESTRICTED`,\n확인한 가격과 지금 가격이 다름 409 `MEMORY_SUMMARY_REGENERATE_PRICE_CHANGED` + `currentCost`, 같은 방에 진행 중 409\n`MEMORY_SUMMARY_REGENERATE_IN_PROGRESS`, 버전 불일치 409 `MEMORY_VERSION_CONFLICT`, 요약 없음 409 `MEMORY_SUMMARY_NOT_READY`.\n클로버 부족은 429 `CLOVER_REQUIRED`(`window: \"memory_summary\"`).\n\n깎은 뒤의 실패는 전부 환불한다: 요약 호출·렌더 실패와 빈 요약은 503 `MEMORY_SUMMARY_REGENERATE_UNAVAILABLE`, 요약을 기다리는\n사이 기억이 바뀌었으면 409 `MEMORY_VERSION_CONFLICT`.\n\n이름은 방 프로필로 다시 만들고(턴이 없다), 비밀 표기 범위는 방이 지금 쓰는 글쓰기 모델로 가른다 — 둘 다 접기가 그 턴에서 받는\n값과 같은 규칙이라 입력이 같으면 요약 프롬프트가 일반 접기와 바이트까지 같다.",
         "operationId": "regenerate_chat_room_memory_summary_chat_rooms__room_id__memory_summary_regenerate_post",
         "parameters": [
           {
@@ -16001,7 +16001,7 @@
           "clover"
         ],
         "summary": "Get Clover Pricing",
-        "description": "공개 조회 — 인증 없음. 충전 상품과 일반 회원이 쓸 수 있는 모든 사용처·허용 계정 전용 소설의 사용 단가, 채팅에서\n고를 수 있는 모델별 단가, 하루 무료 대화 수를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지\n않아 비용이 없으므로 레이트리밋도 붙이지 않는다.\n\n모델 행은 지금 채팅에서 고를 수 있게 보이는 모델만 싣는다(`is_chat_model_visible` — 화면의 모델 목록과 같은 판정이라\n채팅 상위 모델 스위치를 끄거나 공개 목록에서 빼면 그 모델 행이 빠진다). 소설 상위 모델은 소설 허용에 더해 별도 명단에 든 계정만 써서 일반 회원은\n살 수 없으므로 그 화 단가를 따로 싣지 않는다 — 모델 행의 소설 화 단가 칸은 옛 화면 호환용으로 남아 있어 Opus 행의\n값은 계속 보인다.\n\n채팅 상위 모델은 계정을 보지 않고 로그인 회원 모두에게 열리므로(`llm/model_access.py`) 모델 행에 허용 전용 표시가 없고,\n베타 표시는 레지스트리 값이다. 소설 허용 전용 표시는 허용 판정의 구조에서 온다 — 소설\n(`novelize/access.py`)은 스위치가 켜져 있어도 env 명단과 어드민 허용 행이 있는 계정만 쓴다. 그 판정이 명단 없이\n모두에게 열리도록 바뀌면 그 값도 함께 바꾼다.",
+        "description": "공개 조회 — 인증 없음. 충전 상품과 일반 회원이 쓸 수 있는 모든 사용처·허용 계정 전용 소설의 사용 단가, 채팅에서\n고를 수 있는 모델별 단가를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지\n않아 비용이 없으므로 레이트리밋도 붙이지 않는다.\n\n모델 행은 지금 채팅에서 고를 수 있게 보이는 모델만 싣는다(`is_chat_model_visible` — 화면의 모델 목록과 같은 판정이라\n채팅 상위 모델 스위치를 끄거나 공개 목록에서 빼면 그 모델 행이 빠진다). 소설 상위 모델은 소설 허용에 더해 별도 명단에 든 계정만 써서 일반 회원은\n살 수 없으므로 그 화 단가를 따로 싣지 않는다 — 모델 행의 소설 화 단가 칸은 옛 화면 호환용으로 남아 있어 Opus 행의\n값은 계속 보인다.\n\n채팅 상위 모델은 계정을 보지 않고 로그인 회원 모두에게 열리므로(`llm/model_access.py`) 모델 행에 허용 전용 표시가 없고,\n베타 표시는 레지스트리 값이다. 소설 허용 전용 표시는 허용 판정의 구조에서 온다 — 소설\n(`novelize/access.py`)은 스위치가 켜져 있어도 env 명단과 어드민 허용 행이 있는 계정만 쓴다. 그 판정이 명단 없이\n모두에게 열리도록 바뀌면 그 값도 함께 바꾼다.",
         "operationId": "get_clover_pricing_clover_pricing_get",
         "responses": {
           "200": {
@@ -16023,7 +16023,7 @@
           "clover"
         ],
         "summary": "Get Clover Products",
-        "description": "공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책\n숫자·가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로\n다시 읽는다(공개 가격 응답의 같은 주석).",
+        "description": "공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·정책 숫자·\n가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로\n다시 읽는다(공개 가격 응답의 같은 주석).",
         "operationId": "get_clover_products_clover_products_get",
         "responses": {
           "200": {
@@ -27823,10 +27823,6 @@
       },
       "CloverAttendancePolicy": {
         "properties": {
-          "enabled": {
-            "type": "boolean",
-            "title": "Enabled"
-          },
           "rewards": {
             "items": {
               "type": "integer"
@@ -27841,7 +27837,6 @@
         },
         "type": "object",
         "required": [
-          "enabled",
           "rewards",
           "minValidDays"
         ],
@@ -28213,10 +28208,6 @@
             "type": "boolean",
             "title": "Novelrestricted"
           },
-          "dailyFreeChatTurns": {
-            "type": "integer",
-            "title": "Dailyfreechatturns"
-          },
           "novelReadCost": {
             "type": "integer",
             "title": "Novelreadcost"
@@ -28278,7 +28269,6 @@
           "novelEpisodeCost",
           "novelAiEditCost",
           "novelRestricted",
-          "dailyFreeChatTurns",
           "novelReadCost",
           "novelFreeChapterCount",
           "memorySummaryRegenerateCost",
@@ -28405,10 +28395,6 @@
             "type": "boolean",
             "title": "Identitygateenabled"
           },
-          "dailyFreeChatTurns": {
-            "type": "integer",
-            "title": "Dailyfreechatturns"
-          },
           "policy": {
             "$ref": "#/components/schemas/CloverPolicyValues"
           },
@@ -28423,12 +28409,11 @@
           "payMethods",
           "paymentsEnabled",
           "identityGateEnabled",
-          "dailyFreeChatTurns",
           "policy",
           "priceVersion"
         ],
         "title": "CloverProductsResponse",
-        "description": "공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능\n스위치와 사용 단가는 공개 가격 응답(`GET /clover/pricing`)에 그대로 남는다."
+        "description": "공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능\n스위치와 사용 단가는 공개 가격 응답(`GET /clover/pricing`)에 그대로 남는다."
       },
       "CommentAuthorResponse": {
         "properties": {
@@ -32290,10 +32275,6 @@
             "type": "boolean",
             "title": "Identitygated"
           },
-          "dailyFreeChatTurns": {
-            "type": "integer",
-            "title": "Dailyfreechatturns"
-          },
           "paidCloverBalance": {
             "type": "integer",
             "title": "Paidcloverbalance"
@@ -32335,7 +32316,6 @@
           "identityVerified",
           "identityGateEnabled",
           "identityGated",
-          "dailyFreeChatTurns",
           "paidCloverBalance",
           "purchaseBlockReason",
           "novelPublicEnabled"
