@@ -81,7 +81,15 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, render_item=render_item)
+    # 기본은 이번 실행의 리비전 전부를 한 트랜잭션으로 돌린다(운영 배포의 `alembic upgrade head` 가 그렇다). 테스트 세션 끝의
+    # `downgrade base` 만 `transaction_per_migration` 을 켜 리비전마다 커밋한다 — 그 이유는 tests/conftest.py 의
+    # `_migrated_schema`.
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        render_item=render_item,
+        transaction_per_migration=config.attributes.get("transaction_per_migration", False),
+    )
 
     with context.begin_transaction():
         context.run_migrations()
