@@ -35,6 +35,7 @@ import re
 import statistics
 import sys
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
 from pathlib import Path
@@ -120,6 +121,62 @@ def _parroted(reply: str, turn_index: int, window: str) -> bool:
     return any(keyword in scope for keyword in TURN_KEYWORDS[turn_index])
 
 
+@dataclass(frozen=True)
+class ReplyFlags:
+    """응답 하나에 대한 판정 전부 — 되받기만 뺐다(되받기는 고정 대본의 턴 순번에 묶여 `_parroted` 에 남는다)."""
+
+    length: int
+    sentence_count: int
+    truncated: bool
+    self_copy: bool
+    solicit: bool
+    ignored: bool
+    # 마지막 문장이 정적·종결 어휘(_SCENE_CLOSE)로 끝나지 않았다 — 장면 이동형 열기.
+    scene_open: bool
+    label_leak: bool
+    user_turn: bool
+    # 한글 낱말에 라틴 문자가 섞인 첫 자리(없으면 None). 눈으로 확인할 후보라 글자를 그대로 낸다.
+    broken: str | None
+    brackets: tuple[str, ...]
+
+
+def reply_flags(reply: str, previous: str) -> ReplyFlags:
+    """응답 하나와 `previous` 만으로 판정한다. `previous` 는 이 응답보다 앞선, 비어 있지 않은 진행자 응답 가운데 마지막 것이다 —
+    `summarize()` 는 유실 턴(빈 응답)을 건너뛰므로 바로 앞 턴이 유실됐으면 그보다 앞의 응답을 넘기고, 앞선 응답이 하나도 없으면
+    (첫 턴, 또는 첫 턴부터 유실이 이어진 경우) 대화록 첫 항목인 오프닝 메시지를 넘긴다. 대화록 형식을 모르게 둔 것은 chat_probe
+    대화록이 아닌 기록(드라이버 로그 등)에서도 같은 판정을 쓰게 하려는 것이다. 빈 응답(유실 턴)은 판정 대상이 아니라 부르는
+    쪽이 먼저 거른다 — 빈 응답은 절단으로 판정된다."""
+    sentences = _sentences(reply)
+    last_sentence = sentences[-1] if sentences else reply
+    prev_head = previous.strip()[:_SELF_COPY_PREFIX]
+    broken = _BROKEN.search(reply)
+    return ReplyFlags(
+        length=len(reply),
+        sentence_count=len(sentences),
+        truncated=_is_truncated(reply),
+        self_copy=len(prev_head) == _SELF_COPY_PREFIX and reply.strip().startswith(prev_head),
+        solicit=bool(_SOLICIT.search(reply)),
+        ignored=bool(_IGNORE.search(reply[:120])),
+        scene_open=not _SCENE_CLOSE.search(last_sentence),
+        label_leak=bool(_LABEL.search(reply)),
+        user_turn=bool(_USER_TURN.search(reply)),
+        broken=broken.group() if broken else None,
+        brackets=tuple(_BRACKET.findall(reply)),
+    )
+
+
+def is_monotonic_shrinking(lengths: Sequence[int]) -> bool:
+    """방 하나의 응답 길이 수열이 끝까지 늘지 않았는가(같은 길이가 이어져도 참). 턴 단위가 아니라 방 단위 판정이다."""
+    return all(b <= a for a, b in pairwise(lengths))
+
+
+def length_spread(medians: Sequence[float]) -> float:
+    """항목별 길이 중앙값의 최댓값 ÷ 최솟값. 항목이 하나뿐이면 늘 1.0 이라 무의미하다 — 0.0 을 내고 출력에서 생략한다."""
+    if len(medians) < 2:
+        return 0.0
+    return max(medians) / min(medians)
+
+
 @dataclass
 class Summary:
     label: str = ""
@@ -198,37 +255,29 @@ def summarize(path: str) -> Summary:
         for index, reply in enumerate(replies):
             if not reply:
                 continue  # 유실 턴 — 채점만 건너뛰고 인덱스는 그대로 지나간다
-            out.scored += 1
-            lengths.append(len(reply))
-            scored_lengths.append(len(reply))
-            reply_sentences = _sentences(reply)
-            sentence_counts.append(len(reply_sentences))
-            if _is_truncated(reply):
-                out.truncated += 1
-            if _SOLICIT.search(reply):
-                out.solicit += 1
-            if _IGNORE.search(reply[:120]):
-                out.ignored += 1
-            last_sentence = reply_sentences[-1] if reply_sentences else reply
-            if not _SCENE_CLOSE.search(last_sentence):
-                out.scene_open += 1
-            prev_head = previous.strip()[:_SELF_COPY_PREFIX]
-            if len(prev_head) == _SELF_COPY_PREFIX and reply.strip().startswith(prev_head):
-                out.self_copies += 1
+            flags = reply_flags(reply, previous)
             previous = reply
+            out.scored += 1
+            lengths.append(flags.length)
+            scored_lengths.append(flags.length)
+            sentence_counts.append(flags.sentence_count)
+            out.truncated += flags.truncated
+            out.solicit += flags.solicit
+            out.ignored += flags.ignored
+            out.scene_open += flags.scene_open
+            out.self_copies += flags.self_copy
             for window in WINDOWS:
                 if _parroted(reply, index, window):
                     out.hits[window] += 1
                     if window == "chars250":
                         story_hits += 1
-            if _LABEL.search(reply):
+            if flags.label_leak:
                 out.defects.append(f"{key} t{index + 1}: 화자 라벨 누출")
-            if _USER_TURN.search(reply):
+            if flags.user_turn:
                 out.defects.append(f"{key} t{index + 1}: 사용자 턴 대신 씀")
-            broken = _BROKEN.search(reply)
-            if broken:
-                out.defects.append(f"{key} t{index + 1}: 한글깨짐 후보 '{broken.group()}'")
-            for token in _BRACKET.findall(reply):
+            if flags.broken is not None:
+                out.defects.append(f"{key} t{index + 1}: 한글깨짐 후보 '{flags.broken}'")
+            for token in flags.brackets:
                 out.defects.append(f"{key} t{index + 1}: 대괄호 출력 {token}")
         if scored_lengths:
             out.per_story[key] = (
@@ -237,16 +286,12 @@ def summarize(path: str) -> Summary:
                 len(scored_lengths),
             )
             out.total_rooms += 1
-            if all(b <= a for a, b in pairwise(scored_lengths)):
-                out.monotonic_rooms += 1
+            out.monotonic_rooms += is_monotonic_shrinking(scored_lengths)
 
     if lengths:
         out.median_len = statistics.median(lengths)
         out.median_sentences = statistics.median(sentence_counts)
-    medians = [value[1] for value in out.per_story.values()]
-    # 항목이 하나뿐이면 편차는 항상 1.0 이라 무의미하다 — 0.0 으로 두고 출력에서 생략한다.
-    if len(medians) >= 2:
-        out.spread = max(medians) / min(medians)
+    out.spread = length_spread([value[1] for value in out.per_story.values()])
     return out
 
 
