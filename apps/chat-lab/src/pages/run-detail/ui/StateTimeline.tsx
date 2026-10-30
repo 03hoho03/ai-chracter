@@ -26,7 +26,7 @@ import {
   type StatStrip,
   type StripTag,
 } from "../model/timelineChart";
-import { indexAtRatio, placeMarkers, tickIndexes, type MarkerGroup, type MarkerTone } from "../model/timelineMarks";
+import { indexAtPointer, placeMarkers, tickLabels, type MarkerGroup, type MarkerTone } from "../model/timelineMarks";
 import { formatDeltaValue } from "../model/turnRows";
 import { StatChart } from "./StatChart";
 
@@ -105,7 +105,7 @@ export function StateTimeline({
   function indexAt(event: MouseEvent<HTMLDivElement>): number | undefined {
     const rect = event.currentTarget.getBoundingClientRect();
     if (rect.width === 0) return undefined;
-    return indexAtRatio((event.clientX - rect.left) / rect.width, count);
+    return indexAtPointer(markerIndexAt(event.target), (event.clientX - rect.left) / rect.width, count);
   }
 
   function handleClick(event: MouseEvent<HTMLDivElement>) {
@@ -280,6 +280,8 @@ const MarkerRow = memo(function MarkerRow({ groups }: { groups: ReadonlyArray<Ma
           key={group.key}
           title={group.title}
           aria-label={group.title}
+          // 글리프 위에서는 가로 자리 대신 이 묶음의 턴을 고른다(`markerIndexAt`) — 턴 뒤 표지는 칸 경계에 있다.
+          data-marker-index={group.index >= 0 ? group.index : undefined}
           style={{ left: `${group.position * 100}%` }}
           className={cn(
             "absolute top-0.5 -translate-x-1/2 text-label leading-none whitespace-nowrap select-none",
@@ -358,31 +360,23 @@ function TurnDots({ chart, index, count }: { chart: ChartModel; index: number; c
   });
 }
 
+/** 턴 눈금 줄 — 고른 턴 숫자는 굵게, 고른 턴과 겹칠 이웃 눈금 숫자는 그리지 않는다(`tickLabels`). */
 function TickRow({ turnNumbers, selectedIndex }: { turnNumbers: ReadonlyArray<number>; selectedIndex: number }) {
   const count = turnNumbers.length;
-  const ticks = tickIndexes(count);
   return (
     <ol aria-hidden="true" className="relative h-4 border-t border-border">
-      {ticks.map((index) => (
+      {tickLabels(count, selectedIndex).map(({ index, isSelected }) => (
         <li
           key={index}
           style={{ left: `${((index + 0.5) / count) * 100}%` }}
           className={cn(
             "absolute -translate-x-1/2 text-label tabular-nums",
-            index === selectedIndex ? "font-semibold text-ink" : "text-ink-muted",
+            isSelected ? "bg-surface-raised px-0.5 font-semibold text-ink" : "text-ink-muted",
           )}
         >
           {turnNumbers[index]}
         </li>
       ))}
-      {selectedIndex !== -1 && !ticks.includes(selectedIndex) && (
-        <li
-          style={{ left: `${((selectedIndex + 0.5) / count) * 100}%` }}
-          className="absolute -translate-x-1/2 bg-surface-raised px-0.5 text-label font-semibold text-ink tabular-nums"
-        >
-          {turnNumbers[selectedIndex]}
-        </li>
-      )}
     </ol>
   );
 }
@@ -581,6 +575,14 @@ function describeTurn(chart: ChartModel, summary: TurnSummary | undefined, index
     return delta === "" ? `${line.name} ${formatCount(value)}` : `${line.name} ${formatCount(value)}(${delta})`;
   });
   return parts.length === 0 ? "스탯 선 없음" : parts.join(", ");
+}
+
+/** 포인터 아래 표지 글리프가 가리키는 묶음 칸 — 표지 위가 아니면 undefined. */
+function markerIndexAt(target: EventTarget | null): number | undefined {
+  if (!(target instanceof Element)) return undefined;
+  const marker = target.closest<HTMLElement>("[data-marker-index]");
+  const index = marker?.dataset.markerIndex;
+  return index === undefined ? undefined : Number(index);
 }
 
 function ratio(value: number, [low, high]: readonly [number, number]): number {
