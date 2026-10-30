@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.admin.prompts import _validate_prompt_draft_for_publish
 from api.chat.prompt_builder import PromptLane, load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet, PromptSetSemver
+from api.llm.chat_models import PromptSetModelId
 from factories import seed_revisions_above, undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
@@ -82,6 +83,36 @@ async def test_each_chat_lane_gets_a_byte_copy_of_its_sonnet_active_set(
     assert [getattr(seeded, label) for label in _LABELS] == [getattr(source, label) for label in _LABELS]
     assert _rows(seeded_sections) == _rows(source_sections)
     assert {"system", "generation"} <= {s.channel for s in seeded_sections}
+
+
+@pytest.mark.parametrize("lane", _LANES)
+async def test_the_seed_copies_sonnet_even_when_the_other_writing_chains_differ_from_it(
+    db_session: AsyncSession, lane: PromptLane
+) -> None:
+    """테스트 DB 에서는 글쓰기 체인들의 활성 세트가 같은 행일 수 있어, 위 바이트 비교만으로는 어느 체인을 베꼈는지 가리지 못한다.
+    Opus·Gemini 활성 세트의 생성 채널 행 하나와 라벨 하나를 바꿔 Sonnet 과 다르게 만든 뒤 다시 심으면 사본은 Sonnet 과만 같다."""
+    connection = await db_session.connection()
+    await connection.run_sync(_M.delete_seeded_rows)
+    others: tuple[PromptSetModelId, ...] = ("opus", "gemini")
+    for model in others:
+        other, other_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
+        target = next(s for s in other_sections if s.channel == "generation")
+        target.body = f"{target.body}\n{model} 만 다른 줄"
+        other.user_label = f"{other.user_label}·{model}"
+    await db_session.flush()
+
+    await connection.run_sync(_M.seed_published_sets)
+
+    db_session.expire_all()
+    seeded, seeded_sections = await load_active_prompt_set(db_session, lane=lane, model="haiku_writer")
+    sonnet, sonnet_sections = await load_active_prompt_set(db_session, lane=lane, model="sonnet")
+    assert seeded.id == _M.NEW_SET_IDS[lane]
+    assert _rows(seeded_sections) == _rows(sonnet_sections)
+    assert seeded.user_label == sonnet.user_label
+    for model in others:
+        other, other_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
+        assert _rows(seeded_sections) != _rows(other_sections), model
+        assert seeded.user_label != other.user_label, model
 
 
 @pytest.mark.parametrize("lane", _LANES)
