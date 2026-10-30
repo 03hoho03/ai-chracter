@@ -12,6 +12,9 @@ from typing import Literal
 
 # 슬롯 id — 작업 표의 `slot` CHECK 와 같은 넷이다. 슬롯 코드가 하나씩 들어와도 DB 는 처음부터 넷을 받는다.
 SlotId = Literal["source", "events", "facts", "knowledge"]
+# 모델 호출 하나를 어댑터에 배정하는 단위 — 추출은 슬롯마다, 판정은 충돌 검사 하나. 슬롯은 자기 추출의 이름을 갖고 코어는 이
+# 이름으로 어댑터를 받는다(어느 모델인지는 모른다).
+OperationKey = Literal["events.extract", "facts.extract", "knowledge.extract", "conflicts.judge"]
 ItemTable = Literal["event", "event_relation", "fact", "knowledge", "adaptation_candidate"]
 # 항목 표의 상태. `confirmed` 밖의 값은 자리만 잡아 둔 것이다. 대체는 상태 값이 아니라 만료 행과 새 행의 `supersedes_id` 로
 # 나타낸다 — 항목 행은 넣은 뒤 고치지 않는다.

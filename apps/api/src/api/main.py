@@ -20,6 +20,7 @@ from api.admin.inquiries import router as admin_inquiries_router
 from api.admin.legal import router as admin_legal_router
 from api.admin.llm_usage import router as admin_llm_usage_router
 from api.admin.notices import router as admin_notices_router
+from api.admin.novel_bible import router as admin_novel_bible_router
 from api.admin.payments import router as admin_payments_router
 from api.admin.prompt_routing import router as admin_prompt_routing_router
 from api.admin.prompts import router as admin_prompts_router
@@ -176,6 +177,7 @@ app.include_router(admin_prompt_routing_router)
 app.include_router(admin_llm_usage_router)
 app.include_router(admin_payments_router)
 app.include_router(admin_creator_payout_router)
+app.include_router(admin_novel_bible_router)
 app.include_router(assets_router)
 app.include_router(assets_me_router)
 app.include_router(auth_router)
