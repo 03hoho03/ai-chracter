@@ -2,11 +2,11 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { RunListItem } from "@/shared/api/client";
+import { formatCount } from "@/shared/lib/formatNumber";
 import { Button } from "@/shared/ui/Button";
 
 import { useRowKeys } from "../lib/useRowKeys";
 import { ancestorFolders, buildFolderTree, isFolderExpanded, type FolderNode } from "../model/folderTree";
-import { formatCount } from "../model/runFormat";
 import { rowsInFolder, type RunRow } from "../model/runRows";
 import { FolderTree } from "./FolderTree";
 import { RunPreview } from "./RunPreview";

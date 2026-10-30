@@ -12,9 +12,21 @@ type Health = Schemas["Health"];
 type RunList = Schemas["RunList"];
 /** 런 목록의 한 줄. 화면의 목록·미리보기 계산이 이 모양을 받는다. */
 export type RunListItem = Schemas["RunListItem"];
-type RunDetail = Schemas["RunDetail"];
-type TurnDetail = Schemas["TurnDetail"];
-type RunMetrics = Schemas["RunMetrics"];
+// 런 상세 화면의 계산(턴 목록 행·토큰 막대·검사기)이 받는 모양.
+export type RunDetail = Schemas["RunDetail"];
+export type TurnSummary = Schemas["TurnSummary"];
+export type StatSeries = Schemas["StatSeries"];
+export type TimelineMarker = Schemas["TimelineMarker"];
+export type Mismatch = Schemas["Mismatch"];
+export type Caution = Schemas["Caution"];
+export type TurnDetail = Schemas["TurnDetail"];
+export type AttemptDetail = Schemas["AttemptDetail"];
+export type CallCostView = Schemas["CallCostView"];
+export type RunMetrics = Schemas["RunMetrics"];
+export type TurnMetrics = Schemas["TurnMetrics"];
+export type ReplyFlagsView = Schemas["ReplyFlagsView"];
+export type DriverStatChange = Schemas["DriverStatChange"];
+export type RecordLimit = Schemas["RecordLimit"];
 type RunBundle = Schemas["RunBundle"];
 type ExportTurnsRequest = Schemas["ExportTurnsRequest"];
 type ExportTurnsResult = Schemas["ExportTurnsResult"];

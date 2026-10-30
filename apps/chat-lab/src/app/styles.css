@@ -65,7 +65,15 @@
   --text-mono: 12px;
   --text-mono--line-height: 1.6;
 
+  /* 사용자 발화·응답 원문의 줄 길이 상한 — 한국어 산문을 읽는 폭. `max-w-reading`. */
+  --container-reading: 68ch;
+
   /* 간격은 Tailwind 기본 4px 단위(`--spacing: 0.25rem`)를 그대로 쓴다 — 표 한 줄 28px 은 `h-7`. */
+
+  /* 그림자는 잠깐 떠서 다른 것을 가리는 층(펼친 목록·메뉴·토스트)에만. 정지한 패널에는 없다. */
+  --shadow-overlay:
+    0 8px 24px light-dark(oklch(0.22 0.02 256 / 0.14), oklch(0 0 0 / 0.45)),
+    0 0 0 1px light-dark(oklch(0.8 0.008 256), oklch(0.4 0.01 256));
 
   --radius-sm: 3px;
   --radius-md: 5px;

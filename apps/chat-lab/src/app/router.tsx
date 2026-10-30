@@ -1,6 +1,6 @@
 import { createHashHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 
-import { RunDetailPage } from "@/pages/run-detail";
+import { parseRunDetailSearch, RunDetailPage } from "@/pages/run-detail";
 import { parseRunListSearch, RunListPage } from "@/pages/run-list";
 
 // 라우트는 파일 기반 생성 대신 여기에 코드로 적는다. 화면이 둘뿐이고, 런 하나를 단일 HTML 파일로 굳힐 때 JS 가
@@ -19,6 +19,7 @@ const runListRoute = createRoute({
 const runDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/runs/$runId",
+  validateSearch: parseRunDetailSearch,
   component: RunDetailPage,
 });
 

@@ -8,7 +8,6 @@ import {
   formatDateRange,
   formatLabel,
   formatStartedAt,
-  formatUsd,
   lowerBoundNote,
   summarizeModels,
 } from "./runFormat";
@@ -36,6 +35,8 @@ function group(overrides: Partial<GroupSummary> = {}): GroupSummary {
     cautionTotal: 0,
     pricedUsd: 0,
     unpricedCalls: 0,
+    lowerBoundRunCount: 0,
+    tokenGapRunCount: 0,
     needsExportCount: 0,
     unopenedCount: 0,
     ...overrides,
@@ -50,34 +51,44 @@ describe("formatLabel", () => {
   });
 });
 
-describe("formatUsd", () => {
-  it("소수 넷째 자리까지, 천 단위 쉼표", () => {
-    expect(formatUsd(0.0912)).toBe("$0.0912");
-    expect(formatUsd(2.41874)).toBe("$2.4187");
-    expect(formatUsd(1234.5)).toBe("$1,234.5000");
-  });
-
-  it("0 원도 같은 자릿수로 적는다 — 원가가 없는 것과는 다른 모양이다", () => {
-    expect(formatUsd(0)).toBe("$0.0000");
-  });
-});
-
 describe("describeRunCost", () => {
   it("턴 기록 파일이 없어 원가가 비면 내보내기 필요", () => {
     expect(describeRunCost(item({ costUsd: null, hasChatTurns: false }))).toEqual({ kind: "needsExport" });
   });
 
-  it("단가 없는 호출이 없으면 원가 그대로", () => {
-    expect(describeRunCost(item({ costUsd: 0.25, unpricedCalls: 0 }))).toEqual({ kind: "exact", usd: 0.25 });
+  it("측정 서버가 하한으로 보지 않은 원가는 그대로", () => {
+    expect(describeRunCost(item({ costUsd: 0.25, unpricedCalls: 0, costIsLowerBound: false }))).toEqual({
+      kind: "exact",
+      usd: 0.25,
+    });
   });
 
-  it("단가표에 없는 호출이 빠졌으면 하한", () => {
-    expect(describeRunCost(item({ costUsd: 0.25, unpricedCalls: 2 }))).toEqual({
+  it("단가표에 없는 호출이 빠졌으면 하한 — 빠진 호출 수는 까닭 문구에 쓴다", () => {
+    expect(describeRunCost(item({ costUsd: 0.25, unpricedCalls: 2, costIsLowerBound: true }))).toEqual({
       kind: "lowerBound",
       usd: 0.25,
       unpricedCalls: 2,
+      hasTokenGap: false,
       needsExportCount: 0,
       unopenedCount: 0,
+    });
+  });
+
+  it("단가 없는 호출이 없어도 측정 서버가 하한으로 보면 하한 — 입력 토큰이 기록되지 않은 호출이 섞인 런", () => {
+    expect(describeRunCost(item({ costUsd: 0.25, unpricedCalls: 0, costIsLowerBound: true }))).toEqual({
+      kind: "lowerBound",
+      usd: 0.25,
+      unpricedCalls: 0,
+      hasTokenGap: true,
+      needsExportCount: 0,
+      unopenedCount: 0,
+    });
+  });
+
+  it("하한 여부는 단가 없는 호출 수로 다시 셈하지 않는다 — 측정 서버가 하한이 아니라고 하면 그대로", () => {
+    expect(describeRunCost(item({ costUsd: 0.25, unpricedCalls: 2, costIsLowerBound: false }))).toEqual({
+      kind: "exact",
+      usd: 0.25,
     });
   });
 
@@ -97,6 +108,7 @@ describe("describeGroupCost", () => {
       kind: "lowerBound",
       usd: 1.5,
       unpricedCalls: 0,
+      hasTokenGap: false,
       needsExportCount: 1,
       unopenedCount: 0,
     });
@@ -107,8 +119,35 @@ describe("describeGroupCost", () => {
       kind: "lowerBound",
       usd: 1.5,
       unpricedCalls: 0,
+      hasTokenGap: false,
       needsExportCount: 0,
       unopenedCount: 1,
+    });
+  });
+
+  it("원가가 하한인 런이 섞이면 하한 — 단가 없는 호출 없이 토큰만 빠진 런이 있으면 그 까닭도 싣는다", () => {
+    expect(
+      describeGroupCost(group({ pricedUsd: 1.5, unpricedCalls: 2, lowerBoundRunCount: 2, tokenGapRunCount: 1 })),
+    ).toEqual({
+      kind: "lowerBound",
+      usd: 1.5,
+      unpricedCalls: 2,
+      hasTokenGap: true,
+      needsExportCount: 0,
+      unopenedCount: 0,
+    });
+  });
+
+  it("하한인 런이 모두 단가 없는 호출로 설명되면 토큰 까닭은 싣지 않는다", () => {
+    expect(
+      describeGroupCost(group({ pricedUsd: 1.5, unpricedCalls: 2, lowerBoundRunCount: 1, tokenGapRunCount: 0 })),
+    ).toMatchObject({ kind: "lowerBound", unpricedCalls: 2, hasTokenGap: false });
+  });
+
+  it("하한 여부는 단가 없는 호출 합이 아니라 하한인 런 수로 본다", () => {
+    expect(describeGroupCost(group({ pricedUsd: 1.5, unpricedCalls: 2 }))).toEqual({ kind: "exact", usd: 1.5 });
+    expect(describeGroupCost(group({ pricedUsd: 1.5, lowerBoundRunCount: 1, tokenGapRunCount: 1 }))).toMatchObject({
+      kind: "lowerBound",
     });
   });
 
@@ -166,15 +205,20 @@ describe("summarizeModels", () => {
 });
 
 describe("lowerBoundNote", () => {
+  const base = { kind: "lowerBound", usd: 1, unpricedCalls: 0, hasTokenGap: false, needsExportCount: 0, unopenedCount: 0 } as const;
+
   it("합에서 빠진 것을 문장으로", () => {
-    expect(lowerBoundNote({ kind: "lowerBound", usd: 1, unpricedCalls: 2, needsExportCount: 0, unopenedCount: 0 })).toBe(
-      "단가표에 없는 호출 2건이 빠진 합이다",
-    );
-    expect(lowerBoundNote({ kind: "lowerBound", usd: 1, unpricedCalls: 2, needsExportCount: 3, unopenedCount: 0 })).toBe(
+    expect(lowerBoundNote({ ...base, unpricedCalls: 2 })).toBe("단가표에 없는 호출 2건이 빠진 합이다");
+    expect(lowerBoundNote({ ...base, unpricedCalls: 2, needsExportCount: 3 })).toBe(
       "단가표에 없는 호출 2건, 턴 기록 파일이 없는 런 3개가 빠진 합이다",
     );
-    expect(lowerBoundNote({ kind: "lowerBound", usd: 1, unpricedCalls: 0, needsExportCount: 0, unopenedCount: 4 })).toBe(
-      "열지 못한 런 4개가 빠진 합이다",
+    expect(lowerBoundNote({ ...base, unopenedCount: 4 })).toBe("열지 못한 런 4개가 빠진 합이다");
+  });
+
+  it("입력 토큰이 기록되지 않은 호출은 수 없이 그 입력 몫이 빠졌다고 — 목록 한 줄에는 그 호출 수가 없다", () => {
+    expect(lowerBoundNote({ ...base, hasTokenGap: true })).toBe("입력 토큰이 기록되지 않은 호출의 입력 몫이 빠진 합이다");
+    expect(lowerBoundNote({ ...base, unpricedCalls: 1, hasTokenGap: true, unopenedCount: 2 })).toBe(
+      "단가표에 없는 호출 1건, 입력 토큰이 기록되지 않은 호출의 입력 몫, 열지 못한 런 2개가 빠진 합이다",
     );
   });
 });

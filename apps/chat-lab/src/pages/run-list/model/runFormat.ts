@@ -1,4 +1,5 @@
 import type { RunListItem } from "@/shared/api/client";
+import { formatCount } from "@/shared/lib/formatNumber";
 
 import { isOpened, type GroupSummary } from "./runRows";
 
@@ -8,11 +9,6 @@ const FORMAT_LABELS = {
   legacy: "지원 안 함",
 } as const satisfies Record<RunListItem["format"], string>;
 
-/** 원가는 소수 넷째 자리로 자리를 고정한다 — 세로로 줄 선 칸에서 `$0.0912` 와 `$2.4187` 의 소수점이 맞는다. */
-const USD_FORMAT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-
-const COUNT_FORMAT = new Intl.NumberFormat("en-US");
-
 const STAMP_PATTERN = /^\d{4}-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/;
 const DATE_PATTERN = /^\d{4}-(\d{2})-(\d{2})/;
 
@@ -20,44 +16,52 @@ const DATE_PATTERN = /^\d{4}-(\d{2})-(\d{2})/;
  * 원가 칸에 무엇을 적을지. `$0.0000` 과 "원가를 모름"이 같은 모양이 되지 않게 갈래를 나눈다.
  * - `none`: 열지 않은 런 — 원가를 말할 자리가 아니다.
  * - `needsExport`: 턴 기록 파일이 없어 원가를 낼 수 없다.
- * - `lowerBound`: 합에서 빠진 것(단가표에 없는 호출, 턴 기록이 없는 런, 열지 못한 런)이 있어 실제 원가는 이보다 크거나 같다.
+ * - `lowerBound`: 합에서 빠진 것(단가표에 없는 호출, 입력 토큰이 기록되지 않은 호출, 턴 기록이 없는 런, 열지 못한 런)이 있어
+ *   실제 원가는 이보다 크거나 같다. 런 하나가 하한인지는 측정 서버가 판정한 `costIsLowerBound` 를 따르고, 나머지 칸은 까닭 문구용이다.
+ *   `hasTokenGap` 은 하한인데 단가 없는 호출로는 설명되지 않는 런이 있다는 것 — 측정 서버가 하한으로 보는 다른 까닭은 입력 토큰이
+ *   기록되지 않은 호출뿐이다(목록 한 줄에는 그 호출 수가 없다).
  */
 export type CostView =
   | { kind: "none" }
   | { kind: "needsExport" }
   | { kind: "exact"; usd: number }
-  | { kind: "lowerBound"; usd: number; unpricedCalls: number; needsExportCount: number; unopenedCount: number };
+  | {
+      kind: "lowerBound";
+      usd: number;
+      unpricedCalls: number;
+      hasTokenGap: boolean;
+      needsExportCount: number;
+      unopenedCount: number;
+    };
 
 export function formatLabel(format: RunListItem["format"]): string {
   return FORMAT_LABELS[format];
 }
 
-export function formatUsd(usd: number): string {
-  return `$${USD_FORMAT.format(usd)}`;
-}
-
-export function formatCount(count: number): string {
-  return COUNT_FORMAT.format(count);
-}
-
 export function describeRunCost(item: RunListItem): CostView {
   if (!isOpened(item)) return { kind: "none" };
   if (item.costUsd == null) return { kind: "needsExport" };
+  if (item.costIsLowerBound !== true) return { kind: "exact", usd: item.costUsd };
   const unpricedCalls = item.unpricedCalls ?? 0;
-  if (unpricedCalls > 0) {
-    return { kind: "lowerBound", usd: item.costUsd, unpricedCalls, needsExportCount: 0, unopenedCount: 0 };
-  }
-  return { kind: "exact", usd: item.costUsd };
+  return {
+    kind: "lowerBound",
+    usd: item.costUsd,
+    unpricedCalls,
+    hasTokenGap: unpricedCalls === 0,
+    needsExportCount: 0,
+    unopenedCount: 0,
+  };
 }
 
 export function describeGroupCost(summary: GroupSummary): CostView {
   if (summary.unopenedCount === summary.runCount) return { kind: "none" };
   if (summary.runCount - summary.unopenedCount - summary.needsExportCount === 0) return { kind: "needsExport" };
-  if (summary.unpricedCalls > 0 || summary.needsExportCount > 0 || summary.unopenedCount > 0) {
+  if (summary.lowerBoundRunCount > 0 || summary.needsExportCount > 0 || summary.unopenedCount > 0) {
     return {
       kind: "lowerBound",
       usd: summary.pricedUsd,
       unpricedCalls: summary.unpricedCalls,
+      hasTokenGap: summary.tokenGapRunCount > 0,
       needsExportCount: summary.needsExportCount,
       unopenedCount: summary.unopenedCount,
     };
@@ -98,9 +102,10 @@ export function summarizeModels(item: RunListItem): { first: string; extraCount:
 
 /** 하한 원가 옆에 붙일 까닭 — 무엇이 합에서 빠졌는가. */
 export function lowerBoundNote(cost: Extract<CostView, { kind: "lowerBound" }>): string {
-  // 조사는 마지막 낱말을 따른다 — 호출만 빠졌으면 "건이", 런이 빠졌으면 "개가".
+  // 조사는 마지막 낱말을 따른다 — 호출만 빠졌으면 "건이"·"몫이", 런이 빠졌으면 "개가".
   const missing = [
     cost.unpricedCalls > 0 ? `단가표에 없는 호출 ${formatCount(cost.unpricedCalls)}건` : undefined,
+    cost.hasTokenGap ? "입력 토큰이 기록되지 않은 호출의 입력 몫" : undefined,
     cost.needsExportCount > 0 ? `턴 기록 파일이 없는 런 ${formatCount(cost.needsExportCount)}개` : undefined,
     cost.unopenedCount > 0 ? `열지 못한 런 ${formatCount(cost.unopenedCount)}개` : undefined,
   ].filter((part) => part !== undefined);

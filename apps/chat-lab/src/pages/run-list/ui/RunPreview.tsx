@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { RunListItem } from "@/shared/api/client";
+import { formatCount } from "@/shared/lib/formatNumber";
 import { Button } from "@/shared/ui/Button";
 
 import { relativeToFolder } from "../model/folderTree";
@@ -8,7 +9,6 @@ import { describeAttention, type AttentionTone } from "../model/runAttention";
 import {
   describeGroupCost,
   describeRunCost,
-  formatCount,
   formatDateRange,
   formatLabel,
   formatStartedAt,

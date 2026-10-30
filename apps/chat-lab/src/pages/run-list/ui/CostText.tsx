@@ -1,6 +1,7 @@
 import { assertNever } from "@/shared/lib/assertNever";
+import { formatUsd } from "@/shared/lib/formatNumber";
 
-import { formatUsd, lowerBoundNote, type CostView } from "../model/runFormat";
+import { lowerBoundNote, type CostView } from "../model/runFormat";
 
 /**
  * 원가 한 칸. `$0.0000` 과 "원가를 모름"이 같은 모양이 되지 않게 갈래마다 다르게 적는다 — 턴 기록이 없으면 "내보내기 필요",

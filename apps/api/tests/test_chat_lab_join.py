@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from analyze_chat_probe import reply_flags
 from api.db.models import ChatTurn, StatDef
 from api.llm import pricing
+from api.llm.call_policy import CALL_POLICIES
 from api.llm.pricing import PRICES_AS_OF, ModelPrice, call_cost
 from chat_lab.bundles import CHAT_TURNS_NAME, discover_bundles
 from chat_lab.chat_turns_file import (
@@ -34,9 +35,21 @@ from chat_lab.chat_turns_file import (
     stat_def_entry,
 )
 from chat_lab.join import JoinedRun, join_bundle
-from chat_lab.report import run_detail, run_metrics, turn_detail
-from chat_lab.schemas import RunMetrics, TurnMetrics
+from chat_lab.report import (
+    BACKGROUND_LIMIT,
+    EXPORT_NEEDED_LIMIT,
+    JUDGMENT_RESULT_LIMIT,
+    LATENCY_LIMIT,
+    NO_DUMP_LIMIT,
+    call_site_kind,
+    list_entry,
+    run_detail,
+    run_metrics,
+    turn_detail,
+)
+from chat_lab.schemas import CallSiteKind, RunMetrics, TurnMetrics
 from driver_harness import (
+    _DRIVE_LOWER_RULE,
     _DRIVE_RAISE_RULE,
     DRIVE_HIDDEN_RULE,
     DRIVE_HIDDEN_STAT_NAME,
@@ -45,7 +58,7 @@ from driver_harness import (
     drive_room,
     says,
 )
-from replay.logs import generation_records, load_driver_logs, load_dump, turn_line
+from replay.logs import generation_records, load_driver_logs, load_dump, stats_line, turn_line
 
 
 def _jsonl(path: Path) -> list[dict[str, Any]]:
@@ -787,3 +800,430 @@ async def test_a_lost_turn_without_a_retry_is_skipped_when_choosing_the_previous
     assert [(m.turn, m.previous_from, m.previous_turn) for m in metrics.turns] == [(1, "opening", None), (3, "turn", 1)]
     assert next(m for m in metrics.turns if m.turn == 3).flags.model_dump() == _flags_dump(third, first)
     assert (metrics.scored, metrics.lost) == (2, 1)
+
+
+async def test_driver_stat_changes_carry_the_value_the_turn_started_from_and_the_change(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """드라이버 줄 스탯 변화의 `value` 는 바뀐 뒤 값이다(드라이버가 SSE statChange 의 새 값을 적는다). 화면이 앞 턴 값을 빼서
+    변화량을 내면 계산이 화면으로 새므로 서버가 그 턴이 시작한 값(`before`)과 변화량(`delta`)을 준다. 시작 값은 리플레이가 그
+    턴을 조립할 때 읽는 스탯 줄과 같아야 두 도구가 같은 턴을 같은 상태로 본다 — 첫 턴은 오프닝, 유실 뒤 재시도 턴은 드라이버가
+    기준을 다시 잡은 줄이다. 오르고 내리는 변화를 번갈아 넣어 부호나 앞뒤가 뒤집히면 드러나게 한다. 고르지 않은 시도(유실)의
+    변화도 그 턴이 시작한 값에서 잰다 — 그 시도도 같은 상태에서 보냈다. 측정 장치의 유실 시도는 생성이 실패해 판정 전에 끝나므로
+    그 줄에 변화를 하나 얹는다."""
+    driven = await drive_room(
+        db_session,
+        monkeypatch,
+        tmp_path,
+        script=says(5),
+        failing_generations=(3,),
+        stat_verdicts={
+            1: (_DRIVE_RAISE_RULE,),
+            2: (_DRIVE_LOWER_RULE,),
+            4: (_DRIVE_RAISE_RULE,),
+            5: (_DRIVE_LOWER_RULE,),
+        },
+    )
+
+    detail = run_detail(_join(tmp_path))
+
+    assert [(turn.turn, turn.attempt_count) for turn in detail.turns] == [(1, 1), (2, 1), (3, 2), (4, 1)]
+    assert [[(c.name, c.before, c.value, c.delta) for c in turn.driver_stat_changes] for turn in detail.turns] == [
+        [(DRIVE_STAT_NAME, 50.0, 80.0, 30.0)],
+        [(DRIVE_STAT_NAME, 80.0, 40.0, -40.0)],
+        [(DRIVE_STAT_NAME, 40.0, 70.0, 30.0)],
+        [(DRIVE_STAT_NAME, 70.0, 30.0, -40.0)],
+    ]
+    logs = load_driver_logs(driven.log, driven.snapshot_log, driven.room_id)
+    sources = [stats_line(logs, turn.turn)[1] for turn in detail.turns]
+    assert [source["kind"] for source in sources] == ["opening", "turn", "rebase", "turn"]
+    assert [turn.driver_stat_changes[0].before for turn in detail.turns] == [
+        source["roomAfter"]["stats"][DRIVE_STAT_NAME] for source in sources
+    ]
+
+    lines = _jsonl(driven.log)
+    [lost] = [r for r in lines if r["kind"] == "turn" and r["clientTurn"] == 3 and not r["done"]]
+    lost["statChanges"] = [{"name": DRIVE_STAT_NAME, "value": 95}]
+    _write_jsonl(driven.log, lines)
+
+    attempts = turn_detail(_join(tmp_path), 3).attempts
+    assert [(a.selected, [(c.before, c.value, c.delta) for c in a.driver_stat_changes]) for a in attempts] == [
+        (False, [(40.0, 95.0, 55.0)]),
+        (True, [(40.0, 70.0, 30.0)]),
+    ]
+
+
+async def test_the_turn_after_a_replaced_reply_has_no_known_start_value(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """재생성·수정 줄에는 바뀐 뒤 스탯이 없고 재생성은 스탯을 다시 판정하므로, 응답이 교체된 턴의 다음 턴이 어느 값에서 시작했는지
+    기록으로 알 수 없다. 교체 전 줄의 값으로 채우면 틀릴 수 있는 숫자를 보이게 되어 시작 값과 변화량을 비운다. 교체된 턴 자신은
+    교체 전에 시작했으니 그대로이고, 응답을 받지 못한 교체는 응답도 스탯도 바꾸지 않아 다음 턴의 시작 값을 지우지 않는다."""
+    driven = await drive_room(
+        db_session,
+        monkeypatch,
+        tmp_path,
+        script=says(3),
+        failing_generations=(),
+        stat_verdicts={1: (_DRIVE_RAISE_RULE,), 2: (_DRIVE_LOWER_RULE,), 3: (_DRIVE_RAISE_RULE,)},
+    )
+    room = str(driven.room_id)
+    failed = {**_replacement("regenerate", room, 1, "", None), "done": False, "failure": "가짜 생성 실패"}
+    regenerate = _replacement("regenerate", room, 2, "다시 쓴 둘째 응답이다. 바람이 멎는다.", None)
+    lines: list[dict[str, Any]] = []
+    for record in _jsonl(driven.log):
+        lines.append(record)
+        if record["kind"] == "turn":
+            lines += {1: [failed], 2: [regenerate]}.get(record["clientTurn"], [])
+    _write_jsonl(driven.log, lines)
+
+    detail = run_detail(_join(tmp_path))
+
+    assert [(turn.turn, turn.replaced) for turn in detail.turns] == [(1, False), (2, True), (3, False)]
+    assert [[(c.before, c.value, c.delta) for c in turn.driver_stat_changes] for turn in detail.turns] == [
+        [(50.0, 80.0, 30.0)],
+        [(80.0, 40.0, -40.0)],
+        [(None, 70.0, None)],
+    ]
+
+
+async def test_supplement_lines_and_a_rebase_after_a_lost_turn_give_the_next_start_value(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """사람이 친 턴을 보충한 줄도 방 상태(`roomAfter`)를 남겨, 첫 보충 턴의 시작 값은 앞 드라이버 턴 줄에서, 다음 보충 턴의 시작
+    값은 앞 보충 줄에서 온다. 앞 턴이 재시도 없이 유실되면 그 턴 뒤 상태를 아는 줄이 없어 시작 값이 빈다 — 더 앞 턴의 값으로
+    채우면 유실 턴이 바꿨을 수 있는 값을 보인다. 드라이버가 기준을 다시 잡은 줄이 있으면 그 값이다(방을 다시 읽은 실제 상태다)."""
+    driven = await drive_room(
+        db_session,
+        monkeypatch,
+        tmp_path,
+        script=says(2),
+        failing_generations=(),
+        stat_verdicts={1: (_DRIVE_RAISE_RULE,)},
+    )
+    lines = _jsonl(driven.log)
+    second = [r for r in lines if r["kind"] == "turn"][-1]
+    room = str(driven.room_id)
+
+    def supplement(turn_count: int, value: float) -> dict[str, Any]:
+        record = _supplement(room, second["roomAfter"], second["memory"], turn_count)
+        record["statChanges"] = [{"name": DRIVE_STAT_NAME, "value": value}]
+        record["roomAfter"]["stats"] = {**record["roomAfter"]["stats"], DRIVE_STAT_NAME: value}
+        return record
+
+    def changes() -> list[list[tuple[float | None, float, float | None]]]:
+        detail = run_detail(_join(tmp_path))
+        return [[(c.before, c.value, c.delta) for c in turn.driver_stat_changes] for turn in detail.turns]
+
+    supplements = [supplement(3, 60.0), supplement(4, 65.0)]
+    _write_jsonl(driven.log, [*lines, *supplements])
+    known = [[(50.0, 80.0, 30.0)], [], [(80.0, 60.0, -20.0)], [(60.0, 65.0, 5.0)]]
+    assert changes() == known
+
+    lost = {
+        **second,
+        "done": False,
+        "reply": "",
+        "partialReply": "끊긴 조각이다.",
+        "statChanges": [],
+        "assistantMessageId": None,
+        "roomAfter": None,
+    }
+    without_retry = [lost if r is second else r for r in lines]
+    _write_jsonl(driven.log, [*without_retry, *supplements])
+    assert changes() == [[(50.0, 80.0, 30.0)], [], [(None, 60.0, None)], [(60.0, 65.0, 5.0)]]
+
+    rebase = {
+        "kind": "rebase",
+        "roomId": room,
+        "at": second["sentAt"],
+        "reason": "유실 턴 뒤 기준 다시 잡기",
+        "roomAfter": {**second["roomAfter"], "source": "refetch"},
+    }
+    _write_jsonl(driven.log, [*without_retry, rebase, *supplements])
+    assert changes() == known
+
+
+async def test_turn_summaries_carry_the_metric_flags_of_the_same_turn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """턴 목록은 응답 단위 플래그를 턴 요약에서 바로 읽는다. 그 값은 런 지표의 같은 턴 칸과 같아야 한다 — 따로 판정하면 자기복제처럼
+    직전 응답에 달린 판정이 목록과 지표 탭에서 갈린다. 앞 턴이 유실되면 직전 응답은 그보다 앞의 응답이므로, 셋째 응답이 첫 응답으로
+    시작하게 바꿔 직전 응답을 잘못 고르면 자기복제가 갈리게 한다. 응답이 없는 턴에는 플래그가 없다."""
+    driven = await _plain_run(db_session, monkeypatch, tmp_path, 3)
+    lines = _jsonl(driven.log)
+    turns = {r["clientTurn"]: r for r in lines if r["kind"] == "turn"}
+    first_reply = "첫 응답은 자기복제 판정이 보는 머리 쉰 글자보다 길게 쓴다. 바람이 분다. 등불이 흔들리고 골목 끝에서 문이 천천히 닫힌다."
+    turns[1]["reply"] = first_reply
+    turns[2].update(
+        done=False,
+        reply="",
+        partialReply="끊긴 조각이다.",
+        statChanges=[],
+        ending=None,
+        assistantMessageId=None,
+        roomAfter=None,
+    )
+    turns[3]["reply"] = first_reply + " 그리고 다시 걷는다."
+    _write_jsonl(driven.log, lines)
+
+    joined = _join(tmp_path)
+    detail = run_detail(joined)
+    metrics = run_metrics(joined)
+
+    by_turn = {m.turn: m.flags for m in metrics.turns}
+    assert [(turn.turn, turn.flags) for turn in detail.turns] == [(1, by_turn[1]), (2, None), (3, by_turn[3])]
+    third = detail.turns[2].flags
+    assert third is not None and third.self_copy
+
+
+# 호출 정책 표의 모든 호출 위치와 표 밖의 임베딩 호출 이름의 종류. 표에 새 호출 위치가 생기면 이 표에 없어 아래 테스트가 실패한다.
+_EXPECTED_KINDS: dict[str, CallSiteKind] = {
+    "chat_generate": "generation",
+    "preview_generate": "generation",
+    "novelize_chapter": "generation",
+    "replay_generate": "generation",
+    "chat_stat_judgment": "judgment",
+    "chat_ending_judgment": "judgment",
+    "chat_situational_image": "judgment",
+    "chat_media_book_image": "judgment",
+    "chat_scene_judgment": "judgment",
+    "preview_stat_judgment": "judgment",
+    "preview_ending_judgment": "judgment",
+    "preview_media_book_image": "judgment",
+    "preview_scene_judgment": "judgment",
+    "chat_memory_summary": "background",
+    "chat_memory_episode": "background",
+    "chat_memory_fact": "background",
+    "chat_memory_impression": "background",
+    "chat_memory_query_embedding": "embedding",
+    "chat_memory_embedding": "embedding",
+    "publish_filter_character": "other",
+    "publish_filter_story": "other",
+    "seed_story_generate": "other",
+    "seed_similarity_review": "other",
+    "novelize_revise": "other",
+    "novelize_boundary": "other",
+    "novelize_revise_recheck": "other",
+    "novelize_outline": "other",
+    "novelize_episode_outline": "other",
+    "novel_publish_screen": "other",
+    "novel_illustration_screen": "other",
+    "no_such_call_site": "other",
+}
+
+
+def test_every_call_site_gets_one_kind_from_the_call_policy_table() -> None:
+    """호출 뷰의 종류는 화면이 call_site 이름을 따로 해석하지 않게 서버가 준다. 근거는 호출 정책 표의 행(스트리밍으로 부르면 생성,
+    판정 종류가 있으면 판정, 판정 종류 없이 모델 설정이 있으면 기억 요약·추출이라 백그라운드)과 표 밖 임베딩 호출 이름이다. 종류를
+    정하지 않은 새 호출 위치가 조용히 `other` 로 보이지 않게 표의 모든 행을 기대표가 덮는지 함께 본다."""
+    assert set(CALL_POLICIES) <= set(_EXPECTED_KINDS)
+    assert {site: call_site_kind(site) for site in _EXPECTED_KINDS} == _EXPECTED_KINDS
+
+
+async def test_call_views_and_turn_costs_leave_unknown_costs_empty_instead_of_zero(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """원가를 모르는 자리를 0 으로 채우면 공짜 호출·공짜 턴으로 읽힌다. 입력 토큰이 기록되지 않은 호출(그림을 싣는 판정, 시간 안에
+    오지 않은 질의 임베딩)은 호출 원가가 비고, 턴 기록 행이 하나도 붙지 않은 턴은 턴 원가가 빈다. 단가 없는 호출이나 토큰 없는
+    호출이 섞인 턴·행은 합을 내되 하한이라고 표시한다 — 합은 원가 리포트와 같은 단가 함수 값의 합이라 토큰 없는 호출도 기록된
+    칸만큼은 들어간다. 호출 뷰는 화면이 call_site 이름을 해석하지 않게 종류를 싣고, 새 입력 토큰(입력 − 캐시 읽기 − 캐시 쓰기,
+    음수면 0)은 단가 함수가 정가를 곱하는 몫과 같아야 한다."""
+    driven = await _plain_run(db_session, monkeypatch, tmp_path, 4)
+    generation: dict[str, Any] = {
+        "callSite": "chat_generate",
+        "model": "gemini-3.5-flash-lite",
+        "promptTokens": 1200,
+        "cachedTokens": 200,
+        "cacheWriteTokens": None,
+        "outputTokens": 300,
+        "thoughtsTokens": 50,
+        "firstTokenMs": 900,
+        "streamFirstTokenMs": 700,
+    }
+    judgment: dict[str, Any] = {
+        "callSite": "chat_stat_judgment",
+        "model": "claude-haiku-5-5",
+        "promptTokens": 800,
+        "cachedTokens": 100,
+        "cacheWriteTokens": 300,
+        "outputTokens": 40,
+        "thoughtsTokens": None,
+    }
+    over_cached: dict[str, Any] = {
+        "callSite": "chat_scene_judgment",
+        "model": "claude-haiku-5-5",
+        "promptTokens": 10,
+        "cachedTokens": 50,
+        "cacheWriteTokens": 0,
+        "outputTokens": 5,
+        "thoughtsTokens": None,
+    }
+    image_without_input: dict[str, Any] = {
+        "callSite": "chat_situational_image",
+        "model": "gemini-3.5-flash-lite",
+        "promptTokens": None,
+        "cachedTokens": None,
+        "cacheWriteTokens": None,
+        "outputTokens": 30,
+        "thoughtsTokens": None,
+    }
+    embedding_timeout: dict[str, Any] = {
+        "callSite": "chat_memory_query_embedding",
+        "model": "voyage-4-lite",
+        "dims": 1024,
+        "promptTokens": None,
+        "latencyMs": 1500,
+        "outcome": "timeout",
+    }
+    unpriced: dict[str, Any] = {
+        "callSite": "chat_ending_judgment",
+        "model": "no-such-model",
+        "promptTokens": 10,
+        "cachedTokens": 0,
+        "cacheWriteTokens": None,
+        "outputTokens": 1,
+        "thoughtsTokens": None,
+    }
+    calls_by_turn = {
+        1: [generation, judgment, over_cached],
+        2: [generation, image_without_input, embedding_timeout],
+        3: [generation, unpriced],
+    }
+    for number, calls in calls_by_turn.items():
+        await db_session.execute(
+            sa.update(ChatTurn)
+            .where(ChatTurn.chat_room_id == driven.room_id, ChatTurn.turn_number == number)
+            .values(llm_calls=calls)
+        )
+    stat_defs, rows = await _db_export(db_session, driven)
+    _write_export(driven, stat_defs, [row for row in rows if row["turn_number"] != 4])
+
+    joined = _join(tmp_path)
+    detail = run_detail(joined)
+
+    records = {number: turn_detail(joined, number).attempts[0].chat_turns for number in (1, 2, 3)}
+    assert [
+        [
+            (c.call_site, c.kind, c.new_input_tokens, c.usd is None, c.missing_tokens)
+            for r in records[n]
+            for c in r.calls
+        ]
+        for n in (1, 2, 3)
+    ] == [
+        [
+            ("chat_generate", "generation", 1000, False, False),
+            ("chat_stat_judgment", "judgment", 400, False, False),
+            ("chat_scene_judgment", "judgment", 0, False, False),
+        ],
+        [
+            ("chat_generate", "generation", 1000, False, False),
+            ("chat_situational_image", "judgment", None, True, True),
+            ("chat_memory_query_embedding", "embedding", None, True, True),
+        ],
+        [
+            ("chat_generate", "generation", 1000, False, False),
+            ("chat_ending_judgment", "judgment", 10, True, False),
+        ],
+    ]
+    priced = [
+        (call, view)
+        for n in (1, 2, 3)
+        for record in records[n]
+        for call, view in zip(record.row["llm_calls"], record.calls, strict=True)
+        if view.usd is not None
+    ]
+    assert len(priced) == 5
+    for call, view in priced:
+        price = pricing.MODEL_PRICES[view.model]
+        assert view.new_input_tokens is not None
+        assert view.usd == call_cost(call).usd
+        assert view.usd == pytest.approx(
+            (
+                view.new_input_tokens * price.input_usd_per_million
+                + (view.cached_tokens or 0) * price.cached_input_usd_per_million
+                + (view.cache_write_tokens or 0) * price.cache_write_usd_per_million
+                + ((view.output_tokens or 0) + (view.thoughts_tokens or 0)) * price.output_usd_per_million
+            )
+            / 1_000_000
+        )
+
+    def summed(calls: list[dict[str, Any]]) -> float:
+        return sum(c.usd for c in map(call_cost, calls) if c.usd is not None)
+
+    costs = [turn.cost_usd for turn in detail.turns]
+    assert costs[3] is None
+    assert costs[:3] == pytest.approx([summed(calls_by_turn[n]) for n in (1, 2, 3)])
+    assert summed(calls_by_turn[2]) > summed([generation])
+    assert [turn.cost_is_lower_bound for turn in detail.turns] == [False, True, True, False]
+    assert [record.cost_is_lower_bound for n in (1, 2, 3) for record in records[n]] == [False, True, True]
+    assert detail.cost is not None
+    assert (detail.cost.unpriced_calls, detail.cost.missing_token_calls) == (1, 2)
+    assert detail.cost.total_usd == pytest.approx(sum(summed(calls_by_turn[n]) for n in (1, 2, 3)))
+
+
+async def test_record_limits_name_the_slot_each_sentence_stands_in_for(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """기록 한계 문장은 값이 있어야 할 자리에 놓인다 — 화면이 문장 글을 보고 자리를 짐작하면 문장을 고칠 때 자리가 말없이 바뀐다.
+    문장마다 자리 이름을 함께 싣고 글은 그대로 둔다. 판정 응답·판정 지연은 늘, 백그라운드 토큰은 그 턴에 백그라운드 줄이 있을 때,
+    내보내기 필요는 턴 기록 파일이 없을 때, 프롬프트 덤프는 덤프가 없을 때만 실린다."""
+    driven = await _plain_run(db_session, monkeypatch, tmp_path, 4)
+
+    def slots(number: int) -> list[tuple[str, str]]:
+        return [(limit.slot, limit.text) for limit in turn_detail(_join(tmp_path), number).record_limits]
+
+    always = [("judgmentResponse", JUDGMENT_RESULT_LIMIT), ("judgmentLatency", LATENCY_LIMIT)]
+    folded = [turn.number for turn in _join(tmp_path).turns if turn.background_dumps]
+    assert folded, "요약 접기가 돌지 않았다 — 백그라운드 자리를 보지 못한다"
+    assert 1 not in folded
+    assert slots(1) == [*always, ("exportNeeded", EXPORT_NEEDED_LIMIT)]
+    assert slots(folded[0]) == [*always, ("backgroundTokens", BACKGROUND_LIMIT), ("exportNeeded", EXPORT_NEEDED_LIMIT)]
+
+    stat_defs, rows = await _db_export(db_session, driven)
+    _write_export(driven, stat_defs, rows)
+    driven.dump.unlink()
+    assert slots(1) == [*always, ("promptDump", NO_DUMP_LIMIT)]
+
+
+async def test_the_list_item_marks_a_lower_bound_cost_like_the_turn_summaries(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """목록의 단가 없는 호출 수만으로는 입력 토큰이 기록되지 않은 호출을 모른다 — 그런 호출만 있는 런은 단가 없는 호출이 0 이라
+    목록이 정확한 원가로 보이는데 턴 요약은 하한이라고 말한다. 목록 항목도 런 원가 합과 같은 행으로 같은 판정을 실어야 두 화면이
+    갈리지 않는다. 모든 호출에 단가와 토큰이 있으면 하한이 아니다."""
+    driven = await _plain_run(db_session, monkeypatch, tmp_path, 2)
+    priced: dict[str, Any] = {
+        "callSite": "chat_generate",
+        "model": "gemini-3.5-flash-lite",
+        "promptTokens": 900,
+        "outputTokens": 120,
+    }
+    tokenless: dict[str, Any] = {
+        "callSite": "chat_situational_image",
+        "model": "gemini-3.5-flash-lite",
+        "promptTokens": None,
+        "outputTokens": 30,
+    }
+
+    async def export(second_turn_calls: list[dict[str, Any]]) -> None:
+        for number, calls in ((1, [priced]), (2, second_turn_calls)):
+            await db_session.execute(
+                sa.update(ChatTurn)
+                .where(ChatTurn.chat_room_id == driven.room_id, ChatTurn.turn_number == number)
+                .values(llm_calls=calls)
+            )
+        _write_export(driven, *(await _db_export(db_session, driven)))
+
+    await export([priced])
+    [bundle] = discover_bundles(tmp_path)
+    exact = list_entry(bundle)
+    assert (exact.cost_is_lower_bound, exact.unpriced_calls) == (False, 0)
+
+    await export([priced, tokenless])
+    item = list_entry(bundle)
+    detail = run_detail(_join(tmp_path))
+    assert [turn.cost_is_lower_bound for turn in detail.turns] == [False, True]
+    assert (item.cost_is_lower_bound, item.unpriced_calls) == (True, 0)
+    assert detail.run.cost_is_lower_bound is item.cost_is_lower_bound
+    assert item.cost_is_lower_bound == any(turn.cost_is_lower_bound for turn in detail.turns)

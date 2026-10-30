@@ -11,6 +11,10 @@ export type GroupSummary = {
   /** 원가가 있는 런들의 합. 턴 기록이 없는 런·단가 없는 호출은 빠져 있다. */
   pricedUsd: number;
   unpricedCalls: number;
+  /** 원가가 있는 런 가운데 측정 서버가 원가를 하한으로 본 런 수(단가 없는 호출이나 입력 토큰 없는 호출이 섞임). */
+  lowerBoundRunCount: number;
+  /** 그 가운데 단가 없는 호출이 없는 런 수 — 하한의 까닭이 입력 토큰이 기록되지 않은 호출뿐인 런이다. */
+  tokenGapRunCount: number;
   /** 열었지만 턴 기록 파일이 없어 원가가 빈 런 수. */
   needsExportCount: number;
   /** 지원하지 않는 형식이거나 열다 실패한 런 수. */
@@ -62,6 +66,8 @@ export function summarizeGroup(items: ReadonlyArray<RunListItem>): GroupSummary 
     cautionTotal: 0,
     pricedUsd: 0,
     unpricedCalls: 0,
+    lowerBoundRunCount: 0,
+    tokenGapRunCount: 0,
     needsExportCount: 0,
     unopenedCount: 0,
   };
@@ -80,6 +86,10 @@ export function summarizeGroup(items: ReadonlyArray<RunListItem>): GroupSummary 
     } else {
       summary.pricedUsd += item.costUsd;
       summary.unpricedCalls += item.unpricedCalls ?? 0;
+      if (item.costIsLowerBound === true) {
+        summary.lowerBoundRunCount += 1;
+        if ((item.unpricedCalls ?? 0) === 0) summary.tokenGapRunCount += 1;
+      }
     }
     const time = parseTime(item.startedAt);
     if (time === undefined || item.startedAt == null) continue;

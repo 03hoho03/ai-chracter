@@ -1,7 +1,7 @@
 import { cn } from "@/shared/lib/cn";
+import { formatCount } from "@/shared/lib/formatNumber";
 
 import type { FolderNode } from "../model/folderTree";
-import { formatCount } from "../model/runFormat";
 
 type FolderTreeProps = {
   root: FolderNode;

@@ -96,19 +96,22 @@ describe("rowsInFolder", () => {
 describe("summarizeGroup", () => {
   it("런 수·불일치 합·주의 합·원가 합과 시작 범위를 모은다", () => {
     const summary = summarizeGroup([
-      item({ path: "a", mismatchCount: 2, cautionCount: 1, costUsd: 0.5, unpricedCalls: 0, startedAt: "2026-10-01T10:00:00" }),
-      item({ path: "b", mismatchCount: 1, cautionCount: 0, costUsd: 0.25, unpricedCalls: 3, startedAt: "2026-10-03T10:00:00" }),
+      item({ path: "a", mismatchCount: 2, cautionCount: 1, costUsd: 0.5, unpricedCalls: 0, costIsLowerBound: false, startedAt: "2026-10-01T10:00:00" }),
+      item({ path: "b", mismatchCount: 1, cautionCount: 0, costUsd: 0.25, unpricedCalls: 3, costIsLowerBound: true, startedAt: "2026-10-03T10:00:00" }),
+      item({ path: "f", costUsd: 0.1, unpricedCalls: 0, costIsLowerBound: true }),
       item({ path: "c", mismatchCount: 0, cautionCount: 0, costUsd: null, startedAt: "2026-10-02T10:00:00" }),
       item({ path: "d", supported: false, format: "legacy" }),
       item({ path: "e", openError: "ValueError: 깨진 줄" }),
     ]);
 
     expect(summary).toEqual({
-      runCount: 5,
+      runCount: 6,
       mismatchTotal: 3,
       cautionTotal: 1,
-      pricedUsd: 0.75,
+      pricedUsd: 0.85,
       unpricedCalls: 3,
+      lowerBoundRunCount: 2,
+      tokenGapRunCount: 1,
       needsExportCount: 1,
       unopenedCount: 2,
       earliestStartedAt: "2026-10-01T10:00:00",

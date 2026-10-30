@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getRuns } from "@/shared/api/client";
-
-import { runKeys } from "./runKeys";
+import { runKeys } from "@/shared/api/runKeys";
 
 /**
  * 런 목록. 측정 서버는 같은 컴퓨터의 로컬 프로세스라 기본값 둘을 바꾼다.

@@ -3,12 +3,12 @@ import { memo, type MouseEvent, type RefObject } from "react";
 
 import type { RunListItem } from "@/shared/api/client";
 import { cn } from "@/shared/lib/cn";
+import { formatCount } from "@/shared/lib/formatNumber";
 
 import { relativeToFolder } from "../model/folderTree";
 import {
   describeGroupCost,
   describeRunCost,
-  formatCount,
   formatDateRange,
   formatStartedAt,
   summarizeModels,

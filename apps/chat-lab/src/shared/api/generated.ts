@@ -148,6 +148,8 @@ export interface components {
             record: {
                 [key: string]: unknown;
             };
+            /** Driverstatchanges */
+            driverStatChanges: components["schemas"]["DriverStatChange"][];
             /** Generationdump */
             generationDump: {
                 [key: string]: unknown;
@@ -171,6 +173,11 @@ export interface components {
         CallCostView: {
             /** Callsite */
             callSite: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "generation" | "judgment" | "background" | "embedding" | "other";
             /** Model */
             model: string;
             /** Prompttokens */
@@ -183,6 +190,8 @@ export interface components {
             outputTokens: number | null;
             /** Thoughtstokens */
             thoughtsTokens: number | null;
+            /** Newinputtokens */
+            newInputTokens: number | null;
             /** Usd */
             usd: number | null;
             /** Missingtokens */
@@ -214,16 +223,38 @@ export interface components {
             calls: components["schemas"]["CallCostView"][];
             /** Costusd */
             costUsd: number;
+            /** Costislowerbound */
+            costIsLowerBound: boolean;
         };
         /**
          * DriverStatChange
-         * @description 드라이버 턴 줄의 `statChanges` 한 칸(보이는 스탯만, 이름 키).
+         * @description 드라이버 턴 줄의 `statChanges` 한 칸(보이는 스탯만, 이름 키). `value` 는 변화량이 아니라 바뀐 뒤 값이다 — 드라이버가 SSE
+         *     `statChange` 의 새 값(`newValue`)을 적는다. 변화량은 서버가 그 턴이 시작한 값(`before`)과 함께 낸다(`delta`).
+         *
+         *     시작 값은 리플레이가 그 턴을 조립할 때 읽는 스탯 줄(그 턴 줄 앞에서 방 턴 수가 하나 작은 마지막 오프닝·턴·기준 다시 잡기·대조
+         *     줄)의 같은 이름 값이다. 첫 턴은 오프닝, 보통은 앞 턴에서 고른 시도의 줄(사람이 친 턴을 보충한 줄이어도 같다), 앞 턴이 유실된
+         *     뒤 드라이버가 기준을 다시 잡았으면 그 줄이다. 같은 턴의 시도는 고르지 않은 것까지 모두 이 값에서 시작한다(같은 상태에서
+         *     보냈다). 그런 줄이 없으면(앞 턴이 재시도 없이 유실됐거나 턴 번호가 건너뛰었는데 기준을 다시 잡은 줄도 없다) 비고, 앞 턴의
+         *     응답을 재생성·수정이 바꿨어도 빈다 — 교체 줄에는 바뀐 뒤 스탯이 없고 재생성은 스탯을 다시 판정한다.
          */
         DriverStatChange: {
             /** Name */
             name: string;
-            /** Value */
+            /**
+             * Value
+             * @description 바뀐 뒤 값(SSE statChange 의 새 값). 변화량이 아니다.
+             */
             value: number;
+            /**
+             * Before
+             * @description 그 턴이 시작한 값. 기록으로 알 수 없으면 null.
+             */
+            before: number | null;
+            /**
+             * Delta
+             * @description value − before. before 가 null 이면 null.
+             */
+            delta: number | null;
         };
         /** ExportTurnsRequest */
         ExportTurnsRequest: {
@@ -270,6 +301,19 @@ export interface components {
             turn?: number | null;
             /** Detail */
             detail: string;
+        };
+        /**
+         * RecordLimit
+         * @description 이 화면이 보여 줄 수 없는 것을 사실대로 적은 문장 하나와, 그 문장이 대신 서는 자리.
+         */
+        RecordLimit: {
+            /**
+             * Slot
+             * @enum {string}
+             */
+            slot: "judgmentResponse" | "judgmentLatency" | "backgroundTokens" | "exportNeeded" | "promptDump";
+            /** Text */
+            text: string;
         };
         /**
          * RecordedStatChange
@@ -420,6 +464,8 @@ export interface components {
             costUsd?: number | null;
             /** Unpricedcalls */
             unpricedCalls?: number | null;
+            /** Costislowerbound */
+            costIsLowerBound?: boolean | null;
             /**
              * Hassnapshots
              * @default false
@@ -557,7 +603,7 @@ export interface components {
             /** Cautions */
             cautions: components["schemas"]["Caution"][];
             /** Recordlimits */
-            recordLimits: string[];
+            recordLimits: components["schemas"]["RecordLimit"][];
         };
         /** TurnMetrics */
         TurnMetrics: {
@@ -608,8 +654,11 @@ export interface components {
             judgmentDumps: number;
             /** Backgrounddumps */
             backgroundDumps: number;
+            flags: components["schemas"]["ReplyFlagsView"] | null;
             /** Costusd */
             costUsd: number | null;
+            /** Costislowerbound */
+            costIsLowerBound: boolean;
             /** Mismatchcount */
             mismatchCount: number;
         };

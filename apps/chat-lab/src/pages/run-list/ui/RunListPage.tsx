@@ -4,14 +4,15 @@ import type { ReactNode } from "react";
 import { isServerUnreachable } from "@/shared/api/isServerUnreachable";
 import { readLabError } from "@/shared/api/readLabError";
 import { cn } from "@/shared/lib/cn";
+import { formatCount } from "@/shared/lib/formatNumber";
+import { useElapsedSeconds } from "@/shared/lib/useElapsedSeconds";
 import { Button } from "@/shared/ui/Button";
-import { Kbd } from "@/shared/ui/Kbd";
+import { KeyHint } from "@/shared/ui/KeyHint";
 import { AppShell, type Crumb } from "@/widgets/app-shell";
 
 import { useRefreshRuns } from "../api/useRefreshRuns";
 import { useRuns } from "../api/useRuns";
-import { useElapsedSeconds } from "../lib/useElapsedSeconds";
-import { formatClock, formatCount } from "../model/runFormat";
+import { formatClock } from "../model/runFormat";
 import { RunListEmpty } from "./RunListEmpty";
 import { RunListFailure } from "./RunListFailure";
 import { RunListLoading } from "./RunListLoading";
@@ -57,8 +58,8 @@ export function RunListPage() {
       }
       hints={
         <>
-          <Hint keys={["j", "k"]}>다음·이전 행</Hint>
-          <Hint keys={["Enter"]}>열기</Hint>
+          <KeyHint keys={["j", "k"]}>다음·이전 행</KeyHint>
+          <KeyHint keys={["Enter"]}>열기</KeyHint>
           <span className="ml-auto truncate">원가 ≥ 는 빠진 호출이 있는 하한 · 내보내기 필요는 턴 기록 파일 없음</span>
         </>
       }
@@ -149,17 +150,6 @@ function CrumbButton({ isCurrent, isMono = false, onClick, children }: CrumbButt
     >
       {children}
     </button>
-  );
-}
-
-function Hint({ keys, children }: { keys: ReadonlyArray<string>; children: ReactNode }) {
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1">
-      {keys.map((key) => (
-        <Kbd key={key}>{key}</Kbd>
-      ))}
-      <span className="ml-0.5">{children}</span>
-    </span>
   );
 }
 
