@@ -13,6 +13,9 @@ from api.core.field_crypto import FieldKeyring
 from api.llm import backends
 from api.llm.backends import PromptSetModelId
 from api.llm.call_policy import BackendId, LLMCallSite
+from api.novel_bible.adapters import table as bible_adapters
+from api.novel_bible.adapters.table import AdapterId
+from api.novel_bible.ids import OperationKey
 
 # Anthropic API 의 사고 깊이(`output_config.effort`). API 가 받는 값만 둔다 — 오타가 첫 호출의 거부가 아니라 기동 거부가 되게.
 ClaudeEffort = Literal["low", "medium", "high", "xhigh", "max"]
@@ -885,9 +888,48 @@ class Settings(BaseSettings):
     novelize_recheck_hourly_limit: int = Field(default=10, ge=1)
     # 소설 정본 기억 스위치 — 확정한 화에서 사건·사실·지식을 뽑아 리비전으로 쌓는 엔진. 꺼져 있으면(기본값) 어드민 확정 입구가
     # 404(라우트가 없는 것과 같다)이고 새 정본 기억 행이 생기지 않는다. 소설 삭제·숨긴 소설 정리·묶음 삭제는 이 값과 무관하게
-    # 정본 기억 행을 지운다(지울 행이 없으면 0행). 소설 생성 경로는 이 값과 무관하게 정본 기억을 모른다. 슬롯·모델 어댑터·워커가
-    # 들어오기 전이라 켜도 확정 행만 쌓이고 처리되지 않는다.
+    # 정본 기억 행을 지운다(지울 행이 없으면 0행). 소설 생성 경로는 이 값과 무관하게 정본 기억을 모른다. 켜면 기동 검증이 연산마다
+    # 배정된 어댑터가 실제로 갈 구현의 자격·능력을 본다(아래 검증자). 슬롯·워커가 들어오기 전이라 켜도 확정 행만 쌓이고 처리되지
+    # 않는다.
     novel_bible_enabled: bool = False
+    # 정본 기억 연산마다 쓸 어댑터를 코드 표(`novel_bible/adapters/table.py`)에서 바꾼다(`연산:어댑터` 를 쉼표로 이은 목록, 따옴표
+    # 없이). 비면 코드 표 그대로다. 모르는 연산·어댑터 이름은 스위치가 꺼져 있어도 거부한다 — 오타가 켤 때에야 드러나지 않게.
+    novel_bible_adapters: Annotated[dict[OperationKey, AdapterId], NoDecode] = {}
+
+    @field_validator("novel_bible_adapters", mode="before")
+    @classmethod
+    def _split_novel_bible_adapters(cls, value: object) -> object:
+        """env 문자열을 `{연산: 어댑터}` 로 나눈다. 호출 위치 배정(`LLM_CALL_SITE_BACKENDS`)과 같은 규칙이다 — 항목 앞뒤 공백은
+        지우고 빈 항목은 버리며, 항목마다 콜론이 정확히 하나이고 양쪽이 비지 않아야 하고, 같은 연산이 두 번 나오면 거부한다.
+        모르는 연산·어댑터 이름은 pydantic 이 거부한다."""
+        if not isinstance(value, str):
+            return value
+        overrides: dict[str, str] = {}
+        for item in value.split(","):
+            if not item.strip():
+                continue
+            parts = [part.strip() for part in item.split(":")]
+            if len(parts) != 2 or not all(parts):
+                raise ValueError(f"NOVEL_BIBLE_ADAPTERS 의 항목 {item.strip()!r} 은 연산:어댑터 모양이 아니다")
+            operation, adapter_id = parts
+            if operation in overrides:
+                raise ValueError(f"NOVEL_BIBLE_ADAPTERS 에 {operation} 이 두 번 있다")
+            overrides[operation] = adapter_id
+        return overrides
+
+    @model_validator(mode="after")
+    def _novel_bible_adapters_can_run(self) -> "Settings":
+        """정본 기억 스위치가 켜졌을 때만, 연산마다 배정된 어댑터가 실제로 갈 구현과 그 자격·능력을 본다. 꺼져 있으면 아무것도
+        보지 않는다 — 운영은 꺼진 채 배포되므로 운영 기동은 이 검증과 무관하고, 정본 기억을 쓰지 않는 로컬·테스트 환경도 모델 키 없이
+        뜬다. 규칙은 어댑터 표 쪽에 있다."""
+        if not self.novel_bible_enabled:
+            return self
+        errors = bible_adapters.adapter_errors(
+            self.novel_bible_adapters, self.llm_call_site_backends, lambda name: str(getattr(self, name))
+        )
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
 
     @field_validator(
         "novelize_grant_allowlist",
