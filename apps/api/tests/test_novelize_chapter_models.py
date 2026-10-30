@@ -846,26 +846,34 @@ async def test_every_novel_request_naming_the_chat_only_haiku_is_422_before_the_
     premium: bool,
 ) -> None:
     """소설의 모델 선택 요청 여섯 갈래(경계 제안·장 생성·묶음 다시 만들기·연쇄·전체 구성안·장면 구성안과 그 원고)가 모두 같은 게이트를
-    지난다. 허용이 없는 계정도 403 이 아니라 422 다 — 계정이 바뀌어도 고를 수 없는 모델이라서다. 차감·작업·경계 제안 호출이 없다."""
-    monkeypatch.setattr(settings, "novelize_outline_flow_enabled", True)
+    지난다. 허용이 없는 계정도 403 이 아니라 422 다 — 계정이 바뀌어도 고를 수 없는 모델이라서다. 차감·작업·경계 제안 호출이 없다.
+
+    옛 이어 쓰기 갈래는 구성 흐름 스위치가 꺼졌을 때만, 구성안 갈래는 켜졌을 때만 열린다. 닫힌 라우트는 본문과 무관하게 같은
+    답(409·404)을 내야 해서 스위치 검사가 본문의 모델 검사보다 앞이다 — 그래서 각 갈래를 열린 스위치에서 보낸다."""
     room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=premium)
     messages = await _room_messages(db_session, room.room_id)
     chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
     episode_key = uuid.uuid4()
     paid = {"model": "haiku_writer", "expectedCost": 12}
-    requests = [
-        (f"/novels/{novel_id}/chapter-proposal", {"model": "haiku_writer"}),
-        (f"/novels/{novel_id}/chapters", {**paid, "endMessageId": str(room.turns[3][1].id)}),
-        (f"/novels/{novel_id}/chapters/{chapter.id}/regenerate", paid),
-        (f"/novels/{novel_id}/chain", {**paid, "maxBatches": 1}),
-        (f"/novels/{novel_id}/outline", paid),
-        (f"/novels/{novel_id}/outline/episodes/{episode_key}/scenes", paid),
-        (f"/novels/{novel_id}/outline/episodes/{episode_key}/chapter", paid),
-    ]
+    requests_by_flow: dict[bool, list[tuple[str, dict[str, object]]]] = {
+        False: [
+            (f"/novels/{novel_id}/chapter-proposal", {"model": "haiku_writer"}),
+            (f"/novels/{novel_id}/chapters", {**paid, "endMessageId": str(room.turns[3][1].id)}),
+            (f"/novels/{novel_id}/chapters/{chapter.id}/regenerate", paid),
+            (f"/novels/{novel_id}/chain", {**paid, "maxBatches": 1}),
+        ],
+        True: [
+            (f"/novels/{novel_id}/outline", paid),
+            (f"/novels/{novel_id}/outline/episodes/{episode_key}/scenes", paid),
+            (f"/novels/{novel_id}/outline/episodes/{episode_key}/chapter", paid),
+        ],
+    }
 
-    for path, body in requests:
-        resp = await db_client.post(path, json=body)
-        assert (resp.status_code, resp.json()["detail"]) == (422, {"code": "NOVEL_MODEL_UNSUPPORTED"}), path
+    for outline_flow, requests in requests_by_flow.items():
+        monkeypatch.setattr(settings, "novelize_outline_flow_enabled", outline_flow)
+        for path, body in requests:
+            resp = await db_client.post(path, json=body)
+            assert (resp.status_code, resp.json()["detail"]) == (422, {"code": "NOVEL_MODEL_UNSUPPORTED"}), path
 
     assert llm.boundary_calls == 0
     assert await _jobs(db_session, novel_id) == []
