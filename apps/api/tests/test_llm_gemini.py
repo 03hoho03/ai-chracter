@@ -970,6 +970,11 @@ _EXPECTED_TIMEOUT_MS: dict[str, int] = {
     # 구성안 두 호출은 방 원문 전체를 읽고 목록을 내므로 장 생성과 같은 상한이다.
     "novelize_outline": 300_000,
     "novelize_episode_outline": 300_000,
+    # 정본 기억 추출·판정은 화 하나를 읽는 구조화 호출이라 문단 수정과 같은 상한이다(설정 키가 아니라 고정값).
+    "novel_bible_extract_events": 120_000,
+    "novel_bible_extract_facts": 120_000,
+    "novel_bible_extract_knowledge": 120_000,
+    "novel_bible_judge": 120_000,
 }
 
 

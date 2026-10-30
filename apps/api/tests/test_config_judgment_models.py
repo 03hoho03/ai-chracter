@@ -283,6 +283,12 @@ _PRODUCTION_ROUTES: dict[tuple[LLMCallSite, PromptSetModelId], tuple[PromptSetMo
     ("novel_publish_screen", "gemini"): ("gemini", "gemini"),
     ("novel_illustration_screen", "gemini"): ("gemini", "gemini"),
     ("replay_generate", "gemini"): ("gemini", "gemini"),
+    # 정본 기억 호출은 정책 행이 Anthropic 직결이지만 모델 설정이 없어 gemini 로 계산되고, 그 구현이 gemini 를 서비스하지 않아
+    # Gemini 로 간다.
+    ("novel_bible_extract_events", "gemini"): ("gemini", "gemini"),
+    ("novel_bible_extract_facts", "gemini"): ("gemini", "gemini"),
+    ("novel_bible_extract_knowledge", "gemini"): ("gemini", "gemini"),
+    ("novel_bible_judge", "gemini"): ("gemini", "gemini"),
     ("chat_generate", "opus"): ("opus", "anthropic"),
     ("replay_generate", "opus"): ("opus", "anthropic"),
     ("novelize_chapter", "opus"): ("opus", "anthropic"),

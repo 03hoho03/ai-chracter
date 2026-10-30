@@ -66,6 +66,12 @@ LLMCallSite = Literal[
     # 않게 따로 집계하고, Claude 로 쓴 턴도 다시 생성할 수 있게 모델 선택을 허용한다(아래 표의 `model_selectable`). 설정은
     # 채팅 생성과 같아 타임아웃·출력 상한·사고 설정이 같다. 판정·심사에는 넣지 않는다.
     "replay_generate",
+    # 소설 정본 기억: 확정한 화에서 사건·사실·지식을 뽑는 추출 셋과 모호한 충돌 판정 하나(모두 지시문을 따로 싣는 구조화). 연산마다
+    # 하나씩 두어 원가와 실패를 연산별로 본다. 어느 모델로 부르는지는 정본 기억 어댑터가 호출 문맥의 `call_model` 로 싣는다.
+    "novel_bible_extract_events",
+    "novel_bible_extract_facts",
+    "novel_bible_extract_knowledge",
+    "novel_bible_judge",
 ]
 
 JudgmentKind = Literal["stat", "ending", "image"]
@@ -105,6 +111,9 @@ GeminiTimeoutSetting = Literal[
 # 시드 스크립트 호출은 작품 하나를 통째로 만드는 비스트리밍 호출이라 운영 호출 상한(최대 60초)에 걸릴 수 있다. 운영
 # 서버가 부르는 호출이 아니어서 `.env` 로 바꿀 일이 없으므로 설정 키가 아니라 여기 고정한다.
 _SEED_TIMEOUT_MS = 300_000
+# 정본 기억 호출(추출·판정)은 화 하나를 읽는 구조화 호출이다. 운영 서버가 아니라 워커·로컬 측정이 부르고 운영에서는 스위치가
+# 꺼져 있어 `.env` 로 바꿀 일이 없으므로 설정 키가 아니라 여기 고정한다(시드 호출과 같은 까닭).
+_NOVEL_BIBLE_TIMEOUT_MS = 120_000
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -332,5 +341,20 @@ CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
         call_kind="stream",
         model_selectable=True,
         claude_cache_checkpoint=True,
+    ),
+    # 정본 기억은 어댑터가 부를 모델을 호출 문맥에 싣는다(env 배정 줄을 두지 않는다). Claude 모델이면 Anthropic 직결로 간다 —
+    # 배정이 없으면 모델의 기본 구현(Bedrock)으로 가는데 운영 env 에는 그 자격이 없다. Gemini 모델이면 이 구현이 서비스하지
+    # 않아 Gemini 로 간다. 자격은 정본 기억 스위치가 켜졌을 때 설정 검증자가 따로 본다(`novel_bible/adapters/table.py`).
+    "novel_bible_extract_events": CallPolicy(
+        gemini_timeout=_NOVEL_BIBLE_TIMEOUT_MS, call_kind="structured_with_instruction", backend="anthropic"
+    ),
+    "novel_bible_extract_facts": CallPolicy(
+        gemini_timeout=_NOVEL_BIBLE_TIMEOUT_MS, call_kind="structured_with_instruction", backend="anthropic"
+    ),
+    "novel_bible_extract_knowledge": CallPolicy(
+        gemini_timeout=_NOVEL_BIBLE_TIMEOUT_MS, call_kind="structured_with_instruction", backend="anthropic"
+    ),
+    "novel_bible_judge": CallPolicy(
+        gemini_timeout=_NOVEL_BIBLE_TIMEOUT_MS, call_kind="structured_with_instruction", backend="anthropic"
     ),
 }
