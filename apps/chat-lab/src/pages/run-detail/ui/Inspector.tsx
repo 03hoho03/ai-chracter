@@ -13,7 +13,7 @@ import { assertNever } from "@/shared/lib/assertNever";
 import { cn } from "@/shared/lib/cn";
 import { formatCount, formatMs, formatUsd } from "@/shared/lib/formatNumber";
 
-import { generationCardCount, groupCalls, type JudgmentSite } from "../model/callGroups";
+import { attemptCalls, generationCardCount, type AttemptCalls, type JudgmentSite } from "../model/callGroups";
 import {
   BOOLEAN_FLAG_KEYS,
   BOOLEAN_FLAG_LABELS,
@@ -23,6 +23,7 @@ import {
 } from "../model/detailLabels";
 import { readNumber, readRecord, readRecords, readText } from "../model/recordFields";
 import { recordLimitText } from "../model/recordLimits";
+import { flaggedTurns, type RunFlagKey } from "../model/runFlags";
 import { describeRunFocus, type FocusTone } from "../model/runFocus";
 import type { DumpSource, InspectorTab } from "../model/runDetailSearch";
 import { TokenBar } from "./TokenBar";
@@ -62,6 +63,26 @@ const FOCUS_TONE_CLASSES = {
   quiet: "text-ink-secondary",
 } as const satisfies Record<FocusTone, string>;
 
+/** 런 요약의 응답 플래그 줄 — 이 순서로 적는다. 이름은 지표 탭의 턴 칸과 같다. */
+const RUN_FLAG_ROWS = [
+  ...BOOLEAN_FLAG_KEYS.map((key) => ({ key, label: BOOLEAN_FLAG_LABELS[key] })),
+  { key: "broken", label: "깨짐" },
+  { key: "brackets", label: "괄호" },
+] as const satisfies ReadonlyArray<{ key: RunFlagKey; label: string }>;
+
+/** 런 요약의 플래그 수 — 측정 서버가 센 값을 그대로 읽는다. */
+const RUN_FLAG_COUNTS = {
+  truncated: (metrics) => metrics.truncated,
+  selfCopy: (metrics) => metrics.selfCopy,
+  labelLeak: (metrics) => metrics.labelLeak,
+  userTurn: (metrics) => metrics.userTurn,
+  solicit: (metrics) => metrics.solicit,
+  ignored: (metrics) => metrics.ignored,
+  sceneOpen: (metrics) => metrics.sceneOpen,
+  broken: (metrics) => metrics.broken,
+  brackets: (metrics) => metrics.brackets,
+} as const satisfies Record<RunFlagKey, (metrics: RunMetrics) => number>;
+
 /** 턴 원가가 하한일 때 붙이는 까닭 — 측정 서버가 하한으로 보는 조건 그대로다. */
 const LOWER_BOUND_NOTE = "단가표에 없는 호출이나 입력 토큰이 기록되지 않은 호출이 있어 실제 원가는 이보다 크거나 같다";
 
@@ -74,6 +95,11 @@ export function Inspector(props: InspectorProps) {
   const { tab, onTabChange, detail, attempt } = props;
   const rows = attempt?.chatTurns ?? [];
   const calls = rows.flatMap((row) => row.calls);
+  const view = attemptCalls(
+    calls,
+    { judgment: props.turnDetail.judgmentDumps, backgroundCount: props.turnDetail.backgroundDumps.length },
+    attempt?.selected !== false,
+  );
   const recallCount = rows.reduce((count, row) => count + readRecords(row.row, "memory_recall").length, 0);
   const factCount = rows.reduce((count, row) => count + readRecords(row.row, "memory_facts").length, 0);
   const routeCount = rows.reduce((count, row) => count + readRecords(row.row, "stage_routes").length, 0);
@@ -81,7 +107,7 @@ export function Inspector(props: InspectorProps) {
   // 않는다(기억·라우팅과 같다).
   const hasRecords = runRecordGap(detail.run) === undefined;
   const counts = {
-    calls: hasRecords ? calls.length + props.turnDetail.backgroundDumps.length : undefined,
+    calls: hasRecords ? view.cardCount : undefined,
     memory: hasRecords ? recallCount + factCount : undefined,
     routing: hasRecords ? routeCount : undefined,
     metrics: undefined,
@@ -113,13 +139,13 @@ export function Inspector(props: InspectorProps) {
       {/* 흐린 앞 턴 상세 안의 버튼(원문 보기 등)을 한꺼번에 막는다 — 누르면 앞 턴의 덤프 순번이 새 턴에 적용된다. 막힌 fieldset 은
           안의 버튼을 모두 비활성으로 만든다. */}
       <fieldset disabled={props.isStale} className="min-w-0">
-        <InspectorBody {...props} calls={calls} />
+        <InspectorBody {...props} view={view} />
       </fieldset>
     </>
   );
 }
 
-function InspectorBody(props: InspectorProps & { calls: CallCostView[] }) {
+function InspectorBody(props: InspectorProps & { view: AttemptCalls }) {
   switch (props.tab) {
     case "calls":
       return <CallsTab {...props} />;
@@ -134,8 +160,8 @@ function InspectorBody(props: InspectorProps & { calls: CallCostView[] }) {
   }
 }
 
-function CallsTab({ detail, summary, turnDetail, attempt, calls, onOpenDump }: InspectorProps & { calls: CallCostView[] }) {
-  const groups = groupCalls(calls, turnDetail.judgmentDumps);
+function CallsTab({ detail, summary, turnDetail, attempt, view, onOpenDump }: InspectorProps & { view: AttemptCalls }) {
+  const { groups } = view;
   const gap = runRecordGap(detail.run);
   const generationDump = attempt?.generationDump ?? undefined;
   const tokenAbsence = gap === undefined ? "이 시도에 붙은 턴 기록 행 없음" : RECORD_GAP_TEXT[gap];
@@ -144,7 +170,9 @@ function CallsTab({ detail, summary, turnDetail, attempt, calls, onOpenDump }: I
   const responseLimit = recordLimitText(limits, "judgmentResponse");
   const latencyLimit = recordLimitText(limits, "judgmentLatency");
   const backgroundLimit = recordLimitText(limits, "backgroundTokens");
-  const backgroundCount = groups.background.length + turnDetail.backgroundDumps.length;
+  const backgroundDumps = turnDetail.backgroundDumps.slice(0, view.backgroundDumpCount);
+  const backgroundCount = groups.background.length + backgroundDumps.length;
+  const selectedAttempt = turnDetail.attempts.find((candidate) => candidate.selected)?.index;
 
   return (
     <div className="pb-4">
@@ -178,7 +206,12 @@ function CallsTab({ detail, summary, turnDetail, attempt, calls, onOpenDump }: I
       <GroupTitle count={groups.judgment.length} note="call_site 별">
         판정
       </GroupTitle>
-      {groups.judgment.length === 0 && <p className="px-3 py-2 text-data text-ink-muted">이 턴의 판정 덤프 줄·판정 호출 기록 없음</p>}
+      {view.heldJudgmentDumps > 0 && (
+        <HeldTurnDumps count={view.heldJudgmentDumps} kind="판정" selectedAttempt={selectedAttempt} />
+      )}
+      {groups.judgment.length === 0 && view.heldJudgmentDumps === 0 && (
+        <p className="px-3 py-2 text-data text-ink-muted">이 턴의 판정 덤프 줄·판정 호출 기록 없음</p>
+      )}
       {groups.judgment.length > 0 && (responseLimit !== undefined || latencyLimit !== undefined) && (
         // 판정 응답·지연 문장은 이 턴의 판정 카드 모두에 같은 까닭이라 카드마다 되풀이하지 않고 묶음 머리에 한 번 둔다.
         <div className="space-y-1.5 px-3 pb-1">
@@ -191,8 +224,13 @@ function CallsTab({ detail, summary, turnDetail, attempt, calls, onOpenDump }: I
       ))}
 
       <GroupTitle count={backgroundCount}>백그라운드</GroupTitle>
-      {backgroundCount === 0 && <p className="px-3 py-2 text-data text-ink-muted">이 턴에 둔 백그라운드 덤프 줄 없음</p>}
-      {turnDetail.backgroundDumps.length > 0 && backgroundLimit !== undefined && (
+      {view.heldBackgroundDumps > 0 && (
+        <HeldTurnDumps count={view.heldBackgroundDumps} kind="백그라운드" selectedAttempt={selectedAttempt} />
+      )}
+      {backgroundCount === 0 && view.heldBackgroundDumps === 0 && (
+        <p className="px-3 py-2 text-data text-ink-muted">이 턴에 둔 백그라운드 덤프 줄 없음</p>
+      )}
+      {backgroundDumps.length > 0 && backgroundLimit !== undefined && (
         // 백그라운드 토큰 문장은 이 턴의 백그라운드 덤프 카드 모두에 같은 까닭이라 카드마다 되풀이하지 않고 묶음 머리에 한 번 둔다.
         <div className="px-3 pb-1">
           <RecordLimitNote>{backgroundLimit}</RecordLimitNote>
@@ -202,7 +240,7 @@ function CallsTab({ detail, summary, turnDetail, attempt, calls, onOpenDump }: I
         // 턴 기록 행의 호출 칸 순서 그대로이고 바뀌지 않는다.
         <CallCard key={index} call={call} />
       ))}
-      {turnDetail.backgroundDumps.map((dump, index) => (
+      {backgroundDumps.map((dump, index) => (
         <div
           // 그 턴에 붙은 순서 그대로이고 바뀌지 않는다.
           key={index}
@@ -253,6 +291,19 @@ function TurnCost({ summary, gap }: { summary: TurnSummary; gap: RecordGap | und
       {summary.costIsLowerBound && <span className="text-ink-muted">≥ </span>}
       {formatUsd(summary.costUsd)}
     </data>
+  );
+}
+
+/**
+ * 고른 시도가 아닌 시도의 판정·백그라운드 묶음 자리. 그 덤프 줄은 시도가 아니라 턴에 붙어 이 시도의 것이라고 말할 수 없어, 카드를
+ * 그리지 않고(탭 숫자에도 세지 않는다) 어디서 보는지를 적는다.
+ */
+function HeldTurnDumps({ count, kind, selectedAttempt }: { count: number; kind: string; selectedAttempt: number | undefined }) {
+  const where = selectedAttempt === undefined ? "고른 시도" : `고른 시도(시도 ${selectedAttempt})`;
+  return (
+    <p className="px-3 py-2 text-data text-ink-muted">
+      이 턴의 {kind} 덤프 줄 {formatCount(count)}개는 시도가 아니라 턴에 붙어 {where}에서 보인다
+    </p>
   );
 }
 
@@ -632,15 +683,18 @@ function MetricsTab({ detail, turnDetail, metrics: metricsState, onRetryMetrics,
             <Field label="길이 계속 줄어듦">
               {metrics.lengthNonIncreasing === null ? <Missing /> : yesNo(metrics.lengthNonIncreasing)}
             </Field>
-            <RunFlagField label="절단" count={metrics.truncated} scored={metrics.scored} />
-            <RunFlagField label="자기복제" count={metrics.selfCopy} scored={metrics.scored} />
-            <RunFlagField label="라벨 누출" count={metrics.labelLeak} scored={metrics.scored} />
-            <RunFlagField label="사용자 대사 대필" count={metrics.userTurn} scored={metrics.scored} />
-            <RunFlagField label="질문·청유로 끝남" count={metrics.solicit} scored={metrics.scored} />
-            <RunFlagField label="발화 무시" count={metrics.ignored} scored={metrics.scored} />
-            <RunFlagField label="장면 열림" count={metrics.sceneOpen} scored={metrics.scored} />
-            <RunFlagField label="깨짐" count={metrics.broken} scored={metrics.scored} isDanger />
-            <RunFlagField label="괄호" count={metrics.brackets} scored={metrics.scored} />
+            {RUN_FLAG_ROWS.map(({ key, label }) => (
+              <RunFlagField
+                key={key}
+                label={label}
+                count={RUN_FLAG_COUNTS[key](metrics)}
+                scored={metrics.scored}
+                turns={flaggedTurns(metrics.turns, key)}
+                isDanger={key === "broken"}
+                knownTurns={knownTurns}
+                onSelectTurn={onSelectTurn}
+              />
+            ))}
           </dl>
         )}
       </section>
@@ -652,6 +706,7 @@ function MetricsTab({ detail, turnDetail, metrics: metricsState, onRetryMetrics,
             turns={detail.mismatches.map((mismatch) => mismatch.turn)}
             knownTurns={knownTurns}
             onSelectTurn={onSelectTurn}
+            tone="warn"
           />
         </section>
       )}
@@ -663,10 +718,14 @@ type TurnLinksProps = {
   turns: ReadonlyArray<number | null | undefined>;
   knownTurns: ReadonlySet<number>;
   onSelectTurn: (turn: number) => void;
+  /** 불일치는 호박(`warn`), 응답 플래그는 보조 글자색(`quiet`) — 플래그는 기록이 어긋난 것이 아니다. */
+  tone: "warn" | "quiet";
 };
 
-/** 불일치가 가리키는 턴들. 이 런에 없는 번호(건너뛴 번호·짝 없는 줄의 번호)는 고를 턴이 없어 버튼이 아니라 글자로 적는다. */
-function TurnLinks({ turns, knownTurns, onSelectTurn }: TurnLinksProps) {
+/**
+ * 불일치·플래그가 가리키는 턴들. 이 런에 없는 번호(건너뛴 번호·짝 없는 줄의 번호)는 고를 턴이 없어 버튼이 아니라 글자로 적는다.
+ */
+function TurnLinks({ turns, knownTurns, onSelectTurn, tone }: TurnLinksProps) {
   const unique = [...new Set(turns.filter((turn): turn is number => typeof turn === "number"))].sort((a, b) => a - b);
   if (unique.length === 0) return <Absent>턴을 가리키지 않는 불일치뿐이다 — 아래 상태 줄 목록에서 본다</Absent>;
   return (
@@ -677,7 +736,10 @@ function TurnLinks({ turns, knownTurns, onSelectTurn }: TurnLinksProps) {
             key={turn}
             type="button"
             onClick={() => onSelectTurn(turn)}
-            className="h-6 rounded-sm bg-surface-raised px-1.5 text-label text-warn tabular-nums hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+            className={cn(
+              "h-6 rounded-sm bg-surface-raised px-1.5 text-label tabular-nums hover:text-ink focus-visible:outline-2 focus-visible:outline-accent",
+              tone === "warn" ? "text-warn" : "text-ink-secondary",
+            )}
           >
             턴 {turn}
           </button>
@@ -708,11 +770,29 @@ function MetricsPending({ isFailed, onRetry }: { isFailed: boolean; onRetry: () 
   );
 }
 
-function RunFlagField({ label, count, scored, isDanger = false }: { label: string; count: number; scored: number; isDanger?: boolean }) {
+type RunFlagFieldProps = {
+  label: string;
+  count: number;
+  scored: number;
+  /** 그 플래그가 선 턴 — 수 아래 접힌 목록에서 그 턴으로 간다. */
+  turns: ReadonlyArray<number>;
+  isDanger: boolean;
+  knownTurns: ReadonlySet<number>;
+  onSelectTurn: (turn: number) => void;
+};
+
+function RunFlagField({ label, count, scored, turns, isDanger, knownTurns, onSelectTurn }: RunFlagFieldProps) {
   return (
     <Field label={label}>
       <span className={countTone(count, isDanger)}>{formatCount(count)}</span>
       <span className="text-ink-muted"> / 표본 {formatCount(scored)}턴</span>
+      {turns.length > 0 && (
+        // 플래그가 자주 서는 런(질문·청유 등)에서 턴 버튼이 늘어서지 않게 기본은 접는다.
+        <details className="mt-0.5">
+          <summary className="cursor-pointer text-label text-ink-secondary hover:text-ink">어느 턴</summary>
+          <TurnLinks turns={turns} knownTurns={knownTurns} onSelectTurn={onSelectTurn} tone="quiet" />
+        </details>
+      )}
     </Field>
   );
 }

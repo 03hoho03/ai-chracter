@@ -77,3 +77,38 @@ export function groupCalls(calls: ReadonlyArray<CallCostView>, judgmentDumps: Re
   groups.judgment = [...sites.values()];
   return groups;
 }
+
+export type AttemptCalls = {
+  groups: CallGroups;
+  /** 이 시도에서 그리는 백그라운드 덤프 줄 수 — 턴 상세의 백그라운드 덤프 목록 앞에서부터다. */
+  backgroundDumpCount: number;
+  /** 고른 시도가 아니라 그리지 않은 그 턴의 판정·백그라운드 덤프 줄 수. */
+  heldJudgmentDumps: number;
+  heldBackgroundDumps: number;
+  /** 호출 탭에 그리는 카드 수 — 탭 머리의 숫자다. */
+  cardCount: number;
+};
+
+/**
+ * 시도 하나의 호출 탭. 턴 기록 호출은 시도마다 붙지만 판정·백그라운드 덤프 줄은 시도가 아니라 턴에 붙어(덤프 줄과 시도를 잇는
+ * 열쇠가 기록에 없다), DB 응답으로 고른 시도에서만 그 덤프를 함께 그린다. 고르지 않은 시도에 그리면 서버 앞에서 거부된 시도에도
+ * 그 턴 판정이 붙어 보인다. 카드 수는 그린 카드를 그대로 센다 — 생성 묶음은 `generationCardCount`, 판정은 call_site 마다 호출
+ * 수(호출 없이 덤프 줄만 있으면 카드 하나), 백그라운드는 호출과 덤프 줄, 그 밖은 호출 수.
+ */
+export function attemptCalls(
+  calls: ReadonlyArray<CallCostView>,
+  turnDumps: { judgment: ReadonlyArray<LooseRecord>; backgroundCount: number },
+  isSelectedAttempt: boolean,
+): AttemptCalls {
+  const groups = groupCalls(calls, isSelectedAttempt ? turnDumps.judgment : []);
+  const backgroundDumpCount = isSelectedAttempt ? turnDumps.backgroundCount : 0;
+  const judgmentCards = groups.judgment.reduce((sum, site) => sum + Math.max(site.calls.length, 1), 0);
+  return {
+    groups,
+    backgroundDumpCount,
+    heldJudgmentDumps: isSelectedAttempt ? 0 : turnDumps.judgment.length,
+    heldBackgroundDumps: isSelectedAttempt ? 0 : turnDumps.backgroundCount,
+    cardCount:
+      generationCardCount(groups) + judgmentCards + groups.background.length + backgroundDumpCount + groups.other.length,
+  };
+}

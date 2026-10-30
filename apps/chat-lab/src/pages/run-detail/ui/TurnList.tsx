@@ -3,6 +3,7 @@ import { memo, useEffect, type RefObject } from "react";
 import { assertNever } from "@/shared/lib/assertNever";
 import { cn } from "@/shared/lib/cn";
 import { formatCount } from "@/shared/lib/formatNumber";
+import { scrollIntoNearest } from "@/shared/lib/scrollIntoNearest";
 
 import { formatStatDelta, type TurnRow, type Utterance } from "../model/turnRows";
 import { StatDot } from "./StatDot";
@@ -22,9 +23,11 @@ type TurnListProps = {
  */
 export function TurnList({ rows, selectedTurn, scored, listRef, onSelectTurn }: TurnListProps) {
   // 고른 턴이 목록 밖에서 바뀌어도(타임라인·불일치 목록·주소로 연 턴) 목록 스크롤이 그 행을 따라간다. 즉시, 가장 가까운 자리로.
+  // 스크롤만 옮기고 순차 초점 시작점은 그대로 둔다(`scrollIntoNearest`) — 화면을 연 직후 첫 Tab 이 헤더에서 시작해야 한다.
   useEffect(() => {
     if (selectedTurn === undefined) return;
-    listRef.current?.querySelector(`[data-turn="${selectedTurn}"]`)?.scrollIntoView({ block: "nearest" });
+    const row = listRef.current?.querySelector<HTMLElement>(`[data-turn="${selectedTurn}"]`);
+    if (row) scrollIntoNearest(row);
   }, [listRef, selectedTurn]);
 
   return (

@@ -12,6 +12,7 @@ import {
   formatDateRange,
   formatLabel,
   formatStartedAt,
+  MODEL_SOURCE_LABELS,
 } from "../model/runFormat";
 import { isOpened, type GroupSummary, type RunRow } from "../model/runRows";
 import { CostText } from "./CostText";
@@ -106,11 +107,16 @@ function RunDetails({ item }: { item: RunListItem }) {
             </Field>
             <Field label="불일치">{formatCount(item.mismatchCount ?? 0)}</Field>
             <Field label="주의">{formatCount(item.cautionCount ?? 0)}</Field>
-            <Field label="실제 생성 모델">
-              <ModelList models={item.effectiveChatModels} />
-            </Field>
             <Field label="보낸 모델">
-              <ModelList models={item.generationModels} />
+              <ModelList models={item.sentChatModels} />
+              {item.sentChatModelsFrom != null && (
+                <span className="block text-ink-muted">{MODEL_SOURCE_LABELS[item.sentChatModelsFrom]}</span>
+              )}
+            </Field>
+            <Field label="설정값">
+              <span title="방 스냅숏의 effectiveChatModel — 방 설정에서 서버가 쓰겠다고 한 값이라, 모델을 바꿔 돌린 런에서는 보낸 모델과 다르다">
+                <ModelList models={item.configuredChatModels} />
+              </span>
             </Field>
           </>
         )}

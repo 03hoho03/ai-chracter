@@ -104,16 +104,30 @@ export function formatDateRange(earliest: string | undefined, latest: string | u
   return from === to ? from : `${from}~${to}`;
 }
 
+/** 모델 칸의 값이 어느 기록에서 왔는가 — 실제로 보낸 값 둘(덤프·턴 기록)과 방 설정값. */
+export type ModelSource = "dump" | "chatTurns" | "setting";
+
+/** 모델 칸·미리보기에 붙이는 출처 이름. 설정값은 모델을 바꿔 돌린 런에서 실제로 보낸 모델과 다르다. */
+export const MODEL_SOURCE_LABELS = {
+  dump: "실제 보낸 값(덤프 생성 줄)",
+  chatTurns: "실제 보낸 값(턴 기록의 생성 호출)",
+  setting: "설정값(방 스냅숏 — 보낸 기록 없음)",
+} as const satisfies Record<ModelSource, string>;
+
+export type ModelSummary = { first: string; extraCount: number; source: ModelSource; title: string };
+
 /**
- * 모델 칸에 적을 첫 모델과 나머지 개수. 실제 생성 모델(측정 서버가 방 스냅숏에서, 없으면 턴 기록 파일의 그 방 행 전부에서
- * 채운다)이 먼저고, 그것이 비면 덤프에 적힌 보낸 모델을 쓴다.
- * 둘 다 없으면 undefined.
+ * 모델 칸에 적을 첫 모델과 나머지 개수, 그 출처. 측정 서버가 호출 기록에서 찾은 실제 보낸 모델이 먼저고, 그것이 비면 방 스냅숏의
+ * 설정값을 쓰되 설정값이라고 적는다. 둘 다 없으면 undefined.
  */
-export function summarizeModels(item: RunListItem): { first: string; extraCount: number } | undefined {
-  const effective = item.effectiveChatModels ?? [];
-  const models = effective.length > 0 ? effective : (item.generationModels ?? []);
+export function summarizeModels(item: RunListItem): ModelSummary | undefined {
+  const sent = item.sentChatModels ?? [];
+  const from = item.sentChatModelsFrom;
+  const [models, source]: [string[], ModelSource] =
+    sent.length > 0 && from != null ? [sent, from] : [item.configuredChatModels ?? [], "setting"];
   const [first] = models;
-  return first === undefined ? undefined : { first, extraCount: models.length - 1 };
+  if (first === undefined) return undefined;
+  return { first, extraCount: models.length - 1, source, title: `${MODEL_SOURCE_LABELS[source]}: ${models.join(", ")}` };
 }
 
 /** 하한 원가 옆에 붙일 까닭 — 무엇이 합에서 빠졌는가. */

@@ -23,6 +23,8 @@ function summary(overrides: Partial<TurnSummary> = {}): TurnSummary {
     judgmentDumps: 0,
     backgroundDumps: 0,
     flags: null,
+    statsStartKnown: true,
+    statsContinueFromPrevious: true,
     costUsd: null,
     costIsLowerBound: false,
     mismatchCount: 0,
@@ -155,6 +157,20 @@ describe("buildTurnRows", () => {
     ]);
 
     expect([...tones]).toEqual([["호감", "series-1"]]);
+  });
+
+  it("선 자리를 고르면 Δ 점의 색이 고른 자리를 따르고, 자리에서 빠진 스탯은 선이 없어 보조 색이다", () => {
+    const four = [series("호감"), series("긴장"), series("신뢰"), series("의심")];
+    const tones = seriesTones(four, ["id-의심", "id-긴장", "id-신뢰"]);
+
+    expect([...tones]).toEqual([
+      ["호감", "other"],
+      ["긴장", "series-2"],
+      ["신뢰", "series-3"],
+      ["의심", "series-1"],
+    ]);
+    const [row] = buildTurnRows([summary({ driverStatChanges: [change("의심", 1, 2)] })], four, ["id-의심", "id-긴장", "id-신뢰"]);
+    expect(row?.deltas[0]?.tone).toBe("series-1");
   });
 
   it("숨김 스탯은 턴 기록의 전후 차로 숨김 점을 얻고, 전후 하나라도 비면 Δ 를 만들지 않는다", () => {

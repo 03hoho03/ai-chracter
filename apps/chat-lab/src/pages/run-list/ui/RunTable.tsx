@@ -156,15 +156,12 @@ const RunTableRow = memo(function RunTableRow({ row, folder, isActive, onSelect,
           <span role="cell" className={NUMBER_CELL}>
             {item.turnCount}
           </span>
-          <span
-            role="cell"
-            title={[...(item.effectiveChatModels ?? []), ...(item.generationModels ?? [])].join(", ")}
-            className={cn(CELL, WIDE_ONLY)}
-          >
+          <span role="cell" title={models?.title} className={cn(CELL, WIDE_ONLY)}>
             {models ? (
               <>
                 <span className="font-mono">{models.first}</span>
                 {models.extraCount > 0 && <span className="text-ink-muted"> +{models.extraCount}</span>}
+                {models.source === "setting" && <span className="text-ink-muted"> · 설정값</span>}
               </>
             ) : (
               <span className="text-ink-muted">기록 없음</span>

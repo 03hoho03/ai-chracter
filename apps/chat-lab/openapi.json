@@ -1332,19 +1332,34 @@
             ],
             "title": "Endedat"
           },
-          "effectiveChatModels": {
+          "sentChatModels": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Effectivechatmodels"
+            "title": "Sentchatmodels"
           },
-          "generationModels": {
+          "sentChatModelsFrom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dump",
+                  "chatTurns"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentchatmodelsfrom"
+          },
+          "configuredChatModels": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Generationmodels"
+            "title": "Configuredchatmodels"
           },
           "costUsd": {
             "anyOf": [
@@ -1557,6 +1572,17 @@
           "value": {
             "type": "number",
             "title": "Value"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
           }
         },
         "type": "object",
@@ -1926,6 +1952,14 @@
               }
             ]
           },
+          "statsStartKnown": {
+            "type": "boolean",
+            "title": "Statsstartknown"
+          },
+          "statsContinueFromPrevious": {
+            "type": "boolean",
+            "title": "Statscontinuefromprevious"
+          },
           "costUsd": {
             "anyOf": [
               {
@@ -1965,6 +1999,8 @@
           "judgmentDumps",
           "backgroundDumps",
           "flags",
+          "statsStartKnown",
+          "statsContinueFromPrevious",
           "costUsd",
           "costIsLowerBound",
           "mismatchCount"

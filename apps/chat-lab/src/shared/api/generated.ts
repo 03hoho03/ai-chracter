@@ -458,10 +458,12 @@ export interface components {
             startedAt?: string | null;
             /** Endedat */
             endedAt?: string | null;
-            /** Effectivechatmodels */
-            effectiveChatModels?: string[];
-            /** Generationmodels */
-            generationModels?: string[];
+            /** Sentchatmodels */
+            sentChatModels?: string[];
+            /** Sentchatmodelsfrom */
+            sentChatModelsFrom?: ("dump" | "chatTurns") | null;
+            /** Configuredchatmodels */
+            configuredChatModels?: string[];
             /** Costusd */
             costUsd?: number | null;
             /** Unpricedcalls */
@@ -532,6 +534,8 @@ export interface components {
             turn: number;
             /** Value */
             value: number;
+            /** Before */
+            before?: number | null;
         };
         /**
          * StatSeries
@@ -657,6 +661,10 @@ export interface components {
             /** Backgrounddumps */
             backgroundDumps: number;
             flags: components["schemas"]["ReplyFlagsView"] | null;
+            /** Statsstartknown */
+            statsStartKnown: boolean;
+            /** Statscontinuefromprevious */
+            statsContinueFromPrevious: boolean;
             /** Costusd */
             costUsd: number | null;
             /** Costislowerbound */

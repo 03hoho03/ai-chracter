@@ -210,17 +210,38 @@ describe("formatDateRange", () => {
 });
 
 describe("summarizeModels", () => {
-  it("실제 생성 모델의 첫째와 나머지 개수", () => {
-    expect(summarizeModels(item({ effectiveChatModels: ["claude-opus-5-5", "gemini-3.5-flash-lite"] }))).toEqual({
+  it("실제 보낸 모델이 있으면 그것의 첫째와 나머지 개수 — 방 설정값이 달라도 보낸 값이 먼저다", () => {
+    const summary = summarizeModels(
+      item({
+        sentChatModels: ["claude-opus-5-5", "gemini-3.5-flash-lite"],
+        sentChatModelsFrom: "dump",
+        configuredChatModels: ["gemini"],
+      }),
+    );
+
+    expect(summary).toEqual({
       first: "claude-opus-5-5",
       extraCount: 1,
+      source: "dump",
+      title: "실제 보낸 값(덤프 생성 줄): claude-opus-5-5, gemini-3.5-flash-lite",
     });
   });
 
-  it("방 스냅숏이 없어 실제 모델을 모르면 덤프의 보낸 모델로", () => {
-    expect(summarizeModels(item({ effectiveChatModels: [], generationModels: ["claude-haiku-5-5"] }))).toEqual({
+  it("덤프가 없어 턴 기록에서 읽은 보낸 모델은 출처를 턴 기록으로 적는다", () => {
+    expect(summarizeModels(item({ sentChatModels: ["claude-haiku-5-5"], sentChatModelsFrom: "chatTurns" }))).toEqual({
       first: "claude-haiku-5-5",
       extraCount: 0,
+      source: "chatTurns",
+      title: "실제 보낸 값(턴 기록의 생성 호출): claude-haiku-5-5",
+    });
+  });
+
+  it("보낸 기록이 없을 때만 방 설정값을 쓰고, 설정값이라고 적는다", () => {
+    expect(summarizeModels(item({ sentChatModels: [], sentChatModelsFrom: null, configuredChatModels: ["gemini"] }))).toEqual({
+      first: "gemini",
+      extraCount: 0,
+      source: "setting",
+      title: "설정값(방 스냅숏 — 보낸 기록 없음): gemini",
     });
   });
 

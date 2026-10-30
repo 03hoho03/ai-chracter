@@ -168,10 +168,12 @@
   `turnCount`, 나머지는 `roomAfter`·`accumulated`·`fetched` 의 `turnCount`).
 - **턴 기록 행**: 행의 `assistant_message_id` 가 시도의 `assistantMessageId` 와 같은 시도에 붙는다(고른 시도가 아니어도). 맞는
   시도가 없는 행은 불일치(`unmatchedRow`)다. `assistantMessageId` 이전 형식은 잇지 않는다(위 「형식 세대」).
-- **실제 생성 모델**(목록 항목과 상세 `run` 의 `effectiveChatModels`): 방 스냅숏(`roomStatic`)의 `effectiveChatModel` 이다.
-  스냅숏에 그 값이 없으면 턴 기록 파일의 행 전부의 `chat_model` 을 모두 싣는다 — 시도에 붙지 않은 행과, 행을 잇지 않는
-  `assistantMessageId` 이전 형식의 행도 센다(다른 방의 파일은 위 규칙대로 쓰지 않는다). 원가는 여전히 붙은 행만 합한다. 둘 다
-  없으면 비고, 목록 표의 모델 칸은 덤프 생성 줄의 보낸 모델을 대신 적는다.
+- **보낸 모델과 설정값**(목록 항목과 상세 `run` 의 `sentChatModels`·`sentChatModelsFrom`·`configuredChatModels`): 보낸 모델은
+  호출 기록에서 찾는다 — 덤프 생성 줄의 `model`(실제로 보낸 id. 같은 줄의 `chatModel` 은 방이 고른 모델 이름이다)이 먼저고, 덤프에
+  생성 줄이 없으면 턴 기록 파일의 행 전부에서 행마다 생성 호출 칸의 모델, 생성 호출이 기록되지 않은 행은 그 행의 `chat_model` 이다.
+  시도에 붙지 않은 행과 행을 잇지 않는 `assistantMessageId` 이전 형식의 행도 센다(다른 방의 파일은 위 규칙대로 쓰지 않는다). 원가는
+  여전히 붙은 행만 합한다. 방 스냅숏(`roomStatic`)의 `effectiveChatModel` 은 설정값으로 따로 싣는다 — 모델을 바꿔 돌린 런에서는
+  보낸 모델과 다르다. 목록 표의 모델 칸은 보낸 모델을 적고, 그것이 없을 때만 설정값을 "설정값"이라고 붙여 적는다.
 - **스탯 대조**: 드라이버는 보이는 스탯을 이름 키(`roomAfter.stats`)로, 턴 기록은 id 키(`stat_changes`, 값은 `[전, 후]`)로
   남겨서, 방 스냅숏(`roomStatic`)의 id↔이름 표로 잇고 스냅숏에 없는 스탯은 내보낸 정의(숨김 제외)로 채운다. 스냅숏마다 스탯
   목록이 다르거나 이름이 같은 스탯이 있으면 이름을 id 로 되돌릴 수 없어 대조를 건너뛰고 주의(`statDefsChanged`)를 단다. 고른
