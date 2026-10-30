@@ -28,6 +28,8 @@ from api.db.models import (
     NovelBibleCommit,
     NovelBibleJob,
     StartingSetup,
+    StoryPromptTemplate,
+    StoryVersionDetail,
 )
 from api.db.session import engine
 from api.novel_bible.core.confirm import Actor, confirm
@@ -85,6 +87,34 @@ async def _make_work(db: AsyncSession) -> Work:
     novel.content_id, novel.chat_room_id, novel.protagonist_name = content.id, room.id, "주인공"
     await db.flush()
     return Work(novel=novel, content=content, pinned=pinned, published=published)
+
+
+async def _make_story_work(db: AsyncSession, setting: str, *, protagonist: str | None) -> tuple[Novel, uuid.UUID]:
+    """스토리 원작 하나(발행본 하나)와, 방 없이 남은 그 원작의 소설 — 원작 버전은 지금 발행본이다. 운영에서 키워드북 노트를
+    싣는 원작은 스토리뿐이라 이름 치환은 이 원작으로 본다. 스토리 소설은 캐릭터 이름이 없어 `{{char}}` 가 글자 그대로 남는다."""
+    novel = await make_novel(db)
+    content = Content(
+        creator_user_id=novel.user_id, type=ContentType.STORY, hashtags=[], visibility=ContentVisibility.PUBLIC,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db.add(content)
+    await db.flush()
+    version = ContentVersion(
+        content_id=content.id, version_number=1, published_at=datetime.now(UTC), detail_description="설명"
+    )
+    db.add(version)
+    await db.flush()
+    db.add(
+        StoryVersionDetail(
+            content_version_id=version.id, name="스토리", one_liner="한줄", prompt_template=StoryPromptTemplate.BASIC,
+            setting_text=setting,
+        )
+    )
+    content.current_published_version_id = version.id
+    novel.content_id, novel.content_type, novel.character_name = content.id, "story", None
+    novel.protagonist_name = protagonist
+    await db.flush()
+    return novel, version.id
 
 
 async def _note(
@@ -192,6 +222,36 @@ async def test_only_version_wide_notes_with_text_are_read_in_note_order(db_sessi
     ]
 
 
+# 작품 설정과 노트에 같은 문장을 넣고 두 결과를 견준다. 이름 규칙이 두 곳(소설 생성의 작품 설정과 이 슬롯의 노트)에 있어, 생성 쪽만
+# 바뀌면 노트가 옛 규칙으로 남는 것을 이 비교가 잡는다.
+_NAMED_SENTENCE = "합성 길목에서 {{user}}가 {{char}}와 걷는다"
+
+
+@pytest.mark.parametrize(
+    ("protagonist", "expected"),
+    [
+        # 조사는 이름 끝 받침에 맞춘다.
+        pytest.param("지훈", "합성 길목에서 지훈이 {{char}}와 걷는다", id="named"),
+        # 이름이 비면 대체어가 들어간다 — 이름 없는 소설에서도 예외 없이 읽는다.
+        pytest.param(None, "합성 길목에서 당신이 {{char}}와 걷는다", id="unnamed"),
+        pytest.param("", "합성 길목에서 당신이 {{char}}와 걷는다", id="blank-name"),
+    ],
+)
+async def test_note_names_follow_the_work_setting_rule(
+    db_session: AsyncSession, protagonist: str | None, expected: str
+) -> None:
+    novel, version_id = await _make_story_work(db_session, _NAMED_SENTENCE, protagonist=protagonist)
+    note = await _note(db_session, version_id, _NAMED_SENTENCE)
+    slot = SourceCanonSlot()
+    ref = await slot.resolve(db_session, novel.id)
+    assert ref is not None
+
+    canon = await slot.load(db_session, novel.id, ref)
+
+    assert canon.work_setting == expected
+    assert canon.keyword_notes == {note.id: expected}
+
+
 # ── 확정 행 ───────────────────────────────────────────────────────────────
 
 
@@ -297,6 +357,28 @@ async def test_the_hash_changes_with_each_input(db_session: AsyncSession, change
     before, after = await _hash_before_and_after(db_session, work, change)
 
     assert before != after
+
+
+async def test_a_rename_reaches_the_hash_through_a_note_alone(
+    db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """작품 설정에는 이름 자리가 없고 노트에만 있다. 확정 때 해시를 낸 뒤(`resolve`) 이름을 바꾸면 노트 글과 해시가 함께
+    바뀌고, 다시 읽기는 새 이름의 글로 진행하며 경고를 남긴다 — 이름은 확정 행에 남지 않는다."""
+    novel, version_id = await _make_story_work(db_session, "이름 자리 없는 합성 세계관", protagonist="지훈")
+    note = await _note(db_session, version_id, "{{user}}가 합성 열쇠를 쥔다")
+    slot = SourceCanonSlot()
+    ref = await slot.resolve(db_session, novel.id)
+    assert ref is not None
+    novel.protagonist_name = "민수"
+    await db_session.flush()
+
+    with caplog.at_level(logging.WARNING, logger=_SLOT_LOGGER):
+        canon = await slot.load(db_session, novel.id, ref)
+
+    assert canon.work_setting == "이름 자리 없는 합성 세계관"
+    assert canon.keyword_notes == {note.id: "민수가 합성 열쇠를 쥔다"}
+    assert canon.ref.input_hash != ref.input_hash
+    assert [record.levelno for record in caplog.records if record.name == _SLOT_LOGGER] == [logging.WARNING]
 
 
 async def test_the_hash_tells_versions_apart_even_when_their_text_is_the_same(db_session: AsyncSession) -> None:
