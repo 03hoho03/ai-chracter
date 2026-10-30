@@ -1,6 +1,7 @@
 """정본 기억 확정의 어드민 내부 입구 — 확정 하나를 받고 그 상태·개수를 돌려준다.
 
-스위치가 꺼져 있으면 라우트가 없는 것과 같은 404 다(어드민 세션이어도). 응답에는 정본 기억 내용(사실 값·인용)을 싣지 않는다
+스위치가 꺼져 있으면 라우트가 없는 것과 같은 404 다(어드민 세션이어도). 켜져 있어도 확정이 만들 작업에 배정된 어댑터의 문안
+체인에 그 채널이 없으면 503 이다 — 처리될 수 없는 확정을 쌓지 않는다. 응답에는 정본 기억 내용(사실 값·인용)을 싣지 않는다
 — 상태와 개수뿐이다."""
 
 import uuid
@@ -8,16 +9,16 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
 from api.db.models import Novel
-from api.db.models.novel_bible import NovelBibleFinding, NovelBibleJob
+from api.db.models.novel_bible import NovelBibleCommit, NovelBibleFinding, NovelBibleJob
 from api.novel_bible import entry
 from api.novel_bible.core.confirm import ConfirmConflictError, ConfirmResult
 from factories import _create_admin, _login_as, _login_as_admin
-from novel_bible_fakes import add_chapter, make_novel, plant_revision
+from novel_bible_fakes import FakeAdapter, FakeSlot, add_chapter, fake_registry, facts_slot, make_novel, plant_revision
 
 _SECRET_SENTENCE = "합성 원고의 비밀 구절"
 _CONFIRM = "/admin/novel-bible/confirmations"
@@ -151,3 +152,43 @@ async def test_status_reports_counts_without_bible_content(
     }
     assert _SECRET_SENTENCE not in response.text
     assert (await db_client.get(f"{_CONFIRM}/{uuid.uuid4()}")).status_code == 404
+
+
+async def _commits(db_session: AsyncSession, novel_id: str) -> int:
+    return int(
+        await db_session.scalar(
+            select(func.count()).select_from(NovelBibleCommit).where(NovelBibleCommit.novel_id == uuid.UUID(novel_id))
+        )
+        or 0
+    )
+
+
+@pytest.mark.usefixtures("bible_on")
+async def test_confirm_is_unavailable_while_an_assigned_chain_lacks_the_slot_channel(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 실제 어댑터(코드 표의 Gemini)가 실제 소설 레인 Gemini 세트를 읽는다 — 그 세트에는 정본 기억 채널이 아직 없다.
+    slot = FakeSlot("facts", "facts.extract", "novel_bible_facts", frozenset({"fact"}))
+    monkeypatch.setattr(entry, "REGISTRY", fake_registry(slot))
+    await _admin(db_client, db_session)
+    body = await _target(db_session)
+
+    response = await db_client.post(_CONFIRM, json=body)
+
+    assert response.status_code == 503
+    assert await _commits(db_session, body["novelId"]) == 0
+
+
+@pytest.mark.usefixtures("bible_on")
+async def test_confirm_goes_ahead_when_every_assigned_chain_has_its_slot_channel(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(entry, "REGISTRY", fake_registry(facts_slot()))
+    monkeypatch.setattr(entry, "build_resolver", lambda: FakeAdapter().resolver())
+    await _admin(db_client, db_session)
+    body = await _target(db_session)
+
+    response = await db_client.post(_CONFIRM, json=body)
+
+    assert response.status_code == 202
+    assert await _commits(db_session, body["novelId"]) == 1

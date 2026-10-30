@@ -1,5 +1,6 @@
 """정본 기억의 바깥 입구 — 어드민 내부 API 와 측정 하네스가 부른다. 코어 함수에 실제 등록부(`registry.REGISTRY`)와 규칙 목록
-(`rules.RULES`)을 넘기는 자리다. 스위치(`novel_bible_enabled`)가 꺼져 있으면 확정을 받지 않는다."""
+(`rules.RULES`), 어댑터 해석기(`adapters/resolver.py` 의 `build_resolver`)를 넘기는 자리다. 스위치(`novel_bible_enabled`)가 꺼져
+있으면 확정을 받지 않는다."""
 
 import uuid
 from dataclasses import dataclass
@@ -9,11 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
 from api.db.models.novel_bible import NovelBibleCommit, NovelBibleFinding, NovelBibleJob, NovelBibleRevision
+from api.novel_bible.adapters.resolver import build_resolver
 from api.novel_bible.core import pipeline
 from api.novel_bible.core.confirm import Actor, ConfirmResult, confirm
 from api.novel_bible.core.contracts import AdapterResolver
 from api.novel_bible.core.jobs import SessionFactory
 from api.novel_bible.core.queries import bible_at
+from api.novel_bible.core.render import verify_prompt_chains
 from api.novel_bible.core.types import BibleSnapshot
 from api.novel_bible.ids import CommitFailure, CommitStatus, FindingSeverity, JobFailure, JobStatus, SlotId
 from api.novel_bible.registry import REGISTRY
@@ -24,6 +27,10 @@ class BibleDisabledError(Exception):
     """정본 기억 스위치가 꺼져 있다."""
 
 
+class BiblePromptMissingError(Exception):
+    """확정이 만들 작업에 배정된 어댑터의 문안 체인에 그 슬롯 채널이 없다 — 받아도 작업이 문안 없음으로 실패할 뿐이다."""
+
+
 async def confirm_chapter(
     db: AsyncSession,
     *,
@@ -32,10 +39,15 @@ async def confirm_chapter(
     revision_id: uuid.UUID,
     actor: Actor,
     slots: frozenset[SlotId] | None = None,
+    resolver: AdapterResolver | None = None,
 ) -> ConfirmResult:
-    """화 개정 하나를 확정으로 받는다. `slots` 는 측정에서 슬롯 일부만 돌릴 때(None = 등록부 전부). 커밋은 호출부가 한다."""
+    """화 개정 하나를 확정으로 받는다. `slots` 는 측정에서 슬롯 일부만 돌릴 때(None = 등록부 전부), `resolver` 는 측정이 어댑터를
+    바꿔 끼울 때(None = 코드 표와 env 덮어쓰기). 커밋은 호출부가 한다."""
     if not settings.novel_bible_enabled:
         raise BibleDisabledError
+    missing = await verify_prompt_chains(db, REGISTRY, resolver or build_resolver(), slots=slots)
+    if missing:
+        raise BiblePromptMissingError(", ".join(missing))
     return await confirm(
         db, REGISTRY, novel_id=novel_id, chapter_id=chapter_id, revision_id=revision_id, actor=actor, slots=slots
     )
