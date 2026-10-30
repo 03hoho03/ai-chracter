@@ -20,6 +20,7 @@ from api.novel_bible.core.types import (
     Proposal,
     RenderedPrompt,
     RevisionRef,
+    SceneHint,
     SlotRows,
     SourceCanon,
     SourceCanonRef,
@@ -35,6 +36,8 @@ class CoreReadView(Protocol):
     commit: CommitRef
 
     async def manuscript(self) -> Manuscript: ...
+    # 장면 구성안이 없는 화는 빈 목록이다(화 전체가 장면 하나).
+    async def scene_hints(self) -> list[SceneHint]: ...
     async def known_entities(self) -> list[EntityName]: ...
     async def source_canon(self) -> SourceCanon | None: ...
 
