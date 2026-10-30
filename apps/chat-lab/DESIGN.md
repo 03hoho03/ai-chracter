@@ -1,0 +1,295 @@
+---
+name: chat-lab
+description: 채팅 엔진 측정 런을 세션→턴→호출 3단으로 들여다보는 로컬 개발자 도구
+colors:
+  background: "oklch(0.972 0.003 256)"
+  surface: "oklch(0.995 0.001 256)"
+  surface-raised: "oklch(0.955 0.004 256)"
+  surface-sunken: "oklch(0.930 0.006 256)"
+  border: "oklch(0.890 0.005 256)"
+  border-strong: "oklch(0.800 0.008 256)"
+  ink: "oklch(0.220 0.010 256)"
+  ink-secondary: "oklch(0.420 0.010 256)"
+  ink-muted: "oklch(0.505 0.010 256)"
+  accent: "oklch(0.520 0.150 256)"
+  accent-ink: "oklch(0.995 0.001 256)"
+  warn: "oklch(0.520 0.120 70)"
+  danger: "oklch(0.520 0.180 27)"
+  series-1: "oklch(0.671 0.175 41)"
+  series-2: "oklch(0.669 0.141 162)"
+  series-3: "oklch(0.433 0.167 284)"
+  background-dark: "oklch(0.185 0.006 256)"
+  surface-dark: "oklch(0.212 0.007 256)"
+  surface-raised-dark: "oklch(0.248 0.008 256)"
+  surface-sunken-dark: "oklch(0.282 0.009 256)"
+  border-dark: "oklch(0.330 0.008 256)"
+  border-strong-dark: "oklch(0.400 0.010 256)"
+  ink-dark: "oklch(0.930 0.004 256)"
+  ink-secondary-dark: "oklch(0.790 0.006 256)"
+  ink-muted-dark: "oklch(0.670 0.008 256)"
+  accent-dark: "oklch(0.750 0.120 256)"
+  accent-ink-dark: "oklch(0.180 0.030 256)"
+  warn-dark: "oklch(0.820 0.130 80)"
+  danger-dark: "oklch(0.720 0.160 25)"
+  series-1-dark: "oklch(0.622 0.173 40)"
+  series-2-dark: "oklch(0.621 0.128 163)"
+  series-3-dark: "oklch(0.670 0.145 287)"
+typography:
+  title:
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "16px"
+    fontWeight: 600
+    lineHeight: 1.35
+  section:
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "13px"
+    fontWeight: 600
+    lineHeight: 1.4
+  body:
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "13px"
+    fontWeight: 400
+    lineHeight: 1.45
+  reading:
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.7
+  data:
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "12px"
+    fontWeight: 400
+    lineHeight: 1.4
+    fontFeature: "'tnum' 1"
+  label:
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "11px"
+    fontWeight: 500
+    lineHeight: 1.3
+  mono:
+    fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+    fontSize: "12px"
+    fontWeight: 400
+    lineHeight: 1.6
+rounded:
+  sm: "3px"
+  md: "5px"
+  lg: "8px"
+spacing:
+  "1": "4px"
+  "2": "8px"
+  "3": "12px"
+  "4": "16px"
+  "6": "24px"
+  "8": "32px"
+  row: "28px"
+components:
+  button-primary:
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.accent-ink}"
+    rounded: "{rounded.md}" # cite-ok: 문서가 아니라 디자인 토큰 참조(rounded 사다리의 md 칸)
+    padding: "0 12px"
+    height: "28px"
+  button-ghost:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink-secondary}"
+    rounded: "{rounded.md}" # cite-ok: 문서가 아니라 디자인 토큰 참조(rounded 사다리의 md 칸)
+    padding: "0 8px"
+    height: "28px"
+  button-ghost-hover:
+    backgroundColor: "{colors.surface-raised}"
+    textColor: "{colors.ink}"
+  table-row:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    typography: "{typography.data}"
+    height: "{spacing.row}"
+  table-row-selected:
+    backgroundColor: "{colors.surface-raised}"
+    textColor: "{colors.ink}"
+  chip:
+    backgroundColor: "{colors.surface-raised}"
+    textColor: "{colors.ink-secondary}"
+    typography: "{typography.label}"
+    rounded: "{rounded.sm}"
+    padding: "0 6px"
+    height: "18px"
+  raw-block:
+    backgroundColor: "{colors.surface-sunken}"
+    textColor: "{colors.ink}"
+    typography: "{typography.mono}"
+    rounded: "{rounded.md}" # cite-ok: 문서가 아니라 디자인 토큰 참조(rounded 사다리의 md 칸)
+    padding: "12px"
+  limit-note:
+    backgroundColor: "{colors.surface-raised}"
+    textColor: "{colors.ink-secondary}"
+    typography: "{typography.data}"
+    rounded: "{rounded.md}" # cite-ok: 문서가 아니라 디자인 토큰 참조(rounded 사다리의 md 칸)
+    padding: "6px 8px"
+---
+
+# Design System: chat-lab
+
+## 1. Overview
+
+**Creative North Star: "지도와 확대경"**
+
+이 문서는 비주얼만 다룬다. 누가 무엇을 하려고 쓰는지, 성공을 무엇으로 재는지, 어떤 장면에서 여는지는 같은 폴더의 `PRODUCT.md` 에 있다.
+
+이름이 "지도와 확대경"인 이유는 화면이 늘 두 배율을 함께 보여야 해서다 — 런 전체의 모양(타임라인·턴 흐름)을 시야 가장자리에 둔 채, 지금 고른 한 턴을 크게 들여다본다. 확대경을 들이대느라 지도를 접어 버리면 "이 턴이 런 전체에서 어디쯤인가"를 잃는다. 화면 뼈대가 3열 작업대(Navigation 절)인 것도 이 때문이다.
+
+다크·라이트는 둘 다 1급이고 운영체제 설정을 따른다(손으로 바꾸는 토글이 그 위에 선다). 낮과 밤에 같은 화면을 다시 여는 장면이 `PRODUCT.md` 「쓰는 장면」에 있다.
+
+톤은 건조하고 정확하다. 꾸밈보다 밀도, 놀람보다 일관성. 몰입형 소비자 화면이 아니라 판단을 돕는 계기판이라, 또나 서비스의 디자인 시스템(저장소 루트 `DESIGN.md`·`packages/ui`)과 목표가 다르고 그것을 쓰지 않는다. 기준이 되는 도구는 Langfuse·LangSmith·Arize Phoenix·W&B Weave 의 트레이스 화면(세션→트레이스→스팬 3단)과 Linear 의 키보드 우선 목록이다. 반대로 마케팅 대시보드의 큰 숫자 타일, 그래디언트, 유리 질감, 장식 애니메이션은 이 도구가 아니다.
+
+기록의 빈칸을 이유로 말한다는 원칙(`PRODUCT.md` 「원칙」)은 이 문서에서 기록 한계 문구(Record Limit Note)와 Do's 첫 항목의 모양으로 나온다.
+
+**Key Characteristics:**
+- 정보 밀도가 높다 — 표 한 줄 28px, 데이터 글자 12px, 숫자는 전부 고정폭 숫자(tabular-nums).
+- 색은 절제한다(Restrained) — 무채색 사다리 위에 코발트 강조 하나, 상태색 둘(주의·실패), 스탯 선 세 색.
+- 원문은 원문답게 — 프롬프트·지시문·JSON 은 고정폭, 사용자 발화·응답은 읽기용 산세리프.
+- 키보드 우선 — 턴 이동 `j`/`k`, 시도 전환 `[`/`]`, 원문 검색 `/`, 키 한 번에 즉시 한 칸.
+- 그림자 없이 평평하다 — 깊이는 명도 사다리와 1px 선으로 만든다.
+
+## 2. Colors
+
+무채색 사다리는 코발트(색상각 256) 쪽으로 아주 살짝(채도 0.001~0.010) 기울어 있고, 유채색은 네 가지 일에만 쓴다.
+
+### Primary
+- **코발트 강조(Cobalt Accent)** (라이트 `accent` / 다크 `accent-dark`): 지금 고른 것(선택된 턴·탭·시도), 키보드 포커스 링, 화면당 하나뿐인 주 행동 버튼(예: "턴 기록 내보내기"). 라이트에서 표면 대비 5.49:1, 다크 7.92:1 이라 글자로도 쓸 수 있다. 채움 위 글자는 `accent-ink` 로 뒤집는다(다크 8.45:1, 라이트 5.49:1).
+
+### Secondary
+- **주의 호박(Caution Amber)** (`warn` / `warn-dark`): 불일치(mismatch)·주의(caution) 배지와 목록, 타임라인의 rebase·재생성·수정 표지. 라이트 5.57:1, 다크 9.98:1.
+- **실패 적색(Failure Red)** (`danger` / `danger-dark`): 턴 실패·응답 깨짐·열 수 없는 런. 라이트 5.96:1, 다크 6.63:1. 늘 아이콘·낱말과 함께 쓰고 색만으로 뜻을 싣지 않는다.
+
+### Tertiary
+- **스탯 선 세 색(Stat Series)** (`series-1` 주황 / `series-2` 청록 / `series-3` 보라, 다크는 각 `-dark`): 상태 타임라인의 보이는 스탯 선과, 그 스탯을 가리키는 작은 점(Δ 칩 안). 이 순서는 데이터 시각화 팔레트 검증 스크립트로 두 테마의 실제 표면 위에서 모든 쌍을 돌려 통과한 순서다(색각 이상 시뮬레이션 ΔE 9.2 이상, 정상 시각 ΔE 24 이상). 라이트의 청록은 표면 대비 2.77:1 로 3:1 에 못 미쳐, 선 끝에 이름표를 달고 턴 목록이 같은 값을 표로 보여 주는 것으로 보완한다. 숨김 스탯은 네 번째 색을 얻지 않고 `ink-muted` 점으로 따로 그린다.
+
+### Neutral
+- **페이지 바탕(Page)** (`background` / `background-dark`): 창 전체 바탕. 라이트는 패널보다 한 단 어둡고 다크는 한 단 어둡다 — 패널이 늘 바탕 위로 떠 보인다.
+- **패널 면(Surface)** (`surface` / `surface-dark`): 표·타임라인·상세 패널이 놓이는 면. 차트도 이 면 위에 그린다.
+- **올라온 면(Raised)** (`surface-raised` / `surface-raised-dark`): 행 hover·선택 행·칩·기록 한계 문구 바탕.
+- **들어간 면(Sunken)** (`surface-sunken` / `surface-sunken-dark`): 원문 블록(프롬프트·지시문·JSON). 읽을 글이 주변 크롬과 갈리게 한다.
+- **선(Border)** (`border`, `border-strong` 와 각 `-dark`): 1px 구분선. 강한 선은 표 머리와 패널 경계에만.
+- **글자 세 단(Ink)** (`ink` 본문·값, `ink-secondary` 보조, `ink-muted` 축·단위·메타): 세 단 모두 들어간 면 위에서도 4.78:1 이상, 패널 면 위에서 5.79:1 이상이다(가장 약한 `ink-muted` 기준, 라이트·다크 중 낮은 쪽).
+
+### Named Rules
+**The Four Jobs Rule.** 유채색은 선택(코발트)·주의(호박)·실패(적색)·스탯 정체(세 선 색) 네 가지 일에만 쓴다. 행 배경·패널·버튼 테두리에 색을 칠하지 않는다. 화면에서 색 하나가 눈에 들어오면 그건 "지금 고른 것" 아니면 "문제가 있는 것"이어야 한다.
+
+**The Three Lines Rule.** 한 차트에 선은 셋까지. 기준 팔레트의 나머지 다섯 색(파랑·노랑·분홍·초록·빨강)을 넷째로 넣어 검증 스크립트로 모든 쌍을 돌리면 다섯 모두 적어도 한 테마에서 떨어진다(가장 나은 파랑도 다크에서 보라와 정상 시각 ΔE 9.8, 기준 15). 스탯이 넷 이상이면 작은 차트로 나누거나 보일 스탯을 고르게 한다.
+
+**The Status Is Not A Series Rule.** 주의·실패색은 스탯 선 색으로 쓰지 않고, 스탯 선 색은 상태를 뜻하지 않는다. Δ 칩도 오르면 초록·내리면 빨강으로 칠하지 않는다 — 긴장이 오르는 것이 좋은지 나쁜지는 이야기마다 다르다. 부호(+/−)와 숫자로만 말한다.
+
+## 3. Typography
+
+**UI Font:** 시스템 산세리프(`-apple-system` → `Apple SD Gothic Neo` → `Noto Sans KR` → `system-ui`)
+**Mono Font:** 시스템 고정폭(`ui-monospace` → `SF Mono` → `Menlo`)
+
+**Character:** 글꼴은 웹 글꼴을 내려받지 않는 시스템 글꼴 둘이다. 로컬 도구가 외부 요청 없이 즉시 떠야 하고, 이 도구의 목소리는 글꼴이 아니라 정보 배치에서 나온다. 산세리프는 UI·발화·응답을, 고정폭은 기계가 만든 글(프롬프트·지시문·JSON·call_site·모델 이름·runId)을 맡는다.
+
+### Hierarchy
+- **Title** (600, 16px, 1.35): 화면 제목 한 줄 — 런 목록 제목, 런 상세의 이야기 이름.
+- **Section** (600, 13px, 1.4): 패널 제목("턴 17", "호출", "지표").
+- **Body** (400, 13px, 1.45): UI 기본 — 버튼, 설명, 목록 셀의 낱말.
+- **Reading** (400, 14px, 1.7, 최대 68ch): 사용자 발화와 응답 원문. 한국어 산문이라 줄 간격을 넉넉히 둔다.
+- **Data** (400, 12px, 1.4, 고정폭 숫자): 표 셀, 토큰·원가·지연, 타임스탬프.
+- **Label** (500, 11px, 1.3): 칩, 축 눈금, 열 머리. 대문자 변환·자간 벌림은 쓰지 않는다(한글에는 대문자가 없고, 영문 열 머리도 낱말 그대로 읽힌다).
+- **Mono** (400, 12px, 1.6): 원문 블록. 줄바꿈을 지키고(`white-space: pre-wrap`), 가로 스크롤 대신 접어 넣는다.
+
+### Named Rules
+**The Machine Text Rule.** 기계가 만든 문자열은 고정폭, 사람이 쓴 문장은 산세리프. `chat_stat_judgment`·`claude-haiku-5-5` 같은 식별자를 산세리프로 쓰지 않고, 응답 원문을 고정폭으로 쓰지 않는다. 둘을 섞으면 "이게 프롬프트인가 응답인가"를 글꼴로 구분하지 못한다.
+
+**The Tabular Rule.** 세로로 줄 서는 숫자(표 열·축 눈금·토큰 표)는 전부 `font-variant-numeric: tabular-nums`. 원가는 소수 넷째 자리(`$0.0912`), 토큰은 천 단위 쉼표(`18,412`), 지연은 ms 정수(`2,140ms`)로 자리를 고정한다.
+
+**The Ceiling Rule.** 글자 크기 천장은 16px 이다. 이 도구에 "히어로 숫자"는 없다 — 런 원가도 표 한 칸의 숫자다.
+
+## 4. Elevation
+
+평평하다. 정지 상태의 패널·표·칩에는 그림자가 없고, 깊이는 명도 사다리(바탕 → 패널 면 → 올라온 면 → 들어간 면)와 1px 선으로 만든다. 그림자는 화면 위에 잠깐 떠서 다른 것을 가리는 것 — 명령 팔레트, 메뉴, 토스트 — 에만 붙는다.
+
+### Shadow Vocabulary
+- **떠 있는 층(Overlay)** (라이트 `box-shadow: 0 8px 24px oklch(0.22 0.02 256 / 0.14), 0 0 0 1px oklch(0.80 0.008 256)` / 다크 `0 8px 24px oklch(0 0 0 / 0.45), 0 0 0 1px oklch(0.40 0.010 256)`): 명령 팔레트·메뉴·토스트.
+
+### Named Rules
+**The Flat-At-Rest Rule.** 그림자가 붙은 패널이 하나라도 보이면 그 패널은 지금 다른 것을 가리고 떠 있어야 한다. 정지한 패널에 그림자가 있으면 틀린 것이다.
+
+## 5. Components
+
+부품은 "익숙함이 기능"이다. 표준 표·탭·세그먼트·접기를 그대로 쓰고 맛을 위해 새 조작을 만들지 않는다.
+
+### Buttons
+- **Shape:** 살짝 둥근 모서리(5px), 높이 28px.
+- **Primary:** 코발트 채움 + `accent-ink` 글자, 좌우 12px. 화면당 하나 — 런 목록은 미리보기의 "열기", 런 상세는 "턴 기록 내보내기"(측정 서버가 내보내기를 받지 않는 이전 형식 런은 누르면 실패할 버튼 대신 그 자리에 `ink-muted` 글자 "내보내기 없음 · 이전 형식", 까닭은 `title`). "새로 훑기"처럼 가끔 누르는 일은 Ghost 다. 다만 표 대신 안내만 서는 화면(런 루트가 빈 화면의 "새로 훑기", 연결 실패의 "다시 시도")에서는 그 행동이 화면의 유일한 행동이라 Primary 다.
+- **Ghost (기본):** 투명 바탕 + `ink-secondary` 글자. hover 에서 올라온 면 + `ink`. 대부분의 버튼이 이것이다.
+- **Focus:** 2px 코발트 윤곽선, 1px 띄움. 마우스로 누를 때는 보이지 않고(`:focus-visible`) 키보드로 올 때만 보인다.
+- **Disabled / Loading:** 글자 `ink-muted`, 누름 반응 없음. 오래 걸리는 일(런 목록 새로 훑기는 수십 초)은 버튼 자리에 경과 초를 숫자로 보여 준다("훑는 중 12초"). 첫 목록 요청도 측정 서버가 런 루트를 처음 훑느라 같은 시간이 걸려, 로딩 자리에 같은 경과 초를 둔다.
+
+### Chips
+- **Δ 칩:** 올라온 면 + `ink-secondary` 11px. 안에 스탯 선 색 점(6px) + 스탯 이름 + 부호 숫자(`호감 +5`). 숨김 스탯은 점이 `ink-muted` 고리. 그 턴이 시작한 값을 기록으로 알 수 없으면 변화량 자리에 `Δ 모름` 과 `ink-muted` 로 바뀐 뒤 값(`호감 Δ 모름 → 42`) — 바뀐 뒤 값을 변화량처럼 부호 숫자로 적지 않는다.
+- **플래그 칩:** 절단·자기복제·라벨 누출·깨짐. 깨짐만 적색 낱말, 나머지는 `ink-secondary` 낱말. 아이콘 없이 낱말로 — 네 플래그를 기호로 외우게 하지 않는다. 예외는 턴 목록 행의 플래그 열 하나다 — 272px 열에 낱말 넷이 들어가지 않아 한 글자 약자(절·복·라·깨)로 적고, 온 이름을 `title`·`aria-label` 로 단다.
+- **형식 배지:** 현행(`current`)은 배지 없음, 이전(`preMessageId`)은 `ink-secondary` 테두리 배지, 지원 안 함(`legacy`)·열 수 없음은 적색 낱말. 정상이 가장 조용해야 이상한 것이 보인다.
+- **불일치·주의 배지:** 호박 낱말 + 개수(`불일치 3`, `주의 2`). 둘은 따로 세고 주의를 불일치 수에 더하지 않는다(`PRODUCT.md` 「원칙」). 0 이면 그 배지를 그리지 않는다.
+
+### Tables / Lists
+- **행:** 28px, 데이터 글자 12px. hover 는 올라온 면, 선택은 올라온 면 + 행 번호 굵게 + 코발트 1px 윤곽(행 전체). 옆줄 강조선은 쓰지 않는다.
+- **그룹 행:** 대량 시도 폴더(probes 등)는 접힌 한 줄로 — `▸ s3/probes · 런 1,783개`, 그 안에 열지 못한 런이 있으면 옆에 적색 `열 수 없음 2`. 원가·불일치·주의 칸에는 그 폴더의 합이고, 열지 못한 런·턴 기록 없는 런·이전 형식 런·원가가 하한인 런(단가 없는 호출이나 입력 토큰이 기록되지 않은 호출이 섞인 런)이 섞이면 원가 합은 `≥` 하한이다. 열면(두 번 누르기·Enter) 표 안에서 펼치지 않고 폴더 트리가 그 폴더로 들어간다 — 폴더 하나에 런이 천 개를 넘을 수 있어, 펼친 하위 행이 위아래 런을 화면 밖으로 밀어내지 않게 한다.
+- **런 표의 칸:** 이야기(형식 배지를 이름 뒤에) · 경로(고른 폴더 기준, 고정폭) · 시작 · 턴 · 모델 · 원가 · 불일치 · 주의. 대량 시도 폴더 안 런은 이야기가 모두 같아서 경로 칸이 행을 가른다. 원가는 측정 서버가 하한으로 본 합(단가표에 없는 호출이나 입력 토큰이 기록되지 않은 호출이 섞임)이면 `≥ $0.3310` 처럼 하한으로 적고, 턴 기록 파일이 없으면 "내보내기 필요", 이전 형식 런(턴 기록을 응답과 이을 열쇠가 없어 내보내도 채워지지 않는다)이면 "없음 · 이전 형식"이다 — `$0.0000` 과 같은 모양이 되지 않는다.
+- **열 수 없는 런:** 행은 그대로 두고 이야기 이름 자리에 적색 "열 수 없음"(지원하지 않는 형식은 "지원 안 함"), 나머지 칸을 하나로 이은 자리에 경로(고정폭)와 까닭 — `openError` 문장, 지원 안 함은 "옛 형식이라 열지 않는다". 둘 다 숨기지 않는다.
+
+### Inputs / Fields
+- **원문 검색:** 원문 블록 위 한 줄, 들어간 면 바탕, 1px 선. 일치는 코발트 옅은 바탕(16% 알파) 강조, 현재 일치는 진한 바탕. `n`/`N` 으로 다음·이전, 일치 수를 "3/12" 로.
+- **Focus:** 선이 코발트로 바뀐다. 번쩍임·확대 없음.
+
+### Navigation
+- **세 층:** 런 목록(세션) → 런 상세(턴 흐름 + 턴 상세) → 턴 상세 안의 호출 탭(생성 · 판정 call_site 별 · 백그라운드). 층은 주소로 표현한다 — 런 상세 주소에 고른 턴 번호와 시도·탭이 실려, 주소를 붙여 넣으면 같은 자리가 열린다. 런 목록 주소에는 고른 폴더와 행이 실려, 상세에서 돌아오면 보던 자리다.
+- **키보드:** `j`/`k` 다음·이전 턴, `[`/`]` 이전·다음 시도, `1`~`4` 호출 탭, `/` 원문 검색, `g` 타임라인으로, `Esc` 검색·펼침 닫기. 런 목록에서는 `j`/`k` 가 다음·이전 행(포커스도 그 행으로 옮겨 이어 누른 `Enter` 가 그 행에 닿는다), `Enter` 가 그 행 열기다. 마우스는 한 번 누르면 고르기(미리보기가 따라온다), 두 번 누르면 열기이고, 미리보기의 "열기"도 같다. 화면 구석에 늘 보이는 단축키 힌트 한 줄을 둔다.
+- **좁은 화면(768px 미만):** 한 번에 한 층만. 런 목록은 표 하나에 이야기·턴·원가·불일치 칸만 남기고(상태 줄도 숨긴다), 런 상세는 타임라인을 접은 띠로 위에 두고, 턴 목록과 턴 상세를 갈아 끼운다(상단에 "← 턴 17/30 →"). 가로 스크롤은 원문 블록 안에서도 만들지 않는다.
+- **화면 뼈대(3열 작업대):** 뷰포트에 고정된 셸이다. 위 헤더 한 줄(40px — `chat-lab` · 경로 빵부스러기 · 불일치·주의 배지 · 화면별 행동 · 테마 토글), 아래 상태 줄(24px — 단축키 힌트), 그 사이의 열들이 각자 스크롤한다. 문서 전체가 스크롤되지 않아 헤더·상태 줄과 다른 열이 늘 제자리에 있다.
+- **런 목록의 열:** 폴더 트리 240px │ 런 표(남는 폭) │ 미리보기 320px.
+  - 폴더 트리는 런 루트 기준 상대 경로를 폴더로 묶는다. 런이 하나뿐인 폴더는 트리에 따로 두지 않고 부모 폴더 표의 행이 되고, 런 없이 폴더 하나만 품은 폴더는 `s3/probes` 처럼 한 줄로 합친다. 대량 시도 폴더와 그 아래는 접힌 채 시작한다.
+  - 런 표는 고른 폴더 아래 런을 최근 시작 순으로 놓는다. 대량 시도 폴더 밖에서 보면 그 폴더는 그룹 행 한 줄이다(Tables / Lists 의 그룹 행).
+  - 미리보기는 고른 행을 목록 응답의 칸만으로 그린다(런 상세를 따로 부르지 않는다). 맨 위에 "먼저 볼 것" 문장 — 열 수 없음·불일치·원가 빈칸·단가 없는 호출·주의를 그 순서로, 없으면 "불일치·주의 없음" 한 줄 — 그 아래 칸별 값.
+- **런 상세의 열:** 위 상태 타임라인 띠(전체 폭) 아래에 턴 목록 272px │ 대화·원문(남는 폭) │ 호출 검사기 380px. 턴 목록 한 행은 턴 번호 · 사용자 발화 한 줄 · 스탯 Δ 점 · 플래그 열(한 글자 약자 — Chips 의 플래그 칩 예외) · 시도 수다. 가운데 열 아래 원문 칸의 탭은 프롬프트 원문 · 지시문 원문 · 앞선 생성 덤프와 비교 셋이고, 비교 탭은 생성 덤프를 볼 때 그 턴에 앞선 생성 덤프가 있을 때만 선다. "먼저 볼 것"(불일치·주의 목록)은 오른쪽 호출 검사기의 지표 탭에 둔다. 헤더의 불일치·주의 배지는 따로 센 두 수다(Chips 의 불일치·주의 배지).
+- **폭에 따른 접힘:** 1280px 이상은 세 열을 다 편다. 1024~1279px 에서 런 상세는 호출 검사기 열을 접고 가운데 열 머리의 탭(대화·원문 / 호출)으로 갈아 끼우며, 런 목록은 미리보기 열을 숨긴다(행에서 Enter 로 바로 연다). 768~1023px 은 런 목록의 폴더 트리도 숨기고 헤더의 빵부스러기와 표의 그룹 행으로 폴더를 오간다(런 상세는 1024~1279px 과 같다). 768px 미만은 위의 좁은 화면 규칙이다.
+
+### Token Bar
+- **모양:** 6px 높이 가로 막대 하나에 캐시 읽기 · 캐시 쓰기 · 새 입력 · 출력 네 칸을 그 순서로, 2px 틈을 두고 잇는다. 칸 길이는 토큰 수에 비례한다.
+- **칸 색:** 캐시 읽기 `ink-muted` 채움, 캐시 쓰기 `ink-secondary` 채움, 새 입력은 속을 비우고 `ink-muted` 1px 테두리만, 출력 `ink` 채움. 코발트는 선택의 색이라 칸 색으로 쓰지 않는다(The Four Jobs Rule).
+- **대비:** 네 칸 모두 패널 면 대비 3:1 이상이다 — 가장 약한 `ink-muted` 가 라이트 5.79:1, 다크 5.89:1. 새 입력 칸을 옅은 선 색(`border-strong`)으로 채우면 라이트 1.84:1, 다크 1.92:1 이라 칸이 면에 묻힌다.
+- **이름표:** 막대 아래 한 줄에 칸마다 같은 모양의 견본 + 이름 + 숫자(`새 입력 1,204`)를 적어, 색만으로 칸을 가리지 않는다. 토큰이 기록되지 않은 호출은 막대를 그리지 않고 그 자리에 "기록 없음"이다.
+
+### State Timeline (Signature)
+- **스탯 선:** 2px 선, 둥근 이음. 턴(x)마다 점은 그리지 않고, hover·선택 턴에서만 8px 점(2px 면 색 고리). 선 끝에 스탯 이름표(글자는 `ink-secondary`, 색은 옆의 짧은 선 견본만).
+- **숨김 스탯:** 본 차트 아래 따로 한 줄. 바뀐 턴에만 `ink-muted` 점, 값이 유지되는 구간은 1px 선.
+- **표지 줄:** 차트 아래 한 줄에 턴별 표지 — 엔딩·기억 노트 변경·요약 갱신·rebase·재생성·수정·점검·멈춤·실패. 모양과 낱말로 구분하고(실패만 적색, rebase·재생성·수정은 호박, 나머지는 `ink-muted`), hover 하면 `detail` 문장이 뜬다. 드라이버 줄에서 온 표지(rebase 등)는 "그 턴 뒤"라 턴 사이 칸에 놓는다.
+- **선택 턴:** 세로 1px `ink` 선 + 옅은 띠. 클릭하면 그 턴이 선택되고 턴 목록·상세가 따라온다. 차트 hover 는 십자선이 가까운 턴에 붙고 그 턴의 모든 스탯 값을 한 툴팁에 보인다.
+
+### Record Limit Note (Signature)
+- **모양:** 올라온 면 바탕, 5px 모서리, 정보 아이콘(i) + `ink-secondary` 12px 문장. 값이 있어야 할 자리 바로 그곳에 둔다(판정 묶음 머리, 백그라운드 묶음 머리, 턴 원가 칸 자리, 원문 칸 자리). 한곳에 모아 목록으로 늘어놓지 않는다. 판정 응답·지연 문장과 백그라운드 토큰 문장은 그 턴의 그 묶음 카드 모두에 같은 까닭이라 카드마다 되풀이하지 않고 묶음 머리에 한 번 둔다.
+- **문장:** 측정 서버가 주는 `recordLimits` 문장을 그대로 쓴다. 화면이 따로 지어내지 않는다.
+
+### Motion
+- **길이:** 색·배경 바뀜 120ms, 접기·펼치기 180ms, 둘 다 `cubic-bezier(0.25, 1, 0.5, 1)`(ease-out-quart). 튕김·탄성 없음. 페이지 진입 연출 없음.
+- **턴 이동:** 애니메이션 없이 즉시. `j` 를 누르고 있으면 초당 수십 턴이 지나가야 하고, 그때 전환 효과가 쌓이면 화면이 키를 못 따라온다. 목록 스크롤은 `block: nearest` 로 즉시.
+- **동작 줄이기(`prefers-reduced-motion: reduce`):** 접기·펼치기도 즉시, 진행 표시는 움직이는 막대 대신 경과 초 숫자만.
+
+## 6. Do's and Don'ts
+
+### Do:
+- **Do** 빈 값을 이유로 말한다: 토큰이 `null` 이면 "기록 없음", 턴 기록 파일이 없으면 "내보내기 필요", 이전 형식 런이면 원가 자리에 "없음 · 이전 형식"·다른 턴 기록 칸에 "이전 형식이라 턴 기록을 잇지 않음"(내보내라고 하지 않는다), 판정 응답 칸에는 측정 서버의 `recordLimits` 문장을 그대로. 원가 `$0.0000` 과 "원가 기록 없음"은 판단이 정반대라 절대 같은 모양으로 보이지 않게 한다.
+- **Do** 표본 수를 지표 옆에 붙인다: "라벨 누출 1 / 표본 29턴". 분모 없는 개수는 읽히지 않는다.
+- **Do** 숫자 열을 오른쪽 정렬 + 고정폭 숫자로 쓴다(The Tabular Rule).
+- **Do** 지금 고른 턴을 세 곳(타임라인 띠·턴 목록 행·상세 머리)에서 같은 번호로 동시에 보인다.
+- **Do** 다크·라이트 각각 대비를 잰다: 본문 4.5:1, 큰 글자·선 3:1. 이 문서의 토큰 값은 그 기준을 넘도록 고른 것이다.
+- **Do** 정상을 가장 조용하게 그린다: 현행 형식·불일치 0·플래그 없음은 아무 표시도 없다.
+
+### Don't:
+- **Don't** 또나 서비스의 토큰·글꼴·핑크-레드 강조·`packages/ui` 부품을 가져오지 않는다(까닭은 `PRODUCT.md` 「범위 밖」).
+- **Don't** 큰 숫자 + 작은 이름표 + 보조 지표 타일을 늘어놓는 SaaS 대시보드 머리를 만들지 않는다(The Ceiling Rule). 런 요약은 한 줄 문장이나 작은 표다.
+- **Don't** `border-left`/`border-right` 1px 넘는 색 줄로 선택·경고를 표시하지 않는다. 선택은 면 색 + 윤곽, 경고는 낱말 + 호박색.
+- **Don't** 그래디언트 글자, 유리 질감(backdrop blur), 장식용 빛 번짐을 쓰지 않는다.
+- **Don't** 왼쪽·오른쪽에 y축을 하나씩 둔 이중 축 차트를 만들지 않는다. 단위가 다른 값(스탯과 원가)은 다른 차트다.
+- **Don't** 섹션마다 작은 대문자 머리말이나 01·02·03 번호를 붙이지 않는다.
+- **Don't** 턴 이동에 슬라이드·페이드 전환을 넣지 않는다(Motion 의 턴 이동 항목).
+- **Don't** 모달을 먼저 떠올리지 않는다. 원문 펼치기·호출 상세는 그 자리에서 펼친다.
+- **Don't** 측정 원자료(실제 대화 원문)를 시안·문서·스크린숏에 옮기지 않는다. 예시는 지어낸 문장으로 쓴다.

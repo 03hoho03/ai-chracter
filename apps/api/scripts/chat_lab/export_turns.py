@@ -7,6 +7,8 @@
 
 거부하는 것:
 - 열지 않는 형식(턴 줄에 방 id 가 없는 옛 형식)과 방 id 가 uuid 가 아닌 로그.
+- `assistantMessageId` 이전 형식 — 턴 줄에 턴 기록 행을 응답과 이을 열쇠(응답 id)가 없어, 내보내도 결합이 행을 잇지 않는다.
+  파일만 남으면 묶음이 "턴 기록 있음"으로 보이는데 원가·토큰은 끝내 비어 있다.
 - 런 루트의 `archive/` 아래 — git 이 추적하는 폴더라 쓰면 대화 원문이 든 파일이 공개 저장소에 커밋될 수 있다. 런 루트를 바꿔도
   저장소의 측정 기록 보관 폴더는 늘 거부한다.
 - 묶음 폴더에 서로 다른 방의 드라이버 로그가 있는 것 — 턴 기록 파일 이름은 폴더에 하나라 그 폴더의 모든 로그가 그 파일을 짝으로
@@ -35,7 +37,9 @@ ARCHIVE_DIR_NAME = "archive"
 # 저장소가 추적하는 측정 기록 보관 폴더(`apps/api/probe-runs/archive`).
 REPO_ARCHIVE = Path(__file__).resolve().parents[2] / "probe-runs" / ARCHIVE_DIR_NAME
 
-ExportRefusal = Literal["unsupported", "archived", "multipleRooms", "exists", "notFile", "noRoom", "noRows"]
+ExportRefusal = Literal[
+    "unsupported", "unsupportedFormat", "archived", "multipleRooms", "exists", "notFile", "noRoom", "noRows"
+]
 
 
 class ExportRefusedError(Exception):
@@ -81,6 +85,11 @@ async def export_chat_turns(session: AsyncSession, bundle: Bundle, *, force: boo
     """쓴 파일의 경로(resolve 한 것). 거부하면 `ExportRefusedError` — 파일 시스템 검사는 DB 를 읽기 전에 한다."""
     if not bundle.supported:
         raise ExportRefusedError("unsupported", f"{bundle.path}: 턴 줄에 방 id 가 없는 옛 형식이라 열지 않는다")
+    if bundle.format == "preMessageId":
+        raise ExportRefusedError(
+            "unsupportedFormat",
+            f"{bundle.path}: assistantMessageId 이전 형식은 턴 기록을 응답과 이을 열쇠가 없어 내보내도 이을 수 없다",
+        )
     if is_archived(bundle.log.parent, bundle.root):
         raise ExportRefusedError("archived", f"{bundle.path}: {ARCHIVE_DIR_NAME}/ 아래 묶음에는 쓰지 않는다")
     rooms = sorted(

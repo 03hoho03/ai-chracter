@@ -3,15 +3,22 @@
 - 지표는 대화록 분석의 `reply_flags(reply, previous)` 를 턴마다 부른다. `previous` 는 앞 턴 가운데 응답이 있는 마지막 턴의 응답
   — 그 턴에 DB 응답으로 고른 시도의 응답이고, 재생성·수정으로 바뀌었으면 바뀐 뒤 응답이다 — 이고, 첫 턴은 오프닝 마지막
   메시지다. 유실 시도의 조각(`partialReply`)은 쓰지 않는다. 지표와 화면이 같은 응답을 가리켜야 해서다. 되받기는 내지 않는다
-  (고정 대본의 턴 순번 키워드에 묶여 있어 자유 발화에는 뜻이 없다).
-- 원가는 턴 기록 호출 칸마다 `api.llm.pricing.call_cost` 를 부른 합이다. 첫 토큰 지연은 생성 호출 칸에만 있다.
-- 기록 한계는 화면이 사실대로 말하도록 문장으로 함께 싣는다."""
+  (고정 대본의 턴 순번 키워드에 묶여 있어 자유 발화에는 뜻이 없다). 턴 요약의 플래그는 이 지표의 같은 턴 칸을 그대로 싣는다.
+- 드라이버 스탯 변화의 시작 값은 리플레이가 그 턴을 조립할 때 읽는 스탯 줄(`replay.logs.stats_line`)에서 얻는다(규칙은
+  `DriverStatChange`).
+- 원가는 턴 기록 호출 칸마다 `api.llm.pricing.call_cost` 를 부른 합이다 — 원가 리포트들과 같은 합이다. 원가를 모르는 자리는 0 이
+  아니라 비운다: 단가 없는 호출과 입력 토큰이 기록되지 않은 호출의 호출 원가, 턴 기록 행이 붙지 않은 턴의 턴 원가. 그런 호출이
+  섞인 합은 하한이라고 표시한다. 첫 토큰 지연은 생성 호출 칸에만 있다.
+- 기록 한계는 화면이 사실대로 말하도록 문장과 그 문장이 대신 서는 자리를 함께 싣는다."""
 
 import statistics
 from datetime import datetime
 from typing import Any
 
 from analyze_chat_probe import ReplyFlags, is_monotonic_shrinking, reply_flags
+from api.chat.memory_embeddings import EMBEDDING_CALL_SITE
+from api.chat.memory_vector import QUERY_EMBEDDING_CALL_SITE
+from api.llm.call_policy import CALL_POLICIES, CallPolicy
 from api.llm.pricing import call_cost
 from chat_lab.bundles import Bundle
 from chat_lab.join import JoinedRun, Turn, as_int, as_number, join_bundle, recorded_after
@@ -19,9 +26,11 @@ from chat_lab.schemas import (
     AttemptDetail,
     BackgroundDump,
     CallCostView,
+    CallSiteKind,
     ChatTurnRecord,
     DriverStatChange,
     RecordedStatChange,
+    RecordLimit,
     ReplyFlagsView,
     RunBundle,
     RunCost,
@@ -37,7 +46,7 @@ from chat_lab.schemas import (
     TurnSummary,
     UnmatchedRow,
 )
-from replay.logs import ReplayRefusedError, memory_snapshot
+from replay.logs import ReplayRefusedError, memory_snapshot, stats_line
 
 JUDGMENT_RESULT_LIMIT = (
     "판정 응답 원문은 기록되지 않음 — 판정 결과는 드라이버의 스탯 변화·엔딩과 턴 기록의 스탯 전후로 대신 보인다"
@@ -60,17 +69,58 @@ def _calls(row: dict[str, Any]) -> list[dict[str, Any]]:
     return [call for call in calls if isinstance(call, dict)] if isinstance(calls, list) else []
 
 
+# 호출 정책 표에 없는 임베딩 호출 이름 — 질의 임베딩(턴 기록 호출 칸에 실린다)과 저장 임베딩. Voyage 호출은 그 표에 넣지 않는다.
+_EMBEDDING_CALL_SITES = frozenset({QUERY_EMBEDDING_CALL_SITE, EMBEDDING_CALL_SITE})
+# 기록의 call_site 는 그냥 문자열이라 표를 문자열 키로 찾는다.
+_CALL_POLICIES: dict[str, CallPolicy] = {site: policy for site, policy in CALL_POLICIES.items()}
+
+
+def call_site_kind(call_site: str) -> CallSiteKind:
+    """호출 종류. 임베딩은 표 밖 이름으로, 나머지는 호출 정책 표(`api.llm.call_policy`)의 행으로 가른다 — 스트리밍으로 부르는
+    호출이 생성, 판정 종류가 있는 호출이 판정(어드민 판정 비율이 세는 집합과 같다), 판정 종류 없이 모델 설정이 있는 호출이
+    백그라운드다. 표가 모델 설정을 판정 종류마다와 기억 요약·추출·인상에만 두므로 마지막 갈래는 그 넷이고, 넷 모두 응답을 보낸
+    뒤 요약 접기에서 돈다. 표에 없는 이름과 그 밖의 행(심사·시드·소설 구조화, 판정 종류가 없는 정본 기억 추출·판정)은 `other` 다."""
+    if call_site in _EMBEDDING_CALL_SITES:
+        return "embedding"
+    policy = _CALL_POLICIES.get(call_site)
+    if policy is None:
+        return "other"
+    if policy.call_kind == "stream":
+        return "generation"
+    if policy.judgment_kind is not None:
+        return "judgment"
+    if policy.model_setting is not None:
+        return "background"
+    return "other"
+
+
+def new_input_tokens(call: dict[str, Any]) -> int | None:
+    """정가로 치는 입력 토큰 — 입력 − 캐시 읽기 − 캐시 쓰기, 음수면 0. 단가 함수(`api.llm.pricing.estimate_cost_usd`)가 입력 정가를
+    곱하는 몫과 같은 전제다: 입력 토큰은 캐시 읽기·쓰기를 포함한 전체이고(Claude 는 빼고 보고하지만 공급자 모듈이 셋을 더해
+    기록한다 — `api.llm.claude_messages.to_usage`), 비어 있는 캐시 칸은 0 으로 친다. 다른 점은 입력 토큰이 기록되지 않은
+    호출뿐이다 — 단가 함수는 0 으로 치지만 여기는 None 이다(0 이면 새 입력이 없었던 호출로 읽힌다)."""
+    prompt = as_int(call.get("promptTokens"))
+    if prompt is None:
+        return None
+    cached = as_int(call.get("cachedTokens")) or 0
+    cache_write = as_int(call.get("cacheWriteTokens")) or 0
+    return max(prompt - cached - cache_write, 0)
+
+
 def call_view(call: dict[str, Any]) -> CallCostView:
     cost = call_cost(call)
     return CallCostView(
         call_site=cost.call_site,
+        kind=call_site_kind(cost.call_site),
         model=cost.model,
         prompt_tokens=as_int(call.get("promptTokens")),
         cached_tokens=as_int(call.get("cachedTokens")),
         cache_write_tokens=as_int(call.get("cacheWriteTokens")),
         output_tokens=as_int(call.get("outputTokens")),
         thoughts_tokens=as_int(call.get("thoughtsTokens")),
-        usd=cost.usd,
+        new_input_tokens=new_input_tokens(call),
+        # 단가 함수는 없는 입력 토큰을 0 으로 쳐 값을 내지만, 그 값은 이 호출의 원가가 아니다.
+        usd=None if cost.missing_tokens else cost.usd,
         missing_tokens=cost.missing_tokens,
         first_token_ms=as_int(call.get("firstTokenMs")),
         stream_first_token_ms=as_int(call.get("streamFirstTokenMs")),
@@ -82,14 +132,23 @@ def row_cost(row: dict[str, Any]) -> float:
     return sum(cost.usd for cost in (call_cost(call) for call in _calls(row)) if cost.usd is not None)
 
 
+def cost_is_lower_bound(rows: list[dict[str, Any]]) -> bool:
+    """행들의 원가 합이 실제보다 낮을 수 있는가 — 단가 없는 호출(합에서 빠진다)이나 입력 토큰이 기록되지 않은 호출(기록된 칸만
+    들어간다)이 하나라도 있다."""
+    return any(
+        cost.usd is None or cost.missing_tokens for cost in (call_cost(call) for row in rows for call in _calls(row))
+    )
+
+
 def _turn_rows(turn: Turn) -> list[dict[str, Any]]:
     return [row for attempt in turn.attempts for row in attempt.chat_turn_rows]
 
 
 def run_cost(joined: JoinedRun) -> RunCost | None:
-    """런 원가. 시도에 붙은 행만 합하고 「짝 없는 기록」의 원가는 따로 낸다."""
+    """런 원가. 시도에 붙은 행만 합하고 「짝 없는 기록」의 원가는 따로 낸다. 턴 기록이 없으면 없다. `assistantMessageId` 이전
+    형식도 없다 — 행을 잇지 않아(`join_bundle`) 붙은 행이 없으니, 합 0 은 0 원이 아니라 모르는 원가다."""
     export = joined.chat_turns
-    if export is None:
+    if export is None or joined.bundle.format == "preMessageId":
         return None
     total = 0.0
     unpriced = missing = 0
@@ -134,6 +193,17 @@ def _times(joined: JoinedRun) -> tuple[str | None, str | None]:
     return stamps[0][1], stamps[-1][1]
 
 
+def _effective_chat_models(joined: JoinedRun) -> list[str]:
+    """실제 생성 모델 — 방 스냅숏의 `effectiveChatModel` 이고, 스냅숏에 그 값이 없으면 턴 기록 파일의 행 전부의 `chat_model`(그
+    응답을 실제로 쓴 모델)이다. 다른 방의 파일은 결합에서 이미 버려(`chat_turns` 가 None) 여기 오는 행은 모두 이 방의 것이다.
+    시도에 붙지 않은 행(재생성·편집, 같은 방을 이어 친 다른 측정)과 행을 잇지 않는 `assistantMessageId` 이전 형식의 행도 센다 —
+    원가와 달리 이 칸은 그 방을 쓴 모델을 보이는 것이라 붙었는지를 따지지 않는다."""
+    snapshot = {m for m in (_str(r.get("effectiveChatModel")) for r in joined.room_statics) if m is not None}
+    if snapshot or joined.chat_turns is None:
+        return sorted(snapshot)
+    return sorted({m for m in (_str(row.get("chat_model")) for row in joined.chat_turns.rows) if m is not None})
+
+
 def run_list_item(bundle: Bundle, joined: JoinedRun | None) -> RunListItem:
     """`joined` 가 없으면(열지 않는 형식, 아직 열지 않은 묶음) 묶음을 찾을 때 안 것만 싣는다."""
     base = RunListItem(
@@ -157,9 +227,7 @@ def run_list_item(bundle: Bundle, joined: JoinedRun | None) -> RunListItem:
             "turn_count": len(joined.turns),
             "started_at": started,
             "ended_at": ended,
-            "effective_chat_models": sorted(
-                {m for m in (_str(r.get("effectiveChatModel")) for r in joined.room_statics) if m is not None}
-            ),
+            "effective_chat_models": _effective_chat_models(joined),
             "generation_models": sorted(
                 {
                     model
@@ -171,6 +239,12 @@ def run_list_item(bundle: Bundle, joined: JoinedRun | None) -> RunListItem:
             ),
             "cost_usd": cost.total_usd if cost is not None else None,
             "unpriced_calls": cost.unpriced_calls if cost is not None else None,
+            # 런 원가 합(`run_cost`)과 같은 행 — 시도에 붙은 행만 본다.
+            "cost_is_lower_bound": (
+                cost_is_lower_bound([row for turn in joined.turns for row in _turn_rows(turn)])
+                if cost is not None
+                else None
+            ),
             "has_dump": joined.has_dump,
             "has_chat_turns": joined.chat_turns is not None,
             "mismatch_count": len(joined.mismatches),
@@ -216,21 +290,41 @@ def _recorded_changes(joined: JoinedRun, turn: Turn) -> list[RecordedStatChange]
     return changes
 
 
-def _driver_changes(record: dict[str, Any]) -> list[DriverStatChange]:
+def stats_before(joined: JoinedRun, turn: Turn) -> dict[str, Any] | None:
+    """그 턴이 시작한 스탯(드라이버 줄의 이름 키). 리플레이가 그 턴을 조립할 때 읽는 줄(`replay.logs.stats_line`)의
+    `roomAfter.stats` 다 — 따로 고르면 화면과 리플레이가 같은 턴을 다른 상태로 본다. 앞 턴의 응답을 재생성·수정이 바꿨으면 그
+    줄의 값이 교체 뒤에도 맞는지 알 수 없어 None 이다. 규칙 전체는 `DriverStatChange`."""
+    previous = next((t for t in joined.turns if t.number == turn.number - 1), None)
+    if previous is not None and previous.replacement is not None:
+        return None
+    try:
+        _, record = stats_line(joined.logs, turn.number)
+    except ReplayRefusedError:
+        return None
+    stats = record["roomAfter"].get("stats")
+    return stats if isinstance(stats, dict) else None
+
+
+def _driver_changes(record: dict[str, Any], before: dict[str, Any] | None) -> list[DriverStatChange]:
     changes = record.get("statChanges")
     out: list[DriverStatChange] = []
     for change in changes if isinstance(changes, list) else []:
         value = as_number(change.get("value")) if isinstance(change, dict) else None
         name = _str(change.get("name")) if isinstance(change, dict) else None
         if name is not None and value is not None:
-            out.append(DriverStatChange(name=name, value=value))
+            start = as_number(before.get(name)) if before is not None else None
+            out.append(
+                DriverStatChange(name=name, value=value, before=start, delta=None if start is None else value - start)
+            )
     return out
 
 
-def turn_summary(joined: JoinedRun, turn: Turn) -> TurnSummary:
+def turn_summary(joined: JoinedRun, turn: Turn, flags: ReplyFlagsView | None) -> TurnSummary:
+    """`flags` 는 런 지표의 이 턴 칸 — 플래그를 여기서 다시 판정하지 않는다."""
     record = turn.selected.record
     reply = _str(record.get("reply")) or ""
     ending = record.get("ending")
+    rows = _turn_rows(turn)
     return TurnSummary(
         turn=turn.number,
         attempt_count=len(turn.attempts),
@@ -241,14 +335,16 @@ def turn_summary(joined: JoinedRun, turn: Turn) -> TurnSummary:
         shortcut=_str(record.get("shortcut")),
         reply_head=reply[:REPLY_HEAD_CHARS],
         reply_length=len(reply),
-        driver_stat_changes=_driver_changes(record),
+        driver_stat_changes=_driver_changes(record, stats_before(joined, turn)),
         recorded_stat_changes=_recorded_changes(joined, turn),
         ending=ending if isinstance(ending, dict) else None,
         failure=_str(record.get("failure")),
         earlier_generation_dumps=len(turn.earlier_generation_dumps),
         judgment_dumps=len(turn.judgment_dumps),
         background_dumps=len(turn.background_dumps),
-        cost_usd=sum(row_cost(row) for row in _turn_rows(turn)) if joined.chat_turns is not None else None,
+        flags=flags,
+        cost_usd=sum(row_cost(row) for row in rows) if rows else None,
+        cost_is_lower_bound=cost_is_lower_bound(rows),
         mismatch_count=sum(1 for m in joined.mismatches if m.turn == turn.number),
     )
 
@@ -323,13 +419,15 @@ def markers(joined: JoinedRun) -> list[TimelineMarker]:
     return sorted(found, key=lambda marker: marker.turn)
 
 
-def run_detail(joined: JoinedRun) -> RunDetail:
+def run_detail(joined: JoinedRun, *, metrics: RunMetrics | None = None) -> RunDetail:
+    """`metrics` 는 이미 낸 런 지표 — 묶음 전체를 낼 때 넘겨 지표를 두 번 내지 않는다. 턴 요약의 플래그는 그 지표에서 온다."""
     cost = run_cost(joined)
+    flags = {m.turn: m.flags for m in (metrics if metrics is not None else run_metrics(joined)).turns}
     return RunDetail(
         run=run_list_item(joined.bundle, joined),
         meta=joined.meta,
         room_static=joined.room_statics[-1] if joined.room_statics else None,
-        turns=[turn_summary(joined, turn) for turn in joined.turns],
+        turns=[turn_summary(joined, turn, flags.get(turn.number)) for turn in joined.turns],
         series=stat_series(joined),
         markers=markers(joined),
         stat_comparisons=joined.stat_comparisons,
@@ -352,6 +450,7 @@ def flags_view(flags: ReplyFlags) -> ReplyFlagsView:
     return ReplyFlagsView(
         length=flags.length,
         sentence_count=flags.sentence_count,
+        status_block_length=flags.status_block_length,
         truncated=flags.truncated,
         self_copy=flags.self_copy,
         solicit=flags.solicit,
@@ -422,13 +521,18 @@ def turn_detail(joined: JoinedRun, number: int, *, metrics: RunMetrics | None = 
         snapshot: dict[str, Any] | None = memory_snapshot(joined.logs, number)
     except ReplayRefusedError:
         snapshot = None
-    limits = [JUDGMENT_RESULT_LIMIT, LATENCY_LIMIT]
+    limits = [
+        RecordLimit(slot="judgmentResponse", text=JUDGMENT_RESULT_LIMIT),
+        RecordLimit(slot="judgmentLatency", text=LATENCY_LIMIT),
+    ]
     if turn.background_dumps:
-        limits.append(BACKGROUND_LIMIT)
-    if joined.chat_turns is None:
-        limits.append(EXPORT_NEEDED_LIMIT)
+        limits.append(RecordLimit(slot="backgroundTokens", text=BACKGROUND_LIMIT))
+    # `assistantMessageId` 이전 형식은 내보내기를 거부하므로(`export_chat_turns`) 내보내라고 하지 않는다.
+    if joined.chat_turns is None and joined.bundle.format != "preMessageId":
+        limits.append(RecordLimit(slot="exportNeeded", text=EXPORT_NEEDED_LIMIT))
     if not joined.has_dump:
-        limits.append(NO_DUMP_LIMIT)
+        limits.append(RecordLimit(slot="promptDump", text=NO_DUMP_LIMIT))
+    before = stats_before(joined, turn)
     return TurnDetail(
         turn=turn.number,
         supplemented=turn.supplemented,
@@ -439,9 +543,15 @@ def turn_detail(joined: JoinedRun, number: int, *, metrics: RunMetrics | None = 
                 selected=attempt.selected,
                 server_rejected=attempt.server_rejected,
                 record=attempt.record,
+                driver_stat_changes=_driver_changes(attempt.record, before),
                 generation_dump=attempt.generation_dump,
                 chat_turns=[
-                    ChatTurnRecord(row=row, calls=[call_view(call) for call in _calls(row)], cost_usd=row_cost(row))
+                    ChatTurnRecord(
+                        row=row,
+                        calls=[call_view(call) for call in _calls(row)],
+                        cost_usd=row_cost(row),
+                        cost_is_lower_bound=cost_is_lower_bound([row]),
+                    )
                     for row in attempt.chat_turn_rows
                 ],
             )
@@ -501,7 +611,7 @@ def run_bundle(joined: JoinedRun, *, raw: bool) -> RunBundle:
     turns = [turn_detail(joined, turn.number, metrics=metrics) for turn in joined.turns]
     return RunBundle(
         raw=raw,
-        detail=run_detail(joined),
+        detail=run_detail(joined, metrics=metrics),
         metrics=metrics,
         turns=turns if raw else [_without_raw(turn) for turn in turns],
     )
