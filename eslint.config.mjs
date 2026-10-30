@@ -158,6 +158,18 @@ export default tseslint.config(
       ],
     },
   },
+  // web 의 routes·app 블록과 같은 이유다 — chat-lab 의 app 도 `src/` 바로 아래 평면 폴더라 `../` 가 곧 레이어 교차인데,
+  // 위 `allowedDepth: 1` 은 한 단계 `../pages` 를 통과시킨다. app 에는 슬라이스가 없어 `../model/x` 같은 슬라이스 내부
+  // 참조가 없으므로 depth 0 이 안전하다(같은 폴더 `./AppProviders` 는 `allowSameFolder` 가 따로 본다).
+  {
+    files: ["apps/chat-lab/src/app/**/*.{ts,tsx}"],
+    rules: {
+      "no-relative-import-paths/no-relative-import-paths": [
+        "error",
+        { allowSameFolder: true, allowedDepth: 0, rootDir: "apps/chat-lab/src", prefix: "@" },
+      ],
+    },
+  },
 
   {
     // 레이어 의존은 상위→하위 단방향. 서열은 app → pages → widgets → features → entities → shared.

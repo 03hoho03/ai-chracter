@@ -3,7 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>chat-lab</title>
+    <script>
+      // 손으로 고른 테마를 첫 그림 전에 붙인다 — 모듈 스크립트는 문서를 다 읽은 뒤에 돌아, 거기서 붙이면 운영체제 테마로 한 번
+      // 그려진 뒤 바뀐다. 저장 키와 붙이는 모양은 src/shared/lib/theme.ts 와 같아야 한다. 저장소를 못 쓰는 창에서는 읽기가 던져
+      // 운영체제 설정을 따른다.
+      try {
+        var theme = window.localStorage.getItem("chat-lab:theme");
+        if (theme === "light" || theme === "dark") {
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+        }
+      } catch (error) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

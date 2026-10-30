@@ -1,7 +1,7 @@
 import { createHashHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 
 import { RunDetailPage } from "@/pages/run-detail";
-import { RunListPage } from "@/pages/run-list";
+import { parseRunListSearch, RunListPage } from "@/pages/run-list";
 
 // 라우트는 파일 기반 생성 대신 여기에 코드로 적는다. 화면이 둘뿐이고, 런 하나를 단일 HTML 파일로 굳힐 때 JS 가
 // 청크로 따로 떨어지지 않게 하려는 것이다 — 라우터 플러그인의 자동 분할도, `lazy`·`lazyRouteComponent`·동적
@@ -12,6 +12,7 @@ const rootRoute = createRootRoute();
 const runListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
+  validateSearch: parseRunListSearch,
   component: RunListPage,
 });
 

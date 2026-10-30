@@ -10,6 +10,8 @@ export const CHAT_LAB_API_BASE_URL = import.meta.env.VITE_CHAT_LAB_API ?? DEFAUL
 type Schemas = components["schemas"];
 type Health = Schemas["Health"];
 type RunList = Schemas["RunList"];
+/** 런 목록의 한 줄. 화면의 목록·미리보기 계산이 이 모양을 받는다. */
+export type RunListItem = Schemas["RunListItem"];
 type RunDetail = Schemas["RunDetail"];
 type TurnDetail = Schemas["TurnDetail"];
 type RunMetrics = Schemas["RunMetrics"];

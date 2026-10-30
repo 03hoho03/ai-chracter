@@ -1,34 +1,104 @@
 @import "tailwindcss";
 
-/* 이 앱만의 색 토큰. chat-lab 은 또나 디자인 시스템(packages/ui)을 쓰지 않는 독립 도구라 토큰도 따로 둔다.
-   화면 방향을 정하기 전이라 무채색 최소 집합만 둔다. 테마는 운영체제 설정(prefers-color-scheme)을 따른다. */
+/* 이 앱만의 토큰. 값의 출처는 같은 폴더 위 `DESIGN.md` 의 앞머리(colors·typography·rounded)이고, 이 파일이 화면 쪽 유일한 사본이다.
+   chat-lab 은 또나 디자인 시스템(packages/ui)을 쓰지 않는 독립 도구라 토큰도 따로 둔다.
+
+   테마: 색 하나를 `light-dark(라이트, 다크)` 한 줄로 적고, 어느 쪽을 쓸지는 `color-scheme` 이 정한다. 기본은 운영체제 설정을 따르고
+   (`light dark`), `<html data-theme>` 에 손으로 고른 값이 있으면 그것을 따른다(첫 그림 전에는 `index.html` 의 인라인 스크립트가, 토글은 `shared/lib/theme.ts` 가 붙인다). 다크 값을 미디어
+   쿼리와 속성 선택자에 두 벌 적지 않아도 되게 하려는 것이다. */
 :root {
   color-scheme: light dark;
-  --background: oklch(0.985 0 0);
-  --foreground: oklch(0.21 0 0);
-  --muted-foreground: oklch(0.5 0 0);
-  --border: oklch(0.9 0 0);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: oklch(0.17 0 0);
-    --foreground: oklch(0.93 0 0);
-    --muted-foreground: oklch(0.7 0 0);
-    --border: oklch(0.3 0 0);
-  }
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-border: var(--border);
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@theme {
+  /* 기본 팔레트를 지운다 — 화면이 `bg-blue-500` 같은 날 색을 못 쓰고 아래 이름만 쓰게 한다. */
+  --color-*: initial;
+
+  /* 무채색 사다리: 바탕 → 패널 면 → 올라온 면 → 들어간 면. 그림자 대신 이 명도 차이로 깊이를 만든다. */
+  --color-background: light-dark(oklch(0.972 0.003 256), oklch(0.185 0.006 256));
+  --color-surface: light-dark(oklch(0.995 0.001 256), oklch(0.212 0.007 256));
+  --color-surface-raised: light-dark(oklch(0.955 0.004 256), oklch(0.248 0.008 256));
+  --color-surface-sunken: light-dark(oklch(0.93 0.006 256), oklch(0.282 0.009 256));
+  --color-border: light-dark(oklch(0.89 0.005 256), oklch(0.33 0.008 256));
+  --color-border-strong: light-dark(oklch(0.8 0.008 256), oklch(0.4 0.01 256));
+  --color-ink: light-dark(oklch(0.22 0.01 256), oklch(0.93 0.004 256));
+  --color-ink-secondary: light-dark(oklch(0.42 0.01 256), oklch(0.79 0.006 256));
+  --color-ink-muted: light-dark(oklch(0.505 0.01 256), oklch(0.67 0.008 256));
+
+  /* 유채색은 선택(코발트)·주의(호박)·실패(적색)·스탯 선 세 색 네 가지 일에만 쓴다. */
+  --color-accent: light-dark(oklch(0.52 0.15 256), oklch(0.75 0.12 256));
+  --color-accent-ink: light-dark(oklch(0.995 0.001 256), oklch(0.18 0.03 256));
+  --color-warn: light-dark(oklch(0.52 0.12 70), oklch(0.82 0.13 80));
+  --color-danger: light-dark(oklch(0.52 0.18 27), oklch(0.72 0.16 25));
+  --color-series-1: light-dark(oklch(0.671 0.175 41), oklch(0.622 0.173 40));
+  --color-series-2: light-dark(oklch(0.669 0.141 162), oklch(0.621 0.128 163));
+  --color-series-3: light-dark(oklch(0.433 0.167 284), oklch(0.67 0.145 287));
+
+  /* 글꼴은 내려받지 않는 시스템 글꼴 둘 — 산세리프는 사람이 쓴 글·UI, 고정폭은 기계가 만든 글(프롬프트·식별자·경로). */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* 크기 단계. 천장은 16px 이고, 굵기·줄 간격까지 한 이름에 묶어 단계마다 한 벌만 쓰게 한다. */
+  --text-title: 16px;
+  --text-title--line-height: 1.35;
+  --text-title--font-weight: 600;
+  --text-section: 13px;
+  --text-section--line-height: 1.4;
+  --text-section--font-weight: 600;
+  --text-body: 13px;
+  --text-body--line-height: 1.45;
+  --text-reading: 14px;
+  --text-reading--line-height: 1.7;
+  --text-data: 12px;
+  --text-data--line-height: 1.4;
+  --text-label: 11px;
+  --text-label--line-height: 1.3;
+  --text-label--font-weight: 500;
+  --text-mono: 12px;
+  --text-mono--line-height: 1.6;
+
+  /* 간격은 Tailwind 기본 4px 단위(`--spacing: 0.25rem`)를 그대로 쓴다 — 표 한 줄 28px 은 `h-7`. */
+
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 8px;
+
+  /* 모션: 색·배경 바뀜 120ms, 접기·펼치기 180ms, 둘 다 ease-out-quart. `transition-colors` 가 기본으로 120ms 를 쓰게 하고,
+     접기·펼치기는 `duration-180` 으로 적는다. 모두 `motion-safe:` 아래에서만 켠다. */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --default-transition-duration: 120ms;
+  --default-transition-timing-function: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 @layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
   body {
-    background-color: var(--background);
-    color: var(--foreground);
+    background-color: var(--color-background);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 세로로 줄 서는 숫자는 전부 고정폭 숫자로 — 표·카운트·원가가 자리를 지킨다. */
+  table,
+  [role="table"],
+  data,
+  time {
+    font-variant-numeric: tabular-nums;
   }
 }
