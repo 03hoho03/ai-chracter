@@ -155,83 +155,11 @@ describe("getChatRateLimit — 확인 코드", () => {
   });
 });
 
-/** 상위 모델 방에도 무료분이 없다. 서버가 같은 `CLOVER_REQUIRED` 에 자정까지의 초를 실어 보내도 자정에 풀리지
- * 않는다 — 자정이나 무료 한도를 약속하지 않는다. */
-describe("상위 모델 방의 클로버 부족 문구", () => {
-  const rateLimit = { window: "clover", retryAfterSeconds: 43200 } as const;
-
-  it("부족 사실만 말하고 자정·무료 한도를 약속하지 않는다", () => {
-    const message = formatChatRateLimitMessage(rateLimit, "premiumChat", 43200);
-
-    expect(message).toContain("클로버가 부족해요");
-    expect(message).not.toContain("자정");
-    expect(message).not.toContain("무료");
-  });
-
-  it("읽어 주는 문장도 같은 문구다 — 사본이 아니다", () => {
-    expect(formatChatRateLimitAnnouncement(rateLimit, "premiumChat")).toBe(
-      formatChatRateLimitMessage(rateLimit, "premiumChat", 43200),
-    );
-  });
-
-  // 기본·상위 모델의 차이는 단가뿐이고 출석 클로버는 상위 모델에도 쓰여 두 방의 문장을 가를 사실이 없다.
-  it("기본 모델 방 문구와 같다", () => {
-    expect(formatChatRateLimitMessage(rateLimit, "premiumChat", 43200)).toBe(
-      formatChatRateLimitMessage(rateLimit, "chat", 43200),
-    );
-  });
-
-  it("분당 상한 문구는 기본 모델 방과 같다 — 모델과 무관한 상한이다", () => {
-    const minute = { window: "minute", retryAfterSeconds: 30 } as const;
-
-    expect(formatChatRateLimitMessage(minute, "premiumChat", 12)).toBe(formatChatRateLimitMessage(minute, "chat", 12));
-  });
-});
-
-/** 상위 모델 미리보기도 무료분이 없어 자정을 약속하지 않는다. 미리보기 자리이므로 "채팅과 같은 한도"라는 사실은 먼저 말한다. */
-describe("상위 모델 미리보기의 클로버 부족 문구", () => {
-  const rateLimit = { window: "clover", retryAfterSeconds: 43200 } as const;
-
-  it("부족 사실을 말하고 자정·무료 한도를 약속하지 않는다", () => {
-    const message = formatChatRateLimitMessage(rateLimit, "premiumPreview", 43200);
-
-    expect(message).toContain("부족");
-    expect(message).not.toContain("자정");
-    expect(message).not.toContain("무료");
-  });
-
-  it("미리보기 머리말을 먼저 말한다", () => {
-    expect(formatChatRateLimitMessage(rateLimit, "premiumPreview", 43200)).toMatch(/^미리보기도 채팅과 같은 한도를 써요/);
-  });
-
-  it("읽어 주는 문장도 같은 문구다", () => {
-    expect(formatChatRateLimitAnnouncement(rateLimit, "premiumPreview")).toBe(
-      formatChatRateLimitMessage(rateLimit, "premiumPreview", 43200),
-    );
-  });
-
-  // 상위 모델 방과 같은 이유로 기본 모델 미리보기와 가를 사실이 없다.
-  it("기본 모델 미리보기 문구와 같다", () => {
-    expect(formatChatRateLimitMessage(rateLimit, "preview", 43200)).not.toContain("자정");
-    expect(formatChatRateLimitMessage(rateLimit, "premiumPreview", 43200)).toBe(
-      formatChatRateLimitMessage(rateLimit, "preview", 43200),
-    );
-  });
-
-  it("분당 상한 문구와 안내 문장은 기본 모델 미리보기와 같다", () => {
-    const minute = { window: "minute", retryAfterSeconds: 30 } as const;
-
-    expect(formatChatRateLimitMessage(minute, "premiumPreview", 12)).toBe(formatChatRateLimitMessage(minute, "preview", 12));
-    expect(formatChatRateLimitMessage(minute, "premiumPreview", 0)).toBe(formatChatRateLimitMessage(minute, "preview", 0));
-    expect(formatChatRateLimitAnnouncement(minute, "premiumPreview")).toBe(formatChatRateLimitAnnouncement(minute, "preview"));
-  });
-});
-
-/** 무료 일일분이 없어 자정에 풀리는 것이 없다 — 네 자리 모두 자정 대신 출석판을 안내한다. 기본·상위 모델의 차이는
- * 단가뿐이고 출석 클로버는 상위 모델에도 쓰여 문장을 가를 사실이 없다. 출석판 스위치를 읽지 않고도 이 문장이어야 한다. */
+/** 무료 일일분이 없어 자정에 풀리는 것이 없다 — 두 자리 모두 자정 대신 출석판을 안내한다. 모델의 차이는 단가뿐이고
+ * 출석 클로버는 어느 모델에도 쓰여 모델로 문장을 가를 사실이 없다. 출석판 스위치를 읽지 않고도 이 문장이어야 한다. */
 describe("클로버 부족 문구 — 출석판", () => {
   const clover = { window: "clover", retryAfterSeconds: 43200 } as const;
-  const SURFACES: ChatRateLimitSurface[] = ["chat", "premiumChat", "preview", "premiumPreview"];
+  const SURFACES: ChatRateLimitSurface[] = ["chat", "preview"];
 
   it.each(SURFACES)("%s 자리는 자정·무료 한도를 말하지 않고 출석판을 안내한다", (surface) => {
     const message = formatChatRateLimitMessage(clover, surface, 43200);
@@ -240,17 +168,14 @@ describe("클로버 부족 문구 — 출석판", () => {
     expect(message).toContain("출석판");
   });
 
-  it("채팅 두 자리는 같은 문장이다", () => {
+  it("채팅방 문장", () => {
     expect(formatChatRateLimitMessage(clover, "chat", 43200)).toBe("클로버가 부족해요 · 출석판에서 매일 받을 수 있어요");
-    expect(formatChatRateLimitMessage(clover, "premiumChat", 43200)).toBe("클로버가 부족해요 · 출석판에서 매일 받을 수 있어요");
   });
 
-  it("미리보기 두 자리는 미리보기 머리말 뒤에 같은 문장이다", () => {
-    for (const surface of ["preview", "premiumPreview"] as const) {
-      expect(formatChatRateLimitMessage(clover, surface, 43200)).toBe(
-        "미리보기도 채팅과 같은 한도를 써요 · 클로버가 부족해요 · 출석판에서 매일 받을 수 있어요",
-      );
-    }
+  it("미리보기는 미리보기 머리말 뒤에 같은 문장이다", () => {
+    expect(formatChatRateLimitMessage(clover, "preview", 43200)).toBe(
+      "미리보기도 채팅과 같은 한도를 써요 · 클로버가 부족해요 · 출석판에서 매일 받을 수 있어요",
+    );
   });
 
   it.each(SURFACES)("읽어 주는 문장도 같은 문구다(%s)", (surface) => {
@@ -266,16 +191,13 @@ describe("getRateLimitLinks", () => {
   // 문구가 출석판을 말하므로 바로 갈 길을 함께 둔다. 출석판 스위치를 읽지 않고도 늘 둔다.
   it("채팅 방의 클로버 창에 클로버 채우기 뒤로 출석판을 둔다", () => {
     expect(getRateLimitLinks(clover, "chat")).toEqual(["clover", "attendance"]);
-    expect(getRateLimitLinks(clover, "premiumChat")).toEqual(["clover", "attendance"]);
   });
 
   it("미리보기 자리에는 버튼을 두지 않는다", () => {
     expect(getRateLimitLinks(clover, "preview")).toEqual([]);
-    expect(getRateLimitLinks(clover, "premiumPreview")).toEqual([]);
   });
 
   it("분당 상한에는 버튼을 두지 않는다 — 기다리면 풀린다", () => {
     expect(getRateLimitLinks(minute, "chat")).toEqual([]);
-    expect(getRateLimitLinks(minute, "premiumChat")).toEqual([]);
   });
 });

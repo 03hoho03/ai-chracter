@@ -35,11 +35,11 @@ describe("PreviewSessionView turn cost", () => {
   });
 
   it("starts the session with the displayed model's query", () => {
-    expect(viewSource).toContain("query: previewStartQuery(displayModelId),");
+    expect(viewSource).toContain("query: previewStartQuery(models, displayModelId),");
   });
 });
 
-// 상위 모델 허용이 그 사이 꺼져 시작이 403 으로 거절되면, 다시 보내면 기본 모델로 열리므로 이용자가 쓴 글이 사라지면 안 된다.
+// 그 모델을 그 사이 쓸 수 없게 돼 시작이 403 으로 거절되면, 다시 보내면 기본 모델로 열리므로 이용자가 쓴 글이 사라지면 안 된다.
 describe("PreviewSessionView model-not-allowed start rejection", () => {
   const branchStart = viewSource.indexOf("if (isChatModelNotAllowedError(error)) {");
   const branch = viewSource.slice(branchStart, viewSource.indexOf("return undefined;", branchStart));
@@ -50,7 +50,7 @@ describe("PreviewSessionView model-not-allowed start rejection", () => {
   });
 
   it("falls back to the default model, refreshes access and restores the typed text", () => {
-    expect(branch).toContain("toast.error(CHAT_MODEL_NOT_ALLOWED_MESSAGE);");
+    expect(branch).toContain("toast.error(PREVIEW_CHAT_MODEL_NOT_ALLOWED_MESSAGE);");
     expect(branch).toContain("setChosenModelId(DEFAULT_CHAT_MODEL);");
     expect(branch).toContain("invalidateChatModelAccess(queryClient);");
     expect(branch).toContain("onModelNotAllowed?.();");
@@ -63,16 +63,28 @@ describe("PreviewSessionView model-not-allowed start rejection", () => {
   });
 });
 
-// 상위 모델 미리보기의 클로버 부족 배너는 자정 약속이 없는 문구여야 한다.
+// 배너 문구는 모델로 갈리지 않고 미리보기 자리인지로만 갈린다 — 미리보기는 늘 미리보기 자리다.
 describe("PreviewSessionView rate limit surface", () => {
-  it("picks the premium preview surface from the displayed model", () => {
-    expect(viewSource).toContain('surface={isPremiumChatModel(displayModelId) ? "premiumPreview" : "preview"}');
-    expect(viewSource).not.toContain('surface="preview"');
+  it("draws the rate limit banner on the preview surface", () => {
+    expect(viewSource).toContain('<RateLimitNotice rateLimit={sendError.rateLimit} surface="preview" />');
+  });
+});
+
+// 고른 모델이 목록에서 빠지면 화면은 기본 모델을 말하고, 세션이 없으면 고른 값도 기본으로 돌아가야 한다. 고른 값이 남으면
+// 그 모델이 다시 공개될 때 다음 세션이 확인 없이 더 비싼 모델로 열린다. 세션이 있으면 서버가 저장한 모델로 돌아가므로
+// 고른 값을 남겨 화면이 서버를 따라가게 한다.
+describe("PreviewSessionView displayed model", () => {
+  it("decides the displayed model from the model list and resets the chosen model when it leaves the list", () => {
+    expect(viewSource).toContain("const displayModelId = previewDisplayModel(me?.enabledFeatures, chosenModelId, models);");
+    expect(viewSource).toContain(
+      "previewSessionId === undefined ? previewChosenModelReset(models, chosenModelId) : undefined;",
+    );
+    expect(viewSource).toContain("if (chosenModelReset !== undefined) setChosenModelId(chosenModelReset);");
   });
 });
 
 // 모델을 바꾸면 세션 id 가 비고 대화가 처음으로 돌아간다. 앞 세션 턴의 배너(레이트리밋·본인인증·그만둠·실패)가 남으면 막히지 않은
-// 새 모델 위에 옛 배너가 남고, 레이트리밋 문구가 새 모델로 다시 골라져 거짓이 된다.
+// 새 모델 위에 옛 배너가 남는다.
 describe("PreviewSessionView send error after the session is cleared", () => {
   it("draws the send-result banners only while a session id is set", () => {
     expect(viewSource).toContain(

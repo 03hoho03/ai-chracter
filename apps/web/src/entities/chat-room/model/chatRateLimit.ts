@@ -30,12 +30,11 @@ export function getChatRateLimit(error: unknown): ChatRateLimit | undefined {
   return { window: detail.window, retryAfterSeconds: detail.retryAfterSeconds };
 }
 
-/** 배너가 놓인 자리. 하루 무료분이 없어 기본·상위 모델 모두 첫 턴부터 클로버를 쓰고, 두 모델의 차이는 단가뿐이다.
- * 그래서 클로버 문구는 모델로 갈리지 않고 미리보기 자리인지로만 갈린다. 상위 모델 자리를 따로 두는 것은 호출부가
- * 방의 모델을 그대로 넘기게 하려는 것이다.
- * - `chat`·`premiumChat`: 채팅방.
- * - `preview`·`premiumPreview`: 빌더 미리보기. 실제 채팅과 같은 한도를 쓴다. */
-export type ChatRateLimitSurface = "chat" | "premiumChat" | "preview" | "premiumPreview";
+/** 배너가 놓인 자리. 하루 무료분이 없어 어느 모델이든 첫 턴부터 클로버를 쓰고, 모델의 차이는 단가뿐이다. 그래서 문구는
+ * 모델로 갈리지 않고 미리보기 자리인지로만 갈린다.
+ * - `chat`: 채팅방.
+ * - `preview`: 빌더 미리보기. 실제 채팅과 같은 한도를 쓴다. */
+export type ChatRateLimitSurface = "chat" | "preview";
 
 /** 미리보기는 실제 채팅과 같은 상한을 공유한다(BE는 채팅 4경로에 같은 게이트를 건다) — 빌더에서
  * 갑자기 막히면 "미리보기만의 제약"으로 읽히므로 그 사실을 문구가 먼저 말한다. */
@@ -43,7 +42,7 @@ const PREVIEW_LEAD = "미리보기도 채팅과 같은 한도를 써요";
 
 /** 미리보기 자리인가 — 모델과 무관하게 "채팅과 같은 한도"라는 사실을 먼저 말한다. */
 export function isPreviewSurface(surface: ChatRateLimitSurface): boolean {
-  return surface === "preview" || surface === "premiumPreview";
+  return surface === "preview";
 }
 
 function minuteLead(surface: ChatRateLimitSurface): string {

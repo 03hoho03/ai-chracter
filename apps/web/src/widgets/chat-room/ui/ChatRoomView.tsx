@@ -42,7 +42,6 @@ import {
   useDeleteMessageMutation,
   useLoadOlderMessagesMutation,
 } from "@/entities/chat-room";
-import { isPremiumChatModel } from "@/entities/chat-model";
 import {
   CloverBalance,
   isCloverInsufficient,
@@ -146,7 +145,6 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const { data: clover } = useCloverBalanceQuery();
   const { data: me } = useSessionQuery();
   const cloverBalance = clover?.balance ?? 0;
-  const isPremiumRoom = room !== undefined && isPremiumChatModel(room.effectiveChatModel);
   const isCloverShort = room?.turnCost !== undefined && isCloverInsufficient(cloverBalance, room.turnCost);
   // 세션을 잃은 뒤에는 잔량 줄을 내린다 — 잔액을 다시 받는 조회가 401 로 실패해도 옛 값이 캐시에 남아, 로그인이 풀린
   // 화면에 잔량 줄이 그대로 남는다.
@@ -322,13 +320,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       // 응답 생성이 실패한 것이 아니라 로그인이 풀렸거나 정지된 것이다. 이 탭에서 다시 보내도 같은 거절이라 재시도를 두지 않는다.
       errorNotice = <SessionEndedNotice reason={status.sessionEnded} />;
     } else if (status.rateLimit) {
-      errorNotice = (
-        <RateLimitNotice
-          rateLimit={status.rateLimit}
-          surface={isPremiumRoom ? "premiumChat" : "chat"}
-          onRetry={retry}
-        />
-      );
+      errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="chat" onRetry={retry} />;
     } else if (status.identityRequired) {
       // 다시 보내도 같은 403 이라 재시도 버튼을 두지 않고, 실패가 아니라 경고 틴트도 쓰지 않는다.
       errorNotice = <IdentityRequiredNotice reason="free-rewards" />;
