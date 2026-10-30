@@ -46,8 +46,9 @@ character gemini v108·sonnet v109·opus v110·haiku v111)를 심어 story·char
 경계·문단 수정 채널 마이그레이션이 소설 sonnet·opus 체인에 그 네 채널을 더한 세트(novel sonnet v112·opus v113)를, 소설
 등급 규칙 채널 마이그레이션이 소설 세 체인에 등급 규칙 채널을 더한 세트(novel gemini v114·sonnet v115·opus v116)를 심어
 소설 활성이 v114~v116이 되고, 채팅 소설화 행 제거 마이그레이션이 채팅 두 레인 Gemini 체인에서 옛 소설화 세 채널을 뺀
-세트(story gemini v117, character gemini v118)를 심어 story·character Gemini 활성이 v117·v118이 되므로 다음 게시 버전은
-"119"부터다
+세트(story gemini v117, character gemini v118)를 심어 story·character Gemini 활성이 v117·v118이 되고, Haiku 글쓰기 체인
+마이그레이션이 채팅 두 레인에 Sonnet 활성 세트 사본(story haiku_writer v119, character haiku_writer v120)을 심으므로 다음
+게시 버전은 "121"부터다
 (전 레인·전 모델 대상 자동 증가).
 섹션 수는 `_expected_section_count`로 코드 표에서 도출한다 — DB 행은 마이그레이션이
 만드므로 동어반복이 아니다.
@@ -497,8 +498,8 @@ async def test_list_returns_metadata_only_and_marks_active(
     # 사실 추출 지시문 차례: v80~v87. 요약 비밀 표기 출처: v88~v95. 장면 판정 지시문 교체: v96~v99(story 네 체인).
     # 소설 구성안 문안: v100~v102(소설 세 체인). 여러 문단 수정 문안: v103(소설 Gemini 체인). 인상 생성 문안: v104~v111.
     # 소설 Claude 체인 경계·문단 수정 채널: v112·v113(sonnet·opus). 소설 등급 규칙 채널: v114~v116(gemini·sonnet·opus).
-    # 채팅 소설화 행 제거: v117·v118(story·character Gemini 체인).
-    assert len(published) == 120
+    # 채팅 소설화 행 제거: v117·v118(story·character Gemini 체인). Haiku 글쓰기 체인: v119·v120(story·character).
+    assert len(published) == 122
     assert len(draft) == 1
     active = [item for item in published if item["isActive"]]
     # (레인, 모델)마다 하나 — Claude 세트는 원본 Gemini 세트보다 published_at 이 과거지만 모델이 달라 각자 활성이다.
@@ -516,6 +517,8 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("novel", "sonnet", "115"),
         ("novel", "opus", "116"),
         ("novel_screen", "gemini", "23"),
+        ("story", "haiku_writer", "119"),
+        ("character", "haiku_writer", "120"),
     }
     # 레인별 마지막 마이그레이션 이전 세트 열은 비활성이다(소설 레인은 옛 문안을 옮긴 첫 판).
     assert {(item["lane"], item["version"]) for item in published if not item["isActive"]} == {
@@ -628,7 +631,7 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("character", "108"),
     }
     assert draft[0]["isActive"] is False
-    assert {item["version"] for item in published} == {str(n) for n in range(1, 119)}
+    assert {item["version"] for item in published} == {str(n) for n in range(1, 121)}
 
 
 async def test_get_by_id_returns_full_sections(
@@ -864,7 +867,7 @@ async def test_publish_valid_unmodified_draft_succeeds_with_next_version(
     resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "정기 점검 후 재게시"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["version"] == "119"
+    assert body["version"] == "121"
     assert body["status"] == "published"
     assert body["lane"] == "story"
     assert body["note"] == "정기 점검 후 재게시"
@@ -892,11 +895,11 @@ async def test_publish_assigns_sequential_integer_versions(
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client, "story")
     first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v30"})
-    assert first.json()["version"] == "119"
+    assert first.json()["version"] == "121"
 
     await _make_valid_draft(db_client, "story")
     second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v31"})
-    assert second.json()["version"] == "120"
+    assert second.json()["version"] == "122"
 
 
 async def test_next_version_is_global_monotonic_not_per_lane(
@@ -909,8 +912,8 @@ async def test_next_version_is_global_monotonic_not_per_lane(
     지시문 세트 v52~v59, 요약 비밀 표기 세트 v60~v67, 장면 헤더 판정 문안 세트 v68~v71, 장면 추출 지시문 세트 v72~v79, 사실
     추출 지시문 차례 세트 v80~v87, 요약 비밀 표기 출처 세트 v88~v95, 장면 판정 지시문 교체 세트 v96~v99, 소설 구성안 문안
     세트 v100~v102, 여러 문단 수정 문안 세트 v103, 인상 생성 문안 세트 v104~v111, 소설 Claude 체인 경계·문단 수정 채널 세트
-    v112·v113, 소설 등급 규칙 채널 세트 v114~v116, 채팅 소설화 행 제거 세트 v117·v118)에서, story가 v119·v120을 게시한 뒤
-    character 게시가 v121을 받아야
+    v112·v113, 소설 등급 규칙 채널 세트 v114~v116, 채팅 소설화 행 제거 세트 v117·v118, Haiku 글쓰기 체인 세트 v119·v120)에서,
+    story가 v121·v122를 게시한 뒤 character 게시가 v123을 받아야
     한다(레인별
     독립 증가라면 character의 다음 게시는 v18일 것이다) —
     이 테스트는 그 레인 필터의 **부재**를 고정한다."""
@@ -918,15 +921,15 @@ async def test_next_version_is_global_monotonic_not_per_lane(
 
     await _make_valid_draft(db_client, "story")
     first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v30"})
-    assert first.json()["version"] == "119"
+    assert first.json()["version"] == "121"
 
     await _make_valid_draft(db_client, "story")
     second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v31"})
-    assert second.json()["version"] == "120"
+    assert second.json()["version"] == "122"
 
     await _make_valid_draft(db_client, "character")
     third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v32"})
-    assert third.json()["version"] == "121"
+    assert third.json()["version"] == "123"
 
 
 async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
@@ -1010,7 +1013,7 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
         resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "캐시 실패해도 성공"})
 
     assert resp.status_code == 200
-    assert resp.json()["version"] == "119"
+    assert resp.json()["version"] == "121"
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
     assert captured == ["redis"]
 
@@ -1579,7 +1582,7 @@ async def test_claude_publish_becomes_that_models_active_set_and_invalidates_onl
     assert resp.status_code == 200
     body = resp.json()
     assert body["model"] == "sonnet"
-    assert body["version"] == "119"
+    assert body["version"] == "121"
     assert len(body["sections"]) == _section_count("story", _claude_channels("story"))
     assert {s["channel"] for s in body["sections"]} == _claude_channels("story")
     db_session.expire_all()
@@ -1921,7 +1924,7 @@ async def test_novel_screen_lane_publishes_its_seed_and_previews_with_sample_tex
     (item,) = preview.json()["items"]
     assert item["channel"] == "novel_screen"
     assert "[판정 방법]" in item["text"] and "=== chapter_body: 본문 ===\n[샘플] 첫 문단이다." in item["text"]
-    assert (published.status_code, published.json()["version"]) == (200, "119")
+    assert (published.status_code, published.json()["version"]) == (200, "121")
     assert (claude.status_code, claude.json()["detail"]["rule"]) == (422, "lane-model")
 
 
