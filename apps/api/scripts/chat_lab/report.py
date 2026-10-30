@@ -37,6 +37,7 @@ from chat_lab.schemas import (
     RunDetail,
     RunListItem,
     RunMetrics,
+    SentModelsFrom,
     SeriesPoint,
     StatSeries,
     TimelineMarker,
@@ -193,15 +194,36 @@ def _times(joined: JoinedRun) -> tuple[str | None, str | None]:
     return stamps[0][1], stamps[-1][1]
 
 
-def _effective_chat_models(joined: JoinedRun) -> list[str]:
-    """실제 생성 모델 — 방 스냅숏의 `effectiveChatModel` 이고, 스냅숏에 그 값이 없으면 턴 기록 파일의 행 전부의 `chat_model`(그
-    응답을 실제로 쓴 모델)이다. 다른 방의 파일은 결합에서 이미 버려(`chat_turns` 가 None) 여기 오는 행은 모두 이 방의 것이다.
-    시도에 붙지 않은 행(재생성·편집, 같은 방을 이어 친 다른 측정)과 행을 잇지 않는 `assistantMessageId` 이전 형식의 행도 센다 —
-    원가와 달리 이 칸은 그 방을 쓴 모델을 보이는 것이라 붙었는지를 따지지 않는다."""
-    snapshot = {m for m in (_str(r.get("effectiveChatModel")) for r in joined.room_statics) if m is not None}
-    if snapshot or joined.chat_turns is None:
-        return sorted(snapshot)
-    return sorted({m for m in (_str(row.get("chat_model")) for row in joined.chat_turns.rows) if m is not None})
+def _sent_chat_models(joined: JoinedRun) -> tuple[list[str], SentModelsFrom | None]:
+    """실제로 보낸 생성 모델 id 와 그 출처. 덤프 생성 줄의 `model`(측정 대상 서버가 실제로 보낸 id — 같은 줄의 `chatModel` 은
+    방이 고른 모델 이름이라 쓰지 않는다)이 먼저다. 덤프에 생성 줄이 없으면 턴 기록 파일의 행 전부에서 찾는다 — 행마다 생성 호출
+    칸의 모델(덤프의 보낸 id 와 같은 이름), 생성 호출이 기록되지 않은 행은 그 행의 `chat_model`(그 턴에 실제로 쓴 모델)이다. 다른
+    방의 파일은 결합에서 이미 버려(`chat_turns` 가 None) 여기 오는 행은 모두 이 방의 것이다. 시도에 붙지 않은 행(재생성·편집,
+    같은 방을 이어 친 다른 측정)과 행을 잇지 않는 `assistantMessageId` 이전 형식의 행도 센다 — 원가와 달리 이 칸은 그 방을 쓴
+    모델을 보이는 것이라 붙었는지를 따지지 않는다. 방 스냅숏의 설정값은 모델을 바꿔 돌린 런에서 틀리므로 여기 섞지 않는다
+    (`_configured_chat_models`)."""
+    dumped = {
+        model
+        for model in (_str(r.get("model")) for r in joined.dump_records if r.get("kind", "generation") == "generation")
+        if model is not None
+    }
+    if dumped:
+        return sorted(dumped), "dump"
+    recorded: set[str] = set()
+    for row in joined.chat_turns.rows if joined.chat_turns is not None else []:
+        generated = {
+            model
+            for model, site in ((_str(c.get("model")), _str(c.get("callSite"))) for c in _calls(row))
+            if model is not None and site is not None and call_site_kind(site) == "generation"
+        }
+        row_model = _str(row.get("chat_model"))
+        recorded |= generated or ({row_model} if row_model is not None else set())
+    return (sorted(recorded), "chatTurns") if recorded else ([], None)
+
+
+def _configured_chat_models(joined: JoinedRun) -> list[str]:
+    """방 스냅숏(`roomStatic`)의 `effectiveChatModel` — 방 설정에서 서버가 쓰겠다고 한 값이다."""
+    return sorted({m for m in (_str(r.get("effectiveChatModel")) for r in joined.room_statics) if m is not None})
 
 
 def run_list_item(bundle: Bundle, joined: JoinedRun | None) -> RunListItem:
@@ -221,22 +243,16 @@ def run_list_item(bundle: Bundle, joined: JoinedRun | None) -> RunListItem:
         return base
     started, ended = _times(joined)
     cost = run_cost(joined)
+    sent_models, sent_from = _sent_chat_models(joined)
     return base.model_copy(
         update={
             "story_name": _str((joined.meta or {}).get("storyName")),
             "turn_count": len(joined.turns),
             "started_at": started,
             "ended_at": ended,
-            "effective_chat_models": _effective_chat_models(joined),
-            "generation_models": sorted(
-                {
-                    model
-                    for model in (
-                        _str(r.get("model")) for r in joined.dump_records if r.get("kind", "generation") == "generation"
-                    )
-                    if model is not None
-                }
-            ),
+            "sent_chat_models": sent_models,
+            "sent_chat_models_from": sent_from,
+            "configured_chat_models": _configured_chat_models(joined),
             "cost_usd": cost.total_usd if cost is not None else None,
             "unpriced_calls": cost.unpriced_calls if cost is not None else None,
             # 런 원가 합(`run_cost`)과 같은 행 — 시도에 붙은 행만 본다.
@@ -325,6 +341,7 @@ def turn_summary(joined: JoinedRun, turn: Turn, flags: ReplyFlagsView | None) ->
     reply = _str(record.get("reply")) or ""
     ending = record.get("ending")
     rows = _turn_rows(turn)
+    before = stats_before(joined, turn)
     return TurnSummary(
         turn=turn.number,
         attempt_count=len(turn.attempts),
@@ -335,7 +352,7 @@ def turn_summary(joined: JoinedRun, turn: Turn, flags: ReplyFlagsView | None) ->
         shortcut=_str(record.get("shortcut")),
         reply_head=reply[:REPLY_HEAD_CHARS],
         reply_length=len(reply),
-        driver_stat_changes=_driver_changes(record, stats_before(joined, turn)),
+        driver_stat_changes=_driver_changes(record, before),
         recorded_stat_changes=_recorded_changes(joined, turn),
         ending=ending if isinstance(ending, dict) else None,
         failure=_str(record.get("failure")),
@@ -343,10 +360,27 @@ def turn_summary(joined: JoinedRun, turn: Turn, flags: ReplyFlagsView | None) ->
         judgment_dumps=len(turn.judgment_dumps),
         background_dumps=len(turn.background_dumps),
         flags=flags,
+        stats_start_known=before is not None,
+        stats_continue_from_previous=_continues_from_previous(joined, turn, before),
         cost_usd=sum(row_cost(row) for row in rows) if rows else None,
         cost_is_lower_bound=cost_is_lower_bound(rows),
         mismatch_count=sum(1 for m in joined.mismatches if m.turn == turn.number),
     )
+
+
+def _continues_from_previous(joined: JoinedRun, turn: Turn, before: dict[str, Any] | None) -> bool:
+    """그 턴의 시작 스탯(`stats_before`)이 바로 앞 번호 턴의 고른 시도가 남긴 `roomAfter.stats` 와 같은가. 상태 계열은 턴마다 고른
+    시도의 그 값을 점으로 찍으므로(`stat_series`), 이것이 참일 때만 앞 점에서 이 점으로 가는 선분의 기울기가 이 턴의 변화량이다.
+    시작 값의 기준 줄이 앞 턴 줄 자신이면 늘 같고, 기준을 다시 잡은 줄이면 그 값이 같을 때만 참이다. 앞 번호 턴이 런에 없으면
+    (사람이 친 구간 등으로 번호가 건너뜀) 거짓이다."""
+    if before is None:
+        return False
+    previous = next((t for t in joined.turns if t.number == turn.number - 1), None)
+    if previous is None:
+        return False
+    after = previous.selected.record.get("roomAfter")
+    stats = after.get("stats") if isinstance(after, dict) else None
+    return isinstance(stats, dict) and stats == before
 
 
 def stat_series(joined: JoinedRun) -> list[StatSeries]:
@@ -397,6 +431,10 @@ def _line_marker_detail(kind: str, record: dict[str, Any]) -> str | None:
 
 
 def markers(joined: JoinedRun) -> list[TimelineMarker]:
+    """타임라인 표지. 기억 노트 변경·요약 갱신은 고른 시도 줄의 기억 해시가 앞 턴과 달라진 턴에 찍힌다. 드라이버는 그 해시를 턴을
+    보내기 직전에 읽고(`chat_play.memory_snapshot`) 요약 접기는 턴을 커밋한 뒤 백그라운드로 돌아, 턴 n 뒤에 접은 요약은 턴 n+1
+    줄에서 처음 보인다 — 요약 갱신 표지는 바뀐 요약을 처음 기록한 턴(n+1)에 서고, 그 요약을 만든 백그라운드 덤프 줄은 앞 턴(n)에
+    놓인다. 런 마지막 턴 뒤에 접은 요약은 그것을 읽을 뒤 턴 줄이 없어 표지가 없다."""
     found = [
         TimelineMarker(kind=m.kind, turn=m.turn, detail=_line_marker_detail(m.kind, m.record)) for m in joined.markers
     ]

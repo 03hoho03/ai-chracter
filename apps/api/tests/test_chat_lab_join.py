@@ -885,6 +885,84 @@ async def test_the_turn_after_a_replaced_reply_has_no_known_start_value(
         [(80.0, 40.0, -40.0)],
         [(None, 70.0, None)],
     ]
+    assert [turn.stats_start_known for turn in detail.turns] == [True, True, False]
+
+
+async def test_a_turn_continues_the_line_only_from_the_previous_numbered_turn_with_the_same_stats(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """시작 값을 알아도 그 값이 바로 앞 번호 턴이 끝난 값과 이어진다는 보장은 없다. 사람이 앱에서 몇 턴 친 뒤 드라이버가 기준을
+    다시 잡으면 턴 번호가 건너뛰고, 점검이 어긋나 손으로 기준을 다시 잡으면 앞 턴 뒤 값과 다른 값에서 시작한다. 그런 턴으로 선을
+    이으면 기울기가 그 턴의 변화량과 다르다 — 턴 요약은 시작 값이 바로 앞 번호 턴의 고른 시도가 남긴 값과 같을 때만 이어진다고
+    싣는다(첫 턴은 앞 턴이 없다). 실제 드라이버 런에 기준 다시 잡기 줄을 끼워 두 경우를 만든다. 견주는 쪽은 앞 턴의 고른
+    시도다 — 첫 생성이 실패해 같은 턴을 다시 보낸 런에서 드라이버는 완료되지 않은 시도 줄에 방 상태(`roomAfter`)를 적지 않으므로,
+    첫 시도와 견주면 다시 보내 스탯을 바꾼 턴 다음 턴이 이어지지 않는 것으로 잘못 보인다."""
+    driven = await drive_room(
+        db_session,
+        monkeypatch,
+        tmp_path,
+        script=says(3),
+        failing_generations=(),
+        stat_verdicts={1: (_DRIVE_RAISE_RULE,)},
+    )
+    lines = _jsonl(driven.log)
+    room = str(driven.room_id)
+    turns = {r["clientTurn"]: r for r in lines if r["kind"] == "turn"}
+
+    def rebase(after: dict[str, Any], value: float) -> dict[str, Any]:
+        return {
+            "kind": "rebase",
+            "roomId": room,
+            "at": turns[2]["sentAt"],
+            "reason": "점검이 어긋나 손으로 기준 다시 잡기",
+            "roomAfter": {**after, "stats": {**after["stats"], DRIVE_STAT_NAME: value}, "source": "refetch"},
+        }
+
+    def flags() -> list[tuple[int, bool, bool]]:
+        detail = run_detail(_join(tmp_path))
+        return [(t.turn, t.stats_start_known, t.stats_continue_from_previous) for t in detail.turns]
+
+    assert flags() == [(1, True, False), (2, True, True), (3, True, True)]
+
+    def before_third(extra: dict[str, Any], *, drop_second: bool = False) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for record in lines:
+            if record is turns[3]:
+                out.append(extra)
+            if not (drop_second and record is turns[2]):
+                out.append(record)
+        return out
+
+    same = rebase(turns[2]["roomAfter"], turns[2]["roomAfter"]["stats"][DRIVE_STAT_NAME])
+    moved = rebase(turns[2]["roomAfter"], 65.0)
+    assert same["roomAfter"]["stats"] == turns[2]["roomAfter"]["stats"] != moved["roomAfter"]["stats"]
+    _write_jsonl(driven.log, before_third(same))
+    assert flags() == [(1, True, False), (2, True, True), (3, True, True)]
+    _write_jsonl(driven.log, before_third(moved))
+    assert flags() == [(1, True, False), (2, True, True), (3, True, False)]
+
+    # 사람이 턴 2 를 앱에서 쳐 드라이버 로그에는 그 턴 줄이 없고, 드라이버가 같은 값으로 기준을 다시 잡았다.
+    _write_jsonl(driven.log, before_third(same, drop_second=True))
+    assert flags() == [(1, True, False), (3, True, False)]
+
+    # 턴 2 의 첫 생성(호출 2)이 실패하고 다음 대본 줄이 같은 턴을 다시 보내, 고른 시도(호출 3)가 신뢰를 올린다.
+    retry_dir = tmp_path / "retry"
+    retry_dir.mkdir()
+    retried = await drive_room(
+        db_session,
+        monkeypatch,
+        retry_dir,
+        script=says(4),
+        failing_generations=(2,),
+        stat_verdicts={3: (_DRIVE_RAISE_RULE,)},
+    )
+    attempts = [r for r in _jsonl(retried.log) if r["kind"] == "turn" and r["clientTurn"] == 2]
+    assert [(a["done"], a["roomAfter"] is None) for a in attempts] == [(False, True), (True, False)]
+    assert attempts[1]["roomAfter"]["stats"][DRIVE_STAT_NAME] == 80
+    [retried_bundle] = discover_bundles(retry_dir)
+    retried_turns = run_detail(join_bundle(retried_bundle)).turns
+    assert [(t.turn, t.attempt_count) for t in retried_turns] == [(1, 1), (2, 2), (3, 1)]
+    assert retried_turns[2].stats_continue_from_previous is True
 
 
 async def test_supplement_lines_and_a_rebase_after_a_lost_turn_give_the_next_start_value(
@@ -932,6 +1010,10 @@ async def test_supplement_lines_and_a_rebase_after_a_lost_turn_give_the_next_sta
     without_retry = [lost if r is second else r for r in lines]
     _write_jsonl(driven.log, [*without_retry, *supplements])
     assert changes() == [[(50.0, 80.0, 30.0)], [], [(None, 60.0, None)], [(60.0, 65.0, 5.0)]]
+    # 바뀐 스탯이 없는 턴도 시작 값을 모를 수 있다 — 변화 칸이 비면 빈 시작 값으로는 알 수 없어 턴 요약이 따로 싣는다.
+    quiet = {**supplements[0], "statChanges": []}
+    _write_jsonl(driven.log, [*without_retry, quiet, supplements[1]])
+    assert [turn.stats_start_known for turn in run_detail(_join(tmp_path)).turns] == [True, True, False, True]
 
     rebase = {
         "kind": "rebase",
@@ -1241,31 +1323,54 @@ async def test_a_status_block_fenced_at_the_end_of_a_complete_reply_is_not_a_tru
     ]
 
 
-async def test_the_actual_model_falls_back_to_every_record_row_of_the_room_when_no_snapshot_names_it(
+async def test_the_sent_model_comes_from_the_call_records_before_the_room_setting(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """실제 생성 모델은 방 스냅숏의 값이 먼저다. 스냅숏 로그가 없는 묶음에서도 턴 기록 행에는 그 응답을 쓴 모델이 남아 있어,
-    턴 기록 파일의 행 전부의 모델로 채운다(여럿이면 모두). 이 칸은 그 방을 쓴 모델을 보이는 것이라 시도에 붙지 않은 행도 센다."""
+    """모델을 바꿔 돌린 런에서는 방 스냅숏의 `effectiveChatModel`(방 설정에서 서버가 쓰겠다고 한 값)이 실제로 보낸 모델과 다르다.
+    그래서 보낸 모델은 호출 기록에서 찾는다 — 덤프 생성 줄의 보낸 id 가 먼저, 덤프에 생성 줄이 없으면 턴 기록 파일의 행 전부에서
+    행마다 생성 호출 칸의 모델(판정 호출의 모델은 아니다), 생성 호출이 기록되지 않은 행은 그 행의 `chat_model` 이다. 그 방을 쓴
+    모델을 보이는 칸이라 시도에 붙지 않은 행도 센다. 스냅숏의 값은 설정값으로 따로 싣고 보낸 모델 칸에 섞지 않는다. 실제 드라이버
+    런의 덤프 생성 줄을 설정과 다른 모델로 생성한 것처럼 바꿔 쓴다."""
     driven = await _plain_run(db_session, monkeypatch, tmp_path, 2)
+    dump = _jsonl(driven.dump)
+    generation_lines = [r for r in dump if r.get("kind") == "generation"]
+    for record in generation_lines:
+        record["model"] = "lab-sent-model"
+    _write_jsonl(driven.dump, dump)
     stat_defs, rows = await _db_export(db_session, driven)
-    rows[0]["chat_model"], rows[1]["chat_model"] = "lab-model-b", "lab-model-a"
+    rows[0]["chat_model"] = "lab-row-model-of-a-recorded-call"
+    rows[0]["llm_calls"] = [
+        {"callSite": "chat_generate", "model": "lab-call-model", "promptTokens": 10, "outputTokens": 1},
+        {"callSite": "chat_stat_judgment", "model": "lab-judge-model", "promptTokens": 10, "outputTokens": 1},
+    ]
+    rows[1]["chat_model"] = "lab-row-model"
     stray = {
         **copy.deepcopy(rows[-1]),
         "id": uuid.uuid4(),
         "assistant_message_id": uuid.uuid4(),
-        "chat_model": "lab-model-stray",
+        "chat_model": "lab-stray-model",
     }
     _write_export(driven, stat_defs, [*rows, stray])
     snapshot_model = next(r for r in _jsonl(driven.snapshot_log) if r["kind"] == "roomStatic")["effectiveChatModel"]
 
-    with_snapshot = run_detail(_join(tmp_path)).run
-    driven.snapshot_log.unlink()
-    [bundle] = discover_bundles(tmp_path)
-    without_snapshot = list_entry(bundle)
+    def models() -> tuple[list[str], str | None, list[str]]:
+        [bundle] = discover_bundles(tmp_path)
+        item = list_entry(bundle)
+        detail_run = run_detail(_join(tmp_path)).run
+        assert (detail_run.sent_chat_models, detail_run.sent_chat_models_from, detail_run.configured_chat_models) == (
+            item.sent_chat_models,
+            item.sent_chat_models_from,
+            item.configured_chat_models,
+        )
+        return item.sent_chat_models, item.sent_chat_models_from, item.configured_chat_models
 
-    assert isinstance(snapshot_model, str) and snapshot_model not in {"lab-model-a", "lab-model-b"}
-    assert with_snapshot.effective_chat_models == [snapshot_model]
-    assert without_snapshot.effective_chat_models == ["lab-model-a", "lab-model-b", "lab-model-stray"]
+    assert len(generation_lines) == 2
+    assert isinstance(snapshot_model, str) and snapshot_model != "lab-sent-model"
+    assert models() == (["lab-sent-model"], "dump", [snapshot_model])
+    driven.dump.unlink()
+    assert models() == (["lab-call-model", "lab-row-model", "lab-stray-model"], "chatTurns", [snapshot_model])
+    (driven.log.parent / CHAT_TURNS_NAME).unlink()
+    assert models() == ([], None, [snapshot_model])
 
 
 async def test_a_chat_turns_file_beside_a_log_without_message_ids_is_a_caution_not_unmatched_rows(
@@ -1273,8 +1378,8 @@ async def test_a_chat_turns_file_beside_a_log_without_message_ids_is_a_caution_n
 ) -> None:
     """`assistantMessageId` 이전 형식의 턴 줄에는 행을 붙일 응답 id 가 없어, 턴 기록 파일을 짝으로 두면 이을 수 없다. 이어 보면 모든
     행이 짝 없는 기록이 되어 불일치가 행 수만큼 쌓이는데, 결합이 어긋난 것이 아니라 처음부터 이을 수 없는 형식이다 — 행을 잇지 않고
-    주의 하나만 달며, 붙은 행이 없으니 원가를 0 원으로 내지 않는다. 모델 칸은 행을 잇지 않아도 파일의 행으로 채운다. 이 형식은
-    내보내기를 거부하므로, 턴 기록 파일이 없을 때도 내보내라는 기록 한계를 싣지 않는다."""
+    주의 하나만 달며, 붙은 행이 없으니 원가를 0 원으로 내지 않는다. 덤프가 없을 때 보낸 모델 칸은 행을 잇지 않아도 파일의 행으로
+    채운다. 이 형식은 내보내기를 거부하므로, 턴 기록 파일이 없을 때도 내보내라는 기록 한계를 싣지 않는다."""
     driven = await _plain_run(db_session, monkeypatch, tmp_path, 2)
     stat_defs, rows = await _db_export(db_session, driven)
     rows[0]["chat_model"], rows[1]["chat_model"] = "lab-model-b", "lab-model-a"
@@ -1296,7 +1401,12 @@ async def test_a_chat_turns_file_beside_a_log_without_message_ids_is_a_caution_n
     assert joined.unmatched_rows == [] and detail.unmatched_rows == []
     assert [attempt.chat_turn_rows for turn in joined.turns for attempt in turn.attempts] == [[], []]
     assert (detail.cost, detail.run.cost_usd, detail.run.has_chat_turns) == (None, None, True)
-    assert detail.run.effective_chat_models == ["lab-model-a", "lab-model-b"]
+    driven.dump.unlink()
+    without_dump = run_detail(_join(tmp_path)).run
+    assert (without_dump.sent_chat_models, without_dump.sent_chat_models_from) == (
+        ["lab-model-a", "lab-model-b"],
+        "chatTurns",
+    )
     (driven.log.parent / CHAT_TURNS_NAME).unlink()
     without_file = _join(tmp_path)
     assert without_file.chat_turns is None

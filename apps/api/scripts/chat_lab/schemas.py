@@ -11,6 +11,8 @@ from api.core.schema import CamelModel
 
 # 묶음 형식 세대. `legacy` 는 턴 줄에 방 id 가 없는 옛 형식이라 목록에만 보이고 열지 않는다.
 BundleFormat = Literal["current", "preMessageId", "legacy"]
+# 실제로 보낸 생성 모델을 읽은 기록 — 덤프 생성 줄, 턴 기록 파일.
+SentModelsFrom = Literal["dump", "chatTurns"]
 
 # 결합 어긋남 — 목록의 불일치 수는 이것만 센다.
 # missingDump: 덤프 파일이 있는데 그 턴의 응답 시도에 생성 덤프가 없다(서버 앞에서 거부된 시도는 정상이라 넣지 않는다).
@@ -79,10 +81,14 @@ class RunListItem(CamelModel):
     turn_count: int | None = None
     started_at: str | None = None
     ended_at: str | None = None
-    # 실제 생성 모델(방 스냅숏의 `effectiveChatModel`, 스냅숏에 없으면 턴 기록 파일의 행 전부의 `chat_model`)과 덤프 생성 줄의
-    # 보낸 모델 id.
-    effective_chat_models: list[str] = Field(default_factory=list)
-    generation_models: list[str] = Field(default_factory=list)
+    # 실제로 보낸 생성 모델 id — 덤프 생성 줄의 `model` 이 먼저고, 덤프에 생성 줄이 없으면 턴 기록 파일의 행 전부에서 행마다
+    # 생성 호출 칸의 모델(생성 호출이 기록되지 않은 행은 그 행의 `chat_model`)이다. 어느 기록에서 왔는지가
+    # `sent_chat_models_from` 이고, 둘 다 없으면 빈 목록과 None 이다.
+    sent_chat_models: list[str] = Field(default_factory=list)
+    sent_chat_models_from: SentModelsFrom | None = None
+    # 방 스냅숏의 `effectiveChatModel` — 방 설정에서 서버가 쓰겠다고 한 값이다. 모델을 바꿔 돌린 런에서는 실제로 보낸 모델과
+    # 다르므로 보낸 모델 칸에 섞지 않는다.
+    configured_chat_models: list[str] = Field(default_factory=list)
     # 시도에 붙은 턴 기록 행의 원가 합. 턴 기록이 없으면 None("내보내기 필요").
     cost_usd: float | None = None
     # 붙은 행 가운데 단가표에 없는 모델의 호출 수 — 원가 합에서 빠진 호출이다.
@@ -163,6 +169,15 @@ class TurnSummary(CamelModel):
     background_dumps: int
     # 응답 단위 플래그 — 런 지표의 같은 턴 칸(`TurnMetrics.flags`) 그대로다. 응답이 없는 턴은 None.
     flags: ReplyFlagsView | None
+    # 그 턴이 시작한 스탯을 기록으로 아는가 — `DriverStatChange.before` 를 채우는 규칙과 같다. 바뀐 스탯이 없는 턴도 시작 값을
+    # 모를 수 있어(앞 턴 응답이 교체됨, 앞 턴이 유실되고 기준을 다시 잡은 줄이 없음) 변화 칸만으로는 알 수 없다. 변화량 칸("Δ
+    # 모름")이 이 값을 따른다.
+    stats_start_known: bool
+    # 그 시작 값이 바로 앞 번호 턴의 고른 시도가 남긴 스탯(`roomAfter.stats`)과 같은가 — 시작 값을 알고, 앞 번호 턴이 런에 있고,
+    # 두 값이 같을 때만 참이다. 시작 값을 알아도 거짓일 수 있다: 사람이 앱에서 친 턴이 드라이버 로그에 없어 번호가 건너뛰었거나,
+    # 기준을 다시 잡은 줄이 앞 턴 뒤 값과 다른 값을 적었다. 첫 턴은 앞 턴이 없어 거짓이다. 타임라인은 이 값이 참인 턴만 앞 칸과
+    # 선으로 잇는다 — 이으면 기울기가 그 턴의 변화량으로 읽힌다.
+    stats_continue_from_previous: bool
     # 그 턴의 시도에 붙은 턴 기록 행의 원가 합. 붙은 행이 없으면(턴 기록 파일이 없는 경우 포함) None.
     cost_usd: float | None
     # 합에 단가 없는 호출이나 입력 토큰이 기록되지 않은 호출이 섞여, 합이 실제 원가보다 낮을 수 있다.

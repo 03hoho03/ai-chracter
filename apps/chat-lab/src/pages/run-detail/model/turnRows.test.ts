@@ -23,6 +23,8 @@ function summary(overrides: Partial<TurnSummary> = {}): TurnSummary {
     judgmentDumps: 0,
     backgroundDumps: 0,
     flags: null,
+    statsStartKnown: true,
+    statsContinueFromPrevious: true,
     costUsd: null,
     costIsLowerBound: false,
     mismatchCount: 0,
