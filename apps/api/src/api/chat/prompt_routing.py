@@ -26,7 +26,13 @@ from api.chat.prompt_stages import (
 )
 from api.core.config import settings
 from api.chat.prompt_builder import PromptSetNotFoundError, load_active_prompt_set
-from api.llm.backends import BACKENDS, missing_credentials, pick_backend, structured_effort_error
+from api.llm.backends import (
+    BACKENDS,
+    WRITER_ONLY_MODELS,
+    missing_credentials,
+    pick_backend,
+    structured_effort_error,
+)
 from api.llm.call_policy import CALL_POLICIES, BackendId, LLMCallSite
 from api.llm.chat_models import (
     CHAT_MODELS_BY_ID,
@@ -287,6 +293,7 @@ RouteRule = Literal[
     "duplicate-row",
     "generation-chain",
     "chain-not-in-lane",
+    "writer-only-chain",
     "generation-call-model",
     "pair-not-allowed",
     "backend-mismatch",
@@ -373,6 +380,14 @@ def _lane_chain_problem(lane: RoutingLane, chain_model: str | None) -> str | Non
     return None
 
 
+def _writer_only_chain_problem(chain_model: str | None) -> str | None:
+    """글쓰기 전용 체인(haiku_writer)은 판정·요약 행이 읽을 체인이 아니다 — 그 체인의 판정·요약 문안은 게시 검증을 맞추려고 둔
+    Sonnet 사본이라 고쳐도 판정이 따라가지 않을 문안이고, 판정은 판정 전용 체인이 맡는다."""
+    if chain_model is not None and chain_model in WRITER_ONLY_MODELS:
+        return f"읽을 체인 {chain_model} 는 글쓰기 전용 체인이라 판정·요약 문안을 읽지 않는다(판정 전용 체인을 고른다)"
+    return None
+
+
 def _generation_call_model_message(lane: RoutingLane, room_model: RouteRoomModel) -> str:
     if lane == "novel":
         return f"소설 생성 행은 작업 모델({room_model})로만 부른다(소설 차감이 작업 모델 단가다)"
@@ -381,7 +396,7 @@ def _generation_call_model_message(lane: RoutingLane, room_model: RouteRoomModel
 
 def parse_route_row(row: RouteRowInput) -> RouteRow | None:
     """값 범위(배정 표 레인, 그 레인의 단계, 그 칸의 방 모델 축, 모델 축, 경로)와 행 모양(생성은 체인 없음·방 모델(소설은 작업
-    모델)로 부름, 나머지는 체인 있음, 소설 레인 체인은 글쓰기 모델)이 맞으면 타입이 붙은 행, 아니면 None. 허용 목록·경로·자격은
+    모델)로 부름, 나머지는 체인 있음, 소설 레인 체인은 글쓰기 모델, 글쓰기 전용 체인은 읽지 않음)이 맞으면 타입이 붙은 행, 아니면 None. 허용 목록·경로·자격은
     보지 않는다 — DB·캐시에서 읽은 행을 해석에 넘길 때와 저장 검사가 값 범위를 통과한 행을 바꿀 때 같은 함수를 쓴다."""
     lane = _parse_lane(row.lane)
     if lane is None:
@@ -398,6 +413,7 @@ def parse_route_row(row: RouteRowInput) -> RouteRow | None:
         or backend is None
         or _shape_problem(lane, stage, row.chain_model) is not None
         or _lane_chain_problem(lane, row.chain_model) is not None
+        or _writer_only_chain_problem(row.chain_model) is not None
     ):
         return None
     if STAGES[stage].kind == "generation":
@@ -419,12 +435,13 @@ def route_row_errors(rows: Sequence[RouteRowInput]) -> list[RouteRowError]:
     2. `duplicate-row` — 앞 행과 같은 칸.
     3. `generation-chain` — 생성 행에 체인이 옴 / 나머지 행에 체인이 없거나 체인이 모델 축 밖.
     4. `chain-not-in-lane` — 그 레인에 없는 체인(소설 레인의 판정 전용 체인).
-    5. `generation-call-model` — 생성 행의 부를 모델이 방 모델(소설은 작업 모델)이 아님.
-    6. `pair-not-allowed` — (부를 모델, 경로)가 허용 목록 밖.
-    7. `backend-mismatch` — 그 행을 읽는 호출 위치마다 지금 env 배정으로 푼 경로가 행의 경로와 다름. 읽는 호출 위치에는 채팅과
+    5. `writer-only-chain` — 판정·요약 행이 글쓰기 전용 체인을 읽음.
+    6. `generation-call-model` — 생성 행의 부를 모델이 방 모델(소설은 작업 모델)이 아님.
+    7. `pair-not-allowed` — (부를 모델, 경로)가 허용 목록 밖.
+    8. `backend-mismatch` — 그 행을 읽는 호출 위치마다 지금 env 배정으로 푼 경로가 행의 경로와 다름. 읽는 호출 위치에는 채팅과
        미리보기, 그리고 요청에 물려받는 단계(장면 헤더)의 행이 없으면 그 단계의 호출 위치도 든다.
-    8. `missing-credentials` — 그 경로의 자격이 빔.
-    9. `structured-effort` — 판정 행이 Anthropic 직결에서 사고를 끄는 모델로 가는데 구조화 깊이가 그 요청이 받는 범위 밖.
+    9. `missing-credentials` — 그 경로의 자격이 빔.
+    10. `structured-effort` — 판정 행이 Anthropic 직결에서 사고를 끄는 모델로 가는데 구조화 깊이가 그 요청이 받는 범위 밖.
 
     체인의 게시 여부와 채널은 `route_chain_errors` 가 본다(DB)."""
     errors: list[RouteRowError] = []
@@ -462,6 +479,10 @@ def route_row_errors(rows: Sequence[RouteRowInput]) -> list[RouteRowError]:
         lane_chain = _lane_chain_problem(lane, row.chain_model)
         if lane_chain is not None:
             errors.append(RouteRowError(index=index, rule="chain-not-in-lane", message=lane_chain))
+            continue
+        writer_only = _writer_only_chain_problem(row.chain_model)
+        if writer_only is not None:
+            errors.append(RouteRowError(index=index, rule="writer-only-chain", message=writer_only))
             continue
         if STAGES[stage].kind == "generation" and row.call_model != room_model:
             errors.append(

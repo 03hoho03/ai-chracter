@@ -1256,3 +1256,19 @@ def test_the_haiku_writer_room_is_on_the_chat_axes_but_not_on_the_novel_axis() -
             assert "haiku_writer" in stage_room_models(lane, stage), (lane, stage)
     for stage in LANE_STAGES["novel"]:
         assert "haiku_writer" not in stage_room_models("novel", stage), stage
+
+
+@pytest.mark.parametrize("lane", ["story", "character"])
+def test_a_judgment_row_reading_the_writer_only_haiku_chain_is_refused_and_never_parsed(
+    save_env: pytest.MonkeyPatch, lane: str
+) -> None:
+    """Haiku 글쓰기 체인의 판정·요약 문안은 게시 검증을 맞추려고 둔 Sonnet 사본이다 — 행이 그 체인을 읽게 두면 운영자가 고친
+    판정 문안이 판정 전용 체인과 따로 놀고, 판정 전용 체인을 고쳐도 그 칸에는 닿지 않는다. 같은 행의 판정 전용 체인은 저장된다."""
+    room_model = "haiku_writer"
+    refused = _input("memory_fact", lane=lane, room_model=room_model, chain_model="haiku_writer")
+    allowed = _input("memory_fact", lane=lane, room_model=room_model, chain_model="haiku")
+
+    assert _rules([refused]) == [(0, "writer-only-chain")]
+    assert parse_route_row(refused) is None
+    assert _rules([allowed]) == []
+    assert parse_route_row(allowed) is not None
