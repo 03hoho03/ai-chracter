@@ -20,6 +20,9 @@ CLAUDE.md
 # 기억 평가 도구, 로컬·CI 에서만 쓰고 이미지 안에서 부르는 곳이 없다
 scripts/memory_eval/
 scripts/memory_eval_cli.py
+# 로컬 측정 서버와 그 턴 기록 내보내기, 로컬·CI 에서만 쓰고 이미지 안에서 부르는 곳이 없다
+scripts/chat_lab/
+scripts/chat_lab_*.py
 # Cloud Run 시절 Cloud Build 설정, 실행 대상이 없다
 cloudbuild.yaml
 # 로컬 에이전트 설정 폴더
