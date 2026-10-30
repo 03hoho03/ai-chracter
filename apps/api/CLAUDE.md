@@ -47,6 +47,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 - 같은 ENUM 이름을 한 리비전의 여러 테이블에 재사용하는 건 안전하다(`CREATE TYPE`은 한 번만 실행된다).
 - **부분 인덱스의 `postgresql_where`에 bare 컬럼을 넣지 말 것.** `postgresql_where=published`처럼 `Mapped` 컬럼을 그대로 주면 autogenerate가 생성한 마이그레이션 소스에 `<sqlalchemy.orm.properties.MappedColumn object at 0x...>`라는 **repr을 문자 그대로 박아 넣어, 그 파일을 로드하는 순간 `SyntaxError`**가 난다(실측 재현). `published.is_(True)`처럼 **불리언 식**을 주면 렌더러가 `sa.text('published IS true')`로 정상 변환한다. `legal.py`의 `status == "draft"`가 이미 식이라 이 함정을 피해 갔다 — bool 컬럼일 때만 bare로 쓰고 싶어진다는 게 함정의 핵심이다.
 - 시드성 마스터 데이터는 `op.execute("INSERT ...")`로 넣되 PK는 **작성 시점에 하드코딩한 리터럴 UUID**를 쓴다(`uuid4()` 호출 금지 — 환경마다 달라진다).
+- **프롬프트 문안 슬롯·채널을 더하는 마이그레이션은 그 레인에 체인이 있는 모델 전부의 활성 세트를 다룬다** — 채팅 레인은 Gemini·Claude 글쓰기 체인(`haiku_writer`·`sonnet`·`opus`)과 판정 전용 `haiku` 까지다. 빠뜨린 체인은 어드민 게시가 "누락"으로 막히거나, 생성 슬롯이면 그 모델 방만 새 문안 없이 돈다. `tests/test_prompt_chain_coverage.py` 가 head 에서 체인 모델 축(`llm/backends.py` 의 `PromptSetModelId`) 전부를 게시 검증의 기대 슬롯과 견줘 잡는다. 새 체인을 심는 시드 리비전은 `delete_seeded_rows(conn)` 를 두고 `downgrade()` 가 그것을 부르게 한다 — 옛 시드 리비전 테스트의 되돌리기 헬퍼(`tests/factories.py` 의 `undo_seeded_rows_above`)가 그 이름이 있는 리비전만 되돌려, 없으면 옛 테스트가 "그 리비전 직후 상태"를 만들 때 새 세트가 남아 전역 게시 버전이 어긋난다.
 
 ### 배포 중에는 옛 코드가 새 스키마 위에서 돈다 — expand → 배포 → contract
 
