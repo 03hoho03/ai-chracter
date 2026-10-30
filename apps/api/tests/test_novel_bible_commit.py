@@ -28,9 +28,10 @@ from api.db.models.novel_bible_facts import NovelBibleFact
 from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
 from api.novel_bible.core.confirm import Actor, confirm
 from api.novel_bible.core.jobs import EMPTY_NAME, run_next_job
+from api.novel_bible.core.keys import proposition_key
 from api.novel_bible.core import pipeline
 from api.novel_bible.core.pipeline import CAS_LIMIT, link_check_commit, start_linking
-from api.novel_bible.core.types import BibleSnapshot
+from api.novel_bible.core.types import BibleSnapshot, Proposition
 from api.novelize.deletion import delete_batch, strip_author_only_data
 from factories import _committed_engine, _wait_until_a_lock_is_awaited
 from novel_bible_fakes import (
@@ -684,6 +685,15 @@ async def test_life_and_death_gain_and_loss_and_knows_and_believes_get_different
     }
     # 앎과 믿음은 명제가 다르고, 각자 명제가 같은 사실 행과 같은 키다.
     assert (knowledge["knows"], knowledge["believes"]) == (dead.fact_key, alive.fact_key)
+
+
+def test_a_bar_inside_an_attribute_or_its_value_does_not_give_two_propositions_one_key() -> None:
+    subject = uuid.uuid4()
+    # 칸을 `|` 로만 이어 붙이면 두 명제가 같은 글자열("…|스승|제자|두리|1")이 된다.
+    bar_in_attribute = Proposition(subject="하나", kind="attribute", attribute="스승|제자", value="두리", holds=True)
+    bar_in_value = Proposition(subject="하나", kind="attribute", attribute="스승", value="제자|두리", holds=True)
+
+    assert proposition_key(bar_in_attribute, subject, None) != proposition_key(bar_in_value, subject, None)
 
 
 async def test_the_same_proposition_keeps_its_key_in_another_chapter_and_revision(db_session: AsyncSession) -> None:

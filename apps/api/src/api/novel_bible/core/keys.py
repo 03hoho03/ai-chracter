@@ -14,6 +14,7 @@
 
 정규화는 채팅 기억의 사실 키와 같은 규칙(`normalize_part`)이다 — 키 값 자체는 채팅 기억 키와 무관하다."""
 
+import json
 import uuid
 
 from api.chat.memory_facts import normalize_part
@@ -40,7 +41,9 @@ def predicate_norm(kind: FactKind, attribute: str | None) -> str:
 
 def fact_key(subject: uuid.UUID, kind: FactKind, predicate: str, object_token: str, holds: bool) -> uuid.UUID:
     """같은 명제는 어느 화·어느 개정에서 다시 뽑혀도 같은 키다. 유지 여부가 다르면(얻음·잃음) 다른 명제다."""
-    return uuid.uuid5(_FACT_KEY_NAMESPACE, "|".join((str(subject), kind, predicate, object_token, "1" if holds else "0")))
+    # 술어·값은 자유 서술이라 구분 문자를 품을 수 있어, 칸마다 따옴표로 감싸고 안을 이스케이프하는 JSON 배열로 잇는다.
+    parts = [str(subject), kind, predicate, object_token, "1" if holds else "0"]
+    return uuid.uuid5(_FACT_KEY_NAMESPACE, json.dumps(parts, ensure_ascii=False, separators=(",", ":")))
 
 
 def proposition_key(proposition: Proposition, subject: uuid.UUID, value_entity: uuid.UUID | None) -> uuid.UUID:
