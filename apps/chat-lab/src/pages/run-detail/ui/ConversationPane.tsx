@@ -211,7 +211,7 @@ function Chip({ tone = "quiet", title, children }: ChipProps) {
     <span
       title={title}
       className={cn(
-        "inline-flex h-[18px] items-center gap-1 rounded-sm bg-surface-raised px-1.5 text-label whitespace-nowrap",
+        "inline-flex h-4.5 items-center gap-1 rounded-sm bg-surface-raised px-1.5 text-label whitespace-nowrap",
         tone === "danger" ? "text-danger" : "text-ink-secondary",
       )}
     >

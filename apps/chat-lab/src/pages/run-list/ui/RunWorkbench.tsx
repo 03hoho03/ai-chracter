@@ -89,7 +89,7 @@ export function RunWorkbench({ items, folder, selectedRowKey }: RunWorkbenchProp
   useRowKeys({ onMove: handleMove, onOpen: handleOpenActive });
 
   return (
-    <div className="grid h-full grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_20rem]">
+    <div className="grid h-full grid-cols-1 lg:grid-cols-run-list xl:grid-cols-run-list-wide">
       <section aria-label="폴더" className="hidden min-h-0 overflow-auto border-r border-border bg-surface lg:block">
         <div className="sticky top-0 z-10 flex h-8 items-center border-b border-border bg-surface px-3">
           <h2 className="text-section text-ink">폴더</h2>

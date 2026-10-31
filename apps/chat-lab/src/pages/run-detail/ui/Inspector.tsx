@@ -622,7 +622,7 @@ function MetricsTab({ detail, turnDetail, metrics: metricsState, onRetryMetrics,
         {turnMetrics === null ? (
           <Absent>응답이 없는 턴이라 지표 표본에서 빠졌다</Absent>
         ) : (
-          <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-data">
+          <dl className="mt-1 grid grid-cols-fields gap-x-3 gap-y-1 text-data">
             <Field label="길이">
               {formatCount(turnMetrics.flags.length)}자 · {formatCount(turnMetrics.flags.sentenceCount)}문장
               {turnMetrics.flags.statusBlockLength > 0 && (
@@ -668,7 +668,7 @@ function MetricsTab({ detail, turnDetail, metrics: metricsState, onRetryMetrics,
         {metrics === undefined ? (
           <MetricsPending isFailed={metricsState.status === "failed"} onRetry={onRetryMetrics} />
         ) : (
-          <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-data tabular-nums">
+          <dl className="mt-1 grid grid-cols-fields gap-x-3 gap-y-1 text-data tabular-nums">
             <Field label="표본">{formatCount(metrics.scored)}턴 (응답 있는 턴)</Field>
             <Field label="응답 없는 턴">{formatCount(metrics.lost)}</Field>
             <Field label="길이 중앙값">{metrics.medianLength === null ? <Missing /> : `${formatCount(metrics.medianLength)}자`}</Field>

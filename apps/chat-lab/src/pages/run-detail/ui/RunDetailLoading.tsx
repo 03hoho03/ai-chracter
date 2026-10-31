@@ -13,7 +13,7 @@ export function RunDetailLoading({ seconds }: { seconds: number }) {
   return (
     <div className="flex h-full flex-col">
       <div className="h-16 shrink-0 border-b border-border bg-surface" />
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)_23.75rem]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-run-detail xl:grid-cols-run-detail-wide">
         <div className="hidden border-r border-border bg-surface lg:block">
           <div className="h-8 border-b border-border" />
           <SkeletonBars count={SKELETON_ROWS} />

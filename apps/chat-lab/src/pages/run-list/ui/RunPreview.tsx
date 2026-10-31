@@ -96,7 +96,7 @@ function RunDetails({ item }: { item: RunListItem }) {
           ))}
         </ul>
       </section>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-data">
+      <dl className="grid grid-cols-fields gap-x-3 gap-y-1.5 text-data">
         {opened && (
           <>
             <Field label="턴">{item.turnCount}</Field>
@@ -146,7 +146,7 @@ function GroupDetails({ folder, fullPath, summary }: { folder: string; fullPath:
       <p className="text-data text-ink-secondary">
         대량 시도 폴더라 표에서 한 줄로 접었다. 들어가면 런마다 행이 놓인다.
       </p>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-data">
+      <dl className="grid grid-cols-fields gap-x-3 gap-y-1.5 text-data">
         <Field label="런">{formatCount(summary.runCount)}개</Field>
         <Field label="시작">{formatDateRange(summary.earliestStartedAt, summary.latestStartedAt) ?? <Missing />}</Field>
         <Field label="원가 합">

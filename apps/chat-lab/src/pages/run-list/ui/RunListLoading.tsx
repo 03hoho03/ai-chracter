@@ -11,7 +11,7 @@ const BAR_WIDTHS = ["w-2/5", "w-3/5", "w-1/2", "w-4/5", "w-2/3", "w-3/4"] as con
  */
 export function RunListLoading({ seconds }: { seconds: number }) {
   return (
-    <div className="grid h-full grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_20rem]">
+    <div className="grid h-full grid-cols-1 lg:grid-cols-run-list xl:grid-cols-run-list-wide">
       <div className="hidden border-r border-border bg-surface lg:block">
         <div className="h-8 border-b border-border" />
         <SkeletonBars count={6} />

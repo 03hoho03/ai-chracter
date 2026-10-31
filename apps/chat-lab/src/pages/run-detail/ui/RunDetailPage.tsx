@@ -303,7 +303,7 @@ function IssueBadgeButton({ isOpen, onToggle, isWideOnly = false, children }: Is
       aria-controls="run-issues"
       onClick={onToggle}
       className={cn(
-        "h-[18px] items-center rounded-sm bg-surface-raised px-1.5 text-label text-warn tabular-nums",
+        "h-4.5 items-center rounded-sm bg-surface-raised px-1.5 text-label text-warn tabular-nums",
         "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
         isWideOnly ? "hidden sm:inline-flex" : "inline-flex",
       )}

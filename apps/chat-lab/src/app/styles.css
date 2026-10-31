@@ -68,7 +68,16 @@
   /* 사용자 발화·응답 원문의 줄 길이 상한 — 한국어 산문을 읽는 폭. `max-w-reading`. */
   --container-reading: 68ch;
 
-  /* 간격은 Tailwind 기본 4px 단위(`--spacing: 0.25rem`)를 그대로 쓴다 — 표 한 줄 28px 은 `h-7`. */
+  /* 간격은 Tailwind 기본 4px 단위(`--spacing: 0.25rem`)를 그대로 쓴다 — 표 한 줄 28px 은 `h-7`, 칩 18px 은 `h-4.5`. */
+
+  /* 작업대 열 템플릿. 본 화면과 로딩 뼈대가 같은 이름을 써서 열 폭이 두 벌로 갈라지지 않게 한다. 런 목록은 폴더 트리 240px │ 런 표 │
+     미리보기 320px, 런 상세는 턴 목록 272px │ 대화·원문 │ 호출 검사기 380px 이고, `-wide` 없는 쪽은 오른쪽 열을 뺀 1024~1279px 의
+     두 열이다. `fields` 는 이름 │ 값 두 열의 정의 목록(검사기 지표·런 미리보기의 칸별 값)이다. */
+  --grid-template-columns-run-list: 15rem minmax(0, 1fr);
+  --grid-template-columns-run-list-wide: 15rem minmax(0, 1fr) 20rem;
+  --grid-template-columns-run-detail: 17rem minmax(0, 1fr);
+  --grid-template-columns-run-detail-wide: 17rem minmax(0, 1fr) 23.75rem;
+  --grid-template-columns-fields: auto minmax(0, 1fr);
 
   /* 그림자는 잠깐 떠서 다른 것을 가리는 층(펼친 목록·메뉴·토스트)에만. 정지한 패널에는 없다. */
   --shadow-overlay:
