@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AttemptDetail, DriverStatChange, ReplyFlagsView, StatSeries, TurnSummary } from "@/shared/api/client";
 
+import { REPLY_FLAG_LABELS } from "./detailLabels";
 import { attemptDeltas, buildTurnRows, formatStatDelta, seriesTones, type StatDelta } from "./turnRows";
 
 function summary(overrides: Partial<TurnSummary> = {}): TurnSummary {
@@ -110,6 +111,16 @@ describe("buildTurnRows", () => {
   it("응답이 없어 지표 표본에서 빠진 턴(지표 없음)이나 아무 플래그도 서지 않은 턴은 플래그가 없다", () => {
     expect(buildTurnRows([summary({ flags: null })], [])[0]?.flags).toEqual([]);
     expect(buildTurnRows([summary({ flags: flags({ solicit: true, sceneOpen: true }) })], [])[0]?.flags).toEqual([]);
+  });
+
+  it("행 플래그의 온 이름은 검사기·'먼저 볼 것'과 같은 응답 플래그 이름표에서 온다", () => {
+    const raised = flags({ truncated: true, selfCopy: true, labelLeak: true, broken: "x" });
+
+    const [row] = buildTurnRows([summary({ flags: raised })], []);
+
+    expect(row?.flags.map((flag) => [flag.key, flag.label])).toEqual(
+      (["truncated", "selfCopy", "labelLeak", "broken"] as const).map((key) => [key, REPLY_FLAG_LABELS[key]]),
+    );
   });
 
   it("깨짐 낱말이 빈 글이어도 깨짐이다 — 깨짐 여부는 낱말이 있는가로 본다", () => {

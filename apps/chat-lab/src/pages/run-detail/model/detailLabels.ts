@@ -1,6 +1,8 @@
 import type { Caution, Mismatch, ReplyFlagsView, TimelineMarker, TurnMetrics } from "@/shared/api/client";
 import { assertNever } from "@/shared/lib/assertNever";
 
+import { INSPECTOR_TABS, PANES, type InspectorTab, type Pane } from "./runDetailSearch";
+
 /** 불일치 종류의 화면 이름 — 기록끼리 실제로 어긋난 것. */
 export const MISMATCH_LABELS = {
   missingDump: "덤프 없는 턴",
@@ -64,6 +66,36 @@ export const BOOLEAN_FLAG_LABELS = {
 } as const satisfies Record<BooleanFlagKey, string>;
 
 export const BOOLEAN_FLAG_KEYS = Object.keys(BOOLEAN_FLAG_LABELS).filter(isBooleanFlagKey);
+
+/**
+ * 응답 플래그의 화면 이름 — 턴 목록 행(약자의 온 이름)·"먼저 볼 것"·검사기·대화 머리가 모두 여기서 읽는다. 참/거짓 지표는 위 이름
+ * 그대로이고, 값 모양이 다른 깨짐(까닭 낱말)·괄호(괄호 목록)를 더한다.
+ */
+export const REPLY_FLAG_LABELS = {
+  ...BOOLEAN_FLAG_LABELS,
+  broken: "깨짐",
+  brackets: "괄호",
+} as const satisfies Record<BooleanFlagKey | "broken" | "brackets", string>;
+
+const INSPECTOR_TAB_LABELS = {
+  calls: "호출",
+  memory: "기억",
+  routing: "라우팅",
+  metrics: "지표",
+} as const satisfies Record<InspectorTab, string>;
+
+/** 검사기 탭 머리 — 숫자 단축키가 따르는 탭 목록에서 만든다. 탭을 더하거나 옮기면 머리와 단축키가 함께 따라간다. */
+export const INSPECTOR_TAB_OPTIONS = INSPECTOR_TABS.map((tab) => ({ tab, label: INSPECTOR_TAB_LABELS[tab] }));
+
+/** 칸 이름 — 1024px 미만에서 셋 가운데 하나를 고르는 줄의 낱말. */
+export const PANE_LABELS = {
+  turns: "턴",
+  conversation: "대화",
+  inspector: "호출",
+} as const satisfies Record<Pane, string>;
+
+/** 1024px 미만의 칸 고르기 — 칸 목록 전부를 그 순서대로. */
+export const NARROW_PANE_OPTIONS = PANES.map((pane) => ({ pane, label: PANE_LABELS[pane] }));
 
 /** 이 턴 지표의 `previous`(자기복제를 견준 직전 응답)가 어디서 왔는지. */
 export function describePreviousFrom(metrics: TurnMetrics): string {

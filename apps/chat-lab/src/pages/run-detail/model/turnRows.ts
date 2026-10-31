@@ -1,6 +1,7 @@
 import type { AttemptDetail, DriverStatChange, ReplyFlagsView, StatSeries, TurnSummary } from "@/shared/api/client";
 import { formatCount } from "@/shared/lib/formatNumber";
 
+import { REPLY_FLAG_LABELS } from "./detailLabels";
 import { defaultSlots, lineCandidates } from "./statLines";
 
 /**
@@ -41,12 +42,12 @@ export type TurnRow = {
   flags: TurnFlag[];
 };
 
-/** 턴 목록에 보이는 플래그 넷과 그 순서. 나머지 지표(질문·청유, 장면 열림 등)는 검사기 지표 탭에서 본다. */
+/** 턴 목록에 보이는 플래그 넷과 그 순서·약자. 나머지 지표(질문·청유, 장면 열림 등)는 검사기 지표 탭에서 본다. */
 const ROW_FLAGS = [
-  { key: "truncated", abbr: "절", label: "절단" },
-  { key: "selfCopy", abbr: "복", label: "자기복제" },
-  { key: "labelLeak", abbr: "라", label: "라벨 누출" },
-  { key: "broken", abbr: "깨", label: "깨짐" },
+  { key: "truncated", abbr: "절" },
+  { key: "selfCopy", abbr: "복" },
+  { key: "labelLeak", abbr: "라" },
+  { key: "broken", abbr: "깨" },
 ] as const;
 
 type FlagKey = (typeof ROW_FLAGS)[number]["key"];
@@ -156,10 +157,10 @@ function hiddenDeltas(summary: TurnSummary): StatDelta[] {
 
 function rowFlags(flags: ReplyFlagsView | null): TurnFlag[] {
   if (flags === null) return [];
-  return ROW_FLAGS.filter(({ key }) => isRaised(flags, key)).map(({ key, abbr, label }) => ({
+  return ROW_FLAGS.filter(({ key }) => isRaised(flags, key)).map(({ key, abbr }) => ({
     key,
     abbr,
-    label,
+    label: REPLY_FLAG_LABELS[key],
     isDanger: key === "broken",
   }));
 }

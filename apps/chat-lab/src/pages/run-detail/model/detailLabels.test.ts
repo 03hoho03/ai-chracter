@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import type { TurnMetrics } from "@/shared/api/client";
 
-import { BOOLEAN_FLAG_KEYS, BOOLEAN_FLAG_LABELS, describePreviousFrom, MARKER_STYLES } from "./detailLabels";
+import {
+  BOOLEAN_FLAG_KEYS,
+  BOOLEAN_FLAG_LABELS,
+  describePreviousFrom,
+  INSPECTOR_TAB_OPTIONS,
+  MARKER_STYLES,
+  NARROW_PANE_OPTIONS,
+  REPLY_FLAG_LABELS,
+} from "./detailLabels";
+import { INSPECTOR_TABS, PANES } from "./runDetailSearch";
 
 function turnMetrics(previousFrom: TurnMetrics["previousFrom"], previousTurn: number | null): TurnMetrics {
   return {
@@ -44,6 +53,41 @@ describe("BOOLEAN_FLAG_KEYS", () => {
   it("참/거짓 지표만, 이름표의 순서대로 — 길이·문장 수·깨짐·괄호는 값이 다른 모양이라 빠진다", () => {
     expect(BOOLEAN_FLAG_KEYS).toEqual(["truncated", "selfCopy", "labelLeak", "userTurn", "solicit", "ignored", "sceneOpen"]);
     expect(BOOLEAN_FLAG_KEYS).toEqual(Object.keys(BOOLEAN_FLAG_LABELS));
+  });
+});
+
+describe("REPLY_FLAG_LABELS", () => {
+  it("참/거짓 지표 이름을 그대로 싣고 깨짐·괄호를 더한다 — 턴 목록 행·'먼저 볼 것'·검사기가 플래그 이름을 여기서 읽는다", () => {
+    expect(REPLY_FLAG_LABELS).toEqual({ ...BOOLEAN_FLAG_LABELS, broken: "깨짐", brackets: "괄호" });
+  });
+});
+
+describe("INSPECTOR_TAB_OPTIONS", () => {
+  it("검사기 탭 머리는 숫자 단축키가 따르는 탭 목록에서 만든다 — 같은 탭, 같은 순서", () => {
+    expect(INSPECTOR_TAB_OPTIONS.map((option) => option.tab)).toEqual(INSPECTOR_TABS);
+  });
+
+  it("탭 이름은 호출·기억·라우팅·지표", () => {
+    expect(Object.fromEntries(INSPECTOR_TAB_OPTIONS.map((option) => [option.tab, option.label]))).toEqual({
+      calls: "호출",
+      memory: "기억",
+      routing: "라우팅",
+      metrics: "지표",
+    });
+  });
+});
+
+describe("NARROW_PANE_OPTIONS", () => {
+  it("좁은 화면의 칸 고르기는 칸 목록 전부를 그 순서대로 덮는다", () => {
+    expect(NARROW_PANE_OPTIONS.map((option) => option.pane)).toEqual(PANES);
+  });
+
+  it("칸 이름은 턴·대화·호출", () => {
+    expect(Object.fromEntries(NARROW_PANE_OPTIONS.map((option) => [option.pane, option.label]))).toEqual({
+      turns: "턴",
+      conversation: "대화",
+      inspector: "호출",
+    });
   });
 });
 

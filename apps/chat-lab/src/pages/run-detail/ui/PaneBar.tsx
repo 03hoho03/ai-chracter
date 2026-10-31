@@ -1,5 +1,6 @@
 import { cn } from "@/shared/lib/cn";
 
+import { NARROW_PANE_OPTIONS, PANE_LABELS } from "../model/detailLabels";
 import type { Pane } from "../model/runDetailSearch";
 
 type PaneBarProps = {
@@ -11,15 +12,10 @@ type PaneBarProps = {
   onMoveTurn: (step: 1 | -1) => void;
 };
 
-const NARROW_PANES = [
-  { pane: "turns", label: "턴" },
-  { pane: "conversation", label: "대화" },
-  { pane: "inspector", label: "호출" },
-] as const satisfies ReadonlyArray<{ pane: Pane; label: string }>;
-
+/** 1024~1279px 의 두 칸 — 턴 목록이 늘 보여 칸 목록의 일부만 고르고, 대화 칸은 원문 칸까지 품어 이름이 다르다. */
 const MEDIUM_PANES = [
   { pane: "conversation", label: "대화·원문" },
-  { pane: "inspector", label: "호출" },
+  { pane: "inspector", label: PANE_LABELS.inspector },
 ] as const satisfies ReadonlyArray<{ pane: Pane; label: string }>;
 
 /**
@@ -45,7 +41,7 @@ export function PaneBar({ pane, turn, turnIndex, turnCount, onPaneChange, onMove
       </div>
       <Segmented
         className="ml-auto inline-flex lg:hidden"
-        options={NARROW_PANES}
+        options={NARROW_PANE_OPTIONS}
         value={pane}
         onChange={onPaneChange}
         label="보일 칸"
