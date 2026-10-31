@@ -8,6 +8,7 @@ export const cloverKeys = {
   missions: () => [...cloverKeys.all, "missions"] as const,
   pricing: () => [...cloverKeys.all, "pricing"] as const,
   products: () => [...cloverKeys.all, "products"] as const,
+  attendance: () => [...cloverKeys.all, "attendance"] as const,
   // 내역 세 탭을 한꺼번에 무효화할 때의 접두어. 어느 탭에 실릴지는 서버의 범주 맵이 정하므로 화면은 셋을 함께 낡았다고 본다.
   ledgers: () => [...cloverKeys.all, "ledger"] as const,
   // category가 키에 들어가야 탭 전환이 그 자체로 새 쿼리다

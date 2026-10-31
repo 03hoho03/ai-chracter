@@ -73,7 +73,7 @@ function chatPublishEffectCopy(routingQuery: ReturnType<typeof useRoutingQuery>,
   if (routingQuery.isPending) return "운영에서 이 체인을 읽는 칸을 확인하는 중이고";
   if (routingQuery.isError) return "운영에서 이 체인을 읽는 칸을 확인하지 못했고(모델 배정 화면에서 확인하세요)";
   const { live, switchedOff } = chainReaders(routingQuery.data, lane, model);
-  const offNote = switchedOff.length > 0 ? `(Opus 방 ${switchedOff.length}칸은 ${PREMIUM_OFF_UNREAD_COPY})` : "";
+  const offNote = switchedOff.length > 0 ? `(상위 모델 방 ${switchedOff.length}칸은 ${PREMIUM_OFF_UNREAD_COPY})` : "";
   if (live.length === 0) return `지금은 이 체인을 읽는 칸이 없어 게시해도 바로 쓰이지 않고${offNote}`;
   return `이 체인을 읽는 칸(${live.length}칸)의 다음 턴부터 즉시 반영되고${offNote}`;
 }

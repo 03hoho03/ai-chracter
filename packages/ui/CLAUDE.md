@@ -18,7 +18,7 @@ shadcn 기반 공용 프리미티브 + 디자인 토큰. web·admin이 함께 �
 ## 빌드 / 토큰 배선
 
 - **Tailwind v4(CSS-first)라 `tailwind.config.js`가 없다.** 색·타이포·spacing·radius 토큰은 전부 `globals.css` 한 파일에 있다.
-- **`@source` 경로는 CSS 파일 위치(`src/styles/`) 기준 상대경로다.** 새 앱을 추가할 때 그 앱의 `src`가 기존 글롭(`../../../../apps/**/*.{ts,tsx}`)에 걸리는지 확인하고, 안 걸리면 줄을 추가한다 — 안 하면 그 앱에서만 클래스가 조용히 안 나온다.
+- **`@source` 경로는 CSS 파일 위치(`src/styles/`) 기준 상대경로다.** 새 앱을 추가할 때 그 앱의 `src`가 기존 글롭(`../../../../apps/**/*.{ts,tsx}`)에 걸리는지 확인하고, 안 걸리면 줄을 추가한다 — 안 하면 그 앱에서만 클래스가 조용히 안 나온다. `apps/chat-lab`은 이 디자인 시스템을 쓰지 않는 독립 도구라 `globals.css`가 `@source not`으로 일부러 뺀다(그 클래스가 web·admin CSS에 섞이지 않게).
 - **다크는 `.dark` 클래스 기반이다**(`@custom-variant dark (&:is(.dark *))`). `html`에 클래스를 붙이면 전환되고, `:root`/`.dark` 양쪽에 `color-scheme`이 선언돼 네이티브 컨트롤·스크롤바도 따라온다. **admin은 `.dark`를 절대 붙이지 않아 라이트 값만 적용된다** — 이 패키지를 고칠 때 다크만 확인하고 끝내지 말 것.
 - **`data-open:`·`data-active:`·`data-horizontal:` 같은 축약 variant는 Tailwind 내장이 아니다** — `globals.css`의 `@import "shadcn/tailwind.css"`가 정의한다. 순수 tailwindcss로 컴파일하면 `&[data-active]`(불리언 매칭)로 나와 죽은 셀렉터처럼 보이지만 실제 앱에서는 동작한다 — **"안 맞는 셀렉터"로 오판해 고치지 말 것.** shadcn이 정의하지 않은 상태(`data-state=inactive` 등)는 명시 문법 `data-[state=inactive]:`를 쓴다.
 - **이 패키지에는 테스트 러너가 없다.** 순수 함수의 테스트는 `apps/web`에 두고 `@ai-character-chat/ui/lib/*`로 import한다(예: `src/lib/sheet-swipe.ts` ↔ `apps/web/src/shared/lib/sheetSwipe.test.ts`). web CI가 `packages/**` 변경에도 돌아서 그 테스트가 함께 돈다.

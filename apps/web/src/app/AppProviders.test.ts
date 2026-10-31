@@ -22,7 +22,6 @@ const ME: MeResponse = {
   identityVerified: false,
   identityGateEnabled: false,
   identityGated: false,
-  dailyFreeChatTurns: 30,
   paidCloverBalance: 0,
   purchaseBlockReason: "identity_required",
   novelPublicEnabled: false,

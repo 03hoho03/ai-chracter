@@ -1,6 +1,6 @@
 """사용자가 고르는 글쓰기 모델의 레지스트리 — 채팅 턴 생성과 소설 장 생성에 쓰인다.
 
-id 는 공급사 모델명이 아닌 불투명 값(`gemini`·`sonnet`·`opus`)이다. 방·작업 행과 FE 가 이 값을 저장하고 주고받으므로,
+id 는 공급사 모델명이 아닌 불투명 값(`gemini`·`haiku_writer`·`sonnet`·`opus`)이다. 방·작업 행과 FE 가 이 값을 저장하고 주고받으므로,
 모델 버전을 바꿀 때는 실제 모델 id 설정만 바꾸고 이 값은 그대로 둔다. 판정·요약·심사처럼 구조화 출력이 필요한 호출은
 고른 모델과 무관하게 구현을 고른다 — 판정·요약은 모델 배정 표의 행이 정한 모델(호출에 실린 `call_model`), 행이 없으면 판정·요약
 모델 설정으로, 나머지는 기본 모델로(`llm/routing.py`). 모델을 어느 구현이 어느 설정의 id 로 서비스하는지는
@@ -17,7 +17,7 @@ from typing import Literal, TypeGuard, get_args
 
 from api.core import clover
 from api.core.config import settings
-from api.llm.backends import BACKENDS, MODEL_BACKENDS, call_site_model, follows_carried_model
+from api.llm.backends import BACKENDS, MODEL_BACKENDS, NOVEL_MODELS, call_site_model, follows_carried_model
 
 # `as` 는 mypy strict 의 명시적 재export 요구 때문이다 — 기동 검증이 읽도록 정의를 잎 모듈(`llm/backends.py`)로 옮겼고,
 # 이 이름을 여기서 가져오는 모듈이 많아 기존 import 경로를 그대로 쓰게 둔다.
@@ -29,7 +29,7 @@ from api.llm.call_policy import BackendId, LLMCallSite
 
 # 채팅방에 지정할 수 있는 모델. 아래 레지스트리의 `chat_selectable` 이 원천이고, 이 타입은 요청 검증용 사본이다 — 둘이
 # 같은 집합인지는 테스트가 본다.
-ChatRoomModelId = Literal["gemini", "opus"]
+ChatRoomModelId = Literal["gemini", "haiku_writer", "sonnet", "opus"]
 
 # 프롬프트 세트 체인의 모델 축(`prompt_sets.model`)이자 판정·요약 모델 설정의 값(정의는 `llm/backends.py`). 판정 전용 id 의
 # 체인은 판정·요약 문안만 갖고, 그 id 로는 글을 쓰지 않으므로 글쓰기 모델 타입·레지스트리·파서·가격에는 넣지 않는다 — 넣으면
@@ -43,10 +43,18 @@ class ChatModelSpec:
     id: ChatModelId
     # 화면에 보이는 이름. 운영이 그 id 로 실제로 부르는 모델을 따른다 — 운영 경로나 모델 버전을 바꾸면 같이 고친다.
     name: str
-    # 채팅방에서 고를 수 있는가. 거짓인 모델도 소설 장 생성·어드민·측정 리플레이에서는 그대로 쓴다.
+    # 채팅방 모델이 될 수 있는가. 거짓인 모델도 소설 장 생성·어드민·측정 리플레이에서는 그대로 쓴다. 참이어도 지금 화면에
+    # 보이는지는 운영 설정(`is_chat_model_visible`)이 정한다.
     chat_selectable: bool
     # 화면이 베타 표시를 붙이는가.
     beta: bool
+
+    @property
+    def novel_selectable(self) -> bool:
+        """소설(화 생성·전체 구성안·장면 구성안)에서 고를 수 있는가. 거짓인 모델은 소설 모델 목록에 없고 소설 요청이 422 로
+        거절한다. 등록부의 소설 모델 표(`NOVEL_MODELS`)를 읽는다 — 기동 검증도 그 표를 읽어야 하는데 설정 모듈은 이 모듈을
+        import 할 수 없어서다."""
+        return self.id in NOVEL_MODELS
 
     @property
     def provider(self) -> BackendId:
@@ -54,12 +62,11 @@ class ChatModelSpec:
         return MODEL_BACKENDS[self.id][0]
 
 
-# 순서가 곧 선택지의 순서다 — 기본 모델이 맨 앞.
+# 순서가 곧 선택지의 순서다 — 기본 모델이 맨 앞이고, 상위 모델은 채팅 턴 가격이 낮은 것부터다.
 CHAT_MODELS: tuple[ChatModelSpec, ...] = (
     ChatModelSpec(id="gemini", name="Gemini", chat_selectable=True, beta=False),
-    # 지금은 베타 표시가 보이는 곳이 채팅 모델 목록뿐이라 Sonnet 에서는 쓰이지 않는다. 나중에 채팅에 다시 열 때 표시 없이
-    # 나가지 않게 미리 켜 둔다.
-    ChatModelSpec(id="sonnet", name="Claude Sonnet 5.5", chat_selectable=False, beta=True),
+    ChatModelSpec(id="haiku_writer", name="Claude Haiku 5.5", chat_selectable=True, beta=True),
+    ChatModelSpec(id="sonnet", name="Claude Sonnet 5.5", chat_selectable=True, beta=True),
     ChatModelSpec(id="opus", name="Claude Opus 5.5", chat_selectable=True, beta=True),
 )
 CHAT_MODELS_BY_ID: dict[ChatModelId, ChatModelSpec] = {m.id: m for m in CHAT_MODELS}
@@ -68,6 +75,15 @@ CHAT_MODELS_BY_ID: dict[ChatModelId, ChatModelSpec] = {m.id: m for m in CHAT_MOD
 def is_chat_room_model(model: ChatModelId) -> TypeGuard[ChatRoomModelId]:
     """그 모델을 채팅방에서 고를 수 있는가."""
     return CHAT_MODELS_BY_ID[model].chat_selectable
+
+
+def is_chat_model_visible(model: ChatModelId) -> bool:
+    """그 모델이 지금 채팅에서 고를 수 있게 보이는가. 기본 모델은 늘 보인다. 상위 모델은 채팅방 모델이고, 채팅 상위 모델
+    스위치가 켜져 있고, 공개 목록(`chat_models_visible`)에 있어야 한다 — 스위치는 목록과 무관하게 모두 숨기는 총 스위치다.
+    모델 목록·공개 가격·지정·미리보기 시작·저장된 방의 실효 모델이 이 판정 하나를 쓴다. 설정은 호출마다 읽는다."""
+    if model == DEFAULT_CHAT_MODEL:
+        return True
+    return is_chat_room_model(model) and settings.chat_premium_models_enabled and model in settings.chat_models_visible
 
 
 def _default_chat_room_model() -> ChatRoomModelId:
@@ -100,14 +116,22 @@ def backend_model_id(backend: BackendId, model: PromptSetModelId) -> str:
     return value
 
 
+def _novel_price(model_id: ChatModelId, value: int | None) -> int:
+    """소설 단가 칸의 값. 소설에서 고를 수 없는 모델은 칸이 비어 있고, 소설 요청 게이트가 그 모델을 차감 전에 막으므로 여기 닿으면
+    호출부의 버그다 — 가짜 값으로 깎지 않고 멈춘다."""
+    if value is None:
+        raise RuntimeError(f"{model_id} 는 소설 단가가 없다(소설에서 고를 수 없는 모델)")
+    return value
+
+
 def novel_outline_unit_price(model_id: ChatModelId) -> int:
     """구성 흐름의 전체 구성안 한 번의 클로버(모델별 고정가, 화 수와 무관하다)."""
-    return clover.CLOVER_MODEL_PRICES[model_id].novel_outline
+    return _novel_price(model_id, clover.CLOVER_MODEL_PRICES[model_id].novel_outline)
 
 
 def novel_episode_outline_unit_price(model_id: ChatModelId) -> int:
     """구성 흐름의 화 하나의 장면 구성안 한 번의 클로버(모델별 고정가)."""
-    return clover.CLOVER_MODEL_PRICES[model_id].novel_episode_outline
+    return _novel_price(model_id, clover.CLOVER_MODEL_PRICES[model_id].novel_episode_outline)
 
 
 def structured_call_model(
@@ -135,4 +159,4 @@ def chat_turn_cost(model_id: ChatModelId) -> int:
 
 def novel_episode_unit_price(model_id: ChatModelId) -> int:
     """소설 화 하나의 클로버. 생성 한 번은 이 값 × 화 수를 낸다. 다시 만들기도 같은 호출이라 같은 값이다."""
-    return clover.CLOVER_MODEL_PRICES[model_id].novel_episode
+    return _novel_price(model_id, clover.CLOVER_MODEL_PRICES[model_id].novel_episode)

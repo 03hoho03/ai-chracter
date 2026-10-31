@@ -4,6 +4,7 @@ export { useRoutingQuery } from "./api/useRoutingQuery";
 export {
   CHAT_ROUTING_LANES,
   isChatRoutingLane,
+  isNovelPromptModel,
   isPromptSetModelId,
   isRoutingLane,
   PROMPT_MODEL_LABELS,

@@ -26,7 +26,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_set_cache import set_cached_active_prompt_set
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.db.models import ChatRoom, User, UserPersona
 from api.db.models.clover import CloverLedger
 from api.db.models.prompt import PromptSection, PromptSet
@@ -40,6 +40,7 @@ from factories import (
     _make_user_with_clover_lot,
     _override_llm_client,
     _parse_sse_events,
+    _seed_first_turn,
 )
 
 # 확정 문구(기존 `_POLICY_WARNING_MESSAGE`)에서 글자 그대로 옮겼다.
@@ -137,21 +138,15 @@ async def _run_policy_turn(
             )
             await db_session.commit()
         if surface == "regenerate":
-            # 재생성은 "마지막 메시지가 AI 응답"인 상태를 요구한다 — 상한 패치 전이라 무료분으로 통과.
-            _override_llm_client(_FakeLLMClient(tokens=["첫", "응답"]))
-            try:
-                sent = await db_client.post(url, json={"content": "안녕"})
-            finally:
-                _clear_llm_override()
-            assert sent.status_code == 200
+            # 재생성은 "마지막 메시지가 AI 응답"인 상태를 요구한다. 그 턴은 DB 에 심는다 — API 로 보내면 그 턴도 클로버로
+            # 나가 원장 단언에 셋업 몫이 섞인다.
+            await _seed_first_turn(db_session, uuid.UUID(room_id))
             url = f"/chat-rooms/{room_id}/regenerate"
 
-    # 셋업 전송이 캐시를 채웠을 수 있으므로 그 뒤에 덮어쓴다.
+    # 방 생성이 캐시를 채웠을 수 있으므로 그 뒤에 덮어쓴다.
     if stale_cache:
         await _cache_pre_m2_character_set(db_session)
 
-    # 여기서부터 클로버로 낸다.
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     _override_llm_client(_FakeLLMClient(error=LLMPolicyViolationError("blocked")))
     try:
         if surface == "regenerate":

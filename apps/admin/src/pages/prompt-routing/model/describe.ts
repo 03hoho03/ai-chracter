@@ -16,9 +16,11 @@ import {
 
 import { pairValue, type RouteCellForm } from "./schema";
 
-/** 소설 레인의 축은 방이 아니라 작업 모델이다. 구조화 단계는 작업 모델과 무관하게 한 줄(`any`)이다. */
+/** 소설 레인의 축은 방이 아니라 작업 모델이다. 구조화 단계는 작업 모델과 무관하게 한 줄(`any`)이다. Haiku 글쓰기는 채팅 전용이라
+ * 서버가 소설 칸으로 내려 주지 않지만, 축 타입이 채팅과 같아 이름을 둔다. */
 const NOVEL_ROOM_MODEL_LABELS = {
   gemini: "Gemini 작업",
+  haiku_writer: "Haiku 작업",
   sonnet: "Sonnet 작업",
   opus: "Opus 작업",
   any: "모든 작업 모델 공통",

@@ -50,6 +50,7 @@ from factories import (
     _get_genre,
     _login_as,
     _make_asset,
+    _make_paying_user,
     _make_user,
     _NeverCalledLLMClient,
     _override_llm_client,
@@ -217,9 +218,7 @@ async def test_send_message_with_broken_section_body_ends_the_stream_with_an_err
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
 
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
     await _corrupt_section_body(db_session, channel="generation", slot="final_frame", lane="character")
@@ -255,9 +254,7 @@ async def test_send_message_with_broken_section_body_ends_the_stream_with_an_err
 async def test_regenerate_message_with_broken_section_body_ends_the_stream_with_an_error_event(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=2)
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
 
@@ -288,9 +285,7 @@ async def test_regenerate_message_with_broken_section_body_ends_the_stream_with_
 async def test_edit_message_with_broken_section_body_ends_the_stream_with_an_error_event(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=2)
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
 
@@ -334,9 +329,7 @@ async def test_send_preview_message_with_broken_section_body_ends_the_stream_wit
 ) -> None:
     await _corrupt_section_body(db_session, channel="generation", slot="final_frame", lane="character")
 
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     await _login_as(db_client, user.id)
     session_resp = await db_client.post(
         "/preview-sessions",
@@ -377,9 +370,7 @@ async def test_story_chat_judgment_render_failure_is_absorbed_and_the_turn_still
     """생성 채널은 멀쩡하고 `stat_rule_judgment` 채널만 깨지면 — 판정 단계 실패는 여전히
     "이번 턴의 판정만 건너뛴다"는 기존 관용대로 흡수돼야 한다(`LLMClientError`와 같은
     취급). 생성된 응답은 그대로 커밋되고 `done` 이벤트가 정상적으로 나가야 한다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)

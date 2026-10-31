@@ -67,6 +67,25 @@ describe("buildAboutBody", () => {
     expect(sentences.length).toBeGreaterThan(10);
     for (const sentence of sentences) expect(pageSource).toContain(sentence);
   });
+
+  // 하루 무료 대화는 없고 출석판은 늘 열려 있다 — 소개 문장도 출석 보상을 말하고 "무료 사용량 밖" 을 말하지 않는다.
+  // 페이지 쪽도 함께 보는 이유: 봇 사본만 고치고 페이지에 옛 문장이 남으면 사람이 보는 소개가 없는 무료를 약속한다.
+  it("클로버 문장은 출석 보상을 말하고 무료 사용량을 말하지 않는다", () => {
+    const pageSource = Object.values(
+      import.meta.glob<string>("../src/pages/about/ui/AboutPage.tsx", {
+        query: "?raw",
+        import: "default",
+        eager: true,
+      }),
+    ).join("");
+    const cloverSentence =
+      "대화와 이미지 생성에는 클로버가 쓰여요. 클로버는 충전해서 쓰고, 매일 출석과 미션 보상으로도 받을 수 있어요.";
+
+    expect(buildAboutBody()).toContain(cloverSentence);
+    expect(buildAboutBody()).not.toContain("무료 사용량");
+    expect(pageSource).toContain(cloverSentence);
+    expect(pageSource).not.toContain("무료 사용량");
+  });
 });
 
 describe("handleAboutMeta", () => {

@@ -29,6 +29,7 @@ describe("buildRobotsTxt", () => {
     "/chats",
     "/novels",
     "/webnovels",
+    "/attendance",
     "/chat/",
     "/builder/",
     "/studio/",

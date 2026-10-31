@@ -15,7 +15,7 @@ import pytest
 from api.clover import products
 from api.clover import router as clover_router
 from api.clover.products import CloverProduct
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.payments import refund
 from api.payments.methods import PAY_METHODS
 from factories import _count_queries
@@ -47,7 +47,6 @@ async def test_products_response_follows_the_source_values(
     monkeypatch.setattr(clover, "PURCHASE_LOT_YEARS", 920_002)
     monkeypatch.setattr(refund, "FULL_REFUND_DAYS", 920_003)
     monkeypatch.setattr(refund, "REDUCED_REFUND_PERCENT", 920_004)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 920_005)
     # 두 스위치는 로컬 env 의 포트원 설정에 따라 갈리므로 판정 함수를 거짓으로 고정한다(참 갈래는 아래 테스트).
     monkeypatch.setattr(clover_router, "payments_active", lambda: False)
     monkeypatch.setattr(clover_router, "identity_gate_active", lambda: False)
@@ -77,7 +76,6 @@ async def test_products_response_follows_the_source_values(
         "payMethods": [{"payMethod": m.pay_method, "easyPayProvider": m.easy_pay_provider} for m in PAY_METHODS],
         "paymentsEnabled": False,
         "identityGateEnabled": False,
-        "dailyFreeChatTurns": 920_005,
         "policy": {
             "purchaseValidityYears": 920_002,
             "fullRefundDays": 920_003,

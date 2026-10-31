@@ -38,12 +38,12 @@ const FEATURE_SECTIONS: { title: string; body: string; screenshot: AboutScreensh
   },
   {
     title: "클로버",
-    body: "무료 사용량 밖의 대화와 이미지 생성에는 클로버가 쓰여요. 클로버는 충전해서 쓰고, 미션 보상으로도 받을 수 있어요.",
+    body: "대화와 이미지 생성에는 클로버가 쓰여요. 클로버는 충전해서 쓰고, 매일 출석과 미션 보상으로도 받을 수 있어요.",
     screenshot: ABOUT_SCREENSHOTS.cloverMissions,
   },
 ];
 
-/** `/about` — 서비스 소개. 조회 없이 정해지는 정적 본문이라 로그인 여부와 무관하게 바로 그린다. */
+/** `/about` — 서비스 소개. 로그인 여부와 무관하게 바로 그린다. */
 export function AboutPage() {
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-16 px-4 sm:px-6 py-10">

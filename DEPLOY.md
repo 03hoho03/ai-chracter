@@ -199,10 +199,10 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**90개 키다**(2026-10-27 VM 실측 — 사실 주입 줄을 넣은 편집이 넣은 뒤 다시 셈, 키 이름만 셈): 아래 표 153개 중 79개(생략 가능한 조정 키 57개 — `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·소설화 밖 `GEMINI_*_TIMEOUT_MS` 5개(`GENERATE`·`JUDGMENT`·`MEMORY_SUMMARY`·`PUBLISH_FILTER`·`CLIENT`)·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 25개·장기 기억 조정용 9개(`MEMORY_MODEL_SCOPE`·`MEMORY_EMBED_MODEL`·`MEMORY_EMBED_DIMS`·`MEMORY_EMBED_RECALL_` 뒤에 `RRF_K`·`MAX_PLAIN`·`MAX_CUE`·`MAX_DISTANCE`·`VECTOR_LIMIT`·`DF_MAX` 가 붙는 6개), 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 스위치 2개(소설 삽화 `NOVEL_ILLUSTRATIONS_ENABLED`·소설 구성 흐름 `NOVELIZE_OUTLINE_FLOW_ENABLED`), 아직 켜지 않은 인상 키 4개(`MEMORY_IMPRESSIONS_WRITE`·`MEMORY_IMPRESSION_EVERY_N_FOLDS`·`MEMORY_IMPRESSION_MODEL`·`MEMORY_IMPRESSIONS_VISIBLE`), 전체 공개 뒤 줄을 지운 노벨 미리보기 명단 1개(`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`), 잔액을 한꺼번에 옮기는 동안에만 켜고 평소에는 줄을 두지 않는 클로버 정지 스위치 1개(`CLOVER_LEDGER_PAUSED`), 모두 79개 제외 —
+**92개 키다**(2026-10-28 VM 실측 — 인상 쓰기 세 줄 편집(모델 줄·스위치 줄 둘이 새 키, 배정은 기존 줄에 항목 추가)이 넣은 뒤 다시 셈, 키 이름만 셈): 아래 표 157개 중 81개(생략 가능한 조정 키 60개 — `CHAT_MODELS_VISIBLE`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·소설화 밖 `GEMINI_*_TIMEOUT_MS` 5개(`GENERATE`·`JUDGMENT`·`MEMORY_SUMMARY`·`PUBLISH_FILTER`·`CLIENT`)·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 25개·장기 기억 조정용 9개(`MEMORY_MODEL_SCOPE`·`MEMORY_EMBED_MODEL`·`MEMORY_EMBED_DIMS`·`MEMORY_EMBED_RECALL_` 뒤에 `RRF_K`·`MAX_PLAIN`·`MAX_CUE`·`MAX_DISTANCE`·`VECTOR_LIMIT`·`DF_MAX` 가 붙는 6개)·소설 정본 기억 어댑터 덮어쓰기 `NOVEL_BIBLE_ADAPTERS`·소설 정본 기억 워커 동시 상한 `NOVEL_BIBLE_WORKER_MAX_CONCURRENT`, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 스위치 3개(소설 삽화 `NOVEL_ILLUSTRATIONS_ENABLED`·소설 구성 흐름 `NOVELIZE_OUTLINE_FLOW_ENABLED`·소설 정본 기억 `NOVEL_BIBLE_ENABLED`), 줄을 두지 않는 인상 키 2개(묶음 크기 `MEMORY_IMPRESSION_EVERY_N_FOLDS`·아직 켜지 않은 보기 스위치 `MEMORY_IMPRESSIONS_VISIBLE`), 전체 공개 뒤 줄을 지운 노벨 미리보기 명단 1개(`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`), 잔액을 한꺼번에 옮기는 동안에만 켜고 평소에는 줄을 두지 않는 클로버 정지 스위치 1개(`CLOVER_LEDGER_PAUSED`), 모두 81개 제외 —
 파일에 줄이 있는 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`·`NOVELIZE_WORKER_ENABLED`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 9개(`PORTONE_*` 5개·
-`IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 노벨 스위치 2개(`NOVEL_PUBLIC_ENABLED`·공개 정책 `NOVEL_PUBLIC_POLICY_V2_ENABLED`), 여러 문단 수정 스위치 1개(`NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`), 장기 기억 키 14개(`MEMORY_*` 13개 — 장면·사실 추출과 모델, 장면 회상, 사실 주입, 요약 모델·비밀 표기, 지식 범위 필터, 임베딩 쓰기·회상과 그 시간 상한, 기억 보기 `MEMORY_ITEMS_VISIBLE` — 와 `VOYAGE_API_KEY`), 스탯 판정 이벤트 스위치 1개(`STAT_EVENT_LOG`)를 포함한 나머지 74개는 셈에 들어간다) + 앱이 읽지 않지만
+`IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 노벨 스위치 2개(`NOVEL_PUBLIC_ENABLED`·공개 정책 `NOVEL_PUBLIC_POLICY_V2_ENABLED`), 여러 문단 수정 스위치 1개(`NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`), 장기 기억 키 16개(`MEMORY_*` 15개 — 장면·사실 추출과 모델, 장면 회상, 사실 주입, 요약 모델·비밀 표기, 지식 범위 필터, 임베딩 쓰기·회상과 그 시간 상한, 기억 보기 `MEMORY_ITEMS_VISIBLE`, 인상 쓰기와 그 모델 — 와 `VOYAGE_API_KEY`), 스탯 판정 이벤트 스위치 1개(`STAT_EVENT_LOG`)를 포함한 나머지 76개는 셈에 들어간다) + 앱이 읽지 않지만
 옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
 `POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE` — 두 색으로 나뉘기 전의 `API_IMAGE` 줄은 없다) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
@@ -211,6 +211,9 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 더해진 수라, 파일 키 수는 VM 에서 아래 명령으로 따로 센다.
 이 수는 날짜가 붙은 실측값이라 VM에 키를 넣거나 빼면 낡는다 — 그때 VM에서 다시 세어 이 문장을 고친다
 (예: `sudo grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' /opt/ddona/.env | sort -u | wc -l`). 키 개수는 이 문장 한 곳에만 적는다.
+출석판 스위치 키 `ATTENDANCE_BOARD_ENABLED` 는 코드에서 지웠고 위 키 개수는 그 줄을 지운 뒤 기준이다. 그 키를 지우기 전 이미지로 태그 롤백할 때는 운영 `.env` 에
+`ATTENDANCE_BOARD_ENABLED=true` 줄을 먼저 다시 넣어야 한다 — 옛 이미지는 그 키의 기본값이 꺼짐이라, 줄 없이 올리면 하루 무료 대화가 돌아오고
+출석판이 404 가 된다(줄을 넣으면 위 키 개수 문장을 다시 센다).
 
 | 변수 | 값 | 비고 |
 |---|---|---|
@@ -240,9 +243,9 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `PORTONE_API_SECRET` | 포트원 V2 API 시크릿 | 결제·본인인증 조회와 환불(취소) 호출. 비면 결제·본인인증이 꺼진다(기동은 막지 않는다) |
 | `PORTONE_WEBHOOK_SECRET` | 포트원 콘솔의 웹훅 시크릿(`whsec_…`) | 결제 웹훅 서명 검증. 비거나 형식이 틀리면 모든 웹훅이 503 으로 돌아가 포트원이 재시도한다(Bugsink 에 남는다). 서명 시각 허용 오차가 5분이라 VM 시계(NTP)가 맞아야 한다 |
 | `IDENTITY_CI_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 본인인증 CI 를 저장하기 전에 HMAC 으로 바꾸는 키. **한번 정하면 바꾸지 말 것** — 바뀌면 이미 인증한 사람과 대조가 어긋나 같은 사람이 다른 계정으로 다시 인증할 수 있게 된다. `WITHDRAWN_EMAIL_HMAC_KEY` 와 다른 값을 쓴다. 비면 본인인증이 꺼진다 |
-| `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 무료 대화·미션을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다) |
+| `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 미션 보상을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다). 하루 무료 대화는 누구에게도 없어, 이 게이트가 채팅에서 바꾸는 것은 잔액 부족 응답(인증 회원 429 대신 403 `IDENTITY_VERIFICATION_REQUIRED`) 하나다 |
 | `PAYMENT_DISCORD_WEBHOOK_URL` | 결제 알림용 디스코드 채널 웹훅 주소 | 결제·환불 완료 알림(상품·금액·상태만, 회원·주문을 알아볼 단서는 싣지 않는다). 비면 건너뛴다. 크론 알림의 `DISCORD_WEBHOOK_URL` 과 다른 키다 |
-| `CLOVER_LEDGER_PAUSED` | 설정 안 함(기본 `false`). 클로버 단위 전환처럼 잔액을 한꺼번에 옮기는 동안에만 `true` | 클로버 정지 스위치. 켜면 클로버를 새로 깎거나 주는 경로가 503 `CLOVER_PAUSED`(짧은 안내 `message` 포함)로 멈춘다 — 모든 차감(채팅·이미지의 유료 갈래, 요약 다시 만들기, 소설화 작업 시작, 노벨 소장), 미션 수령, 어드민 지급·회수, 어드민 결제 환불 실행(진행 중 시도의 마무리 포함), 주문 생성. 채팅·이미지에서는 하루 1회 확인 429 와 가격 버전 409 보다 먼저 나간다(정지 중에는 어떤 가격으로도 깎지 않아 가격표를 다시 받게 해도 소용이 없다). 막지 않는 것: 무료 대화 턴·무료 토큰 이미지, 모든 환급, 결제 완료 확인·웹훅(포트원 콘솔 취소도 이 길로 들어와 막지 못한다), 만료 크론, 탈퇴. 🔴 켜기 전에 진행 중 환불 시도(`payment_cancellations.status = 'requested'`)를 0 으로 만든다 — 그 마무리 라우트도 정지로 막힌다. 켜기·끄기는 `.env` 에 줄을 더하거나 지운 뒤 형식 검사 → 태그 없는 교체다(`restart` 는 env 를 다시 읽지 않는다 — "env 반영 재기동" 절). 옛 색은 교체가 끝날 때까지 옛 값으로 돈다. 빈 값(`CLOVER_LEDGER_PAUSED=`)은 꺼짐으로 읽는다. 넣고 지울 때 위 VM 키 수를 다시 센다 |
+| `CLOVER_LEDGER_PAUSED` | 설정 안 함(기본 `false`). 클로버 단위 전환처럼 잔액을 한꺼번에 옮기는 동안에만 `true` | 클로버 정지 스위치. 켜면 클로버를 새로 깎거나 주는 경로가 503 `CLOVER_PAUSED`(짧은 안내 `message` 포함)로 멈춘다 — 모든 차감(채팅·이미지의 유료 갈래, 요약 다시 만들기, 소설화 작업 시작, 노벨 소장), 미션 수령, 출석 수령, 어드민 지급·회수, 어드민 결제 환불 실행(진행 중 시도의 마무리 포함), 주문 생성. 채팅·이미지에서는 가격 버전 409 보다(이미지는 하루 1회 확인 429 보다도) 먼저 나간다(정지 중에는 어떤 가격으로도 깎지 않아 가격표를 다시 받게 해도 소용이 없다). 막지 않는 것: 면제 계정의 채팅 턴(면제 계정 밖의 모든 채팅 턴은 정지 중 503 이고, Redis 장애 중에도 같다)·무료 토큰 이미지, 모든 환급, 결제 완료 확인·웹훅(포트원 콘솔 취소도 이 길로 들어와 막지 못한다), 만료 크론, 탈퇴. 🔴 켜기 전에 진행 중 환불 시도(`payment_cancellations.status = 'requested'`)를 0 으로 만든다 — 그 마무리 라우트도 정지로 막힌다. 켜기·끄기는 `.env` 에 줄을 더하거나 지운 뒤 형식 검사 → 태그 없는 교체다(`restart` 는 env 를 다시 읽지 않는다 — "env 반영 재기동" 절). 옛 색은 교체가 끝날 때까지 옛 값으로 돈다. 빈 값(`CLOVER_LEDGER_PAUSED=`)은 꺼짐으로 읽는다. 넣고 지울 때 위 VM 키 수를 다시 센다 |
 | `CREATOR_PAYOUT_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 크리에이터 정산 스위치. 스위치와 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다(지급 정보 입력·지급 신청은 `CREATOR_PAYOUT_ENCRYPTION_KEYS` 도 있어야 열리고, 정산 신청·적립·확정·조회는 키와 무관하다) — 신청 자격이 본인인증한 만 19세 이상(나이는 코드 상수라 env 가 없다)이라서다. 켜면 결제·게이트가 꺼져 있어도 본인인증 시작이 열린다. 꺼져 있으면 회원의 정산 조회·신청·지급 정보 입력·지급 신청이 503 이고, 어드민의 신청·지급 처리(승인·거절·승인 취소, 이체 기록·반려)는 스위치와 무관하게 열려 있다. 정산 신청·지급 신청 접수 알림은 `PAYMENT_DISCORD_WEBHOOK_URL` 채널을 같이 쓴다(건수·금액만, 회원을 알아볼 단서는 싣지 않는다). 🔴 켤 때 "크리에이터 정산 월 확정 — settle cron" 절의 크론 설치를 함께 한다 — 켠 뒤 크론이 없으면 월 확정이 돌지 않는다(2026-10-24 확인 기준 VM 에는 설치돼 있지 않다) |
 | `CREATOR_PAYOUT_RATE_BPS` / `CREATOR_PAYOUT_RETRO_DAYS` | 설정 안 함(기본 `500` / `90`) | 정산 비율(bps, 500 = 공급가의 5%, 1~10000) / 첫 승인 때 거슬러 확정하는 소급 일수(1 이상). 범위 밖이면 api 가 뜨지 않는다. 비율은 확정할 때마다 확정 행에 남아, 바꿔도 이미 확정한 금액은 그대로다 |
 | `CREATOR_PAYOUT_MINIMUM_KRW` | 설정 안 함(기본 `10000`) | 지급을 신청할 수 있는 최소 확정 잔액(원, 1 이상). 탈퇴하려는 회원은 이보다 적어도 탈퇴 화면에서 신청할 수 있다. 범위 밖이면 api 가 뜨지 않는다 |
@@ -271,13 +274,13 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `MEMORY_WINDOW_GENERATION` | 설정 안 함(기본 `true`) | 긴 방의 생성 프롬프트에서 요약이 덮은 메시지를 빼는 히스토리 윈도우. `false` 면 전체 히스토리를 싣는다 — 요약 품질 사고 때 재기동만으로 예전 동작으로 돌아가는 스위치이고, 끄면 아래 두 판정 스위치도 무시된다 |
 | `MEMORY_WINDOW_ENDING_JUDGMENT` | 설정 안 함(기본 `true`) | 엔딩 판정에도 윈도우를 씌운다(요약이 덮은 원문 대신 현재 요약을 싣는다). `false` 는 판정 품질 사고 때 되돌리는 용도다 — 끄면 판정이 대화 전체를 실어 긴 방에서 토큰 원가·지연이 턴 수만큼 늘고 판정 타임아웃·컨텍스트 한도에 닿을 수 있다. 되돌리기는 VM `.env` 에 `MEMORY_WINDOW_ENDING_JUDGMENT=false`·`MEMORY_WINDOW_IMAGE_JUDGMENT=false` 두 줄을 추가 → 아래 형식 검사 → `sudo bash ops/swap-api.sh`(`restart` 는 env 를 다시 읽지 않는다 — "env 반영 재기동" 절). 넣으면 위 VM 키 수를 다시 센다 |
 | `MEMORY_WINDOW_IMAGE_JUDGMENT` | 설정 안 함(기본 `true`) | 그림 매칭 판정 — 캐릭터 상황 이미지와 스토리 미디어 북 칸 둘 다 — 에도 윈도우를 씌운다(최근 원문만 싣고 요약은 싣지 않는다). 미디어 북 칸 판정은 엔딩 뒤·재생성까지 매 턴 돌아 끄면 가장 크게 늘어난다. 끄는 법·주의는 위와 같다 |
-| `STAT_JUDGMENT_MODEL` / `ENDING_JUDGMENT_MODEL` / `IMAGE_JUDGMENT_MODEL` / `MEMORY_SUMMARY_MODEL` | **운영 `haiku`**(2026-10-13부터, 코드 기본값 `gemini`) | 스탯 판정 / 엔딩 판정 / 그림 매칭 판정(캐릭터 상황 이미지·스토리 미디어 북 칸) / 기억 요약 접기의 모델(문안 체인의 모델 id `gemini`·`haiku`·`sonnet`·`opus`, 미리보기 판정도 같은 키를 쓴다). 채팅 방 턴의 판정·요약 문안은 모델 배정 표에 그 (레인, 실효 방 모델, 단계) 칸의 행이 있으면 행이 고른 체인을 읽고, 없을 때만 이 키의 체인이다(행은 그 경로가 이 키·배정으로 푼 경로와 같을 때만 쓰인다). 부르는 모델도 같다 — 행이 쓰인 칸은 행의 부를 모델로 부르고, 행이 없거나 건너뛴 칸만 이 키의 모델로 부른다. 절은 "채팅 단계별 문안 체인·호출 모델 설정 — 켜기 · 끄기 · 되돌리기". `gemini` 면 실제 Gemini 모델은 위 `GEMINI_*_JUDGMENT_MODEL_NAME`·`GEMINI_MODEL_NAME` 이 고른다. Claude 모델은 배정이 없으면 Bedrock 으로 가고, 운영은 `LLM_CALL_SITE_BACKENDS` 에 그 호출 위치를 `anthropic` 으로 배정해 Anthropic 직결(`ANTHROPIC_HAIKU_MODEL_ID`, 설정 안 함 — 기본값은 `.env.example`)로 보낸다. 🔴 모델 줄과 그 호출 위치의 배정 항목은 **한 편집에서 함께** 바꾼다 — 모델을 `gemini` 로 돌리고 배정을 남기면(`anthropic` 은 Gemini 를 서비스하지 않는다) 배정만 지우고 `haiku` 를 남기면(운영 `.env` 에 `BEDROCK_*` 키가 없다) api 가 기동하지 못한다. 배정의 호출 위치 이름을 모르는 옛 이미지로 태그 롤백할 때도 그 항목을 먼저 지운다. 장면·사실 추출 모델(`MEMORY_EPISODE_MODEL`·`MEMORY_FACT_MODEL`)도 같은 규칙이다 |
+| `STAT_JUDGMENT_MODEL` / `ENDING_JUDGMENT_MODEL` / `IMAGE_JUDGMENT_MODEL` / `MEMORY_SUMMARY_MODEL` | **운영 `haiku`**(2026-10-13부터, 코드 기본값 `gemini`) | 스탯 판정 / 엔딩 판정 / 그림 매칭 판정(캐릭터 상황 이미지·스토리 미디어 북 칸) / 기억 요약 접기의 모델(문안 체인의 모델 id `gemini`·`haiku`·`sonnet`·`opus`, 미리보기 판정도 같은 키를 쓴다. 채팅 글쓰기 전용 `haiku_writer` 는 거부해 api 가 기동하지 않는다). 채팅 방 턴의 판정·요약 문안은 모델 배정 표에 그 (레인, 실효 방 모델, 단계) 칸의 행이 있으면 행이 고른 체인을 읽고, 없을 때만 이 키의 체인이다(행은 그 경로가 이 키·배정으로 푼 경로와 같을 때만 쓰인다). 부르는 모델도 같다 — 행이 쓰인 칸은 행의 부를 모델로 부르고, 행이 없거나 건너뛴 칸만 이 키의 모델로 부른다. 절은 "채팅 단계별 문안 체인·호출 모델 설정 — 켜기 · 끄기 · 되돌리기". `gemini` 면 실제 Gemini 모델은 위 `GEMINI_*_JUDGMENT_MODEL_NAME`·`GEMINI_MODEL_NAME` 이 고른다. Claude 모델은 배정이 없으면 Bedrock 으로 가고, 운영은 `LLM_CALL_SITE_BACKENDS` 에 그 호출 위치를 `anthropic` 으로 배정해 Anthropic 직결(`ANTHROPIC_HAIKU_MODEL_ID`, 설정 안 함 — 기본값은 `.env.example`)로 보낸다. 🔴 모델 줄과 그 호출 위치의 배정 항목은 **한 편집에서 함께** 바꾼다 — 모델을 `gemini` 로 돌리고 배정을 남기면(`anthropic` 은 Gemini 를 서비스하지 않는다) 배정만 지우고 `haiku` 를 남기면(운영 `.env` 에 `BEDROCK_*` 키가 없다) api 가 기동하지 못한다. 배정의 호출 위치 이름을 모르는 옛 이미지로 태그 롤백할 때도 그 항목을 먼저 지운다. 장면·사실 추출 모델(`MEMORY_EPISODE_MODEL`·`MEMORY_FACT_MODEL`)도 같은 규칙이다 |
 | `MEMORY_EPISODES_EXTRACT` | **운영 `true`**(2026-10-14부터, 코드 기본값 `false`) | 요약 접기가 접은 구간을 장면 기억으로 뽑는 백그라운드 추출(턴 뒤, 접기 다음). 꺼져 있으면 아무것도 예약하지 않아 턴 동작이 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다. 추출 호출은 클로버·레이트리밋에 세지 않는다. 켜는 법은 줄 추가(`MEMORY_EPISODES_EXTRACT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh` 다. 켠 직후에는 이미 요약이 접힌 기존 방의 밀린 스냅샷을 그 방의 턴마다 하나씩 소화하므로, 따라잡을 때까지 추출 원가가 접기당 1회보다 일시적으로 많다(밀린 수는 방마다 지금까지의 접기 수다). 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 뽑은 장면은 남고 새로 뽑지 않는다 |
 | `MEMORY_EPISODES_RECALL` | **운영 `true`**(2026-10-23부터, 코드 기본값 `false`) | 매 턴 방의 장면 기억에서 이번 턴과 이어질 장면을 골라 생성 프롬프트의 대화 기록 바로 뒤 섹션에 싣는다(LLM 호출 없음, 장면 읽기 한두 번). 꺼져 있으면 장면을 읽지도 않아 생성 프롬프트가 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다. 실은 장면은 턴 기록(`chat_turns.memory_recall`)에 id·점수·순위·글자 수·질의 쪽으로 남는다. 장면은 추출(`MEMORY_EPISODES_EXTRACT`)이 만들므로 추출 없이 켜면 실을 장면이 없다. 켜는 법은 줄 추가(`MEMORY_EPISODES_RECALL=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 섹션이 빠지고 장면·기록은 남는다. 다른 기억 스위치와의 켜는 순서는 「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절 |
 | `MEMORY_EPISODE_MODEL` | **운영 `haiku`**(2026-10-13부터, 코드 기본값 `gemini`) | 장면 기억 추출의 모델(문안 체인의 모델 id). 판정·요약 모델 키와 같은 규칙이다 — `haiku`·`sonnet`·`opus` 면 그 모델이 갈 구현의 배정·자격이 있어야 기동한다 |
 | `MEMORY_FACTS_EXTRACT` | **운영 `true`**(2026-10-14부터, 코드 기본값 `false`) | 요약 접기가 접은 구간을 관계·사실 기억(인물 관계와 인물 속성, 누가 말했고 무엇이 뒤집혔는지)으로 뽑는 백그라운드 추출(턴 뒤, 장면 추출 다음). 장면 추출과 따로 켜고 끈다 — 한쪽이 실패해도 다른 쪽 완료 표지는 흔들리지 않는다. 꺼져 있으면 아무것도 예약하지 않아 턴 동작이 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다. 추출 호출은 클로버·레이트리밋에 세지 않는다. 켜는 법은 줄 추가(`MEMORY_FACTS_EXTRACT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh` 다. 켠 직후에는 장면 추출과 같은 이유로 기존 방의 밀린 스냅샷을 턴마다 하나씩 소화해 따라잡을 때까지 추출 원가가 일시적으로 많다. 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 뽑은 사실은 남고 새로 뽑지 않는다 |
 | `MEMORY_FACT_MODEL` | **운영 `haiku`**(2026-10-14부터, 코드 기본값 `gemini`) | 관계·사실 기억 추출의 모델(문안 체인의 모델 id). 판정·요약 모델 키와 같은 규칙이다 — `haiku`·`sonnet`·`opus` 면 그 모델이 갈 구현의 배정·자격이 있어야 기동한다 |
-| `MEMORY_IMPRESSION_MODEL` | 설정 안 함(기본 `gemini`) — `MEMORY_IMPRESSIONS_WRITE` 를 켤 때 `haiku` 와 배정 `chat_memory_impression:anthropic` 을 함께 넣는다 | 인상 생성의 모델(문안 체인의 모델 id). 판정·요약 모델 키와 같은 규칙이다 — `haiku`·`sonnet`·`opus` 면 그 모델이 갈 구현의 배정·자격이 있어야 기동한다. 🔴 이 호출 위치를 모르는 옛 이미지는 `LLM_CALL_SITE_BACKENDS` 의 `chat_memory_impression` 항목을 거부해 기동하지 못하므로, 그 이미지로 되돌리기 전에 배정 항목을 먼저 지운다 |
+| `MEMORY_IMPRESSION_MODEL` | **운영 `haiku`**(2026-10-28부터, 코드 기본값 `gemini`) — `MEMORY_IMPRESSIONS_WRITE`·배정 `chat_memory_impression:anthropic` 과 한 편집으로 넣었다 | 인상 생성의 모델(문안 체인의 모델 id). 판정·요약 모델 키와 같은 규칙이다 — `haiku`·`sonnet`·`opus` 면 그 모델이 갈 구현의 배정·자격이 있어야 기동한다. 🔴 이 호출 위치를 모르는 옛 이미지는 `LLM_CALL_SITE_BACKENDS` 의 `chat_memory_impression` 항목을 거부해 기동하지 못하므로, 그 이미지로 되돌리기 전에 배정 항목을 먼저 지운다 |
 | `MEMORY_FACTS_INJECT` | **운영 `true`**(2026-10-27부터, 코드 기본값 `false`) | 매 턴 방의 관계·사실 기억을 키마다 지금 값으로 줄여(뒤집힌 값은 되살리지 않는다) 생성 프롬프트의 대화 기록 뒤·회상 앞 섹션에 싣는다(LLM 호출 없음, 사실 읽기 한 번, 줄 합계 700자 상한 — 상한의 앞 30% 는 관계 → 아는 사람이 정해진 사실 → 뒤집힌 사실 → 그 밖 순서, 나머지는 이번 사용자 메시지와 드문 낱말이 겹치는 사실을 먼저 채운다). 꺼져 있으면 사실을 읽지도 않아 생성 프롬프트가 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다(원문이 전체로 실리면 같은 사실이 두 번 들어간다). 실은 사실은 턴 기록(`chat_turns.memory_facts`)에 id·글자 수로 남는다. 사실은 추출(`MEMORY_FACTS_EXTRACT`)이 만들므로 추출 없이 켜면 실을 사실이 없다. 켜는 법은 줄 추가(`MEMORY_FACTS_INJECT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 섹션이 빠지고 사실·기록은 남는다. 🔴 임베딩 쓰기·읽기를 켠 뒤 마지막에 켠다(「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절) |
 | `MEMORY_KNOWLEDGE_FILTER` | **운영 `true`**(2026-10-23부터, 코드 기본값 `false`) | 사실 섹션을 고르기 전에, 아는 사람이 정해진 사실 중 그 사람이 이번 장면(이번 사용자 메시지·직전 응답에 이름이 나온 인물, 사용자 제외)에 없는 행을 뺀다 — 비밀을 모르는 인물만 있는 장면에서 그 비밀이 새지 않게. 거름은 사실 섹션 안에서만 걸리지만, 켠 턴은 회상 줄의 비밀 가림도 직전 응답의 대사 따옴표 안에만 나온 이름을 장면 인물로 세지 않는다(회상이 사실 섹션보다 덜 가려 그 비밀이 회상 줄로 새지 않게). 그래서 `MEMORY_FACTS_INJECT` 가 꺼져 있어도 `MEMORY_EPISODES_RECALL` 이 켜져 있으면 회상 줄이 달라질 수 있고, 회상과 사실 주입이 둘 다 꺼져 있을 때만 켜도 생성 프롬프트·SQL 이 같다. 🔴 켤 때는 `MEMORY_SUMMARY_SECRET_MARKING` 과 한 번에 켠다(「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절). 끄면 다음 턴부터 걸러 내지 않는다. 🔴 `MEMORY_FACTS_INJECT` 가 켜져 있으면 이 줄을 먼저 지우지 않는다 — 사실 주입부터 끈다(처리방침의 "비밀을 아는 인물이 장면에 없으면 보내지 않는다"가 사실 쪽에서는 이 필터가 켜져 있을 때만 참이다) |
 | `MEMORY_SUMMARY_SECRET_MARKING` | **운영 `true`**(2026-10-23부터, 코드 기본값 `false`) | 요약 접기 프롬프트의 지시문 바로 뒤에 비밀 표기 슬롯(비밀에 아는 사람 표기를 붙이고 그 내용을 표기 없이 다시 쓰지 않게 하는 지시와 그 방의 인물 이름 목록)을 싣는다. 꺼져 있으면 이름을 읽지도 않고 슬롯이 빠져 요약 프롬프트가 바이트까지 그대로다. 🔴 켜면 다음 접기부터 **모든 방**의 요약 글이 바뀌고, 그 요약이 생성 프롬프트와 엔딩 판정 입력에도 실린다. 끄면 다음 접기부터 슬롯이 빠지고 이미 쓴 요약은 그대로 남는다. 슬롯 문안은 프롬프트 세트 데이터라 이미지 롤백으로는 빠지지 않는다(옛 코드는 슬롯 값을 넘기지 않아 조용히 빠진다) |
@@ -292,7 +295,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `MEMORY_EMBED_RECALL_MAX_DISTANCE` / `MEMORY_EMBED_RECALL_VECTOR_LIMIT` / `MEMORY_EMBED_RECALL_DF_MAX` | 설정 안 함(기본 `2.0` / `10` / 비어 있음) | 벡터 순위에 넣는 코사인 거리 상한 / 회상의 벡터 순위에 넣는 거리 순 앞 개수 / 흔한 명사의 절대 상한(비면 비율 기준만). 🔴 거리 상한 `2.0` 은 코사인 거리의 최댓값이라 **아무것도 거르지 않는다** — 그래서 보통 턴에도 거의 매번 가장 가까운 장면 하나가 실린다. 측정 격자에서 상한을 둔 점과 목적함수가 같아 기본값에 가장 가까운 점(`2.0`·`10`·비어 있음)을 골랐고, 보통 턴 주입률이 명사 단독 0.95 에서 1.00 으로 오르는 것을 받아들였다. 사실 섹션 관련 몫도 같은 거리 상한을 쓴다 |
 | `MEMORY_ITEMS_VISIBLE` | **운영 `true`**(2026-10-24부터, 코드 기본값 `false`) — 기억 열람·잊게 하기를 적은 처리방침 판이 게시된 뒤에만 켠다 | 방 주인이 그 방의 장면·사실 기억을 보고 고르는 라우트를 연다 — 목록(`GET /chat-rooms/{id}/memory/items`), 장면·사실 잊게 하기(`DELETE /chat-rooms/{id}/memory/episodes/{episodeId}`·`DELETE /chat-rooms/{id}/memory/facts?key=`)와 사실 잊기 미리 보기(`GET /chat-rooms/{id}/memory/facts/forget-preview`), 요약 다시 만들기(`POST /chat-rooms/{id}/memory/summary/regenerate`, 유료). 꺼져 있으면 이 라우트가 모두 404 `MEMORY_ITEMS_DISABLED` 이고(인증보다 먼저 본다), 기억 응답(`GET /chat-rooms/{id}/memory`)의 `features.itemsVisible` 이 `false` 라 웹 기억 패널은 탭 없는 예전 모양(노트 편집기 하나, 목록 요청 없음)이다. 목록은 읽기만 해서 생성·요약·추출 프롬프트와 무관하다. 켜는 법은 줄 추가(`MEMORY_ITEMS_VISIBLE=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 요청부터 다시 404 이고 패널은 예전 모양으로 돌아간다. 🔴 끄거나 이미지를 되돌려도 이미 잊게 한 장면·사실은 돌아오지 않는다(실제로 지운 행이다). 잊게 하기·다시 만들기의 운영 성질은 「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절 |
 | `STAT_EVENT_LOG` | **운영 `true`**(2026-10-24부터, 코드 기본값 `false`) — 처리방침 「턴 기록」 항목에는 판정 규칙 식별자를 남긴다는 문구 한 줄이 다음 판에 더해진다 | 턴 기록(`chat_turns.stat_events`)에 그 턴 스탯 판정이 스탯마다 발동한 규칙·적용한 규칙(판본을 넘어 같은 규칙 id 와 그 판본의 규칙 행 id 쌍)·폭·범위에 잘렸는지와 카운터 스탯의 한 칸을 남긴다(조건 글은 싣지 않는다). 꺼져 있으면 칸이 DB 기본값 `[]` 이고 턴 기록 INSERT 의 칸 목록도 이 칸이 생기기 전과 같다(서버 기본값이 있는 칸이라 RETURNING 에는 이 칸이 더해진다). 켜도 꺼도 판정·생성 프롬프트와 스탯 값은 같다 — 기록만 더한다. 방의 기억 사용 범위와 무관하게 모든 방에 쓴다. 켜는 법은 줄 추가(`STAT_EVENT_LOG=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 다시 `[]` 이고 이미 쓴 이벤트는 남는다(방 초기화·삭제·탈퇴 때 턴 기록과 함께 지워진다) |
-| `MEMORY_IMPRESSIONS_WRITE` | 설정 안 함(기본 `false`) — 처리방침에 인상 항목을 게시한 뒤 켤 때 `true` | 요약 접기 몇 번마다(`MEMORY_IMPRESSION_EVERY_N_FOLDS`) 방 하나에 인상 한 행을 `chat_memory_impressions` 에 쌓는 백그라운드 작업(턴 뒤, 두 추출 다음 · 임베딩 채우기 앞). 입력은 그 접기들에서 뽑힌 장면·사실 행 전부이고 아는 사람이 정해진(비밀) 행도 든다(요약 글·원문은 읽지 않는다). 이 스위치는 저장만 정하고, 인상을 응답 프롬프트에 싣는 경로는 없다. 묶음의 장면·사실 추출이 모두 끝나야 돈다 — 그래서 두 추출이 꺼져 있으면 아무것도 쌓이지 않는다. 기억 사용 범위(`MEMORY_MODEL_SCOPE`) 밖 방에서는 돌지 않는다. 생성 프롬프트에 싣지 않고, 화면에는 `MEMORY_IMPRESSIONS_VISIBLE` 이 켜졌을 때만 보인다. 꺼져 있으면 예약하지 않아 인상 호출도 인상 표 SELECT·INSERT 도 없다. 장면·사실 잊게 하기는 이 스위치와 무관하게 지우는 행을 근거로 쓴 인상만 지우고 잊기 세대를 올린다. 묶음마다 시도 기록(`chat_memory_impression_attempts`) 한 행이 선점·재시도 상한·호출 원가를 겸한다 — 모델 오류·응답 형식 위반·빈 글·렌더 오류(인상 channel 이 빔)는 실패로 적혀 다음 턴 뒤 다시 쥐되 묶음마다 세 번까지만 부르고, 10분이 지나도 `running` 인 선점은 죽은 작업으로 보고 다시 쥔다. 성공·실패 모두 응답을 받은 시도의 토큰을 그 묶음 행에 더하고 모델 id 는 마지막 시도의 것을 남긴다. 켜는 법은 `MEMORY_IMPRESSION_MODEL=haiku`·배정 `chat_memory_impression:anthropic`·이 줄 추가 → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 이 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 쌓인 행은 남는다(되감기·초기화·방 삭제·탈퇴 때, 그리고 근거로 쓴 장면·사실을 잊게 할 때 지워진다). 켜기 전 조건 전부와 되돌리는 차례는 「3-15. 장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절의 「판정 이벤트 기록 · 인상」 문단 |
+| `MEMORY_IMPRESSIONS_WRITE` | **운영 `true`**(2026-10-28부터, 코드 기본값 `false`) — 인상 항목을 담은 처리방침 2026-10-28 판이 시행된 뒤 켰다 | 요약 접기 몇 번마다(`MEMORY_IMPRESSION_EVERY_N_FOLDS`) 방 하나에 인상 한 행을 `chat_memory_impressions` 에 쌓는 백그라운드 작업(턴 뒤, 두 추출 다음 · 임베딩 채우기 앞). 입력은 그 접기들에서 뽑힌 장면·사실 행 전부이고 아는 사람이 정해진(비밀) 행도 든다(요약 글·원문은 읽지 않는다). 이 스위치는 저장만 정하고, 인상을 응답 프롬프트에 싣는 경로는 없다. 묶음의 장면·사실 추출이 모두 끝나야 돈다 — 그래서 두 추출이 꺼져 있으면 아무것도 쌓이지 않는다. 기억 사용 범위(`MEMORY_MODEL_SCOPE`) 밖 방에서는 돌지 않는다. 생성 프롬프트에 싣지 않고, 화면에는 `MEMORY_IMPRESSIONS_VISIBLE` 이 켜졌을 때만 보인다. 꺼져 있으면 예약하지 않아 인상 호출도 인상 표 SELECT·INSERT 도 없다. 장면·사실 잊게 하기는 이 스위치와 무관하게 지우는 행을 근거로 쓴 인상만 지우고 잊기 세대를 올린다. 묶음마다 시도 기록(`chat_memory_impression_attempts`) 한 행이 선점·재시도 상한·호출 원가를 겸한다 — 모델 오류·응답 형식 위반·빈 글·렌더 오류(인상 channel 이 빔)는 실패로 적혀 다음 턴 뒤 다시 쥐되 묶음마다 세 번까지만 부르고, 10분이 지나도 `running` 인 선점은 죽은 작업으로 보고 다시 쥔다. 성공·실패 모두 응답을 받은 시도의 토큰을 그 묶음 행에 더하고 모델 id 는 마지막 시도의 것을 남긴다. 켜는 법은 `MEMORY_IMPRESSION_MODEL=haiku`·배정 `chat_memory_impression:anthropic`·이 줄 추가 → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 이 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 쌓인 행은 남는다(되감기·초기화·방 삭제·탈퇴 때, 그리고 근거로 쓴 장면·사실을 잊게 할 때 지워진다). 켜기 전 조건 전부와 되돌리는 차례는 「3-15. 장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절의 「판정 이벤트 기록 · 인상」 문단 |
 | `MEMORY_IMPRESSION_EVERY_N_FOLDS` | 설정 안 함(기본 `3`) | 인상 하나가 덮는 요약 스냅샷 수. 방의 스냅샷 수가 이 값의 배수가 된 접기 뒤에 가장 새 스냅샷까지 이만큼을 묶는다 — 접기는 대략 10턴마다라 `3` 이면 약 30턴마다 한 번이다. 1 이상이어야 기동한다. 개발 측정에서 다시 정한다 |
 | `MEMORY_IMPRESSIONS_VISIBLE` | 설정 안 함(기본 `false`) — 처리방침에 인상 열람을 게시한 뒤 켤 때 `true` | 기억 보기 목록(`GET /chat-rooms/{id}/memory/items`)의 `impressions` 칸에 그 방의 인상을 최근 묶음 먼저 싣는다 — 항목마다 글·만든 시각·근거 장면 수·근거 사실 키 수·근거 행의 턴 범위이고 근거 행 id 는 싣지 않는다. 꺼져 있거나 방의 레인·다음 턴 모델이 기억 사용 범위(`MEMORY_MODEL_SCOPE`) 밖이면(모델을 바꿔 범위 밖이 된 방 포함, 인상 행이 있어도), 그리고 인상이 하나도 없는데 `MEMORY_IMPRESSIONS_WRITE` 가 꺼져 있으면(새로 생길 수 없어 빈 상태 안내가 거짓이 된다) 칸이 `null` 이라 웹이 인상 구획을 그리지 않고 인상 표를 읽지 않는다. 쓰기 스위치(`MEMORY_IMPRESSIONS_WRITE`)와 따로 두어 쓰기를 켠 뒤 보기만 미룰 수 있다. `MEMORY_ITEMS_VISIBLE` 이 꺼져 있으면 라우트가 404 라 이 값과 무관하다. 켜기·끄기는 줄 추가·삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 끄면 다음 요청부터 다시 `null` 이고 쌓인 행은 남는다 |
 | `NOVELIZE_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 소설화(대화를 장편 소설의 장으로 옮겨 쓰기) 전역 스위치. 쓰려면 이 스위치·아래 명단·어드민이 준 계정별 허용 셋이 모두 있어야 한다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 모든 소설 화면·API 가 403 이고 허용 행은 남는다(다시 켜면 그대로 돌아온다). 켜기·끄기·회수·롤백은 "소설화 켜기 · 끄기 · 회수 · 롤백" 절 |
@@ -317,8 +320,9 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `BEDROCK_CHAT_TIMEOUT_MS` / `BEDROCK_CHAPTER_TIMEOUT_MS` | 설정 안 함(기본 `45000` / `300000`) | 상위 모델 채팅 턴 / 소설 장 생성의 요청 타임아웃(ms). 스트리밍이라 "다음 청크까지"의 상한이다. 재시도는 하지 않는다 |
 | `BEDROCK_CHAT_MAX_TOKENS` / `BEDROCK_CHAPTER_MAX_TOKENS` | 설정 안 함(기본 `4096` / `32768`) | 출력 상한. Bedrock 은 요청의 출력 상한만큼 분당 토큰 쿼터를 먼저 잡으므로 올리면 동시 요청이 스로틀되기 쉽다. 장이 잘리면 실패·환불이다 |
 | `ANTHROPIC_DIRECT_API_KEY` | Anthropic 콘솔에서 만든 이 서비스 전용 API 키 | 상위 모델을 Anthropic API 로 직접 보낼 때의 자격. SDK 가 스스로 읽는 `ANTHROPIC_API_KEY` 와 이름을 나눴다. 아래 배정이 호출을 직결로 옮기는데 비어 있으면 스위치와 무관하게 api 가 기동하지 못한다. 직결의 모델 id·타임아웃·출력 상한·사고 깊이(나머지 `ANTHROPIC_*`)는 설정 안 함이 기본이다(기본값은 `.env.example`) |
-| `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음). 인상 생성 `chat_memory_impression` 은 아직 넣지 않았다 — 인상 쓰기를 켤 때 모델 줄과 함께 넣는다 | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 장면 헤더 판정 호출 위치(`chat_scene_judgment`·`preview_scene_judgment`)는 줄을 두지 않고 배정을 물려받는다 — 채팅 장면은 채팅 스탯 판정을, 미리보기 장면은 채팅 장면을 거쳐 같은 배정을 따른다. **스탯 판정 배정을 바꾸면 장면 판정도 함께 움직인다**(줄을 따로 넣으면 그 이름을 모르는 옛 이미지가 뜨지 못한다). 미리보기 생성(`preview_generate`)과 미리보기 판정 넷은 채팅 짝(`chat_generate`·`chat_stat_judgment`·`chat_ending_judgment`·`chat_media_book_image`·`chat_scene_judgment`)의 배정을 물려받는다. 미리보기 줄이 없으면 짝의 배정으로 가고, 줄이 있으면 그 줄로 가는 경로가 짝을 물려받아 가는 경로와 같아야 기동한다(다르면 api 가 뜨지 않는다). 그래서 **채팅 판정 배정을 바꿀 때는 짝인 미리보기 판정 줄도 같은 편집에서 바꾼다** — 채팅 줄만 바꾸고 미리보기 줄을 남기면 기동이 거부된다. `preview_generate` 줄은 넣지 않는다(채팅 생성 배정을 물려받는다 — 그 이름을 그 호출의 모델로 읽는 옛 이미지는 `preview_generate:anthropic` 줄로 뜨지 못한다). 모델 배정 표(`prompt_routes`)의 행은 이 배정 위에 얹힌다 — 판정·요약·추출 칸의 행은 그 행을 읽는 호출 위치 전부(채팅과 미리보기 판정, 물려받는 장면 판정)에서 이 배정으로 푼 경로가 행의 경로와 같을 때만 쓰인다. 배정을 바꾼 뒤에는 "채팅 단계별 문안 체인·호출 모델 설정 — 켜기 · 끄기 · 되돌리기" 절대로 건너뛴 행을 확인한다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
-| `CHAT_PREMIUM_MODELS_ENABLED` | 켤 때 `true`(코드 기본값은 꺼짐) | 채팅 상위 모델 스위치. 켜면 로그인 회원 모두가 채팅방에 상위 모델(Opus)을 고를 수 있다 — 명단·계정별 허용은 없다. 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 지금 이미지가 읽지 않지만 지우지 않는다(채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단을 다시 읽는다). 켜고 끄는 법은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
+| `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)·인상 생성 `chat_memory_impression`(2026-10-28)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음) | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 장면 헤더 판정 호출 위치(`chat_scene_judgment`·`preview_scene_judgment`)는 줄을 두지 않고 배정을 물려받는다 — 채팅 장면은 채팅 스탯 판정을, 미리보기 장면은 채팅 장면을 거쳐 같은 배정을 따른다. **스탯 판정 배정을 바꾸면 장면 판정도 함께 움직인다**(줄을 따로 넣으면 그 이름을 모르는 옛 이미지가 뜨지 못한다). 미리보기 생성(`preview_generate`)과 미리보기 판정 넷은 채팅 짝(`chat_generate`·`chat_stat_judgment`·`chat_ending_judgment`·`chat_media_book_image`·`chat_scene_judgment`)의 배정을 물려받는다. 미리보기 줄이 없으면 짝의 배정으로 가고, 줄이 있으면 그 줄로 가는 경로가 짝을 물려받아 가는 경로와 같아야 기동한다(다르면 api 가 뜨지 않는다). 그래서 **채팅 판정 배정을 바꿀 때는 짝인 미리보기 판정 줄도 같은 편집에서 바꾼다** — 채팅 줄만 바꾸고 미리보기 줄을 남기면 기동이 거부된다. `preview_generate` 줄은 넣지 않는다(채팅 생성 배정을 물려받는다 — 그 이름을 그 호출의 모델로 읽는 옛 이미지는 `preview_generate:anthropic` 줄로 뜨지 못한다). 모델 배정 표(`prompt_routes`)의 행은 이 배정 위에 얹힌다 — 판정·요약·추출 칸의 행은 그 행을 읽는 호출 위치 전부(채팅과 미리보기 판정, 물려받는 장면 판정)에서 이 배정으로 푼 경로가 행의 경로와 같을 때만 쓰인다. 배정을 바꾼 뒤에는 "채팅 단계별 문안 체인·호출 모델 설정 — 켜기 · 끄기 · 되돌리기" 절대로 건너뛴 행을 확인한다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
+| `CHAT_PREMIUM_MODELS_ENABLED` | 켤 때 `true`(코드 기본값은 꺼짐) | 채팅 상위 모델 스위치. 켜면 로그인 회원 모두가 채팅방에 상위 모델(아래 `CHAT_MODELS_VISIBLE` 의 모델)을 고를 수 있다 — 명단·계정별 허용은 없다. 끄면 그 목록과 무관하게 모두 숨는다. 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 지금 이미지가 읽지 않지만 지우지 않는다(채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단을 다시 읽는다). 켜고 끄는 법은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
+| `CHAT_MODELS_VISIBLE` | 설정 안 함(코드 기본값 `opus`). Sonnet 을 채팅에 열 때 `opus,sonnet`, Haiku 글쓰기까지 열 때 `opus,sonnet,haiku_writer`(목록 순서는 화면 순서와 무관하다) | 위 채팅 스위치가 켜져 있을 때 채팅에서 고를 수 있게 보일 상위 모델(쉼표 구분, 공백·따옴표 없이). 목록에서 뺀 모델은 모델 목록·공개 가격에서 빠지고 방 지정·미리보기 시작이 403 이며, 그 모델이 저장된 방은 Gemini 로 Gemini 가격에 돈다. 켜기 = 이 줄을 `opus,sonnet` 으로, 롤백 = `opus` 로 고치거나 줄을 지우고 `sudo bash ops/swap-api.sh`. 🔴 모두 숨기려면 이 줄을 비우지 말고 채팅 스위치를 끈다 — 값이 빈 줄은 형식 검사(`empty-value`)가 거부해 이후 push 배포가 모두 멈춘다. 모르는 id·`gemini`·중복이면 api 가 기동하지 않는다 — 교체가 실패해도 `.env` 의 이 줄은 그대로 남아 다음 재기동(VM 재부팅 포함)에서 두 색이 모두 못 뜨므로, 교체가 실패하면 이 줄부터 되돌린다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
 | `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같고, 어드민이 준 계정별 허용 행도 있어야 한다. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
 | `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
 | `NOVEL_PUBLIC_PREVIEW_ALLOWLIST` | 미리보기 동안 계정 id, **쉼표 구분**(공백·따옴표 없이). 전체 공개 뒤에는 줄을 지운다(코드 기본값은 빈 명단) | 노벨 미리보기 명단. 비어 있으면 스위치가 켜졌을 때 모두에게 열리고, 비어 있지 않으면 스위치가 켜져 있어도 명단의 로그인 회원에게만 열린다 — 그 밖의 회원·비로그인은 스위치를 끈 것과 같은 응답이고, 인증 없는 가격 응답의 `novelPublicEnabled` 도 거짓이다. UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 절차는 "노벨(공개 소설) 켜기 · 끄기" 절 |
@@ -329,6 +333,9 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `NOVELIZE_MULTI_BLOCK_EDIT_ENABLED` | **운영 `true`**(2026-10-26부터, 코드 기본값 `false`) | 여러 문단 수정 스위치 — 작가가 같은 장면 안의 떨어진 문단 여럿을 골라 한 번에 AI 수정을 맡기고(AI 수정 단가 한 번, 블록 수 무관) 문단마다 수정안을 받는 흐름. 꺼져 있으면 지금의 연속 범위 수정(`/ai-edits`)만 있다. 웹 가격 응답의 `novelizeMultiBlockEditEnabled`, 요청 라우트(`/novels/{id}/chapters/{chapterId}/block-edits`, 과금)와 묶음 재검사 라우트(`/novels/{id}/jobs/{jobId}/bundles/{bundleId}/recheck`, 무과금 모델 호출)만 이 값을 따른다(꺼져 있으면 둘 다 캐시하지 않는 404). 이미 만든 수정안의 상세 목록(`pendingBlockEdits`)과 단위 적용·버리기(`/novels/{id}/jobs/{jobId}/patches/apply`·`.../patches/dismiss`)는 꺼져 있어도 된다 — 켰다 끈 뒤에도 받은 수정안을 쓰거나 버릴 수 있다. 연속 범위 수정은 켠 뒤에도 그대로 남는다. 스키마·롤백은 "여러 문단 수정 스키마" 절, 적용·재검사 배포·되돌리기는 같은 절의 "여러 문단 수정 적용·버리기·재검사" 단락 |
 | `NOVELIZE_BLOCK_EDIT_MAX_INPUT_CHARS` | 설정 안 함(기본 `60000`) | 여러 문단 수정 한 번의 입력 견적 상한(글자 — 모델에 보낼 문맥 문단(장면 있는 화는 그 장면, 없으면 화 전체)·작품 설정·설정 노트·지시의 합). 넘으면 모델을 부르기 전·차감 전에 422 `NOVEL_EDIT_INPUT_TOO_LONG` 이다. 잰 지연으로 정한 값이다 — 수정 호출 지연은 거의 고칠 문단 수가 정하고, 출력이 잰 값의 p90 일 때 지연이 수정 타임아웃 120초의 절반 안에 드는 입력이 약 5.9만 자다(12만 자면 문단 20개 요청이 약 100초로 타임아웃에 가깝다, 4.4만 자 위는 외삽). 장면 없는 화는 화 전체를 세므로 6만 자가 넘는 화는 장면을 나누기 전에는 여러 문단 수정을 받지 못한다(연속 범위 수정은 그대로). 올리면 큰 입력의 여러 문단 요청이 타임아웃으로 실패·환불될 수 있다. 스위치가 꺼져 있으면 쓰이지 않는다 |
 | `NOVELIZE_RECHECK_HOURLY_LIMIT` | 설정 안 함(기본 `10`) | 여러 문단 수정 묶음 재검사(무과금 모델 호출)의 사용자당 시간당 상한. 넘으면 모델을 부르기 전에 429 다. 면제 계정도 똑같이 센다. 재검사 원가를 재기 전의 임시값이고, 스위치가 꺼져 있으면 쓰이지 않는다 |
+| `NOVEL_BIBLE_ENABLED` | 설정 안 함(기본 `false`) | 소설 정본 기억 스위치 — 확정한 화 개정에서 사건·사실·지식을 뽑아 리비전으로 쌓는 엔진. 꺼져 있으면 어드민 내부 확정 입구(`POST /admin/novel-bible/confirmations`, 상태 조회 `GET /admin/novel-bible/confirmations/{commitId}`, 둘 다 openapi 에 없음)가 세션과 무관하게 404 이고 새 정본 기억 행이 생기지 않는다. 소설 삭제·숨긴 소설 정리·묶음 삭제는 이 값과 무관하게 정본 기억 행을 지우는 DELETE 를 낸다(지울 행이 없으면 0행). 소설 생성·구성안·수정 경로는 이 값과 무관하게 정본 기억을 import 하지 않는다. 켜면 기동 검증이 `GEMINI_API_KEY` 를 배정과 무관하게 보고(앱의 모델 클라이언트가 어느 구현으로 보내든 Gemini 클라이언트를 먼저 만든다), 연산마다 배정된 어댑터(아래 `NOVEL_BIBLE_ADAPTERS`)가 실제로 갈 구현의 키와 지시문을 따로 싣는 구조화 능력을 보아, 비었거나 못 받으면 기동하지 않는다(지금 표는 전부 Gemini 라 그 밖의 키는 필요 없다). 켜져 있으면 확정 입구는 배정된 어댑터의 문안 체인에 슬롯 채널이 없을 때 503 이다. 확정의 처리(작업 실행·연결·커밋·만료 정리)는 소설화 워커 프로세스가 한다 — 워커(`NOVELIZE_WORKER_ENABLED`)가 꺼진 환경에서 확정하면 행이 대기로 남는다. 켜진 워커는 기동 때 배정된 어댑터의 문안 체인에 슬롯 채널이 있는지 한 번 보고, 없거나 그 검사가 실패하면 정본 기억만 끈 채(오류 로그, Bugsink 태그 `novelize`) 소설 작업은 그대로 돌린다 — 다시 켜려면 워커를 재기동한다. 꺼져 있으면 워커는 정본 기억 표를 읽지 않는다. 지금 이미지에는 추출 슬롯으로 사건 슬롯 하나가 등록돼 있지만 그 문안 채널(`novel_bible_events`)이 아직 시드되지 않아, 켜면 확정 입구가 503 이고 켜진 워커도 기동 때 정본 기억을 끈다 — 운영에서 켜지 않는다 |
+| `NOVEL_BIBLE_ADAPTERS` | 설정 안 함(기본 빈 값 = 코드 표 그대로) | 소설 정본 기억 연산(`events.extract`·`facts.extract`·`knowledge.extract`·`conflicts.judge`)마다 쓸 어댑터를 코드 표(`apps/api/src/api/novel_bible/adapters/table.py`)에서 바꾼다. `연산:어댑터` 를 쉼표로 잇는다(따옴표 없이, 예 `NOVEL_BIBLE_ADAPTERS=facts.extract:gemini,knowledge.extract:gemini` — 지금 받는 어댑터는 `gemini` 하나라 이 예는 코드 표와 같은 값을 다시 적는 문법 예시다). 항목 앞뒤 공백은 무시하고 빈 항목은 버리며, 콜론이 정확히 하나이고 양쪽이 비지 않아야 하고, 같은 연산이 두 번이면 거부한다. 모르는 연산·어댑터 이름은 스위치가 꺼져 있어도 기동하지 않는다. 키·능력 검사는 스위치를 켰을 때만 한다. 정본 기억 호출 위치(`novel_bible_*`)는 `LLM_CALL_SITE_BACKENDS` 에 줄을 두지 않는다 — 어댑터가 부를 모델을 호출에 싣는다. Claude 구현(`anthropic`·`bedrock`)을 적은 줄은 기동 검증이 그 호출의 모델(모델 설정이 없어 gemini)을 서비스하지 않는다며 거부한다 |
+| `NOVEL_BIBLE_WORKER_MAX_CONCURRENT` | 설정 안 함(기본 `1`) | 소설화 워커 하나가 동시에 돌리는 소설 정본 기억 일(작업 하나 또는 작업이 끝난 확정의 연결·커밋 하나가 한 칸)의 수 상한(1 이상). 소설 작업 상한(`NOVELIZE_WORKER_MAX_CONCURRENT_JOBS`)과 따로 세어 사용자 소설 작업 자리를 먹지 않는다. 한 칸은 300초 안에 끝나거나 끊기고, 그보다 60초 더 멈춘 작업·확정은 워커의 만료 정리가 되돌린다(과금이 없어 환불 없음). 상한을 올리면 워커의 DB 풀도 키운다 — 워커 풀은 운영 `.env` 가 아니라 `docker-compose.prod.yml` 의 워커 `environment`(`DB_POOL_SIZE`·`DB_MAX_OVERFLOW`, 지금 3·2)가 정하므로 그쪽을 고치고(`.env` 의 `DB_POOL_SIZE` 를 올리면 api 풀만 커진다), `DB_POOL_SIZE` 행의 연결 총량 식을 다시 센다. 이 값은 워커 프로세스만 쓰고 `NOVEL_BIBLE_ENABLED` 가 꺼져 있으면 쓰지 않지만, 값 검사(정수로 읽히는지, 1 이상인지)는 스위치와 무관하게 api·워커 모두 기동 때 한다 — 0 이나 숫자가 아닌 값을 적으면 스위치가 꺼진 채로도 api·워커가 뜨지 않는다 |
 
 > **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
 > 지우고 빈 항목은 버리며, 남는 오리진이 없으면 기동에 실패한다. 새로 쓸 때는 쉼표 구분으로 쓴다.
@@ -404,7 +411,8 @@ Artifact Registry push → IAP SSH로 VM에서 `ops/swap-api.sh <태그>`(아래
 단계가 중앙값 약 1분 10초, 이미지 빌드·푸시가 약 40초다. 교체는 옛 색에 남은 요청이 끝나기를 기다리므로 그만큼 길어질 수 있다).
 트리거 경로는 `apps/api/**` · `docker-compose.prod.yml` · `Caddyfile` · 저장소 루트 `ops/**` ·
 워크플로 자신이다. 단 `apps/api/**` 중 런타임 코드가 읽지 않는 파일(`tests/`, 앱 최상위 md, `probe-runs/`,
-평가 도구 `scripts/memory_eval/`·`scripts/memory_eval_cli.py`, 쓰지 않는 `cloudbuild.yaml`)만 바뀐 병합은
+평가 도구 `scripts/memory_eval/`·`scripts/memory_eval_cli.py`, 로컬 측정 서버와 그 턴 기록 내보내기
+`scripts/chat_lab/`·`scripts/chat_lab_*.py`, 쓰지 않는 `cloudbuild.yaml`)만 바뀐 병합은
 배포하지 않는다 — 교체해도 운영 동작이 같다. `apps/api/README.md` 는 빌드가 읽으므로 지우거나 이름을 바꾸면
 다음 api 배포의 빌드에서야 드러난다.
 **GitHub Secrets에 넣는 값은 없다** — WIF라 키를 저장하지 않는다.
@@ -2349,8 +2357,40 @@ sudo bash ops/swap-api.sh
 `restart` 는 env 를 다시 읽지 않으므로 교체 스크립트를 태그 없이 부른다("env 반영 재기동" 절). 위 확인 명령의 마지막 값이
 `True` 인지 보고, 줄을 넣었으니 키 개수 문장을 다시 센다. 로그인 회원이 web 을 새로고침하면(세션 정보를 다시 받는다) 채팅
 화면의 모델 선택 입구(헤더 칩 또는 더보기 「AI 모델」)가 보인다. 고른 모델은 방마다 저장되고 다음 턴부터 그 모델·그 가격으로 돈다. 상위 모델 턴은 레이트리밋
-면제 계정도 값을 내고(턴 단가는 `api/core/clover.py` 의 가격 등록부 `CLOVER_MODEL_PRICES` Opus 행에서 확인한다), 하루 무료분은 Gemini 턴에만
-쓰인다. 소설 장의 상위 모델도 열 때는 `NOVELIZE_PREMIUM_*` 두 줄(스위치·명단)을 같은 방식으로 더한다.
+면제 계정도 값을 낸다(턴 단가는 `api/core/clover.py` 의 가격 등록부 `CLOVER_MODEL_PRICES` Opus 행에서 확인한다). 소설 장의 상위 모델도 열 때는 `NOVELIZE_PREMIUM_*` 두 줄(스위치·명단)을 같은 방식으로 더한다.
+
+**모델마다 보이기·숨기기.** 채팅 스위치가 켜져 있어도 채팅에서 고를 수 있게 보이는 상위 모델은 `CHAT_MODELS_VISIBLE` 의
+모델뿐이다. 줄이 없으면 코드 기본값 `opus` 라 Opus 만 보이고 Sonnet 은 숨는다. Sonnet 을 열 때는 그 줄을 `opus,sonnet` 으로
+넣고(이미 있으면 고치고) 다시 올린다. 채팅 턴·측정용 리플레이 배정(`chat_generate`·`replay_generate`)이 Sonnet 에도 걸리고
+미리보기는 채팅 생성 배정을 물려받으므로 배정 줄은 고치지 않는다. 열기 전에 두 채팅 레인(스토리·캐릭터)의 Sonnet 문안 세트가
+게시돼 있는지 어드민 프롬프트 화면에서 본다 — 없으면 Sonnet 턴이 차감 뒤 실패하고 환불된다.
+
+Haiku 글쓰기(`haiku_writer`, Claude Haiku 5.5, 채팅 턴 12클로버)도 같은 줄에 더해 연다(예: `opus,sonnet,haiku_writer`). 판정 전용
+`haiku` 와 다른 id 라 판정 설정·배정은 고치지 않는다. 이 모델은 배정과 무관하게 늘 Anthropic 직결로 가므로(Bedrock 경로가 없다)
+`ANTHROPIC_DIRECT_API_KEY` 가 있어야 하고, 목록에 넣은 채 키가 비면 api 가 기동하지 않는다. 실제 모델 id 는
+`ANTHROPIC_HAIKU_WRITER_MODEL_ID`(설정 안 함, 기본값은 `.env.example`)로 판정 쪽 `ANTHROPIC_HAIKU_MODEL_ID` 와 따로다. 두 채팅 레인의
+Haiku 글쓰기 문안 세트는 배포 마이그레이션이 그 레인 Sonnet 활성 세트를 복사해 심으므로 여는 날 따로 게시할 것은 없다 — 연 뒤 Sonnet
+문안을 고치면 Haiku 체인에는 따로 게시해야 반영된다. 소설에는 열리지 않는다(소설 모델 목록에 없고, 소설 요청에 이 id 가 오면 422).
+Haiku 턴은 Gemini 보다 싸도 상위 모델 갈래라 레이트리밋 면제 계정도 매 턴 클로버를 내고, Redis 장애면 열지 않는다. 숨기기·이미지 되돌리기는 아래 Sonnet 과 같은
+순서다(먼저 이 줄에서 빼고 나서 이미지를 되돌린다 — Haiku 로 시작한 빌더 미리보기 세션도 옛 이미지가 읽지 못한다).
+Haiku 글쓰기가 없던 이미지로 되돌리면 가격표 버전(`PRICE_VERSION`)이 3 에서 2 로 돌아가, 열려 있던 탭은 다음 유료 턴·이미지에서
+가격 변경 확인(409 `CLOVER_PRICE_CHANGED`)을 한 번 더 받는다 — 가격표를 다시 받으면 끝나는 확인이라 따로 할 일은 없다.
+
+```sh
+cd /opt/ddona/app
+sudo sh -c 'printf "\nCHAT_MODELS_VISIBLE=opus,sonnet\n" >> /opt/ddona/.env'
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo bash ops/swap-api.sh
+```
+
+🔴 교체가 실패하면(새 색이 healthy 가 안 됨 — 값 오타면 기동 검증이 거부한다) 옛 색은 그대로 서빙하지만 `.env` 의 이 줄은
+되돌려지지 않는다. 그대로 두면 다음 재기동(VM 재부팅 포함)에서 두 색이 모두 뜨지 못하므로 이 줄부터 지우거나 고친다.
+숨기기(모델 하나의 롤백)는 줄을 `opus` 로 고치거나 지우고(기본값이 `opus`) 같은 순서로 다시 올린다. 숨긴 모델이 저장된 방은
+막히지 않고 Gemini 로 Gemini 가격에 돌고, 다시 열면 저장된 모델로 돌아간다. 상위 모델을 모두 숨길 때는 이 줄을 비우지 말고
+위 「끄기」로 채팅 스위치를 끈다 — 값이 빈 줄은 형식 검사(`empty-value`)가 거부해 이후 push 배포가 모두 멈춘다. 이미지 태그를
+Sonnet 채팅 이전으로 되돌려야 하면 먼저 이 줄로 Sonnet 을 숨기고 나서 되돌린다. Sonnet 으로 시작한 빌더 미리보기 세션(마지막 활동
+뒤 24시간 Redis 에 남는다)은 옛 이미지가 읽지 못해 그 세션의 요청이 모두 실패하므로 작가가 미리보기를 새로 시작해야 한다(방은
+문자열 칸이라 Gemini 로 내려 문제없다). 줄을 넣거나 지우면 "BE 런타임" 절의 키 개수 문장을 다시 센다.
 
 **소설 계정 허용.** 소설 상위 모델은 스위치와 명단만으로는 아직 아무도 못 쓴다 — 계정마다 허용 행이 있어야 한다.
 
@@ -2383,10 +2423,10 @@ sudo bash ops/swap-api.sh
 ```
 
 끄거나 소설 허용을 거둬도 **상위 모델을 고른 방은 막히지 않는다.** 방에 저장된 모델(`chat_rooms.chat_model`)은 그대로 남고,
-그 방의 다음 턴은 Gemini 로 Gemini 가격(하루 무료분 포함)에 돈다. 방 응답과 모델 목록은 실제로 쓰일 모델(Gemini)을 보인다.
+그 방의 다음 턴은 Gemini 로 Gemini 가격에 돈다. 방 응답과 모델 목록은 실제로 쓰일 모델(Gemini)을 보인다.
 다시 켜면 저장된 모델로 돌아간다. 진행 중이던 턴과 소설 장 작업은 이미 값을 낸 모델로 끝난다(스위치를 껐다고 Gemini 로
-바꾸지 않는다 — 상위 모델 값을 내고 Gemini 글을 받게 된다). 끄는 동안 Redis 일부 장애가 나도 Gemini 턴은 지금처럼
-통과한다(상위 모델 턴만 503 `CHAT_MODEL_UNAVAILABLE` 로 거절된다 — 켜져 있을 때의 동작이다).
+바꾸지 않는다 — 상위 모델 값을 내고 Gemini 글을 받게 된다). 끄는 동안 Redis 일부 장애가 나면 Gemini 턴은
+분당 상한 없이 진행해 면제 계정만 내지 않고 나머지는 평소처럼 클로버로 낸다(상위 모델 턴만 503 `CHAT_MODEL_UNAVAILABLE` 로 거절된다 — 켜져 있을 때의 동작이다).
 
 **키 교체·회수.** 새 키를 만든 뒤 `.env` 의 `ANTHROPIC_DIRECT_API_KEY` 줄을 `sudo sed -i` 로 바꾸고 형식 검사 →
 `sudo bash ops/swap-api.sh` → 위 확인 명령, 그다음 Anthropic 콘솔에서 옛 키를 비활성화한다. 키가 새어 나갔으면 먼저 콘솔에서
@@ -3217,8 +3257,9 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
   없다.
 
 **판정 이벤트 기록 · 인상(`STAT_EVENT_LOG`·`MEMORY_IMPRESSIONS_WRITE`).** 판정 이벤트 기록은 2026-10-24 17:45 KST 교체부터 켜져
-있고(env 표 그 행), 인상 쓰기는 꺼져 있다 — 인상 모델 줄(`MEMORY_IMPRESSION_MODEL`)과 배정 항목(`chat_memory_impression`)도 운영
-`.env` 에 없다. 둘 다 위 「켜는 순서」와 따로 켜고 끈다.
+있고(env 표 그 행), 인상 쓰기는 2026-10-28 교체부터 켜져 있다 — 인상 모델 줄(`MEMORY_IMPRESSION_MODEL=haiku`)과 배정 항목
+(`chat_memory_impression:anthropic`)을 스위치 줄과 한 편집으로 넣었다. 인상 보기(`MEMORY_IMPRESSIONS_VISIBLE`)는 꺼져 있다. 둘 다 위
+「켜는 순서」와 따로 켜고 끈다.
 
 - **인상 문안은 프롬프트 세트 데이터다.** 채널 `memory_impression`(지시문·장면 줄·사실 줄 세 행)은 리비전 `6558ab4d3dbc` 가 채팅
   두 레인의 여덟 체인(gemini·sonnet·opus·haiku)에 새 게시 세트로 심었고, 고칠 때는 어드민 프롬프트 세트 화면에서 게시한다. 스위치가
@@ -3227,15 +3268,15 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
 - **인상 쓰기를 켜기 전 조건** — 셋이 모두 끝나야 켠다. 실패한 묶음의 재시도 상한(묶음마다 세 번)은 이미 코드에 있다(env 표
   `MEMORY_IMPRESSIONS_WRITE` 행).
   1. 개인정보처리방침의 대화방별 기억 항목에 인상(장면·사실 기억에서 만든, 인물 사이 감정·태도의 흐름을 적은 짧은 글 — 저장만 하고
-     생성에 싣지 않는다)과 그것을 만드는 모델 호출을 더한 판이 게시돼 있다.
+     생성에 싣지 않는다)과 그것을 만드는 모델 호출을 더한 판이 시행돼 있다(2026-10-28 판, 게시와 함께 시행).
   2. `MEMORY_IMPRESSION_MODEL=haiku` 줄과 `LLM_CALL_SITE_BACKENDS` 의 `chat_memory_impression:anthropic` 항목을 스위치 줄과 **한
      편집에서** 넣는다(모델 줄과 배정은 짝이다 — `STAT_JUDGMENT_MODEL` 행).
-  3. 운영 설정 기동 테스트가 인상 호출 위치를 빼 두는 제외(`apps/api/tests/test_config_judgment_models.py` 의
-     `_NOT_YET_IN_PRODUCTION`)를 지우고, 테스트가 흉내 내는 운영 값(`apps/api/tests/factories.py` 의 `PRODUCTION_ENV_NAMES`·
-     `PRODUCTION_CALL_SITE_BACKENDS`)에 같은 모델 줄과 배정을 더한다 — 그래야 운영 조합의 기동을 테스트가 계속 검사한다.
+  3. 테스트가 흉내 내는 운영 값(`apps/api/tests/factories.py` 의 `PRODUCTION_ENV_NAMES`·`PRODUCTION_ENV_TYPED_VALUES`·
+     `PRODUCTION_CALL_SITE_BACKENDS`)에 같은 모델 줄·스위치 줄·배정이 있다 — 그래야 운영 조합의 기동을 테스트가 계속 검사한다.
 - **끄기 — 켠 역순.** 인상 쓰기를 켰다면 그것부터: 스위치 줄과 모델 줄·배정 항목을 한 편집에서 지운다(모델 줄 `haiku` 를 남기고
-  배정만 지우면 운영 `.env` 에 `BEDROCK_*` 키가 없어 기동하지 못한다). 그다음 `STAT_EVENT_LOG` 줄 — 다음 턴부터 칸이 `[]` 다. 이미
-  쓴 이벤트와 쌓인 인상 행은 남는다.
+  배정만 지우면 운영 `.env` 에 `BEDROCK_*` 키가 없어 기동하지 못한다). 같은 날 위 조건 3 의 운영 값에서도 세 줄을 빼고, 운영 설정
+  기동 테스트(`apps/api/tests/test_config_judgment_models.py`)가 인상 호출 위치를 운영 배정이 있는 호출로 세지 않게 고친다. 그다음
+  `STAT_EVENT_LOG` 줄 — 다음 턴부터 칸이 `[]` 다. 이미 쓴 이벤트와 쌓인 인상 행은 남는다.
 - **되돌리기 — 스위치 → 워커 → (문안 데이터) → 이미지 → (스키마).**
   - 🔴 배정 항목 `chat_memory_impression` 은 인상 호출 위치를 모르는 이미지(인상 표 도입 이전)로 내리기 **전에** 지운다 — 남아
     있으면 그 이미지가 모르는 이름으로 거부해 기동하지 못한다.
@@ -3568,6 +3609,69 @@ mkdir -p apps/api/scripts/seed_content/private
 tar -xzf seed-bundle.tar.gz -C apps/api/scripts/seed_content/private/ && rm seed-bundle.tar.gz
 ```
 
+### 3-20. 채팅 원가 비율 일일 리포트 — report cron
+
+채팅 모델(그 턴에 실제로 쓴 `gemini`·`sonnet`·`opus` 등)마다 KST 하루의 **원가 비율 = LLM 원가(원) ÷ (차감 클로버 × 0.690원)** 을
+낸다. 0.690원은 판매 1원에서 부가세·PG 수수료·원작자 몫을 뺀 0.828원을 보너스 20% 상품의 1.2 로 나눈 값 — 클로버 하나로 원가에
+쓸 수 있는 돈의 최악 기준이다. 출처는 턴 기록(`chat_turns`) 하나이고, 원가는 그 턴의 호출 전부(생성 + 판정 + 회상 질의 임베딩,
+`api/llm/pricing.py` 단가표·환율 1달러 1,400원), 차감은 그 행의 클로버 차감 합이다. 비율에는 클로버로 낸 턴만 넣고, 무료·예외
+턴(차감 0 — 예외 계정의 시험 턴 등)은 건수와 "무료 포함 총원가"로만 찍는다. 클로버 단위 전환 시각 이전 턴은 세지 않는다.
+**빠지는 것**: 미리보기 턴, 백그라운드 호출(요약 접기·기억 추출·임베딩 채우기 — 방의 모델로 나눌 수 없다), 실패 턴의 부분
+생성 원가. 사용량 일 집계(`scripts/llm_usage_report.py`)와 더하지 않는다 — 턴 기록의 호출을 그쪽도 세므로 두 번 들어간다.
+
+**경보**(Discord, `ops/notify.py` 채널): 그날 비율이 100% 를 넘고 그 모델의 클로버 턴이 10턴 이상이면 한 통(모델이 여럿이면
+한 줄로 묶는다). **연속 초과는 다시 알리지 않는다** — 그 모델의 이전 판정 가능일(거슬러 최대 14일)이 이미 초과였으면 건너뛴다.
+10턴 미만인 날은 판정하지 않고 상태도 바꾸지 않는다. 상태를 저장하지 않고 실행 때마다 이전 날을 다시 계산하므로 같은 날짜를
+다시 돌리면 같은 결론이다. 단가표에 없는 모델 id 의 호출은 0 원으로 치지 않는다 — 그 모델-날은 "판정 불가"로 찍고(단가 있는
+호출만 친 비율이 이미 100% 를 넘으면 초과로 본다), 그런 id 가 처음 나온 날(읽어 온 이전 날 — 거슬러 최대 14일, 단위 전환
+시각 이후 — 어느 날의 클로버 턴에도 없던 날)에는 비율 경보와 따로 "단가 없는 호출 새로 나옴"을 싣는다. 이 알림이 단가표
+(`api/llm/pricing.py`)를 고쳐야 한다는 사실상 유일한 신호다 — 놓치면 그 뒤로 그 모델의 날은 단가 있는 호출만으로 100% 를 넘지
+않는 한 계속 판정 불가로 남는다. **자동 조치는 없다** — 가격·모델 공개를 바꾸는 것은 사람이 정한다. 회원을 알아볼 단서는 싣지 않는다. 실패(색을 못
+고름·리포트 실패·단위 전환 기록이 전환이 아님)는 고정 문구로 알리고 예외 문장은 로그에만 남긴다.
+
+"크리에이터 정산 월 확정 — settle cron" 절처럼 **서빙 중인 api 컨테이너 안에서** `python -m api.clover.chat_cost_ratio` 를 돈다(단가표·환율·호출 원가
+계산이 앱 코드 한 곳에만 있다). 읽기 전용 트랜잭션에서 SELECT 만 한다. 래퍼 `ops/chat-cost-ratio.sh` 는 그 절의 래퍼와 같은 꼴이다 — `ops/active-color.sh` 로 색을 고르고, `.env` 에서는 `DISCORD_WEBHOOK_URL` 하나만
+읽고, 리포트의 마지막 줄이 `채팅 원가 경보:` 로 시작할 때만 그 줄을 보낸다. 인자는 리포트로 그대로 넘긴다 — `--date YYYY-MM-DD`
+(KST, 기본 어제), `--dry-run`(경보 줄 앞에 `[dry-run]` 을 붙여 보내지 않는다), `--ignore-previous`(이전 날을 보지 않고 그날만으로
+판정 — 아래 설치 직후 1회용, 크론 줄에는 없다). 출력은 `/var/log/ddona-chat-cost-ratio.log` 에 쌓이고 `ops/logrotate.d/ddona-cron`
+글롭이 회전한다.
+
+**최초 1회 — 심볼릭 링크 설치**(운영 쓰기라 사용자 승인 뒤에 한다. "클로버 만료 — expire cron" 절과 같은 이유 —
+`/opt/ddona/app` 은 배포마다 `git reset --hard` 되므로 링크해 두면 재설치 없이 다음 배포부터 반영된다). 병합·배포만으로는
+크론이 돌지 않는다 — 이 링크를 놓기 전까지 운영 동작은 바뀌지 않는다.
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/chat-cost-ratio.sh /opt/ddona/chat-cost-ratio.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-chat-cost-ratio /etc/cron.d/ddona-chat-cost-ratio
+```
+
+알림 모듈은 다른 크론과 같은 `/opt/ddona/scripts`(저장소 `apps/api/scripts` 링크)의 `ops.chat_cost_ratio_notify` 다.
+
+**검증**:
+
+```sh
+# 1. 수동 dry-run 1회 — 정상 종료, 모델별 줄과 마지막 줄 확인(수동 실행은 로그 파일이 아니라 화면에 찍힌다). 마지막 줄은 "경보 없음" 이거나
+#    "[dry-run] 채팅 원가 경보: …" 이고, 정상 종료하면 알림은 가지 않는다(실패하면 래퍼의 실패 알림은 간다).
+#    "클로버 단위 전환 기록이 전환이 아니다" 로 실패하면 단위가 전환 상태가 아닌 것이다(비율을 내지 않는다).
+sudo -u root /opt/ddona/chat-cost-ratio.sh --dry-run
+
+# 2. 링크 설치 직후 1회 — 이전 날을 보지 않고 어제만으로 판정한다. 크론을 켜기 전부터 초과가 이어지던 모델은 크론의 첫
+#    실행에서 "연속"으로 억제돼 끝내 알려지지 않는다 — 어제가 초과면 이 실행의 한 통이 그 첫 경보다. 그 뒤 크론의 첫
+#    실행은 이 어제를 직전 날로 보고 연속으로 억제한다.
+sudo -u root /opt/ddona/chat-cost-ratio.sh --ignore-previous
+
+# 3. 다음 15:50 UTC(KST 00:50)에 크론이 실제로 도는지
+tail -f /var/log/ddona-chat-cost-ratio.log
+```
+
+실패 알림을 받은 날은 그날 경보가 가지 않았는데 다음 날 실행은 그날을 "연속"으로 볼 수 있다. 실패 알림을 보면 그날을 다시
+돌린다(`sudo -u root /opt/ddona/chat-cost-ratio.sh --date YYYY-MM-DD`). 단가표·환율을 고치면 지난 날의 판정도 새 값으로 다시
+나온다.
+
+⚠️ 15:50 UTC — 다른 크론(05:00·06:00·15:05·16:35·17:35·18:00 UTC, 매시 17분)과 겹치지 않고, 5분마다 도는 가벼운 자원 점검과만
+겹친다. 배포 교체와 겹치면
+그날은 실패 알림이 오고, 위처럼 `--date` 로 다시 돌린다.
+
 ## 4. 배포 후 스모크 검증
 
 1. `curl https://api.ddona.site/health` → `{"status":"ok"}` · `/ready`로 DB·Redis까지 확인. 배포 로그에서 교체 스크립트의
@@ -3609,12 +3713,12 @@ base64로 싣는다(리사이즈 없음). 싣기 전에 서버가 형식(PNG·JP
 클로버로 차감하고 잔액 부족이면 `CLOVER_REQUIRED`, 그날 차감 동의 전이면 `CLOVER_CONFIRM_REQUIRED`)이고, 거절은
 모두 `{"detail": {"code", "retryAfterSeconds", "window"}}` 한 모양이라 `code`로만 갈린다. 예외 계정
 (`users.rate_limit_exempt`)은 **토큰 버킷만** 면제되고 큐 두 개는 그대로 받는다. 같은 모듈이 채팅 4경로에도
-429를 낸다(분당 10은 `USER_LIMIT`·`window` `minute`, 일일 30 초과분은 클로버 차감으로 넘어가 부족·미동의면
-`CLOVER_REQUIRED`/`CLOVER_CONFIRM_REQUIRED`·`window` `clover`) — 서버 로그의 `user_limit_exceeded`는
+429를 낸다(분당 10은 `USER_LIMIT`·`window` `minute`, 하루 무료분 없이 처음부터 클로버 차감이라
+확인 없이 부족이면 `CLOVER_REQUIRED`·`window` `clover`) — 서버 로그의 `user_limit_exceeded`는
 이미지·채팅 공용이라 `code`/`window`로 가른다. auth 발송 상한의 429(`core/rate_limit.py`, 가입·재발송·
 비밀번호 재설정)도 같은 모양이다(`window` `auth`, `auth/router.py`의 `_auth_too_many_requests`). 429 가 아닌 것이 하나 있다 — 클로버로 낼 채팅 턴·이미지 요청이
 실어 보낸 가격표 버전(`priceVersion`)이 서버 가격표(`core/clover.py` 의 `PRICE_VERSION`)와 다르면 깎기 전에 409
-`CLOVER_PRICE_CHANGED`(+ 그 요청의 지금 금액 `currentCost`)다. 버전을 싣지 않은 요청과 무료·토큰으로 지나는 요청은 대조하지 않는다. 생성 전에는 `GET /capabilities`를 TTL 캐시
+`CLOVER_PRICE_CHANGED`(+ 그 요청의 지금 금액 `currentCost`)다. 버전을 싣지 않은 요청과 면제·토큰으로 지나는 요청은 대조하지 않는다. 생성 전에는 `GET /capabilities`를 TTL 캐시
 (`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`, 기본 30초)로 프로브해 집 PC가 꺼져 있으면 **생성 시도 전에**
 503으로 차단한다.
 

@@ -4,10 +4,10 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useRef, type FocusEvent } from "react";
 
 import {
-  CLOVER_EXPIRY_NOTICE_MESSAGE,
   CLOVER_MISSIONS_SECTION_ID,
   CloverWallet,
   formatCloverExpiringSoonMessage,
+  formatCloverExpiryNotice,
   type CloverBalanceResponse,
 } from "@/entities/clover";
 import { loginRedirectTarget } from "@/entities/session";
@@ -63,7 +63,11 @@ export function WalletSection({
   );
 }
 
-function WalletBody({ view, section, onRetryBalance }: Pick<WalletSectionProps, "view" | "section" | "onRetryBalance">) {
+function WalletBody({
+  view,
+  section,
+  onRetryBalance,
+}: Pick<WalletSectionProps, "view" | "section" | "onRetryBalance">) {
   // 로그인한 뒤 지금 주소로 돌아온다 — 주소에 담긴 상품(`?product=`)도 함께 돌아와 그 상품의 결제로 이어진다.
   const loginRedirect = useRouterState({ select: (state) => loginRedirectTarget(state.location) });
 
@@ -113,10 +117,10 @@ function WalletBody({ view, section, onRetryBalance }: Pick<WalletSectionProps, 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <CloverWallet balance={view.balance.balance} breakdown={view.balance.breakdown} />
-            {/* 미션 클로버 소멸 고지는 무료 몫 바로 아래에 둔다. 화면 첫 줄에 두면 처음 사는 사람이 산 클로버도 일주일이면
+            {/* 무료로 받은 클로버의 소멸 고지는 무료 몫 바로 아래에 둔다. 화면 첫 줄에 두면 처음 사는 사람이 산 클로버도 일주일이면
                 사라진다고 읽는다 — 구매분 유효기간은 클로버 안내가 말한다. 문구는 entities/clover 의 단일 소스
                 (cloverExpiryNotice.ts)라 내역 화면과 같다. */}
-            <p className="text-xs break-keep text-muted-foreground">{CLOVER_EXPIRY_NOTICE_MESSAGE}</p>
+            <p className="text-xs break-keep text-muted-foreground">{formatCloverExpiryNotice()}</p>
           </div>
           {/* 평소 무채색, 만료 임박일 때만 primary 잉크(솔리드 채움이 아니다 — 밝기 예산은 화면당 솔리드 채움 하나만
               관리한다, `CloverBalance`의 같은 처방). */}

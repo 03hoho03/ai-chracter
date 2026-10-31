@@ -23,7 +23,7 @@ from api.admin.prompts import _validate_prompt_draft_for_publish
 from api.chat.prompt_builder import PromptNames, build_scene_judgment_prompt, load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
-from factories import undo_seeded_rows_above
+from factories import set_ids_seeded_above, undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -210,8 +210,7 @@ async def test_new_sets_are_published_in_the_window_of_both_active_rules(db_sess
 
 
 async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: AsyncSession) -> None:
-    """전 레인·전 모델 published 최대 + 1 을 gemini·sonnet·opus·haiku 순서로. 테스트 DB에 이 리비전 뒤에 게시한 세트는 소설
-    레인 문안 리비전과 인상 생성 문안 리비전의 것뿐이라 그 둘을 뺀다."""
+    """전 레인·전 모델 published 최대 + 1 을 gemini·sonnet·opus·haiku 순서로."""
     order = [_M.NEW_SET_IDS[("story", model)] for model in _MODELS]
     versions = [int((await _get_set(db_session, set_id)).version or "0") for set_id in order]
     others = (
@@ -219,9 +218,8 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
                 PromptSet.status == "published",
                 PromptSet.id.not_in(order),
-                PromptSet.id.not_in(_NOVEL_OUTLINE_SET_IDS),
-                PromptSet.id.not_in(list(_IMPRESSION.NEW_SET_IDS.values())),
-                PromptSet.id.not_in(list(_DROP.NEW_SET_IDS.values())),
+                # 이 리비전 위에서 심은 세트는 버전이 이 리비전보다 뒤라 뺀다(레인 무관 — 버전 번호는 전 레인이 이어 쓴다).
+                PromptSet.id.not_in(set_ids_seeded_above(_M.revision)),
             )
         )
     ).all()

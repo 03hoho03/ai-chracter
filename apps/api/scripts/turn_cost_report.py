@@ -44,16 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core.rate_limit import KST
 from api.db.models.chat import ChatTurn
 from api.db.session import async_session_factory
-from api.llm.pricing import estimate_cost_usd
-
-
-@dataclass(frozen=True)
-class CallCost:
-    call_site: str
-    model: str
-    # 단가표에 없는 모델이면 None.
-    usd: float | None
-    missing_tokens: bool
+from api.llm.pricing import CallCost, call_cost
 
 
 @dataclass(frozen=True)
@@ -79,25 +70,6 @@ class Summary:
     query_latency_ms: list[int] = field(default_factory=list)
     first_token_ms: list[int] = field(default_factory=list)
     stream_first_token_ms: list[int] = field(default_factory=list)
-
-
-def _tokens(call: dict[str, Any], key: str) -> int:
-    value = call.get(key)
-    return value if isinstance(value, int) else 0
-
-
-def call_cost(call: dict[str, Any]) -> CallCost:
-    """호출 칸 하나의 원가. 질의 임베딩 칸처럼 없는 칸은 0 으로 친다."""
-    model = str(call.get("model"))
-    usd = estimate_cost_usd(
-        model,
-        input_tokens=_tokens(call, "promptTokens"),
-        cached_tokens=_tokens(call, "cachedTokens"),
-        cache_write_tokens=_tokens(call, "cacheWriteTokens"),
-        output_tokens=_tokens(call, "outputTokens"),
-        thoughts_tokens=_tokens(call, "thoughtsTokens"),
-    )
-    return CallCost(str(call.get("callSite")), model, usd, missing_tokens=not isinstance(call.get("promptTokens"), int))
 
 
 def percentile(values: list[float], fraction: float) -> float | None:

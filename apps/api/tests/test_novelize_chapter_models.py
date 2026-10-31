@@ -366,6 +366,34 @@ async def test_detail_and_proposal_list_episode_prices_per_model_only_with_novel
     assert (detail.json()["prices"]["chapterGenerate"], proposal.json()["cost"]) == (31, 31)
 
 
+@pytest.mark.parametrize(
+    "visible",
+    [
+        pytest.param(["opus"], id="default-list"),
+        pytest.param(["opus", "sonnet"], id="both"),
+        pytest.param([], id="blank-list"),
+    ],
+)
+async def test_the_chat_visible_list_does_not_change_the_novel_chapter_models(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ModelLLM,
+    visible: list[str],
+) -> None:
+    """채팅 공개 목록은 채팅 방 모델만 고른다 — 소설 상위 모델 허용이 있는 계정의 장 모델은 그 목록과 무관하게 세 모델이다.
+    채팅 상위 모델 스위치도 켜 둬서, 공개 목록이 채팅에서 실제로 쓰이는 상태에서도 소설에 번지지 않는 것을 본다."""
+    _, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
+    _distinct_prices(monkeypatch)
+    _enable_chat_premium(monkeypatch)
+    monkeypatch.setattr(settings, "chat_models_visible", visible)
+
+    detail = await db_client.get(f"/novels/{novel_id}")
+
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["chapterModels"] == _expected_models(premium=True)
+
+
 async def _finished_job(
     db: AsyncSession, novel_id: uuid.UUID, user_id: uuid.UUID, *, model: str | None, status: str, kind: str, at: int
 ) -> None:
@@ -782,3 +810,72 @@ async def test_asking_again_with_another_model_counts_toward_the_hourly_proposal
 
     assert statuses == [200, 200, 429]
     assert llm.boundary_calls == 2
+
+
+# ── 채팅 전용 글쓰기 모델(Haiku)은 소설에 없다 ───────────────────────────────────────────────
+
+
+async def test_a_novel_with_a_chapter_lists_no_chat_only_model_and_still_opens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ModelLLM
+) -> None:
+    """Haiku 글쓰기는 소설 상한·단가가 없다 — 장 모델 목록이나 다시 만들기 선택지에 실리면 그 값을 찾다 소설 상세가 500 이 된다.
+    허용 계정이고 채팅에서 Haiku 를 공개해도 소설 쪽 목록에는 소설 모델 셋뿐이다."""
+    room, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
+    _enable_chat_premium(monkeypatch)
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus", "sonnet", "haiku_writer"])
+    messages = await _room_messages(db_session, room.room_id)
+    await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
+
+    detail = await db_client.get(f"/novels/{novel_id}")
+
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert [m["id"] for m in body["chapterModels"]] == ["gemini", "sonnet", "opus"]
+    assert body["batches"]
+    for batch in body["batches"]:
+        assert [o["model"] for o in batch["regenerateOptions"]] == ["gemini", "sonnet", "opus"]
+
+
+@pytest.mark.parametrize("premium", [pytest.param(True, id="with-novel-premium"), pytest.param(False, id="without")])
+async def test_every_novel_request_naming_the_chat_only_haiku_is_422_before_the_account_check(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ModelLLM,
+    enqueued: list[uuid.UUID],
+    premium: bool,
+) -> None:
+    """소설의 모델 선택 요청 여섯 갈래(경계 제안·장 생성·묶음 다시 만들기·연쇄·전체 구성안·장면 구성안과 그 원고)가 모두 같은 게이트를
+    지난다. 허용이 없는 계정도 403 이 아니라 422 다 — 계정이 바뀌어도 고를 수 없는 모델이라서다. 차감·작업·경계 제안 호출이 없다.
+
+    옛 이어 쓰기 갈래는 구성 흐름 스위치가 꺼졌을 때만, 구성안 갈래는 켜졌을 때만 열린다. 닫힌 라우트는 본문과 무관하게 같은
+    답(409·404)을 내야 해서 스위치 검사가 본문의 모델 검사보다 앞이다 — 그래서 각 갈래를 열린 스위치에서 보낸다."""
+    room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=premium)
+    messages = await _room_messages(db_session, room.room_id)
+    chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
+    episode_key = uuid.uuid4()
+    paid = {"model": "haiku_writer", "expectedCost": 12}
+    requests_by_flow: dict[bool, list[tuple[str, dict[str, object]]]] = {
+        False: [
+            (f"/novels/{novel_id}/chapter-proposal", {"model": "haiku_writer"}),
+            (f"/novels/{novel_id}/chapters", {**paid, "endMessageId": str(room.turns[3][1].id)}),
+            (f"/novels/{novel_id}/chapters/{chapter.id}/regenerate", paid),
+            (f"/novels/{novel_id}/chain", {**paid, "maxBatches": 1}),
+        ],
+        True: [
+            (f"/novels/{novel_id}/outline", paid),
+            (f"/novels/{novel_id}/outline/episodes/{episode_key}/scenes", paid),
+            (f"/novels/{novel_id}/outline/episodes/{episode_key}/chapter", paid),
+        ],
+    }
+
+    for outline_flow, requests in requests_by_flow.items():
+        monkeypatch.setattr(settings, "novelize_outline_flow_enabled", outline_flow)
+        for path, body in requests:
+            resp = await db_client.post(path, json=body)
+            assert (resp.status_code, resp.json()["detail"]) == (422, {"code": "NOVEL_MODEL_UNSUPPORTED"}), path
+
+    assert llm.boundary_calls == 0
+    assert await _jobs(db_session, novel_id) == []
+    assert await _novel_ledger(db_session, owner_id) == []
+    assert enqueued == []

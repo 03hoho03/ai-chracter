@@ -56,20 +56,32 @@ def load_driver_logs(log: Path, snapshot_log: Path, room_id: uuid.UUID) -> Drive
     )
 
 
-def dump_record(path: Path, room_id: uuid.UUID, turn: int) -> tuple[dict[str, Any], int]:
-    """서버 덤프에서 그 방·그 턴의 마지막 생성 기록과 생성 기록 수. 유실 턴의 재시도와 재생성은 같은 턴 번호로 다시 덤프되고,
-    DB 에 남은 응답은 마지막 시도의 것이다. 없으면 거부한다 — 덤프 없는 턴은 다시 조립한 입력을 대조할 기준이 없다.
+def load_dump(path: Path) -> list[dict[str, Any]]:
+    """서버 프롬프트 덤프의 줄 전부(파일 순서 그대로). 여러 턴을 볼 때는 한 번 읽어 두고 턴마다 `generation_records` 로
+    고른다 — `dump_record` 는 부를 때마다 파일 전체를 다시 읽는다."""
+    return _jsonl(path)
+
+
+def generation_records(records: list[dict[str, Any]], room_id: uuid.UUID, turn: int) -> list[dict[str, Any]]:
+    """덤프 줄 가운데 그 방·그 턴의 생성 줄(파일 순서 그대로). 유실 턴의 재시도와 재생성은 같은 턴 번호로 다시 덤프되므로 여럿일
+    수 있다.
 
     같은 덤프에 같은 방·턴 번호의 판정 프롬프트 줄(`kind` 가 `judgment`)도 남는다. 판정은 생성 뒤에 돌아 그 턴의 마지막 줄이
     되므로 생성 줄(`kind` 가 `generation`, 또는 그 칸이 없는 옛 덤프의 줄)만 고르고 센다 — 판정 줄을 세면 유실 턴 재시도로 읽히고,
     고르면 지시문이 없는 줄과 대조한다."""
-    found = [
+    return [
         record
-        for record in _jsonl(path)
+        for record in records
         if record.get("roomId") == str(room_id)
         and record.get("turn") == turn
         and record.get("kind", "generation") == "generation"
     ]
+
+
+def dump_record(path: Path, room_id: uuid.UUID, turn: int) -> tuple[dict[str, Any], int]:
+    """서버 덤프에서 그 방·그 턴의 마지막 생성 기록과 생성 기록 수(고르는 규칙은 `generation_records`). DB 에 남은 응답은
+    마지막 시도의 것이다. 없으면 거부한다 — 덤프 없는 턴은 다시 조립한 입력을 대조할 기준이 없다."""
+    found = generation_records(load_dump(path), room_id, turn)
     if not found:
         raise ReplayRefusedError(f"덤프에 턴 {turn} 이 없다")
     return found[-1], len(found)

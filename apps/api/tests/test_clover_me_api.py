@@ -9,14 +9,15 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from sqlalchemy import select, update
+import pytest
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.clover.router import _expiring_soon
 from api.core.clover import grant, kst_today
-from api.db.models.auth import User
-from api.db.models.clover import CloverLedger, CloverLot
-from factories import _login_as, _make_user
+from api.db.models.auth import User, WithdrawnIdentity
+from api.db.models.clover import AttendanceClaim, CloverLedger, CloverLot
+from factories import _login_as, _make_attendance_claim, _make_user
 
 
 async def _logged_in(
@@ -455,3 +456,135 @@ async def test_withdraw_with_zero_balance_still_zeroes_out_leftover_lots(
     lot = await db_session.scalar(select(CloverLot).where(CloverLot.user_id == user.id))
     assert lot is not None
     assert lot.remaining == 0
+
+
+# ── 탈퇴 시 그날 출석 기록 ──────────────────────────────────────────────
+# 같은 사람이 같은 날 새 계정으로 출석을 한 번 더 받지 못하게, 탈퇴하는 인증 회원이 그날 받았는지를 CI 해시 보관 행에 남긴다.
+# 탈퇴 정리의 시계는 실제 지금이라 "오늘"도 실제 KST 날짜로 만든다.
+def _verified_overrides() -> dict[str, object]:
+    return {"identity_ci_hmac": f"ci-{uuid.uuid4().hex}", "identity_verified_at": datetime.now(UTC)}
+
+
+async def _withdrawn_row(db: AsyncSession, ci_hmac: str) -> WithdrawnIdentity:
+    row = await db.scalar(
+        select(WithdrawnIdentity).where(WithdrawnIdentity.ci_hmac == ci_hmac).execution_options(populate_existing=True)
+    )
+    assert row is not None
+    return row
+
+
+async def test_withdraw_after_claiming_today_records_the_date_and_keeps_the_claim(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """깨지는 시나리오: 날짜를 남기지 않으면 오늘 받고 탈퇴한 사람이 새 계정으로 오늘 또 받는다. 출석 행과 원장은 거래 기록이라
+    탈퇴해도 남는다."""
+    overrides = _verified_overrides()
+    user = await _logged_in(db_client, db_session, **overrides)
+    today = kst_today(datetime.now(UTC))
+    await _make_attendance_claim(db_session, user.id, board_no=1, seq=1, claimed_on=today)
+    await db_session.commit()
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    assert (await _withdrawn_row(db_session, str(overrides["identity_ci_hmac"]))).attendance_claimed_on == today
+    claims = await db_session.scalar(
+        select(func.count()).select_from(AttendanceClaim).where(AttendanceClaim.user_id == user.id)
+    )
+    assert claims == 1
+    assert await _ledger_kinds(db_session, user.id) == ["attendance_grant", "withdrawal_burn"]
+
+
+async def test_withdraw_without_a_claim_today_leaves_the_date_empty(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """어제 받은 것만 있으면 비워 둔다 — 출석 행이 있다는 것만 보면 내일 새 계정의 수령까지 막는다(날짜가 오늘로 찍힌다)."""
+    overrides = _verified_overrides()
+    user = await _logged_in(db_client, db_session, **overrides)
+    yesterday = kst_today(datetime.now(UTC)) - timedelta(days=1)
+    await _make_attendance_claim(db_session, user.id, board_no=1, seq=1, claimed_on=yesterday)
+    await db_session.commit()
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    assert (await _withdrawn_row(db_session, str(overrides["identity_ci_hmac"]))).attendance_claimed_on is None
+
+
+async def test_withdraw_keeps_a_later_date_already_recorded(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """같은 사람의 보관 행에 이미 더 늦은 날짜가 있으면 그대로 둔다(둘 중 늦은 날짜)."""
+    overrides = _verified_overrides()
+    ci_hmac = str(overrides["identity_ci_hmac"])
+    today = kst_today(datetime.now(UTC))
+    later = today + timedelta(days=1)
+    db_session.add(
+        WithdrawnIdentity(ci_hmac=ci_hmac, withdrawn_at=datetime.now(UTC) - timedelta(days=1), attendance_claimed_on=later)
+    )
+    # 보관 행이 있는 CI 를 살아 있는 계정이 다시 갖는 것은 재가입·재인증과 같다.
+    user = await _logged_in(db_client, db_session, **overrides)
+    await _make_attendance_claim(db_session, user.id, board_no=1, seq=1, claimed_on=today)
+    await db_session.commit()
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    assert (await _withdrawn_row(db_session, ci_hmac)).attendance_claimed_on == later
+
+
+async def test_withdraw_without_a_claim_keeps_today_already_recorded(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """같은 사람의 둘째 계정이 오늘 받지 못하고(앞 계정이 오늘 받고 탈퇴해 막혔다) 탈퇴해도, 보관 행의 오늘 날짜는 남는다.
+    깨지는 시나리오: 이번 탈퇴에 출석이 없다고 날짜를 비우면 그 사람이 셋째 계정으로 오늘 받는다."""
+    overrides = _verified_overrides()
+    ci_hmac = str(overrides["identity_ci_hmac"])
+    today = kst_today(datetime.now(UTC))
+    db_session.add(WithdrawnIdentity(ci_hmac=ci_hmac, withdrawn_at=datetime.now(UTC), attendance_claimed_on=today))
+    await _logged_in(db_client, db_session, **overrides)
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    assert (await _withdrawn_row(db_session, ci_hmac)).attendance_claimed_on == today
+
+
+@pytest.mark.parametrize("days_before", [pytest.param(1, id="earlier-date"), pytest.param(None, id="no-date")])
+async def test_withdraw_replaces_an_earlier_or_empty_date_with_today(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, days_before: int | None
+) -> None:
+    """깨지는 시나리오: 기존 보관 행의 날짜를 건드리지 않으면 두 번째 탈퇴의 오늘 기록이 빠져, 그 사람이 세 번째 계정으로 오늘
+    또 받는다."""
+    overrides = _verified_overrides()
+    ci_hmac = str(overrides["identity_ci_hmac"])
+    today = kst_today(datetime.now(UTC))
+    earlier = None if days_before is None else today - timedelta(days=days_before)
+    db_session.add(
+        WithdrawnIdentity(
+            ci_hmac=ci_hmac, withdrawn_at=datetime.now(UTC) - timedelta(days=2), attendance_claimed_on=earlier
+        )
+    )
+    user = await _logged_in(db_client, db_session, **overrides)
+    await _make_attendance_claim(db_session, user.id, board_no=1, seq=1, claimed_on=today)
+    await db_session.commit()
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    assert (await _withdrawn_row(db_session, ci_hmac)).attendance_claimed_on == today
+
+
+async def test_unverified_member_withdrawal_retains_no_identity_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """CI 가 없는 회원은 보관할 열쇠가 없어 보관 행을 만들지 않는다(출석을 받았어도 지금과 같다)."""
+    user = await _logged_in(db_client, db_session)
+    await _make_attendance_claim(db_session, user.id, board_no=1, seq=1, claimed_on=kst_today(datetime.now(UTC)))
+    await db_session.commit()
+    before = await db_session.scalar(select(func.count()).select_from(WithdrawnIdentity))
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    assert await db_session.scalar(select(func.count()).select_from(WithdrawnIdentity)) == before

@@ -27,13 +27,12 @@ from typing import cast
 import httpx
 import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import rate_limit_gate
 from api.core.redis import redis_client
 from api.db.models import User
-from api.db.models.chat import ChatMessage, ChatMessageRole
 from factories import (
     _clear_llm_override,
     _FakeLLMClient,
@@ -41,9 +40,11 @@ from factories import (
     _login_as,
     _make_published,
     _make_published_character,
+    _make_paying_user,
     _make_user,
     _override_llm_client,
     _parse_sse_events,
+    _seed_first_turn,
 )
 
 # ---- 4경로 테이블. body는 그 경로의 최소 유효 요청 ----
@@ -62,12 +63,12 @@ _ROUTE_IDS = [f"{method} {path}" for method, path, _body in _CHAT_ROUTES]
 
 
 async def _consented_user(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, **overrides: object
+    db_client: httpx.AsyncClient, db_session: AsyncSession, *, paid_turns: int = 0, **overrides: object
 ) -> User:
     """`_make_user`의 기본값이 이미 "동의한 사용자"라 재동의 403과 섞이지 않는다.
-    `**overrides`는 `_make_user`로 그대로 넘어간다(9번 절의 `rate_limit_exempt`)."""
-    user = _make_user(**overrides)
-    db_session.add(user)
+    `**overrides`는 `_make_user`로 그대로 넘어간다(9번 절의 `rate_limit_exempt`). `paid_turns` 는 게이트를 통과할 기본 모델
+    턴 수만큼의 잔액이다 — 기본 모델 턴에도 하루 무료분이 없어, 통과를 기대하는 테스트만 적는다."""
+    user = await _make_paying_user(db_session, turns=paid_turns, **overrides)
     await db_session.commit()
     await _login_as(db_client, user.id)
     return user
@@ -88,17 +89,6 @@ _PREVIEW_PAYLOAD: dict[str, object] = {
     "hashtags": [],
     "visibility": "private",
 }
-
-
-async def _clear_rate_limit_counters() -> None:
-    """셋업이 남긴 카운터를 지운다.
-
-    `conftest.py`의 autouse `_flush_rate_limit_keys`는 테스트 **시작 전**에만 돈다. 한 테스트
-    안에서 셋업 전송을 한 뒤 상한을 패치하면 버킷이 0에서 시작하지 않아 산술이 어긋난다.
-    """
-    keys = await redis_client.keys("rate_limit:*")
-    if keys:
-        await redis_client.delete(*keys)
 
 
 async def _real_room_id(
@@ -130,36 +120,18 @@ async def _real_route_ids(
 ) -> dict[str, str]:
     """4경로가 쓸 **실존** 경로 파라미터(방·메시지·미리보기 세션)를 만든다.
 
-    셋업 전송 1회가 버킷을 소모하므로 마지막에 카운터를 지운다 — 호출부는 **이 함수 뒤에**
-    상한을 패치해야 한다.
+    편집 대상 사용자 메시지와 재생성 대상 AI 응답은 DB 에 심는다 — 전송으로 만들면 그 턴이 버킷과 클로버를 써서 호출부의
+    상한·잔액 산술이 셋업 몫만큼 어긋난다.
     """
     room_id = await _real_room_id(db_client, db_session, user)
-
-    # 편집 대상 사용자 메시지와 재생성 대상 AI 응답을 성공 전송 한 번으로 함께 만든다.
-    _override_llm_client(_FakeLLMClient(tokens=["첫", "응답"]))
-    try:
-        sent = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
-    finally:
-        _clear_llm_override()
-    assert sent.status_code == 200
-
-    rows = (
-        await db_session.scalars(
-            select(ChatMessage).where(
-                ChatMessage.chat_room_id == uuid.UUID(room_id),
-                ChatMessage.role == ChatMessageRole.USER,
-            )
-        )
-    ).all()
-    assert len(rows) == 1
+    user_message, _reply = await _seed_first_turn(db_session, uuid.UUID(room_id))
 
     preview = await db_client.post("/preview-sessions", json=_PREVIEW_PAYLOAD)
     assert preview.status_code == 201
 
-    await _clear_rate_limit_counters()
     return {
         "room_id": room_id,
-        "message_id": str(rows[0].id),
+        "message_id": str(user_message.id),
         "id": str(preview.json()["previewSessionId"]),
     }
 
@@ -216,7 +188,7 @@ async def test_four_chat_routes_share_one_bucket(
     단일 버킷을 고른 이유가 정확히 이 우회로다 — 전송으로 상한을 소진한 뒤 재생성·편집
     으로 계속 태울 수 있으면 상한이 상한이 아니다.
     """
-    user = await _consented_user(db_client, db_session)
+    user = await _consented_user(db_client, db_session, paid_turns=2)
     ids = await _real_route_ids(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 2)
 
@@ -254,32 +226,25 @@ async def test_four_chat_routes_share_one_bucket(
         assert detail["window"] == "minute"
 
 
-# ---- 2. 일일 상한 초과 → 429, KST 자정까지 ----
+# ---- 2. 잔액 없음 → 429 CLOVER_REQUIRED, KST 자정까지 ----
 
 
 @pytest.mark.parametrize(("method", "path_template", "body"), _CHAT_ROUTES, ids=_ROUTE_IDS)
-async def test_chat_routes_return_429_with_day_window_when_daily_exceeded(
+async def test_chat_routes_return_clover_required_429_without_balance(
     method: str,
     path_template: str,
     body: dict[str, object] | None,
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """버스트는 기본값 그대로 두고 일일만 0으로 낮춘다 — 그래야 "버스트 → 일일"
-    순서(게이트 docstring)에서 뒤쪽 검사가 실제로 실행된다는 것까지 함께
-    증명된다.
+    """버스트는 기본값 그대로 둔다 — 그래야 "버스트 → 클로버" 순서(게이트 docstring)에서 뒤쪽 검사가 실제로 실행된다는
+    것까지 함께 증명된다.
 
-    🔴 **클로버 도입으로 바디가 바뀌었다**. 무료 일일분을 다 쓴
-    뒤에는 클로버가 대신 내므로, **낼 클로버가 없을 때** 나가는 것이 이 429다 —
-    `USER_LIMIT`/`window=day`가 아니라 `CLOVER_REQUIRED`/`window=clover`다.
-    `_make_user`의 기본 잔액이 0이라 이 셋업이 곧 "낼 것이 없는 사용자"다.
-    ⇒ **채팅에서 `window="day"`는 이제 도달할 수 없다** — 일일 초과는 전부 클로버 분기로
-    넘어간다(잔액이 있으면 통과, 없으면 이 429).
+    기본 모델 턴에도 하루 무료분이 없어 첫 턴부터 클로버로 낸다. `_make_user`의 기본 잔액이 0이라 이 셋업이 곧 "낼 것이 없는
+    사용자"이고, 나가는 것은 `CLOVER_REQUIRED`/`window=clover` 다. 채팅에서 `window="day"`는 나오지 않는다.
     """
     user = await _consented_user(db_client, db_session)
     ids = await _real_route_ids(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     _override_llm_client(_FakeLLMClient())
     try:
@@ -296,22 +261,19 @@ async def test_chat_routes_return_429_with_day_window_when_daily_exceeded(
     assert 1 <= retry_after <= 86400
 
 
-# ---- 2-1. 둘 다 넘겼을 때 이기는 쪽 = 버스트 (게이트 docstring) ----
+# ---- 2-1. 둘 다 걸릴 때 이기는 쪽 = 버스트 (게이트 docstring) ----
 
 
-async def test_burst_check_runs_before_daily_check(
+async def test_burst_check_runs_before_the_clover_check(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """위 두 테스트는 한쪽만 0으로 낮추므로 **순서에 대해서는 항진명제다** — 두 검사를 맞바꿔도
-    낮추지 않은 쪽은 기본 상한(`CHAT_BURST_LIMIT`·`CHAT_DAILY_LIMIT`)에 안 걸려 그냥 통과하고, 같은 `window`가 나온다. 순서를
-    구분하는 유일한 상태는 둘 다 넘긴 사용자이고, 그때 나와야 하는 값은 몇 시간짜리 `day`가
-    아니라 몇 초짜리 `minute`이다(게이트 docstring의 UX 결정)."""
+    """버스트를 넘기고 잔액도 없는 사용자에게 나와야 하는 값은 자정까지의 `CLOVER_REQUIRED` 가 아니라 몇 초짜리
+    `minute`이다(게이트 docstring의 UX 결정). 분당 버스트는 폭주 방어라 돈으로 끌 수 없어 클로버보다 앞이다."""
     user = await _consented_user(db_client, db_session)
     room_id = await _real_room_id(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     _override_llm_client(_FakeLLMClient())
     try:
@@ -323,7 +285,7 @@ async def test_burst_check_runs_before_daily_check(
     detail = resp.json()["detail"]
     assert detail["code"] == "USER_LIMIT"
     assert detail["window"] == "minute"
-    # 분당 창 길이를 넘지 않는다 — `day`가 이겼다면 자정까지 남은 초(최대 86400)가 나온다.
+    # 분당 창 길이를 넘지 않는다 — 클로버 부족이 이겼다면 자정까지 남은 초(최대 86400)가 나온다.
     assert detail["retryAfterSeconds"] <= 60
 
 
@@ -354,8 +316,9 @@ async def test_new_scopes_use_the_rate_limit_prefix_so_the_autouse_flush_covers_
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """`conftest.py`의 autouse `_flush_rate_limit_keys`가 `rate_limit:*`만 지운다 — 새 scope가
-    그 프리픽스 밖이면 카운터가 테스트 사이에 남아 뒤 테스트가 실행 순서에 따라 429를 받는다."""
-    user = await _consented_user(db_client, db_session)
+    그 프리픽스 밖이면 카운터가 테스트 사이에 남아 뒤 테스트가 실행 순서에 따라 429를 받는다. 채팅이 세는 창은 분당 버스트
+    하나다 — 하루 무료 창은 없다."""
+    user = await _consented_user(db_client, db_session, paid_turns=1)
     room_id = await _real_room_id(db_client, db_session, user)
 
     _override_llm_client(_FakeLLMClient())
@@ -363,7 +326,7 @@ async def test_new_scopes_use_the_rate_limit_prefix_so_the_autouse_flush_covers_
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
     finally:
         _clear_llm_override()
-    # 게이트를 통과해 턴이 끝까지 돌았다(429가 아니다) — 그 과정에서 두 scope의 키가 찍힌다.
+    # 게이트를 통과해 턴이 끝까지 돌았다(429가 아니다) — 그 과정에서 버스트 scope의 키가 찍힌다.
     assert resp.status_code == 200
 
     # `core/redis.py`의 클라이언트는 `decode_responses=True`라 런타임 값이 `str`인데 redis
@@ -371,18 +334,18 @@ async def test_new_scopes_use_the_rate_limit_prefix_so_the_autouse_flush_covers_
     # 여기서 한 번 좁힌다.
     keys = cast(list[str], await redis_client.keys("rate_limit:*"))
     assert keys
-    assert any(key.startswith("rate_limit:chat_burst:") for key in keys)
-    assert any(key.startswith("rate_limit:chat_day:") for key in keys)
-    assert all(key.startswith(("rate_limit:chat_burst:", "rate_limit:chat_day:")) for key in keys)
+    assert all(key.startswith("rate_limit:chat_burst:") for key in keys)
 
 
-# ---- 5. Redis 장애 시 fail-open + 창당 1회 보고 ----
+# ---- 5. Redis 장애에도 턴은 이어진다 + 창당 1회 보고 ----
 
 
-async def test_gate_fails_open_and_reports_redis_dependency_failure(
+async def test_gate_survives_and_reports_redis_dependency_failure(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    user = await _consented_user(db_client, db_session)
+    """버스트를 세지 못해도 채팅은 막지 않는다. 기본 모델 턴은 그래도 클로버로 낸다(차감은 Redis 를 쓰지 않는다) — 그래서
+    세 턴 값을 준다."""
+    user = await _consented_user(db_client, db_session, paid_turns=3)
     room_id = await _real_room_id(db_client, db_session, user)
 
     calls: list[str] = []
@@ -405,7 +368,7 @@ async def test_gate_fails_open_and_reports_redis_dependency_failure(
     finally:
         _clear_llm_override()
 
-    # fail-open: 429가 아니라 정상 스트림이다.
+    # 장애에도 429가 아니라 정상 스트림이다.
     assert first.status_code == 200
     assert [e["type"] for e in _parse_sse_events(first.text)] == ["token", "token", "done"]
     assert second.status_code == 200
@@ -520,20 +483,19 @@ async def test_user_rate_limit_exempt_is_none_before_flush_and_false_after_reloa
     assert user.rate_limit_exempt is True
 
 
-# ---- 9. 예외 판정: 일일만 면제하고 버스트는 유지한다 ----
+# ---- 9. 예외 판정: 기본 모델 턴의 차감만 면제하고 버스트는 유지한다 ----
 
 
-async def test_exempt_user_bypasses_the_daily_limit_but_not_the_per_minute_burst(
+async def test_exempt_user_bypasses_clover_but_not_the_per_minute_burst(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """면제의 범위는 일일 상한(과 이미지 토큰버킷)이지 "상한 해제"가 아니다.
+    """면제의 범위는 기본 모델 턴의 클로버 차감(과 이미지 토큰버킷)이지 "상한 해제"가 아니다.
     분당 버스트는 예외 계정도 그대로 받는다 — 버스트는 쿼터가 아니라 폭주 방어라서 면제
     대상에게 열어 줄 이유가 없다."""
     user = await _consented_user(db_client, db_session, rate_limit_exempt=True)
     room_id = await _real_room_id(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     _override_llm_client(_FakeLLMClient())
     try:
@@ -542,7 +504,7 @@ async def test_exempt_user_bypasses_the_daily_limit_but_not_the_per_minute_burst
         )
     finally:
         _clear_llm_override()
-    # 게이트를 통과해 턴이 끝까지 돌았다(429가 아니다) — 면제가 일일 상한을 비껴갔다는 뜻이다.
+    # 게이트를 통과해 턴이 끝까지 돌았다(429가 아니다) — 잔액 0 인데도 면제가 차감을 비껴갔다는 뜻이다.
     assert passed.status_code == 200
 
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
@@ -559,17 +521,15 @@ async def test_exempt_user_bypasses_the_daily_limit_but_not_the_per_minute_burst
     assert detail["window"] == "minute"
 
 
-async def test_non_exempt_user_hits_the_same_daily_limit_under_the_same_setup(
+async def test_non_exempt_user_is_refused_for_clover_under_the_same_setup(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """위 테스트의 짝. 셋업이 글자까지 같고 `rate_limit_exempt`만 다르다 — 이 짝이 없으면 위의
     통과는 "면제가 먹혔다"가 아니라 "이 셋업에서는 원래 아무도 안 걸린다"일 수 있다(그 경우
     면제 판정을 통째로 지워도 두 테스트가 다 초록이다)."""
     user = await _consented_user(db_client, db_session, rate_limit_exempt=False)
     room_id = await _real_room_id(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     _override_llm_client(_FakeLLMClient())
     try:
@@ -587,14 +547,12 @@ async def test_non_exempt_user_hits_the_same_daily_limit_under_the_same_setup(
 async def test_exemption_is_read_from_the_db_row_not_the_session_cookie(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """판정의 소스는 `users.rate_limit_exempt` 행 하나다 — Redis 미러도, 로그인 시점에
     세션에 굳는 사본도 없다. 그래서 로그인한 **뒤에** 행을 뒤집으면 같은 쿠키로 보낸 다음
-    요청이 바로 일일 상한에 걸린다. 무효화할 캐시가 없다는 것이 이 단언의 내용이다."""
+    요청이 바로 클로버 차감을 탄다. 무효화할 캐시가 없다는 것이 이 단언의 내용이다."""
     user = await _consented_user(db_client, db_session, rate_limit_exempt=True)
     room_id = await _real_room_id(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     _override_llm_client(_FakeLLMClient())
     try:
@@ -622,7 +580,7 @@ async def test_exemption_is_read_from_the_db_row_not_the_session_cookie(
         _clear_llm_override()
 
     assert after.status_code == 429
-    # 면제가 풀린 뒤에는 일일 상한에 걸리고, 잔액이 0이라 클로버로도 못 낸다.
+    # 면제가 풀린 뒤에는 클로버로 내야 하는데 잔액이 0이라 못 낸다.
     detail = after.json()["detail"]
     assert detail["code"] == "CLOVER_REQUIRED"
     assert detail["window"] == "clover"

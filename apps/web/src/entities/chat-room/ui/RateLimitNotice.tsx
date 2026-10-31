@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { RotateCw } from "lucide-react";
 
 import {
   formatChatRateLimitAnnouncement,
   formatChatRateLimitMessage,
-  isPreviewSurface,
+  getRateLimitLinks,
   type ChatRateLimit,
   type ChatRateLimitSurface,
 } from "../model/chatRateLimit";
 
 type RateLimitNoticeProps = {
   rateLimit: ChatRateLimit;
-  /** 문구만 갈린다 — 미리보기는 "채팅과 같은 한도"라는 사실을 먼저 말하고, 상위 모델 방은 자정 약속을 하지 않는다. */
+  /** 문구와 버튼만 갈린다 — 미리보기는 "채팅과 같은 한도"라는 사실을 먼저 말하고 이동 버튼을 두지 않는다. */
   surface: ChatRateLimitSurface;
   /** 미리보기 배너에는 재시도가 없다 — 넘기지 않으면 버튼이 그려지지 않는다. */
   onRetry?: () => void;
@@ -47,18 +48,29 @@ export function RateLimitNotice({ rateLimit, surface, onRetry }: RateLimitNotice
   }, [rateLimit]);
 
   const isWaiting = rateLimit.window === "minute" && secondsLeft > 0;
+  const links = getRateLimitLinks(rateLimit, surface);
+  // 버튼이 둘이면 좁은 폭에서 문구가 몇 글자씩 쪼개지므로 버튼 묶음을 다음 줄로 내린다. 하나일 때는 지금 배치 그대로다.
+  const hasManyLinks = links.length > 1;
 
   // 대기 중 비활성은 `disabled`가 아니라 `aria-disabled`다 — `disabled`면 카운트다운이 끝나기
   // 전까지 버튼이 탭 순회에서 통째로 빠져 "왜 못 누르는지"가 키보드 사용자에게 닿지 않는다
-  // (apps/web/CLAUDE.md §포커스). pointer-events-none이 포인터만 막으므로 핸들러에 early return을 둔다.
+  // (apps/web/CLAUDE.md 포커스 절). pointer-events-none이 포인터만 막으므로 핸들러에 early return을 둔다.
   function handleRetry() {
     if (isWaiting) return;
     onRetry?.();
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg bg-destructive/10 px-3.5 py-2.5">
-      <span aria-hidden className="min-w-0 break-keep text-xs text-destructive-text">
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3 rounded-lg bg-destructive/10 px-3.5 py-2.5",
+        hasManyLinks && "flex-wrap gap-y-2",
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn("min-w-0 break-keep text-xs text-destructive-text", hasManyLinks && "flex-1 basis-48")}
+      >
         {formatChatRateLimitMessage(rateLimit, surface, secondsLeft)}
       </span>
       {/* role="alert" sr-only 쌍둥이. 보이는 문구는 매초 바뀌어 aria-hidden으로 숨기고,
@@ -68,14 +80,26 @@ export function RateLimitNotice({ rateLimit, surface, onRetry }: RateLimitNotice
       <span role="alert" className="sr-only">
         {formatChatRateLimitAnnouncement(rateLimit, surface)}
       </span>
-      {/* 클로버가 모자라면 채울 곳(구매·미션이 있는 허브)으로 잇는다. 빌더 미리보기에는 두지 않는다 — 누르면
-          만들던 화면을 떠난다. */}
-      {rateLimit.window === "clover" && !isPreviewSurface(surface) && (
-        <Button asChild variant="destructive" size="sm" className="shrink-0">
-          <Link to="/clover" search={{ returnTo }}>
-            클로버 채우기
-          </Link>
-        </Button>
+      {/* 클로버가 모자라면 채울 곳(구매·미션이 있는 허브)과 출석판으로 잇는다. 빌더
+          미리보기에는 두지 않는다 — 누르면 만들던 화면을 떠난다(`getRateLimitLinks`). 버튼은 위 aria-hidden 문구 밖에
+          둔다 — 그 안에 두면 접근성 트리에서 버튼이 사라진다. 출석판에는 돌아올 곳을 넘기지 않는다(출석판은 서치
+          파라미터를 받지 않고, 받은 뒤 "대화 이어가기"가 최근 방으로 돌려보낸다). */}
+      {links.length > 0 && (
+        <div className="flex shrink-0 gap-2">
+          {links.map((link) =>
+            link === "clover" ? (
+              <Button key={link} asChild variant="destructive" size="sm" className="shrink-0">
+                <Link to="/clover" search={{ returnTo }}>
+                  클로버 채우기
+                </Link>
+              </Button>
+            ) : (
+              <Button key={link} asChild variant="destructive" size="sm" className="shrink-0">
+                <Link to="/attendance">출석판</Link>
+              </Button>
+            ),
+          )}
+        </div>
       )}
       {/* day 창에는 재시도를 두지 않는다 — 자정까지 눌러도 같은 429가 돌아온다. */}
       {!!onRetry && rateLimit.window === "minute" && (

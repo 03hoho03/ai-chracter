@@ -930,8 +930,6 @@ async def get_me(
         identity_verified=user.identity_verified_at is not None,
         identity_gate_enabled=identity_gate_active(),
         identity_gated=is_identity_gated(user),
-        # 모듈 속성으로 호출 시점에 읽는다(테스트의 `monkeypatch.setattr` 가 통하게 — 게이트 함수와 같은 관례).
-        daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
         paid_clover_balance=await clover.paid_balance(db, user_id=user.id),
         purchase_block_reason=purchase_block_reason(user),
         novel_public_enabled=novel_public_open_to(user.id),

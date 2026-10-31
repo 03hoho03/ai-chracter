@@ -17,9 +17,10 @@ export const SIDE_PANEL_DESTINATION_KEYS = ["home", "studio", "builder", "favori
  * 레일 화면에서 내 채팅목록에 한 번에 닿을 길이 없다. */
 export const SIDE_PANEL_RAIL_CHATS_KEY = "chats";
 
-/** 프로필 메뉴에 남는 목적지. 크리에이터 정산은 클로버 바로 뒤에 둔다 — 돈에 관한 화면끼리 붙인다. */
+/** 프로필 메뉴에 남는 목적지. 출석판은 클로버 바로 앞, 크리에이터 정산은 클로버 바로 뒤에 둔다 — 클로버를 받고 쓰고
+ * 버는 화면끼리 붙인다. */
 export const PROFILE_MENU_DESTINATION_GROUPS = [
-  { label: "계정", keys: ["profile", "personas", "clover", "creator-payout", "mypage"] },
+  { label: "계정", keys: ["profile", "personas", "attendance", "clover", "creator-payout", "mypage"] },
   { label: "고객센터", keys: ["about", "notices", "inquiry-new", "terms", "privacy", "operation-policy", "youth-policy", "refund-policy"] },
 ] as const satisfies readonly { label: string; keys: readonly string[] }[];
 

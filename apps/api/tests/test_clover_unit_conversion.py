@@ -85,6 +85,8 @@ _M = _load_migration()
 # 무료·유료 표지로만 읽는 화 공개 가격. 새 정수 칼럼이 생기면 아래 전수 테스트가 어느 쪽인지 정하라고 멈춘다.
 _LEFT_AS_IS: dict[str, tuple[str, ...]] = {
     "assets": ("width", "height", "frame_count"),
+    # 출석 기록은 1원 단위가 된 뒤에 생긴 표이고, 과거 행의 금액을 읽어 돈을 움직이는 코드가 없다.
+    "attendance_claims": ("board_no", "reward_version", "seq", "amount"),
     "chat_memory_embeddings": ("dims",),
     "chat_memory_episodes": ("ordinal", "start_turn", "end_turn", "importance"),
     "chat_memory_extractions": (
@@ -139,6 +141,11 @@ _LEFT_AS_IS: dict[str, tuple[str, ...]] = {
     "media_book_people": ("order",),
     "media_book_scenes": ("order",),
     "novel_batches": ("ordinal", "assistant_message_count", "target_episode_count"),
+    "novel_bible_commits": ("cas_losses", "restarts"),
+    "novel_bible_events": ("ordinal",),
+    "novel_bible_evidence": ("char_start", "char_end"),
+    "novel_bible_jobs": ("attempts",),
+    "novel_bible_revisions": ("revision_no",),
     "novel_chapter_editions": ("edition",),
     "novel_chapter_illustrations": ("sort_order",),
     # 화 공개 가격은 0(무료)인지만 읽는다 — 유료 화는 언제나 지금 단가로 판다.

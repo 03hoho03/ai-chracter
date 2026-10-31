@@ -39,9 +39,10 @@ from sqlalchemy.pool import NullPool
 from starlette.types import Message
 
 from api.chat import voyage_backoff
+from api.clover import attendance
 from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.core.clover import CloverKind, SpendUsage, kst_today, refund_spend, revoke_purchase_lots, spend
 from api.core.config import Settings, settings
 from api.core.rate_limit import KST
@@ -55,6 +56,7 @@ from api.db.models import (
     Asset,
     AssetKind,
     AssetStatus,
+    AttendanceClaim,
     CharacterVersionDetail,
     ChatMemoryEmbedding,
     ChatMemoryEpisode,
@@ -95,6 +97,18 @@ from api.db.models import (
     NovelComment,
     NovelCommentReport,
     NovelJob,
+    NovelBibleAdaptationCandidate,
+    NovelBibleCommit,
+    NovelBibleEntity,
+    NovelBibleEvent,
+    NovelBibleEventRelation,
+    NovelBibleEvidence,
+    NovelBibleExpiration,
+    NovelBibleFact,
+    NovelBibleFinding,
+    NovelBibleJob,
+    NovelBibleKnowledge,
+    NovelBibleRevision,
     NovelLike,
     NovelPublication,
     NovelReaderPosition,
@@ -121,7 +135,7 @@ from api.legal.consents import kind_consent_units
 from api.llm import bedrock as bedrock_module
 from api.llm import gemini as gemini_module
 from api.llm.bedrock import BedrockLLMClient
-from api.llm.chat_models import ChatModelId
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, chat_turn_cost
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.llm.gemini import GeminiLLMClient
@@ -189,6 +203,45 @@ async def _make_user_with_clover_lot(
         await db_session.flush()
     return user
 
+
+async def _make_paying_user(db_session: AsyncSession, *, turns: int, **overrides: object) -> User:
+    """기본 모델 턴 `turns` 번을 낼 만큼의 잔액(과 같은 크기의 무기한 로트)을 가진 사용자. 기본 모델 턴에도 하루 무료분이
+    없어 채팅을 보내는 테스트는 그 턴 값을 명시적으로 받아야 한다. 면제 계정으로 만들지 않는 이유는 면제가 차감 갈래를
+    통째로 건너뛰어 그 경로의 회귀를 숨기기 때문이다."""
+    return await _make_user_with_clover_lot(
+        db_session, clover_balance=turns * chat_turn_cost(DEFAULT_CHAT_MODEL), **overrides
+    )
+
+
+async def _make_attendance_claim(
+    db_session: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    board_no: int,
+    seq: int,
+    claimed_on: date,
+    reward_version: int = 1,
+) -> AttendanceClaim:
+    """그날 받은 출석 한 칸 — 실제 수령처럼 `grant` 로 원장·로트를 만들고(멱등키도 수령과 같은 식) 그 원장 행을 가리키는
+    출석 행을 넣는다. 상태 계산은 마지막 행만 보므로 진도를 만들 때 앞 칸들을 다 넣을 필요는 없다. 로트 만료는 이 헬퍼를 쓰는
+    테스트가 보지 않아 무기한으로 둔다."""
+    amount = attendance.ATTENDANCE_REWARDS[reward_version][seq - 1]
+    key = attendance.attendance_idempotency_key(user_id, claimed_on)
+    await clover.grant(db_session, user_id=user_id, amount=amount, kind="attendance_grant", idempotency_key=key)
+    ledger_id = await db_session.scalar(sa.select(CloverLedger.id).where(CloverLedger.idempotency_key == key))
+    assert ledger_id is not None
+    row = AttendanceClaim(
+        user_id=user_id,
+        board_no=board_no,
+        reward_version=reward_version,
+        seq=seq,
+        claimed_on=claimed_on,
+        amount=amount,
+        ledger_id=ledger_id,
+    )
+    db_session.add(row)
+    await db_session.flush()
+    return row
 
 async def _make_payment(db_session: AsyncSession, *, user_id: uuid.UUID, **overrides: object) -> Payment:
     """주문 행 하나(기본: 지금은 팔지 않는 예전 베이직 상품(`basic`)의 값, `pending`). 환불·정산은 상품 키를 다시
@@ -429,6 +482,29 @@ def _make_chat_turn(chat_room_id: uuid.UUID, **overrides: object) -> ChatTurn:
     }
     defaults.update(overrides)
     return ChatTurn(**defaults)
+
+
+async def _make_bare_chat_room(db_session: AsyncSession) -> ChatRoom:
+    """턴 기록을 붙일 방 하나 — 회원 한 명이 작가이자 방 주인인 최소 작품·버전 위에 만든다. 메시지·스탯은 없다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = Content(
+        creator_user_id=user.id,
+        type=ContentType.CHARACTER,
+        hashtags=[],
+        visibility=ContentVisibility.PUBLIC,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(content)
+    await db_session.flush()
+    version = ContentVersion(content_id=content.id, detail_description="설명")
+    db_session.add(version)
+    await db_session.flush()
+    room = ChatRoom(user_id=user.id, content_id=content.id, content_version_id=version.id)
+    db_session.add(room)
+    await db_session.flush()
+    return room
 
 
 def _make_memory_episode(chat_room_id: uuid.UUID, snapshot_id: uuid.UUID, **overrides: object) -> ChatMemoryEpisode:
@@ -695,8 +771,11 @@ async def _make_novel_tree(
 
 async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None:
     """`tree` 의 소설·화에 인물 카드·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록·독자 읽은 자리·
-    좋아요·홈 노벨 자리·화 댓글을 하나씩 붙이고, 그 화와 댓글에 신고를 하나씩 단다(flush). 소설을 지우는 경로가 이 테이블들까지
-    지우는지, 신고는 남기는지 볼 때 쓴다."""
+    좋아요·홈 노벨 자리·화 댓글을 하나씩 붙이고, 그 화와 댓글에 신고를 하나씩 단다(flush). 첫 개정을 확정한 정본 기억 행도
+    표마다 하나씩 심는다(`_plant_bible_rows`). 소설을 지우는 경로가 이 테이블들까지 지우는지, 신고는 남기는지 볼 때 쓴다."""
+    await _plant_bible_rows(
+        db_session, novel_id=tree.novel.id, chapter_id=tree.chapter.id, chapter_revision_id=tree.first_revision.id
+    )
     card = NovelCharacter(novel_id=tree.novel.id, name="인물")
     db_session.add(card)
     await db_session.flush()
@@ -767,6 +846,157 @@ async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None
         ]
     )
     await db_session.flush()
+
+
+@dataclass(frozen=True)
+class BibleRows:
+    """`_plant_bible_rows` 가 심은 행 중 다른 행이 가리키는 것의 id."""
+
+    commit_id: uuid.UUID
+    revision_id: uuid.UUID
+    entity_id: uuid.UUID
+    event_id: uuid.UUID
+    fact_id: uuid.UUID
+
+
+async def _plant_bible_rows(
+    db_session: AsyncSession, *, novel_id: uuid.UUID, chapter_id: uuid.UUID, chapter_revision_id: uuid.UUID
+) -> BibleRows:
+    """화 하나의 개정 확정이 커밋까지 간 꼴로 정본 기억 표 열둘에 행을 하나씩 심는다(flush) — 확정과 그 작업·리비전·검사 결과,
+    리비전에 매달린 사건·회상 관계·사실·지식·근거·만료·각색 후보, 소설에 매달린 개체. 리비전 번호는 그 소설의 다음 번호이고 개체
+    이름은 부를 때마다 새로 지어, 한 소설의 여러 화에 심어도 유니크에 걸리지 않는다. 글은 모두 합성 문장이다."""
+    entity = NovelBibleEntity(
+        novel_id=novel_id, kind="character", name="인물", name_norm=f"인물-{uuid.uuid4().hex[:8]}"
+    )
+    commit = NovelBibleCommit(
+        novel_id=novel_id,
+        kind="chapter_confirm",
+        chapter_id=chapter_id,
+        chapter_revision_id=chapter_revision_id,
+        content_hash="0" * 64,
+        block_ids_hash="0" * 64,
+        status="committed",
+        actor_kind="system",
+    )
+    db_session.add_all([entity, commit])
+    await db_session.flush()
+    last_no = await db_session.scalar(
+        sa.select(sa.func.max(NovelBibleRevision.revision_no)).where(NovelBibleRevision.novel_id == novel_id)
+    )
+    revision = NovelBibleRevision(novel_id=novel_id, revision_no=(last_no or 0) + 1, commit_id=commit.id)
+    db_session.add_all(
+        [
+            revision,
+            NovelBibleJob(novel_id=novel_id, commit_id=commit.id, slot="events", status="succeeded", proposal={}),
+            NovelBibleFinding(
+                novel_id=novel_id, commit_id=commit.id, severity="warning", rule="order_undetermined", payload={}
+            ),
+        ]
+    )
+    await db_session.flush()
+    item: dict[str, Any] = {"novel_id": novel_id, "created_revision_id": revision.id, "chapter_id": chapter_id}
+    event = NovelBibleEvent(
+        **item,
+        ordinal=1,
+        actuality="present",
+        summary="합성 사건",
+        anchor_block_ids=[uuid.uuid4()],
+        present_entity_ids=[entity.id],
+    )
+    db_session.add(event)
+    await db_session.flush()
+    fact = NovelBibleFact(
+        **item,
+        fact_key=uuid.uuid4(),
+        subject_entity_id=entity.id,
+        kind="life",
+        predicate_norm="life",
+        value="살아 있음",
+        value_norm="alive",
+        holds=True,
+        immutable=False,
+        onset=False,
+        scope="from_here",
+        valid_from_event_id=event.id,
+    )
+    db_session.add_all(
+        [
+            fact,
+            NovelBibleEventRelation(
+                **item,
+                from_event_id=event.id,
+                relation="before",
+                to_anchor_block_id=uuid.uuid4(),
+                to_chapter_id=chapter_id,
+            ),
+        ]
+    )
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NovelBibleKnowledge(
+                **item,
+                knower_entity_id=entity.id,
+                kind="knows",
+                fact_key=fact.fact_key,
+                proposition={},
+                known_since_event_id=event.id,
+            ),
+            NovelBibleEvidence(
+                novel_id=novel_id,
+                created_revision_id=revision.id,
+                item_table="fact",
+                item_id=fact.id,
+                origin="manuscript_block",
+                chapter_id=chapter_id,
+                chapter_revision_id=chapter_revision_id,
+                block_id=uuid.uuid4(),
+                char_start=0,
+                char_end=1,
+                quote_sha256="0" * 64,
+            ),
+            NovelBibleExpiration(
+                revision_id=revision.id,
+                novel_id=novel_id,
+                item_table="event",
+                item_id=event.id,
+                reason="chapter_replaced",
+            ),
+            NovelBibleAdaptationCandidate(
+                novel_id=novel_id,
+                created_revision_id=revision.id,
+                chapter_id=chapter_id,
+                fact_key=fact.fact_key,
+                fact_id=fact.id,
+                origin="play",
+            ),
+        ]
+    )
+    await db_session.flush()
+    return BibleRows(commit.id, revision.id, entity.id, event.id, fact.id)
+
+
+async def _bible_row_counts(db_session: AsyncSession, novel_id: uuid.UUID) -> dict[str, int]:
+    """소설 하나에 남은 정본 기억 행 수를 표 이름마다. 모든 표가 `novel_id` 를 갖는다."""
+    columns = (
+        NovelBibleCommit.novel_id,
+        NovelBibleJob.novel_id,
+        NovelBibleRevision.novel_id,
+        NovelBibleEntity.novel_id,
+        NovelBibleEvidence.novel_id,
+        NovelBibleExpiration.novel_id,
+        NovelBibleFinding.novel_id,
+        NovelBibleAdaptationCandidate.novel_id,
+        NovelBibleEvent.novel_id,
+        NovelBibleEventRelation.novel_id,
+        NovelBibleFact.novel_id,
+        NovelBibleKnowledge.novel_id,
+    )
+    return {
+        column.class_.__tablename__: (await db_session.scalar(sa.select(sa.func.count()).where(column == novel_id)))
+        or 0
+        for column in columns
+    }
 
 
 @dataclass(frozen=True)
@@ -1093,11 +1323,10 @@ async def _make_published_story(
 
 
 async def _story_with_setup(
-    db_session: AsyncSession, *, opening_message: str | None, prologue: str = "프롤로그"
+    db_session: AsyncSession, *, opening_message: str | None, prologue: str = "프롤로그", paid_turns: int = 0
 ) -> tuple[uuid.UUID, Content, StartingSetup]:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    """`paid_turns` 는 만드는 사용자에게 줄 기본 모델 턴 수다(`_open_room` 과 같은 규칙 — 채팅을 보내는 호출부만 적는다)."""
+    user = await _make_paying_user(db_session, turns=paid_turns)
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     assert content.current_published_version_id is not None
@@ -1493,13 +1722,15 @@ async def _open_room(
     lane: str = "character",
     message_length: int = 20,
     user: User | None = None,
+    paid_turns: int = 0,
 ) -> Room:
     """방을 API로 만들고(오프닝은 앱이 넣는다) `turns`턴을 `created_at`을 명시해 심는다. 오프닝을
-    하루 전으로 옮기고 그 뒤 1초 간격이라, 요청이 새로 넣는 메시지가 항상 가장 뒤에 온다."""
+    하루 전으로 옮기고 그 뒤 1초 간격이라, 요청이 새로 넣는 메시지가 항상 가장 뒤에 온다.
+
+    `paid_turns` 는 새로 만드는 사용자에게 줄 기본 모델 턴 수다. 기본 0 이라 채팅을 보내는 테스트는 보낼 만큼을 적어야 한다 —
+    빠뜨리면 그 전송이 잔액 부족 429 로 크게 실패한다. `user` 를 넘기면 쓰지 않는다(그 사용자의 잔액은 호출부가 정한다)."""
     if user is None:
-        user = _make_user()
-        db_session.add(user)
-        await db_session.flush()
+        user = await _make_paying_user(db_session, turns=paid_turns)
     genre = await _get_genre(db_session)
     if lane == "character":
         content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -1574,6 +1805,24 @@ async def _open_room(
     return Room(room_id=room_id, user_id=user.id, base=base, turns=seeded)
 
 
+async def _seed_first_turn(db_session: AsyncSession, room_id: uuid.UUID) -> tuple[ChatMessage, ChatMessage]:
+    """API 로 연 방에 첫 턴(사용자 메시지와 AI 응답)을 DB 로 심고 `(사용자, 응답)` 을 돌려준다. 재생성·편집이 요구하는 앞
+    턴을 만드는 셋업이다 — API 로 보내면 그 턴도 클로버로 나가 호출부의 잔액·원장·사용처 단언에 셋업 몫이 섞인다. 오프닝을
+    하루 전으로 옮기고 그 뒤에 심어, 요청이 새로 넣는 메시지가 늘 가장 뒤에 온다(`_open_room` 과 같은 배치)."""
+    base = datetime.now(UTC) - timedelta(days=1)
+    await db_session.execute(sa.update(ChatMessage).where(ChatMessage.chat_room_id == room_id).values(created_at=base))
+    user_message = ChatMessage(
+        chat_room_id=room_id, role=ChatMessageRole.USER, content="안녕", created_at=base + timedelta(seconds=1)
+    )
+    reply = ChatMessage(
+        chat_room_id=room_id, role=ChatMessageRole.ASSISTANT, content="응답", created_at=base + timedelta(seconds=2)
+    )
+    db_session.add_all([user_message, reply])
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room_id).values(turn_count=1))
+    await db_session.commit()
+    return user_message, reply
+
+
 # 스토리 방의 스탯 두 개 — 판정 스탯 "신뢰"(73, 규칙 a1 +5·a2 -2)와 카운터 "남은 날"(30, 턴마다 -1). 재생성 재판정과
 # 직전 응답 되돌리기가 같은 방으로 스탯 효과를 본다.
 
@@ -1586,8 +1835,10 @@ class _Stats:
         self.days = days
 
 
-async def _story_room(db_session: AsyncSession, db_client: httpx.AsyncClient, *, turns: int = 0) -> tuple[Room, _Stats]:
-    room = await _open_room(db_client, db_session, turns=turns, lane="story")
+async def _story_room(
+    db_session: AsyncSession, db_client: httpx.AsyncClient, *, turns: int = 0, paid_turns: int = 0
+) -> tuple[Room, _Stats]:
+    room = await _open_room(db_client, db_session, turns=turns, lane="story", paid_turns=paid_turns)
     setup = await _setup_of(db_session, room.room_id)
     trust = await db_session.scalar(sa.select(StatDef).where(StatDef.starting_setup_id == setup.id))
     assert trust is not None
@@ -1802,34 +2053,22 @@ async def _setup_chat_room(db_client: httpx.AsyncClient, db_session: AsyncSessio
     return uuid.UUID(resp.json()["id"])
 
 
-async def _user_message_id(db_session: AsyncSession, room_id: uuid.UUID) -> uuid.UUID:
-    """편집 대상(그 방의 사용자 메시지) id. 셋업 전송이 남긴 한 건을 쓴다."""
-    rows = (
-        await db_session.scalars(
-            sa.select(ChatMessage).where(ChatMessage.chat_room_id == room_id, ChatMessage.role == ChatMessageRole.USER)
-        )
-    ).all()
-    assert len(rows) == 1
-    return rows[0].id
-
-
 async def _prepare_paid_turn(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
     *,
     surface: str,
     balance: int,
 ) -> tuple[User, str, str, dict[str, object] | None]:
-    """`surface`(전송/편집/재생성/미리보기)의 턴 하나를 클로버로 낼 수밖에 없는 상태를 만들고 `(유저, 메서드, 경로, 본문)`을
-    돌려준다. 재생성은 본문이 없는 요청이라 본문 자리가 None 이다.
+    """`surface`(전송/편집/재생성/미리보기)의 턴 하나를 낼 상태를 만들고 `(유저, 메서드, 경로, 본문)`을 돌려준다. 기본 모델
+    턴에도 하루 무료분이 없어 그 턴은 클로버로 낸다. 재생성은 본문이 없는 요청이라 본문 자리가 None 이다.
 
-    사용자는 오늘치 클로버 사용 확인을 마친 상태다 — 미확인이면 게이트가 차감하지 않고 `CLOVER_CONFIRM_REQUIRED` 로 끊는다.
-    `_make_user` 기본값(한 번도 확인 안 함)은 그대로 둔다. 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는
-    테스트가 셋업만으로 통과한다. 실제로 차감하므로 잔액에 맞는 로트도 함께 만든다.
+    사용자는 오늘치 클로버 사용 확인을 마친 상태다 — 채팅 게이트는 확인을 묻지 않지만, 호출부가 보는 것은 차감이라 확인 여부에
+    기대지 않게 한다. `_make_user` 기본값(한 번도 확인 안 함)은 그대로 둔다 — 기본을 "오늘 확인됨"으로 바꾸면 이미지의 확인
+    게이트를 검증하는 테스트가 셋업만으로 통과한다. 실제로 차감하므로 잔액에 맞는 로트도 함께 만든다.
 
-    하루 무료 상한을 0 으로 낮추는 것은 **셋업이 끝난 뒤**다 — 방 생성과 재생성·편집을 위한 첫 전송은 무료분으로 통과해야
-    원장에 셋업 잡음이 남지 않는다.
+    재생성·편집이 요구하는 앞 턴(마지막 AI 응답, 고칠 사용자 메시지)은 API 로 보내지 않고 DB 에 심는다 — 보내면 그 셋업 턴이
+    잔액을 깎고 원장에 행을 남겨, 호출부의 잔액·원장 단언이 셋업 몫만큼 어긋난다.
     """
     user = await _make_user_with_clover_lot(
         db_session, clover_balance=balance, clover_spend_confirmed_on=kst_today(datetime.now(UTC))
@@ -1837,36 +2076,18 @@ async def _prepare_paid_turn(
     await db_session.commit()
     await _login_as(db_client, user.id)
 
-    room_id: uuid.UUID | None = None
-    session_id: str | None = None
-    message_id: uuid.UUID | None = None
-
     if surface == "preview":
         resp = await db_client.post("/preview-sessions", json=_preview_character_payload())
         assert resp.status_code == 201
         session_id = resp.json()["previewSessionId"]
-    else:
-        room_id = await _setup_chat_room(db_client, db_session, user)
-        if surface in ("regenerate", "edit"):
-            # 재생성은 "마지막 메시지가 AI 응답"인 상태를, 편집은 "고칠 사용자 메시지"를 요구한다 — 성공하는 전송을 한 번 먼저
-            # 태운다.
-            _override_llm_client(_FakeLLMClient(tokens=["첫", "응답"]))
-            try:
-                sent = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
-            finally:
-                _clear_llm_override()
-            assert sent.status_code == 200
-        if surface == "edit":
-            message_id = await _user_message_id(db_session, room_id)
-
-    # 여기서부터 클로버로 낸다.
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
-    if surface == "preview":
         return user, "POST", f"/preview-sessions/{session_id}/messages", {"content": "안녕"}
-    if surface == "regenerate":
-        return user, "POST", f"/chat-rooms/{room_id}/regenerate", None
-    if surface == "edit":
-        return user, "PATCH", f"/chat-rooms/{room_id}/messages/{message_id}", {"content": "고친 내용"}
+    if surface in ("regenerate", "edit"):
+        room = await _open_room(db_client, db_session, turns=1, user=user)
+        if surface == "regenerate":
+            return user, "POST", f"/chat-rooms/{room.room_id}/regenerate", None
+        user_message = room.turns[1][0]
+        return user, "PATCH", f"/chat-rooms/{room.room_id}/messages/{user_message.id}", {"content": "고친 내용"}
+    room_id = await _setup_chat_room(db_client, db_session, user)
     return user, "POST", f"/chat-rooms/{room_id}/messages", {"content": "안녕"}
 
 
@@ -1969,6 +2190,30 @@ async def _assert_blocked(task: "asyncio.Task[object]", *, block_seconds: float 
     """
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(asyncio.shield(task), block_seconds)
+
+
+async def _eventually(check: Callable[[], Awaitable[bool]], *, within: float = 10.0) -> None:
+    """`check` 가 참이 될 때까지 0.01초 간격으로 본다. `within` 초 안에 참이 안 되면 실패다."""
+    for _ in range(int(within / 0.01)):
+        if await check():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"{within}초 안에 조건이 서지 않았다")
+
+
+async def _true(value: bool) -> bool:
+    """이미 계산한 참거짓을 `_eventually` 가 받는 비동기 검사로 감싼다."""
+    return value
+
+
+class _Clock:
+    """테스트가 손으로 미는 단조 시계 — 워커 루프의 `clock` 인자로 넘긴다."""
+
+    def __init__(self, now: float) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
 
 
 @contextmanager
@@ -2534,9 +2779,9 @@ class _FakeProviderSdks:
 
 # 운영 API 컨테이너가 받는 env 키 이름(값 없이). 컨테이너는 `.env` 를 통째로 받으므로 compose·다른 서비스 키도 섞여 있다.
 # 운영 키 이름이 바뀌면 이 목록 하나만 고친다 — 운영 env 그대로 새 이미지가 뜨는지 보는 테스트들이 모두 이 목록을 읽는다.
-# 운영은 상위 모델 글쓰기 호출과 판정·요약·기억 추출 호출을 모두 Anthropic 직결로 배정하고(판정·요약 모델은 모두 `haiku`),
-# 장면·사실 기억 추출을 켠다. 기억 사용 쪽은 장면 회상, 사실 주입, 요약의 비밀 표기와 지식 범위 필터, 임베딩 쓰기·임베딩 회상을
-# 켜고(Voyage 키와 함께), 질의 임베딩 상한을 3초로 늘려 둔다. Bedrock 자격(`BEDROCK_*`), Haiku 실제 id(`ANTHROPIC_HAIKU_MODEL_ID`),
+# 운영은 상위 모델 글쓰기 호출과 판정·요약·기억 추출·인상 호출을 모두 Anthropic 직결로 배정하고(판정·요약·인상 모델은 모두
+# `haiku`), 장면·사실 기억 추출과 인상 쓰기를 켠다(인상 보기 스위치는 운영에 없다). 기억 사용 쪽은 장면 회상, 사실 주입,
+# 요약의 비밀 표기와 지식 범위 필터, 임베딩 쓰기·임베딩 회상을 켜고(Voyage 키와 함께), 질의 임베딩 상한을 3초로 늘려 둔다. Bedrock 자격(`BEDROCK_*`), Haiku 실제 id(`ANTHROPIC_HAIKU_MODEL_ID`),
 # 기억 사용 범위·임베딩 모델·차원, 기억 창 키(`MEMORY_WINDOW_*`)는 운영에 없어 코드 기본값으로 뜬다.
 PRODUCTION_ENV_NAMES = (
     "ANTHROPIC_DIRECT_API_KEY",
@@ -2593,6 +2838,8 @@ PRODUCTION_ENV_NAMES = (
     "MEMORY_FACTS_EXTRACT",
     "MEMORY_FACTS_INJECT",
     "MEMORY_FACT_MODEL",
+    "MEMORY_IMPRESSIONS_WRITE",
+    "MEMORY_IMPRESSION_MODEL",
     "MEMORY_KNOWLEDGE_FILTER",
     "MEMORY_SUMMARY_MODEL",
     "MEMORY_SUMMARY_SECRET_MARKING",
@@ -2624,8 +2871,8 @@ PRODUCTION_ENV_NAMES = (
     "WITHDRAWN_EMAIL_HMAC_KEY",
 )
 
-# 운영의 호출 위치 배정 — 상위 모델 스위치가 쓰는 글쓰기 호출 셋과, 판정·요약·기억 추출 호출(모델이 `haiku` 라 배정이 없으면
-# Bedrock 으로 간다) 열을 모두 Anthropic 직결로 옮긴다.
+# 운영의 호출 위치 배정 — 상위 모델 스위치가 쓰는 글쓰기 호출 셋과, 판정·요약·기억 추출·인상 호출(모델이 `haiku` 라 배정이
+# 없으면 Bedrock 으로 간다) 열하나를 모두 Anthropic 직결로 옮긴다.
 PRODUCTION_CALL_SITE_BACKENDS = ",".join(
     f"{call_site}:anthropic"
     for call_site in (
@@ -2642,14 +2889,15 @@ PRODUCTION_CALL_SITE_BACKENDS = ",".join(
         "preview_media_book_image",
         "chat_memory_episode",
         "chat_memory_fact",
+        "chat_memory_impression",
     )
 )
 
 # 문자열이 아닌 설정만 형식에 맞는 가짜 값을 둔다. 나머지(문자열 설정과 `Settings` 가 모르는 키)는 아무 글자다. 배정은
-# 운영 값 그대로다 — 형식만 맞는 다른 배정이면 Bedrock 으로 남는 호출이 생겨 이 집합으로는 기동하지 못한다. 판정·요약 모델과
-# 기억 스위치(추출 둘과 켜 둔 기억 사용 여섯)와 질의 임베딩 상한도 운영 값 그대로다 — 모델과 배정은 서로 맞아야 기동하고, 임베딩
-# 스위치는 Voyage 키(아무 글자)가 있어야 기동한다. 두 상위 모델
-# 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 켠 상태로 둔다.
+# 운영 값 그대로다 — 형식만 맞는 다른 배정이면 Bedrock 으로 남는 호출이 생겨 이 집합으로는 기동하지 못한다. 판정·요약·인상
+# 모델과 기억 스위치(추출 둘, 켜 둔 기억 사용 여섯, 인상 쓰기)와 질의 임베딩 상한도 운영 값 그대로다 — 모델과 배정은 서로
+# 맞아야 기동하고, 임베딩 스위치는 Voyage 키(아무 글자)가 있어야 기동한다. 두 상위 모델 스위치는 켠 상태가 기동 검증이 더
+# 엄격한 경우라 켠 상태로 둔다.
 PRODUCTION_ENV_TYPED_VALUES = {
     "CHAT_PREMIUM_MODELS_ENABLED": "true",
     "CORS_ALLOW_ORIGINS": "https://a.example,https://b.example",
@@ -2671,6 +2919,8 @@ PRODUCTION_ENV_TYPED_VALUES = {
     "MEMORY_FACTS_EXTRACT": "true",
     "MEMORY_FACTS_INJECT": "true",
     "MEMORY_FACT_MODEL": "haiku",
+    "MEMORY_IMPRESSIONS_WRITE": "true",
+    "MEMORY_IMPRESSION_MODEL": "haiku",
     "MEMORY_KNOWLEDGE_FILTER": "true",
     "MEMORY_SUMMARY_MODEL": "haiku",
     "MEMORY_SUMMARY_SECRET_MARKING": "true",
@@ -2780,6 +3030,21 @@ def seed_revisions_above(revision: str) -> list[str]:
     """`revision` 위에 쌓인 리비전 중 시드 되돌리기 함수(`delete_seeded_rows`)가 있는 것 — head 쪽부터, 실제 downgrade
     순서다. 레인을 가리지 않는다(채팅 레인 테스트도 소설 레인 시드를 되돌린다)."""
     return [script.revision for script in _seed_scripts_above(revision)]
+
+
+def set_ids_seeded_above(revision: str) -> list[uuid.UUID]:
+    """`revision` 위에 쌓인 리비전이 심은 프롬프트 세트 id 전부(세트 여럿을 심은 리비전의 `NEW_SET_IDS`, 하나를 심은
+    리비전의 `NEW_SET_ID`). 시드 리비전 테스트가 "이 리비전의 버전은 그때까지의 전역 최대 + 1 부터"를 볼 때 뒤에 게시된
+    세트를 빼는 데 쓴다 — 새 시드 리비전이 생겨도 테스트 파일의 목록을 고칠 일이 없다. 레인을 가리지 않는다(버전 번호는 전
+    레인이 함께 이어 쓴다)."""
+    set_ids: list[uuid.UUID] = []
+    for script in _migration_scripts().walk_revisions(revision, "heads"):
+        if script.revision == revision:
+            continue
+        set_ids.extend(getattr(script.module, "NEW_SET_IDS", {}).values())
+        if hasattr(script.module, "NEW_SET_ID"):
+            set_ids.append(script.module.NEW_SET_ID)
+    return set_ids
 
 
 def undo_seeded_rows_above(conn: Connection, revision: str) -> None:

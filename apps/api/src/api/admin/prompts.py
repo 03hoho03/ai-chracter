@@ -87,6 +87,7 @@ from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StatRule, StoryPromptTemplate
 from api.db.session import get_db_session
+from api.llm.backends import NOVEL_MODELS
 from api.llm.chat_models import PromptSetModelId, parse_prompt_set_model_id
 from api.novel_public.screening import NovelScreenItem, build_novel_screen_prompt
 from api.novelize.inputs import load_novel_label_set
@@ -451,17 +452,18 @@ _JUDGMENT_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
 }
 
 # Gemini 가 아닌 체인은 그 모델이 쓸 수 있는 채널만 갖는다.
-# - Claude 세트(sonnet·opus 체인): 채팅 레인은 생성의 `system`·`generation` 과 그 레인의 판정·요약 채널이다. 판정·요약 채널은
+# - Claude 세트(haiku_writer·sonnet·opus 체인): 채팅 레인은 생성의 `system`·`generation` 과 그 레인의 판정·요약 채널이다. 판정·요약 채널은
 #   판정 모델을 그 모델로 바꿨을 때 읽는 문안이다(모델 배정 표의 행이 고른 체인, 행이 없으면 판정·요약 모델 설정 — 기본은
 #   Gemini). `novel` 레인은 Gemini 표의 채널 전부다 — 화 생성·구성안 둘은 사용자가 고른 모델의 체인을 읽고, 지금 늘 Gemini 체인으로
 #   부르는 경계 제안·문단 수정·여러 문단 수정·묶음 재검사도 고른 모델로 부를 수 있게 그 체인에 문안을 둔다. 화 생성·구성안이
 #   붙이는 등급 규칙(`novelize_rating`)도 그 체인 세트에서 읽는다.
 # - 판정 전용 세트(haiku 체인): 그 레인의 판정·요약 채널만. 그 id 로는 글을 쓰지 않는다.
 # R-1 기대 집합은 같은 레인 Gemini 표에서 이 채널만 남긴 것이다(표를 따로 적지 않는다 — 슬롯이 늘면 체인이 함께 따라온다).
-# 그래서 **판정·요약 슬롯을 더하거나 바꾸는 마이그레이션은 Gemini 체인뿐 아니라 Claude 체인(story·character × sonnet·opus)과
+# 그래서 **판정·요약 슬롯을 더하거나 바꾸는 마이그레이션은 Gemini 체인뿐 아니라 Claude 체인(story·character × haiku_writer·sonnet·opus)과
 # 판정 전용 체인(story·character × haiku)도 다뤄야** 그 체인 게시가 "누락"으로 막히지 않는다. 레인마다 따로 두는 이유는 한
 # 집합으로 두면 다른 레인의 체인 기대 집합이 비어 그 체인 게시가 영원히 R-1 에 막히기 때문이다. 심사 레인에는 Gemini 체인뿐이고
-# 판정 전용 체인은 채팅 레인에만 있다(`_require_lane_model`).
+# 판정 전용 체인과 Haiku 글쓰기 체인은 채팅 레인에만 있다(`_require_lane_model`). 체인을 빠뜨린 마이그레이션은 head 의 체인
+# 커버리지 테스트(모든 체인 모델의 활성 세트 슬롯이 이 기대 집합과 같은지)가 잡는다.
 _CLAUDE_SET_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
     "story": frozenset({"system", "generation"}) | _JUDGMENT_CHANNELS_BY_LANE["story"],
     "character": frozenset({"system", "generation"}) | _JUDGMENT_CHANNELS_BY_LANE["character"],
@@ -481,7 +483,8 @@ def _expected_slots(lane: PromptLane, model: PromptSetModelId) -> dict[str, froz
 
 def _require_lane_model(lane: PromptLane, model: PromptSetModelId) -> None:
     """심사 레인(발행 심사·노벨 텍스트 심사)은 Gemini 세트뿐이다 — 심사는 모델을 고르지 않는다. 판정 전용 체인은 채팅
-    판정·요약 문안이라 스토리·캐릭터 레인에만 있다."""
+    판정·요약 문안이라 스토리·캐릭터 레인에만 있다. 소설 레인에는 소설에서 고를 수 있는 모델의 체인만 있다 — 채팅 전용 글쓰기
+    모델(Haiku)로는 소설 작업이 생기지 않아 그 체인을 읽는 호출이 없다."""
     if lane in ("publish_filter", "novel_screen") and model != "gemini":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -491,6 +494,11 @@ def _require_lane_model(lane: PromptLane, model: PromptSetModelId) -> None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"rule": "lane-model", "message": "판정 전용 세트는 스토리·캐릭터 레인에만 있습니다."},
+        )
+    if lane == "novel" and model not in NOVEL_MODELS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"rule": "lane-model", "message": "소설 레인에는 소설에서 고를 수 있는 모델의 세트만 있습니다."},
         )
 
 

@@ -1,0 +1,2102 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "chat-lab",
+    "version": "1"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs": {
+      "get": {
+        "summary": "List Runs",
+        "description": "런 목록. 처음 부를 때와 `refresh` 일 때 루트를 훑는다(실데이터에서 수십 초).",
+        "operationId": "list_runs_runs_get",
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{runId}": {
+      "get": {
+        "summary": "Get Run",
+        "operationId": "get_run_runs__runId__get",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "이 서버의 거부(reason 있음) 또는 요청 검증 오류(reason 없음)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LabError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{runId}/turns/{clientTurn}": {
+      "get": {
+        "summary": "Get Turn",
+        "operationId": "get_turn_runs__runId__turns__clientTurn__get",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runid"
+            }
+          },
+          {
+            "name": "clientTurn",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Clientturn"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "이 서버의 거부(reason 있음) 또는 요청 검증 오류(reason 없음)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LabError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{runId}/metrics": {
+      "get": {
+        "summary": "Get Metrics",
+        "operationId": "get_metrics_runs__runId__metrics_get",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunMetrics"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "이 서버의 거부(reason 있음) 또는 요청 검증 오류(reason 없음)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LabError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{runId}/bundle": {
+      "get": {
+        "summary": "Get Bundle",
+        "description": "정적 HTML 내보내기용 통째 응답. `raw` 가 거짓이면 프롬프트·지시문·기억 스냅숏 본문을 뺀다.",
+        "operationId": "get_bundle_runs__runId__bundle_get",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runid"
+            }
+          },
+          {
+            "name": "raw",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "title": "Raw"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunBundle"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "이 서버의 거부(reason 있음) 또는 요청 검증 오류(reason 없음)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LabError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{runId}/export-turns": {
+      "post": {
+        "summary": "Export Turns",
+        "description": "로컬 DB 에서 이 묶음 방의 턴 기록을 묶음 폴더의 `chat-turns.jsonl` 로 쓴다. LLM 호출은 없다.",
+        "operationId": "export_turns_runs__runId__export_turns_post",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportTurnsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportTurnsResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "description": "이 서버의 거부(reason 있음) 또는 요청 검증 오류(reason 없음)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LabError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AttemptDetail": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "selected": {
+            "type": "boolean",
+            "title": "Selected"
+          },
+          "serverRejected": {
+            "type": "boolean",
+            "title": "Serverrejected"
+          },
+          "record": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Record"
+          },
+          "driverStatChanges": {
+            "items": {
+              "$ref": "#/components/schemas/DriverStatChange"
+            },
+            "type": "array",
+            "title": "Driverstatchanges"
+          },
+          "generationDump": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationdump"
+          },
+          "chatTurns": {
+            "items": {
+              "$ref": "#/components/schemas/ChatTurnRecord"
+            },
+            "type": "array",
+            "title": "Chatturns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "selected",
+          "serverRejected",
+          "record",
+          "driverStatChanges",
+          "generationDump",
+          "chatTurns"
+        ],
+        "title": "AttemptDetail"
+      },
+      "BackgroundDump": {
+        "properties": {
+          "record": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Record"
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "turnField",
+              "previousGeneration"
+            ],
+            "title": "Placement"
+          }
+        },
+        "type": "object",
+        "required": [
+          "record",
+          "placement"
+        ],
+        "title": "BackgroundDump"
+      },
+      "CallCostView": {
+        "properties": {
+          "callSite": {
+            "type": "string",
+            "title": "Callsite"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "generation",
+              "judgment",
+              "background",
+              "embedding",
+              "other"
+            ],
+            "title": "Kind"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "promptTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompttokens"
+          },
+          "cachedTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cachedtokens"
+          },
+          "cacheWriteTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cachewritetokens"
+          },
+          "outputTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputtokens"
+          },
+          "thoughtsTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thoughtstokens"
+          },
+          "newInputTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newinputtokens"
+          },
+          "usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd"
+          },
+          "missingTokens": {
+            "type": "boolean",
+            "title": "Missingtokens"
+          },
+          "firstTokenMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firsttokenms"
+          },
+          "streamFirstTokenMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streamfirsttokenms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "callSite",
+          "kind",
+          "model",
+          "promptTokens",
+          "cachedTokens",
+          "cacheWriteTokens",
+          "outputTokens",
+          "thoughtsTokens",
+          "newInputTokens",
+          "usd",
+          "missingTokens",
+          "firstTokenMs",
+          "streamFirstTokenMs"
+        ],
+        "title": "CallCostView"
+      },
+      "Caution": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "placementEstimated",
+              "roomShared",
+              "incompleteLine",
+              "unreadableLine",
+              "manifest",
+              "notDumpLine",
+              "pricesChanged",
+              "statDefsChanged",
+              "chatTurnsNotJoined"
+            ],
+            "title": "Kind"
+          },
+          "turn": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "detail"
+        ],
+        "title": "Caution"
+      },
+      "ChatTurnRecord": {
+        "properties": {
+          "row": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Row"
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/CallCostView"
+            },
+            "type": "array",
+            "title": "Calls"
+          },
+          "costUsd": {
+            "type": "number",
+            "title": "Costusd"
+          },
+          "costIsLowerBound": {
+            "type": "boolean",
+            "title": "Costislowerbound"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row",
+          "calls",
+          "costUsd",
+          "costIsLowerBound"
+        ],
+        "title": "ChatTurnRecord"
+      },
+      "DriverStatChange": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value",
+            "description": "바뀐 뒤 값(SSE statChange 의 새 값). 변화량이 아니다."
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before",
+            "description": "그 턴이 시작한 값. 기록으로 알 수 없으면 null."
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta",
+            "description": "value − before. before 가 null 이면 null."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "value",
+          "before",
+          "delta"
+        ],
+        "title": "DriverStatChange",
+        "description": "드라이버 턴 줄의 `statChanges` 한 칸(보이는 스탯만, 이름 키). `value` 는 변화량이 아니라 바뀐 뒤 값이다 — 드라이버가 SSE\n`statChange` 의 새 값(`newValue`)을 적는다. 변화량은 서버가 그 턴이 시작한 값(`before`)과 함께 낸다(`delta`).\n\n시작 값은 리플레이가 그 턴을 조립할 때 읽는 스탯 줄(그 턴 줄 앞에서 방 턴 수가 하나 작은 마지막 오프닝·턴·기준 다시 잡기·대조\n줄)의 같은 이름 값이다. 첫 턴은 오프닝, 보통은 앞 턴에서 고른 시도의 줄(사람이 친 턴을 보충한 줄이어도 같다), 앞 턴이 유실된\n뒤 드라이버가 기준을 다시 잡았으면 그 줄이다. 같은 턴의 시도는 고르지 않은 것까지 모두 이 값에서 시작한다(같은 상태에서\n보냈다). 그런 줄이 없으면(앞 턴이 재시도 없이 유실됐거나 턴 번호가 건너뛰었는데 기준을 다시 잡은 줄도 없다) 비고, 앞 턴의\n응답을 재생성·수정이 바꿨어도 빈다 — 교체 줄에는 바뀐 뒤 스탯이 없고 재생성은 스탯을 다시 판정한다."
+      },
+      "ExportTurnsRequest": {
+        "properties": {
+          "force": {
+            "type": "boolean",
+            "title": "Force"
+          }
+        },
+        "type": "object",
+        "required": [
+          "force"
+        ],
+        "title": "ExportTurnsRequest"
+      },
+      "ExportTurnsResult": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunListItem"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "run"
+        ],
+        "title": "ExportTurnsResult"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "Health"
+      },
+      "LabError": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "notFound",
+              "unsupported",
+              "unsupportedFormat",
+              "openFailed",
+              "archived",
+              "exists",
+              "notFile",
+              "noRoom",
+              "noRows",
+              "multipleRooms",
+              "dbUnavailable",
+              "notJson"
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "reason"
+        ],
+        "title": "LabError"
+      },
+      "Mismatch": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "missingDump",
+              "unmatchedRow",
+              "turnGap",
+              "statMismatch",
+              "unmatchedDumpLine",
+              "unplacedLine",
+              "chatTurnsRoomMismatch"
+            ],
+            "title": "Kind"
+          },
+          "turn": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "detail"
+        ],
+        "title": "Mismatch"
+      },
+      "RecordLimit": {
+        "properties": {
+          "slot": {
+            "type": "string",
+            "enum": [
+              "judgmentResponse",
+              "judgmentLatency",
+              "backgroundTokens",
+              "exportNeeded",
+              "promptDump"
+            ],
+            "title": "Slot"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slot",
+          "text"
+        ],
+        "title": "RecordLimit",
+        "description": "이 화면이 보여 줄 수 없는 것을 사실대로 적은 문장 하나와, 그 문장이 대신 서는 자리."
+      },
+      "RecordedStatChange": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "hidden",
+          "before",
+          "after"
+        ],
+        "title": "RecordedStatChange",
+        "description": "턴 기록 `stat_changes` 한 칸. 이름·숨김 여부는 내보낸 스탯 정의(없으면 방 스냅숏)에서 얻고, 둘 다 모르면 비운다."
+      },
+      "ReplyFlagsView": {
+        "properties": {
+          "length": {
+            "type": "integer",
+            "title": "Length"
+          },
+          "sentenceCount": {
+            "type": "integer",
+            "title": "Sentencecount"
+          },
+          "statusBlockLength": {
+            "type": "integer",
+            "title": "Statusblocklength"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          },
+          "selfCopy": {
+            "type": "boolean",
+            "title": "Selfcopy"
+          },
+          "solicit": {
+            "type": "boolean",
+            "title": "Solicit"
+          },
+          "ignored": {
+            "type": "boolean",
+            "title": "Ignored"
+          },
+          "sceneOpen": {
+            "type": "boolean",
+            "title": "Sceneopen"
+          },
+          "labelLeak": {
+            "type": "boolean",
+            "title": "Labelleak"
+          },
+          "userTurn": {
+            "type": "boolean",
+            "title": "Userturn"
+          },
+          "broken": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Broken"
+          },
+          "brackets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Brackets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "length",
+          "sentenceCount",
+          "statusBlockLength",
+          "truncated",
+          "selfCopy",
+          "solicit",
+          "ignored",
+          "sceneOpen",
+          "labelLeak",
+          "userTurn",
+          "broken",
+          "brackets"
+        ],
+        "title": "ReplyFlagsView"
+      },
+      "RunBundle": {
+        "properties": {
+          "raw": {
+            "type": "boolean",
+            "title": "Raw"
+          },
+          "detail": {
+            "$ref": "#/components/schemas/RunDetail"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/RunMetrics"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/TurnDetail"
+            },
+            "type": "array",
+            "title": "Turns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "raw",
+          "detail",
+          "metrics",
+          "turns"
+        ],
+        "title": "RunBundle",
+        "description": "런 하나를 통째로 — 정적 HTML 내보내기가 이 응답만 주입한다. `raw` 가 거짓이면 덤프 줄의 프롬프트(`prompt`)·지시문\n(`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을 키째 빼고, 상세의 방 스냅숏(`room_static`,\n단축어 프롬프트 전문·대화 프로필 설명이 든다)을 비운다. 대화(사용자 발화·응답)는 남는다."
+      },
+      "RunCost": {
+        "properties": {
+          "totalUsd": {
+            "type": "number",
+            "title": "Totalusd"
+          },
+          "unmatchedUsd": {
+            "type": "number",
+            "title": "Unmatchedusd"
+          },
+          "unpricedCalls": {
+            "type": "integer",
+            "title": "Unpricedcalls"
+          },
+          "missingTokenCalls": {
+            "type": "integer",
+            "title": "Missingtokencalls"
+          },
+          "pricesAsOfExport": {
+            "type": "string",
+            "title": "Pricesasofexport"
+          },
+          "pricesSha256Export": {
+            "type": "string",
+            "title": "Pricessha256Export"
+          },
+          "pricesChanged": {
+            "type": "boolean",
+            "title": "Priceschanged"
+          }
+        },
+        "type": "object",
+        "required": [
+          "totalUsd",
+          "unmatchedUsd",
+          "unpricedCalls",
+          "missingTokenCalls",
+          "pricesAsOfExport",
+          "pricesSha256Export",
+          "pricesChanged"
+        ],
+        "title": "RunCost",
+        "description": "`total_usd`·`unpriced_calls`·`missing_token_calls` 는 시도에 붙은 행만 센다. 「짝 없는 기록」의 원가는 `unmatched_usd` 로\n따로 싣는다 — 같은 방을 이어 친 다른 측정의 행이 섞일 수 있어 이 런의 원가에 더하지 않는다."
+      },
+      "RunDetail": {
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/RunListItem"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "roomStatic": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roomstatic"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/TurnSummary"
+            },
+            "type": "array",
+            "title": "Turns"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/StatSeries"
+            },
+            "type": "array",
+            "title": "Series"
+          },
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineMarker"
+            },
+            "type": "array",
+            "title": "Markers"
+          },
+          "statComparisons": {
+            "type": "integer",
+            "title": "Statcomparisons"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunCost"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unmatchedRows": {
+            "items": {
+              "$ref": "#/components/schemas/UnmatchedRow"
+            },
+            "type": "array",
+            "title": "Unmatchedrows"
+          },
+          "mismatches": {
+            "items": {
+              "$ref": "#/components/schemas/Mismatch"
+            },
+            "type": "array",
+            "title": "Mismatches"
+          },
+          "cautions": {
+            "items": {
+              "$ref": "#/components/schemas/Caution"
+            },
+            "type": "array",
+            "title": "Cautions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run",
+          "meta",
+          "roomStatic",
+          "turns",
+          "series",
+          "markers",
+          "statComparisons",
+          "cost",
+          "unmatchedRows",
+          "mismatches",
+          "cautions"
+        ],
+        "title": "RunDetail"
+      },
+      "RunList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "discoveredAt": {
+            "type": "string",
+            "title": "Discoveredat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "discoveredAt"
+        ],
+        "title": "RunList",
+        "description": "런 목록. 서버는 루트를 한 번 훑은 결과를 들고 있다가 `refresh` 로 다시 훑는다 — `discovered_at` 은 그 탐색 시각이고, 그 뒤\n새로 생긴 묶음은 다시 훑어야 보인다. 이미 찾은 묶음의 파일이 바뀐 것은 다시 훑지 않아도 반영된다."
+      },
+      "RunListItem": {
+        "properties": {
+          "runId": {
+            "type": "string",
+            "title": "Runid"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "current",
+              "preMessageId",
+              "legacy"
+            ],
+            "title": "Format"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported"
+          },
+          "roomId": {
+            "type": "string",
+            "title": "Roomid"
+          },
+          "storyName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storyname"
+          },
+          "turnCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turncount"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endedat"
+          },
+          "sentChatModels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sentchatmodels"
+          },
+          "sentChatModelsFrom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dump",
+                  "chatTurns"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentchatmodelsfrom"
+          },
+          "configuredChatModels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Configuredchatmodels"
+          },
+          "costUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Costusd"
+          },
+          "unpricedCalls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpricedcalls"
+          },
+          "costIsLowerBound": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Costislowerbound"
+          },
+          "hasSnapshots": {
+            "type": "boolean",
+            "title": "Hassnapshots",
+            "default": false
+          },
+          "hasDump": {
+            "type": "boolean",
+            "title": "Hasdump",
+            "default": false
+          },
+          "hasChatTurns": {
+            "type": "boolean",
+            "title": "Haschatturns",
+            "default": false
+          },
+          "mismatchCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mismatchcount"
+          },
+          "cautionCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cautioncount"
+          },
+          "openError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openerror"
+          }
+        },
+        "type": "object",
+        "required": [
+          "runId",
+          "path",
+          "group",
+          "format",
+          "supported",
+          "roomId"
+        ],
+        "title": "RunListItem",
+        "description": "런 목록의 한 줄. 지원하지 않는 형식은 열지 않으므로 경로·형식·방 id 밖의 칸이 비어 있다."
+      },
+      "RunMetrics": {
+        "properties": {
+          "scored": {
+            "type": "integer",
+            "title": "Scored"
+          },
+          "lost": {
+            "type": "integer",
+            "title": "Lost"
+          },
+          "truncated": {
+            "type": "integer",
+            "title": "Truncated"
+          },
+          "selfCopy": {
+            "type": "integer",
+            "title": "Selfcopy"
+          },
+          "solicit": {
+            "type": "integer",
+            "title": "Solicit"
+          },
+          "ignored": {
+            "type": "integer",
+            "title": "Ignored"
+          },
+          "sceneOpen": {
+            "type": "integer",
+            "title": "Sceneopen"
+          },
+          "labelLeak": {
+            "type": "integer",
+            "title": "Labelleak"
+          },
+          "userTurn": {
+            "type": "integer",
+            "title": "Userturn"
+          },
+          "broken": {
+            "type": "integer",
+            "title": "Broken"
+          },
+          "brackets": {
+            "type": "integer",
+            "title": "Brackets"
+          },
+          "medianLength": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medianlength"
+          },
+          "medianSentences": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediansentences"
+          },
+          "lengthNonIncreasing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lengthnonincreasing"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/TurnMetrics"
+            },
+            "type": "array",
+            "title": "Turns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scored",
+          "lost",
+          "truncated",
+          "selfCopy",
+          "solicit",
+          "ignored",
+          "sceneOpen",
+          "labelLeak",
+          "userTurn",
+          "broken",
+          "brackets",
+          "medianLength",
+          "medianSentences",
+          "lengthNonIncreasing",
+          "turns"
+        ],
+        "title": "RunMetrics",
+        "description": "런 단위 요약. `scored` 가 표본 수(응답이 있는 턴)이고 셈은 모두 그 표본 안의 턴 수다."
+      },
+      "SeriesPoint": {
+        "properties": {
+          "turn": {
+            "type": "integer",
+            "title": "Turn"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turn",
+          "value"
+        ],
+        "title": "SeriesPoint"
+      },
+      "StatSeries": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "driver",
+              "chatTurns"
+            ],
+            "title": "Source"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesPoint"
+            },
+            "type": "array",
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "hidden",
+          "source",
+          "points"
+        ],
+        "title": "StatSeries",
+        "description": "스탯 하나의 턴별 값. 보이는 스탯은 드라이버 `roomAfter`(턴을 마친 뒤 값)에서, 숨김 스탯은 턴 기록에서 — 턴 기록에는 바뀐\n턴의 값만 있어 숨김 스탯은 바뀐 턴에만 점이 있다."
+      },
+      "TimelineMarker": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "rebase",
+              "check",
+              "noteUpdate",
+              "pause",
+              "regenerate",
+              "edit",
+              "ending",
+              "noteChange",
+              "summaryUpdate",
+              "failure"
+            ],
+            "title": "Kind"
+          },
+          "turn": {
+            "type": "integer",
+            "title": "Turn"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "turn"
+        ],
+        "title": "TimelineMarker",
+        "description": "타임라인 표지. 드라이버 줄에서 온 표지(rebase·check·noteUpdate·pause)의 `turn` 은 그 줄을 쓸 때까지 마친 턴 수(그 턴 뒤에\n놓인다), 재생성·수정은 교체한 턴, 나머지는 그 턴이다."
+      },
+      "TurnDetail": {
+        "properties": {
+          "turn": {
+            "type": "integer",
+            "title": "Turn"
+          },
+          "supplemented": {
+            "type": "boolean",
+            "title": "Supplemented"
+          },
+          "replaced": {
+            "type": "boolean",
+            "title": "Replaced"
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/AttemptDetail"
+            },
+            "type": "array",
+            "title": "Attempts"
+          },
+          "earlierGenerationDumps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Earliergenerationdumps"
+          },
+          "judgmentDumps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Judgmentdumps"
+          },
+          "backgroundDumps": {
+            "items": {
+              "$ref": "#/components/schemas/BackgroundDump"
+            },
+            "type": "array",
+            "title": "Backgrounddumps"
+          },
+          "replacements": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Replacements"
+          },
+          "memorySnapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memorysnapshot"
+          },
+          "memorySnapshotChangedHere": {
+            "type": "boolean",
+            "title": "Memorysnapshotchangedhere"
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mismatches": {
+            "items": {
+              "$ref": "#/components/schemas/Mismatch"
+            },
+            "type": "array",
+            "title": "Mismatches"
+          },
+          "cautions": {
+            "items": {
+              "$ref": "#/components/schemas/Caution"
+            },
+            "type": "array",
+            "title": "Cautions"
+          },
+          "recordLimits": {
+            "items": {
+              "$ref": "#/components/schemas/RecordLimit"
+            },
+            "type": "array",
+            "title": "Recordlimits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turn",
+          "supplemented",
+          "replaced",
+          "attempts",
+          "earlierGenerationDumps",
+          "judgmentDumps",
+          "backgroundDumps",
+          "replacements",
+          "memorySnapshot",
+          "memorySnapshotChangedHere",
+          "metrics",
+          "mismatches",
+          "cautions",
+          "recordLimits"
+        ],
+        "title": "TurnDetail"
+      },
+      "TurnMetrics": {
+        "properties": {
+          "turn": {
+            "type": "integer",
+            "title": "Turn"
+          },
+          "flags": {
+            "$ref": "#/components/schemas/ReplyFlagsView"
+          },
+          "previousFrom": {
+            "type": "string",
+            "enum": [
+              "opening",
+              "turn",
+              "replacement",
+              "none"
+            ],
+            "title": "Previousfrom"
+          },
+          "previousTurn": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previousturn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turn",
+          "flags",
+          "previousFrom",
+          "previousTurn"
+        ],
+        "title": "TurnMetrics"
+      },
+      "TurnSummary": {
+        "properties": {
+          "turn": {
+            "type": "integer",
+            "title": "Turn"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "title": "Attemptcount"
+          },
+          "supplemented": {
+            "type": "boolean",
+            "title": "Supplemented"
+          },
+          "replaced": {
+            "type": "boolean",
+            "title": "Replaced"
+          },
+          "lost": {
+            "type": "boolean",
+            "title": "Lost"
+          },
+          "userText": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usertext"
+          },
+          "shortcut": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortcut"
+          },
+          "replyHead": {
+            "type": "string",
+            "title": "Replyhead"
+          },
+          "replyLength": {
+            "type": "integer",
+            "title": "Replylength"
+          },
+          "driverStatChanges": {
+            "items": {
+              "$ref": "#/components/schemas/DriverStatChange"
+            },
+            "type": "array",
+            "title": "Driverstatchanges"
+          },
+          "recordedStatChanges": {
+            "items": {
+              "$ref": "#/components/schemas/RecordedStatChange"
+            },
+            "type": "array",
+            "title": "Recordedstatchanges"
+          },
+          "ending": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ending"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "earlierGenerationDumps": {
+            "type": "integer",
+            "title": "Earliergenerationdumps"
+          },
+          "judgmentDumps": {
+            "type": "integer",
+            "title": "Judgmentdumps"
+          },
+          "backgroundDumps": {
+            "type": "integer",
+            "title": "Backgrounddumps"
+          },
+          "flags": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplyFlagsView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "statsStartKnown": {
+            "type": "boolean",
+            "title": "Statsstartknown"
+          },
+          "statsContinueFromPrevious": {
+            "type": "boolean",
+            "title": "Statscontinuefromprevious"
+          },
+          "costUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Costusd"
+          },
+          "costIsLowerBound": {
+            "type": "boolean",
+            "title": "Costislowerbound"
+          },
+          "mismatchCount": {
+            "type": "integer",
+            "title": "Mismatchcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turn",
+          "attemptCount",
+          "supplemented",
+          "replaced",
+          "lost",
+          "userText",
+          "shortcut",
+          "replyHead",
+          "replyLength",
+          "driverStatChanges",
+          "recordedStatChanges",
+          "ending",
+          "failure",
+          "earlierGenerationDumps",
+          "judgmentDumps",
+          "backgroundDumps",
+          "flags",
+          "statsStartKnown",
+          "statsContinueFromPrevious",
+          "costUsd",
+          "costIsLowerBound",
+          "mismatchCount"
+        ],
+        "title": "TurnSummary"
+      },
+      "UnmatchedRow": {
+        "properties": {
+          "assistantMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assistantmessageid"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "turnNumber": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnnumber"
+          },
+          "costUsd": {
+            "type": "number",
+            "title": "Costusd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "assistantMessageId",
+          "kind",
+          "turnNumber",
+          "costUsd"
+        ],
+        "title": "UnmatchedRow",
+        "description": "「짝 없는 기록」 — 어느 시도에도 붙지 않은 턴 기록 행."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

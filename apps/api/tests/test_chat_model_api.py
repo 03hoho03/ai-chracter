@@ -112,16 +112,32 @@ async def test_unknown_model_is_422(
     assert await _stored(db_session, room_id) is None
 
 
-async def test_a_registry_model_chat_does_not_offer_is_422_even_with_access(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("visible", "status", "stored"),
+    [
+        pytest.param(["opus"], 403, None, id="hidden"),
+        pytest.param(["opus", "sonnet"], 200, "sonnet", id="visible"),
+    ],
+)
+async def test_sonnet_follows_the_visible_list_while_the_switch_is_on(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    visible: list[str],
+    status: int,
+    stored: str | None,
 ) -> None:
-    """Sonnet 은 소설 장 생성에만 남은 모델이다 — 허용이 있는 계정이 채팅방에 지정하려 해도 받지 않고 저장하지 않는다."""
+    """Sonnet 은 방 모델 타입에 있어 422 가 아니다. 스위치가 켜져 있어도 공개 목록에 없으면 스위치 꺼짐과 같은 403 이고
+    저장하지 않으며, 목록에 있으면 저장한다."""
     room_id, _ = await _room_of_new_user(db_client, db_session, monkeypatch, allowed=True)
+    monkeypatch.setattr(settings, "chat_models_visible", visible)
 
     resp = await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": "sonnet"})
 
-    assert resp.status_code == 422
-    assert await _stored(db_session, room_id) is None
+    assert resp.status_code == status
+    if status == 403:
+        assert resp.json()["detail"] == {"code": "CHAT_MODEL_NOT_ALLOWED"}
+    assert await _stored(db_session, room_id) == stored
 
 
 async def test_cannot_set_the_model_of_someone_elses_room(
@@ -173,12 +189,13 @@ async def test_room_response_shows_the_stored_and_the_effective_model(
     ) == ("opus", "gemini", "Gemini", clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)
 
 
-async def test_a_room_storing_sonnet_runs_on_gemini_even_with_access(
+async def test_a_room_storing_a_hidden_sonnet_runs_on_gemini_even_with_the_switch_on(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """채팅에서 내린 Sonnet 이 저장된 방(내리기 전에 고른 방)은 허용이 있어도 Gemini 와 Gemini 가격으로 보인다 — 화면이
-    고를 수 없는 모델로 턴이 돌면 안 된다."""
+    """공개 목록에서 빠진 Sonnet 이 저장된 방(숨기기 전에 고른 방)은 스위치가 켜져 있어도 Gemini 와 Gemini 가격으로 보인다 —
+    화면이 고를 수 없는 모델로 턴이 돌면 안 된다."""
     room_id, _ = await _room_of_new_user(db_client, db_session, monkeypatch, allowed=True)
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus"])
     await db_session.execute(update(ChatRoom).where(ChatRoom.id == room_id).values(chat_model="sonnet"))
     await db_session.commit()
 
@@ -223,17 +240,26 @@ async def test_model_list_for_an_account_without_access_is_gemini_only(
     resp = await db_client.get("/chat-models")
 
     assert resp.status_code == 200
-    assert resp.json() == [{"id": "gemini", "name": "Gemini", "beta": False, "turnCost": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn}]
+    assert resp.json() == [
+        {
+            "id": "gemini",
+            "name": "Gemini",
+            "isDefault": True,
+            "beta": False,
+            "turnCost": clover.CLOVER_MODEL_PRICES["gemini"].chat_turn,
+        }
+    ]
 
 
 async def test_model_list_with_the_switch_on_has_the_chat_models_with_price_and_beta_mark(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Sonnet 은 채팅에서 고를 수 없어 스위치가 켜져 있어도 목록에 없다."""
+    """공개 목록이 기본값(Opus 하나)이면 Sonnet 은 스위치가 켜져 있어도 목록에 없다."""
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
     _enable_chat_premium(monkeypatch)
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus"])
     await _login_as(db_client, user.id)
 
     resp = await db_client.get("/chat-models")

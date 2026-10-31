@@ -18,7 +18,7 @@ from api.chat.prompt_stages import (
     stage_room_models,
 )
 from api.llm.call_policy import CALL_POLICIES
-from api.llm.chat_models import ChatModelId, ChatRoomModelId
+from api.llm.chat_models import CHAT_MODELS_BY_ID, ChatModelId, ChatRoomModelId
 
 
 def test_publish_validation_judgment_channels_are_derived_without_changing_them() -> None:
@@ -122,13 +122,14 @@ def test_the_novel_lane_has_seven_stages_and_the_job_model_leads_three_of_them()
 
 
 def test_each_cell_axis_follows_the_lane_and_the_stage() -> None:
-    """채팅 칸은 방에서 고를 수 있는 모델, 소설 생성 칸은 작업 모델, 소설 구조화 칸은 작업 모델과 무관한 표지 `any` 하나다. 축이
+    """채팅 칸은 방에서 고를 수 있는 모델, 소설 생성 칸은 작업 모델(소설에서 고를 수 있는 모델 — 채팅 전용 Haiku 글쓰기는 없다), 소설 구조화 칸은 작업 모델과 무관한 표지 `any` 하나다. 축이
     넓으면 아무도 읽지 않는 칸에 행이 저장되고, 좁으면 그 작업 모델의 칸을 저장할 수 없다."""
     for lane in get_args(ChatRoutingLane):
         for stage in LANE_STAGES[lane]:
             assert stage_room_models(lane, stage) == get_args(ChatRoomModelId), (lane, stage)
     for stage in LANE_STAGES["novel"]:
-        expected = get_args(ChatModelId) if STAGES[stage].kind == "generation" else ("any",)
+        novel_models = tuple(model for model in get_args(ChatModelId) if CHAT_MODELS_BY_ID[model].novel_selectable)
+        expected = novel_models if STAGES[stage].kind == "generation" else ("any",)
         assert stage_room_models("novel", stage) == expected, stage
 
 

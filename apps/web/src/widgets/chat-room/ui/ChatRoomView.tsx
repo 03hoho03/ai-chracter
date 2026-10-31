@@ -42,12 +42,10 @@ import {
   useDeleteMessageMutation,
   useLoadOlderMessagesMutation,
 } from "@/entities/chat-room";
-import { isPremiumChatModel } from "@/entities/chat-model";
 import {
   CloverBalance,
   isCloverInsufficient,
   isCloverPriceChangedError,
-  shouldShowCloverBalance,
   useCloverBalanceQuery,
 } from "@/entities/clover";
 import { useContentDetailQuery } from "@/entities/content";
@@ -142,23 +140,15 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   }, [isSending]);
   const isMemoryPanelOpen = useAtomValue(chatSidePanelAtom) === "memory";
   useMemoryFollowUpRefresh({ roomId, isSending, isPanelOpen: isMemoryPanelOpen });
-  // 기본 모델 방은 무료 일일분을 쓴 뒤에만, 상위 모델 방은 첫 턴부터 턴마다 깎이므로 언제나 나타난다.
+  // 하루 무료분이 없어 어느 모델 방이든 첫 턴부터 턴마다 깎이므로 잔량은 언제나 나타난다.
   // 단가는 그 방 모델의 한 턴 가격이다. 서버가 가격을 주지 않았으면(이 칸이 생기기 전의 서버) 부족을 판정하지 않는다.
   const { data: clover } = useCloverBalanceQuery();
   const { data: me } = useSessionQuery();
   const cloverBalance = clover?.balance ?? 0;
-  const isPremiumRoom = room !== undefined && isPremiumChatModel(room.effectiveChatModel);
   const isCloverShort = room?.turnCost !== undefined && isCloverInsufficient(cloverBalance, room.turnCost);
   // 세션을 잃은 뒤에는 잔량 줄을 내린다 — 잔액을 다시 받는 조회가 401 로 실패해도 옛 값이 캐시에 남아, 로그인이 풀린
   // 화면에 잔량 줄이 그대로 남는다.
-  const shouldShowClover =
-    clover !== undefined &&
-    me !== undefined &&
-    shouldShowCloverBalance({
-      spendConfirmedToday: clover.spendConfirmedToday,
-      hasCloverShortage: isCloverShort,
-      chargesEveryTurn: isPremiumRoom,
-    });
+  const shouldShowClover = clover !== undefined && me !== undefined;
   const deleteMessageMutation = useDeleteMessageMutation(roomId);
   // 입력창은 이 방의 입력 초안에서 시작한다(`takeChatDraftToRestore`) — 클로버를 충전하러 다녀오면(결제창이 페이지를
   // 떠났다 돌아오는 경우 포함) 쓰던 글이나 클로버가 모자라 거절된 메시지가 돌아와 있다. 되살린 거절 메시지는 그 순간
@@ -330,12 +320,10 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       // 응답 생성이 실패한 것이 아니라 로그인이 풀렸거나 정지된 것이다. 이 탭에서 다시 보내도 같은 거절이라 재시도를 두지 않는다.
       errorNotice = <SessionEndedNotice reason={status.sessionEnded} />;
     } else if (status.rateLimit) {
-      errorNotice = (
-        <RateLimitNotice rateLimit={status.rateLimit} surface={isPremiumRoom ? "premiumChat" : "chat"} onRetry={retry} />
-      );
+      errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="chat" onRetry={retry} />;
     } else if (status.identityRequired) {
       // 다시 보내도 같은 403 이라 재시도 버튼을 두지 않고, 실패가 아니라 경고 틴트도 쓰지 않는다.
-      errorNotice = <IdentityRequiredNotice reason="free-rewards" dailyFreeChatTurns={me?.dailyFreeChatTurns} />;
+      errorNotice = <IdentityRequiredNotice reason="free-rewards" />;
     } else if (status.busy) {
       // 앞 턴이 끝나지 않아 시작도 안 한 요청이다. 실패가 아니라 빨간 alert를 쓰지 않고, 아래 거절 배너와 같은
       // 중립 표면에 사실과 다음 행동만 둔다.

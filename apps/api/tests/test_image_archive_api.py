@@ -22,7 +22,15 @@ from api.db.models.media import Asset, AssetKind
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.main import app
-from factories import _get_genre, _login_as, _make_asset, _make_published_story, _make_user, _parse_sse_events
+from factories import (
+    _get_genre,
+    _login_as,
+    _make_asset,
+    _make_paying_user,
+    _make_published_story,
+    _make_user,
+    _parse_sse_events,
+)
 
 
 async def _make_published_character(
@@ -235,9 +243,7 @@ async def test_image_archive_marks_image_exposed_right_after_chat_match(
     한다 — 노출 기록(`_record_character_image_exposure`)과 보관함 조회를 잇는 유일한 종단 경로다.
     보관함은 방이 고정한 버전이 아니라 콘텐츠의 현재 발행 버전을 나열하므로, 이 테스트는 두
     조회가 같은 이미지 집합을 보는지(entity_id 기준 대조)까지 함께 고정한다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=1)
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
     image = await _add_situational_image(db_session, content, owner_user_id=user.id, order=1)

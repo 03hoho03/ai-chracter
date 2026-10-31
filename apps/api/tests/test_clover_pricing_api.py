@@ -6,7 +6,8 @@
 2. 응답은 요청 시점의 상품 목록과 `core/clover.py` 의 가격 등록부·단가 상수를 따른다 — 상수를 바꾼 뒤 응답이 따라오는지로 확인한다.
    응답을 오늘의 상수 값과 비교만 하면 라우트가 숫자 사본을 들고 있어도 통과하므로 그렇게 쓰지 않는다.
 3. 상위 모델 단가와 소설 단가(화·AI 수정)도 응답에 실린다 — 구매 전 안내에 없는 사용처 가격은 숨은 가격으로 읽힌다.
-   모델 목록은 채팅에서 고를 수 있는 모델만 싣고, 베타 표시는 스위치와 무관한 고정 값이다. 허용된 계정만 쓰는 소설은
+   모델 목록은 채팅에서 지금 고를 수 있게 보이는 모델만 싣고(채팅 상위 모델 스위치와 공개 목록을 따른다 — 그 갈래는
+   `test_chat_model_visibility.py` 가 본다), 베타 표시는 스위치와 무관한 고정 값이다. 허용된 계정만 쓰는 소설은
    그 사실이 함께 실린다. 소설 상위 모델의 화 단가는 일반 회원이 살 수 없어 따로 싣지 않는다. 노벨 화 소장 가격과
    무료 화 수, 대화방 요약 다시 만들기 가격도 싣는다.
 4. 상품 정의가 지금의 가격 규칙을 지킨다(아래 테스트 docstring).
@@ -23,8 +24,7 @@ import pytest
 from api.clover import products
 from api.core.config import settings
 from api.clover.products import CloverProduct
-from api.core import clover, rate_limit_gate
-from api.llm.chat_models import CHAT_MODELS
+from api.core import clover
 from factories import _set_model_price
 
 # 지금 상품표 이전에 팔던 상품의 키. 결제 행(`payments.product_key`)이 이 키를 그대로 갖고 있고 어드민이 그 값을
@@ -63,8 +63,10 @@ async def test_response_follows_products_and_cost_constants(
 
     assert resp.status_code == 200
     body = resp.json()
-    # 결제 여부·결제수단은 결제 테스트(`test_payments_api.py`)가, 모델별·소설 단가와 무료 대화 수는 아래 테스트가, 노벨 켜짐
-    # 여부는 노벨 독자 테스트(`test_webnovel_reading.py`)가 본다.
+    # 하루 무료 대화가 없어 그 수를 싣던 칸도 없다.
+    assert "dailyFreeChatTurns" not in body
+    # 결제 여부·결제수단은 결제 테스트(`test_payments_api.py`)가, 모델별·소설 단가는 아래 테스트가, 노벨 켜짐
+    # 여부는 노벨 독자 테스트(`test_webnovel_reading.py`)가, 출석 안내는 출석 테스트(`test_clover_attendance.py`)가 본다.
     for key in (
         "paymentsEnabled",
         "novelPublicEnabled",
@@ -78,7 +80,7 @@ async def test_response_follows_products_and_cost_constants(
         "novelAiEditCost",
         "novelRestricted",
         "novelEpisodeCost",
-        "dailyFreeChatTurns",
+        "attendance",
     ):
         del body[key]
     assert body == {
@@ -98,23 +100,23 @@ async def test_response_follows_products_and_cost_constants(
 async def test_chat_selectable_models_and_novel_cost_are_exposed(
     db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """모든 단가 상수와 무료 대화 수를 서로 겹치지 않는 표지 값으로 바꿔 두면 응답이 그 값을 모델별로 그대로 싣는다.
-    모델 목록은 레지스트리에서 채팅에서 고를 수 있는 모델만 레지스트리 순서대로 담는다 — 이 목록은 채팅 모델 안내라 채팅에서
-    고를 수 없는 Sonnet 을 실으면 채팅에서 살 수 없는 선택지가 보이고, 고를 수 있는 모델을 빠뜨리면 숨은 가격이 된다.
-    Sonnet 은 소설 상위 모델로 쓰이지만 별도 허용 명단에 든 계정만 써서 일반 회원은 살 수 없으므로 그 화 단가도 따로 싣지
-    않는다. 행에 허용 전용 표시는 없고 베타 표시가 있다. 모델별 소설 화 단가 칸은 그 칸을 가드 없이 읽는 옛 화면을 위해
+    """모든 단가 상수를 서로 겹치지 않는 표지 값으로 바꿔 두면 응답이 그 값을 모델별로 그대로 싣는다.
+    모델 목록은 채팅에서 고를 수 있게 보이는 모델만 레지스트리 순서대로 담는다 — 이 목록은 채팅 모델 안내라 공개 목록에서
+    뺀 Sonnet 을 실으면 채팅에서 살 수 없는 선택지가 보이고, 고를 수 있는 모델을 빠뜨리면 숨은 가격이 된다. 여기서는 스위치를
+    켜고 공개 목록을 Opus 하나로 둔다. Sonnet 은 소설 상위 모델로도 쓰이지만 별도 허용 명단에 든 계정만 써서 일반 회원은 살 수
+    없으므로 그 화 단가도 따로 싣지 않는다. 행에 허용 전용 표시는 없고 베타 표시가 있다. 모델별 소설 화 단가 칸은 그 칸을 가드 없이 읽는 옛 화면을 위해
     남아 있어 Opus 행의 소설 화 단가는 계속 보이고, 기본 모델의 소설 화 단가는 최상위 칸에도 실린다."""
     _set_model_price(monkeypatch, "gemini", chat_turn=910_001, novel_episode=910_004)
     _set_model_price(monkeypatch, "sonnet", chat_turn=910_002, novel_episode=910_005)
     _set_model_price(monkeypatch, "opus", chat_turn=910_003, novel_episode=910_006)
     monkeypatch.setattr(clover, "NOVELIZE_AI_EDIT_COST", 910_007)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 910_008)
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", True)
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus"])
 
     resp = await db_client.get("/clover/pricing")
 
     assert resp.status_code == 200
     body = resp.json()
-    assert [m["id"] for m in body["models"]] == [m.id for m in CHAT_MODELS if m.chat_selectable] == ["gemini", "opus"]
     assert body["models"] == [
         {
             "id": "gemini",
@@ -137,13 +139,11 @@ async def test_chat_selectable_models_and_novel_cost_are_exposed(
     assert body["novelEpisodeCost"] == 910_004
     assert body["novelAiEditCost"] == 910_007
     assert body["novelRestricted"] is True
-    assert body["dailyFreeChatTurns"] == 910_008
 
 
 @pytest.mark.parametrize(
     ("switch", "allowlist"),
     [
-        pytest.param("chat_premium_models_enabled", None, id="chat-premium"),
         pytest.param("novelize_premium_models_enabled", "novelize_premium_model_allowlist", id="novel-premium"),
         pytest.param("novelize_enabled", "novelize_grant_allowlist", id="novelize"),
     ],
@@ -151,9 +151,12 @@ async def test_chat_selectable_models_and_novel_cost_are_exposed(
 async def test_pricing_does_not_reveal_switches(
     db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, switch: str, allowlist: str | None
 ) -> None:
-    """비로그인 응답은 스위치를 켜고 명단을 채워도 그대로다(채팅 상위 모델은 명단이 없다) — 모델 행과 베타 표시, 소설의
-    허용 전용 표시는 모두 고정 값이다. 스위치에 따라 값이 바뀌면 비로그인 방문자가 기능이 켜졌는지 알게 된다 — 소설
-    라우트가 꺼짐·미허용을 한 가지 거부로 내는 것과 같은 이유다."""
+    """비로그인 응답은 소설 쪽 스위치를 켜고 명단을 채워도 그대로다 — 모델 행과 베타 표시, 소설의 허용 전용 표시는 모두 고정
+    값이다. 스위치에 따라 값이 바뀌면 비로그인 방문자가 기능이 켜졌는지 알게 된다 — 소설 라우트가 꺼짐·미허용을 한 가지
+    거부로 내는 것과 같은 이유다. 채팅 상위 모델 스위치는 예외다 — 모델 행이 화면의 모델 목록과 같은 판정을 따르므로 끄면 상위
+    모델 행이 빠진다(`test_chat_model_visibility.py`). 그래서 여기서는 채팅 쪽을 켠 채 고정한다."""
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", True)
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus"])
     before = (await db_client.get("/clover/pricing")).json()
     monkeypatch.setattr(settings, switch, True)
     if allowlist is not None:

@@ -155,7 +155,7 @@ function PasswordSection({ me }: { me: MeResponse | undefined }) {
 
 type IdentityNotice = Extract<IdentityResult, { kind: "notice" }>;
 
-/** 휴대폰 본인인증. 보일지·무엇을 말할지는 `getIdentitySection`이 정한다.
+/** 휴대폰 본인인증. 무엇을 말할지는 `getIdentitySection`이 정한다.
  *
  * 인증하기 버튼은 outline 이다 — 이 화면의 솔리드 채움은 비밀번호 변경 제출이 쓴다. 결과 중 고쳐서 다시 할 수 있는 것
  * (창을 닫음·거절 사유)은 버튼 아래 문장으로 남기고, 성공은 토스트 + 세션 재조회로 섹션이 "인증됨"으로 바뀐다. */
@@ -167,8 +167,6 @@ function IdentitySection({ me }: { me: MeResponse }) {
     payments: pricingQuery.data?.paymentsEnabled ?? false,
     creatorPayout: hasEnabledFeature(me.enabledFeatures, "creator_payout"),
   });
-
-  if (section.kind === "hidden") return null;
 
   if (section.kind === "verified") {
     return (

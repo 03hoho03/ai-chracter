@@ -17,13 +17,23 @@ from typing import Literal, TypeGuard, get_args
 from api.llm.call_policy import CALL_POLICIES, BackendId, CallKind, LLMCallSite
 
 # 사용자가 고르는 글쓰기 모델의 id. 기동 검증이 읽어야 해서 여기 두고, `llm/chat_models.py` 가 같은 이름으로 다시 내보낸다.
-ChatModelId = Literal["gemini", "sonnet", "opus"]
+# `haiku_writer` 는 Claude Haiku 로 쓰는 채팅 글쓰기 모델이고 판정 전용 `haiku` 와 다른 id 다 — 같은 id 로 두면 판정·요약이 읽는
+# 체인에 생성 문안이 섞여 한쪽 게시·롤백이 다른 쪽을 함께 바꾸고, 판정 모델 버전을 바꾸는 설정이 사용자가 고른 글쓰기 모델까지
+# 바꾼다.
+ChatModelId = Literal["gemini", "haiku_writer", "sonnet", "opus"]
 DEFAULT_CHAT_MODEL: ChatModelId = "gemini"
+# 소설(화 생성·전체 구성안·장면 구성안)에서 고를 수 있는 글쓰기 모델. 채팅 전용 모델은 소설 묶음 상한·소설 단가가 없어 여기 없다.
+# 기동 검증(`core/config.py`)이 소설 스위치가 여는 경로의 자격을 볼 때 읽어야 해서 잎 모듈인 여기 두고, 레지스트리
+# (`llm/chat_models.py` 의 `novel_selectable`)·가격 등록부(`core/clover.py`)·소설 게이트가 이 값 하나를 읽는다.
+NOVEL_MODELS: frozenset[ChatModelId] = frozenset({"gemini", "sonnet", "opus"})
 # 프롬프트 세트 체인의 모델 축이자 판정·요약 모델 설정의 값 — 글쓰기 모델 전부에 판정 전용 id(`haiku`)를 더한 것이다. 판정
 # 전용 id 로는 글을 쓰지 않으므로 글쓰기 모델 타입·채팅 선택에는 넣지 않는다. 기동 검증이 판정 모델 설정을 읽어야 해서 여기 두고,
 # `llm/chat_models.py` 가 같은 이름으로 다시 내보낸다.
-PromptSetModelId = Literal["gemini", "sonnet", "opus", "haiku"]
+PromptSetModelId = Literal["gemini", "haiku_writer", "sonnet", "opus", "haiku"]
 _PROMPT_SET_MODEL_IDS: frozenset[str] = frozenset(get_args(PromptSetModelId))
+# 판정·요약 모델 설정에 쓸 수 없는 체인 모델 — 글쓰기 전용 id 다. 그 체인의 판정 문안은 게시 검증을 맞추려고 둔 사본이고, 판정은
+# 판정 전용 `haiku` 가 맡는다(`core/config.py` 의 판정 모델 검증이 읽는다).
+WRITER_ONLY_MODELS: frozenset[PromptSetModelId] = frozenset({"haiku_writer"})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -81,6 +91,8 @@ BACKENDS: dict[BackendId, BackendSpec] = {
             "sonnet": "anthropic_sonnet_model_id",
             "opus": "anthropic_opus_model_id",
             "haiku": "anthropic_haiku_model_id",
+            # 판정 전용 `haiku` 와 다른 설정이다 — 판정 모델 버전을 바꿔도 사용자가 고른 글쓰기 모델은 그대로다.
+            "haiku_writer": "anthropic_haiku_writer_model_id",
         },
         credential_env=(("ANTHROPIC_DIRECT_API_KEY", "anthropic_direct_api_key"),),
     ),
@@ -92,6 +104,9 @@ BACKENDS: dict[BackendId, BackendSpec] = {
 # 글쓰기 모델을 따지는 곳(상위 모델 스위치의 기동 검증)은 이 표가 아니라 `ChatModelId` 를 본다.
 MODEL_BACKENDS: dict[PromptSetModelId, tuple[BackendId, ...]] = {
     "gemini": ("gemini",),
+    # Haiku 글쓰기는 Anthropic 직결만이다 — Bedrock 행이 이 모델을 서비스하지 않아, 배정이 Bedrock 이어도 직결로 간다. Bedrock
+    # 쪽 Haiku 는 다른 버전(판정 전용 `haiku` 의 Bedrock id)이라 고른 모델과 다른 글이 나간다.
+    "haiku_writer": ("anthropic",),
     "sonnet": ("bedrock", "anthropic"),
     "opus": ("bedrock", "anthropic"),
     "haiku": ("bedrock", "anthropic"),
@@ -271,8 +286,11 @@ def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting
         if not follows_carried_model(call_site):
             continue
         # 실린 모델을 따르는 구조화 호출(구성안)은 배정이 없어도 글쓰기 모델마다 갈 구현이 그 방식을 받아야 한다 — 아니면 첫
-        # 상위 모델 구성안에서야 실패한다. 자격은 상위 모델 스위치의 기동 검증(`core/config.py`)이 본다.
+        # 상위 모델 구성안에서야 실패한다. 자격은 상위 모델 스위치의 기동 검증(`core/config.py`)이 본다. 소설 호출이면 소설에서
+        # 고를 수 있는 모델만 본다 — 채팅 전용 모델은 소설 요청 게이트가 막아 그 경로로 오지 않는다.
         for model in get_args(ChatModelId):
+            if policy.novelize is not None and model not in NOVEL_MODELS:
+                continue
             _, backend = pick_backend(call_site, model, assignments)
             if not _takes(BACKENDS[backend].capabilities, policy.call_kind):
                 errors.append(

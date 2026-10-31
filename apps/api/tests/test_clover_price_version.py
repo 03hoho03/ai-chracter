@@ -6,8 +6,8 @@
 2. 채팅 턴(전송·재생성·편집·빌더 미리보기)과 이미지 생성 요청이 가격 버전을 실어 왔는데 서버 버전과 다르면, **클로버를 실제로
    깎을 요청에서만** 409 `CLOVER_PRICE_CHANGED` 와 그 요청의 지금 금액(`currentCost`)을 내고 아무것도 깎지 않는다. 채팅은 SSE
    라우트라 스트림이 열리기 전의 JSON 오류 응답이어야 한다.
-3. 무료로 지나는 턴(하루 무료분 안, 면제 계정)과 토큰으로 내는 이미지는 버전이 달라도 그대로 지난다 — 깎지 않는 요청을 막으면
-   가격이 바뀐 날 무료 사용자까지 이유 없이 멈춘다.
+3. 깎지 않는 턴(면제 계정)과 토큰으로 내는 이미지는 버전이 달라도 그대로 지난다 — 깎지 않는 요청을 막으면 가격이 바뀐 날
+   돈을 내지 않는 사용자까지 이유 없이 멈춘다.
 4. 버전을 싣지 않은 요청(가격 버전을 모르는 배포 전 화면)은 지금처럼 처리한다.
 5. 가격이 나가는 출구(가격 함수·작업 금액·노벨 화 가격·공개 가격 응답)가 모두 가격 등록부와 기능 단가 상수에서 읽는다(아래
    "금액 고정" 절). 정한 값 자체는 정책 상수 테스트 한 곳이 고정한다.
@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core import clover, rate_limit_gate
+from api.core.config import settings
 from api.core.rate_limit_gate import ChatCharge, charge_chat_turn, enforce_image_rate_limit
 from api.db.models import User
 from api.db.models.clover import CloverLedger
@@ -120,11 +121,8 @@ async def test_pricing_reports_the_current_price_version(
 
 
 # ── 채팅 게이트 ────────────────────────────────────────────────────────────────
-async def test_paid_gemini_turn_with_a_stale_version_is_409_and_spends_nothing(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """하루 무료분을 다 쓴 Gemini 턴은 클로버로 낸다 — 그 턴의 버전이 다르면 지금 턴 가격을 실어 409 이고 원장이 비어 있다."""
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+async def test_paid_gemini_turn_with_a_stale_version_is_409_and_spends_nothing(db_session: AsyncSession) -> None:
+    """Gemini 턴은 클로버로 낸다 — 그 턴의 버전이 다르면 지금 턴 가격을 실어 409 이고 원장이 비어 있다."""
     user = await _member(db_session)
 
     detail = await _conflict(lambda: _charge(db_session, user, price_version=_stale()))
@@ -134,28 +132,14 @@ async def test_paid_gemini_turn_with_a_stale_version_is_409_and_spends_nothing(
     assert await _ledger(db_session, user.id) == []
 
 
-async def test_stale_version_is_checked_before_the_daily_spend_confirmation(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """오늘치 확인을 아직 안 한 회원도 버전이 다르면 확인 429 가 아니라 409 다. 확인 모달은 화면이 가진 가격으로 "클로버 N 개를
-    써요"를 묻는데, 그 가격이 옛 값이면 옛 가격에 동의를 받는 것이다."""
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
-    user = await _member(db_session, confirmed=False)
-
-    detail = await _conflict(lambda: _charge(db_session, user, price_version=_stale()))
-
-    assert detail == {"code": _PRICE_CHANGED, "currentCost": chat_turn_cost("gemini")}
-
-
 @pytest.mark.parametrize(
     "price_version",
     [pytest.param("current", id="current-version"), pytest.param(None, id="no-version")],
 )
 async def test_paid_gemini_turn_with_the_current_or_no_version_spends(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, price_version: str | None
+    db_session: AsyncSession, price_version: str | None
 ) -> None:
     """위 409 의 짝 — 셋업이 같고 버전만 맞거나 없다. 버전이 없는 요청은 버전을 모르는 배포 전 화면이라 지금처럼 깎는다."""
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     user = await _member(db_session)
 
     charge = await _charge(
@@ -166,25 +150,19 @@ async def test_paid_gemini_turn_with_the_current_or_no_version_spends(
     assert await _ledger(db_session, user.id) == [("chat_spend", -chat_turn_cost("gemini"))]
 
 
-@pytest.mark.parametrize(
-    ("exempt", "source"),
-    [pytest.param(False, "free", id="daily-free"), pytest.param(True, "skipped", id="exempt")],
-)
-async def test_free_turn_ignores_a_stale_version(
-    db_session: AsyncSession, exempt: bool, source: str
-) -> None:
-    """하루 무료분 안의 턴과 면제 계정의 턴은 아무것도 깎지 않으므로 버전이 달라도 지난다. 깨지는 시나리오: 대조를 게이트 맨 앞에
-    두어, 가격이 바뀐 날 옛 화면을 연 무료 사용자의 대화가 전부 409 로 멈춘다."""
-    user = await _member(db_session, rate_limit_exempt=exempt)
+async def test_exempt_turn_ignores_a_stale_version(db_session: AsyncSession) -> None:
+    """면제 계정의 턴은 아무것도 깎지 않으므로 버전이 달라도 지난다. 깨지는 시나리오: 대조를 게이트 맨 앞에 두어, 가격이 바뀐 날
+    옛 화면을 연 면제 계정의 대화가 전부 409 로 멈춘다."""
+    user = await _member(db_session, rate_limit_exempt=True)
 
     charge = await _charge(db_session, user, price_version=_stale())
 
-    assert charge.source == source
+    assert charge.source == "skipped"
     assert await _ledger(db_session, user.id) == []
 
 
 async def test_premium_turn_with_a_stale_version_is_409_and_spends_nothing(db_session: AsyncSession) -> None:
-    """상위 모델 턴은 무료분 없이 늘 클로버로 낸다 — 버전이 다르면 그 모델의 지금 턴 가격으로 409 다."""
+    """상위 모델 턴도 클로버로 낸다 — 버전이 다르면 그 모델의 지금 턴 가격으로 409 다."""
     user = await _member(db_session)
 
     detail = await _conflict(lambda: _charge(db_session, user, model="opus", price_version=_stale()))
@@ -196,7 +174,7 @@ async def test_premium_turn_with_a_stale_version_is_409_and_spends_nothing(db_se
 async def test_unverified_member_turn_with_a_stale_version_is_409_and_spends_nothing(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """본인인증 게이트에 걸린 회원은 무료분이 0 이라 Gemini 턴도 클로버로 낸다 — 이 갈래도 버전이 다르면 409 다."""
+    """본인인증 게이트에 걸린 회원의 Gemini 턴은 따로 갈리는 차감 갈래다 — 이 갈래도 버전이 다르면 409 다."""
     monkeypatch.setattr(rate_limit_gate, "is_identity_gated", lambda _user: True)
     user = await _member(db_session)
 
@@ -216,13 +194,11 @@ def _with_version(body: dict[str, object] | None, version: int) -> dict[str, obj
 
 @_SURFACES
 async def test_paid_chat_turn_with_a_stale_version_is_a_409_before_the_stream(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, surface: str
+    db_client: httpx.AsyncClient, db_session: AsyncSession, surface: str
 ) -> None:
     """네 경로 모두 요청 본문의 버전을 게이트가 읽는다. 409 는 SSE 스트림이 아니라 JSON 오류 응답이다 — 스트림 안에서 오류를
     던지면 커넥션이 깨진다. 재생성은 원래 본문이 없는 요청이라 버전을 싣는 본문이 새로 생긴다."""
-    user, method, path, body = await _prepare_paid_turn(
-        db_client, db_session, monkeypatch, surface=surface, balance=_START_BALANCE
-    )
+    user, method, path, body = await _prepare_paid_turn(db_client, db_session, surface=surface, balance=_START_BALANCE)
     spent_in_setup = await _ledger(db_session, user.id)
 
     _override_llm_client(_FakeLLMClient(tokens=["안", "녕"]))
@@ -238,12 +214,10 @@ async def test_paid_chat_turn_with_a_stale_version_is_a_409_before_the_stream(
 
 @_SURFACES
 async def test_paid_chat_turn_with_the_current_version_runs(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, surface: str
+    db_client: httpx.AsyncClient, db_session: AsyncSession, surface: str
 ) -> None:
     """위 409 의 짝 — 버전이 맞으면 턴이 끝까지 돌고 그 턴 가격을 깎는다. 재생성에 본문을 실어도 받는다."""
-    user, method, path, body = await _prepare_paid_turn(
-        db_client, db_session, monkeypatch, surface=surface, balance=_START_BALANCE
-    )
+    user, method, path, body = await _prepare_paid_turn(db_client, db_session, surface=surface, balance=_START_BALANCE)
 
     _override_llm_client(_FakeLLMClient(tokens=["안", "녕"]))
     try:
@@ -331,10 +305,16 @@ async def test_clover_paid_image_with_the_current_or_no_version_spends(
 
 
 def test_price_functions_follow_the_registry() -> None:
-    """모델 셋의 네 단가와, 그 단가로 계산하는 작업 금액(화 생성·다시 만들기·원고·구성안·장면 구성안·AI 수정·연쇄 묶음 하나),
-    노벨 화 가격(앞 무료 화까지 0, 그 뒤 화당 가격)이 등록부·상수 값 그대로다."""
+    """모델마다 채팅 턴 단가와, 소설 모델의 소설 세 단가와 그 단가로 계산하는 작업 금액(화 생성·다시 만들기·원고·구성안·장면
+    구성안·AI 수정·연쇄 묶음 하나), 노벨 화 가격(앞 무료 화까지 0, 그 뒤 화당 가격)이 등록부·상수 값 그대로다. 채팅 전용 모델은
+    소설 단가가 없다(소설 요청 게이트가 막는다)."""
     for m in CHAT_MODELS:
+        assert chat_turn_cost(m.id) == clover.CLOVER_MODEL_PRICES[m.id].chat_turn, m.id
+    for m in CHAT_MODELS:
+        if not m.novel_selectable:
+            continue
         row = clover.CLOVER_MODEL_PRICES[m.id]
+        assert row.novel_episode is not None, m.id
         assert (
             chat_turn_cost(m.id),
             novel_episode_unit_price(m.id),
@@ -353,8 +333,13 @@ def test_price_functions_follow_the_registry() -> None:
     assert [chapter_price(ordinal, 1) for ordinal in (1, free, free + 1)] == [0, 0, clover.NOVEL_READ_COST]
 
 
-async def test_pricing_response_amounts_follow_the_registry(db_client: httpx.AsyncClient) -> None:
-    """공개 가격 응답의 금액 칸이 등록부·상수 값 그대로다. 기능 스위치·상품·결제수단처럼 금액이 아닌 칸은 다른 테스트가 본다."""
+async def test_pricing_response_amounts_follow_the_registry(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공개 가격 응답의 금액 칸이 등록부·상수 값 그대로다. 기능 스위치·상품·결제수단처럼 금액이 아닌 칸은 다른 테스트가 본다.
+    모델 행은 채팅에서 고를 수 있게 보이는 모델만 실리므로 채팅 상위 모델 스위치를 켜고 공개 목록을 Opus 하나로 고정한다."""
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", True)
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus"])
     body = (await db_client.get("/clover/pricing")).json()
     gemini = clover.CLOVER_MODEL_PRICES["gemini"]
     opus = clover.CLOVER_MODEL_PRICES["opus"]
@@ -366,7 +351,6 @@ async def test_pricing_response_amounts_follow_the_registry(db_client: httpx.Asy
             "imageCost",
             "novelEpisodeCost",
             "novelAiEditCost",
-            "dailyFreeChatTurns",
             "novelReadCost",
             "novelFreeChapterCount",
             "memorySummaryRegenerateCost",
@@ -377,7 +361,6 @@ async def test_pricing_response_amounts_follow_the_registry(db_client: httpx.Asy
         "imageCost": clover.IMAGE_UNIT_COST,
         "novelEpisodeCost": gemini.novel_episode,
         "novelAiEditCost": clover.NOVELIZE_AI_EDIT_COST,
-        "dailyFreeChatTurns": rate_limit_gate.CHAT_DAILY_LIMIT,
         "novelReadCost": clover.NOVEL_READ_COST,
         "novelFreeChapterCount": clover.NOVEL_FREE_CHAPTER_COUNT,
         "memorySummaryRegenerateCost": clover.MEMORY_SUMMARY_REGENERATE_COST,
@@ -385,4 +368,21 @@ async def test_pricing_response_amounts_follow_the_registry(db_client: httpx.Asy
     assert [(m["id"], m["chatTurnCost"], m["novelEpisodeCost"]) for m in body["models"]] == [
         ("gemini", gemini.chat_turn, gemini.novel_episode),
         ("opus", opus.chat_turn, opus.novel_episode),
+    ]
+
+
+async def test_a_visible_haiku_writer_row_has_its_chat_price_and_no_novel_price(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공개 가격은 구매 전 안내라 쓰이지 않을 소설 값을 싣지 않는다 — 채팅 전용 Haiku 글쓰기 행의 소설 화 단가는 null 이다. 행 순서는
+    레지스트리(가격순) 순서다."""
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", True)
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus", "haiku_writer"])
+
+    body = (await db_client.get("/clover/pricing")).json()
+
+    assert [(m["id"], m["isDefault"], m["chatTurnCost"], m["novelEpisodeCost"]) for m in body["models"]] == [
+        ("gemini", True, clover.CLOVER_MODEL_PRICES["gemini"].chat_turn, clover.CLOVER_MODEL_PRICES["gemini"].novel_episode),
+        ("haiku_writer", False, clover.CLOVER_MODEL_PRICES["haiku_writer"].chat_turn, None),
+        ("opus", False, clover.CLOVER_MODEL_PRICES["opus"].chat_turn, clover.CLOVER_MODEL_PRICES["opus"].novel_episode),
     ]

@@ -34,7 +34,7 @@ from api.db.models.clover import (
 )
 from api.db.models.content import Content
 from api.db.models.payment import Payment
-from api.llm.backends import ChatModelId
+from api.llm.backends import NOVEL_MODELS, ChatModelId
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +61,13 @@ class ModelPrices:
     chat_turn: int
     # 소설 화 하나. 생성 한 번은 묶음 하나를 여러 화로 쓰고 화 수 × 화 단가를 낸다. 다시 만들기도 같은 호출이라 같은 화 단가이고,
     # 구성 흐름의 원고(승인한 장면 구성안으로 쓰는 화 하나)도 이 값이다.
-    novel_episode: int
+    # 아래 셋을 포함한 소설 세 칸은 소설에서 고를 수 없는 모델(`llm/backends.py` 의 `NOVEL_MODELS` 밖)이면 `None` 이다 — 공개 가격
+    # 응답이 이 값을 구매 전 안내로 싣기 때문에 쓰이지 않을 가짜 숫자를 넣지 않는다.
+    novel_episode: int | None
     # 구성 흐름의 전체 구성안 한 번과 화 하나의 장면 구성안 한 번 — 화 수와 무관한 모델별 고정가. 구성 흐름 스위치
     # (`NOVELIZE_OUTLINE_FLOW_ENABLED`)가 꺼져 있는 동안은 이 두 값으로 차감하는 경로가 없다.
-    novel_outline: int
-    novel_episode_outline: int
+    novel_outline: int | None
+    novel_episode_outline: int | None
 
 
 # 소설 단가(화·전체 구성안·장면 구성안·AI 문단 수정)는 1클로버 = 3원일 때 정한 값을 1원 단위로 옮기며 세 배 한 것이라 원화
@@ -91,9 +93,12 @@ CLOVER_MODEL_PRICES: dict[ChatModelId, ModelPrices] = {
     # 장 경계 제안 약 4.6원을 더해 약 83원이다 — 쓸 수 있는 돈(240 × 0.828 = 약 199원)의 약 42%. 집계가 호출 하나가 낸 화 수를
     # 모르는 호출당 값이라 묶음이 여러 화를 내면 화당 원가는 더 낮고, 표본이 다섯 번뿐이며 사고 토큰이 보고되지 않았을 수 있다.
     "gemini": ModelPrices(chat_turn=20, novel_episode=240, novel_outline=570, novel_episode_outline=240),
+    # Haiku 글쓰기 턴 12: 채팅 전용 모델이라 소설 칸이 없다. 단가표(`llm/pricing.py`)의 Haiku 5.5 행은 프롬프트 10만 토큰 이하
+    # 정가와 같고, 10만 토큰을 넘는 요청은 모든 토큰이 다섯 배 단가라 원가 보고가 그 턴을 낮게 센다.
+    "haiku_writer": ModelPrices(chat_turn=12, novel_episode=None, novel_outline=None, novel_episode_outline=None),
     # Sonnet 턴 110: 조감독 작품 긴 방에서 잰 Sonnet 턴 원가는 캐시 적중 $0.018(약 25원)·미적중 $0.0796(약 111원)이다. 쓸 수 있는
-    # 돈(110 × 0.828 = 약 91원)에 적중 턴은 들고 미적중 턴은 넘는다. Sonnet 은 지금 채팅에서 고를 수 없어 이 값으로 차감하는 경로가
-    # 없다 — 채팅에 다시 열 때 미적중 비율과 함께 다시 본다(소설 Sonnet 화는 이 행의 화 단가를 쓴다).
+    # 돈(110 × 0.828 = 약 91원)에 적중 턴은 들고 미적중 턴은 넘는다. Sonnet 이 채팅 공개 목록에 있으면 Sonnet 채팅 턴은 이 값(110)을
+    # 차감한다 — 실사용 미적중 비율이 쌓이면 다시 본다(소설 Sonnet 화는 이 행의 화 단가를 쓴다).
     "sonnet": ModelPrices(chat_turn=110, novel_episode=540, novel_outline=990, novel_episode_outline=540),
     # Opus 턴 200(200원 — 3원 단위의 200클로버 600원에서 내린 값): 운영에서 잰 Opus 5.5 채팅 턴 원가(생성과 판정 몫 포함,
     # 백그라운드 요약·추출 제외)는 캐시가 맞을 때 평균 약 45원, 캐시를 놓친 턴 평균 약 175원, 관측 최대 약 343원이다. 쓸 수 있는
@@ -105,10 +110,17 @@ CLOVER_MODEL_PRICES: dict[ChatModelId, ModelPrices] = {
 
 
 def _check_model_prices() -> None:
-    """등록부에 글쓰기 모델마다 꼭 한 행이 있는지. 행이 빠진 모델은 가격 함수가 그 모델을 받는 순간 `KeyError` 로 500 이 되므로,
+    """등록부에 글쓰기 모델마다 꼭 한 행이 있는지, 그리고 소설 세 칸이 소설에서 고를 수 있는 모델에만 모두 있는지. 행이 빠진 모델은
+    가격 함수가 그 모델을 받는 순간 `KeyError` 로 500 이 되고, 소설 모델의 칸이 비면 소설 차감이 `RuntimeError` 로 500 이 되므로,
     모델 타입과 표가 어긋나면 기동에서 멈춘다."""
     if set(CLOVER_MODEL_PRICES) != set(get_args(ChatModelId)):
         raise RuntimeError("가격 등록부의 행이 글쓰기 모델 목록과 다르다")
+    for model, row in CLOVER_MODEL_PRICES.items():
+        cells = (row.novel_episode, row.novel_outline, row.novel_episode_outline)
+        if model in NOVEL_MODELS and any(cell is None for cell in cells):
+            raise RuntimeError(f"소설에서 고를 수 있는 {model} 의 소설 단가 칸이 비어 있다")
+        if model not in NOVEL_MODELS and any(cell is not None for cell in cells):
+            raise RuntimeError(f"소설에서 고를 수 없는 {model} 에 소설 단가가 있다")
 
 
 _check_model_prices()
@@ -130,7 +142,7 @@ MEMORY_SUMMARY_REGENERATE_COST = 30
 # 가격표의 버전. 위 등록부의 값이나 기능 단가·무료 화 수가 하나라도 바뀌면 1 올린다. 공개 가격 응답이 이 값을 싣고, 화면은
 # 클로버를 쓰는 채팅·이미지 요청에 받은 값을 실어 보낸다 — 실제로 깎을 요청의 값이 이 값과 다르면 게이트가 깎기 전에 409
 # (`CLOVER_PRICE_CHANGED`)로 멈춰, 사용자가 본 적 없는 가격으로 깎이지 않게 한다(`core/rate_limit_gate.py`).
-PRICE_VERSION = 2
+PRICE_VERSION = 3
 
 # `db/models/clover.py`의 `kind` 컬럼 주석과 같은 목록이다. 컬럼은 Text라 DB가 값을 막지
 # 않으므로(마이그레이션 없이 넓히기 위해서다) 이 `Literal`이 유일한 강제 지점이다.
@@ -204,11 +216,12 @@ def raise_if_clover_paused() -> None:
     """정지 스위치가 켜져 있으면 503 `CLOVER_PAUSED`. 단위 전환처럼 잔액을 한꺼번에 옮기는 동안 새 차감·지급이 끼지 않게 한다.
 
     부르는 곳: 모든 차감이 지나는 `spend` 첫 줄, 채팅·이미지 게이트의 유료 갈래(`core/rate_limit_gate.py` — 하루 1회 확인 429 와
-    가격 버전 409 보다 먼저), 그리고 공용 함수에서 막을 수 없는 지급·회수 라우트의 의존성(미션 수령·어드민 지급과 회수·어드민 결제
+    가격 버전 409 보다 먼저), 그리고 공용 함수에서 막을 수 없는 지급·회수 라우트의 의존성(미션 수령·출석 수령·어드민 지급과 회수·어드민 결제
     환불 실행·주문 생성). 지급(`grant`)·구매분 회수는 결제 완료·웹훅·콘솔 취소와 함수를 같이 써서 함수에서 막으면 그것까지 멈춘다.
 
-    막지 않는 것: 무료 대화 턴·무료 토큰 이미지(`spend` 를 부르지 않는다), 모든 환급, 결제 완료·웹훅, 만료 배치, 탈퇴 소멸 —
-    이미 시작한 일의 마무리와 돈이 이미 나간 결제의 동기화는 멈추면 안 된다. 라우트 의존성으로도 쓴다(인자가 없다)."""
+    막지 않는 것: 면제 계정의 채팅 턴·무료 토큰 이미지(`spend` 를 부르지 않는다), 모든 환급,
+    결제 완료·웹훅, 만료 배치, 탈퇴 소멸 — 이미 시작한 일의 마무리와 돈이 이미 나간 결제의 동기화는 멈추면 안 된다. 라우트
+    의존성으로도 쓴다(인자가 없다)."""
     if settings.clover_ledger_paused:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -505,7 +518,7 @@ async def grant(
     유니크 인덱스가 그걸 막는 유일한 수단이고, 더블클릭·재시도가
     곧 중복 지급이라 어드민 경로는 반드시 키를 넣는다.
 
-    🔴 `expires_at`은 호출 지점이 명시해야 한다 — 만료가 붙는 무료 지급은 미션과 기존
+    🔴 `expires_at`은 호출 지점이 명시해야 한다 — 만료가 붙는 무료 지급은 미션·누적 출석과 기존
     잔액 백필뿐이고, 어드민 지급과 환불은 `None`(무기한)이다. 기본값을 `None`으로 둔 이유는
     어드민 지급·환불 호출부가 만료를 안 넘겨 기본값에 기대기 때문이다 — 미션 청구
     (`clover/router.py`)는 `core.clover.earned_lot_expiry`로 계산한 값을 명시적으로 넘긴다.

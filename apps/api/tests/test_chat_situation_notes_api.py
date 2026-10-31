@@ -34,7 +34,7 @@ from factories import (
     _add_situation_note,
     _clear_llm_override,
     _login_as,
-    _make_user,
+    _make_paying_user,
     _open_room,
     _override_llm_client,
     _story_with_setup,
@@ -212,7 +212,7 @@ def _section(prompt: str) -> str | None:
 async def test_send_loads_true_notes_in_order_right_after_keyword_notes(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     trust = _add_stat(db_session, setup, "신뢰", 50)
     days = _add_stat(db_session, setup, "남은 날", 5)
     # 순서의 역순으로 넣는다 — 넣은 순서가 곧 순서면 정렬이 빠져도 같은 결과가 나온다.
@@ -254,7 +254,7 @@ async def test_send_loads_true_notes_in_order_right_after_keyword_notes(
 async def test_note_with_stat_at_initial_value_when_room_has_no_row(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     days = _add_stat(db_session, setup, "남은 날", 5)
     _add_situation_note(db_session, setup, "표지-마감 주간", [_rule(days, "lte", 7)])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
@@ -268,7 +268,7 @@ async def test_note_with_stat_at_initial_value_when_room_has_no_row(
 
 
 async def test_section_is_dropped_when_no_note_is_true(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     trust = _add_stat(db_session, setup, "신뢰", 50)
     _add_situation_note(db_session, setup, "표지-거짓", [_rule(trust, "gte", 90)])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
@@ -284,7 +284,7 @@ async def test_send_evaluates_before_judgment_and_regenerate_reevaluates_with_cu
 ) -> None:
     """원 생성은 보낸 순간의 값(50)으로 거짓이고, 그 턴 판정이 80 으로 올린 뒤의 재생성은 참이다 — 재생성 때 화면
     게이지와 맞는 노트가 실린다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=2)
     trust = _add_stat(db_session, setup, "신뢰", 50)
     _add_situation_note(db_session, setup, "표지-가까워짐", [_rule(trust, "gte", 70)])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
@@ -302,7 +302,7 @@ async def test_send_evaluates_before_judgment_and_regenerate_reevaluates_with_cu
 
 
 async def test_edit_evaluates_notes_with_current_values(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=2)
     trust = _add_stat(db_session, setup, "신뢰", 50)
     _add_situation_note(db_session, setup, "표지-가까워짐", [_rule(trust, "gte", 70)])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
@@ -349,7 +349,7 @@ async def test_second_stat_read_in_a_request_sees_value_committed_by_another_req
 
 async def test_notes_keep_loading_after_ending_reached(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     """엔딩 뒤에는 판정이 멈춰 스탯이 동결되지만 노트 평가는 그 값으로 계속한다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     days = _add_stat(db_session, setup, "남은 날", 5)
     _add_situation_note(db_session, setup, "표지-당일", [_rule(days, "lte", 0)])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
@@ -367,7 +367,7 @@ async def test_notes_keep_loading_after_ending_reached(db_client: httpx.AsyncCli
 async def test_broken_condition_json_skips_only_that_note_and_completes_the_turn(
     db_client: httpx.AsyncClient, db_session: AsyncSession, caplog: pytest.LogCaptureFixture
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     trust = _add_stat(db_session, setup, "신뢰", 50)
     db_session.add(
         SituationNote(
@@ -413,7 +413,7 @@ async def test_stats_are_read_for_the_prompt_only_when_the_setup_has_notes(
 ) -> None:
     """엔딩 뒤라 판정 단계는 스탯을 읽지 않는다 — 남는 읽기는 생성 프롬프트 조립 몫이다. 노트가 없는 시작설정은 그
     읽기가 0 이라 노트 기능 이전과 쿼리 수가 같다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.", paid_turns=1)
     trust = _add_stat(db_session, setup, "신뢰", 50)
     if with_note:
         _add_situation_note(db_session, setup, "표지-노트", [_rule(trust, "gte", 0)])
@@ -432,7 +432,7 @@ async def test_stats_are_read_for_the_prompt_only_when_the_setup_has_notes(
 async def test_character_chat_has_no_situation_section_and_reads_no_stats(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room = await _open_room(db_client, db_session, turns=0)
+    room = await _open_room(db_client, db_session, turns=0, paid_turns=1)
     fake = _RecordingLLMClient()
 
     with _stat_table_reads() as reads:
@@ -453,9 +453,7 @@ async def test_preview_evaluates_notes_with_session_stats(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """첫 턴은 세션 시작값(50)으로, 둘째 턴은 첫 턴 판정이 올린 값(90)으로 평가한다. 조건 없는 노트는 실리지 않는다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+    user = await _make_paying_user(db_session, turns=2)
     await _login_as(db_client, user.id)
     stat_id = str(uuid.uuid4())
     setup = {

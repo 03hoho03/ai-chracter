@@ -33,7 +33,7 @@ from api.core.security import hash_withdrawn_email
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User, WithdrawnEmail, WithdrawnIdentity
 from api.db.models.chat import ChatMessageReport, ChatRoom
-from api.db.models.clover import CloverLedger, CloverSpendUsage
+from api.db.models.clover import AttendanceClaim, CloverLedger, CloverSpendUsage
 from api.db.models.content import Content, ContentChatParticipant, ContentVisibility
 from api.db.models.creator_payout import CreatorPayout, CreatorPayoutApplication, CreatorPayoutProfile
 from api.db.models.feature_grant import UserFeatureGrant
@@ -72,8 +72,9 @@ async def delete_storage_objects_later(storage_keys: list[str]) -> None:
 async def _retain_withdrawn_identity(
     db: AsyncSession, *, user_id: uuid.UUID, ci_hmac: str, now: datetime
 ) -> None:
-    """탈퇴하는 인증 회원의 CI 해시와 그가 받은 1회성 미션 키를 `withdrawn_identities` 에 남긴다. 같은 사람이 새 계정으로
-    인증해도 보관 기간 안에는 같은 미션 보상을 다시 받지 못하게 하려는 것이다.
+    """탈퇴하는 인증 회원의 CI 해시와 그가 받은 1회성 미션 키, 그날(KST) 누적 출석을 받았으면 그 날짜를 `withdrawn_identities`
+    에 남긴다. 같은 사람이 새 계정으로 인증해도 보관 기간 안에는 같은 미션 보상을, 탈퇴한 그날에는 출석을 다시 받지 못하게
+    하려는 것이다. 출석 여부는 호출자가 회원 행을 잠근 뒤에 읽는다 — 같은 잠금을 먼저 잡은 수령이 있으면 그 커밋을 본다.
 
     같은 사람이 탈퇴 → 재가입 → 다시 탈퇴하면 행이 이미 있다. 보관 기간 안의 행이면 받은 키를 합치고, 지난 행이면(크론이
     아직 못 지운 것) 새로 쓴다 — 기간이 지난 기록은 조회에서 이미 무시되므로 되살리지 않는다."""
@@ -89,14 +90,29 @@ async def _retain_withdrawn_identity(
         ).all()
     )
     keys: list[str] = [key for ledger_key, key in keys_by_ledger_key.items() if ledger_key in claimed]
+    today = clover.kst_today(now)
+    claimed_today = await db.scalar(
+        select(exists().where(AttendanceClaim.user_id == user_id, AttendanceClaim.claimed_on == today))
+    )
+    attendance_claimed_on = today if claimed_today else None
     row = await db.get(WithdrawnIdentity, ci_hmac, with_for_update=True)
     if row is None:
-        db.add(WithdrawnIdentity(ci_hmac=ci_hmac, withdrawn_at=now, claimed_mission_keys=keys))
+        db.add(
+            WithdrawnIdentity(
+                ci_hmac=ci_hmac,
+                withdrawn_at=now,
+                claimed_mission_keys=keys,
+                attendance_claimed_on=attendance_claimed_on,
+            )
+        )
         return
     if now - row.withdrawn_at < WITHDRAWN_IDENTITY_RETENTION_PERIOD:
         keys = sorted(set(row.claimed_mission_keys) | set(keys))
     row.claimed_mission_keys = keys
     row.withdrawn_at = now
+    # 출석 날짜는 보관 기간과 무관하게 둘 중 늦은 날짜를 남긴다 — 지난 날짜는 오늘 판정에 쓰이지 않아 덮어써도 잃는 것이 없다.
+    dates = [d for d in (row.attendance_claimed_on, attendance_claimed_on) if d is not None]
+    row.attendance_claimed_on = max(dates) if dates else None
 
 
 async def _keep_sold_novels_hidden(

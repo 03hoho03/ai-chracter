@@ -31,8 +31,8 @@ from factories import (
     _clear_llm_override,
     _get_genre,
     _login_as,
+    _make_paying_user,
     _make_published_story,
-    _make_user,
     _override_llm_client,
     _parse_sse_events,
     ending_priority_marker,
@@ -165,8 +165,7 @@ class _FakeLLMClient(LLMClient):
 async def test_send_message_reaches_ending_when_judgment_triggers_with_no_stat_rules(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -213,8 +212,7 @@ async def test_send_message_reaches_ending_when_judgment_triggers_with_no_stat_r
 async def test_send_message_skips_ending_judgment_before_turn_gate(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -248,8 +246,7 @@ async def test_send_message_does_not_call_ending_judgment_when_stat_rule_is_fals
 ) -> None:
     """규칙은 이번 턴 반영 뒤 스탯만으로 정해지므로 먼저 평가한다 — 거짓이면 판정 모델을 부르지 않는다.
     큐에 엔딩 판정 응답을 넣지 않아, 판정을 부르면 빈 큐에서 꺼내다 턴이 깨진다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -283,8 +280,7 @@ async def test_send_message_does_not_reach_ending_when_stat_rule_passes_but_judg
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """규칙이 참이어도 판정 모델이 거짓이면 발동하지 않는다 — 규칙을 먼저 본다고 판정을 건너뛰지 않는다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -320,8 +316,7 @@ async def test_send_message_judges_due_endings_in_order_and_stops_at_first_reach
 ) -> None:
     """order 순으로 본다. 규칙이 거짓인 1순위는 판정 없이 넘어가고, 규칙은 참이나 판정이 거짓인 2순위 다음
     3순위에서 발동하면 규칙 없는 4순위는 판정하지 않는다. 행은 order 와 다른 순서로 넣는다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -365,8 +360,7 @@ async def test_send_message_treats_rule_on_missing_stat_as_false_and_completes_t
 ) -> None:
     """시작설정에 없는 스탯을 가리키는 규칙 항목은 거짓이다. 예외로 SSE 가 끊기지 않고 턴이 커밋되며,
     어느 방·엔딩·스탯인지 경고로 남긴다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -405,8 +399,7 @@ async def test_send_message_judges_priority_stat_group_by_highest_value(
 ) -> None:
     """우선 스탯을 채운 엔딩끼리는 이번 턴 반영 뒤 그 스탯 값이 가장 높은 것만 판정한다. 같은 시나리오를 빌더
     미리보기(`test_send_preview_message_judges_priority_stat_group_by_highest_value`)에도 넣어 결과가 같은지 본다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -458,8 +451,7 @@ async def test_send_message_judges_priority_stat_group_by_highest_value(
 async def test_send_message_only_top_priority_ending_reached_when_multiple_due(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -499,8 +491,7 @@ async def test_send_message_only_top_priority_ending_reached_when_multiple_due(
 async def test_send_message_skips_stat_and_ending_judgment_once_room_already_ending_reached(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -535,8 +526,7 @@ async def test_send_message_skips_stat_and_ending_judgment_once_room_already_end
 async def test_send_message_reaches_ending_without_epilogue_emits_null_epilogue(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -570,8 +560,7 @@ async def test_send_message_reaches_ending_without_epilogue_emits_null_epilogue(
 async def test_send_message_does_not_duplicate_existing_story_ending_unlock(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -608,8 +597,7 @@ async def test_send_message_ending_judgment_uses_stat_values_updated_this_turn(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """엔딩 규칙 평가는 이번 턴에 판단된 스탯 변경 이후의 값을 근거로 해야 한다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -668,8 +656,7 @@ async def test_send_message_stat_judgment_llm_failure_still_completes_the_turn(
     """판정 LLM 실패(429 등)가 SSE 제너레이터 밖으로 새면 ASGI 태스크가 취소되며 요청 스코프 DB
     세션이 강제 종료되고, 망가진 커넥션이 풀로 돌아가 무관한 다음 요청이 500이 된다 — 그래서
     실패를 흡수하고 그 턴의 판정만 포기한다. 이미 스트리밍된 응답은 정상 커밋되어야 한다."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
@@ -722,8 +709,7 @@ async def test_send_message_ending_judgment_llm_failure_keeps_stat_changes(
 ) -> None:
     """스탯 판단은 성공하고 엔딩 판정만 실패한 경우 — 이미 계산된 스탯 변경은 그대로 커밋하고
     엔딩 판정만 포기한다(부분 진행 보존)."""
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)

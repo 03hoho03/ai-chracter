@@ -11,7 +11,7 @@ type ChainReadByProps = {
 };
 
 /** 이 체인을 운영에서 어느 칸이 읽는지. 원천은 모델 배정 표 조회 하나다(배정 표를 저장·되돌리면 그 쿼리가 무효화되어 다음
- * 조회 때 바뀐다). 상위 모델 스위치가 꺼져 실행되지 않는 Opus 방 칸은 읽는 칸과 따로 보인다. 로딩·실패를 "읽는 칸 없음"과
+ * 조회 때 바뀐다). 운영에서 고를 수 없는 상위 모델(스위치가 꺼졌거나 그 모델을 채팅 공개 목록에서 뺀 경우)의 방 칸은 읽는 칸과 따로 보인다. 로딩·실패를 "읽는 칸 없음"과
  * 섞지 않는다 — 조회가 실패한 순간에도 실제로는 읽는 칸이 있을 수 있다. */
 export function ChainReadBy({ lane, model }: ChainReadByProps) {
   const routingQuery = useRoutingQuery();
@@ -38,7 +38,7 @@ export function ChainReadBy({ lane, model }: ChainReadByProps) {
         <p className="max-w-prose break-keep text-xs text-foreground">
           지금 운영에서 이 체인을 읽는 칸이 없어요.{" "}
           {switchedOff.length > 0
-            ? "게시해도 상위 모델을 켜기 전까지 쓰이지 않아요."
+            ? "게시해도 그 모델을 공개하기 전까지 쓰이지 않아요."
             : "게시해도 모델 배정 표가 이 체인을 고르기 전까지 쓰이지 않아요."}{" "}
           <Link
             to="/prompt-routing"

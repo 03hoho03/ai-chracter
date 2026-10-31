@@ -189,11 +189,13 @@ class ProviderSdks:
     """세 구현을 실제 클래스로 만들고 SDK 자리만 바꿔 끼운다. 받은 것을 적는다.
 
     - `sent`: (구현, SDK 가 받은 모델 id)
+    - `claude_requests`: (구현, Claude SDK 가 받은 요청 인자 전부)
     - `recorded`: (구현, 사용량 기록의 호출 위치, 모델 id) — 사용량 해시 필드의 앞 두 칸과 같은 값이다
     - `answers`: 구조화 호출이 돌려줄 응답(스키마 → 값). 테스트가 바꿀 수 있다."""
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self.sent: list[tuple[str, str]] = []
+        self.claude_requests: list[tuple[str, dict[str, Any]]] = []
         self.recorded: list[tuple[str, str, str]] = []
         self.answers: dict[type, Any] = dict(ANSWERS)
 
@@ -254,6 +256,7 @@ class ProviderSdks:
     def _claude(self, backend: str) -> Callable[..., Awaitable[Any]]:
         async def create(**kwargs: Any) -> Any:
             self.sent.append((backend, kwargs["model"]))
+            self.claude_requests.append((backend, kwargs))
             if not kwargs.get("stream"):
                 return SimpleNamespace(usage=_claude_usage(), stop_reason="end_turn", content=[])
 
@@ -857,4 +860,91 @@ async def test_a_room_turn_records_each_stages_route_and_dumps_set_keys_only_for
         },
         ("judgment", "chat_ending_judgment"): {},
         ("judgment", "chat_media_book_image"): {},
+    }
+
+
+async def test_a_visible_sonnet_room_turn_goes_direct_to_anthropic_and_records_the_sonnet_charge(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """운영과 같은 배정(글쓰기와 판정·요약 호출 위치를 Anthropic 직결로, 판정·요약 모델 Haiku)에서 공개 목록에 Sonnet 을 넣으면,
+    표가 빈 Sonnet 스토리 방의 한 턴은 생성을 Sonnet 으로 Anthropic 직결에 보내고 Sonnet 값을 낸다. 판정·요약은 Sonnet 칸에 행이
+    없어 모델 설정(Haiku)으로 같은 직결 경로에 가고, 어느 호출도 Bedrock 으로 가지 않는다. 턴 기록에는 Sonnet 과 그 값, 단계마다의
+    경로가 남는다."""
+    fix_settings(monkeypatch, "haiku-direct", tmp_path / "dump.jsonl")
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus", "sonnet"])
+    method, path, body = await prepare(db_client, db_session, "story-send", "sonnet")
+    room_id = uuid.UUID(path.split("/")[2])
+    sdks = ProviderSdks(monkeypatch)
+    _override_llm_client(sdks.client())
+    try:
+        resp = await db_client.request(method, path, json=body)
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200, resp.text
+    assert _parse_sse_events(resp.text)[-1]["type"] == "done"
+    assert ("anthropic", "fixture-anthropic-sonnet") in sdks.sent
+    assert {backend for backend, _ in sdks.sent} == {"anthropic"}
+    db_session.expire_all()
+    [turn] = (await db_session.scalars(select(ChatTurn).where(ChatTurn.chat_room_id == room_id))).all()
+    sonnet_turn = clover.CLOVER_MODEL_PRICES["sonnet"].chat_turn
+    assert (turn.chat_model, turn.clover_amount) == ("sonnet", sonnet_turn)
+    generation, *structured = turn.stage_routes
+    assert generation == {
+        "lane": "story",
+        "stage": "chat_generate",
+        "chainModel": "sonnet",
+        "promptSetId": await _set_id(db_session, "story", "sonnet"),
+        "callModel": "sonnet",
+        "backend": "anthropic",
+        "source": "room",
+    }
+    assert {(r["source"], r["callModel"], r["backend"]) for r in structured} <= {
+        ("env", "haiku", "anthropic"),
+        ("inherited", "haiku", "anthropic"),
+    }
+
+
+async def test_a_visible_haiku_writer_room_turn_writes_direct_with_haiku_and_judges_with_the_judgment_only_haiku(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """운영과 같은 배정에서 공개 목록에 Haiku 글쓰기를 넣으면, 표가 빈 Haiku 스토리 방의 한 턴은 생성을 글쓰기 Haiku 의 실제 id 로
+    Anthropic 직결에 보내고 Haiku 값을 낸다. 생성 요청은 깊이를 싣고 사고 설정은 싣지 않는다(Opus·Sonnet 과 같은 규칙). 판정·요약은
+    판정 전용 `haiku`(그 id 설정)로 같은 직결 경로에 가고, 어느 호출도 Bedrock 으로 가지 않는다."""
+    fix_settings(monkeypatch, "haiku-direct", tmp_path / "dump.jsonl")
+    monkeypatch.setattr(settings, "anthropic_haiku_writer_model_id", "fixture-anthropic-haiku-writer")
+    monkeypatch.setattr(settings, "chat_models_visible", ["opus", "haiku_writer"])
+    method, path, body = await prepare(db_client, db_session, "story-send", "haiku_writer")
+    room_id = uuid.UUID(path.split("/")[2])
+    sdks = ProviderSdks(monkeypatch)
+    _override_llm_client(sdks.client())
+    try:
+        resp = await db_client.request(method, path, json=body)
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200, resp.text
+    assert _parse_sse_events(resp.text)[-1]["type"] == "done"
+    assert {backend for backend, _ in sdks.sent} == {"anthropic"}
+    [generation_request] = [kwargs for _, kwargs in sdks.claude_requests if kwargs.get("stream")]
+    assert generation_request["model"] == "fixture-anthropic-haiku-writer"
+    assert generation_request["output_config"] == {"effort": "low"}
+    assert "thinking" not in generation_request
+    assert {model for _, model in sdks.sent} == {"fixture-anthropic-haiku-writer", "fixture-anthropic-haiku"}
+    db_session.expire_all()
+    [turn] = (await db_session.scalars(select(ChatTurn).where(ChatTurn.chat_room_id == room_id))).all()
+    assert (turn.chat_model, turn.clover_amount) == ("haiku_writer", clover.CLOVER_MODEL_PRICES["haiku_writer"].chat_turn)
+    generation, *structured = turn.stage_routes
+    assert generation == {
+        "lane": "story",
+        "stage": "chat_generate",
+        "chainModel": "haiku_writer",
+        "promptSetId": await _set_id(db_session, "story", "haiku_writer"),
+        "callModel": "haiku_writer",
+        "backend": "anthropic",
+        "source": "room",
+    }
+    assert {(r["source"], r["callModel"], r["backend"]) for r in structured} <= {
+        ("env", "haiku", "anthropic"),
+        ("inherited", "haiku", "anthropic"),
     }

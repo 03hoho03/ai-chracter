@@ -6,6 +6,7 @@ import {
   clearPaymentReturnTo,
   readPaymentReturnTo,
   useCloverBalanceQuery,
+  useCloverPricingQuery,
   useCloverProductsQuery,
   type CloverProductOffer,
   type CloverProductsResponse,
@@ -72,6 +73,8 @@ export function CloverHubPage({
   const session = useSessionQuery();
   const viewer = toHubViewer(session);
   const productsQuery = useCloverProductsQuery();
+  // 출석판 정책은 상품 응답이 아니라 공개 가격 응답에 있다. 클로버 안내의 출석 클로버 항목이 그 숫자를 쓴다.
+  const attendance = useCloverPricingQuery().data?.attendance;
   // 잔액은 로그인한 사람에게만 묻는다. 묻지 않는 동안 쿼리는 대기 상태로 남고, 화면 갈래는 `getWalletView` 가 세션으로 먼저
   // 가른다.
   const balanceQuery = useCloverBalanceQuery({ enabled: viewer.kind === "member" });
@@ -176,7 +179,7 @@ export function CloverHubPage({
             }}
             returnTo={returnTo}
           />
-          <CloverFaq products={products} isError={productsQuery.isError} />
+          <CloverFaq products={products} isError={productsQuery.isError} attendance={attendance} />
         </div>
       </div>
     </main>

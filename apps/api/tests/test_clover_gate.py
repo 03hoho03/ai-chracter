@@ -1,9 +1,8 @@
-"""무료 한도를 소진한 뒤 클로버가 게이트를 뚫는지 —
+"""기본 모델(Gemini) 턴이 클로버로 게이트를 뚫는지 —
 그리고 **뚫으면 안 되는 자리에서는 안 뚫는지**를 검증한다.
 
-셋업 관례는 `test_user_rate_limit_gate.py`를 그대로 따른다 — 상한을 진짜로 소진시키지 않고
-`monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)`으로 만든다(채팅 경로는 한 번만
-통과해도 LLM을 태운다).
+기본 모델 턴에도 하루 무료분이 없어 면제 계정 밖의 첫 턴부터 클로버로 낸다. 그래서 상한을 패치하지 않고 잔액만으로 갈래를
+고른다(채팅 경로는 한 번만 통과해도 LLM을 태운다).
 
 🔴 **경로 파라미터는 실존해야 한다.** 예전에는 게이트가 `_owned_room_dependency` 앞의
 `Depends`라 더미 방 id로도 게이트에 닿았고 "통과 = 404"였다. 게이트가
@@ -18,7 +17,7 @@
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -28,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core import clover, rate_limit_gate
 from api.core.rate_limit import seconds_until_kst_midnight
 from api.db.models import User
+from api.db.models.chat import ChatTurn
 from api.db.models.clover import CloverLedger
 from factories import (
     _clear_llm_override,
@@ -46,7 +46,7 @@ async def _consented_user(
     db_client: httpx.AsyncClient, db_session: AsyncSession, **overrides: object
 ) -> User:
     """`clover_balance`가 있으면 매칭 로트도 함께 만든다.
-    게이트가 실제로 차감하는 테스트(`test_daily_exhausted_with_balance_spends_clover_and_passes`)
+    게이트가 실제로 차감하는 테스트(`test_gemini_turn_with_balance_spends_clover_and_passes`)
     가 로트 0행 상태에서 `CloverLotShortfallError`를 맞지 않도록."""
     balance = overrides.pop("clover_balance", 0)
     assert isinstance(balance, int)
@@ -57,9 +57,8 @@ async def _consented_user(
 
 
 def _confirmed_today() -> dict[str, object]:
-    """클로버 차감에는 **오늘치 동의**가
-    선행한다. 게이트가 미확인이면 차감하지 않고 `CLOVER_CONFIRM_REQUIRED`로 끊으므로, "차감이
-    일어난다"를 보는 테스트는 그 선행 조건을 셋업에 명시해야 한다.
+    """오늘치 클로버 사용 확인을 마친 상태. 채팅 게이트는 확인을 묻지 않는다 — 이 셋업을 쓰는 테스트는 확인 여부와 무관하게
+    차감 경로만 본다(확인 없이도 깎이는지는 확인하지 않은 사용자를 쓰는 테스트가 본다).
 
     `_make_user`의 기본값은 `None`(한 번도 확인한 적 없음)으로 **그대로 둔다** — 새로 만든
     사용자의 참값이고, 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트를 검증하는 테스트가
@@ -74,7 +73,7 @@ async def _setup_room(
     """그 사용자가 소유한 캐릭터 채팅방을 실제로 만든다.
 
     `POST /chat-rooms`는 채팅 4경로(전송·편집·재생성·미리보기)가 아니라 게이트가 안 붙는다 — 셋업이 상한이나
-    클로버를 소모하지 않는다(그래서 상한 패치를 셋업 뒤에 걸 필요도 없다).
+    클로버를 소모하지 않는다.
     """
     genre = await _get_genre(db_session)
     content = await _make_published_character(
@@ -117,18 +116,16 @@ async def _send(db_client: httpx.AsyncClient, room_id: uuid.UUID) -> httpx.Respo
         _clear_llm_override()
 
 
-# ---- 일일 소진 + 잔액 충분 → 클로버로 통과하고 CHAT_TURN_COST만큼 깎인다 ----
+# ---- 잔액 충분 → 클로버로 통과하고 턴 가격만큼 깎인다 ----
 
 
-async def test_daily_exhausted_with_balance_spends_clover_and_passes(
+async def test_gemini_turn_with_balance_spends_clover_and_passes(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """클로버가 뚫는 것은 **일일 상한 초과분**이다."""
+    """하루 무료분이 없어 첫 턴부터 클로버가 낸다."""
     user = await _consented_user(db_client, db_session, clover_balance=100, **_confirmed_today())
     room_id = await _setup_room(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     resp = await _send(db_client, room_id)
 
@@ -146,16 +143,14 @@ async def test_daily_exhausted_with_balance_spends_clover_and_passes(
     assert rows[0].balance_after == 100 - clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
 
 
-async def test_daily_exhausted_without_balance_is_the_control(
+async def test_gemini_turn_without_balance_is_the_control(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """위 테스트의 짝. 셋업이 글자까지 같고 `clover_balance`만 0이다 — 이 짝이 없으면 위의
     200은 "클로버가 뚫었다"가 아니라 "이 셋업에서는 원래 아무도 안 걸린다"일 수 있다."""
     user = await _consented_user(db_client, db_session, clover_balance=0, **_confirmed_today())
     room_id = await _setup_room(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     resp = await _send(db_client, room_id)
 
@@ -168,15 +163,13 @@ async def test_daily_exhausted_without_balance_is_the_control(
 async def test_insufficient_clover_returns_clover_required_body(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`retryAfterSeconds`가 자정까지 초인 이유는 그때 하루
-    무료분이 돌아오기 때문이다 — 값이 거짓이 아니다."""
+    """`retryAfterSeconds`는 자정까지 초다. 자정에 돌아오는 무료분은 없다 — 화면이 이 값으로 재시도 시각을 약속하지 않고,
+    429 의 계약 모양(`code`·`window`·`retryAfterSeconds`)을 지키려고 싣는다."""
     user = await _consented_user(
         db_client, db_session, clover_balance=clover.CLOVER_MODEL_PRICES["gemini"].chat_turn - 1, **_confirmed_today()
     )
     room_id = await _setup_room(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     resp = await _send(db_client, room_id)
 
@@ -195,7 +188,6 @@ async def test_insufficient_clover_returns_clover_required_body(
 async def test_insufficient_clover_does_not_write_a_ledger_row(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """부족해서 거절된 요청은 잔액도 원장도 건드리지 않는다 — 조건부 UPDATE가 행을 못 잡으면
     원장 INSERT까지 가지 않는다(`core/clover.py`의 `_apply`)."""
@@ -203,7 +195,6 @@ async def test_insufficient_clover_does_not_write_a_ledger_row(
         db_client, db_session, clover_balance=clover.CLOVER_MODEL_PRICES["gemini"].chat_turn - 1, **_confirmed_today()
     )
     room_id = await _setup_room(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     assert (await _send(db_client, room_id)).status_code == 429
 
@@ -245,10 +236,9 @@ async def test_burst_limit_is_not_bypassed_by_clover(
 async def test_exempt_user_passes_without_spending_clover(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """🔴 면제 판정(`:192-193`)이 클로버 검사보다 **앞**이라
-    예외 계정은 일일 상한도 클로버도 건드리지 않고 통과한다. 삽입 지점이 면제 `return`보다
+    """🔴 면제 판정이 클로버 검사보다 **앞**이라
+    예외 계정은 클로버를 건드리지 않고 통과한다. 삽입 지점이 면제 `return`보다
     앞이면 예외 계정의 잔액이 깎인다.
 
     🔴 **방이 실존해야 한다.** 더미 방이면 게이트가 실행되지 않아(게이트가 조회 뒤에
@@ -258,7 +248,6 @@ async def test_exempt_user_passes_without_spending_clover(
         db_client, db_session, rate_limit_exempt=True, clover_balance=100
     )
     room_id = await _setup_room(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     resp = await _send(db_client, room_id)
 
@@ -272,7 +261,6 @@ async def test_exempt_user_passes_without_spending_clover(
 async def test_exempt_user_with_zero_balance_still_passes(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """면제가 클로버 **앞**이라는 것의 더 강한 증거 — 잔액이 0인데도 통과한다. 순서가 뒤집혀
     있으면 여기서 `CLOVER_REQUIRED` 429가 난다.
@@ -284,26 +272,23 @@ async def test_exempt_user_with_zero_balance_still_passes(
         db_client, db_session, rate_limit_exempt=True, clover_balance=0
     )
     room_id = await _setup_room(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     assert (await _send(db_client, room_id)).status_code == 200
 
 
-# ---- Redis 장애에서는 클로버 분기에 도달하지 않는다 ----
+# ---- Redis 장애에도 Gemini 턴은 클로버로 낸다 ----
 
 
-async def test_redis_failure_fails_open_without_touching_clover(
+async def test_redis_failure_still_spends_clover(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """🔴 클로버 검사가 `try` 블록 **안**이라 `check_rate_limit`이
-    `RedisError`를 던지면 `except`로 빠져 **클로버 분기에 도달하지 않는다**. 바깥에 두면
-    Redis 장애 동안 전원이 차감된다.
+    """🔴 버스트 검사가 Redis 장애로 깨져도 무료로 통과시키지 않는다 — 하루 무료분이 없는 사람에게 장애가 무료 턴을 주게 된다.
+    차감은 Redis 를 쓰지 않아 장애 중에도 그대로 할 수 있다. 오늘 확인하지 않은 사용자라 확인을 묻지 않는다는 것도 함께 본다.
 
-    🔴 **방이 실존해야 한다.** 더미 방이면 게이트가 실행되지 않아 "차감 없음"이 항진명제가
-    된다(게이트가 조회 뒤에 있다 — 모듈 docstring). 방을 먼저 만들고 그 뒤에 Redis를
-    고장내는 순서인 이유도 같다 — 셋업이 게이트를 안 타야 한다.
+    🔴 **방이 실존해야 한다.** 더미 방이면 게이트가 실행되지 않는다(게이트가 조회 뒤에 있다 — 모듈 docstring). 방을 먼저
+    만들고 그 뒤에 Redis를 고장내는 순서인 이유도 같다 — 셋업이 게이트를 안 타야 한다.
     """
     from redis.exceptions import ConnectionError as RedisConnectionError
 
@@ -318,152 +303,27 @@ async def test_redis_failure_fails_open_without_touching_clover(
 
     resp = await _send(db_client, room_id)
 
-    assert resp.status_code == 200  # fail-open 통과
-
-    await db_session.refresh(user)
-    assert user.clover_balance == 100
-    assert await _ledger_for(db_session, user.id) == []
-
-
-# ---- 무료 한도 안에서는 클로버가 깎이지 않는다 (`source="free"`) ----
-
-
-async def test_within_daily_limit_does_not_spend_clover(
-    db_client: httpx.AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """🔴 이 파일의 다른 "잔액 양수" 테스트는 **전부** `CHAT_DAILY_LIMIT`을 0으로 패치하거나
-    `check_rate_limit`을 스텁한다. 그래서 **"일일 한도 안 + 잔액 양수"** 조합이 한 번도
-    실행되지 않았다 — `source="free"` 경로에 테스트가 0건이었다.
-
-    그 구멍이 위험한 이유: 클로버 분기가 실수로 `if day_retry_after > 0:` **밖으로** 나가면
-    잔액 0인 유저는 대량 실패로 잡히지만 **잔액이 있는 유저는 조용히 매 턴 깎이고 스위트는
-    초록이다.** 이 테스트만이 그 경우에 빨개진다.
-
-    셋업의 핵심은 **상한을 패치하지 않는 것**이다(요청 1건이라 `CHAT_BURST_LIMIT`·`CHAT_DAILY_LIMIT`
-    둘 다 여유가 있다). *"무료 한도
-    **초과분**만 클로버"*가 지켜지면 잔액도 원장도 그대로여야 한다.
-
-    🔴 **방이 실존해야 한다.** 더미 방이면 게이트가 실행되지 않아(게이트가 조회 뒤에
-    있다 — 모듈 docstring) "차감 없음"이 항진명제가 되고, 위에 적은 구멍을 **이 테스트가
-    더 이상 덮지 못한다.**
-    """
-    user = await _consented_user(db_client, db_session, clover_balance=100)
-    room_id = await _setup_room(db_client, db_session, user)
-
-    resp = await _send(db_client, room_id)
-
-    # 429가 아니다 = 게이트를 통과했다. 클로버를 안 쓰고 무료분으로 지났다는 뜻이다.
     assert resp.status_code == 200
 
+    price = clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
     await db_session.refresh(user)
-    assert user.clover_balance == 100
-    assert await _ledger_for(db_session, user.id) == []
+    assert user.clover_balance == 100 - price
+    assert [(row.kind, row.amount) for row in await _ledger_for(db_session, user.id)] == [("chat_spend", -price)]
 
 
-# ---- 오늘치 동의가 없으면 차감하지 않고 CLOVER_CONFIRM_REQUIRED로 끊는다 ----
-
-
-async def test_unconfirmed_spend_is_blocked_before_charging(
-    db_client: httpx.AsyncClient,
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """"소진 시 하루 1회 확인 **후** 자동 차감"의 *후*가 이 테스트다.
-
-    🔴 **FE는 이 판정을 할 수 없다.** `GET /me/clover`는 잔액·확인여부·유료 잔액·만료 임박만 주고 "이번
-    전송이 무료분을 넘는가"는 모른다 — 미확인인 모든 첫 전송에 모달을 띄우면 무료분을 안 쓴
-    사용자까지 매일 붙잡는다. 그래서 **BE가 단일 판정자**가 되고, 그 판정이 곧 이 429다.
-
-    셋업이 `test_daily_exhausted_with_balance_spends_clover_and_passes`와 **글자까지 같고
-    `_confirmed_today()`만 없다** — 그 짝이 없으면 이 429가 "동의가 없어서"인지 "원래 이
-    셋업에서는 아무도 못 지나서"인지 갈리지 않는다.
-    """
-    user = await _consented_user(db_client, db_session, clover_balance=100)
-    room_id = await _setup_room(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
-
-    resp = await _send(db_client, room_id)
-
-    assert resp.status_code == 429
-    detail = resp.json()["detail"]
-    assert detail["code"] == "CLOVER_CONFIRM_REQUIRED"
-    # `window`는 "어느 기능이냐"라 부족(`CLOVER_REQUIRED`)과 같은 값을 쓴다 — 둘을 가르는 축은
-    # `code`다(이 모듈의 `_IMAGE_WINDOW` 주석이 세운 규칙 그대로).
-    assert detail["window"] == "clover"
-
-    # 🔴 차감이 **일어나지 않았다**. 동의 전에 깎으면 오늘치 동의가 무의미해진다.
-    await db_session.refresh(user)
-    assert user.clover_balance == 100
-    assert await _ledger_for(db_session, user.id) == []
-
-
-async def test_confirmation_from_yesterday_does_not_count_for_today(
-    db_client: httpx.AsyncClient,
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """동의는 KST 자정마다 리셋된다. 어제 동의는 오늘치가 아니다.
-
-    이 테스트가 없으면 판정을 `is not None`("한 번이라도 확인했으면 끝")으로 짜도 초록이다 —
-    그러면 **하루 1회가 평생 1회가 된다**(무단 차감).
-    """
-    yesterday = clover.kst_today(datetime.now(UTC)) - timedelta(days=1)
-    user = await _consented_user(
-        db_client, db_session, clover_balance=100, clover_spend_confirmed_on=yesterday
-    )
-    room_id = await _setup_room(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
-
-    resp = await _send(db_client, room_id)
-
-    assert resp.status_code == 429
-    assert resp.json()["detail"]["code"] == "CLOVER_CONFIRM_REQUIRED"
-    await db_session.refresh(user)
-    assert user.clover_balance == 100
-
-
-async def test_confirmation_gate_is_after_the_free_quota(
-    db_client: httpx.AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """🔴 미확인이어도 **무료 한도 안에서는 아무 일도 없어야 한다.**
-
-    확인 검사를 클로버 분기 **밖**으로 옮기면 무료분이 남은 사용자까지 429를 받는다 — 그게
-    *"무료분을 안 쓴 사용자까지 매일 붙잡는다"* 문제의 서버쪽 판본이다. 상한을
-    패치하지 않는 것이 이 테스트의 핵심이다.
-    """
-    user = await _consented_user(db_client, db_session, clover_balance=100)
-    room_id = await _setup_room(db_client, db_session, user)
-
-    resp = await _send(db_client, room_id)
-
-    assert resp.status_code == 200
-    await db_session.refresh(user)
-    assert user.clover_balance == 100
-    assert await _ledger_for(db_session, user.id) == []
+# ---- 채팅은 하루 1회 확인을 묻지 않는다 ----
 
 
 async def test_unconfirmed_without_balance_gets_shortage_not_confirmation(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """🔴 잔액이 모자라면 **묻지 않고** 곧장 `CLOVER_REQUIRED`다 — 동의를 물어 놓고 직후
-    "부족해요"를 내는 두 단계 헛걸음을 막는 조건(`rate_limit_gate.py`의 `clover_balance >= cost`).
-
-    `test_unconfirmed_spend_is_blocked_before_charging`의 **짝**이다. 그쪽은 "잔액 있음 +
-    미확인 → 확인 429", 이쪽은 "잔액 없음 + 미확인 → 부족 429". 두 테스트가 `clover_balance`
-    하나만 다르므로 **`code`를 가르는 것이 잔액이라는 것**이 그 대조로 증명된다.
-
-    🔴 이 테스트가 없으면 잔액 조건에 회귀 가드가 0이다 — 그 줄을 `return True`로 바꿔도
-    스위트가 전부 초록이었다(잔액이 단가 미만인 다른 셋업은 전부 `_confirmed_today()`이거나
-    `rate_limit_exempt=True`라 확인 게이트에 도달조차 안 한다). 그 커버리지는 원래 우연이었고,
-    확인 게이트를 넣은 커밋이 같은 셋업에 `_confirmed_today()`를 주입하며 걷어 갔다.
+    """오늘 확인하지 않은 사용자의 잔액 부족은 확인 429 가 아니라 곧장 `CLOVER_REQUIRED` 다 — 채팅은 하루 1회 확인을 묻지
+    않는다(하루 무료분이 없어 "무료분을 다 쓴 순간"이 없고, 확인은 그 순간에 묻던 것이다). 잔액이 있는 같은 셋업의 짝은 아래
+    턴 기록 테스트다 — 확인 없이 깎인다.
     """
     user = await _consented_user(db_client, db_session, clover_balance=0)
     room_id = await _setup_room(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     resp = await _send(db_client, room_id)
 
@@ -475,25 +335,29 @@ async def test_unconfirmed_without_balance_gets_shortage_not_confirmation(
     assert await _ledger_for(db_session, user.id) == []
 
 
-async def test_exempt_user_is_not_asked_to_confirm(
+# ---- 첫 턴부터 클로버 턴으로 기록된다 ----
+
+
+@pytest.mark.parametrize(
+    ("exempt", "expected"),
+    [
+        pytest.param(False, ("clover", clover.CLOVER_MODEL_PRICES["gemini"].chat_turn), id="member"),
+        pytest.param(True, ("skipped", 0), id="exempt"),
+    ],
+)
+async def test_first_turn_is_recorded_by_how_it_was_paid(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
+    exempt: bool,
+    expected: tuple[str, int],
 ) -> None:
-    """예외 계정은 차감 대상이 아니므로 동의를 물을 일도 없다.
-
-    게이트 순서가 **버스트 → 면제 → 일일 → 확인 → 차감**이라 면제가 먼저 `return`한다.
-    확인 검사를 면제보다 앞에 두면 이 테스트가 429로 빨개진다.
-    """
-    user = await _consented_user(
-        db_client, db_session, clover_balance=0, rate_limit_exempt=True
-    )
+    """하루 무료분이 없어 실제 방 전송의 첫 턴부터 클로버로 내고 턴 기록에도 그렇게 남는다(오늘 확인을 묻지 않는다). 같은
+    셋업의 면제 계정은 깎지 않은 턴으로 남는다 — 회원 쪽 기록이 셋업만으로 나오지 않는다는 대조군이다."""
+    user = await _consented_user(db_client, db_session, clover_balance=100, rate_limit_exempt=exempt)
     room_id = await _setup_room(db_client, db_session, user)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     resp = await _send(db_client, room_id)
 
     assert resp.status_code == 200
-    await db_session.refresh(user)
-    assert user.clover_balance == 0
-    assert await _ledger_for(db_session, user.id) == []
+    turns = (await db_session.scalars(select(ChatTurn).where(ChatTurn.chat_room_id == room_id))).all()
+    assert [(t.charge_source, t.clover_amount) for t in turns] == [expected]

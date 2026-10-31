@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from api.clover.products import ProductKey
@@ -67,6 +67,63 @@ class CloverMissionClaimResponse(CamelModel):
     balance: int
 
 
+AttendanceCellStatus = Literal["claimed", "today", "upcoming"]
+
+
+class AttendanceCell(CamelModel):
+    """출석판의 한 칸. `today` 는 오늘 받을 수 있을 때만 한 칸 있다 — 오늘 이미 받았으면 그 칸은 `claimed` 다."""
+
+    seq: int
+    amount: int
+    status: AttendanceCellStatus
+
+
+class AttendanceNextSpecial(CamelModel):
+    """금액이 큰 다음 칸(7·14·21·28칸 중 아직 받지 않은 첫 칸). `days_until` 은 그 칸을 받는 날까지 남은 날 수로, 오늘 받을
+    칸이면 0 이다."""
+
+    seq: int
+    amount: int
+    days_until: int
+
+
+class AttendanceBoardResponse(CamelModel):
+    """오늘 기준 출석판. `can_claim_today` 는 판과 날짜로 보아 오늘 받을 칸이 있는가만 뜻하고 본인인증 여부를 섞지 않는다 —
+    화면은 `GET /me` 의 인증 상태로 버튼 대신 인증 안내를 그린다. 같은 사람이 오늘 탈퇴 전 계정에서 받은 날도 거짓인데, 그
+    이유는 싣지 않는다(이유를 내보내면 이 CI 가 오늘 탈퇴했다는 사실이 응답에 실린다).
+
+    `reward_version`·칸 금액은 이 판 1칸이 받은 보상표 버전을 따른다(새 판이면 현재 버전) — 수령이 행에 넣는 값과 같은 규칙이라
+    보여 준 금액과 실제로 주는 금액이 갈리지 않는다."""
+
+    board_no: int
+    reward_version: int
+    cells: list[AttendanceCell]
+    can_claim_today: bool
+    # 오늘 28칸째를 받아 판을 끝냈는가. 다음 날 새 판이 열린다.
+    completed_today: bool
+    # 남은 특별 칸이 없으면(오늘 판을 끝냈으면) null.
+    next_special: AttendanceNextSpecial | None
+    # 이 계정이 마지막으로 받은 날(KST). 받은 적이 없으면 null. 웹이 오래 쉬었다 돌아온 회원을 가르는 데 쓴다.
+    last_claimed_on: date | None
+
+
+class AttendanceClaimResponse(CamelModel):
+    # 오늘 이미 받았거나 받을 칸이 없으면 false 다. **에러가 아니다** — 미션 수령과 같다.
+    granted: bool
+    balance: int
+    board: AttendanceBoardResponse
+
+
+class CloverAttendancePolicy(CamelModel):
+    """공개 가격 응답에 싣는 출석 안내. 로그인하지 않은 방문자도 정책 문장을 읽는다."""
+
+    # 현재 보상표의 1~28칸 금액.
+    rewards: list[int]
+    # 받은 클로버가 적어도 며칠 유효한가. 실제 만료는 지급일 KST 자정 + 8일이라 받은 시각에 따라 7~8일이 남는다 — 그래서
+    # "만료까지 정확히 N일"로 읽히는 이름 대신 최소 보장 일수로 싣는다.
+    min_valid_days: int
+
+
 class CloverLedgerItem(CamelModel):
     """`category`는 BE의 `kind`→범주 맵
     (`clover/router.py`의 `CLOVER_KIND_CATEGORY`)을 그대로 실어 보낸 것이다 — FE가 같은 맵을
@@ -108,8 +165,8 @@ class CloverPayMethodItem(CamelModel):
 
 
 class CloverModelPricingItem(CamelModel):
-    """글쓰기 모델 하나의 사용 단가. 모델 레지스트리(`llm/chat_models.py`)에서 채팅에서 고를 수 있는 모델만 레지스트리
-    순서대로 실린다 — 이 목록은 채팅 모델 안내다. 채팅에서 고를 수 없는 모델(Sonnet)은 소설 상위 모델로 쓰이는데, 소설
+    """글쓰기 모델 하나의 사용 단가. 모델 레지스트리(`llm/chat_models.py`)에서 지금 채팅에서 고를 수 있게 보이는 모델만
+    레지스트리 순서대로 실린다 — 이 목록은 채팅 모델 안내다. 채팅에서 숨긴 상위 모델도 소설 상위 모델로는 쓰이는데, 소설
     상위 모델은 별도 허용 명단에 든 계정만 써서 일반 회원은 살 수 없으므로 그 화 단가를 이 안내에 따로 싣지 않는다."""
 
     id: ChatModelId
@@ -122,9 +179,9 @@ class CloverModelPricingItem(CamelModel):
     beta: bool
     # 이 모델로 쓰는 채팅 턴 하나와 소설 화 하나의 클로버. 소설 화 단가는 모델별 목록이 채팅 모델 안내가 된 뒤에도 이 칸을
     # 가드 없이 읽는 옛 화면을 위해 남긴다 — 그래서 Opus 행의 소설 화 단가는 응답에 계속 보인다. 기본 모델 값은 응답
-    # 최상위 `novel_episode_cost` 에도 있다.
+    # 최상위 `novel_episode_cost` 에도 있다. 소설에서 고를 수 없는 채팅 전용 모델(Haiku 글쓰기)은 소설 단가가 없어 null 이다.
     chat_turn_cost: int
-    novel_episode_cost: int
+    novel_episode_cost: int | None
 
 
 class CloverPricingResponse(CamelModel):
@@ -150,9 +207,6 @@ class CloverPricingResponse(CamelModel):
     novel_ai_edit_cost: int
     # 소설(화 생성·AI 수정)이 허용된 계정 전용인가.
     novel_restricted: bool
-    # 하루에 클로버 없이 쓸 수 있는 대화 턴 수. 로그인한 화면은 `GET /me` 의 같은 값을 읽지만 공개 안내는 그 응답을
-    # 못 읽는다.
-    daily_free_chat_turns: int
     # 노벨 화 하나의 소장 가격과, 소설마다 앞에서부터 무료로 읽는 화 수. 노벨이 꺼져 있어도 싣는다(가격표는 정책 안내다).
     novel_read_cost: int
     novel_free_chapter_count: int
@@ -177,9 +231,11 @@ class CloverPricingResponse(CamelModel):
     payments_enabled: bool
     # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).
     pay_methods: list[CloverPayMethodItem]
-    # 미인증 회원 게이트(무료 대화·미션을 본인인증한 회원에게만)가 켜져 있는가. 로그인하지 않은 방문자도 읽는 정책
+    # 미인증 회원 게이트(미션 보상을 본인인증한 회원에게만)가 켜져 있는가. 로그인하지 않은 방문자도 읽는 정책
     # 문장이 이 값으로 갈린다 — 꺼진 동안 "본인인증을 마친 회원은"이라고 쓰면 거짓이다. `GET /me` 와 같은 판정 함수다.
     identity_gate_enabled: bool
+    # 누적 출석판 안내(보상표·최소 유효 일수).
+    attendance: CloverAttendancePolicy
 
 
 class CloverProductOffer(CamelModel):
@@ -208,13 +264,12 @@ class CloverPolicyValues(CamelModel):
 
 
 class CloverProductsResponse(CamelModel):
-    """공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능
+    """공개 충전 안내 — 상품·결제수단·결제와 본인인증 스위치·정책 숫자·가격표 버전을 한 응답에 싣는다. 기능
     스위치와 사용 단가는 공개 가격 응답(`GET /clover/pricing`)에 그대로 남는다."""
 
     products: list[CloverProductOffer]
     pay_methods: list[CloverPayMethodItem]
     payments_enabled: bool
     identity_gate_enabled: bool
-    daily_free_chat_turns: int
     policy: CloverPolicyValues
     price_version: int

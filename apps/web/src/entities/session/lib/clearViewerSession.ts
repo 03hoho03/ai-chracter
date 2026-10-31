@@ -35,6 +35,7 @@ const VIEWER_QUERY_KEYS: readonly QueryKey[] = [
   cloverKeys.balance(),
   cloverKeys.missions(),
   cloverKeys.ledgers(),
+  cloverKeys.attendance(),
   commentKeys.all,
   contentKeys.lists(),
   contentKeys.details(),

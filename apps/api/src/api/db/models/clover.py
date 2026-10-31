@@ -1,16 +1,18 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     SmallInteger,
     Text,
+    UniqueConstraint,
     Uuid,
     false,
     func,
@@ -43,8 +45,9 @@ class CloverLedger(Base):
     # 값이 늘 때 마이그레이션 없이 넓히기 위해서다. 값은 `core/clover.py`의 `CloverKind`
     # Literal이 강제 지점이다.
     kind: Mapped[str] = mapped_column(Text, nullable=False)
-    # 지금 채우는 것은 어드민 지급/회수·미션 청구·구매 지급뿐이고 나머지는 NULL이다(없어진 `attendance_grant` 의 과거
-    # 행도 키를 갖는다).
+    # 지금 채우는 것은 어드민 지급/회수·미션 청구·누적 출석 수령·구매 지급뿐이고 나머지는 NULL이다. `attendance_grant` 는
+    # 없어진 일일 출석이 쓰던 kind 를 누적 출석 지급에 다시 쓰는 것이라 옛 일일 지급 행도 이 kind 로 키를 갖는데, 옛 행의 키는
+    # `attendance:` 로, 누적 출석의 키는 `attendance28:` 로 시작해 둘이 겹치지 않는다.
     # Postgres는 NULL을 중복으로 치지 않으므로 평범한 unique 인덱스가 "값이 있는 것만 유일"이
     # 된다.
     idempotency_key: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -374,4 +377,49 @@ class CloverUnitEvent(Base):
 
     __table_args__ = (
         CheckConstraint("action IN ('convert', 'revert')", name="ck_clover_unit_events_action"),
+    )
+
+
+class AttendanceClaim(Base):
+    """누적 출석판의 수령 한 번 = 한 행. 진도(몇 번째 판의 몇 번째 칸)를 회원 행에 칸으로 두지 않고 이 표의 마지막 행에서 계산한다
+    — 진도 칸을 따로 두면 이 표와 어긋날 수 있다. 수령은 원장 행 하나(`ledger_id`, 멱등키 `attendance28:{user_id}:{KST 날짜}`)와
+    같은 트랜잭션에 들어간다.
+
+    탈퇴해도 행을 지우지 않는다 — 원장·로트와 같은 거래 기록이고, 날짜·금액은 탈퇴 뒤에도 남는 원장 멱등키·금액에 이미 있다.
+    두 FK 모두 ondelete 를 두지 않는다: 탈퇴는 회원 행을 지우지 않는 소프트 삭제이고 원장은 append-only 라 가리키는 행이 지워지는
+    경로가 없다.
+
+    유니크 둘이 이중 수령의 마지막 그물이다(정상 경로는 수령이 먼저 회원 행을 잠가 같은 회원의 수령을 줄 세운다). `(user_id,
+    claimed_on)` 은 "오늘 받았나" 조회를, `(user_id, board_no, seq)` 는 "마지막 행"(판·칸 역순 첫 행) 조회를 겸한다.
+    CHECK 둘은 alembic 1.18.5 의 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 유일한 검증이다.
+    """
+
+    __tablename__ = "attendance_claims"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, server_default=text("gen_random_uuid()"))
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_attendance_claims_user_id"), nullable=False
+    )
+    # 몇 번째 판인가(1부터). 28칸을 다 받은 다음 날 1 늘어난다.
+    board_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 이 행의 금액을 정한 보상표 버전(`clover/attendance.py` 의 `ATTENDANCE_REWARDS` 키). 판의 1칸이 그때의 현재 버전을 받고
+    # 같은 판의 나머지 칸은 그 버전을 이어받는다 — 진행 중에 보상표가 바뀌어도 그 판의 금액은 그대로다.
+    reward_version: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    # 판 안의 칸 번호(1~28).
+    seq: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    # 받은 날(KST). 상태 계산은 이 칸만 쓴다 — `claimed_at` 은 DB 시각이라 요청이 쓴 시각과 다를 수 있다.
+    claimed_on: Mapped[date] = mapped_column(Date, nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    ledger_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("clover_ledger.id", name="fk_attendance_claims_ledger_id"), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("seq BETWEEN 1 AND 28", name="ck_attendance_claims_seq_range"),
+        CheckConstraint("amount > 0", name="ck_attendance_claims_amount_positive"),
+        UniqueConstraint("user_id", "claimed_on", name="ux_attendance_claims_user_id_claimed_on"),
+        UniqueConstraint("user_id", "board_no", "seq", name="ux_attendance_claims_user_id_board_no_seq"),
     )

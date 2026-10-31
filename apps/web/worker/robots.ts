@@ -16,6 +16,8 @@ const DISALLOWED_PATHS = [
   "/chats",
   "/novels",
   "/webnovels",
+  // 출석판. 로그인 회원의 개인 진도 화면이다.
+  "/attendance",
   "/chat/",
   "/builder/",
   "/studio/",

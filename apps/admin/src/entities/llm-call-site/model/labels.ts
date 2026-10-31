@@ -36,6 +36,10 @@ export const CALL_SITE_LABELS = {
   novel_publish_screen: "노벨 공개 심사(텍스트)",
   novel_illustration_screen: "노벨 공개 심사(삽화)",
   replay_generate: "리플레이 생성(측정)",
+  novel_bible_extract_events: "정본 기억 사건 추출",
+  novel_bible_extract_facts: "정본 기억 사실 추출",
+  novel_bible_extract_knowledge: "정본 기억 지식 추출",
+  novel_bible_judge: "정본 기억 모호 판정",
 } satisfies Record<LlmCallSite, string>;
 
 export function isLlmCallSite(value: string): value is LlmCallSite {

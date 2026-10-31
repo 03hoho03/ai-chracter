@@ -24,7 +24,9 @@ on:
       # 병합으로 교체해도 운영 동작이 같다 — 교체 한 번(드레인 대기 포함)만 헛돈다. 테스트만 바뀐
       # 병합은 api CI(main push)가 따로 검사한다. `memory_eval`·`memory_eval_cli.py` 는 장기 기억
       # 평가 도구라 운영 코드·절차에서 부르는 곳이 없고, `cloudbuild.yaml` 은 이 파일 머리 주석대로
-      # 트리거를 비활성화한 Cloud Build 용이라 쓰이지 않는다. `README.md` 는 `pyproject.toml` 의
+      # 트리거를 비활성화한 Cloud Build 용이라 쓰이지 않는다. `chat_lab/`·`chat_lab_*.py` 는 로컬
+      # 측정 서버와 그 턴 기록 내보내기 CLI 로, 운영 코드·절차가 부르지 않는 측정 도구라 그것만 바뀐
+      # 병합으로 교체할 필요가 없다. `README.md` 는 `pyproject.toml` 의
       # `readme` 라 빌드(`uv sync`)가 읽는다 — 지우거나 이름을 바꾼 병합은 배포가 안 돌아 다음 api
       # 변경 배포의 빌드에서야 깨진다(교체 전 실패라 운영은 그대로다). `scripts/ops/`·`scripts/seed_content/`·
       # 그 밖의 `scripts/*.py` 는 VM 크론·운영 절차가 쓰므로 거르지 않는다. 부정 패턴은 뒤에 오는
@@ -34,6 +36,8 @@ on:
       - "!apps/api/probe-runs/**"
       - "!apps/api/scripts/memory_eval/**"
       - "!apps/api/scripts/memory_eval_cli.py"
+      - "!apps/api/scripts/chat_lab/**"
+      - "!apps/api/scripts/chat_lab_*.py"
       - "!apps/api/cloudbuild.yaml"
       # VM 은 compose·Caddyfile 을 git 에서 받아가므로 이 둘도 배포 트리거다.
       - "docker-compose.prod.yml"

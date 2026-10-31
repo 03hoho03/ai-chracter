@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { useRef } from "react";
 
-import { CLOVER_EXPIRY_NOTICE_MESSAGE, useCloverLedgerQuery, type CloverLedgerItem } from "@/entities/clover";
+import { formatCloverExpiryNotice, useCloverLedgerQuery, type CloverLedgerItem } from "@/entities/clover";
 import { ContentListEmptyState, ContentListLoadMore } from "@/entities/content";
 import { formatDate } from "@/shared/lib/time/formatDate";
 
@@ -52,7 +52,7 @@ export function CloverHistoryPage({ search, onSearchChange }: CloverHistoryPageP
         <h1 className="text-2xl font-bold tracking-tight text-foreground">클로버 내역</h1>
         {/* 클로버 충전 화면(clover-hub)의 내 클로버와 같은 고지, 같은
             단일 소스(entities/clover의 cloverExpiryNotice.ts)를 쓴다. */}
-        <p className="text-sm break-keep text-muted-foreground">{CLOVER_EXPIRY_NOTICE_MESSAGE}</p>
+        <p className="text-sm break-keep text-muted-foreground">{formatCloverExpiryNotice()}</p>
       </div>
 
       {/* apps/web/CLAUDE.md — 탭은 variant="line"(활성 탭은 primary가 아니라 foreground 밑줄). */}

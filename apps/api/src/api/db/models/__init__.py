@@ -24,6 +24,7 @@ from api.db.models.chat import (
     StoryMediaExposure,
 )
 from api.db.models.clover import (
+    AttendanceClaim,
     CloverLedger,
     CloverLot,
     CloverSpendAllocation,
@@ -123,6 +124,19 @@ from api.db.models.novel import (
     NovelSourceSectionMode,
     NovelSourceSelection,
 )
+from api.db.models.novel_bible import (
+    NovelBibleAdaptationCandidate,
+    NovelBibleCommit,
+    NovelBibleEntity,
+    NovelBibleEvidence,
+    NovelBibleExpiration,
+    NovelBibleFinding,
+    NovelBibleJob,
+    NovelBibleRevision,
+)
+from api.db.models.novel_bible_events import NovelBibleEvent, NovelBibleEventRelation
+from api.db.models.novel_bible_facts import NovelBibleFact
+from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
 from api.db.models.payment import (
     Payment,
     PaymentCancellation,
@@ -170,6 +184,7 @@ __all__ = [
     "Asset",
     "AssetKind",
     "AssetStatus",
+    "AttendanceClaim",
     "CharacterImageExposure",
     "CharacterVersionDetail",
     "ChatMemoryEmbedding",
@@ -242,6 +257,18 @@ __all__ = [
     "Notification",
     "Novel",
     "NovelBatch",
+    "NovelBibleAdaptationCandidate",
+    "NovelBibleCommit",
+    "NovelBibleEntity",
+    "NovelBibleEvent",
+    "NovelBibleEventRelation",
+    "NovelBibleEvidence",
+    "NovelBibleExpiration",
+    "NovelBibleFact",
+    "NovelBibleFinding",
+    "NovelBibleJob",
+    "NovelBibleKnowledge",
+    "NovelBibleRevision",
     "NovelChapter",
     "NovelChapterCharacter",
     "NovelChapterEdition",

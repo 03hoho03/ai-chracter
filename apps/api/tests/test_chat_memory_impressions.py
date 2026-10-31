@@ -48,6 +48,7 @@ from api.db.models.chat import IMPRESSION_TEXT_MAX
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, collect_usage
 from factories import (
     IMPRESSION_SYNTHETIC_INSTRUCTION,
+    PRODUCTION_ENV_NAMES,
     Room,
     _clear_llm_override,
     _impression_sections,
@@ -60,6 +61,7 @@ from factories import (
     _override_llm_client,
     _parse_sse_events,
     _plant_snapshot,
+    load_production_env,
 )
 
 ImpressionOutcome = MemoryImpressionResult | Exception | Callable[[], Awaitable[MemoryImpressionResult]]
@@ -273,7 +275,7 @@ async def test_impression_is_not_scheduled_when_switch_is_off(
     monkeypatch.setattr(settings, "memory_episodes_extract", True)
     monkeypatch.setattr(settings, "memory_facts_extract", True)
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = ImpressionLLMClient()
 
     assert (await _send(db_client, room, fake))[-1] == "done"
@@ -294,7 +296,7 @@ async def test_impression_is_scheduled_after_both_extractions_and_skips_a_room_o
     monkeypatch.setattr(settings, "memory_impressions_write", True)
     monkeypatch.setattr(settings, "memory_impression_every_n_folds", 1)
     scheduled = _record_scheduling(monkeypatch)
-    room = await _open_room(db_client, db_session, turns=29)
+    room = await _open_room(db_client, db_session, turns=29, paid_turns=1)
     fake = ImpressionLLMClient()
 
     assert (await _send(db_client, room, fake))[-1] == "done"
@@ -1278,3 +1280,14 @@ async def test_the_table_accepts_the_limits_and_one_row_per_snapshot(
     with pytest.raises(IntegrityError):
         async with db_session.begin_nested():
             await _insert_impression(db_session, room, snapshot_id)
+
+
+def test_production_env_writes_impressions_on_haiku_through_anthropic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영은 인상 쓰기를 켜고 그 모델을 `haiku` 로, 그 호출을 Anthropic 직결로 배정해 돈다 — 스위치만 켜고 모델 줄이 없으면
+    측정하지 않은 Gemini 로 인상을 만든다. 보기 스위치는 운영에 넣지 않아 인상은 아직 화면에 나가지 않는다."""
+    assert {"MEMORY_IMPRESSIONS_WRITE", "MEMORY_IMPRESSION_MODEL"} <= set(PRODUCTION_ENV_NAMES)
+    assert "MEMORY_IMPRESSIONS_VISIBLE" not in PRODUCTION_ENV_NAMES
+    loaded = load_production_env(monkeypatch)
+    assert (loaded.memory_impressions_write, loaded.memory_impression_model) == (True, "haiku")
+    assert loaded.llm_call_site_backends.get("chat_memory_impression") == "anthropic"
+    assert not loaded.memory_impressions_visible

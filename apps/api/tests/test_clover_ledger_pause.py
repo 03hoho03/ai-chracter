@@ -6,8 +6,8 @@
    셋업한다 — 채팅·이미지 유료 갈래는 오늘치 확인을 안 했고 가격 버전도 옛 값이라, 게이트의 정지 검사가 빠지면 확인 429 나 가격
    409 가 먼저 나간다(정지가 그 둘보다 앞이다). 라우트 의존성으로 막는 경로는 검사가 빠지면 그 라우트의 다음 거절(422·404·503
    결제 꺼짐)이나 지급이 나간다. 그래서 목록에서 경로 하나의 검사를 빼면 그 경우가 빨개진다.
-2. 막지 않는 것: 무료 대화 턴, 무료 토큰 이미지, 환급, 지급(결제 완료·웹훅이 쓰는 함수), 결제 완료 확인 라우트, 웹훅 라우트,
-   탈퇴 소멸. 이미 시작한 일의 마무리와 돈이 이미 나간 결제의 동기화는 멈추면 안 된다.
+2. 막지 않는 것: 면제 계정의 대화 턴, 무료 토큰 이미지, 환급, 지급(결제 완료·웹훅이 쓰는
+   함수), 결제 완료 확인 라우트, 웹훅 라우트, 탈퇴 소멸. 이미 시작한 일의 마무리와 돈이 이미 나간 결제의 동기화는 멈추면 안 된다.
 
 만료 배치(`scripts/ops/expire_clover.py`)는 앱 밖의 psql 원시 SQL 이라 이 스위치를 읽을 길이 없다 — 이 파일의 대상이 아니다.
 """
@@ -98,10 +98,10 @@ async def _chat(db: AsyncSession, user: User, model: ChatModelId) -> tuple[int, 
     )
 
 
-async def _chat_after_daily_free(
-    _client: httpx.AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+async def _chat_gemini(
+    _client: httpx.AsyncClient, db: AsyncSession, _monkeypatch: pytest.MonkeyPatch
 ) -> tuple[int, object, uuid.UUID]:
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+    """하루 무료분이 없어 첫 Gemini 턴부터 클로버로 내는 턴이다."""
     user = await _member(db)
     return (*await _chat(db, user, "gemini"), user.id)
 
@@ -163,6 +163,16 @@ async def _mission_claim(
     return resp.status_code, resp.json()["detail"], user.id
 
 
+async def _attendance_claim(
+    client: httpx.AsyncClient, db: AsyncSession, _monkeypatch: pytest.MonkeyPatch
+) -> tuple[int, object, uuid.UUID]:
+    """검사가 빠지면 1칸 800 이 지급된다(본인인증한 회원이다)."""
+    user = await _member(db, identity_ci_hmac=f"ci-{uuid.uuid4().hex}", identity_verified_at=datetime.now(UTC))
+    await _login_as(client, user.id)
+    resp = await client.post("/me/attendance/claim")
+    return resp.status_code, resp.json()["detail"], user.id
+
+
 async def _admin_adjust(
     client: httpx.AsyncClient, db: AsyncSession, _monkeypatch: pytest.MonkeyPatch
 ) -> tuple[int, object, uuid.UUID]:
@@ -204,12 +214,13 @@ async def _create_order(
 
 
 _BLOCKED = [
-    pytest.param(_chat_after_daily_free, id="chat-after-daily-free"),
+    pytest.param(_chat_gemini, id="chat-gemini"),
     pytest.param(_chat_unverified, id="chat-unverified"),
     pytest.param(_chat_premium, id="chat-premium"),
     pytest.param(_image_after_free_tokens, id="image-after-free-tokens"),
     pytest.param(_direct_spend, id="spend"),
     pytest.param(_mission_claim, id="mission-claim"),
+    pytest.param(_attendance_claim, id="attendance-claim"),
     pytest.param(_admin_adjust, id="admin-adjust"),
     pytest.param(_admin_refund, id="admin-refund"),
     pytest.param(_create_order, id="create-order"),
@@ -237,8 +248,9 @@ async def test_switch_off_lets_the_same_spend_through(db_session: AsyncSession, 
 
 
 # ── 막지 않는 것 ───────────────────────────────────────────────────────────────
-async def test_free_daily_turn_still_runs(db_session: AsyncSession) -> None:
-    user = await _member(db_session)
+async def test_exempt_chat_turn_still_runs(db_session: AsyncSession) -> None:
+    """면제 계정의 Gemini 턴은 아무것도 깎지 않아 정지와 무관하다."""
+    user = await _member(db_session, rate_limit_exempt=True)
 
     charge = await charge_chat_turn(
         user.id,
@@ -249,7 +261,7 @@ async def test_free_daily_turn_still_runs(db_session: AsyncSession) -> None:
         usage=clover.SpendUsage("preview"),
     )
 
-    assert charge.source == "free"
+    assert charge.source == "skipped"
 
 
 async def test_free_token_image_still_runs(db_session: AsyncSession) -> None:

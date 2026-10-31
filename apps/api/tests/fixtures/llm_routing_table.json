@@ -439,6 +439,182 @@
       }
     }
   },
+  "novel_bible_extract_events": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "novel_bible_extract_facts": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "novel_bible_extract_knowledge": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "novel_bible_judge": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
   "novel_illustration_screen": {
     "gemini": {
       "generate": {

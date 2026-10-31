@@ -19,6 +19,7 @@ const ROUTE_RULE_LABELS: Record<string, string> = {
   "chain-not-published": "그 체인에 게시본 없음",
   "chain-missing-channel": "그 체인 활성본에 필요한 채널 없음",
   "chain-not-in-lane": "그 레인에 없는 체인",
+  "writer-only-chain": "글쓰기 전용 체인은 판정 문안을 읽지 않음",
   "lane-out-of-scope": "이 저장에 실을 수 없는 레인",
 };
 

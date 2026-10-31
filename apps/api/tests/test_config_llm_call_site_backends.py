@@ -209,8 +209,8 @@ def test_premium_switches_without_an_assignment_still_need_bedrock_credentials_e
         _load_env(monkeypatch, **{_ANTHROPIC_KEY: "sk-ant-test", switch: "true"})
 
 
-# 운영이 Anthropic 직결로 배정한 호출 위치 — 상위 모델 글쓰기 셋(채팅 턴·측정용 다시 생성·소설 장)과 판정·요약·기억 추출
-# 열(채팅과 미리보기의 판정, 기억 요약, 장면·사실 추출)이다.
+# 운영이 Anthropic 직결로 배정한 호출 위치 — 상위 모델 글쓰기 셋(채팅 턴·측정용 다시 생성·소설 장)과 판정·요약·기억 추출·인상
+# 열하나(채팅과 미리보기의 판정, 기억 요약, 장면·사실 추출, 인상 생성)다.
 _PRODUCTION_ANTHROPIC_CALL_SITES = (
     "chat_generate",
     "replay_generate",
@@ -225,6 +225,7 @@ _PRODUCTION_ANTHROPIC_CALL_SITES = (
     "preview_media_book_image",
     "chat_memory_episode",
     "chat_memory_fact",
+    "chat_memory_impression",
 )
 
 
@@ -232,7 +233,7 @@ def test_the_production_env_key_set_starts_with_every_assigned_call_on_anthropic
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """운영 env 그대로 새 이미지가 떠야 한다 — 운영은 상위 모델 글쓰기 호출과 판정·요약·기억 추출 호출을 모두 Anthropic
-    직결로 배정하므로 Bedrock 자격 없이도 기동 검증을 통과해야 하고, 배정은 그 열셋 그대로여야 한다. 두 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 그 상태로 본다. 컨테이너가 받는 `.env` 에는 `Settings` 가 모르는 compose·다른 서비스 키도 있어,
+    직결로 배정하므로 Bedrock 자격 없이도 기동 검증을 통과해야 하고, 배정은 그 열넷 그대로여야 한다. 두 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 그 상태로 본다. 컨테이너가 받는 `.env` 에는 `Settings` 가 모르는 compose·다른 서비스 키도 있어,
     모르는 키를 무시하는 설정이 이 기동의 전제다."""
     assert Settings.model_config.get("extra") == "ignore"
     unknown = [name for name in PRODUCTION_ENV_NAMES if name.lower() not in Settings.model_fields]
@@ -243,3 +244,39 @@ def test_the_production_env_key_set_starts_with_every_assigned_call_on_anthropic
     assert loaded.chat_premium_models_enabled and loaded.novelize_premium_models_enabled
     assert loaded.llm_call_site_backends == dict.fromkeys(_PRODUCTION_ANTHROPIC_CALL_SITES, "anthropic")
     assert loaded.bedrock_access_key_id == ""
+
+
+# ── 직결로만 가는 Haiku 글쓰기와 상위 모델 스위치 ─────────────────────────────────────────────────────
+
+_BEDROCK_ONLY = {"BEDROCK_ACCESS_KEY_ID": "AKIATEST", "BEDROCK_SECRET_ACCESS_KEY": "secret", "BEDROCK_REGION": "ap-northeast-2"}
+
+
+def test_the_novel_switch_alone_without_a_direct_key_starts_since_haiku_never_writes_novels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """소설 스위치는 소설에서 고를 수 있는 모델의 경로만 연다 — 직결로만 가는 Haiku 글쓰기는 소설 요청이 막아 그 경로의 직결
+    키를 요구하지 않는다. Bedrock 자격만 있는 환경이 쓰지도 않을 경로 때문에 기동을 거부당하지 않는다."""
+    loaded = _load_env(monkeypatch, **_BEDROCK_ONLY, NOVELIZE_PREMIUM_MODELS_ENABLED="true")
+
+    assert loaded.novelize_premium_models_enabled
+    assert loaded.anthropic_direct_api_key == ""
+
+
+def test_the_chat_switch_with_haiku_hidden_needs_no_direct_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """채팅 스위치는 공개 목록의 모델만 연다 — 숨긴 Haiku 글쓰기의 직결 키까지 요구하지 않는다."""
+    monkeypatch.delenv("CHAT_MODELS_VISIBLE", raising=False)
+    loaded = _load_env(monkeypatch, **_BEDROCK_ONLY, CHAT_PREMIUM_MODELS_ENABLED="true")
+
+    assert loaded.chat_models_visible == ["opus"]
+
+
+def test_the_chat_switch_with_haiku_visible_needs_the_direct_key_even_without_an_assignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Haiku 글쓰기는 배정이 없어도 직결로 간다(Bedrock 이 서비스하지 않는다) — 공개 목록에 넣으면 그 키가 있어야 뜬다."""
+    monkeypatch.setenv("CHAT_MODELS_VISIBLE", "opus,haiku_writer")
+
+    with pytest.raises(ValidationError, match=_ANTHROPIC_KEY):
+        _load_env(monkeypatch, **_BEDROCK_ONLY, CHAT_PREMIUM_MODELS_ENABLED="true")
+    loaded = _load_env(monkeypatch, **_BEDROCK_ONLY, **{_ANTHROPIC_KEY: "sk-ant-test"}, CHAT_PREMIUM_MODELS_ENABLED="true")
+    assert loaded.chat_models_visible == ["opus", "haiku_writer"]

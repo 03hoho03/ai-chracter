@@ -22,7 +22,7 @@ from sqlalchemy import func, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.clover import products
+from api.clover import attendance, products
 from api.clover.unit import is_legacy_unit, load_unit_events
 from api.clover.missions import (
     MISSION_KEYS,
@@ -34,6 +34,12 @@ from api.clover.missions import (
     mission_idempotency_key,
 )
 from api.clover.schemas import (
+    AttendanceBoardResponse,
+    AttendanceCell,
+    AttendanceCellStatus,
+    AttendanceClaimResponse,
+    AttendanceNextSpecial,
+    CloverAttendancePolicy,
     CloverBalanceBreakdown,
     CloverBalanceResponse,
     CloverExpiringSoon,
@@ -51,7 +57,7 @@ from api.clover.schemas import (
     CloverProductOffer,
     CloverProductsResponse,
 )
-from api.core import clover, rate_limit_gate
+from api.core import clover
 from api.core.clover import (
     PURCHASE_LOT_KINDS,
     earned_lot_expiry,
@@ -66,7 +72,13 @@ from api.db.models.clover import CloverLedger, CloverLot
 from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
 from api.novel_public.access import novel_public_open_to
-from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, chat_turn_cost, novel_episode_unit_price
+from api.llm.chat_models import (
+    CHAT_MODELS,
+    DEFAULT_CHAT_MODEL,
+    chat_turn_cost,
+    is_chat_model_visible,
+    novel_episode_unit_price,
+)
 from api.payments.config import identity_gate_active, payments_active
 from api.payments import refund
 from api.payments.methods import PAY_METHODS
@@ -194,15 +206,16 @@ async def _expiring_soon(db: AsyncSession, *, user_id: uuid.UUID, now: datetime)
 @router.get("/pricing")
 async def get_clover_pricing() -> CloverPricingResponse:
     """공개 조회 — 인증 없음. 충전 상품과 일반 회원이 쓸 수 있는 모든 사용처·허용 계정 전용 소설의 사용 단가, 채팅에서
-    고를 수 있는 모델별 단가, 하루 무료 대화 수를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지
+    고를 수 있는 모델별 단가를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지
     않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
 
-    모델 행은 채팅에서 고를 수 있는 모델만 싣는다. 소설 상위 모델은 소설 허용에 더해 별도 명단에 든 계정만 써서 일반 회원은
+    모델 행은 지금 채팅에서 고를 수 있게 보이는 모델만 싣는다(`is_chat_model_visible` — 화면의 모델 목록과 같은 판정이라
+    채팅 상위 모델 스위치를 끄거나 공개 목록에서 빼면 그 모델 행이 빠진다). 소설 상위 모델은 소설 허용에 더해 별도 명단에 든 계정만 써서 일반 회원은
     살 수 없으므로 그 화 단가를 따로 싣지 않는다 — 모델 행의 소설 화 단가 칸은 옛 화면 호환용으로 남아 있어 Opus 행의
     값은 계속 보인다.
 
-    채팅 상위 모델은 스위치 하나로 로그인 회원 모두에게 열리므로(`llm/model_access.py`) 모델 행에 허용 전용 표시가 없고,
-    행과 베타 표시는 스위치와 무관한 레지스트리 값이다. 소설 허용 전용 표시는 허용 판정의 구조에서 온다 — 소설
+    채팅 상위 모델은 계정을 보지 않고 로그인 회원 모두에게 열리므로(`llm/model_access.py`) 모델 행에 허용 전용 표시가 없고,
+    베타 표시는 레지스트리 값이다. 소설 허용 전용 표시는 허용 판정의 구조에서 온다 — 소설
     (`novelize/access.py`)은 스위치가 켜져 있어도 env 명단과 어드민 허용 행이 있는 계정만 쓴다. 그 판정이 명단 없이
     모두에게 열리도록 바뀌면 그 값도 함께 바꾼다."""
     # 상품과 단가는 요청마다 모듈 속성으로 다시 읽는다 — import 로 값을 묶어 두면 상수를 바꿔도(테스트의 monkeypatch 포함)
@@ -228,15 +241,14 @@ async def get_clover_pricing() -> CloverPricingResponse:
                 is_default=m.id == DEFAULT_CHAT_MODEL,
                 beta=m.beta,
                 chat_turn_cost=chat_turn_cost(m.id),
-                novel_episode_cost=novel_episode_unit_price(m.id),
+                novel_episode_cost=novel_episode_unit_price(m.id) if m.novel_selectable else None,
             )
             for m in CHAT_MODELS
-            if m.chat_selectable
+            if is_chat_model_visible(m.id)
         ],
         novel_episode_cost=novel_episode_unit_price(DEFAULT_CHAT_MODEL),
         novel_ai_edit_cost=clover.NOVELIZE_AI_EDIT_COST,
         novel_restricted=True,
-        daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
         novel_read_cost=clover.NOVEL_READ_COST,
         novel_free_chapter_count=clover.NOVEL_FREE_CHAPTER_COUNT,
         memory_summary_regenerate_cost=clover.MEMORY_SUMMARY_REGENERATE_COST,
@@ -250,13 +262,17 @@ async def get_clover_pricing() -> CloverPricingResponse:
         pay_methods=[
             CloverPayMethodItem(pay_method=m.pay_method, easy_pay_provider=m.easy_pay_provider) for m in PAY_METHODS
         ],
+        attendance=CloverAttendancePolicy(
+            rewards=list(attendance.ATTENDANCE_REWARDS[attendance.CURRENT_REWARD_VERSION]),
+            min_valid_days=attendance.ATTENDANCE_MIN_VALID_DAYS,
+        ),
     )
 
 
 @router.get("/products")
 async def get_clover_products() -> CloverProductsResponse:
-    """공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·하루 무료 대화 수·정책
-    숫자·가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로
+    """공개 조회 — 인증 없음. 충전 허브가 화면을 열 때 한 번 읽는 상품·결제수단·결제와 본인인증 스위치·정책 숫자·
+    가격표 버전이다. 공개 가격 응답과 같은 이유로 DB 를 읽지 않고 레이트리밋도 붙이지 않는다. 값은 요청마다 모듈 속성으로
     다시 읽는다(공개 가격 응답의 같은 주석)."""
     return CloverProductsResponse(
         products=[
@@ -275,7 +291,6 @@ async def get_clover_products() -> CloverProductsResponse:
         ],
         payments_enabled=payments_active(),
         identity_gate_enabled=identity_gate_active(),
-        daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
         policy=CloverPolicyValues(
             purchase_validity_years=clover.PURCHASE_LOT_YEARS,
             full_refund_days=refund.FULL_REFUND_DAYS,
@@ -479,4 +494,69 @@ async def get_clover_ledger(
             for row in page
         ],
         next_cursor=next_cursor,
+    )
+
+
+def _attendance_board(state: attendance.AttendanceState) -> AttendanceBoardResponse:
+    """계산한 판을 응답 모양으로 편다. 다음 특별일은 오늘 받을 칸이 있으면 그 칸부터, 없으면 내일 받을 칸(받은 칸 + 1)부터
+    센다 — 어느 쪽이든 그 칸을 받는 날이 기준점이라 남은 날 수가 같은 규칙으로 나온다."""
+    amounts = attendance.ATTENDANCE_REWARDS[state.reward_version]
+    cells = []
+    for seq in range(1, attendance.BOARD_SIZE + 1):
+        cell_status: AttendanceCellStatus
+        if seq <= state.claimed_count:
+            cell_status = "claimed"
+        elif seq == state.claimable_seq:
+            cell_status = "today"
+        else:
+            cell_status = "upcoming"
+        cells.append(AttendanceCell(seq=seq, amount=amounts[seq - 1], status=cell_status))
+    if state.claimable_seq is not None:
+        start, days_offset = state.claimable_seq, 0
+    else:
+        start, days_offset = state.claimed_count + 1, 1
+    next_seq = next((seq for seq in attendance.SPECIAL_SEQS if seq >= start), None)
+    next_special = (
+        None
+        if next_seq is None
+        else AttendanceNextSpecial(seq=next_seq, amount=amounts[next_seq - 1], days_until=next_seq - start + days_offset)
+    )
+    return AttendanceBoardResponse(
+        board_no=state.board_no,
+        reward_version=state.reward_version,
+        cells=cells,
+        can_claim_today=state.claimable_seq is not None,
+        completed_today=state.completed_today,
+        next_special=next_special,
+        last_claimed_on=state.last_claimed_on,
+    )
+
+
+@me_router.get("/attendance", dependencies=[Depends(require_legal_consent)])
+async def get_attendance_board(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AttendanceBoardResponse:
+    """오늘 기준 출석판. 읽기라 잠그지 않고 정지 스위치도 붙이지 않는다(잔액 조회와 같다). 본인인증하지 않은 회원도 200 이다 —
+    `canClaimToday` 는 판과 날짜만 본다."""
+    user = await _require_active_user(db, user_id)
+    state = await attendance.load_state(
+        db, user_id=user_id, ci_hmac=user.identity_ci_hmac, now=attendance.utcnow()
+    )
+    return _attendance_board(state)
+
+
+@me_router.post("/attendance/claim", dependencies=[Depends(require_legal_consent)])
+async def claim_attendance(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    # 정지 스위치 — 지급 함수는 결제 지급과 같아 함수에서 막지 못해 라우트에서 막는다(미션 수령과 같다).
+    _open: None = Depends(clover.raise_if_clover_paused),
+    db: AsyncSession = Depends(get_db_session),
+) -> AttendanceClaimResponse:
+    """오늘 칸 수령. 잠금·자격(본인인증)·상태 계산·지급은 전부 `attendance.claim` 안에 있어 라우트 없이 불러도 같은 보호를
+    받는다. 오늘 받을 칸이 없으면 에러가 아니라 `granted=false` 와 지금의 판이다."""
+    result = await attendance.claim(db, user_id=user_id, clock=attendance.utcnow)
+    await db.commit()
+    return AttendanceClaimResponse(
+        granted=result.granted, balance=result.balance, board=_attendance_board(result.state)
     )

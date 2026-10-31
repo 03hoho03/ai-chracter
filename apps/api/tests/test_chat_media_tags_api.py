@@ -40,6 +40,7 @@ from factories import (
     _clear_llm_override,
     _get_genre,
     _login_as,
+    _make_paying_user,
     _make_published_character,
     _make_published_story,
     _make_user,
@@ -289,7 +290,7 @@ async def test_room_response_ignores_cells_in_model_reply_left_first_after_openi
 ) -> None:
     """오프닝을 지우면 모델 응답이 첫 자리에 올 수 있다. 사용자가 시킨 대로 모델이 칸 id 태그를 따라 썼어도,
     작성자의 첫 메시지가 가리키지 않는 칸은 서명하지 않는다 — 아직 보지 못한 칸의 원본이 새는 길이다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}} 시작")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}} 시작", paid_turns=1)
     assert content.current_published_version_id is not None
     classroom, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     rooftop, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
@@ -317,7 +318,7 @@ async def test_room_response_ignores_cells_in_model_reply_left_first_after_openi
 async def test_room_response_ignores_user_message_left_first_after_opening_deleted(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}} 시작")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}} 시작", paid_turns=1)
     assert content.current_published_version_id is not None
     classroom, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     await db_session.commit()
@@ -454,7 +455,7 @@ async def test_room_snapshot_leaves_out_the_epilogue_and_its_media_url(
 async def test_ending_reached_event_carries_cell_id_epilogue_and_url_map(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작", paid_turns=1)
     assert content.current_published_version_id is not None
     cell, asset = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
     await _add_epilogue_ending(db_session, setup, "끝났다.\n\n{{img::민아/옥상}}\n\n{{img::수아/옥상}}")
@@ -495,7 +496,7 @@ async def test_room_after_reaching_an_ending_carries_its_cell_id_epilogue_and_ur
 ) -> None:
     """엔딩 도달 이벤트는 그 턴의 스트림에만 실린다 — 방을 다시 받아도(새로고침·재조회) 화면이 에필로그를 그리도록
     방 응답이 도달한 엔딩의 id·에필로그·그 그림 맵을 이벤트와 같은 형태로 싣는다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작", paid_turns=1)
     assert content.current_published_version_id is not None
     cell, asset = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
     ending = await _add_epilogue_ending(db_session, setup, "끝났다.\n\n{{img::민아/옥상}}\n\n{{img::수아/옥상}}")
@@ -520,7 +521,7 @@ async def test_room_after_reaching_an_ending_carries_its_cell_id_epilogue_and_ur
 async def test_room_carries_no_ending_before_reaching_one_and_after_reset(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작", paid_turns=1)
     await _add_epilogue_ending(db_session, setup, "끝났다.")
     await db_session.commit()
     await _login_as(db_client, user_id)
@@ -539,7 +540,7 @@ async def test_room_carries_no_ending_when_the_pinned_version_no_longer_has_the_
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """방이 다른 버전으로 옮겨 가며 도달한 엔딩이 그 버전에서 빠졌으면 실을 에필로그가 없다 — 도달 표시만 남는다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작", paid_turns=1)
     await _add_epilogue_ending(db_session, setup, "끝났다.")
     await db_session.commit()
     await _login_as(db_client, user_id)
@@ -653,6 +654,7 @@ async def test_story_generation_prompt_excludes_media_tags_from_prologue_and_his
         db_session,
         opening_message="{{img::민아/교실}}\n민아가 손을 흔든다.",
         prologue="프롤로그 {{img::민아/옥상}}끝",
+        paid_turns=1,
     )
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
@@ -680,7 +682,7 @@ async def test_story_generation_prompt_excludes_media_tags_from_prologue_and_his
 async def test_ending_judgment_turn_lines_exclude_media_tags(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}}\n시작한다.")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}}\n시작한다.", paid_turns=1)
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     await _add_epilogue_ending(db_session, setup, "끝")
@@ -707,8 +709,7 @@ async def test_ending_judgment_turn_lines_exclude_media_tags(
 async def test_preview_prompt_excludes_name_form_media_tags(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user()
-    db_session.add(user)
+    user = await _make_paying_user(db_session, turns=1)
     await db_session.commit()
     await _login_as(db_client, user.id)
     payload: dict[str, Any] = {

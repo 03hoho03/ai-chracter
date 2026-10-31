@@ -89,11 +89,11 @@ async def _add_rules(db_session: AsyncSession, stat: StatDef, *rules: tuple[str,
 
 
 async def _story_room_with_rules(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, *, paid_turns: int = 0
 ) -> tuple[uuid.UUID, StatDef, StatDef, Ending]:
     """판정 스탯 둘(둘 다 규칙 있음)과 「호감 ≥ 40」 규칙의 엔딩 하나가 있는 방. 같은 작품의 초안 버전에는 같은 entity_id
     스탯에 다른 규칙이 달려 있다 — 방은 고정한 버전의 규칙만 읽어야 한다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="어서 와")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="어서 와", paid_turns=paid_turns)
     affection, trust = _stat(setup, "호감", 0), _stat(setup, "신뢰", 1)
     db_session.add_all([affection, trust])
     await db_session.flush()
@@ -172,7 +172,7 @@ async def test_room_turn_applies_fired_rules_and_judges_the_ending(
     """호감은 발동한 셋 중 |폭| 최대(+8, 동점 -8 보다 순서가 앞선다)만 더하고, 신뢰는 +2. 바뀐 값으로 엔딩 규칙(≥ 40)을
     통과해 엔딩 판정이 이어진다. 판정 프롬프트에는 방이 고정한 버전의 규칙만 실리고 현재값(37)은 실리지 않는다. 규칙
     판정도 스탯 판정 call_site 로 간다(판정 모델 스위치)."""
-    room_id, affection, trust, ending = await _story_room_with_rules(db_client, db_session)
+    room_id, affection, trust, ending = await _story_room_with_rules(db_client, db_session, paid_turns=1)
     fake = _FakeLLMClient(
         [StatRuleJudgmentResult(fired_rule_ids=["a1", "a3", "a2", "b1"]), EndingJudgmentResult(triggered=True)]
     )
@@ -203,7 +203,7 @@ async def test_room_turn_letters_stats_in_author_order_not_insertion_order(
 ) -> None:
     """규칙 글자는 작가가 정한 스탯 순서(`order`)를 따른다. 신뢰(order 1)를 호감(order 0)보다 먼저 넣어, 정렬 없이 읽으면
     행이 놓인 순서대로 신뢰가 a 가 되게 만든다 — 그 순서는 앞선 쓰기·롤백이 남긴 빈자리에 따라 실행마다 달라진다."""
-    user_id, content, setup = await _story_with_setup(db_session, opening_message="어서 와")
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="어서 와", paid_turns=1)
     trust = _stat(setup, "신뢰", 1)
     db_session.add(trust)
     await db_session.flush()
@@ -230,7 +230,7 @@ async def test_room_turn_letters_stats_in_author_order_not_insertion_order(
 async def test_room_turn_skips_stats_and_endings_when_rule_judgment_fails(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room_id, affection, _, _ = await _story_room_with_rules(db_client, db_session)
+    room_id, affection, _, _ = await _story_room_with_rules(db_client, db_session, paid_turns=1)
     fake = _FakeLLMClient([LLMClientError("429 RESOURCE_EXHAUSTED")])
 
     events = await _send(db_client, room_id, fake)
@@ -251,7 +251,7 @@ async def test_room_turn_skips_the_stat_call_but_judges_endings_while_the_set_la
 ) -> None:
     """활성 세트에 규칙 판정 채널이 없으면 렌더가 비어 판정 LLM 을 부르지 않는다. 실패가 아니라 "변화 없음"이라 엔딩 판정은
     그대로 이어진다."""
-    room_id, affection, _, ending = await _story_room_with_rules(db_client, db_session)
+    room_id, affection, _, ending = await _story_room_with_rules(db_client, db_session, paid_turns=1)
     await _lower_ending_threshold(db_session, ending)
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
     old_sections = [section for section in sections if section.channel != "stat_rule_judgment"]
@@ -270,7 +270,7 @@ async def test_room_turn_leaves_a_judged_stat_without_rules_out_of_the_judgment(
 ) -> None:
     """규칙 없는 판정 스탯(신뢰)은 판정 프롬프트에 싣지 않고 값이 그대로다. 규칙 있는 스탯(호감)은 그대로 판정을 받는다 —
     실린 스탯만 글자를 받으므로 호감이 a 다."""
-    room_id, affection, trust, _ = await _story_room_with_rules(db_client, db_session)
+    room_id, affection, trust, _ = await _story_room_with_rules(db_client, db_session, paid_turns=1)
     await db_session.execute(sa.delete(StatRule).where(StatRule.stat_def_id == trust.id))
     await db_session.commit()
     fake = _FakeLLMClient([StatRuleJudgmentResult(fired_rule_ids=["a1", "b1"]), EndingJudgmentResult(triggered=False)])
@@ -290,7 +290,7 @@ async def test_room_turn_without_any_rules_skips_the_stat_call_and_judges_ending
 ) -> None:
     """판정 스탯 어디에도 규칙이 없으면 판정 LLM 을 부르지 않고 스탯은 그대로다. 엔딩 판정은 스탯 반영 결과가 있을 때만
     돌기 때문에, 이 턴을 실패로 다루면 엔딩이 멈춘다 — 엔딩 판정이 그대로 이어져야 한다."""
-    room_id, affection, trust, ending = await _story_room_with_rules(db_client, db_session)
+    room_id, affection, trust, ending = await _story_room_with_rules(db_client, db_session, paid_turns=1)
     await db_session.execute(sa.delete(StatRule).where(StatRule.stat_def_id.in_([affection.id, trust.id])))
     await _lower_ending_threshold(db_session, ending)
     fake = _FakeLLMClient([EndingJudgmentResult(triggered=True)])
@@ -366,7 +366,7 @@ async def test_preview_turn_applies_fired_rules_from_the_draft_payload(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """미리보기는 초안 페이로드의 규칙으로 판정한다. 95 + 10 은 최대 100 으로 잘리고, 엔딩 판정이 이어진다."""
-    user_id, _, _ = await _story_with_setup(db_session, opening_message=None)
+    user_id, _, _ = await _story_with_setup(db_session, opening_message=None, paid_turns=1)
     await db_session.commit()
     await _login_as(db_client, user_id)
     stat_id, ending_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -396,7 +396,7 @@ async def test_preview_turn_applies_fired_rules_from_the_draft_payload(
 async def test_preview_turn_skips_stats_and_endings_when_rule_judgment_fails(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user_id, _, _ = await _story_with_setup(db_session, opening_message=None)
+    user_id, _, _ = await _story_with_setup(db_session, opening_message=None, paid_turns=1)
     await db_session.commit()
     await _login_as(db_client, user_id)
     stat_id = str(uuid.uuid4())
@@ -422,7 +422,7 @@ async def test_preview_turn_without_rules_skips_the_stat_call_and_judges_endings
 ) -> None:
     """초안 스탯에 아직 규칙이 없으면(발행은 막지만 미리보기는 돈다) 판정 LLM 을 부르지 않고 값이 그대로다. 그래도 카운터는
     굴러가고 엔딩 판정은 이어진다."""
-    user_id, _, _ = await _story_with_setup(db_session, opening_message=None)
+    user_id, _, _ = await _story_with_setup(db_session, opening_message=None, paid_turns=1)
     await db_session.commit()
     await _login_as(db_client, user_id)
     stat_id, counter_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -452,7 +452,7 @@ async def test_preview_turn_streams_hidden_stat_changes_without_the_anonymous_si
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """빌더 미리보기는 작가 전용이라 숨긴 스탯도 거르지 않는다 — 그 변화가 `statChange` 로 나가고 익명 신호는 없다."""
-    user_id, _, _ = await _story_with_setup(db_session, opening_message=None)
+    user_id, _, _ = await _story_with_setup(db_session, opening_message=None, paid_turns=1)
     await db_session.commit()
     await _login_as(db_client, user_id)
     stat_id = str(uuid.uuid4())

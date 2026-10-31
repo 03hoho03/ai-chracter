@@ -94,9 +94,11 @@ async def _add_shortcut(db_session: AsyncSession, room_id: uuid.UUID) -> uuid.UU
     return shortcut.entity_id
 
 
-async def _send_with_shortcut(db_client: httpx.AsyncClient, db_session: AsyncSession) -> tuple[uuid.UUID, str]:
-    """단축어로 한 턴 보낸 스토리 방과 그 턴의 생성 프롬프트."""
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+async def _send_with_shortcut(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, *, paid_turns: int = 0
+) -> tuple[uuid.UUID, str]:
+    """단축어로 한 턴 보낸 스토리 방과 그 턴의 생성 프롬프트. `paid_turns` 는 방 주인에게 줄 기본 모델 턴 수다(이 전송 몫 포함)."""
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=paid_turns)
     shortcut_id = await _add_shortcut(db_session, room.room_id)
     sent = _PromptLLM()
     await _post(
@@ -117,7 +119,7 @@ async def _regenerate(db_client: httpx.AsyncClient, room_id: uuid.UUID) -> str:
 async def test_regenerating_a_shortcut_turn_sends_the_original_turns_prompt_with_the_shortcut(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room_id, sent_prompt = await _send_with_shortcut(db_client, db_session)
+    room_id, sent_prompt = await _send_with_shortcut(db_client, db_session, paid_turns=2)
 
     regenerated = await _regenerate(db_client, room_id)
 
@@ -128,7 +130,7 @@ async def test_regenerating_a_shortcut_turn_sends_the_original_turns_prompt_with
 async def test_regenerating_a_regeneration_still_sends_the_shortcut(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    room_id, sent_prompt = await _send_with_shortcut(db_client, db_session)
+    room_id, sent_prompt = await _send_with_shortcut(db_client, db_session, paid_turns=3)
     await _regenerate(db_client, room_id)
 
     regenerated_again = await _regenerate(db_client, room_id)
@@ -141,7 +143,7 @@ async def test_regenerating_a_plain_turn_after_a_shortcut_turn_sends_no_shortcut
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """단축어는 바꾸는 응답의 기록에서만 온다 — 앞 턴이 단축어로 보낸 턴이어도 빌려오지 않는다."""
-    room_id, _sent_prompt = await _send_with_shortcut(db_client, db_session)
+    room_id, _sent_prompt = await _send_with_shortcut(db_client, db_session, paid_turns=3)
     await _post(db_client, f"/chat-rooms/{room_id}/messages", {"content": "계속 걷는다"}, _PromptLLM())
 
     regenerated = await _regenerate(db_client, room_id)
@@ -153,7 +155,7 @@ async def test_regenerating_a_reply_without_a_turn_record_sends_no_shortcut(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """심은 턴은 기록이 없다. 그 버전에 단축어가 있어도 어느 것으로 보냈는지 모르므로 싣지 않는다."""
-    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    room = await _open_room(db_client, db_session, turns=1, lane="story", paid_turns=1)
     await _add_shortcut(db_session, room.room_id)
 
     regenerated = await _regenerate(db_client, room.room_id)
@@ -166,7 +168,7 @@ async def test_regenerating_after_the_shortcut_left_the_rooms_version_sends_no_s
 ) -> None:
     """방을 새 버전에 고정하면 원 턴의 단축어가 그 버전에 없을 수 있다(옛 버전에는 남아 있다). 재생성은 실패하지 않고
     단축어 없이 생성한다 — 옛 버전의 단축어를 집지 않는다."""
-    room_id, _sent_prompt = await _send_with_shortcut(db_client, db_session)
+    room_id, _sent_prompt = await _send_with_shortcut(db_client, db_session, paid_turns=2)
     # 같은 단축어 행을 다른 버전으로 옮겨 "방의 버전에는 없고 다른 버전에는 있다"를 만든다.
     other_author = _make_user()
     db_session.add(other_author)

@@ -406,8 +406,9 @@ class ChatRoomResponse(CamelModel):
 
 
 class ChatRoomModelSelectRequest(CamelModel):
-    """`PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `"gemini"` 나 null 을 명시한다. 채팅에서 고를
-    수 없는 값(레지스트리 밖, 소설에만 남은 Sonnet)은 422 다."""
+    """`PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `"gemini"` 나 null 을 명시한다. 채팅방 모델이 될
+    수 없는 값(레지스트리 밖, 판정 전용 모델)은 422 다. 채팅방 모델이어도 지금 채팅에서 보이지 않는 모델은 라우트가 403 으로
+    거절한다."""
 
     model: ChatRoomModelId | None
 
@@ -426,6 +427,8 @@ class ChatModelItem(CamelModel):
 
     id: ChatRoomModelId
     name: str
+    # 새 대화방이 고르는 기본 모델인가 — 공개 가격의 모델 항목과 같은 뜻이다. 레이트리밋 면제 계정이 내지 않는 것은 기본 모델 턴뿐이다.
+    is_default: bool
     beta: bool
     turn_cost: int
 

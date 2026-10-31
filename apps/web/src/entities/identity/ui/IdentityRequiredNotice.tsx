@@ -6,8 +6,6 @@ import { formatIdentityRequiredMessage, type IdentityRequiredReason } from "../m
 
 type IdentityRequiredNoticeProps = {
   reason: IdentityRequiredReason;
-  /** `GET /me` 의 `dailyFreeChatTurns`. 세션을 아직 못 읽었으면 비워 둔다(숫자 없이 말한다). */
-  dailyFreeChatTurns?: number;
   className?: string;
 };
 
@@ -17,7 +15,7 @@ type IdentityRequiredNoticeProps = {
  * 인증하는 곳은 마이페이지 하나라 링크도 하나다. 링크가 outline 인 것은 이 안내가 화면의 주 행동이 아니기
  * 때문이다 — 채팅·미리보기에는 그 화면의 솔리드 채움(전송)이 이미 있고, 클로버 충전 화면에서는 구매 조건 자리의
  * 보조 안내이고 그 화면의 행동은 상품 행이 맡는다. */
-export function IdentityRequiredNotice({ reason, dailyFreeChatTurns, className }: IdentityRequiredNoticeProps) {
+export function IdentityRequiredNotice({ reason, className }: IdentityRequiredNoticeProps) {
   return (
     <div
       role="status"
@@ -27,7 +25,7 @@ export function IdentityRequiredNotice({ reason, dailyFreeChatTurns, className }
       )}
     >
       <p className="min-w-0 flex-1 basis-48 text-xs break-keep text-muted-foreground">
-        {formatIdentityRequiredMessage(reason, dailyFreeChatTurns)}
+        {formatIdentityRequiredMessage(reason)}
       </p>
       <Button asChild variant="outline" size="sm">
         <Link to="/mypage">본인인증하기</Link>

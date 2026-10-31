@@ -24,3 +24,16 @@ describe("isProfileDestinationVisible", () => {
     expect(isProfileDestinationVisible("chats", oldMe.enabledFeatures)).toBe(true);
   });
 });
+
+/** 출석판은 늘 열려 있어 가격 응답의 출석 스위치를 읽지 않고 메뉴·드로어·좌측 패널에 늘 보인다. */
+describe("isProfileDestinationVisible — 출석판", () => {
+  it("출석판은 허용 기능과 무관하게 보인다", () => {
+    expect(isProfileDestinationVisible("attendance", [])).toBe(true);
+    expect(isProfileDestinationVisible("attendance", ["creator_payout"])).toBe(true);
+  });
+
+  // 비로그인 화면은 허용 기능이 없는 것으로 넘긴다 — 출석판은 비로그인도 들어와 공개 보상표를 본다.
+  it("허용 기능을 모르는 비로그인 화면에서도 보인다", () => {
+    expect(isProfileDestinationVisible("attendance", undefined)).toBe(true);
+  });
+});

@@ -5,7 +5,7 @@ import { ChevronDown, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { DEFAULT_CHAT_MODEL, isPremiumChatModel, useChatModelsQuery, type ChatModelId } from "@/entities/chat-model";
+import { DEFAULT_CHAT_MODEL, useChatModelsQuery, type ChatModelId } from "@/entities/chat-model";
 import type { PreviewShortcut, PreviewStartPayload } from "@/entities/preview-session";
 import {
   AuthorMacroNamesProvider,
@@ -25,7 +25,6 @@ import {
 import {
   CloverBalance,
   isCloverInsufficient,
-  shouldShowCloverBalance,
   useCloverBalanceQuery,
   useCloverPricingQuery,
 } from "@/entities/clover";
@@ -38,9 +37,9 @@ import { PreviewCloseHeader } from "@/features/build-common";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import {
-  CHAT_MODEL_NOT_ALLOWED_MESSAGE,
   invalidateChatModelAccess,
   isChatModelNotAllowedError,
+  PREVIEW_CHAT_MODEL_NOT_ALLOWED_MESSAGE,
 } from "@/features/select-chat-model";
 import { usePreviewSendMessage } from "@/features/preview-chat";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
@@ -49,6 +48,7 @@ import { expandAuthorMacros } from "@/shared/lib/text/authorMacros";
 import { previewAuthorMacroNames } from "../model/previewAuthorMacroNames";
 import {
   isPreviewModelSelectable,
+  previewChosenModelReset,
   previewDisplayModel,
   previewStartQuery,
   previewTurnCost,
@@ -104,11 +104,19 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
     : undefined;
 
   // 고른 모델은 이 화면의 지역 상태다 — 빌더를 떠나면 기본 모델로 돌아온다(확인은 고른 그 순간의 동의라 다음 방문에
-  // 확인 없이 상위 모델 가격이 나가지 않게 한다). 화면이 말하는 모델은 저장하지 않고 세션의 기능 목록으로 매번 정한다.
+  // 확인 없이 상위 모델 가격이 나가지 않게 한다). 화면이 말하는 모델은 저장하지 않고 모델 목록(없으면 세션의 기능 목록)으로
+  // 매번 정한다.
   const [chosenModelId, setChosenModelId] = useState<ChatModelId>(DEFAULT_CHAT_MODEL);
   const { data: me } = useSessionQuery();
-  const displayModelId = previewDisplayModel(me?.enabledFeatures, chosenModelId);
   const models = useChatModelsQuery().data;
+  // 세션이 없을 때 고른 모델이 목록에서 빠지면 고른 값도 기본 모델로 되돌린다 — 다시 공개됐을 때 다음 세션이 확인 없이 그
+  // 모델로 열리지 않게. 세션이 있는 동안은 되돌리지 않는다: 서버가 세션에 저장한 모델을 턴마다 다시 판정해 다시 공개되면 그
+  // 모델로 돌아가므로, 고른 값을 남겨 둬야 화면(칩·잔량·확인 단가)이 서버를 따라간다. 렌더 중에 고치는 것은 목록이 바뀐 그
+  // 렌더에서 바로 맞추려는 것이고, 되돌린 값은 목록에 있어 다시 고치지 않는다.
+  const chosenModelReset =
+    previewSessionId === undefined ? previewChosenModelReset(models, chosenModelId) : undefined;
+  if (chosenModelReset !== undefined) setChosenModelId(chosenModelReset);
+  const displayModelId = previewDisplayModel(me?.enabledFeatures, chosenModelId, models);
   // 기능이 꺼진 계정에는 칩이 없다. 목록이 아직 없으면 이름을 모르므로 칩을 미룬다 — 기본 모델 이름을 지어 넣지 않는다.
   const modelChipName = isPreviewModelSelectable(me?.enabledFeatures)
     ? models?.find((model) => model.id === displayModelId)?.name
@@ -121,26 +129,20 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   const confirmCloverSpend = useConfirmCloverSpend();
   const turnCost = previewTurnCost(models, displayModelId);
   // 가격표를 지켜보게 둔다 — 보내는 요청이 이 캐시에서 가격 버전을 읽는데, 빌더는 전역 헤더(평소 가격표를 지켜보는 자리)를
-  // 그리지 않아 이것이 없으면 새로고침 직후엔 캐시가 비어 있고 한동안 지나면 지워져 버전 없이 나간다. 값은 여기서 쓰지 않는다.
+  // 그리지 않아 이것이 없으면 새로고침 직후엔 캐시가 비어 있고 한동안 지나면 지워져 버전 없이 나간다. 값은 여기서 읽지
+  // 않는다.
   useCloverPricingQuery();
-  // 잔량은 대화방 입력 바와 같은 판정이다 — 상위 모델은 첫 턴부터 턴마다 깎이므로 언제나, 기본 모델은 무료분을 쓴 뒤나
-  // 부족할 때만. 세션을 잃은 뒤에는 내린다(옛 잔액이 캐시에 남는다).
+  // 잔량은 대화방 입력 바와 같은 판정이다 — 하루 무료분이 없어 어느 모델이든 첫 턴부터 턴마다 깎이므로 언제나 보인다.
+  // 세션을 잃은 뒤에는 내린다(옛 잔액이 캐시에 남는다).
   const { data: clover } = useCloverBalanceQuery();
   const cloverBalance = clover?.balance ?? 0;
   const isCloverShort = turnCost !== undefined && isCloverInsufficient(cloverBalance, turnCost);
-  const shouldShowClover =
-    clover !== undefined &&
-    me !== undefined &&
-    shouldShowCloverBalance({
-      spendConfirmedToday: clover.spendConfirmedToday,
-      hasCloverShortage: isCloverShort,
-      chargesEveryTurn: isPremiumChatModel(displayModelId),
-    });
+  const shouldShowClover = clover !== undefined && me !== undefined;
   const { send, status, policyWarning, streamingText } = usePreviewSendMessage(
     async (error) =>
       // 금액은 렌더 때의 `turnCost` 가 아니라 요청 시점의 캐시에서 읽는다(가격 바뀜이면 모델 목록을 다시 받은 뒤) — 가격 확인
       // 뒤 재전송이 받는 하루 한 번 확인이 옛 가격을 말하지 않게(`previewConfirmTurnCost`).
-      // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 일일 버킷을 쓰므로 자정 사유가 참이다.
+      // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 확인을 건다.
       confirmCloverSpend(error, await previewConfirmTurnCost(queryClient, error, displayModelId), "chat"),
     macroNames,
   );
@@ -158,23 +160,23 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   // start()도 동일)로, 이 함수는 이제 마운트가 아니라 첫 전송 시점에 호출되지만 StrictMode
   // 마운트→언마운트→재마운트 취약성은 뮤테이션 훅 자체의 성질이라 여전히 적용된다.
   //
-  // `onModelNotAllowed` 는 상위 모델 허용이 그 사이 꺼져 시작이 거절됐을 때만 불린다 — 입력창에서 보낸 글을 되돌려 놓는 데 쓴다.
+  // `onModelNotAllowed` 는 그 모델을 그 사이 쓸 수 없게 돼 시작이 거절됐을 때만 불린다 — 입력창에서 보낸 글을 되돌려 놓는 데 쓴다.
   async function startPreview(onModelNotAllowed?: () => void): Promise<string | undefined> {
     setIsStarting(true);
     setStartSessionEnded(undefined);
     try {
       const nextState = await startMutation.mutateAsync({
         payload: getPayload(),
-        query: previewStartQuery(displayModelId),
+        query: previewStartQuery(models, displayModelId),
         mediaBookImages: getMediaBookImages?.(),
       });
       setPreviewSessionId(nextState.previewSessionId);
       return nextState.previewSessionId;
     } catch (error) {
-      // 칩이 보이던 사이 상위 모델 허용이 꺼졌다. 기본 모델로 되돌리고 세션·모델 목록을 다시 읽어 칩을 거둔다. 다시 보내면
+      // 칩이 보이던 사이 그 모델을 쓸 수 없게 됐다. 기본 모델로 되돌리고 세션·모델 목록을 다시 읽어 칩을 고친다. 다시 보내면
       // 기본 모델로 열리므로 이용자가 쓴 글은 지우지 않고 입력창에 되돌려 둔다.
       if (isChatModelNotAllowedError(error)) {
-        toast.error(CHAT_MODEL_NOT_ALLOWED_MESSAGE);
+        toast.error(PREVIEW_CHAT_MODEL_NOT_ALLOWED_MESSAGE);
         setChosenModelId(DEFAULT_CHAT_MODEL);
         invalidateChatModelAccess(queryClient);
         onModelNotAllowed?.();
@@ -248,23 +250,17 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   let errorNotice: ReactNode = null;
   const sessionEnded = startSessionEnded ?? (status.kind === "error" ? status.sessionEnded : undefined);
   // 레이트리밋·본인인증·그만둠·실패는 그 세션에 보낸 턴의 결과다. 모델을 바꾸면 세션 id 가 비고 대화가 처음으로 돌아가므로
-  // 앞 세션의 결과를 남기지 않는다 — 남기면 막히지 않은 새 모델 위에 옛 배너가 남고, 레이트리밋 문구는 새 모델로 다시 골라져
-  // 거짓이 된다. 세션 끝남은 세션이 아니라 로그인의 상태라 위에서 그대로 보인다.
+  // 앞 세션의 결과를 남기지 않는다 — 남기면 막히지 않은 새 모델 위에 옛 배너가 남는다. 세션 끝남은 세션이 아니라 로그인의
+  // 상태라 위에서 그대로 보인다.
   const sendError = status.kind === "error" && previewSessionId !== undefined ? status : undefined;
   if (sessionEnded) {
     // 응답 생성이 실패한 것이 아니라 로그인이 풀렸거나 정지된 것이다.
     errorNotice = <SessionEndedNotice reason={sessionEnded} />;
   } else if (sendError) {
     if (sendError.rateLimit) {
-      // 상위 모델 미리보기에는 돌아올 무료 한도가 없어 자정 약속을 하지 않는 문구로 간다.
-      errorNotice = (
-        <RateLimitNotice
-          rateLimit={sendError.rateLimit}
-          surface={isPremiumChatModel(displayModelId) ? "premiumPreview" : "preview"}
-        />
-      );
+      errorNotice = <RateLimitNotice rateLimit={sendError.rateLimit} surface="preview" />;
     } else if (sendError.identityRequired) {
-      errorNotice = <IdentityRequiredNotice reason="free-rewards" dailyFreeChatTurns={me?.dailyFreeChatTurns} />;
+      errorNotice = <IdentityRequiredNotice reason="free-rewards" />;
     } else if (sendError.declined) {
       // 확인 모달에서 그만둔 것은 실패가 아니라 사용자의 선택이라
       // `destructive`도 `role="alert"`도 쓰지 않는다(경고할 일이 없다).

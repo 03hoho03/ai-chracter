@@ -52,13 +52,12 @@ from api.chat.prompt_stages import (
     stage_call_sites,
     stage_room_models,
 )
-from api.core.config import settings
+from api.core.config import Settings, settings
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.backends import pick_backend
 from api.llm.call_policy import CALL_POLICIES, BackendId, LLMCallSite
 from api.llm.chat_models import (
     ChatModelId,
-    ChatRoomModelId,
     PromptSetModelId,
     backend_model_id,
     configured_call_site_model,
@@ -66,6 +65,7 @@ from api.llm.chat_models import (
 )
 from api.llm.client import structured_model
 from api.novelize.inputs import load_novel_prompt_source
+from factories import load_production_env
 
 _EXPECTED_PATH = Path(__file__).parent / "fixtures" / "prompt_routes_empty_table_characterization.json"
 _NOVEL_EXPECTED_PATH = Path(__file__).parent / "fixtures" / "prompt_routes_novel_empty_table_characterization.json"
@@ -272,7 +272,9 @@ def test_an_empty_table_resolves_every_cell_the_way_the_env_rules_do_today(fixed
     assert expected["cases"] == _cases()
     by_key = {(row[0], row[1], row[2], row[3]): row[4:] for row in expected["rows"]}
 
-    # 이 기대값은 채팅 두 레인과 그 단계만 적는다(소설 레인은 아래 따로 둔 기대값이 본다).
+    # 이 기대값은 채팅 두 레인과 그 단계만 적는다(소설 레인은 아래 따로 둔 기대값이 본다). 방 모델은 기대값을 만들 때 채팅에서
+    # 고를 수 있던 둘이다 — 그 뒤 채팅에 연 Sonnet 방의 생성 줄은 기대값 파일에 없고, 해석 함수로 새로 만들면 대조가 항진명제가
+    # 되므로 Sonnet 방은 아래 운영 env 해석 테스트가 따로 본다.
     chat_stages = {stage for lane in get_args(ChatRoutingLane) for stage in LANE_STAGES[lane]}
     compared = 0
     for case in expected["cases"]:
@@ -280,7 +282,7 @@ def test_an_empty_table_resolves_every_cell_the_way_the_env_rules_do_today(fixed
             for name, value in case["settings"].items():
                 patch.setattr(settings, name, value)
             for lane in get_args(ChatRoutingLane):
-                for room_model in get_args(ChatRoomModelId):
+                for room_model in ("gemini", "opus"):
                     for stage, spec in STAGES.items():
                         if stage not in chat_stages:
                             continue
@@ -746,7 +748,6 @@ def test_every_allowed_structured_pair_saves_when_the_env_routes_it_there(save_e
         pytest.param(_input("stat_judgment", lane="character"), "unknown-stage", id="stat-is-not-a-character-stage"),
         pytest.param(_input("situational_image"), "unknown-stage", id="situational-is-not-a-story-stage"),
         pytest.param(_input("memory_fact", lane="novel"), "unknown-stage", id="novel-lane"),
-        pytest.param(_input("memory_fact", room_model="sonnet"), "unknown-stage", id="sonnet-room"),
         pytest.param(
             _input("chat_generate", chain_model="opus", call_model="opus"), "generation-chain", id="gen-chain"
         ),
@@ -964,6 +965,16 @@ def test_novel_generation_rows_on_the_env_path_of_their_job_model_save(save_env:
             id="novel-chain-the-lane-does-not-have",
         ),
         pytest.param(
+            _input("novel_recheck", lane="novel", room_model="any", chain_model="haiku_writer", call_model="gemini"),
+            "chain-not-in-lane",
+            id="novel-chain-of-the-chat-only-haiku-writer",
+        ),
+        pytest.param(
+            _input("novel_chapter", lane="novel", room_model="haiku_writer", chain_model=None, call_model="haiku_writer"),
+            "unknown-stage",
+            id="novel-generation-cell-of-the-chat-only-haiku-writer",
+        ),
+        pytest.param(
             _input("novel_boundary", lane="novel", room_model="any", chain_model="opus", call_model="opus"),
             "backend-mismatch",
             id="novel-structured-claude-row-without-a-direct-assignment",
@@ -1059,3 +1070,205 @@ async def test_a_chain_with_no_published_set_is_refused(db_session: AsyncSession
     errors = await route_chain_errors(db_session, rows)
 
     assert [(error.index, error.rule) for error in errors] == [(0, "chain-not-published")]
+
+
+# --- 채팅에 연 Sonnet 방 ------------------------------------------------------------------------------------------------
+
+
+def test_a_sonnet_room_generation_row_on_bedrock_is_refused_and_never_applied(save_env: pytest.MonkeyPatch) -> None:
+    """Sonnet 방 칸이 열려 생성 행을 저장할 수 있게 됐어도 경로는 직결뿐이다 — Bedrock 경로를 env 가 받쳐도 저장 검사가
+    거부하고, 표에 들어와 있어도 해석이 쓰지 않고 방 규칙으로 돈다. 직결 행과 판정 행은 저장된다."""
+    sonnet_on_bedrock = _input("chat_generate", room_model="sonnet", chain_model=None, call_model="sonnet", backend="bedrock")
+    save_env.setattr(settings, "llm_call_site_backends", {"chat_generate": "bedrock"})
+    save_env.setattr(settings, "bedrock_access_key_id", "AKIATEST")
+    save_env.setattr(settings, "bedrock_secret_access_key", "secret")
+    save_env.setattr(settings, "bedrock_region", "ap-northeast-2")
+
+    refused = _rules([sonnet_on_bedrock])
+    route = _resolve(
+        PromptRoutes.from_rows(
+            [_row("chat_generate", room_model="sonnet", chain_model=None, call_model="sonnet", backend="bedrock")]
+        ),
+        "story",
+        "sonnet",
+        "chat_generate",
+    )
+
+    assert refused == [(0, "pair-not-allowed")]
+    assert route.source == "room"
+    assert route.skipped is not None
+    assert route.skipped.reason == "pair-not-allowed"
+
+
+def test_sonnet_room_rows_on_the_direct_route_save(save_env: pytest.MonkeyPatch) -> None:
+    rows = [
+        _input("chat_generate", room_model="sonnet", chain_model=None, call_model="sonnet"),
+        _input("memory_fact", lane="character", room_model="sonnet"),
+    ]
+
+    assert route_row_errors(rows) == []
+
+
+def _use_production_env(monkeypatch: pytest.MonkeyPatch) -> Settings:
+    loaded = load_production_env(monkeypatch)
+    for name in Settings.model_fields:
+        monkeypatch.setattr(settings, name, getattr(loaded, name))
+    return loaded
+
+
+def test_production_env_sends_sonnet_generation_direct_to_anthropic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 env 에는 Sonnet 을 위한 줄이 따로 없다 — 채팅 생성·측정용 다시 생성 배정이 Sonnet 에도 걸리고, 미리보기 생성은 채팅
+    생성의 배정을 물려받는다. 셋 다 Bedrock 이 아니라 직결이어야 한다."""
+    loaded = _use_production_env(monkeypatch)
+
+    for call_site in ("chat_generate", "preview_generate", "replay_generate"):
+        assert pick_backend(call_site, "sonnet", loaded.llm_call_site_backends) == ("sonnet", "anthropic"), call_site
+    for lane in get_args(ChatRoutingLane):
+        route = _resolve(PromptRoutes.empty(), lane, "sonnet", "chat_generate")
+        assert (route.call_model, route.backend, route.source) == ("sonnet", "anthropic", "room"), lane
+
+
+def test_production_env_judges_a_sonnet_room_with_haiku_on_the_direct_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 행은 스토리 Opus 방의 스탯 판정 하나다. Sonnet 방 칸에는 행이 없어 판정·요약·추출은 모델 설정(Haiku)과 env 배정(직결)으로
+    풀리고 — Gemini 방과 같은 경로다 — Opus 칸의 행이 Sonnet 칸으로 번지지 않는다. 그 행의 Opus 칸 해석은 그대로다."""
+    _use_production_env(monkeypatch)
+    routes = PromptRoutes.from_rows([_row("stat_judgment", room_model="opus", chain_model="haiku", call_model="haiku")])
+
+    compared = 0
+    for lane in get_args(ChatRoutingLane):
+        for stage in LANE_STAGES[lane]:
+            if STAGES[stage].kind != "structured":
+                continue
+            for call_site in stage_call_sites(stage):
+                route = _resolve(routes, lane, "sonnet", stage, call_site)
+                assert (route.source, route.call_model, route.backend, route.skipped) == (
+                    "env",
+                    "haiku",
+                    "anthropic",
+                    None,
+                ), (lane, stage, call_site)
+                compared += 1
+    opus_stat = _resolve(routes, "story", "opus", "stat_judgment")
+
+    assert compared > 0
+    assert (opus_stat.source, opus_stat.chain_model, opus_stat.call_model, opus_stat.backend) == (
+        "row",
+        "haiku",
+        "haiku",
+        "anthropic",
+    )
+
+
+def test_the_judgment_only_model_stays_off_the_chat_room_axis() -> None:
+    """판정 전용 `haiku` 는 글쓰기 모델도 방 모델도 아니다 — 방 모델 축을 넓혀도 그 값으로 글을 쓰는 방 칸은 생기지 않는다."""
+    assert "haiku" not in get_args(ChatModelId)
+    for lane in get_args(ChatRoutingLane):
+        for stage in LANE_STAGES[lane]:
+            assert "haiku" not in stage_room_models(lane, stage), (lane, stage)
+
+
+# --- 채팅에 연 Haiku 글쓰기 방 ------------------------------------------------------------------------------------------
+
+
+def test_a_haiku_writer_room_generation_row_on_bedrock_is_refused_and_never_applied(save_env: pytest.MonkeyPatch) -> None:
+    """Haiku 글쓰기 생성 경로는 직결뿐이다 — Bedrock 행은 저장 검사가 거부하고, 표에 들어와 있어도 해석이 방 규칙(직결)으로 돈다."""
+    save_env.setattr(settings, "llm_call_site_backends", {"chat_generate": "bedrock"})
+    save_env.setattr(settings, "bedrock_access_key_id", "AKIATEST")
+    save_env.setattr(settings, "bedrock_secret_access_key", "secret")
+    save_env.setattr(settings, "bedrock_region", "ap-northeast-2")
+
+    refused = _rules(
+        [_input("chat_generate", room_model="haiku_writer", chain_model=None, call_model="haiku_writer", backend="bedrock")]
+    )
+    route = _resolve(
+        PromptRoutes.from_rows(
+            [
+                _row(
+                    "chat_generate",
+                    room_model="haiku_writer",
+                    chain_model=None,
+                    call_model="haiku_writer",
+                    backend="bedrock",
+                )
+            ]
+        ),
+        "story",
+        "haiku_writer",
+        "chat_generate",
+    )
+
+    assert refused == [(0, "pair-not-allowed")]
+    assert (route.source, route.call_model, route.backend) == ("room", "haiku_writer", "anthropic")
+    assert route.skipped is not None
+    assert route.skipped.reason == "pair-not-allowed"
+
+
+def test_the_writer_only_haiku_is_not_a_judgment_pair() -> None:
+    """판정은 판정 전용 `haiku` 가 맡는다 — 글쓰기 id 를 부를 모델로 고른 판정 행은 허용 목록 밖이다."""
+    assert ("haiku_writer", "anthropic") in ALLOWED_ROUTE_PAIRS["generation"]
+    assert all(model != "haiku_writer" for model, _ in ALLOWED_ROUTE_PAIRS["structured"])
+
+
+def test_production_env_writes_a_haiku_writer_room_direct_and_judges_it_with_the_judgment_only_haiku(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """운영 env 와 운영 행 하나(스토리 Opus 방의 스탯 판정)에서, 표가 빈 Haiku 글쓰기 방의 생성은 방 모델로 직결에 가고, 판정·요약·
+    추출 단계는 모델 설정(판정 전용 `haiku`)과 env 배정(직결)으로 풀린다 — 읽는 체인도 판정 전용 `haiku` 다. Bedrock 기본(Haiku
+    4.5)으로 가지 않는 근거는 운영 배정이라 운영 env 로 고정한다. Opus 칸의 행은 번지지 않는다."""
+    _use_production_env(monkeypatch)
+    routes = PromptRoutes.from_rows([_row("stat_judgment", room_model="opus", chain_model="haiku", call_model="haiku")])
+
+    compared = 0
+    for lane in get_args(ChatRoutingLane):
+        generation = _resolve(routes, lane, "haiku_writer", "chat_generate")
+        assert (generation.source, generation.call_model, generation.backend) == (
+            "room",
+            "haiku_writer",
+            "anthropic",
+        ), lane
+        for stage in LANE_STAGES[lane]:
+            if STAGES[stage].kind != "structured":
+                continue
+            for call_site in stage_call_sites(stage):
+                route = _resolve(routes, lane, "haiku_writer", stage, call_site)
+                assert (route.source, route.chain_model, route.call_model, route.backend, route.skipped) == (
+                    "env",
+                    "haiku",
+                    "haiku",
+                    "anthropic",
+                    None,
+                ), (lane, stage, call_site)
+                compared += 1
+    opus_stat = _resolve(routes, "story", "opus", "stat_judgment")
+
+    assert compared > 0
+    assert (opus_stat.source, opus_stat.chain_model, opus_stat.call_model, opus_stat.backend) == (
+        "row",
+        "haiku",
+        "haiku",
+        "anthropic",
+    )
+
+
+def test_the_haiku_writer_room_is_on_the_chat_axes_but_not_on_the_novel_axis() -> None:
+    for lane in get_args(ChatRoutingLane):
+        for stage in LANE_STAGES[lane]:
+            assert "haiku_writer" in stage_room_models(lane, stage), (lane, stage)
+    for stage in LANE_STAGES["novel"]:
+        assert "haiku_writer" not in stage_room_models("novel", stage), stage
+
+
+@pytest.mark.parametrize("lane", ["story", "character"])
+def test_a_judgment_row_reading_the_writer_only_haiku_chain_is_refused_and_never_parsed(
+    save_env: pytest.MonkeyPatch, lane: str
+) -> None:
+    """Haiku 글쓰기 체인의 판정·요약 문안은 게시 검증을 맞추려고 둔 Sonnet 사본이다 — 행이 그 체인을 읽게 두면 운영자가 고친
+    판정 문안이 판정 전용 체인과 따로 놀고, 판정 전용 체인을 고쳐도 그 칸에는 닿지 않는다. 같은 행의 판정 전용 체인은 저장된다."""
+    room_model = "haiku_writer"
+    refused = _input("memory_fact", lane=lane, room_model=room_model, chain_model="haiku_writer")
+    allowed = _input("memory_fact", lane=lane, room_model=room_model, chain_model="haiku")
+
+    assert _rules([refused]) == [(0, "writer-only-chain")]
+    assert parse_route_row(refused) is None
+    assert _rules([allowed]) == []
+    assert parse_route_row(allowed) is not None

@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 
-import { isPremiumChatModel, type ChatModel, type ChatModelId } from "@/entities/chat-model";
+import { isDefaultChatModel, type ChatModel, type ChatModelId } from "@/entities/chat-model";
 
 import { useSetRoomChatModelMutation } from "../api/useSetRoomChatModelMutation";
 import { CHAT_MODEL_NOT_ALLOWED_MESSAGE, isChatModelNotAllowedError } from "../model/chatModelError";
@@ -8,17 +8,17 @@ import { ChatModelOptions } from "./ChatModelOptions";
 
 type ChatModelPickerProps = {
   roomId: string;
-  /** 방이 지금 실제로 쓰는 모델(유효 모델). 저장한 상위 모델을 쓸 수 없게 되면 서버가 기본 모델로 알려 준다. */
+  /** 방이 지금 실제로 쓰는 모델(유효 모델). 저장한 모델을 쓸 수 없게 되면 서버가 기본 모델로 알려 준다. */
   currentModelId: ChatModelId;
   models: ChatModel[];
   onChanged: () => void;
 };
 
-/** 대화방의 글쓰기 모델 목록. 기본 모델로는 누르면 바로 바꾸고, 상위 모델은 고른 뒤 한 번 더 확인받는다.
+/** 대화방의 글쓰기 모델 목록. 기본 모델로는 누르면 바로 바꾸고, 그 밖의 모델은 고른 뒤 한 번 더 확인받는다.
  *
- * 상위 모델에만 확인을 두는 이유: 그 모델은 무료 대화 없이 턴마다 클로버를 쓰고, 바꾼 뒤에는 하루 한 번 확인도 묻지
- * 않는다 — 이 확인이 그 방에서 클로버를 쓰겠다는 유일한 동의다. 기본 모델로 되돌리는 것은 돈이 덜 드는 쪽이라 묻지
- * 않는다(허용을 거둔 뒤에도 되돌릴 수 있다).
+ * 기본 모델이 아닌 모델에만 확인을 두는 이유: 그 모델은 단가가 더 높고, 바꾼 뒤에는 턴마다 따로 묻지 않는다 — 이 확인이
+ * 그 방에서 그 단가로 클로버를 쓰겠다는 유일한 동의다. 기본 모델로 되돌리는 것은 돈이 덜 드는 쪽이라 묻지
+ * 않는다(모델을 숨긴 뒤에도 되돌릴 수 있다). 기본 모델인지는 서버 목록으로 정하고, 목록으로 정할 수 없으면 묻는 쪽이다.
  *
  * 목록·확인 블록의 화면은 `ChatModelOptions` 가 그리고, 여기는 고른 모델을 방에 저장하고 결과를 알리는 일만 한다. */
 export function ChatModelPicker({ roomId, currentModelId, models, onChanged }: ChatModelPickerProps) {
@@ -48,7 +48,7 @@ export function ChatModelPicker({ roomId, currentModelId, models, onChanged }: C
       listLabel="이 대화방의 글쓰기 모델"
       commitLabel="이 모델로 바꾸기"
       isCommitting={setRoomChatModelMutation.isPending}
-      needsConfirm={isPremiumChatModel}
+      needsConfirm={(modelId) => isDefaultChatModel(models, modelId) !== true}
       onCommit={save}
     />
   );

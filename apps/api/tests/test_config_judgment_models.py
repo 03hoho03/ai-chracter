@@ -24,14 +24,12 @@ _MODEL_KEYS = (
     "MEMORY_SUMMARY_MODEL",
     "MEMORY_EPISODE_MODEL",
     "MEMORY_FACT_MODEL",
+    "MEMORY_IMPRESSION_MODEL",
 )
 _BEDROCK_KEYS = ("BEDROCK_ACCESS_KEY_ID", "BEDROCK_SECRET_ACCESS_KEY", "BEDROCK_REGION")
 _ANTHROPIC_KEY = "ANTHROPIC_DIRECT_API_KEY"
 _ASSIGN = "LLM_CALL_SITE_BACKENDS"
 _HAIKU_ID_KEYS = ("BEDROCK_HAIKU_MODEL_ID", "ANTHROPIC_HAIKU_MODEL_ID")
-# 운영 env 에 아직 모델 줄·배정이 없는 호출 위치. 인상 생성은 쓰기 스위치가 꺼져 있어 운영에서 부르지 않고, 그래서 모델은 코드
-# 기본값(`gemini`)이다 — 스위치를 켤 때 모델 줄(`MEMORY_IMPRESSION_MODEL=haiku`)과 배정을 운영 env 에 넣고 여기서 뺀다.
-_NOT_YET_IN_PRODUCTION = frozenset({"chat_memory_impression"})
 _EFFORT_KEYS = ("ANTHROPIC_CHAT_EFFORT", "ANTHROPIC_STRUCTURED_EFFORT")
 _BEDROCK_CREDENTIALS = {
     "BEDROCK_ACCESS_KEY_ID": "AKIATEST",
@@ -58,7 +56,8 @@ def test_every_judgment_and_summary_model_defaults_to_gemini(monkeypatch: pytest
         loaded.memory_summary_model,
         loaded.memory_episode_model,
         loaded.memory_fact_model,
-    ) == ("gemini", "gemini", "gemini", "gemini", "gemini", "gemini")
+        loaded.memory_impression_model,
+    ) == ("gemini", "gemini", "gemini", "gemini", "gemini", "gemini", "gemini")
     assert loaded.bedrock_haiku_model_id == "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     # 직결은 Haiku 5.5, Bedrock 은 Haiku 4.5 다 — 이 저장소의 판정 평가는 직결로만 하고 Bedrock 의 Haiku 5.5 구조화 출력은
     # 확인하지 않아 그쪽 id 는 옮기지 않았다.
@@ -223,8 +222,9 @@ def test_the_judgment_only_model_is_not_a_premium_writing_model(monkeypatch: pyt
 def test_the_production_env_judges_and_summarizes_with_haiku_through_anthropic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """운영은 판정·요약·기억 추출 모델 여섯을 모두 `haiku` 로 두고 그 호출 위치 전부를 Anthropic 직결로 배정해 돈다. Haiku 의
-    실제 id·깊이 키는 운영에 없어 코드 기본값(직결 Haiku 5.5, 사고를 끈 요청이 받는 깊이)으로 뜨고, Bedrock 자격 없이 기동한다."""
+    """운영은 판정·요약·기억 추출·인상 모델 일곱을 모두 `haiku` 로 두고 그 호출 위치 전부를 Anthropic 직결로 배정해 돈다.
+    Haiku 의 실제 id·깊이 키는 운영에 없어 코드 기본값(직결 Haiku 5.5, 사고를 끈 요청이 받는 깊이)으로 뜨고, Bedrock 자격 없이
+    기동한다."""
     assert set(_MODEL_KEYS) <= set(PRODUCTION_ENV_NAMES)
     assert not {*_HAIKU_ID_KEYS, *_EFFORT_KEYS, *_BEDROCK_KEYS} & set(PRODUCTION_ENV_NAMES)
 
@@ -237,14 +237,11 @@ def test_the_production_env_judges_and_summarizes_with_haiku_through_anthropic(
         loaded.memory_summary_model,
         loaded.memory_episode_model,
         loaded.memory_fact_model,
+        loaded.memory_impression_model,
     ]
-    assert models == ["haiku"] * 6
+    assert models == ["haiku"] * 7
     assert loaded.anthropic_haiku_model_id.startswith("claude-haiku-5")
-    judged = [
-        cs
-        for cs, policy in CALL_POLICIES.items()
-        if policy.model_setting is not None and cs not in _NOT_YET_IN_PRODUCTION
-    ]
+    judged = [cs for cs, policy in CALL_POLICIES.items() if policy.model_setting is not None]
     assert judged
     for call_site in judged:
         model = backends.call_site_model(call_site, lambda name: str(getattr(loaded, name)))
@@ -266,8 +263,7 @@ _PRODUCTION_ROUTES: dict[tuple[LLMCallSite, PromptSetModelId], tuple[PromptSetMo
     ("chat_memory_summary", "gemini"): ("haiku", "anthropic"),
     ("chat_memory_episode", "gemini"): ("haiku", "anthropic"),
     ("chat_memory_fact", "gemini"): ("haiku", "anthropic"),
-    # 인상 생성은 운영 env 에 모델 줄도 배정 줄도 아직 없어 기본(Gemini)으로 간다.
-    ("chat_memory_impression", "gemini"): ("gemini", "gemini"),
+    ("chat_memory_impression", "gemini"): ("haiku", "anthropic"),
     ("chat_scene_judgment", "gemini"): ("haiku", "anthropic"),
     ("preview_generate", "gemini"): ("gemini", "gemini"),
     ("preview_stat_judgment", "gemini"): ("haiku", "anthropic"),
@@ -287,6 +283,12 @@ _PRODUCTION_ROUTES: dict[tuple[LLMCallSite, PromptSetModelId], tuple[PromptSetMo
     ("novel_publish_screen", "gemini"): ("gemini", "gemini"),
     ("novel_illustration_screen", "gemini"): ("gemini", "gemini"),
     ("replay_generate", "gemini"): ("gemini", "gemini"),
+    # 정본 기억 호출은 정책 행이 Anthropic 직결이지만 모델 설정이 없어 gemini 로 계산되고, 그 구현이 gemini 를 서비스하지 않아
+    # Gemini 로 간다.
+    ("novel_bible_extract_events", "gemini"): ("gemini", "gemini"),
+    ("novel_bible_extract_facts", "gemini"): ("gemini", "gemini"),
+    ("novel_bible_extract_knowledge", "gemini"): ("gemini", "gemini"),
+    ("novel_bible_judge", "gemini"): ("gemini", "gemini"),
     ("chat_generate", "opus"): ("opus", "anthropic"),
     ("replay_generate", "opus"): ("opus", "anthropic"),
     ("novelize_chapter", "opus"): ("opus", "anthropic"),
@@ -294,8 +296,8 @@ _PRODUCTION_ROUTES: dict[tuple[LLMCallSite, PromptSetModelId], tuple[PromptSetMo
 
 
 def test_the_production_env_starts_and_routes_every_call_site_as_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
-    """운영 키 조합(판정·요약·추출 모델 여섯 `haiku`, 상위 모델 스위치 켬, 판정·요약 호출 위치를 Anthropic 직결로 둔 배정, 자격은
-    가짜 값, Bedrock 자격 없음)으로 설정이 뜨고, 그 프로세스의 호출 위치마다 경로가 적어 둔 값과 같다. 기동 검증 규칙을 더하거나
+    """운영 키 조합(판정·요약·추출·인상 모델 일곱 `haiku`, 상위 모델 스위치 켬, 판정·요약 호출 위치를 Anthropic 직결로 둔
+    배정, 자격은 가짜 값, Bedrock 자격 없음)으로 설정이 뜨고, 그 프로세스의 호출 위치마다 경로가 적어 둔 값과 같다. 기동 검증 규칙을 더하거나
     바꿀 때 운영 env 그대로 새 이미지가 뜨는지를 여기서 먼저 본다."""
     loaded = load_production_env(monkeypatch)
 
@@ -315,23 +317,19 @@ def test_the_production_env_starts_and_routes_every_call_site_as_recorded(monkey
 # 배정을 다른 호출 위치에서 물려받는 호출은 아래 "한 줄 빠짐" 경우가 거부가 아니다 — 장면 헤더 판정은 운영 배정에 자기 줄이 없어
 # 원래 호출 위치의 줄이 빠지는 경우가 덮고, 미리보기 판정은 줄이 빠지면 채팅 짝을 물려받아 뜬다(이 파일 끝).
 _JUDGED_CALL_SITES = [
-    cs
-    for cs, policy in CALL_POLICIES.items()
-    if policy.model_setting is not None and policy.backend_from is None and cs not in _NOT_YET_IN_PRODUCTION
+    cs for cs, policy in CALL_POLICIES.items() if policy.model_setting is not None and policy.backend_from is None
 ]
 
 
 def test_every_judgment_call_site_has_a_missing_line_case() -> None:
     """운영 배정에서 줄 하나가 빠진 경우를 판정 호출 위치마다 한 규칙이 덮는다 — 자기 줄로 가는 호출은 기동 거부(아래), 미리보기
     판정은 채팅 짝 물려받기(이 파일 끝). 장면 헤더 둘은 운영에 자기 줄이 없어 물려받는 원래 호출 위치의 경우가 덮는다. 물려받는
-    호출이 늘어 위 목록에서 조용히 빠지는 호출이 없게 한다. 운영 env 에 아직 줄이 없는 호출(위 `_NOT_YET_IN_PRODUCTION`)은 빠질
-    줄이 없어 따로 센다."""
+    호출이 늘어 위 목록에서 조용히 빠지는 호출이 없게 한다."""
     judged = {call_site for call_site, policy in CALL_POLICIES.items() if policy.model_setting is not None}
 
     assert judged == {
         *_JUDGED_CALL_SITES,
         *_PRODUCTION_PREVIEW_LINES,
-        *_NOT_YET_IN_PRODUCTION,
         "chat_scene_judgment",
         "preview_scene_judgment",
     }
@@ -362,7 +360,20 @@ def test_production_env_missing_one_judgment_model_line_refuses_to_start(
 
 
 def test_judgment_model_values_are_the_prompt_chain_ids() -> None:
-    assert set(get_args(PromptSetModelId)) == {"gemini", "sonnet", "opus", "haiku"}
+    assert set(get_args(PromptSetModelId)) == {"gemini", "haiku_writer", "sonnet", "opus", "haiku"}
+
+
+@pytest.mark.parametrize("model_key", _MODEL_KEYS)
+def test_the_writer_only_haiku_chain_is_refused_as_a_judgment_model(
+    monkeypatch: pytest.MonkeyPatch, model_key: str
+) -> None:
+    """`haiku_writer` 는 체인 모델 축에 있지만 글쓰기 전용이다 — 판정은 판정 전용 `haiku` 가 맡는다. 자격이 다 있어도 거부한다."""
+    with pytest.raises(ValidationError, match="haiku_writer"):
+        _load(
+            monkeypatch,
+            **{model_key: "haiku_writer", _ANTHROPIC_KEY: "sk-ant-test"},
+            **_BEDROCK_CREDENTIALS,
+        )
 
 
 # ── 장면 헤더 판정의 배정 물려받기 ──────────────────────────────────────────────────────────────

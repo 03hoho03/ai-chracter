@@ -22,7 +22,7 @@ from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import ChatModelId
 from api.novelize import output
 from api.novelize.prompts import build_novelize_chapter_prompt
-from factories import undo_seeded_rows_above
+from factories import set_ids_seeded_above, undo_seeded_rows_above
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -38,32 +38,7 @@ def _load(revision: str) -> ModuleType:
 
 _M = _load("a7a87e3ba631")
 _NOVELIZE = set(_M.CHANNELS)
-# 이 리비전 뒤에 story 레인 Gemini 체인에 스탯 규칙 판정 채널을 더한 세트를 게시하는 리비전 — 버전이 이 리비전의
-# 세트들보다 뒤다.
-_STAT_RULE_SET_ID: uuid.UUID = _load("d9768bc0cfee").NEW_SET_ID
-# 이 리비전 뒤에 채팅 레인 Claude·판정 전용 체인에 판정 문안 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
-_JUDGMENT_CHAIN_SET_IDS: list[uuid.UUID] = list(_load("1a843a0b2d8f").NEW_SET_IDS.values())
-# 그 뒤 채팅 두 레인의 여덟 체인에 장면 기억 문안 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
-_MEMORY_EPISODE_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("fc6f0e134782").NEW_SET_IDS
-# 그 뒤 같은 여덟 체인에 관계·사실 기억 문안 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
-_MEMORY_FACT_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("5cab2abe4e7b").NEW_SET_IDS
-# 그 뒤 글을 쓰는 여섯 체인에 회상 문안만 바꾼 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
-_RECALL_PRIORITY_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("726aad108167").NEW_SET_IDS
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
-_FACT_INSTRUCTION_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("e4e407a62d03").NEW_SET_IDS
-# 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
-_SECRET_MARKING_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0aeadefcf159").NEW_SET_IDS
-# 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
-_SCENE_JUDGMENT_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0346abdbcc92").NEW_SET_IDS
-# 그 뒤 여덟 체인에 장면 추출 지시문만 바꾼 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
-_EPISODE_KNOWN_BY_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("eb8d3cc6d5c2").NEW_SET_IDS
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
-_FACT_KNOWN_BY_ORDER_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("c1f3945cb802").NEW_SET_IDS
-# 그 뒤 여덟 체인의 요약 비밀 표기 슬롯 본문에 미확인 주장의 출처 규칙을 더한 세트를 게시하는 리비전의 세트.
-_SOURCE_MARKING_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0c1a85bc5c2f").NEW_SET_IDS
-# 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전의 세트.
-_SCENE_INSTRUCTION_V2_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0f82ea9f9fa5").NEW_SET_IDS
-# 그 뒤 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전의 세트 — 아래 소설화 행 제거 리비전을
+# 이 리비전 뒤에 채팅 두 레인 여덟 체인에 인상 생성 문안 채널을 더한 세트를 게시하는 리비전의 세트 — 아래 소설화 행 제거 리비전을
 # 되돌리면 두 레인의 활성 Gemini 세트다.
 _IMPRESSION_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("6558ab4d3dbc").NEW_SET_IDS
 # 그 뒤 소설 레인 세 체인에 구성안 문안을 더한 세트를 게시하는 리비전 — head 의 소설 레인 활성이라, "이 리비전 직후 상태"를
@@ -205,20 +180,8 @@ async def test_versions_follow_the_global_sequence_and_the_copy_is_older(db_sess
         sa.select(sa.func.max(sa.cast(PromptSet.version, sa.Integer))).where(
             PromptSet.status == "published",
             PromptSet.lane.not_in(("novel", "novel_screen")),
-            PromptSet.id != _STAT_RULE_SET_ID,
-            PromptSet.id.not_in(_JUDGMENT_CHAIN_SET_IDS),
-            PromptSet.id.not_in(list(_MEMORY_EPISODE_SET_IDS.values())),
-            PromptSet.id.not_in(list(_MEMORY_FACT_SET_IDS.values())),
-            PromptSet.id.not_in(list(_RECALL_PRIORITY_SET_IDS.values())),
-            PromptSet.id.not_in(list(_FACT_INSTRUCTION_SET_IDS.values())),
-            PromptSet.id.not_in(list(_SECRET_MARKING_SET_IDS.values())),
-            PromptSet.id.not_in(list(_SCENE_JUDGMENT_SET_IDS.values())),
-            PromptSet.id.not_in(list(_EPISODE_KNOWN_BY_SET_IDS.values())),
-            PromptSet.id.not_in(list(_FACT_KNOWN_BY_ORDER_SET_IDS.values())),
-            PromptSet.id.not_in(list(_SOURCE_MARKING_SET_IDS.values())),
-            PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2_SET_IDS.values())),
-            PromptSet.id.not_in(list(_IMPRESSION_SET_IDS.values())),
-            PromptSet.id.not_in(list(_CHAT_NOVEL_ROWS_DROP.NEW_SET_IDS.values())),
+            # 이 리비전 위에서 심은 세트는 버전이 이 리비전보다 뒤라 뺀다(레인 무관 — 버전 번호는 전 레인이 이어 쓴다).
+            PromptSet.id.not_in(set_ids_seeded_above(_M.revision)),
         )
     )
     assert others is not None

@@ -53,6 +53,12 @@ def _models_of(call_site: LLMCallSite) -> tuple[ChatModelId, ...]:
     return _MODELS if CALL_POLICIES[call_site].model_selectable else (DEFAULT_CHAT_MODEL,)
 
 
+def _bedrock_or_gemini_models_of(call_site: LLMCallSite) -> tuple[ChatModelId, ...]:
+    """기본 구현을 그대로 적는 배정이 경로를 바꾸지 않는 모델. Haiku 글쓰기의 기본 구현(직결)을 적으면 배정이 모델이 아니라 호출
+    위치 단위라 같은 호출의 Sonnet·Opus 경로도 직결로 옮겨 그 자격을 묻는다 — 그 경우는 아래 Haiku 글쓰기 테스트가 본다."""
+    return tuple(model for model in _models_of(call_site) if model != "haiku_writer")
+
+
 def _register_fake(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -120,7 +126,7 @@ def test_the_declared_default_id_of_every_served_model_has_a_price() -> None:
 def test_writing_down_the_default_backend_of_a_call_is_accepted_at_boot(call_site: LLMCallSite) -> None:
     """지금 기본으로 가는 구현을 그대로 배정하면 아무것도 바뀌지 않으므로 기동 검증이 받아야 한다 — 받지 않으면 능력 표나
     호출 방식 표가 지금 라우팅과 어긋난 것이다."""
-    for model in _models_of(call_site):
+    for model in _bedrock_or_gemini_models_of(call_site):
         assert assignment_errors({call_site: MODEL_BACKENDS[model][0]}, _default_setting) == []
 
 
@@ -534,3 +540,35 @@ def test_the_judgment_dump_names_the_id_the_judgment_model_sends(monkeypatch: py
 
     records = [json.loads(line) for line in dump_path.read_text(encoding="utf-8").splitlines()]
     assert [r["model"] for r in records] == [settings.bedrock_haiku_model_id, "ending-judge-x"]
+
+
+# ── Haiku 글쓰기 ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_the_haiku_writer_is_served_only_by_the_direct_backend_with_its_own_id_setting() -> None:
+    """Bedrock 행에 없으므로 어떤 배정으로도 Bedrock 의 다른 Haiku 버전으로 가지 않는다. 실제 id 는 판정 전용 `haiku` 와 다른
+    설정에서 읽는다."""
+    assert MODEL_BACKENDS["haiku_writer"] == ("anthropic",)
+    assert BACKENDS["anthropic"].model_id_settings["haiku_writer"] == "anthropic_haiku_writer_model_id"
+    assert "haiku_writer" not in BACKENDS["bedrock"].model_id_settings
+
+
+@pytest.mark.parametrize("call_site", ["chat_generate", "preview_generate", "replay_generate"])
+@pytest.mark.parametrize("assigned", ["bedrock", "gemini", None])
+def test_a_haiku_writer_turn_goes_direct_whatever_the_assignment(
+    call_site: LLMCallSite, assigned: BackendId | None
+) -> None:
+    assignments: dict[LLMCallSite, BackendId] = {} if assigned is None else {call_site: assigned}
+
+    assert pick_backend(call_site, "haiku_writer", assignments) == ("haiku_writer", "anthropic")
+
+
+def test_the_judgment_only_haiku_keeps_its_routes_and_ids() -> None:
+    """Haiku 글쓰기를 더해도 판정 전용 `haiku` 는 그대로다 — 배정이 없으면 Bedrock(Haiku 4.5), 직결 배정이면 직결."""
+    assert pick_backend("chat_stat_judgment", "haiku", {}, call_model="haiku") == ("haiku", "bedrock")
+    assert pick_backend("chat_stat_judgment", "haiku", {"chat_stat_judgment": "anthropic"}, call_model="haiku") == (
+        "haiku",
+        "anthropic",
+    )
+    assert Settings.model_fields["bedrock_haiku_model_id"].default == "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+    assert Settings.model_fields["anthropic_haiku_model_id"].default == "claude-haiku-5-5"

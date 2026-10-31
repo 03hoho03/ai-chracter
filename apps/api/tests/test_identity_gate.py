@@ -1,9 +1,10 @@
-"""미인증 회원 게이트: 채팅 무료분 0(빌더 미리보기 포함)·미션 수령 차단, `/me/clover` 의 유료 잔액, 탈퇴한 같은 사람의
-1회성 미션 재수령 차단.
+"""미인증 회원 게이트: 채팅 잔액 부족의 인증 요구 403(빌더 미리보기 포함)·미션 수령 차단, `/me/clover` 의 유료 잔액,
+탈퇴한 같은 사람의 1회성 미션 재수령 차단.
 
 **스위치가 꺼져 있으면 지금과 같다** — 그래서 게이트가 거는 자리마다 같은 입력으로 스위치만 바꾼 꺼짐/켜짐 쌍을 둔다. 꺼짐
 쪽이 기존 동작이고, 두 쪽 결과가 갈리는 것으로 게이트가 그 스위치 하나에 묶여 있음을 본다. 스위치는 로컬 `.env` 가 아니라
-아래 autouse 픽스처가 정한다(꺼짐). 포트원 키도 테스트가 정한다 — 게이트는 본인인증 설정이 있어야 켜진다.
+아래 autouse 픽스처가 정한다(꺼짐). 포트원 키도 테스트가 정한다 — 게이트는 본인인증 설정이 있어야 켜진다. 채팅 차감 자체는
+꺼짐·켜짐이 같다(하루 무료분이 누구에게도 없다) — 채팅에서 갈리는 것은 잔액이 모자랄 때의 응답이다.
 
 채팅 차감 판정은 `charge_chat_turn` 을 직접 부른다(LLM·방 없이 판정만). 403 이 실제 라우트까지 나가는지는 방 전송과 빌더
 미리보기 게이트에서 따로 본다.
@@ -25,6 +26,7 @@ from api.core import clover, rate_limit_gate
 from api.core.config import settings
 from api.core.rate_limit import check_rate_limit
 from api.chat.router import enforce_preview_chat_charge
+from api.chat.schemas import ChatMessageCreateRequest
 from api.core.rate_limit_gate import ChatCharge, charge_chat_turn
 from api.core.security import hash_identity_ci
 from api.db.models.auth import User, WithdrawnIdentity
@@ -95,7 +97,7 @@ async def _charge(db: AsyncSession, user: User) -> ChatCharge:
 
 @pytest.fixture
 def scopes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """채팅 게이트가 센 Redis 창의 이름. 일일 창(`chat_day`)이 없으면 그 회원의 무료 카운터는 올라가지 않았다."""
+    """채팅 게이트가 센 Redis 창의 이름. 버스트 창 하나뿐이면 하루 무료 카운터 같은 다른 창은 세지 않았다."""
     seen: list[str] = []
     async def spy(scope: str, key: str, limit: int, *, window_seconds: int) -> int:
         seen.append(scope)
@@ -124,79 +126,70 @@ async def _forbidden(call: Callable[[], Awaitable[object]]) -> dict[str, object]
 
 # ── 채팅 ─────────────────────────────────────────────────────────────────
 @_GATE
-async def test_unverified_free_turn_becomes_a_clover_turn(
+async def test_unverified_turn_is_a_clover_turn_whether_or_not_the_gate_is_on(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, scopes: list[str], gate: bool
 ) -> None:
-    """무료분이 남은 미인증 회원(확인 완료, 잔액 있음). 꺼짐: 지금처럼 무료로 지나고 일일 창을 센다. 켜짐: 무료분이 0 이라
-    클로버로 내고, 일일 창을 세지 않는다(인증한 날도 하루 무료분 0 에서 시작한다)."""
+    """잔액 있는 미인증 회원의 Gemini 턴은 게이트와 무관하게 클로버로 나간다 — 하루 무료분이 누구에게도 없어, 게이트가 채팅에서
+    바꾸는 것은 잔액이 모자랄 때의 응답뿐이다(아래 테스트). 버스트 밖의 창은 세지 않는다."""
     _set_gate(monkeypatch, gate)
     user = await _member(db_session, balance=100, **_confirmed_today())
 
     charge = await _charge(db_session, user)
 
-    if gate:
-        assert (charge.source, charge.clover_amount) == ("clover", clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)
-        assert scopes == ["chat_burst"]
-        assert await _balance(db_session, user) == 100 - clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
-    else:
-        assert charge.source == "free"
-        assert scopes == ["chat_burst", "chat_day"]
-        assert await _balance(db_session, user) == 100
+    assert (charge.source, charge.clover_amount) == ("clover", clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)
+    assert scopes == ["chat_burst"]
+    assert await _balance(db_session, user) == 100 - clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
 
 
-@_GATE
-async def test_daily_quota_sequence_is_unchanged_when_the_gate_is_off(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, gate: bool
+@pytest.mark.parametrize(
+    ("gate", "expected"),
+    [
+        pytest.param(False, (429, "CLOVER_REQUIRED"), id="gate-off"),
+        pytest.param(True, (403, "IDENTITY_VERIFICATION_REQUIRED"), id="gate-on"),
+    ],
+)
+async def test_unverified_without_clover_gets_identity_403_only_while_the_gate_is_on(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, gate: bool, expected: tuple[int, str]
 ) -> None:
-    """꺼짐: 하루 무료분까지 무료, 그다음 턴부터 클로버(지금 흐름 그대로). 켜짐: 첫 턴부터 클로버."""
-    _set_gate(monkeypatch, gate)
-    monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 100)
-    user = await _member(db_session, balance=1_000, **_confirmed_today())
-
-    sources = [(await _charge(db_session, user)).source for _ in range(rate_limit_gate.CHAT_DAILY_LIMIT + 1)]
-
-    expected_free = 0 if gate else rate_limit_gate.CHAT_DAILY_LIMIT
-    assert sources == ["free"] * expected_free + ["clover"] * (len(sources) - expected_free)
-
-
-@_GATE
-async def test_unverified_without_clover_gets_identity_403(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, gate: bool
-) -> None:
-    """켜짐: 0원 미인증 회원은 `CLOVER_REQUIRED` 429(자정에 무료분이 돌아온다는 거짓)가 아니라 인증 요구 403. 꺼짐: 무료."""
+    """켜짐: 0원 미인증 회원은 `CLOVER_REQUIRED` 429 가 아니라 인증 요구 403 이다 — 그 회원이 풀 길은 인증이다. 꺼짐: 다른 회원과
+    같은 잔액 부족 429. 두 쪽 모두 아무것도 깎이지 않는다."""
     _set_gate(monkeypatch, gate)
     user = await _member(db_session, balance=0, **_confirmed_today())
-
-    if gate:
-        assert await _forbidden(lambda: _charge(db_session, user)) == {"code": "IDENTITY_VERIFICATION_REQUIRED"}
-    else:
-        assert (await _charge(db_session, user)).source == "free"
-    assert await _ledger_kinds(db_session, user.id) == []
-
-
-async def test_unverified_with_clover_is_asked_to_confirm_first(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """오늘 확인하지 않았으면 깎기 전에 묻는다(무료분을 다 쓴 사람과 같은 확인 429). 아무것도 깎이지 않는다."""
-    _set_gate(monkeypatch, True)
-    user = await _member(db_session, balance=100)
 
     with pytest.raises(HTTPException) as caught:
         await _charge(db_session, user)
 
-    assert caught.value.status_code == 429
     assert isinstance(caught.value.detail, dict)
-    assert caught.value.detail["code"] == "CLOVER_CONFIRM_REQUIRED"
-    assert await _balance(db_session, user) == 100
+    assert (caught.value.status_code, caught.value.detail["code"]) == expected
+    assert await _ledger_kinds(db_session, user.id) == []
 
 
-async def test_verified_member_keeps_the_free_quota(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
-    """게이트가 켜져도 인증한 회원은 지금과 같다 — 게이트가 미인증 회원만 겨냥한다는 대조군."""
+async def test_unverified_with_clover_is_charged_without_confirmation(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """오늘 확인하지 않았어도 묻지 않고 깎는다 — 하루 무료분이 없어 "무료분을 다 쓴 순간"의 확인도 없다."""
     _set_gate(monkeypatch, True)
-    user = await _member(db_session, balance=100, **_confirmed_today(), **_verified())
+    user = await _member(db_session, balance=100)
 
-    assert (await _charge(db_session, user)).source == "free"
-    assert await _balance(db_session, user) == 100
+    charge = await _charge(db_session, user)
+
+    assert (charge.source, charge.clover_amount) == ("clover", clover.CLOVER_MODEL_PRICES["gemini"].chat_turn)
+    assert await _balance(db_session, user) == 100 - clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
+
+
+async def test_verified_member_without_clover_gets_the_clover_required_429(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """게이트가 켜져도 인증한 회원의 잔액 부족은 인증 요구가 아니라 `CLOVER_REQUIRED` 429 다 — 게이트가 미인증 회원만 겨냥한다는
+    대조군."""
+    _set_gate(monkeypatch, True)
+    user = await _member(db_session, balance=0, **_confirmed_today(), **_verified())
+
+    with pytest.raises(HTTPException) as caught:
+        await _charge(db_session, user)
+
+    assert isinstance(caught.value.detail, dict)
+    assert (caught.value.status_code, caught.value.detail["code"]) == (429, "CLOVER_REQUIRED")
 
 
 async def test_exempt_member_bypasses_the_gate(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -210,8 +203,8 @@ async def test_exempt_member_bypasses_the_gate(db_session: AsyncSession, monkeyp
 async def test_redis_failure_does_not_give_unverified_members_free_turns(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, gate: bool
 ) -> None:
-    """버스트 검사가 Redis 장애로 깨지면 지금은 무료로 통과시킨다(꺼짐). 켜짐: 원래 무료 턴이 없는 미인증 회원은 Redis 를
-    쓰지 않는 차감으로 낸다 — 장애가 그들에게 무료 턴을 주지 않는다."""
+    """버스트 검사가 Redis 장애로 깨져도 미인증 회원은 게이트와 무관하게 Redis 를 쓰지 않는 차감으로 낸다 — 장애가 무료 턴을
+    주지 않는다."""
     _set_gate(monkeypatch, gate)
     user = await _member(db_session, balance=100, **_confirmed_today())
 
@@ -223,12 +216,8 @@ async def test_redis_failure_does_not_give_unverified_members_free_turns(
 
     charge = await _charge(db_session, user)
 
-    if gate:
-        assert charge.source == "clover"
-        assert await _balance(db_session, user) == 100 - clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
-    else:
-        assert charge.source == "skipped"
-        assert await _balance(db_session, user) == 100
+    assert charge.source == "clover"
+    assert await _balance(db_session, user) == 100 - clover.CLOVER_MODEL_PRICES["gemini"].chat_turn
 
 
 async def test_redis_failure_with_no_clover_is_still_refused(
@@ -247,18 +236,26 @@ async def test_redis_failure_with_no_clover_is_still_refused(
 
 
 async def test_builder_preview_is_gated_too(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
-    """빌더 미리보기도 같은 게이트다 — 미인증 작가는 무료 미리보기 턴이 없고, 가진 클로버로는 미리보기를 할 수 있다."""
+    """빌더 미리보기도 같은 게이트다 — 미인증 작가는 가진 클로버로 미리보기를 하고, 모자라면 인증 요구 403 이다."""
     _set_gate(monkeypatch, True)
     broke = await _member(db_session, balance=0, **_confirmed_today())
     funded = await _member(db_session, balance=100, **_confirmed_today())
 
     detail = await _forbidden(
         lambda: enforce_preview_chat_charge(
-            user_id=broke.id, db=db_session, session_factory=_factory(db_session), model="gemini"
+            user_id=broke.id,
+            db=db_session,
+            session_factory=_factory(db_session),
+            model="gemini",
+            payload=ChatMessageCreateRequest(content="안녕"),
         )
     )
     charge = await enforce_preview_chat_charge(
-        user_id=funded.id, db=db_session, session_factory=_factory(db_session), model="gemini"
+        user_id=funded.id,
+        db=db_session,
+        session_factory=_factory(db_session),
+        model="gemini",
+        payload=ChatMessageCreateRequest(content="안녕"),
     )
 
     assert detail == {"code": "IDENTITY_VERIFICATION_REQUIRED"}
@@ -354,17 +351,6 @@ async def test_me_paid_clover_balance_is_readable_while_reconsent_is_pending(
     me = await db_client.get("/me")
     assert me.status_code == 200
     assert me.json()["paidCloverBalance"] == 500
-
-
-async def test_me_daily_free_chat_turns_is_the_gate_constant(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """화면 문구의 무료 대화 수는 게이트가 쓰는 상수 그 자체다 — 상수를 바꾸면 문구도 따라간다."""
-    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 7)
-    user = await _member(db_session)
-    await _login_as(db_client, user.id)
-
-    assert (await db_client.get("/me")).json()["dailyFreeChatTurns"] == 7
 
 
 @pytest.mark.parametrize(

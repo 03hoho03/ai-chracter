@@ -250,9 +250,10 @@ async def test_starting_with_a_premium_model_without_access_is_refused(
 async def test_starting_with_a_model_the_chat_cannot_pick_is_rejected(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """판정 전용 모델은 글을 쓰지 않으므로 세션 모델로 받지 않는다 — 요청 검증에서 거절한다."""
     fix_settings(monkeypatch, premium=True)
 
-    _, resp = await start(db_client, db_session, model="sonnet")
+    _, resp = await start(db_client, db_session, model="haiku")
 
     assert resp.status_code == 422
 
@@ -372,12 +373,12 @@ async def test_one_preview_turn_reads_the_effective_model_once_for_sets_generati
     answers = [True, False]
     asked: list[bool] = []
 
-    async def _flipping(db: Any, user: Any) -> bool:
+    async def _flipping(db: Any, user: Any, model: Any) -> bool:
         answer = answers[len(asked)] if len(asked) < len(answers) else False
         asked.append(answer)
         return answer
 
-    monkeypatch.setattr(model_access, "has_chat_premium_access", _flipping)
+    monkeypatch.setattr(model_access, "has_chat_model_access", _flipping)
     charges, turns = record_charges(monkeypatch), record_turns(monkeypatch)
     fake = RecordingLLM()
 

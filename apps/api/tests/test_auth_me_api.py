@@ -53,6 +53,7 @@ from api.db.models import (
 )
 from factories import (
     _add_media_book_cell,
+    _bible_row_counts,
     _create_admin,
     _get_genre,
     _grant_novelize,
@@ -1061,3 +1062,4 @@ async def test_withdraw_erases_novels_even_when_the_source_room_is_gone(
         await db_session.scalar(select(sa.func.count()).select_from(NovelJob).where(NovelJob.user_id == user_id)),
     ]
     assert counts == [0, 0, 0, 0, 0, 0, 0, 0]
+    assert set((await _bible_row_counts(db_session, tree.novel.id)).values()) == {0}

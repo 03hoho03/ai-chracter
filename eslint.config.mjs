@@ -31,6 +31,9 @@ export default tseslint.config(
       "**/.wrangler/**",
       "**/routeTree.gen.ts",
       "packages/api-types/src/generated.ts",
+      // openapi-typescript 출력은 `export interface` 라 type 우선 규칙에 걸리는데, `lint:fix` 로 고치면 CI 의
+      // 코드젠 드리프트 검사가 깨진다.
+      "apps/chat-lab/src/shared/api/generated.ts",
       // apps/api는 Python이다. `.venv` 안에 서드파티 `.js`(moto 템플릿 등)가 들어 있어
       // 그대로 두면 타입 정보 없는 파일에 타입 기반 규칙이 걸려 크래시한다.
       "apps/api/**",
@@ -65,6 +68,7 @@ export default tseslint.config(
           project: [
             "apps/web/tsconfig.json",
             "apps/admin/tsconfig.json",
+            "apps/chat-lab/tsconfig.json",
             "packages/ui/tsconfig.json",
             "packages/api-types/tsconfig.json",
           ],
@@ -136,6 +140,33 @@ export default tseslint.config(
       "no-relative-import-paths/no-relative-import-paths": [
         "error",
         { allowSameFolder: true, allowedDepth: 1, rootDir: "apps/admin/src", prefix: "@" },
+      ],
+    },
+  },
+  // chat-lab 은 저장소 밖으로 떼어 낼 수 있게 독립으로 둔 도구라, 다른 앱의 검사 결과를 바꾸지 않도록 이 블록에서만 켠다.
+  // `import-x/extensions` 가 없으면 import-x 가 기본값 `.js/.mjs/.cjs` 만 모듈로 보고 `.ts/.tsx` 의 의존 그래프를
+  // 못 만들어 `no-cycle` 이 조용히 0건이 된다. 저장소 전체에서도 같은 이유로 꺼져 있으니 그쪽은 따로 켠다.
+  {
+    files: ["apps/chat-lab/src/**/*.{ts,tsx}"],
+    settings: {
+      "import-x/extensions": [".ts", ".tsx", ".js", ".mjs", ".cjs"],
+    },
+    rules: {
+      "no-relative-import-paths/no-relative-import-paths": [
+        "error",
+        { allowSameFolder: true, allowedDepth: 1, rootDir: "apps/chat-lab/src", prefix: "@" },
+      ],
+    },
+  },
+  // web 의 routes·app 블록과 같은 이유다 — chat-lab 의 app 도 `src/` 바로 아래 평면 폴더라 `../` 가 곧 레이어 교차인데,
+  // 위 `allowedDepth: 1` 은 한 단계 `../pages` 를 통과시킨다. app 에는 슬라이스가 없어 `../model/x` 같은 슬라이스 내부
+  // 참조가 없으므로 depth 0 이 안전하다(같은 폴더 `./AppProviders` 는 `allowSameFolder` 가 따로 본다).
+  {
+    files: ["apps/chat-lab/src/app/**/*.{ts,tsx}"],
+    rules: {
+      "no-relative-import-paths/no-relative-import-paths": [
+        "error",
+        { allowSameFolder: true, allowedDepth: 0, rootDir: "apps/chat-lab/src", prefix: "@" },
       ],
     },
   },
@@ -259,6 +290,7 @@ export default tseslint.config(
     files: [
       "apps/web/src/app/router.tsx",
       "apps/admin/src/app/router.tsx",
+      "apps/chat-lab/src/app/router.tsx",
       "apps/*/src/vite-env.d.ts",
     ],
     rules: { "@typescript-eslint/consistent-type-definitions": "off" },

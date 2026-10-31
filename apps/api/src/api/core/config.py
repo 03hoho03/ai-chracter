@@ -13,6 +13,9 @@ from api.core.field_crypto import FieldKeyring
 from api.llm import backends
 from api.llm.backends import PromptSetModelId
 from api.llm.call_policy import BackendId, LLMCallSite
+from api.novel_bible.adapters import table as bible_adapters
+from api.novel_bible.adapters.table import AdapterId
+from api.novel_bible.ids import OperationKey
 
 # Anthropic API 의 사고 깊이(`output_config.effort`). API 가 받는 값만 둔다 — 오타가 첫 호출의 거부가 아니라 기동 거부가 되게.
 ClaudeEffort = Literal["low", "medium", "high", "xhigh", "max"]
@@ -183,8 +186,8 @@ class Settings(BaseSettings):
     # 없다 — 보관·회전 절차는 DEPLOY.md. 형식이 틀리면 기동하지 않는다.
     creator_payout_encryption_keys: str = Field(default="", repr=False)
 
-    # 클로버 정지 스위치. 켜면 클로버를 새로 깎거나 주는 경로(모든 차감, 채팅·이미지의 유료 갈래, 미션 수령, 어드민 지급·회수,
-    # 어드민 결제 환불 실행, 주문 생성)가 503 `CLOVER_PAUSED` 로 멈춘다. 무료 대화·무료 토큰 이미지·환급·결제 완료와 웹훅·만료·
+    # 클로버 정지 스위치. 켜면 클로버를 새로 깎거나 주는 경로(모든 차감, 채팅·이미지의 유료 갈래, 미션 수령, 출석 수령, 어드민 지급·회수,
+    # 어드민 결제 환불 실행, 주문 생성)가 503 `CLOVER_PAUSED` 로 멈춘다. 면제 계정의 채팅 턴·무료 토큰 이미지·환급·결제 완료와 웹훅·만료·
     # 탈퇴는 그대로다(`core/clover.py` 의 `raise_if_clover_paused`). 단위 전환처럼 잔액을 한꺼번에 옮기는 동안 켠다 — 사용법은
     # DEPLOY.md 의 "BE 런타임" 절 표.
     clover_ledger_paused: bool = False
@@ -341,6 +344,9 @@ class Settings(BaseSettings):
     # 위 Bedrock 쪽은 Haiku 4.5 그대로다 — 같은 `haiku` 라도 구현에 따라 버전이 다르다. 판정 요청의 사고·깊이 규칙은 이
     # 값(실제 모델 id)으로 가른다(`llm/anthropic_api.py`).
     anthropic_haiku_model_id: str = "claude-haiku-5-5"
+    # 채팅 글쓰기 모델 `haiku_writer`(Claude Haiku 5.5)의 실제 id. 판정 전용 id 와 같은 모델이어도 설정을 나눈다 — 판정 모델 버전을
+    # 바꾸는 일이 사용자가 고른 글쓰기 모델을 바꾸지 않게 한다. 이 모델은 Anthropic 직결로만 간다(Bedrock 쪽 id 가 없다).
+    anthropic_haiku_writer_model_id: str = "claude-haiku-5-5"
     # 요청 타임아웃(ms). Bedrock 과 같은 값이고 같은 뜻("다음 청크까지")이다.
     anthropic_chat_timeout_ms: int = 45_000
     anthropic_chapter_timeout_ms: int = 300_000
@@ -359,6 +365,11 @@ class Settings(BaseSettings):
     # 허용 가능 계정 명단도 두며 뜻은 소설화 스위치·명단과 같다(명단에서 빼고 재기동하면 허용 행이 있어도 막힘). 소설 장의
     # 상위 모델은 소설화 자체 허용도 함께 있어야 쓸 수 있다.
     chat_premium_models_enabled: bool = False
+    # 채팅에서 고를 수 있게 보일 상위 모델(쉼표 목록, 따옴표·공백 없이). 위 채팅 스위치가 켜져 있을 때만 뜻이 있다 — 스위치를
+    # 끄면 이 목록과 무관하게 모두 숨는다. 목록에서 뺀 모델은 모델 목록·공개 가격에서 빠지고 지정·미리보기 시작이 거절되며, 그
+    # 모델이 저장된 방은 기본 모델로 돈다. 기본 모델(Gemini)은 늘 보여 쓸 수 없다. 빈 값은 상위 모델을 하나도 보이지 않는다는
+    # 뜻이지만 운영 env 형식 검사가 값이 빈 줄을 거부하므로, 운영에서 모두 숨기려면 줄을 비우지 말고 채팅 스위치를 끈다.
+    chat_models_visible: Annotated[list[backends.ChatModelId], NoDecode] = ["opus"]
     novelize_premium_models_enabled: bool = False
     novelize_premium_model_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
     # 호출 위치마다 공급자 구현을 배정한다(`call_site:backend` 를 쉼표로 이은 목록, 따옴표 없이). 비면 배정 없음 — 모델의
@@ -366,7 +377,7 @@ class Settings(BaseSettings):
     # 배정은 아래 기동 검증이 거부한다. 호출 위치·구현 이름은 대소문자까지 정확해야 한다.
     llm_call_site_backends: Annotated[dict[LLMCallSite, BackendId], NoDecode] = {}
     # 판정 종류(스탯·엔딩·그림 매칭)와 기억 요약마다 쓰는 모델 — 값은 문안 체인의 모델 id(`gemini`·`sonnet`·`opus`·판정 전용
-    # `haiku`)이고, 판정은 그 모델의 활성 프롬프트 세트로 렌더된다. 모델 배정 표에 그 (레인, 실효 방 모델, 단계) 칸의 행이 있으면
+    # `haiku`, 글쓰기 전용 `haiku_writer` 는 거부)이고, 판정은 그 모델의 활성 프롬프트 세트로 렌더된다. 모델 배정 표에 그 (레인, 실효 방 모델, 단계) 칸의 행이 있으면
     # 판정 문안은 행이 고른 체인을 읽는다(행이 없으면 방의 모델과 무관하다). 기본값 `gemini` 면 지금 동작 그대로이고,
     # 그때 실제 Gemini 모델은 위 `gemini_*_judgment_model_name` 이 고른다. 그 모델을 어느 구현이 서비스할지는 위 배정이 정하고,
     # 배정이 없으면 모델의 기본 구현이다(`haiku`·`sonnet`·`opus` → Bedrock). 배정이 그 모델을 서비스하지 않거나 가는 구현의
@@ -415,6 +426,7 @@ class Settings(BaseSettings):
         "anthropic_sonnet_model_id",
         "anthropic_opus_model_id",
         "anthropic_haiku_model_id",
+        "anthropic_haiku_writer_model_id",
         "anthropic_chat_timeout_ms",
         "anthropic_chapter_timeout_ms",
         "anthropic_chat_max_tokens",
@@ -445,22 +457,35 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _premium_models_need_backend_credentials(self) -> "Settings":
-        """켜진 스위치가 여는 호출(채팅: 턴 생성과 빌더 미리보기 생성과 측정용 다시 생성, 소설: 장 생성과 구성안 두 호출)이 상위
-        모델로 실제로 갈 구현마다 그 자격이 모두 있어야 한다. 배정이 없으면 그 구현은 Bedrock 이라 키·비밀 키·리전 셋을 본다. 켜진 채 빈 값으로 뜨면 첫
+        """켜진 스위치가 여는 호출(채팅: 턴 생성과 빌더 미리보기 생성과 측정용 다시 생성, 소설: 장 생성과 구성안 두 호출)이 그
+        스위치가 여는 상위 모델(채팅은 공개 목록의 모델, 소설은 소설에서 고를 수 있는 모델)로 실제로 갈 구현마다 그 자격이 모두 있어야 한다. 배정이 없으면 그 구현은 Bedrock 이라 키·비밀 키·리전 셋을 본다. 켜진 채 빈 값으로 뜨면 첫
         상위 모델 호출에서야 실패하고(그 턴은 환불된다), Bedrock 은 클라이언트가 막지 못한 경로가 생기면 R2 자격으로 서명된다."""
-        call_sites: list[LLMCallSite] = []
-        if self.chat_premium_models_enabled:
-            call_sites += ["chat_generate", "preview_generate", "replay_generate"]
-        if self.novelize_premium_models_enabled:
-            call_sites += ["novelize_chapter", "novelize_outline", "novelize_episode_outline"]
         # 글쓰기 모델만 본다 — 구현 등록부의 모델 표에는 판정 전용 id 도 있어, 그 표로 고르면 스위치가 열지 않는 경로의
         # 자격까지 요구한다.
-        premium_models = [model for model in get_args(backends.ChatModelId) if model != backends.DEFAULT_CHAT_MODEL]
-        resolved = {
-            backends.pick_backend(call_site, model, self.llm_call_site_backends)[1]
-            for call_site in call_sites
-            for model in premium_models
-        }
+        premium_models: list[backends.ChatModelId] = [
+            model for model in get_args(backends.ChatModelId) if model != backends.DEFAULT_CHAT_MODEL
+        ]
+        chat_call_sites: tuple[LLMCallSite, ...] = ("chat_generate", "preview_generate", "replay_generate")
+        novel_call_sites: tuple[LLMCallSite, ...] = ("novelize_chapter", "novelize_outline", "novelize_episode_outline")
+        paths: list[tuple[LLMCallSite, backends.ChatModelId]] = []
+        if self.chat_premium_models_enabled:
+            # 채팅 스위치는 공개 목록에 있는 상위 모델만 연다 — 숨긴 모델의 경로 자격까지 요구하면 직결로만 가는 모델(Haiku 글쓰기)을
+            # 숨겨 둔 채 Bedrock 자격만 있는 환경이 쓰지도 않을 경로 때문에 기동하지 못한다.
+            paths += [
+                (call_site, model)
+                for call_site in chat_call_sites
+                for model in premium_models
+                if model in self.chat_models_visible
+            ]
+        if self.novelize_premium_models_enabled:
+            # 소설 스위치는 소설에서 고를 수 있는 모델만 연다 — 채팅 전용 모델의 소설 경로는 요청 게이트가 막아 불리지 않는다.
+            paths += [
+                (call_site, model)
+                for call_site in novel_call_sites
+                for model in premium_models
+                if model in backends.NOVEL_MODELS
+            ]
+        resolved = {backends.pick_backend(call_site, model, self.llm_call_site_backends)[1] for call_site, model in paths}
         missing = [
             env_name
             for backend in sorted(resolved)
@@ -470,6 +495,43 @@ class Settings(BaseSettings):
         if missing:
             raise ValueError(f"상위 모델 스위치가 켜져 있는데 {', '.join(missing)} 가 비어 있다")
         return self
+
+    @field_validator(
+        "stat_judgment_model",
+        "ending_judgment_model",
+        "image_judgment_model",
+        "memory_summary_model",
+        "memory_episode_model",
+        "memory_fact_model",
+        "memory_impression_model",
+    )
+    @classmethod
+    def _judgment_model_is_not_writer_only(cls, value: PromptSetModelId, info: ValidationInfo) -> PromptSetModelId:
+        """글쓰기 전용 체인 모델(`haiku_writer`)은 판정·요약 모델로 쓰지 않는다 — 그 체인의 판정 문안은 게시 검증을 맞추려고 둔
+        사본이고 판정은 판정 전용 `haiku` 가 맡는다. 받으면 판정 문안을 고칠 곳이 두 체인으로 갈려 한쪽만 고쳐진다."""
+        if value in backends.WRITER_ONLY_MODELS:
+            raise ValueError(f"{info.field_name} 에 글쓰기 전용 모델 {value} 은 쓸 수 없다(판정은 haiku 가 맡는다)")
+        return value
+
+    @field_validator("chat_models_visible", mode="before")
+    @classmethod
+    def _split_chat_models_visible(cls, value: object) -> object:
+        """env 문자열을 모델 id 목록으로 나눈다. 항목은 쉼표로 나누고 앞뒤 공백은 지우며 빈 항목은 버린다 — 남는 항목이 없으면
+        빈 목록(상위 모델 모두 숨김)이다. 같은 모델이 두 번 나오면 거부하고, 기본 모델은 늘 보이므로 목록에 쓰면 거부한다. 모르는
+        id(판정 전용 `haiku` 포함)는 pydantic 이 거부한다 — 오타가 조용히 무시되면 켠 모델이 화면에 없는데 기동은 성공한다."""
+        if not isinstance(value, str):
+            return value
+        models: list[str] = []
+        for item in value.split(","):
+            model = item.strip()
+            if not model:
+                continue
+            if model in models:
+                raise ValueError(f"CHAT_MODELS_VISIBLE 에 {model} 이 두 번 있다")
+            if model == backends.DEFAULT_CHAT_MODEL:
+                raise ValueError(f"CHAT_MODELS_VISIBLE 에 기본 모델 {model} 은 쓸 수 없다(늘 보인다)")
+            models.append(model)
+        return models
 
     @field_validator("memory_model_scope", mode="before")
     @classmethod
@@ -664,7 +726,7 @@ class Settings(BaseSettings):
     # 레인과 글쓰기 모델이 이 목록에 있어야 켜진 스위치가 동작하고, 없으면 그 턴은 스위치를 다 끈 것과 프롬프트·SQL 이 같다.
     # 기억 품질은 Opus 방에서만 재 보았고 다른 모델 방에서 켜면 측정하지 않은 동작이 나가므로 기본은 Opus 방뿐이다. 값은 쉼표로
     # 나눈 목록이고 원소는 `모델`(두 레인 모두) 또는 `레인:모델`이다 — 레인은 `story`·`character`, 모델은 글쓰기 모델 id
-    # (`gemini`·`sonnet`·`opus`, 판정 전용 `haiku` 는 아니다). 모르는 레인·모델이면 기동하지 않는다. 어떤 방에서도
+    # (`gemini`·`haiku_writer`·`sonnet`·`opus`, 판정 전용 `haiku` 는 아니다). 모르는 레인·모델이면 기동하지 않는다. 어떤 방에서도
     # 기억을 쓰지 않으려면 이 값을 비우지 말고 기억 스위치를 끈다 — 운영 env 형식 검사가 빈 값을 거부해 배포가 멈춘다.
     # 추출(장면·사실)과 임베딩 쓰기는 이 범위와 무관하다 — 쌓아 두는 일이라 어느 방에서 켜도 그 방 대화가 바뀌지 않는다.
     memory_model_scope: Annotated[list[tuple[MemoryScopeLane, backends.ChatModelId]], NoDecode] = [
@@ -858,6 +920,56 @@ class Settings(BaseSettings):
     # 여러 문단 수정 묶음 재검사(무과금 모델 호출)를 한 사용자가 한 시간에 몇 번까지 부를 수 있는지. 따로 적용할 수 없다는 판정을
     # 받은 묶음은 다시 물을 수 있어 이 상한이 유일한 제동이다. 면제 계정도 똑같이 센다. 재검사 원가를 재기 전의 임시값.
     novelize_recheck_hourly_limit: int = Field(default=10, ge=1)
+    # 소설 정본 기억 스위치 — 확정한 화에서 사건·사실·지식을 뽑아 리비전으로 쌓는 엔진. 꺼져 있으면(기본값) 어드민 확정 입구가
+    # 404(라우트가 없는 것과 같다)이고 새 정본 기억 행이 생기지 않는다. 소설 삭제·숨긴 소설 정리·묶음 삭제는 이 값과 무관하게
+    # 정본 기억 행을 지운다(지울 행이 없으면 0행). 소설 생성 경로는 이 값과 무관하게 정본 기억을 모른다. 켜면 기동 검증이 연산마다
+    # 배정된 어댑터가 실제로 갈 구현의 자격·능력을 본다(아래 검증자). 확정의 처리는 소설화 워커 프로세스가 한다 — 워커가 꺼진
+    # 환경에서는 확정 행이 대기로 남는다. 등록된 추출 슬롯은 사건 슬롯 하나이고 그 문안 채널이 시드되기 전이라, 켜면 확정 입구가
+    # 503 이고 켜진 워커도 기동 때 정본 기억을 끈다.
+    novel_bible_enabled: bool = False
+    # 소설화 워커 하나가 동시에 돌리는 정본 기억 작업(작업 하나 또는 준비된 확정 처리 하나가 한 칸) 수 상한. 소설 작업 상한과 따로
+    # 세 사용자 소설 작업 자리를 먹지 않는다. 올리면 워커의 DB 풀도 키운다 — 운영 워커 풀은 `.env` 가 아니라
+    # `docker-compose.prod.yml` 워커 `environment` 의 `DB_POOL_SIZE`·`DB_MAX_OVERFLOW` 가 정한다(`.env` 값은 api 풀만 바꾼다).
+    # 워커만 쓰고 스위치가 꺼져 있으면 쓰지 않지만, `ge=1` 검사는 스위치와 무관하게 api·워커 기동(아래 `settings` 생성) 때 한다.
+    novel_bible_worker_max_concurrent: int = Field(default=1, ge=1)
+    # 정본 기억 연산마다 쓸 어댑터를 코드 표(`novel_bible/adapters/table.py`)에서 바꾼다(`연산:어댑터` 를 쉼표로 이은 목록, 따옴표
+    # 없이). 비면 코드 표 그대로다. 모르는 연산·어댑터 이름은 스위치가 꺼져 있어도 거부한다 — 오타가 켤 때에야 드러나지 않게.
+    novel_bible_adapters: Annotated[dict[OperationKey, AdapterId], NoDecode] = {}
+
+    @field_validator("novel_bible_adapters", mode="before")
+    @classmethod
+    def _split_novel_bible_adapters(cls, value: object) -> object:
+        """env 문자열을 `{연산: 어댑터}` 로 나눈다. 호출 위치 배정(`LLM_CALL_SITE_BACKENDS`)과 같은 규칙이다 — 항목 앞뒤 공백은
+        지우고 빈 항목은 버리며, 항목마다 콜론이 정확히 하나이고 양쪽이 비지 않아야 하고, 같은 연산이 두 번 나오면 거부한다.
+        모르는 연산·어댑터 이름은 pydantic 이 거부한다."""
+        if not isinstance(value, str):
+            return value
+        overrides: dict[str, str] = {}
+        for item in value.split(","):
+            if not item.strip():
+                continue
+            parts = [part.strip() for part in item.split(":")]
+            if len(parts) != 2 or not all(parts):
+                raise ValueError(f"NOVEL_BIBLE_ADAPTERS 의 항목 {item.strip()!r} 은 연산:어댑터 모양이 아니다")
+            operation, adapter_id = parts
+            if operation in overrides:
+                raise ValueError(f"NOVEL_BIBLE_ADAPTERS 에 {operation} 이 두 번 있다")
+            overrides[operation] = adapter_id
+        return overrides
+
+    @model_validator(mode="after")
+    def _novel_bible_adapters_can_run(self) -> "Settings":
+        """정본 기억 스위치가 켜졌을 때만, 연산마다 배정된 어댑터가 실제로 갈 구현과 그 자격·능력을 본다. 꺼져 있으면 아무것도
+        보지 않는다 — 운영은 꺼진 채 배포되므로 운영 기동은 이 검증과 무관하고, 정본 기억을 쓰지 않는 로컬·테스트 환경도 모델 키 없이
+        뜬다. 규칙은 어댑터 표 쪽에 있다."""
+        if not self.novel_bible_enabled:
+            return self
+        errors = bible_adapters.adapter_errors(
+            self.novel_bible_adapters, self.llm_call_site_backends, lambda name: str(getattr(self, name))
+        )
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
 
     @field_validator(
         "novelize_grant_allowlist",
