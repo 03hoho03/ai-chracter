@@ -139,7 +139,7 @@ const RunTableRow = memo(function RunTableRow({ row, folder, isActive, onSelect,
         {item.format === "preMessageId" && (
           <span
             title="이전 형식 — 드라이버 턴 줄에 메시지 id 가 없다"
-            className="inline-flex h-[18px] shrink-0 items-center rounded-sm border border-border-strong px-1.5 text-label text-ink-secondary"
+            className="inline-flex h-4.5 shrink-0 items-center rounded-sm border border-border-strong px-1.5 text-label text-ink-secondary"
           >
             이전
           </span>

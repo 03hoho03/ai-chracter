@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { isServerUnreachable } from "@/shared/api/isServerUnreachable";
 import { readLabError } from "@/shared/api/readLabError";
 import { StaticBundleError } from "@/shared/api/staticBundle";
-import { Button } from "@/shared/ui/Button";
+import { Button, buttonClassName } from "@/shared/ui/Button";
 import { Notice } from "@/shared/ui/Notice";
 import { ServerUnreachableNotice } from "@/shared/ui/ServerUnreachableNotice";
 
@@ -11,9 +11,6 @@ type RunDetailFailureProps = {
   error: unknown;
   onRetry: () => void;
 };
-
-const BACK_TO_LIST_CLASS =
-  "inline-flex h-7 items-center rounded-md bg-accent px-3 text-body font-medium text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
 
 /**
  * 런 상세를 받지 못했을 때. 서버에 닿지 못했으면 띄우는 방법을(목록과 같은 안내), 없는 런·열지 않는 런이면 서버 문장을 그대로
@@ -25,7 +22,7 @@ export function RunDetailFailure({ error, onRetry }: RunDetailFailureProps) {
 
   const labError = readLabError(error);
   const backToList = (
-    <Link to="/" className={BACK_TO_LIST_CLASS}>
+    <Link to="/" className={buttonClassName("primary")}>
       런 목록으로
     </Link>
   );
@@ -84,7 +81,7 @@ function StaticFailure({ error }: { error: StaticBundleError }) {
       title={STATIC_FAILURE_TITLE[error.reason]}
       action={
         error.reason === "broken" ? undefined : (
-          <Link to="/" className={BACK_TO_LIST_CLASS}>
+          <Link to="/" className={buttonClassName("primary")}>
             이 파일의 런 열기
           </Link>
         )

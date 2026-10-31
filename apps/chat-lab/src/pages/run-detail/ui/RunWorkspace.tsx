@@ -200,7 +200,7 @@ export function RunWorkspace({ runId, detail, notice, isIssuesOpen, onCloseIssue
         onPaneChange={(next) => updateSearch({ pane: next })}
         onMoveTurn={moveTurn}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)_23.75rem]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-run-detail xl:grid-cols-run-detail-wide">
         <section
           aria-label="턴 목록"
           className={cn(

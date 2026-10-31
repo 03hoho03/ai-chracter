@@ -4,7 +4,7 @@ import type { AttemptDetail, ReplyFlagsView, TurnDetail } from "@/shared/api/cli
 import { cn } from "@/shared/lib/cn";
 import { formatCount, formatMs } from "@/shared/lib/formatNumber";
 
-import { BOOLEAN_FLAG_KEYS, BOOLEAN_FLAG_LABELS } from "../model/detailLabels";
+import { BOOLEAN_FLAG_KEYS, BOOLEAN_FLAG_LABELS, REPLY_FLAG_LABELS } from "../model/detailLabels";
 import { readBoolean, readNumber, readText } from "../model/recordFields";
 import { formatStatDelta, type StatDelta } from "../model/turnRows";
 import { StatDot } from "./StatDot";
@@ -60,9 +60,14 @@ export function ConversationPane({ turn, turnDetail, attempt, deltas, isStale, o
         )}
         {flags &&
           BOOLEAN_FLAG_KEYS.filter((key) => flags[key]).map((key) => <Chip key={key}>{BOOLEAN_FLAG_LABELS[key]}</Chip>)}
-        {flags?.broken != null && <Chip tone="danger">깨짐 · {flags.broken}</Chip>}
-        {deltas.map((delta) => (
-          <Chip key={`${delta.tone}:${delta.name}`} title={deltaTitle(delta)}>
+        {flags?.broken != null && (
+          <Chip tone="danger">
+            {REPLY_FLAG_LABELS.broken} · {flags.broken}
+          </Chip>
+        )}
+        {deltas.map((delta, index) => (
+          // 기록에서 만든 고정 순서이고 칩에 상태가 없다. 스탯 이름에는 유일 제약이 없어 이름으로는 key 가 겹칠 수 있다.
+          <Chip key={index} title={deltaTitle(delta)}>
             <StatDot tone={delta.tone} />
             {delta.name}
             <span className="tabular-nums">{formatStatDelta(delta)}</span>
@@ -207,7 +212,7 @@ function Chip({ tone = "quiet", title, children }: ChipProps) {
     <span
       title={title}
       className={cn(
-        "inline-flex h-[18px] items-center gap-1 rounded-sm bg-surface-raised px-1.5 text-label whitespace-nowrap",
+        "inline-flex h-4.5 items-center gap-1 rounded-sm bg-surface-raised px-1.5 text-label whitespace-nowrap",
         tone === "danger" ? "text-danger" : "text-ink-secondary",
       )}
     >

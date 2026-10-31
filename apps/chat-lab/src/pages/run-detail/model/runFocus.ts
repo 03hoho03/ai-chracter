@@ -1,6 +1,8 @@
 import type { RunDetail, RunMetrics } from "@/shared/api/client";
 import { formatCount, formatUsd } from "@/shared/lib/formatNumber";
 
+import { REPLY_FLAG_LABELS } from "./detailLabels";
+
 /** `warn` 은 호박(불일치·주의), `danger` 는 적색(깨짐), `quiet` 는 보조 글자색이다. */
 export type FocusTone = "danger" | "warn" | "quiet";
 
@@ -43,15 +45,17 @@ export function describeRunFocus(detail: RunDetail, metrics: RunMetrics | undefi
   }
   if (metrics !== undefined) {
     const sample = `표본 ${formatCount(metrics.scored)}턴`;
-    if (metrics.broken > 0) lines.push({ tone: "danger", text: `깨짐 ${formatCount(metrics.broken)} / ${sample}` });
+    if (metrics.broken > 0) {
+      lines.push({ tone: "danger", text: `${REPLY_FLAG_LABELS.broken} ${formatCount(metrics.broken)} / ${sample}` });
+    }
     const flagCounts = [
-      ["절단", metrics.truncated],
-      ["자기복제", metrics.selfCopy],
-      ["라벨 누출", metrics.labelLeak],
-      ["사용자 대사 대필", metrics.userTurn],
+      ["truncated", metrics.truncated],
+      ["selfCopy", metrics.selfCopy],
+      ["labelLeak", metrics.labelLeak],
+      ["userTurn", metrics.userTurn],
     ] as const;
-    for (const [label, count] of flagCounts) {
-      if (count > 0) lines.push({ tone: "quiet", text: `${label} ${formatCount(count)} / ${sample}` });
+    for (const [key, count] of flagCounts) {
+      if (count > 0) lines.push({ tone: "quiet", text: `${REPLY_FLAG_LABELS[key]} ${formatCount(count)} / ${sample}` });
     }
     if (metrics.lost > 0) {
       lines.push({ tone: "quiet", text: `응답 없는 턴 ${formatCount(metrics.lost)}개 — 지표 표본에서 빠졌다.` });

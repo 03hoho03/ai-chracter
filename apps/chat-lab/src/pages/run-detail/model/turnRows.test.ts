@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AttemptDetail, DriverStatChange, ReplyFlagsView, StatSeries, TurnSummary } from "@/shared/api/client";
 
+import { REPLY_FLAG_LABELS } from "./detailLabels";
 import { attemptDeltas, buildTurnRows, formatStatDelta, seriesTones, type StatDelta } from "./turnRows";
 
 function summary(overrides: Partial<TurnSummary> = {}): TurnSummary {
@@ -30,6 +31,19 @@ function summary(overrides: Partial<TurnSummary> = {}): TurnSummary {
     mismatchCount: 0,
     ...overrides,
   };
+}
+
+/**
+ * 고른 시도의 응답이 `reply` 인 턴. 측정 서버처럼 응답 앞 200자와 길이를 싣고, 응답이 비었는데 교체 줄도 없으면 유실로 센다.
+ */
+function replied(reply: string, overrides: Partial<TurnSummary> = {}): TurnSummary {
+  const isReplaced = overrides.replaced ?? false;
+  return summary({
+    replyHead: reply.slice(0, 200),
+    replyLength: reply.length,
+    lost: reply === "" && !isReplaced,
+    ...overrides,
+  });
 }
 
 function series(name: string, overrides: Partial<StatSeries> = {}): StatSeries {
@@ -73,13 +87,10 @@ function attempt(overrides: Partial<AttemptDetail> = {}): AttemptDetail {
 }
 
 describe("buildTurnRows", () => {
-  it("보충 줄·응답 교체·시도 수·유실을 행에 그대로 싣는다", () => {
-    const [row] = buildTurnRows(
-      [summary({ turn: 105, supplemented: true, replaced: true, attemptCount: 3, lost: true })],
-      [],
-    );
+  it("보충 줄·응답 교체·시도 수를 행에 그대로 싣는다 — 응답이 없는 턴은 응답 한 줄이 그 까닭을 싣는다", () => {
+    const [row] = buildTurnRows([summary({ turn: 105, supplemented: true, replaced: true, attemptCount: 3 })], []);
 
-    expect(row).toMatchObject({ turn: 105, isSupplemented: true, isReplaced: true, attemptCount: 3, isLost: true });
+    expect(row).toMatchObject({ turn: 105, isSupplemented: true, isReplaced: true, attemptCount: 3 });
   });
 
   it("발화가 없으면 단축어 이름, 둘 다 없으면 발화 없음", () => {
@@ -110,6 +121,16 @@ describe("buildTurnRows", () => {
   it("응답이 없어 지표 표본에서 빠진 턴(지표 없음)이나 아무 플래그도 서지 않은 턴은 플래그가 없다", () => {
     expect(buildTurnRows([summary({ flags: null })], [])[0]?.flags).toEqual([]);
     expect(buildTurnRows([summary({ flags: flags({ solicit: true, sceneOpen: true }) })], [])[0]?.flags).toEqual([]);
+  });
+
+  it("행 플래그의 온 이름은 검사기·'먼저 볼 것'과 같은 응답 플래그 이름표에서 온다", () => {
+    const raised = flags({ truncated: true, selfCopy: true, labelLeak: true, broken: "x" });
+
+    const [row] = buildTurnRows([summary({ flags: raised })], []);
+
+    expect(row?.flags.map((flag) => [flag.key, flag.label])).toEqual(
+      (["truncated", "selfCopy", "labelLeak", "broken"] as const).map((key) => [key, REPLY_FLAG_LABELS[key]]),
+    );
   });
 
   it("깨짐 낱말이 빈 글이어도 깨짐이다 — 깨짐 여부는 낱말이 있는가로 본다", () => {
@@ -192,6 +213,90 @@ describe("buildTurnRows", () => {
       { name: "의심", delta: 15, before: 10, after: 25, tone: "hidden" },
       { name: "s4", delta: -2, before: 5, after: 3, tone: "hidden" },
     ]);
+  });
+});
+
+describe("buildTurnRows 의 응답 한 줄", () => {
+  function replyLine(turn: TurnSummary) {
+    return buildTurnRows([turn], [])[0]?.reply;
+  }
+
+  it("응답이 있으면 그 앞부분을 싣는다", () => {
+    expect(replyLine(replied("그가 고개를 들어 문 쪽을 본다."))).toEqual({
+      kind: "reply",
+      text: "그가 고개를 들어 문 쪽을 본다.",
+    });
+  });
+
+  it("줄바꿈·탭·겹친 공백은 빈칸 하나로 접고 앞뒤 공백을 뗀다 — 행에서 한 줄로 읽힌다", () => {
+    expect(replyLine(replied('\n  그가 고개를 든다.\n\n\t"누구세요?"  \n'))).toEqual({
+      kind: "reply",
+      text: '그가 고개를 든다. "누구세요?"',
+    });
+  });
+
+  it("응답이 있으면 실패 문장이 함께 있어도 응답을 보인다", () => {
+    expect(replyLine(replied("문이 열린다.", { failure: "error: 판정 지연" }))?.kind).toBe("reply");
+  });
+
+  it("응답 없이 실패로 끝났으면 빈칸 대신 실패 문장을 한 줄로 접어 까닭으로 보이고, 유실한 턴이라고 싣는다", () => {
+    expect(replyLine(replied("", { failure: 'HTTP 500: {"detail":\n  "서버 오류"}' }))).toEqual({
+      kind: "failure",
+      text: 'HTTP 500: {"detail": "서버 오류"}',
+      isLost: true,
+    });
+  });
+
+  it("응답이 공백뿐인데 실패 문장이 있으면 실패 문장을 보이되 유실이라 하지 않는다 — 측정 서버도 응답이 온 턴으로 센다", () => {
+    const blankWithFailure = replied(" \n ", { failure: "error: 판정 지연" });
+
+    expect(blankWithFailure.lost).toBe(false);
+    expect(replyLine(blankWithFailure)).toEqual({ kind: "failure", text: "error: 판정 지연", isLost: false });
+  });
+
+  it("응답도 실패 문장도 없으면 응답 없음 — 실패 문장이 공백뿐이어도 같다", () => {
+    expect(replyLine(replied(""))).toEqual({ kind: "none" });
+    expect(replyLine(replied("", { failure: " \n " }))).toEqual({ kind: "none" });
+  });
+
+  it("응답이 공백뿐이면 빈 응답 — 응답이 오지 않은 턴(유실)과 가른다", () => {
+    const blank = replied(" \n\n ");
+
+    expect(blank.lost).toBe(false);
+    expect(replyLine(blank)).toEqual({ kind: "blank" });
+  });
+
+  it("측정 서버가 주는 앞부분만 공백이고 그 뒤에 글이 이어지면 빈 응답이라 하지 않고 앞부분이 공백뿐이라고", () => {
+    const lateText = replied(`${" ".repeat(200)}그가 고개를 든다.`);
+
+    expect(lateText.replyLength).toBeGreaterThan(lateText.replyHead.length);
+    expect(replyLine(lateText)).toEqual({ kind: "blankHead" });
+  });
+
+  it("응답이 교체됐어도 고른 시도에 응답이 있으면(앞부분만 공백) 앞부분이 공백뿐이라고 — 교체 사실은 교체 표지가 따로 보인다", () => {
+    // 측정 서버는 성공한 재생성·수정 줄이 있으면 고른 시도의 응답 유무와 상관없이 교체로 보고, 응답 앞부분·길이는 고른 시도에서 낸다.
+    const [row] = buildTurnRows([replied(`${" ".repeat(200)}그가 고개를 든다.`, { replaced: true })], []);
+
+    expect(row?.isReplaced).toBe(true);
+    expect(row?.reply).toEqual({ kind: "blankHead" });
+  });
+
+  it("고른 시도에 응답이 없어도 응답이 교체됐으면 유실이 아니라 응답이 교체 줄에 있다고 보인다", () => {
+    const replaced = replied("", { replaced: true });
+
+    expect(replaced.lost).toBe(false);
+    expect(replyLine(replaced)).toEqual({ kind: "replaced" });
+  });
+
+  it("교체됐어도 고른 시도가 실패로 끝났으면 실패 문장을 보이되, 교체 줄이 응답을 냈으니 유실이라 하지 않는다", () => {
+    const replacedFailure = replied("", { replaced: true, failure: "transport: ReadTimeout: timed out" });
+
+    expect(replacedFailure.lost).toBe(false);
+    expect(replyLine(replacedFailure)).toEqual({
+      kind: "failure",
+      text: "transport: ReadTimeout: timed out",
+      isLost: false,
+    });
   });
 });
 

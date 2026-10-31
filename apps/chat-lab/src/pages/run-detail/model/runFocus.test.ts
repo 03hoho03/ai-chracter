@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { RunDetail, RunMetrics } from "@/shared/api/client";
 
+import { REPLY_FLAG_LABELS } from "./detailLabels";
 import { describeRunFocus } from "./runFocus";
 
 type RunCost = NonNullable<RunDetail["cost"]>;
@@ -103,6 +104,16 @@ describe("describeRunFocus", () => {
       { tone: "quiet", text: "응답 없는 턴 2개 — 지표 표본에서 빠졌다." },
       { tone: "warn", text: "주의 1건 — 불일치로 세지 않는 참고 사항이다." },
     ]);
+  });
+
+  it("플래그 줄의 이름은 턴 목록 행·검사기와 같은 응답 플래그 이름표에서 온다", () => {
+    const lines = describeRunFocus(detail(), metrics({ broken: 1, truncated: 1, selfCopy: 1, labelLeak: 1, userTurn: 1 }));
+
+    expect(lines.map((line) => line.text)).toEqual(
+      (["broken", "truncated", "selfCopy", "labelLeak", "userTurn"] as const).map(
+        (key) => `${REPLY_FLAG_LABELS[key]} 1 / 표본 29턴`,
+      ),
+    );
   });
 
   it("불일치와 주의는 따로 센다 — 주의를 불일치 수에 더하지 않는다", () => {

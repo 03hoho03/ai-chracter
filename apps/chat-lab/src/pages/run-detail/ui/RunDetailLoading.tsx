@@ -1,6 +1,7 @@
 import { cn } from "@/shared/lib/cn";
 
-const SKELETON_ROWS = 14;
+/** 턴 목록 자리의 빈 행 수 — 행이 두 줄(44px)이라, 한 줄 행 14개가 채우던 높이를 9행이 채운다. */
+const SKELETON_ROWS = 9;
 
 /** 빈 막대 길이 — 행마다 조금씩 달라야 목록처럼 읽힌다. */
 const BAR_WIDTHS = ["w-2/5", "w-3/5", "w-1/2", "w-4/5", "w-2/3", "w-3/4"] as const;
@@ -13,10 +14,10 @@ export function RunDetailLoading({ seconds }: { seconds: number }) {
   return (
     <div className="flex h-full flex-col">
       <div className="h-16 shrink-0 border-b border-border bg-surface" />
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)_23.75rem]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-run-detail xl:grid-cols-run-detail-wide">
         <div className="hidden border-r border-border bg-surface lg:block">
           <div className="h-8 border-b border-border" />
-          <SkeletonBars count={SKELETON_ROWS} />
+          <TurnSkeletonRows count={SKELETON_ROWS} />
         </div>
         <div className="min-h-0 bg-surface">
           <div role="status" className="flex h-8 items-center gap-2 border-b border-border px-3 text-data text-ink-secondary">
@@ -32,6 +33,21 @@ export function RunDetailLoading({ seconds }: { seconds: number }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** 턴 목록 자리 — 턴 목록 행처럼 두 줄(발화 · 응답)에 같은 높이, 막대도 발화 칸이 시작하는 자리에서 시작한다. */
+function TurnSkeletonRows({ count }: { count: number }) {
+  return (
+    <ul aria-hidden="true">
+      {Array.from({ length: count }, (_, index) => (
+        // 정적인 빈 자리라 순서가 바뀌지 않는다.
+        <li key={index} className="flex h-11 flex-col justify-center gap-2 border-b border-border pr-3 pl-9.5">
+          <span className={cn("h-2 rounded-sm bg-surface-raised", BAR_WIDTHS[index % BAR_WIDTHS.length])} />
+          <span className={cn("h-2 rounded-sm bg-surface-raised", BAR_WIDTHS[(index + 3) % BAR_WIDTHS.length])} />
+        </li>
+      ))}
+    </ul>
   );
 }
 

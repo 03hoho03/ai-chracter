@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 
 import { isShortcutBlocked } from "@/shared/lib/isShortcutBlocked";
 
+import { INSPECTOR_TABS } from "../model/runDetailSearch";
+
 type DetailKeyHandlers = {
   onMoveTurn: (step: 1 | -1) => void;
   onMoveAttempt: (step: 1 | -1) => void;
@@ -12,7 +14,8 @@ type DetailKeyHandlers = {
   onEscape: () => void;
 };
 
-const INSPECTOR_KEYS = ["Digit1", "Digit2", "Digit3", "Digit4"];
+/** 검사기 탭 숫자 키 — 탭 목록에서 만들어, 탭을 더하면 그 숫자 키도 함께 선다(`onInspectorTab` 은 탭 목록의 순번을 받는다). */
+const INSPECTOR_KEYS = INSPECTOR_TABS.map((_, index) => `Digit${index + 1}`);
 
 /**
  * 런 상세 단축키: `j`/`k` 다음·이전 턴, `[`/`]` 이전·다음 시도, `/` 원문 검색, `n`/`N` 다음·이전 일치, `1`~`4` 검사기 탭,

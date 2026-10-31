@@ -19,7 +19,9 @@ import {
   BOOLEAN_FLAG_LABELS,
   CAUTION_LABELS,
   describePreviousFrom,
+  INSPECTOR_TAB_OPTIONS,
   MISMATCH_LABELS,
+  REPLY_FLAG_LABELS,
 } from "../model/detailLabels";
 import { readNumber, readRecord, readRecords, readText } from "../model/recordFields";
 import { recordLimitText } from "../model/recordLimits";
@@ -48,15 +50,6 @@ type InspectorProps = {
   onSelectTurn: (turn: number) => void;
 };
 
-const TAB_LABELS = {
-  calls: "호출",
-  memory: "기억",
-  routing: "라우팅",
-  metrics: "지표",
-} as const satisfies Record<InspectorTab, string>;
-
-const TABS = ["calls", "memory", "routing", "metrics"] as const satisfies ReadonlyArray<InspectorTab>;
-
 const FOCUS_TONE_CLASSES = {
   danger: "text-danger",
   warn: "text-warn",
@@ -66,8 +59,8 @@ const FOCUS_TONE_CLASSES = {
 /** 런 요약의 응답 플래그 줄 — 이 순서로 적는다. 이름은 지표 탭의 턴 칸과 같다. */
 const RUN_FLAG_ROWS = [
   ...BOOLEAN_FLAG_KEYS.map((key) => ({ key, label: BOOLEAN_FLAG_LABELS[key] })),
-  { key: "broken", label: "깨짐" },
-  { key: "brackets", label: "괄호" },
+  { key: "broken", label: REPLY_FLAG_LABELS.broken },
+  { key: "brackets", label: REPLY_FLAG_LABELS.brackets },
 ] as const satisfies ReadonlyArray<{ key: RunFlagKey; label: string }>;
 
 /** 런 요약의 플래그 수 — 측정 서버가 센 값을 그대로 읽는다. */
@@ -116,20 +109,20 @@ export function Inspector(props: InspectorProps) {
   return (
     <>
       <div role="tablist" aria-label="호출 검사기" className="sticky top-0 z-10 flex h-8 items-stretch border-b border-border bg-surface px-1">
-        {TABS.map((candidate, index) => (
+        {INSPECTOR_TAB_OPTIONS.map(({ tab: candidate, label }, index) => (
           <button
             key={candidate}
             type="button"
             role="tab"
             aria-selected={candidate === tab}
-            title={`${TAB_LABELS[candidate]} (${index + 1})`}
+            title={`${label} (${index + 1})`}
             onClick={() => onTabChange(candidate)}
             className={cn(
               "flex items-center gap-1.5 border-b-2 px-2.5 text-data whitespace-nowrap focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent motion-safe:transition-colors",
               candidate === tab ? "border-accent font-medium text-ink" : "border-transparent text-ink-secondary hover:text-ink",
             )}
           >
-            {TAB_LABELS[candidate]}
+            {label}
             {counts[candidate] !== undefined && (
               <span className="text-label text-ink-muted tabular-nums">{formatCount(counts[candidate])}</span>
             )}
@@ -629,7 +622,7 @@ function MetricsTab({ detail, turnDetail, metrics: metricsState, onRetryMetrics,
         {turnMetrics === null ? (
           <Absent>응답이 없는 턴이라 지표 표본에서 빠졌다</Absent>
         ) : (
-          <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-data">
+          <dl className="mt-1 grid grid-cols-fields gap-x-3 gap-y-1 text-data">
             <Field label="길이">
               {formatCount(turnMetrics.flags.length)}자 · {formatCount(turnMetrics.flags.sentenceCount)}문장
               {turnMetrics.flags.statusBlockLength > 0 && (
@@ -641,10 +634,10 @@ function MetricsTab({ detail, turnDetail, metrics: metricsState, onRetryMetrics,
                 {turnMetrics.flags[key] ? <span className="text-ink">예</span> : <span className="text-ink-muted">아니오</span>}
               </Field>
             ))}
-            <Field label="깨짐">
+            <Field label={REPLY_FLAG_LABELS.broken}>
               {turnMetrics.flags.broken === null ? <span className="text-ink-muted">아니오</span> : <span className="text-danger">{turnMetrics.flags.broken}</span>}
             </Field>
-            <Field label="괄호">
+            <Field label={REPLY_FLAG_LABELS.brackets}>
               {turnMetrics.flags.brackets.length === 0 ? <span className="text-ink-muted">없음</span> : <span className="font-mono">{turnMetrics.flags.brackets.join(" ")}</span>}
             </Field>
             <Field label="직전 응답">{describePreviousFrom(turnMetrics)}</Field>
@@ -675,7 +668,7 @@ function MetricsTab({ detail, turnDetail, metrics: metricsState, onRetryMetrics,
         {metrics === undefined ? (
           <MetricsPending isFailed={metricsState.status === "failed"} onRetry={onRetryMetrics} />
         ) : (
-          <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-data tabular-nums">
+          <dl className="mt-1 grid grid-cols-fields gap-x-3 gap-y-1 text-data tabular-nums">
             <Field label="표본">{formatCount(metrics.scored)}턴 (응답 있는 턴)</Field>
             <Field label="응답 없는 턴">{formatCount(metrics.lost)}</Field>
             <Field label="길이 중앙값">{metrics.medianLength === null ? <Missing /> : `${formatCount(metrics.medianLength)}자`}</Field>

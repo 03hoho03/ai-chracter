@@ -1,6 +1,7 @@
 import type { AttemptDetail, DriverStatChange, ReplyFlagsView, StatSeries, TurnSummary } from "@/shared/api/client";
 import { formatCount } from "@/shared/lib/formatNumber";
 
+import { REPLY_FLAG_LABELS } from "./detailLabels";
 import { defaultSlots, lineCandidates } from "./statLines";
 
 /**
@@ -30,23 +31,45 @@ export type TurnFlag = {
 
 export type Utterance = { kind: "user"; text: string } | { kind: "shortcut"; name: string } | { kind: "none" };
 
+/**
+ * 턴 목록 행의 응답 한 줄. 응답이 없으면 빈칸 대신, 받은 칸의 모양만으로 정해지는 까닭을 싣는다. 위에서부터 먼저 맞는 것이다.
+ * - `reply`: 고른 시도의 응답 앞부분(측정 서버가 앞 200자를 준다). 실패 문장이 함께 있어도 응답이 먼저다.
+ * - `failure`: 보일 응답 없이 실패 문장이 있다 — 그 문장. 응답이 교체됐어도 이것이 먼저다(교체 표지는 행에 따로 선다).
+ *   `isLost` 는 측정 서버가 이 턴을 유실(응답도 교체 줄도 없음)로 본 것이다 — 교체 줄이 응답을 냈거나 공백뿐인 응답이 왔으면
+ *   실패 문장이 있어도 거짓이라, 행이 "응답 없음"이라고 하지 않는다.
+ * - `blankHead`: 측정 서버가 주는 앞부분(앞 200자)이 공백뿐이고 그 뒤에 글이 이어진다 — 행에 보일 앞부분이 없지만 빈 응답은 아니다.
+ *   응답이 교체됐어도 이것이 먼저다(고른 시도에 응답이 있고, 교체 표지는 행에 따로 선다).
+ * - `replaced`: 고른 시도에 보일 응답이 없지만(비었거나 공백뿐) 재생성·수정한 줄이 응답을 냈다 — 유실이 아니다.
+ * - `blank`: 응답이 왔는데 공백뿐이다.
+ * - `none`: 응답도 실패 문장도 없다.
+ *
+ * 글은 줄바꿈·탭·겹친 공백을 빈칸 하나로 접어 한 줄로 싣는다.
+ */
+export type ReplyLine =
+  | { kind: "reply"; text: string }
+  | { kind: "failure"; text: string; isLost: boolean }
+  | { kind: "replaced" }
+  | { kind: "blank" }
+  | { kind: "blankHead" }
+  | { kind: "none" };
+
 export type TurnRow = {
   turn: number;
   utterance: Utterance;
+  reply: ReplyLine;
   attemptCount: number;
   isSupplemented: boolean;
   isReplaced: boolean;
-  isLost: boolean;
   deltas: StatDelta[];
   flags: TurnFlag[];
 };
 
-/** 턴 목록에 보이는 플래그 넷과 그 순서. 나머지 지표(질문·청유, 장면 열림 등)는 검사기 지표 탭에서 본다. */
+/** 턴 목록에 보이는 플래그 넷과 그 순서·약자. 나머지 지표(질문·청유, 장면 열림 등)는 검사기 지표 탭에서 본다. */
 const ROW_FLAGS = [
-  { key: "truncated", abbr: "절", label: "절단" },
-  { key: "selfCopy", abbr: "복", label: "자기복제" },
-  { key: "labelLeak", abbr: "라", label: "라벨 누출" },
-  { key: "broken", abbr: "깨", label: "깨짐" },
+  { key: "truncated", abbr: "절" },
+  { key: "selfCopy", abbr: "복" },
+  { key: "labelLeak", abbr: "라" },
+  { key: "broken", abbr: "깨" },
 ] as const;
 
 type FlagKey = (typeof ROW_FLAGS)[number]["key"];
@@ -71,10 +94,10 @@ export function buildTurnRows(
   return turns.map((summary) => ({
     turn: summary.turn,
     utterance: utteranceOf(summary),
+    reply: replyLineOf(summary),
     attemptCount: summary.attemptCount,
     isSupplemented: summary.supplemented,
     isReplaced: summary.replaced,
-    isLost: summary.lost,
     deltas: [...visibleDeltas(summary.driverStatChanges, tones), ...hiddenDeltas(summary)],
     flags: rowFlags(summary.flags),
   }));
@@ -128,6 +151,21 @@ function utteranceOf(summary: TurnSummary): Utterance {
   return { kind: "none" };
 }
 
+function replyLineOf(summary: TurnSummary): ReplyLine {
+  const reply = foldLine(summary.replyHead);
+  if (reply !== "") return { kind: "reply", text: reply };
+  const failure = foldLine(summary.failure ?? "");
+  if (failure !== "") return { kind: "failure", text: failure, isLost: summary.lost };
+  if (summary.replyLength > summary.replyHead.length) return { kind: "blankHead" };
+  if (summary.replaced) return { kind: "replaced" };
+  return summary.replyLength > 0 ? { kind: "blank" } : { kind: "none" };
+}
+
+/** 줄바꿈·탭·겹친 공백을 빈칸 하나로 접고 앞뒤 공백을 뗀다. */
+function foldLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 /** 드라이버 줄의 `value` 는 바뀐 뒤 값이라 Δ 로 쓰지 않는다 — 변화량은 측정 서버가 낸 `delta` 다. */
 function visibleDeltas(changes: ReadonlyArray<DriverStatChange>, tones: ReadonlyMap<string, StatTone>): StatDelta[] {
   return changes.map((change) => ({
@@ -156,10 +194,10 @@ function hiddenDeltas(summary: TurnSummary): StatDelta[] {
 
 function rowFlags(flags: ReplyFlagsView | null): TurnFlag[] {
   if (flags === null) return [];
-  return ROW_FLAGS.filter(({ key }) => isRaised(flags, key)).map(({ key, abbr, label }) => ({
+  return ROW_FLAGS.filter(({ key }) => isRaised(flags, key)).map(({ key, abbr }) => ({
     key,
     abbr,
-    label,
+    label: REPLY_FLAG_LABELS[key],
     isDanger: key === "broken",
   }));
 }
