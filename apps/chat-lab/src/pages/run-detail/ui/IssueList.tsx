@@ -36,7 +36,10 @@ export function IssueList({ mismatches, cautions, knownTurns, onSelectTurn, onCl
           닫기 <span className="text-label text-ink-muted">Esc</span>
         </Button>
       </div>
-      <div className="min-h-0 overflow-auto">
+      {/* `relative` 는 항목 안의 읽기 프로그램 전용 낱말(절대 위치)이 이 스크롤 안에 붙게 한다 — 없으면 스크롤 밖의 패널에 붙어,
+          아래쪽 항목의 그 낱말이 화면 전체를 세로로 늘린다. 항목 행이 아니라 여기에 두는 것은, 행을 위치 요소로 만들면 스크롤된
+          행이 고정된 묶음 머리 위로 그려지기 때문이다. */}
+      <div className="relative min-h-0 overflow-auto">
         <IssueSection
           title="불일치"
           note="기록끼리 실제로 어긋난 것"

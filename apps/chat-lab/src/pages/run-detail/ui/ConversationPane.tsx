@@ -65,8 +65,9 @@ export function ConversationPane({ turn, turnDetail, attempt, deltas, isStale, o
             {REPLY_FLAG_LABELS.broken} · {flags.broken}
           </Chip>
         )}
-        {deltas.map((delta) => (
-          <Chip key={`${delta.tone}:${delta.name}`} title={deltaTitle(delta)}>
+        {deltas.map((delta, index) => (
+          // 기록에서 만든 고정 순서이고 칩에 상태가 없다. 스탯 이름에는 유일 제약이 없어 이름으로는 key 가 겹칠 수 있다.
+          <Chip key={index} title={deltaTitle(delta)}>
             <StatDot tone={delta.tone} />
             {delta.name}
             <span className="tabular-nums">{formatStatDelta(delta)}</span>
