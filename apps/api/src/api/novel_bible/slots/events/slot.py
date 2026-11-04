@@ -32,6 +32,7 @@ from api.db.models.novel_bible_events import NovelBibleEvent, NovelBibleEventRel
 from api.novel_bible.core.contracts import CoreReadView
 from api.novel_bible.core.jobs import LISTED_NAME_TOO_LONG, name_too_long
 from api.novel_bible.core.keys import normalize_name
+from api.novel_bible.core.known import known_entities_text
 from api.novel_bible.core.queries import current_items, revision_at
 from api.novel_bible.core.quotes import verify_quote
 from api.novel_bible.core.types import (
@@ -48,14 +49,13 @@ from api.novel_bible.core.types import (
     SlotRows,
     VerifiedQuote,
 )
-from api.novel_bible.ids import EntityKind, EventActuality, ItemTable, OperationKey, SlotId
+from api.novel_bible.ids import EventActuality, ItemTable, OperationKey, SlotId
 from api.novel_bible.slots.events.schema import EventsOutput, ExtractedEvent
 
 # 앞 화 사건 목록에 싣는 수 — 이야기 순서로 가장 늦은 것부터 센다.
 _PRIOR_LIMIT = 200
 # 사건 하나에 남기는 인물 이름 수(등장·언급 각각). 넘는 이름은 자른다.
 _NAME_LIMIT = 20
-_KIND_LABELS: dict[EntityKind, str] = {"character": "인물", "object": "사물", "ability": "능력"}
 _TABLES: tuple[tuple[ItemTable, Any], ...] = (("event", NovelBibleEvent), ("event_relation", NovelBibleEventRelation))
 
 
@@ -128,11 +128,6 @@ def _manuscript_text(manuscript: Manuscript, scenes: Sequence[SceneHint]) -> str
     return "\n".join(lines)
 
 
-def _entity_line(name: EntityName) -> str:
-    aliases = f" — 별칭: {', '.join(name.aliases)}" if name.aliases else ""
-    return f"- {name.name} ({_KIND_LABELS[name.kind]}){aliases}"
-
-
 def _characters(names: Iterable[str]) -> tuple[EntityName, ...]:
     kept = [EntityName(kind="character", name=name.strip()) for name in names if normalize_name(name)]
     return tuple(kept[:_NAME_LIMIT])
@@ -185,9 +180,7 @@ class EventsSlot:
           `[번호] ` 머리 없이 그 문단 글에서 그대로 옮긴 구절이어야 한다 — 인용 검증이 문단 글에서 찾는다.
         - `scene_hints`: 장면마다 한 줄 `장면 n. 제목`, 회상 장면이면 끝에 ` (회상)`. n 은 원고의 `[장면 n]` 과 같다. 구성안이
           없는 화는 빈 값이다(문안이 이 섹션을 조건부로 두면 섹션째 빠진다).
-        - `known_entities`: 개체마다 한 줄 `- 이름 (인물)`(종류 자리는 `인물`·`사물`·`능력`), 별칭이 있으면 끝에
-          ` — 별칭: a, b`. 같은 줄은 한 번만 싣고 줄은 글자 순으로 정렬한다. 모델이 인물·사물 이름을 낼 때는 이름만 써야 한다 —
-          괄호의 종류나 별칭 꼬리를 함께 옮기면 그 글 그대로 다른 개체가 생긴다.
+        - `known_entities`: 사실 슬롯과 같은 글이다 — 꼴은 `core/known.py` 의 `known_entities_text`.
         - `prior_events`: 앞 화 사건마다 한 줄 `P1. 3화 — 요지`. 회상 관계의 `target` 은 표지(`P1`)만 받는다 — 앞뒤 공백 말고
           다른 글자(마침표·괄호·소문자 따위)가 붙으면 그 관계를 버린다."""
         assert isinstance(slot_input, EventsInput)
@@ -197,7 +190,7 @@ class EventsSlot:
                 f"장면 {number}. {scene.title}" + (" (회상)" if scene.flashback else "")
                 for number, scene in enumerate(slot_input.scenes, start=1)
             ),
-            "known_entities": "\n".join(sorted({_entity_line(name) for name in slot_input.known})),
+            "known_entities": known_entities_text(slot_input.known),
             "prior_events": "\n".join(
                 f"{prior.label}. {prior.chapter_ordinal}화 — {prior.summary}" for prior in slot_input.prior
             ),

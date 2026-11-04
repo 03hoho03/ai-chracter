@@ -28,11 +28,19 @@ from api.db.models.novel_bible_events import NovelBibleEvent
 from api.db.models.novel_bible_facts import NovelBibleFact
 from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
 from api.novel_bible.core.confirm import Actor, confirm
-from api.novel_bible.core.jobs import _VALIDATION_VERSION, EMPTY_NAME, NAME_TOO_LONG, run_next_job
+from api.novel_bible.core.jobs import (
+    _VALIDATION_VERSION,
+    EMPTY_NAME,
+    NAME_TOO_LONG,
+    SUBJECT_KIND_MISMATCH,
+    drop_unlinkable,
+    run_next_job,
+)
 from api.novel_bible.core.keys import proposition_key
 from api.novel_bible.core import pipeline
 from api.novel_bible.core.pipeline import CAS_LIMIT, link_check_commit, start_linking
-from api.novel_bible.core.types import BibleSnapshot, Proposition
+from api.novel_bible.core.types import BibleSnapshot, EntityName, ItemDraft, Proposal, Proposition, VerifiedQuote
+from api.novel_bible.ids import EntityKind
 from api.novelize.deletion import delete_batch, strip_author_only_data
 from factories import _committed_engine, _wait_until_a_lock_is_awaited
 from novel_bible_fakes import (
@@ -812,6 +820,33 @@ async def test_an_item_whose_single_entity_name_is_over_the_limit_is_dropped_and
         await db_session.scalars(select(NovelBibleEntity.name_norm).where(NovelBibleEntity.novel_id == novel.id))
     )
     assert at_limit in names and too_long not in names
+
+
+def test_an_item_whose_subject_name_kind_differs_from_the_proposition_subject_kind_is_dropped() -> None:
+    """명제의 주어 이름의 개체 종류가 명제의 주어 종류와 다르면 그 항목만 버리고 사유를 센다. 깨지는 시나리오: 코어가 슬롯의
+    약속에 기대면, 주어 이름을 다른 종류로 만든 슬롯 하나 때문에 그 행·키는 이름의 종류로, 같은 명제를 내는 다른 슬롯은 명제의
+    종류로 개체를 이어 둘의 키가 갈린다 — 지식이 그 사실에 영영 이어지지 않는다."""
+    quote = VerifiedQuote(block_id=uuid.uuid4(), char_start=0, char_end=1, quote_sha256="합성 해시")
+
+    def draft(key: str, name_kind: EntityKind, subject_kind: EntityKind) -> ItemDraft:
+        return ItemDraft(
+            local_key=key, table="fact", fields={}, quotes=(quote,),
+            names={"subject": (EntityName(kind=name_kind, name="검"),)},
+            proposition=Proposition(
+                subject="검", subject_kind=subject_kind, kind="attribute", attribute="날", value="무딤", holds=True
+            ),
+        )
+
+    proposal = Proposal(
+        items=(draft("same", "object", "object"), draft("name-is-character", "character", "object"),
+               draft("name-is-object", "object", "character")),
+        dropped={"quote_not_found": 1},
+    )
+
+    kept = drop_unlinkable(proposal)
+
+    assert [item.local_key for item in kept.items] == ["same"]
+    assert kept.dropped == {"quote_not_found": 1, SUBJECT_KIND_MISMATCH: 2}
 
 
 @pytest.mark.parametrize(

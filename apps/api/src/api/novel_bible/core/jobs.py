@@ -10,12 +10,19 @@
 개체 하나로 푸는 칸에 있으면 항목을 버리고, 그 밖의 이름 칸(사건의 등장·언급 인물 같은 이름 목록)에 있으면 그 이름만 빼고
 항목은 남긴다 — 이름 하나 때문에 사건이 통째로 빠지면 사건이 덜 잡힌 것처럼 보인다. 뺀 이름도 이름 수로 `dropped` 에 센다.
 이름 목록 둘을 같은 차례로 짝지어 저장하는 슬롯(사건의 행동)은 코어가 한쪽 칸에서만 빼면 짝이 어긋나므로, 그런 짝은 슬롯이
-검증에서 먼저 뺀다. 출력 전체가 아니라 그 항목이나 그 이름만 버린다.
+검증에서 먼저 뺀다. 명제의 주어 이름(`names["subject"]`)의 개체 종류가 명제의 주어 종류와 다른 항목도 버린다 — 행과 안정 키는
+이름의 종류로 개체를 잇는데, 같은 명제를 내는 다른 슬롯은 명제의 종류로 이어 둘의 키가 갈린다. 슬롯 계약이 둘을 같게 만들라고
+하지만 코어는 그 약속에 기대지 않고 확인한다 — assert 로 막으면 슬롯 하나의 실수로 확정 전체가 실패하므로 그 항목만 버린다.
+출력 전체가 아니라 그 항목이나 그 이름만 버린다.
 
 추출 캐시: 같은 소설에서 슬롯·어댑터·문안 세트·출력 스키마·검증 규칙 판이 같고 본문 해시·블록 id 해시·슬롯의 힌트가
-아닌 렌더 값이 같은 앞 작업이 성공해 있으면 그 제안을 복사하고 호출하지 않는다. 힌트(아는 개체 따위 정본 상태에서 오는 값)는
-다른 화가 커밋될 때마다 바뀌므로 열쇠에서 뺀다. 블록 id 해시가 열쇠에 드는 이유는 제안이 블록 id 로 저장돼 있어서다 — 본문이
-같아도 블록 id 가 다른 개정에는 다시 쓸 수 없다."""
+아닌 렌더 값·입력이 읽은 채팅 기억 행의 방·행 id·입력이 읽은 원작의 버전 id·노트 id 가 같은 앞 작업이 성공해 있으면 그 제안을
+복사하고 호출하지 않는다. 힌트(아는 개체 따위 정본 상태에서 오는 값)는 다른 화가 커밋될 때마다 바뀌므로 열쇠에서 뺀다. 블록 id
+해시가 열쇠에 드는 이유는 제안이 블록 id 로 저장돼 있어서다 — 본문이 같아도 블록 id 가 다른 개정에는 다시 쓸 수 없다. 채팅 기억
+행 id 도 같은 이유다 — 제안의 플레이 근거가 행 id 로 저장돼 있는데 렌더 글에는 id 가 없어, 되감기 뒤 같은 사실이 같은 글의 새
+행으로 다시 쓰이면 글만으로는 열쇠가 같아 지워진 행을 가리키는 제안을 재사용하게 된다(그 근거는 태어날 때부터 소실로 읽힌다).
+원작 버전 id·노트 id 도 같다 — 원작 근거가 그 id 로 저장되는데 렌더 글에는 표지(`S`·`K1`)만 있어, 같은 글의 새 버전·새 노트로
+바뀌면 글만으로는 이번 확정이 읽지 않은 버전·노트를 가리키는 제안을 재사용하게 된다."""
 
 import hashlib
 import json
@@ -52,6 +59,8 @@ _RETRYABLE: frozenset[JobFailure] = frozenset(
 )
 # 코어가 풀어야 하는 이름이 비어 버린 항목의 `dropped` 사유.
 EMPTY_NAME = "empty_name"
+# 명제의 주어 이름의 개체 종류가 명제의 주어 종류와 다른 항목의 `dropped` 사유.
+SUBJECT_KIND_MISMATCH = "subject_kind_mismatch"
 # 코어가 개체 하나로 풀어야 하는 칸의 이름이 정규화 뒤 개체 이름 길이 상한을 넘는 항목의 `dropped` 사유.
 NAME_TOO_LONG = "name_too_long"
 # 이름 목록 칸에서 상한을 넘어 뺀 이름의 `dropped` 사유 — 항목이 아니라 뺀 이름 수를 센다.
@@ -59,7 +68,7 @@ LISTED_NAME_TOO_LONG = "listed_name_too_long"
 # 추출 캐시 열쇠에 드는 검증 규칙의 판. 캐시는 검증을 마친 제안을 다시 검증하지 않고 복사하므로, 슬롯 검증이나 코어의 거르기
 # (근거 인용 찾기·이름 거르기) 규칙을 바꾸면 이 값을 올려 옛 규칙으로 만든 제안을 다시 쓰지 않게 한다. 이 값이 열쇠에 들기 전의
 # 작업은 열쇠 꼴이 달라 어느 판과도 맞지 않는다.
-_VALIDATION_VERSION = 2
+_VALIDATION_VERSION = 3
 
 
 async def commit_ref(session: AsyncSession, commit: NovelBibleCommit) -> CommitRef:
@@ -96,6 +105,10 @@ def drop_unlinkable(proposal: Proposal) -> Proposal:
                 needed.append("value")
         if not all(any(normalize_name(name.name) for name in draft.names.get(field, ())) for field in needed):
             reason = EMPTY_NAME
+        elif draft.proposition is not None and any(
+            name.kind != draft.proposition.subject_kind for name in draft.names["subject"]
+        ):
+            reason = SUBJECT_KIND_MISMATCH
         elif any(name_too_long(name.name) for field in needed for name in draft.names.get(field, ())):
             reason = NAME_TOO_LONG
         else:
@@ -179,7 +192,9 @@ async def _prepare(
         commit = await session.get(NovelBibleCommit, commit_id)
         if commit is None:
             return None
-        view = CommitView(session, registry, await commit_ref(session, commit), source_ref_of(commit))
+        view = CommitView(
+            session, registry, await commit_ref(session, commit), source_ref_of(commit), commit.chat_room_id
+        )
         slot_input = await slot.build_input(session, view)
         values = slot.prompt_values(slot_input)
         adapter = resolver(slot.operation)
@@ -191,6 +206,10 @@ async def _prepare(
                 commit.content_hash, commit.block_ids_hash, slot.id, adapter.id, str(source.prompt_set_id), schema_name,
                 _VALIDATION_VERSION,
                 {name: value for name, value in values.items() if name not in slot.hint_values},
+                [[str(fact.chat_room_id), str(fact.chat_memory_fact_id)] for fact in view.served_play_facts],
+                [str(canon.ref.content_version_id), [str(note_id) for note_id in canon.keyword_notes]]
+                if (canon := view.served_source_canon) is not None
+                else None,
             ]
         )
         input_hash = _digest(
