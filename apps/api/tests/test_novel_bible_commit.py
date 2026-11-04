@@ -28,7 +28,7 @@ from api.db.models.novel_bible_events import NovelBibleEvent
 from api.db.models.novel_bible_facts import NovelBibleFact
 from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
 from api.novel_bible.core.confirm import Actor, confirm
-from api.novel_bible.core.jobs import EMPTY_NAME, NAME_TOO_LONG, run_next_job
+from api.novel_bible.core.jobs import _VALIDATION_VERSION, EMPTY_NAME, NAME_TOO_LONG, run_next_job
 from api.novel_bible.core.keys import proposition_key
 from api.novel_bible.core import pipeline
 from api.novel_bible.core.pipeline import CAS_LIMIT, link_check_commit, start_linking
@@ -338,6 +338,28 @@ async def test_the_extraction_cache_misses_when_chapter_inputs_change(db_session
 
     changed = await change(db_session, chapter.id, list(revision.block_ids), adapter, source)
     commit_id = await _confirm(db_session, registry, novel.id, chapter.id, changed)
+    await drain(factory, registry, adapter)
+
+    assert (await _commit_row(db_session, commit_id)).status == "committed"
+    assert sorted(adapter.calls[calls_before:]) == ["events.extract", "facts.extract", "knowledge.extract"]
+
+
+async def test_the_extraction_cache_misses_when_the_validation_rules_version_changes(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 본문·블록 id·문안 세트가 같은 삽화 개정이라 판이 같으면 캐시가 맞는다. 판만 올리면 옛 규칙으로 검증한 제안을 쓰지 않고
+    # 슬롯마다 다시 부른다.
+    novel = await make_novel(db_session)
+    chapter, revision = await add_chapter(db_session, novel.id, 1, BODY)
+    registry, adapter = full_registry(), FakeAdapter()
+    factory = savepoint_factory(db_session)
+    await _confirm(db_session, registry, novel.id, chapter.id, revision.id)
+    await drain(factory, registry, adapter)
+    calls_before = len(adapter.calls)
+    illustrated = await add_revision(db_session, chapter.id, BODY, block_ids=revision.block_ids, source="illustration")
+    monkeypatch.setattr("api.novel_bible.core.jobs._VALIDATION_VERSION", _VALIDATION_VERSION + 1)
+
+    commit_id = await _confirm(db_session, registry, novel.id, chapter.id, illustrated.id)
     await drain(factory, registry, adapter)
 
     assert (await _commit_row(db_session, commit_id)).status == "committed"

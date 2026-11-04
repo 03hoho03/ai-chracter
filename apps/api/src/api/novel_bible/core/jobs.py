@@ -12,10 +12,10 @@
 이름 목록 둘을 같은 차례로 짝지어 저장하는 슬롯(사건의 행동)은 코어가 한쪽 칸에서만 빼면 짝이 어긋나므로, 그런 짝은 슬롯이
 검증에서 먼저 뺀다. 출력 전체가 아니라 그 항목이나 그 이름만 버린다.
 
-추출 캐시: 같은 소설에서 슬롯·어댑터·문안 세트·출력 스키마가 같고 본문 해시·블록 id 해시·슬롯의 힌트가 아닌 렌더 값이 같은 앞
-작업이 성공해 있으면 그 제안을 복사하고 호출하지 않는다. 힌트(아는 개체 따위 정본 상태에서 오는 값)는 다른 화가 커밋될 때마다
-바뀌므로 열쇠에서 뺀다. 블록 id 해시가 열쇠에 드는 이유는 제안이 블록 id 로 저장돼 있어서다 — 본문이 같아도 블록 id 가 다른
-개정에는 다시 쓸 수 없다."""
+추출 캐시: 같은 소설에서 슬롯·어댑터·문안 세트·출력 스키마·검증 규칙 판이 같고 본문 해시·블록 id 해시·슬롯의 힌트가
+아닌 렌더 값이 같은 앞 작업이 성공해 있으면 그 제안을 복사하고 호출하지 않는다. 힌트(아는 개체 따위 정본 상태에서 오는 값)는
+다른 화가 커밋될 때마다 바뀌므로 열쇠에서 뺀다. 블록 id 해시가 열쇠에 드는 이유는 제안이 블록 id 로 저장돼 있어서다 — 본문이
+같아도 블록 id 가 다른 개정에는 다시 쓸 수 없다."""
 
 import hashlib
 import json
@@ -56,6 +56,10 @@ EMPTY_NAME = "empty_name"
 NAME_TOO_LONG = "name_too_long"
 # 이름 목록 칸에서 상한을 넘어 뺀 이름의 `dropped` 사유 — 항목이 아니라 뺀 이름 수를 센다.
 LISTED_NAME_TOO_LONG = "listed_name_too_long"
+# 추출 캐시 열쇠에 드는 검증 규칙의 판. 캐시는 검증을 마친 제안을 다시 검증하지 않고 복사하므로, 슬롯 검증이나 코어의 거르기
+# (근거 인용 찾기·이름 거르기) 규칙을 바꾸면 이 값을 올려 옛 규칙으로 만든 제안을 다시 쓰지 않게 한다. 이 값이 열쇠에 들기 전의
+# 작업은 열쇠 꼴이 달라 어느 판과도 맞지 않는다.
+_VALIDATION_VERSION = 2
 
 
 async def commit_ref(session: AsyncSession, commit: NovelBibleCommit) -> CommitRef:
@@ -185,6 +189,7 @@ async def _prepare(
         cache_key = _digest(
             [
                 commit.content_hash, commit.block_ids_hash, slot.id, adapter.id, str(source.prompt_set_id), schema_name,
+                _VALIDATION_VERSION,
                 {name: value for name, value in values.items() if name not in slot.hint_values},
             ]
         )

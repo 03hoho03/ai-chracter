@@ -143,11 +143,14 @@ def test_composition_and_whitespace_differences_together_map_back_to_the_origina
         pytest.param(2, "문을열었다", id="missing-space-is-not-a-whitespace-run"),
         pytest.param(2, "ＡＢ", id="full-width-letters-are-not-folded"),
         pytest.param(2, "   ", id="whitespace-only"),
+        # 한 칸 공백과 줄바꿈은 둘째 문단에 그대로 있다. 공백만인 인용은 문단에 있어도 근거가 아니다.
+        pytest.param(2, " ", id="single-space-in-the-paragraph"),
+        pytest.param(2, "\n", id="single-newline-in-the-paragraph"),
         pytest.param(2, "", id="empty"),
     ],
 )
 def test_a_quote_that_is_not_in_its_paragraph_is_still_dropped(paragraph: int, quote: str) -> None:
-    manuscript = _manuscript("첫 문단이다.\n\n그는 AB 문을 열었다.")
+    manuscript = _manuscript("첫 문단이다.\n\n그는\nAB 문을 열었다.")
 
     assert verify_quote(manuscript, QuoteOut(paragraph=paragraph, text=quote)) is None
 

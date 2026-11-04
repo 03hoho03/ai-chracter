@@ -88,8 +88,9 @@ def _locate(text: str, quote: str) -> _Span | None:
 
 def verify_quote(manuscript: Manuscript, quote: QuoteOut) -> VerifiedQuote | None:
     """`quote.paragraph` 번 문단에서 `quote.text` 를 찾아 원문 구간과 그 원문 글의 해시를 낸다. 문단이 없거나 구절이 그
-    문단에 없으면 None."""
-    if not quote.text or not 1 <= quote.paragraph <= len(manuscript.blocks):
+    문단에 없으면 None. 공백만인 인용도 None 이다 — 거의 모든 문단에 띄어쓰기가 있어, 찾아 주면 근거 없는 항목도 인용 검증을
+    지난다."""
+    if not quote.text.strip() or not 1 <= quote.paragraph <= len(manuscript.blocks):
         return None
     block = manuscript.blocks[quote.paragraph - 1]
     span = _locate(block.text, quote.text)
