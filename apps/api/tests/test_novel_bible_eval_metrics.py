@@ -283,6 +283,7 @@ def test_a_run_whose_commits_all_failed_or_that_halted_gets_no_verdict() -> None
     finished = synthetic_report(eval_set, clean, [], adapter="fake")["metrics"]
     assert finished["block_false_positive"]["pass"] is True
     assert finished["recall.facts"]["pass"] is False  # 사실 0/5
+    assert "direction_error" not in finished  # 지식 작업이 없는 실행은 방향 오류 지표를 내지 않는다
     halted = synthetic_report(eval_set, clean, [], adapter="fake", halted="합성 멈춤")["metrics"]
     for name in ("block_false_positive", "recall.facts"):
         assert halted[name]["pass"] is None
