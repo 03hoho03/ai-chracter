@@ -2187,9 +2187,10 @@ async def publish_content(
     글만 바뀐 경우는 충돌로 치지 않는다 — 심사는 그림만 보고, 발행본에는 3 에서 다시 읽은 글이 실린다. 3 에서 검증을
     다시 돌리므로 그사이 필수 칸이 비면 400 이다. 충돌로 멈춘 발행이 이미 올린 블러본은 가리키는 행 없이 남는다.
 
-    본문의 `novelPermission` 은 3 에서 발행과 함께 작품의 소설화 허락으로 쓴다. 발행 이력이 없는 작품을 그 값 없이
-    발행하면 아직 막지 않고 1 에서 경고 로그 한 줄만 남긴다 — 첫 발행 때 허락을 고르게 하는 화면이 나간 뒤 그런 발행이
-    사라졌는지 세는 신호다. 막을 때도 이 자리(검증·그림 심사 전)라 거절에 심사 원가가 들지 않는다."""
+    본문의 `novelPermission` 은 3 에서 발행과 함께 작품의 소설화 허락으로 쓴다. 발행 이력이 없는 작품은 그 값이 있어야
+    발행된다 — 다른 회원의 소설 만들기를 작가가 첫 발행 때 직접 고르게 하려는 것이다. 없으면 1 에서 발행 검증보다 먼저
+    400 `NOVEL_PERMISSION_REQUIRED` 로 거절하므로 거절에 심사 원가가 들지 않는다. 발행 이력이 있는 작품은 값 없이 다시
+    발행해도 되고 허락은 그대로다."""
     novel_permission = body.novel_permission if body is not None else None
     # 인증 의존성이 요청 세션에 연 읽기 트랜잭션을 닫는다(롤백은 세션의 객체를 만료시켜 쓰지 않는다).
     await db.commit()
@@ -2198,8 +2199,14 @@ async def publish_content(
             read_db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
         )
         if content.current_published_version_id is None and novel_permission is None:
-            # 작품·회원 id 는 싣지 않는다 — 셀 수만 있으면 된다.
-            logger.warning("publish_first_without_novel_permission type=%s", content.type.value)
+            # 접근 로그의 발행 400 에는 필수 칸 누락·심사 거부가 섞여 있어 이 거절만 세려면 따로 남긴다. 회원 id 는 싣지 않는다.
+            logger.warning(
+                "publish_first_novel_permission_required content_id=%s type=%s", content.id, content.type.value
+            )
+            # `reason` 칸을 두지 않는다 — 화면은 400 의 `reason` 을 심사 거부로 읽어 이의제기로 안내한다.
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail={"code": "NOVEL_PERMISSION_REQUIRED"}
+            )
         prompt_set, prompt_sections = await load_active_prompt_set(read_db, lane="publish_filter")
         if content.type == ContentType.CHARACTER:
             plan = await _plan_character_publish(read_db, content, version, prompt_sections)

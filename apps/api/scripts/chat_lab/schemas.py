@@ -11,6 +11,8 @@ from api.core.schema import CamelModel
 
 # 묶음 형식 세대. `legacy` 는 턴 줄에 방 id 가 없는 옛 형식이라 목록에만 보이고 열지 않는다.
 BundleFormat = Literal["current", "preMessageId", "legacy"]
+# 실제로 보낸 생성 모델을 읽은 기록 — 덤프 생성 줄, 턴 기록 파일.
+SentModelsFrom = Literal["dump", "chatTurns"]
 
 # 결합 어긋남 — 목록의 불일치 수는 이것만 센다.
 # missingDump: 덤프 파일이 있는데 그 턴의 응답 시도에 생성 덤프가 없다(서버 앞에서 거부된 시도는 정상이라 넣지 않는다).
@@ -38,6 +40,8 @@ MismatchKind = Literal[
 # pricesChanged: 턴 기록을 내보낸 때의 단가표와 지금 단가표가 다르다(원가는 지금 표로 낸다).
 # statDefsChanged: 방 스냅숏마다 스탯 목록이 다르거나 이름이 같은 스탯이 있어 이름 키 스탯을 id 로 되돌릴 수 없다 — 그 묶음의
 # 스탯 대조를 건너뛴다(대조하면 거짓 불일치가 된다).
+# chatTurnsNotJoined: `assistantMessageId` 이전 형식이라 턴 기록 행을 붙일 응답 id 가 없어 행을 턴에 잇지 않았다 — 원가도 내지
+# 않는다(붙은 행이 없다).
 CautionKind = Literal[
     "placementEstimated",
     "roomShared",
@@ -47,6 +51,7 @@ CautionKind = Literal[
     "notDumpLine",
     "pricesChanged",
     "statDefsChanged",
+    "chatTurnsNotJoined",
 ]
 
 
@@ -76,13 +81,21 @@ class RunListItem(CamelModel):
     turn_count: int | None = None
     started_at: str | None = None
     ended_at: str | None = None
-    # 방 스냅숏의 실제 생성 모델(`effectiveChatModel`)과 덤프 생성 줄의 보낸 모델 id.
-    effective_chat_models: list[str] = Field(default_factory=list)
-    generation_models: list[str] = Field(default_factory=list)
+    # 실제로 보낸 생성 모델 id — 덤프 생성 줄의 `model` 이 먼저고, 덤프에 생성 줄이 없으면 턴 기록 파일의 행 전부에서 행마다
+    # 생성 호출 칸의 모델(생성 호출이 기록되지 않은 행은 그 행의 `chat_model`)이다. 어느 기록에서 왔는지가
+    # `sent_chat_models_from` 이고, 둘 다 없으면 빈 목록과 None 이다.
+    sent_chat_models: list[str] = Field(default_factory=list)
+    sent_chat_models_from: SentModelsFrom | None = None
+    # 방 스냅숏의 `effectiveChatModel` — 방 설정에서 서버가 쓰겠다고 한 값이다. 모델을 바꿔 돌린 런에서는 실제로 보낸 모델과
+    # 다르므로 보낸 모델 칸에 섞지 않는다.
+    configured_chat_models: list[str] = Field(default_factory=list)
     # 시도에 붙은 턴 기록 행의 원가 합. 턴 기록이 없으면 None("내보내기 필요").
     cost_usd: float | None = None
     # 붙은 행 가운데 단가표에 없는 모델의 호출 수 — 원가 합에서 빠진 호출이다.
     unpriced_calls: int | None = None
+    # 원가 합이 실제보다 낮을 수 있다 — 붙은 행에 단가 없는 호출이나 입력 토큰이 기록되지 않은 호출이 있다(턴 요약과 같은 판정).
+    # 원가가 없으면 None.
+    cost_is_lower_bound: bool | None = None
     has_snapshots: bool = False
     has_dump: bool = False
     has_chat_turns: bool = False
@@ -93,10 +106,19 @@ class RunListItem(CamelModel):
 
 
 class DriverStatChange(CamelModel):
-    """드라이버 턴 줄의 `statChanges` 한 칸(보이는 스탯만, 이름 키)."""
+    """드라이버 턴 줄의 `statChanges` 한 칸(보이는 스탯만, 이름 키). `value` 는 변화량이 아니라 바뀐 뒤 값이다 — 드라이버가 SSE
+    `statChange` 의 새 값(`newValue`)을 적는다. 변화량은 서버가 그 턴이 시작한 값(`before`)과 함께 낸다(`delta`).
+
+    시작 값은 리플레이가 그 턴을 조립할 때 읽는 스탯 줄(그 턴 줄 앞에서 방 턴 수가 하나 작은 마지막 오프닝·턴·기준 다시 잡기·대조
+    줄)의 같은 이름 값이다. 첫 턴은 오프닝, 보통은 앞 턴에서 고른 시도의 줄(사람이 친 턴을 보충한 줄이어도 같다), 앞 턴이 유실된
+    뒤 드라이버가 기준을 다시 잡았으면 그 줄이다. 같은 턴의 시도는 고르지 않은 것까지 모두 이 값에서 시작한다(같은 상태에서
+    보냈다). 그런 줄이 없으면(앞 턴이 재시도 없이 유실됐거나 턴 번호가 건너뛰었는데 기준을 다시 잡은 줄도 없다) 비고, 앞 턴의
+    응답을 재생성·수정이 바꿨어도 빈다 — 교체 줄에는 바뀐 뒤 스탯이 없고 재생성은 스탯을 다시 판정한다."""
 
     name: str
-    value: float
+    value: float = Field(description="바뀐 뒤 값(SSE statChange 의 새 값). 변화량이 아니다.")
+    before: float | None = Field(description="그 턴이 시작한 값. 기록으로 알 수 없으면 null.")
+    delta: float | None = Field(description="value − before. before 가 null 이면 null.")
 
 
 class RecordedStatChange(CamelModel):
@@ -107,6 +129,24 @@ class RecordedStatChange(CamelModel):
     hidden: bool | None
     before: float | None
     after: float | None
+
+
+# 대화록 분석 판정(`analyze_chat_probe.ReplyFlags`)과 같은 칸. 고정 대본 키워드에 묶인 판정은 싣지 않는다 — 클래스 설명은
+# openapi 스키마에 그대로 실리므로 여기 주석으로 둔다. 길이·문장 수는 응답 끝의 상태창 코드 블록을 뗀 본문이고, 뗀 꼬리의 글자
+# 수가 `status_block_length`(없으면 0)다 — 떼는 규칙은 `analyze_chat_probe.reply_flags`.
+class ReplyFlagsView(CamelModel):
+    length: int
+    sentence_count: int
+    status_block_length: int
+    truncated: bool
+    self_copy: bool
+    solicit: bool
+    ignored: bool
+    scene_open: bool
+    label_leak: bool
+    user_turn: bool
+    broken: str | None
+    brackets: list[str]
 
 
 class TurnSummary(CamelModel):
@@ -127,13 +167,31 @@ class TurnSummary(CamelModel):
     earlier_generation_dumps: int
     judgment_dumps: int
     background_dumps: int
+    # 응답 단위 플래그 — 런 지표의 같은 턴 칸(`TurnMetrics.flags`) 그대로다. 응답이 없는 턴은 None.
+    flags: ReplyFlagsView | None
+    # 그 턴이 시작한 스탯을 기록으로 아는가 — `DriverStatChange.before` 를 채우는 규칙과 같다. 바뀐 스탯이 없는 턴도 시작 값을
+    # 모를 수 있어(앞 턴 응답이 교체됨, 앞 턴이 유실되고 기준을 다시 잡은 줄이 없음) 변화 칸만으로는 알 수 없다. 변화량 칸("Δ
+    # 모름")이 이 값을 따른다.
+    stats_start_known: bool
+    # 그 시작 값이 바로 앞 번호 턴의 고른 시도가 남긴 스탯(`roomAfter.stats`)과 같은가 — 시작 값을 알고, 앞 번호 턴이 런에 있고,
+    # 두 값이 같을 때만 참이다. 시작 값을 알아도 거짓일 수 있다: 사람이 앱에서 친 턴이 드라이버 로그에 없어 번호가 건너뛰었거나,
+    # 기준을 다시 잡은 줄이 앞 턴 뒤 값과 다른 값을 적었다. 첫 턴은 앞 턴이 없어 거짓이다. 타임라인은 이 값이 참인 턴만 앞 칸과
+    # 선으로 잇는다 — 이으면 기울기가 그 턴의 변화량으로 읽힌다.
+    stats_continue_from_previous: bool
+    # 그 턴의 시도에 붙은 턴 기록 행의 원가 합. 붙은 행이 없으면(턴 기록 파일이 없는 경우 포함) None.
     cost_usd: float | None
+    # 합에 단가 없는 호출이나 입력 토큰이 기록되지 않은 호출이 섞여, 합이 실제 원가보다 낮을 수 있다.
+    cost_is_lower_bound: bool
     mismatch_count: int
 
 
 class SeriesPoint(CamelModel):
     turn: int
     value: float
+    # 턴 기록에서 온 점(숨김 스탯 등)만 그 행의 앞 값(`stat_changes` 의 `[전, 후]` 앞)을 싣는다. 턴 기록에는 바뀐 턴의 값만 있어,
+    # 화면이 다음 변화의 앞 값으로 유지 구간이 실제로 이어졌는지 본다. 드라이버 계열은 None — 그 턴의 시작 값은 턴 요약의
+    # `driverStatChanges`·`statsContinueFromPrevious` 가 말한다.
+    before: float | None = None
 
 
 class StatSeries(CamelModel):
@@ -207,15 +265,24 @@ class RunDetail(CamelModel):
     cautions: list[Caution]
 
 
+# 호출 종류(`report.call_site_kind`). generation: 본문을 스트리밍으로 쓰는 생성(채팅 응답·미리보기·소설 화·리플레이). judgment:
+# 판정(스탯·엔딩·그림·장면 헤더). background: 요약 접기와 기억 추출·인상 — 응답 뒤에 돈다. embedding: 기억 임베딩(질의·저장).
+# other: 그 밖(심사·시드·소설 구조화 호출 — 채팅 턴 기록에는 없다)과 모르는 이름.
+CallSiteKind = Literal["generation", "judgment", "background", "embedding", "other"]
+
+
 class CallCostView(CamelModel):
     call_site: str
+    kind: CallSiteKind
     model: str
     prompt_tokens: int | None
     cached_tokens: int | None
     cache_write_tokens: int | None
     output_tokens: int | None
     thoughts_tokens: int | None
-    # 단가표에 없는 모델이면 None.
+    # 정가로 치는 입력 토큰 — 입력 − 캐시 읽기 − 캐시 쓰기(음수면 0). 입력 토큰이 기록되지 않았으면 None.
+    new_input_tokens: int | None
+    # 단가표에 없는 모델이거나 입력 토큰이 기록되지 않은 호출이면 None — 원가를 모르는 호출을 0 원으로 보이지 않는다.
     usd: float | None
     missing_tokens: bool
     # 생성 호출에만 있다. 판정·임베딩 호출은 None(기록 없음).
@@ -227,6 +294,8 @@ class ChatTurnRecord(CamelModel):
     row: dict[str, Any]
     calls: list[CallCostView]
     cost_usd: float
+    # 이 행에 단가 없는 호출이나 입력 토큰이 기록되지 않은 호출이 있어 `cost_usd` 가 실제 원가보다 낮을 수 있다.
+    cost_is_lower_bound: bool
 
 
 class AttemptDetail(CamelModel):
@@ -235,6 +304,8 @@ class AttemptDetail(CamelModel):
     # 서버 앞에서 거부된 시도(HTTP 비200) — 덤프가 없는 것이 정상이다.
     server_rejected: bool
     record: dict[str, Any]
+    # 이 시도 줄의 스탯 변화. 시작 값은 고른 시도와 같다(`DriverStatChange`).
+    driver_stat_changes: list[DriverStatChange]
     generation_dump: dict[str, Any] | None
     chat_turns: list[ChatTurnRecord]
 
@@ -243,22 +314,6 @@ class BackgroundDump(CamelModel):
     record: dict[str, Any]
     # turnField: 줄의 턴 칸을 따랐다. previousGeneration: 턴 칸이 없어 파일 순서상 바로 앞 생성 줄의 턴에 놓았다.
     placement: Literal["turnField", "previousGeneration"]
-
-
-# 대화록 분석 판정(`analyze_chat_probe.ReplyFlags`)과 같은 칸. 고정 대본 키워드에 묶인 판정은 싣지 않는다 — 클래스 설명은
-# openapi 스키마에 그대로 실리므로 여기 주석으로 둔다.
-class ReplyFlagsView(CamelModel):
-    length: int
-    sentence_count: int
-    truncated: bool
-    self_copy: bool
-    solicit: bool
-    ignored: bool
-    scene_open: bool
-    label_leak: bool
-    user_turn: bool
-    broken: str | None
-    brackets: list[str]
 
 
 # 자기복제 판정이 견준 직전 응답: 오프닝, 앞 턴의 고른 시도, 앞 턴의 교체 뒤 응답, 없음(오프닝도 없는 로그).
@@ -293,6 +348,19 @@ class RunMetrics(CamelModel):
     turns: list[TurnMetrics]
 
 
+# 기록 한계 문장이 대신 서는 자리. judgmentResponse: 판정 응답 원문. judgmentLatency: 판정·임베딩 호출의 지연. backgroundTokens:
+# 백그라운드 호출의 토큰·원가. exportNeeded: 턴 기록 파일이 없어 비는 토큰·원가(`assistantMessageId` 이전 형식에는 없다 — 내보내기를
+# 거부한다). promptDump: 덤프가 없어 비는 프롬프트·지시문 원문.
+RecordLimitSlot = Literal["judgmentResponse", "judgmentLatency", "backgroundTokens", "exportNeeded", "promptDump"]
+
+
+class RecordLimit(CamelModel):
+    """이 화면이 보여 줄 수 없는 것을 사실대로 적은 문장 하나와, 그 문장이 대신 서는 자리."""
+
+    slot: RecordLimitSlot
+    text: str
+
+
 class TurnDetail(CamelModel):
     turn: int
     supplemented: bool
@@ -308,8 +376,7 @@ class TurnDetail(CamelModel):
     metrics: TurnMetrics | None
     mismatches: list[Mismatch]
     cautions: list[Caution]
-    # 이 화면이 보여 줄 수 없는 것을 사실대로 적은 문장들.
-    record_limits: list[str]
+    record_limits: list[RecordLimit]
 
 
 class Health(CamelModel):
@@ -326,7 +393,8 @@ class RunList(CamelModel):
 
 class RunBundle(CamelModel):
     """런 하나를 통째로 — 정적 HTML 내보내기가 이 응답만 주입한다. `raw` 가 거짓이면 덤프 줄의 프롬프트(`prompt`)·지시문
-    (`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을 키째 뺀다. 대화(사용자 발화·응답)는 남는다."""
+    (`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을 키째 빼고, 상세의 방 스냅숏(`room_static`,
+    단축어 프롬프트 전문·대화 프로필 설명이 든다)을 비운다. 대화(사용자 발화·응답)는 남는다."""
 
     raw: bool
     detail: RunDetail
@@ -347,12 +415,14 @@ class ExportTurnsResult(CamelModel):
 
 # 이 서버가 내는 오류의 종류. FastAPI 의 요청 검증 오류(422, `detail` 이 목록)에는 이 칸이 없어 웹은 `reason` 으로 둘을 가른다.
 # notFound: 그런 묶음·턴이 없다(id 모양이 틀린 것 포함). unsupported: 열지 않는 형식. openFailed: 열다 실패했다.
+# unsupportedFormat: `assistantMessageId` 이전 형식이라 턴 기록을 응답과 이을 열쇠가 없어 내보내도 이을 수 없다(내보내기만).
 # archived: 보관 폴더라 쓰지 않는다. exists: 턴 기록 파일이 이미 있다 — 강제로 다시 내보낼 수 있는 것은 이것뿐이다.
 # notFile: 그 자리에 링크·폴더가 있다. noRoom·noRows: 그 DB 에 방이 없거나 턴 기록이 0 이다. multipleRooms: 묶음 폴더에 서로
 # 다른 방의 드라이버 로그가 있다. dbUnavailable: DB 가 설정되지 않았거나 닿지 않는다. notJson: 쓰기 요청 본문이 JSON 이 아니다.
 LabErrorReason = Literal[
     "notFound",
     "unsupported",
+    "unsupportedFormat",
     "openFailed",
     "archived",
     "exists",

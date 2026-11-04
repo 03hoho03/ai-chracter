@@ -22,6 +22,9 @@ on:
       - "apps/admin/**"
       # 앱 최상위 문서는 빌드·lint 가 읽지 않는다.
       - "!apps/admin/*.md"
+      - "apps/chat-lab/**"
+      # 앱 최상위 문서는 lint 가 읽지 않는다.
+      - "!apps/chat-lab/*.md"
       - "packages/**"
       # 패키지 최상위 문서는 어느 빌드·테스트·lint 도 읽지 않는다.
       - "!packages/*/*.md"
@@ -43,6 +46,9 @@ on:
       - "apps/admin/**"
       # 앱 최상위 문서는 빌드·lint 가 읽지 않는다.
       - "!apps/admin/*.md"
+      - "apps/chat-lab/**"
+      # 앱 최상위 문서는 lint 가 읽지 않는다.
+      - "!apps/chat-lab/*.md"
       - "packages/**"
       # 패키지 최상위 문서는 어느 빌드·테스트·lint 도 읽지 않는다.
       - "!packages/*/*.md"

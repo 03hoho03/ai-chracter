@@ -5,15 +5,19 @@
 밀려나도(`stale`) 작업 행이 그대로라 제안을 저장한다 — 같은 개정을 다시 확정하면 그 제안을 추출 캐시로 쓴다.
 
 슬롯의 검증을 지난 제안에서 코어가 개체로 풀어야 하는 이름(지식의 앎 주체, 명제의 주어, 대상이 개체인 종류의 대상)이 정규화 뒤
-비는 항목은 저장 전에 버리고 `dropped` 에 센다 — 그런 항목은 행의 주어도 안정 키도 만들 수 없다. 출력 전체가 아니라 그 항목만
-버린다.
+비는 항목은 저장 전에 버리고 `dropped` 에 센다 — 그런 항목은 행의 주어도 안정 키도 만들 수 없다. 정규화한 이름이 개체 이름
+길이 상한을 넘으면 연결이 그 이름으로 개체를 만들다 CHECK 에 걸려 확정 전체가 실패하므로 저장 전에 걸러 낸다. 그 이름이 위의
+개체 하나로 푸는 칸에 있으면 항목을 버리고, 그 밖의 이름 칸(사건의 등장·언급 인물 같은 이름 목록)에 있으면 그 이름만 빼고
+항목은 남긴다 — 이름 하나 때문에 사건이 통째로 빠지면 사건이 덜 잡힌 것처럼 보인다. 뺀 이름도 이름 수로 `dropped` 에 센다.
+이름 목록 둘을 같은 차례로 짝지어 저장하는 슬롯(사건의 행동)은 코어가 한쪽 칸에서만 빼면 짝이 어긋나므로, 그런 짝은 슬롯이
+검증에서 먼저 뺀다. 출력 전체가 아니라 그 항목이나 그 이름만 버린다.
 
-추출 캐시: 같은 소설에서 슬롯·어댑터·문안 세트·출력 스키마가 같고 본문 해시·블록 id 해시·슬롯의 힌트가 아닌 렌더 값·입력이
-읽은 채팅 기억 행의 방·행 id 가 같은 앞 작업이 성공해 있으면 그 제안을 복사하고 호출하지 않는다. 힌트(아는 개체 따위 정본
-상태에서 오는 값)는 다른 화가 커밋될 때마다 바뀌므로 열쇠에서 뺀다. 블록 id 해시가 열쇠에 드는 이유는 제안이 블록 id 로 저장돼
-있어서다 — 본문이 같아도 블록 id 가 다른 개정에는 다시 쓸 수 없다. 채팅 기억 행 id 도 같은 이유다 — 제안의 플레이 근거가 행
-id 로 저장돼 있는데 렌더 글에는 id 가 없어, 되감기 뒤 같은 사실이 같은 글의 새 행으로 다시 쓰이면 글만으로는 열쇠가 같아 지워진
-행을 가리키는 제안을 재사용하게 된다(그 근거는 태어날 때부터 소실로 읽힌다)."""
+추출 캐시: 같은 소설에서 슬롯·어댑터·문안 세트·출력 스키마·검증 규칙 판이 같고 본문 해시·블록 id 해시·슬롯의 힌트가
+아닌 렌더 값·입력이 읽은 채팅 기억 행의 방·행 id 가 같은 앞 작업이 성공해 있으면 그 제안을 복사하고 호출하지 않는다. 힌트(아는
+개체 따위 정본 상태에서 오는 값)는 다른 화가 커밋될 때마다 바뀌므로 열쇠에서 뺀다. 블록 id 해시가 열쇠에 드는 이유는 제안이 블록
+id 로 저장돼 있어서다 — 본문이 같아도 블록 id 가 다른 개정에는 다시 쓸 수 없다. 채팅 기억 행 id 도 같은 이유다 — 제안의 플레이
+근거가 행 id 로 저장돼 있는데 렌더 글에는 id 가 없어, 되감기 뒤 같은 사실이 같은 글의 새 행으로 다시 쓰이면 글만으로는 열쇠가
+같아 지워진 행을 가리키는 제안을 재사용하게 된다(그 근거는 태어날 때부터 소실로 읽힌다)."""
 
 import hashlib
 import json
@@ -30,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.prompt_builder import PromptRenderError
 from api.db.models.novel import Novel, NovelChapter
-from api.db.models.novel_bible import NovelBibleCommit, NovelBibleJob
+from api.db.models.novel_bible import ENTITY_NAME_MAX, NovelBibleCommit, NovelBibleJob
 from api.novel_bible.core.contracts import AdapterCallError, AdapterResolver, Registry, Slot
 from api.novel_bible.core.keys import TARGETED_KINDS, normalize_name
 from api.novel_bible.core.render import render
@@ -50,6 +54,14 @@ _RETRYABLE: frozenset[JobFailure] = frozenset(
 )
 # 코어가 풀어야 하는 이름이 비어 버린 항목의 `dropped` 사유.
 EMPTY_NAME = "empty_name"
+# 코어가 개체 하나로 풀어야 하는 칸의 이름이 정규화 뒤 개체 이름 길이 상한을 넘는 항목의 `dropped` 사유.
+NAME_TOO_LONG = "name_too_long"
+# 이름 목록 칸에서 상한을 넘어 뺀 이름의 `dropped` 사유 — 항목이 아니라 뺀 이름 수를 센다.
+LISTED_NAME_TOO_LONG = "listed_name_too_long"
+# 추출 캐시 열쇠에 드는 검증 규칙의 판. 캐시는 검증을 마친 제안을 다시 검증하지 않고 복사하므로, 슬롯 검증이나 코어의 거르기
+# (근거 인용 찾기·이름 거르기) 규칙을 바꾸면 이 값을 올려 옛 규칙으로 만든 제안을 다시 쓰지 않게 한다. 이 값이 열쇠에 들기 전의
+# 작업은 열쇠 꼴이 달라 어느 판과도 맞지 않는다.
+_VALIDATION_VERSION = 2
 
 
 async def commit_ref(session: AsyncSession, commit: NovelBibleCommit) -> CommitRef:
@@ -71,7 +83,11 @@ async def commit_ref(session: AsyncSession, commit: NovelBibleCommit) -> CommitR
     )
 
 
-def drop_unnamed(proposal: Proposal) -> Proposal:
+def name_too_long(name: str) -> bool:
+    return len(normalize_name(name)) > ENTITY_NAME_MAX
+
+
+def drop_unlinkable(proposal: Proposal) -> Proposal:
     kept = []
     dropped = dict(proposal.dropped)
     for draft in proposal.items:
@@ -80,10 +96,22 @@ def drop_unnamed(proposal: Proposal) -> Proposal:
             needed.append("subject")
             if draft.proposition.kind in TARGETED_KINDS:
                 needed.append("value")
-        if all(any(normalize_name(name.name) for name in draft.names.get(field, ())) for field in needed):
-            kept.append(draft)
+        if not all(any(normalize_name(name.name) for name in draft.names.get(field, ())) for field in needed):
+            reason = EMPTY_NAME
+        elif any(name_too_long(name.name) for field in needed for name in draft.names.get(field, ())):
+            reason = NAME_TOO_LONG
         else:
-            dropped[EMPTY_NAME] = dropped.get(EMPTY_NAME, 0) + 1
+            listed = {
+                field: names if field in needed else tuple(name for name in names if not name_too_long(name.name))
+                for field, names in draft.names.items()
+            }
+            removed = sum(len(names) - len(listed[field]) for field, names in draft.names.items())
+            if removed:
+                dropped[LISTED_NAME_TOO_LONG] = dropped.get(LISTED_NAME_TOO_LONG, 0) + removed
+                draft = draft.model_copy(update={"names": listed})
+            kept.append(draft)
+            continue
+        dropped[reason] = dropped.get(reason, 0) + 1
     return Proposal(items=tuple(kept), dropped=dropped)
 
 
@@ -165,6 +193,7 @@ async def _prepare(
         cache_key = _digest(
             [
                 commit.content_hash, commit.block_ids_hash, slot.id, adapter.id, str(source.prompt_set_id), schema_name,
+                _VALIDATION_VERSION,
                 {name: value for name, value in values.items() if name not in slot.hint_values},
                 [[str(fact.chat_room_id), str(fact.chat_memory_fact_id)] for fact in view.served_play_facts],
             ]
@@ -273,7 +302,7 @@ async def run_next_job(
         output = await resolver(slot.operation).structured(
             prepared.prompt, slot.output_schema, records=records, stage=slot.operation
         )
-        validated = drop_unnamed(slot.validate(prepared.slot_input, output))
+        validated = drop_unlinkable(slot.validate(prepared.slot_input, output))
         await _succeed(factory, job_id, prepared, validated.model_dump(mode="json"), records, None)
     except AdapterCallError as error:
         await _fail(factory, job_id, attempts, error.code, retry=error.retryable and error.code in _RETRYABLE,

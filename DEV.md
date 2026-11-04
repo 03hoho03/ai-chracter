@@ -136,7 +136,7 @@ https://<호스트>.<테일넷>.ts.net/s3/   → localhost:5001  (moto, 썸네�
 
 채팅엔 불필요하다. 측정 런 폴더(기본 `apps/api/probe-runs/`)를 읽어 HTTP 로 내주는 로컬 측정 서버와, 그 런의 턴 기록을
 로컬 DB 에서 꺼내 런 폴더에 쓰는 내보내기 명령이다. 둘 다 운영 이미지에 싣지 않고 배포도 일으키지 않는다(`DEPLOY.md` 의
-「BE → GCE VM」 절).
+「BE → GCE VM」 절). 그 런을 보는 웹 앱의 실행과 측정 서버가 읽는 런 묶음 형식은 `apps/chat-lab/README.md` 에 있다.
 
 ```sh
 # 측정 서버 — http://127.0.0.1:8791

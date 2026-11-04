@@ -17,7 +17,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import NovelChapter, NovelChapterRevision
 from api.db.models.novel import NovelEpisodeOutline, NovelOutline, NovelSceneBlock
-from api.db.models.novel_bible import NovelBibleCommit, NovelBibleEntity, NovelBibleExpiration, NovelBibleRevision
+from api.db.models.novel_bible import (
+    ENTITY_NAME_MAX,
+    NovelBibleCommit,
+    NovelBibleEntity,
+    NovelBibleExpiration,
+    NovelBibleJob,
+    NovelBibleRevision,
+)
 from api.db.models.novel_bible_events import NovelBibleEvent, NovelBibleEventRelation
 from api.db.models.novel_bible_facts import NovelBibleFact
 from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
@@ -29,6 +36,7 @@ from api.novel_bible.core.contracts import (
     PromptSource,
     Registry,
 )
+from api.novel_bible.core.jobs import LISTED_NAME_TOO_LONG
 from api.novel_bible.core.pipeline import run_until_idle
 from api.novel_bible.core.positions import Bound, Interval, precedes, story_positions
 from api.novel_bible.core.queries import bible_at, revision_at
@@ -509,6 +517,40 @@ async def test_a_confirmed_chapter_commits_its_events_with_linked_entities_and_a
     # 이 슬롯은 사건 표 밖에 쓰지 않는다.
     for model in (NovelBibleFact, NovelBibleKnowledge, NovelBibleEventRelation):
         assert await db_session.scalar(select(func.count()).select_from(model).where(model.novel_id == novel.id)) == 0
+
+
+async def test_an_over_limit_name_in_an_event_name_list_drops_only_that_name_and_the_event_commits(
+    db_session: AsyncSession,
+) -> None:
+    # 이름 목록의 긴 이름 하나 때문에 사건이 통째로 빠지면 사건 재현율이 흔들린다 — 그 이름만 빼고 사건은 남긴다. 행동은
+    # 행위자·대상이 짝으로 저장되므로 긴 이름이 낀 짝은 통째로 빠진다. 상한과 같은 길이는 남는다. 뺀 긴 이름은 수로 센다.
+    novel = await make_novel(db_session)
+    chapter, revision = await add_chapter(db_session, novel.id, 1, FIRST_BODY)
+    too_long, at_limit = "가" * (ENTITY_NAME_MAX + 1), "나" * ENTITY_NAME_MAX
+    output = {
+        "events": [
+            _event("e1", [1, 2], (1, "하나가 정원에서"), present=["하나", too_long], mentioned=[at_limit],
+                   uses=[{"actor": too_long, "thing": "방패", "thing_kind": "object"},
+                         {"actor": "하나", "thing": "검", "thing_kind": "object"}]),
+        ],
+        "relations": [],
+    }
+
+    commit_id = await _confirm_and_run(db_session, chapter, revision, ScriptedAdapter([output]))
+
+    assert await _status(db_session, commit_id) == "committed"
+    (event,) = await _events(db_session, chapter.id)
+    one = await _entity_id(db_session, novel.id, "character", "하나")
+    sword = await _entity_id(db_session, novel.id, "object", "검")
+    assert event.present_entity_ids == [one]
+    assert event.mentioned_entity_ids == [await _entity_id(db_session, novel.id, "character", at_limit)]
+    assert event.uses == [{"actor": str(one), "thing": str(sword)}]
+    assert await _entity_id(db_session, novel.id, "object", "방패") is None
+    assert await _entity_id(db_session, novel.id, "character", too_long) is None
+    proposal = await db_session.scalar(
+        select(NovelBibleJob.proposal).where(NovelBibleJob.commit_id == commit_id, NovelBibleJob.slot == "events")
+    )
+    assert proposal is not None and proposal["dropped"] == {LISTED_NAME_TOO_LONG: 2}
 
 
 async def test_a_flashback_relation_points_at_the_earlier_event_and_orders_story_time(

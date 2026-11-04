@@ -2600,9 +2600,10 @@ export interface paths {
          *     글만 바뀐 경우는 충돌로 치지 않는다 — 심사는 그림만 보고, 발행본에는 3 에서 다시 읽은 글이 실린다. 3 에서 검증을
          *     다시 돌리므로 그사이 필수 칸이 비면 400 이다. 충돌로 멈춘 발행이 이미 올린 블러본은 가리키는 행 없이 남는다.
          *
-         *     본문의 `novelPermission` 은 3 에서 발행과 함께 작품의 소설화 허락으로 쓴다. 발행 이력이 없는 작품을 그 값 없이
-         *     발행하면 아직 막지 않고 1 에서 경고 로그 한 줄만 남긴다 — 첫 발행 때 허락을 고르게 하는 화면이 나간 뒤 그런 발행이
-         *     사라졌는지 세는 신호다. 막을 때도 이 자리(검증·그림 심사 전)라 거절에 심사 원가가 들지 않는다.
+         *     본문의 `novelPermission` 은 3 에서 발행과 함께 작품의 소설화 허락으로 쓴다. 발행 이력이 없는 작품은 그 값이 있어야
+         *     발행된다 — 다른 회원의 소설 만들기를 작가가 첫 발행 때 직접 고르게 하려는 것이다. 없으면 1 에서 발행 검증보다 먼저
+         *     400 `NOVEL_PERMISSION_REQUIRED` 로 거절하므로 거절에 심사 원가가 들지 않는다. 발행 이력이 있는 작품은 값 없이 다시
+         *     발행해도 되고 허락은 그대로다.
          */
         post: operations["publish_content_contents__id__publish_post"];
         delete?: never;
@@ -12050,8 +12051,9 @@ export interface components {
         };
         /**
          * ContentPublishRequest
-         * @description `POST /contents/{id}/publish` 본문. 본문도 칸도 선택이다 — 본문을 보내지 않는 옛 화면과 재발행이 그대로 돈다.
-         *     `novel_permission` 을 실으면 발행과 같은 트랜잭션에서 작품의 소설화 허락으로 쓴다(재발행에도).
+         * @description `POST /contents/{id}/publish` 본문. 발행 이력이 없는 작품은 `novel_permission` 이 있어야 발행되고(없으면 400
+         *     `NOVEL_PERMISSION_REQUIRED`), 발행 이력이 있는 작품은 본문 없이 다시 발행해도 된다. 실으면 발행과 같은 트랜잭션에서
+         *     작품의 소설화 허락으로 쓴다(재발행에도).
          */
         ContentPublishRequest: {
             /** Novelpermission */

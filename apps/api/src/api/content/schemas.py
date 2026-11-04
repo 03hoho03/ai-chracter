@@ -307,8 +307,9 @@ class CharacterDraftResponse(CamelModel):
 
 
 class ContentPublishRequest(CamelModel):
-    """`POST /contents/{id}/publish` 본문. 본문도 칸도 선택이다 — 본문을 보내지 않는 옛 화면과 재발행이 그대로 돈다.
-    `novel_permission` 을 실으면 발행과 같은 트랜잭션에서 작품의 소설화 허락으로 쓴다(재발행에도)."""
+    """`POST /contents/{id}/publish` 본문. 발행 이력이 없는 작품은 `novel_permission` 이 있어야 발행되고(없으면 400
+    `NOVEL_PERMISSION_REQUIRED`), 발행 이력이 있는 작품은 본문 없이 다시 발행해도 된다. 실으면 발행과 같은 트랜잭션에서
+    작품의 소설화 허락으로 쓴다(재발행에도)."""
 
     novel_permission: NovelPermission | None = None
 
