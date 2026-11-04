@@ -417,7 +417,8 @@ async def add_chapter(
     now = datetime.now(UTC)
     segment: dict[str, Any] = {
         "start_message_id": uuid.uuid4(), "start_message_created_at": now - timedelta(hours=2),
-        "end_message_id": uuid.uuid4(), "end_message_created_at": now, "assistant_message_count": 1, "source_hash": "0" * 64,
+        "end_message_id": uuid.uuid4(), "end_message_created_at": now, "assistant_message_count": 1,
+        "source_hash": "0" * 64,
     }
     batch = NovelBatch(novel_id=novel_id, ordinal=ordinal, target_episode_count=1, **segment)
     db.add(batch)

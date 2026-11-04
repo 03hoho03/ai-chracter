@@ -80,7 +80,8 @@ def _fact(
     source: tuple[str, str] | None = None, play: str | None = None, subject_kind: EntityKind = "character",
 ) -> dict[str, Any]:
     return {
-        "subject": subject, "subject_kind": subject_kind, "kind": kind, "attribute": attribute, "value": value, "holds": holds,
+        "subject": subject, "subject_kind": subject_kind, "kind": kind, "attribute": attribute, "value": value,
+        "holds": holds,
         "immutable": immutable, "onset": onset, "scope": scope,
         "quote": {"paragraph": quote[0], "text": quote[1]},
         "source_difference": {"label": source[0], "quote": source[1]} if source else None,
