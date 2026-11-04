@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>chat-lab</title>
+    <!-- 아이콘은 문서 안의 SVG 라 따로 받아 오는 요청이 없다. 밝은 탭 막대와 어두운 탭 막대 양쪽에서 보이도록 중간 밝기의
+         무채색 하나로 그린다. -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='6' fill='none' stroke='%237a8089' stroke-width='3'/%3E%3Cpath d='M10 12h12M10 16.5h8M10 21h10' stroke='%237a8089' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <script>
+      // 손으로 고른 테마를 첫 그림 전에 붙인다 — 모듈 스크립트는 문서를 다 읽은 뒤에 돌아, 거기서 붙이면 운영체제 테마로 한 번
+      // 그려진 뒤 바뀐다. 저장 키와 붙이는 모양은 src/shared/lib/theme.ts 와 같아야 한다. 저장소를 못 쓰는 창에서는 읽기가 던져
+      // 운영체제 설정을 따른다.
+      try {
+        var theme = window.localStorage.getItem("chat-lab:theme");
+        if (theme === "light" || theme === "dark") {
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+        }
+      } catch (error) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

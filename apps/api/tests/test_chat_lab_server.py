@@ -40,7 +40,7 @@ from chat_lab.chat_turns_file import export_text
 from chat_lab.join import join_bundle
 from chat_lab.report import list_entry, run_bundle, run_detail, run_metrics, turn_detail
 from chat_lab.run_id import encode_run_id
-from driver_harness import DrivenRoom, drive_room, says
+from driver_harness import DRIVE_PERSONA_THEN, DrivenRoom, drive_room, says
 
 # 로컬 주소라 가드는 통과하지만 아무것도 듣지 않는 포트 — 접속하려 들면 곧바로 실패한다.
 UNREACHABLE_DB = "postgresql+asyncpg://lab:lab@127.0.0.1:1/chat_lab_unreachable"
@@ -141,7 +141,8 @@ async def test_the_whole_bundle_drops_prompts_instructions_and_snapshot_text_onl
 ) -> None:
     """정적 HTML 은 통째 응답 하나만 주입하므로 모든 턴 상세가 실려야 한다. 원문 없는 묶음은 이 방 덤프 줄의 프롬프트·지시문과
     기억 스냅숏의 노트·요약 본문이 어디에도 없어야 하고(키도 남지 않는다), 원문 묶음에는 그것들이 하나도 빠짐없이 있어야 한다
-    — 한쪽만 보면 "아무것도 싣지 않는" 구현과 "아무것도 빼지 않는" 구현이 각각 통과한다. 상세·지표는 두 묶음이 같다."""
+    — 한쪽만 보면 "아무것도 싣지 않는" 구현과 "아무것도 빼지 않는" 구현이 각각 통과한다. 상세의 방 스냅숏(단축어 프롬프트 전문·
+    대화 프로필 설명)도 같은 짝으로 본다 — 원문 묶음에는 있고 원문 없는 묶음에는 비어 있다. 상세의 나머지와 지표는 두 묶음이 같다."""
     root, driven, _ = await _run_root(db_session, monkeypatch, tmp_path)
     [bundle] = discover_bundles(root)
     joined = join_bundle(bundle)
@@ -156,7 +157,13 @@ async def test_the_whole_bundle_drops_prompts_instructions_and_snapshot_text_onl
     assert bare.json() == _dumped(run_bundle(joined, raw=False))
     assert (raw.json()["raw"], bare.json()["raw"]) == (True, False)
     assert [t["turn"] for t in raw.json()["turns"]] == [t.number for t in joined.turns] == list(range(1, 13))
-    assert bare.json()["detail"] == raw.json()["detail"]
+    raw_static = raw.json()["detail"]["roomStatic"]
+    assert raw_static is not None
+    assert raw_static["shortcuts"]
+    assert all(isinstance(s["prompt"], str) and s["prompt"] for s in raw_static["shortcuts"])
+    assert raw_static["persona"]["description"] == DRIVE_PERSONA_THEN
+    assert bare.json()["detail"]["roomStatic"] is None
+    assert bare.json()["detail"] == {**raw.json()["detail"], "roomStatic": None}
     assert bare.json()["metrics"] == raw.json()["metrics"]
 
     room_dump = [r for r in _jsonl(driven.dump) if r.get("roomId") == str(driven.room_id)]

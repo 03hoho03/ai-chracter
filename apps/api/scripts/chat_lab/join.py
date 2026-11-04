@@ -11,12 +11,14 @@
   작업이 읽은 방 턴 수라 다음 턴이 먼저 커밋되면 하나 크므로, 어느 쪽이든 배치는 추정이라 줄마다 주의를 단다.
 - 재생성·수정 줄은 `clientTurn` 이 없고 대상 턴은 `turnBefore` 다. 그 턴에 "응답 교체됨"으로 붙이고 타임라인 표지가 된다.
   기준 다시 잡기·대조·노트 저장·일시 정지 줄도 표지다.
-- 턴 기록 행은 시도의 `assistantMessageId` 로 붙이고, 붙지 않는 행은 「짝 없는 기록」이다.
+- 턴 기록 행은 시도의 `assistantMessageId` 로 붙이고, 붙지 않는 행은 「짝 없는 기록」이다. `assistantMessageId` 이전 형식은 붙일
+  id 가 없어 행을 잇지 않고 주의 하나만 단다.
 - 보이는 스탯은 드라이버 `roomAfter.stats`(이름 키), 턴 기록은 `stat_changes`(id 키)라, 방 스냅숏의 id↔이름 표로 양쪽에 다 있는
   스탯만 견준다. 숨김 스탯은 방 스냅숏에 없어 견주지 않는다(견주면 늘 "드라이버에 없음"인 거짓 불일치가 된다).
 
 결합이 틀린 것(불일치)과 결합은 맞지만 알아야 하는 것(주의)을 따로 모은다. 조용히 버리는 줄은 없다 — 이 방의 덤프 줄과 턴
-기록 행은 모두 어딘가에 붙거나 불일치로 남는다."""
+기록 행은 모두 어딘가에 붙거나 불일치로 남는다. 예외는 잇지 않는 `assistantMessageId` 이전 형식의 턴 기록 행으로, 그 수를 주의
+하나에 적는다."""
 
 import uuid
 from dataclasses import dataclass, field
@@ -455,7 +457,17 @@ def join_bundle(bundle: Bundle) -> JoinedRun:
                     detail=f"내보낸 때(기준일 {export.prices_as_of})와 단가표가 다르다 — 원가는 지금 단가표로 냈다",
                 )
             )
-        unmatched_rows = _attach_rows(export, turns, mismatches)
+        if bundle.format == "preMessageId":
+            # 이 형식의 턴 줄에는 행을 붙일 응답 id 가 없어, 이으면 모든 행이 짝 없는 기록이 된다 — 결합이 어긋난 것이 아니라
+            # 처음부터 이을 수 없는 것이라 불일치로 세지 않는다.
+            cautions.append(
+                Caution(
+                    kind="chatTurnsNotJoined",
+                    detail=f"assistantMessageId 이전 형식이라 {CHAT_TURNS_LABEL}의 행 {len(export.rows)}개를 턴에 잇지 않았다 — 원가를 내지 않는다",
+                )
+            )
+        else:
+            unmatched_rows = _attach_rows(export, turns, mismatches)
         if stat_trouble is None:
             stat_comparisons = _compare_stats(turns, stat_names, export, room_statics, mismatches)
 

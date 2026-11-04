@@ -355,6 +355,11 @@ async def _make_publishable_story_draft(
     return content, version, thumbnail, setup, ending, stat_def
 
 
+# 발행 이력이 없는 작품은 소설화 허락을 실어야 발행된다. 이 파일의 첫 발행은 이 본문을 싣는다 — 값이 저장 기본값과
+# 같아 실어도 작품의 허락은 바뀌지 않는다. 재발행은 본문 없이 보내 "재발행은 허락 없이 된다"를 그대로 지난다.
+_FIRST_PUBLISH_BODY = {"novelPermission": "forbidden"}
+
+
 class _FakeLLMClient(LLMClient):
     def __init__(self, result: PublishFilterResult) -> None:
         self.result = result
@@ -423,7 +428,7 @@ async def test_publish_returns_403_for_non_owner(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert resp.status_code == 403
@@ -441,7 +446,7 @@ async def test_publish_rejects_incomplete_draft_with_missing_fields(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert resp.status_code == 400
@@ -486,7 +491,7 @@ async def test_publish_character_rejects_situational_image_without_image(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -525,7 +530,7 @@ async def test_publish_character_rejects_whitespace_only_required_text_before_fi
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -563,7 +568,7 @@ async def test_publish_keeps_surrounding_whitespace_of_a_real_value(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -620,7 +625,7 @@ async def test_publish_rejects_when_filter_fails_and_leaves_draft_unchanged(
     fake = _FakeLLMClient(PublishFilterResult(passed=False, reason="부적절한 표현이 포함되어 있어요"))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -685,7 +690,7 @@ async def test_publish_passes_thumbnail_original_and_situational_thumbnails_in_o
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -716,7 +721,7 @@ async def test_publish_screens_situational_original_when_its_thumbnail_is_missin
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -740,7 +745,7 @@ async def test_publish_screens_the_frame_sheet_of_an_animated_situational_image(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -766,7 +771,7 @@ async def test_publish_does_not_fall_back_when_situational_thumbnail_read_fails_
     _override_llm_client(fake)
     try:
         with pytest.raises(ClientError):
-            await db_client.post(f"/contents/{content.id}/publish")
+            await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -800,7 +805,7 @@ async def test_publish_character_sends_original_type_read_from_bytes_not_key(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -820,11 +825,11 @@ async def test_publish_character_rejects_with_fixed_reason_when_gemini_blocks_an
 
     try:
         _override_llm_client(blocking)
-        blocked = await db_client.post(f"/contents/{content.id}/publish")
+        blocked = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         await db_session.refresh(version)
         published_after_block = version.published_at
         _override_llm_client(passing)
-        retried = await db_client.post(f"/contents/{content.id}/publish")
+        retried = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -845,7 +850,7 @@ async def test_publish_character_filter_prompt_carries_no_creator_text(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -870,7 +875,7 @@ async def test_publish_confirms_transaction_and_clones_draft(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -961,7 +966,7 @@ async def test_publish_removes_content_from_my_drafts(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert resp.status_code == 200
@@ -986,7 +991,7 @@ async def test_republish_increments_version_number(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        first_resp = await db_client.post(f"/contents/{content.id}/publish")
+        first_resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         assert first_resp.status_code == 200
         second_resp = await db_client.post(f"/contents/{content.id}/publish")
     finally:
@@ -1008,7 +1013,7 @@ async def test_publish_story_rejects_incomplete_draft_with_missing_fields(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert resp.status_code == 400
@@ -1052,7 +1057,7 @@ async def test_publish_story_rejects_whitespace_only_required_text_before_filter
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -1088,7 +1093,7 @@ async def test_publish_story_rejects_ending_with_low_turn_count_gate(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert resp.status_code == 400
@@ -1115,7 +1120,7 @@ async def test_publish_story_rejects_ending_rules_on_stat_missing_from_their_set
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert resp.status_code == 400
@@ -1142,7 +1147,7 @@ async def test_publish_story_rejects_stat_with_initial_value_outside_its_range_b
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert resp.status_code == 400
@@ -1166,7 +1171,7 @@ async def test_publish_story_rejects_when_filter_fails_and_leaves_draft_unchange
     fake = _FakeLLMClient(PublishFilterResult(passed=False, reason="부적절한 표현이 포함되어 있어요"))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -1211,7 +1216,7 @@ async def test_publish_story_passes_thumbnail_to_filter(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -1253,7 +1258,7 @@ async def test_publish_story_confirms_transaction_and_clones_draft(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -1386,7 +1391,7 @@ async def test_reset_draft_after_real_publish_restores_character_edits(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert publish_resp.status_code == 200
@@ -1464,7 +1469,7 @@ async def test_reset_draft_after_real_publish_restores_story_edits(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert publish_resp.status_code == 200
@@ -1637,7 +1642,7 @@ async def test_has_unpublished_changes_follows_draft_lifecycle(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         assert publish_resp.status_code == 200
         assert await _summary_has_unpublished_changes(db_client, creator_user_id=user.id) is False
 
@@ -1684,7 +1689,7 @@ async def test_publish_story_clears_has_unpublished_changes(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -1705,7 +1710,7 @@ async def _publish_moves_last_edit_forward(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -1764,7 +1769,7 @@ async def test_publish_clones_media_book_with_stable_entity_ids(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -1855,7 +1860,7 @@ async def test_publish_story_creates_blur_only_for_cells_without_blur(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -1901,7 +1906,7 @@ async def test_publish_story_rejected_by_filter_creates_no_blur(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=False, reason="부적절")))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -1942,7 +1947,7 @@ async def test_publish_story_reports_cell_whose_image_cannot_be_blurred(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -1976,7 +1981,7 @@ async def test_publish_story_reports_cell_whose_image_exceeds_the_pixel_limit(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2039,7 +2044,7 @@ async def test_publish_story_blurs_cells_concurrently_within_s3_connection_limit
     monkeypatch.setattr("api.assets.blur.generate_blurred_image", counting_blur)
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2105,7 +2110,7 @@ async def test_publish_story_blur_failure_reports_first_cell_in_axis_order_after
     monkeypatch.setattr("api.assets.blur.generate_blurred_image", slow_blur)
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2171,7 +2176,7 @@ async def test_publish_story_sends_media_cell_thumbnails_to_filter(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2197,7 +2202,7 @@ async def test_publish_story_sends_the_frame_sheet_of_an_animated_media_cell_to_
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2220,7 +2225,7 @@ async def test_publish_story_filter_prompt_labels_media_book_cells_by_name_only(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2248,7 +2253,7 @@ async def test_publish_story_fails_closed_when_media_cell_thumbnail_is_missing(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2278,7 +2283,7 @@ async def test_publish_story_does_not_publish_when_thumbnail_download_raises_une
     _override_llm_client(fake)
     try:
         with pytest.raises(RuntimeError, match="예상 밖 오류"):
-            await db_client.post(f"/contents/{content.id}/publish")
+            await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2307,7 +2312,7 @@ async def test_publish_story_does_not_publish_when_filter_call_fails(
     fake = _FailingFilterLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2337,7 +2342,7 @@ async def test_publish_story_rejects_with_fixed_reason_when_gemini_blocks_an_ima
 
     _override_llm_client(_BlockedFilterLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2358,7 +2363,7 @@ async def test_publish_story_sends_thumbnail_type_read_from_bytes_not_key(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2387,7 +2392,7 @@ async def test_publish_story_rejects_more_than_fifty_media_cells(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2416,7 +2421,7 @@ async def test_publish_story_rejects_media_cell_whose_axis_is_gone(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -2699,7 +2704,7 @@ async def test_publish_and_reset_clone_every_stat_def_field(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert publish_resp.status_code == 200
@@ -2753,7 +2758,7 @@ async def test_publish_and_reset_clone_stat_rules_onto_the_new_stat(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert publish_resp.status_code == 200
@@ -2804,7 +2809,7 @@ async def test_publish_story_rejects_stat_rules_on_counter_stat_before_filter(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert resp.status_code == 400
@@ -2831,7 +2836,7 @@ async def test_publish_and_reset_clone_ending_priority_stat(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert publish_resp.status_code == 200
@@ -2880,7 +2885,7 @@ async def test_publish_story_rejects_ending_priority_stat_missing_from_its_setup
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert resp.status_code == 400
@@ -2907,7 +2912,7 @@ async def test_publish_story_rejects_judged_stat_without_rules_before_filter(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert resp.status_code == 400
@@ -2969,7 +2974,7 @@ async def test_publish_and_reset_clone_every_situation_note_field(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert publish_resp.status_code == 200
@@ -3091,7 +3096,7 @@ async def test_publish_story_rejects_situation_notes_before_filter(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert resp.status_code == 400
@@ -3140,7 +3145,7 @@ async def test_publish_and_reset_clone_every_keyword_note_field(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert publish_resp.status_code == 200
@@ -3195,14 +3200,14 @@ async def test_publish_rejects_keyword_note_without_keywords_unless_always_on(
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        rejected = await db_client.post(f"/contents/{content.id}/publish")
+        rejected = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         assert rejected.status_code == 400
         assert rejected.json()["detail"] == {"missingFields": ["keywordNotes.triggerKeywords"]}
         assert fake.received_prompt is None
 
         await db_session.delete(keywordless)
         await db_session.commit()
-        accepted = await db_client.post(f"/contents/{content.id}/publish")
+        accepted = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert accepted.status_code == 200
@@ -3326,7 +3331,7 @@ async def _publish_twice(
     """첫 발행이 통과한 것을 확인하고, `between` 을 돌린 뒤 다시 발행한 응답을 돌려준다."""
     _override_llm_client(fake)
     try:
-        first = await db_client.post(f"/contents/{content.id}/publish")
+        first = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         assert first.status_code == 200
         if between is not None:
             await between()
@@ -3559,9 +3564,9 @@ async def test_identical_character_drafts_do_not_share_a_pass(
 
     _override_llm_client(fake)
     try:
-        first_resp = await db_client.post(f"/contents/{first.id}/publish")
+        first_resp = await db_client.post(f"/contents/{first.id}/publish", json=_FIRST_PUBLISH_BODY)
         first_prompt, first_images = fake.received_prompt, fake.received_images
-        second_resp = await db_client.post(f"/contents/{second.id}/publish")
+        second_resp = await db_client.post(f"/contents/{second.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -3579,9 +3584,9 @@ async def test_rejected_publish_is_not_remembered(
 
     try:
         _override_llm_client(rejecting)
-        rejected = await db_client.post(f"/contents/{content.id}/publish")
+        rejected = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         _override_llm_client(passing)
-        retried = await db_client.post(f"/contents/{content.id}/publish")
+        retried = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -3597,9 +3602,9 @@ async def test_failed_filter_call_is_not_remembered(
 
     try:
         _override_llm_client(_FailingFilterLLMClient(PublishFilterResult(passed=True, reason=None)))
-        failed = await db_client.post(f"/contents/{content.id}/publish")
+        failed = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         _override_llm_client(passing)
-        retried = await db_client.post(f"/contents/{content.id}/publish")
+        retried = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -3688,9 +3693,9 @@ async def test_republish_unchanged_story_skips_filter_and_still_blurs(
 
     _override_llm_client(fake)
     try:
-        stalled = await db_client.post(f"/contents/{content.id}/publish")
+        stalled = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         _upload_test_image(late.storage_key)
-        retried = await db_client.post(f"/contents/{content.id}/publish")
+        retried = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -3780,7 +3785,7 @@ async def test_publish_screening_rate_limited_by_gemini_returns_503_and_reports_
 
     _override_llm_client(_QuotaExhaustedFilterLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -3803,8 +3808,8 @@ async def test_publish_screening_returns_429_with_publish_window_after_hourly_li
 
     _override_llm_client(fake)
     try:
-        first = await db_client.post(f"/contents/{content.id}/publish")
-        second = await db_client.post(f"/contents/{content.id}/publish")
+        first = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
+        second = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -3834,10 +3839,10 @@ async def test_publish_screening_limit_does_not_count_validation_failures_or_rem
 
     _override_llm_client(fake)
     try:
-        incomplete = await db_client.post(f"/contents/{content.id}/publish")
+        incomplete = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         detail.name = name
         await db_session.commit()
-        published = await db_client.post(f"/contents/{content.id}/publish")
+        published = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         republished = await db_client.post(f"/contents/{content.id}/publish")
     finally:
         _clear_llm_override()
@@ -3863,7 +3868,7 @@ async def test_publish_screening_limit_skips_exempt_users(
 
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -3887,7 +3892,7 @@ async def test_publish_screening_limit_fails_open_when_redis_fails(
 
     _override_llm_client(fake)
     try:
-        resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
 
@@ -3931,7 +3936,7 @@ async def test_publish_character_holds_no_transaction_while_downloading_or_scree
         )
         _override_llm_client(_NotingFilterLLMClient(open_sessions, seen))
         try:
-            resp = await db_client.post(f"/contents/{content.id}/publish")
+            resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         finally:
             _clear_llm_override()
 
@@ -3955,7 +3960,7 @@ async def test_publish_story_holds_no_transaction_while_downloading_screening_or
             monkeypatch.setattr(module, attr, _noting_open_transactions(open_sessions, seen, name, real))
         _override_llm_client(_NotingFilterLLMClient(open_sessions, seen))
         try:
-            resp = await db_client.post(f"/contents/{content.id}/publish")
+            resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
         finally:
             _clear_llm_override()
 
@@ -3999,7 +4004,7 @@ async def _publish_while_first_screening_waits(
     fake = _PausingFilterLLMClient()
     _override_llm_client(fake)
     try:
-        first = asyncio.create_task(db_client.post(f"/contents/{content_id}/publish"))
+        first = asyncio.create_task(db_client.post(f"/contents/{content_id}/publish", json=_FIRST_PUBLISH_BODY))
         await asyncio.wait_for(fake.entered.wait(), 10)
         try:
             during_result = await during()
@@ -4035,7 +4040,7 @@ async def test_overlapping_publishes_of_one_draft_publish_once_and_refuse_the_ot
     content, _, _, _ = await _publishable_character(db_session, db_client)
 
     async def publish_again() -> httpx.Response:
-        return await db_client.post(f"/contents/{content.id}/publish")
+        return await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
 
     late, early = await _publish_while_first_screening_waits(db_client, content.id, publish_again)
 
@@ -4198,7 +4203,7 @@ async def test_publish_and_reset_copy_the_scene_header_toggle_and_initial_scene(
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
-        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish", json=_FIRST_PUBLISH_BODY)
     finally:
         _clear_llm_override()
     assert publish_resp.status_code == 200
@@ -4245,17 +4250,9 @@ async def test_publish_and_reset_copy_the_scene_header_toggle_and_initial_scene(
 
 # --- 발행 요청 본문의 소설화 허락 ---
 #
-# 발행 요청은 본문 없이도 되고(옛 화면·재발행), 본문에 `novelPermission` 을 실으면 발행과 같은 트랜잭션에서 작품의 소설화
-# 허락으로 쓴다. 아직 거절하지는 않는다 — 발행 이력이 없는 작품을 본문 없이 발행하면 경고 로그 한 줄만 남겨, 화면이 그
-# 값을 싣기 시작한 뒤 그런 발행이 사라졌는지 셀 수 있게 한다.
-
-
-def _first_publish_without_permission_logs(caplog: pytest.LogCaptureFixture) -> list[str]:
-    return [
-        record.getMessage()
-        for record in caplog.records
-        if "publish_first_without_novel_permission" in record.getMessage()
-    ]
+# 발행 이력이 없는 작품은 본문에 `novelPermission` 을 실어야 발행된다 — 다른 회원의 소설 만들기를 작가가 첫 발행 때 직접
+# 고르게 하려는 것이다. 없으면 400 `NOVEL_PERMISSION_REQUIRED` 이고, 발행 검증·그림 심사보다 앞에서 거절해 심사 원가가
+# 나가지 않는다. 발행 이력이 있는 작품은 본문 없이 다시 발행해도 허락이 그대로이고, 본문이 실려 오면 재발행에서도 쓴다.
 
 
 async def _stored_novel_permission(db_session: AsyncSession, content_id: uuid.UUID) -> str | None:
@@ -4265,30 +4262,7 @@ async def _stored_novel_permission(db_session: AsyncSession, content_id: uuid.UU
     return permission
 
 
-async def test_first_character_publish_saves_the_permission_from_the_body(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, caplog: pytest.LogCaptureFixture
-) -> None:
-    """빨개지는 조건: 본문을 받지 않거나 받은 값을 쓰지 않으면 저장값이 기본값(허용 안 함)으로 남는다. 본문이 있는데도
-    경고를 남기면 로그 목록이 비지 않는다."""
-    content, _, _, _ = await _publishable_character(db_session, db_client)
-    assert content.novel_permission == "forbidden"
-
-    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
-    try:
-        with caplog.at_level(logging.WARNING, logger="api.content.router"):
-            resp = await db_client.post(f"/contents/{content.id}/publish", json={"novelPermission": "public"})
-    finally:
-        _clear_llm_override()
-
-    assert resp.status_code == 200
-    assert await _stored_novel_permission(db_session, content.id) == "public"
-    assert _first_publish_without_permission_logs(caplog) == []
-
-
-async def test_first_story_publish_saves_the_permission_from_the_body(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
-) -> None:
-    """스토리 발행은 캐릭터와 다른 쓰기 함수를 탄다 — 한쪽에만 쓰면 이 테스트가 빨갛다."""
+async def _publishable_story(db_session: AsyncSession, db_client: httpx.AsyncClient) -> Content:
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -4296,6 +4270,31 @@ async def test_first_story_publish_saves_the_permission_from_the_body(
     content, _, _, _, _, _ = await _make_publishable_story_draft(db_session, creator_user_id=user.id, genre_id=genre.id)
     await db_session.commit()
     await _login_as(db_client, user.id)
+    return content
+
+
+async def test_first_character_publish_saves_the_permission_from_the_body(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """빨개지는 조건: 본문을 받지 않거나 받은 값을 쓰지 않으면 저장값이 기본값(허용 안 함)으로 남는다."""
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    assert content.novel_permission == "forbidden"
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish", json={"novelPermission": "public"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert await _stored_novel_permission(db_session, content.id) == "public"
+
+
+async def test_first_story_publish_saves_the_permission_from_the_body(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """스토리 발행은 캐릭터와 다른 쓰기 함수를 탄다 — 한쪽에만 쓰면 이 테스트가 빨갛다."""
+    content = await _publishable_story(db_session, db_client)
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
@@ -4308,22 +4307,20 @@ async def test_first_story_publish_saves_the_permission_from_the_body(
 
 
 async def test_republish_keeps_the_permission_without_a_body_and_saves_one_that_comes(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, caplog: pytest.LogCaptureFixture
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """발행 이력이 있는 작품은 본문 없이 다시 발행해도 허락이 그대로이고 경고도 없다. 본문이 실려 오면 재발행에서도 쓴다.
+    """발행 이력이 있는 작품은 본문 없이 다시 발행해도 통과하고 허락이 그대로다. 본문이 실려 오면 재발행에서도 쓴다.
 
-    빨개지는 조건: 본문이 없을 때 기본값으로 덮으면 둘째 단언이, 발행 이력을 보지 않고 경고하면 로그 단언이, 재발행에서
-    본문을 버리면 마지막 단언이 깨진다."""
+    빨개지는 조건: 발행 이력을 보지 않고 본문 없는 발행을 모두 거절하면 둘째 발행이, 본문이 없을 때 기본값으로 덮으면
+    그 뒤 단언이, 재발행에서 본문을 버리면 마지막 단언이 깨진다."""
     content, _, _, _ = await _publishable_character(db_session, db_client)
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
         first = await db_client.post(f"/contents/{content.id}/publish", json={"novelPermission": "private"})
         assert first.status_code == 200
-        with caplog.at_level(logging.WARNING, logger="api.content.router"):
-            bare = await db_client.post(f"/contents/{content.id}/publish")
+        bare = await db_client.post(f"/contents/{content.id}/publish")
         assert bare.status_code == 200
         assert await _stored_novel_permission(db_session, content.id) == "private"
-        assert _first_publish_without_permission_logs(caplog) == []
 
         changed = await db_client.post(f"/contents/{content.id}/publish", json={"novelPermission": "public"})
     finally:
@@ -4333,30 +4330,62 @@ async def test_republish_keeps_the_permission_without_a_body_and_saves_one_that_
     assert await _stored_novel_permission(db_session, content.id) == "public"
 
 
-async def test_first_publish_without_a_body_still_publishes_and_leaves_one_warning(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, caplog: pytest.LogCaptureFixture
+@pytest.mark.parametrize("kind", ["character", "story"])
+@pytest.mark.parametrize(
+    "body", [None, {}, {"novelPermission": None}], ids=["no-body", "empty-body", "null-permission"]
+)
+async def test_first_publish_without_a_permission_is_rejected_before_screening(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    s3_bucket: None,
+    caplog: pytest.LogCaptureFixture,
+    kind: str,
+    body: dict[str, Any] | None,
 ) -> None:
-    """본문 없는 첫 발행(옛 화면)은 지금은 거절하지 않고 경고 한 줄을 남긴다. 로그에는 작품·회원 id 를 싣지 않는다."""
-    content, _, _, _ = await _publishable_character(db_session, db_client)
+    """발행 이력이 없는 작품을 허락 없이 발행하면 400 `NOVEL_PERMISSION_REQUIRED` 이고 아무것도 쓰지 않는다. `detail` 에
+    `reason` 을 두지 않는 것은 화면이 `reason` 을 심사 거부로 읽어 이의제기로 안내하기 때문이다. 심사 호출 0 은 거절이
+    그림 심사보다 앞이라는 뜻이다. 거절마다 작품 id 를 실은 경고 한 줄을 남긴다 — 접근 로그의 발행 400 에는 필수 칸 누락·
+    심사 거부가 섞여 있어, 배포 뒤 이 거절만 세려면 따로 남겨야 한다. 회원 id 는 싣지 않는다.
 
-    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    빨개지는 조건: 검사가 없으면 200 으로 발행되고, 캐릭터·스토리 한쪽에만 걸면 다른 쪽 줄이, 본문이 있는데 값이 비어 있는
+    경우를 놓치면 그 두 줄이, 심사 뒤에서 거절하면 호출 수 단언이, 로그를 안 남기거나 id 를 바꿔 실으면 로그 단언이 깨진다."""
+    if kind == "character":
+        content, _, _, _ = await _publishable_character(db_session, db_client)
+    else:
+        content = await _publishable_story(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    _override_llm_client(fake)
     try:
         with caplog.at_level(logging.WARNING, logger="api.content.router"):
-            resp = await db_client.post(f"/contents/{content.id}/publish")
+            if body is None:
+                resp = await db_client.post(f"/contents/{content.id}/publish")
+            else:
+                resp = await db_client.post(f"/contents/{content.id}/publish", json=body)
     finally:
         _clear_llm_override()
 
-    assert resp.status_code == 200
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"code": "NOVEL_PERMISSION_REQUIRED"}
+    assert fake.calls == 0
     assert await _stored_novel_permission(db_session, content.id) == "forbidden"
-    (warning,) = _first_publish_without_permission_logs(caplog)
-    assert str(content.id) not in warning and str(content.creator_user_id) not in warning
+    published_version_id = await db_session.scalar(
+        sa.select(Content.current_published_version_id).where(Content.id == content.id)
+    )
+    assert published_version_id is None
+    (rejection_log,) = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("publish_first_novel_permission_required")
+    ]
+    assert rejection_log == f"publish_first_novel_permission_required content_id={content.id} type={kind}"
 
 
-async def test_the_first_publish_warning_comes_before_validation_and_screening(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+async def test_the_first_publish_permission_check_comes_before_validation(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """경고는 발행 검증·그림 심사보다 앞에서 남는다 — 나중에 이 자리에서 거절할 때 심사 원가가 나가지 않는 위치다.
-    필수 칸이 빈 초안은 검증에서 400 이 나므로, 경고가 검증 뒤에 있으면 목록이 비고 심사 호출 수도 0 이다."""
+    """허락 검사는 발행 검증보다도 앞이다 — 필수 칸이 빈 초안도 허락이 없으면 `missingFields` 가 아니라 허락 거절을 받는다.
+    검사가 검증 뒤에 있으면 `missingFields` 400 이 먼저 나와 이 테스트가 빨갛다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -4367,11 +4396,10 @@ async def test_the_first_publish_warning_comes_before_validation_and_screening(
 
     _override_llm_client(fake)
     try:
-        with caplog.at_level(logging.WARNING, logger="api.content.router"):
-            resp = await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish")
     finally:
         _clear_llm_override()
 
-    assert resp.status_code == 400 and "missingFields" in resp.json()["detail"]
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"code": "NOVEL_PERMISSION_REQUIRED"}
     assert fake.calls == 0
-    assert len(_first_publish_without_permission_logs(caplog)) == 1
