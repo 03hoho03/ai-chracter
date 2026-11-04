@@ -757,6 +757,40 @@ async def test_a_same_text_reconfirm_reuses_the_extraction_unless_the_play_facts
     assert "P1. 민수 → 지아: 소꿉친구" in prompt and "- 지아 · 눈 색: 갈색" in prompt
 
 
+async def test_a_reconfirm_extracts_again_when_a_play_fact_is_rewritten_with_the_same_text_as_a_new_row(
+    db_session: AsyncSession,
+) -> None:
+    """같은 플레이 사실이 같은 글의 새 채팅 기억 행으로 다시 쓰이면(되감기 뒤 다시 접힘) 본문이 같은 재확정도 추출을 다시 하고,
+    새 근거는 새 행을 가리킨다. 깨지는 시나리오: 열쇠가 렌더 글만 보면 지워진 행 id 를 근거로 든 앞 제안을 재사용해, 그 근거가
+    태어날 때부터 소실로 읽힌다."""
+    novel = await make_novel(db_session)
+    body = "민수와 지아는 남매다."
+    chapter, revision = await add_chapter(db_session, novel.id, 1, body)
+    rows = await _room_with_facts(db_session, novel.id, chapter)
+    output = {"facts": [_fact("민수", "relation", "지아", (1, "남매다"), attribute="남매", play="P1")]}
+    adapter = ScriptedAdapter({"facts.extract": [output, output]})
+    await _confirm_and_run(db_session, chapter, revision, adapter, _registry(events=False))
+    room_id, snapshot_id, ordinal, old_id = rows[1].chat_room_id, rows[1].snapshot_id, rows[1].ordinal, rows[1].id
+    await db_session.execute(delete(ChatMemoryFact).where(ChatMemoryFact.id == old_id))
+    rewritten = _make_memory_fact(room_id, snapshot_id, ordinal=ordinal, value="연인")
+    db_session.add(rewritten)
+    await db_session.flush()
+    same = await add_revision(db_session, chapter.id, body, block_ids=revision.block_ids)
+
+    commit_id = await _confirm_and_run(db_session, chapter, same, adapter, _registry(events=False))
+
+    assert await _status(db_session, commit_id) == "committed"
+    first, second = (prompt.prompt.split("플레이 사실\n", 1)[1] for prompt in adapter.prompts["facts.extract"])
+    assert first == second and first.startswith("P1. 민수 → 지아: 연인\n")
+    head = await revision_at(db_session, novel.id, None)
+    pointed = await db_session.scalar(
+        select(NovelBibleEvidence.chat_memory_fact_id).where(
+            NovelBibleEvidence.origin == "chat_memory", NovelBibleEvidence.created_revision_id == head.id
+        )
+    )
+    assert pointed == rewritten.id != old_id
+
+
 async def test_a_play_evidence_survives_the_chat_memory_row_it_points_at(db_session: AsyncSession) -> None:
     """채팅 기억 행이 되감기·잊기로 사라져도 커밋된 사실과 근거 행은 그대로이고, 근거가 가리키던 행이 없다는 것으로 소실을
     읽는다(소실 칸은 없다). 깨지는 시나리오: 근거가 채팅 기억 행을 FK 로 가리키면 되감기가 정본 행을 지우거나 막힌다."""

@@ -2,7 +2,7 @@
 사실."""
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +50,8 @@ class CommitView:
     source_ref: SourceCanonRef | None
     # 확정 때 소설의 방(확정 행에 남은 것). 그 뒤 방이 지워져도 확정이 읽을 방은 바뀌지 않는다 — 행이 사라졌으면 비어 읽힌다.
     chat_room_id: uuid.UUID | None = None
+    # `play_facts` 가 마지막으로 돌려준 행. 작업이 추출 캐시 열쇠에 이 행들의 방·행 id 를 넣는다(`core/jobs.py`).
+    served_play_facts: tuple[PlayFact, ...] = field(default=(), init=False)
 
     async def manuscript(self) -> Manuscript:
         revision = await self.session.get(NovelChapterRevision, self.commit.chapter_revision_id)
@@ -133,6 +135,7 @@ class CommitView:
             )
             for _, row in latest_by_key(rows)
         ]
+        self.served_play_facts = tuple(facts)
         return facts or None
 
 
