@@ -31,7 +31,7 @@ from api.db.models.novel_bible import NovelBibleEntity
 from api.db.models.novel_bible_facts import NovelBibleFact
 from api.novel_bible.core.contracts import CoreReadView
 from api.novel_bible.core.keys import TARGETED_KINDS, normalize_name, predicate_norm
-from api.novel_bible.core.known import known_entities_text
+from api.novel_bible.core.known import KIND_LABELS, known_entities_text
 from api.novel_bible.core.queries import current_items, revision_at
 from api.novel_bible.core.quotes import locate_quote, quote_hash, verify_quote
 from api.novel_bible.core.types import (
@@ -78,9 +78,11 @@ _DISPROVED_TAIL = " (반증)"
 
 @dataclass(frozen=True)
 class KnownAttribute:
-    """이미 정본인 불변 속성 하나 — 같은 값이면 같은 표기를 쓰게 보여 준다. 속성은 정규화한 술어다."""
+    """이미 정본인 불변 속성 하나 — 같은 값이면 같은 표기를 쓰게 보여 준다. 속성은 정규화한 술어다. 주어 종류가 함께 있는
+    것은 개체가 (종류, 이름)으로 갈려, 같은 이름의 인물과 사물이 각자 불변 속성을 가질 수 있어서다."""
 
     subject: str
+    subject_kind: EntityKind
     attribute: str
     value: str
 
@@ -135,7 +137,7 @@ async def _known_attributes(session: AsyncSession, commit: CommitRef, manuscript
     rows = (
         await session.execute(
             current_items(NovelBibleFact, "fact", commit.novel_id, head)
-            .add_columns(NovelBibleEntity.name, NovelBibleEntity.aliases)
+            .add_columns(NovelBibleEntity.kind, NovelBibleEntity.name, NovelBibleEntity.aliases)
             .join(NovelBibleEntity, NovelBibleEntity.id == NovelBibleFact.subject_entity_id)
             .where(
                 NovelBibleFact.kind == "attribute", NovelBibleFact.immutable.is_(True),
@@ -145,11 +147,11 @@ async def _known_attributes(session: AsyncSession, commit: CommitRef, manuscript
     ).all()
     text = normalize_name("\n".join(block.text for block in manuscript.blocks))
     found = {
-        KnownAttribute(subject=name, attribute=fact.predicate_norm, value=fact.value)
-        for fact, name, aliases in rows
+        KnownAttribute(subject=name, subject_kind=kind, attribute=fact.predicate_norm, value=fact.value)
+        for fact, kind, name, aliases in rows
         if any(norm and norm in text for norm in map(normalize_name, (name, *aliases)))
     }
-    return sorted(found, key=lambda known: (known.subject, known.attribute, known.value))
+    return sorted(found, key=lambda known: (known.subject, known.subject_kind, known.attribute, known.value))
 
 
 def _problem(fact: ExtractedFact) -> str | None:
@@ -225,8 +227,10 @@ class FactsSlot:
         - `manuscript`: 문단마다 한 줄 `[번호] 글`. 장면 경계 표시는 없다. 모델이 내는 `quote.paragraph` 는 `[번호]` 의 번호이고,
           `quote.text` 는 `[번호] ` 머리 없이 그 문단 글에서 그대로 옮긴 구절이어야 한다 — 인용 검증이 문단 글에서 찾는다.
         - `known_entities`: 사건 슬롯과 같은 글이다 — 꼴은 `core/known.py` 의 `known_entities_text`.
-        - `known_attributes`: 다른 화에서 이미 정본인 불변 속성마다 한 줄 `- 주어 · 속성: 값`(속성은 정규화한 이름), 같은 줄은 한 번만
-          글자 순으로. 같은 값이면 이 표기를 그대로 쓰게 하는 힌트다 — 표기가 다르면 같은 값도 다른 값으로 읽힌다.
+        - `known_attributes`: 다른 화에서 이미 정본인 불변 속성마다 한 줄 `- 주어 (인물) · 속성: 값`(속성은 정규화한 이름), 같은
+          줄은 한 번만 글자 순으로. 괄호는 주어 종류이고 표지는 아는 개체 힌트와 같다(`core/known.py` 의 `KIND_LABELS`) — 같은
+          이름의 인물과 사물을 가른다. 같은 값이면 이 표기를 그대로 쓰게 하는 힌트다 — 표기가 다르면 같은 값도 다른 값으로
+          읽힌다. 주어 이름을 낼 때 괄호의 종류를 옮기지 않고 `subject_kind` 로 내야 한다.
         - `source_canon`: 원작 글마다 `[표지] 글` 한 덩이, 덩이 사이는 빈 줄. 표지는 작품 설정 `S`, 키워드 노트 `K1`·`K2` …. 글
           안에 줄바꿈이 있을 수 있다. 차이를 낼 때 `source_difference.label` 은 표지(`S`·`K1`)만, `quote` 는 `[표지] ` 머리 없이
           그 글에서 그대로 옮긴 구절이다 — 표지가 없거나 구절이 그 글에 없으면(원고 인용과 같은 규칙: 조합형·공백 차이는
@@ -242,7 +246,12 @@ class FactsSlot:
             "manuscript": "\n".join(f"[{block.index}] {block.text}" for block in slot_input.manuscript.blocks),
             "known_entities": known_entities_text(slot_input.known),
             "known_attributes": "\n".join(
-                sorted({f"- {known.subject} · {known.attribute}: {known.value}" for known in slot_input.known_attributes})
+                sorted(
+                    {
+                        f"- {known.subject} ({KIND_LABELS[known.subject_kind]}) · {known.attribute}: {known.value}"
+                        for known in slot_input.known_attributes
+                    }
+                )
             ),
             "source_canon": "\n\n".join(
                 f"[{label}] {source.text}" for label, source in _source_texts(slot_input.source).items()

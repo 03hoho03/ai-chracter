@@ -128,15 +128,17 @@ def _canon(work_setting: str, *notes: str) -> SourceCanon:
 
 
 def test_the_prompt_values_number_paragraphs_and_label_the_source_and_play_facts() -> None:
-    """문단은 장면 표시 없이 `[번호] 글`, 아는 개체는 개체마다 한 줄, 정본 불변 속성은 `- 주어 · 속성: 값`, 원작은 표지 `[S]`·
-    `[K1]` 로 시작하는 덩이, 플레이 사실은 `P1.` 표지 줄이고 주장·반증은 끝 꼬리로 가른다. 깨지는 시나리오: 꼴이 바뀌면 그 꼴을
-    설명하는 지시문과 어긋나 모델이 표지·문단 번호를 틀리게 내거나, 반증된 값을 플레이에서 참이던 값으로 읽는다."""
+    """문단은 장면 표시 없이 `[번호] 글`, 아는 개체는 개체마다 한 줄, 정본 불변 속성은 `- 주어 (종류) · 속성: 값`, 원작은 표지
+    `[S]`·`[K1]` 로 시작하는 덩이, 플레이 사실은 `P1.` 표지 줄이고 주장·반증은 끝 꼬리로 가른다. 깨지는 시나리오: 꼴이 바뀌면 그
+    꼴을 설명하는 지시문과 어긋나 모델이 표지·문단 번호를 틀리게 내거나, 반증된 값을 플레이에서 참이던 값으로 읽거나, 같은 이름의
+    인물·사물 불변 속성이 한 주어의 것으로 읽힌다."""
     canon = _canon("합성 작품 설정 글.", "첫 합성 노트.", "둘째 합성 노트.")
     slot_input = _input(
         _manuscript("첫째 문단이다.", "둘째 문단이다."),
         known=[EntityName(kind="object", name="열쇠"), EntityName(kind="character", name="하나", aliases=("큰언니",))],
-        known_attributes=[KnownAttribute(subject="하나", attribute="눈 색", value="갈색"),
-                          KnownAttribute(subject="둘", attribute="혈액형", value="A")],
+        known_attributes=[KnownAttribute(subject="하나", subject_kind="character", attribute="눈 색", value="갈색"),
+                          KnownAttribute(subject="둘", subject_kind="character", attribute="혈액형", value="A"),
+                          KnownAttribute(subject="하나", subject_kind="object", attribute="재질", value="나무")],
         source=canon,
         play=[_play("민수", "연인", target="지아"), _play("지아", "기사", attribute="직업", claimed=True),
               _play("민수", "바다 마을", attribute="고향", disproved=True)],
@@ -146,7 +148,7 @@ def test_the_prompt_values_number_paragraphs_and_label_the_source_and_play_facts
 
     assert values["manuscript"] == "[1] 첫째 문단이다.\n[2] 둘째 문단이다."
     assert values["known_entities"] == "- 열쇠 (사물)\n- 하나 (인물) — 별칭: 큰언니"
-    assert values["known_attributes"] == "- 둘 · 혈액형: A\n- 하나 · 눈 색: 갈색"
+    assert values["known_attributes"] == "- 둘 (인물) · 혈액형: A\n- 하나 (사물) · 재질: 나무\n- 하나 (인물) · 눈 색: 갈색"
     assert values["source_canon"] == "[S] 합성 작품 설정 글.\n\n[K1] 첫 합성 노트.\n\n[K2] 둘째 합성 노트."
     assert values["play_facts"] == "P1. 민수 → 지아: 연인\nP2. 지아 · 직업: 기사 (주장)\nP3. 민수 · 고향: 바다 마을 (반증)"
 
@@ -740,6 +742,8 @@ async def test_known_attributes_are_current_immutable_attributes_of_entities_nam
     first, first_revision = await add_chapter(db_session, novel.id, 1, "하나는 갈색 눈이다.\n\n둘은 키가 크다.")
     output = {"facts": [
         _fact("하나", "attribute", "갈색", (1, "갈색 눈"), attribute="눈 색", immutable=True, scope="work"),
+        _fact("하나", "attribute", "나무", (1, "하나는"), attribute="재질", immutable=True, scope="work",
+              subject_kind="object"),
         _fact("둘", "attribute", "크다", (2, "키가 크다"), attribute="키", scope="from_here"),
     ]}
     adapter = ScriptedAdapter({"facts.extract": [output]})
@@ -753,7 +757,10 @@ async def test_known_attributes_are_current_immutable_attributes_of_entities_nam
     own = await FactsSlot().build_input(db_session, _view(db_session, first, edited))
 
     assert isinstance(named, FactsInput) and isinstance(unnamed, FactsInput) and isinstance(own, FactsInput)
-    assert named.known_attributes == [KnownAttribute(subject="하나", attribute="눈 색", value="갈색")]
+    assert named.known_attributes == [
+        KnownAttribute(subject="하나", subject_kind="character", attribute="눈 색", value="갈색"),
+        KnownAttribute(subject="하나", subject_kind="object", attribute="재질", value="나무"),
+    ]
     assert unnamed.known_attributes == []
     assert own.known_attributes == []
     assert {name.name for name in named.known} >= {"하나", "둘"}
@@ -876,7 +883,7 @@ async def test_a_same_text_reconfirm_reuses_the_extraction_unless_the_play_facts
     assert await _status(db_session, fresh) == "committed"
     assert len(adapter.prompts["facts.extract"]) == 3
     prompt = adapter.prompts["facts.extract"][2].prompt
-    assert "P1. 민수 → 지아: 소꿉친구" in prompt and "- 지아 · 눈 색: 갈색" in prompt
+    assert "P1. 민수 → 지아: 소꿉친구" in prompt and "- 지아 (인물) · 눈 색: 갈색" in prompt
 
 
 async def test_a_reconfirm_extracts_again_when_a_play_fact_is_rewritten_with_the_same_text_as_a_new_row(

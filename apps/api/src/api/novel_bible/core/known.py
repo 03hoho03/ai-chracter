@@ -8,8 +8,8 @@ from collections.abc import Iterable
 from api.novel_bible.core.types import EntityName
 from api.novel_bible.ids import EntityKind
 
-# 개체 종류마다 줄에 보이는 표지. 종류가 늘면 여기 더한다 — 빠진 종류의 개체가 하나라도 있는 소설은 그 뒤 모든 확정의 렌더가
-# 실패한다(아는 개체는 소설의 개체 전부다).
+# 개체 종류마다 줄에 보이는 표지. 사실 슬롯의 정본 불변 속성 힌트도 주어 종류를 이 표지로 단다. 종류가 늘면 여기 더한다 — 빠진
+# 종류의 개체가 하나라도 있는 소설은 그 뒤 모든 확정의 렌더가 실패한다(아는 개체는 소설의 개체 전부다).
 KIND_LABELS: dict[EntityKind, str] = {"character": "인물", "object": "사물", "ability": "능력"}
 
 
