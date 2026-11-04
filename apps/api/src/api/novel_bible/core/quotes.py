@@ -3,7 +3,10 @@
 모델이 옮긴 인용은 유니코드 조합형(분해형 한글 자모 따위)이나 공백(여러 칸·줄바꿈·전각 공백)만 원문과 다를 수 있다. 그런
 차이만으로 있는 인용을 버리면 근거 없는 항목으로 잘못 세어지므로 정규화한 글에서 다시 찾는다. 다만 저장하는 구간과 해시는
 모델이 낸 글이 아니라 원문에서 찾은 구간의 원문 글로 낸다 — 차단 판정이 개정 본문을 다시 나눠 그 구간의 해시를 맞춰 보므로,
-모델 글로 해시를 내면 정규화로 찾은 인용은 그 대조에서 늘 떨어져 그 근거에 기댄 차단이 경고로 낮아진다."""
+모델 글로 해시를 내면 정규화로 찾은 인용은 그 대조에서 늘 떨어져 그 근거에 기댄 차단이 경고로 낮아진다.
+
+원고 밖의 글(사실 슬롯이 원작 정본에서 찾는 차이 구절)도 같은 찾기(`locate_quote`)를 쓴다. 규칙이 갈리면 같은 모양의 구절이
+원고에서는 찾아지고 원작에서는 버려져, 측정에서 두 근거의 버림률을 견줄 수 없다."""
 
 import hashlib
 import itertools
@@ -71,9 +74,14 @@ def _collapse_whitespace(text: str, spans: list[_Span]) -> tuple[str, list[_Span
     return "".join(chars), collapsed
 
 
-def _locate(text: str, quote: str) -> _Span | None:
-    """`quote` 가 `text` 안에 있는 원문 구간. NFC 정규화한 두 글에서 그대로 찾고, 없으면 두 글의 이어진 공백을 한 칸으로
-    줄여(인용은 앞뒤 공백도 걷어) 다시 찾는다. 정규화로 길이가 바뀌어도 찾은 자리를 원문 위치로 되돌린다."""
+def locate_quote(text: str, quote: str) -> tuple[int, int] | None:
+    """`quote` 가 `text` 안에 있는 원문 구간(시작, 끝). NFC 정규화한 두 글에서 그대로 찾고, 없으면 두 글의 이어진 공백을 한
+    칸으로 줄여(인용은 앞뒤 공백도 걷어) 다시 찾는다. 정규화로 길이가 바뀌어도 찾은 자리를 원문 위치로 되돌린다. 구간의 해시는
+    부르는 쪽이 `text[시작:끝]`(원문 글)로 낸다.
+
+    공백만인 인용은 None 이다 — 거의 모든 글에 띄어쓰기가 있어, 찾아 주면 근거 없는 항목도 인용 검증을 지난다."""
+    if not quote.strip():
+        return None
     normalized, spans = _nfc_with_spans(text)
     target = _nfc(quote)
     start = normalized.find(target)
@@ -87,13 +95,12 @@ def _locate(text: str, quote: str) -> _Span | None:
 
 
 def verify_quote(manuscript: Manuscript, quote: QuoteOut) -> VerifiedQuote | None:
-    """`quote.paragraph` 번 문단에서 `quote.text` 를 찾아 원문 구간과 그 원문 글의 해시를 낸다. 문단이 없거나 구절이 그
-    문단에 없으면 None. 공백만인 인용도 None 이다 — 거의 모든 문단에 띄어쓰기가 있어, 찾아 주면 근거 없는 항목도 인용 검증을
-    지난다."""
-    if not quote.text.strip() or not 1 <= quote.paragraph <= len(manuscript.blocks):
+    """`quote.paragraph` 번 문단에서 `quote.text` 를 `locate_quote` 로 찾아 원문 구간과 그 원문 글의 해시를 낸다. 문단이 없거나
+    구절이 그 문단에 없으면(공백만인 인용 포함) None."""
+    if not 1 <= quote.paragraph <= len(manuscript.blocks):
         return None
     block = manuscript.blocks[quote.paragraph - 1]
-    span = _locate(block.text, quote.text)
+    span = locate_quote(block.text, quote.text)
     if span is None:
         return None
     start, end = span

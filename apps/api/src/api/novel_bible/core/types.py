@@ -47,9 +47,16 @@ class EntityName(_Frozen):
 
 class Proposition(_Frozen):
     """사실 슬롯과 지식 슬롯이 같은 꼴로 쓰는 명제. 안정 키(`keys.proposition_key`)는 이 칸들과, 연결 단계가 주어·대상
-    이름에서 푼 개체 id 에서 나온다."""
+    이름에서 푼 개체 id 에서 나온다.
+
+    주어 종류(`subject_kind`)가 명제에 있는 것은 개체가 (종류, 정규 이름)으로 갈리기 때문이다 — 같은 이름이라도 종류가 다르면
+    다른 개체이고 키도 다르다. 두 슬롯이 이 칸으로 주어 개체 이름(`names["subject"]`)을 만들어야 같은 명제가 같은 키를 받는다
+    (둘이 다른 항목은 코어가 저장 전에 버린다).
+    기본값이 인물인 것은 이 칸이 생기기 전에 저장된 제안(작업 행의 `proposal`)이 그때의 뜻(주어는 늘 인물) 그대로 다시 읽히게
+    하려는 것이다."""
 
     subject: str
+    subject_kind: EntityKind = "character"
     kind: FactKind
     attribute: str | None
     value: str
@@ -86,11 +93,11 @@ class ItemDraft(_Frozen):
     (`names`), 근거(`quotes`, 하나 이상), 사건 연결 앵커(`anchor_block`), 사건이 걸친 블록(`covers_blocks`, 사건만), 명제
     (`proposition`), 원작·플레이 근거(`side_quotes`)뿐이다.
 
-    명제가 있는 항목(사실·지식)은 명제의 주어를 `names["subject"]` 에, 대상이 개체인 종류(소지·능력·관계)면 대상을
-    `names["value"]` 에 둔다 — 코어가 그 개체 id 로 안정 키를 만든다. 지식 항목은 앎 주체를 `names["knower"]`, 앎 종류를
-    `fields["kind"]` 에 둔다 — 같은 화의 이전 지식 행을 대체할 때 코어가 (앎 주체, 종류, 키)로 짝을 찾는다. 그 밖의 이름 칸은
-    이름 목록으로 읽어, 개체 이름 길이 상한을 넘는 이름은 코어가 칸마다 따로 뺀다 — 두 칸을 같은 차례로 짝짓는 슬롯은 그런
-    이름이 낀 짝을 검증에서 먼저 빼야 한다."""
+    명제가 있는 항목(사실·지식)은 명제의 주어를 명제의 주어 종류로 `names["subject"]` 에, 대상이 개체인 종류(소지·능력·
+    관계)면 대상을 `names["value"]` 에 둔다 — 코어가 그 개체 id 로 안정 키를 만든다. 지식 항목은 앎 주체를
+    `names["knower"]`, 앎 종류를 `fields["kind"]` 에 둔다 — 같은 화의 이전 지식 행을 대체할 때 코어가 (앎 주체, 종류, 키)로
+    짝을 찾는다. 그 밖의 이름 칸은 이름 목록으로 읽어, 개체 이름 길이 상한을 넘는 이름은 코어가 칸마다 따로 뺀다 — 두 칸을 같은
+    차례로 짝짓는 슬롯은 그런 이름이 낀 짝을 검증에서 먼저 빼야 한다."""
 
     local_key: str
     table: ItemTable
@@ -183,6 +190,24 @@ class SourceCanon:
 
 
 @dataclass(frozen=True)
+class PlayFact:
+    """채팅 기억 사실 하나 — 그 소설이 나온 방의 플레이에서 그랬던 것. 사실 슬롯이 소설 사실과 다른지 견줄 근거로만 읽는다.
+    관계면 `object` 가 대상이고 `attribute` 가 비며, 속성이면 그 반대다. `claimed` 는 말한 사람만 그렇다고 한 주장이고,
+    `disproved` 는 플레이에서 그 값이 아니라고 밝혀진 반증이다(둘은 함께 참이 아니다). 채팅 기억 행은 되감기·잊기로 사라질 수
+    있어 근거는 이 행 id 와 키를 FK 없이 남긴다."""
+
+    chat_room_id: uuid.UUID
+    chat_memory_fact_id: uuid.UUID
+    chat_fact_key: str
+    subject: str
+    object: str | None
+    attribute: str | None
+    value: str
+    claimed: bool
+    disproved: bool
+
+
+@dataclass(frozen=True)
 class RenderedPrompt:
     system_instruction: str
     prompt: str
@@ -222,6 +247,8 @@ class FactRow:
     value_entity_id: uuid.UUID | None
     holds: bool
     immutable: bool
+    # 이 장면에서 상태가 시작됐다고 서술됨(얻음·배움·일어남·돌아옴). 거짓이면 이미 참이던 상태를 여기서 처음 서술한 것이다.
+    onset: bool
     scope: FactScope
     valid_from_event_id: uuid.UUID | None
 

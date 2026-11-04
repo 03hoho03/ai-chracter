@@ -3,6 +3,7 @@
 
 from api.novel_bible.core.contracts import Registry
 from api.novel_bible.slots.events.slot import EventsSlot
+from api.novel_bible.slots.facts.slot import FactsSlot
 from api.novel_bible.slots.source.slot import SourceCanonSlot
 
-REGISTRY = Registry(extracting={slot.id: slot for slot in (EventsSlot(),)}, source=SourceCanonSlot())
+REGISTRY = Registry(extracting={slot.id: slot for slot in (EventsSlot(), FactsSlot())}, source=SourceCanonSlot())

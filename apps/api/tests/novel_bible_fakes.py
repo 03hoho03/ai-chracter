@@ -14,7 +14,7 @@
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict
@@ -272,7 +272,8 @@ def _to_row(row: Any, chapter_ordinal: int) -> EventRow | RelationRow | FactRow 
         return FactRow(
             id=row.id, chapter_id=row.chapter_id, fact_key=row.fact_key, subject_entity_id=row.subject_entity_id,
             kind=row.kind, predicate_norm=row.predicate_norm, value=row.value, value_norm=row.value_norm,
-            value_entity_id=row.value_entity_id, holds=row.holds, immutable=row.immutable, scope=row.scope,
+            value_entity_id=row.value_entity_id, holds=row.holds, immutable=row.immutable, onset=row.onset,
+            scope=row.scope,
             valid_from_event_id=row.valid_from_event_id,
         )
     assert isinstance(row, NovelBibleKnowledge)
@@ -296,10 +297,12 @@ def knowledge_slot() -> FakeSlot:
 
 @dataclass
 class FakeSource:
-    """원작 정본 가짜 — 표가 없고 글은 이 객체의 `note` 다. 노트가 비면 원작이 없는 것이다."""
+    """원작 정본 가짜 — 표가 없고 작품 설정 글은 이 객체의 `note`, 키워드 노트는 `keyword_notes` 다. `note` 가 비면 원작이 없는
+    것이다."""
 
     note: str = ""
     version_id: uuid.UUID = field(default_factory=uuid.uuid4)
+    keyword_notes: dict[uuid.UUID, str] = field(default_factory=dict)
     id: SlotId = "source"
 
     async def resolve(self, session: AsyncSession, novel_id: uuid.UUID) -> SourceCanonRef | None:
@@ -308,7 +311,7 @@ class FakeSource:
         return SourceCanonRef(content_version_id=self.version_id, input_hash=f"hash:{self.note}")
 
     async def load(self, session: AsyncSession, novel_id: uuid.UUID, ref: SourceCanonRef) -> SourceCanon:
-        return SourceCanon(ref=ref, work_setting=self.note, keyword_notes={})
+        return SourceCanon(ref=ref, work_setting=self.note, keyword_notes=dict(self.keyword_notes))
 
 
 def fake_registry(*slots: Slot, source: FakeSource | None = None) -> Registry:
@@ -410,11 +413,14 @@ async def drain(
 async def add_chapter(
     db: AsyncSession, novel_id: uuid.UUID, ordinal: int, body: str
 ) -> tuple[NovelChapter, NovelChapterRevision]:
-    """화 하나짜리 묶음 하나와 그 화, 첫 개정(flush). 묶음 번호는 화 번호와 같다 — 묶음 삭제로 화 하나를 지울 수 있다."""
+    """화 하나짜리 묶음 하나와 그 화, 첫 개정(flush). 묶음 번호는 화 번호와 같다 — 묶음 삭제로 화 하나를 지울 수 있다. 화의
+    시작 메시지는 끝 메시지보다 두 시간 앞이다 — 시작과 끝이 같으면 화 도중에 접힌 채팅 기억을 심을 자리가 없어, 화 끝 대신 화
+    시작을 커서로 읽는 잘못을 테스트가 가르지 못한다."""
     now = datetime.now(UTC)
     segment: dict[str, Any] = {
-        "start_message_id": uuid.uuid4(), "start_message_created_at": now, "end_message_id": uuid.uuid4(),
-        "end_message_created_at": now, "assistant_message_count": 1, "source_hash": "0" * 64,
+        "start_message_id": uuid.uuid4(), "start_message_created_at": now - timedelta(hours=2),
+        "end_message_id": uuid.uuid4(), "end_message_created_at": now, "assistant_message_count": 1,
+        "source_hash": "0" * 64,
     }
     batch = NovelBatch(novel_id=novel_id, ordinal=ordinal, target_episode_count=1, **segment)
     db.add(batch)
