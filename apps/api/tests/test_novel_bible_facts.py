@@ -10,7 +10,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, TypeVar
+from typing import Any, TypeVar, get_args
 
 import pytest
 from pydantic import BaseModel
@@ -34,6 +34,7 @@ from api.db.models.prompt import PromptSection
 from api.novel_bible.core.confirm import Actor, confirm
 from api.novel_bible.core.contracts import AdapterCapabilities, BibleModelAdapter, PromptSource, Registry, Slot
 from api.novel_bible.core.keys import StateKey, fact_key, state_key
+from api.novel_bible.core.known import KIND_LABELS
 from api.novel_bible.core.pipeline import run_until_idle
 from api.novel_bible.core.queries import facts_true_at, revision_at
 from api.novel_bible.core.quotes import quote_hash
@@ -50,9 +51,9 @@ from api.novel_bible.core.types import (
     SourceCanonRef,
 )
 from api.novel_bible.core.views import CommitView
-from api.novel_bible.ids import FactKind, FactScope, OperationKey
+from api.novel_bible.ids import EntityKind, FactKind, FactScope, OperationKey
 from api.novel_bible.registry import REGISTRY
-from api.novel_bible.slots.events.slot import EventsSlot
+from api.novel_bible.slots.events.slot import EventsInput, EventsSlot
 from api.novel_bible.slots.facts.schema import FactsOutput
 from api.novel_bible.slots.facts.slot import FactsInput, FactsSlot, KnownAttribute
 from factories import _make_bare_chat_room, _make_memory_fact
@@ -140,6 +141,41 @@ def test_the_prompt_values_number_paragraphs_and_label_the_source_and_play_facts
     assert values["known_attributes"] == "- 둘 · 혈액형: A\n- 하나 · 눈 색: 갈색"
     assert values["source_canon"] == "[S] 합성 작품 설정 글.\n\n[K1] 첫 합성 노트.\n\n[K2] 둘째 합성 노트."
     assert values["play_facts"] == "P1. 민수 → 지아: 연인\nP2. 지아 · 직업: 기사 (주장)"
+
+
+def test_both_slots_render_the_known_entities_hint_as_the_same_text() -> None:
+    """사건·사실 슬롯의 아는 개체 힌트는 같은 글이다 — 개체마다 한 줄, 같은 줄은 한 번, 글자 순, 별칭은 끝 꼬리. 깨지는
+    시나리오: 두 슬롯이 꼴을 따로 들고 있으면 한쪽만 고쳐져, 같은 꼴을 설명하는 두 채널 지시문 중 하나가 어긋난다."""
+    one = EntityName(kind="character", name="하나", aliases=("큰언니", "하나야"))
+    known = [
+        EntityName(kind="object", name="열쇠"), one, EntityName(kind="ability", name="비행"), one,
+        EntityName(kind="character", name="둘"), EntityName(kind="object", name="열쇠", aliases=("작은 열쇠",)),
+    ]
+    manuscript = _manuscript("합성 문단.")
+
+    facts = FactsSlot().prompt_values(_input(manuscript, known=known))["known_entities"]
+    events = EventsSlot().prompt_values(EventsInput(manuscript=manuscript, scenes=[], known=known, prior=[]))
+
+    assert facts == (
+        "- 둘 (인물)\n- 비행 (능력)\n- 열쇠 (사물)\n- 열쇠 (사물) — 별칭: 작은 열쇠\n- 하나 (인물) — 별칭: 큰언니, 하나야"
+    )
+    assert events["known_entities"] == facts
+    assert FactsSlot().prompt_values(_input(manuscript))["known_entities"] == ""
+
+
+def test_the_known_entities_hint_labels_every_entity_kind_in_both_slots() -> None:
+    """개체 종류 전부에 표지가 있다. 깨지는 시나리오: 종류를 넓히고 표지를 빠뜨리면 그 종류의 개체가 하나라도 생긴 소설은 이후
+    모든 확정의 두 슬롯 렌더가 실패한다 — 아는 개체 힌트는 소설의 개체 전부를 싣고, 타입 검사는 사전 키가 다 있는지 보지 않는다."""
+    kinds = get_args(EntityKind)
+    assert set(KIND_LABELS) == set(kinds)
+    known = [EntityName(kind=kind, name=f"합성{number}") for number, kind in enumerate(kinds)]
+    manuscript = _manuscript("합성 문단.")
+
+    facts = FactsSlot().prompt_values(_input(manuscript, known=known))["known_entities"]
+    events = EventsSlot().prompt_values(EventsInput(manuscript=manuscript, scenes=[], known=known, prior=[]))
+
+    assert facts == events["known_entities"]
+    assert facts.splitlines() == [f"- 합성{number} ({KIND_LABELS[kind]})" for number, kind in enumerate(kinds)]
 
 
 def test_without_a_source_or_play_facts_those_values_are_empty() -> None:

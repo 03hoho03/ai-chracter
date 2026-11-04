@@ -30,6 +30,7 @@ from api.db.models.novel_bible import NovelBibleEntity
 from api.db.models.novel_bible_facts import NovelBibleFact
 from api.novel_bible.core.contracts import CoreReadView
 from api.novel_bible.core.keys import TARGETED_KINDS, normalize_name, predicate_norm
+from api.novel_bible.core.known import known_entities_text
 from api.novel_bible.core.queries import current_items, revision_at
 from api.novel_bible.core.quotes import quote_hash, verify_quote
 from api.novel_bible.core.types import (
@@ -60,7 +61,6 @@ from api.novel_bible.ids import (
 )
 from api.novel_bible.slots.facts.schema import ExtractedFact, FactsOutput, SourceDifference
 
-_KIND_LABELS: dict[EntityKind, str] = {"character": "인물", "object": "사물", "ability": "능력"}
 # 대상이 개체인 종류의 대상 개체 종류.
 _VALUE_ENTITY_KINDS: dict[FactKind, EntityKind] = {"possession": "object", "ability": "ability", "relation": "character"}
 # 값이 정해진 목록 안에 있어야 하는 종류.
@@ -122,11 +122,6 @@ def _play_line(label: str, fact: PlayFact) -> str:
     else:
         body = f"{fact.subject} · {fact.attribute}: {fact.value}"
     return f"{label}. {body}" + (_CLAIMED_TAIL if fact.claimed else "")
-
-
-def _entity_line(name: EntityName) -> str:
-    aliases = f" — 별칭: {', '.join(name.aliases)}" if name.aliases else ""
-    return f"- {name.name} ({_KIND_LABELS[name.kind]}){aliases}"
 
 
 async def _known_attributes(session: AsyncSession, commit: CommitRef, manuscript: Manuscript) -> list[KnownAttribute]:
@@ -218,9 +213,7 @@ class FactsSlot:
 
         - `manuscript`: 문단마다 한 줄 `[번호] 글`. 장면 경계 표시는 없다. 모델이 내는 `quote.paragraph` 는 `[번호]` 의 번호이고,
           `quote.text` 는 `[번호] ` 머리 없이 그 문단 글에서 그대로 옮긴 구절이어야 한다 — 인용 검증이 문단 글에서 찾는다.
-        - `known_entities`: 개체마다 한 줄 `- 이름 (인물)`(종류 자리는 `인물`·`사물`·`능력`), 별칭이 있으면 끝에
-          ` — 별칭: a, b`. 같은 줄은 한 번만 싣고 글자 순으로 정렬한다. 모델이 주어·대상 이름을 낼 때는 이름만 써야 한다 — 괄호의
-          종류나 별칭 꼬리를 함께 옮기면 그 글 그대로 다른 개체가 생긴다.
+        - `known_entities`: 사건 슬롯과 같은 글이다 — 꼴은 `core/known.py` 의 `known_entities_text`.
         - `known_attributes`: 이미 정본인 불변 속성마다 한 줄 `- 주어 · 속성: 값`(속성은 정규화한 이름), 같은 줄은 한 번만
           글자 순으로. 같은 값이면 이 표기를 그대로 쓰게 하는 힌트다 — 표기가 다르면 같은 값도 다른 값으로 읽힌다.
         - `source_canon`: 원작 글마다 `[표지] 글` 한 덩이, 덩이 사이는 빈 줄. 표지는 작품 설정 `S`, 키워드 노트 `K1`·`K2` …. 글
@@ -234,7 +227,7 @@ class FactsSlot:
         assert isinstance(slot_input, FactsInput)
         return {
             "manuscript": "\n".join(f"[{block.index}] {block.text}" for block in slot_input.manuscript.blocks),
-            "known_entities": "\n".join(sorted({_entity_line(name) for name in slot_input.known})),
+            "known_entities": known_entities_text(slot_input.known),
             "known_attributes": "\n".join(
                 sorted({f"- {known.subject} · {known.attribute}: {known.value}" for known in slot_input.known_attributes})
             ),
