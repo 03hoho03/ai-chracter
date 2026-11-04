@@ -940,6 +940,7 @@ async def _plant_bible_rows(
                 kind="knows",
                 fact_key=fact.fact_key,
                 proposition={},
+                onset=False,
                 known_since_event_id=event.id,
             ),
             NovelBibleEvidence(

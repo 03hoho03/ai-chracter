@@ -218,7 +218,7 @@ async def test_knowledge_at_joins_the_facts_of_the_same_proposition_key(db_sessi
         return NovelBibleKnowledge(
             novel_id=story.novel_id, created_revision_id=story.revisions[index].id, chapter_id=story.chapters[index].id,
             knower_entity_id=story.dul, kind=kind, fact_key=_key(story.hana, "life", value, True),
-            proposition={"value": value}, known_since_event_id=story.main[index].id,
+            proposition={"value": value}, onset=False, known_since_event_id=story.main[index].id,
         )
 
     knows, believes = knowledge(4, "knows", "dead"), knowledge(4, "believes", "alive")

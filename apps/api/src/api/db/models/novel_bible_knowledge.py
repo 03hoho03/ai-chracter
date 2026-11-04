@@ -3,7 +3,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Text, Uuid, text
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Text, Uuid, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,7 @@ from api.novel_bible.ids import KnowledgeKind
 class NovelBibleKnowledge(NovelBibleItem, Base):
     """인물(`knower_entity_id`)이 명제 하나를 안다(`knows`)거나 믿는다(`believes`). `fact_key` 는 그 명제의 안정 키로, 사실 행이
     없어도 계산된다. `proposition` 은 명제 칸(주어 개체 id·종류·술어·값·유지) — 믿음의 내용이고 키를 다시 계산할 때 쓴다.
+    `onset` 은 이 장면에서 알게(믿게) 됐다고 서술됐는가다 — 이미 알던 것을 여기서 처음 서술했으면 거짓이다.
     `known_since_event_id` 는 알게 된 같은 화 사건이고, 비어 있으면 미정이다."""
 
     __tablename__ = "novel_bible_knowledge"
@@ -29,6 +30,7 @@ class NovelBibleKnowledge(NovelBibleItem, Base):
     kind: Mapped[KnowledgeKind] = mapped_column(Text, nullable=False)
     fact_key: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     proposition: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    onset: Mapped[bool] = mapped_column(Boolean, nullable=False)
     known_since_event_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("novel_bible_events.id", ondelete="SET NULL"), nullable=True
     )
