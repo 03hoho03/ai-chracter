@@ -6,6 +6,7 @@
 
 원고·채팅 기억·원작 글은 합성 문장이고 모델은 가짜 어댑터다(연산마다 정해 둔 출력을 차례로 돌려준다)."""
 
+import unicodedata
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -37,7 +38,7 @@ from api.novel_bible.core.keys import StateKey, fact_key, state_key
 from api.novel_bible.core.known import KIND_LABELS
 from api.novel_bible.core.pipeline import run_until_idle
 from api.novel_bible.core.queries import facts_true_at, revision_at
-from api.novel_bible.core.quotes import quote_hash
+from api.novel_bible.core.quotes import quote_hash, verify_quote
 from api.novel_bible.core.types import (
     CommitRef,
     EntityName,
@@ -46,6 +47,7 @@ from api.novel_bible.core.types import (
     ManuscriptBlock,
     PlayFact,
     Proposal,
+    QuoteOut,
     RenderedPrompt,
     SideQuote,
     SourceCanon,
@@ -344,6 +346,42 @@ def test_without_a_source_or_play_facts_every_difference_is_dropped() -> None:
 
     assert len(proposal.items) == 1 and proposal.items[0].side_quotes == ()
     assert proposal.dropped == {"source_difference_dropped": 1, "play_difference_dropped": 1}
+
+
+@pytest.mark.parametrize(
+    ("text", "quote", "found"),
+    [
+        pytest.param("하나의 눈은 푸른색이다.", "푸른색", "푸른색", id="exact"),
+        pytest.param("하나의 눈은 푸른색이다.", unicodedata.normalize("NFD", "푸른색"), "푸른색", id="decomposed-hangul"),
+        pytest.param("하나의 눈은\n  푸른색이다.", " 눈은 푸른색 ", "눈은\n  푸른색", id="collapsed-whitespace"),
+        pytest.param("하나의 눈은 푸른색이다.", " ", None, id="whitespace-only"),
+        pytest.param("하나의 눈은 푸른색이다.", "원작에 없는 구절", None, id="missing"),
+    ],
+)
+def test_a_source_difference_quote_follows_the_manuscript_quote_rules_and_hashes_the_source_span(
+    text: str, quote: str, found: str | None
+) -> None:
+    """원작 차이 구절은 원고 인용과 같은 규칙으로 찾는다 — 조합형·공백 차이는 찾고 공백만인 구절은 버린다. 구간과 해시는 찾은
+    원문 구간의 글이다. 깨지는 시나리오: 두 근거의 찾기 규칙이 갈리면 같은 구절이 원고에서는 남고 원작에서는 버려져 측정의 차이
+    버림률이 부풀고, 모델 글로 해시를 내면 저장된 원작 근거를 원작 글로 대 볼 때 맞지 않는다."""
+    manuscript = _manuscript(text)
+    output = _output(_fact("하나", "attribute", "갈색", (1, "하나의"), attribute="눈 색", source=("S", quote)))
+
+    proposal = FactsSlot().validate(_input(manuscript, source=_canon(text)), output)
+    in_manuscript = verify_quote(manuscript, QuoteOut(paragraph=1, text=quote))
+
+    (item,) = proposal.items
+    if found is None:
+        assert (item.side_quotes, in_manuscript) == ((), None)
+        assert proposal.dropped == {"source_difference_dropped": 1}
+        return
+    start = text.index(found)
+    (side,) = item.side_quotes
+    assert (side.char_start, side.char_end, side.quote_sha256) == (start, start + len(found), quote_hash(found))
+    assert in_manuscript is not None
+    assert (in_manuscript.char_start, in_manuscript.char_end, in_manuscript.quote_sha256) == (
+        side.char_start, side.char_end, side.quote_sha256,
+    )
 
 
 # ── 입력 ────────────────────────────────────────────────────────────

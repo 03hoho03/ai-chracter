@@ -33,7 +33,7 @@ from api.novel_bible.core.contracts import CoreReadView
 from api.novel_bible.core.keys import TARGETED_KINDS, normalize_name, predicate_norm
 from api.novel_bible.core.known import known_entities_text
 from api.novel_bible.core.queries import current_items, revision_at
-from api.novel_bible.core.quotes import quote_hash, verify_quote
+from api.novel_bible.core.quotes import locate_quote, quote_hash, verify_quote
 from api.novel_bible.core.types import (
     CommitRef,
     EntityName,
@@ -172,16 +172,19 @@ def _problem(fact: ExtractedFact) -> str | None:
 def _source_side(
     difference: SourceDifference, texts: dict[str, _SourceText], canon: SourceCanon | None
 ) -> SideQuote | None:
+    """원작 차이 구절을 그 표지 글에서 원고 인용과 같은 찾기(`locate_quote`)로 찾는다. 구간과 해시는 찾은 원문 구간의 글로
+    낸다 — 정규화로 찾은 구절은 모델 글과 원문 글이 달라, 모델 글로 해시를 내면 저장된 근거를 원작 글로 대 볼 때 맞지 않는다."""
     source = texts.get(difference.label.strip())
-    if canon is None or source is None or not difference.quote:
+    if canon is None or source is None:
         return None
-    start = source.text.find(difference.quote)
-    if start < 0:
+    span = locate_quote(source.text, difference.quote)
+    if span is None:
         return None
+    start, end = span
     return SideQuote(
         origin="source_canon", content_version_id=canon.ref.content_version_id, source_field=source.field,
-        keyword_note_id=source.keyword_note_id, char_start=start, char_end=start + len(difference.quote),
-        quote_sha256=quote_hash(difference.quote),
+        keyword_note_id=source.keyword_note_id, char_start=start, char_end=end,
+        quote_sha256=quote_hash(source.text[start:end]),
     )
 
 
@@ -226,7 +229,8 @@ class FactsSlot:
           글자 순으로. 같은 값이면 이 표기를 그대로 쓰게 하는 힌트다 — 표기가 다르면 같은 값도 다른 값으로 읽힌다.
         - `source_canon`: 원작 글마다 `[표지] 글` 한 덩이, 덩이 사이는 빈 줄. 표지는 작품 설정 `S`, 키워드 노트 `K1`·`K2` …. 글
           안에 줄바꿈이 있을 수 있다. 차이를 낼 때 `source_difference.label` 은 표지(`S`·`K1`)만, `quote` 는 `[표지] ` 머리 없이
-          그 글에서 그대로 옮긴 구절이다 — 표지가 없거나 구절이 그 글에 없으면 차이만 버린다.
+          그 글에서 그대로 옮긴 구절이다 — 표지가 없거나 구절이 그 글에 없으면(원고 인용과 같은 규칙: 조합형·공백 차이는
+          찾고, 공백만인 구절은 버린다) 차이만 버린다.
         - `play_facts`: 플레이 사실마다 한 줄 `P1. 주어 → 대상: 값`(관계) 또는 `P1. 주어 · 속성: 값`(속성), 말한 사람만 그렇다고
           한 주장이면 끝에 ` (주장)`, 플레이에서 그 값이 아니라고 밝혀진 반증이면 끝에 ` (반증)`. 반증 줄의 값은 플레이에서 참이
           아니었던 값이다 — 소설이 그 값을 참으로 쓰면 그것이 플레이와 다른 곳이다. `play_difference.ref` 는 표지(`P1`)만 받는다 —

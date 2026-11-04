@@ -61,7 +61,7 @@ LISTED_NAME_TOO_LONG = "listed_name_too_long"
 # 추출 캐시 열쇠에 드는 검증 규칙의 판. 캐시는 검증을 마친 제안을 다시 검증하지 않고 복사하므로, 슬롯 검증이나 코어의 거르기
 # (근거 인용 찾기·이름 거르기) 규칙을 바꾸면 이 값을 올려 옛 규칙으로 만든 제안을 다시 쓰지 않게 한다. 이 값이 열쇠에 들기 전의
 # 작업은 열쇠 꼴이 달라 어느 판과도 맞지 않는다.
-_VALIDATION_VERSION = 2
+_VALIDATION_VERSION = 3
 
 
 async def commit_ref(session: AsyncSession, commit: NovelBibleCommit) -> CommitRef:
