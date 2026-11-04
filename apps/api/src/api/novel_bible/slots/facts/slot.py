@@ -22,7 +22,6 @@ import uuid
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import get_args
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +29,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.db.models.novel_bible import NovelBibleEntity
 from api.db.models.novel_bible_facts import NovelBibleFact
 from api.novel_bible.core.contracts import CoreReadView
-from api.novel_bible.core.keys import TARGETED_KINDS, normalize_name, predicate_norm
+from api.novel_bible.core.keys import (
+    TARGETED_KINDS,
+    make_proposition,
+    normalize_name,
+    predicate_norm,
+    proposition_names,
+    proposition_problem,
+)
 from api.novel_bible.core.known import KIND_LABELS, known_entities_text
 from api.novel_bible.core.queries import current_items, revision_at
 from api.novel_bible.core.quotes import locate_quote, quote_hash, verify_quote
@@ -43,34 +49,14 @@ from api.novel_bible.core.types import (
     Manuscript,
     PlayFact,
     Proposal,
-    Proposition,
     RevisionRef,
     SideQuote,
     SlotRows,
     SourceCanon,
 )
-from api.novel_bible.ids import (
-    EntityKind,
-    FactKind,
-    FactScope,
-    ItemTable,
-    LifeValue,
-    OperationKey,
-    PresenceValue,
-    SlotId,
-    SourceField,
-)
+from api.novel_bible.ids import EntityKind, FactScope, ItemTable, OperationKey, SlotId, SourceField
 from api.novel_bible.slots.facts.schema import ExtractedFact, FactsOutput, SourceDifference
 
-# 대상이 개체인 종류의 대상 개체 종류.
-_VALUE_ENTITY_KINDS: dict[FactKind, EntityKind] = {"possession": "object", "ability": "ability", "relation": "character"}
-# 값이 정해진 목록 안에 있어야 하는 종류.
-_CLOSED_VALUES: dict[FactKind, frozenset[str]] = {
-    "life": frozenset(get_args(LifeValue)),
-    "presence": frozenset(get_args(PresenceValue)),
-}
-# 술어가 속성·관계 이름인 종류.
-_NAMED_PREDICATE: frozenset[FactKind] = frozenset({"attribute", "relation"})
 _WORK_SETTING_LABEL = "S"
 _CLAIMED_TAIL = " (주장)"
 _DISPROVED_TAIL = " (반증)"
@@ -155,20 +141,11 @@ async def _known_attributes(session: AsyncSession, commit: CommitRef, manuscript
 
 
 def _problem(fact: ExtractedFact) -> str | None:
-    """항목을 버릴 사유 — 값이 종류에 맞지 않음, 값이 빔, 유지가 거짓일 수 없는 종류, 속성·관계 이름이 빔, 속성이 아닌 불변."""
-    value = normalize_name(fact.value)
-    closed = _CLOSED_VALUES.get(fact.kind)
-    if closed is not None and value not in closed:
-        return "value_invalid"
-    if not value:
-        return "value_empty"
-    if not fact.holds and fact.kind not in TARGETED_KINDS:
-        return "holds_invalid"
-    if fact.kind in _NAMED_PREDICATE and not normalize_name(fact.attribute):
-        return "attribute_missing"
-    if fact.immutable and fact.kind != "attribute":
+    """항목을 버릴 사유 — 명제 칸이 종류 규칙에 어긋남(지식 슬롯과 같은 코어 규칙), 속성이 아닌 불변."""
+    problem = proposition_problem(fact.kind, fact.attribute, fact.value, fact.holds)
+    if problem is None and fact.immutable and fact.kind != "attribute":
         return "immutable_not_attribute"
-    return None
+    return problem
 
 
 def _source_side(
@@ -277,17 +254,9 @@ class FactsSlot:
                 dropped[problem] += 1
                 continue
             scope: FactScope = "work" if fact.immutable else fact.scope
-            value = normalize_name(fact.value) if fact.kind in _CLOSED_VALUES else fact.value.strip()
-            proposition = Proposition(
-                subject=fact.subject.strip(), subject_kind=fact.subject_kind, kind=fact.kind,
-                attribute=(fact.attribute or "").strip() if fact.kind in _NAMED_PREDICATE else None,
-                value=value, holds=fact.holds,
+            proposition = make_proposition(
+                fact.subject, fact.subject_kind, fact.kind, fact.attribute, fact.value, fact.holds
             )
-            names: dict[str, tuple[EntityName, ...]] = {
-                "subject": (EntityName(kind=proposition.subject_kind, name=proposition.subject),)
-            }
-            if fact.kind in _VALUE_ENTITY_KINDS:
-                names["value"] = (EntityName(kind=_VALUE_ENTITY_KINDS[fact.kind], name=value),)
             sides: list[SideQuote] = []
             if fact.source_difference is not None:
                 side = _source_side(fact.source_difference, sources, slot_input.source)
@@ -311,7 +280,7 @@ class FactsSlot:
                     local_key=f"fact{len(drafts) + 1}",
                     table="fact",
                     fields={"immutable": fact.immutable, "onset": fact.onset and scope != "work", "scope": scope},
-                    names=names,
+                    names=proposition_names(proposition),
                     quotes=(quote,),
                     anchor_block=quote.block_id,
                     proposition=proposition,
