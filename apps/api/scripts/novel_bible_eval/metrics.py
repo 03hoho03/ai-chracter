@@ -312,12 +312,13 @@ def _supported(labeled: LabeledClaim, adapter: str) -> bool:
 
 def label_precision(labeled: Sequence[LabeledClaim], adapter: str, *, core_only: bool = False) -> Ratio:
     """그 어댑터가 낸 주장 중 라벨이 `맞음` 이고 그 어댑터가 붙인 인용이 모두 `받침` 인 것 / 판단 불가가 아닌 것. `core_only`
-    는 차단 규칙이 읽는 사실 주장으로 좁힌다."""
+    는 차단 규칙이 읽는 사실 주장으로 좁히되, 속성이 핵심인지는 그 어댑터 자신의 불변 표시로 정한다 — 다른 어댑터가 같은 속성을
+    불변으로 냈다고 이 어댑터의 주장이 핵심 사실 정밀도에 들지 않는다."""
     clusters: dict[int, list[int]] = {}
     for row in labeled:
         if adapter not in row.claim.adapters or row.label.verdict == "unknown":
             continue
-        if core_only and not row.claim.core:
+        if core_only and not row.claim.core[adapter]:
             continue
         cell = clusters.setdefault(row.claim.chapter, [0, 0])
         cell[0] += row.label.verdict == "correct" and _supported(row, adapter)

@@ -20,7 +20,8 @@ from api.db.models import Novel, NovelChapter, User
 from api.novel_bible.core.types import BibleSnapshot, RenderedPrompt
 from api.novel_bible.ids import OperationKey
 from memory_eval.ledger import EXIT_BUDGET, Ledger
-from novel_bible_eval.__main__ import _outcomes, extract, main, synthetic
+from novel_bible_eval import labels
+from novel_bible_eval.__main__ import _outcomes, _parser, _run, extract, main, synthetic
 from novel_bible_eval.fake_llm import FakeLLM, Faults
 from novel_bible_eval.run import BudgetHalt, ChapterOutcome, Meter, extract_chapters, run_set
 from novel_bible_eval.seed import EVAL_EMAIL_DOMAIN, seed_novel
@@ -259,3 +260,42 @@ async def test_a_halted_extraction_still_writes_the_chapters_it_finished(
     # 결과 파일만 본 사람도 앞 두 화에서 멈춘 결과인지 안다.
     assert "멈춤 선" in written["halted"]
     assert [outcome.ordinal for outcome in _outcomes(tmp_path / "labels" / "extract-fake.json")] == [1, 2]
+
+
+async def test_a_halted_extraction_leaves_that_adapters_label_verdict_undetermined_through_sheet_and_score(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 두 어댑터가 같은 앞 두 화를 낸다. 하나는 끝까지 돌았고 하나는 셋째 화에서 원장 멈춤으로 끊겼다. 라벨은 전부 맞음·받침이라
+    # 갈리는 것은 멈춤뿐이다 — 앞 화 일부만 담긴 추출의 핵심 사실 정밀도로 합격을 내지 않는다.
+    eval_set = load_set(FIXTURE)
+    factory = savepoint_factory(db_session)
+    monkeypatch.setattr("novel_bible_eval.__main__.async_session_factory", factory)
+    async with factory() as session, session.begin():
+        whole = await seed_novel(session, eval_set.novels[0])
+        cut = await seed_novel(session, eval_set.novels[0])
+    out = tmp_path / "labels"
+    finished = await extract(factory, Meter().wrap(FakeLLM(eval_set).resolver()), whole.novel_id, out,
+                             adapter="whole", count=2)
+    assert finished == 0
+    # 호출 하나가 $20 이고 화마다 두 슬롯이라, 셋째 화의 첫 호출은 견적을 더하면 $100 이라 부르기 전에 멈춘다.
+    fake = FakeLLM(eval_set, model="gemini-3.5-flash-lite", prompt_tokens=0, output_tokens=8_000_000)
+    meter = Meter(ledger=Ledger(tmp_path / "ledger.jsonl", cap_usd=100, halt_usd=90, bundle="ci"), estimate_usd=20)
+    assert await extract(factory, meter.wrap(fake.resolver()), cut.novel_id, out, adapter="cut", count=3) == EXIT_BUDGET
+
+    await _run(_parser().parse_args([
+        "sheet", "--extract", f"whole={out / 'extract-whole.json'}", f"cut={out / 'extract-cut.json'}", "--out", str(out),
+    ]))
+    rows = labels.sheet_claims((out / "sheet.html").read_text(encoding="utf-8"))
+    verdicts = {row["id"]: {"verdict": "correct", "quotes": ["supported"] * len(row["quotes"])} for row in rows}
+    result = out / "labels-result.json"
+    result.write_text(json.dumps({"labels": verdicts, "missing": {}}), encoding="utf-8")
+    await _run(_parser().parse_args(["score", "--key", str(out / "claims-key.json"), "--labels", str(result),
+                                     "--out", str(out)]))
+
+    report = json.loads((out / "label-report.json").read_text())["adapters"]
+    assert report["whole"]["core_fact_precision"]["pass"] is True
+    core = report["cut"]["core_fact_precision"]
+    assert (core["value"], core["pass"], core.get("undetermined")) == (1.0, None, "멈춘 실행")
+    # 보고서만 본 사람도 어느 어댑터가 왜 멈췄는지 안다.
+    assert report["whole"]["halted"] is None
+    assert "멈춤 선" in report["cut"]["halted"]

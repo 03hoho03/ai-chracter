@@ -3,8 +3,9 @@
 - `synthetic`: 합성 세트를 심고 확정·처리해 실행 폴더에 보고서(JSON·마크다운)와 결과(`outcomes.json`)를 쓴다.
 - `extract`: 사람 라벨용 소설 사본의 앞 화들을 확정해 그 어댑터의 결과를 쓴다. 결과 파일의 `halted` 칸에 멈춤·끊김 까닭을 적는다
   (끝까지 돌았으면 null) — 나중에 결과 파일만 보는 사람도 앞 화 일부만 담긴 결과인지 안다.
-- `sheet`: 어댑터들의 `extract` 결과를 합쳐 라벨 시트와 열쇠를 쓴다.
-- `score`: 사람이 내려받은 시트 결과를 읽어 어댑터별 라벨 지표를 쓴다.
+- `sheet`: 어댑터들의 `extract` 결과를 합쳐 라벨 시트와 열쇠를 쓴다. 결과 파일의 `halted` 는 열쇠로 옮긴다.
+- `score`: 사람이 내려받은 시트 결과를 읽어 어댑터별 라벨 지표를 쓴다. 열쇠에 멈춤·끊김 까닭이 있는 어댑터의 판정은 판정
+  불가다.
 
 무엇이든 하기 전에 DB 가 로컬인지 본다 — 운영·공유 DB 에 측정 소설을 심거나 사용자 원고를 모델에 보내지 않게. 모델을 부르는
 명령(`synthetic`·`extract`)은 원장을 요구한다: 호출마다 견적으로 자리를 잡고 실제 호출 기록으로 원가를 적으며, 묶음 누적이
@@ -91,6 +92,11 @@ def _outcomes(path: Path) -> list[ChapterOutcome]:
     return [ChapterOutcome.model_validate(row) for row in rows]
 
 
+def _halted(path: Path) -> str | None:
+    reason: str | None = json.loads(path.read_text(encoding="utf-8"))["halted"]
+    return reason
+
+
 async def _block_texts(factory: SessionFactory, runs: dict[str, list[ChapterOutcome]]) -> dict[str, str]:
     texts: dict[str, str] = {}
     revisions = {uuid.UUID(o.revision) for outcomes in runs.values() for o in outcomes if o.revision is not None}
@@ -148,12 +154,15 @@ async def _run(args: argparse.Namespace) -> int:
             factory, resolver, args.novel_id, args.run_dir, adapter=args.adapter, count=args.chapters, slots=slots
         )
     if args.command == "sheet":
-        runs = {name: _outcomes(Path(path)) for name, path in (item.split("=", 1) for item in args.extract)}
-        sheet, key = labels.write_sheet(labels.merge_claims(runs, await _block_texts(factory, runs)), args.out,
-                                        seed=args.seed)
+        files = {name: Path(path) for name, path in (item.split("=", 1) for item in args.extract)}
+        runs = {name: _outcomes(path) for name, path in files.items()}
+        sheet, key = labels.write_sheet(
+            labels.merge_claims(runs, await _block_texts(factory, runs)), args.out,
+            halted={name: _halted(path) for name, path in files.items()}, seed=args.seed,
+        )
         print(f"시트 {sheet} · 열쇠 {key}")
         return 0
-    report = label_report(labels.read_labels(args.labels, args.key))
+    report = label_report(labels.read_labels(args.labels, args.key), labels.read_halted(args.key))
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "label-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0

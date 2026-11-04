@@ -9,7 +9,8 @@
 
 시트에는 주장의 서로 다른 근거 인용(블록 글에서 위치로 잘라 낸 원문, 어댑터마다 최대 셋)이 실린다. 그래서 시트와 결과는 측정 실행 폴더
 (저장소가 추적하지 않는 곳)에만 두고 커밋·게시하지 않는다. 어느 어댑터가 어느 인용을 붙였는지는 시트가 아니라 옆의 열쇠 파일에
-있다 — 라벨하는 사람이 어댑터를 알면 판정이 기운다."""
+있다 — 라벨하는 사람이 어댑터를 알면 판정이 기운다. 열쇠에는 어댑터마다 추출이 멈췄거나 끊긴 까닭도 실린다 — 점수가 앞 화
+일부만 담긴 추출로 합격을 내지 않게."""
 
 import hashlib
 import html
@@ -33,19 +34,21 @@ QuoteMark = Literal["supported", "unsupported"]
 # 어댑터 하나가 한 주장에 싣는 인용 수 상한. 주장 전체에 상한을 걸면 앞에 합친 어댑터가 자리를 채워 뒤 어댑터의 인용이 빠지고,
 # 그 어댑터의 주장은 받침을 볼 인용이 없어 틀림으로 센다 — 합치는 순서가 정밀도를 바꾼다.
 _MAX_QUOTES = 3
-# 차단 규칙이 읽는 사실 종류 — 핵심 사실 정밀도가 이것으로 좁힌다. 속성은 불변이라고 표시된 것만 든다.
+# 차단 규칙이 읽는 사실 종류 — 핵심 사실 정밀도가 이것으로 좁힌다. 속성은 그 어댑터가 불변이라고 표시한 것만 든다.
 _CORE_KINDS = frozenset({"life", "presence", "possession", "ability"})
 _SLOT_OF_TABLE = {"fact": "facts", "knowledge": "knowledge", "event": "events"}
 
 
 class Claim(BaseModel):
     """`adapters` 는 어댑터마다 그 어댑터가 붙인 서로 다른 인용(앞의 셋까지)의 차례(`quotes` 안). 인용을 붙이지 않은 어댑터는 빈
-    목록이다."""
+    목록이다. `core` 는 어댑터마다 그 어댑터의 주장이 핵심 사실인가 — 불변 표시는 주장 키에 없어서(사람이 같은 명제를 두 번
+    라벨하지 않게) 같은 속성을 한 어댑터는 불변으로, 다른 어댑터는 불변 아님으로 낼 수 있고, 차단 규칙이 읽는 것은 그 어댑터
+    자신의 표시다."""
 
     id: str
     chapter: int
     slot: str
-    core: bool
+    core: dict[str, bool]
     line: str
     quotes: list[str]
     adapters: dict[str, list[int]]
@@ -119,7 +122,7 @@ def merge_claims(runs: Mapping[str, Sequence[ChapterOutcome]], block_texts: Mapp
                         key,
                         Claim(
                             id=hashlib.sha256(json.dumps(key, ensure_ascii=False).encode()).hexdigest()[:16],
-                            chapter=outcome.ordinal, slot=_SLOT_OF_TABLE[item.table], core=core, line=line,
+                            chapter=outcome.ordinal, slot=_SLOT_OF_TABLE[item.table], core={}, line=line,
                             quotes=[], adapters={},
                         ),
                     )
@@ -135,6 +138,7 @@ def merge_claims(runs: Mapping[str, Sequence[ChapterOutcome]], block_texts: Mapp
                         if (index := claim.quotes.index(text)) not in indices:
                             indices.append(index)
                     claim.adapters[adapter] = indices
+                    claim.core[adapter] = core
     return list(merged.values())
 
 
@@ -217,9 +221,11 @@ document.getElementById("download").addEventListener("click", () => {
 _EMBEDDED = re.compile(r'<script type="application/json" id="claims">(.*?)</script>', re.DOTALL)
 
 
-def write_sheet(claims: Sequence[Claim], out_dir: Path, *, seed: int = 0) -> tuple[Path, Path]:
+def write_sheet(
+    claims: Sequence[Claim], out_dir: Path, *, halted: Mapping[str, str | None], seed: int = 0
+) -> tuple[Path, Path]:
     """시트(`sheet.html`, 화 순서로 묶되 화 안에서 시드로 섞음 — 어댑터 순서가 드러나지 않게)와 열쇠(`claims-key.json`)를
-    쓴다."""
+    쓴다. `halted` 는 합친 어댑터마다 그 추출의 멈춤·끊김 까닭(끝까지 돌았으면 None)이고 열쇠에만 싣는다."""
     shuffled = list(claims)
     random.Random(seed).shuffle(shuffled)
     shuffled.sort(key=lambda claim: claim.chapter)
@@ -231,8 +237,8 @@ def write_sheet(claims: Sequence[Claim], out_dir: Path, *, seed: int = 0) -> tup
     sheet.write_text(_SHEET.replace("__CLAIMS__", embedded).replace("__SHEET_ID__", html.escape(sheet_id)),
                      encoding="utf-8")
     key = out_dir / "claims-key.json"
-    key.write_text(json.dumps([claim.model_dump() for claim in claims], ensure_ascii=False, indent=2),
-                   encoding="utf-8")
+    written = {"halted": dict(halted), "claims": [claim.model_dump() for claim in claims]}
+    key.write_text(json.dumps(written, ensure_ascii=False, indent=2), encoding="utf-8")
     return sheet, key
 
 
@@ -246,7 +252,7 @@ def sheet_claims(sheet_html: str) -> list[dict[str, Any]]:
 def read_labels(result: Path, key: Path) -> list[LabeledClaim]:
     """시트 결과와 열쇠를 맞춘다. 라벨이 빠진 주장이 있거나 인용 칸 수가 다르면 거절한다 — 덜 채운 시트를 조용히 세면 분모가
     줄어 정밀도가 그 주장 없이 나온다."""
-    claims = [Claim.model_validate(row) for row in json.loads(key.read_text(encoding="utf-8"))]
+    claims = [Claim.model_validate(row) for row in json.loads(key.read_text(encoding="utf-8"))["claims"]]
     raw = json.loads(result.read_text(encoding="utf-8"))["labels"]
     missing = [claim.id for claim in claims if claim.id not in raw]
     if missing:
@@ -255,3 +261,9 @@ def read_labels(result: Path, key: Path) -> list[LabeledClaim]:
     if any(len(row.label.quotes) != len(row.claim.quotes) for row in labeled):
         raise ValueError("인용 칸 수가 열쇠와 다른 라벨이 있다")
     return labeled
+
+
+def read_halted(key: Path) -> dict[str, str | None]:
+    """열쇠에 실린 어댑터마다의 추출 멈춤·끊김 까닭(끝까지 돌았으면 None)."""
+    halted: dict[str, str | None] = json.loads(key.read_text(encoding="utf-8"))["halted"]
+    return halted

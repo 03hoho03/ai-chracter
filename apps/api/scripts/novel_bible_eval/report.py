@@ -6,7 +6,8 @@
 
 판정 불가(`pass` 가 null, `undetermined` 에 까닭)는 셋이다.
 - 분모가 0 이다 — 어느 합격 지표든 관측치가 없다.
-- 실행이 멈췄다(원장 멈춤이나 끊김) — 합성 세트의 합격 지표 모두. 설계한 표본(반복 수·탐침 수)이 다 돌지 않은 실행이다.
+- 실행이 멈췄다(원장 멈춤이나 끊김) — 합성 세트의 합격 지표 모두. 설계한 표본(반복 수·탐침 수)이 다 돌지 않은 실행이다. 사람
+  라벨은 추출이 멈췄거나 끊긴 어댑터의 핵심 사실 정밀도 — 앞 화 일부만 담긴 추출이다.
 - 판정에 쓰지 못한 확정이 25% 를 넘는다(기본 화의 실패, 충돌·비충돌 탐침의 실패 + 정본 불완전) — 차단 지표. 그중 합격선이
   있는 것은 차단 오탐이고, 합격선이 없는 차단·경고 재현율은 `blocking.undeterminable` 로 적는다. 재현율은 실패한 화의 정답도
   분모에 두어 실패가 놓침으로 들고, 방향 오류는 실패한 화에서 짝이 생기지 않아 분자·분모가 함께 빠지므로 이 검사를 두지 않는다.
@@ -16,7 +17,7 @@
 1건 이상이면 멈췄거나 판정에 쓰지 못한 확정이 25% 를 넘어도 미달로 확정한다. 오탐이 0건일 때만 위 까닭으로 판정 불가가 된다."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -113,16 +114,20 @@ def synthetic_report(
     }
 
 
-def label_report(labeled: Sequence[LabeledClaim]) -> dict[str, Any]:
-    """어댑터별 사람 라벨 지표. κ 는 판정 모델 라벨이 생기면 `metrics.cohen_kappa` 로 같은 주장 단위에서 센다."""
-    adapters = sorted({adapter for row in labeled for adapter in row.claim.adapters})
+def label_report(labeled: Sequence[LabeledClaim], halted: Mapping[str, str | None]) -> dict[str, Any]:
+    """어댑터별 사람 라벨 지표. `halted` 는 어댑터마다 그 추출의 멈춤·끊김 까닭(라벨 열쇠에 실린 것) — 멈춘 어댑터의 판정은
+    판정 불가로 두고 까닭을 그 어댑터 칸에 싣는다. 주장이 하나도 없는 어댑터도 열쇠에 있으면 싣는다(멈춘 추출이 보고서에서
+    사라지지 않게). κ 는 판정 모델 라벨이 생기면 `metrics.cohen_kappa` 로 같은 주장 단위에서 센다."""
+    adapters = sorted(set(halted) | {adapter for row in labeled for adapter in row.claim.adapters})
     out: dict[str, Any] = {}
     for adapter in adapters:
         core = metrics.label_precision(labeled, adapter, core_only=True)
+        reason = halted.get(adapter)
         out[adapter] = {
+            "halted": reason,
             "precision": _entry(metrics.label_precision(labeled, adapter)),
             "core_fact_precision": _verdict(
-                _entry(core), None if core.value is None else core.value >= CORE_PRECISION_FLOOR, halted=None
+                _entry(core), None if core.value is None else core.value >= CORE_PRECISION_FLOOR, halted=reason
             ),
             "direction_error": _entry(metrics.label_direction_error(labeled, adapter), error_rate=True),
         }

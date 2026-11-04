@@ -12,6 +12,7 @@ import pytest
 
 from api.novel_bible.core.types import EntityName, ItemDraft, Proposal, Proposition, VerifiedQuote
 from novel_bible_eval import labels, metrics
+from novel_bible_eval.report import label_report
 from novel_bible_eval.run import ChapterOutcome, JobOutcome
 
 ALPHA, BETA = "adapter-alpha", "adapter-beta"
@@ -96,6 +97,29 @@ def test_the_order_adapters_are_merged_in_does_not_change_their_precision() -> N
     assert scores == [{ALPHA: (1, 1), BETA: (1, 1)}] * 2
 
 
+def _attribute(*, immutable: bool) -> ItemDraft:
+    proposition = Proposition(subject="서하", kind="attribute", attribute="머리색", value="검정", holds=True)
+    return ItemDraft(
+        local_key="a1", table="fact", fields={"immutable": immutable}, quotes=(_quote(B1, 0, 2),),
+        proposition=proposition, names={"subject": (EntityName(kind="character", name="서하"),)},
+    )
+
+
+def test_whether_a_fact_is_core_follows_each_adapters_own_immutable_mark_in_any_merge_order() -> None:
+    # 같은 속성을 알파는 불변으로, 베타는 불변 아님으로 낸다. 차단 규칙은 불변 속성만 읽으므로 핵심 사실 정밀도에는 알파의
+    # 주장만 든다. 사람은 이 명제를 한 번만 라벨하고, 어느 어댑터를 먼저 합치든 결과가 같아야 한다.
+    alpha = _outcome(("facts", (_attribute(immutable=True),)))
+    beta = _outcome(("facts", (_attribute(immutable=False),)))
+    scores = []
+    for runs in ({ALPHA: [alpha], BETA: [beta]}, {BETA: [beta], ALPHA: [alpha]}):
+        (claim,) = labels.merge_claims(runs, TEXTS)
+        labeled = [labels.LabeledClaim(claim, labels.Label(verdict="correct", quotes=["supported"] * len(claim.quotes)))]
+        scores.append({
+            name: (r.k, r.n) for name in (ALPHA, BETA) for r in [metrics.label_precision(labeled, name, core_only=True)]
+        })
+    assert scores == [{ALPHA: (1, 1), BETA: (0, 0)}] * 2
+
+
 def _fill(sheet: list[dict[str, Any]], key: list[labels.Claim]) -> dict[str, Any]:
     slot_of = {claim.id: claim.slot for claim in key}
     verdicts: dict[str, Any] = {}
@@ -112,7 +136,7 @@ def _fill(sheet: list[dict[str, Any]], key: list[labels.Claim]) -> dict[str, Any
 
 def test_the_sheet_hides_adapters_and_its_result_scores_each_adapter_with_the_same_labels(tmp_path: Path) -> None:
     claims = labels.merge_claims(_runs(), TEXTS)
-    sheet_path, key_path = labels.write_sheet(claims, tmp_path, seed=3)
+    sheet_path, key_path = labels.write_sheet(claims, tmp_path, halted={ALPHA: None, BETA: None}, seed=3)
     html = sheet_path.read_text(encoding="utf-8")
     assert ALPHA not in html and BETA not in html
     sheet = labels.sheet_claims(html)
@@ -135,10 +159,18 @@ def test_the_sheet_hides_adapters_and_its_result_scores_each_adapter_with_the_sa
 
 def test_a_result_that_leaves_a_claim_unlabeled_is_refused(tmp_path: Path) -> None:
     claims = labels.merge_claims(_runs(), TEXTS)
-    sheet_path, key_path = labels.write_sheet(claims, tmp_path)
+    sheet_path, key_path = labels.write_sheet(claims, tmp_path, halted={ALPHA: None, BETA: None})
     filled = _fill(labels.sheet_claims(sheet_path.read_text(encoding="utf-8")), claims)
     filled["labels"].pop(next(iter(filled["labels"])))
     result = tmp_path / "partial.json"
     result.write_text(json.dumps(filled), encoding="utf-8")
     with pytest.raises(ValueError, match="라벨이 없는 주장"):
         labels.read_labels(result, key_path)
+
+
+def test_an_adapter_whose_extraction_halted_before_any_claim_still_shows_in_the_label_report() -> None:
+    # 첫 화를 마치기 전에 멈춘 어댑터는 주장이 하나도 없다. 열쇠에 실린 멈춤으로 보고서에 남아야 그 어댑터가 빠진 줄 안다.
+    report = label_report([], {ALPHA: "합성 멈춤", BETA: None})["adapters"]
+    core = report[ALPHA]["core_fact_precision"]
+    assert (report[ALPHA]["halted"], core["n"], core["pass"], core["undetermined"]) == ("합성 멈춤", 0, None, "멈춘 실행")
+    assert report[BETA]["core_fact_precision"]["undetermined"] == "분모 0"
