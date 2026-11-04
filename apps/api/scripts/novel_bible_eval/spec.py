@@ -12,7 +12,7 @@ from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from api.novel_bible.ids import BlockingRule, EventActuality, FactKind, KnowledgeKind, WarningRule
+from api.novel_bible.ids import BlockingRule, EntityKind, EventActuality, FactKind, KnowledgeKind, WarningRule
 from api.novelize.text import split_paragraphs
 
 ProbeKind = Literal["conflict", "warning", "non_conflict"]
@@ -32,14 +32,23 @@ class PlantedEvent(_Spec):
 
 
 class PlantedFact(_Spec):
-    """`values` 는 맞다고 칠 값 표기 전부(정규화해서 견준다)."""
+    """`values` 는 맞다고 칠 값 표기 전부(정규화해서 견준다). `subject_kind`·`immutable` 은 사실 슬롯 출력의 같은 이름 칸과 같은
+    뜻이다 — 불변 표시는 속성에만 둔다(슬롯 검증이 속성이 아닌 불변 사실을 버리므로 그런 정답은 맞힐 수 없다)."""
 
     subject: str
+    subject_kind: EntityKind = "character"
     kind: FactKind
     attribute: str | None = None
     values: list[str]
     holds: bool = True
+    immutable: bool = False
     paragraph: int
+
+    @model_validator(mode="after")
+    def _immutable_is_an_attribute(self) -> "PlantedFact":
+        if self.immutable and self.kind != "attribute":
+            raise ValueError("불변 표시는 속성 정답에만 둔다")
+        return self
 
 
 class PlantedKnowledge(_Spec):

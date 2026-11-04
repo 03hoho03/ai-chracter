@@ -45,6 +45,12 @@ def test_a_planted_fact_quoting_a_missing_paragraph_is_rejected() -> None:
     _rejects(raw)
 
 
+def test_an_immutable_mark_on_a_planted_fact_that_is_not_an_attribute_is_rejected() -> None:
+    raw = _raw()
+    raw["novels"][0]["chapters"][0]["facts"][0]["immutable"] = True  # 소지 — 슬롯 검증이 버려 맞힐 수 없다
+    _rejects(raw)
+
+
 def test_a_paragraph_that_would_split_into_two_blocks_is_rejected() -> None:
     raw = _raw()
     raw["novels"][0]["chapters"][0]["paragraphs"][0] = "첫 줄이다.\n\n둘째 줄이다."

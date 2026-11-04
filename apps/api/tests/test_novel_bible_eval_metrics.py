@@ -14,6 +14,7 @@ from api.novel_bible.core.types import EntityName, ItemDraft, Proposal, Proposit
 from novel_bible_eval import metrics
 from novel_bible_eval.match import (
     ExtractedEvent,
+    ExtractedFact,
     ExtractedKnowledge,
     direction_counts,
     matched_events,
@@ -84,11 +85,13 @@ def test_a_fact_matches_by_alias_and_by_any_allowed_surface_of_the_value() -> No
         PlantedFact(subject="도윤", kind="possession", values=["낡은 등불", "등불"], paragraph=1),
         PlantedFact(subject="서하", kind="attribute", attribute="눈 색", values=["회색"], paragraph=1),
         PlantedFact(subject="서하", kind="life", values=["dead"], paragraph=1),
+        PlantedFact(subject="하람", kind="attribute", attribute="키", values=["작다"], immutable=True, paragraph=1),
     ]
     extracted = [
-        _prop("뱃사람", "possession", " 등불 "),  # 별칭 + 허용 표기
-        _prop("서하", "attribute", "회색", attribute="눈색"),  # 속성 이름이 다르다
-        _prop("서하", "life", "dead", holds=False),  # 유지 여부가 다르다
+        ExtractedFact(_prop("뱃사람", "possession", " 등불 ")),  # 별칭 + 허용 표기
+        ExtractedFact(_prop("서하", "attribute", "회색", attribute="눈색")),  # 속성 이름이 다르다
+        ExtractedFact(_prop("서하", "life", "dead", holds=False)),  # 유지 여부가 다르다
+        ExtractedFact(_prop("하람", "attribute", "작다", attribute="키")),  # 불변 표시가 다르다
     ]
     assert matched_facts(planted, extracted, {"도윤": ["뱃사람"]}) == 1
 
@@ -265,7 +268,7 @@ def test_a_run_whose_commits_all_failed_or_that_halted_gets_no_verdict() -> None
                                             proposal=Proposal(items=()).model_dump(mode="json"), calls=[]),))
     finished = synthetic_report(eval_set, clean, [], adapter="fake")["metrics"]
     assert finished["block_false_positive"]["pass"] is True
-    assert finished["recall.facts"]["pass"] is False  # 사실 0/2
+    assert finished["recall.facts"]["pass"] is False  # 사실 0/5
     halted = synthetic_report(eval_set, clean, [], adapter="fake", halted="합성 멈춤")["metrics"]
     for name in ("block_false_positive", "recall.facts"):
         assert halted[name]["pass"] is None
@@ -282,8 +285,8 @@ def test_the_markdown_puts_the_verdict_on_the_mean_row_of_a_repeated_metric() ->
     rows = [line for line in to_markdown(synthetic_report(eval_set, outcomes, [], adapter="fake")).splitlines()
             if line.startswith("| recall.facts")]
     assert rows == [
-        "| recall.facts (반복 1) | 0.000 | 0/2 | Wilson [0.000, 0.658] | - |",
-        "| recall.facts (반복 2) | 0.000 | 0/2 | Wilson [0.000, 0.658] | - |",
+        "| recall.facts (반복 1) | 0.000 | 0/5 | Wilson [0.000, 0.434] | - |",
+        "| recall.facts (반복 2) | 0.000 | 0/5 | Wilson [0.000, 0.434] | - |",
         "| recall.facts (평균) | 0.000 | - | - | 미달 |",
     ]
 

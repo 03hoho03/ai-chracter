@@ -154,6 +154,25 @@ def recall(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> dict[str, l
     return result
 
 
+def fact_precision(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> list[Ratio] | None:
+    """반복별 사실 정밀도(합성) = 정답에 대응한 제안 사실 / 기본 화의 제안 사실. 제안 하나가 원자 명제 하나이고, 정답 하나에는
+    제안 하나만 대응하므로 같은 명제를 두 번 내면 하나는 틀린 것으로 센다. 결과가 없는 화는 제안이 없어 분모에 아무것도 더하지
+    않는다. 사실 작업이 없으면 None."""
+    if "facts" not in _ran_slots(outcomes):
+        return None
+    per_repeat = []
+    for by_chapter in _base_by_repeat(outcomes).values():
+        clusters = []
+        for novel in eval_set.novels:
+            for ordinal, chapter in enumerate(novel.chapters, start=1):
+                outcome = by_chapter.get((novel.key, ordinal))
+                if outcome is not None:
+                    found = extracted(outcome).facts
+                    clusters.append((matched_facts(chapter.facts, found, novel.aliases), len(found)))
+        per_repeat.append(_ratio(clusters))
+    return per_repeat
+
+
 def direction_error(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> list[Ratio] | None:
     """반복별 인물 지식 방향 오류율(합성). 지식 작업이 없으면 None."""
     if "knowledge" not in _ran_slots(outcomes):

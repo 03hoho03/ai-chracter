@@ -1,7 +1,10 @@
 """결정적 매처 — 추출 제안이 심은 정답을 맞혔는가. 모델을 부르지 않는다.
 
 - 사건: 문단이 겹치고 현실성이 같다.
-- 사실: 주어 이름(또는 그 별칭)이 같고, 종류·술어가 같고, 값이 명세의 허용 표기 중 하나이고, 유지 여부가 같다.
+- 사실: 주어 이름(또는 그 별칭)이 같고, 종류·술어가 같고, 값이 명세의 허용 표기 중 하나이고, 유지 여부와 불변 표시가 같다.
+  제안 하나가 원자 명제 하나다. 불변 표시까지 보는 것은 그 표시가 불변 속성 불일치 차단(`immutable_attribute_mismatch`)이 읽을
+  사실인지를 정해서다 — 바뀌는 속성을 불변으로 내면 다른 화에서 값이 바뀐 것을 막고, 불변 속성을 바뀌는 것으로 내면 그 충돌을
+  놓친다.
 - 지식: 앎 주체·앎 종류가 같고 명제가 위 사실 규칙으로 맞는다.
 
 이름·값은 코어가 개체·안정 키를 만들 때와 같은 정규화로 견준다. 정답 하나에는 제안 하나만 대응한다(먼저 맞는 것)."""
@@ -26,6 +29,12 @@ class ExtractedEvent:
 
 
 @dataclass(frozen=True)
+class ExtractedFact:
+    proposition: Proposition
+    immutable: bool = False
+
+
+@dataclass(frozen=True)
 class ExtractedKnowledge:
     knower: str
     kind: str
@@ -35,7 +44,7 @@ class ExtractedKnowledge:
 @dataclass(frozen=True)
 class Extracted:
     events: tuple[ExtractedEvent, ...]
-    facts: tuple[Proposition, ...]
+    facts: tuple[ExtractedFact, ...]
     knowledge: tuple[ExtractedKnowledge, ...]
 
 
@@ -43,7 +52,7 @@ def extracted(outcome: ChapterOutcome) -> Extracted:
     """확정 하나의 성공한 작업 제안에서 매처가 읽는 꼴만 꺼낸다. 사건의 블록은 개정의 차례로 문단 번호가 된다."""
     order = {block: number for number, block in enumerate(outcome.block_ids, start=1)}
     events: list[ExtractedEvent] = []
-    facts: list[Proposition] = []
+    facts: list[ExtractedFact] = []
     knowledge: list[ExtractedKnowledge] = []
     for job in outcome.jobs:
         if job.proposal is None:
@@ -53,7 +62,7 @@ def extracted(outcome: ChapterOutcome) -> Extracted:
                 paragraphs = frozenset(order[str(block)] for block in item.covers_blocks if str(block) in order)
                 events.append(ExtractedEvent(paragraphs, str(item.fields.get("actuality", "present"))))
             elif item.table == "fact" and item.proposition is not None:
-                facts.append(item.proposition)
+                facts.append(ExtractedFact(item.proposition, item.fields.get("immutable") is True))
             elif item.table == "knowledge" and item.proposition is not None and item.names.get("knower"):
                 knower = item.names["knower"][0].name
                 knowledge.append(ExtractedKnowledge(knower, str(item.fields.get("kind")), item.proposition))
@@ -91,14 +100,15 @@ def matched_events(planted: Sequence[PlantedEvent], found: Sequence[ExtractedEve
     return len(used)
 
 
-def matched_facts(planted: Sequence[PlantedFact], found: Sequence[Proposition], aliases: Aliases) -> int:
+def matched_facts(planted: Sequence[PlantedFact], found: Sequence[ExtractedFact], aliases: Aliases) -> int:
     used: set[int] = set()
     for fact in planted:
         hit = next(
             (
                 index for index, candidate in enumerate(found)
-                if index not in used and _same(candidate.subject, fact.subject, aliases)
-                and _proposition_fits(candidate, fact.kind, fact.attribute, fact.values, fact.holds)
+                if index not in used and _same(candidate.proposition.subject, fact.subject, aliases)
+                and _proposition_fits(candidate.proposition, fact.kind, fact.attribute, fact.values, fact.holds)
+                and candidate.immutable == fact.immutable
             ),
             None,
         )

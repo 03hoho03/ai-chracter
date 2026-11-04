@@ -1,7 +1,8 @@
 """보고서 — 지표마다 관측치·k/n·구간·합격선 대조를 JSON 과 마크다운으로 쓴다. 측정 실행 폴더에만 두고 커밋하지 않는다.
 
 합격선(관측치로 판정): 핵심 사실 정밀도 ≥ 0.90, 사실 재현율 ≥ 0.70(반복 평균), 인물 지식 방향 오류 ≤ 3%(반복 평균), 차단 오탐
-0건, 판정 모델과 사람의 κ ≥ 0.6. 합격 여부와 무관하게 운영에서 켜지 않는다.
+0건, 판정 모델과 사람의 κ ≥ 0.6. 합격 여부와 무관하게 운영에서 켜지 않는다. 합성 세트의 사실 정밀도(`precision.facts`)는 합격선
+없이 싣는다 — 합격선이 있는 정밀도는 사람 라벨의 핵심 사실 정밀도다.
 
 판정 불가(`pass` 가 null, `undetermined` 에 까닭)는 셋이다.
 - 분모가 0 이다 — 어느 합격 지표든 관측치가 없다.
@@ -65,6 +66,10 @@ def synthetic_report(
         out[f"recall.{slot}"] = entry if floor is None else _verdict(
             entry, None if mean is None else mean >= floor, halted=halted
         )
+    precision = metrics.fact_precision(eval_set, outcomes)
+    if precision is not None:
+        out["precision.facts"] = {"repeats": [_entry(ratio) for ratio in precision], "mean": _mean(precision),
+                                  "pass": None}
     direction = metrics.direction_error(eval_set, outcomes)
     if direction is not None:
         mean = _mean(direction)

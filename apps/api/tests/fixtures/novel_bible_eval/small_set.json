@@ -17,7 +17,8 @@
             {"paragraphs": [3, 4], "present": ["서하", "도윤"], "summary": "도윤이 섬으로 가는 길을 묻는다"}
           ],
           "facts": [
-            {"subject": "서하", "kind": "possession", "values": ["낡은 등불", "등불"], "paragraph": 1}
+            {"subject": "서하", "kind": "possession", "values": ["낡은 등불", "등불"], "paragraph": 1},
+            {"subject": "도윤", "kind": "presence", "values": ["present"], "paragraph": 3}
           ],
           "knowledge": [
             {"knower": "도윤", "kind": "knows", "subject": "서하", "fact_kind": "possession", "values": ["낡은 등불", "등불"], "paragraph": 4}
@@ -35,19 +36,24 @@
             {"paragraphs": [3], "present": ["서하"], "summary": "서하가 홀로 섬에 닿는다"}
           ],
           "facts": [
-            {"subject": "도윤", "kind": "life", "values": ["dead"], "paragraph": 2}
+            {"subject": "도윤", "kind": "life", "values": ["dead"], "paragraph": 2},
+            {"subject": "서하", "kind": "possession", "values": ["젖은 지도", "지도"], "paragraph": 3}
           ]
         },
         {
           "paragraphs": [
             "섬의 등대지기는 서하에게 따뜻한 차를 내주었다.",
             "어린 시절 할머니와 바닷가를 걷던 날이 서하의 눈앞에 되살아났다.",
-            "서하는 등대 꼭대기에서 다시 등불을 밝혔다."
+            "서하는 등대 꼭대기에서 다시 등불을 밝혔다.",
+            "등대지기의 왼쪽 눈은 태어날 때부터 잿빛이었다."
           ],
           "events": [
             {"paragraphs": [1], "present": ["서하", "등대지기"], "summary": "등대지기가 차를 내준다"},
             {"paragraphs": [2], "actuality": "flashback", "present": ["서하"], "summary": "어린 날 바닷가 기억"},
             {"paragraphs": [3], "present": ["서하"], "summary": "서하가 등불을 밝힌다"}
+          ],
+          "facts": [
+            {"subject": "등대지기", "kind": "attribute", "attribute": "눈 색", "values": ["잿빛"], "immutable": true, "paragraph": 4}
           ]
         }
       ],

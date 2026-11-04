@@ -1,8 +1,9 @@
 """정본 기억 측정 하네스의 전 경로 — 합성 세트 읽기 → 격리 DB 에 심기 → 확정과 워커 대신 `run_until_idle` → 결과 수집 →
 지표·구간 → 보고서, 그리고 원장의 멈춤 선과 로컬 DB 가드.
 
-모델은 가짜 해석기다. 명세에서 정답 출력을 만들고, 일부러 틀린 출력(사건 빠뜨림·없는 인용·첫 시도 스키마 실패)을 섞어 지표가
-그 틀림을 세는지 본다. 원고는 합성 문장이다."""
+모델은 가짜 해석기다. 명세에서 정답 출력을 만들고, 일부러 틀린 출력(사건 빠뜨림·없는 인용·첫 시도 스키마 실패·사실의 불변 표시
+뒤집기·심지 않은 사실)을 섞어 지표가 그 틀림을 세는지 본다. 가짜 해석기는 사건·사실 두 슬롯을 내므로 화마다 호출이 둘이다.
+원고는 합성 문장이다."""
 
 import json
 from pathlib import Path
@@ -67,7 +68,8 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
         eval_set,
         faults=Faults(
             omit=frozenset({(NOVEL, "1", 1)}), misquote=frozenset({(NOVEL, "2", 0)}),
-            schema_failure=frozenset({(NOVEL, "3")}),
+            schema_failure=frozenset({(NOVEL, "3")}), flip_immutable=frozenset({(NOVEL, "3", 0)}),
+            extra_fact=frozenset({(NOVEL, "1")}),
         ),
     )
     meter = Meter()
@@ -96,13 +98,19 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
     assert await db_session.scalar(eval_chapters) == 3
 
     report = json.loads((run_dir / "report.json").read_text())
-    assert report["slots"] == ["events"]
+    assert report["slots"] == ["events", "facts"]
     events = report["metrics"]["recall.events"]["repeats"][0]
     assert (events["k"], events["n"]) == (6, 8)  # 빠뜨린 1 + 인용이 틀려 버린 1
+    # 사실은 원자 명제 단위다. 3화의 불변 속성은 불변 표시를 뒤집어 내 맞히지 못했고, 1화에는 심지 않은 사실이 하나 더 있다.
+    facts = report["metrics"]["recall.facts"]["repeats"][0]
+    assert (facts["k"], facts["n"]) == (4, 5)
+    precision = report["metrics"]["precision.facts"]["repeats"][0]
+    assert (precision["k"], precision["n"]) == (4, 6)
+    assert report["metrics"]["precision.facts"]["pass"] is None  # 합성 세트의 사실 정밀도는 합격선이 없다
     quote = report["metrics"]["quote_rate"]
-    assert (quote["k"], quote["n"]) == (10, 11)  # 기본 6 + 탐침 4 / 거기에 인용 실패 1
+    assert (quote["k"], quote["n"]) == (16, 17)  # 사건 기본 6 + 탐침 4, 사실 6 / 거기에 사건 인용 실패 1
     schema = report["metrics"]["schema_failure_rate"]
-    assert (schema["k"], schema["n"]) == (1, 8)
+    assert (schema["k"], schema["n"]) == (1, 15)  # 기본 3화·탐침 4 에 슬롯 둘씩 + 3화 첫 호출의 재시도
     false_positive = report["metrics"]["block_false_positive"]
     assert (false_positive["k"], false_positive["n"]) == (0, 5)
     assert false_positive["upper"] == pytest.approx(1 - 0.05 ** (1 / 5))
@@ -153,13 +161,14 @@ async def test_the_halt_line_stops_the_run_before_the_call_that_would_cross_it(
         slots=fake.slots,
     )
     assert code == EXIT_BUDGET
-    assert fake.calls == 2  # $40 뒤의 셋째 호출은 견적을 더하면 $60 이라 부르기 전에 멈춘다
+    # 1화의 두 슬롯 호출로 $40 — 2화 첫 호출은 견적을 더하면 $60 이라 부르기 전에 멈춘다
+    assert fake.calls == 2
     rows = ledger.rows()
     assert [row["bundleCumulativeUsd"] for row in rows] == pytest.approx([20, 40])
     report = json.loads((run_dir / "report.json").read_text())
     assert "멈춤 선" in report["halted"]
     outcomes = json.loads((run_dir / "outcomes.json").read_text())
-    assert [row["ordinal"] for row in outcomes] == [1, 2]
+    assert [row["ordinal"] for row in outcomes] == [1]
 
 
 async def test_the_label_set_extraction_confirms_the_first_chapters_of_an_existing_novel(
@@ -217,7 +226,7 @@ async def test_an_interrupted_run_still_writes_the_chapters_it_finished(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     eval_set = load_set(FIXTURE)
-    fake = _CutAfter(eval_set, calls=2)
+    fake = _CutAfter(eval_set, calls=4)  # 화마다 두 슬롯 — 3화 첫 호출에서 끊긴다
     meter = Meter()
     run_dir = tmp_path / "run"
     with pytest.raises(_Cut):
@@ -238,9 +247,9 @@ async def test_a_halted_extraction_still_writes_the_chapters_it_finished(
     factory = savepoint_factory(db_session)
     async with factory() as session, session.begin():
         seeded = await seed_novel(session, eval_set.novels[0])
-    # 호출 하나가 $20 이라 셋째 화의 호출은 부르기 전에 멈춘다.
+    # 호출 하나가 $20 이고 화마다 두 슬롯이라, $80 뒤 셋째 화의 첫 호출은 견적을 더하면 $100 이라 부르기 전에 멈춘다.
     fake = FakeLLM(eval_set, model="gemini-3.5-flash-lite", prompt_tokens=0, output_tokens=8_000_000)
-    meter = Meter(ledger=Ledger(tmp_path / "ledger.jsonl", cap_usd=60, halt_usd=50, bundle="ci"), estimate_usd=20)
+    meter = Meter(ledger=Ledger(tmp_path / "ledger.jsonl", cap_usd=100, halt_usd=90, bundle="ci"), estimate_usd=20)
     code = await extract(
         factory, meter.wrap(fake.resolver()), seeded.novel_id, tmp_path / "labels", adapter="fake", count=3
     )
