@@ -1,6 +1,6 @@
 """측정 하네스 진입점 — `apps/api` 에서 `PYTHONPATH=scripts uv run --env-file .env python -m novel_bible_eval <명령>`.
 
-- `synthetic`: 합성 세트를 심고 확정·처리해 보고서(`report.json`·`report.md`)와 결과(`outcomes.json`)를 쓴다.
+- `synthetic`: 합성 세트를 심고 확정·처리해 실행 폴더에 보고서(JSON·마크다운)와 결과(`outcomes.json`)를 쓴다.
 - `extract`: 사람 라벨용 소설 사본의 앞 화들을 확정해 그 어댑터의 결과를 쓴다.
 - `sheet`: 어댑터들의 `extract` 결과를 합쳐 라벨 시트와 열쇠를 쓴다.
 - `score`: 사람이 내려받은 시트 결과를 읽어 어댑터별 라벨 지표를 쓴다.

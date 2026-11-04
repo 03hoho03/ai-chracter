@@ -87,7 +87,7 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
     assert (report["metrics"]["block_recall"]["k"], report["metrics"]["block_recall"]["n"]) == (0, 1)
     # 지식 슬롯이 등록부에 없으면 방향 오류 지표도 없다.
     assert "direction_error" not in report["metrics"]
-    markdown = (run_dir / "report.md").read_text()
+    markdown = (run_dir / "report.md").read_text()  # cite-ok: 문서가 아니라 하네스가 쓴 출력 파일 이름
     assert "block_false_positive" in markdown and "recall.events" in markdown
 
 

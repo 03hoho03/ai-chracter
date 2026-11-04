@@ -129,7 +129,7 @@ def to_markdown(report: dict[str, Any]) -> str:
 def write_report(report: dict[str, Any], outcomes: Sequence[ChapterOutcome], run_dir: Path) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    (run_dir / "report.md").write_text(to_markdown(report), encoding="utf-8")
+    (run_dir / "report.md").write_text(to_markdown(report), encoding="utf-8")  # cite-ok: 문서가 아니라 하네스의 출력 파일 이름
     (run_dir / "outcomes.json").write_text(
         json.dumps([outcome.model_dump(mode="json") for outcome in outcomes], ensure_ascii=False, indent=2),
         encoding="utf-8",
