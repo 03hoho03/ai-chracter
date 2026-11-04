@@ -261,8 +261,6 @@ class KnowledgeRow:
     kind: KnowledgeKind
     fact_key: uuid.UUID
     proposition: Mapping[str, Any]
-    # 이 장면에서 알게(믿게) 됐다고 서술됨. 거짓이면 이미 알던 것을 여기서 처음 서술한 것이다.
-    onset: bool
     known_since_event_id: uuid.UUID | None
 
 

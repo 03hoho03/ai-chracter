@@ -10,9 +10,8 @@
 키의 새 행으로 대체돼도 읽을 때 이어진다. 믿음은 사실 행에 붙인 표시가 아니라 명제 하나다 — 원고의 사실과 다른 내용(거짓 믿음)은
 사실 행으로 나타낼 수 없기 때문이다. 명제는 사실 하나뿐이라 앎에 대한 앎(고차 믿음)은 담지 않는다.
 
-`onset` 은 이 장면에서 알게(믿게) 됐다고 서술됐는가다. 앎이 이어지는 사건은 알게 된 자리가 아니라 처음 인용한 자리라, 이미 알던
-것을 늦게 서술한 앎을 "그 일이 일어나기 전에 안다"로 읽지 않으려고 따로 받는다. 꿈·상상 장면에서 생긴 앎도 버리지 않는다 — 그
-장면이 꿈이라는 것은 알게 된 사건의 현실성이 가지고, 앎은 그 사건에 이어져 그 정보를 잃지 않는다.
+꿈·상상 장면에서 생긴 앎도 버리지 않는다 — 그 장면이 꿈이라는 것은 알게 된 사건의 현실성이 가지고, 앎은 그 사건에 이어져 그
+정보를 잃지 않는다.
 
 다른 슬롯을 모른다 — 지식 표에만 쓰고, 앎이 사건에 이어지는 것은 코어의 연결 단계가 인용 블록으로 푼다."""
 
@@ -62,8 +61,7 @@ class KnowledgeInput(BaseModel):
 def _knowledge_row(row: NovelBibleKnowledge) -> KnowledgeRow:
     return KnowledgeRow(
         id=row.id, chapter_id=row.chapter_id, knower_entity_id=row.knower_entity_id, kind=row.kind,
-        fact_key=row.fact_key, proposition=dict(row.proposition), onset=row.onset,
-        known_since_event_id=row.known_since_event_id,
+        fact_key=row.fact_key, proposition=dict(row.proposition), known_since_event_id=row.known_since_event_id,
     )
 
 
@@ -121,7 +119,7 @@ class KnowledgeSlot:
                 ItemDraft(
                     local_key=f"knowledge{len(drafts) + 1}",
                     table="knowledge",
-                    fields={"kind": item.kind, "onset": item.onset},
+                    fields={"kind": item.kind},
                     names={
                         "knower": (EntityName(kind="character", name=item.knower.strip()),),
                         **proposition_names(proposition),
@@ -154,7 +152,7 @@ class KnowledgeSlot:
                     id=item.id, novel_id=commit.novel_id, chapter_id=commit.chapter_id, created_revision_id=revision_id,
                     supersedes_id=item.supersedes_id, knower_entity_id=item.entity_ids["knower"][0],
                     kind=item.draft.fields["kind"], fact_key=item.fact_key, proposition=stored,
-                    onset=item.draft.fields["onset"], known_since_event_id=item.event_id,
+                    known_since_event_id=item.event_id,
                 )
             )
         return records

@@ -151,7 +151,6 @@ def _base_values(model: type[Base], ctx: _Ctx) -> dict[str, Any]:
         "kind": "knows",
         "fact_key": uuid.uuid4(),
         "proposition": {},
-        "onset": False,
     }
 
 

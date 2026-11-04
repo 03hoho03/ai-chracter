@@ -205,8 +205,8 @@ class FakeSlot:
                     NovelBibleKnowledge(
                         id=item.id, supersedes_id=item.supersedes_id, knower_entity_id=item.entity_ids["knower"][0],
                         kind=item.draft.fields["kind"], fact_key=item.fact_key,
-                        proposition=proposition.model_dump(mode="json"), onset=False,
-                        known_since_event_id=item.event_id, **common,
+                        proposition=proposition.model_dump(mode="json"), known_since_event_id=item.event_id,
+                        **common,
                     )
                 )
         return rows
@@ -279,8 +279,7 @@ def _to_row(row: Any, chapter_ordinal: int) -> EventRow | RelationRow | FactRow 
     assert isinstance(row, NovelBibleKnowledge)
     return KnowledgeRow(
         id=row.id, chapter_id=row.chapter_id, knower_entity_id=row.knower_entity_id, kind=row.kind,
-        fact_key=row.fact_key, proposition=dict(row.proposition), onset=row.onset,
-        known_since_event_id=row.known_since_event_id,
+        fact_key=row.fact_key, proposition=dict(row.proposition), known_since_event_id=row.known_since_event_id,
     )
 
 

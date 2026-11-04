@@ -91,11 +91,8 @@ def _about(
             "holds": holds}
 
 
-def _known(
-    knower: str, kind: KnowledgeKind, about: dict[str, Any], quote: tuple[int, str], *, onset: bool = False
-) -> dict[str, Any]:
-    return {"knower": knower, "kind": kind, "about": about, "onset": onset,
-            "quote": {"paragraph": quote[0], "text": quote[1]}}
+def _known(knower: str, kind: KnowledgeKind, about: dict[str, Any], quote: tuple[int, str]) -> dict[str, Any]:
+    return {"knower": knower, "kind": kind, "about": about, "quote": {"paragraph": quote[0], "text": quote[1]}}
 
 
 def _fact(about: dict[str, Any], quote: tuple[int, str], *, onset: bool = False,
@@ -200,7 +197,7 @@ def test_the_knower_and_the_proposition_subject_are_named_apart() -> None:
     인용 블록이다. 깨지는 시나리오: 둘을 한 칸에서 읽으면 "둘이 하나의 검을 안다"가 "하나가 둘의 검을 안다"로 뒤집혀, 아는
     사람이 엉뚱한 인물이 되고 명제 키도 다른 사람의 소지가 된다."""
     manuscript = _manuscript("하나가 검을 받는다.", "둘은 하나가 검을 받은 것을 안다.")
-    output = _output(_known("둘", "knows", _about("하나", "possession", " 검 "), (2, "검을 받은 것을 안다"), onset=True))
+    output = _output(_known("둘", "knows", _about("하나", "possession", " 검 "), (2, "검을 받은 것을 안다")))
 
     (draft,) = KnowledgeSlot().validate(_input(manuscript), output).items
 
@@ -212,7 +209,7 @@ def test_the_knower_and_the_proposition_subject_are_named_apart() -> None:
     }
     assert draft.proposition is not None
     assert (draft.proposition.subject, draft.proposition.kind, draft.proposition.value) == ("하나", "possession", "검")
-    assert draft.fields == {"kind": "knows", "onset": True}
+    assert draft.fields == {"kind": "knows"}
     assert draft.anchor_block == manuscript.blocks[1].block_id
     assert draft.quotes[0].block_id == manuscript.blocks[1].block_id
 
@@ -250,7 +247,7 @@ def test_a_belief_is_its_own_proposition_and_may_differ_from_the_facts() -> None
 
     (draft,) = KnowledgeSlot().validate(_input(manuscript), output).items
 
-    assert draft.fields == {"kind": "believes", "onset": False}
+    assert draft.fields == {"kind": "believes"}
     assert draft.proposition is not None and (draft.proposition.kind, draft.proposition.value) == ("life", "dead")
 
 
@@ -367,7 +364,7 @@ def _facts_output() -> dict[str, Any]:
 
 def _knowledge_output() -> dict[str, Any]:
     return {"items": [
-        _known("둘", "knows", _about("하나", "possession", "검"), (2, "검을 받은 것을 안다"), onset=True),
+        _known("둘", "knows", _about("하나", "possession", "검"), (2, "검을 받은 것을 안다")),
         _known("셋", "believes", _about("하나", "life", "dead"), (3, "죽었다고 믿는다")),
     ]}
 
@@ -381,7 +378,7 @@ def _proposition_key(proposition: dict[str, Any]) -> uuid.UUID:
     )
 
 
-async def test_a_confirmed_chapter_commits_knowledge_with_its_knower_key_onset_and_event(
+async def test_a_confirmed_chapter_commits_knowledge_with_its_knower_key_and_event(
     db_session: AsyncSession,
 ) -> None:
     """`knows` 는 같은 명제의 사실 행과 같은 키, `believes` 는 사실과 다른 명제의 키를 받는다. 앎 주체는 아는 인물이고 명제의
@@ -402,16 +399,14 @@ async def test_a_confirmed_chapter_commits_knowledge_with_its_knower_key_onset_a
     (fact,) = (await db_session.scalars(select(NovelBibleFact).where(NovelBibleFact.chapter_id == chapter.id))).all()
     one, two, three = [await _entity(db_session, novel.id, "character", name) for name in ("하나", "둘", "셋")]
     sword = await _entity(db_session, novel.id, "object", "검")
-    assert (knows.knower_entity_id, knows.kind, knows.onset, knows.known_since_event_id) == (two, "knows", True, second.id)
+    assert (knows.knower_entity_id, knows.kind, knows.known_since_event_id) == (two, "knows", second.id)
     assert knows.fact_key == fact.fact_key == fact_key(one, "possession", "possession", str(sword), True)
     assert knows.proposition == {
         "subject_entity_id": str(one), "kind": "possession", "predicate_norm": "possession", "value": "검",
         "value_norm": "검", "value_entity_id": str(sword), "holds": True,
     }
     assert _proposition_key(knows.proposition) == knows.fact_key
-    assert (believes.knower_entity_id, believes.kind, believes.onset, believes.known_since_event_id) == (
-        three, "believes", False, second.id
-    )
+    assert (believes.knower_entity_id, believes.kind, believes.known_since_event_id) == (three, "believes", second.id)
     assert believes.fact_key == fact_key(one, "life", "life", "dead", True) == _proposition_key(believes.proposition)
     assert believes.proposition["value_entity_id"] is None
     assert {row.status for row in (knows, believes)} == {"confirmed"}
@@ -469,7 +464,7 @@ async def test_knowledge_anchored_in_a_dream_is_stored_and_its_event_keeps_the_d
                                        _event("e2", [2], (2, "꿈속에서"), ["둘"], actuality="dream_or_imagined")],
                             "relations": []}],
         "knowledge.extract": [{"items": [
-            _known("둘", "knows", _about("하나", "possession", "검"), (2, "검을 가졌다는 걸 안다"), onset=True)
+            _known("둘", "knows", _about("하나", "possession", "검"), (2, "검을 가졌다는 걸 안다"))
         ]}],
     })
 
@@ -478,7 +473,7 @@ async def test_knowledge_anchored_in_a_dream_is_stored_and_its_event_keeps_the_d
     assert await _status(db_session, commit_id) == "committed"
     (known,) = await _knowledge(db_session, chapter.id)
     _, dream = await _events(db_session, chapter.id)
-    assert (known.known_since_event_id, known.onset) == (dream.id, True)
+    assert known.known_since_event_id == dream.id
     assert dream.actuality == "dream_or_imagined"
 
 
@@ -516,7 +511,6 @@ async def test_reconfirming_expires_the_chapters_knowledge_and_new_rows_supersed
     }
     before = await KnowledgeSlot().read(db_session, novel.id, await revision_at(db_session, novel.id, head.revision_no - 1))
     assert {row.id for row in before} == set(old.values())
-    assert {row.onset for row in current if isinstance(row, KnowledgeRow)} == {True, False}
 
 
 # ── 시점 질의 ───────────────────────────────────────────────────────
@@ -530,7 +524,7 @@ def _second_outputs() -> dict[OperationKey, list[dict[str, Any]]]:
         "events.extract": [{"events": [_event("e1", [1, 2], (1, "죽은 것을 안다"), ["둘"])], "relations": []}],
         "facts.extract": [{"facts": []}],
         "knowledge.extract": [{"items": [
-            _known("둘", "knows", _about("하나", "life", "dead"), (1, "죽은 것을 안다"), onset=True),
+            _known("둘", "knows", _about("하나", "life", "dead"), (1, "죽은 것을 안다")),
             _known("둘", "believes", _about("하나", "life", "alive"), (2, "살아 있다고 믿는다")),
         ]}],
     }
@@ -610,7 +604,7 @@ def _independence_outputs() -> dict[OperationKey, list[dict[str, Any]]]:
             _fact(_about("하나", "presence", "departed"), (4, "숲으로 떠난다"), onset=True),
         ]}],
         "knowledge.extract": [{"items": [
-            _known("둘", "knows", _about("하나", "possession", "검"), (2, "검을 받은 것을 안다"), onset=True),
+            _known("둘", "knows", _about("하나", "possession", "검"), (2, "검을 받은 것을 안다")),
             _known("셋", "believes", _about("하나", "life", "dead"), (3, "죽었다고 믿는다")),
         ]}],
     }
@@ -639,7 +633,9 @@ async def _story_novel(db: AsyncSession) -> Novel:
 
 
 def _new_knowledge(snapshot: BibleSnapshot) -> tuple[uuid.UUID, ...]:
-    return tuple(row.id for row in snapshot.knowledge or () if row.id in snapshot.new_ids)
+    """지식 칸이 비어 있으면 실패한다 — 지식 슬롯을 뺀 등록부에서 코어가 이 규칙을 건너뛰지 않으면 확정이 실패하게."""
+    assert snapshot.knowledge is not None, "지식 슬롯이 없는 등록부에서 지식을 읽는 규칙이 돌았다"
+    return tuple(row.id for row in snapshot.knowledge if row.id in snapshot.new_ids)
 
 
 async def _projection(db: AsyncSession, novel_id: uuid.UUID) -> dict[str, list[tuple[Any, ...]]]:
@@ -672,7 +668,7 @@ async def _projection(db: AsyncSession, novel_id: uuid.UUID) -> dict[str, list[t
             for f in facts
         ),
         "knowledge": sorted(
-            (names[k.knower_entity_id], k.kind, k.onset, entity(k.proposition["subject_entity_id"]),
+            (names[k.knower_entity_id], k.kind, entity(k.proposition["subject_entity_id"]),
              k.proposition["kind"], k.proposition["predicate_norm"], k.proposition["value_norm"],
              entity(k.proposition["value_entity_id"]), k.proposition["holds"])
             for k in knowledge
@@ -691,8 +687,8 @@ async def test_dropping_a_slot_keeps_the_other_slots_rows_and_leaves_links_undet
 ) -> None:
     """같은 합성 화를 실제 등록부 전체와, 슬롯 하나를 뺀 부분집합으로 확정한다. 두 번 다 커밋되고, 남은 슬롯의 항목은 연결 칸을
     빼면 같으며, 뺀 슬롯의 작업·항목은 없다. 뺀 슬롯이 사건이면 사실·앎의 사건 칸이 미정(NULL)이고, 원작이면 각색 후보만 없다.
-    뺀 슬롯을 읽는 규칙은 결과를 내지 않는다. 깨지는 시나리오: 한 슬롯이 다른 슬롯의 행이나 출력에 기대면 그 슬롯을 뺄 때 남은
-    슬롯의 항목이 달라지거나 확정이 실패한다."""
+    뺀 슬롯을 읽는 규칙은 돌지 않는다(돌면 빈 지식 칸을 읽다 확정이 실패한다). 깨지는 시나리오: 한 슬롯이 다른 슬롯의
+    행이나 출력에 기대면 그 슬롯을 뺄 때 남은 슬롯의 항목이 달라지거나 확정이 실패한다."""
     rules = [FakeRule(pick=_new_knowledge, severity="warning", rule="knowledge_source_unclear",
                       slots=frozenset({"knowledge"}))]
     full_ids: tuple[SlotId, ...] = ("events", "facts", "knowledge", "source")
