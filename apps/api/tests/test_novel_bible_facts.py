@@ -920,6 +920,50 @@ async def test_a_reconfirm_extracts_again_when_a_play_fact_is_rewritten_with_the
     assert pointed == rewritten.id != old_id
 
 
+async def test_a_same_text_reconfirm_extracts_again_when_the_source_version_or_a_note_id_changes(
+    db_session: AsyncSession,
+) -> None:
+    """원작 글이 같아도 원작 버전 id 나 키워드 노트 id 가 바뀌면 본문이 같은 재확정도 추출을 다시 하고, 새 근거는 새 버전·새
+    노트를 가리킨다. 아무것도 바뀌지 않으면 다시 쓴다. 깨지는 시나리오: 열쇠가 원작 렌더 글(표지만 있고 id 는 없음)만 보면 옛
+    버전·옛 노트 id 를 근거로 든 앞 제안을 재사용해, 근거가 이번 확정이 읽지 않은 원작을 가리킨다."""
+    novel = await make_novel(db_session)
+    body = "민수와 지아는 남매다."
+    chapter, revision = await add_chapter(db_session, novel.id, 1, body)
+    note = "원작에서 민수와 지아는 소꿉친구다."
+    source = FakeSource(note="합성 작품 설정.", keyword_notes={uuid.uuid4(): note})
+    output = {"facts": [_fact("민수", "relation", "지아", (1, "남매다"), attribute="남매", source=("K1", "소꿉친구"))]}
+    adapter = ScriptedAdapter({"facts.extract": [output, output, output]})
+    registry = _registry(events=False, source=source)
+
+    async def reconfirm() -> tuple[uuid.UUID | None, uuid.UUID | None]:
+        same = await add_revision(db_session, chapter.id, body, block_ids=revision.block_ids)
+        commit_id = await _confirm_and_run(db_session, chapter, same, adapter, registry)
+        assert await _status(db_session, commit_id) == "committed"
+        head = await revision_at(db_session, novel.id, None)
+        pointed = (
+            await db_session.execute(
+                select(NovelBibleEvidence.content_version_id, NovelBibleEvidence.keyword_note_id).where(
+                    NovelBibleEvidence.origin == "source_canon", NovelBibleEvidence.created_revision_id == head.id
+                )
+            )
+        ).one()
+        return pointed.content_version_id, pointed.keyword_note_id
+
+    await _confirm_and_run(db_session, chapter, revision, adapter, registry)
+    assert await reconfirm() == (source.version_id, next(iter(source.keyword_notes)))
+    assert len(adapter.prompts["facts.extract"]) == 1
+
+    source.keyword_notes = {uuid.uuid4(): note}
+    assert await reconfirm() == (source.version_id, next(iter(source.keyword_notes)))
+    assert len(adapter.prompts["facts.extract"]) == 2
+
+    source.version_id = uuid.uuid4()
+    assert await reconfirm() == (source.version_id, next(iter(source.keyword_notes)))
+    assert len(adapter.prompts["facts.extract"]) == 3
+    first, second, third = (prompt.prompt.split("원작 정본\n", 1)[1] for prompt in adapter.prompts["facts.extract"])
+    assert first == second == third == "[S] 합성 작품 설정.\n\n[K1] 원작에서 민수와 지아는 소꿉친구다."
+
+
 async def test_a_play_evidence_survives_the_chat_memory_row_it_points_at(db_session: AsyncSession) -> None:
     """채팅 기억 행이 되감기·잊기로 사라져도 커밋된 사실과 근거 행은 그대로이고, 근거가 가리키던 행이 없다는 것으로 소실을
     읽는다(소실 칸은 없다). 깨지는 시나리오: 근거가 채팅 기억 행을 FK 로 가리키면 되감기가 정본 행을 지우거나 막힌다."""

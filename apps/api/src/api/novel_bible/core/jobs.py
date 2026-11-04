@@ -13,11 +13,13 @@
 검증에서 먼저 뺀다. 출력 전체가 아니라 그 항목이나 그 이름만 버린다.
 
 추출 캐시: 같은 소설에서 슬롯·어댑터·문안 세트·출력 스키마·검증 규칙 판이 같고 본문 해시·블록 id 해시·슬롯의 힌트가
-아닌 렌더 값·입력이 읽은 채팅 기억 행의 방·행 id 가 같은 앞 작업이 성공해 있으면 그 제안을 복사하고 호출하지 않는다. 힌트(아는
-개체 따위 정본 상태에서 오는 값)는 다른 화가 커밋될 때마다 바뀌므로 열쇠에서 뺀다. 블록 id 해시가 열쇠에 드는 이유는 제안이 블록
-id 로 저장돼 있어서다 — 본문이 같아도 블록 id 가 다른 개정에는 다시 쓸 수 없다. 채팅 기억 행 id 도 같은 이유다 — 제안의 플레이
-근거가 행 id 로 저장돼 있는데 렌더 글에는 id 가 없어, 되감기 뒤 같은 사실이 같은 글의 새 행으로 다시 쓰이면 글만으로는 열쇠가
-같아 지워진 행을 가리키는 제안을 재사용하게 된다(그 근거는 태어날 때부터 소실로 읽힌다)."""
+아닌 렌더 값·입력이 읽은 채팅 기억 행의 방·행 id·입력이 읽은 원작의 버전 id·노트 id 가 같은 앞 작업이 성공해 있으면 그 제안을
+복사하고 호출하지 않는다. 힌트(아는 개체 따위 정본 상태에서 오는 값)는 다른 화가 커밋될 때마다 바뀌므로 열쇠에서 뺀다. 블록 id
+해시가 열쇠에 드는 이유는 제안이 블록 id 로 저장돼 있어서다 — 본문이 같아도 블록 id 가 다른 개정에는 다시 쓸 수 없다. 채팅 기억
+행 id 도 같은 이유다 — 제안의 플레이 근거가 행 id 로 저장돼 있는데 렌더 글에는 id 가 없어, 되감기 뒤 같은 사실이 같은 글의 새
+행으로 다시 쓰이면 글만으로는 열쇠가 같아 지워진 행을 가리키는 제안을 재사용하게 된다(그 근거는 태어날 때부터 소실로 읽힌다).
+원작 버전 id·노트 id 도 같다 — 원작 근거가 그 id 로 저장되는데 렌더 글에는 표지(`S`·`K1`)만 있어, 같은 글의 새 버전·새 노트로
+바뀌면 글만으로는 이번 확정이 읽지 않은 버전·노트를 가리키는 제안을 재사용하게 된다."""
 
 import hashlib
 import json
@@ -196,6 +198,9 @@ async def _prepare(
                 _VALIDATION_VERSION,
                 {name: value for name, value in values.items() if name not in slot.hint_values},
                 [[str(fact.chat_room_id), str(fact.chat_memory_fact_id)] for fact in view.served_play_facts],
+                [str(canon.ref.content_version_id), [str(note_id) for note_id in canon.keyword_notes]]
+                if (canon := view.served_source_canon) is not None
+                else None,
             ]
         )
         input_hash = _digest(

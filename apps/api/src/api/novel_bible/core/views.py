@@ -52,6 +52,8 @@ class CommitView:
     chat_room_id: uuid.UUID | None = None
     # `play_facts` 가 마지막으로 돌려준 행. 작업이 추출 캐시 열쇠에 이 행들의 방·행 id 를 넣는다(`core/jobs.py`).
     served_play_facts: tuple[PlayFact, ...] = field(default=(), init=False)
+    # `source_canon` 이 마지막으로 돌려준 원작. 작업이 추출 캐시 열쇠에 그 버전 id·노트 id 를 넣는다(`core/jobs.py`).
+    served_source_canon: SourceCanon | None = field(default=None, init=False)
 
     async def manuscript(self) -> Manuscript:
         revision = await self.session.get(NovelChapterRevision, self.commit.chapter_revision_id)
@@ -104,7 +106,8 @@ class CommitView:
     async def source_canon(self) -> SourceCanon | None:
         if self.registry.source is None or self.source_ref is None:
             return None
-        return await self.registry.source.load(self.session, self.commit.novel_id, self.source_ref)
+        self.served_source_canon = await self.registry.source.load(self.session, self.commit.novel_id, self.source_ref)
+        return self.served_source_canon
 
     async def play_facts(self) -> list[PlayFact] | None:
         """그 방에서 이 화의 끝 메시지까지 접힌 채팅 기억 사실을 키마다 이긴 행 하나로 줄인 것. 읽기(`fact_rows_statement`)와

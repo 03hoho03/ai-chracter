@@ -297,10 +297,12 @@ def knowledge_slot() -> FakeSlot:
 
 @dataclass
 class FakeSource:
-    """원작 정본 가짜 — 표가 없고 글은 이 객체의 `note` 다. 노트가 비면 원작이 없는 것이다."""
+    """원작 정본 가짜 — 표가 없고 작품 설정 글은 이 객체의 `note`, 키워드 노트는 `keyword_notes` 다. `note` 가 비면 원작이 없는
+    것이다."""
 
     note: str = ""
     version_id: uuid.UUID = field(default_factory=uuid.uuid4)
+    keyword_notes: dict[uuid.UUID, str] = field(default_factory=dict)
     id: SlotId = "source"
 
     async def resolve(self, session: AsyncSession, novel_id: uuid.UUID) -> SourceCanonRef | None:
@@ -309,7 +311,7 @@ class FakeSource:
         return SourceCanonRef(content_version_id=self.version_id, input_hash=f"hash:{self.note}")
 
     async def load(self, session: AsyncSession, novel_id: uuid.UUID, ref: SourceCanonRef) -> SourceCanon:
-        return SourceCanon(ref=ref, work_setting=self.note, keyword_notes={})
+        return SourceCanon(ref=ref, work_setting=self.note, keyword_notes=dict(self.keyword_notes))
 
 
 def fake_registry(*slots: Slot, source: FakeSource | None = None) -> Registry:
