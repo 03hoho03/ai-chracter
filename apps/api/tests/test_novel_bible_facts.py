@@ -45,6 +45,7 @@ from api.novel_bible.core.types import (
     Manuscript,
     ManuscriptBlock,
     PlayFact,
+    Proposal,
     RenderedPrompt,
     SideQuote,
     SourceCanon,
@@ -76,10 +77,10 @@ def _manuscript(*texts: str) -> Manuscript:
 def _fact(
     subject: str, kind: FactKind, value: str, quote: tuple[int, str], *, attribute: str | None = None,
     holds: bool = True, immutable: bool = False, onset: bool = False, scope: FactScope = "from_here",
-    source: tuple[str, str] | None = None, play: str | None = None,
+    source: tuple[str, str] | None = None, play: str | None = None, subject_kind: EntityKind = "character",
 ) -> dict[str, Any]:
     return {
-        "subject": subject, "kind": kind, "attribute": attribute, "value": value, "holds": holds,
+        "subject": subject, "subject_kind": subject_kind, "kind": kind, "attribute": attribute, "value": value, "holds": holds,
         "immutable": immutable, "onset": onset, "scope": scope,
         "quote": {"paragraph": quote[0], "text": quote[1]},
         "source_difference": {"label": source[0], "quote": source[1]} if source else None,
@@ -261,6 +262,39 @@ def test_a_fact_anchors_at_its_quote_block_and_names_only_entity_valued_targets(
     assert presence is not None and (presence.kind, presence.value, presence.attribute) == (
         "presence", "gone_for_good", None
     )
+
+
+def test_a_fact_subject_is_named_with_the_kind_the_model_gave_and_the_proposition_carries_it() -> None:
+    """주어 개체 이름은 모델이 낸 주어 종류로 만들고, 같은 종류가 명제에도 실린다. 깨지는 시나리오: 이름만 종류를 따르고 명제가
+    모르면, 같은 명제를 명제 꼴로 내는 지식 슬롯이 주어를 인물로 풀어 사물 주어 사실과 키가 어긋난다."""
+    manuscript = _manuscript("검은 오래되어 날이 무디다.", "하나는 검을 쥔다.")
+    output = _output(
+        _fact("검", "attribute", "무딤", (1, "날이 무디다"), attribute="날", subject_kind="object"),
+        _fact("하나", "possession", "검", (2, "검을 쥔다")),
+    )
+
+    proposal = FactsSlot().validate(_input(manuscript), output)
+
+    blunt, holding = proposal.items
+    assert blunt.names["subject"] == (EntityName(kind="object", name="검"),)
+    assert blunt.proposition is not None and blunt.proposition.subject_kind == "object"
+    assert holding.names["subject"] == (EntityName(kind="character", name="하나"),)
+    assert holding.proposition is not None and holding.proposition.subject_kind == "character"
+
+
+def test_a_proposal_stored_before_the_subject_kind_reads_its_subject_as_a_character() -> None:
+    """주어 종류 칸이 생기기 전에 저장된 제안은 주어를 인물로 읽는다. 깨지는 시나리오: 칸을 필수로 두면 작업 행에 남은 옛 제안이
+    재사용·연결 때 검증 오류로 깨져 확정이 실패한다."""
+    manuscript = _manuscript("하나가 검을 받는다.")
+    proposal = FactsSlot().validate(_input(manuscript), _output(_fact("하나", "possession", "검", (1, "검을 받는다"))))
+    stored = proposal.model_dump(mode="json")
+    for item in stored["items"]:
+        del item["proposition"]["subject_kind"]
+
+    read = Proposal.model_validate(stored)
+
+    assert read == proposal
+    assert read.items[0].proposition is not None and read.items[0].proposition.subject_kind == "character"
 
 
 def test_differences_become_side_quotes_and_a_bad_difference_drops_only_itself() -> None:
@@ -548,6 +582,26 @@ async def test_a_confirmed_chapter_commits_facts_with_keys_onset_scope_and_their
     prompt = adapter.prompts["facts.extract"][0].prompt
     assert "원작 정본" not in prompt and "플레이 사실" not in prompt and "정본 불변 속성" not in prompt
     assert "[장면" not in prompt
+
+
+async def test_a_fact_about_a_thing_commits_under_an_object_entity_not_a_character(db_session: AsyncSession) -> None:
+    """사물이 주어인 사실은 사물 개체에 붙고, 같은 이름의 인물 개체를 만들지 않는다. 깨지는 시나리오: 주어를 늘 인물로 만들면
+    사물 이름의 인물 개체가 생겨, 그 소설의 이후 아는 개체 힌트에 그 이름이 인물로 실린다."""
+    novel = await make_novel(db_session)
+    chapter, revision = await add_chapter(db_session, novel.id, 1, "검은 오래되어 날이 무디다.")
+    output = {"facts": [_fact("검", "attribute", "무딤", (1, "날이 무디다"), attribute="날", subject_kind="object")]}
+
+    commit_id = await _confirm_and_run(
+        db_session, chapter, revision, ScriptedAdapter({"facts.extract": [output]}), _registry(events=False)
+    )
+
+    assert await _status(db_session, commit_id) == "committed"
+    (fact,) = await _facts(db_session, chapter.id)
+    sword = await _entity(db_session, novel.id, "object", "검")
+    assert fact.subject_entity_id == sword
+    assert fact.fact_key == fact_key(sword, "attribute", "날", "무딤", True)
+    kinds = (await db_session.scalars(select(NovelBibleEntity.kind).where(NovelBibleEntity.novel_id == novel.id))).all()
+    assert kinds == ["object"]
 
 
 async def test_reconfirming_expires_the_chapters_facts_and_a_new_row_supersedes_the_same_key(

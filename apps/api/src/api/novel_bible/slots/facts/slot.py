@@ -12,8 +12,9 @@
 `onset` 은 이 장면에서 상태가 시작됐다고 서술됐는가다(얻음·배움·일어남·돌아옴). 사실이 이어지는 사건은 시작 자리가 아니라 처음
 인용한 자리라, 늦게 드러난 기존 상태("오래 지니던 검")를 시작으로 읽지 않으려고 따로 받는다. 작품 전체 범위에는 시작 자리가 없어
 거짓으로 고친다. 불변 속성은 작품 전체 범위로 둔다. 속성 값은 인물 이름이어도 개체에 잇지 않는다 — 이으면 그 이름의 개체가
-먼저 생겼느냐에 따라 같은 명제의 안정 키가 달라진다. 주어는 인물이다. 대상이 개체인 종류(소지·능력·관계)만 대상을 개체(사물·
-능력·인물)로 잇는다.
+먼저 생겼느냐에 따라 같은 명제의 안정 키가 달라진다. 주어는 모델이 낸 종류(인물·사물·능력)의 개체로 잇고, 그 종류는 명제에도
+실어 지식 슬롯이 같은 명제를 같은 개체·같은 키로 풀게 한다. 대상이 개체인 종류(소지·능력·관계)만 대상을 개체(사물·능력·인물)로
+잇는다.
 
 다른 슬롯을 모른다 — 사실 표에만 쓰고, 사실이 사건에 이어지는 것은 코어의 연결 단계가 인용 블록으로 푼다."""
 
@@ -257,12 +258,12 @@ class FactsSlot:
             scope: FactScope = "work" if fact.immutable else fact.scope
             value = normalize_name(fact.value) if fact.kind in _CLOSED_VALUES else fact.value.strip()
             proposition = Proposition(
-                subject=fact.subject.strip(), kind=fact.kind,
+                subject=fact.subject.strip(), subject_kind=fact.subject_kind, kind=fact.kind,
                 attribute=(fact.attribute or "").strip() if fact.kind in _NAMED_PREDICATE else None,
                 value=value, holds=fact.holds,
             )
             names: dict[str, tuple[EntityName, ...]] = {
-                "subject": (EntityName(kind="character", name=proposition.subject),)
+                "subject": (EntityName(kind=proposition.subject_kind, name=proposition.subject),)
             }
             if fact.kind in _VALUE_ENTITY_KINDS:
                 names["value"] = (EntityName(kind=_VALUE_ENTITY_KINDS[fact.kind], name=value),)

@@ -10,12 +10,14 @@
 - `gone_for_good` 은 원고가 영구 퇴장으로 서술한 것(추방·사라짐·"다시는 돌아오지 않았다")뿐이다. 그 장면을 떠난 것은
   `departed` 에 `scope="scene"`, 여행·이사처럼 돌아올 수 있는 떠남은 `departed` 에 `scope="from_here"`.
 - `onset` 은 이 장면에서 상태가 시작됐다고 서술됐을 때만 참이다. 이미 지니던 것·이미 그랬던 것을 여기서 처음 서술했으면
-  거짓이다 — 늦게 드러난 기존 상태를 "얻기 전 사용"·"일어나기 전 앎"으로 막지 않게 하는 칸이다."""
+  거짓이다 — 늦게 드러난 기존 상태를 "얻기 전 사용"·"일어나기 전 앎"으로 막지 않게 하는 칸이다.
+- `subject_kind` 는 주어가 인물·사물·능력 중 무엇인가다. 개체는 (종류, 이름)으로 갈려, 인물을 사물로 내면 같은 이름의 다른
+  개체가 생기고 그 사실은 그 인물의 상태에서 빠진다. 아는 개체 힌트에 있는 이름이면 거기 적힌 종류를 그대로 쓰게 해야 한다."""
 
 from pydantic import BaseModel
 
 from api.novel_bible.core.types import QuoteOut
-from api.novel_bible.ids import FactKind, FactScope
+from api.novel_bible.ids import EntityKind, FactKind, FactScope
 
 
 class SourceDifference(BaseModel):
@@ -29,6 +31,7 @@ class PlayDifference(BaseModel):
 
 class ExtractedFact(BaseModel):
     subject: str
+    subject_kind: EntityKind  # 주어가 인물·사물·능력 중 무엇인가
     kind: FactKind
     attribute: str | None  # 속성 이름(attribute) · 관계 이름(relation), 나머지는 null
     value: str  # life: alive|dead, presence: present|departed|gone_for_good, 나머지는 대상·값
