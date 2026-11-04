@@ -1,7 +1,8 @@
 """측정 하네스 진입점 — `apps/api` 에서 `PYTHONPATH=scripts uv run --env-file .env python -m novel_bible_eval <명령>`.
 
 - `synthetic`: 합성 세트를 심고 확정·처리해 실행 폴더에 보고서(JSON·마크다운)와 결과(`outcomes.json`)를 쓴다.
-- `extract`: 사람 라벨용 소설 사본의 앞 화들을 확정해 그 어댑터의 결과를 쓴다.
+- `extract`: 사람 라벨용 소설 사본의 앞 화들을 확정해 그 어댑터의 결과를 쓴다. 결과 파일의 `halted` 칸에 멈춤·끊김 까닭을 적는다
+  (끝까지 돌았으면 null) — 나중에 결과 파일만 보는 사람도 앞 화 일부만 담긴 결과인지 안다.
 - `sheet`: 어댑터들의 `extract` 결과를 합쳐 라벨 시트와 열쇠를 쓴다.
 - `score`: 사람이 내려받은 시트 결과를 읽어 어댑터별 라벨 지표를 쓴다.
 
@@ -62,29 +63,32 @@ async def extract(
     count: int, slots: frozenset[SlotId] | None = None,
 ) -> int:
     outcomes: list[ChapterOutcome] = []
+    halted: str | None = None
     try:
         await extract_chapters(factory, resolver, novel_id, count=count, slots=slots, outcomes=outcomes)
     except BudgetHalt as halt:
+        halted = str(halt)
         print(f"원장 멈춤: {halt} — 끝난 {len(outcomes)}화까지 썼다")
         return EXIT_BUDGET
     except BaseException as error:
+        halted = f"끊김 — {type(error).__name__}: {error}"
         print(f"끊김: {type(error).__name__} — 끝난 {len(outcomes)}화까지 썼다")
         raise
     finally:
-        _write_extract(outcomes, run_dir, adapter)
+        _write_extract(outcomes, run_dir, adapter, halted)
     return 0
 
 
-def _write_extract(outcomes: list[ChapterOutcome], run_dir: Path, adapter: str) -> None:
+def _write_extract(outcomes: list[ChapterOutcome], run_dir: Path, adapter: str, halted: str | None) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / f"extract-{adapter}.json").write_text(
-        json.dumps([outcome.model_dump(mode="json") for outcome in outcomes], ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    written = {"halted": halted, "outcomes": [outcome.model_dump(mode="json") for outcome in outcomes]}
+    (run_dir / f"extract-{adapter}.json").write_text(json.dumps(written, ensure_ascii=False, indent=2),
+                                                     encoding="utf-8")
 
 
 def _outcomes(path: Path) -> list[ChapterOutcome]:
-    return [ChapterOutcome.model_validate(row) for row in json.loads(path.read_text(encoding="utf-8"))]
+    rows = json.loads(path.read_text(encoding="utf-8"))["outcomes"]
+    return [ChapterOutcome.model_validate(row) for row in rows]
 
 
 async def _block_texts(factory: SessionFactory, runs: dict[str, list[ChapterOutcome]]) -> dict[str, str]:

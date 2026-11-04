@@ -20,7 +20,7 @@ from api.db.models import Novel, NovelChapter, User
 from api.novel_bible.core.types import BibleSnapshot, RenderedPrompt
 from api.novel_bible.ids import OperationKey
 from memory_eval.ledger import EXIT_BUDGET, Ledger
-from novel_bible_eval.__main__ import extract, main, synthetic
+from novel_bible_eval.__main__ import _outcomes, extract, main, synthetic
 from novel_bible_eval.fake_llm import FakeLLM, Faults
 from novel_bible_eval.run import BudgetHalt, ChapterOutcome, Meter, extract_chapters, run_set
 from novel_bible_eval.seed import EVAL_EMAIL_DOMAIN, seed_novel
@@ -255,4 +255,7 @@ async def test_a_halted_extraction_still_writes_the_chapters_it_finished(
     )
     assert code == EXIT_BUDGET
     written = json.loads((tmp_path / "labels" / "extract-fake.json").read_text())
-    assert [(row["ordinal"], row["status"]) for row in written] == [(1, "committed"), (2, "committed")]
+    assert [(row["ordinal"], row["status"]) for row in written["outcomes"]] == [(1, "committed"), (2, "committed")]
+    # 결과 파일만 본 사람도 앞 두 화에서 멈춘 결과인지 안다.
+    assert "멈춤 선" in written["halted"]
+    assert [outcome.ordinal for outcome in _outcomes(tmp_path / "labels" / "extract-fake.json")] == [1, 2]
