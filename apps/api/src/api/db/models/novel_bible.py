@@ -238,6 +238,11 @@ class NovelBibleRevision(Base):
     )
 
 
+# 개체 정규 이름의 길이 상한. CHECK 와 확정 전에 긴 이름을 거르는 쪽(개체 하나로 푸는 칸이면 항목을 버리고, 이름 목록 칸이면
+# 그 이름만 뺀다)이 같은 상수를 쓴다 — 값이 갈리면 거르지 않은 이름이 연결 때 CHECK 에 막혀 확정 전체가 실패한다.
+ENTITY_NAME_MAX = 200
+
+
 class NovelBibleEntity(Base):
     """소설 안의 인물·사물·능력 하나. 항목은 이름이 아니라 이 id 로 개체를 가리킨다.
 
@@ -259,7 +264,7 @@ class NovelBibleEntity(Base):
 
     __table_args__ = (
         CheckConstraint(f"kind IN ({_sql_in_list(EntityKind)})", name="ck_novel_bible_entities_kind"),
-        CheckConstraint("char_length(name_norm) BETWEEN 1 AND 200", name="ck_novel_bible_entities_name"),
+        CheckConstraint(f"char_length(name_norm) BETWEEN 1 AND {ENTITY_NAME_MAX}", name="ck_novel_bible_entities_name"),
         Index("ux_novel_bible_entities_novel_kind_name", "novel_id", "kind", "name_norm", unique=True),
     )
 
