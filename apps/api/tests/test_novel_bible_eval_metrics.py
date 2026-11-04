@@ -3,6 +3,7 @@
 구간은 알려진 값과 대조한다: Wilson 9/10 은 [0.596, 0.982], 단측 Clopper–Pearson 상한은 1/10 이 0.394, 0건이면
 1 − 0.05^(1/n), Cohen κ 는 일치 0.7·우연 일치 0.5 인 표에서 0.4. 합성 이름과 문장만 쓴다."""
 
+import itertools
 import uuid
 from pathlib import Path
 from typing import Any
@@ -113,6 +114,27 @@ def test_direction_errors_count_swaps_and_wrong_knowers_inside_the_denominator()
         _knows("서하", "서하", "차"),
     ]
     assert direction_counts(planted, extracted, {}) == (2, 1)
+
+
+def test_direction_pairs_do_not_depend_on_the_order_the_answers_were_written_in() -> None:
+    # 두 인물이 같은 명제를 안다. 추출은 그중 둘째 인물의 바른 짝 하나다 — 첫 인물이 그 제안을 제 쪽의 앎 주체 오류로
+    # 먼저 가져가면 안 된다.
+    planted = [
+        PlantedKnowledge(knower=knower, kind="knows", subject="서하", fact_kind="possession", values=["등불"],
+                         paragraph=1)
+        for knower in ("도윤", "하람")
+    ]
+    assert direction_counts(planted, [_knows("하람", "서하", "등불")], {}) == (1, 0)
+    assert direction_counts(planted[::-1], [_knows("하람", "서하", "등불")], {}) == (1, 0)
+    # 정답 셋·제안 셋을 어떤 순서로 적어도 같다 — 바른 짝 둘, 남은 정답 하나가 앎 주체만 틀린 제안을 받는다.
+    planted.append(PlantedKnowledge(knower="하람", kind="knows", subject="도윤", fact_kind="possession",
+                                    values=["지도"], paragraph=1))
+    found = [_knows("도윤", "서하", "등불"), _knows("하람", "서하", "등불"), _knows("등대지기", "도윤", "지도")]
+    results = {
+        direction_counts(list(answers), list(extracted), {})
+        for answers in itertools.permutations(planted) for extracted in itertools.permutations(found)
+    }
+    assert results == {(3, 1)}
 
 
 # ── 지표 식(결과 묶음 위) ──────────────────────────────────────────────

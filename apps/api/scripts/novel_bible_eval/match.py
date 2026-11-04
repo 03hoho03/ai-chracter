@@ -8,6 +8,7 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from api.novel_bible.core.keys import normalize_name, predicate_norm
 from api.novel_bible.core.types import Proposal, Proposition
@@ -140,27 +141,45 @@ def matched_knowledge(planted: Sequence[PlantedKnowledge], found: Sequence[Extra
     return len(used)
 
 
+def _planted_order(knowledge: PlantedKnowledge) -> tuple[Any, ...]:
+    return (knowledge.knower, knowledge.subject, knowledge.kind, knowledge.fact_kind, knowledge.attribute or "",
+            tuple(knowledge.values), knowledge.holds)
+
+
+def _found_order(candidate: ExtractedKnowledge) -> tuple[Any, ...]:
+    proposition = candidate.proposition
+    return (candidate.knower, candidate.kind, proposition.subject, proposition.kind, proposition.attribute or "",
+            proposition.value, proposition.holds)
+
+
 def direction_counts(
     planted: Sequence[PlantedKnowledge], found: Sequence[ExtractedKnowledge], aliases: Aliases
 ) -> tuple[int, int]:
     """(분모 D, 분자 E). D 는 골격이 같은 심은 지식(앎 주체 ≠ 명제 주어)에 대응한 제안 — 이름이 바르거나, 앎 주체와 명제 주어가
     뒤바뀌었거나, 명제 주어는 맞고 앎 주체만 틀린 것. E 는 D 중 뒤의 둘이라 E ⊂ D 가 정의로 성립한다. 정답 하나에는 제안 하나만
-    대응하고 바른 짝을 먼저 고른다. 자기 자신에 대한 앎은 뒤바뀜이 정의되지 않아 뺀다."""
+    대응한다. 자기 자신에 대한 앎은 뒤바뀜이 정의되지 않아 뺀다.
+
+    짝은 화 안에서 전역으로 세 번에 나눠 맺는다 — 모든 정답의 바른 짝을 먼저, 남은 것끼리 뒤바뀜, 그다음 앎 주체만 틀림. 정답
+    하나씩 바른 짝부터 찾으면, 같은 명제를 두 인물이 아는 화에서 앞 정답이 뒤 정답의 바른 짝을 제 쪽의 앎 주체 오류로 먼저
+    가져가 정답을 적은 순서에 따라 오류 수가 갈린다. 각 번은 정답과 제안을 내용 순으로 늘어놓고 돌므로 입력 순서가 결과를
+    바꾸지 않는다."""
+    targets = sorted((k for k in planted if not _same(k.subject, k.knower, aliases)), key=_planted_order)
+    candidates = sorted(found, key=_found_order)
+    paired: dict[int, str] = {}  # 정답 차례 → 맺은 방향
     used: set[int] = set()
-    denominator = errors = 0
-    for knowledge in planted:
-        if _same(knowledge.subject, knowledge.knower, aliases):
-            continue
-        candidates = [
-            (index, _direction(knowledge, candidate, aliases))
-            for index, candidate in enumerate(found)
-            if index not in used and _skeleton(knowledge, candidate)
-        ]
-        for wanted in ("correct", "swapped", "wrong_knower"):
-            hit = next((index for index, direction in candidates if direction == wanted), None)
+    for wanted in ("correct", "swapped", "wrong_knower"):
+        for number, knowledge in enumerate(targets):
+            if number in paired:
+                continue
+            hit = next(
+                (
+                    index for index, candidate in enumerate(candidates)
+                    if index not in used and _skeleton(knowledge, candidate)
+                    and _direction(knowledge, candidate, aliases) == wanted
+                ),
+                None,
+            )
             if hit is not None:
                 used.add(hit)
-                denominator += 1
-                errors += wanted != "correct"
-                break
-    return denominator, errors
+                paired[number] = wanted
+    return len(paired), sum(direction != "correct" for direction in paired.values())
