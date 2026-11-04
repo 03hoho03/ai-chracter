@@ -23,10 +23,10 @@ def _quote(block: uuid.UUID, start: int, end: int) -> VerifiedQuote:
     return VerifiedQuote(block_id=block, char_start=start, char_end=end, quote_sha256="0" * 64)
 
 
-def _fact(key: str, quote: VerifiedQuote, *, subject: str = "서하") -> ItemDraft:
+def _fact(key: str, quote: VerifiedQuote, *more: VerifiedQuote, subject: str = "서하") -> ItemDraft:
     proposition = Proposition(subject=subject, kind="possession", attribute=None, value="낡은 등불", holds=True)
     return ItemDraft(
-        local_key=key, table="fact", fields={}, quotes=(quote,), proposition=proposition,
+        local_key=key, table="fact", fields={}, quotes=(quote, *more), proposition=proposition,
         names={"subject": (EntityName(kind="character", name=subject),)},
     )
 
@@ -81,6 +81,19 @@ def test_claims_merge_across_adapters_and_keep_every_distinct_quote() -> None:
     assert fact.adapters == {ALPHA: [0], BETA: [1]}
     assert by_slot["knowledge"].adapters == {ALPHA: [0]}
     assert by_slot["events"].adapters == {BETA: [0]}
+
+
+def test_the_order_adapters_are_merged_in_does_not_change_their_precision() -> None:
+    # 알파가 서로 다른 인용 셋을 붙여도 베타의 인용은 실린다 — 주장 전체에 셋 상한을 걸면 뒤에 합친 어댑터는 인용이 없어
+    # 맞는 주장도 틀림으로 센다.
+    alpha = _outcome(("facts", (_fact("f1", _quote(B1, 0, 2), _quote(B1, 4, 9), _quote(B1, 10, 13)),)))
+    beta = _outcome(("facts", (_fact("f1", _quote(B2, 8, 11)),)))
+    scores = []
+    for runs in ({ALPHA: [alpha], BETA: [beta]}, {BETA: [beta], ALPHA: [alpha]}):
+        (claim,) = labels.merge_claims(runs, TEXTS)
+        labeled = [labels.LabeledClaim(claim, labels.Label(verdict="correct", quotes=["supported"] * len(claim.quotes)))]
+        scores.append({name: (r.k, r.n) for name in (ALPHA, BETA) for r in [metrics.label_precision(labeled, name)]})
+    assert scores == [{ALPHA: (1, 1), BETA: (1, 1)}] * 2
 
 
 def _fill(sheet: list[dict[str, Any]], key: list[labels.Claim]) -> dict[str, Any]:

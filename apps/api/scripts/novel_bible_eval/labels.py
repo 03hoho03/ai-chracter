@@ -7,7 +7,7 @@
 - 사건: (화, 걸친 문단 집합, 현실성, 등장 인물 집합)
 별칭이 달라 갈라지는 주장은 합치지 않는다 — 라벨 수가 조금 늘 뿐이고, 잘못 합치면 서로 다른 주장이 한 라벨을 나눠 갖는다.
 
-시트에는 주장의 서로 다른 근거 인용(블록 글에서 위치로 잘라 낸 원문, 최대 셋)이 실린다. 그래서 시트와 결과는 측정 실행 폴더
+시트에는 주장의 서로 다른 근거 인용(블록 글에서 위치로 잘라 낸 원문, 어댑터마다 최대 셋)이 실린다. 그래서 시트와 결과는 측정 실행 폴더
 (저장소가 추적하지 않는 곳)에만 두고 커밋·게시하지 않는다. 어느 어댑터가 어느 인용을 붙였는지는 시트가 아니라 옆의 열쇠 파일에
 있다 — 라벨하는 사람이 어댑터를 알면 판정이 기운다."""
 
@@ -30,6 +30,8 @@ from novel_bible_eval.run import ChapterOutcome
 
 Verdict = Literal["correct", "wrong", "direction", "unknown"]
 QuoteMark = Literal["supported", "unsupported"]
+# 어댑터 하나가 한 주장에 싣는 인용 수 상한. 주장 전체에 상한을 걸면 앞에 합친 어댑터가 자리를 채워 뒤 어댑터의 인용이 빠지고,
+# 그 어댑터의 주장은 받침을 볼 인용이 없어 틀림으로 센다 — 합치는 순서가 정밀도를 바꾼다.
 _MAX_QUOTES = 3
 # 차단 규칙이 읽는 사실 종류 — 핵심 사실 정밀도가 이것으로 좁힌다. 속성은 불변이라고 표시된 것만 든다.
 _CORE_KINDS = frozenset({"life", "presence", "possession", "ability"})
@@ -37,7 +39,8 @@ _SLOT_OF_TABLE = {"fact": "facts", "knowledge": "knowledge", "event": "events"}
 
 
 class Claim(BaseModel):
-    """`adapters` 는 어댑터마다 그 어댑터가 붙인 인용의 차례(`quotes` 안). 인용이 셋을 넘어 실리지 못한 어댑터는 빈 목록이다."""
+    """`adapters` 는 어댑터마다 그 어댑터가 붙인 서로 다른 인용(앞의 셋까지)의 차례(`quotes` 안). 인용을 붙이지 않은 어댑터는 빈
+    목록이다."""
 
     id: str
     chapter: int
@@ -124,11 +127,13 @@ def merge_claims(runs: Mapping[str, Sequence[ChapterOutcome]], block_texts: Mapp
                         continue
                     indices: list[int] = []
                     for quote in item.quotes:
+                        if len(indices) == _MAX_QUOTES:
+                            break
                         text = block_texts[str(quote.block_id)][quote.char_start:quote.char_end]
-                        if text not in claim.quotes and len(claim.quotes) < _MAX_QUOTES:
+                        if text not in claim.quotes:
                             claim.quotes.append(text)
-                        if text in claim.quotes:
-                            indices.append(claim.quotes.index(text))
+                        if (index := claim.quotes.index(text)) not in indices:
+                            indices.append(index)
                     claim.adapters[adapter] = indices
     return list(merged.values())
 
