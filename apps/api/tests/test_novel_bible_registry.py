@@ -1,5 +1,5 @@
-"""정본 기억 등록부와 규칙 목록. 등록부에는 코드가 들어온 슬롯만 있고 규칙 목록은 비어 있다 — 운영 이미지는 "슬롯이 빠진
-엔진"을 그대로 싣고, 빠진 슬롯은 작업이 만들어지지 않는다."""
+"""정본 기억 등록부와 규칙 목록. 등록부는 슬롯 id 넷을 모두 담고 규칙 목록은 아직 비어 있다. 슬롯 하나를 뺀 등록부로도 확정이
+도는지(남은 슬롯의 결과가 같은지)는 지식 슬롯 테스트의 슬롯 독립 확정이 본다."""
 
 from typing import get_args
 
@@ -9,12 +9,12 @@ from api.novel_bible.rules import RULES
 from novel_bible_fakes import FakeSource, events_slot, fake_registry
 
 
-def test_registered_slots_are_ids_the_job_table_accepts() -> None:
-    assert set(REGISTRY.ids()) <= set(get_args(SlotId))
+def test_the_registry_holds_every_slot_id_the_job_table_accepts() -> None:
+    """깨지는 시나리오: 슬롯 id 를 하나 더 늘리고 등록부에 싣지 않으면 그 슬롯은 작업이 만들어지지 않아 조용히 꺼진 채로 돈다."""
+    assert set(REGISTRY.ids()) == set(get_args(SlotId))
 
 
-def test_no_slot_or_rule_is_registered_before_their_code_arrives() -> None:
-    assert set(REGISTRY.extracting) == {"events", "facts"}
+def test_no_rule_is_registered_before_its_code_arrives() -> None:
     assert list(RULES) == []
 
 
