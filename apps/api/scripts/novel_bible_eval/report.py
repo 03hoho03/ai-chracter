@@ -1,8 +1,14 @@
 """보고서 — 지표마다 관측치·k/n·구간·합격선 대조를 JSON 과 마크다운으로 쓴다. 측정 실행 폴더에만 두고 커밋하지 않는다.
 
 합격선(관측치로 판정): 핵심 사실 정밀도 ≥ 0.90, 사실 재현율 ≥ 0.70(반복 평균), 인물 지식 방향 오류 ≤ 3%(반복 평균), 차단 오탐
-0건, 판정 모델과 사람의 κ ≥ 0.6. 합격 여부와 무관하게 운영에서 켜지 않는다. 정본 불완전으로 뺀 탐침이 많으면(충돌·비충돌 어느
-쪽이든 25% 초과) 탐침이 드는 지표를 판정하지 않는다(`pass` 가 null)."""
+0건, 판정 모델과 사람의 κ ≥ 0.6. 합격 여부와 무관하게 운영에서 켜지 않는다.
+
+판정 불가(`pass` 가 null, `undetermined` 에 까닭)는 셋이다.
+- 분모가 0 이다 — 어느 합격 지표든 관측치가 없다.
+- 실행이 멈췄다(원장 멈춤이나 끊김) — 합성 세트의 합격 지표 모두. 설계한 표본(반복 수·탐침 수)이 다 돌지 않은 실행이다.
+- 판정에 쓰지 못한 확정이 25% 를 넘는다(기본 화의 실패, 충돌·비충돌 탐침의 실패 + 정본 불완전) — 차단 오탐만. 재현율은 실패한
+  화의 정답도 분모에 두어 실패가 놓침으로 들고, 방향 오류는 실패한 화에서 짝이 생기지 않아 분자·분모가 함께 빠지므로 이 검사를
+  두지 않는다. 확정 실패율은 갈래마다 차단 오탐 바로 뒤에 지표로 싣는다."""
 
 import json
 from collections.abc import Sequence
@@ -33,6 +39,14 @@ def _entry(ratio: Ratio, *, error_rate: bool = False) -> dict[str, Any]:
     return entry
 
 
+def _verdict(entry: dict[str, Any], observed: bool | None, *, halted: str | None, unusable: bool = False) -> dict[str, Any]:
+    """합격 칸을 채운다. 판정할 수 없으면 `pass` 를 null 로 두고 그 까닭을 `undetermined` 에 적는다."""
+    reason = (
+        "멈춘 실행" if halted else "분모 0" if observed is None else "실패·정본 불완전 25% 초과" if unusable else None
+    )
+    return {**entry, "pass": None if reason else observed, **({"undetermined": reason} if reason else {})}
+
+
 def _mean(ratios: Sequence[Ratio]) -> float | None:
     values = [ratio.value for ratio in ratios if ratio.value is not None]
     return sum(values) / len(values) if values else None
@@ -46,24 +60,28 @@ def synthetic_report(
     for slot, ratios in metrics.recall(eval_set, outcomes).items():
         mean = _mean(ratios)
         floor = RECALL_FLOOR.get(slot)
-        out[f"recall.{slot}"] = {
-            "repeats": [_entry(ratio) for ratio in ratios], "mean": mean,
-            "pass": None if floor is None or mean is None else mean >= floor,
-        }
+        entry = {"repeats": [_entry(ratio) for ratio in ratios], "mean": mean, "pass": None}
+        out[f"recall.{slot}"] = entry if floor is None else _verdict(
+            entry, None if mean is None else mean >= floor, halted=halted
+        )
     direction = metrics.direction_error(eval_set, outcomes)
     if direction is not None:
         mean = _mean(direction)
-        out["direction_error"] = {
-            "repeats": [_entry(ratio, error_rate=True) for ratio in direction], "mean": mean,
-            "pass": None if mean is None else mean <= DIRECTION_CEILING,
-        }
+        out["direction_error"] = _verdict(
+            {"repeats": [_entry(ratio, error_rate=True) for ratio in direction], "mean": mean},
+            None if mean is None else mean <= DIRECTION_CEILING, halted=halted,
+        )
     blocking = metrics.blocking(eval_set, outcomes)
-    judged = not blocking.undeterminable
-    out["block_false_positive"] = {
-        **_entry(blocking.false_positive, error_rate=True),
-        "by_chapter": _entry(blocking.false_positive_by_chapter, error_rate=True),
-        "pass": blocking.false_positive.k == 0 if judged else None,
-    }
+    false_positive = blocking.false_positive
+    out["block_false_positive"] = _verdict(
+        {
+            **_entry(false_positive, error_rate=True),
+            "by_chapter": _entry(blocking.false_positive_by_chapter, error_rate=True),
+        },
+        false_positive.k == 0 if false_positive.n else None, halted=halted, unusable=blocking.undeterminable,
+    )
+    for branch, ratio in blocking.failed.items():
+        out[f"commit_failure.{branch}"] = _entry(ratio, error_rate=True)
     out["block_recall"] = _entry(blocking.recall)
     out["warning_recall"] = _entry(blocking.warning_recall)
     out["quote_rate"] = _entry(metrics.quote_rate(outcomes))
@@ -76,9 +94,8 @@ def synthetic_report(
         "blocking": {
             "by_rule": blocking.by_rule,
             "by_group": {group: _entry(ratio, error_rate=True) for group, ratio in blocking.by_group.items()},
-            "probes": blocking.totals,
+            "attempted": blocking.totals,
             "excluded": blocking.excluded,
-            "failed": blocking.failed,
             "undeterminable": blocking.undeterminable,
             "probe_rows_left": sum(outcome.rows_left for outcome in outcomes),
         },
@@ -94,9 +111,9 @@ def label_report(labeled: Sequence[LabeledClaim]) -> dict[str, Any]:
         core = metrics.label_precision(labeled, adapter, core_only=True)
         out[adapter] = {
             "precision": _entry(metrics.label_precision(labeled, adapter)),
-            "core_fact_precision": {
-                **_entry(core), "pass": None if core.value is None else core.value >= CORE_PRECISION_FLOOR
-            },
+            "core_fact_precision": _verdict(
+                _entry(core), None if core.value is None else core.value >= CORE_PRECISION_FLOOR, halted=None
+            ),
             "direction_error": _entry(metrics.label_direction_error(labeled, adapter), error_rate=True),
         }
     return {"claims": len(labeled), "adapters": out}
@@ -110,17 +127,26 @@ def _cell(entry: dict[str, Any]) -> str:
     return f"{value} | {entry['k']}/{entry['n']} | {bounds}"
 
 
+def _verdict_cell(entry: dict[str, Any]) -> str:
+    verdict = entry.get("pass")
+    if verdict is None:
+        return f"판정 불가 — {entry['undetermined']}" if "undetermined" in entry else "-"
+    return "합격" if verdict else "미달"
+
+
 def to_markdown(report: dict[str, Any]) -> str:
+    """반복이 있는 지표는 반복별 행 뒤에 판정 근거인 평균 행을 두고, 합격 칸은 평균 행에만 채운다."""
     lines = [f"# 정본 기억 측정 — {report['adapter']}", ""]
     if report.get("halted"):
-        lines += [f"원장 멈춤: {report['halted']}", ""]
+        lines += [f"실행 멈춤: {report['halted']}", ""]
     lines += ["| 지표 | 관측 | k/n | 구간 | 합격 |", "|---|---|---|---|---|"]
     for name, entry in report["metrics"].items():
-        rows = [(f"{name} (반복 {i})", row) for i, row in enumerate(entry["repeats"], 1)] if "repeats" in entry \
-            else [(name, entry)]
-        for label, row in rows:
-            verdict = entry.get("pass")
-            lines.append(f"| {label} | {_cell(row)} | {'-' if verdict is None else ('합격' if verdict else '미달')} |")
+        if "repeats" not in entry:
+            lines.append(f"| {name} | {_cell(entry)} | {_verdict_cell(entry)} |")
+            continue
+        lines += [f"| {name} (반복 {i}) | {_cell(row)} | - |" for i, row in enumerate(entry["repeats"], 1)]
+        mean = "-" if entry["mean"] is None else f"{entry['mean']:.3f}"
+        lines.append(f"| {name} (평균) | {mean} | - | - | {_verdict_cell(entry)} |")
     lines += ["", "```json", json.dumps({k: v for k, v in report.items() if k != "metrics"}, ensure_ascii=False,
                                        indent=2), "```", ""]
     return "\n".join(lines)

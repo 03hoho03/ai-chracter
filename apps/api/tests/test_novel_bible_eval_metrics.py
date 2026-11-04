@@ -19,6 +19,7 @@ from novel_bible_eval.match import (
     matched_events,
     matched_facts,
 )
+from novel_bible_eval.report import synthetic_report, to_markdown
 from novel_bible_eval.run import ChapterOutcome, JobOutcome
 from novel_bible_eval.spec import PlantedEvent, PlantedFact, PlantedKnowledge, load_set
 
@@ -199,7 +200,9 @@ def test_blocking_counts_false_positives_and_drops_probes_with_an_incomplete_can
     assert {group: (r.k, r.n) for group, r in summary.by_group.items()} == {"A": (1, 1)}
     assert (summary.recall.k, summary.recall.n) == (0, 0)
     assert summary.excluded == {"conflict": 1, "warning": 1, "non_conflict": 1}
-    assert summary.failed == 1
+    assert {branch: (r.k, r.n) for branch, r in summary.failed.items()} == {
+        "base": (1, 3), "conflict": (0, 1), "non_conflict": (0, 2), "warning": (0, 1)
+    }
     assert summary.undeterminable  # 충돌 1/1, 비충돌 1/2 를 뺐다 — 25% 를 넘는다
 
 
@@ -218,6 +221,71 @@ def test_blocking_recall_needs_the_expected_rule_and_warning_recall_the_expected
     assert (summary.false_positive.k, summary.false_positive.n) == (0, 5)
     assert {group: (r.k, r.n) for group, r in summary.by_group.items()} == {"A": (0, 1), "C": (0, 1)}
     assert not summary.undeterminable
+
+
+def _clean_run() -> list[ChapterOutcome]:
+    return [
+        _outcome(1), _outcome(2), _outcome(3),
+        _outcome(4, probe="dead-returns"), _outcome(4, probe="unrelated-memory"),
+        _outcome(4, probe="harbor-memory"), _outcome(4, probe="rumor"),
+    ]
+
+
+def test_commits_that_never_reached_a_verdict_are_failures_and_too_many_leave_the_verdict_open() -> None:
+    eval_set = load_set(FIXTURE)
+    outcomes = _clean_run()
+    outcomes[2] = _outcome(3, "extracting")  # 끝 상태에 닿지 않은 확정은 막히지 않은 확정이 아니다
+    outcomes[6] = _outcome(4, "failed", probe="rumor")
+    summary = metrics.blocking(eval_set, outcomes)
+    # 막히지 않은 확정은 끝난 기본 화 둘 + 짝 화가 정본에 있는 비충돌 탐침 하나뿐이다.
+    assert (summary.false_positive.k, summary.false_positive.n) == (0, 3)
+    assert {branch: (r.k, r.n) for branch, r in summary.failed.items()} == {
+        "base": (1, 3), "conflict": (0, 1), "non_conflict": (1, 2), "warning": (0, 1)
+    }
+    assert summary.undeterminable  # 기본 화 실패 1/3 이 25% 를 넘는다
+
+    report = synthetic_report(eval_set, outcomes, [], adapter="fake")["metrics"]
+    # 관측 오탐은 0 이지만 판정하지 않고, 실패율이 그 바로 옆에 지표로 실린다.
+    assert report["block_false_positive"]["pass"] is None
+    assert report["block_false_positive"]["undetermined"] == "실패·정본 불완전 25% 초과"
+    assert (report["commit_failure.base"]["k"], report["commit_failure.base"]["n"]) == (1, 3)
+    names = list(report)
+    assert names[names.index("block_false_positive") + 1].startswith("commit_failure.")
+
+
+def test_a_run_whose_commits_all_failed_or_that_halted_gets_no_verdict() -> None:
+    eval_set = load_set(FIXTURE)
+    all_failed = synthetic_report(eval_set, [_outcome(n, "failed") for n in (1, 2, 3)], [], adapter="fake")
+    false_positive = all_failed["metrics"]["block_false_positive"]
+    assert (false_positive["k"], false_positive["n"], false_positive["pass"]) == (0, 0, None)
+    assert false_positive["undetermined"] == "분모 0"
+
+    clean = _clean_run()
+    clean[0] = _outcome(1, jobs=(JobOutcome(slot="facts", status="succeeded", attempts=1, failure_code=None,
+                                            proposal=Proposal(items=()).model_dump(mode="json"), calls=[]),))
+    finished = synthetic_report(eval_set, clean, [], adapter="fake")["metrics"]
+    assert finished["block_false_positive"]["pass"] is True
+    assert finished["recall.facts"]["pass"] is False  # 사실 0/2
+    halted = synthetic_report(eval_set, clean, [], adapter="fake", halted="합성 멈춤")["metrics"]
+    for name in ("block_false_positive", "recall.facts"):
+        assert halted[name]["pass"] is None
+        assert halted[name]["undetermined"] == "멈춘 실행"
+
+
+def test_the_markdown_puts_the_verdict_on_the_mean_row_of_a_repeated_metric() -> None:
+    eval_set = load_set(FIXTURE)
+    outcomes = [
+        _outcome(1, repeat=repeat, jobs=(JobOutcome(slot="facts", status="succeeded", attempts=1, failure_code=None,
+                                                    proposal=Proposal(items=()).model_dump(mode="json"), calls=[]),))
+        for repeat in (1, 2)
+    ]
+    rows = [line for line in to_markdown(synthetic_report(eval_set, outcomes, [], adapter="fake")).splitlines()
+            if line.startswith("| recall.facts")]
+    assert rows == [
+        "| recall.facts (반복 1) | 0.000 | 0/2 | Wilson [0.000, 0.658] | - |",
+        "| recall.facts (반복 2) | 0.000 | 0/2 | Wilson [0.000, 0.658] | - |",
+        "| recall.facts (평균) | 0.000 | - | - | 미달 |",
+    ]
 
 
 def test_the_quote_rate_counts_kept_items_against_items_dropped_for_their_quote() -> None:

@@ -32,8 +32,12 @@ from novel_bible_eval.spec import ChapterSpec, EvalSet
 
 _Z95 = 1.959963984540054
 _SYNTHETIC_SLOTS = ("events", "facts", "knowledge")
-# 한 어댑터에서 정본 불완전으로 뺀 탐침이 이 비율을 넘으면 탐침 지표를 판정하지 않는다.
+# 한 어댑터에서 판정에 쓰지 못한 확정이 이 비율을 넘으면 차단 지표를 판정하지 않는다 — 기본 화는 실패한 확정, 충돌·비충돌
+# 탐침은 실패한 것과 정본 불완전으로 뺀 것을 합쳐 각각 본다.
 EXCLUDED_LIMIT = 0.25
+# 검사가 판정을 낸 끝 상태. 실패와 끝나지 않은 상태(작업 중·밀려남)는 검사에 닿지 못했으므로 막히지 않은 확정으로 세지 않고
+# 실패율에 넣는다.
+_JUDGED = ("committed", "blocked")
 
 
 @dataclass(frozen=True)
@@ -178,16 +182,18 @@ class BlockingSummary:
     recall: Ratio
     warning_recall: Ratio
     excluded: dict[str, int]
-    failed: int
+    failed: dict[str, Ratio]  # 확정 실패율 — 기본 화(`base`)·탐침 종류마다 검사에 닿지 못한 확정 / 시도한 확정
     undeterminable: bool
-    totals: dict[str, int] = field(default_factory=dict)
+    totals: dict[str, int] = field(default_factory=dict)  # 시도한 확정 수, `failed` 와 같은 갈래
 
 
 def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingSummary:
-    """차단 오탐률 = (차단된 기본 확정 + 차단된 비충돌 탐침) / (기본 확정 + 비충돌 탐침). 실패한 확정은 검사에 닿지 못했으므로
-    오탐 분모에서 빼고 따로 센다. 탐침은 기대는 기본 화(`depends_on`)가 첫 반복에서 하나라도 정본에 없으면 정본 불완전으로
-    오탐·차단 재현율·경고 재현율 어디에도 넣지 않는다 — 짝이 없으면 충돌 탐침은 막힐 수 없고 비충돌 탐침은 막히지 않을 수밖에
-    없어 넣으면 재현율은 내려가고 오탐은 0 쪽으로 기운다."""
+    """차단 오탐률 = (차단된 기본 확정 + 차단된 비충돌 탐침) / (기본 확정 + 비충돌 탐침). 막히지 않은 확정은 `committed` 만
+    센다. 실패했거나 끝 상태에 닿지 않은 확정은 검사에 닿지 못했으므로 오탐 분모에서 빼고 갈래마다 실패율로 센다. 탐침은 기대는
+    기본 화(`depends_on`)가 첫 반복에서 하나라도 정본에 없으면 정본 불완전으로 오탐·차단 재현율·경고 재현율 어디에도 넣지
+    않는다 — 짝이 없으면 충돌 탐침은 막힐 수 없고 비충돌 탐침은 막히지 않을 수밖에 없어 넣으면 재현율은 내려가고 오탐은 0 쪽으로
+    기운다. 실패한 확정을 빼기만 하면 오탐 분모가 조용히 줄어 실패가 몰린 실행이 오탐 0 으로 읽히므로, 기본 화의 실패나 충돌·비충돌
+    탐침의 실패 + 정본 불완전이 25% 를 넘으면 판정 불가로 표시한다."""
     probes = {probe.key: probe for novel in eval_set.novels for probe in novel.probes}
     canon = {(o.novel, o.ordinal) for o in outcomes if o.probe is None and o.repeat == 1 and o.status == "committed"}
     population: list[ChapterOutcome] = []
@@ -198,10 +204,12 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
     warning: list[tuple[int, int]] = []
     excluded: Counter[str] = Counter()
     totals: Counter[str] = Counter()
-    failed = 0
+    failed: Counter[str] = Counter()
     for outcome in outcomes:
-        if outcome.status == "failed":
-            failed += 1
+        branch = "base" if outcome.probe is None else probes[outcome.probe].kind
+        totals[branch] += 1
+        if outcome.status not in _JUDGED:
+            failed[branch] += 1
             continue
         blocked = outcome.status == "blocked"
         if outcome.probe is None:
@@ -210,7 +218,6 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
             base_units[key] = base_units.get(key, False) or blocked
             continue
         probe = probes[outcome.probe]
-        totals[probe.kind] += 1
         if not all((outcome.novel, ordinal) in canon for ordinal in probe.depends_on):
             excluded[probe.kind] += 1
         elif probe.kind == "non_conflict":
@@ -226,7 +233,8 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
         if outcome.status == "blocked":
             rules.update(set(outcome.block_rules))
     over = any(
-        totals[kind] and excluded[kind] / totals[kind] > EXCLUDED_LIMIT for kind in ("conflict", "non_conflict")
+        totals[kind] and (failed[kind] + excluded[kind]) / totals[kind] > EXCLUDED_LIMIT
+        for kind in ("base", "conflict", "non_conflict")
     )
     return BlockingSummary(
         false_positive=_ratio([(int(o.status == "blocked"), 1) for o in population]),
@@ -236,7 +244,7 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
         recall=_ratio(conflict),
         warning_recall=_ratio(warning),
         excluded=dict(excluded),
-        failed=failed,
+        failed={branch: Ratio(failed[branch], count) for branch, count in sorted(totals.items())},
         undeterminable=over,
         totals=dict(totals),
     )
