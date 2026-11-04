@@ -21,12 +21,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core.config import settings
 from api.db.models import ChatMemoryFact, ChatRoomMemorySnapshot, Novel, NovelChapter, NovelChapterRevision
 from api.db.models.novel_bible import (
+    ENTITY_NAME_MAX,
     NovelBibleAdaptationCandidate,
     NovelBibleCommit,
     NovelBibleEntity,
     NovelBibleEvidence,
     NovelBibleExpiration,
     NovelBibleFinding,
+    NovelBibleJob,
 )
 from api.db.models.novel_bible_events import NovelBibleEvent
 from api.db.models.novel_bible_facts import NovelBibleFact
@@ -35,6 +37,7 @@ from api.db.models.prompt import PromptSection
 from api.novel_bible.core.confirm import Actor, confirm
 from api.novel_bible.core.contracts import AdapterCapabilities, BibleModelAdapter, PromptSource, Registry, Slot
 from api.novel_bible.core.keys import StateKey, fact_key, state_key
+from api.novel_bible.core.jobs import NAME_TOO_LONG
 from api.novel_bible.core.known import KIND_LABELS
 from api.novel_bible.core.pipeline import run_until_idle
 from api.novel_bible.core.queries import facts_true_at, revision_at
@@ -651,6 +654,43 @@ async def test_a_fact_about_a_thing_commits_under_an_object_entity_not_a_charact
     assert fact.fact_key == fact_key(sword, "attribute", "날", "무딤", True)
     kinds = (await db_session.scalars(select(NovelBibleEntity.kind).where(NovelBibleEntity.novel_id == novel.id))).all()
     assert kinds == ["object"]
+
+
+async def test_a_fact_whose_subject_or_target_name_is_over_the_limit_is_dropped_and_a_long_attribute_value_stays(
+    db_session: AsyncSession,
+) -> None:
+    """사실의 개체 이름 칸은 주어와 대상(소지·능력·관계) 둘뿐이고 둘 다 코어가 개체 하나로 푸는 칸이라, 정규화한 이름이 개체 이름
+    상한을 넘으면 그 항목을 버리고 확정은 이어진다. 상한과 같은 길이는 남는다. 속성 값은 개체에 잇지 않아 길어도 남는다. 깨지는
+    시나리오: 대상 이름이 코어가 개체 하나로 푸는 칸 밖에 있으면 코어가 그 이름만 빼고 항목을 남겨 대상 없는 소지 사실이 연결에서
+    확정 전체를 실패시키고, 속성 값을 개체 이름으로 두면 긴 속성 값 하나로 그 값이 이름 목록처럼 빠진다."""
+    novel = await make_novel(db_session)
+    chapter, revision = await add_chapter(db_session, novel.id, 1, "하나가 검을 받는다.")
+    too_long, at_limit = "가" * (ENTITY_NAME_MAX + 1), "나" * ENTITY_NAME_MAX
+    quote = (1, "검을 받는다")
+    output = {"facts": [
+        _fact(too_long, "life", "alive", quote),
+        _fact("하나", "possession", too_long, quote),
+        _fact("하나", "relation", too_long, quote, attribute="친구"),
+        _fact(at_limit, "life", "alive", quote),
+        _fact("하나", "attribute", too_long, quote, attribute="별명"),
+    ]}
+
+    commit_id = await _confirm_and_run(
+        db_session, chapter, revision, ScriptedAdapter({"facts.extract": [output]}), _registry(events=False)
+    )
+
+    assert await _status(db_session, commit_id) == "committed"
+    proposal = await db_session.scalar(
+        select(NovelBibleJob.proposal).where(NovelBibleJob.commit_id == commit_id, NovelBibleJob.slot == "facts")
+    )
+    assert proposal is not None and proposal["dropped"] == {NAME_TOO_LONG: 3}
+    assert [(fact.kind, fact.value) for fact in await _facts(db_session, chapter.id)] == [
+        ("attribute", too_long), ("life", "alive"),
+    ]
+    names = set(
+        await db_session.scalars(select(NovelBibleEntity.name_norm).where(NovelBibleEntity.novel_id == novel.id))
+    )
+    assert names == {"하나", at_limit}
 
 
 async def test_reconfirming_expires_the_chapters_facts_and_a_new_row_supersedes_the_same_key(
