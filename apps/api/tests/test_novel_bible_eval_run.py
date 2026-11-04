@@ -6,17 +6,20 @@
 
 import json
 from pathlib import Path
+from typing import Any, TypeVar
 
 import pytest
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import api.novel_bible.entry as entry
 from api.core.config import settings
 from api.db.models import Novel, NovelChapter, User
-from api.novel_bible.core.types import BibleSnapshot
+from api.novel_bible.core.types import BibleSnapshot, RenderedPrompt
+from api.novel_bible.ids import OperationKey
 from memory_eval.ledger import EXIT_BUDGET, Ledger
-from novel_bible_eval.__main__ import main, synthetic
+from novel_bible_eval.__main__ import extract, main, synthetic
 from novel_bible_eval.fake_llm import FakeLLM, Faults
 from novel_bible_eval.run import BudgetHalt, ChapterOutcome, Meter, extract_chapters, run_set
 from novel_bible_eval.seed import EVAL_EMAIL_DOMAIN, seed_novel
@@ -25,6 +28,26 @@ from novel_bible_fakes import FakeRule, savepoint_factory
 
 FIXTURE = Path(__file__).parent / "fixtures" / "novel_bible_eval" / "small_set.json"
 NOVEL = "synthetic-1"
+T = TypeVar("T", bound=BaseModel)
+
+
+class _Cut(BaseException):
+    """Ctrl-C 처럼 코어가 작업 실패로 삼키지 않는 끊김."""
+
+
+class _CutAfter(FakeLLM):
+    """`calls` 번 부른 뒤의 호출에서 끊긴다."""
+
+    def __init__(self, eval_set: Any, *, calls: int) -> None:
+        super().__init__(eval_set)
+        self._limit = calls
+
+    async def structured(
+        self, prompt: RenderedPrompt, schema: type[T], *, records: list[dict[str, Any]], stage: OperationKey
+    ) -> T:
+        if self.calls == self._limit:
+            raise _Cut
+        return await super().structured(prompt, schema, records=records, stage=stage)
 
 
 @pytest.fixture(autouse=True)
@@ -171,3 +194,56 @@ async def test_a_call_whose_model_the_price_table_does_not_know_stops_the_run(
     with pytest.raises(BudgetHalt, match="단가"):
         await run_set(savepoint_factory(db_session), meter.wrap(fake.resolver()), eval_set, slots=fake.slots)
     assert fake.calls == 1  # 원가를 모르는 호출을 다시 부르지 않는다
+
+
+async def test_a_ledger_write_that_fails_for_any_reason_stops_the_run(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    eval_set = load_set(FIXTURE)
+    fake = FakeLLM(eval_set)
+    ledger = Ledger(tmp_path / "ledger.jsonl", cap_usd=60, halt_usd=50, bundle="ci")
+
+    def unwritable(**_: object) -> None:
+        raise OSError("합성 쓰기 실패")
+
+    monkeypatch.setattr(ledger, "append", unwritable)
+    meter = Meter(ledger=ledger, estimate_usd=1)
+    with pytest.raises(BudgetHalt, match="합성 쓰기 실패"):
+        await run_set(savepoint_factory(db_session), meter.wrap(fake.resolver()), eval_set, slots=fake.slots)
+    assert fake.calls == 1  # 원장에 적지 못한 호출을 작업 재시도로 다시 부르지 않는다
+
+
+async def test_an_interrupted_run_still_writes_the_chapters_it_finished(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    eval_set = load_set(FIXTURE)
+    fake = _CutAfter(eval_set, calls=2)
+    meter = Meter()
+    run_dir = tmp_path / "run"
+    with pytest.raises(_Cut):
+        await synthetic(
+            savepoint_factory(db_session), meter.wrap(fake.resolver()), eval_set, run_dir, adapter="fake",
+            meter=meter, slots=fake.slots,
+        )
+    assert [row["ordinal"] for row in json.loads((run_dir / "outcomes.json").read_text())] == [1, 2]
+    report = json.loads((run_dir / "report.json").read_text())
+    assert "_Cut" in report["halted"]
+    assert report["metrics"]["block_false_positive"]["pass"] is None
+
+
+async def test_a_halted_extraction_still_writes_the_chapters_it_finished(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    eval_set = load_set(FIXTURE)
+    factory = savepoint_factory(db_session)
+    async with factory() as session, session.begin():
+        seeded = await seed_novel(session, eval_set.novels[0])
+    # 호출 하나가 $20 이라 셋째 화의 호출은 부르기 전에 멈춘다.
+    fake = FakeLLM(eval_set, model="gemini-3.5-flash-lite", prompt_tokens=0, output_tokens=8_000_000)
+    meter = Meter(ledger=Ledger(tmp_path / "ledger.jsonl", cap_usd=60, halt_usd=50, bundle="ci"), estimate_usd=20)
+    code = await extract(
+        factory, meter.wrap(fake.resolver()), seeded.novel_id, tmp_path / "labels", adapter="fake", count=3
+    )
+    assert code == EXIT_BUDGET
+    written = json.loads((tmp_path / "labels" / "extract-fake.json").read_text())
+    assert [(row["ordinal"], row["status"]) for row in written] == [(1, "committed"), (2, "committed")]

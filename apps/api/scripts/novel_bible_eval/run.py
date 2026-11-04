@@ -72,7 +72,8 @@ class BudgetHalt(BaseException):
 @dataclass
 class Meter:
     """어댑터 호출마다 시도 결과(성공은 None, 실패는 사유)를 세고, 원장이 있으면 견적으로 자리를 잡은 뒤 호출 기록 원소마다
-    원가를 적는다. 판정 호출도 같은 해석기를 지나므로 함께 센다."""
+    원가를 적는다. 이 해석기를 지나는 것은 추출 호출뿐이다. 판정 호출은 아직 없고, 지금 검사 단계는 해석기를 받지 않는다 —
+    검사 단계에 판정이 들어오면 그 호출이 이 해석기(`wrap`)를 지나게 해야 원장에 들고 멈춤 선을 지킨다."""
 
     ledger: Ledger | None = None
     estimate_usd: float = 0.0
@@ -90,7 +91,9 @@ class Meter:
             raise BudgetHalt(str(error)) from error
 
     def charge(self, stage: str, records: list[dict[str, Any]]) -> None:
-        """단가표에 없는 모델의 호출이면 멈춘다 — 원가를 모르는 유료 호출을 이어 부르지 않는다(그 호출 하나는 이미 나갔다)."""
+        """원장에 적지 못하면 무엇 때문이든 멈춘다 — 단가표에 없는 모델, 원장 파일 쓰기 실패, 토큰 칸 꼴 오류 모두. 원장에 적히지
+        않은 유료 호출을 이어 부르지 않는다(그 호출 하나는 이미 나갔다). `Exception` 으로 올리면 코어의 작업 실행이 작업 실패로
+        삼켜 다시 부르고, 그 호출들은 원장에 적히지 않아 멈춤 선에 다가가지 않는다."""
         if self.ledger is None:
             return
         for record in records:
@@ -103,8 +106,8 @@ class Meter:
                     output_tokens=int(record.get("outputTokens") or 0),
                     thoughts_tokens=int(record.get("thoughtsTokens") or 0),
                 )
-            except KeyError as error:
-                raise BudgetHalt(f"원가를 모르는 호출이라 멈춘다 — {error}") from error
+            except Exception as error:
+                raise BudgetHalt(f"원장에 적지 못한 호출이라 멈춘다 — {type(error).__name__}: {error}") from error
 
     def wrap(self, resolver: AdapterResolver) -> AdapterResolver:
         return lambda operation: _MeteredAdapter(resolver(operation), self)
@@ -243,10 +246,11 @@ async def run_set(
 
 async def extract_chapters(
     factory: SessionFactory, resolver: AdapterResolver, novel_id: uuid.UUID, *, count: int,
-    slots: frozenset[SlotId] | None = None,
+    slots: frozenset[SlotId] | None = None, outcomes: list[ChapterOutcome] | None = None,
 ) -> list[ChapterOutcome]:
     """이미 있는 소설(사람 라벨용 사본)의 앞 `count` 화를 화마다 최신 개정으로 차례로 확정한다. 차단이 나도 다음 화로 간다 —
-    라벨은 확정 항목이 아니라 작업의 추출 제안을 대상으로 한다."""
+    라벨은 확정 항목이 아니라 작업의 추출 제안을 대상으로 한다. 결과는 `outcomes` 에 화마다 더한다 — 중간에 멈춰도 끝난 화의
+    결과가 남는다."""
     async with factory() as session:
         rows = (
             await session.execute(
@@ -268,11 +272,11 @@ async def extract_chapters(
             chapters.append(
                 SeededChapter(row.ordinal, row.id, row.batch_id, revision.id, tuple(revision.block_ids))
             )
-    outcomes = []
+    collected = outcomes if outcomes is not None else []
     for chapter in chapters:
         commit_id = await _confirm(factory, resolver, novel_id, chapter, slots)
         async with factory() as session:
-            outcomes.append(
+            collected.append(
                 await _collect(session, commit_id, novel=str(novel_id), repeat=1, chapter=chapter, probe=None)
             )
-    return outcomes
+    return collected

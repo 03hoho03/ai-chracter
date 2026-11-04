@@ -7,9 +7,11 @@
 
 무엇이든 하기 전에 DB 가 로컬인지 본다 — 운영·공유 DB 에 측정 소설을 심거나 사용자 원고를 모델에 보내지 않게. 모델을 부르는
 명령(`synthetic`·`extract`)은 원장을 요구한다: 호출마다 견적으로 자리를 잡고 실제 호출 기록으로 원가를 적으며, 묶음 누적이
-멈춤 선에 닿을 호출은 부르기 전에 멈추고 그때까지의 결과로 보고서를 쓴 뒤 종료 코드 20 으로 끝난다. 상한·멈춤 선·견적은 승인
+멈춤 선에 닿을 호출은 부르기 전에 멈추고 그때까지의 결과를 쓴 뒤 종료 코드 20 으로 끝난다. 다른 이유로 끊겨도(Ctrl-C·DB 오류)
+끝난 부분까지 쓰고 예외를 다시 올린다 — 낸 돈은 원장에 남으므로 결과를 버리면 다시 돌려야 한다. 상한·멈춤 선·견적은 승인
 값이라 기본값 없이 인자로 받는다. 어댑터 배정은 이 프로세스의 env(`NOVEL_BIBLE_ADAPTERS`)가 정한다 — `--adapter` 는 보고서에
-적는 이름이다. 판정 모델 호출(정본 기억의 충돌 판정)도 같은 해석기를 지나 원장에 든다."""
+적는 이름이다. 판정 모델 호출(정본 기억의 충돌 판정)은 아직 없다. 검사 단계에 판정이 들어오면 그 호출이 이 해석기를 지나게 해야
+원장에 든다(지금 검사 단계는 해석기를 받지 않는다)."""
 
 import argparse
 import asyncio
@@ -46,8 +48,39 @@ async def synthetic(
         await run_set(factory, resolver, eval_set, repeats=repeats, slots=slots, outcomes=outcomes)
     except BudgetHalt as halt:
         halted = str(halt)
-    write_report(synthetic_report(eval_set, outcomes, meter.attempts, adapter=adapter, halted=halted), outcomes, run_dir)
+    except BaseException as error:
+        halted = f"끊김 — {type(error).__name__}: {error}"
+        raise
+    finally:
+        report = synthetic_report(eval_set, outcomes, meter.attempts, adapter=adapter, halted=halted)
+        write_report(report, outcomes, run_dir)
     return EXIT_BUDGET if halted else 0
+
+
+async def extract(
+    factory: SessionFactory, resolver: AdapterResolver, novel_id: uuid.UUID, run_dir: Path, *, adapter: str,
+    count: int, slots: frozenset[SlotId] | None = None,
+) -> int:
+    outcomes: list[ChapterOutcome] = []
+    try:
+        await extract_chapters(factory, resolver, novel_id, count=count, slots=slots, outcomes=outcomes)
+    except BudgetHalt as halt:
+        print(f"원장 멈춤: {halt} — 끝난 {len(outcomes)}화까지 썼다")
+        return EXIT_BUDGET
+    except BaseException as error:
+        print(f"끊김: {type(error).__name__} — 끝난 {len(outcomes)}화까지 썼다")
+        raise
+    finally:
+        _write_extract(outcomes, run_dir, adapter)
+    return 0
+
+
+def _write_extract(outcomes: list[ChapterOutcome], run_dir: Path, adapter: str) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / f"extract-{adapter}.json").write_text(
+        json.dumps([outcome.model_dump(mode="json") for outcome in outcomes], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def _outcomes(path: Path) -> list[ChapterOutcome]:
@@ -107,17 +140,9 @@ async def _run(args: argparse.Namespace) -> int:
                 factory, resolver, load_set(args.set), args.run_dir, adapter=args.adapter, meter=meter,
                 repeats=args.repeats, slots=slots,
             )
-        try:
-            outcomes = await extract_chapters(factory, resolver, args.novel_id, count=args.chapters, slots=slots)
-        except BudgetHalt as halt:
-            print(f"원장 멈춤: {halt}")
-            return EXIT_BUDGET
-        args.run_dir.mkdir(parents=True, exist_ok=True)
-        (args.run_dir / f"extract-{args.adapter}.json").write_text(
-            json.dumps([outcome.model_dump(mode="json") for outcome in outcomes], ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        return await extract(
+            factory, resolver, args.novel_id, args.run_dir, adapter=args.adapter, count=args.chapters, slots=slots
         )
-        return 0
     if args.command == "sheet":
         runs = {name: _outcomes(Path(path)) for name, path in (item.split("=", 1) for item in args.extract)}
         sheet, key = labels.write_sheet(labels.merge_claims(runs, await _block_texts(factory, runs)), args.out,
