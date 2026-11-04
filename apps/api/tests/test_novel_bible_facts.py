@@ -653,9 +653,10 @@ async def test_reconfirming_expires_the_chapters_facts_and_a_new_row_supersedes_
 async def test_known_attributes_are_current_immutable_attributes_of_entities_named_in_the_chapter(
     db_session: AsyncSession,
 ) -> None:
-    """정본 불변 속성 힌트는 지금 머리의 불변 속성 중 주어 이름(별칭 포함)이 이 화 원고에 나오는 것뿐이다. 깨지는 시나리오:
-    가변 속성이나 이 화에 안 나오는 인물의 속성까지 실으면 힌트가 화마다 커지고, 불변 속성이 빠지면 같은 값을 다른 표기로 내
-    표기 차이 경고가 는다."""
+    """정본 불변 속성 힌트는 지금 머리의 다른 화 불변 속성 중 주어 이름(별칭 포함)이 이 화 원고에 나오는 것뿐이다. 깨지는
+    시나리오: 가변 속성이나 이 화에 안 나오는 인물의 속성까지 실으면 힌트가 화마다 커지고, 불변 속성이 빠지면 같은 값을 다른
+    표기로 내 표기 차이 경고가 늘며, 이 화 자신의 행을 실으면 값을 고쳐 다시 확정할 때 곧 만료될 옛 값이 같은 표기로 쓰라는
+    힌트가 된다."""
     novel = await make_novel(db_session)
     first, first_revision = await add_chapter(db_session, novel.id, 1, "하나는 갈색 눈이다.\n\n둘은 키가 크다.")
     output = {"facts": [
@@ -669,10 +670,13 @@ async def test_known_attributes_are_current_immutable_attributes_of_entities_nam
 
     named = await FactsSlot().build_input(db_session, _view(db_session, second, second_revision))
     unnamed = await FactsSlot().build_input(db_session, _view(db_session, third, third_revision))
+    edited = await add_revision(db_session, first.id, "하나는 푸른 눈이다.\n\n둘은 키가 크다.")
+    own = await FactsSlot().build_input(db_session, _view(db_session, first, edited))
 
-    assert isinstance(named, FactsInput) and isinstance(unnamed, FactsInput)
+    assert isinstance(named, FactsInput) and isinstance(unnamed, FactsInput) and isinstance(own, FactsInput)
     assert named.known_attributes == [KnownAttribute(subject="하나", attribute="눈 색", value="갈색")]
     assert unnamed.known_attributes == []
+    assert own.known_attributes == []
     assert {name.name for name in named.known} >= {"하나", "둘"}
 
 
@@ -723,27 +727,66 @@ async def test_source_and_play_differences_become_adaptation_candidates_and_the_
     ) == 0
 
 
+async def test_reconfirming_expires_the_chapters_adaptation_candidates(db_session: AsyncSession) -> None:
+    """원작·플레이 차이가 있는 화를 다시 확정하면 그 화의 앞 각색 후보가 만료되고, 새 확정이 새 사실 행에 단 후보만 현재다.
+    깨지는 시나리오: 만료되지 않으면 고친 원고가 더는 원작·플레이와 다르지 않아도 옛 후보가 열린 채 남고, 같은 차이가 확정마다
+    후보를 하나씩 더 쌓는다."""
+    novel = await make_novel(db_session)
+    chapter, revision = await add_chapter(db_session, novel.id, 1, "민수와 지아는 남매다.")
+    await _room_with_facts(db_session, novel.id, chapter)
+    registry = _registry(events=False, source=FakeSource(note="원작에서 민수와 지아는 소꿉친구다."))
+    output = {"facts": [_fact("민수", "relation", "지아", (1, "남매다"), attribute="남매", source=("S", "소꿉친구"),
+                              play="P1")]}
+    adapter = ScriptedAdapter({"facts.extract": [output, output]})
+    await _confirm_and_run(db_session, chapter, revision, adapter, registry)
+    candidates = select(NovelBibleAdaptationCandidate).where(NovelBibleAdaptationCandidate.novel_id == novel.id)
+    old = {row.id for row in (await db_session.scalars(candidates)).all()}
+    assert len(old) == 2
+    replacement = await add_revision(db_session, chapter.id, "민수와 지아는 남매다.\n\n둘이 웃는다.")
+
+    commit_id = await _confirm_and_run(db_session, chapter, replacement, adapter, registry)
+
+    assert await _status(db_session, commit_id) == "committed"
+    head = await revision_at(db_session, novel.id, None)
+    expired = (
+        await db_session.execute(
+            select(NovelBibleExpiration.item_id, NovelBibleExpiration.reason).where(
+                NovelBibleExpiration.revision_id == head.id, NovelBibleExpiration.item_table == "adaptation_candidate"
+            )
+        )
+    ).all()
+    assert {(row.item_id, row.reason) for row in expired} == {(item_id, "chapter_replaced") for item_id in old}
+    new = [row for row in (await db_session.scalars(candidates)).all() if row.id not in old]
+    (fact,) = [fact for fact in await _facts(db_session, chapter.id) if fact.created_revision_id == head.id]
+    assert sorted((row.origin, row.fact_id, row.created_revision_id) for row in new) == [
+        ("play", fact.id, head.id), ("source_canon", fact.id, head.id),
+    ]
+
+
 async def test_a_same_text_reconfirm_reuses_the_extraction_unless_the_play_facts_changed(
     db_session: AsyncSession,
 ) -> None:
     """본문·블록이 같은 재확정은 아는 개체·정본 불변 속성 힌트가 바뀌어도 추출을 다시 쓰고, 채팅 기억 행이 바뀌면 다시 뽑는다.
     깨지는 시나리오: 플레이 사실을 힌트로 두면 되감기·잊기 뒤에도 옛 플레이로 뽑은 각색 후보를 재사용하고, 정본 불변 속성을
-    열쇠에 넣으면 그 화가 만든 속성 때문에 같은 본문도 늘 다시 뽑는다."""
+    열쇠에 넣으면 다른 화가 만든 속성 때문에 같은 본문도 다시 뽑는다."""
     novel = await make_novel(db_session)
     body = "민수와 지아는 남매다.\n\n지아는 원래 눈이 갈색이다."
     chapter, revision = await add_chapter(db_session, novel.id, 1, body)
     rows = await _room_with_facts(db_session, novel.id, chapter)
     output = {"facts": [_fact("민수", "relation", "지아", (1, "남매다"), attribute="남매", play="P1"),
                         _fact("지아", "attribute", "갈색", (2, "눈이 갈색"), attribute="눈 색", immutable=True)]}
-    adapter = ScriptedAdapter({"facts.extract": [output, output]})
-    # 첫 확정이 개체와 불변 속성을 만들어 다음 확정의 두 힌트가 바뀐다.
+    other = {"facts": [_fact("지아", "attribute", "갈색", (1, "눈이 갈색"), attribute="눈 색", immutable=True)]}
+    adapter = ScriptedAdapter({"facts.extract": [output, other, output]})
+    # 첫 확정이 개체를, 다른 화의 확정이 불변 속성을 만들어 다음 확정의 두 힌트가 바뀐다.
     await _confirm_and_run(db_session, chapter, revision, adapter, _registry(events=False))
+    second, second_revision = await add_chapter(db_session, novel.id, 2, "지아는 원래 눈이 갈색이다.")
+    await _confirm_and_run(db_session, second, second_revision, adapter, _registry(events=False))
     same = await add_revision(db_session, chapter.id, body, block_ids=revision.block_ids)
 
     reused = await _confirm_and_run(db_session, chapter, same, adapter, _registry(events=False))
 
     assert await _status(db_session, reused) == "committed"
-    assert len(adapter.prompts["facts.extract"]) == 1
+    assert len(adapter.prompts["facts.extract"]) == 2
 
     await db_session.execute(delete(ChatMemoryFact).where(ChatMemoryFact.id == rows[1].id))
     await db_session.flush()
@@ -752,8 +795,8 @@ async def test_a_same_text_reconfirm_reuses_the_extraction_unless_the_play_facts
     fresh = await _confirm_and_run(db_session, chapter, rewound, adapter, _registry(events=False))
 
     assert await _status(db_session, fresh) == "committed"
-    assert len(adapter.prompts["facts.extract"]) == 2
-    prompt = adapter.prompts["facts.extract"][1].prompt
+    assert len(adapter.prompts["facts.extract"]) == 3
+    prompt = adapter.prompts["facts.extract"][2].prompt
     assert "P1. 민수 → 지아: 소꿉친구" in prompt and "- 지아 · 눈 색: 갈색" in prompt
 
 

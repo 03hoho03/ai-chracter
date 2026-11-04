@@ -1,10 +1,10 @@
 """사실 슬롯 — 확정 원고에서 상태·속성·관계 명제(생사·출입·소지·능력·속성·관계)를 뽑아 사실 표에 쓴다.
 
-입력은 확정 개정의 문단(번호만 — 장면 경계 표시는 싣지 않는다), 아는 개체, 이미 정본인 불변 속성, 원작 정본(작품 설정·키워드
-노트), 플레이 사실(그 소설이 나온 방의 채팅 기억 사실)이다. 아는 개체와 정본 불변 속성은 정본 상태에서 오는 힌트라 추출 캐시
-열쇠에서 빠지고, 원작·플레이 사실은 화 고유 입력이라 열쇠에 든다. 장면 구성안은 싣지 않는다 — 계획은 확정된 원고가 아니라, 거기서
-뽑으면 원고에 없는 내용이 정본이 된다. 원문 채팅 구간도 읽지 않는다 — 플레이와의 차이는 채팅 기억 사실로 본다. 플레이 사실은
-채팅 기억 스위치와 무관하게 읽고(코어 읽기 뷰의 `play_facts`), 방이 없으면 그 섹션이 빠진다.
+입력은 확정 개정의 문단(번호만 — 장면 경계 표시는 싣지 않는다), 아는 개체, 다른 화에서 이미 정본인 불변 속성, 원작
+정본(작품 설정·키워드 노트), 플레이 사실(그 소설이 나온 방의 채팅 기억 사실)이다. 아는 개체와 정본 불변 속성은 정본 상태에서
+오는 힌트라 추출 캐시 열쇠에서 빠지고, 원작·플레이 사실은 화 고유 입력이라 열쇠에 든다. 장면 구성안은 싣지 않는다 — 계획은
+확정된 원고가 아니라, 거기서 뽑으면 원고에 없는 내용이 정본이 된다. 원문 채팅 구간도 읽지 않는다 — 플레이와의 차이는 채팅
+기억 사실로 본다. 플레이 사실은 채팅 기억 스위치와 무관하게 읽고(코어 읽기 뷰의 `play_facts`), 방이 없으면 그 섹션이 빠진다.
 
 정본은 원고다. 원작·플레이와 다른 사실도 그대로 확정 사실로 커밋되고, 모델이 짚은 차이는 근거(`side_quotes`)로 실려 코어가 각색
 후보 행과 그 근거 행을 쓴다 — 차단이 아니다. 차이의 근거가 틀리면(표지가 없음, 구절이 그 글에 없음) 차이만 버리고 사실은 남긴다.
@@ -128,14 +128,19 @@ def _play_line(label: str, fact: PlayFact) -> str:
 
 
 async def _known_attributes(session: AsyncSession, commit: CommitRef, manuscript: Manuscript) -> list[KnownAttribute]:
-    """지금 머리 시점에 현재인 불변 속성 중 주어 개체의 이름이나 별칭이 이 화 원고에 나오는 것(정규화한 글의 부분 문자열)."""
+    """지금 머리 시점에 현재인 다른 화의 불변 속성 중 주어 개체의 이름이나 별칭이 이 화 원고에 나오는 것(정규화한 글의 부분
+    문자열). 이 화의 행은 뺀다 — 이 화를 다시 확정하면 그 행은 곧 만료될 값이라, 작가가 그 화에서 값을 고쳐 재확정할 때 힌트가
+    모델을 옛 값으로 끌 수 있다. 다른 화에 같은 불변 속성이 있으면 그 행으로 힌트가 남는다."""
     head = await revision_at(session, commit.novel_id, None)
     rows = (
         await session.execute(
             current_items(NovelBibleFact, "fact", commit.novel_id, head)
             .add_columns(NovelBibleEntity.name, NovelBibleEntity.aliases)
             .join(NovelBibleEntity, NovelBibleEntity.id == NovelBibleFact.subject_entity_id)
-            .where(NovelBibleFact.kind == "attribute", NovelBibleFact.immutable.is_(True))
+            .where(
+                NovelBibleFact.kind == "attribute", NovelBibleFact.immutable.is_(True),
+                NovelBibleFact.chapter_id != commit.chapter_id,
+            )
         )
     ).all()
     text = normalize_name("\n".join(block.text for block in manuscript.blocks))
@@ -217,7 +222,7 @@ class FactsSlot:
         - `manuscript`: 문단마다 한 줄 `[번호] 글`. 장면 경계 표시는 없다. 모델이 내는 `quote.paragraph` 는 `[번호]` 의 번호이고,
           `quote.text` 는 `[번호] ` 머리 없이 그 문단 글에서 그대로 옮긴 구절이어야 한다 — 인용 검증이 문단 글에서 찾는다.
         - `known_entities`: 사건 슬롯과 같은 글이다 — 꼴은 `core/known.py` 의 `known_entities_text`.
-        - `known_attributes`: 이미 정본인 불변 속성마다 한 줄 `- 주어 · 속성: 값`(속성은 정규화한 이름), 같은 줄은 한 번만
+        - `known_attributes`: 다른 화에서 이미 정본인 불변 속성마다 한 줄 `- 주어 · 속성: 값`(속성은 정규화한 이름), 같은 줄은 한 번만
           글자 순으로. 같은 값이면 이 표기를 그대로 쓰게 하는 힌트다 — 표기가 다르면 같은 값도 다른 값으로 읽힌다.
         - `source_canon`: 원작 글마다 `[표지] 글` 한 덩이, 덩이 사이는 빈 줄. 표지는 작품 설정 `S`, 키워드 노트 `K1`·`K2` …. 글
           안에 줄바꿈이 있을 수 있다. 차이를 낼 때 `source_difference.label` 은 표지(`S`·`K1`)만, `quote` 는 `[표지] ` 머리 없이
