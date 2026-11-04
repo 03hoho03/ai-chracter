@@ -218,7 +218,9 @@ async def _comparable_items(db: AsyncSession, novel_id: uuid.UUID) -> dict[str, 
 
 
 def _new_facts(snapshot: BibleSnapshot) -> tuple[uuid.UUID, ...]:
-    return tuple(fact.id for fact in snapshot.facts or () if fact.id in snapshot.new_ids)
+    """사실 칸이 비어 있으면 실패한다 — 사실 슬롯을 뺀 등록부에서 코어가 이 규칙을 건너뛰지 않으면 확정이 실패하게."""
+    assert snapshot.facts is not None, "사실 슬롯이 없는 등록부에서 사실을 읽는 규칙이 돌았다"
+    return tuple(fact.id for fact in snapshot.facts if fact.id in snapshot.new_ids)
 
 
 @pytest.mark.parametrize("dropped", ["events", "facts", "knowledge"])
