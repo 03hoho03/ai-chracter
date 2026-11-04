@@ -256,6 +256,20 @@ def test_commits_that_never_reached_a_verdict_are_failures_and_too_many_leave_th
     assert names[names.index("block_false_positive") + 1].startswith("commit_failure.")
 
 
+def test_an_observed_false_positive_fails_the_block_line_even_when_the_run_halted_or_too_many_commits_failed() -> None:
+    eval_set = load_set(FIXTURE)
+    outcomes = _clean_run()
+    outcomes[0] = _outcome(1, "blocked", block=("exit_then_appearance",))
+    outcomes[2] = _outcome(3, "failed")
+    assert metrics.blocking(eval_set, outcomes).undeterminable  # 기본 화 실패 1/3 이 25% 를 넘는다
+    for halted in (None, "합성 멈춤"):
+        entry = synthetic_report(eval_set, outcomes, [], adapter="fake", halted=halted)["metrics"]
+        false_positive = entry["block_false_positive"]
+        # 합격선이 0건이라 이미 본 오탐 하나로 미달이 정해진다 — 표본을 더 돌려도 합격으로 뒤집히지 않는다.
+        assert (false_positive["k"], false_positive["n"], false_positive["pass"]) == (1, 2, False)
+        assert "undetermined" not in false_positive
+
+
 def test_a_run_whose_commits_all_failed_or_that_halted_gets_no_verdict() -> None:
     eval_set = load_set(FIXTURE)
     all_failed = synthetic_report(eval_set, [_outcome(n, "failed") for n in (1, 2, 3)], [], adapter="fake")

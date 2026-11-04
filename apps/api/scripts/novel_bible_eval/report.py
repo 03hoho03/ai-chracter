@@ -10,7 +10,10 @@
 - 판정에 쓰지 못한 확정이 25% 를 넘는다(기본 화의 실패, 충돌·비충돌 탐침의 실패 + 정본 불완전) — 차단 지표. 그중 합격선이
   있는 것은 차단 오탐이고, 합격선이 없는 차단·경고 재현율은 `blocking.undeterminable` 로 적는다. 재현율은 실패한 화의 정답도
   분모에 두어 실패가 놓침으로 들고, 방향 오류는 실패한 화에서 짝이 생기지 않아 분자·분모가 함께 빠지므로 이 검사를 두지 않는다.
-  확정 실패율은 갈래마다 차단 오탐 바로 뒤에 지표로 싣는다."""
+  확정 실패율은 갈래마다 차단 오탐 바로 뒤에 지표로 싣는다.
+
+차단 오탐은 예외다 — 합격선이 0건이라, 관측된 오탐이 하나라도 있으면 표본을 더 돌려도 합격으로 뒤집히지 않는다. 그래서 오탐이
+1건 이상이면 멈췄거나 판정에 쓰지 못한 확정이 25% 를 넘어도 미달로 확정한다. 오탐이 0건일 때만 위 까닭으로 판정 불가가 된다."""
 
 import json
 from collections.abc import Sequence
@@ -79,12 +82,13 @@ def synthetic_report(
         )
     blocking = metrics.blocking(eval_set, outcomes)
     false_positive = blocking.false_positive
-    out["block_false_positive"] = _verdict(
-        {
-            **_entry(false_positive, error_rate=True),
-            "by_chapter": _entry(blocking.false_positive_by_chapter, error_rate=True),
-        },
-        false_positive.k == 0 if false_positive.n else None, halted=halted, unusable=blocking.undeterminable,
+    fp_entry = {
+        **_entry(false_positive, error_rate=True),
+        "by_chapter": _entry(blocking.false_positive_by_chapter, error_rate=True),
+    }
+    # 합격선이 0건이라 관측된 오탐은 표본이 덜 돌았어도 미달을 정한다 — 멈춤·실패 초과로 판정을 미루지 않는다.
+    out["block_false_positive"] = {**fp_entry, "pass": False} if false_positive.k else _verdict(
+        fp_entry, True if false_positive.n else None, halted=halted, unusable=blocking.undeterminable,
     )
     for branch, ratio in blocking.failed.items():
         out[f"commit_failure.{branch}"] = _entry(ratio, error_rate=True)
