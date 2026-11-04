@@ -10,7 +10,10 @@
 개체 하나로 푸는 칸에 있으면 항목을 버리고, 그 밖의 이름 칸(사건의 등장·언급 인물 같은 이름 목록)에 있으면 그 이름만 빼고
 항목은 남긴다 — 이름 하나 때문에 사건이 통째로 빠지면 사건이 덜 잡힌 것처럼 보인다. 뺀 이름도 이름 수로 `dropped` 에 센다.
 이름 목록 둘을 같은 차례로 짝지어 저장하는 슬롯(사건의 행동)은 코어가 한쪽 칸에서만 빼면 짝이 어긋나므로, 그런 짝은 슬롯이
-검증에서 먼저 뺀다. 출력 전체가 아니라 그 항목이나 그 이름만 버린다.
+검증에서 먼저 뺀다. 명제의 주어 이름(`names["subject"]`)의 개체 종류가 명제의 주어 종류와 다른 항목도 버린다 — 행과 안정 키는
+이름의 종류로 개체를 잇는데, 같은 명제를 내는 다른 슬롯은 명제의 종류로 이어 둘의 키가 갈린다. 슬롯 계약이 둘을 같게 만들라고
+하지만 코어는 그 약속에 기대지 않고 확인한다 — assert 로 막으면 슬롯 하나의 실수로 확정 전체가 실패하므로 그 항목만 버린다.
+출력 전체가 아니라 그 항목이나 그 이름만 버린다.
 
 추출 캐시: 같은 소설에서 슬롯·어댑터·문안 세트·출력 스키마·검증 규칙 판이 같고 본문 해시·블록 id 해시·슬롯의 힌트가
 아닌 렌더 값·입력이 읽은 채팅 기억 행의 방·행 id·입력이 읽은 원작의 버전 id·노트 id 가 같은 앞 작업이 성공해 있으면 그 제안을
@@ -56,6 +59,8 @@ _RETRYABLE: frozenset[JobFailure] = frozenset(
 )
 # 코어가 풀어야 하는 이름이 비어 버린 항목의 `dropped` 사유.
 EMPTY_NAME = "empty_name"
+# 명제의 주어 이름의 개체 종류가 명제의 주어 종류와 다른 항목의 `dropped` 사유.
+SUBJECT_KIND_MISMATCH = "subject_kind_mismatch"
 # 코어가 개체 하나로 풀어야 하는 칸의 이름이 정규화 뒤 개체 이름 길이 상한을 넘는 항목의 `dropped` 사유.
 NAME_TOO_LONG = "name_too_long"
 # 이름 목록 칸에서 상한을 넘어 뺀 이름의 `dropped` 사유 — 항목이 아니라 뺀 이름 수를 센다.
@@ -100,6 +105,10 @@ def drop_unlinkable(proposal: Proposal) -> Proposal:
                 needed.append("value")
         if not all(any(normalize_name(name.name) for name in draft.names.get(field, ())) for field in needed):
             reason = EMPTY_NAME
+        elif draft.proposition is not None and any(
+            name.kind != draft.proposition.subject_kind for name in draft.names["subject"]
+        ):
+            reason = SUBJECT_KIND_MISMATCH
         elif any(name_too_long(name.name) for field in needed for name in draft.names.get(field, ())):
             reason = NAME_TOO_LONG
         else:
