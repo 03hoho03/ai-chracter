@@ -73,6 +73,7 @@ _CLOSED_VALUES: dict[FactKind, frozenset[str]] = {
 _NAMED_PREDICATE: frozenset[FactKind] = frozenset({"attribute", "relation"})
 _WORK_SETTING_LABEL = "S"
 _CLAIMED_TAIL = " (주장)"
+_DISPROVED_TAIL = " (반증)"
 
 
 @dataclass(frozen=True)
@@ -122,7 +123,8 @@ def _play_line(label: str, fact: PlayFact) -> str:
         body = f"{fact.subject} → {fact.object}: {fact.value}"
     else:
         body = f"{fact.subject} · {fact.attribute}: {fact.value}"
-    return f"{label}. {body}" + (_CLAIMED_TAIL if fact.claimed else "")
+    tail = _CLAIMED_TAIL if fact.claimed else _DISPROVED_TAIL if fact.disproved else ""
+    return f"{label}. {body}{tail}"
 
 
 async def _known_attributes(session: AsyncSession, commit: CommitRef, manuscript: Manuscript) -> list[KnownAttribute]:
@@ -221,8 +223,9 @@ class FactsSlot:
           안에 줄바꿈이 있을 수 있다. 차이를 낼 때 `source_difference.label` 은 표지(`S`·`K1`)만, `quote` 는 `[표지] ` 머리 없이
           그 글에서 그대로 옮긴 구절이다 — 표지가 없거나 구절이 그 글에 없으면 차이만 버린다.
         - `play_facts`: 플레이 사실마다 한 줄 `P1. 주어 → 대상: 값`(관계) 또는 `P1. 주어 · 속성: 값`(속성), 말한 사람만 그렇다고
-          한 주장이면 끝에 ` (주장)`. `play_difference.ref` 는 표지(`P1`)만 받는다 — 앞뒤 공백 말고 다른 글자가 붙으면 차이를
-          버린다.
+          한 주장이면 끝에 ` (주장)`, 플레이에서 그 값이 아니라고 밝혀진 반증이면 끝에 ` (반증)`. 반증 줄의 값은 플레이에서 참이
+          아니었던 값이다 — 소설이 그 값을 참으로 쓰면 그것이 플레이와 다른 곳이다. `play_difference.ref` 는 표지(`P1`)만 받는다 —
+          앞뒤 공백 말고 다른 글자가 붙으면 차이를 버린다.
 
         원작·플레이 사실이 없으면 그 값은 빈 글이다(문안이 그 섹션을 조건부로 두면 섹션째 빠진다)."""
         assert isinstance(slot_input, FactsInput)

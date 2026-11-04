@@ -105,9 +105,15 @@ class CommitView:
         return await self.registry.source.load(self.session, self.commit.novel_id, self.source_ref)
 
     async def play_facts(self) -> list[PlayFact] | None:
-        """그 방에서 이 화의 끝 메시지까지 접힌 채팅 기억 사실을 키마다 이긴 행 하나로 줄인 것(채팅의 사실 섹션과 같은 읽기·같은
-        규칙), 반증된 값은 뺀다 — 반증된 값은 플레이에서 그렇지 않았던 것이라 소설과 견줄 사실이 아니다. 아는 사람 거름은 하지
-        않는다 — 그것은 채팅 턴이 장면 인물에게 무엇을 보여 줄지의 거름이고, 여기서 묻는 것은 플레이에서 무엇이 그랬나다.
+        """그 방에서 이 화의 끝 메시지까지 접힌 채팅 기억 사실을 키마다 이긴 행 하나로 줄인 것. 읽기(`fact_rows_statement`)와
+        키별 최신 규칙(`latest_by_key` — 같은 값을 반증한 앞 행이 뒤의 같은 값 행을 이긴다)은 채팅의 사실 섹션과 같다.
+
+        반증 행도 표시(`disproved`)를 달아 싣는다 — 채팅 사실 섹션도 반증 행을 표지와 함께 싣는다. "플레이에서 그 값이 아니었다"도
+        플레이의 사실이라, 소설이 그 값을 쓰면 그 차이가 각색 후보가 된다. 무엇을 싣는지가 채팅 섹션과 다른 곳은 둘이다. 채팅
+        섹션은 사용자가 아닌 쪽의 주장을 빼지만(꼬리표를 붙여도 생성 모델이 사실로 굳힌다) 여기서는 주장도 표시(`claimed`)를 달아
+        싣는다 — 이 입력은 추출 모델이 차이를 견주는 데만 쓰고, 주장에서 나온 각색 후보는 차단이 아니라 잡음의 대가가 작다. 아는
+        사람 거름도 하지 않는다 — 그것은 채팅 턴이 장면 인물에게 무엇을 보여 줄지의 거름이고, 여기서 묻는 것은 플레이에서 무엇이
+        그랬나다.
 
         채팅 기억 스위치(추출·주입·거름 따위)를 보지 않는다. 그 스위치는 채팅 턴이 기억을 쓰고 읽는지를 정할 뿐이고, 이미 쌓인
         행은 스위치와 무관하게 플레이에서 있었던 일이다. 읽는 두 함수도 방·커서·행만 받는다. 방이 없거나 행이 없으면 None 이다."""
@@ -123,10 +129,9 @@ class CommitView:
             PlayFact(
                 chat_room_id=row.chat_room_id, chat_memory_fact_id=row.id, chat_fact_key=row.fact_key,
                 subject=row.subject, object=row.object, attribute=row.attribute, value=row.value,
-                claimed=row.truth_status == "claimed",
+                claimed=row.truth_status == "claimed", disproved=row.truth_status == "disproved",
             )
             for _, row in latest_by_key(rows)
-            if row.truth_status != "disproved"
         ]
         return facts or None
 

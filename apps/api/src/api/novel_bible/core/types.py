@@ -189,8 +189,9 @@ class SourceCanon:
 @dataclass(frozen=True)
 class PlayFact:
     """채팅 기억 사실 하나 — 그 소설이 나온 방의 플레이에서 그랬던 것. 사실 슬롯이 소설 사실과 다른지 견줄 근거로만 읽는다.
-    관계면 `object` 가 대상이고 `attribute` 가 비며, 속성이면 그 반대다. `claimed` 는 말한 사람만 그렇다고 한 주장이다. 채팅
-    기억 행은 되감기·잊기로 사라질 수 있어 근거는 이 행 id 와 키를 FK 없이 남긴다."""
+    관계면 `object` 가 대상이고 `attribute` 가 비며, 속성이면 그 반대다. `claimed` 는 말한 사람만 그렇다고 한 주장이고,
+    `disproved` 는 플레이에서 그 값이 아니라고 밝혀진 반증이다(둘은 함께 참이 아니다). 채팅 기억 행은 되감기·잊기로 사라질 수
+    있어 근거는 이 행 id 와 키를 FK 없이 남긴다."""
 
     chat_room_id: uuid.UUID
     chat_memory_fact_id: uuid.UUID
@@ -200,6 +201,7 @@ class PlayFact:
     attribute: str | None
     value: str
     claimed: bool
+    disproved: bool
 
 
 @dataclass(frozen=True)

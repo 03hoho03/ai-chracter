@@ -103,10 +103,10 @@ def _input(
 
 
 def _play(subject: str, value: str, *, target: str | None = None, attribute: str | None = None,
-          claimed: bool = False) -> PlayFact:
+          claimed: bool = False, disproved: bool = False) -> PlayFact:
     return PlayFact(
         chat_room_id=uuid.uuid4(), chat_memory_fact_id=uuid.uuid4(), chat_fact_key=f"합성|{subject}|{value}",
-        subject=subject, object=target, attribute=attribute, value=value, claimed=claimed,
+        subject=subject, object=target, attribute=attribute, value=value, claimed=claimed, disproved=disproved,
     )
 
 
@@ -123,8 +123,8 @@ def _canon(work_setting: str, *notes: str) -> SourceCanon:
 
 def test_the_prompt_values_number_paragraphs_and_label_the_source_and_play_facts() -> None:
     """문단은 장면 표시 없이 `[번호] 글`, 아는 개체는 개체마다 한 줄, 정본 불변 속성은 `- 주어 · 속성: 값`, 원작은 표지 `[S]`·
-    `[K1]` 로 시작하는 덩이, 플레이 사실은 `P1.` 표지 줄이다. 깨지는 시나리오: 꼴이 바뀌면 그 꼴을 설명하는 지시문과 어긋나 모델이
-    표지·문단 번호를 틀리게 낸다."""
+    `[K1]` 로 시작하는 덩이, 플레이 사실은 `P1.` 표지 줄이고 주장·반증은 끝 꼬리로 가른다. 깨지는 시나리오: 꼴이 바뀌면 그 꼴을
+    설명하는 지시문과 어긋나 모델이 표지·문단 번호를 틀리게 내거나, 반증된 값을 플레이에서 참이던 값으로 읽는다."""
     canon = _canon("합성 작품 설정 글.", "첫 합성 노트.", "둘째 합성 노트.")
     slot_input = _input(
         _manuscript("첫째 문단이다.", "둘째 문단이다."),
@@ -132,7 +132,8 @@ def test_the_prompt_values_number_paragraphs_and_label_the_source_and_play_facts
         known_attributes=[KnownAttribute(subject="하나", attribute="눈 색", value="갈색"),
                           KnownAttribute(subject="둘", attribute="혈액형", value="A")],
         source=canon,
-        play=[_play("민수", "연인", target="지아"), _play("지아", "기사", attribute="직업", claimed=True)],
+        play=[_play("민수", "연인", target="지아"), _play("지아", "기사", attribute="직업", claimed=True),
+              _play("민수", "바다 마을", attribute="고향", disproved=True)],
     )
 
     values = FactsSlot().prompt_values(slot_input)
@@ -141,7 +142,7 @@ def test_the_prompt_values_number_paragraphs_and_label_the_source_and_play_facts
     assert values["known_entities"] == "- 열쇠 (사물)\n- 하나 (인물) — 별칭: 큰언니"
     assert values["known_attributes"] == "- 둘 · 혈액형: A\n- 하나 · 눈 색: 갈색"
     assert values["source_canon"] == "[S] 합성 작품 설정 글.\n\n[K1] 첫 합성 노트.\n\n[K2] 둘째 합성 노트."
-    assert values["play_facts"] == "P1. 민수 → 지아: 연인\nP2. 지아 · 직업: 기사 (주장)"
+    assert values["play_facts"] == "P1. 민수 → 지아: 연인\nP2. 지아 · 직업: 기사 (주장)\nP3. 민수 · 고향: 바다 마을 (반증)"
 
 
 def test_both_slots_render_the_known_entities_hint_as_the_same_text() -> None:
@@ -368,23 +369,28 @@ async def _snapshot(db: AsyncSession, room_id: uuid.UUID, at: datetime) -> ChatR
 
 
 async def _room_with_facts(db: AsyncSession, novel_id: uuid.UUID, chapter: NovelChapter) -> list[ChatMemoryFact]:
-    """방 하나와 그 방의 채팅 기억 사실 — 화 끝보다 앞에 접힌 넷(같은 키 둘·주장·반증)과 화 끝 뒤에 접힌 하나. 앞의 넷만 화 끝까지
-    접힌 것이다."""
+    """방 하나와 그 방의 채팅 기억 사실. 화 시작보다 앞에 접힌 스냅샷에 관계 하나, 화 도중(시작과 끝 사이)에 접힌 스냅샷에 같은
+    키의 새 값·주장·반증·아는 사람이 정해진 행(장면 인물이 아닌 이름), 화 끝 뒤에 접힌 스냅샷에 하나. 앞의 둘이 화 끝까지 접힌
+    것이다. 차례는 `[앞 관계, 새 값, 주장, 반증, 화 끝 뒤, 아는 사람]`."""
     room = await _make_bare_chat_room(db)
     novel = await db.get(Novel, novel_id)
     assert novel is not None
     novel.chat_room_id = room.id
-    before = await _snapshot(db, room.id, chapter.end_message_created_at - timedelta(hours=1))
+    early = await _snapshot(db, room.id, chapter.start_message_created_at - timedelta(hours=1))
+    during = await _snapshot(db, room.id, chapter.end_message_created_at - timedelta(hours=1))
+    assert chapter.start_message_created_at < during.cursor_created_at < chapter.end_message_created_at
     after = await _snapshot(db, room.id, chapter.end_message_created_at + timedelta(hours=1))
     rows = [
-        _make_memory_fact(room.id, before.id, ordinal=0, value="소꿉친구"),
-        _make_memory_fact(room.id, before.id, ordinal=1, value="연인"),
-        _make_memory_fact(room.id, before.id, ordinal=2, kind="fact", subject="지아", object=None, attribute="직업",
+        _make_memory_fact(room.id, early.id, ordinal=0, value="소꿉친구"),
+        _make_memory_fact(room.id, during.id, ordinal=0, value="연인"),
+        _make_memory_fact(room.id, during.id, ordinal=1, kind="fact", subject="지아", object=None, attribute="직업",
                           fact_key="fact|지아|직업", value="기사", truth_status="claimed", asserted_by="character"),
-        _make_memory_fact(room.id, before.id, ordinal=3, kind="fact", subject="민수", object=None, attribute="고향",
+        _make_memory_fact(room.id, during.id, ordinal=2, kind="fact", subject="민수", object=None, attribute="고향",
                           fact_key="fact|민수|고향", value="바다 마을", truth_status="disproved"),
         _make_memory_fact(room.id, after.id, ordinal=0, kind="fact", subject="지아", object=None, attribute="나이",
                           fact_key="fact|지아|나이", value="스물"),
+        _make_memory_fact(room.id, during.id, ordinal=3, kind="fact", subject="지아", object=None, attribute="비밀",
+                          fact_key="fact|지아|비밀", value="왕녀", known_by=["세라"]),
     ]
     db.add_all(rows)
     await db.flush()
@@ -392,9 +398,10 @@ async def _room_with_facts(db: AsyncSession, novel_id: uuid.UUID, chapter: Novel
 
 
 async def test_the_input_reads_play_facts_folded_up_to_the_chapter_end_one_per_key(db_session: AsyncSession) -> None:
-    """플레이 사실은 화의 끝 메시지까지 접힌 채팅 기억 사실 중 키마다 이긴 행이고, 반증된 값은 싣지 않는다. 장면 구성안은 싣지
-    않는다. 깨지는 시나리오: 화 끝 뒤의 대화를 읽으면 그 화 뒤에 일어난 일이 각색 후보 근거가 되고, 키별 최신으로 줄이지 않으면
-    옛 값과 새 값이 함께 실린다."""
+    """플레이 사실은 화의 끝 메시지까지 접힌 채팅 기억 사실(화 시작 전과 화 도중에 접힌 것) 중 키마다 이긴 행이고, 주장과
+    반증은 표시해 싣는다. 장면 구성안은 싣지 않는다. 깨지는 시나리오: 화 끝 뒤의 대화를 읽으면 그 화 뒤에 일어난 일이 각색 후보
+    근거가 되고, 화 시작까지만 읽으면 그 화 동안 쌓인 플레이 사실이 통째로 빠지며, 키별 최신으로 줄이지 않으면 옛 값과 새 값이
+    함께 실린다."""
     novel = await make_novel(db_session)
     chapter, revision = await add_chapter(db_session, novel.id, 1, "민수와 지아가 정원에 있다.\n\n지아가 웃는다.")
     rows = await _room_with_facts(db_session, novel.id, chapter)
@@ -403,15 +410,18 @@ async def test_the_input_reads_play_facts_folded_up_to_the_chapter_end_one_per_k
 
     assert isinstance(slot_input, FactsInput)
     assert slot_input.play is not None
-    assert [(fact.chat_memory_fact_id, fact.value, fact.claimed) for fact in slot_input.play] == [
-        (rows[1].id, "연인", False), (rows[2].id, "기사", True),
+    assert [(fact.chat_memory_fact_id, fact.value, fact.claimed, fact.disproved) for fact in slot_input.play] == [
+        (rows[1].id, "연인", False, False), (rows[2].id, "기사", True, False), (rows[3].id, "바다 마을", False, True),
+        (rows[5].id, "왕녀", False, False),
     ]
     assert slot_input.play[0].chat_room_id == novel.chat_room_id
     assert slot_input.play[0].chat_fact_key == "relation|민수|지아"
     assert slot_input.source is None
     values = FactsSlot().prompt_values(slot_input)
     assert values["manuscript"] == "[1] 민수와 지아가 정원에 있다.\n[2] 지아가 웃는다."
-    assert values["play_facts"] == "P1. 민수 → 지아: 연인\nP2. 지아 · 직업: 기사 (주장)"
+    assert values["play_facts"] == (
+        "P1. 민수 → 지아: 연인\nP2. 지아 · 직업: 기사 (주장)\nP3. 민수 · 고향: 바다 마을 (반증)\nP4. 지아 · 비밀: 왕녀"
+    )
 
 
 async def test_a_novel_without_a_room_or_without_chat_memory_rows_has_no_play_facts(db_session: AsyncSession) -> None:
@@ -844,8 +854,9 @@ async def test_chat_memory_switches_change_neither_the_facts_input_nor_the_commi
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """같은 채팅 기억 행을 심어 둔 채 채팅 기억 스위치를 전부 끄고 한 번, 전부 켜고 한 번 확정한다(둘 사이에 확정을 되돌려 같은
-    상태에서 시작). 렌더 글과 커밋된 행이 같다. 깨지는 시나리오: 읽기가 채팅 기억 스위치(추출·주입·지식 범위 거름 따위)를 보면
-    스위치를 끈 환경에서 플레이 사실 섹션이 비거나 줄어 각색 후보가 사라진다."""
+    상태에서 시작). 렌더 글과 커밋된 행이 같고, 아는 사람이 정해진 행도 두 렌더에 다 실린다. 깨지는 시나리오: 읽기가 채팅 기억
+    스위치(추출·주입·지식 범위 거름 따위)를 보면 스위치를 끈 환경에서 플레이 사실 섹션이 비거나 줄어 각색 후보가 사라지고, 지식
+    범위 스위치에 묶여 아는 사람이 정해진 행을 빼면 켠 환경에서만 그 차이가 후보가 되지 못한다."""
     switches = _memory_switches()
     assert len(switches) >= 10
     novel = await make_novel(db_session)
@@ -867,6 +878,7 @@ async def test_chat_memory_switches_change_neither_the_facts_input_nor_the_commi
 
     (off_prompt, off_rows), (on_prompt, on_rows) = seen
     assert "플레이 사실\nP1. 민수 → 지아: 연인\nP2. 지아 · 직업: 기사 (주장)" in off_prompt
+    assert "P4. 지아 · 비밀: 왕녀" in off_prompt and "P4. 지아 · 비밀: 왕녀" in on_prompt
     assert on_prompt == off_prompt
     assert len([row for row in off_rows["evidence"] if row[0] == "chat_memory"]) == 2
     assert off_rows["candidates"] == ["play", "play"]

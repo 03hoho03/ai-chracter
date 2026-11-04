@@ -14,7 +14,7 @@
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict
@@ -411,11 +411,13 @@ async def drain(
 async def add_chapter(
     db: AsyncSession, novel_id: uuid.UUID, ordinal: int, body: str
 ) -> tuple[NovelChapter, NovelChapterRevision]:
-    """화 하나짜리 묶음 하나와 그 화, 첫 개정(flush). 묶음 번호는 화 번호와 같다 — 묶음 삭제로 화 하나를 지울 수 있다."""
+    """화 하나짜리 묶음 하나와 그 화, 첫 개정(flush). 묶음 번호는 화 번호와 같다 — 묶음 삭제로 화 하나를 지울 수 있다. 화의
+    시작 메시지는 끝 메시지보다 두 시간 앞이다 — 시작과 끝이 같으면 화 도중에 접힌 채팅 기억을 심을 자리가 없어, 화 끝 대신 화
+    시작을 커서로 읽는 잘못을 테스트가 가르지 못한다."""
     now = datetime.now(UTC)
     segment: dict[str, Any] = {
-        "start_message_id": uuid.uuid4(), "start_message_created_at": now, "end_message_id": uuid.uuid4(),
-        "end_message_created_at": now, "assistant_message_count": 1, "source_hash": "0" * 64,
+        "start_message_id": uuid.uuid4(), "start_message_created_at": now - timedelta(hours=2),
+        "end_message_id": uuid.uuid4(), "end_message_created_at": now, "assistant_message_count": 1, "source_hash": "0" * 64,
     }
     batch = NovelBatch(novel_id=novel_id, ordinal=ordinal, target_episode_count=1, **segment)
     db.add(batch)
