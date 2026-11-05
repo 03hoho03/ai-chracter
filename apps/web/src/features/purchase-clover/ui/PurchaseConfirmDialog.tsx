@@ -19,6 +19,7 @@ import { Controller, useForm } from "react-hook-form";
 
 import { CloverProductLine, type CloverProductOffer } from "@/entities/clover";
 import { createCallable } from "@/shared/lib/callable/createCallable";
+import { checkExhaustive } from "@/shared/lib/checkExhaustive";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
 import { findPayMethod, formatPayMethodLabel, toPayMethodKey, type CloverPayMethodItem } from "../model/payMethod";
@@ -102,8 +103,17 @@ export const PurchaseConfirmDialog = createCallable<PurchaseConfirmDialogProps, 
         // 결제창이 페이지를 떠난다. 돌아오면 허브가 쿼리로 이어받는다.
         case "redirecting":
           return;
-        default:
+        case "notCompleted":
+        case "ageRestricted":
+        case "unavailable":
+        case "failed":
+        case "sdkUnavailable":
           setNotice(attempt.result);
+          return;
+        // 타입은 앱의 갈래지만 결제 완료 응답의 상태를 검증 없이 접어 온 값이라, 서버가 새 상태를 먼저 보내면 여기에
+        // 닿는다. 던지지 않고 안내 없이 다이얼로그를 그대로 둔다.
+        default:
+          checkExhaustive(attempt.result);
       }
     }
 

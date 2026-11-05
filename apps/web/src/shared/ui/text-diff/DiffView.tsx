@@ -2,6 +2,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ChevronDown } from "lucide-react";
 import { useId, useMemo, useState, type ReactNode } from "react";
 
+import { assertNever } from "@/shared/lib/assertNever";
 import { buildDiffView, type DiffBlock, type DiffSegment } from "@/shared/lib/text-diff/buildDiffView";
 
 type DiffViewProps = {
@@ -95,8 +96,10 @@ function DiffSegmentView({ segment }: { segment: DiffSegment }) {
           {segment.text}
         </del>
       );
-    default:
+    case "equal":
       return <span>{segment.text}</span>;
+    default:
+      return assertNever(segment.kind);
   }
 }
 

@@ -15,6 +15,7 @@ export type MockupChoice = { label: string; isSelected: boolean };
  * 바뀌면 그림도 같이 바뀐다. 원고 값은 시드 표기(템플릿·타겟·공개범위의 값 이름, 적용 대상은 시작설정 id 또는 null)다.
  */
 export function choicesOf(key: StoryFieldKey, value: string | number | null): MockupChoice[] {
+  // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- 칸 키는 일흔 개가 넘고 칩 묶음은 넷뿐이라, 나머지는 원고가 칩 묶음이 아닌 칸에 선택지를 쓴 오류로 보고 한 갈래에서 던진다
   switch (key) {
     case "storySetting.promptTemplate":
       return labelChoices(Object.entries(PROMPT_TEMPLATE_LABELS).map(([id, { label }]) => [id, label]), value);

@@ -209,8 +209,13 @@ export function parseManuscript(markdown: string): Manuscript {
       case "summary":
         if (open) fail(index, `블록(${open.block.line}번째 줄)이 \`:::\` 로 닫히지 않았다`);
         break;
-      default:
+      // 열린 블록 안에서만 쓰는 표기라 닫히지 않은 블록을 따지지 않는다.
+      case "details":
+      case "bad":
+      case "close":
         break;
+      default:
+        assertNever(directive);
     }
 
     switch (directive.kind) {
