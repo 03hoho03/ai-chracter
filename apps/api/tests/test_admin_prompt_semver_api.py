@@ -317,8 +317,8 @@ async def test_two_publishes_from_the_same_base_conflict_instead_of_forking_the_
 @pytest.mark.parametrize(
     ("lane", "expected"),
     [
-        # 소설 Gemini 체인은 등급 규칙 채널을 심은 마이그레이션이 그 채널을 minor 로 올려 1.1.0 에서 시작한다.
-        pytest.param("novel", "1.1.1", id="novel"),
+        # 소설 Gemini 체인은 등급 규칙 채널과 정본 기억 채널을 심은 두 마이그레이션이 각각 minor 로 올려 1.2.0 에서 시작한다.
+        pytest.param("novel", "1.2.1", id="novel"),
         pytest.param("publish_filter", "1.0.1", id="publish_filter"),
         pytest.param("novel_screen", "1.0.1", id="novel_screen"),
     ],

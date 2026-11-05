@@ -249,9 +249,11 @@ async def test_the_undo_removes_every_haiku_writer_row_including_admin_drafts_an
 
 async def test_older_seed_revision_tests_undo_this_seed_too(db_session: AsyncSession) -> None:
     """옛 시드 리비전 테스트는 "그 리비전 직후 상태"를 만들려고 위 시드 리비전을 되돌린다 — 이 리비전에 되돌리기 함수가 있어야 그
-    목록에 들고, 남은 Haiku 세트가 전역 게시 버전 최대값을 올려 그 테스트의 버전 단언을 어긋나게 하지 않는다."""
-    assert _M.revision in seed_revisions_above(_OLDER_SEED_REVISION)
-    assert seed_revisions_above(_M.revision) == []
+    목록에 들고, 남은 Haiku 세트가 전역 게시 버전 최대값을 올려 그 테스트의 버전 단언을 어긋나게 하지 않는다. 되돌리기는 그 목록
+    순서로 돌므로 이 리비전 위에 쌓인 시드는 모두 이 리비전보다 먼저 되돌려져야 한다(실제 downgrade 순서)."""
+    older = seed_revisions_above(_OLDER_SEED_REVISION)
+    assert _M.revision in older
+    assert set(seed_revisions_above(_M.revision)) <= set(older[: older.index(_M.revision)])
     connection = await db_session.connection()
 
     await connection.run_sync(undo_seeded_rows_above, _OLDER_SEED_REVISION)

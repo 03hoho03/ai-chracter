@@ -274,6 +274,16 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
         },
         # 등급 규칙 채널 리비전이 소설 세 체인에 심은 등급 규칙 — 원작 종류마다 한 행.
         "novelize_rating": {("story", "rule_rating", ""), ("character", "rule_rating", "")},
+        # 정본 기억 문안 리비전이 소설 세 체인에 심은 추출 세 채널과 모호 판정 채널.
+        "novel_bible_events": {
+            ("both", slot, "") for slot in ("instruction", "manuscript", "scene_hints", "known_entities", "prior_events")
+        },
+        "novel_bible_facts": {
+            ("both", slot, "")
+            for slot in ("instruction", "manuscript", "known_entities", "known_attributes", "source_canon", "play_facts")
+        },
+        "novel_bible_knowledge": {("both", slot, "") for slot in ("instruction", "manuscript", "known_entities")},
+        "novel_bible_conflicts": {("both", slot, "") for slot in ("instruction", "candidate")},
     },
     # 노벨 텍스트 심사 레인 시드 리비전이 심은 지시문·심사할 글 두 행.
     "novel_screen": {

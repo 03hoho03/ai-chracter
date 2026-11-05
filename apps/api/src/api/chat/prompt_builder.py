@@ -216,6 +216,25 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     # 통로(본문)에 싣는다.
     ("novel_screen", "instruction"): frozenset(),
     ("novel_screen", "screened_text"): frozenset({"screened_text"}),
+    # 정본 기억 채널 — 추출 세 채널은 각 슬롯의 `prompt_values`(`novel_bible/slots/*/slot.py`)가 만드는 값과 같은 이름이고,
+    # 판정 채널의 `candidate` 는 판정할 후보 하나(규칙·두 항목·근거 구절·순서)를 담는 값이다. `instruction` 은 정본 기억 렌더가
+    # 값 없이 따로 렌더하므로 빈 집합이어야 한다.
+    ("novel_bible_events", "instruction"): frozenset(),
+    ("novel_bible_events", "manuscript"): frozenset({"manuscript"}),
+    ("novel_bible_events", "scene_hints"): frozenset({"scene_hints"}),
+    ("novel_bible_events", "known_entities"): frozenset({"known_entities"}),
+    ("novel_bible_events", "prior_events"): frozenset({"prior_events"}),
+    ("novel_bible_facts", "instruction"): frozenset(),
+    ("novel_bible_facts", "manuscript"): frozenset({"manuscript"}),
+    ("novel_bible_facts", "known_entities"): frozenset({"known_entities"}),
+    ("novel_bible_facts", "known_attributes"): frozenset({"known_attributes"}),
+    ("novel_bible_facts", "source_canon"): frozenset({"source_canon"}),
+    ("novel_bible_facts", "play_facts"): frozenset({"play_facts"}),
+    ("novel_bible_knowledge", "instruction"): frozenset(),
+    ("novel_bible_knowledge", "manuscript"): frozenset({"manuscript"}),
+    ("novel_bible_knowledge", "known_entities"): frozenset({"known_entities"}),
+    ("novel_bible_conflicts", "instruction"): frozenset(),
+    ("novel_bible_conflicts", "candidate"): frozenset({"candidate"}),
 }
 
 

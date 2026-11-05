@@ -52,6 +52,9 @@ _BLOCK_EDIT_PROMPTS = _load("174f78b92e5c")
 # 고쳐 둔 채팅 활성 세트를 바꾼다.
 _RATING_PROMPTS = _load("e4df46a80bfa")
 _CLAUDE_CHANNEL_PROMPTS = _load("fe3df6f8e4d5")
+# 등급 규칙 시드 위에 정본 기억 채널을 심은 리비전 — 지금 소설 세 체인의 head 활성이고 판 행이 등급 규칙 시드를 기준판으로
+# 가리키므로, 위 둘을 되돌리기 전에 먼저 되돌린다.
+_BIBLE_PROMPTS = _load("d39cf46dcb5c")
 # 그 뒤 채팅 두 레인 Gemini 체인에서 이 리비전이 옮겨 간 옛 소설화 세 채널을 뺀 세트를 게시하는 리비전 — 두 레인의 head 활성
 # Gemini 세트다. 채팅 레인의 그 행을 읽는 테스트는 이것만 먼저 되돌린다(위와 같은 이유로 헬퍼는 쓰지 않는다).
 _CHAT_NOVEL_ROWS_DROP = _load("7caed2db87dc")
@@ -59,6 +62,7 @@ _CHAT_NOVEL_ROWS_DROP = _load("7caed2db87dc")
 
 async def _undo_rating_and_claude_channels(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_BIBLE_PROMPTS.delete_seeded_rows)
     await connection.run_sync(_RATING_PROMPTS.delete_seeded_rows)
     await connection.run_sync(_CLAUDE_CHANNEL_PROMPTS.delete_seeded_rows)
 
@@ -152,6 +156,7 @@ async def test_seeded_sets_pass_the_novel_lane_publish_check(
     seed_rows = [(s.channel, s.scope, s.slot, s.variant, s.body, s.conditional, s.order) for s in sections]
     later = [*_NOVEL_OUTLINE.chapter_rows(seed_rows), *_NOVEL_OUTLINE.NEW_CHANNEL_ROWS]
     later += list(_BLOCK_EDIT_PROMPTS.NEW_CHANNEL_ROWS)
+    later += list(_BIBLE_PROMPTS.BIBLE_ROWS)
     # 뒤 리비전들이 더한 행의 꼴 — 본문은 합성 문장이다. 세 체인 모두 등급 규칙 두 행, Claude 체인은 경계 제안·문단 수정 채널도.
     later += [
         ("novelize_rating", scope, "rule_rating", "", "[수위]\n합성 등급 규칙", False, 0) for scope in ("story", "character")

@@ -4,7 +4,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { useId } from "react";
 import { useFormContext } from "react-hook-form";
 
-import { isPromptScope, PROMPT_SCOPE_LABELS } from "../model/channels";
+import { isPromptChannel, isPromptScope, PROMPT_SCOPE_LABELS, type PromptChannel } from "../model/channels";
 import type { PromptSetFormValues } from "../model/schema";
 
 /** 수위 규칙은 체인마다 사본이라 한 곳만 고치면 체인끼리 조용히 어긋난다 — 그 칸에서 알린다. 채팅 Gemini 세트와 소설 세트의
@@ -20,6 +20,23 @@ function ratingHintFor(channel: string, slot: string): string | null {
   if (channel === "system") return RULE_RATING_HINT;
   if (channel === "novelize_rating") return NOVEL_RATING_HINT;
   return null;
+}
+
+/** 정본 기억 문안은 게시 검증이 소설 세 세트 모두에 요구해 셋에 함께 있지만, Opus 세트의 것은 어떤 호출도 읽지 않는다 — 고칠
+ * 사람이 지시문 칸에서 읽게 한다. 칸은 어느 세트인지 모르므로 어느 세트에서 읽어도 참인 문장만 쓴다. */
+const NOVEL_BIBLE_HINT =
+  "Opus 세트의 이 칸은 어떤 호출도 읽지 않아요. 게시 검증 때문에 소설 세 세트에 함께 있을 뿐, 고쳐도 아무 호출도 바뀌지 않아요.";
+
+const NOVEL_BIBLE_CHANNELS: ReadonlySet<PromptChannel> = new Set([
+  "novel_bible_events",
+  "novel_bible_facts",
+  "novel_bible_knowledge",
+  "novel_bible_conflicts",
+]);
+
+function novelBibleHintFor(channel: string, slot: string): string | null {
+  if (slot !== "instruction" || !isPromptChannel(channel)) return null;
+  return NOVEL_BIBLE_CHANNELS.has(channel) ? NOVEL_BIBLE_HINT : null;
 }
 
 const BADGE_CLASS =
@@ -64,6 +81,7 @@ export function SectionRow({
   } = useFormContext<PromptSetFormValues>();
   const bodyError = errors.sections?.[fieldIndex]?.body;
   const ratingHint = ratingHintFor(channel, slot);
+  const novelBibleHint = novelBibleHintFor(channel, slot);
   // 공통 슬롯(channel/scope/slot/variant)은 레인마다 사본으로 반복돼 `fieldKey`가 레인 사이에서
   // 겹친다 — 체인 여럿이 `forceMount`로 동시에 마운트되면(PromptSetsPage) 이 id도 DOM에 여러 벌
   // 생겨 `aria-describedby`가 남의 레인 에러 노드를 가리킨다. `useId()`로 컴포넌트 인스턴스별
@@ -114,7 +132,11 @@ export function SectionRow({
         aria-label={`${slot}${variant ? ` (variant: ${variant})` : ""} 본문`}
         aria-invalid={!!bodyError}
         aria-describedby={
-          [bodyError && `${bodyFieldId}-error`, ratingHint !== null && `${bodyFieldId}-rule-rating`]
+          [
+            bodyError && `${bodyFieldId}-error`,
+            ratingHint !== null && `${bodyFieldId}-rule-rating`,
+            novelBibleHint !== null && `${bodyFieldId}-novel-bible`,
+          ]
             .filter(Boolean)
             .join(" ") || undefined
         }
@@ -128,6 +150,11 @@ export function SectionRow({
       {ratingHint !== null && (
         <p id={`${bodyFieldId}-rule-rating`} className="max-w-prose break-keep text-xs text-muted-foreground">
           {ratingHint}
+        </p>
+      )}
+      {novelBibleHint !== null && (
+        <p id={`${bodyFieldId}-novel-bible`} className="max-w-prose break-keep text-xs text-muted-foreground">
+          {novelBibleHint}
         </p>
       )}
       {placeholders.length > 0 && (

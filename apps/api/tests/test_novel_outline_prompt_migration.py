@@ -70,17 +70,23 @@ _LATER_RATING_ROWS = [
     )
     for scope in ("story", "character")
 ]
+# 뒤 리비전이 세 체인에 더한 정본 기억 채널 행 — 그 리비전이 심은 행 그대로다.
+_LATER_BIBLE_ROWS = [
+    PromptSection(channel=c, scope=sc, slot=sl, variant=v, body=b, conditional=cond, order=o)
+    for c, sc, sl, v, b, cond, o in _load("d39cf46dcb5c").BIBLE_ROWS
+]
 
 
 def _with_later_rows(sections: list[PromptSection], model: str) -> list[PromptSection]:
     """지금 코드의 게시 검증·렌더는 뒤 리비전들이 더한 채널도 요구한다 — 이 리비전의 세트·초안에 그 행만 얹어 본다. 세 체인 모두
-    등급 규칙 두 행, Gemini 체인은 여러 문단 수정 두 채널, Claude 체인은 경계 제안·문단 수정·여러 문단 수정·묶음 재검사 네 채널."""
+    등급 규칙 두 행과 정본 기억 네 채널, Gemini 체인은 여러 문단 수정 두 채널, Claude 체인은 경계 제안·문단 수정·여러 문단 수정·묶음
+    재검사 네 채널."""
     blocks = [
         PromptSection(channel=c, scope=sc, slot=sl, variant=v, body=b, conditional=cond, order=o)
         for c, sc, sl, v, b, cond, o in _LATER.NEW_CHANNEL_ROWS
     ]
     if model == "gemini":
-        return [*sections, *blocks, *_LATER_RATING_ROWS]
+        return [*sections, *blocks, *_LATER_RATING_ROWS, *_LATER_BIBLE_ROWS]
     return [
         *sections,
         *blocks,
@@ -89,6 +95,7 @@ def _with_later_rows(sections: list[PromptSection], model: str) -> list[PromptSe
             "novelize_revise", ("instruction", "work_setting", "setting_notes", "paragraphs", "target_range", "user_request")
         ),
         *_LATER_RATING_ROWS,
+        *_LATER_BIBLE_ROWS,
     ]
 
 
