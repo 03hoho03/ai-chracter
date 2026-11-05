@@ -11,10 +11,11 @@
 - `sheet`: 어댑터들의 `extract` 결과를 합쳐 라벨 시트와 열쇠를 쓴다. 결과 파일의 `halted` 와 추출 요약은 열쇠로 옮기고, 멈췄거나
   모자란 추출이 있으면 시트 머리와 표준 오류에 알린다. 어댑터 사본들의 같은 화 본문이 다르면(다른 원고) 거절한다.
 - `judge`: 열쇠의 주장을 판정 모델 하나(`gemini` 먼저, 그다음 `haiku`)로 사람 라벨과 같은 범주로 매겨 `judge-<모델>.json` 에
-  쓴다(`judge.py`). 부를 모델 id 는 `--judge-model` 로 정하고 사고를 끈 조건이 되지 않는 id 는 부르기 전에 거절한다. 멈춘 뒤 같은
-  실행 폴더로 다시 돌리면 판정이 없는 주장만 부른다 — 판정 파일의 모델 id 나 열쇠가 다르면 거절한다.
+  쓴다(`judge.py`). 부를 모델 id 는 `--judge-model` 로 정하고, 판정 호출이 실제로 가는 구현에서 사고를 끈 조건이 되지 않는 id 나
+  단가표에 없는 id 는 부르기 전에 거절한다. 멈춘 뒤 같은 실행 폴더로 다시 돌리면 판정이 없는 주장만 부른다 — 판정 파일의 모델
+  id 나 열쇠가 다르면 거절한다.
 - `score`: 사람이 내려받은 시트 결과를 읽어 어댑터별 라벨 지표를 쓰고, 판정 파일을 주면 판정 모델마다 κ 를 더한다. 열쇠에
-  멈춤·끊김 까닭이 있는 어댑터의 판정은 판정 불가다.
+  멈춤·끊김 까닭이 있는 어댑터의 판정은 판정 불가다. 판정 이름이 같은 판정 파일 둘은 거절한다 — κ 칸이 판정 이름마다 하나다.
 
 무엇이든 하기 전에 DB 가 로컬인지 본다 — 운영·공유 DB 에 측정 소설을 심거나 사용자 원고를 모델에 보내지 않게. 모델을 부르는
 명령(`synthetic`·`extract`·`judge`)은 원장을 요구한다: 호출마다 견적으로 자리를 잡고 실제 호출 기록으로 원가를 적으며, 묶음 누적이
@@ -330,6 +331,12 @@ async def _run(args: argparse.Namespace) -> int:
     digest = judging.key_digest([row.claim for row in labeled])
     for path, run in judged.items():
         _check_key(run, digest, path)
+    names = [run.model for run in judged.values()]
+    if doubled := sorted({name for name in names if names.count(name) > 1}):
+        raise SystemExit(
+            f"판정 이름이 같은 판정 파일이 둘 이상이다({', '.join(doubled)}) — 보고서의 κ 는 판정 이름마다 한 칸이라 한 파일만 "
+            "남는다. 파일마다 따로 점수를 낸다"
+        )
     report = label_report(
         labeled, labels.read_halted(args.key), labels.read_extraction(args.key),
         {run.model: run for run in judged.values()},

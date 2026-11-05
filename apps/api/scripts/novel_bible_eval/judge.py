@@ -6,8 +6,10 @@
 - 판정 모델은 싼 것부터 — Gemini 로 먼저 돌려 κ 를 보고, 그다음 Haiku. 한 판정 파일은 한 모델 id 의 판정이다(주장마다 모델을
   섞으면 κ 가 어느 모델의 것인지 흐려진다). 부를 모델 id 는 실행 인자로 받아 앱의 판정 경로가 읽는 모델 설정을 덮고, 판정 파일에
   적는다. 다른 id 로 이어 돌리거나 다른 모델이 답하면 멈춘다.
-- 사고는 끈 조건에서 잰다. 앱의 구조화 호출은 Haiku 5 계열에 사고 끔을 싣고, Gemini 에는 사고 설정을 싣지 않아 모델 기본값을
-  따른다 — 그래서 사고를 끈 조건이 되는 모델 id 가 아니면 첫 호출 전에 거절하고, 그래도 호출 기록에 사고 토큰이 나오면 멈춘다.
+- 사고는 끈 조건에서 잰다. 앱의 구조화 호출은 구현마다 사고 설정을 따로 고른다 — Anthropic 직결은 Haiku 5 계열에, Bedrock 은
+  사고를 끌 수 있는 모델에 사고 끔을 싣고, Gemini 에는 사고 설정을 싣지 않아 모델 기본값을 따른다. 그래서 판정 호출 위치가 실제로
+  가는 구현(env 배정 포함)에서 사고를 끈 조건이 되는 모델 id 가 아니면 첫 호출 전에 거절하고, 그래도 호출 기록에 사고 토큰이
+  나오면 멈춘다. 단가표에 없는 id 도 첫 호출 전에 거절한다 — 원장이 그 호출의 원가를 셀 수 없다.
 - 판정 파일에는 판정기가 본 열쇠의 지문도 적는다 — 열쇠를 다시 쓴 뒤 옛 판정을 이어받거나 점수에 넣지 않는다.
 - 호출은 측정 원장을 지난다(`Meter` 가 감싼 어댑터 — 호출마다 견적으로 자리를 잡고 원가를 적으며, 멈춤 선에 닿을 호출은 부르기
   전에 멈춘다). 멈춰도 그때까지 받은 판정이 파일에 남고, 같은 파일로 다시 돌리면 판정이 없는 주장만 부른다.
@@ -29,6 +31,8 @@ from pydantic import BaseModel
 
 from api.core.config import settings
 from api.llm.backends import BACKENDS, turns_off_structured_thinking
+from api.llm.bedrock import _structured_thinking as bedrock_structured_thinking
+from api.llm.call_policy import BackendId
 from api.llm.client import LLMCallContext
 from api.novel_bible.adapters.resolver import ModelAdapter
 from api.novel_bible.adapters.table import ADAPTERS, OPERATION_CALL_SITES, AdapterId
@@ -36,6 +40,7 @@ from api.novel_bible.core.contracts import AdapterCallError, BibleModelAdapter
 from api.novel_bible.core.types import RenderedPrompt
 from api.novelize.call_records import sent_model
 
+from memory_eval.ledger import price_for
 from novel_bible_eval.labels import Claim, Label, LabeledClaim, QuoteMark, Verdict
 from novel_bible_eval.metrics import cohen_kappa
 
@@ -45,6 +50,12 @@ JUDGE_MODELS: dict[str, AdapterId] = {"gemini": "gemini", "haiku": "haiku"}
 # 않는 까닭으로 적은 두 모델이다(3.5-flash-lite 는 사고 예산 0 을 거부한다). 다른 Gemini 모델은 기본값에서 사고하지 않는지 확인한
 # 기록이 없어 받지 않는다.
 _GEMINI_NO_THINKING = frozenset({"gemini-3.5-flash-lite", "gemini-3.1-flash-lite"})
+# 구현마다 사고를 끈 채 부를 수 있는 id — 거절 문장에 싣는다.
+_THINKING_OFF_IDS: dict[BackendId, str] = {
+    "gemini": ", ".join(sorted(_GEMINI_NO_THINKING)),
+    "anthropic": "Haiku 5 계열 직결 id(claude-haiku-5…)",
+    "bedrock": "사고를 끌 수 있는 모델의 Bedrock 꼴 id(…anthropic.claude-haiku-…)",
+}
 _CALL_SITE = OPERATION_CALL_SITES["conflicts.judge"]
 INSTRUCTION = """너는 소설 원고에서 뽑은 주장 하나를 검토한다. 주장은 원고 속 인물·사물·능력에 대한 사실, 인물이 아는 것이나 믿는 것,
 또는 장면에서 일어난 사건이다. 주장 아래에 그 주장의 근거로 원고에서 잘라 낸 인용이 번호를 달고 실린다.
@@ -95,19 +106,33 @@ class WrongModelError(Exception):
     """판정 파일의 모델 id 와 다른 모델이 답했다 — 그 답을 이 파일에 넣으면 두 모델의 판정이 섞인다."""
 
 
+def _calls_with_thinking_off(backend: BackendId, model_id: str) -> bool:
+    """그 구현의 구조화 호출이 이 id 를 사고를 끈 채 부르는가 — 앱이 그 구현에서 사고 설정을 고르는 규칙 그대로 본다."""
+    if backend == "gemini":
+        return model_id in _GEMINI_NO_THINKING
+    if backend == "anthropic":
+        return turns_off_structured_thinking(model_id)
+    # Bedrock 은 공급자 접두 `anthropic.`(앞에 지역 접두가 붙기도 한다)가 있는 id 만 알아듣는다 — 직결 꼴 id 는 사고 조건을
+    # 따지기 전에 호출마다 실패한다. 그 꼴이면 앱의 Bedrock 구조화 호출이 사고 끔을 싣는 id 인지 본다.
+    return "anthropic." in model_id and bedrock_structured_thinking(model_id) is not None
+
+
 def judge_adapter(model: str, model_id: str) -> BibleModelAdapter:
     """판정 모델 이름(`JUDGE_MODELS`)의 앱 어댑터가 `model_id` 를 부르게 한다 — 그 판정 경로가 읽는 모델 설정을 이 프로세스
-    안에서 덮는다. 사고를 끈 조건이 되지 않는 id 면 아무것도 바꾸지 않고 거절한다(첫 호출 원가도 내지 않게)."""
+    안에서 덮는다. 판정 호출 위치가 실제로 가는 구현(앱의 경로 고르기 — env 배정 포함)에서 사고를 끈 조건이 되지 않는 id 거나
+    단가표에 없는 id 면 아무것도 바꾸지 않고 거절한다(첫 호출 원가도 내지 않게)."""
     adapter_id = JUDGE_MODELS[model]
     call_model = ADAPTERS[adapter_id].call_model
     usage = LLMCallContext(call_site=_CALL_SITE, user_id=None, room_id=None, call_model=call_model)
     backend, _ = sent_model(usage)
-    thinking_off = model_id in _GEMINI_NO_THINKING if backend == "gemini" else turns_off_structured_thinking(model_id)
-    if not thinking_off:
+    if not _calls_with_thinking_off(backend, model_id):
         raise SystemExit(
-            f"{model_id} 는 이 판정 경로({backend})에서 사고를 끈 조건이 되지 않는다 — Gemini 는 "
-            f"{', '.join(sorted(_GEMINI_NO_THINKING))}, Claude 는 Haiku 5 계열 id 를 준다"
+            f"{model_id} 는 이 판정 경로({backend})가 사고를 끈 채 부를 수 있는 id 가 아니다 — {_THINKING_OFF_IDS[backend]} 를 준다"
         )
+    try:
+        price_for(model_id)
+    except KeyError:
+        raise SystemExit(f"{model_id} 는 단가표에 없어 원장이 원가를 셀 수 없다 — 단가표에 있는 id 를 준다") from None
     setattr(settings, BACKENDS[backend].model_id_settings[call_model], model_id)
     sent = sent_model(usage)[1]
     if sent != model_id:

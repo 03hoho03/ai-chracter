@@ -272,6 +272,28 @@ async def test_score_reads_the_judge_files_into_the_kappa_section(tmp_path: Path
     assert report["kappa"]["gemini"]["model_id"] == LITE
 
 
+async def test_score_refuses_two_judge_files_under_the_same_judge_name(tmp_path: Path) -> None:
+    # 두 Gemini id 의 κ 를 견주려고 두 폴더의 판정 파일을 함께 주면, 보고서의 κ 칸은 판정 이름마다 하나라 한 파일이 조용히 빠진다.
+    labeled = _labeled(_HUMAN)
+    _, key = labels.write_sheet([row.claim for row in labeled], tmp_path, halted={ALPHA: None})
+    result = tmp_path / "labels-result.json"
+    result.write_text(json.dumps({"labels": {row.claim.id: row.label.model_dump() for row in labeled}}), encoding="utf-8")
+    digest = judge.key_digest([row.claim for row in labeled])
+    judged = []
+    for folder, model_id in (("first", LITE), ("second", "gemini-3.1-flash-lite")):
+        (tmp_path / folder).mkdir()
+        judged.append(str(tmp_path / folder / "judge-gemini.json"))
+        judge.write_run(
+            judge.JudgeRun(model="gemini", model_id=model_id, key_digest=digest, answers=_answers(_JUDGE)),
+            Path(judged[-1]),
+        )
+    with pytest.raises(SystemExit, match="판정 이름"):
+        await _run(_parser().parse_args([
+            "score", "--key", str(key), "--labels", str(result), "--out", str(tmp_path), "--judged", *judged,
+        ]))
+    assert not (tmp_path / "label-report.json").exists()
+
+
 class _NoCallAdapter:
     """판정 명령이 거절해야 할 때 실제 어댑터 대신 놓는다 — 거절이 빠져도 유료 호출이 나가지 않게."""
 
@@ -285,7 +307,7 @@ class _NoCallAdapter:
 @pytest.fixture
 def _judge_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """판정 어댑터는 그 판정 경로가 읽는 모델 설정을 덮는다 — 테스트가 끝나면 되돌린다."""
-    for name in ("gemini_model_name", "anthropic_haiku_model_id"):
+    for name in ("gemini_model_name", "anthropic_haiku_model_id", "bedrock_haiku_model_id"):
         monkeypatch.setattr(settings, name, getattr(settings, name))
     monkeypatch.setattr(judge, "ModelAdapter", _NoCallAdapter)
 
@@ -331,6 +353,37 @@ def test_a_judge_model_that_cannot_judge_with_thinking_off_is_refused_before_any
     with pytest.raises(SystemExit, match="사고"):
         judge.judge_adapter(model, model_id)
     assert _sent(judge.JUDGE_MODELS[model]) == before
+
+
+@pytest.mark.usefixtures("_judge_settings")
+def test_a_judge_path_assigned_to_bedrock_takes_only_bedrock_ids_that_bedrock_calls_with_thinking_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # env 배정이 판정 호출을 Bedrock 으로 보내면 허용 여부도 Bedrock 구현의 규칙으로 가린다. 직결 꼴 id 는 Bedrock 이 모르는
+    # 모델이라 주장마다 실패하고, 사고를 끌 수 없는 5.x 글쓰기 모델은 Bedrock 구조화 호출이 사고를 싣지 않는다.
+    monkeypatch.setattr(settings, "llm_call_site_backends", {"novel_bible_judge": "bedrock"})
+    before = _sent("haiku")
+    for model_id in ("claude-haiku-5-5", "global.anthropic.claude-sonnet-5-5"):
+        with pytest.raises(SystemExit, match="사고"):
+            judge.judge_adapter("haiku", model_id)
+        assert _sent("haiku") == before
+    bedrock_haiku = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+    judge.judge_adapter("haiku", bedrock_haiku)
+    assert settings.bedrock_haiku_model_id == bedrock_haiku
+    assert _sent("haiku") == bedrock_haiku
+
+
+@pytest.mark.usefixtures("_judge_settings")
+def test_a_judge_model_id_missing_from_the_price_table_is_refused_before_any_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 원장은 단가표로 원가를 센다 — 단가를 모르는 id 는 첫 호출 하나가 나간 뒤에야 원장 멈춤으로 선다. 사고 끔 조건(Haiku 5
+    # 계열 직결 id)은 맞는 id 로 단가표만 가른다.
+    monkeypatch.setattr(settings, "llm_call_site_backends", {})
+    before = _sent("haiku")
+    with pytest.raises(SystemExit, match="단가"):
+        judge.judge_adapter("haiku", "claude-haiku-5-5-20261101")
+    assert _sent("haiku") == before
 
 
 @pytest.mark.usefixtures("_judge_settings")
