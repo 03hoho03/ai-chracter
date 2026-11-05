@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, useEffectEvent, type RefObject } from "react";
 
 import {
   isScrollRestored,
@@ -45,8 +45,8 @@ type UseScrollReadingTrackerOptions = {
 export function useScrollReadingTracker({ session, paragraphCount, containerRef }: UseScrollReadingTrackerOptions) {
   const { hasRouteSettled } = session;
 
-  useEffect(() => {
-    if (!hasRouteSettled) return;
+  // 되돌릴 자리·문단 수·읽은 자리를 알릴 곳은 이때의 값을 쓰고, 뒤 렌더에서 바뀌어도 다시 돌지 않는다.
+  const startReading = useEffectEvent(() => {
     const root = containerRef.current;
     // 문단이 없는 화는 서버가 자리를 받지 않는다(문단 번호는 문단 수보다 작아야 한다).
     if (root === null || paragraphCount === 0) return;
@@ -162,6 +162,10 @@ export function useScrollReadingTracker({ session, paragraphCount, containerRef 
       window.removeEventListener("scroll", handleUserScroll);
       for (const observer of observers) observer.disconnect();
     };
+  });
+  useEffect(() => {
+    if (!hasRouteSettled) return;
+    return startReading();
     // 이 본문이 붙어 있는 동안 한 번만 되돌리고 잰다(`hasRouteSettled` 는 한 번 참이면 바뀌지 않는다). 화를 열 때는
     // 라우터가 이동을 끝낸 순간, 같은 화 안에서 본문을 바꿔 끼울 때는 붙는 순간 돈다.
   }, [hasRouteSettled]);
