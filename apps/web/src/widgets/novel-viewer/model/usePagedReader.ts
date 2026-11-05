@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 
 import {
   isFinishedScreen,
@@ -391,11 +391,19 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey, il
     fitRef.current = fit;
   }, [fit]);
 
+  // 아래 효과들은 정해 둔 때에만 다시 잰다. `relayout` 은 렌더마다 새 함수라 의존에 넣으면 렌더마다(넘길 때마다) 다시
+  // 재고, 다시 재기는 돌던 넘김 전환을 끝내 버린다.
+  const remeasure = useEffectEvent(() => relayout());
+
+  const measureForLayoutChange = useEffectEvent(() => {
+    anchorRef.current ??= { paragraphIndex: session.toRestoreTarget().index, charOffset: 0, isAtEnd: false };
+    relayout();
+  });
+
   // 처음 그릴 때, 보기 설정이 바뀔 때, 한 장·펼침이 바뀔 때, 삽화 배치가 바뀔 때는 칠하기 전에 잰다 — 다단이 걸리기 전
   // 본문이 한 번 비치지 않게.
   useLayoutEffect(() => {
-    anchorRef.current ??= { paragraphIndex: session.toRestoreTarget().index, charOffset: 0, isAtEnd: false };
-    relayout();
+    measureForLayoutChange();
   }, [typographyKey, fit.columnCount, illustrationLayoutKey]);
 
   // 본문 글꼴이 처음 다 오면 그때부터 쪽 숫자를 보인다. 본문을 그린 뒤에 읽어야 본문이 쓰는 글꼴 조각까지 기다린다.
@@ -405,7 +413,7 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey, il
     void document.fonts.ready.then(() => {
       if (isCancelled) return;
       isFontReadyRef.current = true;
-      relayout();
+      remeasure();
     });
     return () => {
       isCancelled = true;
@@ -419,7 +427,7 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey, il
       if (frame === undefined) {
         frame = requestAnimationFrame(() => {
           frame = undefined;
-          relayout();
+          remeasure();
         });
       }
     }
@@ -431,9 +439,9 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey, il
   }, []);
 
   // 되돌리기와 재기 시작. 이 본문이 붙어 있는 동안 한 번 — 화를 열 때는 라우터가 이동을 끝낸 뒤, 같은 화 안에서 넘김
-  // 방식을 바꿔 붙을 때는 붙는 순간이다.
-  useEffect(() => {
-    if (!hasRouteSettled) return;
+  // 방식을 바꿔 붙을 때는 붙는 순간이다. 되돌릴 자리와 읽은 자리를 알릴 곳은 이때의 값을 쓰고, 뒤 렌더에서 바뀌어도
+  // 다시 돌지 않는다.
+  const startRestoring = useEffectEvent(() => {
     let isCancelled = false;
     let frame: number | undefined;
     const { index, basis } = session.toRestoreTarget();
@@ -483,10 +491,14 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey, il
       isCancelled = true;
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
+  });
+  useEffect(() => {
+    if (!hasRouteSettled) return;
+    return startRestoring();
   }, [hasRouteSettled]);
 
-  // 포커스 이동·보조기기·찾기처럼 브라우저가 옮긴 스크롤을 멈춘 뒤 화면에 맞춘다.
-  useEffect(() => {
+  // 포커스 이동·보조기기·찾기처럼 브라우저가 옮긴 스크롤을 멈춘 뒤 화면에 맞춘다. 처리기는 처음 한 번 단다.
+  const alignBrowserScroll = useEffectEvent(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     const supportsScrollEnd = "onscrollend" in window;
@@ -520,7 +532,8 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey, il
       scroller.removeEventListener("scrollend", align);
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, []);
+  });
+  useEffect(() => alignBrowserScroll(), []);
 
   // 떠날 때 돌던 전환을 멈춘다.
   useEffect(() => () => finishAnimation(), []);
