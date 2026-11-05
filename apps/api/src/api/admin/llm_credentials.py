@@ -575,7 +575,8 @@ async def replace_llm_credential_secret(
     keyring = credential_keyring()
     async with credential_write(db):
         credential = await _get(db, credential_id, lock=True)
-        # 조회를 기다리는 동안 행이 바뀌었을 수 있어 잠근 뒤 다시 본다.
+        # 지금 라우트로는 공급자가 바뀌지 않는다(추가는 anthropic 으로 고정하고 수정은 공급자를 받지 않는다). 나중에 행의
+        # 공급자를 바꾸는 경로가 생겨도 조회를 기다리는 사이 바뀐 행의 비밀을 Anthropic 키로 덮지 않게 잠근 행으로 다시 본다.
         _refuse_other_providers(credential)
         old_fingerprint = credential.secret_fingerprint
         old_is_env_key = same_as_env_key(credential)
@@ -798,7 +799,9 @@ async def check_llm_credential(
     results = [(group, await probe.check(api_key, group, credential_id=credential_id)) for group in groups]
     outcomes, fill = _reconcile(results, started_account)
     # 보안 신호는 기록을 쓰기 전에 보낸다 — 호출을 기다리는 동안 항목이 지워져(404) 기록이 남지 않거나 쓰기가 실패해도, 응답이
-    # 보인 조직은 그대로다. 아래 쓰기가 바꾸는 결과는 통과를 `account-already-listed` 로 돌리는 것뿐이라 신호가 달라지지 않는다.
+    # 보인 조직은 그대로다. 아래 쓰기는 `fill` 을 비우고(그새 키가 바뀌었거나 조직이 채워졌거나 이미 목록에 있는 조직) 그 헤더로
+    # 통과한 축을 `account-already-listed` 로 돌릴 수 있지만, 그래도 신호는 같다. 조직 불일치·허용 밖 축은 건드리지 않고, 헤더
+    # 없음 신호는 모든 응답에 헤더가 없을 때만인데 `fill` 은 헤더에서만 채워지므로 그때 `fill` 은 처음부터 비어 있고 돌릴 축도 없다.
     kinds = {kind for _, kind, _ in outcomes}
     if "organization-mismatch" in kinds:
         notify(f"[Claude 자격] 확인 응답의 조직이 저장된 조직과 다르다 — {label}")

@@ -796,8 +796,8 @@ async def test_secret_replace_rechecks_the_provider_after_locking_the_row(
     notes: list[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """조직 조회를 기다리는 동안 행이 바뀔 수 있어, 잠근 뒤에도 공급자를 다시 본다 — 조회 전 읽기만 믿으면 그 사이 Bedrock 이
-    된 행의 비밀 자리에 Anthropic 키가 들어간다."""
+    """잠근 뒤에도 공급자를 다시 본다. 지금은 행의 공급자를 바꾸는 경로가 없어 DB 를 직접 고쳐 흉내 낸다 — 그런 경로가 생겼을
+    때 조회 전 읽기만 믿으면 조회를 기다리는 사이 Bedrock 이 된 행의 비밀 자리에 Anthropic 키가 들어간다."""
     created = await _create(db_client)
 
     async def lookup_while_the_row_becomes_bedrock(api_key: str) -> str | None:
@@ -815,6 +815,47 @@ async def test_secret_replace_rechecks_the_provider_after_locking_the_row(
 
     assert (resp.status_code, resp.json()["detail"]["rule"]) == (422, "provider-not-available")
     assert (await _row(db_session, created["id"])).secret_fingerprint == secret_fingerprint(FAKE_API_KEY)
+
+
+async def test_secret_replace_clears_the_organization_when_another_key_landed_after_the_skipped_lookup(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_id: uuid.UUID,
+    probe: FakeProbe,
+    notes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """잠그지 않은 읽기에서 같은 키라 조회를 건너뛰었는데 잠근 뒤 보니 그 사이 다른 키(다른 조직)로 바뀌어 있으면, 붙여넣은
+    키의 조직을 모르므로 헤더 없는 응답처럼 조직 표지를 지운다 — 남기면 그 다른 조직의 표지가 붙여넣은 키에 붙는다. 같은
+    키인지는 조회를 건너뛴 판정이 아니라 잠근 행으로 다시 가린다."""
+    created = await _create(db_client)
+    real_get = admin_llm_credentials._get
+    reads: list[bool] = []
+
+    async def read_then_another_key_lands(
+        db: AsyncSession, credential_id: uuid.UUID, *, lock: bool = False
+    ) -> LlmCredential:
+        credential = await real_get(db, credential_id, lock=lock)
+        reads.append(lock)
+        if reads == [False]:
+            await db_session.execute(
+                sa.update(LlmCredential)
+                .where(LlmCredential.id == credential_id)
+                .values(secret_fingerprint=secret_fingerprint(FAKE_OTHER_API_KEY), account_ref=_OTHER_ORG)
+                .execution_options(synchronize_session=False)
+            )
+        return credential
+
+    monkeypatch.setattr(admin_llm_credentials, "_get", read_then_another_key_lands)
+
+    resp = await db_client.put(f"{_BASE}/{created['id']}/secret", json={"apiKey": FAKE_API_KEY})
+
+    assert resp.status_code == 200
+    assert probe.lookups == [FAKE_API_KEY]
+    assert (await _row(db_session, created["id"])).account_ref is None
+    old, new = secret_fingerprint(FAKE_OTHER_API_KEY), secret_fingerprint(FAKE_API_KEY)
+    assert notes[-1].startswith(f"[Claude 자격] 키 교체 — anthropic · 운영 계정 · 지문 {old} → {new} · ")
+    assert notes[-1].endswith("\n조직 미확인으로 돌아감")
 
 
 # ── 순서 ───────────────────────────────────────────────────────────────────────
