@@ -344,7 +344,7 @@ async def test_a_blank_reason_is_refused(
     db_client: httpx.AsyncClient, db_session: AsyncSession, admin: dict[str, object], notes: list[str], reason: str
 ) -> None:
     """사유는 앞뒤 공백을 걷은 뒤 비면 거절한다 — 유니코드 공백까지(화면의 `trim` 과 같은 범위). 깨지는 시나리오: 전각 공백만
-    친 사유가 DB 의 공백 검사(ASCII 공백만 깎는다)를 지나 누가 왜 바꿨는지 모르는 이력이 남는다."""
+    친 사유가 DB 의 공백 검사(스페이스 U+0020 만 깎는다)를 지나 누가 왜 바꿨는지 모르는 이력이 남는다."""
     resp = await db_client.put(
         f"{_BASE}/payments_enabled", json={"value": True, "reason": reason, "expectedOverride": None}
     )
@@ -566,6 +566,38 @@ async def test_a_refund_started_while_turning_on_the_pause_is_warned(
     assert resp.status_code == 200, resp.text
     assert resp.json()["warnings"] == ["refund-started-during-pause"]
     assert await _overrides(db_session) == {"clover_ledger_paused": True}
+
+
+async def test_a_failed_recount_after_turning_on_the_pause_still_answers_and_notifies(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin: dict[str, object],
+    notes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """커밋 뒤 진행 중 환불을 다시 세는 조회가 실패해도, 이미 커밋한 정지는 200 으로 답하고 이 프로세스 재적재와 운영 채널 알림도
+    돈다. 깨지는 시나리오: 커밋 직후 DB 연결이 끊겨 재집계가 예외를 올리면, 정지는 2초 안에 모든 프로세스에 걸리는데 응답은 500 이고
+    가장 알려야 할 돈 스위치의 알림이 빠진다."""
+    monkeypatch.setattr(settings, "clover_ledger_paused", False)
+    calls = 0
+
+    async def requested_refunds(_db: AsyncSession) -> int:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise ConnectionResetError("커밋 뒤 연결이 끊겼다")
+        return 0
+
+    monkeypatch.setattr(admin_feature_switches, "_requested_refunds", requested_refunds)
+
+    resp = await db_client.put(
+        f"{_BASE}/clover_ledger_paused", json={"value": True, "reason": "전환", "expectedOverride": None}
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["warnings"] == []
+    assert switch_on("clover_ledger_paused") is True
+    assert notes == ["[기능 스위치] clover_ledger_paused — 꺼짐 → 켜짐 (어드민 덮어쓰기)\n사유: 전환"]
 
 
 @pytest.mark.parametrize("by_clearing", [pytest.param(False, id="override-on"), pytest.param(True, id="clear-to-env-on")])

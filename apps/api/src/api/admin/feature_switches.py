@@ -25,10 +25,11 @@
   생기는 빈칸이 없다. 그런 세트로 돌더라도 구성안·여러 문단 수정 작업은 모델을 부르기 전에 실패해 환불된다.
 
 **커밋 뒤**: 이 프로세스 맵을 바로 다시 읽고(실패하면 경고 — 주기 갱신이 따라온다), 운영 알림 채널에 쏘고 잊는다(실패는 저장과
-무관). 문구는 스위치 이름·실효 전→후·사유만 싣는다.
+무관). 문구는 스위치 이름·실효 전→후·사유만 싣는다. 커밋 뒤의 일은 서로 막지 않는다 — 하나가 실패해도 이미 커밋한 저장은 200 과
+알림으로 끝난다.
 
-사유는 앞뒤 공백을 유니코드 공백까지 걷고 1~1,000자다 — DB 의 CHECK(`btrim`)는 ASCII 공백만 깎아 전각 공백만 있는 사유를 막지
-못하고, 화면의 `trim` 은 유니코드 공백과 BOM 까지 걷는다. 1,000자는 이름·전→후와 함께 디스코드 글 상한(2,000자) 안에 든다.
+사유는 앞뒤 공백을 유니코드 공백까지 걷고 1~1,000자다 — DB 의 CHECK(`btrim`)는 스페이스(U+0020)만 깎아 탭·줄바꿈·전각 공백만
+있는 사유를 막지 못하고, 화면의 `trim` 은 유니코드 공백과 BOM 까지 걷는다. 1,000자는 이름·전→후와 함께 디스코드 글 상한(2,000자) 안에 든다.
 """
 
 import logging
@@ -259,9 +260,16 @@ async def _after_commit(
     *,
     turned_on_clover_pause: bool,
 ) -> list[FeatureSwitchWarning]:
+    """커밋이 끝난 저장의 뒷일 셋 — 서로 막지 않는다. 어느 하나가 실패해도 저장은 이미 커밋됐으니 200 으로 답하고 알림까지 보낸다.
+    재집계가 실패하면 환불이 생겼는지 알 수 없어 경고를 달지 않고 서버 로그로만 남긴다."""
     warnings: list[FeatureSwitchWarning] = []
-    if turned_on_clover_pause and await _requested_refunds(db):
-        warnings.append("refund-started-during-pause")
+    if turned_on_clover_pause:
+        try:
+            if await _requested_refunds(db):
+                warnings.append("refund-started-during-pause")
+        except Exception as exc:
+            logger.warning("클로버 정지를 켠 뒤 진행 중 환불을 다시 세지 못했다: %s", type(exc).__name__)
+            capture_dependency_failure(exc, dependency="db")
     try:
         await refresh_switch_overrides(session_factory)
     except Exception as exc:
