@@ -391,11 +391,17 @@ class RunList(CamelModel):
     discovered_at: str
 
 
-class RunBundle(CamelModel):
-    """런 하나를 통째로 — 정적 HTML 내보내기가 이 응답만 주입한다. `raw` 가 거짓이면 덤프 줄의 프롬프트(`prompt`)·지시문
-    (`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을 키째 빼고, 상세의 방 스냅숏(`room_static`,
-    단축어 프롬프트 전문·대화 프로필 설명이 든다)을 비운다. 대화(사용자 발화·응답)는 남는다."""
+# 묶음 계약 판 — 올리는 규칙은 `apps/chat-lab/README.md` 「묶음 계약 판과 출처 칸」 절.
+CONTRACT_VERSION = 1
 
+
+class RunBundle(CamelModel):
+    """런 하나를 통째로 — 정적 HTML 내보내기가 이 응답만 주입하고, 호스팅 서비스에 올리는 것도 이 응답의 바이트다. `raw` 가
+    거짓이면 덤프 줄의 프롬프트(`prompt`)·지시문(`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을
+    키째 빼고, 상세의 방 스냅숏(`room_static`, 단축어 프롬프트 전문·대화 프로필 설명이 든다)을 비운다. 대화(사용자 발화·응답)는
+    남는다. 만든 커밋·출처 칸은 싣지 않는다(`apps/chat-lab/README.md` 「묶음 계약 판과 출처 칸」 절)."""
+
+    contract_version: int
     raw: bool
     detail: RunDetail
     metrics: RunMetrics
@@ -413,12 +419,44 @@ class ExportTurnsResult(CamelModel):
     run: RunListItem
 
 
+# 올리기 머리의 요청·응답. 칸의 뜻과 판정은 `apps/chat-lab/README.md` 「묶음 계약 판과 출처 칸」 절.
+class UploadHeaderRequest(CamelModel):
+    exempt_emails: list[str]
+
+
+class SourceCommit(CamelModel):
+    """측정 서버를 띄울 때 읽은 checkout 의 커밋."""
+
+    commit: str
+    dirty: bool
+
+
+class Provenance(CamelModel):
+    """이 런이 로컬 측정 서버에서 테스트 계정으로만 돈 것인지 — 불·수만 싣는다."""
+
+    passed: bool
+    base_local: bool | None
+    room_found: bool
+    owner_in_example_domain: bool
+    outside_users: int
+    exempted_users: int
+    author_in_example_domain: bool | None
+
+
+class UploadHeader(CamelModel):
+    """올리기용 머리 — 묶음 바이트와 따로 낸다."""
+
+    source_commit: SourceCommit
+    provenance: Provenance
+
+
 # 이 서버가 내는 오류의 종류. FastAPI 의 요청 검증 오류(422, `detail` 이 목록)에는 이 칸이 없어 웹은 `reason` 으로 둘을 가른다.
 # notFound: 그런 묶음·턴이 없다(id 모양이 틀린 것 포함). unsupported: 열지 않는 형식. openFailed: 열다 실패했다.
 # unsupportedFormat: `assistantMessageId` 이전 형식이라 턴 기록을 응답과 이을 열쇠가 없어 내보내도 이을 수 없다(내보내기만).
 # archived: 보관 폴더라 쓰지 않는다. exists: 턴 기록 파일이 이미 있다 — 강제로 다시 내보낼 수 있는 것은 이것뿐이다.
 # notFile: 그 자리에 링크·폴더가 있다. noRoom·noRows: 그 DB 에 방이 없거나 턴 기록이 0 이다. multipleRooms: 묶음 폴더에 서로
 # 다른 방의 드라이버 로그가 있다. dbUnavailable: DB 가 설정되지 않았거나 닿지 않는다. notJson: 쓰기 요청 본문이 JSON 이 아니다.
+# gitUnavailable: 측정 서버를 띄울 때 checkout 의 커밋을 git 으로 읽지 못했다(git 이 없거나 checkout 이 아니다 — 올리기 머리만).
 LabErrorReason = Literal[
     "notFound",
     "unsupported",
@@ -432,6 +470,7 @@ LabErrorReason = Literal[
     "multipleRooms",
     "dbUnavailable",
     "notJson",
+    "gitUnavailable",
 ]
 
 

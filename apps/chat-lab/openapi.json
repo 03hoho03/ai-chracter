@@ -413,6 +413,93 @@
           }
         }
       }
+    },
+    "/runs/{runId}/upload-header": {
+      "post": {
+        "summary": "Upload Header",
+        "description": "호스팅 서비스에 올릴 때 묶음 바이트와 따로 보내는 머리 — 띄울 때 읽은 만든 커밋과, 요청 때 로컬 DB 로 계산한 출처 칸.\n형식과 판정은 `apps/chat-lab/README.md` 「묶음 계약 판과 출처 칸」 절.",
+        "operationId": "upload_header_runs__runId__upload_header_post",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadHeaderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadHeader"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "description": "이 서버의 거부(reason 있음) 또는 요청 검증 오류(reason 없음)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LabError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabError"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -836,7 +923,8 @@
               "noRows",
               "multipleRooms",
               "dbUnavailable",
-              "notJson"
+              "notJson",
+              "gitUnavailable"
             ],
             "title": "Reason"
           }
@@ -885,6 +973,64 @@
           "detail"
         ],
         "title": "Mismatch"
+      },
+      "Provenance": {
+        "properties": {
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          },
+          "baseLocal": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baselocal"
+          },
+          "roomFound": {
+            "type": "boolean",
+            "title": "Roomfound"
+          },
+          "ownerInExampleDomain": {
+            "type": "boolean",
+            "title": "Ownerinexampledomain"
+          },
+          "outsideUsers": {
+            "type": "integer",
+            "title": "Outsideusers"
+          },
+          "exemptedUsers": {
+            "type": "integer",
+            "title": "Exemptedusers"
+          },
+          "authorInExampleDomain": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorinexampledomain"
+          }
+        },
+        "type": "object",
+        "required": [
+          "passed",
+          "baseLocal",
+          "roomFound",
+          "ownerInExampleDomain",
+          "outsideUsers",
+          "exemptedUsers",
+          "authorInExampleDomain"
+        ],
+        "title": "Provenance",
+        "description": "이 런이 로컬 측정 서버에서 테스트 계정으로만 돈 것인지 — 불·수만 싣는다."
       },
       "RecordLimit": {
         "properties": {
@@ -1054,6 +1200,10 @@
       },
       "RunBundle": {
         "properties": {
+          "contractVersion": {
+            "type": "integer",
+            "title": "Contractversion"
+          },
           "raw": {
             "type": "boolean",
             "title": "Raw"
@@ -1074,13 +1224,14 @@
         },
         "type": "object",
         "required": [
+          "contractVersion",
           "raw",
           "detail",
           "metrics",
           "turns"
         ],
         "title": "RunBundle",
-        "description": "런 하나를 통째로 — 정적 HTML 내보내기가 이 응답만 주입한다. `raw` 가 거짓이면 덤프 줄의 프롬프트(`prompt`)·지시문\n(`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을 키째 빼고, 상세의 방 스냅숏(`room_static`,\n단축어 프롬프트 전문·대화 프로필 설명이 든다)을 비운다. 대화(사용자 발화·응답)는 남는다."
+        "description": "런 하나를 통째로 — 정적 HTML 내보내기가 이 응답만 주입하고, 호스팅 서비스에 올리는 것도 이 응답의 바이트다. `raw` 가\n거짓이면 덤프 줄의 프롬프트(`prompt`)·지시문(`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을\n키째 빼고, 상세의 방 스냅숏(`room_static`, 단축어 프롬프트 전문·대화 프로필 설명이 든다)을 비운다. 대화(사용자 발화·응답)는\n남는다. 만든 커밋·출처 칸은 싣지 않는다(`apps/chat-lab/README.md` 「묶음 계약 판과 출처 칸」 절)."
       },
       "RunCost": {
         "properties": {
@@ -1592,6 +1743,25 @@
         ],
         "title": "SeriesPoint"
       },
+      "SourceCommit": {
+        "properties": {
+          "commit": {
+            "type": "string",
+            "title": "Commit"
+          },
+          "dirty": {
+            "type": "boolean",
+            "title": "Dirty"
+          }
+        },
+        "type": "object",
+        "required": [
+          "commit",
+          "dirty"
+        ],
+        "title": "SourceCommit",
+        "description": "측정 서버를 띄울 때 읽은 checkout 의 커밋."
+      },
       "StatSeries": {
         "properties": {
           "id": {
@@ -2056,6 +2226,39 @@
         ],
         "title": "UnmatchedRow",
         "description": "「짝 없는 기록」 — 어느 시도에도 붙지 않은 턴 기록 행."
+      },
+      "UploadHeader": {
+        "properties": {
+          "sourceCommit": {
+            "$ref": "#/components/schemas/SourceCommit"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sourceCommit",
+          "provenance"
+        ],
+        "title": "UploadHeader",
+        "description": "올리기용 머리 — 묶음 바이트와 따로 낸다."
+      },
+      "UploadHeaderRequest": {
+        "properties": {
+          "exemptEmails": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exemptemails"
+          }
+        },
+        "type": "object",
+        "required": [
+          "exemptEmails"
+        ],
+        "title": "UploadHeaderRequest"
       },
       "ValidationError": {
         "properties": {

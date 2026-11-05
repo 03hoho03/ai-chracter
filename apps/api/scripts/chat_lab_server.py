@@ -4,10 +4,11 @@
     uv run python scripts/chat_lab_server.py --dump-openapi
 
 바인드는 127.0.0.1 고정이다(호스트를 바꾸는 인자는 없다) — 덤프에 시험 대화 원문이 있어 같은 망의 다른 기기가 읽지 못하게 한다.
-DB 는 턴 기록 내보내기 요청 때만 읽고, `--database-url` 이 없으면 설정의 DB 주소를 쓴다. 어느 쪽이든 로컬 DB 가 아니면 띄우지
-않는다.
+DB 는 턴 기록 내보내기와 올리기 머리의 출처 조회 요청 때만 읽고, `--database-url` 이 없으면 설정의 DB 주소를 쓴다. 어느 쪽이든
+로컬 DB 가 아니면 띄우지 않는다. 받는 DB 는 하나다 — 런을 돈 DB 가 여럿이면 DB 마다 포트를 달리해 따로 띄운다. 올리기 머리의
+만든 커밋은 띄울 때 한 번 읽는다(`chat_lab.source_commit`) — git 으로 읽지 못해도 서버는 뜨고 올리기 머리만 503 이다.
 
-`--dump-openapi` 는 앱 스키마만 `apps/chat-lab/openapi.json` 에 쓰고 끝난다. 가드·DB·설정의 DB 주소·런 루트 어느 것도 보지 않는다
+`--dump-openapi` 는 앱 스키마만 `apps/chat-lab/openapi.json` 에 쓰고 끝난다. 가드·DB·설정의 DB 주소·런 루트·git 어느 것도 보지 않는다
 — CI 러너에는 `.env` 도 기본 DB 도 없는데, 같은 커밋에서 떨군 바이트가 커밋된 파일과 같아야 하기 때문이다. 직렬화는 운영 API 의
 스키마 내보내기(`scripts/export_openapi.py`)와 같다."""
 
@@ -20,6 +21,7 @@ from pathlib import Path
 import uvicorn
 
 from chat_lab.app import create_app
+from chat_lab.source_commit import read_source_commit
 
 API_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_ROOT = API_DIR / "probe-runs"
@@ -45,7 +47,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="측정 런 루트(기본 apps/api/probe-runs)")
-    parser.add_argument("--database-url", help="턴 기록을 내보낼 로컬 DB(기본: 설정의 DB 주소)")
+    parser.add_argument("--database-url", help="턴 기록을 내보내고 출처를 조회할 로컬 DB(기본: 설정의 DB 주소)")
     parser.add_argument(
         "--dump-openapi", action="store_true", help="스키마만 apps/chat-lab/openapi.json 에 쓰고 끝낸다"
     )
@@ -62,7 +64,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"런 루트가 폴더가 아니다: {root}", file=sys.stderr)
         return 1
     database_url = args.database_url if args.database_url is not None else _settings_database_url()
-    app = create_app(root=root, database_url=database_url)
+    source_commit = read_source_commit()
+    if source_commit is None:
+        print("checkout 의 커밋을 git 으로 읽지 못했다 — 올리기 머리는 503(gitUnavailable)으로 답한다", file=sys.stderr)
+    app = create_app(root=root, database_url=database_url, source_commit=source_commit)
     uvicorn.run(app, host=HOST, port=args.port)
     return 0
 

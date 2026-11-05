@@ -23,6 +23,7 @@ const LAB_ERROR_REASONS = {
   multipleRooms: true,
   dbUnavailable: true,
   notJson: true,
+  gitUnavailable: true,
 } as const satisfies Record<LabErrorReason, true>;
 
 /**

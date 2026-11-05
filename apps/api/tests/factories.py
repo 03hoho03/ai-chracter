@@ -12,6 +12,7 @@ import base64
 import json
 import os
 import uuid
+from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Generator, Iterable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -26,6 +27,7 @@ import pytest
 import sqlalchemy as sa
 from alembic.config import Config
 from alembic.script import Script, ScriptDirectory
+from redis.asyncio.connection import AbstractConnection
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
@@ -133,13 +135,16 @@ from api.db.models import (
 from api.db.session import engine
 from api.legal.consents import kind_consent_units
 from api.llm import bedrock as bedrock_module
+from api.llm import dependencies as llm_dependencies
 from api.llm import gemini as gemini_module
+from api.llm.anthropic_api import AnthropicLLMClient
 from api.llm.bedrock import BedrockLLMClient
 from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, chat_turn_cost
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.llm.gemini import GeminiLLMClient
 from api.llm.routing import RoutingLLMClient
+from api.llm.voyage import VoyageEmbeddingClient
 from api.main import app
 from api.novelize.blocks import build_revision, fresh_ids
 from api.session.store import create_session
@@ -467,6 +472,59 @@ def _count_queries() -> Generator[Callable[[], int], None, None]:
         yield lambda: count
     finally:
         sa.event.remove(engine.sync_engine, "before_cursor_execute", _before_cursor_execute)
+
+
+# 생성을 세는 클라이언트 — 글 생성 클라이언트(`LLMClient` 구현 넷)와 기억 임베딩 클라이언트.
+LLM_CLIENT_CLASSES: tuple[type[Any], ...] = (
+    GeminiLLMClient,
+    RoutingLLMClient,
+    AnthropicLLMClient,
+    BedrockLLMClient,
+    VoyageEmbeddingClient,
+)
+
+
+def _count_llm_and_redis(monkeypatch: pytest.MonkeyPatch, *also: type[Any]) -> Counter[str]:
+    """LLM 클라이언트(`LLM_CLIENT_CLASSES`)와 `also` 클래스의 생성(클래스 이름 키), `get_llm_client` 호출, Redis 접속(`redis`
+    키 — 접속은 실패시킨다)을 센다. 아무것도 없으면 빈 `Counter` 다."""
+    seen: Counter[str] = Counter()
+
+    def counting_init(name: str, original: Callable[..., None]) -> Callable[..., None]:
+        def init(self: Any, *args: Any, **kwargs: Any) -> None:
+            seen[name] += 1
+            original(self, *args, **kwargs)
+
+        return init
+
+    for cls in (*LLM_CLIENT_CLASSES, *also):
+        monkeypatch.setattr(cls, "__init__", counting_init(cls.__name__, cls.__init__))
+    original_get = llm_dependencies.get_llm_client
+
+    def counting_get() -> Any:
+        seen["get_llm_client"] += 1
+        return original_get()
+
+    monkeypatch.setattr(llm_dependencies, "get_llm_client", counting_get)
+
+    async def refuse_connect(self: AbstractConnection, *args: Any, **kwargs: Any) -> None:
+        seen["redis"] += 1
+        raise ConnectionError("측정 서버가 Redis 에 접속하려 했다")
+
+    monkeypatch.setattr(AbstractConnection, "connect_check_health", refuse_connect)
+    return seen
+
+
+def _collect_engines(monkeypatch: pytest.MonkeyPatch) -> list[AsyncEngine]:
+    """그동안 만든 비동기 DB 엔진을 만든 순서대로 모은다."""
+    engines: list[AsyncEngine] = []
+    original = AsyncEngine.__init__
+
+    def collecting(self: AsyncEngine, *args: Any, **kwargs: Any) -> None:
+        engines.append(self)
+        original(self, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncEngine, "__init__", collecting)
+    return engines
 
 
 def _make_chat_turn(chat_room_id: uuid.UUID, **overrides: object) -> ChatTurn:
