@@ -30,14 +30,16 @@ from api.llm.chat_models import backend_model_id
 from api.llm.client import LLMClientError
 from api.llm.credential_accounts import AccountProvider
 from api.llm.credential_pool import (
+    GENERATION_KEY,
     SNAPSHOT_KEY,
     CredentialPool,
+    PoolCredential,
     invalidate_pool_snapshot,
     load_pool_snapshot,
     pool_candidates,
     to_pool_credential,
 )
-from api.llm.credentials import CLAUDE_AXES, new_credential, passed_axes, replace_secret
+from api.llm.credentials import CLAUDE_AXES, RejectionKind, new_credential, passed_axes, replace_secret
 from factories import (
     FAKE_ANTHROPIC_ORG,
     FAKE_API_KEY,
@@ -45,7 +47,10 @@ from factories import (
     FAKE_OTHER_API_KEY,
     _add_llm_credential,
     _add_llm_credential_check,
+    _cancel_credential_tasks,
+    _capture_credential_alerts,
     _set_llm_credential_pool,
+    _settle_credential_tasks,
 )
 
 _ORG = FAKE_ANTHROPIC_ORG
@@ -464,3 +469,178 @@ async def test_replacing_the_secret_changes_the_client_key_and_drops_the_old_one
     assert before.live_keys == {old_key}
     assert after.live_keys == {new_key}
     assert pool.secret_of(after.candidates[0]) == FAKE_OTHER_API_KEY
+
+
+# ── 소진 표시 ─────────────────────────────────────────────────────────────────────────
+@pytest.fixture
+def alerts(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    return _capture_credential_alerts(monkeypatch)
+
+
+@pytest.fixture
+async def _settled_tasks() -> AsyncIterator[None]:
+    """표시가 띄운 알림 태스크를 다음 테스트로 넘기지 않는다(이벤트 루프를 모든 테스트가 함께 쓴다)."""
+    yield
+    await _cancel_credential_tasks()
+
+
+async def _planned(pool: CredentialPool) -> PoolCredential:
+    plan = await pool.plan("opus")
+    assert plan is not None
+    (credential,) = plan.candidates
+    return credential
+
+
+async def _state_of(db_session: AsyncSession, credential: LlmCredential) -> tuple[str, str | None, int, str]:
+    row = (
+        await db_session.execute(
+            sa.select(
+                LlmCredential.state,
+                LlmCredential.state_reason,
+                LlmCredential.state_version,
+                LlmCredential.secret_fingerprint,
+            ).where(LlmCredential.id == credential.id)
+        )
+    ).one()
+    return row.state, row.state_reason, row.state_version, row.secret_fingerprint
+
+
+async def _generation_now() -> int:
+    return int(await redis_client.get(GENERATION_KEY) or 0)
+
+
+@pytest.mark.usefixtures("_settled_tasks")
+async def test_two_rejections_from_the_same_snapshot_mark_once_and_alert_once(
+    db_session: AsyncSession, alerts: list[str]
+) -> None:
+    """같은 스냅숏으로 거절이 두 번 와도 상태는 한 번만 바뀐다 — 둘째는 0행이라 세대도 알림도 한 번이다."""
+    credential = await _ready_pool(db_session)
+    pool = CredentialPool(session_factory=_CountingFactory(db_session), redis=redis_client)
+    item = await _planned(pool)
+    before = await _generation_now()
+
+    await pool.mark_exhausted(item, "credit")
+    await pool.mark_exhausted(item, "credit")
+    await _settle_credential_tasks()
+
+    assert await _state_of(db_session, credential) == (
+        "exhausted",
+        "credit",
+        credential.state_version + 1,
+        credential.secret_fingerprint,
+    )
+    assert await _generation_now() == before + 1
+    assert len(alerts) == 1
+
+
+@pytest.mark.usefixtures("_settled_tasks")
+async def test_late_rejection_through_a_replaced_key_does_not_exhaust_the_new_key(
+    db_session: AsyncSession, alerts: list[str]
+) -> None:
+    """키를 바꾼 뒤 옛 키로 보낸 요청의 거절은 새 키를 소진시키지 않는다(키 교체는 상태 판을 올리지 않아 지문만이 가른다)."""
+    credential = await _ready_pool(db_session)
+    pool = CredentialPool(session_factory=_CountingFactory(db_session), redis=redis_client)
+    old = await _planned(pool)
+    replace_secret(FieldKeyring.parse(FAKE_CREDENTIAL_KEYRING), credential, FAKE_OTHER_API_KEY)
+    await db_session.flush()
+    before = await _generation_now()
+
+    await pool.mark_exhausted(old, "auth")
+    await _settle_credential_tasks()
+
+    assert await _state_of(db_session, credential) == (
+        "active",
+        None,
+        old.state_version,
+        credential.secret_fingerprint,
+    )
+    assert await _generation_now() == before
+    assert alerts == []
+
+
+@pytest.mark.usefixtures("_settled_tasks")
+async def test_late_rejection_from_before_a_reenable_does_not_exhaust_the_new_state(
+    db_session: AsyncSession, alerts: list[str]
+) -> None:
+    """끄고 다시 켠 뒤(판 +2) 그 전 스냅숏으로 보낸 요청의 거절은 다시 켠 상태를 소진시키지 않는다."""
+    credential = await _ready_pool(db_session)
+    pool = CredentialPool(session_factory=_CountingFactory(db_session), redis=redis_client)
+    old = await _planned(pool)
+    await db_session.execute(
+        sa.update(LlmCredential)
+        .where(LlmCredential.id == credential.id)
+        .values(state_version=LlmCredential.state_version + 2)
+        .execution_options(synchronize_session=False)
+    )
+
+    await pool.mark_exhausted(old, "credit")
+    await _settle_credential_tasks()
+
+    assert await _state_of(db_session, credential) == (
+        "active",
+        None,
+        old.state_version + 2,
+        old.secret_fingerprint,
+    )
+    assert alerts == []
+
+
+@pytest.mark.parametrize(
+    ("kind", "reason", "action"),
+    [
+        pytest.param("credit", "크레딧 부족", "충전한 뒤 확인 호출 → 켜기", id="credit"),
+        pytest.param("auth", "키 무효 또는 조직 비활성", "키를 교체하거나 지운다", id="auth"),
+        pytest.param(
+            "limit",
+            "사용 한도 도달",
+            "한도가 풀린 뒤(월 상한은 다음 달 1일 00:00 UTC) 확인 호출 → 켜기",
+            id="limit",
+        ),
+    ],
+)
+@pytest.mark.parametrize("env_key", [pytest.param(False, id="other-key"), pytest.param(True, id="env-rollback-key")])
+@pytest.mark.usefixtures("_settled_tasks")
+async def test_exhaustion_alert_names_label_fingerprint_reason_and_env_key_overlap_only(
+    db_session: AsyncSession,
+    alerts: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    kind: RejectionKind,
+    reason: str,
+    action: str,
+    env_key: bool,
+) -> None:
+    """소진 알림은 공급자·라벨·지문·사유와 대응만 싣는다 — 키·끝 4자리·조직 id 는 없다. 그 키가 env 롤백 키와 같으면 목록 사용을
+    꺼도 같은 거절을 받는다고 덧붙인다."""
+    monkeypatch.setattr(settings, "anthropic_direct_api_key", FAKE_API_KEY if env_key else FAKE_OTHER_API_KEY)
+    credential = await _ready_pool(db_session)
+    pool = CredentialPool(session_factory=_CountingFactory(db_session), redis=redis_client)
+
+    await pool.mark_exhausted(await _planned(pool), kind)
+    await _settle_credential_tasks()
+
+    expected = (
+        f"[Claude 자격] 소진 — anthropic · 첫째 계정 · 지문 {credential.secret_fingerprint} · {reason} · 이 항목을 "
+        f"건너뛴다\n{action}"
+    )
+    if env_key:
+        expected += "\nenv 롤백 키와 같은 키다 — 목록 사용을 끄면 env 경로도 같은 거절을 받는다"
+    assert alerts == [expected]
+    for secret in (FAKE_API_KEY, FAKE_API_KEY[-4:], _ORG):
+        assert secret not in alerts[0]
+
+
+@pytest.mark.usefixtures("_settled_tasks")
+async def test_other_process_skips_the_exhausted_item_on_its_next_call(
+    db_session: AsyncSession, alerts: list[str]
+) -> None:
+    """한 프로세스가 표시하면 같은 Redis·DB 를 보는 다른 프로세스도 다음 호출에서 그 항목을 건너뛴다 — 표시가 세대를 올려 그쪽이
+    캐시한 스냅숏을 버리게 한다."""
+    await _ready_pool(db_session)
+    marking = CredentialPool(session_factory=_CountingFactory(db_session), redis=redis_client)
+    other = CredentialPool(session_factory=_CountingFactory(db_session), redis=redis_client)
+    await _planned(other)
+
+    await marking.mark_exhausted(await _planned(marking), "credit")
+    plan = await other.plan("opus")
+
+    assert plan is not None and plan.candidates == []

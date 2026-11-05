@@ -14,20 +14,26 @@
   충전액)은 후보 판정·소진 표시 조건·알림·사용액에 호출마다 필요한 비밀이 아닌 값이다.
 - 세션은 부를 때마다 팩토리로 짧게 열고 닫는다 — 요청 세션에 기대지 않아 소설화 워커·SSE 제너레이터 안에서도 같다. 기본 풀은
   api 와 같은 세션 팩토리·Redis 를 써서 워커도 같은 스냅숏·세대를 본다.
+- **소진 표시**는 조건부 UPDATE(아직 켜짐 + 그 요청이 쓴 키의 지문 + 그 요청이 본 상태 판)라 같은 거절이 여러 요청·프로세스에서
+  와도 한 번만 바뀌고, 바꾼 쪽만 세대를 올리고 알린다. 키를 바꾸거나 끄고 다시 켠 뒤 도착한 늦은 거절은 0행이다. 표시·무효화·
+  알림은 참조를 쥔 태스크 하나로 돌고 부르는 쪽은 방패 너머로 상한까지만 기다린다.
+- **알림**은 쏘고 잊는다(`llm/credential_notify.py`). 후보 없음은 그 요청의 소진 표시가 끝난 뒤의 세대·축으로, 읽을 수 없는 키는
+  (항목, 지문, 키 id)로 Redis 표지를 세워 같은 상태가 이어지는 동안 한 번만 보낸다.
 """
 
 import asyncio
 import base64
 import logging
 import uuid
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Coroutine, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
@@ -38,14 +44,20 @@ from api.db.models.llm_credential import ClaudeModelAxis, LlmCredential, LlmCred
 from api.llm.claude_messages import claude_error
 from api.llm.client import LLMClientError
 from api.llm.credential_accounts import AccountProvider
+from api.llm.credential_notify import spawn_credential_notification, spawn_credential_notification_once
 from api.llm.credential_usage import SpendTarget
 from api.llm.credentials import (
     CLAUDE_AXES,
     CREDENTIAL_KEY_PREFIX,
+    CredentialStoreError,
+    RejectionKind,
     account_in_allowlist,
+    classify_anthropic_rejection,
     allowed_accounts,
     credential_keyring,
+    credential_write,
     decrypt_stored_secret,
+    is_env_key,
     passed_axes,
 )
 from api.llm.usage_store import RECORD_TIMEOUT_SECONDS
@@ -58,6 +70,28 @@ GENERATION_KEY = f"{CREDENTIAL_KEY_PREFIX}pool:generation"
 REDIS_TIMEOUT_SECONDS = RECORD_TIMEOUT_SECONDS
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+# 소진 표시를 부르는 쪽이 기다리는 상한. DB 가 느려도 다음 항목으로 다시 보내는 일이 이만큼보다 밀리지 않는다. 보통은 이 안에
+# 끝나 요청이 끝날 때 DB·세대가 이미 바뀌어 있다(다른 프로세스가 결정적으로 본다). 표시 자체는 상한과 무관하게 끝까지 돈다.
+MARK_TIMEOUT_SECONDS = 1.0
+# 후보 없음·읽을 수 없는 키 알림의 중복 억제 수명 — 같은 상태가 하루 넘게 이어지면 하루에 한 번 다시 알린다.
+_STATE_ALERT_SECONDS = 24 * 60 * 60
+_ALERT_KEY_PREFIX = f"{CREDENTIAL_KEY_PREFIX}alert:"
+# 소진 사유마다 (알림의 사유, 운영자가 할 일).
+_EXHAUSTION_REASONS: dict[RejectionKind, tuple[str, str]] = {
+    "credit": ("크레딧 부족", "충전한 뒤 확인 호출 → 켜기"),
+    "auth": ("키 무효 또는 조직 비활성", "키를 교체하거나 지운다"),
+    "limit": ("사용 한도 도달", "한도가 풀린 뒤(월 상한은 다음 달 1일 00:00 UTC) 확인 호출 → 켜기"),
+}
+# 쏘고 잊은 표시·알림 태스크의 참조(알림 모듈과 같은 꼴) — 참조가 없으면 끝나기 전에 사라질 수 있다.
+_pending: set[asyncio.Task[None]] = set()
+
+
+def _spawn(coroutine: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
+    task = asyncio.create_task(coroutine)
+    _pending.add(task)
+    task.add_done_callback(_pending.discard)
+    return task
 
 
 class PoolCredential(BaseModel):
@@ -90,6 +124,11 @@ class PoolCredential(BaseModel):
         """프로세스 안 SDK 클라이언트 캐시 키. 키를 바꾸면 지문이 바뀌어 새 클라이언트를 만들고, 키링 회전은 값이 같아 지문도
         같으므로 같은 클라이언트를 계속 쓴다."""
         return (self.id, self.secret_fingerprint)
+
+    @property
+    def subject(self) -> str:
+        """알림 문구의 앞머리 — 공급자·라벨·지문만(키·끝 4자리·조직 id 는 싣지 않는다)."""
+        return f"{self.provider} · {self.label} · 지문 {self.secret_fingerprint}"
 
     @property
     def spend_target(self) -> SpendTarget:
@@ -291,4 +330,112 @@ class CredentialPool:
                     credential.secret_fingerprint,
                     credential.key_id,
                 )
+                # 프로세스마다 한 번 쏘고, 프로세스 사이의 중복은 표지가 막는다.
+                spawn_credential_notification_once(
+                    f"{_ALERT_KEY_PREFIX}unreadable:{credential.id}:{credential.secret_fingerprint}:{credential.key_id}",
+                    f"[Claude 자격] 저장한 키를 읽을 수 없어 건너뛴다 — {credential.subject} · 암호화 키 목록을 확인하거나 키를 "
+                    "다시 붙여넣는다",
+                    ttl_seconds=_STATE_ALERT_SECONDS,
+                )
             return None
+
+    # ── 소진 표시·알림 ──────────────────────────────────────────────────────────
+    async def mark_exhausted(self, credential: PoolCredential, kind: RejectionKind) -> asyncio.Task[None]:
+        """그 항목을 소진으로 표시한다. 표시(UPDATE·커밋)와 그 뒤 캐시 무효화·알림은 참조를 쥔 태스크 하나로 돌고, 부르는 쪽은
+        방패 너머로 상한까지만 기다린다 — 커밋이 서버에 닿은 뒤 부르는 쪽이 취소되거나 상한에 걸려도 태스크가 무효화·알림까지
+        끝낸다(부르는 코루틴 안에서 바로 커밋을 기다리면 그 둘이 사라지고, 뒤 요청은 0행이라 아무도 다시 알리지 않는다). 절대
+        raise 하지 않는다(부르는 쪽의 취소는 그대로 올라간다). 돌려준 태스크는 후보 없음 알림이 기다린다."""
+        task = _spawn(self._exhaust(credential, kind))
+        try:
+            async with asyncio.timeout(MARK_TIMEOUT_SECONDS):
+                await asyncio.shield(task)
+        except TimeoutError:
+            logger.warning("Claude 자격 소진 표시가 상한 안에 끝나지 않아 기다리지 않고 다음 항목으로 간다")
+        return task
+
+    async def mark_if_rejected_mid_stream(self, credential: PoolCredential, exc: BaseException) -> None:
+        """스트림이 열린 뒤 온 오류. 재시도는 하지 않는다(글이 이미 나갔을 수 있고, 끊어도 과금된다). 다만 그 오류가 소진으로 볼
+        거절이면(상태 200 에서 분류가 값을 내는 갈래는 결제 오류 종류뿐이다) 그 항목을 소진으로 표시해 다음 요청이 다음 항목으로
+        가게 한다 — 소진이 스트림 오류로만 온다면 생성이 매 턴 실패하는데 판정은 생성 실패로 돌지 않아 아무도 표시하지 않는다."""
+        kind = classify_anthropic_rejection(exc)
+        if kind is not None:
+            await self.mark_exhausted(credential, kind)
+
+    async def _exhaust(self, credential: PoolCredential, kind: RejectionKind) -> None:
+        """그 요청이 쓴 키(지문)·그 요청이 본 상태 판이 그대로이고 아직 켜져 있을 때만 바꾼다 — 다른 프로세스가 먼저 표시했거나 그
+        사이 키를 바꾸거나 끄고 다시 켰으면 0행이라 아무것도 하지 않는다. 판을 올리는 것은 어드민 상태 변경과 같은 뜻이다(그 전의
+        확인은 다시 켜기에 세지 않는다). 1행을 바꿨을 때만 커밋 뒤에 세대를 올리고 알린다. 절대 raise 하지 않는다."""
+        statement = (
+            update(LlmCredential)
+            .where(
+                LlmCredential.id == credential.id,
+                LlmCredential.state == "active",
+                LlmCredential.secret_fingerprint == credential.secret_fingerprint,
+                LlmCredential.state_version == credential.state_version,
+            )
+            .values(
+                state="exhausted",
+                state_reason=kind,
+                state_version=LlmCredential.state_version + 1,
+                state_changed_at=func.now(),
+                updated_at=func.now(),
+            )
+            .returning(LlmCredential.id)
+            .execution_options(synchronize_session=False)
+        )
+        try:
+            async with self.session_factory() as db:
+                # 이 표에 쓰는 문장의 DB 오류는 그 행 전체(암호문)를 싣는다 — 클래스 이름·SQLSTATE 만 남는 오류로 바꾼다.
+                async with credential_write(db):
+                    changed = (await db.execute(statement)).scalar_one_or_none() is not None
+                    await db.commit()
+        except Exception as exc:
+            # 거절은 사실이라 부르는 쪽은 다음 항목으로 간다. 남기는 것은 클래스 이름(자격 표 쓰기 실패면 SQLSTATE 까지)뿐이다.
+            logger.warning(
+                "Claude 자격 소진 표시 실패: %s", exc if isinstance(exc, CredentialStoreError) else type(exc).__name__
+            )
+            capture_dependency_failure(exc, dependency="db")
+            return
+        if not changed:
+            return
+        try:
+            await invalidate_pool_snapshot(self.redis)
+        except Exception as exc:
+            logger.warning(
+                "Claude 자격 소진 표시 뒤 캐시 무효화 실패 — 캐시 수명 동안 다른 프로세스가 그 항목에 먼저 보낸다: %s",
+                type(exc).__name__,
+            )
+            capture_dependency_failure(exc, dependency="redis")
+        spawn_credential_notification(_exhaustion_message(credential, kind))
+
+    def alert_no_candidate(self, axis: ClaudeModelAxis, *, after: Sequence[asyncio.Task[None]]) -> None:
+        """그 축으로 보낼 항목이 없다고 알린다 — 쏘고 잊는다(부르는 쪽은 Redis 도 기다리지 않는다). 표지는 그 요청의 소진 표시
+        (`after`)가 끝난 뒤의 세대다: 계획을 만들 때의 세대를 쓰면 같은 요청의 표시가 세대를 올려, 다음 호출이 새 세대로 표지를 또
+        세워 두 번 알린다. 세대는 소진·어드민 변경마다 오르므로 그 상태가 이어지는 동안 축마다 한 번이다."""
+        _spawn(self._alert_no_candidate(axis, list(after)))
+
+    async def _alert_no_candidate(self, axis: ClaudeModelAxis, after: list[asyncio.Task[None]]) -> None:
+        if after:
+            await asyncio.wait(after)
+        try:
+            async with asyncio.timeout(REDIS_TIMEOUT_SECONDS):
+                raw_generation = await self.redis.get(GENERATION_KEY)
+        except Exception as exc:
+            # 표지 없이 보내면 실패한 호출마다 알린다.
+            logger.warning("Claude 자격 목록 세대를 읽지 못해 후보 없음 알림을 보내지 않는다: %s", type(exc).__name__)
+            capture_dependency_failure(exc, dependency="redis")
+            return
+        spawn_credential_notification_once(
+            f"{_ALERT_KEY_PREFIX}no-candidate:{int(raw_generation or 0)}:{axis}",
+            f"[Claude 자격] {axis} 모델을 보낼 항목이 없다 — 그 모델 호출이 실패·환불된다. 항목을 충전·확인·켜거나, 목록 사용을 "
+            "끄면 env 키 경로로 돈다",
+            ttl_seconds=_STATE_ALERT_SECONDS,
+        )
+
+
+def _exhaustion_message(credential: PoolCredential, kind: RejectionKind) -> str:
+    reason, action = _EXHAUSTION_REASONS[kind]
+    message = f"[Claude 자격] 소진 — {credential.subject} · {reason} · 이 항목을 건너뛴다\n{action}"
+    if is_env_key(credential.provider, credential.secret_fingerprint):
+        message += "\nenv 롤백 키와 같은 키다 — 목록 사용을 끄면 env 경로도 같은 거절을 받는다"
+    return message

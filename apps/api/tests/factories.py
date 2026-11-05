@@ -137,6 +137,7 @@ from api.db.models import (
 from api.db.session import engine
 from api.legal.consents import kind_consent_units
 from api.llm import bedrock as bedrock_module
+from api.llm import credential_notify, credential_pool
 from api.llm import dependencies as llm_dependencies
 from api.llm import gemini as gemini_module
 from api.llm.anthropic_api import AnthropicLLMClient
@@ -3190,3 +3191,37 @@ async def _set_llm_credential_pool(db: AsyncSession, enabled: bool) -> None:
         .values(pool_enabled=enabled)
         .execution_options(synchronize_session=False)
     )
+
+
+def _capture_credential_alerts(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Claude 자격 알림을 웹훅 대신 목록에 모은다. 웹훅 설정을 채워 보내는 길을 연다(비면 쏘기 전에 건너뛴다). 쏘고 잊는
+    알림이라 세기 전에 `_settle_credential_tasks` 로 기다린다."""
+    monkeypatch.setattr(settings, "llm_credential_discord_webhook_url", "https://discord.invalid/api/webhooks/0/alerts")
+    sent: list[str] = []
+
+    async def send(message: str) -> None:
+        sent.append(message)
+
+    monkeypatch.setattr(credential_notify, "send_credential_notification", send)
+    return sent
+
+
+def _credential_tasks() -> set[asyncio.Task[None]]:
+    return credential_pool._pending | credential_notify._pending
+
+
+async def _settle_credential_tasks() -> None:
+    """쏘고 잊은 Claude 자격 목록 태스크(소진 표시·후보 없음 알림·알림 전송)가 모두 끝날 때까지 기다린다. 태스크가 태스크를
+    띄우므로 두 모듈의 집합이 함께 빌 때까지 돈다. 끝나지 않는 태스크가 있으면 멈추지 않고 실패한다(상한 10초)."""
+    async with asyncio.timeout(10):
+        while pending := _credential_tasks():
+            await asyncio.wait(pending)
+
+
+async def _cancel_credential_tasks() -> None:
+    """남은 Claude 자격 목록 태스크를 취소한다 — 테스트 이벤트 루프를 모든 테스트가 함께 쓰므로, 일부러 멈춰 둔 태스크가 다음
+    테스트로 넘어가지 않게 테스트 끝에서 부른다."""
+    while pending := _credential_tasks():
+        for task in pending:
+            task.cancel()
+        await asyncio.wait(pending)

@@ -10,6 +10,11 @@ SDK 경계(`messages.create`)만 가짜로 두고 구현을 그대로 부른다.
 
 기대값은 지금 동작을 기록한 것이다(`fixtures/anthropic_request_characterization.json`). 다시 뜨는 법은
 `factories._assert_characterization`(갱신 변수 `UPDATE_ANTHROPIC_REQUEST_CHARACTERIZATION`).
+
+Claude 자격 목록을 쓰지 않는 세 조건 — 호출 경로 스위치가 꺼짐, 켜졌지만 어드민의 목록 사용이 꺼짐, 켜졌지만 목록에 항목이
+없음 — 이 모두 **같은 기대값**을 내야 한다(목록을 읽는 코드가 들어오기 전에 뜬 값이다). 스위치가 꺼졌으면 목록의 Redis·DB 에
+닿지도 않고, 나머지 둘은 목록 항목용 SDK 클라이언트를 만들지 않고 추정 사용액도 쌓지 않는다. 기대값을 이 조건들 위에서 다시
+뜨지 않는다 — 다시 뜨면 고정이 자기 자신과 비교하게 된다.
 """
 
 import logging
@@ -17,19 +22,31 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import anthropic
 import httpx2
 import pytest
 from anthropic.types import Message
 from pydantic import BaseModel
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core.config import settings
+from api.core.redis import redis_client
 from api.llm import anthropic_api as anthropic_module
 from api.llm.anthropic_api import AnthropicLLMClient
 from api.llm.client import CallUsage, LLMCallContext, LLMClientError, SegmentedPrompt
-from factories import _assert_characterization, _assert_recorded_cases
+from api.llm.credential_pool import CredentialPool
+from factories import (
+    FAKE_ANTHROPIC_ORG,
+    FAKE_CREDENTIAL_KEYRING,
+    _add_llm_credential,
+    _add_llm_credential_check,
+    _assert_characterization,
+    _assert_recorded_cases,
+    _set_llm_credential_pool,
+)
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "anthropic_request_characterization.json"
 UPDATE_ENV = "UPDATE_ANTHROPIC_REQUEST_CHARACTERIZATION"
@@ -320,13 +337,74 @@ async def _observe(
     return observed, fake
 
 
+# ── 목록을 쓰지 않는 세 조건 ──────────────────────────────────────────────────────────────
+_CONDITIONS = ["switch-off", "pool-disabled", "pool-empty"]
+
+
+class _Untouchable:
+    """스위치가 꺼진 조건에서 풀의 Redis·세션 팩토리 자리 — 무엇이든 건드리면 적어 두고 실패한다."""
+
+    def __init__(self) -> None:
+        self.touched: list[str] = []
+
+    def __getattr__(self, name: str) -> Any:
+        self.touched.append(name)
+        raise AssertionError(f"목록 읽기가 {name} 에 닿았다")
+
+    def __call__(self) -> Any:
+        self.touched.append("session")
+        raise AssertionError("목록 읽기가 DB 세션을 열었다")
+
+
+async def _client_under(
+    condition: str, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, untouchable: _Untouchable
+) -> AnthropicLLMClient:
+    """그 조건의 구현. 스위치가 꺼졌으면 풀은 건드리면 실패하는 자리이고, 켜졌으면 셋업과 같은 트랜잭션을 보는 풀이다."""
+    if condition == "switch-off":
+        monkeypatch.setattr(settings, "llm_credential_pool_enabled", False)
+        return AnthropicLLMClient(pool=CredentialPool(session_factory=untouchable, redis=cast(Redis, untouchable)))
+    monkeypatch.setattr(settings, "llm_credential_pool_enabled", True)
+    monkeypatch.setattr(settings, "llm_credential_encryption_keys", FAKE_CREDENTIAL_KEYRING)
+    monkeypatch.setattr(settings, "llm_credential_allowed_accounts", f"anthropic:{FAKE_ANTHROPIC_ORG}")
+    if condition == "pool-disabled":
+        await _set_llm_credential_pool(db_session, False)
+        credential = await _add_llm_credential(db_session, "목록 항목")
+        await _add_llm_credential_check(db_session, credential)
+    else:
+        assert condition == "pool-empty"
+        await _set_llm_credential_pool(db_session, True)
+    sessions = async_sessionmaker(bind=db_session.bind, join_transaction_mode="create_savepoint", expire_on_commit=False)
+    return AnthropicLLMClient(pool=CredentialPool(session_factory=sessions, redis=redis_client))
+
+
+@pytest.mark.parametrize("condition", _CONDITIONS)
 @pytest.mark.parametrize("case", list(_CASES))
 async def test_requests_usage_and_records_match_the_recorded_baseline(
-    case: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    case: str,
+    condition: str,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    observed, _ = await _observe(case, AnthropicLLMClient(), monkeypatch, caplog)
+    untouchable = _Untouchable()
+    pool_sdks: list[str] = []
+
+    def no_pool_sdk(api_key: str) -> Any:
+        pool_sdks.append(api_key)
+        raise AssertionError("목록을 쓰지 않는 조건에서 SDK 클라이언트를 새로 만들었다")
+
+    monkeypatch.setattr(anthropic_module, "_new_sdk", no_pool_sdk)
+    client = await _client_under(condition, db_session, monkeypatch, untouchable)
+
+    observed, _ = await _observe(case, client, monkeypatch, caplog)
 
     _assert_characterization(FIXTURE_PATH, case, observed, UPDATE_ENV)
+    assert pool_sdks == []
+    if condition == "switch-off":
+        assert untouchable.touched == []
+        assert await redis_client.keys("llm_credential:*") == []
+    else:
+        assert await redis_client.keys("llm_credential:usage:*") == []
 
 
 def test_recorded_cases_match_the_parameters() -> None:

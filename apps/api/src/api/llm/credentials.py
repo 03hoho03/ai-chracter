@@ -359,12 +359,13 @@ def passed_axes(credential: LlmCredential, checks: Sequence[LlmCredentialCheck])
 def same_as_env_key(credential: LlmCredential) -> bool:
     """그 항목의 키가 지금 env 롤백 키(`ANTHROPIC_DIRECT_API_KEY`)와 같은가. 저장하지 않고 볼 때마다 계산한다 — env 키를
     바꾸면 답이 바뀌어야 한다. env 키의 지문은 이 비교에만 쓰고 어디에도 남기지 않는다."""
+    return is_env_key(credential.provider, credential.secret_fingerprint)
+
+
+def is_env_key(provider: str, fingerprint: str) -> bool:
+    """`same_as_env_key` 의 규칙을 행 없이 그 두 칸으로 본다(런타임은 행이 아니라 캐시한 스냅숏 항목을 든다)."""
     env_key = settings.anthropic_direct_api_key.strip()
-    return (
-        credential.provider == "anthropic"
-        and bool(env_key)
-        and secret_fingerprint(env_key) == credential.secret_fingerprint
-    )
+    return provider == "anthropic" and bool(env_key) and secret_fingerprint(env_key) == fingerprint
 
 # ── 표 쓰기의 DB 오류 ──────────────────────────────────────────────────────────
 _UNIQUE_VIOLATION = "23505"

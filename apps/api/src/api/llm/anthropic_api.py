@@ -12,19 +12,32 @@
 
 요청에 계정을 가리키는 값(`metadata.user_id` 등)을 싣지 않는다. 다른 모델로 조용히 넘기는 서버 쪽 대체 경로도 쓰지 않는다
 (실패하면 오류와 환불이다 — 사용자가 고른 것과 다른 경로가 돌지 않게).
+
+**어느 계정으로 보내나.** env 스위치(`LLM_CREDENTIAL_POOL_ENABLED`)가 꺼져 있거나, 켜졌어도 어드민의 "목록 사용"이 꺼져 있거나
+Claude 자격 목록에 항목이 하나도 없으면 지금처럼 env 키(`ANTHROPIC_DIRECT_API_KEY`) 하나로 보낸다 — 스위치가 꺼졌으면 목록의
+Redis·DB 를 보지도 않는다. 그 밖이면 목록에서 그 모델 축으로 보낼 수 있는 항목(`llm/credential_pool.py`)을 위치 순으로
+내려간다. 모델 id·요청 인자는 어느 항목이든 같고 계정만 다르다. 응답 본문을 받기 전의 거절(HTTP 상태) 가운데 소진으로 볼
+것(`llm/credentials.py` 의 `classify_anthropic_rejection`)만 그 항목을 소진으로 표시하고 다음 항목으로 같은 요청을 다시
+보낸다 — 아직 사용자에게 글이 나가지 않았다. 스트림이 열린 뒤의 오류는 다시 보내지 않고(결제 오류 종류면 표시만), 소진이 아닌
+거절·시간 초과·연결 오류는 env 키 경로와 같은 예외로 올린다. 보낼 항목이 남지 않으면 `LLMCredentialPoolEmptyError`(환불
+경로)이고 env 키로 떨어지지 않는다. 목록으로 보낸 호출은 사용량 기록·로그 줄에 처리한 항목 id 를 싣고 그 항목의 추정 사용액에
+원가를 쌓는다(`llm/credential_usage.py`).
 """
 
+import asyncio
 import logging
-from collections.abc import AsyncIterator
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import TypeVar
 
 import anthropic
-from anthropic import AsyncAnthropic
-from anthropic.types import ThinkingConfigParam
+from anthropic import AsyncAnthropic, AsyncStream
+from anthropic.types import Message, RawMessageStreamEvent, ThinkingConfigParam
 from pydantic import BaseModel
 
 from api.core.config import ClaudeEffort, settings
-from api.llm.backends import follows_carried_model, turns_off_structured_thinking
+from api.db.models.llm_credential import ClaudeModelAxis
+from api.llm.backends import PromptSetModelId, follows_carried_model, turns_off_structured_thinking
 from api.llm.call_policy import CALL_POLICIES
 from api.llm.chat_models import backend_model_id, structured_call_model
 from api.llm.claude_messages import (
@@ -43,15 +56,20 @@ from api.llm.client import (
     LLMCallSite,
     LLMClient,
     LLMClientError,
+    LLMCredentialPoolEmptyError,
     LLMEmptyResponseError,
     LLMRateLimitError,
     collect_usage,
     request_timeout_ms,
 )
+from api.llm.credential_pool import CredentialPool, PoolCredential
+from api.llm.credential_usage import record_credential_spend
+from api.llm.credentials import classify_anthropic_rejection
 from api.llm.usage_store import record_usage
 
 T = TypeVar("T", bound=BaseModel)
 E = TypeVar("E", bound=LLMClientError)
+R = TypeVar("R")
 
 logger = logging.getLogger(__name__)
 
@@ -117,14 +135,17 @@ def _is_throttling(exc: BaseException) -> bool:
     return isinstance(exc, anthropic.APIStatusError) and exc.type == "rate_limit_error"
 
 
-def _log_usage(usage: LLMCallContext, model: str, usage_metadata: ClaudeUsage | None) -> None:
+def _log_usage(
+    usage: LLMCallContext, model: str, usage_metadata: ClaudeUsage | None, credential: PoolCredential | None
+) -> None:
     """호출 한 건의 토큰 사용량을 고정 토큰 `anthropic_usage` 로 한 줄 남긴다. 형식과 규칙은 `bedrock_usage` 와 같고(텍스트는
     받지도 않는다, 메타데이터가 없으면 `usage=missing`, 절대 raise 하지 않는다), 이 경로는 사고하므로 사고 토큰 칸을 더한다.
-    이름을 따로 두는 이유는 기존 `gemini_usage`·`bedrock_usage` grep·분포를 끊지 않으려는 것이다."""
+    이름을 따로 두는 이유는 기존 `gemini_usage`·`bedrock_usage` grep·분포를 끊지 않으려는 것이다. Claude 자격 목록으로 보낸
+    호출만 끝에 처리한 항목 id 를 붙인다 — 목록을 쓰지 않는 줄은 바이트까지 지금 그대로다."""
     try:
         logger.warning(
             "anthropic_usage call_site=%s model=%s prompt_tokens=%s cached_content_tokens=%s cache_write_tokens=%s "
-            "candidates_tokens=%s thoughts_tokens=%s total_tokens=%s user_id=%s room_id=%s%s",
+            "candidates_tokens=%s thoughts_tokens=%s total_tokens=%s user_id=%s room_id=%s%s%s",
             usage.call_site,
             model,
             getattr(usage_metadata, "prompt_token_count", None),
@@ -136,16 +157,42 @@ def _log_usage(usage: LLMCallContext, model: str, usage_metadata: ClaudeUsage | 
             usage.user_id,
             usage.room_id,
             " usage=missing" if usage_metadata is None else "",
+            f" credential_id={credential.id}" if credential is not None else "",
         )
     except Exception:
         pass
 
 
+def _new_sdk(api_key: str) -> AsyncAnthropic:
+    # 재시도는 하지 않는다(SDK 기본은 2회) — 재시도는 실패한 턴의 지연과 원가를 곱으로 늘린다. env 키와 목록 항목이 같은
+    # 인자로 만든다 — 계정만 다르고 요청은 같아야 한다.
+    return AsyncAnthropic(
+        api_key=api_key,
+        base_url=_BASE_URL,
+        max_retries=0,
+        timeout=settings.anthropic_chat_timeout_ms / 1000,
+    )
+
+
+def _axis(model: PromptSetModelId) -> ClaudeModelAxis:
+    """Claude 자격 목록의 확인 축. 이 구현이 받는 모델은 늘 축이다 — 그 밖의 모델은 모델 id 표(`backend_model_id`)에서 이미
+    `KeyError` 로 멈췄다."""
+    if model == "gemini":
+        raise KeyError(model)
+    return model
+
+
 class AnthropicLLMClient(LLMClient):
-    def __init__(self) -> None:
+    def __init__(self, *, pool: CredentialPool | None = None) -> None:
         # SDK 클라이언트는 첫 호출 때 만든다 — 키가 비었을 때의 실패가 생성자(의존성 해석)가 아니라 그 호출의
         # `LLMClientError` 로 나야 채팅이 환불 경로를 탄다.
         self._client: AsyncAnthropic | None = None
+        # Claude 자격 목록 읽기. 주지 않으면 스위치가 켜진 첫 호출에서 api 와 같은 세션 팩토리·Redis 로 만든다.
+        self._pool = pool
+        # 목록 항목마다의 SDK 클라이언트. (항목 id, 키 지문)으로 묶어 키를 바꾸면 새로 만들고, 호출마다 스냅숏의 켜진 항목으로
+        # 걸러 끄기·소진·삭제·키 교체가 다음 호출에서 옛 클라이언트를 버린다. 버린 클라이언트는 닫지 않는다 — 진행 중인 스트림이
+        # 쥐고 있을 수 있고, 가비지 수거 때 SDK 가 연결을 닫는다.
+        self._pool_clients: dict[tuple[uuid.UUID, str], AsyncAnthropic] = {}
 
     def _sdk(self) -> AsyncAnthropic:
         if self._client is not None:
@@ -155,14 +202,56 @@ class AnthropicLLMClient(LLMClient):
             # 🔴 키를 넘기지 않으면 SDK 가 env `ANTHROPIC_API_KEY`·`ANTHROPIC_AUTH_TOKEN`·로그인 프로필에서 다른 자격을 찾고,
             # 빈 문자열을 넘기면 그것도 명시 자격으로 쳐 env 를 보지 않은 채 인증 실패를 받는다. 만들기 전에 막는다.
             raise _anthropic_error(LLMClientError, "Anthropic API 키가 비어 있어 호출하지 않는다")
-        # 재시도는 하지 않는다(SDK 기본은 2회) — 재시도는 실패한 턴의 지연과 원가를 곱으로 늘린다.
-        self._client = AsyncAnthropic(
-            api_key=key,
-            base_url=_BASE_URL,
-            max_retries=0,
-            timeout=settings.anthropic_chat_timeout_ms / 1000,
-        )
+        self._client = _new_sdk(key)
         return self._client
+
+    def _credential_pool(self) -> CredentialPool:
+        if self._pool is None:
+            self._pool = CredentialPool()
+        return self._pool
+
+    def _pool_sdk(self, pool: CredentialPool, credential: PoolCredential) -> AsyncAnthropic | None:
+        """그 항목의 SDK 클라이언트. 키를 읽을 수 없으면 None(그 항목을 건너뛴다 — 알림은 풀이 한 번)."""
+        sdk = self._pool_clients.get(credential.client_key)
+        if sdk is None:
+            secret = pool.secret_of(credential)
+            if secret is None:
+                return None
+            sdk = self._pool_clients[credential.client_key] = _new_sdk(secret)
+        return sdk
+
+    async def _send(
+        self, axis: ClaudeModelAxis, request: Callable[[AsyncAnthropic], Awaitable[R]]
+    ) -> tuple[R, PoolCredential | None]:
+        """요청을 보낸다. 목록을 쓰지 않으면 env 키로 한 번(지금 그대로). 쓰면 후보를 위치 순으로 내려가며, 소진으로 볼 거절이면
+        그 항목을 소진으로 표시하고 다음 후보로 **같은 요청**을 보낸다. 여기서 잡는 거절은 응답 본문을 받기 전(HTTP 상태)이라
+        사용자에게 글이 나가지 않았다 — 스트림 도중의 오류는 부르는 쪽의 읽기 루프에서 나므로 이 함수에 닿지 않는다. 소진이 아닌
+        오류는 그대로 올려 부르는 쪽이 지금과 같은 예외로 바꾼다. 스위치는 호출마다 읽는다."""
+        if not settings.llm_credential_pool_enabled:
+            return await request(self._sdk()), None
+        pool = self._credential_pool()
+        plan = await pool.plan(axis)
+        if plan is None:
+            return await request(self._sdk()), None
+        self._pool_clients = {key: sdk for key, sdk in self._pool_clients.items() if key in plan.live_keys}
+        rejected: anthropic.APIStatusError | None = None
+        marks: list[asyncio.Task[None]] = []
+        for credential in plan.candidates:
+            sdk = self._pool_sdk(pool, credential)
+            if sdk is None:
+                continue
+            try:
+                return await request(sdk), credential
+            except anthropic.APIStatusError as exc:
+                kind = classify_anthropic_rejection(exc)
+                if kind is None:
+                    raise
+                marks.append(await pool.mark_exhausted(credential, kind))
+                rejected = exc
+        pool.alert_no_candidate(axis, after=marks)
+        raise _anthropic_error(
+            LLMCredentialPoolEmptyError, f"Claude 자격 목록에 {axis} 를 보낼 항목이 없다"
+        ) from rejected
 
     async def generate(
         self,
@@ -176,17 +265,25 @@ class AnthropicLLMClient(LLMClient):
         model = backend_model_id("anthropic", usage.model)
         max_tokens = _max_tokens(usage.call_site)
         tally = ClaudeStreamTally("anthropic", "Anthropic")
-        try:
-            stream = await self._sdk().messages.create(
+        # 한 번만 만든다 — 목록의 다음 항목으로 다시 보낼 때도 같은 요청이다.
+        content = user_content(prompt, usage.call_site, logger)
+
+        async def open_stream(sdk: AsyncAnthropic) -> AsyncStream[RawMessageStreamEvent]:
+            return await sdk.messages.create(
                 model=model,
                 max_tokens=max_tokens,
-                messages=[{"role": "user", "content": user_content(prompt, usage.call_site, logger)}],
+                messages=[{"role": "user", "content": content}],
                 system=system_instruction if system_instruction is not None else anthropic.omit,
                 stop_sequences=stop_sequences if stop_sequences else anthropic.omit,
                 output_config={"effort": _effort(usage.call_site)},
                 stream=True,
                 timeout=_timeout_seconds(usage.call_site),
             )
+
+        credential: PoolCredential | None = None
+        try:
+            # 여기까지가 첫 이벤트 전이다 — 목록의 다음 항목으로 다시 보내는 것은 이 안에서만 일어난다.
+            stream, credential = await self._send(_axis(usage.model), open_stream)
             async for event in stream:
                 was_truncated = tally.truncated
                 text = tally.feed(event)
@@ -196,14 +293,19 @@ class AnthropicLLMClient(LLMClient):
                     # 사고 토큰도 이 상한 안에 든다. 자주 찍히면 상한이 낮거나 effort 가 높은 것이다.
                     logger.warning("Anthropic 응답이 max_tokens(%d)에서 잘렸다", max_tokens)
         except COMMON_TRANSPORT_ERRORS as exc:
+            if credential is not None:
+                # 스트림이 열린 뒤의 오류 — 다시 보내지 않고, 결제 오류 종류면 그 항목을 표시만 한다.
+                await self._credential_pool().mark_if_rejected_mid_stream(credential, exc)
             if _is_throttling(exc):
                 raise _anthropic_error(LLMRateLimitError, f"Anthropic generate() call failed: {exc}") from exc
             raise _anthropic_error(LLMClientError, f"Anthropic generate() call failed: {exc}") from exc
         # 정상 종료한 스트림만 여기 닿는다 — 소비자가 중간에 끊으면(aclose) `yield` 자리에서 빠지고 기록하지 않는다.
         usage_metadata = tally.usage()
-        _log_usage(usage, model, usage_metadata)
+        _log_usage(usage, model, usage_metadata, credential)
         await record_usage(usage.call_site, model, usage_metadata)
-        collect_usage(usage, model, usage_metadata)
+        collect_usage(usage, model, usage_metadata, credential_id=credential.id if credential is not None else None)
+        if credential is not None:
+            await record_credential_spend(credential.spend_target, model, usage_metadata)
         if tally.truncated and not tally.has_text:
             # 사고가 먼저 나오므로 사고 도중 상한에 닿으면 본문이 하나도 없다. 채팅이라도 빈 턴을 저장·과금하지 않고 실패로
             # 올려 환불 경로를 태운다(원가는 이미 나가 위에서 기록했다). 본문이 조금이라도 있으면 아래 규칙대로다.
@@ -245,7 +347,9 @@ class AnthropicLLMClient(LLMClient):
     async def _structured(
         self, prompt: str, response_schema: type[T], system: str | None, usage: LLMCallContext, method: str
     ) -> T:
-        model = backend_model_id("anthropic", structured_call_model(usage.call_site, usage.model, usage.call_model))
+        # 판정·요약은 방의 모델이 아니라 그 호출의 모델로 나가므로 목록의 후보도 그 축으로 고른다.
+        axis = _axis(structured_call_model(usage.call_site, usage.model, usage.call_model))
+        model = backend_model_id("anthropic", axis)
         thinking: ThinkingConfigParam | None
         effort: ClaudeEffort | None
         if follows_carried_model(usage.call_site):
@@ -258,8 +362,9 @@ class AnthropicLLMClient(LLMClient):
         output_config = structured_output_config(response_schema)
         if effort is not None:
             output_config["effort"] = effort
-        try:
-            message = await self._sdk().messages.create(
+
+        async def send(sdk: AsyncAnthropic) -> Message:
+            return await sdk.messages.create(
                 model=model,
                 max_tokens=_max_tokens(usage.call_site),
                 messages=[{"role": "user", "content": str(prompt)}],
@@ -268,12 +373,17 @@ class AnthropicLLMClient(LLMClient):
                 thinking=thinking if thinking is not None else anthropic.omit,
                 timeout=request_timeout_ms(usage.call_site) / 1000,
             )
+
+        try:
+            message, credential = await self._send(axis, send)
         except COMMON_TRANSPORT_ERRORS as exc:
             if _is_throttling(exc):
                 raise _anthropic_error(LLMRateLimitError, f"Anthropic {method}() call failed: {exc}") from exc
             raise _anthropic_error(LLMClientError, f"Anthropic {method}() call failed: {exc}") from exc
         usage_metadata = message_usage(message)
-        _log_usage(usage, model, usage_metadata)
+        _log_usage(usage, model, usage_metadata, credential)
         await record_usage(usage.call_site, model, usage_metadata)
-        collect_usage(usage, model, usage_metadata)
+        collect_usage(usage, model, usage_metadata, credential_id=credential.id if credential is not None else None)
+        if credential is not None:
+            await record_credential_spend(credential.spend_target, model, usage_metadata)
         return parse_structured(message, response_schema, "anthropic", "Anthropic")
