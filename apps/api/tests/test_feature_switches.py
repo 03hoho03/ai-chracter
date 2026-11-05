@@ -1,5 +1,6 @@
 """어드민 기능 스위치 덮어쓰기 — 읽는 순서(고정 맵 → 프로세스 맵 → `settings`), 표에서 다시 읽기와 그 실패, 요청·워커 작업
-시작 때의 고정, api·워커 기동 때의 첫 적재."""
+시작 때의 고정, api·워커 기동 때의 첫 적재. 끝의 시험들은 실제 라우트의 읽기 지점(클로버 정지·결제와 본인인증 판정·채팅 턴의
+기억 접기 예약)이 덮어쓰기를 따르고, 한 요청 안에서는 시작 값을 보는지 본다."""
 
 import asyncio
 import logging
@@ -11,11 +12,12 @@ import httpx
 import pytest
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.sse import EventSourceResponse
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from api.chat import router as chat_router
 from api.core import feature_switches
 from api.core.config import Settings, settings
 from api.core.feature_switches import (
@@ -26,9 +28,21 @@ from api.core.feature_switches import (
     refresh_switch_overrides,
     switch_on,
 )
-from api.db.models import AdminUser, FeatureSwitchChange, FeatureSwitchOverride
+from api.db.models import AdminUser, FeatureSwitchChange, FeatureSwitchOverride, User
+from api.llm.client import LLMCallContext
 from api.novelize import worker
-from factories import _eventually, _NeverCalledLLMClient, _true
+from factories import (
+    _clear_llm_override,
+    _eventually,
+    _FakeLLMClient,
+    _login_as,
+    _make_user_with_clover_lot,
+    _NeverCalledLLMClient,
+    _open_room,
+    _override_llm_client,
+    _parse_sse_events,
+    _true,
+)
 
 
 def _set_process_overrides(overrides: Mapping[FeatureSwitchName, bool]) -> None:
@@ -363,3 +377,130 @@ async def test_a_change_with_a_reason_is_kept(db_session: AsyncSession) -> None:
         )
     )
     await db_session.flush()
+
+
+# ── 실제 라우트의 읽기 지점 ─────────────────────────────────────────────────────
+
+
+async def _balance(db_session: AsyncSession, user_id: uuid.UUID) -> int:
+    balance = await db_session.scalar(
+        select(User.clover_balance).where(User.id == user_id).execution_options(populate_existing=True)
+    )
+    assert balance is not None
+    return balance
+
+
+async def test_a_clover_pause_override_stops_a_grant_route_while_the_env_is_off(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """덮어쓰기로 켠 클로버 정지는 `.env` 가 꺼져 있어도 지급 라우트의 의존성에서 503 이다. 깨지는 시나리오: 정지 검사가
+    `.env` 값만 읽어, 잔액을 옮기려고 어드민에서 정지를 켰는데 미션 보상이 계속 지급된다(이 회원은 미션을 달성하지 않아 검사가
+    덮어쓰기를 못 보면 422 다)."""
+    monkeypatch.setattr(settings, "clover_ledger_paused", False)
+    _set_process_overrides({"clover_ledger_paused": True})
+    user = await _make_user_with_clover_lot(db_session, clover_balance=1000)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post("/me/clover/missions/first_message/claim")
+
+    assert resp.status_code == 503, resp.text
+    assert resp.json()["detail"]["code"] == "CLOVER_PAUSED"
+
+
+async def test_a_clover_pause_override_lets_a_paid_chat_turn_through_while_the_env_is_on(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """덮어쓰기로 끈 클로버 정지는 `.env` 가 켜져 있어도 유료 턴의 게이트와 차감(`spend`)을 둘 다 지나게 한다 — 한 요청의 두
+    검사가 같은 값을 본다. 깨지는 시나리오: 정지 검사가 `.env` 값을 읽어, 어드민에서 정지를 풀었는데 유료 턴이 계속 503 이다."""
+    monkeypatch.setattr(settings, "clover_ledger_paused", True)
+    _set_process_overrides({"clover_ledger_paused": False})
+    room = await _open_room(db_client, db_session, turns=1, paid_turns=1)
+    _override_llm_client(_FakeLLMClient(tokens=["안녕"]))
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "새 메시지"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200, resp.text
+    assert [event["type"] for event in _parse_sse_events(resp.text)][-1] == "done"
+    assert await _balance(db_session, room.user_id) == 0
+
+
+async def test_payment_and_identity_judgments_follow_overrides_read_from_the_table(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """결제·본인인증 실효 판정은 표에서 읽어 온 덮어쓰기를 `.env` 보다 먼저 본다 — 켜는 쪽과 끄는 쪽 모두. 깨지는 시나리오:
+    판정이 `.env` 값만 읽어, 어드민에서 결제를 켰는데 충전 허브가 닫힌 채이거나 본인인증 게이트를 껐는데 미인증 회원이 계속
+    막힌다."""
+    for key in (
+        "portone_store_id",
+        "portone_payment_channel_key",
+        "portone_identity_channel_key",
+        "portone_api_secret",
+        "portone_webhook_secret",
+        "identity_ci_hmac_key",
+    ):
+        monkeypatch.setattr(settings, key, f"{key}-test")
+    monkeypatch.setattr(settings, "payments_enabled", False)
+    monkeypatch.setattr(settings, "identity_gate_enabled", True)
+    admin_id = await _admin_id(db_session)
+    db_session.add_all(
+        [
+            FeatureSwitchOverride(name="payments_enabled", value=True, admin_id=admin_id),
+            FeatureSwitchOverride(name="identity_gate_enabled", value=False, admin_id=admin_id),
+        ]
+    )
+    await db_session.flush()
+    await refresh_switch_overrides(async_sessionmaker(bind=db_session.bind, expire_on_commit=False))
+
+    body = (await db_client.get("/clover/products")).json()
+
+    assert (body["paymentsEnabled"], body["identityGateEnabled"]) == (True, False)
+
+
+class _RefreshedMidTurnLLMClient(_FakeLLMClient):
+    """응답을 쓰기 시작할 때 갱신 태스크가 프로세스 맵을 `refreshed` 로 갈아 끼운 것처럼 만든다."""
+
+    def __init__(self, refreshed: Mapping[FeatureSwitchName, bool]) -> None:
+        super().__init__(tokens=["안녕"])
+        self.refreshed = refreshed
+
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
+    ) -> AsyncIterator[str]:
+        _set_process_overrides(self.refreshed)
+        async for token in super().generate(prompt, system_instruction, stop_sequences, usage=usage):
+            yield token
+
+
+async def test_a_chat_turn_keeps_the_memory_switch_it_started_with(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """채팅 턴(SSE)은 응답을 쓰는 도중 덮어쓰기가 바뀌어도, 커밋 뒤의 접기 예약과 응답 뒤의 접기 작업까지 시작 순간의 값을
+    본다. 요청이 끝나면 바뀐 값이 보인다. 깨지는 시나리오: 접기 예약이 `.env` 값만 읽어 어드민에서 켠 생성 윈도우의 방에 접기가
+    예약되지 않거나, 턴 도중의 갱신을 읽어 같은 턴의 프롬프트는 요약 윈도우로 짓고 접기는 빼먹는다."""
+    monkeypatch.setattr(settings, "memory_window_generation", False)
+    _set_process_overrides({"memory_window_generation": True})
+    seen_by_fold: list[bool] = []
+
+    async def recording_fold(*_args: object, **_kwargs: object) -> None:
+        seen_by_fold.append(switch_on("memory_window_generation"))
+
+    monkeypatch.setattr(chat_router, "fold_memory", recording_fold)
+    room = await _open_room(db_client, db_session, turns=1, paid_turns=1)
+    _override_llm_client(_RefreshedMidTurnLLMClient({"memory_window_generation": False}))
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "새 메시지"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200, resp.text
+    assert [event["type"] for event in _parse_sse_events(resp.text)][-1] == "done"
+    assert seen_by_fold == [True]
+    assert switch_on("memory_window_generation") is False
