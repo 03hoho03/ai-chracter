@@ -103,12 +103,12 @@ def _knows(knower: str, subject: str, value: str) -> ExtractedKnowledge:
 def test_direction_errors_count_swaps_and_wrong_knowers_inside_the_denominator() -> None:
     planted = [
         PlantedKnowledge(knower="도윤", kind="knows", subject="서하", fact_kind="possession", values=["등불"],
-                         paragraph=1),
+                         subject_kind="character", paragraph=1),
         PlantedKnowledge(knower="서하", kind="knows", subject="도윤", fact_kind="possession", values=["지도"],
-                         paragraph=1),
+                         subject_kind="character", paragraph=1),
         # 자기 자신에 대한 앎은 뒤바뀜이 정의되지 않아 분모에 들지 않는다
         PlantedKnowledge(knower="서하", kind="knows", subject="서하", fact_kind="possession", values=["차"],
-                         paragraph=1),
+                         subject_kind="character", paragraph=1),
     ]
     extracted = [
         _knows("서하", "도윤", "등불"),  # 첫 정답의 뒤바뀜 — 그 정답은 바른 짝이 먼저 가져간다
@@ -125,14 +125,14 @@ def test_direction_pairs_do_not_depend_on_the_order_the_answers_were_written_in(
     # 먼저 가져가면 안 된다.
     planted = [
         PlantedKnowledge(knower=knower, kind="knows", subject="서하", fact_kind="possession", values=["등불"],
-                         paragraph=1)
+                         subject_kind="character", paragraph=1)
         for knower in ("도윤", "하람")
     ]
     assert direction_counts(planted, [_knows("하람", "서하", "등불")], {}) == (1, 0)
     assert direction_counts(planted[::-1], [_knows("하람", "서하", "등불")], {}) == (1, 0)
     # 정답 셋·제안 셋을 어떤 순서로 적어도 같다 — 바른 짝 둘, 남은 정답 하나가 앎 주체만 틀린 제안을 받는다.
     planted.append(PlantedKnowledge(knower="하람", kind="knows", subject="도윤", fact_kind="possession",
-                                    values=["지도"], paragraph=1))
+                                    values=["지도"], subject_kind="character", paragraph=1))
     found = [_knows("도윤", "서하", "등불"), _knows("하람", "서하", "등불"), _knows("등대지기", "도윤", "지도")]
     results = {
         direction_counts(list(answers), list(extracted), {})

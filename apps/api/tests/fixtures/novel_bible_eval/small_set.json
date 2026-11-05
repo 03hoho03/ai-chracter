@@ -1,9 +1,18 @@
 {
-  "note": "합성 세트 — 측정 하네스를 CI 에서 돌리려고 지어낸 문장이다. 실제 소설·대화·라벨 원문이 아니다. 1권 3화와 탐침 4.",
+  "note": "합성 세트 — 측정 하네스를 CI 에서 돌리려고 지어낸 문장이다. 실제 소설·대화·라벨·원작·채팅 원문이 아니다. 1권 3화와 탐침 4, 합성 원작 설정·노트 하나씩, 합성 채팅 기억 행 하나.",
   "novels": [
     {
       "key": "synthetic-1",
       "aliases": {"도윤": ["뱃사람"]},
+      "source": {
+        "kind": "story",
+        "name": "합성 항구 이야기",
+        "setting": "항구 마을의 등대지기는 두 눈이 모두 검은색인 노인이다.",
+        "notes": ["도윤은 북쪽 섬에서 나고 자란 뱃사람이다."]
+      },
+      "play": [
+        {"visible_from": 2, "subject": "서하", "attribute": "지도", "value": "바싹 마른 지도"}
+      ],
       "chapters": [
         {
           "paragraphs": [
@@ -21,7 +30,7 @@
             {"subject": "도윤", "kind": "presence", "values": ["present"], "paragraph": 3}
           ],
           "knowledge": [
-            {"knower": "도윤", "kind": "knows", "subject": "서하", "fact_kind": "possession", "values": ["낡은 등불", "등불"], "paragraph": 4}
+            {"knower": "도윤", "kind": "knows", "subject": "서하", "subject_kind": "character", "fact_kind": "possession", "values": ["낡은 등불", "등불"], "paragraph": 4}
           ]
         },
         {
@@ -37,7 +46,7 @@
           ],
           "facts": [
             {"subject": "도윤", "kind": "life", "values": ["dead"], "paragraph": 2},
-            {"subject": "서하", "kind": "possession", "values": ["젖은 지도", "지도"], "paragraph": 3}
+            {"subject": "서하", "kind": "possession", "values": ["젖은 지도", "지도"], "paragraph": 3, "play_difference": 1}
           ]
         },
         {
@@ -45,15 +54,26 @@
             "섬의 등대지기는 서하에게 따뜻한 차를 내주었다.",
             "어린 시절 할머니와 바닷가를 걷던 날이 서하의 눈앞에 되살아났다.",
             "서하는 등대 꼭대기에서 다시 등불을 밝혔다.",
-            "등대지기의 왼쪽 눈은 태어날 때부터 잿빛이었다."
+            "등대지기의 왼쪽 눈은 태어날 때부터 잿빛이었다.",
+            "서하는 그 등대가 백 년 전에 세워졌다는 것을 들어 알고 있었다."
+          ],
+          "scenes": [
+            {"title": "등대지기의 차", "start": 1},
+            {"title": "할머니와 걷던 바닷가", "flashback": true, "start": 2},
+            {"title": "다시 밝힌 등불", "start": 3}
           ],
           "events": [
             {"paragraphs": [1], "present": ["서하", "등대지기"], "summary": "등대지기가 차를 내준다"},
-            {"paragraphs": [2], "actuality": "flashback", "present": ["서하"], "summary": "어린 날 바닷가 기억"},
+            {"paragraphs": [2], "actuality": "flashback", "present": ["서하"], "summary": "어린 날 바닷가 기억",
+             "relation": {"kind": "before", "chapter": 1, "event": 1}},
             {"paragraphs": [3], "present": ["서하"], "summary": "서하가 등불을 밝힌다"}
           ],
           "facts": [
-            {"subject": "등대지기", "kind": "attribute", "attribute": "눈 색", "values": ["잿빛"], "immutable": true, "paragraph": 4}
+            {"subject": "등대지기", "kind": "attribute", "attribute": "눈 색", "values": ["잿빛"], "immutable": true, "paragraph": 4,
+             "source_difference": {"label": "S", "quote": "두 눈이 모두 검은색"}}
+          ],
+          "knowledge": [
+            {"knower": "서하", "kind": "knows", "subject": "등대", "subject_kind": "object", "fact_kind": "attribute", "attribute": "세워진 때", "values": ["백 년 전"], "paragraph": 5}
           ]
         }
       ],
@@ -94,9 +114,11 @@
           "key": "harbor-memory",
           "kind": "non_conflict",
           "group": "A",
+          "subkind": "dead_in_flashback",
           "depends_on": [1],
           "chapter": {
             "paragraphs": ["서하는 처음 도윤을 만난 항구의 정오를 떠올렸다."],
+            "scenes": [{"title": "항구의 정오", "flashback": true, "start": 1}],
             "events": [{"paragraphs": [1], "actuality": "flashback", "present": ["서하", "도윤"], "summary": "처음 만난 날의 기억"}]
           }
         },
@@ -104,6 +126,7 @@
           "key": "rumor",
           "kind": "non_conflict",
           "group": "C",
+          "subkind": "speculation_or_rumor",
           "depends_on": [2, 3],
           "chapter": {
             "paragraphs": ["섬사람들은 그 뱃사람은 아마 죽었겠지 하고 서하 앞에서 수군거렸다."],

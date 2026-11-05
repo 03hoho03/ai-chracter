@@ -118,7 +118,7 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
     assert (precision["k"], precision["n"]) == (4, 6)
     assert report["metrics"]["precision.facts"]["pass"] is None  # 합성 세트의 사실 정밀도는 합격선이 없다
     quote = report["metrics"]["quote_rate"]
-    assert (quote["k"], quote["n"]) == (19, 20)  # 사건 기본 6 + 탐침 5, 사실 기본 6 + 탐침 1, 지식 1 / 거기에 사건 인용 실패 1
+    assert (quote["k"], quote["n"]) == (20, 21)  # 사건 기본 6 + 탐침 5, 사실 기본 6 + 탐침 1, 지식 2 / 거기에 사건 인용 실패 1
     schema = report["metrics"]["schema_failure_rate"]
     assert (schema["k"], schema["n"]) == (1, 22)  # 기본 3화·탐침 4 에 슬롯 셋씩 + 3화 첫 호출의 재시도
     false_positive = report["metrics"]["block_false_positive"]
@@ -127,11 +127,11 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
     assert false_positive["pass"] is True
     assert (report["metrics"]["block_recall"]["k"], report["metrics"]["block_recall"]["n"]) == (1, 1)
     assert (report["metrics"]["warning_recall"]["k"], report["metrics"]["warning_recall"]["n"]) == (1, 1)
-    # 1화에 심은 지식 하나를 바른 방향으로 냈다. 그 앎이 드러나는 문단을 덮은 사건은 빠뜨렸지만 지식 제안은 남는다.
+    # 1화·3화에 심은 지식 둘을 바른 방향으로 냈다. 1화 앎이 드러나는 문단을 덮은 사건은 빠뜨렸지만 지식 제안은 남는다.
     knowledge = report["metrics"]["recall.knowledge"]["repeats"][0]
-    assert (knowledge["k"], knowledge["n"]) == (1, 1)
+    assert (knowledge["k"], knowledge["n"]) == (2, 2)
     direction = report["metrics"]["direction_error"]["repeats"][0]
-    assert (direction["k"], direction["n"]) == (0, 1)
+    assert (direction["k"], direction["n"]) == (0, 2)
     markdown = (run_dir / "report.md").read_text()  # cite-ok: 문서가 아니라 하네스가 쓴 출력 파일 이름
     assert "block_false_positive" in markdown and "recall.events" in markdown
 
@@ -164,8 +164,9 @@ async def test_blocked_base_chapters_count_as_false_positives_and_leave_their_pr
 async def test_a_swapped_knower_and_subject_through_the_real_knowledge_slot_is_one_direction_error(
     db_session: AsyncSession,
 ) -> None:
-    # 1화에 심은 지식 하나(도윤이 서하의 등불 소지를 안다)를 실제 지식 슬롯의 검증·확정을 지난 작업 제안에서 센다. 바르게 내면
-    # 방향 오류 0/1·재현 1/1, 앎 주체와 명제 주어를 뒤바꿔 내면 방향 오류 1/1·재현 0/1 이다.
+    # 1화에 심은 지식 하나(도윤이 서하의 등불 소지를 안다)를 실제 지식 슬롯의 검증·확정을 지난 작업 제안에서 센다. 3화의 지식
+    # (서하가 등대의 세워진 때를 안다)은 그대로 둔다. 바르게 내면 방향 오류 0/2·재현 2/2, 1화 지식의 앎 주체와 명제 주어를 뒤바꿔
+    # 내면 방향 오류 1/2·재현 1/2 이다.
     from novel_bible_eval import metrics
 
     eval_set = load_set(FIXTURE)
@@ -180,7 +181,7 @@ async def test_a_swapped_knower_and_subject_through_the_real_knowledge_slot_is_o
         assert direction is not None
         recall = metrics.recall(eval_set, outcomes)["knowledge"]
         counted[name] = ([(r.k, r.n) for r in direction], [(r.k, r.n) for r in recall])
-    assert counted == {"clean": ([(0, 1)], [(1, 1)]), "swapped": ([(1, 1)], [(0, 1)])}
+    assert counted == {"clean": ([(0, 2)], [(2, 2)]), "swapped": ([(1, 2)], [(1, 2)])}
 
 
 async def test_the_halt_line_stops_the_run_before_the_call_that_would_cross_it(
