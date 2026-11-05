@@ -1,4 +1,4 @@
-"""코어가 아는 계약 — 슬롯·원작·모델 어댑터·규칙. 코어는 이 계약만 알고, 실제 구현은 바깥 입구(`entry.py`)가 인자로 넘긴다
+"""코어가 아는 계약 — 슬롯·원작·모델 어댑터·규칙·모호 후보 판정. 코어는 이 계약만 알고, 실제 구현은 바깥 입구(`entry.py`)가 인자로 넘긴다
 (테스트는 같은 자리에 가짜를 넘긴다). 그래서 코어는 슬롯·규칙·어댑터·모델 호출 계층을 import 하지 않는다."""
 
 import uuid
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
 
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.db.models.prompt import PromptSection
 from api.novel_bible.core.types import (
@@ -15,6 +15,7 @@ from api.novel_bible.core.types import (
     CommitRef,
     EntityName,
     FindingDraft,
+    JudgeCandidate,
     LinkedItem,
     Manuscript,
     PlayFact,
@@ -25,6 +26,7 @@ from api.novel_bible.core.types import (
     SlotRows,
     SourceCanon,
     SourceCanonRef,
+    WarningDraft,
 )
 from api.novel_bible.ids import FindingRule, ItemTable, JobFailure, OperationKey, SlotId
 
@@ -146,3 +148,14 @@ class Rule(Protocol):
     slots: frozenset[SlotId]
 
     def check(self, snapshot: BibleSnapshot) -> Sequence[FindingDraft]: ...
+
+
+class Judge(Protocol):
+    """모호 후보 판정. 검사 틀이 후보 경고를 이 함수가 돌려준 경고 목록으로 바꾼다 — 남길 후보 경고, 모델 판정의 충돌
+    (`llm_conflict`), 판정 실패(`judge_failed`). 돌려주는 타입이 경고뿐이라 판정은 확정을 막지 못하고, 차단 여부는 검사 틀이 판정
+    전 구조 규칙 결과로만 정한다. 호출 실패·기한 초과는 예외로 올리지 않고 판정 실패 경고로 바꾼다. 세션은 문안을 읽을 때만 짧게
+    열고, 모델을 기다리는 동안 쥐지 않는다."""
+
+    async def __call__(
+        self, session_factory: async_sessionmaker[AsyncSession], commit: CommitRef, candidates: Sequence[JudgeCandidate]
+    ) -> list[WarningDraft]: ...

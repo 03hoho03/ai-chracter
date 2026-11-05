@@ -35,8 +35,9 @@ from api.db.models.novel_bible import (
     NovelBibleJob,
     NovelBibleRevision,
 )
+from api.novel_bible.core.candidates import assemble_candidates, is_candidate
 from api.novel_bible.core.confirm import CANON, IN_FLIGHT
-from api.novel_bible.core.contracts import AdapterResolver, Registry, Rule
+from api.novel_bible.core.contracts import AdapterResolver, Judge, Registry, Rule
 from api.novel_bible.core.jobs import SessionFactory, commit_ref, run_next_job
 from api.novel_bible.core.keys import normalize_name, proposition_key
 from api.novel_bible.core.queries import assemble
@@ -53,6 +54,7 @@ from api.novel_bible.core.types import (
     Proposal,
     RelationRow,
     RevisionRef,
+    VerifiedQuote,
 )
 from api.novel_bible.core.views import manuscript_of
 from api.novel_bible.ids import CommitFailure, CommitStatus, EntityKind, ItemTable, SlotId
@@ -307,6 +309,22 @@ async def _base_rows(factory: SessionFactory, registry: Registry, loaded: _Loade
     return rows
 
 
+def _snapshot_rows(
+    registry: Registry, loaded: _Loaded, linked: dict[SlotId, list[LinkedItem]], base_rows: Sequence[Row]
+) -> tuple[list[Row], frozenset[uuid.UUID]]:
+    """검사가 보는 행 — 기준 시점 정본에서 이번 화의 현재 항목을 빼고 이번 확정의 새 항목을 더한 것 — 과 새 항목 id."""
+    new_rows: list[Row] = []
+    for slot_id, items in linked.items():
+        new_rows += registry.extracting[slot_id].rows(items, loaded.ref)
+    new_ids = frozenset(item.id for items in linked.values() for item in items)
+    kept = [row for row in base_rows if row.chapter_id != loaded.ref.chapter_id]
+    return [*kept, *new_rows], new_ids
+
+
+def _new_quotes(linked: dict[SlotId, list[LinkedItem]]) -> dict[uuid.UUID, tuple[VerifiedQuote, ...]]:
+    return {item.id: item.draft.quotes for items in linked.values() for item in items}
+
+
 async def _check(
     factory: SessionFactory, registry: Registry, rules: Sequence[Rule], loaded: _Loaded,
     linked: dict[SlotId, list[LinkedItem]], base_rows: Sequence[Row],
@@ -314,12 +332,8 @@ async def _check(
     """기준 시점 정본에서 이번 화의 현재 항목을 빼고 이번 확정의 새 항목을 더한 스냅숏으로 규칙을 돌린다. 이번 확정의 새 항목이
     하나도 끼지 않은 결과는 버린다. 차단 결과는 관련 항목 모두의 원고 근거가 지금도 맞을 때만 차단이고, 하나라도 맞지 않으면
     경고(`evidence_unverified`)로 낮춘다."""
-    new_rows: list[Row] = []
-    for slot_id, items in linked.items():
-        new_rows += registry.extracting[slot_id].rows(items, loaded.ref)
-    new_ids = frozenset(item.id for items in linked.values() for item in items)
-    kept = [row for row in base_rows if row.chapter_id != loaded.ref.chapter_id]
-    snapshot = assemble(registry, [*kept, *new_rows], new_ids)
+    rows, new_ids = _snapshot_rows(registry, loaded, linked, base_rows)
+    snapshot = assemble(registry, rows, new_ids)
     findings = [
         finding
         for rule in rules
@@ -330,9 +344,10 @@ async def _check(
     blocking = {item for finding in findings if finding.severity == "block" for item in finding.item_ids}
     if not blocking:
         return findings
-    quotes = {item.id: item.draft.quotes for items in linked.values() for item in items}
     async with factory() as session:
-        verified = await manuscript_evidence_verified(session, blocking, quotes, loaded.ref.chapter_revision_id)
+        verified = await manuscript_evidence_verified(
+            session, blocking, _new_quotes(linked), loaded.ref.chapter_revision_id
+        )
     return [
         FindingDraft(
             severity="warning", rule="evidence_unverified", item_ids=finding.item_ids,
@@ -342,6 +357,28 @@ async def _check(
         else finding
         for finding in findings
     ]
+
+
+async def _judged(
+    factory: SessionFactory, registry: Registry, judge: Judge, loaded: _Loaded,
+    linked: dict[SlotId, list[LinkedItem]], base_rows: Sequence[Row], findings: Sequence[FindingDraft],
+) -> list[FindingDraft]:
+    """구조 규칙 결과 중 판정 후보(후보 표시를 실은 경고)를 판정 단계가 돌려준 경고로 바꾼다. 다른 결과는 그대로 둔다. 판정
+    단계가 무엇 때문에든 실패하면 후보 경고를 판정 없이 그대로 둔다 — 판정은 확정을 막지도 실패시키지도 않는다."""
+    candidates = [finding for finding in findings if is_candidate(finding)]
+    if not candidates:
+        return list(findings)
+    rows, _ = _snapshot_rows(registry, loaded, linked, base_rows)
+    try:
+        async with factory() as session:
+            assembled = await assemble_candidates(
+                session, rows, candidates, _new_quotes(linked), loaded.ref.chapter_revision_id
+            )
+        judged = await judge(factory, loaded.ref, assembled)
+    except Exception:
+        logger.exception("정본 기억 확정 %s 의 판정 단계가 실패해 후보 경고를 판정 없이 남긴다", loaded.ref.commit_id)
+        return list(findings)
+    return [*(finding for finding in findings if not is_candidate(finding)), *judged]
 
 
 def _finding_rows(loaded: _Loaded, findings: Sequence[FindingDraft]) -> list[NovelBibleFinding]:
@@ -540,10 +577,14 @@ async def _relink(factory: SessionFactory, commit_id: uuid.UUID) -> bool:
 
 
 async def link_check_commit(
-    factory: SessionFactory, registry: Registry, rules: Sequence[Rule], commit_id: uuid.UUID
+    factory: SessionFactory, registry: Registry, rules: Sequence[Rule], commit_id: uuid.UUID, *,
+    judge: Judge | None = None,
 ) -> None:
     """연결 중인 확정 하나를 끝 상태까지(또는 다른 쪽이 밀어내 멈출 때까지) 돌린다. 예상하지 못한 예외는 `failed(internal)` —
-    커밋 트랜잭션째 되돌아가 리비전·항목·만료가 하나도 남지 않는다."""
+    커밋 트랜잭션째 되돌아가 리비전·항목·만료가 하나도 남지 않는다.
+
+    `judge` 가 있으면 구조 규칙 뒤에 모호 후보 판정을 돌려 후보 경고를 그 결과로 바꾼다. 차단 여부는 판정 전 구조 규칙 결과로만
+    정하고, 판정 결과는 차단된 확정에도 경고로 덧붙는다. 없으면(규칙만 보는 코어 테스트) 후보 경고를 그대로 남긴다."""
     try:
         while True:
             loaded = await _load(factory, registry, commit_id)
@@ -557,7 +598,10 @@ async def link_check_commit(
             if not await _transition(factory, commit_id, "linking", "checking"):
                 return
             findings = await _check(factory, registry, rules, loaded, linked, base_rows)
-            if any(finding.severity == "block" for finding in findings):
+            blocked = any(finding.severity == "block" for finding in findings)
+            if judge is not None:
+                findings = await _judged(factory, registry, judge, loaded, linked, base_rows, findings)
+            if blocked:
                 await _block(factory, loaded, findings)
                 return
             outcome = await _commit(factory, registry, loaded, linked, findings)
@@ -571,7 +615,8 @@ async def link_check_commit(
 
 
 async def process_ready_commit(
-    factory: SessionFactory, registry: Registry, rules: Sequence[Rule], *, novel_id: uuid.UUID | None = None
+    factory: SessionFactory, registry: Registry, rules: Sequence[Rule], *, novel_id: uuid.UUID | None = None,
+    judge: Judge | None = None,
 ) -> bool:
     """작업이 모두 끝난 추출 확정 하나를 골라 끝까지 처리한다. 고를 것이 없으면 거짓."""
     async with factory() as session, session.begin():
@@ -589,20 +634,20 @@ async def process_ready_commit(
             return False
         status = await start_linking(session, commit_id)
     if status == "linking":
-        await link_check_commit(factory, registry, rules, commit_id)
+        await link_check_commit(factory, registry, rules, commit_id, judge=judge)
     return True
 
 
 async def run_until_idle(
     factory: SessionFactory, registry: Registry, rules: Sequence[Rule], resolver: AdapterResolver, *,
-    novel_id: uuid.UUID | None = None, max_steps: int = 1_000,
+    novel_id: uuid.UUID | None = None, max_steps: int = 1_000, judge: Judge | None = None,
 ) -> int:
     """준비된 확정 처리 → 대기 작업 실행을 할 일이 없을 때까지(또는 `max_steps` 번) 한다. 돌린 단계 수를 돌려준다. 재시도
     대기 중인 작업은 대기 시각 전에는 고르지 않는다."""
     steps = 0
     while steps < max_steps:
         if not (
-            await process_ready_commit(factory, registry, rules, novel_id=novel_id)
+            await process_ready_commit(factory, registry, rules, novel_id=novel_id, judge=judge)
             or await run_next_job(factory, registry, resolver, novel_id=novel_id)
         ):
             break

@@ -7,7 +7,7 @@
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -23,6 +23,7 @@ from api.novel_bible.ids import (
     ItemTable,
     KnowledgeKind,
     SourceField,
+    WarningRule,
 )
 
 
@@ -291,3 +292,21 @@ class FindingDraft(_Frozen):
     rule: FindingRule
     item_ids: tuple[uuid.UUID, ...]
     payload: dict[str, Any] = {}
+
+
+class WarningDraft(FindingDraft):
+    """경고만 담는 검사 결과 — 모호 후보 판정 단계가 돌려주는 꼴이다. 등급은 경고로 고정되고 이름은 경고 이름만 받아, 판정
+    결과가 확정을 막는 길이 타입에 없다."""
+
+    severity: Literal["warning"] = "warning"
+    rule: WarningRule
+
+
+@dataclass(frozen=True)
+class JudgeCandidate:
+    """모호 후보 판정에 넘기는 후보 하나 — 구조 규칙이 후보 표시(`payload["judge"]`)를 실은 경고와, 코어가 그 경고의 항목으로
+    조립한 판정 입력 글(문안 `candidate` 값). `chapters` 는 항목들의 화 번호(오름차순)로, 같은 규칙 안 판정 차례를 정한다."""
+
+    warning: WarningDraft
+    chapters: tuple[int, ...]
+    text: str
