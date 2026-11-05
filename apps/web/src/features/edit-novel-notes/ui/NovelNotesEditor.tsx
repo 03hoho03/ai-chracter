@@ -66,7 +66,7 @@ export function NovelNotesEditor({ novel, headingRef, onDraftDirtyChange }: Nove
     } catch (error) {
       const notice = toNovelActionError(error, "notes");
       // 재동의가 필요하면 전역 재동의 모달이 맡는다. 쓴 글은 그대로 남아 동의 뒤 다시 저장할 수 있다.
-      if (notice === null) return;
+      if (notice === undefined) return;
       setResult({ tone: "error", message: notice.message });
       // 소설이 지워졌거나 허용이 회수된 실패는 상세를 다시 받아야 화면이 「찾을 수 없어요」·잠김 화면으로 넘어간다.
       if (notice.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });

@@ -54,7 +54,7 @@ export const MergeCharacterModal = createCallable<MergeCharacterModalProps, stri
         call.end(into.id);
       } catch (mergeError) {
         const notice = toCharacterSaveError(mergeError, "mergeCharacter");
-        if (notice === null) {
+        if (notice === undefined) {
           call.end(null);
           return;
         }

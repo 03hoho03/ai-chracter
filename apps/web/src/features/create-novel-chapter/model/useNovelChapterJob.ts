@@ -282,7 +282,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady, onSele
       if (hasNovelErrorCode(error, "NOVEL_OUTLINE_FLOW_DISABLED")) void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
       else invalidateOutlineFlow();
     }
-    if (result === null) return;
+    if (result === undefined) return;
     setNotice({ tone: "error", message: result.message, isSelectionChanged: isSelectionChangedRefusal(error) });
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
     // 화 화면에는 바뀐 구간도 담을 대화로 가는 길도 없다 — 누를 때마다 같은 거절을 받지 않게 담을 대화로 옮긴다(위에서 다시 받는다).

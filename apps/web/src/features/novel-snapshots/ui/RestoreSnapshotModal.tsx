@@ -44,7 +44,7 @@ export const RestoreSnapshotModal = createCallable<RestoreSnapshotModalProps, No
         call.end(await mutation.mutateAsync({ novelId, snapshotId }));
       } catch (restoreError) {
         const notice = toNovelActionError(restoreError, "restoreSnapshot");
-        if (notice === null) {
+        if (notice === undefined) {
           call.end(null);
           return;
         }

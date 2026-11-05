@@ -28,7 +28,7 @@ export function NovelCoverActions({ novel, pickImage }: NovelCoverActionsProps) 
       await mutation.mutateAsync({ novelId: novel.id, body: { coverAssetId } });
     } catch (error) {
       const notice = toNovelActionError(error, "cover");
-      if (notice === null) return;
+      if (notice === undefined) return;
       setErrorMessage(notice.message);
       if (notice.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
     }

@@ -88,7 +88,7 @@ export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModa
       } catch (error) {
         const result = toNovelActionError(error, "restore");
         // 재동의가 필요하면 전역 재동의 모달이 뜬다 — 그 위에 이 모달을 남겨 두지 않는다.
-        if (result === null) {
+        if (result === undefined) {
           call.end(null);
           return;
         }

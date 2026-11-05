@@ -429,7 +429,7 @@ export function NovelChapterText({
   /** 삽화 요청 실패. 옮기기를 끝내고(다시 받은 판에서 그림 id 가 바뀐다) 문장을 남긴다. 충돌·없어진 그림이면 상세를 다시
    * 받아 화 키가 새 판으로 바뀌고 본문을 새로 받는다 — 다음 요청은 그 판을 기준으로 간다. 스위치가 꺼졌으면 가격도 다시 받아
    * 삽화 조작을 거둔다. */
-  function handlePlacementError(error: unknown, action: NovelAction): NovelActionErrorNotice | null {
+  function handlePlacementError(error: unknown, action: NovelAction): NovelActionErrorNotice | undefined {
     setMoving(undefined);
     setRange(undefined);
     setBlockSelection([]);
@@ -438,7 +438,7 @@ export function NovelChapterText({
     onFocusFallback();
     const result = toNovelActionError(error, action);
     // 재동의가 필요하면 전역 재동의 모달이 맡는다.
-    if (result === null) return null;
+    if (result === undefined) return undefined;
     setPlacementError(result.message);
     if (hasNovelErrorCode(error, "NOVEL_ILLUSTRATIONS_DISABLED")) {
       void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
@@ -508,7 +508,7 @@ export function NovelChapterText({
       const result = handlePlacementError(error, "attachIllustration");
       // 다시 넣어도 같은 결과인 실패(쓸 수 없는 그림·삽화가 꺼짐)와 재동의는 다시 넣기를 두지 않는다.
       const isRetryable =
-        result !== null &&
+        result !== undefined &&
         !hasNovelErrorCode(error, "NOVEL_ILLUSTRATION_ASSET_INVALID") &&
         !hasNovelErrorCode(error, "NOVEL_ILLUSTRATIONS_DISABLED");
       setFailedAttach(isRetryable ? failed : null);
@@ -657,7 +657,7 @@ export function NovelChapterText({
     } catch (error) {
       const result = toNovelActionError(error, "edit");
       // 재동의가 필요하면 전역 재동의 모달이 맡는다 — 입력칸은 그대로 두어 동의 뒤 다시 저장할 수 있다.
-      if (result === null) return;
+      if (result === undefined) return;
       setEditError(result.message);
       if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
     }

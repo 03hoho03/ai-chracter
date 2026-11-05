@@ -58,7 +58,7 @@ export function NovelSynopsisEditor({ novel }: { novel: NovelDetailResponse }) {
       finishEditing();
     } catch (error) {
       const notice = toNovelActionError(error, "synopsis");
-      if (notice === null) return;
+      if (notice === undefined) return;
       setSaveError(notice.message);
       if (notice.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
     }

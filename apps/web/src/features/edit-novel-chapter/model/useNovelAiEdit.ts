@@ -211,7 +211,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
    * 있다는 뜻이다. */
   function handleRequestError(error: unknown, action: NovelAction): boolean {
     const result = toNovelActionError(error, action);
-    if (result === null) return false;
+    if (result === undefined) return false;
     report({ type: "rejected", message: result.message });
     // 여러 문단 수정 스위치가 꺼졌다 — 가격을 다시 받아 고르기를 거둔다.
     if (hasNovelErrorCode(error, "NOVEL_MULTI_BLOCK_EDIT_DISABLED")) {
