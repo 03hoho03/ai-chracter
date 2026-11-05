@@ -3,7 +3,8 @@
 
 모델은 가짜 해석기다. 명세에서 정답 출력을 만들고, 일부러 틀린 출력(사건 빠뜨림·없는 인용·첫 시도 스키마 실패·사실의 불변 표시
 뒤집기·심지 않은 사실·지식의 앎 주체와 명제 주어 뒤바꾸기)을 섞어 지표가 그 틀림을 세는지 본다. 가짜 해석기는 사건·사실·지식
-세 슬롯을 내므로 화마다 호출이 셋이다. 원고는 합성 문장이다."""
+세 슬롯을 내므로 화마다 호출이 셋이고, 모호 후보 판정이 있는 화는 후보마다 하나 더다 — 이 픽스처에서는 1화(1화 앎의 출처가
+서술되지 않은 후보)와 경고 기대 탐침(순서 미정 후보)이다. 원고는 합성 문장이다."""
 
 import json
 from pathlib import Path
@@ -16,8 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import api.novel_bible.entry as entry
 from api.core.config import settings
-from api.db.models import Novel, NovelChapter, User
-from api.db.models.novel_bible import NovelBibleAdaptationCandidate
+from api.db.models import ChatMemoryFact, Novel, NovelChapter, User
+from api.db.models.novel_bible import NovelBibleAdaptationCandidate, NovelBibleEvidence
 from api.db.models.novel_bible_events import NovelBibleEventRelation
 from api.novel_bible.core.types import BibleSnapshot, Proposal, RenderedPrompt
 from api.novel_bible.ids import OperationKey
@@ -27,7 +28,7 @@ from novel_bible_eval.__main__ import _outcomes, _parser, _run, extract, main, s
 from novel_bible_eval.fake_llm import FakeLLM, Faults
 from novel_bible_eval.run import BudgetHalt, ChapterOutcome, Meter, extract_chapters, run_set
 from novel_bible_eval.seed import EVAL_EMAIL_DOMAIN, seed_novel
-from novel_bible_eval.spec import load_set
+from novel_bible_eval.spec import EvalSet, load_set
 from novel_bible_fakes import FakeRule, savepoint_factory
 
 FIXTURE = Path(__file__).parent / "fixtures" / "novel_bible_eval" / "small_set.json"
@@ -122,7 +123,9 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
     quote = report["metrics"]["quote_rate"]
     assert (quote["k"], quote["n"]) == (20, 21)  # 사건 기본 6 + 탐침 5, 사실 기본 6 + 탐침 1, 지식 2 / 거기에 사건 인용 실패 1
     schema = report["metrics"]["schema_failure_rate"]
-    assert (schema["k"], schema["n"]) == (1, 22)  # 기본 3화·탐침 4 에 슬롯 셋씩 + 3화 첫 호출의 재시도
+    # 기본 3화·탐침 4 에 슬롯 셋씩 + 3화 첫 호출의 재시도 + 경고 기대 탐침의 판정 하나. 1화 앎의 출처 후보는 그 앎이 드러나는
+    # 사건을 빠뜨려 이 실행에서는 나지 않는다.
+    assert (schema["k"], schema["n"]) == (1, 23)
     false_positive = report["metrics"]["block_false_positive"]
     assert (false_positive["k"], false_positive["n"]) == (0, 5)
     assert false_positive["upper"] == pytest.approx(1 - 0.05 ** (1 / 5))
@@ -223,7 +226,7 @@ async def test_the_halt_line_stops_the_run_before_the_call_that_would_cross_it(
     eval_set = load_set(FIXTURE)
     # 호출 하나가 단가표로 $20 — 출력 800만 토큰 × $2.50/100만.
     fake = FakeLLM(eval_set, model="gemini-3.5-flash-lite", prompt_tokens=0, output_tokens=8_000_000)
-    ledger = Ledger(tmp_path / "ledger.jsonl", cap_usd=80, halt_usd=70, bundle="ci")
+    ledger = Ledger(tmp_path / "ledger.jsonl", cap_usd=120, halt_usd=90, bundle="ci")
     meter = Meter(ledger=ledger, estimate_usd=20)
     run_dir = tmp_path / "run"
     code = await synthetic(
@@ -231,10 +234,10 @@ async def test_the_halt_line_stops_the_run_before_the_call_that_would_cross_it(
         slots=fake.slots,
     )
     assert code == EXIT_BUDGET
-    # 1화의 세 슬롯 호출로 $60 — 2화 첫 호출은 견적을 더하면 $80 이라 부르기 전에 멈춘다
-    assert fake.calls == 3
+    # 1화의 세 슬롯 호출과 판정 하나로 $80 — 2화 첫 호출은 견적을 더하면 $100 이라 부르기 전에 멈춘다
+    assert fake.calls == 4
     rows = ledger.rows()
-    assert [row["bundleCumulativeUsd"] for row in rows] == pytest.approx([20, 40, 60])
+    assert [row["bundleCumulativeUsd"] for row in rows] == pytest.approx([20, 40, 60, 80])
     report = json.loads((run_dir / "report.json").read_text())
     assert "멈춤 선" in report["halted"]
     outcomes = json.loads((run_dir / "outcomes.json").read_text())
@@ -296,7 +299,7 @@ async def test_an_interrupted_run_still_writes_the_chapters_it_finished(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     eval_set = load_set(FIXTURE)
-    fake = _CutAfter(eval_set, calls=6)  # 화마다 세 슬롯 — 3화 첫 호출에서 끊긴다
+    fake = _CutAfter(eval_set, calls=7)  # 1화 세 슬롯과 판정 하나, 2화 세 슬롯 — 3화 첫 호출에서 끊긴다
     meter = Meter()
     run_dir = tmp_path / "run"
     with pytest.raises(_Cut):
@@ -317,9 +320,10 @@ async def test_a_halted_extraction_still_writes_the_chapters_it_finished(
     factory = savepoint_factory(db_session)
     async with factory() as session, session.begin():
         seeded = await seed_novel(session, eval_set.novels[0])
-    # 호출 하나가 $20 이고 화마다 세 슬롯이라, $120 뒤 셋째 화의 첫 호출은 견적을 더하면 $140 이라 부르기 전에 멈춘다.
+    # 호출 하나가 $20 이고 1화는 세 슬롯과 판정 하나, 2화는 세 슬롯이라, $140 뒤 셋째 화의 첫 호출은 견적을 더하면 $160 이라
+    # 부르기 전에 멈춘다.
     fake = FakeLLM(eval_set, model="gemini-3.5-flash-lite", prompt_tokens=0, output_tokens=8_000_000)
-    meter = Meter(ledger=Ledger(tmp_path / "ledger.jsonl", cap_usd=150, halt_usd=130, bundle="ci"), estimate_usd=20)
+    meter = Meter(ledger=Ledger(tmp_path / "ledger.jsonl", cap_usd=170, halt_usd=150, bundle="ci"), estimate_usd=20)
     code = await extract(
         factory, meter.wrap(fake.resolver()), seeded.novel_id, tmp_path / "labels", adapter="fake", count=3
     )
@@ -346,9 +350,10 @@ async def test_a_halted_extraction_leaves_that_adapters_label_verdict_undetermin
     finished = await extract(factory, Meter().wrap(FakeLLM(eval_set).resolver()), whole.novel_id, out,
                              adapter="whole", count=2)
     assert finished == 0
-    # 호출 하나가 $20 이고 화마다 세 슬롯이라, 셋째 화의 첫 호출은 견적을 더하면 $140 이라 부르기 전에 멈춘다.
+    # 호출 하나가 $20 이고 1화는 세 슬롯과 판정 하나, 2화는 세 슬롯이라, 셋째 화의 첫 호출은 견적을 더하면 $160 이라 부르기 전에
+    # 멈춘다.
     fake = FakeLLM(eval_set, model="gemini-3.5-flash-lite", prompt_tokens=0, output_tokens=8_000_000)
-    meter = Meter(ledger=Ledger(tmp_path / "ledger.jsonl", cap_usd=150, halt_usd=130, bundle="ci"), estimate_usd=20)
+    meter = Meter(ledger=Ledger(tmp_path / "ledger.jsonl", cap_usd=170, halt_usd=150, bundle="ci"), estimate_usd=20)
     assert await extract(factory, meter.wrap(fake.resolver()), cut.novel_id, out, adapter="cut", count=3) == EXIT_BUDGET
 
     await _run(_parser().parse_args([
@@ -368,3 +373,40 @@ async def test_a_halted_extraction_leaves_that_adapters_label_verdict_undetermin
     # 보고서만 본 사람도 어느 어댑터가 왜 멈췄는지 안다.
     assert report["whole"]["halted"] is None
     assert "멈춤 선" in report["cut"]["halted"]
+
+
+async def test_the_fake_answers_the_judge_so_no_candidate_fails_for_want_of_an_answer(db_session: AsyncSession) -> None:
+    # 모호 후보 판정도 같은 해석기로 간다. 경고 기대 탐침의 순서 미정 경고가 판정 후보라, 가짜 해석기가 판정 출력을 내지 못하면
+    # 판정 실패 경고가 붙는다. 가짜 해석기는 판단하지 않고 늘 모르겠다고 답한다 — 순서 미정 경고는 후보 경고로만 남는다.
+    eval_set = load_set(FIXTURE)
+    fake = FakeLLM(eval_set)
+    meter = Meter()
+    outcomes = await run_set(savepoint_factory(db_session), meter.wrap(fake.resolver()), eval_set, slots=fake.slots)
+    assert _statuses(outcomes) == _WITH_THE_CONFLICT_PROBE_BLOCKED
+    assert ("conflicts.judge", None) in meter.attempts
+    assert [rule for outcome in outcomes for rule in outcome.warning_rules if rule in ("judge_failed", "llm_conflict")] == []
+    assert "order_undetermined" in outcomes[4].warning_rules
+
+
+async def test_the_fake_points_its_play_difference_at_the_row_the_app_keeps_for_that_key(db_session: AsyncSession) -> None:
+    # 같은 사실 키의 채팅 기억 행이 둘이면 앱은 뒤에 접힌 행 하나만 싣는다. 명세의 플레이 차이는 그 이긴 행을 가리키고, 가짜
+    # 해석기는 문안에 실린 줄에서 그 행의 표지를 찾아 낸다 — 각색 후보의 근거가 이긴 행이다. 진 행은 명세 끝에 두었지만 1화에
+    # 접혀 먼저다. 1화에 먼저 접힌 다른 키의 관계 행이 있어 문안의 표지 차례(관계 `P1`, 지도 `P2`)가 명세 차례와 다르다.
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    (kept,) = raw["novels"][0]["play"]
+    raw["novels"][0]["play"] += [
+        {"visible_from": 1, "subject": "도윤", "object": "서하", "value": "길동무"},
+        {**kept, "visible_from": 1, "value": "구겨진 지도"},
+    ]
+    eval_set = EvalSet.model_validate(raw)
+    fake = FakeLLM(eval_set)
+    outcomes = await run_set(savepoint_factory(db_session), Meter().wrap(fake.resolver()), eval_set, slots=fake.slots)
+    assert _statuses(outcomes) == _WITH_THE_CONFLICT_PROBE_BLOCKED
+    shown = (
+        await db_session.scalars(
+            select(ChatMemoryFact.value)
+            .join(NovelBibleEvidence, NovelBibleEvidence.chat_memory_fact_id == ChatMemoryFact.id)
+            .where(NovelBibleEvidence.origin == "chat_memory")
+        )
+    ).all()
+    assert list(shown) == [kept["value"]]

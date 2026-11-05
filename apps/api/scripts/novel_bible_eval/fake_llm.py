@@ -7,7 +7,10 @@
 문안 원천은 등록부의 추출 슬롯 채널을 모두 낸다 — 확정 입구가 배정된 체인에 채널이 있는지 먼저 보므로, 슬롯이 늘어도 여기를 고치지 않고 확정이 받힌다. 출력 꼴을 아는 슬롯은 사건·
 사실·지식이다 — 새 추출 슬롯이 등록부에 들어오면 그 슬롯의 출력 만들기를 여기 더해야 `slots` 가 넓어진다. 더하지 않으면 슬롯을
 좁히지 않은 확정(라벨용 추출)이 그 슬롯 작업에서 실패한다. 호출 기록 원소는 실제 어댑터와 같은 칸을 갖고 모델은 단가표에 있는
-id 라, 원장이 실제 호출처럼 원가를 친다."""
+id 라, 원장이 실제 호출처럼 원가를 친다.
+
+모호 후보 판정도 같은 해석기로 온다. 문안 원천은 판정 채널도 내고, 판정에는 판단 없이 늘 "모르겠다"를 답한다 — 그러면 후보
+경고만 남아(앎 출처 불명은 버려진다) 판정 실패 경고가 측정 결과에 섞이지 않는다. 명세는 판정 정답을 싣지 않는다."""
 
 import re
 import uuid
@@ -24,6 +27,7 @@ from api.novel_bible.core.contracts import AdapterCallError, AdapterCapabilities
 from api.novel_bible.core.types import RenderedPrompt
 from api.novel_bible.ids import OperationKey, SlotId
 from api.novel_bible.registry import REGISTRY
+from api.novel_bible.rules.judge import CHANNEL as JUDGE_CHANNEL
 
 from novel_bible_eval.spec import ChapterSpec, EvalSet, NovelSpec, PlayRow
 
@@ -150,6 +154,7 @@ _OUTPUTS: dict[OperationKey, Callable[[_Chapter, str, Faults], dict[str, Any]]] 
 }
 # 원고 값 말고 문안에 싣는 값 — 가짜 해석기가 표지를 찾는 목록이다. 조건부라 그 값이 없는 채널·화에서는 섹션째 빠진다.
 _LISTED_VALUES = ("prior_events", "play_facts")
+_JUDGE_ANSWER = {"verdict": "unsure", "reason": "합성 판정 — 가짜 해석기는 판단하지 않는다."}
 
 
 class FakeLLM:
@@ -189,16 +194,25 @@ class FakeLLM:
                         body=body, conditional=conditional, order=order,
                     )
                 )
+        for order, (slot, body) in enumerate((("instruction", "합성 판정 지시문"), ("body", "{candidate}"))):
+            sections.append(
+                PromptSection(
+                    prompt_set_id=self._prompt_set_id, channel=JUDGE_CHANNEL, scope="both", slot=slot, variant="",
+                    body=body, conditional=False, order=order,
+                )
+            )
         return PromptSource(prompt_set_id=self._prompt_set_id, sections=sections)
 
     async def structured(
         self, prompt: RenderedPrompt, schema: type[T], *, records: list[dict[str, Any]], stage: OperationKey
     ) -> T:
-        at = self._chapters[tuple(_LINE.findall(prompt.prompt))]
         self.calls += 1
         records.append(
             {"callSite": OPERATION_CALL_SITES[stage], **self._usage, "durationMs": 0, "stage": stage, "failure": None}
         )
+        if stage == "conflicts.judge":
+            return schema.model_validate(_JUDGE_ANSWER)
+        at = self._chapters[tuple(_LINE.findall(prompt.prompt))]
         if (at.novel, at.label) in self._faults.schema_failure and (at.novel, at.label) not in self._failed:
             self._failed.add((at.novel, at.label))
             raise AdapterCallError("schema_invalid", retryable=True)
