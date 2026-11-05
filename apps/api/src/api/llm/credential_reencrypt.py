@@ -6,7 +6,9 @@
 붙여넣는 일이 된다.
 
 값은 그대로이고 암호문과 키 id 만 바뀐다(지문·끝 4자리도 그대로). 행마다 따로 커밋해 도중에 멈춰도 다시 돌리면 남은 행만
-한다. 복호화할 수 없는 행(그 키를 이미 잃음)은 건너뛰고 수만 센다 — 그 항목은 어드민에서 키를 다시 붙여넣어야 한다.
+한다. 복호화할 수 없는 행(그 키를 이미 잃음)은 건너뛰고 수만 센다 — 그 항목은 어드민에서 키를 다시 붙여넣어야 한다. 행 쓰기가
+DB 에서 실패한 행도 그 행만 실패로 세고 다음 행으로 간다 — 첫 실패에서 멈추면 뒤 행이 모두 옛 키에 남는데, 요약 줄만으로는
+옛 키를 지워도 되는지 가릴 수 없게 된다.
 
 지급 정보 실행기(`creator_payout/reencrypt.py`)와 달리 실패해도 traceback 을 찍지 않고 오류 클래스 이름(행 쓰기 실패면
 클래스 이름과 SQLSTATE)만 찍는다 — SQLAlchemy 문장 오류는 파라미터(암호문 바이트)를, 드라이버 오류의 DETAIL 은 위반한 행
@@ -29,46 +31,53 @@ from api.llm.credentials import CredentialStoreError, credential_keyring, creden
 @dataclass(frozen=True)
 class ReencryptResult:
     reencrypted: int
+    failed: int
     unreadable: int
 
 
 async def reencrypt_credentials(session_factory: async_sessionmaker[AsyncSession]) -> ReencryptResult:
+    """옛 키의 행을 하나씩 다시 암호화한다. 쓰기에 실패한 행은 그 오류(클래스 이름·SQLSTATE) 한 줄을 찍고 센다."""
     keyring = credential_keyring()
     async with session_factory() as db:
         credential_ids = (
             await db.scalars(select(LlmCredential.id).where(LlmCredential.key_id != keyring.current_key_id))
         ).all()
-    reencrypted = unreadable = 0
+    reencrypted = failed = unreadable = 0
     for credential_id in credential_ids:
-        async with session_factory() as db, credential_write(db):
-            credential = await db.scalar(
-                select(LlmCredential).where(LlmCredential.id == credential_id).with_for_update()
-            )
-            if credential is None or credential.key_id == keyring.current_key_id:
-                continue
-            try:
-                reencrypt_secret(keyring, credential)
-            except FieldDecryptError:
-                unreadable += 1
-                continue
-            await db.commit()
+        try:
+            async with session_factory() as db, credential_write(db):
+                credential = await db.scalar(
+                    select(LlmCredential).where(LlmCredential.id == credential_id).with_for_update()
+                )
+                if credential is None or credential.key_id == keyring.current_key_id:
+                    continue
+                try:
+                    reencrypt_secret(keyring, credential)
+                except FieldDecryptError:
+                    unreadable += 1
+                    continue
+                await db.commit()
+        except CredentialStoreError as exc:
+            print(f"Claude 자격 재암호화 실패: {exc}", file=sys.stderr)
+            failed += 1
+            continue
         reencrypted += 1
-    return ReencryptResult(reencrypted=reencrypted, unreadable=unreadable)
+    return ReencryptResult(reencrypted=reencrypted, failed=failed, unreadable=unreadable)
 
 
 async def run(session_factory: async_sessionmaker[AsyncSession]) -> int:
-    """다시 암호화하고 결과 한 줄을 찍는다. 종료 코드(건너뛴 행이 있거나 실패하면 1)를 돌려준다."""
+    """다시 암호화하고 결과 한 줄을 찍는다. 종료 코드(쓰기에 실패했거나 건너뛴 행이 있으면 1)를 돌려준다."""
     try:
         result = await reencrypt_credentials(session_factory)
-    except CredentialStoreError as exc:
-        print(f"Claude 자격 재암호화 실패: {exc}", file=sys.stderr)
-        return 1
     except Exception as exc:
         # 예외 문장도 찍지 않는다 — 어떤 오류가 어떤 값을 싣는지 이 자리에서 가릴 수 없다.
         print(f"Claude 자격 재암호화 실패: {type(exc).__name__}", file=sys.stderr)
         return 1
-    print(f"Claude 자격 재암호화: {result.reencrypted}행, 복호화할 수 없어 건너뜀 {result.unreadable}행")
-    return 1 if result.unreadable else 0
+    print(
+        f"Claude 자격 재암호화: {result.reencrypted}행, 쓰기 실패 {result.failed}행, "
+        f"복호화할 수 없어 건너뜀 {result.unreadable}행"
+    )
+    return 1 if result.failed or result.unreadable else 0
 
 
 async def _main() -> int:

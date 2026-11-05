@@ -71,7 +71,7 @@ async def test_rows_under_an_old_key_are_reencrypted_with_the_current_key(
     code = await credential_reencrypt.run(_factory(db_session))
 
     assert code == 0
-    assert capsys.readouterr().out.strip() == "Claude 자격 재암호화: 1행, 복호화할 수 없어 건너뜀 0행"
+    assert capsys.readouterr().out.strip() == "Claude 자격 재암호화: 1행, 쓰기 실패 0행, 복호화할 수 없어 건너뜀 0행"
     reencrypted = await _reload(db_session, old.id)
     assert reencrypted.key_id == "k2"
     assert decrypt_secret(FieldKeyring.parse(_ROTATED_KEY), reencrypted) == FAKE_API_KEY + "old"
@@ -92,7 +92,7 @@ async def test_unreadable_rows_are_counted_and_left_alone(
     code = await credential_reencrypt.run(_factory(db_session))
 
     assert code == 1
-    assert capsys.readouterr().out.strip() == "Claude 자격 재암호화: 0행, 복호화할 수 없어 건너뜀 1행"
+    assert capsys.readouterr().out.strip() == "Claude 자격 재암호화: 0행, 쓰기 실패 0행, 복호화할 수 없어 건너뜀 1행"
     unchanged = await _reload(db_session, lost.id)
     assert (unchanged.key_id, unchanged.secret_ciphertext) == ("k9", before)
 
@@ -125,3 +125,31 @@ async def test_reencrypt_failure_prints_only_the_exception_name(
         assert blob[:31].hex().upper() not in output
     assert FAKE_API_KEY not in output
     assert (await _reload(db_session, credential.id)).key_id == "k1"
+
+
+async def test_a_failed_row_is_counted_and_the_next_row_is_still_reencrypted(
+    db_session: AsyncSession, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """한 행의 쓰기가 실패해도 그 행만 실패로 세고 다음 행으로 간다 — 첫 실패에서 멈추면 그 뒤 행이 모두 옛 키에 남아, 옛
+    키를 지울 수 있는지 알려면 다시 돌려 봐야만 한다. 실패한 행마다 오류 클래스 이름과 SQLSTATE 한 줄, 끝에 요약 한 줄이고
+    종료 코드는 1 이다."""
+    ids = {label: (await _stored(db_session, _FIRST_KEY, label)).id for label in ("one", "two")}
+    processed: list[str] = []
+    real = reencrypt_secret
+
+    def failing_first(keyring: FieldKeyring, row: LlmCredential) -> None:
+        real(keyring, row)
+        processed.append(row.label)
+        if len(processed) == 1:
+            row.secret_last4 = "abc"
+
+    monkeypatch.setattr("api.llm.credential_reencrypt.reencrypt_secret", failing_first)
+
+    code = await credential_reencrypt.run(_factory(db_session))
+
+    assert code == 1
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "Claude 자격 재암호화: 1행, 쓰기 실패 1행, 복호화할 수 없어 건너뜀 0행"
+    assert captured.err.strip() == "Claude 자격 재암호화 실패: IntegrityError sqlstate=23514"
+    failed, done = processed
+    assert {label: (await _reload(db_session, ids[label])).key_id for label in processed} == {failed: "k1", done: "k2"}
