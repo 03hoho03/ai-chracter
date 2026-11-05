@@ -1473,8 +1473,10 @@ async def test_lifespan_cancels_the_startup_cleanup_on_shutdown(monkeypatch: pyt
     async def no_markers(_factory: object) -> None:
         return None
 
-    # 이 테스트는 종료 동작을 본다 — 기동 가드(`test_clover_unit_guard.py`)도 다른 기동 작업처럼 막는다.
+    # 이 테스트는 종료 동작을 본다 — 기동 가드(`test_clover_unit_guard.py`)와 기능 스위치 덮어쓰기 첫 적재도 다른 기동 작업처럼
+    # 막는다.
     monkeypatch.setattr(main, "assert_clover_unit_matches", no_markers)
+    monkeypatch.setattr(main, "refresh_switch_overrides", no_markers)
     monkeypatch.setattr(main, "rebuild_suspended_user_markers", no_markers)
     monkeypatch.setattr(main, "expire_stale_jobs_after_startup", waiting_cleanup)
 

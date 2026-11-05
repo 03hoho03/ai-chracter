@@ -45,6 +45,7 @@ from api.comments.router import me_router as comments_me_router, router as comme
 from api.content.router import router as content_router
 from api.creator_payout.router import me_router as creator_payout_me_router
 from api.core.config import settings
+from api.core.feature_switches import PinFeatureSwitches, keep_switch_overrides_fresh, refresh_switch_overrides
 from api.core.redis import redis_client
 from api.core.sentry import build_sentry_options
 from api.db.session import engine, get_session_factory
@@ -97,16 +98,22 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # 맨 먼저 클로버 단위를 대조한다 — 다르면 요청을 받기 전에 기동을 멈춘다(`clover/unit.py`). 평상시 교체에서는 이 실패로 새
     # 색이 healthy 가 되지 않아 교체 스크립트가 멈추고 옛 색이 계속 서빙한다.
     await assert_clover_unit_matches(get_session_factory())
+    # 기능 스위치 덮어쓰기를 요청을 받기 전에 다 읽는다 — 안 기다리면 새 프로세스의 첫 요청들이 잠깐 `.env` 값으로 돌아,
+    # 덮어쓰기로 켠 클로버 정지 같은 스위치가 풀린 채 서빙한다. 실패하면 기동이 실패한다(가드가 이미 DB 를 요구한다).
+    await refresh_switch_overrides(get_session_factory())
     await rebuild_suspended_user_markers(get_session_factory())
     # 재기동으로 죽은 소설화 작업의 환불. 만료를 기다렸다 도므로 기동을 막지 않게 백그라운드로 띄우고, 내려갈 때
     # 아직 기다리는 중이면 취소한다.
     novelize_cleanup = asyncio.create_task(expire_stale_jobs_after_startup(get_session_factory()))
+    # 덮어쓰기 주기 갱신도 내려갈 때 취소한다.
+    switch_refresher = asyncio.create_task(keep_switch_overrides_fresh(get_session_factory()))
     try:
         yield
     finally:
-        novelize_cleanup.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await novelize_cleanup
+        for task in (novelize_cleanup, switch_refresher):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         # 기억 임베딩이 쥐고 있던 Voyage 연결을 닫는다(쓴 적이 없으면 할 일이 없다).
         await aclose_shared_client()
 
@@ -160,6 +167,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# 요청마다 시작 순간의 기능 스위치 덮어쓰기를 고정한다 — 한 요청(SSE 본문·응답 뒤 작업까지) 안에서 같은 스위치 값이 섞이지
+# 않게. 마지막에 더한 미들웨어가 가장 바깥이라 요청 처리 전체를 감싼다.
+app.add_middleware(PinFeatureSwitches)
 
 app.include_router(admin_router)
 app.include_router(admin_me_router)
