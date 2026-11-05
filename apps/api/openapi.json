@@ -21275,7 +21275,7 @@
           "unpricedModel"
         ],
         "title": "AdminLlmCredentialSpend",
-        "description": "충전액 기준 이후의 추정 사용액. 목록 경로 호출과 확인 호출의 원가를 단가표로 친 추정이라 콘솔 잔액과 다를 수 있다(목록을\n쓰지 않은 동안의 env 키 호출·다른 곳에서 같은 키로 부른 호출은 세지 않는다). `remaining_usd` 는 충전액 − 추정 사용액이라 음수일\n수 있고, `below_alert` 는 그 값이 충전액의 임계 비율 아래인가다. 단가표에 없는 모델의 호출은 금액 없이\n`unpriced_calls`·`unpriced_model`(마지막으로 본 id)로 센다."
+        "description": "충전액 기준 이후의 추정 사용액. 목록 경로 호출과 확인 호출의 원가를 단가표로 친 추정이라 콘솔 잔액과 다를 수 있다(목록을\n쓰지 않은 동안의 env 키 호출·다른 곳에서 같은 키로 부른 호출, 소비자가 중간에 끊은 스트림·스트림 도중 실패한 호출은 세지\n않는다 — 마지막 둘은 과금되지만 사용량 기록과 같은 규칙으로 쌓지 않는다). `remaining_usd` 는 충전액 − 추정 사용액이라 음수일\n수 있고, `below_alert` 는 그 값이 충전액의 임계 비율 아래인가다. 단가표에 없는 모델의 호출은 금액 없이\n`unpriced_calls`·`unpriced_model`(마지막으로 본 id)로 센다."
       },
       "AdminLlmCredentialUpdateRequest": {
         "properties": {

@@ -299,7 +299,9 @@ class AnthropicLLMClient(LLMClient):
             if _is_throttling(exc):
                 raise _anthropic_error(LLMRateLimitError, f"Anthropic generate() call failed: {exc}") from exc
             raise _anthropic_error(LLMClientError, f"Anthropic generate() call failed: {exc}") from exc
-        # 정상 종료한 스트림만 여기 닿는다 — 소비자가 중간에 끊으면(aclose) `yield` 자리에서 빠지고 기록하지 않는다.
+        # 정상 종료한 스트림만 여기 닿는다 — 소비자가 중간에 끊으면(aclose) `yield` 자리에서 빠지고 기록하지 않는다. 스트림 도중
+        # 실패한 호출도 위에서 올라가 기록하지 않는다. 둘 다 과금은 되므로, 목록 항목의 추정 사용액에도 쌓이지 않아 그만큼 추정
+        # 잔액이 실제보다 많게 보인다(사용량 기록과 같은 규칙).
         usage_metadata = tally.usage()
         _log_usage(usage, model, usage_metadata, credential)
         await record_usage(usage.call_site, model, usage_metadata)

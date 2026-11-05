@@ -33,7 +33,7 @@ from api.core.field_crypto import FieldKeyring
 from api.core.redis import redis_client
 from api.db.models.llm_credential import LlmCredential, LlmCredentialCheck, LlmCredentialSettings
 from api.db.models.moderation import AdminActionLog
-from api.llm import credential_pool, credential_probe, credential_usage, credentials
+from api.llm import credential_notify, credential_pool, credential_probe, credential_usage, credentials
 from api.llm.claude_messages import to_usage
 from api.llm.credential_notify import get_credential_notifier
 from api.llm.credential_pool import GENERATION_KEY
@@ -134,6 +134,22 @@ def store_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.setattr(settings, "anthropic_structured_effort", "low")
     monkeypatch.setattr(settings, "anthropic_chat_timeout_ms", 45_000)
     return monkeypatch
+
+
+@pytest.fixture(autouse=True)
+async def _no_real_webhook_post(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
+    """이 파일에서는 어떤 Claude 자격 알림도 실제 웹훅(위 `discord.invalid`)으로 나가지 않는다. 라우트의 알림은 `notes` 가 받고,
+    추정 잔액 임계처럼 라우트 밖에서 쏘는 알림은 그것을 기대하는 테스트가 `_capture_credential_alerts` 로 받는다. 그 밖에서 보내려
+    하면 여기 남아 테스트가 끝날 때 실패한다 — 쏘고 잊은 전송 태스크가 다음 테스트로 새지도 않는다."""
+    attempted: list[str] = []
+
+    async def refuse(message: str) -> None:
+        attempted.append(message)
+
+    monkeypatch.setattr(credential_notify, "send_credential_notification", refuse)
+    yield
+    await _settle_credential_tasks()
+    assert attempted == [], f"잡지 않은 Claude 자격 알림이 웹훅으로 나가려 했다: {attempted}"
 
 
 class FakeProbe:
@@ -1860,10 +1876,17 @@ _SPEND_FIELDS = {"spentUsd", "remainingUsd", "belowAlert", "calls", "unpricedCal
 
 
 async def test_admin_list_shows_spend_remaining_and_unpriced_calls(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_id: uuid.UUID,
+    probe: FakeProbe,
+    notes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """충전액이 있는 항목은 그 기준 이후의 추정 사용액·남은 액·임계 아래 여부·호출 수·단가 없는 호출을 싣는다. 충전액이 없는
-    항목은 비운다. Opus 입력 100만·출력 10만 = 4 + 2 = 6 달러, 남은 44 달러는 50 달러의 90% 임계 아래다."""
+    항목은 비운다. Opus 입력 100만·출력 10만 = 4 + 2 = 6 달러, 남은 44 달러는 50 달러의 90% 임계 아래다(그래서 임계 알림이 한
+    번 간다)."""
+    threshold_alerts = _capture_credential_alerts(monkeypatch)
     created = await _create(db_client, creditUsd=50, alertPct=90)
     plain = await _insert_row(db_session)
     target = SpendTarget.of_row(await _row(db_session, created["id"]))
@@ -1884,6 +1907,8 @@ async def test_admin_list_shows_spend_remaining_and_unpriced_calls(
         "unpricedModel": "claude-unknown-model-0",
     }
     assert by_id[str(plain.id)]["spend"] is None
+    await _settle_credential_tasks()
+    assert [alert.split(" — ")[0] for alert in threshold_alerts] == ["[Claude 자격] 추정 잔액이 임계 아래"]
 
 
 async def test_admin_list_survives_an_unreadable_spend_store(
