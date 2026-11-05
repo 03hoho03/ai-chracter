@@ -336,6 +336,34 @@ async def test_drain_waits_for_bible_work(
 
 
 @pytest.mark.usefixtures("bible_on")
+async def test_a_stop_arriving_while_the_novel_claim_waits_launches_no_bible_work(
+    committed_engine: AsyncEngine, registry: Registry, adapter: _GateAdapter, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """정본 기억 칸은 같은 바퀴의 소설 고르기 뒤에 채우므로, 소설 고르기 조회가 DB 응답을 기다리는 사이에 정지가 서면 정본 기억
+    작업을 새로 띄우지 않는다 — 그 작업은 대기로 남아 다음 워커가 집는다. 소설 고르기를 조회 중에 정지를 세우는 가짜로 바꿔
+    끼우므로 시간 대기 없이 매번 같은 순서다. 깨지는 시나리오: 정지 확인이 바퀴 맨 위에만 있어, 비우는 워커가 정본 기억 칸을
+    새로 띄우고 그 칸이 끝나거나 끊길 때까지 정지를 미룬다."""
+    factory, novel_id, _ = await _confirm_chapters(committed_engine, registry, 1)
+    adapter.gate.set()  # 띄워지면 기다리지 않고 끝나게 — 잘못 띄운 것이 시간 초과가 아니라 단언으로 드러난다
+    stop = asyncio.Event()
+    claims = 0
+
+    async def claim_while_stopping(_factory: Any, _limit: int) -> list[uuid.UUID]:
+        nonlocal claims
+        claims += 1
+        stop.set()
+        return []
+
+    monkeypatch.setattr(worker, "claim_candidates", claim_while_stopping)
+    await asyncio.wait_for(_loop(factory, stop, tmp_path / "alive"), 10)
+
+    assert claims == 1
+    assert adapter.calls == []
+    assert await _job_states(factory, novel_id) == [("queued", 0)]
+
+
+@pytest.mark.usefixtures("bible_on")
 async def test_cancel_cancels_bible_work(
     committed_engine: AsyncEngine, registry: Registry, adapter: _GateAdapter, novel_side: _NovelSide,
     tmp_path: Path,

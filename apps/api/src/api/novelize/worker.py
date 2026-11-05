@@ -116,9 +116,10 @@ async def run_worker(
                     await bible.sweep()
                 next_sweep = clock() + SWEEP_INTERVAL_SECONDS
             active = {task for task in active if not task.done()}
-            if await _poll(session_factory, llm_client, active, cap - len(active)):
+            if await _poll(session_factory, llm_client, active, cap - len(active), stop):
                 _mark_alive(alive_file)
-            if bible is not None:
+            # 정지는 바퀴 맨 위에서만 보면 늦다 — 위 고르기가 DB 응답을 기다리는 사이에 설 수 있다.
+            if bible is not None and not stop.is_set():
                 bible_active = {task for task in bible_active if not task.done()}
                 bible.poll(bible_active, settings.novel_bible_worker_max_concurrent - len(bible_active))
             try:
@@ -142,10 +143,15 @@ def _mark_alive(alive_file: Path) -> None:
 
 
 async def _poll(
-    session_factory: SessionFactory, llm_client: LLMClient, active: set[asyncio.Task[None]], free: int
+    session_factory: SessionFactory,
+    llm_client: LLMClient,
+    active: set[asyncio.Task[None]],
+    free: int,
+    stop: asyncio.Event,
 ) -> bool:
     """빈 칸만큼 집어 띄운다. 조회가 성공했으면 참이다(빈 칸이 없어 조회하지 않은 바퀴도 루프가 살아 있으므로 참). 조회
-    실패(DB 가 잠깐 안 됨)는 남기고 거짓을 돌려 다음 바퀴로 간다."""
+    실패(DB 가 잠깐 안 됨)는 남기고 거짓을 돌려 다음 바퀴로 간다. 조회가 응답을 기다리는 사이 정지가 섰으면 고른 작업을 띄우지
+    않는다 — 고르기는 잠그지도 전이하지도 않아 그 행은 대기로 남고 다음 워커가 집는다."""
     if free <= 0:
         return True
     try:
@@ -154,6 +160,8 @@ async def _poll(
         logger.warning("소설화 워커가 대기 작업을 찾지 못했다(다음 바퀴에 다시 본다): %s", type(exc).__name__)
         capture_dependency_failure(exc, dependency="novelize")
         return False
+    if stop.is_set():
+        return True
     for job_id in job_ids:
         active.add(asyncio.create_task(run_job(session_factory, llm_client, job_id)))
     return True
