@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, type ReactNode, type Ref, type RefObject } from "react";
+import { useEffect, useEffectEvent, useImperativeHandle, useRef, type ReactNode, type Ref, type RefObject } from "react";
 
 import { toIllustrationLayoutKey, toReaderBlocks } from "@/entities/novel";
 
@@ -108,8 +108,10 @@ export function PagedEpisodeBody({
 
   useImperativeHandle(ref, () => reader.handle);
 
+  // 위치가 바뀔 때만 알린다 — 부모가 렌더마다 새 콜백을 줘도 다시 알리지 않는다.
+  const reportPosition = useEffectEvent(onPositionChange);
   useEffect(() => {
-    onPositionChange(reader.position);
+    reportPosition(reader.position);
   }, [reader.position]);
 
   return (
