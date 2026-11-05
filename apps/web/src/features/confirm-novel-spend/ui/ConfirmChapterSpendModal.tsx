@@ -31,10 +31,10 @@ type ConfirmChapterSpendModalProps = {
  *
  * 확정하면 고른 모델과 이용자가 본 금액을 돌려준다 — 요청의 `expectedCost` 가 화면의 숫자와 같아야 서버 금액 대조가
  * 뜻을 갖는다. 금액은 서버가 그 동작에 매긴 값을 그대로 쓴다 — 화면에서 화 수와 단가를 곱하면 서버 계산과 갈라질 때
- * 확인할 때마다 409 가 된다. 그만두면 `null` 이다. */
+ * 확인할 때마다 409 가 된다. 그만두면 `undefined` 다. */
 export const ConfirmChapterSpendModal = createCallable<
   ConfirmChapterSpendModalProps,
-  { model: NovelChapterModelId; cost: number } | null
+  { model: NovelChapterModelId; cost: number } | undefined
 >(({ call, title, description, confirmLabel, options, initialModelId, footnote, note }) => {
   const [modelId, setModelId] = useState(initialModelId);
   const cost = options.find((option) => option.id === modelId)?.cost ?? 0;
@@ -48,7 +48,7 @@ export const ConfirmChapterSpendModal = createCallable<
       confirmLabel={confirmLabel}
       footnote={footnote}
       note={note}
-      onCancel={() => call.end(null)}
+      onCancel={() => call.end(undefined)}
       onConfirm={() => call.end({ model: modelId, cost })}
     >
       <ChapterModelSelect options={options} value={modelId} onValueChange={setModelId} />

@@ -176,14 +176,14 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
     return () => {
       isMountedRef.current = false;
       ConfirmNovelSpendModal.end(false);
-      ConfirmChapterSpendModal.end(null);
+      ConfirmChapterSpendModal.end(undefined);
       DiscardManualEditModal.end(false);
       DeleteLastChapterModal.end(false);
-      SaveSnapshotModal.end(null);
-      RestoreSnapshotModal.end(null);
+      SaveSnapshotModal.end(undefined);
+      RestoreSnapshotModal.end(undefined);
       DeleteSnapshotModal.end(false);
       SnapshotDiffModal.end();
-      MergeCharacterModal.end(null);
+      MergeCharacterModal.end(undefined);
     };
   }, []);
 

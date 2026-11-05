@@ -98,7 +98,7 @@ export function BoardEpisodePanel({
 
   // 판 이력 모달은 루트에 마운트돼 화를 옮겨도 남는다 — 이 화를 떠나면(다른 카드 고르기·작업이 끝난 뒤의 자동 이동·
   // 화면 이탈) 이 화의 이력을 닫는다. 남겨 두면 다른 화를 보면서 옛 화의 이력을 보게 된다.
-  useEffect(() => () => NovelRevisionHistoryModal.end(null), []);
+  useEffect(() => () => NovelRevisionHistoryModal.end(undefined), []);
 
   function focusHeading() {
     headingRef.current?.focus();
@@ -141,7 +141,7 @@ export function BoardEpisodePanel({
                 hasPendingAiEdits,
                 hasPendingBlockEdits: hasPendingPatches,
               }).then((restoredRevisionNo) => {
-                if (restoredRevisionNo === null) return;
+                if (restoredRevisionNo === undefined) return;
                 aiEdit.report({ type: "restored", chapterOrdinal: chapter.ordinal, revisionNo: restoredRevisionNo });
                 focusHeading();
               })

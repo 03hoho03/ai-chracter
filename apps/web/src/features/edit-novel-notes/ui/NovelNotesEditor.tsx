@@ -175,8 +175,8 @@ export function NovelNotesEditor({ novel, headingRef, onDraftDirtyChange }: Nove
 }
 
 /** 저장 버튼 옆 한 줄. 저장하지 않은 변경이 먼저다(방금 저장했어도 그 뒤에 또 고쳤으면 그쪽이 지금 사실이다). */
-function toSaveStatus(isDirty: boolean, result: { tone: "error" | "done"; message: string } | undefined): string | null {
+function toSaveStatus(isDirty: boolean, result: { tone: "error" | "done"; message: string } | undefined): string | undefined {
   if (isDirty) return "저장하지 않은 변경이 있어요.";
   if (result?.tone === "done") return result.message;
-  return null;
+  return undefined;
 }

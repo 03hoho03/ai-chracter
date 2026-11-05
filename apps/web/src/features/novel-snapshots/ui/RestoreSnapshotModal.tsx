@@ -26,11 +26,11 @@ type RestoreSnapshotModalProps = {
 };
 
 /** 버전 되돌리기 확인과 실행. 무엇이 바뀌고 무엇이 남는지(그 뒤에 생긴 화는 그대로, 지금 상태는 자동 저장)를 확정
- * 전에 말한다. 되돌린 결과(건너뛴 화 포함)를 돌려주고, 그만두면 `null` 이다.
+ * 전에 말한다. 되돌린 결과(건너뛴 화 포함)를 돌려주고, 그만두면 `undefined` 다.
  *
  * 화를 만들고 있는 동안은 서버가 거부한다 — 생성 결과가 같은 화·인물·제목을 고치기 때문이다. 그때는 끝나면 할 수
  * 있다고 말하고 상세를 다시 받는다(진행 중 작업이 화면에 보이게). */
-export const RestoreSnapshotModal = createCallable<RestoreSnapshotModalProps, NovelSnapshotRestoreResponse | null>(
+export const RestoreSnapshotModal = createCallable<RestoreSnapshotModalProps, NovelSnapshotRestoreResponse | undefined>(
   ({ call, novelId, snapshotId, snapshotName }) => {
     const queryClient = useQueryClient();
     const mutation = useRestoreNovelSnapshotMutation();
@@ -45,7 +45,7 @@ export const RestoreSnapshotModal = createCallable<RestoreSnapshotModalProps, No
       } catch (restoreError) {
         const notice = toNovelActionError(restoreError, "restoreSnapshot");
         if (notice === undefined) {
-          call.end(null);
+          call.end(undefined);
           return;
         }
         setError(
@@ -61,7 +61,7 @@ export const RestoreSnapshotModal = createCallable<RestoreSnapshotModalProps, No
     }
 
     return (
-      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(null)}>
+      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(undefined)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="break-keep">‘{snapshotName}’ 때로 되돌릴까요?</DialogTitle>
@@ -78,7 +78,7 @@ export const RestoreSnapshotModal = createCallable<RestoreSnapshotModalProps, No
           )}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => call.end(null)}>
+            <Button type="button" variant="outline" onClick={() => call.end(undefined)}>
               취소
             </Button>
             <Button type="button" aria-disabled={isRestoring} className="aria-disabled:opacity-65" onClick={() => void handleRestore()}>

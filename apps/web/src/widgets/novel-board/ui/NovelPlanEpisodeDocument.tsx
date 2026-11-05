@@ -34,7 +34,7 @@ export function NovelPlanEpisodeDocument({
   const selection = selectionQuery.data === undefined ? "ok" : toApprovedSourceStatus(selectionQuery.data);
   const isPreparingHere = chapterFlow.preparingEpisodeKey === episodeKey;
   // 도는 작업의 화를 모르면(작업이 화 키를 싣기 전에 만든 작업) 이 화의 작업일 수도 있어 고치기를 막는다 — 끝나면 새 판이 올 수 있다.
-  const isRunningHere = chapterFlow.runningEpisodeKey === null || chapterFlow.runningEpisodeKey === episodeKey;
+  const isRunningHere = chapterFlow.runningEpisodeKey === undefined || chapterFlow.runningEpisodeKey === episodeKey;
   const control: EpisodeJobControl = {
     onMakeScenes: () => void chapterFlow.startEpisodeOutline(episodeKey),
     onWrite: () => void chapterFlow.startOutlineChapter(episodeKey),
@@ -45,7 +45,7 @@ export function NovelPlanEpisodeDocument({
     // 다른 화·다른 버튼에서 시작한 준비(경계 고르기·다시 만들기·구성안 확인)도 진행 중인 작업처럼 막는다.
     isJobRunning: chapterFlow.isJobRunning || (chapterFlow.preparing !== undefined && !isPreparingHere),
     isSceneJobRunningHere: chapterFlow.runningKind === "episode_outline_generate" && isRunningHere,
-    isRunningEpisodeUnknown: chapterFlow.runningEpisodeKey === null,
+    isRunningEpisodeUnknown: chapterFlow.runningEpisodeKey === undefined,
     isWriteJobRunningHere: chapterFlow.runningKind === "outline_chapter_generate" && isRunningHere,
     isAiEditRunning: chapterFlow.isAiEditRunning,
     statusId: chapterFlow.statusId,

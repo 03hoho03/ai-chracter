@@ -136,7 +136,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      AiEditInstructionModal.end(null);
+      AiEditInstructionModal.end(undefined);
     };
   }, []);
 
@@ -242,7 +242,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
         maxLength: novel.limits.aiEditInstructionMaxLength,
         defaultInstruction: lastInstruction,
       });
-      if (instruction === null || !isMountedRef.current) return false;
+      if (instruction === undefined || !isMountedRef.current) return false;
       setLastInstruction(instruction);
       const cost = novel.prices.aiEdit;
       const isConfirmed = await confirmSpend({
@@ -288,7 +288,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
         maxLength: novel.limits.aiEditInstructionMaxLength,
         defaultInstruction: lastInstruction,
       });
-      if (instruction === null || !isMountedRef.current) return false;
+      if (instruction === undefined || !isMountedRef.current) return false;
       setLastInstruction(instruction);
       const cost = novel.prices.aiEdit;
       const isConfirmed = await confirmSpend({

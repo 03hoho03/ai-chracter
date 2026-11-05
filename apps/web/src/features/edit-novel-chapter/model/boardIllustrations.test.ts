@@ -101,7 +101,7 @@ describe("toMoveTarget", () => {
   it("지금 자리의 맨 끝이면 요청하지 않는다", () => {
     expect(
       toMoveTarget(current, illustration("b", { anchorBlockId: "b1", placement: "after", order: 1 }), 1, "after"),
-    ).toBeNull();
+    ).toBeUndefined();
   });
 
   it("같은 자리라도 맨 끝이 아니면 순서가 바뀌므로 요청한다", () => {
@@ -130,7 +130,7 @@ describe("toMoveTarget", () => {
   });
 
   it("지금 판에 없는 문단이면 요청하지 않는다", () => {
-    expect(toMoveTarget(current, illustration("a", { anchorBlockId: "b1" }), 7, "after")).toBeNull();
+    expect(toMoveTarget(current, illustration("a", { anchorBlockId: "b1" }), 7, "after")).toBeUndefined();
   });
 });
 
@@ -306,7 +306,7 @@ describe("toAttachTarget", () => {
   });
 
   it("지금 판에 없는 문단이면 붙일 자리가 없다", () => {
-    expect(toAttachTarget(revision(), { start: 3, end: 4 }, "after")).toBeNull();
+    expect(toAttachTarget(revision(), { start: 3, end: 4 }, "after")).toBeUndefined();
   });
 });
 
@@ -353,7 +353,7 @@ describe("toRetryAttachRequest", () => {
   });
 
   it("그 문단이 지금 판에 없으면 다시 넣을 수 없다(문단을 다시 골라야 한다)", () => {
-    expect(toRetryAttachRequest(revision({ id: "r2", blocks: [{ id: "b0" }] }), failed)).toBeNull();
+    expect(toRetryAttachRequest(revision({ id: "r2", blocks: [{ id: "b0" }] }), failed)).toBeUndefined();
   });
 });
 

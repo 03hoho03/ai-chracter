@@ -49,7 +49,7 @@ type NovelRevisionHistoryModalProps = {
 };
 
 /** 장 하나의 판 이력. 판을 펼치면 그 판의 글이 보이고, 옛 판은 되돌릴 수 있다. 되돌리기는 옛 판을 **새 판으로**
- * 쌓는다 — 지금 글을 지우지 않는다. 돌려주는 값은 되돌린 옛 판의 번호, 되돌리지 않고 닫았으면 `null` 이다(되돌렸으면
+ * 쌓는다 — 지금 글을 지우지 않는다. 돌려주는 값은 되돌린 옛 판의 번호, 되돌리지 않고 닫았으면 `undefined` 다(되돌렸으면
  * 호출부가 그 번호로 결과를 알리고 장 머리로 포커스를 옮긴다 — 모달을 연 버튼은 남아 있지만, 바뀐 본문의 시작으로
  * 보내는 쪽이 결과를 알려 준다).
  *
@@ -61,7 +61,7 @@ type NovelRevisionHistoryModalProps = {
  * 되돌린 판을 밀어낸다. 모달이 열린 사이에 작업이 끝나거나 시작될 수 있어 연 순간의 값이 아니라 소설 상세를 따라
  * 읽는다. 상세는 받은 즉시 낡은 것으로 치는 쿼리라 모달을 열 때 한 번 다시 받는다 — 연 순간의 진행 중 작업도 그만큼
  * 최신이 된다. */
-export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModalProps, number | null>(
+export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModalProps, number | undefined>(
   ({ call, novelId, chapterId, chapterOrdinal, hasPendingAiEdits, hasPendingBlockEdits = false }) => {
     const queryClient = useQueryClient();
     const revisionsQuery = useNovelRevisionsQuery(novelId, chapterId);
@@ -89,7 +89,7 @@ export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModa
         const result = toNovelActionError(error, "restore");
         // 재동의가 필요하면 전역 재동의 모달이 뜬다 — 그 위에 이 모달을 남겨 두지 않는다.
         if (result === undefined) {
-          call.end(null);
+          call.end(undefined);
           return;
         }
         setRestoreError(result.message);
@@ -100,7 +100,7 @@ export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModa
     }
 
     return (
-      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(null)}>
+      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(undefined)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{chapterOrdinal}화 판 이력</DialogTitle>

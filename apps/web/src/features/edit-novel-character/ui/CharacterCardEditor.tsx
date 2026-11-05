@@ -89,7 +89,7 @@ export function CharacterCardEditor({
       character: { id: character.id, name: character.name },
       candidates: mergeCandidates.map(({ id, name }) => ({ id, name })),
     });
-    if (intoId !== null) onMerged(intoId);
+    if (intoId !== undefined) onMerged(intoId);
   }
 
   return (

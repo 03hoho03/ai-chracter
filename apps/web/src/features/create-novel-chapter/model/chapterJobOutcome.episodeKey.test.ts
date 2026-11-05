@@ -31,7 +31,7 @@ describe("작업 응답의 화 키로 다시 시도", () => {
       kind: "episodeOutline",
       episodeKey: "k3",
     });
-    expect(toRetryTarget(job("outline_chapter_generate", { episodeKey: "k3" }), { episodeKey: null })).toEqual({
+    expect(toRetryTarget(job("outline_chapter_generate", { episodeKey: "k3" }), { episodeKey: undefined })).toEqual({
       kind: "outlineChapter",
       episodeKey: "k3",
     });
@@ -66,10 +66,10 @@ describe("작업 응답의 화 키로 다시 시도", () => {
 });
 
 describe("toJobEpisodeKey", () => {
-  it("작업이 실은 화 키가 먼저이고, 없으면 이 화면이 기억한 키, 둘 다 없으면 null 이다", () => {
+  it("작업이 실은 화 키가 먼저이고, 없으면 이 화면이 기억한 키, 둘 다 없으면 undefined 다", () => {
     expect(toJobEpisodeKey({ episodeKey: "k1" }, "k9")).toBe("k1");
     expect(toJobEpisodeKey({ episodeKey: null }, "k9")).toBe("k9");
-    expect(toJobEpisodeKey({}, undefined)).toBeNull();
-    expect(toJobEpisodeKey({ episodeKey: null }, undefined)).toBeNull();
+    expect(toJobEpisodeKey({}, undefined)).toBeUndefined();
+    expect(toJobEpisodeKey({ episodeKey: null }, undefined)).toBeUndefined();
   });
 });
