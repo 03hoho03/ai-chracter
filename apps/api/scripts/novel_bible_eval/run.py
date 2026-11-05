@@ -201,10 +201,10 @@ _Attribute = tuple[str, str, str, str]
 
 
 def _clash(attributes: Sequence[_Attribute]) -> ClosedClash | None:
-    """같은 주어·술어 속성들 중 같은 갈래의 서로 다른 닫힌 값."""
+    """같은 주어·술어 속성들 중 같은 갈래의 서로 다른 닫힌 값. 다름은 앱처럼 닫힌 값으로 본다 — `180cm` 와 `180.0cm` 는 한 값이다."""
     read = [found for *_, value in attributes if (found := closed_value(value)) is not None]
     for category in dict.fromkeys(category for category, _ in read):
-        values = sorted({str(value) for kind, value in read if kind == category})
+        values = sorted(str(value) for value in {value for kind, value in read if kind == category})
         if len(values) >= 2:
             return ClosedClash(category=category, values=values)
     return None

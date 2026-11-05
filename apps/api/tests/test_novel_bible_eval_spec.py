@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from api.novel_bible.rules import blocking
+from novel_bible_eval import __main__ as entry_point
 from novel_bible_eval.spec import NON_CONFLICT_SUBKINDS, EvalSet, load_set
 
 FIXTURE = Path(__file__).parent / "fixtures" / "novel_bible_eval" / "small_set.json"
@@ -328,4 +329,31 @@ def test_a_set_whose_dictionary_item_was_removed_still_reads_when_the_removal_is
     with pytest.raises(ValidationError):
         load_set(path, removed=["enum:혈액형/O"])
     (probe, *_) = load_set(path, removed=["enum:혈액형/A"]).novels[0].probes
+    assert probe.closed is not None and probe.closed.items() == ["enum:혈액형/A", "enum:혈액형/B"]
+
+
+async def test_the_synthetic_command_reads_a_set_whose_dictionary_item_was_removed_only_when_the_removal_is_named(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 뺀 뒤 값을 내려면 사전 줄을 지운 코드로 같은 세트의 추출을 다시 돌린다 — 두 열 비교 명령처럼 측정 명령도 뺀 항목을 받아야
+    # 그 실행이 세트를 읽는다. 세트만 읽고 실행은 하지 않는다.
+    without_a = {surface: value for surface, value in blocking.CLOSED_ATTRIBUTE_VALUES.items() if value != ("혈액형", "A")}
+    monkeypatch.setattr(blocking, "CLOSED_ATTRIBUTE_VALUES", without_a)
+    path = tmp_path / "set.json"
+    path.write_text(json.dumps(_edited(*_B4, (("probes", 0, "closed"), _blood("A형", "B형", canonical=("A", "B"))))),
+                    encoding="utf-8")
+    read: list[EvalSet] = []
+
+    async def recorded(_factory: object, _resolver: object, eval_set: EvalSet, _run_dir: Path, **_: object) -> int:
+        read.append(eval_set)
+        return 0
+
+    monkeypatch.setattr(entry_point, "synthetic", recorded)
+    monkeypatch.setattr(entry_point, "build_resolver", lambda: lambda _operation: None)
+    argv = ["synthetic", "--set", str(path), "--run-dir", str(tmp_path / "run"), "--ledger", str(tmp_path / "ledger.jsonl"),
+            "--bundle", "ci", "--cap-usd", "1", "--halt-usd", "1", "--estimate-usd", "1", "--adapter", "fake"]
+    with pytest.raises(ValidationError):
+        await entry_point._run(entry_point._parser().parse_args(argv))
+    assert await entry_point._run(entry_point._parser().parse_args([*argv, "--removed", "enum:혈액형/A"])) == 0
+    (probe, *_) = read[0].novels[0].probes
     assert probe.closed is not None and probe.closed.items() == ["enum:혈액형/A", "enum:혈액형/B"]

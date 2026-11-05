@@ -43,6 +43,7 @@ from novel_bible_eval.run import (
     ChapterOutcome,
     ClosedClash,
     Meter,
+    _clash,
     _rows_left,
     extract_chapters,
     run_set,
@@ -501,6 +502,22 @@ async def test_closed_value_blocks_record_the_category_and_values_they_compared_
     assert {name: (r.k, r.n) for name, r in closed.recall_by_category.items()} == {"enum:색": (1, 1)}
     # 오탐 분모 = 기본 3 + 비충돌 셋. 막힌 비충돌 탐침은 오드아이 하나다.
     assert {name: (r.k, r.n) for name, r in closed.false_positive_by_category.items()} == {"enum:색": (1, 6)}
+
+
+@pytest.mark.parametrize(
+    ("values", "compared"),
+    [
+        pytest.param(["180cm", "180.0cm"], None, id="same-number-another-spelling"),
+        pytest.param(["180cm", "180.0cm", "190cm"], ["180", "190"], id="same-number-another-spelling-beside-another-number"),
+    ],
+)
+def test_a_number_written_two_ways_is_one_closed_value_in_the_collected_clash(
+    values: list[str], compared: list[str] | None
+) -> None:
+    # 앱은 `180cm` 와 `180.0cm` 를 같은 닫힌 값으로 읽어 막지 않는다. 수집이 둘을 다른 값으로 세면, 이번 확정 항목끼리 견주는
+    # 경우 앱이 막지 않은 그 쌍을 충돌로 적는다.
+    clash = _clash([("character", "서하", "키", value) for value in values])
+    assert (clash.values if clash is not None else None) == compared
 
 
 _SECOND_NOTE = "등대지기의 눈은 둘 다 검은색이라고들 했다."
