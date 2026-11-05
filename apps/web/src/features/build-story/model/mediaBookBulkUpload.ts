@@ -9,7 +9,7 @@ import {
   type CellImageResult,
   type MediaBookCellImage,
 } from "./mediaBookEdit";
-import { MAX_MEDIA_BOOK_CELLS, type MediaBookValues } from "./schema";
+import { MAX_MEDIA_BOOK_CELLS, type MediaBookValues } from "./storyBuilderSchema";
 
 /**
  * 파일 이름으로 칸을 한꺼번에 채우는 흐름의 순수 부분. 파일 이름 `인물_장면.확장자` 를 읽고(계획), 사용자가 덮어쓰기

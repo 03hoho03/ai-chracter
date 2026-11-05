@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { submitInquirySchema } from "./schema";
+import { submitInquirySchema } from "./submitInquirySchema";
 
 function validPayload() {
   return { category: "bug" as const, title: "제목", body: "내용" };

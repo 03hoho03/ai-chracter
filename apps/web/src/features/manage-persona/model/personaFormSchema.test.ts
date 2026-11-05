@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { countPersonaDescriptionChars, personaFormSchema } from "./schema";
+import { countPersonaDescriptionChars, personaFormSchema } from "./personaFormSchema";
 
 function validValues() {
   return { name: "하늘", gender: "unspecified", description: "", setAsDefault: false };

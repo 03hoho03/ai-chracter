@@ -10,7 +10,7 @@ import { novelKeys, toNovelActionError, type NovelDetailResponse } from "@/entit
 import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { useUpdateNovelInfoMutation } from "../api/useUpdateNovelInfoMutation";
-import { countInfoChars, createSynopsisFormSchema, type SynopsisFormValues } from "../model/schema";
+import { countInfoChars, createSynopsisFormSchema, type SynopsisFormValues } from "../model/novelInfoSchema";
 
 /** 작품 정보 화면의 소개 — 이용자가 적는 글(선택). 제목처럼 그 자리에서 고치고, 비워서 저장하면 소개를 지운다.
  * 저장·취소 뒤 포커스는 연필로 돌아온다. */

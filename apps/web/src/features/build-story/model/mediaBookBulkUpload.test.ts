@@ -8,7 +8,7 @@ import {
   planBulkUpload,
 } from "./mediaBookBulkUpload";
 import type { CellImageResult } from "./mediaBookEdit";
-import { MAX_MEDIA_BOOK_CELLS, mediaBookSchema, type MediaBookCellValues, type MediaBookValues } from "./schema";
+import { MAX_MEDIA_BOOK_CELLS, mediaBookSchema, type MediaBookCellValues, type MediaBookValues } from "./storyBuilderSchema";
 
 const PERSON = "00000000-0000-4000-8000-000000000001";
 const SCENE = "00000000-0000-4000-8000-000000000011";

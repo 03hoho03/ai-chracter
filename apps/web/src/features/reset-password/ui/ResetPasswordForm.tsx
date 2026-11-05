@@ -13,7 +13,7 @@ import {
   resetPasswordDefaultValues,
   resetPasswordSchema,
   type ResetPasswordFormValues,
-} from "../model/schema";
+} from "../model/resetPasswordSchema";
 
 type ResetPasswordFormProps = {
   token: string;

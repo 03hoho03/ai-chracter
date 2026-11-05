@@ -4,7 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/client";
 
 import { formToServer } from "../model/formToServer";
-import type { GenerateImagesFormValues } from "../model/schema";
+import type { GenerateImagesFormValues } from "../model/generateImagesSchema";
 
 export type GenerateImageResponse = components["schemas"]["GenerateImageResponse"];
 

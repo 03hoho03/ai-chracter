@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { reconcileKeywordNotesOnStartingSetupRemoval } from "./reconcileKeywordNotes";
-import { createKeywordNote, type KeywordNoteValues } from "./schema";
+import { createKeywordNote, type KeywordNoteValues } from "./storyBuilderSchema";
 
 function globalNote(id: string): KeywordNoteValues {
   return { ...createKeywordNote(id), content: "글로벌 노트", triggerKeywords: ["항상"] };

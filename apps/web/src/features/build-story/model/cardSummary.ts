@@ -9,7 +9,7 @@ import {
   type SituationNoteValues,
   type StartingSetupValues,
   type StatDefValues,
-} from "./schema";
+} from "./storyBuilderSchema";
 
 // 접힌 카드 머리 줄의 제목·요약 글. 빌더 카드와 작성 가이드의 카드 모양 예시가 같은 함수로 만들어 두 화면의 요약이
 // 어긋나지 않게 한다. 요약 조각은 ` · ` 로 잇고 비어 있는 재료는 뺀다.

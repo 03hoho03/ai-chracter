@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useSubmitAppealMutation, type AppealTarget } from "../api/useSubmitAppealMutation";
-import { submitAppealSchema, type SubmitAppealFormValues } from "../model/schema";
+import { submitAppealSchema, type SubmitAppealFormValues } from "../model/submitAppealSchema";
 
 type AppealModalProps = {
   target: AppealTarget;

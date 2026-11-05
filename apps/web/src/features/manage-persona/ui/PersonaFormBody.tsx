@@ -13,7 +13,7 @@ import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { personaErrorMessage } from "../model/personaErrorMessage";
 import { PERSONA_GENDER_OPTIONS, PERSONA_GENDER_OPTION_LABEL, toPersonaGenderOption } from "../model/personaGenderOption";
-import { countPersonaDescriptionChars, personaFormSchema, type PersonaFormValues } from "../model/schema";
+import { countPersonaDescriptionChars, personaFormSchema, type PersonaFormValues } from "../model/personaFormSchema";
 
 type PersonaFormBodyProps = {
   defaultValues: PersonaFormValues;

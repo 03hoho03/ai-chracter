@@ -1,4 +1,4 @@
-import type { KeywordNoteValues } from "./schema";
+import type { KeywordNoteValues } from "./storyBuilderSchema";
 
 /**
  * 시작설정 삭제 시 그 시작설정을 참조하던 키워드 노트를 삭제하지

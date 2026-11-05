@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { STARTING_SETUP_SCOPE, STORY_COLLAPSIBLE_LISTS } from "./collapsibleLists";
-import { storyBuilderSchema } from "./schema";
+import { storyBuilderSchema } from "./storyBuilderSchema";
 
 /** 기본값·선택·null 허용 껍질을 벗겨 안쪽 스키마를 꺼낸다. */
 function unwrap(schema: z.core.$ZodType): z.core.$ZodType {

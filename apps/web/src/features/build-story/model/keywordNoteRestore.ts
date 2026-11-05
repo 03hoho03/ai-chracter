@@ -1,4 +1,4 @@
-import { MAX_ALWAYS_ON_KEYWORD_NOTES, MAX_KEYWORD_NOTES, type KeywordNoteValues } from "./schema";
+import { MAX_ALWAYS_ON_KEYWORD_NOTES, MAX_KEYWORD_NOTES, type KeywordNoteValues } from "./storyBuilderSchema";
 
 /**
  * 지운 키워드 노트를 되돌릴지의 판정(반복 항목 공용 되돌리기의 `decideRestore` 모양). 그 사이 노트를 더 만들었으면 되살린

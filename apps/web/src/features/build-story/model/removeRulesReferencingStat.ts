@@ -1,4 +1,4 @@
-import { countRules, type RuleListItemValues } from "./schema";
+import { countRules, type RuleListItemValues } from "./storyBuilderSchema";
 
 /**
  * 엔딩 탭에서 조건 줄이나 규칙 그룹의 삭제 버튼을 눌렀을 때의 처리. 지운 항목은 자기 `nextOp` 와 함께 사라지고 남은 항목의

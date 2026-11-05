@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { toMediaNameTag } from "@/entities/media-book";
 
 import { findUnknownMediaTags, insertMediaTag, renameMediaTagsInFields } from "./mediaTags";
-import type { MediaBookValues, StartingSetupValues, StoryBuilderFormValues } from "./schema";
+import type { MediaBookValues, StartingSetupValues, StoryBuilderFormValues } from "./storyBuilderSchema";
 
 const PERSON_RIA = "00000000-0000-4000-8000-000000000001";
 const PERSON_MARIA = "00000000-0000-4000-8000-000000000002";

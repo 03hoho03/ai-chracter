@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formToCard } from "./formToCard";
-import type { StoryBuilderFormValues } from "./schema";
+import type { StoryBuilderFormValues } from "./storyBuilderSchema";
 
 function baseFormValues(): StoryBuilderFormValues {
   return {

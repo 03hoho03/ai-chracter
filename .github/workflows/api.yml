@@ -31,7 +31,7 @@ on:
       # 튜토리얼 시드 테스트가 빌더가 고를 수 있는 값(스탯 아이콘·색·턴 하한)을 이 FE 소스에서 직접 읽는다.
       - "apps/web/src/entities/chat-room/model/statIcons.ts"
       - "packages/ui/src/lib/color-palette.ts"
-      - "apps/web/src/features/build-story/model/schema.ts"
+      - "apps/web/src/features/build-story/model/storyBuilderSchema.ts"
       # 원장 kind 라벨 대조 테스트가 web·admin 의 라벨 맵을 이 소스에서 직접 읽는다.
       - "apps/web/src/entities/clover/model/cloverKindLabel.ts"
       - "apps/admin/src/entities/admin-user/model/labels.ts"
@@ -49,7 +49,7 @@ on:
       # 튜토리얼 시드 테스트가 빌더가 고를 수 있는 값(스탯 아이콘·색·턴 하한)을 이 FE 소스에서 직접 읽는다.
       - "apps/web/src/entities/chat-room/model/statIcons.ts"
       - "packages/ui/src/lib/color-palette.ts"
-      - "apps/web/src/features/build-story/model/schema.ts"
+      - "apps/web/src/features/build-story/model/storyBuilderSchema.ts"
       # 원장 kind 라벨 대조 테스트가 web·admin 의 라벨 맵을 이 소스에서 직접 읽는다.
       - "apps/web/src/entities/clover/model/cloverKindLabel.ts"
       - "apps/admin/src/entities/admin-user/model/labels.ts"

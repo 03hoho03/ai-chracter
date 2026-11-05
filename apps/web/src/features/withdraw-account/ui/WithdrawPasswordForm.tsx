@@ -11,7 +11,7 @@ import {
   withdrawPasswordDefaultValues,
   withdrawPasswordSchema,
   type WithdrawPasswordFormValues,
-} from "../model/schema";
+} from "../model/withdrawPasswordSchema";
 import { getWithdrawError } from "../model/withdrawError";
 
 type WithdrawPasswordFormProps = {

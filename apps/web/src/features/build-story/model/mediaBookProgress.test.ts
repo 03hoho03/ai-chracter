@@ -8,7 +8,7 @@ import {
   summarizeMediaBookProgress,
   toUsedAssetLabels,
 } from "./mediaBookProgress";
-import { MAX_MEDIA_BOOK_CELLS, type MediaBookCellValues, type MediaBookValues } from "./schema";
+import { MAX_MEDIA_BOOK_CELLS, type MediaBookCellValues, type MediaBookValues } from "./storyBuilderSchema";
 
 const DOHEE = "00000000-0000-4000-8000-000000000001";
 const YUNA = "00000000-0000-4000-8000-000000000002";

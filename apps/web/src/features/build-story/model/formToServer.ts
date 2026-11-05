@@ -15,7 +15,7 @@ import {
   type StartingSetupValues,
   type StatDefValues,
   type StoryBuilderFormValues,
-} from "./schema";
+} from "./storyBuilderSchema";
 
 type StoryDraftPayload = components["schemas"]["StoryDraftPayload"];
 type DevelopmentExampleItem = components["schemas"]["DevelopmentExampleItem"];

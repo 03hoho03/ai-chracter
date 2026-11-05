@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { countInfoChars, createSynopsisFormSchema, createTitleFormSchema } from "./schema";
+import { countInfoChars, createSynopsisFormSchema, createTitleFormSchema } from "./novelInfoSchema";
 
 describe("countInfoChars", () => {
   it("앞뒤 공백을 걷고 코드 포인트로 센다", () => {

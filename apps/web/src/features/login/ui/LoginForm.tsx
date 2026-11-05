@@ -17,7 +17,7 @@ import {
   type LoginErrorParam,
   type SignupMethod,
 } from "../model/loginErrorMessage";
-import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
+import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/loginSchema";
 import { SocialLoginButtons } from "./SocialLoginButtons";
 
 type LoginFormProps = {

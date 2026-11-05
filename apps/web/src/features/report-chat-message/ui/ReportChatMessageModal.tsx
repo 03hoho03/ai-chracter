@@ -30,7 +30,7 @@ import {
   countNoteLength,
   isChatMessageReportReason,
   type ChatMessageReportFormValues,
-} from "../model/schema";
+} from "../model/chatMessageReportSchema";
 
 type ReportChatMessageModalProps = {
   roomId: string;

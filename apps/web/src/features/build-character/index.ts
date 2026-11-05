@@ -17,4 +17,4 @@ export {
   type SituationalImageValues,
   type Target,
   type Visibility,
-} from "./model/schema";
+} from "./model/characterBuilderSchema";

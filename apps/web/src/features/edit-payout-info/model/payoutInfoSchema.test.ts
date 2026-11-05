@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formToServer } from "./formToServer";
-import { payoutInfoSchema, type PayoutInfoFormValues } from "./schema";
+import { payoutInfoSchema, type PayoutInfoFormValues } from "./payoutInfoSchema";
 
 const VALID = {
   legalName: "홍길동",

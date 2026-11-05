@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isImageAspectRatio } from "./schema";
+import { isImageAspectRatio } from "./generateImagesSchema";
 
 describe("isImageAspectRatio", () => {
   it("목록 안 값을 통과시킨다", () => {

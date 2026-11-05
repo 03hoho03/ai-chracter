@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createEmptyDraft } from "@/entities/content";
 
-import { characterBuilderSchema } from "./schema";
+import { characterBuilderSchema } from "./characterBuilderSchema";
 import { serverToForm } from "./serverToForm";
 
 function validFullForm() {
@@ -24,7 +24,7 @@ function validFullForm() {
 
 /** 초안을 담으려고 nullable로 둔 3필드는 화면에 `*`가
  * 붙어 있고 서버도 요구한다. 타입은 그대로 두고 refine이 상시 검증해 서버 400 왕복 전에 걸린다
- * (스토리 빌더의 같은 3필드와 짝, `features/build-story/model/schema.test.ts`). */
+ * (스토리 빌더의 같은 3필드와 짝, `features/build-story/model/storyBuilderSchema.test.ts`). */
 // 서버 발행 검사는 공백만인 필수 칸을 빈 칸으로 거절한다. 화면도 같은 판정으로 먼저 막아야 발행 버튼이 그 칸을 짚는다.
 describe("characterBuilderSchema blank required text", () => {
   it.each([

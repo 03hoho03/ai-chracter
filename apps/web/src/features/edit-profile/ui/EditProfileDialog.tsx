@@ -27,7 +27,7 @@ import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { useUpdateProfileMutation } from "../api/useUpdateProfileMutation";
 import { formToServer } from "../model/formToServer";
-import { editProfileSchema, type EditProfileFormValues } from "../model/schema";
+import { editProfileSchema, type EditProfileFormValues } from "../model/editProfileSchema";
 import { serverToForm } from "../model/serverToForm";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";

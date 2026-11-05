@@ -1,4 +1,4 @@
-import { keywordNoteSchema } from "./schema";
+import { keywordNoteSchema } from "./storyBuilderSchema";
 
 /**
  * 트리거 키워드를 하나 더 넣을 때의 거절 이유(넣어도 되면 undefined). 넣은 뒤의 목록을 폼 스키마로 검사하므로

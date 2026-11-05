@@ -15,7 +15,7 @@ import {
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { CharacterCount } from "@/shared/ui/CharacterCount";
 
-import { countEpisodeChars, createAuthorNoteSchema, type AuthorNoteFormValues } from "../model/schema";
+import { countEpisodeChars, createAuthorNoteSchema, type AuthorNoteFormValues } from "../model/episodeSchema";
 
 type AuthorNoteEditorProps = {
   novel: NovelDetailResponse;

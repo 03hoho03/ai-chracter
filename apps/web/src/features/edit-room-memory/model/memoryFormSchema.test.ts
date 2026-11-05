@@ -1,7 +1,7 @@
 import { createFormControl } from "react-hook-form";
 import { describe, expect, it } from "vitest";
 
-import { countMemoryChars, createMemoryFormSchema, memoryFormOptions } from "./schema";
+import { countMemoryChars, createMemoryFormSchema, memoryFormOptions } from "./memoryFormSchema";
 
 const LIMITS = { noteMaxLength: 1000, summaryMaxLength: 1500 };
 const SCHEMA = createMemoryFormSchema(LIMITS);

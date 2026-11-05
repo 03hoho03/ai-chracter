@@ -20,7 +20,7 @@ import {
   REPORT_REASON_OPTIONS,
   reportContentSchema,
   type ReportContentFormValues,
-} from "../model/schema";
+} from "../model/reportContentSchema";
 
 type ReportContentModalProps = {
   mutationFn: MutationFn<void, ReportReasonCategory>;

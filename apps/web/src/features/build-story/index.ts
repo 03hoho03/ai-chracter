@@ -160,6 +160,6 @@ export {
   type StorySettingValues,
   type Target,
   type Visibility,
-} from "./model/schema";
+} from "./model/storyBuilderSchema";
 export { FieldLabelText } from "./ui/FieldLabelText";
 export { StatSummary } from "./ui/StatSummary";

@@ -17,7 +17,7 @@ import {
   statDefSchema,
   storyBuilderSchema,
   storySettingSchema,
-} from "./schema";
+} from "./storyBuilderSchema";
 import { serverToForm } from "./serverToForm";
 
 describe("storySettingSchema", () => {

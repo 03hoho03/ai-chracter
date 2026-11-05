@@ -16,7 +16,7 @@ import {
   type NovelDetailResponse,
 } from "@/entities/novel";
 
-import { createEpisodeTitleSchema, toEpisodeHeading, type EpisodeTitleFormValues } from "../model/schema";
+import { createEpisodeTitleSchema, toEpisodeHeading, type EpisodeTitleFormValues } from "../model/episodeSchema";
 
 type EpisodeTitleEditorProps = {
   novel: NovelDetailResponse;

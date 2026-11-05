@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { hasRuleWithMissingStat, isMissingStat } from "./missingStatRules";
-import type { RuleListItemValues, SingleRuleValues } from "./schema";
+import type { RuleListItemValues, SingleRuleValues } from "./storyBuilderSchema";
 
 function rule(id: string, statId: string): SingleRuleValues {
   return { kind: "rule", id, statId, operator: ">=", value: 0, nextOp: null };

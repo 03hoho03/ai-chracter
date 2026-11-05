@@ -1,6 +1,6 @@
 import type { MediaTagImages } from "@/entities/media-book";
 
-import type { MediaBookCellValues } from "./schema";
+import type { MediaBookCellValues } from "./storyBuilderSchema";
 
 type CellImageSize = { width?: number; height?: number };
 

@@ -6,7 +6,7 @@ import { commentDraftLogoutRevisionAtom, type Comment } from "@/entities/comment
 import { draftScopesAtom } from "./atoms";
 import { canUpdateCommentDraftScope, finishCommentDraftScope, resolveCommentDraftScope } from "./draftScope";
 import { changeCommentDraft, newCommentDraft, type CommentDraft } from "./drafts";
-import type { CommentFormValues } from "./schema";
+import type { CommentFormValues } from "./commentFormSchema";
 
 export function useCommentDrafts(contentId: string, viewerId: string | undefined) {
   const revision = useAtomValue(commentDraftLogoutRevisionAtom);

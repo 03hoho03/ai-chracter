@@ -1,7 +1,7 @@
 import type { Comment, CommentPreferences } from "@/entities/comment";
 
 import type { NotificationPreferenceFormValues } from "./notificationPreferenceSchema";
-import type { CommentFormValues } from "./schema";
+import type { CommentFormValues } from "./commentFormSchema";
 
 /** 수정할 댓글을 폼 값으로 펼친다. 본문이 없는 스티커 댓글은 빈 문자열로 받는다. */
 export function commentServerToForm(comment: Comment): CommentFormValues {

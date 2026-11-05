@@ -10,7 +10,7 @@ import { useForm } from "react-hook-form";
 import { novelKeys, toNovelActionError, type NovelDetailResponse } from "@/entities/novel";
 
 import { useUpdateNovelInfoMutation } from "../api/useUpdateNovelInfoMutation";
-import { createTitleFormSchema, type TitleFormValues } from "../model/schema";
+import { createTitleFormSchema, type TitleFormValues } from "../model/novelInfoSchema";
 
 /** 작품 정보 화면 머리의 소설 제목(`h1`)과 그 자리 고치기. 연필을 누르면 제목 자리가 입력칸이 되고, 저장하거나
  * 취소하면 다시 제목이 되며 포커스는 연필로 돌아온다(입력칸이 사라지며 포커스가 `<body>` 로 떨어지지 않게).

@@ -8,7 +8,7 @@ import {
   situationNoteTitle,
   startingSetupSummary,
 } from "./cardSummary";
-import type { RuleListItemValues, SingleRuleValues, StatDefValues } from "./schema";
+import type { RuleListItemValues, SingleRuleValues, StatDefValues } from "./storyBuilderSchema";
 
 function rule(id: string): Extract<RuleListItemValues, { kind: "rule" }> {
   return { kind: "rule", id, statId: "stat", operator: ">=", value: 1, nextOp: null };

@@ -1,6 +1,6 @@
 import { STAT_ICON_OPTIONS } from "@/entities/chat-room";
 
-import type { StatDefValues } from "../model/schema";
+import type { StatDefValues } from "../model/storyBuilderSchema";
 import { statSummaryParts } from "../model/statSummary";
 
 type StatSummaryProps = {

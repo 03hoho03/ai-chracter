@@ -12,7 +12,7 @@ import { COMMENT_GHOST_HOVER_CLASS_NAME, CommentStickerImage, useCommentStickers
 import { useWriteCommentMutation } from "../api/useWriteCommentMutation";
 import type { CommentDraft } from "../model/drafts";
 import { commentFormErrors } from "../model/commentFormErrors";
-import { commentFormSchema, EMPTY_COMMENT_VALUES, type CommentFormValues } from "../model/schema";
+import { commentFormSchema, EMPTY_COMMENT_VALUES, type CommentFormValues } from "../model/commentFormSchema";
 import { CommentLoginModal } from "./CommentLoginModal";
 import { CommentTextField } from "./CommentTextField";
 

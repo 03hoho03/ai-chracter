@@ -9,7 +9,7 @@ import { novelKeys, toNovelActionError, type NovelDetailResponse } from "@/entit
 
 import { useSaveNovelNotesMutation } from "../api/useSaveNovelNotesMutation";
 import { formToServer } from "../model/formToServer";
-import { countNotesChars, notesFormOptions, type NotesFormValues } from "../model/schema";
+import { countNotesChars, notesFormOptions, type NotesFormValues } from "../model/notesFormSchema";
 import { serverToForm } from "../model/serverToForm";
 
 type NovelNotesEditorProps = {

@@ -12,7 +12,7 @@ import {
   type RuleListItemValues,
   type SingleRuleValues,
   type SituationNoteValues,
-} from "./schema";
+} from "./storyBuilderSchema";
 
 // 상한 숫자는 서버(`StoryDraftPayload` 의 상황 노트 검사)와 같아야 한다. 폼이 더 느슨하면 자동저장이 서버 422 로 멈추고,
 // 더 엄격하면 서버가 받는 노트를 작가가 못 만든다. 숫자를 상수와 따로 적어 두 쪽이 함께 바뀌었는지 여기서 본다.

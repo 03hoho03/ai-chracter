@@ -1,6 +1,6 @@
 import { isApiError } from "@/shared/api/client";
 
-import type { MediaBookValues } from "./schema";
+import type { MediaBookValues } from "./storyBuilderSchema";
 
 // 발행이 칸 그림의 블러본을 만들다 실패했을 때 서버가 돌려주는 502 의 `detail.code`. 응답에 실리는 실제 식별자다.
 const IMAGE_UNAVAILABLE_CODE = "MEDIA_BOOK_IMAGE_UNAVAILABLE";

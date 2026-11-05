@@ -10,7 +10,7 @@ import {
   generateImagesDefaultValues,
   generateImagesSchema,
   type GenerateImagesFormValues,
-} from "../model/schema";
+} from "../model/generateImagesSchema";
 import {
   GenerateImagesSubmitContext,
   type GenerateImagesSubmitContextValue,

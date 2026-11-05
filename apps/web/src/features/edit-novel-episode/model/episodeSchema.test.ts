@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createAuthorNoteSchema, createEpisodeTitleSchema, toEpisodeHeading } from "./schema";
+import { createAuthorNoteSchema, createEpisodeTitleSchema, toEpisodeHeading } from "./episodeSchema";
 
 describe("createEpisodeTitleSchema", () => {
   const schema = createEpisodeTitleSchema(4);

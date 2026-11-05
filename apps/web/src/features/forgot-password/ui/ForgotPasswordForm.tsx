@@ -13,7 +13,7 @@ import {
   forgotPasswordDefaultValues,
   forgotPasswordSchema,
   type ForgotPasswordFormValues,
-} from "../model/schema";
+} from "../model/forgotPasswordSchema";
 
 export function ForgotPasswordForm() {
   const {

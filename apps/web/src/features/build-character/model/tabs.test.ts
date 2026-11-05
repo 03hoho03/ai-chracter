@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { characterBuilderSchema } from "./schema";
+import { characterBuilderSchema } from "./characterBuilderSchema";
 import { CHARACTER_TABS } from "./tabs";
 
 /** 한 탭의 `fields` 프리픽스가 최상위 키 `key`를 덮는지 — 첫 세그먼트 일치로 판정한다

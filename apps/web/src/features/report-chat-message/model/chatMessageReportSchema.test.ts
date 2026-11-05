@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH, chatMessageReportSchema, countNoteLength } from "./schema";
+import { CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH, chatMessageReportSchema, countNoteLength } from "./chatMessageReportSchema";
 
 describe("countNoteLength", () => {
   it("counts an emoji as one character", () => {

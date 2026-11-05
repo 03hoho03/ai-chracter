@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formToServer } from "./formToServer";
-import { CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH, chatMessageReportSchema, countNoteLength } from "./schema";
+import { CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH, chatMessageReportSchema, countNoteLength } from "./chatMessageReportSchema";
 
 // 화면 제출과 같은 경로(스키마 파싱 → 본문 변환)로 확인한다 — trim 은 스키마가, 빈 메모 생략은 변환이 한다.
 function toBody(raw: unknown) {

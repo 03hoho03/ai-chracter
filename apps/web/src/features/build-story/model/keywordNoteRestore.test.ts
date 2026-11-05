@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { keywordNoteRestoreDecision } from "./keywordNoteRestore";
-import { createKeywordNote, MAX_ALWAYS_ON_KEYWORD_NOTES, MAX_KEYWORD_NOTES } from "./schema";
+import { createKeywordNote, MAX_ALWAYS_ON_KEYWORD_NOTES, MAX_KEYWORD_NOTES } from "./storyBuilderSchema";
 
 function notes(count: number, alwaysOnCount = 0) {
   return Array.from({ length: count }, (_, index) => ({ alwaysOn: index < alwaysOnCount }));

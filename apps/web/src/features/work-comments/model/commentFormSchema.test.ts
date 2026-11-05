@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { commentFormSchema, EMPTY_COMMENT_VALUES } from "./schema";
+import { commentFormSchema, EMPTY_COMMENT_VALUES } from "./commentFormSchema";
 import { changeCommentDraft, finishCommentDraft, newCommentDraft } from "./drafts";
 
 describe("comment input boundaries", () => {

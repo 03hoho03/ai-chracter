@@ -29,7 +29,7 @@ import {
   payoutInfoSchema,
   type PayoutInfoFormValues,
   type PayoutInfoSubmitValues,
-} from "../model/schema";
+} from "../model/payoutInfoSchema";
 
 const INLINE_LINK_CLASS = "font-medium whitespace-nowrap text-primary underline-offset-4 hover:underline focus-visible:underline";
 const DETAIL_SUMMARY_CLASS =
