@@ -188,7 +188,11 @@ class SceneSpec(_Spec):
 class ChapterSpec(_Spec):
     """`scenes` 가 None 이면 장면 구성안이 없는 화다 — 앱이 화 전체를 장면 하나로 읽는다. 사건의 장면은 첫 문단의 장면이고,
     사건 슬롯은 구성안이 회상이라고 한 장면에서 시작하는 `present` 사건을 늘 `flashback` 으로 저장한다 — 그런 사건을 `present`
-    로 적은 정답은 어느 어댑터도 맞힐 수 없어 받지 않는다."""
+    로 적은 정답은 어느 어댑터도 맞힐 수 없어 받지 않는다.
+
+    사건 정답은 첫 문단 순으로 적어야 한다(같은 첫 문단은 아무 차례). 앱은 사건을 첫 문단 순으로 저장하고 매처는 정답 목록
+    차례대로 저장된 사건과 짝짓는다 — 다른 차례로 적으면 짝이 뒤바뀌어 바른 사건을 고른 회상 관계가 틀림으로 셈해진다. 읽을 때
+    정렬하지 않는 것은 회상 관계가 대상 사건을 목록 차례로 가리켜서다 — 정렬하면 이미 적은 관계가 가리키는 사건이 조용히 바뀐다."""
 
     paragraphs: list[str]
     scenes: list[SceneSpec] | None = None
@@ -205,6 +209,9 @@ class ChapterSpec(_Spec):
         pointed += [fact.paragraph for fact in self.facts] + [known.paragraph for known in self.knowledge]
         if any(not event.paragraphs for event in self.events) or not all(1 <= n <= count for n in pointed):
             raise ValueError(f"정답이 이 화의 문단(1~{count}) 밖을 가리킨다")
+        firsts = [min(event.paragraphs) for event in self.events]
+        if firsts != sorted(firsts):
+            raise ValueError("사건 정답은 화 안에서 첫 문단 순으로 적는다 — 앱이 그 차례로 저장해, 매처가 정답 차례대로 짝짓는다")
         if self.scenes is not None:
             starts = [scene.start for scene in self.scenes]
             if not starts or starts[0] != 1 or starts != sorted(set(starts)) or starts[-1] > count:

@@ -16,7 +16,9 @@ from dataclasses import dataclass, field
 from typing import Any, get_args
 
 from api.llm.pricing import call_cost
+from api.novel_bible.core.keys import normalize_name
 from api.novel_bible.ids import BlockingRule
+from api.novel_bible.rules.blocking import closed_value
 
 from novel_bible_eval.labels import LabeledClaim
 from novel_bible_eval.match import (
@@ -43,7 +45,7 @@ EXCLUDED_LIMIT = 0.25
 _JUDGED = ("committed", "blocked")
 _CLOSED_RULE = "immutable_attribute_mismatch"
 # 같은 주어·술어의 불변 속성 값이 다르지만 닫힌 값 모순이 아닐 때 앱이 내는 경고 — 사전에서 뺀 항목의 값은 닫힌 값이 아니므로
-# 그 항목을 기대한 충돌 탐침은 뺀 뒤에 차단 대신 이 경고를 기대한다.
+# 그 항목을 기대한 충돌 탐침은 뺀 뒤에 막히지 않고 이 경고를 받는다.
 _SURFACE_WARNING = "attribute_surface_differs"
 
 
@@ -248,20 +250,30 @@ def adaptation_recall(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> 
     return result
 
 
+def _read_closed(category: str, values: Sequence[str]) -> set[object]:
+    """비교 값 글자들을 앱의 닫힌 값 판정(`closed_value`)으로 다시 읽은 것 — 숫자는 단위를 붙여 수로 읽으므로 `180` 과 `180.0` 이
+    같은 값이고, 사전 값은 정규 값에서 범주·정규 값으로 읽는다. 지금 사전이 읽지 못하는 값(뺀 항목)은 갈래·글자 그대로 둔다."""
+    unit = category.removeprefix("number:") if category.startswith("number:") else ""
+    return {closed_value(normalize_name(value + unit)) or (category, value) for value in values}
+
+
 def _closed_hit(probe: ProbeSpec, outcome: ChapterOutcome) -> bool:
     """닫힌 값 충돌 탐침이 기대한 갈래·두 값의 모순으로 막혔는가 — 다른 속성이나 다른 두 값의 모순으로 막혔다면 그 갈래·항목을
-    잡은 것이 아니다."""
+    잡은 것이 아니다. 값은 글자가 아니라 앱이 견주는 값으로 견준다(모델이 `180.0cm` 로 내도 앱은 `180cm` 와 같은 값으로 막는다)."""
     assert probe.closed is not None
-    wanted = (probe.closed.category, probe.closed.compared())
-    return outcome.status == "blocked" and any((clash.category, sorted(clash.values)) == wanted for clash in outcome.closed)
+    wanted = _read_closed(probe.closed.category, probe.closed.compared())
+    return outcome.status == "blocked" and any(
+        clash.category == probe.closed.category and _read_closed(clash.category, clash.values) == wanted
+        for clash in outcome.closed
+    )
 
 
 @dataclass(frozen=True)
 class ClosedSummary:
     """닫힌 값 불변 속성 모순 차단을 갈래(사전 범주·숫자 단위)와 사전 항목으로 나눈 것. 오탐은 확정이 견준 값으로 오탐 분모
     그대로, 재현율은 탐침 명세의 기대 갈래·두 값으로 그 갈래·항목을 기대한 충돌 탐침 수가 분모이고 그 갈래·두 값의 모순으로
-    막혔을 때만 맞다. `warning_recall_by_item` 은 뺀 사전 항목마다, 그 항목을 기대해 차단 대신 표면 차이 경고를 기대하게 된
-    탐침의 경고 재현율이다."""
+    막혔을 때만 맞다. `warning_recall_by_item` 은 뺀 사전 항목마다, 그 항목을 기대한 충돌 탐침이 앱이 막는 대신 내는 표면 차이
+    경고를 받았는지의 재현율이다(그 탐침은 재현율 분모에도 남는다)."""
 
     false_positive_by_category: dict[str, Ratio]
     false_positive_by_item: dict[str, Ratio]
@@ -329,8 +341,9 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome], *, removed: 
     기운다. 실패한 확정을 빼기만 하면 오탐 분모가 조용히 줄어 실패가 몰린 실행이 오탐 0 으로 읽히므로, 기본 화의 실패나 충돌·비충돌
     탐침의 실패 + 정본 불완전이 25% 를 넘으면 판정 불가로 표시한다.
 
-    `removed` 는 앱 사전에서 뺀 열거형 사전 항목이다. 그 항목을 기대한 닫힌 값 충돌 탐침은 차단 대신 표면 차이 경고를 기대하는
-    탐침으로 센다 — 빠진 값은 닫힌 값이 아니어서 앱이 막지 않고 경고를 낸다."""
+    `removed` 는 앱 사전에서 뺀 열거형 사전 항목이다. 그 항목을 기대한 닫힌 값 충돌 탐침은 뺀 뒤에도 실제 모순이라 차단 재현율·
+    닫힌 값 갈래·항목 재현율의 분모에 그대로 남는다 — 빠진 값은 닫힌 값이 아니어서 앱이 막지 못하므로 놓침으로 셈해지고, 빼서 잃은
+    재현율이 그렇게 드러난다. 앱은 그 자리에 표면 차이 경고를 내므로 그 탐침은 경고 재현율에도 따로 센다."""
     probes = {probe.key: probe for novel in eval_set.novels for probe in novel.probes}
     canon = {(o.novel, o.ordinal) for o in outcomes if o.probe is None and o.repeat == 1 and o.status == "committed"}
     population: list[ChapterOutcome] = []
@@ -366,14 +379,14 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome], *, removed: 
             groups.setdefault(probe.group, []).append((int(blocked), 1))
             if probe.subkind is not None:
                 subkinds[probe.subkind].append((int(blocked), 1))
-        elif probe.closed is not None and not set(probe.closed.items()).isdisjoint(removed):
-            warned = _SURFACE_WARNING in outcome.warning_rules
-            moved.append((probe, warned))
-            warning.append((int(warned), 1))
         elif probe.kind == "conflict":
             conflicts.append((probe, blocked and probe.expected_rule in outcome.block_rules))
             if probe.closed is not None:
                 closed_conflicts.append((probe, _closed_hit(probe, outcome)))
+                if not set(probe.closed.items()).isdisjoint(removed):
+                    warned = _SURFACE_WARNING in outcome.warning_rules
+                    moved.append((probe, warned))
+                    warning.append((int(warned), 1))
         else:
             warning.append((int(probe.expected_rule in outcome.warning_rules), 1))
     rules: Counter[str] = Counter()

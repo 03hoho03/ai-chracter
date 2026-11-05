@@ -273,8 +273,14 @@ _BELIEVES_DEAD = {
         # 덮으면 대상 블록이 없어 관계를 버린다. 차례는 첫 문단 순이다.
         pytest.param([(("chapters", 0, "events", 1, "paragraphs"), [2]), (("chapters", 2, "events", 1, "relation", "event"), 2)],
                      "덮", id="relation-to-an-event-an-earlier-event-covers"),
+        # 앱은 화 안 사건을 첫 문단 순으로 저장하고, 매처는 정답 목록 차례대로 저장된 사건과 짝짓는다. 정답을 다른 차례로 적으면
+        # 짝이 뒤바뀌어(A[2,3]·B[1,2] 는 A 가 저장된 B 를 가져간다) 바른 사건을 고른 관계가 틀림으로 셈해진다.
+        pytest.param([(("chapters", 0, "events", 0, "paragraphs"), [2, 3]), (("chapters", 0, "events", 1, "paragraphs"), [1, 2])],
+                     "첫 문단 순", id="overlapping-events-not-in-first-paragraph-order"),
+        pytest.param([(("chapters", 0, "events", 0, "paragraphs"), [3, 4]), (("chapters", 0, "events", 1, "paragraphs"), [1, 2])],
+                     "첫 문단 순", id="separate-events-not-in-first-paragraph-order"),
         pytest.param([(("chapters", 0, "events", 0, "paragraphs"), [2]), (("chapters", 0, "events", 1, "paragraphs"), [1, 2, 3, 4])],
-                     "덮", id="relation-to-an-event-covered-by-an-event-listed-after-it-but-starting-first"),
+                     "첫 문단 순", id="event-listed-after-one-it-starts-before"),
     ],
 )
 def test_an_answer_the_app_cannot_produce_or_a_probe_missing_a_chapter_it_leans_on_is_rejected(

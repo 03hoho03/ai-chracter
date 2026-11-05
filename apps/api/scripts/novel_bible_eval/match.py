@@ -238,27 +238,29 @@ def _skeleton(planted: PlantedKnowledge, candidate: ExtractedKnowledge) -> bool:
 
 
 def _direction(planted: PlantedKnowledge, candidate: ExtractedKnowledge, aliases: Aliases) -> str | None:
-    """명제 주어는 그 자리에 와야 할 개체의 종류로 냈을 때만 그 개체다 — 앱이 개체를 (종류, 정규 이름)으로 가른다. 바른 짝과
-    앎 주체만 틀린 짝은 심은 명제 주어의 종류, 뒤바뀜은 명제 주어 자리에 온 심은 앎 주체의 종류(늘 인물)다. 어느 것도 아니면
-    방향 오류 분모에 들지 않는다."""
-    knower, subject, kind = candidate.knower, candidate.proposition.subject, candidate.proposition.subject_kind
-    names_the_subject = kind == planted.subject_kind and _same(subject, planted.subject, aliases)
-    if _same(knower, planted.knower, aliases) and names_the_subject:
+    """이름 꼴만으로 정한 방향 — 앎 주체·명제 주어가 둘 다 맞음, 서로 뒤바뀜, 명제 주어만 맞음. 명제 주어 종류는 보지 않는다:
+    방향 오류율의 분모는 골격과 이름 꼴로 정의돼 있고, 종류가 틀린 오류 짝을 빼면 오류가 분모와 분자에서 함께 빠져 오류율이
+    내려간다. 어느 것도 아니면 방향 오류 분모에 들지 않는다."""
+    knower, subject = candidate.knower, candidate.proposition.subject
+    if _same(knower, planted.knower, aliases) and _same(subject, planted.subject, aliases):
         return "correct"
-    if kind == "character" and _same(knower, planted.subject, aliases) and _same(subject, planted.knower, aliases):
+    if _same(knower, planted.subject, aliases) and _same(subject, planted.knower, aliases):
         return "swapped"
-    if names_the_subject:
+    if _same(subject, planted.subject, aliases):
         return "wrong_knower"
     return None
 
 
 def matched_knowledge(planted: Sequence[PlantedKnowledge], found: Sequence[ExtractedKnowledge], aliases: Aliases) -> int:
+    """지식 재현율의 맞춤은 명제 주어를 심은 종류로 냈을 때만이다 — 앱이 개체를 (종류, 정규 이름)으로 가르므로 다른 종류로 낸
+    명제는 다른 개체에 대한 앎이다. 방향 오류율(`direction_counts`)은 종류를 보지 않는 다른 지표다."""
     used: set[int] = set()
     for knowledge in planted:
         hit = next(
             (
                 index for index, candidate in enumerate(found)
                 if index not in used and _skeleton(knowledge, candidate)
+                and candidate.proposition.subject_kind == knowledge.subject_kind
                 and _direction(knowledge, candidate, aliases) == "correct"
             ),
             None,
@@ -284,7 +286,7 @@ def direction_counts(
 ) -> tuple[int, int]:
     """(분모 D, 분자 E). D 는 골격이 같은 심은 지식(앎 주체 ≠ 명제 주어)에 대응한 제안 — 이름이 바르거나, 앎 주체와 명제 주어가
     뒤바뀌었거나, 명제 주어는 맞고 앎 주체만 틀린 것. E 는 D 중 뒤의 둘이라 E ⊂ D 가 정의로 성립한다. 정답 하나에는 제안 하나만
-    대응한다. 자기 자신에 대한 앎은 뒤바뀜이 정의되지 않아 뺀다.
+    대응한다. 자기 자신에 대한 앎은 뒤바뀜이 정의되지 않아 뺀다. 이름 꼴만 견주고 명제 주어 종류는 보지 않는다(`_direction`).
 
     짝은 화 안에서 전역으로 세 번에 나눠 맺는다 — 모든 정답의 바른 짝을 먼저, 남은 것끼리 뒤바뀜, 그다음 앎 주체만 틀림. 정답
     하나씩 바른 짝부터 찾으면, 같은 명제를 두 인물이 아는 화에서 앞 정답이 뒤 정답의 바른 짝을 제 쪽의 앎 주체 오류로 먼저

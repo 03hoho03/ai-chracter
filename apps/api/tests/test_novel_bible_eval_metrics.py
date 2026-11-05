@@ -393,19 +393,37 @@ def test_a_proposition_naming_its_subject_under_another_kind_is_another_entity_a
     assert matched_facts(fact, [as_object], {}) == 0
     assert matched_facts(fact, [as_object, ExtractedFact(_prop("등대지기", "attribute", "잿빛", attribute="눈 색"), True)],
                          {}) == 1
-    # 지식은 명제 주어를 같은 개체로 냈어야 맞고, 방향 오류 분모에도 들지 않는다(바른 짝도 앎 주체만 틀린 짝도 아니다).
+    # 지식 재현율도 명제 주어를 같은 개체로 냈어야 맞다.
     known = [PlantedKnowledge(knower="서하", kind="knows", subject="등대", subject_kind="object", fact_kind="attribute",
                               attribute="세워진 때", values=["백 년 전"], paragraph=1)]
     person = ExtractedKnowledge("서하", "knows", _prop("등대", "attribute", "백 년 전", attribute="세워진 때"))
     assert matched_knowledge(known, [person], {}) == 0
-    assert direction_counts(known, [person], {}) == (0, 0)
+    # 방향 오류율은 다른 지표다 — 분모는 골격과 이름 꼴로만 정하고 주어 종류를 보지 않는다. 이름이 바르면 바른 짝, 앎 주체만
+    # 틀리거나 뒤바뀌었으면 주어 종류가 틀려도 오류다.
+    assert direction_counts(known, [person], {}) == (1, 0)
     stranger = ExtractedKnowledge("도윤", "knows", _prop("등대", "attribute", "백 년 전", attribute="세워진 때"))
-    assert direction_counts(known, [stranger], {}) == (0, 0)
-    # 뒤바뀜에서 명제 주어 자리에 온 것은 정답의 앎 주체다 — 앎 주체는 늘 인물이라 인물로 냈을 때만 뒤바뀜이다.
+    assert direction_counts(known, [stranger], {}) == (1, 1)
     swapped_as_object = ExtractedKnowledge(
         "등대", "knows", _prop("서하", "attribute", "백 년 전", attribute="세워진 때", subject_kind="object")
     )
-    assert direction_counts(known, [swapped_as_object], {}) == (0, 0)
+    assert direction_counts(known, [swapped_as_object], {}) == (1, 1)
+
+
+def test_a_wrong_subject_kind_does_not_take_an_error_out_of_the_direction_denominator() -> None:
+    # 한 반복에 바른 짝 61 과 앎 주체만 틀린 짝 둘, 그중 하나는 명제 주어를 사물로 냈다. 그 하나를 분모에서 빼면 1/62 = 1.61%
+    # 로 합격선 3% 아래가 되지만, 설계의 분모는 이름 꼴로 정해 2/63 = 3.17% 다 — 오류 한 건이 판정을 바꾸는 자리다.
+    planted = [
+        PlantedKnowledge(knower="도윤", kind="knows", subject="서하", fact_kind="possession", values=[f"물건{number}"],
+                         subject_kind="character", paragraph=1)
+        for number in range(63)
+    ]
+    found = [_knows("도윤", "서하", f"물건{number}") for number in range(61)]
+    found += [
+        _knows("등대지기", "서하", "물건61"),
+        ExtractedKnowledge("등대지기", "knows", _prop("서하", "possession", "물건62", subject_kind="object")),
+    ]
+    assert direction_counts(planted, found, {}) == (63, 2)
+    assert 2 / 63 > 0.03 > 1 / 62
 
 
 # ── 차단 세부 — 규칙별·세부 종류별 오탐, 충돌 규칙별 재현율, 닫힌 값 범주·항목 ───────────────────────
@@ -524,6 +542,31 @@ def test_closed_value_recall_rows_count_a_block_only_when_it_came_from_the_expec
         assert (items["enum:혈액형/A"], items["enum:혈액형/B"]) == ((hit, 1), (hit, 1))
 
 
+def _height_set() -> EvalSet:
+    """사망 뒤 등장 탐침을 키 170cm·180cm 닫힌 값 모순 탐침으로 바꾼 픽스처."""
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    probe = next(probe for probe in raw["novels"][0]["probes"] if probe["key"] == "dead-returns")
+    probe["expected_rule"] = "immutable_attribute_mismatch"
+    probe["closed"] = {"category": "number:cm", "values": ["170cm", "180cm"]}
+    return EvalSet.model_validate(raw)
+
+
+@pytest.mark.parametrize(
+    ("values", "hit"),
+    [
+        # 앱은 수로 견준다 — 모델이 180.0cm 로 내도 같은 두 값의 모순이다.
+        pytest.param(("170", "180.0"), 1, id="same-number-another-spelling"),
+        pytest.param(("170", "180", "180.0"), 1, id="one-number-read-twice"),
+        pytest.param(("170", "190"), 0, id="another-number"),
+    ],
+)
+def test_a_closed_value_hit_compares_the_values_the_way_the_rule_reads_them(values: tuple[str, ...], hit: int) -> None:
+    blocked = _outcome(4, "blocked", probe="dead-returns", block=("immutable_attribute_mismatch",),
+                       closed=(_closed("number:cm", *values),))
+    closed = metrics.blocking(_height_set(), [_outcome(1), _outcome(2), _outcome(3), blocked]).closed
+    assert _counts(closed.recall_by_category) == {"number:cm": (hit, 1)}
+
+
 def test_number_units_are_categories_and_have_no_dictionary_items() -> None:
     # 반복 2 의 2화가 키 170cm·180cm 로 막힌다 — 탐침은 반복 1 정본에 기대 그대로 남아 분모는 기본 6 + 비충돌 2.
     blocked = _outcome(2, "blocked", block=("immutable_attribute_mismatch",), repeat=2,
@@ -557,9 +600,9 @@ def test_the_removal_table_puts_the_before_and_after_values_side_by_side_under_a
     assert first["after"]["upper"] == pytest.approx(metrics.upper_bound(1, 8))
     rule = rows["block_false_positive.immutable_attribute_mismatch"]
     assert _sides(rule) == ((2, 8), (1, 8))
-    # 뺀 항목을 기대한 탐침은 뺀 뒤 열에서 차단 재현율을 떠나 경고 재현율로 간다.
-    assert _sides(rows["block_recall"]) == ((2, 3), (2, 2))
-    assert _sides(rows["block_recall.immutable_attribute_mismatch"]) == ((1, 2), (1, 1))
+    # 뺀 항목을 기대한 탐침은 뺀 뒤에도 실제 모순이라 차단 재현율 분모에 남고(빼기 전에도 놓쳤다), 경고 재현율에도 따로 든다.
+    assert _sides(rows["block_recall"]) == ((2, 3), (2, 3))
+    assert _sides(rows["block_recall.immutable_attribute_mismatch"]) == ((1, 2), (1, 2))
     assert _sides(rows["warning_recall"]) == ((1, 1), (2, 2))
     assert _sides(rows["warning_recall.enum:혈액형/A"]) == ((0, 0), (1, 1))
     # 뺀 뒤 0건이 된 갈래·항목의 오탐은 0/0 이 아니라 같은 확정·탐침 수(8)를 분모로 0건과 그 상한을 보인다.
@@ -571,6 +614,41 @@ def test_the_removal_table_puts_the_before_and_after_values_side_by_side_under_a
     header = next(line for line in markdown.splitlines() if line.startswith("| 지표"))
     assert "빼기 전" in header and "같은 세트로 고르고 다시 잰 값이라 낙관 쪽으로 기운다" in header
     assert "enum:혈액형/A" in markdown
+
+
+def _ten_conflicts() -> EvalSet:
+    """충돌 탐침 열 — 사망 뒤 등장 여덟과 혈액형 A 를 기대한 닫힌 값 모순 둘(A·B, A·O)."""
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    probes = raw["novels"][0]["probes"]
+    dead = next(probe for probe in probes if probe["key"] == "dead-returns")
+    blood_o: dict[str, Any] = json.loads(json.dumps(_BLOOD_TYPE))
+    blood_o["key"] = "blood-type-o"
+    blood_o["closed"] = {"category": "enum:혈액형", "values": ["A형", "O형"], "canonical": ["A", "O"]}
+    blood_o["chapter"]["paragraphs"] = ["서하의 혈액형은 O형이었다."]
+    blood_o["chapter"]["facts"][0]["values"] = ["O형"]
+    probes += [{**dead, "key": f"dead-returns-{number}"} for number in range(2, 9)] + [_BLOOD_TYPE, blood_o]
+    return EvalSet.model_validate(raw)
+
+
+def test_a_probe_expecting_a_removed_item_stays_in_the_after_recall_and_counts_as_missed() -> None:
+    # 혈액형 A 를 뺀다. A 를 기대한 두 탐침은 뺀 뒤에도 실제 모순이다 — 앱이 더는 막지 못할 뿐이다. 빼기 전에 하나(A·O)는
+    # 막고 하나(A·B)는 놓쳐 9/10, 뺀 뒤에는 둘 다 경고만 받아 8/10 이다. 분모에서 빼면 8/8 로 빼서 재현율이 오른 것처럼 읽힌다.
+    eval_set = _ten_conflicts()
+    base = [_outcome(1), _outcome(2), _outcome(3)]
+    dead = [_outcome(4, "blocked", probe=probe.key, block=("exit_then_appearance",))
+            for probe in eval_set.novels[0].probes if probe.key.startswith("dead-returns")]
+    assert len(dead) == 8
+    before = [*base, *dead, _outcome(4, probe="blood-type"),
+              _outcome(4, "blocked", probe="blood-type-o", block=("immutable_attribute_mismatch",),
+                       closed=(_closed("enum:혈액형", "A", "O"),))]
+    after = [*base, *dead, *(_outcome(4, probe=key, warn=("attribute_surface_differs",))
+                             for key in ("blood-type", "blood-type-o"))]
+    rows = {row["name"]: row for row in removal_report(eval_set, before, after, removed=["enum:혈액형/A"])["rows"]}
+    assert _sides(rows["block_recall"]) == ((9, 10), (8, 10))
+    assert rows["block_recall"]["after"]["value"] == pytest.approx(0.8)
+    for name in ("block_recall.immutable_attribute_mismatch", "block_recall.enum:혈액형", "block_recall.enum:혈액형/A"):
+        assert _sides(rows[name]) == ((1, 2), (0, 2))
+    assert _sides(rows["warning_recall.enum:혈액형/A"]) == ((0, 0), (2, 2))
 
 
 # ── 사건 관계 정확도 ─────────────────────────────────────────────────
