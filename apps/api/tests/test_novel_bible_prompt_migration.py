@@ -26,8 +26,9 @@ from api.admin.prompts import _validate_prompt_draft_for_publish
 from api.chat.prompt_builder import PromptLane, load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
+from api.novel_bible.adapters.resolver import build_resolver
 from api.novel_bible.core.contracts import PromptSource
-from api.novel_bible.core.render import render
+from api.novel_bible.core.render import render, verify_prompt_chains
 from api.novel_bible.core.types import Manuscript
 from api.novel_bible.registry import REGISTRY
 from api.novel_bible.slots.events.slot import EventsInput
@@ -375,6 +376,17 @@ async def test_the_seed_matches_the_channels_and_value_names_of_the_registered_s
     }
     assert set(produced) <= instructed
     assert referenced == produced
+
+
+async def test_the_prompt_chain_check_passes_on_the_seeded_chain_with_the_real_registry_and_resolver(
+    db_session: AsyncSession,
+) -> None:
+    """워커 기동과 확정 입구가 부르는 문안 검사를 실제 등록부와 실제 해석기(코드 표의 Gemini 어댑터가 소설 레인 Gemini 활성 세트를
+    읽는다)로 시드된 DB 에 돌리면 빠진 채널이 없다. 채널이 빠진 쪽(거절)은 어드민 입구의 503 테스트가 본다 — 그 테스트만으로는
+    해석기가 시드와 다른 문안을 읽어(다른 레인·시드되지 않은 체인, 늘 실패하는 문안 읽기) 모든 확정을 거절하는 결함도 503 이라
+    초록이다. 깨지는 시나리오: 그런 어긋남이나 시드에서 빠진 추출 슬롯 지시문 때문에, 스위치를 켠 환경에서 워커가 정본 기억을 끈
+    채 뜨고 확정이 전부 503 이 된다."""
+    assert await verify_prompt_chains(db_session, REGISTRY, build_resolver()) == []
 
 
 # ---- 되돌리기·다시 올리기 ----------------------------------------------------------------------

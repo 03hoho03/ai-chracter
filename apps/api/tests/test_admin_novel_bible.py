@@ -19,6 +19,7 @@ from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.novel_bible import NovelBibleCommit, NovelBibleFinding, NovelBibleJob
 from api.novel_bible import entry
 from api.novel_bible.core.confirm import ConfirmConflictError, ConfirmResult
+from api.novel_bible.registry import REGISTRY
 from factories import _create_admin, _login_as, _login_as_admin
 from novel_bible_fakes import FakeAdapter, FakeSlot, add_chapter, fake_registry, facts_slot, make_novel, plant_revision
 
@@ -201,6 +202,29 @@ async def test_confirm_is_unavailable_while_an_assigned_chain_lacks_the_slot_cha
 
     assert response.status_code == 503
     assert await _commits(db_session, body["novelId"]) == 0
+
+
+@pytest.mark.usefixtures("bible_on")
+async def test_confirm_accepts_the_seeded_chain_with_the_real_registry_and_resolver(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    # 바로 위 503 테스트의 짝 — 등록부와 해석기를 바꿔 끼우지 않아, 실제 추출 슬롯마다 실제 어댑터가 시드된 소설 레인 Gemini 활성
+    # 세트를 읽는다. 작업은 만들어지기만 한다 — 이 테스트에는 작업을 처리할 워커가 없어 모델을 부르지 않는다.
+    await _admin(db_client, db_session)
+    body = await _target(db_session)
+
+    response = await db_client.post(_CONFIRM, json=body)
+
+    assert response.status_code == 202
+    assert response.json()["created"] is True and response.json()["status"] == "pending"
+    jobs = (
+        await db_session.execute(
+            select(NovelBibleJob.slot, NovelBibleJob.status, NovelBibleJob.attempts).where(
+                NovelBibleJob.novel_id == uuid.UUID(body["novelId"])
+            )
+        )
+    ).all()
+    assert sorted(jobs) == [(slot, "queued", 0) for slot in sorted(REGISTRY.extracting)]
 
 
 @pytest.mark.usefixtures("bible_on")
