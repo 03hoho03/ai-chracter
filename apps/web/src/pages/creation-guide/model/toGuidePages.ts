@@ -14,11 +14,11 @@ export type GuideStep = {
   title: string;
   /** 개요 단계 행 둘째 줄. 원고의 요약 표기가 없으면(캐릭터) 첫 산문 문단이다 — 화면이 한 줄로 자른다. */
   summary: string;
-  /** 단계 머리의 리드 문단. 칸 블록을 쓰는 토픽만 따로 떼어 둔다(나머지 토픽은 null 이고 `content` 에 그대로 있다). */
-  lead: string | null;
+  /** 단계 머리의 리드 문단. 칸 블록을 쓰는 토픽만 따로 떼어 둔다(나머지 토픽은 undefined 이고 `content` 에 그대로 있다). */
+  lead: string | undefined;
   content: SectionContent[];
-  prevId: string | null;
-  nextId: string | null;
+  prevId: string | undefined;
+  nextId: string | undefined;
 };
 
 export type GuideAnchor = { stepId: string; anchorId: string };
@@ -74,7 +74,7 @@ export function toGuidePages(manuscript: Manuscript, topic: GuideTopic): GuidePa
       }
     }
 
-    const { lead, content } = usesFieldBlocks ? splitLead(section) : { lead: null, content: section.content };
+    const { lead, content } = usesFieldBlocks ? splitLead(section) : { lead: undefined, content: section.content };
     return {
       id: section.id,
       index,
@@ -83,8 +83,8 @@ export function toGuidePages(manuscript: Manuscript, topic: GuideTopic): GuidePa
       summary: section.summary ?? firstParagraph(section.content),
       lead,
       content,
-      prevId: stepIds[index - 1] ?? null,
-      nextId: stepIds[index + 1] ?? null,
+      prevId: stepIds[index - 1],
+      nextId: stepIds[index + 1],
     };
   });
 
@@ -92,7 +92,7 @@ export function toGuidePages(manuscript: Manuscript, topic: GuideTopic): GuidePa
   const after = manuscript.sections.slice(firstPosition + stepIds.length);
   for (const section of [...before, ...after]) {
     if (stepIds.includes(section.id)) throw new Error(`${section.line}번째 줄: 단계 절 ${section.id} 가 한 번 더 나온다`);
-    if (section.summary !== null) throw new Error(`${section.line}번째 줄: 요약 표기는 단계 절에만 쓴다`);
+    if (section.summary !== undefined) throw new Error(`${section.line}번째 줄: 요약 표기는 단계 절에만 쓴다`);
     const block = section.content.find((item) => item.kind === "field" || item.kind === "note");
     if (block) throw new Error(`${section.line}번째 줄: 칸 블록·칸 아닌 블록은 단계 절에만 쓴다`);
   }
@@ -112,7 +112,7 @@ export function toGuidePages(manuscript: Manuscript, topic: GuideTopic): GuidePa
  */
 function splitLead(section: ManuscriptSection): { lead: string; content: SectionContent[] } {
   const [first, ...rest] = section.content;
-  if (section.summary === null) throw new Error(`${section.line}번째 줄 단계 절에 요약 표기(::: summary)가 없다`);
+  if (section.summary === undefined) throw new Error(`${section.line}번째 줄 단계 절에 요약 표기(::: summary)가 없다`);
   if (first?.kind !== "markdown") throw new Error(`${section.line}번째 줄 단계 절이 리드 문단으로 시작하지 않는다`);
   const stray = rest.find((item) => item.kind === "markdown" || item.kind === "example");
   if (stray) throw new Error(`${section.line}번째 줄 단계 절: 리드 뒤에는 블록만 둔다(칸에 안 붙는 글은 note 나 자세히로)`);
@@ -184,7 +184,7 @@ function appendMessage(display: GuideDisplayItem[], message: ConversationMessage
  * 않아 화면에서만 처리할 수 있다. 탭 id 와 정확히 같은 해시만 옮기고, 개요 안의 앵커(`#preview` 등)는 그대로 둔다 —
  * 그래야 개요 안 이동이 단계 페이지로 튀지 않는다.
  */
-export function legacyStepFromHash(hash: string, stepIds: readonly string[]): string | null {
+export function legacyStepFromHash(hash: string, stepIds: readonly string[]): string | undefined {
   const id = hash.startsWith("#") ? hash.slice(1) : hash;
-  return stepIds.includes(id) ? id : null;
+  return stepIds.includes(id) ? id : undefined;
 }

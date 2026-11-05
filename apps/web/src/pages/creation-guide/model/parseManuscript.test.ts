@@ -36,7 +36,7 @@ describe("parseManuscript — sections and prose", () => {
         id: "overview",
         title: "들어가며",
         line: 1,
-        summary: null,
+        summary: undefined,
         content: [
           { kind: "markdown", source: "들어가는 글\n" },
           {
@@ -51,7 +51,7 @@ describe("parseManuscript — sections and prose", () => {
           { kind: "markdown", source: "뒤 문단" },
         ],
       },
-      { id: "profile", title: "1단계 · 프로필", line: 8, summary: null, content: [{ kind: "markdown", source: "프로필 글" }] },
+      { id: "profile", title: "1단계 · 프로필", line: 8, summary: undefined, content: [{ kind: "markdown", source: "프로필 글" }] },
     ]);
   });
 
@@ -123,7 +123,7 @@ describe("parseManuscript — blocks", () => {
         kind: "field",
         id: "profile.oneLiner",
         keys: ["profile.oneLiner"],
-        title: null,
+        title: undefined,
         line: 2,
         intro: [{ kind: "markdown", source: "보이는 설명\n" }],
         values: [

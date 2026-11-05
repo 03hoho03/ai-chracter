@@ -17,7 +17,7 @@ export type MockupCardHeader = {
   placeholderTitle: string;
   summary: string;
   /** 스탯 카드만 — 요약 자리를 글 대신 빌더와 같은 스탯 요약(아이콘·색 점·범위·초기값)으로 그린다. */
-  stat: Pick<StatDefValues, "icon" | "color" | "min" | "max" | "initial" | "unit" | "perTurnDelta" | "rules"> | null;
+  stat?: Pick<StatDefValues, "icon" | "color" | "min" | "max" | "initial" | "unit" | "perTurnDelta" | "rules">;
 };
 
 /**
@@ -30,7 +30,7 @@ export type MockupCardHeader = {
 export function mockupCardHeader(listKey: StoryFieldKey, card: Record<string, unknown>, index: number): MockupCardHeader {
   const placeholderTitle = `${STORY_FIELD_LABELS[listKey].label} ${index + 1}`;
   const name = readString(card, "name");
-  const base = { title: name, placeholderTitle, summary: "", stat: null };
+  const base = { title: name, placeholderTitle, summary: "", stat: undefined };
 
   // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- 칸 키는 일흔 개가 넘고 머리 줄을 따로 만드는 목록은 몇 개뿐이라, 나머지는 이름 칸 제목만 쓰는 한 갈래로 받는다
   switch (listKey) {

@@ -45,8 +45,8 @@ describe("toGuidePages", () => {
     expect(pages.overview.before.map((section) => section.id)).toEqual(["overview"]);
     expect(pages.overview.after.map((section) => section.id)).toEqual(["mistakes"]);
     expect(pages.steps.map(({ id, index, title, summary, lead, prevId, nextId }) => ({ id, index, title, summary, lead, prevId, nextId }))).toEqual([
-      { id: "profile", index: 0, title: "1단계 · 프로필", summary: "프로필 첫 문단", lead: null, prevId: null, nextId: "setting" },
-      { id: "setting", index: 1, title: "2단계 · 설정", summary: "설정 글", lead: null, prevId: "profile", nextId: null },
+      { id: "profile", index: 0, title: "1단계 · 프로필", summary: "프로필 첫 문단", lead: undefined, prevId: undefined, nextId: "setting" },
+      { id: "setting", index: 1, title: "2단계 · 설정", summary: "설정 글", lead: undefined, prevId: "profile", nextId: undefined },
     ]);
   });
 
@@ -134,6 +134,6 @@ describe("legacyStepFromHash", () => {
 
   // 개요 안의 앵커는 단계 페이지로 보내지 않는다 — 보내면 개요 안 이동이 다른 페이지로 튄다.
   it.each(["", "#", "#preview", "#mistakes", "#overview", "#Setting", "#setting-notation"])("leaves %j alone", (hash) => {
-    expect(legacyStepFromHash(hash, stepIds)).toBeNull();
+    expect(legacyStepFromHash(hash, stepIds)).toBeUndefined();
   });
 });
