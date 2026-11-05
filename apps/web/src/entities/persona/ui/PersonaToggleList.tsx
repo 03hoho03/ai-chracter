@@ -6,10 +6,10 @@ import { PersonaSummary } from "./PersonaSummary";
 
 type PersonaToggleListProps = {
   personaList: PersonaList;
-  /** 선택된 프로필 id. null = "선택 안 함"(`shouldIncludeNone` 일 때만 의미가 있다). */
-  value: string | null;
+  /** 선택된 프로필 id. undefined = "선택 안 함"(`shouldIncludeNone` 일 때만 의미가 있다). */
+  value?: string;
   /** 항목을 누를 때마다 부른다 — 이미 선택된 항목을 다시 눌러도 그 값으로 부른다(받는 쪽이 무시하거나 확정으로 읽는다). */
-  onValueChange: (personaId: string | null) => void;
+  onValueChange: (personaId: string | undefined) => void;
   /** 맨 위에 "선택 안 함"을 둔다. 대화방은 프로필 없이 대화할 수 있고, 새 대화를 시작할 때는 늘 하나를 고른다. */
   shouldIncludeNone: boolean;
   "aria-label": string;
@@ -54,7 +54,7 @@ export function PersonaToggleList({
       // 선택된 항목을 다시 누르면 Radix가 ""를 낸다 — 선택은 언제나 정확히 하나라 지금 값으로 읽는다.
       onValueChange={(next) => {
         const picked = next === "" ? selectedValue : next;
-        onValueChange(picked === NO_PERSONA_VALUE ? null : picked);
+        onValueChange(picked === NO_PERSONA_VALUE ? undefined : picked);
       }}
       aria-label={ariaLabel}
       aria-busy={ariaBusy}
