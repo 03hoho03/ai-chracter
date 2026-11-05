@@ -1,4 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { BookX, ChevronLeft, CloudOff } from "lucide-react";
 import type { ReactNode } from "react";
@@ -14,6 +15,12 @@ import {
 import { WebnovelLockedEpisode } from "./WebnovelLockedEpisode";
 import { WebnovelViewer } from "./WebnovelViewer";
 
+type WebnovelEpisodePageProps = {
+  novelId: string;
+  chapterId: string;
+  edition: number | undefined;
+};
+
 /** `/webnovels/$novelId/episodes/$chapterId` — 노벨 화 하나. 작품 정보(목차·이웃 화·읽던 자리)와 화(본문 또는 잠김)를
  * 함께 받는다. 읽을 수 있으면 몰입 뷰어, 아직 소장하지 않은 유료 화면 소장 화면이다 — 사면 같은 주소에서 본문을 다시
  * 받아 뷰어로 바뀐다.
@@ -23,15 +30,7 @@ import { WebnovelViewer } from "./WebnovelViewer";
  *
  * `edition` 은 주소에 실린 산 때의 판이다. 그 주소로 화를 찾을 수 없으면(환급됐거나 정책이 바뀐 뒤의 낡은 주소일 수
  * 있다) 목차 대신 같은 화의 최신 판으로 가는 길을 낸다 — 화 자체가 지워졌으면 그 길이 다시 찾을 수 없다고 말한다. */
-export function WebnovelEpisodePage({
-  novelId,
-  chapterId,
-  edition,
-}: {
-  novelId: string;
-  chapterId: string;
-  edition: number | undefined;
-}) {
+export function WebnovelEpisodePage({ novelId, chapterId, edition }: WebnovelEpisodePageProps) {
   const novelQuery = useWebnovelQuery(novelId);
   const chapterQuery = useWebnovelChapterQuery(novelId, chapterId, edition);
 
@@ -174,7 +173,7 @@ function EpisodeSkeleton({ novelId }: { novelId: string }) {
       <div aria-hidden className="flex flex-col gap-4">
         <div className="h-8 w-2/3 animate-pulse rounded-lg bg-muted" />
         {["w-full", "w-11/12", "w-full", "w-4/5", "w-full", "w-2/3"].map((width, index) => (
-          <div key={index} className={`h-5 ${width} animate-pulse rounded-lg bg-muted`} />
+          <div key={index} className={cn("h-5 animate-pulse rounded-lg bg-muted", width)} />
         ))}
       </div>
     </StatusShell>

@@ -10,7 +10,8 @@ import {
   type StoryBuilderFormValues,
 } from "@/features/build-story";
 
-import { toCellKey, type MediaBookPosition } from "./MediaBookGrid";
+import { toCellKey } from "./MediaBookGrid";
+import type { MediaBookPosition } from "../model/mediaBookPosition";
 import {
   CELL_PANEL_HEAD_ID,
   CELL_PANEL_HEADING_ID,

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { chatRoomKeys, useChatRoomMemoryItemsQuery, type ChatRoomMemoryFact } from "@/entities/chat-room";
 
 import { factHeading } from "../model/memoryItemText";
+import { useForgetResultNotice } from "../model/useForgetResultNotice";
 import { FactSummary } from "./FactSummary";
 import { ForgetButton } from "./ForgetButton";
 import { ForgetFactModal } from "./ForgetFactModal";
@@ -14,7 +15,6 @@ import {
   MemoryItemsSkeleton,
   UsedInRepliesLine,
 } from "./MemoryItemsParts";
-import { useForgetResultNotice } from "./useForgetResultNotice";
 
 type RoomMemoryFactsProps = {
   roomId: string;

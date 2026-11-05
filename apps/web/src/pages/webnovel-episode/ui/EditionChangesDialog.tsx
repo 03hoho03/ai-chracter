@@ -92,13 +92,7 @@ export function EditionChangesDialog({
   );
 }
 
-function EditionItem({
-  label,
-  info,
-  isReading,
-  emptySummary,
-  link,
-}: {
+type EditionItemProps = {
   label: string;
   info: EditionInfo;
   isReading: boolean;
@@ -106,7 +100,9 @@ function EditionItem({
   emptySummary: string | undefined;
   /** 이 판의 주소 — 최신 판은 `edition` 없이 연다. */
   link: { novelId: string; chapterId: string; edition: number | undefined };
-}) {
+};
+
+function EditionItem({ label, info, isReading, emptySummary, link }: EditionItemProps) {
   return (
     <li className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

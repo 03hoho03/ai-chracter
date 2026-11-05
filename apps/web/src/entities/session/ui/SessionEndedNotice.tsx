@@ -1,6 +1,8 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link, useRouterState } from "@tanstack/react-router";
 
+import { assertNever } from "@/shared/lib/assertNever";
+
 import { loginRedirectTarget } from "../lib/loginRedirectTarget";
 import type { SessionEndReason } from "../model/sessionEndReason";
 import { SUSPENDED_ERROR_MESSAGE } from "../model/suspendedAccount";
@@ -27,14 +29,18 @@ export function SessionEndedNotice({ reason }: { reason: SessionEndReason }) {
     );
   }
 
-  return (
-    <div role="status" className={NOTICE_CLASS}>
-      <p className={MESSAGE_CLASS}>로그인이 풀려 요청이 처리되지 않았어요.</p>
-      <Button asChild variant="outline" size="sm">
-        <Link to="/login" search={{ redirect }}>
-          다시 로그인
-        </Link>
-      </Button>
-    </div>
-  );
+  if (reason === "sessionLost") {
+    return (
+      <div role="status" className={NOTICE_CLASS}>
+        <p className={MESSAGE_CLASS}>로그인이 풀려 요청이 처리되지 않았어요.</p>
+        <Button asChild variant="outline" size="sm">
+          <Link to="/login" search={{ redirect }}>
+            다시 로그인
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return assertNever(reason);
 }

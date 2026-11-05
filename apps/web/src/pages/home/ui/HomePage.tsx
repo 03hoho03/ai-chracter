@@ -59,21 +59,19 @@ const SORT_OPTIONS: { value: ContentListSort; label: string }[] = CONTENT_LIST_S
 
 const ALL_GENRES_VALUE = "all";
 
+type HomePageProps = {
+  search: HomeSearch;
+  onSearchChange: (patch: Partial<HomeSearch>) => void;
+  onTypeChange: (type: ContentType) => void;
+};
+
 /** URL `?type=`에 따른 유형별 무한스크롤 리스트, URL search param으로 관리되는
  * 정렬/장르/검색어/크리에이터/해시태그 필터, 공용 `ContentCard`를 조합한 홈 화면. 인증 가드가 없어
  * 비로그인 사용자도 그대로 열람할 수 있다.
  *
  * `onTypeChange` — 유형 전환은 `onSearchChange`(병합)로 못 한다. 정렬만 남기고 나머지 축을 버려야 해서
  * 라우트가 search를 통째로 교체한다. */
-export function HomePage({
-  search,
-  onSearchChange,
-  onTypeChange,
-}: {
-  search: HomeSearch;
-  onSearchChange: (patch: Partial<HomeSearch>) => void;
-  onTypeChange: (type: ContentType) => void;
-}) {
+export function HomePage({ search, onSearchChange, onTypeChange }: HomePageProps) {
   const contentType = resolveHomeContentType(search.type);
   const { open } = useContentDetailModal();
   const sessionQuery = useSessionQuery();
@@ -396,13 +394,19 @@ export function HomePage({
   );
 }
 
+type HomeFilterChipProps = {
+  label: string;
+  removeLabel: string;
+  onRemove: () => void;
+};
+
 /** 걸린 조건 하나를 보이고 해제하는 칩. 세 축(검색어·작가·해시태그)이 같은 모양이라 하나로 묶는다 —
  * 사본 셋이면 히트 영역 숫자 하나가 갈린다.
  *
  * × 히트 영역 — 보이는 버튼은 16px 그대로 두고 `after:`로 누르는 영역만 넓힌다(`KeywordChipField`의 칩 ×와
  * 같은 관용구). 버튼 보더 1px 안쪽에서 펼쳐지므로 `-inset-2`는 30px, 터치(`pointer-coarse`)에서 `-inset-3.5`는
  * 42px로 손가락 타깃 40px를 넘긴다. 넓힌 영역이 라벨 끝 몇 px를 덮어 그 자리를 눌러도 해제된다(같은 감수). */
-function HomeFilterChip({ label, removeLabel, onRemove }: { label: string; removeLabel: string; onRemove: () => void }) {
+function HomeFilterChip({ label, removeLabel, onRemove }: HomeFilterChipProps) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs text-secondary-foreground">
       {label}

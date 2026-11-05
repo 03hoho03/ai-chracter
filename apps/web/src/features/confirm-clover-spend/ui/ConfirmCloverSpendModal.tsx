@@ -14,6 +14,12 @@ import { createCallable } from "@/shared/lib/callable/createCallable";
 import { formatCloverSpendConfirmDescription } from "../model/confirmCloverSpendCopy";
 import type { CloverSpendSurface } from "../model/confirmCloverSpendCopy";
 
+type ConfirmCloverSpendModalProps = {
+  balance: number;
+  cost: number | undefined;
+  surface: CloverSpendSurface;
+};
+
 /** 무료 한도를 다 쓴 첫 시점에 하루 한 번
  * 묻는다. 확정 뒤 동작이 전송·재생성·편집·미리보기·이미지마다 달라 `Promise<boolean>`만 돌려주고
  * 호출부가 이어받는다(`apps/web/CLAUDE.md`의 기준: *"후속 동작이 호출부마다 다르면 주입형, 같으면
@@ -26,10 +32,7 @@ import type { CloverSpendSurface } from "../model/confirmCloverSpendCopy";
  *
  * 🔴 `bg-muted`를 쓰지 않는다 — 모달 표면이 `popover`라 값이 같아 1.0000:1로 사라진다
  * (DESIGN.md Status badges 절). 잔량은 `CloverBalance`의 무채색 잉크 그대로 둔다. */
-export const ConfirmCloverSpendModal = createCallable<
-  { balance: number; cost: number | undefined; surface: CloverSpendSurface },
-  boolean
->(
+export const ConfirmCloverSpendModal = createCallable<ConfirmCloverSpendModalProps, boolean>(
   ({ call, balance, cost, surface }) => {
     return (
       <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(false)}>

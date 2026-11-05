@@ -5,3 +5,9 @@ export type ForgetOutcome =
   | { kind: "forgotten"; linkedEpisodeCount: number }
   | { kind: "notice"; message: string }
   | { kind: "cancelled" };
+
+/** 목록 위에 남기는 잊게 하기 결과. `forgotten`은 요약 편집으로 잇는다 — 장면·사실을 지워도 요약에 같은 내용이 남을 수
+ * 있고, 요약은 사용자가 직접 고칠 수 있다. */
+export type MemoryListNotice =
+  | { kind: "forgotten"; label: string; linkedEpisodeCount: number }
+  | { kind: "message"; message: string };

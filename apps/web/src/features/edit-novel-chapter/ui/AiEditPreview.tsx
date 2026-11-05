@@ -1,4 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useId } from "react";
 
 import type { NovelPendingAiEdit } from "@/entities/novel";
@@ -77,24 +78,21 @@ export function AiEditPreview({ edit, paragraphs, isActing, onApply, onDismiss }
   );
 }
 
-function ComparisonBlock({
-  label,
-  paragraphs,
-  tone,
-}: {
+type ComparisonBlockProps = {
   label: string;
   paragraphs: readonly string[];
   tone: "muted" | "foreground";
-}) {
+};
+
+function ComparisonBlock({ label, paragraphs, tone }: ComparisonBlockProps) {
   return (
     <div className="flex flex-col gap-1.5">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <div
-        className={
-          tone === "muted"
-            ? "flex flex-col gap-3 whitespace-pre-line text-muted-foreground"
-            : "flex flex-col gap-3 whitespace-pre-line text-foreground"
-        }
+        className={cn(
+          "flex flex-col gap-3 whitespace-pre-line",
+          tone === "muted" ? "text-muted-foreground" : "text-foreground",
+        )}
       >
         {paragraphs.map((paragraph, index) => (
           // 같은 문장이 두 번 나오는 문단도 있어 순서로 가른다(이 목록은 그리는 동안 바뀌지 않는다).

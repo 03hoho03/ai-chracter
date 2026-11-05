@@ -31,6 +31,12 @@ import { ProductsSection } from "./ProductsSection";
 import { PurchaseConditions } from "./PurchaseConditions";
 import { WalletSection } from "./WalletSection";
 
+type CloverHubPageProps = {
+  search: CloverHubSearch;
+  onSearchClear: () => void;
+  onProductClear: () => void;
+};
+
 /** 클로버 충전 화면(`/clover`). 로그인 없이 열린다.
  *
  * 한 화면이 두 층이다. 공개 층(구매 조건·충전 상품·클로버 안내)은 누구에게나 같고 상품 응답(`GET /clover/products`)
@@ -61,15 +67,7 @@ import { WalletSection } from "./WalletSection";
  * 링크(충전하지 않고 돌아가는 길), 충전에 성공하면 결과 블록의 솔리드 버튼(`getReturnPlacement`). 이 주소는 로그인
  * 링크에 실어 로그인 왕복 뒤에도 남고, 구매 확인에 넘겨 결제창을 띄우기 전에 탭 저장소에 둔다 — 결제창에서 돌아오면
  * 거기서 되찾는다. */
-export function CloverHubPage({
-  search,
-  onSearchClear,
-  onProductClear,
-}: {
-  search: CloverHubSearch;
-  onSearchClear: () => void;
-  onProductClear: () => void;
-}) {
+export function CloverHubPage({ search, onSearchClear, onProductClear }: CloverHubPageProps) {
   const session = useSessionQuery();
   const viewer = toHubViewer(session);
   const productsQuery = useCloverProductsQuery();

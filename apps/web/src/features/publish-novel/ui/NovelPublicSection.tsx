@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useCloverPricingQuery } from "@/entities/clover";
 import type { NovelPublicationStatus } from "@/entities/novel";
 import { useWebnovelQuery } from "@/entities/webnovel";
+import { assertNever } from "@/shared/lib/assertNever";
 import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
 
 import type { PublishRunResult } from "../api/usePublishNovelRun";
@@ -30,6 +31,8 @@ import { WithdrawNovelPublicationModal } from "./WithdrawNovelPublicationModal";
 type PublishableNovel = { id: string; chapters: readonly { id: string; ordinal: number }[] };
 
 const BADGE_CLASS = "inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-badge font-medium";
+
+const CONTACT_LINE = "조치에 대해 묻고 싶은 것이 있으면 고객센터로 문의해 주세요.";
 
 /** 작품 정보(`/novels/$novelId`)의 "노벨 공개" 절 — 행동 줄 아래, 소개 위. 공개 상태(공개 전·공개 중·거둠·운영 조치·
  * 원작 때문에 막힘·첫 공개 승인 대기·반려)와 요청 중("확인 중 · n/N")·요청 실패(심사 장애·상한·낡음), 마지막 심사 거절을 한자리에서 말한다.
@@ -159,8 +162,13 @@ function ViewBadge({ view }: { view: PublicationView }) {
       return <span className={cn(BADGE_CLASS, "border-border text-muted-foreground")}>심사 대기</span>;
     case "reviewRejected":
       return <span className={cn(BADGE_CLASS, "border-border text-foreground")}>반려</span>;
-    default:
+    // 아직 공개한 적이 없는 상태는 배지 대신 본문 문장이 상황을 말한다.
+    case "noChapters":
+    case "unpublished":
+    case "blocked":
       return null;
+    default:
+      return assertNever(view);
   }
 }
 
@@ -168,15 +176,13 @@ function Lines({ children }: { children: ReactNode }) {
   return <div className="flex flex-col gap-1 text-sm break-keep text-muted-foreground">{children}</div>;
 }
 
-function ViewBody({
-  view,
-  status,
-  counts,
-}: {
+type ViewBodyProps = {
   view: PublicationView;
   status: NovelPublicationStatus;
   counts: { likeCount: number; viewCount: number } | undefined;
-}) {
+};
+
+function ViewBody({ view, status, counts }: ViewBodyProps) {
   const pricing = useCloverPricingQuery().data;
   const buyerPolicy = toBuyerPolicyCopy(pricing);
   const priceSentence = toPublishPriceSentence(
@@ -277,8 +283,6 @@ function ViewBody({
   }
 }
 
-const CONTACT_LINE = "조치에 대해 묻고 싶은 것이 있으면 고객센터로 문의해 주세요.";
-
 function SalesStoppedLines({ status }: { status: string }) {
   return (
     <Lines>
@@ -295,6 +299,18 @@ function toReapplyLine(view: Extract<PublicationView, { kind: "reviewRejected" }
   return "첫 화를 만든 뒤 다시 신청할 수 있어요.";
 }
 
+type ViewActionsProps = {
+  view: PublicationView;
+  novelId: string;
+  rejectionFixOrdinal: number | undefined;
+  fixChapterId: string | undefined;
+  firstChapterId: string | undefined;
+  canRetry: boolean;
+  onPublish: () => void;
+  onRetry: () => void;
+  onWithdraw: () => void;
+};
+
 function ViewActions({
   view,
   novelId,
@@ -305,17 +321,7 @@ function ViewActions({
   onPublish,
   onRetry,
   onWithdraw,
-}: {
-  view: PublicationView;
-  novelId: string;
-  rejectionFixOrdinal: number | undefined;
-  fixChapterId: string | undefined;
-  firstChapterId: string | undefined;
-  canRetry: boolean;
-  onPublish: () => void;
-  onRetry: () => void;
-  onWithdraw: () => void;
-}) {
+}: ViewActionsProps) {
   const buttons: ReactNode[] = [];
   if (canRetry) {
     buttons.push(

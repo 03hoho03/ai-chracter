@@ -20,6 +20,9 @@ export const SIDE_PANEL_ID = "side-panel";
 const LOGO_LINK_CLASS =
   "inline-flex shrink-0 items-center rounded-md text-foreground focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
+// 라벨은 접근 이름으로만 남는다(`sr-only`). 보이는 이름표는 툴팁이 진다.
+const RAIL_ROW_CLASS = cn(SIDE_PANEL_ROW_CLASS, "size-10 justify-center [&_svg]:size-4 [&_svg]:shrink-0 [&>span]:sr-only");
+
 type SidePanelProps = {
   isCollapsed: boolean;
   /** 접힘이 사용자의 토글로 바뀌었을 때만 폭을 전환으로 움직인다(`useSidePanelCollapse`). */
@@ -134,9 +137,6 @@ export function SidePanel({ isCollapsed, isToggled, onToggle }: SidePanelProps) 
     </TooltipProvider>
   );
 }
-
-// 라벨은 접근 이름으로만 남는다(`sr-only`). 보이는 이름표는 툴팁이 진다.
-const RAIL_ROW_CLASS = cn(SIDE_PANEL_ROW_CLASS, "size-10 justify-center [&_svg]:size-4 [&_svg]:shrink-0 [&>span]:sr-only");
 
 type ToggleButtonProps = Omit<ComponentProps<"button">, "children"> & {
   isCollapsed: boolean;

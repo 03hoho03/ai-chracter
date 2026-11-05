@@ -1,7 +1,6 @@
+import { Button } from "@ai-character-chat/ui/components/button";
 import { Link, useCanGoBack, useRouter } from "@tanstack/react-router";
 import { FileQuestion } from "lucide-react";
-
-import { Button } from "@ai-character-chat/ui/components/button";
 
 /** 어느 라우트에도 맞지 않는 주소의 화면. 루트 라우트가 아웃렛 자리에 그리므로 전역 헤더·푸터는 주소에 따라
  * 평소대로 붙는다(`/builder/…`처럼 헤더를 숨기는 접두사 아래면 헤더 없이 이 화면만 남아, 홈으로 가는 버튼을 늘 둔다).

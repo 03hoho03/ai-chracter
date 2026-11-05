@@ -146,21 +146,16 @@ function EmptyResultCells({ shape }: { shape: ResultShape }) {
   );
 }
 
-function ResultBody({
-  shape,
-  job,
-  hasPollError,
-  hiddenAssetIds,
-  openingAssetId,
-  onSelectImage,
-}: {
+type ResultBodyProps = {
   shape: ResultShape;
   job: ImageJobStatusResponse | undefined;
   hasPollError: boolean;
   hiddenAssetIds: ReadonlySet<string>;
   openingAssetId: string | undefined;
   onSelectImage: (assetId: string) => void;
-}) {
+};
+
+function ResultBody({ shape, job, hasPollError, hiddenAssetIds, openingAssetId, onSelectImage }: ResultBodyProps) {
   // 터미널 응답이 먼저다 — 완료·실패한 잡은 더 바뀌지 않으므로, 그 뒤의 조회 오류가 이미 받은 결과를
   // 덮지 않는다.
   if (job?.status === "failed") {
@@ -214,6 +209,14 @@ function ResultBody({
   );
 }
 
+type ResultTileProps = {
+  image: ResultImage;
+  label: string;
+  aspectRatio: string;
+  isOpening: boolean;
+  onSelect: (assetId: string) => void;
+};
+
 // 결과 한 장 = 상세를 여는 버튼. 칸 번호는 지우기 전 순서로 세어, 한 장을 지워도 남은 칸의 이름이
 // 바뀌지 않는다. 분모는 요청한 장수라 진행 중에 먼저 나온 칸도 "1/2" 로 읽힌다.
 //
@@ -225,19 +228,7 @@ function ResultBody({
 //
 // 상세를 열려고 목록을 기다리는 동안은 칸 가운데 스크림 위 스피너로 알린다(채운 그림 위라 스크림 쌍이
 // 대비를 진다, 진행 표시라 모션을 끄지 않는다).
-function ResultTile({
-  image,
-  label,
-  aspectRatio,
-  isOpening,
-  onSelect,
-}: {
-  image: ResultImage;
-  label: string;
-  aspectRatio: string;
-  isOpening: boolean;
-  onSelect: (assetId: string) => void;
-}) {
+function ResultTile({ image, label, aspectRatio, isOpening, onSelect }: ResultTileProps) {
   return (
     <button
       type="button"

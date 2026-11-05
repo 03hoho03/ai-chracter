@@ -12,19 +12,32 @@
 상태 키는 저장하지 않고 계산한다 — 생사·출입·속성은 (주어, 종류, 술어), 소지·능력·관계는 (주어, 종류, 술어, 대상). 같은 상태
 키의 행 중 이야기 순서로 가장 늦은 것이 그 상태의 값이다(사건 시점 질의가 이것으로 묶는다).
 
-정규화는 채팅 기억의 사실 키와 같은 규칙(`normalize_part`)이다 — 키 값 자체는 채팅 기억 키와 무관하다."""
+정규화는 채팅 기억의 사실 키와 같은 규칙(`normalize_part`)이다 — 키 값 자체는 채팅 기억 키와 무관하다.
+
+명제를 만드는 규칙(값이 종류에 맞는가, 값을 어떻게 다듬는가, 주어·대상을 어느 종류의 개체로 잇는가)도 여기 한 곳에 둔다. 사실
+슬롯과 지식 슬롯이 같은 명제를 같은 키로 받으려면 두 슬롯이 이 규칙을 똑같이 써야 하는데, 슬롯은 서로 import 하지 않는다 —
+슬롯마다 사본을 두면 한쪽만 고쳐져 같은 명제의 키가 갈린다."""
 
 import json
 import uuid
+from typing import get_args
 
 from api.chat.memory_facts import normalize_part
-from api.novel_bible.core.types import FactRow, Proposition
-from api.novel_bible.ids import FactKind
+from api.novel_bible.core.types import EntityName, FactRow, Proposition
+from api.novel_bible.ids import EntityKind, FactKind, LifeValue, PresenceValue
 
 # 키 공간을 다른 uuid5 와 가르는 고정 이름 공간. 바꾸면 저장된 모든 키가 달라진다.
 _FACT_KEY_NAMESPACE = uuid.UUID("6b3f0a52-1d9c-4a37-9e0b-2f4c8d1e7a90")
-# 대상이 개체인 종류 — 대상 칸이 개체 id 이고 상태 키에도 대상이 든다.
-TARGETED_KINDS: frozenset[FactKind] = frozenset({"possession", "ability", "relation"})
+# 대상이 개체인 종류와 그 대상 개체의 종류 — 대상 칸이 개체 id 이고 상태 키에도 대상이 든다.
+VALUE_ENTITY_KINDS: dict[FactKind, EntityKind] = {"possession": "object", "ability": "ability", "relation": "character"}
+TARGETED_KINDS: frozenset[FactKind] = frozenset(VALUE_ENTITY_KINDS)
+# 값이 정해진 목록 안에 있어야 하는 종류.
+_CLOSED_VALUES: dict[FactKind, frozenset[str]] = {
+    "life": frozenset(get_args(LifeValue)),
+    "presence": frozenset(get_args(PresenceValue)),
+}
+# 술어가 속성·관계 이름인 종류.
+_NAMED_PREDICATE: frozenset[FactKind] = frozenset({"attribute", "relation"})
 
 # (주어 개체, 종류, 술어, 대상 개체 — 대상이 개체인 종류만, 나머지는 None)
 StateKey = tuple[uuid.UUID, FactKind, str, uuid.UUID | None]
@@ -62,3 +75,42 @@ def state_key(fact: FactRow) -> StateKey:
         fact.subject_entity_id, fact.kind, fact.predicate_norm,
         fact.value_entity_id if fact.kind in TARGETED_KINDS else None,
     )
+
+
+def proposition_problem(kind: FactKind, attribute: str | None, value: str, holds: bool) -> str | None:
+    """명제를 버릴 사유 — 생사·출입 값이 정해진 값이 아님, 값이 빔, 유지가 거짓일 수 없는 종류(생사·출입·속성), 속성·관계
+    이름이 빔. 사유 이름은 `Proposal.dropped` 의 열쇠다."""
+    norm = normalize_name(value)
+    closed = _CLOSED_VALUES.get(kind)
+    if closed is not None and norm not in closed:
+        return "value_invalid"
+    if not norm:
+        return "value_empty"
+    if not holds and kind not in TARGETED_KINDS:
+        return "holds_invalid"
+    if kind in _NAMED_PREDICATE and not normalize_name(attribute):
+        return "attribute_missing"
+    return None
+
+
+def make_proposition(
+    subject: str, subject_kind: EntityKind, kind: FactKind, attribute: str | None, value: str, holds: bool
+) -> Proposition:
+    """검증을 지난 명제 칸을 다듬는다 — 생사·출입 값은 정규화한 값, 나머지 값과 이름은 앞뒤 공백만 뺀다. 속성·관계가 아니면
+    속성 이름을 비운다."""
+    return Proposition(
+        subject=subject.strip(), subject_kind=subject_kind, kind=kind,
+        attribute=(attribute or "").strip() if kind in _NAMED_PREDICATE else None,
+        value=normalize_name(value) if kind in _CLOSED_VALUES else value.strip(), holds=holds,
+    )
+
+
+def proposition_names(proposition: Proposition) -> dict[str, tuple[EntityName, ...]]:
+    """코어가 개체로 풀 명제의 이름 — 주어는 명제의 주어 종류로 `subject`, 대상이 개체인 종류면 대상을 그 종류의 대상 개체로
+    `value`."""
+    names: dict[str, tuple[EntityName, ...]] = {
+        "subject": (EntityName(kind=proposition.subject_kind, name=proposition.subject),)
+    }
+    if proposition.kind in VALUE_ENTITY_KINDS:
+        names["value"] = (EntityName(kind=VALUE_ENTITY_KINDS[proposition.kind], name=proposition.value),)
+    return names

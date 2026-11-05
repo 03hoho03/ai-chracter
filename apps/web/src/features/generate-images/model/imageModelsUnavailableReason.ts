@@ -1,4 +1,5 @@
-import type { UnavailableReason } from "../ui/GenerateImagesUnavailableState";
+/** 생성 폼 대신 대체 화면을 보일 사유. */
+export type UnavailableReason = "error" | "empty" | "unavailable";
 
 /** 모델 목록 쿼리 상태로 생성 폼 대신 대체 화면을 보일 사유를 정한다. `undefined`면 폼을 그린다
  * (목록을 기다리는 중이면 폼이 로딩 모양으로 선다).

@@ -323,21 +323,22 @@ def full_registry(source: FakeSource | None = None) -> Registry:
 
 
 def _sections(prompt_set_id: uuid.UUID) -> list[PromptSection]:
-    sections: list[PromptSection] = []
-    for channel in ("fake_bible_events", "fake_bible_facts", "fake_bible_knowledge"):
-        sections.append(
-            PromptSection(
-                prompt_set_id=prompt_set_id, channel=channel, scope="both", slot="instruction", variant="",
-                body="합성 지시문", conditional=False, order=0,
-            )
+    """가짜 슬롯 채널의 문안 — 실제 시드와 같은 꼴로 원고만 필수, 아는 개체·원작은 비면 섹션째 빠지는 선택 입력이다(필수 섹션의
+    값이 비면 렌더가 멈춘다)."""
+    slots = (
+        ("instruction", "합성 지시문", False),
+        ("manuscript", "{manuscript}", False),
+        ("known_entities", "{known_entities}", True),
+        ("source", "{source}", True),
+    )
+    return [
+        PromptSection(
+            prompt_set_id=prompt_set_id, channel=channel, scope="both", slot=slot, variant="", body=body,
+            conditional=conditional, order=order,
         )
-        sections.append(
-            PromptSection(
-                prompt_set_id=prompt_set_id, channel=channel, scope="both", slot="body", variant="",
-                body="{manuscript}\n{known_entities}\n{source}", conditional=False, order=1,
-            )
-        )
-    return sections
+        for channel in ("fake_bible_events", "fake_bible_facts", "fake_bible_knowledge")
+        for order, (slot, body, conditional) in enumerate(slots)
+    ]
 
 
 @dataclass

@@ -1,6 +1,6 @@
 import { createContext, useContext, type RefObject } from "react";
 
-import type { UnavailableReason } from "../ui/GenerateImagesUnavailableState";
+import type { UnavailableReason } from "./imageModelsUnavailableReason";
 import type { GenerateImagesFormValues } from "./schema";
 
 /** 참조 행이 피커에서 받는 값. 미리보기 URL은 표시 전용이라 폼에 넣지 않는다. */

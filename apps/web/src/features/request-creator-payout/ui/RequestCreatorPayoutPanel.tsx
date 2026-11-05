@@ -13,6 +13,8 @@ import { formatDate } from "@/shared/lib/time/formatDate";
 
 import { getRequestView, type RequestViewInput } from "../model/requestView";
 
+type ShownRequestFailure = Exclude<RequestPayoutFailure, "reconsentRequired">;
+
 const INLINE_LINK_CLASS = "font-medium whitespace-nowrap text-primary underline-offset-4 hover:underline focus-visible:underline";
 
 type RequestCreatorPayoutPanelProps = {
@@ -86,8 +88,6 @@ export function RequestCreatorPayoutPanel({ payout, payoutInfoSectionId }: Reque
     </>
   );
 }
-
-type ShownRequestFailure = Exclude<RequestPayoutFailure, "reconsentRequired">;
 
 type RequestViewBlockProps = RequestCreatorPayoutPanelProps & {
   statusRef: (element: HTMLElement | null) => void;

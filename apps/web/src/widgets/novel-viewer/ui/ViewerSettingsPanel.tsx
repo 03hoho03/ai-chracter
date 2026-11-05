@@ -6,8 +6,8 @@ import { useId, type ReactNode, type Ref } from "react";
 import { isTheme, themeAtom } from "@/shared/model/theme";
 
 import { isScreenWakeLockSupported } from "../lib/useScreenWakeLock";
+import { readerSettingsAtom } from "../model/atoms";
 import {
-  readerSettingsAtom,
   READER_FONT_SIZES,
   READER_LINE_HEIGHTS,
   READER_MODES,
@@ -21,11 +21,12 @@ const LINE_HEIGHT_LABEL = { normal: "좁게", relaxed: "보통", loose: "넓게"
 const MODE_LABEL = { page: "페이지", scroll: "스크롤" } satisfies Record<ReaderMode, string>;
 const KEEP_SCREEN_ON_OPTIONS = ["off", "on"] as const;
 
-/** 목록 안의 값인지 확인하며 좁힌다. Radix 단일 선택 토글은 이미 고른 칸을 다시 누르면 빈 문자열을 내므로, 그때는
- * 무시해 언제나 하나가 선택된 상태를 지킨다. */
-function pick<T extends string>(options: readonly T[], value: string): T | undefined {
-  return options.find((option) => option === value);
-}
+type ViewerSettingsPanelProps = {
+  ref: Ref<HTMLDivElement>;
+  id: string;
+  /** 페이지 모드를 골랐지만 화면이 낮아 스크롤 모드로 보이는 중인가. 저장값(페이지)은 그대로 보이고 힌트로 알린다. */
+  isScrollForced: boolean;
+};
 
 /**
  * 보기 설정 — 넘김 방식·글자 크기·줄 간격·테마·화면 유지. 아래 바 위에 붙어 열리는 **비모달** 패널이다: 본문을
@@ -41,16 +42,7 @@ function pick<T extends string>(options: readonly T[], value: string): T | undef
  * 글자 크기 첫 칸을 "보통"이라 부르는 것은 그것이 기본값이라서다 — "작게"로 부르면 기본이 작은 글씨처럼 읽힌다.
  * 테마는 이 화면만의 값이 아니라 앱 전체 테마다(다크 변형이 문서 전체에 걸려 화면 하나만 따로 둘 수 없다).
  */
-export function ViewerSettingsPanel({
-  ref,
-  id,
-  isScrollForced,
-}: {
-  ref: Ref<HTMLDivElement>;
-  id: string;
-  /** 페이지 모드를 골랐지만 화면이 낮아 스크롤 모드로 보이는 중인가. 저장값(페이지)은 그대로 보이고 힌트로 알린다. */
-  isScrollForced: boolean;
-}) {
+export function ViewerSettingsPanel({ ref, id, isScrollForced }: ViewerSettingsPanelProps) {
   const [settings, setSettings] = useAtom(readerSettingsAtom);
   const [theme, setTheme] = useAtom(themeAtom);
 
@@ -174,15 +166,13 @@ export function ViewerSettingsPanel({
   );
 }
 
-function SettingRow({
-  label,
-  hint,
-  children,
-}: {
+type SettingRowProps = {
   label: string;
   hint?: string;
   children: (labelId: string, hintId: string | undefined) => ReactNode;
-}) {
+};
+
+function SettingRow({ label, hint, children }: SettingRowProps) {
   const labelId = useId();
   const hintId = useId();
 
@@ -201,4 +191,10 @@ function SettingRow({
       </div>
     </div>
   );
+}
+
+/** 목록 안의 값인지 확인하며 좁힌다. Radix 단일 선택 토글은 이미 고른 칸을 다시 누르면 빈 문자열을 내므로, 그때는
+ * 무시해 언제나 하나가 선택된 상태를 지킨다. */
+function pick<T extends string>(options: readonly T[], value: string): T | undefined {
+  return options.find((option) => option === value);
 }

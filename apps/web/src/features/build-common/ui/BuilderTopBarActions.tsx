@@ -8,6 +8,30 @@ import type { CreationGuidePath } from "@/shared/config/creationGuide";
 import { useIsOnline } from "../lib/useIsOnline";
 import type { AutosaveStatus, AutosaveStatusStore } from "../model/autosaveStatus";
 
+/** 손가락 포인터에서 상단바 버튼을 40px 로 올린다. `lg` 미만에서는 라벨이 숨어 아이콘만 남으므로 폭도 40px 를 채운다. 상단바(56px)
+ * 안에 들어가고, 마우스 포인터의 32px 는 그대로다. */
+const TOUCH_TARGET_CLASSNAME = "pointer-coarse:h-10 pointer-coarse:min-w-10";
+
+/** 상태별 아이콘과 접근 이름 뒤에 붙는 말. 오프라인은 저장 상태가 아니라 연결 상태라 여기 없고 `SaveNowButton` 이 덮어쓴다. */
+const SAVE_STATUS_VIEW: Record<AutosaveStatus, { icon: ReactNode; text?: string }> = {
+  idle: { icon: <Save aria-hidden className="size-3.5" /> },
+  // 대기(입력을 멈추면 곧 저장된다)는 아직 아무 일도 진행되지 않으므로 정지 아이콘이다 — 입력하는 내내 돌면 어두운 방에서 움직임만
+  // 계속된다. 접근 이름으로만 저장 전임을 알린다.
+  pending: { icon: <Save aria-hidden className="size-3.5" />, text: "저장 대기 중" },
+  // 저장 요청이 나가 있는 동안의 회전은 진행 표시라 `motion-safe:` 로 가두지 않는다 — 멈추면 저장이 멈춘 것으로 읽힌다.
+  saving: { icon: <Loader2 aria-hidden className="size-3.5 animate-spin" />, text: "저장 중" },
+  saved: { icon: <Check aria-hidden className="size-3.5" />, text: "저장됨" },
+  failed: {
+    icon: <TriangleAlert aria-hidden className="size-3.5 text-destructive-text" />,
+    text: "저장 실패, 눌러서 다시 시도",
+  },
+};
+
+const OFFLINE_VIEW = {
+  icon: <CloudOff aria-hidden className="size-3.5" />,
+  text: "연결 끊김, 연결되면 저장돼요",
+};
+
 type BuilderTopBarActionsProps = {
   /** 이 빌더의 작성 가이드 경로. 스토리·캐릭터 빌더가 각자 자기 가이드를 가리킨다. */
   guidePath: CreationGuidePath;
@@ -87,30 +111,6 @@ export function BuilderTopBarActions({
     </>
   );
 }
-
-/** 손가락 포인터에서 상단바 버튼을 40px 로 올린다. `lg` 미만에서는 라벨이 숨어 아이콘만 남으므로 폭도 40px 를 채운다. 상단바(56px)
- * 안에 들어가고, 마우스 포인터의 32px 는 그대로다. */
-const TOUCH_TARGET_CLASSNAME = "pointer-coarse:h-10 pointer-coarse:min-w-10";
-
-/** 상태별 아이콘과 접근 이름 뒤에 붙는 말. 오프라인은 저장 상태가 아니라 연결 상태라 여기 없고 `SaveNowButton` 이 덮어쓴다. */
-const SAVE_STATUS_VIEW: Record<AutosaveStatus, { icon: ReactNode; text?: string }> = {
-  idle: { icon: <Save aria-hidden className="size-3.5" /> },
-  // 대기(입력을 멈추면 곧 저장된다)는 아직 아무 일도 진행되지 않으므로 정지 아이콘이다 — 입력하는 내내 돌면 어두운 방에서 움직임만
-  // 계속된다. 접근 이름으로만 저장 전임을 알린다.
-  pending: { icon: <Save aria-hidden className="size-3.5" />, text: "저장 대기 중" },
-  // 저장 요청이 나가 있는 동안의 회전은 진행 표시라 `motion-safe:` 로 가두지 않는다 — 멈추면 저장이 멈춘 것으로 읽힌다.
-  saving: { icon: <Loader2 aria-hidden className="size-3.5 animate-spin" />, text: "저장 중" },
-  saved: { icon: <Check aria-hidden className="size-3.5" />, text: "저장됨" },
-  failed: {
-    icon: <TriangleAlert aria-hidden className="size-3.5 text-destructive-text" />,
-    text: "저장 실패, 눌러서 다시 시도",
-  },
-};
-
-const OFFLINE_VIEW = {
-  icon: <CloudOff aria-hidden className="size-3.5" />,
-  text: "연결 끊김, 연결되면 저장돼요",
-};
 
 /**
  * 임시저장 버튼이 자동저장 상태도 보인다 — 아이콘과 접근 이름("임시저장 · 저장됨")만 바뀌고 폭은 그대로다. lg 미만 상단바에는 상태

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { ForgetOutcome } from "../model/forgetOutcome";
-import type { MemoryListNotice } from "./MemoryItemsParts";
+import { assertNever } from "@/shared/lib/assertNever";
+
+import type { ForgetOutcome, MemoryListNotice } from "./forgetOutcome";
 
 /** 잊게 하기 확인 대화의 결과를 목록 위 알림으로 옮기고, 알림이 바뀔 때마다 포커스를 그리로 보낸다 — 잊은 행과 그 행의
  * 지우개 버튼이 함께 사라져 대화 상자가 닫힌 뒤 포커스가 `<body>`로 떨어지기 때문이다. 취소는 아무것도 바꾸지 않는다(포커스는
@@ -15,10 +16,17 @@ export function useForgetResultNotice() {
   }, [notice]);
 
   function showOutcome(outcome: ForgetOutcome, label: string) {
-    if (outcome.kind === "forgotten") {
-      setNotice({ kind: "forgotten", label, linkedEpisodeCount: outcome.linkedEpisodeCount });
-    } else if (outcome.kind === "notice") {
-      setNotice({ kind: "message", message: outcome.message });
+    switch (outcome.kind) {
+      case "forgotten":
+        setNotice({ kind: "forgotten", label, linkedEpisodeCount: outcome.linkedEpisodeCount });
+        return;
+      case "notice":
+        setNotice({ kind: "message", message: outcome.message });
+        return;
+      case "cancelled":
+        return;
+      default:
+        assertNever(outcome);
     }
   }
 

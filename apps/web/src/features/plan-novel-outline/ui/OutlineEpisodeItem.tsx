@@ -281,16 +281,14 @@ export function BasisToggle({ status, basisLabel, isOpen, controlsId, onToggle }
   );
 }
 
-/** 턴 한 줄. `part` 가 있으면 응답이 여럿인 턴의 응답 하나다(나눌 자리 고르기가 연달은 응답을 한 줄씩 펼 때). */
-export function TurnLine({
-  number,
-  excerpt,
-  part,
-}: {
+type TurnLineProps = {
   number: number;
   excerpt: string;
   part?: { number: number; count: number };
-}) {
+};
+
+/** 턴 한 줄. `part` 가 있으면 응답이 여럿인 턴의 응답 하나다(나눌 자리 고르기가 연달은 응답을 한 줄씩 펼 때). */
+export function TurnLine({ number, excerpt, part }: TurnLineProps) {
   return (
     <div className="flex flex-col gap-0.5 rounded-lg border border-border px-3 py-2">
       <span className="text-xs text-muted-foreground tabular-nums">

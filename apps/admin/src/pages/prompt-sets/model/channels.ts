@@ -26,6 +26,10 @@ export const PROMPT_CHANNEL_LABELS = {
   novelize_revise_blocks: "소설 여러 문단 수정",
   novelize_revise_recheck: "소설 묶음 재검사",
   novelize_rating: "소설 등급 규칙",
+  novel_bible_events: "정본 기억 사건",
+  novel_bible_facts: "정본 기억 사실",
+  novel_bible_knowledge: "정본 기억 지식",
+  novel_bible_conflicts: "정본 기억 판정",
   novel_screen: "노벨 심사",
 } as const;
 

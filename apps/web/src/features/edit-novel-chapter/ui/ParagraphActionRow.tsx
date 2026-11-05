@@ -2,6 +2,8 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { ImagePlus, Pencil, Sparkles, X } from "lucide-react";
 import { useId } from "react";
 
+import { assertNever } from "@/shared/lib/assertNever";
+
 import {
   NOVEL_ILLUSTRATION_LIMIT,
   type IllustrationPlacement,
@@ -30,22 +32,6 @@ type ParagraphActionRowProps = {
   onClearSelection: () => void;
   onAttach: (source: IllustrationSource, placement: IllustrationPlacement) => void;
 };
-
-/** 붙이기 버튼이 가리킬 사유 문장. 다시 만드는 중이 먼저다(끝나기를 기다리면 풀리는 쪽이라 상한보다 지금 할 일에 가깝다). */
-function toAttachReasonId({
-  isRegenerating,
-  reasonId,
-  isLimitReached,
-  limitReasonId,
-}: {
-  isRegenerating: boolean;
-  reasonId: string;
-  isLimitReached: boolean;
-  limitReasonId: string;
-}): string | undefined {
-  if (isRegenerating) return reasonId;
-  return isLimitReached ? limitReasonId : undefined;
-}
 
 /** 고른 범위의 마지막 문단 바로 아래, 문서 흐름 안의 동작 줄 — AI로 고치기·직접 고치기·그림 붙이기·선택 해제. 솔리드 채움
  * 없이 테두리·회색뿐이다(이 화면의 유일한 솔리드는 상단 "다음 화 만들기"). */
@@ -131,8 +117,13 @@ export function ParagraphActionRow({
                   선택 해제
                 </Button>
               );
-            default:
+            // 옮기는 중의 세 버튼은 이 줄이 아니라 `NovelChapterText` 의 `MoveTargetRow` 가 그린다.
+            case "placeBefore":
+            case "placeAfter":
+            case "cancelMove":
               return null;
+            default:
+              return assertNever(action);
           }
         })}
       </div>
@@ -148,4 +139,20 @@ export function ParagraphActionRow({
       )}
     </div>
   );
+}
+
+/** 붙이기 버튼이 가리킬 사유 문장. 다시 만드는 중이 먼저다(끝나기를 기다리면 풀리는 쪽이라 상한보다 지금 할 일에 가깝다). */
+function toAttachReasonId({
+  isRegenerating,
+  reasonId,
+  isLimitReached,
+  limitReasonId,
+}: {
+  isRegenerating: boolean;
+  reasonId: string;
+  isLimitReached: boolean;
+  limitReasonId: string;
+}): string | undefined {
+  if (isRegenerating) return reasonId;
+  return isLimitReached ? limitReasonId : undefined;
 }

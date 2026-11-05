@@ -216,7 +216,7 @@ export function KeywordChipField({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="relative size-4 shrink-0 after:absolute after:-inset-2 pointer-coarse:after:-inset-[13px]"
+                className="relative size-4 shrink-0 after:absolute after:-inset-2 pointer-coarse:after:-inset-3.25"
                 disabled={disabled}
                 aria-label={`${chipPrefix}${keyword} ${chipNoun} 삭제`}
                 onClick={() => handleRemove(keyword, index)}

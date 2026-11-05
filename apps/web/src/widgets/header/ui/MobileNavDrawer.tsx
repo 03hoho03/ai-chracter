@@ -350,17 +350,15 @@ function NotificationDisclosure({ viewerId, onNavigate }: { viewerId: string; on
   );
 }
 
-// 드롭다운(`NotificationBell`)과 같은 의미: 목적지가 있는 공지·문의 답변은 이동 링크,
-// 조치 통지 3종은 갈 곳이 없어 읽음 처리만 한다. 링크를 누르면 드로어의 다른 항목처럼 `onNavigate`로 시트를 닫는다.
-function NotificationDrawerItem({
-  notification,
-  onRead,
-  onNavigate,
-}: {
+type NotificationDrawerItemProps = {
   notification: NotificationResponse;
   onRead: (id: string) => void;
   onNavigate: () => void;
-}) {
+};
+
+// 드롭다운(`NotificationBell`)과 같은 의미: 목적지가 있는 공지·문의 답변은 이동 링크,
+// 조치 통지 3종은 갈 곳이 없어 읽음 처리만 한다. 링크를 누르면 드로어의 다른 항목처럼 `onNavigate`로 시트를 닫는다.
+function NotificationDrawerItem({ notification, onRead, onNavigate }: NotificationDrawerItemProps) {
   const destination = resolveNotificationDestination(notification);
   const [modalState, setModalState] = useAtom(contentDetailModalAtom);
   if (destination.kind === "comment") {

@@ -8,18 +8,16 @@ export const SECTION_LINK_CLASS =
 export const INLINE_LINK_CLASS =
   "whitespace-nowrap font-medium text-primary underline-offset-4 hover:underline focus-visible:underline";
 
-/** 이 화면의 섹션 — 제목(Title 단, `text-xl`/600)과 내용. 상자로 감싸지 않는다: 감싸면 안의 `bg-muted` 스켈레톤이 카드
- * 표면 위에서 사라지고, 상품 행 카드가 카드 안 카드가 된다. */
-export function HubSection({
-  title,
-  headingRef,
-  children,
-}: {
+type HubSectionProps = {
   title: string;
   /** 주면 제목이 프로그램 포커스를 받을 수 있다(`tabIndex={-1}`). */
   headingRef?: Ref<HTMLHeadingElement>;
   children: ReactNode;
-}) {
+};
+
+/** 이 화면의 섹션 — 제목(Title 단, `text-xl`/600)과 내용. 상자로 감싸지 않는다: 감싸면 안의 `bg-muted` 스켈레톤이 카드
+ * 표면 위에서 사라지고, 상품 행 카드가 카드 안 카드가 된다. */
+export function HubSection({ title, headingRef, children }: HubSectionProps) {
   return (
     <section className="flex flex-col gap-4">
       <h2

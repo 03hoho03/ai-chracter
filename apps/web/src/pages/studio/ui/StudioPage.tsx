@@ -43,6 +43,10 @@ type StudioPageProps = {
  * 바뀌면 "가장 최근 일"이 아니게 된다. 필터가 없으면 아래 목록과 같은 캐시라 요청이 하나 더 나가지 않는다. */
 const UNFILTERED: MyWorksParams = { type: "all", status: "all", q: undefined };
 
+/** 화면 제목(h1)의 id. 묶음을 만들거나 지워 화면이 바뀌면 누른 메뉴·버튼이 함께 사라져 포커스가 `<body>` 로 떨어지므로,
+ * 새 화면의 제목으로 옮겨 다음 Tab 이 본문에서 이어지게 한다. 제목은 `tabIndex={-1}` 이라 Tab 순서에는 들지 않는다. */
+const STUDIO_HEADING_ID = "studio-heading";
+
 /**
  * `/studio` — 내가 만든 것과 만들 것을 한 화면에서. 위에서부터 제목 · 이어 만들기 + 새로 만들기 · 모든 작품(필터와 행
  * 목록)이다. 목록은 서버 통합 목록(`GET /me/works`) 하나라 일부만 실패하는 상태가 없다.
@@ -181,10 +185,6 @@ function StudioBundleScreen({ userId, scope, params, isNovelAreaVisible, onSearc
     </>
   );
 }
-
-/** 화면 제목(h1)의 id. 묶음을 만들거나 지워 화면이 바뀌면 누른 메뉴·버튼이 함께 사라져 포커스가 `<body>` 로 떨어지므로,
- * 새 화면의 제목으로 옮겨 다음 Tab 이 본문에서 이어지게 한다. 제목은 `tabIndex={-1}` 이라 Tab 순서에는 들지 않는다. */
-const STUDIO_HEADING_ID = "studio-heading";
 
 function focusStudioHeading() {
   // 방금 닫은 대화상자가 다 내려간 뒤에 옮긴다 — 내려가는 중에 옮기면 대화상자의 포커스 범위가 닫히며 `<body>` 로 되돌린다.
@@ -455,7 +455,7 @@ function StudioWorksSection({
           {/* 열 머리는 넓은 폭에서만, 보는 사람용이다 — 의미는 행 안 라벨이 갖는다. 썸네일·메뉴 폭만큼 들여 열을 맞춘다. */}
           <div
             aria-hidden
-            className={`hidden pr-11 pl-[4.75rem] text-xs text-muted-foreground @3xl:grid @3xl:gap-x-4 ${STUDIO_ROW_COLUMNS}`}
+            className={cn("hidden pr-11 pl-19 text-xs text-muted-foreground @3xl:grid @3xl:gap-x-4", STUDIO_ROW_COLUMNS)}
           >
             <span>작품</span>
             <span>상태</span>

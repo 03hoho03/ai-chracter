@@ -141,6 +141,8 @@ def _event_row(event: NovelBibleEvent, chapter_ordinal: int) -> EventRow:
     return EventRow(
         id=event.id, chapter_id=event.chapter_id, chapter_ordinal=chapter_ordinal, ordinal=event.ordinal,
         actuality=event.actuality, anchor_block_ids=tuple(event.anchor_block_ids),
+        present_entity_ids=tuple(event.present_entity_ids),
+        uses=tuple((uuid.UUID(use["actor"]), uuid.UUID(use["thing"])) for use in event.uses),
     )
 
 

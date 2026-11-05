@@ -16,8 +16,8 @@ import {
   applyPreviewStreamEvent,
   buildPreviewSendPayload,
   previewSessionKeys,
+  previewStreamEventSchema,
 } from "@/entities/preview-session";
-import { previewStreamEventSchema } from "@/entities/preview-session";
 import type { PreviewChatMessage, PreviewSessionState } from "@/entities/preview-session";
 import { getSessionEndReason, resetSessionIfLost, sessionKeys, type SessionEndReason } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";

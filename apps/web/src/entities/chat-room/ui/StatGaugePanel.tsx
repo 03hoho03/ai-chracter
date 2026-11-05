@@ -264,7 +264,13 @@ function StatCell({ stat, value, delta, isChipLeaving, isHidden }: StatCellProps
   );
 }
 
-function StatDetail({ stat, value, isHidden }: { stat: StatDef; value: number; isHidden: boolean }) {
+type StatDetailProps = {
+  stat: StatDef;
+  value: number;
+  isHidden: boolean;
+};
+
+function StatDetail({ stat, value, isHidden }: StatDetailProps) {
   const Icon = getIconByName(stat.icon);
   const unit = stat.unit ?? "";
 
@@ -303,9 +309,15 @@ function revealFocusedCell(event: FocusEvent<HTMLButtonElement>) {
   event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
+type StatBarProps = {
+  stat: StatDef;
+  value: number;
+  isHidden: boolean;
+};
+
 /** 트랙은 `secondary` 다 — 팝오버(`popover`) 위에서 `muted` 는 같은 값이라 사라진다. 채움 색은 작가가 고른 스탯 색(사용자
  * 콘텐츠)이고, 숨긴 스탯은 흐리게 그려 작가에게 "플레이어에게 안 보인다"를 함께 알린다. */
-function StatBar({ stat, value, isHidden }: { stat: StatDef; value: number; isHidden: boolean }) {
+function StatBar({ stat, value, isHidden }: StatBarProps) {
   const ratio = stat.max > stat.min ? (value - stat.min) / (stat.max - stat.min) : 0;
   const percent = Math.min(100, Math.max(0, ratio * 100));
   return (
@@ -321,8 +333,14 @@ function StatBar({ stat, value, isHidden }: { stat: StatDef; value: number; isHi
   );
 }
 
+type DeltaChipProps = {
+  delta: number;
+  isLeaving: boolean;
+  icon?: ReactNode;
+};
+
 /** 무채색 윤곽 알약. 오르내림은 기호와 숫자가 진다 — 색을 붙이지 않는다. 화면 전용이고 같은 내용은 `aria-live` 가 읽는다. */
-function DeltaChip({ delta, isLeaving, icon }: { delta: number; isLeaving: boolean; icon?: ReactNode }) {
+function DeltaChip({ delta, isLeaving, icon }: DeltaChipProps) {
   return (
     <span
       aria-hidden
@@ -339,8 +357,14 @@ function DeltaChip({ delta, isLeaving, icon }: { delta: number; isLeaving: boole
   );
 }
 
+type CollapsedDeltaChipsProps = {
+  stats: StatDef[];
+  deltas: Record<string, number>;
+  isLeaving: boolean;
+};
+
 /** 접힌 줄의 증감 요약 — 칸이 숨었으니 어느 스탯인지 아이콘을 칩에 함께 싣는다. */
-function CollapsedDeltaChips({ stats, deltas, isLeaving }: { stats: StatDef[]; deltas: Record<string, number>; isLeaving: boolean }) {
+function CollapsedDeltaChips({ stats, deltas, isLeaving }: CollapsedDeltaChipsProps) {
   const changed = stats.filter((stat) => deltas[stat.id] !== undefined);
   if (changed.length === 0) return null;
   return (

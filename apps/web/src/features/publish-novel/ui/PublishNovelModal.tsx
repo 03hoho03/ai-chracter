@@ -198,17 +198,15 @@ function toDefaultValues({
   };
 }
 
-/** "화별 가격" — 새 화는 무료·유료 칩, 무료 고정 번호와 다시 내는 화는 글. 줄 순서는 화 번호다. */
-function PriceRows({
-  rows,
-  control,
-  chapterPrice,
-}: {
+type PriceRowsProps = {
   rows: PublishPriceRow[];
   control: Control<PublishChoiceFormInput, unknown, PublishChoiceFormValues>;
   /** 지금 유료 화 가격. 가격 응답이 아직 없으면 숫자를 말하지 않는다. */
   chapterPrice: number | undefined;
-}) {
+};
+
+/** "화별 가격" — 새 화는 무료·유료 칩, 무료 고정 번호와 다시 내는 화는 글. 줄 순서는 화 번호다. */
+function PriceRows({ rows, control, chapterPrice }: PriceRowsProps) {
   const headingId = useId();
   const prices = useWatch({ control, name: "prices" });
   const paidLabel = chapterPrice === undefined ? "유료" : `유료 · 클로버 ${chapterPrice.toLocaleString()}개`;
@@ -266,16 +264,14 @@ function PriceRows({
   );
 }
 
-/** "변경 요약" — 다시 내는 고친 화마다 한 칸. 글자 수는 서버처럼 앞뒤 공백을 덜고 코드 포인트로 센다. */
-function SummaryFields({
-  ordinals,
-  form,
-  errors,
-}: {
+type SummaryFieldsProps = {
   ordinals: number[];
   form: ReturnType<typeof useForm<PublishChoiceFormInput, unknown, PublishChoiceFormValues>>;
   errors: FieldErrors<PublishChoiceFormInput>;
-}) {
+};
+
+/** "변경 요약" — 다시 내는 고친 화마다 한 칸. 글자 수는 서버처럼 앞뒤 공백을 덜고 코드 포인트로 센다. */
+function SummaryFields({ ordinals, form, errors }: SummaryFieldsProps) {
   const headingId = useId();
   const summaries = useWatch({ control: form.control, name: "summaries" });
 

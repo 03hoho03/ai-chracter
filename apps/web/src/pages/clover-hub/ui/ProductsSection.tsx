@@ -60,17 +60,14 @@ export function ProductsSection({
   );
 }
 
-function ProductList({
-  products,
-  section,
-  onPick,
-  returnTo,
-}: {
+type ProductListProps = {
   products: readonly CloverProductOffer[];
   section: PurchaseSection;
   onPick: (product: CloverProductOffer) => void;
   returnTo: string | undefined;
-}) {
+};
+
+function ProductList({ products, section, onPick, returnTo }: ProductListProps) {
   if (section === "pending") return <ProductListSkeleton />;
   if (products.length === 0) {
     return (

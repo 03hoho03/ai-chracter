@@ -1,9 +1,10 @@
 """CI 용 가짜 어댑터 — 명세에서 정답 출력을 만들어 돌려주고, 일부러 틀린 출력을 섞을 수 있다. 모델을 부르지 않는다.
 
 원고 문단으로 어느 화인지 알아본다(문안은 원고 값 하나만 렌더한다). 문안 원천은 등록부의 추출 슬롯 채널을 모두 낸다 — 확정
-입구가 배정된 체인에 채널이 있는지 먼저 보므로, 슬롯이 늘어도 여기를 고치지 않고 확정이 받힌다. 출력 꼴을 아는 슬롯은 사건과
-사실이다 — 지식 슬롯이 등록부에 들어오면 그 슬롯의 출력 만들기를 여기 더하고 `slots` 가 넓어진다. 호출 기록 원소는 실제 어댑터와
-같은 칸을 갖고 모델은 단가표에 있는 id 라, 원장이 실제 호출처럼 원가를 친다."""
+입구가 배정된 체인에 채널이 있는지 먼저 보므로, 슬롯이 늘어도 여기를 고치지 않고 확정이 받힌다. 출력 꼴을 아는 슬롯은 사건·
+사실·지식이다 — 새 추출 슬롯이 등록부에 들어오면 그 슬롯의 출력 만들기를 여기 더해야 `slots` 가 넓어진다. 더하지 않으면 슬롯을
+좁히지 않은 확정(라벨용 추출)이 그 슬롯 작업에서 실패한다. 호출 기록 원소는 실제 어댑터와 같은 칸을 갖고 모델은 단가표에 있는
+id 라, 원장이 실제 호출처럼 원가를 친다."""
 
 import re
 import uuid
@@ -30,13 +31,15 @@ _NOT_IN_MANUSCRIPT = "원고에 없는 구절"
 
 @dataclass(frozen=True)
 class Faults:
-    """일부러 틀릴 곳. 화는 (소설 키, 표지) — 기본 화의 표지는 화 번호 글자, 탐침은 탐침 키. 사건·사실은 그 화 정답의 차례(0부터)."""
+    """일부러 틀릴 곳. 화는 (소설 키, 표지) — 기본 화의 표지는 화 번호 글자, 탐침은 탐침 키. 사건·사실·지식은 그 화 정답의
+    차례(0부터)."""
 
     omit: frozenset[tuple[str, str, int]] = frozenset()  # 그 사건을 내지 않는다
     misquote: frozenset[tuple[str, str, int]] = frozenset()  # 그 사건의 인용을 원고에 없는 구절로 낸다
     schema_failure: frozenset[tuple[str, str]] = frozenset()  # 그 화의 첫 호출을 스키마 불일치로 실패시킨다
     flip_immutable: frozenset[tuple[str, str, int]] = frozenset()  # 그 사실의 불변 표시를 뒤집어 낸다
     extra_fact: frozenset[tuple[str, str]] = frozenset()  # 그 화에 심지 않은 사실 하나를 더 낸다
+    swap_knower: frozenset[tuple[str, str, int]] = frozenset()  # 그 지식의 앎 주체와 명제 주어를 맞바꿔 낸다
 
 
 def _events(novel: str, label: str, chapter: ChapterSpec, faults: Faults) -> dict[str, Any]:
@@ -82,8 +85,29 @@ def _facts(novel: str, label: str, chapter: ChapterSpec, faults: Faults) -> dict
     return {"facts": facts}
 
 
+def _knowledge(novel: str, label: str, chapter: ChapterSpec, faults: Faults) -> dict[str, Any]:
+    """정답마다 첫 허용 표기로 내고 정답 문단 전체를 인용한다. 명세의 지식 정답에는 명제 주어의 종류 칸이 없어 인물로 낸다 —
+    지식 매처와 라벨 주장 키는 명제 주어의 종류를 견주지 않는다."""
+    items = []
+    for index, known in enumerate(chapter.knowledge):
+        knower, subject = known.knower, known.subject
+        if (novel, label, index) in faults.swap_knower:
+            knower, subject = subject, knower
+        items.append(
+            {
+                "knower": knower, "kind": known.kind,
+                "about": {
+                    "subject": subject, "subject_kind": "character", "kind": known.fact_kind,
+                    "attribute": known.attribute, "value": known.values[0], "holds": known.holds,
+                },
+                "quote": {"paragraph": known.paragraph, "text": chapter.paragraphs[known.paragraph - 1]},
+            }
+        )
+    return {"items": items}
+
+
 _OUTPUTS: dict[OperationKey, Callable[[str, str, ChapterSpec, Faults], dict[str, Any]]] = {
-    "events.extract": _events, "facts.extract": _facts,
+    "events.extract": _events, "facts.extract": _facts, "knowledge.extract": _knowledge,
 }
 
 

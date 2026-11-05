@@ -5,12 +5,14 @@
 일으키고 순서는 시간이 아니라 잠금 대기로 강제한다."""
 
 import asyncio
+import logging
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
 import pytest
 import pytest_asyncio
+from pydantic import BaseModel
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -37,6 +39,7 @@ from api.novel_bible.core.jobs import (
     run_next_job,
 )
 from api.novel_bible.core.keys import proposition_key
+from api.novel_bible.core import jobs as core_jobs
 from api.novel_bible.core import pipeline
 from api.novel_bible.core.pipeline import CAS_LIMIT, link_check_commit, start_linking
 from api.novel_bible.core.types import BibleSnapshot, EntityName, ItemDraft, Proposal, Proposition, VerifiedQuote
@@ -186,6 +189,51 @@ async def test_a_slot_that_exhausts_retries_fails_the_commit_but_caches_the_othe
     assert reused == {"events": jobs["events"].id, "knowledge": jobs["knowledge"].id, "facts": None}
 
 
+class _BlankManuscriptSlot(FakeSlot):
+    """원고 값이 공백뿐인 가짜 사건 슬롯 — 본문이 빈 화 개정을 흉내 낸다. 문안의 원고 섹션은 조건부가 아니다."""
+
+    def prompt_values(self, slot_input: BaseModel) -> dict[str, str]:
+        return {**super().prompt_values(slot_input), "manuscript": " \n"}
+
+
+@pytest.mark.parametrize(
+    ("slot", "logged", "not_logged"),
+    [
+        (
+            _BlankManuscriptSlot("events", "events.extract", "fake_bible_events", frozenset({"event", "event_relation"})),
+            "섹션 manuscript, 빈 값 manuscript",
+            "문안이 없다",
+        ),
+        (
+            FakeSlot("events", "events.extract", "fake_bible_missing", frozenset({"event", "event_relation"})),
+            "문안이 없다(채널 fake_bible_missing)",
+            "필수 값",
+        ),
+    ],
+    ids=["empty_required_value", "missing_channel"],
+)
+async def test_an_empty_required_value_fails_like_a_missing_prompt_but_logs_the_empty_section(
+    db_session: AsyncSession, caplog: pytest.LogCaptureFixture, slot: FakeSlot, logged: str, not_logged: str
+) -> None:
+    """빈 필수 값과 채널 없는 문안은 같은 실패 사유(`prompt_missing`, 재시도 없음, 모델 호출 없음)로 남는다 — 사유 값은 DB CHECK 가
+    묶어 늘리지 않는다. 경고 로그가 둘을 가른다: 빈 값이면 섹션과 값 이름을 적고 문안이 없다고 말하지 않는다. 깨지는 시나리오:
+    본문이 빈 화를 확정해 작업이 실패하면 운영자가 "문안이 없다" 로그를 보고 멀쩡한 문안 시드·게시를 의심한다."""
+    novel = await make_novel(db_session)
+    chapter, revision = await add_chapter(db_session, novel.id, 1, BODY)
+    registry, adapter = fake_registry(slot), FakeAdapter()
+    commit_id = await _confirm(db_session, registry, novel.id, chapter.id, revision.id)
+
+    with caplog.at_level(logging.WARNING, logger=core_jobs.__name__):
+        await _run_jobs(savepoint_factory(db_session), registry, adapter)
+
+    job = (await db_session.scalars(select(NovelBibleJob).where(NovelBibleJob.commit_id == commit_id))).one()
+    assert (job.status, job.attempts, job.failure_code) == ("failed", 1, "prompt_missing")
+    assert adapter.calls == []
+    messages = [record.getMessage() for record in caplog.records if record.name == core_jobs.__name__]
+    assert len(messages) == 1, messages
+    assert logged in messages[0] and not_logged not in messages[0], messages[0]
+
+
 async def _entity_names(db: AsyncSession, novel_id: uuid.UUID) -> dict[uuid.UUID, tuple[str, str]]:
     rows = (
         await db.execute(
@@ -218,7 +266,9 @@ async def _comparable_items(db: AsyncSession, novel_id: uuid.UUID) -> dict[str, 
 
 
 def _new_facts(snapshot: BibleSnapshot) -> tuple[uuid.UUID, ...]:
-    return tuple(fact.id for fact in snapshot.facts or () if fact.id in snapshot.new_ids)
+    """사실 칸이 비어 있으면 실패한다 — 사실 슬롯을 뺀 등록부에서 코어가 이 규칙을 건너뛰지 않으면 확정이 실패하게."""
+    assert snapshot.facts is not None, "사실 슬롯이 없는 등록부에서 사실을 읽는 규칙이 돌았다"
+    return tuple(fact.id for fact in snapshot.facts if fact.id in snapshot.new_ids)
 
 
 @pytest.mark.parametrize("dropped", ["events", "facts", "knowledge"])

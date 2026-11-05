@@ -95,6 +95,8 @@
 
 ## UI / 컴포넌트
 
+- **`&&` 조건부 렌더링의 좌변은 숫자·NaN 이 될 수 있을 때만 boolean 으로 바꾼다** — React 는 `false`·`null`·`undefined`·빈 문자열을 아무것도 그리지 않고 `0`·`NaN` 만 글자로 그리므로, 문자열·객체·함수 좌변은 그대로 두고 `ReactNode` 좌변은 실제로 숫자가 들어올 수 있을 때만 바꾼다.
+
 ### 카드 · 목록
 
 - **클릭 카드**는 바깥을 `role="button"` div(`tabIndex=0` + Enter/Space)로 만든다(`<button>` 중첩은 무효 HTML). 공용 `ContentCard`가 이 패턴이고, **`<Link>` 카드에는 focus 링을 직접 붙인다**(전역 base의 1px UA 아웃라인은 카드 위에서 3:1 미달) — `button.tsx`와 같은 문자열 + 터치의 유일한 피드백인 `active:translate-y-px`.

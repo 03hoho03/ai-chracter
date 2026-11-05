@@ -32,6 +32,7 @@ export function mockupCardHeader(listKey: StoryFieldKey, card: Record<string, un
   const name = readString(card, "name");
   const base = { title: name, placeholderTitle, summary: "", stat: null };
 
+  // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- 칸 키는 일흔 개가 넘고 머리 줄을 따로 만드는 목록은 몇 개뿐이라, 나머지는 이름 칸 제목만 쓰는 한 갈래로 받는다
   switch (listKey) {
     case "storySetting.developmentExamples":
       // 전개 예시는 이름 칸이 없어 빌더도 순번 자리표시를 제목으로, 사용자 메시지 첫 줄을 요약으로 쓴다.
