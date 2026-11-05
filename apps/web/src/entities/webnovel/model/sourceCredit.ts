@@ -50,7 +50,7 @@ export function toPublisherCredit(
   return { kind: "profile", userId: novel.publisherUserId, nickname: novel.publisherNickname };
 }
 
-/** 목록·소장 목록 행의 게시자 이름. 탈퇴했으면 "탈퇴한 사용자", 이름이 없으면 `null`(그 자리를 비운다). */
-export function toPublisherName(item: Pick<WebnovelListItem, "publisherNickname" | "publisherWithdrawn">): string | null {
-  return item.publisherWithdrawn === true ? WITHDRAWN_USER_LABEL : item.publisherNickname;
+/** 목록·소장 목록 행의 게시자 이름. 탈퇴했으면 "탈퇴한 사용자", 이름이 없으면 `undefined`(그 자리를 비운다). */
+export function toPublisherName(item: Pick<WebnovelListItem, "publisherNickname" | "publisherWithdrawn">): string | undefined {
+  return item.publisherWithdrawn === true ? WITHDRAWN_USER_LABEL : (item.publisherNickname ?? undefined);
 }

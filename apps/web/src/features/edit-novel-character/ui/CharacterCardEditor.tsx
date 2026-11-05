@@ -76,7 +76,7 @@ export function CharacterCardEditor({
     } catch (error) {
       const notice = toCharacterSaveError(error, action);
       // 재동의가 필요하면 전역 재동의 모달이 맡는다. 입력은 그대로 남아 동의 뒤 다시 저장할 수 있다.
-      if (notice === null) return "";
+      if (notice === undefined) return "";
       if (notice.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.characters(novel.id) });
       return notice.message;
     }
@@ -89,7 +89,7 @@ export function CharacterCardEditor({
       character: { id: character.id, name: character.name },
       candidates: mergeCandidates.map(({ id, name }) => ({ id, name })),
     });
-    if (intoId !== null) onMerged(intoId);
+    if (intoId !== undefined) onMerged(intoId);
   }
 
   return (

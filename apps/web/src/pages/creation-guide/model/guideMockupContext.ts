@@ -6,7 +6,7 @@ import type { GuideStep } from "./toGuidePages";
 export type GuideMockupContext = {
   mockups: StoryFieldMockups;
   /** 미디어 북 칸 상세 블록 캡션의 칸 이름(`유나 / 리딩`). */
-  mediaCellName: string | null;
+  mediaCellName: string | undefined;
   /** 칸 키의 원고 목업 값. 배치표가 같은 단계의 인물·장면 값에서 이름을 읽고, 개요가 예시 작품 이름·한줄소개를 읽는다. */
   valueOf: (key: string) => string | undefined;
 };

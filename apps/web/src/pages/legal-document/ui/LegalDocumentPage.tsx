@@ -149,7 +149,7 @@ function UpcomingFullText({ kind }: { kind: LegalDocumentKind }) {
 function ChangeHistory({ kind }: { kind: LegalDocumentKind }) {
   const headingId = useId();
   const changesQuery = useLegalChangesQuery(kind);
-  const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
+  const [expandedVersion, setExpandedVersion] = useState<string>();
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3 border-t border-border pt-6">
@@ -159,7 +159,7 @@ function ChangeHistory({ kind }: { kind: LegalDocumentKind }) {
       <ChangeHistoryList
         changesQuery={changesQuery}
         expandedVersion={expandedVersion}
-        onToggle={(version) => setExpandedVersion((previous) => (previous === version ? null : version))}
+        onToggle={(version) => setExpandedVersion((previous) => (previous === version ? undefined : version))}
       />
     </section>
   );
@@ -167,7 +167,7 @@ function ChangeHistory({ kind }: { kind: LegalDocumentKind }) {
 
 type ChangeHistoryListProps = {
   changesQuery: ReturnType<typeof useLegalChangesQuery>;
-  expandedVersion: string | null;
+  expandedVersion?: string;
   onToggle: (version: string) => void;
 };
 
@@ -225,7 +225,7 @@ function ChangeHistoryRow({ entry, isCurrent, isExpanded, onToggle }: ChangeHist
       </button>
       {isExpanded && (
         <div id={panelId} className="pt-1 pb-4">
-          {entry.notice === null ? (
+          {entry.notice === undefined ? (
             <p className="text-sm text-muted-foreground">이 판은 변경 안내가 없습니다.</p>
           ) : (
             <Markdown content={entry.notice} />

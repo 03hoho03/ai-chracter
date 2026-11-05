@@ -57,7 +57,7 @@ function takenNameOf(error: unknown): string | undefined {
 
 /** 인물 저장 실패의 문장. 이름·별칭이 다른 카드와 겹치면 서버가 겹친 값을 함께 주므로 그 이름으로 말한다 — 어느
  * 이름이 걸렸는지 알아야 합치기를 고를지 이름을 바꿀지 정할 수 있다. 그 밖은 소설 공통 문장이다. */
-export function toCharacterSaveError(error: unknown, action: NovelAction): NovelActionErrorNotice | null {
+export function toCharacterSaveError(error: unknown, action: NovelAction): NovelActionErrorNotice | undefined {
   if (hasNovelErrorCode(error, "NOVEL_CHARACTER_NAME_TAKEN")) {
     const taken = takenNameOf(error);
     if (taken !== undefined) {

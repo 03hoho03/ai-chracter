@@ -19,7 +19,7 @@ function application(status: CreatorPayoutApplication["status"]): CreatorPayoutA
 describe("getApplicationView", () => {
   it("신청한 적이 없고 조건을 다 갖췄으면 신청할 수 있다", () => {
     const view = getApplicationView({ application: null, eligibility: ELIGIBLE });
-    expect(view).toMatchObject({ kind: "open", previous: null, canApply: true });
+    expect(view).toMatchObject({ kind: "open", previous: undefined, canApply: true });
   });
 
   it("대기 중이면 검토 중이다", () => {

@@ -25,12 +25,12 @@ export type BuilderPreviewProps<TFieldValues extends FieldValues> = {
   contentType: ContentType;
   /** `kind === "card"`에서만 쓰인다. 폼이 지금 가진 대표 이미지의 표시 주소로, 빌더 셸이 정해 대표 이미지 칸과
    * 같은 값을 넘긴다 — 폼 값엔 `{assetId}`뿐이라 URL은 항상 인자로 받는다. */
-  thumbnailUrl: string | null;
+  thumbnailUrl: string | undefined;
   /** `kind === "card"`에서만 쓰인다. `features/build-story`·`features/build-character`가 이미
    * 만들어 둔 순수 변환 함수를 그대로 주입받는다 — 이 위젯은 스토리/캐릭터를 구분하지 않는다. */
   formToCard: (
     values: TFieldValues,
-    ctx: { thumbnailUrl: string | null; authorNickname: string },
+    ctx: { thumbnailUrl: string | undefined; authorNickname: string },
   ) => ContentCardProps;
 };
 

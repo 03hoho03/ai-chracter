@@ -49,7 +49,7 @@ export const ProtagonistNameModal = createCallable<ProtagonistNameModalProps, bo
     } catch (error) {
       const notice = toNovelActionError(error, "protagonistName");
       // 재동의가 필요하면 전역 재동의 모달이 뜬다 — 그 위에 이 모달을 남겨 두지 않는다.
-      if (notice === null) {
+      if (notice === undefined) {
         call.end(false);
         return;
       }

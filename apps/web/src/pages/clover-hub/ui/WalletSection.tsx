@@ -26,7 +26,7 @@ type DeployedBalanceResponse = Omit<CloverBalanceResponse, "breakdown"> & Partia
 type WalletSectionProps = {
   view: WalletView<DeployedBalanceResponse>;
   /** 구매 확인 창이나 결제창 복귀가 끝낸 결과. 새로고침하면 사라진다(복귀 쿼리는 이미 지웠다). */
-  settled: SettledPurchase | null;
+  settled: SettledPurchase | undefined;
   /** 상품 행 갈래. 비로그인 로그인 버튼이 충전을 약속해도 되는지 가른다(`getGuestLoginLabel`). */
   section: PurchaseSection | undefined;
   /** "확인 중"으로 끝난 뒤 잔액이 늘었는가(`isCheckingResolved`). 늘었으면 그 안내를 반영됐다는 문장으로 바꾼다. */

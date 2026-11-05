@@ -198,7 +198,7 @@ function ApplyForm({ onApplying }: { onApplying: (isApplying: boolean) => void }
   const fieldId = useId();
   const [hasAgreed, setHasAgreed] = useState(false);
   const [shouldShowAgreeError, setShouldShowAgreeError] = useState(false);
-  const [result, setResult] = useState<Exclude<ApplyResult, "applied" | "reconsentRequired"> | null>(null);
+  const [result, setResult] = useState<Exclude<ApplyResult, "applied" | "reconsentRequired">>();
   const mutation = useApplyCreatorPayoutMutation();
   const agreeErrorId = `${fieldId}-agree-error`;
 
@@ -208,7 +208,7 @@ function ApplyForm({ onApplying }: { onApplying: (isApplying: boolean) => void }
       setShouldShowAgreeError(true);
       return;
     }
-    setResult(null);
+    setResult(undefined);
     onApplying(true);
     try {
       await mutation.mutateAsync();

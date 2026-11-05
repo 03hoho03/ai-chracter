@@ -36,19 +36,19 @@ export type GuideItem = { kind: "markdown"; source: string } | { kind: "example"
 
 export type FieldValue = { key: string; source: ExampleSource; body: string; line: number };
 
-export type FieldBadPart = { title: string; prose: GuideItem[]; values: FieldValue[]; good: FieldValue | null };
+export type FieldBadPart = { title: string; prose: GuideItem[]; values: FieldValue[]; good?: FieldValue };
 
 export type GuideFieldBlock = {
   kind: "field";
   /** 블록 앵커 id. 첫 칸 키 원문이다(`*`·`.`·`$` 는 HTML id 와 URL 조각에서 그대로 쓸 수 있다). */
   id: string;
   keys: string[];
-  title: string | null;
+  title: string | undefined;
   line: number;
   intro: GuideItem[];
   /** `keys` 순서. */
   values: FieldValue[];
-  details: GuideItem[] | null;
+  details: GuideItem[] | undefined;
   bad: FieldBadPart[];
 };
 
@@ -58,7 +58,7 @@ export type GuideNoteBlock = {
   title: string;
   line: number;
   intro: GuideItem[];
-  details: GuideItem[] | null;
+  details: GuideItem[] | undefined;
 };
 
 export type SectionContent = GuideItem | GuideFieldBlock | GuideNoteBlock;
@@ -67,7 +67,7 @@ export type ManuscriptSection = {
   id: string;
   title: string;
   line: number;
-  summary: string | null;
+  summary: string | undefined;
   content: SectionContent[];
 };
 
@@ -102,7 +102,7 @@ type Fence =
 type Directive =
   | { kind: "heading"; title: string; id: string }
   | { kind: "summary"; text: string }
-  | { kind: "field"; keys: string[]; title: string | null }
+  | { kind: "field"; keys: string[]; title: string | undefined }
   | { kind: "note"; title: string; id: string }
   | { kind: "details" }
   | { kind: "bad"; title: string }
@@ -220,12 +220,12 @@ export function parseManuscript(markdown: string): Manuscript {
 
     switch (directive.kind) {
       case "heading":
-        section = { id: directive.id, title: directive.title, line: index + 1, summary: null, content: [] };
+        section = { id: directive.id, title: directive.title, line: index + 1, summary: undefined, content: [] };
         sections.push(section);
         break;
       case "summary":
         if (!section) fail(index, "첫 절 제목 앞에 내용이 있다");
-        if (section.summary !== null || section.content.length > 0) {
+        if (section.summary !== undefined || section.content.length > 0) {
           fail(index, "요약 표기는 절 제목 바로 다음에 한 번만 쓴다");
         }
         section.summary = directive.text;
@@ -242,7 +242,7 @@ export function parseManuscript(markdown: string): Manuscript {
           line: index + 1,
           intro: [],
           values: [],
-          details: null,
+          details: undefined,
           bad: [],
         };
         section.content.push(block);
@@ -257,7 +257,7 @@ export function parseManuscript(markdown: string): Manuscript {
           title: directive.title,
           line: index + 1,
           intro: [],
-          details: null,
+          details: undefined,
         };
         section.content.push(block);
         open = { kind: "note", block, part: "main" };
@@ -271,7 +271,7 @@ export function parseManuscript(markdown: string): Manuscript {
         break;
       case "bad":
         if (open?.kind !== "field") fail(index, "나쁜 예는 칸 블록 안에만 쓴다");
-        open.block.bad.push({ title: directive.title, prose: [], values: [], good: null });
+        open.block.bad.push({ title: directive.title, prose: [], values: [], good: undefined });
         open.part = "bad";
         break;
       case "close":
@@ -354,7 +354,7 @@ function readDirective(line: string, onUnknown: () => never): Directive | undefi
   const summary = SUMMARY_LINE.exec(line);
   if (summary) return { kind: "summary", text: summary[1] ?? "" };
   const field = FIELD_LINE.exec(line);
-  if (field) return { kind: "field", keys: (field[1] ?? "").split(" "), title: field[2] ?? null };
+  if (field) return { kind: "field", keys: (field[1] ?? "").split(" "), title: field[2] };
   const note = NOTE_LINE.exec(line);
   if (note) return { kind: "note", title: note[1] ?? "", id: note[2] ?? "" };
   if (DETAILS_LINE.test(line)) return { kind: "details" };

@@ -97,7 +97,7 @@ export function StartPersonaRow({ personaList, startPersona, onSelect }: StartPe
                   value={startPersona.id}
                   // 지금 것을 다시 눌러도 닫는다 — 고른 것을 확인하는 동작으로 읽는다.
                   onValueChange={(personaId) => {
-                    if (personaId !== null) selectAndClose(personaId);
+                    if (personaId !== undefined) selectAndClose(personaId);
                   }}
                   shouldIncludeNone={false}
                   aria-label="이번 대화의 대화 프로필"

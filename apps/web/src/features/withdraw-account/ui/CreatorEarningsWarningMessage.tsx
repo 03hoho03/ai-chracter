@@ -103,12 +103,12 @@ function payoutActionSentence(action: WithdrawalPayoutAction): string | null {
 /** 최소 지급액 미만 잔액의 탈퇴 전 신청. 성공하면 정산 요약을 다시 읽어 이 버튼이 "처리 중" 문장으로 바뀐다 — 떼는
  * 세금은 이 응답에만 있어 알림으로 말한다. 진행 중에는 `disabled` 대신 `aria-disabled` 로 막는다(누른 버튼의 포커스). */
 function WithdrawalPayoutRequestButton({ balanceKrw }: { balanceKrw: number }) {
-  const [failure, setFailure] = useState<Exclude<RequestPayoutFailure, "reconsentRequired"> | null>(null);
+  const [failure, setFailure] = useState<Exclude<RequestPayoutFailure, "reconsentRequired">>();
   const mutation = useRequestCreatorPayoutMutation();
 
   const handleRequest = async () => {
     if (mutation.isPending) return;
-    setFailure(null);
+    setFailure(undefined);
     try {
       const result = await mutation.mutateAsync({ forWithdrawal: true });
       toast.success(

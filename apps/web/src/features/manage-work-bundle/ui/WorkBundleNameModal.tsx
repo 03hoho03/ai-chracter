@@ -63,7 +63,7 @@ export const WorkBundleNameModal = createCallable<WorkBundleNameModalProps, stri
       }
     } catch (error) {
       const notice = toWorkBundleActionError(error, props.mode);
-      if (notice === null) {
+      if (notice === undefined) {
         call.end(null);
         return;
       }

@@ -136,7 +136,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      AiEditInstructionModal.end(null);
+      AiEditInstructionModal.end(undefined);
     };
   }, []);
 
@@ -211,7 +211,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
    * 있다는 뜻이다. */
   function handleRequestError(error: unknown, action: NovelAction): boolean {
     const result = toNovelActionError(error, action);
-    if (result === null) return false;
+    if (result === undefined) return false;
     report({ type: "rejected", message: result.message });
     // 여러 문단 수정 스위치가 꺼졌다 — 가격을 다시 받아 고르기를 거둔다.
     if (hasNovelErrorCode(error, "NOVEL_MULTI_BLOCK_EDIT_DISABLED")) {
@@ -242,7 +242,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
         maxLength: novel.limits.aiEditInstructionMaxLength,
         defaultInstruction: lastInstruction,
       });
-      if (instruction === null || !isMountedRef.current) return false;
+      if (instruction === undefined || !isMountedRef.current) return false;
       setLastInstruction(instruction);
       const cost = novel.prices.aiEdit;
       const isConfirmed = await confirmSpend({
@@ -288,7 +288,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
         maxLength: novel.limits.aiEditInstructionMaxLength,
         defaultInstruction: lastInstruction,
       });
-      if (instruction === null || !isMountedRef.current) return false;
+      if (instruction === undefined || !isMountedRef.current) return false;
       setLastInstruction(instruction);
       const cost = novel.prices.aiEdit;
       const isConfirmed = await confirmSpend({

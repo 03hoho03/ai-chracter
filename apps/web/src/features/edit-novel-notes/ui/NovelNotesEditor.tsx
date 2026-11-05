@@ -66,7 +66,7 @@ export function NovelNotesEditor({ novel, headingRef, onDraftDirtyChange }: Nove
     } catch (error) {
       const notice = toNovelActionError(error, "notes");
       // 재동의가 필요하면 전역 재동의 모달이 맡는다. 쓴 글은 그대로 남아 동의 뒤 다시 저장할 수 있다.
-      if (notice === null) return;
+      if (notice === undefined) return;
       setResult({ tone: "error", message: notice.message });
       // 소설이 지워졌거나 허용이 회수된 실패는 상세를 다시 받아야 화면이 「찾을 수 없어요」·잠김 화면으로 넘어간다.
       if (notice.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
@@ -175,8 +175,8 @@ export function NovelNotesEditor({ novel, headingRef, onDraftDirtyChange }: Nove
 }
 
 /** 저장 버튼 옆 한 줄. 저장하지 않은 변경이 먼저다(방금 저장했어도 그 뒤에 또 고쳤으면 그쪽이 지금 사실이다). */
-function toSaveStatus(isDirty: boolean, result: { tone: "error" | "done"; message: string } | undefined): string | null {
+function toSaveStatus(isDirty: boolean, result: { tone: "error" | "done"; message: string } | undefined): string | undefined {
   if (isDirty) return "저장하지 않은 변경이 있어요.";
   if (result?.tone === "done") return result.message;
-  return null;
+  return undefined;
 }

@@ -313,14 +313,14 @@ describe.each(BLOCK_TOPICS)("%s field blocks", (_id, topic: GuideTopic, manuscri
         block.kind === "note"
           ? [{ title: block.title, max: 16 }]
           : [
-              ...(block.title === null ? [] : [{ title: block.title, max: 16 }]),
+              ...(block.title === undefined ? [] : [{ title: block.title, max: 16 }]),
               ...block.bad.map((part) => ({ title: part.title, max: 12 })),
             ];
       const problems = titles.flatMap(({ title, max }) =>
         [...title].length > max || /[*`]/.test(title) || labels.has(title) ? [`${block.id}: "${title}"`] : [],
       );
       // 제목 없는 여러 키 블록은 첫 키가 나머지 키의 목록이어야 h2(첫 키 라벨)가 블록 전체를 말한다.
-      if (block.kind === "field" && block.title === null && block.keys.length > 1) {
+      if (block.kind === "field" && block.title === undefined && block.keys.length > 1) {
         const [listKey, ...cardKeys] = block.keys;
         if (!cardKeys.every((key) => key.startsWith(`${listKey}.*.`))) problems.push(`${block.id}: 여러 키 블록에 제목이 없다`);
       }
@@ -400,7 +400,7 @@ describe.each(BLOCK_TOPICS)("%s field blocks", (_id, topic: GuideTopic, manuscri
     expect(grid.cells.every(inRange)).toBe(true);
     expect(new Set(cellIds).size).toBe(cellIds.length);
     expect(cellIds).toContain(`${grid.selected.person}/${grid.selected.scene}`);
-    expect(mediaCellName).not.toBeNull();
+    expect(mediaCellName).toBeDefined();
   });
 });
 

@@ -40,12 +40,12 @@ type AiEditInstructionModalProps = {
   defaultInstruction: string;
 };
 
-/** AI 수정 지시를 받는다. 돌려주는 값은 지시 문자열이고, 그만두면 `null` 이다. 금액 확인과 요청은 호출부가 이어
+/** AI 수정 지시를 받는다. 돌려주는 값은 지시 문자열이고, 그만두면 `undefined` 다. 금액 확인과 요청은 호출부가 이어
  * 한다 — 이 모달은 아직 아무것도 쓰지 않는다.
  *
  * 고른 문단이 길 수 있어 본문(`DialogBody`)만 스크롤하고 제목·버튼은 제자리에 둔다. 입력칸은 프리미티브대로
  * 16px 글자다(iOS 가 그보다 작은 입력칸에 포커스하면 화면을 확대한다). 버튼은 `취소` 먼저다. */
-export const AiEditInstructionModal = createCallable<AiEditInstructionModalProps, string | null>(
+export const AiEditInstructionModal = createCallable<AiEditInstructionModalProps, string | undefined>(
   ({ call, rangeLabel, paragraphs, paragraphLabels, hasKindChips = false, maxLength, defaultInstruction }) => {
     const fieldId = useId();
     const chipsLabelId = useId();
@@ -60,7 +60,7 @@ export const AiEditInstructionModal = createCallable<AiEditInstructionModalProps
       .join(" ");
 
     return (
-      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(null)}>
+      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(undefined)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>AI로 고치기</DialogTitle>
@@ -140,7 +140,7 @@ export const AiEditInstructionModal = createCallable<AiEditInstructionModalProps
             </DialogBody>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => call.end(null)}>
+              <Button type="button" variant="outline" onClick={() => call.end(undefined)}>
                 취소
               </Button>
               <Button type="submit">다음</Button>

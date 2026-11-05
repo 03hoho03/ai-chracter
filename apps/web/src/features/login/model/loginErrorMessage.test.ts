@@ -30,7 +30,7 @@ describe("getLoginErrorMessage", () => {
   );
 
   it.each(CANCELLED_CODES)("%s 는 사용자가 스스로 취소한 것이라 배너를 띄우지 않는다", (code) => {
-    expect(getLoginErrorMessage(code)).toBeNull();
+    expect(getLoginErrorMessage(code)).toBeUndefined();
   });
 
   it("목록 밖 코드는 일반 오류 문구로 떨어진다", () => {

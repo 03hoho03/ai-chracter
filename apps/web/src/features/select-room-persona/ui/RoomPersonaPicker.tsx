@@ -16,11 +16,11 @@ type RoomPersonaPickerProps = {
  * 같은 동작 한 번이고 내가 보낸 메시지는 바뀌지 않기 때문이다(작품 글 속 이름은 바로, 캐릭터는 다음 턴부터 반영). */
 export function RoomPersonaPicker({ roomId, currentPersonaId, personaList, onChanged }: RoomPersonaPickerProps) {
   const setRoomPersonaMutation = useSetRoomPersonaMutation(roomId);
-  const selectedPersonaId = currentPersonaId ?? null;
 
-  function handleValueChange(personaId: string | null) {
-    if (personaId === selectedPersonaId || setRoomPersonaMutation.isPending) return;
-    setRoomPersonaMutation.mutate(personaId, {
+  function handleValueChange(personaId: string | undefined) {
+    if (personaId === currentPersonaId || setRoomPersonaMutation.isPending) return;
+    // 서버는 "선택 안 함"을 null 로 받는다 — undefined 는 JSON 본문에서 키째 빠진다.
+    setRoomPersonaMutation.mutate(personaId ?? null, {
       onSuccess: () => {
         toast.success("대화 프로필을 바꿨어요. 캐릭터는 다음 대화부터 알아요.");
         onChanged();
@@ -32,7 +32,7 @@ export function RoomPersonaPicker({ roomId, currentPersonaId, personaList, onCha
   return (
     <PersonaToggleList
       personaList={personaList}
-      value={selectedPersonaId}
+      value={currentPersonaId}
       onValueChange={handleValueChange}
       shouldIncludeNone
       aria-label="이 대화방의 대화 프로필"

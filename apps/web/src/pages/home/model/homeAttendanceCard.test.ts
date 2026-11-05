@@ -115,6 +115,6 @@ describe("toHomeAttendanceCard", () => {
 
   // 판을 못 받아도 출석판으로 가는 링크는 산다.
   it("판이 없으면 보조 문장과 점 없이 카드만 보인다", () => {
-    expect(toHomeAttendanceCard({ ...base, board: undefined })).toEqual({ kind: "shown", detail: null, shouldShowDot: false });
+    expect(toHomeAttendanceCard({ ...base, board: undefined })).toEqual({ kind: "shown", detail: undefined, shouldShowDot: false });
   });
 });

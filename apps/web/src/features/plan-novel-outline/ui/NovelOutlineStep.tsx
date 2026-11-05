@@ -239,7 +239,7 @@ function OutlineEditor({
   function handleError(error: unknown, action: NovelAction, labelled: readonly { key: string | null; ordinal: number }[] = []) {
     const tooLong = toTooLongApprovalMessage(error, labelled);
     const actionError = toNovelActionError(error, action);
-    const result = tooLong === undefined || actionError === null ? actionError : { ...actionError, message: tooLong };
+    const result = tooLong === undefined || actionError === undefined ? actionError : { ...actionError, message: tooLong };
     const recovery = toOutlineRecovery(error);
     if (recovery.shouldResetEdits) {
       setEdits(undefined);
@@ -252,11 +252,11 @@ function OutlineEditor({
     }
     if (recovery.shouldRefetchPricing) {
       // 가격을 다시 받으면 구성 화면이 거둬져 이 안내도 함께 사라진다 — 화면 밖에 남는 알림으로 말한다.
-      if (result !== null) toast(result.message);
+      if (result !== undefined) toast(result.message);
       void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
       return;
     }
-    if (result === null) return;
+    if (result === undefined) return;
     setNotice({ tone: "error", message: result.message });
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
   }

@@ -156,10 +156,10 @@ function toChosenSentence(indexes: readonly number[]): string {
 }
 
 /** 고른 문단이 이어져 있으면 그 범위 — 직접 고치기·그림 붙이기는 이어진 문단에만 된다. */
-export function toContiguousRange(indexes: readonly number[]): ParagraphRange | null {
+export function toContiguousRange(indexes: readonly number[]): ParagraphRange | undefined {
   const start = indexes[0];
   const end = indexes.at(-1);
-  if (start === undefined || end === undefined || end - start + 1 !== indexes.length) return null;
+  if (start === undefined || end === undefined || end - start + 1 !== indexes.length) return undefined;
   return { start, end };
 }
 

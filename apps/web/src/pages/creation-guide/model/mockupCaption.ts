@@ -16,7 +16,7 @@ const MEDIA_CELL_KEY_PREFIX = "mediaBook.cells.*.";
 export function mockupCaption(
   block: Pick<GuideFieldBlock, "keys">,
   mockups: StoryFieldMockups,
-  mediaCellName: string | null,
+  mediaCellName: string | undefined,
 ): string {
   const [firstKey] = block.keys;
   const timing = blockReadTiming(block, mockups);
@@ -25,18 +25,18 @@ export function mockupCaption(
 }
 
 /** 블록 키 가운데 AI가 읽는 때가 정해진 키들의 값. 둘 이상 섞이면 캡션 하나로 말할 수 없어 던진다. */
-export function blockReadTiming(block: Pick<GuideFieldBlock, "keys">, mockups: StoryFieldMockups): ReadTimingId | null {
+export function blockReadTiming(block: Pick<GuideFieldBlock, "keys">, mockups: StoryFieldMockups): ReadTimingId | undefined {
   const timings = new Set(
     block.keys.flatMap((key) => {
-      const timing = isStoryFieldKey(key) ? mockups[key].readTiming : null;
+      const timing = isStoryFieldKey(key) ? mockups[key].readTiming : undefined;
       return timing ? [timing] : [];
     }),
   );
   if (timings.size > 1) throw new Error(`한 블록에 AI가 읽는 때가 둘 이상이다: ${block.keys.join(", ")}`);
-  return [...timings][0] ?? null;
+  return [...timings][0];
 }
 
-function positionOf(key: string, mediaCellName: string | null): string {
+function positionOf(key: string, mediaCellName: string | undefined): string {
   if (key.startsWith(MEDIA_CELL_KEY_PREFIX) && mediaCellName) return `${mediaCellName} 칸`;
   const lastStar = key.lastIndexOf(".*");
   if (lastStar === -1) return "예시 작품 입력";
@@ -46,9 +46,9 @@ function positionOf(key: string, mediaCellName: string | null): string {
 
 /**
  * 미디어 북 단계의 배치표 값에서 고른 칸의 이름(`유나 / 리딩`)을 만든다. 인물·장면 이름은 같은 단계의 인물·장면 칸
- * 값에서 읽는다 — 배치표 값에는 위치 번호만 있어 이름 사본이 생기지 않는다. 미디어 북 블록이 없으면 null.
+ * 값에서 읽는다 — 배치표 값에는 위치 번호만 있어 이름 사본이 생기지 않는다. 미디어 북 블록이 없으면 undefined.
  */
-export function selectedMediaCellName(steps: readonly GuideStep[]): string | null {
+export function selectedMediaCellName(steps: readonly GuideStep[]): string | undefined {
   const values = new Map(
     steps.flatMap((step) =>
       step.content.flatMap((item) => (item.kind === "field" ? item.values.map((value) => [value.key, value.body] as const) : [])),
@@ -57,12 +57,12 @@ export function selectedMediaCellName(steps: readonly GuideStep[]): string | nul
   const people = values.get("mediaBook.people");
   const scenes = values.get("mediaBook.scenes");
   const grid = values.get("mediaBook.cells");
-  if (people === undefined || scenes === undefined || grid === undefined) return null;
+  if (people === undefined || scenes === undefined || grid === undefined) return undefined;
 
   const peopleValue = parseMockupValue("chips", people);
   const scenesValue = parseMockupValue("chips", scenes);
   const gridValue = parseMockupValue("mediaGrid", grid);
-  if (peopleValue.kind !== "chips" || scenesValue.kind !== "chips" || gridValue.kind !== "mediaGrid") return null;
+  if (peopleValue.kind !== "chips" || scenesValue.kind !== "chips" || gridValue.kind !== "mediaGrid") return undefined;
   const person = peopleValue.items[gridValue.selected.person];
   const scene = scenesValue.items[gridValue.selected.scene];
   if (person === undefined || scene === undefined) throw new Error("배치표의 고른 칸이 인물·장면 목록 밖이다");

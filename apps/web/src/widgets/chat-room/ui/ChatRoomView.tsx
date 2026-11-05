@@ -126,7 +126,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     // 되살리는 규칙과 같다. 거절 시점의 입력은 렌더 클로저가 아니라 ref 로 읽는다(요청이 도는 사이 쓴 글이 있다).
     (rejectedText) => {
       const restored = restoreRejectedIntoInput(latestTextRef.current, rejectedText);
-      if (restored === null) return;
+      if (restored === undefined) return;
       clearRejectedChatMessage(roomId);
       setText(restored);
       // 이 순간은 아직 보내는 중이라 입력창이 비활성이다 — 포커스는 보내기가 끝나 다시 그려진 뒤 옮긴다(아래 effect).

@@ -41,7 +41,7 @@ export function returnLinkLabel(returnTo: string): string {
  * 성공하면 결과 블록의 솔리드 버튼 하나로 바꾼다 — 같은 목적지를 두 자리에 두지 않고, 이 화면의 솔리드 채움은 성공 뒤의
  * 이 버튼 하나뿐이다. */
 export function getReturnPlacement(
-  result: SettledPurchase["result"] | null,
+  result: SettledPurchase["result"] | undefined,
   returnTo: string | undefined,
 ): { head: boolean; solid: boolean } {
   if (returnTo === undefined) return { head: false, solid: false };

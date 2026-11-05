@@ -203,7 +203,7 @@ describe.each(BLOCK_CASES.map((entry) => [`${entry.topic.id} ${entry.block.id}`,
       const free = block.values.flatMap((value) =>
         value.source.kind === "free" &&
         isStoryFieldKey(value.key) &&
-        mockups[value.key].seedPath !== null &&
+        mockups[value.key].seedPath !== undefined &&
         !FREE_VALUE_ALLOWLIST.has(value.key)
           ? [value.key]
           : [],

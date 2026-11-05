@@ -10,11 +10,11 @@ type CreatorPayoutStatement = components["schemas"]["CreatorPayoutStatementView"
  * 달은 문자열에서 바로 읽는다 — `new Date("2026-11-01")` 은 UTC 자정이라 UTC 보다 서쪽 시간대에서 전날(10월)이 된다. */
 export function formatStatementPeriod(statement: Pick<CreatorPayoutStatement, "kind" | "periodMonth" | "windowStart" | "windowEnd">): {
   title: string;
-  range: string | null;
+  range: string | undefined;
 } {
   if (statement.kind === "monthly" && statement.periodMonth) {
     const [year, month] = statement.periodMonth.split("-");
-    return { title: `${year}년 ${Number(month)}월`, range: null };
+    return { title: `${year}년 ${Number(month)}월`, range: undefined };
   }
   return {
     title: "승인 때 소급 정산",

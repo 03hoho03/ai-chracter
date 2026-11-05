@@ -18,10 +18,10 @@ type NovelPermissionPickerProps = {
   describedBy?: string;
   /** 발행이 이 칸 때문에 막혔는가. */
   invalid?: boolean;
-  /** 크리에이터 정산 적립 비율 표기(`"5%"`). 있으면 목록 아래에 적립 안내를 붙이고, `null` 이면(정산이 닫혔거나 비율을
+  /** 크리에이터 정산 적립 비율 표기(`"5%"`). 있으면 목록 아래에 적립 안내를 붙이고, `undefined` 면(정산이 닫혔거나 비율을
    * 아직 못 받았거나 조회가 실패했다) 숨긴다 — 숫자를 지어내지 않는다. 빠뜨리면 한 자리에서만 안내가 사라지므로 선택값으로
    * 두지 않는다. */
-  earningRate: string | null;
+  earningRate: string | undefined;
   ref?: Ref<HTMLDivElement>;
 } & (
   | {

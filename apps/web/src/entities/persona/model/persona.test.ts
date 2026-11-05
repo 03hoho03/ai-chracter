@@ -23,7 +23,7 @@ describe("defaultPersonaName", () => {
     ["no list yet", undefined],
     ["no default profile", listWith(null)],
     ["a default id missing from the list", listWith("gone")],
-  ] as const)("is null with %s", (_label, list) => {
-    expect(defaultPersonaName(list)).toBeNull();
+  ] as const)("is undefined with %s", (_label, list) => {
+    expect(defaultPersonaName(list)).toBeUndefined();
   });
 });

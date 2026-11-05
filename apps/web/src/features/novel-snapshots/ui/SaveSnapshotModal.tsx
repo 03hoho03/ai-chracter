@@ -33,11 +33,11 @@ type SaveSnapshotModalProps = {
 };
 
 /** 지금 상태를 이름 붙여 남긴다. 저장까지 이 모달이 한다(호출부마다 뒤처리가 같다 — 버전 목록이 다시 받아진다).
- * 저장한 버전을 돌려주고, 그만두면 `null` 이다.
+ * 저장한 버전을 돌려주고, 그만두면 `undefined` 다.
  *
  * 이름 붙인 버전만으로 상한이 차 있으면 서버가 거부한다 — 그 이유와 할 일(하나 지운 뒤 다시)을 입력칸 아래에 남기고
  * 모달은 닫지 않는다. 쓴 이름은 그대로라 지운 뒤 같은 이름으로 다시 저장할 수 있다. */
-export const SaveSnapshotModal = createCallable<SaveSnapshotModalProps, NovelSnapshotSummary | null>(
+export const SaveSnapshotModal = createCallable<SaveSnapshotModalProps, NovelSnapshotSummary | undefined>(
   ({ call, novelId, maxLength, defaultName }) => {
     const queryClient = useQueryClient();
     const inputId = useId();
@@ -58,8 +58,8 @@ export const SaveSnapshotModal = createCallable<SaveSnapshotModalProps, NovelSna
       } catch (error) {
         const notice = toNovelActionError(error, "saveSnapshot");
         // 재동의가 필요하면 전역 재동의 모달이 뜬다 — 그 위에 이 모달을 남겨 두지 않는다.
-        if (notice === null) {
-          call.end(null);
+        if (notice === undefined) {
+          call.end(undefined);
           return;
         }
         setSaveError(notice.message);
@@ -68,7 +68,7 @@ export const SaveSnapshotModal = createCallable<SaveSnapshotModalProps, NovelSna
     }
 
     return (
-      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(null)}>
+      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(undefined)}>
         <DialogContent className="sm:max-w-sm">
           <form
             noValidate
@@ -104,7 +104,7 @@ export const SaveSnapshotModal = createCallable<SaveSnapshotModalProps, NovelSna
               )}
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => call.end(null)}>
+              <Button type="button" variant="outline" onClick={() => call.end(undefined)}>
                 취소
               </Button>
               <Button type="submit" aria-disabled={isSaving} className="aria-disabled:opacity-65">

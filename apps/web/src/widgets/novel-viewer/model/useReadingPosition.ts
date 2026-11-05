@@ -1,5 +1,5 @@
 import { useRouterState } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { toRestoreParagraphIndex, type SavedReadingPosition } from "../lib/toRestoreParagraphIndex";
 import type { ReadingPositionStore, ViewerReadingPosition } from "./viewerSource";
@@ -123,8 +123,8 @@ export function useReadingPosition({ store, paragraphCount }: UseReadingPosition
     return pending === undefined ? Promise.resolve() : store.sendKeepalive(pending);
   }
 
-  useEffect(() => {
-    if (!hasRouteSettled) return;
+  // 저장된 자리·다 읽음·저장소는 이때(라우터가 이동을 끝낸 순간)의 값을 쓰고, 뒤 렌더에서 바뀌어도 다시 돌지 않는다.
+  const startSaving = useEffectEvent(() => {
     // 문단이 없는 화는 잴 것도 보낼 것도 없다(`record` 와 같은 이유).
     if (paragraphCount === 0) return;
 
@@ -151,6 +151,10 @@ export function useReadingPosition({ store, paragraphCount }: UseReadingPosition
       window.removeEventListener("pagehide", handlePageHide);
       store.onLeave(lastRecordedRef.current, Promise.all([inflightRef.current, flushKeepalive()]));
     };
+  });
+  useEffect(() => {
+    if (!hasRouteSettled) return;
+    return startSaving();
     // 화·개정이 바뀌면 읽기 화면이 새로 마운트된다(호출부가 화 id 로 key 를 준다). 저장된 자리는 열 때 한 번만 쓴다 —
     // 라우터가 이동을 끝낸 순간 한 번 돈다(`hasRouteSettled` 는 한 번 참이면 바뀌지 않는다).
   }, [hasRouteSettled]);
@@ -180,6 +184,8 @@ export function useReadingPosition({ store, paragraphCount }: UseReadingPosition
         record();
       },
     }),
+    // `record` 가 읽는 문단 수와 저장소는 화를 연 동안 같은 화·개정을 가리킨다(위와 같은 이유).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `record` 는 렌더마다 새 함수라 넣으면 이 객체가 렌더마다 새로 생겨 위 약속이 깨진다
     [hasRouteSettled, restoredIndex, openingBasis],
   );
 }

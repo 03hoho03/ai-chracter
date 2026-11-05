@@ -83,8 +83,8 @@ describe("toPublisherName", () => {
     expect(WITHDRAWN_USER_LABEL).toBe("탈퇴한 사용자");
   });
 
-  it("아니면 닉네임 그대로(없으면 null)", () => {
+  it("아니면 닉네임 그대로(없으면 undefined)", () => {
     expect(toPublisherName({ publisherNickname: "하루", publisherWithdrawn: false })).toBe("하루");
-    expect(toPublisherName({ publisherNickname: null, publisherWithdrawn: false })).toBeNull();
+    expect(toPublisherName({ publisherNickname: null, publisherWithdrawn: false })).toBeUndefined();
   });
 });

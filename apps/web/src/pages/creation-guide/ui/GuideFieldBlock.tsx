@@ -47,7 +47,7 @@ export function GuideFieldBlock({ block, context }: GuideFieldBlockProps) {
   const listKey = isStoryFieldKey(firstKey) && context.mockups[firstKey].kind === "cardList" ? firstKey : null;
   const cardFieldValues = listKey ? block.values.filter((value) => value.key.startsWith(`${listKey}.*.`)) : [];
   const mainValues = block.values.filter((value) => !cardFieldValues.includes(value));
-  const hasDetails = block.details !== null || cardFieldValues.length > 0;
+  const hasDetails = block.details !== undefined || cardFieldValues.length > 0;
 
   return (
     <section id={block.id} aria-labelledby={headingId} className={SECTION_CLASS}>

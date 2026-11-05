@@ -246,7 +246,7 @@ function useRemoveFromBundleWithUndo(bundleId: string | undefined, onRemoved: (r
                       onSuccess: () => toast.success("다시 넣었어요."),
                       onError: (error) => {
                         const notice = toWorkBundleActionError(error, "addItem");
-                        if (notice !== null) toast.error(notice.message);
+                        if (notice !== undefined) toast.error(notice.message);
                       },
                     },
                   )
@@ -257,7 +257,7 @@ function useRemoveFromBundleWithUndo(bundleId: string | undefined, onRemoved: (r
         },
         onError: (error) => {
           const notice = toWorkBundleActionError(error, "removeItem");
-          if (notice !== null) toast.error(notice.message);
+          if (notice !== undefined) toast.error(notice.message);
         },
       },
     );

@@ -458,8 +458,8 @@ function imageStatusLabel(isUploading: boolean, hasRegisteredImage: boolean): st
 
 /** 세 갈래(그림 주소·주소 없이 등록만 된 이미지·없음)가 배타적이라 early return으로 편다. 주소 없이 등록된 경우는 주소를
  * 싣지 않는 옛 서버의 응답과, 지운 뒤 저장이 지나간 항목을 되살리고 다음 저장 응답이 오기 전까지의 짧은 구간이다. */
-function SituationalImageThumb({ url, hasRegisteredImage }: { url: string | null; hasRegisteredImage: boolean }) {
-  if (url !== null) {
+function SituationalImageThumb({ url, hasRegisteredImage }: { url?: string; hasRegisteredImage: boolean }) {
+  if (url !== undefined) {
     return (
       <img
         src={url}

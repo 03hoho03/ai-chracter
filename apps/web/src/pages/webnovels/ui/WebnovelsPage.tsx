@@ -178,7 +178,7 @@ function WebnovelListBody({ query, isOwned }: { query: WebnovelListQuery; isOwne
  * 목록에서 판매를 멈춘 노벨은 지표 줄 끝에 "판매 중지"를 단다(무채색 — 경고가 아니라 상태다). */
 function WebnovelRow({ item, isPriority }: { item: WebnovelRowItem; isPriority: boolean }) {
   const titleId = useId();
-  const meta = [toPublisherName(item), `${item.chapterCount}화`].filter((part) => part !== null);
+  const meta = [toPublisherName(item), `${item.chapterCount}화`].filter((part) => part !== undefined);
 
   return (
     <Link

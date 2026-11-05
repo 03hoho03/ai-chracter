@@ -9,7 +9,7 @@ const SAVED = [
 
 describe("situationalImageThumbUrl", () => {
   it("shows nothing when the row has no image", () => {
-    expect(situationalImageThumbUrl({ itemId: "row-1", image: null, local: undefined, saved: SAVED })).toBeNull();
+    expect(situationalImageThumbUrl({ itemId: "row-1", image: null, local: undefined, saved: SAVED })).toBeUndefined();
   });
 
   it("uses the saved url of the same row and the same asset", () => {
@@ -22,14 +22,14 @@ describe("situationalImageThumbUrl", () => {
   it("ignores the saved url when the row's asset has changed since the last save", () => {
     expect(
       situationalImageThumbUrl({ itemId: "row-1", image: { assetId: "asset-new" }, local: undefined, saved: SAVED }),
-    ).toBeNull();
+    ).toBeUndefined();
   });
 
   // 같은 자산이라도 다른 행의 주소는 쓰지 않는다.
   it("ignores a saved url that belongs to another row", () => {
     expect(
       situationalImageThumbUrl({ itemId: "row-3", image: { assetId: "asset-1" }, local: undefined, saved: SAVED }),
-    ).toBeNull();
+    ).toBeUndefined();
   });
 
   it("prefers the local copy of the same asset over the saved url", () => {
@@ -63,6 +63,6 @@ describe("situationalImageThumbUrl", () => {
         local: undefined,
         saved: [{ id: "row-1", imageAssetId: "asset-1" }],
       }),
-    ).toBeNull();
+    ).toBeUndefined();
   });
 });
