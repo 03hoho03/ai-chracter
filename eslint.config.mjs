@@ -2,6 +2,7 @@
 import tseslint from "typescript-eslint";
 import importX from "eslint-plugin-import-x";
 import noRelativeImportPaths from "eslint-plugin-no-relative-import-paths";
+import reactHooks from "eslint-plugin-react-hooks";
 import { createTypeScriptImportResolver } from "eslint-import-resolver-typescript";
 
 /**
@@ -114,7 +115,12 @@ export default tseslint.config(
   // 기존 관례다 — 이 옵션 없이는 그 112곳까지 잡아 관례와 싸운다.
   {
     files: ["apps/web/src/**/*.{ts,tsx}"],
+    // 훅 규칙은 두 개만 켠다. 권장 프리셋은 React Compiler 전제의 규칙까지 함께 켜는데 이 앱은 컴파일러를 쓰지
+    // 않는다. effect deps 는 기존 위반이 쌓여 있어 하나씩 판단해 고치도록 경고로만 둔다.
+    plugins: { "react-hooks": reactHooks },
     rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       "no-relative-import-paths/no-relative-import-paths": [
         "error",
         { allowSameFolder: true, allowedDepth: 1, rootDir: "apps/web/src", prefix: "@" },
