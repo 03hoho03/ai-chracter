@@ -141,11 +141,11 @@ _B4 = ((("probes", 0, "expected_rule"), "immutable_attribute_mismatch"),)
         pytest.param([(("chapters", 2, "events", 1, "relation", "chapter"), 3)], id="relation-to-its-own-chapter"),
         pytest.param([(("chapters", 2, "events", 1, "relation", "event"), 3)], id="relation-to-a-missing-event"),
         pytest.param(
-            [(("probes", 2, "depends_on"), [1, 3]),
+            [(("probes", 2, "depends_on"), [1, 2, 3]),
              (("probes", 2, "chapter", "events", 0, "relation"), {"kind": "after", "chapter": 3, "event": 2})],
             id="relation-to-a-flashback-the-prior-list-does-not-show",
         ),
-        pytest.param([(("probes", 2, "chapter", "events", 0, "relation"), {"kind": "overlap", "chapter": 2, "event": 1})],
+        pytest.param([(("probes", 2, "chapter", "events", 0, "relation"), {"kind": "overlap", "chapter": 3, "event": 1})],
                      id="probe-relation-to-a-chapter-it-does-not-lean-on"),
         pytest.param([(("chapters", 0, "scenes"), [])], id="empty-scene-list"),
         pytest.param([(("chapters", 2, "scenes", 0, "start"), 2)], id="scenes-not-starting-at-the-first-paragraph"),
@@ -211,3 +211,75 @@ def test_the_warning_probe_for_a_reappearance_inside_an_unrelated_flashback_carr
     assert (alive.kind, alive.values, alive.paragraph in flashback.paragraphs) == ("life", ["alive"], True)
     assert later.actuality == "present" and min(later.paragraphs) > max(flashback.paragraphs)
     assert alive.subject in flashback.present and alive.subject in later.present
+
+
+# ── 앱에서 맞힐 수 없는 정답 — 회상 장면의 주선 사건·진 플레이 행·기댈 화가 빠진 탐침 ─────────────────────
+
+_MAP = {"subject": "서하", "attribute": "지도"}
+_FIXTURE_PLAY = {"visible_from": 2, **_MAP, "value": "바싹 마른 지도"}  # 픽스처의 플레이 행 그대로
+_SAME_KEY_LATER = {"visible_from": 2, **_MAP, "value": "구겨진 지도"}
+_SAME_KEY_EARLIER = {"visible_from": 1, **_MAP, "value": "구겨진 지도"}
+_SAME_KEY_AFTER_THE_CHAPTER = {"visible_from": 3, **_MAP, "value": "구겨진 지도"}
+# 1화에 접힌, 2화의 행과 같은 값을 반증한 행 — 앱은 뒤의 같은 값 행보다 이 반증 행을 싣는다.
+_SAME_VALUE_DISPROVED = {"visible_from": 1, **_MAP, "value": "바싹 마른 지도", "truth_status": "disproved"}
+_WET_MAP = {"subject": "서하", "kind": "possession", "values": ["젖은 지도"], "paragraph": 1}
+_BELIEVES_DEAD = {
+    "knower": "서하", "kind": "believes", "subject": "도윤", "subject_kind": "character", "fact_kind": "life",
+    "values": ["dead"], "paragraph": 1,
+}
+
+
+@pytest.mark.parametrize(
+    ("edits", "reason"),
+    [
+        # 사건 슬롯은 장면 구성안이 회상이라고 한 장면에서 시작하는 사건을 늘 회상으로 저장한다.
+        pytest.param([(("chapters", 2, "events", 1, "actuality"), "present"), (("chapters", 2, "events", 1, "relation"), _DROP)],
+                     "회상 장면", id="main-line-event-in-a-flashback-scene"),
+        pytest.param([(("probes", 2, "chapter", "events", 0, "actuality"), "present")],
+                     "회상 장면", id="probe-main-line-event-in-a-flashback-scene"),
+        pytest.param(
+            [(("chapters", 1, "scenes"), [{"title": "지도", "flashback": True, "start": 1}, {"title": "폭풍", "start": 2}]),
+             (("chapters", 2, "events", 1, "relation", "chapter"), 2)],
+            "회상 장면", id="relation-to-an-event-the-outline-makes-a-flashback",
+        ),
+        # 앱은 같은 사실 키의 채팅 기억 행을 그 화 끝까지 키마다 이긴 행 하나로 줄여 싣는다.
+        pytest.param([(("play",), [_FIXTURE_PLAY, _SAME_KEY_LATER])], "이긴 행",
+                     id="play-difference-to-a-row-a-later-row-of-the-same-key-replaces"),
+        pytest.param([(("play",), [_FIXTURE_PLAY, _SAME_VALUE_DISPROVED])], "이긴 행",
+                     id="play-difference-to-a-row-an-earlier-disproval-of-the-same-value-outranks"),
+        # 탐침은 그 개체를 처음 소개한 기본 화와 짝 사실이 든 기본 화에 기댄다.
+        pytest.param([(("probes", 3, "depends_on"), [2, 3])], "빠졌다", id="probe-missing-the-chapter-that-introduced-its-people"),
+        pytest.param([(("probes", 2, "depends_on"), [1])], "빠졌다", id="probe-missing-the-death-its-flashback-shows"),
+        pytest.param([(("probes", 3, "depends_on"), [1, 3]), (("probes", 3, "chapter", "facts"), [_WET_MAP])], "빠졌다",
+                     id="probe-missing-the-chapter-of-a-fact-on-the-same-thing"),
+        pytest.param([(("probes", 3, "depends_on"), [1, 3]), (("probes", 3, "chapter", "knowledge"), [_BELIEVES_DEAD])],
+                     "빠졌다", id="probe-missing-the-chapter-of-the-fact-its-knowledge-is-about"),
+        pytest.param([(("probes", 3, "depends_on"), [1, 3]), (("probes", 3, "chapter", "events", 0, "present"), ["서하", "뱃사람"])],
+                     "빠졌다", id="probe-naming-a-person-by-an-alias"),
+    ],
+)
+def test_an_answer_the_app_cannot_produce_or_a_probe_missing_a_chapter_it_leans_on_is_rejected(
+    edits: list[Edit], reason: str
+) -> None:
+    with pytest.raises(ValidationError, match=reason):
+        EvalSet.model_validate(_edited(*edits))
+
+
+@pytest.mark.parametrize(
+    "edits",
+    [
+        # 사건의 장면은 첫 문단의 장면이다 — 주선 장면에서 시작해 회상 장면으로 넘어가는 사건은 주선 사건으로 남는다.
+        pytest.param([(("chapters", 2, "events", 0, "paragraphs"), [1, 2])], id="main-line-event-starting-before-the-flashback"),
+        # 같은 키라도 먼저 접힌 행은 뒤에 접힌 행에 진다 — 명세 차례가 아니라 접힌 차례다.
+        pytest.param([(("play",), [_FIXTURE_PLAY, _SAME_KEY_EARLIER])], id="play-difference-to-the-row-folded-last"),
+        # 그 화 끝 뒤에 접힌 같은 키 행은 그 화의 플레이에 없다.
+        pytest.param([(("play",), [_FIXTURE_PLAY, _SAME_KEY_AFTER_THE_CHAPTER])], id="same-key-row-folded-after-the-chapter"),
+        pytest.param([(("play",), [_FIXTURE_PLAY, _SAME_VALUE_DISPROVED]), (("chapters", 1, "facts", 1, "play_difference"), 2)],
+                     id="play-difference-to-the-disproval-that-wins"),
+        # 탐침에만 나오는 개체는 기댈 기본 화가 없다.
+        pytest.param([(("probes", 3, "depends_on"), []), (("probes", 3, "chapter", "events", 0, "present"), ["섬사람"])],
+                     id="probe-whose-people-appear-only-in-it"),
+    ],
+)
+def test_an_answer_the_app_can_produce_is_accepted(edits: list[Edit]) -> None:
+    EvalSet.model_validate(_edited(*edits))

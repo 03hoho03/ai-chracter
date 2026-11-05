@@ -141,25 +141,26 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
 async def test_blocked_base_chapters_count_as_false_positives_and_leave_their_probes_out(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def chapters_two_and_four(snapshot: BibleSnapshot) -> tuple[object, ...]:
+    def chapters_three_and_four(snapshot: BibleSnapshot) -> tuple[object, ...]:
         events = snapshot.events or ()
-        return tuple(e.id for e in events if e.id in snapshot.new_ids and e.chapter_ordinal in (2, 4))
+        return tuple(e.id for e in events if e.id in snapshot.new_ids and e.chapter_ordinal in (3, 4))
 
-    rule = FakeRule(pick=chapters_two_and_four, rule="exit_then_appearance", slots=frozenset({"events"}))  # type: ignore[arg-type]
+    rule = FakeRule(pick=chapters_three_and_four, rule="exit_then_appearance", slots=frozenset({"events"}))  # type: ignore[arg-type]
     monkeypatch.setattr(entry, "RULES", [rule])
     eval_set = load_set(FIXTURE)
     fake = FakeLLM(eval_set)
     meter = Meter()
     outcomes = await run_set(savepoint_factory(db_session), meter.wrap(fake.resolver()), eval_set, slots=fake.slots)
-    assert [outcome.status for outcome in outcomes if outcome.probe is None] == ["committed", "blocked", "committed"]
-    assert outcomes[1].block_rules == ["exit_then_appearance"]
+    assert [outcome.status for outcome in outcomes if outcome.probe is None] == ["committed", "committed", "blocked"]
+    assert outcomes[2].block_rules == ["exit_then_appearance"]
 
     from novel_bible_eval import metrics
 
     summary = metrics.blocking(eval_set, outcomes)
-    # 차단된 기본 화 1 + 짝 화 1 만 기대는 비충돌 탐침의 차단 1 / 기본 3 + 그 탐침 1
+    # 3화에 기대는 탐침은 소문 탐침 하나라 그것만 빠진다. 차단된 기본 화 1 + 1·2화에만 기대는 비충돌 탐침의 차단 1 / 기본 3 +
+    # 그 탐침 1
     assert (summary.false_positive.k, summary.false_positive.n) == (2, 4)
-    assert summary.excluded == {"conflict": 1, "warning": 1, "non_conflict": 1}
+    assert summary.excluded == {"non_conflict": 1}
     assert summary.undeterminable
 
 

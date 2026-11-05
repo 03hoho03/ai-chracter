@@ -83,7 +83,7 @@
           "kind": "conflict",
           "group": "exit_then_appearance",
           "expected_rule": "exit_then_appearance",
-          "depends_on": [2],
+          "depends_on": [1, 2],
           "chapter": {
             "paragraphs": [
               "아침이 밝자 도윤이 등대 문을 두드리며 서하를 불렀다.",
@@ -97,7 +97,7 @@
           "kind": "warning",
           "group": "flashback_without_relation",
           "expected_rule": "order_undetermined",
-          "depends_on": [2],
+          "depends_on": [1, 2],
           "chapter": {
             "paragraphs": [
               "언제였는지 모를 기억 속에서 도윤은 살아서 서하와 함께 웃고 있었다.",
@@ -115,7 +115,7 @@
           "kind": "non_conflict",
           "group": "A",
           "subkind": "dead_in_flashback",
-          "depends_on": [1],
+          "depends_on": [1, 2],
           "chapter": {
             "paragraphs": ["서하는 처음 도윤을 만난 항구의 정오를 떠올렸다."],
             "scenes": [{"title": "항구의 정오", "flashback": true, "start": 1}],
@@ -127,7 +127,7 @@
           "kind": "non_conflict",
           "group": "C",
           "subkind": "speculation_or_rumor",
-          "depends_on": [2, 3],
+          "depends_on": [1, 2, 3],
           "chapter": {
             "paragraphs": ["섬사람들은 그 뱃사람은 아마 죽었겠지 하고 서하 앞에서 수군거렸다."],
             "events": [{"paragraphs": [1], "present": ["서하"], "summary": "섬사람들의 소문"}]

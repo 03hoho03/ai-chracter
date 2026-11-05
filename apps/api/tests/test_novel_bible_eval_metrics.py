@@ -189,24 +189,24 @@ def test_blocking_counts_false_positives_and_drops_probes_with_an_incomplete_can
     eval_set = load_set(FIXTURE)
     outcomes = [
         _outcome(1),
-        _outcome(2, "blocked", block=("knowledge_before_fact",)),
-        _outcome(3, "failed"),  # 실패는 오탐이 아니다 — 분모에서도 빠지고 따로 센다
-        _outcome(4, probe="dead-returns"),  # 짝 화 2 가 정본에 없다 → 정본 불완전
-        _outcome(4, probe="unrelated-memory", warn=("order_undetermined",)),  # 짝 화 2 가 없어 빠진다
-        _outcome(4, "blocked", probe="harbor-memory", block=("exit_then_appearance",)),
-        _outcome(4, probe="rumor"),  # 짝 화 2·3 이 둘 다 정본에 없어 빠진다
+        _outcome(2),
+        _outcome(3, "blocked", block=("knowledge_before_fact",)),
+        _outcome(4, "failed", probe="dead-returns"),  # 실패는 오탐·재현율이 아니다 — 분모에서도 빠지고 따로 센다
+        _outcome(4, probe="unrelated-memory", warn=("order_undetermined",)),
+        _outcome(4, "blocked", probe="harbor-memory", block=("exit_then_appearance",)),  # 짝 화 1·2 는 정본에 있다
+        _outcome(4, probe="rumor"),  # 기대는 3화가 정본에 없어 빠진다
     ]
     summary = metrics.blocking(eval_set, outcomes)
-    # (차단된 기본 화 1 + 차단된 비충돌 탐침 1) / (실패하지 않은 기본 확정 2 + 남은 비충돌 탐침 1)
-    assert (summary.false_positive.k, summary.false_positive.n) == (2, 3)
+    # (차단된 기본 화 1 + 차단된 비충돌 탐침 1) / (기본 확정 3 + 남은 비충돌 탐침 1)
+    assert (summary.false_positive.k, summary.false_positive.n) == (2, 4)
     assert summary.by_rule == {"knowledge_before_fact": 1, "exit_then_appearance": 1}
     assert {group: (r.k, r.n) for group, r in summary.by_group.items()} == {"A": (1, 1)}
     assert (summary.recall.k, summary.recall.n) == (0, 0)
-    assert summary.excluded == {"conflict": 1, "warning": 1, "non_conflict": 1}
+    assert summary.excluded == {"non_conflict": 1}
     assert {branch: (r.k, r.n) for branch, r in summary.failed.items()} == {
-        "base": (1, 3), "conflict": (0, 1), "non_conflict": (0, 2), "warning": (0, 1)
+        "base": (0, 3), "conflict": (1, 1), "non_conflict": (0, 2), "warning": (0, 1)
     }
-    assert summary.undeterminable  # 충돌 1/1, 비충돌 1/2 를 뺐다 — 25% 를 넘는다
+    assert summary.undeterminable  # 충돌 1/1 이 실패했고 비충돌 1/2 를 뺐다 — 25% 를 넘는다
 
 
 def test_blocking_recall_needs_the_expected_rule_and_warning_recall_the_expected_name() -> None:

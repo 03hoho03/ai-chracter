@@ -11,14 +11,17 @@
 앱이 읽는 행 그대로 심어, 사실 슬롯이 원작·플레이와 다른 곳을 짚는지와 사건 슬롯이 구성안의 회상 표시를 읽는지를 잰다. 원작과
 다른 곳·플레이와 다른 곳·회상 관계의 정답은 그 사실·사건 정답에 붙는다."""
 
-from collections.abc import Iterator
+from bisect import bisect_right
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from api.db.models.chat import FactAssertedBy, FactTruthStatus
-from api.novel_bible.core.keys import normalize_name
+from api.chat.memory_facts import fact_key
+from api.chat.memory_knowledge import latest_by_key
+from api.db.models.chat import ChatMemoryFact, FactAssertedBy, FactTruthStatus
+from api.novel_bible.core.keys import normalize_name, predicate_norm
 from api.novel_bible.ids import (
     BlockingRule,
     EntityKind,
@@ -93,7 +96,7 @@ class _Spec(BaseModel):
 class PlantedRelation(_Spec):
     """회상 사건이 앞 화의 주선 사건과 어떤 앞뒤인가. `chapter` 는 대상 사건의 기본 화 번호, `event` 는 그 화 사건 정답의 차례
     (문단·화 번호처럼 1부터). 대상은 주선 사건이어야 한다 — 사건 슬롯이 문안에 싣는 앞 화 사건 목록이 주선 사건뿐이라, 회상을
-    가리키는 관계는 모델이 낼 수 없다."""
+    가리키는 관계는 모델이 낼 수 없다. 주선(`present`) 정답은 회상 장면에서 시작할 수 없으므로(화 검증) 앱도 주선으로 저장한다."""
 
     kind: EventRelationKind
     chapter: int
@@ -182,7 +185,9 @@ class SceneSpec(_Spec):
 
 
 class ChapterSpec(_Spec):
-    """`scenes` 가 None 이면 장면 구성안이 없는 화다 — 앱이 화 전체를 장면 하나로 읽는다."""
+    """`scenes` 가 None 이면 장면 구성안이 없는 화다 — 앱이 화 전체를 장면 하나로 읽는다. 사건의 장면은 첫 문단의 장면이고,
+    사건 슬롯은 구성안이 회상이라고 한 장면에서 시작하는 `present` 사건을 늘 `flashback` 으로 저장한다 — 그런 사건을 `present`
+    로 적은 정답은 어느 어댑터도 맞힐 수 없어 받지 않는다."""
 
     paragraphs: list[str]
     scenes: list[SceneSpec] | None = None
@@ -203,7 +208,17 @@ class ChapterSpec(_Spec):
             starts = [scene.start for scene in self.scenes]
             if not starts or starts[0] != 1 or starts != sorted(set(starts)) or starts[-1] > count:
                 raise ValueError("장면 구성안은 첫 문단에서 시작하고, 장면 시작 문단은 화 안에서 오르는 차례여야 한다")
+            if any(
+                event.actuality == "present" and self.scenes[self.scene_index(min(event.paragraphs))].flashback
+                for event in self.events
+            ):
+                raise ValueError("주선 사건 정답이 회상 장면에서 시작한다 — 사건 슬롯은 그 사건을 회상으로 저장한다")
         return self
+
+    def scene_index(self, paragraph: int) -> int:
+        """그 문단이 든 장면의 차례(0부터). 장면은 시작 문단부터 다음 장면의 시작 문단 앞까지다."""
+        assert self.scenes is not None
+        return bisect_right([scene.start for scene in self.scenes], paragraph) - 1
 
     @property
     def body(self) -> str:
@@ -301,6 +316,15 @@ class PlayRow(_Spec):
             raise ValueError("플레이 행은 대상(관계)과 속성 중 하나만 둔다")
         return self
 
+    @property
+    def chat_kind(self) -> str:
+        return "fact" if self.object is None else "relation"
+
+    @property
+    def chat_fact_key(self) -> str:
+        """채팅 기억과 같은 규칙의 사실 키 — 앱은 이 키마다 이긴 행 하나만 싣는다."""
+        return fact_key(self.chat_kind, self.subject, self.object or self.attribute)
+
 
 class NovelSpec(_Spec):
     """`aliases` 는 이름마다 같은 개체로 칠 다른 이름들 — 매처가 주어·앎 주체 이름을 견줄 때 쓴다. `source`·`play` 는 합성
@@ -328,7 +352,8 @@ class NovelSpec(_Spec):
     @model_validator(mode="after")
     def _answers_point_at_what_the_slots_are_shown(self) -> "NovelSpec":
         """회상 관계는 그 화 앞 기본 화의 주선 사건(탐침이면 기대는 화의 것), 원작 차이는 있는 원작 글의 구절, 플레이 차이는 그
-        화 끝까지 보이는 플레이 행을 가리켜야 한다 — 아니면 슬롯 문안에 그 표지가 없어 맞힐 수 없는 정답이다."""
+        화 끝까지 보이는 플레이 행 중 앱이 싣는 행(`play_shown`)을 가리켜야 한다 — 아니면 슬롯 문안에 그 표지가 없어 맞힐 수 없는
+        정답이다."""
         texts = self.source.texts() if self.source is not None else {}
         for ordinal, chapter, leans_on in self._numbered_chapters():
             for event in chapter.events:
@@ -345,7 +370,72 @@ class NovelSpec(_Spec):
                 row = fact.play_difference
                 if row is not None and not (1 <= row <= len(self.play) and self.play[row - 1].visible_from <= ordinal):
                     raise ValueError(f"{ordinal}화 플레이 차이가 그 화까지 보이는 플레이 행을 가리키지 않는다")
+                if row is not None and row - 1 not in self.play_shown(ordinal):
+                    raise ValueError(f"{ordinal}화 플레이 차이가 같은 키의 다른 행에 진 행을 가리킨다 — 앱은 키마다 이긴 행만 싣는다")
         return self
+
+    @model_validator(mode="after")
+    def _probes_lean_on_their_people_and_pairs(self) -> "NovelSpec":
+        """탐침은 그 개체를 처음 소개한 기본 화와 짝 사실이 든 기본 화에도 기대야 한다(회상 관계가 가리키는 화는 위에서 본다) —
+        빠지면 그 화가 정본에 못 든 반복에서도 탐침이 표본에 남아 오탐이 0 쪽으로 기운다. 정답에서 구할 수 있는 만큼만 본다.
+        개체는 정답에 나오는 이름(사건 등장 인물, 사실 주어, 앎 주체, 지식 명제 주어 — 별칭은 그 이름으로)이다. 짝 사실은 탐침의
+        사실·지식 명제와 주어·종류·술어가 같은(소지·능력은 같은 것을 가리키는) 기본 화 사실, 그리고 탐침 사건에 나오는 인물의
+        생사·출입 사실이다. 사용처럼 명세에 정답 칸이 없는 짝은 작성자 몫이다."""
+        names = {normalize_name(alias): normalize_name(name) for name, aliases in self.aliases.items() for alias in aliases}
+
+        def entity(text: str) -> str:
+            return names.get(normalize_name(text), normalize_name(text))
+
+        for probe in self.probes:
+            chapter = probe.chapter
+            wanted = {
+                slot
+                for fact in chapter.facts
+                for slot in _fact_slots(entity(fact.subject), fact.kind, fact.attribute, fact.values)
+            }
+            wanted |= {
+                slot
+                for known in chapter.knowledge
+                for slot in _fact_slots(entity(known.subject), known.fact_kind, known.attribute, known.values)
+            }
+            wanted |= {
+                (entity(person), kind, kind, "")
+                for event in chapter.events
+                for person in event.present
+                for kind in ("life", "presence")
+            }
+            people = _named(chapter, entity)
+            required: set[int] = set()
+            for ordinal, base in enumerate(self.chapters, start=1):
+                held = {
+                    slot
+                    for fact in base.facts
+                    for slot in _fact_slots(entity(fact.subject), fact.kind, fact.attribute, fact.values)
+                }
+                introduced = people & _named(base, entity)
+                if held & wanted or introduced:
+                    required.add(ordinal)
+                people -= introduced
+            if missing := sorted(required - set(probe.depends_on)):
+                raise ValueError(
+                    f"탐침 {probe.key} 이 기대는 화에 {missing} 화가 빠졌다 — 탐침의 개체를 처음 소개한 화와 짝 사실이 든 화에 기댄다"
+                )
+        return self
+
+    def play_shown(self, ordinal: int) -> frozenset[int]:
+        """그 화 끝까지 접힌 플레이 행 중 앱이 싣는 행의 차례(0부터) — 키마다 이긴 행 하나. 심기가 접는 차례(보이기 시작하는 화
+        순, 같은 화 안은 명세 차례)로 놓고 앱의 키별 이김 규칙(`latest_by_key` — 마지막 행, 단 같은 값을 반증한 앞 행이 있으면 그
+        행)을 그대로 돌린다."""
+        folded = sorted(
+            (index for index, row in enumerate(self.play) if row.visible_from <= ordinal),
+            key=lambda index: self.play[index].visible_from,
+        )
+        rows = [
+            ChatMemoryFact(fact_key=self.play[index].chat_fact_key, value=self.play[index].value,
+                           truth_status=self.play[index].truth_status)
+            for index in folded
+        ]
+        return frozenset(folded[order] for order, _ in latest_by_key(rows))
 
     def _numbered_chapters(self) -> Iterator[tuple[int, ChapterSpec, list[int] | None]]:
         """(화 번호, 화, 탐침이면 기대는 기본 화). 탐침은 기본 화 뒤 한 화로 붙는다."""
@@ -353,6 +443,22 @@ class NovelSpec(_Spec):
             yield ordinal, chapter, None
         for probe in self.probes:
             yield len(self.chapters) + 1, probe.chapter, probe.depends_on
+
+
+def _fact_slots(subject: str, kind: FactKind, attribute: str | None, values: list[str]) -> set[tuple[str, str, str, str]]:
+    """짝을 찾는 사실 자리 — (주어, 종류, 술어, 소지·능력이면 그 것). 생사·출입·속성·관계는 값이 달라도 짝이다."""
+    head = (subject, kind, predicate_norm(kind, attribute))
+    if kind in ("possession", "ability"):
+        return {(*head, normalize_name(value)) for value in values}
+    return {(*head, "")}
+
+
+def _named(chapter: ChapterSpec, entity: Callable[[str], str]) -> set[str]:
+    """화 정답에 나오는 개체 이름 — 사건 등장 인물, 사실 주어, 앎 주체, 지식 명제 주어."""
+    names = {person for event in chapter.events for person in event.present}
+    names |= {fact.subject for fact in chapter.facts}
+    names |= {name for known in chapter.knowledge for name in (known.knower, known.subject)}
+    return {entity(name) for name in names}
 
 
 class EvalSet(_Spec):
