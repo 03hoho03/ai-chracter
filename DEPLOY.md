@@ -2297,10 +2297,14 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   채팅 줄을 물려받아 뜬다(전에는 Bedrock 으로 풀려 기동이 거부됐다).
 
 **공급자 경로.** 상위 모델 호출이 어느 공급자로 가는지는 호출 위치마다 정한다. 코드 기본 경로는 AWS Bedrock 이고,
-`LLM_CALL_SITE_BACKENDS` 에 배정한 호출 위치만 Anthropic API 직결(`ANTHROPIC_DIRECT_API_KEY`)로 간다. 운영은 채팅
+`LLM_CALL_SITE_BACKENDS` 에 배정한 호출 위치는 Anthropic API 직결(`ANTHROPIC_DIRECT_API_KEY`)로 간다. 운영은 채팅
 턴(`chat_generate`)·측정용 리플레이(`replay_generate`)·소설 장(`novelize_chapter`)을 모두 `anthropic` 에 배정해 두었고
 **이 배정을 유지한다** — 배정을 빼면 그 호출의 Opus 가 코드 기본 경로인 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가
-없으면 api 가 기동을 거부한다. 이 절은 운영 경로(직결)를 기준으로 적는다. Bedrock 으로 보낼 때의 키는 env 표의 `BEDROCK_*`
+없으면 api 가 기동을 거부한다. 소설 정본 기억은 이 배정 줄 없이 직결로 간다 — `NOVEL_BIBLE_ADAPTERS` 로 Claude 어댑터
+(`haiku`·`sonnet`)를 배정한 연산은 호출 정책 표(`apps/api/src/api/llm/call_policy.py`)가 정한 대로 Anthropic 직결로 부르고, 기본
+배정(Gemini)인 연산은 Anthropic 을 부르지 않는다. 정본 기억 호출 위치(`novel_bible_*`)에 Claude 구현 배정 줄을 두면 api 가
+기동하지 않는다(키·기동 검사는 env 표 `NOVEL_BIBLE_ADAPTERS` 행).
+이 절은 운영 경로(직결)를 기준으로 적는다. Bedrock 으로 보낼 때의 키는 env 표의 `BEDROCK_*`
 행이다 — Bedrock 모델 호출만 허용한 전용 IAM 사용자 키를 쓰고, R2 키(`AWS_ACCESS_KEY_ID` 등)를 재사용하거나 그 줄을 고치지
 않으며, Bedrock 계정 설정에서 모델 호출 로깅(model invocation logging)이 꺼져 있는지 먼저 본다.
 
