@@ -79,8 +79,15 @@
           "expected_rule": "order_undetermined",
           "depends_on": [2],
           "chapter": {
-            "paragraphs": ["꿈인지 기억인지 모를 장면 속에서 서하는 도윤과 웃고 있었다."],
-            "events": [{"paragraphs": [1], "actuality": "flashback", "present": ["서하", "도윤"], "summary": "도윤과 웃던 장면"}]
+            "paragraphs": [
+              "언제였는지 모를 기억 속에서 도윤은 살아서 서하와 함께 웃고 있었다.",
+              "기억에서 깨어나자 도윤이 등대 창가에 서서 서하를 부르고 있었다."
+            ],
+            "events": [
+              {"paragraphs": [1], "actuality": "flashback", "present": ["서하", "도윤"], "summary": "도윤과 웃던 기억"},
+              {"paragraphs": [2], "present": ["서하", "도윤"], "summary": "도윤이 등대 창가에서 서하를 부른다"}
+            ],
+            "facts": [{"subject": "도윤", "kind": "life", "values": ["alive"], "paragraph": 1}]
           }
         },
         {

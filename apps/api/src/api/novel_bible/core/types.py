@@ -222,6 +222,10 @@ class EventRow:
     ordinal: int
     actuality: EventActuality
     anchor_block_ids: tuple[uuid.UUID, ...]
+    # 그 장면에 살아서 말하거나 행동하는 인물과 사용(행위자, 대상) 짝 — 사망 뒤 등장·얻기 전 사용 규칙이 읽는다. 순서만 보는
+    # 쪽은 채우지 않아도 된다.
+    present_entity_ids: tuple[uuid.UUID, ...] = ()
+    uses: tuple[tuple[uuid.UUID, uuid.UUID], ...] = ()
 
 
 @dataclass(frozen=True)
