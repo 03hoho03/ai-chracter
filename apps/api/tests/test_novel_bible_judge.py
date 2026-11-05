@@ -14,6 +14,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, Literal, TypeVar, get_type_hints
 
 import pytest
@@ -40,6 +41,7 @@ from api.novel_bible.core.types import (
     CommitRef,
     FindingDraft,
     JudgeCandidate,
+    JudgeSpent,
     RenderedPrompt,
     WarningDraft,
 )
@@ -314,44 +316,88 @@ async def _lose_the_head_comparison(db: AsyncSession) -> None:
         await session.commit()
 
 
-async def test_a_recheck_after_losing_the_head_comparison_judges_only_in_what_is_left_of_the_budget(
-    db_session: AsyncSession,
-) -> None:
-    """총 기한은 확정 하나의 판정 전체에 걸린다. 첫 검사의 판정이 호출 상한을 두 번 다 써 기한을 거의 다 쓴 뒤 커밋이 머리
-    비교에서 진다. 같은 실행 안의 두 번째 검사는 남은 기한만 쓴다 — 첫 후보는 남은 기한에서 끊기거나(그때 기한이 찬다) 부르지
-    않고, 그 뒤 후보는 부르지 않는다. 남는 판정 실패는 모두 `deadline` 이고, 모델 호출에 쓴 시간 전체가 작업 상한(총 기한에 60초를
-    더한 것을 같은 비율로 줄인 값) 안이다. 기한을 줄여(총 1.6초, 호출당 0.7초) 실제 시간으로 본다. 깨지는 시나리오: 검사마다 기한을
-    새로 세면 두 번째 검사가 호출 상한을 다시 두 번 써, 모델이 매달리는 동안 확정 처리가 작업 상한을 넘겨 워커 칸에 끊기고 만료
-    정리가 확정을 연결부터 되풀이한다."""
-    budget, call = 1.6, 0.7
-    task_limit = budget * BIBLE_TASK_TIMEOUT_SECONDS / JUDGE_BUDGET_SECONDS
-    waited: list[float] = []
+@dataclass
+class _Losing:
+    """실제 판정을 감싸 검사마다 넘어온 앞 판정 단계의 몫(쓴 시간, 부른 수)을 남기고, 앞 `losses` 번 검사에서는 판정 전에
+    커밋이 머리 비교에서 지게 만든다. 패배를 판정 입구에서 만들어 그 DB 쓰기가 판정 호출 상한 안에서 돌지 않는다."""
 
-    async def answer(candidate: str) -> JudgeVerdict:
-        if not waited:
-            await _lose_the_head_comparison(db_session)
-        started = time.monotonic()
-        try:
-            await asyncio.Event().wait()
-        finally:
-            waited.append(time.monotonic() - started)
-        raise AssertionError("닿지 않는다")
+    inner: Judge
+    db: AsyncSession
+    losses: int
+    seen: list[tuple[float, int]] = field(default_factory=list)
 
-    adapter = _Adapter(answer)
-    judge = build_judge(adapter.resolver(), budget_seconds=budget, call_seconds=call)
-    async with asyncio.timeout(20):
-        commit_id = await _story(db_session, [_j1(), _j1()], judge)
+    async def __call__(
+        self, session_factory: SessionFactory, commit: CommitRef, candidates: Sequence[JudgeCandidate], *,
+        spent: JudgeSpent,
+    ) -> list[WarningDraft]:
+        self.seen.append((spent.seconds, spent.calls))
+        if len(self.seen) <= self.losses:
+            await _lose_the_head_comparison(self.db)
+        return await self.inner(session_factory, commit, candidates, spent=spent)
 
+    def unjudged(self, candidates: Sequence[FindingDraft]) -> list[WarningDraft]:
+        return self.inner.unjudged(candidates)
+
+
+async def _commit_and_losses(db: AsyncSession, commit_id: uuid.UUID) -> tuple[str, int]:
     row = (
-        await db_session.execute(
+        await db.execute(
             select(NovelBibleCommit.status, NovelBibleCommit.cas_losses).where(NovelBibleCommit.id == commit_id)
         )
     ).one()
-    assert tuple(row) == ("committed", 1)
+    return row.status, row.cas_losses
+
+
+async def test_a_recheck_after_losing_the_head_comparison_judges_only_in_what_is_left_of_the_budget(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """총 기한은 확정 하나의 판정 전체에 걸린다. 모델 호출 하나가 총 기한의 3분의 1(80초)을 쓰고(가짜 시계를 검사 틀과 판정에
+    함께 꽂는다), 커밋이 머리 비교에서 두 번 진다. 첫 검사는 두 후보를 다 불러 160초를 쓴다. 두 번째 검사는 남은 80초로 첫 후보만
+    부르고 둘째는 `deadline` 이다. 세 번째 검사가 받는 남은 기한은 첫·둘째 검사 시간을 모두 뺀 0 이라 부르지 않고 둘 다
+    `deadline` 이다 — 호출 3건, 판정에 쓴 시간이 총 기한 그대로라 작업 상한 안이다. 깨지는 시나리오: 검사마다 기한을 새로 세거나
+    바로 앞 검사 시간만 빼면 다시 검사할 때마다 기한이 되살아나, 모델이 매달리는 동안 확정 처리가 작업 상한을 넘겨 워커 칸에
+    끊기고 만료 정리가 확정을 연결부터 되풀이한다."""
+    step = JUDGE_BUDGET_SECONDS / 3
+    assert step < JUDGE_CALL_SECONDS
+    clock = _Clock()
+    monkeypatch.setattr(pipeline, "time", SimpleNamespace(monotonic=clock))
+
+    async def answer(candidate: str) -> JudgeVerdict:
+        clock.now += step
+        return JudgeVerdict(verdict="unsure", reason="합성 이유")
+
+    adapter = _Adapter(answer)
+    judge = _Losing(build_judge(adapter.resolver(), clock=clock), db_session, losses=2)
+    commit_id = await _story(db_session, [_j1(), _j1()], judge)
+
+    assert await _commit_and_losses(db_session, commit_id) == ("committed", 2)
+    assert len(adapter.judged) == 3
+    # 검사마다 받은 앞 판정 단계의 쓴 시간 — 남은 기한은 총 기한에서 이것을 뺀 240·80·0 초다.
+    assert [seconds for seconds, _ in judge.seen] == [0, 2 * step, 3 * step]
+    assert JUDGE_BUDGET_SECONDS - judge.seen[-1][0] == 0
+    assert clock.now == JUDGE_BUDGET_SECONDS < BIBLE_TASK_TIMEOUT_SECONDS
     failures = [row.payload["failure"] for row in await _findings(db_session, commit_id) if row.rule == "judge_failed"]
     assert failures == ["deadline", "deadline"]
-    assert 2 <= len(adapter.judged) <= 3
-    assert sum(waited) < task_limit
+
+
+async def test_a_recheck_after_losing_the_head_comparison_judges_only_what_is_left_of_the_ten(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정은 확정 하나에 최대 10건이다. 첫 검사가 순서 미정 후보 여섯을 다 부른 뒤 커밋이 머리 비교에서 진다. 같은 실행의 두
+    번째 검사는 남은 4건만 부르고, 넘친 두 후보는 판정 없이 후보 경고만 남긴다(넘친 순서 미정과 같다). 깨지는 시나리오: 검사마다
+    10건을 새로 세면 머리 비교에서 질 때마다 다시 10건을 불러, 한 확정의 모델 호출이 설계한 상한의 몇 배가 된다."""
+    clock = _Clock()
+    monkeypatch.setattr(pipeline, "time", SimpleNamespace(monotonic=clock))
+    adapter = _Adapter(_always("conflict"))
+    judge = _Losing(build_judge(adapter.resolver(), clock=clock), db_session, losses=1)
+    commit_id = await _story(db_session, [_j1() for _ in range(6)], judge)
+
+    assert await _commit_and_losses(db_session, commit_id) == ("committed", 1)
+    assert JUDGE_MAX_CANDIDATES == 10
+    assert len(adapter.judged) == JUDGE_MAX_CANDIDATES
+    assert [calls for _, calls in judge.seen] == [0, 6]
+    rules = [row.rule for row in await _findings(db_session, commit_id)]
+    assert sorted(rules) == sorted(["order_undetermined"] * 6 + ["llm_conflict"] * 4)
 
 
 @pytest.mark.parametrize(
@@ -381,7 +427,8 @@ class _BrokenCall:
     inner: Judge
 
     async def __call__(
-        self, session_factory: SessionFactory, commit: CommitRef, candidates: Sequence[JudgeCandidate], *, spent: float
+        self, session_factory: SessionFactory, commit: CommitRef, candidates: Sequence[JudgeCandidate], *,
+        spent: JudgeSpent,
     ) -> list[WarningDraft]:
         raise RuntimeError("합성 고장")
 
@@ -479,7 +526,7 @@ async def test_at_most_ten_candidates_are_judged_in_rule_then_chapter_order(db_s
     adapter = _Adapter(_always("conflict"))
     shuffled = [j2[0], *j3[:1], *j1[:4], *j3[1:], *j1[4:]]
 
-    warnings = await build_judge(adapter.resolver())(savepoint_factory(db_session), _REF, shuffled, spent=0.0)
+    warnings = await build_judge(adapter.resolver())(savepoint_factory(db_session), _REF, shuffled, spent=JudgeSpent())
 
     def by_chapter(candidates: list[JudgeCandidate]) -> list[JudgeCandidate]:
         return sorted(candidates, key=lambda candidate: candidate.chapters)
@@ -511,7 +558,7 @@ async def test_each_call_is_cut_at_its_own_limit_and_the_rest_wait_for_nothing(d
 
     started = time.monotonic()
     async with asyncio.timeout(10):
-        warnings = await judge(savepoint_factory(db_session), _REF, candidates, spent=0.0)
+        warnings = await judge(savepoint_factory(db_session), _REF, candidates, spent=JudgeSpent())
     elapsed = time.monotonic() - started
 
     failures = [warning.payload["failure"] for warning in warnings if warning.rule == "judge_failed"]

@@ -310,3 +310,13 @@ class JudgeCandidate:
     warning: WarningDraft
     chapters: tuple[int, ...]
     text: str
+
+
+@dataclass
+class JudgeSpent:
+    """한 확정의 판정 단계들이 같은 작업 실행 안에서 이미 쓴 몫 — 쓴 시간(초, 검사 틀이 판정 단계 앞뒤로 재어 더한다)과 모델을
+    부른 후보 수(판정이 부를 때마다 더한다). 머리 비교에서 져 다시 검사할 때 같은 기록을 넘겨, 총 기한과 확정당 최대 건수를
+    검사마다 새로 세지 않게 한다."""
+
+    seconds: float = 0.0
+    calls: int = 0

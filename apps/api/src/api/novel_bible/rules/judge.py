@@ -13,8 +13,10 @@ J1·J2 는 후보 경고만, J3 은 아무것도 남기지 않는다. 호출이 
 
 시간: 확정 하나의 판정 호출 전체에 `JUDGE_BUDGET_SECONDS`(작업 상한보다 60초 짧다), 호출마다 `min(JUDGE_CALL_SECONDS, 남은
 기한)`. 기한이 차면 남은 후보는 부르지 않고 실패 사유 `deadline` 으로 끝낸다. 머리 비교에서 져 같은 작업 실행 안에서 다시 검사하면
-검사 틀이 넘긴, 앞 판정 단계에 이미 쓴 시간(`spent`)을 빼고 남은 기한만 쓴다 — 그래서 판정 10건이 호출마다 상한을 다 쓰고 커밋이
-머리 비교에서 져도 확정 처리가 작업 상한 안에 끝나, 만료 정리가 확정을 연결부터 되풀이하는 일이 정상 경로에서 생기지 않는다.
+검사 틀이 넘긴 기록(`spent`)에서 앞 판정 단계들이 이미 쓴 시간과 부른 수를 빼고 남은 기한·건수만 쓴다(부를 때마다 그 기록의 수를
+더한다) — 그래서 판정 10건이 호출마다 상한을 다 쓰고 커밋이 머리 비교에서 져도 확정 처리가 작업 상한 안에 끝나, 만료 정리가
+확정을 연결부터 되풀이하는 일이 정상 경로에서 생기지 않고, 다시 검사할 때마다 10건을 새로 부르지도 않는다. 다시 검사할 때 남은
+건수를 넘친 후보는 처음부터 넘친 후보와 같이 다룬다.
 
 호출은 `conflicts.judge` 연산에 배정된 어댑터로 간다. 어댑터는 추출과 같은 구조화 호출(지시문을 따로 싣는 것)을 쓰고 호출 기록
 원소를 남긴다 — 사고를 끄는 것도 그 구조화 경로의 몫이다."""
@@ -39,7 +41,7 @@ from api.novel_bible.core.contracts import (
 )
 from api.novel_bible.core.render import render
 from api.novel_bible.core.sweep import BIBLE_TASK_TIMEOUT_SECONDS
-from api.novel_bible.core.types import CommitRef, FindingDraft, JudgeCandidate, WarningDraft
+from api.novel_bible.core.types import CommitRef, FindingDraft, JudgeCandidate, JudgeSpent, WarningDraft
 from api.novel_bible.ids import JobFailure
 
 logger = logging.getLogger(__name__)
@@ -103,14 +105,15 @@ class _ModelJudge:
 
     async def __call__(
         self, session_factory: async_sessionmaker[AsyncSession], commit: CommitRef, candidates: Sequence[JudgeCandidate],
-        *, spent: float,
+        *, spent: JudgeSpent,
     ) -> list[WarningDraft]:
         ordered = sorted(candidates, key=lambda candidate: (_RULE_ORDER[_mark(candidate.warning)], candidate.chapters))
-        called, overflow = ordered[:JUDGE_MAX_CANDIDATES], ordered[JUDGE_MAX_CANDIDATES:]
+        room = max(JUDGE_MAX_CANDIDATES - spent.calls, 0)
+        called, overflow = ordered[:room], ordered[room:]
         warnings = [warning for candidate in overflow for warning in _outcome(candidate.warning, None, None)]
         if not called:
             return warnings
-        budget = self.budget_seconds - spent
+        budget = self.budget_seconds - spent.seconds
         started = self.clock()
         adapter = self.resolver("conflicts.judge")
         records: list[dict[str, Any]] = []
@@ -132,6 +135,7 @@ class _ModelJudge:
             elif remaining <= 0:
                 failure = "deadline"
             else:
+                spent.calls += 1
                 verdict, failure = await _call(
                     adapter, source, commit, candidate, records, min(self.call_seconds, remaining)
                 )

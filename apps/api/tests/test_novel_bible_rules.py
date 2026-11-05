@@ -61,6 +61,7 @@ from api.novel_bible.core.types import (
     FactRow,
     FindingDraft,
     JudgeCandidate,
+    JudgeSpent,
     RenderedPrompt,
     WarningDraft,
 )
@@ -520,7 +521,7 @@ class _SeenJudge:
     seen: list[JudgeCandidate] = field(default_factory=list)
 
     async def __call__(
-        self, session_factory: Any, commit: CommitRef, candidates: Sequence[JudgeCandidate], *, spent: float
+        self, session_factory: Any, commit: CommitRef, candidates: Sequence[JudgeCandidate], *, spent: JudgeSpent
     ) -> list[WarningDraft]:
         self.seen.extend(candidates)
         return [candidate.warning for candidate in candidates]

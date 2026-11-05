@@ -16,6 +16,7 @@ from api.novel_bible.core.types import (
     EntityName,
     FindingDraft,
     JudgeCandidate,
+    JudgeSpent,
     LinkedItem,
     Manuscript,
     PlayFact,
@@ -156,15 +157,16 @@ class Judge(Protocol):
     전 구조 규칙 결과로만 정한다. 호출 실패·기한 초과는 예외로 올리지 않고 판정 실패 경고로 바꾼다. 세션은 문안을 읽을 때만 짧게
     열고, 모델을 기다리는 동안 쥐지 않는다.
 
-    총 기한은 확정 하나의 판정 전체에 걸린다. 머리 비교에서 져 같은 실행 안에서 다시 검사하면 검사 틀이 앞 판정 단계에 이미 쓴
-    시간(`spent`, 초)을 넘기고, 판정은 남은 기한만 쓴다.
+    총 기한과 최대 건수는 확정 하나의 판정 전체에 걸린다. 검사 틀은 한 작업 실행에 기록(`spent`) 하나를 만들어 검사마다 넘기고
+    판정 단계에 쓴 시간을 거기에 더한다. 판정은 모델을 부를 때마다 부른 수를 거기에 더하고, 머리 비교에서 져 다시 검사할 때는
+    남은 기한과 남은 건수만 쓴다.
 
     `unjudged` 는 판정 단계 자체가 깨졌을 때(후보 조립의 읽기 실패나 이 함수의 결함) 검사 틀이 후보 경고 대신 남길 경고다 — 판정을
     받지 못한 후보의 꼴이 호출이 실패했을 때와 같아, 검사 틀은 어느 후보가 충돌 판정 때만 남는지 몰라도 된다."""
 
     async def __call__(
         self, session_factory: async_sessionmaker[AsyncSession], commit: CommitRef, candidates: Sequence[JudgeCandidate],
-        *, spent: float,
+        *, spent: JudgeSpent,
     ) -> list[WarningDraft]: ...
 
     def unjudged(self, candidates: Sequence[FindingDraft]) -> list[WarningDraft]: ...
