@@ -13,6 +13,7 @@ from api.admin.chat_view import router as admin_chat_view_router
 from api.admin.contents import router as admin_contents_router
 from api.admin.creator_payout import router as admin_creator_payout_router
 from api.admin.dashboard import router as admin_dashboard_router
+from api.admin.feature_switches import router as admin_feature_switches_router
 from api.admin.home_curation import router as admin_home_curation_router
 from api.admin.home_novel_curation import router as admin_home_novel_curation_router
 from api.admin.image_generations import router as admin_image_generations_router
@@ -190,6 +191,7 @@ app.include_router(admin_llm_usage_router)
 app.include_router(admin_payments_router)
 app.include_router(admin_creator_payout_router)
 app.include_router(admin_novel_bible_router)
+app.include_router(admin_feature_switches_router)
 app.include_router(assets_router)
 app.include_router(assets_me_router)
 app.include_router(auth_router)

@@ -68,6 +68,46 @@ FeatureSwitchName = Literal[
 ]
 FEATURE_SWITCH_NAMES: tuple[FeatureSwitchName, ...] = get_args(FeatureSwitchName)
 
+# 어드민 현황판이 값만 보이는 나머지 참/거짓 칸과, 버튼을 두지 않는 이유. 이유 문장은 화면이 코드별로 갖는다.
+# - startup-check: 켤 때만 도는 기동 검증(자격·키)이 있어, 덮어쓰기로 켜면 그 검증을 건너뛴다.
+# - worker-startup: 소설화 워커가 기동 때 한 번 읽어, 바꾸려면 워커 재기동과 기동 검증이 필요하다.
+# - deploy-starts-worker: 교체 스크립트가 이 값을 보고 워커 컨테이너를 띄운다 — 워커 없이 켜면 작업이 만료 환불로 끝난다.
+# - separate-cron-process: 월 확정 크론이 따로 뜬 프로세스에서 읽어 덮어쓰기를 보지 못하고, 켤 때 크론 설치가 함께 필요하다.
+# - app-creation: 앱을 만들 때 한 번만 읽는다.
+# - infrastructure: 기능이 아니라 쿠키 보안 인프라 설정이다.
+ReadOnlySwitchReason = Literal[
+    "startup-check",
+    "worker-startup",
+    "deploy-starts-worker",
+    "separate-cron-process",
+    "app-creation",
+    "infrastructure",
+]
+ReadOnlyFeatureSwitchName = Literal[
+    "chat_premium_models_enabled",
+    "novelize_premium_models_enabled",
+    "memory_embed_write",
+    "memory_embed_recall",
+    "novel_bible_enabled",
+    "novelize_worker_enabled",
+    "creator_payout_enabled",
+    "expose_api_docs",
+    "session_cookie_secure",
+]
+READ_ONLY_SWITCH_REASONS: Mapping[ReadOnlyFeatureSwitchName, ReadOnlySwitchReason] = MappingProxyType(
+    {
+        "chat_premium_models_enabled": "startup-check",
+        "novelize_premium_models_enabled": "startup-check",
+        "memory_embed_write": "startup-check",
+        "memory_embed_recall": "startup-check",
+        "novel_bible_enabled": "worker-startup",
+        "novelize_worker_enabled": "deploy-starts-worker",
+        "creator_payout_enabled": "separate-cron-process",
+        "expose_api_docs": "app-creation",
+        "session_cookie_secure": "infrastructure",
+    }
+)
+
 # 다른 프로세스의 저장이 이 프로세스에 보이기까지의 상한. 소설화 워커의 폴링 기본 간격과 같다. 설정 칸으로 두지 않는다 —
 # 운영에서 바꿀 일이 없고, 칸이 생기면 env 키 목록과 그 문서가 같이 늘어난다.
 REFRESH_INTERVAL_SECONDS = 2.0
@@ -95,7 +135,8 @@ def switch_on(name: FeatureSwitchName) -> bool:
     return value
 
 
-def _is_switch_name(name: str) -> TypeGuard[FeatureSwitchName]:
+def is_switch_name(name: str) -> TypeGuard[FeatureSwitchName]:
+    """어드민에서 켜고 끌 수 있는 스위치 이름인가."""
     return name in FEATURE_SWITCH_NAMES
 
 
@@ -109,7 +150,7 @@ async def refresh_switch_overrides(session_factory: async_sessionmaker[AsyncSess
     global _process_overrides
     async with session_factory() as db:
         rows = (await db.execute(select(FeatureSwitchOverride.name, FeatureSwitchOverride.value))).all()
-    _process_overrides = MappingProxyType({name: value for name, value in rows if _is_switch_name(name)})
+    _process_overrides = MappingProxyType({name: value for name, value in rows if is_switch_name(name)})
 
 
 async def keep_switch_overrides_fresh(session_factory: async_sessionmaker[AsyncSession]) -> None:
