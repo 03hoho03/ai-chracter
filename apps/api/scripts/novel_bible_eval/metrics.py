@@ -13,22 +13,27 @@ import statistics
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, get_args
 
 from api.llm.pricing import call_cost
+from api.novel_bible.core.keys import normalize_name
+from api.novel_bible.ids import BlockingRule
+from api.novel_bible.rules.blocking import closed_value
 
 from novel_bible_eval.labels import LabeledClaim
 from novel_bible_eval.match import (
     Aliases,
     Extracted,
+    difference_counts,
     direction_counts,
     extracted,
     matched_events,
     matched_facts,
     matched_knowledge,
+    relation_counts,
 )
-from novel_bible_eval.run import ChapterOutcome
-from novel_bible_eval.spec import ChapterSpec, EvalSet
+from novel_bible_eval.run import ChapterOutcome, ClosedClash
+from novel_bible_eval.spec import NON_CONFLICT_SUBKINDS, ChapterSpec, EvalSet, ProbeSpec
 
 _Z95 = 1.959963984540054
 _SYNTHETIC_SLOTS = ("events", "facts", "knowledge")
@@ -38,6 +43,7 @@ EXCLUDED_LIMIT = 0.25
 # 검사가 판정을 낸 끝 상태. 실패와 끝나지 않은 상태(작업 중·밀려남)는 검사에 닿지 못했으므로 막히지 않은 확정으로 세지 않고
 # 실패율에 넣는다.
 _JUDGED = ("committed", "blocked")
+_CLOSED_RULE = "immutable_attribute_mismatch"
 
 
 @dataclass(frozen=True)
@@ -192,11 +198,108 @@ def direction_error(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> li
     return per_repeat
 
 
+def relation_accuracy(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> list[Ratio] | None:
+    """반복별 사건 관계 정확도 = 관계가 맞은 회상 관계 / 맞춘 회상 사건의 심은 관계. 대상 블록은 같은 소설·반복의 기본 화
+    결과로 화·문단을 푼다. 사건 작업이 없으면 None."""
+    if "events" not in _ran_slots(outcomes):
+        return None
+    per_repeat = []
+    for by_chapter in _base_by_repeat(outcomes).values():
+        clusters = []
+        for novel in eval_set.novels:
+            targets = {
+                block: (ordinal, number)
+                for (key, ordinal), outcome in by_chapter.items() if key == novel.key
+                for number, block in enumerate(outcome.block_ids, start=1)
+            }
+            chapters = [chapter.events for chapter in novel.chapters]
+            for ordinal, chapter in enumerate(novel.chapters, start=1):
+                outcome = by_chapter.get((novel.key, ordinal))
+                found = extracted(outcome).events if outcome is not None else ()
+                clusters.append(relation_counts(chapter.events, found, targets, chapters))
+        per_repeat.append(_ratio(clusters))
+    return per_repeat
+
+
+def adaptation_recall(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> dict[str, list[Ratio]]:
+    """근거 종류(`source_canon` 원작·`play` 플레이)마다 반복별 각색 후보 재현율 = 맞춘 심은 차이 / 기본 세트에 심은 차이. 사실
+    작업이 없으면 빈 사전."""
+    if "facts" not in _ran_slots(outcomes):
+        return {}
+    result: dict[str, list[Ratio]] = {}
+    for origin in ("source_canon", "play"):
+        per_repeat = []
+        for by_chapter in _base_by_repeat(outcomes).values():
+            clusters = []
+            for novel in eval_set.novels:
+                for ordinal, chapter in enumerate(novel.chapters, start=1):
+                    outcome = by_chapter.get((novel.key, ordinal))
+                    found = extracted(outcome).facts if outcome is not None else ()
+                    rows, notes = (outcome.play_rows, outcome.notes) if outcome is not None else ([], [])
+                    clusters.append(
+                        difference_counts(chapter.facts, found, novel.aliases, origin=origin, play_rows=rows, notes=notes)
+                    )
+            per_repeat.append(_ratio(clusters))
+        result[origin] = per_repeat
+    return result
+
+
+def closed_items(category: str, values: Sequence[str]) -> list[str]:
+    """열거형 사전 항목 이름(`enum:범주/정규 값`). 숫자 갈래는 단위가 곧 갈래라 항목이 없다."""
+    return [f"{category}/{value}" for value in values] if category.startswith("enum:") else []
+
+
+def _planted_items(probe: ProbeSpec) -> tuple[str, list[str]]:
+    """닫힌 값 충돌 탐침이 기대하는 갈래와 사전 항목 — 명세의 두 값을 규칙의 판정으로 읽는다."""
+    assert probe.closed is not None
+    read = [closed_value(normalize_name(value)) for value in probe.closed.values]
+    values = sorted({str(found[1]) for found in read if found is not None})
+    return probe.closed.category, closed_items(probe.closed.category, values)
+
+
+@dataclass(frozen=True)
+class ClosedSummary:
+    """닫힌 값 불변 속성 모순 차단을 갈래(사전 범주·숫자 단위)와 사전 항목으로 나눈 것. 오탐은 확정이 견준 값으로 오탐 분모
+    그대로, 재현율은 탐침 명세의 기대 갈래·두 값으로 그 갈래·항목을 기대한 충돌 탐침 수가 분모다."""
+
+    false_positive_by_category: dict[str, Ratio]
+    false_positive_by_item: dict[str, Ratio]
+    recall_by_category: dict[str, Ratio]
+    recall_by_item: dict[str, Ratio]
+
+
+def _closed_summary(population: Sequence[ChapterOutcome], conflicts: Sequence[tuple[ProbeSpec, bool]]) -> ClosedSummary:
+    categories: Counter[str] = Counter()
+    items: Counter[str] = Counter()
+    for outcome in population:
+        if outcome.status != "blocked" or _CLOSED_RULE not in outcome.block_rules:
+            continue
+        clashes: list[ClosedClash] = outcome.closed
+        categories.update({clash.category for clash in clashes})
+        items.update({item for clash in clashes for item in closed_items(clash.category, clash.values)})
+    recall_categories: dict[str, list[tuple[int, int]]] = {}
+    recall_items: dict[str, list[tuple[int, int]]] = {}
+    for probe, hit in conflicts:
+        if probe.closed is None:
+            continue
+        category, planted = _planted_items(probe)
+        recall_categories.setdefault(category, []).append((int(hit), 1))
+        for item in planted:
+            recall_items.setdefault(item, []).append((int(hit), 1))
+    count = len(population)
+    return ClosedSummary(
+        false_positive_by_category={name: Ratio(k, count) for name, k in sorted(categories.items())},
+        false_positive_by_item={name: Ratio(k, count) for name, k in sorted(items.items())},
+        recall_by_category={name: _ratio(rows) for name, rows in sorted(recall_categories.items())},
+        recall_by_item={name: _ratio(rows) for name, rows in sorted(recall_items.items())},
+    )
+
+
 @dataclass(frozen=True)
 class BlockingSummary:
     false_positive: Ratio  # 확정 단위
     false_positive_by_chapter: Ratio  # 기본 화는 반복을 한 화로 묶은 단위(어느 반복에서든 막히면 막힌 화), 탐침은 하나씩
-    by_rule: dict[str, int]
+    by_rule: dict[str, Ratio]  # 차단 규칙마다, 그 규칙 차단이 하나 이상인 확정 / 오탐 분모 그대로
     by_group: dict[str, Ratio]
     recall: Ratio
     warning_recall: Ratio
@@ -204,6 +307,9 @@ class BlockingSummary:
     failed: dict[str, Ratio]  # 확정 실패율 — 기본 화(`base`)·탐침 종류마다 검사에 닿지 못한 확정 / 시도한 확정
     undeterminable: bool
     totals: dict[str, int] = field(default_factory=dict)  # 시도한 확정 수, `failed` 와 같은 갈래
+    by_subkind: dict[str, Ratio] = field(default_factory=dict)  # 비충돌 갈래 A·B·C 의 세부 종류마다(탐침이 없으면 0/0)
+    recall_by_rule: dict[str, Ratio] = field(default_factory=dict)  # 충돌 탐침이 기대한 차단 규칙마다
+    closed: ClosedSummary = field(default_factory=lambda: ClosedSummary({}, {}, {}, {}))
 
 
 def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingSummary:
@@ -219,7 +325,8 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
     base_units: dict[tuple[str, int], bool] = {}
     probe_units: list[bool] = []
     groups: dict[str, list[tuple[int, int]]] = {}
-    conflict: list[tuple[int, int]] = []
+    subkinds: dict[str, list[tuple[int, int]]] = {kind: [] for kinds in NON_CONFLICT_SUBKINDS.values() for kind in kinds}
+    conflicts: list[tuple[ProbeSpec, bool]] = []
     warning: list[tuple[int, int]] = []
     excluded: Counter[str] = Counter()
     totals: Counter[str] = Counter()
@@ -243,14 +350,17 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
             population.append(outcome)
             probe_units.append(blocked)
             groups.setdefault(probe.group, []).append((int(blocked), 1))
+            if probe.subkind is not None:
+                subkinds[probe.subkind].append((int(blocked), 1))
         elif probe.kind == "conflict":
-            conflict.append((int(blocked and probe.expected_rule in outcome.block_rules), 1))
+            conflicts.append((probe, blocked and probe.expected_rule in outcome.block_rules))
         else:
             warning.append((int(probe.expected_rule in outcome.warning_rules), 1))
     rules: Counter[str] = Counter()
     for outcome in population:
         if outcome.status == "blocked":
             rules.update(set(outcome.block_rules))
+    blocking_rules: tuple[str, ...] = get_args(BlockingRule)
     over = any(
         totals[kind] and (failed[kind] + excluded[kind]) / totals[kind] > EXCLUDED_LIMIT
         for kind in ("base", "conflict", "non_conflict")
@@ -258,14 +368,20 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
     return BlockingSummary(
         false_positive=_ratio([(int(o.status == "blocked"), 1) for o in population]),
         false_positive_by_chapter=_ratio([(int(blocked), 1) for blocked in (*base_units.values(), *probe_units)]),
-        by_rule=dict(rules),
+        by_rule={rule: Ratio(rules[rule], len(population)) for rule in blocking_rules},
         by_group={group: _ratio(rows) for group, rows in sorted(groups.items())},
-        recall=_ratio(conflict),
+        recall=_ratio([(int(hit), 1) for _, hit in conflicts]),
         warning_recall=_ratio(warning),
         excluded=dict(excluded),
         failed={branch: Ratio(failed[branch], count) for branch, count in sorted(totals.items())},
         undeterminable=over,
         totals=dict(totals),
+        by_subkind={kind: _ratio(rows) for kind, rows in subkinds.items()},
+        recall_by_rule={
+            rule: _ratio([(int(hit), 1) for probe, hit in conflicts if probe.expected_rule == rule])
+            for rule in blocking_rules
+        },
+        closed=_closed_summary(population, conflicts),
     )
 
 
@@ -290,7 +406,25 @@ def schema_failure_rate(attempts: Sequence[tuple[str, str | None]]) -> Ratio:
 
 def cost(outcomes: Sequence[ChapterOutcome]) -> dict[str, Any]:
     """작업 호출 기록의 원가(앱 단가표)와 지연. 단가표에 없는 모델의 호출은 원가에서 빠지고 `unpriced` 로 센다."""
-    calls = [call for outcome in outcomes for job in outcome.jobs for call in job.calls]
+    return _cost([call for outcome in outcomes for job in outcome.jobs for call in job.calls])
+
+
+def stage_costs(calls: Sequence[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """호출 기록 원소의 단계(추출 슬롯마다의 연산, 판정)마다 `cost` 와 같은 원가·지연."""
+    stages = sorted({str(call.get("stage")) for call in calls})
+    return {stage: _cost([call for call in calls if str(call.get("stage")) == stage]) for stage in stages}
+
+
+def models(calls: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """실제로 부른 (단계, 구현, 모델 id)마다 호출 수 — 어댑터 이름이 아니라 호출 기록이 말하는 모델이다."""
+    counted = Counter((str(call.get("stage")), str(call.get("backend")), str(call.get("model"))) for call in calls)
+    return [
+        {"stage": stage, "backend": backend, "model": model, "calls": count}
+        for (stage, backend, model), count in sorted(counted.items())
+    ]
+
+
+def _cost(calls: Sequence[dict[str, Any]]) -> dict[str, Any]:
     priced = [call_cost(call).usd for call in calls]
     durations = sorted(int(call["durationMs"]) for call in calls if isinstance(call.get("durationMs"), int))
     return {

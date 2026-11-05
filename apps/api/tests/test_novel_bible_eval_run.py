@@ -7,6 +7,7 @@
 서술되지 않은 후보)와 경고 기대 탐침(순서 미정 후보)이다. 원고는 합성 문장이다."""
 
 import json
+import uuid
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -23,10 +24,10 @@ from api.db.models.novel_bible_events import NovelBibleEventRelation
 from api.novel_bible.core.types import BibleSnapshot, Proposal, RenderedPrompt
 from api.novel_bible.ids import OperationKey
 from memory_eval.ledger import EXIT_BUDGET, Ledger
-from novel_bible_eval import labels
+from novel_bible_eval import labels, metrics
 from novel_bible_eval.__main__ import _outcomes, _parser, _run, extract, main, synthetic
 from novel_bible_eval.fake_llm import FakeLLM, Faults
-from novel_bible_eval.run import BudgetHalt, ChapterOutcome, Meter, extract_chapters, run_set
+from novel_bible_eval.run import BIBLE_TABLES, BudgetHalt, ChapterOutcome, ClosedClash, Meter, extract_chapters, run_set
 from novel_bible_eval.seed import EVAL_EMAIL_DOMAIN, seed_novel
 from novel_bible_eval.spec import EvalSet, load_set
 from novel_bible_fakes import FakeRule, savepoint_factory
@@ -99,8 +100,8 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
     # 경고 기대 탐침은 숨진 인물이 관계 없는 회상 속에 살아 있다가 그 뒤 주선 장면에 나오는 화다. 그 삶이 죽음과 순서가 미정이라
     # 차단 대신 순서 미정 경고가 난다.
     assert "order_undetermined" in outcomes[4].warning_rules
-    # 탐침 화는 묶음 삭제로 지웠고 그 화의 정본 기억 확정도 함께 사라졌다.
-    assert all(outcome.rows_left == 0 for outcome in outcomes if outcome.probe is not None)
+    # 탐침 화는 묶음 삭제로 지웠고 그 화 몫의 정본 기억 행이 표마다 하나도 남지 않았다.
+    assert all(outcome.rows_left == dict.fromkeys(BIBLE_TABLES, 0) for outcome in outcomes if outcome.probe is not None)
     eval_chapters = (
         select(func.count())
         .select_from(NovelChapter)
@@ -137,6 +138,23 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
     assert (knowledge["k"], knowledge["n"]) == (2, 2)
     direction = report["metrics"]["direction_error"]["repeats"][0]
     assert (direction["k"], direction["n"]) == (0, 2)
+    # 3화 회상 사건의 관계를 1화 첫 사건으로 바르게 냈다. 2화 지도 소지는 플레이 행을 짚었지만, 3화 눈 색은 불변 표시를 뒤집어
+    # 사실을 맞히지 못해 원작 차이도 놓친 것으로 센다.
+    relation = report["metrics"]["relation_accuracy"]["repeats"][0]
+    assert (relation["k"], relation["n"]) == (1, 1)
+    play = report["metrics"]["adaptation_recall.play"]["repeats"][0]
+    source = report["metrics"]["adaptation_recall.source_canon"]["repeats"][0]
+    assert ((play["k"], play["n"]), (source["k"], source["n"])) == ((1, 1), (0, 1))
+    # 실제로 부른 모델·구현은 해석기를 지난 호출 기록에서 단계마다 센다 — 판정 호출도 든다(스키마 분모와 같은 23).
+    models = report["models"]
+    assert {(row["stage"], row["backend"], row["model"]) for row in models} == {
+        (stage, "fake", "gemini-3.5-flash-lite")
+        for stage in ("events.extract", "facts.extract", "knowledge.extract", "conflicts.judge")
+    }
+    assert sum(row["calls"] for row in models) == 23
+    assert [row["calls"] for row in models if row["stage"] == "conflicts.judge"] == [1]
+    # 호출 하나 = 입력 1,000 토큰 × $0.30/100만 + 출력 200 토큰 × $2.50/100만.
+    assert report["cost_by_stage"]["conflicts.judge"]["usd"] == pytest.approx(0.0008)
     markdown = (run_dir / "report.md").read_text()  # cite-ok: 문서가 아니라 하네스가 쓴 출력 파일 이름
     assert "block_false_positive" in markdown and "recall.events" in markdown
 
@@ -157,8 +175,6 @@ async def test_blocked_base_chapters_count_as_false_positives_and_leave_their_pr
     assert [outcome.status for outcome in outcomes if outcome.probe is None] == ["committed", "committed", "blocked"]
     assert outcomes[2].block_rules == ["exit_then_appearance"]
 
-    from novel_bible_eval import metrics
-
     summary = metrics.blocking(eval_set, outcomes)
     # 3화에 기대는 탐침은 소문 탐침 하나라 그것만 빠진다. 차단된 기본 화 1 + 1·2화에만 기대는 비충돌 탐침의 차단 1 / 기본 3 +
     # 그 탐침 1
@@ -173,8 +189,6 @@ async def test_a_swapped_knower_and_subject_through_the_real_knowledge_slot_is_o
     # 1화에 심은 지식 하나(도윤이 서하의 등불 소지를 안다)를 실제 지식 슬롯의 검증·확정을 지난 작업 제안에서 센다. 3화의 지식
     # (서하가 등대의 세워진 때를 안다)은 그대로 둔다. 바르게 내면 방향 오류 0/2·재현 2/2, 1화 지식의 앎 주체와 명제 주어를 뒤바꿔
     # 내면 방향 오류 1/2·재현 1/2 이다.
-    from novel_bible_eval import metrics
-
     eval_set = load_set(FIXTURE)
     factory = savepoint_factory(db_session)
     counted: dict[str, tuple[list[tuple[int, int]], list[tuple[int, int]]]] = {}
@@ -217,6 +231,12 @@ async def test_the_fake_answers_carry_the_planted_relation_differences_and_propo
     items = Proposal.model_validate(knowledge.proposal).items
     assert [(item.proposition.subject, item.proposition.subject_kind) for item in items if item.proposition] == [
         ("등대", "object")
+    ]
+    # 지표도 같은 행을 맞힌 것으로 센다 — 관계 대상 블록을 1화 첫 사건으로, 각색 후보의 근거를 심기가 돌려준 행·글로 되짚는다.
+    (relation,) = metrics.relation_accuracy(eval_set, outcomes) or []
+    adaptation = metrics.adaptation_recall(eval_set, outcomes)
+    assert [(relation.k, relation.n), *((r.k, r.n) for origin in ("play", "source_canon") for r in adaptation[origin])] == [
+        (1, 1), (1, 1), (1, 1)
     ]
 
 
@@ -410,3 +430,85 @@ async def test_the_fake_points_its_play_difference_at_the_row_the_app_keeps_for_
         )
     ).all()
     assert list(shown) == [kept["value"]]
+
+
+_EYE_BLACK = {
+    "key": "eye-black", "kind": "conflict", "group": "immutable_attribute_mismatch",
+    "expected_rule": "immutable_attribute_mismatch", "closed": {"category": "enum:색", "values": ["잿빛", "검은색"]},
+    "depends_on": [3],
+    "chapter": {
+        "paragraphs": ["등대지기의 두 눈은 본디 검은색이었다."],
+        "facts": [{"subject": "등대지기", "kind": "attribute", "attribute": "눈 색", "values": ["검은색"],
+                   "immutable": True, "paragraph": 1}],
+    },
+}
+# 한 화 안에서 같은 술어에 두 값을 둔 불변 속성(오드아이) — 원고에 모순이 없으니 막히면 오탐이다. 두 값 모두 이 화의 새 항목이라
+# 정본 행이 없다.
+_ODD_EYES = {
+    "key": "odd-eyes", "kind": "non_conflict", "group": "C", "subkind": "two_valued_immutable", "depends_on": [],
+    "chapter": {
+        "paragraphs": ["고양이 나비의 왼눈은 파란색이었다.", "나비의 오른눈은 노란색이었다."],
+        "facts": [
+            {"subject": "나비", "kind": "attribute", "attribute": "눈 색", "values": ["파란색"], "immutable": True,
+             "paragraph": 1},
+            {"subject": "나비", "kind": "attribute", "attribute": "눈 색", "values": ["노란색"], "immutable": True,
+             "paragraph": 2},
+        ],
+    },
+}
+
+
+async def test_closed_value_blocks_record_the_category_and_values_they_compared_before_the_probe_is_deleted(
+    db_session: AsyncSession,
+) -> None:
+    # 눈 색 탐침은 3화 정본의 잿빛(사전의 회색)과 이 화의 검은색이 부딪친다 — 앞 값은 정본 행에서, 뒤 값은 막혀 저장되지 않은
+    # 이 화의 제안에서 읽는다. 오드아이 탐침은 두 값 모두 이 화의 제안이다. 탐침 화는 그 뒤에 지워진다.
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    raw["novels"][0]["probes"] += [_EYE_BLACK, _ODD_EYES]
+    eval_set = EvalSet.model_validate(raw)
+    fake = FakeLLM(eval_set)
+    outcomes = await run_set(savepoint_factory(db_session), Meter().wrap(fake.resolver()), eval_set, slots=fake.slots)
+    probed = {outcome.probe: outcome for outcome in outcomes if outcome.probe is not None}
+    for key, values in (("eye-black", ["검정", "회색"]), ("odd-eyes", ["노랑", "파랑"])):
+        assert (probed[key].status, probed[key].block_rules) == ("blocked", ["immutable_attribute_mismatch"])
+        assert probed[key].closed == [ClosedClash(category="enum:색", values=values)]
+        assert probed[key].rows_left == dict.fromkeys(BIBLE_TABLES, 0)
+    closed = metrics.blocking(eval_set, outcomes).closed
+    assert {name: (r.k, r.n) for name, r in closed.recall_by_category.items()} == {"enum:색": (1, 1)}
+    # 오탐 분모 = 기본 3 + 비충돌 셋. 막힌 비충돌 탐침은 오드아이 하나다.
+    assert {name: (r.k, r.n) for name, r in closed.false_positive_by_category.items()} == {"enum:색": (1, 6)}
+
+
+_SECOND_NOTE = "등대지기의 눈은 둘 다 검은색이라고들 했다."
+
+
+@pytest.mark.parametrize(
+    ("label", "quote", "note"),
+    [
+        # 작품 설정은 앱이 `이름: …` 줄을 앞에 붙여 읽으므로 구간이 그 줄만큼 밀린다.
+        pytest.param("S", "두 눈이 모두 검은색", None, id="work-setting-behind-the-name-line"),
+        pytest.param("K2", "둘 다 검은색", 1, id="second-keyword-note"),
+    ],
+)
+async def test_a_difference_from_a_character_source_points_at_the_planted_text_and_span(
+    db_session: AsyncSession, label: str, quote: str, note: int | None
+) -> None:
+    # 캐릭터 원작에 노트 둘을 두고, 3화 눈 색 차이를 작품 설정이나 둘째 노트(`K2`)에서 짚는다. 근거는 그 글(노트면 심기가 돌려준
+    # 그 노트 id)과 그 글 안의 구절 자리다. 각색 후보 재현율도 같은 글로 되짚어 센다.
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    novel = raw["novels"][0]
+    novel["source"] |= {"kind": "character", "notes": [*novel["source"]["notes"], _SECOND_NOTE]}
+    novel["chapters"][2]["facts"][0]["source_difference"] = {"label": label, "quote": quote}
+    eval_set = EvalSet.model_validate(raw)
+    fake = FakeLLM(eval_set)
+    outcomes = await run_set(savepoint_factory(db_session), Meter().wrap(fake.resolver()), eval_set, slots=fake.slots)
+    assert _statuses(outcomes) == _WITH_THE_CONFLICT_PROBE_BLOCKED
+    (evidence,) = (
+        await db_session.scalars(select(NovelBibleEvidence).where(NovelBibleEvidence.origin == "source_canon"))
+    ).all()
+    source = novel["source"]
+    text = f"이름: {source['name']}\n{source['setting']}" if note is None else source["notes"][note]
+    assert (evidence.char_start, evidence.char_end) == (text.index(quote), text.index(quote) + len(quote))
+    assert evidence.keyword_note_id == (None if note is None else uuid.UUID(outcomes[2].notes[note]))
+    (recalled,) = metrics.adaptation_recall(eval_set, outcomes)["source_canon"]
+    assert (recalled.k, recalled.n) == (1, 1)

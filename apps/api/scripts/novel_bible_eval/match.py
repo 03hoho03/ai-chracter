@@ -1,11 +1,16 @@
 """결정적 매처 — 추출 제안이 심은 정답을 맞혔는가. 모델을 부르지 않는다.
 
 - 사건: 문단이 겹치고 현실성이 같다.
-- 사실: 주어 이름(또는 그 별칭)이 같고, 종류·술어가 같고, 값이 명세의 허용 표기 중 하나이고, 유지 여부와 불변 표시가 같다.
-  제안 하나가 원자 명제 하나다. 불변 표시까지 보는 것은 그 표시가 불변 속성 불일치 차단(`immutable_attribute_mismatch`)이 읽을
-  사실인지를 정해서다 — 바뀌는 속성을 불변으로 내면 다른 화에서 값이 바뀐 것을 막고, 불변 속성을 바뀌는 것으로 내면 그 충돌을
-  놓친다.
+- 사실: 주어 이름(또는 그 별칭)이 같고, 사실 종류(생사·출입·소지·능력·속성·관계)가 같고, 속성·관계 이름이 명세의 이름이나 그
+  다른 표기 중 하나이고, 값이 명세의 허용 표기 중 하나이고, 유지 여부와 불변 표시가 같다. 주어 종류(인물·사물·능력)는 견주지
+  않는다 — 이름이 이미 개체를 가린다. 제안 하나가 원자 명제 하나다. 불변 표시까지 보는 것은 그 표시가 불변 속성 불일치
+  차단(`immutable_attribute_mismatch`)이 읽을 사실인지를 정해서다 — 바뀌는 속성을 불변으로 내면 다른 화에서 값이 바뀐 것을
+  막고, 불변 속성을 바뀌는 것으로 내면 그 충돌을 놓친다.
 - 지식: 앎 주체·앎 종류가 같고 명제가 위 사실 규칙으로 맞는다.
+- 회상 관계: 맞춘 회상 사건이 낸 관계의 종류가 같고, 대상 블록을 화·문단으로 풀면 앱이 심은 대상 사건을 가리킬 때 쓰는 문단
+  (`relation_anchor`)이다.
+- 각색 후보: 맞춘 사실이 심은 차이의 원작 글(작품 설정·그 차례의 노트)이나 플레이 행을 근거로 단다. 노트·플레이 행은 심기가
+  돌려준 행 id 로 되짚는다.
 
 이름·값은 코어가 개체·안정 키를 만들 때와 같은 정규화로 견준다. 정답 하나에는 제안 하나만 대응한다(먼저 맞는 것)."""
 
@@ -14,24 +19,32 @@ from dataclasses import dataclass
 from typing import Any
 
 from api.novel_bible.core.keys import normalize_name, predicate_norm
-from api.novel_bible.core.types import Proposal, Proposition
+from api.novel_bible.core.types import Proposal, Proposition, SideQuote
 
 from novel_bible_eval.run import ChapterOutcome
-from novel_bible_eval.spec import PlantedEvent, PlantedFact, PlantedKnowledge
+from novel_bible_eval.spec import PlantedEvent, PlantedFact, PlantedKnowledge, relation_anchor
 
 Aliases = Mapping[str, Sequence[str]]
+
+
+@dataclass(frozen=True)
+class ExtractedRelation:
+    kind: str
+    target_block: str
 
 
 @dataclass(frozen=True)
 class ExtractedEvent:
     paragraphs: frozenset[int]
     actuality: str
+    relations: tuple[ExtractedRelation, ...] = ()
 
 
 @dataclass(frozen=True)
 class ExtractedFact:
     proposition: Proposition
     immutable: bool = False
+    side_quotes: tuple[SideQuote, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -49,7 +62,8 @@ class Extracted:
 
 
 def extracted(outcome: ChapterOutcome) -> Extracted:
-    """확정 하나의 성공한 작업 제안에서 매처가 읽는 꼴만 꺼낸다. 사건의 블록은 개정의 차례로 문단 번호가 된다."""
+    """확정 하나의 성공한 작업 제안에서 매처가 읽는 꼴만 꺼낸다. 사건의 블록은 개정의 차례로 문단 번호가 된다. 회상 관계는 그
+    관계를 낸 사건에 붙인다(대상은 블록 id 그대로 — 다른 화의 블록이라 화 결과를 함께 봐야 푼다)."""
     order = {block: number for number, block in enumerate(outcome.block_ids, start=1)}
     events: list[ExtractedEvent] = []
     facts: list[ExtractedFact] = []
@@ -57,12 +71,22 @@ def extracted(outcome: ChapterOutcome) -> Extracted:
     for job in outcome.jobs:
         if job.proposal is None:
             continue
-        for item in Proposal.model_validate(job.proposal).items:
+        items = Proposal.model_validate(job.proposal).items
+        relations: dict[str, list[ExtractedRelation]] = {}
+        for item in items:
+            if item.table == "event_relation":
+                relations.setdefault(str(item.fields.get("event")), []).append(
+                    ExtractedRelation(str(item.fields.get("relation")), str(item.fields.get("to_anchor_block_id")))
+                )
+        for item in items:
             if item.table == "event":
                 paragraphs = frozenset(order[str(block)] for block in item.covers_blocks if str(block) in order)
-                events.append(ExtractedEvent(paragraphs, str(item.fields.get("actuality", "present"))))
+                events.append(
+                    ExtractedEvent(paragraphs, str(item.fields.get("actuality", "present")),
+                                   tuple(relations.get(item.local_key, ())))
+                )
             elif item.table == "fact" and item.proposition is not None:
-                facts.append(ExtractedFact(item.proposition, item.fields.get("immutable") is True))
+                facts.append(ExtractedFact(item.proposition, item.fields.get("immutable") is True, item.side_quotes))
             elif item.table == "knowledge" and item.proposition is not None and item.names.get("knower"):
                 knower = item.names["knower"][0].name
                 knowledge.append(ExtractedKnowledge(knower, str(item.fields.get("kind")), item.proposition))
@@ -74,42 +98,54 @@ def _same(name: str, planted: str, aliases: Aliases) -> bool:
 
 
 def _proposition_fits(
-    proposition: Proposition, kind: str, attribute: str | None, values: Sequence[str], holds: bool
+    proposition: Proposition, kind: str, attributes: Sequence[str | None], values: Sequence[str], holds: bool
 ) -> bool:
+    """`attributes` 는 명세의 속성·관계 이름과 그 다른 표기들이다."""
     return (
         proposition.kind == kind
-        and predicate_norm(proposition.kind, proposition.attribute) == predicate_norm(proposition.kind, attribute)
+        and predicate_norm(proposition.kind, proposition.attribute)
+        in {predicate_norm(proposition.kind, attribute) for attribute in attributes}
         and normalize_name(proposition.value) in {normalize_name(value) for value in values}
         and proposition.holds == holds
     )
 
 
-def matched_events(planted: Sequence[PlantedEvent], found: Sequence[ExtractedEvent]) -> int:
-    used: set[int] = set()
-    for event in planted:
+def paired_events(planted: Sequence[PlantedEvent], found: Sequence[ExtractedEvent]) -> dict[int, int]:
+    """정답 차례 → 대응한 제안 차례."""
+    paired: dict[int, int] = {}
+    for number, event in enumerate(planted):
         hit = next(
             (
                 index for index, candidate in enumerate(found)
-                if index not in used and candidate.actuality == event.actuality
+                if index not in paired.values() and candidate.actuality == event.actuality
                 and candidate.paragraphs & set(event.paragraphs)
             ),
             None,
         )
         if hit is not None:
-            used.add(hit)
-    return len(used)
+            paired[number] = hit
+    return paired
+
+
+def matched_events(planted: Sequence[PlantedEvent], found: Sequence[ExtractedEvent]) -> int:
+    return len(paired_events(planted, found))
+
+
+def _fact_fits(fact: PlantedFact, candidate: ExtractedFact, aliases: Aliases) -> bool:
+    return (
+        _same(candidate.proposition.subject, fact.subject, aliases)
+        and _proposition_fits(
+            candidate.proposition, fact.kind, (fact.attribute, *fact.attribute_aliases), fact.values, fact.holds
+        )
+        and candidate.immutable == fact.immutable
+    )
 
 
 def matched_facts(planted: Sequence[PlantedFact], found: Sequence[ExtractedFact], aliases: Aliases) -> int:
     used: set[int] = set()
     for fact in planted:
         hit = next(
-            (
-                index for index, candidate in enumerate(found)
-                if index not in used and _same(candidate.proposition.subject, fact.subject, aliases)
-                and _proposition_fits(candidate.proposition, fact.kind, fact.attribute, fact.values, fact.holds)
-                and candidate.immutable == fact.immutable
-            ),
+            (index for index, candidate in enumerate(found) if index not in used and _fact_fits(fact, candidate, aliases)),
             None,
         )
         if hit is not None:
@@ -117,10 +153,68 @@ def matched_facts(planted: Sequence[PlantedFact], found: Sequence[ExtractedFact]
     return len(used)
 
 
+def relation_counts(
+    planted: Sequence[PlantedEvent], found: Sequence[ExtractedEvent], targets: Mapping[str, tuple[int, int]],
+    chapters: Sequence[Sequence[PlantedEvent]],
+) -> tuple[int, int]:
+    """(관계가 맞은 수, 맞춘 회상 사건의 심은 관계 수). `targets` 는 블록 id → (화 번호, 문단 번호) — 같은 소설·반복의 기본
+    화 결과에서 푼다. `chapters` 는 기본 화마다 사건 정답이다. 관계가 맞으려면 그 회상 사건에 대응한 제안이 같은 종류의 관계를
+    내고, 그 대상 블록이 정답 대상 사건의 앱 대상 문단이어야 한다."""
+    right = total = 0
+    for number, hit in paired_events(planted, found).items():
+        relation = planted[number].relation
+        if relation is None:
+            continue
+        total += 1
+        anchor = (relation.chapter, relation_anchor(chapters[relation.chapter - 1], relation.event - 1))
+        right += any(
+            out.kind == relation.kind and targets.get(out.target_block) == anchor for out in found[hit].relations
+        )
+    return right, total
+
+
+def _points_at(fact: PlantedFact, side: SideQuote, play_rows: Sequence[str], notes: Sequence[str]) -> bool:
+    """근거가 그 사실에 심은 차이의 원작 글·플레이 행인가. 원작 표지는 작품 설정 `S`, 노트 `K1`·`K2` …(심은 차례)다."""
+    if fact.play_difference is not None and side.origin == "play":
+        return str(side.chat_memory_fact_id) == play_rows[fact.play_difference - 1]
+    if (source := fact.source_difference) is None or side.origin != "source_canon":
+        return False
+    if source.label == "S":
+        return side.source_field == "work_setting"
+    return side.source_field == "keyword_note" and str(side.keyword_note_id) == notes[int(source.label[1:]) - 1]
+
+
+def difference_counts(
+    planted: Sequence[PlantedFact], found: Sequence[ExtractedFact], aliases: Aliases, *, origin: str,
+    play_rows: Sequence[str], notes: Sequence[str],
+) -> tuple[int, int]:
+    """(맞춘 차이, 심은 차이) — `origin` 은 `source_canon`(원작) 또는 `play`. 차이는 그 사실 정답에 대응하는 제안 사실이 그
+    차이의 원작 글·플레이 행을 근거로 달았을 때 맞다."""
+    wanted = [
+        fact for fact in planted
+        if (fact.source_difference if origin == "source_canon" else fact.play_difference) is not None
+    ]
+    used: set[int] = set()
+    for fact in wanted:
+        hit = next(
+            (
+                index for index, candidate in enumerate(found)
+                if index not in used and _fact_fits(fact, candidate, aliases)
+                and any(side.origin == origin and _points_at(fact, side, play_rows, notes)
+                        for side in candidate.side_quotes)
+            ),
+            None,
+        )
+        if hit is not None:
+            used.add(hit)
+    return len(used), len(wanted)
+
+
 def _skeleton(planted: PlantedKnowledge, candidate: ExtractedKnowledge) -> bool:
-    """이름을 뺀 골격 — 앎 종류와 명제의 종류·술어·값·유지 여부."""
+    """이름을 뺀 골격 — 앎 종류와 명제의 종류·술어(다른 표기 포함)·값·유지 여부."""
     return candidate.kind == planted.kind and _proposition_fits(
-        candidate.proposition, planted.fact_kind, planted.attribute, planted.values, planted.holds
+        candidate.proposition, planted.fact_kind, (planted.attribute, *planted.attribute_aliases), planted.values,
+        planted.holds,
     )
 
 

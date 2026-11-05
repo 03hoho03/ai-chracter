@@ -171,7 +171,7 @@ class FakeLLM:
             for probe in novel.probes:
                 self._chapters[tuple(probe.chapter.paragraphs)] = _Chapter(novel.key, probe.key, probe.chapter, novel)
         self._faults = faults or Faults()
-        self._usage = {"model": model, "promptTokens": prompt_tokens, "outputTokens": output_tokens}
+        self._usage = {"backend": "fake", "model": model, "promptTokens": prompt_tokens, "outputTokens": output_tokens}
         self._failed: set[tuple[str, str]] = set()
         self._prompt_set_id = uuid.uuid4()
         self.calls = 0

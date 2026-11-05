@@ -54,7 +54,7 @@ async def synthetic(
         halted = f"끊김 — {type(error).__name__}: {error}"
         raise
     finally:
-        report = synthetic_report(eval_set, outcomes, meter.attempts, adapter=adapter, halted=halted)
+        report = synthetic_report(eval_set, outcomes, meter.attempts, adapter=adapter, halted=halted, calls=meter.calls)
         write_report(report, outcomes, run_dir)
     return EXIT_BUDGET if halted else 0
 
