@@ -3,7 +3,7 @@ import type { ContentCardProps } from "@/entities/content";
 import type { CharacterBuilderFormValues } from "./characterBuilderSchema";
 
 type CharacterToCardContext = {
-  thumbnailUrl: string | null;
+  thumbnailUrl: string | undefined;
   authorNickname: string;
 };
 
@@ -23,7 +23,7 @@ export function formToCard(
   ctx: CharacterToCardContext,
 ): ContentCardProps {
   return {
-    thumbnailUrl: ctx.thumbnailUrl ?? undefined,
+    thumbnailUrl: ctx.thumbnailUrl,
     thumbnailAspect: "square",
     title: values.profile.name,
     metrics: { viewCount: 0 },

@@ -116,7 +116,7 @@ type StoryBuilderShellProps = {
     getPayload: () => PreviewStartPayload;
     getMediaBookImages: () => MediaTagImages;
     onClose: () => void;
-    thumbnailUrl: string | null;
+    thumbnailUrl: string | undefined;
   }) => ReactNode;
 };
 
