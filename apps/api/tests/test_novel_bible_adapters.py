@@ -538,8 +538,11 @@ async def test_every_extracting_slot_channel_is_in_the_sonnet_chain_the_claude_a
     """워커 기동과 확정 입구가 부르는 문안 검사가 모든 연산을 Claude 어댑터에 둔 배정에서도 통과한다 — 시드된 Sonnet 체인에 추출
     슬롯 채널이 다 있다. 빠지면 그 배정으로 켠 환경에서 확정이 전부 503 이 된다."""
     monkeypatch.setattr(settings, "novel_bible_adapters", _every_operation_on(adapter_id))
+    resolver = build_resolver()
 
-    assert await verify_prompt_chains(db_session, REGISTRY, build_resolver()) == []
+    # 덮어쓰기가 무시돼 Gemini 체인을 읽어도 통과하지 않게, 검사가 정말 그 어댑터의 문안을 보는지 먼저 확인한다.
+    assert {resolver(operation).id for operation in get_args(OperationKey)} == {adapter_id}
+    assert await verify_prompt_chains(db_session, REGISTRY, resolver) == []
 
 
 async def test_a_chain_without_an_active_set_is_a_prompt_missing_failure(
