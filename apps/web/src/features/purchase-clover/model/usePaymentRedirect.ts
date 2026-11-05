@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 
 import { useCompletePaymentMutation } from "../api/useCompletePaymentMutation";
 import { resolvePaymentRedirect, type PaymentRedirectSearch } from "./paymentRedirect";
@@ -12,7 +12,8 @@ import { settleFailedCompletion, toSettledPurchase, type SettledPurchase } from 
  * 새로고침·뒤로가기로 같은 결제를 다시 확정하러 가지 않게 하려는 것이다.
  *
  * effect 는 키가 바뀔 때만 돈다. `redirect` 객체와 콜백은 렌더마다 새로 만들어지므로 의존성에 넣으면 매 렌더 다시
- * 돌고, 키가 같으면 같은 복귀다. */
+ * 돌고, 키가 같으면 같은 복귀다 — 그래서 처리 본문은 그 값들을 effect 이벤트로 읽는다. 확정을 기다린 뒤에 부르는
+ * 콜백은 처리를 시작한 렌더의 것이다. */
 export function usePaymentRedirect(
   search: PaymentRedirectSearch,
   onSettled: (settled: SettledPurchase) => void,
@@ -23,7 +24,7 @@ export function usePaymentRedirect(
   const redirect = resolvePaymentRedirect(search);
   const key = redirect.kind === "complete" ? `complete:${redirect.paymentId}` : redirect.kind;
 
-  useEffect(() => {
+  const handleRedirect = useEffectEvent(() => {
     if (redirect.kind === "none" || handledKey.current === key) return;
     handledKey.current = key;
 
@@ -40,5 +41,9 @@ export function usePaymentRedirect(
       }
       onHandled();
     })();
+  });
+
+  useEffect(() => {
+    handleRedirect();
   }, [key]);
 }

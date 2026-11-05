@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { toast } from "sonner";
 
 import { assertNever } from "@/shared/lib/assertNever";
@@ -9,14 +9,15 @@ import { IDENTITY_NOT_COMPLETED, IDENTITY_VERIFIED_MESSAGE, toIdentityErrorResul
 
 /** 본인인증창이 페이지를 떠났다가(모바일) 마이페이지로 돌아왔을 때 쿼리를 읽어 저장을 이어받고, 끝나면 쿼리를 지운다.
  * 결제 복귀(`features/purchase-clover`의 같은 이름 훅)와 같은 구조다 — 마운트 시 뮤테이션이라 `mutateAsync` + `await`,
- * 같은 복귀를 두 번 처리하지 않게 처리한 키를 ref 로 기억하고, effect 는 키가 바뀔 때만 돈다. */
+ * 같은 복귀를 두 번 처리하지 않게 처리한 키를 ref 로 기억하고, effect 는 키가 바뀔 때만 돈다(렌더마다 새로 만들어지는
+ * `redirect` 객체와 콜백은 effect 이벤트로 읽는다). */
 export function useIdentityRedirect(search: IdentityRedirectSearch, onHandled: () => void) {
   const { mutateAsync } = useCompleteIdentityVerificationMutation();
   const handledKey = useRef<string | null>(null);
   const redirect = resolveIdentityRedirect(search);
   const key = redirect.kind === "complete" ? `complete:${redirect.identityVerificationId}` : redirect.kind;
 
-  useEffect(() => {
+  const handleRedirect = useEffectEvent(() => {
     if (redirect.kind === "none" || handledKey.current === key) return;
     handledKey.current = key;
 
@@ -33,6 +34,10 @@ export function useIdentityRedirect(search: IdentityRedirectSearch, onHandled: (
       }
       onHandled();
     })();
+  });
+
+  useEffect(() => {
+    handleRedirect();
   }, [key]);
 }
 
