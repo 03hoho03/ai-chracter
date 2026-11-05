@@ -22,6 +22,7 @@ from api.core import feature_switches
 from api.core.config import Settings, settings
 from api.core.feature_switches import (
     FEATURE_SWITCH_NAMES,
+    READ_ONLY_SWITCH_REASONS,
     FeatureSwitchName,
     keep_switch_overrides_fresh,
     pinned_context,
@@ -66,6 +67,15 @@ def test_every_switch_is_a_boolean_settings_field() -> None:
     AttributeError 가 나거나 참/거짓이 아닌 값이 조건문에 들어간다."""
     fields = Settings.model_fields
     assert [name for name in FEATURE_SWITCH_NAMES if name not in fields or fields[name].annotation is not bool] == []
+
+
+def test_every_boolean_settings_field_is_either_a_button_or_read_only_once() -> None:
+    """참/거짓 `Settings` 칸은 모두 버튼 대상이거나 읽기 전용 중 한쪽에만 있다. 깨지는 시나리오: 새 스위치 칸을 더하고 어느
+    쪽에도 넣지 않아 어드민 현황판에서 그 스위치가 조용히 빠지거나, 두 목록에 함께 들어가 읽기 전용 이유가 붙은 채 버튼이
+    생긴다."""
+    booleans = [name for name, field in Settings.model_fields.items() if field.annotation is bool]
+    classified = [*FEATURE_SWITCH_NAMES, *READ_ONLY_SWITCH_REASONS]
+    assert sorted(classified) == sorted(booleans)
 
 
 def test_without_overrides_a_switch_follows_settings_patched_at_any_time(monkeypatch: pytest.MonkeyPatch) -> None:
