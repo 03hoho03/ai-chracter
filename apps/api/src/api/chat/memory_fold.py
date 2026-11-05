@@ -27,6 +27,7 @@ from api.chat.memory_window import MessageKey, load_current_summary, memory_mode
 from api.chat.prompt_builder import MemorySummaryResult, PromptNames, PromptRenderError, build_memory_summary_prompt
 from api.chat.prompt_dump import dump_background_prompt
 from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.redis import redis_client
 from api.core.sentry import capture_dependency_failure
 from api.db.models import (
@@ -228,7 +229,7 @@ async def summary_prompt(
         await _room_people(
             session_factory, room_id, is_story_chat=is_story_chat, names=names, user_label=prompt_set.user_label
         )
-        if settings.memory_summary_secret_marking
+        if switch_on("memory_summary_secret_marking")
         and memory_model_in_scope(prompt_set.lane, writing_model, settings.memory_model_scope)
         else None
     )

@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import MessageKey
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.db.models.novel import (
     Novel,
     NovelSourceSection,
@@ -60,7 +60,7 @@ from api.novelize.source import (
 
 
 async def _require_outline_flow_enabled() -> None:
-    if not settings.novelize_outline_flow_enabled:
+    if not switch_on("novelize_outline_flow_enabled"):
         raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_OUTLINE_FLOW_DISABLED")
 
 

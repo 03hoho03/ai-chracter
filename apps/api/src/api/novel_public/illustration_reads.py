@@ -30,7 +30,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.s3 import build_display_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.content import Content, ModerationStatus
@@ -117,7 +117,7 @@ async def frozen_illustrations(
 ) -> list[FrozenIllustration]:
     """판이 얼린 개정 `revision_id` 의 그림(모듈 docstring 의 조건). `screened_at`·`published_at` 은 그 판의 두 칸,
     `content_id` 는 그 소설의 원작이다."""
-    if not settings.novel_illustrations_enabled or not screened_for(screened_at, published_at):
+    if not switch_on("novel_illustrations_enabled") or not screened_for(screened_at, published_at):
         return []
     revision = await db.get_one(NovelChapterRevision, revision_id)
     rows = [row for row in await placements_of(db, revision) if row.anchor_block_id is not None]

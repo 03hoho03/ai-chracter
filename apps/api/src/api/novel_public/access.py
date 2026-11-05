@@ -26,6 +26,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from api.content.access import publicly_listed_conditions
 from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.db.models.auth import User
 from api.db.models.content import Content, ModerationStatus
 from api.db.models.novel import Novel, NovelChapterPublication, NovelPublication
@@ -49,7 +50,7 @@ def novel_public_open_to(user_id: uuid.UUID | None) -> bool:
 
     독자·게시 게이트, 작품 정보·화 읽기의 직접 판정, 가격 응답과 `GET /me` 의 켜짐 표시가 모두 이 함수를 부른다 — 따로
     판정하면 화면에 보이는 탭이 404 를 받거나, 열린 사람에게 탭이 숨는다."""
-    if not settings.novel_public_enabled:
+    if not switch_on("novel_public_enabled"):
         return False
     allowlist = settings.novel_public_preview_allowlist
     return not allowlist or (user_id is not None and user_id in allowlist)

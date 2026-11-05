@@ -11,20 +11,20 @@ import uuid
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.db.models.content import Content
 from api.db.models.novel import Novel
 
 
 def lock_in_effect(novel: Novel) -> bool:
     """이 소설의 연재권 잠금이 지금 효력이 있는가 — 스위치가 켜졌고 잠겨 있다. 원작 판정이 허락을 건너뛸지 이것으로 정한다."""
-    return settings.novel_public_policy_v2_enabled and novel.serial_locked_at is not None
+    return switch_on("novel_public_policy_v2_enabled") and novel.serial_locked_at is not None
 
 
 def needs_review(novel: Novel) -> bool:
     """이 소설을 독자에게 처음 내보내려면 운영자 승인이 필요한가 — 스위치가 켜졌고 아직 잠기지 않았다. 잠금이 곧 "독자에게
     한 번이라도 보였다"의 기록이라 따로 첫 공개 표식을 두지 않는다."""
-    return settings.novel_public_policy_v2_enabled and novel.serial_locked_at is None
+    return switch_on("novel_public_policy_v2_enabled") and novel.serial_locked_at is None
 
 
 async def lock_serial(db: AsyncSession, novel_id: uuid.UUID, *, terms_version: str | None) -> None:

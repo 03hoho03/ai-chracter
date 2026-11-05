@@ -23,6 +23,7 @@ from api.assets.image_processing import (
 from api.assets.router import delete_emptied_generation_requests
 from api.core import clover
 from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.rate_limit_gate import (
     ImageCharge,
     enforce_image_rate_limit,
@@ -584,7 +585,7 @@ async def list_image_models(
                 supported_aspect_ratios=_known_aspect_ratios(capability.aspect_ratios),
                 available=available,
                 styles=styles,
-                supports_reference_image=settings.local_image_reference_enabled and available,
+                supports_reference_image=switch_on("local_image_reference_enabled") and available,
             )
         )
     return items
@@ -603,7 +604,7 @@ async def _resolve_reference_storage_key(
     않는다(생성 이미지 삭제와 같은 규칙). FE는 두 `detail` 문자열로 안내를 가른다."""
     if reference_asset_id is None:
         return None
-    if not settings.local_image_reference_enabled:
+    if not switch_on("local_image_reference_enabled"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="reference image disabled")
     async with session_factory() as session:
         storage_key = await session.scalar(

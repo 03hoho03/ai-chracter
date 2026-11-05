@@ -20,7 +20,7 @@ from sqlalchemy import Integer, Uuid, case, false, func, insert, literal, litera
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.rate_limit import KST
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
@@ -206,7 +206,7 @@ _SPEND_GRADE = case(
 )
 
 
-# 정지 스위치(`settings.clover_ledger_paused`)가 켜졌을 때의 거절. 결제 꺼짐(`PAYMENTS_UNAVAILABLE`)과 같은 503 모양에 짧은 안내를
+# 정지 스위치(`clover_ledger_paused`)가 켜졌을 때의 거절. 결제 꺼짐(`PAYMENTS_UNAVAILABLE`)과 같은 503 모양에 짧은 안내를
 # 싣는다 — 기다리면 풀리는 일시 정지라 429 의 재시도 계약(`retryAfterSeconds`)이 아니다.
 CLOVER_PAUSED_CODE = "CLOVER_PAUSED"
 _CLOVER_PAUSED_MESSAGE = "클로버 사용을 잠시 멈췄어요. 몇 분 뒤 다시 시도해 주세요."
@@ -222,7 +222,7 @@ def raise_if_clover_paused() -> None:
     막지 않는 것: 면제 계정의 채팅 턴·무료 토큰 이미지(`spend` 를 부르지 않는다), 모든 환급,
     결제 완료·웹훅, 만료 배치, 탈퇴 소멸 — 이미 시작한 일의 마무리와 돈이 이미 나간 결제의 동기화는 멈추면 안 된다. 라우트
     의존성으로도 쓴다(인자가 없다)."""
-    if settings.clover_ledger_paused:
+    if switch_on("clover_ledger_paused"):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": CLOVER_PAUSED_CODE, "message": _CLOVER_PAUSED_MESSAGE},

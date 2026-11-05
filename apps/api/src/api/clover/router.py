@@ -65,7 +65,7 @@ from api.core.clover import (
     is_same_kst_day,
     kst_today,
 )
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.identity_gate import identity_verification_required, is_identity_gated
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
@@ -253,10 +253,10 @@ async def get_clover_pricing() -> CloverPricingResponse:
         novel_free_chapter_count=clover.NOVEL_FREE_CHAPTER_COUNT,
         memory_summary_regenerate_cost=clover.MEMORY_SUMMARY_REGENERATE_COST,
         novel_public_enabled=novel_public_open_to(None),
-        novel_public_policy_v2_enabled=settings.novel_public_policy_v2_enabled,
-        novel_illustrations_enabled=settings.novel_illustrations_enabled,
-        novelize_outline_flow_enabled=settings.novelize_outline_flow_enabled,
-        novelize_multi_block_edit_enabled=settings.novelize_multi_block_edit_enabled,
+        novel_public_policy_v2_enabled=switch_on("novel_public_policy_v2_enabled"),
+        novel_illustrations_enabled=switch_on("novel_illustrations_enabled"),
+        novelize_outline_flow_enabled=switch_on("novelize_outline_flow_enabled"),
+        novelize_multi_block_edit_enabled=switch_on("novelize_multi_block_edit_enabled"),
         payments_enabled=payments_active(),
         identity_gate_enabled=identity_gate_active(),
         pay_methods=[

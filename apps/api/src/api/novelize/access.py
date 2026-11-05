@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.db.models.feature_grant import UserFeatureGrant
 from api.db.session import get_db_session
 from api.session.dependencies import get_current_user_id
@@ -22,7 +23,7 @@ from api.session.dependencies import get_current_user_id
 async def has_novelize_access(db: AsyncSession, user_id: uuid.UUID) -> bool:
     """스위치와 명단은 메모리 값이라 먼저 보고, 둘 다 통과할 때만 허용 행을 조회한다 — 꺼져 있는 동안 `/me` 가
     쿼리를 하나 더 쓰지 않는다."""
-    if not settings.novelize_enabled or user_id not in settings.novelize_grant_allowlist:
+    if not switch_on("novelize_enabled") or user_id not in settings.novelize_grant_allowlist:
         return False
     grant_id = await db.scalar(
         select(UserFeatureGrant.id).where(

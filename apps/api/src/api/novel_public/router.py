@@ -59,7 +59,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.prompt_builder import PromptRenderError, PromptSetNotFoundError, load_active_prompt_set
 from api.core import clover
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.sentry import capture_dependency_failure
 from api.db.models.media import Asset
 from api.db.models.novel import (
@@ -239,7 +239,7 @@ def _price_for(
     """이 요청이 그 화에 둘 가격(`NovelPublishRequest.free` 의 규칙). 이미 공개한 화는 지금 가격을 돌려준다(쓰지 않는다).
     정책 스위치가 꺼져 있으면 요청의 선택을 보지 않는다. `remembered_free` 는 새 화의 번호가 무료로 나간 적 있는가(스위치가
     켜졌을 때만 참) — 앞 화처럼 무료로만 공개한다."""
-    choice = free if settings.novel_public_policy_v2_enabled else None
+    choice = free if switch_on("novel_public_policy_v2_enabled") else None
     if frozen is not None:
         current = chapter_price(frozen.ordinal, frozen.price)
         if choice is False and current == 0:
@@ -256,7 +256,7 @@ def _price_for(
 
 async def _remembered_free(db: AsyncSession, novel_id: uuid.UUID, ordinal: int) -> bool:
     """새로 공개할 화의 번호가 무료로 나간 적 있는가. 정책 스위치가 꺼져 있으면 보지 않는다(지금 약관대로 6화부터 유료)."""
-    if not settings.novel_public_policy_v2_enabled or ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT:
+    if not switch_on("novel_public_policy_v2_enabled") or ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT:
         return False
     found = await db.scalar(
         select(NovelFreeOrdinal.ordinal).where(NovelFreeOrdinal.novel_id == novel_id, NovelFreeOrdinal.ordinal == ordinal)
@@ -284,7 +284,7 @@ async def _plan(db: AsyncSession, novel: Novel, user_id: uuid.UUID, body: NovelP
     if (
         publication is not None
         and publication.review_status == "pending"
-        and settings.novel_public_policy_v2_enabled
+        and switch_on("novel_public_policy_v2_enabled")
     ):
         raise _error(status.HTTP_409_CONFLICT, "NOVEL_PUBLICATION_IN_REVIEW")
     unseen = publication is not None and publication.review_status in ("pending", "rejected")
@@ -321,9 +321,9 @@ async def _plan(db: AsyncSession, novel: Novel, user_id: uuid.UUID, body: NovelP
         if changed:
             # 변경 요약은 새 판을 내는 다시 공개에만 쓴다. 스위치가 켜져 있으면 꼭 있어야 한다 — 심사를 부르기 전에 거절한다.
             change_summary = (
-                body.change_summary if settings.novel_public_policy_v2_enabled and not chapter_is_new else None
+                body.change_summary if switch_on("novel_public_policy_v2_enabled") and not chapter_is_new else None
             )
-            if settings.novel_public_policy_v2_enabled and not chapter_is_new and change_summary is None:
+            if switch_on("novel_public_policy_v2_enabled") and not chapter_is_new and change_summary is None:
                 raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_CHANGE_SUMMARY_REQUIRED")
             chapter_plan = _ChapterPlan(
                 chapter_id=chapter.id,
@@ -336,8 +336,8 @@ async def _plan(db: AsyncSession, novel: Novel, user_id: uuid.UUID, body: NovelP
                 price=price,
                 change_summary=change_summary,
                 text_changed=text_changed,
-                pictures=await _planned_pictures(db, revision) if settings.novel_illustrations_enabled else (),
-                screens_pictures=settings.novel_illustrations_enabled,
+                pictures=await _planned_pictures(db, revision) if switch_on("novel_illustrations_enabled") else (),
+                screens_pictures=switch_on("novel_illustrations_enabled"),
             )
             if len(chapter_plan.pictures) > NOVEL_ILLUSTRATION_LIMIT:
                 raise _error(status.HTTP_409_CONFLICT, "NOVEL_ILLUSTRATION_LIMIT_EXCEEDED")
@@ -435,7 +435,7 @@ def _pictures_differ_from_publication(current_revision_id: SQLColumnExpression[u
     심사하지 않으니 그림만 바뀐 화를 다시 낼 일이 없다). 독자 화면의 그림 모양(`placement_fingerprint`)이 다르거나, 얼린 개정에
     문단에 붙은 그림이 있는데 그 판이 심사하지 않았으면(꺼진 동안 얼렸거나 심사 시각을 모르는 옛 코드가 다시 냈다 — 읽기와 같은
     판정 `screened_for`: 심사 시각 = 공개 시각) 바뀐 화다 — 다시 공개하면 심사를 거쳐 그림이 열린다."""
-    if not settings.novel_illustrations_enabled:
+    if not switch_on("novel_illustrations_enabled"):
         return false()
     frozen = placement_fingerprint(NovelChapterPublication.revision_id)
     return or_(
@@ -521,7 +521,7 @@ async def _published_chapters(db: AsyncSession, novel_id: uuid.UUID) -> list[Nov
 
 async def _free_locked_ordinals(db: AsyncSession, novel_id: uuid.UUID, published: int) -> list[int]:
     """아직 공개하지 않은 번호 중 무료로만 공개할 수 있는 번호(오름차순). 정책 스위치가 꺼져 있으면 지키지 않으므로 비운다."""
-    if not settings.novel_public_policy_v2_enabled:
+    if not switch_on("novel_public_policy_v2_enabled"):
         return []
     rows = await db.scalars(
         select(NovelFreeOrdinal.ordinal)
@@ -936,7 +936,7 @@ async def make_chapter_free(
 
     게시자 행을 먼저 잠근다 — 구매도 게시자 행을 잡으므로 둘은 줄을 서고, 뒤에 선 구매는 잠근 뒤 다시 읽은 가격(0)으로 살
     것이 없다고 거절하며, 앞선 구매는 낸 그대로 남는다."""
-    if not settings.novel_public_policy_v2_enabled:
+    if not switch_on("novel_public_policy_v2_enabled"):
         raise _error(status.HTTP_409_CONFLICT, "NOVEL_PRICE_CHOICE_DISABLED")
     await _lock_user(db, user_id)
     await _get_owned_novel(db, novel_id, user_id)

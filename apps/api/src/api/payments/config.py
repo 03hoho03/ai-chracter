@@ -5,6 +5,7 @@
 """
 
 from api.core.config import settings
+from api.core.feature_switches import switch_on
 
 
 def identity_configured() -> bool:
@@ -26,7 +27,7 @@ def payments_active() -> bool:
     켜지면 구매 화면은 보이는데 아무도 인증할 수 없어 아무도 결제하지 못한다.
     """
     return (
-        settings.payments_enabled
+        switch_on("payments_enabled")
         and all(
             (
                 settings.portone_store_id,
@@ -42,4 +43,4 @@ def payments_active() -> bool:
 def identity_gate_active() -> bool:
     """미인증 회원의 미션 보상을 막는 게이트가 켜져 있는가. 인증할 수 없는 환경에서 게이트만 켜지면 아무도
     풀 수 없으므로 본인인증 설정이 함께 있어야 한다."""
-    return settings.identity_gate_enabled and identity_configured()
+    return switch_on("identity_gate_enabled") and identity_configured()

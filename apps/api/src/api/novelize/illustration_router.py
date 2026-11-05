@@ -11,7 +11,7 @@ import uuid
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.s3 import build_display_key, generate_presigned_get_url
 from api.db.models.novel import Novel, NovelChapterRevision, NovelIllustrationPlacement, NovelIllustrationSource
 from api.db.session import get_db_session
@@ -47,7 +47,7 @@ from api.novelize.schemas import (
 
 
 async def _require_illustrations_enabled() -> None:
-    if not settings.novel_illustrations_enabled:
+    if not switch_on("novel_illustrations_enabled"):
         raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_ILLUSTRATIONS_DISABLED")
 
 

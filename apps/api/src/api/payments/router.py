@@ -13,6 +13,7 @@ from portone_server_sdk import webhook
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core.feature_switches import switch_on
 from api.payments.eligibility import purchase_block_reason
 from api.clover import products
 from api.core import clover
@@ -122,7 +123,7 @@ def _report_webhook_config(problem: str) -> None:
     """웹훅 비밀 설정 사고를 Bugsink 에 남긴다. 결제가 꺼져 있으면 남기지 않는다 — 비밀이 빈 것이 정상인 상태에서 인증
     없이 이 주소를 치는 요청마다 이벤트가 쌓이면 안 된다(응답은 그대로 503)."""
     logger.warning("portone webhook cannot be verified: %s", problem)
-    if settings.payments_enabled:
+    if switch_on("payments_enabled"):
         capture_dependency_failure(PaymentWebhookConfigError(problem), dependency="payment")
 
 

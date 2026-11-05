@@ -23,6 +23,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.rate_limit import check_rate_limit
 from api.core.rate_limit_gate import _too_many_requests
 from api.db.models.novel import Novel, NovelJob
@@ -93,7 +94,7 @@ _RECHECK_REASON_MAX_CHARS = 100
 
 
 async def _require_multi_block_edit_enabled() -> None:
-    if not settings.novelize_multi_block_edit_enabled:
+    if not switch_on("novelize_multi_block_edit_enabled"):
         raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_MULTI_BLOCK_EDIT_DISABLED")
 
 

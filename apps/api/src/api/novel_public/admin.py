@@ -43,7 +43,7 @@ from starlette.concurrency import run_in_threadpool
 
 from api.admin.action_log import record_admin_action
 from api.admin.dependencies import get_current_admin_id
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.models.content import Content
@@ -504,7 +504,7 @@ async def take_down_novel_illustration(
 async def _lock_parties_for_refund(db: AsyncSession, novel_id: uuid.UUID) -> frozenset[uuid.UUID] | None:
     """정책 스위치가 켜져 있으면 이용제한이 환급할 사람들(게시자와 미환급 구매자)을 공개 상태 행보다 먼저 잠그고 돌려준다
     (`purchases.py` 의 잠금 순서). 꺼져 있으면 환급이 없으니 잠그지 않고 None."""
-    if not settings.novel_public_policy_v2_enabled:
+    if not switch_on("novel_public_policy_v2_enabled"):
         return None
     return await lock_novel_parties(db, novel_ids=[novel_id])
 
@@ -580,7 +580,7 @@ async def moderate_admin_novel(
 # ── 판매 중단·재개 ──────────────────────────────────────────────────────────
 def _require_sales_stop_enabled() -> None:
     """판매 중단은 정책 스위치가 켜졌을 때만이다 — 꺼진 동안은 소장자 열람이 없어 "판매만 멈춤"이 환급 없는 닫힘이 된다."""
-    if not settings.novel_public_policy_v2_enabled:
+    if not switch_on("novel_public_policy_v2_enabled"):
         raise _error(status.HTTP_409_CONFLICT, "NOVEL_SALES_STOP_DISABLED")
 
 
