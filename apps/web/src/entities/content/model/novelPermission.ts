@@ -7,6 +7,13 @@ export type NovelPermission = components["schemas"]["ContentNovelPermissionUpdat
 /** 화면에 나열하는 순서 — 막는 쪽에서 넓히는 쪽으로. 빌더 두 탭과 발행 후 설정 모달이 같은 목록을 쓴다. */
 export const NOVEL_PERMISSION_VALUES = ["forbidden", "private", "public"] as const satisfies readonly NovelPermission[];
 
+type AssertNoUncovered<T extends never> = T;
+/** `satisfies` 는 원소가 멤버인지만 보고 목록이 멤버를 다 덮는지는 보지 않는다. `NovelPermission` 은 서버 생성 타입이라
+ * 목록에서 타입을 도출할 수 없어, 멤버를 빠뜨리면 이 줄에서 컴파일이 깨지게 한다 — 서버가 단계를 늘렸는데 고르는 칸에도
+ * `isNovelPermission` 에도 없는 일을 막는다. 타입 레벨 단언이라 쓰이는 곳이 없는 게 정상이다. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _CoversAllNovelPermissions = AssertNoUncovered<Exclude<NovelPermission, (typeof NOVEL_PERMISSION_VALUES)[number]>>;
+
 /** 새 작품의 기본값. 서버의 칸 기본값과 같게 둔다. 새 초안은 첫 저장에 이 칸을 늘 실어 보내므로(`novelPermissionSync`),
  * 작가가 손대지 않은 새 작품에는 서버 기본값이 아니라 화면에 보인 이 값이 저장된다. */
 export const DEFAULT_NOVEL_PERMISSION: NovelPermission = "forbidden";
