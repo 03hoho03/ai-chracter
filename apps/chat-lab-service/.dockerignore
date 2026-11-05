@@ -1,0 +1,21 @@
+# 빌드 컨텍스트가 이 폴더라 저장소의 다른 앱·측정 런 폴더·루트 `.env` 는 애초에 넘어오지 않고, Dockerfile 은 실행에 쓰는
+# 파일만 경로를 지정해 복사한다. 이 목록은 그 위에 덧대는 방어다 — 아래 것은 컨텍스트로도 넘기지 않는다.
+.venv/
+**/__pycache__/
+**/*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+# 시험 코드·자료, 스키마 떨구기 같은 개발 도구는 이미지 안에서 부르는 곳이 없다.
+tests/
+scripts/
+# 로컬 env 파일. 운영 env 는 compose 의 `env_file` 로 실행 때만 들어간다.
+.env*
+*.env
+# 문서와 배포 파일은 이미지가 읽지 않는다.
+*.md
+docker-compose*.yml
+Dockerfile
+.dockerignore
