@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import ColumnElement, Select, and_, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, aliased
+from sqlalchemy.orm.util import AliasedClass
 
 from api.content.access import publicly_listed_conditions
 from api.core.rate_limit import KST
@@ -43,6 +44,7 @@ from api.db.models.novel import (
 from api.db.models.payment import Payment, PaymentCancellation
 from api.db.models.story import StartingSetup, StatDef
 from api.novel_public.access import select_readable_publications
+from api.novelize.job_variants import kinds_where
 
 # 실사용자 가입을 세기 시작하는 시각. 그 전에 만든 면제 아닌 계정(시험·결제 심사용)이 있어 "면제 아닌 회원이 있다"만으로는
 # 설치하자마자 참이 된다. 크론을 켜는 날에 맞춘다.
@@ -58,11 +60,16 @@ UNDO_WINDOW_DAYS = 28
 UNDO_MIN = 30
 UNDO_PER_REGENERATE_MIN = 0.2
 ROOM_UNDO_PER_DAY_MIN = 50
-# 소설화 워커 동시 상한(4)을 다시 열 신호 — 동시 3건, 60초 넘는 대기, 장 실행 상한(360초)에 근접한 300초.
+# 소설화 워커 동시 상한(4)을 다시 열 신호 — 동시 3건, 60초 넘는 대기, 장 실행 상한(360초)에 근접한 300초. 세 수치는 워커가
+# 대기열에서 집는 작업만 센다(`_worker_claims`). 상한은 그 작업들이 나눠 쓰는 칸 수라, 연쇄 생성의 부모(api 안에서 돈다)나
+# 자식(부모가 직접 돌린다)까지 세면 워커가 붐비지 않은 날에도 상한을 다시 보라는 줄이 실린다.
 NOVEL_JOBS_PEAK_MIN = 3
 NOVEL_JOB_WAIT = timedelta(seconds=60)
 NOVEL_JOB_LONG_RUN = timedelta(seconds=300)
-# 연쇄 생성은 다른 작업과 칸을 다투지 않아 동시·대기·실행 시간에서 뺀다.
+# 워커가 집을 줄 아는 작업 종류 — 워커의 목록(`novelize.worker.WORKER_JOB_KINDS`)과 같은 갈래 표에서 같은 식으로 끌어낸다. 워커
+# 모듈을 바로 import 하지 않는 것은 그 모듈이 LLM 클라이언트·정본 기억·실행 경로까지 끌어오기 때문이다.
+WORKER_JOB_KINDS = kinds_where(worker_runs=True)
+# 연쇄 생성 부모. 워커 칸을 쓰지 않아 위 세 수치에는 없고, 만료로 끝난 부모만 따로 센다 — api 안에서 돌아 api 교체 때 함께 죽는다.
 CHAIN_JOB_KIND = "chain_generate"
 READABLE_NOVELS_MIN = 10
 # 소설 레인 지시문 보강을 운영에 게시한 시각. 그 뒤 생성 개정만 보강 효과의 표본이다.
@@ -163,7 +170,7 @@ WATCH_CONDITIONS: tuple[WatchCondition, ...] = (
     WatchCondition(
         lambda m: m.novel_jobs_peak >= NOVEL_JOBS_PEAK_MIN or m.novel_jobs_waited >= 1 or m.novel_jobs_long >= 1,
         lambda m: (
-            f"그날 소설화 작업: 동시 최대 {m.novel_jobs_peak}건(기준 {NOVEL_JOBS_PEAK_MIN})·"
+            f"그날 워커가 집은 소설화 작업: 동시 최대 {m.novel_jobs_peak}건(기준 {NOVEL_JOBS_PEAK_MIN})·"
             f"{NOVEL_JOB_WAIT.seconds}초 넘게 기다린 작업 {m.novel_jobs_waited}건·"
             f"{NOVEL_JOB_LONG_RUN.seconds}초 이상 돈 작업 {m.novel_jobs_long}건 — 워커 동시 상한을 다시 볼 때예요"
         ),
@@ -236,6 +243,12 @@ _REAL = User.rate_limit_exempt.is_(False)
 _ALIVE = User.deleted_at.is_(None)
 
 
+def _worker_claims(job: type[NovelJob] | AliasedClass[NovelJob]) -> ColumnElement[bool]:
+    """워커가 대기열에서 집는 작업 — 워커 고르기(`novelize.worker.claim_candidates`)의 대기 상태 밖 조건과 같다. 장 생성은
+    혼자 도는 생성과 연쇄 자식이 같은 종류라 종류 목록만으로는 연쇄 자식이 걸러지지 않아, 부모 칸 조건을 함께 건다."""
+    return and_(job.parent_job_id.is_(None), job.kind.in_(WORKER_JOB_KINDS))
+
+
 async def _count(session: AsyncSession, statement: Select[tuple[int]]) -> int:
     return (await session.scalar(statement)) or 0
 
@@ -283,7 +296,7 @@ async def load_watch_metrics(session: AsyncSession, start: datetime, end: dateti
         )
     ).one()
 
-    # 그날 시작한 작업마다 그 순간 돌던 작업 수(자기 포함). 아직 안 끝난 작업은 지금까지 도는 것으로 본다.
+    # 그날 시작한 워커 작업마다 그 순간 돌던 워커 작업 수(자기 포함). 아직 안 끝난 작업은 지금까지 도는 것으로 본다.
     job, other = aliased(NovelJob), aliased(NovelJob)
     running_at_start = (
         select(func.count(other.id).label("running"))
@@ -291,16 +304,16 @@ async def load_watch_metrics(session: AsyncSession, start: datetime, end: dateti
         .join(
             other,
             and_(
-                other.kind != CHAIN_JOB_KIND,
+                _worker_claims(other),
                 other.started_at <= job.started_at,
                 func.coalesce(other.finished_at, func.now()) > job.started_at,
             ),
         )
-        .where(job.kind != CHAIN_JOB_KIND, in_day(job.started_at))
+        .where(_worker_claims(job), in_day(job.started_at))
         .group_by(job.id)
         .subquery()
     )
-    not_chain = NovelJob.kind != CHAIN_JOB_KIND
+    worker_job = _worker_claims(NovelJob)
     waited = or_(
         and_(NovelJob.started_at.is_not(None), NovelJob.started_at - NovelJob.created_at > NOVEL_JOB_WAIT),
         and_(NovelJob.started_at.is_(None), NovelJob.failure_code == "expired"),
@@ -382,10 +395,10 @@ async def load_watch_metrics(session: AsyncSession, start: datetime, end: dateti
         real_novel_premium_grants=novel_premium,
         novel_jobs_peak=await _count(session, select(func.max(running_at_start.c.running))),
         novel_jobs_waited=await _count(
-            session, select(func.count()).select_from(NovelJob).where(not_chain, in_day(NovelJob.created_at), waited)
+            session, select(func.count()).select_from(NovelJob).where(worker_job, in_day(NovelJob.created_at), waited)
         ),
         novel_jobs_long=await _count(
-            session, select(func.count()).select_from(NovelJob).where(not_chain, in_day(NovelJob.started_at), long_run)
+            session, select(func.count()).select_from(NovelJob).where(worker_job, in_day(NovelJob.started_at), long_run)
         ),
         chain_jobs_expired=await _count(
             session,

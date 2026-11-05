@@ -242,6 +242,58 @@ async def test_novel_job_peak_wait_and_run_time_of_the_day(db_session: AsyncSess
     assert (metrics.novel_jobs_peak, metrics.novel_jobs_waited, metrics.novel_jobs_long) == (3, 2, 1)
 
 
+async def test_novel_job_watch_counts_only_jobs_the_worker_claims(db_session: AsyncSession) -> None:
+    """연쇄 생성의 부모(api 안에서 돈다)와 자식(부모가 직접 돌린다)은 워커 칸을 쓰지 않는다. 깨지는 시나리오: 워커가 둘을 돌리는
+    사이 연쇄 자식 하나가 오래 돌면 동시 3건·대기·장기 실행이 함께 잡혀 워커 상한을 다시 보라는 줄이 거짓으로 실린다."""
+    writer = await _member(db_session)
+    novel_id = (await _make_novel_tree(db_session, writer.id)).novel.id
+
+    def job(kind: str, created: datetime, started: datetime, finished: datetime, **values: object) -> NovelJob:
+        return NovelJob(
+            novel_id=novel_id,
+            user_id=writer.id,
+            kind=kind,
+            status="succeeded",
+            charged_amount=0,
+            created_at=created,
+            started_at=started,
+            finished_at=finished,
+            **values,
+        )
+
+    parent = job(
+        "chain_generate",
+        kst(10, 21, 10),
+        kst(10, 21, 10),
+        kst(10, 21, 10, 10),
+        planned_batches=1,
+        batch_k_max=1,
+        unit_price=1,
+    )
+    db_session.add(parent)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            # 워커가 집은 둘: 10:00~10:03, 10:02~10:04 — 10:02 에 둘이 함께 돈다.
+            job("chapter_generate", kst(10, 21, 10), kst(10, 21, 10), kst(10, 21, 10, 3)),
+            job("chapter_generate", kst(10, 21, 10, 2), kst(10, 21, 10, 2), kst(10, 21, 10, 4)),
+            # 연쇄 자식: 10:00 에 만들어져 90초 뒤 시작, 390초 돈다. 세면 10:02 의 동시가 3, 대기 1, 장기 실행 1 이 된다.
+            job(
+                "chapter_generate",
+                kst(10, 21, 10),
+                kst(10, 21, 10, 1, 30),
+                kst(10, 21, 10, 8),
+                parent_job_id=parent.id,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    metrics = await _metrics(db_session)
+
+    assert (metrics.novel_jobs_peak, metrics.novel_jobs_waited, metrics.novel_jobs_long) == (2, 0, 0)
+
+
 async def test_novel_conditions_leave_out_exempt_publishers_and_writers(db_session: AsyncSession) -> None:
     before = await _metrics(db_session)
     real, staff = await _member(db_session), await _member(db_session, exempt=True)
