@@ -42,7 +42,7 @@ from api.db.models.novel import Novel, NovelChapter
 from api.db.models.novel_bible import ENTITY_NAME_MAX, NovelBibleCommit, NovelBibleJob
 from api.novel_bible.core.contracts import AdapterCallError, AdapterResolver, Registry, Slot
 from api.novel_bible.core.keys import TARGETED_KINDS, normalize_name
-from api.novel_bible.core.render import render
+from api.novel_bible.core.render import RequiredValueEmptyError, render
 from api.novel_bible.core.types import CommitRef, Proposal, RenderedPrompt
 from api.novel_bible.core.views import CommitView, source_ref_of
 from api.novel_bible.ids import JobFailure, SlotId
@@ -321,6 +321,15 @@ async def run_next_job(
     except AdapterCallError as error:
         await _fail(factory, job_id, attempts, error.code, retry=error.retryable and error.code in _RETRYABLE,
                     records=records)
+    except RequiredValueEmptyError as error:
+        # 문안은 있고 입력(빈 원고 따위)이 빈 것이다. 실패 사유 칸은 DB CHECK 가 묶은 값이라 새 사유를 두려면 마이그레이션이
+        # 들어야 해서 문안 없음과 같은 사유로 남기고, 로그가 빈 값의 섹션을 적어 문안 누락과 가른다. 다시 돌려도 같은 입력이라
+        # 재시도하지 않는다.
+        logger.warning(
+            "정본 기억 작업 %s 의 필수 값이 비었다 — 문안이 아니라 입력 문제다(채널 %s, 섹션 %s, 빈 값 %s)",
+            job_id, slot.channel, error.section, ", ".join(error.names),
+        )
+        await _fail(factory, job_id, attempts, "prompt_missing", retry=False, records=records)
     except PromptRenderError:
         logger.warning("정본 기억 작업 %s 의 문안이 없다(채널 %s)", job_id, slot.channel, exc_info=True)
         await _fail(factory, job_id, attempts, "prompt_missing", retry=False, records=records)

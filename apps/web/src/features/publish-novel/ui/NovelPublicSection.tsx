@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useCloverPricingQuery } from "@/entities/clover";
 import type { NovelPublicationStatus } from "@/entities/novel";
 import { useWebnovelQuery } from "@/entities/webnovel";
+import { assertNever } from "@/shared/lib/assertNever";
 import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
 
 import type { PublishRunResult } from "../api/usePublishNovelRun";
@@ -159,8 +160,13 @@ function ViewBadge({ view }: { view: PublicationView }) {
       return <span className={cn(BADGE_CLASS, "border-border text-muted-foreground")}>심사 대기</span>;
     case "reviewRejected":
       return <span className={cn(BADGE_CLASS, "border-border text-foreground")}>반려</span>;
-    default:
+    // 아직 공개한 적이 없는 상태는 배지 대신 본문 문장이 상황을 말한다.
+    case "noChapters":
+    case "unpublished":
+    case "blocked":
       return null;
+    default:
+      return assertNever(view);
   }
 }
 

@@ -8,11 +8,16 @@ type CloverWalletProps = {
   breakdown: CloverBalanceResponse["breakdown"] | undefined;
 };
 
-const BREAKDOWN_ROWS = [
-  { key: "paid", label: "유료" },
-  { key: "bonus", label: "보너스" },
-  { key: "free", label: "무료" },
-] as const satisfies readonly { key: keyof CloverBalanceResponse["breakdown"]; label: string }[];
+type BreakdownKey = keyof CloverBalanceResponse["breakdown"];
+
+/** 몫마다 라벨. 서버가 몫을 하나 더 실으면 여기서 컴파일 에러가 나 라벨과 아래 순서를 함께 채우게 한다. */
+const BREAKDOWN_LABELS = {
+  paid: "유료",
+  bonus: "보너스",
+  free: "무료",
+} as const satisfies Record<BreakdownKey, string>;
+
+const BREAKDOWN_ORDER = ["paid", "bonus", "free"] as const satisfies readonly BreakdownKey[];
 
 /** 내 클로버 — 총잔액과 그 구성. 클로버 충전 화면에서 쓴다(채팅 입력 바 등 한 줄 잔량은 `CloverBalance`).
  *
@@ -28,10 +33,10 @@ export function CloverWallet({ balance, breakdown }: CloverWalletProps) {
       </p>
       {breakdown && (
         <dl className="flex flex-col gap-1.5 text-sm">
-          {BREAKDOWN_ROWS.map((row) => (
-            <div key={row.key} className="flex items-center justify-between gap-3">
-              <dt className="text-muted-foreground">{row.label}</dt>
-              <dd className="tabular-nums text-foreground">{breakdown[row.key].toLocaleString()}개</dd>
+          {BREAKDOWN_ORDER.map((key) => (
+            <div key={key} className="flex items-center justify-between gap-3">
+              <dt className="text-muted-foreground">{BREAKDOWN_LABELS[key]}</dt>
+              <dd className="tabular-nums text-foreground">{breakdown[key].toLocaleString()}개</dd>
             </div>
           ))}
         </dl>

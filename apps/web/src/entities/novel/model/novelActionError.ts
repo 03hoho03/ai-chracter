@@ -1,5 +1,6 @@
 import { isApiError } from "@/shared/api/client";
 import { getRateLimitDetail } from "@/shared/api/rateLimit";
+import { checkExhaustive } from "@/shared/lib/checkExhaustive";
 
 import type { NovelJobResponse } from "../api/useNovelJobQuery";
 import { toNovelizeForbiddenCopy } from "./novelError";
@@ -596,7 +597,17 @@ function failureReasonSentence(job: Pick<NovelJobResponse, "kind" | "failureReas
       return `${FAILURE_SUBJECT[job.kind]} AI가 쓴 글의 형식이 맞지 않았어요.`;
     case "episode_count_mismatch":
       return `${FAILURE_SUBJECT[job.kind]} AI가 지금과 다른 화 수로 썼어요.`;
+    // 나머지 사유는 사용자에게 따로 할 말이 없어 무엇을 못 했는지만 말한다. 서버가 새 사유를 먼저 보내도 같은 문장으로 접는다.
+    case "timeout":
+    case "empty":
+    case "llm_error":
+    case "truncated":
+    case "expired":
+    case "internal":
+    case null:
+      break;
     default:
-      return FAILURE_SUBJECT[job.kind];
+      checkExhaustive(job.failureReason);
   }
+  return FAILURE_SUBJECT[job.kind];
 }

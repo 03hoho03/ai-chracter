@@ -43,6 +43,8 @@ _M = _load("174f78b92e5c")
 _PREVIOUS_SET_IDS: dict[str, uuid.UUID] = dict(_load("b389c2317149").NEW_SET_IDS)
 _CLAUDE_MODELS: tuple[PromptSetModelId, ...] = ("sonnet", "opus")
 _RATING_CHANNEL = "novelize_rating"
+# 뒤 리비전이 소설 세 체인에 심은 정본 기억 채널 행.
+_BIBLE_ROWS = _load("d39cf46dcb5c").BIBLE_ROWS
 _CLAUDE_LATER_CHANNELS = ("novelize_boundary", "novelize_revise", "novelize_revise_blocks", "novelize_revise_recheck")
 
 
@@ -166,11 +168,14 @@ async def _copy_set(
 
 
 async def _later_rows(db_session: AsyncSession, model: str) -> list[PromptSection]:
-    """지금 코드의 게시 검증·렌더는 뒤 두 리비전이 더한 행(세 체인의 등급 규칙 두 행, Claude 체인의 네 채널)도 요구한다 — 이
-    리비전의 세트·초안에 그 행만 얹어 본다. 등급 규칙은 채팅 Gemini 활성의 등급 규칙 본문, Claude 네 채널은 이 리비전이 심은 Gemini
-    세트의 행이다 — 뒤 리비전은 그때의 Gemini 활성(곧 이 세트)에서 네 채널을 옮기고, 여러 문단 수정·묶음 재검사 두 채널은 이
-    리비전 직전 세트에는 아직 없다."""
-    rows: list[PromptSection] = []
+    """지금 코드의 게시 검증·렌더는 뒤 리비전들이 더한 행(세 체인의 등급 규칙 두 행과 정본 기억 네 채널, Claude 체인의 네 채널)도
+    요구한다 — 이 리비전의 세트·초안에 그 행만 얹어 본다. 등급 규칙은 채팅 Gemini 활성의 등급 규칙 본문, 정본 기억 채널은 그
+    리비전이 심은 행 그대로, Claude 네 채널은 이 리비전이 심은 Gemini 세트의 행이다 — 뒤 리비전은 그때의 Gemini 활성(곧 이 세트)에서
+    네 채널을 옮기고, 여러 문단 수정·묶음 재검사 두 채널은 이 리비전 직전 세트에는 아직 없다."""
+    rows: list[PromptSection] = [
+        PromptSection(channel=c, scope=sc, slot=sl, variant=v, body=b, conditional=cond, order=o)
+        for c, sc, sl, v, b, cond, o in _BIBLE_ROWS
+    ]
     for scope in ("story", "character"):
         chat_set, _ = await load_active_prompt_set(db_session, lane=scope)
         (rule,) = [

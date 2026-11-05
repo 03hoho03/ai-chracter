@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
+import { assertNever } from "@/shared/lib/assertNever";
+
 import { useCompleteIdentityVerificationMutation } from "../api/useCompleteIdentityVerificationMutation";
 import { resolveIdentityRedirect, type IdentityRedirectSearch } from "./identityRedirect";
 import { IDENTITY_NOT_COMPLETED, IDENTITY_VERIFIED_MESSAGE, toIdentityErrorResult, type IdentityResult } from "./identityResult";
@@ -35,7 +37,18 @@ export function useIdentityRedirect(search: IdentityRedirectSearch, onHandled: (
 }
 
 function announceIdentityResult(result: IdentityResult) {
-  if (result.kind === "verified") toast.success(IDENTITY_VERIFIED_MESSAGE);
-  else if (result.kind === "notice" && result.tone === "error") toast.error(result.message);
-  else if (result.kind === "notice") toast(result.message);
+  switch (result.kind) {
+    case "verified":
+      toast.success(IDENTITY_VERIFIED_MESSAGE);
+      return;
+    case "notice":
+      if (result.tone === "error") toast.error(result.message);
+      else toast(result.message);
+      return;
+    // 복귀 처리에서는 인증창을 다시 띄우지 않아 이 결과가 오지 않는다. 와도 알릴 것이 없다.
+    case "redirecting":
+      return;
+    default:
+      assertNever(result);
+  }
 }
