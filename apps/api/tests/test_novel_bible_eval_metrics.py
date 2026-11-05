@@ -103,12 +103,12 @@ def _knows(knower: str, subject: str, value: str) -> ExtractedKnowledge:
 def test_direction_errors_count_swaps_and_wrong_knowers_inside_the_denominator() -> None:
     planted = [
         PlantedKnowledge(knower="도윤", kind="knows", subject="서하", fact_kind="possession", values=["등불"],
-                         paragraph=1),
+                         subject_kind="character", paragraph=1),
         PlantedKnowledge(knower="서하", kind="knows", subject="도윤", fact_kind="possession", values=["지도"],
-                         paragraph=1),
+                         subject_kind="character", paragraph=1),
         # 자기 자신에 대한 앎은 뒤바뀜이 정의되지 않아 분모에 들지 않는다
         PlantedKnowledge(knower="서하", kind="knows", subject="서하", fact_kind="possession", values=["차"],
-                         paragraph=1),
+                         subject_kind="character", paragraph=1),
     ]
     extracted = [
         _knows("서하", "도윤", "등불"),  # 첫 정답의 뒤바뀜 — 그 정답은 바른 짝이 먼저 가져간다
@@ -125,14 +125,14 @@ def test_direction_pairs_do_not_depend_on_the_order_the_answers_were_written_in(
     # 먼저 가져가면 안 된다.
     planted = [
         PlantedKnowledge(knower=knower, kind="knows", subject="서하", fact_kind="possession", values=["등불"],
-                         paragraph=1)
+                         subject_kind="character", paragraph=1)
         for knower in ("도윤", "하람")
     ]
     assert direction_counts(planted, [_knows("하람", "서하", "등불")], {}) == (1, 0)
     assert direction_counts(planted[::-1], [_knows("하람", "서하", "등불")], {}) == (1, 0)
     # 정답 셋·제안 셋을 어떤 순서로 적어도 같다 — 바른 짝 둘, 남은 정답 하나가 앎 주체만 틀린 제안을 받는다.
     planted.append(PlantedKnowledge(knower="하람", kind="knows", subject="도윤", fact_kind="possession",
-                                    values=["지도"], paragraph=1))
+                                    values=["지도"], subject_kind="character", paragraph=1))
     found = [_knows("도윤", "서하", "등불"), _knows("하람", "서하", "등불"), _knows("등대지기", "도윤", "지도")]
     results = {
         direction_counts(list(answers), list(extracted), {})
@@ -189,24 +189,41 @@ def test_blocking_counts_false_positives_and_drops_probes_with_an_incomplete_can
     eval_set = load_set(FIXTURE)
     outcomes = [
         _outcome(1),
-        _outcome(2, "blocked", block=("knowledge_before_fact",)),
-        _outcome(3, "failed"),  # 실패는 오탐이 아니다 — 분모에서도 빠지고 따로 센다
-        _outcome(4, probe="dead-returns"),  # 짝 화 2 가 정본에 없다 → 정본 불완전
-        _outcome(4, probe="unrelated-memory", warn=("order_undetermined",)),  # 짝 화 2 가 없어 빠진다
-        _outcome(4, "blocked", probe="harbor-memory", block=("exit_then_appearance",)),
-        _outcome(4, probe="rumor"),  # 짝 화 2·3 이 둘 다 정본에 없어 빠진다
+        _outcome(2),
+        _outcome(3, "blocked", block=("knowledge_before_fact",)),
+        _outcome(4, "failed", probe="dead-returns"),  # 실패는 오탐·재현율이 아니다 — 분모에서도 빠지고 따로 센다
+        _outcome(4, probe="unrelated-memory", warn=("order_undetermined",)),
+        _outcome(4, "blocked", probe="harbor-memory", block=("exit_then_appearance",)),  # 짝 화 1·2 는 정본에 있다
+        _outcome(4, probe="rumor"),  # 기대는 3화가 정본에 없어 빠진다
     ]
     summary = metrics.blocking(eval_set, outcomes)
-    # (차단된 기본 화 1 + 차단된 비충돌 탐침 1) / (실패하지 않은 기본 확정 2 + 남은 비충돌 탐침 1)
-    assert (summary.false_positive.k, summary.false_positive.n) == (2, 3)
+    # (차단된 기본 화 1 + 차단된 비충돌 탐침 1) / (기본 확정 3 + 남은 비충돌 탐침 1)
+    assert (summary.false_positive.k, summary.false_positive.n) == (2, 4)
     assert summary.by_rule == {"knowledge_before_fact": 1, "exit_then_appearance": 1}
     assert {group: (r.k, r.n) for group, r in summary.by_group.items()} == {"A": (1, 1)}
     assert (summary.recall.k, summary.recall.n) == (0, 0)
-    assert summary.excluded == {"conflict": 1, "warning": 1, "non_conflict": 1}
+    assert summary.excluded == {"non_conflict": 1}
     assert {branch: (r.k, r.n) for branch, r in summary.failed.items()} == {
-        "base": (1, 3), "conflict": (0, 1), "non_conflict": (0, 2), "warning": (0, 1)
+        "base": (0, 3), "conflict": (1, 1), "non_conflict": (0, 2), "warning": (0, 1)
     }
-    assert summary.undeterminable  # 충돌 1/1, 비충돌 1/2 를 뺐다 — 25% 를 넘는다
+    assert summary.undeterminable  # 충돌 1/1 이 실패했고 비충돌 1/2 를 뺐다 — 25% 를 넘는다
+
+    # 2화를 막으면 탐침 넷이 모두 기댈 화를 잃는다. 충돌 탐침은 위와 달리 기대 규칙으로 막히고 경고 탐침은 기대 경고를 내지만,
+    # 짝이 정본에 없으니 둘 다 재현율에 넣지 않고 비충돌 탐침과 함께 뺀다.
+    outcomes = [
+        _outcome(1),
+        _outcome(2, "blocked", block=("knowledge_before_fact",)),
+        _outcome(3),
+        _outcome(4, "blocked", probe="dead-returns", block=("exit_then_appearance",)),
+        _outcome(4, probe="unrelated-memory", warn=("order_undetermined",)),
+        _outcome(4, "blocked", probe="harbor-memory", block=("exit_then_appearance",)),
+        _outcome(4, probe="rumor"),
+    ]
+    summary = metrics.blocking(eval_set, outcomes)
+    assert summary.excluded == {"conflict": 1, "warning": 1, "non_conflict": 2}
+    assert (summary.recall.k, summary.recall.n) == (0, 0)
+    assert (summary.warning_recall.k, summary.warning_recall.n) == (0, 0)
+    assert (summary.false_positive.k, summary.false_positive.n) == (1, 3)
 
 
 def test_blocking_recall_needs_the_expected_rule_and_warning_recall_the_expected_name() -> None:
