@@ -30,6 +30,7 @@ from redis.asyncio import Redis
 from api.core.rate_limit import KST
 from api.core.redis import redis_client
 from api.core.sentry import capture_dependency_failure
+from api.llm.pricing import estimate_cost_usd
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,26 @@ class UsageRow:
     thoughts: int = 0
     total: int = 0
     missing: int = 0
+
+
+def usage_input_tokens(row: UsageRow) -> int:
+    """그 줄의 입력 토큰 전체. 이미지가 실린 호출은 입력 토큰이 비고 total 만 오므로, 입력 전체는 total 에서 출력·사고를 빼서
+    복원한다. total 마저 없는 호출(메타데이터 자체가 없음)은 보고된 입력을 그대로 쓴다. 입력은 모든 모델에서 캐시 읽기·쓰기를
+    포함한 값이다."""
+    return max(row.prompt, row.total - row.candidates - row.thoughts)
+
+
+def usage_cost_usd(row: UsageRow) -> float | None:
+    """그 줄의 추정 원가(달러), 단가표에 없는 모델이면 None. 어드민 사용량 화면과 일일 운영 요약이 이 함수 하나를 같이 쓴다 —
+    입력 복원을 두 곳에 두면 한쪽만 고쳤을 때 두 곳의 원가가 말없이 갈린다."""
+    return estimate_cost_usd(
+        row.model,
+        input_tokens=usage_input_tokens(row),
+        cached_tokens=row.cached,
+        output_tokens=row.candidates,
+        thoughts_tokens=row.thoughts,
+        cache_write_tokens=row.cache_write,
+    )
 
 
 def _rows_for_day(day: date, fields: dict[str, str]) -> list[UsageRow]:

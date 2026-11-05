@@ -8,8 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from api.admin.dependencies import get_current_admin_id
 from api.admin.schemas import AdminLlmModelPrice, AdminLlmUsageResponse, AdminLlmUsageRow
 from api.llm.client import JUDGMENT_CALL_SITES
-from api.llm.pricing import MODEL_PRICES, PRICES_AS_OF, estimate_cost_usd
-from api.llm.usage_store import UsageRow, read_usage, sum_by_call_site_and_model
+from api.llm.pricing import MODEL_PRICES, PRICES_AS_OF
+from api.llm.usage_store import (
+    UsageRow,
+    read_usage,
+    sum_by_call_site_and_model,
+    usage_cost_usd,
+    usage_input_tokens,
+)
 
 router = APIRouter(tags=["admin"])
 
@@ -32,10 +38,8 @@ def _to_response_rows(rows: Iterable[UsageRow]) -> list[AdminLlmUsageRow]:
 
     result = []
     for row in rows:
-        # 이미지가 실린 호출은 입력 토큰이 비고 total 만 오므로, 입력 전체는 total 에서 출력·사고를
-        # 빼서 복원한다. total 마저 없는 호출(메타데이터 자체가 없음)은 보고된 입력을 그대로 쓴다. 입력은 모든 모델에서
-        # 캐시 읽기·쓰기를 포함한 값이라 캐시 적중률은 입력 전체 대비 읽기 비율이다.
-        input_tokens = max(row.prompt, row.total - row.candidates - row.thoughts)
+        # 입력은 모든 모델에서 캐시 읽기·쓰기를 포함한 값이라 캐시 적중률은 입력 전체 대비 읽기 비율이다.
+        input_tokens = usage_input_tokens(row)
         judgment_ratio = None
         if row.call_site in JUDGMENT_CALL_SITES:
             denominator = generation_calls[(row.day, _generation_call_site(row.call_site))]
@@ -56,14 +60,7 @@ def _to_response_rows(rows: Iterable[UsageRow]) -> list[AdminLlmUsageRow]:
                 input_tokens=input_tokens,
                 cache_hit_rate=row.cached / row.prompt if row.prompt else None,
                 judgment_ratio=judgment_ratio,
-                estimated_cost_usd=estimate_cost_usd(
-                    row.model,
-                    input_tokens=input_tokens,
-                    cached_tokens=row.cached,
-                    output_tokens=row.candidates,
-                    thoughts_tokens=row.thoughts,
-                    cache_write_tokens=row.cache_write,
-                ),
+                estimated_cost_usd=usage_cost_usd(row),
             )
         )
     return result
