@@ -21,8 +21,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from novel_bible_eval import metrics
-from novel_bible_eval.labels import LabeledClaim
+from novel_bible_eval import judge, metrics
+from novel_bible_eval.labels import ExtractionSummary, LabeledClaim
 from novel_bible_eval.metrics import Ratio
 from novel_bible_eval.run import BIBLE_TABLES, ChapterOutcome
 from novel_bible_eval.spec import EvalSet
@@ -244,10 +244,17 @@ def _compare_cell(entry: dict[str, Any] | None) -> str:
     return f"{value} ({entry['k']}/{entry['n']}){tail}"
 
 
-def label_report(labeled: Sequence[LabeledClaim], halted: Mapping[str, str | None]) -> dict[str, Any]:
+def label_report(
+    labeled: Sequence[LabeledClaim], halted: Mapping[str, str | None],
+    extraction: Mapping[str, ExtractionSummary] | None = None, judged: Mapping[str, judge.JudgeRun] | None = None,
+) -> dict[str, Any]:
     """어댑터별 사람 라벨 지표. `halted` 는 어댑터마다 그 추출의 멈춤·끊김 까닭(라벨 열쇠에 실린 것) — 멈춘 어댑터의 판정은
     판정 불가로 두고 까닭을 그 어댑터 칸에 싣는다. 주장이 하나도 없는 어댑터도 열쇠에 있으면 싣는다(멈춘 추출이 보고서에서
-    사라지지 않게). κ 는 판정 모델 라벨이 생기면 `metrics.cohen_kappa` 로 같은 주장 단위에서 센다."""
+    사라지지 않게). `extraction` 이 있는 어댑터에는 인용 실재율·스키마 실패율·원가와 막힌 화를 더한다 — 막힌 화는 실제 소설의
+    진짜 모순일 수 있어 오탐으로 세지 않고 그대로 적는다.
+
+    `judged` 는 판정 모델마다 그 판정 파일이다. κ 는 판정 모델마다 모든 주장에 걸쳐 한 값이고(어댑터별이 아니다) 합격은 이진 κ
+    로 정한다. 판정이 멈췄거나 판정 못 한 주장이 있으면 판정 불가다 — 빠진 주장 없이 같은 주장 집합으로 재야 모델끼리 견준다."""
     adapters = sorted(set(halted) | {adapter for row in labeled for adapter in row.claim.adapters})
     out: dict[str, Any] = {}
     for adapter in adapters:
@@ -261,7 +268,29 @@ def label_report(labeled: Sequence[LabeledClaim], halted: Mapping[str, str | Non
             ),
             "direction_error": _entry(metrics.label_direction_error(labeled, adapter), error_rate=True),
         }
-    return {"claims": len(labeled), "adapters": out}
+        if (summary := (extraction or {}).get(adapter)) is not None:
+            quote = Ratio(sum(k for k, _ in summary.quote), sum(n for _, n in summary.quote), tuple(summary.quote))
+            out[adapter] |= {
+                "quote_rate": _entry(quote),
+                "schema_failure_rate": _entry(metrics.schema_failure_rate(summary.attempts), error_rate=True),
+                "cost": summary.cost,
+                "blocked": summary.blocked,
+            }
+    kappa: dict[str, Any] = {}
+    for model, run in (judged or {}).items():
+        found = judge.kappa(labeled, run.answers)
+        entry: dict[str, Any] = {
+            "model_id": run.model_id, "halted": run.halted, "n": found.n, "unjudged": found.unjudged, "value": found.binary,
+            "bootstrap": found.binary_bootstrap,
+            "three_category": {"value": found.three, "bootstrap": found.three_bootstrap},
+        }
+        undetermined = (
+            "멈춘 판정" if run.halted else f"판정 못 한 주장 {found.unjudged}건" if found.unjudged
+            else "분모 0" if found.binary is None else None
+        )
+        entry["pass"] = None if undetermined or found.binary is None else found.binary >= KAPPA_FLOOR
+        kappa[model] = entry | ({"undetermined": undetermined} if undetermined else {})
+    return {"claims": len(labeled), "adapters": out, "kappa": kappa}
 
 
 def _cell(entry: dict[str, Any]) -> str:

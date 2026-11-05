@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
 import { cloverKeys, useCloverPricingQuery } from "@/entities/clover";
 import {
@@ -194,11 +194,12 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady, onSele
 
   // 작업이 끝난 순간을 한 번만 처리한다. 같은 작업을 두 번 처리하면 이동·포커스가 되풀이된다.
   const settledJobIdsRef = useRef(new Set<string>());
+  // 끝난 작업의 정리는 그 작업이 도착한 렌더의 상세·콜백으로 한다. 처리 시점은 `job` 이 정한다.
+  const settleFinishedJob = useEffectEvent((finished: NovelJobResponse) => void settleJob(finished));
   useEffect(() => {
     if (!job || !isTerminalNovelJobStatus(job.status) || settledJobIdsRef.current.has(job.id)) return;
     settledJobIdsRef.current.add(job.id);
-    void settleJob(job);
-    // `settleJob` 은 렌더마다 새로 만들어지는 이 훅 안의 함수라 의존성에 넣지 않는다 — 처리 시점은 `job` 이 정한다.
+    settleFinishedJob(job);
   }, [job]);
 
   // 연쇄는 묶음 하나가 끝날 때마다 새 화가 생긴다 — 끝까지 기다리지 않고 목차·인물을 그때그때 다시 받아, 보드와
@@ -208,15 +209,20 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady, onSele
     if (completedBatches === undefined || completedBatches === null || completedBatches === 0) return;
     void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
     void queryClient.invalidateQueries({ queryKey: novelKeys.characters(novel.id) });
-    // 처리 시점은 만든 묶음 수가 바뀐 순간이다.
-  }, [completedBatches]);
+    // 처리 시점은 만든 묶음 수가 바뀐 순간이다. 소설 id 는 한 마운트 안에서 같다(다른 소설은 호출부가 새로 마운트한다).
+  }, [completedBatches, novel.id, queryClient]);
 
-  useEffect(() => {
-    if (!isJobGone || watched === undefined || settledJobIdsRef.current.has(watched.jobId)) return;
+  // 지켜보던 작업은 404 를 받은 렌더의 것을 읽는다 — 작업이 바뀌어도 다시 돌지 않는다.
+  const settleGoneJob = useEffectEvent(() => {
+    if (watched === undefined || settledJobIdsRef.current.has(watched.jobId)) return;
     settledJobIdsRef.current.add(watched.jobId);
     // 현실적인 경로는 다른 탭에서 소설을 지운 경우다 — 상세를 다시 받으면 화면이 「찾을 수 없어요」로 간다.
     setNotice({ tone: "error", message: "화 작업을 찾을 수 없어요. 소설을 다시 불러왔어요." });
     void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
+  });
+  useEffect(() => {
+    if (!isJobGone) return;
+    settleGoneJob();
     // 처리 시점은 404 를 받은 순간 하나다.
   }, [isJobGone]);
 
