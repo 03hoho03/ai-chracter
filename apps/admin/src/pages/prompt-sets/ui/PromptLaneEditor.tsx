@@ -65,13 +65,13 @@ function nonGeminiGuide(lane: PromptLane, model: PromptModel): string {
   if (lane === "novel") {
     const label = PROMPT_MODEL_LABELS[model];
     const otherCalls =
-      "경계 제안·문단 수정·여러 문단 수정·묶음 재검사는 고른 모델과 상관없이 소설 Gemini 세트를, 화자 라벨·등급 규칙은 원작의 채팅 Gemini 세트를 읽어요.";
+      "경계 제안·문단 수정·여러 문단 수정·묶음 재검사는 고른 모델과 상관없이 모델 배정 표의 소설 칸이 고른 체인의 세트를 읽어요(행이 없거나 쓸 수 없으면 소설 Gemini 세트). 화자 라벨은 소설 Gemini 세트를, 등급 규칙은 그 호출이 읽는 소설 세트의 등급 규칙 채널을 읽어요.";
     // 정본 기억 어댑터가 읽는 소설 체인은 Gemini 와 Sonnet 뿐이다(Claude 어댑터 둘이 Sonnet 체인을 함께 읽는다 —
     // `novel_bible/adapters/table.py`). 그래서 Opus 세트의 정본 기억 채널은 게시 검증 때문에 있을 뿐 읽는 호출이 없다.
     if (model === "sonnet") {
       return `${label} 세트는 이 모델로 쓰는 소설 화 생성과 전체·장면 구성안에 쓰이고, 정본 기억 채널은 env 로 Claude 어댑터(Haiku·Sonnet)를 배정한 정본 기억 연산이 읽어요(기본 배정은 Gemini 세트를 읽어요). ${otherCalls}`;
     }
-    return `${label} 세트는 이 모델로 쓰는 소설 화 생성과 전체·장면 구성안에만 쓰여요. 정본 기억 채널은 게시 검증 때문에 함께 있을 뿐 어떤 호출도 읽지 않아요. ${otherCalls}`;
+    return `${label} 세트는 이 모델로 쓰는 소설 화 생성과 전체·장면 구성안에 쓰여요. 정본 기억 채널은 게시 검증 때문에 함께 있을 뿐 어떤 호출도 읽지 않아요. ${otherCalls}`;
   }
   if (model === "haiku") {
     return "이 세트에는 판정(스탯·장면 헤더·엔딩·이미지)과 기억 요약·추출 문안만 있어요. 모델 배정 표가 이 체인을 고른 칸에서만 쓰이고, 고른 칸이 없으면 env 판정 모델의 체인이 쓰여요. 이 모델로는 응답을 쓰지 않아요.";
