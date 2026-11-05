@@ -418,13 +418,22 @@ async def test_a_scene_the_outline_alone_marks_as_flashback_does_not_block(
     assert await _status(db_session, confirmed.commit_id) == ("committed" if flashback else "blocked")
 
 
-@pytest.mark.parametrize(("actuality", "blocked"), [("present", False), ("dream_or_imagined", True)])
+@pytest.mark.parametrize(
+    ("actuality", "revival_ordinal", "blocked"),
+    [
+        pytest.param("present", 4, False, id="present"),
+        pytest.param("dream_or_imagined", 4, True, id="dream"),
+        pytest.param("present", 7, True, id="revival_after_the_appearance"),
+    ],
+)
 async def test_a_revival_between_the_death_and_the_appearance_lifts_the_block_unless_it_is_a_dream(
-    db_session: AsyncSession, actuality: EventActuality, blocked: bool
+    db_session: AsyncSession, actuality: EventActuality, revival_ordinal: int, blocked: bool
 ) -> None:
-    """4화에 되살아남이 있고 그 사건의 현실성 하나만 다르다. 깨지는 시나리오: 되살아남 사건이 실제로 일어났는지(`actual`)를
-    보지 않으면 꿈 속 되살아남이 사망 뒤 등장 차단을 끈다."""
-    revival = Chapter(4, (BREATH,), events=(Ev((1,), ("하나",), actuality=actuality),),
+    """3화 죽음 → 되살아남 화 → 5화 등장 순서로 확정한다. 4화 되살아남의 두 판은 그 사건의 현실성 하나만 다르고, 4화·7화 두
+    판은 되살아남의 화 번호 하나만 다르다(7화는 5화보다 먼저 확정되고, 되살아남이 그 화 사건 자체에 있어 7화는 커밋된다).
+    깨지는 시나리오: 되살아남 사건이 실제로 일어났는지(`actual`)를 보지 않으면 꿈 속 되살아남이 사망 뒤 등장 차단을 끈다.
+    되살아남이 등장보다 늦지 않은지를 보지 않으면, 등장보다 뒤 화에 서술된 되살아남이 앞 등장의 차단을 끈다."""
+    revival = Chapter(revival_ordinal, (BREATH,), events=(Ev((1,), ("하나",), actuality=actuality),),
                       facts=(Fa(1, "하나", "life", "alive", onset=True),))
     if blocked:
         await _blocks_exit(db_session, _death(), revival, _appearance())
