@@ -9,6 +9,9 @@
   칼럼이 마이크로달러 정수라 잔액 임계를 정수끼리 비교하고, 해시가 돌려준 새 합으로 "이번 호출이 임계를 넘겼는가"를 정확히
   가른다. 반올림 오차는 호출마다 0.5 마이크로달러 이하다.
 - **보존**은 쓸 때마다 다시 거는 400일이다 — 처음에만 걸면 수개월 쓰는 기준의 누적이 통째로 사라져 잔액이 가득 찬 것처럼 보인다.
+- **임계 알림**: 쓰기가 돌려받은 새 합으로 추정 잔액이 충전액의 임계 비율 아래면 한 번 알린다. 표지가 (항목, 기준, 임계)에 묶여
+  처음 내려갈 때 한 번이고, 충전액을 바꾸거나 기준을 다시 잡거나 임계를 바꾸면 표지가 달라져 다시 무장된다. 표지 확인은 쏘고 잊는
+  태스크 안이라 호출 경로의 Redis 왕복은 쓰기 한 번 그대로다.
 - 쓰기·읽기 모두 0.1초 상한 안에서 끝나고 실패를 삼킨다 — 쓰기는 생성 스트림 안에서 불리고, 읽기가 실패하면 어드민 조회는
   사용액 칸만 비운다. 사용자·방 id 는 싣지 않는다.
 """
@@ -23,6 +26,7 @@ from datetime import UTC, datetime, timedelta
 from api.core.redis import redis_client
 from api.core.sentry import capture_dependency_failure
 from api.db.models.llm_credential import LlmCredential
+from api.llm.credential_notify import spawn_credential_notification_once
 from api.llm.credentials import CREDENTIAL_KEY_PREFIX
 from api.llm.usage_store import RECORD_TIMEOUT_SECONDS, call_cost_usd
 
@@ -85,9 +89,23 @@ def below_alert(credit_micro_usd: int, spent_micro_usd: int, alert_pct: int) -> 
     return (credit_micro_usd - spent_micro_usd) * 100 < credit_micro_usd * alert_pct
 
 
+def _alert_below(target: SpendTarget, credit_micro_usd: int, spent_micro_usd: int) -> None:
+    assert target.credit_since is not None
+    remaining_pct = (credit_micro_usd - spent_micro_usd) * 100 // credit_micro_usd
+    spawn_credential_notification_once(
+        f"{CREDENTIAL_KEY_PREFIX}alert:threshold:{target.id}:{credit_basis(target.credit_since)}:{target.alert_pct}",
+        f"[Claude 자격] 추정 잔액이 임계 아래 — anthropic · {target.label} · 지문 {target.fingerprint} · 추정 사용 "
+        f"{spent_micro_usd / _MICRO_PER_USD:.2f} / 충전 {credit_micro_usd / _MICRO_PER_USD:.2f} 달러 · 남은 "
+        f"{remaining_pct}%(임계 {target.alert_pct}%) · 콘솔 잔액을 확인하고 충전액을 그 값으로 고치거나(같으면 기준 다시 잡기) "
+        "충전한다",
+        ttl_seconds=SPEND_RETENTION_SECONDS,
+    )
+
+
 async def record_credential_spend(target: SpendTarget, model: str, usage_metadata: object | None) -> None:
-    """호출 한 건의 원가를 그 항목의 지금 기준에 더한다. 기준이 없으면 아무것도 하지 않는다. MULTI/EXEC 한 번 왕복이라 상한에
-    걸려도 일부만 반영된 호출이 생기지 않는다. **절대 raise 하지 않는다** — 생성 스트림 안에서 불린다(취소는 그대로 올라간다)."""
+    """호출 한 건의 원가를 그 항목의 지금 기준에 더하고, 그 합이 임계 아래면 알린다(위 머리말). 기준이 없으면 아무것도 하지
+    않는다. MULTI/EXEC 한 번 왕복이라 상한에 걸려도 일부만 반영된 호출이 생기지 않는다. **절대 raise 하지 않는다** — 생성
+    스트림 안에서 불린다(취소는 그대로 올라간다)."""
     try:
         key = spend_key(target)
         if key is None:
@@ -102,7 +120,9 @@ async def record_credential_spend(target: SpendTarget, model: str, usage_metadat
                     pipe.hincrby(key, "unpriced_calls", 1)
                     pipe.hset(key, "unpriced_model", model)
                 pipe.expire(key, SPEND_RETENTION_SECONDS)
-                await pipe.execute()
+                spent = int((await pipe.execute())[0])
+        if target.credit_micro_usd is not None and below_alert(target.credit_micro_usd, spent, target.alert_pct):
+            _alert_below(target, target.credit_micro_usd, spent)
     except Exception as exc:
         logger.warning("Claude 자격 추정 사용액 기록 실패 — 이 호출 한 건은 사용액에서 빠진다", exc_info=True)
         capture_dependency_failure(exc, dependency="redis")

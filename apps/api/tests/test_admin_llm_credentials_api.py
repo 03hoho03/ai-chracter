@@ -59,8 +59,10 @@ from factories import (
     FAKE_CREDENTIAL_KEYRING,
     FAKE_OTHER_API_KEY,
     FAKE_ROTATED_KEYRING,
+    _capture_credential_alerts,
     _create_admin,
     _login_as_admin,
+    _settle_credential_tasks,
 )
 
 _BASE = "/admin/llm-credentials"
@@ -1944,13 +1946,23 @@ async def test_same_credit_sent_with_a_label_change_keeps_the_credit_basis(
 
 
 async def test_reset_flag_restarts_the_basis_with_the_same_credit(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_id: uuid.UUID,
+    probe: FakeProbe,
+    notes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """콘솔 잔액이 우연히 이전 충전액과 같아도 플래그로 기준을 지금으로 다시 잡는다 — 사용액이 새 기준에서 0 부터 센다."""
-    created = await _create(db_client, creditUsd=50)
+    """콘솔 잔액이 우연히 이전 충전액과 같아도 플래그로 기준을 지금으로 다시 잡는다 — 사용액이 새 기준에서 0 부터 세고, 옛 기준에서
+    이미 보낸 잔액 임계 알림이 다시 무장된다. Opus 입력 100만·출력 10만 = 6 달러라 50 달러의 90% 임계 아래로 내려간다."""
+    threshold_alerts = _capture_credential_alerts(monkeypatch)
+    created = await _create(db_client, creditUsd=50, alertPct=90)
     await _with_past_basis(db_session, created["id"])
     old_target = SpendTarget.of_row(await _row(db_session, created["id"]))
     await record_credential_spend(old_target, "claude-haiku-5-5", to_usage(1000, 0, 0, 200))
+    await record_credential_spend(old_target, "claude-opus-5-5", to_usage(1_000_000, 0, 0, 100_000))
+    await _settle_credential_tasks()
+    assert len(threshold_alerts) == 1
     subject = f"anthropic · 운영 계정 · 지문 {secret_fingerprint(FAKE_API_KEY)}"
     notes.clear()
     before = await _generation()
@@ -1965,8 +1977,12 @@ async def test_reset_flag_restarts_the_basis_with_the_same_credit(
     assert await _generation() == before + 1
     assert (resp.json()["spend"]["calls"], resp.json()["spend"]["spentUsd"]) == (0, "0.00")
     assert await read_credential_spend([old_target]) == {
-        row.id: CredentialSpend(spent_micro_usd=200, calls=1, unpriced_calls=0, unpriced_model=None)
+        row.id: CredentialSpend(spent_micro_usd=6_000_200, calls=2, unpriced_calls=0, unpriced_model=None)
     }
+
+    await record_credential_spend(SpendTarget.of_row(row), "claude-opus-5-5", to_usage(1_000_000, 0, 0, 100_000))
+    await _settle_credential_tasks()
+    assert len(threshold_alerts) == 2
 
 
 @pytest.mark.parametrize(

@@ -17,6 +17,7 @@ from api.core.redis import redis_client
 from api.llm import credential_usage
 from api.llm.claude_messages import to_usage
 from api.llm.credential_usage import CredentialSpend, SpendTarget, read_credential_spend, record_credential_spend
+from factories import _capture_credential_alerts, _settle_credential_tasks
 
 _BASIS = datetime(2026, 11, 1, 3, 0, tzinfo=UTC)
 _LATER_BASIS = datetime(2026, 11, 4, 9, 30, 15, 123456, tzinfo=UTC)
@@ -142,3 +143,56 @@ async def test_unreadable_spend_store_reads_as_unknown(monkeypatch: pytest.Monke
     without_basis = _target(credit_since=None, id=uuid.UUID("00000000-0000-4000-8000-0000000000a2"))
 
     assert await read_credential_spend([with_basis, without_basis]) == {with_basis.id: None, without_basis.id: None}
+
+
+# ── 추정 잔액 임계 알림 ──────────────────────────────────────────────────────────────────
+# Haiku 5.5 출력 400만 토큰 = 400만 × 0.50 달러/백만 = 2 달러(입력 없음).
+_TWO_DOLLARS = to_usage(0, 0, 0, 4_000_000)
+
+
+def _below(spent: str, credit: str, remaining: int, alert: int) -> str:
+    return (
+        "[Claude 자격] 추정 잔액이 임계 아래 — anthropic · 운영 계정 · 지문 0a1b2c3d · "
+        f"추정 사용 {spent} / 충전 {credit} 달러 · 남은 {remaining}%(임계 {alert}%) · 콘솔 잔액을 확인하고 충전액을 그 값으로 "
+        "고치거나(같으면 기준 다시 잡기) 충전한다"
+    )
+
+
+async def _spend_twice_over(target: SpendTarget, times: int) -> None:
+    for _ in range(times):
+        await record_credential_spend(target, "claude-haiku-5-5", _TWO_DOLLARS)
+    await _settle_credential_tasks()
+
+
+async def test_threshold_alert_fires_once_on_the_first_crossing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """충전 10 달러·임계 50%: 2·4 달러는 위, 6 달러에서 처음 아래로 내려가 한 번 알리고, 더 내려가도(추정 초과 포함) 다시 알리지
+    않는다."""
+    alerts = _capture_credential_alerts(monkeypatch)
+    target = _target(credit_micro_usd=10_000_000, alert_pct=50)
+
+    await _spend_twice_over(target, 2)
+    assert alerts == []
+    await _spend_twice_over(target, 1)
+    assert alerts == [_below("6.00", "10.00", 40, 50)]
+    await _spend_twice_over(target, 3)
+    assert alerts == [_below("6.00", "10.00", 40, 50)]
+
+
+async def test_threshold_alert_rearms_when_the_credit_or_percent_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """이미 아래인 채 임계만 바꿔도 다음 호출에서 한 번 더 알린다. 충전액 기준을 다시 잡으면 새 기준의 누적이 0 부터라 다시 내려갈
+    때 알린다."""
+    alerts = _capture_credential_alerts(monkeypatch)
+    target = _target(credit_micro_usd=10_000_000, alert_pct=50)
+    await _spend_twice_over(target, 3)
+
+    await _spend_twice_over(_target(credit_micro_usd=10_000_000, alert_pct=30), 1)
+    rebased = _target(credit_since=_LATER_BASIS, credit_micro_usd=10_000_000, alert_pct=50)
+    await _spend_twice_over(rebased, 2)
+    assert len(alerts) == 2
+    await _spend_twice_over(rebased, 1)
+
+    assert alerts == [
+        _below("6.00", "10.00", 40, 50),
+        _below("8.00", "10.00", 20, 30),
+        _below("6.00", "10.00", 40, 50),
+    ]
