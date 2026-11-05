@@ -295,6 +295,7 @@ GARDEN = "둘이 정원에 물을 준다."
 SWEEP = "둘이 마당을 쓴다."
 RECALL = "살아서 웃던 하나의 얼굴이 떠오른다."
 BREATH = "하나의 가슴이 다시 오르내린다."
+LONG_AGO = "둘은 하나가 오래전에 세상을 떠났다고 말한다."
 
 
 def _death(*extra: Fa, ordinal: int = 3) -> Chapter:
@@ -433,20 +434,25 @@ async def test_a_revival_between_the_death_and_the_appearance_lifts_the_block_un
     assert await _rules_of(db_session, confirmed.commit_id) == []
 
 
-async def test_alive_all_along_stated_at_the_appearance_itself_does_not_block(db_session: AsyncSession) -> None:
-    """등장 사건 자체에 "알고 보니 살아 있었다"(`alive`, `onset=false`)가 있다. 깨지는 시나리오: 생사의 되살아남에도 `onset` 을
-    요구하거나 등장 사건 자체를 창에서 빼면, 죽은 줄 알았던 인물이 살아 돌아오는 원고를 확정할 수 없다."""
-    _, confirmed = await _story(db_session, _death(), _appearance(Fa(1, "하나", "life", "alive")))
+@pytest.mark.parametrize("scope", ["from_here", "work"])
+async def test_alive_all_along_stated_at_the_appearance_itself_does_not_block(
+    db_session: AsyncSession, scope: FactScope
+) -> None:
+    """등장 사건 자체에 "알고 보니 살아 있었다"(`alive`, `onset=false`)가 있다 — 범위 칸 하나만 다른 두 판 모두 결과가 없다.
+    깨지는 시나리오: 생사의 되살아남에도 `onset` 을 요구하거나 등장 사건 자체를 창에서 빼면, 죽은 줄 알았던 인물이 살아
+    돌아오는 원고를 확정할 수 없다. 되살아남의 자리를 그 사실이 놓인 등장 사건 대신 작품 범위의 시작(어느 화보다 앞)으로
+    읽으면, 모델이 "처음부터 살아 있었다"를 작품 범위로 낸 같은 원고가 죽음보다 앞선 삶으로 읽혀 막힌다."""
+    _, confirmed = await _story(db_session, _death(), _appearance(Fa(1, "하나", "life", "alive", scope=scope)))
     assert await _status(db_session, confirmed.commit_id) == "committed"
     assert await _rules_of(db_session, confirmed.commit_id) == []
 
 
-def _recall_chapter(relation: Rel | None) -> Chapter:
+def _recall_chapter(relation: Rel | None, *, scope: FactScope = "from_here") -> Chapter:
     """4화 — 지금 이야기 사건 하나와 하나가 살아 있던 회상 사건 하나. 앞 화 사건 목록은 P1 = 2화 정원 사건, P2 = 3화 죽음."""
     return Chapter(
         4, (SWEEP, RECALL),
         events=(Ev((1,), ("둘",)), Ev((2,), (), actuality="flashback", mentioned=("하나",))),
-        facts=(Fa(2, "하나", "life", "alive"),),
+        facts=(Fa(2, "하나", "life", "alive", scope=scope),),
         relations=(relation,) if relation else (),
     )
 
@@ -459,13 +465,17 @@ async def test_alive_in_a_flashback_before_the_death_still_blocks(db_session: As
     await _blocks_exit(db_session, _GARDEN, _death(), _recall_chapter(Rel(2, "before", "P1")), _appearance(ordinal=6))
 
 
+@pytest.mark.parametrize("scope", ["from_here", "work"])
 async def test_alive_in_a_flashback_without_relation_warns_order_undetermined_instead_of_blocking(
-    db_session: AsyncSession,
+    db_session: AsyncSession, scope: FactScope
 ) -> None:
     """관계 없는 회상 속 삶 — 왼쪽 "죽음 앞 회상"과 관계 칸 하나만 다르다. 차단을 끄되 침묵하지 않고 순서 미정 경고와 판정
-    후보를 남긴다. 깨지는 시나리오: 죽음과의 순서가 미정인 되살아남을 순서가 알려진 것과 같이 다루면, 죽은 인물을 떠올린 회상
-    하나 때문에 그 인물의 사망 뒤 등장이 영영 조용해진다."""
-    novel, confirmed = await _story(db_session, _GARDEN, _death(), _recall_chapter(None), _appearance(ordinal=6))
+    후보를 남긴다. 삶의 범위가 작품 전체여도 같다. 깨지는 시나리오: 죽음과의 순서가 미정인 되살아남을 순서가 알려진 것과 같이
+    다루면, 죽은 인물을 떠올린 회상 하나 때문에 그 인물의 사망 뒤 등장이 영영 조용해진다. 작품 범위 삶의 자리를 회상 사건 대신
+    어느 화보다 앞으로 읽으면 같은 회상이 죽음보다 앞선 삶이 되어 경고 대신 차단이 난다."""
+    novel, confirmed = await _story(
+        db_session, _GARDEN, _death(), _recall_chapter(None, scope=scope), _appearance(ordinal=6)
+    )
     assert await _status(db_session, confirmed.commit_id) == "committed"
     (finding,) = await _findings(db_session, confirmed.commit_id)
     assert (finding.severity, finding.rule) == ("warning", "order_undetermined")
@@ -508,6 +518,28 @@ async def test_an_appearance_in_a_flashback_placed_after_the_death_does_not_bloc
     _, confirmed = await _story(db_session, _GARDEN, _death(), appearance)
     assert await _status(db_session, confirmed.commit_id) == "committed"
     assert await _rules_of(db_session, confirmed.commit_id) == []
+
+
+@pytest.mark.parametrize(
+    ("scope", "appearance_ordinal", "expected"),
+    [
+        pytest.param("from_here", 1, [], id="earlier_appearance"),
+        pytest.param("work", 1, [], id="earlier_appearance_work_scope"),
+        pytest.param("work", 5, [("block", "exit_then_appearance")], id="later_appearance_work_scope"),
+    ],
+)
+async def test_a_death_stated_for_the_whole_work_stands_at_the_event_that_states_it(
+    db_session: AsyncSession, scope: FactScope, appearance_ordinal: int, expected: list[tuple[str, str]]
+) -> None:
+    """3화 지금 이야기 사건이 하나의 오래전 죽음을 사망으로 낸다. 1화 등장과의 두 판은 사망의 범위 칸 하나만 다르고 둘 다
+    결과가 없다. 5화 등장 판은 작품 범위 사망도 그것이 서술된 사건 뒤의 등장은 여전히 막는지 본다. 깨지는 시나리오: 작품 범위
+    사망을 어느 화보다 앞선 퇴장으로 읽으면, 과거에 놓인 1화 장면을 모델이 지금 이야기로 표시한 원고에서 3화 확정이 막히고
+    1화를 다시 확정해도 같은 차단이 난다."""
+    long_dead = Chapter(3, (LONG_AGO,), events=(Ev((1,), ("둘",)),), facts=(Fa(1, "하나", "life", "dead", scope=scope),))
+    chapters = sorted([long_dead, _appearance(ordinal=appearance_ordinal)], key=lambda spec: spec.ordinal)
+    _, confirmed = await _story(db_session, *chapters)
+    assert await _status(db_session, confirmed.commit_id) == ("blocked" if expected else "committed")
+    assert await _rules_of(db_session, confirmed.commit_id) == expected
 
 
 @pytest.mark.parametrize(

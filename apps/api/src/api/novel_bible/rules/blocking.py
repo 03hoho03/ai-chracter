@@ -8,7 +8,9 @@
 검사 틀이 그 항목 모두의 원고 근거를 다시 맞춰 보고, 하나라도 맞지 않으면 차단을 경고로 낮춘다.
 
 현실성: 주선(`main`)은 지금 이야기, 실제(`actual`)는 지금 이야기와 회상이다. 꿈·상상 사건은 둘 다 아니다. 작품 범위 사실은 어느
-사건보다 앞에서 시작한 것으로 친다."""
+사건보다 앞에서 시작한 것으로 친다(`Order.start`) — 다만 사망·영구 퇴장 뒤 등장은 퇴장·되살아남을 범위와 무관하게 그 사실이 놓인
+사건의 자리로 본다. 그 규칙은 퇴장이 서술된 사건과 등장 사건 사이의 앞섬을 묻기 때문이다: 등장 사건에서 "알고 보니 살아 있었다"가
+작품 범위로 나와도 그 등장을 막지 않고, 작품 범위의 "오래전에 죽었다"가 그 서술보다 앞 화의 등장을 막지 않는다."""
 
 import re
 import uuid
@@ -97,8 +99,8 @@ def _undoes(revival: FactRow, exit_fact: FactRow) -> bool:
 def exit_cases(snapshot: BibleSnapshot, *, departures: bool = False) -> Iterator[ExitCase]:
     """사망·영구 퇴장 사실(`departures` 면 돌아올 수 있는 떠남)과 그 주어가 등장한 주선 사건의 짝 중 차단 식이 참이거나 순서만
     미정인 것. 되살아남 창 r 은 실제 사건에서, 퇴장과 다른 사건에서, 퇴장보다 앞서지 않고 등장보다 늦지 않은 것이다 — 퇴장과
-    같은 사건의 출석·삶은 그 장면에 서 있던 것이지 되돌림이 아니다. 돌아올 수 있는 떠남은 순서 미정 갈래가 없다(되돌림이
-    하나라도 있으면 결과 없음)."""
+    같은 사건의 출석·삶은 그 장면에 서 있던 것이지 되돌림이 아니다. 퇴장 d 와 되살아남 r 의 자리는 범위와 무관하게 그 사실의
+    시작 사건이다. 돌아올 수 있는 떠남은 순서 미정 갈래가 없다(되돌림이 하나라도 있으면 결과 없음)."""
     if snapshot.facts is None or snapshot.events is None:
         return
     order = Order.of(snapshot)
@@ -117,7 +119,7 @@ def exit_cases(snapshot: BibleSnapshot, *, departures: bool = False) -> Iterator
                 if not departures:
                     yield ExitCase(exit_fact, appearance, undetermined=True)
                 continue
-            exit_at, appear_at = order.start(exit_fact), order.at(appearance.id)
+            exit_at, appear_at = order.at(exit_event), order.at(appearance.id)
             if precedes(exit_at, appear_at) is not True:
                 continue
             revivals = [
@@ -126,12 +128,12 @@ def exit_cases(snapshot: BibleSnapshot, *, departures: bool = False) -> Iterator
                 if _undoes(revival, exit_fact)
                 and order.actual(revival.valid_from_event_id)
                 and revival.valid_from_event_id != exit_event
-                and precedes(order.start(revival), exit_at) is not True
-                and precedes(appear_at, order.start(revival)) is not True
+                and precedes(order.at(revival.valid_from_event_id), exit_at) is not True
+                and precedes(appear_at, order.at(revival.valid_from_event_id)) is not True
             ]
             if not revivals:
                 yield ExitCase(exit_fact, appearance, undetermined=False)
-            elif not departures and not any(precedes(order.start(r), exit_at) is False for r in revivals):
+            elif not departures and not any(precedes(order.at(r.valid_from_event_id), exit_at) is False for r in revivals):
                 yield ExitCase(exit_fact, appearance, undetermined=True, revivals=tuple(r.id for r in revivals))
 
 
