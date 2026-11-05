@@ -1,7 +1,7 @@
 """llm credentials
 
 Revision ID: 7eb6d96b147f
-Revises: 45e57ce4d815
+Revises: d39cf46dcb5c
 Create Date: 2026-11-04 16:20:18.821496
 
 Claude 자격 목록 표 셋을 만든다 — 자격(`llm_credentials`), 확인 기록(`llm_credential_checks`), 목록 사용 칸과 목록 판
@@ -26,7 +26,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '7eb6d96b147f'
-down_revision: str | Sequence[str] | None = '45e57ce4d815'
+down_revision: str | Sequence[str] | None = 'd39cf46dcb5c'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
