@@ -10,7 +10,7 @@ function apiError(status: number, detail: ApiError["detail"]): ApiError {
 const LIMIT = apiError(409, { code: "WORK_BUNDLE_LIMIT" });
 
 describe("toWorkBundleActionError", () => {
-  it("재동의가 필요하면 null — 전역 재동의 모달에 맡기고 따로 알리지 않는다", () => {
+  it("재동의가 필요하면 undefined — 전역 재동의 모달에 맡기고 따로 알리지 않는다", () => {
     const reconsent = apiError(403, { code: "LEGAL_RECONSENT_REQUIRED", consents: [] });
     expect(toWorkBundleActionError(reconsent, "create")).toBeUndefined();
     expect(toWorkBundleActionError(reconsent, "addItem")).toBeUndefined();
