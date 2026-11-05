@@ -1,9 +1,12 @@
 """측정 하네스 진입점 — `apps/api` 에서 `PYTHONPATH=scripts uv run --env-file .env python -m novel_bible_eval <명령>`.
 
 - `synthetic`: 합성 세트를 심고 확정·처리해 실행 폴더에 보고서(JSON·마크다운)와 결과(`outcomes.json`)를 쓴다.
-- `extract`: 사람 라벨용 소설 사본의 앞 화들을 확정해 그 어댑터의 결과를 쓴다. 결과 파일의 `halted` 칸에 멈춤·끊김 까닭을 적는다
-  (끝까지 돌았으면 null) — 나중에 결과 파일만 보는 사람도 앞 화 일부만 담긴 결과인지 안다.
-- `sheet`: 어댑터들의 `extract` 결과를 합쳐 라벨 시트와 열쇠를 쓴다. 결과 파일의 `halted` 는 열쇠로 옮긴다.
+- `copy-text`: 텍스트 파일 폴더(사람 라벨 원고)에서 어댑터마다 새 소설 사본을 만들고 어댑터 → 소설 id 를 `copies.json` 에 쓴다.
+- `extract`: 사람 라벨용 소설 사본의 앞 화들을 확정해 그 어댑터의 결과를 쓴다. 이미 정본 기억 확정이 있는 소설은 거절한다 —
+  같은 소설로 두 번째 어댑터를 돌리면 확정 입구가 같은 개정을 그대로 돌려 첫 어댑터의 작업을 모으고, 오류 없이 틀린 결과가 된다.
+  결과 파일의 `halted` 칸에 멈춤·끊김 까닭, 또는 검사까지 끝난 확정이 요청한 화 수보다 적다는 것을 적는다(끝까지 돌았으면
+  null) — 나중에 결과 파일만 보는 사람도 앞 화 일부만 담긴 결과인지 안다. 시도 기록·원가·막힌 화도 함께 싣는다.
+- `sheet`: 어댑터들의 `extract` 결과를 합쳐 라벨 시트와 열쇠를 쓴다. 결과 파일의 `halted` 와 추출 요약은 열쇠로 옮긴다.
 - `score`: 사람이 내려받은 시트 결과를 읽어 어댑터별 라벨 지표를 쓴다. 열쇠에 멈춤·끊김 까닭이 있는 어댑터의 판정은 판정
   불가다.
 
@@ -21,10 +24,11 @@ import json
 import uuid
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from api.core.config import settings
 from api.db.models import NovelChapterRevision
+from api.db.models.novel_bible import NovelBibleCommit
 from api.db.session import async_session_factory
 from api.novel_bible.adapters.resolver import build_resolver
 from api.novel_bible.core.contracts import AdapterResolver
@@ -34,7 +38,7 @@ from api.novel_bible.ids import SlotId
 from memory_eval.ledger import EXIT_BUDGET, Ledger
 from replay.local_db import ensure_local_database
 
-from novel_bible_eval import labels
+from novel_bible_eval import labels, metrics, text_copy
 from novel_bible_eval.report import label_report, synthetic_report, write_report
 from novel_bible_eval.run import BudgetHalt, ChapterOutcome, Meter, extract_chapters, run_set
 from novel_bible_eval.spec import EvalSet, load_set
@@ -59,14 +63,46 @@ async def synthetic(
     return EXIT_BUDGET if halted else 0
 
 
+async def copy_text(factory: SessionFactory, folder: Path, adapters: list[str], run_dir: Path) -> int:
+    """어댑터마다 사본 하나. 한 트랜잭션이라 폴더가 거절되거나 중간에 끊기면 사본이 하나도 남지 않는다."""
+    text = text_copy.read_text_dir(folder)
+    copies: dict[str, str] = {}
+    async with factory() as session, session.begin():
+        for adapter in adapters:
+            novel_id, _ = await text_copy.copy_text_novel(session, text)
+            copies[adapter] = str(novel_id)
+    _write_json(run_dir / "copies.json", copies)
+    print(f"{len(text.chapters)}화 사본 {len(copies)}벌 — {run_dir / 'copies.json'}")
+    return 0
+
+
+def _write_json(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 async def extract(
     factory: SessionFactory, resolver: AdapterResolver, novel_id: uuid.UUID, run_dir: Path, *, adapter: str,
-    count: int, slots: frozenset[SlotId] | None = None,
+    count: int, meter: Meter, slots: frozenset[SlotId] | None = None,
 ) -> int:
+    """`resolver` 는 `meter` 가 감싼 해석기다 — 그 시도 기록을 결과에 싣는다."""
+    async with factory() as session:
+        confirmed = await session.scalar(
+            select(func.count()).select_from(NovelBibleCommit).where(NovelBibleCommit.novel_id == novel_id)
+        )
+    if confirmed:
+        # 결과 파일을 쓰기 전에 거절한다 — 같은 어댑터 이름으로 다시 돌린 것이면 앞서 쓴 결과를 덮지 않는다.
+        raise SystemExit(
+            f"소설 {novel_id} 에 이미 정본 기억 확정이 {confirmed}건 있다 — 어댑터마다 copy-text 로 만든 새 사본을 쓴다"
+        )
     outcomes: list[ChapterOutcome] = []
     halted: str | None = None
     try:
         await extract_chapters(factory, resolver, novel_id, count=count, slots=slots, outcomes=outcomes)
+        judged = sum(outcome.status in ("committed", "blocked") for outcome in outcomes)
+        if judged < count:
+            halted = f"화 부족 — 요청 {count}화 중 검사까지 끝난 확정 {judged}화(확정한 화 {len(outcomes)})"
+            print(halted)
     except BudgetHalt as halt:
         halted = str(halt)
         print(f"원장 멈춤: {halt} — 끝난 {len(outcomes)}화까지 썼다")
@@ -76,13 +112,23 @@ async def extract(
         print(f"끊김: {type(error).__name__} — 끝난 {len(outcomes)}화까지 썼다")
         raise
     finally:
-        _write_extract(outcomes, run_dir, adapter, halted)
+        _write_extract(outcomes, run_dir, adapter, halted, meter.attempts)
     return 0
 
 
-def _write_extract(outcomes: list[ChapterOutcome], run_dir: Path, adapter: str, halted: str | None) -> None:
+def _write_extract(
+    outcomes: list[ChapterOutcome], run_dir: Path, adapter: str, halted: str | None,
+    attempts: list[tuple[str, str | None]],
+) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
-    written = {"halted": halted, "outcomes": [outcome.model_dump(mode="json") for outcome in outcomes]}
+    summary = labels.ExtractionSummary(
+        attempts=attempts, quote=list(metrics.quote_rate(outcomes).clusters), cost=metrics.cost(outcomes),
+        blocked={outcome.ordinal: outcome.block_rules for outcome in outcomes if outcome.status == "blocked"},
+    )
+    written = {
+        "halted": halted, **summary.model_dump(mode="json"),
+        "outcomes": [outcome.model_dump(mode="json") for outcome in outcomes],
+    }
     (run_dir / f"extract-{adapter}.json").write_text(json.dumps(written, ensure_ascii=False, indent=2),
                                                      encoding="utf-8")
 
@@ -126,6 +172,10 @@ def _parser() -> argparse.ArgumentParser:
     extract = commands.add_parser("extract", parents=[paid])
     extract.add_argument("--novel-id", type=uuid.UUID, required=True)
     extract.add_argument("--chapters", type=int, default=4)
+    copy = commands.add_parser("copy-text")
+    copy.add_argument("--text-dir", type=Path, required=True, help="01.txt…NN.txt 와 선택 meta.txt 가 든 원고 폴더")
+    copy.add_argument("--adapters", nargs="+", required=True, help="사본을 하나씩 만들 어댑터 이름")
+    copy.add_argument("--run-dir", type=Path, required=True)
     sheet = commands.add_parser("sheet")
     sheet.add_argument("--extract", nargs="+", required=True, metavar="어댑터=결과.json")
     sheet.add_argument("--out", type=Path, required=True)
@@ -151,18 +201,28 @@ async def _run(args: argparse.Namespace) -> int:
                 repeats=args.repeats, slots=slots,
             )
         return await extract(
-            factory, resolver, args.novel_id, args.run_dir, adapter=args.adapter, count=args.chapters, slots=slots
+            factory, resolver, args.novel_id, args.run_dir, adapter=args.adapter, count=args.chapters, meter=meter,
+            slots=slots,
         )
+    if args.command == "copy-text":
+        return await copy_text(factory, args.text_dir, args.adapters, args.run_dir)
     if args.command == "sheet":
         files = {name: Path(path) for name, path in (item.split("=", 1) for item in args.extract)}
         runs = {name: _outcomes(path) for name, path in files.items()}
         sheet, key = labels.write_sheet(
             labels.merge_claims(runs, await _block_texts(factory, runs)), args.out,
-            halted={name: _halted(path) for name, path in files.items()}, seed=args.seed,
+            halted={name: _halted(path) for name, path in files.items()},
+            extraction={
+                name: labels.ExtractionSummary.model_validate_json(path.read_text(encoding="utf-8"))
+                for name, path in files.items()
+            },
+            seed=args.seed,
         )
         print(f"시트 {sheet} · 열쇠 {key}")
         return 0
-    report = label_report(labels.read_labels(args.labels, args.key), labels.read_halted(args.key))
+    report = label_report(
+        labels.read_labels(args.labels, args.key), labels.read_halted(args.key), labels.read_extraction(args.key)
+    )
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "label-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0

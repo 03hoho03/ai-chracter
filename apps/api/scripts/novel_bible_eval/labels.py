@@ -10,7 +10,8 @@
 시트에는 주장의 서로 다른 근거 인용(블록 글에서 위치로 잘라 낸 원문, 어댑터마다 최대 셋)이 실린다. 그래서 시트와 결과는 측정 실행 폴더
 (저장소가 추적하지 않는 곳)에만 두고 커밋·게시하지 않는다. 어느 어댑터가 어느 인용을 붙였는지는 시트가 아니라 옆의 열쇠 파일에
 있다 — 라벨하는 사람이 어댑터를 알면 판정이 기운다. 열쇠에는 어댑터마다 추출이 멈췄거나 끊긴 까닭도 실린다 — 점수가 앞 화
-일부만 담긴 추출로 합격을 내지 않게."""
+일부만 담긴 추출로 합격을 내지 않게. 추출 요약(시도 기록·인용 실재율의 화별 수·원가·막힌 화)도 열쇠로 옮겨 라벨 보고서가
+싣는다."""
 
 import hashlib
 import html
@@ -58,6 +59,18 @@ class Label(BaseModel):
     verdict: Verdict
     quotes: list[QuoteMark | None]
     memo: str = ""
+
+
+class ExtractionSummary(BaseModel):
+    """어댑터 하나의 라벨용 추출 요약 — 추출 결과 파일에 싣고 열쇠로 옮긴다. `attempts` 는 어댑터 호출마다 (연산, 실패 사유 —
+    성공은 None)로 스키마 실패율의 재료, `quote` 는 화마다 (검증을 통과해 남은 항목, 남은 + 인용 때문에 버린 항목), `cost` 는
+    작업 호출 기록의 원가·지연, `blocked` 는 막힌 화 → 막은 규칙. 사람 라벨 세트는 실제 소설이라 차단이 진짜 모순일 수 있어
+    차단 오탐에 넣지 않고 따로 적는다."""
+
+    attempts: list[tuple[str, str | None]]
+    quote: list[tuple[int, int]]
+    cost: dict[str, Any]
+    blocked: dict[int, list[str]]
 
 
 @dataclass(frozen=True)
@@ -222,10 +235,12 @@ _EMBEDDED = re.compile(r'<script type="application/json" id="claims">(.*?)</scri
 
 
 def write_sheet(
-    claims: Sequence[Claim], out_dir: Path, *, halted: Mapping[str, str | None], seed: int = 0
+    claims: Sequence[Claim], out_dir: Path, *, halted: Mapping[str, str | None],
+    extraction: Mapping[str, ExtractionSummary] | None = None, seed: int = 0,
 ) -> tuple[Path, Path]:
     """시트(`sheet.html`, 화 순서로 묶되 화 안에서 시드로 섞음 — 어댑터 순서가 드러나지 않게)와 열쇠(`claims-key.json`)를
-    쓴다. `halted` 는 합친 어댑터마다 그 추출의 멈춤·끊김 까닭(끝까지 돌았으면 None)이고 열쇠에만 싣는다."""
+    쓴다. `halted` 는 합친 어댑터마다 그 추출의 멈춤·끊김 까닭(끝까지 돌았으면 None), `extraction` 은 어댑터마다 추출 요약이고
+    둘 다 열쇠에만 싣는다."""
     shuffled = list(claims)
     random.Random(seed).shuffle(shuffled)
     shuffled.sort(key=lambda claim: claim.chapter)
@@ -237,7 +252,11 @@ def write_sheet(
     sheet.write_text(_SHEET.replace("__CLAIMS__", embedded).replace("__SHEET_ID__", html.escape(sheet_id)),
                      encoding="utf-8")
     key = out_dir / "claims-key.json"
-    written = {"halted": dict(halted), "claims": [claim.model_dump() for claim in claims]}
+    written = {
+        "halted": dict(halted),
+        "extraction": {name: summary.model_dump(mode="json") for name, summary in (extraction or {}).items()},
+        "claims": [claim.model_dump() for claim in claims],
+    }
     key.write_text(json.dumps(written, ensure_ascii=False, indent=2), encoding="utf-8")
     return sheet, key
 
@@ -267,3 +286,9 @@ def read_halted(key: Path) -> dict[str, str | None]:
     """열쇠에 실린 어댑터마다의 추출 멈춤·끊김 까닭(끝까지 돌았으면 None)."""
     halted: dict[str, str | None] = json.loads(key.read_text(encoding="utf-8"))["halted"]
     return halted
+
+
+def read_extraction(key: Path) -> dict[str, ExtractionSummary]:
+    """열쇠에 실린 어댑터마다의 추출 요약."""
+    rows = json.loads(key.read_text(encoding="utf-8"))["extraction"]
+    return {name: ExtractionSummary.model_validate(row) for name, row in rows.items()}

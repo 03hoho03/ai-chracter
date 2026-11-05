@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from novel_bible_eval import metrics
-from novel_bible_eval.labels import LabeledClaim
+from novel_bible_eval.labels import ExtractionSummary, LabeledClaim
 from novel_bible_eval.metrics import Ratio
 from novel_bible_eval.run import ChapterOutcome
 from novel_bible_eval.spec import EvalSet
@@ -114,10 +114,15 @@ def synthetic_report(
     }
 
 
-def label_report(labeled: Sequence[LabeledClaim], halted: Mapping[str, str | None]) -> dict[str, Any]:
+def label_report(
+    labeled: Sequence[LabeledClaim], halted: Mapping[str, str | None],
+    extraction: Mapping[str, ExtractionSummary] | None = None,
+) -> dict[str, Any]:
     """어댑터별 사람 라벨 지표. `halted` 는 어댑터마다 그 추출의 멈춤·끊김 까닭(라벨 열쇠에 실린 것) — 멈춘 어댑터의 판정은
     판정 불가로 두고 까닭을 그 어댑터 칸에 싣는다. 주장이 하나도 없는 어댑터도 열쇠에 있으면 싣는다(멈춘 추출이 보고서에서
-    사라지지 않게). κ 는 판정 모델 라벨이 생기면 `metrics.cohen_kappa` 로 같은 주장 단위에서 센다."""
+    사라지지 않게). `extraction` 이 있는 어댑터에는 인용 실재율·스키마 실패율·원가와 막힌 화를 더한다 — 막힌 화는 실제 소설의
+    진짜 모순일 수 있어 오탐으로 세지 않고 그대로 적는다. κ 는 판정 모델 라벨이 생기면 `metrics.cohen_kappa` 로 같은 주장
+    단위에서 센다."""
     adapters = sorted(set(halted) | {adapter for row in labeled for adapter in row.claim.adapters})
     out: dict[str, Any] = {}
     for adapter in adapters:
@@ -131,6 +136,14 @@ def label_report(labeled: Sequence[LabeledClaim], halted: Mapping[str, str | Non
             ),
             "direction_error": _entry(metrics.label_direction_error(labeled, adapter), error_rate=True),
         }
+        if (summary := (extraction or {}).get(adapter)) is not None:
+            quote = Ratio(sum(k for k, _ in summary.quote), sum(n for _, n in summary.quote), tuple(summary.quote))
+            out[adapter] |= {
+                "quote_rate": _entry(quote),
+                "schema_failure_rate": _entry(metrics.schema_failure_rate(summary.attempts), error_rate=True),
+                "cost": summary.cost,
+                "blocked": summary.blocked,
+            }
     return {"claims": len(labeled), "adapters": out}
 
 
