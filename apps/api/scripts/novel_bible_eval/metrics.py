@@ -16,9 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, get_args
 
 from api.llm.pricing import call_cost
-from api.novel_bible.core.keys import normalize_name
 from api.novel_bible.ids import BlockingRule
-from api.novel_bible.rules.blocking import closed_value
 
 from novel_bible_eval.labels import LabeledClaim
 from novel_bible_eval.match import (
@@ -33,7 +31,7 @@ from novel_bible_eval.match import (
     relation_counts,
 )
 from novel_bible_eval.run import ChapterOutcome, ClosedClash
-from novel_bible_eval.spec import NON_CONFLICT_SUBKINDS, ChapterSpec, EvalSet, ProbeSpec
+from novel_bible_eval.spec import NON_CONFLICT_SUBKINDS, ChapterSpec, EvalSet, ProbeSpec, closed_items
 
 _Z95 = 1.959963984540054
 _SYNTHETIC_SLOTS = ("events", "facts", "knowledge")
@@ -44,6 +42,9 @@ EXCLUDED_LIMIT = 0.25
 # 실패율에 넣는다.
 _JUDGED = ("committed", "blocked")
 _CLOSED_RULE = "immutable_attribute_mismatch"
+# 같은 주어·술어의 불변 속성 값이 다르지만 닫힌 값 모순이 아닐 때 앱이 내는 경고 — 사전에서 뺀 항목의 값은 닫힌 값이 아니므로
+# 그 항목을 기대한 충돌 탐침은 뺀 뒤에 차단 대신 이 경고를 기대한다.
+_SURFACE_WARNING = "attribute_surface_differs"
 
 
 @dataclass(frozen=True)
@@ -200,7 +201,7 @@ def direction_error(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> li
 
 def relation_accuracy(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> list[Ratio] | None:
     """반복별 사건 관계 정확도 = 관계가 맞은 회상 관계 / 맞춘 회상 사건의 심은 관계. 대상 블록은 같은 소설·반복의 기본 화
-    결과로 화·문단을 푼다. 사건 작업이 없으면 None."""
+    결과로 화·문단을 풀고, 대상 화의 추출 사건으로 사건을 되푼다. 사건 작업이 없으면 None."""
     if "events" not in _ran_slots(outcomes):
         return None
     per_repeat = []
@@ -213,10 +214,13 @@ def relation_accuracy(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> 
                 for number, block in enumerate(outcome.block_ids, start=1)
             }
             chapters = [chapter.events for chapter in novel.chapters]
+            chapter_events = {
+                ordinal: extracted(outcome).events for (key, ordinal), outcome in by_chapter.items() if key == novel.key
+            }
             for ordinal, chapter in enumerate(novel.chapters, start=1):
                 outcome = by_chapter.get((novel.key, ordinal))
                 found = extracted(outcome).events if outcome is not None else ()
-                clusters.append(relation_counts(chapter.events, found, targets, chapters))
+                clusters.append(relation_counts(chapter.events, found, targets, chapters, chapter_events))
         per_repeat.append(_ratio(clusters))
     return per_repeat
 
@@ -244,31 +248,32 @@ def adaptation_recall(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> 
     return result
 
 
-def closed_items(category: str, values: Sequence[str]) -> list[str]:
-    """열거형 사전 항목 이름(`enum:범주/정규 값`). 숫자 갈래는 단위가 곧 갈래라 항목이 없다."""
-    return [f"{category}/{value}" for value in values] if category.startswith("enum:") else []
-
-
-def _planted_items(probe: ProbeSpec) -> tuple[str, list[str]]:
-    """닫힌 값 충돌 탐침이 기대하는 갈래와 사전 항목 — 명세의 두 값을 규칙의 판정으로 읽는다."""
+def _closed_hit(probe: ProbeSpec, outcome: ChapterOutcome) -> bool:
+    """닫힌 값 충돌 탐침이 기대한 갈래·두 값의 모순으로 막혔는가 — 다른 속성이나 다른 두 값의 모순으로 막혔다면 그 갈래·항목을
+    잡은 것이 아니다."""
     assert probe.closed is not None
-    read = [closed_value(normalize_name(value)) for value in probe.closed.values]
-    values = sorted({str(found[1]) for found in read if found is not None})
-    return probe.closed.category, closed_items(probe.closed.category, values)
+    wanted = (probe.closed.category, probe.closed.compared())
+    return outcome.status == "blocked" and any((clash.category, sorted(clash.values)) == wanted for clash in outcome.closed)
 
 
 @dataclass(frozen=True)
 class ClosedSummary:
     """닫힌 값 불변 속성 모순 차단을 갈래(사전 범주·숫자 단위)와 사전 항목으로 나눈 것. 오탐은 확정이 견준 값으로 오탐 분모
-    그대로, 재현율은 탐침 명세의 기대 갈래·두 값으로 그 갈래·항목을 기대한 충돌 탐침 수가 분모다."""
+    그대로, 재현율은 탐침 명세의 기대 갈래·두 값으로 그 갈래·항목을 기대한 충돌 탐침 수가 분모이고 그 갈래·두 값의 모순으로
+    막혔을 때만 맞다. `warning_recall_by_item` 은 뺀 사전 항목마다, 그 항목을 기대해 차단 대신 표면 차이 경고를 기대하게 된
+    탐침의 경고 재현율이다."""
 
     false_positive_by_category: dict[str, Ratio]
     false_positive_by_item: dict[str, Ratio]
     recall_by_category: dict[str, Ratio]
     recall_by_item: dict[str, Ratio]
+    warning_recall_by_item: dict[str, Ratio] = field(default_factory=dict)
 
 
-def _closed_summary(population: Sequence[ChapterOutcome], conflicts: Sequence[tuple[ProbeSpec, bool]]) -> ClosedSummary:
+def _closed_summary(
+    population: Sequence[ChapterOutcome], conflicts: Sequence[tuple[ProbeSpec, bool]],
+    moved: Sequence[tuple[ProbeSpec, bool]],
+) -> ClosedSummary:
     categories: Counter[str] = Counter()
     items: Counter[str] = Counter()
     for outcome in population:
@@ -280,18 +285,22 @@ def _closed_summary(population: Sequence[ChapterOutcome], conflicts: Sequence[tu
     recall_categories: dict[str, list[tuple[int, int]]] = {}
     recall_items: dict[str, list[tuple[int, int]]] = {}
     for probe, hit in conflicts:
-        if probe.closed is None:
-            continue
-        category, planted = _planted_items(probe)
-        recall_categories.setdefault(category, []).append((int(hit), 1))
-        for item in planted:
+        assert probe.closed is not None
+        recall_categories.setdefault(probe.closed.category, []).append((int(hit), 1))
+        for item in probe.closed.items():
             recall_items.setdefault(item, []).append((int(hit), 1))
+    warned: dict[str, list[tuple[int, int]]] = {}
+    for probe, hit in moved:
+        assert probe.closed is not None
+        for item in probe.closed.items():
+            warned.setdefault(item, []).append((int(hit), 1))
     count = len(population)
     return ClosedSummary(
         false_positive_by_category={name: Ratio(k, count) for name, k in sorted(categories.items())},
         false_positive_by_item={name: Ratio(k, count) for name, k in sorted(items.items())},
         recall_by_category={name: _ratio(rows) for name, rows in sorted(recall_categories.items())},
         recall_by_item={name: _ratio(rows) for name, rows in sorted(recall_items.items())},
+        warning_recall_by_item={name: _ratio(rows) for name, rows in sorted(warned.items())},
     )
 
 
@@ -312,13 +321,16 @@ class BlockingSummary:
     closed: ClosedSummary = field(default_factory=lambda: ClosedSummary({}, {}, {}, {}))
 
 
-def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingSummary:
+def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome], *, removed: Sequence[str] = ()) -> BlockingSummary:
     """차단 오탐률 = (차단된 기본 확정 + 차단된 비충돌 탐침) / (기본 확정 + 비충돌 탐침). 막히지 않은 확정은 `committed` 만
     센다. 실패했거나 끝 상태에 닿지 않은 확정은 검사에 닿지 못했으므로 오탐 분모에서 빼고 갈래마다 실패율로 센다. 탐침은 기대는
     기본 화(`depends_on`)가 첫 반복에서 하나라도 정본에 없으면 정본 불완전으로 오탐·차단 재현율·경고 재현율 어디에도 넣지
     않는다 — 짝이 없으면 충돌 탐침은 막힐 수 없고 비충돌 탐침은 막히지 않을 수밖에 없어 넣으면 재현율은 내려가고 오탐은 0 쪽으로
     기운다. 실패한 확정을 빼기만 하면 오탐 분모가 조용히 줄어 실패가 몰린 실행이 오탐 0 으로 읽히므로, 기본 화의 실패나 충돌·비충돌
-    탐침의 실패 + 정본 불완전이 25% 를 넘으면 판정 불가로 표시한다."""
+    탐침의 실패 + 정본 불완전이 25% 를 넘으면 판정 불가로 표시한다.
+
+    `removed` 는 앱 사전에서 뺀 열거형 사전 항목이다. 그 항목을 기대한 닫힌 값 충돌 탐침은 차단 대신 표면 차이 경고를 기대하는
+    탐침으로 센다 — 빠진 값은 닫힌 값이 아니어서 앱이 막지 않고 경고를 낸다."""
     probes = {probe.key: probe for novel in eval_set.novels for probe in novel.probes}
     canon = {(o.novel, o.ordinal) for o in outcomes if o.probe is None and o.repeat == 1 and o.status == "committed"}
     population: list[ChapterOutcome] = []
@@ -327,6 +339,8 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
     groups: dict[str, list[tuple[int, int]]] = {}
     subkinds: dict[str, list[tuple[int, int]]] = {kind: [] for kinds in NON_CONFLICT_SUBKINDS.values() for kind in kinds}
     conflicts: list[tuple[ProbeSpec, bool]] = []
+    closed_conflicts: list[tuple[ProbeSpec, bool]] = []
+    moved: list[tuple[ProbeSpec, bool]] = []
     warning: list[tuple[int, int]] = []
     excluded: Counter[str] = Counter()
     totals: Counter[str] = Counter()
@@ -352,8 +366,14 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
             groups.setdefault(probe.group, []).append((int(blocked), 1))
             if probe.subkind is not None:
                 subkinds[probe.subkind].append((int(blocked), 1))
+        elif probe.closed is not None and not set(probe.closed.items()).isdisjoint(removed):
+            warned = _SURFACE_WARNING in outcome.warning_rules
+            moved.append((probe, warned))
+            warning.append((int(warned), 1))
         elif probe.kind == "conflict":
             conflicts.append((probe, blocked and probe.expected_rule in outcome.block_rules))
+            if probe.closed is not None:
+                closed_conflicts.append((probe, _closed_hit(probe, outcome)))
         else:
             warning.append((int(probe.expected_rule in outcome.warning_rules), 1))
     rules: Counter[str] = Counter()
@@ -381,7 +401,7 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
             rule: _ratio([(int(hit), 1) for probe, hit in conflicts if probe.expected_rule == rule])
             for rule in blocking_rules
         },
-        closed=_closed_summary(population, conflicts),
+        closed=_closed_summary(population, closed_conflicts, moved),
     )
 
 

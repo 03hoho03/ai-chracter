@@ -1,14 +1,17 @@
 """결정적 매처 — 추출 제안이 심은 정답을 맞혔는가. 모델을 부르지 않는다.
 
 - 사건: 문단이 겹치고 현실성이 같다.
-- 사실: 주어 이름(또는 그 별칭)이 같고, 사실 종류(생사·출입·소지·능력·속성·관계)가 같고, 속성·관계 이름이 명세의 이름이나 그
-  다른 표기 중 하나이고, 값이 명세의 허용 표기 중 하나이고, 유지 여부와 불변 표시가 같다. 주어 종류(인물·사물·능력)는 견주지
-  않는다 — 이름이 이미 개체를 가린다. 제안 하나가 원자 명제 하나다. 불변 표시까지 보는 것은 그 표시가 불변 속성 불일치
-  차단(`immutable_attribute_mismatch`)이 읽을 사실인지를 정해서다 — 바뀌는 속성을 불변으로 내면 다른 화에서 값이 바뀐 것을
-  막고, 불변 속성을 바뀌는 것으로 내면 그 충돌을 놓친다.
-- 지식: 앎 주체·앎 종류가 같고 명제가 위 사실 규칙으로 맞는다.
-- 회상 관계: 맞춘 회상 사건이 낸 관계의 종류가 같고, 대상 블록을 화·문단으로 풀면 앱이 심은 대상 사건을 가리킬 때 쓰는 문단
-  (`relation_anchor`)이다.
+- 사실: 주어 종류(인물·사물·능력)와 주어 이름(또는 그 별칭)이 같고, 사실 종류(생사·출입·소지·능력·속성·관계)가 같고, 속성·관계
+  이름이 명세의 이름이나 그 다른 표기 중 하나이고, 값이 명세의 허용 표기 중 하나이고, 유지 여부와 불변 표시가 같다. 주어
+  종류까지 보는 것은 앱이 개체를 (종류, 정규 이름)으로 가르기 때문이다 — 같은 이름을 다른 종류로 낸 명제는 앱에서 다른 개체의
+  명제라 그 인물의 차단 비교에 쓰이지 않으므로, 맞음으로 세면 재현율이 부푼다. 제안 하나가 원자 명제 하나다. 불변 표시까지 보는
+  것은 그 표시가 불변 속성 불일치 차단(`immutable_attribute_mismatch`)이 읽을 사실인지를 정해서다 — 바뀌는 속성을 불변으로 내면
+  다른 화에서 값이 바뀐 것을 막고, 불변 속성을 바뀌는 것으로 내면 그 충돌을 놓친다.
+- 지식: 앎 주체·앎 종류가 같고 명제가 위 사실 규칙으로 맞는다(앎 주체는 앱에서 늘 인물이다).
+- 회상 관계: 맞춘 회상 사건이 낸 관계의 종류가 같고, 대상 블록이 대상 화에서 추출된 사건 중 심은 대상 사건과 짝인 사건의
+  블록이다 — 앱은 그 화에 저장된(=추출된) 주선 사건마다 앞 차례 사건이 덮지 않는 첫 블록을 대상 블록으로 주므로
+  (`relation_anchor`), 블록을 그 규칙으로 추출 사건에 되풀고 그 사건이 사건 매처로 대상 정답과 짝인지 본다. 추출 경계가 정답
+  경계와 달라도 바른 사건을 짚으면 맞고, 대상 블록이 대상 정답의 문단 안에 있어도 다른 사건의 블록이면 틀리다.
 - 각색 후보: 맞춘 사실이 심은 차이의 원작 글(작품 설정·그 차례의 노트)이나 플레이 행을 근거로 단다. 노트·플레이 행은 심기가
   돌려준 행 id 로 되짚는다.
 
@@ -133,7 +136,8 @@ def matched_events(planted: Sequence[PlantedEvent], found: Sequence[ExtractedEve
 
 def _fact_fits(fact: PlantedFact, candidate: ExtractedFact, aliases: Aliases) -> bool:
     return (
-        _same(candidate.proposition.subject, fact.subject, aliases)
+        candidate.proposition.subject_kind == fact.subject_kind
+        and _same(candidate.proposition.subject, fact.subject, aliases)
         and _proposition_fits(
             candidate.proposition, fact.kind, (fact.attribute, *fact.attribute_aliases), fact.values, fact.holds
         )
@@ -153,22 +157,37 @@ def matched_facts(planted: Sequence[PlantedFact], found: Sequence[ExtractedFact]
     return len(used)
 
 
+def _target_event(found: Sequence[ExtractedEvent], paragraph: int) -> int | None:
+    """대상 블록(문단)을 앱 대상 규칙으로 그 화의 추출 주선 사건 차례로 되푼다 — 그 블록을 대상으로 받는 사건이 없으면 None."""
+    return next(
+        (index for index, event in enumerate(found)
+         if event.actuality == "present" and relation_anchor(found, index) == paragraph),
+        None,
+    )
+
+
 def relation_counts(
     planted: Sequence[PlantedEvent], found: Sequence[ExtractedEvent], targets: Mapping[str, tuple[int, int]],
-    chapters: Sequence[Sequence[PlantedEvent]],
+    chapters: Sequence[Sequence[PlantedEvent]], found_chapters: Mapping[int, Sequence[ExtractedEvent]],
 ) -> tuple[int, int]:
     """(관계가 맞은 수, 맞춘 회상 사건의 심은 관계 수). `targets` 는 블록 id → (화 번호, 문단 번호) — 같은 소설·반복의 기본
-    화 결과에서 푼다. `chapters` 는 기본 화마다 사건 정답이다. 관계가 맞으려면 그 회상 사건에 대응한 제안이 같은 종류의 관계를
-    내고, 그 대상 블록이 정답 대상 사건의 앱 대상 문단이어야 한다."""
+    화 결과에서 푼다. `chapters` 는 기본 화마다 사건 정답, `found_chapters` 는 화 번호 → 그 화에서 추출·저장된 사건이다. 관계가
+    맞으려면 그 회상 사건에 대응한 제안이 같은 종류의 관계를 내고, 그 대상 블록을 대상 화의 추출 사건으로 되풀면 대상 정답과
+    짝인 사건이어야 한다."""
     right = total = 0
     for number, hit in paired_events(planted, found).items():
         relation = planted[number].relation
         if relation is None:
             continue
         total += 1
-        anchor = (relation.chapter, relation_anchor(chapters[relation.chapter - 1], relation.event - 1))
-        right += any(
-            out.kind == relation.kind and targets.get(out.target_block) == anchor for out in found[hit].relations
+        prior = found_chapters.get(relation.chapter, ())
+        wanted = paired_events(chapters[relation.chapter - 1], prior).get(relation.event - 1)
+        right += wanted is not None and any(
+            out.kind == relation.kind
+            and (place := targets.get(out.target_block)) is not None
+            and place[0] == relation.chapter
+            and _target_event(prior, place[1]) == wanted
+            for out in found[hit].relations
         )
     return right, total
 
@@ -219,12 +238,16 @@ def _skeleton(planted: PlantedKnowledge, candidate: ExtractedKnowledge) -> bool:
 
 
 def _direction(planted: PlantedKnowledge, candidate: ExtractedKnowledge, aliases: Aliases) -> str | None:
-    knower, subject = candidate.knower, candidate.proposition.subject
-    if _same(knower, planted.knower, aliases) and _same(subject, planted.subject, aliases):
+    """명제 주어는 그 자리에 와야 할 개체의 종류로 냈을 때만 그 개체다 — 앱이 개체를 (종류, 정규 이름)으로 가른다. 바른 짝과
+    앎 주체만 틀린 짝은 심은 명제 주어의 종류, 뒤바뀜은 명제 주어 자리에 온 심은 앎 주체의 종류(늘 인물)다. 어느 것도 아니면
+    방향 오류 분모에 들지 않는다."""
+    knower, subject, kind = candidate.knower, candidate.proposition.subject, candidate.proposition.subject_kind
+    names_the_subject = kind == planted.subject_kind and _same(subject, planted.subject, aliases)
+    if _same(knower, planted.knower, aliases) and names_the_subject:
         return "correct"
-    if _same(knower, planted.subject, aliases) and _same(subject, planted.knower, aliases):
+    if kind == "character" and _same(knower, planted.subject, aliases) and _same(subject, planted.knower, aliases):
         return "swapped"
-    if _same(subject, planted.subject, aliases):
+    if names_the_subject:
         return "wrong_knower"
     return None
 

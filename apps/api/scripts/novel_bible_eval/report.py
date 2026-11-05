@@ -148,23 +148,26 @@ AFTER_HEADER = "뺀 뒤 — 같은 세트로 고르고 다시 잰 값이라 낙�
 def removal_report(
     eval_set: EvalSet, before: Sequence[ChapterOutcome], after: Sequence[ChapterOutcome], *, removed: Sequence[str]
 ) -> dict[str, Any]:
-    """열거형 사전 항목(`enum:범주/정규 값`)을 뺀 뒤의 차단 지표를 빼기 전과 나란히 둔다 — 차단 오탐률·차단 재현율·닫힌 값 불변
-    속성 모순 규칙의 값, 그 규칙의 갈래별 값, 뺀 항목별 값. 뺀 뒤 값을 어떻게 얻었는지(추출을 다시 부름, 기록한 출력을 재생함)는
-    여기서 정하지 않는다 — 그 결과 묶음(`after`)을 받는다. 뺀 항목을 기대한 충돌 탐침은 뺀 뒤에도 분모에 남아, 막지 못하게 된
-    값이 재현율에 그대로 드러난다."""
-    sides = [metrics.blocking(eval_set, outcomes) for outcomes in (before, after)]
+    """열거형 사전 항목(`enum:범주/정규 값`)을 뺀 뒤의 차단 지표를 빼기 전과 나란히 둔다 — 차단 오탐률·차단 재현율·경고 재현율·닫힌
+    값 불변 속성 모순 규칙의 값, 그 규칙의 갈래별 값, 뺀 항목별 값. 뺀 뒤 값을 어떻게 얻었는지(추출을 다시 부름, 기록한 출력을
+    재생함)는 여기서 정하지 않는다 — 그 결과 묶음(`after`)을 받는다. 뺀 항목을 기대한 충돌 탐침은 뺀 뒤 열에서 차단 대신 표면 차이
+    경고를 기대하는 탐침으로 센다(빠진 값은 닫힌 값이 아니어서 앱이 경고를 낸다). 오탐 행은 그 쪽에서 0건이어도 같은 오탐 분모(확정·
+    비충돌 탐침 수)로 0건과 그 상한을 싣는다 — 빼서 0건이 된 값이 표가 보이려는 값이다."""
+    sides = [metrics.blocking(eval_set, before), metrics.blocking(eval_set, after, removed=removed)]
     rows: list[dict[str, Any]] = []
 
     def row(name: str, pick: Any, *, error_rate: bool) -> None:
         picked = [pick(summary) for summary in sides]
+        empty = [Ratio(0, summary.false_positive.n) if error_rate else Ratio(0, 0) for summary in sides]
         rows.append({
             "name": name,
-            "before": _entry(picked[0] or Ratio(0, 0), error_rate=error_rate),
-            "after": _entry(picked[1] or Ratio(0, 0), error_rate=error_rate),
+            "before": _entry(picked[0] or empty[0], error_rate=error_rate),
+            "after": _entry(picked[1] or empty[1], error_rate=error_rate),
         })
 
     row("block_false_positive", lambda summary: summary.false_positive, error_rate=True)
     row("block_recall", lambda summary: summary.recall, error_rate=False)
+    row("warning_recall", lambda summary: summary.warning_recall, error_rate=False)
     row(f"block_false_positive.{_CLOSED}", lambda summary: summary.by_rule[_CLOSED], error_rate=True)
     row(f"block_recall.{_CLOSED}", lambda summary: summary.recall_by_rule[_CLOSED], error_rate=False)
     categories = sorted({c for side in sides for c in (*side.closed.false_positive_by_category,
@@ -176,6 +179,7 @@ def removal_report(
     for item in removed:
         row(f"block_false_positive.{item}", lambda s, i=item: s.closed.false_positive_by_item.get(i), error_rate=True)
         row(f"block_recall.{item}", lambda s, i=item: s.closed.recall_by_item.get(i), error_rate=False)
+        row(f"warning_recall.{item}", lambda s, i=item: s.closed.warning_recall_by_item.get(i), error_rate=False)
     return {"removed": list(removed), "rows": rows}
 
 
@@ -218,10 +222,10 @@ def compare_markdown(reports: Mapping[str, dict[str, Any]]) -> str:
         for name in names
     ]
     lines.append("| 실제 모델 | " + " | ".join(used) + " |")
-    spent = [
-        f"{sum(stage['usd'] for stage in reports[name].get('cost_by_stage', {}).values()):.4f}" for name in names
-    ]
-    lines.append("| 원가(USD, 판정 포함) | " + " | ".join(spent) + " |")
+    stages = [reports[name].get("cost_by_stage", {}).values() for name in names]
+    lines.append("| 원가(USD, 판정 포함) | " + " | ".join(f"{sum(s['usd'] for s in rows):.4f}" for rows in stages) + " |")
+    # 단가표에 없는 모델의 호출은 원가 합계에 들지 못한다 — 합계가 낮게 읽히지 않게 그 호출 수를 따로 싣는다.
+    lines.append("| 단가표에 없는 호출 | " + " | ".join(str(sum(s["unpriced"] for s in rows)) for rows in stages) + " |")
     halted = [reports[name].get("halted") or "-" for name in names]
     lines.append("| 실행 멈춤 | " + " | ".join(halted) + " |")
     return "\n".join([*lines, ""])

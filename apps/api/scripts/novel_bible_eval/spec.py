@@ -12,11 +12,11 @@
 다른 곳·플레이와 다른 곳·회상 관계의 정답은 그 사실·사건 정답에 붙는다."""
 
 from bisect import bisect_right
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterator, Sequence
 from pathlib import Path
-from typing import Literal, get_args
+from typing import Literal, Protocol, get_args
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationInfo, model_validator
 
 from api.chat.memory_facts import fact_key
 from api.chat.memory_knowledge import latest_by_key
@@ -229,17 +229,47 @@ class ChapterSpec(_Spec):
 class ClosedPair(_Spec):
     """닫힌 값 불변 속성 모순 탐침이 기대하는 갈래와 두 값(앞 화에 심은 값, 탐침의 값 — 심은 표기 그대로). 갈래는 규칙의 닫힌 값
     판정(`closed_value`)이 내는 꼴이다: 숫자는 `number:단위`(단위가 없으면 `number:`), 사전 값은 `enum:범주`(혈액형·색). 그 판정으로
-    두 값이 같은 갈래의 다른 값으로 읽혀야 한다 — 아니면 규칙이 막을 수 없는 탐침이라 차단 재현율의 분모를 그르친다."""
+    두 값이 같은 갈래의 다른 값으로 읽혀야 한다 — 아니면 규칙이 막을 수 없는 탐침이라 차단 재현율의 분모를 그르친다.
+
+    사전 갈래는 `canonical` 에 두 값의 사전 정규 값(예: `A형` → `A`)을 함께 적는다. 열거형 사전 항목을 빼는 것은 앱 사전에서 그
+    줄을 지우는 코드 변경이라, 뺀 뒤의 코드로는 심은 표기에서 항목을 다시 읽을 수 없다 — 기대 항목을 명세에 굳혀 두어야 같은
+    세트로 빼기 전·뺀 뒤를 견준다. 세트를 읽을 때 뺀 항목 목록(`load_set` 의 `removed`)을 받으면, 지금 사전이 읽지 못하는 값이 그
+    목록의 항목일 때만 뺀 항목으로 받는다. 숫자는 사전이 아니라 빼는 항목이 없으므로 정규 값을 적지 않는다."""
 
     category: str
     values: tuple[str, str]
+    canonical: tuple[str, str] | None = None
 
     @model_validator(mode="after")
-    def _the_rule_reads_a_clash(self) -> "ClosedPair":
+    def _the_rule_reads_a_clash(self, info: ValidationInfo) -> "ClosedPair":
+        removed: frozenset[str] = (info.context or {}).get("removed", frozenset())
+        enum = self.category.startswith("enum:")
+        if enum != (self.canonical is not None):
+            raise ValueError("사전 갈래는 두 값의 사전 정규 값(canonical)을 함께 적고, 숫자 갈래는 적지 않는다")
         read = [closed_value(normalize_name(value)) for value in self.values]
-        if any(value is None or value[0] != self.category for value in read) or read[0] == read[1]:
+        for got, canonical in zip(read, self.canonical or (None, None), strict=True):
+            if got is None and enum and f"{self.category}/{canonical}" in removed:
+                continue  # 뺀 항목 — 지금 사전은 그 값을 읽지 못한다
+            if got is None or got[0] != self.category or (enum and got[1] != canonical):
+                raise ValueError(f"두 값이 닫힌 값 갈래 {self.category} 의 적은 값으로 읽히지 않는다")
+        if len(set(self.compared())) != 2:
             raise ValueError(f"두 값이 닫힌 값 갈래 {self.category} 의 서로 다른 값으로 읽히지 않는다")
         return self
+
+    def compared(self) -> list[str]:
+        """규칙이 견주는 두 값을 글자로 정렬한 것 — 사전 값은 정규 값, 숫자는 수(수집이 차단마다 읽는 값과 같은 꼴)."""
+        if self.canonical is not None:
+            return sorted(self.canonical)
+        return sorted(str(found[1]) for value in self.values if (found := closed_value(normalize_name(value))))
+
+    def items(self) -> list[str]:
+        """이 탐침이 기대하는 열거형 사전 항목(숫자 갈래는 없음)."""
+        return closed_items(self.category, self.compared())
+
+
+def closed_items(category: str, values: Sequence[str]) -> list[str]:
+    """열거형 사전 항목 이름(`enum:범주/정규 값`). 숫자 갈래는 단위가 곧 갈래라 항목이 없다."""
+    return [f"{category}/{value}" for value in values] if category.startswith("enum:") else []
 
 
 class ProbeSpec(_Spec):
@@ -451,11 +481,21 @@ class NovelSpec(_Spec):
             yield len(self.chapters) + 1, probe.chapter, probe.depends_on
 
 
-def relation_anchor(events: Sequence[PlantedEvent], index: int) -> int | None:
-    """회상 관계가 그 화 사건 정답 `index`(0부터)를 가리킬 때 앱이 대상으로 푸는 문단 — 그 사건의 문단 중, 같은 화에서 차례가
-    앞선 주선 사건이 덮지 않는 첫 문단. 앱은 대상을 그런 첫 블록으로 저장하고, 없으면 관계를 버린다(None). 앱의 사건 차례는 첫
-    문단 순이고 같으면 모델이 낸 차례라, 명세 차례를 낸 차례로 본다."""
-    order = sorted(range(len(events)), key=lambda number: (min(events[number].paragraphs), number))
+class EventSpan(Protocol):
+    """앱의 회상 대상 규칙이 읽는 사건의 꼴 — 덮는 문단과 현실성. 심은 정답과 추출 제안 둘 다 이 꼴이다."""
+
+    @property
+    def paragraphs(self) -> Collection[int]: ...
+
+    @property
+    def actuality(self) -> str: ...
+
+
+def relation_anchor(events: Sequence[EventSpan], index: int) -> int | None:
+    """회상 관계가 그 화 사건 `index`(0부터)를 가리킬 때 앱이 대상으로 푸는 문단 — 그 사건의 문단 중, 같은 화에서 차례가 앞선
+    주선 사건이 덮지 않는 첫 문단. 앱은 대상을 그런 첫 블록으로 저장하고, 없으면 관계를 버린다(None). 앱의 사건 차례는 첫 문단
+    순이고 같으면 모델이 낸 차례라, 목록 차례를 낸 차례로 본다 — 명세에서는 정답 차례, 추출 제안에서는 슬롯이 저장한 차례다."""
+    order = sorted(range(len(events)), key=lambda number: (min(events[number].paragraphs, default=0), number))
     earlier = order[: order.index(index)]
     covered = {n for number in earlier if events[number].actuality == "present" for n in events[number].paragraphs}
     return next((n for n in sorted(set(events[index].paragraphs)) if n not in covered), None)
@@ -495,5 +535,6 @@ class EvalSet(_Spec):
         return next(novel for novel in self.novels if novel.key == key)
 
 
-def load_set(path: Path) -> EvalSet:
-    return EvalSet.model_validate_json(path.read_text(encoding="utf-8"))
+def load_set(path: Path, *, removed: Sequence[str] = ()) -> EvalSet:
+    """`removed` 는 앱 사전에서 뺀 열거형 사전 항목(`enum:범주/정규 값`)이다 — 뺀 뒤의 코드로 같은 세트를 읽을 때 넘긴다."""
+    return EvalSet.model_validate_json(path.read_text(encoding="utf-8"), context={"removed": frozenset(removed)})

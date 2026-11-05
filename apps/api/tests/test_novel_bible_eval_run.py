@@ -19,15 +19,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import api.novel_bible.entry as entry
 from api.core.config import settings
 from api.db.models import ChatMemoryFact, Novel, NovelChapter, User
-from api.db.models.novel_bible import NovelBibleAdaptationCandidate, NovelBibleEvidence
-from api.db.models.novel_bible_events import NovelBibleEventRelation
+from api.db.models.novel_bible import (
+    NovelBibleAdaptationCandidate,
+    NovelBibleCommit,
+    NovelBibleEvidence,
+    NovelBibleFinding,
+    NovelBibleJob,
+    NovelBibleRevision,
+)
+from api.db.models.novel_bible_events import NovelBibleEvent, NovelBibleEventRelation
+from api.db.models.novel_bible_facts import NovelBibleFact
+from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
 from api.novel_bible.core.types import BibleSnapshot, Proposal, RenderedPrompt
 from api.novel_bible.ids import OperationKey
 from memory_eval.ledger import EXIT_BUDGET, Ledger
 from novel_bible_eval import labels, metrics
+from novel_bible_eval import run as run_module
 from novel_bible_eval.__main__ import _outcomes, _parser, _run, extract, main, synthetic
 from novel_bible_eval.fake_llm import FakeLLM, Faults
-from novel_bible_eval.run import BIBLE_TABLES, BudgetHalt, ChapterOutcome, ClosedClash, Meter, extract_chapters, run_set
+from novel_bible_eval.run import (
+    BIBLE_TABLES,
+    BudgetHalt,
+    ChapterOutcome,
+    ClosedClash,
+    Meter,
+    _rows_left,
+    extract_chapters,
+    run_set,
+)
 from novel_bible_eval.seed import EVAL_EMAIL_DOMAIN, seed_novel
 from novel_bible_eval.spec import EvalSet, load_set
 from novel_bible_fakes import FakeRule, savepoint_factory
@@ -434,7 +453,8 @@ async def test_the_fake_points_its_play_difference_at_the_row_the_app_keeps_for_
 
 _EYE_BLACK = {
     "key": "eye-black", "kind": "conflict", "group": "immutable_attribute_mismatch",
-    "expected_rule": "immutable_attribute_mismatch", "closed": {"category": "enum:색", "values": ["잿빛", "검은색"]},
+    "expected_rule": "immutable_attribute_mismatch",
+    "closed": {"category": "enum:색", "values": ["잿빛", "검은색"], "canonical": ["회색", "검정"]},
     "depends_on": [3],
     "chapter": {
         "paragraphs": ["등대지기의 두 눈은 본디 검은색이었다."],
@@ -512,3 +532,47 @@ async def test_a_difference_from_a_character_source_points_at_the_planted_text_a
     assert evidence.keyword_note_id == (None if note is None else uuid.UUID(outcomes[2].notes[note]))
     (recalled,) = metrics.adaptation_recall(eval_set, outcomes)["source_canon"]
     assert (recalled.k, recalled.n) == (1, 1)
+
+
+_TABLE_MODELS: dict[str, Any] = {
+    "commits": NovelBibleCommit, "revisions": NovelBibleRevision, "jobs": NovelBibleJob, "findings": NovelBibleFinding,
+    "evidence": NovelBibleEvidence, "adaptation_candidates": NovelBibleAdaptationCandidate, "events": NovelBibleEvent,
+    "event_relations": NovelBibleEventRelation, "facts": NovelBibleFact, "knowledge": NovelBibleKnowledge,
+}
+
+
+async def test_each_tables_left_over_count_takes_that_chapters_rows_and_no_other(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 탐침 화를 지운 뒤 표마다 남은 행을 세는 조건이 늘 거짓이면 지우지 못한 행을 숨기고, 다른 화의 행까지 세면 지운 화가
+    # 남았다고 한다. 그래서 삭제를 건너뛰고 화마다 센 수를 더하면, 행은 한 화에만 들므로 표마다 이 소설의 행 수와 같아야 한다.
+    # 표마다 행이 있게 기본 화 셋(회상 관계·원작·플레이 차이)과 막히는 충돌 탐침(검사 결과)을 확정한다.
+    async def keep(*_: Any, **__: Any) -> None:
+        return None
+
+    monkeypatch.setattr(run_module, "delete_batch", keep)
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    raw["novels"][0]["probes"] = raw["novels"][0]["probes"][:1]
+    eval_set = EvalSet.model_validate(raw)
+    fake = FakeLLM(eval_set)
+    await run_set(savepoint_factory(db_session), Meter().wrap(fake.resolver()), eval_set, slots=fake.slots)
+    novel_id = (
+        await db_session.scalars(
+            select(Novel.id).join(User, User.id == Novel.user_id).where(User.email.like(f"%@{EVAL_EMAIL_DOMAIN}"))
+        )
+    ).one()
+    counted: dict[str, int] = dict.fromkeys(BIBLE_TABLES, 0)
+    for chapter in (await db_session.scalars(select(NovelChapter.id).where(NovelChapter.novel_id == novel_id))).all():
+        commits = list(await db_session.scalars(select(NovelBibleCommit.id).where(NovelBibleCommit.chapter_id == chapter)))
+        revisions = list(
+            await db_session.scalars(select(NovelBibleRevision.id).where(NovelBibleRevision.commit_id.in_(commits)))
+        )
+        for table, count in (await _rows_left(db_session, chapter, commits, revisions)).items():
+            counted[table] += count
+    totals = {
+        table: await db_session.scalar(select(func.count()).select_from(model).where(model.novel_id == novel_id))
+        for table, model in _TABLE_MODELS.items()
+    }
+    assert set(totals) == set(BIBLE_TABLES)
+    assert all(totals.values()), totals
+    assert counted == totals

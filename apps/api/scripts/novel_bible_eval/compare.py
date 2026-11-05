@@ -3,7 +3,8 @@
 
 - `adapters`: 어댑터별 `synthetic` 보고서(`report.json`)를 합쳐 어댑터마다 관측치와 합격선 대조를 한 표로 쓴다.
 - `removal`: 열거형 사전 항목을 뺀 전·후의 차단 지표를 두 열로 쓴다. 빼기 전은 그 실행의 결과(`outcomes.json`), 뺀 뒤는 다른
-  길로 얻은 결과 묶음이다 — 추출을 다시 부른 실행이든 기록한 출력을 재생한 것이든, 이 명령은 그 결과 파일만 받는다."""
+  길로 얻은 결과 묶음이다 — 추출을 다시 부른 실행이든 기록한 출력을 재생한 것이든, 이 명령은 그 결과 파일만 받는다. 세트는 뺀
+  항목 목록과 함께 읽는다 — 앱 사전에서 그 줄을 지운 코드로 돌려도 같은 세트(같은 탐침)를 읽는다."""
 
 import argparse
 import json
@@ -43,7 +44,8 @@ def main(argv: list[str] | None = None) -> int:
         }
         (args.out / "compare.md").write_text(compare_markdown(reports), encoding="utf-8")  # cite-ok: 하네스 출력 파일 이름
         return 0
-    table = removal_report(load_set(args.set), _outcomes(args.before), _outcomes(args.after), removed=args.removed)
+    eval_set = load_set(args.set, removed=args.removed)
+    table = removal_report(eval_set, _outcomes(args.before), _outcomes(args.after), removed=args.removed)
     (args.out / "removal.json").write_text(json.dumps(table, ensure_ascii=False, indent=2), encoding="utf-8")
     (args.out / "removal.md").write_text(removal_markdown(table), encoding="utf-8")  # cite-ok: 하네스 출력 파일 이름
     return 0

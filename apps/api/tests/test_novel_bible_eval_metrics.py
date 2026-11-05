@@ -368,26 +368,52 @@ def test_costs_and_latencies_come_from_the_call_records() -> None:
 
 
 def test_a_fact_and_a_knowledge_proposition_match_an_allowed_other_spelling_of_the_attribute_name() -> None:
-    # 속성 이름은 명세의 이름이나 그 다른 표기 중 하나면 맞다. 주어 종류는 견주지 않는다 — 이름이 개체를 가린다.
+    # 속성 이름은 명세의 이름이나 그 다른 표기 중 하나면 맞다.
     planted = [PlantedFact(subject="등대지기", kind="attribute", attribute="눈 색", attribute_aliases=["눈동자 색"],
                            values=["잿빛"], immutable=True, paragraph=1)]
-    other = ExtractedFact(_prop("등대지기", "attribute", "잿빛", attribute="눈동자  색", subject_kind="object"), True)
+    other = ExtractedFact(_prop("등대지기", "attribute", "잿빛", attribute="눈동자  색"), True)
     assert matched_facts(planted, [other], {}) == 1
     unlisted = ExtractedFact(_prop("등대지기", "attribute", "잿빛", attribute="눈색"), True)
     assert matched_facts(planted, [unlisted], {}) == 0
     known = [PlantedKnowledge(knower="서하", kind="knows", subject="등대", subject_kind="object", fact_kind="attribute",
                               attribute="세워진 때", attribute_aliases=["지어진 때"], values=["백 년 전"], paragraph=1)]
-    found = [ExtractedKnowledge("서하", "knows", _prop("등대", "attribute", "백 년 전", attribute="지어진 때"))]
+    found = [ExtractedKnowledge("서하", "knows", _prop("등대", "attribute", "백 년 전", attribute="지어진 때",
+                                                     subject_kind="object"))]
     assert matched_knowledge(known, found, {}) == 1
     assert direction_counts(known, [ExtractedKnowledge("등대", "knows", _prop("서하", "attribute", "백 년 전",
                                                                            attribute="지어진 때"))], {}) == (1, 1)
+
+
+def test_a_proposition_naming_its_subject_under_another_kind_is_another_entity_and_matches_nothing() -> None:
+    # 앱은 개체를 (종류, 정규 이름)으로 가른다 — 인물 등대지기와 사물 등대지기는 다른 개체이고 명제 키도 다르다. 그래서 주어
+    # 종류를 틀린 제안은 그 인물의 사실이 아니라(불변 속성 모순 같은 비교에도 쓰이지 않는다) 맞음으로 세면 재현율이 부푼다.
+    fact = [PlantedFact(subject="등대지기", kind="attribute", attribute="눈 색", values=["잿빛"], immutable=True,
+                        paragraph=1)]
+    as_object = ExtractedFact(_prop("등대지기", "attribute", "잿빛", attribute="눈 색", subject_kind="object"), True)
+    assert matched_facts(fact, [as_object], {}) == 0
+    assert matched_facts(fact, [as_object, ExtractedFact(_prop("등대지기", "attribute", "잿빛", attribute="눈 색"), True)],
+                         {}) == 1
+    # 지식은 명제 주어를 같은 개체로 냈어야 맞고, 방향 오류 분모에도 들지 않는다(바른 짝도 앎 주체만 틀린 짝도 아니다).
+    known = [PlantedKnowledge(knower="서하", kind="knows", subject="등대", subject_kind="object", fact_kind="attribute",
+                              attribute="세워진 때", values=["백 년 전"], paragraph=1)]
+    person = ExtractedKnowledge("서하", "knows", _prop("등대", "attribute", "백 년 전", attribute="세워진 때"))
+    assert matched_knowledge(known, [person], {}) == 0
+    assert direction_counts(known, [person], {}) == (0, 0)
+    stranger = ExtractedKnowledge("도윤", "knows", _prop("등대", "attribute", "백 년 전", attribute="세워진 때"))
+    assert direction_counts(known, [stranger], {}) == (0, 0)
+    # 뒤바뀜에서 명제 주어 자리에 온 것은 정답의 앎 주체다 — 앎 주체는 늘 인물이라 인물로 냈을 때만 뒤바뀜이다.
+    swapped_as_object = ExtractedKnowledge(
+        "등대", "knows", _prop("서하", "attribute", "백 년 전", attribute="세워진 때", subject_kind="object")
+    )
+    assert direction_counts(known, [swapped_as_object], {}) == (0, 0)
 
 
 # ── 차단 세부 — 규칙별·세부 종류별 오탐, 충돌 규칙별 재현율, 닫힌 값 범주·항목 ───────────────────────
 
 _EYE_BLACK = {
     "key": "eye-black", "kind": "conflict", "group": "immutable_attribute_mismatch",
-    "expected_rule": "immutable_attribute_mismatch", "closed": {"category": "enum:색", "values": ["잿빛", "검은색"]},
+    "expected_rule": "immutable_attribute_mismatch",
+    "closed": {"category": "enum:색", "values": ["잿빛", "검은색"], "canonical": ["회색", "검정"]},
     "depends_on": [3],
     "chapter": {
         "paragraphs": ["등대지기의 두 눈은 본디 검은색이었다."],
@@ -397,7 +423,8 @@ _EYE_BLACK = {
 }
 _BLOOD_TYPE = {
     "key": "blood-type", "kind": "conflict", "group": "immutable_attribute_mismatch",
-    "expected_rule": "immutable_attribute_mismatch", "closed": {"category": "enum:혈액형", "values": ["A형", "B형"]},
+    "expected_rule": "immutable_attribute_mismatch",
+    "closed": {"category": "enum:혈액형", "values": ["A형", "B형"], "canonical": ["A", "B"]},
     "depends_on": [1],
     "chapter": {
         "paragraphs": ["서하의 혈액형은 B형이었다."],
@@ -482,6 +509,21 @@ def test_closed_value_blocks_are_counted_per_category_and_per_dictionary_item() 
     }
 
 
+def test_closed_value_recall_rows_count_a_block_only_when_it_came_from_the_expected_pair() -> None:
+    # 규칙 단위 재현율은 기대 규칙으로 막히면 맞다. 갈래·항목 행은 그 탐침이 기대한 갈래·두 값에서 난 차단만 맞음으로 센다 —
+    # 혈액형 탐침이 다른 속성(색)이나 다른 두 값(A·O)의 모순으로 막혔다면 혈액형 A·B 를 잡은 것이 아니다.
+    run = [outcome for outcome in _detailed_run() if outcome.probe != "blood-type"]
+    for clash, hit in (
+        (_closed("enum:색", "검정", "회색"), 0), (_closed("enum:혈액형", "A", "O"), 0), (_closed("enum:혈액형", "A", "B"), 1),
+    ):
+        blocked = _outcome(4, "blocked", probe="blood-type", block=("immutable_attribute_mismatch",), closed=(clash,))
+        summary = metrics.blocking(_with_closed_probes(), [*run, blocked])
+        assert _counts(summary.recall_by_rule)["immutable_attribute_mismatch"] == (2, 2)
+        assert _counts(summary.closed.recall_by_category)["enum:혈액형"] == (hit, 1)
+        items = _counts(summary.closed.recall_by_item)
+        assert (items["enum:혈액형/A"], items["enum:혈액형/B"]) == ((hit, 1), (hit, 1))
+
+
 def test_number_units_are_categories_and_have_no_dictionary_items() -> None:
     # 반복 2 의 2화가 키 170cm·180cm 로 막힌다 — 탐침은 반복 1 정본에 기대 그대로 남아 분모는 기본 6 + 비충돌 2.
     blocked = _outcome(2, "blocked", block=("immutable_attribute_mismatch",), repeat=2,
@@ -492,23 +534,39 @@ def test_number_units_are_categories_and_have_no_dictionary_items() -> None:
     assert closed.false_positive_by_item == {}
 
 
+def _sides(row: dict[str, Any]) -> tuple[tuple[int, int], tuple[int, int]]:
+    return (row["before"]["k"], row["before"]["n"]), (row["after"]["k"], row["after"]["n"])
+
+
 def test_the_removal_table_puts_the_before_and_after_values_side_by_side_under_a_biased_after_header() -> None:
+    # 혈액형 A 를 뺀다. 뺀 뒤 반복 2 의 2화(혈액형 A·O 로 막혔던 기본 화)는 커밋되고, A·B 를 심은 혈액형 탐침은 차단 대신 표면
+    # 차이 경고를 받는다 — 사전에서 빠진 값은 닫힌 값이 아니어서 앱이 막지 않고 경고를 낸다.
     eval_set = _with_closed_probes()
     before = _detailed_run()
-    after = [o.model_copy(update={"status": "committed", "block_rules": [], "closed": []})
-             if (o.repeat, o.ordinal, o.probe) == (2, 2, None) else o for o in before]
+    after = [
+        o.model_copy(update={"status": "committed", "block_rules": [], "closed": []})
+        if (o.repeat, o.ordinal, o.probe) == (2, 2, None)
+        else o.model_copy(update={"warning_rules": ["attribute_surface_differs"]}) if o.probe == "blood-type" else o
+        for o in before
+    ]
     table = removal_report(eval_set, before, after, removed=["enum:혈액형/A"])
     assert table["removed"] == ["enum:혈액형/A"]
     rows = {row["name"]: row for row in table["rows"]}
     first = rows["block_false_positive"]
-    assert (first["before"]["k"], first["before"]["n"], first["after"]["k"], first["after"]["n"]) == (2, 8, 1, 8)
+    assert _sides(first) == ((2, 8), (1, 8))
     assert first["after"]["upper"] == pytest.approx(metrics.upper_bound(1, 8))
     rule = rows["block_false_positive.immutable_attribute_mismatch"]
-    assert (rule["before"]["k"], rule["after"]["k"]) == (2, 1)
-    recall = rows["block_recall.immutable_attribute_mismatch"]
-    assert (recall["before"]["k"], recall["before"]["n"], recall["after"]["k"]) == (1, 2, 1)
-    item = rows["block_false_positive.enum:혈액형/A"]
-    assert (item["before"]["k"], item["after"]["k"]) == (1, 0)
+    assert _sides(rule) == ((2, 8), (1, 8))
+    # 뺀 항목을 기대한 탐침은 뺀 뒤 열에서 차단 재현율을 떠나 경고 재현율로 간다.
+    assert _sides(rows["block_recall"]) == ((2, 3), (2, 2))
+    assert _sides(rows["block_recall.immutable_attribute_mismatch"]) == ((1, 2), (1, 1))
+    assert _sides(rows["warning_recall"]) == ((1, 1), (2, 2))
+    assert _sides(rows["warning_recall.enum:혈액형/A"]) == ((0, 0), (1, 1))
+    # 뺀 뒤 0건이 된 갈래·항목의 오탐은 0/0 이 아니라 같은 확정·탐침 수(8)를 분모로 0건과 그 상한을 보인다.
+    for name in ("block_false_positive.enum:혈액형/A", "block_false_positive.enum:혈액형"):
+        assert _sides(rows[name]) == ((1, 8), (0, 8))
+        assert rows[name]["after"]["value"] == 0.0
+        assert rows[name]["after"]["upper"] == pytest.approx(1 - 0.05 ** (1 / 8))
     markdown = removal_markdown(table)
     header = next(line for line in markdown.splitlines() if line.startswith("| 지표"))
     assert "빼기 전" in header and "같은 세트로 고르고 다시 잰 값이라 낙관 쪽으로 기운다" in header
@@ -533,27 +591,55 @@ def _flashback_job(blocks: list[uuid.UUID], paragraph: int, relation: tuple[str,
                       proposal=Proposal(items=tuple(items)).model_dump(mode="json"), calls=[])
 
 
+def _relation_set(first_events: list[list[int]], target_event: int) -> EvalSet:
+    """1화 사건 정답의 문단을 바꾸고, 3화 회상 관계가 1화의 `target_event` 번째 사건을 가리키게 한 픽스처."""
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    chapters = raw["novels"][0]["chapters"]
+    template = chapters[0]["events"][0]
+    chapters[0]["events"] = [{**template, "paragraphs": paragraphs} for paragraphs in first_events]
+    chapters[2]["events"][1]["relation"]["event"] = target_event
+    return EvalSet.model_validate(raw)
+
+
+_FIXTURE_FIRST = [[1, 2], [3, 4]]  # 픽스처 1화 사건 정답 그대로
+# 1화에 주선 사건 셋 — 둘째 사건의 앱 대상 블록(3문단, 1문단은 첫 사건이 덮는다)이 셋째 사건 문단 안에 든다.
+_NESTED_FIRST = [[1, 2], [1, 3], [3, 4]]
+
+
 @pytest.mark.parametrize(
-    ("kind", "target_paragraph", "flashback_paragraph", "expected"),
+    ("first_events", "target_event", "first_found", "kind", "target_paragraph", "flashback_paragraph", "expected"),
     [
-        pytest.param("before", 1, 2, (1, 1), id="kind-and-target-right"),
-        pytest.param("after", 1, 2, (0, 1), id="kind-wrong"),
-        # 1화 둘째 사건의 대상 블록이다.
-        pytest.param("before", 3, 2, (0, 1), id="target-another-event"),
-        # 같은 사건이 덮는 문단이지만 앱이 그 사건으로 푸는 대상 블록(첫 문단)이 아니다.
-        pytest.param("before", 2, 2, (0, 1), id="target-inside-the-event-but-not-its-anchor"),
+        pytest.param(_FIXTURE_FIRST, 1, [[1, 2], [3, 4]], "before", 1, 2, (1, 1), id="kind-and-target-right"),
+        pytest.param(_FIXTURE_FIRST, 1, [[1, 2], [3, 4]], "after", 1, 2, (0, 1), id="kind-wrong"),
+        # 1화 둘째 추출 사건의 대상 블록이다.
+        pytest.param(_FIXTURE_FIRST, 1, [[1, 2], [3, 4]], "before", 3, 2, (0, 1), id="target-another-event"),
+        # 맞는 사건이 덮는 문단이지만 앱이 어느 추출 사건에도 대상으로 주지 않는 블록이다.
+        pytest.param(_FIXTURE_FIRST, 1, [[1, 2], [3, 4]], "before", 2, 2, (0, 1),
+                     id="target-inside-the-event-but-not-an-anchor"),
         # 회상 사건을 맞히지 못하면 그 관계는 분모에 들지 않는다.
-        pytest.param("before", 1, 3, (0, 0), id="flashback-not-matched"),
+        pytest.param(_FIXTURE_FIRST, 1, [[1, 2], [3, 4]], "before", 1, 3, (0, 0), id="flashback-not-matched"),
+        # 모델이 1화 첫 사건을 3문단까지 뽑아, 앱은 둘째 사건을 3문단이 아니라 4문단으로 가리킨다. 정답 경계로 셈한
+        # 대상(3문단)과 달라도 둘째 사건을 짚었으므로 맞다.
+        pytest.param(_FIXTURE_FIRST, 2, [[1, 2, 3], [3, 4]], "before", 4, 2, (1, 1),
+                     id="right-event-under-extracted-boundaries"),
+        # 셋째 사건을 가리킬 관계가 둘째 사건을 골랐다 — 그 대상 블록(3문단)은 셋째 사건 문단 안에 있지만 틀린 사건이다.
+        pytest.param(_NESTED_FIRST, 3, _NESTED_FIRST, "before", 3, 2, (0, 1), id="wrong-event-whose-anchor-lies-inside"),
+        pytest.param(_NESTED_FIRST, 3, _NESTED_FIRST, "before", 4, 2, (1, 1), id="nested-target-right"),
     ],
 )
-def test_relation_accuracy_resolves_the_target_block_to_the_planted_target_event(
-    kind: str, target_paragraph: int, flashback_paragraph: int, expected: tuple[int, int]
+def test_relation_accuracy_resolves_the_target_block_through_the_extracted_target_chapter(
+    first_events: list[list[int]], target_event: int, first_found: list[list[int]], kind: str, target_paragraph: int,
+    flashback_paragraph: int, expected: tuple[int, int],
 ) -> None:
-    # 3화 회상 사건(2문단)이 1화 첫 사건(1·2문단) 앞이다 — 앱은 그 사건을 앞 차례 사건이 덮지 않는 첫 블록(1문단)으로 가리킨다.
-    eval_set = load_set(FIXTURE)
+    # 3화 회상 사건(2문단)이 1화 사건 앞이다. 앱은 1화에서 추출·저장된 주선 사건마다, 앞 차례 사건이 덮지 않는 첫 블록을 대상
+    # 블록으로 준다 — 관계는 그 블록을 1화 추출 사건으로 되풀어, 그 사건이 심은 대상 사건과 짝일 때 맞다.
+    eval_set = _relation_set(first_events, target_event)
     first, third = [uuid.uuid4() for _ in range(4)], [uuid.uuid4() for _ in range(5)]
     job = _flashback_job(third, flashback_paragraph, (kind, first[target_paragraph - 1]))
-    outcomes = [_outcome(1, blocks=first), _outcome(2), _outcome(3, jobs=(job,), blocks=third)]
+    outcomes = [
+        _outcome(1, jobs=(_event_job(first, first_found),), blocks=first), _outcome(2),
+        _outcome(3, jobs=(job,), blocks=third),
+    ]
     (accuracy,) = metrics.relation_accuracy(eval_set, outcomes) or []
     assert (accuracy.k, accuracy.n) == expected
 
@@ -637,7 +723,10 @@ def test_the_adapter_comparison_puts_each_adapters_value_and_verdict_side_by_sid
     clean = _clean_run()
     blocked = _clean_run()
     blocked[5] = _outcome(4, "blocked", probe="harbor-memory", block=("exit_then_appearance",))
-    calls = [{"stage": "events.extract", "backend": "gemini", "model": "gemini-3.5-flash-lite"}]
+    calls = [
+        {"stage": "events.extract", "backend": "gemini", "model": "gemini-3.5-flash-lite"},
+        {"stage": "conflicts.judge", "backend": "anthropic", "model": "unpriced-synthetic-model"},
+    ]
     reports = {
         "gemini": synthetic_report(eval_set, clean, [], adapter="gemini", calls=calls),
         "haiku": synthetic_report(eval_set, blocked, [], adapter="haiku"),
@@ -648,5 +737,8 @@ def test_the_adapter_comparison_puts_each_adapters_value_and_verdict_side_by_sid
     assert row == "| block_false_positive | 0.000 (0/5) 합격 | 0.200 (1/5) 미달 |"
     models = next(line for line in lines if line.startswith("| 실제 모델 |"))
     assert "events.extract gemini/gemini-3.5-flash-lite" in models
+    # 단가표에 없는 모델의 호출은 원가 합계에서 말없이 빠지지 않고 따로 센 줄에 나온다.
+    unpriced = next(line for line in lines if line.startswith("| 단가표에 없는 호출 |"))
+    assert unpriced == "| 단가표에 없는 호출 | 1 | 0 |"
     # 합성 원고를 Claude 계열이 써서 Claude 어댑터의 재현율이 부풀 수 있다는 한계를 표에 함께 적는다.
     assert any("Claude" in line for line in lines)
