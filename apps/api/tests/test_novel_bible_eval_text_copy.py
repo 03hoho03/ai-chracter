@@ -65,7 +65,7 @@ def _write_folder(folder: Path, eval_set: EvalSet, *, title: str | None = "합�
 def test_a_text_folder_reads_into_numbered_chapters_of_paragraphs(tmp_path: Path) -> None:
     eval_set = _plain_set()
     chapters = _write_folder(tmp_path / "book", eval_set)
-    (tmp_path / "book" / "notes.md").write_text("합성 메모", encoding="utf-8")  # 화 파일 꼴이 아니면 읽지 않는다
+    (tmp_path / "book" / "cover.jpg").write_bytes(b"\xff\xd8")  # 화 파일 꼴이 아니면 읽지 않는다
     read = text_copy.read_text_dir(tmp_path / "book")
     assert read.title == "합성 제목"
     assert [list(paragraphs) for paragraphs in read.chapters] == chapters
