@@ -208,6 +208,23 @@ def test_blocking_counts_false_positives_and_drops_probes_with_an_incomplete_can
     }
     assert summary.undeterminable  # 충돌 1/1 이 실패했고 비충돌 1/2 를 뺐다 — 25% 를 넘는다
 
+    # 2화를 막으면 탐침 넷이 모두 기댈 화를 잃는다. 충돌 탐침은 위와 달리 기대 규칙으로 막히고 경고 탐침은 기대 경고를 내지만,
+    # 짝이 정본에 없으니 둘 다 재현율에 넣지 않고 비충돌 탐침과 함께 뺀다.
+    outcomes = [
+        _outcome(1),
+        _outcome(2, "blocked", block=("knowledge_before_fact",)),
+        _outcome(3),
+        _outcome(4, "blocked", probe="dead-returns", block=("exit_then_appearance",)),
+        _outcome(4, probe="unrelated-memory", warn=("order_undetermined",)),
+        _outcome(4, "blocked", probe="harbor-memory", block=("exit_then_appearance",)),
+        _outcome(4, probe="rumor"),
+    ]
+    summary = metrics.blocking(eval_set, outcomes)
+    assert summary.excluded == {"conflict": 1, "warning": 1, "non_conflict": 2}
+    assert (summary.recall.k, summary.recall.n) == (0, 0)
+    assert (summary.warning_recall.k, summary.warning_recall.n) == (0, 0)
+    assert (summary.false_positive.k, summary.false_positive.n) == (1, 3)
+
 
 def test_blocking_recall_needs_the_expected_rule_and_warning_recall_the_expected_name() -> None:
     eval_set = load_set(FIXTURE)
