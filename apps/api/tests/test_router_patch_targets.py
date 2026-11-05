@@ -64,6 +64,9 @@ GUARDED = frozenset(
         "strip_media_tags",
         "_record_story_media_unlocks",
         "JudgmentPromptSets",
+        # 기능 스위치 접근자 — 라우터와 턴 프롬프트·판정·저장 모듈이 모두 부르므로 라우터 쪽만 바꿔 끼우면 옮겨 간 읽기를
+        # 빗나간다. 스위치 값은 접근자를 패치하지 말고 `settings` 나 덮어쓰기 맵으로 바꾼다.
+        "switch_on",
     }
 )
 MOVED_CALLER_MODULES = ("turn_prompt.py", "room_stats.py", "turn_judgments.py", "turn_engine.py", "turn_store.py")
