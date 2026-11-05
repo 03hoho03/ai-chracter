@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent } from "@ai-character-chat/ui/components/tabs";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
 import { flushSync } from "react-dom";
@@ -436,7 +437,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
               <BuilderStepNav variant="bar" {...stepNavProps} />
               <BuilderTabStrip
                 tabs={stepTabs}
-                className={stepTabs.length < 2 ? "hidden" : undefined}
+                className={cn(stepTabs.length < 2 && "hidden")}
                 activeTab={activeTab}
                 errorTabIds={errorTabIds}
                 requiredTabIds={CHARACTER_REQUIRED_TAB_IDS}

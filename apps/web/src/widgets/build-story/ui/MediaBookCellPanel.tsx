@@ -29,10 +29,11 @@ import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { CharacterCount } from "@/shared/ui/CharacterCount";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
-import { toCellKey, type MediaBookPosition } from "./MediaBookGrid";
+import { toCellKey } from "./MediaBookGrid";
 import { focusCellOrHeading } from "./MediaBookSelectionProvider";
 import { copyMediaTag } from "../lib/copyMediaTag";
 import { MEDIA_BOOK_IMAGE_ACCEPT } from "../lib/mediaBookImageFile";
+import type { MediaBookPosition } from "../model/mediaBookPosition";
 import { useMediaBookCellImage } from "../model/useMediaBookCellImage";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";

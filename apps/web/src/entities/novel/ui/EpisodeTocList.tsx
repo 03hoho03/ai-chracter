@@ -64,7 +64,13 @@ export function EpisodeTocList({
   );
 }
 
-function EpisodeMarker({ isCurrent, isFinished, isReading }: { isCurrent: boolean; isFinished: boolean; isReading: boolean }) {
+type EpisodeMarkerProps = {
+  isCurrent: boolean;
+  isFinished: boolean;
+  isReading: boolean;
+};
+
+function EpisodeMarker({ isCurrent, isFinished, isReading }: EpisodeMarkerProps) {
   if (isCurrent) {
     return <span className="shrink-0 pt-0.5 text-xs font-medium whitespace-nowrap text-foreground">지금 화</span>;
   }

@@ -12,9 +12,9 @@ import {
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 
+import type { MediaBookPosition } from "./mediaBookPosition";
 import { useMediaBookEditor } from "./useMediaBookEditor";
 import { useMediaBookThumbnails } from "./useMediaBookThumbnails";
-import type { MediaBookPosition } from "../ui/MediaBookGrid";
 
 /** 칸 이미지를 바꾼 뒤 띄우는 되돌리기 토스트. id 가 하나라 연달아 바꾸면 쌓이지 않고 마지막 교체만 되돌린다. */
 export const MEDIA_BOOK_IMAGE_UNDO_TOAST_ID = "media-book-image-undo";

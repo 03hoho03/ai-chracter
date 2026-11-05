@@ -17,13 +17,10 @@ export function NovelInfoLink({ route, novelId, ...props }: { route: ViewerRoute
   }
 }
 
+type EpisodeLinkProps = { route: ViewerRoute; novelId: string; chapterId: string } & LinkRestProps;
+
 /** 이 소설의 한 화를 읽는 화면으로 가는 링크(경로 규칙은 `NovelInfoLink` 와 같다). */
-export function EpisodeLink({
-  route,
-  novelId,
-  chapterId,
-  ...props
-}: { route: ViewerRoute; novelId: string; chapterId: string } & LinkRestProps) {
+export function EpisodeLink({ route, novelId, chapterId, ...props }: EpisodeLinkProps) {
   switch (route) {
     case "owner":
       return <Link to="/novels/$novelId/episodes/$chapterId" params={{ novelId, chapterId }} {...props} />;

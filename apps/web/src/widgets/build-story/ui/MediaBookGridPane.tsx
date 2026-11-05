@@ -3,9 +3,10 @@ import type { DragEvent } from "react";
 import { formatMediaBookProgress, summarizeMediaBookProgress } from "@/features/build-story";
 import { PreviewCloseHeader } from "@/features/build-common";
 
-import { MediaBookGrid, type MediaBookPosition } from "./MediaBookGrid";
+import { MediaBookGrid } from "./MediaBookGrid";
 import { focusCellOrHeading } from "./MediaBookSelectionProvider";
 import { isFileDrag } from "../lib/mediaBookImageFile";
+import type { MediaBookPosition } from "../model/mediaBookPosition";
 import { useMediaBookCellImage } from "../model/useMediaBookCellImage";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 import {

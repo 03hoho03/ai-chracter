@@ -111,17 +111,14 @@ function PageSeekSlider({ position }: { position: ViewerPagePosition }) {
   );
 }
 
-function EpisodeStepButton({
-  route,
-  novelId,
-  target,
-  direction,
-}: {
+type EpisodeStepButtonProps = {
   route: ViewerRoute;
   novelId: string;
   target: ViewerChapter | undefined;
   direction: "previous" | "next";
-}) {
+};
+
+function EpisodeStepButton({ route, novelId, target, direction }: EpisodeStepButtonProps) {
   const label = direction === "previous" ? "이전 화" : "다음 화";
   const content =
     direction === "previous" ? (
