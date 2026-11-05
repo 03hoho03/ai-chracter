@@ -66,14 +66,14 @@ export const PurchaseConfirmDialog = createCallable<PurchaseConfirmDialogProps, 
     });
     const { errors, isSubmitting } = form.formState;
     const { purchase } = usePurchaseClover();
-    const [notice, setNotice] = useState<DialogNotice | null>(null);
+    const [notice, setNotice] = useState<DialogNotice>();
     // 결제창이 떠 있는 동안 다이얼로그를 내린다. Radix 모달은 열린 동안 바깥의 포인터를 끄고 포커스를 안에 가두는데,
     // 결제창은 body 에 붙는 포트원 iframe 이라 다이얼로그가 떠 있으면 누를 수도 입력할 수도 없다. 폼 상태는 이 컴포넌트가
     // 쥐고 있어 다시 열면 입력이 그대로다.
     const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
     async function handleValidSubmit(values: PurchaseFormValues) {
-      setNotice(null);
+      setNotice(undefined);
       const payMethod = findPayMethod(payMethods, values.payMethodKey);
       if (!payMethod) {
         form.setError("payMethodKey", { message: "결제수단을 골라 주세요" });

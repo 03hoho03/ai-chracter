@@ -22,10 +22,10 @@ type ResolveProfileImageUrlInput = {
  * 이 값을 쥔 셸은 빌더를 떠날 때까지 살아 있어 그 주소가 만료된 뒤 새로 그려지는 `<img>` 가 깨질 수 있지만,
  * 서버 주소는 저장·조회 응답이 올 때마다 다시 서명돼 온다.
  */
-export function resolveProfileImageUrl({ image, local, draft }: ResolveProfileImageUrlInput): string | null {
-  if (image === null) return null;
+export function resolveProfileImageUrl({ image, local, draft }: ResolveProfileImageUrlInput): string | undefined {
+  if (image === null) return undefined;
   const ownLocal = local?.assetId === image.assetId ? local : undefined;
   if (ownLocal !== undefined && !ownLocal.canExpire) return ownLocal.url;
   const savedUrl = draft.thumbnailAssetId === image.assetId ? draft.thumbnailUrl : null;
-  return savedUrl ?? ownLocal?.url ?? null;
+  return savedUrl ?? ownLocal?.url;
 }

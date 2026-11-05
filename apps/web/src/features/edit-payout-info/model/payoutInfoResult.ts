@@ -57,8 +57,8 @@ export function toPayoutInfoFailure(error: unknown): PayoutInfoFailure {
 
 /** 실패를 어느 칸 아래에 보일지. 주민등록번호 자체가 거절된 두 갈래는 그 칸에 붙여 고칠 곳을 가리키고, 나머지는 폼
  * 머리의 오류 상자에 둔다. */
-export function toPayoutInfoFailureField(failure: PayoutInfoFailure): "rrn" | null {
-  return failure === "foreigner" || failure === "rrnMismatch" ? "rrn" : null;
+export function toPayoutInfoFailureField(failure: PayoutInfoFailure): "rrn" | undefined {
+  return failure === "foreigner" || failure === "rrnMismatch" ? "rrn" : undefined;
 }
 
 /** 실패 문장. 기다려서 풀리지 않는 거절에는 "다시 시도"를 말하지 않는다. 재동의는 모달이 대신 말한다. */

@@ -162,7 +162,7 @@ type IdentityNotice = Extract<IdentityResult, { kind: "notice" }>;
 function IdentitySection({ me }: { me: MeResponse }) {
   const pricingQuery = useCloverPricingQuery();
   const { verify, isVerifying } = useVerifyIdentity();
-  const [notice, setNotice] = useState<IdentityNotice | null>(null);
+  const [notice, setNotice] = useState<IdentityNotice>();
   const section = getIdentitySection(me, {
     isPaymentsEnabled: pricingQuery.data?.paymentsEnabled ?? false,
     isCreatorPayoutEnabled: hasEnabledFeature(me.enabledFeatures, "creator_payout"),
@@ -179,7 +179,7 @@ function IdentitySection({ me }: { me: MeResponse }) {
 
   const handleVerify = async () => {
     if (isVerifying) return;
-    setNotice(null);
+    setNotice(undefined);
     const result = await verify();
     if (result.kind === "verified") {
       toast.success(IDENTITY_VERIFIED_MESSAGE);

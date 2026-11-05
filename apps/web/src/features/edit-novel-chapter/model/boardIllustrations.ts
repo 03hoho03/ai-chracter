@@ -70,22 +70,22 @@ export function toIllustrationSpots(revision: BoardRevision): IllustrationSpots 
   return { before, after, unplaced: [...(revision.unplacedIllustrations ?? [])].sort(byOrder) };
 }
 
-/** 고른 문단의 앞·뒤로 옮길 요청 자리. 보내도 바뀌는 것이 없으면 `null` 이다 — 그 자리 맨 끝에 이미 있는 그림을 같은
+/** 고른 문단의 앞·뒤로 옮길 요청 자리. 보내도 바뀌는 것이 없으면 `undefined` 다 — 그 자리 맨 끝에 이미 있는 그림을 같은
  * 자리로 보내면 서버는 같은 배치의 새 판을 하나 더 쌓는다(판 이력에 빈 판이 는다). 같은 자리라도 맨 끝이 아니면 순서가
- * 바뀌므로 보낸다. 지금 판에 없는 문단도 `null` 이다. */
+ * 바뀌므로 보낸다. 지금 판에 없는 문단도 `undefined` 다. */
 export function toMoveTarget(
   revision: BoardRevision,
   illustration: BoardIllustration,
   paragraphIndex: number,
   placement: IllustrationPlacement,
-): PlacementTarget | null {
+): PlacementTarget | undefined {
   const anchorBlockId = revision.blocks[paragraphIndex]?.id;
-  if (anchorBlockId === undefined) return null;
+  if (anchorBlockId === undefined) return undefined;
   if (illustration.anchorBlockId === anchorBlockId && illustration.placement === placement) {
     const spotSize = (revision.illustrations ?? []).filter(
       (item) => item.anchorBlockId === anchorBlockId && item.placement === placement,
     ).length;
-    if (illustration.order >= spotSize - 1) return null;
+    if (illustration.order >= spotSize - 1) return undefined;
   }
   return { anchorBlockId, placement };
 }
@@ -125,14 +125,12 @@ export function toActiveMove({
   revision,
 }: {
   isIllustrationsOn: boolean;
-  moving: MovingIllustration | null;
+  moving: MovingIllustration | undefined;
   revision: BoardRevision;
-}): BoardIllustration | null {
-  if (!isIllustrationsOn || moving === null || moving.revisionId !== revision.id) return null;
-  return (
-    [...(revision.illustrations ?? []), ...(revision.unplacedIllustrations ?? [])].find(
-      (item) => item.id === moving.illustrationId,
-    ) ?? null
+}): BoardIllustration | undefined {
+  if (!isIllustrationsOn || moving === undefined || moving.revisionId !== revision.id) return undefined;
+  return [...(revision.illustrations ?? []), ...(revision.unplacedIllustrations ?? [])].find(
+    (item) => item.id === moving.illustrationId,
   );
 }
 
@@ -150,14 +148,14 @@ export function toParagraphActions({
 }
 
 /** 고른 범위에 그림을 붙일 자리. 뒤면 범위의 마지막 문단 뒤, 앞이면 범위의 첫 문단 앞이다 — 여러 문단을 고르고 앞을 고른
- * 작가는 범위 끝 문단 앞(범위 한가운데)이 아니라 범위 맨 앞을 기대한다. 지금 판에 없는 문단이면 `null`. */
+ * 작가는 범위 끝 문단 앞(범위 한가운데)이 아니라 범위 맨 앞을 기대한다. 지금 판에 없는 문단이면 `undefined`. */
 export function toAttachTarget(
   revision: BoardRevision,
   range: ParagraphRange,
   placement: IllustrationPlacement,
-): PlacementTarget | null {
+): PlacementTarget | undefined {
   const anchorBlockId = revision.blocks[placement === "before" ? range.start : range.end]?.id;
-  return anchorBlockId === undefined ? null : { anchorBlockId, placement };
+  return anchorBlockId === undefined ? undefined : { anchorBlockId, placement };
 }
 
 /** 한 화의 삽화가 상한에 닿았는가. 위치 확인 필요인 그림도 센다 — 서버가 그렇게 세므로, 빼고 세면 붙이기가 열려 있다가
@@ -167,9 +165,9 @@ export function isIllustrationLimitReached(revision: BoardRevision): boolean {
 }
 
 /** 실패한 붙이기를 지금 판에 다시 보낼 요청. 기준 판은 늘 지금 판이다 — 실패한 요청의 옛 기준 판으로 다시 보내면 충돌
- * 409 가 끝없이 되풀이된다. 그 문단이 지금 판에 없으면(다른 곳에서 지웠다) `null` 이라 문단을 다시 골라야 한다. */
-export function toRetryAttachRequest(revision: BoardRevision, failed: FailedAttach): AttachRequest | null {
-  if (!revision.blocks.some((block) => block.id === failed.target.anchorBlockId)) return null;
+ * 409 가 끝없이 되풀이된다. 그 문단이 지금 판에 없으면(다른 곳에서 지웠다) `undefined` 라 문단을 다시 골라야 한다. */
+export function toRetryAttachRequest(revision: BoardRevision, failed: FailedAttach): AttachRequest | undefined {
+  if (!revision.blocks.some((block) => block.id === failed.target.anchorBlockId)) return undefined;
   return { ...failed, baseRevisionId: revision.id };
 }
 

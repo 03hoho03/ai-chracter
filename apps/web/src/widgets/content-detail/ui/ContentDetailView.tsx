@@ -132,7 +132,7 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
   // 바뀐다(프로필이 없거나 비로그인이면 대체어).
   const isLoggedIn = useSessionQuery().data !== undefined;
   const personaList = usePersonasQuery({ enabled: isLoggedIn }).data;
-  const startPersona = isLoggedIn ? resolveStartPersona(personaList, chosenPersonaId) : null;
+  const startPersona = isLoggedIn ? resolveStartPersona(personaList, chosenPersonaId) : undefined;
 
   // 상세 GET이 백그라운드로 조회수를 올리므로 홈 목록을 무효화해야 한다 — 모달 경로는 홈 리스트가
   // 언마운트되지 않아 이것 없이는 닫아도 카드 숫자가 갱신되지 않는다.
@@ -489,7 +489,7 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
 
       {/* 시작 준비(시작 상황·내 대화 목록)의 마지막 줄이라 업데이트(참고 정보)보다 위다. 프로필이 없으면 그리지 않는다 —
           그 사람은 플레이를 누를 때 이름부터 받는다. */}
-      {personaList !== undefined && startPersona !== null && (
+      {personaList !== undefined && startPersona !== undefined && (
         <StartPersonaRow personaList={personaList} startPersona={startPersona} onSelect={setChosenPersonaId} />
       )}
 

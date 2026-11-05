@@ -60,7 +60,7 @@ export function NovelTitleEditor({ novel }: { novel: NovelDetailResponse }) {
     } catch (error) {
       const notice = toNovelActionError(error, "title");
       // 재동의가 필요하면 전역 재동의 모달이 맡는다. 입력은 그대로 남아 동의 뒤 다시 저장할 수 있다.
-      if (notice === null) return;
+      if (notice === undefined) return;
       setSaveError(notice.message);
       if (notice.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
     }

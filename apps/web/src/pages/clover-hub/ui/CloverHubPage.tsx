@@ -77,7 +77,7 @@ export function CloverHubPage({ search, onSearchClear, onProductClear }: CloverH
   // 가른다.
   const balanceQuery = useCloverBalanceQuery({ enabled: viewer.kind === "member" });
   const productsHeadingRef = useRef<HTMLHeadingElement>(null);
-  const [settled, setSettled] = useState<SettledPurchase | null>(null);
+  const [settled, setSettled] = useState<SettledPurchase | undefined>(undefined);
   // 결과가 나온 때의 잔액. "확인 중"으로 끝난 뒤 다시 불러온 잔액이 이보다 늘었는지 본다. 결과 콜백은 비동기라 그때의
   // 렌더 값을 쥐고 있으므로 최신 잔액을 ref 로 읽는다.
   const latestBalance = useRef<number | undefined>(undefined);
@@ -109,7 +109,7 @@ export function CloverHubPage({ search, onSearchClear, onProductClear }: CloverH
   useEffect(() => {
     if (resolvePaymentRedirect(search).kind !== "none") clearPaymentReturnTo();
   }, []);
-  const returnPlacement = getReturnPlacement(settled?.result ?? null, returnTo);
+  const returnPlacement = getReturnPlacement(settled?.result, returnTo);
 
   const products = productsQuery.data;
   const section = products ? getPurchaseSection(products.paymentsEnabled, viewer) : undefined;

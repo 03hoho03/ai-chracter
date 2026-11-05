@@ -64,7 +64,7 @@ export function LoginForm({ redirectTo, errorCode, errorMethod }: LoginFormProps
   }
 
   const redirectErrorMessage =
-    errorCode && !isRedirectErrorDismissed ? getLoginErrorMessage(errorCode, errorMethod) : null;
+    errorCode && !isRedirectErrorDismissed ? getLoginErrorMessage(errorCode, errorMethod) : undefined;
   const bannerMessage = errors.root?.message ?? redirectErrorMessage;
 
   return (

@@ -30,7 +30,7 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
   const [secondsLeft, setSecondsLeft] = useState(RESEND_COOLDOWN_SECONDS);
   // AUTH_LIMIT(시간당 상한, ≤3600초)은 초 카운트다운에 꽂지 않는다 — 별도 줄의 분 단위 정적 문구로만
   // 보여준다. AUTH_COOLDOWN(60초 쿨다운)은 그대로 `secondsLeft`가 카운트다운한다.
-  const [limitMessage, setLimitMessage] = useState<string | null>(null);
+  const [limitMessage, setLimitMessage] = useState<string>();
   const resendMutation = useResendVerificationCodeMutation();
 
   useEffect(() => {
@@ -55,7 +55,7 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
     try {
       await resendMutation.mutateAsync(toResendVerificationCodeRequest(email));
       setSecondsLeft(RESEND_COOLDOWN_SECONDS);
-      setLimitMessage(null);
+      setLimitMessage(undefined);
       toast.success("인증코드를 다시 보냈어요");
     } catch (error) {
       const detail = getAuthRateLimit(error);
@@ -66,7 +66,7 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
       switch (detail.code) {
         case "AUTH_COOLDOWN":
           setSecondsLeft(detail.retryAfterSeconds);
-          setLimitMessage(null);
+          setLimitMessage(undefined);
           break;
         case "AUTH_LIMIT":
           setLimitMessage(formatAuthRateLimitMessage(detail, "resend"));

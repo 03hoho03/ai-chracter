@@ -61,7 +61,7 @@ describe("구성 흐름 작업의 다시 시도", () => {
       episodeKey: "k3",
     });
     expect(toRetryTarget(job("episode_outline_generate"), { chapters })).toBeUndefined();
-    expect(toRetryTarget(job("outline_chapter_generate"), { chapters, episodeKey: null })).toBeUndefined();
+    expect(toRetryTarget(job("outline_chapter_generate"), { chapters, episodeKey: undefined })).toBeUndefined();
   });
 
   it("원문이 바뀐 실패는 어느 종류든 다시 시도를 내밀지 않는다", () => {

@@ -16,7 +16,7 @@ export function GuideExampleWork({ context }: GuideExampleWorkProps) {
   const name = context.valueOf("profile.name");
   const oneLiner = context.valueOf("profile.oneLiner");
   const coverToken = context.valueOf("profile.image");
-  const cover = coverToken ? findGuideImage(coverToken.trim()) : null;
+  const cover = coverToken ? findGuideImage(coverToken.trim()) : undefined;
   if (!name || !cover) return null;
 
   return (

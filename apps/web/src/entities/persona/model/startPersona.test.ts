@@ -37,7 +37,7 @@ describe("resolveStartPersona", () => {
   it.each([
     ["no list yet", undefined],
     ["no profiles", listWith(null, [])],
-  ] as const)("is null with %s", (_label, list) => {
-    expect(resolveStartPersona(list, "anything")).toBeNull();
+  ] as const)("is undefined with %s", (_label, list) => {
+    expect(resolveStartPersona(list, "anything")).toBeUndefined();
   });
 });

@@ -31,6 +31,6 @@ describe("getProductsFootnote", () => {
   });
 
   it.each(["products", "pending"] as const)("%s 이면 덧붙이지 않는다", (section) => {
-    expect(getProductsFootnote(section)).toBeNull();
+    expect(getProductsFootnote(section)).toBeUndefined();
   });
 });

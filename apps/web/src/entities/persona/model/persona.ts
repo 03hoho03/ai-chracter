@@ -11,8 +11,8 @@ export type PersonaGender = NonNullable<Persona["gender"]>;
 export const PERSONA_NAME_MAX_LENGTH = 20;
 export const PERSONA_DESCRIPTION_MAX_LENGTH = 500;
 
-/** 목록에서 기본 프로필의 이름. 목록이 없거나 기본이 없거나 기본 id 가 목록에 없으면 null. */
-export function defaultPersonaName(personaList: PersonaList | undefined): string | null {
-  if (personaList === undefined || personaList.defaultPersonaId === null) return null;
-  return personaList.items.find((persona) => persona.id === personaList.defaultPersonaId)?.name ?? null;
+/** 목록에서 기본 프로필의 이름. 목록이 없거나 기본이 없거나 기본 id 가 목록에 없으면 undefined. */
+export function defaultPersonaName(personaList: PersonaList | undefined): string | undefined {
+  if (personaList === undefined || personaList.defaultPersonaId === null) return undefined;
+  return personaList.items.find((persona) => persona.id === personaList.defaultPersonaId)?.name;
 }

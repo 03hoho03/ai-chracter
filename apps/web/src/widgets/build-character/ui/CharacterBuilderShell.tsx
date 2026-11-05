@@ -88,7 +88,7 @@ type CharacterBuilderShellProps = {
     kind: "card" | "chat";
     getPayload: () => PreviewStartPayload;
     onClose: () => void;
-    thumbnailUrl: string | null;
+    thumbnailUrl: string | undefined;
   }) => ReactNode;
 };
 

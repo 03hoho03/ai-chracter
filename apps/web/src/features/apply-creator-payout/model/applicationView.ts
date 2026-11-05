@@ -22,7 +22,7 @@ export type ApplicationView =
   | { kind: "approved"; decidedAt: string | null }
   | {
       kind: "open";
-      previous: { status: "rejected" | "revoked"; reason: string; endedAt: string | null } | null;
+      previous?: { status: "rejected" | "revoked"; reason: string; endedAt: string | null };
       suspended: boolean;
       requirements: Requirement[];
       canApply: boolean;
@@ -51,7 +51,7 @@ export function getApplicationView(payout: Pick<CreatorPayoutResponse, "applicat
           reason: application.decisionReason,
           endedAt: application.status === "revoked" ? application.revokedAt : application.decidedAt,
         }
-      : null,
+      : undefined,
     suspended: eligibility.suspended,
     requirements,
     canApply: !eligibility.suspended && requirements.every((requirement) => requirement.state === "met"),

@@ -38,16 +38,16 @@ export async function addWorksInOrder<T>(works: readonly T[], put: (work: T) => 
   return { added, gone, stoppedBy: undefined, stopError: undefined };
 }
 
-function toStopReason(notice: WorkBundleActionError | null): NonNullable<AddWorksResult["stoppedBy"]> {
-  if (notice === null) return "reconsent";
+function toStopReason(notice: WorkBundleActionError | undefined): NonNullable<AddWorksResult["stoppedBy"]> {
+  if (notice === undefined) return "reconsent";
   if (notice.kind === "itemLimit" || notice.kind === "bundleGone") return notice.kind;
   return "failed";
 }
 
 export type AddWorksDescription = { tone: "success" | "error"; message: string };
 
-/** 결과를 한 문장으로. 재동의로 멈췄으면 재동의 모달이 대신 말하므로 `null` 이다. */
-export function describeAddWorksResult(result: AddWorksResult): AddWorksDescription | null {
+/** 결과를 한 문장으로. 재동의로 멈췄으면 재동의 모달이 대신 말하므로 `undefined` 다. */
+export function describeAddWorksResult(result: AddWorksResult): AddWorksDescription | undefined {
   const goneNote = result.gone > 0 ? ` ${result.gone}개는 지워졌거나 넣을 수 없는 작품이라 건너뛰었어요.` : "";
   switch (result.stoppedBy) {
     case undefined:
@@ -55,7 +55,7 @@ export function describeAddWorksResult(result: AddWorksResult): AddWorksDescript
         ? { tone: "success", message: `${result.added}개를 넣었어요.${goneNote}` }
         : { tone: "error", message: `넣은 작품이 없어요.${goneNote}` };
     case "reconsent":
-      return null;
+      return undefined;
     case "bundleGone":
       return { tone: "error", message: "이 묶음을 찾을 수 없어요. 다른 곳에서 지웠을 수 있어요." };
     case "itemLimit":

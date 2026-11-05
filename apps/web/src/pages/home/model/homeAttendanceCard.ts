@@ -12,7 +12,7 @@ export function isHomeAttendancePending(input: {
   return input.isLoggedIn && input.isPending;
 }
 
-export type HomeAttendanceCard = { kind: "hidden" } | { kind: "shown"; detail: string | null; shouldShowDot: boolean };
+export type HomeAttendanceCard = { kind: "hidden" } | { kind: "shown"; detail?: string; shouldShowDot: boolean };
 
 /** 홈의 출석판 진입 카드. 로그인 회원에게만 보인다 — 비로그인 홈은 판을 물을 수 없다. 판을 못 받아도 출석판으로 가는
  * 링크는 살린다.
@@ -28,7 +28,7 @@ export function toHomeAttendanceCard(input: {
 }): HomeAttendanceCard {
   if (!input.isLoggedIn || input.isFiltered) return { kind: "hidden" };
   const { board } = input;
-  if (board === undefined) return { kind: "shown", detail: null, shouldShowDot: false };
+  if (board === undefined) return { kind: "shown", detail: undefined, shouldShowDot: false };
   if (board.completedToday) return { kind: "shown", detail: "28일 완주! 내일 새 출석판이 열려요", shouldShowDot: false };
 
   const claimedCount = board.cells.filter((cell) => cell.status === "claimed").length;

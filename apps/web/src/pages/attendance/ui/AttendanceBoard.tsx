@@ -26,7 +26,7 @@ export function AttendanceBoard({
 }: {
   cells: readonly AttendanceCell[];
   /** 방금 받은 칸. 그 칸의 체크만 짧게 나타난다(상태가 바뀐 자리를 짚는 것이지 축하 연출이 아니다). */
-  justClaimedSeq: number | null;
+  justClaimedSeq: number | undefined;
 }) {
   const claimedCount = cells.filter((cell) => cell.status === "claimed").length;
 

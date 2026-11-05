@@ -5,12 +5,12 @@ import { personaNameIssue } from "./personaName";
 
 describe("personaNameIssue", () => {
   it("accepts a name surrounded by spaces", () => {
-    expect(personaNameIssue("  지훈  ")).toBeNull();
+    expect(personaNameIssue("  지훈  ")).toBeUndefined();
   });
 
   it("measures the length after trimming", () => {
-    expect(personaNameIssue(` ${"가".repeat(PERSONA_NAME_MAX_LENGTH)} `)).toBeNull();
-    expect(personaNameIssue("가".repeat(PERSONA_NAME_MAX_LENGTH + 1))).not.toBeNull();
+    expect(personaNameIssue(` ${"가".repeat(PERSONA_NAME_MAX_LENGTH)} `)).toBeUndefined();
+    expect(personaNameIssue("가".repeat(PERSONA_NAME_MAX_LENGTH + 1))).toBeDefined();
   });
 
   it.each(["", "   "])("rejects a blank name %j", (value) => {
@@ -19,6 +19,6 @@ describe("personaNameIssue", () => {
 
   // 이름이 작가 글 속 `{{user}}` 자리에 들어가면 표기로 바뀌는 문자.
   it.each(["지:훈", "*지훈*", "> 지훈"])("rejects %j", (value) => {
-    expect(personaNameIssue(value)).not.toBeNull();
+    expect(personaNameIssue(value)).toBeDefined();
   });
 });

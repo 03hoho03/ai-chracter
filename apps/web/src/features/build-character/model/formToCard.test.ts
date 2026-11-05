@@ -33,7 +33,7 @@ describe("formToCard", () => {
   });
 
   it("발행 전이라 metrics는 0, tags엔 character·unpublished가 함께 달린다", () => {
-    const card = formToCard(baseFormValues(), { thumbnailUrl: null, authorNickname: "숲지기" });
+    const card = formToCard(baseFormValues(), { thumbnailUrl: undefined, authorNickname: "숲지기" });
 
     expect(card.metrics).toEqual({ viewCount: 0 });
     expect(card.tags).toEqual(["character", "unpublished"]);
@@ -43,11 +43,11 @@ describe("formToCard", () => {
     const values = baseFormValues();
     values.profile.name = "";
 
-    expect(formToCard(values, { thumbnailUrl: null, authorNickname: "숲지기" }).title).toBe("");
+    expect(formToCard(values, { thumbnailUrl: undefined, authorNickname: "숲지기" }).title).toBe("");
   });
 
-  it("썸네일이 아직 없으면 undefined로 정규화한다(카드 prop은 null을 받지 않는다)", () => {
-    const card = formToCard(baseFormValues(), { thumbnailUrl: null, authorNickname: "숲지기" });
+  it("썸네일이 아직 없으면 카드에도 썸네일 주소가 없다", () => {
+    const card = formToCard(baseFormValues(), { thumbnailUrl: undefined, authorNickname: "숲지기" });
 
     expect(card.thumbnailUrl).toBeUndefined();
   });
@@ -57,11 +57,11 @@ describe("formToCard", () => {
     const values = baseFormValues();
     values.profile.name = longTitle;
 
-    expect(formToCard(values, { thumbnailUrl: null, authorNickname: "숲지기" }).title).toBe(longTitle);
+    expect(formToCard(values, { thumbnailUrl: undefined, authorNickname: "숲지기" }).title).toBe(longTitle);
   });
 
   it("onClick은 항상 존재하는, 아무 일도 하지 않는 함수다 — 프리뷰 카드는 눌러도 갈 상세 페이지가 없다", () => {
-    const card = formToCard(baseFormValues(), { thumbnailUrl: null, authorNickname: "숲지기" });
+    const card = formToCard(baseFormValues(), { thumbnailUrl: undefined, authorNickname: "숲지기" });
 
     expect(() => card.onClick()).not.toThrow();
   });

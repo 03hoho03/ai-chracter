@@ -63,7 +63,7 @@ export function NovelSnapshotsPanel({ novel, headingRef, onRestored }: NovelSnap
       maxLength: novel.limits.snapshotNameMaxLength,
       defaultName: toDefaultSnapshotName(novel.chapters.map((chapter) => chapter.ordinal)),
     });
-    if (saved !== null) setResult(`‘${saved.name}’${koreanParticle(saved.name, "으로/로")} 저장했어요.`);
+    if (saved !== undefined) setResult(`‘${saved.name}’${koreanParticle(saved.name, "으로/로")} 저장했어요.`);
   }
 
   async function handleRestore(snapshot: NovelSnapshotSummary) {
@@ -74,7 +74,7 @@ export function NovelSnapshotsPanel({ novel, headingRef, onRestored }: NovelSnap
       snapshotId: snapshot.id,
       snapshotName: snapshot.name,
     });
-    if (restored === null) return;
+    if (restored === undefined) return;
     onRestored?.();
     const skipped = toSkippedChaptersNotice(restored.skippedChapters, restored.novel.chapters);
     setResult([`‘${snapshot.name}’ 때로 되돌렸어요.`, skipped].filter((part) => part !== undefined).join(" "));

@@ -27,7 +27,7 @@ export const SIGN_UP_SCHEMA = z.object({
   personaName: z.string().superRefine((value, context) => {
     if (value.trim() === "") return;
     const issue = personaNameIssue(value);
-    if (issue !== null) context.addIssue({ code: "custom", message: issue });
+    if (issue !== undefined) context.addIssue({ code: "custom", message: issue });
   }),
   birthDate: z
     .string()

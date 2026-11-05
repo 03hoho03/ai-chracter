@@ -75,7 +75,7 @@ export function AuthorNoteEditor({ novel, chapter }: AuthorNoteEditorProps) {
       finishEditing();
     } catch (error) {
       const notice = toNovelActionError(error, "authorNote");
-      if (notice === null) return;
+      if (notice === undefined) return;
       setSaveError(notice.message);
       if (notice.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
     }

@@ -66,7 +66,7 @@ export function CreationGuideStepPage({ topicId, stepId }: CreationGuideStepPage
         topicId={topicId}
         steps={pages.steps}
         step={step}
-        finish={previewSection ? { anchorId: previewSection.id, title: previewSection.title } : null}
+        finish={previewSection ? { anchorId: previewSection.id, title: previewSection.title } : undefined}
       />
     </main>
   );

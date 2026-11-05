@@ -30,9 +30,9 @@ type MergeCharacterModalProps = {
  * 같은 인물의 이름 표기가 갈려 생긴 카드를 합친다. 남을 카드를 고르면 이 카드의 이름·별칭은 그 카드의 별칭이 되고,
  * 메모는 그 카드 메모 뒤에 `[이 이름] 메모` 로 붙고, 나온 화가 옮겨진 뒤 이 카드는 사라진다 — 되돌리는 길은 버전
  * 되돌리기뿐이라 확정 전에 그 결과를 문장으로 말한다. 합친 뒤 남은 카드의 id 를 돌려주고(이 카드가 사라져 호출부가
- * 그 카드를 고르고 포커스를 옮긴다), 그만두면 `null` 이다.
+ * 그 카드를 고르고 포커스를 옮긴다), 그만두면 `undefined` 다.
  */
-export const MergeCharacterModal = createCallable<MergeCharacterModalProps, string | null>(
+export const MergeCharacterModal = createCallable<MergeCharacterModalProps, string | undefined>(
   ({ call, novelId, character, candidates }) => {
     const queryClient = useQueryClient();
     const selectId = useId();
@@ -54,8 +54,8 @@ export const MergeCharacterModal = createCallable<MergeCharacterModalProps, stri
         call.end(into.id);
       } catch (mergeError) {
         const notice = toCharacterSaveError(mergeError, "mergeCharacter");
-        if (notice === null) {
-          call.end(null);
+        if (notice === undefined) {
+          call.end(undefined);
           return;
         }
         setError(notice.message);
@@ -65,7 +65,7 @@ export const MergeCharacterModal = createCallable<MergeCharacterModalProps, stri
     }
 
     return (
-      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(null)}>
+      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(undefined)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="break-keep">‘{character.name}’{koreanParticle(character.name, "을/를")} 다른 인물과 합칠까요?</DialogTitle>
@@ -105,7 +105,7 @@ export const MergeCharacterModal = createCallable<MergeCharacterModalProps, stri
           )}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => call.end(null)}>
+            <Button type="button" variant="outline" onClick={() => call.end(undefined)}>
               취소
             </Button>
             <Button type="button" aria-disabled={isMerging} className="aria-disabled:opacity-65" onClick={() => void handleMerge()}>

@@ -77,7 +77,7 @@ export const WorkBundlesForWorkModal = createCallable<WorkBundlesForWorkModalPro
     } catch (error) {
       setOverride(bundleId, undefined);
       const notice = toWorkBundleActionError(error, shouldContain ? "addItem" : "removeItem");
-      if (notice === null) {
+      if (notice === undefined) {
         call.end();
         return;
       }

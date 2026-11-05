@@ -27,18 +27,18 @@ export function selectChangesSinceOldestConsent(
   return items.slice(0, oldestIndex);
 }
 
-/** 판 하나의 변경 안내를 화면에 그릴 모양. `notice` 가 null 이면 그 판은 안내가 비어 있다(공백만 있는 안내도 빈 것으로 본다). */
+/** 판 하나의 변경 안내를 화면에 그릴 모양. `notice` 가 없으면 그 판은 안내가 비어 있다(공백만 있는 안내도 빈 것으로 본다). */
 export type ChangeNoticeEntry = {
   version: string;
   /** 한국 시각 `YYYY.MM.DD`. */
   effectiveDate: string;
-  notice: string | null;
+  notice?: string;
 };
 
 export function toChangeNoticeEntries(items: readonly LegalChangeItem[]): ChangeNoticeEntry[] {
   return items.map((item) => ({
     version: item.version,
     effectiveDate: formatKstDate(item.effectiveAt),
-    notice: item.changeNotice !== null && item.changeNotice.trim() !== "" ? item.changeNotice : null,
+    notice: item.changeNotice !== null && item.changeNotice.trim() !== "" ? item.changeNotice : undefined,
   }));
 }

@@ -55,12 +55,12 @@ describe("returnLinkLabel", () => {
 
 describe("getReturnPlacement", () => {
   it("복귀 주소가 없으면 어디에도 두지 않는다", () => {
-    expect(getReturnPlacement(null, undefined)).toEqual({ head: false, solid: false });
+    expect(getReturnPlacement(undefined, undefined)).toEqual({ head: false, solid: false });
     expect(getReturnPlacement("paid", undefined)).toEqual({ head: false, solid: false });
   });
 
   it("결제 전·미완료·확인 중·문제에는 머리의 텍스트 링크만 둔다", () => {
-    for (const result of [null, "notCompleted", "checking", "problem"] as const) {
+    for (const result of [undefined, "notCompleted", "checking", "problem"] as const) {
       expect(getReturnPlacement(result, "/chat/r")).toEqual({ head: true, solid: false });
     }
   });

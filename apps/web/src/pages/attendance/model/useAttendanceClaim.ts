@@ -25,7 +25,7 @@ export function useAttendanceClaim({
 }) {
   const queryClient = useQueryClient();
   const mutation = useClaimAttendanceMutation();
-  const [failure, setFailure] = useState<ClaimErrorKind | null>(null);
+  const [failure, setFailure] = useState<ClaimErrorKind>();
 
   // 확인 중 문장이 버튼 자리를 차지하고 있어서(포커스도 거기 있다), 확인이 어떻게 끝나든 그 문장이 사라진다 — 받았으면 결과
   // 문장으로, 아니면 다시 그려진 수령 버튼으로 포커스를 옮긴다.
@@ -39,7 +39,7 @@ export function useAttendanceClaim({
       }
       void queryClient.invalidateQueries({ queryKey: cloverKeys.balance() });
       void queryClient.invalidateQueries({ queryKey: cloverKeys.ledgers() });
-      setFailure(null);
+      setFailure(undefined);
       onGranted(board);
       onFocusMove("message");
     } catch {
@@ -49,7 +49,7 @@ export function useAttendanceClaim({
   }
 
   function claim(lastClaimedOnBefore: string | null) {
-    setFailure(null);
+    setFailure(undefined);
     mutation.mutate(
       { lastClaimedOnBefore },
       {

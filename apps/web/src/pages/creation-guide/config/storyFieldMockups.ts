@@ -70,10 +70,10 @@ export type MockupKind =
 
 export type FieldMockup = {
   kind: MockupKind;
-  /** 튜토리얼 시드 JSON 에서 같은 칸의 경로(배열 위치는 `*`). 시드에 그 칸이 없거나 값이 비어 있으면 null — 예시 값을 free 로만 쓸 수 있다. */
-  seedPath: string | null;
-  /** null 이면 원고가 그 칸을 AI가 언제 읽는지 말한 적이 없다는 뜻이라 캡션·개요 목록에 싣지 않는다(새 사실을 만들지 않는다). */
-  readTiming: ReadTimingId | null;
+  /** 튜토리얼 시드 JSON 에서 같은 칸의 경로(배열 위치는 `*`). 시드에 그 칸이 없거나 값이 비어 있으면 없다 — 예시 값을 free 로만 쓸 수 있다. */
+  seedPath?: string;
+  /** 없으면 원고가 그 칸을 AI가 언제 읽는지 말한 적이 없다는 뜻이라 캡션·개요 목록에 싣지 않는다(새 사실을 만들지 않는다). */
+  readTiming?: ReadTimingId;
   /** 글자 수 상한. 빌더 스키마의 상수만 가리킨다 — 숫자를 여기 따로 적으면 스키마와 어긋날 수 있다. */
   limit?: number;
   /** 빌더가 `n/상한` 카운터를 그리는 칸. 목업도 같은 자리(입력칸 바로 아래 오른쪽)에 그린다. 칩 칸이면 입력칸에 쓰는
@@ -86,7 +86,7 @@ export type FieldMockup = {
  * 키 집합이 그 상수와 같아야 한다(빠지거나 남으면 타입 에러).
  */
 export const STORY_FIELD_MOCKUPS = {
-  "profile.image": { kind: "image", seedPath: null, readTiming: "notRead" },
+  "profile.image": { kind: "image", readTiming: "notRead" },
   "profile.name": { kind: "text", seedPath: "name", readTiming: "notRead", limit: MAX_NAME_LENGTH, counter: true },
   "profile.oneLiner": {
     kind: "text",
@@ -96,8 +96,8 @@ export const STORY_FIELD_MOCKUPS = {
     counter: true,
   },
 
-  "storySetting.promptTemplate": { kind: "toggle", seedPath: "promptTemplate", readTiming: null },
-  "storySetting.customPrompt": { kind: "textarea", seedPath: null, readTiming: null },
+  "storySetting.promptTemplate": { kind: "toggle", seedPath: "promptTemplate" },
+  "storySetting.customPrompt": { kind: "textarea" },
   "storySetting.worldSetting": { kind: "textarea", seedPath: "settingText", readTiming: "everyTurn" },
   "storySetting.rules": { kind: "textarea", seedPath: "rules", readTiming: "everyTurn" },
   "storySetting.userGoal": { kind: "textarea", seedPath: "userGoal", readTiming: "everyTurn" },
@@ -109,18 +109,16 @@ export const STORY_FIELD_MOCKUPS = {
   "storySetting.developmentExamples.*.userLine": {
     kind: "textarea",
     seedPath: "developmentExamples.*.userLine",
-    readTiming: null,
   },
   "storySetting.developmentExamples.*.assistantLine": {
     kind: "textarea",
     seedPath: "developmentExamples.*.assistantLine",
-    readTiming: null,
   },
   // 장면 헤더는 생성 AI 가 읽지 않는 화면 설정이다(첫 장면 두 칸도 같다). 튜토리얼 시드는 헤더를 켜고 첫 장면을 채운다.
-  "storySetting.sceneHeaderEnabled": { kind: "switch", seedPath: "sceneHeaderEnabled", readTiming: null },
+  "storySetting.sceneHeaderEnabled": { kind: "switch", seedPath: "sceneHeaderEnabled" },
 
-  startingSetups: { kind: "cardList", seedPath: "startingSetups", readTiming: null },
-  "startingSetups.*.name": { kind: "text", seedPath: "startingSetups.*.name", readTiming: null },
+  startingSetups: { kind: "cardList", seedPath: "startingSetups" },
+  "startingSetups.*.name": { kind: "text", seedPath: "startingSetups.*.name" },
   "startingSetups.*.prologue": { kind: "textarea", seedPath: "startingSetups.*.prologue", readTiming: "everyTurn" },
   "startingSetups.*.openingSituation": {
     kind: "textarea",
@@ -130,56 +128,50 @@ export const STORY_FIELD_MOCKUPS = {
   "startingSetups.*.initialScenePlace": {
     kind: "text",
     seedPath: "startingSetups.*.initialScenePlace",
-    readTiming: null,
     limit: MAX_STORY_SCENE_FIELD_LENGTH,
     counter: true,
   },
   "startingSetups.*.initialSceneTime": {
     kind: "text",
     seedPath: "startingSetups.*.initialSceneTime",
-    readTiming: null,
     limit: MAX_STORY_SCENE_FIELD_LENGTH,
     counter: true,
   },
-  "startingSetups.*.$advanced": { kind: "switch", seedPath: null, readTiming: null },
+  "startingSetups.*.$advanced": { kind: "switch" },
   "startingSetups.*.playGuide": { kind: "textarea", seedPath: "startingSetups.*.playguide", readTiming: "notRead" },
   // 목록은 화면에만 보이지만 누른 답변은 사용자 메시지로 AI에게 가서, 읽는 때 한 가지로 말할 수 없다.
   "startingSetups.*.suggestedReplies": {
     kind: "chips",
     seedPath: "startingSetups.*.suggestedReplies",
-    readTiming: null,
   },
 
-  "startingSetups.*.stats": { kind: "cardList", seedPath: "startingSetups.*.statDefs", readTiming: null },
-  "startingSetups.*.stats.*.icon": { kind: "icon", seedPath: "startingSetups.*.statDefs.*.icon", readTiming: null },
-  "startingSetups.*.stats.*.color": { kind: "color", seedPath: "startingSetups.*.statDefs.*.color", readTiming: null },
-  "startingSetups.*.stats.*.name": { kind: "text", seedPath: "startingSetups.*.statDefs.*.name", readTiming: null },
-  "startingSetups.*.stats.*.min": { kind: "number", seedPath: "startingSetups.*.statDefs.*.minValue", readTiming: null },
-  "startingSetups.*.stats.*.max": { kind: "number", seedPath: "startingSetups.*.statDefs.*.maxValue", readTiming: null },
+  "startingSetups.*.stats": { kind: "cardList", seedPath: "startingSetups.*.statDefs" },
+  "startingSetups.*.stats.*.icon": { kind: "icon", seedPath: "startingSetups.*.statDefs.*.icon" },
+  "startingSetups.*.stats.*.color": { kind: "color", seedPath: "startingSetups.*.statDefs.*.color" },
+  "startingSetups.*.stats.*.name": { kind: "text", seedPath: "startingSetups.*.statDefs.*.name" },
+  "startingSetups.*.stats.*.min": { kind: "number", seedPath: "startingSetups.*.statDefs.*.minValue" },
+  "startingSetups.*.stats.*.max": { kind: "number", seedPath: "startingSetups.*.statDefs.*.maxValue" },
   "startingSetups.*.stats.*.initial": {
     kind: "number",
     seedPath: "startingSetups.*.statDefs.*.initialValue",
-    readTiming: null,
   },
   // 시드의 단위는 모두 null 이라 인용할 글이 없다.
-  "startingSetups.*.stats.*.unit": { kind: "text", seedPath: null, readTiming: null },
+  "startingSetups.*.stats.*.unit": { kind: "text" },
   // 튜토리얼 시드의 스탯은 턴당 자동 변화를 쓰지 않는다 — 시계도 판정을 받는 스탯이다.
-  "startingSetups.*.stats.*.perTurnDelta": { kind: "number", seedPath: null, readTiming: null },
+  "startingSetups.*.stats.*.perTurnDelta": { kind: "number" },
   "startingSetups.*.stats.*.description": {
     kind: "textarea",
     seedPath: "startingSetups.*.statDefs.*.description",
     readTiming: "judge",
   },
   // 숨김·플레이어용 설명·익명 신호는 AI가 읽지 않는 화면 설정이고 튜토리얼 시드도 쓰지 않는다.
-  "startingSetups.*.stats.*.hiddenFromPlayer": { kind: "switch", seedPath: null, readTiming: null },
+  "startingSetups.*.stats.*.hiddenFromPlayer": { kind: "switch" },
   "startingSetups.*.stats.*.playerDescription": {
     kind: "text",
-    seedPath: null,
-    readTiming: null,
     limit: MAX_STAT_PLAYER_DESCRIPTION_LENGTH,
     counter: true,
   },
-  "startingSetups.*.stats.*.signalHiddenChange": { kind: "switch", seedPath: null, readTiming: null },
+  "startingSetups.*.stats.*.signalHiddenChange": { kind: "switch" },
   "startingSetups.*.stats.*.rules": {
     kind: "statChangeRules",
     seedPath: "startingSetups.*.statDefs.*.rules",
@@ -188,28 +180,24 @@ export const STORY_FIELD_MOCKUPS = {
   "startingSetups.*.stats.*.rules.*.condition": {
     kind: "textarea",
     seedPath: "startingSetups.*.statDefs.*.rules.*.condition",
-    readTiming: null,
     limit: MAX_STAT_RULE_CONDITION_LENGTH,
     counter: true,
   },
   "startingSetups.*.stats.*.rules.*.delta": {
     kind: "number",
     seedPath: "startingSetups.*.statDefs.*.rules.*.delta",
-    readTiming: null,
   },
 
-  "startingSetups.*.situationNotes": { kind: "cardList", seedPath: "startingSetups.*.situationNotes", readTiming: null },
+  "startingSetups.*.situationNotes": { kind: "cardList", seedPath: "startingSetups.*.situationNotes" },
   "startingSetups.*.situationNotes.*.name": {
     kind: "text",
     seedPath: "startingSetups.*.situationNotes.*.name",
-    readTiming: null,
     limit: MAX_SITUATION_NOTE_NAME_LENGTH,
     counter: true,
   },
   "startingSetups.*.situationNotes.*.conditionRules": {
     kind: "statRules",
     seedPath: "startingSetups.*.situationNotes.*.conditionRules",
-    readTiming: null,
   },
   "startingSetups.*.situationNotes.*.content": {
     kind: "textarea",
@@ -220,31 +208,28 @@ export const STORY_FIELD_MOCKUPS = {
   },
 
   // 튜토리얼 시드에는 미디어 북이 없다 — 이 탭의 예시는 모두 free 다.
-  mediaBook: { kind: "group", seedPath: null, readTiming: null },
-  "mediaBook.people": { kind: "chips", seedPath: null, readTiming: "imagePick", limit: MAX_MEDIA_BOOK_NAME_LENGTH },
-  "mediaBook.scenes": { kind: "chips", seedPath: null, readTiming: "imagePick", limit: MAX_MEDIA_BOOK_NAME_LENGTH },
-  "mediaBook.cells": { kind: "mediaGrid", seedPath: null, readTiming: null },
+  mediaBook: { kind: "group" },
+  "mediaBook.people": { kind: "chips", readTiming: "imagePick", limit: MAX_MEDIA_BOOK_NAME_LENGTH },
+  "mediaBook.scenes": { kind: "chips", readTiming: "imagePick", limit: MAX_MEDIA_BOOK_NAME_LENGTH },
+  "mediaBook.cells": { kind: "mediaGrid" },
   "mediaBook.cells.*.situationDescription": {
     kind: "textarea",
-    seedPath: null,
     readTiming: "imagePick",
     limit: MAX_MEDIA_BOOK_SITUATION_LENGTH,
     counter: true,
   },
   "mediaBook.cells.*.unlockHint": {
     kind: "text",
-    seedPath: null,
     readTiming: "notRead",
     limit: MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH,
     counter: true,
   },
-  "mediaBook.cells.*.excludeFromChat": { kind: "switch", seedPath: null, readTiming: null },
+  "mediaBook.cells.*.excludeFromChat": { kind: "switch" },
 
-  keywordNotes: { kind: "cardList", seedPath: "keywordNotes", readTiming: null },
+  keywordNotes: { kind: "cardList", seedPath: "keywordNotes" },
   "keywordNotes.*.name": {
     kind: "text",
     seedPath: "keywordNotes.*.name",
-    readTiming: null,
     limit: MAX_KEYWORD_NOTE_NAME_LENGTH,
     counter: true,
   },
@@ -258,34 +243,30 @@ export const STORY_FIELD_MOCKUPS = {
   "keywordNotes.*.triggerKeywords": {
     kind: "chips",
     seedPath: "keywordNotes.*.triggerKeywords",
-    readTiming: null,
     limit: MAX_TRIGGER_KEYWORD_LENGTH,
     counter: true,
   },
   // 금지 키워드는 트리거 키워드와 같은 길이 규칙을 쓴다(빌더 스키마가 같은 목록 스키마를 공유한다).
   "keywordNotes.*.excludeKeywords": {
     kind: "chips",
-    seedPath: null,
-    readTiming: null,
     limit: MAX_TRIGGER_KEYWORD_LENGTH,
     counter: true,
   },
-  "keywordNotes.*.stickyTurns": { kind: "select", seedPath: null, readTiming: null },
-  "keywordNotes.*.alwaysOn": { kind: "switch", seedPath: null, readTiming: null },
+  "keywordNotes.*.stickyTurns": { kind: "select" },
+  "keywordNotes.*.alwaysOn": { kind: "switch" },
   // 시드의 `startingSetupId` 가 null 이면 빌더의 "스토리 전체"다.
-  "keywordNotes.*.scope": { kind: "toggle", seedPath: "keywordNotes.*.startingSetupId", readTiming: null },
+  "keywordNotes.*.scope": { kind: "toggle", seedPath: "keywordNotes.*.startingSetupId" },
 
-  shortcuts: { kind: "cardList", seedPath: "shortcuts", readTiming: null },
-  "shortcuts.*.name": { kind: "text", seedPath: "shortcuts.*.name", readTiming: null },
-  "shortcuts.*.description": { kind: "text", seedPath: "shortcuts.*.description", readTiming: null },
+  shortcuts: { kind: "cardList", seedPath: "shortcuts" },
+  "shortcuts.*.name": { kind: "text", seedPath: "shortcuts.*.name" },
+  "shortcuts.*.description": { kind: "text", seedPath: "shortcuts.*.description" },
   "shortcuts.*.prompt": { kind: "textarea", seedPath: "shortcuts.*.prompt", readTiming: "shortcut" },
 
-  "startingSetups.*.endings": { kind: "cardList", seedPath: "startingSetups.*.endings", readTiming: null },
-  "startingSetups.*.endings.*.name": { kind: "text", seedPath: "startingSetups.*.endings.*.name", readTiming: null },
+  "startingSetups.*.endings": { kind: "cardList", seedPath: "startingSetups.*.endings" },
+  "startingSetups.*.endings.*.name": { kind: "text", seedPath: "startingSetups.*.endings.*.name" },
   "startingSetups.*.endings.*.turnGate": {
     kind: "number",
     seedPath: "startingSetups.*.endings.*.turnCountGate",
-    readTiming: null,
   },
   "startingSetups.*.endings.*.judgePrompt": {
     kind: "textarea",
@@ -301,13 +282,11 @@ export const STORY_FIELD_MOCKUPS = {
   "startingSetups.*.endings.*.statRules": {
     kind: "statRules",
     seedPath: "startingSetups.*.endings.*.statRules",
-    readTiming: null,
   },
   // 시드는 우선 스탯을 이름(`priorityStat`)으로 적는다 — 로더가 id 로 바꾼다.
   "startingSetups.*.endings.*.priorityStatId": {
     kind: "select",
     seedPath: "startingSetups.*.endings.*.priorityStat",
-    readTiming: null,
   },
 
   "registration.description": {
@@ -327,7 +306,7 @@ export const STORY_FIELD_MOCKUPS = {
     counter: true,
   },
   "registration.visibility": { kind: "toggle", seedPath: "visibility", readTiming: "notRead" },
-  "registration.novelPermission": { kind: "toggle", seedPath: null, readTiming: null },
+  "registration.novelPermission": { kind: "toggle" },
 } as const satisfies Record<StoryFieldKey, FieldMockup>;
 
 export type StoryFieldMockups = Readonly<Record<StoryFieldKey, FieldMockup>>;

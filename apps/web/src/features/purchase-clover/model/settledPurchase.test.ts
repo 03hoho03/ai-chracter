@@ -16,7 +16,7 @@ describe("toSettledPurchase", () => {
   it("서버가 받은 수량을 싣지 않았으면 수량 없이 성공만 낸다", () => {
     expect(toSettledPurchase({ status: "paid", grantedPaid: null, grantedBonus: null })).toEqual({
       result: "paid",
-      grant: null,
+      grant: undefined,
     });
   });
 
@@ -24,7 +24,7 @@ describe("toSettledPurchase", () => {
   it("받은 수량 칸이 없는 옛 응답이면 수량 없이 성공만 낸다", () => {
     expect(toSettledPurchase({ status: "paid" })).toEqual({
       result: "paid",
-      grant: null,
+      grant: undefined,
     });
   });
 
@@ -32,7 +32,7 @@ describe("toSettledPurchase", () => {
   it("확인 중이면 수량이 와도 싣지 않는다", () => {
     expect(toSettledPurchase({ status: "pending", grantedPaid: 9900, grantedBonus: 990 })).toEqual({
       result: "checking",
-      grant: null,
+      grant: undefined,
     });
   });
 
@@ -40,7 +40,7 @@ describe("toSettledPurchase", () => {
     ["failed", "notCompleted"],
     ["mismatch", "problem"],
   ] as const)("%s 는 %s 로 끝난다", (status, result) => {
-    expect(toSettledPurchase({ status, grantedPaid: null, grantedBonus: null })).toEqual({ result, grant: null });
+    expect(toSettledPurchase({ status, grantedPaid: null, grantedBonus: null })).toEqual({ result, grant: undefined });
   });
 });
 
@@ -59,7 +59,7 @@ describe("settleFailedCompletion", () => {
   it("내 결제가 아니라는 404 면 결과를 그리지 않는다", () => {
     expect(
       settleFailedCompletion(new ApiErrorObject({ status: 404, message: "x", detail: { code: "PAYMENT_NOT_FOUND" } })),
-    ).toBeNull();
+    ).toBeUndefined();
   });
 
   // 확인 요청만 실패했을 수 있다(포트원 조회 실패 등) — 결제는 됐을 수 있고 웹훅이 같은 결제를 맞춘다.
@@ -68,6 +68,6 @@ describe("settleFailedCompletion", () => {
     new ApiErrorObject({ status: 404, message: "x", detail: { code: "OTHER" } }),
     new Error("network"),
   ])("그 밖의 실패는 확인 중이다 (%o)", (error) => {
-    expect(settleFailedCompletion(error)).toEqual({ result: "checking", grant: null });
+    expect(settleFailedCompletion(error)).toEqual({ result: "checking", grant: undefined });
   });
 });

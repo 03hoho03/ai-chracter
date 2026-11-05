@@ -9,7 +9,7 @@ import {
 
 describe("nextParagraphRange", () => {
   it("고른 것이 없으면 그 문단 하나를 고른다", () => {
-    expect(nextParagraphRange(null, 3)).toEqual({ start: 3, end: 3 });
+    expect(nextParagraphRange(undefined, 3)).toEqual({ start: 3, end: 3 });
   });
 
   it("범위 바로 뒤를 누르면 한 칸 늘린다", () => {
@@ -31,12 +31,12 @@ describe("nextParagraphRange", () => {
   });
 
   it("하나만 고른 문단을 다시 누르면 푼다", () => {
-    expect(nextParagraphRange({ start: 3, end: 3 }, 3)).toBeNull();
+    expect(nextParagraphRange({ start: 3, end: 3 }, 3)).toBeUndefined();
   });
 
   it("Shift 로 범위 밖을 누르면 늘린다", () => {
     expect(nextParagraphRange({ start: 2, end: 2 }, 6, { isExtending: true })).toEqual({ start: 2, end: 6 });
-    expect(nextParagraphRange(null, 6, { isExtending: true })).toEqual({ start: 6, end: 6 });
+    expect(nextParagraphRange(undefined, 6, { isExtending: true })).toEqual({ start: 6, end: 6 });
   });
 
   it("Shift 로 범위 안을 누르면 다시 시작하지 않고 끝을 그 문단으로 옮긴다", () => {
@@ -59,8 +59,8 @@ describe("clampParagraphRange", () => {
   });
 
   it("문단이 없으면 범위도 없다", () => {
-    expect(clampParagraphRange({ start: 0, end: 0 }, 0)).toBeNull();
-    expect(clampParagraphRange(null, 3)).toBeNull();
+    expect(clampParagraphRange({ start: 0, end: 0 }, 0)).toBeUndefined();
+    expect(clampParagraphRange(undefined, 3)).toBeUndefined();
   });
 });
 
@@ -72,6 +72,6 @@ describe("formatParagraphRange", () => {
 
   it("알림 문장은 범위를 말하고, 없으면 없다고 말한다", () => {
     expect(toParagraphSelectionAnnouncement({ start: 2, end: 4 })).toBe("3~5번째 문단을 골랐어요.");
-    expect(toParagraphSelectionAnnouncement(null)).toBe("고른 문단이 없어요.");
+    expect(toParagraphSelectionAnnouncement(undefined)).toBe("고른 문단이 없어요.");
   });
 });

@@ -29,7 +29,7 @@ export function usePaymentRedirect(
 
     void (async () => {
       if (redirect.kind === "notCompleted") {
-        onSettled({ result: "notCompleted", grant: null });
+        onSettled({ result: "notCompleted", grant: undefined });
       } else {
         try {
           onSettled(toSettledPurchase(await mutateAsync(redirect.paymentId)));

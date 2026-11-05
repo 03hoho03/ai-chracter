@@ -60,7 +60,7 @@ describe("toNovelActionError", () => {
 
   it.each(SERVER_CODES)("%i %s 는 일반 실패 문구가 아니라 자기 문구를 갖는다", (status, code) => {
     const notice = toNovelActionError(apiError(status, { code }), "generate");
-    expect(notice).not.toBeNull();
+    expect(notice).toBeDefined();
     expect(notice?.message).not.toBe(fallbackMessage);
   });
 
@@ -218,7 +218,7 @@ describe("toNovelActionError", () => {
   });
 
   it("재동의 403 은 이 화면이 말하지 않는다(전역 모달이 맡는다)", () => {
-    expect(toNovelActionError(apiError(403, { code: "LEGAL_RECONSENT_REQUIRED", consents: ["collection", "transfer"] }), "generate")).toBeNull();
+    expect(toNovelActionError(apiError(403, { code: "LEGAL_RECONSENT_REQUIRED", consents: ["collection", "transfer"] }), "generate")).toBeUndefined();
   });
 
   describe("429 소설화 창", () => {

@@ -18,7 +18,7 @@ type NovelPermissionFieldProps = {
   onChange: (value: NovelPermission) => void;
   fieldRef: Ref<HTMLDivElement>;
   choice: NovelPermissionChoiceView;
-  earningRate: string | null;
+  earningRate: string | undefined;
 };
 
 /**
