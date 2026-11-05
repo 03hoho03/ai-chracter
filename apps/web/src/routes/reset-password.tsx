@@ -8,12 +8,12 @@ import { ResetPasswordPage } from "@/pages/reset-password";
 // "토큰 없음"으로 정규화해 실패를 그대로 드러내는 쪽이다. 아래 loader의
 // `validatePasswordResetToken("")`이 400을 받아 `isTokenValid: false`가 되고, 페이지가 폼 대신
 // "링크가 만료되었어요" + 재요청 버튼을 그린다. `validateSearch` 8곳 공통 처방.
-const resetPasswordSearchSchema = z.object({
+const RESET_PASSWORD_SEARCH_SCHEMA = z.object({
   token: z.string().catch(""),
 });
 
 export const Route = createFileRoute("/reset-password")({
-  validateSearch: resetPasswordSearchSchema,
+  validateSearch: RESET_PASSWORD_SEARCH_SCHEMA,
   loaderDeps: ({ search }) => ({ token: search.token }),
   loader: async ({ deps }) => ({ isTokenValid: await validatePasswordResetToken(deps.token) }),
   component: RouteComponent,

@@ -17,7 +17,7 @@ export function EditPersonaForm({ persona, onSaved, onCancel }: EditPersonaFormP
   return (
     <PersonaFormBody
       defaultValues={serverToForm(persona)}
-      showsSetAsDefault={false}
+      shouldShowSetAsDefault={false}
       submitLabel="저장"
       onCancel={onCancel}
       onValidSubmit={async (values) =>

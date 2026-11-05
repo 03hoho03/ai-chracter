@@ -8,12 +8,12 @@ import { WebnovelEpisodePage } from "@/pages/webnovel-episode";
 // (`isGlobalHeaderHidden`·`isSiteFooterHidden`)이 이 경로도 본다.
 // `edition` 은 소장자가 고른 산 때의 판이다 — 없으면 최신 판. 주소에 두어 새로고침·뒤로 가기가 고른 판을 지킨다.
 // 스키마를 페이지 barrel 이 아니라 여기 두는 이유는 노벨 목록 라우트와 같다(페이지 전체가 첫 화면 번들로 끌려간다).
-const webnovelEpisodeSearchSchema = z.object({
+const WEBNOVEL_EPISODE_SEARCH_SCHEMA = z.object({
   edition: z.number().int().positive().optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/webnovels/$novelId/episodes/$chapterId")({
-  validateSearch: webnovelEpisodeSearchSchema,
+  validateSearch: WEBNOVEL_EPISODE_SEARCH_SCHEMA,
   beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
   component: RouteComponent,
 });

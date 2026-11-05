@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { ResetPasswordFormValues } from "./schema";
+import type { ResetPasswordFormValues } from "./resetPasswordSchema";
 
 type PasswordResetConfirmRequest = components["schemas"]["PasswordResetConfirmRequest"];
 

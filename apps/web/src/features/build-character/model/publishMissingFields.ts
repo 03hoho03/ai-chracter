@@ -1,6 +1,6 @@
 import type { Path } from "react-hook-form";
 
-import type { CharacterBuilderFormValues } from "./schema";
+import type { CharacterBuilderFormValues } from "./characterBuilderSchema";
 
 // 서버(validate_character_publish)가 400 으로 돌려주는 필드명을 form.setError() 가 받는 폼 경로로 옮긴다. 키 집합은 그 함수가
 // 내는 필드 전부다. 값은 tabs.ts(CHARACTER_TABS)의 fields 프리픽스 아래에 들어간다(profile.* 는 profile 탭, registration.* 는

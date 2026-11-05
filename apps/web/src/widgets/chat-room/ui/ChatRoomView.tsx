@@ -286,7 +286,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
   // 작품이 이용제한·삭제됐다 — 방을 열 때 서버가 알려 주거나(`contentRestricted`), 연 뒤에 제한돼 보내기가 거부됐다.
   // 어느 쪽이든 입력창·재생성·편집을 걷고 안내만 남긴다(읽기·삭제·신고는 그대로).
-  const isRestricted = room.contentRestricted || (status.kind === "error" && status.restricted === true);
+  const isRestricted = room.contentRestricted || (status.kind === "error" && status.isRestricted === true);
   // 모델 칩은 헤더(sm 이상)와 입력 바(sm 미만) 두 자리에 같은 판정으로 선다. 이름은 방 응답에 실려 와 방과 같은 렌더에
   // 그려진다 — 따로 받아 오면 칩이 늦게 끼어들며 작품 이름 열을 줄이고 대화 목록을 민다.
   const chatModelChipLabel = chatModelChipName({
@@ -321,10 +321,10 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       errorNotice = <SessionEndedNotice reason={status.sessionEnded} />;
     } else if (status.rateLimit) {
       errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="chat" onRetry={retry} />;
-    } else if (status.identityRequired) {
+    } else if (status.isIdentityRequired) {
       // 다시 보내도 같은 403 이라 재시도 버튼을 두지 않고, 실패가 아니라 경고 틴트도 쓰지 않는다.
       errorNotice = <IdentityRequiredNotice reason="free-rewards" />;
-    } else if (status.busy) {
+    } else if (status.isBusy) {
       // 앞 턴이 끝나지 않아 시작도 안 한 요청이다. 실패가 아니라 빨간 alert를 쓰지 않고, 아래 거절 배너와 같은
       // 중립 표면에 사실과 다음 행동만 둔다.
       errorNotice = (
@@ -336,7 +336,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           </Button>
         </div>
       );
-    } else if (status.declined) {
+    } else if (status.isDeclined) {
       // 확인 모달에서 그만둔 것은 실패가 아니다. `destructive`(위험 액션)도
       // 쓰지 않는다 — 사용자가 고른 결과라 경고할 일이 없다. 중립 표면으로 사실만
       // 말하고 다시 보낼 길은 열어 둔다(낙관적 사용자 메시지가 이미 목록에 있다).

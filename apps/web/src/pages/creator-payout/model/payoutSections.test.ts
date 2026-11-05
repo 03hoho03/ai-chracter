@@ -7,25 +7,25 @@ const IN_PROGRESS = { amountKrw: 12_000, requestedAt: "2026-10-05T00:00:00Z" };
 describe("getPayoutSections", () => {
   it("서버가 지급을 받으면 신청·지급 정보·지급 내역을 모두 보인다", () => {
     expect(getPayoutSections({ everApproved: true, payoutAvailable: true, inProgressPayout: null })).toEqual({
-      request: true,
-      payoutInfo: true,
-      payouts: true,
+      shouldShowRequest: true,
+      shouldShowPayoutInfo: true,
+      shouldShowPayouts: true,
     });
   });
 
   it("서버가 새 신청을 받지 않아도 지급 내역은 보이고, 신청과 지급 정보는 감춘다", () => {
     expect(getPayoutSections({ everApproved: true, payoutAvailable: false, inProgressPayout: IN_PROGRESS })).toEqual({
-      request: false,
-      payoutInfo: false,
-      payouts: true,
+      shouldShowRequest: false,
+      shouldShowPayoutInfo: false,
+      shouldShowPayouts: true,
     });
   });
 
   it("승인된 적이 없으면 아무것도 보이지 않는다", () => {
     expect(getPayoutSections({ everApproved: false, payoutAvailable: true, inProgressPayout: null })).toEqual({
-      request: false,
-      payoutInfo: false,
-      payouts: false,
+      shouldShowRequest: false,
+      shouldShowPayoutInfo: false,
+      shouldShowPayouts: false,
     });
   });
 });

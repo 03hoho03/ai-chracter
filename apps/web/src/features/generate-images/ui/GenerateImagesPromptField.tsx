@@ -15,7 +15,7 @@ import {
 import { getGenerateButtonState } from "../model/generateButtonState";
 import { formatImageCostHint, isImageCloverShort } from "../model/imageCloverCost";
 import { getPromptSyntaxHint, PROMPT_WEIGHT_SYNTAX_HINT } from "../model/promptSyntaxHint";
-import type { GenerateImagesFormValues } from "../model/schema";
+import type { GenerateImagesFormValues } from "../model/generateImagesSchema";
 import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
 
 // danbooru 태그 예시(품질 부스터 금지, 서버에서 치운

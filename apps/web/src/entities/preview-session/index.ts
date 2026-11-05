@@ -15,4 +15,4 @@ export type {
 export { applyPreviewStreamEvent } from "./model/applyPreviewStreamEvent";
 export { buildPreviewSendPayload } from "./model/buildPreviewSendPayload";
 export { buildPreviewStartState } from "./model/buildPreviewStartState";
-export { previewStreamEventSchema } from "./api/previewStream";
+export { PREVIEW_STREAM_EVENT_SCHEMA } from "./api/previewStream";

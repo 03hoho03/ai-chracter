@@ -99,7 +99,7 @@ export function NovelOutlineStep(props: NovelOutlineStepProps) {
 
   // 스위치를 막 껐으면 가격을 다시 받아 구성 화면을 거둔다.
   useEffect(() => {
-    if (error === null || toOutlineRecovery(error).refetchPricing === false) return;
+    if (error === null || toOutlineRecovery(error).shouldRefetchPricing === false) return;
     toast("지금은 구성 흐름을 쓸 수 없어요.");
     void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
   }, [error]);
@@ -241,16 +241,16 @@ function OutlineEditor({
     const actionError = toNovelActionError(error, action);
     const result = tooLong === undefined || actionError === null ? actionError : { ...actionError, message: tooLong };
     const recovery = toOutlineRecovery(error);
-    if (recovery.resetEdits) {
+    if (recovery.shouldResetEdits) {
       setEdits(undefined);
       setEditingId(undefined);
       setSplittingId(undefined);
     }
-    if (recovery.refetchOutline) void queryClient.invalidateQueries({ queryKey: novelKeys.outline(novel.id) });
-    if (recovery.refetchMessages && novel.chatRoomId !== null) {
+    if (recovery.shouldRefetchOutline) void queryClient.invalidateQueries({ queryKey: novelKeys.outline(novel.id) });
+    if (recovery.shouldRefetchMessages && novel.chatRoomId !== null) {
       void queryClient.invalidateQueries({ queryKey: chatRoomKeys.sourceMessages(novel.chatRoomId) });
     }
-    if (recovery.refetchPricing) {
+    if (recovery.shouldRefetchPricing) {
       // 가격을 다시 받으면 구성 화면이 거둬져 이 안내도 함께 사라진다 — 화면 밖에 남는 알림으로 말한다.
       if (result !== null) toast(result.message);
       void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });

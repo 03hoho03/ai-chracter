@@ -1,4 +1,4 @@
-import type { GenerateImagesFormValues } from "./schema";
+import type { GenerateImagesFormValues } from "./generateImagesSchema";
 
 type ImageAspectRatio = GenerateImagesFormValues["aspectRatio"];
 

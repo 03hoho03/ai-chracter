@@ -19,7 +19,7 @@ from typing import Any
 import httpx
 import pytest
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import chat_lab_export_turns
 from api.core.config import settings
@@ -30,6 +30,7 @@ from chat_lab.bundles import CHAT_TURNS_NAME, DUMP_NAME, SNAPSHOTS_NAME, Bundle,
 from chat_lab.chat_turns_file import chat_turn_row, export_text, parse_chat_turns, prices_sha256
 from chat_lab import export_turns
 from chat_lab.export_turns import ExportRefusedError, export_chat_turns
+from chat_lab.schemas import SourceCommit
 from driver_harness import (
     _DRIVE_RAISE_RULE,
     DRIVE_HIDDEN_RULE,
@@ -39,6 +40,7 @@ from driver_harness import (
     drive_room,
     says,
 )
+from factories import _collect_engines
 
 UNREACHABLE_DB = "postgresql+asyncpg://lab:lab@127.0.0.1:1/chat_lab_unreachable"
 RAW_FILES = ("chat.jsonl", SNAPSHOTS_NAME, DUMP_NAME)
@@ -333,32 +335,37 @@ async def test_a_server_export_feeds_cost_and_hidden_stats_into_the_next_detail(
     assert (folder / CHAT_TURNS_NAME).is_symlink()
 
 
-async def test_the_server_opens_its_database_only_when_exporting(
+async def test_the_server_opens_its_database_only_for_exports_and_provenance_checks(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """세션을 따로 주지 않은 서버는 설정한 DB 주소로 엔진을 만든다. 엔진은 첫 내보내기 요청 때 하나만 만들고, 목록·상세는
-    만들지 않는다. 그 엔진은 다른 연결이라 이 테스트 트랜잭션의 방을 보지 못하므로, 내보내기는 "방 없음"(422)으로 파일 없이
-    끝난다 — 다른 DB 를 가리킨 서버가 빈 파일을 남기지 않는다는 것과 같은 일이다. 그 엔진의 트랜잭션은 읽기 전용이다(내보내기는
-    읽기만 한다 — 실수로 쓰는 코드가 들어와도 DB 가 거부한다)."""
+    """세션을 따로 주지 않은 서버는 설정한 DB 주소로 엔진을 만든다. DB 를 읽는 경로는 턴 기록 내보내기와 올리기 머리의 출처 조회
+    둘뿐이다 — 엔진은 그 둘 가운데 첫 요청 때 하나만 만들고 두 경로가 함께 쓴다(로컬 주소 하나). 목록·상세·통째 묶음(정적
+    내보내기가 받는 것)은 만들지 않는다. 그 엔진은 다른 연결이라 이 테스트 트랜잭션의 방을 보지 못하므로, 출처 조회는 방 없음
+    실패로, 내보내기는 "방 없음"(422)으로 파일 없이 끝난다 — 다른 DB 를 가리킨 서버가 빈 파일을 남기지 않는다는 것과 같은 일이다.
+    그 엔진의 트랜잭션은 읽기 전용이다(두 경로 모두 읽기만 한다 — 실수로 쓰는 코드가 들어와도 DB 가 거부한다). 만든 커밋은 띄울
+    때 읽은 값 자리에 고정값을 넘긴다 — 이 테스트는 DB 접속만 본다."""
     root, _, folder = await _hidden_root(db_session, monkeypatch, tmp_path)
     bundle = _bundle(root)
-    engines: list[AsyncEngine] = []
-    original = AsyncEngine.__init__
-
-    def counting(self: AsyncEngine, *args: Any, **kwargs: Any) -> None:
-        engines.append(self)
-        original(self, *args, **kwargs)
-
-    monkeypatch.setattr(AsyncEngine, "__init__", counting)
-    app = create_app(root=root, database_url=os.environ["DATABASE_URL"])
+    engines = _collect_engines(monkeypatch)
+    app = create_app(
+        root=root,
+        database_url=os.environ["DATABASE_URL"],
+        source_commit=SourceCommit(commit="0123456789abcdef0123456789abcdef01234567", dirty=False),
+    )
 
     async with _client(app) as client:
         await client.get("/runs")
         await client.get(f"/runs/{bundle.run_id}")
+        await client.get(f"/runs/{bundle.run_id}/bundle", params={"raw": "true"})
+        await client.get(f"/runs/{bundle.run_id}/bundle", params={"raw": "false"})
         assert engines == []
+        header = await client.post(f"/runs/{bundle.run_id}/upload-header", json={"exemptEmails": []})
+        assert len(engines) == 1
         first = await client.post(f"/runs/{bundle.run_id}/export-turns", json={"force": False})
         second = await client.post(f"/runs/{bundle.run_id}/export-turns", json={"force": False})
 
+    assert header.status_code == 200
+    assert (header.json()["provenance"]["roomFound"], header.json()["provenance"]["passed"]) == (False, False)
     assert [(answer.status_code, answer.json()["reason"]) for answer in (first, second)] == [(422, "noRoom")] * 2
     assert len(engines) == 1
     assert not (folder / CHAT_TURNS_NAME).exists()

@@ -503,7 +503,7 @@ def count_rules(items: Iterable[EndingRuleDraftItem | EndingRuleGroupDraftItem])
 
 
 # 키워드북 저장 상한. 빌더 자동저장은 폼 검증 없이 폼 값을 그대로 보내므로, 빌더가 입력 단계에서 같은 상한을 지켜야
-# 한다(`apps/web` `features/build-story/model/schema.ts` 의 키워드북 상수) — 여기가 더 엄격하면 그 초안의 자동저장이
+# 한다(`apps/web` `features/build-story/model/storyBuilderSchema.ts` 의 키워드북 상수) — 여기가 더 엄격하면 그 초안의 자동저장이
 # 통째로 멈춘다.
 # 길이는 보낸 글자 그대로의 코드 포인트 수다(빌더도 그렇게 센다). NFC 로 바꾼 뒤 재면 길어지는 문자가 있어 빌더가
 # 받아 준 값을 여기서 거절하게 된다.

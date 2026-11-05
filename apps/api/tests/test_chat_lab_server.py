@@ -22,17 +22,10 @@ import httpx
 import pytest
 import uvicorn
 from fastapi import FastAPI
-from redis.asyncio.connection import AbstractConnection
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 import chat_lab_server
 from api.core.config import settings
-from api.llm import dependencies
-from api.llm.anthropic_api import AnthropicLLMClient
-from api.llm.bedrock import BedrockLLMClient
-from api.llm.gemini import GeminiLLMClient
-from api.llm.routing import RoutingLLMClient
-from api.llm.voyage import VoyageEmbeddingClient
 from chat_lab import catalog, report
 from chat_lab.app import LAB_WEB_ORIGINS, create_app
 from chat_lab.bundles import CHAT_TURNS_NAME, DUMP_NAME, MANIFEST_NAME, SNAPSHOTS_NAME, discover_bundles
@@ -41,6 +34,7 @@ from chat_lab.join import join_bundle
 from chat_lab.report import list_entry, run_bundle, run_detail, run_metrics, turn_detail
 from chat_lab.run_id import encode_run_id
 from driver_harness import DRIVE_PERSONA_THEN, DrivenRoom, drive_room, says
+from factories import _count_llm_and_redis
 
 # 로컬 주소라 가드는 통과하지만 아무것도 듣지 않는 포트 — 접속하려 들면 곧바로 실패한다.
 UNREACHABLE_DB = "postgresql+asyncpg://lab:lab@127.0.0.1:1/chat_lab_unreachable"
@@ -366,37 +360,7 @@ async def test_reading_endpoints_build_no_llm_client_and_open_no_redis_or_databa
     테스트 앱은 Redis·가짜 LLM 을 쓴다."""
     root, _, _ = await _run_root(db_session, monkeypatch, tmp_path)
     [bundle] = discover_bundles(root)
-    seen: Counter[str] = Counter()
-
-    def counting_init(name: str, original: Callable[..., None]) -> Callable[..., None]:
-        def init(self: Any, *args: Any, **kwargs: Any) -> None:
-            seen[name] += 1
-            original(self, *args, **kwargs)
-
-        return init
-
-    for cls in (
-        GeminiLLMClient,
-        RoutingLLMClient,
-        AnthropicLLMClient,
-        BedrockLLMClient,
-        VoyageEmbeddingClient,
-        AsyncEngine,
-    ):
-        monkeypatch.setattr(cls, "__init__", counting_init(cls.__name__, cls.__init__))
-    original_get = dependencies.get_llm_client
-
-    def counting_get() -> Any:
-        seen["get_llm_client"] += 1
-        return original_get()
-
-    monkeypatch.setattr(dependencies, "get_llm_client", counting_get)
-
-    async def refuse_connect(self: AbstractConnection, *args: Any, **kwargs: Any) -> None:
-        seen["redis"] += 1
-        raise ConnectionError("측정 서버가 Redis 에 접속하려 했다")
-
-    monkeypatch.setattr(AbstractConnection, "connect_check_health", refuse_connect)
+    seen = _count_llm_and_redis(monkeypatch, AsyncEngine)
 
     app = create_app(root=root, database_url=UNREACHABLE_DB)
     async with _client(app) as client:
@@ -539,11 +503,13 @@ def test_the_openapi_dump_is_byte_stable_and_carries_no_settings_or_paths(
     assert statuses["/runs/{runId}"] == statuses["/runs/{runId}/metrics"] == {"get": read}
     assert statuses["/runs/{runId}/bundle"] == statuses["/runs/{runId}/turns/{clientTurn}"] == {"get": read}
     assert statuses["/runs/{runId}/export-turns"] == {"post": ["200", "403", "404", "409", "415", "422", "503"]}
-    unprocessable = spec["paths"]["/runs/{runId}/export-turns"]["post"]["responses"]["422"]
-    assert {item["$ref"] for item in unprocessable["content"]["application/json"]["schema"]["anyOf"]} == {
-        "#/components/schemas/LabError",
-        "#/components/schemas/HTTPValidationError",
-    }
+    assert statuses["/runs/{runId}/upload-header"] == {"post": ["200", "404", "415", "422", "503"]}
+    for writing in ("/runs/{runId}/export-turns", "/runs/{runId}/upload-header"):
+        unprocessable = spec["paths"][writing]["post"]["responses"]["422"]
+        assert {item["$ref"] for item in unprocessable["content"]["application/json"]["schema"]["anyOf"]} == {
+            "#/components/schemas/LabError",
+            "#/components/schemas/HTTPValidationError",
+        }
     paths = spec["paths"]
     assert sorted(paths) == [
         "/health",
@@ -553,4 +519,5 @@ def test_the_openapi_dump_is_byte_stable_and_carries_no_settings_or_paths(
         "/runs/{runId}/export-turns",
         "/runs/{runId}/metrics",
         "/runs/{runId}/turns/{clientTurn}",
+        "/runs/{runId}/upload-header",
     ]

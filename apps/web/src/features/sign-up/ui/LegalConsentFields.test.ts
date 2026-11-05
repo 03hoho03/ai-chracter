@@ -3,12 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { FormProvider, useForm } from "react-hook-form";
 import { describe, expect, it } from "vitest";
 
-import { signUpDefaultValues, type SignUpFormValues } from "../model/signUpSchema";
+import { SIGN_UP_DEFAULT_VALUES, type SignUpFormValues } from "../model/signUpSchema";
 
 import { LegalConsentFields } from "./LegalConsentFields";
 
 function LegalConsentFieldsWithForm() {
-  const form = useForm<SignUpFormValues>({ defaultValues: signUpDefaultValues });
+  const form = useForm<SignUpFormValues>({ defaultValues: SIGN_UP_DEFAULT_VALUES });
   return createElement(FormProvider<SignUpFormValues>, {
     ...form,
     children: createElement(LegalConsentFields),

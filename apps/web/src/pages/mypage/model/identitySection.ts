@@ -11,8 +11,8 @@ export type IdentitySection = { kind: "verified" } | { kind: "unverified"; messa
 
 /** 인증을 요구하는 기능 중 스위치로 켜고 끄는 것. */
 export type IdentityFeatures = {
-  payments: boolean;
-  creatorPayout: boolean;
+  isPaymentsEnabled: boolean;
+  isCreatorPayoutEnabled: boolean;
 };
 
 export function getIdentitySection(
@@ -33,9 +33,9 @@ export function getIdentitySection(
 function unverifiedMessage(identityGateEnabled: boolean, features: IdentityFeatures): string {
   const receive = identityGateEnabled ? "매일 출석 클로버와 미션 클로버를 받" : "매일 출석 클로버를 받";
   const purposes = [
-    features.payments && { stem: "클로버를 구매하", ending: "려면" },
+    features.isPaymentsEnabled && { stem: "클로버를 구매하", ending: "려면" },
     { stem: receive, ending: "으려면" },
-    features.creatorPayout && { stem: "크리에이터 정산을 신청하", ending: "려면" },
+    features.isCreatorPayoutEnabled && { stem: "크리에이터 정산을 신청하", ending: "려면" },
   ].filter((purpose) => purpose !== false);
 
   const clause = purposes
@@ -43,10 +43,10 @@ function unverifiedMessage(identityGateEnabled: boolean, features: IdentityFeatu
     .join(" ");
   const first = `${clause} 휴대폰 본인인증이 필요해요.`;
 
-  if (features.payments && features.creatorPayout) {
+  if (features.isPaymentsEnabled && features.isCreatorPayoutEnabled) {
     return `${first} 클로버 구매와 정산 신청은 만 19세 이상만 할 수 있어요.`;
   }
-  if (features.payments) return `${first} 만 19세 이상만 구매할 수 있어요.`;
-  if (features.creatorPayout) return `${first} 만 19세 이상만 신청할 수 있어요.`;
+  if (features.isPaymentsEnabled) return `${first} 만 19세 이상만 구매할 수 있어요.`;
+  if (features.isCreatorPayoutEnabled) return `${first} 만 19세 이상만 신청할 수 있어요.`;
   return first;
 }

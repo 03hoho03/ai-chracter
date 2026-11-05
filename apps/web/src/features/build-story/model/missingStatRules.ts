@@ -1,4 +1,4 @@
-import type { RuleListItemValues } from "./schema";
+import type { RuleListItemValues } from "./storyBuilderSchema";
 
 /**
  * 조건이 같은 시작설정의 스탯 목록에 없는 스탯을 가리키는가. 이 화면에서 스탯을 지우면 그 조건도 함께 지워지므로, 이런 조건은

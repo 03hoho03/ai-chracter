@@ -9,9 +9,9 @@ type PayoutSectionsInput = Pick<CreatorPayoutResponse, "everApproved" | "payoutA
  * 지급 정보 입력은 서버가 받을 때만 둔다. */
 export function getPayoutSections({ everApproved, payoutAvailable }: PayoutSectionsInput) {
   return {
-    request: everApproved && payoutAvailable,
-    payoutInfo: everApproved && payoutAvailable,
-    payouts: everApproved,
+    shouldShowRequest: everApproved && payoutAvailable,
+    shouldShowPayoutInfo: everApproved && payoutAvailable,
+    shouldShowPayouts: everApproved,
   };
 }
 

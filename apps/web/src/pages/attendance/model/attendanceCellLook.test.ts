@@ -37,8 +37,8 @@ describe("attendanceCellLook", () => {
   });
 
   it("특별일은 7·14·21·28칸이고 선물 표시를 단다", () => {
-    for (const seq of [7, 14, 21, 28]) expect(attendanceCellLook({ seq, status: "upcoming" }).showGift).toBe(true);
-    for (const seq of [1, 6, 8, 27]) expect(attendanceCellLook({ seq, status: "upcoming" }).showGift).toBe(false);
+    for (const seq of [7, 14, 21, 28]) expect(attendanceCellLook({ seq, status: "upcoming" }).shouldShowGift).toBe(true);
+    for (const seq of [1, 6, 8, 27]) expect(attendanceCellLook({ seq, status: "upcoming" }).shouldShowGift).toBe(false);
   });
 
   // 오늘·받음이면 그 상태의 모양을 따르고 선물 표시만 남는다.
@@ -48,8 +48,8 @@ describe("attendanceCellLook", () => {
     const specialToday = attendanceCellLook({ seq: 7, status: "today" });
     expect(classesOf(specialClaimed)).toBe(classesOf(claimed));
     expect(classesOf(specialToday)).toBe(classesOf(today));
-    expect(specialClaimed.showGift).toBe(true);
-    expect(specialToday.showGift).toBe(true);
+    expect(specialClaimed.shouldShowGift).toBe(true);
+    expect(specialToday.shouldShowGift).toBe(true);
   });
 });
 

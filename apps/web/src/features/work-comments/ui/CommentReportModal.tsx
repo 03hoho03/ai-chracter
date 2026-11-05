@@ -10,13 +10,13 @@ import type { z } from "zod";
 import type { CommentReportReason } from "@/entities/comment";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
-import { commentReportReasonSchema, commentReportSchema, REASON_OPTIONS } from "../model/reportSchema";
+import { COMMENT_REPORT_REASON_SCHEMA, COMMENT_REPORT_SCHEMA, REASON_OPTIONS } from "../model/reportSchema";
 
 export const CommentReportModal = createCallable<{
   mutationFn: MutationFn<void, CommentReportReason>; onRestoreFocus: () => void;
 }, void>(({ call, mutationFn, onRestoreFocus }) => {
   const errorId = useId();
-  const form = useForm<z.infer<typeof commentReportSchema>>({ resolver: zodResolver(commentReportSchema) });
+  const form = useForm<z.infer<typeof COMMENT_REPORT_SCHEMA>>({ resolver: zodResolver(COMMENT_REPORT_SCHEMA) });
   const submit = useMutationFlow(call, mutationFn);
   const isSubmitting = form.formState.isSubmitting || submit.pending;
   return (
@@ -31,10 +31,10 @@ export const CommentReportModal = createCallable<{
           <DialogBody className="flex flex-col gap-4">
             <Controller control={form.control} name="reason" render={({ field }) => (
               <ToggleGroup type="single" variant="list" orientation="vertical" value={field.value ?? ""}
-                onValueChange={(value) => field.onChange(commentReportReasonSchema.options.find((reason) => reason === value))}
+                onValueChange={(value) => field.onChange(COMMENT_REPORT_REASON_SCHEMA.options.find((reason) => reason === value))}
                 aria-label="신고 사유" aria-invalid={!!form.formState.errors.reason}
                 aria-describedby={form.formState.errors.reason ? errorId : undefined} className="w-full">
-                {commentReportReasonSchema.options.map((reason) => <ToggleGroupItem key={reason} value={reason} className="h-11 w-full justify-start hover:bg-secondary">{REASON_OPTIONS[reason].label}</ToggleGroupItem>)}
+                {COMMENT_REPORT_REASON_SCHEMA.options.map((reason) => <ToggleGroupItem key={reason} value={reason} className="h-11 w-full justify-start hover:bg-secondary">{REASON_OPTIONS[reason].label}</ToggleGroupItem>)}
               </ToggleGroup>
             )} />
             {!!form.formState.errors.reason && <p id={errorId} role="alert" className="text-xs text-destructive-text">{form.formState.errors.reason.message}</p>}

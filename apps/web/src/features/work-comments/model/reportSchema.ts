@@ -11,5 +11,5 @@ export const REASON_OPTIONS: { [Reason in CommentReportReason]: { value: Reason;
   other: { value: "other", label: "기타" },
 };
 
-export const commentReportReasonSchema = z.enum(Object.values(REASON_OPTIONS).map((option) => option.value), { message: "신고 사유를 선택해주세요." });
-export const commentReportSchema = z.object({ reason: commentReportReasonSchema });
+export const COMMENT_REPORT_REASON_SCHEMA = z.enum(Object.values(REASON_OPTIONS).map((option) => option.value), { message: "신고 사유를 선택해주세요." });
+export const COMMENT_REPORT_SCHEMA = z.object({ reason: COMMENT_REPORT_REASON_SCHEMA });

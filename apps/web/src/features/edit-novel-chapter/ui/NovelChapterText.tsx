@@ -327,7 +327,7 @@ export function NovelChapterText({
     // 옮길 시점은 입력칸이 닫힌 렌더 하나다.
   }, [manualEdit]);
 
-  function select(index: number, extend: boolean) {
+  function select(index: number, isExtending: boolean) {
     if (activeMove !== null) {
       // 놓을 자리는 문단 하나다 — 범위 늘리기(Shift)는 받지 않는다. 고른 문단을 다시 누르면 푼다.
       const isSame = activeRange !== null && activeRange.start === index && activeRange.end === index;
@@ -338,14 +338,14 @@ export function NovelChapterText({
     if (isBlockMode) {
       // 누른 차례를 지켜 넘긴다 — 마지막으로 누른 문단이 Shift 이어 고르기의 시작점이다(본문 차례로 정렬하면 맨 뒤 문단이 된다).
       const clicked = blockSelection.filter((id) => selectedBlockIds.includes(id));
-      const step = nextBlockSelection(clicked, index, { extend }, selectionContext);
+      const step = nextBlockSelection(clicked, index, { isExtending }, selectionContext);
       setBlockSelection(step.selection);
       setLiveMessage(
         toBlockSelectionAnnouncement(toSelectedIndexes(step.selection, blockIds), step.outcome, selectionContext.maxBlocks),
       );
       return;
     }
-    const next = nextParagraphRange(activeRange, index, { extend });
+    const next = nextParagraphRange(activeRange, index, { isExtending });
     setRange(next);
     setLiveMessage(toParagraphSelectionAnnouncement(next));
   }
@@ -752,7 +752,7 @@ export function NovelChapterText({
           text={paragraph}
           isSelected={isBlockMode ? selectedIndexes.includes(index) : isParagraphInRange(activeRange, index)}
           blockedReasonId={isBlockMode ? toBlockedReasonId(index) : undefined}
-          onSelect={(extend) => select(index, extend)}
+          onSelect={(isExtending) => select(index, isExtending)}
         />
       );
     }
@@ -1119,8 +1119,8 @@ type ParagraphButtonProps = {
   /** 여러 문단 고르기에서 지금 고를 수 없는 까닭 문장의 id(다른 장면·상한). 있으면 `aria-disabled` 로 흐리고 그 문장을 가리킨다 —
    * 누르면 까닭을 알림 줄로 다시 말한다(버튼에서 포커스를 빼지 않는다). */
   blockedReasonId?: string;
-  /** `extend` 는 Shift 를 누른 채 눌렀는가. */
-  onSelect: (extend: boolean) => void;
+  /** `isExtending` 는 Shift 를 누른 채 눌렀는가. */
+  onSelect: (isExtending: boolean) => void;
 };
 
 /** 고치기 모드의 문단 하나. 읽기 모드의 `<p>` 와 같은 상자(안쪽 여백·음수 바깥 여백)라 모드를 바꿔도 글자가

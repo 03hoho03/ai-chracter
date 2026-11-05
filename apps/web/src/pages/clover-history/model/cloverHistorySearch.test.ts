@@ -1,28 +1,28 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  cloverHistorySearchSchema,
+  CLOVER_HISTORY_SEARCH_SCHEMA,
   isCloverHistoryTab,
   resolveCloverHistoryTab,
 } from "./cloverHistorySearch";
 
-describe("cloverHistorySearchSchema", () => {
+describe("CLOVER_HISTORY_SEARCH_SCHEMA", () => {
   it("파라미터가 없으면 undefined다 — 기본값(use)은 URL에 싣지 않는다", () => {
-    expect(cloverHistorySearchSchema.parse({})).toEqual({});
+    expect(CLOVER_HISTORY_SEARCH_SCHEMA.parse({})).toEqual({});
   });
 
   it("기본값 use는 .exclude() 대상이라 그 자체도 부재로 접힌다", () => {
-    expect(cloverHistorySearchSchema.parse({ tab: "use" })).toEqual({});
+    expect(CLOVER_HISTORY_SEARCH_SCHEMA.parse({ tab: "use" })).toEqual({});
   });
 
   it("earn·expire는 그대로 통과한다", () => {
-    expect(cloverHistorySearchSchema.parse({ tab: "earn" })).toEqual({ tab: "earn" });
-    expect(cloverHistorySearchSchema.parse({ tab: "expire" })).toEqual({ tab: "expire" });
+    expect(CLOVER_HISTORY_SEARCH_SCHEMA.parse({ tab: "earn" })).toEqual({ tab: "earn" });
+    expect(CLOVER_HISTORY_SEARCH_SCHEMA.parse({ tab: "expire" })).toEqual({ tab: "expire" });
   });
 
   it("허용값 밖이면 그 축만 부재로 떨어뜨린다 — 던지면 라우터가 페이지를 통째로 죽인다", () => {
-    expect(cloverHistorySearchSchema.parse({ tab: "charge" })).toEqual({});
-    expect(cloverHistorySearchSchema.parse({ tab: 1 })).toEqual({});
+    expect(CLOVER_HISTORY_SEARCH_SCHEMA.parse({ tab: "charge" })).toEqual({});
+    expect(CLOVER_HISTORY_SEARCH_SCHEMA.parse({ tab: 1 })).toEqual({});
   });
 });
 

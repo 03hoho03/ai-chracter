@@ -18,7 +18,7 @@ import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useCreateWorkBundleMutation, useRenameWorkBundleMutation } from "../api/workBundleMutations";
 import { toWorkBundleActionError } from "../model/bundleActionError";
-import { countBundleNameChars, workBundleNameSchema, type WorkBundleNameFormValues } from "../model/bundleName";
+import { countBundleNameChars, WORK_BUNDLE_NAME_SCHEMA, type WorkBundleNameFormValues } from "../model/bundleName";
 
 const SUBMIT_LABEL = {
   create: { idle: "만들기", busy: "만드는 중…" },
@@ -44,7 +44,7 @@ export const WorkBundleNameModal = createCallable<WorkBundleNameModalProps, stri
   const renameMutation = useRenameWorkBundleMutation();
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const form = useForm<WorkBundleNameFormValues>({
-    resolver: zodResolver(workBundleNameSchema),
+    resolver: zodResolver(WORK_BUNDLE_NAME_SCHEMA),
     defaultValues: { name: props.mode === "rename" ? props.currentName : "" },
   });
   const nameLength = countBundleNameChars(form.watch("name"));

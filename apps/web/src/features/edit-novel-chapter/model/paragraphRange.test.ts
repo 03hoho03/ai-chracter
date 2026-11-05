@@ -35,16 +35,16 @@ describe("nextParagraphRange", () => {
   });
 
   it("Shift 로 범위 밖을 누르면 늘린다", () => {
-    expect(nextParagraphRange({ start: 2, end: 2 }, 6, { extend: true })).toEqual({ start: 2, end: 6 });
-    expect(nextParagraphRange(null, 6, { extend: true })).toEqual({ start: 6, end: 6 });
+    expect(nextParagraphRange({ start: 2, end: 2 }, 6, { isExtending: true })).toEqual({ start: 2, end: 6 });
+    expect(nextParagraphRange(null, 6, { isExtending: true })).toEqual({ start: 6, end: 6 });
   });
 
   it("Shift 로 범위 안을 누르면 다시 시작하지 않고 끝을 그 문단으로 옮긴다", () => {
-    expect(nextParagraphRange({ start: 2, end: 6 }, 4, { extend: true })).toEqual({ start: 2, end: 4 });
+    expect(nextParagraphRange({ start: 2, end: 6 }, 4, { isExtending: true })).toEqual({ start: 2, end: 4 });
   });
 
   it("Shift 로 하나만 고른 문단을 다시 눌러도 풀지 않는다", () => {
-    expect(nextParagraphRange({ start: 3, end: 3 }, 3, { extend: true })).toEqual({ start: 3, end: 3 });
+    expect(nextParagraphRange({ start: 3, end: 3 }, 3, { isExtending: true })).toEqual({ start: 3, end: 3 });
   });
 });
 

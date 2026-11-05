@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { purchaseFormSchema, toPortOneCustomer, type PurchaseFormValues } from "./purchaseForm";
+import { PURCHASE_FORM_SCHEMA, toPortOneCustomer, type PurchaseFormValues } from "./purchaseForm";
 
 const VALID: PurchaseFormValues = {
   payMethodKey: "CARD",
@@ -11,11 +11,11 @@ const VALID: PurchaseFormValues = {
 };
 
 function errorPaths(values: PurchaseFormValues): string[] {
-  const result = purchaseFormSchema.safeParse(values);
+  const result = PURCHASE_FORM_SCHEMA.safeParse(values);
   return result.success ? [] : result.error.issues.map((issue) => issue.path.join("."));
 }
 
-describe("purchaseFormSchema", () => {
+describe("PURCHASE_FORM_SCHEMA", () => {
   it("다 채우고 동의하면 통과한다", () => {
     expect(errorPaths(VALID)).toEqual([]);
   });

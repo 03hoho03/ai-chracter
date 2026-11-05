@@ -6,7 +6,7 @@ import { isApiError } from "./client";
  * `auth/router.py`가 내는 429 바디 `{"detail": {"code", "retryAfterSeconds", "window"}}`.
  * `Retry-After` 헤더는 일부러 주지 않으므로(CORS에서 못 읽는다) 재시도 시점의 유일한 출처가 이 detail이다.
  *
- * 단언 대신 스키마로 파싱하는 이유는 `client.ts`의 `errorEnvelopeSchema`와 같다 — 서버가 주는 외부
+ * 단언 대신 스키마로 파싱하는 이유는 `client.ts`의 `ERROR_ENVELOPE_SCHEMA`와 같다 — 서버가 주는 외부
  * 데이터라 모양을 우리가 보장할 수 없다. `window`는 "어느 상한이냐"가 아니라 "어느 기능이냐"다:
  * 채팅 4경로는 minute/clover, 이미지 생성은 image 하나(둘을 가르는 건 `code`), auth 경로는 auth
  * 하나(둘을 가르는 것도 `code` — `AUTH_LIMIT`/`AUTH_COOLDOWN`), 발행 심사는 publish, 업로드 URL 발급은
@@ -26,7 +26,7 @@ import { isApiError } from "./client";
  * 그래도 **여기서는 지운다** 를 고르지 않았다 — 이 스키마는 외부 데이터 파서라 관대한 쪽이 안전하다.
  * 지웠다가 BE가 롤백 등으로 다시 보내면 **429 전체가 인식되지 않는다**(위 1관문 실패 모드). 화면
  * 결정인 "채팅 배너가 무엇을 말하나"는 `entities/chat-room`의 투영이 지고, 거기서는 `"day"`를 뺐다. */
-const rateLimitDetailSchema = z.object({
+const RATE_LIMIT_DETAIL_SCHEMA = z.object({
   code: z.enum([
     "USER_LIMIT",
     "QUEUE_FULL",
@@ -55,7 +55,7 @@ const rateLimitDetailSchema = z.object({
   ]),
 });
 
-export type RateLimitDetail = z.infer<typeof rateLimitDetailSchema>;
+export type RateLimitDetail = z.infer<typeof RATE_LIMIT_DETAIL_SCHEMA>;
 
 /** 좁히기 형태는 `entities/legal`의 `isLegalReconsentRequiredError`와 같다(status → detail이
  * object → 내용) — detail이 string인 429(구조화 dict를 쓰지 않는 다른 429)와 반드시 구분돼야 한다.
@@ -66,6 +66,6 @@ export type RateLimitDetail = z.infer<typeof rateLimitDetailSchema>;
 export function getRateLimitDetail(error: unknown): RateLimitDetail | null {
   const apiError = isApiError(error) ? error : undefined;
   if (apiError?.status !== 429 || !apiError.detail || typeof apiError.detail !== "object") return null;
-  const parsed = rateLimitDetailSchema.safeParse(apiError.detail);
+  const parsed = RATE_LIMIT_DETAIL_SCHEMA.safeParse(apiError.detail);
   return parsed.success ? parsed.data : null;
 }

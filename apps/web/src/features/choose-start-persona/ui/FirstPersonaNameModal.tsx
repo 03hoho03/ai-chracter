@@ -20,7 +20,7 @@ import { personaKeys, useCreatePersonaMutation, type Persona, type PersonaList }
 import { isApiError } from "@/shared/api/client";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
-import { firstPersonaNameSchema, type FirstPersonaNameFormValues } from "../model/firstPersonaNameSchema";
+import { FIRST_PERSONA_NAME_SCHEMA, type FirstPersonaNameFormValues } from "../model/firstPersonaNameSchema";
 
 const GENERIC_ERROR_MESSAGE = "이름을 저장하지 못했어요. 잠시 후 다시 시도해주세요.";
 
@@ -37,7 +37,7 @@ export const FirstPersonaNameModal = createCallable<void, Persona | undefined>((
   const nameId = useId();
   const hintId = `${nameId}-hint`;
   const form = useForm<FirstPersonaNameFormValues>({
-    resolver: zodResolver(firstPersonaNameSchema),
+    resolver: zodResolver(FIRST_PERSONA_NAME_SCHEMA),
     defaultValues: { name: "" },
   });
   const createMutation = useCreatePersonaMutation();

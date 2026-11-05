@@ -132,6 +132,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{runId}/upload-header": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Header
+         * @description 호스팅 서비스에 올릴 때 묶음 바이트와 따로 보내는 머리 — 띄울 때 읽은 만든 커밋과, 요청 때 로컬 DB 로 계산한 출처 칸.
+         *     형식과 판정은 `apps/chat-lab/README.md` 「묶음 계약 판과 출처 칸」 절.
+         */
+        post: operations["upload_header_runs__runId__upload_header_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -288,7 +309,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "notFound" | "unsupported" | "unsupportedFormat" | "openFailed" | "archived" | "exists" | "notFile" | "noRoom" | "noRows" | "multipleRooms" | "dbUnavailable" | "notJson";
+            reason: "notFound" | "unsupported" | "unsupportedFormat" | "openFailed" | "archived" | "exists" | "notFile" | "noRoom" | "noRows" | "multipleRooms" | "dbUnavailable" | "notJson" | "gitUnavailable";
         };
         /** Mismatch */
         Mismatch: {
@@ -301,6 +322,26 @@ export interface components {
             turn?: number | null;
             /** Detail */
             detail: string;
+        };
+        /**
+         * Provenance
+         * @description 이 런이 로컬 측정 서버에서 테스트 계정으로만 돈 것인지 — 불·수만 싣는다.
+         */
+        Provenance: {
+            /** Passed */
+            passed: boolean;
+            /** Baselocal */
+            baseLocal: boolean | null;
+            /** Roomfound */
+            roomFound: boolean;
+            /** Ownerinexampledomain */
+            ownerInExampleDomain: boolean;
+            /** Outsideusers */
+            outsideUsers: number;
+            /** Exemptedusers */
+            exemptedUsers: number;
+            /** Authorinexampledomain */
+            authorInExampleDomain: boolean | null;
         };
         /**
          * RecordLimit
@@ -360,11 +401,14 @@ export interface components {
         };
         /**
          * RunBundle
-         * @description 런 하나를 통째로 — 정적 HTML 내보내기가 이 응답만 주입한다. `raw` 가 거짓이면 덤프 줄의 프롬프트(`prompt`)·지시문
-         *     (`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을 키째 빼고, 상세의 방 스냅숏(`room_static`,
-         *     단축어 프롬프트 전문·대화 프로필 설명이 든다)을 비운다. 대화(사용자 발화·응답)는 남는다.
+         * @description 런 하나를 통째로 — 정적 HTML 내보내기가 이 응답만 주입하고, 호스팅 서비스에 올리는 것도 이 응답의 바이트다. `raw` 가
+         *     거짓이면 덤프 줄의 프롬프트(`prompt`)·지시문(`systemInstruction`)과 기억 스냅숏의 노트·요약 본문(`note`·`summary`) 칸을
+         *     키째 빼고, 상세의 방 스냅숏(`room_static`, 단축어 프롬프트 전문·대화 프로필 설명이 든다)을 비운다. 대화(사용자 발화·응답)는
+         *     남는다. 만든 커밋·출처 칸은 싣지 않는다(`apps/chat-lab/README.md` 「묶음 계약 판과 출처 칸」 절).
          */
         RunBundle: {
+            /** Contractversion */
+            contractVersion: number;
             /** Raw */
             raw: boolean;
             detail: components["schemas"]["RunDetail"];
@@ -539,6 +583,16 @@ export interface components {
             before?: number | null;
         };
         /**
+         * SourceCommit
+         * @description 측정 서버를 띄울 때 읽은 checkout 의 커밋.
+         */
+        SourceCommit: {
+            /** Commit */
+            commit: string;
+            /** Dirty */
+            dirty: boolean;
+        };
+        /**
          * StatSeries
          * @description 스탯 하나의 턴별 값. 보이는 스탯은 드라이버 `roomAfter`(턴을 마친 뒤 값)에서, 숨김 스탯은 턴 기록에서 — 턴 기록에는 바뀐
          *     턴의 값만 있어 숨김 스탯은 바뀐 턴에만 점이 있다.
@@ -686,6 +740,19 @@ export interface components {
             turnNumber: number | null;
             /** Costusd */
             costUsd: number;
+        };
+        /**
+         * UploadHeader
+         * @description 올리기용 머리 — 묶음 바이트와 따로 낸다.
+         */
+        UploadHeader: {
+            sourceCommit: components["schemas"]["SourceCommit"];
+            provenance: components["schemas"]["Provenance"];
+        };
+        /** UploadHeaderRequest */
+        UploadHeaderRequest: {
+            /** Exemptemails */
+            exemptEmails: string[];
         };
         /** ValidationError */
         ValidationError: {
@@ -967,6 +1034,68 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabError"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabError"];
+                };
+            };
+            /** @description 이 서버의 거부(reason 있음) 또는 요청 검증 오류(reason 없음) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabError"] | components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabError"];
+                };
+            };
+        };
+    };
+    upload_header_runs__runId__upload_header_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadHeaderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadHeader"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

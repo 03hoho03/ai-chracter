@@ -46,7 +46,7 @@ export function PayoutInfoPanel({ payout }: PayoutInfoPanelProps) {
         <PayoutInfoForm
           onSaved={closeForm}
           onCancel={payoutInfo === null ? undefined : closeForm}
-          focusOnOpen={isEditing}
+          shouldFocusOnOpen={isEditing}
         />
       </div>
     );

@@ -41,8 +41,8 @@ export function useChromeVisibility({ onHide }: { onHide: () => void }) {
     setIsVisible(false);
   }
 
-  function show({ focusTopBar }: { focusTopBar: boolean }) {
-    shouldFocusTopBarRef.current = focusTopBar;
+  function show({ shouldFocusTopBar }: { shouldFocusTopBar: boolean }) {
+    shouldFocusTopBarRef.current = shouldFocusTopBar;
     setIsVisible(true);
   }
 
@@ -65,8 +65,8 @@ export function useChromeVisibility({ onHide }: { onHide: () => void }) {
       dx: event.clientX - start.x,
       dy: event.clientY - start.y,
       dt: event.timeStamp - start.time,
-      selectionCollapsed: window.getSelection()?.isCollapsed ?? true,
-      targetIsInteractive: target instanceof Element && target.closest(INTERACTIVE_SELECTOR) !== null,
+      isSelectionCollapsed: window.getSelection()?.isCollapsed ?? true,
+      isTargetInteractive: target instanceof Element && target.closest(INTERACTIVE_SELECTOR) !== null,
     });
     if (isTap) onTap();
   }

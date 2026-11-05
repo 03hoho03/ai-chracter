@@ -46,7 +46,7 @@ function AttendanceCellItem({ cell, isJustClaimed }: { cell: AttendanceCell; isJ
   const look = attendanceCellLook(cell);
   const compactLabel = cellStatusLabel(cell.status, true);
   const wideLabel = cellStatusLabel(cell.status, false);
-  const spoken = [`${cell.seq}일차`, `${formatCloverAmount(cell.amount)}클로버`, look.showGift && "특별 보상", CELL_STATUS_SPOKEN[cell.status]]
+  const spoken = [`${cell.seq}일차`, `${formatCloverAmount(cell.amount)}클로버`, look.shouldShowGift && "특별 보상", CELL_STATUS_SPOKEN[cell.status]]
     .filter(Boolean)
     .join(", ");
 
@@ -67,7 +67,7 @@ function AttendanceCellItem({ cell, isJustClaimed }: { cell: AttendanceCell; isJ
         >
           {cell.seq}
           <span className="hidden sm:inline">일차</span>
-          {look.showGift && <Gift className="size-3 shrink-0" />}
+          {look.shouldShowGift && <Gift className="size-3 shrink-0" />}
         </span>
         <span className={cn("text-badge leading-4 tabular-nums", look.amountClassName)}>
           <span className="sm:hidden">{formatCellAmount(cell.amount, true)}</span>

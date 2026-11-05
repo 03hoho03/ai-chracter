@@ -1,4 +1,4 @@
-import type { StatDefValues } from "./schema";
+import type { StatDefValues } from "./storyBuilderSchema";
 
 /** 접힌 스탯 머리 줄 요약의 글 조각. 빌더 스탯 카드와 작성 가이드의 카드 모양 예시가 같이 쓴다. 비었거나 숫자가 아닌 칸의 조각은 없다. */
 export type StatSummaryParts = {

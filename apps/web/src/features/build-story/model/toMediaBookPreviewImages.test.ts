@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { toMediaBookPreviewImages } from "./toMediaBookPreviewImages";
-import type { MediaBookCellValues } from "./schema";
+import type { MediaBookCellValues } from "./storyBuilderSchema";
 
 function cell(overrides: Partial<MediaBookCellValues> = {}): MediaBookCellValues {
   return {

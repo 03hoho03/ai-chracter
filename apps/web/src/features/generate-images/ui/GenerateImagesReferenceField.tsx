@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { ImageOff, Images, X } from "lucide-react";
 import { Controller, useFormContext } from "react-hook-form";
 
-import type { GenerateImagesFormValues } from "../model/schema";
+import type { GenerateImagesFormValues } from "../model/generateImagesSchema";
 import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
 
 const LABEL_ID = "generate-images-reference-label";

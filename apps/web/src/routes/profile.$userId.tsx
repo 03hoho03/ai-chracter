@@ -7,13 +7,13 @@ import { ProfilePage } from "@/pages/profile";
 // 작품 목록 유형 토글은 헤더의 전역 atom과 별개로 URL search
 // param(?type=)으로 관리한다(새로고침/공유 시에도 선택 상태 유지). 생략 시 기본값은 "character".
 // 모르는 값은 그 축만 기본값(= 파라미터의 부재)으로 흘려보낸다 — `validateSearch` 8곳 공통 처방.
-const profileSearchSchema = z.object({
+const PROFILE_SEARCH_SCHEMA = z.object({
   type: z.enum(CONTENT_TYPES).optional().catch(undefined),
 });
 
 // 본인/타인 조회 모두 같은 라우트를 쓰고, 로그인 여부와 무관하게 열람 가능하다.
 export const Route = createFileRoute("/profile/$userId")({
-  validateSearch: profileSearchSchema,
+  validateSearch: PROFILE_SEARCH_SCHEMA,
   component: RouteComponent,
 });
 

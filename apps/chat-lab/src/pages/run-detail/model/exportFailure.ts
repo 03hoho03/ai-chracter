@@ -32,6 +32,7 @@ const EXPORT_HINTS = {
   multipleRooms: "폴더 하나에 방이 여럿이다 — 턴 기록 파일은 폴더에 하나라 드라이버 로그를 방마다 다른 폴더로 나눈다.",
   dbUnavailable: "측정 서버가 DB 를 쓸 수 없다 — 로컬 DB 가 떠 있는지 보고, 서버를 --database-url 과 함께 다시 띄운다.",
   notJson: "요청 본문 형식이 맞지 않았다 — 이 화면과 측정 서버의 판이 같은지 본다.",
+  gitUnavailable: "측정 서버가 git 으로 checkout 의 커밋을 읽지 못했다 — git 이 설치돼 있고 측정 서버가 저장소 checkout 안에서 도는지 본다.",
 } as const satisfies Record<RefusalReason, string>;
 
 export function describeExportFailure(error: unknown): ExportFailure {

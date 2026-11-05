@@ -3,17 +3,17 @@
 
 import { z } from "zod";
 
-import { mediaTagImagesSchema } from "@/entities/media-book/@x/chat-room";
+import { MEDIA_TAG_IMAGES_SCHEMA } from "@/entities/media-book/@x/chat-room";
 
 /** 장면 헤더의 장면(장소·시간). 모르는 칸은 서버가 null 로 싣고, 앱 안에서는 undefined 로 바꾼다(위 이미지 칸과 같은 정규화). */
-const storySceneSchema = z
+const STORY_SCENE_SCHEMA = z
   .object({ place: z.string().nullable(), time: z.string().nullable() })
   .transform(({ place, time }) => ({ place: place ?? undefined, time: time ?? undefined }));
 
 /** SSE 이벤트는 **스키마가 단일 소스**다 — 타입을 따로 쓰고 스키마를 덧붙이면 둘이 갈린다
  * `openChatStream`이 이 스키마로 파싱하므로 서버가 모양을 바꾸면
  * 소비처가 아니라 여기서 걸린다. */
-const chatMessageSchema = z.object({
+const CHAT_MESSAGE_SCHEMA = z.object({
   id: z.string(),
   role: z.union([z.literal("user"), z.literal("assistant")]),
   content: z.string(),
@@ -54,7 +54,7 @@ const chatMessageSchema = z.object({
     .optional(),
   // 장면 헤더를 켠 작품의 AI 응답에 저장된 그 턴의 장면. 꺼진 작품·켜기 전 메시지·사용자 메시지·오프닝은 서버가 null 을 싣는다 —
   // 이미지 칸과 같은 이유로 nullish 로 받고 undefined 로 정규화한다.
-  scene: storySceneSchema
+  scene: STORY_SCENE_SCHEMA
     .nullish()
     .transform((value) => value ?? undefined)
     .optional(),
@@ -63,11 +63,11 @@ const chatMessageSchema = z.object({
 
 /** 메시지 수정·삭제가 지운 턴의 스탯을 어떻게 했는지. `rewound` 는 전부 그 턴 전으로 되돌림, `partial` 은 기록이 없는 옛 턴이
  * 섞여 기록 있는 턴만 되돌림(하나도 못 되돌렸을 수 있다), `kept` 는 되돌리지 않음(중간 답 삭제처럼 정확히 되돌릴 수 없을 때). */
-export const statRewindSchema = z.enum(["rewound", "partial", "kept"]);
+export const STAT_REWIND_SCHEMA = z.enum(["rewound", "partial", "kept"]);
 
-export type StatRewind = z.infer<typeof statRewindSchema>;
+export type StatRewind = z.infer<typeof STAT_REWIND_SCHEMA>;
 
-export const chatStreamEventSchema = z.discriminatedUnion("type", [
+export const CHAT_STREAM_EVENT_SCHEMA = z.discriminatedUnion("type", [
   z.object({ type: z.literal("token"), delta: z.string() }),
   z.object({ type: z.literal("statChange"), statId: z.string(), newValue: z.number() }),
   // 플레이어에게 숨긴 스탯 가운데 신호를 켠 것이 이번 턴에 바뀌었다는 표시 — 인자가 없다(어느 스탯인지·얼마나인지 싣는
@@ -78,7 +78,7 @@ export const chatStreamEventSchema = z.discriminatedUnion("type", [
     endingId: z.string(),
     epilogue: z.string().nullable(),
     // 에필로그 속 칸 id 형태 태그가 가리키는 그림(`{칸 id: 그림}`).
-    mediaTagImages: mediaTagImagesSchema,
+    mediaTagImages: MEDIA_TAG_IMAGES_SCHEMA,
   }),
   // 장면 헤더를 켠 작품의 매 턴 장면 — 바뀌지 않았어도 턴마다 `done` 바로 앞에 온다. `messageId` 는 뒤따르는 `done` 의 응답이라
   // 아직 캐시에 없을 수 있다(`applyStreamEvent` 가 들고 있다가 붙인다).
@@ -93,17 +93,17 @@ export const chatStreamEventSchema = z.discriminatedUnion("type", [
   // `statRewind` 는 지운 턴이 있던 수정의 done 에만 온다. 모르는 값은 버린다 — done 이 튕기면 흐르던 답이 화면에서 사라진다.
   z.object({
     type: z.literal("done"),
-    finalMessage: chatMessageSchema,
-    statRewind: statRewindSchema.optional().catch(undefined),
+    finalMessage: CHAT_MESSAGE_SCHEMA,
+    statRewind: STAT_REWIND_SCHEMA.optional().catch(undefined),
   }),
   // 캐시 변경 없음
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);
 
-export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+export type ChatStreamEvent = z.infer<typeof CHAT_STREAM_EVENT_SCHEMA>;
 
 /** SSE `done` 이벤트가 실어 나르므로 스키마에서 도출한다 — 타입을 따로 쓰면 스키마와 갈린다. */
-export type ChatMessage = z.infer<typeof chatMessageSchema>;
+export type ChatMessage = z.infer<typeof CHAT_MESSAGE_SCHEMA>;
 
 // SSE 이벤트 스키마 [확정] — BE가 이 스키마를 그대로 채택
 

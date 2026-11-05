@@ -107,7 +107,7 @@ export function ImageStudioShell({
   // 목록과 대조하지 않는 것은 새 결과가 목록 재조회 전이라 목록에 아직 없을 때 그 결과까지 숨기기
   // 때문이다. 다음 잡에서도 비우지 않는다(지운 id 는 다시 나오지 않아 남겨 둬도 걸리는 것이 없다).
   const [deletedAssetIds, setDeletedAssetIds] = useState<ReadonlySet<string>>(() => new Set());
-  function markImageDeleted(assetId: string) {
+  function handleImageDeleted(assetId: string) {
     setDeletedAssetIds((previous) => (previous.has(assetId) ? previous : new Set(previous).add(assetId)));
   }
 
@@ -274,7 +274,7 @@ export function ImageStudioShell({
           <ImageStudioLibraryRail
             isOpen={isLibraryOpen}
             onOpenChange={setIsLibraryOpen}
-            onImageDeleted={markImageDeleted}
+            onImageDeleted={handleImageDeleted}
           />
         </aside>
 
@@ -359,7 +359,7 @@ export function ImageStudioShell({
                   hasPollError={hasPollError}
                   isJobInProgress={isJobInProgress}
                   deletedAssetIds={deletedAssetIds}
-                  onImageDeleted={markImageDeleted}
+                  onImageDeleted={handleImageDeleted}
                 />
               </TabsContent>
             </div>

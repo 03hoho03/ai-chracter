@@ -6,7 +6,7 @@ import { useFormContext, useWatch } from "react-hook-form";
 
 import { useImageModelsQuery } from "@/entities/image-model";
 
-import type { GenerateImagesFormValues } from "../model/schema";
+import type { GenerateImagesFormValues } from "../model/generateImagesSchema";
 import { STYLE_SAMPLE_IMAGES } from "../model/styleSampleImages";
 
 // 연 트리거 표식·`aria-expanded`·표시 조건(`lg:hidden`)·`onClick`은 시트를 가진 위젯이 넘기고 여기서는

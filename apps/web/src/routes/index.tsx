@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { toHomeTypeSwitchSearch } from "@/entities/content";
-import { HomePage, homeSearchSchema, type HomeSearch } from "@/pages/home";
+import { HomePage, HOME_SEARCH_SCHEMA, type HomeSearch } from "@/pages/home";
 
 export const Route = createFileRoute("/")({
-  validateSearch: homeSearchSchema,
+  validateSearch: HOME_SEARCH_SCHEMA,
   component: RouteComponent,
 });
 

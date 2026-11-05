@@ -37,27 +37,27 @@ export function useNovelPermissionChoice({
   hasAttemptedPublish: boolean;
 }) {
   const queryClient = useQueryClient();
-  // 열 때의 값으로 고정한다 — 이 화면의 자동저장이 바꾼 값은 이 화면에서 고른 것이라 `chosen` 이 따로 말한다.
+  // 열 때의 값으로 고정한다 — 이 화면의 자동저장이 바꾼 값은 이 화면에서 고른 것이라 `isChosen` 이 따로 말한다.
   const [savedPermission] = useState(initialSavedPermission ?? DEFAULT_NOVEL_PERMISSION);
   const [isNewDraft] = useState(draftId === undefined);
-  const [chosen, setChosen] = useState(false);
-  const [alreadyAsked, setAlreadyAsked] = useState(false);
+  const [isChosen, setIsChosen] = useState(false);
+  const [hasAsked, setHasAsked] = useState(false);
   const versionsQuery = useQuery({
     ...contentVersionsQueryOptions(draftId ?? ""),
     enabled: !isNewDraft && draftId !== undefined,
   });
   const publishedCount = isNewDraft ? 0 : versionsQuery.data?.length;
-  const state = { publishedCount, savedPermission, chosen, alreadyAsked };
+  const state = { publishedCount, savedPermission, isChosen, hasAsked };
   // 조회 중에는 묻지 않는다(발행을 누르면 그때 다시 읽어 판정한다). 이미 막은 뒤로는 조회와 상관없이 묻는다.
-  const needsChoice = needsNovelPermissionChoice(state) && (alreadyAsked || !versionsQuery.isLoading);
+  const needsChoice = needsNovelPermissionChoice(state) && (hasAsked || !versionsQuery.isLoading);
   // 이력을 모르는 동안(조회 실패)은 발행을 눌러 본 뒤에만 그린다. 막은 뒤로는 막힘과 그림이 같은 판정이다 — 그림이 고른 줄을 켜 둔 채
   // 막으면 그 줄을 다시 눌러도 Radix 가 "" 를 보내 고를 길이 없다.
-  const isUnchosen = needsChoice && (publishedCount === 0 || hasAttemptedPublish || alreadyAsked);
-  const isBlocked = isUnchosen && (hasAttemptedPublish || alreadyAsked);
+  const isUnchosen = needsChoice && (publishedCount === 0 || hasAttemptedPublish || hasAsked);
+  const isBlocked = isUnchosen && (hasAttemptedPublish || hasAsked);
 
   /** 발행을 누를 때 이력을 다시 읽어 막아야 하는지 본다. 조회가 실패하면 이력 없음으로 본다(`needsNovelPermissionChoice`). 막으면
    * 고를 때까지 묻는 상태로 남긴다. */
-  async function checkBeforePublish(): Promise<{ blocked: boolean; publishedCount: number | undefined }> {
+  async function checkBeforePublish(): Promise<{ isBlocked: boolean; publishedCount: number | undefined }> {
     const count =
       isNewDraft || draftId === undefined
         ? 0
@@ -65,15 +65,15 @@ export function useNovelPermissionChoice({
             (versions) => versions.length,
             () => undefined,
           );
-    const blocked = needsNovelPermissionChoice({ ...state, publishedCount: count });
-    if (blocked) setAlreadyAsked(true);
-    return { blocked, publishedCount: count };
+    const shouldBlock = needsNovelPermissionChoice({ ...state, publishedCount: count });
+    if (shouldBlock) setHasAsked(true);
+    return { isBlocked: shouldBlock, publishedCount: count };
   }
 
   const view: NovelPermissionChoiceView = {
     isUnchosen,
     isBlocked,
-    onChoose: () => setChosen(true),
+    onChoose: () => setIsChosen(true),
     publishedContentId: draftId !== undefined && publishedCount !== undefined && publishedCount > 0 ? draftId : undefined,
   };
 
@@ -86,11 +86,11 @@ export function useNovelPermissionChoice({
     checkBeforePublish,
     /** 발행 요청 본문에 실을 값(`checkBeforePublish` 가 읽은 이력 기준). */
     publishValue: (publishedCountAtPress: number | undefined, value: NovelPermission) =>
-      novelPermissionPublishValue({ publishedCount: publishedCountAtPress, savedPermission, chosen }, value),
+      novelPermissionPublishValue({ publishedCount: publishedCountAtPress, savedPermission, isChosen }, value),
     /** 서버가 400 `NOVEL_PERMISSION_REQUIRED` 로 거절했다 — 고를 때까지 묻는다. */
     markRequiredByServer: () => {
-      setChosen(false);
-      setAlreadyAsked(true);
+      setIsChosen(false);
+      setHasAsked(true);
     },
   };
 }

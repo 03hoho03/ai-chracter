@@ -93,7 +93,7 @@ export function MockupSelect({ value, className }: { value: string; className?: 
 type MockupTextareaProps = {
   text: string;
   /** false 면 길어도 자르지 않는다 — 좋은 예/나쁜 예 대비처럼 이미 짧게 고른 발췌는 다 보여야 비교가 된다. */
-  clampsLongText?: boolean;
+  shouldClampLongText?: boolean;
 };
 
 /**
@@ -108,7 +108,7 @@ type MockupTextareaProps = {
  * 줄높이는 빌더 칸과 같은 24px 이다(빌더 칸은 `text-base` 의 기본 줄높이). 최소 높이(`min-h-16`, 64px)는 빌더에서 가장
  * 낮은 두 줄 칸(66px)과 거의 같아 한 줄짜리 값도 한 줄 입력칸으로 보이지 않는다.
  */
-export function MockupTextarea({ text, clampsLongText = true }: MockupTextareaProps) {
+export function MockupTextarea({ text, shouldClampLongText = true }: MockupTextareaProps) {
   const textRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDetailsElement>(null);
   const [hasRow, setHasRow] = useState(false);
@@ -118,7 +118,7 @@ export function MockupTextarea({ text, clampsLongText = true }: MockupTextareaPr
   // 아직 안 잘린 짧은 값이 글자 간격 덮어쓰기 등으로 줄이 늘어 높이가 자라는 경우) 다시 재고, 글꼴이 늦게 들어와 줄바꿈이 달라지는 경우도 잡는다(잘린 상자는 높이가 그대로라 크기 감시로는 모른다).
   useLayoutEffect(() => {
     const element = textRef.current;
-    if (!clampsLongText || isExpanded || !element) return;
+    if (!shouldClampLongText || isExpanded || !element) return;
     // 포커스를 가진 줄은 안 잘리게 됐어도 남긴다. 펼친 채 화면을 돌려(좁은→넓은 폭) 접으면 그 자리에서 잘림이 없어지는데,
     // 그때 줄을 내리면 키보드·스크린리더 포커스가 문서 맨 앞(body)으로 튕긴다. 남은 줄은 포커스가 떠난 뒤 다음 재기(폭
     // 변화 등)에서 내린다 — 포커스가 떠나는 순간 내리면 그 아래 내용이 클릭 도중에 밀려 올라온다.
@@ -148,13 +148,13 @@ export function MockupTextarea({ text, clampsLongText = true }: MockupTextareaPr
       isActive = false;
       observer.disconnect();
     };
-  }, [clampsLongText, isExpanded, text]);
+  }, [shouldClampLongText, isExpanded, text]);
 
   return (
     <div className="flex flex-col gap-2">
       {/* 잘림은 안쪽 글 상자에 건다 — 테두리 상자에 걸면 잘린 다음 줄이 아래 패딩 자리에 비쳐 보인다. */}
       <div className="min-h-16 rounded-lg border border-input px-3 py-2 text-sm leading-6 whitespace-pre-wrap break-keep wrap-break-word text-foreground">
-        <div ref={textRef} className={cn(clampsLongText && !isExpanded && "line-clamp-4")}>
+        <div ref={textRef} className={cn(shouldClampLongText && !isExpanded && "line-clamp-4")}>
           {text}
         </div>
       </div>

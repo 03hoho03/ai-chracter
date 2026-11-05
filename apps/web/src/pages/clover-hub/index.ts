@@ -1,4 +1,4 @@
 export { CloverHubPage } from "./ui/CloverHubPage";
-export { cloverHubSearchSchema } from "./model/cloverHubSearch";
+export { CLOVER_HUB_SEARCH_SCHEMA } from "./model/cloverHubSearch";
 export type { CloverHubSearch } from "./model/cloverHubSearch";
-export { cloverPricingRedirectSearchSchema, toCloverHubSearch } from "./model/pricingRedirect";
+export { CLOVER_PRICING_REDIRECT_SEARCH_SCHEMA, toCloverHubSearch } from "./model/pricingRedirect";

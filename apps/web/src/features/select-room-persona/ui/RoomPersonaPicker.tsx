@@ -34,7 +34,7 @@ export function RoomPersonaPicker({ roomId, currentPersonaId, personaList, onCha
       personaList={personaList}
       value={selectedPersonaId}
       onValueChange={handleValueChange}
-      includeNone
+      shouldIncludeNone
       aria-label="이 대화방의 대화 프로필"
       aria-busy={setRoomPersonaMutation.isPending}
     />

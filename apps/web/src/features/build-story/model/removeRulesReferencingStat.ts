@@ -1,4 +1,4 @@
-import { countRules, type RuleListItemValues } from "./schema";
+import { countRules, type RuleListItemValues } from "./storyBuilderSchema";
 
 /**
  * 엔딩 탭에서 조건 줄이나 규칙 그룹의 삭제 버튼을 눌렀을 때의 처리. 지운 항목은 자기 `nextOp` 와 함께 사라지고 남은 항목의
@@ -18,11 +18,11 @@ export function removeRuleListItem(items: RuleListItemValues[], id: string): Rul
  * 지울 것이 없으면 받은 배열을 그대로 돌려줘 호출부가 쓰기를 건너뛸 수 있게 한다.
  */
 export function removeRulesReferencingStat(items: RuleListItemValues[], statId: string): RuleListItemValues[] {
-  let changed = false;
+  let hasChanged = false;
   const next: RuleListItemValues[] = [];
   for (const item of items) {
     if (item.kind === "rule") {
-      if (item.statId === statId) changed = true;
+      if (item.statId === statId) hasChanged = true;
       else next.push(item);
       continue;
     }
@@ -31,10 +31,10 @@ export function removeRulesReferencingStat(items: RuleListItemValues[], statId: 
       next.push(item);
       continue;
     }
-    changed = true;
+    hasChanged = true;
     if (rules.length > 0) next.push({ ...item, rules });
   }
-  return changed ? next : items;
+  return hasChanged ? next : items;
 }
 
 /** 스탯 삭제로 바뀌는 엔딩 하나·상황 노트 하나의 새 조건 목록. */

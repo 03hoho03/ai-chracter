@@ -9,28 +9,28 @@ function apiError(status: number, detail: Record<string, unknown>) {
 }
 
 const NOTHING = {
-  resetEdits: false,
-  refetchEpisode: false,
-  refetchOutline: false,
-  refetchMessages: false,
-  refetchPricing: false,
+  shouldResetEdits: false,
+  shouldRefetchEpisode: false,
+  shouldRefetchOutline: false,
+  shouldRefetchMessages: false,
+  shouldRefetchPricing: false,
 };
 
 describe("장면 구성안 저장·승인 거절 뒤 맞추기", () => {
   it("다른 곳에서 고쳤으면 고친 것을 버리고 그 화를 다시 받는다", () => {
     expect(toEpisodeOutlineRecovery(apiError(409, { code: "NOVEL_EPISODE_OUTLINE_CONFLICT" }))).toEqual({
       ...NOTHING,
-      resetEdits: true,
-      refetchEpisode: true,
+      shouldResetEdits: true,
+      shouldRefetchEpisode: true,
     });
   });
 
   it("낡았으면 구성안도 다시 받아 화 목록의 낡음을 맞춘다", () => {
     expect(toEpisodeOutlineRecovery(apiError(409, { code: "NOVEL_EPISODE_OUTLINE_STALE" }))).toEqual({
       ...NOTHING,
-      resetEdits: true,
-      refetchEpisode: true,
-      refetchOutline: true,
+      shouldResetEdits: true,
+      shouldRefetchEpisode: true,
+      shouldRefetchOutline: true,
     });
   });
 
@@ -38,15 +38,15 @@ describe("장면 구성안 저장·승인 거절 뒤 맞추기", () => {
     for (const reason of ["unknown_id", "basis_outside_episode", "basis_overlap", "basis_splits_turn", "new_reason"]) {
       expect(toEpisodeOutlineRecovery(apiError(422, { code: "NOVEL_EPISODE_OUTLINE_INVALID", reason }))).toEqual({
         ...NOTHING,
-        resetEdits: true,
-        refetchEpisode: true,
+        shouldResetEdits: true,
+        shouldRefetchEpisode: true,
       });
     }
     expect(toEpisodeOutlineRecovery(apiError(422, { code: "NOVEL_EPISODE_OUTLINE_INVALID", reason: "basis_not_found" }))).toEqual({
       ...NOTHING,
-      resetEdits: true,
-      refetchEpisode: true,
-      refetchMessages: true,
+      shouldResetEdits: true,
+      shouldRefetchEpisode: true,
+      shouldRefetchMessages: true,
     });
   });
 
@@ -54,9 +54,9 @@ describe("장면 구성안 저장·승인 거절 뒤 맞추기", () => {
     for (const code of ["NOVEL_OUTLINE_REQUIRED", "NOVEL_OUTLINE_EPISODE_NOT_FOUND"]) {
       expect(toEpisodeOutlineRecovery(apiError(409, { code }))).toEqual({
         ...NOTHING,
-        resetEdits: true,
-        refetchEpisode: true,
-        refetchOutline: true,
+        shouldResetEdits: true,
+        shouldRefetchEpisode: true,
+        shouldRefetchOutline: true,
       });
     }
   });
@@ -64,7 +64,7 @@ describe("장면 구성안 저장·승인 거절 뒤 맞추기", () => {
   it("스위치가 꺼졌으면 가격을 다시 받는다", () => {
     expect(toEpisodeOutlineRecovery(apiError(404, { code: "NOVEL_OUTLINE_FLOW_DISABLED" }))).toEqual({
       ...NOTHING,
-      refetchPricing: true,
+      shouldRefetchPricing: true,
     });
   });
 

@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/client";
 
-import { toDeletedMessageStatRewind } from "./deleteMessageResponse";
+import { toDeletedMessageStatRewind } from "./toDeletedMessageStatRewind";
 import { chatRoomKeys } from "./keys";
 import type { StatRewind } from "./chatStream";
 import type { ChatRoomState } from "../model/chatRoomState";

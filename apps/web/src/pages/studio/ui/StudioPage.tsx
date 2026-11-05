@@ -66,7 +66,7 @@ export function StudioPage({ userId, search, onSearchChange }: StudioPageProps) 
   const scope = resolveStudioScope(search);
   const navigate = useNavigate();
 
-  const createBundle = async () => {
+  const handleCreateBundle = async () => {
     const bundleId = await WorkBundleNameModal.call({ mode: "create" });
     // 새 묶음은 비어 있으니 홈의 필터를 들고 들어가지 않는다.
     if (bundleId === null) return;
@@ -88,7 +88,7 @@ export function StudioPage({ userId, search, onSearchChange }: StudioPageProps) 
             params={params}
             isNovelAreaVisible={isNovelAreaVisible}
             onSearchChange={onSearchChange}
-            onCreateBundle={() => void createBundle()}
+            onCreateBundle={() => void handleCreateBundle()}
           />
         </>
       )}
@@ -135,7 +135,7 @@ function StudioBundleScreen({ userId, scope, params, isNovelAreaVisible, onSearc
   const isBundleMissing = bundlesQuery.isSuccess && !bundlesQuery.isFetching && bundle === undefined;
   if (isBundleMissing || isWorksBundleGone) return <StudioBundleNotFound />;
 
-  const deleteBundle = async (name: string) => {
+  const handleDeleteBundle = async (name: string) => {
     const isDeleted = await DeleteWorkBundleModal.call({ bundleId: scope.bundleId, name });
     if (!isDeleted) return;
     // 화면을 먼저 옮긴다 — 캐시를 먼저 비우면 이 화면이 다시 받아 "찾을 수 없어요"를 한 번 그린다.
@@ -156,7 +156,7 @@ function StudioBundleScreen({ userId, scope, params, isNovelAreaVisible, onSearc
             onRename={() =>
               void WorkBundleNameModal.call({ mode: "rename", bundleId: bundle.id, currentName: bundle.name })
             }
-            onDelete={() => void deleteBundle(bundle.name)}
+            onDelete={() => void handleDeleteBundle(bundle.name)}
           />
         )}
         {bundlesQuery.isError && bundle === undefined && (
@@ -350,7 +350,7 @@ function StudioWorksSection({
   // 툴바는 조건이 걸려 있으면 늘 그린다 — 칩을 처음 눌러 새 조건의 첫 응답을 기다리는 동안에도 칩·셀렉트·검색 칸이 자리를
   // 지켜야 누른 컨트롤의 포커스가 남는다. 조건 없이 처음 들어와 기다리는 동안·실패했을 때·만든 것이 하나도 없을 때는
   // 걸러낼 대상이 없어 그리지 않는다.
-  const showToolbar = hasCondition || view === "list" || view === "awaiting" || view === "emptyResult";
+  const shouldShowToolbar = hasCondition || view === "list" || view === "awaiting" || view === "emptyResult";
   // 건수는 지금 조건의 응답이 왔을 때만 말한다. 자리표시(이전 검색어의 결과)를 보이는 동안 수를 적으면 응답이 오며
   // 뒤집힐 문장이 먼저 읽힌다.
   const isCountSettled = (view === "list" || view === "emptyResult") && !query.isPlaceholderData;
@@ -374,7 +374,7 @@ function StudioWorksSection({
         </div>
       )}
 
-      {showToolbar && (
+      {shouldShowToolbar && (
         <>
           <StudioToolbar
             typeFilterRef={typeFilterRef}

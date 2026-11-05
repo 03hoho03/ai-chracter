@@ -8,15 +8,15 @@ function apiError(status: number, code: string) {
   return new ApiErrorObject({ status, message: "x", detail: { code } });
 }
 
-const NOTHING = { resetEdits: false, refetchSelection: false, refetchMessages: false, refetchPricing: false };
+const NOTHING = { shouldResetEdits: false, shouldRefetchSelection: false, shouldRefetchMessages: false, shouldRefetchPricing: false };
 
 describe("toSelectionRecovery", () => {
   // 다른 탭이 먼저 저장했다 — 이 화면의 고침은 낡은 판 위에 있어 그대로 보내면 같은 409 를 되풀이한다.
   it("판 충돌은 고친 것을 버리고 선택을 다시 받는다", () => {
     expect(toSelectionRecovery(apiError(409, "NOVEL_SOURCE_SELECTION_CONFLICT"))).toEqual({
       ...NOTHING,
-      resetEdits: true,
-      refetchSelection: true,
+      shouldResetEdits: true,
+      shouldRefetchSelection: true,
     });
   });
 
@@ -24,8 +24,8 @@ describe("toSelectionRecovery", () => {
   it("원문 변경은 고친 것을 두고 선택과 대화를 다시 받는다", () => {
     expect(toSelectionRecovery(apiError(409, "NOVEL_SOURCE_SELECTION_SOURCE_CHANGED"))).toEqual({
       ...NOTHING,
-      refetchSelection: true,
-      refetchMessages: true,
+      shouldRefetchSelection: true,
+      shouldRefetchMessages: true,
     });
   });
 
@@ -34,20 +34,20 @@ describe("toSelectionRecovery", () => {
     (code) => {
       expect(toSelectionRecovery(apiError(422, code))).toEqual({
         ...NOTHING,
-        resetEdits: true,
-        refetchSelection: true,
-        refetchMessages: true,
+        shouldResetEdits: true,
+        shouldRefetchSelection: true,
+        shouldRefetchMessages: true,
       });
     },
   );
 
   // 그사이 화가 생겼다. 고친 것은 두고 잠금만 새로 받는다 — 잠긴 턴은 화면이 담기로 보내지 않는다.
   it("잠긴 구간 거절은 선택만 다시 받는다", () => {
-    expect(toSelectionRecovery(apiError(422, "NOVEL_SOURCE_SECTION_LOCKED"))).toEqual({ ...NOTHING, refetchSelection: true });
+    expect(toSelectionRecovery(apiError(422, "NOVEL_SOURCE_SECTION_LOCKED"))).toEqual({ ...NOTHING, shouldRefetchSelection: true });
   });
 
   it("스위치가 꺼졌으면 가격을 다시 받아 구성 화면을 거둔다", () => {
-    expect(toSelectionRecovery(apiError(404, "NOVEL_OUTLINE_FLOW_DISABLED"))).toEqual({ ...NOTHING, refetchPricing: true });
+    expect(toSelectionRecovery(apiError(404, "NOVEL_OUTLINE_FLOW_DISABLED"))).toEqual({ ...NOTHING, shouldRefetchPricing: true });
   });
 
   it.each([

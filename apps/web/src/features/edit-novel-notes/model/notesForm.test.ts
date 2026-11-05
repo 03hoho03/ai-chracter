@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formToServer } from "./formToServer";
-import { countNotesChars, createNotesFormSchema } from "./schema";
+import { countNotesChars, createNotesFormSchema } from "./notesFormSchema";
 import { serverToForm } from "./serverToForm";
 
 let counter = 0;

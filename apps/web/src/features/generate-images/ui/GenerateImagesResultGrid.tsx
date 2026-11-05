@@ -9,7 +9,7 @@ import { getResultTileLabel } from "../model/generateButtonState";
 import { isEveryResultHidden } from "../model/remainingResults";
 import { getPartialBlockNotice, getResultStatusMessage } from "../model/resultStatusMessage";
 import { getResultTileLayout, type ResultShape } from "../model/resultTileLayout";
-import type { GenerateImagesFormValues } from "../model/schema";
+import type { GenerateImagesFormValues } from "../model/generateImagesSchema";
 
 type GenerateImagesResultGridProps = {
   /** 마지막으로 202를 받은 제출의 비율·개수. 없으면 아직 생성한 적이 없는 빈 상태다. */

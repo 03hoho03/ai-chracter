@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 import { formatAuthRateLimitMessage, getAuthRateLimit } from "@/entities/session";
 
-import { useResendVerificationCodeMutation } from "../api/mutations";
+import { useResendVerificationCodeMutation } from "../api/signUpMutations";
 import { toResendVerificationCodeRequest } from "../model/formToServer";
 import type { SignUpFormValues } from "../model/signUpSchema";
 

@@ -8,7 +8,7 @@ import { z } from "zod";
  * 휴대폰은 하이픈을 허용하고 숫자만 세어 10~11자리를 본다 — 결제창에는 숫자만 넘긴다(`toPortOneCustomer`).
  * 이메일도 늘 받는다: 결제대행사가 PC 결제에서 요구하고, 계정 이메일로 이미 채워져 있어 모바일에서 따로 빼는 쪽이
  * 기기 판정 하나만 늘린다. */
-export const purchaseFormSchema = z.object({
+export const PURCHASE_FORM_SCHEMA = z.object({
   payMethodKey: z.string().min(1, { message: "결제수단을 골라 주세요" }),
   fullName: z.string().refine((value) => value.trim().length > 0, { message: "이름을 입력해 주세요" }),
   phoneNumber: z
@@ -18,7 +18,7 @@ export const purchaseFormSchema = z.object({
   agreed: z.boolean().refine((value) => value, { message: "구매 조건에 동의해 주세요" }),
 });
 
-export type PurchaseFormValues = z.infer<typeof purchaseFormSchema>;
+export type PurchaseFormValues = z.infer<typeof PURCHASE_FORM_SCHEMA>;
 
 export function getPurchaseFormDefaultValues(email: string, payMethodKey: string): PurchaseFormValues {
   return { payMethodKey, fullName: "", phoneNumber: "", email, agreed: false };

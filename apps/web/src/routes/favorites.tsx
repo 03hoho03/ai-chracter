@@ -6,14 +6,14 @@ import { requireSession } from "@/entities/session";
 import { FavoritesPage, type FavoritesSearch } from "@/pages/favorites";
 
 // 그리드가 항상 단일 타입이어야 해서 타입 필터 상태를 URL에 싣는다.
-// `routes/profile.$userId.tsx`의 `profileSearchSchema`와 같은 패턴이다. 모르는 값은 그 축만 기본값
+// `routes/profile.$userId.tsx`의 `PROFILE_SEARCH_SCHEMA`와 같은 패턴이다. 모르는 값은 그 축만 기본값
 // (= 파라미터의 부재)으로 흘려보낸다 — `validateSearch` 8곳 공통 처방.
-const favoritesSearchSchema = z.object({
+const FAVORITES_SEARCH_SCHEMA = z.object({
   type: z.enum(CONTENT_TYPES).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/favorites")({
-  validateSearch: favoritesSearchSchema,
+  validateSearch: FAVORITES_SEARCH_SCHEMA,
   beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
   component: RouteComponent,
 });

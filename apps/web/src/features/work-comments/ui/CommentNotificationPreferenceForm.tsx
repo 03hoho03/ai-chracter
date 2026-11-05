@@ -11,7 +11,7 @@ import type { CommentPreferences } from "@/entities/comment";
 import { notificationPreferenceServerToForm } from "../model/serverToForm";
 import { useSaveCommentPreferencesMutation } from "../api/useSaveCommentPreferencesMutation";
 import { notificationPreferenceErrors } from "../model/notificationPreferenceErrors";
-import { notificationPreferenceSchema, type NotificationPreferenceFormValues } from "../model/notificationPreferenceSchema";
+import { NOTIFICATION_PREFERENCE_SCHEMA, type NotificationPreferenceFormValues } from "../model/notificationPreferenceSchema";
 
 const NOTIFICATION_LABELS: Record<keyof NotificationPreferenceFormValues, string> = {
   isNewCommentEnabled: "내 작품의 새 원댓글", isReplyEnabled: "내 댓글에 대한 답글", isMentionEnabled: "나를 선택한 멘션",
@@ -20,7 +20,7 @@ const NOTIFICATION_LABELS: Record<keyof NotificationPreferenceFormValues, string
 export function CommentNotificationPreferenceForm({ viewerId, preferences }: { viewerId: string; preferences: CommentPreferences }) {
   const id = useId();
   const isSubmittingRef = useRef(false);
-  const form = useForm<NotificationPreferenceFormValues>({ resolver: zodResolver(notificationPreferenceSchema), defaultValues: notificationPreferenceServerToForm(preferences) });
+  const form = useForm<NotificationPreferenceFormValues>({ resolver: zodResolver(NOTIFICATION_PREFERENCE_SCHEMA), defaultValues: notificationPreferenceServerToForm(preferences) });
   const save = useSaveCommentPreferencesMutation(viewerId);
   const { errors, isSubmitting, isDirty } = form.formState;
 
@@ -45,7 +45,7 @@ export function CommentNotificationPreferenceForm({ viewerId, preferences }: { v
     if (isSubmitting || isSubmittingRef.current) return;
     void form.handleSubmit(handleSubmit)(event);
   }}>
-    {notificationPreferenceSchema.keyof().options.map((name) => <div key={name} className="flex flex-col gap-1">
+    {NOTIFICATION_PREFERENCE_SCHEMA.keyof().options.map((name) => <div key={name} className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-3">
         <Label htmlFor={id + name} className="break-keep text-sm">{NOTIFICATION_LABELS[name]}</Label>
         <Controller name={name} control={form.control} render={({ field }) => <Switch id={id + name} checked={field.value} onCheckedChange={field.onChange}

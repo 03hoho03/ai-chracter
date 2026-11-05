@@ -1,7 +1,7 @@
 import { createContext, useContext, type RefObject } from "react";
 
 import type { UnavailableReason } from "./imageModelsUnavailableReason";
-import type { GenerateImagesFormValues } from "./schema";
+import type { GenerateImagesFormValues } from "./generateImagesSchema";
 
 /** 참조 행이 피커에서 받는 값. 미리보기 URL은 표시 전용이라 폼에 넣지 않는다. */
 export type PickedReferenceImage = { assetId: string; imageUrl: string };

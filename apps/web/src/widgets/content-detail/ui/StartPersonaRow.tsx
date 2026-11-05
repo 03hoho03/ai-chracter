@@ -99,7 +99,7 @@ export function StartPersonaRow({ personaList, startPersona, onSelect }: StartPe
                   onValueChange={(personaId) => {
                     if (personaId !== null) selectAndClose(personaId);
                   }}
-                  includeNone={false}
+                  shouldIncludeNone={false}
                   aria-label="이번 대화의 대화 프로필"
                 />
 
