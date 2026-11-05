@@ -121,3 +121,65 @@ def test_new_secret_settings_are_hidden_from_repr(monkeypatch: pytest.MonkeyPatc
         assert name not in rendered
     assert "hook-marker" not in rendered
     assert FAKE_CREDENTIAL_KEYRING.rsplit(":", 1)[-1] not in rendered
+
+
+# ── 호출 경로 스위치 ──────────────────────────────────────────────────────────────────
+_WEBHOOK = "https://discord.invalid/api/webhooks/0/pool-marker"
+_STORE = {
+    "LLM_CREDENTIAL_ENCRYPTION_KEYS": FAKE_CREDENTIAL_KEYRING,
+    "LLM_CREDENTIAL_ALLOWED_ACCOUNTS": f"anthropic:{_ORG}",
+    "LLM_CREDENTIAL_DISCORD_WEBHOOK_URL": _WEBHOOK,
+}
+
+
+@pytest.mark.parametrize(
+    "raw", [pytest.param(None, id="unset"), pytest.param("", id="empty"), pytest.param("  ", id="blank")]
+)
+def test_pool_switch_defaults_off_and_reads_an_empty_value_as_off(
+    monkeypatch: pytest.MonkeyPatch, raw: str | None
+) -> None:
+    """줄을 남긴 채 값만 비운 env 도 꺼짐으로 뜬다 — 끄려고 값만 지운 것이 기동 실패가 되면 안 된다. 꺼짐이면 저장소 설정이
+    없어도 뜬다."""
+    for name in (*_STORE, "LLM_CREDENTIAL_POOL_ENABLED"):
+        monkeypatch.delenv(name, raising=False)
+    if raw is not None:
+        monkeypatch.setenv("LLM_CREDENTIAL_POOL_ENABLED", raw)
+
+    loaded = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert loaded.llm_credential_pool_enabled is False
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        pytest.param("LLM_CREDENTIAL_ENCRYPTION_KEYS", "", id="keyring"),
+        pytest.param("LLM_CREDENTIAL_ALLOWED_ACCOUNTS", "", id="allowlist-empty"),
+        pytest.param("LLM_CREDENTIAL_ALLOWED_ACCOUNTS", ",,", id="allowlist-only-separators"),
+        pytest.param("LLM_CREDENTIAL_DISCORD_WEBHOOK_URL", "", id="webhook"),
+    ],
+)
+def test_pool_switch_on_refuses_to_start_without_each_store_setting(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    """켠 채 셋 중 하나가 비면 뜨지 않는다 — 키를 못 읽어 첫 호출에서야 후보가 없거나, 소진·잔액 알림이 갈 곳 없이 조용히 돈다.
+    쉼표만 있는 허용 목록은 읽으면 아무 계정도 없어 빈 값과 같다. 오류 문장에는 키 이름만 있고 다른 값은 없다."""
+    for key, stored in _STORE.items():
+        monkeypatch.setenv(key, stored)
+    monkeypatch.setenv(name, value)
+    monkeypatch.setenv("LLM_CREDENTIAL_POOL_ENABLED", "true")
+
+    with pytest.raises(ValidationError) as caught:
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+    text = str(caught.value)
+    assert f"LLM_CREDENTIAL_POOL_ENABLED 가 켜져 있는데 {name} 가 비어 있다" in text
+    assert "pool-marker" not in text and _ORG not in text
+    assert FAKE_CREDENTIAL_KEYRING.rsplit(":", 1)[-1] not in text
+
+
+def test_production_env_with_the_pool_switch_and_store_settings_boots(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 env 에 스위치와 저장소 세 키를 더해도 뜬다 — 스위치 검사가 운영 env 의 다른 키와 엮여 기동을 막지 않는다."""
+    loaded = load_production_env(monkeypatch, LLM_CREDENTIAL_POOL_ENABLED="true", **_STORE)
+
+    assert loaded.llm_credential_pool_enabled is True

@@ -345,6 +345,11 @@ class Settings(BaseSettings):
     llm_credential_encryption_keys: str = Field(default="", repr=False)
     llm_credential_allowed_accounts: str = ""
     llm_credential_discord_webhook_url: str = Field(default="", repr=False)
+    # Claude 자격 목록을 호출 경로가 읽는 스위치(빈 값은 꺼짐). 꺼지면 Anthropic 직결 호출은 지금처럼 env 키 하나로 간다.
+    # 켜도 어드민의 "목록 사용"이 꺼져 있거나 목록에 항목이 없으면 같다. 켜면 위 암호화 키·허용 계정·알림 웹훅이 모두
+    # 있어야 기동한다 — 소진·추정 잔액 알림이 이 웹훅으로만 가고, 키를 읽으려면 암호화 키가 있어야 한다. env 키
+    # (`ANTHROPIC_DIRECT_API_KEY`)는 켜도 지우지 않는다 — 목록을 끄면 그 키로 돌아간다.
+    llm_credential_pool_enabled: bool = False
 
     @field_validator("llm_credential_allowed_accounts")
     @classmethod
@@ -352,6 +357,33 @@ class Settings(BaseSettings):
         """값은 문자열 그대로 두고 형식만 본다 — 쓰는 쪽이 키링처럼 매번 다시 읽는다."""
         parse_allowed_accounts(value)
         return value
+
+    @field_validator("llm_credential_pool_enabled", mode="before")
+    @classmethod
+    def _empty_llm_credential_pool_enabled_is_off(cls, value: object) -> object:
+        """줄을 남긴 채 값만 비운 env 도 기동하게 빈 값은 꺼짐으로 읽는다(클로버 정지 스위치와 같은 이유)."""
+        if isinstance(value, str) and not value.strip():
+            return False
+        return value
+
+    @model_validator(mode="after")
+    def _credential_pool_needs_store_and_webhook(self) -> "Settings":
+        """켠 채 셋 중 하나가 비면 첫 호출에서야 드러나거나(키를 못 읽어 후보 0) 알림 없이 조용히 돈다 — 배포 단계에서 막는다.
+        허용 계정은 읽은 결과로 본다(쉼표만 있는 값은 아무 계정도 없다). 문장에는 키 이름만 싣는다."""
+        if not self.llm_credential_pool_enabled:
+            return self
+        missing = [
+            name
+            for name, present in (
+                ("LLM_CREDENTIAL_ENCRYPTION_KEYS", bool(self.llm_credential_encryption_keys)),
+                ("LLM_CREDENTIAL_ALLOWED_ACCOUNTS", bool(parse_allowed_accounts(self.llm_credential_allowed_accounts))),
+                ("LLM_CREDENTIAL_DISCORD_WEBHOOK_URL", bool(self.llm_credential_discord_webhook_url.strip())),
+            )
+            if not present
+        ]
+        if missing:
+            raise ValueError(f"LLM_CREDENTIAL_POOL_ENABLED 가 켜져 있는데 {', '.join(missing)} 가 비어 있다")
+        return self
 
     # 실제 모델 id. 같은 `opus`·`sonnet` 이라도 Bedrock 쪽 id 와 버전이 다르다. 화면의 모델 이름(`llm/chat_models.py`)은
     # 운영이 실제로 부르는 쪽을 따르고, 운영은 배정으로 상위 모델을 이 구현에 보내므로 지금은 이 쪽 버전이다.
