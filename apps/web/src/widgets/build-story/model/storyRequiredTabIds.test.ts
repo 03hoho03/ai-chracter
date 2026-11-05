@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { matchTabForPath } from "@/features/build-common";
 import { STORY_FIELD_LABELS, STORY_TABS } from "@/features/build-story";
 
-import { STORY_REQUIRED_TAB_IDS } from "./requiredTabs";
+import { STORY_REQUIRED_TAB_IDS } from "./storyRequiredTabIds";
 
 /**
  * 칸 라벨 표가 말하는 "언제나 필수인 탭". 필수 칸이면서 그 칸을 품은 목록(경로의 `*` 앞까지)도 모두 필수인 칸만 고른다 —

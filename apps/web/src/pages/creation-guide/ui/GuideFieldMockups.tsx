@@ -45,14 +45,14 @@ type GuideFieldMockupsProps = {
   values: readonly FieldValue[];
   context: GuideMockupContext;
   /** false 면 여러 줄 칸을 자르지 않는다(대비 발췌). */
-  clampsLongText?: boolean;
+  shouldClampLongText?: boolean;
 };
 
 /**
  * 칸 값 여러 개를 빌더 칸 모양으로 쌓는다. 빌더가 한 줄에 놓는 칸 묶음(스탯의 아이콘·색·이름, 수치 칸들)은 같은 줄
  * 배치로 그린다 — 따로 쌓으면 빌더에서 본 모양과 달라 "그 칸"으로 읽히지 않는다.
  */
-export function GuideFieldMockups({ values, context, clampsLongText = true }: GuideFieldMockupsProps) {
+export function GuideFieldMockups({ values, context, shouldClampLongText = true }: GuideFieldMockupsProps) {
   const keys = values.map((value) => value.key);
   if (keys.includes(STAT_ICON_KEY)) return <StatIdentityMockup values={values} />;
   const isNumberRow = values.length > 1 && values.every((value) => kindOf(value.key, context) === "number");
@@ -60,7 +60,7 @@ export function GuideFieldMockups({ values, context, clampsLongText = true }: Gu
   return (
     <div className={cn("grid gap-3", isNumberRow && "grid-cols-3")}>
       {values.map((value) => (
-        <GuideFieldMockup key={value.key} value={value} context={context} clampsLongText={clampsLongText} />
+        <GuideFieldMockup key={value.key} value={value} context={context} shouldClampLongText={shouldClampLongText} />
       ))}
     </div>
   );
@@ -69,10 +69,10 @@ export function GuideFieldMockups({ values, context, clampsLongText = true }: Gu
 type GuideFieldMockupProps = {
   value: FieldValue;
   context: GuideMockupContext;
-  clampsLongText: boolean;
+  shouldClampLongText: boolean;
 };
 
-function GuideFieldMockup({ value, context, clampsLongText }: GuideFieldMockupProps) {
+function GuideFieldMockup({ value, context, shouldClampLongText }: GuideFieldMockupProps) {
   const { key } = value;
   if (!isStoryFieldKey(key)) throw new Error(`라벨 상수에 없는 칸 키: ${key}`);
   const mockup = context.mockups[key];
@@ -96,7 +96,7 @@ function GuideFieldMockup({ value, context, clampsLongText }: GuideFieldMockupPr
         fieldKey={key}
         parsed={parsed}
         context={context}
-        clampsLongText={clampsLongText}
+        shouldClampLongText={shouldClampLongText}
         countLimit={countLimit}
       />
     </div>
@@ -107,12 +107,12 @@ type MockupControlProps = {
   fieldKey: StoryFieldKey;
   parsed: MockupValue;
   context: GuideMockupContext;
-  clampsLongText: boolean;
+  shouldClampLongText: boolean;
   /** 입력칸 아래 카운터의 상한. 없으면 카운터를 그리지 않는다. */
   countLimit: number | undefined;
 };
 
-function MockupControl({ fieldKey, parsed, context, clampsLongText, countLimit }: MockupControlProps) {
+function MockupControl({ fieldKey, parsed, context, shouldClampLongText, countLimit }: MockupControlProps) {
   switch (parsed.kind) {
     case "text":
       return (
@@ -124,7 +124,7 @@ function MockupControl({ fieldKey, parsed, context, clampsLongText, countLimit }
     case "textarea":
       return (
         <>
-          <MockupTextarea text={parsed.text} clampsLongText={clampsLongText} />
+          <MockupTextarea text={parsed.text} shouldClampLongText={shouldClampLongText} />
           {countLimit !== undefined && <MockupCharacterCount count={countCharacters(parsed.text)} max={countLimit} />}
         </>
       );

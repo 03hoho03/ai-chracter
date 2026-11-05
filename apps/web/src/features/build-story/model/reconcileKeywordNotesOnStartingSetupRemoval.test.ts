@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { reconcileKeywordNotesOnStartingSetupRemoval } from "./reconcileKeywordNotes";
+import { reconcileKeywordNotesOnStartingSetupRemoval } from "./reconcileKeywordNotesOnStartingSetupRemoval";
 import { createKeywordNote, type KeywordNoteValues } from "./storyBuilderSchema";
 
 function globalNote(id: string): KeywordNoteValues {

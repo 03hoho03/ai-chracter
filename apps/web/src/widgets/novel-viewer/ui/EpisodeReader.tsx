@@ -183,7 +183,7 @@ export function EpisodeReader({
       return;
     }
     if (chrome.isVisible) chrome.hide();
-    else chrome.show({ focusTopBar: false });
+    else chrome.show({ shouldFocusTopBar: false });
   }
 
   function openToc(opener: HTMLElement | null) {
@@ -224,7 +224,7 @@ export function EpisodeReader({
             aria-expanded={chrome.isVisible}
             aria-controls={`${topBarId} ${bottomBarId}`}
             className="pointer-events-auto not-focus-visible:sr-only motion-safe:transition-none"
-            onClick={() => (chrome.isVisible ? chrome.hide() : chrome.show({ focusTopBar: true }))}
+            onClick={() => (chrome.isVisible ? chrome.hide() : chrome.show({ shouldFocusTopBar: true }))}
           >
             {chrome.isVisible ? "메뉴 닫기" : "메뉴 열기"}
           </Button>

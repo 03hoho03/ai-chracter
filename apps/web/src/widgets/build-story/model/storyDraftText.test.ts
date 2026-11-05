@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { StoryBuilderFormValues } from "@/features/build-story";
 
-import { storyDraftText } from "./draftText";
+import { storyDraftText } from "./storyDraftText";
 
 function formValues(): StoryBuilderFormValues {
   return {

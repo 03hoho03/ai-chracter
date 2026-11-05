@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isSummaryRegenerateOffered } from "./regenerateOffer";
+import { isSummaryRegenerateOffered } from "./isSummaryRegenerateOffered";
 
 describe("isSummaryRegenerateOffered", () => {
   it("offers regeneration only while its route is open and summaries are used in replies", () => {

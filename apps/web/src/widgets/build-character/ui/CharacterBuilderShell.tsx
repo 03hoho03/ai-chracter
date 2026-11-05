@@ -239,7 +239,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
     checklist.reapplyServerIssues();
     // 첫 발행인데 소설 만들기 허락을 아직 고르지 않았으면 확인창 전에 막고 그 칸으로 간다(확인 목록에 한 줄이 선다).
     const permissionCheck = await novelPermissionChoice.checkBeforePublish();
-    if (permissionCheck.blocked) {
+    if (permissionCheck.isBlocked) {
       revealAndFocus(errorsAtPaths([NOVEL_PERMISSION_PATH]));
       toast.error(PUBLISH_ISSUES_TOAST);
       return;

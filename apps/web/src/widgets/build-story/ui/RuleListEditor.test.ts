@@ -31,7 +31,7 @@ function render(items: RuleListItemValues[], emptyText = "규칙이 없어요.")
     createElement(RuleListEditor, {
       items,
       stats: [KEPT],
-      allowGroups: true,
+      canUseGroups: true,
       emptyText,
       groupList: "ruleGroup",
       onChange: () => undefined,
@@ -104,7 +104,7 @@ describe("RuleListEditor 조건 상한", () => {
       createElement(RuleListEditor, {
         items,
         stats: [KEPT],
-        allowGroups: true,
+        canUseGroups: true,
         emptyText: "규칙이 없어요.",
         groupList: "situationNoteRuleGroup",
         ruleLimit: { max: 10, reason: "조건은 10개까지예요." },

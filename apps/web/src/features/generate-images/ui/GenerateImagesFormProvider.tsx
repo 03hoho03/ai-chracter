@@ -68,7 +68,7 @@ export function GenerateImagesFormProvider({ onSubmit, onPickReference, children
     dataUpdatedAt: modelsDataUpdatedAt,
   });
   // 빈 목록은 정적 레지스트리가 빈 것이라 다시 물어도 고쳐지지 않는다.
-  const onRetry =
+  const handleRetry =
     unavailableReason === "error" || unavailableReason === "unavailable" ? () => void refetchModels() : undefined;
 
   // 피커가 준 presigned URL은 만료되는 표시 전용 값이라 폼 값이 아니라 state로 둔다. 어느 이미지의
@@ -108,7 +108,7 @@ export function GenerateImagesFormProvider({ onSubmit, onPickReference, children
           onSubmit: handleSubmit,
           isModelsPending,
           unavailableReason,
-          onRetry,
+          onRetry: handleRetry,
           isReferenceEnabled,
           onPickReference,
           referencePreview,

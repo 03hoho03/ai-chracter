@@ -41,7 +41,7 @@ export function NovelTitleEditor({ novel }: { novel: NovelDetailResponse }) {
     pencilRef.current?.focus();
   }, [isEditing]);
 
-  function startEditing() {
+  function handleStartEditing() {
     form.reset({ title: novel.title ?? "" });
     setSaveError(undefined);
     setIsEditing(true);
@@ -123,7 +123,7 @@ export function NovelTitleEditor({ novel }: { novel: NovelDetailResponse }) {
         >
           {novel.title ?? "제목 미정"}
         </h1>
-        <Button ref={pencilRef} type="button" variant="ghost" size="icon-sm" aria-label="제목 고치기" className="shrink-0" onClick={startEditing}>
+        <Button ref={pencilRef} type="button" variant="ghost" size="icon-sm" aria-label="제목 고치기" className="shrink-0" onClick={handleStartEditing}>
           <Pencil aria-hidden />
         </Button>
       </div>

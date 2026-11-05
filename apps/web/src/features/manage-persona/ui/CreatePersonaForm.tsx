@@ -23,7 +23,7 @@ export function CreatePersonaForm({ defaultPersonaId, isFirstPersona, onCreated,
   return (
     <PersonaFormBody
       defaultValues={createFormDefaults(defaultPersonaId)}
-      showsSetAsDefault={!isFirstPersona}
+      shouldShowSetAsDefault={!isFirstPersona}
       submitLabel="만들기"
       onCancel={onCancel}
       onValidSubmit={async (values) => {

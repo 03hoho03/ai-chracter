@@ -15,10 +15,10 @@ export type DiffRunners = { words: DiffRunner; sentences: DiffRunner };
 export type DiffSegment = { kind: "equal" | "added" | "removed"; text: string };
 
 /** 문단 단위 표시 묶음. 바뀐 문단은 하나씩 펼치고, 사이의 바뀌지 않은 문단은 한 덩어리로 접어 둘 수 있게 모은다.
- * `whitespaceOnly` 는 글자는 그대로이고 문단 나눔·공백만 바뀐 문단이다 — 단어 단위 비교는 공백 차이를 차이로 보지
+ * `isWhitespaceOnly` 는 글자는 그대로이고 문단 나눔·공백만 바뀐 문단이다 — 단어 단위 비교는 공백 차이를 차이로 보지
  * 않아 조각이 전부 `equal` 이므로, 화면이 표시할 다른 말이 필요하다. */
 export type DiffBlock =
-  | { kind: "changed"; segments: DiffSegment[]; whitespaceOnly: boolean }
+  | { kind: "changed"; segments: DiffSegment[]; isWhitespaceOnly: boolean }
   | { kind: "unchanged"; paragraphs: string[] };
 
 export type DiffView =
@@ -144,8 +144,8 @@ function toBlocks(paragraphs: Paragraph[]): DiffBlock[] {
   const blocks: DiffBlock[] = [];
   for (const paragraph of paragraphs) {
     if (paragraph.isChanged) {
-      const whitespaceOnly = paragraph.segments.every((segment) => segment.kind === "equal");
-      blocks.push({ kind: "changed", segments: paragraph.segments, whitespaceOnly });
+      const isWhitespaceOnly = paragraph.segments.every((segment) => segment.kind === "equal");
+      blocks.push({ kind: "changed", segments: paragraph.segments, isWhitespaceOnly });
       continue;
     }
     const text = paragraphText(paragraph);

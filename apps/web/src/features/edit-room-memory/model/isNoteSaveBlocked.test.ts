@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isNoteSaveBlocked } from "./noteSaveGuard";
+import { isNoteSaveBlocked } from "./isNoteSaveBlocked";
 
 const IDLE = { isSavePending: false, isClearPending: false, isSubmitting: false };
 

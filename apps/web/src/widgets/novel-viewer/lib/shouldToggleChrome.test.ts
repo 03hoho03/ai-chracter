@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { type ChromeTapGesture, shouldToggleChrome } from "./shouldToggleChrome";
 
-const TAP: ChromeTapGesture = { dx: 0, dy: 0, dt: 100, selectionCollapsed: true, targetIsInteractive: false };
+const TAP: ChromeTapGesture = { dx: 0, dy: 0, dt: 100, isSelectionCollapsed: true, isTargetInteractive: false };
 
 describe("shouldToggleChrome", () => {
   it("제자리에서 짧게 누른 탭은 바를 여닫는다", () => {
@@ -22,10 +22,10 @@ describe("shouldToggleChrome", () => {
   });
 
   it("문장을 선택했으면 탭이 아니다", () => {
-    expect(shouldToggleChrome({ ...TAP, selectionCollapsed: false })).toBe(false);
+    expect(shouldToggleChrome({ ...TAP, isSelectionCollapsed: false })).toBe(false);
   });
 
   it("링크·버튼 위에서 누르면 탭이 아니다", () => {
-    expect(shouldToggleChrome({ ...TAP, targetIsInteractive: true })).toBe(false);
+    expect(shouldToggleChrome({ ...TAP, isTargetInteractive: true })).toBe(false);
   });
 });

@@ -61,7 +61,7 @@ export const StudioAddWorksModal = createCallable<StudioAddWorksModalProps>(({ c
   const isFailed = membersQuery.isError || (worksQuery.isError && works.length === 0);
   const isSaving = mutation.isPending;
 
-  function toggle(item: WorkItem, isChecked: boolean) {
+  function handleToggle(item: WorkItem, isChecked: boolean) {
     setResultError(undefined);
     setSelected((previous) => {
       const next = new Map(previous);
@@ -72,7 +72,7 @@ export const StudioAddWorksModal = createCallable<StudioAddWorksModalProps>(({ c
     });
   }
 
-  function submit() {
+  function handleSubmit() {
     if (isSaving || toAdd.length === 0) return;
     setResultError(undefined);
     mutation.mutate(
@@ -155,7 +155,7 @@ export const StudioAddWorksModal = createCallable<StudioAddWorksModalProps>(({ c
                         item={item}
                         isMember={members.has(key)}
                         isChecked={members.has(key) || selected.has(key)}
-                        onCheckedChange={(isChecked) => toggle(item, isChecked)}
+                        onCheckedChange={(isChecked) => handleToggle(item, isChecked)}
                       />
                     </li>
                   );
@@ -187,7 +187,7 @@ export const StudioAddWorksModal = createCallable<StudioAddWorksModalProps>(({ c
             aria-disabled={isSaving || toAdd.length === 0}
             aria-describedby={resultError !== undefined ? errorId : undefined}
             className="aria-disabled:opacity-65"
-            onClick={submit}
+            onClick={handleSubmit}
           >
             {toSubmitLabel(isSaving, toAdd.length)}
           </Button>

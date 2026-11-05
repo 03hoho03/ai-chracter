@@ -135,7 +135,7 @@ export function SituationNoteCard({ startingSetupIndex, noteIndex, note, stats, 
         <RuleListEditor
           items={note.conditionRules}
           stats={stats}
-          allowGroups
+          canUseGroups
           emptyText={CONDITIONS_EMPTY_TEXT}
           groupList={RULE_GROUP_LIST}
           fieldPath={`${notePath}.conditionRules`}

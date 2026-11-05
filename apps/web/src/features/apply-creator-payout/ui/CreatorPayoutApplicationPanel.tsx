@@ -196,16 +196,16 @@ function RequirementStatus({ requirement }: { requirement: Requirement }) {
  * `<details>`). 신청 중에는 `disabled` 대신 `aria-disabled` 로 막는다 — `disabled` 는 누른 버튼의 포커스를 날린다. */
 function ApplyForm({ onApplying }: { onApplying: (isApplying: boolean) => void }) {
   const fieldId = useId();
-  const [agreed, setAgreed] = useState(false);
-  const [showsAgreeError, setShowsAgreeError] = useState(false);
+  const [hasAgreed, setHasAgreed] = useState(false);
+  const [shouldShowAgreeError, setShouldShowAgreeError] = useState(false);
   const [result, setResult] = useState<Exclude<ApplyResult, "applied" | "reconsentRequired"> | null>(null);
   const mutation = useApplyCreatorPayoutMutation();
   const agreeErrorId = `${fieldId}-agree-error`;
 
   const handleApply = async () => {
     if (mutation.isPending) return;
-    if (!agreed) {
-      setShowsAgreeError(true);
+    if (!hasAgreed) {
+      setShouldShowAgreeError(true);
       return;
     }
     setResult(null);
@@ -228,19 +228,19 @@ function ApplyForm({ onApplying }: { onApplying: (isApplying: boolean) => void }
         <label className="flex items-start gap-2 text-sm break-keep text-foreground">
           <Checkbox
             className="mt-0.5"
-            checked={agreed}
+            checked={hasAgreed}
             onCheckedChange={(checked) => {
-              setAgreed(checked === true);
-              if (checked === true) setShowsAgreeError(false);
+              setHasAgreed(checked === true);
+              if (checked === true) setShouldShowAgreeError(false);
             }}
-            aria-invalid={showsAgreeError}
-            aria-describedby={showsAgreeError ? agreeErrorId : undefined}
+            aria-invalid={shouldShowAgreeError}
+            aria-describedby={shouldShowAgreeError ? agreeErrorId : undefined}
           />
           <span>
             <span className="text-muted-foreground">(필수)</span> {APPLY_CONSENT_LABEL}
           </span>
         </label>
-        {showsAgreeError && (
+        {shouldShowAgreeError && (
           <p id={agreeErrorId} role="alert" className="pl-6 text-xs text-destructive-text">
             동의해야 신청할 수 있어요.
           </p>

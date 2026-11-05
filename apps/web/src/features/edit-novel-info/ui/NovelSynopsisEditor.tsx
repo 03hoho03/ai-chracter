@@ -40,7 +40,7 @@ export function NovelSynopsisEditor({ novel }: { novel: NovelDetailResponse }) {
     pencilRef.current?.focus();
   }, [isEditing]);
 
-  function startEditing() {
+  function handleStartEditing() {
     form.reset({ synopsis: novel.synopsis });
     setSaveError(undefined);
     setIsEditing(true);
@@ -71,7 +71,7 @@ export function NovelSynopsisEditor({ novel }: { novel: NovelDetailResponse }) {
           소개
         </h2>
         {!isEditing && (
-          <Button ref={pencilRef} type="button" variant="ghost" size="icon-sm" aria-label="소개 고치기" onClick={startEditing}>
+          <Button ref={pencilRef} type="button" variant="ghost" size="icon-sm" aria-label="소개 고치기" onClick={handleStartEditing}>
             <Pencil aria-hidden />
           </Button>
         )}

@@ -19,7 +19,7 @@ import {
   useSignUpLoginMutation,
   useSignUpMutation,
   useVerifyEmailMutation,
-} from "../api/mutations";
+} from "../api/signUpMutations";
 import { useOnboardingMutation } from "../api/useOnboardingMutation";
 import {
   toSignUpLoginRequest,

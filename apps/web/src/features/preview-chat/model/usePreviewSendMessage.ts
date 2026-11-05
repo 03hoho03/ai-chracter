@@ -26,7 +26,7 @@ import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/aut
 // isSending(boolean) + error(boolean)의 조합은 "전송 중이면서 동시에 에러"라는 불가능 상태를
 // 타입으로 막지 못했다(useSendMessage와 동일한 처방). 재시도가 없어 useSendMessage와 달리 retryPayload는
 // 필요 없다. 429만 배너 문구가 갈리므로 그 값만 함께 싣는다.
-// `declined`는 확인 모달에서 **사용자가 그만둔 것**이라 실패가 아니다. 문구만 배너가
+// `isDeclined`는 확인 모달에서 **사용자가 그만둔 것**이라 실패가 아니다. 문구만 배너가
 // 갈라 쓴다(`useSendMessage`와 같은 처방). `sessionEnded`(로그인이 풀렸거나 정지)도 실패가 아니라 까닭이다.
 type PreviewSendStatus =
   | { kind: "idle" }
@@ -34,8 +34,8 @@ type PreviewSendStatus =
   | {
       kind: "error";
       rateLimit?: ChatRateLimit;
-      declined?: boolean;
-      identityRequired?: boolean;
+      isDeclined?: boolean;
+      isIdentityRequired?: boolean;
       sessionEnded?: SessionEndReason;
     };
 
@@ -103,11 +103,11 @@ export function usePreviewSendMessage(
     // 🔴 동의 뒤 재전송으로 넘어가면 **이 호출의 `finally`가 안쪽 호출의 상태를 덮어쓰면
     // 안 된다**(`return`은 `finally`를 건너뛰지 않는다). 안쪽이 이미 자기 상태를 세웠으므로
     // 여기서는 아무것도 하지 않는다.
-    let handedOffToRetry = false;
+    let hasHandedOffToRetry = false;
     // 그만두기를 실패와 구분한다(`finally`가 상태를 세우므로 바깥에 둔다).
-    let declined = false;
+    let isDeclined = false;
     // 본인인증 전이라 막힌 것도 실패와 구분한다(같은 이유로 바깥에 둔다).
-    let identityRequired = false;
+    let isIdentityRequired = false;
     // 세션이 끝나 거절된 것도 실패와 구분한다(같은 이유로 바깥에 둔다).
     let sessionEnded: SessionEndReason | undefined;
 
@@ -138,8 +138,8 @@ export function usePreviewSendMessage(
       hasErrored = true;
       // useSendMessage와 같은 이유로 여기서도 재동의 403을 잡는다(SSE는 MutationCache가 못 본다).
       // 본인인증 403 도 같은 이유로 여기서 세션을 다시 읽는다(빌더 미리보기도 채팅과 같은 본인인증 게이트를 지난다).
-      identityRequired = isIdentityVerificationRequiredError(error);
-      if (isLegalReconsentRequiredError(error) || identityRequired) {
+      isIdentityRequired = isIdentityVerificationRequiredError(error);
+      if (isLegalReconsentRequiredError(error) || isIdentityRequired) {
         void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       }
       // 같은 이유로 세션 소실 401·정지 403도 여기서 세션을 비운다.
@@ -151,7 +151,7 @@ export function usePreviewSendMessage(
       // 재전송 전에 방금 넣은 낙관적 메시지를 되돌린다.
       // 가격이 바뀌었다는 409 도 같은 길이다(저절로 다시 보내지 않고 새 가격으로 보낼지 묻는다).
       const confirmOutcome = canAskCloverConfirm(error, allowance) ? await confirmCloverSpend?.(error) : undefined;
-      declined = confirmOutcome === "declined";
+      isDeclined = confirmOutcome === "declined";
       if (confirmOutcome === "retry") {
         queryClient.setQueryData<PreviewSessionState>(
           previewSessionKeys.detail(previewSessionId),
@@ -159,16 +159,16 @@ export function usePreviewSendMessage(
             prev && { ...prev, messages: prev.messages.filter((m) => m.id !== optimisticMessage.id) },
         );
         setStreamingText("");
-        handedOffToRetry = true;
+        hasHandedOffToRetry = true;
         // 이미 바꾼 글이다 — 다시 바꾸지 않는다(이름 속 매크로 글자가 두 번째로 읽히지 않게).
         await sendExpanded(previewSessionId, text, shortcutId, allowanceAfterCloverConfirm(error, allowance));
         return;
       }
       rateLimit = getChatRateLimit(error);
     } finally {
-      if (!handedOffToRetry) {
+      if (!hasHandedOffToRetry) {
         setStreamingText("");
-        setStatus(hasErrored ? { kind: "error", rateLimit, declined, identityRequired, sessionEnded } : { kind: "idle" });
+        setStatus(hasErrored ? { kind: "error", rateLimit, isDeclined, isIdentityRequired, sessionEnded } : { kind: "idle" });
       }
       // 미리보기도 채팅 4경로의 같은 게이트를 지나므로 첫 턴부터
       // 클로버가 깎인다(미리보기 문구가 "같은 한도를 쓴다"고 먼저 말하는 이유).

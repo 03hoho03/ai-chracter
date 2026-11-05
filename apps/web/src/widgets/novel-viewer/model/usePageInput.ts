@@ -155,7 +155,7 @@ export function usePageInput(options: UsePageInputOptions) {
       clientX: event.clientX,
       viewportWidth: window.innerWidth,
       pageWidth,
-      targetIsInteractive: start.isOnInteractive,
+      isTargetInteractive: start.isOnInteractive,
       isSettingsOpen,
       isZoomed: isZoomed(),
     });

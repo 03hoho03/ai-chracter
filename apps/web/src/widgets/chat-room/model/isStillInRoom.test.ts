@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isStillInRoom } from "./roomNovelNavigation";
+import { isStillInRoom } from "./isStillInRoom";
 
 describe("isStillInRoom", () => {
   it("응답이 왔을 때 아직 그 방 화면이면 참이다", () => {

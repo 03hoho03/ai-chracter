@@ -60,18 +60,18 @@ export function NovelPublicSection({ novel }: { novel: PublishableNovel }) {
   const rejection =
     !isChecking && status.lastScreening?.outcome === "rejected" ? toRejectionNotice(status.lastScreening) : undefined;
 
-  async function publish() {
+  async function handlePublish() {
     if (status === undefined || isChecking) return;
     actions.clearFailure();
     announcePublishResult(await actions.openPublish(status));
   }
 
-  async function retry() {
+  async function handleRetry() {
     if (isChecking) return;
     announcePublishResult(await actions.retry());
   }
 
-  async function withdraw() {
+  async function handleWithdraw() {
     if (view === undefined) return;
     const outcome = await actions.openWithdraw(view.kind === "inReview" ? "cancelReview" : "withdraw");
     if (outcome === "cancelled") toast.success("신청을 취소했어요.");
@@ -131,9 +131,9 @@ export function NovelPublicSection({ novel }: { novel: PublishableNovel }) {
           fixChapterId={novel.chapters.find((chapter) => chapter.ordinal === rejection?.fixOrdinal)?.id}
           firstChapterId={novel.chapters.find((chapter) => chapter.ordinal === 1)?.id}
           canRetry={runState.kind === "failed" && isRetryablePublishFailure(runState.failure)}
-          onPublish={() => void publish()}
-          onRetry={() => void retry()}
-          onWithdraw={() => void withdraw()}
+          onPublish={() => void handlePublish()}
+          onRetry={() => void handleRetry()}
+          onWithdraw={() => void handleWithdraw()}
         />
       )}
 

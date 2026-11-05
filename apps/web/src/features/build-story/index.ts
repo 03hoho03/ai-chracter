@@ -71,7 +71,7 @@ export {
   storyAutosaveErrorMessage,
 } from "./model/mediaBookSaveError";
 export { excludeKeywordError, triggerKeywordError } from "./model/keywordNoteEdit";
-export { keywordNoteRestoreDecision } from "./model/keywordNoteRestore";
+export { keywordNoteRestoreDecision } from "./model/keywordNoteRestoreDecision";
 export { mediaBookPublishErrorMessage } from "./model/mediaBookPublishErrorMessage";
 export {
   findNextIncompleteCell,
@@ -84,7 +84,7 @@ export {
 } from "./model/mediaBookProgress";
 export { toMediaBookPreviewImages } from "./model/toMediaBookPreviewImages";
 export { nextThumbnailUrlEntry, type ThumbnailUrlEntry } from "./model/stableThumbnailUrl";
-export { reconcileKeywordNotesOnStartingSetupRemoval } from "./model/reconcileKeywordNotes";
+export { reconcileKeywordNotesOnStartingSetupRemoval } from "./model/reconcileKeywordNotesOnStartingSetupRemoval";
 export { hasRuleWithMissingStat, isMissingStat } from "./model/missingStatRules";
 export {
   isSituationNoteStatNotFoundError,

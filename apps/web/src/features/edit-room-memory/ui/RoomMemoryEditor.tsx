@@ -18,11 +18,11 @@ import {
 } from "../api/memoryMutations";
 import { toNoteRequest, toSummaryRequest } from "../model/formToServer";
 import { toMemoryWriteError, type MemoryWriteError } from "../model/memoryWriteError";
-import { isNoteSaveBlocked } from "../model/noteSaveGuard";
+import { isNoteSaveBlocked } from "../model/isNoteSaveBlocked";
 import { browserStorage, isRollbackUnseen, readSeenRollback, writeSeenRollback } from "../model/rollbackNotice";
 import { countMemoryChars, createMemoryFormSchema, memoryFormOptions, type MemoryFormValues } from "../model/memoryFormSchema";
 import { serverToForm } from "../model/serverToForm";
-import { isSummaryRegenerateOffered } from "../model/regenerateOffer";
+import { isSummaryRegenerateOffered } from "../model/isSummaryRegenerateOffered";
 import { summaryFoldingCopy } from "../model/summaryFoldingCopy";
 import { summaryRevertHint } from "../model/summaryRevertHint";
 import { RegenerateSummaryModal } from "./RegenerateSummaryModal";

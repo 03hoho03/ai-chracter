@@ -42,7 +42,7 @@ type PayoutInfoFormProps = {
   onCancel?: () => void;
   /** 버튼을 눌러 연 폼이면 참 — 누른 버튼이 폼으로 바뀌며 사라지므로 첫 칸(실명)으로 포커스를 옮긴다. 화면을 열자마자
    * 보이는 첫 등록 폼에는 주지 않는다(들어오자마자 포커스를 빼앗지 않는다). */
-  focusOnOpen?: boolean;
+  shouldFocusOnOpen?: boolean;
 };
 
 /** 지급 정보 입력 폼. 실명·주민등록번호·은행·계좌번호와 수집·이용(국외 이전 포함) 동의 하나를 받는다. 동의는 이
@@ -50,7 +50,7 @@ type PayoutInfoFormProps = {
  *
  * 주민등록번호가 거절된 이유(외국인등록번호·본인인증 생년월일과 다름)는 그 칸 아래에, 나머지 실패는 폼 머리에 둔다.
  * 저장 중에는 `disabled` 대신 `aria-disabled` 로 막는다 — `disabled` 는 누른 버튼의 포커스를 날린다. */
-export function PayoutInfoForm({ onSaved, onCancel, focusOnOpen = false }: PayoutInfoFormProps) {
+export function PayoutInfoForm({ onSaved, onCancel, shouldFocusOnOpen = false }: PayoutInfoFormProps) {
   const id = useId();
   const fieldId = (name: keyof PayoutInfoFormValues) => `${id}-${name}`;
   const errorId = (name: keyof PayoutInfoFormValues) => `${id}-${name}-error`;
@@ -71,8 +71,8 @@ export function PayoutInfoForm({ onSaved, onCancel, focusOnOpen = false }: Payou
 
   // 칸의 DOM 은 RHF `register` 가 쥐고 있어, 마운트 뒤 RHF 의 `setFocus` 로 옮긴다.
   useEffect(() => {
-    if (focusOnOpen) setFocus("legalName");
-  }, [focusOnOpen, setFocus]);
+    if (shouldFocusOnOpen) setFocus("legalName");
+  }, [shouldFocusOnOpen, setFocus]);
 
   async function handleValidSubmit(values: PayoutInfoSubmitValues) {
     // 버튼은 `aria-disabled` 라 Enter 제출을 막지 못한다 — 진행 중 재제출은 여기서 끊는다.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { toDeletedMessageStatRewind } from "./deleteMessageResponse";
+import { toDeletedMessageStatRewind } from "./toDeletedMessageStatRewind";
 
 describe("toDeletedMessageStatRewind", () => {
   it("reads how the server rewound the stats", () => {

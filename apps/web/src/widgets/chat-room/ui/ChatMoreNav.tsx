@@ -24,7 +24,7 @@ import { UpdateInfoModal } from "@/features/update-info";
 import type { AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 import { chatSidePanelAtom } from "../model/atoms";
-import { isStillInRoom } from "../model/roomNovelNavigation";
+import { isStillInRoom } from "../model/isStillInRoom";
 import { CHAT_MODEL_FEATURE_GATE, visibleMoreItems, type FeatureGatedItem } from "../model/visibleMoreItems";
 import { RoomChatModelModal } from "./RoomChatModelModal";
 import { RoomPersonaModal } from "./RoomPersonaModal";
