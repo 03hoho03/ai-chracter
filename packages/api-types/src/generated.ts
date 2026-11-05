@@ -1370,6 +1370,174 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/llm-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Llm Credentials */
+        get: operations["list_llm_credentials_admin_llm_credentials_get"];
+        put?: never;
+        /**
+         * Create Llm Credential
+         * @description 목록 끝에 꺼진 채 더한다. 크레딧·한도로 거절된 키도 저장하지 않는다(충전한 뒤 다시 넣는다).
+         */
+        post: operations["create_llm_credential_admin_llm_credentials_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/llm-credentials/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Reorder Llm Credentials */
+        put: operations["reorder_llm_credentials_admin_llm_credentials_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/llm-credentials/pool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Llm Credential Pool
+         * @description 목록 사용 켜기·끄기. 끄기는 늘 된다(되돌리기 첫 단계). 켜기는 축마다 켜진 항목 하나 이상이 지금 키·지금 모델 id 로 확인
+         *     통과했을 때만 된다. 목록 판은 올리지 않는다.
+         */
+        put: operations["set_llm_credential_pool_admin_llm_credentials_pool_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/llm-credentials/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Llm Credential
+         * @description 행을 지운다(확인 기록도 함께) — 남는 행에 암호문이 남지 않게. 행이 사라지므로 감사 로그가 유일한 흔적이다.
+         */
+        delete: operations["delete_llm_credential_admin_llm_credentials__credential_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Llm Credential
+         * @description 라벨·충전액·임계만 고친다. 충전액이 바뀌면 그 기준 시각을 지금으로 다시 잡는다(사용액 누적이 그 시각부터 다시 센다).
+         */
+        patch: operations["update_llm_credential_admin_llm_credentials__credential_id__patch"];
+        trace?: never;
+    };
+    "/admin/llm-credentials/{credential_id}/secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace Llm Credential Secret
+         * @description 키만 바꾼다(한 항목 = 한 계정 — 다른 조직의 키로는 바꾸지 않는다). 상태·판은 그대로이고, 확인 기록이 옛 지문에 묶여
+         *     있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
+         *     없을 때 살리는 길) 지문이 같아 옛 확인 기록이 그대로 지금 키의 확인으로 센다 — 암호문만 지금 키로 다시 쓰고, 같은 키는
+         *     같은 조직이라 조직 조회를 부르지 않고 조직 표지도 그대로 둔다.
+         */
+        put: operations["replace_llm_credential_secret_admin_llm_credentials__credential_id__secret_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/llm-credentials/{credential_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Llm Credential
+         * @description 켠다(소진된 항목의 해제도 이것이다). 조건은 `enable_blocker` — 막히면 409 와 그 이유. 이미 켜져 있으면 그대로 200.
+         */
+        post: operations["enable_llm_credential_admin_llm_credentials__credential_id__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/llm-credentials/{credential_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable Llm Credential
+         * @description 운영자가 끈다. 판이 올라 그 전의 확인은 켜기에 세지 않는다. 이미 꺼져 있으면 그대로 200.
+         */
+        post: operations["disable_llm_credential_admin_llm_credentials__credential_id__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/llm-credentials/{credential_id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Llm Credential
+         * @description 모델 축마다 지금 설정의 실제 id 로 확인 호출을 하고 축마다 한 행을 같은 회차로 남긴다(같은 id 는 한 번, 차례로).
+         *     기록에는 확인을 시작할 때 읽은 판·지문을 남긴다 — 호출을 기다리는 동안 상태나 키가 바뀌면 그 회차는 켜기에 세지 않는다.
+         *     다시 시도할 일(과부하·시간 초과 등)로 실패한 축도 그 종류로 남는다 — 분당 한 번이라 1분 뒤 다시 누른다.
+         */
+        post: operations["check_llm_credential_admin_llm_credentials__credential_id__check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/llm-usage": {
         parameters: {
             query?: never;
@@ -8250,6 +8418,194 @@ export interface components {
             /** Items */
             items: components["schemas"]["AdminLegalVersionItem"][];
         };
+        /**
+         * AdminLlmCredential
+         * @description 목록 항목 하나. 키 원문·암호문·암호화 키 id 는 싣지 않는다 — 끝 4자리와 지문만. `same_as_env_key` 는 볼 때의 env 롤백
+         *     키와 같은 키인지(저장하지 않는 계산값), `enable_blocker` 는 켜기가 막히는 이유(켤 수 있으면 null)다.
+         */
+        AdminLlmCredential: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "anthropic" | "bedrock";
+            /** Label */
+            label: string;
+            /** Position */
+            position: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "active" | "exhausted" | "disabled";
+            /** Statereason */
+            stateReason: ("credit" | "auth" | "limit" | "admin") | null;
+            /** Stateversion */
+            stateVersion: number;
+            /**
+             * Statechangedat
+             * Format: date-time
+             */
+            stateChangedAt: string;
+            /** Accountref */
+            accountRef: string | null;
+            /** Organizationverified */
+            organizationVerified: boolean;
+            /** Secretlast4 */
+            secretLast4: string;
+            /** Secretfingerprint */
+            secretFingerprint: string;
+            /** Sameasenvkey */
+            sameAsEnvKey: boolean;
+            /** Creditusd */
+            creditUsd: string | null;
+            /** Creditsince */
+            creditSince: string | null;
+            /** Alertpct */
+            alertPct: number;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+            /** Checks */
+            checks: components["schemas"]["AdminLlmCredentialCheckItem"][];
+            /** Enableblocker */
+            enableBlocker: ("organization-unverified" | "account-not-allowed" | "check-required" | "organization-mismatch") | null;
+        };
+        /**
+         * AdminLlmCredentialCheckItem
+         * @description 축마다 회차가 가장 큰 확인 기록. 세 `is_current_*` 는 그 기록이 지금도 유효한가 — 지금 키 지문으로 했는가, 지금 설정의
+         *     모델 id 로 보냈는가, 확인을 시작할 때의 판이 지금 판인가(켜기에 세어지는가).
+         */
+        AdminLlmCredentialCheckItem: {
+            /** Run */
+            run: number;
+            /**
+             * Modelaxis
+             * @enum {string}
+             */
+            modelAxis: "haiku_writer" | "sonnet" | "opus" | "haiku";
+            /** Sentmodelid */
+            sentModelId: string;
+            /** Passed */
+            passed: boolean;
+            /** Errorkind */
+            errorKind: ("credit" | "auth" | "limit" | "permission" | "model-not-found" | "rejected" | "unavailable" | "organization-mismatch" | "account-not-allowed" | "account-already-listed") | null;
+            /**
+             * Checkedat
+             * Format: date-time
+             */
+            checkedAt: string;
+            /** Iscurrentsecret */
+            isCurrentSecret: boolean;
+            /** Iscurrentmodelid */
+            isCurrentModelId: boolean;
+            /** Iscurrentstateversion */
+            isCurrentStateVersion: boolean;
+        };
+        /**
+         * AdminLlmCredentialCheckResponse
+         * @description 확인 뒤의 항목과 실제로 부른 호출 수(같은 id 를 쓰는 축은 한 번).
+         */
+        AdminLlmCredentialCheckResponse: {
+            credential: components["schemas"]["AdminLlmCredential"];
+            /** Calls */
+            calls: number;
+        };
+        /**
+         * AdminLlmCredentialCreateRequest
+         * @description 추가. 공급자는 지금 Anthropic 만 받는다(Bedrock 은 스키마 단계에서 422). 새 항목은 꺼진 채 들어온다.
+         */
+        AdminLlmCredentialCreateRequest: {
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "anthropic";
+            /** Label */
+            label: string;
+            /**
+             * Apikey
+             * Format: password
+             */
+            apiKey: string;
+            /** Creditusd */
+            creditUsd?: number | string | null;
+            /**
+             * Alertpct
+             * @default 20
+             */
+            alertPct: number;
+        };
+        /**
+         * AdminLlmCredentialListResponse
+         * @description 목록 전체(위치 순)와 목록 상태. 저장소 설정(암호화 키·허용 계정)·알림 웹훅이 없으면 그 사실을 싣는다. `model_ids` 는
+         *     축마다 지금 설정의 실제 id 다.
+         */
+        AdminLlmCredentialListResponse: {
+            /** Storeconfigured */
+            storeConfigured: boolean;
+            /** Notificationsconfigured */
+            notificationsConfigured: boolean;
+            /** Poolenabled */
+            poolEnabled: boolean;
+            /** Listrevision */
+            listRevision: number;
+            /** Modelids */
+            modelIds: {
+                [key: string]: string;
+            };
+            /** Credentials */
+            credentials: components["schemas"]["AdminLlmCredential"][];
+        };
+        /**
+         * AdminLlmCredentialOrderRequest
+         * @description 목록 전체의 새 순서. `ids` 는 지금 항목 집합과 정확히 같아야 하고(빠짐·더함·중복이면 422), `base_list_revision` 은
+         *     화면이 읽은 목록 판이다(그 사이 추가·삭제·순서 저장이 있었으면 409).
+         */
+        AdminLlmCredentialOrderRequest: {
+            /** Baselistrevision */
+            baseListRevision: number;
+            /** Ids */
+            ids: string[];
+        };
+        /** AdminLlmCredentialPoolRequest */
+        AdminLlmCredentialPoolRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** AdminLlmCredentialSecretRequest */
+        AdminLlmCredentialSecretRequest: {
+            /**
+             * Apikey
+             * Format: password
+             */
+            apiKey: string;
+        };
+        /**
+         * AdminLlmCredentialUpdateRequest
+         * @description 메타만 고친다. 보내지 않은 칸은 그대로다. 충전액은 null 이면 지우고, 바뀌면 그 기준 시각을 지금으로 다시 잡는다.
+         *     라벨·임계는 null 을 보내도 그대로다.
+         */
+        AdminLlmCredentialUpdateRequest: {
+            /** Label */
+            label?: string | null;
+            /** Creditusd */
+            creditUsd?: number | string | null;
+            /** Alertpct */
+            alertPct?: number | null;
+        };
         /** AdminLlmModelPrice */
         AdminLlmModelPrice: {
             /** Model */
@@ -10050,7 +10406,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-illustration-takedown" | "novel-lift" | "novel-report-illustration-takedown" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "novel-sales-resume" | "novel-sales-stop" | "prompt-routing-restore" | "prompt-routing-save" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "llm-credential-add" | "llm-credential-check" | "llm-credential-delete" | "llm-credential-disable" | "llm-credential-enable" | "llm-credential-pool-off" | "llm-credential-pool-on" | "llm-credential-reorder" | "llm-credential-secret-replace" | "llm-credential-update" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-illustration-takedown" | "novel-lift" | "novel-report-illustration-takedown" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "novel-sales-resume" | "novel-sales-stop" | "prompt-routing-restore" | "prompt-routing-save" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -18778,6 +19134,317 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminPromptRoutingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_llm_credentials_admin_llm_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLlmCredentialListResponse"];
+                };
+            };
+        };
+    };
+    create_llm_credential_admin_llm_credentials_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLlmCredentialCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLlmCredential"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_llm_credentials_admin_llm_credentials_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLlmCredentialOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLlmCredentialListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_llm_credential_pool_admin_llm_credentials_pool_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLlmCredentialPoolRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLlmCredentialListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_llm_credential_admin_llm_credentials__credential_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_llm_credential_admin_llm_credentials__credential_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLlmCredentialUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLlmCredential"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_llm_credential_secret_admin_llm_credentials__credential_id__secret_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLlmCredentialSecretRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLlmCredential"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_llm_credential_admin_llm_credentials__credential_id__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLlmCredential"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_llm_credential_admin_llm_credentials__credential_id__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLlmCredential"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_llm_credential_admin_llm_credentials__credential_id__check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLlmCredentialCheckResponse"];
                 };
             };
             /** @description Validation Error */

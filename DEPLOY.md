@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**92개 키다**(2026-10-28 VM 실측 — 인상 쓰기 세 줄 편집(모델 줄·스위치 줄 둘이 새 키, 배정은 기존 줄에 항목 추가)이 넣은 뒤 다시 셈, 키 이름만 셈): 아래 표 157개 중 81개(생략 가능한 조정 키 60개 — `CHAT_MODELS_VISIBLE`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·소설화 밖 `GEMINI_*_TIMEOUT_MS` 5개(`GENERATE`·`JUDGMENT`·`MEMORY_SUMMARY`·`PUBLISH_FILTER`·`CLIENT`)·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 25개·장기 기억 조정용 9개(`MEMORY_MODEL_SCOPE`·`MEMORY_EMBED_MODEL`·`MEMORY_EMBED_DIMS`·`MEMORY_EMBED_RECALL_` 뒤에 `RRF_K`·`MAX_PLAIN`·`MAX_CUE`·`MAX_DISTANCE`·`VECTOR_LIMIT`·`DF_MAX` 가 붙는 6개)·소설 정본 기억 어댑터 덮어쓰기 `NOVEL_BIBLE_ADAPTERS`·소설 정본 기억 워커 동시 상한 `NOVEL_BIBLE_WORKER_MAX_CONCURRENT`, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 스위치 3개(소설 삽화 `NOVEL_ILLUSTRATIONS_ENABLED`·소설 구성 흐름 `NOVELIZE_OUTLINE_FLOW_ENABLED`·소설 정본 기억 `NOVEL_BIBLE_ENABLED`), 줄을 두지 않는 인상 키 2개(묶음 크기 `MEMORY_IMPRESSION_EVERY_N_FOLDS`·아직 켜지 않은 보기 스위치 `MEMORY_IMPRESSIONS_VISIBLE`), 전체 공개 뒤 줄을 지운 노벨 미리보기 명단 1개(`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`), 잔액을 한꺼번에 옮기는 동안에만 켜고 평소에는 줄을 두지 않는 클로버 정지 스위치 1개(`CLOVER_LEDGER_PAUSED`), 모두 81개 제외 —
+**92개 키다**(2026-10-28 VM 실측 — 인상 쓰기 세 줄 편집(모델 줄·스위치 줄 둘이 새 키, 배정은 기존 줄에 항목 추가)이 넣은 뒤 다시 셈, 키 이름만 셈): 아래 표 160개 중 84개(생략 가능한 조정 키 60개 — `CHAT_MODELS_VISIBLE`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·소설화 밖 `GEMINI_*_TIMEOUT_MS` 5개(`GENERATE`·`JUDGMENT`·`MEMORY_SUMMARY`·`PUBLISH_FILTER`·`CLIENT`)·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 25개·장기 기억 조정용 9개(`MEMORY_MODEL_SCOPE`·`MEMORY_EMBED_MODEL`·`MEMORY_EMBED_DIMS`·`MEMORY_EMBED_RECALL_` 뒤에 `RRF_K`·`MAX_PLAIN`·`MAX_CUE`·`MAX_DISTANCE`·`VECTOR_LIMIT`·`DF_MAX` 가 붙는 6개)·소설 정본 기억 어댑터 덮어쓰기 `NOVEL_BIBLE_ADAPTERS`·소설 정본 기억 워커 동시 상한 `NOVEL_BIBLE_WORKER_MAX_CONCURRENT`, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 스위치 3개(소설 삽화 `NOVEL_ILLUSTRATIONS_ENABLED`·소설 구성 흐름 `NOVELIZE_OUTLINE_FLOW_ENABLED`·소설 정본 기억 `NOVEL_BIBLE_ENABLED`), 줄을 두지 않는 인상 키 2개(묶음 크기 `MEMORY_IMPRESSION_EVERY_N_FOLDS`·아직 켜지 않은 보기 스위치 `MEMORY_IMPRESSIONS_VISIBLE`), 전체 공개 뒤 줄을 지운 노벨 미리보기 명단 1개(`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`), 잔액을 한꺼번에 옮기는 동안에만 켜고 평소에는 줄을 두지 않는 클로버 정지 스위치 1개(`CLOVER_LEDGER_PAUSED`), 실측 때 넣지 않은 Claude 자격 목록 키 3개(`LLM_CREDENTIAL_*` — 목록을 쓰기 전이라 없다), 모두 84개 제외 —
 파일에 줄이 있는 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`·`NOVELIZE_WORKER_ENABLED`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 9개(`PORTONE_*` 5개·
 `IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 노벨 스위치 2개(`NOVEL_PUBLIC_ENABLED`·공개 정책 `NOVEL_PUBLIC_POLICY_V2_ENABLED`), 여러 문단 수정 스위치 1개(`NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`), 장기 기억 키 16개(`MEMORY_*` 15개 — 장면·사실 추출과 모델, 장면 회상, 사실 주입, 요약 모델·비밀 표기, 지식 범위 필터, 임베딩 쓰기·회상과 그 시간 상한, 기억 보기 `MEMORY_ITEMS_VISIBLE`, 인상 쓰기와 그 모델 — 와 `VOYAGE_API_KEY`), 스탯 판정 이벤트 스위치 1개(`STAT_EVENT_LOG`)를 포함한 나머지 76개는 셈에 들어간다) + 앱이 읽지 않지만
 옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
@@ -320,6 +320,9 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `BEDROCK_CHAT_TIMEOUT_MS` / `BEDROCK_CHAPTER_TIMEOUT_MS` | 설정 안 함(기본 `45000` / `300000`) | 상위 모델 채팅 턴 / 소설 장 생성의 요청 타임아웃(ms). 스트리밍이라 "다음 청크까지"의 상한이다. 재시도는 하지 않는다 |
 | `BEDROCK_CHAT_MAX_TOKENS` / `BEDROCK_CHAPTER_MAX_TOKENS` | 설정 안 함(기본 `4096` / `32768`) | 출력 상한. Bedrock 은 요청의 출력 상한만큼 분당 토큰 쿼터를 먼저 잡으므로 올리면 동시 요청이 스로틀되기 쉽다. 장이 잘리면 실패·환불이다 |
 | `ANTHROPIC_DIRECT_API_KEY` | Anthropic 콘솔에서 만든 이 서비스 전용 API 키 | 상위 모델을 Anthropic API 로 직접 보낼 때의 자격. SDK 가 스스로 읽는 `ANTHROPIC_API_KEY` 와 이름을 나눴다. 아래 배정이 호출을 직결로 옮기는데 비어 있으면 스위치와 무관하게 api 가 기동하지 못한다. 직결의 모델 id·타임아웃·출력 상한·사고 깊이(나머지 `ANTHROPIC_*`)는 설정 안 함이 기본이다(기본값은 `.env.example`) |
+| `LLM_CREDENTIAL_ENCRYPTION_KEYS` | 🔴 Claude 자격 목록을 쓰기 전에 넣는다. `k1:<base64url 32바이트>` | Claude 자격 목록(어드민에서 붙여넣어 순서대로 쓰는 Anthropic API 키) 암호화 키 목록 `kid:키[,kid:키]`. 맨 앞 키로 암호화하고 모든 키로 복호화한다. 지급 정보 키(`CREATOR_PAYOUT_ENCRYPTION_KEYS`)와 다른 키다 — 한쪽이 새도 다른 쪽 칸이 열리지 않고 회전 일정이 엮이지 않는다. 비거나 아래 허용 계정이 비면 어드민의 자격 추가·키 교체·확인 호출·목록 사용 켜기가 503 이다(조회·메타 수정·끄기·삭제·순서 저장·목록 사용 끄기는 된다). 형식이 틀리면 api 가 뜨지 않는다(오류 문장에 값은 찍히지 않는다). **키를 잃으면 저장한 키를 읽을 수 없다** — 어드민에서 키를 다시 붙여넣는다. 만들기·보관·회전은 "Claude 자격 목록 — 켜기 · 끄기 · 되돌리기" 절. 비밀 |
+| `LLM_CREDENTIAL_ALLOWED_ACCOUNTS` | `anthropic:<조직 id>[,aws:<계정 id>]`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 빈 목록). 값은 저장소에 쓰지 않는다 | Claude 자격 목록에 넣을 수 있는 계정. 키를 저장·확인할 때 응답의 조직 id(`anthropic-organization-id` 헤더)가 이 목록에 없으면 저장하지 않고 알린다. 공급자 토큰은 소문자 `anthropic`·`aws` 만, Anthropic 조직 id 는 `[A-Za-z0-9_-]` 1~64자(소문자로 맞춰 비교한다), AWS 계정 id 는 숫자 12자리 — 틀리거나 같은 항목이 두 번이면 api 가 뜨지 않는다. 비면 위 키가 빈 것과 같다(503). 목록에서 조직을 빼면 그 조직의 항목은 다시 켤 수 없다 |
+| `LLM_CREDENTIAL_DISCORD_WEBHOOK_URL` | Claude 자격 알림용 디스코드 채널 웹훅 주소 | 자격 목록 변경(추가·수정·키 교체·순서·켜기·끄기·삭제·확인 호출·목록 사용)과 보안 신호(허용 목록 밖 조직의 키 저장 시도, 확인 응답의 조직 불일치, 저장·확인 둘 다 조직 헤더 없음)를 알린다. 키·끝 4자리·조직 id 는 싣지 않는다. 비면 알림을 건너뛰고 api 로그에 경고 한 줄만 남긴다. 결제 알림(`PAYMENT_DISCORD_WEBHOOK_URL`)·크론 알림(`DISCORD_WEBHOOK_URL`)과 다른 키다. 비밀 |
 | `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)·인상 생성 `chat_memory_impression`(2026-10-28)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음) | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 장면 헤더 판정 호출 위치(`chat_scene_judgment`·`preview_scene_judgment`)는 줄을 두지 않고 배정을 물려받는다 — 채팅 장면은 채팅 스탯 판정을, 미리보기 장면은 채팅 장면을 거쳐 같은 배정을 따른다. **스탯 판정 배정을 바꾸면 장면 판정도 함께 움직인다**(줄을 따로 넣으면 그 이름을 모르는 옛 이미지가 뜨지 못한다). 미리보기 생성(`preview_generate`)과 미리보기 판정 넷은 채팅 짝(`chat_generate`·`chat_stat_judgment`·`chat_ending_judgment`·`chat_media_book_image`·`chat_scene_judgment`)의 배정을 물려받는다. 미리보기 줄이 없으면 짝의 배정으로 가고, 줄이 있으면 그 줄로 가는 경로가 짝을 물려받아 가는 경로와 같아야 기동한다(다르면 api 가 뜨지 않는다). 그래서 **채팅 판정 배정을 바꿀 때는 짝인 미리보기 판정 줄도 같은 편집에서 바꾼다** — 채팅 줄만 바꾸고 미리보기 줄을 남기면 기동이 거부된다. `preview_generate` 줄은 넣지 않는다(채팅 생성 배정을 물려받는다 — 그 이름을 그 호출의 모델로 읽는 옛 이미지는 `preview_generate:anthropic` 줄로 뜨지 못한다). 모델 배정 표(`prompt_routes`)의 행은 이 배정 위에 얹힌다 — 판정·요약·추출 칸의 행은 그 행을 읽는 호출 위치 전부(채팅과 미리보기 판정, 물려받는 장면 판정)에서 이 배정으로 푼 경로가 행의 경로와 같을 때만 쓰인다. 배정을 바꾼 뒤에는 "채팅 단계별 문안 체인·호출 모델 설정 — 켜기 · 끄기 · 되돌리기" 절대로 건너뛴 행을 확인한다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
 | `CHAT_PREMIUM_MODELS_ENABLED` | 켤 때 `true`(코드 기본값은 꺼짐) | 채팅 상위 모델 스위치. 켜면 로그인 회원 모두가 채팅방에 상위 모델(아래 `CHAT_MODELS_VISIBLE` 의 모델)을 고를 수 있다 — 명단·계정별 허용은 없다. 끄면 그 목록과 무관하게 모두 숨는다. 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 지금 이미지가 읽지 않지만 지우지 않는다(채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단을 다시 읽는다). 켜고 끄는 법은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
 | `CHAT_MODELS_VISIBLE` | 설정 안 함(코드 기본값 `opus`). Sonnet 을 채팅에 열 때 `opus,sonnet`, Haiku 글쓰기까지 열 때 `opus,sonnet,haiku_writer`(목록 순서는 화면 순서와 무관하다) | 위 채팅 스위치가 켜져 있을 때 채팅에서 고를 수 있게 보일 상위 모델(쉼표 구분, 공백·따옴표 없이). 목록에서 뺀 모델은 모델 목록·공개 가격에서 빠지고 방 지정·미리보기 시작이 403 이며, 그 모델이 저장된 방은 Gemini 로 Gemini 가격에 돈다. 켜기 = 이 줄을 `opus,sonnet` 으로, 롤백 = `opus` 로 고치거나 줄을 지우고 `sudo bash ops/swap-api.sh`. 🔴 모두 숨기려면 이 줄을 비우지 말고 채팅 스위치를 끈다 — 값이 빈 줄은 형식 검사(`empty-value`)가 거부해 이후 push 배포가 모두 멈춘다. 모르는 id·`gemini`·중복이면 api 가 기동하지 않는다 — 교체가 실패해도 `.env` 의 이 줄은 그대로 남아 다음 재기동(VM 재부팅 포함)에서 두 색이 모두 못 뜨므로, 교체가 실패하면 이 줄부터 되돌린다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
@@ -2431,7 +2434,10 @@ sudo bash ops/swap-api.sh
 **키 교체·회수.** 새 키를 만든 뒤 `.env` 의 `ANTHROPIC_DIRECT_API_KEY` 줄을 `sudo sed -i` 로 바꾸고 형식 검사 →
 `sudo bash ops/swap-api.sh` → 위 확인 명령, 그다음 Anthropic 콘솔에서 옛 키를 비활성화한다. 키가 새어 나갔으면 먼저 콘솔에서
 비활성화한다 — 스위치가 켜져 있으면 그동안의 상위 모델 호출은 실패하고 환불된다. Bedrock 키(`BEDROCK_*` 두 줄)도 같은
-순서이고 옛 키는 AWS 콘솔에서 비활성화한다.
+순서이고 옛 키는 AWS 콘솔에서 비활성화한다. Claude 자격 목록에 이 키와 같은 키(어드민 목록의 "env 롤백 키와 같은 키" 표시)가
+있으면, 옛 키를 콘솔에서 끄기 전에 그 항목의 키를 먼저 교체하거나 항목을 지운다 — 끄면 그 항목이 키 무효로 소진되고(목록 사용이
+켜져 있으면 다음 항목으로 넘어간다), 반대로 목록 항목을 지우거나 교체할 때 그 키가 이 env 키와 같으면 콘솔에서 폐기하지
+않는다(이 경로가 같은 키를 쓴다).
 
 **보는 곳.** 직결 호출 한 건마다 API 로그에 `anthropic_usage` 줄(입력·캐시 읽기·캐시 쓰기·출력 토큰)이 남고(Bedrock 으로 간
 호출은 `bedrock_usage`), 사용량 집계(`scripts/llm_usage_report.py --model claude-opus-5-5` 처럼 실제 모델 id 로 좁힌다)와
@@ -3672,7 +3678,49 @@ tail -f /var/log/ddona-chat-cost-ratio.log
 겹친다. 배포 교체와 겹치면
 그날은 실패 알림이 오고, 위처럼 `--date` 로 다시 돌린다.
 
-### 3-21. 일일 운영 요약 — digest cron
+### 3-21. Claude 자격 목록 — 켜기 · 끄기 · 되돌리기
+
+어드민에서 Anthropic API 키를 여러 개 붙여넣어 순서대로 쓰는 목록이다. 키는 api 가 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 의 키로
+AES-256-GCM 암호화해 DB 에 넣고(`api/llm/credentials.py`), 감사 로그·알림에는 지문(키 sha256 앞 8자 — 콘솔의 키로
+`printf %s "$KEY" | shasum -a 256 | cut -c1-8` 해 어느 항목인지 맞춰 본다)만, 어드민 응답에는 지문과 화면용 끝 4자리만 나간다. 새 항목은 꺼진 채
+들어오고, 확인 호출(모델 축마다 지금 설정의 실제 id 로 한 번 — 같은 id 는 한 번, 항목마다 분당 1회, 회당 0.002 달러 미만)이
+지금 상태에서 통과해야 켤 수 있다. 저장·확인 응답의 조직 id 가 허용 계정(`LLM_CREDENTIAL_ALLOWED_ACCOUNTS`) 밖이면 저장하지
+않고, 응답에 조직 헤더가 없으면 "조직 미확인"으로 남아 켤 수 없다.
+
+**꺼진 채 배포.** 지금 판은 저장과 어드민 API 만 있고 호출 경로는 이 목록을 읽지 않는다 — 목록 사용을 켜도 상위 모델 호출은
+지금처럼 env 키(`ANTHROPIC_DIRECT_API_KEY`)로 간다. 암호화 키나 허용 계정이 없으면 조회·메타 수정·끄기·삭제·순서 저장·목록
+사용 끄기만 되고 추가·키 교체·확인 호출·목록 사용 켜기가 503 이다(알림 웹훅이 없으면 알림만 건너뛴다). 운영 env 에 넣는 순서와 처음 켜는 절차는 호출 경로가 이 목록을 읽는 판을 배포할 때 이 절에
+더한다.
+
+**암호화 키 만들기·보관·회전.** "크리에이터 지급 정보 암호화 키 — 만들기 · 보관 · 회전" 절과 같은 명령이고 키 이름만
+`LLM_CREDENTIAL_ENCRYPTION_KEYS` 다(지급 정보 키를 재사용하지 않는다). 회전의 다시 암호화는:
+
+```sh
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api_$(sudo bash ops/active-color.sh) \
+  python -m api.llm.credential_reencrypt
+```
+
+마지막 줄 "Claude 자격 재암호화: N행, 쓰기 실패 F행, 복호화할 수 없어 건너뜀 M행". F 나 M 이 0 이 아니면 종료 코드가 1 이고
+옛 키를 지우지 않는다. F 는 행 쓰기가 DB 에서 실패한 행이다 — 그 행만 세고 다음 행으로 가며, 실패한 행마다 요약 줄 앞에 오류
+클래스 이름과 SQLSTATE 한 줄이 찍힌다. 그 행은 옛 키에 남아 있으니 원인을 고친 뒤 다시 돌린다(남은 행만 한다). M 은 그 항목이
+목록에 없는 키로 만들어졌다는 뜻이라 원인을 먼저 찾는다. 어느 실패든 오류 클래스 이름(행 쓰기 실패면 SQLSTATE 까지)만
+찍힌다 — 문장 오류가 암호문을 싣기 때문이다. 키를 잃었으면 그 항목은 확인 호출이 409 `secret-unreadable` 이다 — 어드민에서 키를
+다시 붙여넣는다(키 교체). 원문을 따로 두지 않았다면 콘솔에서 새 키를 발급해 넣는다.
+
+**되돌리기.** 1단계는 어드민 "목록 사용 끄기"다(행과 키는 그대로 남는다). 이미지만 옛 판으로 되돌리면 표는 옛 코드에 보이지
+않은 채 남는다. downgrade 는 세 표를 지워 저장한 키의 암호문이 함께 사라진다 — 다시 올린 뒤에는 키를 다시 붙여넣어야 한다.
+
+**모델 id 설정을 바꾸는 순서(목록 사용이 켜진 동안).** 목록 사용 켜기는 모든 축이 지금 모델 id 로 확인된 켜진 항목에 덮여야
+통과하므로, id 를 바꾼 뒤에는 항목마다 다시 확인해야 다시 켤 수 있다. ①~④ 를 짧게 이어서 한다.
+
+1. 어드민에서 목록 사용을 끈다. 호출 경로가 목록을 읽는 판에서는 그동안 상위 모델 호출이 env 키 계정으로 간다 — 그 계정
+   크레딧이 줄고, 그 계정이 소진이면 그동안의 호출은 실패·환불된다.
+2. env 의 `ANTHROPIC_*_MODEL_ID` 를 바꾸고 형식 검사 → `sudo bash ops/swap-api.sh`.
+3. 어드민에서 **항목마다 확인 호출**을 한다(새 id 로 나간다, 항목마다 분당 1회). 목록의 확인 칸에 지금 id 가 아닌 기록이
+   남은 축이 없는지 본다.
+4. 목록 사용을 켠다 — 덮이지 않은 축이 있으면 409 `pool-uncovered` 와 그 축 목록이다. 그 축을 받는 항목을 확인하거나 켠다.
+
+### 3-22. 일일 운영 요약 — digest cron
 
 매일 KST 09:00 에 KST 어제 하루의 운영 숫자를 Discord(`ops/notify.py` 채널)로 보낸다. 항목은 다섯이다 — 사용자 활동(가입·첫
 대화·활성 회원·턴 수 보내기/수정/재생성), 돈(결제·환불 건수와 원, 그날 새로 생긴 검증 불일치 결제 건수, 클로버 차감
