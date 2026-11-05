@@ -14,10 +14,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from string import Formatter
 from types import ModuleType
-from typing import TypeVar
+from typing import TypeVar, get_args
 
 import pytest
 import sqlalchemy as sa
+from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +28,11 @@ from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
 from api.novel_bible.core.contracts import PromptSource
 from api.novel_bible.core.render import render
+from api.novel_bible.core.types import Manuscript
+from api.novel_bible.registry import REGISTRY
+from api.novel_bible.slots.events.slot import EventsInput
+from api.novel_bible.slots.facts.slot import FactsInput
+from api.novel_bible.slots.knowledge.slot import KnowledgeInput
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -119,7 +125,7 @@ async def _copy_set(
     copy = PromptSet(
         version="9001" if status == "published" else None,
         status=status,
-        lane="novel",
+        lane=source.lane,
         model=source.model,
         **{label: getattr(source, label) for label in _LABELS},
         published_at=published_at,
@@ -297,24 +303,78 @@ async def test_the_seed_gets_a_minor_bump_on_top_of_the_previous_chain_version(
 # ---- 옛 이미지 × 새 데이터 --------------------------------------------------------------------------
 
 
-async def test_the_seed_leaves_every_chat_chain_untouched(db_session: AsyncSession) -> None:
-    """깨지는 시나리오: 시드가 채팅 체인의 활성·행을 바꿔 배포 겹침 동안 옛 이미지의 채팅 글이 바뀐다."""
-    lanes: tuple[PromptLane, ...] = ("story", "character")
-    models: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
+_CHAT_LANES: tuple[PromptLane, ...] = ("story", "character")
 
-    async def snapshot() -> dict[tuple[str, str], tuple[uuid.UUID, dict[Key, Value]]]:
-        taken: dict[tuple[str, str], tuple[uuid.UUID, dict[Key, Value]]] = {}
-        for lane in lanes:
-            for model in models:
-                set_id = (await _active(db_session, lane, model)).id
-                taken[(lane, model)] = (set_id, _keyed(await _sections_of(db_session, set_id)))
-        return taken
 
-    at_head = await snapshot()
+async def _chat_lane_state(db_session: AsyncSession) -> tuple[dict[tuple[str, str], uuid.UUID], set[tuple[object, ...]]]:
+    """채팅 두 레인 × 체인 모델 축 전부의 활성 세트 id, 그리고 두 레인의 모든 세트(게시·초안)의 섹션 행."""
+    db_session.expire_all()
+    active: dict[tuple[str, str], uuid.UUID] = {
+        (lane, model): (await _active(db_session, lane, model)).id
+        for lane in _CHAT_LANES
+        for model in get_args(PromptSetModelId)
+    }
+    rows = await db_session.execute(
+        sa.select(
+            PromptSection.prompt_set_id, PromptSection.channel, PromptSection.scope, PromptSection.slot,
+            PromptSection.variant, PromptSection.body, PromptSection.conditional, PromptSection.order,
+        )
+        .join(PromptSet, PromptSet.id == PromptSection.prompt_set_id)
+        .where(PromptSet.lane.in_(_CHAT_LANES))
+    )
+    return active, {tuple(row) for row in rows}
 
+
+async def test_the_upgrade_leaves_every_chat_chain_untouched(db_session: AsyncSession) -> None:
+    """업그레이드(새 세트 시드 + 초안 패치) 전후로 채팅 체인 전부 — 판정 전용·글쓰기 전용 id 를 포함한 모델 축 전부 — 의 활성과
+    채팅 레인 모든 세트·초안의 행이 같다. 깨지는 시나리오: 시드가 채팅 체인에 세트를 넣거나 채팅 세트·초안 행을 제자리에서 고쳐
+    배포 겹침 동안 옛 이미지의 채팅 글이 바뀐다."""
     await _run(db_session, _M.delete_seeded_rows)
+    chat_active = await _active(db_session, "story", "gemini")
+    await _copy_set(db_session, chat_active.id, status="draft", published_at=None)
+    before = await _chat_lane_state(db_session)
+    assert (await _active(db_session, "novel", "gemini")).id == _PREVIOUS_SET_IDS["gemini"]
 
-    assert await snapshot() == at_head
+    await _run(db_session, _M.seed_published_sets)
+    await _run(db_session, _M._patch_drafts)
+
+    assert (await _active(db_session, "novel", "gemini")).id == _M.NEW_SET_IDS["gemini"]
+    assert await _chat_lane_state(db_session) == before
+
+
+def _minimal_slot_inputs() -> dict[str, BaseModel]:
+    manuscript = Manuscript(revision_id=uuid.uuid4(), blocks=())
+    return {
+        "events": EventsInput(manuscript=manuscript, scenes=[], known=[], prior=[]),
+        "facts": FactsInput(manuscript=manuscript, known=[], known_attributes=[], source=None, play=None),
+        "knowledge": KnowledgeInput(manuscript=manuscript, known=[]),
+    }
+
+
+@pytest.mark.parametrize("model", _MODELS)
+async def test_the_seed_matches_the_channels_and_value_names_of_the_registered_slots(
+    db_session: AsyncSession, model: PromptSetModelId
+) -> None:
+    """실제 등록부의 추출 슬롯마다 그 채널의 지시문이 시드에 있고, 시드 값 섹션이 참조하는 이름 집합이 그 슬롯의 `prompt_values` 가
+    내는 이름 집합과 같다. 판정 채널은 값을 내는 코드가 아직 없어 정해 둔 이름 `candidate` 하나로 본다. 깨지는 시나리오: 슬롯의
+    채널 문자열이나 값 이름이 바뀌고 슬롯 테스트의 합성 문안만 따라 고쳐져 CI 는 초록인데, 스위치를 켠 환경에서 모든 확정이 채널
+    없음으로 거절되거나 필수 값 없음으로 실패하고, 이름이 바뀐 선택 값은 섹션째 조용히 빠진다."""
+    inputs = _minimal_slot_inputs()
+    assert set(REGISTRY.extracting) == set(inputs)
+    produced = {
+        slot.channel: set(slot.prompt_values(inputs[slot_id]))
+        for slot_id, slot in REGISTRY.extracting.items()
+    }
+    produced["novel_bible_conflicts"] = {"candidate"}
+    _, sections = await load_active_prompt_set(db_session, lane="novel", model=model)
+
+    instructed = {s.channel for s in sections if s.slot == "instruction"}
+    referenced = {
+        channel: {name for s in sections if s.channel == channel for _, name, _, _ in Formatter().parse(s.body) if name}
+        for channel in produced
+    }
+    assert set(produced) <= instructed
+    assert referenced == produced
 
 
 # ---- 되돌리기·다시 올리기 ----------------------------------------------------------------------
