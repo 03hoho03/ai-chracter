@@ -9,7 +9,7 @@ import {
   buildRegeneratePayload,
   buildSendPayload,
   chatRoomKeys,
-  chatStreamEventSchema,
+  CHAT_STREAM_EVENT_SCHEMA,
   clearRejectedChatMessage,
   countRepliesAfter,
   dropLastMessage,
@@ -65,15 +65,15 @@ type PendingRequest = {
 // 에러"라는 불가능 상태를 타입으로 막지 못했다. 판별 유니언으로 상태를 하나로 묶는다.
 // 429는 안내 문구와 다음 행동이 다른 오류라(기다리면 풀린다) 배너가
 // 분기할 수 있게 `rateLimit`을 함께 싣는다. 429가 아닌 실패는 값이 없고 기존 배너 그대로다.
-// `declined`는 **사용자가 확인 모달에서 그만둔 것**이라
+// `isDeclined`는 **사용자가 확인 모달에서 그만둔 것**이라
 // 실패가 아니다. 같은 `error` 자리를 쓰는 이유는 낙관적 사용자 메시지가 이미 목록에 있어
 // 아무것도 안 보여 주면 멈춘 것처럼 읽히기 때문이고(재시도 버튼도 그대로 유용하다), 문구만
 // 배너가 갈라 쓴다 — 실패하지 않은 일에 "실패했습니다"를 쓰면 거짓이다.
-// `restricted`는 작품이 이용제한·삭제돼 서버가 거부한 것이다. 기다려도 다시 보내도 안 풀리므로 화면은 재시도 대신
+// `isRestricted`는 작품이 이용제한·삭제돼 서버가 거부한 것이다. 기다려도 다시 보내도 안 풀리므로 화면은 재시도 대신
 // 입력창 자리에 안내를 띄운다(방을 열 때 이미 제한이었다면 응답의 `contentRestricted`가 같은 일을 한다).
-// `busy`는 같은 방의 앞 턴이 아직 끝나지 않아 서버가 시작 전에 거절한 것이다. 기다리면 풀리므로 실패 배너가 아니라
+// `isBusy`는 같은 방의 앞 턴이 아직 끝나지 않아 서버가 시작 전에 거절한 것이다. 기다리면 풀리므로 실패 배너가 아니라
 // 중립 배너와 다시 보내기를 띄운다.
-// `identityRequired`는 본인인증 전이고 가진 클로버도 모자라 서버가 막은 것이다. 다시 보내도 안 풀리고
+// `isIdentityRequired`는 본인인증 전이고 가진 클로버도 모자라 서버가 막은 것이다. 다시 보내도 안 풀리고
 // 실패도 아니라 재시도 대신 본인인증 안내를 띄운다.
 // `sessionEnded`는 세션이 끝나(로그인이 풀렸거나 정지) 서버가 거절한 것이다. 응답 생성이 실패한 것이 아니고 이 탭에서는
 // 다시 보내도 같은 거절이라, 재시도 대신 까닭에 맞는 안내(다시 로그인 / 문의처)를 띄운다.
@@ -84,10 +84,10 @@ type SendMessageStatus =
       kind: "error";
       retryPayload: PendingRequest;
       rateLimit?: ChatRateLimit;
-      declined?: boolean;
-      restricted?: boolean;
-      busy?: boolean;
-      identityRequired?: boolean;
+      isDeclined?: boolean;
+      isRestricted?: boolean;
+      isBusy?: boolean;
+      isIdentityRequired?: boolean;
       sessionEnded?: SessionEndReason;
     };
 
@@ -182,7 +182,7 @@ export function useSendMessage(
     // 서버가 `statChange` 와 따로, 턴 시작 값(반영 전 값)과 이번 판정 결과가 다른 신호 켠 숨긴 스탯으로 정해 보낸다. 재생성도
     // 같은 기준이라 그대로 쓴다.
     let deltas: StatDeltas = {};
-    let hiddenSignal = false;
+    let hasHiddenSignal = false;
     // 수정은 서버가 편집 지점 뒤에서 지운 응답 수만큼 턴 수를 줄인다. 첫 시도 직전 목록으로 센다 — 재시도 때 캐시는 이미
     // 잘려 있어 세면 0 이다. 실패한 시도 사이에 방을 다시 받았으면 이 셈이 어긋날 수 있는데, done 뒤 방을 다시 받아 맞춘다.
     const removedReplyCount =
@@ -198,7 +198,7 @@ export function useSendMessage(
       // 가격 버전은 내용(`pending.payload`)에 굳히지 않고 여는 순간 캐시에서 읽는다 — 가격 바뀜 확인 뒤 재전송과 다시
       // 보내기가 같은 내용에 다시 받은 가격표의 버전을 싣는다.
       const priceVersion = readCloverPricing(queryClient)?.priceVersion;
-      for await (const event of openChatStream(pending.payload, chatStreamEventSchema, { priceVersion })) {
+      for await (const event of openChatStream(pending.payload, CHAT_STREAM_EVENT_SCHEMA, { priceVersion })) {
         if (event.type === "token") {
           setStreamingText((prev) => prev + event.delta);
         } else if (event.type === "policyWarning") {
@@ -211,7 +211,7 @@ export function useSendMessage(
           const previous = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(roomId))?.stats[event.statId];
           deltas = addStatDelta(deltas, event.statId, previous, event.newValue);
         } else if (event.type === "hiddenStatSignal") {
-          hiddenSignal = true;
+          hasHiddenSignal = true;
         } else if (event.type === "done") {
           statRewind = event.statRewind;
         }
@@ -246,25 +246,25 @@ export function useSendMessage(
       // 띄우지 않는다(429가 아니라 클로버와 무관하다).
       if (isContentRestrictedError(error)) {
         void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
-        setStatus({ kind: "error", retryPayload: pending, restricted: true });
+        setStatus({ kind: "error", retryPayload: pending, isRestricted: true });
         return;
       }
       // 본인인증 전이라 막혔다. 세션을 다시 읽어(SSE 라 전역 MutationCache 가 못 본다) 게이트 상태를 화면과 맞추고,
       // 확인 모달은 띄우지 않는다 — 동의해도 쓸 클로버가 없다.
       if (isIdentityVerificationRequiredError(error)) {
         void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
-        setStatus({ kind: "error", retryPayload: pending, identityRequired: true });
+        setStatus({ kind: "error", retryPayload: pending, isIdentityRequired: true });
         return;
       }
       // 앞 턴이 아직 돌고 있다. 클로버와 무관하므로 확인 모달도 띄우지 않는다.
       if (settleTurnInProgress(queryClient, roomId, error, pending.messagesBeforeEdit)) {
-        setStatus({ kind: "error", retryPayload: pending, busy: true });
+        setStatus({ kind: "error", retryPayload: pending, isBusy: true });
         return;
       }
       // 동의가 필요하면 배너가 아니라 모달이다. 동의하면 **같은
       // payload로** 재전송한다(`send()`를 다시 부르지 않으므로 낙관적 사용자 메시지가 중복되지
       // 않는다 — `retry()`와 같은 이유로 `openStream`을 직접 부른다).
-      // 가격이 바뀌었다는 409 도 같은 길이다 — 저절로 다시 보내지 않고 새 가격으로 보낼지 묻는다. 그만두면 아래 `declined`
+      // 가격이 바뀌었다는 409 도 같은 길이다 — 저절로 다시 보내지 않고 새 가격으로 보낼지 묻는다. 그만두면 아래 `isDeclined`
       // 배너가 다시 보내기를 열어 두고, 낙관적 사용자 메시지와 재시도 대상은 그대로 남는다.
       const confirmOutcome = canAskCloverConfirm(error, allowance) ? await confirmCloverSpend?.(error) : undefined;
       if (confirmOutcome === "retry") {
@@ -287,7 +287,7 @@ export function useSendMessage(
         retryPayload: pending,
         rateLimit,
         // 그만두기는 실패가 아니다. 배너가 이 값으로 문구를 가른다.
-        declined: confirmOutcome === "declined",
+        isDeclined: confirmOutcome === "declined",
       });
     } finally {
       setStreamingText("");
@@ -311,8 +311,8 @@ export function useSendMessage(
           roomId,
           messageId: committedMessage.id,
           deltas,
-          hiddenSignal,
-          announcement: room ? buildRoomTurnAnnouncement(room, { deltas, hiddenSignal }, sceneBeforeTurn) : "",
+          hiddenSignal: hasHiddenSignal,
+          announcement: room ? buildRoomTurnAnnouncement(room, { deltas, hiddenSignal: hasHiddenSignal }, sceneBeforeTurn) : "",
         });
       }
       if (!hasErrored) setStatus({ kind: "idle" });

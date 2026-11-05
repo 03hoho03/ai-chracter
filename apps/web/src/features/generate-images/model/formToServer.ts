@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { GenerateImagesFormValues } from "./schema";
+import type { GenerateImagesFormValues } from "./generateImagesSchema";
 
 /** `POST /images/generate` 바디. DTO를 그대로 쓰지 못하고 model·style 두 축만 넓힌다 —
  * 폼은 그 둘을 `GET /images/models` 응답에서 받은 문자열로 들고 있는데(스키마도
@@ -20,7 +20,7 @@ export type GenerateImageRequestBody = Omit<
 /** 폼값 -> `POST /images/generate` 바디 (순수 함수).
  *
  * 한때 이 경계가 없어 `GenerateImagesFormValues`가 그대로 POST 바디였다 — 필드가 4개뿐이라
- * 분리하지 않는다는 결정이었는데(`schema.ts`의 change-password·edit-profile 선례), 바디에 타입이
+ * 분리하지 않는다는 결정이었는데(change-password·edit-profile 의 스키마 파일 선례), 바디에 타입이
  * 안 붙어 있어서 **스키마와 DTO가 이미 어긋나 있는 것조차 컴파일에 안 잡혔다**. 지금은 바디에
  * 늘 싣는 필드가 다섯(참조는 쓸 때만 붙는다)이고 그중 둘이 서버 목록에서 오는 문자열이라 위 타입이
  * 그 경계를 명시한다.

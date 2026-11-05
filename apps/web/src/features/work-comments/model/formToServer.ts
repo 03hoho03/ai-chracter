@@ -3,7 +3,7 @@ import type { components } from "@ai-character-chat/api-types";
 import type { Comment, CommentCreateRequest, CommentWriteRequest } from "@/entities/comment";
 
 import type { NotificationPreferenceFormValues } from "./notificationPreferenceSchema";
-import type { CommentFormValues } from "./schema";
+import type { CommentFormValues } from "./commentFormSchema";
 
 export function commentFormToServer(values: CommentFormValues): CommentWriteRequest {
   return {

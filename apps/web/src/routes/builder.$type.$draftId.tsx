@@ -16,12 +16,12 @@ import { BuilderPage, NEW_DRAFT_SEGMENT } from "@/pages/builder";
 // 받고, 그 빌더에 없는 탭 id 는 빌더가 기본 탭으로 접는다. 기본 탭(프로필)은 파라미터의 부재다. 탭 전환은 기록을 쌓지
 // 않고 주소를 바꾼다 — 뒤로 가기는 탭이 아니라 빌더 밖으로 간다. 창 스크롤은 건드리지 않는다(라우터는 서치만 바뀐
 // 이동에도 창을 맨 위로 올린다).
-const builderSearchSchema = z.object({
+const BUILDER_SEARCH_SCHEMA = z.object({
   tab: z.string().optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/builder/$type/$draftId")({
-  validateSearch: builderSearchSchema,
+  validateSearch: BUILDER_SEARCH_SCHEMA,
   // 세션은 빌더에 들어올 때만 확인한다. 라우터는 서치만 바뀐 이동(탭 전환)과 첫 저장의 id 교체에도 이 함수를 다시 부르는데
   // (`cause` 가 "stay"), 세션을 잃어 세션 캐시가 비워진 뒤라면 그때 로그인 화면으로 보내져 빌더가 언마운트되고 마지막 저장
   // 뒤의 편집이 사라진다. 빌더에 머무는 동안에는 세션을 잃어도 화면을 지키고, 다음에 인증이 필요한 화면에 들어갈 때 보낸다.

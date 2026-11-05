@@ -181,14 +181,14 @@ export function HomePage({ search, onSearchChange, onTypeChange }: HomePageProps
   // 헤더부터 Tab을 다시 시작한다. 그래서 search를 바꾸기 **전에** 동기로, 분기와 무관하게 늘 마운트된 결과
   // 영역으로 포커스를 옮긴다(`apps/web/CLAUDE.md` 포커스 절 — rAF·effect는 라우터 커밋에 기대므로 쓰지 않는다).
   // `preventScroll` — 포커스 이동이 스크롤 위치를 바꾸지 않게 해 마우스로 누른 경우의 화면을 그대로 둔다.
-  const changeFilter = (patch: Partial<HomeSearch>) => {
+  const handleFilterChange = (patch: Partial<HomeSearch>) => {
     resultsRef.current?.focus({ preventScroll: true });
     onSearchChange(patch);
   };
 
   // 상세 모달은 닫히면 연 카드로 포커스를 돌려준다. 그 카드가 그사이 사라졌으면(목록이 다시 그려진 경우) 필터 뒤
   // 착지점과 같은 결과 영역으로 받는다 — 다음 Tab 이 첫 카드로 간다.
-  const openDetail = (type: ContentType, id: string) => {
+  const handleDetailOpen = (type: ContentType, id: string) => {
     open(type, id, { getFallbackFocus: () => resultsRef.current });
   };
 
@@ -314,21 +314,21 @@ export function HomePage({ search, onSearchChange, onTypeChange }: HomePageProps
             <HomeFilterChip
               label={`“${search.q}”`}
               removeLabel="검색어 필터 해제"
-              onRemove={() => changeFilter({ q: undefined })}
+              onRemove={() => handleFilterChange({ q: undefined })}
             />
           )}
           {search.creator && (
             <HomeFilterChip
               label={activeCreatorNickname ? `${activeCreatorNickname}님 작품` : "특정 작가 작품"}
               removeLabel="작가 필터 해제"
-              onRemove={() => changeFilter({ creator: undefined })}
+              onRemove={() => handleFilterChange({ creator: undefined })}
             />
           )}
           {search.hashtag && (
             <HomeFilterChip
               label={`#${search.hashtag}`}
               removeLabel="해시태그 필터 해제"
-              onRemove={() => changeFilter({ hashtag: undefined })}
+              onRemove={() => handleFilterChange({ hashtag: undefined })}
             />
           )}
         </div>
@@ -350,11 +350,11 @@ export function HomePage({ search, onSearchChange, onTypeChange }: HomePageProps
           if (!event.currentTarget.contains(event.relatedTarget)) isFocusInChunkRef.current = false;
         }}
       >
-        {attendanceCard.kind === "shown" && <HomeAttendanceCard detail={attendanceCard.detail} showDot={attendanceCard.showDot} />}
-        {curationView.kind === "shown" && <HomeCurationSection item={curationView.item} viewerPersonaName={viewerPersonaName} onOpen={openDetail} />}
+        {attendanceCard.kind === "shown" && <HomeAttendanceCard detail={attendanceCard.detail} shouldShowDot={attendanceCard.shouldShowDot} />}
+        {curationView.kind === "shown" && <HomeCurationSection item={curationView.item} viewerPersonaName={viewerPersonaName} onOpen={handleDetailOpen} />}
         {homeWebnovels.length > 0 && <HomeWebnovelSection items={homeWebnovels} />}
 
-        {/* 필터를 바꾼 뒤의 포커스 착지점(`changeFilter`). 로딩·빈·실패·목록 어느 분기에서도 마운트돼 있다.
+        {/* 필터를 바꾼 뒤의 포커스 착지점(`handleFilterChange`). 로딩·빈·실패·목록 어느 분기에서도 마운트돼 있다.
             스크립트로만 포커스를 받는 영역이라 링을 그리지 않는다 — 다음 Tab이 첫 카드로 간다. */}
         <section ref={resultsRef} tabIndex={-1} aria-label="작품 목록" className="flex flex-col gap-6 outline-none">
           <HomeContentBody
@@ -364,11 +364,11 @@ export function HomePage({ search, onSearchChange, onTypeChange }: HomePageProps
             thumbnailAspect={thumbnailAspect}
             sentinelRef={sentinelRef}
             endMessage={toHomeListEndMessage(contentType, isFiltered)}
-            onOpenContent={openDetail}
-            onAuthorClick={(creatorUserId) => changeFilter({ creator: creatorUserId })}
-            onFiltersClear={isFiltered ? () => changeFilter(HOME_FILTER_RESET) : undefined}
+            onOpenContent={handleDetailOpen}
+            onAuthorClick={(creatorUserId) => handleFilterChange({ creator: creatorUserId })}
+            onFiltersClear={isFiltered ? () => handleFilterChange(HOME_FILTER_RESET) : undefined}
             // `다시 시도`도 자기 패널을 언마운트시킨다 — 데이터가 하나도 없는 쿼리는 재요청을 시작하는 순간
-            // `isPending`으로 돌아가 스켈레톤 분기가 되므로 패널·버튼이 즉시 사라진다. 그래서 `changeFilter`와
+            // `isPending`으로 돌아가 스켈레톤 분기가 되므로 패널·버튼이 즉시 사라진다. 그래서 `handleFilterChange`와
             // 같이 재요청 **전에** 동기로 결과 영역에 포커스를 옮긴다.
             onRetry={() => {
               resultsRef.current?.focus({ preventScroll: true });

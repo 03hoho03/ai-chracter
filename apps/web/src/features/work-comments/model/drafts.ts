@@ -1,6 +1,6 @@
 import type { Comment } from "@/entities/comment";
 
-import { EMPTY_COMMENT_VALUES, type CommentFormValues } from "./schema";
+import { EMPTY_COMMENT_VALUES, type CommentFormValues } from "./commentFormSchema";
 import { commentServerToForm } from "./serverToForm";
 
 export type CommentDraft = { values: CommentFormValues; requestId: string };

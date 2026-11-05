@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { requireSession } from "@/entities/session";
-import { MyPagePage, mypageSearchSchema } from "@/pages/mypage";
+import { MyPagePage, MYPAGE_SEARCH_SCHEMA } from "@/pages/mypage";
 
 // 본인인증창이 페이지를 떠났다가 돌아오는 곳이 여기라 그 결과 쿼리를 서치 파라미터로 받는다.
 export const Route = createFileRoute("/mypage")({
-  validateSearch: mypageSearchSchema,
+  validateSearch: MYPAGE_SEARCH_SCHEMA,
   beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
   component: RouteComponent,
 });

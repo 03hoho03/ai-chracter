@@ -5,9 +5,9 @@ export type ChromeTapGesture = {
   dy: number;
   dt: number;
   /** 뗀 시점의 문서 선택이 비어 있는가(`Selection.isCollapsed`). */
-  selectionCollapsed: boolean;
+  isSelectionCollapsed: boolean;
   /** 누른 자리가 링크·버튼처럼 스스로 동작하는 요소(또는 그 안)인가. */
-  targetIsInteractive: boolean;
+  isTargetInteractive: boolean;
 };
 
 const MAX_TAP_DISTANCE_PX = 10;
@@ -19,8 +19,8 @@ const MAX_TAP_DURATION_MS = 300;
  * 선택이 남아 있으면 방금 문장을 고른 것, 링크·버튼 위면 그 요소의 동작이다. 경계값(정확히 10px·300ms)은 탭이
  * 아니다.
  */
-export function shouldToggleChrome({ dx, dy, dt, selectionCollapsed, targetIsInteractive }: ChromeTapGesture): boolean {
+export function shouldToggleChrome({ dx, dy, dt, isSelectionCollapsed, isTargetInteractive }: ChromeTapGesture): boolean {
   return (
-    Math.hypot(dx, dy) < MAX_TAP_DISTANCE_PX && dt < MAX_TAP_DURATION_MS && selectionCollapsed && !targetIsInteractive
+    Math.hypot(dx, dy) < MAX_TAP_DISTANCE_PX && dt < MAX_TAP_DURATION_MS && isSelectionCollapsed && !isTargetInteractive
   );
 }

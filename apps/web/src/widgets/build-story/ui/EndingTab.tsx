@@ -272,7 +272,7 @@ function EndingRow({
         <RuleListEditor
           items={statRules}
           stats={stats}
-          allowGroups
+          canUseGroups
           emptyText={ENDING_RULES_EMPTY_TEXT}
           groupList={RULE_GROUP_LIST}
           onChange={(next) =>

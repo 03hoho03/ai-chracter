@@ -8,7 +8,7 @@ export function countBundleNameChars(value: string): number {
 }
 
 /** 묶음 이름 폼. 서버는 앞뒤 공백을 걷어 저장하고 빈 이름을 받지 않으며, 같은 이름은 허용한다. */
-export const workBundleNameSchema = z.object({
+export const WORK_BUNDLE_NAME_SCHEMA = z.object({
   name: z
     .string()
     .refine((value) => countBundleNameChars(value) > 0, "묶음 이름을 입력해 주세요")
@@ -18,4 +18,4 @@ export const workBundleNameSchema = z.object({
     ),
 });
 
-export type WorkBundleNameFormValues = z.infer<typeof workBundleNameSchema>;
+export type WorkBundleNameFormValues = z.infer<typeof WORK_BUNDLE_NAME_SCHEMA>;

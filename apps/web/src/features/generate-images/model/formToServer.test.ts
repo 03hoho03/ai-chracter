@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formToServer } from "./formToServer";
-import type { GenerateImagesFormValues } from "./schema";
+import type { GenerateImagesFormValues } from "./generateImagesSchema";
 
 const ASSET_ID = "3f2b8c1e-5d4a-4b6f-9e2a-1c7d8e9f0a1b";
 

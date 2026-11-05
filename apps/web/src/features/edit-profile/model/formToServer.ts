@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { EditProfileFormValues } from "./schema";
+import type { EditProfileFormValues } from "./editProfileSchema";
 
 type UpdateProfileRequest = components["schemas"]["UpdateProfileRequest"];
 

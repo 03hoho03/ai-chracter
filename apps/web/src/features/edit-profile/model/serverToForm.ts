@@ -1,6 +1,6 @@
 import type { UserProfileResponse } from "@/entities/profile";
 
-import type { EditProfileFormValues } from "./schema";
+import type { EditProfileFormValues } from "./editProfileSchema";
 
 /** 서버 → 폼. 짝인 `./formToServer.ts`가 폼 → 서버를 진다. */
 export function serverToForm(profile: UserProfileResponse): EditProfileFormValues {

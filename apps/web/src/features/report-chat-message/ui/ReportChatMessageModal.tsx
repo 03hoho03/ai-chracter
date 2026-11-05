@@ -26,11 +26,11 @@ import {
   CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH,
   CHAT_MESSAGE_REPORT_REASON_LABELS,
   CHAT_MESSAGE_REPORT_REASONS,
-  chatMessageReportSchema,
+  CHAT_MESSAGE_REPORT_SCHEMA,
   countNoteLength,
   isChatMessageReportReason,
   type ChatMessageReportFormValues,
-} from "../model/schema";
+} from "../model/chatMessageReportSchema";
 
 type ReportChatMessageModalProps = {
   roomId: string;
@@ -55,7 +55,7 @@ export const ReportChatMessageModal = createCallable<ReportChatMessageModalProps
     const noteErrorId = `${fieldId}-note-error`;
 
     const form = useForm<ChatMessageReportFormValues>({
-      resolver: zodResolver(chatMessageReportSchema),
+      resolver: zodResolver(CHAT_MESSAGE_REPORT_SCHEMA),
       defaultValues: { note: "" },
     });
     const { errors, isSubmitting } = form.formState;

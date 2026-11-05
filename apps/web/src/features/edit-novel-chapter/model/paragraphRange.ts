@@ -7,19 +7,19 @@ export type ParagraphRange = { start: number; end: number };
  * - 고른 것이 없으면 그 문단 하나.
  * - 범위 밖을 누르면 그 문단까지 늘린다 — 바로 옆이면 한 칸, 떨어져 있으면 사이 문단을 모두 넣는다.
  * - 범위 안을 누르면 그 문단 하나로 다시 시작한다. 범위가 그 문단 하나뿐이면 고른 것을 푼다.
- * - `extend`(Shift+클릭·Shift+Enter)는 언제나 늘리는 쪽이다: 밖이면 위와 같고, 안이면 시작은 두고 끝을 그 문단으로
+ * - `isExtending`(Shift+클릭·Shift+Enter)는 언제나 늘리는 쪽이다: 밖이면 위와 같고, 안이면 시작은 두고 끝을 그 문단으로
  *   옮긴다(줄이기). 다시 시작하거나 풀지 않는다.
  *
  * 그래서 누르기만으로도, Tab 으로 옮겨 Enter 만 쳐도 같은 범위를 만들 수 있다. */
 export function nextParagraphRange(
   range: ParagraphRange | null,
   index: number,
-  { extend = false }: { extend?: boolean } = {},
+  { isExtending = false }: { isExtending?: boolean } = {},
 ): ParagraphRange | null {
   if (range === null) return { start: index, end: index };
   const isInside = index >= range.start && index <= range.end;
   if (!isInside) return { start: Math.min(range.start, index), end: Math.max(range.end, index) };
-  if (extend) return { start: range.start, end: index };
+  if (isExtending) return { start: range.start, end: index };
   if (range.start === index && range.end === index) return null;
   return { start: index, end: index };
 }

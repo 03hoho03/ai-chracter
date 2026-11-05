@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { ChatMessage } from "../api/chatStream";
 
-const serverMessageIdSchema = z.uuid();
+const SERVER_MESSAGE_ID_SCHEMA = z.uuid();
 
 // 채팅 응답 신고를 붙일 수 있는 메시지인가. 신고는 서버에 저장된 AI 응답의 id 로 요청하므로
 // 두 조건이 다 필요하다 — 사용자 메시지는 신고 대상이 아니고(서버가 400 으로 거절한다), 화면이
@@ -11,5 +11,5 @@ const serverMessageIdSchema = z.uuid();
 // 빌더 미리보기는 이 판정으로 못 거른다 — 미리보기 응답 id 도 UUID 지만 DB 에 저장되지 않는다.
 // 그래서 미리보기 화면은 이 함수를 쓰지 않고 신고 콜백 자체를 넘기지 않는다.
 export function canReportMessage(message: Pick<ChatMessage, "id" | "role">): boolean {
-  return message.role === "assistant" && serverMessageIdSchema.safeParse(message.id).success;
+  return message.role === "assistant" && SERVER_MESSAGE_ID_SCHEMA.safeParse(message.id).success;
 }

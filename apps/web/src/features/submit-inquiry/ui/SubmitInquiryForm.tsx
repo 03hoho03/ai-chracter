@@ -25,10 +25,10 @@ import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 import { useCreateInquiryMutation } from "../api/useCreateInquiryMutation";
 import { formToServer } from "../model/formToServer";
 import {
-  submitInquiryDefaultValues,
-  submitInquirySchema,
+  SUBMIT_INQUIRY_DEFAULT_VALUES,
+  SUBMIT_INQUIRY_SCHEMA,
   type SubmitInquiryFormValues,
-} from "../model/schema";
+} from "../model/submitInquirySchema";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -44,8 +44,8 @@ export function SubmitInquiryForm() {
     clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<SubmitInquiryFormValues>({
-    resolver: zodResolver(submitInquirySchema),
-    defaultValues: submitInquiryDefaultValues,
+    resolver: zodResolver(SUBMIT_INQUIRY_SCHEMA),
+    defaultValues: SUBMIT_INQUIRY_DEFAULT_VALUES,
   });
 
   const createInquiryMutation = useCreateInquiryMutation();

@@ -9,14 +9,14 @@ export const CHAT_REPORT_RATE_LIMITED = "CHAT_REPORT_RATE_LIMITED";
 // 검사하는데, 신고 429 는 댓글 신고와 같은 모양(`code`·`message`·`retryAfterSeconds`·`windowSeconds`)이라
 // 그 목록 밖이다. 거기에 넣으면 이 응답이 `null` 로 떨어져 일반 실패 문구가 뜬다. 그래서 이 기능 안에서
 // 필요한 두 칸만 느슨하게 읽는다.
-const detailSchema = z.object({
+const DETAIL_SCHEMA = z.object({
   code: z.string().optional(),
   retryAfterSeconds: z.number().nonnegative().optional(),
 });
 
 export function reportErrorMessage(error: unknown): string {
   if (!isApiError(error)) return "신고 접수에 실패했어요. 잠시 후 다시 시도해주세요.";
-  const parsed = detailSchema.safeParse(error.detail);
+  const parsed = DETAIL_SCHEMA.safeParse(error.detail);
   const detail = parsed.success ? parsed.data : undefined;
 
   if (error.status === 401) return "로그인이 만료됐어요. 다시 로그인한 뒤 신고해주세요.";

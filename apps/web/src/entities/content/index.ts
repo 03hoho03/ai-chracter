@@ -110,7 +110,7 @@ export {
   MAX_STARTING_SETUPS,
   MAX_SUGGESTED_REPLIES,
   characterLimit,
-  hashtagsSchema,
+  HASHTAGS_SCHEMA,
 } from "./model/builderLimits";
 export { hashtagRefusal, normalizeHashtag } from "./model/hashtag";
 export { isBlankText, requiredText } from "./model/requiredText";

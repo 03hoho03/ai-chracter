@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { toSignupRequest, toSocialOnboardingRequest } from "./formToServer";
-import { signUpDefaultValues, type SignUpFormValues } from "./signUpSchema";
+import { SIGN_UP_DEFAULT_VALUES, type SignUpFormValues } from "./signUpSchema";
 
 function valuesWith(personaName: string): SignUpFormValues {
   return {
-    ...signUpDefaultValues,
+    ...SIGN_UP_DEFAULT_VALUES,
     email: "user@example.com",
     password: "password123",
     nickname: "닉네임",

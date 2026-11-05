@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { signUpSchema } from "./signUpSchema";
+import { SIGN_UP_SCHEMA } from "./signUpSchema";
 
 function validPayload() {
   return {
@@ -22,33 +22,33 @@ function isoDateYearsAgo(years: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-describe("signUpSchema", () => {
+describe("SIGN_UP_SCHEMA", () => {
   // 국외이전 동의는 수집·이용 동의와 구분된 세 번째
   // 필수 필드다. 빠지거나 false면 파싱이 실패해야 한다.
   it("rejects a payload missing transferAgreed", () => {
     const payloadWithoutTransfer: Record<string, unknown> = { ...validPayload() };
     delete payloadWithoutTransfer.transferAgreed;
 
-    const result = signUpSchema.safeParse(payloadWithoutTransfer);
+    const result = SIGN_UP_SCHEMA.safeParse(payloadWithoutTransfer);
 
     expect(result.success).toBe(false);
   });
 
   it("rejects transferAgreed: false", () => {
-    const result = signUpSchema.safeParse({ ...validPayload(), transferAgreed: false });
+    const result = SIGN_UP_SCHEMA.safeParse({ ...validPayload(), transferAgreed: false });
 
     expect(result.success).toBe(false);
   });
 
   it("accepts a fully agreed payload", () => {
-    const result = signUpSchema.safeParse(validPayload());
+    const result = SIGN_UP_SCHEMA.safeParse(validPayload());
 
     expect(result.success).toBe(true);
   });
 
   // 서버가 진짜 게이트, 이건 위저드 1스텝의 UX 하한이다.
   it("rejects a birth date under the minimum age", () => {
-    const result = signUpSchema.safeParse({
+    const result = SIGN_UP_SCHEMA.safeParse({
       ...validPayload(),
       birthDate: isoDateYearsAgo(13),
     });
@@ -57,7 +57,7 @@ describe("signUpSchema", () => {
   });
 
   it("accepts a birth date exactly at the minimum age", () => {
-    const result = signUpSchema.safeParse({
+    const result = SIGN_UP_SCHEMA.safeParse({
       ...validPayload(),
       birthDate: isoDateYearsAgo(14),
     });
@@ -67,10 +67,10 @@ describe("signUpSchema", () => {
 
   // 대화에서 쓸 이름은 선택이다 — 비우면 통과하고, 적었으면 프로필 이름 규칙을 건다.
   it.each(["", "   "])("accepts a blank personaName %j", (personaName) => {
-    expect(signUpSchema.safeParse({ ...validPayload(), personaName }).success).toBe(true);
+    expect(SIGN_UP_SCHEMA.safeParse({ ...validPayload(), personaName }).success).toBe(true);
   });
 
   it.each(["지:훈", "가".repeat(21)])("rejects personaName %j", (personaName) => {
-    expect(signUpSchema.safeParse({ ...validPayload(), personaName }).success).toBe(false);
+    expect(SIGN_UP_SCHEMA.safeParse({ ...validPayload(), personaName }).success).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 export {
-  generateImagesSchema,
+  GENERATE_IMAGES_SCHEMA,
   type GenerateImagesFormValues,
-} from "./model/schema";
+} from "./model/generateImagesSchema";
 export { useGenerateImagesMutation } from "./api/useGenerateImagesMutation";
 export {
   useGenerateImagesSubmit,

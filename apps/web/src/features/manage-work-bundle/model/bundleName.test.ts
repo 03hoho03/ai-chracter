@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { WORK_BUNDLE_NAME_MAX_LENGTH } from "@/entities/work";
 
-import { countBundleNameChars, workBundleNameSchema } from "./bundleName";
+import { countBundleNameChars, WORK_BUNDLE_NAME_SCHEMA } from "./bundleName";
 
 function isValid(name: string): boolean {
-  return workBundleNameSchema.safeParse({ name }).success;
+  return WORK_BUNDLE_NAME_SCHEMA.safeParse({ name }).success;
 }
 
-describe("workBundleNameSchema", () => {
+describe("WORK_BUNDLE_NAME_SCHEMA", () => {
   it("공백만이면 거절한다", () => {
     expect(isValid("   ")).toBe(false);
     expect(isValid("")).toBe(false);

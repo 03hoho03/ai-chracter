@@ -71,8 +71,8 @@ describe("buildDiffView", () => {
     const view = buildDiffView("가나 다라\n\n마바", "가나\n\n다라\n\n마바");
     expect(view).toMatchObject({ status: "compared", changedParagraphCount: 2 });
     expect(blocksOf(view)).toEqual([
-      { kind: "changed", segments: [{ kind: "equal", text: "가나" }], whitespaceOnly: true },
-      { kind: "changed", segments: [{ kind: "equal", text: "다라" }], whitespaceOnly: true },
+      { kind: "changed", segments: [{ kind: "equal", text: "가나" }], isWhitespaceOnly: true },
+      { kind: "changed", segments: [{ kind: "equal", text: "다라" }], isWhitespaceOnly: true },
       { kind: "unchanged", paragraphs: ["마바"] },
     ]);
   });
@@ -81,7 +81,7 @@ describe("buildDiffView", () => {
     const view = buildDiffView("가나\n\n다라\n\n마바", "가나 다라\n\n마바");
     expect(view).toMatchObject({ status: "compared", changedParagraphCount: 1 });
     expect(blocksOf(view)).toEqual([
-      { kind: "changed", segments: [{ kind: "equal", text: "가나 다라" }], whitespaceOnly: true },
+      { kind: "changed", segments: [{ kind: "equal", text: "가나 다라" }], isWhitespaceOnly: true },
       { kind: "unchanged", paragraphs: ["마바"] },
     ]);
   });
@@ -97,7 +97,7 @@ describe("buildDiffView", () => {
     const blocks = blocksOf(view);
     expect(blocks[0]).toEqual({ kind: "unchanged", paragraphs: ["하나"] });
     expect(changedTexts(blocks[1], "removed")).toEqual(["둘"]);
-    expect(blocks[1]).toMatchObject({ whitespaceOnly: false });
+    expect(blocks[1]).toMatchObject({ isWhitespaceOnly: false });
   });
 
   it("does not run the sentence diff when the word diff finishes", () => {

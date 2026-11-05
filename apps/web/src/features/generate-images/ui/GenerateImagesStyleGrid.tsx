@@ -6,7 +6,7 @@ import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import { useImageModelsQuery } from "@/entities/image-model";
 
-import type { GenerateImagesFormValues } from "../model/schema";
+import type { GenerateImagesFormValues } from "../model/generateImagesSchema";
 import { STYLE_SAMPLE_IMAGES } from "../model/styleSampleImages";
 
 type GenerateImagesStyleGridLayout = "rail" | "sheet";

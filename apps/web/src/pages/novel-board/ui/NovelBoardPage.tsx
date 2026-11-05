@@ -373,10 +373,10 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
   const isEmpty = novel.chapters.length === 0;
   // 배치를 한 번도 받지 못했다(받은 뒤 다시 받기만 실패했으면 받은 배치로 그리고 저장해도 된다).
   const isLayoutFailed = layoutQuery.isError && layoutQuery.data === undefined;
-  const showPanel = isCanvasLayout || selection !== undefined;
+  const shouldShowPanel = isCanvasLayout || selection !== undefined;
   // 구성 모드는 넓은 화면에서도 캔버스·옆 패널 대신 한 열 문서다. 패널 자리가 그 문서가 되어, 창 폭이 바뀌어도 고르던 구간이 남는다.
   const isPlan = isPlanSelection(selection);
-  const showCanvas = isCanvasLayout && !isPlan;
+  const shouldShowCanvas = isCanvasLayout && !isPlan;
   const openPlan = () => void selectBoard({ kind: "plan" });
   const planEntry = isOutlineFlowOn ? <BoardPlanEntry novel={novel} onOpen={openPlan} /> : undefined;
 
@@ -385,7 +385,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
       <NovelBoardTopBar
         novelId={novel.id}
         title={novel.title ?? "제목 미정"}
-        autosaveNotice={showCanvas && !isEmpty ? "카드 자리는 자동으로 저장돼요" : undefined}
+        autosaveNotice={shouldShowCanvas && !isEmpty ? "카드 자리는 자동으로 저장돼요" : undefined}
         versions={{
           isOpen: selection?.kind === "versions",
           onToggle: () => void selectBoard(selection?.kind === "versions" ? undefined : { kind: "versions" }),
@@ -403,7 +403,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
       {/* 넓은 화면: 캔버스 + 옆 패널. 좁은 화면: 목록 ↔ 패널 화면. 패널 자리는 두 배치에서 같은 트리 자리(같은 부모의
           둘째 칸)라, 창 폭이 1024px 를 넘나들어도 패널이 다시 마운트되지 않아 쓰던 글이 남는다. */}
       <div className="flex h-below-header">
-        {showCanvas ? (
+        {shouldShowCanvas ? (
           // 실패 안내의 "다시 시도"가 성공하면 안내와 함께 사라지므로, 누를 때 포커스를 받아 둘 자리라 `tabIndex=-1`.
           <main ref={canvasRegionRef} tabIndex={-1} aria-label="편집 보드" className="relative min-w-0 flex-1 outline-none">
             <Button
@@ -459,10 +459,10 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
           </main>
         ) : null}
         <div
-          role={showCanvas ? "complementary" : "main"}
-          aria-label={toPanelSlotLabel(isPlan, showCanvas)}
+          role={shouldShowCanvas ? "complementary" : "main"}
+          aria-label={toPanelSlotLabel(isPlan, shouldShowCanvas)}
           className={
-            showCanvas
+            shouldShowCanvas
               ? "flex w-md shrink-0 flex-col border-l border-border bg-background xl:w-lg"
               : "flex min-w-0 flex-1 flex-col bg-background"
           }
@@ -486,8 +486,8 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
               />
             </div>
           )}
-          {showPanel && isPlan && planAvailability === "loading" && <PlanLoading />}
-          {showPanel && !(isPlan && planAvailability === "loading") && (
+          {shouldShowPanel && isPlan && planAvailability === "loading" && <PlanLoading />}
+          {shouldShowPanel && !(isPlan && planAvailability === "loading") && (
             <NovelBoardPanel
               key={selectValue ?? "overview"}
               novel={novel}
@@ -496,7 +496,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
               aiEdit={aiEdit}
               headingRef={headingRef}
               onSelect={(next) => void selectBoard(next)}
-              onBackToList={showCanvas ? undefined : () => void selectBoard(undefined)}
+              onBackToList={shouldShowCanvas ? undefined : () => void selectBoard(undefined)}
               backLabel={isCanvasLayout ? "캔버스로" : "목록"}
               planEntry={planEntry}
               onChapterDeleted={handleChapterDeleted}
@@ -595,9 +595,9 @@ function toPlanAvailability(isPricingPending: boolean, isOutlineFlowOn: boolean)
 }
 
 /** 패널 자리의 랜드마크 이름. 구성 모드는 그 자리가 화면 본문 전체다. */
-function toPanelSlotLabel(isPlan: boolean, showCanvas: boolean): string {
+function toPanelSlotLabel(isPlan: boolean, shouldShowCanvas: boolean): string {
   if (isPlan) return "구성";
-  return showCanvas ? "편집 패널" : "편집 보드";
+  return shouldShowCanvas ? "편집 패널" : "편집 보드";
 }
 
 /** 구성 모드 주소로 들어왔는데 스위치를 담은 가격 응답을 아직 받는 중. 받으면 구성 문서가 되거나(켜짐) 개요로 접힌다(꺼짐). */

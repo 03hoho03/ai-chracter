@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { myWorksSearchSchema } from "@/pages/my-works";
+import { MY_WORKS_SEARCH_SCHEMA } from "@/pages/my-works";
 import { toStudioSearch } from "@/pages/studio";
 
 // 옛 내 작품 주소의 북마크와 로그인 복귀 주소(`/login?redirect=/my…`)를 살리려고 남긴 라우트다. 만든 작품은 이제
@@ -9,6 +9,6 @@ import { toStudioSearch } from "@/pages/studio";
 // 세션은 여기서 보지 않는다. 보면 비로그인이 로그인 뒤 이 주소로 돌아왔다가 한 번 더 튄다 — 스튜디오 홈이 본다.
 // 리다이렉트는 기록을 바꿔치기해 뒤로가기에 이 주소가 남지 않는다.
 export const Route = createFileRoute("/my")({
-  validateSearch: myWorksSearchSchema,
+  validateSearch: MY_WORKS_SEARCH_SCHEMA,
   beforeLoad: ({ search }) => redirect({ to: "/studio", search: toStudioSearch(search), replace: true, throw: true }),
 });

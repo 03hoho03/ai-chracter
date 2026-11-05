@@ -63,7 +63,7 @@ export function DiffView({ before, after, tooLargeAction, className }: DiffViewP
 
 function DiffBlockView({ block }: { block: DiffBlock }) {
   if (block.kind === "unchanged") return <UnchangedParagraphs paragraphs={block.paragraphs} />;
-  if (block.whitespaceOnly) {
+  if (block.isWhitespaceOnly) {
     return (
       <div className="flex flex-col gap-1">
         <p className="whitespace-pre-line">{block.segments.map((segment) => segment.text).join("")}</p>

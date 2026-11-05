@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { requireSession } from "@/entities/session";
-import { CloverHistoryPage, cloverHistorySearchSchema, type CloverHistorySearch } from "@/pages/clover-history";
+import { CloverHistoryPage, CLOVER_HISTORY_SEARCH_SCHEMA, type CloverHistorySearch } from "@/pages/clover-history";
 
 // 플랫 명명, `inquiries.index.tsx`/`clover.index.tsx` 선례.
 // 탭 상태는 URL 검색 파라미터(`?tab=`)로 둔다.
 export const Route = createFileRoute("/clover/history")({
-  validateSearch: cloverHistorySearchSchema,
+  validateSearch: CLOVER_HISTORY_SEARCH_SCHEMA,
   beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
   component: RouteComponent,
 });

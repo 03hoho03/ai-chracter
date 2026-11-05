@@ -19,8 +19,8 @@ type DerivedNovelsVisibilityFieldProps = {
 export function DerivedNovelsVisibilityField({ contentId, idPrefix }: DerivedNovelsVisibilityFieldProps) {
   const detailQuery = useContentDetailQuery(contentId);
   const mutation = useUpdateDerivedNovelsVisibilityMutation(contentId);
-  const visible = detailQuery.data?.derivedNovelsVisible;
-  if (visible === undefined) return null;
+  const isVisible = detailQuery.data?.derivedNovelsVisible;
+  if (isVisible === undefined) return null;
 
   const switchId = `${idPrefix}-toggle`;
   const descriptionId = `${idPrefix}-description`;
@@ -36,7 +36,7 @@ export function DerivedNovelsVisibilityField({ contentId, idPrefix }: DerivedNov
       </div>
       <Switch
         id={switchId}
-        checked={visible}
+        checked={isVisible}
         aria-describedby={descriptionId}
         onCheckedChange={(next) =>
           mutation.mutate(next, {

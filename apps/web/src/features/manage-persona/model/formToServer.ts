@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { PersonaFormValues } from "./schema";
+import type { PersonaFormValues } from "./personaFormSchema";
 
 type PersonaCreateRequest = components["schemas"]["PersonaCreateRequest"];
 type PersonaUpsertRequest = components["schemas"]["PersonaUpsertRequest"];

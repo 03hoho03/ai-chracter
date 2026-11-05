@@ -8,10 +8,10 @@ import { toast } from "sonner";
 
 import { useWithdrawAccountMutation } from "../api/useWithdrawAccountMutation";
 import {
-  withdrawPasswordDefaultValues,
-  withdrawPasswordSchema,
+  WITHDRAW_PASSWORD_DEFAULT_VALUES,
+  WITHDRAW_PASSWORD_SCHEMA,
   type WithdrawPasswordFormValues,
-} from "../model/schema";
+} from "../model/withdrawPasswordSchema";
 import { getWithdrawError } from "../model/withdrawError";
 
 type WithdrawPasswordFormProps = {
@@ -29,8 +29,8 @@ export function WithdrawPasswordForm({ onWithdrawn }: WithdrawPasswordFormProps)
     setError,
     formState: { errors },
   } = useForm<WithdrawPasswordFormValues>({
-    resolver: zodResolver(withdrawPasswordSchema),
-    defaultValues: withdrawPasswordDefaultValues,
+    resolver: zodResolver(WITHDRAW_PASSWORD_SCHEMA),
+    defaultValues: WITHDRAW_PASSWORD_DEFAULT_VALUES,
   });
   const withdrawMutation = useWithdrawAccountMutation();
 

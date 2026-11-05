@@ -23,14 +23,14 @@ export const apiClient = axios.create({
  * 단언 대신 스키마로 파싱하는 이유: 이건 **서버가 주는 외부 데이터**라 모양을 우리가
  * 보장할 수 없다. 프록시가 끼워 넣은 HTML 에러 페이지나 형태가 바뀐 응답이 오면 단언은 그걸
  * 통과시켜 `detail.loc?.at(-1)`에서 터지지만, 파싱은 `undefined`로 떨어져 아래 폴백이 받는다. */
-const validationErrorItemSchema = z.object({
+const VALIDATION_ERROR_ITEM_SCHEMA = z.object({
   loc: z.array(z.unknown()).optional(),
   msg: z.string().optional(),
 });
 
-export const errorEnvelopeSchema = z.object({
+export const ERROR_ENVELOPE_SCHEMA = z.object({
   detail: z
-    .union([z.string(), z.array(validationErrorItemSchema), z.record(z.string(), z.unknown())])
+    .union([z.string(), z.array(VALIDATION_ERROR_ITEM_SCHEMA), z.record(z.string(), z.unknown())])
     .optional(),
 });
 
@@ -67,7 +67,7 @@ export class ApiErrorObject extends Error implements ApiError {
 
 function normalizeError(error: AxiosError): ApiError {
   const status = error.response?.status ?? 0;
-  const parsed = errorEnvelopeSchema.safeParse(error.response?.data);
+  const parsed = ERROR_ENVELOPE_SCHEMA.safeParse(error.response?.data);
   const detail = parsed.success ? parsed.data.detail : undefined;
 
   if (Array.isArray(detail)) {

@@ -10,7 +10,7 @@ import {
   CHARACTER_FIELD_LABELS,
   CHARACTER_MISSING_FIELDS,
   CHARACTER_TABS,
-  characterBuilderSchema,
+  CHARACTER_BUILDER_SCHEMA,
   characterMissingFieldFormPath,
   serverToForm,
 } from "@/features/build-character";
@@ -69,7 +69,7 @@ const SCENARIOS: Record<string, unknown> = {
 };
 
 function issuePaths(value: unknown): string[] {
-  const result = characterBuilderSchema.safeParse(value);
+  const result = CHARACTER_BUILDER_SCHEMA.safeParse(value);
   return result.success ? [] : result.error.issues.map((issue) => issue.path.map(String).join("."));
 }
 

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { cloverPricingRedirectSearchSchema, toCloverHubSearch } from "./pricingRedirect";
+import { CLOVER_PRICING_REDIRECT_SEARCH_SCHEMA, toCloverHubSearch } from "./pricingRedirect";
 
 function redirectSearchOf(raw: Record<string, unknown>) {
-  return toCloverHubSearch(cloverPricingRedirectSearchSchema.parse(raw));
+  return toCloverHubSearch(CLOVER_PRICING_REDIRECT_SEARCH_SCHEMA.parse(raw));
 }
 
 describe("옛 상품 안내 주소의 충전 화면 넘기기", () => {
