@@ -4502,6 +4502,194 @@
         }
       }
     },
+    "/admin/feature-switches": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Feature Switches",
+        "operationId": "list_feature_switches_admin_feature_switches_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFeatureSwitchListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/feature-switches/changes": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Feature Switch Changes",
+        "description": "최신 먼저 20건씩. `switch` 로 거르면 이 판이 모르는 옛 이름도 거를 수 있다.",
+        "operationId": "list_feature_switch_changes_admin_feature_switches_changes_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "switch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Switch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFeatureSwitchChangeListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/feature-switches/{name}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Set Feature Switch",
+        "description": "덮어쓰기를 `value` 로 바꾼다. 경로의 이름은 문자열로 받아 버튼 대상이 아니면 422 `FEATURE_SWITCH_READ_ONLY` 로 거른다\n(이름 유니언으로 받으면 코드 없는 기본 422 가 나간다).",
+        "operationId": "set_feature_switch_admin_feature_switches__name__put",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminFeatureSwitchSetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFeatureSwitchChangeResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/feature-switches/{name}/override": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Clear Feature Switch Override",
+        "description": "덮어쓰기를 지워 `.env` 값으로 돌린다. 버튼 대상이 아니어도 덮어쓰기 행이 있는 이름(다른 판이 남긴 행)은 지울 수 있다 —\n그 판으로 되돌렸다가 다시 올라올 때 되살아나지 않게. 그런 이름은 응답의 `switch` 가 null 이다.",
+        "operationId": "clear_feature_switch_override_admin_feature_switches__name__override_delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminFeatureSwitchClearRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFeatureSwitchChangeResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/assets/presigned-upload": {
       "post": {
         "tags": [
@@ -17460,6 +17648,77 @@
   },
   "components": {
     "schemas": {
+      "AdminAdjustableSwitch": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "memory_window_generation",
+              "memory_window_ending_judgment",
+              "memory_window_image_judgment",
+              "memory_episodes_extract",
+              "memory_facts_extract",
+              "memory_episodes_recall",
+              "memory_facts_inject",
+              "memory_knowledge_filter",
+              "memory_summary_secret_marking",
+              "memory_items_visible",
+              "stat_event_log",
+              "memory_impressions_write",
+              "memory_impressions_visible",
+              "novelize_enabled",
+              "novel_public_enabled",
+              "novel_public_policy_v2_enabled",
+              "novel_illustrations_enabled",
+              "novelize_outline_flow_enabled",
+              "novelize_multi_block_edit_enabled",
+              "local_image_reference_enabled",
+              "clover_ledger_paused",
+              "payments_enabled",
+              "identity_gate_enabled"
+            ],
+            "title": "Name"
+          },
+          "envValue": {
+            "type": "boolean",
+            "title": "Envvalue"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminSwitchOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveValue": {
+            "type": "boolean",
+            "title": "Effectivevalue"
+          },
+          "effectiveState": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminSwitchEffectiveState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "envValue",
+          "override",
+          "effectiveValue",
+          "effectiveState"
+        ],
+        "title": "AdminAdjustableSwitch",
+        "description": "어드민에서 켜고 끌 수 있는 스위치. `env_value` 는 이 서버가 기동 때 읽은 값이고, 실효 값은 덮어쓰기가 있으면 그 값이다.\n`effective_state` 는 결제·본인인증 게이트에만 있다."
+      },
       "AdminAppealListItem": {
         "properties": {
           "id": {
@@ -19756,6 +20015,238 @@
           "messages"
         ],
         "title": "AdminDashboardTrendPoint"
+      },
+      "AdminFeatureSwitchChangeItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "beforeOverride": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beforeoverride"
+          },
+          "afterOverride": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Afteroverride"
+          },
+          "envValue": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Envvalue"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "adminId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Adminid"
+          },
+          "adminEmail": {
+            "type": "string",
+            "title": "Adminemail"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "beforeOverride",
+          "afterOverride",
+          "envValue",
+          "reason",
+          "adminId",
+          "adminEmail",
+          "createdAt"
+        ],
+        "title": "AdminFeatureSwitchChangeItem",
+        "description": "이력 한 행. 전·후의 null 은 덮어쓰기 없음이다. `env_value` 는 그 순간의 `.env` 값이고, null 은 기록한 판이 그 이름을 몰랐다는\n뜻이다."
+      },
+      "AdminFeatureSwitchChangeListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminFeatureSwitchChangeItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminFeatureSwitchChangeListResponse"
+      },
+      "AdminFeatureSwitchChangeResult": {
+        "properties": {
+          "switch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminAdjustableSwitch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "change": {
+            "$ref": "#/components/schemas/AdminFeatureSwitchChangeItem"
+          },
+          "warnings": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "refund-started-during-pause",
+                "self-refresh-failed"
+              ]
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "switch",
+          "change",
+          "warnings"
+        ],
+        "title": "AdminFeatureSwitchChangeResult",
+        "description": "저장 뒤의 그 스위치(저장 결과로 계산한 값, 모르는 이름을 지웠으면 null)와 남긴 이력 행, 경고."
+      },
+      "AdminFeatureSwitchClearRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "expectedOverride": {
+            "type": "boolean",
+            "title": "Expectedoverride"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason",
+          "expectedOverride"
+        ],
+        "title": "AdminFeatureSwitchClearRequest"
+      },
+      "AdminFeatureSwitchListResponse": {
+        "properties": {
+          "adjustable": {
+            "items": {
+              "$ref": "#/components/schemas/AdminAdjustableSwitch"
+            },
+            "type": "array",
+            "title": "Adjustable"
+          },
+          "readOnly": {
+            "items": {
+              "$ref": "#/components/schemas/AdminReadOnlySwitch"
+            },
+            "type": "array",
+            "title": "Readonly"
+          },
+          "unknownOverrides": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUnknownOverride"
+            },
+            "type": "array",
+            "title": "Unknownoverrides"
+          },
+          "refreshIntervalSeconds": {
+            "type": "number",
+            "title": "Refreshintervalseconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "adjustable",
+          "readOnly",
+          "unknownOverrides",
+          "refreshIntervalSeconds"
+        ],
+        "title": "AdminFeatureSwitchListResponse",
+        "description": "버튼 대상(서버 이름 목록 순서)·읽기 전용·모르는 덮어쓰기와, 다른 프로세스에 저장이 닿기까지의 상한(초)."
+      },
+      "AdminFeatureSwitchSetRequest": {
+        "properties": {
+          "value": {
+            "type": "boolean",
+            "title": "Value"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "expectedOverride": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedoverride"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "reason",
+          "expectedOverride"
+        ],
+        "title": "AdminFeatureSwitchSetRequest",
+        "description": "`expected_override` 는 화면이 본 지금 덮어쓰기다(없음 = null) — 지금 덮어쓰기와 다르면 409 로 돌려보낸다."
       },
       "AdminHomeCurationClearRequest": {
         "properties": {
@@ -25449,6 +25940,49 @@
         "title": "AdminPromptSetSummary",
         "description": "이력 목록은 메타만. 섹션 전문은\n`GET /admin/prompt-sets/{id}`로 뺀다."
       },
+      "AdminReadOnlySwitch": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "chat_premium_models_enabled",
+              "novelize_premium_models_enabled",
+              "memory_embed_write",
+              "memory_embed_recall",
+              "novel_bible_enabled",
+              "novelize_worker_enabled",
+              "creator_payout_enabled",
+              "expose_api_docs",
+              "session_cookie_secure"
+            ],
+            "title": "Name"
+          },
+          "value": {
+            "type": "boolean",
+            "title": "Value"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "startup-check",
+              "worker-startup",
+              "deploy-starts-worker",
+              "separate-cron-process",
+              "app-creation",
+              "infrastructure"
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "value",
+          "reason"
+        ],
+        "title": "AdminReadOnlySwitch",
+        "description": "`.env` 로만 바꾸는 스위치의 지금 값과 버튼이 없는 이유."
+      },
       "AdminRefundQuoteResponse": {
         "properties": {
           "refundKrw": {
@@ -25755,6 +26289,95 @@
           "totalCount"
         ],
         "title": "AdminReportListResponse"
+      },
+      "AdminSwitchEffectiveState": {
+        "properties": {
+          "open": {
+            "type": "boolean",
+            "title": "Open"
+          },
+          "missingSettings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missingsettings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "open",
+          "missingSettings"
+        ],
+        "title": "AdminSwitchEffectiveState",
+        "description": "결제·본인인증 게이트의 실제 상태. 실효 값이 켜져 있고 필요한 설정이 모두 있어야 열린다. `missing_settings` 는 비어 있는\n설정의 env 키 이름이다(값은 싣지 않는다)."
+      },
+      "AdminSwitchOverride": {
+        "properties": {
+          "value": {
+            "type": "boolean",
+            "title": "Value"
+          },
+          "adminId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Adminid"
+          },
+          "adminEmail": {
+            "type": "string",
+            "title": "Adminemail"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "adminId",
+          "adminEmail",
+          "updatedAt"
+        ],
+        "title": "AdminSwitchOverride",
+        "description": "스위치 하나의 지금 덮어쓰기 — 값과 마지막으로 바꾼 운영자·시각."
+      },
+      "AdminUnknownOverride": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "value": {
+            "type": "boolean",
+            "title": "Value"
+          },
+          "adminId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Adminid"
+          },
+          "adminEmail": {
+            "type": "string",
+            "title": "Adminemail"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "value",
+          "adminId",
+          "adminEmail",
+          "updatedAt"
+        ],
+        "title": "AdminUnknownOverride",
+        "description": "이 판이 버튼으로 다루지 않는 이름의 덮어쓰기 행 — 지금은 무시되고 그 스위치는 `.env` 값으로 돈다."
       },
       "AdminUserActionLogItem": {
         "properties": {
