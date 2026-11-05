@@ -26,7 +26,7 @@ CLAUDE.md에서 분리한, **특정 코드를 만질 때만** 필요한 함정·
 
 ## 스키마 / zod
 
-- **zod v4 discriminatedUnion 어노테이션 함정**: 멤버를 `const x: z.ZodType<T> = z.object({...})`로 미리 넓혀 재사용하면 discriminant 추론에 쓰는 내부 캐퍼빌리티(`$ZodTypeDiscriminable`)가 지워져 타입 에러(v3의 흔한 패턴이 v4 discriminatedUnion에서 깨짐). 재귀 rule 스키마(`SINGLE_RULE_SCHEMA`/`RULE_GROUP_SCHEMA`/`RULE_LIST_ITEM_SCHEMA`)는 명시 어노테이션 없이 자연 추론에 맡긴다. `entities/chat-room`의 규칙 타입과는 컴파일타임 연결이 없고 모양만 같다(`STORY_BUILDER_SCHEMA.ts` 주석).
+- **zod v4 discriminatedUnion 어노테이션 함정**: 멤버를 `const x: z.ZodType<T> = z.object({...})`로 미리 넓혀 재사용하면 discriminant 추론에 쓰는 내부 캐퍼빌리티(`$ZodTypeDiscriminable`)가 지워져 타입 에러(v3의 흔한 패턴이 v4 discriminatedUnion에서 깨짐). 재귀 rule 스키마(`SINGLE_RULE_SCHEMA`/`RULE_GROUP_SCHEMA`/`RULE_LIST_ITEM_SCHEMA`)는 명시 어노테이션 없이 자연 추론에 맡긴다. `entities/chat-room`의 규칙 타입과는 컴파일타임 연결이 없고 모양만 같다(`storyBuilderSchema.ts` 주석).
 
 ## situationalImages 전용 이미지 필드
 
