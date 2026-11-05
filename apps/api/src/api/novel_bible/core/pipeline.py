@@ -14,6 +14,7 @@
 하나만 통과시킨다. 진 쪽은 새 머리를 기준으로 저장된 작업 제안을 그대로 다시 연결·검사한다(다시 추출하지 않는다)."""
 
 import logging
+import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -361,10 +362,11 @@ async def _check(
 
 async def _judged(
     factory: SessionFactory, registry: Registry, judge: Judge, loaded: _Loaded,
-    linked: dict[SlotId, list[LinkedItem]], base_rows: Sequence[Row], findings: Sequence[FindingDraft],
+    linked: dict[SlotId, list[LinkedItem]], base_rows: Sequence[Row], findings: Sequence[FindingDraft], *, spent: float,
 ) -> list[FindingDraft]:
-    """구조 규칙 결과 중 판정 후보(후보 표시를 실은 경고)를 판정 단계가 돌려준 경고로 바꾼다. 다른 결과는 그대로 둔다. 판정
-    단계가 무엇 때문에든 실패하면 후보 경고를 판정 없이 그대로 둔다 — 판정은 확정을 막지도 실패시키지도 않는다."""
+    """구조 규칙 결과 중 판정 후보(후보 표시를 실은 경고)를 판정 단계가 돌려준 경고로 바꾼다. 다른 결과는 그대로 둔다. `spent` 는
+    같은 실행의 앞 판정 단계에 이미 쓴 시간이다. 판정 단계가 무엇 때문에든 실패하면 후보를 판정 받지 못한 것으로 남긴다
+    (`judge.unjudged`) — 판정은 확정을 막지도 실패시키지도 않는다."""
     candidates = [finding for finding in findings if is_candidate(finding)]
     if not candidates:
         return list(findings)
@@ -374,10 +376,10 @@ async def _judged(
             assembled = await assemble_candidates(
                 session, rows, candidates, _new_quotes(linked), loaded.ref.chapter_revision_id
             )
-        judged = await judge(factory, loaded.ref, assembled)
+        judged = await judge(factory, loaded.ref, assembled, spent=spent)
     except Exception:
-        logger.exception("정본 기억 확정 %s 의 판정 단계가 실패해 후보 경고를 판정 없이 남긴다", loaded.ref.commit_id)
-        return list(findings)
+        logger.exception("정본 기억 확정 %s 의 판정 단계가 실패해 후보를 판정 받지 못한 것으로 남긴다", loaded.ref.commit_id)
+        judged = judge.unjudged(candidates)
     return [*(finding for finding in findings if not is_candidate(finding)), *judged]
 
 
@@ -584,7 +586,10 @@ async def link_check_commit(
     커밋 트랜잭션째 되돌아가 리비전·항목·만료가 하나도 남지 않는다.
 
     `judge` 가 있으면 구조 규칙 뒤에 모호 후보 판정을 돌려 후보 경고를 그 결과로 바꾼다. 차단 여부는 판정 전 구조 규칙 결과로만
-    정하고, 판정 결과는 차단된 확정에도 경고로 덧붙는다. 없으면(규칙만 보는 코어 테스트) 후보 경고를 그대로 남긴다."""
+    정하고, 판정 결과는 차단된 확정에도 경고로 덧붙는다. 없으면(규칙만 보는 코어 테스트) 후보 경고를 그대로 남긴다. 판정 총 기한은
+    확정 하나의 판정 전체에 걸리므로, 머리 비교에서 져 다시 검사할 때는 앞 판정 단계에 쓴 시간을 이어 세어 넘긴다 — 이 실행은
+    워커의 작업 상한 한 칸 안이라, 검사마다 기한을 새로 세면 그 상한을 넘겨 끊긴다."""
+    judge_spent = 0.0
     try:
         while True:
             loaded = await _load(factory, registry, commit_id)
@@ -600,7 +605,11 @@ async def link_check_commit(
             findings = await _check(factory, registry, rules, loaded, linked, base_rows)
             blocked = any(finding.severity == "block" for finding in findings)
             if judge is not None:
-                findings = await _judged(factory, registry, judge, loaded, linked, base_rows, findings)
+                judge_started = time.monotonic()
+                findings = await _judged(
+                    factory, registry, judge, loaded, linked, base_rows, findings, spent=judge_spent
+                )
+                judge_spent += time.monotonic() - judge_started
             if blocked:
                 await _block(factory, loaded, findings)
                 return

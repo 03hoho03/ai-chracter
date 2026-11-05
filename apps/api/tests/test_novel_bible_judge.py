@@ -18,11 +18,12 @@ from typing import Any, Literal, TypeVar, get_type_hints
 
 import pytest
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models.novel_bible import NovelBibleCommit, NovelBibleFinding
 from api.db.models.prompt import PromptSection
+from api.novel_bible.core import pipeline
 from api.novel_bible.core.confirm import Actor, confirm
 from api.novel_bible.core.contracts import (
     AdapterCallError,
@@ -304,6 +305,55 @@ async def test_a_judge_that_uses_its_whole_limit_every_time_hits_the_deadline_an
     assert all("규칙: order_undetermined" in prompt for prompt in adapter.judged)
 
 
+async def _lose_the_head_comparison(db: AsyncSession) -> None:
+    """검사 중인 확정이 커밋 때 머리 비교에서 지게 한다 — 다른 확정이 먼저 머리를 옮긴 것처럼 기준 리비전을 비운다."""
+    async with savepoint_factory(db)() as session:
+        await session.execute(
+            update(NovelBibleCommit).where(NovelBibleCommit.status == "checking").values(base_revision_id=None)
+        )
+        await session.commit()
+
+
+async def test_a_recheck_after_losing_the_head_comparison_judges_only_in_what_is_left_of_the_budget(
+    db_session: AsyncSession,
+) -> None:
+    """총 기한은 확정 하나의 판정 전체에 걸린다. 첫 검사의 판정이 호출 상한을 두 번 다 써 기한을 거의 다 쓴 뒤 커밋이 머리
+    비교에서 진다. 같은 실행 안의 두 번째 검사는 남은 기한만 쓴다 — 첫 후보는 남은 기한에서 끊기거나(그때 기한이 찬다) 부르지
+    않고, 그 뒤 후보는 부르지 않는다. 남는 판정 실패는 모두 `deadline` 이고, 모델 호출에 쓴 시간 전체가 작업 상한(총 기한에 60초를
+    더한 것을 같은 비율로 줄인 값) 안이다. 기한을 줄여(총 1.6초, 호출당 0.7초) 실제 시간으로 본다. 깨지는 시나리오: 검사마다 기한을
+    새로 세면 두 번째 검사가 호출 상한을 다시 두 번 써, 모델이 매달리는 동안 확정 처리가 작업 상한을 넘겨 워커 칸에 끊기고 만료
+    정리가 확정을 연결부터 되풀이한다."""
+    budget, call = 1.6, 0.7
+    task_limit = budget * BIBLE_TASK_TIMEOUT_SECONDS / JUDGE_BUDGET_SECONDS
+    waited: list[float] = []
+
+    async def answer(candidate: str) -> JudgeVerdict:
+        if not waited:
+            await _lose_the_head_comparison(db_session)
+        started = time.monotonic()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            waited.append(time.monotonic() - started)
+        raise AssertionError("닿지 않는다")
+
+    adapter = _Adapter(answer)
+    judge = build_judge(adapter.resolver(), budget_seconds=budget, call_seconds=call)
+    async with asyncio.timeout(20):
+        commit_id = await _story(db_session, [_j1(), _j1()], judge)
+
+    row = (
+        await db_session.execute(
+            select(NovelBibleCommit.status, NovelBibleCommit.cas_losses).where(NovelBibleCommit.id == commit_id)
+        )
+    ).one()
+    assert tuple(row) == ("committed", 1)
+    failures = [row.payload["failure"] for row in await _findings(db_session, commit_id) if row.rule == "judge_failed"]
+    assert failures == ["deadline", "deadline"]
+    assert 2 <= len(adapter.judged) <= 3
+    assert sum(waited) < task_limit
+
+
 @pytest.mark.parametrize(
     ("verdict", "expected"),
     [
@@ -323,21 +373,51 @@ async def test_knowledge_source_unclear_stays_only_when_the_judge_calls_it_a_con
     assert _summary(await _findings(db_session, commit_id)) == expected
 
 
-async def test_a_judge_stage_that_breaks_leaves_the_candidates_unjudged_and_commits(db_session: AsyncSession) -> None:
-    """판정 함수 자체가 예외를 내도(호출 실패를 경고로 바꾸기 전에 깨진 경우) 확정은 실패하지 않는다 — 후보 경고가 판정 없이
-    그대로 남고 커밋된다."""
+@dataclass
+class _BrokenCall:
+    """부르면 깨지는 판정 — 호출 실패를 경고로 바꾸기 전에 판정 함수 자체가 깨진 경우. 판정 못 한 후보의 경고는 실제 판정이
+    낸다."""
 
-    async def broken(
-        session_factory: SessionFactory, commit: CommitRef, candidates: Sequence[JudgeCandidate]
+    inner: Judge
+
+    async def __call__(
+        self, session_factory: SessionFactory, commit: CommitRef, candidates: Sequence[JudgeCandidate], *, spent: float
     ) -> list[WarningDraft]:
         raise RuntimeError("합성 고장")
 
-    commit_id = await _story(db_session, [*RULES, _j1()], broken)
+    def unjudged(self, candidates: Sequence[FindingDraft]) -> list[WarningDraft]:
+        return self.inner.unjudged(candidates)
+
+
+@pytest.mark.parametrize("broken_at", ["assembly", "call"])
+async def test_a_judge_stage_that_breaks_marks_every_candidate_unjudged_and_commits(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, broken_at: str
+) -> None:
+    """판정 단계 자체가 예외를 내도(후보 조립의 DB 읽기가 깨지거나, 판정 함수가 호출 실패를 경고로 바꾸기 전에 깨진 경우) 확정은
+    실패하지 않는다. 후보마다 판정 실패(후보 규칙과 `internal`)가 남아 "판정 못 함"이 "충돌 아님 판정"과 갈리고, J1 후보 경고는
+    그대로, J3 은 충돌 판정이 없으므로 후보 경고가 남지 않는다 — 호출이 실패했을 때와 같은 꼴이다. 깨지는 시나리오: 후보 경고를
+    판정 없이 그대로 두면 오탐이 커서 충돌 판정 때만 남기는 앎 출처 불명이 판정 없이 커밋되고, 순서 미정은 판정이 충돌 아님이라
+    한 경우와 행이 같아 판정 단계 고장이 깨끗한 판정으로 읽힌다."""
+    judge: Judge = build_judge(_Adapter(_always("conflict")).resolver())
+    if broken_at == "assembly":
+
+        async def broken_assembly(*args: Any, **kwargs: Any) -> list[JudgeCandidate]:
+            raise RuntimeError("합성 고장")
+
+        monkeypatch.setattr(pipeline, "assemble_candidates", broken_assembly)
+    else:
+        judge = _BrokenCall(judge)
+
+    commit_id = await _story(db_session, [*RULES, _j1()], judge)
 
     assert await _status(db_session, commit_id) == "committed"
-    assert _summary(await _findings(db_session, commit_id)) == [
-        ("warning", "knowledge_source_unclear", "J3"), ("warning", "order_undetermined", "J1"),
+    rows = await _findings(db_session, commit_id)
+    assert _summary(rows) == [
+        ("warning", "judge_failed", "J1"), ("warning", "judge_failed", "J3"), ("warning", "order_undetermined", "J1"),
     ]
+    assert {(row.payload["rule"], row.payload["failure"]) for row in rows if row.rule == "judge_failed"} == {
+        ("order_undetermined", "internal"), ("knowledge_source_unclear", "internal")
+    }
 
 
 async def test_judge_warnings_ride_along_on_a_blocked_commit(db_session: AsyncSession) -> None:
@@ -399,7 +479,7 @@ async def test_at_most_ten_candidates_are_judged_in_rule_then_chapter_order(db_s
     adapter = _Adapter(_always("conflict"))
     shuffled = [j2[0], *j3[:1], *j1[:4], *j3[1:], *j1[4:]]
 
-    warnings = await build_judge(adapter.resolver())(savepoint_factory(db_session), _REF, shuffled)
+    warnings = await build_judge(adapter.resolver())(savepoint_factory(db_session), _REF, shuffled, spent=0.0)
 
     def by_chapter(candidates: list[JudgeCandidate]) -> list[JudgeCandidate]:
         return sorted(candidates, key=lambda candidate: candidate.chapters)
@@ -431,7 +511,7 @@ async def test_each_call_is_cut_at_its_own_limit_and_the_rest_wait_for_nothing(d
 
     started = time.monotonic()
     async with asyncio.timeout(10):
-        warnings = await judge(savepoint_factory(db_session), _REF, candidates)
+        warnings = await judge(savepoint_factory(db_session), _REF, candidates, spent=0.0)
     elapsed = time.monotonic() - started
 
     failures = [warning.payload["failure"] for warning in warnings if warning.rule == "judge_failed"]
@@ -443,9 +523,10 @@ async def test_each_call_is_cut_at_its_own_limit_and_the_rest_wait_for_nothing(d
 
 
 def test_the_judge_stage_can_only_return_warnings() -> None:
-    """판정 결과는 어떤 경우에도 차단 사유가 되지 않는다 — 판정 단계의 반환 타입은 경고 목록이고, 그 타입은 차단 등급도 차단
-    이름도 받지 않는다."""
+    """판정 결과는 어떤 경우에도 차단 사유가 되지 않는다 — 판정 단계의 반환 타입은 판정했든 판정 단계가 깨졌든 경고 목록이고,
+    그 타입은 차단 등급도 차단 이름도 받지 않는다."""
     assert get_type_hints(Judge.__call__)["return"] == list[WarningDraft]
+    assert get_type_hints(Judge.unjudged)["return"] == list[WarningDraft]
     with pytest.raises(ValidationError):
         WarningDraft.model_validate({"severity": "block", "rule": "llm_conflict", "item_ids": ()})
     with pytest.raises(ValidationError):

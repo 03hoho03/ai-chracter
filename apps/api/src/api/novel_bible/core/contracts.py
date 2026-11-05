@@ -154,8 +154,17 @@ class Judge(Protocol):
     """모호 후보 판정. 검사 틀이 후보 경고를 이 함수가 돌려준 경고 목록으로 바꾼다 — 남길 후보 경고, 모델 판정의 충돌
     (`llm_conflict`), 판정 실패(`judge_failed`). 돌려주는 타입이 경고뿐이라 판정은 확정을 막지 못하고, 차단 여부는 검사 틀이 판정
     전 구조 규칙 결과로만 정한다. 호출 실패·기한 초과는 예외로 올리지 않고 판정 실패 경고로 바꾼다. 세션은 문안을 읽을 때만 짧게
-    열고, 모델을 기다리는 동안 쥐지 않는다."""
+    열고, 모델을 기다리는 동안 쥐지 않는다.
+
+    총 기한은 확정 하나의 판정 전체에 걸린다. 머리 비교에서 져 같은 실행 안에서 다시 검사하면 검사 틀이 앞 판정 단계에 이미 쓴
+    시간(`spent`, 초)을 넘기고, 판정은 남은 기한만 쓴다.
+
+    `unjudged` 는 판정 단계 자체가 깨졌을 때(후보 조립의 읽기 실패나 이 함수의 결함) 검사 틀이 후보 경고 대신 남길 경고다 — 판정을
+    받지 못한 후보의 꼴이 호출이 실패했을 때와 같아, 검사 틀은 어느 후보가 충돌 판정 때만 남는지 몰라도 된다."""
 
     async def __call__(
-        self, session_factory: async_sessionmaker[AsyncSession], commit: CommitRef, candidates: Sequence[JudgeCandidate]
+        self, session_factory: async_sessionmaker[AsyncSession], commit: CommitRef, candidates: Sequence[JudgeCandidate],
+        *, spent: float,
     ) -> list[WarningDraft]: ...
+
+    def unjudged(self, candidates: Sequence[FindingDraft]) -> list[WarningDraft]: ...
