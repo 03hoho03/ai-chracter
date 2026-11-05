@@ -10,9 +10,7 @@ from pydantic import ValidationError
 
 from api.core.config import Settings
 from api.llm.credential_accounts import parse_allowed_accounts
-from factories import load_production_env
-
-FAKE_CREDENTIAL_KEYRING = "k1:" + base64.urlsafe_b64encode(b"\x01" * 32).decode()
+from factories import FAKE_CREDENTIAL_KEYRING, load_production_env
 
 
 def _settings(monkeypatch: pytest.MonkeyPatch, name: str, value: str) -> Settings:

@@ -1,4 +1,5 @@
-"""Claude 자격 목록의 저장 규칙 — 키링·허용 목록 접근, 비밀 암호화와 지문, Anthropic 거절 분류, 표 쓰기의 DB 오류 변환.
+"""Claude 자격 목록의 저장 규칙 — 키링·허용 목록 접근, 비밀 암호화와 지문, 키 형식 검사, Anthropic 거절 분류, 확인 호출의
+모델 축과 그 기록으로 하는 판정(켜기 조건·목록 사용 덮임·env 롤백 키와 같은 키), 표 쓰기의 DB 오류 변환.
 
 - 비밀은 `core/field_crypto.py` 의 키링으로 암호화한다. 연관 데이터는 표 접두 + 행 id + 칸 이름(`secret`)이라, 다른 항목
   행이나 다른 칸으로 옮긴 암호문은 조용한 오답 대신 복호화 실패가 된다. 그래서 행 id 는 암호화 전에 정한다.
@@ -10,9 +11,11 @@
 """
 
 import hashlib
+import re
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -23,7 +26,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
 from api.core.field_crypto import FieldDecryptError, FieldKeyring
-from api.db.models.llm_credential import CredentialProvider, CredentialStateReason, LlmCredential
+from api.db.models.llm_credential import (
+    CheckErrorKind,
+    ClaudeModelAxis,
+    CredentialProvider,
+    CredentialStateReason,
+    LlmCredential,
+    LlmCredentialCheck,
+)
+from api.llm.chat_models import backend_model_id
 from api.llm.credential_accounts import AccountProvider, parse_allowed_accounts
 
 # 운영자가 끈 상태의 이유. 새 항목도 이 상태로 시작한다(확인 호출이 통과한 뒤에 켠다) — 끄기와 같은 값을 쓴다.
@@ -161,6 +172,171 @@ def classify_anthropic_rejection(exc: BaseException) -> RejectionKind | None:
     return None
 
 
+
+ProbeFailureKind = Literal["credit", "auth", "limit", "permission", "model-not-found", "rejected", "unavailable"]
+
+
+def probe_failure_kind(exc: BaseException) -> ProbeFailureKind:
+    """저장(토큰 세기)·확인 호출이 실패한 종류. 소진으로 볼 거절은 위 분류 그대로이고, 나머지는 권한(403)·모델 없음(404)·그
+    밖 거절(429 를 뺀 4xx)과 다시 시도할 일(429·과부하·서버 오류·시간 초과·연결)로 가른다."""
+    rejection = classify_anthropic_rejection(exc)
+    if rejection is not None:
+        return rejection
+    if isinstance(exc, anthropic.APIStatusError):
+        if exc.status_code == 403:
+            return "permission"
+        if exc.status_code == 404:
+            return "model-not-found"
+        if 400 <= exc.status_code < 500 and exc.status_code != 429:
+            return "rejected"
+    return "unavailable"
+
+
+# ── 키 형식 ───────────────────────────────────────────────────────────────────
+# 공백 없는 인쇄 가능 ASCII. 줄바꿈·제어 문자가 섞인 값이 SDK 헤더로 가면 하위 계층(h11)이 그 값을 오류 문장에 싣는다. 접두
+# (`sk-ant-`)는 형식 근거가 없어 보지 않는다 — 틀린 키는 어차피 조직 조회에서 401 로 거부된다.
+_API_KEY_SHAPE = re.compile(r"[\x21-\x7e]{20,256}")
+
+
+class SecretFormatError(ValueError):
+    """붙여넣은 값이 키 형식이 아니다. 문장에 값·길이를 싣지 않는다."""
+
+
+def validate_api_key_format(raw: str) -> str:
+    """앞뒤 공백을 지운 키. 암호화·지문이 이 값에서 나오므로 먼저 지워야 같은 키의 지문이 env 키·콘솔에서 계산한 값과 맞는다."""
+    key = raw.strip()
+    if not _API_KEY_SHAPE.fullmatch(key):
+        raise SecretFormatError("키 형식이 아닙니다")
+    return key
+
+
+# ── 모델 축 ───────────────────────────────────────────────────────────────────
+# 확인 호출이 도는 순서. Anthropic 구현이 실제 id 설정을 두는 축과 같은 집합이어야 한다(테스트가 본다).
+CLAUDE_AXES: tuple[ClaudeModelAxis, ...] = ("opus", "sonnet", "haiku_writer", "haiku")
+# 판정·요약 전용 축. 이 축만 쓰는 id 는 판정 요청 꼴로 확인한다.
+_JUDGMENT_AXES: frozenset[ClaudeModelAxis] = frozenset({"haiku"})
+
+CheckShape = Literal["generation", "judgment"]
+
+
+@dataclass(frozen=True)
+class CheckGroup:
+    """실제 id 하나로 하는 확인 호출 한 번과 그 결과를 남길 축들. 생성 축이 하나라도 있으면 생성 요청 꼴로 보낸다 — 사용자가
+    값을 내는 쪽의 요청 형태를 확인하고, 판정 전용 id 만 판정 요청 꼴(그 규칙의 거부를 놓치지 않게)로 보낸다."""
+
+    model_id: str
+    axes: tuple[ClaudeModelAxis, ...]
+    shape: CheckShape
+
+
+def current_model_ids() -> dict[ClaudeModelAxis, str]:
+    """축마다 지금 설정의 실제 id."""
+    return {axis: backend_model_id("anthropic", axis) for axis in CLAUDE_AXES}
+
+
+def check_groups(model_ids: Mapping[ClaudeModelAxis, str]) -> list[CheckGroup]:
+    """같은 실제 id 를 쓰는 축을 묶는다(호출은 id 수만큼). 순서는 축 순서에서 그 id 가 처음 나온 자리다."""
+    axes_by_id: dict[str, list[ClaudeModelAxis]] = {}
+    for axis in CLAUDE_AXES:
+        axes_by_id.setdefault(model_ids[axis], []).append(axis)
+    return [
+        CheckGroup(model_id, tuple(axes), "judgment" if set(axes) <= _JUDGMENT_AXES else "generation")
+        for model_id, axes in axes_by_id.items()
+    ]
+
+
+# ── 확인 기록으로 하는 판정 ─────────────────────────────────────────────────────────
+EnableBlocker = Literal["organization-unverified", "account-not-allowed", "check-required", "organization-mismatch"]
+
+# 응답 조직이 어긋났다는 기록. 한 축이라도 있으면 다른 축이 통과했어도 켜지 않는다(보안 신호).
+_ORGANIZATION_ERRORS: frozenset[CheckErrorKind] = frozenset({"organization-mismatch", "account-not-allowed"})
+_ACCOUNT_PROVIDER: dict[CredentialProvider, AccountProvider] = {"anthropic": "anthropic", "bedrock": "aws"}
+
+
+def account_in_allowlist(
+    provider: CredentialProvider, account_ref: str, allowed: frozenset[tuple[AccountProvider, str]]
+) -> bool:
+    """그 공급자의 조직(계정) id 가 허용 목록 안인가."""
+    return (_ACCOUNT_PROVIDER[provider], account_ref) in allowed
+
+
+def _verified_and_allowed(credential: LlmCredential, allowed: frozenset[tuple[AccountProvider, str]]) -> bool:
+    return credential.account_ref is not None and account_in_allowlist(credential.provider, credential.account_ref, allowed)
+
+
+def latest_checks_per_axis(checks: Iterable[LlmCredentialCheck]) -> dict[ClaudeModelAxis, LlmCredentialCheck]:
+    """축마다 회차가 가장 큰 기록. 기록 시각은 보지 않는다 — 한 트랜잭션 안에서는 같고, 시계 순서가 커밋 순서를 보장하지
+    않는다."""
+    latest: dict[ClaudeModelAxis, LlmCredentialCheck] = {}
+    for check in checks:
+        current = latest.get(check.model_axis)
+        if current is None or check.run > current.run:
+            latest[check.model_axis] = check
+    return latest
+
+
+def enable_blocker(
+    credential: LlmCredential,
+    checks: Sequence[LlmCredentialCheck],
+    allowed: frozenset[tuple[AccountProvider, str]],
+) -> EnableBlocker | None:
+    """그 항목(`checks` 는 그 항목의 기록)을 켤 수 없는 이유 중 처음 걸린 것, 켤 수 있으면 None.
+
+    기준 회차는 지금 키 지문의 기록 중 회차가 가장 큰 것이다. 그 회차가 시작할 때의 판이 지금 판과 같고 통과한 축이 하나
+    이상이어야 한다 — 상태가 바뀔 때마다 판이 오르므로, 끄기·소진 전에 시작한 확인은 지문이 같아도 세지 않는다(충전하지
+    않은 계정을 켰다가 바로 다시 떨어지는 왕복을 막는다). 모든 축의 통과는 요구하지 않는다 — 축이 모자라면 목록 사용 켜기가
+    막는다."""
+    if credential.account_ref is None:
+        return "organization-unverified"
+    if not _verified_and_allowed(credential, allowed):
+        return "account-not-allowed"
+    current = [check for check in checks if check.secret_fingerprint == credential.secret_fingerprint]
+    if not current:
+        return "check-required"
+    run = max(check.run for check in current)
+    basis = [check for check in current if check.run == run]
+    if any(check.state_version != credential.state_version for check in basis):
+        return "check-required"
+    if not any(check.passed for check in basis):
+        return "check-required"
+    if any(check.error_kind in _ORGANIZATION_ERRORS for check in basis):
+        return "organization-mismatch"
+    return None
+
+
+def uncovered_axes(
+    credentials: Sequence[LlmCredential],
+    latest_checks: Mapping[uuid.UUID, Mapping[ClaudeModelAxis, LlmCredentialCheck]],
+    model_ids: Mapping[ClaudeModelAxis, str],
+    allowed: frozenset[tuple[AccountProvider, str]],
+) -> list[ClaudeModelAxis]:
+    """덮는 항목이 없는 축(축 순서). 덮는 항목은 켜져 있고, 조직이 확인돼 지금 허용 목록 안이고, 그 축의 최신 확인
+    (`latest_checks` — 항목 id → 축 → 최신 기록)이 통과했고 그 확인이 지금 키 지문과 지금 설정의 id 로 한 것이다. id 일치는
+    목록 사용 켜기에만 거는 조건이다 — 모델 id 설정을 바꾼 뒤 항목마다 새 id 로 다시 확인하게 강제한다."""
+    covered: set[ClaudeModelAxis] = set()
+    for credential in credentials:
+        if credential.state != "active" or not _verified_and_allowed(credential, allowed):
+            continue
+        for axis, check in latest_checks.get(credential.id, {}).items():
+            if (
+                check.passed
+                and check.secret_fingerprint == credential.secret_fingerprint
+                and check.sent_model_id == model_ids.get(axis)
+            ):
+                covered.add(axis)
+    return [axis for axis in CLAUDE_AXES if axis not in covered]
+
+
+def same_as_env_key(credential: LlmCredential) -> bool:
+    """그 항목의 키가 지금 env 롤백 키(`ANTHROPIC_DIRECT_API_KEY`)와 같은가. 저장하지 않고 볼 때마다 계산한다 — env 키를
+    바꾸면 답이 바뀌어야 한다. env 키의 지문은 이 비교에만 쓰고 어디에도 남기지 않는다."""
+    env_key = settings.anthropic_direct_api_key.strip()
+    return (
+        credential.provider == "anthropic"
+        and bool(env_key)
+        and secret_fingerprint(env_key) == credential.secret_fingerprint
+    )
+
 # ── 표 쓰기의 DB 오류 ──────────────────────────────────────────────────────────
 _UNIQUE_VIOLATION = "23505"
 
@@ -195,3 +371,4 @@ async def credential_write(db: AsyncSession) -> AsyncIterator[None]:
                 },
             ) from None
         raise CredentialStoreError(f"{type(exc).__name__} sqlstate={sqlstate}") from None
+

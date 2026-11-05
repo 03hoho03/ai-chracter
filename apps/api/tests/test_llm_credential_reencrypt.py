@@ -15,12 +15,12 @@ from api.core.field_crypto import FieldKeyring
 from api.db.models.llm_credential import LlmCredential
 from api.llm import credential_reencrypt
 from api.llm.credentials import decrypt_secret, new_credential, reencrypt_secret, secret_fingerprint
+from factories import FAKE_API_KEY, FAKE_CREDENTIAL_KEYRING, FAKE_ROTATED_KEYRING
 
-_FIRST_KEY = "k1:" + base64.urlsafe_b64encode(b"\x01" * 32).decode()
-_ROTATED_KEY = "k2:" + base64.urlsafe_b64encode(b"\x02" * 32).decode()
-FAKE_ROTATED_KEYRING = f"{_ROTATED_KEY},{_FIRST_KEY}"
+_FIRST_KEY = FAKE_CREDENTIAL_KEYRING
+# 회전 중 키링의 새 키(k2)만.
+_ROTATED_KEY = FAKE_ROTATED_KEYRING.split(",", 1)[0]
 _LOST_KEY = "k9:" + base64.urlsafe_b64encode(b"\x09" * 32).decode()
-FAKE_API_KEY = "sk-ant-test-" + "0123456789abcdefghij0123456789abcdeCANARYzq"
 
 
 def _factory(db_session: AsyncSession) -> async_sessionmaker[AsyncSession]:

@@ -3053,3 +3053,15 @@ def undo_seeded_rows_above(conn: Connection, revision: str) -> None:
     같은 체인에 게시한 세트가 있다 등)에 걸리면 그 예외가 그대로 난다."""
     for script in _seed_scripts_above(revision):
         script.module.delete_seeded_rows(conn)
+
+
+# ── Claude 자격 목록 가짜 값 ─────────────────────────────────────────────────────────────────
+
+# 자격 암호화 키 목록. 회전 중 키링은 새 키(k2)를 맨 앞에 붙이고 옛 키(k1)를 뒤에 남긴 꼴이다.
+FAKE_CREDENTIAL_KEYRING = "k1:" + base64.urlsafe_b64encode(b"\x01" * 32).decode()
+FAKE_ROTATED_KEYRING = "k2:" + base64.urlsafe_b64encode(b"\x02" * 32).decode() + "," + FAKE_CREDENTIAL_KEYRING
+FAKE_ANTHROPIC_ORG = "org-test-0001"
+# 가짜 키다. 끝 네 글자는 다른 가짜 값(라벨·지문·id·조직)에 우연히 나오지 않는 글자로 골랐다 — 끝 4자리가 감사 로그·알림에
+# 실리는지를 문자열 탐색으로 잡으려면 그 네 글자가 다른 곳에서 나오면 안 된다. 지문·id 는 소문자 hex 라 `y`·`z` 가 없다.
+FAKE_API_KEY = "sk-ant-test-" + "0123456789abcdefghij0123456789abcdeCANARYzq"
+FAKE_OTHER_API_KEY = "sk-ant-test-" + "zyxwvutsrq9876543210zyxwvutsrqOTHERkeyWx"
