@@ -3016,22 +3016,30 @@ async def _run_worker_one_pass(
     llm_client: LLMClient,
     alive_file: Path,
 ) -> list[uuid.UUID]:
-    """소설화 워커 루프를 한 바퀴만 돌린다 — 첫 고르기가 끝나는 순간 정지를 세워, 그 바퀴에 집은 작업만 끝까지 돌리고 루프가
-    돌아온다. 집은 작업 id 를 돌려준다. 한 바퀴뿐이라 루프가 다음 고르기를 돌리지 않아, 테스트 커넥션 하나에 묶인 세션
-    팩토리로도 작업 실행과 고르기 조회가 겹치지 않는다."""
-    from api.novelize import worker
+    """소설화 워커 루프를 한 바퀴만 돌린다 — 첫 고르기가 집은 작업이 실행을 시작할 때 정지를 세워, 그 작업만 끝까지 돌리고
+    루프가 돌아온다. 집은 작업 id 를 돌려준다. 정지를 고르기 안에서 세우지 않는 것은, 워커가 고르기 조회가 돌아온 뒤 정지가
+    서 있으면 고른 작업을 띄우지 않기 때문이다(아무것도 못 고른 고르기만 그 자리에서 정지를 세워 바로 끝낸다). 작업 태스크는
+    루프가 고른 작업을 다 띄운 뒤 양보해야 시작하므로, 거기서 세운 정지는 띄우기를 막지 않고 다음 고르기만 막는다. 고르기가
+    한 번뿐이라, 테스트 커넥션 하나에 묶인 세션 팩토리로도 작업 실행과 고르기 조회가 겹치지 않는다."""
+    from api.novelize import runner, worker
 
     claimed: list[uuid.UUID] = []
     stop = asyncio.Event()
-    original = worker.claim_candidates
+    original_claim, original_run = worker.claim_candidates, runner.run_job
 
     async def claim_once(factory: async_sessionmaker[AsyncSession], limit: int) -> list[uuid.UUID]:
-        ids = await original(factory, limit)
+        ids = await original_claim(factory, limit)
         claimed.extend(ids)
-        stop.set()
+        if not ids:
+            stop.set()
         return ids
 
+    async def run_then_stop(factory: async_sessionmaker[AsyncSession], llm: LLMClient, job_id: uuid.UUID) -> None:
+        stop.set()
+        await original_run(factory, llm, job_id)
+
     monkeypatch.setattr(worker, "claim_candidates", claim_once)
+    monkeypatch.setattr(worker, "run_job", run_then_stop)
     await asyncio.wait_for(worker.run_worker(session_factory, llm_client, stop, alive_file=alive_file), 30)
     return claimed
 

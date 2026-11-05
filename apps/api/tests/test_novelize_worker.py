@@ -389,6 +389,46 @@ async def test_stop_finishes_running_jobs_and_claims_nothing_new(
 
 
 @pytest.mark.usefixtures("plain_revise_input")
+async def test_a_stop_arriving_while_the_claim_query_waits_launches_none_of_what_it_returns(
+    independent_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """고르기 조회가 DB 응답을 기다리는 사이에 정지 신호가 서고 새 작업이 대기로 들어오면, 조회가 그 작업을 돌려줘도 띄우지
+    않는다 — 그 행은 대기로 남아 다음 워커가 집는다. 조회를 감싸 원래 SELECT 바로 앞에서 정지와 대기 복귀를 일으키므로 시간
+    대기 없이 매번 같은 순서다. 깨지는 시나리오: 정지 확인이 바퀴 맨 위에만 있어, 배포가 옛 워커를 비우는 동안 옛 워커가 그
+    사이 들어온 작업을 잡아 끝까지 돌리고 정지 유예를 넘기면 만료 환불로 보낸다."""
+    _, [running_id, later_id] = await _seed_jobs(independent_factory, 2)
+    # 둘째 작업은 고르기에서 빠지게 실행 중으로 숨겨 두었다가, 정지와 함께 대기로 되돌린다.
+    async with independent_factory() as s:
+        await s.execute(update(NovelJob).where(NovelJob.id == later_id).values(status="running"))
+        await s.commit()
+    llm = _GateLLM(open_all=True)
+    stop = asyncio.Event()
+    original = worker.claim_candidates
+    returned: list[list[uuid.UUID]] = []
+
+    async def claim_after_stop(factory: async_sessionmaker[AsyncSession], limit: int) -> list[uuid.UUID]:
+        # 첫 작업이 모델을 부른 뒤(이미 실행 중으로 넘어가 다시 골리지 않는다) 처음 오는 고르기에서 일으킨다.
+        if llm.gates and not stop.is_set():
+            stop.set()
+            async with factory() as s:
+                await s.execute(update(NovelJob).where(NovelJob.id == later_id).values(status="queued"))
+                await s.commit()
+            ids = await original(factory, limit)
+            returned.append(ids)
+            return ids
+        return await original(factory, limit)
+
+    monkeypatch.setattr(worker, "claim_candidates", claim_after_stop)
+    loop = asyncio.create_task(worker.run_worker(independent_factory, llm, stop, alive_file=tmp_path / "alive"))
+    await asyncio.wait_for(loop, 10)
+
+    assert returned == [[later_id]]  # 정지 뒤 조회가 새 작업을 실제로 돌려줬다
+    assert len(llm.gates) == 1
+    assert await _status(independent_factory, running_id) == ("succeeded", None)
+    assert await _status(independent_factory, later_id) == ("queued", None)
+
+
+@pytest.mark.usefixtures("plain_revise_input")
 async def test_a_job_cut_off_past_the_grace_period_is_refunded_once_by_the_expiry_sweep(
     independent_factory: async_sessionmaker[AsyncSession], tmp_path: Path
 ) -> None:
