@@ -41,7 +41,7 @@ export type PageGestureInput = {
   /** 한 화면 폭(px). */
   pageWidth: number;
   /** 누른 자리가 링크·버튼처럼 스스로 동작하는 요소(또는 그 안)인가. */
-  targetIsInteractive: boolean;
+  isTargetInteractive: boolean;
   isSettingsOpen: boolean;
   /** 핀치로 확대한 상태인가. 확대 중의 손짓은 확대한 화면을 둘러보는 것이라 쪽을 넘기지 않는다. */
   isZoomed: boolean;
@@ -68,12 +68,12 @@ export function toPageGesture({
   clientX,
   viewportWidth,
   pageWidth,
-  targetIsInteractive,
+  isTargetInteractive,
   isSettingsOpen,
   isZoomed,
 }: PageGestureInput): PageGesture {
-  if (shouldToggleChrome({ dx, dy, dt, selectionCollapsed: true, targetIsInteractive: false })) {
-    if (targetIsInteractive) return "none";
+  if (shouldToggleChrome({ dx, dy, dt, isSelectionCollapsed: true, isTargetInteractive: false })) {
+    if (isTargetInteractive) return "none";
     if (isSettingsOpen) return "close-settings";
     const zone = toTapZone(clientX, viewportWidth);
     if (zone === "center") return "toggle-chrome";

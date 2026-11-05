@@ -78,7 +78,7 @@ describe("toHomeAttendanceCard", () => {
     expect(toHomeAttendanceCard(base)).toEqual({
       kind: "shown",
       detail: "오늘 7일차 · 1,600클로버를 받을 수 있어요",
-      showDot: true,
+      shouldShowDot: true,
     });
   });
 
@@ -87,7 +87,7 @@ describe("toHomeAttendanceCard", () => {
     expect(toHomeAttendanceCard({ ...base, identityVerified: false })).toEqual({
       kind: "shown",
       detail: "본인인증하고 출석 시작하기",
-      showDot: false,
+      shouldShowDot: false,
     });
   });
 
@@ -95,26 +95,26 @@ describe("toHomeAttendanceCard", () => {
     expect(toHomeAttendanceCard({ ...base, board: makeBoard({ claimed: 7, canClaimToday: false }) })).toEqual({
       kind: "shown",
       detail: "7 / 28일 · 내일 또 만나요",
-      showDot: false,
+      shouldShowDot: false,
     });
   });
 
   it("오늘 완주했으면 새 판을 말하고 점이 없다", () => {
     expect(
       toHomeAttendanceCard({ ...base, board: makeBoard({ claimed: 28, canClaimToday: false, completedToday: true }) }),
-    ).toEqual({ kind: "shown", detail: "28일 완주! 내일 새 출석판이 열려요", showDot: false });
+    ).toEqual({ kind: "shown", detail: "28일 완주! 내일 새 출석판이 열려요", shouldShowDot: false });
   });
 
   it("받은 칸 없이 오늘 받을 수 없으면 진도만 말하고 점이 없다", () => {
     expect(toHomeAttendanceCard({ ...base, board: makeBoard({ claimed: 0, canClaimToday: false }) })).toEqual({
       kind: "shown",
       detail: "0 / 28일",
-      showDot: false,
+      shouldShowDot: false,
     });
   });
 
   // 판을 못 받아도 출석판으로 가는 링크는 산다.
   it("판이 없으면 보조 문장과 점 없이 카드만 보인다", () => {
-    expect(toHomeAttendanceCard({ ...base, board: undefined })).toEqual({ kind: "shown", detail: null, showDot: false });
+    expect(toHomeAttendanceCard({ ...base, board: undefined })).toEqual({ kind: "shown", detail: null, shouldShowDot: false });
   });
 });

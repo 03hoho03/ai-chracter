@@ -1,5 +1,5 @@
 import { findCell } from "./mediaBookEdit";
-import { MAX_MEDIA_BOOK_CELLS, type MediaBookCellValues, type MediaBookValues } from "./schema";
+import { MAX_MEDIA_BOOK_CELLS, type MediaBookCellValues, type MediaBookValues } from "./storyBuilderSchema";
 
 type CellPosition = { personId: string; sceneId: string };
 

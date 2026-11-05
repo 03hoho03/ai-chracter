@@ -98,7 +98,7 @@ function ChangeNotices({ label, changesQuery, consentedVersions }: ChangeNotices
   }
   // 판이 하나면 그 판은 문서 머리의 판과 같아 판 표시를 되풀이하지 않는다.
   if (earlier.length === 0) {
-    return <ChangeNoticeItem entry={latest} showVersion={false} />;
+    return <ChangeNoticeItem entry={latest} shouldShowVersion={false} />;
   }
 
   return (
@@ -106,7 +106,7 @@ function ChangeNotices({ label, changesQuery, consentedVersions }: ChangeNotices
       <p className="text-xs break-keep text-muted-foreground">
         마지막으로 동의하신 뒤 {entries.length}개 판이 시행됐어요.
       </p>
-      <ChangeNoticeItem entry={latest} showVersion />
+      <ChangeNoticeItem entry={latest} shouldShowVersion />
       <EarlierChangeNotices label={label} entries={earlier} />
     </div>
   );
@@ -128,7 +128,7 @@ function EarlierChangeNotices({ label, entries }: { label: string; entries: Chan
         <ol id={panelId} className="flex flex-col gap-4">
           {entries.map((entry) => (
             <li key={entry.version} className="not-first:border-t not-first:border-border not-first:pt-4">
-              <ChangeNoticeItem entry={entry} showVersion />
+              <ChangeNoticeItem entry={entry} shouldShowVersion />
             </li>
           ))}
         </ol>
@@ -137,10 +137,10 @@ function EarlierChangeNotices({ label, entries }: { label: string; entries: Chan
   );
 }
 
-function ChangeNoticeItem({ entry, showVersion }: { entry: ChangeNoticeEntry; showVersion: boolean }) {
+function ChangeNoticeItem({ entry, shouldShowVersion }: { entry: ChangeNoticeEntry; shouldShowVersion: boolean }) {
   return (
     <div className="flex flex-col gap-2">
-      {showVersion && (
+      {shouldShowVersion && (
         <p className="text-xs font-medium text-muted-foreground">
           {entry.version} 판 · {entry.effectiveDate} 시행
         </p>

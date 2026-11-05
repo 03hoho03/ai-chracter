@@ -4,7 +4,7 @@ import type { AutosaveStatus } from "./autosaveStatus";
 export type SaveStatusView = {
   text: string;
   /** [내용 복사]를 곁에 둘지 — 마지막 편집이 서버에 없을 수 있고, 그 상태가 저절로 풀린다고 장담할 수 없을 때다. */
-  offersCopy: boolean;
+  shouldOfferCopy: boolean;
   /** 실패 색으로 그릴지. */
   isFailure: boolean;
 };
@@ -33,21 +33,21 @@ function formatSavedTime(epochMs: number): string {
  * 되지 않게 한다.
  */
 export function saveStatusView(status: AutosaveStatus, isOnline: boolean, lastSavedAt: number | undefined): SaveStatusView {
-  if (!isOnline) return { text: "연결 끊김 · 연결되면 저장돼요", offersCopy: true, isFailure: false };
+  if (!isOnline) return { text: "연결 끊김 · 연결되면 저장돼요", shouldOfferCopy: true, isFailure: false };
   switch (status) {
     case "idle":
-      return { text: "변경사항은 자동으로 저장돼요.", offersCopy: false, isFailure: false };
+      return { text: "변경사항은 자동으로 저장돼요.", shouldOfferCopy: false, isFailure: false };
     case "pending":
-      return { text: "저장 대기 중", offersCopy: false, isFailure: false };
+      return { text: "저장 대기 중", shouldOfferCopy: false, isFailure: false };
     case "saving":
-      return { text: "저장 중", offersCopy: false, isFailure: false };
+      return { text: "저장 중", shouldOfferCopy: false, isFailure: false };
     case "saved":
       return {
         text: lastSavedAt === undefined ? "저장됨" : `저장됨 · ${formatSavedTime(lastSavedAt)}`,
-        offersCopy: false,
+        shouldOfferCopy: false,
         isFailure: false,
       };
     case "failed":
-      return { text: "저장 실패", offersCopy: true, isFailure: true };
+      return { text: "저장 실패", shouldOfferCopy: true, isFailure: true };
   }
 }

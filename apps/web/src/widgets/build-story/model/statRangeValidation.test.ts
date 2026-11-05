@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { createEmptyDraft } from "@/entities/content";
 import {
   serverToForm,
-  storyBuilderSchema,
+  STORY_BUILDER_SCHEMA,
   type StatDefValues,
   type StoryBuilderFormValues,
 } from "@/features/build-story";
@@ -26,7 +26,7 @@ function createForm(stats: StatDefValues[]) {
     { id: "s1", name: "", prologue: "", suggestedReplies: [], stats, endings: [], situationNotes: [] },
   ];
   // 셸과 같은 단언 — zod `.default()` 때문에 리졸버의 입력·출력 타입이 갈린다.
-  const resolver = zodResolver(storyBuilderSchema) as Resolver<StoryBuilderFormValues>;
+  const resolver = zodResolver(STORY_BUILDER_SCHEMA) as Resolver<StoryBuilderFormValues>;
   return createFormControl<StoryBuilderFormValues>({ resolver, defaultValues: values });
 }
 

@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**92개 키다**(2026-10-28 VM 실측 — 인상 쓰기 세 줄 편집(모델 줄·스위치 줄 둘이 새 키, 배정은 기존 줄에 항목 추가)이 넣은 뒤 다시 셈, 키 이름만 셈): 아래 표 157개 중 81개(생략 가능한 조정 키 60개 — `CHAT_MODELS_VISIBLE`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·소설화 밖 `GEMINI_*_TIMEOUT_MS` 5개(`GENERATE`·`JUDGMENT`·`MEMORY_SUMMARY`·`PUBLISH_FILTER`·`CLIENT`)·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 25개·장기 기억 조정용 9개(`MEMORY_MODEL_SCOPE`·`MEMORY_EMBED_MODEL`·`MEMORY_EMBED_DIMS`·`MEMORY_EMBED_RECALL_` 뒤에 `RRF_K`·`MAX_PLAIN`·`MAX_CUE`·`MAX_DISTANCE`·`VECTOR_LIMIT`·`DF_MAX` 가 붙는 6개)·소설 정본 기억 어댑터 덮어쓰기 `NOVEL_BIBLE_ADAPTERS`·소설 정본 기억 워커 동시 상한 `NOVEL_BIBLE_WORKER_MAX_CONCURRENT`, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 스위치 3개(소설 삽화 `NOVEL_ILLUSTRATIONS_ENABLED`·소설 구성 흐름 `NOVELIZE_OUTLINE_FLOW_ENABLED`·소설 정본 기억 `NOVEL_BIBLE_ENABLED`), 줄을 두지 않는 인상 키 2개(묶음 크기 `MEMORY_IMPRESSION_EVERY_N_FOLDS`·아직 켜지 않은 보기 스위치 `MEMORY_IMPRESSIONS_VISIBLE`), 전체 공개 뒤 줄을 지운 노벨 미리보기 명단 1개(`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`), 잔액을 한꺼번에 옮기는 동안에만 켜고 평소에는 줄을 두지 않는 클로버 정지 스위치 1개(`CLOVER_LEDGER_PAUSED`), 모두 81개 제외 —
+**92개 키다**(2026-10-28 VM 실측 — 인상 쓰기 세 줄 편집(모델 줄·스위치 줄 둘이 새 키, 배정은 기존 줄에 항목 추가)이 넣은 뒤 다시 셈, 키 이름만 셈): 아래 표 160개 중 84개(생략 가능한 조정 키 60개 — `CHAT_MODELS_VISIBLE`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·소설화 밖 `GEMINI_*_TIMEOUT_MS` 5개(`GENERATE`·`JUDGMENT`·`MEMORY_SUMMARY`·`PUBLISH_FILTER`·`CLIENT`)·`GEMINI_NOVELIZE_*` 8개·소설화 조정용 `NOVELIZE_*` 25개·장기 기억 조정용 9개(`MEMORY_MODEL_SCOPE`·`MEMORY_EMBED_MODEL`·`MEMORY_EMBED_DIMS`·`MEMORY_EMBED_RECALL_` 뒤에 `RRF_K`·`MAX_PLAIN`·`MAX_CUE`·`MAX_DISTANCE`·`VECTOR_LIMIT`·`DF_MAX` 가 붙는 6개)·소설 정본 기억 어댑터 덮어쓰기 `NOVEL_BIBLE_ADAPTERS`·소설 정본 기억 워커 동시 상한 `NOVEL_BIBLE_WORKER_MAX_CONCURRENT`, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 스위치 3개(소설 삽화 `NOVEL_ILLUSTRATIONS_ENABLED`·소설 구성 흐름 `NOVELIZE_OUTLINE_FLOW_ENABLED`·소설 정본 기억 `NOVEL_BIBLE_ENABLED`), 줄을 두지 않는 인상 키 2개(묶음 크기 `MEMORY_IMPRESSION_EVERY_N_FOLDS`·아직 켜지 않은 보기 스위치 `MEMORY_IMPRESSIONS_VISIBLE`), 전체 공개 뒤 줄을 지운 노벨 미리보기 명단 1개(`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`), 잔액을 한꺼번에 옮기는 동안에만 켜고 평소에는 줄을 두지 않는 클로버 정지 스위치 1개(`CLOVER_LEDGER_PAUSED`), 실측 때 넣지 않은 Claude 자격 목록 키 3개(`LLM_CREDENTIAL_*` — 목록을 쓰기 전이라 없다), 모두 84개 제외 —
 파일에 줄이 있는 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`·`NOVELIZE_WORKER_ENABLED`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 9개(`PORTONE_*` 5개·
 `IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 노벨 스위치 2개(`NOVEL_PUBLIC_ENABLED`·공개 정책 `NOVEL_PUBLIC_POLICY_V2_ENABLED`), 여러 문단 수정 스위치 1개(`NOVELIZE_MULTI_BLOCK_EDIT_ENABLED`), 장기 기억 키 16개(`MEMORY_*` 15개 — 장면·사실 추출과 모델, 장면 회상, 사실 주입, 요약 모델·비밀 표기, 지식 범위 필터, 임베딩 쓰기·회상과 그 시간 상한, 기억 보기 `MEMORY_ITEMS_VISIBLE`, 인상 쓰기와 그 모델 — 와 `VOYAGE_API_KEY`), 스탯 판정 이벤트 스위치 1개(`STAT_EVENT_LOG`)를 포함한 나머지 76개는 셈에 들어간다) + 앱이 읽지 않지만
 옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
@@ -320,6 +320,9 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `BEDROCK_CHAT_TIMEOUT_MS` / `BEDROCK_CHAPTER_TIMEOUT_MS` | 설정 안 함(기본 `45000` / `300000`) | 상위 모델 채팅 턴 / 소설 장 생성의 요청 타임아웃(ms). 스트리밍이라 "다음 청크까지"의 상한이다. 재시도는 하지 않는다 |
 | `BEDROCK_CHAT_MAX_TOKENS` / `BEDROCK_CHAPTER_MAX_TOKENS` | 설정 안 함(기본 `4096` / `32768`) | 출력 상한. Bedrock 은 요청의 출력 상한만큼 분당 토큰 쿼터를 먼저 잡으므로 올리면 동시 요청이 스로틀되기 쉽다. 장이 잘리면 실패·환불이다 |
 | `ANTHROPIC_DIRECT_API_KEY` | Anthropic 콘솔에서 만든 이 서비스 전용 API 키 | 상위 모델을 Anthropic API 로 직접 보낼 때의 자격. SDK 가 스스로 읽는 `ANTHROPIC_API_KEY` 와 이름을 나눴다. 아래 배정이 호출을 직결로 옮기는데 비어 있으면 스위치와 무관하게 api 가 기동하지 못한다. 직결의 모델 id·타임아웃·출력 상한·사고 깊이(나머지 `ANTHROPIC_*`)는 설정 안 함이 기본이다(기본값은 `.env.example`) |
+| `LLM_CREDENTIAL_ENCRYPTION_KEYS` | 🔴 Claude 자격 목록을 쓰기 전에 넣는다. `k1:<base64url 32바이트>` | Claude 자격 목록(어드민에서 붙여넣어 순서대로 쓰는 Anthropic API 키) 암호화 키 목록 `kid:키[,kid:키]`. 맨 앞 키로 암호화하고 모든 키로 복호화한다. 지급 정보 키(`CREATOR_PAYOUT_ENCRYPTION_KEYS`)와 다른 키다 — 한쪽이 새도 다른 쪽 칸이 열리지 않고 회전 일정이 엮이지 않는다. 비거나 아래 허용 계정이 비면 어드민의 자격 추가·키 교체·확인 호출·목록 사용 켜기가 503 이다(조회·메타 수정·끄기·삭제·순서 저장·목록 사용 끄기는 된다). 형식이 틀리면 api 가 뜨지 않는다(오류 문장에 값은 찍히지 않는다). **키를 잃으면 저장한 키를 읽을 수 없다** — 어드민에서 키를 다시 붙여넣는다. 만들기·보관·회전은 "Claude 자격 목록 — 켜기 · 끄기 · 되돌리기" 절. 비밀 |
+| `LLM_CREDENTIAL_ALLOWED_ACCOUNTS` | `anthropic:<조직 id>[,aws:<계정 id>]`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 빈 목록). 값은 저장소에 쓰지 않는다 | Claude 자격 목록에 넣을 수 있는 계정. 키를 저장·확인할 때 응답의 조직 id(`anthropic-organization-id` 헤더)가 이 목록에 없으면 저장하지 않고 알린다. 공급자 토큰은 소문자 `anthropic`·`aws` 만, Anthropic 조직 id 는 `[A-Za-z0-9_-]` 1~64자(소문자로 맞춰 비교한다), AWS 계정 id 는 숫자 12자리 — 틀리거나 같은 항목이 두 번이면 api 가 뜨지 않는다. 비면 위 키가 빈 것과 같다(503). 목록에서 조직을 빼면 그 조직의 항목은 다시 켤 수 없다 |
+| `LLM_CREDENTIAL_DISCORD_WEBHOOK_URL` | Claude 자격 알림용 디스코드 채널 웹훅 주소 | 자격 목록 변경(추가·수정·키 교체·순서·켜기·끄기·삭제·확인 호출·목록 사용)과 보안 신호(허용 목록 밖 조직의 키 저장 시도, 확인 응답의 조직 불일치, 저장·확인 둘 다 조직 헤더 없음)를 알린다. 키·끝 4자리·조직 id 는 싣지 않는다. 비면 알림을 건너뛰고 api 로그에 경고 한 줄만 남긴다. 결제 알림(`PAYMENT_DISCORD_WEBHOOK_URL`)·크론 알림(`DISCORD_WEBHOOK_URL`)과 다른 키다. 비밀 |
 | `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)·인상 생성 `chat_memory_impression`(2026-10-28)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음) | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 장면 헤더 판정 호출 위치(`chat_scene_judgment`·`preview_scene_judgment`)는 줄을 두지 않고 배정을 물려받는다 — 채팅 장면은 채팅 스탯 판정을, 미리보기 장면은 채팅 장면을 거쳐 같은 배정을 따른다. **스탯 판정 배정을 바꾸면 장면 판정도 함께 움직인다**(줄을 따로 넣으면 그 이름을 모르는 옛 이미지가 뜨지 못한다). 미리보기 생성(`preview_generate`)과 미리보기 판정 넷은 채팅 짝(`chat_generate`·`chat_stat_judgment`·`chat_ending_judgment`·`chat_media_book_image`·`chat_scene_judgment`)의 배정을 물려받는다. 미리보기 줄이 없으면 짝의 배정으로 가고, 줄이 있으면 그 줄로 가는 경로가 짝을 물려받아 가는 경로와 같아야 기동한다(다르면 api 가 뜨지 않는다). 그래서 **채팅 판정 배정을 바꿀 때는 짝인 미리보기 판정 줄도 같은 편집에서 바꾼다** — 채팅 줄만 바꾸고 미리보기 줄을 남기면 기동이 거부된다. `preview_generate` 줄은 넣지 않는다(채팅 생성 배정을 물려받는다 — 그 이름을 그 호출의 모델로 읽는 옛 이미지는 `preview_generate:anthropic` 줄로 뜨지 못한다). 모델 배정 표(`prompt_routes`)의 행은 이 배정 위에 얹힌다 — 판정·요약·추출 칸의 행은 그 행을 읽는 호출 위치 전부(채팅과 미리보기 판정, 물려받는 장면 판정)에서 이 배정으로 푼 경로가 행의 경로와 같을 때만 쓰인다. 배정을 바꾼 뒤에는 "채팅 단계별 문안 체인·호출 모델 설정 — 켜기 · 끄기 · 되돌리기" 절대로 건너뛴 행을 확인한다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
 | `CHAT_PREMIUM_MODELS_ENABLED` | 켤 때 `true`(코드 기본값은 꺼짐) | 채팅 상위 모델 스위치. 켜면 로그인 회원 모두가 채팅방에 상위 모델(아래 `CHAT_MODELS_VISIBLE` 의 모델)을 고를 수 있다 — 명단·계정별 허용은 없다. 끄면 그 목록과 무관하게 모두 숨는다. 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 지금 이미지가 읽지 않지만 지우지 않는다(채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단을 다시 읽는다). 켜고 끄는 법은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
 | `CHAT_MODELS_VISIBLE` | 설정 안 함(코드 기본값 `opus`). Sonnet 을 채팅에 열 때 `opus,sonnet`, Haiku 글쓰기까지 열 때 `opus,sonnet,haiku_writer`(목록 순서는 화면 순서와 무관하다) | 위 채팅 스위치가 켜져 있을 때 채팅에서 고를 수 있게 보일 상위 모델(쉼표 구분, 공백·따옴표 없이). 목록에서 뺀 모델은 모델 목록·공개 가격에서 빠지고 방 지정·미리보기 시작이 403 이며, 그 모델이 저장된 방은 Gemini 로 Gemini 가격에 돈다. 켜기 = 이 줄을 `opus,sonnet` 으로, 롤백 = `opus` 로 고치거나 줄을 지우고 `sudo bash ops/swap-api.sh`. 🔴 모두 숨기려면 이 줄을 비우지 말고 채팅 스위치를 끈다 — 값이 빈 줄은 형식 검사(`empty-value`)가 거부해 이후 push 배포가 모두 멈춘다. 모르는 id·`gemini`·중복이면 api 가 기동하지 않는다 — 교체가 실패해도 `.env` 의 이 줄은 그대로 남아 다음 재기동(VM 재부팅 포함)에서 두 색이 모두 못 뜨므로, 교체가 실패하면 이 줄부터 되돌린다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
@@ -333,8 +336,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `NOVELIZE_MULTI_BLOCK_EDIT_ENABLED` | **운영 `true`**(2026-10-26부터, 코드 기본값 `false`) | 여러 문단 수정 스위치 — 작가가 같은 장면 안의 떨어진 문단 여럿을 골라 한 번에 AI 수정을 맡기고(AI 수정 단가 한 번, 블록 수 무관) 문단마다 수정안을 받는 흐름. 꺼져 있으면 지금의 연속 범위 수정(`/ai-edits`)만 있다. 웹 가격 응답의 `novelizeMultiBlockEditEnabled`, 요청 라우트(`/novels/{id}/chapters/{chapterId}/block-edits`, 과금)와 묶음 재검사 라우트(`/novels/{id}/jobs/{jobId}/bundles/{bundleId}/recheck`, 무과금 모델 호출)만 이 값을 따른다(꺼져 있으면 둘 다 캐시하지 않는 404). 이미 만든 수정안의 상세 목록(`pendingBlockEdits`)과 단위 적용·버리기(`/novels/{id}/jobs/{jobId}/patches/apply`·`.../patches/dismiss`)는 꺼져 있어도 된다 — 켰다 끈 뒤에도 받은 수정안을 쓰거나 버릴 수 있다. 연속 범위 수정은 켠 뒤에도 그대로 남는다. 스키마·롤백은 "여러 문단 수정 스키마" 절, 적용·재검사 배포·되돌리기는 같은 절의 "여러 문단 수정 적용·버리기·재검사" 단락 |
 | `NOVELIZE_BLOCK_EDIT_MAX_INPUT_CHARS` | 설정 안 함(기본 `60000`) | 여러 문단 수정 한 번의 입력 견적 상한(글자 — 모델에 보낼 문맥 문단(장면 있는 화는 그 장면, 없으면 화 전체)·작품 설정·설정 노트·지시의 합). 넘으면 모델을 부르기 전·차감 전에 422 `NOVEL_EDIT_INPUT_TOO_LONG` 이다. 잰 지연으로 정한 값이다 — 수정 호출 지연은 거의 고칠 문단 수가 정하고, 출력이 잰 값의 p90 일 때 지연이 수정 타임아웃 120초의 절반 안에 드는 입력이 약 5.9만 자다(12만 자면 문단 20개 요청이 약 100초로 타임아웃에 가깝다, 4.4만 자 위는 외삽). 장면 없는 화는 화 전체를 세므로 6만 자가 넘는 화는 장면을 나누기 전에는 여러 문단 수정을 받지 못한다(연속 범위 수정은 그대로). 올리면 큰 입력의 여러 문단 요청이 타임아웃으로 실패·환불될 수 있다. 스위치가 꺼져 있으면 쓰이지 않는다 |
 | `NOVELIZE_RECHECK_HOURLY_LIMIT` | 설정 안 함(기본 `10`) | 여러 문단 수정 묶음 재검사(무과금 모델 호출)의 사용자당 시간당 상한. 넘으면 모델을 부르기 전에 429 다. 면제 계정도 똑같이 센다. 재검사 원가를 재기 전의 임시값이고, 스위치가 꺼져 있으면 쓰이지 않는다 |
-| `NOVEL_BIBLE_ENABLED` | 설정 안 함(기본 `false`) | 소설 정본 기억 스위치 — 확정한 화 개정에서 사건·사실·지식을 뽑아 리비전으로 쌓는 엔진. 꺼져 있으면 어드민 내부 확정 입구(`POST /admin/novel-bible/confirmations`, 상태 조회 `GET /admin/novel-bible/confirmations/{commitId}`, 둘 다 openapi 에 없음)가 세션과 무관하게 404 이고 새 정본 기억 행이 생기지 않는다. 소설 삭제·숨긴 소설 정리·묶음 삭제는 이 값과 무관하게 정본 기억 행을 지우는 DELETE 를 낸다(지울 행이 없으면 0행). 소설 생성·구성안·수정 경로는 이 값과 무관하게 정본 기억을 import 하지 않는다. 켜면 기동 검증이 `GEMINI_API_KEY` 를 배정과 무관하게 보고(앱의 모델 클라이언트가 어느 구현으로 보내든 Gemini 클라이언트를 먼저 만든다), 연산마다 배정된 어댑터(아래 `NOVEL_BIBLE_ADAPTERS`)가 실제로 갈 구현의 키와 지시문을 따로 싣는 구조화 능력을 보아, 비었거나 못 받으면 기동하지 않는다(지금 표는 전부 Gemini 라 그 밖의 키는 필요 없다). 켜져 있으면 확정 입구는 배정된 어댑터의 문안 체인에 슬롯 채널이 없을 때 503 이다. 확정의 처리(작업 실행·연결·커밋·만료 정리)는 소설화 워커 프로세스가 한다 — 워커(`NOVELIZE_WORKER_ENABLED`)가 꺼진 환경에서 확정하면 행이 대기로 남는다. 켜진 워커는 기동 때 배정된 어댑터의 문안 체인에 슬롯 채널이 있는지 한 번 보고, 없거나 그 검사가 실패하면 정본 기억만 끈 채(오류 로그, Bugsink 태그 `novelize`) 소설 작업은 그대로 돌린다 — 다시 켜려면 워커를 재기동한다. 꺼져 있으면 워커는 정본 기억 표를 읽지 않는다. 지금 이미지에는 추출 슬롯 셋(사건·사실·지식)이 등록돼 있고, 그 문안 채널과 모호 판정 채널(`novel_bible_events`·`novel_bible_facts`·`novel_bible_knowledge`·`novel_bible_conflicts`)은 정본 기억 문안 채널 리비전(`d39cf46dcb5c`)이 소설 레인 세 체인에 첫 시드로 심는다. 지금 어댑터 표는 Gemini 하나라 Gemini 세트의 그 채널만 읽히고, Sonnet·Opus 세트의 것은 게시 검증이 세 체인 모두에 요구해 함께 있을 뿐 어떤 호출도 읽지 않는다. 시드 배포 때: 배포 전부터 열어 둔 어드민 문안 편집기 소설 탭은 새로고침한다(그대로 저장하면 초안이 섹션 전체 교체로 정본 기억 행을 잃고 게시가 "누락"으로 막힌다). 이미지만 되돌린 동안(배포 겹침 포함)은 옛 코드의 게시 검증이 정본 기억 채널을 "잉여"로 거부해 소설 레인 세 체인의 어드민 게시만 막힌다 — 재배포로 풀리고, 급하면 옛 이미지에서 옛 판을 통째 복원해 게시한 뒤 새 이미지로 돌아와 섹션 되돌리기로 시드 판의 정본 기억 채널 넷을 초안에 옮겨 게시한다(자세한 이유와 downgrade 조건은 그 리비전 docstring). 워커는 기동 때 한 번만 문안을 검사하므로 시드 전에 뜬 워커는 재기동해야 정본 기억을 켠다. 측정 전이라 운영에서 아직 켜지 않는다 |
-| `NOVEL_BIBLE_ADAPTERS` | 설정 안 함(기본 빈 값 = 코드 표 그대로) | 소설 정본 기억 연산(`events.extract`·`facts.extract`·`knowledge.extract`·`conflicts.judge`)마다 쓸 어댑터를 코드 표(`apps/api/src/api/novel_bible/adapters/table.py`)에서 바꾼다. `연산:어댑터` 를 쉼표로 잇는다(따옴표 없이, 예 `NOVEL_BIBLE_ADAPTERS=facts.extract:gemini,knowledge.extract:gemini` — 지금 받는 어댑터는 `gemini` 하나라 이 예는 코드 표와 같은 값을 다시 적는 문법 예시다). 항목 앞뒤 공백은 무시하고 빈 항목은 버리며, 콜론이 정확히 하나이고 양쪽이 비지 않아야 하고, 같은 연산이 두 번이면 거부한다. 모르는 연산·어댑터 이름은 스위치가 꺼져 있어도 기동하지 않는다. 키·능력 검사는 스위치를 켰을 때만 한다. 정본 기억 호출 위치(`novel_bible_*`)는 `LLM_CALL_SITE_BACKENDS` 에 줄을 두지 않는다 — 어댑터가 부를 모델을 호출에 싣는다. Claude 구현(`anthropic`·`bedrock`)을 적은 줄은 기동 검증이 그 호출의 모델(모델 설정이 없어 gemini)을 서비스하지 않는다며 거부한다 |
+| `NOVEL_BIBLE_ENABLED` | 설정 안 함(기본 `false`) | 소설 정본 기억 스위치 — 확정한 화 개정에서 사건·사실·지식을 뽑아 리비전으로 쌓는 엔진. 꺼져 있으면 어드민 내부 확정 입구(`POST /admin/novel-bible/confirmations`, 상태 조회 `GET /admin/novel-bible/confirmations/{commitId}`, 둘 다 openapi 에 없음)가 세션과 무관하게 404 이고 새 정본 기억 행이 생기지 않는다. 소설 삭제·숨긴 소설 정리·묶음 삭제는 이 값과 무관하게 정본 기억 행을 지우는 DELETE 를 낸다(지울 행이 없으면 0행). 소설 생성·구성안·수정 경로는 이 값과 무관하게 정본 기억을 import 하지 않는다. 켜면 기동 검증이 `GEMINI_API_KEY` 를 배정과 무관하게 보고(앱의 모델 클라이언트가 어느 구현으로 보내든 Gemini 클라이언트를 먼저 만든다), 연산마다 배정된 어댑터(아래 `NOVEL_BIBLE_ADAPTERS`)가 실제로 갈 구현의 키와 지시문을 따로 싣는 구조화 능력을 보아, 비었거나 못 받으면 기동하지 않는다(코드 표 기본값은 전부 Gemini 라 덮어쓰지 않으면 그 밖의 키는 필요 없다). 켜져 있으면 확정 입구는 배정된 어댑터의 문안 체인에 슬롯 채널이 없을 때 503 이다. 확정의 처리(작업 실행·연결·커밋·만료 정리)는 소설화 워커 프로세스가 한다 — 워커(`NOVELIZE_WORKER_ENABLED`)가 꺼진 환경에서 확정하면 행이 대기로 남는다. 켜진 워커는 기동 때 배정된 어댑터의 문안 체인에 슬롯 채널이 있는지 한 번 보고, 없거나 그 검사가 실패하면 정본 기억만 끈 채(오류 로그, Bugsink 태그 `novelize`) 소설 작업은 그대로 돌린다 — 다시 켜려면 워커를 재기동한다. 꺼져 있으면 워커는 정본 기억 표를 읽지 않는다. 지금 이미지에는 추출 슬롯 셋(사건·사실·지식)이 등록돼 있고, 그 문안 채널과 모호 판정 채널(`novel_bible_events`·`novel_bible_facts`·`novel_bible_knowledge`·`novel_bible_conflicts`)은 정본 기억 문안 채널 리비전(`d39cf46dcb5c`)이 소설 레인 세 체인에 첫 시드로 심는다. 코드 표 기본값은 Gemini 어댑터라 덮어쓰지 않으면 Gemini 세트의 그 채널만 읽히고, Claude 어댑터(`haiku`·`sonnet`)를 배정한 연산은 Sonnet 세트의 것을 읽는다. Opus 세트의 것은 게시 검증이 세 체인 모두에 요구해 함께 있을 뿐 어떤 호출도 읽지 않는다. 시드 배포 때: 배포 전부터 열어 둔 어드민 문안 편집기 소설 탭은 새로고침한다(그대로 저장하면 초안이 섹션 전체 교체로 정본 기억 행을 잃고 게시가 "누락"으로 막힌다). 이미지만 되돌린 동안(배포 겹침 포함)은 옛 코드의 게시 검증이 정본 기억 채널을 "잉여"로 거부해 소설 레인 세 체인의 어드민 게시만 막힌다 — 재배포로 풀리고, 급하면 옛 이미지에서 옛 판을 통째 복원해 게시한 뒤 새 이미지로 돌아와 섹션 되돌리기로 시드 판의 정본 기억 채널 넷을 초안에 옮겨 게시한다(자세한 이유와 downgrade 조건은 그 리비전 docstring). 워커는 기동 때 한 번만 문안을 검사하므로 시드 전에 뜬 워커는 재기동해야 정본 기억을 켠다. 측정 전이라 운영에서 아직 켜지 않는다 |
+| `NOVEL_BIBLE_ADAPTERS` | 설정 안 함(기본 빈 값 = 코드 표 그대로) | 소설 정본 기억 연산(`events.extract`·`facts.extract`·`knowledge.extract`·`conflicts.judge`)마다 쓸 어댑터를 코드 표(`apps/api/src/api/novel_bible/adapters/table.py`)에서 바꾼다. `연산:어댑터` 를 쉼표로 잇는다(따옴표 없이, 예 `NOVEL_BIBLE_ADAPTERS=facts.extract:haiku,knowledge.extract:sonnet`). 받는 어댑터는 `gemini`·`haiku`·`sonnet` 셋이다 — `haiku`·`sonnet` 은 그 Claude 모델을 Anthropic 직결로 부르고 둘 다 소설 레인 Sonnet 체인 문안을 읽는다. 항목 앞뒤 공백은 무시하고 빈 항목은 버리며, 콜론이 정확히 하나이고 양쪽이 비지 않아야 하고, 같은 연산이 두 번이면 거부한다. 모르는 연산·어댑터 이름은 스위치가 꺼져 있어도 기동하지 않는다. 키·능력 검사는 스위치를 켰을 때만 한다 — Claude 어댑터를 배정하고 켜면 `ANTHROPIC_DIRECT_API_KEY` 가 있어야 하고, `haiku` 를 배정했는데 `ANTHROPIC_HAIKU_MODEL_ID` 가 사고를 끄고 판정하는 Haiku 5 계열이면 `ANTHROPIC_STRUCTURED_EFFORT` 가 `low`·`medium`·`high` 중 하나여야 한다. 정본 기억 호출 위치(`novel_bible_*`)는 `LLM_CALL_SITE_BACKENDS` 에 줄을 두지 않는다 — 어댑터가 부를 모델을 호출에 싣는다. Claude 구현(`anthropic`·`bedrock`)을 적은 줄은 기동 검증이 그 호출의 모델(모델 설정이 없어 gemini)을 서비스하지 않는다며 거부한다 |
 | `NOVEL_BIBLE_WORKER_MAX_CONCURRENT` | 설정 안 함(기본 `1`) | 소설화 워커 하나가 동시에 돌리는 소설 정본 기억 일(작업 하나 또는 작업이 끝난 확정의 연결·커밋 하나가 한 칸)의 수 상한(1 이상). 소설 작업 상한(`NOVELIZE_WORKER_MAX_CONCURRENT_JOBS`)과 따로 세어 사용자 소설 작업 자리를 먹지 않는다. 한 칸은 300초 안에 끝나거나 끊기고, 그보다 60초 더 멈춘 작업·확정은 워커의 만료 정리가 되돌린다(과금이 없어 환불 없음). 상한을 올리면 워커의 DB 풀도 키운다 — 워커 풀은 운영 `.env` 가 아니라 `docker-compose.prod.yml` 의 워커 `environment`(`DB_POOL_SIZE`·`DB_MAX_OVERFLOW`, 지금 3·2)가 정하므로 그쪽을 고치고(`.env` 의 `DB_POOL_SIZE` 를 올리면 api 풀만 커진다), `DB_POOL_SIZE` 행의 연결 총량 식을 다시 센다. 이 값은 워커 프로세스만 쓰고 `NOVEL_BIBLE_ENABLED` 가 꺼져 있으면 쓰지 않지만, 값 검사(정수로 읽히는지, 1 이상인지)는 스위치와 무관하게 api·워커 모두 기동 때 한다 — 0 이나 숫자가 아닌 값을 적으면 스위치가 꺼진 채로도 api·워커가 뜨지 않는다 |
 
 > **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
@@ -2297,10 +2300,14 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   채팅 줄을 물려받아 뜬다(전에는 Bedrock 으로 풀려 기동이 거부됐다).
 
 **공급자 경로.** 상위 모델 호출이 어느 공급자로 가는지는 호출 위치마다 정한다. 코드 기본 경로는 AWS Bedrock 이고,
-`LLM_CALL_SITE_BACKENDS` 에 배정한 호출 위치만 Anthropic API 직결(`ANTHROPIC_DIRECT_API_KEY`)로 간다. 운영은 채팅
+`LLM_CALL_SITE_BACKENDS` 에 배정한 호출 위치는 Anthropic API 직결(`ANTHROPIC_DIRECT_API_KEY`)로 간다. 운영은 채팅
 턴(`chat_generate`)·측정용 리플레이(`replay_generate`)·소설 장(`novelize_chapter`)을 모두 `anthropic` 에 배정해 두었고
 **이 배정을 유지한다** — 배정을 빼면 그 호출의 Opus 가 코드 기본 경로인 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가
-없으면 api 가 기동을 거부한다. 이 절은 운영 경로(직결)를 기준으로 적는다. Bedrock 으로 보낼 때의 키는 env 표의 `BEDROCK_*`
+없으면 api 가 기동을 거부한다. 소설 정본 기억은 이 배정 줄 없이 직결로 간다 — `NOVEL_BIBLE_ADAPTERS` 로 Claude 어댑터
+(`haiku`·`sonnet`)를 배정한 연산은 호출 정책 표(`apps/api/src/api/llm/call_policy.py`)가 정한 대로 Anthropic 직결로 부르고, 기본
+배정(Gemini)인 연산은 Anthropic 을 부르지 않는다. 정본 기억 호출 위치(`novel_bible_*`)에 Claude 구현 배정 줄을 두면 api 와
+소설화 워커가 기동하지 않는다(키·기동 검사는 env 표 `NOVEL_BIBLE_ADAPTERS` 행).
+이 절은 운영 경로(직결)를 기준으로 적는다. Bedrock 으로 보낼 때의 키는 env 표의 `BEDROCK_*`
 행이다 — Bedrock 모델 호출만 허용한 전용 IAM 사용자 키를 쓰고, R2 키(`AWS_ACCESS_KEY_ID` 등)를 재사용하거나 그 줄을 고치지
 않으며, Bedrock 계정 설정에서 모델 호출 로깅(model invocation logging)이 꺼져 있는지 먼저 본다.
 
@@ -2431,7 +2438,10 @@ sudo bash ops/swap-api.sh
 **키 교체·회수.** 새 키를 만든 뒤 `.env` 의 `ANTHROPIC_DIRECT_API_KEY` 줄을 `sudo sed -i` 로 바꾸고 형식 검사 →
 `sudo bash ops/swap-api.sh` → 위 확인 명령, 그다음 Anthropic 콘솔에서 옛 키를 비활성화한다. 키가 새어 나갔으면 먼저 콘솔에서
 비활성화한다 — 스위치가 켜져 있으면 그동안의 상위 모델 호출은 실패하고 환불된다. Bedrock 키(`BEDROCK_*` 두 줄)도 같은
-순서이고 옛 키는 AWS 콘솔에서 비활성화한다.
+순서이고 옛 키는 AWS 콘솔에서 비활성화한다. Claude 자격 목록에 이 키와 같은 키(어드민 목록의 "env 롤백 키와 같은 키" 표시)가
+있으면, 옛 키를 콘솔에서 끄기 전에 그 항목의 키를 먼저 교체하거나 항목을 지운다 — 끄면 그 항목이 키 무효로 소진되고(목록 사용이
+켜져 있으면 다음 항목으로 넘어간다), 반대로 목록 항목을 지우거나 교체할 때 그 키가 이 env 키와 같으면 콘솔에서 폐기하지
+않는다(이 경로가 같은 키를 쓴다).
 
 **보는 곳.** 직결 호출 한 건마다 API 로그에 `anthropic_usage` 줄(입력·캐시 읽기·캐시 쓰기·출력 토큰)이 남고(Bedrock 으로 간
 호출은 `bedrock_usage`), 사용량 집계(`scripts/llm_usage_report.py --model claude-opus-5-5` 처럼 실제 모델 id 로 좁힌다)와
@@ -3671,6 +3681,106 @@ tail -f /var/log/ddona-chat-cost-ratio.log
 ⚠️ 15:50 UTC — 다른 크론(05:00·06:00·15:05·16:35·17:35·18:00 UTC, 매시 17분)과 겹치지 않고, 5분마다 도는 가벼운 자원 점검과만
 겹친다. 배포 교체와 겹치면
 그날은 실패 알림이 오고, 위처럼 `--date` 로 다시 돌린다.
+
+### 3-21. Claude 자격 목록 — 켜기 · 끄기 · 되돌리기
+
+어드민에서 Anthropic API 키를 여러 개 붙여넣어 순서대로 쓰는 목록이다. 키는 api 가 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 의 키로
+AES-256-GCM 암호화해 DB 에 넣고(`api/llm/credentials.py`), 감사 로그·알림에는 지문(키 sha256 앞 8자 — 콘솔의 키로
+`printf %s "$KEY" | shasum -a 256 | cut -c1-8` 해 어느 항목인지 맞춰 본다)만, 어드민 응답에는 지문과 화면용 끝 4자리만 나간다. 새 항목은 꺼진 채
+들어오고, 확인 호출(모델 축마다 지금 설정의 실제 id 로 한 번 — 같은 id 는 한 번, 항목마다 분당 1회, 회당 0.002 달러 미만)이
+지금 상태에서 통과해야 켤 수 있다. 저장·확인 응답의 조직 id 가 허용 계정(`LLM_CREDENTIAL_ALLOWED_ACCOUNTS`) 밖이면 저장하지
+않고, 응답에 조직 헤더가 없으면 "조직 미확인"으로 남아 켤 수 없다.
+
+**꺼진 채 배포.** 지금 판은 저장과 어드민 API 만 있고 호출 경로는 이 목록을 읽지 않는다 — 목록 사용을 켜도 상위 모델 호출은
+지금처럼 env 키(`ANTHROPIC_DIRECT_API_KEY`)로 간다. 암호화 키나 허용 계정이 없으면 조회·메타 수정·끄기·삭제·순서 저장·목록
+사용 끄기만 되고 추가·키 교체·확인 호출·목록 사용 켜기가 503 이다(알림 웹훅이 없으면 알림만 건너뛴다). 운영 env 에 넣는 순서와 처음 켜는 절차는 호출 경로가 이 목록을 읽는 판을 배포할 때 이 절에
+더한다.
+
+**암호화 키 만들기·보관·회전.** "크리에이터 지급 정보 암호화 키 — 만들기 · 보관 · 회전" 절과 같은 명령이고 키 이름만
+`LLM_CREDENTIAL_ENCRYPTION_KEYS` 다(지급 정보 키를 재사용하지 않는다). 회전의 다시 암호화는:
+
+```sh
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api_$(sudo bash ops/active-color.sh) \
+  python -m api.llm.credential_reencrypt
+```
+
+마지막 줄 "Claude 자격 재암호화: N행, 쓰기 실패 F행, 복호화할 수 없어 건너뜀 M행". F 나 M 이 0 이 아니면 종료 코드가 1 이고
+옛 키를 지우지 않는다. F 는 행 쓰기가 DB 에서 실패한 행이다 — 그 행만 세고 다음 행으로 가며, 실패한 행마다 요약 줄 앞에 오류
+클래스 이름과 SQLSTATE 한 줄이 찍힌다. 그 행은 옛 키에 남아 있으니 원인을 고친 뒤 다시 돌린다(남은 행만 한다). M 은 그 항목이
+목록에 없는 키로 만들어졌다는 뜻이라 원인을 먼저 찾는다. 어느 실패든 오류 클래스 이름(행 쓰기 실패면 SQLSTATE 까지)만
+찍힌다 — 문장 오류가 암호문을 싣기 때문이다. 키를 잃었으면 그 항목은 확인 호출이 409 `secret-unreadable` 이다 — 어드민에서 키를
+다시 붙여넣는다(키 교체). 원문을 따로 두지 않았다면 콘솔에서 새 키를 발급해 넣는다.
+
+**되돌리기.** 1단계는 어드민 "목록 사용 끄기"다(행과 키는 그대로 남는다). 이미지만 옛 판으로 되돌리면 표는 옛 코드에 보이지
+않은 채 남는다. downgrade 는 세 표를 지워 저장한 키의 암호문이 함께 사라진다 — 다시 올린 뒤에는 키를 다시 붙여넣어야 한다.
+
+**모델 id 설정을 바꾸는 순서(목록 사용이 켜진 동안).** 목록 사용 켜기는 모든 축이 지금 모델 id 로 확인된 켜진 항목에 덮여야
+통과하므로, id 를 바꾼 뒤에는 항목마다 다시 확인해야 다시 켤 수 있다. ①~④ 를 짧게 이어서 한다.
+
+1. 어드민에서 목록 사용을 끈다. 호출 경로가 목록을 읽는 판에서는 그동안 상위 모델 호출이 env 키 계정으로 간다 — 그 계정
+   크레딧이 줄고, 그 계정이 소진이면 그동안의 호출은 실패·환불된다.
+2. env 의 `ANTHROPIC_*_MODEL_ID` 를 바꾸고 형식 검사 → `sudo bash ops/swap-api.sh`.
+3. 어드민에서 **항목마다 확인 호출**을 한다(새 id 로 나간다, 항목마다 분당 1회). 목록의 확인 칸에 지금 id 가 아닌 기록이
+   남은 축이 없는지 본다.
+4. 목록 사용을 켠다 — 덮이지 않은 축이 있으면 409 `pool-uncovered` 와 그 축 목록이다. 그 축을 받는 항목을 확인하거나 켠다.
+
+### 3-22. 일일 운영 요약 — digest cron
+
+매일 KST 09:00 에 KST 어제 하루의 운영 숫자를 Discord(`ops/notify.py` 채널)로 보낸다. 항목은 다섯이다 — 사용자 활동(가입·첫
+대화·활성 회원·턴 수 보내기/수정/재생성), 돈(결제·환불 건수와 원, 그날 새로 생긴 검증 불일치 결제 건수, 클로버 차감
+유료/보너스/무료와 환급), LLM 추정 원가(Redis 일 집계의 호출 위치·모델별 원가와 합계), 처리 대기(신고 다섯 종류·문의·이의제기·
+노벨 첫 공개 승인·진행 중 환불·탈퇴 회원 결제 환불 대기·크리에이터 정산 신청), 충족한 감시 조건(실사용자가 생기면 할 일 가운데
+DB 로 판정할 수 있는 것, `api/ops_digest/watch.py`). 검증 불일치 결제(포트원 결제가 주문과 맞지 않아 지급하지 않은 결제)는
+운영자가 처리해도 상태가 바뀌지 않아 처리 대기로 세면 숫자가 줄지 않는다 — 그래서 대기가 아니라 불일치로 넘어간 날 돈 항목에
+한 번 싣는다. 탈퇴 회원 결제는 운영자가 포트원 콘솔에서 전액 환불하면 취소 웹훅이 상태를 바꿔 대기에서 빠진다.
+사용자 활동과 돈은 **실사용자(레이트리밋 면제가 아닌 계정)와 내부(면제 계정)를 나눠** 싣는다 — 면제 여부는 실행 시각의 값이라,
+어제 만든 시험 계정을 아직 면제로 바꾸지 않았으면 실사용자로 셈된다. LLM 원가는 집계에 사용자 단위가 없어 합계 하나다. 그
+원가는 턴 기록 원가와 더하지 않고, 채팅 원가 비율은 싣지 않는다(위 "채팅 원가 비율 일일 리포트" 절이 매일 따로 보낸다). 건수와
+금액만 싣고 회원·주문을 알아볼 정보는 싣지 않는다. 자동 조치는 없다.
+
+**처리 대기와 누적 감시 조건은 실행 시각의 값이다** — `--date` 로 지난 날을 다시 돌려도 그날이 아니라 지금 대기 수가 나온다(나머지
+항목은 그날 값). 턴 수는 실행 시각에 남은 기록만 센다 — 그 사이 탈퇴·방 삭제·초기화가 지운 턴은 빠지고 원장 차감은 남는다.
+
+"채팅 원가 비율 일일 리포트 — report cron" 절처럼 **서빙 중인 api 컨테이너 안에서** `python -m api.ops_digest` 를 돈다(모델·단가표·
+사용량 집계 읽기가 앱 코드에 있다). 읽기 전용 트랜잭션에서 SELECT 만 하고 LLM 을 부르지 않는다. 래퍼 `ops/daily-digest.sh` 는 그
+절의 래퍼와 같은 꼴(`ops/active-color.sh` 로 색 고르기, `.env` 에서 `DISCORD_WEBHOOK_URL` 하나만 읽기, 실패는 고정 문구)이고,
+다른 점은 보내는 것 하나다 — 마지막 줄이 아니라 출력 전체를 알림 모듈의 표준입력으로 넘기고, 알림 모듈이 `📊 일일 운영 요약`
+으로 시작하는 머리 줄마다 한 통씩 보낸다. 한 통이 Discord 상한(2000자)을 넘으면 요약이 항목 경계에서 여러 통으로 나눠 낸다(머리
+끝 `(1/2)`). 인자는 요약으로 그대로 넘긴다 — `--date YYYY-MM-DD`(KST, 기본 어제), `--dry-run`(머리 앞에 `[dry-run]` 을 붙여
+보내지 않는다). Redis 를 읽지 못한 날은 LLM 항목만 "읽지 못함"으로 오고 나머지는 보낸다. 출력은 `/var/log/ddona-daily-digest.log`
+에 쌓이고 `ops/logrotate.d/ddona-cron` 글롭이 회전한다.
+
+**최초 1회 — 심볼릭 링크 설치**(운영 쓰기라 사용자 승인 뒤에 한다. 병합·배포만으로는 크론이 돌지 않는다 — 이 링크를 놓기 전까지
+운영 동작은 바뀌지 않는다).
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/daily-digest.sh /opt/ddona/daily-digest.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-daily-digest /etc/cron.d/ddona-daily-digest
+```
+
+알림 모듈은 다른 크론과 같은 `/opt/ddona/scripts`(저장소 `apps/api/scripts` 링크)의 `ops.daily_digest_notify` 다.
+
+**검증**:
+
+```sh
+# 1. 링크를 놓기 전에 수동 dry-run 1회 — 정상 종료와 본문을 확인한다(수동 실행은 로그 파일이 아니라 화면에 찍힌다). 정상 종료하면
+#    알림은 가지 않는다(실패하면 래퍼의 실패 알림은 간다).
+#    🔴 끝의 "[감시 조건]" 줄이 "충족 없음" 인지 본다. 운영에는 면제가 아닌 시험·결제 심사용 계정이나 운영자 계정이 있을 수 있어,
+#    설치하자마자 참인 조건은 매일 같은 줄을 다시 싣는다. 이미 참인 조건이 있으면 그 계정을 면제로 바꿀지, 조건을 기준 시각 뒤만
+#    세게 바꿀지 정한 뒤 링크를 놓는다. 실사용자 가입 조건의 기준 시각은 `api/ops_digest/watch.py` 의 `REAL_SIGNUP_BASELINE` 이다.
+sudo -u root /opt/ddona/app/ops/daily-digest.sh --dry-run
+
+# 2. 다음 00:00 UTC(KST 09:00)에 크론이 실제로 도는지
+tail -f /var/log/ddona-daily-digest.log
+```
+
+실패 알림을 받은 날은 그날을 다시 돌린다(`sudo -u root /opt/ddona/daily-digest.sh --date YYYY-MM-DD`) — 이 실행은 실제로 보낸다.
+매일 오는 요약이 안 오면 그 자체가 실패 신호다(healthchecks ping 은 붙이지 않았다).
+
+**끄기**: `sudo rm /etc/cron.d/ddona-daily-digest`. 래퍼 링크(`/opt/ddona/daily-digest.sh`)는 크론이 없으면 불리지 않아 남겨도 된다.
+
+⚠️ 00:00 UTC — 다른 크론(05:00·06:00·15:05·15:50·16:35·17:35·18:00 UTC, 매시 17분)과 겹치지 않고, 5분마다 도는 가벼운 자원 점검과만
+겹친다. 배포 교체와 겹치면 그날은 실패 알림이 오고, 위처럼 `--date` 로 다시 돌린다.
 
 ## 4. 배포 후 스모크 검증
 

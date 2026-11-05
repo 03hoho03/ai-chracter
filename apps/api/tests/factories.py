@@ -12,6 +12,7 @@ import base64
 import json
 import os
 import uuid
+from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Generator, Iterable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -26,6 +27,7 @@ import pytest
 import sqlalchemy as sa
 from alembic.config import Config
 from alembic.script import Script, ScriptDirectory
+from redis.asyncio.connection import AbstractConnection
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
@@ -133,13 +135,16 @@ from api.db.models import (
 from api.db.session import engine
 from api.legal.consents import kind_consent_units
 from api.llm import bedrock as bedrock_module
+from api.llm import dependencies as llm_dependencies
 from api.llm import gemini as gemini_module
+from api.llm.anthropic_api import AnthropicLLMClient
 from api.llm.bedrock import BedrockLLMClient
 from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, chat_turn_cost
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.llm.gemini import GeminiLLMClient
 from api.llm.routing import RoutingLLMClient
+from api.llm.voyage import VoyageEmbeddingClient
 from api.main import app
 from api.novelize.blocks import build_revision, fresh_ids
 from api.session.store import create_session
@@ -467,6 +472,59 @@ def _count_queries() -> Generator[Callable[[], int], None, None]:
         yield lambda: count
     finally:
         sa.event.remove(engine.sync_engine, "before_cursor_execute", _before_cursor_execute)
+
+
+# 생성을 세는 클라이언트 — 글 생성 클라이언트(`LLMClient` 구현 넷)와 기억 임베딩 클라이언트.
+LLM_CLIENT_CLASSES: tuple[type[Any], ...] = (
+    GeminiLLMClient,
+    RoutingLLMClient,
+    AnthropicLLMClient,
+    BedrockLLMClient,
+    VoyageEmbeddingClient,
+)
+
+
+def _count_llm_and_redis(monkeypatch: pytest.MonkeyPatch, *also: type[Any]) -> Counter[str]:
+    """LLM 클라이언트(`LLM_CLIENT_CLASSES`)와 `also` 클래스의 생성(클래스 이름 키), `get_llm_client` 호출, Redis 접속(`redis`
+    키 — 접속은 실패시킨다)을 센다. 아무것도 없으면 빈 `Counter` 다."""
+    seen: Counter[str] = Counter()
+
+    def counting_init(name: str, original: Callable[..., None]) -> Callable[..., None]:
+        def init(self: Any, *args: Any, **kwargs: Any) -> None:
+            seen[name] += 1
+            original(self, *args, **kwargs)
+
+        return init
+
+    for cls in (*LLM_CLIENT_CLASSES, *also):
+        monkeypatch.setattr(cls, "__init__", counting_init(cls.__name__, cls.__init__))
+    original_get = llm_dependencies.get_llm_client
+
+    def counting_get() -> Any:
+        seen["get_llm_client"] += 1
+        return original_get()
+
+    monkeypatch.setattr(llm_dependencies, "get_llm_client", counting_get)
+
+    async def refuse_connect(self: AbstractConnection, *args: Any, **kwargs: Any) -> None:
+        seen["redis"] += 1
+        raise ConnectionError("측정 서버가 Redis 에 접속하려 했다")
+
+    monkeypatch.setattr(AbstractConnection, "connect_check_health", refuse_connect)
+    return seen
+
+
+def _collect_engines(monkeypatch: pytest.MonkeyPatch) -> list[AsyncEngine]:
+    """그동안 만든 비동기 DB 엔진을 만든 순서대로 모은다."""
+    engines: list[AsyncEngine] = []
+    original = AsyncEngine.__init__
+
+    def collecting(self: AsyncEngine, *args: Any, **kwargs: Any) -> None:
+        engines.append(self)
+        original(self, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncEngine, "__init__", collecting)
+    return engines
 
 
 def _make_chat_turn(chat_room_id: uuid.UUID, **overrides: object) -> ChatTurn:
@@ -3053,3 +3111,15 @@ def undo_seeded_rows_above(conn: Connection, revision: str) -> None:
     같은 체인에 게시한 세트가 있다 등)에 걸리면 그 예외가 그대로 난다."""
     for script in _seed_scripts_above(revision):
         script.module.delete_seeded_rows(conn)
+
+
+# ── Claude 자격 목록 가짜 값 ─────────────────────────────────────────────────────────────────
+
+# 자격 암호화 키 목록. 회전 중 키링은 새 키(k2)를 맨 앞에 붙이고 옛 키(k1)를 뒤에 남긴 꼴이다.
+FAKE_CREDENTIAL_KEYRING = "k1:" + base64.urlsafe_b64encode(b"\x01" * 32).decode()
+FAKE_ROTATED_KEYRING = "k2:" + base64.urlsafe_b64encode(b"\x02" * 32).decode() + "," + FAKE_CREDENTIAL_KEYRING
+FAKE_ANTHROPIC_ORG = "org-test-0001"
+# 가짜 키다. 끝 네 글자는 다른 가짜 값(라벨·지문·id·조직)에 우연히 나오지 않는 글자로 골랐다 — 끝 4자리가 감사 로그·알림에
+# 실리는지를 문자열 탐색으로 잡으려면 그 네 글자가 다른 곳에서 나오면 안 된다. 지문·id 는 소문자 hex 라 `y`·`z` 가 없다.
+FAKE_API_KEY = "sk-ant-test-" + "0123456789abcdefghij0123456789abcdeCANARYzq"
+FAKE_OTHER_API_KEY = "sk-ant-test-" + "zyxwvutsrq9876543210zyxwvutsrqOTHERkeyWx"

@@ -13,7 +13,7 @@ export const CHANGE_SUMMARY_MAX_LENGTH = 100;
  *
  * 변경 요약은 서버와 같은 규칙이다 — 앞뒤 공백을 덜고 1자 이상, 상한은 코드 포인트로 센다. 입력칸에 `maxLength` 를 두지
  * 않는다 — 붙여넣은 글이 말없이 잘리지 않고 오류로 보이게. */
-export const publishChoiceSchema = z.object({
+export const PUBLISH_CHOICE_SCHEMA = z.object({
   targetOrdinal: z.number(),
   prices: z.array(z.object({ ordinal: z.number(), isFree: z.boolean() })),
   summaries: z.array(
@@ -30,8 +30,8 @@ export const publishChoiceSchema = z.object({
   ),
 });
 
-export type PublishChoiceFormInput = z.input<typeof publishChoiceSchema>;
-export type PublishChoiceFormValues = z.output<typeof publishChoiceSchema>;
+export type PublishChoiceFormInput = z.input<typeof PUBLISH_CHOICE_SCHEMA>;
+export type PublishChoiceFormValues = z.output<typeof PUBLISH_CHOICE_SCHEMA>;
 
 /** 폼 값 → 모달이 돌려줄 선택. 가격 줄은 고를 수 있는 끝까지 미리 만들어 두므로 고른 끝 화 뒤의 줄은 버린다. */
 export function toPublishChoice(values: PublishChoiceFormValues): PublishChoice {

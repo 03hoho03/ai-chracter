@@ -44,26 +44,26 @@ export function toSceneKeyOf(revision: {
  * - 누르면 켜고, 고른 문단을 다시 누르면 끈다. 떨어진 문단도 함께 고른다.
  * - 이미 고른 문단과 다른 장면이면 켜지 않는다(`outsideScene`). 다 풀면 어느 장면이든 새로 고를 수 있다.
  * - 상한만큼 골랐으면 더 켜지 않는다(`limit`). 끄는 것은 된다.
- * - `extend`(Shift+누르기·Shift+Enter)는 마지막으로 고른 문단부터 누른 문단까지 같은 장면 안의 고를 수 있는 문단을 모두 켠다
+ * - `isExtending`(Shift+누르기·Shift+Enter)는 마지막으로 고른 문단부터 누른 문단까지 같은 장면 안의 고를 수 있는 문단을 모두 켠다
  *   — 끄지 않는다. 상한에 닿으면 시작점에 가까운 쪽부터 거기까지만 켜고 `limit` 을 알린다. */
 export function nextBlockSelection(
   selection: readonly string[],
   index: number,
-  { extend = false }: { extend?: boolean },
+  { isExtending = false }: { isExtending?: boolean },
   context: BlockSelectionContext,
 ): BlockSelectionStep {
   const blockId = context.blockIds[index];
   if (blockId === undefined || !context.isSelectable(index)) return { selection: [...selection], outcome: "ignored" };
   const anchorId = selection.at(-1);
   const anchorIndex = anchorId === undefined ? -1 : context.blockIds.indexOf(anchorId);
-  if (selection.includes(blockId) && !extend) {
+  if (selection.includes(blockId) && !isExtending) {
     return { selection: selection.filter((id) => id !== blockId), outcome: "removed" };
   }
   const sceneKey = selection[0] === undefined ? undefined : context.sceneKeyOf(selection[0]);
   if (sceneKey !== undefined && context.sceneKeyOf(blockId) !== sceneKey) {
     return { selection: [...selection], outcome: "outsideScene" };
   }
-  if (!extend || anchorIndex < 0) {
+  if (!isExtending || anchorIndex < 0) {
     if (selection.includes(blockId)) return { selection: [...selection], outcome: "added" };
     if (selection.length >= context.maxBlocks) return { selection: [...selection], outcome: "limit" };
     return { selection: [...selection, blockId], outcome: "added" };

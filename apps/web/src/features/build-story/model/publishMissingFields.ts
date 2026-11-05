@@ -1,6 +1,6 @@
 import type { Path } from "react-hook-form";
 
-import { MAX_MEDIA_BOOK_CELLS, type StoryBuilderFormValues } from "./schema";
+import { MAX_MEDIA_BOOK_CELLS, type StoryBuilderFormValues } from "./storyBuilderSchema";
 
 // 서버(validate_story_publish)가 400으로 돌려주는 필드명을 한국어 라벨로 보여준다. 초안 상태를
 // 표현하느라 nullable인 3필드(profile.image/registration.genre/target)도 이제는 폼

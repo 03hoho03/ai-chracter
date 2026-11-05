@@ -38,7 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # PR 에서 이 검사가 돌지 않는다. 파일을 옮기면 그 필터도 함께 고친다.
 STAT_ICONS_TS = REPO_ROOT / "apps/web/src/entities/chat-room/model/statIcons.ts"
 COLOR_PALETTE_TS = REPO_ROOT / "packages/ui/src/lib/color-palette.ts"
-STORY_FORM_SCHEMA_TS = REPO_ROOT / "apps/web/src/features/build-story/model/schema.ts"
+STORY_FORM_SCHEMA_TS = REPO_ROOT / "apps/web/src/features/build-story/model/storyBuilderSchema.ts"
 
 
 def _read_all(pattern: str, path: Path) -> list[str]:

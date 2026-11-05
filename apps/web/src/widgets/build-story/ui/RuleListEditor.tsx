@@ -37,7 +37,7 @@ type LogicOp = (typeof LOGIC_OPERATORS)[number];
 type RuleListEditorProps = {
   items: RuleListItemValues[];
   stats: StatDefValues[];
-  allowGroups: boolean;
+  canUseGroups: boolean;
   /** 규칙이 하나도 없을 때의 문장 — 규칙이 선택인 목록(엔딩)과 필수인 목록이 다르게 말한다. 그룹 안에도 같은 문장이 쓰인다. */
   emptyText: string;
   /** 그룹 열림 키의 목록 이름. 발행 실패 때 셸이 오류가 든 그룹을 여는 키와 같아야 해서, 편집기를 쓰는 목록마다 따로 둔다. */
@@ -93,7 +93,7 @@ type RuleGroupRowProps = {
 };
 
 /** 스탯 기반 규칙 목록 편집기. "단일 규칙 추가"/"규칙 그룹 추가"로 항목을 늘리고 손잡이를 끌거나 화살표 키로 재정렬한다.
- * `allowGroups=false`로 그룹 내부(단일 규칙만)에도 그대로 재사용된다. 폼 상태를 직접 잡지 않는 제어 컴포넌트라 호출부가
+ * `canUseGroups=false`로 그룹 내부(단일 규칙만)에도 그대로 재사용된다. 폼 상태를 직접 잡지 않는 제어 컴포넌트라 호출부가
  * 목록을 읽어 넘기고 바뀐 목록을 통째로 써 넣는다.
  *
  * 상한(`ruleLimit`)에 닿으면 추가 버튼을 지우지 않고 `aria-disabled` 로 잠근 채 사유를 잇는다 — 지우면 왜 더 못 만드는지가
@@ -103,7 +103,7 @@ type RuleGroupRowProps = {
 export function RuleListEditor({
   items,
   stats,
-  allowGroups,
+  canUseGroups,
   emptyText,
   groupList,
   fieldPath,
@@ -243,7 +243,7 @@ export function RuleListEditor({
           >
             단일 규칙 추가
           </Button>
-          {allowGroups && (
+          {canUseGroups && (
             <Button
               ref={addGroupButtonRef}
               type="button"
@@ -458,7 +458,7 @@ function RuleGroupRow({
       <RuleListEditor
         items={group.rules}
         stats={stats}
-        allowGroups={false}
+        canUseGroups={false}
         emptyText={emptyText}
         groupList={groupList}
         fieldPath={fieldPath === undefined ? undefined : `${fieldPath}.rules`}

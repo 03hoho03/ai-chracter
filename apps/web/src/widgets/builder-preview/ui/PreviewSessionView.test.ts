@@ -92,9 +92,9 @@ describe("PreviewSessionView send error after the session is cleared", () => {
     );
     expect(viewSource).toContain("} else if (sendError) {");
     expect(viewSource).toContain("rateLimit={sendError.rateLimit}");
-    expect(viewSource).toContain("} else if (sendError.identityRequired) {");
-    expect(viewSource).toContain("} else if (sendError.declined) {");
-    expect(viewSource).not.toMatch(/status\.(rateLimit|identityRequired|declined)/);
+    expect(viewSource).toContain("} else if (sendError.isIdentityRequired) {");
+    expect(viewSource).toContain("} else if (sendError.isDeclined) {");
+    expect(viewSource).not.toMatch(/status\.(rateLimit|isIdentityRequired|isDeclined)/);
   });
 
   it("changing the model clears the session id", () => {

@@ -19,7 +19,7 @@ import {
   MAX_STAT_PLAYER_DESCRIPTION_LENGTH,
   MAX_STAT_RULES,
   serverToForm,
-  storyBuilderSchema,
+  STORY_BUILDER_SCHEMA,
   STORY_FIELD_LABELS,
   STORY_MISSING_FIELD_LABELS,
   storyMissingFieldFormPath,
@@ -247,7 +247,7 @@ const SCENARIOS: Record<string, unknown> = {
 };
 
 function issuePaths(value: unknown): string[] {
-  const result = storyBuilderSchema.safeParse(value);
+  const result = STORY_BUILDER_SCHEMA.safeParse(value);
   return result.success ? [] : result.error.issues.map((issue) => issue.path.map(String).join("."));
 }
 

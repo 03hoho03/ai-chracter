@@ -18,6 +18,7 @@ from api.admin.home_novel_curation import router as admin_home_novel_curation_ro
 from api.admin.image_generations import router as admin_image_generations_router
 from api.admin.inquiries import router as admin_inquiries_router
 from api.admin.legal import router as admin_legal_router
+from api.admin.llm_credentials import router as admin_llm_credentials_router
 from api.admin.llm_usage import router as admin_llm_usage_router
 from api.admin.notices import router as admin_notices_router
 from api.admin.novel_bible import router as admin_novel_bible_router
@@ -174,6 +175,7 @@ app.include_router(admin_image_generations_router)
 app.include_router(admin_chat_view_router)
 app.include_router(admin_prompts_router)
 app.include_router(admin_prompt_routing_router)
+app.include_router(admin_llm_credentials_router)
 app.include_router(admin_llm_usage_router)
 app.include_router(admin_payments_router)
 app.include_router(admin_creator_payout_router)

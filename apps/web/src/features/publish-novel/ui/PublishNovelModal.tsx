@@ -27,7 +27,7 @@ import { toBuyerPolicyCopy } from "../model/buyerPolicyCopy";
 import { toPublishPriceSentence, type PublishChoice } from "../model/publicationView";
 import {
   CHANGE_SUMMARY_MAX_LENGTH,
-  publishChoiceSchema,
+  PUBLISH_CHOICE_SCHEMA,
   toPublishChoice,
   type PublishChoiceFormInput,
   type PublishChoiceFormValues,
@@ -72,7 +72,7 @@ export const PublishNovelModal = createCallable<PublishNovelModalProps, PublishC
     const selectId = useId();
     const pricing = useCloverPricingQuery().data;
     const form = useForm<PublishChoiceFormInput, unknown, PublishChoiceFormValues>({
-      resolver: zodResolver(publishChoiceSchema),
+      resolver: zodResolver(PUBLISH_CHOICE_SCHEMA),
       defaultValues: toDefaultValues({ range, status, policyV2 }),
     });
     const target = useWatch({ control: form.control, name: "targetOrdinal" });

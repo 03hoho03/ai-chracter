@@ -25,7 +25,7 @@ import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 import { findPayMethod, formatPayMethodLabel, toPayMethodKey, type CloverPayMethodItem } from "../model/payMethod";
 import {
   getPurchaseFormDefaultValues,
-  purchaseFormSchema,
+  PURCHASE_FORM_SCHEMA,
   type PurchaseFormValues,
 } from "../model/purchaseForm";
 import { PURCHASE_MESSAGES, type PurchaseResult } from "../model/purchaseResult";
@@ -61,7 +61,7 @@ export const PurchaseConfirmDialog = createCallable<PurchaseConfirmDialogProps, 
     const fieldId = useId();
     const [firstPayMethod] = payMethods;
     const form = useForm<PurchaseFormValues>({
-      resolver: zodResolver(purchaseFormSchema),
+      resolver: zodResolver(PURCHASE_FORM_SCHEMA),
       defaultValues: getPurchaseFormDefaultValues(email, firstPayMethod ? toPayMethodKey(firstPayMethod) : ""),
     });
     const { errors, isSubmitting } = form.formState;

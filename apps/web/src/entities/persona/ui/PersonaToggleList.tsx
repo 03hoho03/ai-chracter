@@ -6,12 +6,12 @@ import { PersonaSummary } from "./PersonaSummary";
 
 type PersonaToggleListProps = {
   personaList: PersonaList;
-  /** 선택된 프로필 id. null = "선택 안 함"(`includeNone` 일 때만 의미가 있다). */
+  /** 선택된 프로필 id. null = "선택 안 함"(`shouldIncludeNone` 일 때만 의미가 있다). */
   value: string | null;
   /** 항목을 누를 때마다 부른다 — 이미 선택된 항목을 다시 눌러도 그 값으로 부른다(받는 쪽이 무시하거나 확정으로 읽는다). */
   onValueChange: (personaId: string | null) => void;
   /** 맨 위에 "선택 안 함"을 둔다. 대화방은 프로필 없이 대화할 수 있고, 새 대화를 시작할 때는 늘 하나를 고른다. */
-  includeNone: boolean;
+  shouldIncludeNone: boolean;
   "aria-label": string;
   "aria-busy"?: boolean;
 };
@@ -39,7 +39,7 @@ export function PersonaToggleList({
   personaList,
   value,
   onValueChange,
-  includeNone,
+  shouldIncludeNone,
   "aria-label": ariaLabel,
   "aria-busy": ariaBusy,
 }: PersonaToggleListProps) {
@@ -60,7 +60,7 @@ export function PersonaToggleList({
       aria-busy={ariaBusy}
       className="w-full flex-col gap-1.5"
     >
-      {includeNone && (
+      {shouldIncludeNone && (
         <ToggleGroupItem value={NO_PERSONA_VALUE} className={ITEM_CLASS}>
           <span className="flex flex-col gap-0.5 text-left">
             <span className="text-sm font-medium">선택 안 함</span>

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ApiErrorObject } from "@/shared/api/client";
 
 import { storyAutosaveErrorMessage } from "./mediaBookSaveError";
-import type { StartingSetupValues, StatDefValues } from "./schema";
+import type { StartingSetupValues, StatDefValues } from "./storyBuilderSchema";
 import {
   isSituationNoteStatNotFoundError,
   locateSituationNotePublishError,

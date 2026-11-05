@@ -6,7 +6,7 @@ export type AttendanceCellLook = {
   cellClassName: string;
   amountClassName: string;
   statusClassName: string;
-  showGift: boolean;
+  shouldShowGift: boolean;
 };
 
 /** 금액이 큰 칸. 보상표 금액이 아니라 칸 자리로 정한다 — 화면은 특별일이 7일마다라는 사실만 안다. */
@@ -46,21 +46,21 @@ const LOOKS = {
 export function attendanceCellLook(cell: Pick<AttendanceCell, "seq" | "status">): AttendanceCellLook {
   const isSpecial = cell.seq % SPECIAL_EVERY === 0;
   const look = cell.status === "upcoming" && isSpecial ? LOOKS.specialUpcoming : LOOKS[cell.status];
-  return { ...look, showGift: isSpecial };
+  return { ...look, shouldShowGift: isSpecial };
 }
 
-/** `compact` 는 `sm` 미만 칸이다. 320px 폭의 7열 칸에서는 쉼표까지 넣은 "4,800" 이 가장 좁은 오늘 칸(테두리 2px)의 안쪽
+/** `isCompact` 는 `sm` 미만 칸이다. 320px 폭의 7열 칸에서는 쉼표까지 넣은 "4,800" 이 가장 좁은 오늘 칸(테두리 2px)의 안쪽
  * 폭을 넘는다. 한 칸만 빼면 칸끼리 표기가 갈려 좁은 칸은 전부 뺀다. 낭독 문장과 버튼·진도 문구는 쉼표를 그대로 쓴다. */
-export function formatCellAmount(amount: number, compact: boolean): string {
-  return compact ? String(amount) : formatCloverAmount(amount);
+export function formatCellAmount(amount: number, isCompact: boolean): string {
+  return isCompact ? String(amount) : formatCloverAmount(amount);
 }
 
 /** 칸의 상태 글자. 글자 없이 아이콘만 둘 때는 null — 좁은 받음 칸은 "받음" 과 체크 아이콘을 함께 두면 안쪽 폭을 넘어
  * 아이콘만 두고, 낭독 문장이 "받음" 을 말한다. */
-export function cellStatusLabel(status: AttendanceCell["status"], compact: boolean): string | null {
+export function cellStatusLabel(status: AttendanceCell["status"], isCompact: boolean): string | null {
   switch (status) {
     case "claimed":
-      return compact ? null : "받음";
+      return isCompact ? null : "받음";
     case "today":
       return "오늘";
     case "upcoming":

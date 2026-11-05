@@ -113,20 +113,20 @@ function CreatorPayoutBody() {
         <SectionHeading>정산 신청</SectionHeading>
         <CreatorPayoutApplicationPanel payout={payout} />
       </section>
-      {payout.everApproved && <BalanceSection payout={payout} showRequest={sections.request} />}
-      {sections.payoutInfo && (
+      {payout.everApproved && <BalanceSection payout={payout} shouldShowRequest={sections.shouldShowRequest} />}
+      {sections.shouldShowPayoutInfo && (
         <section id={PAYOUT_INFO_SECTION_ID} className="flex scroll-mt-20 flex-col gap-4">
           <SectionHeading>지급 정보</SectionHeading>
           <PayoutInfoPanel payout={payout} />
         </section>
       )}
-      {sections.payouts && <PayoutsSection />}
+      {sections.shouldShowPayouts && <PayoutsSection />}
       {payout.everApproved && <StatementsSection />}
     </>
   );
 }
 
-function BalanceSection({ payout, showRequest }: { payout: CreatorPayoutResponse; showRequest: boolean }) {
+function BalanceSection({ payout, shouldShowRequest }: { payout: CreatorPayoutResponse; shouldShowRequest: boolean }) {
   const { balanceKrw } = payout;
   return (
     <section className="flex flex-col gap-4">
@@ -145,7 +145,7 @@ function BalanceSection({ payout, showRequest }: { payout: CreatorPayoutResponse
         </p>
         <p className="text-xs break-keep text-muted-foreground">{getBalancePayoutNote(payout)}</p>
       </div>
-      {showRequest && (
+      {shouldShowRequest && (
         <RequestCreatorPayoutPanel payout={payout} payoutInfoSectionId={PAYOUT_INFO_SECTION_ID} />
       )}
     </section>

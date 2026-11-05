@@ -125,8 +125,8 @@ function SelectionLoader({
   const state = selectionQuery.data;
   const messages = messagesQuery.data;
   if (state === undefined || messages === undefined) {
-    const failed = (selectionQuery.isError && state === undefined) || (messagesQuery.isError && messages === undefined);
-    if (!failed) {
+    const hasFailed = (selectionQuery.isError && state === undefined) || (messagesQuery.isError && messages === undefined);
+    if (!hasFailed) {
       return (
         <StepShell status={undefined}>
           <div role="status" className="flex flex-col gap-2">
@@ -343,10 +343,10 @@ function SelectionEditor({
   function handleError(error: unknown, action: NovelAction) {
     const result = toNovelActionError(error, action);
     const recovery = toSelectionRecovery(error);
-    if (recovery.resetEdits) setEdits(undefined);
-    if (recovery.refetchSelection) void queryClient.invalidateQueries({ queryKey: novelKeys.sourceSelection(novel.id) });
-    if (recovery.refetchMessages) void queryClient.invalidateQueries({ queryKey: chatRoomKeys.sourceMessages(roomId) });
-    if (recovery.refetchPricing) {
+    if (recovery.shouldResetEdits) setEdits(undefined);
+    if (recovery.shouldRefetchSelection) void queryClient.invalidateQueries({ queryKey: novelKeys.sourceSelection(novel.id) });
+    if (recovery.shouldRefetchMessages) void queryClient.invalidateQueries({ queryKey: chatRoomKeys.sourceMessages(roomId) });
+    if (recovery.shouldRefetchPricing) {
       // 가격을 다시 받으면 구성 화면이 거둬져 이 안내도 함께 사라진다 — 화면 밖에 남는 알림으로 말한다.
       if (result !== null) toast(result.message);
       void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });

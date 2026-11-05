@@ -13,6 +13,7 @@ from api.core.field_crypto import FieldKeyring
 from api.llm import backends
 from api.llm.backends import PromptSetModelId
 from api.llm.call_policy import BackendId, LLMCallSite
+from api.llm.credential_accounts import parse_allowed_accounts
 from api.novel_bible.adapters import table as bible_adapters
 from api.novel_bible.adapters.table import AdapterId
 from api.novel_bible.ids import OperationKey
@@ -217,7 +218,7 @@ class Settings(BaseSettings):
             return cls.model_fields[info.field_name].default
         return value
 
-    @field_validator("creator_payout_encryption_keys")
+    @field_validator("creator_payout_encryption_keys", "llm_credential_encryption_keys")
     @classmethod
     def _creator_payout_encryption_keys_are_well_formed(cls, value: str) -> str:
         if value:
@@ -336,6 +337,22 @@ class Settings(BaseSettings):
     # `ANTHROPIC_API_KEY` 와 나눈다(Bedrock 키가 `AWS_*` 를 피한 것과 같은 이유) — 배정이 경로를 옮기는데 키가 비면 기동하지
     # 않는다(`llm/backends.py` 의 `assignment_errors`).
     anthropic_direct_api_key: str = Field(default="", repr=False)
+    # Claude 자격 목록(어드민에서 키를 붙여넣어 순서대로 쓰는 목록)의 저장소 설정. 암호화 키 목록은 지급 정보 키와 같은 형식
+    # `kid:base64url(32바이트)[,kid:…]`(맨 앞 키로 암호화, 모든 키로 복호화)이고 지급 정보 키와 나눈다 — 한쪽 키가 새도 다른
+    # 쪽 칸이 열리지 않고 회전 일정이 엮이지 않는다. 허용 계정은 `anthropic:<조직 id>,aws:<계정 id>` 쉼표 목록이다(형식은
+    # `llm/credential_accounts.py`). 둘 중 하나라도 비면 어드민의 자격 추가·키 교체·확인 호출이 503 이고, 형식이 틀리면
+    # 기동하지 않는다. 알림 웹훅이 비면 변경 알림을 보내지 않는다(주소가 곧 그 채널에 쓸 권한이라 비밀이다).
+    llm_credential_encryption_keys: str = Field(default="", repr=False)
+    llm_credential_allowed_accounts: str = ""
+    llm_credential_discord_webhook_url: str = Field(default="", repr=False)
+
+    @field_validator("llm_credential_allowed_accounts")
+    @classmethod
+    def _llm_credential_allowed_accounts_are_well_formed(cls, value: str) -> str:
+        """값은 문자열 그대로 두고 형식만 본다 — 쓰는 쪽이 키링처럼 매번 다시 읽는다."""
+        parse_allowed_accounts(value)
+        return value
+
     # 실제 모델 id. 같은 `opus`·`sonnet` 이라도 Bedrock 쪽 id 와 버전이 다르다. 화면의 모델 이름(`llm/chat_models.py`)은
     # 운영이 실제로 부르는 쪽을 따르고, 운영은 배정으로 상위 모델을 이 구현에 보내므로 지금은 이 쪽 버전이다.
     anthropic_sonnet_model_id: str = "claude-sonnet-5-5"
@@ -924,8 +941,9 @@ class Settings(BaseSettings):
     # 404(라우트가 없는 것과 같다)이고 새 정본 기억 행이 생기지 않는다. 소설 삭제·숨긴 소설 정리·묶음 삭제는 이 값과 무관하게
     # 정본 기억 행을 지운다(지울 행이 없으면 0행). 소설 생성 경로는 이 값과 무관하게 정본 기억을 모른다. 켜면 기동 검증이 연산마다
     # 배정된 어댑터가 실제로 갈 구현의 자격·능력을 본다(아래 검증자). 확정의 처리는 소설화 워커 프로세스가 한다 — 워커가 꺼진
-    # 환경에서는 확정 행이 대기로 남는다. 등록된 추출 슬롯은 사건 슬롯 하나이고 그 문안 채널이 시드되기 전이라, 켜면 확정 입구가
-    # 503 이고 켜진 워커도 기동 때 정본 기억을 끈다.
+    # 환경에서는 확정 행이 대기로 남는다. 추출 슬롯은 셋(사건·사실·지식)이고, 그 문안 채널과 모호 판정 채널은 소설 레인 세 체인에
+    # 시드돼 있다. 켜진 동안 확정 입구는 추출 슬롯마다 배정된 어댑터의 문안 체인에 그 채널의 지시문이 없으면 503 이고, 켜진 워커는
+    # 기동 때 같은 검사를 한 번 해 없거나 검사가 실패하면 정본 기억만 끈 채 뜬다(다시 켜려면 워커를 재기동한다).
     novel_bible_enabled: bool = False
     # 소설화 워커 하나가 동시에 돌리는 정본 기억 작업(작업 하나 또는 준비된 확정 처리 하나가 한 칸) 수 상한. 소설 작업 상한과 따로
     # 세 사용자 소설 작업 자리를 먹지 않는다. 올리면 워커의 DB 풀도 키운다 — 운영 워커 풀은 `.env` 가 아니라

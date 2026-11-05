@@ -17,7 +17,7 @@ import {
   type LoginErrorParam,
   type SignupMethod,
 } from "../model/loginErrorMessage";
-import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
+import { LOGIN_DEFAULT_VALUES, LOGIN_SCHEMA, type LoginFormValues } from "../model/loginSchema";
 import { SocialLoginButtons } from "./SocialLoginButtons";
 
 type LoginFormProps = {
@@ -34,8 +34,8 @@ export function LoginForm({ redirectTo, errorCode, errorMethod }: LoginFormProps
     clearErrors,
     formState: { errors },
   } = useForm<LoginFormValues>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: loginDefaultValues,
+    resolver: zodResolver(LOGIN_SCHEMA),
+    defaultValues: LOGIN_DEFAULT_VALUES,
   });
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   // 소셜 로그인 리다이렉트 실패는 이 폼의 제출 결과가 아니라 진입 시점에 URL이 물고 온 상태라

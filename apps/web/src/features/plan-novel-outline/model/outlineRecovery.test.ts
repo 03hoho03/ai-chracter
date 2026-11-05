@@ -8,21 +8,21 @@ function apiError(status: number, detail: Record<string, unknown>) {
   return new ApiErrorObject({ status, message: "x", detail });
 }
 
-const NOTHING = { resetEdits: false, refetchOutline: false, refetchMessages: false, refetchPricing: false };
+const NOTHING = { shouldResetEdits: false, shouldRefetchOutline: false, shouldRefetchMessages: false, shouldRefetchPricing: false };
 
 describe("구성안 저장·승인 거절 뒤 맞추기", () => {
   it("다른 곳에서 고쳤거나 낡았으면 고친 것을 버리고 구성안을 다시 받는다", () => {
     for (const code of ["NOVEL_OUTLINE_CONFLICT", "NOVEL_OUTLINE_STALE"]) {
-      expect(toOutlineRecovery(apiError(409, { code }))).toEqual({ ...NOTHING, resetEdits: true, refetchOutline: true });
+      expect(toOutlineRecovery(apiError(409, { code }))).toEqual({ ...NOTHING, shouldResetEdits: true, shouldRefetchOutline: true });
     }
   });
 
   it("지워진 근거 메시지는 대화도 다시 받는다", () => {
     expect(toOutlineRecovery(apiError(422, { code: "NOVEL_OUTLINE_INVALID", reason: "basis_not_found" }))).toEqual({
       ...NOTHING,
-      resetEdits: true,
-      refetchOutline: true,
-      refetchMessages: true,
+      shouldResetEdits: true,
+      shouldRefetchOutline: true,
+      shouldRefetchMessages: true,
     });
   });
 
@@ -30,8 +30,8 @@ describe("구성안 저장·승인 거절 뒤 맞추기", () => {
     for (const reason of ["unknown_key", "basis_outside_include", "something_new"]) {
       expect(toOutlineRecovery(apiError(422, { code: "NOVEL_OUTLINE_INVALID", reason }))).toEqual({
         ...NOTHING,
-        resetEdits: true,
-        refetchOutline: true,
+        shouldResetEdits: true,
+        shouldRefetchOutline: true,
       });
     }
   });
@@ -45,7 +45,7 @@ describe("구성안 저장·승인 거절 뒤 맞추기", () => {
   it("스위치가 꺼졌으면 가격을 다시 받는다", () => {
     expect(toOutlineRecovery(apiError(404, { code: "NOVEL_OUTLINE_FLOW_DISABLED" }))).toEqual({
       ...NOTHING,
-      refetchPricing: true,
+      shouldRefetchPricing: true,
     });
   });
 
@@ -60,7 +60,7 @@ describe("어느 모델로도 못 쓰는 화가 있어 승인을 못 했을 때"
   it("고친 것을 남기고 구성안만 다시 받는다", () => {
     expect(toOutlineRecovery(apiError(409, { code: "NOVEL_OUTLINE_EPISODE_TOO_LONG", maxTurns: 45, episodes: [] }))).toEqual({
       ...NOTHING,
-      refetchOutline: true,
+      shouldRefetchOutline: true,
     });
   });
 });

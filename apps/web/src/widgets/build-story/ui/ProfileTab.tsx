@@ -58,7 +58,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
                   ImageCropModal.call({
                     file,
                     aspect: toThumbnailAspectRatio(toThumbnailAspect("story")),
-                    keepAnimation: true,
+                    shouldKeepAnimation: true,
                   })
                 }
               />

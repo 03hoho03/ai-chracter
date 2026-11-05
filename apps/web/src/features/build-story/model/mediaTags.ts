@@ -1,6 +1,6 @@
 import { findMediaNameTags, normalizeMediaBookName, renameMediaTagName, type MediaBookAxis } from "@/entities/media-book";
 
-import type { MediaBookValues, StoryBuilderFormValues } from "./schema";
+import type { MediaBookValues, StoryBuilderFormValues } from "./storyBuilderSchema";
 
 /**
  * 빌더 글 속 미디어 북 태그를 폼 값에 맞춰 다루는 함수들. 태그 문법(무엇이 이름 형태 태그인가, 이름을 어떻게

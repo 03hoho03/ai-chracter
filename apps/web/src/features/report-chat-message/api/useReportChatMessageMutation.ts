@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/client";
 
-import type { ChatMessageReportRequest } from "../model/schema";
+import type { ChatMessageReportRequest } from "../model/chatMessageReportSchema";
 
 type ChatMessageReportResponse = components["schemas"]["ChatMessageReportResponse"];
 

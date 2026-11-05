@@ -8,7 +8,7 @@ import type { FieldValue, GuideFieldBlock as GuideFieldBlockData, GuideNoteBlock
 import { GuideBadComparison } from "./GuideBadComparison";
 import { GuideCardListMockup } from "./GuideCardListMockup";
 import { GuideDisclosure } from "./GuideDisclosure";
-import { GuideFieldMockups } from "./GuideFieldMockup";
+import { GuideFieldMockups } from "./GuideFieldMockups";
 import { GuideItems } from "./GuideItems";
 import { MockupTextarea } from "./GuideMockupControls";
 import { GuideMockupFrame } from "./GuideMockupFrame";
@@ -86,7 +86,7 @@ export function GuideFieldBlock({ block, context }: GuideFieldBlockProps) {
                     key={part.title}
                     part={part}
                     context={context}
-                    showsTitle={block.bad.length > 1}
+                    shouldShowTitle={block.bad.length > 1}
                   />
                 ))}
               </div>

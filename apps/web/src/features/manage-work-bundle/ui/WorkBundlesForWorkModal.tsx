@@ -87,7 +87,7 @@ export const WorkBundlesForWorkModal = createCallable<WorkBundlesForWorkModalPro
     }
   }
 
-  async function createAndAdd() {
+  async function handleCreateAndAdd() {
     if (isAtBundleLimit) return;
     const bundleId = await WorkBundleNameModal.call({ mode: "create" });
     if (bundleId === null) return;
@@ -145,7 +145,7 @@ export const WorkBundlesForWorkModal = createCallable<WorkBundlesForWorkModalPro
               className="aria-disabled:opacity-65"
               onClick={() => {
                 if (query.isPending) return;
-                void createAndAdd();
+                void handleCreateAndAdd();
               }}
             >
               <Plus aria-hidden />새 묶음 만들기

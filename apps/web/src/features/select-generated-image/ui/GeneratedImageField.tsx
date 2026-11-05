@@ -44,7 +44,7 @@ type GeneratedImageFieldProps = {
 /**
  * 캐릭터/스토리 빌더가 공유하는 이미지 필드. 업로드/갤러리선택/삭제
  * 세 경로 모두 `{assetId}`(또는 삭제 시 null) 하나로 수렴하므로, 이 컴포넌트를 쓰는 zod 폼 필드는
- * 항상 `z.object({ assetId: z.string() }).nullable()` 모양이면 된다(situationalImageSchema/
+ * 항상 `z.object({ assetId: z.string() }).nullable()` 모양이면 된다(SITUATIONAL_IMAGE_SCHEMA/
  * profile.image와 동일 shape).
  *
  * 표시 주소는 소비자가 `previewUrl`로 준다 — assetId만으로는 렌더링 가능한 URL을 만들 수 없다. 업로드가 끝나면

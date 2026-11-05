@@ -12,10 +12,10 @@ import {
 import {
   MAX_MEDIA_BOOK_CELLS,
   MEDIA_BOOK_DUPLICATE_NAME_MESSAGE,
-  mediaBookSchema,
+  MEDIA_BOOK_SCHEMA,
   type MediaBookCellValues,
   type MediaBookValues,
-} from "./schema";
+} from "./storyBuilderSchema";
 
 const PERSON_A = "00000000-0000-4000-8000-000000000001";
 const PERSON_B = "00000000-0000-4000-8000-000000000002";
@@ -49,7 +49,7 @@ describe("mediaBookNameError", () => {
 
   it("says the same duplicate-name sentence as the form schema", () => {
     const duplicated = { ...BASE_BOOK, people: [...BASE_BOOK.people, { id: NEW_ID, name: "에리" }] };
-    const issues = mediaBookSchema.safeParse(duplicated).error?.issues ?? [];
+    const issues = MEDIA_BOOK_SCHEMA.safeParse(duplicated).error?.issues ?? [];
 
     expect(issues.map((issue) => issue.message)).toContain(mediaBookNameError("에리", BASE_BOOK.people));
   });
@@ -75,7 +75,7 @@ describe("axis edits", () => {
 
     expect(removed.people.map((person) => person.id)).toEqual([PERSON_B]);
     expect(removed.cells).toEqual([]);
-    expect(mediaBookSchema.safeParse(removed).success).toBe(true);
+    expect(MEDIA_BOOK_SCHEMA.safeParse(removed).success).toBe(true);
   });
 });
 

@@ -11,7 +11,7 @@ const TAP: PageGestureInput = {
   clientX: 200,
   viewportWidth: 400,
   pageWidth: 400,
-  targetIsInteractive: false,
+  isTargetInteractive: false,
   isSettingsOpen: false,
   isZoomed: false,
 };
@@ -54,9 +54,9 @@ describe("toPageGesture — 탭", () => {
   });
 
   it("링크·버튼 위의 탭은 그 요소에 맡긴다", () => {
-    expect(toPageGesture({ ...TAP, targetIsInteractive: true })).toBe("none");
-    expect(toPageGesture({ ...TAP, clientX: 350, targetIsInteractive: true })).toBe("none");
-    expect(toPageGesture({ ...TAP, targetIsInteractive: true, isSettingsOpen: true })).toBe("none");
+    expect(toPageGesture({ ...TAP, isTargetInteractive: true })).toBe("none");
+    expect(toPageGesture({ ...TAP, clientX: 350, isTargetInteractive: true })).toBe("none");
+    expect(toPageGesture({ ...TAP, isTargetInteractive: true, isSettingsOpen: true })).toBe("none");
   });
 
   it("확대 중에는 좌·우 탭이 넘기지 않고 가운데 탭만 바를 여닫는다", () => {
@@ -106,7 +106,7 @@ describe("toPageGesture — 스와이프·끌기", () => {
   });
 
   it("링크 위에서 시작한 스와이프도 넘기고, 설정이 열려 있어도 넘긴다", () => {
-    expect(toPageGesture({ ...DRAG, dx: -100, targetIsInteractive: true })).toBe("next");
+    expect(toPageGesture({ ...DRAG, dx: -100, isTargetInteractive: true })).toBe("next");
     expect(toPageGesture({ ...DRAG, dx: -100, isSettingsOpen: true })).toBe("next");
   });
 

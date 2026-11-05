@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cloverHubSearchSchema } from "./cloverHubSearch";
+import { CLOVER_HUB_SEARCH_SCHEMA } from "./cloverHubSearch";
 import { getReturnPlacement, parseReturnTo, resolveHubReturnTo, returnLinkLabel } from "./returnTo";
 
 describe("parseReturnTo", () => {
@@ -71,9 +71,9 @@ describe("getReturnPlacement", () => {
   });
 });
 
-describe("cloverHubSearchSchema 의 복귀 주소", () => {
+describe("CLOVER_HUB_SEARCH_SCHEMA 의 복귀 주소", () => {
   it("안전한 복귀 주소는 상품·결제 결과와 함께 받는다", () => {
-    expect(cloverHubSearchSchema.parse({ returnTo: "/chat/r", product: "lite", paymentId: "pay_1" })).toEqual({
+    expect(CLOVER_HUB_SEARCH_SCHEMA.parse({ returnTo: "/chat/r", product: "lite", paymentId: "pay_1" })).toEqual({
       returnTo: "/chat/r",
       product: "lite",
       paymentId: "pay_1",
@@ -82,8 +82,8 @@ describe("cloverHubSearchSchema 의 복귀 주소", () => {
 
   // 어긋난 복귀 주소 때문에 화면이 열리지 않으면 안 된다 — 그 값만 버린다.
   it("어긋난 복귀 주소는 버리고 나머지는 그대로 읽는다", () => {
-    expect(cloverHubSearchSchema.parse({ returnTo: "//evil.example", product: "lite" })).toEqual({ product: "lite" });
-    expect(cloverHubSearchSchema.parse({ returnTo: "/clover" })).toEqual({});
+    expect(CLOVER_HUB_SEARCH_SCHEMA.parse({ returnTo: "//evil.example", product: "lite" })).toEqual({ product: "lite" });
+    expect(CLOVER_HUB_SEARCH_SCHEMA.parse({ returnTo: "/clover" })).toEqual({});
   });
 });
 

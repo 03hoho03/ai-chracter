@@ -6,14 +6,14 @@ import { isApiError } from "@/shared/api/client";
  * (`currentCost`)은 그 요청의 총액이다 — 채팅은 턴 가격, 이미지는 장수 × 장당 가격. 새 가격 버전은 싣지 않으므로 화면은
  * 가격표를 다시 받아야 한다. 이 본문은 HTTP 오류 응답이라 코드젠을 타지 않는다(서버 `core/rate_limit_gate.py` 의
  * `_check_price_version` 과 손으로 맞춘 사본). 금액이 숫자가 아니어도 코드만 맞으면 가격 바뀜으로 본다 — 금액 없이 묻는다. */
-const priceChangedDetailSchema = z.object({
+const PRICE_CHANGED_DETAIL_SCHEMA = z.object({
   code: z.literal("CLOVER_PRICE_CHANGED"),
   currentCost: z.number().optional().catch(undefined),
 });
 
 function parsePriceChanged(error: unknown) {
   if (!isApiError(error) || error.status !== 409) return undefined;
-  const parsed = priceChangedDetailSchema.safeParse(error.detail);
+  const parsed = PRICE_CHANGED_DETAIL_SCHEMA.safeParse(error.detail);
   return parsed.success ? parsed.data : undefined;
 }
 

@@ -1,6 +1,6 @@
 import type { ContentCardProps } from "@/entities/content";
 
-import type { StoryBuilderFormValues } from "./schema";
+import type { StoryBuilderFormValues } from "./storyBuilderSchema";
 
 type StoryToCardContext = {
   thumbnailUrl: string | null;

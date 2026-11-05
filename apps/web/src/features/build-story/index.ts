@@ -71,7 +71,7 @@ export {
   storyAutosaveErrorMessage,
 } from "./model/mediaBookSaveError";
 export { excludeKeywordError, triggerKeywordError } from "./model/keywordNoteEdit";
-export { keywordNoteRestoreDecision } from "./model/keywordNoteRestore";
+export { keywordNoteRestoreDecision } from "./model/keywordNoteRestoreDecision";
 export { mediaBookPublishErrorMessage } from "./model/mediaBookPublishErrorMessage";
 export {
   findNextIncompleteCell,
@@ -84,7 +84,7 @@ export {
 } from "./model/mediaBookProgress";
 export { toMediaBookPreviewImages } from "./model/toMediaBookPreviewImages";
 export { nextThumbnailUrlEntry, type ThumbnailUrlEntry } from "./model/stableThumbnailUrl";
-export { reconcileKeywordNotesOnStartingSetupRemoval } from "./model/reconcileKeywordNotes";
+export { reconcileKeywordNotesOnStartingSetupRemoval } from "./model/reconcileKeywordNotesOnStartingSetupRemoval";
 export { hasRuleWithMissingStat, isMissingStat } from "./model/missingStatRules";
 export {
   isSituationNoteStatNotFoundError,
@@ -105,9 +105,9 @@ export {
   COMPARISON_OPERATORS,
   countRules,
   createKeywordNote,
-  endingSchema,
+  ENDING_SCHEMA,
   hasPerTurnDelta,
-  keywordNoteSchema,
+  KEYWORD_NOTE_SCHEMA,
   LOGIC_OPERATORS,
   MAX_ALWAYS_ON_KEYWORD_NOTES,
   MAX_EXCLUDE_KEYWORDS,
@@ -123,12 +123,12 @@ export {
   MAX_SITUATION_NOTE_NAME_LENGTH,
   MAX_SITUATION_NOTE_RULES,
   MAX_SITUATION_NOTES,
-  mediaBookSchema,
+  MEDIA_BOOK_SCHEMA,
   MAX_TRIGGER_KEYWORD_LENGTH,
   MAX_TRIGGER_KEYWORDS,
   PROMPT_TEMPLATE_VALUES,
-  ruleListItemSchema,
-  shortcutSchema,
+  RULE_LIST_ITEM_SCHEMA,
+  SHORTCUT_SCHEMA,
   SITUATION_NOTE_RULE_LIMIT_MESSAGE,
   MAX_STAT_PLAYER_DESCRIPTION_LENGTH,
   MAX_STAT_RULE_CONDITION_LENGTH,
@@ -137,10 +137,10 @@ export {
   STAT_RULE_LIMIT_MESSAGE,
   STAT_RULES_REQUIRED_MESSAGE,
   STAT_RULES_WITH_COUNTER_MESSAGE,
-  startingSetupSchema,
-  statDefSchema,
-  storyBuilderSchema,
-  storySettingSchema,
+  STARTING_SETUP_SCHEMA,
+  STAT_DEF_SCHEMA,
+  STORY_BUILDER_SCHEMA,
+  STORY_SETTING_SCHEMA,
   TARGET_VALUES,
   VISIBILITY_VALUES,
   type EndingValues,
@@ -160,6 +160,6 @@ export {
   type StorySettingValues,
   type Target,
   type Visibility,
-} from "./model/schema";
+} from "./model/storyBuilderSchema";
 export { FieldLabelText } from "./ui/FieldLabelText";
 export { StatSummary } from "./ui/StatSummary";

@@ -23,6 +23,7 @@ from api.llm.pricing import call_cost
 from chat_lab.bundles import Bundle
 from chat_lab.join import JoinedRun, Turn, as_int, as_number, join_bundle, recorded_after
 from chat_lab.schemas import (
+    CONTRACT_VERSION,
     AttemptDetail,
     BackgroundDump,
     CallCostView,
@@ -653,6 +654,7 @@ def run_bundle(joined: JoinedRun, *, raw: bool) -> RunBundle:
     turns = [turn_detail(joined, turn.number, metrics=metrics) for turn in joined.turns]
     detail = run_detail(joined, metrics=metrics)
     return RunBundle(
+        contract_version=CONTRACT_VERSION,
         raw=raw,
         detail=detail if raw else detail.model_copy(update={"room_static": None}),
         metrics=metrics,

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ApiErrorObject } from "@/shared/api/client";
 
 import { mediaBookPublishErrorMessage } from "./mediaBookPublishErrorMessage";
-import type { MediaBookValues } from "./schema";
+import type { MediaBookValues } from "./storyBuilderSchema";
 
 const MEDIA_BOOK: MediaBookValues = {
   people: [{ id: "p1", name: "민아" }],

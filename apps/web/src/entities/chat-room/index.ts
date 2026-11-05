@@ -101,4 +101,4 @@ export { restoreMessages, truncateAndEdit } from "./model/truncateAndEdit";
 export { countMessagesAfter, countRepliesAfter, shouldConfirmEditTruncation } from "./model/editTruncation";
 export { dropLastMessage, restoreMessage } from "./model/dropLastMessage";
 export { stripChatNotation } from "./model/stripChatNotation";
-export { chatStreamEventSchema } from "./api/chatStream";
+export { CHAT_STREAM_EVENT_SCHEMA } from "./api/chatStream";

@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { usePublishContentMutation, type CharacterDraftContent } from "@/entities/content";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import {
-  characterBuilderSchema,
+  CHARACTER_BUILDER_SCHEMA,
   characterMissingFieldFormPath,
   characterSaveErrorMessage,
   formToServer,
@@ -150,7 +150,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
     // 옵셔널 타입으로 번진다(자동저장·미리보기 경로까지). 런타임에는 안전하다 — defaultValues
     // (serverToForm)가 이 필드들을 항상 채워 넘기고 이후 어떤 입력도 그걸 undefined로 되돌리지 않는다.
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- 위 사유(zod .default()/RHF Resolver 제네릭의 구조적 한계)
-    resolver: zodResolver(characterBuilderSchema) as Resolver<CharacterBuilderFormValues>,
+    resolver: zodResolver(CHARACTER_BUILDER_SCHEMA) as Resolver<CharacterBuilderFormValues>,
     defaultValues: serverToForm(draft),
     // 첫 오류로 가는 포커스는 `useFocusFirstError` 가 확인 목록이 선 뒤에 준다. RHF 가 검증 직후 먼저 포커스하면 목록이 서기 전
     // 자리로 스크롤돼 그 칸이 목록에 밀려 화면 밖에 남는다.
@@ -183,7 +183,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   // 탭 줄의 채움 표시, 발행을 누른 뒤 고친 칸의 오류 해제, 남은 서버 거절을 셸 한 곳에서 맞춘다.
   const checklist = usePublishChecklist({
     form,
-    schema: characterBuilderSchema,
+    schema: CHARACTER_BUILDER_SCHEMA,
     tabs: TABS,
     requiredTabIds: CHARACTER_REQUIRED_TAB_IDS,
   });
@@ -231,7 +231,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
     }
   }
 
-  // `handleSubmit`이 넘겨주는 values는 resolver(characterBuilderSchema)를 이미 통과한 파싱 결과라
+  // `handleSubmit`이 넘겨주는 values는 resolver(CHARACTER_BUILDER_SCHEMA)를 이미 통과한 파싱 결과라
   // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다.
   async function handlePublish(values: CharacterBuilderFormValues) {
     setRejectionReason(undefined);
@@ -239,7 +239,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
     checklist.reapplyServerIssues();
     // 첫 발행인데 소설 만들기 허락을 아직 고르지 않았으면 확인창 전에 막고 그 칸으로 간다(확인 목록에 한 줄이 선다).
     const permissionCheck = await novelPermissionChoice.checkBeforePublish();
-    if (permissionCheck.blocked) {
+    if (permissionCheck.isBlocked) {
       revealAndFocus(errorsAtPaths([NOVEL_PERMISSION_PATH]));
       toast.error(PUBLISH_ISSUES_TOAST);
       return;

@@ -1,6 +1,6 @@
 import type { ContentCardProps } from "@/entities/content";
 
-import type { CharacterBuilderFormValues } from "./schema";
+import type { CharacterBuilderFormValues } from "./characterBuilderSchema";
 
 type CharacterToCardContext = {
   thumbnailUrl: string | null;

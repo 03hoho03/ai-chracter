@@ -1,7 +1,7 @@
 import { isApiError } from "@/shared/api/client";
 
 import { commentErrorDetail, commentErrorMessage } from "./commentError";
-import { COMMENT_TOO_LONG_MESSAGE, type CommentFormValues } from "./schema";
+import { COMMENT_TOO_LONG_MESSAGE, type CommentFormValues } from "./commentFormSchema";
 
 type CommentFormError = { field: keyof CommentFormValues | "root"; message: string };
 

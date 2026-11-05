@@ -1,6 +1,6 @@
 import { DEFAULT_NOVEL_PERMISSION, type CharacterDraftContent } from "@/entities/content";
 
-import type { CharacterBuilderFormValues } from "./schema";
+import type { CharacterBuilderFormValues } from "./characterBuilderSchema";
 
 /**
  * `GET /contents/{id}/draft` 응답 -> 폼 defaultValues (순수 함수).

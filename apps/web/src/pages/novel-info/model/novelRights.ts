@@ -66,7 +66,7 @@ export function toNovelRightsView({ novel, source, policyV2Enabled }: NovelRight
   const isDerived = origin === "derived";
   // 방이 지워진 소설은 이미 만든 화를 읽고 고칠 수만 있고 새 화를 만들 수 없다.
   const hasRoom = novel.chatRoomId !== null;
-  const sourceUp = source.kind !== "loaded" || source.sourceAvailable;
+  const isSourceUp = source.kind !== "loaded" || source.sourceAvailable;
 
   let allowance: NovelRightsView["allowance"];
   if (source.kind !== "loaded") allowance = { kind: source.kind };
@@ -94,7 +94,7 @@ export function toNovelRightsView({ novel, source, policyV2Enabled }: NovelRight
       novel.serialLockedAt,
       novel.serialLockPermission,
       "노벨에 처음 공개되면 생겨요.",
-      isDerived && sourceUp && policyV2Enabled === true ? "원작자가 허락을 거둬도 다음 화를 이어 공개할 수 있어요." : undefined,
+      isDerived && isSourceUp && policyV2Enabled === true ? "원작자가 허락을 거둬도 다음 화를 이어 공개할 수 있어요." : undefined,
     ),
   };
 }

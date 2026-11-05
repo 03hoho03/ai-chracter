@@ -1,6 +1,6 @@
 import type { Persona } from "@/entities/persona";
 
-import type { PersonaFormValues } from "./schema";
+import type { PersonaFormValues } from "./personaFormSchema";
 
 /** 편집 폼의 초기값. 편집 폼에는 "기본으로 지정" 체크박스가 없으므로 `setAsDefault`는 쓰이지 않는다. */
 export function serverToForm(persona: Persona): PersonaFormValues {

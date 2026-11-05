@@ -10,7 +10,7 @@ import { countCommentGraphemes, uniqueComments, useCommentCandidatesQuery, type 
 import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { findCommentMentionToken } from "../model/mentionToken";
-import { COMMENT_MAX_GRAPHEMES, COMMENT_MAX_MENTIONS, COMMENT_MENTION_LIMIT_MESSAGE, type CommentFormValues } from "../model/schema";
+import { COMMENT_MAX_GRAPHEMES, COMMENT_MAX_MENTIONS, COMMENT_MENTION_LIMIT_MESSAGE, type CommentFormValues } from "../model/commentFormSchema";
 
 type CommentTextFieldProps = {
   contentId: string; viewerId: string; canMention: boolean;

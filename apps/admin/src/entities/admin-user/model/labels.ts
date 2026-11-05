@@ -87,6 +87,16 @@ export const ACTION_TYPE_LABELS = {
   "prompt-set-publish": "프롬프트 세트 게시",
   "prompt-routing-save": "모델 배정 저장",
   "prompt-routing-restore": "모델 배정 되돌리기",
+  "llm-credential-add": "Claude 자격 추가",
+  "llm-credential-update": "Claude 자격 수정",
+  "llm-credential-secret-replace": "Claude 자격 키 교체",
+  "llm-credential-reorder": "Claude 자격 순서 저장",
+  "llm-credential-enable": "Claude 자격 켜기",
+  "llm-credential-disable": "Claude 자격 끄기",
+  "llm-credential-delete": "Claude 자격 삭제",
+  "llm-credential-check": "Claude 자격 확인 호출",
+  "llm-credential-pool-on": "Claude 자격 목록 사용 켜기",
+  "llm-credential-pool-off": "Claude 자격 목록 사용 끄기",
 } satisfies Record<AdminActionType, string>;
 
 /** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 22종이다(`mission_grant`·`expire_burn`

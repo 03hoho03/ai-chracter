@@ -1,6 +1,6 @@
 import { isApiError } from "@/shared/api/client";
 
-import type { MemoryFormValues } from "./schema";
+import type { MemoryFormValues } from "./memoryFormSchema";
 
 type MemoryFormField = keyof MemoryFormValues;
 

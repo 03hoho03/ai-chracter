@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formToServer } from "./formToServer";
-import type { CharacterBuilderFormValues } from "./schema";
+import type { CharacterBuilderFormValues } from "./characterBuilderSchema";
 
 function baseFormValues(): CharacterBuilderFormValues {
   return {

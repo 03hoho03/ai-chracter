@@ -10,7 +10,7 @@ export const MY_WORK_TYPE_FILTERS = ["all", "character", "story", "unpublished"]
 
 export type MyWorkTypeFilter = (typeof MY_WORK_TYPE_FILTERS)[number];
 
-/** 정렬은 지금 최신순 하나뿐이다. 옵션을 늘리려면 이 목록·`myWorksSearchSchema`뿐
+/** 정렬은 지금 최신순 하나뿐이다. 옵션을 늘리려면 이 목록·`MY_WORKS_SEARCH_SCHEMA`뿐
  * 아니라 **`mergeMyWorks`까지** 값이 닿아야 한다 — 지금은 병합이 항상 `updatedAt` 내림차순이라
  * `sort`가 화면 표시로만 살아 있다. */
 export const MY_WORKS_SORTS = ["latest"] as const;
@@ -24,7 +24,7 @@ export { MY_WORKS_QUERY_MAX_LENGTH, normalizeMyWorksQuery };
 /** 필터·정렬은 전부 URL 서치 파라미터에 남아 새로고침·뒤로가기에서 보존된다.
  * 기본값(`all` / `latest`)은 파라미터를 **비워서** 표현한다 — `?type=all&sort=latest`가 늘 붙어 있으면
  * 공유 URL이 지저분해지는 데다 "필터가 걸려 있다"는 신호 자체가 죽는다. */
-export const myWorksSearchSchema = z.object({
+export const MY_WORKS_SEARCH_SCHEMA = z.object({
   // 기본값 멤버(`all`)는 `.exclude()`로 뺀다 — 출력 타입에 `all`이 없어야 `navigate`/`<Link>`가
   // `?type=all`을 쓸 수 없고 "부재가 곧 기본값"이 타입 수준에서 지켜진다.
   // `.catch(undefined)`는 그 반대편이다 — **읽을 때는** 모르는 값(`?type=all`·`?type=bogus`)을 거부하지
@@ -38,7 +38,7 @@ export const myWorksSearchSchema = z.object({
   q: z.string().transform(normalizeMyWorksQuery).optional().catch(undefined),
 });
 
-export type MyWorksSearch = z.infer<typeof myWorksSearchSchema>;
+export type MyWorksSearch = z.infer<typeof MY_WORKS_SEARCH_SCHEMA>;
 
 /**
  * URL의 서치 파라미터를 화면·필터·건수 라벨이 함께 보는 값으로 편다. **세 축의 기본값 규칙은 여기
