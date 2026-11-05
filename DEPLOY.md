@@ -3778,6 +3778,16 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -
 찍힌다 — 문장 오류가 암호문을 싣기 때문이다. 키를 잃었으면 그 항목은 확인 호출이 409 `secret-unreadable` 이다 — 어드민에서 키를
 다시 붙여넣는다(키 교체). 원문을 따로 두지 않았다면 콘솔에서 새 키를 발급해 넣는다.
 
+F·M 이 0 인데 종료 코드가 2 이고 `Claude 자격 목록 캐시 무효화 실패(<오류 클래스>) — 5분 기다린 뒤 옛 키를 지운다` 줄이 찍히면,
+다시 쓴 행은 그대로지만 호출 경로의 목록 캐시(Redis)에 다시 쓰기 전의 암호문(옛 키 id)이 캐시 수명(5분)까지 남는다. 그 사이 옛
+키를 빼고 교체하면 새 프로세스가 그 항목들을 복호화하지 못해 건너뛴다(모든 항목이 옛 키였으면 상위 모델 호출이 보낼 항목 없이
+실패한다). 이 줄이 찍히거나 종료 코드가 2 면 5분 기다리거나, 아래로 무효화를 다시 성공시킨 뒤(종료 코드 0) 옛 키를 지운다.
+
+```sh
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api_$(sudo bash ops/active-color.sh) \
+  python -c "import asyncio; from api.llm.credential_pool import invalidate_pool_snapshot; asyncio.run(invalidate_pool_snapshot())"
+```
+
 **되돌리기.** 1단계는 어드민 "목록 사용 끄기" 또는 env 스위치 줄 삭제 → 교체다(위 "끄기" — 오늘 경로, 행과 키는 그대로
 남는다). 이미지만 옛 판으로 되돌리면 옛 이미지는 스위치 키를 모르고 무시해(설정이 모르는 키를 버린다) env 키 경로로 돈다 —
 줄 삭제는 선택이다. 표는 옛 코드에 보이지 않은 채 남는다. downgrade 는 세 표를 지워 저장한 키의 암호문이 함께 사라진다 — 다시

@@ -179,22 +179,38 @@ async def test_reencrypt_runner_invalidates_the_snapshot(
     capsys.readouterr()
 
 
-async def test_reencrypt_runner_reports_an_invalidation_failure_without_changing_the_exit_code(
-    db_session: AsyncSession, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("unreadable", "expected"),
+    [pytest.param(False, 2, id="only-the-invalidation-failed"), pytest.param(True, 1, id="with-an-unreadable-row")],
+)
+async def test_reencrypt_runner_exits_with_its_own_code_when_the_invalidation_fails(
+    db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    unreadable: bool,
+    expected: int,
 ) -> None:
-    """무효화가 실패해도 다시 쓴 행은 그대로이고 종료 코드도 그대로다 — 회전 중에는 옛 키가 키링에 남아 옛 암호문도 읽히고,
-    캐시는 수명이 다하면 저절로 맞춰진다. 오류 클래스 이름만 한 줄 찍는다."""
+    """무효화가 실패하면 다시 쓴 행은 그대로지만 종료 코드가 2 이고 따로 한 줄을 찍는다 — 런타임 캐시에 옛 키 id 의 암호문을 든
+    스냅숏이 캐시 수명(5분)까지 남아, 그 사이 옛 키를 빼고 교체하면 새 프로세스가 그 스냅숏의 항목을 하나도 읽지 못한다. 행이
+    실패했거나 건너뛰었으면 옛 키를 아예 지우면 안 되므로 1 이 앞선다. 오류 문장(주소 등)은 찍지 않고 클래스 이름만 찍는다."""
 
     class _Broken:
         async def incr(self, *args: Any) -> int:
             raise RedisConnectionError("redis is down at redis://secret-host")
 
     await _stored(db_session, _FIRST_KEY, "old")
+    if unreadable:
+        await _stored(db_session, _LOST_KEY, "lost")
     monkeypatch.setattr(credential_pool, "redis_client", _Broken())
 
     code = await credential_reencrypt.run(_factory(db_session))
 
-    assert code == 0
+    assert code == expected
     captured = capsys.readouterr()
-    assert captured.out.strip() == "Claude 자격 재암호화: 1행, 쓰기 실패 0행, 복호화할 수 없어 건너뜀 0행"
-    assert captured.err.strip() == "자격 목록 캐시 무효화 실패 — 5분 안에 저절로 맞춰진다 (ConnectionError)"
+    assert captured.out.strip() == (
+        f"Claude 자격 재암호화: 1행, 쓰기 실패 0행, 복호화할 수 없어 건너뜀 {int(unreadable)}행"
+    )
+    assert captured.err.strip() == (
+        "Claude 자격 목록 캐시 무효화 실패(ConnectionError) — 5분 기다린 뒤 옛 키를 지운다"
+    )
+    assert "secret-host" not in captured.err
