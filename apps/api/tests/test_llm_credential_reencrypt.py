@@ -211,6 +211,6 @@ async def test_reencrypt_runner_exits_with_its_own_code_when_the_invalidation_fa
         f"Claude 자격 재암호화: 1행, 쓰기 실패 0행, 복호화할 수 없어 건너뜀 {int(unreadable)}행"
     )
     assert captured.err.strip() == (
-        "Claude 자격 목록 캐시 무효화 실패(ConnectionError) — 5분 기다린 뒤 옛 키를 지운다"
+        "Claude 자격 목록 캐시 무효화 실패(ConnectionError) — 5분 안에는 옛 키를 지우지 않는다"
     )
     assert "secret-host" not in captured.err
