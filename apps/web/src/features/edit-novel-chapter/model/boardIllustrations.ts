@@ -125,14 +125,12 @@ export function toActiveMove({
   revision,
 }: {
   isIllustrationsOn: boolean;
-  moving: MovingIllustration | null;
+  moving: MovingIllustration | undefined;
   revision: BoardRevision;
-}): BoardIllustration | null {
-  if (!isIllustrationsOn || moving === null || moving.revisionId !== revision.id) return null;
-  return (
-    [...(revision.illustrations ?? []), ...(revision.unplacedIllustrations ?? [])].find(
-      (item) => item.id === moving.illustrationId,
-    ) ?? null
+}): BoardIllustration | undefined {
+  if (!isIllustrationsOn || moving === undefined || moving.revisionId !== revision.id) return undefined;
+  return [...(revision.illustrations ?? []), ...(revision.unplacedIllustrations ?? [])].find(
+    (item) => item.id === moving.illustrationId,
   );
 }
 

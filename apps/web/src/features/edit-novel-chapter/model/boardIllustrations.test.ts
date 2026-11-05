@@ -171,7 +171,7 @@ describe("toActiveMove", () => {
   it("판이 바뀌었으면 옮기는 중이 아니다", () => {
     expect(
       toActiveMove({ isIllustrationsOn: true, moving: { illustrationId: "a", revisionId: "r0" }, revision: current }),
-    ).toBeNull();
+    ).toBeUndefined();
   });
 
   it("그 판에 없는 그림이면 옮기는 중이 아니다", () => {
@@ -181,13 +181,13 @@ describe("toActiveMove", () => {
         moving: { illustrationId: "gone", revisionId: "r1" },
         revision: current,
       }),
-    ).toBeNull();
+    ).toBeUndefined();
   });
 
   it("스위치가 꺼졌으면 옮기는 중이 아니다", () => {
     expect(
       toActiveMove({ isIllustrationsOn: false, moving: { illustrationId: "a", revisionId: "r1" }, revision: current }),
-    ).toBeNull();
+    ).toBeUndefined();
   });
 });
 
