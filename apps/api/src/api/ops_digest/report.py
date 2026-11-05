@@ -8,15 +8,18 @@ KST 하루(기본 어제)의 운영 숫자를 Discord 메시지로 만든다.
   차감 사용처 기록도 없는 회원 — 사용처 기록은 방을 지워도 남아, 방 삭제로 옛 턴이 사라진 회원을 다시 첫 대화로 세지 않는다),
   활성 회원(그날 턴이 하나 이상), 턴 수(보내기·수정·재생성). 턴은 실행 시각에 남아 있는 기록만 센다 — 탈퇴·방 삭제·초기화가
   그 방의 턴을 지운다.
-- 돈: 결제(결제 완료 시각 기준 건수·원), 환불(취소 성공 시각 기준 건수·원), 클로버 차감을 로트 등급(유료·보너스·무료)으로 나눈
-  합과 환급 합. 원과 클로버는 더하지 않는다 — 보너스·부가세 때문에 클로버 수는 매출이 아니다. 환급을 빼 순소비로 내지 않는 것은
-  환급 대부분이 실패 턴이라 그 수 자체가 장애 신호이기 때문이다.
+- 돈: 결제(결제 완료 시각 기준 건수·원), 환불(취소 성공 시각 기준 건수·원), 그날 새로 생긴 검증 불일치 결제(포트원 결제가 주문과
+  맞지 않아 지급하지 않은 결제 — 불일치로 넘어간 시각 기준 건수), 클로버 차감을 로트 등급(유료·보너스·무료)으로 나눈 합과 환급
+  합. 원과 클로버는 더하지 않는다 — 보너스·부가세 때문에 클로버 수는 매출이 아니다. 환급을 빼 순소비로 내지 않는 것은 환급
+  대부분이 실패 턴이라 그 수 자체가 장애 신호이기 때문이다.
 - LLM 추정 원가: Redis 일 집계(`llm/usage_store.py`) 하나로 호출 위치·모델별 원가와 합계. 집계에 사용자 단위가 없어 실사용자와
   내부를 나눌 수 없다. 🔴 턴 기록(`chat_turns`)의 원가와 더하지 않는다 — 일 집계가 그 호출도 같은 자리에서 세므로 더하면 두 번
   들어간다. 같은 이유로 턴 기록 기준인 채팅 원가 비율도 싣지 않는다(원가 비율 크론이 매일 따로 보고한다). Redis 를 읽지 못하면 이
   항목만 "읽지 못함"으로 싣고 나머지는 보낸다.
 - 처리 대기: 실행 시각의 누적이다(어드민 대기열과 같은 조건 — 요약을 보고 연 화면의 숫자와 같아야 한다). `--date` 로 지난 날을 다시
-  돌려도 지금 값이다.
+  돌려도 지금 값이다. 결제는 탈퇴 회원 결제만 센다 — 운영자가 포트원 콘솔에서 전액 환불하면 취소 웹훅이 상태를 바꿔 대기에서
+  빠진다. 검증 불일치 결제는 처리해도 상태가 그대로라(결제 동기화가 이미 끝난 주문으로 보고 손대지 않는다) 대기로 세면 숫자가
+  줄지 않아, 돈 항목에서 넘어간 날 한 번만 싣는다.
 - 감시 조건: `watch.py`. 충족한 것만 끝에 한 줄씩.
 
 실사용자와 내부는 레이트리밋 면제(`users.rate_limit_exempt`)로 가른다 — 면제 아닌 계정이 실사용자이고, 면제 여부는 실행 시각의
@@ -97,6 +100,7 @@ class Group:
     payments_krw: int = 0
     refunds: int = 0
     refunds_krw: int = 0
+    mismatches: int = 0
     spent: Counter[str] = field(default_factory=Counter)
     refunded: Counter[str] = field(default_factory=Counter)
 
@@ -110,7 +114,7 @@ class Pending:
     appeals: int
     novel_first_reviews: int
     refunds_in_progress: int
-    manual_payments: int
+    withdrawn_refunds: int
     payout_applications: int
 
 
@@ -215,6 +219,17 @@ async def load_groups(session: AsyncSession, start: datetime, end: datetime) -> 
     ):
         groups[flag].refunds, groups[flag].refunds_krw = refunds, krw
 
+    # 불일치로 넘어간 뒤 `updated_at` 을 바꾸는 경로가 없어(모델에 자동 갱신이 없고, 결제 동기화는 불일치 주문을 이미 끝난 주문으로
+    # 보고 그대로 두며, 어드민 환불은 지급한 주문만 받는다) 그 칸이 불일치로 넘어간 시각이다.
+    for flag, mismatches in await session.execute(
+        select(exempt, func.count())
+        .select_from(Payment)
+        .join(User, User.id == Payment.user_id)
+        .where(Payment.status == "mismatch", in_day(Payment.updated_at))
+        .group_by(exempt)
+    ):
+        groups[flag].mismatches = mismatches
+
     # 차감 배분 행은 차감에만 생기고(회수·소멸은 남기지 않는다) 시각이 없어, 시각은 그 차감의 원장 행에서 읽는다.
     for flag, grade, spent in await session.execute(
         select(exempt, _GRADE, func.sum(CloverSpendAllocation.amount))
@@ -281,9 +296,8 @@ async def load_pending(session: AsyncSession) -> Pending:
             session,
             select(func.count()).select_from(PaymentCancellation).where(PaymentCancellation.status == "requested"),
         ),
-        manual_payments=await _count(
-            session,
-            select(func.count()).select_from(Payment).where(Payment.status.in_(("mismatch", "owner_withdrawn"))),
+        withdrawn_refunds=await _count(
+            session, select(func.count()).select_from(Payment).where(Payment.status == "owner_withdrawn")
         ),
         payout_applications=await _count(
             session,
@@ -340,6 +354,7 @@ def _money_block(digest: Digest) -> list[str]:
     def line(name: str, group: Group) -> str:
         return (
             f"{name}: 결제 {group.payments:,}건 {group.payments_krw:,}원 · 환불 {group.refunds:,}건 {group.refunds_krw:,}원"
+            f" · 새 검증 불일치 {group.mismatches:,}건"
             f" · 클로버 차감 {group.spent.total():,}({_breakdown(group.spent, _GRADES)})"
             f" · 환급 {group.refunded.total():,}({_breakdown(group.refunded, _GRADES)})"
         )
@@ -348,6 +363,7 @@ def _money_block(digest: Digest) -> list[str]:
         "[돈] 결제·환불은 원(부가세 포함), 클로버는 개수 — 둘을 더하지 않는다",
         line("실사용자", digest.real),
         line("내부", digest.internal),
+        "새 검증 불일치 = 그날 포트원 결제가 주문과 맞지 않아 지급하지 않은 결제 — 처리해도 상태가 남아 처리 대기에는 세지 않는다",
     ]
 
 
@@ -394,7 +410,7 @@ def _pending_block(pending: Pending) -> list[str]:
         "[처리 대기] 실행 시각 기준 누적 — --date 로 지난 날을 다시 돌려도 지금 값이다",
         "신고: " + " · ".join(f"{name} {count:,}" for name, count in pending.reports.items()),
         f"문의 {pending.inquiries:,} · 이의제기 {pending.appeals:,} · 노벨 첫 공개 승인 {pending.novel_first_reviews:,}",
-        f"진행 중 환불 {pending.refunds_in_progress:,} · 수동 처리 결제 {pending.manual_payments:,}"
+        f"진행 중 환불 {pending.refunds_in_progress:,} · 탈퇴 회원 결제 환불 대기 {pending.withdrawn_refunds:,}"
         f" · 크리에이터 정산 신청 {pending.payout_applications:,}",
     ]
 

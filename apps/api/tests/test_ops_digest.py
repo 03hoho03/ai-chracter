@@ -79,7 +79,7 @@ _EMPTY = report.Digest(
         appeals=0,
         novel_first_reviews=0,
         refunds_in_progress=0,
-        manual_payments=0,
+        withdrawn_refunds=0,
         payout_applications=0,
     ),
     llm=[],
@@ -193,12 +193,28 @@ async def test_money_splits_real_from_internal_by_grade_and_by_success(db_sessio
     assert (internal.payments, internal.payments_krw, internal.refunds) == (1, 4_900, 0)
 
 
+async def test_new_mismatches_count_payments_flagged_that_day(db_session: AsyncSession) -> None:
+    """불일치로 넘어간 시각(`updated_at`)이 그날인 결제만 센다 — 그 뒤로 상태도 시각도 바뀌지 않아, 날짜 없이 세면 처리한
+    건까지 매일 다시 나온다. 그날 바뀐 다른 상태의 결제는 세지 않는다."""
+    buyer = await _member(db_session)
+    staff = await _member(db_session, exempt=True)
+    for at in (kst(10, 21), kst(10, 21, 23, 59, 59), kst(10, 20, 23, 59, 59), kst(10, 22), kst(10, 22, 8, 59, 59)):
+        await _make_payment(db_session, user_id=buyer.id, status="mismatch", updated_at=at)
+    await _make_payment(db_session, user_id=buyer.id, status="owner_withdrawn", updated_at=kst(10, 21, 12))
+    await _make_payment(db_session, user_id=staff.id, status="mismatch", updated_at=kst(10, 21, 12))
+
+    real, internal = await report.load_groups(db_session, *report.day_window(_DAY))
+
+    assert (real.mismatches, internal.mismatches) == (2, 1)
+
+
 def test_a_day_without_payments_reports_zero_won() -> None:
     blocks = report.build_blocks(_digest())
 
     money = next(block for block in blocks if block[0].startswith("[돈]"))
     assert money[1] == (
-        "실사용자: 결제 0건 0원 · 환불 0건 0원 · 클로버 차감 0(유료 0·보너스 0·무료 0) · 환급 0(유료 0·보너스 0·무료 0)"
+        "실사용자: 결제 0건 0원 · 환불 0건 0원 · 새 검증 불일치 0건"
+        " · 클로버 차감 0(유료 0·보너스 0·무료 0) · 환급 0(유료 0·보너스 0·무료 0)"
     )
 
 
@@ -275,6 +291,8 @@ def test_only_the_costliest_rows_are_listed_and_the_rest_are_summed() -> None:
 
 # ── 처리 대기 ───────────────────────────────────────────────────────────────────
 async def test_pending_counts_only_rows_still_waiting(db_session: AsyncSession) -> None:
+    """검증 불일치 결제는 운영자가 처리해도 상태가 그대로라 대기로 세면 끝없이 쌓인다 — 환불하면 취소 웹훅이 상태를 바꾸는
+    탈퇴 회원 결제만 센다."""
     before = await report.load_pending(db_session)
     reporter = await _member(db_session)
     content = await _make_draft_content(db_session, creator_user_id=reporter.id)
@@ -302,7 +320,7 @@ async def test_pending_counts_only_rows_still_waiting(db_session: AsyncSession) 
 
     assert after.reports["작품"] - before.reports["작품"] == 1
     assert after.refunds_in_progress - before.refunds_in_progress == 1
-    assert after.manual_payments - before.manual_payments == 2
+    assert after.withdrawn_refunds - before.withdrawn_refunds == 1
     assert after.payout_applications - before.payout_applications == 1
 
 

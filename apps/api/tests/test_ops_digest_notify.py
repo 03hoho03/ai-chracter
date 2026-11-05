@@ -39,7 +39,7 @@ def _rendered(*, dry_run: bool) -> str:
             appeals=0,
             novel_first_reviews=0,
             refunds_in_progress=0,
-            manual_payments=0,
+            withdrawn_refunds=0,
             payout_applications=0,
         ),
         llm=[
