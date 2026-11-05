@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { toast } from "sonner";
 
 import { useSaveNovelBoardLayoutMutation, type NovelBoardViewport } from "@/entities/novel";
@@ -75,10 +75,17 @@ export function useBoardLayoutSave({ novelId, maxBytes, read, canSave }: UseBoar
     timerRef.current = setTimeout(flush, SAVE_DELAY_MS);
   }
 
+  // `schedule` 은 렌더마다 새 함수라 의존성에 넣으면 렌더마다 effect 가 돌아, 들고 있는 저장이 나가기 전 렌더마다 타이머를 다시
+  // 건다 — effect 를 돌린 렌더의 것을 부른다.
+  const scheduleHeldSave = useEffectEvent(() => schedule());
   useEffect(() => {
-    if (canSave && hasHeldSaveRef.current) schedule();
+    if (canSave && hasHeldSaveRef.current) scheduleHeldSave();
     // 들고 있던 저장을 보낼 시점은 저장해도 되게 된 순간이다.
   }, [canSave]);
+
+  // 떠나는 순간 마지막 렌더의 `flush` 를 부른다. 노드·화면 위치·저장 가능 여부는 ref 로 읽고 소설 id 는 이 보드가 떠 있는 동안
+  // 같아, 어느 렌더의 것을 불러도 달라지는 것은 크기 상한(`maxBytes`)이 지금 값이라는 것뿐이다.
+  const flushOnLeave = useEffectEvent(() => flush());
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -87,9 +94,9 @@ export function useBoardLayoutSave({ novelId, maxBytes, read, canSave }: UseBoar
       toast.dismiss(SAVE_FAILED_TOAST_ID);
       if (timerRef.current === undefined) return;
       clearTimeout(timerRef.current);
-      flush();
+      flushOnLeave();
     };
-    // 떠날 때 한 번만 돈다. `flush` 는 ref 로 지금 값을 읽는다.
+    // 떠날 때 한 번만 돈다.
   }, []);
 
   return { schedule };

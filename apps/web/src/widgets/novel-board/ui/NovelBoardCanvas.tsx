@@ -17,7 +17,7 @@ import {
 } from "@xyflow/react";
 import { useAtomValue } from "jotai";
 import { Maximize, Minus, Plus } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 
 import type { NovelBoardLayout } from "@/entities/novel";
 import { themeAtom } from "@/shared/model/theme";
@@ -171,13 +171,15 @@ function BoardFlow({ novelId, model, savedLayout, maxBytes, canSave, selectedNod
   // 캔버스 밖에서 고른 카드(목록 링크·뒤로 가기·새 화 완성)가 화면 밖이면 그 카드로 순간 이동한다. 캔버스 안에서 고른
   // 카드는 이미 보이는 자리라 옮기지 않고, 그 표시는 한 번 쓰고 비운다 — 남겨 두면 나중에 밖에서 같은 카드를 다시
   // 골랐을 때 옮기지 않는다.
+  // 캔버스 크기·화면 위치는 고른 카드가 바뀐 렌더의 값을 읽는다 — 그 값이 바뀌어도 다시 옮기지 않는다.
+  const revealSelectedNode = useEffectEvent((nodeKey: string) => revealNode(nodeKey));
   useEffect(() => {
     if (selectedNodeKey === undefined) return;
     if (selectedNodeKey === canvasSelectedKeyRef.current) {
       canvasSelectedKeyRef.current = undefined;
       return;
     }
-    revealNode(selectedNodeKey);
+    revealSelectedNode(selectedNodeKey);
     // 옮길 시점은 고른 카드가 바뀐 순간이다.
   }, [selectedNodeKey]);
 
