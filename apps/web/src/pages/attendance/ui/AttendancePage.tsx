@@ -33,7 +33,7 @@ export function AttendancePage() {
   // 출석판은 늘 열려 있어 로그인 회원은 가격 응답과 무관하게 판을 묻는다 — 판정 규칙은 `toAttendanceView` 머리 주석.
   const boardQuery = useAttendanceBoardQuery({ enabled: isLoggedIn });
 
-  const [justClaimedSeq, setJustClaimedSeq] = useState<number | null>(null);
+  const [justClaimedSeq, setJustClaimedSeq] = useState<number | undefined>(undefined);
   // 수령 결과로 포커스가 있던 자리가 사라졌을 때 옮겨 갈 곳. 그 자리가 그려지는 첫 렌더에서 한 번만 쓰고 비운다 — 그 사이 다른
   // 자리가 몇 번 다시 그려져도 엉뚱한 곳이 포커스를 가져가지 않게 대상을 함께 적어 둔다.
   const pendingFocusRef = useRef<ClaimFocusTarget | null>(null);
@@ -104,14 +104,14 @@ export function AttendancePage() {
   );
 }
 
-function lastClaimedSeq(board: AttendanceBoardData): number | null {
+function lastClaimedSeq(board: AttendanceBoardData): number | undefined {
   const claimed = board.cells.filter((cell) => cell.status === "claimed");
-  return claimed[claimed.length - 1]?.seq ?? null;
+  return claimed[claimed.length - 1]?.seq;
 }
 
 type AttendanceBodyProps = {
   view: Exclude<AttendanceView, { kind: "notFound" }>;
-  justClaimedSeq: number | null;
+  justClaimedSeq: number | undefined;
   recentRoomId: string | undefined;
   focusRef: (target: ClaimFocusTarget) => (node: HTMLElement | null) => void;
   onClaim: (board: AttendanceBoardData) => void;
@@ -128,7 +128,7 @@ function AttendanceBody({ view, justClaimedSeq, recentRoomId, focusRef, onClaim,
           <p className="text-sm font-semibold text-foreground">{formatGuestTotal(view.rewards)}</p>
           <AttendanceBoard
             cells={view.rewards.map((amount, index) => ({ seq: index + 1, amount, status: "upcoming" }))}
-            justClaimedSeq={null}
+            justClaimedSeq={undefined}
           />
           <Button asChild size="lg" className="h-11 w-full self-start sm:w-auto">
             <Link to="/login" search={{ redirect: "/attendance" }}>
@@ -165,7 +165,7 @@ function AttendanceBody({ view, justClaimedSeq, recentRoomId, focusRef, onClaim,
             todayCell={board.cells.find((cell) => cell.status === "today")}
             onClaim={() => onClaim(board)}
             recentRoomId={recentRoomId}
-            isJustClaimed={justClaimedSeq !== null}
+            isJustClaimed={justClaimedSeq !== undefined}
             focusRef={focusRef}
           />
         </>
