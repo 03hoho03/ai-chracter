@@ -2300,10 +2300,14 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
   채팅 줄을 물려받아 뜬다(전에는 Bedrock 으로 풀려 기동이 거부됐다).
 
 **공급자 경로.** 상위 모델 호출이 어느 공급자로 가는지는 호출 위치마다 정한다. 코드 기본 경로는 AWS Bedrock 이고,
-`LLM_CALL_SITE_BACKENDS` 에 배정한 호출 위치만 Anthropic API 직결(`ANTHROPIC_DIRECT_API_KEY`)로 간다. 운영은 채팅
+`LLM_CALL_SITE_BACKENDS` 에 배정한 호출 위치는 Anthropic API 직결(`ANTHROPIC_DIRECT_API_KEY`)로 간다. 운영은 채팅
 턴(`chat_generate`)·측정용 리플레이(`replay_generate`)·소설 장(`novelize_chapter`)을 모두 `anthropic` 에 배정해 두었고
 **이 배정을 유지한다** — 배정을 빼면 그 호출의 Opus 가 코드 기본 경로인 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가
-없으면 api 가 기동을 거부한다. 이 절은 운영 경로(직결)를 기준으로 적는다. Bedrock 으로 보낼 때의 키는 env 표의 `BEDROCK_*`
+없으면 api 가 기동을 거부한다. 소설 정본 기억은 이 배정 줄 없이 직결로 간다 — `NOVEL_BIBLE_ADAPTERS` 로 Claude 어댑터
+(`haiku`·`sonnet`)를 배정한 연산은 호출 정책 표(`apps/api/src/api/llm/call_policy.py`)가 정한 대로 Anthropic 직결로 부르고, 기본
+배정(Gemini)인 연산은 Anthropic 을 부르지 않는다. 정본 기억 호출 위치(`novel_bible_*`)에 Claude 구현 배정 줄을 두면 api 와
+소설화 워커가 기동하지 않는다(키·기동 검사는 env 표 `NOVEL_BIBLE_ADAPTERS` 행).
+이 절은 운영 경로(직결)를 기준으로 적는다. Bedrock 으로 보낼 때의 키는 env 표의 `BEDROCK_*`
 행이다 — Bedrock 모델 호출만 허용한 전용 IAM 사용자 키를 쓰고, R2 키(`AWS_ACCESS_KEY_ID` 등)를 재사용하거나 그 줄을 고치지
 않으며, Bedrock 계정 설정에서 모델 호출 로깅(model invocation logging)이 꺼져 있는지 먼저 본다.
 
@@ -3719,6 +3723,64 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -
 3. 어드민에서 **항목마다 확인 호출**을 한다(새 id 로 나간다, 항목마다 분당 1회). 목록의 확인 칸에 지금 id 가 아닌 기록이
    남은 축이 없는지 본다.
 4. 목록 사용을 켠다 — 덮이지 않은 축이 있으면 409 `pool-uncovered` 와 그 축 목록이다. 그 축을 받는 항목을 확인하거나 켠다.
+
+### 3-22. 일일 운영 요약 — digest cron
+
+매일 KST 09:00 에 KST 어제 하루의 운영 숫자를 Discord(`ops/notify.py` 채널)로 보낸다. 항목은 다섯이다 — 사용자 활동(가입·첫
+대화·활성 회원·턴 수 보내기/수정/재생성), 돈(결제·환불 건수와 원, 그날 새로 생긴 검증 불일치 결제 건수, 클로버 차감
+유료/보너스/무료와 환급), LLM 추정 원가(Redis 일 집계의 호출 위치·모델별 원가와 합계), 처리 대기(신고 다섯 종류·문의·이의제기·
+노벨 첫 공개 승인·진행 중 환불·탈퇴 회원 결제 환불 대기·크리에이터 정산 신청), 충족한 감시 조건(실사용자가 생기면 할 일 가운데
+DB 로 판정할 수 있는 것, `api/ops_digest/watch.py`). 검증 불일치 결제(포트원 결제가 주문과 맞지 않아 지급하지 않은 결제)는
+운영자가 처리해도 상태가 바뀌지 않아 처리 대기로 세면 숫자가 줄지 않는다 — 그래서 대기가 아니라 불일치로 넘어간 날 돈 항목에
+한 번 싣는다. 탈퇴 회원 결제는 운영자가 포트원 콘솔에서 전액 환불하면 취소 웹훅이 상태를 바꿔 대기에서 빠진다.
+사용자 활동과 돈은 **실사용자(레이트리밋 면제가 아닌 계정)와 내부(면제 계정)를 나눠** 싣는다 — 면제 여부는 실행 시각의 값이라,
+어제 만든 시험 계정을 아직 면제로 바꾸지 않았으면 실사용자로 셈된다. LLM 원가는 집계에 사용자 단위가 없어 합계 하나다. 그
+원가는 턴 기록 원가와 더하지 않고, 채팅 원가 비율은 싣지 않는다(위 "채팅 원가 비율 일일 리포트" 절이 매일 따로 보낸다). 건수와
+금액만 싣고 회원·주문을 알아볼 정보는 싣지 않는다. 자동 조치는 없다.
+
+**처리 대기와 누적 감시 조건은 실행 시각의 값이다** — `--date` 로 지난 날을 다시 돌려도 그날이 아니라 지금 대기 수가 나온다(나머지
+항목은 그날 값). 턴 수는 실행 시각에 남은 기록만 센다 — 그 사이 탈퇴·방 삭제·초기화가 지운 턴은 빠지고 원장 차감은 남는다.
+
+"채팅 원가 비율 일일 리포트 — report cron" 절처럼 **서빙 중인 api 컨테이너 안에서** `python -m api.ops_digest` 를 돈다(모델·단가표·
+사용량 집계 읽기가 앱 코드에 있다). 읽기 전용 트랜잭션에서 SELECT 만 하고 LLM 을 부르지 않는다. 래퍼 `ops/daily-digest.sh` 는 그
+절의 래퍼와 같은 꼴(`ops/active-color.sh` 로 색 고르기, `.env` 에서 `DISCORD_WEBHOOK_URL` 하나만 읽기, 실패는 고정 문구)이고,
+다른 점은 보내는 것 하나다 — 마지막 줄이 아니라 출력 전체를 알림 모듈의 표준입력으로 넘기고, 알림 모듈이 `📊 일일 운영 요약`
+으로 시작하는 머리 줄마다 한 통씩 보낸다. 한 통이 Discord 상한(2000자)을 넘으면 요약이 항목 경계에서 여러 통으로 나눠 낸다(머리
+끝 `(1/2)`). 인자는 요약으로 그대로 넘긴다 — `--date YYYY-MM-DD`(KST, 기본 어제), `--dry-run`(머리 앞에 `[dry-run]` 을 붙여
+보내지 않는다). Redis 를 읽지 못한 날은 LLM 항목만 "읽지 못함"으로 오고 나머지는 보낸다. 출력은 `/var/log/ddona-daily-digest.log`
+에 쌓이고 `ops/logrotate.d/ddona-cron` 글롭이 회전한다.
+
+**최초 1회 — 심볼릭 링크 설치**(운영 쓰기라 사용자 승인 뒤에 한다. 병합·배포만으로는 크론이 돌지 않는다 — 이 링크를 놓기 전까지
+운영 동작은 바뀌지 않는다).
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/daily-digest.sh /opt/ddona/daily-digest.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-daily-digest /etc/cron.d/ddona-daily-digest
+```
+
+알림 모듈은 다른 크론과 같은 `/opt/ddona/scripts`(저장소 `apps/api/scripts` 링크)의 `ops.daily_digest_notify` 다.
+
+**검증**:
+
+```sh
+# 1. 링크를 놓기 전에 수동 dry-run 1회 — 정상 종료와 본문을 확인한다(수동 실행은 로그 파일이 아니라 화면에 찍힌다). 정상 종료하면
+#    알림은 가지 않는다(실패하면 래퍼의 실패 알림은 간다).
+#    🔴 끝의 "[감시 조건]" 줄이 "충족 없음" 인지 본다. 운영에는 면제가 아닌 시험·결제 심사용 계정이나 운영자 계정이 있을 수 있어,
+#    설치하자마자 참인 조건은 매일 같은 줄을 다시 싣는다. 이미 참인 조건이 있으면 그 계정을 면제로 바꿀지, 조건을 기준 시각 뒤만
+#    세게 바꿀지 정한 뒤 링크를 놓는다. 실사용자 가입 조건의 기준 시각은 `api/ops_digest/watch.py` 의 `REAL_SIGNUP_BASELINE` 이다.
+sudo -u root /opt/ddona/app/ops/daily-digest.sh --dry-run
+
+# 2. 다음 00:00 UTC(KST 09:00)에 크론이 실제로 도는지
+tail -f /var/log/ddona-daily-digest.log
+```
+
+실패 알림을 받은 날은 그날을 다시 돌린다(`sudo -u root /opt/ddona/daily-digest.sh --date YYYY-MM-DD`) — 이 실행은 실제로 보낸다.
+매일 오는 요약이 안 오면 그 자체가 실패 신호다(healthchecks ping 은 붙이지 않았다).
+
+**끄기**: `sudo rm /etc/cron.d/ddona-daily-digest`. 래퍼 링크(`/opt/ddona/daily-digest.sh`)는 크론이 없으면 불리지 않아 남겨도 된다.
+
+⚠️ 00:00 UTC — 다른 크론(05:00·06:00·15:05·15:50·16:35·17:35·18:00 UTC, 매시 17분)과 겹치지 않고, 5분마다 도는 가벼운 자원 점검과만
+겹친다. 배포 교체와 겹치면 그날은 실패 알림이 오고, 위처럼 `--date` 로 다시 돌린다.
 
 ## 4. 배포 후 스모크 검증
 
