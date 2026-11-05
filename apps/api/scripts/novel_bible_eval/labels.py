@@ -165,9 +165,10 @@ body{margin:0 auto;max-width:760px;padding:16px;background:var(--bg);color:var(-
 .claim{border-top:1px solid var(--line);padding:12px 0}.meta{color:var(--muted);font-size:12px}
 blockquote{margin:6px 0;padding-left:10px;border-left:3px solid var(--line)}textarea{width:100%;box-sizing:border-box}
 label{margin-right:12px}button{font:inherit;padding:6px 12px}
+.warn{border:2px solid currentColor;padding:8px 12px;font-weight:600}
 </style></head><body>
 <h1>정본 기억 라벨 시트</h1>
-<p class="meta">주장마다 판정 하나와 인용마다 받침 여부를 고른다. 작업 중 값은 이 브라우저에만 남는다. 끝나면 결과를 내려받는다.</p>
+__WARNING__<p class="meta">주장마다 판정 하나와 인용마다 받침 여부를 고른다. 작업 중 값은 이 브라우저에만 남는다. 끝나면 결과를 내려받는다.</p>
 <div id="sheet"></div>
 <button id="download" type="button">결과 JSON 내려받기</button>
 <script type="application/json" id="claims">__CLAIMS__</script>
@@ -248,9 +249,16 @@ def write_sheet(
     embedded = json.dumps(rows, ensure_ascii=False).replace("</", "<\\/")
     sheet_id = hashlib.sha256("".join(claim.id for claim in shuffled).encode()).hexdigest()[:12]
     out_dir.mkdir(parents=True, exist_ok=True)
+    stopped = sum(reason is not None for reason in halted.values())
+    # 시트는 어댑터를 드러내지 않으므로 몇 개가 모자란지만 적는다 — 라벨 전에 다시 추출할지 정하기엔 그것으로 넉넉하다.
+    warning = (
+        f'<p class="warn">추출 {len(halted)}개 중 {stopped}개가 멈췄거나 요청한 화보다 적게 끝났다 — 그 추출의 핵심 사실 정밀도는 '
+        "판정 불가가 된다. 라벨을 시작하기 전에 다시 추출할지 정한다(어느 추출인지는 sheet 명령의 표준 오류와 열쇠에 있다).</p>\n"
+        if stopped else ""
+    )
     sheet = out_dir / "sheet.html"
-    sheet.write_text(_SHEET.replace("__CLAIMS__", embedded).replace("__SHEET_ID__", html.escape(sheet_id)),
-                     encoding="utf-8")
+    page = _SHEET.replace("__WARNING__", warning).replace("__CLAIMS__", embedded)
+    sheet.write_text(page.replace("__SHEET_ID__", html.escape(sheet_id)), encoding="utf-8")
     key = out_dir / "claims-key.json"
     written = {
         "halted": dict(halted),

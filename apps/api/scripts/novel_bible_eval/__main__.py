@@ -2,11 +2,14 @@
 
 - `synthetic`: 합성 세트를 심고 확정·처리해 실행 폴더에 보고서(JSON·마크다운)와 결과(`outcomes.json`)를 쓴다.
 - `copy-text`: 텍스트 파일 폴더(사람 라벨 원고)에서 어댑터마다 새 소설 사본을 만들고 어댑터 → 소설 id 를 `copies.json` 에 쓴다.
+  그 파일이 이미 있으면 `--add` 없이는 거절한다(덮으면 다른 어댑터의 사본 id 가 사라진다). 문단이 하나뿐인 화는 경고한다.
 - `extract`: 사람 라벨용 소설 사본의 앞 화들을 확정해 그 어댑터의 결과를 쓴다. 이미 정본 기억 확정이 있는 소설은 거절한다 —
   같은 소설로 두 번째 어댑터를 돌리면 확정 입구가 같은 개정을 그대로 돌려 첫 어댑터의 작업을 모으고, 오류 없이 틀린 결과가 된다.
   결과 파일의 `halted` 칸에 멈춤·끊김 까닭, 또는 검사까지 끝난 확정이 요청한 화 수보다 적다는 것을 적는다(끝까지 돌았으면
-  null) — 나중에 결과 파일만 보는 사람도 앞 화 일부만 담긴 결과인지 안다. 시도 기록·원가·막힌 화도 함께 싣는다.
-- `sheet`: 어댑터들의 `extract` 결과를 합쳐 라벨 시트와 열쇠를 쓴다. 결과 파일의 `halted` 와 추출 요약은 열쇠로 옮긴다.
+  null) — 나중에 결과 파일만 보는 사람도 앞 화 일부만 담긴 결과인지 안다. 시도 기록·원가·막힌 화도 함께 싣는다. 화가 모자라면
+  표준 오류에 까닭을 쓰고 종료 코드 21 로 끝난다 — 라벨 전에 다시 추출할지 정하게.
+- `sheet`: 어댑터들의 `extract` 결과를 합쳐 라벨 시트와 열쇠를 쓴다. 결과 파일의 `halted` 와 추출 요약은 열쇠로 옮기고, 멈췄거나
+  모자란 추출이 있으면 시트 머리와 표준 오류에 알린다. 어댑터 사본들의 같은 화 본문이 다르면(다른 원고) 거절한다.
 - `judge`: 열쇠의 주장을 판정 모델 하나(`gemini` 먼저, 그다음 `haiku`)로 사람 라벨과 같은 범주로 매겨 `judge-<모델>.json` 에
   쓴다(`judge.py`). 부를 모델 id 는 `--judge-model` 로 정하고 사고를 끈 조건이 되지 않는 id 는 부르기 전에 거절한다. 멈춘 뒤 같은
   실행 폴더로 다시 돌리면 판정이 없는 주장만 부른다 — 판정 파일의 모델 id 나 열쇠가 다르면 거절한다.
@@ -24,6 +27,7 @@
 import argparse
 import asyncio
 import json
+import sys
 import uuid
 from pathlib import Path
 
@@ -47,6 +51,9 @@ from novel_bible_eval.report import label_report, synthetic_report, write_report
 from novel_bible_eval.run import BudgetHalt, ChapterOutcome, Meter, extract_chapters, run_set
 from novel_bible_eval.spec import EvalSet, load_set
 
+# 화 부족으로 끝난 추출 — 원장 멈춤(`EXIT_BUDGET`)과 갈라 다음 단계(시트·라벨)로 넘어가기 전에 멈추게 한다.
+EXIT_SHORT = 21
+
 
 async def synthetic(
     factory: SessionFactory, resolver: AdapterResolver, eval_set: EvalSet, run_dir: Path, *, adapter: str,
@@ -67,16 +74,28 @@ async def synthetic(
     return EXIT_BUDGET if halted else 0
 
 
-async def copy_text(factory: SessionFactory, folder: Path, adapters: list[str], run_dir: Path) -> int:
-    """어댑터마다 사본 하나. 한 트랜잭션이라 폴더가 거절되거나 중간에 끊기면 사본이 하나도 남지 않는다."""
-    text = text_copy.read_text_dir(folder)
+async def copy_text(
+    factory: SessionFactory, folder: Path, adapters: list[str], run_dir: Path, *, add: bool = False
+) -> int:
+    """어댑터마다 사본 하나. 한 트랜잭션이라 폴더가 거절되거나 중간에 끊기면 사본이 하나도 남지 않는다. `add` 면 기존
+    `copies.json` 에 더한다(같은 어댑터는 새 사본으로 바뀐다)."""
+    path = run_dir / "copies.json"
     copies: dict[str, str] = {}
+    if path.exists():
+        if not add:
+            raise SystemExit(f"{path} 가 이미 있다 — 덮으면 다른 어댑터의 사본 id 가 파일에서 사라진다. 사본을 더하려면 --add")
+        copies = json.loads(path.read_text(encoding="utf-8"))
+    text = text_copy.read_text_dir(folder)
+    for number, paragraphs in enumerate(text.chapters, start=1):
+        if len(paragraphs) == 1:
+            print(f"경고: {number}화는 문단이 하나뿐이다 — 줄바꿈 하나로 문단을 가른 원고면 빈 줄로 다시 가른다", file=sys.stderr)
     async with factory() as session, session.begin():
         for adapter in adapters:
             novel_id, _ = await text_copy.copy_text_novel(session, text)
             copies[adapter] = str(novel_id)
-    _write_json(run_dir / "copies.json", copies)
-    print(f"{len(text.chapters)}화 사본 {len(copies)}벌 — {run_dir / 'copies.json'}")
+    _write_json(path, copies)
+    counts = " · ".join(f"{number}화 {len(paragraphs)}" for number, paragraphs in enumerate(text.chapters, start=1))
+    print(f"{len(text.chapters)}화 사본 {len(adapters)}벌 — {path} (화별 문단 수: {counts})")
     return 0
 
 
@@ -106,7 +125,7 @@ async def extract(
         judged = sum(outcome.status in ("committed", "blocked") for outcome in outcomes)
         if judged < count:
             halted = f"화 부족 — 요청 {count}화 중 검사까지 끝난 확정 {judged}화(확정한 화 {len(outcomes)})"
-            print(halted)
+            print(f"{halted} — 이 추출로 라벨하면 그 어댑터 판정은 판정 불가다", file=sys.stderr)
     except BudgetHalt as halt:
         halted = str(halt)
         print(f"원장 멈춤: {halt} — 끝난 {len(outcomes)}화까지 썼다")
@@ -117,7 +136,7 @@ async def extract(
         raise
     finally:
         _write_extract(outcomes, run_dir, adapter, halted, meter.attempts)
-    return 0
+    return EXIT_SHORT if halted else 0
 
 
 def _write_extract(
@@ -177,6 +196,28 @@ def _check_key(run: judging.JudgeRun, digest: str, path: Path) -> None:
         raise SystemExit(f"{path} 는 지금 열쇠와 다른 주장·인용으로 판정했다 — 이 열쇠로 새 판정 파일을 만든다")
 
 
+async def _check_same_manuscript(factory: SessionFactory, runs: dict[str, list[ChapterOutcome]]) -> None:
+    """어댑터 사본들의 같은 화가 같은 본문(개정의 `content_hash`)인가. 사본 사이에 원고 폴더를 고쳤다면 다른 원고의 추출이 한
+    시트에 섞여, 같은 화의 주장이 서로 다른 본문을 가리킨다."""
+    revision_of = {
+        (name, outcome.ordinal): uuid.UUID(outcome.revision)
+        for name, outcomes in runs.items() for outcome in outcomes if outcome.revision is not None
+    }
+    async with factory() as session:
+        rows = await session.execute(
+            select(NovelChapterRevision.id, NovelChapterRevision.content_hash)
+            .where(NovelChapterRevision.id.in_(set(revision_of.values())))
+        )
+        hashes = {revision: content_hash for revision, content_hash in rows.tuples()}
+    bodies: dict[int, set[str]] = {}
+    for (_, ordinal), revision in revision_of.items():
+        bodies.setdefault(ordinal, set()).add(hashes[revision])
+    differing = sorted(ordinal for ordinal, found in bodies.items() if len(found) > 1)
+    if differing:
+        chapters = ", ".join(f"{ordinal}화" for ordinal in differing)
+        raise SystemExit(f"어댑터 사본들의 {chapters} 본문이 서로 다르다 — 같은 원고로 만든 사본의 추출만 한 시트에 합친다")
+
+
 def _outcomes(path: Path) -> list[ChapterOutcome]:
     rows = json.loads(path.read_text(encoding="utf-8"))["outcomes"]
     return [ChapterOutcome.model_validate(row) for row in rows]
@@ -221,6 +262,7 @@ def _parser() -> argparse.ArgumentParser:
     copy.add_argument("--text-dir", type=Path, required=True, help="01.txt…NN.txt 와 선택 meta.txt 가 든 원고 폴더")
     copy.add_argument("--adapters", nargs="+", required=True, help="사본을 하나씩 만들 어댑터 이름")
     copy.add_argument("--run-dir", type=Path, required=True)
+    copy.add_argument("--add", action="store_true", help="기존 copies.json 에 사본을 더한다(같은 어댑터는 새 사본으로 바뀐다)")
     rate = commands.add_parser("judge", parents=[budget])
     rate.add_argument("--key", type=Path, required=True, help="sheet 가 쓴 열쇠(claims-key.json)")
     rate.add_argument("--model", choices=list(judging.JUDGE_MODELS), required=True, help="판정 모델 — 싼 gemini 먼저")
@@ -263,19 +305,24 @@ async def _run(args: argparse.Namespace) -> int:
         adapter = meter.wrap(lambda _operation: judge_adapter)("conflicts.judge")
         return await judge(adapter, args.key, args.run_dir, model=args.model, model_id=args.judge_model)
     if args.command == "copy-text":
-        return await copy_text(factory, args.text_dir, args.adapters, args.run_dir)
+        return await copy_text(factory, args.text_dir, args.adapters, args.run_dir, add=args.add)
     if args.command == "sheet":
         files = {name: Path(path) for name, path in (item.split("=", 1) for item in args.extract)}
         runs = {name: _outcomes(path) for name, path in files.items()}
+        await _check_same_manuscript(factory, runs)
+        halted = {name: _halted(path) for name, path in files.items()}
         sheet, key = labels.write_sheet(
             labels.merge_claims(runs, await _block_texts(factory, runs)), args.out,
-            halted={name: _halted(path) for name, path in files.items()},
+            halted=halted,
             extraction={
                 name: labels.ExtractionSummary.model_validate_json(path.read_text(encoding="utf-8"))
                 for name, path in files.items()
             },
             seed=args.seed,
         )
+        for name, reason in halted.items():
+            if reason:
+                print(f"!!! {name} 추출이 멈췄거나 모자라다 — {reason}. 이대로 라벨하면 그 어댑터 판정은 판정 불가다", file=sys.stderr)
         print(f"시트 {sheet} · 열쇠 {key}")
         return 0
     labeled = labels.read_labels(args.labels, args.key)

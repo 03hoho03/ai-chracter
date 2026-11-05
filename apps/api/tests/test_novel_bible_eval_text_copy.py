@@ -4,10 +4,13 @@
 원고는 합성 세트의 문장을 텍스트 파일로 옮긴 것이다 — 실제 소설 원문이 아니다. 모델은 가짜 해석기다."""
 
 import json
+import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import pytest
+from novel_bible_fakes import FakeRule, savepoint_factory
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,15 +18,17 @@ import api.novel_bible.entry as entry
 from api.core.config import settings
 from api.db.models import Content, Novel, NovelChapter, NovelChapterRevision, NovelSceneBlock
 from api.db.models.novel_bible import NovelBibleCommit
-from api.novel_bible.core.types import BibleSnapshot
+from api.novel_bible.core.contracts import AdapterCallError, BibleModelAdapter
+from api.novel_bible.core.types import BibleSnapshot, RenderedPrompt
 from api.novelize.text import split_paragraphs
+from memory_eval.ledger import EXIT_BUDGET
 from novel_bible_eval import labels, text_copy
-from novel_bible_eval.__main__ import _parser, _run, extract, main
+from novel_bible_eval.__main__ import EXIT_SHORT, _parser, _run, extract, main
 from novel_bible_eval.fake_llm import FakeLLM, Faults
 from novel_bible_eval.report import label_report
 from novel_bible_eval.run import Meter
-from novel_bible_eval.spec import EvalSet
-from novel_bible_fakes import FakeRule, savepoint_factory
+from novel_bible_eval.seed import add_chapter
+from novel_bible_eval.spec import ChapterSpec, EvalSet
 
 FIXTURE = Path(__file__).parent / "fixtures" / "novel_bible_eval" / "small_set.json"
 NOVEL = "synthetic-1"
@@ -186,16 +191,19 @@ async def test_extract_refuses_a_novel_that_already_has_canon_commits_and_keeps_
 
 
 async def test_an_extraction_that_ends_with_fewer_chapters_than_asked_is_undetermined_in_the_label_report(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # 사본은 세 화뿐인데 네 화를 요청했다. 앞 화 일부만 담긴 추출로 핵심 사실 정밀도의 합격을 내지 않는다.
+    # 사본은 세 화뿐인데 네 화를 요청했다. 앞 화 일부만 담긴 추출로 핵심 사실 정밀도의 합격을 내지 않는다. 라벨을 시작하기 전에
+    # 알도록 추출은 원장 멈춤과 다른 0 아닌 종료 코드로 끝나고, 시트는 머리와 표준 오류에 알린다.
     factory, copies, _ = await _copies(db_session, monkeypatch, tmp_path, "alpha", "beta")
     eval_set = _plain_set()
     out = tmp_path / "labels"
-    for adapter, count in (("alpha", 3), ("beta", 4)):
+    for adapter, count, code in (("alpha", 3, 0), ("beta", 4, EXIT_SHORT)):
         meter = Meter()
         assert await extract(factory, meter.wrap(FakeLLM(eval_set).resolver()), copies[adapter], out,
-                             adapter=adapter, count=count, meter=meter) == 0
+                             adapter=adapter, count=count, meter=meter) == code
+    assert EXIT_SHORT not in (0, EXIT_BUDGET)
+    assert "화 부족" in capsys.readouterr().err
     short = json.loads((out / "extract-beta.json").read_text(encoding="utf-8"))
     assert "화 부족" in short["halted"] and "4화" in short["halted"]
     assert json.loads((out / "extract-alpha.json").read_text(encoding="utf-8"))["halted"] is None
@@ -204,7 +212,12 @@ async def test_an_extraction_that_ends_with_fewer_chapters_than_asked_is_undeter
         "sheet", "--extract", f"alpha={out / 'extract-alpha.json'}", f"beta={out / 'extract-beta.json'}",
         "--out", str(out),
     ]))
-    rows = labels.sheet_claims((out / "sheet.html").read_text(encoding="utf-8"))
+    err = capsys.readouterr().err
+    assert "beta" in err and "화 부족" in err and "alpha" not in err
+    sheet_html = (out / "sheet.html").read_text(encoding="utf-8")
+    # 시트 머리는 몇 개가 모자란지만 적는다 — 라벨하는 사람에게 어댑터 이름을 보이지 않는다.
+    assert "추출 2개 중 1개" in sheet_html and "beta" not in sheet_html
+    rows = labels.sheet_claims(sheet_html)
     verdicts = {row["id"]: {"verdict": "correct", "quotes": ["supported"] * len(row["quotes"])} for row in rows}
     result = out / "labels-result.json"
     result.write_text(json.dumps({"labels": verdicts, "missing": {}}), encoding="utf-8")
@@ -254,3 +267,115 @@ def test_copy_text_refuses_a_database_that_is_not_local(monkeypatch: pytest.Monk
     with pytest.raises(SystemExit, match="로컬 DB"):
         main(["copy-text", "--text-dir", str(tmp_path), "--adapters", "alpha", "--run-dir", str(tmp_path / "run")])
     assert not (tmp_path / "run").exists()
+
+
+T = TypeVar("T", bound=BaseModel)
+
+
+class _FailingChapter:
+    """한 화의 사건 추출을 늘 다시 해 볼 만한 실패로 끝낸다 — 작업이 세 번 다 실패한다. 나머지는 가짜 해석기 그대로."""
+
+    def __init__(self, inner: BibleModelAdapter, paragraph: str) -> None:
+        self._inner = inner
+        self._paragraph = paragraph
+        self.id = inner.id
+        self.capabilities = inner.capabilities
+        self.prompt_source = inner.prompt_source
+
+    async def structured(
+        self, prompt: RenderedPrompt, schema: type[T], *, records: list[dict[str, Any]], stage: Any
+    ) -> T:
+        if stage == "events.extract" and self._paragraph in prompt.prompt:
+            raise AdapterCallError("schema_invalid", retryable=True)
+        return await self._inner.structured(prompt, schema, records=records, stage=stage)
+
+
+async def test_a_chapter_whose_extraction_failed_every_try_leaves_the_extraction_short(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 실패한 확정은 그 화 제안 일부가 빠진 추출이다 — 검사까지 끝난 화로 세지 않는다.
+    factory, copies, chapters = await _copies(db_session, monkeypatch, tmp_path, "alpha")
+    inner = FakeLLM(_plain_set()).resolver()
+
+    def resolver(operation: Any) -> BibleModelAdapter:
+        return _FailingChapter(inner(operation), chapters[1][0])
+
+    meter = Meter()
+    out = tmp_path / "labels"
+    code = await extract(factory, meter.wrap(resolver), copies["alpha"], out, adapter="alpha", count=3, meter=meter)
+    written = json.loads((out / "extract-alpha.json").read_text(encoding="utf-8"))
+    statuses = dict((row["ordinal"], row["status"]) for row in written["outcomes"])
+    assert statuses[2] == "failed"
+    assert code == EXIT_SHORT
+    assert "화 부족" in written["halted"] and "2화" in written["halted"]
+    assert "화 부족" in capsys.readouterr().err
+
+
+async def test_copy_text_keeps_the_copies_file_unless_asked_to_add_to_it(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 멈춘 어댑터 하나만 새 사본을 만들 때 파일을 덮으면 나머지 어댑터의 사본 id 가 파일에서 사라진다.
+    _, copies, _ = await _copies(db_session, monkeypatch, tmp_path, "alpha", "beta")
+    path = tmp_path / "run" / "copies.json"
+    before = path.read_text(encoding="utf-8")
+    again = ["copy-text", "--text-dir", str(tmp_path / "book"), "--adapters", "beta", "--run-dir", str(tmp_path / "run")]
+    with pytest.raises(SystemExit, match="--add"):
+        await _run(_parser().parse_args(again))
+    assert path.read_text(encoding="utf-8") == before
+
+    assert await _run(_parser().parse_args([*again, "--add"])) == 0
+    after = json.loads(path.read_text(encoding="utf-8"))
+    assert after["alpha"] == copies["alpha"]
+    assert after["beta"] != copies["beta"]
+
+
+async def test_copy_text_warns_about_a_chapter_with_a_single_paragraph(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 줄바꿈 하나로 문단을 가른 원고는 앱 규칙(빈 줄)으로는 화 전체가 문단 하나다 — 앱에서 생기지 않는 입력으로 잰다.
+    monkeypatch.setattr("novel_bible_eval.__main__.async_session_factory", savepoint_factory(db_session))
+    book = tmp_path / "book"
+    book.mkdir()
+    (book / "01.txt").write_text("합성 첫 문단.\n\n합성 둘째 문단.\n", encoding="utf-8")
+    (book / "02.txt").write_text("합성 첫 줄.\n합성 둘째 줄.\n", encoding="utf-8")
+    code = await _run(_parser().parse_args([
+        "copy-text", "--text-dir", str(book), "--adapters", "alpha", "--run-dir", str(tmp_path / "run"),
+    ]))
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "2화" in captured.err and "문단이 하나" in captured.err
+    assert "1화" not in captured.err
+    assert "1화 2 · 2화 1" in captured.out
+
+
+async def test_sheet_refuses_copies_whose_chapters_come_from_different_manuscripts(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 사본 사이에 원고 폴더를 고쳤다면 다른 원고의 추출이 한 시트에 섞여, 같은 화의 주장이 서로 다른 본문을 가리킨다.
+    factory, copies, chapters = await _copies(db_session, monkeypatch, tmp_path, "alpha", "beta")
+    async with factory() as session, session.begin():
+        changed = await add_chapter(
+            session, uuid.UUID(copies["beta"]), 99, ChapterSpec(paragraphs=[*chapters[0], "합성으로 덧붙인 문단."])
+        )
+    revisions = {
+        "alpha": await db_session.scalar(
+            select(NovelChapterRevision.id).join(NovelChapter, NovelChapter.id == NovelChapterRevision.chapter_id)
+            .where(NovelChapter.novel_id == copies["alpha"], NovelChapter.ordinal == 1)
+        ),
+        "beta": changed.revision_id,
+    }
+    out = tmp_path / "labels"
+    out.mkdir()
+    for adapter, revision in revisions.items():
+        outcome = {
+            "novel": "합성", "repeat": 0, "ordinal": 1, "probe": None, "status": "committed", "block_rules": [],
+            "warning_rules": [], "block_ids": [], "jobs": [], "revision": str(revision),
+        }
+        written: dict[str, Any] = {"halted": None, "attempts": [], "quote": [], "cost": {}, "blocked": {}, "outcomes": [outcome]}
+        (out / f"extract-{adapter}.json").write_text(json.dumps(written), encoding="utf-8")
+    with pytest.raises(SystemExit, match="1화"):
+        await _run(_parser().parse_args([
+            "sheet", "--extract", f"alpha={out / 'extract-alpha.json'}", f"beta={out / 'extract-beta.json'}",
+            "--out", str(out),
+        ]))
+    assert not (out / "sheet.html").exists()
