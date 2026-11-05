@@ -98,8 +98,9 @@ class UseWithoutAcquisition:
 
 
 class UseAfterLoss:
-    """같은 (행위자, 대상)을 잃은 사실 l 이 실제 사건에서 주선 사용보다 앞서고, 그 사이 다시 지닌다는 사실이 없다. 다시 지님 g 의
-    창은 사망 뒤 등장의 되살아남 창과 같다 — 잃음보다 앞서지 않고 사용보다 늦지 않다(사용과 같은 사건에서 되찾은 것도 친다)."""
+    """같은 (행위자, 대상)을 잃은 사실 l 이 실제 사건에서 주선 사용보다 앞서고, 그 사이 다시 지닌다는 사실이 없다. 다시 지님 g 는
+    사망 뒤 등장의 되살아남과 같은 꼴이다 — 잃음과 다른 사건에서, 잃음보다 앞서지 않고 사용보다 늦지 않다(사용과 같은 사건에서
+    되찾은 것도 친다). 잃음과 같은 사건의 소지 행은 그 장면에 들고 있던 것이지 다시 지님이 아니다."""
 
     rule: FindingRule = "use_after_loss"
     slots: frozenset[SlotId] = _EXIT_SLOTS
@@ -119,6 +120,7 @@ class UseAfterLoss:
                     continue
                 regained = any(
                     held.valid_from_event_id is not None
+                    and held.valid_from_event_id != lost.valid_from_event_id
                     and order.actual(held.valid_from_event_id)
                     and precedes(order.start(held), lost_at) is not True
                     and precedes(used_at, order.start(held)) is not True

@@ -717,14 +717,25 @@ async def test_a_use_without_any_acquisition_warns_only_when_the_use_is_new(db_s
     assert await _rules_of(db_session, later.commit_id) == []
 
 
-@pytest.mark.parametrize(("regained", "expected"), [(False, [("warning", "use_after_loss")]), (True, [])])
+@pytest.mark.parametrize(
+    ("held_when_lost", "regained", "expected"),
+    [
+        pytest.param(False, False, [("warning", "use_after_loss")], id="lost"),
+        pytest.param(False, True, [], id="regained"),
+        # 잃는 사건에 "지니던 검"(소지, 시작 서술 없음)이 함께 있다 — 그 장면에 들고 있던 것이지 다시 지님이 아니다.
+        pytest.param(True, False, [("warning", "use_after_loss")], id="held_in_the_losing_scene"),
+    ],
+)
 async def test_using_a_lost_sword_warns_unless_it_was_regained(
-    db_session: AsyncSession, regained: bool, expected: list[tuple[str, str]]
+    db_session: AsyncSession, held_when_lost: bool, regained: bool, expected: list[tuple[str, str]]
 ) -> None:
+    """잃는 화에 소지 행 하나가 더 있는 판도 다시 지님이 없는 판과 같은 경고다. 깨지는 시나리오: 다시 지님을 잃음과 같은
+    사건에서도 받으면, 실제 추출이 잃는 장면에 함께 내는 소지 행 때문에 잃은 뒤 사용 경고가 사라진다."""
     gained = Chapter(1, ("하나가 대장간에서 검을 받는다.",), events=(Ev((1,), ("하나",)),),
                      facts=(Fa(1, "하나", "possession", "검", onset=True),))
+    held = (Fa(1, "하나", "possession", "검"),) if held_when_lost else ()
     lost = Chapter(2, ("하나가 강물에 검을 떨어뜨린다.",), events=(Ev((1,), ("하나",)),),
-                   facts=(Fa(1, "하나", "possession", "검", holds=False, onset=True),))
+                   facts=(*held, Fa(1, "하나", "possession", "검", holds=False, onset=True)))
     regain = (Fa(1, "하나", "possession", "검", onset=True),) if regained else ()
     use = Chapter(3, (SWING,), events=(Ev((1,), ("하나",), uses=(("하나", "검", "object"),)),), facts=regain)
     _, confirmed = await _story(db_session, gained, lost, use)
