@@ -516,6 +516,8 @@ async def test_an_appearance_in_a_flashback_placed_after_the_death_does_not_bloc
         pytest.param("gone_for_good", "from_here", [("block", "exit_then_appearance")], id="gone_for_good"),
         pytest.param("departed", "from_here", [("warning", "return_unstated")], id="departed_from_here"),
         pytest.param("departed", "scene", [], id="departed_scene"),
+        # 범위만 장면으로 다른 영구 퇴장 — 장면 범위 사실은 그 장면과 함께 끝나 퇴장으로 세지 않는다.
+        pytest.param("gone_for_good", "scene", [], id="gone_for_good_scene"),
     ],
 )
 async def test_a_departure_that_may_return_warns_and_leaving_the_scene_says_nothing(
