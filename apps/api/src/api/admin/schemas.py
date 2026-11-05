@@ -1,17 +1,25 @@
 import enum
 import uuid
 from datetime import date, datetime
-from typing import Literal
+from decimal import Decimal
+from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, ConfigDict, EmailStr, Field
+from pydantic import AwareDatetime, ConfigDict, EmailStr, Field, SecretStr, StringConstraints
 
 from api.admin.prompt_semver import SectionChange, SemverLevel
 from api.chat.prompt_builder import PromptLane
 from api.chat.prompt_routing import RouteSource, SkipReason
 from api.chat.prompt_stages import PromptStage, RouteRoomModel, RoutingLane, StageKind
-from api.core.schema import CamelModel
+from api.core.schema import CamelModel, NoNul
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType, ContentVisibility, DerivativeNovelsChoice, ModerationStatus
+from api.db.models.llm_credential import (
+    CheckErrorKind,
+    ClaudeModelAxis,
+    CredentialProvider,
+    CredentialState,
+    CredentialStateReason,
+)
 from api.db.models.creator_payout import (
     BankCode,
     CreatorPayoutApplicationStatus,
@@ -29,6 +37,7 @@ from api.db.models.payment import PaymentStatus
 from api.legal.schemas import LegalConsentUnit, LegalDocumentKind
 from api.llm.call_policy import BackendId, LLMCallSite
 from api.llm.chat_models import ChatModelId, PromptSetModelId
+from api.llm.credentials import EnableBlocker
 
 
 class AdminLoginRequest(CamelModel):
@@ -1283,3 +1292,108 @@ class AdminUserCreatorPayoutResponse(CamelModel):
     balance_krw: int
     confirmations: list[AdminUserCreatorPayoutConfirmation]
     payouts: list[AdminUserCreatorPayoutPayout]
+
+
+# ── Claude 자격 목록 ──────────────────────────────────────────────────────────
+# 요청 칸에는 값으로 문구를 만드는 검증자를 두지 않는다 — 검증 오류 문구는 pydantic 기본 문구(값을 싣지 않는다)뿐이고, 키 형식
+# 검사는 라우터 본문이 한다. 키 칸은 `SecretStr` 이라 요청 모델의 repr·str 에 값이 나오지 않는다.
+LlmCredentialLabel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40), NoNul]
+LlmCredentialApiKey = Annotated[SecretStr, Field(min_length=1, max_length=256)]
+# 충전액은 달러 소수 둘째 자리까지 받아 마이크로달러 정수로 저장한다.
+LlmCredentialCreditUsd = Annotated[Decimal, Field(gt=0, max_digits=12, decimal_places=2)]
+LlmCredentialAlertPct = Annotated[int, Field(ge=1, le=99)]
+
+
+class AdminLlmCredentialCreateRequest(CamelModel):
+    """추가. 공급자는 지금 Anthropic 만 받는다(Bedrock 은 스키마 단계에서 422). 새 항목은 꺼진 채 들어온다."""
+
+    provider: Literal["anthropic"]
+    label: LlmCredentialLabel
+    api_key: LlmCredentialApiKey
+    credit_usd: LlmCredentialCreditUsd | None = None
+    alert_pct: LlmCredentialAlertPct = 20
+
+
+class AdminLlmCredentialUpdateRequest(CamelModel):
+    """메타만 고친다. 보내지 않은 칸은 그대로다. 충전액은 null 이면 지우고, 바뀌면 그 기준 시각을 지금으로 다시 잡는다.
+    라벨·임계는 null 을 보내도 그대로다."""
+
+    label: LlmCredentialLabel | None = None
+    credit_usd: LlmCredentialCreditUsd | None = None
+    alert_pct: LlmCredentialAlertPct | None = None
+
+
+class AdminLlmCredentialSecretRequest(CamelModel):
+    api_key: LlmCredentialApiKey
+
+
+class AdminLlmCredentialOrderRequest(CamelModel):
+    """목록 전체의 새 순서. `ids` 는 지금 항목 집합과 정확히 같아야 하고(빠짐·더함·중복이면 422), `base_list_revision` 은
+    화면이 읽은 목록 판이다(그 사이 추가·삭제·순서 저장이 있었으면 409)."""
+
+    base_list_revision: int
+    ids: list[uuid.UUID]
+
+
+class AdminLlmCredentialPoolRequest(CamelModel):
+    enabled: bool
+
+
+class AdminLlmCredentialCheckItem(CamelModel):
+    """축마다 회차가 가장 큰 확인 기록. 세 `is_current_*` 는 그 기록이 지금도 유효한가 — 지금 키 지문으로 했는가, 지금 설정의
+    모델 id 로 보냈는가, 확인을 시작할 때의 판이 지금 판인가(켜기에 세어지는가)."""
+
+    run: int
+    model_axis: ClaudeModelAxis
+    sent_model_id: str
+    passed: bool
+    error_kind: CheckErrorKind | None
+    checked_at: datetime
+    is_current_secret: bool
+    is_current_model_id: bool
+    is_current_state_version: bool
+
+
+class AdminLlmCredential(CamelModel):
+    """목록 항목 하나. 키 원문·암호문·암호화 키 id 는 싣지 않는다 — 끝 4자리와 지문만. `same_as_env_key` 는 볼 때의 env 롤백
+    키와 같은 키인지(저장하지 않는 계산값), `enable_blocker` 는 켜기가 막히는 이유(켤 수 있으면 null)다."""
+
+    id: uuid.UUID
+    provider: CredentialProvider
+    label: str
+    position: int
+    state: CredentialState
+    state_reason: CredentialStateReason | None
+    state_version: int
+    state_changed_at: datetime
+    account_ref: str | None
+    organization_verified: bool
+    secret_last4: str
+    secret_fingerprint: str
+    same_as_env_key: bool
+    credit_usd: Decimal | None
+    credit_since: datetime | None
+    alert_pct: int
+    created_at: datetime
+    updated_at: datetime
+    checks: list[AdminLlmCredentialCheckItem]
+    enable_blocker: EnableBlocker | None
+
+
+class AdminLlmCredentialListResponse(CamelModel):
+    """목록 전체(위치 순)와 목록 상태. 저장소 설정(암호화 키·허용 계정)·알림 웹훅이 없으면 그 사실을 싣는다. `model_ids` 는
+    축마다 지금 설정의 실제 id 다."""
+
+    store_configured: bool
+    notifications_configured: bool
+    pool_enabled: bool
+    list_revision: int
+    model_ids: dict[ClaudeModelAxis, str]
+    credentials: list[AdminLlmCredential]
+
+
+class AdminLlmCredentialCheckResponse(CamelModel):
+    """확인 뒤의 항목과 실제로 부른 호출 수(같은 id 를 쓰는 축은 한 번)."""
+
+    credential: AdminLlmCredential
+    calls: int

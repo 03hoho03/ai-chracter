@@ -3259,6 +3259,425 @@
         }
       }
     },
+    "/admin/llm-credentials": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Llm Credentials",
+        "operationId": "list_llm_credentials_admin_llm_credentials_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLlmCredentialListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create Llm Credential",
+        "description": "목록 끝에 꺼진 채 더한다. 크레딧·한도로 거절된 키도 저장하지 않는다(충전한 뒤 다시 넣는다).",
+        "operationId": "create_llm_credential_admin_llm_credentials_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLlmCredentialCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLlmCredential"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/llm-credentials/order": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Reorder Llm Credentials",
+        "operationId": "reorder_llm_credentials_admin_llm_credentials_order_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLlmCredentialOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLlmCredentialListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/llm-credentials/pool": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Set Llm Credential Pool",
+        "description": "목록 사용 켜기·끄기. 끄기는 늘 된다(되돌리기 첫 단계). 켜기는 축마다 켜진 항목 하나 이상이 지금 키·지금 모델 id 로 확인\n통과했을 때만 된다. 목록 판은 올리지 않는다.",
+        "operationId": "set_llm_credential_pool_admin_llm_credentials_pool_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLlmCredentialPoolRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLlmCredentialListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/llm-credentials/{credential_id}": {
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update Llm Credential",
+        "description": "라벨·충전액·임계만 고친다. 충전액이 바뀌면 그 기준 시각을 지금으로 다시 잡는다(사용액 누적이 그 시각부터 다시 센다).",
+        "operationId": "update_llm_credential_admin_llm_credentials__credential_id__patch",
+        "parameters": [
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLlmCredentialUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLlmCredential"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete Llm Credential",
+        "description": "행을 지운다(확인 기록도 함께) — 남는 행에 암호문이 남지 않게. 행이 사라지므로 감사 로그가 유일한 흔적이다.",
+        "operationId": "delete_llm_credential_admin_llm_credentials__credential_id__delete",
+        "parameters": [
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/llm-credentials/{credential_id}/secret": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Replace Llm Credential Secret",
+        "description": "키만 바꾼다(한 항목 = 한 계정 — 다른 조직의 키로는 바꾸지 않는다). 상태·판은 그대로이고, 확인 기록이 옛 지문에 묶여\n있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수\n없을 때 살리는 길) 지문이 같아 옛 확인 기록이 그대로 지금 키의 확인으로 센다 — 암호문만 지금 키로 다시 쓰고, 같은 키는\n같은 조직이라 조직 조회를 부르지 않고 조직 표지도 그대로 둔다.",
+        "operationId": "replace_llm_credential_secret_admin_llm_credentials__credential_id__secret_put",
+        "parameters": [
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLlmCredentialSecretRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLlmCredential"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/llm-credentials/{credential_id}/enable": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Enable Llm Credential",
+        "description": "켠다(소진된 항목의 해제도 이것이다). 조건은 `enable_blocker` — 막히면 409 와 그 이유. 이미 켜져 있으면 그대로 200.",
+        "operationId": "enable_llm_credential_admin_llm_credentials__credential_id__enable_post",
+        "parameters": [
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLlmCredential"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/llm-credentials/{credential_id}/disable": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Disable Llm Credential",
+        "description": "운영자가 끈다. 판이 올라 그 전의 확인은 켜기에 세지 않는다. 이미 꺼져 있으면 그대로 200.",
+        "operationId": "disable_llm_credential_admin_llm_credentials__credential_id__disable_post",
+        "parameters": [
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLlmCredential"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/llm-credentials/{credential_id}/check": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Check Llm Credential",
+        "description": "모델 축마다 지금 설정의 실제 id 로 확인 호출을 하고 축마다 한 행을 같은 회차로 남긴다(같은 id 는 한 번, 차례로).\n기록에는 확인을 시작할 때 읽은 판·지문을 남긴다 — 호출을 기다리는 동안 상태나 키가 바뀌면 그 회차는 켜기에 세지 않는다.\n다시 시도할 일(과부하·시간 초과 등)로 실패한 축도 그 종류로 남는다 — 분당 한 번이라 1분 뒤 다시 누른다.",
+        "operationId": "check_llm_credential_admin_llm_credentials__credential_id__check_post",
+        "parameters": [
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLlmCredentialCheckResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/llm-usage": {
       "get": {
         "tags": [
@@ -20367,6 +20786,487 @@
         ],
         "title": "AdminLegalVersionsResponse"
       },
+      "AdminLlmCredential": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "bedrock"
+            ],
+            "title": "Provider"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "exhausted",
+              "disabled"
+            ],
+            "title": "State"
+          },
+          "stateReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "credit",
+                  "auth",
+                  "limit",
+                  "admin"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statereason"
+          },
+          "stateVersion": {
+            "type": "integer",
+            "title": "Stateversion"
+          },
+          "stateChangedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Statechangedat"
+          },
+          "accountRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accountref"
+          },
+          "organizationVerified": {
+            "type": "boolean",
+            "title": "Organizationverified"
+          },
+          "secretLast4": {
+            "type": "string",
+            "title": "Secretlast4"
+          },
+          "secretFingerprint": {
+            "type": "string",
+            "title": "Secretfingerprint"
+          },
+          "sameAsEnvKey": {
+            "type": "boolean",
+            "title": "Sameasenvkey"
+          },
+          "creditUsd": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creditusd"
+          },
+          "creditSince": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creditsince"
+          },
+          "alertPct": {
+            "type": "integer",
+            "title": "Alertpct"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/AdminLlmCredentialCheckItem"
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "enableBlocker": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "organization-unverified",
+                  "account-not-allowed",
+                  "check-required",
+                  "organization-mismatch"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enableblocker"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "provider",
+          "label",
+          "position",
+          "state",
+          "stateReason",
+          "stateVersion",
+          "stateChangedAt",
+          "accountRef",
+          "organizationVerified",
+          "secretLast4",
+          "secretFingerprint",
+          "sameAsEnvKey",
+          "creditUsd",
+          "creditSince",
+          "alertPct",
+          "createdAt",
+          "updatedAt",
+          "checks",
+          "enableBlocker"
+        ],
+        "title": "AdminLlmCredential",
+        "description": "목록 항목 하나. 키 원문·암호문·암호화 키 id 는 싣지 않는다 — 끝 4자리와 지문만. `same_as_env_key` 는 볼 때의 env 롤백\n키와 같은 키인지(저장하지 않는 계산값), `enable_blocker` 는 켜기가 막히는 이유(켤 수 있으면 null)다."
+      },
+      "AdminLlmCredentialCheckItem": {
+        "properties": {
+          "run": {
+            "type": "integer",
+            "title": "Run"
+          },
+          "modelAxis": {
+            "type": "string",
+            "enum": [
+              "haiku_writer",
+              "sonnet",
+              "opus",
+              "haiku"
+            ],
+            "title": "Modelaxis"
+          },
+          "sentModelId": {
+            "type": "string",
+            "title": "Sentmodelid"
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          },
+          "errorKind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "credit",
+                  "auth",
+                  "limit",
+                  "permission",
+                  "model-not-found",
+                  "rejected",
+                  "unavailable",
+                  "organization-mismatch",
+                  "account-not-allowed",
+                  "account-already-listed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errorkind"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checkedat"
+          },
+          "isCurrentSecret": {
+            "type": "boolean",
+            "title": "Iscurrentsecret"
+          },
+          "isCurrentModelId": {
+            "type": "boolean",
+            "title": "Iscurrentmodelid"
+          },
+          "isCurrentStateVersion": {
+            "type": "boolean",
+            "title": "Iscurrentstateversion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run",
+          "modelAxis",
+          "sentModelId",
+          "passed",
+          "errorKind",
+          "checkedAt",
+          "isCurrentSecret",
+          "isCurrentModelId",
+          "isCurrentStateVersion"
+        ],
+        "title": "AdminLlmCredentialCheckItem",
+        "description": "축마다 회차가 가장 큰 확인 기록. 세 `is_current_*` 는 그 기록이 지금도 유효한가 — 지금 키 지문으로 했는가, 지금 설정의\n모델 id 로 보냈는가, 확인을 시작할 때의 판이 지금 판인가(켜기에 세어지는가)."
+      },
+      "AdminLlmCredentialCheckResponse": {
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/AdminLlmCredential"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "credential",
+          "calls"
+        ],
+        "title": "AdminLlmCredentialCheckResponse",
+        "description": "확인 뒤의 항목과 실제로 부른 호출 수(같은 id 를 쓰는 축은 한 번)."
+      },
+      "AdminLlmCredentialCreateRequest": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "const": "anthropic",
+            "title": "Provider"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "apiKey": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "format": "password",
+            "title": "Apikey",
+            "writeOnly": true
+          },
+          "creditUsd": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creditusd"
+          },
+          "alertPct": {
+            "type": "integer",
+            "maximum": 99.0,
+            "minimum": 1.0,
+            "title": "Alertpct",
+            "default": 20
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "label",
+          "apiKey"
+        ],
+        "title": "AdminLlmCredentialCreateRequest",
+        "description": "추가. 공급자는 지금 Anthropic 만 받는다(Bedrock 은 스키마 단계에서 422). 새 항목은 꺼진 채 들어온다."
+      },
+      "AdminLlmCredentialListResponse": {
+        "properties": {
+          "storeConfigured": {
+            "type": "boolean",
+            "title": "Storeconfigured"
+          },
+          "notificationsConfigured": {
+            "type": "boolean",
+            "title": "Notificationsconfigured"
+          },
+          "poolEnabled": {
+            "type": "boolean",
+            "title": "Poolenabled"
+          },
+          "listRevision": {
+            "type": "integer",
+            "title": "Listrevision"
+          },
+          "modelIds": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "haiku_writer",
+                "sonnet",
+                "opus",
+                "haiku"
+              ]
+            },
+            "type": "object",
+            "title": "Modelids"
+          },
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/AdminLlmCredential"
+            },
+            "type": "array",
+            "title": "Credentials"
+          }
+        },
+        "type": "object",
+        "required": [
+          "storeConfigured",
+          "notificationsConfigured",
+          "poolEnabled",
+          "listRevision",
+          "modelIds",
+          "credentials"
+        ],
+        "title": "AdminLlmCredentialListResponse",
+        "description": "목록 전체(위치 순)와 목록 상태. 저장소 설정(암호화 키·허용 계정)·알림 웹훅이 없으면 그 사실을 싣는다. `model_ids` 는\n축마다 지금 설정의 실제 id 다."
+      },
+      "AdminLlmCredentialOrderRequest": {
+        "properties": {
+          "baseListRevision": {
+            "type": "integer",
+            "title": "Baselistrevision"
+          },
+          "ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "baseListRevision",
+          "ids"
+        ],
+        "title": "AdminLlmCredentialOrderRequest",
+        "description": "목록 전체의 새 순서. `ids` 는 지금 항목 집합과 정확히 같아야 하고(빠짐·더함·중복이면 422), `base_list_revision` 은\n화면이 읽은 목록 판이다(그 사이 추가·삭제·순서 저장이 있었으면 409)."
+      },
+      "AdminLlmCredentialPoolRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "AdminLlmCredentialPoolRequest"
+      },
+      "AdminLlmCredentialSecretRequest": {
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "format": "password",
+            "title": "Apikey",
+            "writeOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "apiKey"
+        ],
+        "title": "AdminLlmCredentialSecretRequest"
+      },
+      "AdminLlmCredentialUpdateRequest": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "creditUsd": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creditusd"
+          },
+          "alertPct": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 99.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alertpct"
+          }
+        },
+        "type": "object",
+        "title": "AdminLlmCredentialUpdateRequest",
+        "description": "메타만 고친다. 보내지 않은 칸은 그대로다. 충전액은 null 이면 지우고, 바뀌면 그 기준 시각을 지금으로 다시 잡는다.\n라벨·임계는 null 을 보내도 그대로다."
+      },
       "AdminLlmModelPrice": {
         "properties": {
           "model": {
@@ -24832,6 +25732,16 @@
               "inquiry-reply",
               "legal-publish",
               "legal-withdraw",
+              "llm-credential-add",
+              "llm-credential-check",
+              "llm-credential-delete",
+              "llm-credential-disable",
+              "llm-credential-enable",
+              "llm-credential-pool-off",
+              "llm-credential-pool-on",
+              "llm-credential-reorder",
+              "llm-credential-secret-replace",
+              "llm-credential-update",
               "notice-publish",
               "notice-unpublish",
               "novel-comment-delete",

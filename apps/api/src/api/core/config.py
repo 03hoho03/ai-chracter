@@ -13,6 +13,7 @@ from api.core.field_crypto import FieldKeyring
 from api.llm import backends
 from api.llm.backends import PromptSetModelId
 from api.llm.call_policy import BackendId, LLMCallSite
+from api.llm.credential_accounts import parse_allowed_accounts
 from api.novel_bible.adapters import table as bible_adapters
 from api.novel_bible.adapters.table import AdapterId
 from api.novel_bible.ids import OperationKey
@@ -217,7 +218,7 @@ class Settings(BaseSettings):
             return cls.model_fields[info.field_name].default
         return value
 
-    @field_validator("creator_payout_encryption_keys")
+    @field_validator("creator_payout_encryption_keys", "llm_credential_encryption_keys")
     @classmethod
     def _creator_payout_encryption_keys_are_well_formed(cls, value: str) -> str:
         if value:
@@ -336,6 +337,22 @@ class Settings(BaseSettings):
     # `ANTHROPIC_API_KEY` 와 나눈다(Bedrock 키가 `AWS_*` 를 피한 것과 같은 이유) — 배정이 경로를 옮기는데 키가 비면 기동하지
     # 않는다(`llm/backends.py` 의 `assignment_errors`).
     anthropic_direct_api_key: str = Field(default="", repr=False)
+    # Claude 자격 목록(어드민에서 키를 붙여넣어 순서대로 쓰는 목록)의 저장소 설정. 암호화 키 목록은 지급 정보 키와 같은 형식
+    # `kid:base64url(32바이트)[,kid:…]`(맨 앞 키로 암호화, 모든 키로 복호화)이고 지급 정보 키와 나눈다 — 한쪽 키가 새도 다른
+    # 쪽 칸이 열리지 않고 회전 일정이 엮이지 않는다. 허용 계정은 `anthropic:<조직 id>,aws:<계정 id>` 쉼표 목록이다(형식은
+    # `llm/credential_accounts.py`). 둘 중 하나라도 비면 어드민의 자격 추가·키 교체·확인 호출이 503 이고, 형식이 틀리면
+    # 기동하지 않는다. 알림 웹훅이 비면 변경 알림을 보내지 않는다(주소가 곧 그 채널에 쓸 권한이라 비밀이다).
+    llm_credential_encryption_keys: str = Field(default="", repr=False)
+    llm_credential_allowed_accounts: str = ""
+    llm_credential_discord_webhook_url: str = Field(default="", repr=False)
+
+    @field_validator("llm_credential_allowed_accounts")
+    @classmethod
+    def _llm_credential_allowed_accounts_are_well_formed(cls, value: str) -> str:
+        """값은 문자열 그대로 두고 형식만 본다 — 쓰는 쪽이 키링처럼 매번 다시 읽는다."""
+        parse_allowed_accounts(value)
+        return value
+
     # 실제 모델 id. 같은 `opus`·`sonnet` 이라도 Bedrock 쪽 id 와 버전이 다르다. 화면의 모델 이름(`llm/chat_models.py`)은
     # 운영이 실제로 부르는 쪽을 따르고, 운영은 배정으로 상위 모델을 이 구현에 보내므로 지금은 이 쪽 버전이다.
     anthropic_sonnet_model_id: str = "claude-sonnet-5-5"
