@@ -168,4 +168,4 @@ class UploadResult(CamelModel):
 
 class DeleteResult(CamelModel):
     run_id: str
-    deleted_versions: int
+    deleted_versions: int = Field(description="지운 판의 수")
