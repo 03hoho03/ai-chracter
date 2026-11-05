@@ -8,7 +8,8 @@
   null) — 나중에 결과 파일만 보는 사람도 앞 화 일부만 담긴 결과인지 안다. 시도 기록·원가·막힌 화도 함께 싣는다.
 - `sheet`: 어댑터들의 `extract` 결과를 합쳐 라벨 시트와 열쇠를 쓴다. 결과 파일의 `halted` 와 추출 요약은 열쇠로 옮긴다.
 - `judge`: 열쇠의 주장을 판정 모델 하나(`gemini` 먼저, 그다음 `haiku`)로 사람 라벨과 같은 범주로 매겨 `judge-<모델>.json` 에
-  쓴다(`judge.py`). 멈춘 뒤 같은 실행 폴더로 다시 돌리면 판정이 없는 주장만 부른다.
+  쓴다(`judge.py`). 부를 모델 id 는 `--judge-model` 로 정하고 사고를 끈 조건이 되지 않는 id 는 부르기 전에 거절한다. 멈춘 뒤 같은
+  실행 폴더로 다시 돌리면 판정이 없는 주장만 부른다 — 판정 파일의 모델 id 나 열쇠가 다르면 거절한다.
 - `score`: 사람이 내려받은 시트 결과를 읽어 어댑터별 라벨 지표를 쓰고, 판정 파일을 주면 판정 모델마다 κ 를 더한다. 열쇠에
   멈춤·끊김 까닭이 있는 어댑터의 판정은 판정 불가다.
 
@@ -32,7 +33,7 @@ from api.core.config import settings
 from api.db.models import NovelChapterRevision
 from api.db.models.novel_bible import NovelBibleCommit
 from api.db.session import async_session_factory
-from api.novel_bible.adapters.resolver import ModelAdapter, build_resolver
+from api.novel_bible.adapters.resolver import build_resolver
 from api.novel_bible.core.contracts import AdapterResolver, BibleModelAdapter
 from api.novel_bible.core.jobs import SessionFactory
 from api.novel_bible.core.views import manuscript_of
@@ -136,10 +137,11 @@ def _write_extract(
                                                      encoding="utf-8")
 
 
-async def judge(adapter: BibleModelAdapter, key: Path, run_dir: Path, *, model: str) -> int:
-    """`adapter` 는 측정 원장을 지나는(`Meter` 가 감싼) 판정 어댑터다. 판정 파일이 이미 있으면 그 판정을 이어받는다."""
+async def judge(adapter: BibleModelAdapter, key: Path, run_dir: Path, *, model: str, model_id: str) -> int:
+    """`adapter` 는 측정 원장을 지나는(`Meter` 가 감싼) 판정 어댑터이고 `model_id` 는 그 어댑터가 부르는 모델 id 다. 판정 파일이
+    이미 있으면 그 판정을 이어받는다."""
     path = run_dir / f"judge-{model}.json"
-    run, claims = _judge_inputs(path, key, model)
+    run, claims = _judge_inputs(path, key, model, model_id)
     try:
         await judging.judge_claims(adapter, claims, run)
     except BudgetHalt as halt:
@@ -154,11 +156,25 @@ async def judge(adapter: BibleModelAdapter, key: Path, run_dir: Path, *, model: 
     return 0
 
 
-def _judge_inputs(path: Path, key: Path, model: str) -> tuple[judging.JudgeRun, list[labels.Claim]]:
-    run = judging.read_run(path) if path.exists() else judging.JudgeRun(model=model)
-    run.halted = None
+def _judge_inputs(
+    path: Path, key: Path, model: str, model_id: str
+) -> tuple[judging.JudgeRun, list[labels.Claim]]:
+    """이어받는 판정 파일이 다른 모델 id 의 것이거나 다른 열쇠로 판정한 것이면 거절한다 — 섞인 판정으로 κ 를 재지 않게."""
     claims = [labels.Claim.model_validate(row) for row in json.loads(key.read_text(encoding="utf-8"))["claims"]]
+    digest = judging.key_digest(claims)
+    if not path.exists():
+        return judging.JudgeRun(model=model, model_id=model_id, key_digest=digest), claims
+    run = judging.read_run(path)
+    if run.model_id != model_id:
+        raise SystemExit(f"{path} 는 {run.model_id} 의 판정이다 — {model_id} 로 이어 돌리지 않는다. 다른 실행 폴더를 쓴다")
+    _check_key(run, digest, path)
+    run.halted = None
     return run, claims
+
+
+def _check_key(run: judging.JudgeRun, digest: str, path: Path) -> None:
+    if run.key_digest != digest:
+        raise SystemExit(f"{path} 는 지금 열쇠와 다른 주장·인용으로 판정했다 — 이 열쇠로 새 판정 파일을 만든다")
 
 
 def _outcomes(path: Path) -> list[ChapterOutcome]:
@@ -208,6 +224,9 @@ def _parser() -> argparse.ArgumentParser:
     rate = commands.add_parser("judge", parents=[budget])
     rate.add_argument("--key", type=Path, required=True, help="sheet 가 쓴 열쇠(claims-key.json)")
     rate.add_argument("--model", choices=list(judging.JUDGE_MODELS), required=True, help="판정 모델 — 싼 gemini 먼저")
+    rate.add_argument(
+        "--judge-model", required=True, help="부를 모델 id(예 gemini-3.5-flash-lite·claude-haiku-5-5) — 판정 파일에 적는다"
+    )
     sheet = commands.add_parser("sheet")
     sheet.add_argument("--extract", nargs="+", required=True, metavar="어댑터=결과.json")
     sheet.add_argument("--out", type=Path, required=True)
@@ -238,10 +257,11 @@ async def _run(args: argparse.Namespace) -> int:
             slots=slots,
         )
     if args.command == "judge":
+        judge_adapter = judging.judge_adapter(args.model, args.judge_model)
         ledger = Ledger(args.ledger, cap_usd=args.cap_usd, halt_usd=args.halt_usd, bundle=args.bundle)
         meter = Meter(ledger=ledger, estimate_usd=args.estimate_usd)
-        adapter = meter.wrap(lambda _operation: ModelAdapter(judging.JUDGE_MODELS[args.model]))("conflicts.judge")
-        return await judge(adapter, args.key, args.run_dir, model=args.model)
+        adapter = meter.wrap(lambda _operation: judge_adapter)("conflicts.judge")
+        return await judge(adapter, args.key, args.run_dir, model=args.model, model_id=args.judge_model)
     if args.command == "copy-text":
         return await copy_text(factory, args.text_dir, args.adapters, args.run_dir)
     if args.command == "sheet":
@@ -258,9 +278,14 @@ async def _run(args: argparse.Namespace) -> int:
         )
         print(f"시트 {sheet} · 열쇠 {key}")
         return 0
+    labeled = labels.read_labels(args.labels, args.key)
+    judged = {path: judging.read_run(path) for path in args.judged}
+    digest = judging.key_digest([row.claim for row in labeled])
+    for path, run in judged.items():
+        _check_key(run, digest, path)
     report = label_report(
-        labels.read_labels(args.labels, args.key), labels.read_halted(args.key), labels.read_extraction(args.key),
-        {run.model: run for run in map(judging.read_run, args.judged)},
+        labeled, labels.read_halted(args.key), labels.read_extraction(args.key),
+        {run.model: run for run in judged.values()},
     )
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "label-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

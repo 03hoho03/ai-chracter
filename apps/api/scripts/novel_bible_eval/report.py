@@ -150,7 +150,7 @@ def label_report(
     for model, run in (judged or {}).items():
         found = judge.kappa(labeled, run.answers)
         entry: dict[str, Any] = {
-            "halted": run.halted, "n": found.n, "unjudged": found.unjudged, "value": found.binary,
+            "model_id": run.model_id, "halted": run.halted, "n": found.n, "unjudged": found.unjudged, "value": found.binary,
             "bootstrap": found.binary_bootstrap,
             "three_category": {"value": found.three, "bootstrap": found.three_bootstrap},
         }
