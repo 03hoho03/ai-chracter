@@ -7,11 +7,13 @@
   결과 파일의 `halted` 칸에 멈춤·끊김 까닭, 또는 검사까지 끝난 확정이 요청한 화 수보다 적다는 것을 적는다(끝까지 돌았으면
   null) — 나중에 결과 파일만 보는 사람도 앞 화 일부만 담긴 결과인지 안다. 시도 기록·원가·막힌 화도 함께 싣는다.
 - `sheet`: 어댑터들의 `extract` 결과를 합쳐 라벨 시트와 열쇠를 쓴다. 결과 파일의 `halted` 와 추출 요약은 열쇠로 옮긴다.
-- `score`: 사람이 내려받은 시트 결과를 읽어 어댑터별 라벨 지표를 쓴다. 열쇠에 멈춤·끊김 까닭이 있는 어댑터의 판정은 판정
-  불가다.
+- `judge`: 열쇠의 주장을 판정 모델 하나(`gemini` 먼저, 그다음 `haiku`)로 사람 라벨과 같은 범주로 매겨 `judge-<모델>.json` 에
+  쓴다(`judge.py`). 멈춘 뒤 같은 실행 폴더로 다시 돌리면 판정이 없는 주장만 부른다.
+- `score`: 사람이 내려받은 시트 결과를 읽어 어댑터별 라벨 지표를 쓰고, 판정 파일을 주면 판정 모델마다 κ 를 더한다. 열쇠에
+  멈춤·끊김 까닭이 있는 어댑터의 판정은 판정 불가다.
 
 무엇이든 하기 전에 DB 가 로컬인지 본다 — 운영·공유 DB 에 측정 소설을 심거나 사용자 원고를 모델에 보내지 않게. 모델을 부르는
-명령(`synthetic`·`extract`)은 원장을 요구한다: 호출마다 견적으로 자리를 잡고 실제 호출 기록으로 원가를 적으며, 묶음 누적이
+명령(`synthetic`·`extract`·`judge`)은 원장을 요구한다: 호출마다 견적으로 자리를 잡고 실제 호출 기록으로 원가를 적으며, 묶음 누적이
 멈춤 선에 닿을 호출은 부르기 전에 멈추고 그때까지의 결과를 쓴 뒤 종료 코드 20 으로 끝난다. 다른 이유로 끊겨도(Ctrl-C·DB 오류)
 끝난 부분까지 쓰고 예외를 다시 올린다 — 낸 돈은 원장에 남으므로 결과를 버리면 다시 돌려야 한다. 상한·멈춤 선·견적은 승인
 값이라 기본값 없이 인자로 받는다. 어댑터 배정은 이 프로세스의 env(`NOVEL_BIBLE_ADAPTERS`)가 정한다 — `--adapter` 는 보고서에
@@ -30,14 +32,15 @@ from api.core.config import settings
 from api.db.models import NovelChapterRevision
 from api.db.models.novel_bible import NovelBibleCommit
 from api.db.session import async_session_factory
-from api.novel_bible.adapters.resolver import build_resolver
-from api.novel_bible.core.contracts import AdapterResolver
+from api.novel_bible.adapters.resolver import ModelAdapter, build_resolver
+from api.novel_bible.core.contracts import AdapterResolver, BibleModelAdapter
 from api.novel_bible.core.jobs import SessionFactory
 from api.novel_bible.core.views import manuscript_of
 from api.novel_bible.ids import SlotId
 from memory_eval.ledger import EXIT_BUDGET, Ledger
 from replay.local_db import ensure_local_database
 
+from novel_bible_eval import judge as judging
 from novel_bible_eval import labels, metrics, text_copy
 from novel_bible_eval.report import label_report, synthetic_report, write_report
 from novel_bible_eval.run import BudgetHalt, ChapterOutcome, Meter, extract_chapters, run_set
@@ -133,6 +136,31 @@ def _write_extract(
                                                      encoding="utf-8")
 
 
+async def judge(adapter: BibleModelAdapter, key: Path, run_dir: Path, *, model: str) -> int:
+    """`adapter` 는 측정 원장을 지나는(`Meter` 가 감싼) 판정 어댑터다. 판정 파일이 이미 있으면 그 판정을 이어받는다."""
+    path = run_dir / f"judge-{model}.json"
+    run, claims = _judge_inputs(path, key, model)
+    try:
+        await judging.judge_claims(adapter, claims, run)
+    except BudgetHalt as halt:
+        run.halted = str(halt)
+        print(f"원장 멈춤: {halt} — 판정 {len(run.answers)}건까지 썼다")
+        return EXIT_BUDGET
+    except BaseException as error:
+        run.halted = f"끊김 — {type(error).__name__}: {error}"
+        raise
+    finally:
+        judging.write_run(run, path)
+    return 0
+
+
+def _judge_inputs(path: Path, key: Path, model: str) -> tuple[judging.JudgeRun, list[labels.Claim]]:
+    run = judging.read_run(path) if path.exists() else judging.JudgeRun(model=model)
+    run.halted = None
+    claims = [labels.Claim.model_validate(row) for row in json.loads(key.read_text(encoding="utf-8"))["claims"]]
+    return run, claims
+
+
 def _outcomes(path: Path) -> list[ChapterOutcome]:
     rows = json.loads(path.read_text(encoding="utf-8"))["outcomes"]
     return [ChapterOutcome.model_validate(row) for row in rows]
@@ -157,14 +185,15 @@ async def _block_texts(factory: SessionFactory, runs: dict[str, list[ChapterOutc
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="novel_bible_eval")
     commands = parser.add_subparsers(dest="command", required=True)
-    paid = argparse.ArgumentParser(add_help=False)
-    paid.add_argument("--run-dir", type=Path, required=True)
+    budget = argparse.ArgumentParser(add_help=False)
+    budget.add_argument("--run-dir", type=Path, required=True)
+    budget.add_argument("--ledger", type=Path, required=True, help="측정 전체가 함께 쓰는 원장 jsonl")
+    budget.add_argument("--bundle", required=True, help="승인 묶음 — 멈춤 판정은 이 묶음의 누적만 본다")
+    budget.add_argument("--cap-usd", type=float, required=True)
+    budget.add_argument("--halt-usd", type=float, required=True)
+    budget.add_argument("--estimate-usd", type=float, required=True, help="호출 하나의 견적")
+    paid = argparse.ArgumentParser(add_help=False, parents=[budget])
     paid.add_argument("--adapter", required=True, help="보고서에 적는 어댑터 이름(배정은 env 가 정한다)")
-    paid.add_argument("--ledger", type=Path, required=True, help="측정 전체가 함께 쓰는 원장 jsonl")
-    paid.add_argument("--bundle", required=True, help="승인 묶음 — 멈춤 판정은 이 묶음의 누적만 본다")
-    paid.add_argument("--cap-usd", type=float, required=True)
-    paid.add_argument("--halt-usd", type=float, required=True)
-    paid.add_argument("--estimate-usd", type=float, required=True, help="호출 하나의 견적")
     paid.add_argument("--slots", help="쉼표로 가른 슬롯 id(없으면 등록부 전부)")
     run = commands.add_parser("synthetic", parents=[paid])
     run.add_argument("--set", type=Path, required=True)
@@ -176,6 +205,9 @@ def _parser() -> argparse.ArgumentParser:
     copy.add_argument("--text-dir", type=Path, required=True, help="01.txt…NN.txt 와 선택 meta.txt 가 든 원고 폴더")
     copy.add_argument("--adapters", nargs="+", required=True, help="사본을 하나씩 만들 어댑터 이름")
     copy.add_argument("--run-dir", type=Path, required=True)
+    rate = commands.add_parser("judge", parents=[budget])
+    rate.add_argument("--key", type=Path, required=True, help="sheet 가 쓴 열쇠(claims-key.json)")
+    rate.add_argument("--model", choices=list(judging.JUDGE_MODELS), required=True, help="판정 모델 — 싼 gemini 먼저")
     sheet = commands.add_parser("sheet")
     sheet.add_argument("--extract", nargs="+", required=True, metavar="어댑터=결과.json")
     sheet.add_argument("--out", type=Path, required=True)
@@ -184,6 +216,7 @@ def _parser() -> argparse.ArgumentParser:
     score.add_argument("--key", type=Path, required=True)
     score.add_argument("--labels", type=Path, required=True)
     score.add_argument("--out", type=Path, required=True)
+    score.add_argument("--judged", type=Path, nargs="*", default=[], metavar="judge-모델.json")
     return parser
 
 
@@ -204,6 +237,11 @@ async def _run(args: argparse.Namespace) -> int:
             factory, resolver, args.novel_id, args.run_dir, adapter=args.adapter, count=args.chapters, meter=meter,
             slots=slots,
         )
+    if args.command == "judge":
+        ledger = Ledger(args.ledger, cap_usd=args.cap_usd, halt_usd=args.halt_usd, bundle=args.bundle)
+        meter = Meter(ledger=ledger, estimate_usd=args.estimate_usd)
+        adapter = meter.wrap(lambda _operation: ModelAdapter(judging.JUDGE_MODELS[args.model]))("conflicts.judge")
+        return await judge(adapter, args.key, args.run_dir, model=args.model)
     if args.command == "copy-text":
         return await copy_text(factory, args.text_dir, args.adapters, args.run_dir)
     if args.command == "sheet":
@@ -221,7 +259,8 @@ async def _run(args: argparse.Namespace) -> int:
         print(f"시트 {sheet} · 열쇠 {key}")
         return 0
     report = label_report(
-        labels.read_labels(args.labels, args.key), labels.read_halted(args.key), labels.read_extraction(args.key)
+        labels.read_labels(args.labels, args.key), labels.read_halted(args.key), labels.read_extraction(args.key),
+        {run.model: run for run in map(judging.read_run, args.judged)},
     )
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "label-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
