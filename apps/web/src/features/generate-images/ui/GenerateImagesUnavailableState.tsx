@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ImageOff, TriangleAlert, WifiOff } from "lucide-react";
 
-export type UnavailableReason = "error" | "empty" | "unavailable";
+import type { UnavailableReason } from "../model/imageModelsUnavailableReason";
 
 const COPY: Record<
   UnavailableReason,

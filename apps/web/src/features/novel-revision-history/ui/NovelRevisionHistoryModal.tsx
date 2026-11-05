@@ -424,21 +424,17 @@ function RevisionPreview({ novelId, chapterId, revision, previous, current }: Re
 
 type RevisionQuery = ReturnType<typeof useNovelRevisionQuery>;
 
-/** 두 판의 글 비교. 글이 같고 삽화만 다르면 글 비교는 "바뀐 곳이 없어요"를 말하므로, 대신 삽화만 바뀌었다고 말하고 그림이
- * 보이는 이 판 글로 넘어가는 버튼을 둔다. */
-function RevisionDiff({
-  beforeQuery,
-  afterQuery,
-  caption,
-  illustrationOnlyNote,
-  onShowText,
-}: {
+type RevisionDiffProps = {
   beforeQuery: RevisionQuery;
   afterQuery: RevisionQuery;
   caption: string;
   illustrationOnlyNote: string;
   onShowText: () => void;
-}) {
+};
+
+/** 두 판의 글 비교. 글이 같고 삽화만 다르면 글 비교는 "바뀐 곳이 없어요"를 말하므로, 대신 삽화만 바뀌었다고 말하고 그림이
+ * 보이는 이 판 글로 넘어가는 버튼을 둔다. */
+function RevisionDiff({ beforeQuery, afterQuery, caption, illustrationOnlyNote, onShowText }: RevisionDiffProps) {
   if (beforeQuery.isPending || afterQuery.isPending) {
     return <div className="h-24 animate-pulse rounded-lg bg-secondary" />;
   }

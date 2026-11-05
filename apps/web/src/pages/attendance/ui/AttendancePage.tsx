@@ -109,21 +109,16 @@ function lastClaimedSeq(board: AttendanceBoardData): number | null {
   return claimed[claimed.length - 1]?.seq ?? null;
 }
 
-function AttendanceBody({
-  view,
-  justClaimedSeq,
-  recentRoomId,
-  focusRef,
-  onClaim,
-  onRetryLoad,
-}: {
+type AttendanceBodyProps = {
   view: Exclude<AttendanceView, { kind: "notFound" }>;
   justClaimedSeq: number | null;
   recentRoomId: string | undefined;
   focusRef: (target: ClaimFocusTarget) => (node: HTMLElement | null) => void;
   onClaim: (board: AttendanceBoardData) => void;
   onRetryLoad: () => void;
-}) {
+};
+
+function AttendanceBody({ view, justClaimedSeq, recentRoomId, focusRef, onClaim, onRetryLoad }: AttendanceBodyProps) {
   switch (view.kind) {
     case "skeleton":
       return <AttendanceBoardSkeleton />;

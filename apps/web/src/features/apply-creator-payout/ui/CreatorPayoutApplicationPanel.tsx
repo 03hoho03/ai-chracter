@@ -1,5 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Checkbox } from "@ai-character-chat/ui/components/checkbox";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { Check, ChevronDown, Circle, CircleDashed, type LucideIcon } from "lucide-react";
 import { useId, useRef, useState } from "react";
@@ -49,7 +50,7 @@ export function CreatorPayoutApplicationPanel({ payout }: CreatorPayoutApplicati
   switch (view.kind) {
     case "pending":
       return (
-        <div ref={focusStatusIfJustApplied} tabIndex={-1} role="status" className={`${STATUS_BLOCK_CLASS} outline-none`}>
+        <div ref={focusStatusIfJustApplied} tabIndex={-1} role="status" className={cn(STATUS_BLOCK_CLASS, "outline-none")}>
           <p className="text-sm font-medium text-foreground">신청을 검토하고 있어요</p>
           <p className="text-xs break-keep text-muted-foreground">
             {formatDate(view.appliedAt)}에 신청했어요. 검토 결과는 이 화면에서 확인할 수 있어요.

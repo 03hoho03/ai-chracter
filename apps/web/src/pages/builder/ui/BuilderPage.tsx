@@ -8,6 +8,13 @@ import { CharacterBuilderShell } from "@/widgets/build-character";
 import { StoryBuilderShell } from "@/widgets/build-story";
 import { BuilderPreview } from "@/widgets/builder-preview";
 
+type BuilderPageProps = {
+  type: ContentType;
+  draftId: string | undefined;
+  tab: string | undefined;
+  onTabChange: (tab: string | undefined) => void;
+};
+
 /**
  * 초안 만들기(`draftId === undefined`)와 이어쓰기 양쪽의 화면.
  *
@@ -21,17 +28,7 @@ import { BuilderPreview } from "@/widgets/builder-preview";
  * `tab` 은 주소의 `?tab=` 그대로다(어느 빌더의 탭인지 모른다). 빌더가 자기 탭 목록으로 읽고, 탭을 바꿀 때
  * `onTabChange` 로 주소에 돌려 적는다.
  */
-export function BuilderPage({
-  type,
-  draftId,
-  tab,
-  onTabChange,
-}: {
-  type: ContentType;
-  draftId: string | undefined;
-  tab: string | undefined;
-  onTabChange: (tab: string | undefined) => void;
-}) {
+export function BuilderPage({ type, draftId, tab, onTabChange }: BuilderPageProps) {
   const draftQuery = useContentDraftQuery(draftId);
   const emptyDraft = useMemo(() => createEmptyDraft(type), [type]);
 

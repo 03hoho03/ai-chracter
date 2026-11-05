@@ -1,4 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { BookX, ChevronLeft, CloudOff } from "lucide-react";
 import type { ReactNode } from "react";
@@ -153,7 +154,7 @@ function EpisodeSkeleton({ novelId }: { novelId: string }) {
       <div aria-hidden className="flex flex-col gap-4">
         <div className="h-8 w-2/3 animate-pulse rounded-lg bg-muted" />
         {["w-full", "w-11/12", "w-full", "w-4/5", "w-full", "w-2/3"].map((width, index) => (
-          <div key={index} className={`h-5 ${width} animate-pulse rounded-lg bg-muted`} />
+          <div key={index} className={cn("h-5 animate-pulse rounded-lg bg-muted", width)} />
         ))}
       </div>
     </EpisodeStatusShell>

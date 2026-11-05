@@ -45,15 +45,13 @@ export function PublishIssueList({ rows, onSelect }: PublishIssueListProps) {
   );
 }
 
-const IssueRow = memo(function IssueRow({
-  path,
-  label,
-  onSelect,
-}: {
+type IssueRowProps = {
   path: string;
   label: string;
   onSelect: (path: string) => void;
-}) {
+};
+
+const IssueRow = memo(function IssueRow({ path, label, onSelect }: IssueRowProps) {
   return (
     <li>
       <button

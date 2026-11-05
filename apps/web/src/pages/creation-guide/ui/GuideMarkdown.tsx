@@ -1,8 +1,7 @@
 import type { ComponentProps } from "react";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import type { Components, ExtraProps } from "react-markdown";
 import Markdown from "react-markdown";
-
-import { cn } from "@ai-character-chat/ui/lib/utils";
 
 import { GUIDE_MARKDOWN_OPTIONS } from "../config/guideMarkdownOptions";
 import { GUIDE_QUIET_LINK_CLASS } from "../config/guideStyles";

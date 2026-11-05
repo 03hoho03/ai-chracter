@@ -43,7 +43,7 @@ export const DeleteWorkBundleModal = createCallable<DeleteWorkBundleModalProps, 
     <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(false)}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle className="break-keep [overflow-wrap:anywhere]">‘{name}’ 묶음을 지울까요?</DialogTitle>
+          <DialogTitle className="break-keep wrap-anywhere">‘{name}’ 묶음을 지울까요?</DialogTitle>
           <DialogDescription>작품은 지워지지 않아요. 묶음만 없어져요.</DialogDescription>
         </DialogHeader>
         <DialogFooter>

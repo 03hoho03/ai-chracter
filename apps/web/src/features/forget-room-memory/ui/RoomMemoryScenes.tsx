@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { chatRoomKeys, useChatRoomMemoryItemsQuery, type ChatRoomMemoryEpisode } from "@/entities/chat-room";
 
 import { turnRangeLabel } from "../model/memoryItemText";
+import { useForgetResultNotice } from "../model/useForgetResultNotice";
 import { ForgetButton } from "./ForgetButton";
 import { ForgetSceneModal } from "./ForgetSceneModal";
 import { MEMORY_BADGE_CLASS } from "./memoryBadge";
@@ -17,7 +18,6 @@ import {
   MemoryItemsSkeleton,
   UsedInRepliesLine,
 } from "./MemoryItemsParts";
-import { useForgetResultNotice } from "./useForgetResultNotice";
 
 type RoomMemoryScenesProps = {
   roomId: string;

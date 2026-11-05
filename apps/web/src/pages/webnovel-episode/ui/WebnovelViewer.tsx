@@ -39,6 +39,9 @@ import {
 
 import { EditionChangesDialog } from "./EditionChangesDialog";
 
+const EDITION_LINK_CLASS =
+  "text-foreground underline underline-offset-2 outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring";
+
 type WebnovelViewerProps = {
   novel: WebnovelDetailResponse;
   /** 지금 화의 목차 항목(읽던 자리). 화 조회 응답에도 자리가 실리지만, 떠날 때 먼저 써 두는 곳이 작품 정보 캐시라
@@ -266,23 +269,17 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
   );
 }
 
-const EDITION_LINK_CLASS =
-  "text-foreground underline underline-offset-2 outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring";
-
-/** 화 제목 아래 판 안내 — 산 뒤 고쳐진 화를 연 소장자에게, 지금 읽는 판과 다른 판으로 가는 길과 두 판의 "바뀐 내용"을
- * 여는 버튼을 낸다. 고른 판은 주소의 `edition` 이라 같은 화면에서 search 만 바꾼다(판이 바뀌면 읽기 화면이 새로
- * 마운트된다). 최신 판 칸을 모르는 옛 서버면 "바뀐 내용"이 없다(보일 날짜·요약이 없다). */
-function EditionNoteLine({
-  novelId,
-  chapterId,
-  notice,
-  onOpenChanges,
-}: {
+type EditionNoteLineProps = {
   novelId: string;
   chapterId: string;
   notice: EditionNotice;
   onOpenChanges: (opener: HTMLElement) => void;
-}) {
+};
+
+/** 화 제목 아래 판 안내 — 산 뒤 고쳐진 화를 연 소장자에게, 지금 읽는 판과 다른 판으로 가는 길과 두 판의 "바뀐 내용"을
+ * 여는 버튼을 낸다. 고른 판은 주소의 `edition` 이라 같은 화면에서 search 만 바꾼다(판이 바뀌면 읽기 화면이 새로
+ * 마운트된다). 최신 판 칸을 모르는 옛 서버면 "바뀐 내용"이 없다(보일 날짜·요약이 없다). */
+function EditionNoteLine({ novelId, chapterId, notice, onOpenChanges }: EditionNoteLineProps) {
   const params = { novelId, chapterId };
   const purchasedLabel = `구매 당시 판(${notice.purchased.dateLabel} 공개)`;
   const changesButton = notice.latest !== undefined && (

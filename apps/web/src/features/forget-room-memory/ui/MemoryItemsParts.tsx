@@ -4,14 +4,9 @@ import { CircleCheck, CircleSlash, Info } from "lucide-react";
 
 import { koreanParticle } from "@/shared/lib/text/koreanParticle";
 
+import type { MemoryListNotice } from "../model/forgetOutcome";
 import { MEMORY_COMEBACK_NOTICE, usedInRepliesText } from "../model/memoryItemText";
 import { MemoryNote } from "./MemoryNote";
-
-/** 목록 위에 남기는 잊게 하기 결과. `forgotten`은 요약 편집으로 잇는다 — 장면·사실을 지워도 요약에 같은 내용이 남을 수
- * 있고, 요약은 사용자가 직접 고칠 수 있다. */
-export type MemoryListNotice =
-  | { kind: "forgotten"; label: string; linkedEpisodeCount: number }
-  | { kind: "message"; message: string };
 
 type ForgetResultNoticeProps = {
   ref: Ref<HTMLDivElement>;

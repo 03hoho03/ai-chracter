@@ -606,19 +606,16 @@ function toTurnsStatus(status: { isRoomGone: boolean; isReady: boolean; isFailed
   return status.isFailed ? "error" : "loading";
 }
 
-/** 화 화면의 제목 자리와 본문. 제목은 이 화면으로 옮겼을 때 포커스를 받는 자리라 `tabIndex=-1` 이고 포커스 테두리를 그리지 않는다. */
-function EpisodeShell({
-  headingRef,
-  title,
-  header,
-  children,
-}: {
+type EpisodeShellProps = {
   headingRef: RefObject<HTMLHeadingElement | null>;
   title: string;
   /** 제목 바로 아래 붙는 화의 상태·줄거리. */
   header?: ReactNode;
   children: ReactNode;
-}) {
+};
+
+/** 화 화면의 제목 자리와 본문. 제목은 이 화면으로 옮겼을 때 포커스를 받는 자리라 `tabIndex=-1` 이고 포커스 테두리를 그리지 않는다. */
+function EpisodeShell({ headingRef, title, header, children }: EpisodeShellProps) {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
@@ -632,15 +629,13 @@ function EpisodeShell({
   );
 }
 
-function EpisodeSummary({
-  episode,
-  sceneOutline,
-  manuscript,
-}: {
+type EpisodeSummaryProps = {
   episode: NovelOutlineEpisode;
   sceneOutline: NovelOutlineEpisode["sceneOutline"];
   manuscript: ManuscriptStatus;
-}) {
+};
+
+function EpisodeSummary({ episode, sceneOutline, manuscript }: EpisodeSummaryProps) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-1.5">
