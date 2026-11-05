@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models import NovelBibleCommit
+from api.db.models import ChatMemoryFact, KeywordNote, NovelBibleCommit
 from api.novel_bible.core.confirm import Actor, confirm
 from api.novel_bible.core.jobs import commit_ref
 from api.novel_bible.core.views import CommitView, source_ref_of
@@ -17,7 +17,7 @@ from api.novel_bible.registry import REGISTRY
 from api.novel_bible.slots.events.slot import EventsInput, EventsSlot
 from api.novel_bible.slots.facts.slot import FactsInput, FactsSlot
 from novel_bible_eval.seed import SeededChapter, add_chapter, seed_novel
-from novel_bible_eval.spec import load_set
+from novel_bible_eval.spec import PlayRow, load_set
 
 FIXTURE = Path(__file__).parent / "fixtures" / "novel_bible_eval" / "small_set.json"
 SYSTEM = Actor(kind="system")
@@ -107,3 +107,27 @@ async def test_a_probe_chapter_carries_its_scene_outline_too(db_session: AsyncSe
     assert [(scene.title, scene.flashback) for scene in slot_input.scenes] == [
         (scene.title, scene.flashback) for scene in probe.chapter.scenes
     ]
+
+
+async def test_the_seeded_novel_maps_each_spec_play_row_and_note_to_the_row_id_the_app_reads(
+    db_session: AsyncSession,
+) -> None:
+    # 각색 후보의 근거는 채팅 기억 행 id·키워드 노트 id 로 남는다. 심기가 명세 차례마다 그 id 를 돌려주어, 근거를 명세의 행으로
+    # 되짚는다 — 앱이 싣는 차례는 접힌 차례라 명세 차례와 다를 수 있다. 여기서는 명세의 둘째 행이 먼저 접힌다.
+    (spec,) = load_set(FIXTURE).novels
+    assert spec.source is not None
+    earlier = PlayRow(visible_from=1, subject="도윤", object="서하", value="길동무")
+    seeded = await seed_novel(db_session, spec.model_copy(update={"play": [*spec.play, earlier]}))
+    assert len(seeded.play_row_ids) == 2 and len(seeded.note_ids) == len(spec.source.notes)
+    for row, row_id in zip([*spec.play, earlier], seeded.play_row_ids, strict=True):
+        stored = await db_session.get(ChatMemoryFact, row_id)
+        assert stored is not None and (stored.subject, stored.value) == (row.subject, row.value)
+    for note, note_id in zip(spec.source.notes, seeded.note_ids, strict=True):
+        kept = await db_session.get(KeywordNote, note_id)
+        assert kept is not None and kept.info_text == note
+    slot_input = await _facts_input(db_session, seeded.novel_id, seeded.chapters[1])
+    assert slot_input.play is not None and slot_input.source is not None
+    assert [fact.chat_memory_fact_id for fact in slot_input.play] == [seeded.play_row_ids[1], seeded.play_row_ids[0]]
+    assert {fact.chat_room_id for fact in slot_input.play} == {seeded.room_id}
+    assert list(slot_input.source.keyword_notes) == list(seeded.note_ids)
+    assert slot_input.source.ref.content_version_id == seeded.content_version_id

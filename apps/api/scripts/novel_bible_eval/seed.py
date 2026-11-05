@@ -15,7 +15,6 @@
 회원은 이메일이 예약 도메인(`.invalid`)이라 실제 주소와 겹치지 않는다."""
 
 import uuid
-from bisect import bisect_right
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -23,7 +22,6 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.memory_facts import fact_key
 from api.db.models import (
     CharacterVersionDetail,
     ChatMemoryFact,
@@ -47,7 +45,7 @@ from api.db.models import (
 )
 from api.novelize.blocks import build_revision, fresh_ids
 
-from novel_bible_eval.spec import ChapterSpec, NovelSpec, PlayRow, SceneSpec, SourceSpec
+from novel_bible_eval.spec import ChapterSpec, NovelSpec, PlayRow, SourceSpec
 
 # 측정 회원이 동의한 것으로 치는 약관·처리방침 판. 동의 게이트를 타는 경로를 부르지 않으므로 값은 꼴만 맞으면 된다.
 _LEGAL_VERSION = "2026-09-06"
@@ -68,9 +66,17 @@ class SeededChapter:
 
 @dataclass(frozen=True)
 class SeededNovel:
+    """`play_row_ids`·`note_ids` 는 명세의 플레이 행·키워드 노트 차례마다 심은 행 id 다. 각색 후보의 근거는 채팅 기억 행 id·
+    키워드 노트 id 로 남는데, 앱이 싣는 차례(`P1`·`K1` …)는 접힌 차례·같은 키 줄이기를 거쳐 명세 차례와 다를 수 있어 차례로는
+    짝지을 수 없다 — 근거를 명세의 행으로 되짚을 때 이 대응을 쓴다. 원작·플레이가 없으면 None·빈 튜플이다."""
+
     key: str
     novel_id: uuid.UUID
     chapters: tuple[SeededChapter, ...]
+    content_version_id: uuid.UUID | None = None
+    room_id: uuid.UUID | None = None
+    play_row_ids: tuple[uuid.UUID, ...] = ()
+    note_ids: tuple[uuid.UUID, ...] = ()
 
 
 def _chapter_end(ordinal: int) -> datetime:
@@ -95,9 +101,11 @@ async def _member(session: AsyncSession, nickname: str) -> User:
     return user
 
 
-async def _seed_source(session: AsyncSession, spec: SourceSpec) -> tuple[uuid.UUID, uuid.UUID]:
-    """(작품 id, 발행한 버전 id). 작품 설정은 스토리면 세계관 설정, 캐릭터면 캐릭터 프롬프트 칸에 둔다 — 앱이 원작 글을 그
-    칸에서 읽는다."""
+async def _seed_source(
+    session: AsyncSession, spec: SourceSpec
+) -> tuple[uuid.UUID, uuid.UUID, tuple[uuid.UUID, ...]]:
+    """(작품 id, 발행한 버전 id, 노트 id — 명세 차례). 작품 설정은 스토리면 세계관 설정, 캐릭터면 캐릭터 프롬프트 칸에 둔다 —
+    앱이 원작 글을 그 칸에서 읽는다."""
     author = await _member(session, "측정 작가")
     story = spec.kind == "story"
     content = Content(
@@ -125,25 +133,28 @@ async def _seed_source(session: AsyncSession, spec: SourceSpec) -> tuple[uuid.UU
                 example_dialogues=[], character_prompt=spec.setting,
             )
         )
-    session.add_all(
+    notes = [
         KeywordNote(
             entity_id=uuid.uuid4(), content_version_id=version.id, info_text=note, trigger_keywords=[spec.name],
             order=order,
         )
         for order, note in enumerate(spec.notes)
-    )
+    ]
+    session.add_all(notes)
     content.current_published_version_id = version.id
     await session.flush()
-    return content.id, version.id
+    return content.id, version.id, tuple(note.id for note in notes)
 
 
 async def _seed_play(
     session: AsyncSession, user_id: uuid.UUID, content_id: uuid.UUID, version_id: uuid.UUID, rows: Sequence[PlayRow]
-) -> uuid.UUID:
-    """방 하나와, 행이 접힌 화마다 스냅숏 하나·그 행들(명세 차례대로). 사실 키는 채팅 기억과 같은 규칙으로 만든다."""
+) -> tuple[uuid.UUID, tuple[uuid.UUID, ...]]:
+    """(방 id, 행 id — 명세 차례). 방 하나와, 행이 접힌 화마다 스냅숏 하나·그 행들(명세 차례대로). 사실 키는 채팅 기억과 같은
+    규칙으로 만든다."""
     room = ChatRoom(user_id=user_id, content_id=content_id, content_version_id=version_id)
     session.add(room)
     await session.flush()
+    stored: dict[int, ChatMemoryFact] = {}
     for visible_from in sorted({row.visible_from for row in rows}):
         at, message_id = _folded_at(visible_from), uuid.uuid4()
         snapshot = ChatRoomMemorySnapshot(
@@ -152,25 +163,23 @@ async def _seed_play(
         )
         session.add(snapshot)
         await session.flush()
-        folded = [row for row in rows if row.visible_from == visible_from]
-        session.add_all(
-            ChatMemoryFact(
-                chat_room_id=room.id, snapshot_id=snapshot.id, ordinal=ordinal,
-                kind="fact" if row.object is None else "relation", subject=row.subject, object=row.object,
-                attribute=row.attribute,
-                fact_key=fact_key("fact" if row.object is None else "relation", row.subject, row.object or row.attribute),
+        folded = [index for index, row in enumerate(rows) if row.visible_from == visible_from]
+        for ordinal, index in enumerate(folded):
+            row = rows[index]
+            stored[index] = ChatMemoryFact(
+                chat_room_id=room.id, snapshot_id=snapshot.id, ordinal=ordinal, kind=row.chat_kind,
+                subject=row.subject, object=row.object, attribute=row.attribute, fact_key=row.chat_fact_key,
                 value=row.value, truth_status=row.truth_status, asserted_by=row.asserted_by, importance=3,
                 start_created_at=at, start_message_id=message_id, end_created_at=at, end_message_id=message_id,
                 start_turn=1, end_turn=1,
             )
-            for ordinal, row in enumerate(folded)
-        )
+            session.add(stored[index])
         await session.flush()
-    return room.id
+    return room.id, tuple(stored[index].id for index in range(len(rows)))
 
 
 async def _seed_scenes(
-    session: AsyncSession, chapter: NovelChapter, block_ids: Sequence[uuid.UUID], scenes: Sequence[SceneSpec]
+    session: AsyncSession, chapter: NovelChapter, block_ids: Sequence[uuid.UUID], spec: ChapterSpec
 ) -> None:
     """장면 구성안의 장면은 정본 기억이 읽는 칸(id·제목·회상 표시)만 둔다. 전체 구성안은 소설에 한 판만 두고 화마다 그 판에
     잇는다 — 앱도 한 판의 화마다 장면 구성안을 만든다."""
@@ -182,7 +191,8 @@ async def _seed_scenes(
         session.add(outline)
         await session.flush()
         outline_id = outline.id
-    planned = [{"id": str(uuid.uuid4()), "title": scene.title, "flashback": scene.flashback} for scene in scenes]
+    assert spec.scenes is not None
+    planned = [{"id": str(uuid.uuid4()), "title": scene.title, "flashback": scene.flashback} for scene in spec.scenes]
     episode = NovelEpisodeOutline(
         novel_id=chapter.novel_id, outline_id=outline_id, episode_key=uuid.uuid4(), revision=1, source="generate",
         scenes=planned,
@@ -190,11 +200,10 @@ async def _seed_scenes(
     session.add(episode)
     await session.flush()
     chapter.episode_outline_id = episode.id
-    starts = [scene.start for scene in scenes]
     session.add_all(
         NovelSceneBlock(
             block_id=block_id, chapter_id=chapter.id, episode_outline_id=episode.id,
-            scene_id=planned[bisect_right(starts, number) - 1]["id"],
+            scene_id=planned[spec.scene_index(number)]["id"],
         )
         for number, block_id in enumerate(block_ids, start=1)
     )
@@ -220,7 +229,7 @@ async def add_chapter(session: AsyncSession, novel_id: uuid.UUID, ordinal: int, 
     session.add(revision)
     await session.flush()
     if spec.scenes is not None:
-        await _seed_scenes(session, chapter, revision.block_ids, spec.scenes)
+        await _seed_scenes(session, chapter, revision.block_ids, spec)
     return SeededChapter(ordinal, chapter.id, batch.id, revision.id, tuple(revision.block_ids))
 
 
@@ -228,11 +237,13 @@ async def seed_novel(session: AsyncSession, spec: NovelSpec) -> SeededNovel:
     """회원·원작·방·소설·기본 화 전부(flush). 커밋은 호출부가 한다. 원작이 없는 명세면 소설의 원작 칸은 행이 없는 id 라 원작
     입력 없이 확정된다."""
     reader = await _member(session, "측정")
-    content_id, room_id = uuid.uuid4(), None
+    content_id, version_id, room_id = uuid.uuid4(), None, None
+    note_ids: tuple[uuid.UUID, ...] = ()
+    play_row_ids: tuple[uuid.UUID, ...] = ()
     if spec.source is not None:
-        content_id, version_id = await _seed_source(session, spec.source)
+        content_id, version_id, note_ids = await _seed_source(session, spec.source)
         if spec.play:
-            room_id = await _seed_play(session, reader.id, content_id, version_id, spec.play)
+            room_id, play_row_ids = await _seed_play(session, reader.id, content_id, version_id, spec.play)
     character = spec.source is None or spec.source.kind == "character"
     title = "합성 원작" if spec.source is None else spec.source.name
     novel = Novel(
@@ -246,4 +257,4 @@ async def seed_novel(session: AsyncSession, spec: NovelSpec) -> SeededNovel:
         await add_chapter(session, novel.id, ordinal, chapter)
         for ordinal, chapter in enumerate(spec.chapters, start=1)
     ]
-    return SeededNovel(spec.key, novel.id, tuple(chapters))
+    return SeededNovel(spec.key, novel.id, tuple(chapters), version_id, room_id, play_row_ids, note_ids)
