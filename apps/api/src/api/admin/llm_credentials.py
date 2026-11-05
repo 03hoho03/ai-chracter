@@ -549,13 +549,18 @@ async def replace_llm_credential_secret(
     notify: Notifier = Depends(get_credential_notifier),
 ) -> AdminLlmCredential:
     """키만 바꾼다(한 항목 = 한 계정 — 다른 조직의 키로는 바꾸지 않는다). 상태·판은 그대로이고, 확인 기록이 옛 지문에 묶여
-    있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다."""
+    있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
+    없을 때 살리는 길) 지문이 같아 옛 확인 기록이 그대로 지금 키의 확인으로 센다 — 암호문만 지금 키로 다시 쓴다."""
     _require_store()
     api_key = _api_key(body.api_key)
     header = await _organization(probe, api_key)
     keyring = credential_keyring()
     async with credential_write(db):
         credential = await _get(db, credential_id, lock=True)
+        if credential.provider != "anthropic":
+            raise _rule(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, "provider-not-available", "이 공급자의 키 교체는 아직 없습니다."
+            )
         old_fingerprint = credential.secret_fingerprint
         old_is_env_key = same_as_env_key(credential)
         cleared = False
@@ -583,7 +588,11 @@ async def replace_llm_credential_secret(
             credential.account_ref = header
         replace_secret(keyring, credential, api_key)
         credential.updated_at = datetime.now(UTC)
-        fingerprints = f"지문 {old_fingerprint} → {credential.secret_fingerprint}"
+        same_key = credential.secret_fingerprint == old_fingerprint
+        if same_key:
+            fingerprints = f"지문 {old_fingerprint} · 같은 키 — 암호문만 다시 씀"
+        else:
+            fingerprints = f"지문 {old_fingerprint} → {credential.secret_fingerprint}"
         await record_admin_action(
             db,
             admin_id=admin_id,
@@ -593,12 +602,12 @@ async def replace_llm_credential_secret(
         )
         await db.flush()
         await db.commit()
-    message = (
-        f"[Claude 자격] 키 교체 — {credential.provider} · {credential.label} · {fingerprints} · 확인 호출 전까지 미확인"
-        + _env_key_line(old_is_env_key)
-    )
-    if same_as_env_key(credential):
-        message += "\n새 키는 env 롤백 키와 같다"
+    message = f"[Claude 자격] 키 교체 — {credential.provider} · {credential.label} · {fingerprints}"
+    # 같은 키면 옛 키가 곧 지금 키라 확인 기록이 그대로 세고 폐기할 옛 키도 없다.
+    if not same_key:
+        message += " · 확인 호출 전까지 미확인" + _env_key_line(old_is_env_key)
+        if same_as_env_key(credential):
+            message += "\n새 키는 env 롤백 키와 같다"
     if cleared:
         message += "\n조직 미확인으로 돌아감"
     _after_commit(notify, message)
@@ -769,6 +778,16 @@ async def check_llm_credential(
     groups = check_groups(current_model_ids())
     results = [(group, await probe.check(api_key, group, credential_id=credential_id)) for group in groups]
     outcomes, fill = _reconcile(results, started_account)
+    # 보안 신호는 기록을 쓰기 전에 보낸다 — 호출을 기다리는 동안 항목이 지워져(404) 기록이 남지 않거나 쓰기가 실패해도, 응답이
+    # 보인 조직은 그대로다. 아래 쓰기가 바꾸는 결과는 통과를 `account-already-listed` 로 돌리는 것뿐이라 신호가 달라지지 않는다.
+    kinds = {kind for _, kind, _ in outcomes}
+    if "organization-mismatch" in kinds:
+        notify(f"[Claude 자격] 확인 응답의 조직이 저장된 조직과 다르다 — {label}")
+    if "account-not-allowed" in kinds:
+        notify(f"[Claude 자격] 확인 응답의 조직이 허용 목록 밖이다 — {label}")
+    no_header = all(header is None for _, _, header in outcomes)
+    if started_account is None and fill is None and no_header and None in kinds:
+        notify(f"[Claude 자격] 저장·확인 둘 다 조직 헤더가 없다 — {label} 은 켤 수 없다")
 
     async with credential_write(db):
         current = await db.scalar(
@@ -824,16 +843,9 @@ async def check_llm_credential(
         await db.flush()
         await db.commit()
 
-    messages = [f"[Claude 자격] 확인 — {subject} · {' · '.join(axis_results)}" + ("\n조직 확인됨" if fill else "")]
-    kinds = {kind for _, kind, _ in outcomes}
-    if "organization-mismatch" in kinds:
-        messages.append(f"[Claude 자격] 확인 응답의 조직이 저장된 조직과 다르다 — {label}")
-    if "account-not-allowed" in kinds:
-        messages.append(f"[Claude 자격] 확인 응답의 조직이 허용 목록 밖이다 — {label}")
-    no_header = all(header is None for _, _, header in outcomes)
-    if started_account is None and fill is None and no_header and None in kinds:
-        messages.append(f"[Claude 자격] 저장·확인 둘 다 조직 헤더가 없다 — {label} 은 켤 수 없다")
-    _after_commit(notify, *messages)
+    _after_commit(
+        notify, f"[Claude 자격] 확인 — {subject} · {' · '.join(axis_results)}" + ("\n조직 확인됨" if fill else "")
+    )
     return AdminLlmCredentialCheckResponse(
         credential=await _credential_response(db, credential_id), calls=len(groups)
     )

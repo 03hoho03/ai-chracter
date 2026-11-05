@@ -714,6 +714,55 @@ async def test_secret_replace_makes_earlier_checks_stale(
     assert (enable.status_code, enable.json()["detail"]["rule"]) == (409, "check-required")
 
 
+async def test_replacing_with_the_same_key_rewrites_only_the_ciphertext_and_keeps_earlier_checks(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_id: uuid.UUID,
+    probe: FakeProbe,
+    notes: list[str],
+    store_env: pytest.MonkeyPatch,
+) -> None:
+    """암호화 키를 잃어 저장한 키를 읽을 수 없게 된 항목은 같은 키를 다시 붙여넣어 살린다. 지문과 판이 그대로라 잃기 전의
+    확인이 지금 키의 확인으로 남아 바로 켤 수 있고, 알림은 키가 바뀐 것처럼 미확인이라 하거나 폐기를 권하지 않는다 — 그
+    키는 계속 쓰는 키다."""
+    lost_keyring = "k9:" + base64.urlsafe_b64encode(b"\x09" * 32).decode()
+    store_env.setattr(settings, "llm_credential_encryption_keys", lost_keyring)
+    created = await _create(db_client)
+    await _check(db_client, created["id"])
+    store_env.setattr(settings, "llm_credential_encryption_keys", FAKE_CREDENTIAL_KEYRING)
+
+    resp = await db_client.put(f"{_BASE}/{created['id']}/secret", json={"apiKey": FAKE_API_KEY})
+
+    assert resp.status_code == 200
+    row = await _row(db_session, created["id"])
+    assert decrypt_secret(FieldKeyring.parse(FAKE_CREDENTIAL_KEYRING), row) == FAKE_API_KEY
+    assert {item["isCurrentSecret"] for item in resp.json()["checks"]} == {True}
+    enable = await db_client.post(f"{_BASE}/{created['id']}/enable")
+    assert enable.status_code == 200
+    replaced = [note for note in notes if note.startswith("[Claude 자격] 키 교체")]
+    assert replaced == [
+        f"[Claude 자격] 키 교체 — anthropic · 운영 계정 · 지문 {secret_fingerprint(FAKE_API_KEY)} · 같은 키 — 암호문만 다시 씀"
+    ]
+
+
+async def test_secret_replace_refuses_bedrock(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """Bedrock 항목의 키 교체는 아직 없다 — 확인 호출과 같은 규칙으로 422 이고 비밀·조직은 그대로다. 막지 않으면 Anthropic
+    키가 Bedrock 항목의 비밀 자리에 들어간다."""
+    bedrock = await _insert_row(db_session, provider="bedrock", region="us-east-1", account_ref="123456789012")
+    before = (bedrock.key_id, bedrock.secret_ciphertext, bedrock.secret_fingerprint)
+    probe.organization = None
+
+    resp = await db_client.put(f"{_BASE}/{bedrock.id}/secret", json={"apiKey": FAKE_OTHER_API_KEY})
+
+    assert (resp.status_code, resp.json()["detail"]["rule"]) == (422, "provider-not-available")
+    row = await _row(db_session, bedrock.id)
+    assert (row.key_id, row.secret_ciphertext, row.secret_fingerprint) == before
+    assert row.account_ref == "123456789012"
+    assert notes == []
+
+
 # ── 순서 ───────────────────────────────────────────────────────────────────────
 async def _three(client: httpx.AsyncClient, probe: FakeProbe) -> list[str]:
     ids = [(await _create(client, "가 계정"))["id"]]
@@ -1040,6 +1089,62 @@ async def test_check_fails_an_axis_whose_response_organization_differs(
     assert all(_OTHER_ORG not in note and _ORG not in note for note in notes)
 
 
+async def test_check_passes_a_verified_credential_whose_responses_carry_no_organization_header(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """조직이 저장 때 확인된 항목은 응답에 조직 헤더가 없어도 통과다 — 규칙은 "다르면 실패"뿐이고, 헤더가 없는 것은 다른
+    조직이라는 증거가 아니다."""
+    created = await _create(db_client)
+    probe.default = CheckCallResult(error_kind=None, organization=None)
+
+    await _check(db_client, created["id"])
+
+    assert {(r.passed, r.error_kind) for r in await _checks(db_session, created["id"])} == {(True, None)}
+    assert (await _row(db_session, created["id"])).account_ref == _ORG
+
+
+async def test_check_on_an_unverified_credential_fails_a_later_axis_whose_header_differs_from_the_first(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """미확인 항목의 확인에서는 첫 허용 헤더가 그 확인의 기준이 된다 — 뒤 응답이 다른 허용 조직이면 그 축은 불일치다. 둘 다
+    허용 목록 안이라 허용 검사만으로는 갈리지 않는다."""
+    probe.organization = None
+    created = await _create(db_client)
+    probe.results[_IDS["sonnet"]] = CheckCallResult(error_kind=None, organization=_OTHER_ORG)
+
+    await _check(db_client, created["id"])
+
+    rows = {r.model_axis: r for r in await _checks(db_session, created["id"])}
+    assert (rows["opus"].passed, rows["sonnet"].error_kind) == (True, "organization-mismatch")
+    assert (await _row(db_session, created["id"])).account_ref == _ORG
+
+
+async def test_check_does_not_fill_the_organization_when_the_key_changed_during_the_calls(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """호출을 기다리는 동안 키가 바뀌었으면 응답의 조직을 채우지 않는다 — 그 헤더는 옛 키의 조직이라 새 키의 조직이라는
+    증거가 아니다. 기록은 시작할 때의 지문으로 남아 새 키의 확인으로 세지 않는다."""
+    probe.organization = None
+    created = await _create(db_client)
+
+    async def replace_key() -> None:
+        await db_session.execute(
+            sa.update(LlmCredential)
+            .where(LlmCredential.id == uuid.UUID(created["id"]))
+            .values(secret_fingerprint=secret_fingerprint(FAKE_OTHER_API_KEY))
+            .execution_options(synchronize_session=False)
+        )
+
+    probe.during_check = replace_key
+    await _check(db_client, created["id"])
+
+    assert (await _row(db_session, created["id"])).account_ref is None
+    assert {r.secret_fingerprint for r in await _checks(db_session, created["id"])} == {
+        secret_fingerprint(FAKE_API_KEY)
+    }
+    assert not [note for note in notes if note.endswith("\n조직 확인됨")]
+
+
 async def test_check_fills_an_unverified_organization_from_the_response_header(
     db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
 ) -> None:
@@ -1124,6 +1229,28 @@ async def test_check_on_a_credential_deleted_during_the_calls_is_404(
 
     assert resp.status_code == 404
     assert await db_session.scalar(sa.select(sa.func.count()).select_from(LlmCredentialCheck)) == 0
+
+
+async def test_check_alerts_an_organization_mismatch_even_when_the_credential_was_deleted_during_the_calls(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """응답이 다른 조직을 보였다는 보안 신호는 기록 쓰기가 404 로 끝나도 나간다 — 그 키가 다른 조직의 키라는 사실은 항목이
+    사라져도 그대로다. 변경 알림(확인 결과)은 쓰기가 성공했을 때만이라 나가지 않는다."""
+    created = await _create(db_client)
+    probe.results[_IDS["sonnet"]] = CheckCallResult(error_kind=None, organization=_OTHER_ORG)
+
+    async def delete() -> None:
+        await db_session.execute(
+            sa.delete(LlmCredential)
+            .where(LlmCredential.id == uuid.UUID(created["id"]))
+            .execution_options(synchronize_session=False)
+        )
+
+    probe.during_check = delete
+    resp = await db_client.post(f"{_BASE}/{created['id']}/check")
+
+    assert resp.status_code == 404
+    assert notes[1:] == ["[Claude 자격] 확인 응답의 조직이 저장된 조직과 다르다 — 운영 계정"]
 
 
 async def test_check_refuses_bedrock(
