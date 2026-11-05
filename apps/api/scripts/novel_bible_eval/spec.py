@@ -12,7 +12,7 @@
 다른 곳·플레이와 다른 곳·회상 관계의 정답은 그 사실·사건 정답에 붙는다."""
 
 from bisect import bisect_right
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Literal, get_args
 
@@ -96,7 +96,8 @@ class _Spec(BaseModel):
 class PlantedRelation(_Spec):
     """회상 사건이 앞 화의 주선 사건과 어떤 앞뒤인가. `chapter` 는 대상 사건의 기본 화 번호, `event` 는 그 화 사건 정답의 차례
     (문단·화 번호처럼 1부터). 대상은 주선 사건이어야 한다 — 사건 슬롯이 문안에 싣는 앞 화 사건 목록이 주선 사건뿐이라, 회상을
-    가리키는 관계는 모델이 낼 수 없다. 주선(`present`) 정답은 회상 장면에서 시작할 수 없으므로(화 검증) 앱도 주선으로 저장한다."""
+    가리키는 관계는 모델이 낼 수 없다. 주선(`present`) 정답은 회상 장면에서 시작할 수 없으므로(화 검증) 앱도 주선으로 저장한다.
+    대상 사건의 문단을 그 화의 앞 차례 주선 사건이 모두 덮으면 앱이 관계를 버리므로 그런 대상도 받지 않는다(`relation_anchor`)."""
 
     kind: EventRelationKind
     chapter: int
@@ -363,6 +364,11 @@ class NovelSpec(_Spec):
                 targets = self.chapters[relation.chapter - 1].events if reachable else []
                 if not 1 <= relation.event <= len(targets) or targets[relation.event - 1].actuality != "present":
                     raise ValueError(f"{ordinal}화 회상 관계가 앞 화(탐침이면 기대는 화)의 주선 사건을 가리키지 않는다")
+                if relation_anchor(targets, relation.event - 1) is None:
+                    raise ValueError(
+                        f"{ordinal}화 회상 관계가 가리키는 사건의 문단을 그 화에서 차례가 앞선 주선 사건이 모두 덮는다 — 앱이 그"
+                        " 관계를 버린다"
+                    )
             for fact in chapter.facts:
                 differs = fact.source_difference
                 if differs is not None and not (differs.quote.strip() and differs.quote in texts.get(differs.label, "")):
@@ -443,6 +449,16 @@ class NovelSpec(_Spec):
             yield ordinal, chapter, None
         for probe in self.probes:
             yield len(self.chapters) + 1, probe.chapter, probe.depends_on
+
+
+def relation_anchor(events: Sequence[PlantedEvent], index: int) -> int | None:
+    """회상 관계가 그 화 사건 정답 `index`(0부터)를 가리킬 때 앱이 대상으로 푸는 문단 — 그 사건의 문단 중, 같은 화에서 차례가
+    앞선 주선 사건이 덮지 않는 첫 문단. 앱은 대상을 그런 첫 블록으로 저장하고, 없으면 관계를 버린다(None). 앱의 사건 차례는 첫
+    문단 순이고 같으면 모델이 낸 차례라, 명세 차례를 낸 차례로 본다."""
+    order = sorted(range(len(events)), key=lambda number: (min(events[number].paragraphs), number))
+    earlier = order[: order.index(index)]
+    covered = {n for number in earlier if events[number].actuality == "present" for n in events[number].paragraphs}
+    return next((n for n in sorted(set(events[index].paragraphs)) if n not in covered), None)
 
 
 def _fact_slots(subject: str, kind: FactKind, attribute: str | None, values: list[str]) -> set[tuple[str, str, str, str]]:

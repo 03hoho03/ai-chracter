@@ -256,6 +256,12 @@ _BELIEVES_DEAD = {
                      "빠졌다", id="probe-missing-the-chapter-of-the-fact-its-knowledge-is-about"),
         pytest.param([(("probes", 3, "depends_on"), [1, 3]), (("probes", 3, "chapter", "events", 0, "present"), ["서하", "뱃사람"])],
                      "빠졌다", id="probe-naming-a-person-by-an-alias"),
+        # 앱은 회상 관계의 대상을 그 사건만 덮는 첫 블록으로 푼다 — 같은 화에서 차례가 앞선 주선 사건이 그 사건의 문단을 모두
+        # 덮으면 대상 블록이 없어 관계를 버린다. 차례는 첫 문단 순이다.
+        pytest.param([(("chapters", 0, "events", 1, "paragraphs"), [2]), (("chapters", 2, "events", 1, "relation", "event"), 2)],
+                     "덮", id="relation-to-an-event-an-earlier-event-covers"),
+        pytest.param([(("chapters", 0, "events", 0, "paragraphs"), [2]), (("chapters", 0, "events", 1, "paragraphs"), [1, 2, 3, 4])],
+                     "덮", id="relation-to-an-event-covered-by-an-event-listed-after-it-but-starting-first"),
     ],
 )
 def test_an_answer_the_app_cannot_produce_or_a_probe_missing_a_chapter_it_leans_on_is_rejected(
@@ -279,6 +285,9 @@ def test_an_answer_the_app_cannot_produce_or_a_probe_missing_a_chapter_it_leans_
         # 탐침에만 나오는 개체는 기댈 기본 화가 없다.
         pytest.param([(("probes", 3, "depends_on"), []), (("probes", 3, "chapter", "events", 0, "present"), ["섬사람"])],
                      id="probe-whose-people-appear-only-in-it"),
+        # 앞 사건과 겹쳐도 그 사건만 덮는 문단이 하나라도 있으면 앱이 그 문단으로 관계를 푼다.
+        pytest.param([(("chapters", 0, "events", 1, "paragraphs"), [2, 3]), (("chapters", 2, "events", 1, "relation", "event"), 2)],
+                     id="relation-to-an-event-partly-covered-by-an-earlier-one"),
     ],
 )
 def test_an_answer_the_app_can_produce_is_accepted(edits: list[Edit]) -> None:
