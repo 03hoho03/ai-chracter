@@ -1,7 +1,10 @@
 """CI 용 가짜 어댑터 — 명세에서 정답 출력을 만들어 돌려주고, 일부러 틀린 출력을 섞을 수 있다. 모델을 부르지 않는다.
 
-원고 문단으로 어느 화인지 알아본다(문안은 원고 값 하나만 렌더한다). 문안 원천은 등록부의 추출 슬롯 채널을 모두 낸다 — 확정
-입구가 배정된 체인에 채널이 있는지 먼저 보므로, 슬롯이 늘어도 여기를 고치지 않고 확정이 받힌다. 출력 꼴을 아는 슬롯은 사건·
+원고 문단으로 어느 화인지 알아본다. 문안은 원고 값과, 표지를 찾는 데 쓰는 앞 화 사건 목록·플레이 사실 목록을 렌더한다 — 회상
+관계의 대상(`P1` …)과 플레이 차이의 행(`P1` …)은 그 화 문안에 실린 목록에서 찾고, 원작 차이의 표지는 명세의 원작 글 차례에서
+온다. 그래서 심기가 앞 화·플레이 행을 명세대로 놓지 못하면 표지를 못 찾아 그 관계·차이를 내지 않는다.
+
+문안 원천은 등록부의 추출 슬롯 채널을 모두 낸다 — 확정 입구가 배정된 체인에 채널이 있는지 먼저 보므로, 슬롯이 늘어도 여기를 고치지 않고 확정이 받힌다. 출력 꼴을 아는 슬롯은 사건·
 사실·지식이다 — 새 추출 슬롯이 등록부에 들어오면 그 슬롯의 출력 만들기를 여기 더해야 `slots` 가 넓어진다. 더하지 않으면 슬롯을
 좁히지 않은 확정(라벨용 추출)이 그 슬롯 작업에서 실패한다. 호출 기록 원소는 실제 어댑터와 같은 칸을 갖고 모델은 단가표에 있는
 id 라, 원장이 실제 호출처럼 원가를 친다."""
@@ -22,11 +25,24 @@ from api.novel_bible.core.types import RenderedPrompt
 from api.novel_bible.ids import OperationKey, SlotId
 from api.novel_bible.registry import REGISTRY
 
-from novel_bible_eval.spec import ChapterSpec, EvalSet
+from novel_bible_eval.spec import ChapterSpec, EvalSet, NovelSpec, PlayRow
 
 T = TypeVar("T", bound=BaseModel)
 _LINE = re.compile(r"^\[\d+\] (.*)$", re.MULTILINE)
 _NOT_IN_MANUSCRIPT = "원고에 없는 구절"
+# 사건 슬롯 문안의 앞 화 사건 한 줄(`P1. 3화 — 요지`)과 사실 슬롯 문안의 플레이 사실 한 줄(`P1. 주어 · 속성: 값`).
+_PRIOR = re.compile(r"^(P\d+)\. (\d+)화 — (.*)$", re.MULTILINE)
+_PLAY = re.compile(r"^(P\d+)\. (.*)$", re.MULTILINE)
+
+
+@dataclass(frozen=True)
+class _Chapter:
+    """가짜 해석기가 알아본 화 — 소설 키, 표지(기본 화는 화 번호 글자, 탐침은 탐침 키), 그 화 명세, 그 소설 명세."""
+
+    novel: str
+    label: str
+    spec: ChapterSpec
+    book: NovelSpec
 
 
 @dataclass(frozen=True)
@@ -42,8 +58,11 @@ class Faults:
     swap_knower: frozenset[tuple[str, str, int]] = frozenset()  # 그 지식의 앎 주체와 명제 주어를 맞바꿔 낸다
 
 
-def _events(novel: str, label: str, chapter: ChapterSpec, faults: Faults) -> dict[str, Any]:
-    events = []
+def _events(at: _Chapter, prompt: str, faults: Faults) -> dict[str, Any]:
+    """회상 관계는 대상 사건의 (화 번호, 요지)가 문안의 앞 화 사건 목록에 있을 때만 그 표지로 낸다."""
+    novel, label, chapter = at.novel, at.label, at.spec
+    prior = {(int(ordinal), summary): target for target, ordinal, summary in _PRIOR.findall(prompt)}
+    events, relations = [], []
     for index, event in enumerate(chapter.events):
         if (novel, label, index) in faults.omit:
             continue
@@ -56,7 +75,11 @@ def _events(novel: str, label: str, chapter: ChapterSpec, faults: Faults) -> dic
                 "quote": {"paragraph": first, "text": quote},
             }
         )
-    return {"events": events, "relations": []}
+        if (relation := event.relation) is not None:
+            aimed = at.book.chapters[relation.chapter - 1].events[relation.event - 1]
+            if (target := prior.get((relation.chapter, aimed.summary))) is not None:
+                relations.append({"event": f"e{index}", "relation": relation.kind, "target": target})
+    return {"events": events, "relations": relations}
 
 
 def _fact(
@@ -71,23 +94,39 @@ def _fact(
     }
 
 
-def _facts(novel: str, label: str, chapter: ChapterSpec, faults: Faults) -> dict[str, Any]:
-    """정답마다 첫 허용 표기로 낸다. 더하는 사실은 첫 문단을 인용한, 정답에 없는 소지다."""
-    facts = [
-        _fact(
+def _play_line(row: PlayRow) -> str:
+    """사실 슬롯이 플레이 사실 한 줄에 싣는 본문(표지·꼬리 뺌)과 같은 꼴."""
+    if row.object is not None:
+        return f"{row.subject} → {row.object}: {row.value}"
+    return f"{row.subject} · {row.attribute}: {row.value}"
+
+
+def _facts(at: _Chapter, prompt: str, faults: Faults) -> dict[str, Any]:
+    """정답마다 첫 허용 표기로 낸다. 원작 차이는 명세의 표지·구절 그대로, 플레이 차이는 그 행의 줄이 문안에 있을 때만 그 표지로
+    낸다. 더하는 사실은 첫 문단을 인용한, 정답에 없는 소지다."""
+    novel, label, chapter = at.novel, at.label, at.spec
+    shown = {body: ref for ref, body in _PLAY.findall(prompt)}
+    facts = []
+    for index, fact in enumerate(chapter.facts):
+        out = _fact(
             fact.subject, fact.subject_kind, fact.kind, fact.attribute, fact.values[0], fact.holds,
             fact.immutable != ((novel, label, index) in faults.flip_immutable), fact.paragraph, chapter,
         )
-        for index, fact in enumerate(chapter.facts)
-    ]
+        if (source := fact.source_difference) is not None:
+            out["source_difference"] = {"label": source.label, "quote": source.quote}
+        if fact.play_difference is not None:
+            line = _play_line(at.book.play[fact.play_difference - 1])
+            ref = next((ref for body, ref in shown.items() if body.startswith(line)), None)
+            out["play_difference"] = None if ref is None else {"ref": ref}
+        facts.append(out)
     if (novel, label) in faults.extra_fact:
         facts.append(_fact("합성 여분 인물", "character", "possession", None, "합성 여분 물건", True, False, 1, chapter))
     return {"facts": facts}
 
 
-def _knowledge(novel: str, label: str, chapter: ChapterSpec, faults: Faults) -> dict[str, Any]:
-    """정답마다 첫 허용 표기로 내고 정답 문단 전체를 인용한다. 명세의 지식 정답에는 명제 주어의 종류 칸이 없어 인물로 낸다 —
-    지식 매처와 라벨 주장 키는 명제 주어의 종류를 견주지 않는다."""
+def _knowledge(at: _Chapter, prompt: str, faults: Faults) -> dict[str, Any]:
+    """정답마다 첫 허용 표기와 명제 주어의 종류로 내고 정답 문단 전체를 인용한다."""
+    novel, label, chapter = at.novel, at.label, at.spec
     items = []
     for index, known in enumerate(chapter.knowledge):
         knower, subject = known.knower, known.subject
@@ -97,7 +136,7 @@ def _knowledge(novel: str, label: str, chapter: ChapterSpec, faults: Faults) -> 
             {
                 "knower": knower, "kind": known.kind,
                 "about": {
-                    "subject": subject, "subject_kind": "character", "kind": known.fact_kind,
+                    "subject": subject, "subject_kind": known.subject_kind, "kind": known.fact_kind,
                     "attribute": known.attribute, "value": known.values[0], "holds": known.holds,
                 },
                 "quote": {"paragraph": known.paragraph, "text": chapter.paragraphs[known.paragraph - 1]},
@@ -106,9 +145,11 @@ def _knowledge(novel: str, label: str, chapter: ChapterSpec, faults: Faults) -> 
     return {"items": items}
 
 
-_OUTPUTS: dict[OperationKey, Callable[[str, str, ChapterSpec, Faults], dict[str, Any]]] = {
+_OUTPUTS: dict[OperationKey, Callable[[_Chapter, str, Faults], dict[str, Any]]] = {
     "events.extract": _events, "facts.extract": _facts, "knowledge.extract": _knowledge,
 }
+# 원고 값 말고 문안에 싣는 값 — 가짜 해석기가 표지를 찾는 목록이다. 조건부라 그 값이 없는 채널·화에서는 섹션째 빠진다.
+_LISTED_VALUES = ("prior_events", "play_facts")
 
 
 class FakeLLM:
@@ -118,12 +159,12 @@ class FakeLLM:
         self, eval_set: EvalSet, *, faults: Faults | None = None, model: str = "gemini-3.5-flash-lite",
         prompt_tokens: int = 1_000, output_tokens: int = 200,
     ) -> None:
-        self._chapters: dict[tuple[str, ...], tuple[str, str, ChapterSpec]] = {}
+        self._chapters: dict[tuple[str, ...], _Chapter] = {}
         for novel in eval_set.novels:
             for ordinal, chapter in enumerate(novel.chapters, start=1):
-                self._chapters[tuple(chapter.paragraphs)] = (novel.key, str(ordinal), chapter)
+                self._chapters[tuple(chapter.paragraphs)] = _Chapter(novel.key, str(ordinal), chapter, novel)
             for probe in novel.probes:
-                self._chapters[tuple(probe.chapter.paragraphs)] = (novel.key, probe.key, probe.chapter)
+                self._chapters[tuple(probe.chapter.paragraphs)] = _Chapter(novel.key, probe.key, probe.chapter, novel)
         self._faults = faults or Faults()
         self._usage = {"model": model, "promptTokens": prompt_tokens, "outputTokens": output_tokens}
         self._failed: set[tuple[str, str]] = set()
@@ -138,12 +179,14 @@ class FakeLLM:
 
     async def prompt_source(self, session: AsyncSession) -> PromptSource:
         sections = []
+        bodies = [("instruction", "합성 지시문", False), ("body", "{manuscript}", False)]
+        bodies += [(name, f"{{{name}}}", True) for name in _LISTED_VALUES]
         for channel in sorted({slot.channel for slot in REGISTRY.extracting.values()}):
-            for order, (slot, body) in enumerate((("instruction", "합성 지시문"), ("body", "{manuscript}"))):
+            for order, (slot, body, conditional) in enumerate(bodies):
                 sections.append(
                     PromptSection(
                         prompt_set_id=self._prompt_set_id, channel=channel, scope="both", slot=slot, variant="",
-                        body=body, conditional=False, order=order,
+                        body=body, conditional=conditional, order=order,
                     )
                 )
         return PromptSource(prompt_set_id=self._prompt_set_id, sections=sections)
@@ -151,15 +194,15 @@ class FakeLLM:
     async def structured(
         self, prompt: RenderedPrompt, schema: type[T], *, records: list[dict[str, Any]], stage: OperationKey
     ) -> T:
-        novel, label, chapter = self._chapters[tuple(_LINE.findall(prompt.prompt))]
+        at = self._chapters[tuple(_LINE.findall(prompt.prompt))]
         self.calls += 1
         records.append(
             {"callSite": OPERATION_CALL_SITES[stage], **self._usage, "durationMs": 0, "stage": stage, "failure": None}
         )
-        if (novel, label) in self._faults.schema_failure and (novel, label) not in self._failed:
-            self._failed.add((novel, label))
+        if (at.novel, at.label) in self._faults.schema_failure and (at.novel, at.label) not in self._failed:
+            self._failed.add((at.novel, at.label))
             raise AdapterCallError("schema_invalid", retryable=True)
-        return schema.model_validate(_OUTPUTS[stage](novel, label, chapter, self._faults))
+        return schema.model_validate(_OUTPUTS[stage](at, prompt.prompt, self._faults))
 
     def resolver(self) -> AdapterResolver:
         return lambda operation: self

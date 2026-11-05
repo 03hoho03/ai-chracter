@@ -17,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import api.novel_bible.entry as entry
 from api.core.config import settings
 from api.db.models import Novel, NovelChapter, User
-from api.novel_bible.core.types import BibleSnapshot, RenderedPrompt
+from api.db.models.novel_bible import NovelBibleAdaptationCandidate
+from api.db.models.novel_bible_events import NovelBibleEventRelation
+from api.novel_bible.core.types import BibleSnapshot, Proposal, RenderedPrompt
 from api.novel_bible.ids import OperationKey
 from memory_eval.ledger import EXIT_BUDGET, Ledger
 from novel_bible_eval import labels
@@ -182,6 +184,36 @@ async def test_a_swapped_knower_and_subject_through_the_real_knowledge_slot_is_o
         recall = metrics.recall(eval_set, outcomes)["knowledge"]
         counted[name] = ([(r.k, r.n) for r in direction], [(r.k, r.n) for r in recall])
     assert counted == {"clean": ([(0, 2)], [(2, 2)]), "swapped": ([(1, 2)], [(1, 2)])}
+
+
+async def test_the_fake_answers_carry_the_planted_relation_differences_and_proposition_subject_kind(
+    db_session: AsyncSession,
+) -> None:
+    # 가짜 해석기가 명세의 회상 관계·원작과 다른 곳·플레이와 다른 곳·지식 명제의 주어 종류를 내고, 실제 슬롯의 검증과 확정을
+    # 지나 정본 기억 행이 된다 — 표지(`P1`·`S`)는 문안에 실린 앞 화 사건·원작·플레이 목록에서 찾은 것이라, 심기가 원작·방·화
+    # 순서를 틀리면 여기서 빠진다.
+    eval_set = load_set(FIXTURE)
+    fake = FakeLLM(eval_set)
+    outcomes = await run_set(savepoint_factory(db_session), Meter().wrap(fake.resolver()), eval_set, slots=fake.slots)
+    assert _statuses(outcomes) == _WITH_THE_CONFLICT_PROBE_BLOCKED
+    # 3화 회상 사건이 1화 첫 주선 사건보다 앞이다.
+    relations = (
+        await db_session.execute(
+            select(NovelBibleEventRelation.relation, NovelChapter.ordinal)
+            .join(NovelChapter, NovelChapter.id == NovelBibleEventRelation.to_chapter_id)
+        )
+    ).all()
+    assert [tuple(row) for row in relations] == [("before", 1)]
+    # 2화 지도 소지는 플레이와, 3화 등대지기 눈 색은 원작과 다르다 — 각색 후보가 하나씩이다.
+    origins = (await db_session.scalars(select(NovelBibleAdaptationCandidate.origin))).all()
+    assert sorted(origins) == ["play", "source_canon"]
+    # 3화 지식의 명제 주어(등대)는 사물이다. 인물로 내면 같은 이름의 다른 개체·다른 명제 키가 된다.
+    (knowledge,) = [job for job in outcomes[2].jobs if job.slot == "knowledge"]
+    assert knowledge.proposal is not None
+    items = Proposal.model_validate(knowledge.proposal).items
+    assert [(item.proposition.subject, item.proposition.subject_kind) for item in items if item.proposition] == [
+        ("등대", "object")
+    ]
 
 
 async def test_the_halt_line_stops_the_run_before_the_call_that_would_cross_it(
