@@ -745,11 +745,35 @@ async def test_replacing_with_the_same_key_rewrites_only_the_ciphertext_and_keep
     ]
 
 
+async def test_replacing_with_the_same_key_skips_the_organization_lookup_and_keeps_the_organization(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """같은 키는 같은 조직이다 — 조직 조회를 부르지 않고 조직 표지를 그대로 둔다. 불렀다면 헤더 없는 응답이 표지를 지워
+    확인 호출 전까지 켤 수 없게 된다. 알림과 감사는 같은 키라는 한 문구뿐이다."""
+    created = await _create(db_client)
+    await _check(db_client, created["id"])
+    probe.organization = None
+
+    resp = await db_client.put(f"{_BASE}/{created['id']}/secret", json={"apiKey": FAKE_API_KEY})
+
+    assert resp.status_code == 200
+    assert probe.lookups == [FAKE_API_KEY]
+    assert (resp.json()["accountRef"], resp.json()["organizationVerified"]) == (_ORG, True)
+    enable = await db_client.post(f"{_BASE}/{created['id']}/enable")
+    assert enable.status_code == 200
+    same = f"anthropic · 운영 계정 · 지문 {secret_fingerprint(FAKE_API_KEY)} · 같은 키 — 암호문만 다시 씀"
+    assert [note for note in notes if note.startswith("[Claude 자격] 키 교체")] == [f"[Claude 자격] 키 교체 — {same}"]
+    audits = [
+        log.reason_text for log in await _audits(db_session) if log.action_type == "llm-credential-secret-replace"
+    ]
+    assert audits == [same]
+
+
 async def test_secret_replace_refuses_bedrock(
     db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
 ) -> None:
     """Bedrock 항목의 키 교체는 아직 없다 — 확인 호출과 같은 규칙으로 422 이고 비밀·조직은 그대로다. 막지 않으면 Anthropic
-    키가 Bedrock 항목의 비밀 자리에 들어간다."""
+    키가 Bedrock 항목의 비밀 자리에 들어간다. 조직 조회(외부 호출)보다 먼저 막는다."""
     bedrock = await _insert_row(db_session, provider="bedrock", region="us-east-1", account_ref="123456789012")
     before = (bedrock.key_id, bedrock.secret_ciphertext, bedrock.secret_fingerprint)
     probe.organization = None
@@ -757,10 +781,40 @@ async def test_secret_replace_refuses_bedrock(
     resp = await db_client.put(f"{_BASE}/{bedrock.id}/secret", json={"apiKey": FAKE_OTHER_API_KEY})
 
     assert (resp.status_code, resp.json()["detail"]["rule"]) == (422, "provider-not-available")
+    assert probe.lookups == []
     row = await _row(db_session, bedrock.id)
     assert (row.key_id, row.secret_ciphertext, row.secret_fingerprint) == before
     assert row.account_ref == "123456789012"
     assert notes == []
+
+
+async def test_secret_replace_rechecks_the_provider_after_locking_the_row(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_id: uuid.UUID,
+    probe: FakeProbe,
+    notes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """조직 조회를 기다리는 동안 행이 바뀔 수 있어, 잠근 뒤에도 공급자를 다시 본다 — 조회 전 읽기만 믿으면 그 사이 Bedrock 이
+    된 행의 비밀 자리에 Anthropic 키가 들어간다."""
+    created = await _create(db_client)
+
+    async def lookup_while_the_row_becomes_bedrock(api_key: str) -> str | None:
+        await db_session.execute(
+            sa.update(LlmCredential)
+            .where(LlmCredential.id == uuid.UUID(created["id"]))
+            .values(provider="bedrock", region="us-east-1")
+            .execution_options(synchronize_session=False)
+        )
+        return _ORG
+
+    monkeypatch.setattr(probe, "organization_of", lookup_while_the_row_becomes_bedrock)
+
+    resp = await db_client.put(f"{_BASE}/{created['id']}/secret", json={"apiKey": FAKE_OTHER_API_KEY})
+
+    assert (resp.status_code, resp.json()["detail"]["rule"]) == (422, "provider-not-available")
+    assert (await _row(db_session, created["id"])).secret_fingerprint == secret_fingerprint(FAKE_API_KEY)
 
 
 # ── 순서 ───────────────────────────────────────────────────────────────────────

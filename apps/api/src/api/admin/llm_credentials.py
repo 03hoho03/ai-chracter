@@ -6,7 +6,8 @@
   메타 수정·끄기·삭제·순서 저장·목록 사용 끄기는 설정 없이도 된다 — 끄기·삭제는 되돌리기 경로라 막으면 안 된다.
 - **조직 대조**: 추가·키 교체는 트랜잭션 밖에서 토큰 세기를 불러 응답의 조직 헤더를 허용 목록과 견준다(한 행 잠금을 쥔 채 최대
   10초를 기다리면 그동안 다른 목록 변경이 줄 선다). 헤더가 없으면 조직 미확인으로 저장하고, 확인 호출이 헤더로 채울 때까지 켤
-  수 없다. 키 교체가 헤더 없이 오면 옛 조직 표지를 지운다 — 남기면 다른 조직의 키로 바꾼 항목이 확인된 것으로 보인다.
+  수 없다. 키 교체가 헤더 없이 오면 옛 조직 표지를 지운다 — 남기면 다른 조직의 키로 바꾼 항목이 확인된 것으로 보인다. 같은
+  키(같은 지문)를 다시 넣는 교체는 같은 조직이라 토큰 세기를 부르지 않고 표지를 그대로 둔다.
 - **켜기**는 지금 키 지문의 최신 확인 회차가 지금 판(`state_version`)에서 시작했고 통과한 축이 있고 조직 오류가 없을 때만
   된다(`llm/credentials.py` 의 `enable_blocker`). 확인 호출은 시작할 때의 판·지문을 기록에 남기므로, 호출을 기다리는 동안
   끄기·소진·키 교체가 있었으면 그 회차는 세지 않는다. 목록 사용 켜기는 모든 축이 지금 모델 id 로 확인된 켜진 항목으로 덮일
@@ -88,6 +89,7 @@ from api.llm.credentials import (
     new_credential,
     replace_secret,
     same_as_env_key,
+    secret_fingerprint,
     store_configured,
     uncovered_axes,
     validate_api_key_format,
@@ -148,6 +150,14 @@ def _require_store() -> None:
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "store-not-configured",
             "자격 저장소 설정(암호화 키·허용 계정)이 없습니다.",
+        )
+
+
+def _refuse_other_providers(credential: LlmCredential) -> None:
+    """키 교체는 Anthropic 항목만 받는다 — 확인 호출과 같은 규칙·같은 응답 꼴."""
+    if credential.provider != "anthropic":
+        raise _rule(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "provider-not-available", "이 공급자의 키 교체는 아직 없습니다."
         )
 
 
@@ -550,21 +560,31 @@ async def replace_llm_credential_secret(
 ) -> AdminLlmCredential:
     """키만 바꾼다(한 항목 = 한 계정 — 다른 조직의 키로는 바꾸지 않는다). 상태·판은 그대로이고, 확인 기록이 옛 지문에 묶여
     있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
-    없을 때 살리는 길) 지문이 같아 옛 확인 기록이 그대로 지금 키의 확인으로 센다 — 암호문만 지금 키로 다시 쓴다."""
+    없을 때 살리는 길) 지문이 같아 옛 확인 기록이 그대로 지금 키의 확인으로 센다 — 암호문만 지금 키로 다시 쓰고, 같은 키는
+    같은 조직이라 조직 조회를 부르지 않고 조직 표지도 그대로 둔다."""
     _require_store()
     api_key = _api_key(body.api_key)
-    header = await _organization(probe, api_key)
+    fingerprint = secret_fingerprint(api_key)
+    # 외부 호출 전에 잠그지 않고 읽는다 — 다른 공급자는 조회 없이 거부하고, 같은 키면 조회를 건너뛴다. 읽기만 한 트랜잭션은
+    # 호출 전에 닫는다(호출을 기다리는 동안 연결·스냅샷을 쥐지 않는다).
+    credential = await _get(db, credential_id)
+    _refuse_other_providers(credential)
+    lookup = credential.secret_fingerprint != fingerprint
+    await db.commit()
+    header = await _organization(probe, api_key) if lookup else None
     keyring = credential_keyring()
     async with credential_write(db):
         credential = await _get(db, credential_id, lock=True)
-        if credential.provider != "anthropic":
-            raise _rule(
-                status.HTTP_422_UNPROCESSABLE_CONTENT, "provider-not-available", "이 공급자의 키 교체는 아직 없습니다."
-            )
+        # 조회를 기다리는 동안 행이 바뀌었을 수 있어 잠근 뒤 다시 본다.
+        _refuse_other_providers(credential)
         old_fingerprint = credential.secret_fingerprint
         old_is_env_key = same_as_env_key(credential)
+        same_key = old_fingerprint == fingerprint
         cleared = False
-        if header is None:
+        if same_key:
+            pass  # 같은 키는 같은 조직이다 — 조직 표지를 그대로 둔다.
+        elif header is None:
+            # 조회를 건너뛰었는데 그 사이 다른 키로 바뀐 행도 여기로 온다 — 붙여넣은 키의 조직을 모르니 헤더 없음과 같다.
             cleared = credential.account_ref is not None
             credential.account_ref = None
         elif header != credential.account_ref:
@@ -588,7 +608,6 @@ async def replace_llm_credential_secret(
             credential.account_ref = header
         replace_secret(keyring, credential, api_key)
         credential.updated_at = datetime.now(UTC)
-        same_key = credential.secret_fingerprint == old_fingerprint
         if same_key:
             fingerprints = f"지문 {old_fingerprint} · 같은 키 — 암호문만 다시 씀"
         else:
