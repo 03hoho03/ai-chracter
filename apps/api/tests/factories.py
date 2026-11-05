@@ -47,11 +47,13 @@ from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
 from api.core import clover
 from api.core.clover import CloverKind, SpendUsage, kst_today, refund_spend, revoke_purchase_lots, spend
 from api.core.config import Settings, settings
+from api.core.field_crypto import FieldKeyring
 from api.core.rate_limit import KST
 from api.core.security import hash_password
 from api.db.models.clover import CloverSpendAllocation, CloverSpendRefund, CloverSpendUsage
 from api.db.models.creator_payout import CreatorPayoutApplication
 from api.db.models.novel import NovelRevisionSource
+from api.db.models.llm_credential import ClaudeModelAxis, LlmCredential, LlmCredentialCheck, LlmCredentialSettings
 from api.db.models.payment import PaymentCancellation
 from api.db.models import (
     AdminUser,
@@ -139,7 +141,8 @@ from api.llm import dependencies as llm_dependencies
 from api.llm import gemini as gemini_module
 from api.llm.anthropic_api import AnthropicLLMClient
 from api.llm.bedrock import BedrockLLMClient
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, chat_turn_cost
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, backend_model_id, chat_turn_cost
+from api.llm.credentials import CLAUDE_AXES, new_credential
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.llm.gemini import GeminiLLMClient
@@ -3123,3 +3126,67 @@ FAKE_ANTHROPIC_ORG = "org-test-0001"
 # 실리는지를 문자열 탐색으로 잡으려면 그 네 글자가 다른 곳에서 나오면 안 된다. 지문·id 는 소문자 hex 라 `y`·`z` 가 없다.
 FAKE_API_KEY = "sk-ant-test-" + "0123456789abcdefghij0123456789abcdeCANARYzq"
 FAKE_OTHER_API_KEY = "sk-ant-test-" + "zyxwvutsrq9876543210zyxwvutsrqOTHERkeyWx"
+
+
+async def _add_llm_credential(
+    db: AsyncSession, label: str, *, secret: str = FAKE_API_KEY, account_ref: str | None = FAKE_ANTHROPIC_ORG, **row: Any
+) -> LlmCredential:
+    """켜진 Anthropic 항목 하나를 목록 끝에 넣는다(라우트를 거치지 않는다 — 켜기 조건도 보지 않는다). 한 조직은 목록에 한
+    번이라 여럿을 넣으면 `account_ref` 를 달리 준다. `row` 는 행 칸을 그대로 덮는다(상태·공급자·충전액 등)."""
+    position = await db.scalar(sa.select(sa.func.coalesce(sa.func.max(LlmCredential.position), 0) + 1))
+    assert position is not None
+    credential = new_credential(
+        FieldKeyring.parse(FAKE_CREDENTIAL_KEYRING),
+        provider="anthropic",
+        label=label,
+        secret=secret,
+        account_ref=account_ref,
+        position=position,
+        credit_micro_usd=None,
+        alert_pct=20,
+    )
+    credential.state, credential.state_reason = "active", None
+    for name, value in row.items():
+        setattr(credential, name, value)
+    db.add(credential)
+    await db.flush()
+    return credential
+
+
+async def _add_llm_credential_check(
+    db: AsyncSession, credential: LlmCredential, axes: Iterable[ClaudeModelAxis] = CLAUDE_AXES, **row: Any
+) -> int:
+    """그 항목의 지금 키·지금 판으로 한 확인 한 회차(축마다 통과 한 행)를 넣고 회차를 돌려준다. `row` 는 행마다 칸을 덮는다(실패면
+    `passed=False` 와 `error_kind` 를 함께)."""
+    run = await db.scalar(
+        sa.select(sa.func.coalesce(sa.func.max(LlmCredentialCheck.run), 0) + 1).where(
+            LlmCredentialCheck.credential_id == credential.id
+        )
+    )
+    assert run is not None
+    for axis in axes:
+        check = LlmCredentialCheck(
+            credential_id=credential.id,
+            run=run,
+            state_version=credential.state_version,
+            model_axis=axis,
+            sent_model_id=backend_model_id("anthropic", axis),
+            secret_fingerprint=credential.secret_fingerprint,
+            passed=True,
+            error_kind=None,
+        )
+        for name, value in row.items():
+            setattr(check, name, value)
+        db.add(check)
+    await db.flush()
+    return run
+
+
+async def _set_llm_credential_pool(db: AsyncSession, enabled: bool) -> None:
+    """어드민의 목록 사용 칸(마이그레이션이 심은 한 행)을 바꾼다."""
+    await db.execute(
+        sa.update(LlmCredentialSettings)
+        .where(LlmCredentialSettings.id == 1)
+        .values(pool_enabled=enabled)
+        .execution_options(synchronize_session=False)
+    )
