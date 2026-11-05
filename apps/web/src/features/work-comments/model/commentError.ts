@@ -2,11 +2,11 @@ import { z } from "zod";
 
 import { isApiError } from "@/shared/api/client";
 
-const detailSchema = z.object({ code: z.string().optional(), retryAfterSeconds: z.number().nonnegative().optional() });
+const DETAIL_SCHEMA = z.object({ code: z.string().optional(), retryAfterSeconds: z.number().nonnegative().optional() });
 
 export function commentErrorDetail(error: unknown) {
   if (!isApiError(error)) return undefined;
-  const detail = detailSchema.safeParse(error.detail);
+  const detail = DETAIL_SCHEMA.safeParse(error.detail);
   return detail.success ? detail.data : undefined;
 }
 

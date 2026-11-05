@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { MemoryFormValues } from "./schema";
+import type { MemoryFormValues } from "./memoryFormSchema";
 
 type NoteRequest = components["schemas"]["ChatRoomMemoryNoteRequest"];
 type SummaryRequest = components["schemas"]["ChatRoomMemorySummaryRequest"];

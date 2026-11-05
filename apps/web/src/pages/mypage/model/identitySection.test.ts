@@ -5,7 +5,7 @@ import { getIdentitySection } from "./identitySection";
 type Combo = { payments: boolean; gate: boolean; creatorPayout: boolean };
 
 function unverifiedMessage({ payments, gate, creatorPayout }: Combo): string {
-  const section = getIdentitySection({ identityVerified: false, identityGateEnabled: gate }, { payments, creatorPayout });
+  const section = getIdentitySection({ identityVerified: false, identityGateEnabled: gate }, { isPaymentsEnabled: payments, isCreatorPayoutEnabled: creatorPayout });
   if (section.kind !== "unverified") throw new Error(`expected unverified, got ${section.kind}`);
   return section.message;
 }
@@ -34,7 +34,7 @@ const ALL_COMBOS: Combo[] = [
 describe("getIdentitySection", () => {
   it("결제·게이트·정산이 모두 꺼져 있어도 출석 보상 때문에 보인다", () => {
     expect(
-      getIdentitySection({ identityVerified: false, identityGateEnabled: false }, { payments: false, creatorPayout: false })
+      getIdentitySection({ identityVerified: false, identityGateEnabled: false }, { isPaymentsEnabled: false, isCreatorPayoutEnabled: false })
         .kind,
     ).toBe("unverified");
   });
@@ -82,7 +82,7 @@ describe("getIdentitySection", () => {
 
   it.each([false, true])("인증을 마쳤으면 인증됨이다(게이트 %s)", (gate) => {
     expect(
-      getIdentitySection({ identityVerified: true, identityGateEnabled: gate }, { payments: false, creatorPayout: false }),
+      getIdentitySection({ identityVerified: true, identityGateEnabled: gate }, { isPaymentsEnabled: false, isCreatorPayoutEnabled: false }),
     ).toEqual({ kind: "verified" });
   });
 });

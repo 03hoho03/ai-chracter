@@ -55,10 +55,10 @@ export function toPublicationView(status: NovelPublicationStatus): PublicationVi
   const salesStopped = status.salesStopped === true;
   const newBlock = toSourceBlock(status.newPublishBlock);
   // 심사 칸이 없는 옛 응답(`undefined`)은 엄격 비교에 걸리지 않아 아래의 지금 판정으로 떨어진다.
-  const inReviewRow = status.reviewStatus === "pending" || status.reviewStatus === "rejected";
+  const isInReviewRow = status.reviewStatus === "pending" || status.reviewStatus === "rejected";
   // 정책 스위치를 켰다가 끄면 대기·반려 행이 남는데, 서버는 그 행을 승인 없이 다시 연다(`reviewRequired` 거짓). 그래서
   // 심사 상태가 아니라 거둔 공개로 그린다. 독자에게 보인 적 없는 행을 여는 것이라 새로 공개하는 것과 같은 원작 판정을 받는다.
-  if (inReviewRow && status.reviewRequired === false) {
+  if (isInReviewRow && status.reviewRequired === false) {
     return { kind: "withdrawn", canReopen: newBlock === undefined && !salesStopped, salesStopped };
   }
   if (status.reviewStatus === "pending") return { kind: "inReview" };

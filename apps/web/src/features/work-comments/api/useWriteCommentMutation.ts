@@ -4,7 +4,7 @@ import { commentApi, commentKeys, type Comment } from "@/entities/comment";
 import { notificationKeys, redactNotificationCaches } from "@/entities/notification";
 
 import { commentCreateToServer, commentFormToServer } from "../model/formToServer";
-import type { CommentFormValues } from "../model/schema";
+import type { CommentFormValues } from "../model/commentFormSchema";
 
 type WriteCommentOptions = {
   contentId: string; viewerId: string; editCommentId?: string; replyTarget?: Comment; requestId: string;

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { publishChoiceSchema, toPublishChoice } from "./publishChoiceSchema";
+import { PUBLISH_CHOICE_SCHEMA, toPublishChoice } from "./publishChoiceSchema";
 
 function parseSummary(text: string) {
-  return publishChoiceSchema.safeParse({ targetOrdinal: 6, prices: [], summaries: [{ ordinal: 3, text }] });
+  return PUBLISH_CHOICE_SCHEMA.safeParse({ targetOrdinal: 6, prices: [], summaries: [{ ordinal: 3, text }] });
 }
 
-describe("publishChoiceSchema 변경 요약", () => {
+describe("PUBLISH_CHOICE_SCHEMA 변경 요약", () => {
   it("비었거나 공백뿐이면 적어 달라고 한다", () => {
     for (const text of ["", "   \n "]) {
       const result = parseSummary(text);
@@ -30,7 +30,7 @@ describe("publishChoiceSchema 변경 요약", () => {
   });
 
   it("요약 칸이 없으면(꺼짐·새 화만) 검증할 것이 없다", () => {
-    expect(publishChoiceSchema.safeParse({ targetOrdinal: 3, prices: [], summaries: [] }).success).toBe(true);
+    expect(PUBLISH_CHOICE_SCHEMA.safeParse({ targetOrdinal: 3, prices: [], summaries: [] }).success).toBe(true);
   });
 });
 

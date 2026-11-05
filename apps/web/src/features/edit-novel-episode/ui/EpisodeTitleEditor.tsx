@@ -16,7 +16,7 @@ import {
   type NovelDetailResponse,
 } from "@/entities/novel";
 
-import { createEpisodeTitleSchema, toEpisodeHeading, type EpisodeTitleFormValues } from "../model/schema";
+import { createEpisodeTitleSchema, toEpisodeHeading, type EpisodeTitleFormValues } from "../model/episodeSchema";
 
 type EpisodeTitleEditorProps = {
   novel: NovelDetailResponse;
@@ -58,7 +58,7 @@ export function EpisodeTitleEditor({ novel, chapter, headingRef }: EpisodeTitleE
     pencilRef.current?.focus();
   }, [isEditing]);
 
-  function startEditing() {
+  function handleStartEditing() {
     form.reset({ title: chapter.title ?? "" });
     setSaveError(undefined);
     setIsEditing(true);
@@ -172,7 +172,7 @@ export function EpisodeTitleEditor({ novel, chapter, headingRef }: EpisodeTitleE
           size="icon-sm"
           aria-label={`${chapter.ordinal}화 제목 고치기`}
           className="shrink-0"
-          onClick={startEditing}
+          onClick={handleStartEditing}
         >
           <Pencil aria-hidden />
         </Button>

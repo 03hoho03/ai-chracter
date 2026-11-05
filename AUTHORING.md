@@ -20,7 +20,7 @@
 괄호 안은 시드 JSON 키다.
 
 - 스토리 설정(`settingText`) → `base_content` 자리의 `setting_text`.
-- 커스텀 프롬프트(`customPrompt`) → 같은 `base_content` 자리의 `custom` 변형 행. 템플릿이 커스텀이면 `_story_generation_variant`가 `custom`을 고르고, `select_sections_for_render`가 같은 자리의 기본 행 대신 그 행을 실어 설정 글이 빠진다. 빌더에서도 커스텀을 고르면 스토리 설정 입력란이 숨는다(`widgets/build-story/ui/SettingTab.tsx`, 스키마는 `features/build-story/model/schema.ts`의 `storySettingSchema`).
+- 커스텀 프롬프트(`customPrompt`) → 같은 `base_content` 자리의 `custom` 변형 행. 템플릿이 커스텀이면 `_story_generation_variant`가 `custom`을 고르고, `select_sections_for_render`가 같은 자리의 기본 행 대신 그 행을 실어 설정 글이 빠진다. 빌더에서도 커스텀을 고르면 스토리 설정 입력란이 숨는다(`widgets/build-story/ui/SettingTab.tsx`, 스키마는 `features/build-story/model/storyBuilderSchema.ts`의 `STORY_SETTING_SCHEMA`).
 - 규칙(`rules`), 사용자의 역할과 목표(`userGoal`) → `rules`·`user_goal` 자리. 템플릿 변형이 없는 자리라 어느 템플릿에서나 실린다.
 - 전개 예시(`developmentExamples`, 최대 3쌍) → `development_examples` 자리(값 `example_lines`). 쌍마다 `prompt_set.user_label`과 `prompt_set.story_example_label`을 코드가 붙인다. 대화 기록 쪽 라벨은 `story_assistant_label`이라 둘이 다르다(의도된 현재 동작).
 - 시작설정의 프롤로그(`startingSetups[].prologue`) → `prologue` 자리, **매 턴**. 미디어 북 태그는 지운 뒤 싣는다(아래 미디어 북 태그).

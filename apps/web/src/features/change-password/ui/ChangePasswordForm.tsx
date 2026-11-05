@@ -11,10 +11,10 @@ import { LOGIN_LINK_ERROR_TYPE, loginRedirectTarget } from "@/entities/session";
 import { useChangePasswordMutation } from "../api/useChangePasswordMutation";
 import { getChangePasswordErrorBanner } from "../model/changePasswordErrorBanner";
 import {
-  changePasswordDefaultValues,
-  changePasswordSchema,
+  CHANGE_PASSWORD_DEFAULT_VALUES,
+  CHANGE_PASSWORD_SCHEMA,
   type ChangePasswordFormValues,
-} from "../model/schema";
+} from "../model/changePasswordSchema";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -27,8 +27,8 @@ export function ChangePasswordForm() {
     clearErrors,
     formState: { errors },
   } = useForm<ChangePasswordFormValues>({
-    resolver: zodResolver(changePasswordSchema),
-    defaultValues: changePasswordDefaultValues,
+    resolver: zodResolver(CHANGE_PASSWORD_SCHEMA),
+    defaultValues: CHANGE_PASSWORD_DEFAULT_VALUES,
   });
 
   const changePasswordMutation = useChangePasswordMutation();
@@ -40,7 +40,7 @@ export function ChangePasswordForm() {
     try {
       await changePasswordMutation.mutateAsync(values);
       toast.success("비밀번호가 변경되었어요.");
-      reset(changePasswordDefaultValues);
+      reset(CHANGE_PASSWORD_DEFAULT_VALUES);
     } catch (error) {
       // 401(세션 소멸)은 자동으로 로그인 화면에 보내지 않는다 — 입력 중이던 값을 잃지 않게 링크만 준다.
       const banner = getChangePasswordErrorBanner(error);

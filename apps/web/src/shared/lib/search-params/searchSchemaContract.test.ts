@@ -17,7 +17,7 @@ const ROUTE_SOURCES = import.meta.glob<string>("../../../routes/*.tsx", {
   eager: true,
 });
 
-/** 라우트 밖에 사는 서치 스키마(`/my`의 `myWorksSearchSchema`)를 찾기 위한 두 번째 후보 목록. */
+/** 라우트 밖에 사는 서치 스키마(`/my`의 `MY_WORKS_SEARCH_SCHEMA`)를 찾기 위한 두 번째 후보 목록. */
 const MODEL_SOURCES = import.meta.glob<string>("../../../pages/**/model/*.ts", {
   query: "?raw",
   import: "default",

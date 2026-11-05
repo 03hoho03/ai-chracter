@@ -19,7 +19,7 @@ import {
   useSignUpLoginMutation,
   useSignUpMutation,
   useVerifyEmailMutation,
-} from "../api/mutations";
+} from "../api/signUpMutations";
 import { useOnboardingMutation } from "../api/useOnboardingMutation";
 import {
   toSignUpLoginRequest,
@@ -28,7 +28,7 @@ import {
   toVerifyEmailRequest,
 } from "../model/formToServer";
 import { getOnboardingErrorBanner } from "../model/onboardingErrorBanner";
-import { signUpDefaultValues, signUpSchema, type SignUpFormValues } from "../model/signUpSchema";
+import { SIGN_UP_DEFAULT_VALUES, SIGN_UP_SCHEMA, type SignUpFormValues } from "../model/signUpSchema";
 import { BasicInfoStep } from "./BasicInfoStep";
 import { EmailVerifyStep } from "./EmailVerifyStep";
 import { SocialBasicInfoStep } from "./SocialBasicInfoStep";
@@ -56,8 +56,8 @@ const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 �
 
 export function SignUpWizard(props: SignUpWizardProps) {
   const form = useForm<SignUpFormValues>({
-    resolver: zodResolver(signUpSchema),
-    defaultValues: signUpDefaultValues,
+    resolver: zodResolver(SIGN_UP_SCHEMA),
+    defaultValues: SIGN_UP_DEFAULT_VALUES,
   });
   const queryClient = useQueryClient();
   const navigate = useNavigate();

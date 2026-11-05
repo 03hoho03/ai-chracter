@@ -56,7 +56,7 @@ export function NovelSnapshotsPanel({ novel, headingRef, onRestored }: NovelSnap
   const [result, setResult] = useState<string | undefined>(undefined);
   const isJobRunning = novel.activeJob !== null;
 
-  async function save() {
+  async function handleSave() {
     setResult(undefined);
     const saved = await SaveSnapshotModal.call({
       novelId: novel.id,
@@ -66,7 +66,7 @@ export function NovelSnapshotsPanel({ novel, headingRef, onRestored }: NovelSnap
     if (saved !== null) setResult(`‘${saved.name}’${koreanParticle(saved.name, "으로/로")} 저장했어요.`);
   }
 
-  async function restore(snapshot: NovelSnapshotSummary) {
+  async function handleRestore(snapshot: NovelSnapshotSummary) {
     if (isJobRunning) return;
     setResult(undefined);
     const restored = await RestoreSnapshotModal.call({
@@ -80,7 +80,7 @@ export function NovelSnapshotsPanel({ novel, headingRef, onRestored }: NovelSnap
     setResult([`‘${snapshot.name}’ 때로 되돌렸어요.`, skipped].filter((part) => part !== undefined).join(" "));
   }
 
-  async function remove(snapshot: NovelSnapshotSummary) {
+  async function handleRemove(snapshot: NovelSnapshotSummary) {
     setResult(undefined);
     const isDeleted = await DeleteSnapshotModal.call({
       novelId: novel.id,
@@ -108,7 +108,7 @@ export function NovelSnapshotsPanel({ novel, headingRef, onRestored }: NovelSnap
         </p>
       </div>
 
-      <Button type="button" variant="outline" className="self-start" onClick={() => void save()}>
+      <Button type="button" variant="outline" className="self-start" onClick={() => void handleSave()}>
         <Plus aria-hidden />
         지금 상태 저장
       </Button>
@@ -119,8 +119,8 @@ export function NovelSnapshotsPanel({ novel, headingRef, onRestored }: NovelSnap
         onCompare={(snapshot) =>
           void SnapshotDiffModal.call({ novelId: novel.id, snapshotId: snapshot.id, snapshotName: snapshot.name })
         }
-        onRestore={(snapshot) => void restore(snapshot)}
-        onDelete={(snapshot) => void remove(snapshot)}
+        onRestore={(snapshot) => void handleRestore(snapshot)}
+        onDelete={(snapshot) => void handleRemove(snapshot)}
       />
 
       {query.data !== undefined && (

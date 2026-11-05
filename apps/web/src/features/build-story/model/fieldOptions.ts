@@ -5,7 +5,7 @@ import {
   type PromptTemplate,
   type Target,
   type Visibility,
-} from "./schema";
+} from "./storyBuilderSchema";
 
 // 선택지 화면 글자를 빌더 탭과 작성 가이드의 빌더 모양 예시가 같이 읽는다. 값 목록은 스키마가 단일 소스이고, 여기서는
 // 값마다 글자만 붙인다.

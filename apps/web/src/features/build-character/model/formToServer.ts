@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { CharacterBuilderFormValues } from "./schema";
+import type { CharacterBuilderFormValues } from "./characterBuilderSchema";
 
 type CharacterDraftPayload = components["schemas"]["CharacterDraftPayload"];
 

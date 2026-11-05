@@ -164,8 +164,8 @@ function IdentitySection({ me }: { me: MeResponse }) {
   const { verify, isVerifying } = useVerifyIdentity();
   const [notice, setNotice] = useState<IdentityNotice | null>(null);
   const section = getIdentitySection(me, {
-    payments: pricingQuery.data?.paymentsEnabled ?? false,
-    creatorPayout: hasEnabledFeature(me.enabledFeatures, "creator_payout"),
+    isPaymentsEnabled: pricingQuery.data?.paymentsEnabled ?? false,
+    isCreatorPayoutEnabled: hasEnabledFeature(me.enabledFeatures, "creator_payout"),
   });
 
   if (section.kind === "verified") {
@@ -222,7 +222,7 @@ function IdentityNoticeMessage({ notice }: { notice: IdentityNotice }) {
   return (
     <div role="alert" className="flex flex-col items-start gap-2 rounded-lg bg-destructive/10 p-3">
       <p className="text-sm break-keep text-destructive-text">{notice.message}</p>
-      {notice.reload && (
+      {notice.shouldReload && (
         <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
           새로고침
         </Button>

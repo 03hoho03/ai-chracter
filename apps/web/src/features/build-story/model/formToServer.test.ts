@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formToServer } from "./formToServer";
-import type { StoryBuilderFormValues } from "./schema";
+import type { StoryBuilderFormValues } from "./storyBuilderSchema";
 
 function requireFirst<T>(items: readonly T[]): T {
   const [first] = items;

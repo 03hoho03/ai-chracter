@@ -4,12 +4,12 @@ import { isApiError } from "@/shared/api/client";
  *
  * - `verified` — 서버가 결과를 저장했다.
  * - `redirecting` — 인증창이 페이지를 떠난다. 돌아오면 리다이렉트 처리가 이어받는다.
- * - `notice` — 그 밖. `tone` 이 `neutral` 이면 실패가 아니다(창을 닫았다·이미 인증했다). `reload` 면 새로고침만이
+ * - `notice` — 그 밖. `tone` 이 `neutral` 이면 실패가 아니다(창을 닫았다·이미 인증했다). `shouldReload` 면 새로고침만이
  *   길이다(인증창 SDK 를 못 불러왔다). */
 export type IdentityResult =
   | { kind: "verified" }
   | { kind: "redirecting" }
-  | { kind: "notice"; tone: "neutral" | "error"; message: string; reload?: boolean };
+  | { kind: "notice"; tone: "neutral" | "error"; message: string; shouldReload?: boolean };
 
 export const IDENTITY_VERIFIED_MESSAGE = "본인인증을 마쳤어요.";
 
@@ -25,7 +25,7 @@ export const IDENTITY_SDK_UNAVAILABLE: IdentityResult = {
   kind: "notice",
   tone: "error",
   message: "본인인증 창을 불러오지 못했어요. 페이지를 새로고침한 뒤 다시 시도해 주세요.",
-  reload: true,
+  shouldReload: true,
 };
 
 export const IDENTITY_REQUEST_FAILED: IdentityResult = {

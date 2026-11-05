@@ -1,4 +1,4 @@
-import type { NotesFormValues } from "./schema";
+import type { NotesFormValues } from "./notesFormSchema";
 
 /** 서버의 노트 글 → 폼의 줄 목록. 줄바꿈마다 한 사실이고, 빈 줄은 버린다. 줄 키는 새로 만든다(서버에 줄 id 가
  * 없다). */

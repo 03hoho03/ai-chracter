@@ -31,7 +31,7 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
  *
  * 모르는 칸은 오류 없이 버린다(`z.object` 의 기본 동작) — 좌우 여백 칸이 있던 옛 저장값도 그대로 읽히고, 다음에
  * 저장할 때 그 칸이 빠진다. 여백은 페이지 모드에서 판형 안 고정값이라 설정이 없다. */
-export const readerSettingsSchema = z.object({
+export const READER_SETTINGS_SCHEMA = z.object({
   fontSize: z.enum(READER_FONT_SIZES).catch(DEFAULT_READER_SETTINGS.fontSize),
   lineHeight: z.enum(READER_LINE_HEIGHTS).catch(DEFAULT_READER_SETTINGS.lineHeight),
   mode: z.enum(READER_MODES).catch(DEFAULT_READER_SETTINGS.mode),

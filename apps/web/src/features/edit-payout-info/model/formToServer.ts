@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import { stripSeparators, type PayoutInfoSubmitValues } from "./schema";
+import { stripSeparators, type PayoutInfoSubmitValues } from "./payoutInfoSchema";
 
 export type PutPayoutInfoRequest = components["schemas"]["PutPayoutInfoRequest"];
 

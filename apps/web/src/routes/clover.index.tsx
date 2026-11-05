@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { requireSession } from "@/entities/session";
 import { resolvePaymentRedirect } from "@/features/purchase-clover";
-import { CloverHubPage, cloverHubSearchSchema } from "@/pages/clover-hub";
+import { CloverHubPage, CLOVER_HUB_SEARCH_SCHEMA } from "@/pages/clover-hub";
 
 // 플랫 명명, `.index`인 이유는 형제 라우트
 // `clover.history.tsx`(`/clover/history`)가 있어서다(`inquiries.index.tsx` 선례).
@@ -13,7 +13,7 @@ import { CloverHubPage, cloverHubSearchSchema } from "@/pages/clover-hub";
 // 사이 만료) 확정을 요청하기 전에 로그인으로 보낸다 — 로그인 redirect 가 결과 쿼리를 포함한 주소를 싣고 있어 로그인한
 // 뒤 같은 결제를 이어서 확정한다. 그대로 두면 확정 요청이 401 로 끝나 결과를 잃는다.
 export const Route = createFileRoute("/clover/")({
-  validateSearch: cloverHubSearchSchema,
+  validateSearch: CLOVER_HUB_SEARCH_SCHEMA,
   beforeLoad: async ({ context, location, search }) => {
     if (resolvePaymentRedirect(search).kind === "complete") await requireSession(context.queryClient, location.href);
   },

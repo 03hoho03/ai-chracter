@@ -12,7 +12,7 @@ export function isHomeAttendancePending(input: {
   return input.isLoggedIn && input.isPending;
 }
 
-export type HomeAttendanceCard = { kind: "hidden" } | { kind: "shown"; detail: string | null; showDot: boolean };
+export type HomeAttendanceCard = { kind: "hidden" } | { kind: "shown"; detail: string | null; shouldShowDot: boolean };
 
 /** 홈의 출석판 진입 카드. 로그인 회원에게만 보인다 — 비로그인 홈은 판을 물을 수 없다. 판을 못 받아도 출석판으로 가는
  * 링크는 살린다.
@@ -28,19 +28,19 @@ export function toHomeAttendanceCard(input: {
 }): HomeAttendanceCard {
   if (!input.isLoggedIn || input.isFiltered) return { kind: "hidden" };
   const { board } = input;
-  if (board === undefined) return { kind: "shown", detail: null, showDot: false };
-  if (board.completedToday) return { kind: "shown", detail: "28일 완주! 내일 새 출석판이 열려요", showDot: false };
+  if (board === undefined) return { kind: "shown", detail: null, shouldShowDot: false };
+  if (board.completedToday) return { kind: "shown", detail: "28일 완주! 내일 새 출석판이 열려요", shouldShowDot: false };
 
   const claimedCount = board.cells.filter((cell) => cell.status === "claimed").length;
   const today = board.cells.find((cell) => cell.status === "today");
   if (board.canClaimToday && today !== undefined) {
-    if (!input.identityVerified) return { kind: "shown", detail: "본인인증하고 출석 시작하기", showDot: false };
+    if (!input.identityVerified) return { kind: "shown", detail: "본인인증하고 출석 시작하기", shouldShowDot: false };
     return {
       kind: "shown",
       detail: `오늘 ${today.seq}일차 · ${today.amount.toLocaleString("ko-KR")}클로버를 받을 수 있어요`,
-      showDot: true,
+      shouldShowDot: true,
     };
   }
   const progress = `${claimedCount} / ${board.cells.length}일`;
-  return { kind: "shown", detail: claimedCount >= 1 ? `${progress} · 내일 또 만나요` : progress, showDot: false };
+  return { kind: "shown", detail: claimedCount >= 1 ? `${progress} · 내일 또 만나요` : progress, shouldShowDot: false };
 }

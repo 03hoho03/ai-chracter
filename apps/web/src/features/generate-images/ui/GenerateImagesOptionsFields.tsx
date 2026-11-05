@@ -10,7 +10,7 @@ import {
   IMAGE_COUNT_OPTIONS,
   isImageAspectRatio,
   type GenerateImagesFormValues,
-} from "../model/schema";
+} from "../model/generateImagesSchema";
 import { parseAspectRatio } from "../model/resultTileLayout";
 
 // 비율·개수는 Select가 아니라 ToggleGroup(칩)이다. 모델 Select는

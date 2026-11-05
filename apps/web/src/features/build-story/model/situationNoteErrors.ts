@@ -10,7 +10,7 @@ import {
   type RuleListItemValues,
   type StartingSetupValues,
   type StoryBuilderFormValues,
-} from "./schema";
+} from "./storyBuilderSchema";
 
 // 상황 노트 조건이 같은 시작설정에 없는 스탯을 가리킬 때 서버가 초안 저장에 돌려주는 422 의 `detail.code`. 응답에 실리는 실제
 // 식별자다(엔딩 조건과 코드가 따로라 엔딩 탭으로 잘못 보내지 않는다).

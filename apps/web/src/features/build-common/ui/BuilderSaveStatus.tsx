@@ -34,7 +34,7 @@ export function BuilderSaveStatus({ saveStatus, onCopy, className }: BuilderSave
       <p className={cn("min-w-0 truncate text-xs", view.isFailure ? "font-medium text-destructive-text" : "text-muted-foreground")}>
         {view.text}
       </p>
-      {view.offersCopy && <CopyDraftButton className="shrink-0" onClick={onCopy} />}
+      {view.shouldOfferCopy && <CopyDraftButton className="shrink-0" onClick={onCopy} />}
     </div>
   );
 }

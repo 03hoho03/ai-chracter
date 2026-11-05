@@ -11,21 +11,27 @@
 묶음 id 는 루트 기준 상대 경로를 감싼 것이고 되돌릴 때 루트 밖·링크를 거부한다(`chat_lab.run_id`). 쓰기는 턴 기록 내보내기
 하나뿐이고 `archive/` 아래를 거부한다(`chat_lab.export_turns`).
 
-DB 는 내보내기 때만 연다. 앱을 만들 때 로컬 DB 가드만 걸고 엔진은 첫 내보내기 요청 때 만든다 — 목록·상세·기동은 DB·Redis
-어디에도 접속하지 않고 LLM 클라이언트도 만들지 않는다. 운영 설정을 읽는 DB 세션 모듈(`api.db.session`)은 import 하지 않는다
-(import 만으로 운영 설정의 엔진을 만든다). 앱을 만들 때 파일 시스템도 보지 않는다 — 스키마만 떨굴 때 런 루트가 없어도 된다.
+DB 는 턴 기록 내보내기와 올리기 머리의 출처 조회 때만 연다. 앱을 만들 때 로컬 DB 가드만 걸고 엔진은 그 둘 가운데 첫 요청 때
+하나 만들어 함께 쓴다 — 받는 DB 주소는 하나다. 목록·상세·통째 묶음·기동은 DB·Redis 어디에도 접속하지 않고, 어느 경로도
+LLM 클라이언트를 만들지 않는다. 운영 설정을 읽는 DB 세션 모듈(`api.db.session`)은 import 하지 않는다(import 만으로 운영 설정의
+엔진을 만든다). 앱을 만들 때 파일 시스템도 보지 않는다 — 스키마만 떨굴 때 런 루트가 없어도 된다.
 
 오류 본문은 모두 `LabError`(`detail` 글 + `reason` 종류)다. FastAPI 의 요청 검증 오류(422)만 기본 모양(`detail` 이 목록, `reason`
-없음)으로 남아, 웹은 `reason` 이 있는지로 둘을 가른다. 경로마다 실제로 내는 상태 코드를 스키마에 적는다."""
+없음)으로 남아, 웹은 `reason` 이 있는지로 둘을 가른다. 그 목록의 항목에는 어디가 왜 틀렸는지(`loc`·`msg`·`type`)만 싣는다 — FastAPI
+기본은 받은 값(`input`)과 검증 맥락(`ctx`)을 되돌려 올리기 머리의 예외 이메일이 응답에 나온다. DB 오류의 503 에도 예외 이름만
+싣는다 — SQLAlchemy 오류 글에는 바인드 인자가, 드라이버 접속 오류 글에는 접속 주소의 계정·DB 이름이 든다. 경로마다 실제로 내는
+상태 코드를 스키마에 적는다."""
 
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Annotated, Any
 
+import asyncpg
 from fastapi import Body, FastAPI, Query, Request
 from fastapi import Path as PathParam
 from fastapi.concurrency import run_in_threadpool
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy.exc import SQLAlchemyError
@@ -37,6 +43,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from chat_lab.catalog import BundleOpenError, RunCatalog, RunNotFoundError
 from chat_lab.export_turns import ExportRefusal, ExportRefusedError, export_chat_turns, read_only_engine
 from chat_lab.join import JoinedRun
+from chat_lab.provenance import check_provenance
 from chat_lab.report import run_bundle, run_detail, run_metrics, turn_detail
 from chat_lab.schemas import (
     ExportTurnsRequest,
@@ -48,7 +55,10 @@ from chat_lab.schemas import (
     RunDetail,
     RunList,
     RunMetrics,
+    SourceCommit,
     TurnDetail,
+    UploadHeader,
+    UploadHeaderRequest,
 )
 from replay.local_db import ensure_local_database
 
@@ -61,6 +71,12 @@ LAB_WEB_ORIGINS = ("http://127.0.0.1:5291", "http://localhost:5291")
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+# DB 를 쓸 수 없다(503 `dbUnavailable`)로 읽는 예외 — SQLAlchemy 오류, 접속 거부·끊김, 그리고 드라이버(asyncpg)가 접속 단계에서
+# SQLAlchemy 가 감싸지 않은 채 내는 오류(틀린 계정·비밀번호·DB 이름 등).
+DB_ERRORS: tuple[type[Exception], ...] = (SQLAlchemyError, OSError, asyncpg.PostgresError, asyncpg.InterfaceError)
+# 요청 검증 오류 항목에서 남기는 칸.
+VALIDATION_KEYS = ("loc", "msg", "type")
 
 # 내보내기 거부 → 상태 코드. 409 는 "이미 있음" 하나다 — 웹이 강제로 다시 내보내기를 권하는 것은 이 경우뿐이어야 해서(링크·폴더가
 # 그 자리에 있으면 강제로도 못 쓴다). 보관 폴더는 403, 나머지는 이 묶음·이 DB 로는 내보낼 수 없다는 422(상세의 "지원 안 함"과 같다).
@@ -97,6 +113,12 @@ _EXPORT_ERRORS: dict[int | str, dict[str, Any]] = {
     403: _LAB_ERROR,
     404: _LAB_ERROR,
     409: _LAB_ERROR,
+    415: _LAB_ERROR,
+    422: _UNPROCESSABLE,
+    503: _LAB_ERROR,
+}
+_UPLOAD_HEADER_ERRORS: dict[int | str, dict[str, Any]] = {
+    404: _LAB_ERROR,
     415: _LAB_ERROR,
     422: _UNPROCESSABLE,
     503: _LAB_ERROR,
@@ -145,9 +167,17 @@ def _default_sessions(database_url: str) -> SessionFactory:
     return open_session
 
 
-def create_app(*, root: Path, database_url: str | None, session_factory: SessionFactory | None = None) -> FastAPI:
-    """`database_url` 이 로컬 DB 가 아니면 `SystemExit`(만들지 않는다). `session_factory` 를 주면 내보내기가 그 세션을 쓴다
-    (테스트가 자기 트랜잭션을 넣는 자리). 둘 다 없으면 내보내기는 503 이다(스키마만 떨구는 앱)."""
+def create_app(
+    *,
+    root: Path,
+    database_url: str | None,
+    session_factory: SessionFactory | None = None,
+    source_commit: SourceCommit | None = None,
+) -> FastAPI:
+    """`database_url` 이 로컬 DB 가 아니면 `SystemExit`(만들지 않는다). `session_factory` 를 주면 내보내기·출처 조회가 그 세션을
+    쓴다(테스트가 자기 트랜잭션을 넣는 자리). 둘 다 없으면 둘은 503 이다(스키마만 떨구는 앱). `source_commit` 은 띄울 때 읽은 만든
+    커밋이고(`chat_lab.source_commit.read_source_commit`), 없으면 올리기 머리는 503 `gitUnavailable` 이다 — 앱은 git 을 부르지
+    않는다."""
     if database_url is not None:
         ensure_local_database(database_url, tool="chat-lab")
     sessions = session_factory
@@ -169,6 +199,11 @@ def create_app(*, root: Path, database_url: str | None, session_factory: Session
     @app.exception_handler(LabHTTPError)
     async def lab_error(request: Request, error: LabHTTPError) -> JSONResponse:
         return _error_response(error.status, error.reason, error.detail)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, error: RequestValidationError) -> JSONResponse:
+        detail = [{key: item[key] for key in VALIDATION_KEYS if key in item} for item in error.errors()]
+        return JSONResponse({"detail": detail}, status_code=422)
 
     def joined(run_id: str) -> JoinedRun:
         try:
@@ -222,11 +257,35 @@ def create_app(*, root: Path, database_url: str | None, session_factory: Session
                 written = await export_chat_turns(session, bundle, force=request.force)
         except ExportRefusedError as error:
             raise LabHTTPError(EXPORT_STATUS[error.reason], error.reason, str(error)) from error
-        except (SQLAlchemyError, OSError) as error:
+        except DB_ERRORS as error:
             raise LabHTTPError(
-                503, "dbUnavailable", f"내보내기를 마치지 못했다(DB 접속·파일 쓰기): {type(error).__name__}: {error}"
+                503, "dbUnavailable", f"내보내기를 마치지 못했다(DB 접속·파일 쓰기): {type(error).__name__}"
             ) from error
         entry = await run_in_threadpool(catalog.entry, run_id)
         return ExportTurnsResult(path=written.relative_to(bundle.root).as_posix(), run=entry)
+
+    @app.post("/runs/{runId}/upload-header", responses=_UPLOAD_HEADER_ERRORS)
+    async def upload_header(run_id: RunId, request: Annotated[UploadHeaderRequest, Body()]) -> UploadHeader:
+        """호스팅 서비스에 올릴 때 묶음 바이트와 따로 보내는 머리 — 띄울 때 읽은 만든 커밋과, 요청 때 로컬 DB 로 계산한 출처 칸.
+        형식과 판정은 `apps/chat-lab/README.md` 「묶음 계약 판과 출처 칸」 절."""
+        run = await run_in_threadpool(joined, run_id)
+        if sessions is None:
+            raise LabHTTPError(503, "dbUnavailable", "이 서버에는 DB 가 설정되지 않았다")
+        if source_commit is None:
+            raise LabHTTPError(
+                503,
+                "gitUnavailable",
+                "측정 서버를 띄울 때 checkout 의 커밋을 git 으로 읽지 못했다 — 고친 뒤 다시 띄운다",
+            )
+        try:
+            async with sessions() as session:
+                provenance = await check_provenance(
+                    session, meta=run.meta, room_id=run.bundle.room_id, exempt_emails=request.exempt_emails
+                )
+        except DB_ERRORS as error:
+            raise LabHTTPError(
+                503, "dbUnavailable", f"출처를 조회하지 못했다(DB 접속): {type(error).__name__}"
+            ) from error
+        return UploadHeader(source_commit=source_commit, provenance=provenance)
 
     return app

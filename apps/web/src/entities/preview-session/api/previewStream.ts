@@ -6,24 +6,24 @@
 import { z } from "zod";
 import type { components } from "@ai-character-chat/api-types";
 
-import { mediaTagImagesSchema } from "@/entities/media-book/@x/preview-session";
+import { MEDIA_TAG_IMAGES_SCHEMA } from "@/entities/media-book/@x/preview-session";
 
 export type PreviewStartPayload =
   components["schemas"]["CharacterDraftPayload"] | components["schemas"]["StoryDraftPayload"];
 
 /** 장면 헤더를 켠 초안의 턴 장면. entities/chat-room `chatStream.ts` 의 장면 스키마와 같은 이유로 null 칸을 undefined 로 바꾼다. */
-const previewSceneSchema = z
+const PREVIEW_SCENE_SCHEMA = z
   .object({ place: z.string().nullable(), time: z.string().nullable() })
   .transform(({ place, time }) => ({ place: place ?? undefined, time: time ?? undefined }));
 
 /** SSE `done` 이벤트가 실어 나르므로 스키마에서 도출한다 — 타입을 따로 쓰면 스키마와 갈린다. */
-const previewChatMessageSchema = z.object({
+const PREVIEW_CHAT_MESSAGE_SCHEMA = z.object({
   id: z.string(),
   role: z.union([z.literal("user"), z.literal("assistant")]),
   content: z.string(),
   // 스토리 미리보기 턴이 판정한 미디어 북 그림. 이 키들을 적지 않으면 zod 가 조용히 버려 미리보기 판정
   // 이미지가 한 장도 안 나온다. 캐릭터 미리보기는 판정하지 않아 서버가 null 을 싣는다 — entities/chat-room
-  // `chatStream.ts` 의 `chatMessageSchema` 와 같은 이유로 nullish 로 받고 출력은 undefined 로 정규화한다.
+  // `chatStream.ts` 의 `CHAT_MESSAGE_SCHEMA` 와 같은 이유로 nullish 로 받고 출력은 undefined 로 정규화한다.
   imageId: z
     .string()
     .nullish()
@@ -45,19 +45,19 @@ const previewChatMessageSchema = z.object({
     .transform((value) => value ?? undefined)
     .optional(),
   // 장면 헤더를 켠 초안이면 서버가 그 턴의 장면을 응답에 싣는다. 끈 초안·캐릭터 미리보기는 null 이다.
-  scene: previewSceneSchema
+  scene: PREVIEW_SCENE_SCHEMA
     .nullish()
     .transform((value) => value ?? undefined)
     .optional(),
   createdAt: z.string(),
 });
 
-export type PreviewChatMessage = z.infer<typeof previewChatMessageSchema>;
+export type PreviewChatMessage = z.infer<typeof PREVIEW_CHAT_MESSAGE_SCHEMA>;
 
 // BE의 ChatStreamEvent(apps/api/src/api/chat/schemas.py)와 와이어 형태는 동일하지만, entities/chat-room의
 // ChatStreamEvent를 import하지 않고 이 레이어 전용으로 별도 선언한다(entities 간 직접 참조 없이 구조적
 // 호환만으로 충분 — shared/api/sse의 openChatStream이 이미 이 방식을 쓴다, apps/web/CLAUDE.md 참고).
-export const previewStreamEventSchema = z.discriminatedUnion("type", [
+export const PREVIEW_STREAM_EVENT_SCHEMA = z.discriminatedUnion("type", [
   z.object({ type: z.literal("token"), delta: z.string() }),
   z.object({ type: z.literal("statChange"), statId: z.string(), newValue: z.number() }),
   z.object({
@@ -65,7 +65,7 @@ export const previewStreamEventSchema = z.discriminatedUnion("type", [
     endingId: z.string(),
     epilogue: z.string().nullable(),
     // 에필로그 속 칸 id 형태 태그가 가리키는 그림(`{칸 id: 그림}`).
-    mediaTagImages: mediaTagImagesSchema,
+    mediaTagImages: MEDIA_TAG_IMAGES_SCHEMA,
   }),
   // 장면 헤더를 켠 초안의 매 턴 장면 — 실제 방과 같은 엔진이 `done` 바로 앞에 보낸다.
   z.object({
@@ -75,11 +75,11 @@ export const previewStreamEventSchema = z.discriminatedUnion("type", [
     time: z.string().nullable(),
   }),
   z.object({ type: z.literal("policyWarning"), message: z.string() }),
-  z.object({ type: z.literal("done"), finalMessage: previewChatMessageSchema }),
+  z.object({ type: z.literal("done"), finalMessage: PREVIEW_CHAT_MESSAGE_SCHEMA }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);
 
-export type PreviewStreamEvent = z.infer<typeof previewStreamEventSchema>;
+export type PreviewStreamEvent = z.infer<typeof PREVIEW_STREAM_EVENT_SCHEMA>;
 
 // shared/api/sse/openChatStream.ts의 ChatStreamRequestPayload에 구조적으로 맞춘 preview 전용 요청.
 export type SendPreviewMessageRequest = {

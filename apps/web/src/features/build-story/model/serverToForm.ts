@@ -14,7 +14,7 @@ import type {
   StartingSetupValues,
   StatDefValues,
   StoryBuilderFormValues,
-} from "./schema";
+} from "./storyBuilderSchema";
 
 type DevelopmentExampleItem = components["schemas"]["DevelopmentExampleItem"];
 type StartingSetupDraftItem = components["schemas"]["StartingSetupDraftItem"];
@@ -173,8 +173,8 @@ function fromApiMediaBook(mediaBook: MediaBookDraft | undefined): MediaBookValue
  * registration 부분 -> 폼 defaultValues(순수 함수).
  *
  * `settingText`/`customPrompt`는 promptTemplate 값과 무관하게 서버가 저장된 값을 그대로 돌려주므로
- * 여기서 분기 없이 그대로 복원한다 — 필수 여부 분기는 `schema.ts`의
- * `storySettingSchema` superRefine에서만 적용된다. `developmentExamples`/`userGoal`/`rules`도 같은
+ * 여기서 분기 없이 그대로 복원한다 — 필수 여부 분기는 `storyBuilderSchema.ts`의
+ * `STORY_SETTING_SCHEMA` superRefine에서만 적용된다. `developmentExamples`/`userGoal`/`rules`도 같은
  * 이유로 분기 없이 그대로 복원한다(템플릿과 무관하게 항상 적용). 구
  * 필드 `developmentExample`은 더 이상 폼에서 관리하지 않는다(`formToServer.ts` 참고).
  *

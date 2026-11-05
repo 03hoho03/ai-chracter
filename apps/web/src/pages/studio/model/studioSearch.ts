@@ -29,7 +29,7 @@ export const UNREADABLE_BUNDLE = "unreadable";
  * 모든 필드는 `.catch(undefined)` 로 끝난다 — 모르는 값을 거부하면 라우터가 `SearchParamError` 를 던져 앱 크롬 없는
  * 오류 상자만 남는다. 소설 칩·"심사 중" 을 볼 수 없는 계정이 그 값으로 들어오는 경우는 스키마가 아니라
  * `resolveStudioSearch` 가 접는다(허용 여부는 세션을 읽어야 안다). */
-export const studioSearchSchema = z.object({
+export const STUDIO_SEARCH_SCHEMA = z.object({
   type: z.enum(STUDIO_TYPE_FILTERS).exclude(["all"]).optional().catch(undefined),
   status: z.enum(STUDIO_STATUS_FILTERS).exclude(["all"]).optional().catch(undefined),
   q: z.union([z.string(), z.number()]).transform(toSearchQuery).optional().catch(undefined),
@@ -38,7 +38,7 @@ export const studioSearchSchema = z.object({
   bundle: z.guid().optional().catch(UNREADABLE_BUNDLE),
 });
 
-export type StudioSearch = z.infer<typeof studioSearchSchema>;
+export type StudioSearch = z.infer<typeof STUDIO_SEARCH_SCHEMA>;
 
 /** 스튜디오가 지금 보는 범위 — 모든 작품(홈)인지, 묶음 하나인지. */
 export type StudioScope = { kind: "home" } | { kind: "bundle"; bundleId: string } | { kind: "unreadableBundle" };

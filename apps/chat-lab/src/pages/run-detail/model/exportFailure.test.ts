@@ -23,6 +23,7 @@ const REFUSAL_STATUSES = {
   multipleRooms: 422,
   dbUnavailable: 503,
   notJson: 415,
+  gitUnavailable: 503,
 } satisfies Record<Exclude<LabErrorReason, "exists">, number>;
 
 /** 서버가 2xx 가 아닌 응답을 줬을 때 axios 가 reject 하는 오류와 같은 꼴. */

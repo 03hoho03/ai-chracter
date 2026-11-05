@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { previewSessionKeys } from "../api/keys";
-import { previewStreamEventSchema } from "../api/previewStream";
+import { PREVIEW_STREAM_EVENT_SCHEMA } from "../api/previewStream";
 import { applyPreviewStreamEvent } from "./applyPreviewStreamEvent";
 import type { PreviewSessionState } from "./previewSessionState";
 
@@ -87,7 +87,7 @@ describe("applyPreviewStreamEvent", () => {
       },
     };
 
-    applyPreviewStreamEvent(queryClient, SESSION_ID, previewStreamEventSchema.parse(wire));
+    applyPreviewStreamEvent(queryClient, SESSION_ID, PREVIEW_STREAM_EVENT_SCHEMA.parse(wire));
 
     const next = queryClient.getQueryData<PreviewSessionState>(previewSessionKeys.detail(SESSION_ID));
     expect(next?.messages.at(-1)).toEqual(wire.finalMessage);
@@ -109,7 +109,7 @@ describe("applyPreviewStreamEvent", () => {
       },
     };
 
-    applyPreviewStreamEvent(queryClient, SESSION_ID, previewStreamEventSchema.parse(wire));
+    applyPreviewStreamEvent(queryClient, SESSION_ID, PREVIEW_STREAM_EVENT_SCHEMA.parse(wire));
 
     const last = queryClient.getQueryData<PreviewSessionState>(previewSessionKeys.detail(SESSION_ID))?.messages.at(-1);
     expect(last).toEqual({ id: "m2", role: "assistant", content: "다음 대사", createdAt: "2026-07-08T00:01:00Z" });
@@ -120,7 +120,7 @@ describe("applyPreviewStreamEvent", () => {
     applyPreviewStreamEvent(
       queryClient,
       SESSION_ID,
-      previewStreamEventSchema.parse({ type: "sceneChange", messageId: "m2", place: "갱도", time: null }),
+      PREVIEW_STREAM_EVENT_SCHEMA.parse({ type: "sceneChange", messageId: "m2", place: "갱도", time: null }),
     );
     applyPreviewStreamEvent(queryClient, SESSION_ID, {
       type: "done",
@@ -131,7 +131,7 @@ describe("applyPreviewStreamEvent", () => {
     expect(state?.messages.at(-1)?.scene).toEqual({ place: "갱도", time: undefined });
     expect(state?.pendingScene).toBeUndefined();
 
-    const done = previewStreamEventSchema.parse({
+    const done = PREVIEW_STREAM_EVENT_SCHEMA.parse({
       type: "done",
       finalMessage: {
         id: "m3",

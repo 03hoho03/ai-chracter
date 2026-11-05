@@ -93,6 +93,11 @@
 - **발행은 `parse()` → `formToServer()` → draft PATCH → `publish()` 순서다**(`publish`가 무바디라 중간 debounce 미반영 값이 누락된다). 400 `detail`은 `{missingFields}`(토스트)와 `{reason}`(이의제기 배너) 두 모양 — `"reason" in detail`로 먼저 판별한다. nullable draft 스키마는 `safeParse`를 통과해도 서버 필수값이 빌 수 있어 `missingFields`→한국어 라벨 매핑이 필요하다.
 - **`useFieldArray`**: 순서 없는 배열은 `fields.map(key={field.id})` + `append({id: crypto.randomUUID()})`. 순서=우선순위면 `@dnd-kit/sortable` + `move`(listeners는 드래그 핸들에만) — 센서·화살표 키 한 칸 이동·한국어 안내는 `features/build-common`의 `useSortableList`가 맡고 손잡이는 `ItemDragHandle`이다. 부모의 동적 인덱스에 `name`이 의존하는 중첩 배열은 **부모 안정 `id`로 key**를 줘 통째로 remount(인덱스로 key 금지). 재귀 트리는 `useFieldArray` 대신 `items`/`onChange` 순수 제어 컴포넌트로.
 
+## 이름
+
+- **boolean 접두는 `is`·`has`·`can`·`should` 외에 `was*`(이미 지나간 사실 — `wasRejected`)·`needs*`(아직 해야 할 일 — `needsSave`)도 쓴다.** 라이브러리 옵션을 그대로 따르는 `enabled`(TanStack Query 옵션과 같은 꼴의 훅 인자)도 그대로 둔다. `was*`·`needs*` 는 `is`/`has` 로 바꾸면 시제나 "해야 한다"는 뜻이 빠지고, `enabled` 는 바꾸면 같은 뜻의 라이브러리 옵션과 이름이 갈린다.
+- **한 파일에 훅 여럿(`*Mutations.ts` 처럼 같은 리소스의 뮤테이션 묶음)이나 컴포넌트 여럿을 두는 건 허용하고, 그때는 파일 이름을 도메인 명사로 짓는다**(`memoryMutations.ts`·`signUpMutations.ts`). 같은 리소스를 함께 고치는 훅·함께 그리는 조각을 파일마다 쪼개면 import 만 늘고 한 번에 읽히지 않는다. 컴포넌트 파일 안에서만 쓰는 비공개 훅은 그 파일에 둔다 — 밖에서 부르지 않는 훅을 따로 빼면 공개 API 처럼 보인다.
+
 ## UI / 컴포넌트
 
 - **`&&` 조건부 렌더링의 좌변은 숫자·NaN 이 될 수 있을 때만 boolean 으로 바꾼다** — React 는 `false`·`null`·`undefined`·빈 문자열을 아무것도 그리지 않고 `0`·`NaN` 만 글자로 그리므로, 문자열·객체·함수 좌변은 그대로 두고 `ReactNode` 좌변은 실제로 숫자가 들어올 수 있을 때만 바꾼다.

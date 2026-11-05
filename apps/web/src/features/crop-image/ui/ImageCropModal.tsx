@@ -29,7 +29,7 @@ export type ImageCropModalProps = {
   shape?: "rect" | "round";
   /** GIF 를 움직이는 채로 둔다 — canvas 로 자르면 첫 프레임만 남으므로, 원본 파일과 크롭 영역을 그대로 돌려줘 서버가
    * 모든 프레임을 자르게 한다. 그 영역을 서버에 넘기는 업로드(대표 이미지)에서만 켠다. */
-  keepAnimation?: boolean;
+  shouldKeepAnimation?: boolean;
 };
 
 // 확대는 원본 크기와 무관하게 항상 1~3배다.
@@ -45,7 +45,7 @@ const MAX_ZOOM = 3;
 // 잘라낸 File(움직이는 GIF 는 원본과 크롭 영역)을 그대로 돌려주는 순수 입력 모달이라 mutationFn 주입형이 아니다. 취소·ESC·바깥클릭·✕는
 // 전부 onOpenChange 한 지점으로 모여 call.end(undefined)로 수렴한다(GeneratedImagePickerModal과 동일 패턴).
 export const ImageCropModal = createCallable<ImageCropModalProps, PreparedUpload | undefined>(
-  ({ call, file, aspect, shape = "rect", keepAnimation = false }) => {
+  ({ call, file, aspect, shape = "rect", shouldKeepAnimation = false }) => {
     const isOpen = !call.ended;
     const labelId = useId();
 
@@ -71,7 +71,7 @@ export const ImageCropModal = createCallable<ImageCropModalProps, PreparedUpload
 
     const handleApply = async () => {
       if (!croppedAreaPixels) return;
-      if (keepAnimation && file.type === "image/gif") {
+      if (shouldKeepAnimation && file.type === "image/gif") {
         // 라이브러리가 주는 영역은 소수 픽셀이라 반올림한다. 경계를 1px 넘는 것은 서버가 그림 안으로 자른다.
         const { x, y, width, height } = croppedAreaPixels;
         call.end({ file, crop: { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) } });

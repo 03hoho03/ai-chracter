@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formToServer } from "./formToServer";
-import type { GenerateImagesFormValues } from "./schema";
+import type { GenerateImagesFormValues } from "./generateImagesSchema";
 
 const VALUES: GenerateImagesFormValues = {
   prompt: "1girl, solo",

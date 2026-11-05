@@ -12,7 +12,7 @@ import { COMMENT_GHOST_HOVER_CLASS_NAME, CommentStickerImage, useCommentStickers
 import { useWriteCommentMutation } from "../api/useWriteCommentMutation";
 import type { CommentDraft } from "../model/drafts";
 import { commentFormErrors } from "../model/commentFormErrors";
-import { commentFormSchema, EMPTY_COMMENT_VALUES, type CommentFormValues } from "../model/schema";
+import { COMMENT_FORM_SCHEMA, EMPTY_COMMENT_VALUES, type CommentFormValues } from "../model/commentFormSchema";
 import { CommentLoginModal } from "./CommentLoginModal";
 import { CommentTextField } from "./CommentTextField";
 
@@ -27,7 +27,7 @@ export function CommentComposer({
   contentId, viewerId, isLoggedIn, draft, canSubmit, disabledReason, editCommentId, replyTarget,
   isReplyMode, hasInheritedSpoiler, autoFocus, onChange, onSaved, onCancel, canAddMentions = true,
 }: CommentComposerProps) {
-  const form = useForm<CommentFormValues>({ resolver: zodResolver(commentFormSchema), defaultValues: draft.values });
+  const form = useForm<CommentFormValues>({ resolver: zodResolver(COMMENT_FORM_SCHEMA), defaultValues: draft.values });
   const values = useWatch({ control: form.control });
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isSubmittingRef = useRef(false);

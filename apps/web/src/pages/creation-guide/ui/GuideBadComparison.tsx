@@ -8,14 +8,14 @@ import { GUIDE_CHAT_MACRO_NAMES } from "../config/guideChatMacroNames";
 import type { GuideMockupContext } from "../model/guideMockupContext";
 import type { FieldBadPart } from "../model/parseManuscript";
 import { toDisplayItems } from "../model/toGuidePages";
-import { GuideFieldMockups } from "./GuideFieldMockup";
+import { GuideFieldMockups } from "./GuideFieldMockups";
 import { GuideMarkdown } from "./GuideMarkdown";
 
 type GuideBadComparisonProps = {
   part: FieldBadPart;
   context: GuideMockupContext;
   /** 한 칸에 나쁜 예가 둘 이상이면 접기 줄이 이름을 다 싣지 못해, 대비마다 이름을 위에 적는다. */
-  showsTitle: boolean;
+  shouldShowTitle: boolean;
 };
 
 /**
@@ -26,18 +26,18 @@ type GuideBadComparisonProps = {
  * 좁은 화면은 위아래, 넓은 화면은 나란히 놓는다 — 비교는 동시에 보여야 한다. 좋은 쪽이 없는 대비(시드에 맞대어 보일 줄이
  * 없는 실수)는 나쁜 쪽만 오른쪽 칸에 둬, 좋은 쪽은 위의 칸 그림이라는 자리 관계를 지킨다.
  */
-export function GuideBadComparison({ part, context, showsTitle }: GuideBadComparisonProps) {
+export function GuideBadComparison({ part, context, shouldShowTitle }: GuideBadComparisonProps) {
   return (
     <div className="flex flex-col gap-2">
-      {showsTitle && <p className="m-0 text-sm font-semibold text-foreground">{part.title}</p>}
+      {shouldShowTitle && <p className="m-0 text-sm font-semibold text-foreground">{part.title}</p>}
       <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
         {part.good && (
           <ComparisonSide tone="good">
-            <GuideFieldMockups values={[part.good]} context={context} clampsLongText={false} />
+            <GuideFieldMockups values={[part.good]} context={context} shouldClampLongText={false} />
           </ComparisonSide>
         )}
         <ComparisonSide tone="bad" className={cn(!part.good && "lg:col-start-2")}>
-          {part.values.length > 0 && <GuideFieldMockups values={part.values} context={context} clampsLongText={false} />}
+          {part.values.length > 0 && <GuideFieldMockups values={part.values} context={context} shouldClampLongText={false} />}
           <BadProse part={part} />
         </ComparisonSide>
       </div>

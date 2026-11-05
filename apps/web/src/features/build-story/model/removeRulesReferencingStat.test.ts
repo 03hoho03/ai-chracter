@@ -6,7 +6,7 @@ import {
   removeRulesReferencingStat,
   type StatRemovalCounts,
 } from "./removeRulesReferencingStat";
-import { countRules, type RuleListItemValues, type SingleRuleValues } from "./schema";
+import { countRules, type RuleListItemValues, type SingleRuleValues } from "./storyBuilderSchema";
 
 function rule(id: string, statId: string, nextOp: SingleRuleValues["nextOp"] = null): SingleRuleValues {
   return { kind: "rule", id, statId, operator: ">=", value: 50, nextOp };

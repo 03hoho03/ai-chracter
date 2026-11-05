@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { SubmitInquiryFormValues } from "./schema";
+import type { SubmitInquiryFormValues } from "./submitInquirySchema";
 
 type InquiryCreateRequest = components["schemas"]["InquiryCreateRequest"];
 

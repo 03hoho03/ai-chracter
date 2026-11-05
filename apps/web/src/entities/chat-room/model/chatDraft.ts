@@ -10,9 +10,9 @@ import { z } from "zod";
  * 로그아웃·탈퇴는 전부 지운다(`clearAllChatDrafts`) — 같은 탭에서 다음 계정이 앞 계정의 글을 보면 안 된다. */
 const CHAT_DRAFT_KEY_PREFIX = "ttona.chatDraft.";
 
-const chatDraftSchema = z.object({ input: z.string(), rejected: z.string() });
+const CHAT_DRAFT_SCHEMA = z.object({ input: z.string(), rejected: z.string() });
 
-export type ChatDraft = z.infer<typeof chatDraftSchema>;
+export type ChatDraft = z.infer<typeof CHAT_DRAFT_SCHEMA>;
 
 type ChatDraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length">;
 
@@ -31,7 +31,7 @@ export function readChatDraft(roomId: string, getStorage: () => ChatDraftStorage
   try {
     const raw = getStorage().getItem(chatDraftKey(roomId));
     if (raw === null) return null;
-    const parsed = chatDraftSchema.safeParse(JSON.parse(raw));
+    const parsed = CHAT_DRAFT_SCHEMA.safeParse(JSON.parse(raw));
     return parsed.success ? parsed.data : null;
   } catch {
     return null;

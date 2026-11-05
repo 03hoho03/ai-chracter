@@ -87,40 +87,40 @@ describe("nextBlockSelection", () => {
 
   describe("Shift 이어 고르기", () => {
     it("마지막으로 고른 문단부터 누른 문단까지 같은 장면 안을 모두 켠다", () => {
-      expect(nextBlockSelection(["b0"], 3, { extend: true }, context())).toEqual({
+      expect(nextBlockSelection(["b0"], 3, { isExtending: true }, context())).toEqual({
         selection: ["b0", "b1", "b2", "b3"],
         outcome: "added",
       });
     });
 
     it("거꾸로도 이어 고르고, 이미 고른 문단은 끄지 않는다", () => {
-      expect(nextBlockSelection(["b1", "b3"], 0, { extend: true }, context())).toEqual({
+      expect(nextBlockSelection(["b1", "b3"], 0, { isExtending: true }, context())).toEqual({
         selection: ["b1", "b3", "b2", "b0"],
         outcome: "added",
       });
     });
 
     it("누른 문단이 다른 장면이면 하나도 켜지 않는다", () => {
-      expect(nextBlockSelection(["b2"], 5, { extend: true }, context())).toEqual({
+      expect(nextBlockSelection(["b2"], 5, { isExtending: true }, context())).toEqual({
         selection: ["b2"],
         outcome: "outsideScene",
       });
     });
 
     it("고를 수 없는 문단은 건너뛴다", () => {
-      const step = nextBlockSelection(["b0"], 3, { extend: true }, context({ isSelectable: (index) => index !== 2 }));
+      const step = nextBlockSelection(["b0"], 3, { isExtending: true }, context({ isSelectable: (index) => index !== 2 }));
       expect(step.selection).toEqual(["b0", "b1", "b3"]);
     });
 
     it("상한에 닿으면 거기까지만 켜고 상한을 알린다", () => {
-      expect(nextBlockSelection(["b0"], 3, { extend: true }, context({ maxBlocks: 3 }))).toEqual({
+      expect(nextBlockSelection(["b0"], 3, { isExtending: true }, context({ maxBlocks: 3 }))).toEqual({
         selection: ["b0", "b1", "b2"],
         outcome: "limit",
       });
     });
 
     it("고른 것이 없으면 그 문단 하나를 켠다", () => {
-      expect(nextBlockSelection([], 4, { extend: true }, context())).toEqual({ selection: ["b4"], outcome: "added" });
+      expect(nextBlockSelection([], 4, { isExtending: true }, context())).toEqual({ selection: ["b4"], outcome: "added" });
     });
   });
 });

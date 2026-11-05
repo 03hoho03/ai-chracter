@@ -102,7 +102,7 @@ function ProfileBody({ query, userId, isOwner, contentType, onContentTypeChange 
                 aspect: 1,
                 shape: "round",
               });
-              // 프로필 사진은 움짤을 받지 않아(`keepAnimation` 없음) 언제나 잘라낸 파일 하나다.
+              // 프로필 사진은 움짤을 받지 않아(`shouldKeepAnimation` 없음) 언제나 잘라낸 파일 하나다.
               return cropped?.file;
             }}
           />

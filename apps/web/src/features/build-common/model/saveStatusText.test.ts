@@ -12,7 +12,7 @@ describe("saveStatusView", () => {
   it("idle 은 자동저장 안내문이다", () => {
     expect(saveStatusView("idle", true, undefined)).toEqual({
       text: "변경사항은 자동으로 저장돼요.",
-      offersCopy: false,
+      shouldOfferCopy: false,
       isFailure: false,
     });
   });
@@ -37,10 +37,10 @@ describe("saveStatusView", () => {
   });
 
   it("실패에서만 실패 표시와 내용 복사를 낸다", () => {
-    expect(saveStatusView("failed", true, AT_23_42)).toEqual({ text: "저장 실패", offersCopy: true, isFailure: true });
+    expect(saveStatusView("failed", true, AT_23_42)).toEqual({ text: "저장 실패", shouldOfferCopy: true, isFailure: true });
     for (const status of ["idle", "pending", "saving", "saved"] as const) {
       const view = saveStatusView(status, true, AT_23_42);
-      expect(view.offersCopy).toBe(false);
+      expect(view.shouldOfferCopy).toBe(false);
       expect(view.isFailure).toBe(false);
     }
   });
@@ -50,7 +50,7 @@ describe("saveStatusView", () => {
   it.each<AutosaveStatus>(["idle", "pending", "saving", "saved", "failed"])("오프라인이면 %s 이어도 연결 끊김이다", (status) => {
     expect(saveStatusView(status, false, AT_23_42)).toEqual({
       text: "연결 끊김 · 연결되면 저장돼요",
-      offersCopy: true,
+      shouldOfferCopy: true,
       isFailure: false,
     });
   });

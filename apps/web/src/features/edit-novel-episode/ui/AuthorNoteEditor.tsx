@@ -15,7 +15,7 @@ import {
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { CharacterCount } from "@/shared/ui/CharacterCount";
 
-import { countEpisodeChars, createAuthorNoteSchema, type AuthorNoteFormValues } from "../model/schema";
+import { countEpisodeChars, createAuthorNoteSchema, type AuthorNoteFormValues } from "../model/episodeSchema";
 
 type AuthorNoteEditorProps = {
   novel: NovelDetailResponse;
@@ -53,7 +53,7 @@ export function AuthorNoteEditor({ novel, chapter }: AuthorNoteEditorProps) {
     openButtonRef.current?.focus();
   }, [isEditing]);
 
-  function startEditing() {
+  function handleStartEditing() {
     form.reset({ authorNote: chapter.authorNote });
     setSaveError(undefined);
     setIsEditing(true);
@@ -94,7 +94,7 @@ export function AuthorNoteEditor({ novel, chapter }: AuthorNoteEditorProps) {
             variant="ghost"
             size="icon-sm"
             aria-label="작가의 말 고치기"
-            onClick={startEditing}
+            onClick={handleStartEditing}
           >
             <Pencil aria-hidden />
           </Button>
@@ -144,7 +144,7 @@ export function AuthorNoteEditor({ novel, chapter }: AuthorNoteEditorProps) {
       )}
 
       {!isEditing && isEmpty && (
-        <Button ref={openButtonRef} type="button" variant="outline" size="sm" className="self-start" onClick={startEditing}>
+        <Button ref={openButtonRef} type="button" variant="outline" size="sm" className="self-start" onClick={handleStartEditing}>
           <Pencil aria-hidden />
           작가의 말 쓰기
         </Button>
