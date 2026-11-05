@@ -6,7 +6,9 @@
   본문 사본으로 심고, 원문 줄 라벨을 채팅 세트(스토리 라벨은 스토리 세트, 캐릭터 라벨은 캐릭터 세트)에서 옮긴다.
 
 마이그레이션 자체는 다시 돌리지 않는다(앞의 문안 리비전 테스트와 같은 방식). 세션 스코프 스키마가 이미 `upgrade head` 를 했으므로
-시드는 "마이그레이션 뒤 DB 상태"를 단언하고, `seed_published_sets`·`_patch_drafts`·`delete_seeded_rows` 는 테스트마다 롤백되는
+시드는 "마이그레이션 뒤 DB 상태"를 단언한다 — 그 위에 정본 기억 채널을 심은 뒤 리비전은 테스트마다 먼저 되돌려 두 리비전 직후
+상태를 본다(테스트 트랜잭션이 끝나면 롤백된다). 지금 코드의 게시 검증은 그 리비전의 채널도 요구하므로 게시 검증을 부르는
+테스트는 그 행을 얹어 본다. `seed_published_sets`·`_patch_drafts`·`delete_seeded_rows` 는 테스트마다 롤백되는
 `db_session` 의 커넥션에 `run_sync` 로 직접 부른다. 기대 행은 이 파일이 DB 의 이전 활성 세트와 채팅 세트에서 직접 읽어 만든다 —
 마이그레이션의 행 조립으로 기대값을 만들면 그 조립이 틀려도 테스트가 같이 틀린다."""
 
@@ -43,6 +45,8 @@ def _load(revision: str) -> ModuleType:
 
 _C = _load("fe3df6f8e4d5")
 _B = _load("e4df46a80bfa")
+# 두 리비전 뒤 소설 세 체인에 정본 기억 채널을 심은 리비전 — 판 행이 등급 규칙 시드를 기준판으로 가리킨다.
+_N = _load("d39cf46dcb5c")
 # 두 리비전 직전 소설 레인 활성 — Gemini 는 여러 문단 수정 문안 리비전, Claude 두 체인은 구성안 문안 리비전의 세트다.
 _PREVIOUS_SET_IDS: dict[str, uuid.UUID] = {
     "gemini": _load("174f78b92e5c").NEW_SET_IDS["gemini"],
@@ -132,6 +136,22 @@ async def _copy_set(
 async def _run(db_session: AsyncSession, fn: Callable[[Connection], T]) -> T:
     connection = await db_session.connection()
     return await connection.run_sync(fn)
+
+
+@pytest.fixture(autouse=True)
+async def _undo_the_bible_seed(db_session: AsyncSession) -> None:
+    await _run(db_session, _N.delete_seeded_rows)
+
+
+def _with_bible_rows(sections: list[PromptSection]) -> list[PromptSection]:
+    """정본 기억 리비전이 심는 행을 얹는다 — 지금 코드의 소설 레인 게시 검증이 그 채널을 요구한다."""
+    return [
+        *sections,
+        *(
+            PromptSection(channel=c, scope=sc, slot=sl, variant=v, body=b, conditional=cond, order=o)
+            for c, sc, sl, v, b, cond, o in _N.BIBLE_ROWS
+        ),
+    ]
 
 
 async def _undo_both(db_session: AsyncSession) -> None:
@@ -229,7 +249,7 @@ async def test_each_novel_chain_is_active_at_the_rating_seed_with_the_chat_ratin
 async def test_the_seeded_sets_pass_publish_validation(db_session: AsyncSession, model: PromptSetModelId) -> None:
     """깨지는 시나리오: 시드가 게시 검증의 슬롯 집합과 어긋나 배포 직후 소설 레인 그 체인의 어드민 게시가 "누락·잉여"로 막힌다."""
     prompt_set, sections = await load_active_prompt_set(db_session, lane="novel", model=model)
-    _validate_prompt_draft_for_publish(prompt_set, sections, lane="novel", model=model)
+    _validate_prompt_draft_for_publish(prompt_set, _with_bible_rows(sections), lane="novel", model=model)
 
 
 @pytest.mark.parametrize("model", _MODELS)
@@ -498,7 +518,7 @@ async def test_rating_patch_drafts_adds_the_rating_rows_and_labels_in_place(db_s
     ]
     draft_sections = await _sections_of(db_session, draft_id)
     draft = await _get_set(db_session, draft_id)
-    _validate_prompt_draft_for_publish(draft, draft_sections, lane="novel", model="gemini")
+    _validate_prompt_draft_for_publish(draft, _with_bible_rows(draft_sections), lane="novel", model="gemini")
 
     assert await _run(db_session, _B._patch_drafts) == []
 

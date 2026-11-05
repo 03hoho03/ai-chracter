@@ -5,15 +5,17 @@
 — 상태와 개수뿐이다."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat.prompt_builder import load_active_prompt_set
 from api.core.config import settings
 from api.db.models import Novel
+from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.novel_bible import NovelBibleCommit, NovelBibleFinding, NovelBibleJob
 from api.novel_bible import entry
 from api.novel_bible.core.confirm import ConfirmConflictError, ConfirmResult
@@ -169,7 +171,27 @@ async def _commits(db_session: AsyncSession, novel_id: str) -> int:
 async def test_confirm_is_unavailable_while_an_assigned_chain_lacks_the_slot_channel(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # 실제 어댑터(코드 표의 Gemini)가 실제 소설 레인 Gemini 세트를 읽는다 — 그 세트에는 정본 기억 채널이 아직 없다.
+    # 실제 어댑터(코드 표의 Gemini)가 실제 소설 레인 Gemini 활성 세트를 읽는다 — 시드 세트를 정본 기억 채널만 뺀 채 더 늦게
+    # 게시해, 배정된 체인의 활성 세트에 그 채널이 없게 만든다.
+    active, sections = await load_active_prompt_set(db_session, lane="novel", model="gemini")
+    assert active.published_at is not None
+    without = PromptSet(
+        version="9001", status="published", lane="novel", model="gemini", user_label=active.user_label,
+        story_assistant_label=active.story_assistant_label, story_example_label=active.story_example_label,
+        character_assistant_label=active.character_assistant_label,
+        published_at=active.published_at + timedelta(seconds=1),
+    )
+    db_session.add(without)
+    await db_session.flush()
+    db_session.add_all(
+        PromptSection(
+            prompt_set_id=without.id, channel=s.channel, scope=s.scope, slot=s.slot, variant=s.variant, body=s.body,
+            conditional=s.conditional, order=s.order,
+        )
+        for s in sections
+        if not s.channel.startswith("novel_bible_")
+    )
+    await db_session.flush()
     slot = FakeSlot("facts", "facts.extract", "novel_bible_facts", frozenset({"fact"}))
     monkeypatch.setattr(entry, "REGISTRY", fake_registry(slot))
     await _admin(db_client, db_session)

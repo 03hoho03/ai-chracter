@@ -251,7 +251,7 @@ async def test_older_seed_revision_tests_undo_this_seed_too(db_session: AsyncSes
     """옛 시드 리비전 테스트는 "그 리비전 직후 상태"를 만들려고 위 시드 리비전을 되돌린다 — 이 리비전에 되돌리기 함수가 있어야 그
     목록에 들고, 남은 Haiku 세트가 전역 게시 버전 최대값을 올려 그 테스트의 버전 단언을 어긋나게 하지 않는다."""
     assert _M.revision in seed_revisions_above(_OLDER_SEED_REVISION)
-    assert seed_revisions_above(_M.revision) == []
+    assert _M.revision not in seed_revisions_above(_M.revision)
     connection = await db_session.connection()
 
     await connection.run_sync(undo_seeded_rows_above, _OLDER_SEED_REVISION)

@@ -184,6 +184,19 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
         }
     ),
     "novelize_rating": frozenset({("story", "rule_rating", ""), ("character", "rule_rating", "")}),
+    # 정본 기억(화 확정 때 사건·사실·앎을 뽑아 두는 기록)의 추출 세 채널과 모호한 어긋남 판정 채널. 어느 체인을 읽을지는 정본 기억
+    # 어댑터 표가 정하지만, Claude 체인의 기대 채널이 이 표 전부라 세 체인 모두 같은 행을 가진다.
+    "novel_bible_events": frozenset(
+        {("both", slot, "") for slot in ("instruction", "manuscript", "scene_hints", "known_entities", "prior_events")}
+    ),
+    "novel_bible_facts": frozenset(
+        {
+            ("both", slot, "")
+            for slot in ("instruction", "manuscript", "known_entities", "known_attributes", "source_canon", "play_facts")
+        }
+    ),
+    "novel_bible_knowledge": frozenset({("both", slot, "") for slot in ("instruction", "manuscript", "known_entities")}),
+    "novel_bible_conflicts": frozenset({("both", slot, "") for slot in ("instruction", "candidate")}),
 }
 
 # 코드가 레인별로 아는 (channel, scope, slot, variant)
