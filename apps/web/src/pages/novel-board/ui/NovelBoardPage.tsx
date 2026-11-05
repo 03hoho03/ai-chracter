@@ -259,7 +259,8 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
     if (!canRemoveDeletedChapterCaches(deletedChapterIds, shownChapterId)) return;
     removeDeletedChapterCaches(queryClient, novel.id, deletedChapterIds);
     setDeletedChapterIds([]);
-  }, [deletedChapterIds, shownChapterId]);
+    // 소설 id 는 이 보드가 떠 있는 동안 같다(다른 소설은 새로 마운트한다).
+  }, [deletedChapterIds, shownChapterId, novel.id, queryClient]);
 
   // 고른 것이 바뀐 렌더의 커밋 뒤에 포커스를 옮긴다.
   useEffect(() => {

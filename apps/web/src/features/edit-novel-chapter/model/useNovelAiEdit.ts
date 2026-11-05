@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
 import { cloverKeys } from "@/entities/clover";
 import {
@@ -113,11 +113,17 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
   // 상세가 알려 온 진행 중 작업(새로고침·다른 기기에서 이어받은 것)도 이 화면이 지켜보는 작업으로 잡아 둔다. 상세가
   // 작업 폴링보다 먼저 끝난 모습을 받으면 진행 중 작업이 사라지는데, 그때 잡아 둔 것이 없으면 작업을 더 묻지 않아
   // 끝난 순간의 처리(실패·환불 안내, 잔액 갱신)가 돌지 않는다. 잡아 두면 그 작업 id 로 한 번 더 물어 끝을 받는다.
-  useEffect(() => {
+  // 이미 잡아 둔 작업은 상세가 알려 온 렌더의 값으로 비교한다 — 잡아 둔 작업이 바뀌어도 다시 돌지 않는다.
+  const trackActiveAiEdit = useEffectEvent(() => {
     if (activeAiEdit === undefined || activeAiEdit.jobId === tracked?.jobId) return;
     setTracked(activeAiEdit);
+  });
+  const activeAiEditJobId = activeAiEdit?.jobId;
+  useEffect(() => {
+    if (activeAiEditJobId === undefined) return;
+    trackActiveAiEdit();
     // 잡을 시점은 상세가 새 작업을 알려 온 순간이다.
-  }, [activeAiEdit?.jobId]);
+  }, [activeAiEditJobId]);
   const jobQuery = useNovelJobQuery(novel.id, watched?.jobId);
   const job = jobQuery.data;
   const hasPollError = hasNovelJobPollError(jobQuery);
@@ -142,18 +148,24 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
 
   // 작업이 끝난 순간을 한 번만 처리한다.
   const settledJobIdsRef = useRef(new Set<string>());
+  // 끝난 작업의 정리는 그 작업이 도착한 렌더의 상세로 한다. 처리 시점은 `job` 이 정한다.
+  const settleFinishedJob = useEffectEvent((finished: NovelJobResponse) => settleJob(finished));
   useEffect(() => {
     if (!job || !isTerminalNovelJobStatus(job.status) || settledJobIdsRef.current.has(job.id)) return;
     settledJobIdsRef.current.add(job.id);
-    settleJob(job);
-    // `settleJob` 은 렌더마다 새로 만들어지는 이 훅 안의 함수라 넣지 않는다 — 처리 시점은 `job` 이 정한다.
+    settleFinishedJob(job);
   }, [job]);
 
-  useEffect(() => {
-    if (!isJobGone || watched === undefined || settledJobIdsRef.current.has(watched.jobId)) return;
+  // 지켜보던 작업은 404 를 받은 렌더의 것을 읽는다 — 작업이 바뀌어도 다시 돌지 않는다.
+  const settleGoneJob = useEffectEvent(() => {
+    if (watched === undefined || settledJobIdsRef.current.has(watched.jobId)) return;
     settledJobIdsRef.current.add(watched.jobId);
     setNotice({ tone: "error", message: "AI 수정 작업을 찾을 수 없어요. 소설을 다시 불러왔어요." });
     void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
+  });
+  useEffect(() => {
+    if (!isJobGone) return;
+    settleGoneJob();
     // 처리 시점은 404 를 받은 순간 하나다.
   }, [isJobGone]);
 

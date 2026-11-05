@@ -3,7 +3,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownToLine, ArrowUpToLine, RotateCcw, X } from "lucide-react";
-import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { Fragment, useEffect, useEffectEvent, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 
 import { cloverKeys } from "@/entities/clover";
 import {
@@ -250,11 +250,13 @@ export function NovelChapterText({
   // 같은 화면의 요청과 충돌해 409 로 끝난다.
   const isPlacementBlocked = isPlacing || isRegenerating || isSaving || isRevisionRefreshing;
 
+  // 콜백은 호출부의 ref 쓰기라 렌더마다 같은 일을 한다 — 어느 렌더의 것을 불러도 같다.
+  const reportDraftDirty = useEffectEvent(onDraftDirtyChange);
   useEffect(() => {
-    onDraftDirtyChange(isDraftDirty);
-    // 알릴 시점은 값이 바뀐 순간이다. 콜백은 호출부의 ref 쓰기라 렌더마다 같은 일을 한다.
+    reportDraftDirty(isDraftDirty);
+    // 알릴 시점은 값이 바뀐 순간이다.
   }, [isDraftDirty]);
-  useEffect(() => () => onDraftDirtyChange(false), []);
+  useEffect(() => () => reportDraftDirty(false), []);
 
   // 모드를 끄면 고른 것도 푼다(입력 중인 직접 고치기는 그대로 둔다 — 쓰던 글을 지우지 않는다). 옮기기도 끝난다.
   useEffect(() => {
@@ -268,7 +270,8 @@ export function NovelChapterText({
   // 여러 문단 고르기 스위치가 꺼지면(요청이 꺼짐으로 거절돼 가격을 다시 받았다) 고른 문단 표시와 동작 줄이 이미 사라졌다 — "선택
   // 해제"처럼 풀고 알린다. 사라진 동작 줄에 있던 포커스는 `<body>` 로 떨어졌으니 마지막 고른 문단으로 옮긴다(다른 자리의 포커스는 둔다).
   const wasMultiBlockEditOnRef = useRef(isMultiBlockEditOn);
-  useEffect(() => {
+  // 고른 것·블록은 스위치가 바뀐 렌더의 값을 읽는다 — 고를 때마다 다시 돌면 포커스를 옮길 수 있다.
+  const releaseOnSwitchOff = useEffectEvent(() => {
     const release = toReleaseOnSwitchOff({
       wasOn: wasMultiBlockEditOnRef.current,
       isOn: isMultiBlockEditOn,
@@ -282,24 +285,30 @@ export function NovelChapterText({
     if (document.activeElement === null || document.activeElement === document.body) {
       paragraphButtonsRef.current.get(release.focusIndex)?.focus();
     }
-    // 처리 시점은 스위치가 바뀐 순간이다. 고른 것·블록은 그 렌더의 값을 읽는다.
+  });
+  useEffect(() => {
+    releaseOnSwitchOff();
+    // 처리 시점은 스위치가 바뀐 순간이다.
   }, [isMultiBlockEditOn]);
 
   // 옮기는 동안 Esc 는 어디서 눌러도 옮기기만 그만둔다. 보드도 Esc 로 고른 화를 푸는데(편집 패널이 닫힌다) 그쪽은 React
   // 처리기라 문서에 버블로 걸면 늦는다 — 캡처로 먼저 받아 기본 동작을 막고, 패널은 막힌 Esc 를 무시한다.
+  // 처리기는 누른 순간의 `cancelMove` 를 부른다. 그것이 읽는 옮기는 그림 id 는 이 구독 동안 같다(바뀌면 다시 건다).
+  const cancelMoveOnEscape = useEffectEvent(() => cancelMove());
+  const activeMoveId = activeMove?.id;
   useEffect(() => {
-    if (activeMove === undefined) return;
+    if (activeMoveId === undefined) return;
     function handleKeyDown(event: globalThis.KeyboardEvent) {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       // 그사이 연 대화상자(판 이력 등)의 Esc 는 그 대화상자 몫이다.
       if (event.target instanceof Element && event.target.closest('[role="dialog"],[role="alertdialog"]')) return;
       event.preventDefault();
-      cancelMove();
+      cancelMoveOnEscape();
     }
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-    // 옮기는 그림이 바뀔 때만 다시 건다. 처리기는 상태 설정과 ref 만 쓴다.
-  }, [activeMove?.id]);
+    // 옮기는 그림이 바뀔 때만 다시 건다.
+  }, [activeMoveId]);
 
   // 옮긴 그림은 새 판에서 배치 id 가 바뀌어 새로 그려진다 — 그 블록이 그려진 렌더 뒤에 포커스를 옮긴다. 응답을 캐시에 쓰는
   // 렌더와 요청이 끝나는 순간의 앞뒤가 정해져 있지 않아 렌더마다 본다.
@@ -314,7 +323,8 @@ export function NovelChapterText({
 
   // 입력칸이 닫힌 뒤(저장·취소) 그 자리의 첫 문단 버튼으로 포커스를 돌린다. 버튼은 입력칸이 사라진 다음 렌더에
   // 생기므로 렌더 뒤에 옮긴다. 고치기 모드가 꺼져 있으면 문단이 버튼이 아니라 장 제목으로 간다.
-  useEffect(() => {
+  // 문단 수·대신 포커스를 둘 곳은 입력칸이 닫힌 렌더의 값을 읽는다 — 그 값이 바뀌어도 포커스를 다시 옮기지 않는다.
+  const restoreFocusAfterEdit = useEffectEvent(() => {
     const index = pendingFocusIndexRef.current;
     if (index === undefined || manualEdit !== undefined) return;
     pendingFocusIndexRef.current = undefined;
@@ -324,6 +334,9 @@ export function NovelChapterText({
       return;
     }
     onFocusFallback();
+  });
+  useEffect(() => {
+    restoreFocusAfterEdit();
     // 옮길 시점은 입력칸이 닫힌 렌더 하나다.
   }, [manualEdit]);
 
