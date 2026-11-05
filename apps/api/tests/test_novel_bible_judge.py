@@ -7,12 +7,11 @@
 
 확정 경로 테스트는 가짜 슬롯(원고의 합성 문법으로 항목을 만든다)과 실제 규칙 목록에, 앞 화 사실과 새 화 사실 한 쌍에 J1·J2
 후보를 내는 표지 규칙을 더해 돈다. 앎 출처 불명(J3)은 실제 규칙이 낸다. 모델은 가짜 어댑터다(유료 호출 없음). 시간은 가짜
-시계와 짧게 줄인 기한으로 보고 실제로 기한만큼 기다리지 않는다. 원고는 합성 문장이다."""
+시계로 보고 기한은 운영 값 그대로다 — 실제로 기다리지 않는다. 원고는 합성 문장이다."""
 
-import asyncio
-import time
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, Literal, TypeVar, get_type_hints
@@ -47,6 +46,7 @@ from api.novel_bible.core.types import (
 )
 from api.novel_bible.ids import FindingRule, OperationKey, SlotId, WarningRule
 from api.novel_bible.rules import RULES
+from api.novel_bible.rules import judge as judge_rules
 from api.novel_bible.rules.judge import (
     JUDGE_BUDGET_SECONDS,
     JUDGE_CALL_SECONDS,
@@ -543,30 +543,57 @@ async def test_at_most_ten_candidates_are_judged_in_rule_then_chapter_order(db_s
     assert all(warning.item_ids != dropped for warning in warnings)
 
 
-async def test_each_call_is_cut_at_its_own_limit_and_the_rest_wait_for_nothing(db_session: AsyncSession) -> None:
-    """모델이 답하지 않는다(끝없이 기다린다). 기한을 줄여(총 1초, 호출당 0.25초) 실제 시간으로 본다 — 호출마다 자기 상한에서
-    끊기고(첫 실패는 시간 초과), 총 기한이 차면 남은 후보는 부르지 않고 `deadline` 으로 끝난다. 판정 단계 전체가 총 기한 안에
-    돌아온다."""
+class _HungError(Exception):
+    """가짜 모델이 끝없이 답하지 않는다는 표시 — 실제로 기다리지 않고 곧바로 올린다."""
 
-    async def answer(candidate: str) -> JudgeVerdict:
-        await asyncio.Event().wait()
-        raise AssertionError("닿지 않는다")
 
-    adapter = _Adapter(answer)
-    judge = build_judge(adapter.resolver(), budget_seconds=1.0, call_seconds=0.25)
+@dataclass
+class _HangingModel:
+    """끝없이 답하지 않는 모델과, 판정이 호출마다 거는 상한을 가짜 시계로 흉내 낸다. 판정 모듈의 `asyncio.timeout` 자리에
+    `timeout` 을 끼우면 판정이 건 상한을 남기고, 모델이 매달리면 시계를 그 상한만큼 밀고 시간 초과를 낸다 — 실제 상한이 그
+    시각에 하는 일이다."""
+
+    clock: _Clock
+    limits: list[float] = field(default_factory=list)
+
+    async def answer(self, candidate: str) -> JudgeVerdict:
+        raise _HungError
+
+    @asynccontextmanager
+    async def timeout(self, limit: float) -> AsyncIterator[None]:
+        self.limits.append(limit)
+        try:
+            yield
+        except _HungError:
+            self.clock.now += limit
+            raise TimeoutError from None
+
+
+async def test_each_call_is_cut_at_its_own_limit_and_the_rest_wait_for_nothing(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """모델이 답하지 않는다(끝없이 기다린다). 기한은 운영 값 그대로 가짜 시계로 본다. 앞 판정 단계가 40초를 써 남은 기한이
+    200초다. 호출마다 자기 상한 `min(호출 상한, 남은 기한)` 에서 끊긴다 — 첫 호출은 호출 상한 120초에서 끊겨 시간 초과, 둘째는
+    남은 80초에서 끊겨 총 기한이 찬다. 남은 후보는 부르지 않고 `deadline` 으로 끝나며, 판정 단계 전체가 남은 기한 그대로 200초
+    만에 돌아온다. 깨지는 시나리오: 호출 상한을 무시하면 첫 호출이 남은 기한을 다 써 시간 초과 없이 끝나고, 남은 기한을 무시하면
+    둘째 호출이 호출 상한을 다 써 판정 단계가 기한을 넘긴다."""
+    already = 40.0
+    clock = _Clock()
+    model = _HangingModel(clock)
+    monkeypatch.setattr(judge_rules, "asyncio", SimpleNamespace(timeout=model.timeout))
+    adapter = _Adapter(model.answer)
+    judge = build_judge(adapter.resolver(), clock=clock)
     candidates = [_candidate("J1", earlier) for earlier in range(1, 6)]
 
-    started = time.monotonic()
-    async with asyncio.timeout(10):
-        warnings = await judge(savepoint_factory(db_session), _REF, candidates, spent=JudgeSpent())
-    elapsed = time.monotonic() - started
+    warnings = await judge(savepoint_factory(db_session), _REF, candidates, spent=JudgeSpent(seconds=already))
 
+    left = JUDGE_BUDGET_SECONDS - already
+    assert JUDGE_CALL_SECONDS < left < 2 * JUDGE_CALL_SECONDS
+    assert model.limits == [JUDGE_CALL_SECONDS, left - JUDGE_CALL_SECONDS]
+    assert len(adapter.judged) == len(model.limits)
     failures = [warning.payload["failure"] for warning in warnings if warning.rule == "judge_failed"]
-    assert len(failures) == len(candidates)
-    assert failures[0] == "timeout"
-    assert failures[-1] == "deadline"
-    assert 1 <= len(adapter.judged) < len(candidates)
-    assert elapsed < 4
+    assert failures == ["timeout"] + ["deadline"] * (len(candidates) - 1)
+    assert clock.now == left
 
 
 def test_the_judge_stage_can_only_return_warnings() -> None:
