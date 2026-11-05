@@ -138,6 +138,10 @@ _LEFT_AS_IS: dict[str, tuple[str, ...]] = {
     "home_novel_curations": ("position",),
     "image_generation_requests": ("requested_count", "completed_count", "blocked_count", "input_error_count"),
     "keyword_notes": ("order", "sticky_turns"),
+    # Claude 자격 목록의 정수는 클로버 수량이 아니다 — 순서·판 번호·확인 회차·마이크로달러 충전액·임계 퍼센트·한 행 표의 id.
+    "llm_credential_checks": ("run", "state_version"),
+    "llm_credential_settings": ("id", "list_revision"),
+    "llm_credentials": ("position", "state_version", "credit_micro_usd", "alert_pct"),
     "media_book_people": ("order",),
     "media_book_scenes": ("order",),
     "novel_batches": ("ordinal", "assistant_message_count", "target_episode_count"),
