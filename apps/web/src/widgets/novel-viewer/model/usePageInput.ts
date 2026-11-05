@@ -235,7 +235,7 @@ export function usePageInput(options: UsePageInputOptions) {
       viewport.removeEventListener("wheel", handleWheel);
       viewport.removeEventListener("touchstart", handleTouchStart);
     };
-  }, []);
+  }, [wheelRootRef]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
