@@ -131,3 +131,48 @@ async def test_the_seeded_novel_maps_each_spec_play_row_and_note_to_the_row_id_t
     assert {fact.chat_room_id for fact in slot_input.play} == {seeded.room_id}
     assert list(slot_input.source.keyword_notes) == list(seeded.note_ids)
     assert slot_input.source.ref.content_version_id == seeded.content_version_id
+
+
+async def test_a_character_source_reaches_the_facts_input_behind_the_name_line_the_app_puts_first(
+    db_session: AsyncSession,
+) -> None:
+    # 캐릭터 원작의 작품 설정은 앱이 `이름: …` 한 줄을 앞에 붙여 읽는다 — 원작 차이 구간은 그 줄만큼 밀린 자리다.
+    (spec,) = load_set(FIXTURE).novels
+    assert spec.source is not None
+    source = spec.source.model_copy(update={"kind": "character", "name": "합성 등대지기"})
+    seeded = await seed_novel(db_session, spec.model_copy(update={"source": source}))
+    slot_input = await _facts_input(db_session, seeded.novel_id, seeded.chapters[0])
+    assert slot_input.source is not None
+    assert slot_input.source.work_setting == f"이름: {source.name}\n{source.setting}"
+
+
+async def test_two_keyword_notes_keep_the_spec_order_the_note_labels_follow(db_session: AsyncSession) -> None:
+    (spec,) = load_set(FIXTURE).novels
+    assert spec.source is not None
+    notes = ["서하는 등대 아래 마을에서 자랐다.", "등대지기는 말수가 적다."]
+    seeded = await seed_novel(db_session, spec.model_copy(update={"source": spec.source.model_copy(update={"notes": notes})}))
+    slot_input = await _facts_input(db_session, seeded.novel_id, seeded.chapters[0])
+    assert slot_input.source is not None
+    assert list(slot_input.source.keyword_notes.items()) == list(zip(seeded.note_ids, notes, strict=True))
+
+
+async def test_only_the_winning_row_of_each_play_key_reaches_the_facts_input_across_snapshots(
+    db_session: AsyncSession,
+) -> None:
+    # 같은 키 행이 두 스냅숏(1화·2화)에 나뉘어 접혔다. 1화 끝까지는 앞 행이, 2화 끝부터는 뒤 행이 그 키의 이긴 행이다 — 명세가
+    # 계산하는 이긴 행(`play_shown`)과 앱이 싣는 행이 같다.
+    (spec,) = load_set(FIXTURE).novels
+    (kept,) = spec.play
+    rows = [
+        PlayRow(visible_from=1, subject=kept.subject, attribute=kept.attribute, value="구겨진 지도"),
+        PlayRow(visible_from=1, subject="도윤", object="서하", value="길동무"),
+        kept,
+    ]
+    edited = spec.model_copy(update={"play": rows})
+    seeded = await seed_novel(db_session, edited)
+    for chapter in seeded.chapters[:2]:
+        play = (await _facts_input(db_session, seeded.novel_id, chapter)).play
+        assert play is not None
+        shown = {seeded.play_row_ids[index] for index in edited.play_shown(chapter.ordinal)}
+        assert {fact.chat_memory_fact_id for fact in play} == shown
+    assert edited.play_shown(1) == {0, 1} and edited.play_shown(2) == {1, 2}
