@@ -179,8 +179,8 @@ describe("toContiguousRange", () => {
   it("이어진 문단이면 범위, 떨어졌거나 비었으면 없다", () => {
     expect(toContiguousRange([2, 3, 4])).toEqual({ start: 2, end: 4 });
     expect(toContiguousRange([3])).toEqual({ start: 3, end: 3 });
-    expect(toContiguousRange([2, 4])).toBeNull();
-    expect(toContiguousRange([])).toBeNull();
+    expect(toContiguousRange([2, 4])).toBeUndefined();
+    expect(toContiguousRange([])).toBeUndefined();
   });
 });
 

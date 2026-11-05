@@ -12,28 +12,28 @@ export type ParagraphRange = { start: number; end: number };
  *
  * 그래서 누르기만으로도, Tab 으로 옮겨 Enter 만 쳐도 같은 범위를 만들 수 있다. */
 export function nextParagraphRange(
-  range: ParagraphRange | null,
+  range: ParagraphRange | undefined,
   index: number,
   { isExtending = false }: { isExtending?: boolean } = {},
-): ParagraphRange | null {
-  if (range === null) return { start: index, end: index };
+): ParagraphRange | undefined {
+  if (range === undefined) return { start: index, end: index };
   const isInside = index >= range.start && index <= range.end;
   if (!isInside) return { start: Math.min(range.start, index), end: Math.max(range.end, index) };
   if (isExtending) return { start: range.start, end: index };
-  if (range.start === index && range.end === index) return null;
+  if (range.start === index && range.end === index) return undefined;
   return { start: index, end: index };
 }
 
 /** 본문이 바뀌어(다른 곳의 수정을 다시 받음) 문단 수가 줄었을 때 범위를 남은 문단 안으로 접는다. 문단이 없으면
  * 범위도 없다. */
-export function clampParagraphRange(range: ParagraphRange | null, paragraphCount: number): ParagraphRange | null {
-  if (range === null || paragraphCount === 0) return null;
+export function clampParagraphRange(range: ParagraphRange | undefined, paragraphCount: number): ParagraphRange | undefined {
+  if (range === undefined || paragraphCount === 0) return undefined;
   const last = paragraphCount - 1;
   return { start: Math.min(range.start, last), end: Math.min(range.end, last) };
 }
 
-export function isParagraphInRange(range: ParagraphRange | null, index: number): boolean {
-  return range !== null && index >= range.start && index <= range.end;
+export function isParagraphInRange(range: ParagraphRange | undefined, index: number): boolean {
+  return range !== undefined && index >= range.start && index <= range.end;
 }
 
 /** "3~5번째 문단" / "3번째 문단". 화면 번호는 1부터다. */
@@ -44,6 +44,6 @@ export function formatParagraphRange(range: ParagraphRange): string {
 }
 
 /** 고른 범위를 알리는 한 줄(`aria-live`). 고른 것이 없으면 빈 문장 대신 무엇을 하면 되는지 말한다. */
-export function toParagraphSelectionAnnouncement(range: ParagraphRange | null): string {
-  return range === null ? "고른 문단이 없어요." : `${formatParagraphRange(range)}을 골랐어요.`;
+export function toParagraphSelectionAnnouncement(range: ParagraphRange | undefined): string {
+  return range === undefined ? "고른 문단이 없어요." : `${formatParagraphRange(range)}을 골랐어요.`;
 }
