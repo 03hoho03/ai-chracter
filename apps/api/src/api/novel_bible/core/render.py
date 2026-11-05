@@ -4,6 +4,8 @@
 더해야 하고, 생성 경로는 정본 기억을 몰라야 한다. 확정 입구가 작업을 만들기 전에 배정된 체인에 채널이 있는지 보는 검사도 여기
 둔다."""
 
+from string import Formatter
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import PromptRenderError, render_prompt_channel, select_sections_for_render
@@ -15,11 +17,25 @@ _INSTRUCTION_SLOT = "instruction"
 
 
 def render(source: PromptSource, *, channel: str, scope: str, values: dict[str, str]) -> RenderedPrompt:
-    """채널에 지시문 섹션이 없거나 렌더 결과가 비면 `PromptRenderError`(체인에 그 채널이 게시되지 않았다)."""
+    """채널에 지시문 섹션이 없거나 렌더 결과가 비면 `PromptRenderError`(체인에 그 채널이 게시되지 않았다).
+
+    조건부가 아닌 값 섹션이 참조하는 값이 없거나 공백뿐이어도 `PromptRenderError` 다. 조건부 섹션은 값이 비면 섹션째 빠지지만
+    조건부가 아닌 섹션은 머리글만 남은 채 렌더되어, 빈 원고 같은 입력 버그가 오류 대신 "입력 없는 프롬프트"로 모델에 나간다. 어느
+    값이 필수인지는 문안의 조건부 표시가 정한다 — 이 규칙은 채널·슬롯 이름을 모른다."""
     sections = [section for section in source.sections if section.channel == channel]
-    present = {section.slot for section in select_sections_for_render(sections, channel=channel, scope=scope)}
-    if _INSTRUCTION_SLOT not in present:
+    selected = select_sections_for_render(sections, channel=channel, scope=scope)
+    if _INSTRUCTION_SLOT not in {section.slot for section in selected}:
         raise PromptRenderError(f"channel={channel!r} scope={scope!r} 지시문 섹션이 없다")
+    for section in selected:
+        if section.conditional or section.slot == _INSTRUCTION_SLOT:
+            continue
+        empty = sorted(
+            name for _, name, _, _ in Formatter().parse(section.body) if name and not values.get(name, "").strip()
+        )
+        if empty:
+            raise PromptRenderError(
+                f"channel={channel!r} scope={scope!r} slot={section.slot!r} 필수 값이 비었다: {', '.join(empty)}"
+            )
     instruction = render_prompt_channel(
         [s for s in sections if s.slot == _INSTRUCTION_SLOT], channel=channel, scope=scope, values={}
     )
