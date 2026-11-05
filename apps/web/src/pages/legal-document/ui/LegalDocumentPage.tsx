@@ -225,7 +225,7 @@ function ChangeHistoryRow({ entry, isCurrent, isExpanded, onToggle }: ChangeHist
       </button>
       {isExpanded && (
         <div id={panelId} className="pt-1 pb-4">
-          {entry.notice === null ? (
+          {entry.notice === undefined ? (
             <p className="text-sm text-muted-foreground">이 판은 변경 안내가 없습니다.</p>
           ) : (
             <Markdown content={entry.notice} />

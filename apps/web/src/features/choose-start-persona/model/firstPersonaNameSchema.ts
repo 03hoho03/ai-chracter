@@ -6,7 +6,7 @@ import { personaNameIssue } from "@/entities/persona";
 export const FIRST_PERSONA_NAME_SCHEMA = z.object({
   name: z.string().superRefine((value, context) => {
     const issue = personaNameIssue(value);
-    if (issue !== null) context.addIssue({ code: "custom", message: issue });
+    if (issue !== undefined) context.addIssue({ code: "custom", message: issue });
   }),
 });
 

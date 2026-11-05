@@ -29,8 +29,8 @@ export function useCreatorPayoutQuery({ enabled = true }: { enabled?: boolean } 
 }
 
 /** 정산 밖에서 적립 비율을 말할 자리(소설 만들기 허락 설명)의 비율 표기. 정산이 닫혀 있거나(`isEnabled` 거짓) 값이
- * 아직 없거나 조회가 실패하면 `null` 이다 — 그때는 안내를 숨긴다. 비율은 서버 설정이라 웹이 숫자를 지어내지 않는다. */
-export function useCreatorPayoutRate(isEnabled: boolean): string | null {
+ * 아직 없거나 조회가 실패하면 `undefined` 다 — 그때는 안내를 숨긴다. 비율은 서버 설정이라 웹이 숫자를 지어내지 않는다. */
+export function useCreatorPayoutRate(isEnabled: boolean): string | undefined {
   const query = useCreatorPayoutQuery({ enabled: isEnabled });
-  return isEnabled && query.data ? formatPayoutRate(query.data.rateBps) : null;
+  return isEnabled && query.data ? formatPayoutRate(query.data.rateBps) : undefined;
 }

@@ -9,7 +9,7 @@ import type { HomeCurationItem } from "@/entities/content";
 
 import { HomeCurationSection } from "./HomeCurationSection";
 
-function render(item: Partial<HomeCurationItem>, viewerPersonaName: string | null): string {
+function render(item: Partial<HomeCurationItem>, viewerPersonaName: string | undefined): string {
   return renderToStaticMarkup(
     createElement(HomeCurationSection, {
       item: {
@@ -43,10 +43,10 @@ describe("HomeCurationSection", () => {
   });
 
   it("falls back to the fallback name for a signed-out viewer", () => {
-    expect(render({}, null)).toContain("당신은 영화 동아리의 조감독이다.");
+    expect(render({}, undefined)).toContain("당신은 영화 동아리의 조감독이다.");
   });
 
   it("is its own size container, since the column ladder it shares with the grid below is a container query", () => {
-    expect(render({}, null)).toMatch(/^<section [^>]*class="(?:[^"]* )?@container[ "]/);
+    expect(render({}, undefined)).toMatch(/^<section [^>]*class="(?:[^"]* )?@container[ "]/);
   });
 });

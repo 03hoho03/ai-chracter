@@ -8,7 +8,7 @@ describe("formatStatementPeriod", () => {
   it("월 확정은 그 달 이름이다", () => {
     expect(formatStatementPeriod({ kind: "monthly", periodMonth: "2026-11-01", ...WINDOW })).toEqual({
       title: "2026년 11월",
-      range: null,
+      range: undefined,
     });
   });
 

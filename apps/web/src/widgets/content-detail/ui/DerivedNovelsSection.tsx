@@ -54,7 +54,7 @@ export function DerivedNovelsSection({ contentId, isOwner, derivedNovelsVisible 
       )}
       <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border">
         {area.items.map((item) => {
-          const meta = [toPublisherName(item), `${item.chapterCount}화`].filter((part) => part !== null);
+          const meta = [toPublisherName(item), `${item.chapterCount}화`].filter((part) => part !== undefined);
           return (
             <li key={item.id}>
               {/* 행 전체가 노벨 작품 정보로 가는 링크 하나다. 포커스는 둥근 목록 안쪽에 그린다(`overflow-hidden` 이 바깥

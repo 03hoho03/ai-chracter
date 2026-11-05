@@ -145,7 +145,7 @@ function ChangeNoticeItem({ entry, shouldShowVersion }: { entry: ChangeNoticeEnt
           {entry.version} 판 · {entry.effectiveDate} 시행
         </p>
       )}
-      {entry.notice === null ? (
+      {entry.notice === undefined ? (
         <p className="text-sm break-keep text-muted-foreground">{EMPTY_NOTICE_TEXT}</p>
       ) : (
         <Markdown content={entry.notice} className={MODAL_MARKDOWN_CLASSNAME} />

@@ -69,8 +69,8 @@ describe("toChangeNoticeEntries", () => {
       ]),
     ).toEqual([
       { version: "2026-11-20", effectiveDate: "2026.11.20", notice: "- 바뀐 점" },
-      { version: "2026-10-17", effectiveDate: "2026.10.17", notice: null },
-      { version: "2026-10-12", effectiveDate: "2026.10.12", notice: null },
+      { version: "2026-10-17", effectiveDate: "2026.10.17", notice: undefined },
+      { version: "2026-10-12", effectiveDate: "2026.10.12", notice: undefined },
     ]);
   });
 });

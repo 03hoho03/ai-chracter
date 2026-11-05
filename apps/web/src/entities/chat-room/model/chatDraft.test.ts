@@ -60,8 +60,8 @@ describe("채팅 초안 저장", () => {
     saveChatDraftInput("room-a", "a", () => storage);
     saveChatDraftInput("room-b", "b", () => storage);
     removeChatDraft("room-a", () => storage);
-    expect(readChatDraft("room-a", () => storage)).toBeNull();
-    expect(readChatDraft("room-b", () => storage)).not.toBeNull();
+    expect(readChatDraft("room-a", () => storage)).toBeUndefined();
+    expect(readChatDraft("room-b", () => storage)).toBeDefined();
   });
 
   // 같은 탭에서 다른 계정으로 로그인했을 때 앞 계정의 초안이 보이면 안 된다.
@@ -78,13 +78,13 @@ describe("채팅 초안 저장", () => {
     saveChatDraftInput("room-a", "a", () => storage);
     const [key = ""] = storage.values.keys();
     storage.values.set(key, "{not json");
-    expect(readChatDraft("room-a", () => storage)).toBeNull();
+    expect(readChatDraft("room-a", () => storage)).toBeUndefined();
     storage.values.set(key, JSON.stringify({ input: 1 }));
-    expect(readChatDraft("room-a", () => storage)).toBeNull();
+    expect(readChatDraft("room-a", () => storage)).toBeUndefined();
   });
 
   it("저장소가 막혀도 던지지 않는다", () => {
-    expect(readChatDraft("room-a", blocked)).toBeNull();
+    expect(readChatDraft("room-a", blocked)).toBeUndefined();
     expect(() => saveChatDraftInput("room-a", "a", blocked)).not.toThrow();
     expect(() => saveRejectedChatMessage("room-a", "a", blocked)).not.toThrow();
     expect(() => clearRejectedChatMessage("room-a", blocked)).not.toThrow();
@@ -95,7 +95,7 @@ describe("채팅 초안 저장", () => {
 
 describe("pickChatDraftToRestore", () => {
   it("저장값이 없으면 되살릴 글이 없다", () => {
-    expect(pickChatDraftToRestore(null)).toBe("");
+    expect(pickChatDraftToRestore(undefined)).toBe("");
   });
 
   it("입력 초안이 없으면 거절된 메시지를 되살린다", () => {
@@ -155,6 +155,6 @@ describe("restoreRejectedIntoInput", () => {
 
   // 기다리는 사이 새로 쓴 글이 있으면 그것이 더 나중의 뜻이다 — 방에 돌아올 때의 규칙과 같다.
   it("입력창에 글이 있으면 덮지 않는다", () => {
-    expect(restoreRejectedIntoInput("새로 쓰는 말", "보내려던 말")).toBeNull();
+    expect(restoreRejectedIntoInput("새로 쓰는 말", "보내려던 말")).toBeUndefined();
   });
 });

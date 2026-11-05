@@ -27,14 +27,14 @@ function chatDraftKey(roomId: string): string {
 }
 
 /** 저장값이 없거나 깨졌거나 못 읽으면 없는 것이다. */
-export function readChatDraft(roomId: string, getStorage: () => ChatDraftStorage = browserStorage): ChatDraft | null {
+export function readChatDraft(roomId: string, getStorage: () => ChatDraftStorage = browserStorage): ChatDraft | undefined {
   try {
     const raw = getStorage().getItem(chatDraftKey(roomId));
-    if (raw === null) return null;
+    if (raw === null) return undefined;
     const parsed = CHAT_DRAFT_SCHEMA.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
+    return parsed.success ? parsed.data : undefined;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
@@ -113,16 +113,16 @@ export function takeChatDraftToRestore(roomId: string, getStorage: () => ChatDra
 }
 
 /** 클로버가 모자라 새 메시지가 거절된 그 자리에서 입력창에 넣을 글. 입력창이 비어 있으면 거절된 글이고, 글이 있으면
- * `null`(덮지 않는다) — 기다리는 사이 새로 쓴 글이 더 나중의 뜻이라는 점에서 `pickChatDraftToRestore` 와 같은 규칙이다. */
-export function restoreRejectedIntoInput(currentInput: string, rejected: string): string | null {
-  return currentInput.trim() === "" ? rejected : null;
+ * `undefined`(덮지 않는다) — 기다리는 사이 새로 쓴 글이 더 나중의 뜻이라는 점에서 `pickChatDraftToRestore` 와 같은 규칙이다. */
+export function restoreRejectedIntoInput(currentInput: string, rejected: string): string | undefined {
+  return currentInput.trim() === "" ? rejected : undefined;
 }
 
 /** 방에 돌아왔을 때 입력창에 넣을 글. 입력 초안이 있으면 그것이고, 없으면 거절된 메시지다.
  *
  * 입력 초안을 거절된 메시지로 덮지 않는다 — 보낼 때 입력창을 비우므로 거절된 메시지는 언제나 입력창이 빈 뒤에 생기고,
  * 그 뒤 입력창에 글이 있다면 거절 뒤에 새로 쓴 글이다. 더 나중의 뜻을 앞의 글로 지우지 않는다. */
-export function pickChatDraftToRestore(draft: ChatDraft | null): string {
+export function pickChatDraftToRestore(draft: ChatDraft | undefined): string {
   if (!draft) return "";
   return draft.input.trim() !== "" ? draft.input : draft.rejected;
 }
