@@ -9,12 +9,12 @@ import { WebnovelsPage } from "@/pages/webnovels";
 // 목록은 최신순이 기본이라 파라미터의 부재로 적고 인기순·소장만 싣는다(옛 주소의 `?sort=popular` 를 지키려고 이름은
 // `sort` 그대로다). 스키마를 페이지 barrel 이 아니라 여기 두는 이유는 라우트 옵션이 쓰는 값을 페이지 barrel 에서
 // 가져오면 페이지 전체가 첫 화면 번들로 끌려가서다.
-const webnovelsSearchSchema = z.object({
+const WEBNOVELS_SEARCH_SCHEMA = z.object({
   sort: z.enum([...WEBNOVEL_LIST_SORTS, "owned"]).exclude(["latest"]).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/webnovels/")({
-  validateSearch: webnovelsSearchSchema,
+  validateSearch: WEBNOVELS_SEARCH_SCHEMA,
   beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
   component: RouteComponent,
 });

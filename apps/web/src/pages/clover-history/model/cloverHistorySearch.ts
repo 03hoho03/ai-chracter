@@ -6,14 +6,14 @@ export const CLOVER_HISTORY_TABS = ["use", "earn", "expire"] as const;
 
 export type CloverHistoryTab = (typeof CLOVER_HISTORY_TABS)[number];
 
-/** `/my`의 `myWorksSearchSchema` 선례(`pages/my-works/model/myWorksSearch.ts`)를 그대로 따른다 —
+/** `/my`의 `MY_WORKS_SEARCH_SCHEMA` 선례(`pages/my-works/model/myWorksSearch.ts`)를 그대로 따른다 —
  * 기본값(`use`)은 `.exclude()`로 열거형에서 빼 URL에 싣지 않고, 모르는/어긋난
  * 값은 `.catch(undefined)`로 부재에 접는다(던지면 라우터가 앱 크롬 없는 에러 상자를 띄운다). */
-export const cloverHistorySearchSchema = z.object({
+export const CLOVER_HISTORY_SEARCH_SCHEMA = z.object({
   tab: z.enum(CLOVER_HISTORY_TABS).exclude(["use"]).optional().catch(undefined),
 });
 
-export type CloverHistorySearch = z.infer<typeof cloverHistorySearchSchema>;
+export type CloverHistorySearch = z.infer<typeof CLOVER_HISTORY_SEARCH_SCHEMA>;
 
 /** URL 파라미터 부재를 기본 탭(`use`)으로 편다 — 기본값 규칙은 여기 하나뿐이다. */
 export function resolveCloverHistoryTab(search: CloverHistorySearch): CloverHistoryTab {

@@ -10,7 +10,7 @@ import { z } from "zod";
  * 직접 읽는다(옛 `GenerateImagesForm.tsx`가 세 조각으로 쪼개졌다). */
 
 /** 비율 풀 세트, 기본값 1:1. **이 배열이 단일 소스다** —
- * 아래 옵션 목록도 `generateImagesSchema`의 zod enum도 전부 여기서 도출된다.
+ * 아래 옵션 목록도 `GENERATE_IMAGES_SCHEMA`의 zod enum도 전부 여기서 도출된다.
  *
  * 한때 배열과 enum이 손으로 유지되는 두 소스였고 "둘 다 고쳐야 한다"는 경고 주석이 달려 있었다.
  * 경고는 실제 위험을 정확히 적었지만 **경고로는 못 막는다** — enum만 고쳐도 타입은 통과하고 선택지만
@@ -51,7 +51,7 @@ export function isImageAspectRatio(value: string): value is (typeof IMAGE_ASPECT
  * `GET /images/models` 응답과 BE의 재검증(종횡비 포함)이 한다. */
 // 집 PC 계약 v3가 통보한 1000자 하드 상한을 미러한다 — 값이 바뀌면 계약 개정으로
 // 통지된다. BE 미러: apps/api/src/api/images/schemas.py.
-export const generateImagesSchema = z.object({
+export const GENERATE_IMAGES_SCHEMA = z.object({
   prompt: z
     .string()
     .trim()
@@ -66,12 +66,12 @@ export const generateImagesSchema = z.object({
   reference: z.object({ assetId: z.uuid() }).nullable(),
 });
 
-export type GenerateImagesFormValues = z.infer<typeof generateImagesSchema>;
+export type GenerateImagesFormValues = z.infer<typeof GENERATE_IMAGES_SCHEMA>;
 
 /** model/style은 여기 없다 — 모델 목록이 로드된 뒤 `GenerateImagesFormProvider`가 첫 가용 모델/
  * 스타일로 `reset()`한다. `DefaultValues<T>`는 partial이라 이 누락이 타입 에러 없이 통과하므로,
  * 그 동안 `field.value`가 `undefined`인 것을 Select 쪽에서 감안해야 한다. */
-export const generateImagesDefaultValues: DefaultValues<GenerateImagesFormValues> = {
+export const GENERATE_IMAGES_DEFAULT_VALUES: DefaultValues<GenerateImagesFormValues> = {
   prompt: "",
   aspectRatio: "1:1",
   count: 1,

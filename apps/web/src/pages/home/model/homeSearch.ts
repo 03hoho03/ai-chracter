@@ -8,7 +8,7 @@ import { CONTENT_LIST_SORTS, CONTENT_TYPES } from "@/entities/content";
 // 기본값(= 파라미터의 부재)으로 떨어지고 페이지는 렌더된다(`apps/web/CLAUDE.md`의 `validateSearch` 규칙).
 // 라우트 파일이 아니라 여기 두는 이유는 vitest로 파싱을 시험하기 위해서다(라우트 모듈은 `node` 환경에서
 // import하면 죽는다).
-export const homeSearchSchema = z.object({
+export const HOME_SEARCH_SCHEMA = z.object({
   // 기본 유형(스토리)은 `.exclude()`로 뺀다 — `?type=story`를 쓰는 `<Link>`·`navigate`가 타입 단계에서
   // 막혀 "부재가 곧 스토리"가 지켜진다. 기본값을 고른 근거는 `entities/content`의 `resolveHomeContentType`.
   type: z.enum(CONTENT_TYPES).exclude(["story"]).optional().catch(undefined),
@@ -19,7 +19,7 @@ export const homeSearchSchema = z.object({
   hashtag: z.string().optional().catch(undefined),
 });
 
-export type HomeSearch = z.infer<typeof homeSearchSchema>;
+export type HomeSearch = z.infer<typeof HOME_SEARCH_SCHEMA>;
 
 /** 목록을 거르는 축. 유형은 목록 자체를 바꾸고 정렬은 순서만 바꾸므로 여기 없다 — `필터 지우기`가 이
  * 넷만 비우고, 빈 상태·끝 문구가 "조건이 걸렸는지"를 이 넷으로 판단한다. */

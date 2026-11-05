@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formToServer } from "./formToServer";
-import { payoutInfoSchema, type PayoutInfoFormValues } from "./payoutInfoSchema";
+import { PAYOUT_INFO_SCHEMA, type PayoutInfoFormValues } from "./payoutInfoSchema";
 
 const VALID = {
   legalName: "홍길동",
@@ -12,11 +12,11 @@ const VALID = {
 } as const satisfies PayoutInfoFormValues;
 
 function errorPaths(values: PayoutInfoFormValues): string[] {
-  const result = payoutInfoSchema.safeParse(values);
+  const result = PAYOUT_INFO_SCHEMA.safeParse(values);
   return result.success ? [] : result.error.issues.map((issue) => issue.path.join("."));
 }
 
-describe("payoutInfoSchema", () => {
+describe("PAYOUT_INFO_SCHEMA", () => {
   it("하이픈을 넣어 적은 주민등록번호·계좌번호를 받는다", () => {
     expect(errorPaths(VALID)).toEqual([]);
   });

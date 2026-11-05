@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import {
   characterLimit,
-  hashtagsSchema,
+  HASHTAGS_SCHEMA,
   MAX_CHARACTER_PROMPT_LENGTH,
   MAX_DESCRIPTION_LENGTH,
   MAX_DEVELOPMENT_EXAMPLES,
@@ -85,16 +85,16 @@ describe("characterLimit", () => {
   });
 });
 
-describe("hashtagsSchema", () => {
+describe("HASHTAGS_SCHEMA", () => {
   it("accepts up to the count and length limits", () => {
     const tags = Array.from({ length: MAX_HASHTAGS }, (_, i) => `${"가".repeat(MAX_HASHTAG_LENGTH - 1)}${i}`);
-    expect(hashtagsSchema.safeParse(tags).success).toBe(true);
+    expect(HASHTAGS_SCHEMA.safeParse(tags).success).toBe(true);
   });
 
   it("rejects one tag too many or one character too long, on the list itself", () => {
-    const tooMany = hashtagsSchema.safeParse(Array.from({ length: MAX_HASHTAGS + 1 }, (_, i) => `태그${i}`));
+    const tooMany = HASHTAGS_SCHEMA.safeParse(Array.from({ length: MAX_HASHTAGS + 1 }, (_, i) => `태그${i}`));
     expect(tooMany.success).toBe(false);
     expect(tooMany.error?.issues[0]?.path).toEqual([]);
-    expect(hashtagsSchema.safeParse(["가".repeat(MAX_HASHTAG_LENGTH + 1)]).success).toBe(false);
+    expect(HASHTAGS_SCHEMA.safeParse(["가".repeat(MAX_HASHTAG_LENGTH + 1)]).success).toBe(false);
   });
 });

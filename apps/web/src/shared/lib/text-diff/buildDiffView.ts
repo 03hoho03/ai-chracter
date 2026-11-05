@@ -28,7 +28,7 @@ export type DiffView =
 // 기본 정규식 나누기는 한글을 음절 단위로 쪼개 "그녀는→그녀가" 를 "그녀" 그대로 + "는" 삭제 + "가" 추가로 잡는다.
 // 더 좁지만 음절 조각이 문장 곳곳에 흩어져 읽기 어렵다. 한국어 단어 경계는 어절 단위("그녀는" 삭제 + "그녀가" 추가)로
 // 잡아 바뀐 자리가 낱말로 읽히고, 토큰 수도 한 문장에서 21개가 8개로 줄어 같은 시간 상한에 덜 걸린다.
-const koreanWordSegmenter = new Intl.Segmenter("ko", { granularity: "word" });
+const KOREAN_WORD_SEGMENTER = new Intl.Segmenter("ko", { granularity: "word" });
 
 export function createDiffRunners(
   wordTimeoutMs: number = WORD_DIFF_TIMEOUT_MS,
@@ -36,12 +36,12 @@ export function createDiffRunners(
 ): DiffRunners {
   return {
     words: (before, after) =>
-      diffWords(before, after, { intlSegmenter: koreanWordSegmenter, timeout: wordTimeoutMs }),
+      diffWords(before, after, { intlSegmenter: KOREAN_WORD_SEGMENTER, timeout: wordTimeoutMs }),
     sentences: (before, after) => diffSentences(before, after, { timeout: sentenceTimeoutMs }),
   };
 }
 
-const defaultRunners = createDiffRunners();
+const DEFAULT_RUNNERS = createDiffRunners();
 
 // 문단 구분은 빈 줄(공백만 있는 줄 포함)이다. 저장된 본문은 문단을 빈 줄 하나로 잇는다.
 const PARAGRAPH_SEPARATOR = /\n[ \t]*\n/g;
@@ -167,7 +167,7 @@ function toView(changes: Change[], granularity: "word" | "sentence", before: str
  * 그것도 넘으면 `tooLarge` 를 돌려준다(화면은 "차이가 커서 비교를 보여 줄 수 없다"를 띄운다).
  * 비교 함수는 테스트가 시간에 기대지 않고 각 갈래를 고를 수 있게 주입받는다.
  */
-export function buildDiffView(before: string, after: string, runners: DiffRunners = defaultRunners): DiffView {
+export function buildDiffView(before: string, after: string, runners: DiffRunners = DEFAULT_RUNNERS): DiffView {
   const words = runners.words(before, after);
   if (words) return toView(words, "word", before, after);
   const sentences = runners.sentences(before, after);

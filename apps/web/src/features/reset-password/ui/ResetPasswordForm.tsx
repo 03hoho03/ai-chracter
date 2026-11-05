@@ -10,8 +10,8 @@ import { isApiError } from "@/shared/api/client";
 import { useConfirmPasswordResetMutation } from "../api/useConfirmPasswordResetMutation";
 import { formToServer } from "../model/formToServer";
 import {
-  resetPasswordDefaultValues,
-  resetPasswordSchema,
+  RESET_PASSWORD_DEFAULT_VALUES,
+  RESET_PASSWORD_SCHEMA,
   type ResetPasswordFormValues,
 } from "../model/resetPasswordSchema";
 
@@ -29,8 +29,8 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
     clearErrors,
     formState: { errors },
   } = useForm<ResetPasswordFormValues>({
-    resolver: zodResolver(resetPasswordSchema),
-    defaultValues: resetPasswordDefaultValues,
+    resolver: zodResolver(RESET_PASSWORD_SCHEMA),
+    defaultValues: RESET_PASSWORD_DEFAULT_VALUES,
   });
 
   const navigate = useNavigate();

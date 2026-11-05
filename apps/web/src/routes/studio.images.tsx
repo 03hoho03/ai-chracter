@@ -11,12 +11,12 @@ import { IMAGE_STUDIO_TABS } from "@/widgets/image-studio";
 // 탭 값은 지금 generate 하나다(library는 탭이 아니다). 모르는 값은 그 축만 기본값(= 파라미터의
 // 부재)으로 흘려보낸다 — 예전에 있던 `?tab=transform`·`?tab=inpaint` 주소도 enum 밖이라
 // .catch(undefined)가 받아 생성 탭으로 연다. `validateSearch` 8곳 공통 처방이라 이 모양을 유지한다.
-const studioImagesSearchSchema = z.object({
+const STUDIO_IMAGES_SEARCH_SCHEMA = z.object({
   tab: z.enum(IMAGE_STUDIO_TABS).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/studio/images")({
-  validateSearch: studioImagesSearchSchema,
+  validateSearch: STUDIO_IMAGES_SEARCH_SCHEMA,
   beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
   component: RouteComponent,
 });

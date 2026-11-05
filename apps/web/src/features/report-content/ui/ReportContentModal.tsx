@@ -18,7 +18,7 @@ import { createCallable } from "@/shared/lib/callable/createCallable";
 import {
   isReportReason,
   REPORT_REASON_OPTIONS,
-  reportContentSchema,
+  REPORT_CONTENT_SCHEMA,
   type ReportContentFormValues,
 } from "../model/reportContentSchema";
 
@@ -41,7 +41,7 @@ export const ReportContentModal = createCallable<ReportContentModalProps, void>(
     handleSubmit,
     formState: { errors },
   } = useForm<ReportContentFormValues>({
-    resolver: zodResolver(reportContentSchema),
+    resolver: zodResolver(REPORT_CONTENT_SCHEMA),
   });
 
   const submit = useMutationFlow(call, mutationFn);

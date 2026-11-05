@@ -34,7 +34,7 @@ export function countNoteLength(note: string): number {
   return Array.from(note.trim()).length;
 }
 
-export const chatMessageReportSchema = z.object({
+export const CHAT_MESSAGE_REPORT_SCHEMA = z.object({
   reason: z.enum(CHAT_MESSAGE_REPORT_REASONS, { message: "신고 사유를 선택해주세요" }),
   note: z
     .string()
@@ -44,4 +44,4 @@ export const chatMessageReportSchema = z.object({
     }),
 });
 
-export type ChatMessageReportFormValues = z.infer<typeof chatMessageReportSchema>;
+export type ChatMessageReportFormValues = z.infer<typeof CHAT_MESSAGE_REPORT_SCHEMA>;

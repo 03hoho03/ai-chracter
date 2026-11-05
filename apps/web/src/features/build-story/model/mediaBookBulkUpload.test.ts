@@ -8,7 +8,7 @@ import {
   planBulkUpload,
 } from "./mediaBookBulkUpload";
 import type { CellImageResult } from "./mediaBookEdit";
-import { MAX_MEDIA_BOOK_CELLS, mediaBookSchema, type MediaBookCellValues, type MediaBookValues } from "./storyBuilderSchema";
+import { MAX_MEDIA_BOOK_CELLS, MEDIA_BOOK_SCHEMA, type MediaBookCellValues, type MediaBookValues } from "./storyBuilderSchema";
 
 const PERSON = "00000000-0000-4000-8000-000000000001";
 const SCENE = "00000000-0000-4000-8000-000000000011";
@@ -144,7 +144,7 @@ describe("applyBulkUploadEntry", () => {
     expect(next.people.map((person) => person.name)).toEqual(["에리", "하나"]);
     expect(next.scenes).toEqual(FILLED_BOOK.scenes);
     expect(next.cells).toHaveLength(2);
-    expect(mediaBookSchema.safeParse(next).success).toBe(true);
+    expect(MEDIA_BOOK_SCHEMA.safeParse(next).success).toBe(true);
   });
 
   it("does not bring back a person the author deleted while the batch was uploading", () => {

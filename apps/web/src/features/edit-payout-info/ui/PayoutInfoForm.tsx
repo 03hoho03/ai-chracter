@@ -25,8 +25,8 @@ import { PAYOUT_INFO_CONSENT_LABEL, PAYOUT_INFO_CONSENT_NOTICE } from "../model/
 import { formToServer } from "../model/formToServer";
 import { PAYOUT_INFO_MESSAGES, toPayoutInfoFailure, toPayoutInfoFailureField } from "../model/payoutInfoResult";
 import {
-  payoutInfoDefaultValues,
-  payoutInfoSchema,
+  PAYOUT_INFO_DEFAULT_VALUES,
+  PAYOUT_INFO_SCHEMA,
   type PayoutInfoFormValues,
   type PayoutInfoSubmitValues,
 } from "../model/payoutInfoSchema";
@@ -65,8 +65,8 @@ export function PayoutInfoForm({ onSaved, onCancel, focusOnOpen = false }: Payou
     clearErrors,
     formState: { errors },
   } = useForm<PayoutInfoFormValues, unknown, PayoutInfoSubmitValues>({
-    resolver: zodResolver(payoutInfoSchema),
-    defaultValues: payoutInfoDefaultValues,
+    resolver: zodResolver(PAYOUT_INFO_SCHEMA),
+    defaultValues: PAYOUT_INFO_DEFAULT_VALUES,
   });
 
   // 칸의 DOM 은 RHF `register` 가 쥐고 있어, 마운트 뒤 RHF 의 `setFocus` 로 옮긴다.

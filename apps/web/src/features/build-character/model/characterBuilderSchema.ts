@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   characterLimit,
   DEFAULT_NOVEL_PERMISSION,
-  hashtagsSchema,
+  HASHTAGS_SCHEMA,
   MAX_CHARACTER_PROMPT_LENGTH,
   MAX_DESCRIPTION_LENGTH,
   MAX_EXAMPLE_DIALOGUE_LINE_LENGTH,
@@ -25,7 +25,7 @@ export type Target = (typeof TARGET_VALUES)[number];
 export const VISIBILITY_VALUES = ["public", "link", "private"] as const;
 export type Visibility = (typeof VISIBILITY_VALUES)[number];
 
-export const exampleDialogueSchema = z.object({
+export const EXAMPLE_DIALOGUE_SCHEMA = z.object({
   id: z.string(),
   userLine: z
     .string()
@@ -38,7 +38,7 @@ export const exampleDialogueSchema = z.object({
 });
 
 /** 상황별 이미지는 배열 순서 자체가 동시매칭 우선순위다. */
-export const situationalImageSchema = z.object({
+export const SITUATIONAL_IMAGE_SCHEMA = z.object({
   id: z.string(),
   // 업로드/AI생성 갤러리 선택 모두 assetId 참조로 수렴한다 — 업로드 중
   // 상태는 이미지 필드 컴포넌트의 로컬 상태로만 존재하고 이 스키마에는 두지 않는다.
@@ -49,7 +49,7 @@ export const situationalImageSchema = z.object({
     .refine(...characterLimit(MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH, "상황")),
 });
 
-export const characterBuilderSchema = z.object({
+export const CHARACTER_BUILDER_SCHEMA = z.object({
   profile: z.object({
     // 대표 이미지가 맨 앞인 이유: 발행 실패 때 포커스가 가는 "첫 오류"는 같은 탭 안에서 이 키 순서를 따른다. 화면에서 맨 위 칸이
     // 대표 이미지라 순서가 다르면 둘째 칸(이름)으로 먼저 간다.
@@ -78,7 +78,7 @@ export const characterBuilderSchema = z.object({
       .refine(...requiredText("인트로를 입력해주세요"))
       .refine(...characterLimit(MAX_INTRO_LENGTH, "인트로")),
     exampleDialogues: z
-      .array(exampleDialogueSchema)
+      .array(EXAMPLE_DIALOGUE_SCHEMA)
       .max(MAX_EXAMPLE_DIALOGUES, `예시 대화는 최대 ${MAX_EXAMPLE_DIALOGUES}개까지만 추가할 수 있습니다`)
       .default([]),
     playGuide: z.string().refine(...characterLimit(MAX_PLAY_GUIDE_LENGTH, "플레이가이드")).optional(),
@@ -89,7 +89,7 @@ export const characterBuilderSchema = z.object({
       .refine(...requiredText("캐릭터 프롬프트를 입력해주세요"))
       .refine(...characterLimit(MAX_CHARACTER_PROMPT_LENGTH, "캐릭터 프롬프트")),
   }),
-  situationalImages: z.array(situationalImageSchema).default([]),
+  situationalImages: z.array(SITUATIONAL_IMAGE_SCHEMA).default([]),
   registration: z.object({
     description: z
       .string()
@@ -115,12 +115,12 @@ export const characterBuilderSchema = z.object({
           ctx.addIssue({ code: z.ZodIssueCode.custom, message: "타겟을 선택해주세요" });
         }
       }),
-    hashtags: hashtagsSchema,
+    hashtags: HASHTAGS_SCHEMA,
     visibility: z.enum(VISIBILITY_VALUES).default("private"),
     novelPermission: z.enum(NOVEL_PERMISSION_VALUES).default(DEFAULT_NOVEL_PERMISSION),
   }),
 });
 
-export type CharacterBuilderFormValues = z.infer<typeof characterBuilderSchema>;
-export type ExampleDialogueValues = z.infer<typeof exampleDialogueSchema>;
-export type SituationalImageValues = z.infer<typeof situationalImageSchema>;
+export type CharacterBuilderFormValues = z.infer<typeof CHARACTER_BUILDER_SCHEMA>;
+export type ExampleDialogueValues = z.infer<typeof EXAMPLE_DIALOGUE_SCHEMA>;
+export type SituationalImageValues = z.infer<typeof SITUATIONAL_IMAGE_SCHEMA>;

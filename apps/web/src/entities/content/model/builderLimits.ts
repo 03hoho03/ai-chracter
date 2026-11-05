@@ -56,7 +56,7 @@ export const HASHTAG_TOO_LONG_MESSAGE = characterLimitMessage("해시태그", MA
  * 두 빌더가 함께 쓰는 해시태그 목록 검사. 위반을 원소가 아니라 목록 자리에 싣는다 — 화면은 칩 목록 아래 한 줄로만
  * 오류를 보여 준다. 새로 넣는 태그는 입력 단계에서 이미 걸러지므로, 이 검사는 다른 경로로 들어온 값을 발행 전에 막는다.
  */
-export const hashtagsSchema = z
+export const HASHTAGS_SCHEMA = z
   .array(z.string())
   .superRefine((tags, ctx) => {
     if (tags.length > MAX_HASHTAGS) ctx.addIssue({ code: "custom", message: HASHTAG_LIMIT_MESSAGE });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { toStudioSearch } from "./legacyMyWorksSearch";
-import { studioSearchSchema } from "./studioSearch";
+import { STUDIO_SEARCH_SCHEMA } from "./studioSearch";
 
 describe("toStudioSearch", () => {
   it("캐릭터·스토리 유형은 같은 값으로 옮긴다", () => {
@@ -44,6 +44,6 @@ describe("toStudioSearch", () => {
   // 리다이렉트가 넘긴 값을 스튜디오 라우트가 다시 읽는다 — 그 스키마가 값을 버리지 않아야 옮긴 필터가 살아남는다.
   it("옮긴 값은 스튜디오 서치 스키마를 거쳐도 그대로 남는다", () => {
     const moved = toStudioSearch({ type: "unpublished", q: "초안" });
-    expect(studioSearchSchema.parse(moved)).toMatchObject({ status: "draft", q: "초안" });
+    expect(STUDIO_SEARCH_SCHEMA.parse(moved)).toMatchObject({ status: "draft", q: "초안" });
   });
 });

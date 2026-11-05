@@ -2,8 +2,8 @@ import type { components } from "@ai-character-chat/api-types";
 
 import {
   MAX_STAT_RULES,
-  mediaBookSchema,
-  statRuleSchema,
+  MEDIA_BOOK_SCHEMA,
+  STAT_RULE_SCHEMA,
   type DevelopmentExampleValues,
   type EndingValues,
   type KeywordNoteValues,
@@ -94,7 +94,7 @@ function toApiStatRules(rules: StatDefValues["rules"]): StatRuleDraftItem[] {
   const sent: StatRuleDraftItem[] = [];
   for (const rule of rules) {
     if (sent.length >= MAX_STAT_RULES) break;
-    if (seen.has(rule.id) || !statRuleSchema.safeParse(rule).success) continue;
+    if (seen.has(rule.id) || !STAT_RULE_SCHEMA.safeParse(rule).success) continue;
     seen.add(rule.id);
     sent.push({ id: rule.id, condition: rule.condition.trim(), delta: rule.delta });
   }
@@ -223,7 +223,7 @@ export function formToServer(values: StoryBuilderFormValues): StoryBuilderDraftP
     shortcuts: values.shortcuts,
     // 서버는 `mediaBook` 이 없으면 미디어 북에 손대지 않는다. 입력 중간 상태(빈 이름 등)처럼 서버가 거절할
     // 미디어 북을 실으면 PATCH 전체가 422 가 돼 다른 탭의 수정까지 저장되지 않으므로, 그동안은 빼고 보낸다.
-    ...(mediaBookSchema.safeParse(values.mediaBook).success ? { mediaBook: toApiMediaBook(values.mediaBook) } : {}),
+    ...(MEDIA_BOOK_SCHEMA.safeParse(values.mediaBook).success ? { mediaBook: toApiMediaBook(values.mediaBook) } : {}),
     description: values.registration.description,
     genreId: values.registration.genre,
     target: values.registration.target,

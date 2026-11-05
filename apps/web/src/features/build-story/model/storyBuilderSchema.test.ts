@@ -3,28 +3,28 @@ import { describe, expect, it } from "vitest";
 import { createEmptyDraft } from "@/entities/content";
 
 import {
-  endingSchema,
-  keywordNoteSchema,
+  ENDING_SCHEMA,
+  KEYWORD_NOTE_SCHEMA,
   MAX_MEDIA_BOOK_CELLS,
   MAX_MEDIA_BOOK_NAME_LENGTH,
-  mediaBookAxisSchema,
-  mediaBookCellSchema,
-  mediaBookSchema,
-  ruleListItemSchema,
-  shortcutSchema,
+  MEDIA_BOOK_AXIS_SCHEMA,
+  MEDIA_BOOK_CELL_SCHEMA,
+  MEDIA_BOOK_SCHEMA,
+  RULE_LIST_ITEM_SCHEMA,
+  SHORTCUT_SCHEMA,
   STAT_RULES_REQUIRED_MESSAGE,
-  startingSetupSchema,
-  statDefSchema,
-  storyBuilderSchema,
-  storySettingSchema,
+  STARTING_SETUP_SCHEMA,
+  STAT_DEF_SCHEMA,
+  STORY_BUILDER_SCHEMA,
+  STORY_SETTING_SCHEMA,
 } from "./storyBuilderSchema";
 import { serverToForm } from "./serverToForm";
 
-describe("storySettingSchema", () => {
+describe("STORY_SETTING_SCHEMA", () => {
   it.each(["basic", "emotional", "simulation"] as const)(
     "requires worldSetting when promptTemplate is %s",
     (promptTemplate) => {
-      const result = storySettingSchema.safeParse({ promptTemplate });
+      const result = STORY_SETTING_SCHEMA.safeParse({ promptTemplate });
 
       expect(result.success).toBe(false);
       expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual([
@@ -36,14 +36,14 @@ describe("storySettingSchema", () => {
   it.each(["basic", "emotional", "simulation"] as const)(
     "passes without customPrompt when promptTemplate is %s and worldSetting is set",
     (promptTemplate) => {
-      const result = storySettingSchema.safeParse({ promptTemplate, worldSetting: "세계관 설명" });
+      const result = STORY_SETTING_SCHEMA.safeParse({ promptTemplate, worldSetting: "세계관 설명" });
 
       expect(result.success).toBe(true);
     },
   );
 
   it("requires customPrompt when promptTemplate is custom", () => {
-    const result = storySettingSchema.safeParse({ promptTemplate: "custom" });
+    const result = STORY_SETTING_SCHEMA.safeParse({ promptTemplate: "custom" });
 
     expect(result.success).toBe(false);
     expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual([
@@ -52,7 +52,7 @@ describe("storySettingSchema", () => {
   });
 
   it("passes without worldSetting when promptTemplate is custom and customPrompt is set", () => {
-    const result = storySettingSchema.safeParse({
+    const result = STORY_SETTING_SCHEMA.safeParse({
       promptTemplate: "custom",
       customPrompt: "커스텀 프롬프트",
     });
@@ -61,11 +61,11 @@ describe("storySettingSchema", () => {
   });
 
   it("never requires developmentExamples/userGoal/rules regardless of promptTemplate", () => {
-    const basic = storySettingSchema.safeParse({
+    const basic = STORY_SETTING_SCHEMA.safeParse({
       promptTemplate: "basic",
       worldSetting: "세계관 설명",
     });
-    const custom = storySettingSchema.safeParse({
+    const custom = STORY_SETTING_SCHEMA.safeParse({
       promptTemplate: "custom",
       customPrompt: "커스텀 프롬프트",
     });
@@ -75,8 +75,8 @@ describe("storySettingSchema", () => {
   });
 
   it("defaults promptTemplate to basic when omitted, still requiring worldSetting", () => {
-    const missingWorldSetting = storySettingSchema.safeParse({});
-    const withWorldSetting = storySettingSchema.safeParse({ worldSetting: "세계관 설명" });
+    const missingWorldSetting = STORY_SETTING_SCHEMA.safeParse({});
+    const withWorldSetting = STORY_SETTING_SCHEMA.safeParse({ worldSetting: "세계관 설명" });
 
     expect(missingWorldSetting.success).toBe(false);
     expect(withWorldSetting.success).toBe(true);
@@ -84,7 +84,7 @@ describe("storySettingSchema", () => {
   });
 
   it("accepts userGoal/rules as optional free text", () => {
-    const result = storySettingSchema.safeParse({
+    const result = STORY_SETTING_SCHEMA.safeParse({
       promptTemplate: "basic",
       worldSetting: "세계관 설명",
       userGoal: "사용자는 새로 부임한 주방장이다. 손님들의 신뢰를 얻는 것이 목표다.",
@@ -99,7 +99,7 @@ describe("storySettingSchema", () => {
   });
 
   it("defaults developmentExamples to an empty array when omitted", () => {
-    const result = storySettingSchema.safeParse({
+    const result = STORY_SETTING_SCHEMA.safeParse({
       promptTemplate: "basic",
       worldSetting: "세계관 설명",
     });
@@ -114,7 +114,7 @@ describe("storySettingSchema", () => {
       assistantLine: `스토리 응답 ${i}`,
     }));
 
-    const result = storySettingSchema.safeParse({
+    const result = STORY_SETTING_SCHEMA.safeParse({
       promptTemplate: "basic",
       worldSetting: "세계관 설명",
       developmentExamples: threePairs,
@@ -129,7 +129,7 @@ describe("storySettingSchema", () => {
       assistantLine: `스토리 응답 ${i}`,
     }));
 
-    const result = storySettingSchema.safeParse({
+    const result = STORY_SETTING_SCHEMA.safeParse({
       promptTemplate: "basic",
       worldSetting: "세계관 설명",
       developmentExamples: fourPairs,
@@ -168,10 +168,10 @@ function validStartingSetup() {
   };
 }
 
-describe("statDefSchema", () => {
+describe("STAT_DEF_SCHEMA", () => {
   it("requires name/description and accepts an optional unit", () => {
-    const missingName = statDefSchema.safeParse({ ...validStatDef(), name: "" });
-    const withoutUnit = statDefSchema.safeParse({ ...validStatDef(), unit: undefined });
+    const missingName = STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), name: "" });
+    const withoutUnit = STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), unit: undefined });
 
     expect(missingName.success).toBe(false);
     expect(withoutUnit.success).toBe(true);
@@ -179,8 +179,8 @@ describe("statDefSchema", () => {
 
   it("caps the player description at 60 characters counted after trimming, the way the server counts", () => {
     const sixty = "가".repeat(60);
-    expect(statDefSchema.safeParse({ ...validStatDef(), playerDescription: `  ${sixty}  ` }).success).toBe(true);
-    const result = statDefSchema.safeParse({ ...validStatDef(), playerDescription: `${sixty}가` });
+    expect(STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), playerDescription: `  ${sixty}  ` }).success).toBe(true);
+    const result = STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), playerDescription: `${sixty}가` });
     expect(result.error?.issues.map((issue) => [issue.path.join("."), issue.message])).toEqual([
       ["playerDescription", "플레이어에게 보일 설명은 60자 이하로 입력해주세요"],
     ]);
@@ -188,21 +188,21 @@ describe("statDefSchema", () => {
 
   it("keeps a hidden stat's description and an unhidden stat's signal — locking a field does not make its value invalid", () => {
     expect(
-      statDefSchema.safeParse({ ...validStatDef(), hiddenFromPlayer: true, playerDescription: "남은 설명", signalHiddenChange: true })
+      STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), hiddenFromPlayer: true, playerDescription: "남은 설명", signalHiddenChange: true })
         .success,
     ).toBe(true);
-    expect(statDefSchema.safeParse({ ...validStatDef(), hiddenFromPlayer: false, signalHiddenChange: true }).success).toBe(true);
+    expect(STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), hiddenFromPlayer: false, signalHiddenChange: true }).success).toBe(true);
   });
 
   it("requires min/max/initial to be numbers", () => {
-    const result = statDefSchema.safeParse({ ...validStatDef(), min: "0" });
+    const result = STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), min: "0" });
 
     expect(result.success).toBe(false);
   });
 
   it("requires icon and color", () => {
-    const missingIcon = statDefSchema.safeParse({ ...validStatDef(), icon: "" });
-    const missingColor = statDefSchema.safeParse({ ...validStatDef(), color: "" });
+    const missingIcon = STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), icon: "" });
+    const missingColor = STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), color: "" });
 
     expect(missingIcon.success).toBe(false);
     expect(missingColor.success).toBe(false);
@@ -210,7 +210,7 @@ describe("statDefSchema", () => {
 
   describe("범위 검사", () => {
     function issuesOf(overrides: Partial<Omit<ReturnType<typeof validStatDef>, "perTurnDelta"> & { perTurnDelta: number }>) {
-      const result = statDefSchema.safeParse({ ...validStatDef(), ...overrides });
+      const result = STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), ...overrides });
       return (result.error?.issues ?? []).map((issue) => ({ path: issue.path.join("."), message: issue.message }));
     }
 
@@ -252,7 +252,7 @@ describe("statDefSchema", () => {
     });
 
     it("시작설정 스키마를 거쳐도 오류 경로가 그 스탯의 초기값 칸까지 이어진다", () => {
-      const result = startingSetupSchema.safeParse({
+      const result = STARTING_SETUP_SCHEMA.safeParse({
         ...validStartingSetup(),
         stats: [validStatDef(), { ...validStatDef(), id: "stat-2", initial: 101 }],
       });
@@ -262,9 +262,9 @@ describe("statDefSchema", () => {
   });
 });
 
-describe("statDefSchema 규칙", () => {
+describe("STAT_DEF_SCHEMA 규칙", () => {
   function issuesOf(overrides: Record<string, unknown>) {
-    const result = statDefSchema.safeParse({ ...validStatDef(), ...overrides });
+    const result = STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), ...overrides });
     return (result.error?.issues ?? []).map((issue) => ({ path: issue.path.join("."), message: issue.message }));
   }
 
@@ -316,10 +316,10 @@ describe("statDefSchema 규칙", () => {
   });
 });
 
-describe("startingSetupSchema", () => {
+describe("STARTING_SETUP_SCHEMA", () => {
   it("requires name/prologue and defaults suggestedReplies/stats to empty arrays", () => {
-    const missingPrologue = startingSetupSchema.safeParse({ ...validStartingSetup(), prologue: "" });
-    const minimal = startingSetupSchema.safeParse({
+    const missingPrologue = STARTING_SETUP_SCHEMA.safeParse({ ...validStartingSetup(), prologue: "" });
+    const minimal = STARTING_SETUP_SCHEMA.safeParse({
       id: "setup-1",
       name: "표류 첫날",
       prologue: "배가 좌초되고 눈을 뜨니 낯선 해변이다.",
@@ -332,7 +332,7 @@ describe("startingSetupSchema", () => {
   });
 
   it("makes openingSituation/playGuide optional", () => {
-    const result = startingSetupSchema.safeParse(validStartingSetup());
+    const result = STARTING_SETUP_SCHEMA.safeParse(validStartingSetup());
 
     expect(result.success).toBe(true);
     expect(result.success && result.data.openingSituation).toBeUndefined();
@@ -342,7 +342,7 @@ describe("startingSetupSchema", () => {
   it("accepts up to 4 suggested replies", () => {
     const fourReplies = Array.from({ length: 4 }, (_, i) => `추천 답변 ${i}`);
 
-    const result = startingSetupSchema.safeParse({
+    const result = STARTING_SETUP_SCHEMA.safeParse({
       ...validStartingSetup(),
       suggestedReplies: fourReplies,
     });
@@ -353,10 +353,10 @@ describe("startingSetupSchema", () => {
   it("caps each first scene field at 24 characters after trimming, like the server", () => {
     const max = "가".repeat(24);
     expect(
-      startingSetupSchema.safeParse({ ...validStartingSetup(), initialScenePlace: `  ${max}  `, initialSceneTime: max })
+      STARTING_SETUP_SCHEMA.safeParse({ ...validStartingSetup(), initialScenePlace: `  ${max}  `, initialSceneTime: max })
         .success,
     ).toBe(true);
-    const result = startingSetupSchema.safeParse({ ...validStartingSetup(), initialSceneTime: `${max}가` });
+    const result = STARTING_SETUP_SCHEMA.safeParse({ ...validStartingSetup(), initialSceneTime: `${max}가` });
     expect(result.success ? [] : result.error.issues.map((issue) => [issue.path.join("."), issue.message])).toEqual([
       ["initialSceneTime", "첫 장면 시간은 24자 이하로 입력해주세요"],
     ]);
@@ -365,7 +365,7 @@ describe("startingSetupSchema", () => {
   it("rejects a 5th suggested reply", () => {
     const fiveReplies = Array.from({ length: 5 }, (_, i) => `추천 답변 ${i}`);
 
-    const result = startingSetupSchema.safeParse({
+    const result = STARTING_SETUP_SCHEMA.safeParse({
       ...validStartingSetup(),
       suggestedReplies: fiveReplies,
     });
@@ -374,7 +374,7 @@ describe("startingSetupSchema", () => {
   });
 });
 
-describe("keywordNoteSchema", () => {
+describe("KEYWORD_NOTE_SCHEMA", () => {
   function validKeywordNote() {
     return {
       id: "note-1",
@@ -393,21 +393,21 @@ describe("keywordNoteSchema", () => {
   }
 
   it("requires content and at least one triggerKeyword", () => {
-    const missingContent = keywordNoteSchema.safeParse({ ...validKeywordNote(), content: "" });
-    const missingKeywords = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: [] });
+    const missingContent = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), content: "" });
+    const missingKeywords = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), triggerKeywords: [] });
 
     expect(missingContent.success).toBe(false);
     expect(missingKeywords.success).toBe(false);
   });
 
   it("accepts a global scope with no startingSetupId", () => {
-    const result = keywordNoteSchema.safeParse(validKeywordNote());
+    const result = KEYWORD_NOTE_SCHEMA.safeParse(validKeywordNote());
 
     expect(result.success).toBe(true);
   });
 
   it("accepts a startingSetup scope with a startingSetupId", () => {
-    const result = keywordNoteSchema.safeParse({
+    const result = KEYWORD_NOTE_SCHEMA.safeParse({
       ...validKeywordNote(),
       scope: { kind: "startingSetup" as const, startingSetupId: "setup-1" },
     });
@@ -420,14 +420,14 @@ describe("keywordNoteSchema", () => {
   });
 
   it("rejects an unknown scope kind", () => {
-    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), scope: { kind: "unknown" } });
+    const result = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), scope: { kind: "unknown" } });
 
     expect(result.success).toBe(false);
   });
 
   it("accepts content up to the length limit and rejects one character more", () => {
-    const atLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), content: "가".repeat(800) });
-    const overLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), content: "가".repeat(801) });
+    const atLimit = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), content: "가".repeat(800) });
+    const overLimit = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), content: "가".repeat(801) });
 
     expect(atLimit.success).toBe(true);
     expect(overLimit.success).toBe(false);
@@ -436,20 +436,20 @@ describe("keywordNoteSchema", () => {
   it("accepts up to 10 trigger keywords and rejects the 11th", () => {
     const keywords = (count: number) => Array.from({ length: count }, (_, i) => `키워드${i}`);
 
-    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: keywords(10) }).success).toBe(true);
-    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: keywords(11) }).success).toBe(false);
+    expect(KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), triggerKeywords: keywords(10) }).success).toBe(true);
+    expect(KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), triggerKeywords: keywords(11) }).success).toBe(false);
   });
 
   it("accepts a 20-character trigger keyword and rejects a 21-character one", () => {
-    const atLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: ["가".repeat(20)] });
-    const overLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: ["가".repeat(21)] });
+    const atLimit = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), triggerKeywords: ["가".repeat(20)] });
+    const overLimit = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), triggerKeywords: ["가".repeat(21)] });
 
     expect(atLimit.success).toBe(true);
     expect(overLimit.success).toBe(false);
   });
 
   it("rejects a whitespace-only trigger keyword", () => {
-    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: ["밤", "  "] });
+    const result = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), triggerKeywords: ["밤", "  "] });
 
     expect(result.success).toBe(false);
   });
@@ -459,7 +459,7 @@ describe("keywordNoteSchema", () => {
     ["Unicode composition", "한밤", "한밤".normalize("NFD")],
     ["sharp s that the server folds to ss", "straße", "STRASSE"],
   ])("rejects trigger keywords that differ only by %s", (_, first, second) => {
-    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: [first, second] });
+    const result = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), triggerKeywords: [first, second] });
 
     expect(result.success).toBe(false);
     // 배열 자리에 실어야 화면의 키워드 오류 한 줄에 보인다(원소 자리 오류는 표시할 곳이 없다).
@@ -467,35 +467,35 @@ describe("keywordNoteSchema", () => {
   });
 
   it("puts the missing-keyword error on triggerKeywords for a note that is not always on", () => {
-    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: [] });
+    const result = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), triggerKeywords: [] });
 
     expect(result.success).toBe(false);
     expect(issuePaths(result)).toContainEqual(["triggerKeywords"]);
   });
 
   it("lets an always-on note have no trigger keywords", () => {
-    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), alwaysOn: true, triggerKeywords: [] });
+    const result = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), alwaysOn: true, triggerKeywords: [] });
 
     expect(result.success).toBe(true);
   });
 
   it("still checks trigger keyword limits on an always-on note", () => {
-    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), alwaysOn: true, triggerKeywords: ["USB", "usb"] });
+    const result = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), alwaysOn: true, triggerKeywords: ["USB", "usb"] });
 
     expect(result.success).toBe(false);
   });
 
   it("accepts exclude keywords on an always-on note", () => {
-    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), alwaysOn: true, excludeKeywords: ["회상"] });
+    const result = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), alwaysOn: true, excludeKeywords: ["회상"] });
 
     expect(result.success).toBe(true);
   });
 
   it("accepts up to 10 exclude keywords and rejects the 11th on excludeKeywords", () => {
     const keywords = (count: number) => Array.from({ length: count }, (_, i) => `금지${i}`);
-    const over = keywordNoteSchema.safeParse({ ...validKeywordNote(), excludeKeywords: keywords(11) });
+    const over = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), excludeKeywords: keywords(11) });
 
-    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), excludeKeywords: keywords(10) }).success).toBe(true);
+    expect(KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), excludeKeywords: keywords(10) }).success).toBe(true);
     expect(over.success).toBe(false);
     expect(issuePaths(over)).toContainEqual(["excludeKeywords"]);
   });
@@ -506,19 +506,19 @@ describe("keywordNoteSchema", () => {
     ["a duplicate after case folding", ["USB", "usb"]],
     ["a duplicate after Unicode composition", ["한밤", "한밤".normalize("NFD")]],
   ])("rejects an exclude keyword that is %s", (_, excludeKeywords) => {
-    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), excludeKeywords });
+    const result = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), excludeKeywords });
 
     expect(result.success).toBe(false);
     expect(issuePaths(result)).toContainEqual(["excludeKeywords"]);
   });
 
   it("accepts a 20-character exclude keyword", () => {
-    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), excludeKeywords: ["가".repeat(20)] }).success).toBe(true);
+    expect(KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), excludeKeywords: ["가".repeat(20)] }).success).toBe(true);
   });
 
   it("accepts a name up to 20 characters and rejects one character more", () => {
-    const atLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), name: "가".repeat(20) });
-    const overLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), name: "가".repeat(21) });
+    const atLimit = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), name: "가".repeat(20) });
+    const overLimit = KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), name: "가".repeat(21) });
 
     expect(atLimit.success).toBe(true);
     expect(overLimit.success).toBe(false);
@@ -527,19 +527,19 @@ describe("keywordNoteSchema", () => {
 
   it("counts name length in code points like the server", () => {
     // 이모지 하나는 JS length 2, 코드 포인트 1 — 서버(파이썬 len)는 20자로 센다.
-    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), name: "😀".repeat(20) }).success).toBe(true);
+    expect(KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), name: "😀".repeat(20) }).success).toBe(true);
   });
 
   it.each([0, 5])("accepts stickyTurns %i", (stickyTurns) => {
-    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), stickyTurns }).success).toBe(true);
+    expect(KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), stickyTurns }).success).toBe(true);
   });
 
   it.each([-1, 6, 1.5])("rejects stickyTurns %s", (stickyTurns) => {
-    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), stickyTurns }).success).toBe(false);
+    expect(KEYWORD_NOTE_SCHEMA.safeParse({ ...validKeywordNote(), stickyTurns }).success).toBe(false);
   });
 });
 
-describe("storyBuilderSchema keywordNotes", () => {
+describe("STORY_BUILDER_SCHEMA keywordNotes", () => {
   function notes(count: number) {
     return Array.from({ length: count }, (_, i) => ({
       id: `note-${i}`,
@@ -558,33 +558,33 @@ describe("storyBuilderSchema keywordNotes", () => {
   }
 
   it("accepts up to 50 keyword notes and rejects the 51st", () => {
-    expect(storyBuilderSchema.safeParse({ ...validFullForm(), keywordNotes: notes(50) }).success).toBe(true);
-    expect(storyBuilderSchema.safeParse({ ...validFullForm(), keywordNotes: notes(51) }).success).toBe(false);
+    expect(STORY_BUILDER_SCHEMA.safeParse({ ...validFullForm(), keywordNotes: notes(50) }).success).toBe(true);
+    expect(STORY_BUILDER_SCHEMA.safeParse({ ...validFullForm(), keywordNotes: notes(51) }).success).toBe(false);
   });
 
   it("accepts three always-on notes and rejects a fourth on the keywordNotes array", () => {
-    const four = storyBuilderSchema.safeParse({ ...validFullForm(), keywordNotes: withAlwaysOn(4) });
+    const four = STORY_BUILDER_SCHEMA.safeParse({ ...validFullForm(), keywordNotes: withAlwaysOn(4) });
 
-    expect(storyBuilderSchema.safeParse({ ...validFullForm(), keywordNotes: withAlwaysOn(3) }).success).toBe(true);
+    expect(STORY_BUILDER_SCHEMA.safeParse({ ...validFullForm(), keywordNotes: withAlwaysOn(3) }).success).toBe(true);
     expect(four.success).toBe(false);
     // 배열 자리 오류라 키워드북 탭 머리의 한 줄(`errors.keywordNotes` 또는 `.root`)에 보인다.
     expect(four.error?.issues.map((issue) => issue.path)).toContainEqual(["keywordNotes"]);
   });
 });
 
-describe("shortcutSchema", () => {
+describe("SHORTCUT_SCHEMA", () => {
   function validShortcut() {
     return { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" };
   }
 
   it("requires name/description/prompt", () => {
-    expect(shortcutSchema.safeParse({ ...validShortcut(), name: "" }).success).toBe(false);
-    expect(shortcutSchema.safeParse({ ...validShortcut(), description: "" }).success).toBe(false);
-    expect(shortcutSchema.safeParse({ ...validShortcut(), prompt: "" }).success).toBe(false);
+    expect(SHORTCUT_SCHEMA.safeParse({ ...validShortcut(), name: "" }).success).toBe(false);
+    expect(SHORTCUT_SCHEMA.safeParse({ ...validShortcut(), description: "" }).success).toBe(false);
+    expect(SHORTCUT_SCHEMA.safeParse({ ...validShortcut(), prompt: "" }).success).toBe(false);
   });
 
   it("passes with all fields present", () => {
-    expect(shortcutSchema.safeParse(validShortcut()).success).toBe(true);
+    expect(SHORTCUT_SCHEMA.safeParse(validShortcut()).success).toBe(true);
   });
 });
 
@@ -592,13 +592,13 @@ function singleRule(overrides: Partial<Record<string, unknown>> = {}) {
   return { kind: "rule", id: "rule-1", statId: "stat-1", operator: ">=", value: 50, nextOp: null, ...overrides };
 }
 
-describe("ruleListItemSchema", () => {
+describe("RULE_LIST_ITEM_SCHEMA", () => {
   it("accepts a single rule", () => {
-    expect(ruleListItemSchema.safeParse(singleRule()).success).toBe(true);
+    expect(RULE_LIST_ITEM_SCHEMA.safeParse(singleRule()).success).toBe(true);
   });
 
   it("accepts a group containing only single rules", () => {
-    const result = ruleListItemSchema.safeParse({
+    const result = RULE_LIST_ITEM_SCHEMA.safeParse({
       kind: "group",
       id: "group-1",
       nextOp: null,
@@ -609,7 +609,7 @@ describe("ruleListItemSchema", () => {
   });
 
   it("rejects a group nested inside another group (no nesting)", () => {
-    const result = ruleListItemSchema.safeParse({
+    const result = RULE_LIST_ITEM_SCHEMA.safeParse({
       kind: "group",
       id: "group-1",
       nextOp: null,
@@ -620,19 +620,19 @@ describe("ruleListItemSchema", () => {
   });
 
   it("rejects the '!=' operator (server EndingRuleOperator has no not-equal value)", () => {
-    const result = ruleListItemSchema.safeParse(singleRule({ operator: "!=" }));
+    const result = RULE_LIST_ITEM_SCHEMA.safeParse(singleRule({ operator: "!=" }));
 
     expect(result.success).toBe(false);
   });
 
   it("accepts the other 5 comparison operators", () => {
     for (const operator of [">", ">=", "<", "<=", "=="]) {
-      expect(ruleListItemSchema.safeParse(singleRule({ operator })).success).toBe(true);
+      expect(RULE_LIST_ITEM_SCHEMA.safeParse(singleRule({ operator })).success).toBe(true);
     }
   });
 });
 
-describe("endingSchema", () => {
+describe("ENDING_SCHEMA", () => {
   function validEnding() {
     return {
       id: "ending-1",
@@ -644,22 +644,22 @@ describe("endingSchema", () => {
   }
 
   it("requires turnGate to be at least 10", () => {
-    const belowMin = endingSchema.safeParse({ ...validEnding(), turnGate: 9 });
-    const atMin = endingSchema.safeParse({ ...validEnding(), turnGate: 10 });
+    const belowMin = ENDING_SCHEMA.safeParse({ ...validEnding(), turnGate: 9 });
+    const atMin = ENDING_SCHEMA.safeParse({ ...validEnding(), turnGate: 10 });
 
     expect(belowMin.success).toBe(false);
     expect(atMin.success).toBe(true);
   });
 
   it("defaults statRules to an empty array (judgePrompt만으로 판정)", () => {
-    const result = endingSchema.safeParse(validEnding());
+    const result = ENDING_SCHEMA.safeParse(validEnding());
 
     expect(result.success).toBe(true);
     expect(result.success && result.data.statRules).toEqual([]);
   });
 
   it("makes epilogue/hint optional", () => {
-    const result = endingSchema.safeParse(validEnding());
+    const result = ENDING_SCHEMA.safeParse(validEnding());
 
     expect(result.success).toBe(true);
     expect(result.success && result.data.epilogue).toBeUndefined();
@@ -667,17 +667,17 @@ describe("endingSchema", () => {
   });
 
   it("requires name/judgePrompt", () => {
-    expect(endingSchema.safeParse({ ...validEnding(), name: "" }).success).toBe(false);
-    expect(endingSchema.safeParse({ ...validEnding(), judgePrompt: "" }).success).toBe(false);
+    expect(ENDING_SCHEMA.safeParse({ ...validEnding(), name: "" }).success).toBe(false);
+    expect(ENDING_SCHEMA.safeParse({ ...validEnding(), judgePrompt: "" }).success).toBe(false);
   });
 
   // '없음'은 발행을 막지 않는 값이고, 키를 빼면(undefined) RHF 가 같은 자리 옛 엔딩의 값으로 다시 채우므로 거절한다.
   it("accepts a priority stat id or null, but not an omitted key", () => {
-    expect(endingSchema.safeParse({ ...validEnding(), priorityStatId: "stat-1" }).success).toBe(true);
-    expect(endingSchema.safeParse({ ...validEnding(), priorityStatId: null }).success).toBe(true);
+    expect(ENDING_SCHEMA.safeParse({ ...validEnding(), priorityStatId: "stat-1" }).success).toBe(true);
+    expect(ENDING_SCHEMA.safeParse({ ...validEnding(), priorityStatId: null }).success).toBe(true);
     const withoutPriority: Partial<ReturnType<typeof validEnding>> = validEnding();
     delete withoutPriority.priorityStatId;
-    expect(endingSchema.safeParse(withoutPriority).success).toBe(false);
+    expect(ENDING_SCHEMA.safeParse(withoutPriority).success).toBe(false);
   });
 });
 
@@ -702,7 +702,7 @@ function validFullForm() {
 }
 
 // 서버 발행 검사는 공백만인 필수 칸을 빈 칸으로 거절한다. 화면도 같은 판정으로 먼저 막아야 발행 버튼이 그 칸을 짚는다.
-describe("storyBuilderSchema blank required text", () => {
+describe("STORY_BUILDER_SCHEMA blank required text", () => {
   const BLANK = " \n\u3000";
 
   it.each([
@@ -714,20 +714,20 @@ describe("storyBuilderSchema blank required text", () => {
     ["startingSetups.0.name", (f: ReturnType<typeof validFullForm>) => ({ ...f, startingSetups: [{ ...validStartingSetup(), name: BLANK }] }), "시작설정 이름을 입력해주세요"],
     ["startingSetups.0.prologue", (f: ReturnType<typeof validFullForm>) => ({ ...f, startingSetups: [{ ...validStartingSetup(), prologue: BLANK }] }), "프롤로그를 입력해주세요"],
   ] as const)("%s 이 공백만이면 칸 이름을 든 문구로 거절한다", (path, toForm, message) => {
-    const result = storyBuilderSchema.safeParse(toForm(validFullForm()));
+    const result = STORY_BUILDER_SCHEMA.safeParse(toForm(validFullForm()));
 
     expect(result.success).toBe(false);
     expect(result.error?.issues.map((issue) => [issue.path.join("."), issue.message])).toContainEqual([path, message]);
   });
 
   it.each([
-    ["stat name", () => statDefSchema.safeParse({ ...validStatDef(), name: BLANK }), "스탯 이름을 입력해주세요"],
-    ["stat description", () => statDefSchema.safeParse({ ...validStatDef(), description: BLANK }), "스탯 설명을 입력해주세요"],
-    ["ending name", () => endingSchema.safeParse({ id: "e", name: BLANK, turnGate: 10, judgePrompt: "판정", priorityStatId: null }), "엔딩 이름을 입력해주세요"],
-    ["ending judgePrompt", () => endingSchema.safeParse({ id: "e", name: "엔딩", turnGate: 10, judgePrompt: BLANK, priorityStatId: null }), "판단 프롬프트를 입력해주세요"],
-    ["shortcut name", () => shortcutSchema.safeParse({ id: "s", name: BLANK, description: "설명", prompt: "프롬프트" }), "단축어 이름을 입력해주세요"],
-    ["shortcut description", () => shortcutSchema.safeParse({ id: "s", name: "이름", description: BLANK, prompt: "프롬프트" }), "단축어 설명을 입력해주세요"],
-    ["shortcut prompt", () => shortcutSchema.safeParse({ id: "s", name: "이름", description: "설명", prompt: BLANK }), "실행될 프롬프트를 입력해주세요"],
+    ["stat name", () => STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), name: BLANK }), "스탯 이름을 입력해주세요"],
+    ["stat description", () => STAT_DEF_SCHEMA.safeParse({ ...validStatDef(), description: BLANK }), "스탯 설명을 입력해주세요"],
+    ["ending name", () => ENDING_SCHEMA.safeParse({ id: "e", name: BLANK, turnGate: 10, judgePrompt: "판정", priorityStatId: null }), "엔딩 이름을 입력해주세요"],
+    ["ending judgePrompt", () => ENDING_SCHEMA.safeParse({ id: "e", name: "엔딩", turnGate: 10, judgePrompt: BLANK, priorityStatId: null }), "판단 프롬프트를 입력해주세요"],
+    ["shortcut name", () => SHORTCUT_SCHEMA.safeParse({ id: "s", name: BLANK, description: "설명", prompt: "프롬프트" }), "단축어 이름을 입력해주세요"],
+    ["shortcut description", () => SHORTCUT_SCHEMA.safeParse({ id: "s", name: "이름", description: BLANK, prompt: "프롬프트" }), "단축어 설명을 입력해주세요"],
+    ["shortcut prompt", () => SHORTCUT_SCHEMA.safeParse({ id: "s", name: "이름", description: "설명", prompt: BLANK }), "실행될 프롬프트를 입력해주세요"],
   ] as const)("%s 가 공백만이면 거절한다", (_name, parse, message) => {
     const result = parse();
 
@@ -737,17 +737,17 @@ describe("storyBuilderSchema blank required text", () => {
 
   it("앞뒤 공백이 있는 값은 통과하고 자르지 않는다", () => {
     const form = validFullForm();
-    const result = storyBuilderSchema.safeParse({ ...form, profile: { ...form.profile, name: "  항해 " } });
+    const result = STORY_BUILDER_SCHEMA.safeParse({ ...form, profile: { ...form.profile, name: "  항해 " } });
 
     expect(result.success).toBe(true);
     expect(result.data?.profile.name).toBe("  항해 ");
   });
 });
 
-describe("storyBuilderSchema startingSetups", () => {
+describe("STORY_BUILDER_SCHEMA startingSetups", () => {
   it("requires at least one starting setup", () => {
-    const empty = storyBuilderSchema.safeParse({ ...validFullForm(), startingSetups: [] });
-    const withOne = storyBuilderSchema.safeParse(validFullForm());
+    const empty = STORY_BUILDER_SCHEMA.safeParse({ ...validFullForm(), startingSetups: [] });
+    const withOne = STORY_BUILDER_SCHEMA.safeParse(validFullForm());
 
     expect(empty.success).toBe(false);
     expect(withOne.success).toBe(true);
@@ -759,7 +759,7 @@ describe("storyBuilderSchema startingSetups", () => {
       id: `setup-${i}`,
     }));
 
-    const result = storyBuilderSchema.safeParse({ ...validFullForm(), startingSetups: fourSetups });
+    const result = STORY_BUILDER_SCHEMA.safeParse({ ...validFullForm(), startingSetups: fourSetups });
 
     expect(result.success).toBe(true);
   });
@@ -770,13 +770,13 @@ describe("storyBuilderSchema startingSetups", () => {
       id: `setup-${i}`,
     }));
 
-    const result = storyBuilderSchema.safeParse({ ...validFullForm(), startingSetups: fiveSetups });
+    const result = STORY_BUILDER_SCHEMA.safeParse({ ...validFullForm(), startingSetups: fiveSetups });
 
     expect(result.success).toBe(false);
   });
 
   it("defaults keywordNotes/shortcuts to empty arrays when omitted", () => {
-    const result = storyBuilderSchema.safeParse(validFullForm());
+    const result = STORY_BUILDER_SCHEMA.safeParse(validFullForm());
 
     expect(result.success).toBe(true);
     expect(result.success && result.data.keywordNotes).toEqual([]);
@@ -786,9 +786,9 @@ describe("storyBuilderSchema startingSetups", () => {
 
 /** 초안을 담으려고 nullable로 둔 3필드는 화면에 `*`가
  * 붙어 있고 서버도 요구한다. 타입은 그대로 두고 refine이 상시 검증해 서버 400 왕복 전에 걸린다. */
-describe("storyBuilderSchema publish-required nullable fields", () => {
+describe("STORY_BUILDER_SCHEMA publish-required nullable fields", () => {
   it("rejects a null profile.image", () => {
-    const result = storyBuilderSchema.safeParse({
+    const result = STORY_BUILDER_SCHEMA.safeParse({
       ...validFullForm(),
       profile: { ...validFullForm().profile, image: null },
     });
@@ -801,7 +801,7 @@ describe("storyBuilderSchema publish-required nullable fields", () => {
   });
 
   it("rejects a null registration.genre", () => {
-    const result = storyBuilderSchema.safeParse({
+    const result = STORY_BUILDER_SCHEMA.safeParse({
       ...validFullForm(),
       registration: { ...validFullForm().registration, genre: null },
     });
@@ -814,7 +814,7 @@ describe("storyBuilderSchema publish-required nullable fields", () => {
   });
 
   it("rejects a null registration.target", () => {
-    const result = storyBuilderSchema.safeParse({
+    const result = STORY_BUILDER_SCHEMA.safeParse({
       ...validFullForm(),
       registration: { ...validFullForm().registration, target: null },
     });
@@ -828,7 +828,7 @@ describe("storyBuilderSchema publish-required nullable fields", () => {
 
   it("reports all three at once (누락 토스트가 한 번에 나열할 수 있어야 한다)", () => {
     const form = validFullForm();
-    const result = storyBuilderSchema.safeParse({
+    const result = STORY_BUILDER_SCHEMA.safeParse({
       ...form,
       profile: { ...form.profile, image: null },
       registration: { ...form.registration, genre: null, target: null },
@@ -841,7 +841,7 @@ describe("storyBuilderSchema publish-required nullable fields", () => {
   });
 
   it("passes once all three are filled", () => {
-    expect(storyBuilderSchema.safeParse(validFullForm()).success).toBe(true);
+    expect(STORY_BUILDER_SCHEMA.safeParse(validFullForm()).success).toBe(true);
   });
 });
 
@@ -852,9 +852,9 @@ function guid(prefix: string, index: number): string {
 
 const SCENE_ID = guid("b", 0);
 
-describe("mediaBookAxisSchema", () => {
+describe("MEDIA_BOOK_AXIS_SCHEMA", () => {
   function nameIssues(name: string) {
-    const result = mediaBookAxisSchema.safeParse({ id: "00000000-0000-4000-8000-0000000000a1", name });
+    const result = MEDIA_BOOK_AXIS_SCHEMA.safeParse({ id: "00000000-0000-4000-8000-0000000000a1", name });
     return result.success ? [] : result.error.issues.map((issue) => issue.path);
   }
 
@@ -881,7 +881,7 @@ describe("mediaBookAxisSchema", () => {
   });
 });
 
-describe("mediaBookCellSchema", () => {
+describe("MEDIA_BOOK_CELL_SCHEMA", () => {
   function validCell() {
     return {
       id: "00000000-0000-4000-8000-0000000000c1",
@@ -895,7 +895,7 @@ describe("mediaBookCellSchema", () => {
   }
 
   it("accepts a situation description of 100 characters and an unlock hint of 20", () => {
-    const result = mediaBookCellSchema.safeParse({
+    const result = MEDIA_BOOK_CELL_SCHEMA.safeParse({
       ...validCell(),
       situationDescription: "가".repeat(100),
       unlockHint: "가".repeat(20),
@@ -905,7 +905,7 @@ describe("mediaBookCellSchema", () => {
   });
 
   it("rejects a situation description of 101 characters", () => {
-    const result = mediaBookCellSchema.safeParse({ ...validCell(), situationDescription: "가".repeat(101) });
+    const result = MEDIA_BOOK_CELL_SCHEMA.safeParse({ ...validCell(), situationDescription: "가".repeat(101) });
 
     expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual([
       "situationDescription",
@@ -913,13 +913,13 @@ describe("mediaBookCellSchema", () => {
   });
 
   it("rejects an unlock hint of 21 characters", () => {
-    const result = mediaBookCellSchema.safeParse({ ...validCell(), unlockHint: "가".repeat(21) });
+    const result = MEDIA_BOOK_CELL_SCHEMA.safeParse({ ...validCell(), unlockHint: "가".repeat(21) });
 
     expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual(["unlockHint"]);
   });
 });
 
-describe("mediaBookSchema", () => {
+describe("MEDIA_BOOK_SCHEMA", () => {
   // 칸마다 다른 인물 줄에 둬 같은 자리 중복 검사에 걸리지 않게 한다.
   function mediaBookWithCells(count: number) {
     const people = Array.from({ length: count }, (_, index) => ({ id: guid("a", index), name: `인물${index}` }));
@@ -939,17 +939,17 @@ describe("mediaBookSchema", () => {
   }
 
   it("accepts exactly the cell limit", () => {
-    expect(mediaBookSchema.safeParse(mediaBookWithCells(MAX_MEDIA_BOOK_CELLS)).success).toBe(true);
+    expect(MEDIA_BOOK_SCHEMA.safeParse(mediaBookWithCells(MAX_MEDIA_BOOK_CELLS)).success).toBe(true);
   });
 
   it("rejects one cell over the limit", () => {
-    const result = mediaBookSchema.safeParse(mediaBookWithCells(MAX_MEDIA_BOOK_CELLS + 1));
+    const result = MEDIA_BOOK_SCHEMA.safeParse(mediaBookWithCells(MAX_MEDIA_BOOK_CELLS + 1));
 
     expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual(["cells"]);
   });
 
   function issuePaths(value: unknown) {
-    const result = mediaBookSchema.safeParse(value);
+    const result = MEDIA_BOOK_SCHEMA.safeParse(value);
     return result.success ? [] : result.error.issues.map((issue) => issue.path);
   }
 
@@ -1059,11 +1059,11 @@ describe("mediaBookSchema", () => {
 
 // 발행 실패 때 같은 탭 안의 첫 오류는 검증 오류의 순서를 따른다. 화면 맨 위 칸인 대표 이미지가 첫 오류여야 포커스가 둘째 칸(이름)으로
 // 먼저 가지 않는다.
-describe("storyBuilderSchema issue order", () => {
+describe("STORY_BUILDER_SCHEMA issue order", () => {
   it("puts profile.image first for an empty draft", () => {
     const draft = createEmptyDraft("story");
     if (draft.type !== "story") throw new Error("스토리 빈 초안이 아니에요.");
-    const issues = storyBuilderSchema.safeParse(serverToForm(draft)).error?.issues ?? [];
+    const issues = STORY_BUILDER_SCHEMA.safeParse(serverToForm(draft)).error?.issues ?? [];
     expect(issues.map((issue) => issue.path.join(".")).slice(0, 3)).toEqual([
       "profile.image",
       "profile.name",

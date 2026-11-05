@@ -25,8 +25,8 @@ export const REPORT_REASON_OPTIONS = REPORT_REASON_VALUES.map((value) => ({
   label: REPORT_REASON_LABELS[value],
 }));
 
-export const reportContentSchema = z.object({
+export const REPORT_CONTENT_SCHEMA = z.object({
   reason: z.enum(REPORT_REASON_VALUES, { message: "신고 사유를 선택해주세요" }),
 });
 
-export type ReportContentFormValues = z.infer<typeof reportContentSchema>;
+export type ReportContentFormValues = z.infer<typeof REPORT_CONTENT_SCHEMA>;

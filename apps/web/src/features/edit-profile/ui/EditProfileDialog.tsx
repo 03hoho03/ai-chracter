@@ -27,7 +27,7 @@ import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { useUpdateProfileMutation } from "../api/useUpdateProfileMutation";
 import { formToServer } from "../model/formToServer";
-import { editProfileSchema, type EditProfileFormValues } from "../model/editProfileSchema";
+import { EDIT_PROFILE_SCHEMA, type EditProfileFormValues } from "../model/editProfileSchema";
 import { serverToForm } from "../model/serverToForm";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
@@ -46,7 +46,7 @@ export function EditProfileDialog({ userId, profile, beforeUpload }: EditProfile
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const form = useForm<EditProfileFormValues>({
-    resolver: zodResolver(editProfileSchema),
+    resolver: zodResolver(EDIT_PROFILE_SCHEMA),
     defaultValues: serverToForm(profile),
   });
 

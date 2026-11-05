@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiErrorObject, errorEnvelopeSchema } from "./client";
+import { ApiErrorObject, ERROR_ENVELOPE_SCHEMA } from "./client";
 
 /**
  * FastAPI 에러 봉투 파싱. 이 경로는 지금까지 테스트가 0이었는데, `as` 단언이 무엇이 오든
@@ -11,11 +11,11 @@ import { ApiErrorObject, errorEnvelopeSchema } from "./client";
  * `detail.loc?.at(-1)`에서 터졌지만, 파싱은 `undefined`로 떨어져 폴백이 받는다.
  */
 const detailOf = (data: unknown) => {
-  const parsed = errorEnvelopeSchema.safeParse(data);
+  const parsed = ERROR_ENVELOPE_SCHEMA.safeParse(data);
   return parsed.success ? parsed.data.detail : undefined;
 };
 
-describe("errorEnvelopeSchema", () => {
+describe("ERROR_ENVELOPE_SCHEMA", () => {
   it("HTTPException의 string detail을 그대로 통과시킨다", () => {
     expect(detailOf({ detail: "권한이 없어요" })).toBe("권한이 없어요");
   });

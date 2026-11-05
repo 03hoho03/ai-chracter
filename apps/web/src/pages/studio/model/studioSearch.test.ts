@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { MY_WORKS_QUERY_MAX_LENGTH } from "@/entities/work";
 
-import { resolveStudioScope, resolveStudioSearch, studioSearchSchema, UNREADABLE_BUNDLE } from "./studioSearch";
+import { resolveStudioScope, resolveStudioSearch, STUDIO_SEARCH_SCHEMA, UNREADABLE_BUNDLE } from "./studioSearch";
 
-describe("studioSearchSchema", () => {
+describe("STUDIO_SEARCH_SCHEMA", () => {
   it("아는 값은 그대로 받는다", () => {
-    expect(studioSearchSchema.parse({ type: "novel", status: "review", q: "비 오는 밤" })).toEqual({
+    expect(STUDIO_SEARCH_SCHEMA.parse({ type: "novel", status: "review", q: "비 오는 밤" })).toEqual({
       type: "novel",
       status: "review",
       q: "비 오는 밤",
@@ -14,12 +14,12 @@ describe("studioSearchSchema", () => {
   });
 
   it("모르는 값과 기본값 all 은 부재로 떨어뜨린다", () => {
-    expect(studioSearchSchema.parse({ type: "unpublished", status: "all" })).toEqual({
+    expect(STUDIO_SEARCH_SCHEMA.parse({ type: "unpublished", status: "all" })).toEqual({
       type: undefined,
       status: undefined,
       q: undefined,
     });
-    expect(studioSearchSchema.parse({ type: "all", status: "bogus" })).toEqual({
+    expect(STUDIO_SEARCH_SCHEMA.parse({ type: "all", status: "bogus" })).toEqual({
       type: undefined,
       status: undefined,
       q: undefined,
@@ -27,19 +27,19 @@ describe("studioSearchSchema", () => {
   });
 
   it("검색어는 보낼 꼴로 접는다 — 공백뿐이면 부재, 상한을 넘으면 자른다", () => {
-    expect(studioSearchSchema.parse({ q: "   " }).q).toBeUndefined();
-    expect(studioSearchSchema.parse({ q: "가".repeat(MY_WORKS_QUERY_MAX_LENGTH + 1) }).q).toBe(
+    expect(STUDIO_SEARCH_SCHEMA.parse({ q: "   " }).q).toBeUndefined();
+    expect(STUDIO_SEARCH_SCHEMA.parse({ q: "가".repeat(MY_WORKS_QUERY_MAX_LENGTH + 1) }).q).toBe(
       "가".repeat(MY_WORKS_QUERY_MAX_LENGTH),
     );
   });
 
   it("라우터가 숫자로 읽은 검색어(?q=1)도 검색어로 남긴다", () => {
-    expect(studioSearchSchema.parse({ q: 1 }).q).toBe("1");
-    expect(studioSearchSchema.parse({ q: 2024 }).q).toBe("2024");
+    expect(STUDIO_SEARCH_SCHEMA.parse({ q: 1 }).q).toBe("1");
+    expect(STUDIO_SEARCH_SCHEMA.parse({ q: 2024 }).q).toBe("2024");
   });
 
   it("검색어로 읽을 수 없는 값은 부재로 떨어뜨린다", () => {
-    expect(studioSearchSchema.parse({ q: { nested: true } }).q).toBeUndefined();
+    expect(STUDIO_SEARCH_SCHEMA.parse({ q: { nested: true } }).q).toBeUndefined();
   });
 });
 
@@ -75,17 +75,17 @@ describe("resolveStudioSearch", () => {
 
 const BUNDLE_ID = "0b7a5a2e-7c1d-4f3e-9a6b-2d8c1e4f5a60";
 
-describe("studioSearchSchema 의 묶음", () => {
+describe("STUDIO_SEARCH_SCHEMA 의 묶음", () => {
   it("id 모양이면 그대로 받는다 — RFC 변형 비트가 아닌 id 도 서버가 받으므로 받는다", () => {
-    expect(studioSearchSchema.parse({ bundle: BUNDLE_ID }).bundle).toBe(BUNDLE_ID);
+    expect(STUDIO_SEARCH_SCHEMA.parse({ bundle: BUNDLE_ID }).bundle).toBe(BUNDLE_ID);
     const nonRfc = "0b7a5a2e-7c1d-0f3e-0a6b-2d8c1e4f5a60";
-    expect(studioSearchSchema.parse({ bundle: nonRfc }).bundle).toBe(nonRfc);
+    expect(STUDIO_SEARCH_SCHEMA.parse({ bundle: nonRfc }).bundle).toBe(nonRfc);
   });
 
   it("없으면 부재, 모양이 틀리면 읽을 수 없는 묶음으로 남긴다 — 홈으로 조용히 바뀌지 않게", () => {
-    expect(studioSearchSchema.parse({}).bundle).toBeUndefined();
-    expect(studioSearchSchema.parse({ bundle: "abc" }).bundle).toBe(UNREADABLE_BUNDLE);
-    expect(studioSearchSchema.parse({ bundle: 123 }).bundle).toBe(UNREADABLE_BUNDLE);
+    expect(STUDIO_SEARCH_SCHEMA.parse({}).bundle).toBeUndefined();
+    expect(STUDIO_SEARCH_SCHEMA.parse({ bundle: "abc" }).bundle).toBe(UNREADABLE_BUNDLE);
+    expect(STUDIO_SEARCH_SCHEMA.parse({ bundle: 123 }).bundle).toBe(UNREADABLE_BUNDLE);
   });
 });
 

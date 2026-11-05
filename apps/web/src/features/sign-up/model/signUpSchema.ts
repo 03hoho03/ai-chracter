@@ -18,7 +18,7 @@ function isUnderMinimumAge(birthDate: Date, today: Date): boolean {
   return age < MINIMUM_SIGNUP_AGE;
 }
 
-export const signUpSchema = z.object({
+export const SIGN_UP_SCHEMA = z.object({
   email: z.email({ message: "이메일 형식이 올바르지 않습니다" }),
   password: z.string().min(8, { message: "비밀번호는 8자 이상이어야 합니다" }),
   nickname: z.string().min(1, { message: "닉네임을 입력해주세요" }),
@@ -46,9 +46,9 @@ export const signUpSchema = z.object({
   emailVerificationCode: z.string().length(6, { message: "6자리 코드를 입력해주세요" }),
 });
 
-export type SignUpFormValues = z.infer<typeof signUpSchema>;
+export type SignUpFormValues = z.infer<typeof SIGN_UP_SCHEMA>;
 
-export const signUpDefaultValues: SignUpFormValues = {
+export const SIGN_UP_DEFAULT_VALUES: SignUpFormValues = {
   email: "",
   password: "",
   nickname: "",

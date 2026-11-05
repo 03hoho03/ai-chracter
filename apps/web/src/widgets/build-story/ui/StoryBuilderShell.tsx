@@ -12,7 +12,7 @@ import { usePublishContentMutation, type StoryDraftContent } from "@/entities/co
 import type { MediaTagImages } from "@/entities/media-book";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import {
-  storyBuilderSchema,
+  STORY_BUILDER_SCHEMA,
   ENDING_RULE_STAT_NOT_FOUND_MESSAGE,
   formToServer,
   isEndingRuleStatNotFoundError,
@@ -20,7 +20,7 @@ import {
   locateSituationNotePublishError,
   MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
   mediaBookPublishErrorMessage,
-  mediaBookSchema,
+  MEDIA_BOOK_SCHEMA,
   SELECTED_STARTING_SETUP,
   serverToForm,
   SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE,
@@ -178,7 +178,7 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
     // 타입으로 번진다(자동저장·미리보기 경로까지). 런타임에는 안전하다 — defaultValues(serverToForm)가
     // 이 필드들을 항상 채워 넘기고 이후 어떤 입력도 그걸 undefined로 되돌리지 않는다.
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- 위 사유(zod .default()/RHF Resolver 제네릭의 구조적 한계)
-    resolver: zodResolver(storyBuilderSchema) as Resolver<StoryBuilderFormValues>,
+    resolver: zodResolver(STORY_BUILDER_SCHEMA) as Resolver<StoryBuilderFormValues>,
     defaultValues: serverToForm(draft),
     // 첫 오류로 가는 포커스는 `useFocusFirstError` 가 확인 목록이 선 뒤에 준다. RHF 가 검증 직후 먼저 포커스하면 목록이 서기 전
     // 자리로 스크롤돼 그 칸이 목록에 밀려 화면 밖에 남는다.
@@ -213,7 +213,7 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
   // 탭 줄의 채움 표시, 발행을 누른 뒤 고친 칸의 오류 해제, 남은 서버 거절을 셸 한 곳에서 맞춘다.
   const checklist = usePublishChecklist({
     form,
-    schema: storyBuilderSchema,
+    schema: STORY_BUILDER_SCHEMA,
     tabs: TABS,
     requiredTabIds: STORY_REQUIRED_TAB_IDS,
   });
@@ -282,14 +282,14 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
       await saveNow(values);
       // 서버가 거절할 미디어 북은 저장 요청에서 빠진다(`formToServer`). 그때 "임시저장했어요"만 말하면 미디어 북도
       // 저장된 줄 안다.
-      if (mediaBookSchema.safeParse(values.mediaBook).success) toast.success("임시저장했어요.");
+      if (MEDIA_BOOK_SCHEMA.safeParse(values.mediaBook).success) toast.success("임시저장했어요.");
       else toast.warning("임시저장했어요. 미디어 북은 고칠 항목이 있어 이번에는 저장하지 않았어요.");
     } catch (error) {
       toast.error(storyAutosaveErrorMessage(error) ?? "임시저장에 실패했어요. 잠시 후 다시 시도해주세요.");
     }
   }
 
-  // `handleSubmit`이 넘겨주는 values는 resolver(storyBuilderSchema)를 이미 통과한 파싱 결과라
+  // `handleSubmit`이 넘겨주는 values는 resolver(STORY_BUILDER_SCHEMA)를 이미 통과한 파싱 결과라
   // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다.
   async function handlePublish(values: StoryBuilderFormValues) {
     setRejectionReason(undefined);

@@ -3,7 +3,7 @@ import { normalizeMediaBookName, type MediaBookAxis } from "@/entities/media-boo
 import {
   MAX_MEDIA_BOOK_CELLS,
   MEDIA_BOOK_DUPLICATE_NAME_MESSAGE,
-  mediaBookAxisSchema,
+  MEDIA_BOOK_AXIS_SCHEMA,
   type MediaBookAxisValues,
   type MediaBookCellValues,
   type MediaBookValues,
@@ -12,7 +12,7 @@ import {
 /**
  * 미디어 북 편집을 순수 함수로 모았다. 화면은 이 함수들이 돌려준 **새 미디어 북 전체**를 폼에 통째로 쓴다 —
  * 배열 항목 단위 액션(`useFieldArray`의 remove 등)은 자동저장 구독에 닿지 않을 때가 있어 쓰지 않는다.
- * 모든 함수는 폼 스키마(`mediaBookSchema`)를 통과하는 값만 만든다: 이름은 정규화한 값으로 넣고, 상한·중복은
+ * 모든 함수는 폼 스키마(`MEDIA_BOOK_SCHEMA`)를 통과하는 값만 만든다: 이름은 정규화한 값으로 넣고, 상한·중복은
  * 호출 전에 막는다.
  */
 
@@ -39,7 +39,7 @@ export function mediaBookNameError(
   siblings: readonly MediaBookAxisValues[],
   selfId?: string,
 ): string | undefined {
-  const parsed = mediaBookAxisSchema.shape.name.safeParse(name);
+  const parsed = MEDIA_BOOK_AXIS_SCHEMA.shape.name.safeParse(name);
   if (!parsed.success) return parsed.error.issues[0]?.message;
   const normalized = normalizeMediaBookName(name);
   const isTaken = siblings.some((item) => item.id !== selfId && normalizeMediaBookName(item.name) === normalized);

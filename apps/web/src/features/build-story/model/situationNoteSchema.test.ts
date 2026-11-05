@@ -7,8 +7,8 @@ import {
   MAX_SITUATION_NOTES,
   SITUATION_NOTE_BLANK_CONTENT_MESSAGE,
   SITUATION_NOTE_EMPTY_CONDITIONS_MESSAGE,
-  situationNoteSchema,
-  startingSetupSchema,
+  SITUATION_NOTE_SCHEMA,
+  STARTING_SETUP_SCHEMA,
   type RuleListItemValues,
   type SingleRuleValues,
   type SituationNoteValues,
@@ -33,11 +33,11 @@ function note(overrides: Partial<SituationNoteValues> = {}): SituationNoteValues
 }
 
 function issuesOf(value: SituationNoteValues): { path: PropertyKey[]; message: string }[] {
-  const result = situationNoteSchema.safeParse(value);
+  const result = SITUATION_NOTE_SCHEMA.safeParse(value);
   return result.success ? [] : result.error.issues.map((issue) => ({ path: issue.path, message: issue.message }));
 }
 
-describe("situationNoteSchema", () => {
+describe("SITUATION_NOTE_SCHEMA", () => {
   it("이름이 비어도 조건 하나와 상황이 있으면 통과한다", () => {
     expect(issuesOf(note())).toEqual([]);
   });
@@ -88,7 +88,7 @@ describe("situationNoteSchema", () => {
   });
 });
 
-describe("startingSetupSchema 의 상황 노트 목록", () => {
+describe("STARTING_SETUP_SCHEMA 의 상황 노트 목록", () => {
   function setupWith(count: number) {
     return {
       id: "s1",
@@ -99,14 +99,14 @@ describe("startingSetupSchema 의 상황 노트 목록", () => {
   }
 
   it("시작설정마다 노트 10개까지 받고 11개는 목록 자리에 오류를 건다", () => {
-    expect(startingSetupSchema.safeParse(setupWith(MAX_SITUATION_NOTES)).success).toBe(true);
+    expect(STARTING_SETUP_SCHEMA.safeParse(setupWith(MAX_SITUATION_NOTES)).success).toBe(true);
 
-    const over = startingSetupSchema.safeParse(setupWith(MAX_SITUATION_NOTES + 1));
+    const over = STARTING_SETUP_SCHEMA.safeParse(setupWith(MAX_SITUATION_NOTES + 1));
     expect(over.success ? [] : over.error.issues.map((issue) => issue.path)).toEqual([["situationNotes"]]);
   });
 
   it("노트를 적지 않은 시작설정은 빈 목록으로 읽는다", () => {
-    const result = startingSetupSchema.safeParse({ id: "s1", name: "가을 학기", prologue: "프롤로그" });
+    const result = STARTING_SETUP_SCHEMA.safeParse({ id: "s1", name: "가을 학기", prologue: "프롤로그" });
 
     expect(result.success && result.data.situationNotes).toEqual([]);
   });

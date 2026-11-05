@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { storyBuilderSchema } from "./storyBuilderSchema";
+import { STORY_BUILDER_SCHEMA } from "./storyBuilderSchema";
 import { STORY_TABS } from "./tabs";
 
 /** 한 탭의 `fields` 프리픽스가 최상위 키 `key`를 덮는지 — 첫 세그먼트 일치로 판정한다
@@ -11,7 +11,7 @@ function tabsCovering(key: string): (typeof STORY_TABS)[number][] {
 
 describe("STORY_TABS", () => {
   it("startingSetups를 제외한 모든 스키마 최상위 키가 정확히 한 탭에 귀속된다", () => {
-    const topLevelKeys = Object.keys(storyBuilderSchema.shape).filter((key) => key !== "startingSetups");
+    const topLevelKeys = Object.keys(STORY_BUILDER_SCHEMA.shape).filter((key) => key !== "startingSetups");
 
     for (const key of topLevelKeys) {
       expect(tabsCovering(key)).toHaveLength(1);

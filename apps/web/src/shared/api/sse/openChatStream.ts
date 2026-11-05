@@ -2,7 +2,7 @@ import type { ZodType } from "zod";
 
 import { assertNever } from "@/shared/lib/assertNever";
 
-import { API_BASE_URL, ApiErrorObject, errorEnvelopeSchema } from "../client";
+import { API_BASE_URL, ApiErrorObject, ERROR_ENVELOPE_SCHEMA } from "../client";
 
 /** 메시지 전송/재생성/수정은 모두 본문이 있는 POST/PATCH라 네이티브
  * EventSource(GET 전용)를 쓸 수 없어 fetch + ReadableStream으로 SSE(`data: <json>\n\n`)를
@@ -86,7 +86,7 @@ function buildRequestInit(
  */
 async function toApiError(response: Response): Promise<ApiErrorObject> {
   const parsed = await response.json().then(
-    (body: unknown) => errorEnvelopeSchema.safeParse(body),
+    (body: unknown) => ERROR_ENVELOPE_SCHEMA.safeParse(body),
     () => null,
   );
   const detail = parsed?.success === true ? parsed.data.detail : undefined;

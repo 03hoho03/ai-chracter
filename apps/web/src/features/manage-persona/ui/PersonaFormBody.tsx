@@ -13,7 +13,7 @@ import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { personaErrorMessage } from "../model/personaErrorMessage";
 import { PERSONA_GENDER_OPTIONS, PERSONA_GENDER_OPTION_LABEL, toPersonaGenderOption } from "../model/personaGenderOption";
-import { countPersonaDescriptionChars, personaFormSchema, type PersonaFormValues } from "../model/personaFormSchema";
+import { countPersonaDescriptionChars, PERSONA_FORM_SCHEMA, type PersonaFormValues } from "../model/personaFormSchema";
 
 type PersonaFormBodyProps = {
   defaultValues: PersonaFormValues;
@@ -28,7 +28,7 @@ type PersonaFormBodyProps = {
 export function PersonaFormBody({ defaultValues, showsSetAsDefault, submitLabel, onValidSubmit, onCancel }: PersonaFormBodyProps) {
   const fieldId = useId();
   const form = useForm<PersonaFormValues>({
-    resolver: zodResolver(personaFormSchema),
+    resolver: zodResolver(PERSONA_FORM_SCHEMA),
     defaultValues,
   });
   const { errors, isSubmitting } = form.formState;

@@ -7,8 +7,8 @@ import { useImageModelsQuery } from "@/entities/image-model";
 import { getImageModelsUnavailableReason } from "../model/imageModelsUnavailableReason";
 import { isReferenceImageEnabled } from "../model/isReferenceImageEnabled";
 import {
-  generateImagesDefaultValues,
-  generateImagesSchema,
+  GENERATE_IMAGES_DEFAULT_VALUES,
+  GENERATE_IMAGES_SCHEMA,
   type GenerateImagesFormValues,
 } from "../model/generateImagesSchema";
 import {
@@ -37,8 +37,8 @@ export function GenerateImagesFormProvider({ onSubmit, onPickReference, children
   } = useImageModelsQuery();
 
   const form = useForm<GenerateImagesFormValues>({
-    resolver: zodResolver(generateImagesSchema),
-    defaultValues: generateImagesDefaultValues,
+    resolver: zodResolver(GENERATE_IMAGES_SCHEMA),
+    defaultValues: GENERATE_IMAGES_DEFAULT_VALUES,
   });
   const { getValues, reset, setValue, setError, clearErrors, control } = form;
   const selectedModelId = useWatch({ control, name: "model" });

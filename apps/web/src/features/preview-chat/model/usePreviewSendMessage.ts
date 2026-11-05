@@ -16,7 +16,7 @@ import {
   applyPreviewStreamEvent,
   buildPreviewSendPayload,
   previewSessionKeys,
-  previewStreamEventSchema,
+  PREVIEW_STREAM_EVENT_SCHEMA,
 } from "@/entities/preview-session";
 import type { PreviewChatMessage, PreviewSessionState } from "@/entities/preview-session";
 import { getSessionEndReason, resetSessionIfLost, sessionKeys, type SessionEndReason } from "@/entities/session";
@@ -115,7 +115,7 @@ export function usePreviewSendMessage(
       // 가격 버전은 보내는 순간 캐시에서 읽는다 — 가격 바뀜 확인 뒤 재전송이 다시 받은 가격표의 버전을 싣는다.
       for await (const event of openChatStream(
         buildPreviewSendPayload({ previewSessionId, text, shortcutId }),
-        previewStreamEventSchema,
+        PREVIEW_STREAM_EVENT_SCHEMA,
         { priceVersion: readCloverPricing(queryClient)?.priceVersion },
       )) {
         if (event.type === "token") {

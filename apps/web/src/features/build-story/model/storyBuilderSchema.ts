@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   characterLimit,
   DEFAULT_NOVEL_PERMISSION,
-  hashtagsSchema,
+  HASHTAGS_SCHEMA,
   MAX_DESCRIPTION_LENGTH,
   MAX_DEVELOPMENT_EXAMPLES,
   MAX_NAME_LENGTH,
@@ -28,12 +28,12 @@ export type Visibility = (typeof VISIBILITY_VALUES)[number];
 
 /**
  * 전개 예시 한 쌍. build-character의
- * `exampleDialogueSchema`와 같은 입출력 쌍 모양이지만 `id`는 두지 않는다 — 서버 계약
+ * `EXAMPLE_DIALOGUE_SCHEMA`와 같은 입출력 쌍 모양이지만 `id`는 두지 않는다 — 서버 계약
  * (`DevelopmentExampleItem`)에 id가 없고(다른 레코드가 참조하지 않고 순서가 곧 정체성), id를 넣으면
  * `serverToForm`이 매번 새 id를 발급해야 해서 순수 함수가 아니게 된다. 위젯에서 목록 key가 필요하면
  * RHF가 `useFieldArray`에 자동으로 붙여주는 `field.id`를 쓴다(등록된 폼 필드가 아니라 값에 섞이지 않는다).
  */
-export const developmentExampleSchema = z.object({
+export const DEVELOPMENT_EXAMPLE_SCHEMA = z.object({
   userLine: z.string(),
   assistantLine: z.string(),
 });
@@ -50,12 +50,12 @@ export const developmentExampleSchema = z.object({
 export const PROMPT_TEMPLATE_VALUES = ["basic", "emotional", "simulation", "custom"] as const;
 export type PromptTemplate = (typeof PROMPT_TEMPLATE_VALUES)[number];
 
-export const storySettingSchema = z
+export const STORY_SETTING_SCHEMA = z
   .object({
     promptTemplate: z.enum(PROMPT_TEMPLATE_VALUES).default("basic"),
     worldSetting: z.string().optional(),
     developmentExamples: z
-      .array(developmentExampleSchema)
+      .array(DEVELOPMENT_EXAMPLE_SCHEMA)
       .max(MAX_DEVELOPMENT_EXAMPLES, `전개 예시는 최대 ${MAX_DEVELOPMENT_EXAMPLES}개까지만 추가할 수 있습니다`)
       .default([]),
     userGoal: z.string().optional(),
@@ -130,7 +130,7 @@ export function statRuleDeltaTooWideMessage(rangeWidth: number): string {
  * 스탯 하나의 「조건 → 증감」 규칙. 판정 AI 가 이번 턴에 맞은 규칙을 고르면 코드가 폭의 절댓값이 가장 큰 하나(같으면 목록
  * 앞)만 더한다 — 순서가 동점의 우선순위라 배열 위치가 곧 순서다. 증감 칸이 비었거나 정수로 읽히지 않으면 NaN 이다.
  */
-export const statRuleSchema = z.object({
+export const STAT_RULE_SCHEMA = z.object({
   id: z.string(),
   condition: z
     .string()
@@ -146,10 +146,10 @@ export const statRuleSchema = z.object({
 });
 
 /** 초안 저장이 받는 규칙 목록 — 서버가 422 로 막는 조건(개수·조건 길이·폭 0·같은 스탯 안 id 중복)을 그대로 건다. 발행 전
- * 폼 검증이 이 스키마로 칸마다 오류를 붙인다. 자동저장은 목록째 거르지 않고 `formToServer` 가 규칙 하나씩 `statRuleSchema` 로
+ * 폼 검증이 이 스키마로 칸마다 오류를 붙인다. 자동저장은 목록째 거르지 않고 `formToServer` 가 규칙 하나씩 `STAT_RULE_SCHEMA` 로
  * 골라 보낸다. 폭이 범위 폭을 넘는지는 발행만 본다. */
-export const statRulesSchema = z
-  .array(statRuleSchema)
+export const STAT_RULES_SCHEMA = z
+  .array(STAT_RULE_SCHEMA)
   .max(MAX_STAT_RULES, STAT_RULE_LIMIT_MESSAGE)
   .superRefine((rules, ctx) => {
     const seen = new Set<string>();
@@ -180,7 +180,7 @@ export function hasPerTurnDelta(stat: Pick<StatDefValues, "perTurnDelta">): bool
 /** 스탯 수치 네 칸(최소·최대·초기값, 턴당 변화)은 서버가 정수로만 받는다 — 소수를 넣으면 초안 자동저장부터 거절된다. */
 const STAT_INTEGER_MESSAGE = "정수로 입력해주세요";
 
-export const statDefSchema = z
+export const STAT_DEF_SCHEMA = z
   .object({
     id: z.string(),
     name: z.string().refine(...requiredText("스탯 이름을 입력해주세요")),
@@ -201,7 +201,7 @@ export const statDefSchema = z
      */
     perTurnDelta: z.number().int(STAT_INTEGER_MESSAGE).nullable(),
     /** 「조건 → 증감」 규칙. 판정을 받는 스탯(턴당 자동 변화가 없는 스탯)에는 하나 이상 있어야 발행된다(아래 검사). */
-    rules: statRulesSchema,
+    rules: STAT_RULES_SCHEMA,
     /** 플레이어 화면에서 이 스탯을 뺀다. 판정·엔딩은 그대로 이 스탯을 쓴다. */
     hiddenFromPlayer: z.boolean(),
     /** 플레이어가 게이지 칸을 눌러 보는 짧은 설명. 판정에는 실리지 않는다. 빈 글이 "없음"이다(`formToServer` 가 null 로
@@ -255,40 +255,40 @@ export const statDefSchema = z
  * 모양만 맞춰 둔다. `formToServer.ts`/`serverToForm.ts`는 생성 DTO(`EndingRuleDraftItem`)와만 대응한다).
  * `operator`는 실제 DB enum(`EndingRuleOperator`: gte/lte/eq/gt/lt)에 맞춰
  * `ComparisonOp`의 6개 값 중 서버가 애초에 저장할 방법이 없는 "!="만 제외한 5개로 좁힌다.
- * 그룹(`ruleGroupSchema`)의 `rules`는 `singleRuleSchema`만 허용해 그룹 중첩을 zod 레벨에서 막는다.
+ * 그룹(`RULE_GROUP_SCHEMA`)의 `rules`는 `SINGLE_RULE_SCHEMA`만 허용해 그룹 중첩을 zod 레벨에서 막는다.
  */
 // widgets/build-story/ui/EndingTab.tsx가 이 두 배열을 단일 소스로 삼는다(손복사 금지).
 export const COMPARISON_OPERATORS = [">", ">=", "<", "<=", "=="] as const;
 export const LOGIC_OPERATORS = ["and", "or"] as const;
 
-const comparisonOpSchema = z.enum(COMPARISON_OPERATORS);
-const logicOpSchema = z.enum(LOGIC_OPERATORS);
+const COMPARISON_OP_SCHEMA = z.enum(COMPARISON_OPERATORS);
+const LOGIC_OP_SCHEMA = z.enum(LOGIC_OPERATORS);
 
-const singleRuleSchema = z.object({
+const SINGLE_RULE_SCHEMA = z.object({
   kind: z.literal("rule"),
   id: z.string(),
   statId: z.string(),
-  operator: comparisonOpSchema,
+  operator: COMPARISON_OP_SCHEMA,
   value: z.number(),
-  nextOp: logicOpSchema.nullable(),
+  nextOp: LOGIC_OP_SCHEMA.nullable(),
 });
 
-const ruleGroupSchema = z.object({
+const RULE_GROUP_SCHEMA = z.object({
   kind: z.literal("group"),
   id: z.string(),
-  rules: z.array(singleRuleSchema),
-  nextOp: logicOpSchema.nullable(),
+  rules: z.array(SINGLE_RULE_SCHEMA),
+  nextOp: LOGIC_OP_SCHEMA.nullable(),
 });
 
-export const ruleListItemSchema = z.discriminatedUnion("kind", [singleRuleSchema, ruleGroupSchema]);
+export const RULE_LIST_ITEM_SCHEMA = z.discriminatedUnion("kind", [SINGLE_RULE_SCHEMA, RULE_GROUP_SCHEMA]);
 
 /** turnGate는 최소 10턴(선행 게이트), statRules가 비어있으면 judgePrompt만으로 판정한다. */
-export const endingSchema = z.object({
+export const ENDING_SCHEMA = z.object({
   id: z.string(),
   name: z.string().refine(...requiredText("엔딩 이름을 입력해주세요")),
   turnGate: z.number().min(10, "엔딩조건은 10턴 이상이어야 합니다"),
   judgePrompt: z.string().refine(...requiredText("판단 프롬프트를 입력해주세요")),
-  statRules: z.array(ruleListItemSchema).default([]),
+  statRules: z.array(RULE_LIST_ITEM_SCHEMA).default([]),
   epilogue: z.string().optional(),
   hint: z.string().optional(),
   /**
@@ -322,7 +322,7 @@ export const SITUATION_NOTE_RULE_LIMIT_MESSAGE = `조건은 노트마다 ${MAX_S
  * 조건 없음·본문 공백은 서버가 저장은 받고 발행만 막는다(노트를 막 추가한 초안도 저장돼야 한다). 이 스키마는 발행 때만
  * 돌므로 같은 두 검사를 여기 둬 발행 버튼이 그 노트의 칸을 바로 짚게 한다. 빈 그룹만 있는 노트도 조건 0개다(서버와 같은 셈).
  */
-export const situationNoteSchema = z.object({
+export const SITUATION_NOTE_SCHEMA = z.object({
   id: z.string(),
   name: z
     .string()
@@ -337,7 +337,7 @@ export const situationNoteSchema = z.object({
       (value) => countCharacters(value) <= MAX_SITUATION_NOTE_CONTENT_LENGTH,
       `상황은 ${MAX_SITUATION_NOTE_CONTENT_LENGTH}자 이하로 입력해주세요`,
     ),
-  conditionRules: z.array(ruleListItemSchema).superRefine((rules, ctx) => {
+  conditionRules: z.array(RULE_LIST_ITEM_SCHEMA).superRefine((rules, ctx) => {
     const count = countRules(rules);
     if (count === 0) ctx.addIssue({ code: "custom", message: SITUATION_NOTE_EMPTY_CONDITIONS_MESSAGE });
     else if (count > MAX_SITUATION_NOTE_RULES) ctx.addIssue({ code: "custom", message: SITUATION_NOTE_RULE_LIMIT_MESSAGE });
@@ -348,7 +348,7 @@ export const situationNoteSchema = z.object({
  * 시작설정 배열은 dnd-kit로 재정렬 가능하며, 목록의 첫 번째
  * 항목이 기본 선택이다.
  */
-export const startingSetupSchema = z.object({
+export const STARTING_SETUP_SCHEMA = z.object({
   id: z.string(),
   name: z.string().refine(...requiredText("시작설정 이름을 입력해주세요")),
   prologue: z.string().refine(...requiredText("프롤로그를 입력해주세요")),
@@ -359,10 +359,10 @@ export const startingSetupSchema = z.object({
     // 사용자 문구는 화면 라벨과 같은 "추천 답변"이다(식별자만 서버 계약의 suggestedReplies를 따른다).
     .max(MAX_SUGGESTED_REPLIES, `추천 답변은 최대 ${MAX_SUGGESTED_REPLIES}개까지만 추가할 수 있습니다`)
     .default([]),
-  stats: z.array(statDefSchema).default([]),
-  endings: z.array(endingSchema).default([]),
+  stats: z.array(STAT_DEF_SCHEMA).default([]),
+  endings: z.array(ENDING_SCHEMA).default([]),
   situationNotes: z
-    .array(situationNoteSchema)
+    .array(SITUATION_NOTE_SCHEMA)
     .max(MAX_SITUATION_NOTES, `상황 노트는 시작설정마다 최대 ${MAX_SITUATION_NOTES}개까지만 추가할 수 있습니다`)
     .default([]),
   /** 장면 헤더의 첫 장면 — 아직 AI 턴이 없을 때 상태 줄에 보이고 첫 장면 판정이 이어받는다. 빈 글과 undefined 가 "없음"이다
@@ -426,7 +426,7 @@ function keywordListSchema(limitMessage: string) {
  * 노트에도 걸린다(금지 키워드가 나온 턴에는 상시 노트도 빠진다). 이름은 목록에서 노트를 알아보는 용도라 AI 에게
  * 보내지 않는다.
  */
-export const keywordNoteSchema = z
+export const KEYWORD_NOTE_SCHEMA = z
   .object({
     id: z.string(),
     content: z
@@ -471,7 +471,7 @@ export function createKeywordNote(id: string): KeywordNoteValues {
   };
 }
 
-export const shortcutSchema = z.object({
+export const SHORTCUT_SCHEMA = z.object({
   id: z.string(),
   name: z.string().refine(...requiredText("단축어 이름을 입력해주세요")),
   description: z.string().refine(...requiredText("단축어 설명을 입력해주세요")),
@@ -490,14 +490,14 @@ const MEDIA_BOOK_NAME_FORBIDDEN = /[/{}:]/;
 
 // 축·칸·자산 id 는 서버가 uuid 로 받는다. `z.uuid()`는 RFC 변형 비트까지 요구해 서버가 받는 id 도 거절할 수
 // 있어, 서버(파이썬 `uuid.UUID`)처럼 16진 8-4-4-4-12 모양만 보는 `z.guid()`를 쓴다.
-const mediaBookIdSchema = z.guid("미디어 북 항목의 id 가 올바르지 않습니다");
+const MEDIA_BOOK_ID_SCHEMA = z.guid("미디어 북 항목의 id 가 올바르지 않습니다");
 
 /**
  * 미디어 북 축(인물·장면) 항목. 서버는 앞뒤 공백을 지우고 NFC 로 맞춘 뒤 길이를 재고 저장하므로, 폼도 같은
  * 정규화 결과로 길이를 잰다 — 값 자체는 바꾸지 않는다(정규화된 이름은 저장 응답이 돌려준다).
  */
-export const mediaBookAxisSchema = z.object({
-  id: mediaBookIdSchema,
+export const MEDIA_BOOK_AXIS_SCHEMA = z.object({
+  id: MEDIA_BOOK_ID_SCHEMA,
   name: z
     .string()
     .refine((value) => countCharacters(normalizeMediaBookName(value)) >= 1, "이름을 입력해주세요")
@@ -512,11 +512,11 @@ export const mediaBookAxisSchema = z.object({
  * 미디어 북 칸 하나(인물 × 장면 자리에 이미지 1장). `personId`/`sceneId`는 축 항목의 `id`다.
  * `imageUrl`/`imageWidth`/`imageHeight`는 화면 표시 전용이라 `formToServer`가 서버로 보내지 않는다.
  */
-export const mediaBookCellSchema = z.object({
-  id: mediaBookIdSchema,
-  personId: mediaBookIdSchema,
-  sceneId: mediaBookIdSchema,
-  imageAssetId: mediaBookIdSchema,
+export const MEDIA_BOOK_CELL_SCHEMA = z.object({
+  id: MEDIA_BOOK_ID_SCHEMA,
+  personId: MEDIA_BOOK_ID_SCHEMA,
+  sceneId: MEDIA_BOOK_ID_SCHEMA,
+  imageAssetId: MEDIA_BOOK_ID_SCHEMA,
   imageUrl: z.string().optional(),
   imageWidth: z.number().optional(),
   imageHeight: z.number().optional(),
@@ -540,11 +540,11 @@ export const mediaBookCellSchema = z.object({
  * 같은 인물 × 장면 칸 중복, 칸 id 중복)을 모두 여기서도 검사한다 — `formToServer`가 이 스키마를 통과하지 못한
  * 미디어 북을 자동저장에서 빼는 기준이라, 서버가 거절할 값이 이 스키마를 통과하면 그 초안 저장 전체가 막힌다.
  */
-export const mediaBookSchema = z.object({
-  people: z.array(mediaBookAxisSchema),
-  scenes: z.array(mediaBookAxisSchema),
+export const MEDIA_BOOK_SCHEMA = z.object({
+  people: z.array(MEDIA_BOOK_AXIS_SCHEMA),
+  scenes: z.array(MEDIA_BOOK_AXIS_SCHEMA),
   cells: z
-    .array(mediaBookCellSchema)
+    .array(MEDIA_BOOK_CELL_SCHEMA)
     .max(MAX_MEDIA_BOOK_CELLS, `미디어 북 이미지는 최대 ${MAX_MEDIA_BOOK_CELLS}장까지만 넣을 수 있습니다`),
 })
   .superRefine((value, ctx) => {
@@ -585,7 +585,7 @@ export const mediaBookSchema = z.object({
     });
   });
 
-export const storyBuilderSchema = z.object({
+export const STORY_BUILDER_SCHEMA = z.object({
   profile: z.object({
     // 대표 이미지가 맨 앞인 이유: 발행 실패 때 포커스가 가는 "첫 오류"는 같은 탭 안에서 이 키 순서를 따른다. 화면에서 맨 위 칸이
     // 대표 이미지라 순서가 다르면 둘째 칸(이름)으로 먼저 간다.
@@ -608,13 +608,13 @@ export const storyBuilderSchema = z.object({
       .refine(...requiredText("한줄소개를 입력해주세요"))
       .refine(...characterLimit(MAX_ONE_LINER_LENGTH, "한줄소개")),
   }),
-  storySetting: storySettingSchema,
+  storySetting: STORY_SETTING_SCHEMA,
   startingSetups: z
-    .array(startingSetupSchema)
+    .array(STARTING_SETUP_SCHEMA)
     .min(1, "시작설정을 1개 이상 추가해주세요")
     .max(MAX_STARTING_SETUPS, `시작설정은 최대 ${MAX_STARTING_SETUPS}개까지만 추가할 수 있습니다`),
   keywordNotes: z
-    .array(keywordNoteSchema)
+    .array(KEYWORD_NOTE_SCHEMA)
     .max(MAX_KEYWORD_NOTES, `키워드 노트는 최대 ${MAX_KEYWORD_NOTES}개까지만 추가할 수 있습니다`)
     // 배열 자리 오류라 키워드북 탭 머리의 한 줄에 보인다.
     .superRefine((notes, ctx) => {
@@ -626,8 +626,8 @@ export const storyBuilderSchema = z.object({
       }
     })
     .default([]),
-  shortcuts: z.array(shortcutSchema).default([]),
-  mediaBook: mediaBookSchema,
+  shortcuts: z.array(SHORTCUT_SCHEMA).default([]),
+  mediaBook: MEDIA_BOOK_SCHEMA,
   registration: z.object({
     description: z
       .string()
@@ -653,24 +653,24 @@ export const storyBuilderSchema = z.object({
           ctx.addIssue({ code: z.ZodIssueCode.custom, message: "타겟을 선택해주세요" });
         }
       }),
-    hashtags: hashtagsSchema,
+    hashtags: HASHTAGS_SCHEMA,
     visibility: z.enum(VISIBILITY_VALUES).default("private"),
     novelPermission: z.enum(NOVEL_PERMISSION_VALUES).default(DEFAULT_NOVEL_PERMISSION),
   }),
 });
 
-export type StorySettingValues = z.infer<typeof storySettingSchema>;
-export type DevelopmentExampleValues = z.infer<typeof developmentExampleSchema>;
-export type StatDefValues = z.infer<typeof statDefSchema>;
-export type StatRuleValues = z.infer<typeof statRuleSchema>;
-export type RuleListItemValues = z.infer<typeof ruleListItemSchema>;
+export type StorySettingValues = z.infer<typeof STORY_SETTING_SCHEMA>;
+export type DevelopmentExampleValues = z.infer<typeof DEVELOPMENT_EXAMPLE_SCHEMA>;
+export type StatDefValues = z.infer<typeof STAT_DEF_SCHEMA>;
+export type StatRuleValues = z.infer<typeof STAT_RULE_SCHEMA>;
+export type RuleListItemValues = z.infer<typeof RULE_LIST_ITEM_SCHEMA>;
 export type SingleRuleValues = Extract<RuleListItemValues, { kind: "rule" }>;
-export type EndingValues = z.infer<typeof endingSchema>;
-export type SituationNoteValues = z.infer<typeof situationNoteSchema>;
-export type StartingSetupValues = z.infer<typeof startingSetupSchema>;
-export type KeywordNoteValues = z.infer<typeof keywordNoteSchema>;
-export type ShortcutValues = z.infer<typeof shortcutSchema>;
-export type MediaBookAxisValues = z.infer<typeof mediaBookAxisSchema>;
-export type MediaBookCellValues = z.infer<typeof mediaBookCellSchema>;
-export type MediaBookValues = z.infer<typeof mediaBookSchema>;
-export type StoryBuilderFormValues = z.infer<typeof storyBuilderSchema>;
+export type EndingValues = z.infer<typeof ENDING_SCHEMA>;
+export type SituationNoteValues = z.infer<typeof SITUATION_NOTE_SCHEMA>;
+export type StartingSetupValues = z.infer<typeof STARTING_SETUP_SCHEMA>;
+export type KeywordNoteValues = z.infer<typeof KEYWORD_NOTE_SCHEMA>;
+export type ShortcutValues = z.infer<typeof SHORTCUT_SCHEMA>;
+export type MediaBookAxisValues = z.infer<typeof MEDIA_BOOK_AXIS_SCHEMA>;
+export type MediaBookCellValues = z.infer<typeof MEDIA_BOOK_CELL_SCHEMA>;
+export type MediaBookValues = z.infer<typeof MEDIA_BOOK_SCHEMA>;
+export type StoryBuilderFormValues = z.infer<typeof STORY_BUILDER_SCHEMA>;

@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useSubmitAppealMutation, type AppealTarget } from "../api/useSubmitAppealMutation";
-import { submitAppealSchema, type SubmitAppealFormValues } from "../model/submitAppealSchema";
+import { SUBMIT_APPEAL_SCHEMA, type SubmitAppealFormValues } from "../model/submitAppealSchema";
 
 type AppealModalProps = {
   target: AppealTarget;
@@ -35,7 +35,7 @@ export const AppealModal = createCallable<AppealModalProps, void>(({ call, targe
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<SubmitAppealFormValues>({
-    resolver: zodResolver(submitAppealSchema),
+    resolver: zodResolver(SUBMIT_APPEAL_SCHEMA),
     defaultValues: { reasonText: "" },
   });
 

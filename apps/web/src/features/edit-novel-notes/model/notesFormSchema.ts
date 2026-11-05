@@ -9,7 +9,7 @@ export function countNotesChars(value: string): number {
   return Array.from(value.trim()).length;
 }
 
-const noteItemSchema = z.object({
+const NOTE_ITEM_SCHEMA = z.object({
   /** 화면에서 줄을 가르는 키(`useFieldArray` 의 key). 서버로 가지 않는다. */
   id: z.string(),
   text: z.string(),
@@ -19,7 +19,7 @@ const noteItemSchema = z.object({
  * 보낼 글 전체에 건다. 상한은 상세의 `limits` 에서만 읽는다. 빈 줄은 저장할 때 빠지므로 막지 않는다. */
 export function createNotesFormSchema(maxLength: number) {
   return z
-    .object({ notes: z.array(noteItemSchema) })
+    .object({ notes: z.array(NOTE_ITEM_SCHEMA) })
     .superRefine((values, context) => {
       if (countNotesChars(formToServer(values).settingNotes) <= maxLength) return;
       context.addIssue({

@@ -10,8 +10,8 @@ import { formatAuthRateLimitMessage, getAuthRateLimit } from "@/entities/session
 
 import { useRequestPasswordResetMutation } from "../api/useRequestPasswordResetMutation";
 import {
-  forgotPasswordDefaultValues,
-  forgotPasswordSchema,
+  FORGOT_PASSWORD_DEFAULT_VALUES,
+  FORGOT_PASSWORD_SCHEMA,
   type ForgotPasswordFormValues,
 } from "../model/forgotPasswordSchema";
 
@@ -24,8 +24,8 @@ export function ForgotPasswordForm() {
     clearErrors,
     formState: { errors },
   } = useForm<ForgotPasswordFormValues>({
-    resolver: zodResolver(forgotPasswordSchema),
-    defaultValues: forgotPasswordDefaultValues,
+    resolver: zodResolver(FORGOT_PASSWORD_SCHEMA),
+    defaultValues: FORGOT_PASSWORD_DEFAULT_VALUES,
   });
   const [isRequested, setIsRequested] = useState(false);
   const requestMutation = useRequestPasswordResetMutation();

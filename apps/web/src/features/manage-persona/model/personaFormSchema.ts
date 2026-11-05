@@ -13,7 +13,7 @@ export function countPersonaDescriptionChars(value: string): number {
 
 /** BE `persona/schemas.py`와 같은 규칙: 이름은 trim 뒤 1~20자이고 작가 글의 `{{user}}` 자리에 들어갈 수 있어야
  * 한다(막는 문자와 이유는 `userNameError`), 설명은 trim 뒤 0~500자(선택). */
-export const personaFormSchema = z.object({
+export const PERSONA_FORM_SCHEMA = z.object({
   name: z
     .string()
     .trim()
@@ -34,4 +34,4 @@ export const personaFormSchema = z.object({
   setAsDefault: z.boolean(),
 });
 
-export type PersonaFormValues = z.infer<typeof personaFormSchema>;
+export type PersonaFormValues = z.infer<typeof PERSONA_FORM_SCHEMA>;

@@ -13,7 +13,7 @@ export function stripSeparators(value: string): string {
  *
  * 은행은 처음에 고른 값이 없어야 해서(첫 항목을 기본값으로 두면 고르지 않은 채 잘못된 은행으로 등록된다) `nullable`
  * 이다. 외국인등록번호·본인인증 생년월일 대조는 서버만 할 수 있어 여기서 보지 않는다. */
-export const payoutInfoSchema = z.object({
+export const PAYOUT_INFO_SCHEMA = z.object({
   legalName: z
     .string()
     .refine((value) => value.trim().length > 0, { message: "실명을 입력해 주세요" })
@@ -35,12 +35,12 @@ export const payoutInfoSchema = z.object({
 
 /** 폼이 쥐는 값(은행은 아직 고르지 않은 `null` 을 담는다)과, 검증을 통과해 넘어오는 값(은행이 목록 안의 코드로 좁혀진다).
  * 은행 검증이 타입 가드라 둘이 갈린다. */
-export type PayoutInfoFormValues = z.input<typeof payoutInfoSchema>;
-export type PayoutInfoSubmitValues = z.output<typeof payoutInfoSchema>;
+export type PayoutInfoFormValues = z.input<typeof PAYOUT_INFO_SCHEMA>;
+export type PayoutInfoSubmitValues = z.output<typeof PAYOUT_INFO_SCHEMA>;
 
 /** 이미 등록한 정보가 있어도 칸을 채우지 않는다 — 서버가 원문을 돌려주지 않고(마스킹 값뿐), 바꿀 때는 넷을 모두 새로
  * 받는다. 동의도 입력할 때마다 새로 받는다. */
-export const payoutInfoDefaultValues: PayoutInfoFormValues = {
+export const PAYOUT_INFO_DEFAULT_VALUES: PayoutInfoFormValues = {
   legalName: "",
   rrn: "",
   bankCode: null,

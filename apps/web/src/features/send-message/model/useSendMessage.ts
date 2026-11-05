@@ -9,7 +9,7 @@ import {
   buildRegeneratePayload,
   buildSendPayload,
   chatRoomKeys,
-  chatStreamEventSchema,
+  CHAT_STREAM_EVENT_SCHEMA,
   clearRejectedChatMessage,
   countRepliesAfter,
   dropLastMessage,
@@ -198,7 +198,7 @@ export function useSendMessage(
       // 가격 버전은 내용(`pending.payload`)에 굳히지 않고 여는 순간 캐시에서 읽는다 — 가격 바뀜 확인 뒤 재전송과 다시
       // 보내기가 같은 내용에 다시 받은 가격표의 버전을 싣는다.
       const priceVersion = readCloverPricing(queryClient)?.priceVersion;
-      for await (const event of openChatStream(pending.payload, chatStreamEventSchema, { priceVersion })) {
+      for await (const event of openChatStream(pending.payload, CHAT_STREAM_EVENT_SCHEMA, { priceVersion })) {
         if (event.type === "token") {
           setStreamingText((prev) => prev + event.delta);
         } else if (event.type === "policyWarning") {

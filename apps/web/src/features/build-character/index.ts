@@ -7,9 +7,9 @@ export { CHARACTER_MISSING_FIELDS, characterMissingFieldFormPath } from "./model
 export { serverToForm } from "./model/serverToForm";
 export { CHARACTER_TABS, type CharacterBuilderTab } from "./model/tabs";
 export {
-  characterBuilderSchema,
-  exampleDialogueSchema,
-  situationalImageSchema,
+  CHARACTER_BUILDER_SCHEMA,
+  EXAMPLE_DIALOGUE_SCHEMA,
+  SITUATIONAL_IMAGE_SCHEMA,
   TARGET_VALUES,
   VISIBILITY_VALUES,
   type CharacterBuilderFormValues,

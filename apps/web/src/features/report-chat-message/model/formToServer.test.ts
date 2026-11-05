@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { formToServer } from "./formToServer";
-import { CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH, chatMessageReportSchema, countNoteLength } from "./chatMessageReportSchema";
+import { CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH, CHAT_MESSAGE_REPORT_SCHEMA, countNoteLength } from "./chatMessageReportSchema";
 
 // 화면 제출과 같은 경로(스키마 파싱 → 본문 변환)로 확인한다 — trim 은 스키마가, 빈 메모 생략은 변환이 한다.
 function toBody(raw: unknown) {
-  return formToServer(chatMessageReportSchema.parse(raw));
+  return formToServer(CHAT_MESSAGE_REPORT_SCHEMA.parse(raw));
 }
 
 describe("chat message report body", () => {
@@ -22,13 +22,13 @@ describe("chat message report body", () => {
   });
 
   it("rejects a missing reason and a note over the limit", () => {
-    expect(chatMessageReportSchema.safeParse({ note: "" }).success).toBe(false);
+    expect(CHAT_MESSAGE_REPORT_SCHEMA.safeParse({ note: "" }).success).toBe(false);
     expect(
-      chatMessageReportSchema.safeParse({ reason: "other", note: "가".repeat(CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH + 1) })
+      CHAT_MESSAGE_REPORT_SCHEMA.safeParse({ reason: "other", note: "가".repeat(CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH + 1) })
         .success,
     ).toBe(false);
     expect(
-      chatMessageReportSchema.safeParse({ reason: "other", note: "가".repeat(CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH) })
+      CHAT_MESSAGE_REPORT_SCHEMA.safeParse({ reason: "other", note: "가".repeat(CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH) })
         .success,
     ).toBe(true);
   });
@@ -38,8 +38,8 @@ describe("chat message report body", () => {
     const atLimit = `  ${"가".repeat(CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH)}\n `;
     const overLimit = `  ${"가".repeat(CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH + 1)} `;
     expect(countNoteLength(atLimit)).toBe(CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH);
-    expect(chatMessageReportSchema.safeParse({ reason: "other", note: atLimit }).success).toBe(true);
+    expect(CHAT_MESSAGE_REPORT_SCHEMA.safeParse({ reason: "other", note: atLimit }).success).toBe(true);
     expect(countNoteLength(overLimit)).toBe(CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH + 1);
-    expect(chatMessageReportSchema.safeParse({ reason: "other", note: overLimit }).success).toBe(false);
+    expect(CHAT_MESSAGE_REPORT_SCHEMA.safeParse({ reason: "other", note: overLimit }).success).toBe(false);
   });
 });
