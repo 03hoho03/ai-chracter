@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { toast } from "sonner";
 
 import { chatRoomKeys, useChatRoomSourceMessagesQuery } from "@/entities/chat-room";
@@ -120,7 +120,8 @@ function SelectionLoader({
     if (hasNovelErrorCode(selectionError, "NOVEL_ROOM_GONE")) {
       void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
     }
-  }, [selectionError]);
+    // 소설 id 는 한 마운트 안에서 같다(다른 소설은 보드가 새로 마운트한다).
+  }, [selectionError, novel.id, queryClient]);
 
   const state = selectionQuery.data;
   const messages = messagesQuery.data;
@@ -246,26 +247,36 @@ function SelectionEditor({
   const isFixedEndMissing =
     status !== "unsaved" && !isMessagesBehind && base !== undefined && isFixedEndLost(messages, base.view);
   const refetchedForRef = useRef<string | null>(null);
+  // 호출부가 렌더마다 새로 넘기는 다시 받기 콜백이다 — 하는 일(같은 쿼리의 refetch)은 렌더마다 같다.
+  const refetchMessages = useEffectEvent(onRefetchMessages);
   useEffect(() => {
     if (!isMessagesBehind || isMessagesFetching || refetchedForRef.current === roomEndId) return;
     refetchedForRef.current = roomEndId;
-    onRefetchMessages();
+    refetchMessages();
   }, [isMessagesBehind, isMessagesFetching, roomEndId]);
 
+  // 호출부가 넘기는 콜백은 렌더마다 새 함수지만 하는 일(ref 쓰기)은 같다 — 어느 렌더의 것을 불러도 같다.
+  const reportDraftDirty = useEffectEvent(onDraftDirtyChange);
   useEffect(() => {
-    onDraftDirtyChange(isDirty);
+    reportDraftDirty(isDirty);
   }, [isDirty]);
-  useEffect(() => () => onDraftDirtyChange(false), []);
+  useEffect(() => () => reportDraftDirty(false), []);
 
   // 되돌려 달라는 구간이 왔다(낡은 구성안의 "구간 되돌리기"). 고침을 만들고 타임라인을 펼쳐 이 단계 제목으로 포커스를 옮긴다 —
   // 이용자가 확인한 뒤 승인한다.
-  useEffect(() => {
+  // 요청과 되돌릴 턴·상태는 요청이 온 렌더의 값을 읽는다 — 고침으로 턴·상태가 바뀌어도 다시 되돌리거나 포커스를 옮기지 않는다.
+  const applyRestoreRequest = useEffectEvent(() => {
     if (restoreRequest === undefined || handledRestoreIdRef.current === restoreRequest.id) return;
     handledRestoreIdRef.current = restoreRequest.id;
     setIsExpanded(true);
     setNotice({ tone: "done", message: restoreRequest.isExact ? restoreExactly(restoreRequest.ranges) : restoreRoughly(restoreRequest.ranges) });
     headingRef.current?.focus();
-  }, [restoreRequest?.id]);
+  });
+  const restoreRequestId = restoreRequest?.id;
+  useEffect(() => {
+    if (restoreRequestId === undefined) return;
+    applyRestoreRequest();
+  }, [restoreRequestId]);
 
   /** 그 구성안이 쓴 선택의 담기 구간을 양 끝 그대로 되돌린다. 그대로 고를 수 없으면(대화 묶음이 달라졌거나 그 대화가 화가 됐다)
    * 아무것도 바꾸지 않고 다시 만들라고 말한다. 돌려준 것은 알릴 문장이다. */

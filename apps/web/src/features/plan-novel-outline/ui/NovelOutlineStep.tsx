@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, RotateCcw } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { toast } from "sonner";
 
 import { chatRoomKeys } from "@/entities/chat-room";
@@ -102,7 +102,7 @@ export function NovelOutlineStep(props: NovelOutlineStepProps) {
     if (error === null || toOutlineRecovery(error).shouldRefetchPricing === false) return;
     toast("지금은 구성 흐름을 쓸 수 없어요.");
     void queryClient.invalidateQueries({ queryKey: cloverKeys.pricing() });
-  }, [error]);
+  }, [error, queryClient]);
 
   if (query.data === undefined) {
     if (!query.isError) {
@@ -190,20 +190,27 @@ function OutlineEditor({
     turnCaps,
   );
 
+  // 호출부가 넘기는 콜백은 렌더마다 새 함수지만 하는 일(ref 쓰기)은 같다 — 어느 렌더의 것을 불러도 같다.
+  const reportDraftDirty = useEffectEvent(onDraftDirtyChange);
   useEffect(() => {
-    onDraftDirtyChange(isDirty || isFormOpen);
+    reportDraftDirty(isDirty || isFormOpen);
   }, [isDirty, isFormOpen]);
-  useEffect(() => () => onDraftDirtyChange(false), []);
+  useEffect(() => () => reportDraftDirty(false), []);
 
   // 고치는 사이 새 판이 왔다(구성안 작업의 다시 시도·다른 탭) — 옛 판 위의 고침은 저장해도 409 로 버려지므로 지금 버리고 알린다.
   const latestRevision = base?.view.revision;
-  useEffect(() => {
+  // 저장 중인지·고침의 기준 판은 새 판이 온 렌더의 값을 읽는다 — 따지는 때는 새 판이 온 순간 하나이고, 저장이 끝나 그 값이
+  // 바뀌어도 다시 따지지 않는다.
+  const discardOutdatedEdits = useEffectEvent(() => {
     // 저장·승인 중에는 이 화면이 낸 새 판이다 — 저장이 끝나며 고침을 비운다.
     if (busy !== undefined || !isEditBaseOutdated(edits?.baseRevision, latestRevision)) return;
     setEdits(undefined);
     setEditingId(undefined);
     setSplittingId(undefined);
     setNotice({ tone: "error", message: "그사이 새 구성안이 와서 고치던 것은 버렸어요. 새 구성안을 확인해주세요." });
+  });
+  useEffect(() => {
+    discardOutdatedEdits();
   }, [latestRevision]);
 
   useEffect(() => {
