@@ -27,6 +27,10 @@ class OrderUndetermined:
     """차단 식(사망 뒤 등장·얻기 전 사용·일어나기 전 앎)의 다른 조건은 맞는데 순서가 미정이다 — 시작 사건이 없거나, 사망 뒤
     등장을 끄는 되살아남·돌아옴이 모두 죽음과의 순서가 미정이다(그때는 그 행들을 `revivals` 로 싣는다).
 
+    되살아남 갈래는 그 행들을 결과 항목에도 퇴장·등장 뒤에 더한다. 판정 후보 글은 결과 항목으로 만들어지는데, 이 갈래에서 퇴장이
+    등장보다 앞서는 것은 이미 정해져 있어 모호함의 원인은 되살아남 쪽에 있기 때문이다 — 빠지면 모델이 회상을 모른 채 판정한다.
+    `revivals` 는 결과 항목 중 어느 것이 되살아남인지를 가리킨다.
+
     읽는 슬롯은 사실·사건이다. 일어나기 전 앎 갈래는 지식 슬롯이 등록돼 있을 때만 본다 — 지식 슬롯을 뺀 등록부에서 앞 두 갈래까지
     건너뛰지 않게."""
 
@@ -36,7 +40,7 @@ class OrderUndetermined:
     def check(self, snapshot: BibleSnapshot) -> list[FindingDraft]:
         findings = [
             FindingDraft(
-                severity="warning", rule=self.rule, item_ids=(case.exit.id, case.appearance.id),
+                severity="warning", rule=self.rule, item_ids=(case.exit.id, case.appearance.id, *case.revivals),
                 payload={"rule": "exit_then_appearance", "judge": "J1", "revivals": [str(r) for r in case.revivals]},
             )
             for case in exit_cases(snapshot)

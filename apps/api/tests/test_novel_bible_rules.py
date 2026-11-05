@@ -9,7 +9,7 @@
 원고·원작 글은 모두 합성 문장이다."""
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, TypeVar
@@ -44,10 +44,27 @@ from api.db.models.novel_bible_facts import NovelBibleFact
 from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
 from api.db.models.prompt import PromptSection
 from api.novel_bible.core.confirm import Actor, confirm
-from api.novel_bible.core.contracts import AdapterCapabilities, BibleModelAdapter, PromptSource, Registry, Rule, Slot
+from api.novel_bible.core.contracts import (
+    AdapterCapabilities,
+    BibleModelAdapter,
+    Judge,
+    PromptSource,
+    Registry,
+    Rule,
+    Slot,
+)
 from api.novel_bible.core.keys import normalize_name
 from api.novel_bible.core.pipeline import run_until_idle
-from api.novel_bible.core.types import BibleSnapshot, FactRow, RenderedPrompt
+from api.novel_bible.core.types import (
+    BibleSnapshot,
+    CommitRef,
+    FactRow,
+    FindingDraft,
+    JudgeCandidate,
+    JudgeSpent,
+    RenderedPrompt,
+    WarningDraft,
+)
 from api.novel_bible.ids import EventActuality, FactKind, FactScope, KnowledgeKind, OperationKey, SlotId
 from api.novel_bible.registry import REGISTRY
 from api.novel_bible.rules import RULES
@@ -220,24 +237,25 @@ class Confirmed:
 
 async def _run(
     db: AsyncSession, chapter: NovelChapter, revision: NovelChapterRevision, spec: Chapter, *,
-    registry: Registry | None = None, rules: list[Rule] | None = None,
+    registry: Registry | None = None, rules: list[Rule] | None = None, judge: Judge | None = None,
 ) -> Confirmed:
     registry = registry or _registry()
     result = await confirm(
         db, registry, novel_id=chapter.novel_id, chapter_id=chapter.id, revision_id=revision.id, actor=SYSTEM
     )
     await run_until_idle(
-        savepoint_factory(db), registry, list(RULES) if rules is None else rules, _Adapter(spec.outputs()).resolver()
+        savepoint_factory(db), registry, list(RULES) if rules is None else rules, _Adapter(spec.outputs()).resolver(),
+        judge=judge,
     )
     return Confirmed(result.commit_id, chapter, revision)
 
 
 async def _confirm(
     db: AsyncSession, novel_id: uuid.UUID, spec: Chapter, *, registry: Registry | None = None,
-    rules: list[Rule] | None = None,
+    rules: list[Rule] | None = None, judge: Judge | None = None,
 ) -> Confirmed:
     chapter, revision = await add_chapter(db, novel_id, spec.ordinal, "\n\n".join(spec.paragraphs))
-    return await _run(db, chapter, revision, spec, registry=registry, rules=rules)
+    return await _run(db, chapter, revision, spec, registry=registry, rules=rules, judge=judge)
 
 
 async def _status(db: AsyncSession, commit_id: uuid.UUID) -> str | None:
@@ -494,6 +512,50 @@ async def test_alive_in_a_flashback_without_relation_warns_order_undetermined_in
         select(NovelBibleFact.id).where(NovelBibleFact.novel_id == novel.id, NovelBibleFact.value_norm == "alive")
     )
     assert finding.payload["revivals"] == [str(alive)]
+
+
+@dataclass
+class _SeenJudge:
+    """판정 단계에 넘어온 후보를 남기고 후보 경고를 판정 없이 그대로 돌려준다 — 모델을 부르지 않는다."""
+
+    seen: list[JudgeCandidate] = field(default_factory=list)
+
+    async def __call__(
+        self, session_factory: Any, commit: CommitRef, candidates: Sequence[JudgeCandidate], *, spent: JudgeSpent
+    ) -> list[WarningDraft]:
+        self.seen.extend(candidates)
+        return [candidate.warning for candidate in candidates]
+
+    def unjudged(self, candidates: Sequence[FindingDraft]) -> list[WarningDraft]:
+        raise AssertionError("판정 단계가 깨지지 않았다")
+
+
+async def test_the_judge_reads_the_revival_that_left_the_death_order_undetermined(db_session: AsyncSession) -> None:
+    """관계 없는 회상 속 삶 때문에 사망 뒤 등장의 순서가 미정인 갈래 — 판정 후보 글에 죽음·등장과 함께 모호함의 원인인 되살아남
+    항목(화 번호·한 줄 서술·근거 구절)과 그 항목의 죽음과의 순서(미정)가 실린다. 깨지는 시나리오: 죽음·등장 두 항목만 실으면 그
+    둘의 순서는 이미 정해져 있어, 서술과 근거만 보는 모델이 회상을 모른 채 충돌이라 판정한다."""
+    judge = _SeenJudge()
+    novel = await make_novel(db_session)
+    for spec in (_GARDEN, _death(), _recall_chapter(None)):
+        assert await _status(db_session, (await _confirm(db_session, novel.id, spec)).commit_id) == "committed"
+    confirmed = await _confirm(db_session, novel.id, _appearance(ordinal=6), judge=judge)
+
+    assert await _status(db_session, confirmed.commit_id) == "committed"
+    (candidate,) = judge.seen
+    assert candidate.text.splitlines() == [
+        "규칙: order_undetermined",
+        "항목 1: 3화 · 사실",
+        "서술: 하나 — 생사: 사망",
+        f"근거: {DEATH}",
+        "항목 2: 6화 · 사건",
+        "서술: 사건 — 등장: 하나",
+        f"근거: {APPEAR}",
+        "항목 3: 4화 · 사실",
+        "서술: 하나 — 생사: 살아 있음",
+        f"근거: {RECALL}",
+        "순서(항목 1 · 항목 2): 항목 1 이 앞선다",
+        "순서(항목 1 · 항목 3): 미정",
+    ]
 
 
 async def test_alive_in_a_flashback_after_the_death_does_not_block(db_session: AsyncSession) -> None:
