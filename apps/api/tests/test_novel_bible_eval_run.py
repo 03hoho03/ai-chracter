@@ -325,7 +325,8 @@ async def test_a_halted_extraction_still_writes_the_chapters_it_finished(
     fake = FakeLLM(eval_set, model="gemini-3.5-flash-lite", prompt_tokens=0, output_tokens=8_000_000)
     meter = Meter(ledger=Ledger(tmp_path / "ledger.jsonl", cap_usd=170, halt_usd=150, bundle="ci"), estimate_usd=20)
     code = await extract(
-        factory, meter.wrap(fake.resolver()), seeded.novel_id, tmp_path / "labels", adapter="fake", count=3
+        factory, meter.wrap(fake.resolver()), seeded.novel_id, tmp_path / "labels", adapter="fake", count=3,
+        meter=meter,
     )
     assert code == EXIT_BUDGET
     written = json.loads((tmp_path / "labels" / "extract-fake.json").read_text())
@@ -347,14 +348,17 @@ async def test_a_halted_extraction_leaves_that_adapters_label_verdict_undetermin
         whole = await seed_novel(session, eval_set.novels[0])
         cut = await seed_novel(session, eval_set.novels[0])
     out = tmp_path / "labels"
-    finished = await extract(factory, Meter().wrap(FakeLLM(eval_set).resolver()), whole.novel_id, out,
-                             adapter="whole", count=2)
+    plain = Meter()
+    finished = await extract(factory, plain.wrap(FakeLLM(eval_set).resolver()), whole.novel_id, out,
+                             adapter="whole", count=2, meter=plain)
     assert finished == 0
     # 호출 하나가 $20 이고 1화는 세 슬롯과 판정 하나, 2화는 세 슬롯이라, 셋째 화의 첫 호출은 견적을 더하면 $160 이라 부르기 전에
     # 멈춘다.
     fake = FakeLLM(eval_set, model="gemini-3.5-flash-lite", prompt_tokens=0, output_tokens=8_000_000)
     meter = Meter(ledger=Ledger(tmp_path / "ledger.jsonl", cap_usd=170, halt_usd=150, bundle="ci"), estimate_usd=20)
-    assert await extract(factory, meter.wrap(fake.resolver()), cut.novel_id, out, adapter="cut", count=3) == EXIT_BUDGET
+    assert await extract(
+        factory, meter.wrap(fake.resolver()), cut.novel_id, out, adapter="cut", count=3, meter=meter
+    ) == EXIT_BUDGET
 
     await _run(_parser().parse_args([
         "sheet", "--extract", f"whole={out / 'extract-whole.json'}", f"cut={out / 'extract-cut.json'}", "--out", str(out),
