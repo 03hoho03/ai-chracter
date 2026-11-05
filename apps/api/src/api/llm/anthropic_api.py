@@ -300,8 +300,9 @@ class AnthropicLLMClient(LLMClient):
                 raise _anthropic_error(LLMRateLimitError, f"Anthropic generate() call failed: {exc}") from exc
             raise _anthropic_error(LLMClientError, f"Anthropic generate() call failed: {exc}") from exc
         # 정상 종료한 스트림만 여기 닿는다 — 소비자가 중간에 끊으면(aclose) `yield` 자리에서 빠지고 기록하지 않는다. 스트림 도중
-        # 실패한 호출도 위에서 올라가 기록하지 않는다(구조화 호출이 클라이언트 쪽 시간 초과로 끝난 것도 같다). 둘 다 과금될 수
-        # 있는데 목록 항목의 추정 사용액에도 쌓이지 않아, 그만큼 추정 잔액이 실제보다 많게 보일 수 있다(사용량 기록과 같은 규칙).
+        # 실패한 호출도 위에서 올라가 기록하지 않는다. 구조화 호출이 시간 초과나 연결 끊김(부르는 쪽 취소)으로 응답 전에 끝난 것도
+        # 같다. 이 셋은 과금될 수 있는데 목록 항목의 추정 사용액에도 쌓이지 않아, 그만큼 추정 잔액이 실제보다 많게 보일 수 있다
+        # (사용량 기록과 같은 규칙).
         usage_metadata = tally.usage()
         _log_usage(usage, model, usage_metadata, credential)
         await record_usage(usage.call_site, model, usage_metadata)
