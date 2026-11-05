@@ -93,6 +93,9 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
     # 충돌 탐침은 2화에 숨진 인물이 4화 주선 장면에 나오는 화라 실제 규칙이 사망 뒤 등장으로 막는다. 나머지는 막지 않는다.
     assert _statuses(outcomes) == _WITH_THE_CONFLICT_PROBE_BLOCKED
     assert outcomes[3].block_rules == ["exit_then_appearance"]
+    # 경고 기대 탐침은 숨진 인물이 관계 없는 회상 속에 살아 있다가 그 뒤 주선 장면에 나오는 화다. 그 삶이 죽음과 순서가 미정이라
+    # 차단 대신 순서 미정 경고가 난다.
+    assert "order_undetermined" in outcomes[4].warning_rules
     # 탐침 화는 묶음 삭제로 지웠고 그 화의 정본 기억 확정도 함께 사라졌다.
     assert all(outcome.rows_left == 0 for outcome in outcomes if outcome.probe is not None)
     eval_chapters = (
@@ -115,7 +118,7 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
     assert (precision["k"], precision["n"]) == (4, 6)
     assert report["metrics"]["precision.facts"]["pass"] is None  # 합성 세트의 사실 정밀도는 합격선이 없다
     quote = report["metrics"]["quote_rate"]
-    assert (quote["k"], quote["n"]) == (17, 18)  # 사건 기본 6 + 탐침 4, 사실 6, 지식 1 / 거기에 사건 인용 실패 1
+    assert (quote["k"], quote["n"]) == (19, 20)  # 사건 기본 6 + 탐침 5, 사실 기본 6 + 탐침 1, 지식 1 / 거기에 사건 인용 실패 1
     schema = report["metrics"]["schema_failure_rate"]
     assert (schema["k"], schema["n"]) == (1, 22)  # 기본 3화·탐침 4 에 슬롯 셋씩 + 3화 첫 호출의 재시도
     false_positive = report["metrics"]["block_false_positive"]
@@ -123,6 +126,7 @@ async def test_the_fake_run_seeds_confirms_drains_and_reports_what_it_got_wrong(
     assert false_positive["upper"] == pytest.approx(1 - 0.05 ** (1 / 5))
     assert false_positive["pass"] is True
     assert (report["metrics"]["block_recall"]["k"], report["metrics"]["block_recall"]["n"]) == (1, 1)
+    assert (report["metrics"]["warning_recall"]["k"], report["metrics"]["warning_recall"]["n"]) == (1, 1)
     # 1화에 심은 지식 하나를 바른 방향으로 냈다. 그 앎이 드러나는 문단을 덮은 사건은 빠뜨렸지만 지식 제안은 남는다.
     knowledge = report["metrics"]["recall.knowledge"]["repeats"][0]
     assert (knowledge["k"], knowledge["n"]) == (1, 1)
