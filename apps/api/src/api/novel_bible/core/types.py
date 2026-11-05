@@ -286,7 +286,9 @@ class BibleSnapshot:
 
 
 class FindingDraft(_Frozen):
-    """규칙 하나가 낸 검사 결과. `item_ids` 는 관련 항목들이고, `payload` 에는 위치·근거 위치만 두고 인용 글은 넣지 않는다."""
+    """규칙 하나가 낸 검사 결과. `item_ids` 는 관련 항목들이고, 규칙이 내는 `payload` 에는 위치·근거 위치만 두고 인용 글은 넣지
+    않는다. 예외는 판정 단계가 내는 모델 판정의 충돌(`llm_conflict`, `WarningDraft`)로, 모델이 쓴 이유 글을 실어 원고 조각이 섞일
+    수 있다 — 그 글이 언제 지워지고 무엇이 남을 수 있는지는 검사 결과 표(`NovelBibleFinding`)에 적었다."""
 
     severity: FindingSeverity
     rule: FindingRule
