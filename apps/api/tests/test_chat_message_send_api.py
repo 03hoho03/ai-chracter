@@ -26,7 +26,14 @@ from api.db.models import (
     User,
     UserPersona,
 )
-from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
+from api.llm.claude_messages import claude_error
+from api.llm.client import (
+    LLMCallContext,
+    LLMClient,
+    LLMClientError,
+    LLMCredentialPoolEmptyError,
+    LLMPolicyViolationError,
+)
 from replay import logs as replay_logs
 from factories import (
     _add_room_situational_image,
@@ -152,6 +159,35 @@ async def test_message_text_with_a_nul_character_is_rejected_before_anything_is_
         )
         == before
     )
+    db_session.expire_all()
+    assert (
+        await db_session.scalar(sa.select(User.clover_balance).where(User.id == room.user_id))
+    ) == balance_before
+
+
+async def test_turn_failing_for_no_usable_claude_credential_is_refunded(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Claude 자격 목록에 보낼 항목이 없어 생성이 실패하면 다른 호출 실패처럼 실패 이벤트를 내고 깎은 클로버를 돌려준다. 오류
+    추적에는 그 공급자(anthropic) 태그로 남는다."""
+    captured: list[tuple[BaseException, str]] = []
+    monkeypatch.setattr(
+        turn_engine,
+        "capture_dependency_failure",
+        lambda exc, *, dependency: captured.append((exc, dependency)),
+    )
+    room = await _open_room(db_client, db_session, turns=1, paid_turns=1)
+    balance_before = await db_session.scalar(sa.select(User.clover_balance).where(User.id == room.user_id))
+
+    error = claude_error(LLMCredentialPoolEmptyError, "Claude 자격 목록에 opus 를 보낼 항목이 없다", "anthropic")
+    _override_llm_client(_FakeLLMClient(error=error))
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
+
+    assert [event["type"] for event in _parse_sse_events(resp.text)] == ["error"]
+    assert [(type(exc), dependency) for exc, dependency in captured] == [(LLMCredentialPoolEmptyError, "anthropic")]
     db_session.expire_all()
     assert (
         await db_session.scalar(sa.select(User.clover_balance).where(User.id == room.user_id))

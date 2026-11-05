@@ -222,6 +222,12 @@ class LLMEmptyResponseError(LLMClientError):
     올라온다(빈 턴을 저장·과금하지 않고 환불 경로를 태운다)."""
 
 
+class LLMCredentialPoolEmptyError(LLMClientError):
+    """Claude 자격 목록을 쓰는데 그 모델로 보낼 항목이 없다 — 전부 꺼짐·소진·미확인이거나, 이 요청에서 차례로 모두 거절됐다.
+    채팅·소설은 다른 호출 실패처럼 환불 경로를 탄다. 하위 클래스로 두는 이유: 판정 재시도 규칙은 원인 없는 `LLMClientError`
+    를 파싱 실패로 읽어 한 번 더 부르는데, 쓸 자격이 없는 실패는 다시 불러도 같다."""
+
+
 def dependency_tag(exc: LLMClientError) -> str:
     """흡수한 LLM 실패를 Bugsink 로 승격할 때의 `dependency` 태그. 공급자마다 이름이 따로다(`gemini`·`gemini_rate_limit`,
     `bedrock`·`bedrock_rate_limit`, `anthropic`·`anthropic_rate_limit`) — 한 이름으로 합치면 기존 Gemini 이벤트 묶음과 로그
