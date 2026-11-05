@@ -2,7 +2,8 @@
 `novel_bible/ids.py` 밖의 앱 모듈을 import 하지 않는다(설정을 만드는 도중에 다른 모듈을 끌어오면 기동이 깨진다).
 
 어댑터는 (부를 모델, 읽을 소설 레인 문안 체인) 한 쌍이다. 연산(슬롯 추출·충돌 판정)마다 어느 어댑터를 쓸지 이 표가 정하고, env
-`NOVEL_BIBLE_ADAPTERS` 가 연산별로 덮어쓴다. 처음 표는 Gemini 어댑터 하나다."""
+`NOVEL_BIBLE_ADAPTERS` 가 연산별로 덮어쓴다. 표에는 Gemini 어댑터와 Claude 어댑터 둘(`haiku`·`sonnet`)이 있고, 코드 표의
+기본 배정은 모두 Gemini 라 Claude 어댑터는 env 덮어쓰기로만 쓰인다."""
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ from api.llm.backends import (
 from api.llm.call_policy import BackendId, LLMCallSite
 from api.novel_bible.ids import OperationKey
 
-AdapterId = Literal["gemini"]
+AdapterId = Literal["gemini", "haiku", "sonnet"]
 
 # novel 레인에 있는 체인 — 어드민 문안 화면의 레인 규칙(`admin/prompts.py` 의 `_require_lane_model`)과 같은 집합이다. 판정 전용
 # 체인(haiku)과 채팅 전용 글쓰기 체인(haiku_writer)은 소설 레인에 없어, 글쓰기 모델 전부가 아니라 소설에서 고를 수 있는 모델이다.
@@ -44,6 +45,13 @@ class AdapterSpec:
 ADAPTERS: dict[AdapterId, AdapterSpec] = {
     "gemini": AdapterSpec(
         call_model="gemini", prompt_chain="gemini", structured=True, with_instruction=True, max_input_chars=200_000
+    ),
+    # Claude 계열은 sonnet 체인 문안 하나를 함께 읽는다 — 소설 레인에 haiku 체인이 없다.
+    "haiku": AdapterSpec(
+        call_model="haiku", prompt_chain="sonnet", structured=True, with_instruction=True, max_input_chars=100_000
+    ),
+    "sonnet": AdapterSpec(
+        call_model="sonnet", prompt_chain="sonnet", structured=True, with_instruction=True, max_input_chars=100_000
     ),
 }
 

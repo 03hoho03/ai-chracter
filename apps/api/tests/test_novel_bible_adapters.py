@@ -1,14 +1,19 @@
 """정본 기억 모델 어댑터 — 코드 표, env 덮어쓰기, 켜진 스위치의 기동 검증, 호출 위치 정책, 호출 기록, 실제 어댑터의 호출.
 
 어댑터는 (부를 모델, 읽을 소설 레인 문안 체인) 한 쌍이다. 연산(슬롯 추출·충돌 판정)마다 어댑터를 코드 표가 정하고 env 가
-덮어쓴다. 처음 등록부는 Gemini 어댑터 하나라 Claude 쪽 검증은 표를 가짜 스펙으로 바꿔 함수 단계에서 본다. 모델 호출은 가짜
-클라이언트로만 한다."""
+덮어쓴다. 표에는 Gemini 어댑터와 Claude 어댑터 둘(haiku·sonnet)이 있고, Claude 어댑터의 기동 검증·호출 경로·문안 읽기는 실제
+스펙으로 본다. 표의 어느 어댑터에도 없는 칸 값(구조화를 못 하는 스펙, 소설 레인 밖 체인, 다른 어댑터와 겹치지 않는 글자 수
+상한)만 실제 스펙을 한 칸 바꾼 가짜로 본다. 모델 호출은 가짜 클라이언트나 가짜 전송 계층으로만 한다."""
 
+import json
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any, cast, get_args
+from typing import Any, get_args
 
+import anthropic
+import httpx2
 import pytest
 from fastapi import HTTPException
 from pydantic import BaseModel, ValidationError
@@ -22,6 +27,7 @@ from api.db.models.novel_bible_events import NovelBibleEvent
 from api.db.models.novel_bible_facts import NovelBibleFact
 from api.db.models.novel_bible_knowledge import NovelBibleKnowledge
 from api.db.models.prompt import PromptSet, PromptSection
+from api.llm import anthropic_api as anthropic_module
 from api.llm import backends
 from api.llm.backends import PromptSetModelId
 from api.llm.call_policy import CALL_POLICIES
@@ -42,8 +48,10 @@ from api.novel_bible.adapters.table import AdapterId, AdapterSpec
 from api.novel_bible.core.confirm import Actor, confirm
 from api.novel_bible.core.contracts import AdapterCallError, BibleModelAdapter
 from api.novel_bible.core.pipeline import run_until_idle
+from api.novel_bible.core.render import verify_prompt_chains
 from api.novel_bible.core.types import RenderedPrompt
 from api.novel_bible.ids import JobFailure, OperationKey
+from api.novel_bible.registry import REGISTRY
 from api.novelize.call_records import recorded_call
 from factories import load_production_env
 from novel_bible_fakes import FakeAdapter, add_chapter, full_registry, make_novel, savepoint_factory
@@ -69,11 +77,15 @@ def _reader(loaded: Settings) -> Any:
 
 
 def _claude_spec(**changes: Any) -> AdapterSpec:
-    fields: dict[str, Any] = {
-        "call_model": "haiku", "prompt_chain": "sonnet", "structured": True, "with_instruction": True,
-        "max_input_chars": 100_000,
-    }
-    return AdapterSpec(**(fields | changes))
+    """실제 Haiku 어댑터 스펙에서 `changes` 칸만 바꾼 것 — 표의 어느 어댑터에도 없는 칸 값을 만들 때만 쓴다."""
+    return replace(table.ADAPTERS["haiku"], **changes)
+
+
+def _every_operation_on(adapter_id: AdapterId) -> dict[OperationKey, AdapterId]:
+    return dict.fromkeys(get_args(OperationKey), adapter_id)
+
+
+_CLAUDE_ADAPTERS = pytest.mark.parametrize("adapter_id", ["haiku", "sonnet"])
 
 
 # --- 코드 표 ---
@@ -90,10 +102,18 @@ def test_every_operation_has_an_adapter_and_its_own_call_site_with_a_policy_row(
     assert set(call_sites) <= set(CALL_POLICIES)
 
 
-def test_the_first_registry_holds_only_the_gemini_adapter() -> None:
-    assert get_args(AdapterId) == ("gemini",)
-    spec = table.ADAPTERS["gemini"]
-    assert (spec.call_model, spec.prompt_chain, spec.structured, spec.with_instruction) == ("gemini", "gemini", True, True)
+def test_the_registry_holds_gemini_and_two_claude_adapters_that_share_the_sonnet_chain() -> None:
+    assert get_args(AdapterId) == ("gemini", "haiku", "sonnet")
+    rows = {
+        adapter_id: (spec.call_model, spec.prompt_chain, spec.structured, spec.with_instruction)
+        for adapter_id, spec in table.ADAPTERS.items()
+    }
+    assert rows == {
+        "gemini": ("gemini", "gemini", True, True),
+        "haiku": ("haiku", "sonnet", True, True),
+        "sonnet": ("sonnet", "sonnet", True, True),
+    }
+    # 코드 표의 기본 배정은 Gemini 그대로다 — Claude 어댑터는 env 덮어쓰기로만 쓰인다.
     assert set(table.SLOT_OPERATION_ADAPTERS.values()) == {"gemini"}
 
 
@@ -109,13 +129,10 @@ def test_novel_lane_chains_are_the_chains_the_admin_prompt_screen_allows_in_the_
     assert table.NOVEL_LANE_CHAINS == allowed
 
 
-def test_an_override_replaces_only_its_operation(monkeypatch: pytest.MonkeyPatch) -> None:
-    other = cast(AdapterId, "other")
-    monkeypatch.setitem(table.ADAPTERS, other, _claude_spec(call_model="sonnet"))
+def test_an_override_replaces_only_its_operation() -> None:
+    effective = table.effective_adapters({"facts.extract": "sonnet"})
 
-    effective = table.effective_adapters({"facts.extract": other})
-
-    assert effective == {**table.SLOT_OPERATION_ADAPTERS, "facts.extract": other}
+    assert effective == {**table.SLOT_OPERATION_ADAPTERS, "facts.extract": "sonnet"}
     assert table.effective_adapters({}) == table.SLOT_OPERATION_ADAPTERS
 
 
@@ -166,7 +183,7 @@ def _prompt() -> RenderedPrompt:
 
 
 def _refuse_to_build() -> LLMClient:
-    raise AssertionError("Gemini 어댑터의 호출이 다른 구현으로 갔다")
+    raise AssertionError("이 테스트가 막아 둔 구현으로 호출이 갔다")
 
 
 async def test_bible_calls_with_the_gemini_adapter_go_to_gemini_despite_the_anthropic_policy_row(
@@ -185,6 +202,77 @@ async def test_bible_calls_with_the_gemini_adapter_go_to_gemini_despite_the_anth
 
     assert {record["backend"] for record in records} == {"gemini"}
     assert [record["stage"] for record in records] == list(table.OPERATION_CALL_SITES)
+
+
+def _schema_and_answer(operation: OperationKey) -> tuple[type[BaseModel], dict[str, Any]]:
+    """연산의 실제 응답 스키마와 그 스키마로 읽히는 가장 작은 답. 추출 연산은 등록부 슬롯의 출력 꼴이고(맨 위 칸이 전부 목록이라
+    빈 목록들이 맞는 답이다), 충돌 판정은 아직 부르는 규칙이 없어 합성 스키마다."""
+    for slot in REGISTRY.extracting.values():
+        if slot.operation == operation:
+            return slot.output_schema, {name: [] for name in slot.output_schema.model_fields}
+    return _Answer, {"verdict": "합성 판정"}
+
+
+@_CLAUDE_ADAPTERS
+async def test_bible_calls_with_a_claude_adapter_follow_the_anthropic_policy_row_to_anthropic_direct(
+    monkeypatch: pytest.MonkeyPatch, adapter_id: AdapterId
+) -> None:
+    """env 배정 줄이 없어도 정책 행의 `anthropic` 을 따라 Anthropic 직결 구현으로 간다 — 정책 행이 읽히지 않으면 Claude 모델의
+    기본 구현(Bedrock)으로 가 운영에 없는 자격을 찾는다. 실제 구현에 전송 계층만 가짜로 끼워, 연산마다 실제 응답 스키마가 JSON
+    스키마 구조화로 실려 나가고 돌아온 답이 그 스키마로 읽히는지, 지시문이 원고와 따로 실리는지까지 본다."""
+    monkeypatch.setattr(settings, "llm_call_site_backends", {})
+    monkeypatch.setattr(settings, "anthropic_direct_api_key", "sk-ant-test")
+
+    async def keep_usage_local(call_site: str, model: str, usage_metadata: object | None) -> None:
+        return None
+
+    monkeypatch.setattr(anthropic_module, "record_usage", keep_usage_local)
+    answer: dict[str, Any] = {}
+    seen: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        message = {
+            "id": "msg_test", "type": "message", "role": "assistant", "model": "m",
+            "content": [{"type": "text", "text": json.dumps(answer, ensure_ascii=False)}],
+            "stop_reason": "end_turn", "stop_sequence": None, "usage": {"input_tokens": 10, "output_tokens": 3},
+        }
+        return httpx2.Response(200, json=message)
+
+    real = anthropic.AsyncAnthropic
+
+    def build(**kwargs: Any) -> anthropic.AsyncAnthropic:
+        return real(**kwargs, http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
+
+    monkeypatch.setattr(anthropic_module, "AsyncAnthropic", build)
+    gemini = _RecordingClient()
+    router = RoutingLLMClient(
+        gemini, factories={"anthropic": anthropic_module.AnthropicLLMClient, "bedrock": _refuse_to_build}
+    )
+    adapter = ModelAdapter(adapter_id, router)
+    sent_id = getattr(settings, f"anthropic_{adapter_id}_model_id")
+    records: list[dict[str, Any]] = []
+
+    for operation in table.OPERATION_CALL_SITES:
+        schema, answer_fields = _schema_and_answer(operation)
+        answer.clear()
+        answer.update(answer_fields)
+
+        result = await adapter.structured(_prompt(), schema, records=records, stage=operation)
+
+        assert result == schema.model_validate(answer_fields)
+        request = seen[-1]
+        assert (request.url.host, request.url.path) == ("api.anthropic.com", "/v1/messages")
+        body = json.loads(request.content)
+        assert body["model"] == sent_id
+        assert (body["system"], body["messages"]) == ("합성 지시문", [{"role": "user", "content": "합성 원고"}])
+        assert body["output_config"]["format"] == {"type": "json_schema", "schema": anthropic.transform_schema(schema)}
+
+    assert gemini.calls == [] and len(seen) == len(table.OPERATION_CALL_SITES)
+    assert {(record["backend"], record["model"], record["failure"]) for record in records} == {
+        ("anthropic", sent_id, None)
+    }
+    assert [(record["stage"], record["callSite"]) for record in records] == list(table.OPERATION_CALL_SITES.items())
 
 
 def test_an_env_backend_line_for_a_bible_call_site_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -206,6 +294,8 @@ def test_an_env_backend_line_for_a_bible_call_site_is_refused(monkeypatch: pytes
         (" , ,", {}),
         ("facts.extract:gemini", {"facts.extract": "gemini"}),
         (" facts.extract : gemini , knowledge.extract:gemini ,", {"facts.extract": "gemini", "knowledge.extract": "gemini"}),
+        ("facts.extract:haiku", {"facts.extract": "haiku"}),
+        ("events.extract:sonnet,conflicts.judge:haiku", {"events.extract": "sonnet", "conflicts.judge": "haiku"}),
     ],
 )
 def test_the_adapter_override_parses_operation_adapter_pairs(
@@ -223,8 +313,9 @@ def test_the_adapter_override_parses_operation_adapter_pairs(
         "facts.extract:",
         "facts.extract:gemini,facts.extract:gemini",
         "facts.judge:gemini",
-        "facts.extract:haiku",
+        "facts.extract:opus",
         "facts.extract:Gemini",
+        "facts.extract:Haiku",
     ],
 )
 def test_a_malformed_or_unknown_override_is_refused_even_while_the_switch_is_off(
@@ -238,9 +329,9 @@ def test_a_malformed_or_unknown_override_is_refused_even_while_the_switch_is_off
 
 
 def test_with_the_switch_off_nothing_is_checked(monkeypatch: pytest.MonkeyPatch) -> None:
-    loaded = _load(monkeypatch, NOVEL_BIBLE_ADAPTERS="facts.extract:gemini")
+    loaded = _load(monkeypatch, NOVEL_BIBLE_ADAPTERS="facts.extract:haiku")
 
-    assert not loaded.novel_bible_enabled
+    assert not loaded.novel_bible_enabled and loaded.novel_bible_adapters == {"facts.extract": "haiku"}
     assert not loaded.gemini_api_key and not loaded.anthropic_direct_api_key
 
 
@@ -259,8 +350,8 @@ def test_the_switch_on_needs_the_gemini_key_even_when_every_operation_goes_to_cl
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # 어댑터가 쓰는 앱의 모델 클라이언트는 어느 구현으로 보내든 Gemini 클라이언트를 먼저 만든다.
-    monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec())
-    claude_only = {"ANTHROPIC_DIRECT_API_KEY": "sk-test"}
+    every_operation_on_haiku = ",".join(f"{operation}:haiku" for operation in get_args(OperationKey))
+    claude_only = {"ANTHROPIC_DIRECT_API_KEY": "sk-test", "NOVEL_BIBLE_ADAPTERS": every_operation_on_haiku}
 
     assert not _load(monkeypatch, **claude_only).novel_bible_enabled
     assert _load(
@@ -280,15 +371,53 @@ def test_the_production_env_starts_with_the_switch_off_or_on(
     assert loaded.novel_bible_enabled == bool(extra)
 
 
-# --- 기동 검증 규칙(함수 단계, 가짜 Claude 스펙) ---
+@_CLAUDE_ADAPTERS
+def test_the_switch_on_with_a_claude_adapter_needs_the_anthropic_direct_key(
+    monkeypatch: pytest.MonkeyPatch, adapter_id: AdapterId
+) -> None:
+    on = {"NOVEL_BIBLE_ENABLED": "true", "GEMINI_API_KEY": "gemini-test", "NOVEL_BIBLE_ADAPTERS": f"facts.extract:{adapter_id}"}
+
+    with pytest.raises(ValidationError) as refused:
+        _load(monkeypatch, **on)
+    loaded = _load(monkeypatch, ANTHROPIC_DIRECT_API_KEY="sk-test", **on)
+
+    message = "; ".join(str(error["msg"]) for error in refused.value.errors())
+    assert "facts.extract 이 가는 구현 anthropic 의 ANTHROPIC_DIRECT_API_KEY 가 비어 있다" in message
+    # 덮어쓰지 않은 연산은 Gemini 그대로라 이 키를 묻지 않고, Claude 모델의 기본 구현(Bedrock) 자격도 묻지 않는다.
+    assert message.count("ANTHROPIC_DIRECT_API_KEY") == 1 and "BEDROCK" not in message
+    assert loaded.novel_bible_enabled and loaded.novel_bible_adapters == {"facts.extract": adapter_id}
 
 
-def test_a_claude_spec_goes_to_anthropic_direct_and_needs_its_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec())
+def test_a_haiku_adapter_refuses_a_structured_effort_that_haiku_5_cannot_take_with_thinking_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    on = {
+        "NOVEL_BIBLE_ENABLED": "true",
+        "GEMINI_API_KEY": "gemini-test",
+        "ANTHROPIC_DIRECT_API_KEY": "sk-test",
+        "ANTHROPIC_HAIKU_MODEL_ID": "claude-haiku-5-5",
+        "ANTHROPIC_STRUCTURED_EFFORT": "max",
+    }
 
-    without_key = table.adapter_errors({}, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test")))
+    with pytest.raises(ValidationError, match="claude-haiku-5-5 는 사고를 끄고 판정하는데 ANTHROPIC_STRUCTURED_EFFORT=max"):
+        _load(monkeypatch, NOVEL_BIBLE_ADAPTERS="facts.extract:haiku", **on)
+    # 같은 깊이라도 사고를 끄지 않는 Sonnet 으로 가는 배정과 Gemini 표는 뜬다 — 거부는 Haiku 5 로 가는 배정에만 걸린다.
+    assert _load(monkeypatch, NOVEL_BIBLE_ADAPTERS="facts.extract:sonnet", **on).novel_bible_enabled
+    assert _load(monkeypatch, **on).novel_bible_enabled
+
+
+# --- 기동 검증 규칙(함수 단계) ---
+
+
+@_CLAUDE_ADAPTERS
+def test_every_operation_on_a_claude_adapter_goes_to_anthropic_direct_and_needs_its_key(
+    monkeypatch: pytest.MonkeyPatch, adapter_id: AdapterId
+) -> None:
+    overrides = _every_operation_on(adapter_id)
+
+    without_key = table.adapter_errors(overrides, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test")))
     with_key = table.adapter_errors(
-        {}, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test"))
+        overrides, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test"))
     )
 
     assert len(without_key) == len(table.OPERATION_CALL_SITES)
@@ -297,70 +426,48 @@ def test_a_claude_spec_goes_to_anthropic_direct_and_needs_its_key(monkeypatch: p
     assert with_key == []
 
 
-def test_a_claude_spec_whose_model_turns_thinking_off_refuses_a_deep_structured_effort(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec())
-    loaded = _load(
-        monkeypatch,
-        GEMINI_API_KEY="gemini-test",
-        ANTHROPIC_DIRECT_API_KEY="sk-test",
-        ANTHROPIC_HAIKU_MODEL_ID="claude-haiku-5-5",
-        ANTHROPIC_STRUCTURED_EFFORT="max",
-    )
-
-    errors = table.adapter_errors({}, {}, _reader(loaded))
-
-    assert errors and all("ANTHROPIC_STRUCTURED_EFFORT=max" in error for error in errors)
-
-
 @pytest.mark.parametrize("changes", [{"structured": False}, {"with_instruction": False}])
 def test_a_spec_without_instruction_structured_output_is_refused(
     monkeypatch: pytest.MonkeyPatch, changes: dict[str, bool]
 ) -> None:
-    monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec(**changes))
+    monkeypatch.setitem(table.ADAPTERS, "haiku", _claude_spec(**changes))
 
     errors = table.adapter_errors(
-        {}, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test"))
+        _every_operation_on("haiku"), {},
+        _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test")),
     )
 
     assert errors and all("구조화 출력을 하지 못한다" in error for error in errors)
 
 
 def test_a_spec_reading_a_chain_outside_the_novel_lane_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec(prompt_chain="haiku"))
+    monkeypatch.setitem(table.ADAPTERS, "haiku", _claude_spec(prompt_chain="haiku"))
 
     errors = table.adapter_errors(
-        {}, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test"))
+        _every_operation_on("haiku"), {},
+        _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test")),
     )
 
     assert errors and all("소설 레인에 없다" in error for error in errors)
 
 
 def test_an_implementation_without_instruction_structured_calls_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec())
-    anthropic = backends.BACKENDS["anthropic"]
+    anthropic_row = backends.BACKENDS["anthropic"]
     capabilities = backends.BackendCapabilities(
         structured="json_schema", structured_images=False, structured_with_instruction=False
     )
     monkeypatch.setitem(
         backends.BACKENDS, "anthropic",
-        backends.BackendSpec(capabilities=capabilities, model_id_settings=anthropic.model_id_settings,
-                             credential_env=anthropic.credential_env),
+        backends.BackendSpec(capabilities=capabilities, model_id_settings=anthropic_row.model_id_settings,
+                             credential_env=anthropic_row.credential_env),
     )
 
     errors = table.adapter_errors(
-        {}, {}, _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test"))
+        _every_operation_on("haiku"), {},
+        _reader(_load(monkeypatch, GEMINI_API_KEY="gemini-test", ANTHROPIC_DIRECT_API_KEY="sk-test")),
     )
 
     assert errors and all("구조화 호출을 받지 못한다" in error for error in errors)
-
-
-def test_the_settings_validator_refuses_what_the_rule_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec())
-
-    with pytest.raises(ValidationError, match="ANTHROPIC_DIRECT_API_KEY"):
-        _load(monkeypatch, NOVEL_BIBLE_ENABLED="true", GEMINI_API_KEY="gemini-test")
 
 
 # --- 호출 기록 ---
@@ -400,15 +507,20 @@ def test_bible_call_records_have_the_same_keys_as_novel_job_call_records() -> No
 # --- 실제 어댑터 ---
 
 
-async def test_the_adapter_reads_the_active_novel_lane_set_of_its_chain(db_session: AsyncSession) -> None:
-    source = await ModelAdapter("gemini").prompt_source(db_session)
+@pytest.mark.parametrize(
+    ("adapter_id", "chain"), [("gemini", "gemini"), ("haiku", "sonnet"), ("sonnet", "sonnet")]
+)
+async def test_the_adapter_reads_the_active_novel_lane_set_of_its_chain(
+    db_session: AsyncSession, adapter_id: AdapterId, chain: PromptSetModelId
+) -> None:
+    source = await ModelAdapter(adapter_id).prompt_source(db_session)
 
     prompt_set = await db_session.get(PromptSet, source.prompt_set_id)
     assert prompt_set is not None
-    assert (prompt_set.lane, prompt_set.model, prompt_set.status) == ("novel", "gemini", "published")
+    assert (prompt_set.lane, prompt_set.model, prompt_set.status) == ("novel", chain, "published")
     latest = await db_session.scalar(
         select(func.max(PromptSet.published_at)).where(
-            PromptSet.lane == "novel", PromptSet.model == "gemini", PromptSet.status == "published"
+            PromptSet.lane == "novel", PromptSet.model == chain, PromptSet.status == "published"
         )
     )
     assert prompt_set.published_at == latest
@@ -419,14 +531,25 @@ async def test_the_adapter_reads_the_active_novel_lane_set_of_its_chain(db_sessi
     assert {section.prompt_set_id for section in source.sections} == {prompt_set.id}
 
 
+@_CLAUDE_ADAPTERS
+async def test_every_extracting_slot_channel_is_in_the_sonnet_chain_the_claude_adapters_read(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, adapter_id: AdapterId
+) -> None:
+    """워커 기동과 확정 입구가 부르는 문안 검사가 모든 연산을 Claude 어댑터에 둔 배정에서도 통과한다 — 시드된 Sonnet 체인에 추출
+    슬롯 채널이 다 있다. 빠지면 그 배정으로 켠 환경에서 확정이 전부 503 이 된다."""
+    monkeypatch.setattr(settings, "novel_bible_adapters", _every_operation_on(adapter_id))
+
+    assert await verify_prompt_chains(db_session, REGISTRY, build_resolver()) == []
+
+
 async def test_a_chain_without_an_active_set_is_a_prompt_missing_failure(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # 소설 레인에는 판정 전용 체인 세트가 없다.
-    monkeypatch.setitem(table.ADAPTERS, "gemini", _claude_spec(prompt_chain="haiku"))
+    monkeypatch.setitem(table.ADAPTERS, "haiku", _claude_spec(prompt_chain="haiku"))
 
     with pytest.raises(AdapterCallError) as raised:
-        await ModelAdapter("gemini").prompt_source(db_session)
+        await ModelAdapter("haiku").prompt_source(db_session)
 
     assert (raised.value.code, raised.value.retryable) == ("prompt_missing", False)
 
@@ -476,13 +599,13 @@ async def test_provider_failures_become_failure_codes_the_core_knows(
 
 
 def test_the_resolver_follows_the_code_table_and_the_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    other = cast(AdapterId, "other")
-    monkeypatch.setitem(table.ADAPTERS, other, _claude_spec(call_model="sonnet", max_input_chars=7))
-    monkeypatch.setattr(settings, "novel_bible_adapters", {"facts.extract": other})
+    # 글자 수 상한을 다른 어댑터에 없는 값으로 바꿔 둔다 — 능력이 덮어쓴 어댑터의 스펙에서 오는지 가른다.
+    monkeypatch.setitem(table.ADAPTERS, "haiku", _claude_spec(max_input_chars=7))
+    monkeypatch.setattr(settings, "novel_bible_adapters", {"facts.extract": "haiku"})
 
     resolver = build_resolver()
 
-    assert resolver("facts.extract").id == "other"
+    assert resolver("facts.extract").id == "haiku"
     assert resolver("facts.extract").capabilities.max_input_chars == 7
     assert {resolver(operation).id for operation in get_args(OperationKey) if operation != "facts.extract"} == {"gemini"}
 
