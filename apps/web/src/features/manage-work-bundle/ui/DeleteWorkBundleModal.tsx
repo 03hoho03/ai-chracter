@@ -34,7 +34,7 @@ export const DeleteWorkBundleModal = createCallable<DeleteWorkBundleModalProps, 
       },
       onError: (error) => {
         const notice = toWorkBundleActionError(error, "delete");
-        if (notice !== null) toast.error(notice.message);
+        if (notice !== undefined) toast.error(notice.message);
       },
     });
   }

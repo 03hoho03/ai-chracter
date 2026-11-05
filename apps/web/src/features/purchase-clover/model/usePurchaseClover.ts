@@ -10,7 +10,7 @@ import { toCreatePaymentFailure, type PurchaseResult } from "./purchaseResult";
 import { toSettledPurchase, type PurchaseGrant } from "./settledPurchase";
 
 /** 구매 시도 하나의 끝. `grant` 는 지급까지 끝났고 서버가 받은 수량을 실었을 때만 있다. */
-export type PurchaseAttempt = { result: PurchaseResult; grant: PurchaseGrant | null };
+export type PurchaseAttempt = { result: PurchaseResult; grant?: PurchaseGrant };
 
 type PurchaseInput = {
   productKey: CloverProductItem["key"];
@@ -42,7 +42,7 @@ export function usePurchaseClover() {
     try {
       order = await createPayment.mutateAsync({ productKey, agreed: true });
     } catch (error) {
-      return { result: toCreatePaymentFailure(error), grant: null };
+      return { result: toCreatePaymentFailure(error), grant: undefined };
     }
 
     onCheckoutOpen();
@@ -60,13 +60,13 @@ export function usePurchaseClover() {
       customer: toPortOneCustomer(values),
       redirectUrl: buildPaymentRedirectUrl(window.location.origin),
     });
-    if (outcome !== "succeeded") return { result: outcome, grant: null };
+    if (outcome !== "succeeded") return { result: outcome, grant: undefined };
 
     try {
       return toSettledPurchase(await completePayment.mutateAsync(order.paymentId));
     } catch {
       // 확인 요청만 실패했다(포트원 조회 실패 등). 결제는 됐을 수 있고 웹훅이 같은 결제를 맞춘다.
-      return { result: "checking", grant: null };
+      return { result: "checking", grant: undefined };
     }
   }
 

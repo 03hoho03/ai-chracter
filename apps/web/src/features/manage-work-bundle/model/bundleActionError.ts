@@ -16,9 +16,9 @@ export type WorkBundleActionError = {
 
 /** 실패를 화면에 쓸 문장으로. 같은 409 라도 만들기는 묶음 수, 넣기는 항목 수 한도라 동작을 함께 받는다.
  *
- * 재동의가 필요한 실패면 `null` 이다 — 전역 처리가 세션을 다시 읽어 재동의 모달을 띄우므로 여기서 또 알리지 않는다. */
-export function toWorkBundleActionError(error: unknown, action: WorkBundleAction): WorkBundleActionError | null {
-  if (isLegalReconsentRequiredError(error)) return null;
+ * 재동의가 필요한 실패면 `undefined` 다 — 전역 처리가 세션을 다시 읽어 재동의 모달을 띄우므로 여기서 또 알리지 않는다. */
+export function toWorkBundleActionError(error: unknown, action: WorkBundleAction): WorkBundleActionError | undefined {
+  if (isLegalReconsentRequiredError(error)) return undefined;
   const code = readCode(error);
   if (code === LIMIT_CODE) {
     return action === "create"

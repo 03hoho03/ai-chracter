@@ -88,7 +88,7 @@ export const StudioAddWorksModal = createCallable<StudioAddWorksModalProps>(({ c
             });
           }
           const description = describeAddWorksResult(result);
-          if (description === null) return;
+          if (description === undefined) return;
           if (description.tone === "success") {
             toast.success(description.message);
             call.end();

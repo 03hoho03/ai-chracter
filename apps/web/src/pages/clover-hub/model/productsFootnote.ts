@@ -8,7 +8,7 @@ import type { PurchaseSection } from "./purchaseSection";
  * (`isWideOnly`). */
 export type ProductsFootnote = { text: string; isWideOnly: boolean };
 
-export function getProductsFootnote(section: PurchaseSection): ProductsFootnote | null {
+export function getProductsFootnote(section: PurchaseSection): ProductsFootnote | undefined {
   switch (section) {
     case "guest":
       return { text: "상품을 고르면 로그인한 뒤 그 상품의 결제로 이어져요.", isWideOnly: false };
@@ -20,6 +20,6 @@ export function getProductsFootnote(section: PurchaseSection): ProductsFootnote 
       return { text: PURCHASE_CONDITION_SENTENCES.ageRestricted, isWideOnly: true };
     case "products":
     case "pending":
-      return null;
+      return undefined;
   }
 }

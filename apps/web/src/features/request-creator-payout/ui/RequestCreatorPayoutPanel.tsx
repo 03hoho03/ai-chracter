@@ -35,7 +35,7 @@ type RequestCreatorPayoutPanelProps = {
  * (잔액이 최소액 아래로 내려가는 등) 신청 버튼째 사라진다 — 문장을 버튼 곁에 두면 함께 사라지고 포커스가 `<body>` 로
  * 떨어진다. 그래서 문장을 갈래와 무관하게 두고, 실패하면 포커스를 문장으로 옮긴다. */
 export function RequestCreatorPayoutPanel({ payout, payoutInfoSectionId }: RequestCreatorPayoutPanelProps) {
-  const [failure, setFailure] = useState<ShownRequestFailure | null>(null);
+  const [failure, setFailure] = useState<ShownRequestFailure>();
   const shouldFocusStatusRef = useRef(false);
   const shouldFocusFailureRef = useRef(false);
   const focusStatusIfJustRequested = (element: HTMLElement | null) => {
@@ -57,7 +57,7 @@ export function RequestCreatorPayoutPanel({ payout, payoutInfoSectionId }: Reque
         statusRef={focusStatusIfJustRequested}
         onRequestStart={() => {
           shouldFocusStatusRef.current = true;
-          setFailure(null);
+          setFailure(undefined);
         }}
         onRequestFail={(next) => {
           shouldFocusStatusRef.current = false;

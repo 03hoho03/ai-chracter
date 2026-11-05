@@ -37,8 +37,8 @@ describe("toPayoutInfoFailureField", () => {
   it("주민등록번호가 거절된 두 갈래만 그 칸에 붙인다", () => {
     expect(toPayoutInfoFailureField("foreigner")).toBe("rrn");
     expect(toPayoutInfoFailureField("rrnMismatch")).toBe("rrn");
-    expect(toPayoutInfoFailureField("invalid")).toBeNull();
-    expect(toPayoutInfoFailureField("inProgress")).toBeNull();
+    expect(toPayoutInfoFailureField("invalid")).toBeUndefined();
+    expect(toPayoutInfoFailureField("inProgress")).toBeUndefined();
   });
 });
 

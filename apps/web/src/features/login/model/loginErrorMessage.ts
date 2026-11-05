@@ -60,20 +60,20 @@ function emailTakenMessage(attempted: SocialProvider, method: SignupMethod | und
   return `이미 ${label}로 가입된 이메일이에요. ${label} 로그인을 이용해주세요.`;
 }
 
-/** 리다이렉트 오류 코드 → 배너 문구. `null`은 "배너를 띄우지 않는다"이다.
+/** 리다이렉트 오류 코드 → 배너 문구. `undefined`는 "배너를 띄우지 않는다"이다.
  *
- * `*_cancelled`가 `null`인 이유: 사용자가 제공자 동의 화면에서 **스스로** 취소하고 돌아온 것이라 고칠 것도
+ * `*_cancelled`가 `undefined`인 이유: 사용자가 제공자 동의 화면에서 **스스로** 취소하고 돌아온 것이라 고칠 것도
  * 알릴 것도 없다. 이 화면의 배너는 빨간 틴트 + `role="alert"`라 무엇을 띄우든 "실패했다"로 읽히고, 조용한
  * 회색 문장을 따로 만들어도 방금 자기가 한 일을 되읽히는 것뿐이다. 돌아온 화면에 로그인 버튼이 그대로 있어
  * 다시 시도할 길도 이미 열려 있다. */
-export function getLoginErrorMessage(code: LoginErrorParam, method?: SignupMethod): string | null {
+export function getLoginErrorMessage(code: LoginErrorParam, method?: SignupMethod): string | undefined {
   switch (code) {
     case "google_state":
     case "kakao_state":
       return `${SOCIAL_PROVIDER_LABELS[code === "google_state" ? "google" : "kakao"]} 로그인 요청이 만료되었어요. 다시 시도해주세요.`;
     case "google_cancelled":
     case "kakao_cancelled":
-      return null;
+      return undefined;
     case "google_failed":
     case "kakao_failed":
       return `${SOCIAL_PROVIDER_LABELS[code === "google_failed" ? "google" : "kakao"]} 로그인 중 문제가 생겼어요. 잠시 후 다시 시도해주세요.`;

@@ -60,6 +60,6 @@ describe("describeAddWorksResult", () => {
   });
 
   it("재동의로 멈추면 알리지 않는다", () => {
-    expect(describeAddWorksResult({ added: 0, gone: 0, stoppedBy: "reconsent", stopError: undefined })).toBeNull();
+    expect(describeAddWorksResult({ added: 0, gone: 0, stoppedBy: "reconsent", stopError: undefined })).toBeUndefined();
   });
 });
