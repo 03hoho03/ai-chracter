@@ -3,7 +3,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Search, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { useDebounce } from "react-use";
 
 import { CONTENT_TYPE_LABEL, resolveHomeContentType } from "@/entities/content";
@@ -81,9 +81,12 @@ export function SearchInlineExpand({
   // 좁혀 마운트 1회만 알린다. useEffect가 아니라 useLayoutEffect인 이유는 그대로다 — URL 검색어가
   // 있으면 `isExpanded`가 첫 렌더부터 true인데 useEffect는 페인트 후에 돌아 첫 프레임에 부모(Header)가
   // 아직 false로 그려져 버거·로고가 한 프레임 노출된다(모바일 폭에서 `?q=` URL 직접 열기 — 2026-09-15
-  // 적대적 리뷰가 지목).
-  useLayoutEffect(() => {
+  // 적대적 리뷰가 지목). 알릴 값과 콜백은 effect 이벤트로 읽는다 — 의존성에 넣으면 펼침이 바뀔 때마다 다시 알린다.
+  const reportInitialExpanded = useEffectEvent(() => {
     onExpandedChange?.(isExpanded);
+  });
+  useLayoutEffect(() => {
+    reportInitialExpanded();
   }, []);
 
   // 닫기 버튼·Esc·URL 검색어가 지워져 접힐 때는 포커스가 펼친 쪽에 있어 검색 버튼으로 돌려준다. 빈 입력칸에서
@@ -99,17 +102,20 @@ export function SearchInlineExpand({
   // URL 검색어가 바깥에서 바뀌면(로고·유형 전환·해시태그·칩 ×·`필터 지우기`·뒤로/앞으로) 펼친 입력칸이 옛
   // 검색어로 남아 칩과 다른 말을 한다 — 지워졌으면 접고, 다른 값이 됐으면 그 값으로 채운다. 자기 쓰기와
   // 바깥 변경은 디바운스가 마지막으로 쓴 값으로 가른다(규칙은 `resolveSearchInputSync`). deps를 URL 검색어
-  // 하나로 둬 타이핑으로는 이 효과가 돌지 않는다.
-  useEffect(() => {
+  // 하나로 둬 타이핑으로는 이 효과가 돌지 않는다 — 입력값·펼침 상태·`collapse` 는 effect 이벤트로 읽는다.
+  const syncInputWithUrlQuery = useEffectEvent((nextUrlQuery: string | undefined) => {
     const sync = resolveSearchInputSync({
-      urlQuery,
+      urlQuery: nextUrlQuery,
       lastWrittenQuery: lastWrittenQueryRef.current,
       inputValue: value,
       isExpanded,
     });
-    lastWrittenQueryRef.current = urlQuery;
+    lastWrittenQueryRef.current = nextUrlQuery;
     if (sync.kind === "collapse") collapse();
     if (sync.kind === "fill") setValue(sync.value);
+  });
+  useEffect(() => {
+    syncInputWithUrlQuery(urlQuery);
   }, [urlQuery]);
 
   return (
