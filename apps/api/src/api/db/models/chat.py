@@ -720,7 +720,8 @@ class ChatTurn(Base):
       차감의 사용처는 `clover_spend_usages` 가 맡으므로 여기서는 그와 잇는 조인 키로만 쓴다.
     - `turn_number` 는 이 응답이 속한 턴이다. 재생성 행은 대체한 응답 기록의 값을 이어받는다.
     - `llm_calls` 는 `[{callSite, model, promptTokens, cachedTokens, cacheWriteTokens, outputTokens, thoughtsTokens}]`,
-      `stat_changes` 는 `{statEntityId: [before, after]}` 다. 임베딩 회상을 켠 턴은 맨 앞에 질의 임베딩 한 칸
+      `stat_changes` 는 `{statEntityId: [before, after]}` 다. Claude 자격 목록 경로로 간 호출의 칸에는 처리한 항목 id
+      `credentialId` 가 더해진다(목록을 쓰지 않은 호출에는 키가 없다). 임베딩 회상을 켠 턴은 맨 앞에 질의 임베딩 한 칸
       `{callSite, model, dims, promptTokens, latencyMs, outcome}` 이 붙는다(`chat/memory_vector.py`).
       생성 칸에는 처음으로 글이 든 델타가 오기까지의 지연 둘(정수 ms)이 더해진다 — `firstTokenMs` 는 턴 시작(생성 프롬프트
       조립 직전)부터라 기억 기능의 조립·질의 임베딩 지연까지 품고, `streamFirstTokenMs` 는 생성 스트림을 연 때부터라 생성

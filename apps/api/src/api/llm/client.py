@@ -112,9 +112,12 @@ class CallUsage:
     cache_write_tokens: int | None
     output_tokens: int | None
     thoughts_tokens: int | None
+    # 이 호출을 처리한 Claude 자격 목록 항목의 id. 목록을 쓰지 않은 호출은 None 이고 기록에 키를 싣지 않는다 — 목록을 쓰지 않는
+    # 동안의 턴·소설 기록이 바이트까지 지금과 같게. 기본값이 있어 기존 호출부·테스트 가짜는 그대로다.
+    credential_id: str | None = None
 
     def as_record(self) -> dict[str, Any]:
-        return {
+        record: dict[str, Any] = {
             "callSite": self.call_site,
             "model": self.model,
             "promptTokens": self.prompt_tokens,
@@ -123,6 +126,9 @@ class CallUsage:
             "outputTokens": self.output_tokens,
             "thoughtsTokens": self.thoughts_tokens,
         }
+        if self.credential_id is not None:
+            record["credentialId"] = self.credential_id
+        return record
 
 
 def _token_count(usage_metadata: object | None, attr: str) -> int | None:
@@ -130,10 +136,13 @@ def _token_count(usage_metadata: object | None, attr: str) -> int | None:
     return value if isinstance(value, int) else None
 
 
-def collect_usage(usage: "LLMCallContext", model: str, usage_metadata: object | None) -> None:
+def collect_usage(
+    usage: "LLMCallContext", model: str, usage_metadata: object | None, *, credential_id: uuid.UUID | None = None
+) -> None:
     """호출 한 건을 그 호출의 `usage_sink` 에 더한다(없으면 아무것도 하지 않는다). 공급자 구현이 `record_usage` 를 부르는
     바로 그 자리에서 함께 부른다 — 그래서 더하는 조건(스트림은 정상 종료 때만, 구조화는 파싱 검사 앞)이 사용량 집계와
-    같다. 생성 스트림 안에서 불리므로 메타데이터가 이상해도 예외를 내지 않게 정수가 아닌 값은 `None` 으로 읽는다."""
+    같다. 생성 스트림 안에서 불리므로 메타데이터가 이상해도 예외를 내지 않게 정수가 아닌 값은 `None` 으로 읽는다.
+    `credential_id` 는 Claude 자격 목록 경로로 간 호출이 처리한 항목이다(그 밖의 호출은 넘기지 않는다)."""
     if usage.usage_sink is None:
         return
     usage.usage_sink.append(
@@ -145,6 +154,7 @@ def collect_usage(usage: "LLMCallContext", model: str, usage_metadata: object | 
             cache_write_tokens=_token_count(usage_metadata, "cache_write_token_count"),
             output_tokens=_token_count(usage_metadata, "candidates_token_count"),
             thoughts_tokens=_token_count(usage_metadata, "thoughts_token_count"),
+            credential_id=str(credential_id) if credential_id is not None else None,
         )
     )
 

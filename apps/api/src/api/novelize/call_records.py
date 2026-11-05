@@ -5,7 +5,8 @@
 `cacheWriteTokens`·`outputTokens`·`thoughtsTokens`)에 이 모듈이 바깥에서 칸을 덧붙인다: `backend`(호출이 간 구현), `durationMs`(호출을
 감싼 구간의 걸린 시간, 스트림은 다 받을 때까지), `promptSetId`(문안을 읽은 소설 세트 id), `stage`(작업 갈래, 경계 제안은 `boundary`,
 묶음 재검사는 `recheck`), `routeSource`(배정 표를 읽는 단계만 — 그 해석의 출처, 나머지는 null), `failure`(호출 단위의 실패 사유, 정상
-종료면 null). 사용량 칸 모양은 채팅 턴 기록과 같게 두어 같은 원가 함수로 친다 — 그래서 `llm/client.py` 의 세 이름은 고치지 않고
+종료면 null). Claude 자격 목록 경로로 간 호출은 사용량 칸에 처리한 항목 id `credentialId` 가 더해진다(목록을 쓰지 않은 호출에는 키가
+없다). 사용량 칸 모양은 채팅 턴 기록과 같게 두어 같은 원가 함수로 친다 — 그래서 `llm/client.py` 의 세 이름은 고치지 않고
 덧붙이기만 한다. 공급자가 사용량을 남기기 전에 끝난 호출(안전 차단·전송 오류·쿼터 소진·시간 상한 취소)은 토큰 칸 없이 `callSite`·
 `model` 만 갖고, `model` 은 요청에 실은 id 다(라우터와 같은 해석에 Gemini 는 클라이언트가 고르는 소설화 모델, `sent_model`). 세트의 판
 번호는 싣지 않는다 — 서빙 경로는 판 표를 읽지 않으므로(`tests/test_prompt_semver_boundary.py`), 판은 세트 id 로 판 표와 이어 읽는다.
