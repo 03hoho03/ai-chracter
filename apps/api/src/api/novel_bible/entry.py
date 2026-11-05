@@ -1,5 +1,6 @@
 """정본 기억의 바깥 입구 — 어드민 내부 API, 측정 하네스, 소설화 워커가 부른다. 코어 함수에 실제 등록부(`registry.REGISTRY`)와
-규칙 목록(`rules.RULES`), 어댑터 해석기(`adapters/resolver.py` 의 `build_resolver`)를 넘기는 자리다. 스위치(`novel_bible_enabled`)가
+규칙 목록(`rules.RULES`), 어댑터 해석기(`adapters/resolver.py` 의 `build_resolver`), 그 해석기로 부르는 모호 후보 판정
+(`rules.build_judge`)을 넘기는 자리다. 스위치(`novel_bible_enabled`)가
 꺼져 있으면 확정을 받지 않고, 워커는 처리기(`BibleWorker`)를 만들지 않는다."""
 
 import asyncio
@@ -24,7 +25,7 @@ from api.novel_bible.core.sweep import BIBLE_TASK_TIMEOUT_SECONDS, expire_stale_
 from api.novel_bible.core.types import BibleSnapshot
 from api.novel_bible.ids import CommitFailure, CommitStatus, FindingSeverity, JobFailure, JobStatus, SlotId
 from api.novel_bible.registry import REGISTRY
-from api.novel_bible.rules import RULES
+from api.novel_bible.rules import RULES, build_judge
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +65,11 @@ async def run_until_idle(
     max_steps: int = 1_000,
 ) -> int:
     """워커가 하는 일(준비된 확정 처리 → 대기 작업 실행)을 이 프로세스 안에서 할 일이 없을 때까지 한다. 돌린 단계 수를
-    돌려준다. 측정 하네스가 워커 없이 쓴다."""
+    돌려준다. 측정 하네스가 워커 없이 쓴다. 판정도 같은 해석기로 부른다 — 하네스가 감싼 해석기를 넘기면 판정 호출도 그 원장을
+    지난다."""
     return await pipeline.run_until_idle(
-        session_factory, REGISTRY, RULES, resolver, novel_id=novel_id, max_steps=max_steps
+        session_factory, REGISTRY, RULES, resolver, novel_id=novel_id, max_steps=max_steps,
+        judge=build_judge(resolver),
     )
 
 
@@ -83,6 +86,7 @@ class BibleWorker:
     def __init__(self, session_factory: SessionFactory, resolver: AdapterResolver) -> None:
         self._session_factory = session_factory
         self._resolver = resolver
+        self._judge = build_judge(resolver)
 
     @classmethod
     async def start(cls, session_factory: SessionFactory) -> "BibleWorker | None":
@@ -114,7 +118,9 @@ class BibleWorker:
         # 실패는 삼키고 남긴다 — 정본 기억 조회 실패가 워커의 살아 있음 판정(소설 고르기 성공에 묶임)을 흔들지 않는다.
         try:
             async with asyncio.timeout(BIBLE_TASK_TIMEOUT_SECONDS):
-                if not await pipeline.process_ready_commit(self._session_factory, REGISTRY, RULES):
+                if not await pipeline.process_ready_commit(
+                    self._session_factory, REGISTRY, RULES, judge=self._judge
+                ):
                     await run_next_job(self._session_factory, REGISTRY, self._resolver)
         except Exception as exc:
             logger.warning("정본 기억 처리 한 칸이 실패했다(다음 바퀴에 다시 고른다): %s", type(exc).__name__)

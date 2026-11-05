@@ -109,14 +109,16 @@ def verify_quote(manuscript: Manuscript, quote: QuoteOut) -> VerifiedQuote | Non
     )
 
 
-def _matches(body: str, block_ids: list[uuid.UUID], quote: VerifiedQuote) -> bool:
+def _cut(body: str, block_ids: list[uuid.UUID], quote: VerifiedQuote) -> str | None:
+    """근거가 가리키는 블록 구간의 원문 글 — 그 구간의 해시가 근거의 해시와 같을 때만. 블록이 없거나 해시가 다르면 None."""
     if quote.block_id not in block_ids:
-        return False
+        return None
     paragraphs = split_paragraphs(body)
     index = block_ids.index(quote.block_id)
-    return index < len(paragraphs) and quote_hash(paragraphs[index][quote.char_start : quote.char_end]) == (
-        quote.quote_sha256
-    )
+    if index >= len(paragraphs):
+        return None
+    text = paragraphs[index][quote.char_start : quote.char_end]
+    return text if quote_hash(text) == quote.quote_sha256 else None
 
 
 async def manuscript_evidence_verified(
@@ -127,6 +129,18 @@ async def manuscript_evidence_verified(
 ) -> dict[uuid.UUID, bool]:
     """항목마다 원고 근거 중 하나 이상이 지금 그 개정의 글과 맞는가. 이번 확정의 새 항목은 `new_quotes`(확정 개정 기준)로,
     정본에 있던 항목은 저장된 근거 행으로 본다. 개정이 지워졌으면 맞지 않는 것이다."""
+    texts = await manuscript_evidence_texts(session, item_ids, new_quotes, new_revision_id)
+    return {item_id: bool(found) for item_id, found in texts.items()}
+
+
+async def manuscript_evidence_texts(
+    session: AsyncSession,
+    item_ids: set[uuid.UUID],
+    new_quotes: Mapping[uuid.UUID, tuple[VerifiedQuote, ...]],
+    new_revision_id: uuid.UUID,
+) -> dict[uuid.UUID, list[str]]:
+    """항목마다 지금 그 개정의 글과 맞는 원고 근거의 원문 글(근거 블록에서 위치로 잘라 낸 구간). 읽는 근거는
+    `manuscript_evidence_verified` 와 같다 — 차단 근거 확인과 판정 입력의 인용이 같은 글을 본다."""
     quotes: dict[uuid.UUID, list[tuple[uuid.UUID, VerifiedQuote]]] = {
         item_id: [(new_revision_id, quote) for quote in new_quotes[item_id]]
         for item_id in item_ids
@@ -166,9 +180,10 @@ async def manuscript_evidence_verified(
         ).all()
     }
     return {
-        item_id: any(
-            revision_id in revisions and _matches(*revisions[revision_id], quote)
+        item_id: [
+            text
             for revision_id, quote in quotes.get(item_id, [])
-        )
+            if revision_id in revisions and (text := _cut(*revisions[revision_id], quote)) is not None
+        ]
         for item_id in item_ids
     }

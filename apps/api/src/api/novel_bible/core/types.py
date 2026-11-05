@@ -7,7 +7,7 @@
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -23,6 +23,7 @@ from api.novel_bible.ids import (
     ItemTable,
     KnowledgeKind,
     SourceField,
+    WarningRule,
 )
 
 
@@ -285,9 +286,39 @@ class BibleSnapshot:
 
 
 class FindingDraft(_Frozen):
-    """규칙 하나가 낸 검사 결과. `item_ids` 는 관련 항목들이고, `payload` 에는 위치·근거 위치만 두고 인용 글은 넣지 않는다."""
+    """규칙 하나가 낸 검사 결과. `item_ids` 는 관련 항목들이고, 규칙이 내는 `payload` 에는 위치·근거 위치만 두고 인용 글은 넣지
+    않는다. 예외는 판정 단계가 내는 모델 판정의 충돌(`llm_conflict`, `WarningDraft`)로, 모델이 쓴 이유 글을 실어 원고 조각이 섞일
+    수 있다 — 그 글이 언제 지워지고 무엇이 남을 수 있는지는 검사 결과 표(`NovelBibleFinding`)에 적었다."""
 
     severity: FindingSeverity
     rule: FindingRule
     item_ids: tuple[uuid.UUID, ...]
     payload: dict[str, Any] = {}
+
+
+class WarningDraft(FindingDraft):
+    """경고만 담는 검사 결과 — 모호 후보 판정 단계가 돌려주는 꼴이다. 등급은 경고로 고정되고 이름은 경고 이름만 받아, 판정
+    결과가 확정을 막는 길이 타입에 없다."""
+
+    severity: Literal["warning"] = "warning"
+    rule: WarningRule
+
+
+@dataclass(frozen=True)
+class JudgeCandidate:
+    """모호 후보 판정에 넘기는 후보 하나 — 구조 규칙이 후보 표시(`payload["judge"]`)를 실은 경고와, 코어가 그 경고의 항목으로
+    조립한 판정 입력 글(문안 `candidate` 값). `chapters` 는 항목들의 화 번호(오름차순)로, 같은 규칙 안 판정 차례를 정한다."""
+
+    warning: WarningDraft
+    chapters: tuple[int, ...]
+    text: str
+
+
+@dataclass
+class JudgeSpent:
+    """한 확정의 판정 단계들이 같은 작업 실행 안에서 이미 쓴 몫 — 쓴 시간(초, 검사 틀이 판정 단계 앞뒤로 재어 더한다)과 모델을
+    부른 후보 수(판정이 부를 때마다 더한다). 머리 비교에서 져 다시 검사할 때 같은 기록을 넘겨, 총 기한과 확정당 최대 건수를
+    검사마다 새로 세지 않게 한다."""
+
+    seconds: float = 0.0
+    calls: int = 0
