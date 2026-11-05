@@ -1464,7 +1464,9 @@ export interface paths {
         /**
          * Replace Llm Credential Secret
          * @description 키만 바꾼다(한 항목 = 한 계정 — 다른 조직의 키로는 바꾸지 않는다). 상태·판은 그대로이고, 확인 기록이 옛 지문에 묶여
-         *     있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다.
+         *     있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
+         *     없을 때 살리는 길) 지문이 같아 옛 확인 기록이 그대로 지금 키의 확인으로 센다 — 암호문만 지금 키로 다시 쓰고, 같은 키는
+         *     같은 조직이라 조직 조회를 부르지 않고 조직 표지도 그대로 둔다.
          */
         put: operations["replace_llm_credential_secret_admin_llm_credentials__credential_id__secret_put"];
         post?: never;
