@@ -14,8 +14,8 @@ type GuideStepPagerProps = {
   topicId: CreationGuideTopicId;
   steps: readonly GuideStep[];
   step: GuideStep;
-  /** 마지막 단계 다음에 가는 개요 절(미리보기로 시험하기). 그런 절이 없는 토픽은 null 이고 개요 첫머리로 간다. */
-  finish: { anchorId: string; title: string } | null;
+  /** 마지막 단계 다음에 가는 개요 절(미리보기로 시험하기). 그런 절이 없는 토픽은 비워 두고 개요 첫머리로 간다. */
+  finish?: { anchorId: string; title: string };
 };
 
 /**
