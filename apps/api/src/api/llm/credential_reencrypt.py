@@ -6,7 +6,8 @@
 붙여넣는 일이 된다.
 
 값은 그대로이고 암호문과 키 id 만 바뀐다(지문·끝 4자리도 그대로). 행마다 따로 커밋해 도중에 멈춰도 다시 돌리면 남은 행만
-한다. 복호화할 수 없는 행(그 키를 이미 잃음)은 건너뛰고 수만 센다 — 그 항목은 어드민에서 키를 다시 붙여넣어야 한다. 행 쓰기가
+한다. 한 행이라도 다시 썼으면 끝에 런타임의 목록 캐시 세대를 한 번 올린다 — 그 무효화가 실패해도 종료 코드는 그대로다(캐시는
+수명이 다하면 저절로 맞춰지고, 그동안 런타임이 든 옛 암호문은 회전 절차 동안 키링에 남은 옛 키로 읽힌다). 복호화할 수 없는 행(그 키를 이미 잃음)은 건너뛰고 수만 센다 — 그 항목은 어드민에서 키를 다시 붙여넣어야 한다. 행 쓰기가
 DB 에서 실패한 행도 그 행만 실패로 세고 다음 행으로 간다 — 첫 실패에서 멈추면 뒤 행이 모두 옛 키에 남는데, 요약 줄만으로는
 옛 키를 지워도 되는지 가릴 수 없게 된다.
 
@@ -25,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from api.core.field_crypto import FieldDecryptError
 from api.db.models.llm_credential import LlmCredential
 from api.db.session import async_session_factory, engine
+from api.llm.credential_pool import invalidate_pool_snapshot
 from api.llm.credentials import CredentialStoreError, credential_keyring, credential_write, reencrypt_secret
 
 
@@ -77,6 +79,12 @@ async def run(session_factory: async_sessionmaker[AsyncSession]) -> int:
         f"Claude 자격 재암호화: {result.reencrypted}행, 쓰기 실패 {result.failed}행, "
         f"복호화할 수 없어 건너뜀 {result.unreadable}행"
     )
+    if result.reencrypted:
+        try:
+            await invalidate_pool_snapshot()
+        except Exception as exc:
+            # 종료 코드는 바꾸지 않는다 — 회전 중에는 옛 키가 키링에 남아 런타임이 든 옛 암호문도 읽힌다.
+            print(f"자격 목록 캐시 무효화 실패 — 5분 안에 저절로 맞춰진다 ({type(exc).__name__})", file=sys.stderr)
     return 1 if result.failed or result.unreadable else 0
 
 

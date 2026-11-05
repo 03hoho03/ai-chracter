@@ -14,6 +14,7 @@ import pytest
 
 from api.core.config import settings
 from api.llm import credential_probe
+from api.llm.claude_messages import to_usage
 from api.llm.credential_probe import (
     AnthropicCredentialProbe,
     CheckCallResult,
@@ -209,14 +210,15 @@ async def test_generation_shape_request_matches_production_generation_with_a_sma
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """생성 꼴은 운영 채팅 생성과 같은 인자에 출력 상한만 작다: 사고 설정을 싣지 않고(글쓰기 모델은 끌 수 없다) 깊이를
-    채팅 생성 깊이로 보낸다. 지시문·멈춤 문자열·계정 단서는 싣지 않고, 헤더·사용량이 응답 하나에 오게 비스트림이다."""
+    채팅 생성 깊이로 보낸다. 지시문·멈춤 문자열·계정 단서는 싣지 않고, 헤더·사용량이 응답 하나에 오게 비스트림이다. 받아들여진
+    호출의 사용량은 결과에 실려 그 항목의 추정 사용액에 쌓인다."""
     seen = _sdk_backed(monkeypatch, _message())
 
     result = await AnthropicCredentialProbe().check(
         FAKE_API_KEY, CheckGroup("claude-opus-5-5", ("opus",), "generation"), credential_id=_CREDENTIAL_ID
     )
 
-    assert result == CheckCallResult(error_kind=None, organization=None)
+    assert result == CheckCallResult(error_kind=None, organization=None, usage=to_usage(12, 0, 0, 16))
     (request,) = seen
     assert request.url.path == "/v1/messages"
     assert json.loads(request.content) == {
@@ -259,7 +261,7 @@ async def test_judgment_shape_request_follows_structured_reasoning(
 
 
 async def test_check_reads_the_organization_header_of_each_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    """확인은 응답마다 조직 헤더를 정규화해 돌려준다(대조는 라우터가 한다). 거절된 호출은 종류만 있고 헤더는 없다."""
+    """확인은 응답마다 조직 헤더를 정규화해 돌려준다(대조는 라우터가 한다). 거절된 호출은 종류만 있고 헤더·사용량은 없다."""
     responses = iter(
         [
             _message({_ORG_HEADER: "Org-Test-0001"}),
@@ -274,7 +276,7 @@ async def test_check_reads_the_organization_header_of_each_response(monkeypatch:
     results = [await probe.check(FAKE_API_KEY, group, credential_id=_CREDENTIAL_ID) for _ in range(3)]
 
     assert results == [
-        CheckCallResult(error_kind=None, organization="org-test-0001"),
-        CheckCallResult(error_kind=None, organization=None),
+        CheckCallResult(error_kind=None, organization="org-test-0001", usage=to_usage(12, 0, 0, 16)),
+        CheckCallResult(error_kind=None, organization=None, usage=to_usage(12, 0, 0, 16)),
         CheckCallResult(error_kind="credit", organization=None),
     ]

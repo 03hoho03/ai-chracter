@@ -1316,11 +1316,14 @@ class AdminLlmCredentialCreateRequest(CamelModel):
 
 class AdminLlmCredentialUpdateRequest(CamelModel):
     """메타만 고친다. 보내지 않은 칸은 그대로다. 충전액은 null 이면 지우고, 바뀌면 그 기준 시각을 지금으로 다시 잡는다.
-    라벨·임계는 null 을 보내도 그대로다."""
+    라벨·임계는 null 을 보내도 그대로다. `reset_credit_basis` 가 참이면 충전액이 같아도 그 기준 시각을 지금으로 다시 잡는다(추정
+    사용액이 0 부터 다시 세고 잔액 임계 알림이 다시 무장된다). 거짓이면 값이 바뀔 때만 다시 잡는다 — 충전액 칸이 실려 오기만 해도
+    다시 잡으면, 칸을 늘 실어 보내는 화면에서 라벨만 고쳐도 기준이 지워진다. 참인데 다시 잡을 충전액이 없으면 409 다."""
 
     label: LlmCredentialLabel | None = None
     credit_usd: LlmCredentialCreditUsd | None = None
     alert_pct: LlmCredentialAlertPct | None = None
+    reset_credit_basis: bool = False
 
 
 class AdminLlmCredentialSecretRequest(CamelModel):
@@ -1354,9 +1357,24 @@ class AdminLlmCredentialCheckItem(CamelModel):
     is_current_state_version: bool
 
 
+class AdminLlmCredentialSpend(CamelModel):
+    """충전액 기준 이후의 추정 사용액. 목록 경로 호출과 확인 호출의 원가를 단가표로 친 추정이라 콘솔 잔액과 다를 수 있다(목록을
+    쓰지 않은 동안의 env 키 호출·다른 곳에서 같은 키로 부른 호출은 세지 않는다). `remaining_usd` 는 충전액 − 추정 사용액이라 음수일
+    수 있고, `below_alert` 는 그 값이 충전액의 임계 비율 아래인가다. 단가표에 없는 모델의 호출은 금액 없이
+    `unpriced_calls`·`unpriced_model`(마지막으로 본 id)로 센다."""
+
+    spent_usd: Decimal
+    remaining_usd: Decimal
+    below_alert: bool
+    calls: int
+    unpriced_calls: int
+    unpriced_model: str | None
+
+
 class AdminLlmCredential(CamelModel):
     """목록 항목 하나. 키 원문·암호문·암호화 키 id 는 싣지 않는다 — 끝 4자리와 지문만. `same_as_env_key` 는 볼 때의 env 롤백
-    키와 같은 키인지(저장하지 않는 계산값), `enable_blocker` 는 켜기가 막히는 이유(켤 수 있으면 null)다."""
+    키와 같은 키인지(저장하지 않는 계산값), `enable_blocker` 는 켜기가 막히는 이유(켤 수 있으면 null)다. `spend` 는 추정
+    사용액이다 — 충전액이 없거나 사용액 저장소를 읽지 못하면 null."""
 
     id: uuid.UUID
     provider: CredentialProvider
@@ -1378,6 +1396,7 @@ class AdminLlmCredential(CamelModel):
     updated_at: datetime
     checks: list[AdminLlmCredentialCheckItem]
     enable_blocker: EnableBlocker | None
+    spend: AdminLlmCredentialSpend | None
 
 
 class AdminLlmCredentialListResponse(CamelModel):

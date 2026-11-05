@@ -1,6 +1,8 @@
 """어드민 Claude 자격 목록 API — 조회, 추가, 메타 수정, 키 교체, 순서 저장, 켜기, 끄기, 삭제, 확인 호출, 목록 사용 켜기·끄기.
 
-이 판은 저장과 관리만 한다 — 호출 경로는 아직 이 목록을 읽지 않는다. 조회는 캐시가 아니라 DB 를 읽는다.
+조회는 캐시가 아니라 DB 를 읽는다. 호출 경로는 이 목록을 Redis 스냅숏과 세대 번호로 읽으므로(`llm/credential_pool.py`) 커밋된
+변경마다 커밋 뒤에 그 세대를 올린다 — 끈 항목·바꾼 순서가 다음 호출부터 보인다. 무효화가 실패해도 변경은 이미 커밋됐으니 응답은
+그대로이고 경고만 남긴다(옛 스냅숏은 캐시 수명 안에서 저절로 맞춰진다).
 
 - **키를 받는 일**(추가·키 교체·확인 호출)과 목록 사용 켜기는 저장소 설정(암호화 키·허용 계정)이 있어야 한다(없으면 503).
   메타 수정·끄기·삭제·순서 저장·목록 사용 끄기는 설정 없이도 된다 — 끄기·삭제는 되돌리기 경로라 막으면 안 된다.
@@ -12,6 +14,8 @@
   된다(`llm/credentials.py` 의 `enable_blocker`). 확인 호출은 시작할 때의 판·지문을 기록에 남기므로, 호출을 기다리는 동안
   끄기·소진·키 교체가 있었으면 그 회차는 세지 않는다. 목록 사용 켜기는 모든 축이 지금 모델 id 로 확인된 켜진 항목으로 덮일
   것을 요구한다 — 모델 id 설정을 바꾼 뒤 항목마다 다시 확인하게 강제하는 자리다.
+- **추정 사용액**: 조회 응답은 충전액이 있는 항목마다 그 기준 이후의 추정 사용액을 싣는다(`llm/credential_usage.py`). 확인
+  호출의 원가도 그 항목에 쌓는다 — 호출 경로 스위치와 무관하게 계정은 실제로 썼다.
 - **목록 판**: 추가·삭제·순서 저장은 한 행 표의 판 번호를 먼저 올린다. 그 행의 잠금이 세 변경을 줄 세우고, 순서 저장만 화면이
   본 판을 요구한다(한 문장 조건부 UPDATE — 낡은 판과 경쟁을 함께 409 로). 순서는 모두를 같은 양수만큼 민 뒤 최종값을 매긴다
   (위치는 즉시 검사하는 유일 칸이라 바로 최종값을 매기면 도중에 겹친다).
@@ -19,10 +23,11 @@
   `credential_write` 로 감싼다 — DB 오류의 파라미터와 드라이버 DETAIL(위반한 행 전체)이 암호문을 싣는다. 응답·감사 로그·알림에는
   키 원문·암호문·암호화 키 id 를 싣지 않고, 감사 로그·알림에는 끝 4자리와 조직 id 도 싣지 않는다.
 - **감사·알림**: 성공한 변경마다 감사 한 행(대상 칸 없음 — 회원 상세가 읽지 않는다)과 커밋 뒤 알림 한 건이다. 바뀐 것이 없는
-  요청(이미 켜진 항목 켜기 등)은 둘 다 남기지 않는다. 보안 신호(허용 목록 밖 조직의 키 저장 시도, 확인 응답의 조직 불일치·허용
-  밖, 저장·확인 둘 다 조직 헤더 없음)는 변경이 거부돼도 따로 알린다.
+  요청(이미 켜진 항목 켜기 등)은 둘 다 남기지 않고 캐시도 무효화하지 않는다. 보안 신호(허용 목록 밖 조직의 키 저장 시도, 확인
+  응답의 조직 불일치·허용 밖, 저장·확인 둘 다 조직 헤더 없음)는 변경이 거부돼도 따로 알린다.
 """
 
+import logging
 import uuid
 from collections.abc import Callable, Coroutine, Sequence
 from datetime import UTC, datetime
@@ -34,6 +39,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import SecretStr
+from redis.exceptions import RedisError
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,11 +54,13 @@ from api.admin.schemas import (
     AdminLlmCredentialOrderRequest,
     AdminLlmCredentialPoolRequest,
     AdminLlmCredentialSecretRequest,
+    AdminLlmCredentialSpend,
     AdminLlmCredentialUpdateRequest,
 )
 from api.core.config import settings
 from api.core.field_crypto import FieldDecryptError
 from api.core.rate_limit import check_rate_limit
+from api.core.sentry import capture_dependency_failure
 from api.db.models.llm_credential import (
     CheckErrorKind,
     ClaudeModelAxis,
@@ -66,11 +74,19 @@ from api.db.models.llm_credential import (
 from api.db.session import get_db_session
 from api.llm import credentials
 from api.llm.credential_notify import get_credential_notifier
+from api.llm.credential_pool import invalidate_pool_snapshot
 from api.llm.credential_probe import (
     CheckCallResult,
     CredentialProbe,
     CredentialProbeError,
     get_anthropic_credential_probe,
+)
+from api.llm.credential_usage import (
+    CredentialSpend,
+    SpendTarget,
+    below_alert,
+    read_credential_spend,
+    record_credential_spend,
 )
 from api.llm.credentials import (
     CLAUDE_AXES,
@@ -96,6 +112,8 @@ from api.llm.credentials import (
 )
 
 Notifier = Callable[[str], None]
+
+logger = logging.getLogger(__name__)
 
 # 확인 호출은 항목마다 분당 한 번이다(호출마다 실제 비용이 든다). 정책값이라 기구(`core/rate_limit.py`)가 아니라 여기 둔다.
 CHECK_LIMIT = 1
@@ -250,8 +268,12 @@ def _micro(usd: Decimal | None) -> int | None:
     return None if usd is None else int(usd * _MICRO_PER_USD)
 
 
+def _dollars(micro: int) -> Decimal:
+    return (Decimal(micro) / _MICRO_PER_USD).quantize(Decimal("0.01"))
+
+
 def _usd(micro: int | None) -> Decimal | None:
-    return None if micro is None else (Decimal(micro) / _MICRO_PER_USD).quantize(Decimal("0.01"))
+    return None if micro is None else _dollars(micro)
 
 
 def _usd_text(micro: int | None) -> str:
@@ -271,8 +293,18 @@ def _env_key_line(same: bool) -> str:
     return "\n쓰지 않을 키면 콘솔에서 폐기한다"
 
 
-def _after_commit(notify: Notifier, *messages: str) -> None:
-    """커밋된 변경의 알림."""
+async def _invalidate_pool_snapshot() -> None:
+    """런타임 목록 캐시의 세대를 올린다. 실패는 삼킨다 — 변경은 이미 커밋됐고, 옛 스냅숏이 나가는 시간은 캐시 수명이 상한이다."""
+    try:
+        await invalidate_pool_snapshot()
+    except (RedisError, TimeoutError):
+        logger.warning("Claude 자격 목록 변경 뒤 캐시 무효화 실패 — 캐시 수명 동안 옛 목록이 나간다", exc_info=True)
+        capture_dependency_failure(dependency="redis")
+
+
+async def _after_commit(notify: Notifier, *messages: str) -> None:
+    """커밋된 변경의 캐시 무효화와 알림. 무효화가 먼저다 — 알림을 받은 운영자가 바로 본 런타임이 옛 목록이면 안 된다."""
+    await _invalidate_pool_snapshot()
     for message in messages:
         notify(message)
 
@@ -293,8 +325,25 @@ def _check_out(
     )
 
 
+def _spend_out(credential: LlmCredential, spend: CredentialSpend | None) -> AdminLlmCredentialSpend | None:
+    if spend is None or credential.credit_micro_usd is None:
+        return None
+    remaining = credential.credit_micro_usd - spend.spent_micro_usd
+    return AdminLlmCredentialSpend(
+        spent_usd=_dollars(spend.spent_micro_usd),
+        remaining_usd=_dollars(remaining),
+        below_alert=below_alert(credential.credit_micro_usd, spend.spent_micro_usd, credential.alert_pct),
+        calls=spend.calls,
+        unpriced_calls=spend.unpriced_calls,
+        unpriced_model=spend.unpriced_model,
+    )
+
+
 def _credential_out(
-    credential: LlmCredential, checks: Sequence[LlmCredentialCheck], model_ids: dict[ClaudeModelAxis, str]
+    credential: LlmCredential,
+    checks: Sequence[LlmCredentialCheck],
+    model_ids: dict[ClaudeModelAxis, str],
+    spend: CredentialSpend | None,
 ) -> AdminLlmCredential:
     latest = latest_checks_per_axis(checks)
     return AdminLlmCredential(
@@ -318,6 +367,7 @@ def _credential_out(
         updated_at=credential.updated_at,
         checks=[_check_out(credential, latest[axis], model_ids) for axis in CLAUDE_AXES if axis in latest],
         enable_blocker=enable_blocker(credential, checks, allowed_accounts()),
+        spend=_spend_out(credential, spend),
     )
 
 
@@ -325,7 +375,8 @@ async def _credential_response(db: AsyncSession, credential_id: uuid.UUID) -> Ad
     """커밋 뒤 다시 읽은 항목 — 서버가 채운 칸(만든 시각 등)까지."""
     credential = await _get(db, credential_id)
     checks = await _checks_of(db, [credential.id])
-    return _credential_out(credential, checks[credential.id], current_model_ids())
+    spends = await read_credential_spend([SpendTarget.of_row(credential)])
+    return _credential_out(credential, checks[credential.id], current_model_ids(), spends[credential.id])
 
 
 async def _list_response(db: AsyncSession) -> AdminLlmCredentialListResponse:
@@ -336,6 +387,7 @@ async def _list_response(db: AsyncSession) -> AdminLlmCredentialListResponse:
     )
     rows = await _ordered(db)
     checks = await _checks_of(db, [credential.id for credential in rows])
+    spends = await read_credential_spend([SpendTarget.of_row(credential) for credential in rows])
     model_ids = current_model_ids()
     return AdminLlmCredentialListResponse(
         store_configured=store_configured(),
@@ -343,7 +395,9 @@ async def _list_response(db: AsyncSession) -> AdminLlmCredentialListResponse:
         pool_enabled=row.pool_enabled if row is not None else False,
         list_revision=row.list_revision if row is not None else 0,
         model_ids=model_ids,
-        credentials=[_credential_out(credential, checks[credential.id], model_ids) for credential in rows],
+        credentials=[
+            _credential_out(credential, checks[credential.id], model_ids, spends[credential.id]) for credential in rows
+        ],
     )
 
 
@@ -406,7 +460,7 @@ async def create_llm_credential(
         message += "\n조직 헤더가 없어 조직 미확인 — 확인 호출에서 다시 대조한다"
     if same_as_env_key(credential):
         message += "\nenv 롤백 키와 같은 키다 — 이 항목을 지우거나 교체해도 콘솔에서 폐기하지 마라"
-    _after_commit(notify, message)
+    await _after_commit(notify, message)
     return await _credential_response(db, credential.id)
 
 
@@ -455,7 +509,7 @@ async def reorder_llm_credentials(
         )
         await db.flush()
         await db.commit()
-    _after_commit(notify, f"[Claude 자격] 순서 — {order}")
+    await _after_commit(notify, f"[Claude 자격] 순서 — {order}")
     return await _list_response(db)
 
 
@@ -505,7 +559,7 @@ async def set_llm_credential_pool(
             await db.commit()
             changed = True
     if changed:
-        _after_commit(notify, f"[Claude 자격] 목록 사용 {'켬' if body.enabled else '끔'}")
+        await _after_commit(notify, f"[Claude 자격] 목록 사용 {'켬' if body.enabled else '끔'}")
     return await _list_response(db)
 
 
@@ -518,19 +572,25 @@ async def update_llm_credential(
     db: AsyncSession = Depends(get_db_session),
     notify: Notifier = Depends(get_credential_notifier),
 ) -> AdminLlmCredential:
-    """라벨·충전액·임계만 고친다. 충전액이 바뀌면 그 기준 시각을 지금으로 다시 잡는다(사용액 누적이 그 시각부터 다시 센다)."""
+    """라벨·충전액·임계만 고친다. 충전액이 바뀌면 그 기준 시각을 지금으로 다시 잡는다(사용액 누적이 그 시각부터 다시 센다).
+    `resetCreditBasis` 면 충전액이 같아도 다시 잡고, 다시 잡을 충전액이 없으면(원래 없거나 같은 요청이 지우면) 아무것도 바꾸지
+    않고 409 다."""
     changes: list[str] = []
     async with credential_write(db):
         credential = await _get(db, credential_id, lock=True)
+        credit = _micro(body.credit_usd) if "credit_usd" in body.model_fields_set else credential.credit_micro_usd
+        if body.reset_credit_basis and credit is None:
+            raise _rule(status.HTTP_409_CONFLICT, "credit-basis-missing", "충전액이 없어 기준을 다시 잡을 수 없습니다.")
         if body.label is not None and body.label != credential.label:
             changes.append(f"라벨 {credential.label} → {body.label}")
             credential.label = body.label
-        if "credit_usd" in body.model_fields_set:
-            micro = _micro(body.credit_usd)
-            if micro != credential.credit_micro_usd:
-                changes.append(f"충전액 {_usd_text(credential.credit_micro_usd)} → {_usd_text(micro)} 달러")
-                credential.credit_micro_usd = micro
-                credential.credit_since = None if micro is None else datetime.now(UTC)
+        if credit != credential.credit_micro_usd:
+            changes.append(f"충전액 {_usd_text(credential.credit_micro_usd)} → {_usd_text(credit)} 달러")
+            credential.credit_micro_usd = credit
+            credential.credit_since = None if credit is None else datetime.now(UTC)
+        elif body.reset_credit_basis:
+            changes.append(f"사용액 기준 다시 잡음(충전액 {_usd_text(credit)} 달러)")
+            credential.credit_since = datetime.now(UTC)
         if body.alert_pct is not None and body.alert_pct != credential.alert_pct:
             changes.append(f"임계 {credential.alert_pct} → {body.alert_pct}%")
             credential.alert_pct = body.alert_pct
@@ -545,7 +605,7 @@ async def update_llm_credential(
             await db.flush()
             await db.commit()
     if changes:
-        _after_commit(notify, f"[Claude 자격] 수정 — {_subject(credential)} · {', '.join(changes)}")
+        await _after_commit(notify, f"[Claude 자격] 수정 — {_subject(credential)} · {', '.join(changes)}")
     return await _credential_response(db, credential_id)
 
 
@@ -630,7 +690,7 @@ async def replace_llm_credential_secret(
             message += "\n새 키는 env 롤백 키와 같다"
     if cleared:
         message += "\n조직 미확인으로 돌아감"
-    _after_commit(notify, message)
+    await _after_commit(notify, message)
     return await _credential_response(db, credential_id)
 
 
@@ -658,7 +718,7 @@ async def enable_llm_credential(
             await db.commit()
             changed = True
     if changed:
-        _after_commit(notify, f"[Claude 자격] 켬 — {_subject(credential)}")
+        await _after_commit(notify, f"[Claude 자격] 켬 — {_subject(credential)}")
     return await _credential_response(db, credential_id)
 
 
@@ -683,7 +743,7 @@ async def disable_llm_credential(
             await db.commit()
             changed = True
     if changed:
-        _after_commit(notify, f"[Claude 자격] 끔 — {_subject(credential)}")
+        await _after_commit(notify, f"[Claude 자격] 끔 — {_subject(credential)}")
     return await _credential_response(db, credential_id)
 
 
@@ -719,7 +779,7 @@ async def delete_llm_credential(
     message = f"[Claude 자격] 삭제 — {subject}" + _env_key_line(was_env_key)
     if not remaining:
         message += "\n목록이 비었다 — 런타임은 env 키 경로로 돈다"
-    _after_commit(notify, message)
+    await _after_commit(notify, message)
 
 
 # ── 확인 호출 ─────────────────────────────────────────────────────────────────────
@@ -865,7 +925,12 @@ async def check_llm_credential(
         await db.flush()
         await db.commit()
 
-    _after_commit(
+    # 받아들여진 호출마다 원가를 그 항목의 지금 기준에 쌓는다 — 기록을 쓴 행의 기준이라 그 사이 충전액을 바꿨으면 새 기준이다.
+    spend_target = SpendTarget.of_row(current)
+    for group, result in results:
+        if result.usage is not None:
+            await record_credential_spend(spend_target, group.model_id, result.usage)
+    await _after_commit(
         notify, f"[Claude 자격] 확인 — {subject} · {' · '.join(axis_results)}" + ("\n조직 확인됨" if fill else "")
     )
     return AdminLlmCredentialCheckResponse(
