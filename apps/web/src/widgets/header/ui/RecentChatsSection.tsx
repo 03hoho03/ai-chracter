@@ -170,6 +170,12 @@ function RecentChatsSkeleton({ surface }: { surface: RecentChatsSurface }) {
   );
 }
 
+type RecentChatRowProps = {
+  item: MyChatRoomListItem;
+  surface: RecentChatsSurface;
+  onNavigate: (() => void) | undefined;
+};
+
 /**
  * 한 방의 행: 썸네일 · 작품명 · "방 이름 · 상대 시각". 같은 작품의 방이 여럿이면 썸네일과 작품명이 같아 방 이름과 시각이
  * 가른다. 미리보기 문장은 넣지 않는다 — 세 줄째를 넣으면 열 개가 낮은 화면에서 내비까지 밀어 올린다. 행 메뉴도 두지 않는다
@@ -179,15 +185,7 @@ function RecentChatsSkeleton({ surface }: { surface: RecentChatsSurface }) {
  * 테두리가 없으면 그 순간 썸네일 자리가 사라진다. 현재 방의 굵기는 첫 줄(작품명)에만 건다 — 행 전체에 걸면 둘째 줄까지
  * 굵어져 두 줄을 가르는 굵기 차이가 무너진다.
  */
-function RecentChatRow({
-  item,
-  surface,
-  onNavigate,
-}: {
-  item: MyChatRoomListItem;
-  surface: RecentChatsSurface;
-  onNavigate: (() => void) | undefined;
-}) {
+function RecentChatRow({ item, surface, onNavigate }: RecentChatRowProps) {
   const relativeTime = formatRelativeTime(item.lastMessageAt ?? item.createdAt, new Date());
 
   return (

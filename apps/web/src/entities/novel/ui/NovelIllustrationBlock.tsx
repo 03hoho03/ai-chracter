@@ -51,20 +51,18 @@ export function NovelIllustrationFigure({
   );
 }
 
+type NovelIllustrationWithheldNoticeProps = {
+  illustration: ViewerIllustration;
+  isInPageFormat: boolean;
+  surface: NovelIllustrationSurface;
+};
+
 /**
  * 그림 대신 서는 안내 — 운영자가 내린 그림(사유 함께)과 원작이 이용 제한 중인 그림. 소유자와 독자가 같은 안내를 본다
  * (작가도 독자가 무엇을 보는지 알아야 그 그림을 바꾸거나 뗀다). 그림 크기를 지키지 않고 짧은 상자로 선다 — 지키면 한
  * 쪽 거의 전부가 "없는 그림"이 된다. 판형 안이면 px 에 사유를 세 줄에서 자르고, 글 흐름 속이면 평소 크기에 자르지 않는다.
  */
-export function NovelIllustrationWithheldNotice({
-  illustration,
-  isInPageFormat,
-  surface,
-}: {
-  illustration: ViewerIllustration;
-  isInPageFormat: boolean;
-  surface: NovelIllustrationSurface;
-}) {
+export function NovelIllustrationWithheldNotice({ illustration, isInPageFormat, surface }: NovelIllustrationWithheldNoticeProps) {
   const isTakenDown = illustration.withheld === "taken_down";
   const title = isTakenDown ? "운영 정책에 따라 내린 그림이에요" : "원작이 이용 제한 중이라 이 그림은 보여 드릴 수 없어요";
   const reason = isTakenDown ? illustration.withheldReason?.trim() : undefined;

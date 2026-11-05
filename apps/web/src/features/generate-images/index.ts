@@ -15,8 +15,6 @@ export { GenerateImagesResultGrid } from "./ui/GenerateImagesResultGrid";
 export { GenerateImagesStyleGrid } from "./ui/GenerateImagesStyleGrid";
 export { GenerateImagesStyleSummaryButton } from "./ui/GenerateImagesStyleSummaryButton";
 export type { ResultShape } from "./model/resultTileLayout";
-export {
-  GenerateImagesUnavailableState,
-  type UnavailableReason,
-} from "./ui/GenerateImagesUnavailableState";
+export { GenerateImagesUnavailableState } from "./ui/GenerateImagesUnavailableState";
+export type { UnavailableReason } from "./model/imageModelsUnavailableReason";
 export { imageRequestCloverCost } from "./model/imageCloverCost";

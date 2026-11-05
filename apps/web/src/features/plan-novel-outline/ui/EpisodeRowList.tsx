@@ -42,15 +42,13 @@ export function EpisodeRowList({ rows, onOpenEpisode, onOpenChapter }: EpisodeRo
   );
 }
 
-function EpisodeRowItem({
-  row,
-  onOpenEpisode,
-  onOpenChapter,
-}: {
+type EpisodeRowItemProps = {
   row: EpisodeRow;
   onOpenEpisode: (episodeKey: string) => void;
   onOpenChapter: (chapterId: string) => void;
-}) {
+};
+
+function EpisodeRowItem({ row, onOpenEpisode, onOpenChapter }: EpisodeRowItemProps) {
   const headingId = useId();
   const label = `${row.ordinal}화`;
   const { manuscript } = row;

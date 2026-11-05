@@ -1,4 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useRef, useState } from "react";
 
 import { BANK_LABELS, type CreatorPayoutResponse } from "@/entities/creator-payout";
@@ -52,7 +53,7 @@ export function PayoutInfoPanel({ payout }: PayoutInfoPanelProps) {
   }
 
   return (
-    <div ref={focusSummaryIfJustSaved} tabIndex={-1} className={`${STATUS_BLOCK_CLASS} outline-none`}>
+    <div ref={focusSummaryIfJustSaved} tabIndex={-1} className={cn(STATUS_BLOCK_CLASS, "outline-none")}>
       {/* 복호화하지 못하면(암호화 키를 잃었다) 실명이 없다. 은행·계좌 끝자리는 남아 있지만 운영자도 원문을 읽지 못해
           이체할 수 없으므로 다시 입력받는다. */}
       {payoutInfo.maskedName === null && (

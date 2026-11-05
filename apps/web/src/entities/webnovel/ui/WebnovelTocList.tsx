@@ -70,7 +70,13 @@ export function WebnovelTocList({
   );
 }
 
-function ReadingMarker({ isCurrent, isFinished, isReading }: { isCurrent: boolean; isFinished: boolean; isReading: boolean }) {
+type ReadingMarkerProps = {
+  isCurrent: boolean;
+  isFinished: boolean;
+  isReading: boolean;
+};
+
+function ReadingMarker({ isCurrent, isFinished, isReading }: ReadingMarkerProps) {
   if (isCurrent) {
     return <span className="shrink-0 text-xs font-medium whitespace-nowrap text-foreground">지금 화</span>;
   }

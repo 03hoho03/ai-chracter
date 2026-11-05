@@ -99,7 +99,7 @@ export const WorkBundlesForWorkModal = createCallable<WorkBundlesForWorkModalPro
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>묶음에 넣기</DialogTitle>
-          <DialogDescription className="[overflow-wrap:anywhere]">
+          <DialogDescription className="wrap-anywhere">
             ‘{title}’{koreanParticle(title, "을/를")} 넣을 묶음을 골라 주세요.
           </DialogDescription>
         </DialogHeader>
@@ -191,7 +191,7 @@ function BundleCheckRow({ bundle, isChecked, isBusy, onCheckedChange }: BundleCh
           onCheckedChange(next === true);
         }}
       />
-      <span className="min-w-0 flex-1 text-sm break-keep text-foreground [overflow-wrap:anywhere]">{bundle.name}</span>
+      <span className="min-w-0 flex-1 text-sm break-keep text-foreground wrap-anywhere">{bundle.name}</span>
       <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{bundle.itemCount}개</span>
     </label>
   );

@@ -157,7 +157,7 @@ export function CommentTextField({
         help={canMention ? "Enter는 줄바꿈 · @로 작품 참여자 멘션" : "Enter는 줄바꿈 · 멘션 선택은 참여 가능한 로그인 상태에서 이용해요."} />
       {!!bodyError && <p id={id + "-error"} role="alert" className="text-xs text-destructive-text">{bodyError.message}</p>}
       {isOpen && !!position && createPortal(
-        <div ref={popupRef} className="z-[60] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+        <div ref={popupRef} className="z-60 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
           style={{ position: position.isInModal ? "absolute" : "fixed", left: position.left, top: position.top, width: position.width,
             maxHeight: position.maxHeight, transform: position.isAbove ? "translateY(-100%)" : undefined }}
           onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDismissed(signature); inputRef.current?.focus(); } }}>

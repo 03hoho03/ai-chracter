@@ -1,4 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 
 type KakaoLoginButtonProps = {
   onClick: () => void;
@@ -48,7 +49,7 @@ const KAKAO_BRAND_COLOR_CLASSNAME = "bg-[#FEE500] text-[#191919] hover:bg-[#FEE5
  * - 심볼–레이블 간격은 `gap-2`(8px) — 공식 SVG(46px 높이)의 실측 간격 약 7.9px에 맞췄다. */
 export function KakaoLoginButton({ onClick }: KakaoLoginButtonProps) {
   return (
-    <Button type="button" size="lg" className={`gap-2 ${KAKAO_BRAND_COLOR_CLASSNAME}`} onClick={onClick}>
+    <Button type="button" size="lg" className={cn("gap-2", KAKAO_BRAND_COLOR_CLASSNAME)} onClick={onClick}>
       <KakaoSymbol />
       카카오 로그인
     </Button>

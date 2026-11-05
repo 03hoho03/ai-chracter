@@ -2,7 +2,7 @@ import { createContext, useContext } from "react";
 
 import type { MediaBookValues } from "@/features/build-story";
 
-import type { MediaBookPosition } from "../ui/MediaBookGrid";
+import type { MediaBookPosition } from "./mediaBookPosition";
 
 /** 고른 칸의 상세. 표의 칸 버튼이 `aria-controls` 로 가리키므로 표와 상세가 같은 값을 쓴다. */
 export const CELL_PANEL_ID = "media-book-cell-panel";

@@ -1,3 +1,4 @@
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ChevronRight } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useId } from "react";
@@ -50,7 +51,7 @@ export function StudioWorkRow({ item, userId, onRemoved, onRemoveFromBundle }: S
       >
         <StudioWorkThumbnail item={item} className="size-12 @3xl:size-14" />
 
-        <span className={`grid min-w-0 flex-1 gap-1 @3xl:grid-rows-[auto_auto] @3xl:items-center @3xl:gap-x-4 ${STUDIO_ROW_COLUMNS}`}>
+        <span className={cn("grid min-w-0 flex-1 gap-1 @3xl:grid-rows-[auto_auto] @3xl:items-center @3xl:gap-x-4", STUDIO_ROW_COLUMNS)}>
           <span className="text-sm font-semibold break-keep text-foreground [overflow-wrap:anywhere] @3xl:col-start-1 @3xl:row-start-1">
             {title}
           </span>

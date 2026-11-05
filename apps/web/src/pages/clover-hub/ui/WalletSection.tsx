@@ -148,6 +148,13 @@ function MemberLinks() {
 
 const CHECKING_RESOLVED_MESSAGE = "결제가 확인돼 잔액에 반영됐어요.";
 
+type PurchaseOutcomeProps = {
+  settled: SettledPurchase;
+  isCheckingResolved: boolean;
+  onRetryBalance: () => void;
+  solidReturnTo: string | undefined;
+};
+
 /** 끝난 결제의 결과. 나타날 때 결과 문장으로 포커스를 옮긴다 — 구매 확인 창이 닫히면 포커스가 누른 상품 행으로
  * 돌아가 결과를 놓친다. 창이 닫히며 포커스를 정리하는 일이 다음 프레임까지 이어지므로 두 프레임 뒤에 옮긴다.
  *
@@ -158,17 +165,7 @@ const CHECKING_RESOLVED_MESSAGE = "결제가 확인돼 잔액에 반영됐어요
  *
  * 충전하러 온 화면이 있으면(복귀 주소) 성공 블록에 그리로 돌아가는 솔리드 버튼을 둔다 — 이 화면의 유일한 솔리드 채움이다.
  * 누르면 이동만 한다. 거절됐던 메시지는 채팅 방이 입력창에 되살려 두고, 다시 보낼지는 그 방의 전송 버튼이 정한다. */
-function PurchaseOutcome({
-  settled,
-  isCheckingResolved,
-  onRetryBalance,
-  solidReturnTo,
-}: {
-  settled: SettledPurchase;
-  isCheckingResolved: boolean;
-  onRetryBalance: () => void;
-  solidReturnTo: string | undefined;
-}) {
+function PurchaseOutcome({ settled, isCheckingResolved, onRetryBalance, solidReturnTo }: PurchaseOutcomeProps) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const isFocusInside = useRef(false);
 

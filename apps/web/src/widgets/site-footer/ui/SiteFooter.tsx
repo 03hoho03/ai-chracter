@@ -21,6 +21,8 @@ const FOOTER_LINK_KEYS = [
 const LINK_CLASS =
   "whitespace-nowrap rounded-sm text-xs text-muted-foreground motion-safe:transition-colors hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
+const MAIL_ORDER_REPORT = describeMailOrderReport(BUSINESS_INFO.mailOrderReportNumber, BUSINESS_INFO.registrationNumber);
+
 /**
  * 문서 끝에 놓이는 정보 푸터. 고정하지 않는다 — 루트 레이아웃이 페이지 영역을 늘려 짧은 페이지에서는 뷰포트
  * 바닥에, 긴 페이지에서는 끝까지 스크롤해야 만난다.
@@ -72,8 +74,6 @@ export function SiteFooter() {
     </footer>
   );
 }
-
-const MAIL_ORDER_REPORT = describeMailOrderReport(BUSINESS_INFO.mailOrderReportNumber, BUSINESS_INFO.registrationNumber);
 
 /** 값이 길어도(주소) 어절 단위로 접혀 390px에서 가로 스크롤을 만들지 않는다 — 그래서 값에 `whitespace-nowrap`을
  * 걸지 않는다. */

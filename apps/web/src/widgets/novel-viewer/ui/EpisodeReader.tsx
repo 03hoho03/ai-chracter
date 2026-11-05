@@ -12,7 +12,7 @@ import { readerTypographyClassName } from "../lib/readerTypography";
 import { toEpisodeScrollProgress } from "../lib/readingProgress";
 import { useIsFinePointer } from "../lib/useIsFinePointer";
 import { useScreenWakeLock } from "../lib/useScreenWakeLock";
-import { readerSettingsAtom } from "../model/readerSettings";
+import { readerSettingsAtom } from "../model/atoms";
 import { useChromeVisibility } from "../model/useChromeVisibility";
 import type { PagedPosition, PagedReaderHandle } from "../model/usePagedReader";
 import { usePageFit } from "../model/usePageFit";

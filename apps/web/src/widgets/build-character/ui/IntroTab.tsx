@@ -34,6 +34,9 @@ import { CharacterMacroNotice } from "./CharacterMacroNotice";
 
 const EXAMPLE_DIALOGUE_LIST: CharacterCollapsibleList = "exampleDialogue";
 
+/** 토스트에 담을 사용자 대사 앞부분의 길이(코드 포인트). 긴 대사가 토스트 문장을 늘이지 않게 자른다. */
+const DIALOGUE_SNIPPET_LENGTH = 20;
+
 /** 인트로는 단일 필드, 예시 대화는 고급 설정 뒤에 숨겨진 add/remove 전용
  * 목록(순서가 판정에 영향 없어 dnd-kit 불필요), 플레이가이드는 선택 입력. */
 export function IntroTab() {
@@ -183,9 +186,6 @@ export function IntroTab() {
     </div>
   );
 }
-
-/** 토스트에 담을 사용자 대사 앞부분의 길이(코드 포인트). 긴 대사가 토스트 문장을 늘이지 않게 자른다. */
-const DIALOGUE_SNIPPET_LENGTH = 20;
 
 /** 토스트 문장의 목적어("‘안녕, 오랜만이야’ 예시 대화를") — 이름이 없어 사용자 대사 첫 줄 앞부분으로 가른다. */
 function exampleDialogueObjectPhrase(dialogue: { userLine: string }): string {

@@ -22,6 +22,10 @@ const STATE_LABEL: Record<TurnState, string> = {
   locked: "이미 씀",
 };
 
+// 포커스는 하우스 레시피(불투명 `border-ring` 이 3:1 을 지고 바깥 반투명 링을 더한다).
+const ROW_CLASS =
+  "flex w-full items-start gap-3 rounded-lg border border-transparent px-3 py-2 text-left outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 motion-safe:transition-colors";
+
 type SourceTimelineProps = {
   turns: readonly SourceTurn[];
   states: ReadonlyMap<string, TurnState>;
@@ -182,10 +186,6 @@ type TurnRowProps = {
   isChanged: boolean;
   onToggle: (turn: SourceTurn, options: { isRange: boolean }) => void;
 };
-
-// 포커스는 하우스 레시피(불투명 `border-ring` 이 3:1 을 지고 바깥 반투명 링을 더한다).
-const ROW_CLASS =
-  "flex w-full items-start gap-3 rounded-lg border border-transparent px-3 py-2 text-left outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 motion-safe:transition-colors";
 
 function TurnRow({ turn, state, isChanged, onToggle }: TurnRowProps) {
   const isIncluded = state === "include";

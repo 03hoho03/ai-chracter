@@ -92,6 +92,13 @@ export function AboutPage() {
   );
 }
 
+type FeatureSectionProps = {
+  title: string;
+  body: string;
+  screenshot: AboutScreenshot;
+  isFirst: boolean;
+};
+
 /**
  * 기능 하나 = 글 + 화면 캡처. DOM 순서는 언제나 글 → 그림이라 좁은 화면에서는 글을 먼저 읽고 그림이 따라온다.
  *
@@ -99,17 +106,7 @@ export function AboutPage() {
  * 글 열이 288px — 16px 글자로 한 줄 18자 안팎 — 만 남는다. `md`에서는 384px(그림 열 288px)이 남고, 콘텐츠 그리드가
  * 이미 쓰는 브레이크포인트다. 그림은 매번 같은 오른쪽 — 글 열의 왼쪽 끝이 제목·소개문과 한 줄로 맞아 위에서 아래로 훑기 쉽다.
  */
-function FeatureSection({
-  title,
-  body,
-  screenshot,
-  isFirst,
-}: {
-  title: string;
-  body: string;
-  screenshot: AboutScreenshot;
-  isFirst: boolean;
-}) {
+function FeatureSection({ title, body, screenshot, isFirst }: FeatureSectionProps) {
   return (
     <section className="flex flex-col gap-6 md:flex-row md:items-center md:gap-12">
       <div className="flex flex-col gap-2 md:flex-1">

@@ -22,16 +22,12 @@ import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
 
 import { toWebnovelsView, type WebnovelsView } from "../model/webnovelsView";
 
+/** 목록 한 줄의 재료 — 노벨 목록 항목, 소장 목록이면 판매 중지 표시가 더 붙는다. */
+type WebnovelRowItem = WebnovelListItem & { salesStopped?: boolean };
+
 const PAGE_CLASS = "mx-auto flex max-w-list flex-col gap-6 px-4 sm:px-6 py-10 lg:pt-6";
 
 const VIEW_LABELS: Record<WebnovelsView, string> = { latest: "최신순", popular: "인기순", owned: "소장" };
-
-function isWebnovelsView(value: string): value is WebnovelsView {
-  return value in VIEW_LABELS;
-}
-
-/** 목록 한 줄의 재료 — 노벨 목록 항목, 소장 목록이면 판매 중지 표시가 더 붙는다. */
-type WebnovelRowItem = WebnovelListItem & { salesStopped?: boolean };
 
 /** `/webnovels` — 노벨 목록. 회원이 AI 캐릭터와 나눈 대화를 소설로 옮겨 공개한 작품들이다. 목록의 모든 작품이 그렇게
  * 만든 소설이라 행마다 배지를 달지 않고 머리의 한 문장이 그 표시를 맡는다.
@@ -106,6 +102,10 @@ export function WebnovelsPage({ view, onViewChange }: { view: WebnovelsView; onV
       {isOwnedView ? <WebnovelListBody query={ownedQuery} isOwned /> : <WebnovelListBody query={listQuery} isOwned={false} />}
     </main>
   );
+}
+
+function isWebnovelsView(value: string): value is WebnovelsView {
+  return value in VIEW_LABELS;
 }
 
 type WebnovelListQuery = ReturnType<typeof useWebnovelListQuery> | ReturnType<typeof useOwnedWebnovelListQuery>;

@@ -53,20 +53,18 @@ export function PagedEpisodeBlocks({ paragraphs, blocks, typography }: PagedEpis
   );
 }
 
+type PageIllustrationBlockProps = {
+  blockKey: string;
+  illustration: ViewerIllustration;
+  marginBottom: number;
+};
+
 /**
  * 판형 안 그림 블록. 상자 크기는 응답의 그림 크기로 미리 정한 px 라(`toPageIllustrationBox`) 그림이 늦게 와도 쪽 나눔이
  * 그대로다. 캡션·안내 글자도 px 다 — 판형 안이 브라우저 기본 글자 크기를 따르면 쪽 수가 바뀐다. 사유 안내는 세 줄에서
  * 자른다 — 운영자 사유에 길이 상한이 없어 한 단보다 길어지면 쪽에 걸쳐 쪼개지지 않는 블록이 단 아래에서 잘린다.
  */
-function PageIllustrationBlock({
-  blockKey,
-  illustration,
-  marginBottom,
-}: {
-  blockKey: string;
-  illustration: ViewerIllustration;
-  marginBottom: number;
-}) {
+function PageIllustrationBlock({ blockKey, illustration, marginBottom }: PageIllustrationBlockProps) {
   const placementProps = {
     "data-illustration-key": blockKey,
     "data-illustration-paragraph": illustration.paragraphIndex,

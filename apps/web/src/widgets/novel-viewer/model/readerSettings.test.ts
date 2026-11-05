@@ -1,7 +1,8 @@
 import { createStore } from "jotai";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_READER_SETTINGS, readerSettingsAtom, readerSettingsSchema } from "./readerSettings";
+import { readerSettingsAtom } from "./atoms";
+import { DEFAULT_READER_SETTINGS, readerSettingsSchema } from "./readerSettings";
 
 describe("readerSettingsSchema", () => {
   it("올바른 값을 그대로 통과시킨다", () => {

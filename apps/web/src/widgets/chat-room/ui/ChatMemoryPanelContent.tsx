@@ -24,6 +24,9 @@ type ChatMemoryPanelLayout = "sidebar" | "dialog";
 // 채팅 화면 전체가 문서 스크롤(`scrollIntoView` 등)에 위로 밀리고 아래에 빈 띠가 남는다.
 const SIDEBAR_SCROLL_CLASS = "relative min-h-0 flex-1 overflow-y-auto px-4 pb-4";
 
+// 탭 패널은 Radix 가 Tab 정지로 둔다 — 포커스가 보이게 띄운 아웃라인을 준다(패널 바깥 링은 스크롤 영역에 잘린다).
+const TAB_PANEL_CLASS = "rounded-sm focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring";
+
 type ChatMemoryPanelContentProps = {
   roomId: string;
   /** `sidebar`는 lg 이상 인라인 패널의 머리 아래, `dialog`는 lg 미만 Dialog 의 `DialogHeader` 아래에 들어간다. */
@@ -54,9 +57,6 @@ export function ChatMemoryPanelContent({ roomId, layout }: ChatMemoryPanelConten
 function isMemoryTab(value: string): value is ChatMemoryTab {
   return value === "notes" || value === "scenes" || value === "facts";
 }
-
-// 탭 패널은 Radix 가 Tab 정지로 둔다 — 포커스가 보이게 띄운 아웃라인을 준다(패널 바깥 링은 스크롤 영역에 잘린다).
-const TAB_PANEL_CLASS = "rounded-sm focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring";
 
 /** 탭 줄은 스크롤 영역 밖의 흐름 줄이다 — 목록을 내려 읽는 동안에도 탭이 보이고, sticky 를 쓰지 않는다. 탭 줄 아래 선은
  * 스크롤 영역의 위 모서리다(Dialog 는 `DialogBody`의 `border-t`). */
@@ -138,15 +138,13 @@ function ChatMemoryTabs({ roomId, layout }: { roomId: string; layout: ChatMemory
   );
 }
 
-function ScrollBody({
-  ref,
-  layout,
-  children,
-}: {
+type ScrollBodyProps = {
   ref: RefObject<HTMLDivElement | null>;
   layout: ChatMemoryPanelLayout;
   children: ReactNode;
-}) {
+};
+
+function ScrollBody({ ref, layout, children }: ScrollBodyProps) {
   if (layout === "dialog") return <DialogBody ref={ref}>{children}</DialogBody>;
   return (
     <div ref={ref} className={cn(SIDEBAR_SCROLL_CLASS, "border-t border-border pt-4")}>

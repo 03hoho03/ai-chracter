@@ -42,6 +42,9 @@ import { ImageStudioLibraryRail } from "./ImageStudioLibraryRail";
 import { ImageStudioOptionsRail, type OptionsSheetEntry } from "./ImageStudioOptionsRail";
 import { ImageStudioResultArea } from "./ImageStudioResultArea";
 
+/** 202를 받은 제출. 결과 영역은 이 잡의 진행을 이 비율·개수 모양으로 그린다. */
+type JobSubmission = ResultShape & { jobId: string };
+
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
 // /studio/images의 3열 셸. widgets/chat-room/ui/ChatRoomView.tsx의
@@ -375,9 +378,6 @@ export function ImageStudioShell({
     </div>
   );
 }
-
-/** 202를 받은 제출. 결과 영역은 이 잡의 진행을 이 비율·개수 모양으로 그린다. */
-type JobSubmission = ResultShape & { jobId: string };
 
 type ImageStudioGenerateTabContentProps = {
   isStyleSheetOpen: boolean;

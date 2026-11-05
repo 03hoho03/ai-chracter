@@ -7,9 +7,8 @@ import { findCell, isMissingDescription, type MediaBookCellValues, type MediaBoo
 import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScrollClip";
 
 import { isFileDrag, pickDroppedImage } from "../lib/mediaBookImageFile";
+import type { MediaBookPosition } from "../model/mediaBookPosition";
 import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
-
-export type MediaBookPosition = { personId: string; sceneId: string };
 
 /**
  * 고정된 장면 이름 열(머리 행 모서리 칸 포함). 배경색 채움을 왼쪽으로 표 스크롤러 안쪽 여백(4px)만큼, 오른쪽으로 칸 사이

@@ -43,13 +43,13 @@ export function GenerateImagesStyleGrid({ layout }: { layout: GenerateImagesStyl
     <div className="flex flex-col gap-1.5">
       <Label id={labelId}>스타일</Label>
       {/* 모델 목록이 아직 로딩 중이면(models === undefined) 스타일 자리가 통째로 빈 채로 렌더됐다 —
-          실제 타일과 같은 셸(같은 그리드 클래스 · aspect-[3/4])의 스켈레톤으로 채운다
+          실제 타일과 같은 셸(같은 그리드 클래스 · aspect-3/4)의 스켈레톤으로 채운다
           (GeneratedImageLibraryPanel.tsx의 LibraryGridSkeleton 관용구를 따른다 — 바탕색도 같은
           이유로 `secondary`). 개수 7은 레지스트리 스타일 종수와 맞춘다. */}
       {models === undefined ? (
         <div className={gridClassName}>
           {[0, 1, 2, 3, 4, 5, 6].map((key) => (
-            <div key={key} className="aspect-[3/4] animate-pulse rounded-lg bg-secondary" />
+            <div key={key} className="aspect-3/4 animate-pulse rounded-lg bg-secondary" />
           ))}
         </div>
       ) : (
@@ -72,7 +72,7 @@ export function GenerateImagesStyleGrid({ layout }: { layout: GenerateImagesStyl
                     // rounded-lg — 90~190px 타일에 xl 반경은 모서리가 과하다. 같은 크기대의 보관함
                     // 타일과 같은 값이다.
                     className={cn(
-                      "relative aspect-[3/4] overflow-hidden rounded-lg border-2 bg-secondary",
+                      "relative aspect-3/4 overflow-hidden rounded-lg border-2 bg-secondary",
                       "focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
                       "disabled:pointer-events-none disabled:opacity-50",
                       isSelected ? "border-primary" : "border-transparent",

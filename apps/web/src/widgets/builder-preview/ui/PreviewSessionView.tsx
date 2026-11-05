@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ChevronDown, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -368,7 +369,7 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
                 마운트다. */}
             <div
               aria-live="polite"
-              className={policyWarning ? "flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5" : "sr-only"}
+              className={cn(policyWarning ? "flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5" : "sr-only")}
             >
               <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
               <span className="text-xs break-keep text-muted-foreground">{policyWarning}</span>

@@ -94,19 +94,15 @@ export function WebnovelCommentsSheet({
   );
 }
 
-function CommentList({
-  novelId,
-  chapterId,
-  query,
-  comments,
-  onReport,
-}: {
+type CommentListProps = {
   novelId: string;
   chapterId: string;
   query: ReturnType<typeof useWebnovelCommentsQuery>;
   comments: WebnovelComment[];
   onReport: (commentId: string) => void;
-}) {
+};
+
+function CommentList({ novelId, chapterId, query, comments, onReport }: CommentListProps) {
   const remove = useDeleteWebnovelCommentMutation(novelId, chapterId);
   const now = new Date();
 

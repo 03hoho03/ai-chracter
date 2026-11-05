@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@ai-character-chat/ui/components/select";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link } from "@tanstack/react-router";
 import { ChevronDown } from "lucide-react";
@@ -236,7 +237,7 @@ export function PayoutInfoForm({ onSaved, onCancel, focusOnOpen = false }: Payou
           )}
         />
         {errors.agreed && (
-          <p id={errorId("agreed")} role="alert" className={`pl-6 ${FIELD_ERROR_CLASS}`}>
+          <p id={errorId("agreed")} role="alert" className={cn("pl-6", FIELD_ERROR_CLASS)}>
             {errors.agreed.message}
           </p>
         )}

@@ -17,23 +17,9 @@ type NovelBoardTopBarProps = {
   /** 버전 패널을 여닫는 토글. 상세를 받기 전에는 없다. */
   versions?: { isOpen: boolean; onToggle: () => void };
   /** 다음 화 만들기. 상세를 받기 전에는 없다. */
-  create?: CreateChapterAction;
+  create?: CreateChapterButtonProps;
   /** 노벨 공개 버튼(ghost) — 공개는 다른 기능이라 화면이 넣는다. 버전 앞에 놓인다. */
   publishAction?: ReactNode;
-};
-
-type CreateChapterAction = {
-  flow: NovelChapterJobFlow;
-  hasChapters: boolean;
-  /** 못 누르는 이유 문장(작업 줄 안). 진행 중이면 진행 줄을 가리킨다. */
-  blockedReasonId: string | undefined;
-  /** 작업 줄의 "다시 시도"가 사라지기 전에 포커스를 옮겨 둘 자리. */
-  buttonRef: RefObject<HTMLButtonElement | null>;
-  /** 누르면 할 일. 구성 흐름이 켜져 있으면 화면이 구성 모드로 옮기는 함수를 준다 — 다음 화는 구성 화면에서 만든다. 주지
-   * 않으면 화 만들기 흐름(경계 고르기)을 시작한다. */
-  onStart?: () => void;
-  /** 구성 흐름 스위치를 실은 가격 응답을 아직 받는 중인가. 그동안은 어느 흐름으로 갈지 몰라 막고 아이콘을 진행 표시로 둔다. */
-  isSwitchPending?: boolean;
 };
 
 /**
@@ -85,6 +71,20 @@ export function NovelBoardTopBar({ novelId, title, autosaveNotice, versions, cre
   );
 }
 
+type CreateChapterButtonProps = {
+  flow: NovelChapterJobFlow;
+  hasChapters: boolean;
+  /** 못 누르는 이유 문장(작업 줄 안). 진행 중이면 진행 줄을 가리킨다. */
+  blockedReasonId: string | undefined;
+  /** 작업 줄의 "다시 시도"가 사라지기 전에 포커스를 옮겨 둘 자리. */
+  buttonRef: RefObject<HTMLButtonElement | null>;
+  /** 누르면 할 일. 구성 흐름이 켜져 있으면 화면이 구성 모드로 옮기는 함수를 준다 — 다음 화는 구성 화면에서 만든다. 주지
+   * 않으면 화 만들기 흐름(경계 고르기)을 시작한다. */
+  onStart?: () => void;
+  /** 구성 흐름 스위치를 실은 가격 응답을 아직 받는 중인가. 그동안은 어느 흐름으로 갈지 몰라 막고 아이콘을 진행 표시로 둔다. */
+  isSwitchPending?: boolean;
+};
+
 /** "다음 화 만들기". 못 누르는 동안에도 `disabled` 가 아니라 `aria-disabled` 다 — `disabled` 는 누른 순간 포커스를
  * 날리고 이유를 말하지 않는다. 이유와 진행은 패널 맨 위 작업 줄이 진다. 준비 중(이름·경계 고르기·확인)과 구성 흐름 스위치를 아직 모를 때는 아이콘만
  * 스피너로 바뀌고 라벨은 그대로라 버튼 폭이 흔들리지 않는다 — 스피너는 진행 표시라 동작 줄이기 설정에서도 돈다. */
@@ -95,7 +95,7 @@ function CreateChapterButton({
   buttonRef,
   onStart,
   isSwitchPending = false,
-}: CreateChapterAction) {
+}: CreateChapterButtonProps) {
   const isBlocked = isCreateChapterBlocked(flow, { isSwitchPending });
   const isPreparing = flow.preparing === "create" || isSwitchPending;
   const label = hasChapters ? "다음 화 만들기" : "첫 화 만들기";

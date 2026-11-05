@@ -17,16 +17,6 @@ import type { MeResponse } from "@/entities/session";
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 const IDENTITY_REQUIRED_MESSAGE = "본인인증을 하면 받을 수 있어요.";
 
-/** 미션 수령 실패 토스트. 본인인증 403 은 실패가 아니라 "아직 받을 수 없다"라 오류 토스트가 아니고, 세션은 전역
- * 뮤테이션 처리가 다시 읽어 행의 "받기"가 상태 배지로 바뀐다. */
-function toastClaimError(error: unknown) {
-  if (isIdentityVerificationRequiredError(error)) {
-    toast(IDENTITY_REQUIRED_MESSAGE);
-    return;
-  }
-  toast.error(GENERIC_ERROR_MESSAGE);
-}
-
 /** 클로버 미션. 충전 화면이 로그인 없이 열리는 상품 안내가 되면서, 회원만의 일인 미션 보상 받기는 계정 설정 화면으로
  * 왔다. 충전 화면의 "미션 보상 받기" 링크가 이 섹션 앵커로 바로 온다(`scroll-mt-20` 은 sticky 헤더 높이만큼 띄운다).
  *
@@ -72,6 +62,16 @@ export function MissionSection({ me }: { me: MeResponse }) {
       )}
     </section>
   );
+}
+
+/** 미션 수령 실패 토스트. 본인인증 403 은 실패가 아니라 "아직 받을 수 없다"라 오류 토스트가 아니고, 세션은 전역
+ * 뮤테이션 처리가 다시 읽어 행의 "받기"가 상태 배지로 바뀐다. */
+function toastClaimError(error: unknown) {
+  if (isIdentityVerificationRequiredError(error)) {
+    toast(IDENTITY_REQUIRED_MESSAGE);
+    return;
+  }
+  toast.error(GENERIC_ERROR_MESSAGE);
 }
 
 /** 충전 화면의 "미션 보상 받기"(`#clover-missions`)로 들어오면, 미션 목록이 그려진 뒤 한 번 이 섹션으로 스크롤한다. 라우터의

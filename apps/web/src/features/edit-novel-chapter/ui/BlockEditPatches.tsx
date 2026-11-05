@@ -1,5 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useId, useState } from "react";
 
 import type { PatchCardView, PatchJobView, PatchUnitView } from "../model/blockEditPatches";
@@ -55,11 +56,10 @@ export function BlockPatchCard({ card, currentText, isActing, onApply, onDismiss
         )}
       </div>
       <div
-        className={
-          isApplicable
-            ? "flex flex-col gap-3 whitespace-pre-line text-foreground"
-            : "flex flex-col gap-3 whitespace-pre-line text-muted-foreground"
-        }
+        className={cn(
+          "flex flex-col gap-3 whitespace-pre-line",
+          isApplicable ? "text-foreground" : "text-muted-foreground",
+        )}
       >
         {paragraphs.map((paragraph, rank) => (
           // 한 블록을 대신하는 새 문단들이다 — 같은 문장이 둘일 수 있어 순서로 가른다(그리는 동안 바뀌지 않는다).
