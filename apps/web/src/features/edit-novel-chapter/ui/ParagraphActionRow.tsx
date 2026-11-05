@@ -2,6 +2,8 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { ImagePlus, Pencil, Sparkles, X } from "lucide-react";
 import { useId } from "react";
 
+import { assertNever } from "@/shared/lib/assertNever";
+
 import {
   NOVEL_ILLUSTRATION_LIMIT,
   type IllustrationPlacement,
@@ -131,8 +133,13 @@ export function ParagraphActionRow({
                   선택 해제
                 </Button>
               );
-            default:
+            // 옮기는 중의 세 버튼은 이 줄이 아니라 `NovelChapterText` 의 `MoveTargetRow` 가 그린다.
+            case "placeBefore":
+            case "placeAfter":
+            case "cancelMove":
               return null;
+            default:
+              return assertNever(action);
           }
         })}
       </div>

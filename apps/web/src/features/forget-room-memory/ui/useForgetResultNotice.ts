@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { assertNever } from "@/shared/lib/assertNever";
+
 import type { ForgetOutcome } from "../model/forgetOutcome";
 import type { MemoryListNotice } from "./MemoryItemsParts";
 
@@ -15,10 +17,17 @@ export function useForgetResultNotice() {
   }, [notice]);
 
   function showOutcome(outcome: ForgetOutcome, label: string) {
-    if (outcome.kind === "forgotten") {
-      setNotice({ kind: "forgotten", label, linkedEpisodeCount: outcome.linkedEpisodeCount });
-    } else if (outcome.kind === "notice") {
-      setNotice({ kind: "message", message: outcome.message });
+    switch (outcome.kind) {
+      case "forgotten":
+        setNotice({ kind: "forgotten", label, linkedEpisodeCount: outcome.linkedEpisodeCount });
+        return;
+      case "notice":
+        setNotice({ kind: "message", message: outcome.message });
+        return;
+      case "cancelled":
+        return;
+      default:
+        assertNever(outcome);
     }
   }
 

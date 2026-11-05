@@ -1,5 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import { checkExhaustive } from "@/shared/lib/checkExhaustive";
+
 export type NotificationResponse = components["schemas"]["NotificationResponse"];
 export type ReportReasonCategory = components["schemas"]["ReportReasonCategory"];
 
@@ -30,9 +32,14 @@ export function toNovelRefundNotificationText(
     case "source_restricted":
     case "source_deleted":
       return { title, body: `원작을 볼 수 없게 돼, 소장하신 ${spent} 돌려드렸어요.` };
+    case "deleted":
+    case null:
+    case undefined:
+      break;
     default:
-      return counts
-        ? { title, body: `게시자가 소장하신 화 ${counts.chapters}개를 지워, 쓰신 클로버 ${counts.clovers}개를 돌려드렸어요.` }
-        : { title, body: "게시자가 소장하신 화를 지워, 쓰신 클로버를 돌려드렸어요." };
+      checkExhaustive(reason);
   }
+  return counts
+    ? { title, body: `게시자가 소장하신 화 ${counts.chapters}개를 지워, 쓰신 클로버 ${counts.clovers}개를 돌려드렸어요.` }
+    : { title, body: "게시자가 소장하신 화를 지워, 쓰신 클로버를 돌려드렸어요." };
 }

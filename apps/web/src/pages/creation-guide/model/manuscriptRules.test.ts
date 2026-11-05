@@ -12,6 +12,7 @@ import {
   VISIBILITY_LABELS,
 } from "@/features/build-story";
 import type { CreationGuideTopicId } from "@/shared/config/creationGuide";
+import { assertNever } from "@/shared/lib/assertNever";
 
 import { GUIDE_IMAGE_PLACEHOLDER, GUIDE_IMAGES } from "../config/guideImages";
 import { READ_TIMING_GROUPS, STORY_FIELD_MOCKUPS, type StoryFieldMockups } from "../config/storyFieldMockups";
@@ -435,8 +436,17 @@ function valueProblems(key: string, value: ReturnType<typeof parseMockupValue>, 
         problems.push(`모르는 그림 ${value.token}`);
       }
       break;
-    default:
+    // 이 함수가 따지는 길이·선택지·그림 검사가 걸리지 않는 값이다.
+    case "number":
+    case "icon":
+    case "color":
+    case "switch":
+    case "statRules":
+    case "cardList":
+    case "mediaGrid":
       break;
+    default:
+      assertNever(value);
   }
   return problems;
 }

@@ -119,6 +119,18 @@ export default tseslint.config(
         "error",
         { allowSameFolder: true, allowedDepth: 1, rootDir: "apps/web/src", prefix: "@" },
       ],
+      // 유니언 switch 에 멤버가 늘면 빠진 case 를 잡는다. `default:` 가 있어도 빠진 멤버를 보고하게 해서
+      // (`considerDefaultExhaustiveForUnions: false`) "나머지 전부" 갈래가 새 멤버를 조용히 삼키지 않게 한다.
+      // 그래서 모든 멤버를 case 로 쓴 switch 에는 `default: assertNever` 를 따로 붙이지 않아도 된다.
+      // 유니언이 아닌 값(문자열·숫자)의 switch 에는 default 를 요구하지 않는다.
+      "@typescript-eslint/switch-exhaustiveness-check": [
+        "error",
+        {
+          considerDefaultExhaustiveForUnions: false,
+          requireDefaultForNonUnion: false,
+          allowDefaultCaseForExhaustiveSwitch: true,
+        },
+      ],
     },
   },
   // routes·app은 `src/` 바로 아래 평면 폴더라 `../`가 곧 레이어 교차다 — `../pages`·`../entities`도

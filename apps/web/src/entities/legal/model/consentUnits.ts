@@ -18,6 +18,13 @@ export type ReconsentFlags = Pick<
 /** 화면에 늘어놓는 순서. 가입 화면의 체크 순서와 같다. */
 const CONSENT_UNIT_ORDER = ["terms", "collection", "transfer"] as const satisfies readonly LegalConsentUnit[];
 
+type AssertNoUncovered<T extends never> = T;
+/** `satisfies` 는 원소가 멤버인지만 보고 순서 목록이 멤버를 다 덮는지는 보지 않는다. `LegalConsentUnit` 은 서버 생성
+ * 타입이라 목록에서 타입을 도출할 수 없어, 단위를 빠뜨리면 이 줄에서 컴파일이 깨지게 한다 — 서버가 동의 단위를 늘렸는데
+ * 그 단위가 다시 받을 동의 목록에서 조용히 빠지는 일을 막는다. 타입 레벨 단언이라 쓰이는 곳이 없는 게 정상이다. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _CoversAllConsentUnits = AssertNoUncovered<Exclude<LegalConsentUnit, (typeof CONSENT_UNIT_ORDER)[number]>>;
+
 const FLAG_BY_UNIT: Record<LegalConsentUnit, keyof ReconsentFlags> = {
   terms: "termsReconsentRequired",
   collection: "collectionReconsentRequired",
