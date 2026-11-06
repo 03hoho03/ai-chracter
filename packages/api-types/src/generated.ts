@@ -10488,7 +10488,7 @@ export interface components {
              * Name
              * @enum {string}
              */
-            name: "chat_premium_models_enabled" | "novelize_premium_models_enabled" | "memory_embed_write" | "memory_embed_recall" | "novel_bible_enabled" | "novelize_worker_enabled" | "creator_payout_enabled" | "expose_api_docs" | "session_cookie_secure";
+            name: "chat_premium_models_enabled" | "novelize_premium_models_enabled" | "memory_embed_write" | "memory_embed_recall" | "llm_credential_pool_enabled" | "novel_bible_enabled" | "novelize_worker_enabled" | "creator_payout_enabled" | "expose_api_docs" | "session_cookie_secure";
             /** Value */
             value: boolean;
             /**

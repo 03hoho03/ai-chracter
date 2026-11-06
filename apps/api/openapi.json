@@ -25949,6 +25949,7 @@
               "novelize_premium_models_enabled",
               "memory_embed_write",
               "memory_embed_recall",
+              "llm_credential_pool_enabled",
               "novel_bible_enabled",
               "novelize_worker_enabled",
               "creator_payout_enabled",

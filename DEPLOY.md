@@ -359,11 +359,11 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 - **버튼 대상 23개.** 이름 목록의 정본은 `apps/api/src/api/core/feature_switches.py` 의 `FeatureSwitchName` 이다(`Settings` 칸
   이름 그대로 — env 키는 그 대문자). 위 표에서는 비고가 켜기·끄기를 어드민 기능 스위치 화면으로 적은 행이다.
-- **`.env` 로만 바꾸는 9개**(같은 파일의 `READ_ONLY_SWITCH_REASONS`, 화면에는 값과 이유만 보인다): 켤 때만 도는 기동 검증(자격·키)이
+- **`.env` 로만 바꾸는 10개**(같은 파일의 `READ_ONLY_SWITCH_REASONS`, 화면에는 값과 이유만 보인다): 켤 때만 도는 기동 검증(자격·키)이
   있어 덮어쓰기로 켜면 그 검증을 건너뛰는 `CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_MODELS_ENABLED`·`MEMORY_EMBED_WRITE`·
-  `MEMORY_EMBED_RECALL`, 소설화 워커가 기동 때 한 번 읽는 `NOVEL_BIBLE_ENABLED`, 교체 스크립트가 보고 워커 컨테이너를 띄우는
-  `NOVELIZE_WORKER_ENABLED`, 따로 뜬 월 확정 크론 프로세스가 읽고 켤 때 크론 설치가 함께 필요한 `CREATOR_PAYOUT_ENABLED`, 앱을 만들
-  때 한 번 읽는 `EXPOSE_API_DOCS`, 기능이 아닌 쿠키 보안 설정 `SESSION_COOKIE_SECURE`.
+  `MEMORY_EMBED_RECALL`·`LLM_CREDENTIAL_POOL_ENABLED`, 소설화 워커가 기동 때 한 번 읽는 `NOVEL_BIBLE_ENABLED`, 교체 스크립트가
+  보고 워커 컨테이너를 띄우는 `NOVELIZE_WORKER_ENABLED`, 따로 뜬 월 확정 크론 프로세스가 읽고 켤 때 크론 설치가 함께 필요한
+  `CREATOR_PAYOUT_ENABLED`, 앱을 만들 때 한 번 읽는 `EXPOSE_API_DOCS`, 기능이 아닌 쿠키 보안 설정 `SESSION_COOKIE_SECURE`.
 - **반영 시간.** 저장한 프로세스는 커밋 직후, api 의 다른 워커 프로세스·다른 색·소설화 워커는 약 2초 안에 새 값을 본다(프로세스마다
   덮어쓰기 표를 다시 읽고 나서 2초를 쉬므로, 실제 간격은 2초에 한 번 읽는 시간이 더해진 값이다 — 부하가 크면 3초 가까이까지 늘 수
   있다). 이미 시작된 요청(SSE 응답과 그 요청의 백그라운드 작업 포함)과 소설화 작업은 시작 때 값으로 끝까지 돈다. 교체가 없어 돌던
