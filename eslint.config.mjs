@@ -116,11 +116,11 @@ export default tseslint.config(
   {
     files: ["apps/web/src/**/*.{ts,tsx}"],
     // 훅 규칙은 두 개만 켠다. 권장 프리셋은 React Compiler 전제의 규칙까지 함께 켜는데 이 앱은 컴파일러를 쓰지
-    // 않는다. effect deps 는 기존 위반이 쌓여 있어 하나씩 판단해 고치도록 경고로만 둔다.
+    // 않는다. effect deps 는 쌓여 있던 위반을 하나씩 고쳐 0 이 되어 에러로 막는다 — 의도된 예외는 이유를 적은 disable 주석으로 둔다.
     plugins: { "react-hooks": reactHooks },
     rules: {
       "react-hooks/rules-of-hooks": "error",
-      "react-hooks/exhaustive-deps": "warn",
+      "react-hooks/exhaustive-deps": "error",
       "no-relative-import-paths/no-relative-import-paths": [
         "error",
         { allowSameFolder: true, allowedDepth: 1, rootDir: "apps/web/src", prefix: "@" },
