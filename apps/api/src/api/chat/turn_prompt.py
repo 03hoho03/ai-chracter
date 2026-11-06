@@ -49,6 +49,7 @@ from api.content.schemas import (
     count_rules,
 )
 from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessage, ChatRoom
 from api.db.models.persona import UserPersona
@@ -484,7 +485,7 @@ async def build_room_prompt(
     memory_summary = ""
     full_history = history
     current_summary: CurrentSummary | None = None
-    if settings.memory_window_generation:
+    if switch_on("memory_window_generation"):
         current_summary = await load_current_summary(db, room.id) if turn_state is None else turn_state.summary
         if current_summary is not None:
             history = prompt_window(history, current_summary.cursor)
@@ -493,9 +494,9 @@ async def build_room_prompt(
     # 기억 사용 스위치는 이 턴의 레인·글쓰기 모델(생성 세트의 것)이 기억 사용 범위에 들 때만 켜진 것으로 읽는다 — 범위 밖이면
     # 스위치를 다 끈 턴과 프롬프트·SQL 이 같다.
     in_scope = memory_model_in_scope(prompt_set.lane, prompt_set.model, settings.memory_model_scope)
-    episodes_recall = settings.memory_episodes_recall and in_scope
-    facts_inject = settings.memory_facts_inject and in_scope
-    knowledge_filter = settings.memory_knowledge_filter and in_scope
+    episodes_recall = switch_on("memory_episodes_recall") and in_scope
+    facts_inject = switch_on("memory_facts_inject") and in_scope
+    knowledge_filter = switch_on("memory_knowledge_filter") and in_scope
     embed_recall = settings.memory_embed_recall and in_scope
 
     recall_searches = episodes_recall and (turn_state is None or turn_state.recall_lines is None)

@@ -26,8 +26,8 @@ from api.chat.room_deletion import delete_chat_rooms
 from api.clover.missions import MISSION_KEYS, mission_idempotency_key
 from api.comments.actions import erase_user_comments, lock_withdrawal_contents
 from api.core import clover
-from api.core.config import settings
 from api.core.constants import WITHDRAWN_IDENTITY_RETENTION_PERIOD
+from api.core.feature_switches import switch_on
 from api.core.s3 import build_variant_keys, delete_object
 from api.core.security import hash_withdrawn_email
 from api.core.sentry import capture_dependency_failure
@@ -232,7 +232,7 @@ async def erase_account(db: AsyncSession, user: User, *, delete_storage_object: 
     # 지운다 — 잔액은 아래 `burn_all` 이 통째로 소멸시킨다. 정책 스위치가 켜져 있으면 노벨로 팔린 소설은 지우지 않고 숨겨
     # 남긴다(모듈 docstring). 판정은 탈퇴자 행을 잠근 지금 한다.
     novel_ids = (await db.scalars(select(Novel.id).where(Novel.user_id == user_id))).all()
-    kept = await sold_novel_ids(db, novel_ids) if settings.novel_public_policy_v2_enabled else frozenset()
+    kept = await sold_novel_ids(db, novel_ids) if switch_on("novel_public_policy_v2_enabled") else frozenset()
     freed: list[str] = []
     await _keep_sold_novels_hidden(db, [novel_id for novel_id in novel_ids if novel_id in kept], freed_storage_keys=freed)
     await delete_novels(db, [novel_id for novel_id in novel_ids if novel_id not in kept], freed_storage_keys=freed)

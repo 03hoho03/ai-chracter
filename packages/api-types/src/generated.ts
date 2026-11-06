@@ -1919,6 +1919,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/feature-switches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Feature Switches */
+        get: operations["list_feature_switches_admin_feature_switches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/feature-switches/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Feature Switch Changes
+         * @description 최신 먼저 20건씩. `switch` 로 거르면 이 판이 모르는 옛 이름도 거를 수 있다.
+         */
+        get: operations["list_feature_switch_changes_admin_feature_switches_changes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/feature-switches/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Feature Switch
+         * @description 덮어쓰기를 `value` 로 바꾼다. 경로의 이름은 문자열로 받아 버튼 대상이 아니면 422 `FEATURE_SWITCH_READ_ONLY` 로 거른다
+         *     (이름 유니언으로 받으면 코드 없는 기본 422 가 나간다).
+         */
+        put: operations["set_feature_switch_admin_feature_switches__name__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/feature-switches/{name}/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Clear Feature Switch Override
+         * @description 덮어쓰기를 지워 `.env` 값으로 돌린다. 버튼 대상이 아니어도 덮어쓰기 행이 있는 이름(다른 판이 남긴 행)은 지울 수 있다 —
+         *     그 판으로 되돌렸다가 다시 올라올 때 되살아나지 않게. 그런 이름은 응답의 `switch` 가 null 이다.
+         */
+        delete: operations["clear_feature_switch_override_admin_feature_switches__name__override_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/presigned-upload": {
         parameters: {
             query?: never;
@@ -7067,6 +7146,24 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AdminAdjustableSwitch
+         * @description 어드민에서 켜고 끌 수 있는 스위치. `env_value` 는 이 서버가 기동 때 읽은 값이고, 실효 값은 덮어쓰기가 있으면 그 값이다.
+         *     `effective_state` 는 결제·본인인증 게이트에만 있다.
+         */
+        AdminAdjustableSwitch: {
+            /**
+             * Name
+             * @enum {string}
+             */
+            name: "memory_window_generation" | "memory_window_ending_judgment" | "memory_window_image_judgment" | "memory_episodes_extract" | "memory_facts_extract" | "memory_episodes_recall" | "memory_facts_inject" | "memory_knowledge_filter" | "memory_summary_secret_marking" | "memory_items_visible" | "stat_event_log" | "memory_impressions_write" | "memory_impressions_visible" | "novelize_enabled" | "novel_public_enabled" | "novel_public_policy_v2_enabled" | "novel_illustrations_enabled" | "novelize_outline_flow_enabled" | "novelize_multi_block_edit_enabled" | "local_image_reference_enabled" | "clover_ledger_paused" | "payments_enabled" | "identity_gate_enabled";
+            /** Envvalue */
+            envValue: boolean;
+            override: components["schemas"]["AdminSwitchOverride"] | null;
+            /** Effectivevalue */
+            effectiveValue: boolean;
+            effectiveState: components["schemas"]["AdminSwitchEffectiveState"] | null;
+        };
         /** AdminAppealListItem */
         AdminAppealListItem: {
             /**
@@ -8006,6 +8103,95 @@ export interface components {
             contents: number;
             /** Messages */
             messages: number;
+        };
+        /**
+         * AdminFeatureSwitchChangeItem
+         * @description 이력 한 행. 전·후의 null 은 덮어쓰기 없음이다. `env_value` 는 그 순간의 `.env` 값이고, null 은 기록한 판이 그 이름을 몰랐다는
+         *     뜻이다.
+         */
+        AdminFeatureSwitchChangeItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Beforeoverride */
+            beforeOverride: boolean | null;
+            /** Afteroverride */
+            afterOverride: boolean | null;
+            /** Envvalue */
+            envValue: boolean | null;
+            /** Reason */
+            reason: string;
+            /**
+             * Adminid
+             * Format: uuid
+             */
+            adminId: string;
+            /** Adminemail */
+            adminEmail: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminFeatureSwitchChangeListResponse */
+        AdminFeatureSwitchChangeListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminFeatureSwitchChangeItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /**
+         * AdminFeatureSwitchChangeResult
+         * @description 저장 뒤의 그 스위치(저장 결과로 계산한 값, 모르는 이름을 지웠으면 null)와 남긴 이력 행, 경고.
+         */
+        AdminFeatureSwitchChangeResult: {
+            switch: components["schemas"]["AdminAdjustableSwitch"] | null;
+            change: components["schemas"]["AdminFeatureSwitchChangeItem"];
+            /** Warnings */
+            warnings: ("refund-started-during-pause" | "self-refresh-failed")[];
+        };
+        /** AdminFeatureSwitchClearRequest */
+        AdminFeatureSwitchClearRequest: {
+            /** Reason */
+            reason: string;
+            /** Expectedoverride */
+            expectedOverride: boolean;
+        };
+        /**
+         * AdminFeatureSwitchListResponse
+         * @description 버튼 대상(서버 이름 목록 순서)·읽기 전용·모르는 덮어쓰기와, 프로세스마다 덮어쓰기를 다시 읽는 간격(초 — 다른 프로세스에
+         *     저장이 닿기까지 길어야 약 이만큼 걸린다).
+         */
+        AdminFeatureSwitchListResponse: {
+            /** Adjustable */
+            adjustable: components["schemas"]["AdminAdjustableSwitch"][];
+            /** Readonly */
+            readOnly: components["schemas"]["AdminReadOnlySwitch"][];
+            /** Unknownoverrides */
+            unknownOverrides: components["schemas"]["AdminUnknownOverride"][];
+            /** Refreshintervalseconds */
+            refreshIntervalSeconds: number;
+        };
+        /**
+         * AdminFeatureSwitchSetRequest
+         * @description `expected_override` 는 화면이 본 지금 덮어쓰기다(없음 = null) — 지금 덮어쓰기와 다르면 409 로 돌려보낸다.
+         */
+        AdminFeatureSwitchSetRequest: {
+            /** Value */
+            value: boolean;
+            /** Reason */
+            reason: string;
+            /** Expectedoverride */
+            expectedOverride: boolean | null;
         };
         /** AdminHomeCurationClearRequest */
         AdminHomeCurationClearRequest: {
@@ -10293,6 +10479,24 @@ export interface components {
             /** Semver */
             semver?: string | null;
         };
+        /**
+         * AdminReadOnlySwitch
+         * @description `.env` 로만 바꾸는 스위치의 지금 값과 버튼이 없는 이유.
+         */
+        AdminReadOnlySwitch: {
+            /**
+             * Name
+             * @enum {string}
+             */
+            name: "chat_premium_models_enabled" | "novelize_premium_models_enabled" | "memory_embed_write" | "memory_embed_recall" | "llm_credential_pool_enabled" | "novel_bible_enabled" | "novelize_worker_enabled" | "creator_payout_enabled" | "expose_api_docs" | "session_cookie_secure";
+            /** Value */
+            value: boolean;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "startup-check" | "worker-startup" | "deploy-starts-worker" | "separate-cron-process" | "app-creation" | "infrastructure";
+        };
         /** AdminRefundQuoteResponse */
         AdminRefundQuoteResponse: {
             /** Refundkrw */
@@ -10426,6 +10630,59 @@ export interface components {
             totalPages: number;
             /** Totalcount */
             totalCount: number;
+        };
+        /**
+         * AdminSwitchEffectiveState
+         * @description 결제·본인인증 게이트의 실제 상태. 실효 값이 켜져 있고 필요한 설정이 모두 있어야 열린다. `missing_settings` 는 비어 있는
+         *     설정의 env 키 이름이다(값은 싣지 않는다).
+         */
+        AdminSwitchEffectiveState: {
+            /** Open */
+            open: boolean;
+            /** Missingsettings */
+            missingSettings: string[];
+        };
+        /**
+         * AdminSwitchOverride
+         * @description 스위치 하나의 지금 덮어쓰기 — 값과 마지막으로 바꾼 운영자·시각.
+         */
+        AdminSwitchOverride: {
+            /** Value */
+            value: boolean;
+            /**
+             * Adminid
+             * Format: uuid
+             */
+            adminId: string;
+            /** Adminemail */
+            adminEmail: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+        };
+        /**
+         * AdminUnknownOverride
+         * @description 이 판이 버튼으로 다루지 않는 이름의 덮어쓰기 행 — 지금은 무시되고 그 스위치는 `.env` 값으로 돈다.
+         */
+        AdminUnknownOverride: {
+            /** Name */
+            name: string;
+            /** Value */
+            value: boolean;
+            /**
+             * Adminid
+             * Format: uuid
+             */
+            adminId: string;
+            /** Adminemail */
+            adminEmail: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
         };
         /** AdminUserActionLogItem */
         AdminUserActionLogItem: {
@@ -20014,6 +20271,128 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminUserCreatorPayoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_feature_switches_admin_feature_switches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFeatureSwitchListResponse"];
+                };
+            };
+        };
+    };
+    list_feature_switch_changes_admin_feature_switches_changes_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                switch?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFeatureSwitchChangeListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_feature_switch_admin_feature_switches__name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminFeatureSwitchSetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFeatureSwitchChangeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_feature_switch_override_admin_feature_switches__name__override_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminFeatureSwitchClearRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFeatureSwitchChangeResult"];
                 };
             };
             /** @description Validation Error */

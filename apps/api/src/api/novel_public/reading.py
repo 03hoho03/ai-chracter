@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
 from api.core import clover
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.content.access import publicly_listed_conditions
 from api.db.models.auth import User
@@ -215,7 +215,7 @@ async def _owned_chapter_ids(db: AsyncSession, user_id: uuid.UUID, novel_id: uui
 async def _keeps_reading(db: AsyncSession, user_id: uuid.UUID, novel_id: uuid.UUID) -> bool:
     """목록 조건으로 읽을 수 없는 노벨을 이 사람에게 소장자 조건으로 다시 볼 것인가 — 정책 스위치가 켜졌고 이 소설에 아직
     환급되지 않은 구매가 있다(모듈 docstring 의 소장자 열람)."""
-    if not settings.novel_public_policy_v2_enabled:
+    if not switch_on("novel_public_policy_v2_enabled"):
         return False
     found = await db.scalar(
         select(NovelPurchase.id)
@@ -455,7 +455,7 @@ async def list_owned_webnovels(
     순서·커서로 20편씩. 판단은 작품 정보와 같다: 목록 조건으로 읽히면 판매 중이고, 정책 스위치가 켜졌을 때 소장자 조건으로만
     읽히면 `salesStopped` 가 참이다(모듈 docstring 의 소장자 열람). 스위치가 꺼져 있으면 소장자 열람이 없어 판매 중인 노벨만
     싣는다 — 누르면 410 인 노벨을 "소장"으로 보이지 않는다. 환급으로 닫힌 노벨은 미환급 구매가 없어 빠진다."""
-    policy_v2 = settings.novel_public_policy_v2_enabled
+    policy_v2 = switch_on("novel_public_policy_v2_enabled")
     select_publications = select_owner_readable_publications if policy_v2 else select_readable_publications
     owns = (
         select(NovelPurchase.id)
@@ -693,7 +693,7 @@ async def get_webnovel_chapter(
     owned = await _owned_chapter_ids(db, user_id, novel_id)
     access = _chapter_access(chapter.ordinal, chapter.price, chapter_id, is_publisher=is_publisher, owned=owned)
 
-    policy_v2 = settings.novel_public_policy_v2_enabled
+    policy_v2 = switch_on("novel_public_policy_v2_enabled")
     # 산 때의 판은 소장 표시가 아니라 미환급 구매로 고른다 — 산 뒤 무료가 된 화는 "무료"로 보이지만 산 사람은 산 글을 계속
     # 고른다. 게시자 본인은 지금 판만 읽는다.
     bought = (

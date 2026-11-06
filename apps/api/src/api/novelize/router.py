@@ -37,6 +37,7 @@ from api.chat.router import _ensure_content_playable, _get_owned_room
 from api.content.access import is_open_to
 from api.content.media_tags import strip_media_tags
 from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.rate_limit import check_rate_limit
 from api.core.rate_limit_gate import _too_many_requests
 from api.core.s3 import build_display_key, build_thumbnail_key, generate_presigned_get_url
@@ -230,7 +231,7 @@ async def _refuse_while_outline_flow_on() -> None:
     길은 마지막 화의 끝부터 방의 대화를 그대로 이어 읽어 모델에 보내므로 작가가 구간 선택에서 뺀 대화까지 보낸다 — 화면이 구성
     흐름으로만 다음 화를 만드는 동안 직접 호출로도 그 대화가 나가지 않게 서버에서 닫는다. 이어 쓰기로 이미 만든 화의 다시 만들기는
     닫지 않는다 — 그 화를 만든 구간만 다시 읽고, 그 화는 구성 흐름으로 다시 만들 길이 없다."""
-    if settings.novelize_outline_flow_enabled:
+    if switch_on("novelize_outline_flow_enabled"):
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_OUTLINE_FLOW_REQUIRED")
 
 
@@ -930,7 +931,7 @@ async def delete_novel(
     # 행이 곧 지워져 남지 않으므로 사유 칸은 어느 값이든 같다 — 우리 쪽 사정으로 끝낸 작업이라 `internal` 이다.
     await refund_active_jobs(db, novel_id=novel_id, failure_code="internal")
     freed: list[str] = []
-    if settings.novel_public_policy_v2_enabled and await novel_was_sold(db, novel_id):
+    if switch_on("novel_public_policy_v2_enabled") and await novel_was_sold(db, novel_id):
         await strip_author_only_data(db, [novel_id], freed_storage_keys=freed)
         await db.execute(
             update(NovelPublication).where(NovelPublication.novel_id == novel_id).values(visibility="withdrawn")
@@ -1583,7 +1584,7 @@ async def _delete_last_batch(
     if batch.ordinal != last_ordinal:
         raise _novel_error(status.HTTP_409_CONFLICT, not_last_code)
     chapter_ids = list((await db.scalars(select(NovelChapter.id).where(NovelChapter.batch_id == batch.id))).all())
-    if settings.novel_public_policy_v2_enabled and await chapters_with_unrefunded_purchase(db, chapter_ids):
+    if switch_on("novel_public_policy_v2_enabled") and await chapters_with_unrefunded_purchase(db, chapter_ids):
         raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_BATCH_SOLD")
     await refund_deleted_purchases(db, novel_id=novel.id, locked_user_ids=locked, chapter_ids=chapter_ids)
     freed: list[str] = []
@@ -1648,7 +1649,7 @@ async def _revision_response(db: AsyncSession, revision: NovelChapterRevision) -
     """개정 본문·문단·블록과, 삽화 스위치가 켜져 있으면 그 개정의 삽화(문단에 붙은 것과 위치 확인 필요인 것). 운영자가 내린
     그림과 운영자가 이용제한한 원작의 그림은 독자 화면과 같이 주소 없이 까닭만 싣는다."""
     paragraphs = split_paragraphs(revision.body)
-    views = await placement_views(db, revision) if settings.novel_illustrations_enabled else []
+    views = await placement_views(db, revision) if switch_on("novel_illustrations_enabled") else []
     withholdings = (
         await owner_withholdings(
             db,

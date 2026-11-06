@@ -64,6 +64,7 @@ from api.db.models.creator_payout import (
     CreatorPayoutProfile,
 )
 from api.db.models.feature_grant import FeatureName, UserFeatureGrant
+from api.db.models.feature_switch import FeatureSwitchChange, FeatureSwitchOverride
 from api.db.models.inquiry import Inquiry, InquiryCategory, InquiryStatus
 from api.db.models.legal import LegalDocument, UserLegalConsent
 from api.db.models.llm_credential import LlmCredential, LlmCredentialCheck, LlmCredentialSettings
@@ -236,6 +237,8 @@ __all__ = [
     "EndingRuleOperator",
     "Favorite",
     "FeatureName",
+    "FeatureSwitchChange",
+    "FeatureSwitchOverride",
     "Genre",
     "GuardianConsent",
     "HomeCuration",

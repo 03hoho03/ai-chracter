@@ -36,7 +36,7 @@ from api.assets.schemas import (
     RegisterSituationalImageRequest,
     SituationalImageResponse,
 )
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.rate_limit_gate import enforce_upload_rate_limit
 from api.core.redis import redis_client
 from api.core.redis_lock import release_lock, wait_for_lock
@@ -83,7 +83,7 @@ async def create_presigned_upload(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="crop is only accepted for content-thumbnail"
         )
-    if payload.purpose == AssetPurpose.NOVEL_ILLUSTRATION and not settings.novel_illustrations_enabled:
+    if payload.purpose == AssetPurpose.NOVEL_ILLUSTRATION and not switch_on("novel_illustrations_enabled"):
         # 삽화 스위치가 꺼진 동안은 모르는 용도와 같게 답한다(약관 게시 전에 삽화 사진을 받지 않는다).
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="novel-illustration uploads are not open"
@@ -573,7 +573,7 @@ async def collect_novel_asset_usages(
     )
     for asset_id, novel_id, owner_id, title, content_title in placement_rows.tuples():
         _add(asset_id, novel_id, owner_id, title, content_title, "illustration")
-    if settings.novel_illustrations_enabled:
+    if switch_on("novel_illustrations_enabled"):
         cover_rows = await db.execute(
             select(Novel.cover_asset_id, Novel.id, Novel.user_id, Novel.title, Novel.content_title).where(
                 Novel.cover_asset_id.in_(asset_ids)

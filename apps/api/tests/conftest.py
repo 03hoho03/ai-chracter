@@ -87,7 +87,7 @@ from api.chat.prompt_routing_cache import PROMPT_ROUTES_CACHE_KEY_PREFIX
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
 from api.chat.voyage_backoff import VOYAGE_BACKOFF_KEY
 from api.content.publish_filter_memo import PASSED_KEY_PREFIX
-from api.core import clover
+from api.core import clover, feature_switches
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.db.session import engine
@@ -250,6 +250,16 @@ async def _flush_voyage_backoff() -> None:
     """Voyage 연속 실패 백오프는 방과 무관한 키 하나라 테스트끼리 자연히 갈리지 않는다. 키 거부·5xx 를 흉내 내는 테스트가
     남긴 실패 수가 쌓이면 무관한 다음 테스트의 질의 임베딩·채우기가 조용히 건너뛰어진다."""
     await redis_client.delete(VOYAGE_BACKOFF_KEY)
+
+
+@pytest.fixture(autouse=True)
+def _clear_feature_switch_overrides() -> None:
+    """기능 스위치 덮어쓰기 맵은 프로세스 전역이라 DB 처럼 테스트마다 롤백되지 않는다. 앞 테스트가 읽어 둔 덮어쓰기가 남으면
+    같은 프로세스에서 뒤에 도는 테스트의 `monkeypatch.setattr(settings, ...)` 를 이겨 실행 순서에 따라 갈리는 실패가 난다 —
+    매 테스트 전에 맵과 고정을 비운다. 테스트는 스스로 만든 컨텍스트에서 돌지만 이 컨텍스트를 복사해 시작하므로 여기서 비운
+    고정이 그대로 보인다."""
+    feature_switches._process_overrides = feature_switches._NO_OVERRIDES
+    feature_switches._pinned.set(None)
 
 
 @pytest.fixture

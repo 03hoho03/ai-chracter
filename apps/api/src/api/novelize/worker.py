@@ -38,6 +38,7 @@ api 프로세스 안에서 돌던 작업은 api 교체(blue/green) 때 프로세
 실패해 지금처럼 드러난다). 정지 뒤에는 두 쪽 태스크를 함께 기다리고, 취소되면 함께 취소한다."""
 
 import asyncio
+import contextlib
 import logging
 import signal
 import sys
@@ -50,6 +51,7 @@ import sentry_sdk
 from sqlalchemy import select
 
 from api.core.config import settings
+from api.core.feature_switches import keep_switch_overrides_fresh, pinned_context, refresh_switch_overrides
 from api.core.sentry import build_sentry_options, capture_dependency_failure
 from api.db.models.novel import NovelJob, NovelJobKind
 from api.clover.unit import assert_clover_unit_matches
@@ -163,7 +165,8 @@ async def _poll(
     if stop.is_set():
         return True
     for job_id in job_ids:
-        active.add(asyncio.create_task(run_job(session_factory, llm_client, job_id)))
+        # 작업마다 띄우는 순간의 기능 스위치 덮어쓰기를 고정한다 — 작업 도중 맵이 갱신돼도 한 작업 안의 값이 섞이지 않게.
+        active.add(asyncio.create_task(run_job(session_factory, llm_client, job_id), context=pinned_context()))
     return True
 
 
@@ -201,6 +204,8 @@ def _init_sentry() -> None:
 async def _main() -> None:
     # 서버 lifespan 과 같은 클로버 단위 대조 — 교체 스크립트 밖에서 워커를 손으로 띄워도 단위가 다른 DB 에서는 일을 받지 않는다.
     await assert_clover_unit_matches(async_session_factory)
+    # 서버 lifespan 과 같이 기능 스위치 덮어쓰기를 일을 받기 전에 다 읽고, 도는 동안 같은 간격으로 다시 읽는다.
+    await refresh_switch_overrides(async_session_factory)
     # 모델 클라이언트를 일을 받기 전에 만든다 — 키가 없으면 여기서 실패해 기동부터 안 된다.
     llm_client = get_llm_client()
     logger.info(
@@ -208,9 +213,13 @@ async def _main() -> None:
         settings.novelize_worker_max_concurrent_jobs,
         settings.novelize_worker_poll_interval_seconds,
     )
+    switch_refresher = asyncio.create_task(keep_switch_overrides_fresh(async_session_factory))
     try:
         await serve(async_session_factory, llm_client)
     finally:
+        switch_refresher.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await switch_refresher
         await engine.dispose()
     logger.info("소설화 워커 종료 — 돌던 작업을 모두 마쳤다")
 

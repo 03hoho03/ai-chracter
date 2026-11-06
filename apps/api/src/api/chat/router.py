@@ -160,6 +160,7 @@ from api.content.schemas import (
 from api.core import clover
 from api.core.clover import SpendUsage
 from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.rate_limit import seconds_until_kst_midnight
 from api.core.rate_limit_gate import ChatCharge, _too_many_requests, charge_chat_turn
 from api.core.schema import NoNul
@@ -1137,7 +1138,7 @@ def _fold_after_commit(
     넣은 행까지 본다. 이것도 예외를 밖으로 내지 않는다. 꺼져 있으면 예약하지 않아 Voyage 호출도 임베딩 표 SELECT·INSERT 도 없다."""
 
     def schedule(_turn: TurnResult) -> None:
-        if not settings.memory_window_generation:
+        if not switch_on("memory_window_generation"):
             return
         is_story_chat = setup is not None
         summary_set, summary_sections = judgment_sets.summary
@@ -1154,7 +1155,7 @@ def _fold_after_commit(
             writing_model=writing_model,
             call_model=judgment_sets.call_model("summary"),
         )
-        if settings.memory_episodes_extract:
+        if switch_on("memory_episodes_extract"):
             episode_set, episode_sections = judgment_sets.episode
             background_tasks.add_task(
                 extract_pending_episode,
@@ -1168,7 +1169,7 @@ def _fold_after_commit(
                 names=names,
                 call_model=judgment_sets.call_model("episode"),
             )
-        if settings.memory_facts_extract:
+        if switch_on("memory_facts_extract"):
             fact_set, fact_sections = judgment_sets.fact
             background_tasks.add_task(
                 extract_pending_facts,
@@ -1182,7 +1183,7 @@ def _fold_after_commit(
                 names=names,
                 call_model=judgment_sets.call_model("fact"),
             )
-        if settings.memory_impressions_write:
+        if switch_on("memory_impressions_write"):
             impression_set, impression_sections = judgment_sets.impression
             background_tasks.add_task(
                 generate_pending_impression,
@@ -2301,7 +2302,7 @@ async def _memory_response(db: AsyncSession, room_id: uuid.UUID) -> ChatRoomMemo
         rolled_back_at=room_row.memory_rolled_back_at,
         limits=ChatRoomMemoryLimits(note_max_length=MEMORY_NOTE_MAX_LENGTH, summary_max_length=SUMMARY_MAX_LENGTH),
         features=ChatRoomMemoryFeatures(
-            items_visible=settings.memory_items_visible, summary_folding=settings.memory_window_generation
+            items_visible=switch_on("memory_items_visible"), summary_folding=switch_on("memory_window_generation")
         ),
     )
 
@@ -2319,7 +2320,7 @@ async def get_chat_room_memory(
 
 
 async def _require_memory_items_visible() -> None:
-    if not settings.memory_items_visible:
+    if not switch_on("memory_items_visible"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "MEMORY_ITEMS_DISABLED"})
 
 
@@ -2354,11 +2355,11 @@ async def list_chat_room_memory_items(
             )
             for view in await memory_impressions(db, room.id)
         ]
-        if settings.memory_impressions_visible and in_scope
+        if switch_on("memory_impressions_visible") and in_scope
         else None
     )
     # 쓰기가 꺼져 있으면 인상이 새로 생기지 않아 화면의 "대화가 쌓이면 정리돼요" 빈 상태가 거짓이 된다. 이미 만든 인상은 그대로 보인다.
-    if impressions == [] and not settings.memory_impressions_write:
+    if impressions == [] and not switch_on("memory_impressions_write"):
         impressions = None
     return ChatRoomMemoryItemsResponse(
         episodes=[

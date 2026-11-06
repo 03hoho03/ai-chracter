@@ -45,7 +45,7 @@ from sqlalchemy import Select, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import clover
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.rate_limit import seconds_until_kst_midnight
 from api.core.rate_limit_gate import _too_many_requests
 from api.core.schema import CamelModel
@@ -441,7 +441,7 @@ async def lock_source_closing(
 
     조치 행 INSERT 보다 먼저 부른다. 그 INSERT 가 FK 로 원작 행에 키 공유 잠금을 거는데, 탈퇴는 회원 행을 잡은 뒤 댓글을 단
     원작 행을 `FOR UPDATE` 로 잡는다 — 원작 행을 먼저 쥐고 구매자 행을 기다리면 그 원작에 댓글을 단 구매자의 탈퇴와 교착한다."""
-    if not settings.novel_public_policy_v2_enabled:
+    if not switch_on("novel_public_policy_v2_enabled"):
         return None
     novel_ids = list((await db.scalars(select(Novel.id).where(Novel.content_id == content_id).order_by(Novel.id))).all())
     locked = await lock_novel_parties(db, novel_ids=novel_ids)
@@ -466,7 +466,7 @@ def source_closing_keeps_buyers(*, closes: bool, choice: DerivativeNovelsChoice 
     없어 "판매만 멈춤"이 환급 없는 닫힘이 된다. 아무것도 쓰기 전에 부른다."""
     if not closes or choice != "stop_sales":
         return False
-    if not settings.novel_public_policy_v2_enabled:
+    if not switch_on("novel_public_policy_v2_enabled"):
         raise _error(status.HTTP_409_CONFLICT, "NOVEL_SALES_STOP_DISABLED")
     return True
 
@@ -530,7 +530,7 @@ async def purchase_refund_preview(db: AsyncSession, novel_id: uuid.UUID) -> Nove
     last_batch_chapters = select(NovelChapter.id).where(NovelChapter.batch_id == last_batch)
     novel_buyers, novel_amount = await _buyers_and_amount(db, novel_id)
     batch_buyers, batch_amount = await _buyers_and_amount(db, novel_id, last_batch_chapters)
-    policy_v2 = settings.novel_public_policy_v2_enabled
+    policy_v2 = switch_on("novel_public_policy_v2_enabled")
     return NovelPurchaseRefundPreview(
         novel_buyer_count=novel_buyers,
         novel_refund_amount=novel_amount,

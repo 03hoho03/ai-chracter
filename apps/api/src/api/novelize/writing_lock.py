@@ -12,7 +12,7 @@ from datetime import datetime
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.db.models.auth import User
 from api.db.models.content import Content
 from api.db.models.novel import Novel, NovelJob
@@ -39,7 +39,7 @@ async def novelize_refused_contents(
     """`novelize_refused` 를 작품 여럿에 한 번에 판정해 막힌 작품 id 를 돌려준다. 작가 탈퇴는 허락이 막지 않는 남의 작품의
     작가만 한 번에 조회한다."""
     refused = {content.id for content in contents if refuses_novelize(content, user_id)}
-    if not settings.novel_public_policy_v2_enabled:
+    if not switch_on("novel_public_policy_v2_enabled"):
         return refused
     others = [content for content in contents if content.id not in refused and content.creator_user_id != user_id]
     if not others:

@@ -171,6 +171,9 @@ class Settings(BaseSettings):
     identity_gate_enabled: bool = False
     # 결제·환불 완료를 알리는 디스코드 웹훅 주소. 비면 알림을 건너뛴다. 주소 자체가 그 채널에 글을 쓸 권한이라 비밀이다.
     payment_discord_webhook_url: str = Field(default="", repr=False)
+    # 운영 알림 디스코드 주소 — VM 크론 알림과 같은 채널이고, 키는 이미 운영 `.env` 에 있다(크론 래퍼가 그 파일에서 읽는다).
+    # API 는 어드민에서 기능 스위치를 바꿀 때 여기 알린다. 비면 알림을 건너뛴다. 주소가 곧 그 채널에 쓸 권한이라 비밀이다.
+    discord_webhook_url: str = Field(default="", repr=False)
 
     # 크리에이터 정산 스위치. 켜도 본인인증 설정이 없으면 꺼진 것으로 본다(`creator_payout/config.py`) — 신청 자격이 본인인증과
     # 만 19세라 인증할 수 없는 환경에서는 아무도 신청할 수 없다. 어드민 신청 처리는 이 값과 무관하게 열려 있다.

@@ -29,11 +29,11 @@ from api.chat.turn_engine import (
     _turn_message_response,
 )
 from api.chat.turn_settlement import TurnSettlement
+from api.core.feature_switches import switch_on
 from api.core.rate_limit_gate import ChatCharge
 from api.content.media_book import normalize_texts, normalize_texts_for_display, resolve_media_tag_images
 from api.content.media_tags import strip_media_tags
 from api.content.schemas import MediaTagImage
-from api.core.config import settings
 from api.core.s3 import generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.chat import (
@@ -458,7 +458,7 @@ class RoomTurnStore:
             record.shortcut_entity_id = replaced_record.shortcut_entity_id
         # 켠 동안 이벤트가 있을 때만 칸을 채운다 — 꺼져 있거나 비어 있으면 INSERT 에 칸을 싣지 않아 DB 기본값 `[]` 이 들어가고,
         # INSERT 칸 목록이 이 칸이 생기기 전과 같다(서버 기본값이 있는 칸이라 RETURNING 에는 이 칸이 더해진다).
-        if settings.stat_event_log and stat_events:
+        if switch_on("stat_event_log") and stat_events:
             record.stat_events = list(stat_events)
         self.db.add(record)
 

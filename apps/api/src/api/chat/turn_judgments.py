@@ -79,7 +79,7 @@ from api.content.schemas import (
     StatDefDraftItem,
     StoryDraftPayload,
 )
-from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.core.sentry import capture_dependency_failure
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomStat, ChatTurn
@@ -234,7 +234,7 @@ async def _load_due_endings(
     ]
     ending_history = history
     ending_summary = ""
-    if settings.memory_window_generation and settings.memory_window_ending_judgment:
+    if switch_on("memory_window_generation") and switch_on("memory_window_ending_judgment"):
         current_summary = await load_current_summary(db, room.id)
         if current_summary is not None:
             ending_history = prompt_window(history, current_summary.cursor)
@@ -327,7 +327,7 @@ async def _no_judgment() -> None:
 async def _image_judgment_summary(db: AsyncSession, room: ChatRoom) -> CurrentSummary | None:
     """판정 윈도우를 켜면 요약이 덮은 원문을 뺀다 — 장면 매칭은 최근 원문이면 충분해 요약은 싣지 않는다.
     캐릭터 상황별 이미지와 스토리 칸 판정이 같은 스위치를 따른다. 후보가 있을 때만 부른다."""
-    if settings.memory_window_generation and settings.memory_window_image_judgment:
+    if switch_on("memory_window_generation") and switch_on("memory_window_image_judgment"):
         return await load_current_summary(db, room.id)
     return None
 

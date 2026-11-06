@@ -26,6 +26,7 @@ from api.chat.memory_facts import fact_rows_statement
 from api.chat.memory_knowledge import latest_by_key
 from api.chat.memory_window import load_current_summary, memory_model_in_scope
 from api.core.config import settings
+from api.core.feature_switches import switch_on
 from api.db.models.chat import (
     ChatMemoryEpisode,
     ChatMemoryFact,
@@ -123,8 +124,8 @@ async def room_in_memory_scope(db: AsyncSession, room: ChatRoom) -> bool:
 def used_in_replies(in_scope: bool) -> tuple[bool, bool]:
     """(장면, 사실)이 이 방의 다음 턴 응답 프롬프트에 실릴 수 있는가. 턴 조립과 같은 판정이다 — 생성 윈도우가 켜져 있고, 그
     기억의 스위치(회상·사실 주입)가 켜져 있고, 방이 기억 사용 범위에 들어야 한다(`in_scope`, `room_in_memory_scope`)."""
-    usable = settings.memory_window_generation and in_scope
-    return usable and settings.memory_episodes_recall, usable and settings.memory_facts_inject
+    usable = switch_on("memory_window_generation") and in_scope
+    return usable and switch_on("memory_episodes_recall"), usable and switch_on("memory_facts_inject")
 
 
 @dataclass(frozen=True)

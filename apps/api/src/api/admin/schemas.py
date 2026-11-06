@@ -10,6 +10,7 @@ from api.admin.prompt_semver import SectionChange, SemverLevel
 from api.chat.prompt_builder import PromptLane
 from api.chat.prompt_routing import RouteSource, SkipReason
 from api.chat.prompt_stages import PromptStage, RouteRoomModel, RoutingLane, StageKind
+from api.core.feature_switches import FeatureSwitchName, ReadOnlyFeatureSwitchName, ReadOnlySwitchReason
 from api.core.schema import CamelModel, NoNul
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType, ContentVisibility, DerivativeNovelsChoice, ModerationStatus
@@ -1418,3 +1419,109 @@ class AdminLlmCredentialCheckResponse(CamelModel):
 
     credential: AdminLlmCredential
     calls: int
+
+
+# ── 기능 스위치 ──────────────────────────────────────────────────────────────
+
+# 저장은 됐지만 운영자가 알아야 할 것. `refund-started-during-pause`: 클로버 정지를 켜는 사이 진행 중 환불이 생겼다(정지 중에는
+# 그 환불을 마무리할 수 없다). `self-refresh-failed`: 저장한 프로세스가 커밋 뒤 자기 맵을 다시 읽지 못했다(주기 갱신이 따라온다).
+FeatureSwitchWarning = Literal["refund-started-during-pause", "self-refresh-failed"]
+
+
+class AdminSwitchOverride(CamelModel):
+    """스위치 하나의 지금 덮어쓰기 — 값과 마지막으로 바꾼 운영자·시각."""
+
+    value: bool
+    admin_id: uuid.UUID
+    admin_email: str
+    updated_at: datetime
+
+
+class AdminSwitchEffectiveState(CamelModel):
+    """결제·본인인증 게이트의 실제 상태. 실효 값이 켜져 있고 필요한 설정이 모두 있어야 열린다. `missing_settings` 는 비어 있는
+    설정의 env 키 이름이다(값은 싣지 않는다)."""
+
+    open: bool
+    missing_settings: list[str]
+
+
+class AdminAdjustableSwitch(CamelModel):
+    """어드민에서 켜고 끌 수 있는 스위치. `env_value` 는 이 서버가 기동 때 읽은 값이고, 실효 값은 덮어쓰기가 있으면 그 값이다.
+    `effective_state` 는 결제·본인인증 게이트에만 있다."""
+
+    name: FeatureSwitchName
+    env_value: bool
+    override: AdminSwitchOverride | None
+    effective_value: bool
+    effective_state: AdminSwitchEffectiveState | None
+
+
+class AdminReadOnlySwitch(CamelModel):
+    """`.env` 로만 바꾸는 스위치의 지금 값과 버튼이 없는 이유."""
+
+    name: ReadOnlyFeatureSwitchName
+    value: bool
+    reason: ReadOnlySwitchReason
+
+
+class AdminUnknownOverride(CamelModel):
+    """이 판이 버튼으로 다루지 않는 이름의 덮어쓰기 행 — 지금은 무시되고 그 스위치는 `.env` 값으로 돈다."""
+
+    name: str
+    value: bool
+    admin_id: uuid.UUID
+    admin_email: str
+    updated_at: datetime
+
+
+class AdminFeatureSwitchListResponse(CamelModel):
+    """버튼 대상(서버 이름 목록 순서)·읽기 전용·모르는 덮어쓰기와, 프로세스마다 덮어쓰기를 다시 읽는 간격(초 — 다른 프로세스에
+    저장이 닿기까지 길어야 약 이만큼 걸린다)."""
+
+    adjustable: list[AdminAdjustableSwitch]
+    read_only: list[AdminReadOnlySwitch]
+    unknown_overrides: list[AdminUnknownOverride]
+    refresh_interval_seconds: float
+
+
+class AdminFeatureSwitchSetRequest(CamelModel):
+    """`expected_override` 는 화면이 본 지금 덮어쓰기다(없음 = null) — 지금 덮어쓰기와 다르면 409 로 돌려보낸다."""
+
+    value: bool
+    reason: Annotated[str, NoNul]
+    expected_override: bool | None
+
+
+class AdminFeatureSwitchClearRequest(CamelModel):
+    reason: Annotated[str, NoNul]
+    expected_override: bool
+
+
+class AdminFeatureSwitchChangeItem(CamelModel):
+    """이력 한 행. 전·후의 null 은 덮어쓰기 없음이다. `env_value` 는 그 순간의 `.env` 값이고, null 은 기록한 판이 그 이름을 몰랐다는
+    뜻이다."""
+
+    id: uuid.UUID
+    name: str
+    before_override: bool | None
+    after_override: bool | None
+    env_value: bool | None
+    reason: str
+    admin_id: uuid.UUID
+    admin_email: str
+    created_at: datetime
+
+
+class AdminFeatureSwitchChangeResult(CamelModel):
+    """저장 뒤의 그 스위치(저장 결과로 계산한 값, 모르는 이름을 지웠으면 null)와 남긴 이력 행, 경고."""
+
+    switch: AdminAdjustableSwitch | None
+    change: AdminFeatureSwitchChangeItem
+    warnings: list[FeatureSwitchWarning]
+
+
+class AdminFeatureSwitchChangeListResponse(CamelModel):
+    items: list[AdminFeatureSwitchChangeItem]
+    page: int
+    total_pages: int
+    total_count: int
