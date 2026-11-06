@@ -90,12 +90,14 @@ from api.llm.credential_usage import (
 )
 from api.llm.credentials import (
     CLAUDE_AXES,
+    TRANSIENT_CHECK_ERROR,
     CheckGroup,
     EnableBlocker,
     SecretFormatError,
     account_in_allowlist,
     allowed_accounts,
     check_groups,
+    conclusive_checks_per_axis,
     credential_keyring,
     credential_write,
     current_model_ids,
@@ -310,7 +312,11 @@ async def _after_commit(notify: Notifier, *messages: str) -> None:
 
 
 def _check_out(
-    credential: LlmCredential, check: LlmCredentialCheck, model_ids: dict[ClaudeModelAxis, str]
+    credential: LlmCredential,
+    check: LlmCredentialCheck,
+    model_ids: dict[ClaudeModelAxis, str],
+    *,
+    is_runtime_basis: bool,
 ) -> AdminLlmCredentialCheckItem:
     return AdminLlmCredentialCheckItem(
         run=check.run,
@@ -322,7 +328,25 @@ def _check_out(
         is_current_secret=check.secret_fingerprint == credential.secret_fingerprint,
         is_current_model_id=check.sent_model_id == model_ids.get(check.model_axis),
         is_current_state_version=check.state_version == credential.state_version,
+        is_runtime_basis=is_runtime_basis,
     )
+
+
+def _checks_out(
+    credential: LlmCredential, checks: Sequence[LlmCredentialCheck], model_ids: dict[ClaudeModelAxis, str]
+) -> list[AdminLlmCredentialCheckItem]:
+    """축 순서로, 축마다 회차가 가장 큰 기록과 — 그것이 런타임이 그 축에 쓰는 기록이 아니면 — 런타임이 쓰는 기록을 하나 더.
+    화면이 런타임과 같은 답(`credentials.passed_axes`)을 내려면 일시 오류 아래의 결론이 응답에 있어야 한다."""
+    latest = latest_checks_per_axis(checks)
+    basis = conclusive_checks_per_axis(credential, checks)
+    items: list[AdminLlmCredentialCheckItem] = []
+    for axis in CLAUDE_AXES:
+        newest, used = latest.get(axis), basis.get(axis)
+        if newest is not None:
+            items.append(_check_out(credential, newest, model_ids, is_runtime_basis=newest is used))
+        if used is not None and used is not newest:
+            items.append(_check_out(credential, used, model_ids, is_runtime_basis=True))
+    return items
 
 
 def _spend_out(credential: LlmCredential, spend: CredentialSpend | None) -> AdminLlmCredentialSpend | None:
@@ -345,7 +369,6 @@ def _credential_out(
     model_ids: dict[ClaudeModelAxis, str],
     spend: CredentialSpend | None,
 ) -> AdminLlmCredential:
-    latest = latest_checks_per_axis(checks)
     return AdminLlmCredential(
         id=credential.id,
         provider=credential.provider,
@@ -365,7 +388,7 @@ def _credential_out(
         alert_pct=credential.alert_pct,
         created_at=credential.created_at,
         updated_at=credential.updated_at,
-        checks=[_check_out(credential, latest[axis], model_ids) for axis in CLAUDE_AXES if axis in latest],
+        checks=_checks_out(credential, checks, model_ids),
         enable_blocker=enable_blocker(credential, checks, allowed_accounts()),
         spend=_spend_out(credential, spend),
     )
@@ -811,9 +834,19 @@ def _reconcile(
     return outcomes, fill
 
 
+def _axis_result(axis: ClaudeModelAxis, kind: CheckErrorKind | None) -> str:
+    """감사·알림의 축 하나. 일시 오류는 실패가 아니라 이전 결과 유지로 적는다 — 런타임이 그 축의 이전 결론을 그대로 쓴다
+    (`credentials.passed_axes`)."""
+    if kind is None:
+        return f"{axis} 통과"
+    if kind == TRANSIENT_CHECK_ERROR:
+        return f"{axis} 일시 오류(이전 결과 유지)"
+    return f"{axis} 실패({kind})"
+
+
 def _axis_results(outcomes: Sequence[_Outcome]) -> list[str]:
     kinds = {axis: kind for group, kind, _ in outcomes for axis in group.axes}
-    return [f"{axis} 통과" if kinds[axis] is None else f"{axis} 실패({kinds[axis]})" for axis in CLAUDE_AXES if axis in kinds]
+    return [_axis_result(axis, kinds[axis]) for axis in CLAUDE_AXES if axis in kinds]
 
 
 @router.post("/admin/llm-credentials/{credential_id}/check")
@@ -826,7 +859,8 @@ async def check_llm_credential(
 ) -> AdminLlmCredentialCheckResponse:
     """모델 축마다 지금 설정의 실제 id 로 확인 호출을 하고 축마다 한 행을 같은 회차로 남긴다(같은 id 는 한 번, 차례로).
     기록에는 확인을 시작할 때 읽은 판·지문을 남긴다 — 호출을 기다리는 동안 상태나 키가 바뀌면 그 회차는 켜기에 세지 않는다.
-    다시 시도할 일(과부하·시간 초과 등)로 실패한 축도 그 종류로 남는다 — 분당 한 번이라 1분 뒤 다시 누른다."""
+    다시 시도할 일(429·과부하·시간 초과 등)로 실패한 축도 그 종류(`unavailable`)로 남지만 그 축의 이전 결과를 덮지 않는다 —
+    런타임은 그 축의 이전 결론을 그대로 쓰고, 켜기·목록 사용 켜기에는 세지 않는다(분당 한 번이라 1분 뒤 다시 누른다)."""
     # DB 조회보다 먼저 센다 — 그 항목이 있든 없든 카운터가 오른다.
     retry_after = await check_rate_limit(
         "llm_credential_check", str(credential_id), CHECK_LIMIT, window_seconds=CHECK_WINDOW_SECONDS

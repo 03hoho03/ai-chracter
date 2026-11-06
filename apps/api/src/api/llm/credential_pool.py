@@ -210,8 +210,9 @@ def pool_candidates(
 # ── 스냅숏 캐시 ──────────────────────────────────────────────────────────────────
 async def _read_from_db(session_factory: SessionFactory, *, generation: int | None) -> PoolSnapshot:
     """설정 행(없으면 꺼짐)·항목 전부(위치 순)·그 항목들의 확인 기록 전부를 짧은 세션 하나로 읽는다. 확인 기록을 전부 읽는 것은
-    "축마다 최신"을 켜기 조건과 같은 함수로 고르기 위해서다(확인은 항목마다 분당 한 번이라 행이 적고, 스냅숏은 무효화·캐시 수명
-    때만 다시 만든다). 읽지 못하면 원인을 단 `LLMClientError`."""
+    축마다 쓸 기록이 최신 회차가 아닐 수 있어서다 — 일시 오류 기록을 건너뛰고 그 축의 이전 결론으로 내려간다
+    (`credentials.passed_axes`). 확인은 항목마다 분당 한 번이라 행이 적고, 스냅숏은 무효화·캐시 수명 때만 다시 만든다. 읽지
+    못하면 원인을 단 `LLMClientError`."""
     try:
         async with session_factory() as db:
             pool_enabled = await db.scalar(

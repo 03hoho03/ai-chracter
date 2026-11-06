@@ -374,6 +374,12 @@ _Row = tuple[int, CheckErrorKind | None]
         pytest.param(_ORG, [(1, "credit"), (1, "unavailable")], "check-required", id="nothing-passed"),
         pytest.param(_ORG, [(1, None), (2, "credit")], "check-required", id="latest-run-did-not-pass"),
         pytest.param(
+            _ORG,
+            [(1, None), (1, None), (2, "unavailable"), (2, "unavailable")],
+            "check-required",
+            id="latest-run-had-only-transient-errors",
+        ),
+        pytest.param(
             _ORG, [(1, None), (1, "organization-mismatch")], "organization-mismatch", id="one-axis-org-mismatch"
         ),
         pytest.param(_ORG, [(1, None), (1, "account-not-allowed")], "organization-mismatch", id="one-axis-not-allowed"),
@@ -384,7 +390,8 @@ _Row = tuple[int, CheckErrorKind | None]
 def test_enable_blocker_order(account_ref: str | None, rows: list[_Row | str], expected: str | None) -> None:
     """켜기 조건은 위에서부터 처음 걸린 것을 이유로 낸다: 조직 미확인 → 허용 목록 밖 → 지금 키·지금 판의 최신 회차에 통과가
     없음 → 그 회차에 조직 오류. 판은 시각 대신 쓰는 기준이다 — 확인을 시작한 뒤 상태가 바뀌었으면(끄기·소진) 그 회차는 세지
-    않는다. 축이 모자란 것은 켜기가 아니라 목록 사용 켜기가 막는다."""
+    않는다. 축이 모자란 것은 켜기가 아니라 목록 사용 켜기가 막는다. 일시 오류뿐인 최신 회차도 통과가 없는 회차다 — 런타임
+    후보 판정과 달리 그 전 회차의 통과로 내려가지 않는다."""
     credential = _credential(FieldKeyring.parse(FAKE_CREDENTIAL_KEYRING))
     credential.account_ref = account_ref
     credential.state_version = 3

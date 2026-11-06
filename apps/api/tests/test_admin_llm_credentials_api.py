@@ -119,6 +119,7 @@ _CHECK_FIELDS = {
     "isCurrentSecret",
     "isCurrentModelId",
     "isCurrentStateVersion",
+    "isRuntimeBasis",
 }
 
 
@@ -1221,6 +1222,59 @@ async def test_check_passes_a_verified_credential_whose_responses_carry_no_organ
 
     assert {(r.passed, r.error_kind) for r in await _checks(db_session, created["id"])} == {(True, None)}
     assert (await _row(db_session, created["id"])).account_ref == _ORG
+
+
+async def test_transient_check_errors_keep_earlier_passes_at_runtime_but_never_count_for_turning_on(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """켜진 항목을 확인하다 Anthropic 이 잠깐 429·과부하를 내면 그 회차는 축마다 일시 오류로 남되, 런타임은 그 축의 이전
+    통과를 그대로 쓴다 — 항목이 후보에서 빠지지 않는다. 알림·감사 문구는 그 축이 이전 결과를 유지한다고 말한다. 켜기와 목록
+    사용 켜기는 최신 회차의 확정 통과를 요구하므로 그 회차로는 켜지 않는다."""
+    ready = await _ready(db_client)
+    probe.default = CheckCallResult(error_kind="unavailable", organization=None)
+    await _allow_another_check(ready["id"])
+
+    body = await _check(db_client, ready["id"])
+
+    row = await _row(db_session, ready["id"])
+    assert credentials.passed_axes(row, await _checks(db_session, ready["id"])) == frozenset(_AXES_IN_ORDER)
+    kept = "일시 오류(이전 결과 유지)"
+    results = f"opus {kept} · sonnet {kept} · haiku_writer {kept} · haiku {kept}"
+    assert notes[-1] == f"[Claude 자격] 확인 — anthropic · 운영 계정 · 지문 {secret_fingerprint(FAKE_API_KEY)} · {results}"
+    assert body["credential"]["enableBlocker"] == "check-required"
+    pool = await db_client.put(f"{_BASE}/pool", json={"enabled": True})
+    assert (pool.status_code, pool.json()["detail"]["axes"]) == (409, _AXES_IN_ORDER)
+
+
+async def test_listing_adds_the_runtime_basis_row_under_a_transient_latest_check(
+    db_client: httpx.AsyncClient, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """화면이 런타임과 같은 답을 내도록, 축마다 최신 기록이 일시 오류면 그 아래 지금 키의 결론(런타임이 그 축에 쓰는 기록)을
+    바로 뒤에 하나 더 싣는다. 최신 기록이 이미 그 결론이면 행 하나이고, 일시 오류 아래에 결론이 없으면 최신 기록 하나만
+    런타임 기록이 아닌 채로 싣는다."""
+    ready = await _ready(db_client)
+    probe.results[_IDS["haiku"]] = CheckCallResult(error_kind="unavailable", organization=None)
+    await _allow_another_check(ready["id"])
+    await _check(db_client, ready["id"])
+    probe.results.clear()
+    probe.organization = _OTHER_ORG
+    probe.default = CheckCallResult(error_kind="unavailable", organization=None)
+    never_concluded = await _create(db_client, "둘째 계정", FAKE_OTHER_API_KEY)
+    await _check(db_client, never_concluded["id"])
+
+    first, second = (await _listing(db_client))["credentials"]
+
+    assert [(c["modelAxis"], c["run"], c["errorKind"], c["isRuntimeBasis"]) for c in first["checks"]] == [
+        ("opus", 2, None, True),
+        ("sonnet", 2, None, True),
+        ("haiku_writer", 2, "unavailable", False),
+        ("haiku_writer", 1, None, True),
+        ("haiku", 2, "unavailable", False),
+        ("haiku", 1, None, True),
+    ]
+    assert [(c["modelAxis"], c["run"], c["isRuntimeBasis"]) for c in second["checks"]] == [
+        (axis, 1, False) for axis in _AXES_IN_ORDER
+    ]
 
 
 async def test_check_on_an_unverified_credential_fails_a_later_axis_whose_header_differs_from_the_first(

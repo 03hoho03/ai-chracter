@@ -1344,8 +1344,11 @@ class AdminLlmCredentialPoolRequest(CamelModel):
 
 
 class AdminLlmCredentialCheckItem(CamelModel):
-    """축마다 회차가 가장 큰 확인 기록. 세 `is_current_*` 는 그 기록이 지금도 유효한가 — 지금 키 지문으로 했는가, 지금 설정의
-    모델 id 로 보냈는가, 확인을 시작할 때의 판이 지금 판인가(켜기에 세어지는가)."""
+    """확인 기록 하나(어느 기록이 실리는지는 `AdminLlmCredential.checks`). 세 `is_current_*` 는 그 기록이 지금도 유효한가 —
+    지금 키 지문으로 했는가, 지금 설정의 모델 id 로 보냈는가, 확인을 시작할 때의 판이 지금 판인가(켜기에 세어지는가).
+    `error_kind` 가 `unavailable` 이면 일시 오류(429·과부하·시간 초과)라 그 축의 이전 결과를 덮지 않는다 — 런타임은 그 축의
+    이전 결론을 그대로 쓰고, 켜기·목록 사용 켜기에는 세지 않는다. `is_runtime_basis` 는 이 기록이 런타임이 그 축에 쓰는 기록인가
+    — 지금 키 지문으로 한 기록 가운데 `unavailable` 을 뺀 회차가 가장 큰 것이다."""
 
     run: int
     model_axis: ClaudeModelAxis
@@ -1356,6 +1359,7 @@ class AdminLlmCredentialCheckItem(CamelModel):
     is_current_secret: bool
     is_current_model_id: bool
     is_current_state_version: bool
+    is_runtime_basis: bool
 
 
 class AdminLlmCredentialSpend(CamelModel):
@@ -1377,7 +1381,16 @@ class AdminLlmCredentialSpend(CamelModel):
 class AdminLlmCredential(CamelModel):
     """목록 항목 하나. 키 원문·암호문·암호화 키 id 는 싣지 않는다 — 끝 4자리와 지문만. `same_as_env_key` 는 볼 때의 env 롤백
     키와 같은 키인지(저장하지 않는 계산값), `enable_blocker` 는 켜기가 막히는 이유(켤 수 있으면 null)다. `spend` 는 추정
-    사용액이다 — 충전액이 없거나 사용액 저장소를 읽지 못하면 null."""
+    사용액이다 — 충전액이 없거나 사용액 저장소를 읽지 못하면 null.
+
+    `checks` 는 축 순서이고, 축마다 회차가 가장 큰 기록이 먼저 오고, 그것이 런타임이 그 축에 쓰는 기록(`is_runtime_basis`)이
+    아니고 그런 기록이 따로 있으면 그 기록이 바로 뒤에 하나 더 온다 — 한 축에 행이 둘이면 앞이 최신, 뒤가 런타임 기록이다.
+    최신이 일시 오류인데 지금 키로 한 그 전 결론이 없거나, 최신이 옛 키의 기록이고 지금 키의 결론이 없으면 그 축은 행 하나이고
+    `is_runtime_basis` 가 거짓이다. 런타임에 받는 축은 이 행들로 이렇게 정해진다: `is_runtime_basis` 인 행 가운데 `error_kind`
+    가 `organization-mismatch`·`account-not-allowed` 인 것이 하나라도 있으면 어느 축도 받지 않고(조직 오류는 결론이라 그 축의
+    뒤따른 일시 오류가 지우지 않는다 — 그 축이 확정 결과를 받아야 풀린다), 아니면 `is_runtime_basis` 이고 `passed` 인 행의 축을
+    받는다. 여기에 켜짐(`state`)·조직 확인·지금 허용 목록·Anthropic 공급자 조건이 더해진다. 켜기(`enable_blocker`)와 목록 사용
+    켜기는 일시 오류를 건너뛰지 않고 최신 기록으로 판정한다."""
 
     id: uuid.UUID
     provider: CredentialProvider
