@@ -75,11 +75,19 @@ class ClosedClash(BaseModel):
     values: list[str]
 
 
+class BlockedFinding(BaseModel):
+    """차단 하나 — 규칙과 그 항목. 항목은 앞선 정본 행이면 화·종류·내용(`2화 사실 주원 · life: dead`), 막힌 확정의 새 항목이면
+    `이번 화 새 항목` 이다 — 막힌 확정은 항목을 쓰지 않아 새 항목의 행이 없다."""
+
+    rule: str
+    items: list[str]
+
+
 class ChapterOutcome(BaseModel):
     """확정 하나의 결과. 기본 화는 `probe` 가 None 이다. `block_ids` 는 개정의 블록 차례(문단 번호를 블록으로 푼다).
     `rows_left` 는 탐침 화를 지운 뒤 그 화 몫으로 남은 정본 기억 행 수(표마다, 모두 0 이어야 한다). `closed` 는 닫힌 값 불변
     속성 모순 차단마다 견준 갈래와 값이다. `play_rows`·`notes` 는 심기가 명세의 플레이 행·키워드 노트 차례마다 심은 행 id 라,
-    각색 후보의 근거를 명세의 행·글로 되짚는다."""
+    각색 후보의 근거를 명세의 행·글로 되짚는다. `blocks` 는 차단마다 규칙과 항목이다(세트 결함 표가 막힌 화의 항목을 적는다)."""
 
     novel: str
     repeat: int
@@ -92,6 +100,7 @@ class ChapterOutcome(BaseModel):
     jobs: list[JobOutcome]
     rows_left: dict[str, int] = {}
     closed: list[ClosedClash] = []
+    blocks: list[BlockedFinding] = []
     play_rows: list[str] = []
     notes: list[str] = []
     revision: str | None = None  # 확정한 화 개정 — 라벨 시트가 인용을 그 개정의 블록 글에서 잘라 낸다
@@ -250,6 +259,48 @@ async def _closed_clashes(
     return clashes
 
 
+_NEW_ITEM = "이번 화 새 항목"
+
+
+async def _blocked_findings(session: AsyncSession, commit_id: uuid.UUID) -> list[BlockedFinding]:
+    """차단마다 항목을 정본 행에서 읽어 적는다 — 사실은 주어·술어·값, 사건은 요지, 지식은 앎 주체·종류. 행이 없는 항목은 이번
+    확정의 새 항목이다."""
+    payloads = (
+        await session.execute(
+            select(NovelBibleFinding.rule, NovelBibleFinding.payload)
+            .where(NovelBibleFinding.commit_id == commit_id, NovelBibleFinding.severity == "block")
+            .order_by(NovelBibleFinding.rule)
+        )
+    ).all()
+    ids = {uuid.UUID(item) for _, payload in payloads for item in payload["items"]}
+    known: dict[uuid.UUID, str] = {}
+    subject = NovelBibleEntity.id == NovelBibleFact.subject_entity_id
+    for fact in await session.execute(
+        select(NovelBibleFact.id, NovelChapter.ordinal, NovelBibleEntity.name, NovelBibleFact.predicate_norm,
+               NovelBibleFact.value)
+        .join(NovelBibleEntity, subject).join(NovelChapter, NovelChapter.id == NovelBibleFact.chapter_id)
+        .where(NovelBibleFact.id.in_(ids))
+    ):
+        known[fact.id] = f"{fact.ordinal}화 사실 {fact.name} · {fact.predicate_norm}: {fact.value}"
+    for event in await session.execute(
+        select(NovelBibleEvent.id, NovelChapter.ordinal, NovelBibleEvent.summary)
+        .join(NovelChapter, NovelChapter.id == NovelBibleEvent.chapter_id)
+        .where(NovelBibleEvent.id.in_(ids))
+    ):
+        known[event.id] = f"{event.ordinal}화 사건 「{event.summary}」"
+    for knowledge in await session.execute(
+        select(NovelBibleKnowledge.id, NovelChapter.ordinal, NovelBibleEntity.name, NovelBibleKnowledge.kind)
+        .join(NovelBibleEntity, NovelBibleEntity.id == NovelBibleKnowledge.knower_entity_id)
+        .join(NovelChapter, NovelChapter.id == NovelBibleKnowledge.chapter_id)
+        .where(NovelBibleKnowledge.id.in_(ids))
+    ):
+        known[knowledge.id] = f"{knowledge.ordinal}화 지식 {knowledge.name} {knowledge.kind}"
+    return [
+        BlockedFinding(rule=rule, items=[known.get(uuid.UUID(item), _NEW_ITEM) for item in payload["items"]])
+        for rule, payload in payloads
+    ]
+
+
 async def _collect(
     session: AsyncSession, commit_id: uuid.UUID, *, novel: str, repeat: int, chapter: SeededChapter,
     probe: str | None, seeded: SeededNovel | None = None,
@@ -279,6 +330,7 @@ async def _collect(
         revision=str(chapter.revision_id),
         jobs=jobs,
         closed=await _closed_clashes(session, commit_id, jobs),
+        blocks=await _blocked_findings(session, commit_id),
         play_rows=[str(row) for row in seeded.play_row_ids] if seeded is not None else [],
         notes=[str(note) for note in seeded.note_ids] if seeded is not None else [],
     )

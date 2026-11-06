@@ -1,6 +1,11 @@
 """측정 하네스 진입점 — `apps/api` 에서 `PYTHONPATH=scripts uv run --env-file .env python -m novel_bible_eval <명령>`.
 
-- `synthetic`: 합성 세트를 심고 확정·처리해 실행 폴더에 보고서(JSON·마크다운)와 결과(`outcomes.json`)를 쓴다.
+- `synthetic`: 합성 세트를 심고 확정·처리해 실행 폴더에 보고서(JSON·마크다운)와 결과(`outcomes.json`)를 쓴다. `--oracle` 이면
+  해석기를 명세 정답을 그대로 내는 가짜(`FakeLLM(oracle=True)`)로 바꿔 끼워 모델을 하나도 부르지 않고, 보고서 머리에 오라클
+  실행임을 적고 세트 결함 표(`oracle.py`)를 마크다운 파일 하나로 더 쓴다 — 유료 실측 전에 세트 자체의 결함을 찾는 실행이다.
+  원장을 쓰지 않으므로 원장·어댑터 인자를 받지 않는다(주면 거절한다). 중간에 끊기면 결함 표 머리에 판정 불가와 그 까닭을 적고
+  예외를 다시 올린다(종료 코드가 0 이 아니다). 실행 폴더에 다른 갈래의 보고서(`report.json` 의 `oracle` 이 다른 것)가 이미 있으면
+  무엇이든 하기 전에 거절한다 — 공짜 오라클 실행이 낸 돈의 결과를 덮거나, 유료 실행이 오라클 결과 폴더에 섞여 들지 않게.
 - `copy-text`: 텍스트 파일 폴더(사람 라벨 원고)에서 어댑터마다 새 소설 사본을 만들고 어댑터 → 소설 id 를 `copies.json` 에 쓴다.
   그 파일이 이미 있으면 `--add` 없이는 거절한다(덮으면 다른 어댑터의 사본 id 가 사라진다). 문단이 하나뿐인 화는 경고한다.
 - `extract`: 사람 라벨용 소설 사본의 앞 화들을 확정해 그 어댑터의 결과를 쓴다. 이미 정본 기억 확정이 있는 소설은 거절한다 —
@@ -48,6 +53,8 @@ from replay.local_db import ensure_local_database
 
 from novel_bible_eval import judge as judging
 from novel_bible_eval import labels, metrics, text_copy
+from novel_bible_eval.fake_llm import FakeLLM
+from novel_bible_eval.oracle import defects_markdown, set_defects
 from novel_bible_eval.report import label_report, synthetic_report, write_report
 from novel_bible_eval.run import BudgetHalt, ChapterOutcome, Meter, extract_chapters, run_set
 from novel_bible_eval.spec import EvalSet, load_set
@@ -58,8 +65,10 @@ EXIT_SHORT = 21
 
 async def synthetic(
     factory: SessionFactory, resolver: AdapterResolver, eval_set: EvalSet, run_dir: Path, *, adapter: str,
-    meter: Meter, repeats: int = 1, slots: frozenset[SlotId] | None = None,
+    meter: Meter, repeats: int = 1, slots: frozenset[SlotId] | None = None, oracle: bool = False,
 ) -> int:
+    """`oracle` 이면 `resolver` 는 명세 정답을 그대로 내는 가짜 해석기이고, 보고서와 함께 세트 결함 표를 쓴다."""
+    _check_run_dir(run_dir, oracle=oracle)
     outcomes: list[ChapterOutcome] = []
     halted: str | None = None
     try:
@@ -70,9 +79,27 @@ async def synthetic(
         halted = f"끊김 — {type(error).__name__}: {error}"
         raise
     finally:
-        report = synthetic_report(eval_set, outcomes, meter.attempts, adapter=adapter, halted=halted, calls=meter.calls)
+        report = synthetic_report(
+            eval_set, outcomes, meter.attempts, adapter=adapter, halted=halted, calls=meter.calls, oracle=oracle
+        )
         write_report(report, outcomes, run_dir)
+        if oracle:
+            defects = defects_markdown(set_defects(eval_set, outcomes, halted=halted))
+            (run_dir / "set-defects.md").write_text(defects, encoding="utf-8")  # cite-ok: 하네스의 출력 파일 이름
     return EXIT_BUDGET if halted else 0
+
+
+def _check_run_dir(run_dir: Path, *, oracle: bool) -> None:
+    """실행 폴더의 보고서가 다른 갈래(오라클이냐 아니냐)의 것이면 거절한다. 옛 보고서에 `oracle` 칸이 없으면 유료 실행으로 본다."""
+    path = run_dir / "report.json"
+    if not path.exists():
+        return
+    found = bool(json.loads(path.read_text(encoding="utf-8")).get("oracle"))
+    if found == oracle:
+        return
+    if oracle:
+        raise SystemExit(f"{path} 는 유료(오라클 아닌) 실행의 보고서다 — 오라클 실행이 덮지 않는다. 다른 실행 폴더를 쓴다")
+    raise SystemExit(f"{path} 는 오라클 실행의 보고서다 — 유료 실행 결과를 그 폴더에 쓰지 않는다. 다른 실행 폴더를 쓴다")
 
 
 async def copy_text(
@@ -240,20 +267,46 @@ async def _block_texts(factory: SessionFactory, runs: dict[str, list[ChapterOutc
     return texts
 
 
+# 모델을 부르는 실행이 요구하는 원장·어댑터 인자 — `synthetic` 은 오라클 실행이 이것 없이 돌아 파서가 아니라
+# `_check_synthetic_args` 가 요구한다.
+_PAID_ARGS = ("ledger", "bundle", "cap_usd", "halt_usd", "estimate_usd", "adapter")
+
+
+def _paid_parser(*, required: bool) -> argparse.ArgumentParser:
+    paid = argparse.ArgumentParser(add_help=False)
+    paid.add_argument("--run-dir", type=Path, required=True)
+    paid.add_argument("--ledger", type=Path, required=required, help="측정 전체가 함께 쓰는 원장 jsonl")
+    paid.add_argument("--bundle", required=required, help="승인 묶음 — 멈춤 판정은 이 묶음의 누적만 본다")
+    paid.add_argument("--cap-usd", type=float, required=required)
+    paid.add_argument("--halt-usd", type=float, required=required)
+    paid.add_argument("--estimate-usd", type=float, required=required, help="호출 하나의 견적")
+    return paid
+
+
+def _check_synthetic_args(args: argparse.Namespace) -> None:
+    """오라클 실행은 원장·어댑터 인자를 거절하고(쓰지 않는 원장을 준 것은 유료 실행을 오라클로 잘못 부른 것이다), 그 밖의
+    `synthetic` 은 모두 요구한다."""
+    given = [name for name in _PAID_ARGS if getattr(args, name) is not None]
+    if args.oracle and given:
+        raise SystemExit(f"오라클 실행은 모델을 부르지 않는다 — 원장·어댑터 인자를 받지 않는다: {', '.join(given)}")
+    if not args.oracle and (missing := [name for name in _PAID_ARGS if name not in given]):
+        raise SystemExit(f"모델을 부르는 synthetic 은 원장·어댑터 인자가 필요하다: {', '.join(missing)}")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="novel_bible_eval")
     commands = parser.add_subparsers(dest="command", required=True)
-    budget = argparse.ArgumentParser(add_help=False)
-    budget.add_argument("--run-dir", type=Path, required=True)
-    budget.add_argument("--ledger", type=Path, required=True, help="측정 전체가 함께 쓰는 원장 jsonl")
-    budget.add_argument("--bundle", required=True, help="승인 묶음 — 멈춤 판정은 이 묶음의 누적만 본다")
-    budget.add_argument("--cap-usd", type=float, required=True)
-    budget.add_argument("--halt-usd", type=float, required=True)
-    budget.add_argument("--estimate-usd", type=float, required=True, help="호출 하나의 견적")
+    budget = _paid_parser(required=True)
     paid = argparse.ArgumentParser(add_help=False, parents=[budget])
     paid.add_argument("--adapter", required=True, help="보고서에 적는 어댑터 이름(배정은 env 가 정한다)")
     paid.add_argument("--slots", help="쉼표로 가른 슬롯 id(없으면 등록부 전부)")
-    run = commands.add_parser("synthetic", parents=[paid])
+    run = commands.add_parser("synthetic", parents=[_paid_parser(required=False)])
+    run.add_argument("--adapter", help="보고서에 적는 어댑터 이름(배정은 env 가 정한다) — 오라클 실행은 받지 않는다")
+    run.add_argument("--slots", help="쉼표로 가른 슬롯 id(없으면 등록부 전부, 오라클 실행은 가짜 해석기가 내는 슬롯 전부)")
+    run.add_argument(
+        "--oracle", action="store_true",
+        help="명세 정답을 그대로 내는 가짜 해석기로 돌린다 — 모델 호출 0, 세트·규칙 정합 확인(원장 인자 없이)",
+    )
     run.add_argument("--set", type=Path, required=True)
     run.add_argument("--repeats", type=int, default=1)
     run.add_argument(
@@ -288,6 +341,17 @@ def _parser() -> argparse.ArgumentParser:
 
 async def _run(args: argparse.Namespace) -> int:
     factory: SessionFactory = async_session_factory
+    if args.command == "synthetic":
+        _check_synthetic_args(args)
+    if args.command == "synthetic" and args.oracle:
+        eval_set = load_set(args.set, removed=args.removed)
+        # 호출 기록은 모델 칸이 `oracle`(단가표에 없음)이고 토큰 0 이라 원가가 0 이다 — 원장 없이 돌고 보고서의 원가 칸도 0 이다.
+        fake = FakeLLM(eval_set, oracle=True, prompt_tokens=0, output_tokens=0)
+        meter = Meter()
+        return await synthetic(
+            factory, meter.wrap(fake.resolver()), eval_set, args.run_dir, adapter="oracle", meter=meter,
+            repeats=args.repeats, slots=frozenset(args.slots.split(",")) if args.slots else fake.slots, oracle=True,
+        )
     if args.command in ("synthetic", "extract"):
         ledger = Ledger(args.ledger, cap_usd=args.cap_usd, halt_usd=args.halt_usd, bundle=args.bundle)
         meter = Meter(ledger=ledger, estimate_usd=args.estimate_usd)
