@@ -70,7 +70,7 @@ async def synthetic(
         halted = f"끊김 — {type(error).__name__}: {error}"
         raise
     finally:
-        report = synthetic_report(eval_set, outcomes, meter.attempts, adapter=adapter, halted=halted)
+        report = synthetic_report(eval_set, outcomes, meter.attempts, adapter=adapter, halted=halted, calls=meter.calls)
         write_report(report, outcomes, run_dir)
     return EXIT_BUDGET if halted else 0
 
@@ -256,6 +256,10 @@ def _parser() -> argparse.ArgumentParser:
     run = commands.add_parser("synthetic", parents=[paid])
     run.add_argument("--set", type=Path, required=True)
     run.add_argument("--repeats", type=int, default=1)
+    run.add_argument(
+        "--removed", nargs="+", default=[], metavar="enum:범주/정규 값",
+        help="앱 사전에서 뺀 열거형 사전 항목 — 그 줄을 지운 코드로 같은 세트를 돌릴 때",
+    )
     extract = commands.add_parser("extract", parents=[paid])
     extract.add_argument("--novel-id", type=uuid.UUID, required=True)
     extract.add_argument("--chapters", type=int, default=4)
@@ -292,8 +296,8 @@ async def _run(args: argparse.Namespace) -> int:
         slots: frozenset[SlotId] | None = frozenset(args.slots.split(",")) if args.slots else None
         if args.command == "synthetic":
             return await synthetic(
-                factory, resolver, load_set(args.set), args.run_dir, adapter=args.adapter, meter=meter,
-                repeats=args.repeats, slots=slots,
+                factory, resolver, load_set(args.set, removed=args.removed), args.run_dir, adapter=args.adapter,
+                meter=meter, repeats=args.repeats, slots=slots,
             )
         return await extract(
             factory, resolver, args.novel_id, args.run_dir, adapter=args.adapter, count=args.chapters, meter=meter,

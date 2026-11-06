@@ -10,6 +10,8 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from api.novel_bible.rules import blocking
+from novel_bible_eval import __main__ as entry_point
 from novel_bible_eval.spec import NON_CONFLICT_SUBKINDS, EvalSet, load_set
 
 FIXTURE = Path(__file__).parent / "fixtures" / "novel_bible_eval" / "small_set.json"
@@ -128,6 +130,12 @@ def test_each_non_conflict_branch_but_the_free_one_has_a_fixed_list_of_subkinds(
 
 
 _RELATION = {"kind": "before", "chapter": 1, "event": 1}
+
+
+def _blood(*values: str, canonical: tuple[str, ...] | None = None) -> dict[str, Any]:
+    pair: dict[str, Any] = {"category": "enum:혈액형", "values": list(values)}
+    return pair if canonical is None else {**pair, "canonical": list(canonical)}
+
 _B4 = ((("probes", 0, "expected_rule"), "immutable_attribute_mismatch"),)
 
 
@@ -167,16 +175,22 @@ _B4 = ((("probes", 0, "expected_rule"), "immutable_attribute_mismatch"),)
         pytest.param([(("probes", 3, "group"), "D")], id="free-chapter-probe-with-a-subkind"),
         pytest.param([(("probes", 0, "subkind"), "dead_in_flashback")], id="conflict-probe-with-a-subkind"),
         pytest.param(list(_B4), id="closed-value-conflict-without-its-expected-pair"),
-        pytest.param([(("probes", 0, "closed"), {"category": "enum:혈액형", "values": ["A형", "B형"]})],
+        pytest.param([(("probes", 0, "closed"), _blood("A형", "B형", canonical=("A", "B")))],
                      id="expected-pair-on-another-rule"),
-        pytest.param([*_B4, (("probes", 0, "closed"), {"category": "enum:혈액형", "values": ["A형", "검은색"]})],
+        pytest.param([*_B4, (("probes", 0, "closed"), _blood("A형", "검은색", canonical=("A", "검정")))],
                      id="expected-pair-across-categories"),
-        pytest.param([*_B4, (("probes", 0, "closed"), {"category": "enum:혈액형", "values": ["A형", "에이형"]})],
+        pytest.param([*_B4, (("probes", 0, "closed"), _blood("A형", "에이형", canonical=("A", "A")))],
                      id="expected-pair-of-the-same-value"),
-        pytest.param([*_B4, (("probes", 0, "closed"), {"category": "enum:색", "values": ["A형", "B형"]})],
+        pytest.param([*_B4, (("probes", 0, "closed"), {**_blood("A형", "B형", canonical=("A", "B")), "category": "enum:색"})],
                      id="expected-pair-under-the-wrong-category"),
-        pytest.param([*_B4, (("probes", 0, "closed"), {"category": "enum:혈액형", "values": ["A형"]})],
-                     id="expected-pair-with-one-value"),
+        pytest.param([*_B4, (("probes", 0, "closed"), _blood("A형", canonical=("A",)))], id="expected-pair-with-one-value"),
+        # 사전 값은 정규 값을 함께 적는다 — 사전에서 항목을 뺀 코드로 같은 세트를 다시 읽을 때 기대 항목이 그대로 남게.
+        pytest.param([*_B4, (("probes", 0, "closed"), _blood("A형", "B형"))], id="dictionary-pair-without-canonical-values"),
+        pytest.param([*_B4, (("probes", 0, "closed"), _blood("A형", "B형", canonical=("A", "O")))],
+                     id="canonical-value-the-dictionary-does-not-read"),
+        pytest.param([*_B4, (("probes", 0, "closed"), {"category": "number:cm", "values": ["170cm", "182 cm"],
+                                                        "canonical": ["170", "182"]})],
+                     id="number-pair-with-canonical-values"),
     ],
 )
 def test_a_spec_the_harness_could_not_seed_or_score_is_rejected(edits: list[Edit]) -> None:
@@ -186,7 +200,7 @@ def test_a_spec_the_harness_could_not_seed_or_score_is_rejected(edits: list[Edit
 @pytest.mark.parametrize(
     "closed",
     [
-        pytest.param({"category": "enum:혈액형", "values": ["A형", "비형"]}, id="dictionary"),
+        pytest.param({"category": "enum:혈액형", "values": ["A형", "비형"], "canonical": ["A", "B"]}, id="dictionary"),
         pytest.param({"category": "number:cm", "values": ["170cm", "182 cm"]}, id="number"),
     ],
 )
@@ -256,6 +270,18 @@ _BELIEVES_DEAD = {
                      "빠졌다", id="probe-missing-the-chapter-of-the-fact-its-knowledge-is-about"),
         pytest.param([(("probes", 3, "depends_on"), [1, 3]), (("probes", 3, "chapter", "events", 0, "present"), ["서하", "뱃사람"])],
                      "빠졌다", id="probe-naming-a-person-by-an-alias"),
+        # 앱은 회상 관계의 대상을 그 사건만 덮는 첫 블록으로 푼다 — 같은 화에서 차례가 앞선 주선 사건이 그 사건의 문단을 모두
+        # 덮으면 대상 블록이 없어 관계를 버린다. 차례는 첫 문단 순이다.
+        pytest.param([(("chapters", 0, "events", 1, "paragraphs"), [2]), (("chapters", 2, "events", 1, "relation", "event"), 2)],
+                     "덮", id="relation-to-an-event-an-earlier-event-covers"),
+        # 앱은 화 안 사건을 첫 문단 순으로 저장하고, 매처는 정답 목록 차례대로 저장된 사건과 짝짓는다. 정답을 다른 차례로 적으면
+        # 짝이 뒤바뀌어(A[2,3]·B[1,2] 는 A 가 저장된 B 를 가져간다) 바른 사건을 고른 관계가 틀림으로 셈해진다.
+        pytest.param([(("chapters", 0, "events", 0, "paragraphs"), [2, 3]), (("chapters", 0, "events", 1, "paragraphs"), [1, 2])],
+                     "첫 문단 순", id="overlapping-events-not-in-first-paragraph-order"),
+        pytest.param([(("chapters", 0, "events", 0, "paragraphs"), [3, 4]), (("chapters", 0, "events", 1, "paragraphs"), [1, 2])],
+                     "첫 문단 순", id="separate-events-not-in-first-paragraph-order"),
+        pytest.param([(("chapters", 0, "events", 0, "paragraphs"), [2]), (("chapters", 0, "events", 1, "paragraphs"), [1, 2, 3, 4])],
+                     "첫 문단 순", id="event-listed-after-one-it-starts-before"),
     ],
 )
 def test_an_answer_the_app_cannot_produce_or_a_probe_missing_a_chapter_it_leans_on_is_rejected(
@@ -279,7 +305,55 @@ def test_an_answer_the_app_cannot_produce_or_a_probe_missing_a_chapter_it_leans_
         # 탐침에만 나오는 개체는 기댈 기본 화가 없다.
         pytest.param([(("probes", 3, "depends_on"), []), (("probes", 3, "chapter", "events", 0, "present"), ["섬사람"])],
                      id="probe-whose-people-appear-only-in-it"),
+        # 앞 사건과 겹쳐도 그 사건만 덮는 문단이 하나라도 있으면 앱이 그 문단으로 관계를 푼다.
+        pytest.param([(("chapters", 0, "events", 1, "paragraphs"), [2, 3]), (("chapters", 2, "events", 1, "relation", "event"), 2)],
+                     id="relation-to-an-event-partly-covered-by-an-earlier-one"),
     ],
 )
 def test_an_answer_the_app_can_produce_is_accepted(edits: list[Edit]) -> None:
     EvalSet.model_validate(_edited(*edits))
+
+
+def test_a_set_whose_dictionary_item_was_removed_still_reads_when_the_removal_is_named(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 열거형 사전 항목을 빼는 것은 앱 사전에서 그 줄을 지우는 코드 변경이다. 뺀 뒤에도 같은 세트(같은 탐침·같은 분모)를 읽어야
+    # 빼기 전·뺀 뒤를 견줄 수 있다 — 뺀 항목으로 알린 값만 받고, 그 밖의 읽지 못하는 값은 여전히 거절한다.
+    without_a = {surface: value for surface, value in blocking.CLOSED_ATTRIBUTE_VALUES.items() if value != ("혈액형", "A")}
+    monkeypatch.setattr(blocking, "CLOSED_ATTRIBUTE_VALUES", without_a)
+    path = tmp_path / "set.json"
+    path.write_text(json.dumps(_edited(*_B4, (("probes", 0, "closed"), _blood("A형", "B형", canonical=("A", "B"))))),
+                    encoding="utf-8")
+    with pytest.raises(ValidationError):
+        load_set(path)
+    with pytest.raises(ValidationError):
+        load_set(path, removed=["enum:혈액형/O"])
+    (probe, *_) = load_set(path, removed=["enum:혈액형/A"]).novels[0].probes
+    assert probe.closed is not None and probe.closed.items() == ["enum:혈액형/A", "enum:혈액형/B"]
+
+
+async def test_the_synthetic_command_reads_a_set_whose_dictionary_item_was_removed_only_when_the_removal_is_named(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 뺀 뒤 값을 내려면 사전 줄을 지운 코드로 같은 세트의 추출을 다시 돌린다 — 두 열 비교 명령처럼 측정 명령도 뺀 항목을 받아야
+    # 그 실행이 세트를 읽는다. 세트만 읽고 실행은 하지 않는다.
+    without_a = {surface: value for surface, value in blocking.CLOSED_ATTRIBUTE_VALUES.items() if value != ("혈액형", "A")}
+    monkeypatch.setattr(blocking, "CLOSED_ATTRIBUTE_VALUES", without_a)
+    path = tmp_path / "set.json"
+    path.write_text(json.dumps(_edited(*_B4, (("probes", 0, "closed"), _blood("A형", "B형", canonical=("A", "B"))))),
+                    encoding="utf-8")
+    read: list[EvalSet] = []
+
+    async def recorded(_factory: object, _resolver: object, eval_set: EvalSet, _run_dir: Path, **_: object) -> int:
+        read.append(eval_set)
+        return 0
+
+    monkeypatch.setattr(entry_point, "synthetic", recorded)
+    monkeypatch.setattr(entry_point, "build_resolver", lambda: lambda _operation: None)
+    argv = ["synthetic", "--set", str(path), "--run-dir", str(tmp_path / "run"), "--ledger", str(tmp_path / "ledger.jsonl"),
+            "--bundle", "ci", "--cap-usd", "1", "--halt-usd", "1", "--estimate-usd", "1", "--adapter", "fake"]
+    with pytest.raises(ValidationError):
+        await entry_point._run(entry_point._parser().parse_args(argv))
+    assert await entry_point._run(entry_point._parser().parse_args([*argv, "--removed", "enum:혈액형/A"])) == 0
+    (probe, *_) = read[0].novels[0].probes
+    assert probe.closed is not None and probe.closed.items() == ["enum:혈액형/A", "enum:혈액형/B"]

@@ -13,22 +13,27 @@ import statistics
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, get_args
 
 from api.llm.pricing import call_cost
+from api.novel_bible.core.keys import normalize_name
+from api.novel_bible.ids import BlockingRule
+from api.novel_bible.rules.blocking import closed_value
 
 from novel_bible_eval.labels import LabeledClaim
 from novel_bible_eval.match import (
     Aliases,
     Extracted,
+    difference_counts,
     direction_counts,
     extracted,
     matched_events,
     matched_facts,
     matched_knowledge,
+    relation_counts,
 )
-from novel_bible_eval.run import ChapterOutcome
-from novel_bible_eval.spec import ChapterSpec, EvalSet
+from novel_bible_eval.run import ChapterOutcome, ClosedClash
+from novel_bible_eval.spec import NON_CONFLICT_SUBKINDS, ChapterSpec, EvalSet, ProbeSpec, closed_items
 
 _Z95 = 1.959963984540054
 _SYNTHETIC_SLOTS = ("events", "facts", "knowledge")
@@ -38,6 +43,10 @@ EXCLUDED_LIMIT = 0.25
 # 검사가 판정을 낸 끝 상태. 실패와 끝나지 않은 상태(작업 중·밀려남)는 검사에 닿지 못했으므로 막히지 않은 확정으로 세지 않고
 # 실패율에 넣는다.
 _JUDGED = ("committed", "blocked")
+_CLOSED_RULE = "immutable_attribute_mismatch"
+# 같은 주어·술어의 불변 속성 값이 다르지만 닫힌 값 모순이 아닐 때 앱이 내는 경고 — 사전에서 뺀 항목의 값은 닫힌 값이 아니므로
+# 그 항목을 기대한 충돌 탐침은 뺀 뒤에 막히지 않고 이 경고를 받는다.
+_SURFACE_WARNING = "attribute_surface_differs"
 
 
 @dataclass(frozen=True)
@@ -192,11 +201,126 @@ def direction_error(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> li
     return per_repeat
 
 
+def relation_accuracy(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> list[Ratio] | None:
+    """반복별 사건 관계 정확도 = 관계가 맞은 회상 관계 / 맞춘 회상 사건의 심은 관계. 대상 블록은 같은 소설·반복의 기본 화
+    결과로 화·문단을 풀고, 대상 화의 추출 사건으로 사건을 되푼다. 사건 작업이 없으면 None."""
+    if "events" not in _ran_slots(outcomes):
+        return None
+    per_repeat = []
+    for by_chapter in _base_by_repeat(outcomes).values():
+        clusters = []
+        for novel in eval_set.novels:
+            targets = {
+                block: (ordinal, number)
+                for (key, ordinal), outcome in by_chapter.items() if key == novel.key
+                for number, block in enumerate(outcome.block_ids, start=1)
+            }
+            chapters = [chapter.events for chapter in novel.chapters]
+            chapter_events = {
+                ordinal: extracted(outcome).events for (key, ordinal), outcome in by_chapter.items() if key == novel.key
+            }
+            for ordinal, chapter in enumerate(novel.chapters, start=1):
+                outcome = by_chapter.get((novel.key, ordinal))
+                found = extracted(outcome).events if outcome is not None else ()
+                clusters.append(relation_counts(chapter.events, found, targets, chapters, chapter_events))
+        per_repeat.append(_ratio(clusters))
+    return per_repeat
+
+
+def adaptation_recall(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> dict[str, list[Ratio]]:
+    """근거 종류(`source_canon` 원작·`play` 플레이)마다 반복별 각색 후보 재현율 = 맞춘 심은 차이 / 기본 세트에 심은 차이. 사실
+    작업이 없으면 빈 사전."""
+    if "facts" not in _ran_slots(outcomes):
+        return {}
+    result: dict[str, list[Ratio]] = {}
+    for origin in ("source_canon", "play"):
+        per_repeat = []
+        for by_chapter in _base_by_repeat(outcomes).values():
+            clusters = []
+            for novel in eval_set.novels:
+                for ordinal, chapter in enumerate(novel.chapters, start=1):
+                    outcome = by_chapter.get((novel.key, ordinal))
+                    found = extracted(outcome).facts if outcome is not None else ()
+                    rows, notes = (outcome.play_rows, outcome.notes) if outcome is not None else ([], [])
+                    clusters.append(
+                        difference_counts(chapter.facts, found, novel.aliases, origin=origin, play_rows=rows, notes=notes)
+                    )
+            per_repeat.append(_ratio(clusters))
+        result[origin] = per_repeat
+    return result
+
+
+def _read_closed(category: str, values: Sequence[str]) -> set[object]:
+    """비교 값 글자들을 앱의 닫힌 값 판정(`closed_value`)으로 다시 읽은 것 — 숫자는 단위를 붙여 수로 읽으므로 `180` 과 `180.0` 이
+    같은 값이고, 사전 값은 정규 값에서 범주·정규 값으로 읽는다. 지금 사전이 읽지 못하는 값(뺀 항목)은 갈래·글자 그대로 둔다."""
+    unit = category.removeprefix("number:") if category.startswith("number:") else ""
+    return {closed_value(normalize_name(value + unit)) or (category, value) for value in values}
+
+
+def _closed_hit(probe: ProbeSpec, outcome: ChapterOutcome) -> bool:
+    """닫힌 값 충돌 탐침이 기대한 갈래·두 값의 모순으로 막혔는가 — 다른 속성이나 다른 두 값의 모순으로 막혔다면 그 갈래·항목을
+    잡은 것이 아니다. 값은 글자가 아니라 앱이 견주는 값으로 견준다(모델이 `180.0cm` 로 내도 앱은 `180cm` 와 같은 값으로 막는다)."""
+    assert probe.closed is not None
+    wanted = _read_closed(probe.closed.category, probe.closed.compared())
+    return outcome.status == "blocked" and any(
+        clash.category == probe.closed.category and _read_closed(clash.category, clash.values) == wanted
+        for clash in outcome.closed
+    )
+
+
+@dataclass(frozen=True)
+class ClosedSummary:
+    """닫힌 값 불변 속성 모순 차단을 갈래(사전 범주·숫자 단위)와 사전 항목으로 나눈 것. 오탐은 확정이 견준 값으로 오탐 분모
+    그대로, 재현율은 탐침 명세의 기대 갈래·두 값으로 그 갈래·항목을 기대한 충돌 탐침 수가 분모이고 그 갈래·두 값의 모순으로
+    막혔을 때만 맞다. `warning_recall_by_item` 은 뺀 사전 항목마다, 그 항목을 기대한 충돌 탐침이 앱이 막는 대신 내는 표면 차이
+    경고를 받았는지의 재현율이다(그 탐침은 재현율 분모에도 남는다)."""
+
+    false_positive_by_category: dict[str, Ratio]
+    false_positive_by_item: dict[str, Ratio]
+    recall_by_category: dict[str, Ratio]
+    recall_by_item: dict[str, Ratio]
+    warning_recall_by_item: dict[str, Ratio] = field(default_factory=dict)
+
+
+def _closed_summary(
+    population: Sequence[ChapterOutcome], conflicts: Sequence[tuple[ProbeSpec, bool]],
+    moved: Sequence[tuple[ProbeSpec, bool]],
+) -> ClosedSummary:
+    categories: Counter[str] = Counter()
+    items: Counter[str] = Counter()
+    for outcome in population:
+        if outcome.status != "blocked" or _CLOSED_RULE not in outcome.block_rules:
+            continue
+        clashes: list[ClosedClash] = outcome.closed
+        categories.update({clash.category for clash in clashes})
+        items.update({item for clash in clashes for item in closed_items(clash.category, clash.values)})
+    recall_categories: dict[str, list[tuple[int, int]]] = {}
+    recall_items: dict[str, list[tuple[int, int]]] = {}
+    for probe, hit in conflicts:
+        assert probe.closed is not None
+        recall_categories.setdefault(probe.closed.category, []).append((int(hit), 1))
+        for item in probe.closed.items():
+            recall_items.setdefault(item, []).append((int(hit), 1))
+    warned: dict[str, list[tuple[int, int]]] = {}
+    for probe, hit in moved:
+        assert probe.closed is not None
+        for item in probe.closed.items():
+            warned.setdefault(item, []).append((int(hit), 1))
+    count = len(population)
+    return ClosedSummary(
+        false_positive_by_category={name: Ratio(k, count) for name, k in sorted(categories.items())},
+        false_positive_by_item={name: Ratio(k, count) for name, k in sorted(items.items())},
+        recall_by_category={name: _ratio(rows) for name, rows in sorted(recall_categories.items())},
+        recall_by_item={name: _ratio(rows) for name, rows in sorted(recall_items.items())},
+        warning_recall_by_item={name: _ratio(rows) for name, rows in sorted(warned.items())},
+    )
+
+
 @dataclass(frozen=True)
 class BlockingSummary:
     false_positive: Ratio  # 확정 단위
     false_positive_by_chapter: Ratio  # 기본 화는 반복을 한 화로 묶은 단위(어느 반복에서든 막히면 막힌 화), 탐침은 하나씩
-    by_rule: dict[str, int]
+    by_rule: dict[str, Ratio]  # 차단 규칙마다, 그 규칙 차단이 하나 이상인 확정 / 오탐 분모 그대로
     by_group: dict[str, Ratio]
     recall: Ratio
     warning_recall: Ratio
@@ -204,22 +328,32 @@ class BlockingSummary:
     failed: dict[str, Ratio]  # 확정 실패율 — 기본 화(`base`)·탐침 종류마다 검사에 닿지 못한 확정 / 시도한 확정
     undeterminable: bool
     totals: dict[str, int] = field(default_factory=dict)  # 시도한 확정 수, `failed` 와 같은 갈래
+    by_subkind: dict[str, Ratio] = field(default_factory=dict)  # 비충돌 갈래 A·B·C 의 세부 종류마다(탐침이 없으면 0/0)
+    recall_by_rule: dict[str, Ratio] = field(default_factory=dict)  # 충돌 탐침이 기대한 차단 규칙마다
+    closed: ClosedSummary = field(default_factory=lambda: ClosedSummary({}, {}, {}, {}))
 
 
-def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingSummary:
+def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome], *, removed: Sequence[str] = ()) -> BlockingSummary:
     """차단 오탐률 = (차단된 기본 확정 + 차단된 비충돌 탐침) / (기본 확정 + 비충돌 탐침). 막히지 않은 확정은 `committed` 만
     센다. 실패했거나 끝 상태에 닿지 않은 확정은 검사에 닿지 못했으므로 오탐 분모에서 빼고 갈래마다 실패율로 센다. 탐침은 기대는
     기본 화(`depends_on`)가 첫 반복에서 하나라도 정본에 없으면 정본 불완전으로 오탐·차단 재현율·경고 재현율 어디에도 넣지
     않는다 — 짝이 없으면 충돌 탐침은 막힐 수 없고 비충돌 탐침은 막히지 않을 수밖에 없어 넣으면 재현율은 내려가고 오탐은 0 쪽으로
     기운다. 실패한 확정을 빼기만 하면 오탐 분모가 조용히 줄어 실패가 몰린 실행이 오탐 0 으로 읽히므로, 기본 화의 실패나 충돌·비충돌
-    탐침의 실패 + 정본 불완전이 25% 를 넘으면 판정 불가로 표시한다."""
+    탐침의 실패 + 정본 불완전이 25% 를 넘으면 판정 불가로 표시한다.
+
+    `removed` 는 앱 사전에서 뺀 열거형 사전 항목이다. 그 항목을 기대한 닫힌 값 충돌 탐침은 뺀 뒤에도 실제 모순이라 차단 재현율·
+    닫힌 값 갈래·항목 재현율의 분모에 그대로 남는다 — 빠진 값은 닫힌 값이 아니어서 앱이 막지 못하므로 놓침으로 셈해지고, 빼서 잃은
+    재현율이 그렇게 드러난다. 앱은 그 자리에 표면 차이 경고를 내므로 그 탐침은 경고 재현율에도 따로 센다."""
     probes = {probe.key: probe for novel in eval_set.novels for probe in novel.probes}
     canon = {(o.novel, o.ordinal) for o in outcomes if o.probe is None and o.repeat == 1 and o.status == "committed"}
     population: list[ChapterOutcome] = []
     base_units: dict[tuple[str, int], bool] = {}
     probe_units: list[bool] = []
     groups: dict[str, list[tuple[int, int]]] = {}
-    conflict: list[tuple[int, int]] = []
+    subkinds: dict[str, list[tuple[int, int]]] = {kind: [] for kinds in NON_CONFLICT_SUBKINDS.values() for kind in kinds}
+    conflicts: list[tuple[ProbeSpec, bool]] = []
+    closed_conflicts: list[tuple[ProbeSpec, bool]] = []
+    moved: list[tuple[ProbeSpec, bool]] = []
     warning: list[tuple[int, int]] = []
     excluded: Counter[str] = Counter()
     totals: Counter[str] = Counter()
@@ -243,14 +377,23 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
             population.append(outcome)
             probe_units.append(blocked)
             groups.setdefault(probe.group, []).append((int(blocked), 1))
+            if probe.subkind is not None:
+                subkinds[probe.subkind].append((int(blocked), 1))
         elif probe.kind == "conflict":
-            conflict.append((int(blocked and probe.expected_rule in outcome.block_rules), 1))
+            conflicts.append((probe, blocked and probe.expected_rule in outcome.block_rules))
+            if probe.closed is not None:
+                closed_conflicts.append((probe, _closed_hit(probe, outcome)))
+                if not set(probe.closed.items()).isdisjoint(removed):
+                    warned = _SURFACE_WARNING in outcome.warning_rules
+                    moved.append((probe, warned))
+                    warning.append((int(warned), 1))
         else:
             warning.append((int(probe.expected_rule in outcome.warning_rules), 1))
     rules: Counter[str] = Counter()
     for outcome in population:
         if outcome.status == "blocked":
             rules.update(set(outcome.block_rules))
+    blocking_rules: tuple[str, ...] = get_args(BlockingRule)
     over = any(
         totals[kind] and (failed[kind] + excluded[kind]) / totals[kind] > EXCLUDED_LIMIT
         for kind in ("base", "conflict", "non_conflict")
@@ -258,14 +401,20 @@ def blocking(eval_set: EvalSet, outcomes: Sequence[ChapterOutcome]) -> BlockingS
     return BlockingSummary(
         false_positive=_ratio([(int(o.status == "blocked"), 1) for o in population]),
         false_positive_by_chapter=_ratio([(int(blocked), 1) for blocked in (*base_units.values(), *probe_units)]),
-        by_rule=dict(rules),
+        by_rule={rule: Ratio(rules[rule], len(population)) for rule in blocking_rules},
         by_group={group: _ratio(rows) for group, rows in sorted(groups.items())},
-        recall=_ratio(conflict),
+        recall=_ratio([(int(hit), 1) for _, hit in conflicts]),
         warning_recall=_ratio(warning),
         excluded=dict(excluded),
         failed={branch: Ratio(failed[branch], count) for branch, count in sorted(totals.items())},
         undeterminable=over,
         totals=dict(totals),
+        by_subkind={kind: _ratio(rows) for kind, rows in subkinds.items()},
+        recall_by_rule={
+            rule: _ratio([(int(hit), 1) for probe, hit in conflicts if probe.expected_rule == rule])
+            for rule in blocking_rules
+        },
+        closed=_closed_summary(population, closed_conflicts, moved),
     )
 
 
@@ -290,7 +439,25 @@ def schema_failure_rate(attempts: Sequence[tuple[str, str | None]]) -> Ratio:
 
 def cost(outcomes: Sequence[ChapterOutcome]) -> dict[str, Any]:
     """작업 호출 기록의 원가(앱 단가표)와 지연. 단가표에 없는 모델의 호출은 원가에서 빠지고 `unpriced` 로 센다."""
-    calls = [call for outcome in outcomes for job in outcome.jobs for call in job.calls]
+    return _cost([call for outcome in outcomes for job in outcome.jobs for call in job.calls])
+
+
+def stage_costs(calls: Sequence[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """호출 기록 원소의 단계(추출 슬롯마다의 연산, 판정)마다 `cost` 와 같은 원가·지연."""
+    stages = sorted({str(call.get("stage")) for call in calls})
+    return {stage: _cost([call for call in calls if str(call.get("stage")) == stage]) for stage in stages}
+
+
+def models(calls: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """실제로 부른 (단계, 구현, 모델 id)마다 호출 수 — 어댑터 이름이 아니라 호출 기록이 말하는 모델이다."""
+    counted = Counter((str(call.get("stage")), str(call.get("backend")), str(call.get("model"))) for call in calls)
+    return [
+        {"stage": stage, "backend": backend, "model": model, "calls": count}
+        for (stage, backend, model), count in sorted(counted.items())
+    ]
+
+
+def _cost(calls: Sequence[dict[str, Any]]) -> dict[str, Any]:
     priced = [call_cost(call).usd for call in calls]
     durations = sorted(int(call["durationMs"]) for call in calls if isinstance(call.get("durationMs"), int))
     return {
