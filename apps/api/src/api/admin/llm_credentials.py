@@ -338,7 +338,8 @@ def _checks_out(
     credential: LlmCredential, checks: Sequence[LlmCredentialCheck], model_ids: dict[ClaudeModelAxis, str]
 ) -> list[AdminLlmCredentialCheckItem]:
     """축 순서로, 축마다 회차가 가장 큰 기록과 — 그것이 런타임이 그 축에 쓰는 기록이 아니면 — 런타임이 쓰는 기록을 하나 더.
-    화면이 런타임과 같은 답(`credentials.passed_axes`)을 내려면 일시 오류 아래의 결론이 응답에 있어야 한다."""
+    표시용이다(일시 오류 아래에 어떤 결론이 남아 있는지 보인다). 런타임 축은 이 행들로 다시 계산하지 말고 서버가 계산한
+    `runtime_axes`(`credentials.passed_axes`)를 본다 — 조직 신호를 정하는 기록은 이 행들에 실리지 않을 수 있다."""
     latest = latest_checks_per_axis(checks)
     basis = conclusive_checks_per_axis(credential.secret_fingerprint, checks)
     items: list[AdminLlmCredentialCheckItem] = []
@@ -645,7 +646,8 @@ async def replace_llm_credential_secret(
 ) -> AdminLlmCredential:
     """키만 바꾼다(한 항목 = 한 계정 — 다른 조직의 키로는 바꾸지 않는다). 상태·판은 그대로이고, 확인 기록이 옛 지문에 묶여
     있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 예전에 쓰던 키로 되돌리면 그 키로 한 예전 확인이 다시 지금 키의
-    확인으로 센다(런타임도 바로 그 결론을 쓴다) — 알림이 그렇게 말한다. 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
+    확인으로 센다 — 알림이 그렇게 말하고, 항목이 켜져 있고 조직 확인이 남아 있으면 런타임도 바로 그 결론을 쓴다(되돌릴 때 조직
+    조회에 헤더가 없으면 조직 표지가 지워져 확인 호출 전까지 쓰지 않는다). 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
     없을 때 살리는 길) 지문이 같아 옛 확인 기록이 그대로 지금 키의 확인으로 센다 — 암호문만 지금 키로 다시 쓰고, 같은 키는
     같은 조직이라 조직 조회를 부르지 않고 조직 표지도 그대로 둔다."""
     _require_store()

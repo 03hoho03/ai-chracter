@@ -331,7 +331,9 @@ def _check(
     fingerprint: str | None = None,
     model_id: str | None = None,
     checked_at: datetime | None = None,
+    header: str | None = _ORG,
 ) -> LlmCredentialCheck:
+    """통과 행에는 응답 조직 헤더(`header`, 기본은 저장된 조직)를 싣는다 — 헤더 없는 통과는 조직을 대조하지 않은 통과다."""
     return LlmCredentialCheck(
         id=uuid.uuid4(),
         credential_id=credential.id,
@@ -342,7 +344,7 @@ def _check(
         secret_fingerprint=credential.secret_fingerprint if fingerprint is None else fingerprint,
         passed=error_kind is None,
         error_kind=error_kind,
-        organization_header=None,
+        organization_header=header if error_kind is None else None,
         checked_at=checked_at or datetime(2026, 11, 4, tzinfo=UTC),
     )
 
@@ -406,7 +408,7 @@ _Row = tuple[int, CheckErrorKind | None]
 )
 def test_enable_blocker_order(account_ref: str | None, rows: list[_Row | str], expected: str | None) -> None:
     """켜기 조건은 위에서부터 처음 걸린 것을 이유로 낸다: 조직 미확인 → 허용 목록 밖 → 지금 키·지금 판의 최신 회차에 통과가
-    없음 → 조직 신호(어느 축이든 그 축의 마지막 조직 판정 — 통과나 조직 오류 — 이 조직 오류). 조직 신호는 런타임 후보 판정과
+    없음 → 조직 신호(어느 축이든 그 축의 마지막 조직 판정 — 조직 헤더가 실린 통과나 조직 오류 — 이 조직 오류). 조직 신호는 런타임 후보 판정과
     같은 규칙이라, 런타임이 조직 때문에 쓰지 않는 항목은 켜지지도 않는다 — 어긋난 축이 다시 통과해야 풀리고, 그 축의 일시 오류나
     조직과 무관한 실패로는 풀리지 않는다. 판은 시각 대신 쓰는 기준이다 — 확인을 시작한 뒤 상태가 바뀌었으면(끄기·소진) 그 회차는 세지
     않는다. 축이 모자란 것은 켜기가 아니라 목록 사용 켜기가 막는다. 일시 오류뿐인 최신 회차도 통과가 없는 회차다 — 런타임
@@ -426,6 +428,22 @@ def test_enable_blocker_order(account_ref: str | None, rows: list[_Row | str], e
             checks.append(_check(credential, row[0], axes[index % 2], error_kind=row[1]))
 
     assert enable_blocker(credential, checks, _ALLOWED) == expected
+
+
+def test_enable_stays_blocked_until_the_mismatched_axis_passes_with_an_organization_header() -> None:
+    """Haiku 응답 조직이 어긋난 뒤 Haiku 가 헤더 없는 200 으로 통과해도 켜기는 조직 불일치로 막힌다 — 헤더가 없으면 응답 조직을
+    대조하지 않은 통과라 신호를 풀 근거가 없다. 응답 조직이 맞은(헤더가 실린) 통과가 오면 풀린다."""
+    credential = _credential(FieldKeyring.parse(FAKE_CREDENTIAL_KEYRING))
+    checks = [
+        _check(credential, 1, "sonnet"),
+        _check(credential, 1, "haiku", error_kind="organization-mismatch"),
+        _check(credential, 2, "sonnet"),
+        _check(credential, 2, "haiku", header=None),
+    ]
+
+    assert enable_blocker(credential, checks, _ALLOWED) == "organization-mismatch"
+    matched = [_check(credential, 3, "sonnet"), _check(credential, 3, "haiku")]
+    assert enable_blocker(credential, [*checks, *matched], _ALLOWED) is None
 
 
 def test_same_as_env_key_is_computed_from_the_current_env_key(monkeypatch: pytest.MonkeyPatch) -> None:

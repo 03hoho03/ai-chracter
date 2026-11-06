@@ -367,15 +367,16 @@ def conclusive_checks_per_axis(
 
 def organization_signal(credential: LlmCredential, checks: Iterable[LlmCredentialCheck]) -> bool:
     """지금 키로 한 확인에 풀리지 않은 조직 불일치가 있는가. 축마다 그 축의 마지막 조직 판정 — 지금 키 지문으로 한 기록 가운데
-    통과(응답 조직이 맞았다)나 조직 오류(불일치·허용 밖)인 것 중 회차가 가장 큰 것 — 을 보고, 어느 축이든 그것이 조직 오류면
-    참이다. 그래서 신호는 어긋난 그 축이 다시 통과해야만 풀린다: 일시 오류는 조직에 대해 아무 말도 하지 않았고, 모델 없음·권한·
-    크레딧 같은 조직과 무관한 확정 실패는 응답 조직을 대조하지 않은 결과라 풀지 않는다. 다른 축의 통과도 풀지 않는다. 지금 키의
-    가장 최근 회차에 조직 오류가 있으면 그 축의 마지막 판정이 그 오류라 참이다(이전 규칙이 그대로 든다)."""
+    응답 조직을 대조한 것, 곧 조직 헤더가 실린 통과(헤더가 저장된 조직과 같았다)나 조직 오류(불일치·허용 밖) 중 회차가 가장 큰
+    것 — 을 보고, 어느 축이든 그것이 조직 오류면 참이다. 그래서 신호는 어긋난 그 축이 응답 조직이 맞는 통과를 다시 받아야만
+    풀린다: 헤더 없는 통과(200 이지만 조직 헤더가 없다)와 일시 오류는 조직에 대해 아무 말도 하지 않았고, 모델 없음·권한·크레딧
+    같은 조직과 무관한 확정 실패는 응답 조직을 대조하지 않은 결과라 풀지 않는다. 다른 축의 통과도 풀지 않는다. 지금 키의 가장
+    최근 회차에 조직 오류가 있으면 그 축의 마지막 판정이 그 오류라 참이다(이전 규칙이 그대로 든다)."""
     verdicts = latest_checks_per_axis(
         check
         for check in checks
         if check.secret_fingerprint == credential.secret_fingerprint
-        and (check.passed or check.error_kind in _ORGANIZATION_ERRORS)
+        and ((check.passed and check.organization_header is not None) or check.error_kind in _ORGANIZATION_ERRORS)
     )
     return any(check.error_kind in _ORGANIZATION_ERRORS for check in verdicts.values())
 
@@ -389,7 +390,7 @@ def passed_axes(credential: LlmCredential, checks: Sequence[LlmCredentialCheck])
     (`enable_blocker` 의 이유).
 
     풀리지 않은 조직 불일치(`organization_signal`)가 있으면 빈 집합이다 — 켜기를 막는 것과 같은 보안 신호이고, 켜진 뒤의 확인에서
-    나와도 그 키로 요청을 보내지 않게 한다. 어긋난 축이 다시 통과해야 풀리므로, 그 축의 일시 오류나 조직과 무관한 실패 뒤에 위의
+    나와도 그 키로 요청을 보내지 않게 한다. 어긋난 축이 응답 조직이 맞는 통과를 다시 받아야 풀리므로, 그 축의 일시 오류나 조직과 무관한 실패 뒤에 위의
     건너뛰기가 어긋난 회차의 다른 축 통과로 내려가 그 키로 요청을 보내는 일이 없다.
 
     상태·허용 목록은 부르는 쪽이 본다. 모델 id 와 확인 때의 상태 판은 보지 않는다 — 축 단위 확인이라 id 설정을 바꿔도 남고,

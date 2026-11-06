@@ -101,8 +101,10 @@ def _checks(
     error_kind: Any = None,
     state_version: int | None = None,
     sent_model_id: str | None = None,
+    header: str | None = _ORG,
 ) -> list[LlmCredentialCheck]:
-    """축마다 한 행. 보낸 id 는 따로 주지 않으면 지금 설정의 그 축 id 다."""
+    """축마다 한 행. 보낸 id 는 따로 주지 않으면 지금 설정의 그 축 id 다. 통과 행에는 응답 조직 헤더(`header`, 기본은 저장된
+    조직)를 싣는다 — 헤더 없는 통과는 조직을 대조하지 않은 통과다."""
     return [
         LlmCredentialCheck(
             credential_id=credential.id,
@@ -113,6 +115,7 @@ def _checks(
             secret_fingerprint=fingerprint or credential.secret_fingerprint,
             passed=error_kind is None,
             error_kind=error_kind,
+            organization_header=header if error_kind is None else None,
         )
         for axis in axes
     ]
@@ -312,6 +315,21 @@ def test_organization_errors_on_several_axes_are_not_cleared_by_unrelated_failur
 
     assert _candidate_axes(credential, checks) == []
     assert _candidate_axes(credential, [*checks, *_checks(credential, 4, mismatched)]) == list(CLAUDE_AXES)
+
+
+def test_a_pass_without_an_organization_header_does_not_clear_an_organization_error() -> None:
+    """회차 2 에서 Haiku 응답 조직이 어긋난 뒤 회차 3 에서 Haiku 가 헤더 없는 200 으로 통과해도 항목은 빠진 채다 — 헤더가 없으면
+    응답 조직을 대조하지 않았다. 회차 4 에서 저장된 조직의 헤더가 실린 통과가 오면 풀린다."""
+    credential = _row()
+    checks = [
+        *_checks(credential, 1),
+        *_checks(credential, 2, ("opus", "sonnet", "haiku_writer")),
+        *_checks(credential, 2, ("haiku",), error_kind="organization-mismatch"),
+        *_checks(credential, 3, header=None),
+    ]
+
+    assert _candidate_axes(credential, checks) == []
+    assert _candidate_axes(credential, [*checks, *_checks(credential, 4, ("haiku",))]) == list(CLAUDE_AXES)
 
 
 def test_axis_check_still_counts_after_the_model_id_setting_changes(monkeypatch: pytest.MonkeyPatch) -> None:
