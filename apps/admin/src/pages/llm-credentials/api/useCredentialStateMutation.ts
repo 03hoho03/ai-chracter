@@ -11,12 +11,14 @@ export type CredentialStateAction = "enable" | "disable";
 
 type StateVariables = { id: string; action: CredentialStateAction };
 
+/** 오프라인이면 일시정지하지 않고 바로 실패한다(`networkMode: "always"`) — 멈춘 채 닫히지 않거나 연결이 돌아온 순간 모르게 보내지 않게. */
 export function useCredentialStateMutation() {
   const queryClient = useQueryClient();
 
   return useMutation<AdminLlmCredential, ApiError, StateVariables>({
     mutationFn: async ({ id, action }) =>
       (await apiClient.post<AdminLlmCredential>(`/admin/llm-credentials/${id}/${action}`)).data,
+    networkMode: "always",
     onSuccess: (credential) => {
       replaceCredential(queryClient, credential);
       void invalidateCredentials(queryClient);
