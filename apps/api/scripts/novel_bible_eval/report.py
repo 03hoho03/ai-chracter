@@ -24,6 +24,7 @@ from typing import Any
 from novel_bible_eval import judge, metrics
 from novel_bible_eval.labels import ExtractionSummary, LabeledClaim
 from novel_bible_eval.metrics import Ratio
+from novel_bible_eval.oracle import HEADER as ORACLE_HEADER
 from novel_bible_eval.run import BIBLE_TABLES, ChapterOutcome
 from novel_bible_eval.spec import EvalSet
 
@@ -65,10 +66,11 @@ def _repeated(ratios: Sequence[Ratio]) -> dict[str, Any]:
 
 def synthetic_report(
     eval_set: EvalSet, outcomes: Sequence[ChapterOutcome], attempts: Sequence[tuple[str, str | None]], *,
-    adapter: str, halted: str | None = None, calls: Sequence[dict[str, Any]] = (),
+    adapter: str, halted: str | None = None, calls: Sequence[dict[str, Any]] = (), oracle: bool = False,
 ) -> dict[str, Any]:
     """`calls` 는 해석기를 지난 호출 기록 원소 전부(`Meter.calls`)다 — 실제 모델·구현과 단계별 원가를 거기서 센다. 작업 행에
-    남지 않는 판정 호출도 들어 있다. `cost` 는 작업 행에 남은 추출 호출만 센 원가다."""
+    남지 않는 판정 호출도 들어 있다. `cost` 는 작업 행에 남은 추출 호출만 센 원가다. `oracle` 은 가짜 해석기가 명세 정답을
+    그대로 낸 실행이다 — 지표는 추출 정확도가 아니라 세트·규칙 정합을 말한다."""
     out: dict[str, Any] = {}
     for slot, ratios in metrics.recall(eval_set, outcomes).items():
         mean = _mean(ratios)
@@ -110,6 +112,7 @@ def synthetic_report(
     out["schema_failure_rate"] = _entry(metrics.schema_failure_rate(attempts), error_rate=True)
     return {
         "adapter": adapter,
+        "oracle": oracle,
         "halted": halted,
         "slots": sorted({job.slot for outcome in outcomes for job in outcome.jobs}),
         "metrics": out,
@@ -312,6 +315,8 @@ def to_markdown(report: dict[str, Any]) -> str:
     """반복이 있는 지표는 반복별 행 뒤에 판정 근거인 평균 행을 두고, 합격 칸은 평균 행에만 채운다. 그 뒤에 차단 세부(규칙별 오탐은
     전체 오탐과 같은 분모, 충돌 규칙별 재현율, 비충돌 세부 종류별 오탐, 닫힌 값 갈래·사전 항목별)를 표로 두고 나머지는 JSON 이다."""
     lines = [f"# 정본 기억 측정 — {report['adapter']}", ""]
+    if report.get("oracle"):
+        lines += [f"{ORACLE_HEADER}. 세트 결함 표는 같은 폴더의 set-defects.md 다.", ""]  # cite-ok: 하네스의 출력 파일 이름
     if report.get("halted"):
         lines += [f"실행 멈춤: {report['halted']}", ""]
     lines += ["| 지표 | 관측 | k/n | 구간 | 합격 |", "|---|---|---|---|---|"]

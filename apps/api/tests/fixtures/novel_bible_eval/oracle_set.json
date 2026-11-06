@@ -1,0 +1,160 @@
+{
+  "note": "합성 세트 — 오라클 실행을 CI 에서 돌리려고 지어낸 문장이다. 실제 소설·대화·라벨이 아니다. 1권 3화와 탐침 6. 사실의 시작 서술(onset)·범위(scope)와 사건의 사용(uses)을 정답 칸으로 적었다.",
+  "novels": [
+    {
+      "key": "oracle-1",
+      "chapters": [
+        {
+          "paragraphs": [
+            "아침 시장에서 하린은 은빛 열쇠를 샀다.",
+            "하린은 그 열쇠로 오래된 창고 문을 열었다.",
+            "창고 앞에서 하린은 주원과 서진을 만났다.",
+            "하린은 주원이 창고지기라는 것을 알고 있었다."
+          ],
+          "events": [
+            {"paragraphs": [1], "present": ["하린"], "uses": [], "summary": "하린이 열쇠를 산다"},
+            {"paragraphs": [2], "present": ["하린"], "summary": "하린이 창고 문을 연다",
+             "uses": [{"actor": "하린", "thing": "은빛 열쇠", "thing_kind": "object"}]},
+            {"paragraphs": [3, 4], "present": ["하린", "주원", "서진"], "uses": [], "summary": "셋이 창고 앞에서 만난다"}
+          ],
+          "facts": [
+            {"subject": "하린", "kind": "possession", "values": ["은빛 열쇠"], "onset": true, "scope": "from_here", "paragraph": 1}
+          ],
+          "knowledge": [
+            {"knower": "하린", "kind": "knows", "subject": "주원", "subject_kind": "character", "fact_kind": "attribute", "attribute": "직업", "values": ["창고지기"], "paragraph": 4}
+          ]
+        },
+        {
+          "paragraphs": [
+            "그날 밤 주원은 낡은 다리에서 떨어져 숨을 거두었다.",
+            "하린은 창고에 홀로 남아 열쇠를 쥐었다."
+          ],
+          "events": [
+            {"paragraphs": [1], "present": ["주원"], "uses": [], "summary": "주원이 다리에서 숨진다"},
+            {"paragraphs": [2], "present": ["하린"], "uses": [], "summary": "하린이 홀로 남는다"}
+          ],
+          "facts": [
+            {"subject": "주원", "kind": "life", "values": ["dead"], "onset": true, "scope": "from_here", "paragraph": 1}
+          ]
+        },
+        {
+          "paragraphs": [
+            "회의가 끝나자 서진은 잠시 방을 나섰다.",
+            "같은 날 도담은 다시는 돌아오지 않겠다며 마을을 영영 떠났다."
+          ],
+          "events": [
+            {"paragraphs": [1], "present": ["서진"], "uses": [], "summary": "서진이 잠시 방을 나선다"},
+            {"paragraphs": [2], "present": ["도담"], "uses": [], "summary": "도담이 마을을 영영 떠난다"}
+          ],
+          "facts": [
+            {"subject": "서진", "kind": "presence", "values": ["departed"], "onset": true, "scope": "scene", "paragraph": 1},
+            {"subject": "도담", "kind": "presence", "values": ["gone_for_good"], "onset": true, "scope": "from_here", "paragraph": 2}
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "key": "early-lamp",
+          "kind": "conflict",
+          "group": "use_before_acquisition",
+          "expected_rule": "use_before_acquisition",
+          "depends_on": [1],
+          "chapter": {
+            "paragraphs": [
+              "하린은 금빛 등잔에 불을 붙여 어두운 골목을 밝혔다.",
+              "그 뒤에야 하린은 노점에서 금빛 등잔을 값을 치르고 샀다."
+            ],
+            "events": [
+              {"paragraphs": [1], "present": ["하린"], "summary": "하린이 등잔으로 골목을 밝힌다",
+               "uses": [{"actor": "하린", "thing": "금빛 등잔", "thing_kind": "object"}]},
+              {"paragraphs": [2], "present": ["하린"], "uses": [], "summary": "하린이 등잔을 산다"}
+            ],
+            "facts": [
+              {"subject": "하린", "kind": "possession", "values": ["금빛 등잔"], "onset": true, "scope": "from_here", "paragraph": 2}
+            ]
+          }
+        },
+        {
+          "key": "early-knowing",
+          "kind": "conflict",
+          "group": "knowledge_before_fact",
+          "expected_rule": "knowledge_before_fact",
+          "depends_on": [1, 3],
+          "chapter": {
+            "paragraphs": [
+              "하린은 서진이 대장장이가 되었다는 것을 이미 알고 있었다.",
+              "그날 오후 서진은 처음으로 대장장이가 되었다."
+            ],
+            "events": [
+              {"paragraphs": [1], "present": ["하린"], "uses": [], "summary": "하린이 서진의 일을 안다"},
+              {"paragraphs": [2], "present": ["서진"], "uses": [], "summary": "서진이 대장장이가 된다"}
+            ],
+            "facts": [
+              {"subject": "서진", "kind": "attribute", "attribute": "직업", "values": ["대장장이"], "onset": true, "scope": "from_here", "paragraph": 2}
+            ],
+            "knowledge": [
+              {"knower": "하린", "kind": "knows", "subject": "서진", "subject_kind": "character", "fact_kind": "attribute", "attribute": "직업", "values": ["대장장이"], "paragraph": 1}
+            ]
+          }
+        },
+        {
+          "key": "dead-walks",
+          "kind": "conflict",
+          "group": "exit_then_appearance",
+          "expected_rule": "exit_then_appearance",
+          "depends_on": [1, 2],
+          "chapter": {
+            "paragraphs": ["주원이 창고 문을 열고 들어와 하린에게 인사했다."],
+            "events": [{"paragraphs": [1], "present": ["주원", "하린"], "uses": [], "summary": "주원이 창고에 들어온다"}]
+          }
+        },
+        {
+          "key": "came-back",
+          "kind": "non_conflict",
+          "group": "A",
+          "subkind": "revival_or_return",
+          "depends_on": [1, 3],
+          "chapter": {
+            "paragraphs": ["몇 해 뒤 도담이 마을로 돌아와 하린의 문을 두드렸다."],
+            "events": [{"paragraphs": [1], "present": ["도담", "하린"], "uses": [], "summary": "도담이 마을로 돌아온다"}],
+            "facts": [
+              {"subject": "도담", "kind": "presence", "values": ["present"], "onset": true, "scope": "from_here", "paragraph": 1}
+            ]
+          }
+        },
+        {
+          "key": "stepped-out",
+          "kind": "non_conflict",
+          "group": "B",
+          "subkind": "scene_exit_then_next_chapter",
+          "depends_on": [1, 3],
+          "chapter": {
+            "paragraphs": ["다음 날 아침 서진은 시장에서 하린을 만나 인사했다."],
+            "events": [{"paragraphs": [1], "present": ["서진", "하린"], "uses": [], "summary": "서진이 하린을 만난다"}]
+          }
+        },
+        {
+          "key": "old-compass",
+          "kind": "warning",
+          "group": "already_held",
+          "expected_rule": "onset_unstated",
+          "depends_on": [1],
+          "chapter": {
+            "paragraphs": [
+              "하린은 낡은 나침반으로 숲길을 찾았다.",
+              "하린이 그 나침반을 오래전부터 지니고 다녔다는 것은 아무도 몰랐다."
+            ],
+            "events": [
+              {"paragraphs": [1], "present": ["하린"], "summary": "하린이 나침반으로 길을 찾는다",
+               "uses": [{"actor": "하린", "thing": "낡은 나침반", "thing_kind": "object"}]},
+              {"paragraphs": [2], "present": ["하린"], "uses": [], "summary": "나침반을 오래 지녔다는 것이 드러난다"}
+            ],
+            "facts": [
+              {"subject": "하린", "kind": "possession", "values": ["낡은 나침반"], "onset": false, "scope": "from_here", "paragraph": 2}
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

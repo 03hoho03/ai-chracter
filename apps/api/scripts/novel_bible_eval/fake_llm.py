@@ -1,4 +1,14 @@
-"""CI 용 가짜 어댑터 — 명세에서 정답 출력을 만들어 돌려주고, 일부러 틀린 출력을 섞을 수 있다. 모델을 부르지 않는다.
+"""가짜 어댑터 — 명세에서 정답 출력을 만들어 돌려준다. 모델을 부르지 않는다. 모드가 둘이다.
+
+- CI 모드(기본): 정답 일부만 낸다 — 사실의 시작 서술(`onset`)은 늘 거짓, 범위는 불변 여부로만(불변 속성은 작품 전체, 그 밖은
+  이 장면부터), 사건의 사용은 빈 목록이다. 일부러 틀린 출력(`Faults`)을 섞어 지표가 그 틀림을 세는지 본다.
+- 오라클 모드(`oracle=True`): 명세 정답의 모든 칸을 슬롯 출력 스키마 그대로 낸다 — 위 셋도 명세 값(`onset`·`effective_scope`·
+  `uses`)으로. 추출이 정답과 똑같다고 놓고 세트를 실제 확정·검사 경로로 돌려, 막히거나 안 막힌 것이 세트 쪽 결함인지 보는
+  실행이다. 틀린 출력을 섞지 않는다. 명세가 싣지 않는 칸 하나는 늘 비운다 — 사건의 말로만 언급된 인물(`mentioned`)은 규칙이
+  읽지 않고 매처도 견주지 않는다.
+
+근거 인용은 두 모드 모두 원고에서 정답 문단의 글 전체를 그대로 옮긴다 — 문안의 `[번호] 글` 줄과 같은 글이라 인용 검증과 차단 전
+근거 재확인을 통과한다. 사건 인용은 그 사건의 첫 문단이다(앱은 인용 문단이 사건 문단 안이기를 요구한다).
 
 원고 문단으로 어느 화인지 알아본다. 문안은 원고 값과, 표지를 찾는 데 쓰는 앞 화 사건 목록·플레이 사실 목록을 렌더한다 — 회상
 관계의 대상(`P1` …)과 플레이 차이의 행(`P1` …)은 그 화 문안에 실린 목록에서 찾고, 원작 차이의 표지는 명세의 원작 글 차례에서
@@ -62,8 +72,9 @@ class Faults:
     swap_knower: frozenset[tuple[str, str, int]] = frozenset()  # 그 지식의 앎 주체와 명제 주어를 맞바꿔 낸다
 
 
-def _events(at: _Chapter, prompt: str, faults: Faults) -> dict[str, Any]:
-    """회상 관계는 대상 사건의 (화 번호, 요지)가 문안의 앞 화 사건 목록에 있을 때만 그 표지로 낸다."""
+def _events(at: _Chapter, prompt: str, faults: Faults, oracle: bool) -> dict[str, Any]:
+    """회상 관계는 대상 사건의 (화 번호, 요지)가 문안의 앞 화 사건 목록에 있을 때만 그 표지로 낸다. 사용은 오라클 모드에서만
+    명세 그대로 낸다."""
     novel, label, chapter = at.novel, at.label, at.spec
     prior = {(int(ordinal), summary): target for target, ordinal, summary in _PRIOR.findall(prompt)}
     events, relations = [], []
@@ -75,7 +86,8 @@ def _events(at: _Chapter, prompt: str, faults: Faults) -> dict[str, Any]:
         events.append(
             {
                 "key": f"e{index}", "summary": event.summary, "paragraphs": event.paragraphs,
-                "actuality": event.actuality, "present": event.present, "mentioned": [], "uses": [],
+                "actuality": event.actuality, "present": event.present, "mentioned": [],
+                "uses": [use.model_dump() for use in event.uses] if oracle else [],
                 "quote": {"paragraph": first, "text": quote},
             }
         )
@@ -88,11 +100,13 @@ def _events(at: _Chapter, prompt: str, faults: Faults) -> dict[str, Any]:
 
 def _fact(
     subject: str, subject_kind: str, kind: str, attribute: str | None, value: str, holds: bool, immutable: bool,
-    paragraph: int, chapter: ChapterSpec,
+    paragraph: int, chapter: ChapterSpec, *, onset: bool = False, scope: str | None = None,
 ) -> dict[str, Any]:
+    """`scope` 가 없으면 불변 여부로 정한다(불변 속성은 작품 전체, 그 밖은 이 장면부터)."""
     return {
         "subject": subject, "subject_kind": subject_kind, "kind": kind, "attribute": attribute, "value": value,
-        "holds": holds, "immutable": immutable, "onset": False, "scope": "work" if immutable else "from_here",
+        "holds": holds, "immutable": immutable, "onset": onset,
+        "scope": scope or ("work" if immutable else "from_here"),
         "quote": {"paragraph": paragraph, "text": chapter.paragraphs[paragraph - 1]},
         "source_difference": None, "play_difference": None,
     }
@@ -105,9 +119,9 @@ def _play_line(row: PlayRow) -> str:
     return f"{row.subject} · {row.attribute}: {row.value}"
 
 
-def _facts(at: _Chapter, prompt: str, faults: Faults) -> dict[str, Any]:
+def _facts(at: _Chapter, prompt: str, faults: Faults, oracle: bool) -> dict[str, Any]:
     """정답마다 첫 허용 표기로 낸다. 원작 차이는 명세의 표지·구절 그대로, 플레이 차이는 그 행의 줄이 문안에 있을 때만 그 표지로
-    낸다. 더하는 사실은 첫 문단을 인용한, 정답에 없는 소지다."""
+    낸다. 더하는 사실은 첫 문단을 인용한, 정답에 없는 소지다. 시작 서술·범위는 오라클 모드에서만 명세 값이다."""
     novel, label, chapter = at.novel, at.label, at.spec
     shown = {body: ref for ref, body in _PLAY.findall(prompt)}
     facts = []
@@ -115,6 +129,7 @@ def _facts(at: _Chapter, prompt: str, faults: Faults) -> dict[str, Any]:
         out = _fact(
             fact.subject, fact.subject_kind, fact.kind, fact.attribute, fact.values[0], fact.holds,
             fact.immutable != ((novel, label, index) in faults.flip_immutable), fact.paragraph, chapter,
+            onset=oracle and fact.onset, scope=fact.effective_scope if oracle else None,
         )
         if (source := fact.source_difference) is not None:
             out["source_difference"] = {"label": source.label, "quote": source.quote}
@@ -128,7 +143,7 @@ def _facts(at: _Chapter, prompt: str, faults: Faults) -> dict[str, Any]:
     return {"facts": facts}
 
 
-def _knowledge(at: _Chapter, prompt: str, faults: Faults) -> dict[str, Any]:
+def _knowledge(at: _Chapter, prompt: str, faults: Faults, oracle: bool) -> dict[str, Any]:
     """정답마다 첫 허용 표기와 명제 주어의 종류로 내고 정답 문단 전체를 인용한다."""
     novel, label, chapter = at.novel, at.label, at.spec
     items = []
@@ -149,7 +164,7 @@ def _knowledge(at: _Chapter, prompt: str, faults: Faults) -> dict[str, Any]:
     return {"items": items}
 
 
-_OUTPUTS: dict[OperationKey, Callable[[_Chapter, str, Faults], dict[str, Any]]] = {
+_OUTPUTS: dict[OperationKey, Callable[[_Chapter, str, Faults, bool], dict[str, Any]]] = {
     "events.extract": _events, "facts.extract": _facts, "knowledge.extract": _knowledge,
 }
 # 원고 값 말고 문안에 싣는 값 — 가짜 해석기가 표지를 찾는 목록이다. 조건부라 그 값이 없는 채널·화에서는 섹션째 빠진다.
@@ -161,9 +176,11 @@ class FakeLLM:
     id = "fake"
 
     def __init__(
-        self, eval_set: EvalSet, *, faults: Faults | None = None, model: str = "gemini-3.5-flash-lite",
-        prompt_tokens: int = 1_000, output_tokens: int = 200,
+        self, eval_set: EvalSet, *, faults: Faults | None = None, oracle: bool = False,
+        model: str = "gemini-3.5-flash-lite", prompt_tokens: int = 1_000, output_tokens: int = 200,
     ) -> None:
+        if oracle and faults is not None:
+            raise ValueError("오라클 모드는 명세 정답을 그대로 낸다 — 틀린 출력을 섞지 않는다")
         self._chapters: dict[tuple[str, ...], _Chapter] = {}
         for novel in eval_set.novels:
             for ordinal, chapter in enumerate(novel.chapters, start=1):
@@ -171,6 +188,7 @@ class FakeLLM:
             for probe in novel.probes:
                 self._chapters[tuple(probe.chapter.paragraphs)] = _Chapter(novel.key, probe.key, probe.chapter, novel)
         self._faults = faults or Faults()
+        self._oracle = oracle
         self._usage = {"backend": "fake", "model": model, "promptTokens": prompt_tokens, "outputTokens": output_tokens}
         self._failed: set[tuple[str, str]] = set()
         self._prompt_set_id = uuid.uuid4()
@@ -216,7 +234,7 @@ class FakeLLM:
         if (at.novel, at.label) in self._faults.schema_failure and (at.novel, at.label) not in self._failed:
             self._failed.add((at.novel, at.label))
             raise AdapterCallError("schema_invalid", retryable=True)
-        return schema.model_validate(_OUTPUTS[stage](at, prompt.prompt, self._faults))
+        return schema.model_validate(_OUTPUTS[stage](at, prompt.prompt, self._faults, self._oracle))
 
     def resolver(self) -> AdapterResolver:
         return lambda operation: self
