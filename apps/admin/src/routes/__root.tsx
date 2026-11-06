@@ -8,6 +8,14 @@ import { ContentActionConfirmModal, HomeCurationConfirmModal } from "../pages/co
 import { ClearOverrideDialog, SwitchChangeDialog } from "../pages/feature-switches";
 import { PublishDialog, WithdrawDialog } from "../pages/legal";
 import {
+  AddCredentialDialog,
+  ConfirmActionDialog,
+  CreditBasisDialog,
+  DeleteCredentialDialog,
+  EditCredentialDialog,
+  ReplaceSecretDialog,
+} from "../pages/llm-credentials";
+import {
   HomeNovelCurationConfirmModal,
   NovelCommentActionConfirmModal,
   NovelIllustrationTakedownConfirmModal,
@@ -76,6 +84,12 @@ function RootComponent() {
       <DecisionReasonModal />
       <SwitchChangeDialog />
       <ClearOverrideDialog />
+      <AddCredentialDialog />
+      <ReplaceSecretDialog />
+      <EditCredentialDialog />
+      <CreditBasisDialog />
+      <DeleteCredentialDialog />
+      <ConfirmActionDialog />
     </>
   );
 }
