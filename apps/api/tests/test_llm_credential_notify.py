@@ -6,14 +6,22 @@
 import asyncio
 import json
 import logging
+from typing import Any
 
 import httpx
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from api.core.config import settings
+from api.core.redis import redis_client
 from api.llm import credential_notify
-from api.llm.credential_notify import send_credential_notification, spawn_credential_notification
-from factories import _patch_httpx
+from api.llm.credential_notify import (
+    send_credential_notification,
+    send_credential_notification_once,
+    spawn_credential_notification,
+    spawn_credential_notification_once,
+)
+from factories import _capture_credential_alerts, _patch_httpx, _settle_credential_tasks
 
 _WEBHOOK = "https://discord.invalid/api/webhooks/0/test-hook"
 
@@ -96,3 +104,49 @@ async def test_spawned_notification_is_kept_until_done(monkeypatch: pytest.Monke
     await asyncio.sleep(0)
     assert sent == ["[Claude 자격] 켬"]
     assert credential_notify._pending == set()
+
+
+# ── 같은 표지로 한 번만 ─────────────────────────────────────────────────────────────────
+async def test_once_notification_is_sent_once_per_key_within_its_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
+    """같은 표지로는 수명 안에 한 번만 보낸다(표지를 처음 세운 쪽만). 표지가 다르면 따로 보낸다. 쏘는 쪽은 기다리지 않는다."""
+    sent = _capture_credential_alerts(monkeypatch)
+
+    spawn_credential_notification_once("llm_credential:alert:test:a", "첫 알림", ttl_seconds=600)
+    spawn_credential_notification_once("llm_credential:alert:test:a", "같은 표지", ttl_seconds=600)
+    await _settle_credential_tasks()
+    spawn_credential_notification_once("llm_credential:alert:test:a", "같은 표지 다시", ttl_seconds=600)
+    spawn_credential_notification_once("llm_credential:alert:test:b", "다른 표지", ttl_seconds=600)
+    await _settle_credential_tasks()
+
+    assert sent == ["첫 알림", "다른 표지"]
+    assert 590 < await redis_client.ttl("llm_credential:alert:test:a") <= 600
+
+
+class _BrokenRedis:
+    def __init__(self, hang: bool) -> None:
+        self.hang = hang
+
+    async def set(self, *args: Any, **kwargs: Any) -> bool:
+        if self.hang:
+            await asyncio.sleep(5)
+        raise RedisConnectionError("redis is down")
+
+
+@pytest.mark.parametrize("hang", [pytest.param(False, id="error"), pytest.param(True, id="timeout")])
+async def test_once_notification_is_skipped_when_redis_fails(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, hang: bool
+) -> None:
+    """표지를 확인하지 못하면 보내지 않고 경고만 남긴다 — 확인 없이 보내면 실패한 호출마다 알림이 간다. 답하지 않는 Redis 도 상한
+    안에 포기한다."""
+    sent = _capture_credential_alerts(monkeypatch)
+    monkeypatch.setattr(credential_notify, "redis_client", _BrokenRedis(hang))
+    caplog.set_level(logging.WARNING, logger="api.llm.credential_notify")
+
+    async with asyncio.timeout(1):
+        await send_credential_notification_once("llm_credential:alert:test:a", "알림", ttl_seconds=600)
+
+    assert sent == []
+    reason = "TimeoutError" if hang else "ConnectionError"
+    assert [record.getMessage() for record in caplog.records] == [
+        f"llm credential notification skipped: dedupe check failed ({reason})"
+    ]

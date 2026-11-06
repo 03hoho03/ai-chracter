@@ -6,8 +6,11 @@
 붙여넣는 일이 된다.
 
 값은 그대로이고 암호문과 키 id 만 바뀐다(지문·끝 4자리도 그대로). 행마다 따로 커밋해 도중에 멈춰도 다시 돌리면 남은 행만
-한다. 복호화할 수 없는 행(그 키를 이미 잃음)은 건너뛰고 수만 센다 — 그 항목은 어드민에서 키를 다시 붙여넣어야 한다. 행 쓰기가
-DB 에서 실패한 행도 그 행만 실패로 세고 다음 행으로 간다 — 첫 실패에서 멈추면 뒤 행이 모두 옛 키에 남는데, 요약 줄만으로는
+한다. 한 행이라도 다시 썼으면 끝에 런타임의 목록 캐시 세대를 한 번 올린다. 그 무효화가 실패하면 따로 한 줄을 찍고 종료 코드
+2 로 끝난다 — 캐시된 스냅숏이 있으면 다시 쓰기 전의 암호문(옛 키 id)을 든 채 캐시 수명(5분)까지 남는데, 그 사이 옛 키를 빼고
+교체하면 새 프로세스가 그 항목들을 복호화하지 못해 건너뛴다(모든 항목이 옛 키였으면 보낼 항목이 없다). 그래서 그 5분 안에는 옛
+키를 지우지 않는다(지우는 시점 자체는 회전 순서 그대로 백업 보관 기간 뒤다). 복호화할 수 없는 행(그 키를 이미 잃음)은 건너뛰고 수만 센다 — 그 항목은 어드민에서 키를 다시 붙여넣어야 한다.
+행 쓰기가 DB 에서 실패한 행도 그 행만 실패로 세고 다음 행으로 간다 — 첫 실패에서 멈추면 뒤 행이 모두 옛 키에 남는데, 요약 줄만으로는
 옛 키를 지워도 되는지 가릴 수 없게 된다.
 
 지급 정보 실행기(`creator_payout/reencrypt.py`)와 달리 실패해도 traceback 을 찍지 않고 오류 클래스 이름(행 쓰기 실패면
@@ -25,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from api.core.field_crypto import FieldDecryptError
 from api.db.models.llm_credential import LlmCredential
 from api.db.session import async_session_factory, engine
+from api.llm.credential_pool import invalidate_pool_snapshot
 from api.llm.credentials import CredentialStoreError, credential_keyring, credential_write, reencrypt_secret
 
 
@@ -66,7 +70,9 @@ async def reencrypt_credentials(session_factory: async_sessionmaker[AsyncSession
 
 
 async def run(session_factory: async_sessionmaker[AsyncSession]) -> int:
-    """다시 암호화하고 결과 한 줄을 찍는다. 종료 코드(쓰기에 실패했거나 건너뛴 행이 있으면 1)를 돌려준다."""
+    """다시 암호화하고 결과 한 줄을 찍는다. 종료 코드를 돌려준다 — 쓰기에 실패했거나 건너뛴 행이 있으면 1(옛 키를 지우지 않는다),
+    그렇지 않은데 캐시 무효화가 실패했으면 2(5분 안에는 옛 키를 지우지 않는다), 둘 다 아니면 0. 무효화 실패 줄은 1 일 때도 찍힌다
+    — 그때는 1 의 "지우지 않는다"가 앞선다."""
     try:
         result = await reencrypt_credentials(session_factory)
     except Exception as exc:
@@ -77,7 +83,21 @@ async def run(session_factory: async_sessionmaker[AsyncSession]) -> int:
         f"Claude 자격 재암호화: {result.reencrypted}행, 쓰기 실패 {result.failed}행, "
         f"복호화할 수 없어 건너뜀 {result.unreadable}행"
     )
-    return 1 if result.failed or result.unreadable else 0
+    invalidation_failed = False
+    if result.reencrypted:
+        try:
+            await invalidate_pool_snapshot()
+        except Exception as exc:
+            # 옛 키가 키링에 있는 동안은 캐시에 남은 옛 암호문도 읽힌다. 옛 키를 지우는 순간부터 읽히지 않으므로, 캐시가 수명으로
+            # 맞춰지기 전에는 지우지 말라고 따로 알린다(지우라는 지시가 아니라 금지다). 오류 문장은 Redis 주소를 실을 수 있어 클래스
+            # 이름만 찍는다.
+            print(
+                f"Claude 자격 목록 캐시 무효화 실패({type(exc).__name__}) — 5분 안에는 옛 키를 지우지 않는다", file=sys.stderr
+            )
+            invalidation_failed = True
+    if result.failed or result.unreadable:
+        return 1
+    return 2 if invalidation_failed else 0
 
 
 async def _main() -> int:

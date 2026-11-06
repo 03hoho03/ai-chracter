@@ -7,9 +7,11 @@ env 파일과 무관하게 여기서 고정한다.
 켜기 조건은 시각이 아니라 판(`state_version`)과 확인 회차로 가른다 — 테스트 트랜잭션 안에서는 `now()` 가 같아 시각으로는
 어느 것도 가를 수 없고, 판은 운영과 테스트에서 같은 답을 낸다."""
 
+import asyncio
 import base64
 import json
 import logging
+import time
 import uuid
 from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
@@ -22,6 +24,7 @@ import httpx
 import httpx2
 import pytest
 import sqlalchemy as sa
+from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin import llm_credentials as admin_llm_credentials
@@ -30,13 +33,16 @@ from api.core.field_crypto import FieldKeyring
 from api.core.redis import redis_client
 from api.db.models.llm_credential import LlmCredential, LlmCredentialCheck, LlmCredentialSettings
 from api.db.models.moderation import AdminActionLog
-from api.llm import credential_probe, credentials
+from api.llm import credential_notify, credential_pool, credential_probe, credential_usage, credentials
+from api.llm.claude_messages import to_usage
 from api.llm.credential_notify import get_credential_notifier
+from api.llm.credential_pool import GENERATION_KEY
 from api.llm.credential_probe import (
     CheckCallResult,
     CredentialProbeError,
     get_anthropic_credential_probe,
 )
+from api.llm.credential_usage import CredentialSpend, SpendTarget, read_credential_spend, record_credential_spend
 from api.llm.credentials import (
     CheckGroup,
     CredentialStoreError,
@@ -53,8 +59,10 @@ from factories import (
     FAKE_CREDENTIAL_KEYRING,
     FAKE_OTHER_API_KEY,
     FAKE_ROTATED_KEYRING,
+    _capture_credential_alerts,
     _create_admin,
     _login_as_admin,
+    _settle_credential_tasks,
 )
 
 _BASE = "/admin/llm-credentials"
@@ -99,6 +107,7 @@ _CREDENTIAL_FIELDS = {
     "updatedAt",
     "checks",
     "enableBlocker",
+    "spend",
 }
 _CHECK_FIELDS = {
     "run",
@@ -125,6 +134,22 @@ def store_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.setattr(settings, "anthropic_structured_effort", "low")
     monkeypatch.setattr(settings, "anthropic_chat_timeout_ms", 45_000)
     return monkeypatch
+
+
+@pytest.fixture(autouse=True)
+async def _no_real_webhook_post(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
+    """이 파일에서는 어떤 Claude 자격 알림도 실제 웹훅(위 `discord.invalid`)으로 나가지 않는다. 라우트의 알림은 `notes` 가 받고,
+    추정 잔액 임계처럼 라우트 밖에서 쏘는 알림은 그것을 기대하는 테스트가 `_capture_credential_alerts` 로 받는다. 그 밖에서 보내려
+    하면 여기 남아 테스트가 끝날 때 실패한다 — 쏘고 잊은 전송 태스크가 다음 테스트로 새지도 않는다."""
+    attempted: list[str] = []
+
+    async def refuse(message: str) -> None:
+        attempted.append(message)
+
+    monkeypatch.setattr(credential_notify, "send_credential_notification", refuse)
+    yield
+    await _settle_credential_tasks()
+    assert attempted == [], f"잡지 않은 Claude 자격 알림이 웹훅으로 나가려 했다: {attempted}"
 
 
 class FakeProbe:
@@ -1725,3 +1750,309 @@ async def test_logs_carry_no_secret_material(
 
     for marker in (FAKE_API_KEY, FAKE_OTHER_API_KEY, _ENV_KEY, secret_fingerprint(_ENV_KEY)):
         assert marker not in caplog.text
+
+
+# ── 런타임 캐시 무효화 ───────────────────────────────────────────────────────────────────
+async def _generation() -> int:
+    return int(await redis_client.get(GENERATION_KEY) or 0)
+
+
+_Request = Callable[[], Awaitable[httpx.Response]]
+
+
+async def _prepare_write(route: str, client: httpx.AsyncClient) -> _Request:
+    """그 라우트가 실제로 무엇을 바꾸는 요청 하나를 준비한다(준비가 만든 변경은 세지 않는다)."""
+    if route == "add":
+        return lambda: client.post(_BASE, json={"provider": "anthropic", "label": "새 계정", "apiKey": FAKE_API_KEY})
+    if route in ("pool", "disable"):
+        ready = await _ready(client)
+        if route == "pool":
+            return lambda: client.put(f"{_BASE}/pool", json={"enabled": True})
+        return lambda: client.post(f"{_BASE}/{ready['id']}/disable")
+    created = await _create(client)
+    path = f"{_BASE}/{created['id']}"
+    if route == "order":
+        revision = (await _listing(client))["listRevision"]
+        return lambda: client.put(f"{_BASE}/order", json={"baseListRevision": revision, "ids": [created["id"]]})
+    if route == "update":
+        return lambda: client.patch(path, json={"label": "바꾼 이름"})
+    if route == "secret":
+        return lambda: client.put(f"{path}/secret", json={"apiKey": FAKE_OTHER_API_KEY})
+    if route == "enable":
+        await _check(client, created["id"])
+        return lambda: client.post(f"{path}/enable")
+    if route == "delete":
+        return lambda: client.delete(path)
+    assert route == "check"
+    return lambda: client.post(f"{path}/check")
+
+
+@pytest.mark.parametrize(
+    "route", ["add", "order", "pool", "update", "secret", "enable", "disable", "delete", "check"]
+)
+async def test_every_admin_write_invalidates_the_snapshot(
+    db_client: httpx.AsyncClient, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str], route: str
+) -> None:
+    """커밋된 변경마다 런타임 목록 캐시의 세대를 한 번 올린다 — 끈 항목·바꾼 순서가 다음 호출부터 바로 보인다."""
+    request = await _prepare_write(route, db_client)
+    before = await _generation()
+
+    resp = await request()
+
+    assert resp.status_code in (200, 201, 204), resp.text
+    assert await _generation() == before + 1
+
+
+async def test_admin_request_that_changes_nothing_leaves_the_snapshot_alone(
+    db_client: httpx.AsyncClient, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """바뀐 것이 없는 요청(이미 켜진 항목 켜기·같은 라벨·이미 꺼진 목록 사용 끄기)은 무효화할 것도 없다."""
+    ready = await _ready(db_client)
+    before = await _generation()
+
+    await db_client.post(f"{_BASE}/{ready['id']}/enable")
+    await db_client.patch(f"{_BASE}/{ready['id']}", json={"label": ready["label"]})
+    await db_client.put(f"{_BASE}/pool", json={"enabled": False})
+
+    assert await _generation() == before
+
+
+class _BrokenGenerationRedis:
+    def __init__(self, hang: bool) -> None:
+        self.hang = hang
+
+    async def incr(self, *args: Any) -> int:
+        if self.hang:
+            await asyncio.sleep(5)
+        raise RedisConnectionError("redis is down")
+
+
+@pytest.mark.parametrize("hang", [pytest.param(False, id="error"), pytest.param(True, id="timeout")])
+async def test_admin_write_survives_an_invalidation_failure(
+    db_client: httpx.AsyncClient,
+    admin_id: uuid.UUID,
+    probe: FakeProbe,
+    notes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    hang: bool,
+) -> None:
+    """변경은 이미 커밋됐다 — 무효화가 실패하거나 답하지 않아도 응답은 성공이고 알림도 간다. 옛 스냅숏은 캐시 수명 안에서 저절로
+    맞춰진다."""
+    monkeypatch.setattr(credential_pool, "redis_client", _BrokenGenerationRedis(hang))
+    created = await _create(db_client)
+
+    started = time.monotonic()
+    with caplog.at_level(logging.WARNING, logger="api.admin.llm_credentials"):
+        resp = await db_client.patch(f"{_BASE}/{created['id']}", json={"label": "바꾼 이름"})
+
+    assert resp.status_code == 200
+    assert time.monotonic() - started < 2.0
+    assert notes[-1].startswith("[Claude 자격] 수정 — ")
+    assert any("캐시 무효화 실패" in record.getMessage() for record in caplog.records)
+
+
+# ── 추정 사용액 ──────────────────────────────────────────────────────────────────────
+async def test_check_calls_add_to_the_item_spend(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """확인 호출도 그 계정의 크레딧을 쓴다 — 받아들여진 호출마다 원가를 그 항목의 추정 사용액에 쌓는다(호출 경로 스위치와 무관).
+    거절된 호출은 과금되지 않아 쌓지 않는다. 입력 12·출력 3: Opus 12×4 + 3×20 = 108, Haiku 5.5 12×0.1 + 3×0.5 = 2.7 → 3
+    마이크로달러."""
+    probe.default = CheckCallResult(error_kind=None, organization=_ORG, usage=to_usage(12, 0, 0, 3))
+    probe.results[_IDS["sonnet"]] = CheckCallResult(error_kind="credit", organization=None)
+    created = await _create(db_client, creditUsd=50)
+
+    checked = await _check(db_client, created["id"])
+
+    row = await _row(db_session, created["id"])
+    assert await read_credential_spend([SpendTarget.of_row(row)]) == {
+        row.id: CredentialSpend(spent_micro_usd=111, calls=2, unpriced_calls=0, unpriced_model=None)
+    }
+    assert checked["credential"]["spend"]["calls"] == 2
+
+
+_SPEND_FIELDS = {"spentUsd", "remainingUsd", "belowAlert", "calls", "unpricedCalls", "unpricedModel"}
+
+
+async def test_admin_list_shows_spend_remaining_and_unpriced_calls(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_id: uuid.UUID,
+    probe: FakeProbe,
+    notes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """충전액이 있는 항목은 그 기준 이후의 추정 사용액·남은 액·임계 아래 여부·호출 수·단가 없는 호출을 싣는다. 충전액이 없는
+    항목은 비운다. Opus 입력 100만·출력 10만 = 4 + 2 = 6 달러, 남은 44 달러는 50 달러의 90% 임계 아래다(그래서 임계 알림이 한
+    번 간다)."""
+    threshold_alerts = _capture_credential_alerts(monkeypatch)
+    created = await _create(db_client, creditUsd=50, alertPct=90)
+    plain = await _insert_row(db_session)
+    target = SpendTarget.of_row(await _row(db_session, created["id"]))
+    await record_credential_spend(target, "claude-opus-5-5", to_usage(1_000_000, 0, 0, 100_000))
+    await record_credential_spend(target, "claude-unknown-model-0", to_usage(10, 0, 0, 1))
+
+    listing = await _listing(db_client)
+
+    by_id = {item["id"]: item for item in listing["credentials"]}
+    spend = by_id[created["id"]]["spend"]
+    assert set(spend) == _SPEND_FIELDS
+    assert spend == {
+        "spentUsd": "6.00",
+        "remainingUsd": "44.00",
+        "belowAlert": True,
+        "calls": 2,
+        "unpricedCalls": 1,
+        "unpricedModel": "claude-unknown-model-0",
+    }
+    assert by_id[str(plain.id)]["spend"] is None
+    await _settle_credential_tasks()
+    assert [alert.split(" — ")[0] for alert in threshold_alerts] == ["[Claude 자격] 추정 잔액이 임계 아래"]
+
+
+async def test_admin_list_survives_an_unreadable_spend_store(
+    db_client: httpx.AsyncClient, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사용액을 읽지 못해도 조회는 뜨고 사용액 칸만 비운다."""
+    created = await _create(db_client, creditUsd=50)
+
+    class _Broken:
+        def pipeline(self, transaction: bool = True) -> Any:
+            raise RedisConnectionError("redis is down")
+
+    monkeypatch.setattr(credential_usage, "redis_client", _Broken())
+    listing = await _listing(db_client)
+
+    assert [item["spend"] for item in listing["credentials"] if item["id"] == created["id"]] == [None]
+
+
+# ── 사용액 기준 다시 잡기 ──────────────────────────────────────────────────────────────
+_PAST = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+async def _with_past_basis(db_session: AsyncSession, credential_id: str) -> None:
+    """기준 시각을 고정 과거 값으로 — 시계에 기대지 않고 "다시 잡혔다"를 그 값과의 차이로 본다."""
+    await db_session.execute(
+        sa.update(LlmCredential)
+        .where(LlmCredential.id == uuid.UUID(credential_id))
+        .values(credit_since=_PAST)
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def _update_audits(db_session: AsyncSession) -> list[str]:
+    return [log.reason_text for log in await _audits(db_session) if log.action_type == "llm-credential-update"]
+
+
+async def test_same_credit_sent_with_a_label_change_keeps_the_credit_basis(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """화면이 충전액 칸을 늘 실어 보내도 값이 같고 플래그가 없으면 기준은 그대로다 — 라벨만 고쳤는데 사용액이 지워지면 안 된다.
+    라벨까지 같으면 바뀐 것이 없어 감사·알림·무효화가 없다."""
+    created = await _create(db_client, creditUsd=50)
+    await _with_past_basis(db_session, created["id"])
+    subject = f"anthropic · 새 이름 · 지문 {secret_fingerprint(FAKE_API_KEY)}"
+    notes.clear()
+    before = await _generation()
+
+    renamed = await db_client.patch(f"{_BASE}/{created['id']}", json={"label": "새 이름", "creditUsd": "50.00"})
+    assert renamed.status_code == 200
+    assert (await _row(db_session, created["id"])).credit_since == _PAST
+    assert notes == [f"[Claude 자격] 수정 — {subject} · 라벨 운영 계정 → 새 이름"]
+    assert await _update_audits(db_session) == [f"{subject} · 라벨 운영 계정 → 새 이름"]
+    assert await _generation() == before + 1
+
+    again = await db_client.patch(f"{_BASE}/{created['id']}", json={"label": "새 이름", "creditUsd": "50.00"})
+    assert again.status_code == 200
+    assert (await _row(db_session, created["id"])).credit_since == _PAST
+    assert len(notes) == 1 and len(await _update_audits(db_session)) == 1
+    assert await _generation() == before + 1
+
+
+async def test_reset_flag_restarts_the_basis_with_the_same_credit(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_id: uuid.UUID,
+    probe: FakeProbe,
+    notes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """콘솔 잔액이 우연히 이전 충전액과 같아도 플래그로 기준을 지금으로 다시 잡는다 — 사용액이 새 기준에서 0 부터 세고, 옛 기준에서
+    이미 보낸 잔액 임계 알림이 다시 무장된다. Opus 입력 100만·출력 10만 = 6 달러라 50 달러의 90% 임계 아래로 내려간다."""
+    threshold_alerts = _capture_credential_alerts(monkeypatch)
+    created = await _create(db_client, creditUsd=50, alertPct=90)
+    await _with_past_basis(db_session, created["id"])
+    old_target = SpendTarget.of_row(await _row(db_session, created["id"]))
+    await record_credential_spend(old_target, "claude-haiku-5-5", to_usage(1000, 0, 0, 200))
+    await record_credential_spend(old_target, "claude-opus-5-5", to_usage(1_000_000, 0, 0, 100_000))
+    await _settle_credential_tasks()
+    assert len(threshold_alerts) == 1
+    subject = f"anthropic · 운영 계정 · 지문 {secret_fingerprint(FAKE_API_KEY)}"
+    notes.clear()
+    before = await _generation()
+
+    resp = await db_client.patch(f"{_BASE}/{created['id']}", json={"creditUsd": "50.00", "resetCreditBasis": True})
+
+    assert resp.status_code == 200, resp.text
+    row = await _row(db_session, created["id"])
+    assert row.credit_micro_usd == 50_000_000 and row.credit_since is not None and row.credit_since != _PAST
+    assert notes == [f"[Claude 자격] 수정 — {subject} · 사용액 기준 다시 잡음(충전액 50.00 달러)"]
+    assert await _update_audits(db_session) == [f"{subject} · 사용액 기준 다시 잡음(충전액 50.00 달러)"]
+    assert await _generation() == before + 1
+    assert (resp.json()["spend"]["calls"], resp.json()["spend"]["spentUsd"]) == (0, "0.00")
+    assert await read_credential_spend([old_target]) == {
+        row.id: CredentialSpend(spent_micro_usd=6_000_200, calls=2, unpriced_calls=0, unpriced_model=None)
+    }
+
+    await record_credential_spend(SpendTarget.of_row(row), "claude-opus-5-5", to_usage(1_000_000, 0, 0, 100_000))
+    await _settle_credential_tasks()
+    assert len(threshold_alerts) == 2
+
+
+@pytest.mark.parametrize(
+    "cleared", [pytest.param(False, id="without-a-credit"), pytest.param(True, id="credit-cleared-in-the-same-request")]
+)
+async def test_reset_flag_without_a_credit_is_refused(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_id: uuid.UUID,
+    probe: FakeProbe,
+    notes: list[str],
+    cleared: bool,
+) -> None:
+    """다시 잡을 충전액이 없으면 효과 없는 명시 요청을 조용히 성공시키지 않고 409 다 — 같은 요청의 다른 칸도 반영되지 않는다."""
+    created = await (_create(db_client, creditUsd=50) if cleared else _create(db_client))
+    row = await _row(db_session, created["id"])
+    kept = (row.label, row.credit_micro_usd, row.credit_since)
+    notes.clear()
+    before = await _generation()
+    body: dict[str, Any] = {"label": "바뀌면 안 되는 이름", "resetCreditBasis": True}
+    if cleared:
+        body["creditUsd"] = None
+
+    resp = await db_client.patch(f"{_BASE}/{created['id']}", json=body)
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == {"rule": "credit-basis-missing", "message": "충전액이 없어 기준을 다시 잡을 수 없습니다."}
+    row = await _row(db_session, created["id"])
+    assert (row.label, row.credit_micro_usd, row.credit_since) == kept
+    assert notes == [] and await _update_audits(db_session) == []
+    assert await _generation() == before
+
+
+async def test_reset_flag_with_a_changed_credit_records_one_change(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """값도 바뀌었으면 기준은 어차피 다시 잡히므로 변경 줄은 충전액 하나로 충분하다."""
+    created = await _create(db_client, creditUsd=50)
+    await _with_past_basis(db_session, created["id"])
+    subject = f"anthropic · 운영 계정 · 지문 {secret_fingerprint(FAKE_API_KEY)}"
+    notes.clear()
+
+    resp = await db_client.patch(f"{_BASE}/{created['id']}", json={"creditUsd": "80.00", "resetCreditBasis": True})
+
+    assert resp.status_code == 200
+    assert (await _row(db_session, created["id"])).credit_since != _PAST
+    assert notes == [f"[Claude 자격] 수정 — {subject} · 충전액 50.00 → 80.00 달러"]
+    assert await _update_audits(db_session) == [f"{subject} · 충전액 50.00 → 80.00 달러"]

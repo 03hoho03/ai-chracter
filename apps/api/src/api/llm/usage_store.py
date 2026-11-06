@@ -136,6 +136,13 @@ def usage_cost_usd(row: UsageRow) -> float | None:
     )
 
 
+def call_cost_usd(model: str, usage_metadata: object | None) -> float | None:
+    """호출 한 건의 추정 원가(달러), 단가표에 없는 모델이면 None. 그 호출이 하루 해시에 더하는 값(`_increments`)으로 만든 줄의
+    원가(`usage_cost_usd`)라 어드민 사용량 화면·일일 운영 요약과 같은 규칙이다(입력 복원 포함). Claude 자격 목록 항목의 추정
+    사용액이 이것으로 쌓는다."""
+    return usage_cost_usd(UsageRow(day=None, call_site="", model=model, **_increments(usage_metadata)))
+
+
 def _rows_for_day(day: date, fields: dict[str, str]) -> list[UsageRow]:
     by_pair: dict[tuple[str, str], dict[str, int]] = {}
     for field, raw in fields.items():

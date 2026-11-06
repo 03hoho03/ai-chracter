@@ -5,15 +5,19 @@
 
 import base64
 import uuid
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core.config import settings
 from api.core.field_crypto import FieldKeyring
+from api.core.redis import redis_client
 from api.db.models.llm_credential import LlmCredential
-from api.llm import credential_reencrypt
+from api.llm import credential_pool, credential_reencrypt
+from api.llm.credential_pool import GENERATION_KEY
 from api.llm.credentials import decrypt_secret, new_credential, reencrypt_secret, secret_fingerprint
 from factories import FAKE_API_KEY, FAKE_CREDENTIAL_KEYRING, FAKE_ROTATED_KEYRING
 
@@ -153,3 +157,60 @@ async def test_a_failed_row_is_counted_and_the_next_row_is_still_reencrypted(
     assert captured.err.strip() == "Claude 자격 재암호화 실패: IntegrityError sqlstate=23514"
     failed, done = processed
     assert {label: (await _reload(db_session, ids[label])).key_id for label in processed} == {failed: "k1", done: "k2"}
+
+
+async def _generation() -> int:
+    return int(await redis_client.get(GENERATION_KEY) or 0)
+
+
+async def test_reencrypt_runner_invalidates_the_snapshot(
+    db_session: AsyncSession, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """한 행이라도 다시 쓰면 끝에 Claude 자격 목록 캐시의 세대를 한 번 올린다 — 런타임이 옛 키 id 의 암호문을 든 스냅숏을 다음
+    호출부터 버린다. 다시 쓴 행이 없으면 올리지 않는다."""
+    await _stored(db_session, _FIRST_KEY, "old")
+    await _stored(db_session, _FIRST_KEY, "older")
+
+    assert await credential_reencrypt.run(_factory(db_session)) == 0
+    assert await _generation() == 1
+
+    assert await credential_reencrypt.run(_factory(db_session)) == 0
+    assert await _generation() == 1
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize(
+    ("unreadable", "expected"),
+    [pytest.param(False, 2, id="only-the-invalidation-failed"), pytest.param(True, 1, id="with-an-unreadable-row")],
+)
+async def test_reencrypt_runner_exits_with_its_own_code_when_the_invalidation_fails(
+    db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    unreadable: bool,
+    expected: int,
+) -> None:
+    """무효화가 실패하면 다시 쓴 행은 그대로지만 종료 코드가 2 이고 따로 한 줄을 찍는다 — 런타임 캐시에 옛 키 id 의 암호문을 든
+    스냅숏이 캐시 수명(5분)까지 남아, 그 사이 옛 키를 빼고 교체하면 새 프로세스가 그 스냅숏의 항목을 하나도 읽지 못한다. 행이
+    실패했거나 건너뛰었으면 옛 키를 아예 지우면 안 되므로 1 이 앞선다. 오류 문장(주소 등)은 찍지 않고 클래스 이름만 찍는다."""
+
+    class _Broken:
+        async def incr(self, *args: Any) -> int:
+            raise RedisConnectionError("redis is down at redis://secret-host")
+
+    await _stored(db_session, _FIRST_KEY, "old")
+    if unreadable:
+        await _stored(db_session, _LOST_KEY, "lost")
+    monkeypatch.setattr(credential_pool, "redis_client", _Broken())
+
+    code = await credential_reencrypt.run(_factory(db_session))
+
+    assert code == expected
+    captured = capsys.readouterr()
+    assert captured.out.strip() == (
+        f"Claude 자격 재암호화: 1행, 쓰기 실패 0행, 복호화할 수 없어 건너뜀 {int(unreadable)}행"
+    )
+    assert captured.err.strip() == (
+        "Claude 자격 목록 캐시 무효화 실패(ConnectionError) — 5분 안에는 옛 키를 지우지 않는다"
+    )
+    assert "secret-host" not in captured.err

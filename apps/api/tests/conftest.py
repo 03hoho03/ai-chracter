@@ -91,6 +91,7 @@ from api.core import clover
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.db.session import engine
+from api.llm.credentials import CREDENTIAL_KEY_PREFIX
 from api.llm.usage_store import USAGE_KEY_PREFIX
 from api.db.session import get_db_session, get_session_factory
 from api.main import app
@@ -212,6 +213,15 @@ async def _flush_llm_usage_keys() -> None:
     """LLM 사용량 집계는 날짜 하나에 해시 하나라 랜덤 값으로 격리되지 않는다 — 실제
     `GeminiLLMClient` 를 쓰는 테스트가 오늘 해시에 쌓은 수가 다음 테스트의 단언에 섞인다."""
     keys = await redis_client.keys(f"{USAGE_KEY_PREFIX}*")
+    if keys:
+        await redis_client.delete(*keys)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _flush_llm_credential_keys() -> None:
+    """Claude 자격 목록의 스냅숏·세대·추정 사용액·알림 표지는 고정 키이거나 항목 id 가 들어가도 롤백되지 않는 Redis 에 남는다 —
+    한 테스트가 캐시한 스냅숏이나 올린 세대를 다음 테스트가 그대로 보지 않게 매 테스트 전에 접두 하나로 지운다."""
+    keys = await redis_client.keys(f"{CREDENTIAL_KEY_PREFIX}*")
     if keys:
         await redis_client.delete(*keys)
 

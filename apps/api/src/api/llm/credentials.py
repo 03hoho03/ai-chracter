@@ -1,5 +1,5 @@
 """Claude 자격 목록의 저장 규칙 — 키링·허용 목록 접근, 비밀 암호화와 지문, 키 형식 검사, Anthropic 거절 분류, 확인 호출의
-모델 축과 그 기록으로 하는 판정(켜기 조건·목록 사용 덮임·env 롤백 키와 같은 키), 표 쓰기의 DB 오류 변환.
+모델 축과 그 기록으로 하는 판정(켜기 조건·목록 사용 덮임·런타임에 받을 수 있는 축·env 롤백 키와 같은 키), 표 쓰기의 DB 오류 변환.
 
 - 비밀은 `core/field_crypto.py` 의 키링으로 암호화한다. 연관 데이터는 표 접두 + 행 id + 칸 이름(`secret`)이라, 다른 항목
   행이나 다른 칸으로 옮긴 암호문은 조용한 오답 대신 복호화 실패가 된다. 그래서 행 id 는 암호화 전에 정한다.
@@ -39,6 +39,9 @@ from api.llm.credential_accounts import AccountProvider, parse_allowed_accounts
 
 # 운영자가 끈 상태의 이유. 새 항목도 이 상태로 시작한다(확인 호출이 통과한 뒤에 켠다) — 끄기와 같은 값을 쓴다.
 ADMIN_DISABLED_REASON: CredentialStateReason = "admin"
+# 런타임이 Redis 에 두는 모든 키(목록 스냅숏·세대, 추정 사용액, 알림 중복 억제 표지)의 접두. 하나로 두어 운영 문서의 "지우지
+# 마라"와 테스트의 격리가 한 줄이 된다. 확인 호출의 분당 제한 키는 제한 기구의 접두(`rate_limit:`)를 따른다.
+CREDENTIAL_KEY_PREFIX = "llm_credential:"
 
 
 # ── 설정 ─────────────────────────────────────────────────────────────────────
@@ -108,7 +111,15 @@ def new_credential(
 
 def decrypt_secret(keyring: FieldKeyring, credential: LlmCredential) -> str:
     """저장한 비밀을 되읽는다. 실패하면 `FieldDecryptError`."""
-    return keyring.decrypt(credential.key_id, credential.secret_ciphertext, aad=_aad(credential.id, "secret"))
+    return decrypt_stored_secret(
+        keyring, credential_id=credential.id, key_id=credential.key_id, ciphertext=credential.secret_ciphertext
+    )
+
+
+def decrypt_stored_secret(keyring: FieldKeyring, *, credential_id: uuid.UUID, key_id: str, ciphertext: bytes) -> str:
+    """행 객체 없이 그 칸 값들로 비밀을 되읽는다(런타임은 행이 아니라 캐시한 스냅숏 항목을 든다). 규칙은 `decrypt_secret` 과 같다
+    — 연관 데이터가 그 항목 id 라 다른 항목의 암호문이면 실패한다. 실패하면 `FieldDecryptError`."""
+    return keyring.decrypt(key_id, ciphertext, aad=_aad(credential_id, "secret"))
 
 
 def replace_secret(keyring: FieldKeyring, credential: LlmCredential, secret: str) -> None:
@@ -327,15 +338,34 @@ def uncovered_axes(
     return [axis for axis in CLAUDE_AXES if axis not in covered]
 
 
+def passed_axes(credential: LlmCredential, checks: Sequence[LlmCredentialCheck]) -> frozenset[ClaudeModelAxis]:
+    """런타임에 그 항목이 받을 수 있는 축(`checks` 는 그 항목의 확인 기록 전부): 축마다 최신 확인이 통과했고 그 확인이 지금 키로
+    한 것이다. 지금 키로 한 가장 최근 회차에 응답 조직이 어긋난 축이 하나라도 있으면 빈 집합이다 — 켜기를 막는 것과 같은
+    보안 신호이고, 켜진 뒤의 확인에서 나와도 그 키로 요청을 보내지 않게 한다. 상태·허용 목록은 부르는 쪽이 본다. 모델 id 와
+    확인 때의 상태 판은 보지 않는다 — 축 단위 확인이라 id 설정을 바꿔도 남고, 켜기가 판을 올리므로 판을 보면 켠 순간 모든
+    확인이 무효가 된다."""
+    current = [check for check in checks if check.secret_fingerprint == credential.secret_fingerprint]
+    if current:
+        run = max(check.run for check in current)
+        if any(check.run == run and check.error_kind in _ORGANIZATION_ERRORS for check in current):
+            return frozenset()
+    return frozenset(
+        axis
+        for axis, check in latest_checks_per_axis(checks).items()
+        if check.passed and check.secret_fingerprint == credential.secret_fingerprint
+    )
+
+
 def same_as_env_key(credential: LlmCredential) -> bool:
     """그 항목의 키가 지금 env 롤백 키(`ANTHROPIC_DIRECT_API_KEY`)와 같은가. 저장하지 않고 볼 때마다 계산한다 — env 키를
     바꾸면 답이 바뀌어야 한다. env 키의 지문은 이 비교에만 쓰고 어디에도 남기지 않는다."""
+    return is_env_key(credential.provider, credential.secret_fingerprint)
+
+
+def is_env_key(provider: str, fingerprint: str) -> bool:
+    """`same_as_env_key` 의 규칙을 행 없이 그 두 칸으로 본다(런타임은 행이 아니라 캐시한 스냅숏 항목을 든다)."""
     env_key = settings.anthropic_direct_api_key.strip()
-    return (
-        credential.provider == "anthropic"
-        and bool(env_key)
-        and secret_fingerprint(env_key) == credential.secret_fingerprint
-    )
+    return provider == "anthropic" and bool(env_key) and secret_fingerprint(env_key) == fingerprint
 
 # ── 표 쓰기의 DB 오류 ──────────────────────────────────────────────────────────
 _UNIQUE_VIOLATION = "23505"

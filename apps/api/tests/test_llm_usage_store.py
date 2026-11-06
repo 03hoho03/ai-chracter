@@ -9,9 +9,11 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 
 from api.core.redis import redis_client
 from api.llm import usage_store
+from api.llm.claude_messages import to_usage
 from api.llm.usage_store import (
     USAGE_RETENTION_SECONDS,
     UsageRow,
+    call_cost_usd,
     read_usage,
     record_usage,
     sum_by_call_site_and_model,
@@ -241,3 +243,11 @@ async def test_cache_writes_are_their_own_metric_and_absent_for_gemini() -> None
     rows = await read_usage(_DAY, _DAY)
     assert [(r.model, r.cache_write) for r in rows] == [("claude", 200), ("gemini", 0)]
     assert sum_by_call_site_and_model(rows + rows)[0].cache_write == 400
+
+
+def test_call_cost_uses_the_same_input_rule_as_the_usage_screen() -> None:
+    """호출 한 건의 원가는 사용량 화면의 줄 원가와 같은 규칙이다 — 입력 토큰이 비고 합계만 온 호출은 합계에서 출력·사고를 빼서
+    입력을 되살린다. 기대값은 단가표(Haiku 5.5 입력 0.10·출력 0.50 달러/백만)로 손으로 계산했다."""
+    assert call_cost_usd("claude-haiku-5-5", to_usage(1000, 0, 0, 200)) == pytest.approx(200 / 1_000_000)
+    assert call_cost_usd("claude-haiku-5-5", _meta(None, 300, 0, 1500)) == pytest.approx(270 / 1_000_000)
+    assert call_cost_usd("claude-unknown-model-0", to_usage(1000, 0, 0, 200)) is None

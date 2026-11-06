@@ -35,10 +35,12 @@ from api.llm.client import (
     collect_usage,
     structured_model,
 )
+from api.llm.claude_messages import to_usage
 from api.llm.routing import resolve_backend
 from api.main import app
 from api.novelize import billing, runner
 from api.novelize import router as novelize_router
+from api.novelize.call_records import recorded_call
 from factories import (
     _add_chapter,
     _batch_output,
@@ -556,3 +558,46 @@ async def test_the_record_is_not_in_the_job_response_nor_in_the_api_schema(
     assert "llmCalls" not in polled.text and "llm_calls" not in polled.text
     schema = json.dumps(app.openapi())
     assert "llmCalls" not in schema and "llm_calls" not in schema
+
+
+# ── 처리한 Claude 자격 목록 항목 ─────────────────────────────────────────────────────
+_SEVEN_KEYS = ["callSite", "model", "promptTokens", "cachedTokens", "cacheWriteTokens", "outputTokens", "thoughtsTokens"]
+
+
+def test_call_record_without_an_item_keeps_the_seven_keys() -> None:
+    """목록을 쓰지 않은 호출의 기록은 지금 일곱 키 그대로다 — 목록을 쓰지 않는 동안의 턴·소설 기록이 바이트까지 같게, 없는 항목
+    id 를 null 로 싣지도 않는다."""
+    sink: list[Any] = []
+    usage = LLMCallContext("chat_generate", None, None, model="opus", usage_sink=sink)
+
+    collect_usage(usage, "claude-opus-5-5", to_usage(700, 200, 100, 70, 20))
+
+    (call,) = sink
+    assert list(call.as_record()) == _SEVEN_KEYS
+
+
+def test_pool_call_records_the_item_id_in_turn_and_novel_records() -> None:
+    """목록 경로 호출은 처리한 항목 id 를 턴 기록 원소와 소설 작업 기록 원소에 함께 싣는다 — 둘 다 같은 `as_record` 에서 온다."""
+    item = uuid.UUID("00000000-0000-4000-8000-0000000000c1")
+    sink: list[Any] = []
+    collect_usage(
+        LLMCallContext("chat_generate", None, None, model="opus", usage_sink=sink),
+        "claude-opus-5-5",
+        to_usage(700, 200, 100, 70, 20),
+        credential_id=item,
+    )
+    records: list[dict[str, Any]] = []
+    with recorded_call(
+        records,
+        LLMCallContext("novelize_chapter", None, None, model="opus"),
+        stage="chain_child",
+        prompt_set_id=None,
+        route_source=None,
+    ) as context:
+        collect_usage(context, "claude-opus-5-5", to_usage(700, 200, 100, 70, 20), credential_id=item)
+
+    (turn_call,) = sink
+    assert list(turn_call.as_record()) == [*_SEVEN_KEYS, "credentialId"]
+    assert turn_call.as_record()["credentialId"] == str(item)
+    (record,) = records
+    assert record["credentialId"] == str(item)

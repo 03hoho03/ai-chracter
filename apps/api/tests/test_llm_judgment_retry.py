@@ -13,6 +13,7 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
+import anthropic
 import botocore.eventstream
 import botocore.exceptions
 import httpx
@@ -25,6 +26,7 @@ from api.llm import gemini as gemini_module
 from api.llm.client import (
     LLMCallContext,
     LLMClientError,
+    LLMCredentialPoolEmptyError,
     LLMEmptyResponseError,
     LLMTruncatedError,
     is_retryable_judgment_failure,
@@ -146,3 +148,27 @@ _BEDROCK_REQUEST = httpx2.Request("POST", "https://bedrock-runtime.invalid")
 )
 def test_claude_transport_causes_outside_the_sdk_are_sorted_by_kind(cause: BaseException, expected: bool) -> None:
     assert is_retryable_judgment_failure(_caused_by(cause)) is expected
+
+
+def _pool_empty(cause: BaseException | None) -> LLMCredentialPoolEmptyError:
+    try:
+        raise LLMCredentialPoolEmptyError("Claude 자격 목록에 haiku 를 보낼 항목이 없다") from cause
+    except LLMCredentialPoolEmptyError as exc:
+        return exc
+
+
+_REJECTED = anthropic.APIStatusError(
+    "Error code: 402",
+    response=httpx2.Response(402, request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages")),
+    body={"type": "error", "error": {"type": "billing_error", "message": "Your credit balance is too low"}},
+)
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [pytest.param(None, id="no-candidate-from-the-start"), pytest.param(_REJECTED, id="every-item-rejected")],
+)
+def test_pool_empty_error_is_not_retried_as_a_judgment_parse_failure(cause: BaseException | None) -> None:
+    """Claude 자격 목록에 보낼 항목이 없는 실패는 다시 불러도 같다 — 원인이 없어도 파싱 실패로 읽지 않고, 마지막 거절이 원인이어도
+    5xx 가 아니라 다시 부르지 않는다."""
+    assert is_retryable_judgment_failure(_pool_empty(cause)) is False

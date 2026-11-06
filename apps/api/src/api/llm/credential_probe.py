@@ -8,7 +8,8 @@
 - 키와 호스트를 명시로 넘기고 재시도하지 않는다 — 직결 구현(`llm/anthropic_api.py`)과 같은 이유로, SDK 는 명시 인자가 없으면
   env 의 `ANTHROPIC_API_KEY`·`ANTHROPIC_BASE_URL` 을 읽는다. 저장마다 만들고 버리는 클라이언트라 `async with` 로 닫는다.
 - 호출 위치를 만들지 않는다 — 사용량 기록·어드민 사용량 화면에 나타나지 않고, 실제 호출마다 고정 토큰 줄
-  `anthropic_credential_check_usage` 하나만 남긴다(직결의 `anthropic_usage` grep·분포에 섞이지 않게 이름을 나눴다).
+  `anthropic_credential_check_usage` 하나만 남긴다(직결의 `anthropic_usage` grep·분포에 섞이지 않게 이름을 나눴다). 받아들여진
+  호출의 사용량은 결과에 실어 돌려주고, 어드민 확인 라우트가 그 항목의 추정 사용액에 쌓는다.
 - 실패는 종류 문자열만 실은 `CredentialProbeError` 로 원인 사슬을 끊어 올린다 — SDK 전송 오류의 원인에는 하위 계층 문장이
   붙고, 그 계층(h11)은 헤더 값을 문장에 그대로 싣는다.
 """
@@ -24,7 +25,7 @@ from anthropic.types import MessageParam
 
 from api.core.config import settings
 from api.llm.anthropic_api import _BASE_URL, _structured_reasoning
-from api.llm.claude_messages import COMMON_TRANSPORT_ERRORS
+from api.llm.claude_messages import COMMON_TRANSPORT_ERRORS, ClaudeUsage, message_usage
 from api.llm.credential_accounts import normalize_account
 from api.llm.credentials import CheckGroup, ProbeFailureKind, probe_failure_kind
 
@@ -48,10 +49,13 @@ class CredentialProbeError(Exception):
 
 @dataclass(frozen=True)
 class CheckCallResult:
-    """확인 호출 한 번의 결과. `error_kind` 가 None 이면 받아들여졌다(200). `organization` 은 그 응답의 조직 헤더(정규화)다."""
+    """확인 호출 한 번의 결과. `error_kind` 가 None 이면 받아들여졌다(200). `organization` 은 그 응답의 조직 헤더(정규화)다.
+    `usage` 는 받아들여진 호출의 사용량이다 — 확인 호출도 그 계정의 크레딧을 써서 그 항목의 추정 사용액에 쌓는다. 거절된 호출은
+    과금되지 않아 None 이다."""
 
     error_kind: ProbeFailureKind | None
     organization: str | None
+    usage: ClaudeUsage | None = None
 
 
 class CredentialProbe(Protocol):
@@ -128,7 +132,7 @@ class AnthropicCredentialProbe:
                 _log_usage(credential_id, group.model_id, kind)
                 return CheckCallResult(error_kind=kind, organization=None)
         _log_usage(credential_id, group.model_id, message)
-        return CheckCallResult(error_kind=None, organization=normalize_account(header))
+        return CheckCallResult(error_kind=None, organization=normalize_account(header), usage=message_usage(message))
 
 
 def get_anthropic_credential_probe() -> CredentialProbe:
