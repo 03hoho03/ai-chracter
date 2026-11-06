@@ -19,29 +19,13 @@ import { CredentialList } from "./CredentialList";
 import { PoolSection, type RuntimeSwitchState } from "./PoolSection";
 import type { CredentialScreenSlots } from "./screenSlots";
 import { StoreNotice } from "./StoreNotice";
-
-/**
- * 대화상자·알림을 붙이기 전의 자리. 할 일: 추가·이름 수정·충전액·키 교체·삭제·목록 사용 대화상자와 범용 확인 대화상자를 만들어 이
- * 함수들에서 열고, 알림과 확인 뒤 결과 안내를 채운다. 그때까지 그 버튼들은 눌러도 아무 일도 하지 않고, 첫 후보가 바뀌는 동작은 확인 없이
- * 보내지 않도록 취소로 끝낸다.
- */
-const UNATTACHED_SLOTS: CredentialScreenSlots = {
-  openAdd: () => undefined,
-  openEdit: () => undefined,
-  openCreditBasis: () => undefined,
-  openReplaceSecret: () => undefined,
-  openDelete: () => undefined,
-  openPoolChange: () => undefined,
-  confirmCandidateChange: () => Promise.resolve({ status: "cancelled" }),
-  notify: () => undefined,
-  renderCheckNotice: () => null,
-};
+import { useCredentialScreenSlots } from "./useCredentialScreenSlots";
 
 export function LlmCredentialsPage() {
   useDocumentTitle("Claude 자격");
   const listQuery = useLlmCredentialsQuery();
   const switchQuery = useRuntimeSwitchQuery();
-  const slots = UNATTACHED_SLOTS;
+  const slots = useCredentialScreenSlots({ list: listQuery.data, runtimeSwitch: switchQuery.data });
   // 목록을 읽기 전에는 저장소 설정을 모른다 — 막지 않고, 서버가 503 으로 답하면 그때 띠가 나타난다.
   const isStoreMissing = listQuery.data?.storeConfigured === false;
 
