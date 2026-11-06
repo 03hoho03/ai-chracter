@@ -261,6 +261,9 @@ EnableBlocker = Literal["organization-unverified", "account-not-allowed", "check
 
 # 응답 조직이 어긋났다는 기록. 한 축이라도 있으면 다른 축이 통과했어도 켜지 않는다(보안 신호).
 _ORGANIZATION_ERRORS: frozenset[CheckErrorKind] = frozenset({"organization-mismatch", "account-not-allowed"})
+# 확인 호출의 일시 오류(429·과부하·서버 오류·시간 초과·연결 — `probe_failure_kind` 가 다시 시도할 일로 가른 것). 그 축이 지금
+# 키로 되는지 아무것도 결론 내지 않은 기록이라, 런타임 후보 판정은 이 기록을 건너뛰고 그 축의 이전 결론을 쓴다.
+TRANSIENT_CHECK_ERROR: CheckErrorKind = "unavailable"
 _ACCOUNT_PROVIDER: dict[CredentialProvider, AccountProvider] = {"anthropic": "anthropic", "bedrock": "aws"}
 
 
@@ -296,7 +299,14 @@ def enable_blocker(
     기준 회차는 지금 키 지문의 기록 중 회차가 가장 큰 것이다. 그 회차가 시작할 때의 판이 지금 판과 같고 통과한 축이 하나
     이상이어야 한다 — 상태가 바뀔 때마다 판이 오르므로, 끄기·소진 전에 시작한 확인은 지문이 같아도 세지 않는다(충전하지
     않은 계정을 켰다가 바로 다시 떨어지는 왕복을 막는다). 모든 축의 통과는 요구하지 않는다 — 축이 모자라면 목록 사용 켜기가
-    막는다."""
+    막는다.
+
+    일시 오류 기록도 회차에 그대로 센다 — 일시 오류뿐인 최신 회차는 통과가 없어 켜지 않는다. 런타임 후보 판정(`passed_axes`)은
+    일시 오류를 건너뛰고 이전 결론을 쓰지만 켜기는 그러지 않는다: 켜기는 그 항목을 새로 쓰기 시작하는 결정이라 지금 상태에서 난
+    확정 통과가 증거로 있어야 하고, 런타임의 건너뛰기는 이미 쓰던 항목을 확인 한 번의 일시 오류로 빼지 않기 위한 것이다.
+
+    조직 불일치는 런타임과 같은 조직 신호(`organization_signal`)로 본다 — 런타임이 조직 때문에 쓰지 않는 항목을 켜 두지 않는다.
+    기준 회차의 조직 오류는 그 축의 마지막 조직 판정이므로 이 신호에 이미 든다."""
     if credential.account_ref is None:
         return "organization-unverified"
     if not _verified_and_allowed(credential, allowed):
@@ -310,27 +320,33 @@ def enable_blocker(
         return "check-required"
     if not any(check.passed for check in basis):
         return "check-required"
-    if any(check.error_kind in _ORGANIZATION_ERRORS for check in basis):
+    if organization_signal(credential, checks):
         return "organization-mismatch"
     return None
 
 
 def uncovered_axes(
     credentials: Sequence[LlmCredential],
-    latest_checks: Mapping[uuid.UUID, Mapping[ClaudeModelAxis, LlmCredentialCheck]],
+    checks: Mapping[uuid.UUID, Sequence[LlmCredentialCheck]],
     model_ids: Mapping[ClaudeModelAxis, str],
     allowed: frozenset[tuple[AccountProvider, str]],
 ) -> list[ClaudeModelAxis]:
-    """덮는 항목이 없는 축(축 순서). 덮는 항목은 켜져 있고, 조직이 확인돼 지금 허용 목록 안이고, 그 축의 최신 확인
-    (`latest_checks` — 항목 id → 축 → 최신 기록)이 통과했고 그 확인이 지금 키 지문과 지금 설정의 id 로 한 것이다. id 일치는
-    목록 사용 켜기에만 거는 조건이다 — 모델 id 설정을 바꾼 뒤 항목마다 새 id 로 다시 확인하게 강제한다."""
+    """덮는 항목이 없는 축(축 순서). `checks` 는 항목 id → 그 항목의 확인 기록 전부다. 덮는 항목은 켜져 있고, 조직이 확인돼 지금
+    허용 목록 안이고, 그 축의 최신 확인이 통과했고 그 확인이 지금 키 지문과 지금 설정의 id 로 한 것이고, 런타임도 그 축을
+    받는다(`passed_axes`) — 두 조건의 교집합이다. id 일치는 목록 사용 켜기에만 거는 조건이다 — 모델 id 설정을 바꾼 뒤 항목마다
+    새 id 로 다시 확인하게 강제한다. 최신 확인이 일시 오류면 그 축을 덮지 않는다 — 목록 사용 켜기도 켜기(`enable_blocker`)처럼
+    새로 쓰기 시작하는 결정이라 확정 통과를 요구한다. 런타임 축과 교집합을 두는 것은 최신 확인이 통과여도 런타임이 조직 신호로
+    그 항목을 쓰지 않으면 그 축은 실제로 덮이지 않기 때문이다."""
     covered: set[ClaudeModelAxis] = set()
     for credential in credentials:
         if credential.state != "active" or not _verified_and_allowed(credential, allowed):
             continue
-        for axis, check in latest_checks.get(credential.id, {}).items():
+        rows = checks.get(credential.id, ())
+        runtime = passed_axes(credential, rows)
+        for axis, check in latest_checks_per_axis(rows).items():
             if (
-                check.passed
+                axis in runtime
+                and check.passed
                 and check.secret_fingerprint == credential.secret_fingerprint
                 and check.sent_model_id == model_ids.get(axis)
             ):
@@ -338,22 +354,51 @@ def uncovered_axes(
     return [axis for axis in CLAUDE_AXES if axis not in covered]
 
 
-def passed_axes(credential: LlmCredential, checks: Sequence[LlmCredentialCheck]) -> frozenset[ClaudeModelAxis]:
-    """런타임에 그 항목이 받을 수 있는 축(`checks` 는 그 항목의 확인 기록 전부): 축마다 최신 확인이 통과했고 그 확인이 지금 키로
-    한 것이다. 지금 키로 한 가장 최근 회차에 응답 조직이 어긋난 축이 하나라도 있으면 빈 집합이다 — 켜기를 막는 것과 같은
-    보안 신호이고, 켜진 뒤의 확인에서 나와도 그 키로 요청을 보내지 않게 한다. 상태·허용 목록은 부르는 쪽이 본다. 모델 id 와
-    확인 때의 상태 판은 보지 않는다 — 축 단위 확인이라 id 설정을 바꿔도 남고, 켜기가 판을 올리므로 판을 보면 켠 순간 모든
-    확인이 무효가 된다."""
-    current = [check for check in checks if check.secret_fingerprint == credential.secret_fingerprint]
-    if current:
-        run = max(check.run for check in current)
-        if any(check.run == run and check.error_kind in _ORGANIZATION_ERRORS for check in current):
-            return frozenset()
-    return frozenset(
-        axis
-        for axis, check in latest_checks_per_axis(checks).items()
-        if check.passed and check.secret_fingerprint == credential.secret_fingerprint
+def conclusive_checks_per_axis(
+    fingerprint: str, checks: Iterable[LlmCredentialCheck]
+) -> dict[ClaudeModelAxis, LlmCredentialCheck]:
+    """축마다 그 키 지문으로 한 기록 가운데 일시 오류(`TRANSIENT_CHECK_ERROR`)를 뺀 회차가 가장 큰 것 — 런타임이 그 축에 쓰는
+    결론이다. 지문을 먼저 거르므로 키를 바꾼 뒤 그 아래의 옛 키 기록으로 내려가지 않고, 예전에 쓰던 키로 되돌리면 그 키로 한
+    예전 결론을 다시 쓴다(확인 기록은 지문으로 그때의 키에 묶인다). 그런 기록이 없는 축은 빠진다."""
+    return latest_checks_per_axis(
+        check for check in checks if check.secret_fingerprint == fingerprint and check.error_kind != TRANSIENT_CHECK_ERROR
     )
+
+
+def organization_signal(credential: LlmCredential, checks: Iterable[LlmCredentialCheck]) -> bool:
+    """지금 키로 한 확인에 풀리지 않은 조직 불일치가 있는가. 축마다 그 축의 마지막 조직 판정 — 지금 키 지문으로 한 기록 가운데
+    응답 조직을 대조한 것, 곧 조직 헤더가 실린 통과(헤더가 저장된 조직과 같았다)나 조직 오류(불일치·허용 밖) 중 회차가 가장 큰
+    것 — 을 보고, 어느 축이든 그것이 조직 오류면 참이다. 그래서 신호는 어긋난 그 축이 응답 조직이 맞는 통과를 다시 받아야만
+    풀린다: 헤더 없는 통과(200 이지만 조직 헤더가 없다)와 일시 오류는 조직에 대해 아무 말도 하지 않았고, 모델 없음·권한·크레딧
+    같은 조직과 무관한 확정 실패는 응답 조직을 대조하지 않은 결과라 풀지 않는다. 다른 축의 통과도 풀지 않는다. 지금 키의 가장
+    최근 회차에 조직 오류가 있으면 그 축의 마지막 판정이 그 오류라 참이다(이전 규칙이 그대로 든다)."""
+    verdicts = latest_checks_per_axis(
+        check
+        for check in checks
+        if check.secret_fingerprint == credential.secret_fingerprint
+        and ((check.passed and check.organization_header is not None) or check.error_kind in _ORGANIZATION_ERRORS)
+    )
+    return any(check.error_kind in _ORGANIZATION_ERRORS for check in verdicts.values())
+
+
+def passed_axes(credential: LlmCredential, checks: Sequence[LlmCredentialCheck]) -> frozenset[ClaudeModelAxis]:
+    """런타임에 그 항목이 받을 수 있는 축(`checks` 는 그 항목의 확인 기록 전부): 축마다 지금 키로 한 결론 난 최신 기록
+    (`conclusive_checks_per_axis` — 일시 오류 기록을 건너뛴다)이 통과한 축이다. 켜진 항목을 확인하다 Anthropic 이 잠깐
+    429·과부하·시간 초과를 내도 그 축의 이전 통과가 남아 항목이 후보에서 빠지지 않는다 — 런타임이 소진이 아닌 429·529·5xx·
+    시간 초과에서 다음 항목으로 넘기지 않는 것과 같은 뜻이고, 그렇지 않으면 확인 한 번에 항목이 빠져 다음 항목이 없을 때 모든
+    호출이 실패한다. 크레딧·키·조직·모델 접근 같은 확정 실패는 이전 통과를 덮는다. 켜기·목록 사용 켜기는 이렇게 건너뛰지 않는다
+    (`enable_blocker` 의 이유).
+
+    풀리지 않은 조직 불일치(`organization_signal`)가 있으면 빈 집합이다 — 켜기를 막는 것과 같은 보안 신호이고, 켜진 뒤의 확인에서
+    나와도 그 키로 요청을 보내지 않게 한다. 어긋난 축이 응답 조직이 맞는 통과를 다시 받아야 풀리므로, 그 축의 일시 오류나 조직과 무관한 실패 뒤에 위의
+    건너뛰기가 어긋난 회차의 다른 축 통과로 내려가 그 키로 요청을 보내는 일이 없다.
+
+    상태·허용 목록은 부르는 쪽이 본다. 모델 id 와 확인 때의 상태 판은 보지 않는다 — 축 단위 확인이라 id 설정을 바꿔도 남고,
+    켜기가 판을 올리므로 판을 보면 켠 순간 모든 확인이 무효가 된다."""
+    if organization_signal(credential, checks):
+        return frozenset()
+    concluded = conclusive_checks_per_axis(credential.secret_fingerprint, checks)
+    return frozenset(axis for axis, check in concluded.items() if check.passed)
 
 
 def same_as_env_key(credential: LlmCredential) -> bool:

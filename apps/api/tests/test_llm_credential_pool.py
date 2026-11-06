@@ -101,8 +101,10 @@ def _checks(
     error_kind: Any = None,
     state_version: int | None = None,
     sent_model_id: str | None = None,
+    header: str | None = _ORG,
 ) -> list[LlmCredentialCheck]:
-    """축마다 한 행. 보낸 id 는 따로 주지 않으면 지금 설정의 그 축 id 다."""
+    """축마다 한 행. 보낸 id 는 따로 주지 않으면 지금 설정의 그 축 id 다. 통과 행에는 응답 조직 헤더(`header`, 기본은 상수
+    `_ORG`)를 싣는다 — 헤더 없는 통과는 조직을 대조하지 않은 통과다."""
     return [
         LlmCredentialCheck(
             credential_id=credential.id,
@@ -113,6 +115,7 @@ def _checks(
             secret_fingerprint=fingerprint or credential.secret_fingerprint,
             passed=error_kind is None,
             error_kind=error_kind,
+            organization_header=header if error_kind is None else None,
         )
         for axis in axes
     ]
@@ -204,6 +207,129 @@ def test_passed_axes_is_empty_when_the_latest_run_of_this_key_carries_an_account
     checks = _checks(credential, 1) + _checks(credential, 2, ("sonnet",), error_kind="account-not-allowed")
 
     assert passed_axes(credential, checks) == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("later", "expected"),
+    [
+        pytest.param("unavailable", list(CLAUDE_AXES), id="transient-error-keeps-the-earlier-pass"),
+        pytest.param("model-not-found", [], id="missing-model-overrides-the-earlier-pass"),
+        pytest.param("credit", [], id="credit-overrides-the-earlier-pass"),
+        pytest.param("permission", [], id="permission-overrides-the-earlier-pass"),
+    ],
+)
+def test_only_a_conclusive_failure_overrides_an_earlier_pass(later: str, expected: list[str]) -> None:
+    """켜진 항목을 확인하다 Anthropic 이 잠깐 429·과부하·시간 초과를 내면 그 회차는 축마다 일시 오류로 남는다. 일시 오류는
+    그 축에 대해 아무것도 결론 내지 않았으므로 이전 통과가 그대로 후보를 만든다 — 그렇지 않으면 확인 한 번에 항목이 후보에서
+    빠지고, 다음 항목이 없으면 모든 Claude 호출이 실패한다. 크레딧·모델 없음·권한 같은 확정 실패는 이전 통과를 덮는다."""
+    credential = _row()
+    checks = _checks(credential, 1) + _checks(credential, 2, error_kind=later)
+
+    assert _candidate_axes(credential, checks) == expected
+
+
+def test_transient_errors_are_skipped_per_axis_down_to_that_axis_last_conclusion() -> None:
+    """건너뛰기는 축마다다: 한 회차 안에서도 일시 오류 축은 그 전 결론으로 내려가고, 확정 결과가 난 축은 그 결과를 쓴다.
+    일시 오류가 여러 번 이어져도 마지막 결론까지 내려간다."""
+    credential = _row()
+    checks = [
+        *_checks(credential, 1),
+        *_checks(credential, 2, ("opus", "haiku"), error_kind="unavailable"),
+        *_checks(credential, 2, ("sonnet",), error_kind="credit"),
+        *_checks(credential, 2, ("haiku_writer",)),
+        *_checks(credential, 3, ("opus",), error_kind="unavailable"),
+    ]
+
+    assert _candidate_axes(credential, checks) == ["opus", "haiku_writer", "haiku"]
+
+
+def test_item_whose_checks_never_reached_a_conclusion_is_not_a_candidate() -> None:
+    """일시 오류 아래에 결론이 없으면(확인이 일시 오류뿐) 그 축은 받지 않는다. 일시 오류 아래의 결론이 실패여도 받지 않는다."""
+    credential = _row()
+
+    assert _candidate_axes(credential, _checks(credential, 1, error_kind="unavailable")) == []
+    failed_then_transient = _checks(credential, 1, error_kind="credit") + _checks(credential, 2, error_kind="unavailable")
+    assert _candidate_axes(credential, failed_then_transient) == []
+
+
+def test_transient_check_under_a_new_key_does_not_fall_back_to_the_previous_key() -> None:
+    """키를 바꾼 뒤 첫 확인이 일시 오류면 그 아래의 옛 키 통과로 내려가지 않는다 — 옛 키의 통과는 지금 키의 확인이 아니다.
+    대조군: 지금 키로 통과한 뒤의 일시 오류는 그 통과로 내려간다."""
+    credential = _row()
+    old = _checks(credential, 1, fingerprint="0badc0de")
+    transient = _checks(credential, 2, error_kind="unavailable")
+
+    assert _candidate_axes(credential, old + transient) == []
+    passed_then_transient = _checks(credential, 2) + _checks(credential, 3, error_kind="unavailable")
+    assert _candidate_axes(credential, old + passed_then_transient) == list(CLAUDE_AXES)
+
+
+@pytest.mark.parametrize(
+    ("latest", "expected"),
+    [
+        pytest.param("transient", [], id="transient-only-run-keeps-the-organization-error"),
+        pytest.param("other-axis-failure", [], id="failure-on-another-axis-keeps-the-organization-error"),
+        pytest.param("same-axis-unrelated-failure", [], id="unrelated-failure-on-that-axis-keeps-the-organization-error"),
+        pytest.param("same-axis-passes", list(CLAUDE_AXES), id="pass-on-that-axis-clears-the-organization-error"),
+    ],
+)
+def test_organization_error_stays_until_that_axis_passes_again(latest: str, expected: list[str]) -> None:
+    """지금 키의 확인에서 응답 조직이 어긋난 축은, 그 축이 다시 통과(응답 조직이 맞았다)하기 전까지 항목 전체를 뺀다. 그 뒤의
+    일시 오류는 조직에 대해 아무 말도 하지 않았고, 모델 없음·크레딧 같은 조직과 무관한 확정 실패도 응답 조직을 확인하지 않은
+    결과라 그 신호를 지우지 않는다 — 지우면 후보 판정이 어긋난 회차의 다른 축 통과로 내려가 그 키로 요청을 보내게 된다."""
+    credential = _row()
+    checks = [
+        *_checks(credential, 1),
+        *_checks(credential, 2, ("opus", "sonnet", "haiku_writer")),
+        *_checks(credential, 2, ("haiku",), error_kind="organization-mismatch"),
+    ]
+    if latest == "transient":
+        checks += _checks(credential, 3, error_kind="unavailable")
+    elif latest == "other-axis-failure":
+        checks += _checks(credential, 3, ("opus",), error_kind="credit")
+        checks += _checks(credential, 3, ("sonnet", "haiku_writer", "haiku"), error_kind="unavailable")
+    elif latest == "same-axis-unrelated-failure":
+        checks += _checks(credential, 3, ("opus", "sonnet", "haiku_writer"), error_kind="unavailable")
+        checks += _checks(credential, 3, ("haiku",), error_kind="model-not-found")
+    else:
+        checks += _checks(credential, 3, ("opus", "sonnet", "haiku_writer"), error_kind="unavailable")
+        checks += _checks(credential, 3, ("haiku",))
+
+    assert _candidate_axes(credential, checks) == expected
+
+
+def test_organization_errors_on_several_axes_are_not_cleared_by_unrelated_failures_or_transient_errors() -> None:
+    """회차 2 에서 sonnet 만 429 이고 나머지 축이 모두 조직 불일치, 회차 3 에서 그 축들이 404·크레딧이고 sonnet 은 또 429 면 항목
+    전체가 빠진 채다 — 조직 불일치 축이 하나도 다시 통과하지 않았고, sonnet 의 회차 1 통과로 내려가면 조직이 어긋난 키로 요청을
+    보내게 된다. 대조군: 어긋났던 축이 모두 다시 통과하면 풀린다."""
+    credential = _row()
+    mismatched: tuple[ClaudeModelAxis, ...] = ("opus", "haiku_writer", "haiku")
+    checks = [
+        *_checks(credential, 1),
+        *_checks(credential, 2, ("sonnet",), error_kind="unavailable"),
+        *_checks(credential, 2, mismatched, error_kind="organization-mismatch"),
+        *_checks(credential, 3, ("opus",), error_kind="model-not-found"),
+        *_checks(credential, 3, ("haiku_writer", "haiku"), error_kind="credit"),
+        *_checks(credential, 3, ("sonnet",), error_kind="unavailable"),
+    ]
+
+    assert _candidate_axes(credential, checks) == []
+    assert _candidate_axes(credential, [*checks, *_checks(credential, 4, mismatched)]) == list(CLAUDE_AXES)
+
+
+def test_a_pass_without_an_organization_header_does_not_clear_an_organization_error() -> None:
+    """회차 2 에서 Haiku 응답 조직이 어긋난 뒤 회차 3 에서 Haiku 가 헤더 없는 200 으로 통과해도 항목은 빠진 채다 — 헤더가 없으면
+    응답 조직을 대조하지 않았다. 회차 4 에서 저장된 조직의 헤더가 실린 통과가 오면 풀린다."""
+    credential = _row()
+    checks = [
+        *_checks(credential, 1),
+        *_checks(credential, 2, ("opus", "sonnet", "haiku_writer")),
+        *_checks(credential, 2, ("haiku",), error_kind="organization-mismatch"),
+        *_checks(credential, 3, header=None),
+    ]
+
+    assert _candidate_axes(credential, checks) == []
+    assert _candidate_axes(credential, [*checks, *_checks(credential, 4, ("haiku",))]) == list(CLAUDE_AXES)
 
 
 def test_axis_check_still_counts_after_the_model_id_setting_changes(monkeypatch: pytest.MonkeyPatch) -> None:

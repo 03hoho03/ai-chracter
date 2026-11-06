@@ -1466,7 +1466,9 @@ export interface paths {
         /**
          * Replace Llm Credential Secret
          * @description 키만 바꾼다(한 항목 = 한 계정 — 다른 조직의 키로는 바꾸지 않는다). 상태·판은 그대로이고, 확인 기록이 옛 지문에 묶여
-         *     있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
+         *     있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 예전에 쓰던 키로 되돌리면 그 키로 한 예전 확인이 다시 지금 키의
+         *     확인으로 센다 — 알림이 그렇게 말하고, 항목이 켜져 있고 조직 확인이 남아 있으면 런타임도 바로 그 결론을 쓴다(되돌릴 때 조직
+         *     조회에 헤더가 없으면 조직 표지가 지워져 확인 호출 전까지 쓰지 않는다). 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
          *     없을 때 살리는 길) 지문이 같아 옛 확인 기록이 그대로 지금 키의 확인으로 센다 — 암호문만 지금 키로 다시 쓰고, 같은 키는
          *     같은 조직이라 조직 조회를 부르지 않고 조직 표지도 그대로 둔다.
          */
@@ -1531,7 +1533,8 @@ export interface paths {
          * Check Llm Credential
          * @description 모델 축마다 지금 설정의 실제 id 로 확인 호출을 하고 축마다 한 행을 같은 회차로 남긴다(같은 id 는 한 번, 차례로).
          *     기록에는 확인을 시작할 때 읽은 판·지문을 남긴다 — 호출을 기다리는 동안 상태나 키가 바뀌면 그 회차는 켜기에 세지 않는다.
-         *     다시 시도할 일(과부하·시간 초과 등)로 실패한 축도 그 종류로 남는다 — 분당 한 번이라 1분 뒤 다시 누른다.
+         *     다시 시도할 일(429·과부하·시간 초과 등)로 실패한 축도 그 종류(`unavailable`)로 남지만 그 축의 이전 결과를 덮지 않는다 —
+         *     런타임은 그 축의 이전 결론을 그대로 쓰고, 켜기·목록 사용 켜기에는 세지 않는다(분당 한 번이라 1분 뒤 다시 누른다).
          */
         post: operations["check_llm_credential_admin_llm_credentials__credential_id__check_post"];
         delete?: never;
@@ -8611,6 +8614,22 @@ export interface components {
          * @description 목록 항목 하나. 키 원문·암호문·암호화 키 id 는 싣지 않는다 — 끝 4자리와 지문만. `same_as_env_key` 는 볼 때의 env 롤백
          *     키와 같은 키인지(저장하지 않는 계산값), `enable_blocker` 는 켜기가 막히는 이유(켤 수 있으면 null)다. `spend` 는 추정
          *     사용액이다 — 충전액이 없거나 사용액 저장소를 읽지 못하면 null.
+         *
+         *     `checks` 는 축 순서이고, 축마다 회차가 가장 큰 기록이 먼저 오고, 그것이 런타임이 그 축에 쓰는 기록(`is_runtime_basis`)이
+         *     아니고 그런 기록이 따로 있으면 그 기록이 바로 뒤에 하나 더 온다 — 한 축에 행이 둘이면 앞이 최신, 뒤가 런타임 기록이다.
+         *     최신이 일시 오류인데 지금 키로 한 그 전 결론이 없거나, 최신이 옛 키의 기록이고 지금 키의 결론이 없으면 그 축은 행 하나이고
+         *     `is_runtime_basis` 가 거짓이다. 이 행들은 표시용이다 — 조직 신호를 정하는 기록(그 축의 조직 헤더가 실린 마지막 통과나 조직 오류)은 실리지 않을
+         *     수 있다.
+         *
+         *     `runtime_axes` 는 서버가 계산한 런타임 축(축 순서) — 확인 기록만으로 정하는 `llm/credentials.py` 의 `passed_axes` 결과
+         *     그대로다: 축마다 지금 키로 한 결론(일시 오류를 건너뛴 기록)이 통과한 축이고, 풀리지 않은 조직 불일치(어긋난 축이 조직 헤더가
+         *     실린 통과를 다시 받기 전까지 — 헤더 없는 통과, 그 축의 일시 오류, 조직과 무관한 실패로는 풀리지 않는다)가 있으면 빈
+         *     목록이다. 화면은 후보 축 판정에
+         *     이 칸을 쓰고 규칙을 다시 짜지 않는다. 켜짐(`state`)·조직 확인(`organization_verified`)·지금 허용 목록·Anthropic 공급자
+         *     조건은 **들어 있지 않다** — 런타임은 이 축에 그 조건을 더해 후보를 고르므로 화면도 켜짐·조직 확인·공급자는 그 칸(`state`·
+         *     `organization_verified`·`provider`)으로 따로 본다. 허용 목록은 응답에 없다(빠진 조직이면 `enable_blocker` 가
+         *     `account-not-allowed`). 켜기(`enable_blocker`)와 목록 사용 켜기는
+         *     일시 오류를 건너뛰지 않고 최신 기록으로 판정하고, 조직 신호는 이 칸과 같다.
          */
         AdminLlmCredential: {
             /**
@@ -8669,14 +8688,19 @@ export interface components {
             updatedAt: string;
             /** Checks */
             checks: components["schemas"]["AdminLlmCredentialCheckItem"][];
+            /** Runtimeaxes */
+            runtimeAxes: ("haiku_writer" | "sonnet" | "opus" | "haiku")[];
             /** Enableblocker */
             enableBlocker: ("organization-unverified" | "account-not-allowed" | "check-required" | "organization-mismatch") | null;
             spend: components["schemas"]["AdminLlmCredentialSpend"] | null;
         };
         /**
          * AdminLlmCredentialCheckItem
-         * @description 축마다 회차가 가장 큰 확인 기록. 세 `is_current_*` 는 그 기록이 지금도 유효한가 — 지금 키 지문으로 했는가, 지금 설정의
-         *     모델 id 로 보냈는가, 확인을 시작할 때의 판이 지금 판인가(켜기에 세어지는가).
+         * @description 확인 기록 하나(어느 기록이 실리는지는 `AdminLlmCredential.checks`). 세 `is_current_*` 는 그 기록이 지금도 유효한가 —
+         *     지금 키 지문으로 했는가, 지금 설정의 모델 id 로 보냈는가, 확인을 시작할 때의 판이 지금 판인가(켜기에 세어지는가).
+         *     `error_kind` 가 `unavailable` 이면 일시 오류(429·과부하·시간 초과)라 그 축의 이전 결과를 덮지 않는다 — 런타임은 그 축의
+         *     이전 결론을 그대로 쓰고, 켜기·목록 사용 켜기에는 세지 않는다. `is_runtime_basis` 는 이 기록이 런타임이 그 축에 쓰는 기록인가
+         *     — 지금 키 지문으로 한 기록 가운데 `unavailable` 을 뺀 회차가 가장 큰 것이다.
          */
         AdminLlmCredentialCheckItem: {
             /** Run */
@@ -8703,6 +8727,8 @@ export interface components {
             isCurrentModelId: boolean;
             /** Iscurrentstateversion */
             isCurrentStateVersion: boolean;
+            /** Isruntimebasis */
+            isRuntimeBasis: boolean;
         };
         /**
          * AdminLlmCredentialCheckResponse

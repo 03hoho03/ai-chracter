@@ -331,7 +331,9 @@ def _check(
     fingerprint: str | None = None,
     model_id: str | None = None,
     checked_at: datetime | None = None,
+    header: str | None = _ORG,
 ) -> LlmCredentialCheck:
+    """통과 행에는 응답 조직 헤더(`header`, 기본은 상수 `_ORG`)를 싣는다 — 헤더 없는 통과는 조직을 대조하지 않은 통과다."""
     return LlmCredentialCheck(
         id=uuid.uuid4(),
         credential_id=credential.id,
@@ -342,7 +344,7 @@ def _check(
         secret_fingerprint=credential.secret_fingerprint if fingerprint is None else fingerprint,
         passed=error_kind is None,
         error_kind=error_kind,
-        organization_header=None,
+        organization_header=header if error_kind is None else None,
         checked_at=checked_at or datetime(2026, 11, 4, tzinfo=UTC),
     )
 
@@ -374,17 +376,43 @@ _Row = tuple[int, CheckErrorKind | None]
         pytest.param(_ORG, [(1, "credit"), (1, "unavailable")], "check-required", id="nothing-passed"),
         pytest.param(_ORG, [(1, None), (2, "credit")], "check-required", id="latest-run-did-not-pass"),
         pytest.param(
+            _ORG,
+            [(1, None), (1, None), (2, "unavailable"), (2, "unavailable")],
+            "check-required",
+            id="latest-run-had-only-transient-errors",
+        ),
+        pytest.param(
             _ORG, [(1, None), (1, "organization-mismatch")], "organization-mismatch", id="one-axis-org-mismatch"
         ),
         pytest.param(_ORG, [(1, None), (1, "account-not-allowed")], "organization-mismatch", id="one-axis-not-allowed"),
-        pytest.param(_ORG, [(1, "organization-mismatch"), (2, None)], None, id="earlier-mismatch-is-superseded"),
+        pytest.param(
+            _ORG,
+            [(1, "organization-mismatch"), (1, None), (2, None), (2, None)],
+            None,
+            id="earlier-mismatch-is-cleared-when-that-axis-passes-again",
+        ),
+        pytest.param(
+            _ORG,
+            [(1, "organization-mismatch"), (1, None), (2, "unavailable"), (2, None)],
+            "organization-mismatch",
+            id="mismatch-is-not-cleared-by-a-transient-error-on-that-axis",
+        ),
+        pytest.param(
+            _ORG,
+            [(1, "organization-mismatch"), (1, None), (2, "model-not-found"), (2, None)],
+            "organization-mismatch",
+            id="mismatch-is-not-cleared-by-an-unrelated-failure-on-that-axis",
+        ),
         pytest.param(_ORG, [(1, None), (1, "credit")], None, id="one-passing-axis-is-enough"),
     ],
 )
 def test_enable_blocker_order(account_ref: str | None, rows: list[_Row | str], expected: str | None) -> None:
     """켜기 조건은 위에서부터 처음 걸린 것을 이유로 낸다: 조직 미확인 → 허용 목록 밖 → 지금 키·지금 판의 최신 회차에 통과가
-    없음 → 그 회차에 조직 오류. 판은 시각 대신 쓰는 기준이다 — 확인을 시작한 뒤 상태가 바뀌었으면(끄기·소진) 그 회차는 세지
-    않는다. 축이 모자란 것은 켜기가 아니라 목록 사용 켜기가 막는다."""
+    없음 → 조직 신호(어느 축이든 그 축의 마지막 조직 판정 — 조직 헤더가 실린 통과나 조직 오류 — 이 조직 오류). 조직 신호는 런타임 후보 판정과
+    같은 규칙이라, 런타임이 조직 때문에 쓰지 않는 항목은 켜지지도 않는다 — 어긋난 축이 조직 헤더가 실린 통과를 다시 받아야 풀리고,
+    그 축의 헤더 없는 통과·일시 오류나 조직과 무관한 실패로는 풀리지 않는다. 판은 시각 대신 쓰는 기준이다 — 확인을 시작한 뒤 상태가 바뀌었으면(끄기·소진) 그 회차는 세지
+    않는다. 축이 모자란 것은 켜기가 아니라 목록 사용 켜기가 막는다. 일시 오류뿐인 최신 회차도 통과가 없는 회차다 — 런타임
+    후보 판정과 달리 그 전 회차의 통과로 내려가지 않는다."""
     credential = _credential(FieldKeyring.parse(FAKE_CREDENTIAL_KEYRING))
     credential.account_ref = account_ref
     credential.state_version = 3
@@ -400,6 +428,22 @@ def test_enable_blocker_order(account_ref: str | None, rows: list[_Row | str], e
             checks.append(_check(credential, row[0], axes[index % 2], error_kind=row[1]))
 
     assert enable_blocker(credential, checks, _ALLOWED) == expected
+
+
+def test_enable_stays_blocked_until_the_mismatched_axis_passes_with_an_organization_header() -> None:
+    """Haiku 응답 조직이 어긋난 뒤 Haiku 가 헤더 없는 200 으로 통과해도 켜기는 조직 불일치로 막힌다 — 헤더가 없으면 응답 조직을
+    대조하지 않은 통과라 신호를 풀 근거가 없다. 응답 조직이 맞은(헤더가 실린) 통과가 오면 풀린다."""
+    credential = _credential(FieldKeyring.parse(FAKE_CREDENTIAL_KEYRING))
+    checks = [
+        _check(credential, 1, "sonnet"),
+        _check(credential, 1, "haiku", error_kind="organization-mismatch"),
+        _check(credential, 2, "sonnet"),
+        _check(credential, 2, "haiku", header=None),
+    ]
+
+    assert enable_blocker(credential, checks, _ALLOWED) == "organization-mismatch"
+    matched = [_check(credential, 3, "sonnet"), _check(credential, 3, "haiku")]
+    assert enable_blocker(credential, [*checks, *matched], _ALLOWED) is None
 
 
 def test_same_as_env_key_is_computed_from_the_current_env_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -431,18 +475,23 @@ def _covered(keyring: FieldKeyring) -> tuple[LlmCredential, dict[ClaudeModelAxis
         pytest.param("haiku-old-model-id", ["haiku"], id="check-sent-another-model-id"),
         pytest.param("haiku-writer-missing", ["haiku_writer"], id="axis-never-checked"),
         pytest.param("opus-failed-but-another-covers", [], id="another-credential-covers-the-axis"),
+        pytest.param("opus-transient", ["opus"], id="latest-check-was-a-transient-error"),
+        pytest.param("organization-signal", list(CLAUDE_AXES), id="runtime-drops-the-item-for-an-organization-error"),
     ],
 )
 def test_uncovered_axes_require_active_verified_current_secret_and_current_model_id(
     breaking: str, expected: list[str]
 ) -> None:
     """목록 사용을 켜려면 축마다 덮는 항목이 하나 이상 있어야 한다: 켜져 있고, 조직이 확인돼 지금 허용 목록 안이고, 그 축의
-    최신 확인이 통과했고, 그 확인이 지금 키와 지금 설정의 모델 id 로 한 것이다."""
+    최신 확인이 통과했고, 그 확인이 지금 키와 지금 설정의 모델 id 로 한 것이고, 런타임도 그 축을 받는다. 최신 확인이 일시 오류면
+    런타임은 이전 통과로 그 축을 받아도 덮지 않는다(새로 쓰기 시작하는 결정이라 확정 통과가 필요하다). 거꾸로 다른 축의 최신
+    확인이 통과여도 런타임이 조직 신호로 그 항목을 쓰지 않으면(회차 2 에서 haiku 조직 불일치, 회차 3 에서 haiku 만 429) 어느
+    축도 덮지 않는다."""
     keyring = FieldKeyring.parse(FAKE_CREDENTIAL_KEYRING)
     credential, checks = _covered(keyring)
     credential.account_ref = _ORG
     credentials = [credential]
-    latest: dict[uuid.UUID, dict[ClaudeModelAxis, LlmCredentialCheck]] = {credential.id: checks}
+    history: dict[uuid.UUID, list[LlmCredentialCheck]] = {credential.id: []}
     if breaking == "disabled":
         credential.state, credential.state_reason = "disabled", "admin"
     elif breaking == "unverified":
@@ -457,11 +506,22 @@ def test_uncovered_axes_require_active_verified_current_secret_and_current_model
         checks["haiku"] = _check(credential, 1, "haiku", model_id="claude-haiku-4-5")
     elif breaking == "haiku-writer-missing":
         del checks["haiku_writer"]
+    elif breaking == "opus-transient":
+        history[credential.id].append(checks["opus"])
+        checks["opus"] = _check(credential, 2, "opus", error_kind="unavailable")
+    elif breaking == "organization-signal":
+        history[credential.id] += [*checks.values(), _check(credential, 2, "haiku", error_kind="organization-mismatch")]
+        others: tuple[ClaudeModelAxis, ...] = ("opus", "sonnet", "haiku_writer")
+        history[credential.id] += [_check(credential, 2, axis) for axis in others]
+        checks = {axis: _check(credential, 3, axis) for axis in CLAUDE_AXES}
+        checks["haiku"] = _check(credential, 3, "haiku", error_kind="unavailable")
     if breaking == "opus-failed-but-another-covers":
         other = _active(keyring, FAKE_OTHER_API_KEY)
         other.account_ref = "org-test-0002"
         credentials.append(other)
-        latest[other.id] = {"opus": _check(other, 1, "opus")}
+        history[other.id] = [_check(other, 1, "opus")]
+    all_checks = {credential.id: [*history[credential.id], *checks.values()]}
+    all_checks.update({key: rows for key, rows in history.items() if key != credential.id})
 
     allowed: frozenset[tuple[AccountProvider, str]] = _ALLOWED | {("anthropic", "org-test-0002")}
-    assert uncovered_axes(credentials, latest, _DEFAULT_IDS, allowed) == expected
+    assert uncovered_axes(credentials, all_checks, _DEFAULT_IDS, allowed) == expected

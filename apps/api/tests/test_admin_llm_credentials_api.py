@@ -106,6 +106,7 @@ _CREDENTIAL_FIELDS = {
     "createdAt",
     "updatedAt",
     "checks",
+    "runtimeAxes",
     "enableBlocker",
     "spend",
 }
@@ -119,6 +120,7 @@ _CHECK_FIELDS = {
     "isCurrentSecret",
     "isCurrentModelId",
     "isCurrentStateVersion",
+    "isRuntimeBasis",
 }
 
 
@@ -1213,7 +1215,8 @@ async def test_check_passes_a_verified_credential_whose_responses_carry_no_organ
     db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
 ) -> None:
     """조직이 저장 때 확인된 항목은 응답에 조직 헤더가 없어도 통과다 — 규칙은 "다르면 실패"뿐이고, 헤더가 없는 것은 다른
-    조직이라는 증거가 아니다."""
+    조직이라는 증거가 아니다. 다만 그 통과는 응답 조직을 대조하지 않아 조직 불일치를 풀지 못하므로, 알림·감사 문구가 헤더가
+    없었다고 적는다."""
     created = await _create(db_client)
     probe.default = CheckCallResult(error_kind=None, organization=None)
 
@@ -1221,6 +1224,122 @@ async def test_check_passes_a_verified_credential_whose_responses_carry_no_organ
 
     assert {(r.passed, r.error_kind) for r in await _checks(db_session, created["id"])} == {(True, None)}
     assert (await _row(db_session, created["id"])).account_ref == _ORG
+    plain = "통과(조직 헤더 없음)"
+    assert notes[-1] == (
+        f"[Claude 자격] 확인 — anthropic · 운영 계정 · 지문 {secret_fingerprint(FAKE_API_KEY)} · opus {plain} · "
+        f"sonnet {plain} · haiku_writer {plain} · haiku {plain}"
+    )
+
+
+async def test_transient_check_errors_keep_earlier_passes_at_runtime_but_never_count_for_turning_on(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """켜진 항목을 확인하다 Anthropic 이 잠깐 429·과부하를 내면 그 회차는 축마다 일시 오류로 남되, 런타임은 그 축의 이전
+    통과를 그대로 쓴다 — 항목이 후보에서 빠지지 않는다. 알림·감사 문구는 그 축이 이전 결과를 유지한다고 말한다. 켜기와 목록
+    사용 켜기는 최신 회차의 확정 통과를 요구하므로 그 회차로는 켜지 않는다."""
+    ready = await _ready(db_client)
+    probe.default = CheckCallResult(error_kind="unavailable", organization=None)
+    await _allow_another_check(ready["id"])
+
+    body = await _check(db_client, ready["id"])
+
+    row = await _row(db_session, ready["id"])
+    assert credentials.passed_axes(row, await _checks(db_session, ready["id"])) == frozenset(_AXES_IN_ORDER)
+    kept = "일시 오류(이전 결과 유지)"
+    results = f"opus {kept} · sonnet {kept} · haiku_writer {kept} · haiku {kept}"
+    assert notes[-1] == f"[Claude 자격] 확인 — anthropic · 운영 계정 · 지문 {secret_fingerprint(FAKE_API_KEY)} · {results}"
+    assert body["credential"]["enableBlocker"] == "check-required"
+    pool = await db_client.put(f"{_BASE}/pool", json={"enabled": True})
+    assert (pool.status_code, pool.json()["detail"]["axes"]) == (409, _AXES_IN_ORDER)
+
+
+async def test_listing_adds_the_runtime_basis_row_under_a_transient_latest_check(
+    db_client: httpx.AsyncClient, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """화면이 런타임과 같은 답을 내도록, 축마다 최신 기록이 일시 오류면 그 아래 지금 키의 결론(런타임이 그 축에 쓰는 기록)을
+    바로 뒤에 하나 더 싣는다. 최신 기록이 이미 그 결론이면 행 하나이고, 일시 오류 아래에 결론이 없으면 최신 기록 하나만
+    런타임 기록이 아닌 채로 싣는다."""
+    ready = await _ready(db_client)
+    probe.results[_IDS["haiku"]] = CheckCallResult(error_kind="unavailable", organization=None)
+    await _allow_another_check(ready["id"])
+    await _check(db_client, ready["id"])
+    probe.results.clear()
+    probe.organization = _OTHER_ORG
+    probe.default = CheckCallResult(error_kind="unavailable", organization=None)
+    never_concluded = await _create(db_client, "둘째 계정", FAKE_OTHER_API_KEY)
+    await _check(db_client, never_concluded["id"])
+
+    first, second = (await _listing(db_client))["credentials"]
+
+    assert [(c["modelAxis"], c["run"], c["errorKind"], c["isRuntimeBasis"]) for c in first["checks"]] == [
+        ("opus", 2, None, True),
+        ("sonnet", 2, None, True),
+        ("haiku_writer", 2, "unavailable", False),
+        ("haiku_writer", 1, None, True),
+        ("haiku", 2, "unavailable", False),
+        ("haiku", 1, None, True),
+    ]
+    assert [(c["modelAxis"], c["run"], c["isRuntimeBasis"]) for c in second["checks"]] == [
+        (axis, 1, False) for axis in _AXES_IN_ORDER
+    ]
+    assert (first["runtimeAxes"], second["runtimeAxes"]) == (_AXES_IN_ORDER, [])
+
+
+async def test_an_uncleared_organization_mismatch_drops_the_item_from_runtime_enable_and_pool_on(
+    db_client: httpx.AsyncClient, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """확인에서 Haiku 응답의 조직이 어긋난 뒤 다음 확인에서 Haiku 만 429 를 내고 나머지가 통과하면, 어긋난 축이 다시 통과하지
+    않았으므로 서버가 계산한 런타임 축(`runtimeAxes`)은 비고, 켜기는 조직 불일치로 막히고, 목록 사용 켜기도 어느 축도 덮였다고
+    보지 않는다 — 셋이 같은 조직 규칙을 쓴다. Haiku 가 다시 통과하면 풀린다."""
+    ready = await _ready(db_client)
+    probe.results[_IDS["haiku"]] = CheckCallResult(error_kind=None, organization=_OTHER_ORG)
+    await _allow_another_check(ready["id"])
+    await _check(db_client, ready["id"])
+    probe.results[_IDS["haiku"]] = CheckCallResult(error_kind="unavailable", organization=None)
+    await _allow_another_check(ready["id"])
+    await _check(db_client, ready["id"])
+
+    (item,) = (await _listing(db_client))["credentials"]
+    pool = await db_client.put(f"{_BASE}/pool", json={"enabled": True})
+    probe.results.clear()
+    await _allow_another_check(ready["id"])
+    cleared = (await _check(db_client, ready["id"]))["credential"]
+
+    assert (item["runtimeAxes"], item["enableBlocker"]) == ([], "organization-mismatch")
+    assert (pool.status_code, pool.json()["detail"]["axes"]) == (409, _AXES_IN_ORDER)
+    assert (cleared["runtimeAxes"], cleared["enableBlocker"]) == (_AXES_IN_ORDER, None)
+
+
+async def test_returning_to_an_earlier_key_counts_its_earlier_checks_again(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """키를 A 에서 B 로 바꾼 뒤 B 의 첫 확인이 429 뿐이면 B 는 어느 축도 받지 않고, 알림은 일시 오류 축이 이 키로 한 이전 결과가
+    없어 아직 쓰지 않는다고 말한다(옛 키 A 의 통과가 이어지는 것처럼 읽히지 않게). 다시 A 로 되돌리면 확인 기록이 지문으로 그때의
+    키에 묶이므로 A 로 한 예전 확인이 다시 지금 키의 확인으로 세어 런타임이 바로 A 를 쓰고, 알림도 미확인이 아니라 그렇게 말한다."""
+    ready = await _ready(db_client)
+    key_a, key_b = secret_fingerprint(FAKE_API_KEY), secret_fingerprint(FAKE_OTHER_API_KEY)
+    assert (await db_client.put(f"{_BASE}/{ready['id']}/secret", json={"apiKey": FAKE_OTHER_API_KEY})).status_code == 200
+    probe.default = CheckCallResult(error_kind="unavailable", organization=None)
+    await _allow_another_check(ready["id"])
+    under_b = (await _check(db_client, ready["id"]))["credential"]
+    transient_note = notes[-1]
+
+    back = await db_client.put(f"{_BASE}/{ready['id']}/secret", json={"apiKey": FAKE_API_KEY})
+
+    unused = "일시 오류(이 키로 한 이전 결과 없음 — 이 모델은 아직 쓰지 않는다)"
+    assert transient_note == (
+        f"[Claude 자격] 확인 — anthropic · 운영 계정 · 지문 {key_b} · opus {unused} · sonnet {unused} · "
+        f"haiku_writer {unused} · haiku {unused}"
+    )
+    assert under_b["runtimeAxes"] == []
+    assert back.status_code == 200
+    assert notes[-1] == (
+        f"[Claude 자격] 키 교체 — anthropic · 운영 계정 · 지문 {key_b} → {key_a} · 이 키로 한 이전 확인이 다시 센다\n"
+        "쓰지 않을 키면 콘솔에서 폐기한다"
+    )
+    assert back.json()["runtimeAxes"] == _AXES_IN_ORDER
+    row = await _row(db_session, ready["id"])
+    assert credentials.passed_axes(row, await _checks(db_session, ready["id"])) == frozenset(_AXES_IN_ORDER)
 
 
 async def test_check_on_an_unverified_credential_fails_a_later_axis_whose_header_differs_from_the_first(
