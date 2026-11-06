@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/lib/api/client";
 
 import type { AdminLlmCredentialCheckResponse } from "../model/credential";
+import { sendCredentialWrite } from "../model/failure";
 import { invalidateCredentials, reloadIfListStale, replaceCredential } from "./cache";
 
 /** 확인 호출. 모델 id 마다 짧은 요청을 차례로 보내 응답이 늦으면 몇십 초 걸린다. 응답 항목(확인 기록·사용액 포함)을 끼운 뒤에도 다시
@@ -13,8 +14,10 @@ export function useCheckCredentialMutation() {
   const queryClient = useQueryClient();
 
   return useMutation<AdminLlmCredentialCheckResponse, ApiError, string>({
-    mutationFn: async (id) =>
-      (await apiClient.post<AdminLlmCredentialCheckResponse>(`/admin/llm-credentials/${id}/check`)).data,
+    mutationFn: (id) =>
+      sendCredentialWrite(
+        async () => (await apiClient.post<AdminLlmCredentialCheckResponse>(`/admin/llm-credentials/${id}/check`)).data,
+      ),
     networkMode: "always",
     onSuccess: (response) => {
       replaceCredential(queryClient, response.credential);

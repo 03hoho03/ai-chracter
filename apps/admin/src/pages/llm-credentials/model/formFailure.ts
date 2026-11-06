@@ -5,8 +5,8 @@ import { SERVER_FIELD_REJECTION_TEXTS } from "./schema";
 export type FormFailurePlan<Field extends CredentialFormField> = {
   fieldErrors: { field: Field; message: string }[];
   rootMessage: string | undefined;
-  /** 키 칸을 비운다. 붙여넣은 키가 거절됐거나, 결과를 받지 못해 이미 저장됐을 수 있을 때다 — 오프라인(보내지 않음)·Anthropic
-   * 일시 장애처럼 키가 틀린 게 아닌 실패는 비우지 않아 다시 누르기만 하면 된다. */
+  /** 키 칸을 비운다. 붙여넣은 키가 거절됐거나, 결과를 받지 못해 이미 저장됐을 수 있을 때다 — 보내기 직전에 오프라인이었던 실패(보내지
+   * 않음)·Anthropic 일시 장애처럼 키가 틀린 게 아닌 실패는 비우지 않아 다시 누르기만 하면 된다. */
   clearsSecret: boolean;
 };
 

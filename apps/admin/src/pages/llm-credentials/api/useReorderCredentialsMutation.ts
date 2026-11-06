@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/lib/api/client";
 
 import type { AdminLlmCredentialListResponse, AdminLlmCredentialOrderRequest } from "../model/credential";
+import { sendCredentialWrite } from "../model/failure";
 import { putList, reloadIfListStale } from "./cache";
 
 /** 목록 전체의 새 순서. 판 번호와 `ids` 는 부르는 쪽이 누른 순간의 같은 목록에서 함께 만든다 — 새 판에 옛 순서를(또는 그 반대를) 섞어
@@ -13,8 +14,10 @@ export function useReorderCredentialsMutation() {
   const queryClient = useQueryClient();
 
   return useMutation<AdminLlmCredentialListResponse, ApiError, AdminLlmCredentialOrderRequest>({
-    mutationFn: async (body) =>
-      (await apiClient.put<AdminLlmCredentialListResponse>("/admin/llm-credentials/order", body)).data,
+    mutationFn: (body) =>
+      sendCredentialWrite(
+        async () => (await apiClient.put<AdminLlmCredentialListResponse>("/admin/llm-credentials/order", body)).data,
+      ),
     networkMode: "always",
     onSuccess: (list) => putList(queryClient, list),
     onError: (error) => reloadIfListStale(queryClient, error),

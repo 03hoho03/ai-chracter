@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/lib/api/client";
 
 import type { AdminLlmCredential, AdminLlmCredentialUpdateRequest } from "../model/credential";
+import { sendCredentialWrite } from "../model/failure";
 import { invalidateCredentials, reloadIfListStale, replaceCredential } from "./cache";
 
 type UpdateVariables = { id: string; body: AdminLlmCredentialUpdateRequest };
@@ -14,8 +15,10 @@ export function useUpdateCredentialMutation() {
   const queryClient = useQueryClient();
 
   return useMutation<AdminLlmCredential, ApiError, UpdateVariables>({
-    mutationFn: async ({ id, body }) =>
-      (await apiClient.patch<AdminLlmCredential>(`/admin/llm-credentials/${id}`, body)).data,
+    mutationFn: ({ id, body }) =>
+      sendCredentialWrite(
+        async () => (await apiClient.patch<AdminLlmCredential>(`/admin/llm-credentials/${id}`, body)).data,
+      ),
     networkMode: "always",
     onSuccess: (credential) => {
       replaceCredential(queryClient, credential);

@@ -17,8 +17,9 @@ export type CredentialFormField = "label" | "apiKey" | "creditUsd" | "alertPct";
  * - `upstream-unavailable`: Anthropic 에 닿지 못했다 — 키가 틀린 게 아니라 칸을 비우지 않는다.
  * - `stale-order`: 화면이 본 목록 판이 낡았다 — 확인 대화상자가 열려 있으면 닫고 순서 절 위에 안내한다.
  * - `fields`: 서버 검증이 칸을 거절했다(서버는 입력값을 되돌려 싣지 않는다).
- * - `unknown-outcome`: 서버 오류이거나 응답 없이 끊겼다(연결은 살아 있다) — 커밋 뒤에 응답만 끊겼을 수 있어 실패로 단정하지 않고,
- *   목록을 다시 받아 실제 결과를 보게 한다.
+ * - `offline`: 보내기 직전에 이미 오프라인이었다 — 보내지 않았으니 다시 누르기만 하면 된다.
+ * - `unknown-outcome`: 서버 오류이거나, 보낼 때는 연결이 살아 있었는데 응답 없이 끊겼다 — 커밋 뒤에 응답만 끊겼을 수 있어 실패로
+ *   단정하지 않고, 목록을 다시 받아 실제 결과를 보게 한다.
  * 목록을 다시 받아야 하는 실패는 `failureReloadsList` 가 고른다 — 뮤테이션이 실패마다 이미 그렇게 한다.
  */
 export type CredentialFailure =
@@ -146,11 +147,28 @@ const RULE_FAILURES = {
   }),
 } satisfies Record<CredentialRule, (error: ApiError, context: FailureContext) => CredentialFailure>;
 
+/**
+ * 보내기 직전에 이미 오프라인이었던 요청의 실패. "보내지 않았다"는 이때의 연결 상태로만 말한다 — 실패를 가르는 순간의 연결 상태로
+ * 정하면 서버가 받아 커밋한 뒤 연결이 끊긴 요청까지 보내지 않은 것으로 읽혀, 운영자가 다시 눌러 같은 키를 또 넣는다.
+ */
+const sentOfflineFailures = new WeakSet<object>();
+
+/** 자격 쓰기를 보낸다. 모든 자격 쓰기 뮤테이션이 이것으로 보내, 보내기 직전에 오프라인이었던 실패만 `offline` 으로 갈리게 한다. */
+export async function sendCredentialWrite<T>(send: () => Promise<T>): Promise<T> {
+  const isOfflineAtSend = isOffline();
+  try {
+    return await send();
+  } catch (error) {
+    if (isOfflineAtSend && typeof error === "object" && error !== null) sentOfflineFailures.add(error);
+    throw error;
+  }
+}
+
 export function classifyCredentialFailure(error: unknown, context: FailureContext = {}): CredentialFailure {
-  // 응답이 없다. 키를 싣는 요청은 오프라인에서 일시정지하지 않고 바로 실패하므로, 연결이 끊긴 상태면 보내지 않은 것이다. 연결이
-  // 살아 있는데 응답이 없으면 서버가 받아 처리한 뒤 끊겼을 수 있다.
+  // 응답이 없다. 보내기 직전에 이미 오프라인이었으면 보내지 않은 것이고(자격 쓰기는 오프라인에서 일시정지하지 않고 바로 실패한다),
+  // 보낼 때 연결이 살아 있었으면 서버가 받아 처리한 뒤 끊겼을 수 있다.
   if (!isApiError(error) || error.status === 0) {
-    return isOffline() ? { kind: "offline", message: OFFLINE_FAILURE_TEXT } : unknownOutcome();
+    return wasSentOffline(error) ? { kind: "offline", message: OFFLINE_FAILURE_TEXT } : unknownOutcome();
   }
   if (error.status === 429 && apiErrorCode(error) === CHECK_LIMIT_CODE) {
     const seconds = detailNumber(error, "retryAfterSeconds") ?? CHECK_COOLDOWN_SECONDS;
@@ -218,6 +236,10 @@ function isFormField(value: string): value is CredentialFormField {
 
 function isOffline(): boolean {
   return typeof navigator !== "undefined" && !navigator.onLine;
+}
+
+function wasSentOffline(error: unknown): boolean {
+  return typeof error === "object" && error !== null && sentOfflineFailures.has(error);
 }
 
 function detailValue(error: ApiError, key: string): unknown {
