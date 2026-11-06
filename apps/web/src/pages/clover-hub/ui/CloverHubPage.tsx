@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronLeft } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import {
   clearPaymentReturnTo,
@@ -91,10 +91,13 @@ export function CloverHubPage({ search, onSearchClear, onProductClear }: CloverH
     setSettled(next);
   };
   const balanceNow = balanceQuery.data?.balance;
+  // 기준을 다시 따지는 때는 결과가 바뀌거나 잔액이 도착할 때뿐이다. 이미 잡힌 기준은 effect 이벤트로 읽어, 기준이 바뀐
+  // 것만으로는 돌지 않는다.
+  const recordFirstBalanceAfterSettle = useEffectEvent((balance: number) => {
+    if (balanceAtSettle === undefined && firstBalanceAfterSettle === undefined) setFirstBalanceAfterSettle(balance);
+  });
   useEffect(() => {
-    if (settled && balanceAtSettle === undefined && firstBalanceAfterSettle === undefined && balanceNow !== undefined) {
-      setFirstBalanceAfterSettle(balanceNow);
-    }
+    if (settled && balanceNow !== undefined) recordFirstBalanceAfterSettle(balanceNow);
   }, [settled, balanceNow]);
 
   usePaymentRedirect(search, handleSettled, onSearchClear);
@@ -106,8 +109,12 @@ export function CloverHubPage({ search, onSearchClear, onProductClear }: CloverH
     resolveHubReturnTo({ paymentId: search.paymentId, code: search.code }, readPaymentReturnTo()),
   );
   const returnTo = search.returnTo ?? paymentReturnTo;
-  useEffect(() => {
+  // 처음 그린 화면의 주소로 한 번만 판정한다 — 결제 결과 쿼리를 지운 뒤의 주소로 다시 따지지 않는다.
+  const clearPaymentReturnToOnRedirect = useEffectEvent(() => {
     if (resolvePaymentRedirect(search).kind !== "none") clearPaymentReturnTo();
+  });
+  useEffect(() => {
+    clearPaymentReturnToOnRedirect();
   }, []);
   const returnPlacement = getReturnPlacement(settled?.result, returnTo);
 
@@ -188,18 +195,23 @@ export function CloverHubPage({ search, onSearchClear, onProductClear }: CloverH
  * 온다(`resolveRequestedProduct` 가 `open` 을 줄 때). 같은 키를 두 번 열지 않게 연 키를 ref 로 기억한다 — StrictMode 의
  * 이중 실행에서 창이 두 개 뜬다.
  *
- * effect 는 열 상품이 바뀔 때만 돈다. 콜백과 응답 객체는 렌더마다 새로 만들어지고, 키가 같으면 같은 요청이다. */
+ * effect 는 열 상품의 키가 바뀔 때만 돈다. 콜백과 응답 객체는 렌더마다 새로 만들어지고 키가 같으면 같은 요청이라, 그
+ * 둘은 effect 이벤트로 읽는다. */
 function useOpenRequestedProduct(
   product: CloverProductOffer | undefined,
   onOpen: (product: CloverProductOffer) => void,
 ) {
   const openedKey = useRef<string | null>(null);
+  const productKey = product?.key;
+  const openProduct = useEffectEvent(() => {
+    if (product) onOpen(product);
+  });
 
   useEffect(() => {
-    if (!product || openedKey.current === product.key) return;
-    openedKey.current = product.key;
-    onOpen(product);
-  }, [product?.key]);
+    if (productKey === undefined || openedKey.current === productKey) return;
+    openedKey.current = productKey;
+    openProduct();
+  }, [productKey]);
 }
 
 /** 충전하지 않고 돌아가는 길. 제목에 딸린 보조 이동이라 무채색 텍스트 링크다(솔리드는 성공 뒤 결과 블록 몫). 보더가

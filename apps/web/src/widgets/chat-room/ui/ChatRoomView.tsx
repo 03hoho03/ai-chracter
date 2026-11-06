@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
@@ -134,9 +134,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     },
   );
   const isSending = status.kind === "sending";
-  // 턴이 시작되면(보내기·수정·다시 생성·재시도 모두 여기로 모인다) 재생성 직후의 되돌리기 안내를 거둔다.
+  // 턴이 시작되면(보내기·수정·다시 생성·재시도 모두 여기로 모인다) 재생성 직후의 되돌리기 안내를 거둔다. 거두는 함수는
+  // 렌더마다 새로 만들어지므로 effect 이벤트로 읽는다 — 보내는 중으로 바뀔 때만 돌아야 한다.
+  const dismissRestoreOfferOnSend = useEffectEvent(dismissRestoreOffer);
   useEffect(() => {
-    if (isSending) dismissRestoreOffer();
+    if (isSending) dismissRestoreOfferOnSend();
   }, [isSending]);
   const isMemoryPanelOpen = useAtomValue(chatSidePanelAtom) === "memory";
   useMemoryFollowUpRefresh({ roomId, isSending, isPanelOpen: isMemoryPanelOpen });
@@ -177,7 +179,8 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   // 뜨자마자 사라진다 — 로컬 state로 "봤다"는 사실을 분리해서 들고 있는다. room이 비동기로 로드되므로
   // useEffectOnce 대신 usePlayContent와 동일한 ref 가드+useEffect 패턴을 쓴다.
   const [isVersionUpgradeBannerVisible, setIsVersionUpgradeBannerVisible] = useState(false);
-  const acknowledgeVersionUpgradeMutation = useAcknowledgeVersionUpgradeMutation(roomId);
+  // 뮤테이션 결과 객체는 렌더마다 바뀌지만 `mutate` 는 안정적이라 그것만 꺼내 의존성에 둔다.
+  const { mutate: acknowledgeVersionUpgrade } = useAcknowledgeVersionUpgradeMutation(roomId);
   const versionUpgradeAcknowledgedRef = useRef(false);
   useEffect(() => {
     if (versionUpgradeAcknowledgedRef.current || !room) return;
@@ -186,9 +189,9 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       setIsVersionUpgradeBannerVisible(true);
       // mutateAsync가 아니라 mutate인 채로 둔다 — per-call 콜백이 없고, 결과와 무관하게 항상 일어나야 할
       // 부수효과는 훅 정의의 onSuccess에 있다(CLAUDE.md "마운트 시 뮤테이션"). 바꾸면 실패 시 unhandled rejection만 는다.
-      acknowledgeVersionUpgradeMutation.mutate();
+      acknowledgeVersionUpgrade();
     }
-  }, [room]);
+  }, [room, acknowledgeVersionUpgrade]);
 
   function handleDeleteMessage(messageId: string) {
     deleteMessageMutation.mutate(messageId, {
