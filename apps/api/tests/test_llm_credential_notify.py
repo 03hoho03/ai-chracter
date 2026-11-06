@@ -108,17 +108,23 @@ async def test_spawned_notification_is_kept_until_done(monkeypatch: pytest.Monke
 
 # ── 같은 표지로 한 번만 ─────────────────────────────────────────────────────────────────
 async def test_once_notification_is_sent_once_per_key_within_its_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
-    """같은 표지로는 수명 안에 한 번만 보낸다(표지를 처음 세운 쪽만). 표지가 다르면 따로 보낸다. 쏘는 쪽은 기다리지 않는다."""
+    """같은 표지로는 수명 안에 한 번만 보낸다 — 동시에 온 둘 중 Redis 에서 표지를 먼저 세운 쪽 하나만이다. 어느 쪽이 먼저 세울지는
+    정해지지 않는다: 두 태스크는 공용 풀의 서로 다른 연결로 보내므로 띄운 순서가 Redis 가 처리하는 순서가 아니다. 그래서 풀에
+    쉬는 연결을 여럿 만들어 두 태스크가 실제로 다른 연결로 겨루게 하고, 한 건만 갔는지와 그것이 둘 중 하나인지만 본다. 수명 안에
+    같은 표지로 다시 와도 보내지 않고, 표지가 다르면 따로 보낸다."""
     sent = _capture_credential_alerts(monkeypatch)
+    await asyncio.gather(*(redis_client.ping() for _ in range(4)))
 
-    spawn_credential_notification_once("llm_credential:alert:test:a", "첫 알림", ttl_seconds=600)
-    spawn_credential_notification_once("llm_credential:alert:test:a", "같은 표지", ttl_seconds=600)
+    spawn_credential_notification_once("llm_credential:alert:test:a", "같은 표지 하나", ttl_seconds=600)
+    spawn_credential_notification_once("llm_credential:alert:test:a", "같은 표지 둘", ttl_seconds=600)
     await _settle_credential_tasks()
+    racing = list(sent)
     spawn_credential_notification_once("llm_credential:alert:test:a", "같은 표지 다시", ttl_seconds=600)
     spawn_credential_notification_once("llm_credential:alert:test:b", "다른 표지", ttl_seconds=600)
     await _settle_credential_tasks()
 
-    assert sent == ["첫 알림", "다른 표지"]
+    assert len(racing) == 1 and racing[0] in {"같은 표지 하나", "같은 표지 둘"}
+    assert sent == [*racing, "다른 표지"]
     assert 590 < await redis_client.ttl("llm_credential:alert:test:a") <= 600
 
 
