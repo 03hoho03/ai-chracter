@@ -179,7 +179,7 @@ export function useCredentialScreenSlots({ list, runtimeSwitch }: UseCredentialS
           showNotice(reorderedNotice(event.list));
           return;
         case "state-changed":
-          showNotice(stateChangedNotice(event.credential));
+          showNotice(stateChangedNotice(event.credential, event.stateBefore));
           return;
         case "checked": {
           const checked = event.response.credential;

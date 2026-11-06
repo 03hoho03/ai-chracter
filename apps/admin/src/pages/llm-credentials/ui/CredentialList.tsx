@@ -116,7 +116,9 @@ export function CredentialList({ list, route, firsts, isListFetching, slots }: C
       slots.notify({ kind: "failed", action, credential, failure });
       return;
     }
-    if (saved.credential !== undefined) slots.notify({ kind: "state-changed", action, credential: saved.credential });
+    if (saved.credential !== undefined) {
+      slots.notify({ kind: "state-changed", action, credential: saved.credential, stateBefore: credential.state });
+    }
   };
 
   const handleCheck = async (credential: AdminLlmCredential) => {

@@ -174,7 +174,7 @@ function checkNotes(
 ): string[] {
   const notes: string[] = [];
   if (!latest.isCurrentSecret) notes.push(...oldSecretNotes(axisRows));
-  // 켜진 항목에는 붙이지 않는다 — 켜는 순간 판이 올라 늘 거짓이다.
+  // 켜진 항목에는 붙이지 않는다 — 아래 덧붙임은 모두 켜기 조건을 말하는데, 켜진 항목에는 켜기 조건이 해당하지 않는다.
   if (credential.state !== "active") {
     if (!latest.isCurrentStateVersion) notes.push(OLD_STATE_CHECK_TEXT);
     const latestRun = credential.checks.filter((check) => check.run === latest.run);

@@ -3,6 +3,7 @@ import type {
   AdminLlmCredentialCheckResponse,
   AdminLlmCredentialListResponse,
   ClaudeModelAxis,
+  CredentialState,
 } from "./credential";
 import { ENV_ROUTE_CAUSE_LABELS } from "./labels";
 import { formatUsd } from "./money";
@@ -97,9 +98,11 @@ export function reorderedNotice(list: AdminLlmCredentialListResponse): NoticeCop
   return { title: `순서를 저장했어요: ${list.credentials.map((credential) => credential.label).join(" → ")}` };
 }
 
-/** 켜기·끄기 응답(바뀐 뒤의 항목)으로 쓴다. 켜기는 응답만으로는 꺼짐에서 켰는지 소진에서 다시 켰는지 모른다 — 둘 다 "켰어요"다. */
-export function stateChangedNotice(credential: AdminLlmCredential): NoticeCopy {
-  return { title: `‘${credential.label}’을(를) ${credential.state === "active" ? "켰어요" : "껐어요"}.` };
+/** 켜기·끄기 응답(바뀐 뒤의 항목)과 바꾸기 전 상태로 쓴다. 응답만으로는 꺼짐에서 켰는지 소진에서 다시 켰는지 모르므로 부르는 쪽이
+ * 누른 순간의 상태를 넘긴다 — 소진에서 켠 것은 버튼 글자처럼 "다시 켰어요"다. */
+export function stateChangedNotice(credential: AdminLlmCredential, stateBefore: CredentialState): NoticeCopy {
+  if (credential.state !== "active") return { title: `‘${credential.label}’을(를) 껐어요.` };
+  return { title: `‘${credential.label}’을(를) ${stateBefore === "exhausted" ? "다시 켰어요" : "켰어요"}.` };
 }
 
 /** 확인 호출 한 회차의 요약. 첫 후보에서 빠진 축은 알림이 아니라 그 항목의 확인 블록이 진다. */

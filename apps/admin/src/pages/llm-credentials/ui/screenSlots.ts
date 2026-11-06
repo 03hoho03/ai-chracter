@@ -5,6 +5,7 @@ import type {
   AdminLlmCredential,
   AdminLlmCredentialCheckResponse,
   AdminLlmCredentialListResponse,
+  CredentialState,
 } from "../model/credential";
 import type { CredentialFailure } from "../model/failure";
 import type { CandidateChange, EffectiveRoute } from "../model/status";
@@ -31,7 +32,13 @@ export type CandidateChangeOutcome = { status: "done" } | { status: "cancelled" 
  * 화면이 순서 절 위에 직접 안내하므로 여기 오지 않는다. */
 export type CredentialEvent =
   | { kind: "reordered"; list: AdminLlmCredentialListResponse }
-  | { kind: "state-changed"; action: CredentialStateAction; credential: AdminLlmCredential }
+  | {
+      kind: "state-changed";
+      action: CredentialStateAction;
+      credential: AdminLlmCredential;
+      /** 누른 순간의 상태 — 소진에서 켠 것인지 알린다. */
+      stateBefore: CredentialState;
+    }
   | { kind: "checked"; before: AdminLlmCredentialListResponse; response: AdminLlmCredentialCheckResponse }
   | {
       kind: "failed";

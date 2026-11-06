@@ -118,7 +118,8 @@ const RULE_FAILURES = {
     message: "다른 조직의 키로는 바꿀 수 없어요. 이 항목을 지우고 새로 추가하세요.",
   }),
   "provider-not-available": () => ({ kind: "other", message: BEDROCK_UNSUPPORTED_TEXT }),
-  // 판 검사가 집합 검사보다 먼저라 둘 다 "다른 곳에서 먼저 바뀌었다"의 뜻이다.
+  // 서버는 판을 먼저 보고, 추가·삭제·순서 저장이 모두 판을 올린다 — 그래서 집합 거절(`order-mismatch`)은 판이 맞는데 보낸 id 가
+  // 지금 목록과 다를 때, 곧 화면 쪽 버그에서만 난다. 처리(닫고 다시 받기)는 그때도 해가 없어 낡은 판과 같이 둔다.
   "stale-list-revision": () => ({ kind: "stale-order", message: STALE_ORDER_TEXT }),
   "order-mismatch": () => ({ kind: "stale-order", message: STALE_ORDER_TEXT }),
   "pool-uncovered": (error) => {
