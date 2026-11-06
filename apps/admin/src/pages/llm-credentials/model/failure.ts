@@ -17,6 +17,8 @@ export type CredentialFormField = "label" | "apiKey" | "creditUsd" | "alertPct";
  * - `upstream-unavailable`: Anthropic 에 닿지 못했다 — 키가 틀린 게 아니라 칸을 비우지 않는다.
  * - `stale-order`: 화면이 본 목록 판이 낡았다 — 확인 대화상자가 열려 있으면 닫고 순서 절 위에 안내한다.
  * - `fields`: 서버 검증이 칸을 거절했다(서버는 입력값을 되돌려 싣지 않는다).
+ * - `unknown-outcome`: 서버 오류이거나 응답 없이 끊겼다(연결은 살아 있다) — 커밋 뒤에 응답만 끊겼을 수 있어 실패로 단정하지 않고,
+ *   목록을 다시 받아 실제 결과를 보게 한다.
  * 목록을 다시 받아야 하는 실패는 `failureReloadsList` 가 고른다 — 뮤테이션이 실패마다 이미 그렇게 한다.
  */
 export type CredentialFailure =
@@ -32,6 +34,7 @@ export type CredentialFailure =
   | { kind: "conflict"; message: string }
   | { kind: "fields"; fields: CredentialFormField[]; message: string }
   | { kind: "offline"; message: string }
+  | { kind: "unknown-outcome"; message: string }
   | { kind: "other"; message: string };
 
 export type FailureContext = {
@@ -66,6 +69,7 @@ type CredentialRule =
 const CHECK_LIMIT_CODE = "LLM_CREDENTIAL_CHECK_LIMIT";
 
 const GENERIC_FAILURE_TEXT = "저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+const UNKNOWN_OUTCOME_TEXT = "결과를 받지 못했어요 — 목록을 다시 받아 확인해 주세요.";
 const OFFLINE_FAILURE_TEXT = "서버에 닿지 못했어요. 연결을 확인한 뒤 다시 눌러 주세요. (보내지 않았어요)";
 const FIELDS_FAILURE_TEXT = "입력값을 확인해 주세요.";
 const STALE_ORDER_TEXT =
@@ -143,9 +147,10 @@ const RULE_FAILURES = {
 } satisfies Record<CredentialRule, (error: ApiError, context: FailureContext) => CredentialFailure>;
 
 export function classifyCredentialFailure(error: unknown, context: FailureContext = {}): CredentialFailure {
-  // 응답이 없다. 키를 싣는 요청은 오프라인에서 일시정지하지 않고 바로 실패하므로, 연결이 끊긴 상태면 보내지 않은 것이다.
+  // 응답이 없다. 키를 싣는 요청은 오프라인에서 일시정지하지 않고 바로 실패하므로, 연결이 끊긴 상태면 보내지 않은 것이다. 연결이
+  // 살아 있는데 응답이 없으면 서버가 받아 처리한 뒤 끊겼을 수 있다.
   if (!isApiError(error) || error.status === 0) {
-    return isOffline() ? { kind: "offline", message: OFFLINE_FAILURE_TEXT } : { kind: "other", message: GENERIC_FAILURE_TEXT };
+    return isOffline() ? { kind: "offline", message: OFFLINE_FAILURE_TEXT } : unknownOutcome();
   }
   if (error.status === 429 && apiErrorCode(error) === CHECK_LIMIT_CODE) {
     const seconds = detailNumber(error, "retryAfterSeconds") ?? CHECK_COOLDOWN_SECONDS;
@@ -161,11 +166,13 @@ export function classifyCredentialFailure(error: unknown, context: FailureContex
   }
   const rule = detailString(error, "rule");
   if (rule !== undefined && isCredentialRule(rule)) return RULE_FAILURES[rule](error, context);
+  // 거절 규칙이 없는 서버 오류는 커밋 뒤에 났을 수 있다(알림·감사 기록 단계 등).
+  if (error.status >= 500) return unknownOutcome();
   return { kind: "other", message: serverMessage(error) ?? GENERIC_FAILURE_TEXT };
 }
 
 /** 화면이 본 목록이 틀렸다는 뜻의 실패 — 저장소 설정이 사라졌거나, 판이 낡았거나, 미리 계산한 켜기 막힘이 낡았거나, 항목이 없거나,
- * 같은 변경이 겹쳤다. 다시 받아야 새 상태(저장소 띠·새 판·새 막힘)가 보인다. */
+ * 같은 변경이 겹쳤거나, 결과를 받지 못했다. 다시 받아야 새 상태(저장소 띠·새 판·새 막힘·실제로 된 변경)가 보인다. */
 export function failureReloadsList(failure: CredentialFailure): boolean {
   switch (failure.kind) {
     case "store-missing":
@@ -173,6 +180,7 @@ export function failureReloadsList(failure: CredentialFailure): boolean {
     case "enable-blocked":
     case "not-found":
     case "conflict":
+    case "unknown-outcome":
       return true;
     case "secret-rejected":
     case "upstream-unavailable":
@@ -186,6 +194,10 @@ export function failureReloadsList(failure: CredentialFailure): boolean {
     default:
       return assertNever(failure);
   }
+}
+
+function unknownOutcome(): CredentialFailure {
+  return { kind: "unknown-outcome", message: UNKNOWN_OUTCOME_TEXT };
 }
 
 function enableBlocked(blocker: EnableBlocker, context: FailureContext): CredentialFailure {
