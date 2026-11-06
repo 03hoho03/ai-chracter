@@ -266,14 +266,14 @@ def test_transient_check_under_a_new_key_does_not_fall_back_to_the_previous_key(
     [
         pytest.param("transient", [], id="transient-only-run-keeps-the-organization-error"),
         pytest.param("other-axis-failure", [], id="failure-on-another-axis-keeps-the-organization-error"),
+        pytest.param("same-axis-unrelated-failure", [], id="unrelated-failure-on-that-axis-keeps-the-organization-error"),
         pytest.param("same-axis-passes", list(CLAUDE_AXES), id="pass-on-that-axis-clears-the-organization-error"),
     ],
 )
-def test_organization_error_stays_until_that_axis_reaches_a_later_conclusion(latest: str, expected: list[str]) -> None:
-    """지금 키의 확인에서 응답 조직이 어긋난 축은, 그 축이 뒤에 확정 결과를 받기 전까지 항목 전체를 뺀다. 그 뒤가 일시 오류뿐이면
-    일시 오류를 건너뛴 그 축의 기록이 여전히 조직 오류다 — 일시 오류뿐인 회차가 조직 오류를 지우면 건너뛰기가 어긋난 회차의 다른
-    축 통과로 내려가 그 키로 요청을 보내게 된다. 다른 축의 실패도 그 축의 결론이 아니라 지우지 않고, 그 축의 통과(응답 조직이
-    맞았다)가 지운다."""
+def test_organization_error_stays_until_that_axis_passes_again(latest: str, expected: list[str]) -> None:
+    """지금 키의 확인에서 응답 조직이 어긋난 축은, 그 축이 다시 통과(응답 조직이 맞았다)하기 전까지 항목 전체를 뺀다. 그 뒤의
+    일시 오류는 조직에 대해 아무 말도 하지 않았고, 모델 없음·크레딧 같은 조직과 무관한 확정 실패도 응답 조직을 확인하지 않은
+    결과라 그 신호를 지우지 않는다 — 지우면 후보 판정이 어긋난 회차의 다른 축 통과로 내려가 그 키로 요청을 보내게 된다."""
     credential = _row()
     checks = [
         *_checks(credential, 1),
@@ -285,11 +285,33 @@ def test_organization_error_stays_until_that_axis_reaches_a_later_conclusion(lat
     elif latest == "other-axis-failure":
         checks += _checks(credential, 3, ("opus",), error_kind="credit")
         checks += _checks(credential, 3, ("sonnet", "haiku_writer", "haiku"), error_kind="unavailable")
+    elif latest == "same-axis-unrelated-failure":
+        checks += _checks(credential, 3, ("opus", "sonnet", "haiku_writer"), error_kind="unavailable")
+        checks += _checks(credential, 3, ("haiku",), error_kind="model-not-found")
     else:
         checks += _checks(credential, 3, ("opus", "sonnet", "haiku_writer"), error_kind="unavailable")
         checks += _checks(credential, 3, ("haiku",))
 
     assert _candidate_axes(credential, checks) == expected
+
+
+def test_organization_errors_on_several_axes_are_not_cleared_by_unrelated_failures_or_transient_errors() -> None:
+    """회차 2 에서 sonnet 만 429 이고 나머지 축이 모두 조직 불일치, 회차 3 에서 그 축들이 404·크레딧이고 sonnet 은 또 429 면 항목
+    전체가 빠진 채다 — 조직 불일치 축이 하나도 다시 통과하지 않았고, sonnet 의 회차 1 통과로 내려가면 조직이 어긋난 키로 요청을
+    보내게 된다. 대조군: 어긋났던 축이 모두 다시 통과하면 풀린다."""
+    credential = _row()
+    mismatched: tuple[ClaudeModelAxis, ...] = ("opus", "haiku_writer", "haiku")
+    checks = [
+        *_checks(credential, 1),
+        *_checks(credential, 2, ("sonnet",), error_kind="unavailable"),
+        *_checks(credential, 2, mismatched, error_kind="organization-mismatch"),
+        *_checks(credential, 3, ("opus",), error_kind="model-not-found"),
+        *_checks(credential, 3, ("haiku_writer", "haiku"), error_kind="credit"),
+        *_checks(credential, 3, ("sonnet",), error_kind="unavailable"),
+    ]
+
+    assert _candidate_axes(credential, checks) == []
+    assert _candidate_axes(credential, [*checks, *_checks(credential, 4, mismatched)]) == list(CLAUDE_AXES)
 
 
 def test_axis_check_still_counts_after_the_model_id_setting_changes(monkeypatch: pytest.MonkeyPatch) -> None:

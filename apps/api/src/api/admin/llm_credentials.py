@@ -10,8 +10,8 @@
   10초를 기다리면 그동안 다른 목록 변경이 줄 선다). 헤더가 없으면 조직 미확인으로 저장하고, 확인 호출이 헤더로 채울 때까지 켤
   수 없다. 키 교체가 헤더 없이 오면 옛 조직 표지를 지운다 — 남기면 다른 조직의 키로 바꾼 항목이 확인된 것으로 보인다. 같은
   키(같은 지문)를 다시 넣는 교체는 같은 조직이라 토큰 세기를 부르지 않고 표지를 그대로 둔다.
-- **켜기**는 지금 키 지문의 최신 확인 회차가 지금 판(`state_version`)에서 시작했고 통과한 축이 있고 조직 오류가 없을 때만
-  된다(`llm/credentials.py` 의 `enable_blocker`). 확인 호출은 시작할 때의 판·지문을 기록에 남기므로, 호출을 기다리는 동안
+- **켜기**는 지금 키 지문의 최신 확인 회차가 지금 판(`state_version`)에서 시작했고 통과한 축이 있고 풀리지 않은 조직 불일치가
+  없을 때만 된다(`llm/credentials.py` 의 `enable_blocker` — 조직 신호는 런타임과 같다). 확인 호출은 시작할 때의 판·지문을 기록에 남기므로, 호출을 기다리는 동안
   끄기·소진·키 교체가 있었으면 그 회차는 세지 않는다. 목록 사용 켜기는 모든 축이 지금 모델 id 로 확인된 켜진 항목으로 덮일
   것을 요구한다 — 모델 id 설정을 바꾼 뒤 항목마다 다시 확인하게 강제하는 자리다.
 - **추정 사용액**: 조회 응답은 충전액이 있는 항목마다 그 기준 이후의 추정 사용액을 싣는다(`llm/credential_usage.py`). 확인
@@ -105,6 +105,7 @@ from api.llm.credentials import (
     enable_blocker,
     latest_checks_per_axis,
     new_credential,
+    passed_axes,
     replace_secret,
     same_as_env_key,
     secret_fingerprint,
@@ -128,7 +129,8 @@ _BLOCKER_MESSAGES: dict[EnableBlocker, str] = {
     "organization-unverified": "조직이 확인되지 않아 켤 수 없습니다. 확인 호출로 조직을 다시 대조해 주세요.",
     "account-not-allowed": "이 항목의 조직이 지금 허용 목록에 없어 켤 수 없습니다.",
     "check-required": "지금 키로 한 확인 호출이 지금 상태에서 통과해야 켤 수 있습니다. 확인 호출을 먼저 해 주세요.",
-    "organization-mismatch": "마지막 확인에서 응답의 조직이 어긋난 축이 있어 켤 수 없습니다.",
+    "organization-mismatch": "응답의 조직이 어긋났던 축이 아직 다시 통과하지 않아 켤 수 없습니다. 그 축이 확인 호출에서 통과해야 "
+    "합니다.",
 }
 
 
@@ -338,7 +340,7 @@ def _checks_out(
     """축 순서로, 축마다 회차가 가장 큰 기록과 — 그것이 런타임이 그 축에 쓰는 기록이 아니면 — 런타임이 쓰는 기록을 하나 더.
     화면이 런타임과 같은 답(`credentials.passed_axes`)을 내려면 일시 오류 아래의 결론이 응답에 있어야 한다."""
     latest = latest_checks_per_axis(checks)
-    basis = conclusive_checks_per_axis(credential, checks)
+    basis = conclusive_checks_per_axis(credential.secret_fingerprint, checks)
     items: list[AdminLlmCredentialCheckItem] = []
     for axis in CLAUDE_AXES:
         newest, used = latest.get(axis), basis.get(axis)
@@ -389,6 +391,7 @@ def _credential_out(
         created_at=credential.created_at,
         updated_at=credential.updated_at,
         checks=_checks_out(credential, checks, model_ids),
+        runtime_axes=[axis for axis in CLAUDE_AXES if axis in passed_axes(credential, checks)],
         enable_blocker=enable_blocker(credential, checks, allowed_accounts()),
         spend=_spend_out(credential, spend),
     )
@@ -561,8 +564,7 @@ async def set_llm_credential_pool(
             if body.enabled:
                 rows = await _ordered(db)
                 checks = await _checks_of(db, [credential.id for credential in rows])
-                latest = {credential_id: latest_checks_per_axis(items) for credential_id, items in checks.items()}
-                axes = uncovered_axes(rows, latest, current_model_ids(), allowed_accounts())
+                axes = uncovered_axes(rows, checks, current_model_ids(), allowed_accounts())
                 if axes:
                     raise _rule(
                         status.HTTP_409_CONFLICT,
@@ -642,7 +644,8 @@ async def replace_llm_credential_secret(
     notify: Notifier = Depends(get_credential_notifier),
 ) -> AdminLlmCredential:
     """키만 바꾼다(한 항목 = 한 계정 — 다른 조직의 키로는 바꾸지 않는다). 상태·판은 그대로이고, 확인 기록이 옛 지문에 묶여
-    있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
+    있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 예전에 쓰던 키로 되돌리면 그 키로 한 예전 확인이 다시 지금 키의
+    확인으로 센다(런타임도 바로 그 결론을 쓴다) — 알림이 그렇게 말한다. 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
     없을 때 살리는 길) 지문이 같아 옛 확인 기록이 그대로 지금 키의 확인으로 센다 — 암호문만 지금 키로 다시 쓰고, 같은 키는
     같은 조직이라 조직 조회를 부르지 않고 조직 표지도 그대로 둔다."""
     _require_store()
@@ -664,6 +667,10 @@ async def replace_llm_credential_secret(
         old_fingerprint = credential.secret_fingerprint
         old_is_env_key = same_as_env_key(credential)
         same_key = old_fingerprint == fingerprint
+        # 예전에 쓰던 키로 되돌리는가 — 그 키로 한 결론 기록이 있으면 교체 즉시 그 기록이 다시 지금 키의 확인이 된다.
+        counts_again = not same_key and bool(
+            conclusive_checks_per_axis(fingerprint, (await _checks_of(db, [credential.id]))[credential.id])
+        )
         cleared = False
         if same_key:
             pass  # 같은 키는 같은 조직이다 — 조직 표지를 그대로 둔다.
@@ -708,7 +715,9 @@ async def replace_llm_credential_secret(
     message = f"[Claude 자격] 키 교체 — {credential.provider} · {credential.label} · {fingerprints}"
     # 같은 키면 옛 키가 곧 지금 키라 확인 기록이 그대로 세고 폐기할 옛 키도 없다.
     if not same_key:
-        message += " · 확인 호출 전까지 미확인" + _env_key_line(old_is_env_key)
+        message += (" · 이 키로 한 이전 확인이 다시 센다" if counts_again else " · 확인 호출 전까지 미확인") + _env_key_line(
+            old_is_env_key
+        )
         if same_as_env_key(credential):
             message += "\n새 키는 env 롤백 키와 같다"
     if cleared:
@@ -834,19 +843,24 @@ def _reconcile(
     return outcomes, fill
 
 
-def _axis_result(axis: ClaudeModelAxis, kind: CheckErrorKind | None) -> str:
-    """감사·알림의 축 하나. 일시 오류는 실패가 아니라 이전 결과 유지로 적는다 — 런타임이 그 축의 이전 결론을 그대로 쓴다
-    (`credentials.passed_axes`)."""
+def _axis_result(axis: ClaudeModelAxis, kind: CheckErrorKind | None, *, concluded_before: bool) -> str:
+    """감사·알림의 축 하나. 일시 오류는 실패가 아니라 이전 결과로 적는다 — 런타임이 그 축의 이전 결론을 그대로 쓴다
+    (`credentials.passed_axes`). 이 키로 한 이전 결론이 없으면(키를 막 바꾼 뒤의 첫 확인 등) 옛 키의 통과가 이어지는 것처럼
+    읽히지 않게 그 축을 아직 쓰지 않는다고 적는다."""
     if kind is None:
         return f"{axis} 통과"
     if kind == TRANSIENT_CHECK_ERROR:
-        return f"{axis} 일시 오류(이전 결과 유지)"
+        if concluded_before:
+            return f"{axis} 일시 오류(이전 결과 유지)"
+        return f"{axis} 일시 오류(이 키로 한 이전 결과 없음 — 이 모델은 아직 쓰지 않는다)"
     return f"{axis} 실패({kind})"
 
 
-def _axis_results(outcomes: Sequence[_Outcome]) -> list[str]:
+def _axis_results(outcomes: Sequence[_Outcome], concluded_before: set[ClaudeModelAxis]) -> list[str]:
     kinds = {axis: kind for group, kind, _ in outcomes for axis in group.axes}
-    return [_axis_result(axis, kinds[axis]) for axis in CLAUDE_AXES if axis in kinds]
+    return [
+        _axis_result(axis, kinds[axis], concluded_before=axis in concluded_before) for axis in CLAUDE_AXES if axis in kinds
+    ]
 
 
 @router.post("/admin/llm-credentials/{credential_id}/check")
@@ -923,6 +937,9 @@ async def check_llm_credential(
                 for group, kind, header in outcomes
             ]
             fill = None
+        # 이번 회차를 쓰기 전의 기록 — 일시 오류 축의 문구가 이 키로 한 이전 결론이 있는지에 따라 갈린다.
+        earlier = await _checks_of(db, [credential_id])
+        concluded_before = set(conclusive_checks_per_axis(started_fingerprint, earlier[credential_id]))
         run: int = (
             await db.execute(
                 select(func.coalesce(func.max(LlmCredentialCheck.run), 0) + 1).where(
@@ -949,7 +966,7 @@ async def check_llm_credential(
             current.account_ref = fill
             current.updated_at = datetime.now(UTC)
         subject = _subject(current, started_fingerprint)
-        axis_results = _axis_results(outcomes)
+        axis_results = _axis_results(outcomes, concluded_before)
         await record_admin_action(
             db,
             admin_id=admin_id,

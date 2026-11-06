@@ -106,6 +106,7 @@ _CREDENTIAL_FIELDS = {
     "createdAt",
     "updatedAt",
     "checks",
+    "runtimeAxes",
     "enableBlocker",
     "spend",
 }
@@ -1275,6 +1276,64 @@ async def test_listing_adds_the_runtime_basis_row_under_a_transient_latest_check
     assert [(c["modelAxis"], c["run"], c["isRuntimeBasis"]) for c in second["checks"]] == [
         (axis, 1, False) for axis in _AXES_IN_ORDER
     ]
+    assert (first["runtimeAxes"], second["runtimeAxes"]) == (_AXES_IN_ORDER, [])
+
+
+async def test_an_uncleared_organization_mismatch_drops_the_item_from_runtime_enable_and_pool_on(
+    db_client: httpx.AsyncClient, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """확인에서 Haiku 응답의 조직이 어긋난 뒤 다음 확인에서 Haiku 만 429 를 내고 나머지가 통과하면, 어긋난 축이 다시 통과하지
+    않았으므로 서버가 계산한 런타임 축(`runtimeAxes`)은 비고, 켜기는 조직 불일치로 막히고, 목록 사용 켜기도 어느 축도 덮였다고
+    보지 않는다 — 셋이 같은 조직 규칙을 쓴다. Haiku 가 다시 통과하면 풀린다."""
+    ready = await _ready(db_client)
+    probe.results[_IDS["haiku"]] = CheckCallResult(error_kind=None, organization=_OTHER_ORG)
+    await _allow_another_check(ready["id"])
+    await _check(db_client, ready["id"])
+    probe.results[_IDS["haiku"]] = CheckCallResult(error_kind="unavailable", organization=None)
+    await _allow_another_check(ready["id"])
+    await _check(db_client, ready["id"])
+
+    (item,) = (await _listing(db_client))["credentials"]
+    pool = await db_client.put(f"{_BASE}/pool", json={"enabled": True})
+    probe.results.clear()
+    await _allow_another_check(ready["id"])
+    cleared = (await _check(db_client, ready["id"]))["credential"]
+
+    assert (item["runtimeAxes"], item["enableBlocker"]) == ([], "organization-mismatch")
+    assert (pool.status_code, pool.json()["detail"]["axes"]) == (409, _AXES_IN_ORDER)
+    assert (cleared["runtimeAxes"], cleared["enableBlocker"]) == (_AXES_IN_ORDER, None)
+
+
+async def test_returning_to_an_earlier_key_counts_its_earlier_checks_again(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
+) -> None:
+    """키를 A 에서 B 로 바꾼 뒤 B 의 첫 확인이 429 뿐이면 B 는 어느 축도 받지 않고, 알림은 일시 오류 축이 이 키로 한 이전 결과가
+    없어 아직 쓰지 않는다고 말한다(옛 키 A 의 통과가 이어지는 것처럼 읽히지 않게). 다시 A 로 되돌리면 확인 기록이 지문으로 그때의
+    키에 묶이므로 A 로 한 예전 확인이 다시 지금 키의 확인으로 세어 런타임이 바로 A 를 쓰고, 알림도 미확인이 아니라 그렇게 말한다."""
+    ready = await _ready(db_client)
+    key_a, key_b = secret_fingerprint(FAKE_API_KEY), secret_fingerprint(FAKE_OTHER_API_KEY)
+    assert (await db_client.put(f"{_BASE}/{ready['id']}/secret", json={"apiKey": FAKE_OTHER_API_KEY})).status_code == 200
+    probe.default = CheckCallResult(error_kind="unavailable", organization=None)
+    await _allow_another_check(ready["id"])
+    under_b = (await _check(db_client, ready["id"]))["credential"]
+    transient_note = notes[-1]
+
+    back = await db_client.put(f"{_BASE}/{ready['id']}/secret", json={"apiKey": FAKE_API_KEY})
+
+    unused = "일시 오류(이 키로 한 이전 결과 없음 — 이 모델은 아직 쓰지 않는다)"
+    assert transient_note == (
+        f"[Claude 자격] 확인 — anthropic · 운영 계정 · 지문 {key_b} · opus {unused} · sonnet {unused} · "
+        f"haiku_writer {unused} · haiku {unused}"
+    )
+    assert under_b["runtimeAxes"] == []
+    assert back.status_code == 200
+    assert notes[-1] == (
+        f"[Claude 자격] 키 교체 — anthropic · 운영 계정 · 지문 {key_b} → {key_a} · 이 키로 한 이전 확인이 다시 센다\n"
+        "쓰지 않을 키면 콘솔에서 폐기한다"
+    )
+    assert back.json()["runtimeAxes"] == _AXES_IN_ORDER
+    row = await _row(db_session, ready["id"])
+    assert credentials.passed_axes(row, await _checks(db_session, ready["id"])) == frozenset(_AXES_IN_ORDER)
 
 
 async def test_check_on_an_unverified_credential_fails_a_later_axis_whose_header_differs_from_the_first(

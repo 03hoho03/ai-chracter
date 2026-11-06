@@ -1466,7 +1466,8 @@ export interface paths {
         /**
          * Replace Llm Credential Secret
          * @description 키만 바꾼다(한 항목 = 한 계정 — 다른 조직의 키로는 바꾸지 않는다). 상태·판은 그대로이고, 확인 기록이 옛 지문에 묶여
-         *     있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
+         *     있어 교체만으로 그 기록이 지금 키의 확인이 아니게 된다. 예전에 쓰던 키로 되돌리면 그 키로 한 예전 확인이 다시 지금 키의
+         *     확인으로 센다(런타임도 바로 그 결론을 쓴다) — 알림이 그렇게 말한다. 같은 키를 다시 붙여넣으면(암호화 키를 잃어 저장한 키를 읽을 수
          *     없을 때 살리는 길) 지문이 같아 옛 확인 기록이 그대로 지금 키의 확인으로 센다 — 암호문만 지금 키로 다시 쓰고, 같은 키는
          *     같은 조직이라 조직 조회를 부르지 않고 조직 표지도 그대로 둔다.
          */
@@ -8616,11 +8617,17 @@ export interface components {
          *     `checks` 는 축 순서이고, 축마다 회차가 가장 큰 기록이 먼저 오고, 그것이 런타임이 그 축에 쓰는 기록(`is_runtime_basis`)이
          *     아니고 그런 기록이 따로 있으면 그 기록이 바로 뒤에 하나 더 온다 — 한 축에 행이 둘이면 앞이 최신, 뒤가 런타임 기록이다.
          *     최신이 일시 오류인데 지금 키로 한 그 전 결론이 없거나, 최신이 옛 키의 기록이고 지금 키의 결론이 없으면 그 축은 행 하나이고
-         *     `is_runtime_basis` 가 거짓이다. 런타임에 받는 축은 이 행들로 이렇게 정해진다: `is_runtime_basis` 인 행 가운데 `error_kind`
-         *     가 `organization-mismatch`·`account-not-allowed` 인 것이 하나라도 있으면 어느 축도 받지 않고(조직 오류는 결론이라 그 축의
-         *     뒤따른 일시 오류가 지우지 않는다 — 그 축이 확정 결과를 받아야 풀린다), 아니면 `is_runtime_basis` 이고 `passed` 인 행의 축을
-         *     받는다. 여기에 켜짐(`state`)·조직 확인·지금 허용 목록·Anthropic 공급자 조건이 더해진다. 켜기(`enable_blocker`)와 목록 사용
-         *     켜기는 일시 오류를 건너뛰지 않고 최신 기록으로 판정한다.
+         *     `is_runtime_basis` 가 거짓이다. 이 행들은 표시용이다 — 조직 신호를 정하는 기록(그 축의 마지막 통과나 조직 오류)은 실리지 않을
+         *     수 있다.
+         *
+         *     `runtime_axes` 는 서버가 계산한 런타임 축(축 순서) — 확인 기록만으로 정하는 `llm/credentials.py` 의 `passed_axes` 결과
+         *     그대로다: 축마다 지금 키로 한 결론(일시 오류를 건너뛴 기록)이 통과한 축이고, 풀리지 않은 조직 불일치(어긋난 축이 다시
+         *     통과하기 전까지 — 그 축의 일시 오류나 조직과 무관한 실패로는 풀리지 않는다)가 있으면 빈 목록이다. 화면은 후보 축 판정에
+         *     이 칸을 쓰고 규칙을 다시 짜지 않는다. 켜짐(`state`)·조직 확인(`organization_verified`)·지금 허용 목록·Anthropic 공급자
+         *     조건은 **들어 있지 않다** — 런타임은 이 축에 그 조건을 더해 후보를 고르므로 화면도 켜짐·조직 확인·공급자는 그 칸(`state`·
+         *     `organization_verified`·`provider`)으로 따로 본다. 허용 목록은 응답에 없다(빠진 조직이면 `enable_blocker` 가
+         *     `account-not-allowed`). 켜기(`enable_blocker`)와 목록 사용 켜기는
+         *     일시 오류를 건너뛰지 않고 최신 기록으로 판정하고, 조직 신호는 이 칸과 같다.
          */
         AdminLlmCredential: {
             /**
@@ -8679,6 +8686,8 @@ export interface components {
             updatedAt: string;
             /** Checks */
             checks: components["schemas"]["AdminLlmCredentialCheckItem"][];
+            /** Runtimeaxes */
+            runtimeAxes: ("haiku_writer" | "sonnet" | "opus" | "haiku")[];
             /** Enableblocker */
             enableBlocker: ("organization-unverified" | "account-not-allowed" | "check-required" | "organization-mismatch") | null;
             spend: components["schemas"]["AdminLlmCredentialSpend"] | null;
