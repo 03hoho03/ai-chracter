@@ -14,6 +14,7 @@ import { Route as PromptSetsRouteImport } from './routes/prompt-sets'
 import { Route as PromptRoutingRouteImport } from './routes/prompt-routing'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LegalRouteImport } from './routes/legal'
+import { Route as FeatureSwitchesRouteImport } from './routes/feature-switches'
 import { Route as CreatorPayoutApplicationsRouteImport } from './routes/creator-payout-applications'
 import { Route as AppealsRouteImport } from './routes/appeals'
 import { Route as IndexRouteImport } from './routes/index'
@@ -58,6 +59,11 @@ const LoginRoute = LoginRouteImport.update({
 const LegalRoute = LegalRouteImport.update({
   id: '/legal',
   path: '/legal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FeatureSwitchesRoute = FeatureSwitchesRouteImport.update({
+  id: '/feature-switches',
+  path: '/feature-switches',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CreatorPayoutApplicationsRoute =
@@ -167,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/appeals': typeof AppealsRoute
   '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
+  '/feature-switches': typeof FeatureSwitchesRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/prompt-routing': typeof PromptRoutingRoute
@@ -194,6 +201,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/appeals': typeof AppealsRoute
   '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
+  '/feature-switches': typeof FeatureSwitchesRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/prompt-routing': typeof PromptRoutingRoute
@@ -222,6 +230,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/appeals': typeof AppealsRoute
   '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
+  '/feature-switches': typeof FeatureSwitchesRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/prompt-routing': typeof PromptRoutingRoute
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/'
     | '/appeals'
     | '/creator-payout-applications'
+    | '/feature-switches'
     | '/legal'
     | '/login'
     | '/prompt-routing'
@@ -278,6 +288,7 @@ export interface FileRouteTypes {
     | '/'
     | '/appeals'
     | '/creator-payout-applications'
+    | '/feature-switches'
     | '/legal'
     | '/login'
     | '/prompt-routing'
@@ -305,6 +316,7 @@ export interface FileRouteTypes {
     | '/'
     | '/appeals'
     | '/creator-payout-applications'
+    | '/feature-switches'
     | '/legal'
     | '/login'
     | '/prompt-routing'
@@ -333,6 +345,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppealsRoute: typeof AppealsRoute
   CreatorPayoutApplicationsRoute: typeof CreatorPayoutApplicationsRoute
+  FeatureSwitchesRoute: typeof FeatureSwitchesRoute
   LegalRoute: typeof LegalRoute
   LoginRoute: typeof LoginRoute
   PromptRoutingRoute: typeof PromptRoutingRoute
@@ -392,6 +405,13 @@ declare module '@tanstack/react-router' {
       path: '/legal'
       fullPath: '/legal'
       preLoaderRoute: typeof LegalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/feature-switches': {
+      id: '/feature-switches'
+      path: '/feature-switches'
+      fullPath: '/feature-switches'
+      preLoaderRoute: typeof FeatureSwitchesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/creator-payout-applications': {
@@ -541,6 +561,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppealsRoute: AppealsRoute,
   CreatorPayoutApplicationsRoute: CreatorPayoutApplicationsRoute,
+  FeatureSwitchesRoute: FeatureSwitchesRoute,
   LegalRoute: LegalRoute,
   LoginRoute: LoginRoute,
   PromptRoutingRoute: PromptRoutingRoute,

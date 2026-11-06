@@ -12,6 +12,7 @@ import {
   Scale,
   ScrollText,
   SquareTerminal,
+  ToggleRight,
   Users,
   Waypoints,
 } from "lucide-react";
@@ -52,6 +53,7 @@ export const ADMIN_NAV_GROUPS = [
       { label: "약관 관리", to: "/legal", icon: ScrollText },
       { label: "프롬프트 관리", to: "/prompt-sets", icon: SquareTerminal },
       { label: "모델 배정", to: "/prompt-routing", icon: Waypoints },
+      { label: "기능 스위치", to: "/feature-switches", icon: ToggleRight },
     ],
   },
 ] as const;
