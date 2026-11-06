@@ -88,14 +88,15 @@ export function useAutosave<TForm, TPayload>(opts: {
   const errorActionRef = useRef(opts.errorAction);
   errorActionRef.current = opts.errorAction;
 
+  // 디바운서는 이 네 값으로만 다시 만든다 — `opts` 는 호출부가 렌더마다 새 객체로 넘기므로 통째로 의존하면 매 렌더 새 디바운서가 생긴다.
+  const { save, formToServer, errorMessage, debounceMs } = opts;
   const debouncedSave = useMemo(
     () =>
       debounce((values: TForm) => {
-        void opts
-          .save(opts.formToServer(values))
+        void save(formToServer(values))
           .catch((error: unknown) => {
             const message =
-              opts.errorMessage?.(error) ??
+              errorMessage?.(error) ??
               "자동저장에 실패했어요. 입력한 내용은 그대로 있으니 잠시 후 다시 시도해주세요.";
             toast.error(message, {
               id: AUTOSAVE_ERROR_TOAST_ID,
@@ -104,8 +105,8 @@ export function useAutosave<TForm, TPayload>(opts: {
               action: errorActionRef.current,
             });
           });
-      }, opts.debounceMs ?? 1500),
-    [opts.save, opts.formToServer, opts.errorMessage, opts.debounceMs],
+      }, debounceMs ?? 1500),
+    [save, formToServer, errorMessage, debounceMs],
   );
 
   // 구독은 `debouncedSave`가 바뀔 때만(사실상 마운트 한 번) 다시 건다. 호출부는 `opts`를 렌더마다 새
