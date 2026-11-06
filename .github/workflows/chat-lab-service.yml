@@ -1,0 +1,135 @@
+name: chat-lab-service
+
+# 측정 런 묶음을 팀이 함께 보는 호스팅 서비스(`apps/chat-lab-service`)의 검사·테스트. 배포는 사람이 손으로 한다(서비스 README 의
+# 「손 배포」 절) — 이 워크플로는 이미지를 올리지도, VM 에 닿지도 않는다.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/chat-lab-service/**"
+      # 서비스 폴더 바로 아래 문서는 빌드·검사·테스트가 읽지 않는다 — `pyproject.toml` 에 `readme` 를 두지 않았고 이미지 빌드도
+      # `.dockerignore` 로 md 를 뺀다. `*` 는 `/` 를 넘지 않아 하위 폴더의 md 는 거르지 않는다.
+      - "!apps/chat-lab-service/*.md"
+      # 스키마 드리프트 검사가 이 생성물을 다시 떨궈 커밋본과 맞춰 보므로, 이 파일만 손으로 고친 커밋에도 검사가 돌게 한다.
+      - "apps/chat-lab/service-openapi.json"
+      # 묶음 모양 대조 테스트가 측정 서버 스키마를 JSON 으로 읽어 서비스가 읽는 칸이 아직 있는지 본다 — 측정 서버 스키마만 바뀐
+      # 커밋에도 대조가 돌게 한다.
+      - "apps/chat-lab/openapi.json"
+      # 이 워크플로의 검사 단계를 고친 커밋이 그 검사를 한 번도 거치지 않은 채 병합되지 않게 한다.
+      - ".github/workflows/chat-lab-service.yml"
+  pull_request:
+    paths:
+      # 각 줄의 이유는 push 쪽 주석과 같다.
+      - "apps/chat-lab-service/**"
+      - "!apps/chat-lab-service/*.md"
+      - "apps/chat-lab/service-openapi.json"
+      - "apps/chat-lab/openapi.json"
+      - ".github/workflows/chat-lab-service.yml"
+
+permissions:
+  contents: read
+
+# PR 은 같은 브랜치의 새 push 가 옛 실행을 취소한다. main push 는 실행마다 고유 그룹(run_id)이라 취소도 대체도 없다 — main 끼리
+# 한 그룹을 쓰면 그룹당 대기 실행이 하나만 남아, 연속 병합 때 중간 커밋의 main 검사가 사라진다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/chat-lab-service
+    services:
+      postgres:
+        # 서비스의 DB `chat_lab` 은 운영에서 또나와 같은 Postgres 인스턴스에 있다 — 그 서버와 같은 이미지로 검증한다. digest 는
+        # api.yml 과 같다(태그는 다시 밀릴 수 있어 매니페스트 digest 로 고정한다).
+        image: ghcr.io/03hoho03/postgres-pgvector@sha256:fe16e6e8926fa50cdc2d90e8a101e40d3b92efa555e310024dcec7f8a0913bc1
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # 시험이 읽는 env 는 이것 하나다. 세션이 이 DB 를 지우고 다시 만들므로 이름이 `_test` 로 끝나야 conftest 가 받는다.
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/chat_lab_service_ci_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.15"
+
+      - run: uv sync --locked
+
+      - run: uv run ruff check src migrations scripts tests
+
+      - run: uv run ruff format --check src migrations scripts tests
+
+      # mypy 증분 캐시를 실행 사이에 이어 쓴다. 캐시가 있어도 mypy 는 바뀐 파일과 그 파일에 기대는 모듈을 다시 검사하므로 판정은
+      # 캐시 없이 돌린 것과 같다. 의존 판(uv.lock)이나 설정(pyproject.toml)이 바뀌면 키가 바뀐다. `actions/cache` 는 잡의
+      # working-directory 를 따르지 않아 경로를 저장소 루트 기준으로 적는다.
+      - uses: actions/cache@v4
+        with:
+          path: apps/chat-lab-service/.mypy_cache
+          key: mypy-chat-lab-service-${{ runner.os }}-${{ hashFiles('apps/chat-lab-service/uv.lock', 'apps/chat-lab-service/pyproject.toml') }}-${{ github.sha }}
+          restore-keys: |
+            mypy-chat-lab-service-${{ runner.os }}-${{ hashFiles('apps/chat-lab-service/uv.lock', 'apps/chat-lab-service/pyproject.toml') }}-
+            mypy-chat-lab-service-${{ runner.os }}-
+
+      - run: uv run mypy src migrations scripts tests
+
+      # 웹이 쓰는 서비스 스키마 `apps/chat-lab/service-openapi.json` 은 커밋되는 생성물이다. 다시 떨궈 커밋본과 다르면 여기서
+      # 떨어뜨린다. 잡의 작업 폴더가 서비스 폴더라 경로를 `../chat-lab/` 로 적는다. `git diff` 대신 `git status --porcelain` 이
+      # 비었는지 보는 것은, 생성물을 커밋에서 빠뜨려 아직 추적되지 않는 새 파일을 `git diff` 가 보지 못해서다. 스키마는 설정·DB·
+      # 공개키 없이 만들어지므로 env 가 없는 이 잡에서도 로컬과 같은 바이트가 나온다.
+      - name: service-openapi.json 드리프트 검사
+        run: |
+          uv run python scripts/dump_openapi.py
+          test -z "$(git status --porcelain -- ../chat-lab/service-openapi.json)" || {
+            git status --porcelain -- ../chat-lab/service-openapi.json
+            git diff -- ../chat-lab/service-openapi.json
+            echo "::error::apps/chat-lab/service-openapi.json 이 서비스 스키마와 어긋났다 — apps/chat-lab-service 에서 'uv run python scripts/dump_openapi.py' 를 돌리고 커밋해라"
+            exit 1
+          }
+
+      # 마이그레이션이 모델과 어긋나지 않았는지 본다. pytest 가 쓰는 DB 와는 일부러 다른 이름을 쓴다 — pytest 는 세션이 끝날 때
+      # 자기 DB 를 내리고 지운다. 러너에 postgresql-client 가 있다고 가정하지 않고 이미 깔린 asyncpg 로 만든다.
+      - name: alembic check 용 DB 만들기
+        run: |
+          uv run python -c "
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              conn = await asyncpg.connect(host='localhost', port=5432, user='postgres', password='postgres', database='postgres')
+              await conn.execute('CREATE DATABASE chat_lab_service_ci_migrate')
+              await conn.close()
+
+          asyncio.run(main())
+          "
+
+      # 마이그레이션은 DB 주소 하나만 읽는다 — Access 설정 없이 돈다.
+      - name: alembic check
+        env:
+          LAB_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/chat_lab_service_ci_migrate
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+
+      # `--durations` 는 느린 테스트가 스위트 시간을 끌어올릴 때 이 로그만 보고 찾게 하려고 둔다.
+      - run: uv run pytest --durations=15 --cov --cov-report=term-missing:skip-covered --cov-fail-under=95
+
+      # 이미지가 빌드되는지는 PR 에서만 본다 — 이미지를 어디에도 올리지 않으므로 main push 에서 다시 만들어도 남는 것이 없다.
+      # 웹 빌드(pnpm)는 이 잡에 없으므로 `index.html` 하나만 든 임시 폴더를 웹 자리에 넘긴다.
+      - if: github.event_name == 'pull_request'
+        name: 이미지 빌드 확인
+        run: |
+          web_dir="$(mktemp -d)"
+          printf '<!doctype html>\n<title>chat-lab</title>\n' > "$web_dir/index.html"
+          docker build --build-context web="$web_dir" -t chat-lab-service:ci .

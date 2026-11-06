@@ -1390,6 +1390,24 @@ healthchecks.io dead man's switch는 만들지 않았다 — 이 작업의 범�
 자체가 이벤트 삭제 쿼리 한 번이라 `pg_dump`보다 훨씬 가볍고, 보관기간이 30일 단위라 몇 시간
 지연이 "30일간 보관 후 파기" 약속을 깨지 않는다 — 시간대를 더 정교하게 고를 이유가 없다.
 
+### chat-lab 호스팅 서비스 — 별도 compose, 별도 배포
+
+측정 런 묶음을 팀이 함께 보는 호스팅 서비스(`lab.ddona.site`)가 같은 VM 에서 돈다. `docker-compose.prod.yml` 과 **다른 compose
+프로젝트**(`ddona-lab`, 저장소 파일은 `apps/chat-lab-service/docker-compose.lab.yml`)이고 Bugsink 처럼 **앱 배포와 별도로 손으로**
+배포한다. 프로젝트에는 서비스 컨테이너 하나와 Cloudflare Tunnel 커넥터(`cloudflared`) 하나가 있고, 데이터는 또나와 **같은 Postgres
+인스턴스**의 별도 DB `chat_lab`(역할 `chat_lab`)에 있다. 바깥에서 들어오는 길은 Tunnel 하나라 Caddy·호스트 포트를 거치지 않는다.
+
+또나 쪽에서 알아야 할 것(까닭과 명령은 `apps/chat-lab-service/README.md` 의 "또나 쪽에 주는 결과" 절):
+
+- `deploy-api` 는 이 서비스를 건드리지 않는다 — 트리거 경로에 서비스 폴더가 없다. 또나를 배포해도 lab 은 그대로다.
+- lab 서비스 컨테이너가 `ddona_default` 망에 붙어 있다. 또나 스택을 `down` 할 때는 lab 을 먼저 내리고, 또나를 다시 띄운 뒤 lab 을 띄운다.
+- DB `chat_lab` 은 "백업 · 복원" 절의 백업 밖이다. 복구는 다시 올리기다.
+- 이 서비스는 `/opt/ddona/.env` 를 읽지 않는다. 대신 저장소에서 오지 않는 것 — VM 의 이 서비스 파일(비밀이 든 것 포함)과 Postgres
+  안의 DB `chat_lab`·역할 — 이 있어, VM 이나 Postgres 볼륨을 다시 만들면 README 절차로 다시 놓는다(파일 자리·권한은 README 의
+  "3. 파일 자리(VM)" 절).
+
+배포·롤백·팀원 추가·VM 재구축은 같은 README 의 "손 배포"·"롤백"·"팀원 추가·빼기"·"VM 재구축" 절.
+
 ### 3-7. VM 리소스 감시 — cron이 `free`/`df`를 직접 읽는다
 
 GCP Cloud Monitoring을 쓰지 않는 이유 —

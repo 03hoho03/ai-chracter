@@ -1,0 +1,83 @@
+[project]
+name = "chat-lab-service"
+version = "0.1.0"
+description = "채팅 측정 런 묶음을 팀이 함께 보는 호스팅 서비스"
+requires-python = ">=3.11"
+# 판은 apps/api 의 uv.lock 이 잠근 판과 같게 `==` 로 고정한다 — 운영에서 이미 도는 판을 쓰려는 것이고, 하한만 두면
+# lock 이 더 새 판(예: SQLAlchemy 2.1)을 고른다. apps/api 의 판을 올릴 때 이 목록도 같이 맞춘다.
+# `readme` 를 두지 않는다. 두면 빌드(`uv sync`)가 README 를 읽어 문서 이름만 바꿔도 이미지가 깨진다.
+dependencies = [
+    "alembic==1.18.5",
+    "anyio==4.14.1",
+    "asyncpg==0.31.0",
+    "cryptography==49.0.0",
+    "fastapi==0.139.0",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.14.2",
+    # 2.14.0 부터 모르는 kid 로 공개키를 다시 받는 횟수에 쿨다운(기본 30초)이 걸리고, 공개키 주소가
+    # 다른 곳으로 리다이렉트하면 따라가지 않는다. 그보다 낮은 판에서는 모르는 kid 를 담은 요청마다
+    # 공개키를 다시 받는다.
+    "pyjwt[crypto]>=2.14.0",
+    "sqlalchemy[asyncio]==2.0.51",
+    "starlette==1.3.1",
+    "uvicorn==0.50.2",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.15,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "asyncpg-stubs==0.31.3",
+    "httpx==0.28.1",
+    "mypy==2.1.0",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "pytest-cov==7.1.0",
+    "ruff==0.16.6",
+]
+
+[tool.ruff]
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["N", "ASYNC", "UP", "B", "TID", "RUF"]
+# RUF001/002/003 은 식별자에 숨은 동형이의 글자를 잡으려는 규칙인데, 한국어 산문 주석·문자열의 정상 문장
+# 부호(‘’·×)에 계속 걸린다.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+  "fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body",
+  "fastapi.Header", "fastapi.Security",
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# 동기 TestClient 는 앱을 다른 이벤트 루프에서 돌려, 테스트가 쥔 비동기 DB 엔진과 루프가 갈린다.
+"fastapi.testclient.TestClient".msg = "httpx.AsyncClient(ASGITransport) 를 쓸 것"
+
+[tool.mypy]
+python_version = "3.11"
+# 테스트 도우미 모듈(`tests/` 의 키·묶음 만들기)을 테스트 파일이 절대 import 하는데 `__init__.py` 가 없어,
+# 검색 경로에 넣어야 mypy 가 찾는다.
+mypy_path = ["src", "tests"]
+explicit_package_bases = true
+strict = true
+# strict 에 없는 검사다. 비동기 함수의 `await` 를 빠뜨리면 코루틴 객체가 늘 참이라 조건문이 오답에도
+# 통과하는데, strict 만으로는 이걸 못 잡는다.
+enable_error_code = ["truthy-bool"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+# 경로(`--cov=src/...`)가 아니라 패키지 이름이어야 한다 — 경로 꼴은 경고만 내고 조용히 어긋난다.
+source = ["chat_lab_service"]
+# SQLAlchemy 의 asyncio 는 greenlet 위에서 돌아 이 설정이 없으면 라우트 본문이 통째로 미커버로 찍힌다.
+# 공개키 받기·압축 풀기는 스레드에서 돌아 thread 도 둔다.
+concurrency = ["thread", "greenlet"]
