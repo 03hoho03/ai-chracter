@@ -3,7 +3,9 @@
 - `synthetic`: 합성 세트를 심고 확정·처리해 실행 폴더에 보고서(JSON·마크다운)와 결과(`outcomes.json`)를 쓴다. `--oracle` 이면
   해석기를 명세 정답을 그대로 내는 가짜(`FakeLLM(oracle=True)`)로 바꿔 끼워 모델을 하나도 부르지 않고, 보고서 머리에 오라클
   실행임을 적고 세트 결함 표(`oracle.py`)를 마크다운 파일 하나로 더 쓴다 — 유료 실측 전에 세트 자체의 결함을 찾는 실행이다.
-  원장을 쓰지 않으므로 원장·어댑터 인자를 받지 않는다(주면 거절한다).
+  원장을 쓰지 않으므로 원장·어댑터 인자를 받지 않는다(주면 거절한다). 중간에 끊기면 결함 표 머리에 판정 불가와 그 까닭을 적고
+  예외를 다시 올린다(종료 코드가 0 이 아니다). 실행 폴더에 다른 갈래의 보고서(`report.json` 의 `oracle` 이 다른 것)가 이미 있으면
+  무엇이든 하기 전에 거절한다 — 공짜 오라클 실행이 낸 돈의 결과를 덮거나, 유료 실행이 오라클 결과 폴더에 섞여 들지 않게.
 - `copy-text`: 텍스트 파일 폴더(사람 라벨 원고)에서 어댑터마다 새 소설 사본을 만들고 어댑터 → 소설 id 를 `copies.json` 에 쓴다.
   그 파일이 이미 있으면 `--add` 없이는 거절한다(덮으면 다른 어댑터의 사본 id 가 사라진다). 문단이 하나뿐인 화는 경고한다.
 - `extract`: 사람 라벨용 소설 사본의 앞 화들을 확정해 그 어댑터의 결과를 쓴다. 이미 정본 기억 확정이 있는 소설은 거절한다 —
@@ -66,6 +68,7 @@ async def synthetic(
     meter: Meter, repeats: int = 1, slots: frozenset[SlotId] | None = None, oracle: bool = False,
 ) -> int:
     """`oracle` 이면 `resolver` 는 명세 정답을 그대로 내는 가짜 해석기이고, 보고서와 함께 세트 결함 표를 쓴다."""
+    _check_run_dir(run_dir, oracle=oracle)
     outcomes: list[ChapterOutcome] = []
     halted: str | None = None
     try:
@@ -81,9 +84,22 @@ async def synthetic(
         )
         write_report(report, outcomes, run_dir)
         if oracle:
-            defects = defects_markdown(set_defects(eval_set, outcomes))
+            defects = defects_markdown(set_defects(eval_set, outcomes, halted=halted))
             (run_dir / "set-defects.md").write_text(defects, encoding="utf-8")  # cite-ok: 하네스의 출력 파일 이름
     return EXIT_BUDGET if halted else 0
+
+
+def _check_run_dir(run_dir: Path, *, oracle: bool) -> None:
+    """실행 폴더의 보고서가 다른 갈래(오라클이냐 아니냐)의 것이면 거절한다. 옛 보고서에 `oracle` 칸이 없으면 유료 실행으로 본다."""
+    path = run_dir / "report.json"
+    if not path.exists():
+        return
+    found = bool(json.loads(path.read_text(encoding="utf-8")).get("oracle"))
+    if found == oracle:
+        return
+    if oracle:
+        raise SystemExit(f"{path} 는 유료(오라클 아닌) 실행의 보고서다 — 오라클 실행이 덮지 않는다. 다른 실행 폴더를 쓴다")
+    raise SystemExit(f"{path} 는 오라클 실행의 보고서다 — 유료 실행 결과를 그 폴더에 쓰지 않는다. 다른 실행 폴더를 쓴다")
 
 
 async def copy_text(
@@ -329,7 +345,7 @@ async def _run(args: argparse.Namespace) -> int:
         _check_synthetic_args(args)
     if args.command == "synthetic" and args.oracle:
         eval_set = load_set(args.set, removed=args.removed)
-        # 호출 기록은 토큰 0 이라 원가가 0 이다 — 원장 없이 돌고 보고서의 원가 칸도 0 이다.
+        # 호출 기록은 모델 칸이 `oracle`(단가표에 없음)이고 토큰 0 이라 원가가 0 이다 — 원장 없이 돌고 보고서의 원가 칸도 0 이다.
         fake = FakeLLM(eval_set, oracle=True, prompt_tokens=0, output_tokens=0)
         meter = Meter()
         return await synthetic(

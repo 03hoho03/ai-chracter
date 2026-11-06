@@ -16,8 +16,9 @@
 
 문안 원천은 등록부의 추출 슬롯 채널을 모두 낸다 — 확정 입구가 배정된 체인에 채널이 있는지 먼저 보므로, 슬롯이 늘어도 여기를 고치지 않고 확정이 받힌다. 출력 꼴을 아는 슬롯은 사건·
 사실·지식이다 — 새 추출 슬롯이 등록부에 들어오면 그 슬롯의 출력 만들기를 여기 더해야 `slots` 가 넓어진다. 더하지 않으면 슬롯을
-좁히지 않은 확정(라벨용 추출)이 그 슬롯 작업에서 실패한다. 호출 기록 원소는 실제 어댑터와 같은 칸을 갖고 모델은 단가표에 있는
-id 라, 원장이 실제 호출처럼 원가를 친다.
+좁히지 않은 확정(라벨용 추출)이 그 슬롯 작업에서 실패한다. 호출 기록 원소는 실제 어댑터와 같은 칸을 갖는다. CI 모드의 모델은
+단가표에 있는 id 라 원장이 실제 호출처럼 원가를 친다. 오라클 모드의 모델은 `oracle` 이다 — 보고서의 실제 모델 칸에 실측 모델 id
+가 찍히지 않고, 비교 명령이 결과 묶음에서 오라클 실행을 알아보는 표지가 된다(단가표에 없어 원가는 0 이다).
 
 모호 후보 판정도 같은 해석기로 온다. 문안 원천은 판정 채널도 내고, 판정에는 판단 없이 늘 "모르겠다"를 답한다 — 그러면 후보
 경고만 남아(앎 출처 불명은 버려진다) 판정 실패 경고가 측정 결과에 섞이지 않는다. 명세는 판정 정답을 싣지 않는다."""
@@ -42,6 +43,8 @@ from api.novel_bible.rules.judge import CHANNEL as JUDGE_CHANNEL
 from novel_bible_eval.spec import ChapterSpec, EvalSet, NovelSpec, PlayRow
 
 T = TypeVar("T", bound=BaseModel)
+# 오라클 모드 호출 기록의 모델 칸.
+ORACLE_MODEL = "oracle"
 _LINE = re.compile(r"^\[\d+\] (.*)$", re.MULTILINE)
 _NOT_IN_MANUSCRIPT = "원고에 없는 구절"
 # 사건 슬롯 문안의 앞 화 사건 한 줄(`P1. 3화 — 요지`)과 사실 슬롯 문안의 플레이 사실 한 줄(`P1. 주어 · 속성: 값`).
@@ -177,7 +180,7 @@ class FakeLLM:
 
     def __init__(
         self, eval_set: EvalSet, *, faults: Faults | None = None, oracle: bool = False,
-        model: str = "gemini-3.5-flash-lite", prompt_tokens: int = 1_000, output_tokens: int = 200,
+        model: str | None = None, prompt_tokens: int = 1_000, output_tokens: int = 200,
     ) -> None:
         if oracle and faults is not None:
             raise ValueError("오라클 모드는 명세 정답을 그대로 낸다 — 틀린 출력을 섞지 않는다")
@@ -189,6 +192,8 @@ class FakeLLM:
                 self._chapters[tuple(probe.chapter.paragraphs)] = _Chapter(novel.key, probe.key, probe.chapter, novel)
         self._faults = faults or Faults()
         self._oracle = oracle
+        if model is None:
+            model = ORACLE_MODEL if oracle else "gemini-3.5-flash-lite"
         self._usage = {"backend": "fake", "model": model, "promptTokens": prompt_tokens, "outputTokens": output_tokens}
         self._failed: set[tuple[str, str]] = set()
         self._prompt_set_id = uuid.uuid4()
