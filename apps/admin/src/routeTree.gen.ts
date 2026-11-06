@@ -13,6 +13,7 @@ import { Route as UsageMetricsRouteImport } from './routes/usage-metrics'
 import { Route as PromptSetsRouteImport } from './routes/prompt-sets'
 import { Route as PromptRoutingRouteImport } from './routes/prompt-routing'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as LlmCredentialsRouteImport } from './routes/llm-credentials'
 import { Route as LegalRouteImport } from './routes/legal'
 import { Route as FeatureSwitchesRouteImport } from './routes/feature-switches'
 import { Route as CreatorPayoutApplicationsRouteImport } from './routes/creator-payout-applications'
@@ -54,6 +55,11 @@ const PromptRoutingRoute = PromptRoutingRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LlmCredentialsRoute = LlmCredentialsRouteImport.update({
+  id: '/llm-credentials',
+  path: '/llm-credentials',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LegalRoute = LegalRouteImport.update({
@@ -175,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
   '/feature-switches': typeof FeatureSwitchesRoute
   '/legal': typeof LegalRoute
+  '/llm-credentials': typeof LlmCredentialsRoute
   '/login': typeof LoginRoute
   '/prompt-routing': typeof PromptRoutingRoute
   '/prompt-sets': typeof PromptSetsRoute
@@ -203,6 +210,7 @@ export interface FileRoutesByTo {
   '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
   '/feature-switches': typeof FeatureSwitchesRoute
   '/legal': typeof LegalRoute
+  '/llm-credentials': typeof LlmCredentialsRoute
   '/login': typeof LoginRoute
   '/prompt-routing': typeof PromptRoutingRoute
   '/prompt-sets': typeof PromptSetsRoute
@@ -232,6 +240,7 @@ export interface FileRoutesById {
   '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
   '/feature-switches': typeof FeatureSwitchesRoute
   '/legal': typeof LegalRoute
+  '/llm-credentials': typeof LlmCredentialsRoute
   '/login': typeof LoginRoute
   '/prompt-routing': typeof PromptRoutingRoute
   '/prompt-sets': typeof PromptSetsRoute
@@ -262,6 +271,7 @@ export interface FileRouteTypes {
     | '/creator-payout-applications'
     | '/feature-switches'
     | '/legal'
+    | '/llm-credentials'
     | '/login'
     | '/prompt-routing'
     | '/prompt-sets'
@@ -290,6 +300,7 @@ export interface FileRouteTypes {
     | '/creator-payout-applications'
     | '/feature-switches'
     | '/legal'
+    | '/llm-credentials'
     | '/login'
     | '/prompt-routing'
     | '/prompt-sets'
@@ -318,6 +329,7 @@ export interface FileRouteTypes {
     | '/creator-payout-applications'
     | '/feature-switches'
     | '/legal'
+    | '/llm-credentials'
     | '/login'
     | '/prompt-routing'
     | '/prompt-sets'
@@ -347,6 +359,7 @@ export interface RootRouteChildren {
   CreatorPayoutApplicationsRoute: typeof CreatorPayoutApplicationsRoute
   FeatureSwitchesRoute: typeof FeatureSwitchesRoute
   LegalRoute: typeof LegalRoute
+  LlmCredentialsRoute: typeof LlmCredentialsRoute
   LoginRoute: typeof LoginRoute
   PromptRoutingRoute: typeof PromptRoutingRoute
   PromptSetsRoute: typeof PromptSetsRoute
@@ -398,6 +411,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/llm-credentials': {
+      id: '/llm-credentials'
+      path: '/llm-credentials'
+      fullPath: '/llm-credentials'
+      preLoaderRoute: typeof LlmCredentialsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/legal': {
@@ -563,6 +583,7 @@ const rootRouteChildren: RootRouteChildren = {
   CreatorPayoutApplicationsRoute: CreatorPayoutApplicationsRoute,
   FeatureSwitchesRoute: FeatureSwitchesRoute,
   LegalRoute: LegalRoute,
+  LlmCredentialsRoute: LlmCredentialsRoute,
   LoginRoute: LoginRoute,
   PromptRoutingRoute: PromptRoutingRoute,
   PromptSetsRoute: PromptSetsRoute,
