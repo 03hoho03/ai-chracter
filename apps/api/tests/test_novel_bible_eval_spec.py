@@ -30,6 +30,15 @@ def test_the_ci_fixture_reads_as_one_novel_of_three_chapters_and_four_probes() -
     assert "합성" in eval_set.note
 
 
+def test_onset_scope_and_uses_default_so_a_set_written_without_them_still_reads() -> None:
+    # 명세가 칸을 적지 않으면 시작 서술은 거짓, 범위는 불변 속성이면 작품 전체·아니면 이 장면부터, 사용은 없음이다.
+    (novel,) = load_set(FIXTURE).novels
+    lamp, eye = novel.chapters[0].facts[0], novel.chapters[2].facts[0]
+    assert (lamp.onset, lamp.scope, lamp.effective_scope) == (False, None, "from_here")
+    assert (eye.immutable, eye.effective_scope) == (True, "work")
+    assert all(event.uses == [] for chapter in novel.chapters for event in chapter.events)
+
+
 def _rejects(raw: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         EvalSet.model_validate(raw)
@@ -191,6 +200,13 @@ _B4 = ((("probes", 0, "expected_rule"), "immutable_attribute_mismatch"),)
         pytest.param([*_B4, (("probes", 0, "closed"), {"category": "number:cm", "values": ["170cm", "182 cm"],
                                                         "canonical": ["170", "182"]})],
                      id="number-pair-with-canonical-values"),
+        # 사실 슬롯은 불변 속성을 작품 전체 범위로 두고, 작품 전체 범위의 시작 서술을 거짓으로 고친다.
+        pytest.param([(("chapters", 2, "facts", 0, "scope"), "scene")], id="immutable-attribute-outside-the-work-scope"),
+        pytest.param([(("chapters", 2, "facts", 0, "onset"), True)], id="onset-on-an-immutable-attribute"),
+        pytest.param([(("chapters", 0, "facts", 0, "scope"), "work"), (("chapters", 0, "facts", 0, "onset"), True)],
+                     id="onset-on-a-work-scope-fact"),
+        pytest.param([(("chapters", 0, "events", 0, "uses"), [{"actor": "서하", "thing": "등불", "thing_kind": "weapon"}])],
+                     id="use-of-a-thing-that-is-neither-an-object-nor-an-ability"),
     ],
 )
 def test_a_spec_the_harness_could_not_seed_or_score_is_rejected(edits: list[Edit]) -> None:
@@ -237,6 +253,9 @@ _SAME_KEY_AFTER_THE_CHAPTER = {"visible_from": 3, **_MAP, "value": "구겨진 �
 # 1화에 접힌, 2화의 행과 같은 값을 반증한 행 — 앱은 뒤의 같은 값 행보다 이 반증 행을 싣는다.
 _SAME_VALUE_DISPROVED = {"visible_from": 1, **_MAP, "value": "바싹 마른 지도", "truth_status": "disproved"}
 _WET_MAP = {"subject": "서하", "kind": "possession", "values": ["젖은 지도"], "paragraph": 1}
+_USES_WET_MAP = {"actor": "서하", "thing": "젖은 지도", "thing_kind": "object"}
+_USES_COMPASS = {"actor": "서하", "thing": "나침반", "thing_kind": "object"}
+_HAS_COMPASS = {"subject": "서하", "kind": "possession", "values": ["나침반"], "paragraph": 1}
 _BELIEVES_DEAD = {
     "knower": "서하", "kind": "believes", "subject": "도윤", "subject_kind": "character", "fact_kind": "life",
     "values": ["dead"], "paragraph": 1,
@@ -270,6 +289,12 @@ _BELIEVES_DEAD = {
                      "빠졌다", id="probe-missing-the-chapter-of-the-fact-its-knowledge-is-about"),
         pytest.param([(("probes", 3, "depends_on"), [1, 3]), (("probes", 3, "chapter", "events", 0, "present"), ["서하", "뱃사람"])],
                      "빠졌다", id="probe-naming-a-person-by-an-alias"),
+        # 사용의 짝은 같은 행위자·대상의 소지·능력이다 — 탐침이 쓰는 것을 얻은 기본 화, 탐침이 얻는 것을 쓴 기본 화에 기댄다.
+        pytest.param([(("probes", 3, "depends_on"), [1, 3]), (("probes", 3, "chapter", "events", 0, "uses"), [_USES_WET_MAP])],
+                     "빠졌다", id="probe-missing-the-chapter-where-what-it-uses-was-acquired"),
+        pytest.param([(("probes", 3, "depends_on"), [1, 3]), (("chapters", 1, "events", 2, "uses"), [_USES_COMPASS]),
+                      (("probes", 3, "chapter", "facts"), [_HAS_COMPASS])],
+                     "빠졌다", id="probe-missing-the-chapter-that-used-what-it-acquires"),
         # 앱은 회상 관계의 대상을 그 사건만 덮는 첫 블록으로 푼다 — 같은 화에서 차례가 앞선 주선 사건이 그 사건의 문단을 모두
         # 덮으면 대상 블록이 없어 관계를 버린다. 차례는 첫 문단 순이다.
         pytest.param([(("chapters", 0, "events", 1, "paragraphs"), [2]), (("chapters", 2, "events", 1, "relation", "event"), 2)],

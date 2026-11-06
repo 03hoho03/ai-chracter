@@ -28,6 +28,7 @@ from api.novel_bible.ids import (
     EventActuality,
     EventRelationKind,
     FactKind,
+    FactScope,
     KnowledgeKind,
     WarningRule,
 )
@@ -104,10 +105,23 @@ class PlantedRelation(_Spec):
     event: int
 
 
+class PlantedUse(_Spec):
+    """사건 안에서 인물이 물건·능력을 쓴 것 — 사건 슬롯 출력의 사용 칸과 같은 꼴(행위자, 대상, 대상 종류). 얻기 전 사용 규칙은
+    같은 (행위자, 대상)의 소지(물건)·능력 사실과 짝짓는다 — 대상 이름이 그 사실의 값과 같은 개체로 풀려야 짝이 된다."""
+
+    actor: str
+    thing: str
+    thing_kind: Literal["object", "ability"]
+
+
 class PlantedEvent(_Spec):
+    """`uses` 는 그 사건의 사용이다. 적지 않으면 사용이 없는 사건이다 — 오라클 실행의 세트 결함 표는 적지 않은 주선 사건을
+    정답 칸 미기입으로 표시한다(규칙은 주선 사건의 사용만 읽는다)."""
+
     paragraphs: list[int]
     actuality: EventActuality = "present"
     present: list[str] = []
+    uses: list[PlantedUse] = []
     summary: str = ""
     relation: PlantedRelation | None = None
 
@@ -133,8 +147,15 @@ class SourceDifference(_Spec):
 
 class PlantedFact(_Spec):
     """`values` 는 맞다고 칠 값 표기 전부(정규화해서 견준다), `attribute_aliases` 는 속성·관계 이름의 다른 허용 표기다.
-    `subject_kind`·`immutable` 은 사실 슬롯 출력의 같은 이름 칸과 같은 뜻이다 — 불변 표시는 속성에만 둔다(슬롯 검증이 속성이 아닌
-    불변 사실을 버리므로 그런 정답은 맞힐 수 없다). `play_difference` 는 이 사실과 다른 플레이 행의 차례(소설의 `play`, 1부터)다."""
+    `subject_kind`·`immutable`·`onset`·`scope` 는 사실 슬롯 출력의 같은 이름 칸과 같은 뜻이다 — 불변 표시는 속성에만 둔다(슬롯
+    검증이 속성이 아닌 불변 사실을 버리므로 그런 정답은 맞힐 수 없다). `play_difference` 는 이 사실과 다른 플레이 행의 차례(소설의
+    `play`, 1부터)다.
+
+    `onset` 은 그 상태가 이 장면에서 시작됐다고 서술됐는가(얻음·배움·일어남·돌아옴)이고 적지 않으면 거짓이다. `scope` 는 그 사실이
+    걸치는 범위이고 적지 않으면(None) 불변 속성은 작품 전체(`work`), 그 밖은 이 장면부터(`from_here`)로 친다 — 슬롯 출력에 꼭 있는
+    칸이라 오라클이 낼 값이 `effective_scope` 다. 슬롯은 불변 속성을 작품 전체 범위로 고치고 작품 전체 범위의 시작 서술을 거짓으로
+    고치므로, 그와 어긋나게 적은 정답(불변 속성의 다른 범위, 작품 전체 범위의 시작 서술)은 받지 않는다. 매처는 이 두 칸을 견주지
+    않는다 — 규칙이 읽는 칸이라 오라클 실행이 세트를 확인할 때 쓴다."""
 
     subject: str
     subject_kind: EntityKind = "character"
@@ -144,6 +165,8 @@ class PlantedFact(_Spec):
     values: list[str]
     holds: bool = True
     immutable: bool = False
+    onset: bool = False
+    scope: FactScope | None = None
     paragraph: int
     source_difference: SourceDifference | None = None
     play_difference: int | None = None
@@ -152,8 +175,19 @@ class PlantedFact(_Spec):
     def _immutable_is_an_attribute(self) -> "PlantedFact":
         if self.immutable and self.kind != "attribute":
             raise ValueError("불변 표시는 속성 정답에만 둔다")
+        if self.immutable and self.scope not in (None, "work"):
+            raise ValueError("불변 속성의 범위는 작품 전체다 — 사실 슬롯이 그렇게 고친다")
+        if self.onset and self.effective_scope == "work":
+            raise ValueError("작품 전체 범위 사실에는 시작 서술을 두지 않는다 — 사실 슬롯이 거짓으로 고친다")
         _aliases_need_an_attribute(self.attribute, self.attribute_aliases)
         return self
+
+    @property
+    def effective_scope(self) -> FactScope:
+        """적은 범위, 적지 않았으면 불변 속성은 작품 전체·그 밖은 이 장면부터."""
+        if self.scope is not None:
+            return self.scope
+        return "work" if self.immutable else "from_here"
 
 
 class PlantedKnowledge(_Spec):
@@ -423,7 +457,8 @@ class NovelSpec(_Spec):
         빠지면 그 화가 정본에 못 든 반복에서도 탐침이 표본에 남아 오탐이 0 쪽으로 기운다. 정답에서 구할 수 있는 만큼만 본다.
         개체는 정답에 나오는 이름(사건 등장 인물, 사실 주어, 앎 주체, 지식 명제 주어 — 별칭은 그 이름으로)이다. 짝 사실은 탐침의
         사실·지식 명제와 주어·종류·술어가 같은(소지·능력은 같은 것을 가리키는) 기본 화 사실, 그리고 탐침 사건에 나오는 인물의
-        생사·출입 사실이다. 사용처럼 명세에 정답 칸이 없는 짝은 작성자 몫이다."""
+        생사·출입 사실이다. 사용은 같은 행위자·대상의 소지(물건)·능력과 짝이다 — 탐침이 쓰는 것을 얻은 기본 화와, 탐침이 얻는 것을
+        쓴 기본 화에도 기댄다."""
         names = {normalize_name(alias): normalize_name(name) for name, aliases in self.aliases.items() for alias in aliases}
 
         def entity(text: str) -> str:
@@ -447,6 +482,7 @@ class NovelSpec(_Spec):
                 for person in event.present
                 for kind in ("life", "presence")
             }
+            wanted |= _use_slots(chapter, entity)
             people = _named(chapter, entity)
             required: set[int] = set()
             for ordinal, base in enumerate(self.chapters, start=1):
@@ -454,7 +490,7 @@ class NovelSpec(_Spec):
                     slot
                     for fact in base.facts
                     for slot in _fact_slots(entity(fact.subject), fact.kind, fact.attribute, fact.values)
-                }
+                } | _use_slots(base, entity)
                 introduced = people & _named(base, entity)
                 if held & wanted or introduced:
                     required.add(ordinal)
@@ -514,6 +550,16 @@ def _fact_slots(subject: str, kind: FactKind, attribute: str | None, values: lis
     if kind in ("possession", "ability"):
         return {(*head, normalize_name(value)) for value in values}
     return {(*head, "")}
+
+
+def _use_slots(chapter: ChapterSpec, entity: Callable[[str], str]) -> set[tuple[str, str, str, str]]:
+    """화의 사용마다 그 짝이 될 사실 자리 — 물건은 소지, 능력은 능력."""
+    slots: set[tuple[str, str, str, str]] = set()
+    for event in chapter.events:
+        for use in event.uses:
+            kind: FactKind = "possession" if use.thing_kind == "object" else "ability"
+            slots |= _fact_slots(entity(use.actor), kind, None, [use.thing])
+    return slots
 
 
 def _named(chapter: ChapterSpec, entity: Callable[[str], str]) -> set[str]:
