@@ -4,7 +4,7 @@ import { Fragment, type ReactNode } from "react";
 
 import { formatMonthDayTime } from "@/shared/lib/format/formatDateTime";
 
-import { AXIS_LABELS } from "../model/axes";
+import { AXIS_LABELS, axisNames } from "../model/axes";
 import { checkCallCount } from "../model/checkCall";
 import type { AdminLlmCredential, AdminLlmCredentialCheckItem } from "../model/credential";
 import {
@@ -14,6 +14,7 @@ import {
   NO_CHECKS_TEXT,
   OLD_SECRET_CHECK_TEXT,
   OLD_STATE_CHECK_TEXT,
+  RETURNED_SECRET_CHECK_TEXT,
   TRANSIENT_RETRY_HINT_TEXT,
   TRANSIENT_WITH_PREVIOUS_TEXT,
   TRANSIENT_WITHOUT_PREVIOUS_TEXT,
@@ -41,12 +42,13 @@ type CheckResultsProps = {
 };
 
 /**
- * 확인 블록. 축마다 최신 결과를 보이고, 최신이 일시 오류면 런타임이 그대로 쓰는 이전 결과를 함께 보인다. 받을 수 있는 축 자체는 상태
- * 표지가 `runtimeAxes` 로 말한다 — 여기 행이 통과여도 그 축을 받지 않을 수 있고(풀리지 않은 조직 신호), 그 이유는 켤 수 없는 이유
- * 문장이 설명한다.
+ * 확인 블록. 축마다 최신 결과를 보이고, 최신이 일시 오류면 런타임이 그대로 쓰는 이전 결과를 함께 보인다. 최신이 바꾸기 전 키로 한
+ * 확인이면 런타임이 쓰는 지금 키의 이전 결과를 본문으로 올린다. 받을 수 있는 축 자체는 상태 표지가 `runtimeAxes` 로 말한다 — 여기
+ * 행이 통과여도 그 축을 받지 않을 수 있고(풀리지 않은 조직 신호), 그 이유는 켤 수 없는 이유 문장이 설명한다.
  */
 export function CheckResults({ credential, itemName, modelIds, lock, onCheck, notice }: CheckResultsProps) {
   const latest = latestCheck(credential.checks);
+  const axisRows = axisCheckRows(credential.checks);
   const isChecking = lock.kind === "checking";
   const callCount = checkCallCount(modelIds);
 
@@ -61,11 +63,11 @@ export function CheckResults({ credential, itemName, modelIds, lock, onCheck, no
             마지막 확인 {formatMonthDayTime(latest.checkedAt)} · {latest.run}번째
           </p>
           <dl className="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
-            {axisCheckRows(credential.checks).map((rows) => (
+            {axisRows.map((rows) => (
               <AxisResult key={rows.axis} rows={rows} currentModelId={modelIds[rows.axis]} />
             ))}
           </dl>
-          {checkNotes(credential, latest).map((note) => (
+          {checkNotes(credential, latest, axisRows).map((note) => (
             <p key={note} className="break-keep text-xs text-muted-foreground">
               {note}
             </p>
@@ -121,15 +123,25 @@ function AxisResult({ rows, currentModelId }: AxisResultProps) {
   );
 }
 
-/** 한 축의 결과 글자. 일시 오류는 결론이 아니라, 런타임이 쓰는 이전 결과(뒤 행)가 있으면 그것을 함께 보인다. 최신이 옛 키로 한 확인이고
- * 지금 키의 이전 결과가 있으면(예전 키로 되돌린 경우) 그것도 보인다. */
+type ResultLines = { main: string; isFailure: boolean; details: string[] };
+
+/** 한 축의 결과 글자. 일시 오류는 결론이 아니라, 런타임이 쓰는 이전 결과(뒤 행)가 있으면 그것을 함께 보인다. 최신이 바꾸기 전 키로 한
+ * 확인이고 지금 키로 한 이전 결과(뒤 행)가 있으면(예전 키로 되돌린 경우) 런타임은 그 결과를 쓰므로 그것이 본문이고, 최신은 작은 줄로
+ * 내린다 — 본문이 상태 표지가 따르는 `runtimeAxes` 와 같은 기록을 말하게. */
 function resultLines(
   latest: AdminLlmCredentialCheckItem,
   previous: AdminLlmCredentialCheckItem | undefined,
   currentModelId: string | undefined,
-): { main: string; isFailure: boolean; details: string[] } {
-  const details = [latest.sentModelId];
+): ResultLines {
+  if (!latest.isCurrentSecret && previous !== undefined) {
+    return verdictLines(
+      previous,
+      currentModelId,
+      `바꾸기 전 키로 한 확인: ${checkVerdictText(latest)} · ${formatMonthDayTime(latest.checkedAt)}`,
+    );
+  }
   if (latest.errorKind === "unavailable") {
+    const details = [latest.sentModelId];
     if (previous === undefined) {
       return { main: TRANSIENT_WITHOUT_PREVIOUS_TEXT, isFailure: false, details: [...details, TRANSIENT_RETRY_HINT_TEXT] };
     }
@@ -139,17 +151,29 @@ function resultLines(
       details: [...details, `이전: ${checkVerdictText(previous)} · ${formatMonthDayTime(previous.checkedAt)}`],
     };
   }
-  if (!latest.isCurrentSecret && previous !== undefined) {
-    details.push(`지금 키의 이전 결과: ${checkVerdictText(previous)} · ${formatMonthDayTime(previous.checkedAt)}`);
-  }
-  if (latest.passed && !latest.isCurrentModelId) details.push(modelIdChangedText(latest.sentModelId, currentModelId));
-  return { main: checkVerdictText(latest), isFailure: !latest.passed, details };
+  return verdictLines(latest, currentModelId);
+}
+
+/** 확인 행 하나의 결론을 본문으로. `note` 는 보낸 모델 id 바로 아래에 붙는 작은 줄이다. */
+function verdictLines(
+  check: AdminLlmCredentialCheckItem,
+  currentModelId: string | undefined,
+  note?: string,
+): ResultLines {
+  const details = [check.sentModelId];
+  if (note !== undefined) details.push(note);
+  if (check.passed && !check.isCurrentModelId) details.push(modelIdChangedText(check.sentModelId, currentModelId));
+  return { main: checkVerdictText(check), isFailure: !check.passed, details };
 }
 
 /** 블록 전체에 붙는 덧붙임. 한 회차는 네 축을 함께 쓰므로 최신 회차 하나로 본다. */
-function checkNotes(credential: AdminLlmCredential, latest: AdminLlmCredentialCheckItem): string[] {
+function checkNotes(
+  credential: AdminLlmCredential,
+  latest: AdminLlmCredentialCheckItem,
+  axisRows: readonly AxisCheckRows[],
+): string[] {
   const notes: string[] = [];
-  if (!latest.isCurrentSecret) notes.push(OLD_SECRET_CHECK_TEXT);
+  if (!latest.isCurrentSecret) notes.push(...oldSecretNotes(axisRows));
   // 켜진 항목에는 붙이지 않는다 — 켜는 순간 판이 올라 늘 거짓이다.
   if (credential.state !== "active") {
     if (!latest.isCurrentStateVersion) notes.push(OLD_STATE_CHECK_TEXT);
@@ -159,6 +183,17 @@ function checkNotes(credential: AdminLlmCredential, latest: AdminLlmCredentialCh
     if (latest.isCurrentSecret && isTransientOnly) notes.push(ENABLE_NEEDS_CONCLUSIVE_TEXT);
   }
   return notes;
+}
+
+/** 최신 회차가 바꾸기 전 키로 한 것일 때의 덧붙임. 지금 키로 한 이전 결과(뒤 행)가 있는 축은 런타임이 그 결과를 쓰고, 없는 축은
+ * 지금 키로 다시 확인해야 쓴다. 한 블록에 두 경우가 섞이면 축 이름을 앞에 붙여 두 줄로 가른다. */
+function oldSecretNotes(axisRows: readonly AxisCheckRows[]): string[] {
+  const oldSecretRows = axisRows.filter((rows) => !rows.latest.isCurrentSecret);
+  const returned = oldSecretRows.flatMap((rows) => (rows.previous === undefined ? [] : [rows.axis]));
+  const unchecked = oldSecretRows.flatMap((rows) => (rows.previous === undefined ? [rows.axis] : []));
+  if (returned.length === 0) return [OLD_SECRET_CHECK_TEXT];
+  if (unchecked.length === 0) return [RETURNED_SECRET_CHECK_TEXT];
+  return [`${axisNames(returned)}: ${RETURNED_SECRET_CHECK_TEXT}`, `${axisNames(unchecked)}: ${OLD_SECRET_CHECK_TEXT}`];
 }
 
 function lockDescriptionId(credentialId: string, lock: CheckLock): string {

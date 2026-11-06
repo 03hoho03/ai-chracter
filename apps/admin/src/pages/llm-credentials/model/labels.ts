@@ -113,6 +113,7 @@ export const TRANSIENT_WITH_PREVIOUS_TEXT = "일시 오류 — 이전 결과 유
 export const TRANSIENT_WITHOUT_PREVIOUS_TEXT = "일시 오류 — 이 키로 한 이전 결과가 없어 이 모델은 아직 쓰지 않아요";
 export const TRANSIENT_RETRY_HINT_TEXT = "1분 뒤 다시 확인하세요";
 export const OLD_SECRET_CHECK_TEXT = "키를 바꾸기 전에 한 확인이에요 — 지금 키로 다시 확인해야 써요.";
+export const RETURNED_SECRET_CHECK_TEXT = "지금 키로 예전에 한 확인 결과를 써요 — 키를 바꾸기 전에 한 최신 확인은 세지 않아요.";
 export const OLD_STATE_CHECK_TEXT = "상태가 바뀌기 전에 한 확인이라 켜기 조건에 세지 않아요.";
 export const ENABLE_NEEDS_CONCLUSIVE_TEXT =
   "켜려면 최신 확인이 일시 오류 없이 통과해야 해요 — 켜기 조건은 이전 결과로 내려가지 않아요.";
