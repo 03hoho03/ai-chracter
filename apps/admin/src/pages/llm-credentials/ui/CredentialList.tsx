@@ -130,8 +130,12 @@ export function CredentialList({ list, route, firsts, isListFetching, slots }: C
       slots.notify({ kind: "checked", before, response });
     } catch (error) {
       const failure = classifyCredentialFailure(error);
-      // 서버는 항목을 찾기 전에 횟수를 세므로 거절된 확인도 1분 창을 쓴다.
-      startCooldown(credential.id, failure.kind === "rate-limited" ? failure.retryAfterSeconds : CHECK_COOLDOWN_SECONDS);
+      // 서버는 항목을 찾기 전에 횟수를 세므로 서버에 닿은 실패만 1분 창을 쓴다(결과 미확정은 닿았을 수 있어 센다). 보내기 직전에
+      // 오프라인이었던 실패는 서버에 닿지 않아 횟수가 없으니 잠그지 않는다.
+      if (failure.kind !== "offline") {
+        const seconds = failure.kind === "rate-limited" ? failure.retryAfterSeconds : CHECK_COOLDOWN_SECONDS;
+        startCooldown(credential.id, seconds);
+      }
       slots.notify({ kind: "failed", action: "check", credential, failure });
     } finally {
       setCheckingIds((prev) => withoutKey(prev, credential.id));
