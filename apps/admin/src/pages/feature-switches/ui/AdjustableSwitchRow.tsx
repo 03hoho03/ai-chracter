@@ -51,8 +51,10 @@ export function AdjustableSwitchRow({ item, list, meId }: AdjustableSwitchRowPro
           ) : (
             <span className="flex min-w-0 flex-col">
               <span className="text-foreground">{onOffText(override.value)}</span>
-              <span className="text-xs break-all text-muted-foreground">
-                {override.adminId === meId ? "나" : override.adminEmail} · {formatDateTime(override.updatedAt)}
+              {/* 긴 이메일만 아무 데서나 끊고 날짜·시각은 한 덩이로 둔다. */}
+              <span className="text-xs text-muted-foreground">
+                <span className="break-all">{override.adminId === meId ? "나" : override.adminEmail}</span> ·{" "}
+                <span className="whitespace-nowrap">{formatDateTime(override.updatedAt)}</span>
               </span>
             </span>
           )}

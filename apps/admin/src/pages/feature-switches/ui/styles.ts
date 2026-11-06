@@ -10,6 +10,8 @@ export const OUTLINE_BADGE_CLASS =
 export const FOCUS_TARGET_HEADING_CLASS =
   "scroll-mt-20 rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 
-/** 이 화면의 글자 링크. 유채색은 확인 모달의 확정 버튼 하나에만 쓰므로 링크는 무채색 글자 + 밑줄로 링크임을 보인다. */
+/** 이 화면의 글자 링크. 유채색은 확인 모달의 확정 버튼 하나에만 쓰므로 링크는 무채색 글자 + 밑줄로 링크임을 보인다. 문장 밖에
+ * 홀로 놓여 보더가 없으므로 포커스는 50% 링에 불투명 1px 아웃라인을 더한다 — 반투명 링만으로는 배경 대비 3:1 에 못 미친다.
+ * 기본 윤곽을 지운(`outline-none`) 자리라 `outline-solid` 를 빼면 아웃라인 스타일이 `none` 으로 남아 선이 그려지지 않는다. */
 export const TEXT_LINK_CLASS =
-  "admin-hit-area rounded-sm font-medium text-foreground underline underline-offset-4 outline-none hover:decoration-2 focus-visible:ring-3 focus-visible:ring-ring/50";
+  "admin-hit-area rounded-sm font-medium text-foreground underline underline-offset-4 outline-none hover:decoration-2 focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50";

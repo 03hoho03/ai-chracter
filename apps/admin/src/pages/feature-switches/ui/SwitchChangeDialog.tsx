@@ -22,6 +22,7 @@ import type { AdminAdjustableSwitch, AdminFeatureSwitchListResponse } from "../m
 import { useReasonSave } from "../model/useReasonSave";
 import { EffectSections, NoticeLine } from "./EffectSections";
 import { ReasonField } from "./ReasonField";
+import { SaveFailureAlert } from "./SaveFailureAlert";
 import { ValueChange } from "./ValueChange";
 
 type SwitchChangeDialogProps = {
@@ -126,11 +127,7 @@ export const SwitchChangeDialog = createCallable<SwitchChangeDialogProps, void>(
 
             <ReasonField id="feature-switch-change-reason" registration={register("reason")} error={errors.reason?.message} />
 
-            {failureMessage !== null && (
-              <p role="alert" className="text-sm break-keep text-destructive-text">
-                {failureMessage}
-              </p>
-            )}
+            {failureMessage !== null && <SaveFailureAlert message={failureMessage} />}
           </DialogBody>
 
           <DialogFooter>

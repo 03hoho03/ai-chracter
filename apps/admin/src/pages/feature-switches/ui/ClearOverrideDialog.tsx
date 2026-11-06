@@ -31,6 +31,7 @@ import { useReasonSave } from "../model/useReasonSave";
 import { EffectSections } from "./EffectSections";
 import { groupHeadingId, toggleButtonId, UNKNOWN_OVERRIDES_HEADING_ID } from "./elementIds";
 import { ReasonField } from "./ReasonField";
+import { SaveFailureAlert } from "./SaveFailureAlert";
 import { ValueChange } from "./ValueChange";
 
 type ClearOverrideDialogProps =
@@ -139,11 +140,7 @@ export const ClearOverrideDialog = createCallable<ClearOverrideDialogProps, void
 
             <ReasonField id="feature-switch-clear-reason" registration={register("reason")} error={errors.reason?.message} />
 
-            {failureMessage !== null && (
-              <p role="alert" className="text-sm break-keep text-destructive-text">
-                {failureMessage}
-              </p>
-            )}
+            {failureMessage !== null && <SaveFailureAlert message={failureMessage} />}
           </DialogBody>
 
           <DialogFooter>

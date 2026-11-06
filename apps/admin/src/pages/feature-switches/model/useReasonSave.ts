@@ -27,7 +27,8 @@ export function useReasonSave({ save, onStale }: ReasonSaveOptions) {
     } catch (error) {
       const failure = toSaveFailure(error);
       if (failure.kind === "field") {
-        form.setError("reason", { type: "server", message: failure.message });
+        // 저장 중에 비활성이 됐던 확정 버튼이 포커스를 잃었다 — 고칠 칸으로 옮긴다.
+        form.setError("reason", { type: "server", message: failure.message }, { shouldFocus: true });
         return;
       }
       if (failure.kind === "close") {

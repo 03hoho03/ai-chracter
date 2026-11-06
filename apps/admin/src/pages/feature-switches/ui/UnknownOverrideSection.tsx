@@ -43,11 +43,13 @@ export function UnknownOverrideSection({ overrides, refreshSeconds, meId }: Unkn
               <div className="flex min-w-0 flex-col gap-0.5 text-sm">
                 {label !== null && <span className="font-semibold text-foreground">{label}</span>}
                 <code className="font-sans text-xs wrap-anywhere text-muted-foreground">{override.name}</code>
-                <span className="break-all text-foreground">
+                {/* 긴 이메일만 아무 데서나 끊고 날짜·시각은 한 덩이로 둔다. */}
+                <span className="text-foreground">
                   덮어쓴 값 {onOffText(override.value)}
                   <span className="text-muted-foreground">
                     {" "}
-                    · {override.adminId === meId ? "나" : override.adminEmail} · {formatDateTime(override.updatedAt)}
+                    · <span className="break-all">{override.adminId === meId ? "나" : override.adminEmail}</span> ·{" "}
+                    <span className="whitespace-nowrap">{formatDateTime(override.updatedAt)}</span>
                   </span>
                 </span>
               </div>
