@@ -103,8 +103,8 @@ def _checks(
     sent_model_id: str | None = None,
     header: str | None = _ORG,
 ) -> list[LlmCredentialCheck]:
-    """축마다 한 행. 보낸 id 는 따로 주지 않으면 지금 설정의 그 축 id 다. 통과 행에는 응답 조직 헤더(`header`, 기본은 저장된
-    조직)를 싣는다 — 헤더 없는 통과는 조직을 대조하지 않은 통과다."""
+    """축마다 한 행. 보낸 id 는 따로 주지 않으면 지금 설정의 그 축 id 다. 통과 행에는 응답 조직 헤더(`header`, 기본은 상수
+    `_ORG`)를 싣는다 — 헤더 없는 통과는 조직을 대조하지 않은 통과다."""
     return [
         LlmCredentialCheck(
             credential_id=credential.id,

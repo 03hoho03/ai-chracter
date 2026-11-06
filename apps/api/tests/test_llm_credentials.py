@@ -333,7 +333,7 @@ def _check(
     checked_at: datetime | None = None,
     header: str | None = _ORG,
 ) -> LlmCredentialCheck:
-    """통과 행에는 응답 조직 헤더(`header`, 기본은 저장된 조직)를 싣는다 — 헤더 없는 통과는 조직을 대조하지 않은 통과다."""
+    """통과 행에는 응답 조직 헤더(`header`, 기본은 상수 `_ORG`)를 싣는다 — 헤더 없는 통과는 조직을 대조하지 않은 통과다."""
     return LlmCredentialCheck(
         id=uuid.uuid4(),
         credential_id=credential.id,
@@ -409,8 +409,8 @@ _Row = tuple[int, CheckErrorKind | None]
 def test_enable_blocker_order(account_ref: str | None, rows: list[_Row | str], expected: str | None) -> None:
     """켜기 조건은 위에서부터 처음 걸린 것을 이유로 낸다: 조직 미확인 → 허용 목록 밖 → 지금 키·지금 판의 최신 회차에 통과가
     없음 → 조직 신호(어느 축이든 그 축의 마지막 조직 판정 — 조직 헤더가 실린 통과나 조직 오류 — 이 조직 오류). 조직 신호는 런타임 후보 판정과
-    같은 규칙이라, 런타임이 조직 때문에 쓰지 않는 항목은 켜지지도 않는다 — 어긋난 축이 다시 통과해야 풀리고, 그 축의 일시 오류나
-    조직과 무관한 실패로는 풀리지 않는다. 판은 시각 대신 쓰는 기준이다 — 확인을 시작한 뒤 상태가 바뀌었으면(끄기·소진) 그 회차는 세지
+    같은 규칙이라, 런타임이 조직 때문에 쓰지 않는 항목은 켜지지도 않는다 — 어긋난 축이 조직 헤더가 실린 통과를 다시 받아야 풀리고,
+    그 축의 헤더 없는 통과·일시 오류나 조직과 무관한 실패로는 풀리지 않는다. 판은 시각 대신 쓰는 기준이다 — 확인을 시작한 뒤 상태가 바뀌었으면(끄기·소진) 그 회차는 세지
     않는다. 축이 모자란 것은 켜기가 아니라 목록 사용 켜기가 막는다. 일시 오류뿐인 최신 회차도 통과가 없는 회차다 — 런타임
     후보 판정과 달리 그 전 회차의 통과로 내려가지 않는다."""
     credential = _credential(FieldKeyring.parse(FAKE_CREDENTIAL_KEYRING))

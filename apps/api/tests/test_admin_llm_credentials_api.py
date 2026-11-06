@@ -1215,7 +1215,8 @@ async def test_check_passes_a_verified_credential_whose_responses_carry_no_organ
     db_client: httpx.AsyncClient, db_session: AsyncSession, admin_id: uuid.UUID, probe: FakeProbe, notes: list[str]
 ) -> None:
     """조직이 저장 때 확인된 항목은 응답에 조직 헤더가 없어도 통과다 — 규칙은 "다르면 실패"뿐이고, 헤더가 없는 것은 다른
-    조직이라는 증거가 아니다."""
+    조직이라는 증거가 아니다. 다만 그 통과는 응답 조직을 대조하지 않아 조직 불일치를 풀지 못하므로, 알림·감사 문구가 헤더가
+    없었다고 적는다."""
     created = await _create(db_client)
     probe.default = CheckCallResult(error_kind=None, organization=None)
 
@@ -1223,6 +1224,11 @@ async def test_check_passes_a_verified_credential_whose_responses_carry_no_organ
 
     assert {(r.passed, r.error_kind) for r in await _checks(db_session, created["id"])} == {(True, None)}
     assert (await _row(db_session, created["id"])).account_ref == _ORG
+    plain = "통과(조직 헤더 없음)"
+    assert notes[-1] == (
+        f"[Claude 자격] 확인 — anthropic · 운영 계정 · 지문 {secret_fingerprint(FAKE_API_KEY)} · opus {plain} · "
+        f"sonnet {plain} · haiku_writer {plain} · haiku {plain}"
+    )
 
 
 async def test_transient_check_errors_keep_earlier_passes_at_runtime_but_never_count_for_turning_on(

@@ -129,8 +129,8 @@ _BLOCKER_MESSAGES: dict[EnableBlocker, str] = {
     "organization-unverified": "조직이 확인되지 않아 켤 수 없습니다. 확인 호출로 조직을 다시 대조해 주세요.",
     "account-not-allowed": "이 항목의 조직이 지금 허용 목록에 없어 켤 수 없습니다.",
     "check-required": "지금 키로 한 확인 호출이 지금 상태에서 통과해야 켤 수 있습니다. 확인 호출을 먼저 해 주세요.",
-    "organization-mismatch": "응답의 조직이 어긋났던 축이 아직 다시 통과하지 않아 켤 수 없습니다. 그 축이 확인 호출에서 통과해야 "
-    "합니다.",
+    "organization-mismatch": "응답의 조직이 어긋났던 축이 아직 응답 조직이 맞는 통과를 받지 않아 켤 수 없습니다. 그 축이 확인 "
+    "호출에서 조직 헤더가 실린 통과를 받아야 합니다.",
 }
 
 
@@ -845,12 +845,15 @@ def _reconcile(
     return outcomes, fill
 
 
-def _axis_result(axis: ClaudeModelAxis, kind: CheckErrorKind | None, *, concluded_before: bool) -> str:
-    """감사·알림의 축 하나. 일시 오류는 실패가 아니라 이전 결과로 적는다 — 런타임이 그 축의 이전 결론을 그대로 쓴다
-    (`credentials.passed_axes`). 이 키로 한 이전 결론이 없으면(키를 막 바꾼 뒤의 첫 확인 등) 옛 키의 통과가 이어지는 것처럼
+def _axis_result(
+    axis: ClaudeModelAxis, kind: CheckErrorKind | None, header: str | None, *, concluded_before: bool
+) -> str:
+    """감사·알림의 축 하나. 헤더 없는 통과는 그렇다고 적는다 — 응답 조직을 대조하지 않은 통과라 조직 불일치를 풀지 못한다
+    (`credentials.organization_signal`). 일시 오류는 실패가 아니라 이전 결과로 적는다 — 런타임이 그 축의 이전 결론을 그대로
+    쓴다(`credentials.passed_axes`). 이 키로 한 이전 결론이 없으면(키를 막 바꾼 뒤의 첫 확인 등) 옛 키의 통과가 이어지는 것처럼
     읽히지 않게 그 축을 아직 쓰지 않는다고 적는다."""
     if kind is None:
-        return f"{axis} 통과"
+        return f"{axis} 통과" if header is not None else f"{axis} 통과(조직 헤더 없음)"
     if kind == TRANSIENT_CHECK_ERROR:
         if concluded_before:
             return f"{axis} 일시 오류(이전 결과 유지)"
@@ -859,9 +862,11 @@ def _axis_result(axis: ClaudeModelAxis, kind: CheckErrorKind | None, *, conclude
 
 
 def _axis_results(outcomes: Sequence[_Outcome], concluded_before: set[ClaudeModelAxis]) -> list[str]:
-    kinds = {axis: kind for group, kind, _ in outcomes for axis in group.axes}
+    results = {axis: (kind, header) for group, kind, header in outcomes for axis in group.axes}
     return [
-        _axis_result(axis, kinds[axis], concluded_before=axis in concluded_before) for axis in CLAUDE_AXES if axis in kinds
+        _axis_result(axis, *results[axis], concluded_before=axis in concluded_before)
+        for axis in CLAUDE_AXES
+        if axis in results
     ]
 
 
