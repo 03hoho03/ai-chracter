@@ -2,8 +2,8 @@
 
 덮어쓰기는 DB 표(`feature_switch_overrides`)가 소스다. 프로세스마다 그 표를 통째로 읽은 맵을 메모리에 두고 갱신 태스크가
 `REFRESH_INTERVAL_SECONDS` 마다 갈아 끼운다 — 요청 경로에는 DB·Redis 왕복이 하나도 늘지 않는다. 다른 프로세스(api 의 다른
-워커·다른 색·소설화 워커)의 저장은 그 간격 안에 보인다. 저장한 프로세스는 커밋 직후 `refresh_switch_overrides` 를 불러 자기
-맵을 바로 바꾼다.
+워커·다른 색·소설화 워커)의 저장은 길어야 약 그 간격 뒤에 보인다 — 갱신이 끝난 뒤 그 간격을 쉬므로 실제 간격은 여기에 한 번
+읽는 시간과 이벤트 루프 지연이 더해진다. 저장한 프로세스는 커밋 직후 `refresh_switch_overrides` 를 불러 자기 맵을 바로 바꾼다.
 
 **한 작업 안에서는 값이 섞이지 않는다.** 스위치는 한 요청·한 작업 안에서 여러 번 읽히고, 그 사이 맵이 바뀌어 앞뒤 값이 다르면
 심사 비용을 쓴 뒤 거절하거나 환급을 빠뜨리는 식으로 깨진다. 그래서 HTTP 요청은 시작 순간의 맵을 `PinFeatureSwitches` 가,
@@ -108,8 +108,9 @@ READ_ONLY_SWITCH_REASONS: Mapping[ReadOnlyFeatureSwitchName, ReadOnlySwitchReaso
     }
 )
 
-# 다른 프로세스의 저장이 이 프로세스에 보이기까지의 상한. 소설화 워커의 폴링 기본 간격과 같다. 설정 칸으로 두지 않는다 —
-# 운영에서 바꿀 일이 없고, 칸이 생기면 env 키 목록과 그 문서가 같이 늘어난다.
+# 갱신 사이에 쉬는 시간 — 다른 프로세스의 저장은 길어야 약 이만큼 뒤에 이 프로세스에 보인다(한 번 읽는 시간이 더해져 정확한
+# 상한은 아니다). 소설화 워커의 폴링 기본 간격과 같다. 설정 칸으로 두지 않는다 — 운영에서 바꿀 일이 없고, 칸이 생기면 env 키
+# 목록과 그 문서가 같이 늘어난다.
 REFRESH_INTERVAL_SECONDS = 2.0
 
 _NO_OVERRIDES: Mapping[FeatureSwitchName, bool] = MappingProxyType({})
@@ -146,7 +147,7 @@ async def refresh_switch_overrides(session_factory: async_sessionmaker[AsyncSess
 
     이 코드가 모르는 이름의 행(다음 이미지에서 버튼 대상에서 빠진 스위치가 남긴 행)은 건너뛴다 — 그 스위치는 `.env` 값으로
     돈다. 주기 갱신과 저장 직후 갱신이 겹치면 늦게 끝난 쪽이 이기므로, 저장한 프로세스도 한 간격 동안 옛 맵을 볼 수 있다 —
-    다른 프로세스와 같은 상한이다."""
+    다른 프로세스와 같은 지연이다."""
     global _process_overrides
     async with session_factory() as db:
         rows = (await db.execute(select(FeatureSwitchOverride.name, FeatureSwitchOverride.value))).all()

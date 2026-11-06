@@ -1475,7 +1475,8 @@ class AdminUnknownOverride(CamelModel):
 
 
 class AdminFeatureSwitchListResponse(CamelModel):
-    """버튼 대상(서버 이름 목록 순서)·읽기 전용·모르는 덮어쓰기와, 다른 프로세스에 저장이 닿기까지의 상한(초)."""
+    """버튼 대상(서버 이름 목록 순서)·읽기 전용·모르는 덮어쓰기와, 프로세스마다 덮어쓰기를 다시 읽는 간격(초 — 다른 프로세스에
+    저장이 닿기까지 길어야 약 이만큼 걸린다)."""
 
     adjustable: list[AdminAdjustableSwitch]
     read_only: list[AdminReadOnlySwitch]

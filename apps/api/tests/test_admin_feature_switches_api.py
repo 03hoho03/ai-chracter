@@ -576,8 +576,8 @@ async def test_a_failed_recount_after_turning_on_the_pause_still_answers_and_not
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """커밋 뒤 진행 중 환불을 다시 세는 조회가 실패해도, 이미 커밋한 정지는 200 으로 답하고 이 프로세스 재적재와 운영 채널 알림도
-    돈다. 깨지는 시나리오: 커밋 직후 DB 연결이 끊겨 재집계가 예외를 올리면, 정지는 2초 안에 모든 프로세스에 걸리는데 응답은 500 이고
-    가장 알려야 할 돈 스위치의 알림이 빠진다."""
+    돈다. 깨지는 시나리오: 커밋 직후 DB 연결이 끊겨 재집계가 예외를 올리면, 정지는 약 2초 안에 모든 프로세스에 걸리는데 응답은
+    500 이고 가장 알려야 할 돈 스위치의 알림이 빠진다."""
     monkeypatch.setattr(settings, "clover_ledger_paused", False)
     calls = 0
 
