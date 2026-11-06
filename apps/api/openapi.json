@@ -21624,6 +21624,10 @@
             "type": "boolean",
             "title": "Notificationsconfigured"
           },
+          "runtimeSwitchEnabled": {
+            "type": "boolean",
+            "title": "Runtimeswitchenabled"
+          },
           "poolEnabled": {
             "type": "boolean",
             "title": "Poolenabled"
@@ -21659,13 +21663,14 @@
         "required": [
           "storeConfigured",
           "notificationsConfigured",
+          "runtimeSwitchEnabled",
           "poolEnabled",
           "listRevision",
           "modelIds",
           "credentials"
         ],
         "title": "AdminLlmCredentialListResponse",
-        "description": "목록 전체(위치 순)와 목록 상태. 저장소 설정(암호화 키·허용 계정)·알림 웹훅이 없으면 그 사실을 싣는다. `model_ids` 는\n축마다 지금 설정의 실제 id 다."
+        "description": "목록 전체(위치 순)와 목록 상태. 저장소 설정(암호화 키·허용 계정)·알림 웹훅이 없으면 그 사실을 싣는다. `model_ids` 는\n축마다 지금 설정의 실제 id 다.\n\n`runtime_switch_enabled` 는 서버 env 스위치(`LLM_CREDENTIAL_POOL_ENABLED`)가 켜져 있는가이고, `pool_enabled` 는 어드민이\n켜고 끄는 \"목록 사용\" DB 칸이다 — 둘은 다른 값이다. 스위치는 `.env` 로만 바뀌고 응답을 만들 때마다 설정에서 읽는다. 호출이\n실제로 목록으로 가는 것은 스위치가 켜져 있고, 목록 사용이 켜져 있고, 목록에 행이 하나 이상(공급자·상태 무관) 있을 때뿐이다 —\n셋 중 하나라도 아니면 env 키 하나로 보낸다. 화면의 \"사용 중\" 표지는 이 셋을 함께 보고 정한다."
       },
       "AdminLlmCredentialOrderRequest": {
         "properties": {

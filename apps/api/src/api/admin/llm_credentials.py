@@ -392,6 +392,7 @@ async def _list_response(db: AsyncSession) -> AdminLlmCredentialListResponse:
     return AdminLlmCredentialListResponse(
         store_configured=store_configured(),
         notifications_configured=bool(settings.llm_credential_discord_webhook_url),
+        runtime_switch_enabled=settings.llm_credential_pool_enabled,
         pool_enabled=row.pool_enabled if row is not None else False,
         list_revision=row.list_revision if row is not None else 0,
         model_ids=model_ids,

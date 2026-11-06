@@ -85,7 +85,15 @@ _ID_SETTINGS = {
 }
 _AXES_IN_ORDER = ["opus", "sonnet", "haiku_writer", "haiku"]
 
-_LIST_FIELDS = {"storeConfigured", "notificationsConfigured", "poolEnabled", "listRevision", "modelIds", "credentials"}
+_LIST_FIELDS = {
+    "storeConfigured",
+    "notificationsConfigured",
+    "runtimeSwitchEnabled",
+    "poolEnabled",
+    "listRevision",
+    "modelIds",
+    "credentials",
+}
 _CREDENTIAL_FIELDS = {
     "id",
     "provider",
@@ -1512,6 +1520,27 @@ async def test_pool_off_always_works(
 
     assert (off.status_code, off.json()["poolEnabled"]) == (200, False)
     assert notes[-1] == "[Claude 자격] 목록 사용 끔"
+
+
+@pytest.mark.parametrize("switch_on", [True, False])
+async def test_list_reports_the_server_switch_apart_from_the_pool_toggle(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_id: uuid.UUID,
+    store_env: pytest.MonkeyPatch,
+    switch_on: bool,
+) -> None:
+    """조회는 서버 env 스위치 값을 어드민 "목록 사용" 칸과 따로 싣는다 — 스위치가 꺼져 있으면 목록 사용이 켜져 있어도 호출은
+    env 키로 가므로 화면은 둘을 함께 봐야 "사용 중"을 바르게 가린다. 값은 요청 때 설정에서 읽는다(여기서 바꾼 값이 보인다).
+    목록 사용 칸을 늘 스위치와 반대로 두어 한쪽 칸을 다른 쪽에 비춰 싣는 실수도 잡는다."""
+    store_env.setattr(settings, "llm_credential_pool_enabled", switch_on)
+    await db_session.execute(
+        sa.update(LlmCredentialSettings).where(LlmCredentialSettings.id == 1).values(pool_enabled=not switch_on)
+    )
+
+    listing = await _listing(db_client)
+
+    assert (listing["runtimeSwitchEnabled"], listing["poolEnabled"]) == (switch_on, not switch_on)
 
 
 # ── env 롤백 키 표지 ──────────────────────────────────────────────────────────────
