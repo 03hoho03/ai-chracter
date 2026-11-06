@@ -1,3 +1,4 @@
+import { CLAUDE_MODEL_AXES } from "./axes";
 import type {
   AdminLlmCredential,
   AdminLlmCredentialCheckResponse,
@@ -7,7 +8,7 @@ import type {
 } from "./credential";
 import { ENV_ROUTE_CAUSE_LABELS } from "./labels";
 import { formatUsd } from "./money";
-import { candidateShift, latestCheck, type CandidateChange, type EffectiveRoute } from "./status";
+import { candidateShift, firstCandidates, latestCheck, type CandidateChange, type EffectiveRoute } from "./status";
 
 /** 성공 알림 한 건. 여러 문장은 설명 줄로 나눈다. */
 export type NoticeCopy = { title: string; description?: string };
@@ -161,7 +162,7 @@ export function poolChangePreview(
         sentences: [
           "다음 호출부터 Claude 호출이 이 목록으로 나가요 — 모델마다 아래 항목이 받아요. 받을 항목이 없는 모델은 env 키로 넘어가지 않고 실패·환불돼요.",
         ],
-        changes: candidateShift([], list.credentials),
+        changes: acrossEnvChanges(list.credentials, "from-env"),
         across: "from-env",
         showCacheNote: true,
       };
@@ -180,7 +181,7 @@ export function poolChangePreview(
   if (now.kind === "list") {
     return {
       sentences: ["다음 호출부터 Claude 호출이 env 키로 나가요. 목록 순서와 항목은 그대로 남아요."],
-      changes: candidateShift(list.credentials, []),
+      changes: acrossEnvChanges(list.credentials, "to-env"),
       across: "to-env",
       showCacheNote: true,
     };
@@ -201,6 +202,18 @@ export function poolChangedNotice(enabled: boolean, after: EffectiveRoute): Noti
   if (!enabled) return { title: "목록 사용을 껐어요 — 다음 호출부터 env 키로 나가요." };
   if (after.kind === "list") return { title: "목록 사용을 켰어요 — 다음 호출부터 이 목록으로 나가요." };
   return { title: "목록 사용을 켰어요.", description: afterEnvSentence(after) };
+}
+
+/** 한쪽이 env 키인 전환(목록 사용 켜기·끄기)에서 바뀌는 축 — 네 축 모두다. 전후 첫 후보를 견주는 `candidateShift` 로는 목록에서 받을
+ * 항목이 없는 축이 전후 모두 "없음"이라 빠지는데, 그 축도 실제로는 끄면 "없음(실패·환불) → env 키", 켜면 "env 키 → 없음"으로 바뀐다. */
+function acrossEnvChanges(
+  credentials: readonly AdminLlmCredential[],
+  across: NonNullable<PoolChangePreview["across"]>,
+): CandidateChange[] {
+  const firsts = firstCandidates(credentials);
+  return CLAUDE_MODEL_AXES.map((axis) =>
+    across === "from-env" ? { axis, from: undefined, to: firsts[axis] } : { axis, from: firsts[axis], to: undefined },
+  );
 }
 
 /** 켜도 목록이 실제로 쓰이지 않는 이유. */
