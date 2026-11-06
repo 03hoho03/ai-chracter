@@ -5,7 +5,7 @@ import { Button, buttonVariants } from "@ai-character-chat/ui/components/button"
 import { Label } from "@ai-character-chat/ui/components/label";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Camera, ImageOff, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -81,13 +81,14 @@ export function AdvancedTab({ ensureContentVersionId, savedImages }: AdvancedTab
   const awaitingDescriptionRef = useRef(new Map<string, string>());
 
   // 상황을 채우지 않고 탭을 떠나면 서버 행에 그림이 없는 채로 남으므로 폼도 '이미지 없음'으로 맞춘다 — 남겨 두면 화면은
-  // 등록됨인데 다시 열면 이미지 없음이 되고 발행이 거절된다.
+  // 등록됨인데 다시 열면 이미지 없음이 되고 발행이 거절된다. 정리는 언마운트에서 한 번만 돈다.
+  const clearAwaitingImages = useEffectEvent((awaiting: Map<string, string>) => {
+    for (const [itemId, assetId] of awaiting) clearImageIfStill(itemId, assetId);
+    awaiting.clear();
+  });
   useEffect(() => {
     const awaiting = awaitingDescriptionRef.current;
-    return () => {
-      for (const [itemId, assetId] of awaiting) clearImageIfStill(itemId, assetId);
-      awaiting.clear();
-    };
+    return () => clearAwaitingImages(awaiting);
   }, []);
 
   function clearImageIfStill(itemId: string, assetId: string) {
