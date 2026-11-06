@@ -1,0 +1,28 @@
+import type { ApiError } from "@ai-character-chat/api-types";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+import { apiClient } from "@/shared/lib/api/client";
+
+import type { AdminLlmCredentialCheckResponse } from "../model/credential";
+import { sendCredentialWrite } from "../model/failure";
+import { invalidateCredentials, reloadIfListStale, replaceCredential } from "./cache";
+
+/** 확인 호출. 모델 id 마다 짧은 요청을 차례로 보내 응답이 늦으면 몇십 초 걸린다. 응답 항목(확인 기록·사용액 포함)을 끼운 뒤에도 다시
+ * 받는 것은 기다리는 동안 다른 탭·다른 관리자가 바꾼 것(다른 항목·목록 판)을 줍기 위해서다.
+ * 오프라인이면 일시정지하지 않고 바로 실패한다(`networkMode: "always"`) — 멈춘 채 닫히지 않거나 연결이 돌아온 순간 모르게 보내지 않게. */
+export function useCheckCredentialMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation<AdminLlmCredentialCheckResponse, ApiError, string>({
+    mutationFn: (id) =>
+      sendCredentialWrite(
+        async () => (await apiClient.post<AdminLlmCredentialCheckResponse>(`/admin/llm-credentials/${id}/check`)).data,
+      ),
+    networkMode: "always",
+    onSuccess: (response) => {
+      replaceCredential(queryClient, response.credential);
+      void invalidateCredentials(queryClient);
+    },
+    onError: (error) => reloadIfListStale(queryClient, error),
+  });
+}
