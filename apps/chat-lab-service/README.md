@@ -4,7 +4,7 @@
 `apps/api/scripts/chat_lab/`)에서 만든 런 묶음을 올리고, 팀원은 브라우저에서 Google 로 로그인해 같은 웹 화면으로 본다.
 
 - **올리기**: 운영자 Mac 의 업로드 CLI(측정 서버에서 묶음을 받아 올리는 명령)가 Cloudflare Access 서비스 토큰으로 올린다. 사람
-  로그인으로는 올릴 수 없다. 그 CLI 는 아직 없다 — 「4. 이미지 만들기·옮기기(운영자 Mac → VM)」의 선행 조건을 본다.
+  로그인으로는 올릴 수 없다. 명령과 자격 파일은 `apps/chat-lab/README.md` 「올리기」 절에 있다.
 - **읽기·지우기**: 허용 목록에 든 팀원이 Google 로그인으로 목록·판·묶음을 보고, 런을 지운다. 서비스 토큰으로는 읽을 수 없다.
 - 서비스는 또나 앱 코드(`apps/api`)와 측정 서버 코드를 import 하지 않는다. LLM 호출도 없다.
 
@@ -26,7 +26,8 @@
      postgres — DB chat_lab(역할 chat_lab). 또나 DB 와 같은 인스턴스
 ```
 
-- 이미지 하나에 서비스(FastAPI)와 웹 정적 파일(`apps/chat-lab` 빌드 결과)이 함께 든다. 웹은 이미지 밖에서 빌드해 넣는다.
+- 이미지 하나에 서비스(FastAPI)와 웹 정적 파일(`apps/chat-lab` 의 호스팅 모드 빌드 결과 — `apps/chat-lab/README.md`
+  「호스팅 모드」)이 함께 든다. 웹은 이미지 밖에서 빌드해 넣는다.
 - 배포 묶음은 이 폴더에 있다: `Dockerfile`·`.dockerignore`·`docker-compose.lab.yml`. 또나 앱 배포(deploy-api)의 트리거 밖이라 손으로
   배포한다(「손 배포」 절).
 - CI 는 `.github/workflows/chat-lab-service.yml`(린트·타입·스키마 드리프트·마이그레이션 대조·테스트, PR 에서 이미지 빌드).
@@ -146,7 +147,8 @@ uv run mypy src migrations scripts tests
 ## 백업 없음 — 복구는 다시 올리기
 
 DB `chat_lab` 은 백업하지 않는다. 또나의 일일 백업은 또나 DB 하나만 덤프하므로 `chat_lab` 은 거기에도 없다. 잃으면 다시 올려 되살린다:
-로컬에 남은 올리기 기록의 목록을 업로드 CLI 로 다시 올린다. 그러려면 **원본 런 폴더와 그 런을 돈 로컬 DB 가 남아 있어야 한다**(올리기
+로컬에 남은 올리기 기록의 목록을 업로드 CLI 로 다시 올린다(기록 파일의 자리·칸과 다시 올리는 명령은 `apps/chat-lab/README.md`
+「올리기」). 그러려면 **원본 런 폴더와 그 런을 돈 로컬 DB 가 남아 있어야 한다**(올리기
 머리의 출처 칸을 로컬 DB 로 다시 계산한다). 원본이 한 PC 에만 있으면 그 PC 를 잃을 때 서비스 데이터도 함께 잃는다. 다시 올려도 되살지
 않는 것: 접근 기록, 지우기 이력(누가 언제 지웠나), 원본을 지운 런. 되살아도 달라지는 것: 올린 때·올린 이는 다시 올린 값이 되고, 판
 번호와 최신 판은 다시 올린 순서를 따른다 — A → B → A 로 올려 최신이 B 이던 런을 B, A 순으로 다시 올리면 최신이 A 다.
@@ -165,16 +167,24 @@ L="sudo docker compose -p ddona-lab -f /opt/ddona/lab/docker-compose.lab.yml --e
 
 ### 1. 대시보드 쪽(사람)
 
-- **Tunnel**: Zero Trust 에서 cloudflared Tunnel 을 만들고 공개 호스트 이름 `lab.ddona.site` → `HTTP` `chat-lab-service:8000` 을 단다.
-  설치 화면에 나오는 토큰은 3단계에서 VM 파일로 넣는다. 대상은 서비스 이름으로만 적고 IP 로 적지 않는다 — cloudflared 가 붙은 망은
-  일반 브리지라 IP 로 적으면 호스트·다른 주소로도 길이 날 수 있다.
+아래 순서대로 만든다. **Access 앱을 Tunnel 공개 호스트보다 먼저** 만든다 — 공개 호스트가 생기는 순간 `lab.ddona.site` 가 바깥에
+열리므로, 그때 이미 Access 가 그 도메인 전체를 막고 있어야 한다. Access 앱이 고를 로그인 방법과 Service Auth 정책이 고를 서비스 토큰은
+앱보다 먼저 있어야 한다.
+
 - **Google 로그인 방법**: Google Cloud 에 OAuth 클라이언트(웹 애플리케이션)를 만들고, 리디렉션 URI 는 Access 의 로그인 방법 화면이
   보여 주는 콜백 주소를 넣는다. 클라이언트는 또나 로그인이 쓰는 옛 GCP 프로젝트(DEPLOY.md 「Google OAuth (로그인)」 절)가 아니라 배포
   프로젝트에 만든다 — OAuth 동의 화면은 프로젝트당 하나라 옛 프로젝트의 동의 화면을 바꾸면 또나 로그인이 막힐 수 있다.
+- **서비스 토큰**: 만들 때 한 번 보이는 Client Secret 은 업로드하는 Mac 의 자격 파일에만 둔다(꼴·권한·만드는 명령은
+  `apps/chat-lab/README.md` 「올리기」). Client ID 가 `LAB_UPLOAD_CLIENT_IDS` 가 된다.
 - **Access 앱**: 자체 호스팅 앱, 도메인 `lab.ddona.site` 전체(경로 없음), 로그인 방법은 Google 하나. 정책 둘 — 팀원 이메일을 허용하는
-  Allow 정책, 업로드 서비스 토큰을 허용하는 **Service Auth** 정책(Allow 로 두면 토큰 요청도 로그인 화면으로 돌려보낸다). 앱의 AUD
+  Allow 정책, 업로드 서비스 토큰을 허용하는 **Service Auth** 정책(Allow 로 두면 토큰 요청도 로그인 화면으로 돌려보낸다. Include →
+  Service Token 으로 그 토큰을 직접 고른다 — Any Access Service Token 은 계정의 모든 토큰이 지나므로 고르지 않는다). 앱의 AUD
   태그와 팀 도메인이 `LAB_ACCESS_AUD`·`LAB_ACCESS_ISSUER` 가 된다.
-- **서비스 토큰**: 만들 때 한 번 보이는 Client Secret 은 업로드하는 Mac 에만 둔다. Client ID 가 `LAB_UPLOAD_CLIENT_IDS` 가 된다.
+- **Tunnel**: Cloudflare 대시보드의 **Networking > Tunnels** 에서 cloudflared Tunnel 을 만든다(Zero Trust 대시보드 메뉴가 아니다 —
+  [공식 안내](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/)).
+  설치 화면에 나오는 토큰은 3단계에서 VM 파일로 넣는다. 그다음 그 Tunnel 의 **Routes** 탭에서 Add route → Published application 으로
+  공개 호스트를 단다 — 서브도메인 `lab`, 도메인 `ddona.site`, **Service URL** 한 칸에 `http://chat-lab-service:8000`. 대상은 서비스
+  이름으로만 적고 IP 로 적지 않는다 — cloudflared 가 붙은 망은 일반 브리지라 IP 로 적으면 호스트·다른 주소로도 길이 날 수 있다.
 
 ### 2. DB·역할 만들기(VM, 사람)
 
@@ -228,9 +238,8 @@ sudo cut -d= -f1 /opt/ddona/lab.env
 
 ### 4. 이미지 만들기·옮기기(운영자 Mac → VM)
 
-선행 조건: 웹 호스팅 모드(빌드 상수 `VITE_CHAT_LAB_MODE=hosted`)가 main 에 들어온 뒤에 배포한다 — 그 전의 웹 빌드는 런 목록을 로컬
-측정 서버에서 찾아 이 서비스에서는 목록이 뜨지 않는다. 업로드 CLI 도 웹 호스팅 모드와 함께 들어온다 — 그 전에는 이 서비스로 올리는
-길이 없다.
+선행 조건: 웹 호스팅 모드와 업로드 CLI 가 main 에 들어온 뒤의 커밋에서 빌드한다 — 그 전 커밋의 웹은 런 목록을 로컬 측정 서버에서
+찾아 이 서비스에서는 목록이 뜨지 않는다. 호스팅 모드가 무엇을 바꾸는지는 `apps/chat-lab/README.md` 「호스팅 모드」 절에 있다.
 
 레지스트리를 쓰지 않는다. 병합 커밋의 깨끗한 트리에서 웹과 이미지를 만든다 — 태그(커밋 앞 7자리)가 이미지 내용과 맞고, 웹과 서비스가
 같은 커밋에서 나오게 하려는 것이다.
@@ -279,7 +288,9 @@ sudo docker stats --no-stream ddona-lab-chat-lab-service-1 ddona-lab-cloudflared
 실행 중이 되기만 기다리고, 기동이 실패해 재시작을 되풀이해도(예: 마지막 이메일을 빼 `LAB_READ_EMAILS` 가 비어 설정 검증이 실패) 통과할
 수 있다. 기동 확인은 위의 `$L ps`(Restarting 이 아닌지)와 health 줄이 한다 — 아래 다른 절의 `--wait` 뒤에도 이 두 줄을 이어서 돈다.
 
-그 뒤 사람이 브라우저로 `https://lab.ddona.site/` 에 들어가 Google 로그인 → 목록이 뜨는지 본다.
+그 뒤 사람이 브라우저로 `https://lab.ddona.site/` 에 들어가 Google 로그인 → 목록이 뜨는지 본다. 목록 대신 "이 화면은 로컬 빌드다"
+안내가 뜨면 호스팅 모드가 아닌 웹이 이미지에 실린 것이다 — 「4. 이미지 만들기·옮기기(운영자 Mac → VM)」의 웹 빌드 줄
+(`VITE_CHAT_LAB_MODE=hosted`)로 이미지를 다시 만든다.
 
 ### 6. 옛 이미지 정리(VM)
 
@@ -373,8 +384,9 @@ $L ps                                                   # Restarting 이 아닌�
 - **Google OAuth 클라이언트는 6개월 동안 쓰이지 않으면 Google 이 자동으로 지운다.** 예고 메일이 오면 lab 에 한 번 로그인한다. 이미
   지워졌으면 30일 안에 Google Cloud 에서 되살린다.
 - **서비스 토큰은 만료된다(기본 1년).** 만료되면 올리기가 Access 에서 막혀 서비스까지 오지 않는다. 만료 전에 대시보드에서 기간을
-  늘린다. 새 토큰으로 바꾸면 Client ID 가 달라지므로 `LAB_UPLOAD_CLIENT_IDS`(「팀원 추가·빼기」와 같은 재생성)와 업로드하는 Mac 의
-  설정을 함께 바꾼다.
+  늘린다. 새 토큰으로 바꾸면 Client ID 가 달라지므로 세 곳을 함께 바꾼다 — Access 앱 Service Auth 정책이 고른 토큰,
+  `LAB_UPLOAD_CLIENT_IDS`(「팀원 추가·빼기」와 같은 재생성), 업로드하는 Mac 의 자격 파일(`apps/chat-lab/README.md` 「올리기」).
+  정책을 빠뜨리면 올리기가 Access 에서 막혀 업로드 CLI 가 3xx·401·403 문구로 끝난다.
 - cloudflared 가 UDP 수신 버퍼 경고를 남겨도 VM 커널 설정을 바꾸지 않는다. 특히 `sysctl --system` 은 Docker 가 켜 둔 IP 포워딩을 꺼
   또나 트래픽까지 끊은 적이 있다(DEPLOY.md 「겹침 대비 운영 설정 — Postgres max_connections · 스왑」 절).
 
