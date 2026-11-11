@@ -22,6 +22,7 @@ import {
 } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
+import { formToServer } from "../model/formToServer";
 import { createSnapshotNameSchema, type SnapshotNameFormValues } from "../model/snapshotName";
 
 type SaveSnapshotModalProps = {
@@ -54,7 +55,7 @@ export const SaveSnapshotModal = createCallable<SaveSnapshotModalProps, NovelSna
     async function handleValidSubmit(values: SnapshotNameFormValues) {
       setSaveError(undefined);
       try {
-        call.end(await mutation.mutateAsync({ novelId, name: values.name.trim() }));
+        call.end(await mutation.mutateAsync({ novelId, ...formToServer(values) }));
       } catch (error) {
         const notice = toNovelActionError(error, "saveSnapshot");
         // 재동의가 필요하면 전역 재동의 모달이 뜬다 — 그 위에 이 모달을 남겨 두지 않는다.

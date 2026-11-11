@@ -10,6 +10,7 @@ import { useForm } from "react-hook-form";
 import { novelKeys, toNovelActionError, type NovelDetailResponse } from "@/entities/novel";
 
 import { useUpdateNovelInfoMutation } from "../api/useUpdateNovelInfoMutation";
+import { titleFormToServer } from "../model/formToServer";
 import { createTitleFormSchema, type TitleFormValues } from "../model/novelInfoSchema";
 
 /** 작품 정보 화면 머리의 소설 제목(`h1`)과 그 자리 고치기. 연필을 누르면 제목 자리가 입력칸이 되고, 저장하거나
@@ -55,7 +56,7 @@ export function NovelTitleEditor({ novel }: { novel: NovelDetailResponse }) {
   async function handleValidSubmit(values: TitleFormValues) {
     setSaveError(undefined);
     try {
-      await mutation.mutateAsync({ novelId: novel.id, body: { title: values.title.trim() } });
+      await mutation.mutateAsync({ novelId: novel.id, body: titleFormToServer(values) });
       finishEditing();
     } catch (error) {
       const notice = toNovelActionError(error, "title");

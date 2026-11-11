@@ -21,6 +21,7 @@ import { isApiError } from "@/shared/api/client";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { FIRST_PERSONA_NAME_SCHEMA, type FirstPersonaNameFormValues } from "../model/firstPersonaNameSchema";
+import { formToServer } from "../model/formToServer";
 
 const GENERIC_ERROR_MESSAGE = "이름을 저장하지 못했어요. 잠시 후 다시 시도해주세요.";
 
@@ -47,12 +48,7 @@ export const FirstPersonaNameModal = createCallable<void, Persona | undefined>((
   async function handleValidSubmit(values: FirstPersonaNameFormValues) {
     form.clearErrors("root");
     try {
-      const persona = await createMutation.mutateAsync({
-        name: values.name.trim(),
-        gender: null,
-        description: "",
-        setAsDefault: true,
-      });
+      const persona = await createMutation.mutateAsync(formToServer(values));
       // 생성 훅이 목록을 다시 읽지만, 그 조회가 실패하면 캐시가 "0개"로 남아 다음 시작에서 이 모달이 또 떠 프로필이
       // 하나 더 생긴다. 방금 만든 것을 캐시에 직접 넣어 둔다.
       queryClient.setQueryData<PersonaList>(personaKeys.list(), (old) =>

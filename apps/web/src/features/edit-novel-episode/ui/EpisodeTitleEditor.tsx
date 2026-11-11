@@ -17,6 +17,7 @@ import {
 } from "@/entities/novel";
 
 import { createEpisodeTitleSchema, toEpisodeHeading, type EpisodeTitleFormValues } from "../model/episodeSchema";
+import { episodeTitleFormToServer } from "../model/formToServer";
 
 type EpisodeTitleEditorProps = {
   novel: NovelDetailResponse;
@@ -92,7 +93,7 @@ export function EpisodeTitleEditor({ novel, chapter, headingRef }: EpisodeTitleE
         onSubmit={(event) => {
           event.preventDefault();
           if (isSaving) return;
-          void form.handleSubmit((values) => save({ title: values.title.trim() }))(event);
+          void form.handleSubmit((values) => save(episodeTitleFormToServer(values)))(event);
         }}
       >
         {/* 고치는 동안에도 패널의 제목이 남게 한다 — 입력칸이 그 자리를 대신하는 동안 보조기기는 이 줄을 읽는다. */}

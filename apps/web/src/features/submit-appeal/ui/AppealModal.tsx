@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useSubmitAppealMutation, type AppealTarget } from "../api/useSubmitAppealMutation";
+import { formToServer } from "../model/formToServer";
 import { SUBMIT_APPEAL_SCHEMA, type SubmitAppealFormValues } from "../model/submitAppealSchema";
 
 type AppealModalProps = {
@@ -45,7 +46,7 @@ export const AppealModal = createCallable<AppealModalProps, void>(({ call, targe
     if (isSubmitting) return;
 
     try {
-      await submitAppeal.mutateAsync({ target, reasonText: values.reasonText });
+      await submitAppeal.mutateAsync(formToServer(values, target));
       toast.success("이의제기가 접수되었어요. 검토 후 결과를 안내해드릴게요.");
       call.end();
     } catch {
