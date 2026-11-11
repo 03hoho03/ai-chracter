@@ -26,6 +26,7 @@ import {
   type CharacterMemoFormValues,
   type CharacterNameFormValues,
 } from "../model/characterForm";
+import { memoFormToServer, nameFormToServer } from "../model/formToServer";
 import { MergeCharacterModal } from "./MergeCharacterModal";
 
 type CharacterCardEditorProps = {
@@ -98,7 +99,7 @@ export function CharacterCardEditor({
         name={character.name}
         maxLength={novel.limits.characterNameMaxLength}
         headingRef={headingRef}
-        onSave={(name) => update({ name }, "character")}
+        onSave={(body) => update(body, "character")}
       />
       <CharacterAliasesField
         name={character.name}
@@ -111,7 +112,7 @@ export function CharacterCardEditor({
       <CharacterMemoField
         memo={character.memo}
         maxLength={novel.limits.characterMemoMaxLength}
-        onSave={(memo) => update({ memo }, "character")}
+        onSave={(body) => update(body, "character")}
         onDraftDirtyChange={onDraftDirtyChange}
       />
 
@@ -165,7 +166,7 @@ type CharacterNameFieldProps = {
   maxLength: number;
   headingRef: RefObject<HTMLHeadingElement | null> | undefined;
   /** 저장하고 실패 문장을 돌려준다(성공이면 `undefined`, 다른 곳이 알린 실패면 빈 문자열). */
-  onSave: (name: string) => Promise<string | undefined>;
+  onSave: (body: NovelCharacterUpdateRequest) => Promise<string | undefined>;
 };
 
 /** 카드 이름(`h2`)과 그 자리 고치기. 다른 카드가 쓰는 이름이면 서버가 겹친 이름을 알려 와 그 이름으로 말한다. */
@@ -173,7 +174,6 @@ function CharacterNameField({ name, maxLength, headingRef, onSave }: CharacterNa
   const inputId = useId();
   const errorId = useId();
   const [isEditing, setIsEditing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const pencilRef = useRef<HTMLButtonElement>(null);
   const shouldFocusPencilRef = useRef(false);
@@ -182,6 +182,7 @@ function CharacterNameField({ name, maxLength, headingRef, onSave }: CharacterNa
     defaultValues: { name },
   });
   const errorMessage = form.formState.errors.name?.message ?? saveError;
+  const isSaving = form.formState.isSubmitting;
 
   useEffect(() => {
     if (isEditing || !shouldFocusPencilRef.current) return;
@@ -195,10 +196,8 @@ function CharacterNameField({ name, maxLength, headingRef, onSave }: CharacterNa
   }
 
   async function handleValidSubmit(values: CharacterNameFormValues) {
-    setIsSaving(true);
     setSaveError(undefined);
-    const failure = await onSave(values.name.trim());
-    setIsSaving(false);
+    const failure = await onSave(nameFormToServer(values));
     if (failure === undefined) finishEditing();
     else if (failure !== "") setSaveError(failure);
   }
@@ -397,7 +396,7 @@ function CharacterAliasesField({ name, aliases, maxCount, maxLength, isSaving, o
 type CharacterMemoFieldProps = {
   memo: string;
   maxLength: number;
-  onSave: (memo: string) => Promise<string | undefined>;
+  onSave: (body: NovelCharacterUpdateRequest) => Promise<string | undefined>;
   onDraftDirtyChange?: (isDirty: boolean) => void;
 };
 
@@ -408,7 +407,6 @@ function CharacterMemoField({ memo, maxLength, onSave, onDraftDirtyChange }: Cha
   const descriptionId = useId();
   const countId = useId();
   const errorId = useId();
-  const [isSaving, setIsSaving] = useState(false);
   const [result, setResult] = useState<{ tone: "error" | "done"; message: string } | undefined>(undefined);
   const form = useForm<CharacterMemoFormValues>({
     resolver: zodResolver(createCharacterMemoSchema(maxLength)),
@@ -417,6 +415,7 @@ function CharacterMemoField({ memo, maxLength, onSave, onDraftDirtyChange }: Cha
   const value = useWatch({ control: form.control, name: "memo" });
   const fieldError = form.formState.errors.memo?.message;
   const { isDirty } = form.formState;
+  const isSaving = form.formState.isSubmitting;
   // 저장하지 않은 입력이 있는가를 호출부에 알린다 — 호출부가 다른 것을 고르거나 뒤로 가기 전에 버릴지 묻는다.
   // 사라질 때는 거짓으로 돌려놓는다. 호출부 함수는 렌더마다 새로 만들어질 수 있어 ref 로 읽는다.
   const onDraftDirtyChangeRef = useRef(onDraftDirtyChange);
@@ -427,13 +426,11 @@ function CharacterMemoField({ memo, maxLength, onSave, onDraftDirtyChange }: Cha
   useEffect(() => () => onDraftDirtyChangeRef.current?.(false), []);
 
   async function handleValidSubmit(values: CharacterMemoFormValues) {
-    const trimmed = values.memo.trim();
-    setIsSaving(true);
+    const body = memoFormToServer(values);
     setResult(undefined);
-    const failure = await onSave(trimmed);
-    setIsSaving(false);
+    const failure = await onSave(body);
     if (failure === undefined) {
-      form.reset({ memo: trimmed });
+      form.reset({ memo: body.memo });
       setResult({ tone: "done", message: "메모를 저장했어요. 다음 화부터 반영돼요." });
     } else if (failure !== "") {
       setResult({ tone: "error", message: failure });
