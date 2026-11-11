@@ -117,7 +117,8 @@ export function HomePage({ search, onSearchChange, onTypeChange }: HomePageProps
     isLoggedIn,
     isPricingPending: pricingQuery.isPending,
     isOpen: isWebnovelSectionOpen,
-    isPending: homeWebnovelsQuery.isPending,
+    // 재시도 백오프 중에도 `isPending` 이라 첫 실패 뒤에는 기다리지 않는다 — 섹션은 재시도가 붙으면 늦게 들어오고 끝내 실패하면 빠진다.
+    isPending: homeWebnovelsQuery.isPending && homeWebnovelsQuery.failureCount === 0,
   });
   // 출석 카드도 로그인 회원에게만 있다. 노벨 섹션과 같은 이유로 같은 대기 묶음에 넣는다.
   const attendanceBoardQuery = useAttendanceBoardQuery({ enabled: isLoggedIn });
