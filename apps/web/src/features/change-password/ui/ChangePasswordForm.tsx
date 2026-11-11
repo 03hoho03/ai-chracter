@@ -25,7 +25,7 @@ export function ChangePasswordForm() {
     reset,
     setError,
     clearErrors,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<ChangePasswordFormValues>({
     resolver: zodResolver(CHANGE_PASSWORD_SCHEMA),
     defaultValues: CHANGE_PASSWORD_DEFAULT_VALUES,
@@ -111,8 +111,8 @@ export function ChangePasswordForm() {
         )}
       </div>
 
-      <Button type="submit" size="lg" className="self-start" disabled={changePasswordMutation.isPending}>
-        {changePasswordMutation.isPending ? "변경 중..." : "비밀번호 변경"}
+      <Button type="submit" size="lg" className="self-start" disabled={isSubmitting}>
+        {isSubmitting ? "변경 중..." : "비밀번호 변경"}
       </Button>
     </form>
   );

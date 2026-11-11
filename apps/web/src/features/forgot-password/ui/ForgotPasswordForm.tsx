@@ -22,7 +22,7 @@ export function ForgotPasswordForm() {
     getValues,
     setError,
     clearErrors,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<ForgotPasswordFormValues>({
     resolver: zodResolver(FORGOT_PASSWORD_SCHEMA),
     defaultValues: FORGOT_PASSWORD_DEFAULT_VALUES,
@@ -89,8 +89,8 @@ export function ForgotPasswordForm() {
         )}
       </div>
 
-      <Button type="submit" size="lg" disabled={requestMutation.isPending}>
-        {requestMutation.isPending ? "전송 중..." : "재설정 링크 받기"}
+      <Button type="submit" size="lg" disabled={isSubmitting}>
+        {isSubmitting ? "전송 중..." : "재설정 링크 받기"}
       </Button>
     </form>
   );

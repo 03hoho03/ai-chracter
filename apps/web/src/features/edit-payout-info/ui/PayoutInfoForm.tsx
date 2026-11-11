@@ -63,7 +63,7 @@ export function PayoutInfoForm({ onSaved, onCancel, shouldFocusOnOpen = false }:
     setError,
     setFocus,
     clearErrors,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<PayoutInfoFormValues, unknown, PayoutInfoSubmitValues>({
     resolver: zodResolver(PAYOUT_INFO_SCHEMA),
     defaultValues: PAYOUT_INFO_DEFAULT_VALUES,
@@ -75,8 +75,6 @@ export function PayoutInfoForm({ onSaved, onCancel, shouldFocusOnOpen = false }:
   }, [shouldFocusOnOpen, setFocus]);
 
   async function handleValidSubmit(values: PayoutInfoSubmitValues) {
-    // 버튼은 `aria-disabled` 라 Enter 제출을 막지 못한다 — 진행 중 재제출은 여기서 끊는다.
-    if (mutation.isPending) return;
     clearErrors("root");
     setIsForeignerRejected(false);
     try {
@@ -106,6 +104,8 @@ export function PayoutInfoForm({ onSaved, onCancel, shouldFocusOnOpen = false }:
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
+        // 버튼은 `aria-disabled` 라 Enter 제출을 막지 못한다 — 진행 중 재제출은 여기서 끊는다.
+        if (isSubmitting) return;
         void handleSubmit(handleValidSubmit)(event);
       }}
     >
@@ -278,8 +278,8 @@ export function PayoutInfoForm({ onSaved, onCancel, shouldFocusOnOpen = false }:
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" aria-disabled={mutation.isPending} className="aria-disabled:opacity-65">
-          {mutation.isPending ? "저장하는 중…" : "지급 정보 저장"}
+        <Button type="submit" aria-disabled={isSubmitting} className="aria-disabled:opacity-65">
+          {isSubmitting ? "저장하는 중…" : "지급 정보 저장"}
         </Button>
         {onCancel && (
           <Button type="button" variant="outline" onClick={onCancel}>

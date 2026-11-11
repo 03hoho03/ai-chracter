@@ -106,7 +106,7 @@ export function EditProfileDialog({ userId, profile, beforeUpload }: EditProfile
   }
 
   const displayImageUrl = previewUrl ?? profile.profileImageUrl ?? undefined;
-  const isSaving = updateProfileMutation.isPending;
+  const isSaving = form.formState.isSubmitting;
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
