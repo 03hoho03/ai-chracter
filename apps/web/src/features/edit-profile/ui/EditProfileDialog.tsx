@@ -106,7 +106,8 @@ export function EditProfileDialog({ userId, profile, beforeUpload }: EditProfile
   }
 
   const displayImageUrl = previewUrl ?? profile.profileImageUrl ?? undefined;
-  const isSaving = form.formState.isSubmitting;
+  // 저장 중에 닫았다 다시 열면 열 때의 `reset`이 `isSubmitting`을 풀어 버리므로, 요청이 끝날 때까지는 뮤테이션으로도 잠근다.
+  const isSaving = form.formState.isSubmitting || updateProfileMutation.isPending;
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>

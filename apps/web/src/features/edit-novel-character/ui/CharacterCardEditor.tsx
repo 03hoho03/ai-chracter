@@ -263,7 +263,9 @@ function CharacterNameField({ name, maxLength, headingRef, onSave }: CharacterNa
         aria-label="인물 이름 고치기"
         className="shrink-0"
         onClick={() => {
-          form.reset({ name });
+          // 저장 중에 취소했다 다시 열면 `reset`이 `isSubmitting`을 풀어 두 번째 저장이 나갈 수 있다 — 그때는 보내는 중인
+          // 값과 잠금을 그대로 둔다.
+          if (!isSaving) form.reset({ name });
           setSaveError(undefined);
           setIsEditing(true);
         }}
