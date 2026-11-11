@@ -9,12 +9,19 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { confirmSameRoom, costGapWarning, decideOutputPath, parseExportArgs, pickRun } from "./exportTarget.mjs";
+import {
+  confirmSameRoom,
+  costGapWarning,
+  decideOutputPath,
+  findRun,
+  getJson,
+  parseExportArgs,
+  Refusal,
+  resolveTarget,
+} from "./exportTarget.mjs";
 import { buildStaticHtml } from "./staticHtml.mjs";
 
 const DIST_DIR = fileURLToPath(new URL("../dist/", import.meta.url));
-
-class Refusal extends Error {}
 
 async function main() {
   let args;
@@ -26,11 +33,7 @@ async function main() {
   }
   // `pnpm --filter chat-lab …` 은 이 패키지 폴더에서 돌므로, 상대 경로는 명령을 친 자리(`INIT_CWD`) 기준으로 푼다.
   const base = process.env.INIT_CWD ?? process.cwd();
-  const root = realOrRefuse(path.resolve(base, args.root), "런 루트가 없다");
-  const target = realOrRefuse(path.resolve(base, args.target), "대상이 없다");
-  const relative = path.relative(root, target);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Refusal(`대상이 런 루트(${root}) 밖이다: ${target}`);
-  const relativePosix = relative === "" ? "." : relative.split(path.sep).join("/");
+  const { root, relativePosix } = resolveTarget({ base, root: args.root, target: args.target });
 
   const indexHtml = readOrRefuse(path.join(DIST_DIR, "index.html"), "웹 빌드가 없다 — 먼저 `pnpm --filter chat-lab exec vite build`");
 
@@ -65,33 +68,6 @@ async function main() {
   return 0;
 }
 
-async function findRun(api, relativePosix) {
-  let picked = pickRun((await getJson(`${api}/runs`)).items, relativePosix);
-  if (picked.kind === "none") {
-    // 측정 서버는 처음 훑은 결과를 들고 있어, 그 뒤 생긴 묶음은 다시 훑어야 보인다.
-    console.log("목록에 없어 측정 서버가 런 루트를 다시 훑는다(실데이터에서 수십 초)…");
-    picked = pickRun((await getJson(`${api}/runs?refresh=true`)).items, relativePosix);
-  }
-  if (picked.kind === "none") throw new Refusal(`측정 서버의 런 목록에 ${relativePosix} 의 묶음이 없다`);
-  if (picked.kind === "many") {
-    const paths = picked.items.map((candidate) => `  ${candidate.path}`).join("\n");
-    throw new Refusal(`그 폴더에 드라이버 로그가 여럿이다 — 로그 경로로 하나를 고른다:\n${paths}`);
-  }
-  return picked.item;
-}
-
-async function getJson(url) {
-  let response;
-  try {
-    response = await fetch(url);
-  } catch (error) {
-    throw new Refusal(`측정 서버에 닿지 못했다(${url}) — 먼저 띄운다: ${error.cause?.code ?? error.message}`);
-  }
-  const body = await response.json().catch(() => undefined);
-  if (!response.ok) throw new Refusal(`측정 서버가 거부했다 ${response.status}: ${body?.detail ?? "(본문 없음)"}`);
-  return body;
-}
-
 function readDistAsset(href) {
   const file = path.resolve(DIST_DIR, `.${href}`);
   if (!file.startsWith(DIST_DIR)) throw new Refusal(`dist/ 밖 자산을 가리킨다: ${href}`);
@@ -123,14 +99,6 @@ function writeWhole(target, text, { force }) {
     throw error;
   } finally {
     fs.rmSync(temporary, { force: true });
-  }
-}
-
-function realOrRefuse(target, message) {
-  try {
-    return fs.realpathSync.native(target);
-  } catch {
-    throw new Refusal(`${message}: ${target}`);
   }
 }
 
