@@ -44,7 +44,8 @@ export function useDraftPersistence({
   // 이 마운트만의 이름을 쓴다 — 첫 저장이 초안을 만들어 id 가 생겨도 리마운트가 없으므로, 이름을 그때 바꾸면 앞 저장과 뒤
   // 저장이 다른 줄로 갈려 다시 겹친다.
   const [draftSaveKey] = useState(() => draftId ?? `new-${crypto.randomUUID()}`);
-  const updateDraftMutation = useUpdateContentDraftMutation(draftSaveKey);
+  // 뮤테이션 결과 객체는 렌더마다 바뀌지만 `mutateAsync` 는 마운트 내내 같은 함수라 이것만 꺼내 `persist` 의 의존성에 둔다.
+  const { mutateAsync: updateDraft } = useUpdateContentDraftMutation(draftSaveKey);
 
   // 이 래퍼가 마운트 동안 하나여야 "초안은 정확히 한 번만 만들어진다"가 성립한다(연속 자동저장이
   // 겹쳐 들어온다) → ref에 담아 첫 렌더의 것을 계속 쓴다. 첫 렌더의 `mutateAsync`를 붙잡는 건
@@ -74,7 +75,7 @@ export function useDraftPersistence({
       const sent = novelPermissionSync.prepare(payload);
       let draft: ContentDraftResponse;
       try {
-        draft = await updateDraftMutation.mutateAsync({ id, payload: sent });
+        draft = await updateDraft({ id, payload: sent });
       } catch (error) {
         novelPermissionSync.fail(sent);
         throw error;
@@ -98,7 +99,7 @@ export function useDraftPersistence({
       }
       return draft;
     },
-    [createDraftOnce, navigate, novelPermissionSync, queryClient, type, updateDraftMutation.mutateAsync],
+    [createDraftOnce, navigate, novelPermissionSync, queryClient, type, updateDraft],
   );
 
   // 세 저장 경로가 모두 이 함수를 지나므로 저장 상태도 여기서 잡는다(저장 상태 글자 줄과 임시저장 버튼이 그린다). 저장소는 마운트 동안 하나여야 상태가

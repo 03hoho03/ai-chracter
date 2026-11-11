@@ -55,13 +55,14 @@ const SCROLL_EDGE_PX = 32;
  */
 export function BuilderTabStrip({ tabs, className, activeTab, errorTabIds, requiredTabIds, completedTabIds }: BuilderTabStripProps) {
   const tabsScroll = useHorizontalScrollClip();
+  const tabsScrollRef = tabsScroll.ref;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const setContainerRef = useCallback(
     (el: HTMLDivElement | null) => {
       containerRef.current = el;
-      return tabsScroll.ref(el);
+      return tabsScrollRef(el);
     },
-    [tabsScroll.ref],
+    [tabsScrollRef],
   );
 
   // 같은 값으로 다시 돈 effect(첫 그리기, 개발 모드의 두 번 실행)는 줄을 밀지 않도록 직전에 잰 조건을 기억한다.
