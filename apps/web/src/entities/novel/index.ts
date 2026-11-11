@@ -1,4 +1,4 @@
-export { novelKeys, novelScoped } from "./api/keys";
+export { novelKeys, novelScoped, novelScopedAll } from "./api/keys";
 export {
   useNovelBoardLayoutQuery,
   useSaveNovelBoardLayoutMutation,

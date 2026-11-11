@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
@@ -36,6 +36,7 @@ import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScroll
 import { useCurationWaitCap } from "../model/curationWaitCap";
 import { isHomeAttendancePending, toHomeAttendanceCard, type HomeAttendanceCard as HomeAttendanceCardView } from "../model/homeAttendanceCard";
 import {
+  isHomeWebnovelDropped,
   isHomeWebnovelPending,
   shouldRestoreResultsFocus,
   toHomeCurationLayoutKey,
@@ -117,7 +118,8 @@ export function HomePage({ search, onSearchChange, onTypeChange }: HomePageProps
     isLoggedIn,
     isPricingPending: pricingQuery.isPending,
     isOpen: isWebnovelSectionOpen,
-    isPending: homeWebnovelsQuery.isPending,
+    // 재시도 백오프 중에도 `isPending` 이라 첫 실패 뒤에는 기다리지 않는다 — 섹션은 재시도가 붙으면 늦게 들어오고 끝내 실패하면 빠진다.
+    isPending: homeWebnovelsQuery.isPending && homeWebnovelsQuery.failureCount === 0,
   });
   // 출석 카드도 로그인 회원에게만 있다. 노벨 섹션과 같은 이유로 같은 대기 묶음에 넣는다.
   const attendanceBoardQuery = useAttendanceBoardQuery({ enabled: isLoggedIn });
@@ -136,8 +138,23 @@ export function HomePage({ search, onSearchChange, onTypeChange }: HomePageProps
     isPending: isCurationPending,
     item: homeCurationQuery.data ?? null,
   });
+  // 첫 실패로 기다리지 않고 섹션 없이 그리드를 그렸다면, 재시도가 늦게 성공해도 이 마운트에서는 그리지 않는다 — 그리면
+  // 그리드 위로 끼어들어 카드가 밀려 내려간다(대기 상한 포기와 같은 처리).
+  const [hasDroppedWebnovels, setHasDroppedWebnovels] = useState(false);
+  if (
+    !hasDroppedWebnovels &&
+    isHomeWebnovelDropped({
+      view: curationView,
+      isFiltered,
+      isOpen: isWebnovelSectionOpen,
+      isPending: homeWebnovelsQuery.isPending,
+      failureCount: homeWebnovelsQuery.failureCount,
+    })
+  ) {
+    setHasDroppedWebnovels(true);
+  }
   const homeWebnovels =
-    isWebnovelSectionOpen && curationView.kind !== "waiting" && !isFiltered && !hasGivenUpCuration
+    isWebnovelSectionOpen && curationView.kind !== "waiting" && !isFiltered && !hasGivenUpCuration && !hasDroppedWebnovels
       ? (homeWebnovelsQuery.data ?? [])
       : [];
   const attendanceCard: HomeAttendanceCardView =
