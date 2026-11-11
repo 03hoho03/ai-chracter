@@ -63,3 +63,9 @@ export function novelScoped(novelId: string, kinds: readonly string[]) {
   return (query: { queryKey: readonly unknown[] }) =>
     query.queryKey[2] === novelId && typeof query.queryKey[1] === "string" && kinds.includes(query.queryKey[1]);
 }
+
+/** 한 소설의 캐시를 종류와 상관없이 모두 고르는 술어. 소설을 지운 뒤 그 소설 캐시를 통째로 버릴 때 쓴다 — 목록·대화 소스 키는
+ * 셋째 자리가 없어 걸리지 않고, 루트가 `"novel"` 이 아닌 키(같은 소설 id 의 노벨 캐시 등)도 건드리지 않는다. */
+export function novelScopedAll(novelId: string) {
+  return (query: { queryKey: readonly unknown[] }) => query.queryKey[0] === "novel" && query.queryKey[2] === novelId;
+}

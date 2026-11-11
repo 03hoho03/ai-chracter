@@ -13,7 +13,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { useCloverPricingQuery } from "@/entities/clover";
-import { hasNovelErrorCode, novelKeys, toNovelActionError, useNovelQuery } from "@/entities/novel";
+import { hasNovelErrorCode, novelKeys, novelScopedAll, toNovelActionError, useNovelQuery } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useDeleteNovelMutation } from "../api/useDeleteNovelMutation";
@@ -81,7 +81,7 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
     const pathname = router.state.location.pathname;
     if (pathname === `/novels/${novelId}` || pathname.startsWith(`/novels/${novelId}/`)) await navigate({ to: "/studio", search: { type: "novel" } });
     // 이 소설의 상세·작업·장 본문·판 캐시는 키의 세 번째 자리가 소설 id 다(목록은 그 자리가 없다).
-    queryClient.removeQueries({ predicate: (query) => query.queryKey[0] === "novel" && query.queryKey[2] === novelId });
+    queryClient.removeQueries({ predicate: novelScopedAll(novelId) });
     toast.success("소설을 지웠어요.");
     call.end(true);
   }
