@@ -25,13 +25,13 @@ import {
   splitEpisode,
   toEpisodeDrafts,
   toMoveBlockedReason,
-  toOutlineProblems,
   toSaveEpisodes,
   toTurnIndex,
   updateEpisodeText,
   type OutlineEpisodeDraft,
   type OutlineTurn,
 } from "../model/outlineEdits";
+import { toOutlineProblems } from "../model/outlineEpisodeSchema";
 import { toOutlineRecovery } from "../model/outlineRecovery";
 import {
   toApproveTurnCapBlock,

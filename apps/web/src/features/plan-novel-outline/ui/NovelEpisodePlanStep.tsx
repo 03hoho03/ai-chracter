@@ -29,7 +29,6 @@ import {
   toSaveScenes,
   toSceneDrafts,
   toSceneMoveBlockedReason,
-  toSceneProblems,
   toSceneRemoveBlockedReason,
   updateSceneText,
   type SceneDraft,
@@ -47,6 +46,7 @@ import {
 } from "../model/episodeStatus";
 import { toTurnIndex, type OutlineTurn } from "../model/outlineEdits";
 import { isEditBaseOutdated, toEpisodeOrdinals } from "../model/outlineStatus";
+import { toSceneProblems } from "../model/sceneSchema";
 
 import type { OutlineTurnsStatus } from "./OutlineEpisodeItem";
 import { SceneItem } from "./SceneItem";
