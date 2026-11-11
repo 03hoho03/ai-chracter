@@ -1,16 +1,16 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ComponentProps } from "react";
 
 import { cn } from "@/shared/lib/cn";
 
-type ButtonVariant = "primary" | "ghost";
+type ButtonVariant = "primary" | "ghost" | "danger";
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+type ButtonProps = ComponentProps<"button"> & {
   variant?: ButtonVariant;
 };
 
 /**
- * 높이 28px 버튼. `primary` 는 화면당 하나뿐인 주 행동, 나머지는 `ghost` 다. `type` 기본값을 `button` 으로 둬 폼 안에서 뜻하지
- * 않게 제출하지 않는다.
+ * 높이 28px 버튼. `primary` 는 화면당 하나뿐인 주 행동, 나머지는 `ghost` 다. `danger` 는 확인 대화 안 위험 버튼이다(까닭은
+ * DESIGN.md 「Buttons」). `type` 기본값을 `button` 으로 둬 폼 안에서 뜻하지 않게 제출하지 않는다.
  */
 export function Button({ variant = "ghost", type = "button", className, ...rest }: ButtonProps) {
   return <button type={type} className={buttonClassName(variant, className)} {...rest} />;
@@ -27,6 +27,8 @@ export function buttonClassName(variant: ButtonVariant = "ghost", className?: st
     "disabled:cursor-default disabled:text-ink-muted motion-safe:transition-colors",
     variant === "primary" && "bg-accent px-3 font-medium text-accent-ink disabled:bg-surface-raised",
     variant === "ghost" && "px-2 text-ink-secondary enabled:hover:bg-surface-raised enabled:hover:text-ink",
+    variant === "danger" &&
+      "border border-danger px-3 text-danger enabled:hover:bg-surface-raised disabled:border-border-strong",
     className,
   );
 }

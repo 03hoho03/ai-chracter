@@ -8,8 +8,10 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "codegen": "openapi-typescript openapi.json -o src/shared/api/generated.ts",
-    "export:static": "vite build && node scripts/exportStatic.mjs"
+    "codegen": "openapi-typescript openapi.json -o src/shared/api/generated.ts && pnpm run codegen:service",
+    "codegen:service": "openapi-typescript service-openapi.json -o src/shared/api/service/generated.ts",
+    "export:static": "vite build && node scripts/exportStatic.mjs",
+    "upload": "node scripts/uploadRun.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.2",

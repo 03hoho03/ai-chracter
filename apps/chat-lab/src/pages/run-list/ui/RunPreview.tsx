@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 
+import { RawBadge, shortCommit, uploadedAtText, versionNumberText, versionSizeText } from "@/entities/run-version";
+import { DeleteRunButton } from "@/features/delete-run";
 import type { RunListItem } from "@/shared/api/client";
+import type { HostedRunVersion } from "@/shared/api/service/hostedRuns";
 import { formatCount } from "@/shared/lib/formatNumber";
 import { Button } from "@/shared/ui/Button";
 
@@ -20,6 +23,8 @@ import { CostText } from "./CostText";
 type RunPreviewProps = {
   row: RunRow | undefined;
   folder: string;
+  /** 호스팅 화면이면 고른 런의 판. 판 칸과 지우기를 더한다. */
+  version: HostedRunVersion | undefined;
   onOpen: (row: RunRow) => void;
 };
 
@@ -30,7 +35,7 @@ const TONE_CLASSES = {
 } as const satisfies Record<AttentionTone, string>;
 
 /** 오른쪽 미리보기 — 고른 행을 목록 응답의 칸만으로 그린다(런 상세를 따로 부르지 않는다). */
-export function RunPreview({ row, folder, onOpen }: RunPreviewProps) {
+export function RunPreview({ row, folder, version, onOpen }: RunPreviewProps) {
   if (!row) {
     return (
       <PreviewFrame action={null}>
@@ -59,7 +64,7 @@ export function RunPreview({ row, folder, onOpen }: RunPreviewProps) {
         </Button>
       }
     >
-      <RunDetails item={row.item} />
+      <RunDetails item={row.item} version={version} />
     </PreviewFrame>
   );
 }
@@ -76,7 +81,7 @@ function PreviewFrame({ action, children }: { action: ReactNode; children: React
   );
 }
 
-function RunDetails({ item }: { item: RunListItem }) {
+function RunDetails({ item, version }: { item: RunListItem; version: HostedRunVersion | undefined }) {
   const opened = isOpened(item);
   const attention = describeAttention(item);
 
@@ -84,6 +89,11 @@ function RunDetails({ item }: { item: RunListItem }) {
     <>
       <div>
         <h3 className="text-title text-balance text-ink">{item.storyName ?? "이야기 이름 없음"}</h3>
+        {version?.latest.raw === true && (
+          <p className="mt-1">
+            <RawBadge />
+          </p>
+        )}
         <p className="mt-0.5 font-mono text-label break-all text-ink-muted">{item.path}</p>
       </div>
       <section aria-label="먼저 볼 것">
@@ -132,7 +142,56 @@ function RunDetails({ item }: { item: RunListItem }) {
           <span className="font-mono break-all">{item.roomId}</span>
         </Field>
       </dl>
+      {version !== undefined && <VersionDetails item={item} version={version} />}
     </>
+  );
+}
+
+/**
+ * 호스팅 화면의 판 칸 — 이 런의 최신 판을 누가 언제 어느 커밋의 측정 서버로 올렸는지, 원문을 담았는지. 지우기는 런의 모든 판을
+ * 지우므로 판 수 옆, 칸 맨 아래에 둔다.
+ */
+function VersionDetails({ item, version }: { item: RunListItem; version: HostedRunVersion }) {
+  const { latest, versionCount } = version;
+
+  return (
+    <section aria-label="판" className="border-t border-border pt-3">
+      <h4 className="text-section text-ink">판</h4>
+      <dl className="mt-1.5 grid grid-cols-fields gap-x-3 gap-y-1.5 text-data">
+        <Field label="판">{versionNumberText(latest, versionCount)}</Field>
+        <Field label="올린 때">
+          <span title={latest.uploadedAt}>{uploadedAtText(latest)}</span>
+        </Field>
+        <Field label="올린 이">
+          <span className="font-mono break-all">{latest.uploadedBy}</span>
+        </Field>
+        <Field label="커밋">
+          <span className="font-mono" title={latest.sourceCommit.commit}>
+            {shortCommit(latest)}
+          </span>
+          {latest.sourceCommit.dirty && <span className="text-warn"> · 커밋 안 한 변경 있음</span>}
+        </Field>
+        <Field label="원문">{latest.raw ? "포함" : "제외"}</Field>
+        <Field label="크기">{versionSizeText(latest)}</Field>
+        <Field label="계약 판">{latest.contractVersion}</Field>
+        {latest.provenance.authorInExampleDomain === false && (
+          <Field label="작가">
+            <span className="text-warn">테스트 계정 밖 — 실제 회원의 작품</span>
+          </Field>
+        )}
+      </dl>
+      <div className="mt-3">
+        <DeleteRunButton
+          key={item.runId}
+          runId={item.runId}
+          latest={latest}
+          versionCount={versionCount}
+          storyName={item.storyName}
+          path={item.path}
+          triggerLabel="런 지우기…"
+        />
+      </div>
+    </section>
   );
 }
 

@@ -1,4 +1,5 @@
-// 정적 HTML 내보내기의 인자·대상 런·출력 자리 판정. 측정 서버를 부르고 파일을 쓰는 것은 `exportStatic.mjs` 가 한다.
+// 정적 HTML 내보내기의 인자·대상 런·출력 자리 판정. 측정 서버를 부르고 파일을 쓰는 것은 `exportStatic.mjs` 가 한다. 대상 경로
+// 풀기·런 찾기·보관 폴더 판정은 올리기 CLI(`uploadFlow.mjs`)도 같은 규칙으로 쓴다.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -12,6 +13,9 @@ export const DEFAULT_API = "http://127.0.0.1:8791";
 // 저장소가 추적하는 측정 기록 보관 폴더. 런 루트를 바꿔도 늘 거부한다 — 측정 서버의 턴 기록 내보내기와 같은 규칙이다.
 const REPO_ARCHIVE = fileURLToPath(new URL("../../api/probe-runs/archive", import.meta.url));
 const ARCHIVE_DIR_NAME = "archive";
+
+/** 사용자에게 문구만 보이고 1 로 끝낼 거부. 이 밖의 오류는 예상하지 못한 것이다. */
+export class Refusal extends Error {}
 
 /**
  * 명령줄 인자. 대상(묶음 폴더나 드라이버 로그) 하나와 플래그. 원문 포함(`--raw`)·덮어쓰기(`--force`)는 이름 붙은 플래그로만
@@ -41,6 +45,59 @@ export function parseExportArgs(argv) {
     root: values.root ?? DEFAULT_ROOT,
     api: values.api ?? DEFAULT_API,
   };
+}
+
+/**
+ * 대상 경로를 런 루트 기준으로 푼다. 상대 경로는 `base`(명령을 친 자리) 기준이다. 링크를 따라간 실제 자리로 견주므로 링크로
+ * 런 루트 밖을 가리켜도 밖으로 본다.
+ * @param {{ base: string, root: string, target: string }} input
+ * @returns {{ root: string, target: string, relativePosix: string }} 실제 자리들과 런 루트 기준 POSIX 경로(루트 자신은 `.`)
+ */
+export function resolveTarget({ base, root, target }) {
+  const realRoot = realOrRefuse(path.resolve(base, root), "런 루트가 없다");
+  const realTarget = realOrRefuse(path.resolve(base, target), "대상이 없다");
+  const relative = path.relative(realRoot, realTarget);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Refusal(`대상이 런 루트(${realRoot}) 밖이다: ${realTarget}`);
+  }
+  return { root: realRoot, target: realTarget, relativePosix: relative === "" ? "." : relative.split(path.sep).join("/") };
+}
+
+/**
+ * 측정 서버의 런 목록에서 대상 런 하나. 목록에 없으면 한 번 다시 훑게 하고, 그래도 없거나 폴더에 로그가 여럿이면 거부한다.
+ * @param {string} api
+ * @param {string} relativePosix
+ * @param {{ log?: (line: string) => void }} [options]
+ */
+export async function findRun(api, relativePosix, { log = console.log } = {}) {
+  let picked = pickRun((await getJson(`${api}/runs`)).items, relativePosix);
+  if (picked.kind === "none") {
+    // 측정 서버는 처음 훑은 결과를 들고 있어, 그 뒤 생긴 묶음은 다시 훑어야 보인다.
+    log("목록에 없어 측정 서버가 런 루트를 다시 훑는다(실데이터에서 수십 초)…");
+    picked = pickRun((await getJson(`${api}/runs?refresh=true`)).items, relativePosix);
+  }
+  if (picked.kind === "none") throw new Refusal(`측정 서버의 런 목록에 ${relativePosix} 의 묶음이 없다`);
+  if (picked.kind === "many") {
+    const paths = picked.items.map((candidate) => `  ${candidate.path}`).join("\n");
+    throw new Refusal(`그 폴더에 드라이버 로그가 여럿이다 — 로그 경로로 하나를 고른다:\n${paths}`);
+  }
+  return picked.item;
+}
+
+/**
+ * 측정 서버의 JSON 응답. 닿지 못하거나 거부하면 `Refusal`.
+ * @param {string} url
+ */
+export async function getJson(url) {
+  let response;
+  try {
+    response = await fetch(url);
+  } catch (error) {
+    throw new Refusal(`측정 서버에 닿지 못했다(${url}) — 먼저 띄운다: ${error.cause?.code ?? error.message}`);
+  }
+  const body = await response.json().catch(() => undefined);
+  if (!response.ok) throw new Refusal(`측정 서버가 거부했다 ${response.status}: ${body?.detail ?? "(본문 없음)"}`);
+  return body;
 }
 
 /**
@@ -105,11 +162,40 @@ export function confirmSameRoom(roomId, logText) {
  * @returns {string | undefined}
  */
 export function costGapWarning(detail, bundleFolder) {
-  if (detail.cost !== null || detail.run.format === "preMessageId") return undefined;
+  if (!needsTurnExport(detail)) return undefined;
   return (
     "턴 기록 파일이 없어 이 파일의 원가·토큰이 비어 있다 — 먼저 턴 기록을 내보낸 뒤 다시 내보낸다:\n" +
     `  cd apps/api && uv run python scripts/chat_lab_export_turns.py --run-dir ${bundleFolder}`
   );
+}
+
+/**
+ * 턴 기록을 내보내야 원가·토큰이 채워지는 런인가 — 원가가 비었고 이전 형식이 아니다(이유는 `costGapWarning` 에 적었다).
+ * @param {{ cost: unknown, run: { format: string } }} detail
+ */
+export function needsTurnExport(detail) {
+  return detail.cost === null && detail.run.format !== "preMessageId";
+}
+
+/**
+ * 그 폴더나 조상이 보관 폴더(런 루트의 `archive/`, 저장소의 보관 폴더)인가. 경로 글자가 아니라 장치·inode 로 같은 폴더인지 본다 —
+ * 링크나 다른 대소문자로 닿아도 보관 폴더다. 이름이 `archive` 여도 그 두 자리가 아니면 보관 폴더가 아니다.
+ * @param {string} folder
+ * @param {{ root: string, archiveDirs?: string[] }} options `archiveDirs` 를 주면 기본 두 자리 대신 그것을 본다
+ */
+export function isArchived(folder, { root, archiveDirs }) {
+  let real;
+  try {
+    real = fs.realpathSync.native(folder);
+  } catch {
+    real = path.resolve(folder);
+  }
+  const archives = new Set(
+    (archiveDirs ?? [path.join(root, ARCHIVE_DIR_NAME), REPO_ARCHIVE]).map(identity).filter((id) => id !== undefined),
+  );
+  return ancestry(real)
+    .map(identity)
+    .some((id) => id !== undefined && archives.has(id));
 }
 
 /**
@@ -132,13 +218,10 @@ export function decideOutputPath({ root, bundleFolder, logName, raw, force, out,
     return refused("noFolder", `출력 폴더가 없다: ${path.dirname(requested)}`);
   }
   if (!fs.statSync(folder).isDirectory()) return refused("noFolder", `출력 폴더가 폴더가 아니다: ${folder}`);
-  const chain = ancestry(folder).map(identity);
-  const archives = new Set(
-    (archiveDirs ?? [path.join(root, ARCHIVE_DIR_NAME), REPO_ARCHIVE]).map(identity).filter((id) => id !== undefined),
-  );
-  if (chain.some((id) => id !== undefined && archives.has(id))) {
+  if (isArchived(folder, { root, archiveDirs })) {
     return refused("archived", `${folder}: ${ARCHIVE_DIR_NAME}/ 아래에는 쓰지 않는다 — git 이 추적하는 보관 폴더다`);
   }
+  const chain = ancestry(folder).map(identity);
   const rootId = identity(root);
   if (rootId === undefined || !chain.includes(rootId)) {
     return refused("outsideRoot", `${folder}: 런 루트(${root}) 밖에는 쓰지 않는다 — 다른 곳에 두려면 쓴 뒤 복사한다`);
@@ -158,6 +241,14 @@ export function decideOutputPath({ root, bundleFolder, logName, raw, force, out,
 
 function refused(reason, message) {
   return { kind: "refused", reason, message };
+}
+
+function realOrRefuse(target, message) {
+  try {
+    return fs.realpathSync.native(target);
+  } catch {
+    throw new Refusal(`${message}: ${target}`);
+  }
 }
 
 /** 그 폴더와 조상 전부(루트 `/` 까지). */

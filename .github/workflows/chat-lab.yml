@@ -51,20 +51,23 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # `generated.ts` 는 커밋되는 생성물이다(`openapi.json` → 이 파일). 체인의 앞 절반(측정 서버 스키마 → `openapi.json`)은
-      # `api.yml` 이 검사하고 뒤 절반을 여기서 검사한다 — 한쪽만 보면 스키마를 고치고 다음 파일을 다시 떨구지 않아도
-      # 초록이 된다. typecheck 가 대신하지 못하는 이유: 필드가 추가될 때는 쓰는 순간 타입 에러로 잡히지만, 삭제·변경될
-      # 때는 옛 타입이 그대로 남아 typecheck 가 초록인 채로 서버와 어긋난다.
+      # 생성 타입 둘은 커밋되는 생성물이다 — `openapi.json` → `src/shared/api/generated.ts`(측정 서버),
+      # `service-openapi.json` → `src/shared/api/service/generated.ts`(호스팅 서비스). 체인의 앞 절반(측정 서버 스키마 →
+      # `openapi.json`, 서비스 스키마 → `service-openapi.json`)은 `api.yml`·`chat-lab-service.yml` 이 검사하고 뒤 절반을
+      # 여기서 검사한다 — 한쪽만 보면 스키마를 고치고 다음 파일을 다시 떨구지 않아도 초록이 된다. typecheck 가 대신하지
+      # 못하는 이유: 필드가 추가될 때는 쓰는 순간 타입 에러로 잡히지만, 삭제·변경될 때는 옛 타입이 그대로 남아 typecheck 가
+      # 초록인 채로 서버와 어긋난다. `paths` 가 `apps/chat-lab/**` 라 `service-openapi.json` 만 바뀌어도 돈다.
       #
       # `git diff` 대신 `git status --porcelain` 출력이 비었는지 보는 것은, 생성물을 커밋에서 빠뜨려 아직 추적되지 않는
       # 새 파일도 `git diff` 는 보지 못해서다.
-      - name: generated.ts 드리프트 검사
+      - name: 생성 타입 드리프트 검사
         run: |
           pnpm --filter chat-lab run codegen
-          test -z "$(git status --porcelain -- apps/chat-lab/src/shared/api/generated.ts)" || {
-            git status --porcelain -- apps/chat-lab/src/shared/api/generated.ts
-            git diff -- apps/chat-lab/src/shared/api/generated.ts
-            echo "::error::generated.ts 가 openapi.json 과 어긋났다 — 'pnpm --filter chat-lab run codegen' 을 돌리고 커밋해라"
+          drift="$(git status --porcelain -- apps/chat-lab/src/shared/api/generated.ts apps/chat-lab/src/shared/api/service/generated.ts)"
+          test -z "$drift" || {
+            echo "$drift"
+            git diff -- apps/chat-lab/src/shared/api/generated.ts apps/chat-lab/src/shared/api/service/generated.ts
+            echo "::error::생성 타입이 원본 스키마와 어긋났다(src/shared/api/generated.ts ← openapi.json, src/shared/api/service/generated.ts ← service-openapi.json) — 'pnpm --filter chat-lab run codegen' 을 돌리고 커밋해라"
             exit 1
           }
 

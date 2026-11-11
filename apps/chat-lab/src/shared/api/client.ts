@@ -3,7 +3,17 @@ import axios from "axios";
 import { assertNever } from "@/shared/lib/assertNever";
 
 import type { components } from "./generated";
-import { findStaticTurn, isStaticMode, StaticBundleError, staticBundleState } from "./staticBundle";
+import {
+  currentPageLocation,
+  isMeasurementPage,
+  labMode,
+  LocalBuildElsewhereError,
+  type LabMode,
+  type PageLocation,
+} from "./labMode";
+import { HostedError } from "./service/hostedFailure";
+import { loadHostedBundle } from "./service/hostedRuns";
+import { findStaticTurn, StaticBundleError, staticBundleState } from "./staticBundle";
 
 /** 측정 서버(`apps/api/scripts/chat_lab_server.py`)의 기본 주소 — 서버의 기본 포트와 같다. */
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8791";
@@ -48,14 +58,32 @@ const chatLabClient = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// 정적 HTML 로 연 화면은 측정 서버에 요청하지 않는다 — 데이터는 모두 파일 안에 있어서, 요청이 나간다는 것은 서버가 있어야 하는
-// 동작을 숨기다 빠뜨린 자리다. 그 요청은 파일을 연 컴퓨터의 127.0.0.1 로 나가고, `file://` 의 Origin(`null`)은 측정 서버 CORS
-// 가 받지 않아 응답을 읽지 못한 채 "측정 서버에 닿지 못했다 — 띄운다" 안내로 끝난다. 정적 파일에서는 틀린 안내라, 요청이 나가기
-// 전에 여기서 정적 화면의 실패로 막는다.
 chatLabClient.interceptors.request.use((config) => {
-  if (isStaticMode()) throw new StaticBundleError("serverless", "정적 HTML 로 연 화면은 측정 서버에 닿지 않는다");
+  refuseServerlessRequest(labMode());
   return config;
 });
+
+/**
+ * 측정 서버 요청을 내보내도 되는 모드·출처인가 — 아니면 그 실패로 던진다. 정적·호스팅 화면에서 측정 서버 요청이 나간다는 것은
+ * 서버가 있어야 하는 동작을 숨기다 빠뜨린 자리다.
+ * - 정적 HTML: 데이터는 모두 파일 안에 있다. 요청은 파일을 연 컴퓨터의 127.0.0.1 로 나가고, `file://` 의 Origin(`null`)은 측정
+ *   서버 CORS 가 받지 않아 "측정 서버에 닿지 못했다 — 띄운다" 는 틀린 안내로 끝난다.
+ * - 호스팅: 요청이 보는 사람 브라우저의 127.0.0.1 로 나간다. 팀원 컴퓨터에는 측정 서버가 없고, 있으면 남의 로컬 서버를 부른다.
+ * - 로컬 빌드라도 루프백 밖 출처에서 열렸으면 호스팅과 같은 까닭으로 막는다 — 로컬 빌드가 서비스에 잘못 실린 것이다.
+ */
+export function refuseServerlessRequest(mode: LabMode, page: PageLocation | undefined = currentPageLocation()): void {
+  switch (mode) {
+    case "local":
+      if (page !== undefined && !isMeasurementPage(page)) throw new LocalBuildElsewhereError(page.hostname);
+      return;
+    case "static":
+      throw new StaticBundleError("serverless", "정적 HTML 로 연 화면은 측정 서버에 닿지 않는다");
+    case "hosted":
+      throw new HostedError("serverless");
+    default:
+      assertNever(mode);
+  }
+}
 
 /** 런 id 는 base64url 이라 지금은 인코딩해도 그대로지만, 경로 한 마디에 넣는 값이라 인코딩을 거친다. */
 function runPath(runId: string): string {
@@ -74,8 +102,25 @@ export async function getRuns(params: { refresh?: boolean } = {}): Promise<RunLi
 }
 
 /**
- * 정적 HTML 로 열었으면 그 파일에 실린 묶음, 측정 서버를 읽는 화면이면 undefined. 상세·지표·턴은 이 값이 있으면 서버 대신 여기서
- * 읽는다 — 서버가 낸 응답을 그대로 실은 것이라 결합·지표를 다시 계산하지 않는다. 읽지 못한 파일이거나 이 파일의 런이 아니면 던진다.
+ * 측정 서버를 읽지 않는 화면이 런을 읽어 올 묶음. 측정 서버를 읽는 화면이면 undefined. 상세·지표·턴은 이 값이 있으면 서버 대신
+ * 여기서 읽는다 — 측정 서버가 낸 응답을 그대로 실은 것이라 결합·지표를 다시 계산하지 않고, 세 모드가 같은 줄을 지난다.
+ */
+async function bundledRun(runId: string): Promise<RunBundle | undefined> {
+  const mode = labMode();
+  switch (mode) {
+    case "local":
+      return undefined;
+    case "static":
+      return staticRun(runId);
+    case "hosted":
+      return loadHostedBundle(runId);
+    default:
+      return assertNever(mode);
+  }
+}
+
+/**
+ * 정적 HTML 로 열었으면 그 파일에 실린 묶음, 실린 태그가 없으면 undefined. 읽지 못한 파일이거나 이 파일의 런이 아니면 던진다.
  */
 function staticRun(runId: string): RunBundle | undefined {
   const state = staticBundleState();
@@ -95,25 +140,31 @@ function staticRun(runId: string): RunBundle | undefined {
 }
 
 export async function getRun(runId: string): Promise<RunDetail> {
-  const bundle = staticRun(runId);
+  const bundle = await bundledRun(runId);
   if (bundle !== undefined) return bundle.detail;
   const response = await chatLabClient.get<RunDetail>(runPath(runId));
   return response.data;
 }
 
 export async function getTurn(runId: string, clientTurn: number): Promise<TurnDetail> {
-  const bundle = staticRun(runId);
+  const bundle = await bundledRun(runId);
   if (bundle !== undefined) {
     const detail = findStaticTurn(bundle, clientTurn);
-    if (detail === undefined) throw new StaticBundleError("notFound", `이 파일에 턴 ${clientTurn} 이 없다`);
+    if (detail === undefined) throw missingTurnError(clientTurn);
     return detail;
   }
   const response = await chatLabClient.get<TurnDetail>(`${runPath(runId)}/turns/${clientTurn}`);
   return response.data;
 }
 
+/** 묶음에 없는 턴 — 그 묶음을 읽은 모드의 찾지 못함으로. */
+function missingTurnError(clientTurn: number): Error {
+  if (labMode() === "hosted") return new HostedError("notFound");
+  return new StaticBundleError("notFound", `이 파일에 턴 ${clientTurn} 이 없다`);
+}
+
 export async function getRunMetrics(runId: string): Promise<RunMetrics> {
-  const bundle = staticRun(runId);
+  const bundle = await bundledRun(runId);
   if (bundle !== undefined) return bundle.metrics;
   const response = await chatLabClient.get<RunMetrics>(`${runPath(runId)}/metrics`);
   return response.data;

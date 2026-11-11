@@ -1,7 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { RunListItem } from "@/shared/api/client";
+import type { HostedRunVersion } from "@/shared/api/service/hostedRuns";
 import { formatCount } from "@/shared/lib/formatNumber";
 import { Button } from "@/shared/ui/Button";
 
@@ -16,13 +17,17 @@ type RunWorkbenchProps = {
   items: ReadonlyArray<RunListItem>;
   folder: string;
   selectedRowKey: string | undefined;
+  /** 호스팅 화면의 런별 판 — 표의 원문 칩과 미리보기의 판 칸·지우기가 읽는다. 로컬 화면에는 없다. */
+  versions?: ReadonlyMap<string, HostedRunVersion>;
+  /** 런 표 칸 맨 위(머리 줄 아래, 표 위)에 놓을 띠 — 호스팅 화면의 읽지 못하는 런. */
+  tableTop?: ReactNode;
 };
 
 /**
  * 3열 작업대 — 폴더 트리 │ 런 표 │ 미리보기. 좁아지면 미리보기(1280 미만), 폴더 트리(1024 미만) 순으로 접고 표는 남는다.
  * 고른 폴더와 행은 주소에 있어(`?folder=…&row=…`) 런 상세에서 돌아오면 보던 자리다.
  */
-export function RunWorkbench({ items, folder, selectedRowKey }: RunWorkbenchProps) {
+export function RunWorkbench({ items, folder, selectedRowKey, versions, tableTop }: RunWorkbenchProps) {
   const navigate = useNavigate({ from: "/" });
   const tree = useMemo(() => buildFolderTree(items), [items]);
   const rows = useMemo(() => rowsInFolder(items, folder), [items, folder]);
@@ -109,15 +114,14 @@ export function RunWorkbench({ items, folder, selectedRowKey }: RunWorkbenchProp
           </h2>
           <span className="shrink-0 text-data text-ink-muted tabular-nums">런 {formatCount(runCount)}</span>
         </div>
+        {tableTop}
         {rows.length === 0 ? (
-          <div className="space-y-3 px-3 py-6 text-body text-ink-secondary">
-            <p>이 폴더 아래에는 런이 없다. 주소의 폴더가 옛 것이거나, 새로 훑은 뒤 폴더가 사라졌다.</p>
-            <Button onClick={() => selectFolder("")}>전체 보기</Button>
-          </div>
+          <EmptyFolder folder={folder} onShowAll={() => selectFolder("")} />
         ) : (
           <RunTable
             rows={rows}
             folder={folder}
+            versions={versions}
             activeKey={activeRow?.key}
             tableRef={tableRef}
             onSelectRow={selectRow}
@@ -126,8 +130,30 @@ export function RunWorkbench({ items, folder, selectedRowKey }: RunWorkbenchProp
         )}
       </section>
       <aside aria-label="미리보기" className="hidden min-h-0 overflow-auto border-l border-border bg-surface xl:block">
-        <RunPreview row={activeRow} folder={folder} onOpen={openRow} />
+        <RunPreview
+          row={activeRow}
+          folder={folder}
+          version={activeRow?.kind === "run" ? versions?.get(activeRow.item.runId) : undefined}
+          onOpen={openRow}
+        />
       </aside>
+    </div>
+  );
+}
+
+/**
+ * 고른 폴더에 표에 놓을 런이 없을 때. 폴더를 골랐으면 주소의 폴더가 옛 것이거나 목록이 바뀌어(새로 훑기·다시 받기·지우기) 폴더가
+ * 사라졌다. 전체에서도 없으면 표에 놓을 런이 하나도 없는 것이다 — 호스팅 화면에서 서비스의 런이 모두 이 웹이 읽지 못하는 런일
+ * 때(위 띠에 놓인다).
+ */
+function EmptyFolder({ folder, onShowAll }: { folder: string; onShowAll: () => void }) {
+  if (folder === "") {
+    return <p className="px-3 py-6 text-body text-ink-secondary">표에 놓을 런이 없다.</p>;
+  }
+  return (
+    <div className="space-y-3 px-3 py-6 text-body text-ink-secondary">
+      <p>이 폴더 아래에는 런이 없다. 주소의 폴더가 옛 것이거나, 목록이 바뀌어 폴더가 사라졌다.</p>
+      <Button onClick={onShowAll}>전체 보기</Button>
     </div>
   );
 }

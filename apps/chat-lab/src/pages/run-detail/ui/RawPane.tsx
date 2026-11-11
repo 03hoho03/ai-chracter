@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 
-import { assertNever } from "@/shared/lib/assertNever";
+import { labMode } from "@/shared/api/labMode";
 import { cn } from "@/shared/lib/cn";
 import { formatCount } from "@/shared/lib/formatNumber";
 
 import { diffLines, foldDiff } from "../model/lineDiff";
+import { rawAbsentText } from "../model/rawAbsentText";
 import { splitByMatches, type TextMatch } from "../model/rawSearch";
 import type { RawView } from "../model/rawSource";
 import type { DumpSource, RawTab } from "../model/runDetailSearch";
@@ -232,32 +233,9 @@ function RawAbsent({ view }: { view: Exclude<RawView, { kind: "text" }> }) {
       <span aria-hidden="true" className="font-semibold text-ink-muted">
         i
       </span>
-      <p>{absentSentence(view)}</p>
+      <p>{rawAbsentText(view, labMode())}</p>
     </div>
   );
-}
-
-function absentSentence(view: Exclude<RawView, { kind: "text" }>): string {
-  switch (view.kind) {
-    case "noDumpFile":
-      return view.text;
-    case "notSelectedAttempt":
-      return view.earlierCount > 0
-        ? `덤프 없음 — 생성 덤프는 DB 응답으로 고른 시도에만 붙는다. 이 턴의 앞선 생성 덤프 ${view.earlierCount}개는 어느 시도의 것인지 가르지 않아 출처에서 따로 연다.`
-        : "덤프 없음 — 생성 덤프는 DB 응답으로 고른 시도에만 붙는다.";
-    case "noDumpForAttempt":
-      return "덤프 없음 — 이 출처에 붙은 덤프 줄이 없다.";
-    case "excluded":
-      return view.field === "prompt"
-        ? "원문 제외 — 이 파일은 프롬프트·지시문 원문을 빼고 내보냈다. 원문까지 보려면 원문 포함(--raw)으로 다시 내보낸다."
-        : "원문 제외 — 이 파일은 원문 없이 내보내, 이 호출이 지시문을 따로 보냈는지도 이 파일로는 알 수 없다. 원문까지 보려면 원문 포함(--raw)으로 다시 내보낸다.";
-    case "emptyPrompt":
-      return "이 덤프 줄의 프롬프트 칸이 비어 있다 — 칸은 있지만 글이 아닌 값이 적혀 있다.";
-    case "noField":
-      return "이 덤프 줄에는 지시문 칸이 없다 — 지시문을 따로 보내지 않은 호출이다.";
-    default:
-      return assertNever(view);
-  }
 }
 
 function CompareBody({ view, earlierPrompts }: { view: RawView; earlierPrompts: ReadonlyArray<string | undefined> }) {

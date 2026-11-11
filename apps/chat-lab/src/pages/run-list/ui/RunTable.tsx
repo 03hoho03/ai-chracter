@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { memo, type MouseEvent, type RefObject } from "react";
 
+import { RawBadge } from "@/entities/run-version";
 import type { RunListItem } from "@/shared/api/client";
+import type { HostedRunVersion } from "@/shared/api/service/hostedRuns";
 import { cn } from "@/shared/lib/cn";
 import { formatCount } from "@/shared/lib/formatNumber";
 
@@ -19,6 +21,8 @@ import { CostText } from "./CostText";
 type RunTableProps = {
   rows: ReadonlyArray<RunRow>;
   folder: string;
+  /** 호스팅 화면의 런별 판. 있으면 원문 포함 판의 이름 칸에 원문 칩을 단다. */
+  versions?: ReadonlyMap<string, HostedRunVersion>;
   activeKey: string | undefined;
   tableRef: RefObject<HTMLDivElement | null>;
   onSelectRow: (key: string) => void;
@@ -42,7 +46,7 @@ const WIDE_ONLY = "hidden md:block";
  * 가운데 런 표. 행을 한 번 누르면 고르고(미리보기가 따라온다), 두 번 누르거나 고른 행에서 Enter 면 연다 — 런은 상세로, 그룹 행은
  * 그 폴더로 들어간다. 고르기와 열기를 나눈 것은 미리보기로 먼저 훑고 여는 흐름 때문이다.
  */
-export function RunTable({ rows, folder, activeKey, tableRef, onSelectRow, onOpenRow }: RunTableProps) {
+export function RunTable({ rows, folder, versions, activeKey, tableRef, onSelectRow, onOpenRow }: RunTableProps) {
   return (
     <div role="table" aria-label="런" ref={tableRef}>
       <div role="rowgroup" className="sticky top-8 z-10 bg-surface">
@@ -80,6 +84,7 @@ export function RunTable({ rows, folder, activeKey, tableRef, onSelectRow, onOpe
               key={row.key}
               row={row}
               folder={folder}
+              isRaw={versions?.get(row.item.runId)?.latest.raw === true}
               isActive={row.key === activeKey}
               onSelect={onSelectRow}
               onOpen={onOpenRow}
@@ -108,8 +113,13 @@ type RowProps<Kind extends RunRow["kind"]> = {
   onOpen: (row: RunRow) => void;
 };
 
+type RunTableRowProps = RowProps<"run"> & {
+  /** 이 런의 최신 판이 원문을 담았는가(호스팅 화면). 맵 대신 불을 받아 행 메모가 깨지지 않게 한다. */
+  isRaw: boolean;
+};
+
 // 행은 메모한다 — j/k 로 옮길 때 바뀌는 것은 앞뒤 두 행의 `isActive` 뿐인데, 대량 시도 폴더 하나가 천 행을 넘을 수 있다.
-const RunTableRow = memo(function RunTableRow({ row, folder, isActive, onSelect, onOpen }: RowProps<"run">) {
+const RunTableRow = memo(function RunTableRow({ row, folder, isRaw, isActive, onSelect, onOpen }: RunTableRowProps) {
   const { item } = row;
   const models = summarizeModels(item);
   const startedAt = formatStartedAt(item.startedAt);
@@ -144,6 +154,7 @@ const RunTableRow = memo(function RunTableRow({ row, folder, isActive, onSelect,
             이전
           </span>
         )}
+        {isRaw && <RawBadge isCompact />}
       </span>
       {isOpened(item) ? (
         <>

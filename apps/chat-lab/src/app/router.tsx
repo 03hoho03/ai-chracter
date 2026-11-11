@@ -1,7 +1,8 @@
 import { createHashHistory, createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 
 import { parseRunDetailSearch, RunDetailPage } from "@/pages/run-detail";
-import { parseRunListSearch, RunListPage } from "@/pages/run-list";
+import { HostedRunListPage, parseRunListSearch, RunListPage } from "@/pages/run-list";
+import { labMode } from "@/shared/api/labMode";
 import { staticBundleState } from "@/shared/api/staticBundle";
 
 // 라우트는 파일 기반 생성 대신 여기에 코드로 적는다. 화면이 둘뿐이고, 런 하나를 단일 HTML 파일로 굳힐 때 JS 가
@@ -29,7 +30,9 @@ const runListRoute = createRoute({
       throw: true,
     });
   },
-  component: RunListPage,
+  // 호스팅 화면은 목록을 측정 서버가 아니라 서비스에서 받고 그 화면만의 동작(다시 받기·지우기)이 있어 목록 화면을 따로 둔다. 모듈
+  // 스크립트는 문서를 다 읽은 뒤 돌아, 여기서 정적 묶음 태그를 읽어도 된다(`beforeLoad` 가 같은 값을 읽는다).
+  component: labMode() === "hosted" ? HostedRunListPage : RunListPage,
 });
 
 const runDetailRoute = createRoute({

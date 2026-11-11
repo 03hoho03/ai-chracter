@@ -1,6 +1,8 @@
 import { isServerUnreachable } from "@/shared/api/isServerUnreachable";
+import { LocalBuildElsewhereError } from "@/shared/api/labMode";
 import { readLabError } from "@/shared/api/readLabError";
 import { Button } from "@/shared/ui/Button";
+import { LocalBuildElsewhereNotice } from "@/shared/ui/LocalBuildElsewhereNotice";
 import { Notice } from "@/shared/ui/Notice";
 import { ServerUnreachableNotice } from "@/shared/ui/ServerUnreachableNotice";
 
@@ -11,6 +13,7 @@ type RunListFailureProps = {
 
 /** 런 목록을 받지 못했을 때. 서버에 닿지 못했으면 띄우는 방법을, 서버가 거부했으면 그 사유를 그대로 보인다. */
 export function RunListFailure({ error, onRetry }: RunListFailureProps) {
+  if (error instanceof LocalBuildElsewhereError) return <LocalBuildElsewhereNotice error={error} />;
   if (isServerUnreachable(error)) return <ServerUnreachableNotice onRetry={onRetry} />;
 
   const labError = readLabError(error);

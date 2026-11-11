@@ -1,18 +1,17 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import type { ReactNode } from "react";
 
 import { isServerUnreachable } from "@/shared/api/isServerUnreachable";
 import { readLabError } from "@/shared/api/readLabError";
-import { cn } from "@/shared/lib/cn";
 import { formatCount } from "@/shared/lib/formatNumber";
 import { useElapsedSeconds } from "@/shared/lib/useElapsedSeconds";
 import { Button } from "@/shared/ui/Button";
 import { KeyHint } from "@/shared/ui/KeyHint";
-import { AppShell, type Crumb } from "@/widgets/app-shell";
+import { AppShell } from "@/widgets/app-shell";
 
 import { useRefreshRuns } from "../api/useRefreshRuns";
 import { useRuns } from "../api/useRuns";
 import { formatClock } from "../model/runFormat";
+import { folderCrumbs } from "./folderCrumbs";
 import { RunListEmpty } from "./RunListEmpty";
 import { RunListFailure } from "./RunListFailure";
 import { RunListLoading } from "./RunListLoading";
@@ -94,63 +93,20 @@ type RunListBodyProps = {
  */
 function RunListBody({ query, loadingSeconds, folder, selectedRowKey, refreshLabel, isRefreshing, onRefresh }: RunListBodyProps) {
   if (query.data === undefined) {
-    if (query.isPending || query.isFetching) return <RunListLoading seconds={loadingSeconds} />;
+    if (query.isPending || query.isFetching) {
+      return (
+        <RunListLoading
+          seconds={loadingSeconds}
+          message="런 목록을 불러오는 중이다. 처음 부르면 측정 서버가 런 루트를 훑어 수십 초 걸린다."
+        />
+      );
+    }
     return <RunListFailure error={query.error} onRetry={() => void query.refetch()} />;
   }
   if (query.data.items.length === 0) {
     return <RunListEmpty refreshLabel={refreshLabel} isRefreshing={isRefreshing} onRefresh={onRefresh} />;
   }
   return <RunWorkbench items={query.data.items} folder={folder} selectedRowKey={selectedRowKey} />;
-}
-
-/** 헤더 빵부스러기 — `런` 다음에 고른 폴더의 마디마다 한 칸. 누르면 그 폴더로 간다. */
-function folderCrumbs(folder: string, onSelect: (path: string) => void): Crumb[] {
-  const names = folder === "" ? [] : folder.split("/");
-  return [
-    {
-      key: "",
-      content: (
-        <CrumbButton isCurrent={names.length === 0} onClick={() => onSelect("")}>
-          런
-        </CrumbButton>
-      ),
-    },
-    ...names.map((name, index) => {
-      const path = names.slice(0, index + 1).join("/");
-      return {
-        key: path,
-        content: (
-          <CrumbButton isMono isCurrent={index === names.length - 1} onClick={() => onSelect(path)}>
-            {name}
-          </CrumbButton>
-        ),
-      };
-    }),
-  ];
-}
-
-type CrumbButtonProps = {
-  isCurrent: boolean;
-  isMono?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-};
-
-function CrumbButton({ isCurrent, isMono = false, onClick, children }: CrumbButtonProps) {
-  return (
-    <button
-      type="button"
-      aria-current={isCurrent ? "location" : undefined}
-      onClick={onClick}
-      className={cn(
-        "max-w-full truncate rounded-sm focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
-        isMono ? "font-mono text-data" : "text-body",
-        isCurrent ? "font-semibold text-ink" : "text-ink-secondary hover:text-ink",
-      )}
-    >
-      {children}
-    </button>
-  );
 }
 
 function failureDetail(error: unknown): string {

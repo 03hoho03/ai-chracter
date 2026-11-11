@@ -35,6 +35,7 @@ export default tseslint.config(
       // openapi-typescript 출력은 `export interface` 라 type 우선 규칙에 걸리는데, `lint:fix` 로 고치면 CI 의
       // 코드젠 드리프트 검사가 깨진다.
       "apps/chat-lab/src/shared/api/generated.ts",
+      "apps/chat-lab/src/shared/api/service/generated.ts",
       // apps/api는 Python이다. `.venv` 안에 서드파티 `.js`(moto 템플릿 등)가 들어 있어
       // 그대로 두면 타입 정보 없는 파일에 타입 기반 규칙이 걸려 크래시한다.
       "apps/api/**",
