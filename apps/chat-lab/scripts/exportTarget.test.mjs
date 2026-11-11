@@ -1,17 +1,24 @@
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   confirmSameRoom,
   costGapWarning,
   decideOutputPath,
   defaultOutputName,
+  findRun,
+  getJson,
+  isArchived,
+  needsTurnExport,
   parseExportArgs,
   pickRun,
+  Refusal,
+  resolveTarget,
 } from "./exportTarget.mjs";
 
 /** 임시 폴더가 놓인 파일 시스템이 대소문자를 가리지 않는가(macOS 기본 APFS). 가리는 곳(CI 의 Linux)에서는 그 검사를 건너뛴다. */
@@ -243,3 +250,233 @@ describe("costGapWarning", () => {
     expect(costGapWarning({ cost: null, run: { format: "preMessageId" } }, "/runs/a")).toBeUndefined();
   });
 });
+
+describe("needsTurnExport", () => {
+  it("턴 기록이 없어 원가가 빈 현행 형식 런만 턴 기록 내보내기가 필요하다", () => {
+    expect(needsTurnExport({ cost: null, run: { format: "current" } })).toBe(true);
+  });
+
+  it("원가가 있으면(0 원 포함) 필요 없다", () => {
+    expect(needsTurnExport({ cost: { totalUsd: 0 }, run: { format: "current" } })).toBe(false);
+  });
+
+  it("이전 형식은 턴 기록을 내보내도 원가가 채워지지 않아 필요 없다", () => {
+    expect(needsTurnExport({ cost: null, run: { format: "preMessageId" } })).toBe(false);
+  });
+});
+
+describe("isArchived", () => {
+  let base;
+  let root;
+
+  beforeEach(() => {
+    // 실제 파일 시스템에서 본다 — 경로 글자가 아니라 같은 폴더인지(장치·inode)로 가르는지가 검사 대상이다.
+    base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "chat-lab-archived-")));
+    root = path.join(base, "root");
+    fs.mkdirSync(path.join(root, "runs", "a"), { recursive: true });
+    fs.mkdirSync(path.join(root, "archive", "kept"), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it("런 루트의 archive/ 와 그 아래는 보관 폴더이고, 런 루트와 다른 묶음 폴더는 아니다", () => {
+    expect(isArchived(path.join(root, "archive"), { root })).toBe(true);
+    expect(isArchived(path.join(root, "archive", "kept"), { root })).toBe(true);
+    expect(isArchived(path.join(root, "runs", "a"), { root })).toBe(false);
+    expect(isArchived(root, { root })).toBe(false);
+  });
+
+  it("링크로 닿은 보관 폴더도 보관 폴더로 본다", () => {
+    fs.symlinkSync(path.join(root, "archive"), path.join(root, "linked"));
+
+    expect(isArchived(path.join(root, "linked", "kept"), { root })).toBe(true);
+  });
+
+  it("이름이 archive 여도 런 루트의 보관 폴더가 아니면 보관 폴더가 아니다", () => {
+    fs.mkdirSync(path.join(root, "runs", "archive"));
+
+    expect(isArchived(path.join(root, "runs", "archive"), { root })).toBe(false);
+  });
+
+  it("런 루트가 달라도 함께 넘긴 보관 폴더(저장소의 보관 폴더 자리)는 보관 폴더다", () => {
+    const repoArchive = path.join(base, "repo", "probe-runs", "archive");
+    fs.mkdirSync(path.join(repoArchive, "old"), { recursive: true });
+
+    expect(
+      isArchived(path.join(repoArchive, "old"), { root, archiveDirs: [path.join(root, "archive"), repoArchive] }),
+    ).toBe(true);
+  });
+});
+
+describe("resolveTarget", () => {
+  let base;
+  let root;
+
+  beforeEach(() => {
+    base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "chat-lab-target-")));
+    root = path.join(base, "root");
+    fs.mkdirSync(path.join(root, "runs", "a"), { recursive: true });
+    fs.writeFileSync(path.join(root, "runs", "a", "chat.jsonl"), "");
+    fs.mkdirSync(path.join(base, "root2", "x"), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it("상대 경로는 명령을 친 자리 기준으로 풀고 런 루트 기준 POSIX 경로를 낸다(런 루트 자신은 `.`)", () => {
+    expect(resolveTarget({ base, root: "root", target: "root/runs/a/chat.jsonl" })).toEqual({
+      root,
+      target: path.join(root, "runs", "a", "chat.jsonl"),
+      relativePosix: "runs/a/chat.jsonl",
+    });
+    expect(resolveTarget({ base: root, root: ".", target: "runs/a" })).toEqual({
+      root,
+      target: path.join(root, "runs", "a"),
+      relativePosix: "runs/a",
+    });
+    expect(resolveTarget({ base, root: "root", target: "root" })).toMatchObject({ relativePosix: "." });
+  });
+
+  it("런 루트 밖은 거부한다 — `..` 로 빠져나가거나, 이름 앞부분만 같은 옆 폴더이거나, 링크로 밖을 가리켜도", () => {
+    fs.symlinkSync(path.join(base, "root2"), path.join(root, "escape"));
+    const outside = path.join(base, "root2", "x");
+
+    for (const target of ["root/../root2/x", outside, path.join(root, "escape", "x")]) {
+      const error = thrown(() => resolveTarget({ base, root: "root", target }));
+      expect(error).toBeInstanceOf(Refusal);
+      expect(error.message).toBe(`대상이 런 루트(${root}) 밖이다: ${outside}`);
+    }
+  });
+
+  it("런 루트나 대상이 없으면 거부하고 푼 자리를 적는다", () => {
+    const missingRoot = thrown(() => resolveTarget({ base, root: "nowhere", target: "root" }));
+    const missingTarget = thrown(() => resolveTarget({ base, root: "root", target: "root/runs/zzz" }));
+
+    expect(missingRoot).toBeInstanceOf(Refusal);
+    expect(missingRoot.message).toBe(`런 루트가 없다: ${path.join(base, "nowhere")}`);
+    expect(missingTarget).toBeInstanceOf(Refusal);
+    expect(missingTarget.message).toBe(`대상이 없다: ${path.join(root, "runs", "zzz")}`);
+  });
+});
+
+describe("findRun · getJson", () => {
+  // 가짜 측정 서버 — 127.0.0.1 의 빈 포트. `/runs` 는 처음 훑은 목록, `?refresh=true` 는 다시 훑은 목록을 준다.
+  let server;
+  let api;
+  let requests;
+  let lists;
+
+  beforeEach(async () => {
+    requests = [];
+    lists = { first: [], refreshed: [] };
+    server = http.createServer((request, response) => {
+      requests.push(request.url);
+      const url = new URL(request.url, "http://lab.invalid");
+      const reply = (status, body, type = "application/json") => {
+        response.writeHead(status, { "content-type": type });
+        response.end(typeof body === "string" ? body : JSON.stringify(body));
+      };
+      if (url.pathname === "/runs") {
+        const items = url.searchParams.get("refresh") === "true" ? lists.refreshed : lists.first;
+        reply(200, { items, discoveredAt: "2026-11-06T00:00:00Z" });
+      } else if (url.pathname === "/ok") reply(200, { value: 1 });
+      else if (url.pathname === "/missing") reply(404, { detail: "그런 묶음이 없다", reason: "notFound" });
+      else reply(500, "Internal Server Error", "text/plain");
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    api = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  afterEach(async () => {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  it("목록에 있으면 그 런이고 다시 훑지 않는다", async () => {
+    lists.first = [{ runId: "r1", path: "runs/a/chat.jsonl" }];
+    const log = vi.fn();
+
+    expect(await findRun(api, "runs/a", { log })).toEqual(lists.first[0]);
+    expect(requests).toEqual(["/runs"]);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it("목록에 없으면 다시 훑는다고 알리고 한 번 다시 훑어 찾는다", async () => {
+    lists.refreshed = [{ runId: "r1", path: "runs/a/chat.jsonl" }];
+    const log = vi.fn();
+
+    expect(await findRun(api, "runs/a/chat.jsonl", { log })).toEqual(lists.refreshed[0]);
+    expect(requests).toEqual(["/runs", "/runs?refresh=true"]);
+    expect(log).toHaveBeenCalledWith("목록에 없어 측정 서버가 런 루트를 다시 훑는다(실데이터에서 수십 초)…");
+  });
+
+  it("다시 훑어도 없으면 거부한다", async () => {
+    const error = await rejected(findRun(api, "runs/zzz", { log: vi.fn() }));
+
+    expect(error).toBeInstanceOf(Refusal);
+    expect(error.message).toBe("측정 서버의 런 목록에 runs/zzz 의 묶음이 없다");
+  });
+
+  it("폴더에 드라이버 로그가 여럿이면 후보 경로를 모두 적고 거부한다", async () => {
+    lists.first = [
+      { runId: "r2", path: "runs/b/first.jsonl" },
+      { runId: "r3", path: "runs/b/second.jsonl" },
+    ];
+
+    const error = await rejected(findRun(api, "runs/b", { log: vi.fn() }));
+
+    expect(error).toBeInstanceOf(Refusal);
+    expect(error.message).toBe(
+      "그 폴더에 드라이버 로그가 여럿이다 — 로그 경로로 하나를 고른다:\n  runs/b/first.jsonl\n  runs/b/second.jsonl",
+    );
+    expect(requests).toEqual(["/runs"]);
+  });
+
+  it("성공 응답은 JSON 본문이다", async () => {
+    expect(await getJson(`${api}/ok`)).toEqual({ value: 1 });
+  });
+
+  it("거부 응답은 상태와 detail 을 적고, 본문이 JSON 이 아니면 (본문 없음)을 적는다", async () => {
+    const withDetail = await rejected(getJson(`${api}/missing`));
+    const withoutBody = await rejected(getJson(`${api}/broken`));
+
+    expect(withDetail).toBeInstanceOf(Refusal);
+    expect(withDetail.message).toBe("측정 서버가 거부했다 404: 그런 묶음이 없다");
+    expect(withoutBody).toBeInstanceOf(Refusal);
+    expect(withoutBody.message).toBe("측정 서버가 거부했다 500: (본문 없음)");
+  });
+
+  it("닿지 못하면 주소와 오류 코드를 적는다", async () => {
+    // 방금 닫은 포트 — 연결이 거부되는 루프백 주소.
+    const probe = http.createServer();
+    await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
+    const closed = `http://127.0.0.1:${probe.address().port}`;
+    await new Promise((resolve) => probe.close(resolve));
+
+    const error = await rejected(getJson(`${closed}/runs`));
+
+    expect(error).toBeInstanceOf(Refusal);
+    expect(error.message).toBe(`측정 서버에 닿지 못했다(${closed}/runs) — 먼저 띄운다: ECONNREFUSED`);
+  });
+});
+
+function thrown(run) {
+  try {
+    run();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("던지지 않았다");
+}
+
+async function rejected(promise) {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error("거부되지 않았다");
+}
