@@ -15,7 +15,7 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check } from "lucide-react";
 import { useId } from "react";
-import { Controller, useForm, useWatch, type Control, type FieldErrors } from "react-hook-form";
+import { Controller, FormProvider, useForm, useFormContext, useWatch } from "react-hook-form";
 
 import { useCloverPricingQuery } from "@/entities/clover";
 import type { NovelPublicationStatus } from "@/entities/novel";
@@ -95,87 +95,89 @@ export const PublishNovelModal = createCallable<PublishNovelModalProps, PublishC
             </DialogDescription>
           </DialogHeader>
 
-          <form
-            noValidate
-            className="flex min-h-0 flex-1 flex-col gap-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void form.handleSubmit((values) => call.end(toPublishChoice(values)))(event);
-            }}
-          >
-            <DialogBody className="flex flex-col gap-5">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-foreground tabular-nums">
-                {isFixed ? (
-                  <span>{range.max === 1 ? "1화" : `1~${range.max}화`}</span>
-                ) : (
-                  <>
-                    <label htmlFor={selectId}>1화부터</label>
-                    <Controller
-                      control={form.control}
-                      name="targetOrdinal"
-                      render={({ field }) => (
-                        <Select value={String(field.value)} onValueChange={(value) => field.onChange(Number(value))}>
-                          <SelectTrigger id={selectId} className="w-28" aria-label="공개할 마지막 화">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {options.map((ordinal) => (
-                              <SelectItem key={ordinal} value={String(ordinal)}>
-                                {ordinal}화까지
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </>
+          <FormProvider {...form}>
+            <form
+              noValidate
+              className="flex min-h-0 flex-1 flex-col gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void form.handleSubmit((values) => call.end(toPublishChoice(values)))(event);
+              }}
+            >
+              <DialogBody className="flex flex-col gap-5">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-foreground tabular-nums">
+                  {isFixed ? (
+                    <span>{range.max === 1 ? "1화" : `1~${range.max}화`}</span>
+                  ) : (
+                    <>
+                      <label htmlFor={selectId}>1화부터</label>
+                      <Controller
+                        control={form.control}
+                        name="targetOrdinal"
+                        render={({ field }) => (
+                          <Select value={String(field.value)} onValueChange={(value) => field.onChange(Number(value))}>
+                            <SelectTrigger id={selectId} className="w-28" aria-label="공개할 마지막 화">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {options.map((ordinal) => (
+                                <SelectItem key={ordinal} value={String(ordinal)}>
+                                  {ordinal}화까지
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    </>
+                  )}
+                  <span className="text-muted-foreground">· {status.chapterCount}화 중</span>
+                </div>
+
+                {priceRows.length > 0 && (
+                  <PriceRows rows={priceRows} chapterPrice={pricing?.novelReadCost} />
                 )}
-                <span className="text-muted-foreground">· {status.chapterCount}화 중</span>
-              </div>
 
-              {priceRows.length > 0 && (
-                <PriceRows rows={priceRows} control={form.control} chapterPrice={pricing?.novelReadCost} />
-              )}
+                {summaryOrdinals.length > 0 && (
+                  <SummaryFields ordinals={summaryOrdinals} />
+                )}
 
-              {summaryOrdinals.length > 0 && (
-                <SummaryFields ordinals={summaryOrdinals} form={form} errors={form.formState.errors} />
-              )}
+                <ul className="flex flex-col gap-2 text-sm break-keep text-muted-foreground">
+                  {[
+                    "공개하기 전에 제목·소개·화 본문·작가의 말을 자동으로 확인해요.",
+                    "공개한 뒤 고친 내용은 ‘다시 공개’해야 노벨에 반영돼요.",
+                    `${toPublishPriceSentence(
+                      pricing === undefined
+                        ? undefined
+                        : {
+                            freeChapterCount: pricing.novelFreeChapterCount,
+                            chapterPrice: pricing.novelReadCost,
+                            isPolicyV2Enabled: policyV2 !== undefined,
+                          },
+                    )} 나는 언제나 무료로 읽어요.`,
+                    "지금은 열람 수익을 게시자에게 나누지 않아요.",
+                    "표지는 원작 그림으로 보여요.",
+                  ].map((line) => (
+                    <li key={line} className="flex gap-2">
+                      <Check aria-hidden className="mt-0.5 size-4 shrink-0" />
+                      <span>{line}</span>
+                    </li>
+                  ))}
+                </ul>
 
-              <ul className="flex flex-col gap-2 text-sm break-keep text-muted-foreground">
-                {[
-                  "공개하기 전에 제목·소개·화 본문·작가의 말을 자동으로 확인해요.",
-                  "공개한 뒤 고친 내용은 ‘다시 공개’해야 노벨에 반영돼요.",
-                  `${toPublishPriceSentence(
-                    pricing === undefined
-                      ? undefined
-                      : {
-                          freeChapterCount: pricing.novelFreeChapterCount,
-                          chapterPrice: pricing.novelReadCost,
-                          isPolicyV2Enabled: policyV2 !== undefined,
-                        },
-                  )} 나는 언제나 무료로 읽어요.`,
-                  "지금은 열람 수익을 게시자에게 나누지 않아요.",
-                  "표지는 원작 그림으로 보여요.",
-                ].map((line) => (
-                  <li key={line} className="flex gap-2">
-                    <Check aria-hidden className="mt-0.5 size-4 shrink-0" />
-                    <span>{line}</span>
-                  </li>
-                ))}
-              </ul>
+                <p className="text-sm break-keep text-muted-foreground">{toBuyerPolicyCopy(pricing).publishWithdrawNote}</p>
+              </DialogBody>
 
-              <p className="text-sm break-keep text-muted-foreground">{toBuyerPolicyCopy(pricing).publishWithdrawNote}</p>
-            </DialogBody>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => call.end(undefined)}>
-                취소
-              </Button>
-              <Button type="submit">
-                {reviewRequired ? "1화 공개 신청하기" : `${(isFixed ? range.max : target).toLocaleString()}화까지 공개하기`}
-              </Button>
-            </DialogFooter>
-          </form>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => call.end(undefined)}>
+                  취소
+                </Button>
+                <Button type="submit">
+                  {reviewRequired ? "1화 공개 신청하기" : `${(isFixed ? range.max : target).toLocaleString()}화까지 공개하기`}
+                </Button>
+              </DialogFooter>
+            </form>
+          </FormProvider>
         </DialogContent>
       </Dialog>
     );
@@ -200,14 +202,14 @@ function toDefaultValues({
 
 type PriceRowsProps = {
   rows: PublishPriceRow[];
-  control: Control<PublishChoiceFormInput, unknown, PublishChoiceFormValues>;
   /** 지금 유료 화 가격. 가격 응답이 아직 없으면 숫자를 말하지 않는다. */
   chapterPrice: number | undefined;
 };
 
 /** "화별 가격" — 새 화는 무료·유료 칩, 무료 고정 번호와 다시 내는 화는 글. 줄 순서는 화 번호다. */
-function PriceRows({ rows, control, chapterPrice }: PriceRowsProps) {
+function PriceRows({ rows, chapterPrice }: PriceRowsProps) {
   const headingId = useId();
+  const { control } = useFormContext<PublishChoiceFormInput, unknown, PublishChoiceFormValues>();
   const prices = useWatch({ control, name: "prices" });
   const paidLabel = chapterPrice === undefined ? "유료" : `유료 · 클로버 ${chapterPrice.toLocaleString()}개`;
 
@@ -266,13 +268,13 @@ function PriceRows({ rows, control, chapterPrice }: PriceRowsProps) {
 
 type SummaryFieldsProps = {
   ordinals: number[];
-  form: ReturnType<typeof useForm<PublishChoiceFormInput, unknown, PublishChoiceFormValues>>;
-  errors: FieldErrors<PublishChoiceFormInput>;
 };
 
 /** "변경 요약" — 다시 내는 고친 화마다 한 칸. 글자 수는 서버처럼 앞뒤 공백을 덜고 코드 포인트로 센다. */
-function SummaryFields({ ordinals, form, errors }: SummaryFieldsProps) {
+function SummaryFields({ ordinals }: SummaryFieldsProps) {
   const headingId = useId();
+  const form = useFormContext<PublishChoiceFormInput, unknown, PublishChoiceFormValues>();
+  const { errors } = form.formState;
   const summaries = useWatch({ control: form.control, name: "summaries" });
 
   return (
