@@ -16,6 +16,7 @@ import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { countEpisodeChars, createAuthorNoteSchema, type AuthorNoteFormValues } from "../model/episodeSchema";
+import { authorNoteFormToServer } from "../model/formToServer";
 
 type AuthorNoteEditorProps = {
   novel: NovelDetailResponse;
@@ -70,7 +71,7 @@ export function AuthorNoteEditor({ novel, chapter }: AuthorNoteEditorProps) {
       await mutation.mutateAsync({
         novelId: novel.id,
         chapterId: chapter.id,
-        body: { authorNote: values.authorNote.trim() },
+        body: authorNoteFormToServer(values),
       });
       finishEditing();
     } catch (error) {

@@ -1,6 +1,6 @@
 import type { NovelEpisodeOutlineView, NovelSceneInput } from "@/entities/novel";
 
-import { countOutlineChars, OUTLINE_GOAL_MAX_LENGTH, OUTLINE_SUMMARY_MAX_LENGTH, type OutlineRange } from "./outlineEdits";
+import { OUTLINE_GOAL_MAX_LENGTH, OUTLINE_SUMMARY_MAX_LENGTH, type OutlineRange } from "./outlineEdits";
 
 /** 화면이 고치는 장면 하나. 장면의 근거와 등장인물은 고치지 않는다(빼기·차례·글·회상 표시만) — 근거를 바꾸려면 전체 구성안에서 화를
  * 나누거나 합친다. */
@@ -100,26 +100,4 @@ export function toSaveScenes(scenes: readonly SceneDraft[]): NovelSceneInput[] {
     flashback: scene.flashback,
     basis: scene.basis.map((range) => ({ startMessageId: range.startMessageId, endMessageId: range.endMessageId })),
   }));
-}
-
-/** 저장 전에 고칠 것 — 서버가 같은 이유로 막는 것을 장면 번호로 먼저 짚는다. 고치기 폼이 같은 규칙으로 막으므로 대개 비어 있다. */
-export function toSceneProblems(scenes: readonly SceneDraft[], limits: { titleMaxLength: number }): string[] {
-  return scenes.flatMap((scene, index) => {
-    const label = `장면 ${index + 1}`;
-    const problems: string[] = [];
-    const titleLength = countOutlineChars(scene.title);
-    const summaryLength = countOutlineChars(scene.summary);
-    if (titleLength === 0) problems.push(`${label} 제목을 적어주세요.`);
-    else if (titleLength > limits.titleMaxLength) {
-      problems.push(`${label} 제목은 ${limits.titleMaxLength.toLocaleString()}자까지 쓸 수 있어요.`);
-    }
-    if (summaryLength === 0) problems.push(`${label} 내용을 적어주세요.`);
-    else if (summaryLength > SCENE_SUMMARY_MAX_LENGTH) {
-      problems.push(`${label} 내용은 ${SCENE_SUMMARY_MAX_LENGTH.toLocaleString()}자까지 쓸 수 있어요.`);
-    }
-    if (countOutlineChars(scene.purpose) > SCENE_PURPOSE_MAX_LENGTH) {
-      problems.push(`${label} 목적은 ${SCENE_PURPOSE_MAX_LENGTH.toLocaleString()}자까지 쓸 수 있어요.`);
-    }
-    return problems;
-  });
 }

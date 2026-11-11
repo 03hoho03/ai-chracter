@@ -27,7 +27,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
     handleSubmit,
     setError,
     clearErrors,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<ResetPasswordFormValues>({
     resolver: zodResolver(RESET_PASSWORD_SCHEMA),
     defaultValues: RESET_PASSWORD_DEFAULT_VALUES,
@@ -102,8 +102,8 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
         )}
       </div>
 
-      <Button type="submit" size="lg" disabled={confirmMutation.isPending}>
-        {confirmMutation.isPending ? "변경 중..." : "비밀번호 변경"}
+      <Button type="submit" size="lg" disabled={isSubmitting}>
+        {isSubmitting ? "변경 중..." : "비밀번호 변경"}
       </Button>
     </form>
   );

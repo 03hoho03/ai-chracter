@@ -32,7 +32,7 @@ export function LoginForm({ redirectTo, errorCode, errorMethod }: LoginFormProps
     handleSubmit,
     setError,
     clearErrors,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(LOGIN_SCHEMA),
     defaultValues: LOGIN_DEFAULT_VALUES,
@@ -140,8 +140,8 @@ export function LoginForm({ redirectTo, errorCode, errorMethod }: LoginFormProps
           </Link>
         </div>
 
-        <Button type="submit" size="lg" disabled={loginMutation.isPending}>
-          {loginMutation.isPending ? "로그인 중..." : "로그인"}
+        <Button type="submit" size="lg" disabled={isSubmitting}>
+          {isSubmitting ? "로그인 중..." : "로그인"}
         </Button>
       </form>
 

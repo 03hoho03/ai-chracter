@@ -385,26 +385,3 @@ export function toSaveEpisodes(episodes: readonly OutlineEpisodeDraft[]): NovelO
 export function countOutlineChars(value: string): number {
   return [...value.trim()].length;
 }
-
-/** 저장하기 전에 고쳐야 할 것 — 화 번호를 붙인 문장들. 비었으면 저장할 수 있다. */
-export function toOutlineProblems(
-  episodes: readonly OutlineEpisodeDraft[],
-  ordinals: readonly number[],
-  limits: { titleMaxLength: number; maxEpisodes: number },
-): string[] {
-  if (episodes.length > limits.maxEpisodes) {
-    return [`구성안은 ${limits.maxEpisodes.toLocaleString()}화까지예요. 화를 합치거나 지워주세요.`];
-  }
-  return episodes.flatMap((episode, index) => {
-    const label = `${ordinals[index] ?? index + 1}화`;
-    const problems: string[] = [];
-    const titleLength = countOutlineChars(episode.title);
-    if (titleLength === 0) problems.push(`${label} 제목을 적어주세요.`);
-    else if (titleLength > limits.titleMaxLength) problems.push(`${label} 제목이 ${limits.titleMaxLength}자를 넘어요.`);
-    const summaryLength = countOutlineChars(episode.summary);
-    if (summaryLength === 0) problems.push(`${label} 줄거리를 적어주세요.`);
-    else if (summaryLength > OUTLINE_SUMMARY_MAX_LENGTH) problems.push(`${label} 줄거리가 ${OUTLINE_SUMMARY_MAX_LENGTH}자를 넘어요.`);
-    if (countOutlineChars(episode.goal) > OUTLINE_GOAL_MAX_LENGTH) problems.push(`${label} 목표가 ${OUTLINE_GOAL_MAX_LENGTH}자를 넘어요.`);
-    return problems;
-  });
-}

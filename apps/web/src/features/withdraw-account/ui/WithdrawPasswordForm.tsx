@@ -27,7 +27,7 @@ export function WithdrawPasswordForm({ onWithdrawn }: WithdrawPasswordFormProps)
     register,
     handleSubmit,
     setError,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<WithdrawPasswordFormValues>({
     resolver: zodResolver(WITHDRAW_PASSWORD_SCHEMA),
     defaultValues: WITHDRAW_PASSWORD_DEFAULT_VALUES,
@@ -35,8 +35,6 @@ export function WithdrawPasswordForm({ onWithdrawn }: WithdrawPasswordFormProps)
   const withdrawMutation = useWithdrawAccountMutation();
 
   async function handleValidSubmit(values: WithdrawPasswordFormValues) {
-    // 버튼은 `aria-disabled` 라 Enter 제출을 막지 못한다 — 진행 중 재제출은 여기서 끊는다.
-    if (withdrawMutation.isPending) return;
     try {
       await withdrawMutation.mutateAsync(values);
       onWithdrawn();
@@ -56,6 +54,8 @@ export function WithdrawPasswordForm({ onWithdrawn }: WithdrawPasswordFormProps)
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
+        // 버튼은 `aria-disabled` 라 Enter 제출을 막지 못한다 — 진행 중 재제출은 여기서 끊는다.
+        if (isSubmitting) return;
         void handleSubmit(handleValidSubmit)(event);
       }}
     >
@@ -81,10 +81,10 @@ export function WithdrawPasswordForm({ onWithdrawn }: WithdrawPasswordFormProps)
         <Button
           type="submit"
           variant="destructive"
-          aria-disabled={withdrawMutation.isPending}
+          aria-disabled={isSubmitting}
           className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
         >
-          {withdrawMutation.isPending ? "탈퇴 처리 중..." : "탈퇴하기"}
+          {isSubmitting ? "탈퇴 처리 중..." : "탈퇴하기"}
         </Button>
       </AlertDialogFooter>
     </form>

@@ -12,7 +12,6 @@ import {
   toEpisodeDrafts,
   toEpisodeTurns,
   toMoveBlockedReason,
-  toOutlineProblems,
   toSaveEpisodes,
   toSplitPoints,
   toSplitRows,
@@ -21,6 +20,7 @@ import {
   type OutlineEpisodeDraft,
   type OutlineTurn,
 } from "./outlineEdits";
+import { toOutlineProblems } from "./outlineEpisodeSchema";
 
 // 메시지 차례: u1 a1 | u2 a2 | u3 a3 a3b | u4 | u5 a5 | u6 a6 — 4턴은 응답 없는 말 하나다.
 const TURNS: OutlineTurn[] = [

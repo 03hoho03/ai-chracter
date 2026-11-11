@@ -10,10 +10,10 @@ import {
   toSaveScenes,
   toSceneDrafts,
   toSceneMoveBlockedReason,
-  toSceneProblems,
   toSceneRemoveBlockedReason,
   updateSceneText,
 } from "./episodeScenes";
+import { toSceneProblems } from "./sceneSchema";
 
 const view = {
   revision: 3,
