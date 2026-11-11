@@ -51,6 +51,26 @@ export function isHomeWebnovelPending({
   return isOpen && isPending;
 }
 
+/** 노벨 조회가 첫 실패 뒤 재시도 중인 채로 필터 없는 홈의 그리드가 정해졌는가 — 참이면 그 그리드는 노벨 섹션 없이
+ * 그려진 것이라, 화면은 이 마운트 동안 섹션을 버린다. 재시도가 늦게 성공해 섹션을 그리면 이미 그린 그리드 위로
+ * 끼어들어 카드가 섹션 높이만큼 밀려 내려가기 때문이다(대기 상한 포기와 같은 처리). 재시도 없이 끝난 실패(4xx)는
+ * 대기 중이 아니라 여기에 걸리지 않는다. */
+export function isHomeWebnovelDropped({
+  view,
+  isFiltered,
+  isOpen,
+  isPending,
+  failureCount,
+}: {
+  view: HomeCurationView;
+  isFiltered: boolean;
+  isOpen: boolean;
+  isPending: boolean;
+  failureCount: number;
+}): boolean {
+  return view.kind !== "waiting" && !isFiltered && isOpen && isPending && failureCount > 0;
+}
+
 /** 큐레이션 섹션 + 결과 영역 덩어리의 React `key`. 큐레이션이 정해지기 전(`waiting`)과 정해진 뒤가 서로 다른 값이라,
  * 정해지는 순간 덩어리가 통째로 새 노드가 된다 — 기다리며 그려 둔 스켈레톤이 섹션에 밀려 내려가는 대신 사라지고
  * 새로 생기므로 브라우저가 레이아웃 이동으로 세지 않는다. 정해진 뒤(보임·숨김·포기)끼리는 같은 값이라, 필터를 걸고

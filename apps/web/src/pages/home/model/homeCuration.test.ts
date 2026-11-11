@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isHomeWebnovelDropped,
   isHomeWebnovelPending,
   shouldRestoreResultsFocus,
   toHomeCurationHeading,
@@ -93,5 +94,32 @@ describe("isHomeWebnovelPending", () => {
   it("섹션이 있을지 모르는 동안은 기다린다", () => {
     expect(isHomeWebnovelPending({ ...base, isSessionPending: true, isLoggedIn: false })).toBe(true);
     expect(isHomeWebnovelPending({ ...base, isPricingPending: true, isOpen: false })).toBe(true);
+  });
+});
+
+describe("isHomeWebnovelDropped", () => {
+  const decided = { kind: "hidden" } as const;
+  const retrying = { view: decided, isFiltered: false, isOpen: true, isPending: true, failureCount: 1 };
+
+  it("첫 실패 뒤 재시도 중에 그리드가 정해졌으면 섹션을 버린다", () => {
+    expect(isHomeWebnovelDropped(retrying)).toBe(true);
+  });
+
+  it("첫 실패 뒤 재시도가 늦게 성공해도 섹션이 없다 — 화면은 한 번 버리면 그 마운트 동안 다시 들이지 않는다", () => {
+    const renders = [retrying, { ...retrying, isPending: false }];
+    const hasDropped = renders.reduce((dropped, state) => dropped || isHomeWebnovelDropped(state), false);
+    expect(hasDropped).toBe(true);
+  });
+
+  it("그리드가 정해지기 전에 재시도가 성공하면 버리지 않는다", () => {
+    const renders = [{ ...retrying, view: { kind: "waiting" } as const }, { ...retrying, isPending: false }];
+    expect(renders.some((state) => isHomeWebnovelDropped(state))).toBe(false);
+  });
+
+  it("실패가 없었거나, 재시도 없이 끝났거나, 필터가 걸렸거나, 섹션이 닫혀 있으면 버리지 않는다", () => {
+    expect(isHomeWebnovelDropped({ ...retrying, failureCount: 0 })).toBe(false);
+    expect(isHomeWebnovelDropped({ ...retrying, isPending: false })).toBe(false);
+    expect(isHomeWebnovelDropped({ ...retrying, isFiltered: true })).toBe(false);
+    expect(isHomeWebnovelDropped({ ...retrying, isOpen: false })).toBe(false);
   });
 });
