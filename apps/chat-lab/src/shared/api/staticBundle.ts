@@ -1,3 +1,5 @@
+import { isRecord } from "@/shared/lib/isRecord";
+
 import type { components } from "./generated";
 import { STATIC_BUNDLE_ELEMENT_ID } from "./staticBundleElement";
 
@@ -65,23 +67,15 @@ export class StaticBundleError extends Error {
   }
 }
 
-/** 정적 HTML 로 연 화면인가 — 실린 묶음을 읽지 못했어도 정적이다(측정 서버로 넘어가지 않는다). */
-export function isStaticMode(): boolean {
-  return staticBundleState().kind !== "absent";
-}
-
-function isRunBundle(value: unknown): value is RunBundle {
+/** 런 묶음 겉모양 — 정적 HTML 에 실린 글과 호스팅 서비스가 준 묶음을 같은 잣대로 본다. */
+export function isRunBundle(value: unknown): value is RunBundle {
   return (
-    isObject(value) &&
+    isRecord(value) &&
     typeof value.raw === "boolean" &&
-    isObject(value.detail) &&
-    isObject(value.detail.run) &&
+    isRecord(value.detail) &&
+    isRecord(value.detail.run) &&
     typeof value.detail.run.runId === "string" &&
-    isObject(value.metrics) &&
+    isRecord(value.metrics) &&
     Array.isArray(value.turns)
   );
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

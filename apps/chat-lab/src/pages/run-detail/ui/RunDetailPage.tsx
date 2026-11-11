@@ -2,6 +2,7 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 
 import type { RunDetail } from "@/shared/api/client";
+import { labMode, type LabMode } from "@/shared/api/labMode";
 import { COST_GAP_TEXT, OLD_FORMAT_EXPORT_REASON, runRecordGap } from "@/shared/api/recordGap";
 import { staticBundleState, type StaticBundleState } from "@/shared/api/staticBundle";
 import { cn } from "@/shared/lib/cn";
@@ -15,6 +16,7 @@ import { useExportTurns } from "../api/useExportTurns";
 import { useRunDetail } from "../api/useRunDetail";
 import { describeExportFailure } from "../model/exportFailure";
 import { ExportNotice, type ExportFeedback } from "./ExportNotice";
+import { HostedRunAction } from "./HostedRunAction";
 import { RunDetailFailure } from "./RunDetailFailure";
 import { RunDetailLoading } from "./RunDetailLoading";
 import { RunWorkspace } from "./RunWorkspace";
@@ -22,7 +24,8 @@ import { RunWorkspace } from "./RunWorkspace";
 /**
  * 런 상세(턴 층). 위 상태 타임라인 띠 아래에 턴 목록 │ 대화·원문 │ 호출 검사기 3열. 고른 턴·시도·탭은 주소에 실린다.
  * 헤더의 주 행동은 "턴 기록 내보내기" 하나다 — 턴 기록 파일이 있어야 원가·토큰·숨김 스탯이 채워진다. 정적 HTML 로 연 화면은
- * 측정 서버가 없어 내보낼 수 없으므로, 그 자리에 이 파일이 무엇인지(원문을 담았는지)를 적는다.
+ * 측정 서버가 없어 내보낼 수 없으므로, 그 자리에 이 파일이 무엇인지(원문을 담았는지)를 적는다. 호스팅 화면도 측정 서버가 없어
+ * 그 자리에 이 판의 원문 표지·판·지우기가 선다.
  */
 export function RunDetailPage() {
   const { runId } = useParams({ from: "/runs/$runId" });
@@ -39,6 +42,7 @@ function RunDetailScreen({ runId }: { runId: string }) {
   const loadingSeconds = useElapsedSeconds(detailQuery.isFetching && detailQuery.data === undefined);
   const exportSeconds = useElapsedSeconds(exportTurns.isPending);
   const detail = detailQuery.data;
+  const mode = labMode();
   const staticState = staticBundleState();
 
   function handleExport(force: boolean) {
@@ -55,7 +59,7 @@ function RunDetailScreen({ runId }: { runId: string }) {
 
   return (
     <AppShell
-      crumbs={detailCrumbs(runId, detail, staticState.kind !== "absent")}
+      crumbs={detailCrumbs(runId, detail, mode === "static")}
       meta={detail ? runMeta(detail) : undefined}
       badges={
         detail && (
@@ -68,7 +72,10 @@ function RunDetailScreen({ runId }: { runId: string }) {
         )
       }
       actions={
-        detail && (
+        detail &&
+        (mode === "hosted" ? (
+          <HostedRunAction runId={runId} detail={detail} />
+        ) : (
           <RunAction
             detail={detail}
             staticState={staticState}
@@ -76,7 +83,7 @@ function RunDetailScreen({ runId }: { runId: string }) {
             exportSeconds={exportSeconds}
             onExport={() => handleExport(false)}
           />
-        )
+        ))
       }
       hints={
         <>
@@ -119,6 +126,13 @@ function RunDetailScreen({ runId }: { runId: string }) {
   );
 }
 
+/** 상세를 기다리는 동안의 문장 — 정적 파일은 곧바로 읽혀 측정 서버 문장이 서도 보이지 않는다. */
+const DETAIL_LOADING_MESSAGES = {
+  local: "런을 여는 중이다. 측정 서버가 드라이버 로그·덤프·턴 기록을 턴 단위로 잇는다.",
+  static: "런을 여는 중이다. 측정 서버가 드라이버 로그·덤프·턴 기록을 턴 단위로 잇는다.",
+  hosted: "서비스에서 이 런의 최신 판 묶음을 받는 중이다.",
+} as const satisfies Record<LabMode, string>;
+
 type RunDetailBodyProps = {
   query: ReturnType<typeof useRunDetail>;
   runId: string;
@@ -134,7 +148,9 @@ type RunDetailBodyProps = {
  */
 function RunDetailBody({ query, runId, loadingSeconds, notice, isIssuesOpen, onCloseIssues }: RunDetailBodyProps) {
   if (query.data === undefined) {
-    if (query.isPending || query.isFetching) return <RunDetailLoading seconds={loadingSeconds} />;
+    if (query.isPending || query.isFetching) {
+      return <RunDetailLoading seconds={loadingSeconds} message={DETAIL_LOADING_MESSAGES[labMode()]} />;
+    }
     return <RunDetailFailure error={query.error} onRetry={() => void query.refetch()} />;
   }
   return (

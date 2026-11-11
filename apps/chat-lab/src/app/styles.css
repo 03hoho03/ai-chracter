@@ -79,10 +79,12 @@
   --grid-template-columns-run-detail-wide: 17rem minmax(0, 1fr) 23.75rem;
   --grid-template-columns-fields: auto minmax(0, 1fr);
 
-  /* 그림자는 잠깐 떠서 다른 것을 가리는 층(펼친 목록·메뉴·토스트)에만. 정지한 패널에는 없다. */
+  /* 그림자는 잠깐 떠서 다른 것을 가리는 층(펼친 목록·메뉴·토스트·확인 대화)에만. 정지한 패널에는 없다. */
   --shadow-overlay:
     0 8px 24px light-dark(oklch(0.22 0.02 256 / 0.14), oklch(0 0 0 / 0.45)),
     0 0 0 1px light-dark(oklch(0.8 0.008 256), oklch(0.4 0.01 256));
+  /* 모달 확인 대화 뒤를 어둡게 덮는 막(`backdrop:bg-scrim`). 떠 있는 층 그림자와 같은 색상각이다. */
+  --color-scrim: light-dark(oklch(0.22 0.02 256 / 0.35), oklch(0 0 0 / 0.55));
 
   --radius-sm: 3px;
   --radius-md: 5px;

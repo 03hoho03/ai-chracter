@@ -1,9 +1,13 @@
 import { Link } from "@tanstack/react-router";
 
 import { isServerUnreachable } from "@/shared/api/isServerUnreachable";
+import { labMode, LocalBuildElsewhereError } from "@/shared/api/labMode";
 import { readLabError } from "@/shared/api/readLabError";
+import { describeHostedFailure } from "@/shared/api/service/hostedFailure";
 import { StaticBundleError } from "@/shared/api/staticBundle";
 import { Button, buttonClassName } from "@/shared/ui/Button";
+import { HostedFailureNotice } from "@/shared/ui/HostedFailureNotice";
+import { LocalBuildElsewhereNotice } from "@/shared/ui/LocalBuildElsewhereNotice";
 import { Notice } from "@/shared/ui/Notice";
 import { ServerUnreachableNotice } from "@/shared/ui/ServerUnreachableNotice";
 
@@ -14,10 +18,26 @@ type RunDetailFailureProps = {
 
 /**
  * 런 상세를 받지 못했을 때. 서버에 닿지 못했으면 띄우는 방법을(목록과 같은 안내), 없는 런·열지 않는 런이면 서버 문장을 그대로
- * 보이고 목록으로 돌아갈 길을 둔다. 정적 HTML 로 연 화면이면 따로 — 다시 읽어도 같고 목록도 없다.
+ * 보이고 목록으로 돌아갈 길을 둔다. 정적 HTML 로 연 화면이면 따로 — 다시 읽어도 같고 목록도 없다. 호스팅 화면이면 서비스의 실패
+ * 갈래로 — 측정 서버를 띄우라는 안내는 틀린 안내다.
  */
 export function RunDetailFailure({ error, onRetry }: RunDetailFailureProps) {
   if (error instanceof StaticBundleError) return <StaticFailure error={error} />;
+  if (labMode() === "hosted") {
+    return (
+      <HostedFailureNotice
+        failure={describeHostedFailure(error, "bundle")}
+        subject="run"
+        onRetry={onRetry}
+        backToList={
+          <Link to="/" className={buttonClassName("primary")}>
+            런 목록으로
+          </Link>
+        }
+      />
+    );
+  }
+  if (error instanceof LocalBuildElsewhereError) return <LocalBuildElsewhereNotice error={error} />;
   if (isServerUnreachable(error)) return <ServerUnreachableNotice onRetry={onRetry} />;
 
   const labError = readLabError(error);
